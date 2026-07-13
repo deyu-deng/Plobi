@@ -48,21 +48,21 @@ Pick the row that matches your goal:
 
 ## 1. Install Vaelis Agent
 ### With the Vaelis Desktop installer on macOS or Windows (recommended)
-To easily install the command-line and desktop applications, [download the Vaelis Desktop installer](https://hermes-agent.nousresearch.com/) from our website and run it.
+To easily install the command-line and desktop applications, [download the Vaelis Desktop installer](https://vaelis.dev/) from our website and run it.
 
 ### Without Vaelis Desktop:
 For a command-line only install without Vaelis Desktop, run:
 
 #### Linux / macOS / WSL2 / Android (Termux)
 ```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://vaelis.dev/install.sh | bash
 ```
 
 #### Windows (native)
 
 Run in powershell:
 ```powershell
-iex (irm https://hermes-agent.nousresearch.com/install.ps1) 
+iex (irm https://vaelis.dev/install.ps1) 
 ```
 
 :::tip Android / Termux

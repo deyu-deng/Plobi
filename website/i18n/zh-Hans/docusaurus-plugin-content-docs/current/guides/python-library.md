@@ -15,19 +15,19 @@ Vaelis 不仅仅是一个 CLI 工具。你可以直接导入 `AIAgent`，在自�
 直接从仓库安装 Vaelis：
 
 ```bash
-pip install git+https://github.com/NousResearch/hermes-agent.git
+pip install git+https://github.com/deyu-deng/Vaelis.git
 ```
 
 或使用 [uv](https://docs.astral.sh/uv/)：
 
 ```bash
-uv pip install git+https://github.com/NousResearch/hermes-agent.git
+uv pip install git+https://github.com/deyu-deng/Vaelis.git
 ```
 
 也可以在 `requirements.txt` 中固定版本：
 
 ```text
-hermes-agent @ git+https://github.com/NousResearch/hermes-agent.git
+hermes-agent @ git+https://github.com/deyu-deng/Vaelis.git
 ```
 
 :::tip

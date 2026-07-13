@@ -3,7 +3,7 @@
   "updated_at": "2026-07-09T18:38:59Z",
   "metadata": {
     "source": "hermes-agent repo",
-    "docs": "https://hermes-agent.nousresearch.com/docs/reference/model-catalog"
+    "docs": "https://vaelis.dev/docs/reference/model-catalog"
   },
   "providers": {
     "openrouter": {

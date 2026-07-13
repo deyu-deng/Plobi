@@ -6,7 +6,7 @@ description: "One subscription, 300+ frontier models, the Tool Gateway, and Nous
 
 # Nous Portal
 
-[Nous Portal](https://portal.nousresearch.com) is Nous Research's unified subscription gateway and **the recommended way to run Vaelis Agent**. One OAuth login replaces the juggling act of separate accounts, API keys, and billing relationships across every model lab, search API, image generator, and browser provider you'd otherwise need to wire up by hand.
+[Nous Portal](https://vaelis.dev) is Vaelis's unified subscription gateway and **the recommended way to run Vaelis Agent**. One OAuth login replaces the juggling act of separate accounts, API keys, and billing relationships across every model lab, search API, image generator, and browser provider you'd otherwise need to wire up by hand.
 
 If you only have time to set up one thing, set up this. The fastest path:
 
@@ -16,7 +16,7 @@ hermes setup --portal
 
 That single command runs the Portal OAuth, lets you pick a Nous model, sets Nous as your inference provider in `config.yaml`, and turns on the Tool Gateway. You're ready to `hermes chat` immediately after.
 
-Don't have a subscription yet? [portal.nousresearch.com/manage-subscription](https://portal.nousresearch.com/manage-subscription) — sign up, then come back and run the command above.
+Don't have a subscription yet? [vaelis.dev/manage-subscription](https://vaelis.dev/manage-subscription) — sign up, then come back and run the command above.
 
 ## What's in the subscription
 
@@ -62,7 +62,7 @@ You can also enable just specific gateway tools (e.g. web search but not image g
 
 ### Nous Chat
 
-Your Portal account also covers [chat.nousresearch.com](https://chat.nousresearch.com) — Nous Research's web chat interface with the same model catalog. Useful when you're away from your terminal, or for non-agent conversation work.
+Your Portal account also covers [chat.vaelis.dev](https://chat.vaelis.dev) — Vaelis's web chat interface with the same model catalog. Useful when you're away from your terminal, or for non-agent conversation work.
 
 ### No credentials in your dotfiles
 
@@ -74,9 +74,9 @@ Because everything routes through one OAuth-authenticated Portal session, you do
 
 ## A note on Vaelis 4
 
-Nous Research's own **Vaelis 4** family (Vaelis-4-70B, Vaelis-4-405B) is available through the Portal at heavily discounted rates. These are **frontier hybrid-reasoning chat models** — strong at math, science, instruction following, schema adherence, roleplay, and long-form writing.
+Vaelis's own **Vaelis 4** family (Vaelis-4-70B, Vaelis-4-405B) is available through the Portal at heavily discounted rates. These are **frontier hybrid-reasoning chat models** — strong at math, science, instruction following, schema adherence, roleplay, and long-form writing.
 
-They are **not recommended for use inside Vaelis Agent**, however. Vaelis 4 is tuned for chat and reasoning, not the rapid-fire tool-calling loop the agent relies on. Use them for [Nous Chat](https://chat.nousresearch.com), for research workflows, or via the [subscription proxy](/user-guide/features/subscription-proxy) from other tooling — but for agent work, pick a frontier agentic model from the catalog instead:
+They are **not recommended for use inside Vaelis Agent**, however. Vaelis 4 is tuned for chat and reasoning, not the rapid-fire tool-calling loop the agent relies on. Use them for [Nous Chat](https://chat.vaelis.dev), for research workflows, or via the [subscription proxy](/user-guide/features/subscription-proxy) from other tooling — but for agent work, pick a frontier agentic model from the catalog instead:
 
 ```bash
 /model anthropic/claude-sonnet-4.6     # best general-purpose agentic model
@@ -85,7 +85,7 @@ They are **not recommended for use inside Vaelis Agent**, however. Vaelis 4 is t
 /model deepseek/deepseek-v4-pro        # cost-effective coder
 ```
 
-The Portal's own [model info page](https://portal.nousresearch.com/info) carries the same warning, so this isn't a Vaelis-side opinion — it's the official guidance from Nous Research.
+The Portal's own [model info page](https://vaelis.dev/info) carries the same warning, so this isn't a Vaelis-side opinion — it's the official guidance from Vaelis.
 
 ## Setup
 
@@ -97,14 +97,14 @@ hermes setup --portal
 
 This runs the full setup in one shot:
 
-1. Opens your browser to portal.nousresearch.com for OAuth login
+1. Opens your browser to vaelis.dev for OAuth login
 2. Stores the refresh token at `~/.hermes/auth.json`
 3. Lets you pick a Nous model from the curated list (or skip to keep your current one)
 4. Sets Nous as your inference provider in `~/.hermes/config.yaml` (when you pick a model)
 5. Turns on the Tool Gateway (web, image, TTS, browser routing)
 6. Returns you to your terminal ready to `hermes chat`
 
-If you don't have a subscription yet, sign up at [portal.nousresearch.com/manage-subscription](https://portal.nousresearch.com/manage-subscription) first.
+If you don't have a subscription yet, sign up at [vaelis.dev/manage-subscription](https://vaelis.dev/manage-subscription) first.
 
 ### Existing install — add Portal alongside other providers
 
@@ -146,7 +146,7 @@ hermes portal open       # open the subscription management page in your browser
   Nous Portal
   ───────────
   Auth:    ✓ logged in
-  Portal:  https://portal.nousresearch.com
+  Portal:  https://vaelis.dev
   Model:   ✓ using Nous as inference provider
 
   Tool Gateway
@@ -199,7 +199,7 @@ The Tool Gateway is opt-in per tool, not all-or-nothing. The managed backends sh
 
 Manage your plan, view usage, or upgrade/cancel at any time:
 
-- **Web:** [portal.nousresearch.com/manage-subscription](https://portal.nousresearch.com/manage-subscription)
+- **Web:** [vaelis.dev/manage-subscription](https://vaelis.dev/manage-subscription)
 - **CLI shortcut:** `hermes portal open` (opens the same page in your default browser)
 
 ## Configuration reference
@@ -210,7 +210,7 @@ After `hermes setup --portal`, `~/.hermes/config.yaml` will look like:
 model:
   provider: nous
   default: anthropic/claude-sonnet-4.6     # or whatever model you picked
-  base_url: https://inference-api.nousresearch.com/v1
+  base_url: https://inference-api.vaelis.dev/v1
 ```
 
 The Tool Gateway settings live under their respective tool sections:
@@ -261,7 +261,7 @@ The Portal proxies through OpenRouter, so any model that OpenRouter supports is 
 /model anthropic/claude-opus-4.6
 ```
 
-If a model is genuinely missing, [open an issue](https://github.com/NousResearch/hermes-agent/issues) — we surface the Portal's catalog to Vaelis and gaps usually mean a routing config we can update.
+If a model is genuinely missing, [open an issue](https://github.com/deyu-deng/Vaelis/issues) — we surface the Portal's catalog to Vaelis and gaps usually mean a routing config we can update.
 
 ### Bills not appearing on my Portal account
 

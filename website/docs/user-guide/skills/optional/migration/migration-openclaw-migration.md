@@ -17,7 +17,7 @@ Migrate a user's OpenClaw customization footprint into Vaelis Agent. Imports Vae
 | Source | Optional — install with `hermes skills install official/migration/openclaw-migration` |
 | Path | `optional-skills/migration/openclaw-migration` |
 | Version | `1.0.0` |
-| Author | Vaelis Agent (Nous Research) |
+| Author | Vaelis Agent (Vaelis) |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `Migration`, `OpenClaw`, `Vaelis`, `Memory`, `Persona`, `Import` |

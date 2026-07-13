@@ -6,7 +6,7 @@ description: "一个订阅，300+ 前沿模型，Tool Gateway，以及 Nous Chat
 
 # Nous Portal
 
-[Nous Portal](https://portal.nousresearch.com) 是 Nous Research 的统一订阅网关，也是**运行 Vaelis Agent 的推荐方式**。一次 OAuth 登录，即可替代原本需要手动配置的各模型厂商独立账号、API 密钥和计费关系。
+[Nous Portal](https://vaelis.dev) 是 Vaelis 的统一订阅网关，也是**运行 Vaelis Agent 的推荐方式**。一次 OAuth 登录，即可替代原本需要手动配置的各模型厂商独立账号、API 密钥和计费关系。
 
 如果你只有时间配置一件事，就配置这个。最快路径：
 
@@ -16,7 +16,7 @@ hermes setup --portal
 
 这条命令会完成 Portal OAuth 认证，让你选择一个 Nous 模型，在 `config.yaml` 中将 Nous 设为推理提供商，并开启 Tool Gateway。完成后即可立即运行 `hermes chat`。
 
-还没有订阅？前往 [portal.nousresearch.com/manage-subscription](https://portal.nousresearch.com/manage-subscription) 注册，然后回来运行上面的命令。
+还没有订阅？前往 [vaelis.dev/manage-subscription](https://vaelis.dev/manage-subscription) 注册，然后回来运行上面的命令。
 
 ## 订阅包含的内容
 
@@ -58,7 +58,7 @@ Portal 代理了来自整个生态系统的精选 agentic 模型目录——统�
 
 ### Nous Chat
 
-你的 Portal 账号同样覆盖 [chat.nousresearch.com](https://chat.nousresearch.com)——Nous Research 的网页对话界面，使用相同的模型目录。适合离开终端时使用，或用于非 agent 的普通对话场景。
+你的 Portal 账号同样覆盖 [chat.vaelis.dev](https://chat.vaelis.dev)——Vaelis 的网页对话界面，使用相同的模型目录。适合离开终端时使用，或用于非 agent 的普通对话场景。
 
 ### 凭证不落入 dotfiles
 
@@ -70,9 +70,9 @@ Portal 代理了来自整个生态系统的精选 agentic 模型目录——统�
 
 ## 关于 Vaelis 4 的说明
 
-Nous Research 自家的 **Vaelis 4** 系列（Vaelis-4-70B、Vaelis-4-405B）通过 Portal 提供，享有大幅折扣。这些是**前沿混合推理对话模型**——在数学、科学、指令遵循、schema 遵从、角色扮演和长文写作方面表现出色。
+Vaelis 自家的 **Vaelis 4** 系列（Vaelis-4-70B、Vaelis-4-405B）通过 Portal 提供，享有大幅折扣。这些是**前沿混合推理对话模型**——在数学、科学、指令遵循、schema 遵从、角色扮演和长文写作方面表现出色。
 
-但**不建议在 Vaelis Agent 内部使用它们**。Vaelis 4 针对对话和推理进行了调优，而非 agent 所依赖的高频工具调用循环。请将它们用于 [Nous Chat](https://chat.nousresearch.com)、研究工作流，或通过[订阅代理](/user-guide/features/subscription-proxy)从其他工具调用——但在 agent 场景下，请从目录中选择前沿 agentic 模型：
+但**不建议在 Vaelis Agent 内部使用它们**。Vaelis 4 针对对话和推理进行了调优，而非 agent 所依赖的高频工具调用循环。请将它们用于 [Nous Chat](https://chat.vaelis.dev)、研究工作流，或通过[订阅代理](/user-guide/features/subscription-proxy)从其他工具调用——但在 agent 场景下，请从目录中选择前沿 agentic 模型：
 
 ```bash
 /model anthropic/claude-sonnet-4.6     # 最佳通用 agentic 模型
@@ -81,7 +81,7 @@ Nous Research 自家的 **Vaelis 4** 系列（Vaelis-4-70B、Vaelis-4-405B）通
 /model deepseek/deepseek-v3.2          # 高性价比代码模型
 ```
 
-Portal 自身的[模型信息页](https://portal.nousresearch.com/info)也有相同警告，因此这不是 Vaelis 侧的主观意见——这是 Nous Research 的官方指导。
+Portal 自身的[模型信息页](https://vaelis.dev/info)也有相同警告，因此这不是 Vaelis 侧的主观意见——这是 Vaelis 的官方指导。
 
 ## 配置
 
@@ -93,14 +93,14 @@ hermes setup --portal
 
 一次性完成全部配置：
 
-1. 打开浏览器跳转至 portal.nousresearch.com 进行 OAuth 登录
+1. 打开浏览器跳转至 vaelis.dev 进行 OAuth 登录
 2. 将 refresh token 存储至 `~/.hermes/auth.json`
 3. 让你从精选列表中选择一个 Nous 模型（也可跳过以保留当前模型）
 4. 在 `~/.hermes/config.yaml` 中将 Nous 设为推理提供商（当你选择模型时）
 5. 开启 Tool Gateway（网页、图像、TTS、浏览器路由）
 6. 返回终端，即可运行 `hermes chat`
 
-如果还没有订阅，请先在 [portal.nousresearch.com/manage-subscription](https://portal.nousresearch.com/manage-subscription) 注册。
+如果还没有订阅，请先在 [vaelis.dev/manage-subscription](https://vaelis.dev/manage-subscription) 注册。
 
 ### 已有安装——在现有提供商旁添加 Portal
 
@@ -141,7 +141,7 @@ hermes portal open       # 在浏览器中打开订阅管理页面
   Nous Portal
   ───────────
   Auth:    ✓ logged in
-  Portal:  https://portal.nousresearch.com
+  Portal:  https://vaelis.dev
   Model:   ✓ using Nous as inference provider
 
   Tool Gateway
@@ -194,7 +194,7 @@ Tool Gateway 是按工具单独选择启用的，而非全部或全不。完整�
 
 随时管理套餐、查看用量或升级/取消：
 
-- **网页端：** [portal.nousresearch.com/manage-subscription](https://portal.nousresearch.com/manage-subscription)
+- **网页端：** [vaelis.dev/manage-subscription](https://vaelis.dev/manage-subscription)
 - **CLI 快捷方式：** `hermes portal open`（在默认浏览器中打开同一页面）
 
 ## 配置参考
@@ -205,7 +205,7 @@ Tool Gateway 是按工具单独选择启用的，而非全部或全不。完整�
 model:
   provider: nous
   default: anthropic/claude-sonnet-4.6     # 或你选择的其他模型
-  base_url: https://inference.nousresearch.com/v1
+  base_url: https://inference.vaelis.dev/v1
 ```
 
 Tool Gateway 设置位于各自工具的配置节下：
@@ -256,7 +256,7 @@ Portal 通过 OpenRouter 代理，因此 OpenRouter 支持的所有模型通常�
 /model anthropic/claude-opus-4.6
 ```
 
-如果某个模型确实缺失，请[提交 issue](https://github.com/NousResearch/hermes-agent/issues)——我们将 Portal 目录同步至 Vaelis，缺口通常意味着可以更新的路由配置。
+如果某个模型确实缺失，请[提交 issue](https://github.com/deyu-deng/Vaelis/issues)——我们将 Portal 目录同步至 Vaelis，缺口通常意味着可以更新的路由配置。
 
 ### 账单未出现在我的 Portal 账号中
 

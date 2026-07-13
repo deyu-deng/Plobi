@@ -51,7 +51,7 @@ That does not stop Vaelis from working well as a phone-native CLI agent — it j
 Vaelis now ships a Termux-aware installer path:
 
 ```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://vaelis.dev/install.sh | bash
 ```
 
 On Termux, the installer automatically:
@@ -87,7 +87,7 @@ Why these packages?
 ### 2. Clone Vaelis
 
 ```bash
-git clone https://github.com/NousResearch/hermes-agent.git
+git clone https://github.com/deyu-deng/Vaelis.git
 cd hermes-agent
 ```
 

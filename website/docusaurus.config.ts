@@ -7,11 +7,12 @@ const config: Config = {
   tagline: 'The self-improving AI agent',
   favicon: 'img/favicon.ico',
 
-  url: 'https://hermes-agent.nousresearch.com',
+  // TODO: replace with your Vaelis docs domain once set up
+  url: 'https://vaelis.dev',
   baseUrl: '/docs/',
 
-  organizationName: 'NousResearch',
-  projectName: 'hermes-agent',
+  organizationName: 'deyu-deng',
+  projectName: 'Vaelis',
 
   onBrokenLinks: 'warn',
 
@@ -96,7 +97,7 @@ const config: Config = {
         docs: {
           routeBasePath: '/',  // Docs at the root of /docs/
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/NousResearch/hermes-agent/edit/main/website/',
+          editUrl: 'https://github.com/deyu-deng/Vaelis/edit/main/website/',
         },
         blog: false,
         theme: {
@@ -107,7 +108,6 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/hermes-agent-banner.png',
     colorMode: {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
@@ -120,10 +120,6 @@ const config: Config = {
     },
     navbar: {
       title: 'Vaelis Agent',
-      logo: {
-        alt: 'Vaelis Agent',
-        src: 'img/logo.png',
-      },
       items: [
         {
           type: 'docSidebar',
@@ -137,7 +133,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com/',
+          href: 'https://vaelis.dev/',
           label: 'Download',
           position: 'left',
         },
@@ -146,17 +142,17 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com',
+          href: 'https://vaelis.dev',
           label: 'Home',
           position: 'right',
         },
         {
-          href: 'https://github.com/NousResearch/hermes-agent',
+          href: 'https://github.com/deyu-deng/Vaelis',
           label: 'GitHub',
           position: 'right',
         },
         {
-          href: 'https://discord.gg/NousResearch',
+          href: 'https://discord.gg/vaelis',
           label: 'Discord',
           position: 'right',
         },
@@ -177,21 +173,21 @@ const config: Config = {
         {
           title: 'Community',
           items: [
-            { label: 'Discord', href: 'https://discord.gg/NousResearch' },
-            { label: 'GitHub Issues', href: 'https://github.com/NousResearch/hermes-agent/issues' },
+            { label: 'Discord', href: 'https://discord.gg/vaelis' },
+            { label: 'GitHub Issues', href: 'https://github.com/deyu-deng/Vaelis/issues' },
             { label: 'Skills Hub', href: 'https://agentskills.io' },
           ],
         },
         {
           title: 'More',
           items: [
-            { label: 'Desktop Download', href: 'https://hermes-agent.nousresearch.com/' },
-            { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
-            { label: 'Nous Research', href: 'https://nousresearch.com' },
+            { label: 'Desktop Download', href: 'https://vaelis.dev/' },
+            { label: 'GitHub', href: 'https://github.com/deyu-deng/Vaelis' },
+            { label: 'Vaelis', href: 'https://vaelis.dev' },
           ],
         },
       ],
-      copyright: `Built by <a href="https://nousresearch.com">Nous Research</a> · MIT License · ${new Date().getFullYear()}`,
+      copyright: `Built by Vaelis · MIT License · ${new Date().getFullYear()}`,
     },
     prism: {
       theme: prismThemes.github,

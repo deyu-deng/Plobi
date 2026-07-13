@@ -347,7 +347,7 @@ docker exec -u hermes hermes-agent hermes pairing approve telegram ABC12DEF
 If you already ran the command as root and the user is still unauthorized,
 restart the container — the entrypoint will fix ownership on the next start.
 
-[i10270]: https://github.com/NousResearch/hermes-agent/issues/10270
+[i10270]: https://github.com/deyu-deng/Vaelis/issues/10270
 :::
 
 **Storage:** Pairing data is stored in `~/.hermes/pairing/` with per-platform JSON files:
