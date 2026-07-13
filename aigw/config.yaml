@@ -1,0 +1,42 @@
+# aigw — 本地开发配置（mock 模式，无需任何外部 token / 网络）
+# 用途：验证「闭源软件额度通道」是否打通。真实 Cursor / Antigravity 额度需要在
+# config.example.yaml 的基础上补抓包得到的协议与令牌（下一步工作）。
+server:
+  host: 127.0.0.1
+  port: 8000
+  api_key: sk-local-dev-key        # 与 Vaelis 默认 AIGW_API_KEY 一致
+
+logging:
+  level: INFO
+
+trust_env: false
+
+vault:
+  enabled: false                   # 开发期不需要加密凭证库
+
+scheduler:
+  max_retries: 3
+  global_concurrency: 32
+  per_account_concurrency: 4
+  sticky_ttl: 1800
+  strategy: least_fail
+
+# 通配路由：任何模型名都改写为 mock/echo 交给 mock 处理
+# （mock 不校验具体模型，直接回 OpenAI 格式；Vaelis 发的 deepseek-chat 等会被映射到 mock/echo）
+routing:
+  rules:
+    - match: "*"
+      providers: [mock]
+      model: mock/echo
+
+providers:
+  mock:
+    enabled: true
+    mode: echo                     # 默认回显用户最后一条消息
+    reply: "（Vaelis 本地 mock 回应）已收到你的消息，闭源额度通道验证通过。"
+    latency_ms: 0
+    embedding_dim: 8
+    models: ["mock/echo", "mock/static", "mock/fail", "mock/dead", "mock/embedding"]
+    accounts:
+      - { id: mock-echo, mode: echo }
+      - { id: mock-ok, mode: static }

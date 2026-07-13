@@ -1,0 +1,34 @@
+# aigw — Antigravity (Google Gemini Code Assist) gateway config
+#
+# 1) Get a refresh token once:   aigw auth antigravity
+#    (prints a composite "rt|projectId|mpid" string)
+# 2) Put it in accounts[].refresh_token below, or export ANTIGRAVITY_REFRESH_TOKEN.
+#
+# The gateway serves OpenAI-compatible endpoints on 127.0.0.1:8019:
+#   GET  /v1/models
+#   POST /v1/chat/completions
+#   GET  /healthz
+# Auth: a single local api_key (sk-...) so only your own software calls aigw.
+
+server:
+  host: 127.0.0.1
+  port: 8019
+  api_key: ${AIGW_KEY:-sk-local-antigravity}
+
+logging:
+  level: INFO
+
+providers:
+  antigravity:
+    enabled: true
+    # Daily (sandbox) is what the Antigravity app itself hits; switch to prod if needed.
+    host: https://daily-cloudcode-pa.googleapis.com
+    thinking: false
+    # project_id: ""   # optional; auto-discovered via loadCodeAssist at runtime
+    accounts:
+      - id: primary
+        refresh_token: ${ANTIGRAVITY_REFRESH_TOKEN}
+
+aliases: {}
+routing:
+  rules: []

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 480" font-family="-apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <g id="mark">
+      <line x1="50" y1="72" x2="31" y2="30" stroke="#FF7A29" stroke-width="13" stroke-linecap="round"/>
+      <line x1="50" y1="72" x2="69" y2="30" stroke="#FF7A29" stroke-width="13" stroke-linecap="round"/>
+      <circle cx="50" cy="72" r="7.5" fill="#E85B12"/>
+    </g>
+  </defs>
+
+  <rect x="0" y="0" width="680" height="480" rx="18" fill="transparent"/>
+  <text x="40" y="44" font-size="20" font-weight="500" fill="#2A2A2A">Vaelis · 核心 Mark 概念稿</text>
+  <text x="40" y="64" font-size="13" fill="#8A8A8A">抽象几何 · 扁平极简 · 暖橙活力 ｜ 先出一个核心 mark</text>
+
+  <rect x="40" y="86" width="280" height="290" rx="16" fill="#F4F4F2"/>
+  <use href="#mark" transform="translate(90,139.2) scale(1.8)"/>
+  <text x="180" y="362" font-size="12" fill="#9A9A9A" text-anchor="middle">浅色背景</text>
+
+  <rect x="360" y="86" width="280" height="290" rx="16" fill="#1C1C1E"/>
+  <use href="#mark" transform="translate(410,139.2) scale(1.8)"/>
+  <text x="500" y="362" font-size="12" fill="#7A7A7A" text-anchor="middle">深色背景</text>
+
+  <text x="40" y="412" font-size="12" fill="#8A8A8A">缩放验证（16–64px，浅底）</text>
+  <use href="#mark" transform="translate(58,399.36) scale(0.64)"/>
+  <use href="#mark" transform="translate(176,407.52) scale(0.48)"/>
+  <use href="#mark" transform="translate(284,415.68) scale(0.32)"/>
+  <use href="#mark" transform="translate(368,419.76) scale(0.24)"/>
+  <use href="#mark" transform="translate(442,423.84) scale(0.16)"/>
+
+  <rect x="540" y="400" width="20" height="20" rx="5" fill="#FF7A29"/>
+  <text x="566" y="415" font-size="12" fill="#6B6B6B">#FF7A29 主橙</text>
+  <rect x="540" y="426" width="20" height="20" rx="5" fill="#E85B12"/>
+  <text x="566" y="441" font-size="12" fill="#6B6B6B">#E85B12 核心深橙</text>
+</svg>

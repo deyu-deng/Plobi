@@ -1,0 +1,140 @@
+# aigw — unified desktop-quota gateway config
+# copy to config.yaml and fill in. env vars: ${VAR} or ${VAR:-default}
+
+server:
+  host: 127.0.0.1          # keep it local; do NOT bind 0.0.0.0 without auth in front
+  port: 8000
+  api_key: ${AIGW_KEY:-sk-local-dev-key}   # downstream key your software sends
+
+# --- Logging (optional) ----------------------------------------------------
+# level: DEBUG|INFO|WARNING|ERROR ; file: optional log file path
+logging:
+  level: INFO
+  # file: /var/log/aigw.log
+
+trust_env: false           # do not inherit system HTTP_PROXY for upstream calls
+
+# --- Token Manager ----------------------------------------------------------
+# Encrypted credential vault + proactive background refresh + per-app health.
+#   enabled:    turn the TokenManager on
+#   backend:    auto | keyring | file  (keyring uses OS keychain when available)
+#   persist:    write refreshed creds to the encrypted vault so restarts don't
+#               immediately re-trigger re-auth (only where the upstream allows
+#               replaying the stored refresh token)
+#   preempt_sec: refresh a token this many seconds BEFORE it expires
+#   refresh_interval: background refresh loop period (seconds)
+vault:
+  enabled: true
+  backend: auto
+  persist: false
+  preempt_sec: 300
+  refresh_interval: 120
+
+# --- Scheduler ---------------------------------------------------------------
+scheduler:
+  max_retries: 3
+  global_concurrency: 32
+  per_account_concurrency: 4
+  sticky_ttl: 1800         # seconds a conversation stays pinned to one account
+  strategy: least_fail     # least_fail | round_robin
+
+# --- Routing rules -----------------------------------------------------------
+# Aliases rename a concrete model. Routing rules can fan a name out to an ORDERED
+# list of candidate providers (cross-app failover). Only providers that actually
+# serve the resolved model are tried, so list providers that mirror the model.
+#   match:   glob, e.g. "auto", "gemini-*", "cursor/*"
+#   providers: ordered candidate list (failover order)
+#   model:   optional concrete model override
+aliases:
+  gpt-4o: cursor/gpt-4o
+  gemini: antigravity/gemini-3-pro
+
+routing:
+  rules:
+    # "fast" fails over between Antigravity and Cursor for the same target model.
+    # Both providers must serve antigravity/gemini-3-flash for this to be useful.
+    - match: "fast"
+      providers: [antigravity, cursor]
+      model: antigravity/gemini-3-flash
+
+providers:
+
+  antigravity:
+    enabled: true
+    use_local_session: true           # auto-read ~/.antigravity/db.sqlite
+    client_id: ${ANTIGRAVITY_CLIENT_ID}     # capture via mitm_discover.py (Google OAuth client)
+    client_secret: ${ANTIGRAVITY_CLIENT_SECRET:-}
+    # VERIFY these from a captured request before expecting 200s:
+    host: https://daily-cloudcode-pa.sandbox.googleapis.com
+    api_version: v1internal
+    thinking: false                   # emit thinkingConfig when true
+    cloudcode:
+      envelope: false                 # wrap gemini body in Cloud Code envelope
+      project: ${ANTIGRAVITY_CC_PROJECT:-}   # VERIFY: cloudcode project id
+      request_field: request          # VERIFY: field name carrying the gemini body
+      signature: ${ANTIGRAVITY_CC_SIG:-}     # VERIFY: thinking signature to replay
+    extra_headers: {}                 # mirror captured client-metadata headers
+    accounts:                          # optional extra exported tokens for pooling
+      - id: ag-2
+        label: second google account
+        refresh_token: ${AG2_REFRESH_TOKEN:-}
+
+  cursor:
+    enabled: true
+    use_local_session: true           # auto-read Cursor state.vscdb
+    # Transport strategy when chat is requested:
+    #   use_proto: true  -> binary Connect/protobuf (needs cursor_pb2 stubs)
+    #   fallback:  auto | proto | connect_json
+    #     auto         -> use proto if stubs present, else connect_json if templated
+    #     connect_json -> JSON Connect transport (needs connect_json_body_template)
+    use_proto: false
+    fallback: auto
+    checksum: ${CURSOR_CHECKSUM:-}     # x-cursor-checksum (see burpheart/cursor-tap)
+    host: https://api2.cursor.sh
+    chat_path: /aiserver.v1.ChatService/StreamUnifiedChat
+    model_map: {}                      # e.g. {"cursor/auto": "claude-4-sonnet"}
+    # Connect-JSON fallback body template. Cursor's message schema is undocumented,
+    # so you map the OpenAI request yourself. Placeholders: {model} {prompt}
+    # {system} {messages} (messages is the raw JSON array).
+    # connect_json_body_template:
+    #   model: "{model}"
+    #   prompt: "{prompt}"
+    #   history: "{messages}"
+    accounts: []
+
+  workbuddy:
+    enabled: false                     # enable after MITM discovery
+    base_url: ${WORKBUDDY_BASE_URL:-https://REPLACE_ME}
+    dialect: openai                    # openai | anthropic
+    chat_path: /v1/chat/completions
+    chat_path_template: null          # e.g. "/v1/messages" (may contain {model_upstream})
+    models: ["workbuddy/default"]
+    model_map: { "workbuddy/default": "default" }
+    auth:
+      type: bearer                     # bearer | header
+      header: x-api-key
+    # header_templates: any required header, with {token}/{account_id}/{model}/...
+    header_templates:
+      - { name: "x-app-version", value: "9.2.1" }
+      - { name: "x-device-id",  value: "{account_id}" }
+    extra_headers: {}                  # static fallback headers (lowest priority)
+    accounts:
+      - id: wb-1
+        token: ${WORKBUDDY_TOKEN:-}
+
+  # --- Mock provider (ToS-safe, for dev/demo and testing) -----------------
+  # No network, no vendor account. Returns OpenAI-shaped replies so you can boot
+  # the gateway today, point your own client at it, and run the e2e test suite.
+  # Per-account `mode`: echo | static | fail (retryable 429) | dead (reauth 401).
+  mock:
+    enabled: true
+    mode: static                 # default mode for accounts without their own
+    reply: "mock reply"          # canned text for `static` mode
+    latency_ms: 0                # artificial upstream latency
+    embedding_dim: 8             # vector size for /v1/embeddings (mock only)
+    models: ["mock/echo", "mock/static", "mock/fail", "mock/dead", "mock/embedding"]
+    accounts:
+      - { id: mock-ok,   mode: static }
+      - { id: mock-echo, mode: echo }
+      # - { id: mock-fail, mode: fail }   # uncomment to exercise scheduler failover
+      # - { id: mock-dead, mode: dead }   # uncomment to exercise reauth -> 503

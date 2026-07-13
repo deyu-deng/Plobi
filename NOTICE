@@ -1,0 +1,19 @@
+Vaelis Desktop
+Copyright © 2026 Vaelis
+
+This product is a modified version of Hermes Agent, an MIT-licensed project
+by Nous Research (https://github.com/NousResearch/Hermes-Agent).
+
+The original Hermes Agent source code is Copyright © Nous Research and is
+distributed under the MIT License.
+
+  Original work:
+    Copyright © Nous Research
+    Hermes Agent: https://github.com/NousResearch/Hermes-Agent
+    License: MIT
+
+This modified version (Vaelis Desktop) is distributed under the same MIT
+License terms. The full license text is in the LICENSE file at the repository
+root.
+
+Summary of modifications for Vaelis is recorded in VAELIS_PATCHES.md.

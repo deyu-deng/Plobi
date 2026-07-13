@@ -1,0 +1,27 @@
+[project]
+name = "aigw"
+version = "0.2.0"
+description = "Local OpenAI-compatible gateway that aggregates desktop-app quota (Cursor/Antigravity/Workbuddy)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx[http2]>=0.27",
+    "pyyaml>=6.0",
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+vault = ["keyring>=24.0"]            # OS keyring backend for the encrypted vault
+discover = ["mitmproxy>=10.0"]       # protocol capture addon
+protobuf = ["protobuf>=4.0"]         # generate cursor_pb2 stubs
+
+[project.scripts]
+aigw = "aigw.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["aigw", "aigw.providers", "aigw.tokens", "aigw.proto"]

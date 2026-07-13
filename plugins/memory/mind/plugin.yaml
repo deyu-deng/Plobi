@@ -1,0 +1,6 @@
+name: mind
+version: 0.1.0
+description: "Native adapter for the Mind second-brain vault (Obsidian markdown, file-backed, zero external deps). FRAMEWORK STUB — structure only, no disk I/O yet. Spec: docs/MIND_ADAPTER_PLAN.md."
+hooks:
+  - on_session_end
+  - on_memory_write
