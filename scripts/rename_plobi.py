@@ -153,6 +153,22 @@ def tracked_files(root: Path, extra_excludes: tuple[str, ...] = ()) -> list[str]
     return [r for r in out.decode().split("\0") if r and not _skipped(r, extra_excludes)]
 
 
+def tracked_paths_for_rename(root: Path, extra_excludes: tuple[str, ...] = ()) -> list[str]:
+    """Every tracked path, including the ones content rewriting must not touch.
+
+    Content rules depend on a file being text and not legal/lock material, but a
+    *name* carries no such constraint. Skipping .png and dist/ here is what left
+    apps/desktop/public/hermes-sprite.png behind after the code that referenced
+    it had already been rewritten to plobi-sprite.png -- a dangling reference is
+    worse than an unfixed name.
+    """
+    out = subprocess.run(["git", "ls-files", "-z"], cwd=root,
+                         capture_output=True, check=True).stdout
+    return [r for r in out.decode().split("\0")
+            if r and r not in SELF_EXCLUDE and not any(
+                r.startswith(e) for e in extra_excludes)]
+
+
 def _match_case(dst: str, sample: str) -> str:
     if sample.isupper():
         return dst.upper()
@@ -312,7 +328,8 @@ def main() -> int:
             if args.apply and new_text != text:
                 p.write_text(new_text, encoding="utf-8", newline="")
 
-    pairs = [] if args.no_rename else plan_renames(candidates, families)
+    pairs = [] if args.no_rename else plan_renames(
+        tracked_paths_for_rename(root, tuple(args.exclude)), families)
     hits = sum(per_family.values())
 
     print(f"layer={args.layer}  families={'+'.join(families)}  root={root}")
