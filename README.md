@@ -184,6 +184,20 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
+## Acknowledgements
+
+Plobi is a fork of **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** by
+[Nous Research](https://nousresearch.com), from which the agent core, the messaging
+gateway, the TUI, the plugin/skill system and the CLI derive. The full text of the MIT
+license and both copyright notices ship in [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE);
+every other third-party dependency is named in `pyproject.toml`, `uv.lock`,
+`package.json` and `package-lock.json`.
+
+"Hermes" and "Nous Research" are the names of that upstream project and its authors.
+They appear only here, in `LICENSE`/`NOTICE`, in the upstream URLs we keep pointing at,
+and in model identifiers such as `hermes-4` that are other people's products — everything
+else in this tree has been renamed to Plobi.
+
 <div align="center">
 
 Built on the [Hermes Agent](https://github.com/NousResearch/hermes-agent) foundation.
