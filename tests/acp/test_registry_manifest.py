@@ -32,9 +32,12 @@ def test_agent_json_matches_official_registry_required_fields():
     assert re.fullmatch(r"[a-z][a-z0-9-]*", data["id"])
     assert data["name"] == "Plobi Agent"
     assert data["description"]
-    assert data["repository"] == "https://github.com/NousResearch/hermes-agent"
-    assert data["website"].startswith("https://hermes-agent.nousresearch.com/")
-    assert data["authors"] == ["Nous Research"]
+    # This manifest is the registry listing for *our* distribution, so its
+    # identity fields name us (R-038 §2.4: attribution lives in LICENSE/NOTICE
+    # and the README acknowledgement, not in the published identity fields).
+    assert data["repository"] == "https://github.com/deyu-deng/Plobi"
+    assert data["website"].startswith("https://github.com/deyu-deng/Plobi")
+    assert data["authors"] == ["Plobi"]
     assert data["license"] == "MIT"
     assert set(data["distribution"]) <= ALLOWED_DISTRIBUTIONS
 
