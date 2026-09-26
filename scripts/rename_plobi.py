@@ -74,6 +74,12 @@ PROTECT = [
     # The separator is at most one character on purpose: allowing arbitrary
     # whitespace once swallowed `${cfg.stateDir}/.hermes` in nix/nixosModules.nix
     # because a permission number happened to follow it on the same line.
+    # Known false positive of this rule: IRC nick collision suffixes
+    # (``hermes_1`` / ``hermes_2``) looked like model ids and survived
+    # half-swept next to ``plobi_``; fixed by hand in
+    # plugins/platforms/irc/adapter.py and tests/gateway/test_irc_adapter.py.
+    # Audit the residue for this shape instead of tightening the rule: the digit
+    # really does mean a model in hermes-3-llama-3.1-405b and hermes-0day.
     r"(?:nous[\s_-]+)?[Hh][Ee][Rr][Mm][Ee][Ss][\s_-]?\d[\w.:-]*",
     # ── External resources. A URL, an issue token or a container image names a
     # thing living on somebody else's infrastructure; rewriting it does not
