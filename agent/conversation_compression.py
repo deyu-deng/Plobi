@@ -894,7 +894,7 @@ def compress_context(
         # Notify the context engine that a compaction boundary occurred. Plugin
         # engines (e.g. plobi-lcm) use boundary_reason="compression" to preserve
         # DAG lineage / checkpoint per-session state across the boundary instead of
-        # re-initializing fresh. See plobi-lcm#68. Built-in ContextCompressor
+        # re-initializing fresh. See hermes-lcm#68. Built-in ContextCompressor
         # ignores kwargs. Fires in BOTH modes: rotation passes old→new ids; in-place
         # passes the SAME id (the boundary is real even though the id didn't move).
         try:

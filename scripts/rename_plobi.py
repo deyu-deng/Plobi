@@ -49,6 +49,15 @@ LAYER_FAMILIES = {
 }
 
 # Spans that must survive verbatim (legal attribution, mailmap, external URLs).
+# Rewriting a URL is only correct when the URL points at something we own, so
+# the allow-list below is deliberately narrow: placeholder hosts used in docs
+# and tests, our own repository, and the badge describing our docs.
+_OURS_URL = (
+    r"(?:[a-z0-9-]+\.)*(?:example\.(?:com|org)|example|invalid|local|test|domain\.com)"
+    r"|localhost|127\.0\.0\.1|host(?=[/:])"
+    r"|(?:github\.com|raw\.githubusercontent\.com)/(?:deyu-deng|xgbc|example|you)/"
+    r"|img\.shields\.io/"
+)
 PROTECT = [
     r"https?://(?:www\.)?github\.com/NousResearch/[^\s\"'`)\]]*",
     r"https?://discord\.gg/NousResearch",
@@ -66,6 +75,30 @@ PROTECT = [
     # whitespace once swallowed `${cfg.stateDir}/.hermes` in nix/nixosModules.nix
     # because a permission number happened to follow it on the same line.
     r"(?:nous[\s_-]+)?[Hh][Ee][Rr][Mm][Ee][Ss][\s_-]?\d[\w.:-]*",
+    # ── External resources. A URL, an issue token or a container image names a
+    # thing living on somebody else's infrastructure; rewriting it does not
+    # rename that thing, it just produces a 404 or a "pull access denied".
+    # S3 learned this the hard way: 147 distinct URLs and 15 issue tokens were
+    # swept, among them the upstream docs site (``hermes-agent.nousresearch.com``,
+    # 196 hits), ``ghcr.io/nousresearch/hermes-agent``, Honcho / Reddit / Medium /
+    # LinkedIn article slugs and ``teknium1/nous-discord-archive`` file names.
+    # Every one was restored by matching it against the pre-rename tree
+    # (commit ``f3ecd3e``) — see Docs/PROGRESS.md 2026-09-26.
+    #
+    # URLs: protected unless the host is a placeholder or the path is our repo.
+    r"https?://(?!" + _OURS_URL + r")[^\s\"'`)\]]*",
+    # Upstream issue references: ``hermes-agent#1234`` / ``NousResearch/hermes-agent#1234``.
+    r"\b(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]*[Hh]ermes[A-Za-z0-9_.-]*#\d+",
+    # Container images published by other people — we cannot retag them.
+    r"(?:ghcr\.io/|docker\.io/|hub\.docker\.com/r/)?nousresearch/[A-Za-z0-9_.:/-]+",
+    # Mentioning the *word* rather than using it as an identifier:
+    # ``"Hermes" and "Nous Research" are the names of that upstream project``
+    # (LICENSE/README attribution) must survive, and so does "the upstream
+    # Hermes build" in comments. Both always denote the real upstream.
+    # Case-sensitive on purpose: a lowercase quoted 'hermes' is usually an
+    # identifier in argv/config (`['hermes', 'gateway']`), which MUST rename.
+    "[\"'`\u201c\u2018](?:Hermes|Vaelis)[\"'`\u201d\u2019]",
+    r"\b(?:upstream|原)\s+(?:the\s+)?(?:[Hh]ermes|[Vv]aelis)\b",
 ]
 PROTECT_RE = re.compile("|".join(f"(?:{p})" for p in PROTECT))
 

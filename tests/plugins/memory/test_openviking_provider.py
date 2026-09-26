@@ -2182,7 +2182,7 @@ def test_validate_openviking_identity_value_matches_cli_rules(value, field, ok):
     assert valid is ok
     assert bool(normalized) is ok
 # ---------------------------------------------------------------------------
-# on_session_switch — flush + commit + rotate behavior (plobi-agent#28296)
+# on_session_switch — flush + commit + rotate behavior (hermes-agent#28296)
 # ---------------------------------------------------------------------------
 
 def _make_provider_with_session(session_id: str, turn_count: int):
@@ -2562,7 +2562,7 @@ def test_end_then_switch_with_pending_tokens_does_not_double_commit():
 
 
 def test_session_needs_commit_guard_wins_over_stale_turn_count():
-    """Regression for plobi-agent#28296 review (M3): once a session is marked
+    """Regression for hermes-agent#28296 review (M3): once a session is marked
     committed, _session_needs_commit must return False even if turn_count is
     still positive. A racing sync_turn can re-increment _turn_count after the
     commit+reset; without the guard ordering, a follow-up finalizer would
@@ -2665,7 +2665,7 @@ def test_on_session_switch_waits_for_all_writers_not_just_latest():
 
 
 def test_on_session_switch_does_not_block_caller_on_slow_drain():
-    """Regression for plobi-agent#28296 review (H1): on_session_switch must
+    """Regression for hermes-agent#28296 review (H1): on_session_switch must
     NOT run the old-session drain/commit on the caller's thread. /new, /branch,
     /resume, /undo call this synchronously on the command thread, so a slow
     writer drain (up to _SESSION_DRAIN_TIMEOUT/_DEFERRED_COMMIT_TIMEOUT) or a
@@ -2713,7 +2713,7 @@ def test_on_session_switch_defers_old_commit_to_finalizer_thread():
     """The switch path rotates session state synchronously (cheap, in-memory)
     but offloads the old-session drain + commit onto a daemon finalizer so the
     caller's command thread (/new, /branch, /resume) never blocks on the up-to
-    -_DEFERRED_COMMIT_TIMEOUT drain or the commit POST. See plobi-agent#28296
+    -_DEFERRED_COMMIT_TIMEOUT drain or the commit POST. See hermes-agent#28296
     review (the #41945 'do not block the turn thread' contract)."""
     import threading
 

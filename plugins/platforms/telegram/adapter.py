@@ -420,7 +420,7 @@ _UPDATER_STOP_TIMEOUT = 15.0
 # after _drain_polling_connections(), particularly when both primary and fallback
 # Telegram endpoints are unreachable. Bounding start_polling() prevents the
 # reconnect ladder from stalling indefinitely and allows the heartbeat loop to
-# trigger its own recovery path. Refs: NousResearch/plobi-agent#59614
+# trigger its own recovery path. Refs: NousResearch/hermes-agent#59614
 _UPDATER_START_TIMEOUT = 30.0
 
 
@@ -2089,7 +2089,7 @@ class TelegramAdapter(BasePlatformAdapter):
                     # "in-flight" and skips triggering a new reconnect, and
                     # the gateway silently drops messages for hours.
                     # Bounding stop() lets the reconnect ladder always advance.
-                    # Refs: NousResearch/plobi-agent#58270
+                    # Refs: NousResearch/hermes-agent#58270
                     await asyncio.wait_for(app.updater.stop(), timeout=_UPDATER_STOP_TIMEOUT)
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -2112,7 +2112,7 @@ class TelegramAdapter(BasePlatformAdapter):
             # out within PTB's internal flow. Bounding start_polling() prevents
             # the reconnect ladder from stalling indefinitely and allows the
             # heartbeat loop to trigger its own recovery path.
-            # Refs: NousResearch/plobi-agent#59614
+            # Refs: NousResearch/hermes-agent#59614
             try:
                 await asyncio.wait_for(
                     app.updater.start_polling(

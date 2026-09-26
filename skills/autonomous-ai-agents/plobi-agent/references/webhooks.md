@@ -81,7 +81,7 @@ plobi webhook subscribe todoist-plobi \
   --deliver telegram --deliver-chat-id "12345"
 ```
 
-Full filter syntax: https://plobi-agent.nousresearch.com/docs/user-guide/messaging/webhooks#payload-filters
+Full filter syntax: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks#payload-filters
 
 ### List subscriptions
 ```bash

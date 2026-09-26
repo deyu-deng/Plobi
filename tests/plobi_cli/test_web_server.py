@@ -1691,7 +1691,7 @@ class TestWebServerEndpoints:
         assert data["name"] == "plobi-update"
         assert data["pid"] is None
         assert data["error"] == "docker_update_unsupported"
-        assert "docker pull nousresearch/plobi-agent:latest" in data["message"]
+        assert "docker pull nousresearch/hermes-agent:latest" in data["message"]
         assert spawned is False
 
         status = self.client.get("/api/actions/plobi-update/status")
@@ -1700,7 +1700,7 @@ class TestWebServerEndpoints:
         assert status_data["running"] is False
         assert status_data["exit_code"] == 1
         assert status_data["pid"] is None
-        assert any("docker pull nousresearch/plobi-agent:latest" in line for line in status_data["lines"])
+        assert any("docker pull nousresearch/hermes-agent:latest" in line for line in status_data["lines"])
 
     def test_update_plobi_returns_managed_runtime_guidance_without_spawning(self, monkeypatch):
         import plobi_cli.web_server as web_server
@@ -2474,7 +2474,7 @@ class TestWebServerEndpoints:
         assert "personal WeChat" in weixin["description"]
         assert "Official Account" not in f"{weixin['name']} {weixin['description']}"
         assert weixin["docs_url"] == (
-            "https://plobi-agent.nousresearch.com/docs/user-guide/messaging/weixin/"
+            "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/weixin/"
         )
 
         fields = {field["key"]: field for field in weixin["env_vars"]}
@@ -2492,7 +2492,7 @@ class TestWebServerEndpoints:
 
         teams = _build_catalog_entry("teams")
         assert teams["docs_url"] == (
-            "https://plobi-agent.nousresearch.com/docs/user-guide/messaging/teams"
+            "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/teams"
         )
 
     def test_google_chat_messaging_metadata_links_setup_guide(self):
@@ -2505,7 +2505,7 @@ class TestWebServerEndpoints:
         google_chat = _build_catalog_entry("google_chat")
         assert google_chat["name"] == "Google Chat"
         assert google_chat["docs_url"] == (
-            "https://plobi-agent.nousresearch.com/docs/user-guide/messaging/google_chat"
+            "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/google_chat"
         )
 
     def test_messaging_catalog_covers_gateway_platforms(self):

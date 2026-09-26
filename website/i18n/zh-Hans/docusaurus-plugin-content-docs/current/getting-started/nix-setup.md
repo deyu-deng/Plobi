@@ -607,7 +607,7 @@ NixOS 模块支持声明式插件安装——无需命令式的 `plobi plugins i
 
 ### 目录插件（`extraPlugins`）
 
-对于只包含 `plugin.yaml` + `__init__.py` 的源码树插件（例如 [plobi-lcm](https://github.com/stephenschoettler/plobi-lcm)）：
+对于只包含 `plugin.yaml` + `__init__.py` 的源码树插件（例如 [plobi-lcm](https://github.com/stephenschoettler/hermes-lcm)）：
 
 ```nix
 services.plobi-agent.extraPlugins = [
@@ -624,7 +624,7 @@ services.plobi-agent.extraPlugins = [
 
 ### 入口点插件（`extraPythonPackages`）
 
-对于通过 `[project.entry-points."plobi_agent.plugins"]` 注册的 pip 打包插件（例如 [rtk-plobi](https://github.com/ogallotti/rtk-plobi)）：
+对于通过 `[project.entry-points."plobi_agent.plugins"]` 注册的 pip 打包插件（例如 [rtk-plobi](https://github.com/ogallotti/rtk-hermes)）：
 
 ```nix
 services.plobi-agent.extraPythonPackages = [

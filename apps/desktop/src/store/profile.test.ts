@@ -34,7 +34,7 @@ const profile = (name: string, isDefault = false): ProfileInfo => ({
 })
 
 const remoteConn = (over: Partial<PlobiConnection> = {}): PlobiConnection =>
-  ({ baseUrl: 'https://plobi-roy.tail.ts.net', mode: 'remote', profile: 'vps-remote', ...over }) as PlobiConnection
+  ({ baseUrl: 'https://hermes-roy.tail.ts.net', mode: 'remote', profile: 'vps-remote', ...over }) as PlobiConnection
 
 const localConn = (over: Partial<PlobiConnection> = {}): PlobiConnection =>
   ({ baseUrl: '', mode: 'local', profile: 'default', ...over }) as PlobiConnection

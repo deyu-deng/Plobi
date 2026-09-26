@@ -49,7 +49,7 @@ development environment on the same layout the CLI, updater, lazy dependency
 installer, gateway, and docs assume.
 
 ```bash
-curl -fsSL https://plobi-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 cd "${PLOBI_HOME:-$HOME/.plobi}/plobi-agent"
 
 # Add dev/test extras on top of the standard install.

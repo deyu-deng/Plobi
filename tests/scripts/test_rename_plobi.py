@@ -50,6 +50,20 @@ REWRITE = [
     # the URL is theirs (survive).
     ("[Vaelis Agent](https://github.com/NousResearch/hermes-agent)",
      "[Plobi Agent](https://github.com/NousResearch/hermes-agent)"),
+    # URLs that point at things we own are exactly the URLs the codemod SHOULD
+    # rewrite -- the placeholder hosts docs/tests use, and our own repo.
+    ("https://github.com/deyu-deng/Vaelis/issues",
+     "https://github.com/deyu-deng/Plobi/issues"),
+    ("https://raw.githubusercontent.com/deyu-deng/Vaelis/main/install.sh",
+     "https://raw.githubusercontent.com/deyu-deng/Plobi/main/install.sh"),
+    ("https://hermes.example/auth/callback", "https://plobi.example/auth/callback"),
+    ("https://github.com/example/hermes-agent.git",
+     "https://github.com/example/plobi-agent.git"),
+    ("https://img.shields.io/badge/Docs-Hermes-FFD700",
+     "https://img.shields.io/badge/Docs-Plobi-FFD700"),
+    # A lowercase quoted stem is an identifier in argv/config, not a mention of
+    # the word -- it must still rename.
+    ("['hermes', 'gateway']", "['plobi', 'gateway']"),
 ]
 
 PRESERVE = [
@@ -65,6 +79,26 @@ PRESERVE = [
     # upstream attribution obligations
     "dev@nousresearch.com",
     "[Hermes Agent](https://github.com/NousResearch/hermes-agent)",
+    # ── External resources. S3 rewrote 147 URLs + 15 issue tokens into 404s and
+    # an unpullable image; these rows are the classes that broke, kept verbatim
+    # so a re-run cannot re-break them.
+    "https://hermes-agent.nousresearch.com/install.sh",
+    "https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban",
+    "https://setup.hermes-agent.nousresearch.com",
+    "docker pull ghcr.io/nousresearch/hermes-agent:latest",
+    "image: nousresearch/hermes-agent:latest",
+    "See hermes-agent#21444 for symptom history.",
+    "Surface 8 of NousResearch/hermes-agent#47072",
+    "https://docs.honcho.dev/v3/guides/integrations/hermes",
+    "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "https://medium.com/@jsong_49820/how-i-built-a-self-improving-llm-wiki-with-hermes-agent",
+    "https://www.reddit.com/r/hermesagent/comments/1snfnq9/yes_hermes_and_qwen354b_is_all_i_need_details/",
+    "https://hermes.fly.dev/auth/callback",
+    "https://hermes-roy.tail.ts.net",
+    # Mentioning the name as a word (attribution prose) and naming the upstream
+    # build -- both denote the real Hermes, never our product.
+    '"Hermes" and "Nous Research" are the names of that upstream project',
+    "Was 'nous' (Nous Portal) in the upstream Hermes build.",
 ]
 
 

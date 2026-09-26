@@ -7,7 +7,7 @@ const config: Config = {
   tagline: 'The self-improving AI agent',
   favicon: 'img/favicon.ico',
 
-  url: 'https://plobi-agent.nousresearch.com',
+  url: 'https://hermes-agent.nousresearch.com',
   baseUrl: '/docs/',
 
   organizationName: 'NousResearch',
@@ -137,7 +137,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://plobi-agent.nousresearch.com/',
+          href: 'https://hermes-agent.nousresearch.com/',
           label: 'Download',
           position: 'left',
         },
@@ -146,7 +146,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://plobi-agent.nousresearch.com',
+          href: 'https://hermes-agent.nousresearch.com',
           label: 'Home',
           position: 'right',
         },
@@ -185,7 +185,7 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            { label: 'Desktop Download', href: 'https://plobi-agent.nousresearch.com/' },
+            { label: 'Desktop Download', href: 'https://hermes-agent.nousresearch.com/' },
             { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
             { label: 'Nous Research', href: 'https://nousresearch.com' },
           ],

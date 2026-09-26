@@ -202,7 +202,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
             "Durable SQLite-backed task board shared across Plobi profiles. "
             "Tasks are claimed atomically, can depend on other tasks, and "
             "are executed by a named profile in an isolated workspace. "
-            "See https://plobi-agent.nousresearch.com/docs/user-guide/features/kanban "
+            "See https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban "
             "or docs/plobi-kanban-v1-spec.pdf for the full design."
         ),
     )

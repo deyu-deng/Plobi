@@ -420,7 +420,7 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
     The supported installs self-identify via the code-scoped stamp:
       - the curl installer (scripts/install.sh, the README/website install
         command) git-clones the repo and stamps ``git`` next to the code;
-      - the published ``nousresearch/plobi-agent`` image bakes a ``docker``
+      - the published ``nousresearch/hermes-agent`` image bakes a ``docker``
         stamp into ``/opt/plobi`` at build time.
     An unsupported manual install dropped into a container (no stamp) falls
     through to the ``.git``/pip checks and behaves like any off-path install.
@@ -538,7 +538,7 @@ def recommended_update_command_for_method(method: str) -> str:
     if method == "homebrew":
         return "brew upgrade plobi-agent"
     if method == "docker":
-        return "docker pull nousresearch/plobi-agent:latest"
+        return "docker pull nousresearch/hermes-agent:latest"
     if method == "pip":
         if is_uv_tool_install():
             return "uv tool upgrade plobi-agent"
@@ -571,7 +571,7 @@ def recommended_update_command() -> str:
 # banner, the TUI/desktop session info panel, and ``plobi update``. NixOS
 # stays fully supported (Tier 2) and must never hit this path.
 
-PLATFORM_SUPPORT_DOCS_URL = "https://plobi-agent.nousresearch.com/docs/getting-started/platform-support"
+PLATFORM_SUPPORT_DOCS_URL = "https://hermes-agent.nousresearch.com/docs/getting-started/platform-support"
 
 _UNSUPPORTED_INSTALL_METHODS = frozenset({"pip", "homebrew"})
 
@@ -620,23 +620,23 @@ def format_unsupported_install_warning(method: str) -> str:
 _DOCKER_UPDATE_MESSAGE = """\
 ✗ ``plobi update`` doesn't apply inside the Docker container.
 
-Plobi Agent runs as a published image (nousresearch/plobi-agent), not a
+Plobi Agent runs as a published image (nousresearch/hermes-agent), not a
 git checkout — the container has no working tree to pull into.  Update by
 pulling a fresh image and restarting your container instead:
 
-  docker pull nousresearch/plobi-agent:latest
+  docker pull nousresearch/hermes-agent:latest
   # then restart whatever started the container, e.g.:
   docker compose up -d --force-recreate plobi-agent
   # or, for ad-hoc runs, exit the current container and `docker run` again
 
 Verify the new version after restart:
-  docker run --rm nousresearch/plobi-agent:latest --version
+  docker run --rm nousresearch/hermes-agent:latest --version
 
 Notes:
   • If you pinned a specific tag (e.g. ``:v0.14.0``) the ``:latest`` tag
     won't move your container — pull the newer tag you actually want, or
     switch to ``:latest`` / ``:main`` for rolling updates.  See available
-    tags at https://hub.docker.com/r/nousresearch/plobi-agent/tags
+    tags at https://hub.docker.com/r/nousresearch/hermes-agent/tags
   • Your config and session history live under ``$PLOBI_HOME`` (``/opt/data``
     in the container, typically bind-mounted from the host) and persist
     across image upgrades — re-pulling doesn't lose any state.
@@ -2818,7 +2818,7 @@ DEFAULT_CONFIG = {
     # The default URL is served by the docs site GitHub Pages deploy.
     "model_catalog": {
         "enabled": True,
-        "url": "https://plobi-agent.nousresearch.com/docs/api/model-catalog.json",
+        "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `plobi model` invocation; network failures
         # silently fall back to the stale cache.

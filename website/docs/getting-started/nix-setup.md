@@ -627,7 +627,7 @@ The NixOS module supports declarative plugin installation — no imperative `plo
 
 ### Directory Plugins (`extraPlugins`)
 
-For plugins that are just a source tree with `plugin.yaml` + `__init__.py` (e.g., [plobi-lcm](https://github.com/stephenschoettler/plobi-lcm)):
+For plugins that are just a source tree with `plugin.yaml` + `__init__.py` (e.g., [plobi-lcm](https://github.com/stephenschoettler/hermes-lcm)):
 
 ```nix
 services.plobi-agent.extraPlugins = [
@@ -644,7 +644,7 @@ Plugins are symlinked into `$PLOBI_HOME/plugins/` at activation time. Plobi disc
 
 ### Entry-Point Plugins (`extraPythonPackages`)
 
-For pip-packaged plugins that register via `[project.entry-points."plobi_agent.plugins"]` (e.g., [rtk-plobi](https://github.com/ogallotti/rtk-plobi)):
+For pip-packaged plugins that register via `[project.entry-points."plobi_agent.plugins"]` (e.g., [rtk-plobi](https://github.com/ogallotti/rtk-hermes)):
 
 ```nix
 services.plobi-agent.extraPythonPackages = [

@@ -114,7 +114,7 @@ class TestRealWorldOutput:
         "Total Upload: 0.19 KiB / gzip: 0.16 KiB\n"
         "Uploaded plobi-temp-hello (0.74 sec)\n"
         "Deployed plobi-temp-hello triggers (0.42 sec)\n"
-        "  https://plobi-temp-hello.serene-temple.workers.dev\n"
+        "  https://hermes-temp-hello.serene-temple.workers.dev\n"
     )
 
     def test_multiword_account_name(self):
@@ -124,7 +124,7 @@ class TestRealWorldOutput:
 
     def test_all_fields_from_real_output(self):
         r = pdo.parse(self.REAL)
-        assert r["live_url"] == "https://plobi-temp-hello.serene-temple.workers.dev"
+        assert r["live_url"] == "https://hermes-temp-hello.serene-temple.workers.dev"
         assert r["claim_url"].endswith("claimToken=fxLzyAD-vlTzMQmClpg")
         assert r["expires_minutes"] == 60
         assert r["deployed"] is True

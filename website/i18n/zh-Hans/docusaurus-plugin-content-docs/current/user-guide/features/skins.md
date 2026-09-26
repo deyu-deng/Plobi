@@ -214,9 +214,9 @@ tool_prefix: "▏"
 
 ## Plobi Mod — 可视化皮肤编辑器
 
-[Plobi Mod](https://github.com/cocktailpeanut/plobi-mod) 是一个社区构建的 Web UI，用于可视化创建和管理皮肤。无需手写 YAML，提供带实时预览的点击式编辑器。
+[Plobi Mod](https://github.com/cocktailpeanut/hermes-mod) 是一个社区构建的 Web UI，用于可视化创建和管理皮肤。无需手写 YAML，提供带实时预览的点击式编辑器。
 
-![Plobi Mod skin editor](https://raw.githubusercontent.com/cocktailpeanut/plobi-mod/master/nous.png)
+![Plobi Mod skin editor](https://raw.githubusercontent.com/cocktailpeanut/hermes-mod/master/nous.png)
 
 **功能说明：**
 
@@ -243,7 +243,7 @@ npx -y plobi-mod
 **方式三 — 手动安装：**
 
 ```bash
-git clone https://github.com/cocktailpeanut/plobi-mod.git
+git clone https://github.com/cocktailpeanut/hermes-mod.git
 cd plobi-mod/app
 npm install
 npm start

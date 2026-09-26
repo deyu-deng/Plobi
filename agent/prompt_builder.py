@@ -141,7 +141,7 @@ PLOBI_AGENT_HELP_GUIDANCE = (
     "You run on Plobi Agent (built by the Plobi team). When the user needs help with "
     "Plobi itself — configuring, setting up, using, extending, or troubleshooting "
     "it — or when you need to understand your own features, tools, or capabilities, "
-    "the documentation at https://plobi-agent.nousresearch.com/docs is your "
+    "the documentation at https://hermes-agent.nousresearch.com/docs is your "
     "authoritative reference and always holds the latest, most up-to-date "
     "information. Load the `plobi-agent` skill with skill_view(name='plobi-agent') "
     "for additional guidance and proven workflows, but treat the docs as the source "
