@@ -6732,9 +6732,9 @@ def _discard_stashed_changes(
 
 OFFICIAL_REPO_URLS = {
     "https://github.com/NousResearch/hermes-agent.git",
-    "git@github.com:NousResearch/plobi-agent.git",
+    "git@github.com:NousResearch/hermes-agent.git",
     "https://github.com/NousResearch/hermes-agent",
-    "git@github.com:NousResearch/plobi-agent",
+    "git@github.com:NousResearch/hermes-agent",
 }
 OFFICIAL_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
 SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
@@ -6885,7 +6885,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
         # Ask user if they want to add upstream
         print()
         print("ℹ Your fork is not tracking the official Plobi repository.")
-        print("  This means you may miss updates from NousResearch/plobi-agent.")
+        print("  This means you may miss updates from NousResearch/hermes-agent.")
         print()
         try:
             response = (

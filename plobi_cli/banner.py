@@ -466,7 +466,7 @@ def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
 
     Local-only — runs ``git describe --tags --abbrev=0`` against the
     Plobi checkout. Cached per-process. Release URL always points at the
-    canonical NousResearch/plobi-agent repo (forks don't get a link).
+    canonical NousResearch/hermes-agent repo (forks don't get a link).
     """
     global _latest_release_cache
     if _latest_release_cache is not None:

@@ -1,12 +1,12 @@
-"""Tests for the Nous-Plobi-3/4 non-agentic warning detector.
+"""Tests for the Nous-Hermes-3/4 non-agentic warning detector.
 
 Prior to this check, the warning fired on any model whose name contained
-``"plobi"`` anywhere (case-insensitive). That false-positived on unrelated
-local Modelfiles such as ``plobi-brain:qwen3-14b-ctx16k`` — a tool-capable
-Qwen3 wrapper that happens to live under the "plobi" tag namespace.
+``"hermes"`` anywhere (case-insensitive). That false-positived on unrelated
+local Modelfiles such as ``hermes-brain:qwen3-14b-ctx16k`` — a tool-capable
+Qwen3 wrapper that happens to live under the "Hermes" tag namespace.
 
 ``is_nous_plobi_non_agentic`` should only match the actual Nous Research
-Plobi-3 / Plobi-4 chat family.
+Hermes-3 / Hermes-4 chat family.
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ from plobi_cli.model_switch import (
 @pytest.mark.parametrize(
     "model_name",
     [
-        "NousResearch/Plobi-3-Llama-3.1-70B",
-        "NousResearch/Plobi-3-Llama-3.1-405B",
+        "NousResearch/Hermes-3-Llama-3.1-70B",
+        "NousResearch/Hermes-3-Llama-3.1-405B",
         "hermes-3",
-        "Plobi-3",
+        "Hermes-3",
         "hermes-4",
         "hermes-4-405b",
         "hermes_4_70b",
@@ -36,9 +36,9 @@ from plobi_cli.model_switch import (
         "hermes-3.1",
     ],
 )
-def test_matches_real_nous_plobi_chat_models(model_name: str) -> None:
+def test_matches_upstream_non_agentic_models(model_name: str) -> None:
     assert is_nous_plobi_non_agentic(model_name), (
-        f"expected {model_name!r} to be flagged as Nous Plobi 3/4"
+        f"expected {model_name!r} to be flagged as Nous Hermes 3/4"
     )
     assert _check_plobi_model_warning(model_name) == _PLOBI_MODEL_WARNING
 
@@ -46,9 +46,13 @@ def test_matches_real_nous_plobi_chat_models(model_name: str) -> None:
 @pytest.mark.parametrize(
     "model_name",
     [
-        # Kyle's local Modelfile — qwen3:14b under a custom tag
+        # Kyle's local Modelfile — qwen3:14b under a custom tag. These are the
+        # shapes the old substring check false-positived on, so they stay.
+        "hermes-brain:qwen3-14b-ctx16k",
+        "hermes-brain:qwen3-14b-ctx32k",
+        "hermes-honcho:qwen3-8b-ctx8k",
+        # Same story in our own tag namespace, post R-038.
         "plobi-brain:qwen3-14b-ctx16k",
-        "plobi-brain:qwen3-14b-ctx32k",
         "plobi-honcho:qwen3-8b-ctx8k",
         # Plain unrelated models
         "qwen3:14b",
@@ -73,7 +77,7 @@ def test_matches_real_nous_plobi_chat_models(model_name: str) -> None:
 )
 def test_does_not_match_unrelated_models(model_name: str) -> None:
     assert not is_nous_plobi_non_agentic(model_name), (
-        f"expected {model_name!r} NOT to be flagged as Nous Plobi 3/4"
+        f"expected {model_name!r} NOT to be flagged as Nous Hermes 3/4"
     )
     assert _check_plobi_model_warning(model_name) == ""
 

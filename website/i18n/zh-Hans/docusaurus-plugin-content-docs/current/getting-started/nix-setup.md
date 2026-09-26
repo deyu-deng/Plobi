@@ -35,11 +35,11 @@ Plobi Agent 提供了一个 Nix flake，支持三个层级的集成：
 
 ```bash
 # 直接运行（首次使用时构建，之后使用缓存）
-nix run github:NousResearch/plobi-agent -- setup
-nix run github:NousResearch/plobi-agent -- chat
+nix run github:NousResearch/hermes-agent -- setup
+nix run github:NousResearch/hermes-agent -- chat
 
 # 或持久化安装
-nix profile install github:NousResearch/plobi-agent
+nix profile install github:NousResearch/hermes-agent
 plobi setup
 plobi chat
 ```
@@ -75,7 +75,7 @@ nix build
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    plobi-agent.url = "github:NousResearch/plobi-agent";
+    plobi-agent.url = "github:NousResearch/hermes-agent";
   };
 
   outputs = { nixpkgs, plobi-agent, ... }: {
@@ -685,7 +685,7 @@ services.plobi-agent = {
 
 ```nix
 {
-  inputs.plobi-agent.url = "github:NousResearch/plobi-agent";
+  inputs.plobi-agent.url = "github:NousResearch/hermes-agent";
   outputs = { plobi-agent, nixpkgs, ... }: {
     nixpkgs.overlays = [ plobi-agent.overlays.default ];
     # 然后：
