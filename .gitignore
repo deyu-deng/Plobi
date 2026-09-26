@@ -148,10 +148,10 @@ apps/desktop/demo/
 # pr-infographic-workflow reference (storage rule + lapse #8 / #COMMIT-1).
 infographic/
 
-# Vaelis agent working memory (private, machine-specific — NOT project source)
+# Plobi agent working memory (private, machine-specific — NOT project source)
 .workbuddy/
 
-# Old Vaelis code backup. Carries its own .git history on disk (preserved as a
+# Old Plobi code backup. Carries its own .git history on disk (preserved as a
 # restore point); excluding from the main repo avoids a nested-repository commit.
 backup/
 

@@ -263,7 +263,7 @@ def test_preflight_codex_api_kwargs_drops_oversized_message_id_end_to_end():
     kwargs = _preflight_codex_api_kwargs(
         {
             "model": "gpt-5.5",
-            "instructions": "You are Vaelis.",
+            "instructions": "You are Plobi.",
             "input": [
                 {"role": "user", "content": "ping"},
                 {

@@ -10,5 +10,5 @@ from .mind import MindProvider
 
 
 def register(collector) -> None:
-    """Register the Mind provider with the Vaelis memory plugin loader."""
+    """Register the Mind provider with the Plobi memory plugin loader."""
     collector.register_memory_provider(MindProvider())

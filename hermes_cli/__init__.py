@@ -1,5 +1,5 @@
 """
-Vaelis CLI - Unified command-line interface for Vaelis Agent.
+Plobi CLI - Unified command-line interface for Plobi Agent.
 
 Provides subcommands for:
 - hermes chat          - Interactive chat (same as ./hermes)

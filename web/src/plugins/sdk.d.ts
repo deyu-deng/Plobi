@@ -1,5 +1,5 @@
 /**
- * Vaelis Dashboard Plugin SDK — typed contract (SPIKE)
+ * Plobi Dashboard Plugin SDK — typed contract (SPIKE)
  * ====================================================
  *
  * This is the public type surface for ``window.__HERMES_PLUGIN_SDK__`` and

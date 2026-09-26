@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build the Vaelis Model Catalog — a centralized JSON manifest of curated models.
+"""Build the Plobi Model Catalog — a centralized JSON manifest of curated models.
 
 This script reads the in-repo hardcoded curated lists (``OPENROUTER_MODELS``,
 ``_PROVIDER_MODELS["nous"]``) and writes them to a JSON manifest that the
-Vaelis CLI fetches at runtime. Publishing the catalog through the docs site
-lets maintainers update model lists without shipping a Vaelis release.
+Plobi CLI fetches at runtime. Publishing the catalog through the docs site
+lets maintainers update model lists without shipping a Plobi release.
 
 The runtime fetcher falls back to the same in-repo hardcoded lists if the
 manifest is unreachable, so this script is a convenience for keeping the

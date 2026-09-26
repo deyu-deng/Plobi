@@ -386,13 +386,13 @@ describe('countDiffLineStats', () => {
   })
 })
 
-describe('buildToolView vaelis_secretary_ask (WP-G5 real JSON)', () => {
+describe('buildToolView plobi_secretary_ask (WP-G5 real JSON)', () => {
   it('shows 日程秘书 + intent while waiting (args only)', () => {
     const view = buildToolView(
       part({
         args: { intent: 'refresh_agenda', user_text: '明天的日常安排是什么' },
         result: undefined,
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -409,7 +409,7 @@ describe('buildToolView vaelis_secretary_ask (WP-G5 real JSON)', () => {
       part({
         args: { intent: 'mutate_agenda', action: 'create', user_text: '帮我加明天下午三点开会' },
         result: undefined,
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -420,7 +420,7 @@ describe('buildToolView vaelis_secretary_ask (WP-G5 real JSON)', () => {
   })
 })
 
-describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, 裁定 27)', () => {
+describe('buildToolView plobi_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, 裁定 27)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
@@ -437,7 +437,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
           user_text: '帮我加明天下午三点开会',
           event: { id: 'evt_1', title: '开会', start_at: '2026-09-12T15:00:00', end_at: null, status: 'confirmed' }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -460,7 +460,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
           action: 'update',
           event: { id: 'evt_1', title: '开会', start_at: '2026-09-12T15:00:00', end_at: '2026-09-12T16:00:00' }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -475,7 +475,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
       part({
         args: { intent: 'mutate_agenda', action: 'delete', event_id: 'evt_1' },
         result: { ok: true, intent: 'mutate_agenda', action: 'delete', deleted: true, title: '开会' },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -489,7 +489,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
       part({
         args: { intent: 'refresh_agenda', user_text: '明天的日常安排是什么' },
         result: { ok: true, intent: 'refresh_agenda', agent: { id: 'agenda' } },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -522,7 +522,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
           route: 'fallback',
           model: 'test'
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -547,7 +547,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
           agenda: { events: [] },
           route: 'fallback'
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -562,7 +562,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
       part({
         args: { intent: 'write_briefing', user_text: '根据明天的日程写一段早报', route: 'workbuddy' },
         result: undefined,
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -578,7 +578,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
       part({
         args: { intent: 'write_briefing' },
         result: { ok: true, intent: 'write_briefing', briefing: 'Morning.', model: 'workbuddy/deepseek-chat' },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -598,7 +598,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
           route: 'workbuddy',
           model: 'workbuddy/default'
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -621,7 +621,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
           error: 'chatlog 未启动或 /health 失败，采集不通',
           agent: { id: 'agenda' }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -633,7 +633,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda (WP-L1-MUTATE-CARD, �
   })
 })
 
-describe('buildToolView vaelis_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 28.4)', () => {
+describe('buildToolView plobi_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 28.4)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
@@ -653,7 +653,7 @@ describe('buildToolView vaelis_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 
       part({
         args: { intent: 'query_agenda', user_text: '今天有什么', ...args },
         result: { ok: true, intent: 'query_agenda', ...result },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -709,7 +709,7 @@ describe('buildToolView vaelis_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 
   it('reads 查看中 while the tool is still running', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
-      part({ args: { intent: 'query_agenda', range: 'today' }, result: undefined, toolName: 'vaelis_secretary_ask' }),
+      part({ args: { intent: 'query_agenda', range: 'today' }, result: undefined, toolName: 'plobi_secretary_ask' }),
       ''
     )
 
@@ -737,7 +737,7 @@ describe('buildToolView vaelis_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 
             { id: 'nap', title: '午休', start_at: '2026-09-15T12:30:00', end_at: '2026-09-15T13:30:00' }
           ]
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -754,7 +754,7 @@ describe('buildToolView vaelis_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 
       part({
         args: { intent: 'query_agenda', range: 'today' },
         result: { ok: true, intent: 'query_agenda', range: 'today', events: [], pending: [] },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -765,7 +765,7 @@ describe('buildToolView vaelis_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 
   })
 })
 
-describe('buildToolView vaelis_secretary_ask decide_pending (WP-SEC-VOCAB, 裁定 28.4)', () => {
+describe('buildToolView plobi_secretary_ask decide_pending (WP-SEC-VOCAB, 裁定 28.4)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
@@ -775,7 +775,7 @@ describe('buildToolView vaelis_secretary_ask decide_pending (WP-SEC-VOCAB, 裁�
       part({
         args: { intent: 'decide_pending', decision: 'confirm', ...args },
         result: { ok: true, intent: 'decide_pending', ...result },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -811,7 +811,7 @@ describe('buildToolView vaelis_secretary_ask decide_pending (WP-SEC-VOCAB, 裁�
       part({
         args: { intent: 'decide_pending', decision: 'confirm' },
         result: undefined,
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -835,7 +835,7 @@ describe('buildToolView vaelis_secretary_ask decide_pending (WP-SEC-VOCAB, 裁�
   })
 })
 
-describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, 裁定 30.1)', () => {
+describe('buildToolView plobi_secretary_ask project_status (WP-PROJECT-CARD, 裁定 30.1)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
@@ -843,12 +843,12 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
   const project = (overrides: Record<string, unknown>) => ({
     category: 'projects',
     has_mind: true,
-    id: 'vaelis',
-    mind_subtree: 'Vault/projects/Vaelis',
-    name: 'Vaelis',
+    id: 'plobi',
+    mind_subtree: 'Vault/projects/Plobi',
+    name: 'Plobi',
     plan_excerpt: '',
     progress_excerpt: '',
-    project_path: 'D:/Projects/Vaelis',
+    project_path: 'D:/Projects/Plobi',
     weekly_hours: 12,
     ...overrides
   })
@@ -858,7 +858,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
       part({
         args: { intent: 'project_status', user_text: '各项目进度怎么样', ...args },
         result: { ok: true, intent: 'project_status', ...result },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -866,7 +866,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
   it('pending says 查看项目中, not Asked 日程秘书', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
-      part({ args: { intent: 'project_status' }, result: undefined, toolName: 'vaelis_secretary_ask' }),
+      part({ args: { intent: 'project_status' }, result: undefined, toolName: 'plobi_secretary_ask' }),
       ''
     )
 
@@ -878,13 +878,13 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
   it('titles 各项目 · N using the backend row count', () => {
     setRuntimeI18nLocale('zh')
     const view = status({
-      seeded_vaelis: true,
-      projects: [project({ id: 'vaelis', name: 'Vaelis' }), project({ id: 'loom', name: 'Loom', weekly_hours: 6 })]
+      seeded_plobi: true,
+      projects: [project({ id: 'plobi', name: 'Plobi' }), project({ id: 'loom', name: 'Loom', weekly_hours: 6 })]
     })
 
     expect(view.title).toBe('各项目 · 2')
     // 配节奏的副标题：项目名 · 每周 Nh。
-    expect(view.subtitle).toBe('Vaelis · 每周 12h / Loom · 每周 6h')
+    expect(view.subtitle).toBe('Plobi · 每周 12h / Loom · 每周 6h')
     // 仍是答，不是派工。
     expect(view.subtitle).not.toContain('日程秘书')
   })
@@ -892,17 +892,17 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
   it('reads 未设节奏 when weekly_hours is null', () => {
     setRuntimeI18nLocale('zh')
     const view = status({
-      seeded_vaelis: true,
-      projects: [project({ id: 'vaelis', name: 'Vaelis', weekly_hours: null })]
+      seeded_plobi: true,
+      projects: [project({ id: 'plobi', name: 'Plobi', weekly_hours: null })]
     })
 
-    expect(view.subtitle).toBe('Vaelis · 未设节奏')
+    expect(view.subtitle).toBe('Plobi · 未设节奏')
   })
 
   it('truncates beyond three rows with +K and prints 没有... for an empty list', () => {
     setRuntimeI18nLocale('zh')
     const truncated = status({
-      seeded_vaelis: true,
+      seeded_plobi: true,
       projects: [
         project({ id: 'a', name: 'A' }),
         project({ id: 'b', name: 'B' }),
@@ -914,7 +914,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
     expect(truncated.title).toBe('各项目 · 4')
     expect(truncated.subtitle).toContain('A · 每周 12h / B · 每周 12h / C · 每周 12h +1')
 
-    const empty = status({ seeded_vaelis: true, projects: [] })
+    const empty = status({ seeded_plobi: true, projects: [] })
 
     expect(empty.title).toBe('各项目 · 0')
     expect(empty.subtitle).toBe('没有在推进的项目')
@@ -926,7 +926,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
       part({
         args: { intent: 'refresh_agenda', user_text: '明天的日常安排是什么' },
         result: { ok: true, intent: 'refresh_agenda', agent: { id: 'agenda' } },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -936,7 +936,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
       part({
         args: { intent: 'query_agenda', range: 'today' },
         result: { ok: true, intent: 'query_agenda', range: 'today', events: [], pending: [] },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -953,7 +953,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
           action: 'create',
           event: { id: 'e1', title: 'meeting', start_at: '2026-09-12T15:00:00', end_at: null }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -968,7 +968,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
           decision: 'confirm',
           event: { id: 'e1', title: 'standup', start_at: '2026-09-12T10:00:00', end_at: null, status: 'confirmed' }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -976,7 +976,7 @@ describe('buildToolView vaelis_secretary_ask project_status (WP-PROJECT-CARD, �
   })
 })
 
-describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 32.5)', () => {
+describe('buildToolView plobi_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 32.5)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
@@ -988,7 +988,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
       part({
         args: { intent: 'plan_day', for_date: '2026-09-16', ...args },
         result: { ok: true, intent: 'plan_day', for_date: '2026-09-16', ...result },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -996,7 +996,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
   it('pending says 排出中, not Asked 日程秘书', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
-      part({ args: { intent: 'plan_day' }, result: undefined, toolName: 'vaelis_secretary_ask' }),
+      part({ args: { intent: 'plan_day' }, result: undefined, toolName: 'plobi_secretary_ask' }),
       ''
     )
 
@@ -1061,7 +1061,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
       part({
         args: { intent: 'plan_day' },
         result: { ok: false, intent: 'plan_day', error: 'planner is offline' },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1082,7 +1082,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
       part({
         args: { intent: 'refresh_agenda', user_text: 'tomorrow' },
         result: { ok: true, intent: 'refresh_agenda', agent: { id: 'agenda' } },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1092,7 +1092,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
       part({
         args: { intent: 'query_agenda', range: 'today' },
         result: { ok: true, intent: 'query_agenda', range: 'today', events: [], pending: [] },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1107,7 +1107,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
           action: 'create',
           event: { id: 'e1', title: 'meeting', start_at: '2026-09-16T15:00:00', end_at: null }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1117,7 +1117,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
       part({
         args: { intent: 'project_status' },
         result: { ok: true, intent: 'project_status', projects: [] },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1125,7 +1125,7 @@ describe('buildToolView vaelis_secretary_ask plan_day (WP-PLAN-DAY-CARD, 裁定 
   })
 })
 
-describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-CANCEL-CARD, 裁定 33.5)', () => {
+describe('buildToolView plobi_secretary_ask mutate_agenda cancel_matching (WP-CANCEL-CARD, 裁定 33.5)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
@@ -1138,7 +1138,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
       part({
         args: { intent: 'mutate_agenda', action: 'cancel_matching', from_date: '2026-09-15', ...args },
         result: { ok: true, intent: 'mutate_agenda', action: 'cancel_matching', from_date: '2026-09-15', ...result },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1149,7 +1149,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
       part({
         args: { intent: 'mutate_agenda', action: 'cancel_matching', from_date: '2026-09-15' },
         result: undefined,
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1199,7 +1199,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
       part({
         args: { intent: 'mutate_agenda', action: 'cancel_matching', from_date: '2026-09-15' },
         result: { ok: false, intent: 'mutate_agenda', action: 'cancel_matching', error: 'cancelled scope failed' },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1222,7 +1222,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
           action: 'create',
           event: { id: 'e1', title: 'meeting', start_at: '2026-09-15T15:00:00', end_at: null }
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1232,7 +1232,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
       part({
         args: { intent: 'refresh_agenda', user_text: 'tomorrow' },
         result: { ok: true, intent: 'refresh_agenda', agent: { id: 'agenda' } },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1242,7 +1242,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
       part({
         args: { intent: 'query_agenda', range: 'today' },
         result: { ok: true, intent: 'query_agenda', range: 'today', events: [], pending: [] },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1259,7 +1259,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
           conflict_count: 0,
           summary: ''
         },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1269,7 +1269,7 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
       part({
         args: { intent: 'project_status' },
         result: { ok: true, intent: 'project_status', projects: [] },
-        toolName: 'vaelis_secretary_ask'
+        toolName: 'plobi_secretary_ask'
       }),
       ''
     )
@@ -1277,14 +1277,14 @@ describe('buildToolView vaelis_secretary_ask mutate_agenda cancel_matching (WP-C
   })
 })
 
-describe('buildToolView vaelis_checkin_respond proposal card (WP-STUDIO, 裁定 36.3)', () => {
+describe('buildToolView plobi_checkin_respond proposal card (WP-STUDIO, 裁定 36.3)', () => {
   afterEach(() => {
     setRuntimeI18nLocale('en')
   })
 
   const checkin = (result: Record<string, unknown> | undefined, args: Record<string, unknown> = {}) =>
     buildToolView(
-      part({ args: { user_text: '别中午排会', ...args }, result, toolName: 'vaelis_checkin_respond' }),
+      part({ args: { user_text: '别中午排会', ...args }, result, toolName: 'plobi_checkin_respond' }),
       ''
     )
 

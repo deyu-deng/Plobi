@@ -1,12 +1,12 @@
 ---
 sidebar_position: 18
 title: "Browser CDP Supervisor"
-description: "How Vaelis detects and responds to native JS dialogs and interacts with cross-origin iframes via a persistent CDP connection."
+description: "How Plobi detects and responds to native JS dialogs and interacts with cross-origin iframes via a persistent CDP connection."
 ---
 
 # Browser CDP Supervisor
 
-The CDP supervisor closes two long-standing gaps in Vaelis' browser tooling:
+The CDP supervisor closes two long-standing gaps in Plobi' browser tooling:
 
 1. **Native JS dialogs** (`alert`/`confirm`/`prompt`/`beforeunload`) block the
    page's JS thread. Without supervision, the agent has no way to know a
@@ -49,7 +49,7 @@ Camofox is unsupported — no CDP surface, REST-only.
 
 ### CDPSupervisor
 
-One `asyncio.Task` running in a background daemon thread per Vaelis `task_id`.
+One `asyncio.Task` running in a background daemon thread per Plobi `task_id`.
 Holds a persistent WebSocket to the backend's CDP endpoint. Maintains:
 
 - **Dialog queue** — `List[PendingDialog]` with `{id, type, message, default_prompt, session_id, opened_at}`

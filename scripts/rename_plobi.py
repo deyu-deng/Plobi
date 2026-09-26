@@ -54,9 +54,12 @@ PROTECT = [
     r"https?://discord\.gg/NousResearch",
     r"[A-Za-z0-9._%+-]+@nousresearch\.com",
     r"https?://pypi\.org/project/[A-Za-z0-9._-]+",
-    # Markdown links that point at upstream: keep the visible label too, it is
-    # naming Nous Research's project, not ours.
-    r"\[[^\]\n]*\]\(\s*https?://github\.com/NousResearch/[^\)]*\)",
+    # Markdown links whose *label* names upstream: keep the whole link, since
+    # the label refers to Nous Research's project. A label naming us is still
+    # rewritten -- "[Vaelis Agent](https://github.com/NousResearch/hermes-agent)"
+    # is our product name glued to an upstream URL, and the URL alone is
+    # covered by the rule above.
+    r"\[(?=[^\]\n]*(?i:hermes))[^\]\n]*\]\(\s*https?://github\.com/NousResearch/[^\)]*\)",
     # Real third-party model identifiers (Nous Hermes 2/3/4, openrouter/hermes3).
     # Renaming these makes the product address a nonexistent model.
     r"(?:nous[\s_-]+)?[Hh][Ee][Rr][Mm][Ee][Ss][\s_-]*\d[\w.:-]*",
@@ -97,13 +100,19 @@ def loose_pattern(src: str) -> re.Pattern:
 LEGAL_BASENAMES = {"LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING", "NOTICE"}
 LOCK_BASENAMES = {"package-lock.json", "uv.lock", "bun.lockb", "pnpm-lock.yaml"}
 SKIP_DIR_PARTS = {"node_modules", ".venv", "__pycache__", "dist", "build", ".git"}
+# The codemod and its contract tests carry the old stems as *rule data*
+# (FAMILIES, the preserve-list). Rewriting them would silently turn the tool
+# into a no-op and delete the evidence that foreign identifiers survive.
+SELF_EXCLUDE = {"scripts/rename_plobi.py", "tests/scripts/test_rename_plobi.py"}
 SKIP_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".icns", ".pdf",
                  ".woff", ".woff2", ".ttf", ".mp3", ".wav", ".zip", ".gz",
                  ".tar", ".pyc", ".so", ".dll", ".dylib", ".node", ".exe",
                  ".bundle", ".lock")
 
 
-def _skipped(rel: str) -> bool:
+def _skipped(rel: str, extra_excludes: tuple[str, ...] = ()) -> bool:
+    if rel in SELF_EXCLUDE or any(rel.startswith(e) for e in extra_excludes):
+        return True
     parts = rel.split("/")
     if any(p in SKIP_DIR_PARTS or p.endswith(".egg-info") for p in parts[:-1]):
         return True
@@ -115,10 +124,10 @@ def _skipped(rel: str) -> bool:
     return False
 
 
-def tracked_files(root: Path) -> list[str]:
+def tracked_files(root: Path, extra_excludes: tuple[str, ...] = ()) -> list[str]:
     out = subprocess.run(["git", "ls-files", "-z"], cwd=root,
                          capture_output=True, check=True).stdout
-    return [r for r in out.decode().split("\0") if r and not _skipped(r)]
+    return [r for r in out.decode().split("\0") if r and not _skipped(r, extra_excludes)]
 
 
 def _match_case(dst: str, sample: str) -> str:
@@ -185,12 +194,13 @@ def apply_renames(root: Path, pairs: list[tuple[str, str]]) -> int:
     return moved
 
 
-def residual_report(root: Path, families: list[str], limit: int) -> int:
+def residual_report(root: Path, families: list[str], limit: int,
+                    exclude: tuple[str, ...] = ()) -> int:
     """List surviving stems. Used after --apply to prove the sweep is complete
     and that every leftover is a deliberate exclusion (external name, legal
     text, protected model id), not a missed word shape."""
     rows = []
-    for rel in tracked_files(root):
+    for rel in tracked_files(root, exclude):
         p = root / rel
         try:
             raw = p.read_bytes()
@@ -217,6 +227,9 @@ def main() -> int:
                     help="tree to sweep (pass the Docs/ checkout for --layer s5)")
     ap.add_argument("--prefix", action="append", default=[],
                     help="restrict to paths starting with these globs")
+    ap.add_argument("--exclude", action="append", default=[],
+                    help="skip paths starting with these prefixes (history "
+                         "documents in layer s5 must not be rewritten)")
     ap.add_argument("--no-rename", action="store_true",
                     help="rewrite contents only, leave paths alone")
     ap.add_argument("--apply", action="store_true")
@@ -230,9 +243,9 @@ def main() -> int:
     families = LAYER_FAMILIES[args.layer]
 
     if args.verify:
-        return residual_report(root, families, args.limit)
+        return residual_report(root, families, args.limit, tuple(args.exclude))
 
-    all_rels = tracked_files(root)
+    all_rels = tracked_files(root, tuple(args.exclude))
     candidates = [r for r in all_rels
                   if not args.prefix or any(r.startswith(p) for p in args.prefix)]
 

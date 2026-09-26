@@ -58,7 +58,7 @@ def test_active_session_lease_blocks_until_release(tmp_path, monkeypatch):
 
     assert blocked_lease is None
     assert blocked_message == (
-        "Vaelis is at the active session limit (1/1). "
+        "Plobi is at the active session limit (1/1). "
         "Try again when another session finishes."
     )
 

@@ -37,7 +37,7 @@ const ChainToolFallback: FC<ToolCallMessagePartProps> = props => {
     return <ClarifyTool {...props} />
   }
 
-  // Vaelis L1 console (U2): the assistant proposes a pending agenda change and
+  // Plobi L1 console (U2): the assistant proposes a pending agenda change and
   // the user confirms/ignores inline. [SPEC-QUESTION] the card contents are
   // frozen in ui-l1-console-spec.md §3.2 but the carrying tool name is not —
   // dispatched here like `clarify`/`image_generate`.

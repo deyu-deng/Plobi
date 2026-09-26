@@ -1,4 +1,4 @@
-"""Tests for the Vaelis plugin system (hermes_cli.plugins)."""
+"""Tests for the Plobi plugin system (hermes_cli.plugins)."""
 
 import logging
 import sys

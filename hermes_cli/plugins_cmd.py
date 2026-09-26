@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 def _resolve_git_executable() -> Optional[str]:
     """Resolve a git binary for subprocess use when ``PATH`` may be minimal.
 
-    Matches other Vaelis subprocess resolution: :func:`shutil.which` first,
+    Matches other Plobi subprocess resolution: :func:`shutil.which` first,
     then common Git for Windows install paths and POSIX defaults.
     """
     found = shutil.which("git")
@@ -519,7 +519,7 @@ def _install_plugin_core(identifier: str, *, force: bool) -> tuple[Path, dict, s
                 raise PluginOperationError(
                     f"Plugin '{plugin_name}' requires manifest_version {mv}, "
                     f"but this installer only supports up to {_SUPPORTED_MANIFEST_VERSION}. "
-                    f"Run {recommended_update_command()} to update Vaelis.",
+                    f"Run {recommended_update_command()} to update Plobi.",
                 ) from None
 
         if target.exists():
@@ -592,7 +592,7 @@ def cmd_install(
     ).exists():
         console.print(
             f"[yellow]Warning:[/yellow] {installed_name} doesn't contain plugin.yaml "
-            f"or __init__.py. It may not be a valid Vaelis plugin.",
+            f"or __init__.py. It may not be a valid Plobi plugin.",
         )
 
     _prompt_plugin_env_vars(installed_manifest, console)
@@ -637,7 +637,7 @@ def cmd_install(
 # as ``hermes update`` — historical incident protection). Code sync is
 # performed manually by the responsible Agent.
 _SELF_UPDATE_DISABLED_MSG = (
-    "Vaelis 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。"
+    "Plobi 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。"
 )
 
 
@@ -879,7 +879,7 @@ def cmd_enable(name: str, allow_tool_override: Optional[bool] = None) -> None:
         console.print(f"[dim]Plugin '{key}' is already enabled.[/dim]")
 
     # Built-in tool override is a privileged grant. Bundled plugins ship with
-    # Vaelis core and are trusted; every other source needs operator opt-in.
+    # Plobi core and are trusted; every other source needs operator opt-in.
     if source == "bundled":
         return
 
@@ -1193,7 +1193,7 @@ def _discover_context_engines() -> list[tuple[str, str]]:
     """Return [(name, description), ...] for available context engines.
 
     Includes repo-shipped engines from ``plugins/context_engine/`` AND
-    plugin-registered engines (third-party engines installed as Vaelis
+    plugin-registered engines (third-party engines installed as Plobi
     plugins via ``ctx.register_context_engine``). Repo-shipped descriptions
     win when a plugin-registered engine collides on name.
     """

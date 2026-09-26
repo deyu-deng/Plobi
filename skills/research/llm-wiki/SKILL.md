@@ -2,7 +2,7 @@
 name: llm-wiki
 description: "Karpathy's LLM Wiki: build/query interlinked markdown KB."
 version: 2.1.0
-author: Vaelis Agent
+author: Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

@@ -6,14 +6,14 @@ description: "将你的 Nous Portal 订阅（或其他 OAuth 提供商）用作�
 
 # 订阅代理
 
-订阅代理是一个本地 HTTP 服务器，让外部应用——OpenViking、Karakeep、Open WebUI，以及任何支持 OpenAI 兼容聊天补全（chat completions）的应用——能够将你的 Vaelis 托管提供商订阅用作其 LLM 端点。代理会自动附加正确的凭据（并在需要时自动刷新），因此应用无需静态 API 密钥。
+订阅代理是一个本地 HTTP 服务器，让外部应用——OpenViking、Karakeep、Open WebUI，以及任何支持 OpenAI 兼容聊天补全（chat completions）的应用——能够将你的 Plobi 托管提供商订阅用作其 LLM 端点。代理会自动附加正确的凭据（并在需要时自动刷新），因此应用无需静态 API 密钥。
 
 这与 [API 服务器](./api-server.md) 不同：
 
 | | API 服务器 | 订阅代理 |
 |---|---|---|
 | 服务内容 | 你的 Agent（完整工具集、记忆、技能） | 原始模型推理 |
-| 使用场景 | "将 Vaelis 用作聊天后端" | "从其他应用使用我的 Portal 订阅" |
+| 使用场景 | "将 Plobi 用作聊天后端" | "从其他应用使用我的 Portal 订阅" |
 | 认证 | 你的 `API_SERVER_KEY` | 任意 bearer（代理附加真实凭据） |
 | 工具调用 | 是——Agent 执行工具 | 否——仅透传 |
 
@@ -27,7 +27,7 @@ description: "将你的 Nous Portal 订阅（或其他 OAuth 提供商）用作�
 hermes portal
 ```
 
-这会打开浏览器进行 Nous Portal OAuth 流程。Vaelis 将刷新令牌存储在 `~/.hermes/auth.json` 中——与所有 Vaelis 提供商登录信息存放在同一位置。
+这会打开浏览器进行 Nous Portal OAuth 流程。Plobi 将刷新令牌存储在 `~/.hermes/auth.json` 中——与所有 Plobi 提供商登录信息存放在同一位置。
 
 ### 2. 启动代理
 
@@ -36,7 +36,7 @@ hermes proxy start
 ```
 
 ```
-Starting Vaelis proxy for Nous Portal
+Starting Plobi proxy for Nous Portal
   Listening on:  http://127.0.0.1:8645/v1
   Forwarding to: (resolved per-request from your subscription)
   Use any bearer token in the client — the proxy attaches your real credential.
@@ -51,7 +51,7 @@ Starting Vaelis proxy for Nous Portal
 ```
 Base URL:   http://127.0.0.1:8645/v1
 API key:    任意值（例如 "sk-unused"）
-Model:      Vaelis-4-70B    # 或 Vaelis-4.3-36B、Vaelis-4-405B
+Model:      Plobi-4-70B    # 或 Plobi-4.3-36B、Plobi-4-405B
 ```
 
 代理会忽略来自你应用的 `Authorization` 请求头，并将你真实的 Portal 凭据附加到上游请求中。当 bearer 令牌临近过期时，刷新会自动进行。
@@ -71,7 +71,7 @@ hermes proxy status
 ```
 
 ```
-Vaelis proxy upstream adapters
+Plobi proxy upstream adapters
 
   [nous    ] Nous Portal — ready (bearer expires 2026-05-15T06:43:21Z)
 ```
@@ -101,7 +101,7 @@ Vaelis proxy upstream adapters
 {
   "vlm": {
     "provider": "openai",
-    "model": "Vaelis-4-70B",
+    "model": "Plobi-4-70B",
     "api_base": "http://127.0.0.1:8645/v1",
     "api_key": "unused-proxy-attaches-real-creds"
   }
@@ -128,7 +128,7 @@ OpenViking 的 VLM 调用现在将通过你的 Portal 订阅进行。Embedding �
 # Karakeep .env
 OPENAI_API_BASE_URL=http://127.0.0.1:8645/v1
 OPENAI_API_KEY=any-non-empty-string
-INFERENCE_TEXT_MODEL=Vaelis-4-70B
+INFERENCE_TEXT_MODEL=Plobi-4-70B
 ```
 
 同样的方式适用于 Open WebUI、LobeChat、NextChat 或任何其他 OpenAI 兼容客户端。

@@ -80,14 +80,14 @@ export interface ShellSettings {
 }
 
 // Autostart defaults ON: the whole point of this slice is that a cold boot
-// brings Vaelis (and its backend) up without the user clicking anything.
+// brings Plobi (and its backend) up without the user clicking anything.
 export const SHELL_SETTINGS_DEFAULTS: ShellSettings = { openAtLogin: true, trayBalloonShown: false }
 
 /**
  * Read the shell flags out of the existing window-state.json object. Kept
  * deliberately lenient: anything that isn't an explicit `false` means
  * autostart is on, so a hand-edited or partially written file can't silently
- * drop the user back to "Vaelis doesn't start".
+ * drop the user back to "Plobi doesn't start".
  */
 export function readShellSettings(raw?: unknown): ShellSettings {
   const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
@@ -136,19 +136,19 @@ export interface TrayStrings {
 // it.
 const TRAY_STRINGS: Record<TrayLanguage, TrayStrings> = {
   zh: {
-    tooltip: 'Vaelis',
-    show: '显示 Vaelis',
+    tooltip: 'Plobi',
+    show: '显示 Plobi',
     openAtLogin: '开机自启',
-    quit: '退出 Vaelis',
-    balloonTitle: 'Vaelis 仍在运行',
+    quit: '退出 Plobi',
+    balloonTitle: 'Plobi 仍在运行',
     balloonBody: '窗口已收进托盘，后台服务继续运行。'
   },
   en: {
-    tooltip: 'Vaelis',
-    show: 'Show Vaelis',
+    tooltip: 'Plobi',
+    show: 'Show Plobi',
     openAtLogin: 'Launch at login',
-    quit: 'Quit Vaelis',
-    balloonTitle: 'Vaelis is still running',
+    quit: 'Quit Plobi',
+    balloonTitle: 'Plobi is still running',
     balloonBody: 'The window is in the tray; background services keep running.'
   }
 }
@@ -163,7 +163,7 @@ export function trayStrings(locale?: string): TrayStrings {
 
 // ─── Dev-mode autostart launcher ───────────────────────────────────────────
 
-export const DEV_AUTOSTART_FILENAME = 'vaelis_desktop_autostart.vbs'
+export const DEV_AUTOSTART_FILENAME = 'plobi_desktop_autostart.vbs'
 
 /**
  * Build the Windows Startup script that relaunches a *dev* desktop checkout.
@@ -185,7 +185,7 @@ export function buildDevAutostartScript({
   environment?: Record<string, string>
 }): string {
   const lines = [
-    "' Vaelis desktop autostart (dev checkout) — written by WP-ENV-AUTOSTART.",
+    "' Plobi desktop autostart (dev checkout) — written by WP-ENV-AUTOSTART.",
     "' Toggle it from the tray menu; deleting this file disables autostart.",
     'Option Explicit',
     'Dim sh, env',

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 4
 title: "Contributing"
-description: "How to contribute to Vaelis Agent — dev setup, code style, PR process"
+description: "How to contribute to Plobi Agent — dev setup, code style, PR process"
 ---
 
 # Contributing
 
-Thank you for contributing to Vaelis Agent! This guide covers setting up your dev environment, understanding the codebase, and getting your PR merged.
+Thank you for contributing to Plobi Agent! This guide covers setting up your dev environment, understanding the codebase, and getting your PR merged.
 
 ## Contribution Priorities
 
@@ -22,8 +22,8 @@ We value contributions in this order:
 
 ## Common contribution paths
 
-- Building a custom/local tool without modifying Vaelis core? Start with [Build a Vaelis Plugin](../developer-guide/plugins/index.md)
-- Building a new built-in core tool for Vaelis itself? Start with [Adding Tools](./adding-tools.md)
+- Building a custom/local tool without modifying Plobi core? Start with [Build a Plobi Plugin](../developer-guide/plugins/index.md)
+- Building a new built-in core tool for Plobi itself? Start with [Adding Tools](./adding-tools.md)
 - Building a new skill? Start with [Creating Skills](./creating-skills.md)
 - Building a new inference provider? Start with [Adding Providers](./adding-providers.md)
 
@@ -42,7 +42,7 @@ We value contributions in this order:
 
 For most contributors, the best development bootstrap is the same path users
 take: run the standard installer, then work inside the repository it cloned.
-The installer creates the Vaelis venv, wires the `hermes` command, stamps the
+The installer creates the Plobi venv, wires the `hermes` command, stamps the
 install method for `hermes update`, and clones the full git project into
 `$HERMES_HOME/hermes-agent` (usually `~/.hermes/hermes-agent`). That keeps your
 development environment on the same layout the CLI, updater, lazy dependency
@@ -66,7 +66,7 @@ git checkout -b fix/description
 scripts/run_tests.sh
 ```
 
-You can also run a fully isolated Vaelis instance (throwaway HERMES_HOME, separate Electron
+You can also run a fully isolated Plobi instance (throwaway HERMES_HOME, separate Electron
 userData, distinct Electron app name to avoid the single-instance lock):
 
 ```bash
@@ -76,7 +76,7 @@ scripts/dev-sandbox.sh --persistent python -m hermes_cli.main desktop  # state s
 
 ### Manual clone fallback
 
-Use this only if you intentionally do not want Vaelis' managed install layout
+Use this only if you intentionally do not want Plobi' managed install layout
 (for example, a throwaway clone inside a container or CI job). If you install
 this way, make sure you run the `hermes` entrypoint from this venv; running the
 system `python3 -m hermes_cli.main` can pick up unrelated system Python
@@ -202,7 +202,7 @@ Use `pathlib.Path` instead of string concatenation with `/`.
 
 ## Security Considerations
 
-Vaelis has terminal access. Security matters.
+Plobi has terminal access. Security matters.
 
 ### Existing Protections
 
@@ -282,7 +282,7 @@ fix(security): prevent shell injection in sudo password piping
 ## Reporting Issues
 
 - Use [GitHub Issues](https://github.com/NousResearch/hermes-agent/issues)
-- Include: OS, Python version, Vaelis version (`hermes version`), full error traceback
+- Include: OS, Python version, Plobi version (`hermes version`), full error traceback
 - Include steps to reproduce
 - Check existing issues before creating duplicates
 - For security vulnerabilities, please report privately

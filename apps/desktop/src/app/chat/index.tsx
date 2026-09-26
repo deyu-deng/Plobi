@@ -333,7 +333,7 @@ export function ChatView({
       }
 
       if (!gateway) {
-        throw new Error('Vaelis gateway unavailable')
+        throw new Error('Plobi gateway unavailable')
       }
 
       return gateway.request<ModelOptionsResponse>('model.options', {

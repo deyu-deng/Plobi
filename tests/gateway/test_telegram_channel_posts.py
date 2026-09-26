@@ -2,7 +2,7 @@
 
 Telegram channel broadcasts are delivered as ``Update.channel_post`` rather than
 ``Update.message``.  The adapter should use ``effective_message`` so channel
-posts are converted into Vaelis gateway events instead of being silently
+posts are converted into Plobi gateway events instead of being silently
 ignored.
 """
 

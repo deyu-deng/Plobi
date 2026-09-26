@@ -1041,7 +1041,7 @@ class TestMediaDeliveryDefaultMode:
         assert BasePlatformAdapter.validate_media_delivery_path(str(config_file)) is None
 
     def test_denylist_blocks_shared_hermes_root_config_for_profiles(self, tmp_path, monkeypatch):
-        """Profile-mode gateways must still block the shared Vaelis root config."""
+        """Profile-mode gateways must still block the shared Plobi root config."""
         self._patch_roots(monkeypatch)
 
         fake_home = tmp_path / "home"
@@ -1809,7 +1809,7 @@ class _CapturingAdapter(BasePlatformAdapter):
 
     The four media-send fallbacks (send_voice, send_video, send_document,
     send_image_file) historically forwarded their *_path argument into the
-    chat text. That argument is a host filesystem path inside the Vaelis
+    chat text. That argument is a host filesystem path inside the Plobi
     cache, so any subclass that fell back to super() — like the Telegram
     adapter on a rejected video — would leak the host's directory layout
     into the user's chat.

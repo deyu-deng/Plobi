@@ -136,8 +136,8 @@ foreach ($tmpVar in @('TEMP', 'TMP')) {
 # Configuration
 # ============================================================================
 
-$RepoUrlSsh = "git@github.com:deyu-deng/Vaelis.git"
-$RepoUrlHttps = "https://github.com/deyu-deng/Vaelis.git"
+$RepoUrlSsh = "git@github.com:deyu-deng/Plobi.git"
+$RepoUrlHttps = "https://github.com/deyu-deng/Plobi.git"
 $PythonVersion = "3.11"
 # Minor versions the installer accepts when the requested $PythonVersion isn't
 # available, in preference order.  uv discovers both uv-managed and system
@@ -1512,13 +1512,13 @@ function Install-Repository {
                 # for.  GitHub supports archive URLs for commits, tags, and
                 # branches; we honour Commit > Tag > Branch.
                 if ($Commit) {
-                    $zipUrl = "https://github.com/deyu-deng/Vaelis/archive/$Commit.zip"
+                    $zipUrl = "https://github.com/deyu-deng/Plobi/archive/$Commit.zip"
                     $zipLabel = $Commit
                 } elseif ($Tag) {
-                    $zipUrl = "https://github.com/deyu-deng/Vaelis/archive/refs/tags/$Tag.zip"
+                    $zipUrl = "https://github.com/deyu-deng/Plobi/archive/refs/tags/$Tag.zip"
                     $zipLabel = $Tag
                 } else {
-                    $zipUrl = "https://github.com/deyu-deng/Vaelis/archive/refs/heads/$Branch.zip"
+                    $zipUrl = "https://github.com/deyu-deng/Plobi/archive/refs/heads/$Branch.zip"
                     $zipLabel = $Branch
                 }
                 $zipPath = "$env:TEMP\hermes-agent-$zipLabel.zip"

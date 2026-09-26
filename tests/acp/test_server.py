@@ -150,11 +150,11 @@ class TestInitialize:
             {
                 "args": ["--setup"],
                 "description": (
-                    "Open Vaelis' interactive model/provider setup in a terminal. "
-                    "Use this when Vaelis has not been configured on this machine yet."
+                    "Open Plobi' interactive model/provider setup in a terminal. "
+                    "Use this when Plobi has not been configured on this machine yet."
                 ),
                 "id": TERMINAL_SETUP_AUTH_METHOD_ID,
-                "name": "Configure Vaelis provider",
+                "name": "Configure Plobi provider",
                 "type": "terminal",
             }
         ]

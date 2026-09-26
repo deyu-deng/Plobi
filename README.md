@@ -1,10 +1,10 @@
 <div align="center">
 
-# Vaelis
+# Plobi
 
 **AI Secretary for the Multi-App Era**
 
-Vaelis is a desktop AI agent that orchestrates your free-tier AI tools — Cursor, Antigravity, WorkBuddy, Marvis, DevEco, and API providers — into one unified secretary. It tracks quotas, dispatches tasks, manages your agenda, and runs unattended automations, so you don't have to jump between apps.
+Plobi is a desktop AI agent that orchestrates your free-tier AI tools — Cursor, Antigravity, WorkBuddy, Marvis, DevEco, and API providers — into one unified secretary. It tracks quotas, dispatches tasks, manages your agenda, and runs unattended automations, so you don't have to jump between apps.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
 [![Electron](https://img.shields.io/badge/Electron-40-9feaf4)](https://www.electronjs.org/)
@@ -15,9 +15,9 @@ Vaelis is a desktop AI agent that orchestrates your free-tier AI tools — Curso
 
 ---
 
-## Why Vaelis?
+## Why Plobi?
 
-Every AI tool gives away free quota, but using them all means constant context-switching. Vaelis sits above them all:
+Every AI tool gives away free quota, but using them all means constant context-switching. Plobi sits above them all:
 
 - **Unified quota awareness** — knows which tools have remaining quota and routes work accordingly
 - **Three-tier delegation** — a secretary (L1) dispatches to project agents (L2), which schedule execution bodies (L3) including external AI apps
@@ -75,8 +75,8 @@ Every AI tool gives away free quota, but using them all means constant context-s
 ### Install
 
 ```bash
-git clone https://github.com/deyu-deng/Vaelis.git
-cd Vaelis/Code
+git clone https://github.com/deyu-deng/Plobi.git
+cd Plobi/Code
 
 # Python backend
 python -m venv .venv
@@ -149,7 +149,7 @@ Code/
 ├── agent/              # Core agent runtime (LangGraph)
 ├── aigw/               # Local AI gateway (OpenAI-compatible)
 ├── apps/desktop/       # Electron desktop app
-├── vaelis/             # Vaelis-specific modules
+├── plobi/             # Plobi-specific modules
 │   ├── agenda/         # Agenda service & collectors
 │   ├── quota/          # Quota pool & source probes
 │   ├── delegation/     # L3 delegation guard

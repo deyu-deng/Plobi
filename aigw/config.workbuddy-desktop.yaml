@@ -4,7 +4,7 @@
 # CLI (spawn-based, opendesign-style — no token scraping), and falls back to
 # Windows UI Automation of the Workbuddy Desktop app when no CLI is present.
 # No OAuth / API key is required: it rides on the user's already-logged-in
-# Workbuddy (CLI or Desktop). The desktop's vaelis-gateway:auth handler detects
+# Workbuddy (CLI or Desktop). The desktop's plobi-gateway:auth handler detects
 # a local Workbuddy and starts this gateway on port 8020.
 #
 # This mirrors config.antigravity-desktop.yaml but uses the compliant

@@ -29,7 +29,7 @@ export interface ConnectedDesktopApp {
   apiKey?: string
 }
 
-const STORE_KEY = 'vaelis.desktop.desktop-quotas'
+const STORE_KEY = 'plobi.desktop.desktop-quotas'
 
 // Served model ids per app (slug prefix stripped — the provider slug carries it).
 // These MUST stay in sync with aigw's AntigravityProvider.served_models (minus

@@ -1,6 +1,6 @@
 # Context Compression and Caching
 
-Vaelis Agent uses a dual compression system and Anthropic prompt caching to
+Plobi Agent uses a dual compression system and Anthropic prompt caching to
 manage context window usage efficiently across long conversations.
 
 Source files: `agent/context_engine.py` (ABC), `agent/context_compressor.py` (default engine),
@@ -36,7 +36,7 @@ For building a context engine plugin, see [Context Engine Plugins](/developer-gu
 
 ## Dual Compression System
 
-Vaelis has two separate compression layers that operate independently:
+Plobi has two separate compression layers that operate independently:
 
 ```
                      ┌──────────────────────────┐
@@ -114,7 +114,7 @@ The ChatGPT Codex OAuth backend hard-caps gpt-5.5 at a **272K** context window
 (the same slug exposes 1.05M on OpenAI's direct API and OpenRouter, and 400K on
 GitHub Copilot). At the default 50% trigger, compaction would fire at ~136K —
 half the window the model can actually use. When the active route is Codex
-OAuth (`provider: openai-codex`) and the model is gpt-5.5, Vaelis raises the
+OAuth (`provider: openai-codex`) and the model is gpt-5.5, Plobi raises the
 trigger to **85%** (~231K) and shows a notice with the opt-out command. The
 notice is shown once per profile — a marker under `$HERMES_HOME`
 (`.codex_gpt55_autoraise_notice`) records that it ran, so repeated agent/session
@@ -137,7 +137,7 @@ hermes config set compression.codex_gpt55_autoraise_notice false
 
 Codex app-server sessions (`api_mode: codex_app_server` — the codex CLI/agent
 runtime) are different from every other route: the codex agent owns the backing
-thread context, so Vaelis' auxiliary summarizer cannot shrink it — rewriting the
+thread context, so Plobi' auxiliary summarizer cannot shrink it — rewriting the
 local transcript mirror leaves the real thread growing unbounded until a hard
 context reset. For this runtime, compaction goes through the app-server's own
 mechanism instead:
@@ -145,15 +145,15 @@ mechanism instead:
 - Manual compaction (`/compress`) asks the app-server to compact the thread
   (`thread/compact/start`) and waits for the compaction turn to complete.
 - Automatic compaction is controlled by `compression.codex_app_server_auto`:
-  the default `native` lets the app-server decide when to compact and Vaelis
+  the default `native` lets the app-server decide when to compact and Plobi
   records the resulting compaction events (compression counters, session
-  events). Set `hermes` to let Vaelis' compression threshold initiate
-  app-server compaction, or `off` to disable Vaelis-initiated automatic
+  events). Set `hermes` to let Plobi' compression threshold initiate
+  app-server compaction, or `off` to disable Plobi-initiated automatic
   compaction entirely (codex may still compact natively).
 
-Vaelis' local transcript is never rewritten on this runtime — state.db records
+Plobi' local transcript is never rewritten on this runtime — state.db records
 the compaction boundary while the visible transcript stays intact. All other
-routes (including Codex OAuth chat sessions) keep Vaelis' summary compressor.
+routes (including Codex OAuth chat sessions) keep Plobi' summary compressor.
 
 ### Computed Values (for a 200K context model at defaults)
 
@@ -342,7 +342,7 @@ conversation prefix. Uses Anthropic's `cache_control` breakpoints.
 
 ### Strategy: system_and_3
 
-Anthropic allows a maximum of 4 `cache_control` breakpoints per request. Vaelis
+Anthropic allows a maximum of 4 `cache_control` breakpoints per request. Plobi
 uses the "system_and_3" strategy:
 
 ```
@@ -395,7 +395,7 @@ The marker is applied differently based on content type:
    credential-pool rotation onto a different account — means the next request
    gets zero cache hits and re-reads the full conversation at undiscounted
    input price. This is inherent to how provider caches work, not something
-   Vaelis can avoid; user-facing docs for `/model`, fallback providers, and
+   Plobi can avoid; user-facing docs for `/model`, fallback providers, and
    credential pools carry cost warnings for this reason. Don't add features
    that silently swap the model or credentials mid-session.
 

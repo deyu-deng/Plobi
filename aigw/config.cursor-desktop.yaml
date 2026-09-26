@@ -3,7 +3,7 @@
 # Uses the `cursor` provider, which reads the user's already-logged-in Cursor
 # session from %APPDATA%\Cursor\User\globalStorage\state.vscdb (token + refresh)
 # and storage.json (machine ids for the x-cursor-checksum header). No OAuth /
-# sign-in is required: the desktop's vaelis-gateway:auth handler detects a local
+# sign-in is required: the desktop's plobi-gateway:auth handler detects a local
 # Cursor and starts this gateway on port 8021.
 #
 # Chat travels over Cursor's current protocol (agent.v1.AgentService/Run) as

@@ -1,6 +1,6 @@
 # Photon iMessage platform plugin
 
-This plugin connects Vaelis Agent to iMessage (and other Spectrum
+This plugin connects Plobi Agent to iMessage (and other Spectrum
 interfaces) through [Photon][photon] — a managed service that handles
 iMessage line allocation, delivery, and abuse-prevention so users don't
 have to run their own Mac relay.
@@ -13,7 +13,7 @@ recommend for everyone who doesn't already pay for a dedicated number.
 Like Discord and Slack, Photon is a **persistent-connection** channel — no
 public URL, no webhook, no signing secret. The `spectrum-ts` SDK holds a
 long-lived **gRPC stream** to Photon for both directions. Because the SDK is
-TypeScript-only, Vaelis runs it inside a small supervised Node sidecar and
+TypeScript-only, Plobi runs it inside a small supervised Node sidecar and
 talks to it over loopback.
 
 ```
@@ -37,7 +37,7 @@ talks to it over loopback.
   drops; the sidecar owns the gRPC reconnect to Photon.
 - **Outbound**: `send` / `send_typing` / reaction tapbacks are loopback POSTs
   to the sidecar (`/send`, `/send-attachment`, `/typing`, `/react`,
-  `/unreact`), authenticated with a shared `X-Vaelis-Sidecar-Token`.
+  `/unreact`), authenticated with a shared `X-Plobi-Sidecar-Token`.
 
 ## First-time setup
 
@@ -53,7 +53,7 @@ hermes gateway start
 
 1. **Device login** (RFC 8628, `client_id=photon-cli`) — opens
    `https://app.photon.codes/` for approval and stores the bearer token.
-2. **Find or create** the `Vaelis Agent` project on the Photon dashboard.
+2. **Find or create** the `Plobi Agent` project on the Photon dashboard.
 3. **Provision the project secret** — mint a fresh project secret (the
    dashboard reveals it only once) and persist it to `~/.hermes/.env` so the
    sidecar can authenticate `spectrum-ts`. Spectrum is always on, so there's no
@@ -66,7 +66,7 @@ hermes gateway start
    verbatim, so every setup runs the exact `spectrum-ts` version this plugin
    was written against).
 
-There is no separate `login` command; like every other Vaelis channel,
+There is no separate `login` command; like every other Plobi channel,
 onboarding goes through one setup surface. Re-running `setup` reuses an
 existing token/project, so it's safe to run again to finish a partial setup.
 Run `hermes photon status` to see what's configured.
@@ -94,7 +94,7 @@ Management metadata lives in `~/.hermes/auth.json` under `credential_pool`:
         "dashboard_project_id": "<project id>",
         "spectrum_project_id": "<project id>",
         "project_secret": "<projectSecret>",
-        "name": "Vaelis Agent"
+        "name": "Plobi Agent"
       }
     ]
   }

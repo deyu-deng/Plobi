@@ -3,7 +3,7 @@
 A *secret source* resolves credentials from an external secret manager
 (Bitwarden Secrets Manager, 1Password, an OS keystore, a user script, ...)
 into environment-variable-shaped values at process startup, AFTER
-``~/.hermes/.env`` has loaded and BEFORE the rest of Vaelis reads
+``~/.hermes/.env`` has loaded and BEFORE the rest of Plobi reads
 ``os.environ``.
 
 Scope of the contract (deliberate, please do not widen):
@@ -199,7 +199,7 @@ class SecretSource(ABC):
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # ANSI CSI/OSC escape sequences — helper-CLI stderr often carries color
-# codes that must not reach Vaelis' own startup output.
+# codes that must not reach Plobi' own startup output.
 _ANSI_RE = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?)")
 
 
@@ -229,9 +229,9 @@ def run_secret_cli(
     * The child gets ``PATH``/``HOME``/locale basics plus only the env
       vars named in ``allow_env`` (auth/session vars) and ``extra_env``
       — never a copy of the full post-dotenv ``os.environ``, which by
-      this point holds every credential Vaelis knows about.
+      this point holds every credential Plobi knows about.
     * ``NO_COLOR=1`` is set and stderr/stdout are ANSI-scrubbed so
-      helper diagnostics can't smuggle escape sequences into Vaelis
+      helper diagnostics can't smuggle escape sequences into Plobi
       output.
     * stdin is ``/dev/null`` so a helper that decides to prompt fails
       fast instead of hanging startup.

@@ -1,0 +1,74 @@
+# Plobi L1 (secretary) knobs — merge into the **active/default** profile
+# Copy relevant keys into $HERMES_HOME/config.yaml (usually the default profile).
+# Do NOT run `hermes profile create master` (ARCH-RULINGS 2026-09-04 裁定 6).
+# L1 is the current activity profile; open toolset plobi_north_star there.
+# Register as the resident L1 via: hermes plobi agents register secretary
+#   --role l1_secretary --profile default --provider moonshot --model kimi-k3
+#   (or copy docs/plobi/profiles/projects.yaml to $HERMES_HOME/plobi/projects.yaml)
+# Intent: best available model, narrow tool surface, clean orchestrator context.
+# Contract: docs/plobi/north_star/GRILL_FREEZE.md; routing rationale: ADR-0011.
+
+# L1 = best available model (currently Kimi K3). Cost discipline matters more
+# than model choice: K3 bills reasoning as output (~CNY 100/M) and always
+# thinks, so L1 must stay OUT of tool loops and per-message classification.
+model: ""  # e.g. moonshot/kimi-k3 — set when key is available
+
+# L2 (project / specialist agents) run cheap models or aigw-aggregated quota.
+# Keep L1 and L2 on SEPARATE sessions — never switch models mid reasoning chain.
+delegation:
+  orchestrator_enabled: true
+  max_spawn_depth: 2
+  max_concurrent_children: 4
+  # Point delegation at the cheap L2 model; L1 only receives summaries.
+  provider: ""   # e.g. deepseek
+  model: ""      # e.g. deepseek-chat
+
+# L1 must NOT burn free-tier GUI quotas itself. GUI-only closed-source apps
+# are L3 executors driven over Pico HID (priority queue, ADR-0011).
+
+# Memory brain: Mind holds knowledge + profile (set MIND_ROOT; the vault lives
+# outside this repo). Runtime state (agenda / DDL) lives in SQLite, not Mind
+# (ADR-0007). Mind writes go through the non-LLM serial writer service.
+memory:
+  memory_enabled: true
+  # provider: mind   # enable once plugins/memory/mind has real disk I/O
+
+# Narrow toolsets for L1 sessions — WP-BE-9 mid-narrow (裁定 12).
+# Drop terminal / session_search / code runners; keep clarify. Reversible:
+# re-add those names under platform_toolsets. Applied by
+# plobi.agents.registry.ensure_north_star_toolset on the active profile.
+platform_toolsets:
+  cli:
+    - web
+    - file
+    - memory
+    - skills
+    - todo
+    - clarify
+    - delegation
+    - plobi_north_star
+  gateway:
+    - web
+    - file
+    - memory
+    - skills
+    - todo
+    - clarify
+    - delegation
+    - plobi_north_star
+
+plugins:
+  # Standalone plugins are opt-in — this profile must enable North Star.
+  enabled:
+    - plobi-north-star
+  entries:
+    plobi-north-star:
+      enabled: true
+
+# Approvals: human closes high-risk; night mode respects the risk queue.
+approvals:
+  mode: manual
+
+display:
+  # L1 UI should emphasize status / approvals / preview, not raw tool spam.
+  tool_progress: verbose

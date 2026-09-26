@@ -1,7 +1,7 @@
-"""Safe Vaelis Console command engine.
+"""Safe Plobi Console command engine.
 
 This module backs ``hermes console`` and is intentionally narrower than the
-full Vaelis CLI. It exposes a curated set of native adapters that can later be
+full Plobi CLI. It exposes a curated set of native adapters that can later be
 shared by the dashboard console websocket without becoming a raw shell.
 """
 
@@ -578,7 +578,7 @@ def _register_command_family(
 
 
 class HermesConsoleEngine:
-    """Curated line-command executor for Vaelis Console."""
+    """Curated line-command executor for Plobi Console."""
 
     def __init__(self, *, output_limit: int = 20000, context: ConsoleContext = "local"):
         if context not in ALL_CONTEXTS:
@@ -603,8 +603,8 @@ class HermesConsoleEngine:
 
             if _contains_shell_syntax(raw_line, tokens):
                 raise ConsoleCommandError(
-                    "Vaelis Console does not run shell syntax. Use one supported "
-                    "Vaelis command at a time."
+                    "Plobi Console does not run shell syntax. Use one supported "
+                    "Plobi command at a time."
                 )
 
             builtin = self._execute_builtin(tokens)
@@ -636,7 +636,7 @@ class HermesConsoleEngine:
             return f"{command.usage}\n{command.summary}"
 
         lines = [
-            "Vaelis Console",
+            "Plobi Console",
             "",
             "Supported commands:",
         ]
@@ -655,9 +655,9 @@ class HermesConsoleEngine:
         return "\n".join(lines)
 
     def _register_defaults(self) -> None:
-        self.register(("status",), "status", "Show Vaelis component status.", _status, contexts=ALL_CONTEXTS)
+        self.register(("status",), "status", "Show Plobi component status.", _status, contexts=ALL_CONTEXTS)
         self.register(("doctor",), "doctor", "Run diagnostics without auto-fix.", _doctor, contexts=ALL_CONTEXTS)
-        self.register(("logs",), "logs [name] [-n N]", "Show recent Vaelis logs.", _logs, contexts=ALL_CONTEXTS)
+        self.register(("logs",), "logs [name] [-n N]", "Show recent Plobi logs.", _logs, contexts=ALL_CONTEXTS)
         self.register(("sessions", "list"), "sessions list [--limit N]", "List recent sessions.", _sessions_list, contexts=ALL_CONTEXTS)
         self.register(("sessions", "stats"), "sessions stats", "Show session store statistics.", _sessions_stats, contexts=ALL_CONTEXTS)
         self.register(("config", "show"), "config show", "Show current configuration.", _config_show, contexts=ALL_CONTEXTS)
@@ -668,7 +668,7 @@ class HermesConsoleEngine:
             "Set a configuration value.",
             _config_set,
             mutating=True,
-            confirmation="Update Vaelis configuration?",
+            confirmation="Update Plobi configuration?",
             contexts=ALL_CONTEXTS,
         )
         self.register(("cron", "list"), "cron list [--all]", "List scheduled jobs.", _cron_list, contexts=ALL_CONTEXTS)
@@ -703,7 +703,7 @@ class HermesConsoleEngine:
         self._register_broad_cli_surface()
 
     def _register_broad_cli_surface(self) -> None:
-        """Register non-admin CLI commands that are safe for Vaelis Console."""
+        """Register non-admin CLI commands that are safe for Plobi Console."""
 
         extracted = {
             "version": (
@@ -972,7 +972,7 @@ class HermesConsoleEngine:
             "Update config with new options.",
             _config_migrate,
             mutating=True,
-            confirmation="Update Vaelis configuration with missing defaults?",
+            confirmation="Update Plobi configuration with missing defaults?",
         )
         self.register(
             ("sessions", "export"),
@@ -1278,7 +1278,7 @@ class HermesConsoleEngine:
                 if self.context not in command.contexts:
                     raise ConsoleCommandError(
                         f"`hermes {command.usage}` is not available in "
-                        f"{self.context} Vaelis Console."
+                        f"{self.context} Plobi Console."
                     )
                 self._enforce_context_policy(command, list(tokens[size:]))
                 return command, list(tokens[size:])
@@ -1291,7 +1291,7 @@ class HermesConsoleEngine:
         probe = " ".join(tokens[:2]) if len(tokens) > 1 else tokens[0]
         suggestions = difflib.get_close_matches(probe, available, n=3, cutoff=0.45)
         suffix = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
-        raise ConsoleCommandError(f"Unsupported Vaelis Console command: {probe}.{suffix}")
+        raise ConsoleCommandError(f"Unsupported Plobi Console command: {probe}.{suffix}")
 
     def _enforce_context_policy(self, command: ConsoleCommand, args: list[str]) -> None:
         if self.context != "hosted":
@@ -1301,7 +1301,7 @@ class HermesConsoleEngine:
     def _rejection_for(self, tokens: Sequence[str]) -> str:
         first = tokens[0]
         if first.startswith("-"):
-            return f"{first} is not available in Vaelis Console."
+            return f"{first} is not available in Plobi Console."
         blocked_top = {
             "acp",
             "chat",
@@ -1327,30 +1327,30 @@ class HermesConsoleEngine:
             "whatsapp-cloud",
         }
         if first in blocked_top:
-            return f"`hermes {first}` is not available in Vaelis Console."
+            return f"`hermes {first}` is not available in Plobi Console."
         blocked_pairs = {
-            ("config", "edit"): "`config edit` opens an editor and is not available in Vaelis Console.",
-            ("mcp", "serve"): "`mcp serve` starts a server and is not available in Vaelis Console.",
-            ("profile", "alias"): "`profile alias` creates shell wrappers and is not available in Vaelis Console.",
-            ("skills", "config"): "`skills config` is interactive and is not available in Vaelis Console.",
-            ("skills", "publish"): "`skills publish` is not available in Vaelis Console.",
-            ("portal", "login"): "`portal login` is interactive and is not available in Vaelis Console.",
-            ("portal", "open"): "`portal open` opens a browser and is not available in Vaelis Console.",
-            ("kanban", "tail"): "`kanban tail` streams output and is not available in Vaelis Console.",
-            ("kanban", "watch"): "`kanban watch` streams output and is not available in Vaelis Console.",
-            ("kanban", "daemon"): "`kanban daemon` starts a service and is not available in Vaelis Console.",
-            ("kanban", "dispatcher"): "`kanban dispatcher` starts a worker and is not available in Vaelis Console.",
-            ("kanban", "swarm"): "`kanban swarm` starts agent work and is not available in Vaelis Console.",
-            ("kanban", "decompose"): "`kanban decompose` starts agent work and is not available in Vaelis Console.",
-            ("kanban", "specify"): "`kanban specify` starts agent work and is not available in Vaelis Console.",
-            ("kanban", "gc"): "`kanban gc` is not available in Vaelis Console.",
+            ("config", "edit"): "`config edit` opens an editor and is not available in Plobi Console.",
+            ("mcp", "serve"): "`mcp serve` starts a server and is not available in Plobi Console.",
+            ("profile", "alias"): "`profile alias` creates shell wrappers and is not available in Plobi Console.",
+            ("skills", "config"): "`skills config` is interactive and is not available in Plobi Console.",
+            ("skills", "publish"): "`skills publish` is not available in Plobi Console.",
+            ("portal", "login"): "`portal login` is interactive and is not available in Plobi Console.",
+            ("portal", "open"): "`portal open` opens a browser and is not available in Plobi Console.",
+            ("kanban", "tail"): "`kanban tail` streams output and is not available in Plobi Console.",
+            ("kanban", "watch"): "`kanban watch` streams output and is not available in Plobi Console.",
+            ("kanban", "daemon"): "`kanban daemon` starts a service and is not available in Plobi Console.",
+            ("kanban", "dispatcher"): "`kanban dispatcher` starts a worker and is not available in Plobi Console.",
+            ("kanban", "swarm"): "`kanban swarm` starts agent work and is not available in Plobi Console.",
+            ("kanban", "decompose"): "`kanban decompose` starts agent work and is not available in Plobi Console.",
+            ("kanban", "specify"): "`kanban specify` starts agent work and is not available in Plobi Console.",
+            ("kanban", "gc"): "`kanban gc` is not available in Plobi Console.",
         }
         if len(tokens) >= 2:
             pair = (tokens[0], tokens[1])
             if pair in blocked_pairs:
                 return blocked_pairs[pair]
         if tuple(tokens[:2]) in {("sessions", "delete"), ("sessions", "prune")}:
-            return "`sessions delete` and `sessions prune` are not available in Vaelis Console."
+            return "`sessions delete` and `sessions prune` are not available in Plobi Console."
         return ""
 
     def _help_result(self) -> ConsoleResult:
@@ -1440,7 +1440,7 @@ def _enforce_hosted_line_policy(path: tuple[str, ...], args: Sequence[str]) -> N
         key = args[0] if args else ""
         if key and not _hosted_config_key_allowed(key):
             raise ConsoleCommandError(
-                f"`config set {key}` is not available in hosted Vaelis Console. "
+                f"`config set {key}` is not available in hosted Plobi Console. "
                 "Use the dashboard setting for hosted account/provider changes."
             )
         return
@@ -1448,24 +1448,24 @@ def _enforce_hosted_line_policy(path: tuple[str, ...], args: Sequence[str]) -> N
     if path == ("mcp", "add"):
         if _flag_present(args, "--command") or _flag_present(args, "--args"):
             raise ConsoleCommandError(
-                "Hosted Vaelis Console does not add stdio MCP servers. "
+                "Hosted Plobi Console does not add stdio MCP servers. "
                 "Use catalog install or an HTTP/SSE URL."
             )
         if _flag_present(args, "--preset"):
             raise ConsoleCommandError(
-                "Hosted Vaelis Console does not add MCP presets directly. "
+                "Hosted Plobi Console does not add MCP presets directly. "
                 "Use `mcp install <catalog-name>`."
             )
         url = _flag_value(args, "--url")
         if not url:
             raise ConsoleCommandError(
-                "Hosted Vaelis Console requires `mcp add` to use --url with "
+                "Hosted Plobi Console requires `mcp add` to use --url with "
                 "an HTTP/SSE endpoint."
             )
         scheme = urlparse(url).scheme.lower()
         if scheme not in {"http", "https"}:
             raise ConsoleCommandError(
-                "Hosted Vaelis Console only accepts http:// or https:// MCP URLs."
+                "Hosted Plobi Console only accepts http:// or https:// MCP URLs."
             )
         return
 
@@ -1474,7 +1474,7 @@ def _enforce_hosted_line_policy(path: tuple[str, ...], args: Sequence[str]) -> N
             if _flag_present(args, flag):
                 raise ConsoleCommandError(
                     f"`cron {' '.join(path[1:])} {flag}` is not available in "
-                    "hosted Vaelis Console."
+                    "hosted Plobi Console."
                 )
 
 
@@ -1494,7 +1494,7 @@ def _apply_confirmed_defaults(args: argparse.Namespace, context: ConsoleContext)
     if getattr(args, "auth_action", None) == "add":
         auth_type = getattr(args, "auth_type", None)
         if auth_type in {"api-key", "api_key"} and not getattr(args, "api_key", None):
-            raise ConsoleCommandError("auth add --type api-key requires --api-key in Vaelis Console.")
+            raise ConsoleCommandError("auth add --type api-key requires --api-key in Plobi Console.")
     if getattr(args, "import_name", None) is not None:
         # profile import has no prompt flag; leave it alone.
         return
@@ -1530,7 +1530,7 @@ def _doctor(_engine: HermesConsoleEngine, args: list[str]) -> str:
 
 def _logs(_engine: HermesConsoleEngine, args: list[str]) -> str:
     if "-f" in args or "--follow" in args:
-        raise ConsoleCommandError("`logs -f` is not available in Vaelis Console.")
+        raise ConsoleCommandError("`logs -f` is not available in Plobi Console.")
     parser = _ArgumentParser(prog="logs", add_help=False)
     parser.add_argument("log_name", nargs="?", default="agent")
     parser.add_argument("-n", "--lines", type=int, default=50)
@@ -1843,7 +1843,7 @@ def run_console_repl(
 
     engine = HermesConsoleEngine()
     if interactive:
-        print("Vaelis Console. Type `help` for commands, `exit` to quit.", file=stdout)
+        print("Plobi Console. Type `help` for commands, `exit` to quit.", file=stdout)
 
     while True:
         if interactive:

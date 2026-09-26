@@ -384,7 +384,7 @@ def build_turn_context(
         )
         _preflight_deferred = _defer_preflight(_preflight_tokens)
         # Codex app-server threads are compacted by the codex agent itself;
-        # Vaelis only initiates compaction in "hermes" mode (#36801).
+        # Plobi only initiates compaction in "hermes" mode (#36801).
         _codex_native_auto = (
             getattr(agent, "api_mode", None) == "codex_app_server"
             and str(
@@ -427,8 +427,8 @@ def build_turn_context(
             )
         elif _codex_native_auto:
             logger.info(
-                "Skipping Vaelis preflight compression for codex app-server "
-                "(mode=%s); Vaelis will not start thread compaction here.",
+                "Skipping Plobi preflight compression for codex app-server "
+                "(mode=%s); Plobi will not start thread compaction here.",
                 getattr(agent, "codex_app_server_auto_compaction", "native"),
             )
         elif _compressor.should_compress(_preflight_tokens):

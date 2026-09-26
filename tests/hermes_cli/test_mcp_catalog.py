@@ -592,7 +592,7 @@ class TestCatalogDiagnostics:
         show_catalog()
         out = capsys.readouterr().out
         assert "futuristic" in out
-        assert "requires a newer Vaelis" in out
+        assert "requires a newer Plobi" in out
 
 
 # ---------------------------------------------------------------------------

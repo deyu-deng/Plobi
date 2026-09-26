@@ -25,7 +25,7 @@ Pixel art w/ era palettes (NES, Game Boy, PICO-8).
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Vaelis loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Plobi loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Pixel Art
@@ -204,7 +204,7 @@ Quantizing before would waste error-diffusion on detail that disappears.
 
 - Python 3.9+
 - Pillow (`pip install Pillow`)
-- ffmpeg on PATH (only needed for video — Vaelis installs package this)
+- ffmpeg on PATH (only needed for video — Plobi installs package this)
 
 ## Pitfalls
 

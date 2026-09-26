@@ -29,7 +29,7 @@ Teams 会议流水线使用**仅限应用**（daemon）身份验证从 Microsoft
 2. 导航至 **Identity → Applications → App registrations**。
 3. 点击 **New registration**。
 4. 填写以下内容：
-   - **Name：**`Vaelis Teams Meeting Pipeline`（或任何你能识别的名称）。
+   - **Name：**`Plobi Teams Meeting Pipeline`（或任何你能识别的名称）。
    - **Supported account types：***Accounts in this organizational directory only (Single tenant)*。
    - **Redirect URI：**留空——仅限应用的身份验证不需要此项。
 5. 点击 **Register**。
@@ -95,19 +95,19 @@ Microsoft 专门为 Teams 提供了**应用程序访问策略**（Application Ac
 在已安装并连接 MicrosoftTeams 模块的管理员 PowerShell 中（`Connect-MicrosoftTeams`）执行：
 
 ```powershell
-# Create a policy scoped to the Vaelis app
+# Create a policy scoped to the Plobi app
 New-CsApplicationAccessPolicy `
-  -Identity "Vaelis-Meeting-Pipeline-Policy" `
+  -Identity "Plobi-Meeting-Pipeline-Policy" `
   -AppIds "<MSGRAPH_CLIENT_ID>" `
-  -Description "Restrict Vaelis meeting pipeline to allow-listed users"
+  -Description "Restrict Plobi meeting pipeline to allow-listed users"
 
 # Grant the policy to specific users whose meetings the pipeline may read
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Vaelis-Meeting-Pipeline-Policy" `
+  -PolicyName "Plobi-Meeting-Pipeline-Policy" `
   -Identity "alice@example.com"
 
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Vaelis-Meeting-Pipeline-Policy" `
+  -PolicyName "Plobi-Meeting-Pipeline-Policy" `
   -Identity "bob@example.com"
 ```
 
@@ -137,7 +137,7 @@ chmod 600 ~/.hermes/.env
 
 ## 步骤 6：验证令牌流程
 
-Vaelis 内置了 Graph 身份验证冒烟测试。在 Vaelis 安装目录下执行：
+Plobi 内置了 Graph 身份验证冒烟测试。在 Plobi 安装目录下执行：
 
 ```python
 python -c "

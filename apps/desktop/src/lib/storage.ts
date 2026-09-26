@@ -5,7 +5,7 @@
 
 /**
  * Central prefix for all localStorage keys. Currently `hermes.` — a future
- * rebrand to `vaelis.` only needs to change this constant plus add a one-time
+ * rebrand to `plobi.` only needs to change this constant plus add a one-time
  * migration in the app entry point. Every store file should construct keys as:
  *   `${STORAGE_PREFIX}desktop.foo`
  * rather than hard-coding `hermes.desktop.foo`.

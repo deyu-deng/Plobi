@@ -2,12 +2,12 @@
 # HID remains primary for Marvis; this profile is the software fallback.
 
 aliases:
-  vaelis/master-bypass: antigravity_cli/gemini-3-flash
-  vaelis/antigravity: antigravity_cli/gemini-3-flash
+  plobi/master-bypass: antigravity_cli/gemini-3-flash
+  plobi/antigravity: antigravity_cli/gemini-3-flash
 
 routing:
   rules:
-    - match: "vaelis/antigravity"
+    - match: "plobi/antigravity"
       providers: [antigravity_cli, mock]
       model: antigravity_cli/gemini-3-flash
     - match: "auto"

@@ -1,6 +1,6 @@
 """Tests for the ``pinPeerName`` / ``pinUserPeer`` config flag.
 
-Under a gateway (Telegram, Discord, Slack, ...) Vaelis passes the
+Under a gateway (Telegram, Discord, Slack, ...) Plobi passes the
 platform-native user ID as ``runtime_user_peer_name`` into
 ``HonchoSessionManager``.  By default that ID wins over any configured
 ``peer_name`` so multi-user bots scope memory per user.
@@ -536,7 +536,7 @@ class TestPeerResolutionOrder:
 
 
 class TestCrossPlatformMemoryUnification:
-    """The same physical user talking to Vaelis via Telegram AND Discord
+    """The same physical user talking to Plobi via Telegram AND Discord
     lands on ONE peer when ``pinPeerName`` is opted in.
     """
 
@@ -818,7 +818,7 @@ class TestPinTransition:
 
 
 class TestProfilePeerUniqueness:
-    """Each Vaelis profile can pin to its own unique peerName.
+    """Each Plobi profile can pin to its own unique peerName.
 
     Profile cloning copies host blocks, but operators routinely diverge them
     afterwards (e.g. `hermes -p partner` pinned to a different person's peer).

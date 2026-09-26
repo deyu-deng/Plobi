@@ -100,7 +100,7 @@ def _discord_request(
         headers={
             "Authorization": f"Bot {token}",
             "Content-Type": "application/json",
-            "User-Agent": "Vaelis-Agent (https://github.com/NousResearch/hermes-agent)",
+            "User-Agent": "Plobi-Agent (https://github.com/NousResearch/hermes-agent)",
         },
     )
 

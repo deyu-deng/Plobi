@@ -631,7 +631,7 @@ class TestHermesConfigWriteProtection:
         assert dangerous is False
 
     def test_normal_yaml_write_safe(self):
-        # A non-Vaelis config.yaml in a project dir is handled by the project
+        # A non-Plobi config.yaml in a project dir is handled by the project
         # patterns, but a plain temp write must not false-positive.
         dangerous, key, desc = detect_dangerous_command("echo data > /tmp/scratch.txt")
         assert dangerous is False
@@ -900,13 +900,13 @@ class TestSensitiveInPlaceEditPattern:
 
 
 class TestWindowsAbsolutePathFolding:
-    """Windows absolute home / Vaelis-home prefixes must fold to ~/ and
+    """Windows absolute home / Plobi-home prefixes must fold to ~/ and
     ~/.hermes/ in dangerous-command detection.
 
     Regression: on native Windows the home prefix uses backslash separators
     (``C:\\Users\\alice\\.ssh\\authorized_keys``). Detection stripped backslash
     escapes *before* folding, dissolving those separators, so writes to startup,
-    SSH, and Vaelis config/env files returned "safe" without an approval prompt.
+    SSH, and Plobi config/env files returned "safe" without an approval prompt.
     The OS-specific ``Path.home()`` / ``get_hermes_home()`` tests above only
     exercise this branch on a Windows host; these monkeypatch a Windows-style
     HOME/HERMES_HOME so the fold is verified on the POSIX CI runner too."""
@@ -938,7 +938,7 @@ class TestWindowsAbsolutePathFolding:
         assert key is not None
 
     def test_windows_hermes_home_config_folds(self, monkeypatch):
-        # Vaelis home nests under the user home on Windows; it must fold before
+        # Plobi home nests under the user home on Windows; it must fold before
         # the user-home rewrite eats its prefix.
         monkeypatch.setenv("HOME", r"C:\Users\tester")
         monkeypatch.setenv("HERMES_HOME", r"C:\Users\tester\.hermes")
@@ -1289,7 +1289,7 @@ class TestIFSWhitespaceBypass:
         assert dangerous is True
 
     def test_ifs_sed_config_dangerous(self):
-        """In-place edit of the Vaelis security config via IFS must be caught."""
+        """In-place edit of the Plobi security config via IFS must be caught."""
         cmd = "sed${IFS}-i ~/.hermes/config.yaml"
         dangerous, key, desc = detect_dangerous_command(cmd)
         assert dangerous is True
@@ -1426,7 +1426,7 @@ class TestPgrepKillExpansion:
 
 
 class TestLaunchctlGatewayLifecycle:
-    """launchctl stop/kickstart/bootout/unload against the Vaelis service
+    """launchctl stop/kickstart/bootout/unload against the Plobi service
     label achieves the same effect as `hermes gateway stop|restart` and
     must require the same approval. See issue #33071.
     """
@@ -1459,7 +1459,7 @@ class TestLaunchctlGatewayLifecycle:
         assert dangerous is False
 
     def test_launchctl_stop_unrelated_not_flagged(self):
-        """`launchctl stop` on a non-Vaelis label is out of scope for the
+        """`launchctl stop` on a non-Plobi label is out of scope for the
         gateway-lifecycle guard."""
         cmd = "launchctl stop com.example.unrelated"
         dangerous, _, _ = detect_dangerous_command(cmd)

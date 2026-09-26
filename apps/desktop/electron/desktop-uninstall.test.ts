@@ -56,12 +56,12 @@ test('mode predicates classify what each mode removes', () => {
 
 test('resolveRemovableAppPath finds the .app bundle on macOS', () => {
   assert.equal(
-    resolveRemovableAppPath('/Applications/Vaelis.app/Contents/MacOS/Vaelis', 'darwin'),
-    '/Applications/Vaelis.app'
+    resolveRemovableAppPath('/Applications/Plobi.app/Contents/MacOS/Plobi', 'darwin'),
+    '/Applications/Plobi.app'
   )
   assert.equal(
-    resolveRemovableAppPath('/Users/x/Applications/Vaelis.app/Contents/MacOS/Vaelis', 'darwin'),
-    '/Users/x/Applications/Vaelis.app'
+    resolveRemovableAppPath('/Users/x/Applications/Plobi.app/Contents/MacOS/Plobi', 'darwin'),
+    '/Users/x/Applications/Plobi.app'
   )
 })
 
@@ -80,23 +80,23 @@ test('resolveRemovableAppPath: dev-run .app resolves (safety is shouldRemoveAppB
 
 test('resolveRemovableAppPath finds the install dir on Windows', () => {
   assert.equal(
-    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\Programs\\Vaelis\\Vaelis.exe', 'win32'),
-    'C:\\Users\\x\\AppData\\Local\\Programs\\Vaelis'
+    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\Programs\\Plobi\\Plobi.exe', 'win32'),
+    'C:\\Users\\x\\AppData\\Local\\Programs\\Plobi'
   )
   assert.equal(
-    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\hermes-desktop\\Vaelis.exe', 'win32'),
+    resolveRemovableAppPath('C:\\Users\\x\\AppData\\Local\\hermes-desktop\\Plobi.exe', 'win32'),
     'C:\\Users\\x\\AppData\\Local\\hermes-desktop'
   )
 })
 
 test('resolveRemovableAppPath returns null for an unrecognized Windows dir', () => {
-  assert.equal(resolveRemovableAppPath('C:\\Temp\\foo\\Vaelis.exe', 'win32'), null)
+  assert.equal(resolveRemovableAppPath('C:\\Temp\\foo\\Plobi.exe', 'win32'), null)
 })
 
 test('resolveRemovableAppPath uses APPIMAGE on Linux when set', () => {
   assert.equal(
-    resolveRemovableAppPath('/tmp/.mount_HermesXXXX/hermes', 'linux', { APPIMAGE: '/home/x/Apps/Vaelis.AppImage' }),
-    '/home/x/Apps/Vaelis.AppImage'
+    resolveRemovableAppPath('/tmp/.mount_HermesXXXX/hermes', 'linux', { APPIMAGE: '/home/x/Apps/Plobi.AppImage' }),
+    '/home/x/Apps/Plobi.AppImage'
   )
 })
 
@@ -114,8 +114,8 @@ test('resolveRemovableAppPath returns null for an empty exe path', () => {
 // --- shouldRemoveAppBundle ---
 
 test('shouldRemoveAppBundle requires packaged AND a resolved path', () => {
-  assert.equal(shouldRemoveAppBundle(true, '/Applications/Vaelis.app'), true)
-  assert.equal(shouldRemoveAppBundle(false, '/Applications/Vaelis.app'), false)
+  assert.equal(shouldRemoveAppBundle(true, '/Applications/Plobi.app'), true)
+  assert.equal(shouldRemoveAppBundle(false, '/Applications/Plobi.app'), false)
   assert.equal(shouldRemoveAppBundle(true, null), false)
   assert.equal(shouldRemoveAppBundle(false, null), false)
 })
@@ -214,7 +214,7 @@ test('buildWindowsCleanupScript waits (bounded) for PID, runs uninstall, rmdir b
     pythonPath: 'C:\\hermes',
     agentRoot: 'C:\\hermes',
     uninstallArgs: ['-m', 'hermes_cli.uninstall', '--mode', 'full'],
-    appPath: 'C:\\Users\\x\\AppData\\Local\\Programs\\Vaelis',
+    appPath: 'C:\\Users\\x\\AppData\\Local\\Programs\\Plobi',
     hermesHome: 'C:\\Users\\x\\AppData\\Local\\hermes'
   })
 
@@ -229,7 +229,7 @@ test('buildWindowsCleanupScript waits (bounded) for PID, runs uninstall, rmdir b
   assert.doesNotMatch(script, /find "%PID%"/) // the old substring-prone form is gone
   // Removal is a retry loop (Windows releases dir handles lazily).
   assert.match(script, /:rmloop/)
-  assert.match(script, /rmdir \/s \/q "C:\\Users\\x\\AppData\\Local\\Programs\\Vaelis" >nul 2>&1/)
+  assert.match(script, /rmdir \/s \/q "C:\\Users\\x\\AppData\\Local\\Programs\\Plobi" >nul 2>&1/)
   assert.match(script, /if %tries% geq 10 goto rmdone/)
   assert.match(script, /del "%~f0"/)
 })

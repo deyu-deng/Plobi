@@ -29,7 +29,7 @@ You need **tenant admin rights** (or an admin to grant consent on your behalf) t
 2. Navigate to **Identity → Applications → App registrations**.
 3. Click **New registration**.
 4. Fill in:
-   - **Name:** `Vaelis Teams Meeting Pipeline` (or any name you'll recognize).
+   - **Name:** `Plobi Teams Meeting Pipeline` (or any name you'll recognize).
    - **Supported account types:** *Accounts in this organizational directory only (Single tenant)*.
    - **Redirect URI:** leave blank — app-only auth does not need one.
 5. Click **Register**.
@@ -95,19 +95,19 @@ Microsoft provides **Application Access Policies** for Teams exactly for this. T
 From an admin PowerShell with the MicrosoftTeams module installed and connected (`Connect-MicrosoftTeams`):
 
 ```powershell
-# Create a policy scoped to the Vaelis app
+# Create a policy scoped to the Plobi app
 New-CsApplicationAccessPolicy `
-  -Identity "Vaelis-Meeting-Pipeline-Policy" `
+  -Identity "Plobi-Meeting-Pipeline-Policy" `
   -AppIds "<MSGRAPH_CLIENT_ID>" `
-  -Description "Restrict Vaelis meeting pipeline to allow-listed users"
+  -Description "Restrict Plobi meeting pipeline to allow-listed users"
 
 # Grant the policy to specific users whose meetings the pipeline may read
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Vaelis-Meeting-Pipeline-Policy" `
+  -PolicyName "Plobi-Meeting-Pipeline-Policy" `
   -Identity "alice@example.com"
 
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Vaelis-Meeting-Pipeline-Policy" `
+  -PolicyName "Plobi-Meeting-Pipeline-Policy" `
   -Identity "bob@example.com"
 ```
 
@@ -137,7 +137,7 @@ chmod 600 ~/.hermes/.env
 
 ## Step 6: Verify the Token Flow
 
-Vaelis ships a Graph auth smoke-test. From your Vaelis install:
+Plobi ships a Graph auth smoke-test. From your Plobi install:
 
 ```python
 python -c "

@@ -16,8 +16,8 @@ export const setTerminalTakeover = (active: boolean) => $terminalTakeover.set(ac
 export const $terminalInjection = atom<null | string>(null)
 
 /** Open the terminal pane and run a command in it. Used to disconnect external
- *  (CLI-managed) providers, which Vaelis can't clear via the API — the user
- *  sees exactly what runs instead of Vaelis silently deleting their creds. */
+ *  (CLI-managed) providers, which Plobi can't clear via the API — the user
+ *  sees exactly what runs instead of Plobi silently deleting their creds. */
 export const runInTerminal = (command: string) => {
   const trimmed = command.trim()
 

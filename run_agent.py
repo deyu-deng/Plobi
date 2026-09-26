@@ -330,7 +330,7 @@ def _safe_session_filename_component(session_id: str) -> str:
     """Return a stable, path-safe filename component for a session ID.
 
     Session IDs can originate from untrusted input (e.g. the
-    ``X-Vaelis-Session-Id`` API header) and are otherwise interpolated raw
+    ``X-Plobi-Session-Id`` API header) and are otherwise interpolated raw
     into on-disk artifact filenames under ``~/.hermes/sessions/``.  Without
     sanitization, a traversal-shaped ID such as ``../../../../etc/pwned``
     would let a caller write the session snapshot / request dump outside the
@@ -760,7 +760,7 @@ class AIAgent:
 
     def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> None:
         """
-        Preload the LM Studio model with at least Vaelis' minimum context.
+        Preload the LM Studio model with at least Plobi' minimum context.
         """
         if (self.provider or "").strip().lower() != "lmstudio":
             return
@@ -2054,7 +2054,7 @@ class AIAgent:
         That body covers several real causes we cannot distinguish without
         more info from xAI.  The most common (and least obvious) one is
         that **X Premium+ does NOT include API access** — only standalone
-        SuperGrok subscribers can use Vaelis against xai-oauth.  Lots of
+        SuperGrok subscribers can use Plobi against xai-oauth.  Lots of
         users see Grok in their X app, assume it works here too, and hit
         this 403 with no idea why.  Lead the hint with that.
 
@@ -2579,7 +2579,7 @@ class AIAgent:
         # session-id changes land in the right file without any re-point
         # bookkeeping at the call sites.  Sanitize the session ID into a
         # single traversal-free path segment — session IDs can come from
-        # untrusted input (X-Vaelis-Session-Id header) and must not escape
+        # untrusted input (X-Plobi-Session-Id header) and must not escape
         # the sessions directory.
         try:
             safe_sid = _safe_session_filename_component(self.session_id)

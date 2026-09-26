@@ -20,7 +20,7 @@ import { EmptyState, ListRow, LoadingState, Pill, SettingsContent } from './prim
 type Mode = 'local' | 'remote' | 'cloud'
 type AuthMode = 'oauth' | 'token'
 type ProbeStatus = 'idle' | 'probing' | 'done' | 'error'
-// Vaelis Cloud discovery lifecycle for the cloud-mode panel.
+// Plobi Cloud discovery lifecycle for the cloud-mode panel.
 type CloudDiscoverStatus = 'idle' | 'loading' | 'done' | 'error'
 
 interface GatewaySettingsState {
@@ -123,7 +123,7 @@ export function GatewaySettings() {
   const [remoteToken, setRemoteToken] = useState('')
   const [lastTest, setLastTest] = useState<null | string>(null)
 
-  // --- Vaelis Cloud (cloud mode) state ---
+  // --- Plobi Cloud (cloud mode) state ---
   // One portal session powers discovery + the silent per-agent cascade. These
   // track the cloud panel: whether we're signed in, the discovered agent list,
   // and which agent is mid-connect.
@@ -439,7 +439,7 @@ export function GatewaySettings() {
     }
   }
 
-  // --- Vaelis Cloud handlers ---
+  // --- Plobi Cloud handlers ---
 
   // Pull the discovered agent list over the shared portal session. Tolerant of
   // a lapsed session: a needsCloudLogin error flips us back to signed-out.
@@ -786,7 +786,7 @@ export function GatewaySettings() {
         </div>
       </div>
 
-      {/* Vaelis Cloud panel: one portal sign-in, then a discovered-agent picker
+      {/* Plobi Cloud panel: one portal sign-in, then a discovered-agent picker
           whose selection drives the silent per-agent cascade + a cloud
           connection. Replaces the URL/token form while in cloud mode. */}
       {state.mode === 'cloud' && !state.envOverride ? (

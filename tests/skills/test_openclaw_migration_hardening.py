@@ -1,4 +1,4 @@
-"""Tests for the OpenClaw→Vaelis migration hardening features.
+"""Tests for the OpenClaw→Plobi migration hardening features.
 
 Covers the changes in the "claw migrate hardening" PR:
   - secret redaction (engine-level, applied to report JSON)

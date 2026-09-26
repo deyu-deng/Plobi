@@ -27,16 +27,16 @@ def build_user_agent() -> str:
 
     Format::
 
-        QQBotAdapter/<qqbot_version> (Python/<py_version>; <os>; Vaelis/<hermes_version>)
+        QQBotAdapter/<qqbot_version> (Python/<py_version>; <os>; Plobi/<hermes_version>)
 
     Example::
 
-        QQBotAdapter/1.0.0 (Python/3.11.15; darwin; Vaelis/0.9.0)
+        QQBotAdapter/1.0.0 (Python/3.11.15; darwin; Plobi/0.9.0)
     """
     py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     os_name = platform.system().lower()
     hermes_version = _get_hermes_version()
-    return f"QQBotAdapter/{QQBOT_VERSION} (Python/{py_version}; {os_name}; Vaelis/{hermes_version})"
+    return f"QQBotAdapter/{QQBOT_VERSION} (Python/{py_version}; {os_name}; Plobi/{hermes_version})"
 
 
 def get_api_headers() -> Dict[str, str]:

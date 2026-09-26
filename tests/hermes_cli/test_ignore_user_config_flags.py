@@ -2,7 +2,7 @@
 
 Ported from openai/codex#18646 (`feat: add --ignore-user-config and --ignore-rules`).
 Codex's flags fully isolate a run from user-level config and exec-policy .rules
-files. In Vaelis the equivalent isolation is:
+files. In Plobi the equivalent isolation is:
 
 * ``--ignore-user-config`` → skip ``~/.hermes/config.yaml`` in ``load_cli_config()``
   (credentials in ``.env`` are still loaded).

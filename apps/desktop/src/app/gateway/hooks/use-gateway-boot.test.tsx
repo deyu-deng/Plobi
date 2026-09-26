@@ -192,7 +192,7 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
     // After ~45s waitForHermes gives up and getConnection rejects → boot()
     // catch → failDesktopBoot → the BootFailureOverlay recovery surface.
     await act(async () => {
-      rejectConn(new Error('Vaelis backend did not become ready: timeout'))
+      rejectConn(new Error('Plobi backend did not become ready: timeout'))
       await vi.advanceTimersByTimeAsync(0)
     })
 

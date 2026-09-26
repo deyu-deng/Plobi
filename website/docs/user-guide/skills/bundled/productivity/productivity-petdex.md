@@ -1,14 +1,14 @@
 ---
-title: "Petdex — Install and select animated petdex mascots for Vaelis"
+title: "Petdex — Install and select animated petdex mascots for Plobi"
 sidebar_label: "Petdex"
-description: "Install and select animated petdex mascots for Vaelis"
+description: "Install and select animated petdex mascots for Plobi"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
 # Petdex
 
-Install and select animated petdex mascots for Vaelis.
+Install and select animated petdex mascots for Plobi.
 
 ## Skill metadata
 
@@ -17,7 +17,7 @@ Install and select animated petdex mascots for Vaelis.
 | Source | Bundled (installed by default) |
 | Path | `skills/productivity/petdex` |
 | Version | `1.0.0` |
-| Author | Vaelis Agent |
+| Author | Plobi Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `petdex`, `mascot`, `display`, `cli`, `tui`, `desktop` |
@@ -25,7 +25,7 @@ Install and select animated petdex mascots for Vaelis.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Vaelis loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Plobi loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Petdex Skill
@@ -33,7 +33,7 @@ The following is the complete skill definition that Vaelis loads when this skill
 Browse, install, and select animated "pet" mascots from the public
 [petdex](https://github.com/crafter-station/petdex) gallery. An installed pet
 reacts to agent activity (idle, running a tool, reviewing, error, done) across
-the Vaelis CLI, TUI, and desktop app. This skill drives the `hermes pets` CLI
+the Plobi CLI, TUI, and desktop app. This skill drives the `hermes pets` CLI
 and the `display.pet` config — it does not generate sprites.
 
 ## When to Use
@@ -45,7 +45,7 @@ and the `display.pet` config — it does not generate sprites.
 ## Prerequisites
 
 - Network access to `petdex.dev` for the gallery/manifest (read-only, no auth).
-- Pillow (a core Vaelis dependency) for sprite decoding — already installed.
+- Pillow (a core Plobi dependency) for sprite decoding — already installed.
 - For full-fidelity terminal rendering: a graphics-capable terminal (kitty,
   Ghostty, WezTerm, iTerm2, or sixel). Otherwise a truecolor Unicode
   half-block fallback is used automatically.
@@ -96,7 +96,7 @@ Under `display.pet` in `config.yaml`:
 
 - A pet only shows once one is installed AND selected (`enabled: true`).
 - Inside a pipe/redirect (no TTY) terminal rendering is disabled by design.
-- The petdex npm CLI installs to `~/.codex/pets`; Vaelis uses its own
+- The petdex npm CLI installs to `~/.codex/pets`; Plobi uses its own
   profile-scoped `<HERMES_HOME>/pets/` instead — install through `hermes pets`.
 
 ## Verification

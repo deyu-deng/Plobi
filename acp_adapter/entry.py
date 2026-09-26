@@ -25,7 +25,7 @@ except ModuleNotFoundError:
     pass
 else:
     # Stop a ``utils/``/``proxy/``/``ui/`` package in the launch directory from
-    # shadowing Vaelis's own modules — ``hermes acp`` can be started from any
+    # shadowing Plobi's own modules — ``hermes acp`` can be started from any
     # cwd, including a project that has same-named packages on its path.
     hermes_bootstrap.harden_import_path()
 
@@ -116,9 +116,9 @@ def _load_env() -> None:
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="hermes-acp",
-        description="Run Vaelis Agent as an ACP stdio server.",
+        description="Run Plobi Agent as an ACP stdio server.",
     )
-    parser.add_argument("--version", action="store_true", help="Print Vaelis version and exit")
+    parser.add_argument("--version", action="store_true", help="Print Plobi version and exit")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -127,7 +127,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="Run interactive Vaelis provider/model setup for ACP terminal auth",
+        help="Run interactive Plobi provider/model setup for ACP terminal auth",
     )
     parser.add_argument(
         "--setup-browser",
@@ -156,7 +156,7 @@ def _run_check() -> None:
     import acp  # noqa: F401
     from acp_adapter.server import HermesACPAgent  # noqa: F401
 
-    print("Vaelis ACP check OK")
+    print("Plobi ACP check OK")
 
 
 def _run_setup() -> None:

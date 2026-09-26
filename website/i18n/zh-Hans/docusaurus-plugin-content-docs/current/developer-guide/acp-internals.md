@@ -6,7 +6,7 @@ description: "ACP 适配器的工作原理：生命周期、会话、事件桥�
 
 # ACP 内部机制
 
-ACP 适配器将 Vaelis 的同步 `AIAgent` 封装为异步 JSON-RPC stdio 服务器。
+ACP 适配器将 Plobi 的同步 `AIAgent` 封装为异步 JSON-RPC stdio 服务器。
 
 关键实现文件：
 
@@ -94,15 +94,15 @@ asyncio.run_coroutine_threadsafe(...)
 
 映射关系：
 
-- `allow_once` -> Vaelis `once`
-- `allow_always` -> Vaelis `always`
-- 拒绝选项 -> Vaelis `deny`
+- `allow_once` -> Plobi `once`
+- `allow_always` -> Plobi `always`
+- 拒绝选项 -> Plobi `deny`
 
 超时和桥接失败默认拒绝。
 
 ### 工具渲染辅助
 
-`acp_adapter/tools.py` 将 Vaelis 工具映射到 ACP 工具类型，并构建面向编辑器的内容。
+`acp_adapter/tools.py` 将 Plobi 工具映射到 ACP 工具类型，并构建面向编辑器的内容。
 
 示例：
 
@@ -144,12 +144,12 @@ prompt(..., session_id)
 
 ACP 不实现自己的认证存储。
 
-而是复用 Vaelis 的运行时解析器：
+而是复用 Plobi 的运行时解析器：
 
 - `acp_adapter/auth.py`
 - `hermes_cli/runtime_provider.py`
 
-因此 ACP 通告并使用当前配置的 Vaelis provider/凭据。它还始终通告一个终端 setup 认证方法（`hermes-setup`，参数 `--setup`），以便首次运行的 registry 客户端在启动正常 ACP 会话前可以打开 Vaelis 的交互式模型/provider 配置。
+因此 ACP 通告并使用当前配置的 Plobi provider/凭据。它还始终通告一个终端 setup 认证方法（`hermes-setup`，参数 `--setup`），以便首次运行的 registry 客户端在启动正常 ACP 会话前可以打开 Plobi 的交互式模型/provider 配置。
 
 ## 工作目录绑定
 

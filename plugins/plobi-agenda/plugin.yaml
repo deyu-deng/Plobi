@@ -1,0 +1,9 @@
+name: plobi-agenda
+version: "0.1.0"
+description: >-
+  Resolves agenda confirmations ("确认 3" / "忽略 3") straight from a chat
+  message, without waking the agent. Keeps the confirm loop free of model
+  tokens, which matters because L1 runs a flagship model (ADR-0011).
+author: Plobi
+hooks:
+  - pre_gateway_dispatch

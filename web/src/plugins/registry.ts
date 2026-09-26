@@ -123,7 +123,7 @@ export function exposePluginSDK() {
       createContext,
     },
 
-    // Vaelis API client
+    // Plobi API client
     api,
     // Raw fetchJSON for plugin-specific JSON endpoints
     fetchJSON,

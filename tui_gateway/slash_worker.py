@@ -4,7 +4,7 @@ Protocol: reads JSON lines from stdin {id, command}, writes {id, ok, output|erro
 """
 
 # Stop a ``utils/`` (or ``proxy/``, ``ui/``) package in the launch directory
-# from shadowing Vaelis's own top-level modules.  This worker is spawned as
+# from shadowing Plobi's own top-level modules.  This worker is spawned as
 # ``-m tui_gateway.slash_worker`` and inherits the user's CWD, so the ``import
 # cli`` below would otherwise resolve ``utils`` to a colliding local package
 # and crash the child in a retry loop (issue #51286).  ``hermes_bootstrap``

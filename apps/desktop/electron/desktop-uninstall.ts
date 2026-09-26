@@ -59,8 +59,8 @@ function modeRemovesUserData(mode) {
  * Resolve the on-disk app bundle/dir to remove for the running desktop app,
  * given the path to the running executable (`process.execPath`) and platform.
  *
- *   macOS:   …/Vaelis.app/Contents/MacOS/Vaelis  → …/Vaelis.app
- *   Windows: …\Vaelis\Vaelis.exe                 → …\Vaelis  (install dir)
+ *   macOS:   …/Plobi.app/Contents/MacOS/Plobi  → …/Plobi.app
+ *   Windows: …\Plobi\Plobi.exe                 → …\Plobi  (install dir)
  *   Linux:   AppImage → the APPIMAGE env path; unpacked → the *-unpacked dir
  *
  * Returns null when we can't confidently identify a removable bundle (e.g.
@@ -79,10 +79,10 @@ function resolveRemovableAppPath(execPath, platform, env: any = {}) {
   const p = platform === 'win32' ? path.win32 : path.posix
 
   if (platform === 'darwin') {
-    // …/Vaelis.app/Contents/MacOS/Vaelis → strip 3 segments to the .app
+    // …/Plobi.app/Contents/MacOS/Plobi → strip 3 segments to the .app
     const macOsDir = p.dirname(exe) // …/Contents/MacOS
     const contents = p.dirname(macOsDir) // …/Contents
-    const appBundle = p.dirname(contents) // …/Vaelis.app
+    const appBundle = p.dirname(contents) // …/Plobi.app
 
     if (appBundle.endsWith('.app')) {
       return appBundle
@@ -92,10 +92,10 @@ function resolveRemovableAppPath(execPath, platform, env: any = {}) {
   }
 
   if (platform === 'win32') {
-    // NSIS per-user installs Vaelis.exe directly in the install dir.
+    // NSIS per-user installs Plobi.exe directly in the install dir.
     const dir = p.dirname(exe)
 
-    if (/[\\/]Vaelis$/i.test(dir) || /[\\/]hermes-desktop$/i.test(dir)) {
+    if (/[\\/]Plobi$/i.test(dir) || /[\\/]hermes-desktop$/i.test(dir)) {
       return dir
     }
 
@@ -202,7 +202,7 @@ function buildWindowsCleanupScript({
   const pid = Number(desktopPid) || 0
   // cmd.exe has no string escaping inside quotes; strip embedded quotes (paths
   // under %LOCALAPPDATA% never contain them). `&`/`^` in a path would still be
-  // a problem, but Vaelis install paths don't use them.
+  // a problem, but Plobi install paths don't use them.
   const q = s => `"${String(s).replace(/"/g, '')}"`
 
   const lines = [

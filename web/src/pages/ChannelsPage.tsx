@@ -771,7 +771,7 @@ function WhatsAppOnboardingPanel({
         : "waiting";
   const setupHelp =
     phase === "connected" || phase === "applying"
-      ? "WhatsApp is linked but Vaelis is not listening yet. Save and restart the gateway to finish setup."
+      ? "WhatsApp is linked but Plobi is not listening yet. Save and restart the gateway to finish setup."
       : setup?.status === "installing"
         ? "Preparing the WhatsApp bridge. The QR code will appear here when it is ready."
         : setup?.status === "starting"
@@ -782,24 +782,24 @@ function WhatsAppOnboardingPanel({
     : setup?.account_name || setup?.account_id || "";
   const linkedAccountDetail =
     setup?.account_phone || setup?.account_id
-      ? "This is the WhatsApp account Vaelis is now logged into."
-      : "Vaelis is logged into the WhatsApp account that scanned the QR code.";
+      ? "This is the WhatsApp account Plobi is now logged into."
+      : "Plobi is logged into the WhatsApp account that scanned the QR code.";
   const linkedAccountChatUrl = setup?.account_phone
     ? `https://wa.me/${setup.account_phone}`
     : "";
   const messageInstruction =
     mode === "self-chat"
-      ? "After the restart, open Message Yourself on the linked account and send Vaelis a message."
-      : "After the restart, start a chat from another WhatsApp account with the linked account and send Vaelis a message.";
+      ? "After the restart, open Message Yourself on the linked account and send Plobi a message."
+      : "After the restart, start a chat from another WhatsApp account with the linked account and send Plobi a message.";
   const hasSavedAllowedUsers = Boolean(platform.whatsapp_setup?.allowed_users_set);
   const pairingInstruction =
     mode === "self-chat" && !allowedUsers.trim()
       ? hasSavedAllowedUsers
-        ? "Vaelis will keep the saved WhatsApp allowlist."
+        ? "Plobi will keep the saved WhatsApp allowlist."
         : "Self-chat mode will allow the linked account automatically when you save."
       : !allowedUsers.trim() && hasSavedAllowedUsers
-        ? "Vaelis will keep the saved WhatsApp allowlist."
-        : "If no allowed numbers were entered, Vaelis replies with a pairing code. Approve it from the dashboard Pairing page.";
+        ? "Plobi will keep the saved WhatsApp allowlist."
+        : "If no allowed numbers were entered, Plobi replies with a pairing code. Approve it from the dashboard Pairing page.";
 
   return (
     <div className="rounded-sm border border-border bg-background/35 p-4">
@@ -881,7 +881,7 @@ function WhatsAppOnboardingPanel({
 
               {phase === "waiting" && (
                 <div className="text-xs text-muted-foreground">
-                  After saving, unknown DMs use Vaelis pairing codes unless their
+                  After saving, unknown DMs use Plobi pairing codes unless their
                   number is already allowed.
                 </div>
               )}
@@ -1070,7 +1070,7 @@ function TelegramOnboardingPanel({
     setDetectedOwnerId(null);
     setNewAllowedId("");
     try {
-      const res = await api.startTelegramOnboarding({ bot_name: "Vaelis Agent" });
+      const res = await api.startTelegramOnboarding({ bot_name: "Plobi Agent" });
       const dataUrl = await QRCode.toDataURL(res.qr_payload, {
         errorCorrectionLevel: "M",
         margin: 1,

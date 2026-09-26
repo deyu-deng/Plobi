@@ -34,7 +34,7 @@ export const AGENT_STATUSES: readonly AgentStatus[] = [
  * L1 still must not auto-spawn except one agenda L2 (S2).
  */
 export interface AgentCreateRequest {
-  /** Registry id / default profile name, e.g. `vaelis-code`. */
+  /** Registry id / default profile name, e.g. `plobi-code`. */
   id: string
   /**
    * Sidebar taxonomy group (R-012): `projects` / `butler` / `events` /
@@ -64,7 +64,7 @@ export interface AgentCreateRequest {
   cloneFrom?: string
 }
 
-/** L1-safe plan snapshot on `vaelis_secretary_ask` (no plan_items). */
+/** L1-safe plan snapshot on `plobi_secretary_ask` (no plan_items). */
 export type DailyPlanStatus = 'empty' | 'pending' | 'confirmed' | 'dismissed' | 'missing'
 
 export interface DailyPlanL1View {

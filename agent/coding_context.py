@@ -1,7 +1,7 @@
-"""Coding-context awareness — base Vaelis, every interactive surface.
+"""Coding-context awareness — base Plobi, every interactive surface.
 
-When the user runs Vaelis inside a code workspace (CLI, TUI, desktop app, or an
-editor over ACP), Vaelis shifts into a **coding posture**. This module is the
+When the user runs Plobi inside a code workspace (CLI, TUI, desktop app, or an
+editor over ACP), Plobi shifts into a **coding posture**. This module is the
 single place that decides whether we're in that posture and what it implies,
 so the rest of the codebase never re-derives "are we coding?" on its own.
 
@@ -609,7 +609,7 @@ def is_coding_context(
     cwd: Optional[str | Path] = None,
     config: Optional[dict[str, Any]] = None,
 ) -> bool:
-    """Whether Vaelis should operate in its coding posture right now."""
+    """Whether Plobi should operate in its coding posture right now."""
     return resolve_runtime_mode(platform=platform, cwd=cwd, config=config).is_coding
 
 

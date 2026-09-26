@@ -1,12 +1,12 @@
 ---
 sidebar_position: 16
 title: "Yuanbao"
-description: "Connect Vaelis Agent to the Yuanbao enterprise messaging platform via WebSocket gateway"
+description: "Connect Plobi Agent to the Yuanbao enterprise messaging platform via WebSocket gateway"
 ---
 
 # Yuanbao
 
-Connect Vaelis to [Yuanbao](https://yuanbao.tencent.com/), Tencent's enterprise messaging platform. The adapter uses a WebSocket gateway for real-time message delivery and supports both direct (C2C) and group conversations.
+Connect Plobi to [Yuanbao](https://yuanbao.tencent.com/), Tencent's enterprise messaging platform. The adapter uses a WebSocket gateway for real-time message delivery and supports both direct (C2C) and group conversations.
 
 :::info
 Yuanbao is an enterprise messaging platform primarily used within Tencent and enterprise environments. It uses WebSocket for real-time communication, HMAC-based authentication, and supports rich media including images, files, and voice messages.
@@ -170,7 +170,7 @@ The bot responds in the same conversation thread.
 
 ### Available Commands
 
-All standard Vaelis commands work on Yuanbao:
+All standard Plobi commands work on Yuanbao:
 
 | Command | Description |
 |---------|-------------|
@@ -278,7 +278,7 @@ platforms:
 
 ### Message Chunking
 
-Yuanbao has a maximum message size. Vaelis automatically chunks large responses with Markdown-aware splitting (respects code fences, tables, and paragraph boundaries).
+Yuanbao has a maximum message size. Plobi automatically chunks large responses with Markdown-aware splitting (respects code fences, tables, and paragraph boundaries).
 
 ### Connection Parameters
 

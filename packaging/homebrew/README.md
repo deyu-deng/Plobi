@@ -1,4 +1,4 @@
-Homebrew packaging notes for Vaelis Agent.
+Homebrew packaging notes for Plobi Agent.
 
 Use `packaging/homebrew/hermes-agent.rb` as a tap or `homebrew-core` starting point.
 

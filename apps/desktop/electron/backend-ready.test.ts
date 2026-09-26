@@ -124,7 +124,7 @@ test('rejects with the timeout message after the deadline', async () => {
   const child = makeFakeChild()
   await assert.rejects(
     waitForDashboardPort(child, 20),
-    /Timed out waiting for Vaelis backend port announcement \(20ms\)/
+    /Timed out waiting for Plobi backend port announcement \(20ms\)/
   )
 })
 

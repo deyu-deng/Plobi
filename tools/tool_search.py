@@ -1,8 +1,8 @@
-"""Progressive tool disclosure ("tool search") for Vaelis Agent.
+"""Progressive tool disclosure ("tool search") for Plobi Agent.
 
 When enabled, MCP and non-core plugin tools are replaced in the model-visible
 tools array by three bridge tools — ``tool_search``, ``tool_describe``,
-``tool_call`` — and surfaced on demand. Core Vaelis tools never defer.
+``tool_call`` — and surfaced on demand. Core Plobi tools never defer.
 
 Design constraints this module is built around (see ``openclaw-tool-search-report``
 for the full rationale):

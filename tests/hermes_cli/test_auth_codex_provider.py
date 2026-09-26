@@ -1,4 +1,4 @@
-"""Tests for Codex auth — tokens stored in Vaelis auth store (~/.hermes/auth.json)."""
+"""Tests for Codex auth — tokens stored in Plobi auth store (~/.hermes/auth.json)."""
 
 import json
 import time
@@ -23,7 +23,7 @@ from hermes_cli.auth import (
 
 
 def _setup_hermes_auth(hermes_home: Path, *, access_token: str = "access", refresh_token: str = "refresh"):
-    """Write Codex tokens into the Vaelis auth store."""
+    """Write Codex tokens into the Plobi auth store."""
     hermes_home.mkdir(parents=True, exist_ok=True)
     auth_store = {
         "version": 1,
@@ -753,7 +753,7 @@ def test_import_codex_cli_tokens_missing(tmp_path, monkeypatch):
 
 
 def test_codex_tokens_not_written_to_shared_file(tmp_path, monkeypatch):
-    """Verify _save_codex_tokens writes only to Vaelis auth store, not ~/.codex/."""
+    """Verify _save_codex_tokens writes only to Plobi auth store, not ~/.codex/."""
     hermes_home = tmp_path / "hermes"
     codex_home = tmp_path / "codex-cli"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -765,10 +765,10 @@ def test_codex_tokens_not_written_to_shared_file(tmp_path, monkeypatch):
 
     _save_codex_tokens({"access_token": "hermes-at", "refresh_token": "hermes-rt"})
 
-    # ~/.codex/auth.json should NOT exist — _save_codex_tokens only touches Vaelis store
+    # ~/.codex/auth.json should NOT exist — _save_codex_tokens only touches Plobi store
     assert not (codex_home / "auth.json").exists()
 
-    # Vaelis auth store should have the tokens
+    # Plobi auth store should have the tokens
     data = _read_codex_tokens()
     assert data["tokens"]["access_token"] == "hermes-at"
 

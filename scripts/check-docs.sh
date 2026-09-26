@@ -5,7 +5,7 @@
 #   R1. docs/ 下新增/改名的文档必须落在允许的类目子目录里。
 #   R2. docs/ 下新增/改名的文档必须在 docs/INDEX.md 登记一行。
 #
-# 允许的类目：north_star specs adr reference audit runbooks templates plans archive vaelis
+# 允许的类目：north_star specs adr reference audit runbooks templates plans archive plobi
 # docs/INDEX.md 自身豁免。
 #
 # 安装：cp scripts/check-docs.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
@@ -15,7 +15,7 @@ set -uo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 INDEX="$REPO_ROOT/docs/INDEX.md"
-ALLOWED=" north_star specs adr reference audit runbooks templates plans archive vaelis "
+ALLOWED=" north_star specs adr reference audit runbooks templates plans archive plobi "
 
 failed=0
 while IFS= read -r f; do

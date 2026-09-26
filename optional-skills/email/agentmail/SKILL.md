@@ -45,7 +45,7 @@ mcp_servers:
       AGENTMAIL_API_KEY: "am_your_key_here"
 ```
 
-### 3. Restart Vaelis
+### 3. Restart Plobi
 ```bash
 hermes
 ```

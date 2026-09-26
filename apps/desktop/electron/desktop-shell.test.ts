@@ -73,7 +73,7 @@ test('with no tray there is nothing keeping the app reachable, so it quits', () 
 // ─── startHiddenFromLaunch ─────────────────────────────────────────────────
 
 test('--hidden (packaged autostart) boots into the tray', () => {
-  assert.equal(startHiddenFromLaunch({ argv: ['Vaelis.exe', '--hidden'] }), true)
+  assert.equal(startHiddenFromLaunch({ argv: ['Plobi.exe', '--hidden'] }), true)
 })
 
 test('the dev Startup script signals the tray boot through the environment', () => {
@@ -86,7 +86,7 @@ test('an explicit off value does not hide the window', () => {
 })
 
 test('a normal launch shows the window', () => {
-  assert.equal(startHiddenFromLaunch({ argv: ['Vaelis.exe'], env: {} }), false)
+  assert.equal(startHiddenFromLaunch({ argv: ['Plobi.exe'], env: {} }), false)
   assert.equal(startHiddenFromLaunch(), false)
 })
 
@@ -140,10 +140,10 @@ test('Chinese is the primary tray language and English is the fallback', () => {
   assert.equal(trayLanguage('zh-CN'), 'zh')
   assert.equal(trayLanguage(undefined), 'zh')
   assert.equal(trayLanguage(''), 'zh')
-  assert.equal(trayStrings('zh-CN').show, '显示 Vaelis')
+  assert.equal(trayStrings('zh-CN').show, '显示 Plobi')
 
   assert.equal(trayLanguage('en-US'), 'en')
-  assert.equal(trayStrings('en-US').show, 'Show Vaelis')
+  assert.equal(trayStrings('en-US').show, 'Show Plobi')
 })
 
 test('every tray string is present in both languages', () => {
@@ -160,12 +160,12 @@ test('every tray string is present in both languages', () => {
 
 test('the dev autostart script relaunches hidden in the right working directory', () => {
   const script = buildDevAutostartScript({
-    workingDirectory: 'D:\\Projects\\Vaelis\\Code\\apps\\desktop',
+    workingDirectory: 'D:\\Projects\\Plobi\\Code\\apps\\desktop',
     command: 'cmd /c npm run dev',
     environment: { HERMES_DESKTOP_START_HIDDEN: '1' }
   })
 
-  assert.ok(script.includes('sh.CurrentDirectory = "D:\\Projects\\Vaelis\\Code\\apps\\desktop"'))
+  assert.ok(script.includes('sh.CurrentDirectory = "D:\\Projects\\Plobi\\Code\\apps\\desktop"'))
   assert.ok(script.includes('sh.Run "cmd /c npm run dev", 0, False'))
   assert.ok(script.includes('env.Item("HERMES_DESKTOP_START_HIDDEN") = "1"'))
   // Window style 0 is what keeps the console from flashing on every boot.
@@ -179,5 +179,5 @@ test('the dev autostart script is CRLF-terminated for WScript', () => {
   assert.ok(script.includes('\r\n'))
   assert.ok(script.endsWith('\r\n'))
   assert.ok(!/(?<!\r)\n/.test(script), 'no bare LF line endings')
-  assert.equal(DEV_AUTOSTART_FILENAME, 'vaelis_desktop_autostart.vbs')
+  assert.equal(DEV_AUTOSTART_FILENAME, 'plobi_desktop_autostart.vbs')
 })

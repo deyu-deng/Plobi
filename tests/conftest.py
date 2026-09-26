@@ -902,25 +902,25 @@ def _live_system_guard(request, monkeypatch):
 # runs ``git add`` + ``git commit`` in the Mind root. When a test's Mind root
 # is a ``--basetemp`` nested inside the product checkout, git walks upward and
 # finds the *product* repo — so every affected test appended a
-# ``chore(vaelis): update N file(s)`` commit to the real history (WP-P0-HYGIENE
+# ``chore(plobi): update N file(s)`` commit to the real history (WP-P0-HYGIENE
 # root cause). Two independent safety nets now exist:
 #
-#   1. ``vaelis/mind/writer.py::MindWriter._commit`` refuses to commit unless
+#   1. ``plobi/mind/writer.py::MindWriter._commit`` refuses to commit unless
 #      the Mind root is *itself* the git top-level (production guard).
 #   2. This autouse fixture stubs ``_commit`` outright for every test, so even
 #      a root that legitimately resolves as its own repo can't commit during a
 #      test run. The file write still happens; only the git side-effect is gone.
 #
 # Tests that must exercise the real ``_commit`` (the top-level guard tests in
-# ``tests/vaelis/test_mind.py``) re-patch the captured original themselves.
+# ``tests/plobi/test_mind.py``) re-patch the captured original themselves.
 
 
 @pytest.fixture(autouse=True)
 def _mind_writer_never_commits(monkeypatch):
     """Disable ``MindWriter``'s git commit side-effect for every test."""
     try:
-        from vaelis.mind.writer import MindWriter
-    except Exception:  # pragma: no cover — vaelis import guarded elsewhere too
+        from plobi.mind.writer import MindWriter
+    except Exception:  # pragma: no cover — plobi import guarded elsewhere too
         return
     monkeypatch.setattr(
         MindWriter,

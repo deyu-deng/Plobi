@@ -1,15 +1,15 @@
-"""Vaelis-tools-as-MCP server for the codex_app_server runtime.
+"""Plobi-tools-as-MCP server for the codex_app_server runtime.
 
 When the user runs `openai/*` turns through the codex app-server, codex
 owns the loop and builds its own tool list. By default, that means
-Vaelis' richer tool surface — web search, browser automation,
+Plobi' richer tool surface — web search, browser automation,
 delegate_task subagents, vision analysis, persistent memory, skills,
 cross-session search, image generation, TTS — is unreachable.
 
-This module exposes a curated subset of those Vaelis tools to the
+This module exposes a curated subset of those Plobi tools to the
 spawned codex subprocess via stdio MCP. Codex registers it as a normal
 MCP server (per `~/.codex/config.toml [mcp_servers.hermes-tools]`) and
-the user gets full Vaelis capability inside a Codex turn.
+the user gets full Plobi capability inside a Codex turn.
 
 Scope (what we expose):
   - web_search, web_extract              — Firecrawl, no codex equivalent
@@ -18,7 +18,7 @@ Scope (what we expose):
     _get_images / _console / _vision
   - vision_analyze                       — image inspection by vision model
   - image_generate                       — image generation
-  - skill_view, skills_list              — Vaelis' skill library
+  - skill_view, skills_list              — Plobi' skill library
   - text_to_speech                       — TTS
   - kanban_* (complete/block/comment/    — kanban worker + orchestrator
     heartbeat/show/list/create/            handoff (stateless: read env var,
@@ -29,7 +29,7 @@ What we DO NOT expose:
   - read_file / write_file / patch       — codex's apply_patch + shell
   - search_files / process               — codex's shell
   - clarify                              — codex's own UX
-  - delegate_task / memory /             — `_AGENT_LOOP_TOOLS` in Vaelis
+  - delegate_task / memory /             — `_AGENT_LOOP_TOOLS` in Plobi
     session_search / todo                  (model_tools.py). They require
                                            the running AIAgent context to
                                            dispatch (mid-loop state), so a
@@ -53,7 +53,7 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-# Tools we expose. Each name MUST match a registered Vaelis tool that
+# Tools we expose. Each name MUST match a registered Plobi tool that
 # `model_tools.handle_function_call()` can dispatch.
 #
 # What we deliberately DO NOT expose:
@@ -61,9 +61,9 @@ logger = logging.getLogger(__name__)
 #     process — codex's built-ins cover these and approval routes through
 #     codex's own UI.
 #   - delegate_task / memory / session_search / todo — these are
-#     `_AGENT_LOOP_TOOLS` in Vaelis (model_tools.py:493). They require
+#     `_AGENT_LOOP_TOOLS` in Plobi (model_tools.py:493). They require
 #     the running AIAgent context to dispatch (mid-loop state), so a
-#     stateless MCP callback can't drive them. Vaelis' default runtime
+#     stateless MCP callback can't drive them. Plobi' default runtime
 #     keeps these working; the codex_app_server runtime cannot.
 EXPOSED_TOOLS: tuple[str, ...] = (
     "web_search",
@@ -106,7 +106,7 @@ EXPOSED_TOOLS: tuple[str, ...] = (
 
 
 def _build_server() -> Any:
-    """Create the FastMCP server with Vaelis tools attached. Lazy imports
+    """Create the FastMCP server with Plobi tools attached. Lazy imports
     so the module can be imported without the mcp package installed
     (we degrade to a clear error only when actually run)."""
     try:
@@ -116,7 +116,7 @@ def _build_server() -> Any:
             f"hermes-tools MCP server requires the 'mcp' package: {exc}"
         ) from exc
 
-    # Discover Vaelis tools so dispatch works.
+    # Discover Plobi tools so dispatch works.
     from model_tools import (
         get_tool_definitions,
         handle_function_call,
@@ -125,7 +125,7 @@ def _build_server() -> Any:
     mcp = FastMCP(
         "hermes-tools",
         instructions=(
-            "Vaelis Agent's tool surface, exposed for use inside a Codex "
+            "Plobi Agent's tool surface, exposed for use inside a Codex "
             "session. Use these for capabilities Codex's built-in toolset "
             "doesn't cover: web search/extract, browser automation, "
             "subagent delegation, vision, image generation, persistent "
@@ -133,8 +133,8 @@ def _build_server() -> Any:
         ),
     )
 
-    # Pull authoritative Vaelis tool schemas for the ones we expose, so
-    # MCP clients see the same parameter docs Vaelis gives the model.
+    # Pull authoritative Plobi tool schemas for the ones we expose, so
+    # MCP clients see the same parameter docs Plobi gives the model.
     all_defs = {
         td["function"]["name"]: td["function"]
         for td in (get_tool_definitions(quiet_mode=True) or [])
@@ -147,11 +147,11 @@ def _build_server() -> Any:
         spec = all_defs.get(name)
         if spec is None:
             logger.debug(
-                "skipping %s — not registered in this Vaelis process", name
+                "skipping %s — not registered in this Plobi process", name
             )
             continue
 
-        description = spec.get("description") or f"Vaelis {name} tool"
+        description = spec.get("description") or f"Plobi {name} tool"
         params_schema = spec.get("parameters") or {"type": "object", "properties": {}}
 
         # FastMCP wants a Python callable. Build a closure that takes the
@@ -206,7 +206,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    # Quiet mode: keep Vaelis' own banners off stdout (which is the MCP wire).
+    # Quiet mode: keep Plobi' own banners off stdout (which is the MCP wire).
     os.environ.setdefault("HERMES_QUIET", "1")
     os.environ.setdefault("HERMES_REDACT_SECRETS", "true")
 

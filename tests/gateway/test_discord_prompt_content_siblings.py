@@ -80,7 +80,7 @@ async def test_clarify_with_choices_mirrors_question_into_content():
 
     assert result.success is True
     assert sent["view"] is not None
-    assert "Vaelis needs your input" in sent["content"]
+    assert "Plobi needs your input" in sent["content"]
     assert "Which environment should I deploy to?" in sent["content"]
     assert "Pick one below" in sent["content"]
 

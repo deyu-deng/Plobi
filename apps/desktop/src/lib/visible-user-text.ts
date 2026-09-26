@@ -1,7 +1,7 @@
 /**
  * Display-layer scrubber for injected internal directives (WP-UI-NO-INTERNALS).
  *
- * The §8.2 hard route (`plugins/vaelis-north-star/hard_route.py`, WP-BE-13)
+ * The §8.2 hard route (`plugins/plobi-north-star/hard_route.py`, WP-BE-13)
  * rewrites the stored user turn into:
  *
  *     <用户原话>\n\n[§8.2 硬路由 · 本回合强制] 上面这句话命中总秘书冻结话术…

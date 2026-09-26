@@ -1,17 +1,17 @@
 # NeMo Relay Observability
 
-Optional Vaelis observability plugin that maps Vaelis observer hooks to
+Optional Plobi observability plugin that maps Plobi observer hooks to
 NeMo Relay scopes, LLM spans, tool spans, marks, ATOF, and ATIF.
 
 NeMo Relay is NVIDIA's runtime layer for agent execution boundaries. It does
-not replace Vaelis Agent's planner, tools, memory, model provider routing, or
-CLI UX. Instead, this plugin lets Vaelis emit NeMo Relay lifecycle events for
-the work Vaelis already owns: sessions, turns, provider/API calls, tool calls,
+not replace Plobi Agent's planner, tools, memory, model provider routing, or
+CLI UX. Instead, this plugin lets Plobi emit NeMo Relay lifecycle events for
+the work Plobi already owns: sessions, turns, provider/API calls, tool calls,
 approval prompts, and delegated subagents.
 
-With this plugin enabled, Vaelis Agent can:
+With this plugin enabled, Plobi Agent can:
 
-- Preserve Vaelis execution as NeMo Relay scopes, LLM spans, tool spans, and
+- Preserve Plobi execution as NeMo Relay scopes, LLM spans, tool spans, and
   mark events.
 - Export raw lifecycle events as Agent Trajectory Observability Format (ATOF)
   JSONL for debugging and offline inspection.
@@ -56,9 +56,9 @@ Runs started with `--ignore_user_config` skip the enabled-plugin state from
 `HERMES_HOME`, so local E2E tests should omit that flag unless the test harness
 loads `observability/nemo_relay` explicitly another way.
 
-`HERMES_HOME` is the Vaelis profile/config home used by both
+`HERMES_HOME` is the Plobi profile/config home used by both
 `hermes plugins enable ...` and the later `hermes chat ...` run. If unset,
-Vaelis uses the user's default home, usually `~/.hermes`. For isolated smoke
+Plobi uses the user's default home, usually `~/.hermes`. For isolated smoke
 tests, choose any writable temporary directory and use the same value for every
 command in that test:
 
@@ -129,7 +129,7 @@ Optional overrides:
 ### NeMo Relay Component Config
 
 To initialize NeMo Relay from a component config, create a `plugins.toml` file
-and point Vaelis at it:
+and point Plobi at it:
 
 ```bash
 export HERMES_NEMO_RELAY_PLUGINS_TOML=.nemo-relay/plugins.toml
@@ -157,7 +157,7 @@ mode = "overwrite"
 enabled = true
 output_directory = ".nemo-relay/atif"
 filename_template = "trajectory-{session_id}.json"
-agent_name = "Vaelis Agent"
+agent_name = "Plobi Agent"
 agent_version = "local"
 ```
 
@@ -165,9 +165,9 @@ When `HERMES_NEMO_RELAY_PLUGINS_TOML` is set and initializes successfully, NeMo
 Relay owns exporter lifecycle through that config. The direct
 `HERMES_NEMO_RELAY_ATOF_*` fallback setup is skipped. If the same
 `plugins.toml` observability config enables `atif`, the direct
-`HERMES_NEMO_RELAY_ATIF_*` fallback setup is also skipped so Vaelis does not
+`HERMES_NEMO_RELAY_ATIF_*` fallback setup is also skipped so Plobi does not
 double-export trajectories on teardown. If `plugins.toml` initialization fails,
-Vaelis keeps the direct env-var fallbacks active for that run.
+Plobi keeps the direct env-var fallbacks active for that run.
 
 To enable NeMo Relay managed execution intercepts for provider and tool calls,
 include an adaptive component in the same `plugins.toml`:
@@ -182,14 +182,14 @@ mode = "observe_only"
 ```
 
 When the adaptive component is enabled and the installed NeMo Relay runtime
-exposes `llm.execute(...)` / `tools.execute(...)`, Vaelis routes LLM and tool
+exposes `llm.execute(...)` / `tools.execute(...)`, Plobi routes LLM and tool
 execution through those middleware boundaries. The observer hooks still emit
 session, turn, approval, and subagent marks; the plugin skips its manual
 `llm.call` and `tools.call` spans for executions that are already managed by
 NeMo Relay. `tool_parallelism.mode = "observe_only"` keeps tool scheduling
 observational while still wrapping the real execution boundary.
 
-For the full generic Vaelis middleware contract, see
+For the full generic Plobi middleware contract, see
 [`docs/middleware/README.md`](../../../docs/middleware/README.md).
 
 ## Canonical Local Examples
@@ -225,7 +225,7 @@ YAML
 
 ### Delegated Subagent Tool Call
 
-This run starts a parent Vaelis session, delegates to a child subagent, has the
+This run starts a parent Plobi session, delegates to a child subagent, has the
 child call `terminal`, and writes both ATOF and ATIF.
 
 ```bash
@@ -236,7 +236,7 @@ export HERMES_NEMO_RELAY_ATOF_MODE=overwrite
 export HERMES_NEMO_RELAY_ATIF_ENABLED=1
 export HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY=/tmp/hermes-nemo-relay-docs/subagent/atif
 export HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE='nested-subagent-atif-{session_id}.json'
-export HERMES_NEMO_RELAY_ATIF_AGENT_NAME='Vaelis Agent E2E'
+export HERMES_NEMO_RELAY_ATIF_AGENT_NAME='Plobi Agent E2E'
 export HERMES_NEMO_RELAY_ATIF_AGENT_VERSION=docs-example
 export HERMES_NEMO_RELAY_ATIF_SUBAGENT_EXPORT_MODE=all
 
@@ -272,7 +272,7 @@ Sanitized ATIF excerpt:
 {
   "schema_version": "ATIF-v1.7",
   "session_id": "docs-parent-session",
-  "agent": {"name": "Vaelis Agent E2E", "version": "docs-example", "model_name": "qwen3.6:35b"},
+  "agent": {"name": "Plobi Agent E2E", "version": "docs-example", "model_name": "qwen3.6:35b"},
   "steps": [
     {
       "source": "agent",
@@ -306,7 +306,7 @@ Sanitized ATIF excerpt:
 ### Parallel Tool Calls
 
 This run asks the model to emit two `read_file` tool calls in the same assistant
-message. Vaelis dispatches the read-only tools as one batch, and NeMo Relay
+message. Plobi dispatches the read-only tools as one batch, and NeMo Relay
 records both tool invocations.
 
 ```bash
@@ -322,7 +322,7 @@ export HERMES_NEMO_RELAY_ATOF_MODE=overwrite
 export HERMES_NEMO_RELAY_ATIF_ENABLED=1
 export HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY=/tmp/hermes-nemo-relay-docs/parallel/atif
 export HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE='parallel-tools-atif-{session_id}.json'
-export HERMES_NEMO_RELAY_ATIF_AGENT_NAME='Vaelis Agent E2E'
+export HERMES_NEMO_RELAY_ATIF_AGENT_NAME='Plobi Agent E2E'
 export HERMES_NEMO_RELAY_ATIF_AGENT_VERSION=docs-example
 
 hermes chat \
@@ -358,7 +358,7 @@ Sanitized ATIF excerpt:
 {
   "schema_version": "ATIF-v1.7",
   "session_id": "docs-parallel-session",
-  "agent": {"name": "Vaelis Agent E2E", "version": "docs-example", "model_name": "qwen3.6:35b"},
+  "agent": {"name": "Plobi Agent E2E", "version": "docs-example", "model_name": "qwen3.6:35b"},
   "steps": [
     {
       "source": "agent",
@@ -382,9 +382,9 @@ Sanitized ATIF excerpt:
 
 The plugin keeps NeMo Relay's native event model:
 
-- Vaelis sessions map to `agent` scopes.
-- Vaelis API request hooks map to `llm` scope start/end events.
-- Vaelis tool hooks map to `tool` scope start/end events.
+- Plobi sessions map to `agent` scopes.
+- Plobi API request hooks map to `llm` scope start/end events.
+- Plobi tool hooks map to `tool` scope start/end events.
 - Turn, approval, subagent, and diagnostic fallback events map to `mark`
   events.
 
@@ -396,7 +396,7 @@ separate trajectories.
 
 ## Adaptive Middleware Example
 
-The `observability/nemo_relay` plugin uses Vaelis execution middleware to hand
+The `observability/nemo_relay` plugin uses Plobi execution middleware to hand
 LLM and tool calls to NeMo Relay managed execution when an adaptive component is
 enabled.
 
@@ -413,26 +413,26 @@ enabled = true
 mode = "observe_only"
 ```
 
-Enable it for Vaelis:
+Enable it for Plobi:
 
 ```bash
 export HERMES_NEMO_RELAY_PLUGINS_TOML=/tmp/hermes-middleware-test/plugins.toml
 ```
 
 When the adaptive component is enabled and the installed NeMo Relay runtime
-exposes `llm.execute(...)` and `tools.execute(...)`, Vaelis routes execution
+exposes `llm.execute(...)` and `tools.execute(...)`, Plobi routes execution
 through these boundaries:
 
 ```text
-Vaelis provider call
+Plobi provider call
   -> llm_execution middleware
     -> nemo_relay.llm.execute(...)
-      -> Vaelis provider adapter next_call(...)
+      -> Plobi provider adapter next_call(...)
 
-Vaelis tool call
+Plobi tool call
   -> tool_execution middleware
     -> nemo_relay.tools.execute(...)
-      -> Vaelis tool dispatcher next_call(...)
+      -> Plobi tool dispatcher next_call(...)
 ```
 
 The plugin still emits observer marks for sessions, turns, approvals, and
@@ -443,7 +443,7 @@ for the same execution.
 ### Local Adaptive E2E
 
 This example enables both NeMo Relay observability export and adaptive execution
-middleware for a local Vaelis run. This path requires a NeMo Relay runtime that
+middleware for a local Plobi run. This path requires a NeMo Relay runtime that
 supports `[components.config.tool_parallelism]`; the `nemo-relay==0.3`
 install used by the earlier observability-only examples does not support this
 adaptive config.
@@ -483,7 +483,7 @@ mode = "overwrite"
 enabled = true
 output_directory = "/tmp/hermes-middleware-test/atif"
 filename_template = "middleware-trajectory-{session_id}.json"
-agent_name = "Vaelis Middleware E2E"
+agent_name = "Plobi Middleware E2E"
 agent_version = "local"
 
 [[components]]
@@ -528,7 +528,7 @@ Expected ATIF shape:
   "schema_version": "ATIF-v1.7",
   "session_id": "middleware-demo-session",
   "agent": {
-    "name": "Vaelis Middleware E2E",
+    "name": "Plobi Middleware E2E",
     "version": "local",
     "model_name": "qwen3.6:35b"
   },

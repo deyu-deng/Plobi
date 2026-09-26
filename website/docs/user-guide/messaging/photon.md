@@ -4,7 +4,7 @@ sidebar_position: 18
 
 # Photon iMessage
 
-Connect Vaelis to **iMessage** through [Photon][photon], a managed
+Connect Plobi to **iMessage** through [Photon][photon], a managed
 service that handles the Apple line allocation and abuse-prevention
 layer so you don't have to run your own Mac relay.
 
@@ -16,7 +16,7 @@ recommended starting point.
 
 :::info Free to start
 Photon's shared-line pool is free. No subscription is required to send
-your first iMessage from Vaelis — just a phone number we can bind to
+your first iMessage from Plobi — just a phone number we can bind to
 your account.
 :::
 
@@ -26,7 +26,7 @@ Photon is a **persistent-connection** channel, like Discord or Slack —
 **no webhook, no public URL, no signing secret to manage.**
 
 The `spectrum-ts` SDK holds a long-lived **gRPC stream** to Photon for
-both directions. Because the SDK is TypeScript-only, Vaelis runs it in a
+both directions. Because the SDK is TypeScript-only, Plobi runs it in a
 small supervised **Node sidecar** and talks to it over loopback:
 
 - **Inbound** — the sidecar consumes the SDK's `app.messages` gRPC
@@ -66,7 +66,7 @@ The setup, in order:
 
 1. **Device login** (`client_id=photon-cli`) — opens
    `https://app.photon.codes/` for approval and stores the bearer token.
-2. **Finds or creates** the `Vaelis Agent` project on your account.
+2. **Finds or creates** the `Plobi Agent` project on your account.
 3. **Enables Spectrum**, reads the project's Spectrum id, and rotates
    the project secret.
 4. **Registers your phone number** as a Spectrum user — skipped if a
@@ -83,11 +83,11 @@ the same place every other channel keeps its token. Management metadata
 
 ## Authorizing users
 
-Photon uses the same authorization model as every other Vaelis
+Photon uses the same authorization model as every other Plobi
 channel. Choose one approach:
 
 **DM pairing (default).** When an unknown number messages your Photon
-line, Vaelis replies with a pairing code. Approve it with:
+line, Plobi replies with a pairing code. Approve it with:
 
 ```bash
 hermes pairing approve photon <CODE>
@@ -113,7 +113,7 @@ deliberately restricted access).
 
 ### Require mentions in group chats
 
-By default Vaelis responds to every authorized DM and group message.
+By default Plobi responds to every authorized DM and group message.
 To make group chats opt-in, enable mention gating (DMs still always
 work):
 
@@ -126,8 +126,8 @@ gateway:
 ```
 
 With `require_mention: true`, group-chat messages are ignored unless
-they match a wake-word pattern. The defaults match `Vaelis` and
-`@Vaelis agent` variants. For a custom agent name, set regex patterns:
+they match a wake-word pattern. The defaults match `Plobi` and
+`@Plobi agent` variants. For a custom agent name, set regex patterns:
 
 ```yaml
 gateway:
@@ -154,7 +154,7 @@ You'll see something like:
 [photon] connected — sidecar on 127.0.0.1:8789, streaming inbound over gRPC
 ```
 
-Send an iMessage to your assigned number and Vaelis will reply.
+Send an iMessage to your assigned number and Plobi will reply.
 
 ## Status & troubleshooting
 
@@ -163,7 +163,7 @@ hermes photon status
 ```
 
 Prints saved credentials, sidecar health, your registered number, and the
-assigned iMessage line Vaelis uses. When a Photon token and dashboard project
+assigned iMessage line Plobi uses. When a Photon token and dashboard project
 are available, `status` refreshes missing number rows from the dashboard
 without provisioning new lines.
 
@@ -197,7 +197,7 @@ Common issues:
   filename + MIME type; the agent sees a marker but can't yet read the
   bytes. The SDK exposes attachment bytes via `content.read()`, so this
   is a sidecar follow-up.
-- **Outbound attachments are supported.** Vaelis sends images, voice
+- **Outbound attachments are supported.** Plobi sends images, voice
   notes, video, and documents through spectrum-ts' `attachment()` /
   `voice()` content builders via the sidecar's `/send-attachment`
   endpoint. Captions arrive as a separate iMessage bubble after the
@@ -220,7 +220,7 @@ Common issues:
 | `PHOTON_ALLOWED_USERS`    | (unset)            | Comma-separated E.164 allowlist            |
 | `PHOTON_ALLOW_ALL_USERS`  | `false`            | Dev only — accept any sender               |
 | `PHOTON_REQUIRE_MENTION`  | `false`            | Require a wake word before responding in groups |
-| `PHOTON_MENTION_PATTERNS` | Vaelis wake words  | JSON list / comma / newline regex patterns for group mentions |
+| `PHOTON_MENTION_PATTERNS` | Plobi wake words  | JSON list / comma / newline regex patterns for group mentions |
 | `PHOTON_DASHBOARD_HOST`   | `app.photon.codes` | Override the dashboard / device-login host |
 | `PHOTON_SPECTRUM_HOST`    | `spectrum.photon.codes` | Override the Spectrum API host |
 

@@ -347,7 +347,7 @@ class TestRunConversationCodexPath:
     def test_gateway_terminal_cwd_seeds_codex_thread_cwd(self, monkeypatch, tmp_path):
         """Gateway sessions set TERMINAL_CWD without stamping agent.session_cwd.
         Codex app-server must still start in that configured workspace instead
-        of falling back to the Vaelis daemon process cwd."""
+        of falling back to the Plobi daemon process cwd."""
         from agent.transports.codex_app_server_session import (
             CodexAppServerSession, TurnResult,
         )
@@ -405,7 +405,7 @@ class TestRunConversationCodexPath:
     def test_approvals_mode_off_auto_approves_codex_server_requests(
         self, monkeypatch
     ):
-        """When the user disables Vaelis approvals, codex app-server approval
+        """When the user disables Plobi approvals, codex app-server approval
         requests should not fail closed just because no interactive callback is
         wired (the typical gateway path). Codex's own sandbox permission
         profile remains the filesystem boundary."""
@@ -695,7 +695,7 @@ class TestSessionRetirementOnRunAgent:
 
 class TestCodexToolProgressBridge:
     """#38835: Codex app-server item/started notifications must surface as
-    Vaelis tool-progress so gateways show verbose breadcrumbs on this route."""
+    Plobi tool-progress so gateways show verbose breadcrumbs on this route."""
 
     def test_mapper_command_execution(self):
         from agent.codex_runtime import _codex_note_to_tool_progress

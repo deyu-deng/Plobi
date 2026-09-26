@@ -55,7 +55,7 @@ declare global {
       probeConnectionConfig: (remoteUrl: string) => Promise<DesktopConnectionProbeResult>
       oauthLoginConnectionConfig: (remoteUrl: string) => Promise<DesktopOauthLoginResult>
       oauthLogoutConnectionConfig: (remoteUrl?: string) => Promise<DesktopOauthLogoutResult>
-      // Vaelis Cloud: one portal login powers discovery + silent per-agent
+      // Plobi Cloud: one portal login powers discovery + silent per-agent
       // sign-in (cloud-auto-discovery Phase 3).
       cloud: {
         status: () => Promise<DesktopCloudStatus>
@@ -212,8 +212,8 @@ declare global {
         // returns the most-installed themes.
         searchMarketplace: (query: string) => Promise<DesktopMarketplaceSearchItem[]>
       }
-      // Vaelis Gateway (aigw) — local desktop-quota aggregator.
-      vaelisGateway: {
+      // Plobi Gateway (aigw) — local desktop-quota aggregator.
+      plobiGateway: {
         start: () => Promise<{ ok: boolean; running: boolean; baseUrl?: string; pid?: number | null; error?: string }>
         stop: () => Promise<{ ok: boolean; running: boolean }>
         status: () => Promise<{ running: boolean; pid: number | null; baseUrl: string; port: number }>
@@ -423,7 +423,7 @@ export interface DesktopActiveProfile {
 
 export interface DesktopConnectionConfig {
   envOverride: boolean
-  // The saved connection mode. 'cloud' is a Vaelis Cloud connection: it carries
+  // The saved connection mode. 'cloud' is a Plobi Cloud connection: it carries
   // a remote-shaped block (remoteUrl = the selected agent's dashboardUrl,
   // remoteAuthMode 'oauth') but is remembered as cloud so settings reopens into
   // the cloud picker. Resolution treats cloud exactly as remote
@@ -437,7 +437,7 @@ export interface DesktopConnectionConfig {
   remoteTokenPreview: string | null
   remoteTokenSet: boolean
   remoteUrl: string
-  // For a 'cloud' connection: the persisted Vaelis Cloud org (slug or id) the
+  // For a 'cloud' connection: the persisted Plobi Cloud org (slug or id) the
   // connected instance was discovered under, so Settings → Gateway can reopen
   // into that org. Empty string for remote/local.
   cloudOrg: string
@@ -451,7 +451,7 @@ export interface DesktopConnectionConfigInput {
   remoteAuthMode?: 'oauth' | 'token'
   remoteToken?: string
   remoteUrl?: string
-  // For a 'cloud' connection: the selected Vaelis Cloud org (slug or id) to
+  // For a 'cloud' connection: the selected Plobi Cloud org (slug or id) to
   // persist so Settings can reopen into it. Ignored for remote/local modes.
   cloudOrg?: string
 }
@@ -492,7 +492,7 @@ export interface DesktopOauthLogoutResult {
   connected: boolean
 }
 
-// --- Vaelis Cloud (cloud-auto-discovery Phase 3) ---
+// --- Plobi Cloud (cloud-auto-discovery Phase 3) ---
 
 export interface DesktopCloudStatus {
   // The portal base URL the desktop talks to (default or env-overridden).
@@ -503,7 +503,7 @@ export interface DesktopCloudStatus {
   signedIn: boolean
 }
 
-// A discovered Vaelis Cloud agent — the trimmed DTO from NAS GET /api/agents.
+// A discovered Plobi Cloud agent — the trimmed DTO from NAS GET /api/agents.
 export interface DesktopCloudAgent {
   id: string
   name: string

@@ -2,7 +2,7 @@
 name: github-issues
 description: "Create, triage, label, assign GitHub issues via gh or REST."
 version: 1.1.0
-author: Vaelis Agent
+author: Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

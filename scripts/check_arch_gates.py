@@ -51,14 +51,14 @@ def main() -> int:
             py,
             "-m",
             "pytest",
-            "tests/vaelis/test_console_arch_guard.py",
+            "tests/plobi/test_console_arch_guard.py",
             "-q",
             "--basetemp=.pytest-run",
         ],
         ROOT,
     )
     if be != 0:
-        print("\nArchitecture gate FAILED (backend). Restore vaelis/console to __init__.py + router.py only.")
+        print("\nArchitecture gate FAILED (backend). Restore plobi/console to __init__.py + router.py only.")
         return be
 
     fe = 0

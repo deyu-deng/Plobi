@@ -401,7 +401,7 @@ class HomeAssistantAdapter(BasePlatformAdapter):
             "Content-Type": "application/json",
         }
         payload = {
-            "title": "Vaelis Agent",
+            "title": "Plobi Agent",
             "message": content[:self.MAX_MESSAGE_LENGTH],
         }
 
@@ -554,7 +554,7 @@ def _build_adapter(config):
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Vaelis plugin system."""
+    """Plugin entry point — called by the Plobi plugin system."""
     ctx.register_platform(
         name="homeassistant",
         label="Home Assistant",

@@ -21,7 +21,7 @@ const emptySessionsResponse = {
   total: 0
 }
 
-describe('Vaelis REST session helpers', () => {
+describe('Plobi REST session helpers', () => {
   let api: ReturnType<typeof vi.fn>
 
   beforeEach(() => {

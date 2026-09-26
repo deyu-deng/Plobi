@@ -1,4 +1,4 @@
-"""Shared ANSI color utilities for Vaelis CLI modules."""
+"""Shared ANSI color utilities for Plobi CLI modules."""
 
 import os
 import sys

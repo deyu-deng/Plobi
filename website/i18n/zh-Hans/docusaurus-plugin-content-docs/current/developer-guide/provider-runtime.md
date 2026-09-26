@@ -1,12 +1,12 @@
 ---
 sidebar_position: 4
 title: "Provider 运行时解析"
-description: "Vaelis 如何在运行时解析 provider、凭据、API 模式及辅助模型"
+description: "Plobi 如何在运行时解析 provider、凭据、API 模式及辅助模型"
 ---
 
 # Provider 运行时解析
 
-Vaelis 拥有一个共享的 provider 运行时解析器，用于以下场景：
+Plobi 拥有一个共享的 provider 运行时解析器，用于以下场景：
 
 - CLI
 - gateway
@@ -36,7 +36,7 @@ Vaelis 拥有一个共享的 provider 运行时解析器，用于以下场景：
 3. 环境变量
 4. provider 特定的默认值或自动解析
 
-该顺序很重要，因为 Vaelis 将已保存的模型/provider 选择视为正常运行的真实来源。这可以防止过时的 shell 导出变量悄悄覆盖用户在 `hermes model` 中最后选择的端点。
+该顺序很重要，因为 Plobi 将已保存的模型/provider 选择视为正常运行的真实来源。这可以防止过时的 shell 导出变量悄悄覆盖用户在 `hermes model` 中最后选择的端点。
 
 ## Provider
 
@@ -84,7 +84,7 @@ Vaelis 拥有一个共享的 provider 运行时解析器，用于以下场景：
 
 ## 为什么这很重要
 
-该解析器是 Vaelis 能够在以下场景之间共享认证/运行时逻辑的主要原因：
+该解析器是 Plobi 能够在以下场景之间共享认证/运行时逻辑的主要原因：
 
 - `hermes chat`
 - gateway 消息处理
@@ -94,14 +94,14 @@ Vaelis 拥有一个共享的 provider 运行时解析器，用于以下场景：
 
 ## OpenRouter 与自定义 OpenAI 兼容 base URL
 
-Vaelis 包含相关逻辑，以避免在存在多个 provider 密钥时（例如同时存在 `OPENROUTER_API_KEY` 和 `OPENAI_API_KEY`）将错误的 API key 泄露给自定义端点。
+Plobi 包含相关逻辑，以避免在存在多个 provider 密钥时（例如同时存在 `OPENROUTER_API_KEY` 和 `OPENAI_API_KEY`）将错误的 API key 泄露给自定义端点。
 
 每个 provider 的 API key 仅作用于其自身的 base URL：
 
 - `OPENROUTER_API_KEY` 仅发送至 `openrouter.ai` 端点
 - `OPENAI_API_KEY` 用于自定义端点及作为回退
 
-Vaelis 还区分以下两种情况：
+Plobi 还区分以下两种情况：
 
 - 用户主动选择的真实自定义端点
 - 未配置自定义端点时使用的 OpenRouter 回退路径
@@ -117,7 +117,7 @@ Vaelis 还区分以下两种情况：
 
 Anthropic 不再仅限于"通过 OpenRouter"访问。
 
-当 provider 解析选择 `anthropic` 时，Vaelis 使用：
+当 provider 解析选择 `anthropic` 时，Plobi 使用：
 
 - `api_mode = anthropic_messages`
 - 原生 Anthropic Messages API
@@ -127,8 +127,8 @@ Anthropic 不再仅限于"通过 OpenRouter"访问。
 
 - 包含可刷新认证的 Claude Code 凭据文件被视为首选来源
 - 手动设置的 `ANTHROPIC_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` 值仍可作为显式覆盖
-- Vaelis 在调用原生 Messages API 前会预检 Anthropic 凭据刷新
-- Vaelis 在重建 Anthropic 客户端后，仍会在收到 401 时重试一次，作为回退路径
+- Plobi 在调用原生 Messages API 前会预检 Anthropic 凭据刷新
+- Plobi 在重建 Anthropic 客户端后，仍会在收到 401 时重试一次，作为回退路径
 
 ## OpenAI Codex 路径
 
@@ -150,7 +150,7 @@ Codex 使用独立的 Responses API 路径：
 
 这些任务可以使用各自独立的 provider/模型路由，而非主对话模型。
 
-当辅助任务配置的 provider 为 `main` 时，Vaelis 通过与普通对话相同的共享运行时路径进行解析。实际效果为：
+当辅助任务配置的 provider 为 `main` 时，Plobi 通过与普通对话相同的共享运行时路径进行解析。实际效果为：
 
 - 环境变量驱动的自定义端点仍然有效
 - 通过 `hermes model` / `config.yaml` 保存的自定义端点同样有效
@@ -158,7 +158,7 @@ Codex 使用独立的 Responses API 路径：
 
 ## 回退模型
 
-Vaelis 支持配置回退 provider 链——一个按顺序尝试的 `(provider, model)` 条目列表，当主模型遇到错误时依次尝试。旧版单对 `fallback_model` 字典仍被接受以保持向后兼容（并在首次写入时迁移）。
+Plobi 支持配置回退 provider 链——一个按顺序尝试的 `(provider, model)` 条目列表，当主模型遇到错误时依次尝试。旧版单对 `fallback_model` 字典仍被接受以保持向后兼容（并在首次写入时迁移）。
 
 ### 内部工作原理
 

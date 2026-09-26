@@ -40,7 +40,7 @@ result = agent.run_conversation(
 
 ## API Modes
 
-Vaelis supports three API execution modes, resolved from provider selection, explicit args, and base URL heuristics:
+Plobi supports three API execution modes, resolved from provider selection, explicit args, and base URL heuristics:
 
 | API mode | Used for | Client type |
 |----------|----------|-------------|

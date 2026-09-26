@@ -20,7 +20,7 @@ import pytest
 
 @pytest.fixture
 def fake_hermes(tmp_path, monkeypatch):
-    """Build a two-profile Vaelis layout and point HERMES_HOME at
+    """Build a two-profile Plobi layout and point HERMES_HOME at
     the hermes-security profile (matching the original-incident shape).
     """
     root = tmp_path / "fake-hermes"
@@ -250,9 +250,9 @@ class TestSystemPromptActiveProfile:
         # explicit user direction.
         from pathlib import Path
         src = Path("agent/system_prompt.py").read_text()
-        assert "Active Vaelis profile" in src
+        assert "Active Plobi profile" in src
         assert "cross_profile=True" in src
         assert "~/.hermes/profiles/" in src
         # Both branches present (default and named profile).
-        assert "Active Vaelis profile: default" in src
-        assert "Active Vaelis profile: {active_profile}" in src
+        assert "Active Plobi profile: default" in src
+        assert "Active Plobi profile: {active_profile}" in src

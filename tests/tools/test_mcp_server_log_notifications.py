@@ -2,7 +2,7 @@
 
 MCP servers can emit ``notifications/message`` logging notifications
 (RFC 5424 syslog levels). The MCP SDK's default ``logging_callback``
-silently discards them; Vaelis now passes ``_make_logging_callback()``
+silently discards them; Plobi now passes ``_make_logging_callback()``
 to ``ClientSession`` so server-side diagnostics land in agent.log,
 tagged with the server name.
 """

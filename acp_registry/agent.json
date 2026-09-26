@@ -1,11 +1,11 @@
 {
   "id": "hermes-agent",
-  "name": "Vaelis Agent",
+  "name": "Plobi Agent",
   "version": "0.18.2",
-  "description": "Self-improving open-source AI agent by Vaelis with ACP editor integration, persistent memory, skills, and rich tool support.",
-  "repository": "https://github.com/deyu-deng/Vaelis",
-  "website": "https://github.com/deyu-deng/Vaelis",
-  "authors": ["Vaelis"],
+  "description": "Self-improving open-source AI agent by Plobi with ACP editor integration, persistent memory, skills, and rich tool support.",
+  "repository": "https://github.com/deyu-deng/Plobi",
+  "website": "https://github.com/deyu-deng/Plobi",
+  "authors": ["Plobi"],
   "license": "MIT",
   "distribution": {
     "uvx": {

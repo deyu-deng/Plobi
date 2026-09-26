@@ -1,7 +1,7 @@
 ---
 sidebar_position: 11
 title: "Cron Internals"
-description: "How Vaelis stores, schedules, edits, pauses, skill-loads, and delivers cron jobs"
+description: "How Plobi stores, schedules, edits, pauses, skill-loads, and delivers cron jobs"
 ---
 
 # Cron Internals

@@ -78,5 +78,5 @@ if command -v "$1" >/dev/null 2>&1; then
     drop "$@"
 fi
 
-# Vaelis subcommand pass-through.
+# Plobi subcommand pass-through.
 drop hermes "$@"

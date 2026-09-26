@@ -1,0 +1,9 @@
+name: plobi-north-star
+version: "0.1.0"
+description: >-
+  Plobi North Star runtime: Master helpers, risk/stage task queue, HID worker
+  abstraction (Pico 2W), compute routing, preview bus, mobile command surface,
+  night autonomy hooks. Edge capability — does not grow the agent core waist.
+author: Plobi
+hooks:
+  - pre_gateway_dispatch

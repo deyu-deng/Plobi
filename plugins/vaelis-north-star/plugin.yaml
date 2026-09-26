@@ -1,9 +1,0 @@
-name: vaelis-north-star
-version: "0.1.0"
-description: >-
-  Vaelis North Star runtime: Master helpers, risk/stage task queue, HID worker
-  abstraction (Pico 2W), compute routing, preview bus, mobile command surface,
-  night autonomy hooks. Edge capability — does not grow the agent core waist.
-author: Vaelis
-hooks:
-  - pre_gateway_dispatch

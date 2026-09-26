@@ -541,7 +541,7 @@ _hermes_home: Path | None = None
 
 
 def _get_hermes_home() -> Path:
-    """Resolve Vaelis home dynamically while preserving test monkeypatch hooks.
+    """Resolve Plobi home dynamically while preserving test monkeypatch hooks.
 
     Cron is per-profile by design (#4707): the in-process ticker runs inside a
     profile-scoped gateway, so resolving the active HERMES_HOME at call time
@@ -734,7 +734,7 @@ def _open_continuable_cron_thread(
     if not callable(create_thread) or loop is None:
         return None
     task_name = job.get("name") or job.get("id", "cron")
-    thread_name = f"Vaelis — {task_name}"
+    thread_name = f"Plobi — {task_name}"
     try:
         from agent.async_utils import safe_schedule_threadsafe
 
@@ -2030,7 +2030,7 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
     (the `memory-watchdog.sh` pattern) without wrapping them in Python.
 
     Subprocess environment is passed through ``_sanitize_subprocess_env`` so
-    provider credentials and other Vaelis-managed secrets are not inherited
+    provider credentials and other Plobi-managed secrets are not inherited
     (SECURITY.md §2.3), matching terminal and MCP child processes.
 
     Args:

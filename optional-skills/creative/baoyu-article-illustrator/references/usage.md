@@ -1,6 +1,6 @@
 # Usage
 
-This skill is triggered by natural language in Vaelis — no slash command or CLI flags.
+This skill is triggered by natural language in Plobi — no slash command or CLI flags.
 
 ## Trigger Phrases
 

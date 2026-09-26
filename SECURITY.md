@@ -1,14 +1,14 @@
-# Vaelis Agent Security Policy
+# Plobi Agent Security Policy
 
-This document describes Vaelis Agent's trust model, names the one
+This document describes Plobi Agent's trust model, names the one
 security boundary the project treats as load-bearing, and defines the
 scope for vulnerability reports.
 
 ## 1. Reporting a Vulnerability
 
-Report privately via [GitHub Security Advisories](https://github.com/deyu-deng/Vaelis/security/advisories/new)
+Report privately via [GitHub Security Advisories](https://github.com/deyu-deng/Plobi/security/advisories/new)
 or **[安全联系邮箱占位]**. Do not open public issues for
-security vulnerabilities. **Vaelis Agent does not operate a bug
+security vulnerabilities. **Plobi Agent does not operate a bug
 bounty program.**
 
 A useful report includes:
@@ -31,13 +31,13 @@ through the private security channel.
 
 ## 2. Trust Model
 
-Vaelis Agent is a single-tenant personal agent. Its posture is
+Plobi Agent is a single-tenant personal agent. Its posture is
 layered, and the layers are not equally load-bearing. Reporters and
 operators should reason about them in the same terms.
 
 ### 2.1 Definitions
 
-- **Agent process.** The Python interpreter running Vaelis Agent,
+- **Agent process.** The Python interpreter running Plobi Agent,
   including any Python modules it has loaded (skills, plugins,
   hook handlers).
 - **Terminal backend.** A pluggable execution target for the
@@ -48,9 +48,9 @@ operators should reason about them in the same terms.
   agent's context: operator input, web fetches, email, gateway
   messages, file reads, MCP server responses, tool results.
 - **Trust envelope.** The set of resources an operator has implicitly
-  granted Vaelis Agent access to by running it — typically, whatever
+  granted Plobi Agent access to by running it — typically, whatever
   the operator's own user account can reach on the host.
-- **Stance.** An explicit statement in Vaelis Agent's documentation
+- **Stance.** An explicit statement in Plobi Agent's documentation
   or code about how a consuming layer (adapter, UI, file writer,
   shell) should treat agent output — e.g. "the dashboard renders
   agent output as inert HTML."
@@ -64,7 +64,7 @@ pattern scanner, not any tool allowlist. Any in-process component
 that screens LLM output is a heuristic operating on an
 attacker-influenced string, and this policy treats it as such.
 
-Vaelis Agent supports two OS-level isolation postures. They address
+Plobi Agent supports two OS-level isolation postures. They address
 different threats and an operator should choose deliberately.
 
 #### Terminal-backend isolation
@@ -94,9 +94,9 @@ sandbox. Every code path — shell, code-execution, MCP, file tools,
 plugins, hooks, skill loading — is subject to the same filesystem,
 network, process, and (where applicable) inference policy.
 
-Vaelis Agent supports this in two ways:
+Plobi Agent supports this in two ways:
 
-- **Vaelis Agent's own Docker image and Compose setup.** Lighter-
+- **Plobi Agent's own Docker image and Compose setup.** Lighter-
   weight; the agent runs in a standard container with operator-
   configured mounts and network policy.
 - **[NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell)**.
@@ -106,7 +106,7 @@ Vaelis Agent supports this in two ways:
   hot-reloadable. Credentials are injected from a Provider store
   and never touch the sandbox filesystem.
 
-Under a whole-process wrapper, Vaelis Agent's in-process heuristics
+Under a whole-process wrapper, Plobi Agent's in-process heuristics
 (§2.4) function as accident-prevention layered on top of a real
 boundary. This is the supported posture when the agent ingests
 content from surfaces the operator does not control — the open web,
@@ -120,7 +120,7 @@ outside the supported security posture.
 
 ### 2.3 Credential Scoping
 
-Vaelis Agent filters the environment it passes to its lower-trust
+Plobi Agent filters the environment it passes to its lower-trust
 in-process components: shell subprocesses, MCP subprocesses,
 cron job scripts, and the code-execution child. Credentials like
 provider API keys and gateway tokens are stripped by default;
@@ -163,8 +163,8 @@ called out separately because plugins are architecturally heavier
 and often ship their own background services, network listeners,
 and dependencies.
 
-A malicious or buggy plugin is not a vulnerability in Vaelis Agent
-itself. Bugs in Vaelis Agent's plugin-install or plugin-discovery
+A malicious or buggy plugin is not a vulnerability in Plobi Agent
+itself. Bugs in Plobi Agent's plugin-install or plugin-discovery
 path that prevent the operator from seeing what they're installing
 are in scope under §3.1.
 
@@ -175,7 +175,7 @@ process through which a caller can dispatch agent work, resolve
 approvals, or receive agent output. Each surface has its own
 authorization model, but the rules below apply uniformly.
 
-**Surfaces in Vaelis Agent:**
+**Surfaces in Plobi Agent:**
 
 - **Gateway platform adapters.** Messaging integrations in
   `gateway/platforms/` (Telegram, Discord, Slack, email, SMS, etc.)
@@ -209,7 +209,7 @@ authorization model, but the rules below apply uniformly.
    access to their approvals or output; authorization is always
    re-checked against the allowlist (or OS-level equivalent).
 4. **Within the authorized set, all callers are equally trusted.**
-   Vaelis Agent does not model per-caller capabilities inside a
+   Plobi Agent does not model per-caller capabilities inside a
    single adapter. Operators who need capability separation should
    run separate agent instances with separate allowlists.
 5. **Binding a local-only surface to a non-loopback interface is a
@@ -237,9 +237,9 @@ authorization model, but the rules below apply uniformly.
   (environment scrubbing bug, adapter logging, transport error
   that flushes credentials to an upstream, etc.).
 - Trust-model documentation violations: code behaving contrary to
-  what this policy, Vaelis Agent's own documentation, or reasonable
+  what this policy, Plobi Agent's own documentation, or reasonable
   operator expectations would predict — including cases where
-  Vaelis Agent has documented a stance about how its output should
+  Plobi Agent has documented a stance about how its output should
   be rendered by a consuming layer (dashboard, gateway adapter,
   file writer, shell) and a code path breaks that stance.
 
@@ -279,10 +279,10 @@ private-disclosure channel and don't receive advisories.
   configurations are not vulnerabilities — that's the flag's job.
 - **Community-contributed skills and plugins.** Third-party skills
   (including the community skills repository) and third-party
-  plugins are in the operator's review surface, not Vaelis Agent's
+  plugins are in the operator's review surface, not Plobi Agent's
   trust surface (§2.4, §2.5). A skill or plugin doing something
   malicious is the expected failure mode of one that wasn't
-  reviewed, not a vulnerability in Vaelis Agent. Bugs in Vaelis
+  reviewed, not a vulnerability in Plobi Agent. Bugs in Plobi
   Agent's skill-install or plugin-install path that prevent the
   operator from seeing what they're installing are in scope under
   §3.1.
@@ -316,7 +316,7 @@ that:
   §2.5). For skills, this means reading the Python and scripts,
   not just SKILL.md. Skills Guard reports and the install audit
   log are the review surface.
-- Vaelis Agent includes supply-chain guards for MCP server
+- Plobi Agent includes supply-chain guards for MCP server
   launches and for dependency / bundled-package changes in CI; see
   `CONTRIBUTING.md` for specifics.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a Vaelis instance in an isolated sandbox — separate HERMES_HOME,
+# Run a Plobi instance in an isolated sandbox — separate HERMES_HOME,
 # separate Electron userData, and a distinct Desktop app name so it doesn't compete
 # with your main desktop instance's single-instance lock.
 #
@@ -29,7 +29,7 @@ print_help() {
   cat <<'EOF'
 Usage: dev-sandbox.sh [--persistent] [--] <command...>
 
-Run a Vaelis instance in an isolated sandbox.
+Run a Plobi instance in an isolated sandbox.
 
 Options:
   --persistent    Keep the sandbox dir across restarts (under the worktree

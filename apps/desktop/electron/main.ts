@@ -290,24 +290,24 @@ if (INSTALL_STAMP) {
   )
 }
 
-// VAELIS_HOME — the user-facing root for everything Vaelis-related.
+// PLOBI_HOME — the user-facing root for everything Plobi-related.
 //
-// We deliberately default to OUR OWN home (~/.vaelis) instead of Hermes's
-// ~/.hermes so Vaelis data (config.yaml, sessions, .env, auth.json, model
+// We deliberately default to OUR OWN home (~/.plobi) instead of Hermes's
+// ~/.hermes so Plobi data (config.yaml, sessions, .env, auth.json, model
 // cache, logs, plugins) is fully isolated from a co-installed official Hermes.
-// This is the first step in severing Vaelis from Hermes.
+// This is the first step in severing Plobi from Hermes.
 //
 // Resolution order:
-//   1. VAELIS_HOME env var          (explicit Vaelis override)
+//   1. PLOBI_HOME env var          (explicit Plobi override)
 //   2. HERMES_HOME env var          (fallback — kept so we can share data with
 //                                    an existing Hermes install during a
 //                                    transitional period; remove once severed)
-//   3. USER_DATA_OVERRIDE (tests)   -> <override>/vaelis-home
-//   4. Windows: %LOCALAPPDATA%\vaelis
-//      macOS/Linux: ~/.vaelis
+//   3. USER_DATA_OVERRIDE (tests)   -> <override>/plobi-home
+//   4. Windows: %LOCALAPPDATA%\plobi
+//      macOS/Linux: ~/.plobi
 function resolveHermesHome() {
-  if (process.env.VAELIS_HOME) {
-    return normalizeHermesHomeRoot(process.env.VAELIS_HOME)
+  if (process.env.PLOBI_HOME) {
+    return normalizeHermesHomeRoot(process.env.PLOBI_HOME)
   }
 
   if (process.env.HERMES_HOME) {
@@ -315,15 +315,15 @@ function resolveHermesHome() {
   }
 
   if (USER_DATA_OVERRIDE) {
-    return path.join(path.resolve(USER_DATA_OVERRIDE), 'vaelis-home')
+    return path.join(path.resolve(USER_DATA_OVERRIDE), 'plobi-home')
   }
 
   if (IS_WINDOWS) {
     // A GUI app launched from Explorer inherits the environment block captured
-    // at login, so a VAELIS_HOME/HERMES_HOME set via `setx` AFTER login is
+    // at login, so a PLOBI_HOME/HERMES_HOME set via `setx` AFTER login is
     // invisible in process.env even though the CLI (a fresh shell) sees it.
     const fromRegistry =
-      readWindowsUserEnvVar('VAELIS_HOME') || readWindowsUserEnvVar('HERMES_HOME')
+      readWindowsUserEnvVar('PLOBI_HOME') || readWindowsUserEnvVar('HERMES_HOME')
 
     if (fromRegistry) {
       return normalizeHermesHomeRoot(fromRegistry)
@@ -331,10 +331,10 @@ function resolveHermesHome() {
   }
 
   if (IS_WINDOWS && process.env.LOCALAPPDATA) {
-    return path.join(process.env.LOCALAPPDATA, 'vaelis')
+    return path.join(process.env.LOCALAPPDATA, 'plobi')
   }
 
-  return path.join(app.getPath('home'), '.vaelis')
+  return path.join(app.getPath('home'), '.plobi')
 }
 
 const HERMES_HOME = resolveHermesHome()
@@ -354,7 +354,7 @@ function pathWithHermesManagedNode(...entries) {
   return [...hermesManagedNodePathEntries(), ...entries, process.env.PATH].filter(Boolean).join(path.delimiter)
 }
 
-// ACTIVE_HERMES_ROOT — the canonical mutable Vaelis install. Same path
+// ACTIVE_HERMES_ROOT — the canonical mutable Plobi install. Same path
 // install.ps1 / install.sh use, so a desktop-only user and a CLI-only user end
 // up with identical layouts and can share one install.
 const ACTIVE_HERMES_ROOT = path.join(HERMES_HOME, 'hermes-agent')
@@ -377,7 +377,7 @@ const BOOTSTRAP_MARKER_SCHEMA_VERSION = 1
 const DESKTOP_CONNECTION_CONFIG_PATH = path.join(app.getPath('userData'), 'connection.json')
 const DESKTOP_UPDATE_CONFIG_PATH = path.join(app.getPath('userData'), 'updates.json')
 const DESKTOP_WINDOW_STATE_PATH = path.join(app.getPath('userData'), 'window-state.json')
-// active-profile.json records which Vaelis profile the desktop launches its
+// active-profile.json records which Plobi profile the desktop launches its
 // local backend as. When set, startHermes() passes `hermes --profile <name>
 // dashboard …`, which deterministically pins HERMES_HOME (see
 // _apply_profile_override in hermes_cli/main.py) and bypasses the sticky
@@ -428,7 +428,7 @@ const BOOT_FAKE_STEP_MS = (() => {
   return Math.max(120, raw)
 })()
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME || 'Vaelis'
+const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME || 'Plobi'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 
@@ -721,15 +721,15 @@ app.setName(APP_NAME)
 // Windows toast notifications silently no-op unless an AppUserModelID is set:
 // `new Notification().show()` returns without error and nothing appears. The
 // AUMID must match the installed Start Menu shortcut's AUMID, which
-// electron-builder derives from the build `appId` (com.vaelis.desktop) —
+// electron-builder derives from the build `appId` (com.plobi.desktop) —
 // keep this string in sync with package.json `build.appId`. macOS/Linux don't
 // need this, so gate it on Windows. (Fixes: desktop approval/turn notifications
 // never firing on Windows.)
 if (IS_WINDOWS) {
-  app.setAppUserModelId('com.vaelis.desktop')
+  app.setAppUserModelId('com.plobi.desktop')
 }
 
-// Seed the native About panel with the live Vaelis version. This is refreshed
+// Seed the native About panel with the live Plobi version. This is refreshed
 // on every open via the explicit "About" menu handler (refreshAboutPanel), so
 // an in-place `hermes update` mid-session is reflected without an app restart;
 // the seed here just covers the first open and any non-menu invocation path.
@@ -871,7 +871,7 @@ let nativeThemeListenerInstalled = false
 let bootProgressState = {
   error: null,
   fakeMode: BOOT_FAKE_MODE,
-  message: 'Waiting to start Vaelis backend',
+  message: 'Waiting to start Plobi backend',
   phase: 'idle',
   progress: 0,
   running: false,
@@ -1389,7 +1389,7 @@ async function waitForUpdateToFinish() {
   while (marker && Date.now() < deadline) {
     await advanceBootProgress(
       'backend.update-wait',
-      'An update is finishing — Vaelis will start automatically when it completes…',
+      'An update is finishing — Plobi will start automatically when it completes…',
       12
     )
     await new Promise(r => setTimeout(r, UPDATE_WAIT_POLL_MS))
@@ -1501,14 +1501,14 @@ function unwrapWindowsVenvHermesCommand(command, backendArgs) {
     })
   ) {
     rememberLog(
-      `Ignoring venv Vaelis at ${python}: runtime import probe failed (broken/partial venv); falling through to bootstrap.`
+      `Ignoring venv Plobi at ${python}: runtime import probe failed (broken/partial venv); falling through to bootstrap.`
     )
 
     return null
   }
 
   return {
-    label: `existing Vaelis Python at ${python}`,
+    label: `existing Plobi Python at ${python}`,
     command: python,
     args: ['-m', 'hermes_cli.main', ...backendArgs],
     bootstrap: false,
@@ -1685,7 +1685,7 @@ function findSystemPython() {
   //      miss real Python 3.13 installs (user-reported case).
   //
   // We also restrict ourselves to Python 3.11–3.13. 3.14 is the latest
-  // CPython but several Vaelis deps (notably pywinpty's Rust-built
+  // CPython but several Plobi deps (notably pywinpty's Rust-built
   // windows_x86_64_msvc crate) don't yet publish 3.14 wheels, and
   // `pip install -e .` falls back to source-build, which fails without
   // a Rust toolchain. install.ps1 sidesteps this by pinning to 3.11
@@ -1801,7 +1801,7 @@ function findSystemPython() {
   return null
 }
 
-// findGitBash — locate bash.exe on Windows. Vaelis' terminal tool requires
+// findGitBash — locate bash.exe on Windows. Plobi' terminal tool requires
 // bash (POSIX shell), and on Windows that's almost always Git for Windows'
 // bundled Git Bash. We check the same set of locations tools/environments/
 // local.py:_find_bash() checks at runtime, so a positive result here means
@@ -2380,7 +2380,7 @@ let updateInFlight = false
 // actually dies and the hand-off script can proceed immediately.
 let isQuittingForHandoff = false
 
-// Set when the user really means to quit (tray "Quit Vaelis", or any app.quit()
+// Set when the user really means to quit (tray "Quit Plobi", or any app.quit()
 // path — see the before-quit handler). Without it the close handler would just
 // re-hide the window and the app would be unquittable. Typed loosely because
 // main.ts is the untyped Electron entry; the decision itself lives in the pure,
@@ -2608,7 +2608,7 @@ async function releaseBackendLock(updateRoot, tag) {
 //
 // The desktop is a pure consumer: it does NOT git pull / pip install / rebuild
 // itself (the old open-coded git dance lived here and drifted from
-// `hermes update`). Instead we spawn the staged Vaelis-Setup binary with
+// `hermes update`). Instead we spawn the staged Plobi-Setup binary with
 // --update and quit, so it can run `hermes update` (which refuses while we
 // hold the venv shim) and rebuild the desktop with our exe already gone.
 //
@@ -2671,7 +2671,7 @@ async function applyUpdates(opts = {}) {
     emitUpdateProgress({
       stage: 'restart',
       message:
-        'Updating Vaelis — this window will close and the updater will open. Don’t reopen Vaelis yourself; it restarts automatically when the update finishes.',
+        'Updating Plobi — this window will close and the updater will open. Don’t reopen Plobi yourself; it restarts automatically when the update finishes.',
       percent: 100
     })
     repairMacUpdaterHelper(updater)
@@ -2701,8 +2701,8 @@ async function applyUpdates(opts = {}) {
       // user close the holder and retry. Restart our own backend so the app
       // keeps working after the failed attempt.
       const message =
-        'Update aborted: another process is holding the Vaelis install open ' +
-        '(a second Vaelis window or a terminal running hermes?). Close it and retry.'
+        'Update aborted: another process is holding the Plobi install open ' +
+        '(a second Plobi window or a terminal running hermes?). Close it and retry.'
 
       emitUpdateProgress({ stage: 'error', message, percent: null })
       startHermes().catch(() => {})
@@ -2908,7 +2908,7 @@ async function applyUpdatesPosixInApp(opts: any) {
     return { ok: true, manual: true, command: 'hermes update', hermesRoot: updateRoot }
   }
 
-  // Put the Vaelis-managed Node and the venv on PATH so `hermes desktop`'s
+  // Put the Plobi-managed Node and the venv on PATH so `hermes desktop`'s
   // npm build can find them on a machine with no system Node. Windows portable
   // Node lives directly under %LOCALAPPDATA%\hermes\node, not node\bin.
   const env: Record<string, string> = {
@@ -2958,7 +2958,7 @@ async function applyUpdatesPosixInApp(opts: any) {
     // best effort
   }
 
-  emitUpdateProgress({ stage: 'update', message: 'Updating Vaelis (git + dependencies)…', percent: 10 })
+  emitUpdateProgress({ stage: 'update', message: 'Updating Plobi (git + dependencies)…', percent: 10 })
 
   const updated = (await runStreamedUpdate(hermes, ['update', '--yes', ...branchArgs], {
     cwd: updateRoot,
@@ -2988,7 +2988,7 @@ async function applyUpdatesPosixInApp(opts: any) {
   if (rebuilt.code !== 0) {
     emitUpdateProgress({
       stage: 'error',
-      message: 'Backend updated, but the desktop rebuild failed. Restart Vaelis to retry.',
+      message: 'Backend updated, but the desktop rebuild failed. Restart Plobi to retry.',
       error: rebuilt.error || 'rebuild-failed'
     })
 
@@ -3035,7 +3035,7 @@ async function applyUpdatesPosixInApp(opts: any) {
     const outcome = decideRelaunchOutcome({ underUnpacked, sandboxOk })
 
     if (outcome === 'relaunch') {
-      emitUpdateProgress({ stage: 'restart', message: 'Restarting Vaelis…', percent: 100 })
+      emitUpdateProgress({ stage: 'restart', message: 'Restarting Plobi…', percent: 100 })
       // Preserve launch context across the re-exec: replay the original args
       // (filtered of Electron internals) and the env/cwd that define which
       // backend/profile/root this instance talks to. Without this the
@@ -3073,7 +3073,7 @@ async function applyUpdatesPosixInApp(opts: any) {
           backendUpdated: true,
           guiUpdated: false,
           manualRestart: true,
-          message: 'Backend updated. Quit and reopen Vaelis to load the new version.'
+          message: 'Backend updated. Quit and reopen Plobi to load the new version.'
         }
       }
     }
@@ -3083,7 +3083,7 @@ async function applyUpdatesPosixInApp(opts: any) {
         stage: 'guiSkew',
         message:
           'Backend updated, but the desktop app package was not changed. ' +
-          'Update or reinstall the Vaelis desktop app to match.',
+          'Update or reinstall the Plobi desktop app to match.',
         percent: 100
       })
       rememberLog(
@@ -3109,13 +3109,13 @@ async function applyUpdatesPosixInApp(opts: any) {
       sandboxBlocked: true,
       message:
         'Backend updated. The rebuilt app can’t relaunch automatically ' +
-        '(sandbox helper needs root). Quit and reopen Vaelis to finish.'
+        '(sandbox helper needs root). Quit and reopen Plobi to finish.'
     }
   }
 
   const rebuiltApp = [
-    path.join(updateRoot, 'apps', 'desktop', 'release', 'mac-arm64', 'Vaelis.app'),
-    path.join(updateRoot, 'apps', 'desktop', 'release', 'mac', 'Vaelis.app')
+    path.join(updateRoot, 'apps', 'desktop', 'release', 'mac-arm64', 'Plobi.app'),
+    path.join(updateRoot, 'apps', 'desktop', 'release', 'mac', 'Plobi.app')
   ].find(directoryExists)
 
   const targetApp = runningAppBundle()
@@ -3125,7 +3125,7 @@ async function applyUpdatesPosixInApp(opts: any) {
   if (!rebuiltApp || !targetApp) {
     emitUpdateProgress({
       stage: 'done',
-      message: 'Backend updated. Restart Vaelis to load the new version.',
+      message: 'Backend updated. Restart Plobi to load the new version.',
       percent: 100
     })
 
@@ -3164,7 +3164,7 @@ fi
   } catch (err) {
     emitUpdateProgress({
       stage: 'done',
-      message: 'Backend + app updated. Restart Vaelis to load the new version.',
+      message: 'Backend + app updated. Restart Plobi to load the new version.',
       percent: 100
     })
     rememberLog(`[updates] could not write swap script: ${err.message}; rebuilt app at ${rebuiltApp}`)
@@ -3336,7 +3336,7 @@ function isPackagedInstallPath(dir) {
 
 function resolveHermesCwd() {
   // In a packaged build, `process.cwd()` resolves to the install root (e.g.
-  // `…/win-unpacked` on Windows or `/Applications/Vaelis.app/Contents/...`
+  // `…/win-unpacked` on Windows or `/Applications/Plobi.app/Contents/...`
   // on macOS). Sessions spawned there leave files inside the app bundle
   // and bewilder users when "where did my files go?" is the install dir.
   // The user-configurable default project directory wins over everything,
@@ -3468,7 +3468,7 @@ function createActiveBackend(backendArgs) {
 
   return {
     kind: 'python',
-    label: `Vaelis at ${ACTIVE_HERMES_ROOT}`,
+    label: `Plobi at ${ACTIVE_HERMES_ROOT}`,
     command,
     args: ['-m', 'hermes_cli.main', ...backendArgs],
     env: buildDesktopBackendEnv({
@@ -3488,7 +3488,7 @@ function resolveHermesBackend(backendArgs) {
   const overrideRoot = process.env.HERMES_DESKTOP_HERMES_ROOT && path.resolve(process.env.HERMES_DESKTOP_HERMES_ROOT)
 
   if (overrideRoot && isHermesSourceRoot(overrideRoot)) {
-    const backend = createPythonBackend(overrideRoot, `Vaelis source at ${overrideRoot}`, backendArgs)
+    const backend = createPythonBackend(overrideRoot, `Plobi source at ${overrideRoot}`, backendArgs)
 
     if (backend) {
       return backend
@@ -3500,7 +3500,7 @@ function resolveHermesBackend(backendArgs) {
   //    installed `hermes` on PATH so local Python edits are actually exercised.
   //    (In dev with no checkout, SOURCE_REPO_ROOT won't pass isHermesSourceRoot.)
   if (!IS_PACKAGED && isHermesSourceRoot(SOURCE_REPO_ROOT)) {
-    const backend = createPythonBackend(SOURCE_REPO_ROOT, `Vaelis source at ${SOURCE_REPO_ROOT}`, backendArgs)
+    const backend = createPythonBackend(SOURCE_REPO_ROOT, `Plobi source at ${SOURCE_REPO_ROOT}`, backendArgs)
 
     if (backend) {
       return backend
@@ -3534,7 +3534,7 @@ function resolveHermesBackend(backendArgs) {
       } else if (!isWindowsBinaryPathInWsl(hermesOverride, { isWsl: IS_WSL })) {
         hermesCommand = hermesOverride
       } else {
-        rememberLog(`Ignoring Windows Vaelis override under WSL: ${hermesOverride}`)
+        rememberLog(`Ignoring Windows Plobi override under WSL: ${hermesOverride}`)
       }
     } else {
       hermesCommand = findOnPath('hermes')
@@ -3542,7 +3542,7 @@ function resolveHermesBackend(backendArgs) {
 
     if (hermesCommand) {
       if (looksLikeDesktopAppBinary(hermesCommand)) {
-        rememberLog(`Ignoring desktop app executable on PATH while resolving Vaelis CLI: ${hermesCommand}`)
+        rememberLog(`Ignoring desktop app executable on PATH while resolving Plobi CLI: ${hermesCommand}`)
         hermesCommand = null
       }
     }
@@ -3566,7 +3566,7 @@ function resolveHermesBackend(backendArgs) {
       if (verifyHermesCli(hermesCommand, { shell: shellForProbe })) {
         return (
           unwrapWindowsVenvHermesCommand(hermesCommand, backendArgs) || {
-            label: `existing Vaelis CLI at ${hermesCommand}`,
+            label: `existing Plobi CLI at ${hermesCommand}`,
             command: hermesCommand,
             args: backendArgs,
             bootstrap: false,
@@ -3578,7 +3578,7 @@ function resolveHermesBackend(backendArgs) {
       }
 
       rememberLog(
-        `Ignoring existing Vaelis CLI at ${hermesCommand}: --version probe failed; falling through to bootstrap.`
+        `Ignoring existing Plobi CLI at ${hermesCommand}: --version probe failed; falling through to bootstrap.`
       )
     }
   }
@@ -3624,7 +3624,7 @@ function resolveHermesBackend(backendArgs) {
   //    is a recoverable state the GUI can drive through.
   return {
     kind: 'bootstrap-needed',
-    label: 'Vaelis Agent not installed yet; bootstrap required',
+    label: 'Plobi Agent not installed yet; bootstrap required',
     command: null,
     args: backendArgs,
     bootstrap: true,
@@ -3655,11 +3655,11 @@ async function ensureRuntime(backend) {
   // will rewire startup to spawn the window first and route bootstrap events
   // to a renderer-side install overlay.
   if (backend.kind === 'bootstrap-needed') {
-    rememberLog('[bootstrap] no Vaelis install found; starting first-launch bootstrap')
+    rememberLog('[bootstrap] no Plobi install found; starting first-launch bootstrap')
 
     if (await handOffWindowsBootstrapRecovery('bootstrap-needed')) {
       const handoffError: Error & { isBootstrapFailure?: boolean; bootstrapHandedOff?: boolean } = new Error(
-        'Vaelis recovery was handed off to Vaelis Setup. The desktop will restart when recovery completes.'
+        'Plobi recovery was handed off to Plobi Setup. The desktop will restart when recovery completes.'
       )
 
       handoffError.isBootstrapFailure = true
@@ -3716,7 +3716,7 @@ async function ensureRuntime(backend) {
     bootstrapAbortController = null
 
     if (bootstrapResult.cancelled) {
-      const cancelledError = new Error('Vaelis install was cancelled.') as any
+      const cancelledError = new Error('Plobi install was cancelled.') as any
       cancelledError.isBootstrapFailure = true
       cancelledError.bootstrapCancelled = true
       bootstrapFailure = cancelledError
@@ -3725,7 +3725,7 @@ async function ensureRuntime(backend) {
 
     if (!bootstrapResult.ok) {
       const bootstrapError = new Error(
-        `Vaelis bootstrap failed${bootstrapResult.failedStage ? ` at stage '${bootstrapResult.failedStage}'` : ''}: ` +
+        `Plobi bootstrap failed${bootstrapResult.failedStage ? ` at stage '${bootstrapResult.failedStage}'` : ''}: ` +
           `${bootstrapResult.error || 'unknown error'}. ` +
           `Check ${path.join(HERMES_HOME, 'logs', 'desktop.log')} for the full transcript.`
       ) as any
@@ -3754,12 +3754,12 @@ async function ensureRuntime(backend) {
   // attests they ran successfully).
   if (!isHermesSourceRoot(ACTIVE_HERMES_ROOT)) {
     throw new Error(
-      `Vaelis install at ${ACTIVE_HERMES_ROOT} is missing or incomplete. ` +
+      `Plobi install at ${ACTIVE_HERMES_ROOT} is missing or incomplete. ` +
         'Reinstall via the desktop installer or scripts/install.ps1.'
     )
   }
 
-  // On Windows, preflight Git Bash. Vaelis' terminal tool calls bash.exe
+  // On Windows, preflight Git Bash. Plobi' terminal tool calls bash.exe
   // directly (tools/environments/local.py); without it the agent can't run
   // terminal commands. install.ps1's Stage-Git puts PortableGit at
   // %LOCALAPPDATA%\hermes\git\, which findGitBash() picks up, so for any
@@ -3767,10 +3767,10 @@ async function ensureRuntime(backend) {
   // here via an external `hermes` on PATH, this check still helps.
   if (IS_WINDOWS && !findGitBash()) {
     throw new Error(
-      'Git for Windows is required for Vaelis on Windows (provides Git Bash, ' +
+      'Git for Windows is required for Plobi on Windows (provides Git Bash, ' +
         "which the agent's terminal tool uses). Install it from " +
         'https://git-scm.com/download/win or run `winget install -e --id Git.Git`, ' +
-        'then relaunch Vaelis.'
+        'then relaunch Plobi.'
     )
   }
 
@@ -3785,15 +3785,15 @@ async function ensureRuntime(backend) {
     // install.ps1 succeeds. If we hit this, the user (or a deleted venv)
     // broke the invariant; tell them to re-run the install.
     throw new Error(
-      `Vaelis venv missing at ${VENV_ROOT}. Re-run the desktop installer or ` + '`scripts/install.ps1` to rebuild it.'
+      `Plobi venv missing at ${VENV_ROOT}. Re-run the desktop installer or ` + '`scripts/install.ps1` to rebuild it.'
     )
   }
 
   backend.command = getVenvPython(VENV_ROOT)
-  backend.label = `Vaelis at ${ACTIVE_HERMES_ROOT} (venv: ${VENV_ROOT})`
+  backend.label = `Plobi at ${ACTIVE_HERMES_ROOT} (venv: ${VENV_ROOT})`
   updateBootProgress({
     phase: 'runtime.ready',
-    message: 'Vaelis runtime is ready',
+    message: 'Plobi runtime is ready',
     progress: 82,
     running: true,
     error: null
@@ -3810,7 +3810,7 @@ function fetchJson(url, token, options: any = {}) {
     const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Vaelis backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported Plobi backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -3821,7 +3821,7 @@ function fetchJson(url, token, options: any = {}) {
         method: options.method || 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'X-Vaelis-Session-Token': token,
+          'X-Plobi-Session-Token': token,
           ...(body ? { 'Content-Length': String(body.length) } : {})
         }
       },
@@ -3855,7 +3855,7 @@ function fetchJson(url, token, options: any = {}) {
             reject(
               new Error(
                 `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                  'The endpoint is likely missing on the Vaelis backend.'
+                  'The endpoint is likely missing on the Plobi backend.'
               )
             )
 
@@ -3873,7 +3873,7 @@ function fetchJson(url, token, options: any = {}) {
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to Vaelis backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to Plobi backend after ${timeoutMs}ms`))
     })
 
     if (body) {
@@ -3886,7 +3886,7 @@ function fetchJson(url, token, options: any = {}) {
 function fetchPublicJson(url, options: any = {}) {
   // Credential-free JSON GET/POST for public gateway endpoints
   // (``/api/status``, ``/api/auth/providers``). Unlike ``fetchJson`` it sends
-  // NO ``X-Vaelis-Session-Token`` header — used by the auth-mode probe before
+  // NO ``X-Plobi-Session-Token`` header — used by the auth-mode probe before
   // any credentials exist, and any time we must not leak a token to an
   // endpoint that doesn't need one.
   return new Promise((resolve, reject) => {
@@ -3905,7 +3905,7 @@ function fetchPublicJson(url, options: any = {}) {
     const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Vaelis backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported Plobi backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -3944,7 +3944,7 @@ function fetchPublicJson(url, options: any = {}) {
             reject(
               new Error(
                 `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                  'The endpoint is likely missing on the Vaelis backend.'
+                  'The endpoint is likely missing on the Plobi backend.'
               )
             )
 
@@ -3962,7 +3962,7 @@ function fetchPublicJson(url, options: any = {}) {
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to Vaelis backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to Plobi backend after ${timeoutMs}ms`))
     })
 
     if (body) {
@@ -4602,7 +4602,7 @@ async function waitForHermes(baseUrl, token) {
     }
   }
 
-  throw new Error(`Vaelis backend did not become ready: ${lastError?.message || 'timeout'}`)
+  throw new Error(`Plobi backend did not become ready: ${lastError?.message || 'timeout'}`)
 }
 
 function getWindowButtonPosition() {
@@ -4657,7 +4657,7 @@ function sendClosePreviewRequested() {
 
 // Tell the renderer the machine just woke. Sleep silently drops the
 // renderer's WebSocket to the local backend; the renderer reconnects on this
-// signal so the chat composer doesn't stay stuck on "Starting Vaelis...".
+// signal so the chat composer doesn't stay stuck on "Starting Plobi...".
 function sendPowerResume() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
@@ -5119,7 +5119,7 @@ function installMediaPermissions() {
 // ---------------------------------------------------------------------------
 // OAuth remote-gateway auth.
 //
-// Hosted Vaelis gateways gate the dashboard behind an OAuth provider (e.g.
+// Hosted Plobi gateways gate the dashboard behind an OAuth provider (e.g.
 // Nous Research) instead of a static session token. The auth model is
 // fundamentally different from the token path:
 //
@@ -5319,7 +5319,7 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
       win = new BrowserWindow({
         width: 520,
         height: 720,
-        title: silent ? 'Connecting to Vaelis Cloud agent…' : 'Sign in to Vaelis gateway',
+        title: silent ? 'Connecting to Plobi Cloud agent…' : 'Sign in to Plobi gateway',
         autoHideMenuBar: true,
         // Silent cascade: start HIDDEN. The auto-SSO 302 chain completes in
         // well under a second, so the window normally never needs to show. We
@@ -5410,7 +5410,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
     }
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported Vaelis backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported Plobi backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -5439,7 +5439,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
         // already finished
       }
 
-      reject(new Error(`Timed out connecting to Vaelis backend after ${timeoutMs}ms`))
+      reject(new Error(`Timed out connecting to Plobi backend after ${timeoutMs}ms`))
     }, timeoutMs)
 
     request.on('response', res => {
@@ -5541,7 +5541,7 @@ async function freshGatewayWsUrl(profile) {
   return connection.wsUrl
 }
 
-// --- Vaelis Cloud discovery + silent per-agent sign-in (cloud-auto-discovery
+// --- Plobi Cloud discovery + silent per-agent sign-in (cloud-auto-discovery
 // Phase 3) ---------------------------------------------------------------
 //
 // The "cloud" connection mode lets a user sign in to the Nous portal ONCE in
@@ -5557,7 +5557,7 @@ async function freshGatewayWsUrl(profile) {
 
 // Canonical Nous portal base URL, overridable for staging/dev. Mirrors the CLI
 // convention (hermes_cli/auth.py DEFAULT_NOUS_PORTAL_URL + the same env names)
-// so a single override flips every Vaelis surface to the same portal.
+// so a single override flips every Plobi surface to the same portal.
 const DEFAULT_NOUS_PORTAL_URL = 'https://portal.nousresearch.com'
 
 function resolvePortalBaseUrl() {
@@ -5568,7 +5568,7 @@ function resolvePortalBaseUrl() {
 
 // Whether the OAuth partition currently holds a live Nous portal session — the
 // credential that powers both discovery and the silent cascade. The portal
-// authenticates via PRIVY, not the Vaelis gateway session cookies, so this
+// authenticates via PRIVY, not the Plobi gateway session cookies, so this
 // checks for the `privy-token` cookie on the portal host (NOT
 // hasLiveOauthSession, which looks for hermes_session_at/rt that the portal
 // never sets). See connection-config.ts cookiesHavePrivySession.
@@ -5607,7 +5607,7 @@ function openPortalLoginWindow() {
 
   return new Promise((resolve, reject) => {
     if (!app.isReady()) {
-      reject(new Error('Desktop is not ready to start a Vaelis Cloud sign-in.'))
+      reject(new Error('Desktop is not ready to start a Plobi Cloud sign-in.'))
 
       return
     }
@@ -5664,7 +5664,7 @@ function openPortalLoginWindow() {
       win = new BrowserWindow({
         width: 520,
         height: 720,
-        title: 'Sign in to Vaelis Cloud',
+        title: 'Sign in to Plobi Cloud',
         autoHideMenuBar: true,
         webPreferences: {
           contextIsolation: true,
@@ -5699,7 +5699,7 @@ function openPortalLoginWindow() {
   })
 }
 
-// Discover the hosted (Vaelis Cloud) agents the signed-in user can see. Calls
+// Discover the hosted (Plobi Cloud) agents the signed-in user can see. Calls
 // the NAS trimmed-summary endpoint over the partition-bound net, so the portal
 // session cookie is attached automatically (no bearer needed — NAS accepts the
 // cookie). Returns { agents } on success, or { needsOrgSelection: true, orgs }
@@ -5712,7 +5712,7 @@ async function discoverCloudAgents(org?: string) {
 
   if (!(await hasLivePortalSession())) {
     const err = new Error(
-      'You are not signed in to Vaelis Cloud. Open Settings → Gateway, choose Vaelis Cloud, and sign in.'
+      'You are not signed in to Plobi Cloud. Open Settings → Gateway, choose Plobi Cloud, and sign in.'
     ) as any
     err.needsCloudLogin = true
     throw err
@@ -5730,7 +5730,7 @@ async function discoverCloudAgents(org?: string) {
     // A 401 means the portal session lapsed between the liveness check and the
     // call — surface it as a re-login, not a generic failure.
     if (error && error.statusCode === 401) {
-      const err = new Error('Your Vaelis Cloud session has expired. Open Settings → Gateway and sign in again.') as any
+      const err = new Error('Your Plobi Cloud session has expired. Open Settings → Gateway and sign in again.') as any
       err.needsCloudLogin = true
       err.cause = error
       throw err
@@ -5835,7 +5835,7 @@ async function cloudAgentSilentSignIn(dashboardUrl) {
   // interactive prompt rather than a silent cascade. Discovery already gates on
   // this, but a selection can arrive after the session lapsed.
   if (!(await hasLivePortalSession())) {
-    const err = new Error('Your Vaelis Cloud session has expired. Sign in to Vaelis Cloud again.') as any
+    const err = new Error('Your Plobi Cloud session has expired. Sign in to Plobi Cloud again.') as any
     err.needsCloudLogin = true
     throw err
   }
@@ -5911,7 +5911,7 @@ function sanitizeConnectionProfiles(raw: Record<string, any>) {
       cleaned.token = entry.token
     }
 
-    // Preserve the Vaelis Cloud org tag on cloud-mode entries so Settings can
+    // Preserve the Plobi Cloud org tag on cloud-mode entries so Settings can
     // reopen into the same org for a per-profile cloud connection.
     if (cleaned.mode === 'cloud') {
       const org = String(entry.org || '').trim()
@@ -6028,7 +6028,7 @@ async function sanitizeDesktopConnectionConfig(config = readDesktopConnectionCon
   const authMode = normAuthMode(block.authMode)
   const remoteUrl = envOverride ? String(process.env.HERMES_DESKTOP_REMOTE_URL || '') : String(block.url || '')
   // The env override forces a plain remote connection. Otherwise reflect the
-  // saved mode, preserving 'cloud' (a Vaelis Cloud connection — Q6) so the UI
+  // saved mode, preserving 'cloud' (a Plobi Cloud connection — Q6) so the UI
   // reopens into the cloud picker; any non-remote-like value collapses to local.
   const savedMode = key ? scoped?.mode : config.mode
   const mode = envOverride ? 'remote' : modeIsRemoteLike(savedMode) ? savedMode : 'local'
@@ -6054,7 +6054,7 @@ async function sanitizeDesktopConnectionConfig(config = readDesktopConnectionCon
     remoteAuthMode: authMode,
     remoteOauthConnected,
     remoteUrl,
-    // The persisted Vaelis Cloud org (slug/id) for a cloud connection, or '' for
+    // The persisted Plobi Cloud org (slug/id) for a cloud connection, or '' for
     // remote/local. Lets Settings → Gateway reopen into the same org.
     cloudOrg: mode === 'cloud' ? String(block.org || '') : '',
     remoteTokenPreview: tokenPreview(remoteToken),
@@ -6068,7 +6068,7 @@ async function sanitizeDesktopConnectionConfig(config = readDesktopConnectionCon
 // Build + validate a `{ url, authMode, token }` remote block. OAuth gateways
 // authenticate via the login-window session cookie (verified at connect time in
 // resolveRemoteBackend), so only token-auth remotes require a saved token.
-// `org` (optional) is the Vaelis Cloud org slug/id the instance was discovered
+// `org` (optional) is the Plobi Cloud org slug/id the instance was discovered
 // under — persisted so Settings can reopen into the same org; omitted from the
 // block when empty so plain remote connections stay unchanged.
 function buildRemoteBlock(remoteUrl, authMode, token, org?: string) {
@@ -6102,7 +6102,7 @@ function coerceDesktopConnectionConfig(input: any = {}, existing = readDesktopCo
   // The block being edited: a per-profile entry or the global remote block.
   const rawExistingBlock = key ? existing.profiles?.[key] || {} : existing.remote || {}
   // Leaving a CLOUD connection unselects it: a cloud block's url/org/token
-  // describe a discovered Vaelis Cloud instance, NOT a user-owned remote gateway,
+  // describe a discovered Plobi Cloud instance, NOT a user-owned remote gateway,
   // so switching to local or remote must NOT inherit them (otherwise the stale
   // cloud URL lingers and re-selecting Cloud looks "already connected"). When the
   // saved block was cloud and the new mode is not cloud, start from an empty
@@ -6171,7 +6171,7 @@ async function buildRemoteConnection(rawUrl, authMode, token, source) {
     // the authoritative liveness check.
     if (!(await hasLiveOauthSession(baseUrl))) {
       const err = new Error(
-        'Remote Vaelis gateway uses OAuth, but you are not signed in. ' +
+        'Remote Plobi gateway uses OAuth, but you are not signed in. ' +
           'Open Settings → Gateway and click "Sign in", or switch back to Local.'
       ) as any
 
@@ -6206,7 +6206,7 @@ async function buildRemoteConnection(rawUrl, authMode, token, source) {
 
   if (!token) {
     throw new Error(
-      'Remote Vaelis gateway is selected, but no session token is saved. ' +
+      'Remote Plobi gateway is selected, but no session token is saved. ' +
         'Open Settings → Gateway and save a token, or switch back to Local.'
     )
   }
@@ -6250,7 +6250,7 @@ async function resolveRemoteBackend(profile) {
     if (!rawEnvToken) {
       throw new Error(
         'HERMES_DESKTOP_REMOTE_URL is set but HERMES_DESKTOP_REMOTE_TOKEN is not. ' +
-          'Both must be provided to connect to a remote Vaelis backend.'
+          'Both must be provided to connect to a remote Plobi backend.'
       )
     }
 
@@ -6310,7 +6310,7 @@ async function requestJsonForProfile(profile: string, path: string, method: Meth
 
 async function probeRemoteAuthMode(rawUrl) {
   // Determine how a remote gateway expects callers to authenticate, WITHOUT
-  // sending any credentials. ``/api/status`` is public on every Vaelis
+  // sending any credentials. ``/api/status`` is public on every Plobi
   // gateway (it backs the portal liveness probe) and reports:
   //   auth_required: true  → OAuth gate is engaged (cookie + ws-ticket auth)
   //   auth_required: false → loopback/--insecure: legacy session-token auth
@@ -6414,7 +6414,7 @@ async function testDesktopConnectionConfig(input: any = {}) {
   // connects — a separate transport with separate server-side guards (Host/
   // Origin, ws-ticket/token auth). Validating only the HTTP side produced a
   // false-positive "reachable" while the real boot still failed with "Could not
-  // connect to Vaelis gateway". Mirror the renderer's connect here so the test
+  // connect to Plobi gateway". Mirror the renderer's connect here so the test
   // reflects the full path the app actually uses.
   const wsUrl = await resolveTestWsUrl(baseUrl, authMode, token, { mintTicket: mintGatewayWsTicket })
 
@@ -6686,8 +6686,8 @@ async function spawnPoolBackend(profile, entry) {
   // step 3 in hermes_cli/main.py), so the child re-homes to this profile.
   // --host/--port resolved by serveBackendArgs: defaults to 127.0.0.1:<ephemeral>
   // (loopback + OS-assigned port) so the desktop auto-discovery contract is
-  // preserved; flips to 0.0.0.0:8787 when VAELIS_LAN=1 is set (process env or
-  // $HERMES_HOME/.env) so the Vaelis App on the same Wi-Fi can pair.
+  // preserved; flips to 0.0.0.0:8787 when PLOBI_LAN=1 is set (process env or
+  // $HERMES_HOME/.env) so the Plobi App on the same Wi-Fi can pair.
   const backendArgs = serveBackendArgs(profile)
   const backend = await ensureRuntime(resolveHermesBackend(backendArgs))
   // Route old runtimes (no `serve`) through the legacy `dashboard --no-open`.
@@ -6696,7 +6696,7 @@ async function spawnPoolBackend(profile, entry) {
   const webDist = resolveWebDist()
   const readyFile = backend.readyFile ? makeDashboardReadyFile() : null
 
-  rememberLog(`Starting Vaelis backend for profile "${profile}" via ${backend.label}`)
+  rememberLog(`Starting Plobi backend for profile "${profile}" via ${backend.label}`)
 
   const child = spawn(
     backend.command,
@@ -6737,17 +6737,17 @@ async function spawnPoolBackend(profile, entry) {
   })
 
   child.once('error', error => {
-    rememberLog(`Vaelis backend for profile "${profile}" failed to start: ${error.message}`)
+    rememberLog(`Plobi backend for profile "${profile}" failed to start: ${error.message}`)
     backendPool.delete(profile)
     rejectStart?.(error)
   })
   child.once('exit', (code, signal) => {
-    rememberLog(`Vaelis backend for profile "${profile}" exited (${signal || code})`)
+    rememberLog(`Plobi backend for profile "${profile}" exited (${signal || code})`)
     backendPool.delete(profile)
 
     if (!ready) {
       rejectStart?.(
-        new Error(`Vaelis backend for profile "${profile}" exited before it became ready (${signal || code}).`)
+        new Error(`Plobi backend for profile "${profile}" exited before it became ready (${signal || code}).`)
       )
     }
   })
@@ -6767,7 +6767,7 @@ async function spawnPoolBackend(profile, entry) {
 
   const authToken = await adoptServedDashboardToken(baseUrl, token, {
     childAlive: () => child.exitCode === null && !child.killed,
-    label: `Vaelis backend for profile "${profile}"`,
+    label: `Plobi backend for profile "${profile}"`,
     rememberLog
   })
 
@@ -6890,17 +6890,17 @@ async function startHermes() {
   }
 
   connectionPromise = (async () => {
-    await advanceBootProgress('backend.resolve', 'Resolving Vaelis backend', 8)
+    await advanceBootProgress('backend.resolve', 'Resolving Plobi backend', 8)
     // Resolve for the desktop's primary profile so a per-profile remote
     // override on the active profile is honored (falls back to env / global).
     const remote = await resolveRemoteBackend(primaryProfileKey())
 
     if (remote) {
-      await advanceBootProgress('backend.remote', `Connecting to remote Vaelis backend at ${remote.baseUrl}`, 24)
+      await advanceBootProgress('backend.remote', `Connecting to remote Plobi backend at ${remote.baseUrl}`, 24)
       await waitForHermes(remote.baseUrl, remote.token)
       updateBootProgress({
         phase: 'backend.ready',
-        message: 'Remote Vaelis backend is ready',
+        message: 'Remote Plobi backend is ready',
         progress: 94,
         running: true,
         error: null
@@ -6929,12 +6929,12 @@ async function startHermes() {
     const token = crypto.randomBytes(32).toString('base64url')
     // --host/--port resolved by serveBackendArgs: defaults to 127.0.0.1:<ephemeral>
     // (loopback + OS-assigned port) so the desktop auto-discovery contract is
-    // preserved; flips to 0.0.0.0:8787 when VAELIS_LAN=1 is set (process env or
-    // $HERMES_HOME/.env) so the Vaelis App on the same Wi-Fi can pair.
+    // preserved; flips to 0.0.0.0:8787 when PLOBI_LAN=1 is set (process env or
+    // $HERMES_HOME/.env) so the Plobi App on the same Wi-Fi can pair.
     const activeProfile = readActiveDesktopProfile()
     const backendArgs = serveBackendArgs(activeProfile)
 
-    await advanceBootProgress('backend.runtime', 'Resolving Vaelis runtime', 28)
+    await advanceBootProgress('backend.runtime', 'Resolving Plobi runtime', 28)
     const backend = await ensureRuntime(resolveHermesBackend(backendArgs))
     // Route old runtimes (no `serve`) through the legacy `dashboard --no-open`.
     backend.args = getBackendArgsForRuntime(backend)
@@ -6942,8 +6942,8 @@ async function startHermes() {
     const webDist = resolveWebDist()
     const readyFile = backend.readyFile ? makeDashboardReadyFile() : null
 
-    await advanceBootProgress('backend.spawn', `Starting Vaelis backend via ${backend.label}`, 84)
-    rememberLog(`Starting Vaelis backend via ${backend.label}`)
+    await advanceBootProgress('backend.spawn', `Starting Plobi backend via ${backend.label}`, 84)
+    rememberLog(`Starting Plobi backend via ${backend.label}`)
 
     hermesProcess = spawn(
       backend.command,
@@ -6985,11 +6985,11 @@ async function startHermes() {
     })
 
     hermesProcess.once('error', error => {
-      rememberLog(`Vaelis backend failed to start: ${error.message}`)
+      rememberLog(`Plobi backend failed to start: ${error.message}`)
       updateBootProgress(
         {
           error: error.message,
-          message: `Vaelis backend failed to start: ${error.message}`,
+          message: `Plobi backend failed to start: ${error.message}`,
           phase: 'backend.error',
           running: false
         },
@@ -7001,13 +7001,13 @@ async function startHermes() {
       rejectBackendStart?.(error)
     })
     hermesProcess.once('exit', (code, signal) => {
-      rememberLog(`Vaelis backend exited (${signal || code})`)
+      rememberLog(`Plobi backend exited (${signal || code})`)
       hermesProcess = null
       connectionPromise = null
       sendBackendExit({ code, signal })
 
       if (!backendReady) {
-        const message = `Vaelis backend exited before it became ready (${signal || code}).`
+        const message = `Plobi backend exited before it became ready (${signal || code}).`
         updateBootProgress(
           {
             error: message,
@@ -7019,13 +7019,13 @@ async function startHermes() {
         )
         rejectBackendStart?.(
           new Error(
-            `Vaelis backend exited before it became ready (${signal || code}). Log: ${DESKTOP_LOG_PATH}\n${recentHermesLog()}`
+            `Plobi backend exited before it became ready (${signal || code}). Log: ${DESKTOP_LOG_PATH}\n${recentHermesLog()}`
           )
         )
       }
     })
 
-    await advanceBootProgress('backend.port', 'Waiting for Vaelis backend to launch', 86)
+    await advanceBootProgress('backend.port', 'Waiting for Plobi backend to launch', 86)
 
     // Discover the ephemeral port the child bound to
     const port = await Promise.race([
@@ -7038,7 +7038,7 @@ async function startHermes() {
     }
 
     const baseUrl = `http://127.0.0.1:${port}`
-    await advanceBootProgress('backend.wait', 'Waiting for Vaelis backend to become ready', 90)
+    await advanceBootProgress('backend.wait', 'Waiting for Plobi backend to become ready', 90)
     await Promise.race([waitForHermes(baseUrl, token), backendStartFailed])
     backendReady = true
     backendStartFailure = null
@@ -7051,7 +7051,7 @@ async function startHermes() {
 
     updateBootProgress({
       phase: 'backend.ready',
-      message: 'Vaelis backend is ready. Finalizing desktop startup',
+      message: 'Plobi backend is ready. Finalizing desktop startup',
       progress: 94,
       running: true,
       error: null
@@ -7160,7 +7160,7 @@ function spawnSecondaryWindow({
     height: SESSION_WINDOW_MIN_HEIGHT,
     minWidth: SESSION_WINDOW_MIN_WIDTH,
     minHeight: SESSION_WINDOW_MIN_HEIGHT,
-    title: 'Vaelis',
+    title: 'Plobi',
     titleBarStyle: 'hidden',
     titleBarOverlay: getTitleBarOverlayOptions(),
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
@@ -7219,7 +7219,7 @@ function createNewSessionWindow() {
 
 // The pet overlay: a single transparent, frameless, always-on-top window that
 // hosts ONLY the floating mascot. Shift-clicking the in-window pet "pops it out"
-// here so it can leave the app's bounds and stay visible while Vaelis is
+// here so it can leave the app's bounds and stay visible while Plobi is
 // minimized (Codex-style task-completion glance). It carries no gateway
 // connection of its own — the main renderer is the single source of truth and
 // pushes pet state over IPC (hermes:pet-overlay:state); the overlay just renders
@@ -7251,7 +7251,7 @@ function spawnPetOverlayWindow(bounds) {
     // taskbar/alt-tab entry. On macOS, cmd-tab is app-level and this can make
     // the whole app look like it vanished when the only newly-created visible
     // window is a frameless overlay. Use NSPanel + Mission Control hiding below
-    // instead, leaving the main Vaelis app as the Dock/cmd-tab anchor.
+    // instead, leaving the main Plobi app as the Dock/cmd-tab anchor.
     skipTaskbar: !IS_MAC,
     hasShadow: false,
     alwaysOnTop: true,
@@ -7261,7 +7261,7 @@ function spawnPetOverlayWindow(bounds) {
     hiddenInMissionControl: IS_MAC,
     // Non-activating: the overlay must never become the app's key/main window,
     // or it (a frameless, taskbar-skipping panel) becomes the app's switcher
-    // anchor and the Vaelis icon drops out of cmd/alt-tab — especially when the
+    // anchor and the Plobi icon drops out of cmd/alt-tab — especially when the
     // main window is minimized. We flip this on only while the composer needs
     // the keyboard (see hermes:pet-overlay:set-focusable).
     focusable: false,
@@ -7290,7 +7290,7 @@ function spawnPetOverlayWindow(bounds) {
   try {
     // Electron docs: macOS may transform process type on each
     // setVisibleOnAllWorkspaces() call unless skipTransformProcessType=true,
-    // which briefly hides the Dock/cmd-tab presence. Keep Vaelis in the normal
+    // which briefly hides the Dock/cmd-tab presence. Keep Plobi in the normal
     // ForegroundApplication class so shift-clicking the pet never drops the app
     // out of app switchers.
     win.setVisibleOnAllWorkspaces(
@@ -7493,7 +7493,7 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
     ...computeWindowOptions(savedWindowState, screen.getAllDisplays()),
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
-    title: 'Vaelis',
+    title: 'Plobi',
     // Frameless title bar on every platform so the renderer can paint the
     // "hide sidebar" button (and other left-side titlebar tools) flush with
     // the top edge — matching the macOS layout where the traffic lights sit
@@ -7548,7 +7548,7 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
   mainWindow.once('ready-to-show', () => {
     // An autostart launch stays in the tray: the window and its renderer are
     // live (the backend still connects), it just never becomes visible until
-    // the user picks "Show Vaelis" from the tray menu.
+    // the user picks "Show Plobi" from the tray menu.
     if (!hidden && !windowParkedInTray && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show()
     }
@@ -7663,7 +7663,7 @@ ipcMain.handle('hermes:connection', async (_event, profile) => ensureBackend(pro
 // so the 'exit'/'error' handlers that would clear a dead connectionPromise never
 // fire — once the remote becomes unreachable across a sleep/wake the renderer
 // re-dials the same dead descriptor forever and the composer stays stuck on
-// "Starting Vaelis…". Before the renderer's backoff loop reconnects, it asks us
+// "Starting Plobi…". Before the renderer's backoff loop reconnects, it asks us
 // to confirm the cached PRIMARY backend is still reachable; if a remote one is
 // not, we drop the cache so the next getConnection() rebuilds it. Local backends
 // self-heal via their child 'exit' handler, so we never touch them here.
@@ -7696,7 +7696,7 @@ ipcMain.handle('hermes:connection:revalidate', async () => {
     // Unreachable remote: drop the stale cache so the renderer's next reconnect
     // tick rebuilds a fresh, reachable descriptor. resetHermesConnection only
     // nulls connectionPromise for a remote (no child to SIGTERM).
-    rememberLog('Cached remote Vaelis backend failed liveness probe; dropping stale connection.')
+    rememberLog('Cached remote Plobi backend failed liveness probe; dropping stale connection.')
     resetHermesConnection()
 
     return { ok: true, rebuilt: true }
@@ -7949,7 +7949,7 @@ async function chatlogHealthy(): Promise<boolean> {
 
 function resolveChatlogBinary(): null | string {
   const candidates = [
-    process.env.VAELIS_CHATLOG_BIN,
+    process.env.PLOBI_CHATLOG_BIN,
     process.env.CHATLOG_BIN,
     path.resolve(app.getAppPath(), '..', '..', 'tools', 'chatlog', 'bin', 'chatlog.exe'),
     path.join('D:', 'Tools', 'wechat', 'chatlog', 'chatlog.exe')
@@ -8028,7 +8028,7 @@ async function ensureChatlogServer(): Promise<void> {
   const exe = resolveChatlogBinary()
 
   if (!exe) {
-    rememberLog('[sidecar] chatlog binary not found; skip (set VAELIS_CHATLOG_BIN)')
+    rememberLog('[sidecar] chatlog binary not found; skip (set PLOBI_CHATLOG_BIN)')
     return
   }
 
@@ -8124,7 +8124,7 @@ async function ensureProductAigw(): Promise<void> {
     return
   }
 
-  const apiKey = process.env.AIGW_API_KEY || process.env.VAELIS_AIGW_API_KEY || 'sk-local-dev-key'
+  const apiKey = process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
   const result = await startAigwGateway('product', configPath, {}, {
     port: 8000,
     apiKey,
@@ -8148,9 +8148,9 @@ function ensureLocalSidecars(): void {
   })
 }
 
-// --- Vaelis Gateway (aigw) — local desktop-quota aggregator -----------------
+// --- Plobi Gateway (aigw) — local desktop-quota aggregator -----------------
 // Bridges the user's own aigw (OpenAI-compatible HTTP gateway) into onboarding
-// as a first-class "Use Vaelis Gateway" option. aigw is spawned as a child
+// as a first-class "Use Plobi Gateway" option. aigw is spawned as a child
 // process here; the renderer drives Start/Stop/Status and points the local
 // endpoint at it. Fully separate from the core hermes_cli backend so a failure
 // here never breaks the app's normal boot path.
@@ -8193,8 +8193,8 @@ function isAigwDir(dir: string): boolean {
 
 function resolveAigwDir(): string {
   // 1) Explicit override (for packaged builds or non-standard layouts).
-  if (process.env.VAELIS_AIGW_DIR) {
-    return process.env.VAELIS_AIGW_DIR
+  if (process.env.PLOBI_AIGW_DIR) {
+    return process.env.PLOBI_AIGW_DIR
   }
 
   // 2) Dev layout: apps/desktop -> apps -> repo root -> aigw
@@ -8219,7 +8219,7 @@ function resolveAigwDir(): string {
   }
 
   // 4) Bootstrap-installed backend clone (HERMES_HOME/hermes-agent/aigw).
-  //    After first-launch bootstrap the full Vaelis repo (including aigw/) is
+  //    After first-launch bootstrap the full Plobi repo (including aigw/) is
   //    cloned into HERMES_HOME, so a packaged desktop can find it there.
   const hermesHome = process.env.HERMES_HOME
   if (hermesHome) {
@@ -8478,7 +8478,7 @@ function aigwApiKeyFor(appId: string): string {
   return `sk-local-${appId}`
 }
 
-ipcMain.handle('vaelis-gateway:status', async (_event, appId: string = 'antigravity') => {
+ipcMain.handle('plobi-gateway:status', async (_event, appId: string = 'antigravity') => {
   const child = getAigwChild(appId)
   const running = child !== null && !child.killed
   const port = aigwPortFor(appId)
@@ -8491,7 +8491,7 @@ ipcMain.handle('vaelis-gateway:status', async (_event, appId: string = 'antigrav
   }
 })
 
-ipcMain.handle('vaelis-gateway:start', async (_event, appId: string = 'antigravity') => {
+ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravity') => {
   const port = aigwPortFor(appId)
   const apiKey = aigwApiKeyFor(appId)
   const existing = getAigwChild(appId)
@@ -8523,7 +8523,7 @@ ipcMain.handle('vaelis-gateway:start', async (_event, appId: string = 'antigravi
   return { ok: true, running: true, baseUrl: gw.baseUrl, pid: gw.pid ?? null }
 })
 
-ipcMain.handle('vaelis-gateway:stop', async (_event, appId?: string) => {
+ipcMain.handle('plobi-gateway:stop', async (_event, appId?: string) => {
   const ids = appId ? [appId] : [...aigwChildren.keys()]
 
   for (const id of ids) {
@@ -8543,7 +8543,7 @@ ipcMain.handle('vaelis-gateway:stop', async (_event, appId?: string) => {
   return { ok: true, running: false }
 })
 
-ipcMain.handle('vaelis-gateway:auth', async (_event, appId: string) => {
+ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   const aigwDir = resolveAigwDir()
 
   if (appId === 'antigravity') {
@@ -8636,7 +8636,7 @@ async function authWorkbuddy(aigwDir: string): Promise<{
       ok: false,
       code: 'WORKBUDDY_NOT_FOUND',
       installHint: '未检测到本地 Workbuddy：请把 workbuddy CLI 加入 PATH，或确保 Workbuddy 桌面端正在运行。',
-      error: 'No local Workbuddy detected (CLI not on PATH and no Workbuddy/Vaelis process running).'
+      error: 'No local Workbuddy detected (CLI not on PATH and no Workbuddy/Plobi process running).'
     }
   }
 
@@ -8715,7 +8715,7 @@ async function finishGatewayAuth(
 }
 
 // Detect a locally-available Workbuddy: prefer the CLI on PATH, else a running
-// Workbuddy/Vaelis desktop process (Windows UI Automation route).
+// Workbuddy/Plobi desktop process (Windows UI Automation route).
 function detectLocalWorkbuddy(): 'cli' | 'gui' | null {
   try {
     execFileSync('where.exe', ['workbuddy'], { windowsHide: true, timeout: 5000 })
@@ -8726,7 +8726,7 @@ function detectLocalWorkbuddy(): 'cli' | 'gui' | null {
 
   try {
     const out = execFileSync('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true, timeout: 5000 }).toString()
-    if (/\b(?:workbuddy|vaelis)\.exe/i.test(out)) {
+    if (/\b(?:workbuddy|plobi)\.exe/i.test(out)) {
       return 'gui'
     }
   } catch {
@@ -8852,7 +8852,7 @@ ipcMain.handle('hermes:connection-config:oauth-logout', async (_event, rawUrl) =
   return { ok: true, connected: baseUrl ? await hasLiveOauthSession(baseUrl) : false }
 })
 
-// --- Vaelis Cloud (cloud-auto-discovery Phase 3) ---
+// --- Plobi Cloud (cloud-auto-discovery Phase 3) ---
 // One portal login in the OAuth partition powers both discovery and the silent
 // per-agent cascade. See the discovery/cascade helpers above.
 ipcMain.handle('hermes:cloud:status', async () => ({
@@ -9147,7 +9147,7 @@ ipcMain.handle('hermes:notify', (_event, payload) => {
   const actions = Array.isArray(payload?.actions) ? payload.actions : []
 
   const notification = new Notification({
-    title: payload?.title || 'Vaelis',
+    title: payload?.title || 'Plobi',
     body: payload?.body || '',
     silent: Boolean(payload?.silent),
     actions: actions.map(action => ({ type: 'button', text: String(action?.text || '') }))
@@ -9520,7 +9520,7 @@ function terminalShellEnv() {
 
   // Strip color/theme-detection vars that ride along when Electron is launched
   // from a non-tty agent shell (Cursor's runner sets NO_COLOR/FORCE_COLOR=0
-  // /TERM=dumb; some terminals set COLORFGBG which would flip Vaelis' TUI into
+  // /TERM=dumb; some terminals set COLORFGBG which would flip Plobi' TUI into
   // light-mode). Our PTY is a real xterm-compat terminal — force truecolor.
   delete env.NO_COLOR
   delete env.FORCE_COLOR
@@ -9529,7 +9529,7 @@ function terminalShellEnv() {
   env.COLORTERM = 'truecolor'
   env.LC_CTYPE = env.LC_CTYPE || 'UTF-8'
   env.TERM = 'xterm-256color'
-  env.TERM_PROGRAM = 'Vaelis'
+  env.TERM_PROGRAM = 'Plobi'
   env.TERM_PROGRAM_VERSION = app.getVersion()
 
   // Let a hermes/--tui launched in this pane know it's embedded in the desktop
@@ -9811,9 +9811,9 @@ ipcMain.handle('hermes:updates:branch:set', async (_event, name) => {
   return { branch }
 })
 
-// Resolve the canonical Vaelis version (the one `release.py` bumps in
+// Resolve the canonical Plobi version (the one `release.py` bumps in
 // hermes_cli/__init__.py + pyproject.toml) so the desktop About panel shows the
-// real Vaelis version instead of the Electron app's own package.json version,
+// real Plobi version instead of the Electron app's own package.json version,
 // which historically drifted (stuck at 0.0.2). Falls back to app.getVersion()
 // when the source tree can't be read (e.g. a packaged build without the repo).
 function resolveHermesVersion() {
@@ -9836,7 +9836,7 @@ function resolveHermesVersion() {
   return app.getVersion()
 }
 
-// Re-resolve the live Vaelis version and push it into the native About panel
+// Re-resolve the live Plobi version and push it into the native About panel
 // just before showing it, so an in-place `hermes update` is reflected without
 // an app restart. macOS only — `showAboutPanel()` is a no-op elsewhere, and the
 // other platforms don't use this menu item.
@@ -9964,7 +9964,7 @@ async function runDesktopUninstall(mode) {
     return {
       ok: false,
       error: 'agent-missing',
-      message: `Can't run the uninstaller: no Vaelis agent venv at ${VENV_ROOT}.`
+      message: `Can't run the uninstaller: no Plobi agent venv at ${VENV_ROOT}.`
     }
   }
 
@@ -10079,12 +10079,12 @@ ipcMain.handle('hermes:vscode-theme:fetch', async (_event, id) => fetchMarketpla
 ipcMain.handle('hermes:vscode-theme:search', async (_event, query) => searchMarketplaceThemes(String(query || ''), 20))
 
 // ---------------------------------------------------------------------------
-// vaelis:// deep links (e.g. vaelis://blueprint/morning-brief?time=08:00).
+// plobi:// deep links (e.g. plobi://blueprint/morning-brief?time=08:00).
 // A docs/dashboard "Send to App" button opens this URL; we route it into the
 // running app's chat composer. Three delivery paths: macOS 'open-url',
 // Win/Linux running-app 'second-instance' (argv), Win/Linux cold-start argv.
 // ---------------------------------------------------------------------------
-const VAELIS_PROTOCOL = 'vaelis'
+const PLOBI_PROTOCOL = 'plobi'
 let _pendingDeepLink = null
 let _rendererReadyForDeepLink = false
 
@@ -10093,7 +10093,7 @@ function _extractDeepLink(argv) {
     return null
   }
 
-  return argv.find(a => typeof a === 'string' && a.startsWith(`${VAELIS_PROTOCOL}://`)) || null
+  return argv.find(a => typeof a === 'string' && a.startsWith(`${PLOBI_PROTOCOL}://`)) || null
 }
 
 function handleDeepLink(url) {
@@ -10110,7 +10110,7 @@ function handleDeepLink(url) {
     return
   }
 
-  // vaelis://blueprint/<key>?slot=val  -> host="blueprint", path="/<key>"
+  // plobi://blueprint/<key>?slot=val  -> host="blueprint", path="/<key>"
   const kind = parsed.hostname || ''
   const name = decodeURIComponent((parsed.pathname || '').replace(/^\//, ''))
   const params = {}
@@ -10146,7 +10146,7 @@ ipcMain.handle('hermes:deep-link-ready', () => {
     const queued = _pendingDeepLink
     _pendingDeepLink = null
     handleDeepLink(
-      `${VAELIS_PROTOCOL}://${queued.kind}/${encodeURIComponent(queued.name)}` +
+      `${PLOBI_PROTOCOL}://${queued.kind}/${encodeURIComponent(queued.name)}` +
         (Object.keys(queued.params).length ? '?' + new URLSearchParams(queued.params).toString() : '')
     )
   }
@@ -10159,9 +10159,9 @@ function registerDeepLinkProtocol() {
     if (process.defaultApp && process.argv.length >= 2) {
       // Dev: register with the electron exec path + entry script so the OS can
       // relaunch us with the URL.
-      app.setAsDefaultProtocolClient(VAELIS_PROTOCOL, process.execPath, [path.resolve(process.argv[1])])
+      app.setAsDefaultProtocolClient(PLOBI_PROTOCOL, process.execPath, [path.resolve(process.argv[1])])
     } else {
-      app.setAsDefaultProtocolClient(VAELIS_PROTOCOL)
+      app.setAsDefaultProtocolClient(PLOBI_PROTOCOL)
     }
   } catch (err) {
     rememberLog(`[deeplink] protocol registration failed: ${err.message}`)
@@ -10169,7 +10169,7 @@ function registerDeepLinkProtocol() {
 }
 
 // Single-instance lock: deep links on a running app (Win/Linux) arrive as a
-// second-instance argv. Without the lock a second `vaelis://` launch spawns a
+// second-instance argv. Without the lock a second `plobi://` launch spawns a
 // whole new app instead of routing into the running one.
 const _gotSingleInstanceLock = app.requestSingleInstanceLock()
 
@@ -10218,7 +10218,7 @@ app.whenReady().then(() => {
   // a Startup script deleted by hand while the toggle is still ON comes back.
   syncAutostartArtifacts(readShellSettingsState().openAtLogin)
 
-  // Win/Linux cold start: the launching vaelis:// URL is in our own argv.
+  // Win/Linux cold start: the launching plobi:// URL is in our own argv.
   const _coldStartLink = _extractDeepLink(process.argv)
 
   if (_coldStartLink) {
@@ -10259,7 +10259,7 @@ function configureSpellChecker() {
 }
 
 app.on('before-quit', () => {
-  // Any quit path — tray "Quit Vaelis", the macOS app menu, an updater
+  // Any quit path — tray "Quit Plobi", the macOS app menu, an updater
   // hand-off — must be able to close windows for real. Flipping this here (not
   // only in the tray handler) means the close handler can never turn a quit
   // into a hide and strand an unquittable headless process.

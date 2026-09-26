@@ -113,7 +113,7 @@ class TestParseSchedule:
             parse_schedule("99 99 99 99 99")
 
     def test_naive_iso_anchors_to_configured_tz_not_server_local(self, monkeypatch):
-        """A naive ISO timestamp must be interpreted in the CONFIGURED Vaelis
+        """A naive ISO timestamp must be interpreted in the CONFIGURED Plobi
         timezone, NOT the server's local timezone (#51021).
 
         Regression: when the configured zone differs from the server's local
@@ -143,7 +143,7 @@ class TestParseSchedule:
 
 class TestNaiveScheduleTimezoneDivergence:
     """End-to-end: a one-shot created with a naive recent-past timestamp must
-    become due even when the configured Vaelis timezone differs from the
+    become due even when the configured Plobi timezone differs from the
     server's local timezone. Before #51021 the naive value was anchored to
     server-local, so the job never fired."""
 
@@ -1306,7 +1306,7 @@ class TestGetDueJobs:
         now = datetime(2026, 5, 19, 13, 2, 0, tzinfo=current_tz)
         monkeypatch.setattr("cron.jobs._hermes_now", lambda: now)
 
-        # A 21:00 cron was stored while Vaelis/system local time was UTC+10.
+        # A 21:00 cron was stored while Plobi/system local time was UTC+10.
         # After the host moves to UTC+02, that absolute timestamp converts to
         # 13:00+02.  At 13:02+02 the old code considered it due and fired, even
         # though the user's local wall-clock cron intent is still 21:00.

@@ -85,7 +85,7 @@ export function findLatestSessionForProfile<
 }
 
 export function l1MainSessionKey(profile: string): string {
-  return `vaelis.desktop.l1MainSession.${normalizeProfileKey(profile)}`
+  return `plobi.desktop.l1MainSession.${normalizeProfileKey(profile)}`
 }
 
 export function readL1MainSessionId(profile: string): null | string {

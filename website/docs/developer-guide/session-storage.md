@@ -1,6 +1,6 @@
 # Session Storage
 
-Vaelis Agent uses a SQLite database (`~/.hermes/state.db`) to persist session
+Plobi Agent uses a SQLite database (`~/.hermes/state.db`) to persist session
 metadata, full message history, and model configuration across CLI and gateway
 sessions. This replaces the earlier per-session JSONL file approach.
 

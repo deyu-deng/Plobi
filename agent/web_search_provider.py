@@ -61,7 +61,7 @@ def get_provider_env(name: str) -> str:
 
     Resolves *name* via :func:`hermes_cli.config.get_env_value` (checks
     ``os.environ`` first, then ``~/.hermes/.env``) so credentials set
-    through Vaelis' config layer are visible even when they were never
+    through Plobi' config layer are visible even when they were never
     exported into the process environment — gateway sessions, delegate
     children, and subprocess agent runs (issue #40190). Falls back to a
     bare ``os.getenv`` when the config module is unavailable (stripped

@@ -75,12 +75,12 @@ def _add_server_runtime_args(parser) -> None:
     parser.add_argument(
         "--stop",
         action="store_true",
-        help="Stop all running Vaelis web server processes and exit",
+        help="Stop all running Plobi web server processes and exit",
     )
     parser.add_argument(
         "--status",
         action="store_true",
-        help="List running Vaelis web server processes and exit",
+        help="List running Plobi web server processes and exit",
     )
 
 
@@ -101,19 +101,19 @@ def build_dashboard_parser(
     dashboard_parser = subparsers.add_parser(
         "dashboard",
         help="Start the web UI dashboard",
-        description="Launch the Vaelis Agent web dashboard for managing config, API keys, and sessions",
+        description="Launch the Plobi Agent web dashboard for managing config, API keys, and sessions",
     )
     _add_server_runtime_args(dashboard_parser)
     dashboard_parser.add_argument(
         "--no-open", action="store_true", help="Don't open browser automatically"
     )
-    # Backward-compat shim: older Vaelis desktop app shells (<= 0.15.x) spawn the
+    # Backward-compat shim: older Plobi desktop app shells (<= 0.15.x) spawn the
     # backend as `hermes dashboard --no-open --tui --host ... --port ...`. The
     # `--tui` flag was removed from this subcommand in cae6b5486 (embedded chat is
     # always on now). When a user's CLI updates past that commit but their desktop
     # app binary has not, argparse used to hard-error with "unrecognized arguments:
     # --tui" and exit(2) — the backend died before becoming ready and the GUI just
-    # showed "Vaelis couldn't start" with no actionable cause. Accept and silently
+    # showed "Plobi couldn't start" with no actionable cause. Accept and silently
     # ignore the flag so an old app + new CLI degrades gracefully instead of
     # bricking. Hidden from --help; safe to delete once the floor app version is
     # well past 0.16.0.
@@ -128,16 +128,16 @@ def build_dashboard_parser(
     # serve command — the headless backend server
     #
     # `serve` boots the exact same gateway as `dashboard` but never opens a
-    # browser. It exists so the Vaelis Desktop app (and headless remote
+    # browser. It exists so the Plobi Desktop app (and headless remote
     # backends) can launch a backend WITHOUT invoking `dashboard`: the desktop
     # app and the web dashboard are independent surfaces that merely share this
     # server, and neither should appear to launch the other.
     # =========================================================================
     serve_parser = subparsers.add_parser(
         "serve",
-        help="Start the Vaelis backend server (headless; powers the desktop app and remote backends)",
+        help="Start the Plobi backend server (headless; powers the desktop app and remote backends)",
         description=(
-            "Run the Vaelis backend server — the JSON-RPC/WebSocket gateway the "
+            "Run the Plobi backend server — the JSON-RPC/WebSocket gateway the "
             "desktop app and remote clients connect to. Headless: it never opens "
             "a browser UI."
         ),

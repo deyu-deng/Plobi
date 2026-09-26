@@ -905,7 +905,7 @@ class DingTalkAdapter(BasePlatformAdapter):
 
         payload = {
             "msgtype": "markdown",
-            "markdown": {"title": "Vaelis", "text": normalized},
+            "markdown": {"title": "Plobi", "text": normalized},
         }
 
         try:
@@ -1686,7 +1686,7 @@ def _build_adapter(config):
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Vaelis plugin system."""
+    """Plugin entry point — called by the Plobi plugin system."""
     ctx.register_platform(
         name="dingtalk",
         label="DingTalk",

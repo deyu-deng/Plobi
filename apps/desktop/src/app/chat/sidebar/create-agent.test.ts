@@ -14,7 +14,7 @@ import {
 describe('agentIdFromName', () => {
   it('lowerCases and hyphenates', () => {
     expect(agentIdFromName('My Project')).toBe('my-project')
-    expect(agentIdFromName('VaElis Code')).toBe('vaelis-code')
+    expect(agentIdFromName('plobi Code')).toBe('plobi-code')
   })
 
   it('falls back to an l2- timestamped slug for empty/CJK-only input', () => {
@@ -75,14 +75,14 @@ describe('categoryNeedsProjectPath (WP-STUDIO, 裁定 36.1)', () => {
 
 describe('buildCreateAgentBody projectPath (WP-STUDIO, 裁定 36.1)', () => {
   it('forwards the picked folder for a projects agent', () => {
-    const body = buildCreateAgentBody('Code', 'projects', 'D:/Projects/Vaelis/Code')
+    const body = buildCreateAgentBody('Code', 'projects', 'D:/Projects/Plobi/Code')
 
     expect(body).toEqual({
       id: 'code',
       name: 'Code',
       role: 'l2_project',
       category: 'projects',
-      projectPath: 'D:/Projects/Vaelis/Code'
+      projectPath: 'D:/Projects/Plobi/Code'
     })
   })
 

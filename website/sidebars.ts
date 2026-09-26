@@ -19,7 +19,7 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Using Vaelis',
+      label: 'Using Plobi',
       collapsed: true,
       items: [
         'user-guide/cli',

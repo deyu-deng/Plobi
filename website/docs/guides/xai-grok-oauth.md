@@ -1,18 +1,18 @@
 ---
 sidebar_position: 16
 title: "xAI Grok OAuth (SuperGrok / X Premium+)"
-description: "Sign in with your SuperGrok or X Premium+ subscription to use Grok models in Vaelis Agent — no API key required"
+description: "Sign in with your SuperGrok or X Premium+ subscription to use Grok models in Plobi Agent — no API key required"
 ---
 
 # xAI Grok OAuth (SuperGrok / X Premium+)
 
-Vaelis Agent supports xAI Grok through a browser-based OAuth device-code login flow against [accounts.x.ai](https://accounts.x.ai), using either a **SuperGrok subscription** ([grok.com](https://x.ai/grok)) or an **X Premium+ subscription** (linked X account). No `XAI_API_KEY` is required — log in once and Vaelis automatically refreshes your session in the background.
+Plobi Agent supports xAI Grok through a browser-based OAuth device-code login flow against [accounts.x.ai](https://accounts.x.ai), using either a **SuperGrok subscription** ([grok.com](https://x.ai/grok)) or an **X Premium+ subscription** (linked X account). No `XAI_API_KEY` is required — log in once and Plobi automatically refreshes your session in the background.
 
 When you sign in with an X account that has Premium+, xAI automatically links the subscription status to your xAI session, so the OAuth flow works the same as it does for direct SuperGrok subscribers.
 
 The transport reuses the `codex_responses` adapter (xAI exposes a Responses-style endpoint), so reasoning, tool-calling, streaming, and prompt caching work without any adapter changes.
 
-The same OAuth bearer token is also reused by every direct-to-xAI surface in Vaelis — TTS, image generation, video generation, and transcription — so a single login covers all four.
+The same OAuth bearer token is also reused by every direct-to-xAI surface in Plobi — TTS, image generation, video generation, and transcription — so a single login covers all four.
 
 ## Overview
 
@@ -31,7 +31,7 @@ The same OAuth bearer token is also reused by every direct-to-xAI surface in Vae
 ## Prerequisites
 
 - Python 3.9+
-- Vaelis Agent installed
+- Plobi Agent installed
 - An active **SuperGrok** subscription on your xAI account, **or** an **X Premium+** subscription on the X account you sign in with (xAI links the subscription automatically)
 - A browser available anywhere you can open the printed verification URL
 
@@ -45,7 +45,7 @@ xAI's backend enforces its own allowlist on the OAuth API surface and has been s
 # Launch the provider and model picker
 hermes model
 # → Select "xAI Grok OAuth (SuperGrok / X Premium+)" from the provider list
-# → Vaelis opens or prints an accounts.x.ai verification URL
+# → Plobi opens or prints an accounts.x.ai verification URL
 # → Enter the displayed code if prompted, then approve access in the browser
 # → Pick a model (grok-build-0.1 is at the top)
 # → Start chatting
@@ -65,21 +65,21 @@ hermes auth add xai-oauth
 
 ### Remote / headless sessions
 
-On servers, containers, browser-only consoles (Cloud Shell, Codespaces, EC2 Instance Connect), or SSH sessions where Vaelis cannot open a browser locally, Vaelis prints the xAI verification URL and user code. Open the URL in any browser on your laptop or in the cloud console, enter the code if prompted, and Vaelis will keep polling until xAI approves the login. No SSH tunnel or local callback listener is required.
+On servers, containers, browser-only consoles (Cloud Shell, Codespaces, EC2 Instance Connect), or SSH sessions where Plobi cannot open a browser locally, Plobi prints the xAI verification URL and user code. Open the URL in any browser on your laptop or in the cloud console, enter the code if prompted, and Plobi will keep polling until xAI approves the login. No SSH tunnel or local callback listener is required.
 
 ```bash
 hermes auth add xai-oauth --no-browser
 # Open the printed verification URL in your browser.
 ```
 
-The same device-code flow applies when you sign in from the web dashboard or the desktop app: Vaelis shows the verification URL and user code, then polls in the background until you approve access.
+The same device-code flow applies when you sign in from the web dashboard or the desktop app: Plobi shows the verification URL and user code, then polls in the background until you approve access.
 
 ## How the Login Works
 
-1. Vaelis requests a device code from `auth.x.ai`.
+1. Plobi requests a device code from `auth.x.ai`.
 2. You open the verification URL, sign in, enter the displayed code if prompted, and approve access.
-3. Vaelis polls xAI until approval, then saves tokens to `~/.hermes/auth.json`.
-4. From then on, Vaelis refreshes the access token in the background — you stay signed in until you `hermes auth logout xai-oauth` or revoke access from your xAI account settings.
+3. Plobi polls xAI until approval, then saves tokens to `~/.hermes/auth.json`.
+4. From then on, Plobi refreshes the access token in the background — you stay signed in until you `hermes auth logout xai-oauth` or revoke access from your xAI account settings.
 
 ## Checking Login Status
 
@@ -179,21 +179,21 @@ To select xAI as the active provider, set `model.provider: xai-oauth` in `config
 
 ### Token expired — not re-logging in automatically
 
-Vaelis refreshes the token before each session and again reactively on a 401. If refresh fails with `invalid_grant` (the refresh token was revoked, or the account was rotated), Vaelis surfaces a typed re-auth message instead of crashing.
+Plobi refreshes the token before each session and again reactively on a 401. If refresh fails with `invalid_grant` (the refresh token was revoked, or the account was rotated), Plobi surfaces a typed re-auth message instead of crashing.
 
-When the refresh failure is terminal (HTTP 4xx, `invalid_grant`, revoked grant, etc.), Vaelis marks the refresh token as dead and quarantines it locally — subsequent calls skip the doomed refresh attempt instead of replaying the same 401 over and over. The agent surfaces a single "re-authentication required" message and stays out of the way until you log in again.
+When the refresh failure is terminal (HTTP 4xx, `invalid_grant`, revoked grant, etc.), Plobi marks the refresh token as dead and quarantines it locally — subsequent calls skip the doomed refresh attempt instead of replaying the same 401 over and over. The agent surfaces a single "re-authentication required" message and stays out of the way until you log in again.
 
 **Fix:** run `hermes auth add xai-oauth` again to start a fresh login. The quarantine clears on the next successful exchange.
 
 ### Authorization timed out
 
-Device-code approval has a finite expiry window (xAI sets `expires_in` on the device-code response, typically on the order of tens of minutes). If you do not approve the login in time, Vaelis raises a timeout error.
+Device-code approval has a finite expiry window (xAI sets `expires_in` on the device-code response, typically on the order of tens of minutes). If you do not approve the login in time, Plobi raises a timeout error.
 
 **Fix:** re-run `hermes auth add xai-oauth` (or `hermes model`). The flow starts fresh.
 
 ### Logging in from a remote server
 
-On SSH or container sessions Vaelis prints the verification URL and user code instead of opening a browser. Open that URL in a browser on your laptop or in a cloud console — no SSH port forward is needed for xAI Grok OAuth.
+On SSH or container sessions Plobi prints the verification URL and user code instead of opening a browser. Open that URL in a browser on your laptop or in a cloud console — no SSH port forward is needed for xAI Grok OAuth.
 
 ```bash
 hermes auth add xai-oauth --no-browser

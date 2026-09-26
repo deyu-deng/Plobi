@@ -2221,7 +2221,7 @@ export interface Translations {
         pending: string
         title: (date: string, count: number) => string
       }
-      /** 裁定 36.3: spoken preference proposal (`vaelis_checkin_respond`). */
+      /** 裁定 36.3: spoken preference proposal (`plobi_checkin_respond`). */
       checkin: {
         empty: string
         pending: string

@@ -1,22 +1,22 @@
 ---
 sidebar_position: 10
 title: "DingTalk"
-description: "Set up Vaelis Agent as a DingTalk chatbot"
+description: "Set up Plobi Agent as a DingTalk chatbot"
 ---
 
 # DingTalk Setup
 
-Vaelis Agent integrates with DingTalk (钉钉) as a chatbot, letting you chat with your AI assistant through direct messages or group chats. The bot connects via DingTalk's Stream Mode — a long-lived WebSocket connection that requires no public URL or webhook server — and replies using markdown-formatted messages through DingTalk's session webhook API.
+Plobi Agent integrates with DingTalk (钉钉) as a chatbot, letting you chat with your AI assistant through direct messages or group chats. The bot connects via DingTalk's Stream Mode — a long-lived WebSocket connection that requires no public URL or webhook server — and replies using markdown-formatted messages through DingTalk's session webhook API.
 
-Before setup, here's the part most people want to know: how Vaelis behaves once it's in your DingTalk workspace.
+Before setup, here's the part most people want to know: how Plobi behaves once it's in your DingTalk workspace.
 
-## How Vaelis Behaves
+## How Plobi Behaves
 
 | Context | Behavior |
 |---------|----------|
-| **DMs (1:1 chat)** | Vaelis responds to every message. No `@mention` needed. Each DM has its own session. |
-| **Group chats** | Vaelis responds when you `@mention` it. Without a mention, Vaelis ignores the message. |
-| **Shared groups with multiple users** | By default, Vaelis isolates session history per user inside the group. Two people talking in the same group do not share one transcript unless you explicitly disable that. |
+| **DMs (1:1 chat)** | Plobi responds to every message. No `@mention` needed. Each DM has its own session. |
+| **Group chats** | Plobi responds when you `@mention` it. Without a mention, Plobi ignores the message. |
+| **Shared groups with multiple users** | By default, Plobi isolates session history per user inside the group. Two people talking in the same group do not share one transcript unless you explicitly disable that. |
 
 ### Session Model in DingTalk
 
@@ -63,7 +63,7 @@ pip install dingtalk-stream httpx alibabacloud-dingtalk
 2. Log in with your DingTalk admin account.
 3. Click **Application Development** → **Custom Apps** → **Create App via H5 Micro-App** (or **Robot** depending on your console version).
 4. Fill in:
-   - **App Name**: e.g., `Vaelis Agent`
+   - **App Name**: e.g., `Plobi Agent`
    - **Description**: optional
 5. After creating, navigate to **Credentials & Basic Info** to find your **Client ID** (AppKey) and **Client Secret** (AppSecret). Copy both.
 
@@ -83,14 +83,14 @@ Stream Mode is the recommended setup. It uses a long-lived WebSocket connection 
 
 ## Step 3: Find Your DingTalk User ID
 
-Vaelis Agent uses your DingTalk User ID to control who can interact with the bot. DingTalk User IDs are alphanumeric strings set by your organization's admin.
+Plobi Agent uses your DingTalk User ID to control who can interact with the bot. DingTalk User IDs are alphanumeric strings set by your organization's admin.
 
 To find yours:
 
 1. Ask your DingTalk organization admin — User IDs are configured in the DingTalk admin console under **Contacts** → **Members**.
 2. Alternatively, the bot logs the `sender_id` for each incoming message. Start the gateway, send the bot a message, then check the logs for your ID.
 
-## Step 4: Configure Vaelis Agent
+## Step 4: Configure Plobi Agent
 
 ### Option A: Interactive Setup (Recommended)
 
@@ -106,7 +106,7 @@ Select **DingTalk** when prompted. The setup wizard can authorize via one of two
 - **Manual paste.** If you already have credentials (or QR scanning isn't convenient), paste your Client ID, Client Secret, and allowed user IDs when prompted.
 
 :::note openClaw branding disclosure
-Because DingTalk's `verification_uri_complete` is hardcoded to the openClaw identity at the API layer, the QR currently authorizes under an `openClaw` source string until Alibaba / DingTalk-Real-AI registers a Vaelis-specific template server-side. This is purely how DingTalk presents the consent screen — the bot you create is fully yours and private to your tenant.
+Because DingTalk's `verification_uri_complete` is hardcoded to the openClaw identity at the API layer, the QR currently authorizes under an `openClaw` source string until Alibaba / DingTalk-Real-AI registers a Plobi-specific template server-side. This is purely how DingTalk presents the consent screen — the bot you create is fully yours and private to your tenant.
 :::
 
 ### Option B: Manual Configuration
@@ -174,7 +174,7 @@ You can run `hermes gateway` in the background or as a systemd service for persi
 
 ### AI Cards
 
-Vaelis can reply using DingTalk AI Cards instead of plain markdown messages. Cards provide a richer, more structured display and support streaming updates as the agent generates its response.
+Plobi can reply using DingTalk AI Cards instead of plain markdown messages. Cards provide a richer, more structured display and support streaming updates as the agent generates its response.
 
 To enable AI Cards, configure a card template ID in `config.yaml`:
 
@@ -190,7 +190,7 @@ You can find your card template ID in the DingTalk Developer Console under your 
 
 ### Emoji Reactions
 
-Vaelis automatically adds emoji reactions to your messages to show processing status:
+Plobi automatically adds emoji reactions to your messages to show processing status:
 
 - 🤔Thinking — added when the bot starts processing your message
 - 🥳Done — added when the response is complete (replaces the Thinking reaction)
@@ -253,7 +253,7 @@ pip install dingtalk-stream httpx
 
 ### Bot is offline
 
-**Cause**: The Vaelis gateway isn't running, or it failed to connect.
+**Cause**: The Plobi gateway isn't running, or it failed to connect.
 
 **Fix**: Check that `hermes gateway` is running. Look at the terminal output for error messages. Common issues: wrong credentials, app deactivated, `dingtalk-stream` or `httpx` not installed.
 
@@ -269,7 +269,7 @@ pip install dingtalk-stream httpx
 Always set `DINGTALK_ALLOWED_USERS` to restrict who can interact with the bot. Without it, the gateway denies all users by default as a safety measure. Only add User IDs of people you trust — authorized users have full access to the agent's capabilities, including tool use and system access.
 :::
 
-For more information on securing your Vaelis Agent deployment, see the [Security Guide](../security.md).
+For more information on securing your Plobi Agent deployment, see the [Security Guide](../security.md).
 
 ## Notes
 

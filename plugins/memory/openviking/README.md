@@ -15,7 +15,7 @@ hermes memory setup    # select "openviking"
 ```
 
 The setup can link to an existing `~/.openviking/ovcli.conf`, copy its current
-connection values into Vaelis, or create a minimal `ovcli.conf` when one does
+connection values into Plobi, or create a minimal `ovcli.conf` when one does
 not exist.
 
 Or manually:
@@ -34,11 +34,11 @@ All config via environment variables in `.env`:
 | `OPENVIKING_API_KEY` | (none) | User/admin API key for authenticated servers |
 | `OPENVIKING_ACCOUNT` | `default` | Tenant account for local/trusted mode |
 | `OPENVIKING_USER` | `default` | Tenant user for local/trusted mode |
-| `OPENVIKING_AGENT` | `hermes` | Vaelis peer ID in OpenViking, used for peer-scoped memories |
+| `OPENVIKING_AGENT` | `hermes` | Plobi peer ID in OpenViking, used for peer-scoped memories |
 
-When `OPENVIKING_API_KEY` is set, Vaelis lets OpenViking derive account/user
+When `OPENVIKING_API_KEY` is set, Plobi lets OpenViking derive account/user
 identity from the key. In local or trusted deployments without an API key,
-Vaelis sends `OPENVIKING_ACCOUNT` and `OPENVIKING_USER` as identity headers.
+Plobi sends `OPENVIKING_ACCOUNT` and `OPENVIKING_USER` as identity headers.
 
 ## Tools
 
@@ -60,14 +60,14 @@ canonical user-scoped form such as
 `viking://user/default/peers/${OPENVIKING_AGENT}/memories/...` in API-key mode.
 Explicit remembers do not depend on session commit extraction.
 
-Vaelis built-in `memory` tool additions are mirrored to OpenViking after the
+Plobi built-in `memory` tool additions are mirrored to OpenViking after the
 local memory operation succeeds:
 
-| Vaelis action | OpenViking operation |
+| Plobi action | OpenViking operation |
 |---------------|----------------------|
 | `add` | `content/write` with `mode=create` under the configured peer memory namespace |
 
-Built-in `replace` and `remove` operations are not mirrored because Vaelis
+Built-in `replace` and `remove` operations are not mirrored because Plobi
 native memory entries do not yet carry stable OpenViking file URIs. Use
 `viking_forget` when the user explicitly asks to delete a specific OpenViking
 memory URI.

@@ -37,11 +37,11 @@ scheduler:
   strategy: least_fail
 
 aliases:
-  # Friendly names for Vaelis / Hermes clients
-  vaelis/mock: mock/static
-  vaelis/echo: mock/echo
-  vaelis/fast: antigravity_cli/gemini-3-flash
-  vaelis/code: antigravity_cli/gemini-3-pro
+  # Friendly names for Plobi / Hermes clients
+  plobi/mock: mock/static
+  plobi/echo: mock/echo
+  plobi/fast: antigravity_cli/gemini-3-flash
+  plobi/code: antigravity_cli/gemini-3-pro
 
 routing:
   rules:

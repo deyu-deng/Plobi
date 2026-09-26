@@ -22,9 +22,9 @@ Forked verbatim from Anthropic's claude-plugins-official repository
   See the License for the specific language governing permissions and
   limitations under the License.
 
-Modifications by NousResearch for the Vaelis Agent plugin port:
+Modifications by NousResearch for the Plobi Agent plugin port:
   - none to the pattern data itself; this file is byte-for-byte the upstream
-    patterns.py at commit 0bde168 (2026-05-26). Vaelis-side wiring lives in
+    patterns.py at commit 0bde168 (2026-05-26). Plobi-side wiring lives in
     __init__.py.
 """
 from enum import IntEnum

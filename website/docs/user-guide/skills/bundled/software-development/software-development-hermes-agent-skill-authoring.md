@@ -1,12 +1,12 @@
 ---
-title: "Vaelis Agent Skill Authoring — Author in-repo SKILL"
-sidebar_label: "Vaelis Agent Skill Authoring"
+title: "Plobi Agent Skill Authoring — Author in-repo SKILL"
+sidebar_label: "Plobi Agent Skill Authoring"
 description: "Author in-repo SKILL"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
-# Vaelis Agent Skill Authoring
+# Plobi Agent Skill Authoring
 
 Author in-repo SKILL.md: frontmatter, validator, structure.
 
@@ -17,7 +17,7 @@ Author in-repo SKILL.md: frontmatter, validator, structure.
 | Source | Bundled (installed by default) |
 | Path | `skills/software-development/hermes-agent-skill-authoring` |
 | Version | `1.0.0` |
-| Author | Vaelis Agent |
+| Author | Plobi Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `skills`, `authoring`, `hermes-agent`, `conventions`, `skill-md` |
@@ -26,10 +26,10 @@ Author in-repo SKILL.md: frontmatter, validator, structure.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Vaelis loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Plobi loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
-# Authoring Vaelis-Agent Skills (in-repo)
+# Authoring Plobi-Agent Skills (in-repo)
 
 ## Overview
 
@@ -62,7 +62,7 @@ Peer-matched shape used by every skill under `skills/software-development/`:
 name: my-skill-name               # lowercase, hyphens, ≤64 chars (MAX_NAME_LENGTH)
 description: Use when <trigger>. <one-line behavior>.
 version: 1.0.0
-author: Vaelis Agent
+author: Plobi Agent
 license: MIT
 metadata:
   hermes:
@@ -96,7 +96,7 @@ One or two paragraphs: what and why.
 ## <Topic sections specific to the skill>
 - Quick-reference tables are common
 - Code blocks with exact commands
-- Vaelis-specific recipes (tests via scripts/run_tests.sh, ui-tui paths, etc.)
+- Plobi-specific recipes (tests via scripts/run_tests.sh, ui-tui paths, etc.)
 
 ## Common Pitfalls
 Numbered list of mistakes and their fixes.

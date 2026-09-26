@@ -1,7 +1,7 @@
 """Tests for tui_gateway/entry.py sys.path hardening (issues #15989, #51286).
 
 When the TUI backend is spawned by Node.js, the launch directory may shadow
-Vaelis's own top-level modules (``utils``, ``proxy``, ``ui``).  entry.py must
+Plobi's own top-level modules (``utils``, ``proxy``, ``ui``).  entry.py must
 neutralize this before any non-stdlib import is resolved, by delegating to the
 shared ``hermes_bootstrap.harden_import_path`` guard.
 
@@ -65,8 +65,8 @@ def test_entry_does_not_reimplement_guard_inline():
 
 def test_guard_handles_absolute_cwd_path():
     """The #51286 case: the launch dir is on sys.path as its own absolute
-    path, ahead of the Vaelis root.  harden_import_path must relocate the
-    Vaelis root to the front so ``from utils import ...`` resolves to Vaelis."""
+    path, ahead of the Plobi root.  harden_import_path must relocate the
+    Plobi root to the front so ``from utils import ...`` resolves to Plobi."""
     import sys
 
     original = sys.path[:]
