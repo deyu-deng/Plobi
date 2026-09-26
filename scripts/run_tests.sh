@@ -29,7 +29,9 @@
 # are forwarded to each per-file pytest invocation automatically — no '--'
 # separator required. The explicit '--' form still works and stacks with
 # bare flags. Positional path arguments override the default discovery
-# root (tests/).
+# root (tests/). A path that was mistakenly placed after '--' is lifted
+# back into the discovery roots (with a note) rather than silently running
+# the whole suite.
 
 set -euo pipefail
 

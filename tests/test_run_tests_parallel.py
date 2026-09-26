@@ -277,3 +277,77 @@ def test_positional_path_not_treated_as_flag(tmp_path: Path) -> None:
     # Discovery found the probe file (2 tests), proving the positional path
     # was consumed as a root, not forwarded to pytest as a bad flag.
     assert "test_flagprobe.py" in proc.stdout, proc.stdout
+
+
+# ── Targeted runs must stay targeted ─────────────────────────────────────────
+#
+# Both cases below are the "false green" class that makes slice-acceptance
+# evidence worthless: reporting success for a scope that never ran, or exiting
+# 0 after the runner itself broke mid-report.
+
+
+def test_path_after_double_dash_is_lifted_into_discovery(tmp_path: Path) -> None:
+    """A path written after ``--`` scopes the run instead of running everything.
+
+    Before the fix, ``run_tests.sh -- tests/foo.py`` sent the path to pytest as
+    passthrough, so discovery fell back to the full ``tests/`` root and each
+    per-file invocation got a second target. Asking for one file yielded the
+    whole suite plus a green that meant nothing.
+    """
+    probe_dir = _make_probe_dir(tmp_path)
+    (probe_dir / "test_siblingshouldnotrun.py").write_text(
+        "def test_sibling():\n    assert True\n"
+    )
+    target = probe_dir / "test_flagprobe.py"
+    repo_root = Path(__file__).resolve().parent.parent
+    runner = repo_root / "scripts" / "run_tests_parallel.py"
+    proc = subprocess.run(
+        [sys.executable, str(runner), "-j", "1", "--file-timeout", "30",
+         "--", str(target)],
+        cwd=repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stdout
+    assert "lifted path argument(s) after '--'" in proc.stdout, proc.stdout
+    assert "Discovered 1 test files" in proc.stdout, proc.stdout
+    assert "test_siblingshouldnotrun" not in proc.stdout, (
+        f"sibling file ran — the path did not scope discovery:\n{proc.stdout}"
+    )
+
+
+def test_runner_side_crash_exits_nonzero(tmp_path: Path) -> None:
+    """A crash inside the progress reporter cannot end the run with exit 0.
+
+    Results accumulate in a Future done-callback, and the executor swallows
+    anything a callback raises — so a display bug used to print a traceback and
+    still exit green. Runs a copy of the runner with an injected crash in
+    ``_print_progress`` and asserts the run is flagged untrustworthy.
+    """
+    root = tmp_path / "repo"
+    (root / "scripts").mkdir(parents=True)
+    (root / "tests").mkdir()
+    (root / "tests" / "test_probe.py").write_text(
+        "def test_ok():\n    assert True\n"
+    )
+
+    real = (Path(__file__).resolve().parent.parent / "scripts"
+            / "run_tests_parallel.py").read_text(encoding="utf-8")
+    marker = '    status = "✓" if rc == 0 else "✗"'
+    assert marker in real, "injection point missing from _print_progress"
+    broken = real.replace(
+        marker,
+        '    raise RuntimeError("injected display crash")\n' + marker,
+        1,
+    )
+    (root / "scripts" / "run_tests_parallel.py").write_text(broken, encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, str(root / "scripts" / "run_tests_parallel.py"),
+         str(root / "tests" / "test_probe.py"), "-j", "1",
+         "--file-timeout", "30"],
+        cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, timeout=60,
+    )
+    assert proc.returncode != 0, proc.stdout
+    assert "runner error in _print_progress" in proc.stdout, proc.stdout
+    assert "NOT trustworthy" in proc.stdout, proc.stdout

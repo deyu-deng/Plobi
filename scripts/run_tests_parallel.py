@@ -46,6 +46,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -710,6 +711,29 @@ def main() -> int:
     else:
         before, explicit_passthrough = argv, []
 
+    # A path (or node id) written after `--` is the caller's discovery target
+    # sitting in the wrong slot. Left in the passthrough it becomes a *second*
+    # pytest target for every per-file subprocess while discovery silently
+    # falls back to the full `tests/` root — a subset run that reports green
+    # for work it never scoped. Lift such tokens into the positional roots.
+    def _looks_like_target(tok: str) -> bool:
+        target = tok.split("::", 1)[0]
+        return bool(target) and Path(target).exists()
+
+    lifted_targets: List[str] = []
+    kept_passthrough: List[str] = []
+    prev_consumed = False
+    for idx, tok in enumerate(explicit_passthrough):
+        if not prev_consumed and tok.startswith("-"):
+            kept_passthrough.append(tok)
+            prev_consumed = tok in PYTEST_VALUE_FLAGS
+            continue
+        if not prev_consumed and _looks_like_target(tok):
+            lifted_targets.append(tok)
+        else:
+            kept_passthrough.append(tok)
+        prev_consumed = False
+
     our_args: List[str] = []
     bare_passthrough: List[str] = []
     i = 0
@@ -726,10 +750,17 @@ def main() -> int:
             our_args.append(tok)
         i += 1
 
+    our_args.extend(lifted_targets)
     args = parser.parse_args(our_args)
+    if lifted_targets:
+        print(
+            f"note: lifted path argument(s) after '--' into discovery roots: {lifted_targets} "
+            "(put paths before '--' to silence this)",
+            flush=True,
+        )
     # Bare flags run before any explicit ``--`` passthrough so ordering is
     # intuitive (``run_tests.sh tests/foo.py -q -- --tb=long`` → ``-q --tb=long``).
-    pytest_passthrough = bare_passthrough + explicit_passthrough
+    pytest_passthrough = bare_passthrough + kept_passthrough
 
     # Parse --slice (or HERMES_TEST_SLICE) early so we can exit on bad input
     # before doing any expensive discovery.
@@ -819,6 +850,17 @@ def main() -> int:
     # Capture and print on completion (out-of-order is fine — keeps the
     # terminal clean rather than interleaving N parallel pytest outputs).
     failures: List[Tuple[Path, str, Dict[str, int]]] = []
+    # Runner-side errors (progress printing, inline failure rendering). These
+    # run inside Future done-callbacks, where an exception is logged by the
+    # executor and dropped — so without collecting them here a runner bug can
+    # end the run with an empty `failures` list and exit code 0.
+    internal_errors: List[str] = []
+
+    def _report_internal_error(where: str, exc: BaseException) -> None:
+        msg = f"runner error in {where}: {exc!r}\n{traceback.format_exc()}"
+        internal_errors.append(msg)
+        print(msg, file=sys.stderr, flush=True)
+
     file_times: List[Tuple[Path, float]] = []  # (file, subprocess_wall) for distribution
     started = time.monotonic()
     files_done = 0
@@ -840,13 +882,16 @@ def main() -> int:
                 tests_done += n_tests
                 fail_count += 1
                 failures.append((file, f"runner crashed: {exc!r}", {}))
-                _print_progress(
-                    tests_done, approx_total_tests, file, 1,
-                    time.monotonic() - started_at,
-                    repo_root, tests_passed, tests_failed,
-                    test_counts,
-                    subproc_wall=0.0,
-                )
+                try:
+                    _print_progress(
+                        tests_done, approx_total_tests, file, 1,
+                        time.monotonic() - started_at,
+                        repo_root, tests_passed, tests_failed,
+                        test_counts,
+                        subproc_wall=0.0,
+                    )
+                except Exception as disp_exc:  # noqa: BLE001
+                    _report_internal_error("_print_progress", disp_exc)
             return
         with lock:
             files_done += 1
@@ -860,31 +905,32 @@ def main() -> int:
             else:
                 fail_count += 1
                 failures.append((fpath, output, summary))
-            _print_progress(
-                tests_done, approx_total_tests, fpath, rc,
-                time.monotonic() - started_at,
-                repo_root, tests_passed, tests_failed,
-                test_counts,
-                file_summary=summary,
-                subproc_wall=subproc_wall,
-            )
-            if rc != 0:
-                _print_inline_failure(fpath, output, repo_root, pytest_passthrough)
+            try:
+                _print_progress(
+                    tests_done, approx_total_tests, fpath, rc,
+                    time.monotonic() - started_at,
+                    repo_root, tests_passed, tests_failed,
+                    test_counts,
+                    file_summary=summary,
+                    subproc_wall=subproc_wall,
+                )
+                if rc != 0:
+                    _print_inline_failure(fpath, output, repo_root, pytest_passthrough)
+            except Exception as disp_exc:  # noqa: BLE001
+                _report_internal_error("_print_progress", disp_exc)
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures: List[Future] = []
         for file in files:
             t0 = time.monotonic()
             fut = pool.submit(
                 _run_one_file, file, pytest_passthrough, repo_root, args.file_timeout
             )
             fut.add_done_callback(lambda f, file=file, t0=t0: _on_done(file, t0, f))
-            futures.append(fut)
-        # Block until everything's done. ThreadPoolExecutor.__exit__ waits
-        # for all submitted work, but doing it explicitly here makes the
-        # control flow obvious.
-        for fut in futures:
-            fut.result() if fut.exception() is None else None
+        # Pool shutdown (context-manager exit) joins the worker threads, which
+        # run each done-callback inline — so every result is recorded by the
+        # time we summarize. The executor swallows an exception raised inside a
+        # callback, which is why _on_done captures runner-side errors into
+        # internal_errors instead of letting one escape.
 
     elapsed = time.monotonic() - started
     print()
@@ -925,6 +971,12 @@ def main() -> int:
         for f, t in slowest:
             print(f"    {t:>6.2f}s  {_format_file(f, repo_root)}")
 
+    if internal_errors:
+        print()
+        print(f"=== {len(internal_errors)} runner error(s) — the counts above are NOT trustworthy ===")
+        for msg in internal_errors:
+            print(msg.rstrip())
+
     if failures:
         print()
         print("=== Failure output ===")
@@ -953,6 +1005,8 @@ def main() -> int:
             print(f"=== {len(no_tests_ran)} file{'s' if len(no_tests_ran) != 1 else ''} where no tests ran (collection/import error, timeout before collection, etc.) ===")
             for file, s in no_tests_ran:
                 print(f"  {_format_file(file, repo_root)}")
+
+    if failures or internal_errors:
         return 1
 
     return 0
