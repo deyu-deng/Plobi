@@ -29,7 +29,7 @@ class TestGatewayLifecyclePattern:
         "plobi gateway restart",
         "plobi gateway stop",
         "plobi  gateway  restart",         # double spaces
-        "Hermez Gateway Restart".lower().replace("z", "s"),  # case handled
+        "Plobi Gateway Restart",                # case handled
         "PLOBI GATEWAY RESTART",           # uppercase
     ])
     def test_plobi_gateway_commands(self, text):
