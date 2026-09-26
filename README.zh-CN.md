@@ -184,6 +184,16 @@ python -m pytest tests/ -q
 
 ## 许可证
 
+## 致谢
+
+Plobi 是 [Hermes Agent](https://github.com/NousResearch/hermes-agent)（[Nous Research](https://nousresearch.com)）
+的 fork，agent 内核、消息网关、TUI、插件/技能体系与 CLI 都由它派生。MIT 许可全文与两份版权声明见
+[`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)；其余第三方依赖由 `pyproject.toml`、`uv.lock`、
+`package.json` 与 `package-lock.json` 逐一列名。
+
+"Hermes" 与 "Nous Research" 是那个上游项目及其作者的名称，只出现在本节、`LICENSE`/`NOTICE`、
+我们保留指向上游的 URL，以及 `hermes-4` 这类别人的模型标识里——本仓库其余一切都已改名为 Plobi。
+
 MIT — 详见 [LICENSE](LICENSE)。
 
 由 [Plobi]([官网占位]) 构建。

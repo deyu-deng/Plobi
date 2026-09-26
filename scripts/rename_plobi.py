@@ -328,8 +328,14 @@ def main() -> int:
             if args.apply and new_text != text:
                 p.write_text(new_text, encoding="utf-8", newline="")
 
-    pairs = [] if args.no_rename else plan_renames(
-        tracked_paths_for_rename(root, tuple(args.exclude)), families)
+    rename_src = tracked_paths_for_rename(root, tuple(args.exclude))
+    if args.prefix:
+        # --prefix is a scope promise: layer s5 sweeps the current-contract
+        # documents only, and renaming a history ADR's filename is exactly as
+        # much a rewrite of protected history as editing its body.
+        rename_src = [r for r in rename_src
+                      if any(r.startswith(p) for p in args.prefix)]
+    pairs = [] if args.no_rename else plan_renames(rename_src, families)
     hits = sum(per_family.values())
 
     print(f"layer={args.layer}  families={'+'.join(families)}  root={root}")
