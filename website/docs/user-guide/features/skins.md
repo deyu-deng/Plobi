@@ -214,9 +214,9 @@ tool_prefix: "▏"
 
 ## Plobi Mod — Visual Skin Editor
 
-[Plobi Mod](https://github.com/cocktailpeanut/plobi-mod) is a community-built web UI for creating and managing skins visually. Instead of writing YAML by hand, you get a point-and-click editor with live preview.
+[Plobi Mod](https://github.com/cocktailpeanut/hermes-mod) is a community-built web UI for creating and managing skins visually. Instead of writing YAML by hand, you get a point-and-click editor with live preview.
 
-![Plobi Mod skin editor](https://raw.githubusercontent.com/cocktailpeanut/plobi-mod/master/nous.png)
+![Plobi Mod skin editor](https://raw.githubusercontent.com/cocktailpeanut/hermes-mod/master/nous.png)
 
 **What it does:**
 
@@ -243,7 +243,7 @@ npx -y plobi-mod
 **Option 3 — Manual:**
 
 ```bash
-git clone https://github.com/cocktailpeanut/plobi-mod.git
+git clone https://github.com/cocktailpeanut/hermes-mod.git
 cd plobi-mod/app
 npm install
 npm start

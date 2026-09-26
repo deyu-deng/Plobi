@@ -68,7 +68,7 @@ plobi memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装后
 
 旧版 `plobi honcho setup` 命令仍然有效（现在会重定向到 `plobi memory setup`），但只有在 Honcho 被选为激活记忆提供者后才会注册。
 
-**配置：** `$PLOBI_HOME/honcho.json`（profile 本地）或 `~/.honcho/config.json`（全局）。解析顺序：`$PLOBI_HOME/honcho.json` > `~/.plobi/honcho.json` > `~/.honcho/config.json`。参见[配置参考](https://github.com/plobi-ai/plobi-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/plobi)。
+**配置：** `$PLOBI_HOME/honcho.json`（profile 本地）或 `~/.honcho/config.json`（全局）。解析顺序：`$PLOBI_HOME/honcho.json` > `~/.plobi/honcho.json` > `~/.honcho/config.json`。参见[配置参考](https://github.com/hermes-ai/hermes-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/hermes)。
 
 <details>
 <summary>完整配置参考</summary>
@@ -255,7 +255,7 @@ plobi honcho sync
 
 </details>
 
-参见[配置参考](https://github.com/plobi-ai/plobi-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/plobi)。
+参见[配置参考](https://github.com/hermes-ai/hermes-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/hermes)。
 
 
 ---
@@ -467,7 +467,7 @@ plobi config set memory.provider byterover
 | | |
 |---|---|
 | **适合场景** | 带用户 profile 和会话级图谱构建的语义召回 |
-| **依赖** | `pip install supermemory` + [API key](http://app.supermemory.ai/integrations?connect=plobi) |
+| **依赖** | `pip install supermemory` + [API key](http://app.supermemory.ai/integrations?connect=hermes) |
 | **数据存储** | Supermemory Cloud |
 | **费用** | Supermemory 定价 |
 

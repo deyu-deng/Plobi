@@ -3654,7 +3654,7 @@ def check_for_skill_updates(
 # Plobi centralized index source
 # ---------------------------------------------------------------------------
 
-PLOBI_INDEX_URL = "https://plobi-agent.nousresearch.com/docs/api/skills-index.json"
+PLOBI_INDEX_URL = "https://hermes-agent.nousresearch.com/docs/api/skills-index.json"
 PLOBI_INDEX_TTL = 6 * 3600  # 6 hours
 
 

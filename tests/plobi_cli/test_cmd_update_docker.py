@@ -163,7 +163,7 @@ def test_format_docker_update_message_contents():
     msg = format_docker_update_message()
 
     # Primary command — the entire reason this message exists.
-    assert "docker pull nousresearch/plobi-agent:latest" in msg
+    assert "docker pull nousresearch/hermes-agent:latest" in msg
 
     # The four key concepts the message must cover:
     assert "restart" in msg.lower(), "must explain that a restart is required"

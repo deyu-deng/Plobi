@@ -1,6 +1,6 @@
 # Plobi Achievements
 
-> **Bundled with Plobi Agent.** Originally authored by [@PCinkusz](https://github.com/PCinkusz) at https://github.com/PCinkusz/plobi-achievements — vendored into `plugins/plobi-achievements/` so it ships with the dashboard out-of-the-box and stays in lockstep with Plobi feature changes. Upstream repo remains the staging ground for new badges and UI iteration.
+> **Bundled with Plobi Agent.** Originally authored by [@PCinkusz](https://github.com/PCinkusz) at https://github.com/PCinkusz/hermes-achievements — vendored into `plugins/plobi-achievements/` so it ships with the dashboard out-of-the-box and stays in lockstep with Plobi feature changes. Upstream repo remains the staging ground for new badges and UI iteration.
 >
 > When Plobi is installed via the install script or cloned from source, this plugin auto-registers as a dashboard tab on first `plobi dashboard` launch. No separate install step. See [Built-in Plugins → plobi-achievements](../../website/docs/user-guide/features/built-in-plugins.md) in the main docs.
 
@@ -61,13 +61,13 @@ Version `0.2.x` expands the catalog to 60+ achievements, including model/provide
 Clone into your Plobi plugins directory:
 
 ```bash
-git clone https://github.com/PCinkusz/plobi-achievements ~/.plobi/plugins/plobi-achievements
+git clone https://github.com/PCinkusz/hermes-achievements ~/.plobi/plugins/plobi-achievements
 ```
 
 For local development, keep the repo elsewhere and symlink it:
 
 ```bash
-git clone https://github.com/PCinkusz/plobi-achievements ~/plobi-achievements
+git clone https://github.com/PCinkusz/hermes-achievements ~/plobi-achievements
 ln -s ~/plobi-achievements ~/.plobi/plugins/plobi-achievements
 ```
 

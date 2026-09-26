@@ -58,7 +58,7 @@ plobi honcho setup
 # select "local", enter base URL (e.g. http://localhost:8000)
 ```
 
-参见：https://docs.honcho.dev/v3/guides/integrations/plobi#running-honcho-locally-with-plobi
+参见：https://docs.honcho.dev/v3/guides/integrations/hermes#running-honcho-locally-with-hermes
 
 ### 验证
 

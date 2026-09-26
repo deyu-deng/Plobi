@@ -167,4 +167,4 @@ You've hit the Bedrock per-model rate limit. Plobi automatically retries with ba
 
 For a fully automated deployment on EC2 with CloudFormation:
 
-**[sample-plobi-agent-on-aws-with-bedrock](https://github.com/JiaDe-Wu/sample-plobi-agent-on-aws-with-bedrock)** — creates VPC, IAM role, EC2 instance, and configures Bedrock automatically. Deploy in any region with one click.
+**[sample-plobi-agent-on-aws-with-bedrock](https://github.com/JiaDe-Wu/sample-hermes-agent-on-aws-with-bedrock)** — creates VPC, IAM role, EC2 instance, and configures Bedrock automatically. Deploy in any region with one click.

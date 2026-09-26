@@ -11,7 +11,7 @@
 #
 services:
   gateway:
-    image: nousresearch/plobi-agent:latest
+    image: nousresearch/hermes-agent:latest
     container_name: plobi
     restart: unless-stopped
     volumes:
@@ -22,7 +22,7 @@ services:
     command: ["gateway", "run"]
 
   dashboard:
-    image: nousresearch/plobi-agent:latest
+    image: nousresearch/hermes-agent:latest
     container_name: plobi-dashboard
     restart: unless-stopped
     depends_on:

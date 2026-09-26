@@ -6042,7 +6042,7 @@ def _print_curator_first_run_notice() -> None:
     print("  Preview now:  plobi curator run --dry-run")
     print("  Pause it:     plobi curator pause")
     print(
-        "  Docs:         https://plobi-agent.nousresearch.com/docs/user-guide/features/curator"
+        "  Docs:         https://hermes-agent.nousresearch.com/docs/user-guide/features/curator"
     )
 
 
@@ -9545,7 +9545,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 return
             print("✗ Not a git repository. Please reinstall:")
             print(
-                "  curl -fsSL https://plobi-agent.nousresearch.com/install.sh | bash"
+                "  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash"
             )
             sys.exit(1)
 
@@ -11918,7 +11918,7 @@ def _maybe_setup_dashboard_auth_interactively(args) -> None:
             "    plobi dashboard register\n"
             "  It provisions a Nous Portal OAuth client and writes "
             "PLOBI_DASHBOARD_OAUTH_CLIENT_ID into ~/.plobi/.env for you.\n"
-            "  Docs: https://plobi-agent.nousresearch.com/docs/"
+            "  Docs: https://hermes-agent.nousresearch.com/docs/"
             "user-guide/features/web-dashboard#authentication-gated-mode"
         )
         sys.exit(0)
@@ -12905,7 +12905,7 @@ def main():
             "Manage the fallback provider chain.  Fallback providers are tried "
             "in order when the primary model fails with rate-limit, overload, or "
             "connection errors.  See: "
-            "https://plobi-agent.nousresearch.com/docs/user-guide/features/fallback-providers"
+            "https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers"
         ),
     )
     fallback_subparsers = fallback_parser.add_subparsers(dest="fallback_command")
@@ -12939,7 +12939,7 @@ def main():
             "Pull API keys from an external secret manager at process startup "
             "instead of storing them in ~/.plobi/.env.  Supports Bitwarden "
             "Secrets Manager and 1Password.  See: "
-            "https://plobi-agent.nousresearch.com/docs/user-guide/secrets/"
+            "https://hermes-agent.nousresearch.com/docs/user-guide/secrets/"
         ),
     )
     secrets_subparsers = secrets_parser.add_subparsers(dest="secrets_command")

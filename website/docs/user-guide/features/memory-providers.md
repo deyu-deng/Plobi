@@ -70,7 +70,7 @@ plobi memory setup        # select "honcho" — runs the Honcho-specific post-se
 
 The legacy `plobi honcho setup` command still works (it now redirects to `plobi memory setup`), but is only registered after Honcho is selected as the active memory provider.
 
-**Config:** `$PLOBI_HOME/honcho.json` (profile-local) or `~/.honcho/config.json` (global). Resolution order: `$PLOBI_HOME/honcho.json` > `~/.plobi/honcho.json` > `~/.honcho/config.json`. See the [config reference](https://github.com/NousResearch/hermes-agent/blob/main/plugins/memory/honcho/README.md) and the [Honcho integration guide](https://docs.honcho.dev/v3/guides/integrations/plobi).
+**Config:** `$PLOBI_HOME/honcho.json` (profile-local) or `~/.honcho/config.json` (global). Resolution order: `$PLOBI_HOME/honcho.json` > `~/.plobi/honcho.json` > `~/.honcho/config.json`. See the [config reference](https://github.com/NousResearch/hermes-agent/blob/main/plugins/memory/honcho/README.md) and the [Honcho integration guide](https://docs.honcho.dev/v3/guides/integrations/hermes).
 
 <details>
 <summary>Full config reference</summary>
@@ -272,7 +272,7 @@ Off-gateway these keys do nothing. `plobi memory setup` only prompts for them wh
 
 </details>
 
-See the [config reference](https://github.com/NousResearch/hermes-agent/blob/main/plugins/memory/honcho/README.md) and [Honcho integration guide](https://docs.honcho.dev/v3/guides/integrations/plobi).
+See the [config reference](https://github.com/NousResearch/hermes-agent/blob/main/plugins/memory/honcho/README.md) and [Honcho integration guide](https://docs.honcho.dev/v3/guides/integrations/hermes).
 
 
 ---
@@ -537,7 +537,7 @@ Semantic long-term memory with profile recall, semantic search, explicit memory 
 | | |
 |---|---|
 | **Best for** | Semantic recall with user profiling and session-level graph building |
-| **Requires** | `pip install supermemory` + [API key](http://app.supermemory.ai/integrations?connect=plobi) |
+| **Requires** | `pip install supermemory` + [API key](http://app.supermemory.ai/integrations?connect=hermes) |
 | **Data storage** | Supermemory Cloud |
 | **Cost** | Supermemory pricing |
 

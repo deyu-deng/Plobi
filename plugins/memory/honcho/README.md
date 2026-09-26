@@ -2,7 +2,7 @@
 
 AI-native cross-session user modeling with multi-pass dialectic reasoning, session summaries, bidirectional peer tools, and persistent conclusions.
 
-> **Honcho docs:** <https://docs.honcho.dev/v3/guides/integrations/plobi>
+> **Honcho docs:** <https://docs.honcho.dev/v3/guides/integrations/hermes>
 
 ## Requirements
 
