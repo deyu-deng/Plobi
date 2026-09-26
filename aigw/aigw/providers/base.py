@@ -100,7 +100,7 @@ class UpstreamError(Exception):
 class Capabilities:
     """What a provider can honestly do over the OpenAI surface.
 
-    Exposed on ``GET /v1/models`` so clients (Plobi desktop / Hermes) can hide
+    Exposed on ``GET /v1/models`` so clients (Plobi desktop / Plobi) can hide
     models that cannot serve the current agent features (tools, vision, ...).
     """
 

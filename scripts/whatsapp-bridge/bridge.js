@@ -16,7 +16,7 @@
  *   GET  /health         - Health check
  *
  * Usage:
- *   node bridge.js --port 3000 --session ~/.hermes/whatsapp/session
+ *   node bridge.js --port 3000 --session ~/.plobi/whatsapp/session
  */
 
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage, getAggregateVotesInPollMessage, decryptPollVote, getKeyAuthor, jidNormalizedUser } from '@whiskeysockets/baileys';
@@ -76,21 +76,21 @@ const FORWARD_OWNER_MESSAGES =
   ['1', 'true', 'yes', 'on'].includes(process.env.WHATSAPP_FORWARD_OWNER_MESSAGES.toLowerCase());
 
 const PORT = parseInt(getArg('port', '3000'), 10);
-const SESSION_DIR = getArg('session', path.join(process.env.HOME || '~', '.hermes', 'whatsapp', 'session'));
+const SESSION_DIR = getArg('session', path.join(process.env.HOME || '~', '.plobi', 'whatsapp', 'session'));
 // Cache directories: the Python gateway passes the profile-aware paths via
-// env (HERMES_HOME-aware, new cache/ layout).  Fall back to the legacy
+// env (PLOBI_HOME-aware, new cache/ layout).  Fall back to the legacy
 // hardcoded locations for bridges launched outside the gateway.
-const IMAGE_CACHE_DIR = process.env.HERMES_IMAGE_CACHE_DIR
-  || path.join(process.env.HOME || '~', '.hermes', 'image_cache');
-const DOCUMENT_CACHE_DIR = process.env.HERMES_DOCUMENT_CACHE_DIR
-  || path.join(process.env.HOME || '~', '.hermes', 'document_cache');
-const AUDIO_CACHE_DIR = process.env.HERMES_AUDIO_CACHE_DIR
-  || path.join(process.env.HOME || '~', '.hermes', 'audio_cache');
+const IMAGE_CACHE_DIR = process.env.PLOBI_IMAGE_CACHE_DIR
+  || path.join(process.env.HOME || '~', '.plobi', 'image_cache');
+const DOCUMENT_CACHE_DIR = process.env.PLOBI_DOCUMENT_CACHE_DIR
+  || path.join(process.env.HOME || '~', '.plobi', 'document_cache');
+const AUDIO_CACHE_DIR = process.env.PLOBI_AUDIO_CACHE_DIR
+  || path.join(process.env.HOME || '~', '.plobi', 'audio_cache');
 
 // Self-hash of this script file.  Reported in /health so the Python gateway
 // can detect a running bridge that predates the current bridge.js and
 // restart it instead of silently reusing stale code (stale-bridge trap:
-// `hermes update` updates bridge.js on disk but a long-lived bridge process
+// `plobi update` updates bridge.js on disk but a long-lived bridge process
 // keeps serving the old behavior forever).
 let SCRIPT_HASH = '';
 try {
@@ -910,7 +910,7 @@ app.post('/send-media', async (req, res) => {
           // as video/mp4.
           let tmpGifMp4 = null;
           try {
-            tmpGifMp4 = path.join(tmpdir(), `hermes_gif_${randomBytes(6).toString('hex')}.mp4`);
+            tmpGifMp4 = path.join(tmpdir(), `plobi_gif_${randomBytes(6).toString('hex')}.mp4`);
             execFileSync(
               'ffmpeg',
               ['-y', '-i', filePath, '-movflags', 'faststart', '-pix_fmt', 'yuv420p', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', tmpGifMp4],
@@ -944,7 +944,7 @@ app.post('/send-media', async (req, res) => {
         const needsConversion = !['ogg', 'opus'].includes(ext);
         let tmpPath = null;
         if (needsConversion) {
-          tmpPath = path.join(tmpdir(), `hermes_voice_${randomBytes(6).toString('hex')}.ogg`);
+          tmpPath = path.join(tmpdir(), `plobi_voice_${randomBytes(6).toString('hex')}.ogg`);
           try {
             execFileSync(
               'ffmpeg',

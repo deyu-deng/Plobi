@@ -6,7 +6,7 @@ author: Plobi Agent
 license: MIT
 platforms: [macos]
 metadata:
-  hermes:
+  plobi:
     tags: [Notes, Apple, macOS, note-taking]
     related_skills: [obsidian]
 prerequisites:

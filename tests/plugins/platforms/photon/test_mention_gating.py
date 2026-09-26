@@ -113,7 +113,7 @@ def test_custom_mention_patterns_from_config(monkeypatch: pytest.MonkeyPatch) ->
     assert adapter.require_mention is True
     assert len(adapter._mention_patterns) == 1
     assert adapter._message_matches_mention_patterns("amos help me") is True
-    assert adapter._message_matches_mention_patterns("hermes help me") is False
+    assert adapter._message_matches_mention_patterns("plobi help me") is False
 
 
 def test_mention_patterns_env_comma_separated(monkeypatch: pytest.MonkeyPatch) -> None:

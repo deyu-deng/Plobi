@@ -1,6 +1,6 @@
 """cron no_agent 脚本：消息待办 digest（逐条待确认消息改动）→ 钉钉（切片 B5）。
 
-由 ``scripts/plobi/register_butler.py`` 复制到 ``HERMES_HOME/scripts/`` 并注册
+由 ``scripts/plobi/register_butler.py`` 复制到 ``PLOBI_HOME/scripts/`` 并注册
 为每日 12:00 任务。无待办时不推送。stdout 为 JSON 结果。
 
 默认零 LLM（确定性模板）。设 ``PLOBI_BUTLER_POLISH=1`` 时走 L2 便宜模型改写。
@@ -22,7 +22,7 @@ def _bootstrap() -> None:
     except ImportError:
         pass
 
-    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    home = Path(os.environ.get("PLOBI_HOME") or Path.home() / ".plobi")
     runtime = home / "plobi" / "runtime.json"
     try:
         code_root = json.loads(runtime.read_text(encoding="utf-8"))["code_root"]

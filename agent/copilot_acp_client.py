@@ -28,7 +28,7 @@ from openai.types.chat.chat_completion_message_tool_call import (
 
 from agent.file_safety import get_read_block_error, is_write_denied
 from agent.redact import redact_sensitive_text
-from tools.environments.local import hermes_subprocess_env
+from tools.environments.local import plobi_subprocess_env
 
 ACP_MARKER_BASE_URL = "acp://copilot"
 _DEFAULT_TIMEOUT_SECONDS = 900.0
@@ -61,14 +61,14 @@ def _is_gh_copilot_deprecation_message(stderr_text: str) -> bool:
 
 def _resolve_command() -> str:
     return (
-        os.getenv("HERMES_COPILOT_ACP_COMMAND", "").strip()
+        os.getenv("PLOBI_COPILOT_ACP_COMMAND", "").strip()
         or os.getenv("COPILOT_CLI_PATH", "").strip()
         or "copilot"
     )
 
 
 def _resolve_args() -> list[str]:
-    raw = os.getenv("HERMES_COPILOT_ACP_ARGS", "").strip()
+    raw = os.getenv("PLOBI_COPILOT_ACP_ARGS", "").strip()
     if not raw:
         return ["--acp", "--stdio"]
     return shlex.split(raw)
@@ -94,7 +94,7 @@ def _resolve_home_dir() -> str:
         pass
 
     # Last resort: /tmp (writable on any POSIX system). Avoids crashing the
-    # subprocess with no HOME; callers can set HERMES_HOME explicitly if they
+    # subprocess with no HOME; callers can set PLOBI_HOME explicitly if they
     # need a different writable dir.
     return "/tmp"
 
@@ -103,10 +103,10 @@ def _build_subprocess_env() -> dict[str, str]:
     # Copilot ACP is a model-driving CLI executor: it legitimately needs LLM
     # provider credentials. Route through the central helper so Tier-1 secrets
     # (gateway bot tokens, GitHub auth, infra) are still stripped (#29157).
-    env = hermes_subprocess_env(inherit_credentials=True)
+    env = plobi_subprocess_env(inherit_credentials=True)
     home = _resolve_home_dir()
     env["HOME"] = home
-    from hermes_constants import apply_subprocess_home_env
+    from plobi_constants import apply_subprocess_home_env
     apply_subprocess_home_env(env)
     return env
 
@@ -516,7 +516,7 @@ class CopilotACPClient:
         except FileNotFoundError as exc:
             raise RuntimeError(
                 f"Could not start Copilot ACP command '{self._acp_command}'. "
-                "Install GitHub Copilot CLI or set HERMES_COPILOT_ACP_COMMAND/COPILOT_CLI_PATH."
+                "Install GitHub Copilot CLI or set PLOBI_COPILOT_ACP_COMMAND/COPILOT_CLI_PATH."
             ) from exc
 
         if proc.stdin is None or proc.stdout is None:
@@ -604,9 +604,9 @@ class CopilotACPClient:
                         "  # then verify with: copilot --help\n\n"
                         "If `copilot` already resolves to the new CLI but you still see this,\n"
                         "point Plobi at it explicitly:\n"
-                        "  export HERMES_COPILOT_ACP_COMMAND=/path/to/new/copilot\n\n"
+                        "  export PLOBI_COPILOT_ACP_COMMAND=/path/to/new/copilot\n\n"
                         "Alternative: use the `copilot` provider (no ACP, hits the Copilot API\n"
-                        "directly with a Copilot subscription token) via `hermes setup`.\n\n"
+                        "directly with a Copilot subscription token) via `plobi setup`.\n\n"
                         f"Original error:\n{stderr_text}"
                     )
                 raise RuntimeError(f"Copilot ACP process exited early: {stderr_text}")
@@ -624,7 +624,7 @@ class CopilotACPClient:
                         }
                     },
                     "clientInfo": {
-                        "name": "hermes-agent",
+                        "name": "plobi-agent",
                         "title": "Plobi Agent",
                         "version": "0.0.0",
                     },

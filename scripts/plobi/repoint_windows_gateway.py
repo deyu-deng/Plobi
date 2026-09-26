@@ -7,14 +7,14 @@ that venv. After uninstall / partial delete, dingtalk-stream fails every ~10s:
   Could not find a suitable TLS CA certificate bundle, invalid path:
   D:\\Software\\Plobi\\plobi-agent\\venv\\Lib\\site-packages\\certifi\\cacert.pem
 
-This script rewrites ``$HERMES_HOME/gateway-service/*Gateway*.{vbs,cmd}`` (and
-Startup-folder copies) to run ``hermes_cli.main gateway run`` from the Code
-``.venv``, with ``HERMES_HOME`` set. It does not rename the Scheduled Task
+This script rewrites ``$PLOBI_HOME/gateway-service/*Gateway*.{vbs,cmd}`` (and
+Startup-folder copies) to run ``plobi_cli.main gateway run`` from the Code
+``.venv``, with ``PLOBI_HOME`` set. It does not rename the Scheduled Task
 (legacy name may still be ``Plobi_Gateway``).
 
 Usage (from Code root)::
 
-    set HERMES_HOME=D:\\Data\\AppData\\Plobi
+    set PLOBI_HOME=D:\\Data\\AppData\\Plobi
     .venv\\Scripts\\python.exe scripts\\plobi\\repoint_windows_gateway.py
     .venv\\Scripts\\python.exe scripts\\plobi\\repoint_windows_gateway.py --restart
 """
@@ -39,17 +39,17 @@ STALE_MARKERS = (
 )
 
 
-def _hermes_home() -> Path:
-    raw = (os.environ.get("HERMES_HOME") or "").strip()
+def _plobi_home() -> Path:
+    raw = (os.environ.get("PLOBI_HOME") or "").strip()
     if raw:
         return Path(raw)
     # Dev machine convention (see PROMPT-DINGTALK-ROUTING-FIX).
     candidate = Path(r"D:\Data\AppData\Plobi")
     if candidate.is_dir():
         return candidate
-    from hermes_constants import get_hermes_home
+    from plobi_constants import get_plobi_home
 
-    return Path(get_hermes_home())
+    return Path(get_plobi_home())
 
 
 def _launcher_paths(home: Path) -> list[Path]:
@@ -83,9 +83,9 @@ def _needs_repoint(path: Path) -> bool:
 
 
 def _profile_arg_for_launcher(path: Path) -> str:
-    """Infer ``--profile X`` from launcher stem like ``Hermes_Gateway_l2-agenda``."""
+    """Infer ``--profile X`` from launcher stem like ``Plobi_Gateway_l2-agenda``."""
     stem = path.stem
-    for prefix in ("Hermes_Gateway_", "Plobi_Gateway_"):
+    for prefix in ("Plobi_Gateway_", "Plobi_Gateway_"):
         if stem.startswith(prefix):
             name = stem[len(prefix) :].strip()
             if name and name.lower() != "default":
@@ -101,20 +101,20 @@ def _build_contents(
     profile_arg: str = "",
 ) -> str:
     # Import after PYTHONPATH includes CODE_ROOT.
-    from hermes_cli.gateway_windows import (
+    from plobi_cli.gateway_windows import (
         _build_gateway_cmd_script,
         _build_gateway_vbs_script,
     )
 
-    hermes_home = str(home)
-    working_dir = hermes_home
+    plobi_home = str(home)
+    working_dir = plobi_home
     python_path = str(python_exe)
     if as_vbs:
         return _build_gateway_vbs_script(
-            python_path, working_dir, hermes_home, profile_arg
+            python_path, working_dir, plobi_home, profile_arg
         )
     return _build_gateway_cmd_script(
-        python_path, working_dir, hermes_home, profile_arg
+        python_path, working_dir, plobi_home, profile_arg
     )
 
 
@@ -164,7 +164,7 @@ def _kill_stale_gateways() -> list[int]:
                 killed.append(int(line))
     except Exception:
         pass
-    state = _hermes_home() / "gateway_state.json"
+    state = _plobi_home() / "gateway_state.json"
     if state.is_file():
         try:
             import json
@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         "--home",
         type=Path,
         default=None,
-        help="HERMES_HOME (default: env or D:\\Data\\AppData\\Plobi)",
+        help="PLOBI_HOME (default: env or D:\\Data\\AppData\\Plobi)",
     )
     parser.add_argument(
         "--force",
@@ -231,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # Ensure hermes_cli imports resolve from Code.
+    # Ensure plobi_cli imports resolve from Code.
     code = str(CODE_ROOT)
     existing = os.environ.get("PYTHONPATH", "")
     if code not in existing.split(os.pathsep):
@@ -239,8 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     if str(CODE_ROOT) not in sys.path:
         sys.path.insert(0, str(CODE_ROOT))
 
-    home = args.home or _hermes_home()
-    os.environ["HERMES_HOME"] = str(home)
+    home = args.home or _plobi_home()
+    os.environ["PLOBI_HOME"] = str(home)
 
     if args.check_only:
         stale = [p for p in _launcher_paths(home) if _needs_repoint(p)]

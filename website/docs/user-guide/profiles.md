@@ -15,7 +15,7 @@ When you create a profile, it automatically becomes its own command. Create a pr
 ## Quick start
 
 ```bash
-hermes profile create coder       # creates profile + "coder" command alias
+plobi profile create coder       # creates profile + "coder" command alias
 coder setup                       # configure API keys and model
 coder chat                        # start chatting
 ```
@@ -25,13 +25,13 @@ That's it. `coder` is now its own Plobi profile with its own config, memory, and
 ## Creating a profile
 
 :::tip
-Quickest setup: run `hermes setup --portal` inside the new profile to wire up models + tools at once. See [Nous Portal](/integrations/nous-portal).
+Quickest setup: run `plobi setup --portal` inside the new profile to wire up models + tools at once. See [Nous Portal](/integrations/nous-portal).
 :::
 
 ### Blank profile
 
 ```bash
-hermes profile create mybot
+plobi profile create mybot
 ```
 
 Creates a fresh profile with bundled skills seeded. Run `mybot setup` to configure API keys, model, and gateway tokens.
@@ -39,37 +39,37 @@ Creates a fresh profile with bundled skills seeded. Run `mybot setup` to configu
 If you plan to use this profile as a kanban worker (or want the kanban orchestrator to route work to it), pass `--description "<role>"` at create time so the orchestrator knows what it's good at:
 
 ```bash
-hermes profile create researcher --description "Reads source code and external docs, writes findings."
+plobi profile create researcher --description "Reads source code and external docs, writes findings."
 ```
 
-You can also set or auto-generate the description later with `hermes profile describe` — see the [Kanban guide](./features/kanban#auto-vs-manual-orchestration) for the full routing model.
+You can also set or auto-generate the description later with `plobi profile describe` — see the [Kanban guide](./features/kanban#auto-vs-manual-orchestration) for the full routing model.
 
 ### Clone config only (`--clone`)
 
 ```bash
-hermes profile create work --clone
+plobi profile create work --clone
 ```
 
-Copies your current profile's `config.yaml`, `.env`, `SOUL.md`, and skills into the new profile. Same API keys, model, and capabilities, but fresh sessions and memory. Edit `~/.hermes/profiles/work/.env` for different API keys, or `~/.hermes/profiles/work/SOUL.md` for a different personality.
+Copies your current profile's `config.yaml`, `.env`, `SOUL.md`, and skills into the new profile. Same API keys, model, and capabilities, but fresh sessions and memory. Edit `~/.plobi/profiles/work/.env` for different API keys, or `~/.plobi/profiles/work/SOUL.md` for a different personality.
 
 ### Clone everything (`--clone-all`)
 
 ```bash
-hermes profile create backup --clone-all
+plobi profile create backup --clone-all
 ```
 
-Copies **everything** — config, API keys, personality, all memories, skills, cron jobs, plugins. A complete working snapshot. Per-profile history is excluded (session history, `state.db`, `backups/`, `state-snapshots/`, `checkpoints/`) — these belong to the source profile and can reach tens of GB. For a full backup including history, use `hermes profile export` or `hermes backup` instead.
+Copies **everything** — config, API keys, personality, all memories, skills, cron jobs, plugins. A complete working snapshot. Per-profile history is excluded (session history, `state.db`, `backups/`, `state-snapshots/`, `checkpoints/`) — these belong to the source profile and can reach tens of GB. For a full backup including history, use `plobi profile export` or `plobi backup` instead.
 
 ### Clone from a specific profile
 
 ```bash
-hermes profile create work --clone-from coder
+plobi profile create work --clone-from coder
 ```
 
 `--clone-from <source>` selects the source profile directly and implies a config/skills/SOUL clone. Combine it with `--clone-all` when you want a full copy of that source profile:
 
 ```bash
-hermes profile create work-backup --clone-from coder --clone-all
+plobi profile create work-backup --clone-from coder --clone-all
 ```
 
 :::tip Honcho memory + profiles
@@ -91,28 +91,28 @@ coder skills list             # list coder's skills
 coder config set model.default anthropic/claude-sonnet-4
 ```
 
-The alias works with every hermes subcommand — it's just `hermes -p <name>` under the hood.
+The alias works with every plobi subcommand — it's just `plobi -p <name>` under the hood.
 
 ### The `-p` flag
 
 You can also target a profile explicitly with any command:
 
 ```bash
-hermes -p coder chat
-hermes --profile=coder doctor
-hermes chat -p coder -q "hello"    # works in any position
+plobi -p coder chat
+plobi --profile=coder doctor
+plobi chat -p coder -q "hello"    # works in any position
 ```
 
-### Sticky default (`hermes profile use`)
+### Sticky default (`plobi profile use`)
 
 ```bash
-hermes profile use coder
-hermes chat                   # now targets coder
-hermes tools                  # configures coder's tools
-hermes profile use default    # switch back
+plobi profile use coder
+plobi chat                   # now targets coder
+plobi tools                  # configures coder's tools
+plobi profile use default    # switch back
 ```
 
-Sets a default so plain `hermes` commands target that profile. Like `kubectl config use-context`.
+Sets a default so plain `plobi` commands target that profile. Like `kubectl config use-context`.
 
 ### Knowing where you are
 
@@ -120,7 +120,7 @@ The CLI always shows which profile is active:
 
 - **Prompt**: `coder ❯` instead of `❯`
 - **Banner**: Shows `Profile: coder` on startup
-- **`hermes profile`**: Shows current profile name, path, model, gateway status
+- **`plobi profile`**: Shows current profile name, path, model, gateway status
 
 ## Profiles vs workspaces vs sandboxing
 
@@ -163,10 +163,10 @@ Each profile has its own `.env` file. Configure a different Telegram/Discord/Sla
 
 ```bash
 # Edit coder's tokens
-nano ~/.hermes/profiles/coder/.env
+nano ~/.plobi/profiles/coder/.env
 
 # Edit assistant's tokens
-nano ~/.hermes/profiles/assistant/.env
+nano ~/.plobi/profiles/assistant/.env
 ```
 
 ### Safety: token locks
@@ -176,14 +176,14 @@ If two profiles accidentally use the same bot token, the second gateway will be 
 ### Persistent services
 
 ```bash
-coder gateway install         # creates hermes-gateway-coder systemd/launchd service
-assistant gateway install     # creates hermes-gateway-assistant service
+coder gateway install         # creates plobi-gateway-coder systemd/launchd service
+assistant gateway install     # creates plobi-gateway-assistant service
 ```
 
 Each profile gets its own service name. They run independently.
 
 :::note Inside the official Docker image
-Per-profile gateways are supervised by [s6-overlay](https://github.com/just-containers/s6-overlay) (PID 1 in the container), so `hermes profile create <name>` automatically registers an s6 service slot at `/run/service/gateway-<name>/`. `hermes -p <name> gateway start/stop/restart` dispatches to `s6-svc` instead of spawning a bare process — crashes are auto-restarted and `docker restart` preserves the previously-running set of gateways. See [Per-profile gateway supervision](/user-guide/docker#per-profile-gateway-supervision) for details.
+Per-profile gateways are supervised by [s6-overlay](https://github.com/just-containers/s6-overlay) (PID 1 in the container), so `plobi profile create <name>` automatically registers an s6 service slot at `/run/service/gateway-<name>/`. `plobi -p <name> gateway start/stop/restart` dispatches to `s6-svc` instead of spawning a bare process — crashes are auto-restarted and `docker restart` preserves the previously-running set of gateways. See [Per-profile gateway supervision](/user-guide/docker#per-profile-gateway-supervision) for details.
 :::
 
 ## Configuring profiles
@@ -196,7 +196,7 @@ Each profile has its own:
 
 ```bash
 coder config set model.default anthropic/claude-sonnet-4
-echo "You are a focused coding assistant." > ~/.hermes/profiles/coder/SOUL.md
+echo "You are a focused coding assistant." > ~/.plobi/profiles/coder/SOUL.md
 ```
 
 If you want this profile to work in a specific project by default, also set its own `terminal.cwd`:
@@ -216,15 +216,15 @@ also follows the switcher, spawning a conversation under the selected
 profile's home.
 
 Note: "Set as active" on the dashboard's Profiles page is the sticky
-default for **future CLI/gateway runs** (same as `hermes profile use`) —
+default for **future CLI/gateway runs** (same as `plobi profile use`) —
 to edit a profile from the dashboard, use the switcher instead.
 
 ## Updating
 
-`hermes update` pulls code once (shared) and syncs new bundled skills to **all** profiles automatically:
+`plobi update` pulls code once (shared) and syncs new bundled skills to **all** profiles automatically:
 
 ```bash
-hermes update
+plobi update
 # → Code updated (12 commits)
 # → Skills synced: default (up to date), coder (+2 new), assistant (+2 new)
 ```
@@ -234,54 +234,54 @@ User-modified skills are never overwritten.
 ## Managing profiles
 
 ```bash
-hermes profile list           # show all profiles with status
-hermes profile show coder     # detailed info for one profile
-hermes profile rename coder dev-bot   # rename (updates alias + service)
-hermes profile export coder   # export to coder.tar.gz
-hermes profile import coder.tar.gz   # import from archive
+plobi profile list           # show all profiles with status
+plobi profile show coder     # detailed info for one profile
+plobi profile rename coder dev-bot   # rename (updates alias + service)
+plobi profile export coder   # export to coder.tar.gz
+plobi profile import coder.tar.gz   # import from archive
 ```
 
 ## Deleting a profile
 
 ```bash
-hermes profile delete coder
+plobi profile delete coder
 ```
 
 This stops the gateway, removes the systemd/launchd service, removes the command alias, and deletes all profile data. You'll be asked to type the profile name to confirm.
 
-Use `--yes` to skip confirmation: `hermes profile delete coder --yes`
+Use `--yes` to skip confirmation: `plobi profile delete coder --yes`
 
 :::note
-You cannot delete the default profile (`~/.hermes`). To remove everything, use `hermes uninstall`.
+You cannot delete the default profile (`~/.plobi`). To remove everything, use `plobi uninstall`.
 :::
 
 ## Tab completion
 
 ```bash
 # Bash
-eval "$(hermes completion bash)"
+eval "$(plobi completion bash)"
 
 # Zsh
-eval "$(hermes completion zsh)"
+eval "$(plobi completion zsh)"
 ```
 
 Add the line to your `~/.bashrc` or `~/.zshrc` for persistent completion. Completes profile names after `-p`, profile subcommands, and top-level commands.
 
 ## How it works
 
-Profiles use the `HERMES_HOME` environment variable. When you run `coder chat`, the wrapper script sets `HERMES_HOME=~/.hermes/profiles/coder` before launching hermes. Since 119+ files in the codebase resolve paths via `get_hermes_home()`, Plobi state automatically scopes to the profile's directory — config, sessions, memory, skills, state database, gateway PID, logs, and cron jobs.
+Profiles use the `PLOBI_HOME` environment variable. When you run `coder chat`, the wrapper script sets `PLOBI_HOME=~/.plobi/profiles/coder` before launching plobi. Since 119+ files in the codebase resolve paths via `get_plobi_home()`, Plobi state automatically scopes to the profile's directory — config, sessions, memory, skills, state database, gateway PID, logs, and cron jobs.
 
-This is separate from terminal working directory. Tool execution starts from `terminal.cwd` (or the launch directory when `cwd: "."` on the local backend), not automatically from `HERMES_HOME`.
+This is separate from terminal working directory. Tool execution starts from `terminal.cwd` (or the launch directory when `cwd: "."` on the local backend), not automatically from `PLOBI_HOME`.
 
 On host installs, tool subprocesses keep your real OS-user `HOME` by default so
 existing CLI credentials under `~` keep working across profiles. Profile data is
-isolated by `HERMES_HOME`, not by changing `HOME`. Container backends still use
-`{HERMES_HOME}/home` for persistent tool state, and host users who need strict
+isolated by `PLOBI_HOME`, not by changing `HOME`. Container backends still use
+`{PLOBI_HOME}/home` for persistent tool state, and host users who need strict
 per-profile tool config can opt in with `terminal.home_mode: profile`.
 
 This means two things that are easy to mix up:
 
-- `HERMES_HOME` is the profile boundary. It controls Plobi config, `.env`,
+- `PLOBI_HOME` is the profile boundary. It controls Plobi config, `.env`,
   memory, sessions, skills, logs, cron jobs, gateway state, and other Plobi
   data.
 - `HOME` is the operating-system/user home that external CLIs expect. On host
@@ -292,14 +292,14 @@ This means two things that are easy to mix up:
 The tradeoff is that host profiles share normal user-level CLI state by default.
 If you need separate CLI identities per profile, set `terminal.home_mode:
 profile` in that profile's `config.yaml`. In that mode Plobi launches tool
-subprocesses with `HOME={HERMES_HOME}/home`; you then need to initialize or link
+subprocesses with `HOME={PLOBI_HOME}/home`; you then need to initialize or link
 the profile-specific `~/.ssh`, `~/.gitconfig`, `~/.config/gh`, cloud CLI auth,
 Claude/Codex auth, npm state, and similar files inside that profile home.
 
-Plobi also exposes `HERMES_REAL_HOME` to subprocesses so scripts can still find
+Plobi also exposes `PLOBI_REAL_HOME` to subprocesses so scripts can still find
 the actual account home when `home_mode: profile` is active.
 
-The default profile is simply `~/.hermes` itself. No migration needed — existing installs work identically.
+The default profile is simply `~/.plobi` itself. No migration needed — existing installs work identically.
 
 ## Sharing profiles as distributions
 
@@ -307,10 +307,10 @@ A profile you built on one machine can be packaged as a **git repository** and i
 
 ```bash
 # Install a whole agent from a git repo
-hermes profile install github.com/you/research-bot --alias
+plobi profile install github.com/you/research-bot --alias
 
 # Update later when the author ships a new version (keeps your memories + .env)
-hermes profile update research-bot
+plobi profile update research-bot
 ```
 
 See **[Profile Distributions: Share a Whole Agent](./profile-distributions.md)** for the full guide — authoring, publishing, update semantics, security model, and use cases.

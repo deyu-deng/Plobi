@@ -48,18 +48,18 @@ Email 适配器使用 Python 内置的 `imaplib`、`smtplib` 和 `email` 模块�
 最简便的方式：
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 从平台菜单中选择 **Email**。向导会提示输入邮箱地址、密码、IMAP/SMTP 主机以及允许的发件人。
 
 ### 手动配置
 
-在 `~/.hermes/.env` 中添加：
+在 `~/.plobi/.env` 中添加：
 
 ```bash
 # 必填
-EMAIL_ADDRESS=hermes@gmail.com
+EMAIL_ADDRESS=plobi@gmail.com
 EMAIL_PASSWORD=abcd efgh ijkl mnop    # 应用专用密码（非常规密码）
 EMAIL_IMAP_HOST=imap.gmail.com
 EMAIL_SMTP_HOST=smtp.gmail.com
@@ -79,9 +79,9 @@ EMAIL_HOME_ADDRESS=your@email.com      # cron 任务的默认投递目标
 ## 第二步：启动 Gateway
 
 ```bash
-hermes gateway              # 在前台运行
-hermes gateway install      # 安装为用户服务
-sudo hermes gateway install --system   # 仅 Linux：开机自启的系统服务
+plobi gateway              # 在前台运行
+plobi gateway install      # 安装为用户服务
+sudo plobi gateway install --system   # 仅 Linux：开机自启的系统服务
 ```
 
 启动时，适配器会：
@@ -155,7 +155,7 @@ platforms:
 | 启动时出现 **"SMTP connection failed"** | 检查 `EMAIL_SMTP_HOST` 和 `EMAIL_SMTP_PORT`。确认密码正确（Gmail 请使用应用专用密码）。 |
 | **未收到邮件** | 检查 `EMAIL_ALLOWED_USERS` 是否包含发件人邮箱。检查垃圾邮件文件夹——部分服务商会将自动回复标记为垃圾邮件。 |
 | **"Authentication failed"** | 对于 Gmail，必须使用应用专用密码，而非常规密码。请先确保已启用双重验证。 |
-| **重复回复** | 确保只有一个 gateway 实例在运行。检查 `hermes gateway status`。 |
+| **重复回复** | 确保只有一个 gateway 实例在运行。检查 `plobi gateway status`。 |
 | **响应缓慢** | 默认轮询间隔为 15 秒。设置 `EMAIL_POLL_INTERVAL=5` 可加快响应速度（但会增加 IMAP 连接次数）。 |
 | **回复未归入线程** | 适配器使用 In-Reply-To 头部。部分邮件客户端（尤其是网页版）可能无法正确将自动回复归入线程。 |
 
@@ -169,7 +169,7 @@ platforms:
 
 - 使用**应用专用密码**代替主密码（Gmail 开启双重验证后必须如此）
 - 设置 `EMAIL_ALLOWED_USERS` 以限制可与 Agent 交互的用户
-- 密码存储在 `~/.hermes/.env` 中——请保护此文件（`chmod 600`）
+- 密码存储在 `~/.plobi/.env` 中——请保护此文件（`chmod 600`）
 - IMAP 默认使用 SSL（端口 993），SMTP 默认使用 STARTTLS（端口 587）——连接已加密
 
 ---

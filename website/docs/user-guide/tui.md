@@ -14,36 +14,36 @@ It's the recommended way to run Plobi interactively.
 
 ```bash
 # Launch the TUI
-hermes --tui
+plobi --tui
 
 # Resume the latest TUI session (falls back to the latest classic session)
-hermes --tui -c
-hermes --tui --continue
+plobi --tui -c
+plobi --tui --continue
 
 # Resume a specific session by ID or title
-hermes --tui -r 20260409_000000_aa11bb
-hermes --tui --resume "my t0p session"
+plobi --tui -r 20260409_000000_aa11bb
+plobi --tui --resume "my t0p session"
 
 # Run source directly — skips the prebuild step (for TUI contributors)
-hermes --tui --dev
+plobi --tui --dev
 ```
 
 You can also enable it via env var:
 
 ```bash
-export HERMES_TUI=1
-hermes          # now uses the TUI
-hermes chat     # same
+export PLOBI_TUI=1
+plobi          # now uses the TUI
+plobi chat     # same
 ```
 
-Or make it the persistent default in `~/.hermes/config.yaml`:
+Or make it the persistent default in `~/.plobi/config.yaml`:
 
 ```yaml
 display:
   interface: tui   # "cli" (default) or "tui"
 ```
 
-With `display.interface: tui`, a bare `hermes` (and `hermes chat`) launches the TUI. Explicit flags always win — run `hermes --cli` to drop back to the classic REPL for a single invocation, or `hermes --tui` / `HERMES_TUI=1` to force the TUI when the config default is `cli`.
+With `display.interface: tui`, a bare `plobi` (and `plobi chat`) launches the TUI. Explicit flags always win — run `plobi --cli` to drop back to the classic REPL for a single invocation, or `plobi --tui` / `PLOBI_TUI=1` to force the TUI when the config default is `cli`.
 
 The classic CLI remains the shipped default. Anything documented in [CLI Interface](cli.md) — slash commands, quick commands, skill preloading, personalities, multi-line input, interrupts — works in the TUI identically.
 
@@ -74,7 +74,7 @@ Click anywhere on a section header (or its chevron) to toggle it. The Tools list
 
 ## Requirements
 
-- **Node.js** ≥ 20 — the TUI runs as a subprocess launched from the Python CLI. `hermes doctor` verifies this.
+- **Node.js** ≥ 20 — the TUI runs as a subprocess launched from the Python CLI. `plobi doctor` verifies this.
 - **TTY** — like the classic CLI, piping stdin or running in non-interactive environments falls back to single-query mode.
 
 On first launch Plobi installs the TUI's Node dependencies into `ui-tui/node_modules` (one-time, a few seconds). Subsequent launches are fast. If you pull a new Plobi version, the TUI bundle is rebuilt automatically when sources are newer than the dist.
@@ -84,8 +84,8 @@ On first launch Plobi installs the TUI's Node dependencies into `ui-tui/node_mod
 Distributions that ship a prebuilt bundle (Nix, system packages) can point Plobi at it:
 
 ```bash
-export HERMES_TUI_DIR=/path/to/prebuilt/ui-tui
-hermes --tui
+export PLOBI_TUI_DIR=/path/to/prebuilt/ui-tui
+plobi --tui
 ```
 
 The directory must contain `dist/entry.js`.
@@ -114,14 +114,14 @@ All slash commands work unchanged. A few are TUI-owned — they produce richer o
 | `/details` | Toggle verbose tool-call details (global or per-section) |
 | `/usage` | Rich token / cost / context panel |
 | `/agents` (alias `/tasks`) | Observability overlay — live subagent tree with kill/pause controls, per-branch cost / token / file rollups, turn-by-turn history |
-| `/reload` | Re-reads `~/.hermes/.env` into the running TUI process so newly added API keys take effect without a restart |
+| `/reload` | Re-reads `~/.plobi/.env` into the running TUI process so newly added API keys take effect without a restart |
 | `/mouse [on\|off\|toggle\|wheel\|buttons\|all]` | Pick a mouse tracking preset at runtime (also persists to `display.mouse_tracking` in `config.yaml`). `wheel` (1000+1006) keeps scroll-wheel scrolling without the hover events that make tmux spam "No image in clipboard" over the prompt row; `buttons` adds drag-to-select; `all` is the default with hover-driven UI. |
 
 Every other slash command (including installed skills, quick commands, and personality toggles) works identically to the classic CLI. See [Slash Commands Reference](../reference/slash-commands.md).
 
 ## Live session switcher
 
-Use the live session switcher when you want one terminal to act as a dispatcher for several TUI sessions. It lists only sessions that are currently live in this TUI process; closed sessions remain saved transcripts and can still be reopened with `/resume` or `hermes --tui --resume <id-or-title>`.
+Use the live session switcher when you want one terminal to act as a dispatcher for several TUI sessions. It lists only sessions that are currently live in this TUI process; closed sessions remain saved transcripts and can still be reopened with `/resume` or `plobi --tui --resume <id-or-title>`.
 
 Open it with any of these:
 
@@ -154,14 +154,14 @@ This is always-on — nothing to configure. Classic CLI keeps the raw TeX.
 
 The TUI auto-detects light terminals and swaps to the light theme accordingly. Detection works in three layers:
 
-1. `HERMES_TUI_THEME` env var — highest priority. Values: `light`, `dark`, or a raw 6-char background hex (e.g. `ffffff`, `1a1a2e`).
+1. `PLOBI_TUI_THEME` env var — highest priority. Values: `light`, `dark`, or a raw 6-char background hex (e.g. `ffffff`, `1a1a2e`).
 2. `COLORFGBG` env var — the classic "what's my background color?" hint used by xterm-derived terminals.
 3. Terminal background probe via OSC 11 — works on modern terminals (Ghostty, Warp, iTerm2, WezTerm, Kitty) that don't set `COLORFGBG`.
 
 If you want the light theme permanently regardless of terminal:
 
 ```bash
-export HERMES_TUI_THEME=light
+export PLOBI_TUI_THEME=light
 ```
 
 ## Busy indicator styles
@@ -177,12 +177,12 @@ Or in-session: `/indicator emoji` (etc.). Styles ship with matched glyph widths 
 
 ## Auto-resume
 
-By default, `hermes --tui` starts a fresh session each launch. To re-attach to the most recent TUI session automatically (useful when your terminal or SSH connection drops unexpectedly), opt in:
+By default, `plobi --tui` starts a fresh session each launch. To re-attach to the most recent TUI session automatically (useful when your terminal or SSH connection drops unexpectedly), opt in:
 
 ```bash
-export HERMES_TUI_RESUME=1          # most-recent TUI session
+export PLOBI_TUI_RESUME=1          # most-recent TUI session
 # or:
-export HERMES_TUI_RESUME=<session-id>   # specific session
+export PLOBI_TUI_RESUME=<session-id>   # specific session
 ```
 
 Unset the variable or pass `--resume <id>` explicitly to override on a per-launch basis.
@@ -203,15 +203,15 @@ The per-skin status-bar colors and thresholds are shared with the classic CLI �
 
 The status line also shows:
 
-- **Working directory with git branch** — `~/projects/hermes-agent (docs/two-week-gap-sweep)`. The branch suffix updates when you `git checkout` in a side terminal (mtime-cached) so the TUI reflects your actual active branch, not whatever it was at launch.
+- **Working directory with git branch** — `~/projects/plobi-agent (docs/two-week-gap-sweep)`. The branch suffix updates when you `git checkout` in a side terminal (mtime-cached) so the TUI reflects your actual active branch, not whatever it was at launch.
 - **Per-prompt elapsed time** — `⏱ 12s/3m 45s` while the turn is running (live), frozen to `⏲ 32s / 3m 45s` after the turn completes. First number is time since last user message; second is total session duration. Resets on every new prompt.
 - **`🗜️ N`** — number of times the running session has been auto-compressed. Appears once the first compression fires.
 - **`▶ N`** — number of `/background` tasks currently running in this session. Appears whenever at least one task is in flight.
-- **`⚠ YOLO`** — visible warning whenever YOLO mode is on (`hermes --yolo`, `/yolo`, or `HERMES_YOLO_MODE=1`). The same badge also appears in the startup banner so you cannot launch an auto-approving session without noticing.
+- **`⚠ YOLO`** — visible warning whenever YOLO mode is on (`plobi --yolo`, `/yolo`, or `PLOBI_YOLO_MODE=1`). The same badge also appears in the startup banner so you cannot launch an auto-approving session without noticing.
 
 ## Configuration
 
-The TUI respects all standard Plobi config: `~/.hermes/config.yaml`, profiles, personalities, skins, quick commands, credential pools, memory providers, tool/skill enablement. No TUI-specific config file exists.
+The TUI respects all standard Plobi config: `~/.plobi/config.yaml`, profiles, personalities, skins, quick commands, credential pools, memory providers, tool/skill enablement. No TUI-specific config file exists.
 
 A handful of keys tune the TUI surface specifically:
 
@@ -267,7 +267,7 @@ existing configs keep working unchanged.
 
 ## Sessions
 
-Sessions are shared between the TUI and the classic CLI — both write to the same `~/.hermes/state.db`. You can start a session in one, resume in the other. The session picker surfaces sessions from both sources, with a source tag.
+Sessions are shared between the TUI and the classic CLI — both write to the same `~/.plobi/state.db`. You can start a session in one, resume in the other. The session picker surfaces sessions from both sources, with a source tag.
 
 See [Sessions](sessions.md) for lifecycle, search, compression, and export.
 
@@ -275,15 +275,15 @@ See [Sessions](sessions.md) for lifecycle, search, compression, and export.
 
 By default the TUI spawns its own in-process gateway, so each TUI instance is self-contained — there's nothing to configure.
 
-You may see a `HERMES_TUI_GATEWAY_URL` env var referenced in the codebase or logs. This is an **internal wiring detail of the web dashboard**, not a user-facing remote-attach knob. When you open the dashboard's "Chat" tab (`hermes dashboard` → `/chat`), the dashboard's web server spawns an embedded TUI child process and injects `HERMES_TUI_GATEWAY_URL` so that child attaches to the dashboard's own in-process `tui_gateway` over a loopback WebSocket (`/api/ws`). The `/api/ws` endpoint exists only inside the dashboard server (`hermes_cli/web_server.py`) and is bound to that process's lifetime and auth.
+You may see a `PLOBI_TUI_GATEWAY_URL` env var referenced in the codebase or logs. This is an **internal wiring detail of the web dashboard**, not a user-facing remote-attach knob. When you open the dashboard's "Chat" tab (`plobi dashboard` → `/chat`), the dashboard's web server spawns an embedded TUI child process and injects `PLOBI_TUI_GATEWAY_URL` so that child attaches to the dashboard's own in-process `tui_gateway` over a loopback WebSocket (`/api/ws`). The `/api/ws` endpoint exists only inside the dashboard server (`plobi_cli/web_server.py`) and is bound to that process's lifetime and auth.
 
-There is no general "point any TUI at any standalone gateway port" mode. In particular, the OpenAI-compatible API server (`hermes gateway` / the `api_server` platform) does **not** serve `/api/ws` — it's the model-backend surface (`/v1/chat/completions`, `/v1/models`, …) and deliberately does not expose the TUI's JSON-RPC control channel. Setting `HERMES_TUI_GATEWAY_URL` to that port will 404.
+There is no general "point any TUI at any standalone gateway port" mode. In particular, the OpenAI-compatible API server (`plobi gateway` / the `api_server` platform) does **not** serve `/api/ws` — it's the model-backend surface (`/v1/chat/completions`, `/v1/models`, …) and deliberately does not expose the TUI's JSON-RPC control channel. Setting `PLOBI_TUI_GATEWAY_URL` to that port will 404.
 
-If you want multiple surfaces to share one set of sessions, use the shared `~/.hermes/state.db` (see [Sessions](sessions.md)) or the web dashboard's embedded chat (see [Web Dashboard](features/web-dashboard.md#chat)) — not a hand-set gateway URL.
+If you want multiple surfaces to share one set of sessions, use the shared `~/.plobi/state.db` (see [Sessions](sessions.md)) or the web dashboard's embedded chat (see [Web Dashboard](features/web-dashboard.md#chat)) — not a hand-set gateway URL.
 
 ## Reverting to the classic CLI
 
-Launching `hermes` (without `--tui`) stays on the classic CLI by default. To make a machine prefer the TUI, set `display.interface: tui` in `~/.hermes/config.yaml` (persistent) or `HERMES_TUI=1` in your shell profile (per-shell). To go back, set `interface: cli` / unset the env var, or pass `hermes --cli` for a one-off.
+Launching `plobi` (without `--tui`) stays on the classic CLI by default. To make a machine prefer the TUI, set `display.interface: tui` in `~/.plobi/config.yaml` (persistent) or `PLOBI_TUI=1` in your shell profile (per-shell). To go back, set `interface: cli` / unset the env var, or pass `plobi --cli` for a one-off.
 
 If the TUI fails to launch (no Node, missing bundle, TTY issue), Plobi prints a diagnostic and falls back — rather than leaving you stuck.
 

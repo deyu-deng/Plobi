@@ -8,7 +8,7 @@ license: MIT
 dependencies: [semanticscholar, arxiv, habanero, requests, scipy, numpy, matplotlib, SciencePlots]
 platforms: [linux, macos]
 metadata:
-  hermes:
+  plobi:
     tags: [Research, Paper Writing, Experiments, ML, AI, NeurIPS, ICML, ICLR, ACL, AAAI, COLM, LaTeX, Citations, Statistical Analysis]
     category: research
     related_skills: [arxiv, ml-paper-writing, subagent-driven-development, plan]
@@ -2126,7 +2126,7 @@ Compose this skill with other Plobi skills for specific phases:
 |-------|-------------|-------------|
 | **arxiv** | Phase 1 (Literature Review): searching arXiv, generating BibTeX, finding related papers via Semantic Scholar | `skill_view("arxiv")` |
 | **subagent-driven-development** | Phase 5 (Drafting): parallel section writing with 2-stage review (spec compliance then quality) | `skill_view("subagent-driven-development")` |
-| **plan** | Phase 0 (Setup): creating structured plans before execution. Writes to `.hermes/plans/` | `skill_view("plan")` |
+| **plan** | Phase 0 (Setup): creating structured plans before execution. Writes to `.plobi/plans/` | `skill_view("plan")` |
 | **qmd** | Phase 1 (Literature): searching local knowledge bases (notes, transcripts, docs) via hybrid BM25+vector search | Install: `skill_manage("install", "qmd")` |
 | **diagramming** | Phase 4-5: creating Excalidraw-based figures and architecture diagrams | `skill_view("diagramming")` |
 | **data-science** | Phase 4 (Analysis): Jupyter live kernel for interactive analysis and visualization | `skill_view("data-science")` |
@@ -2148,7 +2148,7 @@ Compose this skill with other Plobi skills for specific phases:
 | **`memory`** | Persist key decisions across sessions: contribution framing, venue choice, reviewer feedback. |
 | **`cronjob`** | Schedule experiment monitoring, deadline countdowns, automated arXiv checks. |
 | **`clarify`** | Ask the user targeted questions when blocked (venue choice, contribution framing). |
-| **cron `deliver:`** | Notify the user when experiments complete or drafts are ready even if they're not in chat — schedule the check as a cron job with a messaging `deliver:` target (the agent no longer has a `send_message` tool; outbound delivery is handled by cron/`hermes send`). |
+| **cron `deliver:`** | Notify the user when experiments complete or drafts are ready even if they're not in chat — schedule the check as a cron job with a messaging `deliver:` target (the agent no longer has a `send_message` tool; outbound delivery is handled by cron/`plobi send`). |
 
 ### Tool Usage Patterns
 

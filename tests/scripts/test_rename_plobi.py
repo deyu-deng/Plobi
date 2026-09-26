@@ -39,6 +39,13 @@ REWRITE = [
     ("vaelis_secretary_ask", "plobi_secretary_ask"),
     ("VAELIS_DELEGATION_GLOBAL_MAX", "PLOBI_DELEGATION_GLOBAL_MAX"),
     ("com.vaelis.desktop", "com.plobi.desktop"),
+    # Relative module paths and glued service names must go through the generic
+    # rule, not the ./hermes launcher override -- an unanchored override turned
+    # these into '../plobi.py' and 'plobi.py-gateway.service'.
+    ("from '../hermes'", "from '../plobi'"),
+    ("/user.slice/.../hermes-gateway.service", "/user.slice/.../plobi-gateway.service"),
+    ("callPackage ./hermes-agent.nix", "callPackage ./plobi-agent.nix"),
+    ("C:/Users/.../hermes-snap-1.sh", "C:/Users/.../plobi-snap-1.sh"),
     # A label naming us glued to an upstream URL: the label is ours (rewrite),
     # the URL is theirs (survive).
     ("[Vaelis Agent](https://github.com/NousResearch/hermes-agent)",
@@ -92,5 +99,19 @@ def test_path_rename_plan_follows_the_same_rules() -> None:
         ["vaelis", "hermes"],
     ) == [
         ("vaelis/agenda/store.py", "plobi/agenda/store.py"),
+        ("hermes_cli/main.py", "plobi_cli/main.py"),
+    ]
+
+
+def test_root_launcher_does_not_collide_with_the_package_dir() -> None:
+    """`hermes` (repo-root launcher) becomes plobi.py, not plobi/.
+
+    S2 turns the `vaelis/` package into `plobi/`, so a stem-for-stem rename of
+    the root launcher would aim at an occupied name. Both the content reference
+    and the path plan must agree on plobi.py.
+    """
+    assert _rewrite("run ./hermes from the checkout") == "run ./plobi.py from the checkout"
+    assert rename_plobi.plan_renames(["hermes", "hermes_cli/main.py"], ["hermes"]) == [
+        ("hermes", "plobi.py"),
         ("hermes_cli/main.py", "plobi_cli/main.py"),
     ]

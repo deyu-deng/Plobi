@@ -6,11 +6,11 @@
  * the agent state machine in §4.2.
  *
  * Reuse note: agenda events are NOT re-declared here — the console shares
- * `AgendaEvent` from `@/types/hermes` with the existing full-screen board so
+ * `AgendaEvent` from `@/types/plobi` with the existing full-screen board so
  * there is exactly one shape for schedule rows.
  */
 
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 /** Every console response is unwrapped from this envelope. */
 export interface ApiEnvelope<T> {
@@ -54,7 +54,7 @@ export interface AgentCreateRequest {
   /**
    * Human-typed display name, now sent **as typed** (2026-09-16). The backend
    * reads `body["name"]` into its `display` slot; `id` stays the lowercased
-   * slug because it doubles as the Hermes profile name. The rail still prints
+   * slug because it doubles as the Plobi profile name. The rail still prints
    * `id` until the backend serves a display name on the agent row — see
    * `Docs/AGENT-TASK-AGENT-DISPLAY-NAME.md`.
    */
@@ -90,7 +90,7 @@ export interface Agent {
   model?: string
   name: string
   /**
-   * Hermes profile this agent chats under (`registry.profile_name`). The
+   * Plobi profile this agent chats under (`registry.profile_name`). The
    * desktop switches the live gateway onto this profile when entering L2 so
    * L1/L2 transcripts stay isolated (ARCH-RULINGS 裁定 1/3).
    */

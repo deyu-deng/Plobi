@@ -501,10 +501,10 @@ def test_soul_block_identity_remains_idempotent_under_ensure_l1_secretary_routin
     from plobi.agents.registry import ensure_l1_secretary_routing_soul
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    # 真实 HERMES_HOME + 先建好 .hermes 目录，否则 ensure 写不进 SOUL.md。
-    hermes_home = tmp_path / ".hermes"
-    hermes_home.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    # 真实 PLOBI_HOME + 先建好 .plobi 目录，否则 ensure 写不进 SOUL.md。
+    plobi_home = tmp_path / ".plobi"
+    plobi_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PLOBI_HOME", str(plobi_home))
 
     changed_first = ensure_l1_secretary_routing_soul(home=tmp_path)
     changed_second = ensure_l1_secretary_routing_soul(home=tmp_path)

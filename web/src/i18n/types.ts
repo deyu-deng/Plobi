@@ -148,11 +148,11 @@ export interface Translations {
     starting: string;
     startedInBackground: string;
     stopped: string;
-    updateHermes: string;
-    updateHermesConfirmMessage?: string;
-    updateHermesConfirmNow?: string;
-    updateHermesConfirmTitle?: string;
-    updatingHermes: string;
+    updatePlobi: string;
+    updatePlobiConfirmMessage?: string;
+    updatePlobiConfirmNow?: string;
+    updatePlobiConfirmTitle?: string;
+    updatingPlobi: string;
     waitingForOutput: string;
   };
 
@@ -576,7 +576,7 @@ export interface Translations {
     fontMono?: string;
   };
 
-  // ── Achievements plugin (plugins/hermes-achievements) ──
+  // ── Achievements plugin (plugins/plobi-achievements) ──
   achievements: {
     hero: {
       kicker: string;

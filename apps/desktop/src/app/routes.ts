@@ -96,7 +96,7 @@ export function isOverlayView(view: AppView): boolean {
 }
 
 // Main-pane pages that replace the center column but keep the session sidebar.
-// Hermes always left the left rail mounted on these routes; U6/WP-A gated the
+// Plobi always left the left rail mounted on these routes; U6/WP-A gated the
 // sidebar on `chatOpen` / secretary `level`, which hid it on /skills and made
 // the page feel inescapable. Overlays (settings, cron, …) still cover the shell.
 export const SHELL_PAGE_VIEWS: ReadonlySet<AppView> = new Set(['artifacts', 'messaging', 'skills'])

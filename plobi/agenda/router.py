@@ -1,7 +1,7 @@
 """HTTP adapter for the agenda service.
 
 Thin by design: validate, call the service, map business errors to status
-codes. Mounted at ``/api/agenda`` by ``hermes_cli.web_server`` so the desktop
+codes. Mounted at ``/api/agenda`` by ``plobi_cli.web_server`` so the desktop
 board does not depend on an opt-in plugin being enabled (ADR-0008).
 
 WP-DAY-SURFACE 新增 ``GET /api/agenda/day?date=YYYY-MM-DD`` —— 白天看板用的

@@ -271,7 +271,7 @@ run stalling in Phase 2.
   Turnstile, hCaptcha checkbox) and reads anti-bot people-search pages that `web_extract` and the
   proxyless agent browser cannot. This is what the skill's `browser_backend` setting governs
   (`auto` picks Browserbase when `BROWSERBASE_API_KEY` is present - now also read from
-  `$HERMES_HOME/.env`, not just the shell env, so `doctor`/`setup --auto` detect the key Plobi
+  `$PLOBI_HOME/.env`, not just the shell env, so `doctor`/`setup --auto` detect the key Plobi
   already loads for its own tools).
 - **Phase 2 (execute: opt-out forms, webmail sends, session-bound multi-step gates):** the work must
   run in the **operator's own everyday browser** - real fingerprint, residential IP, AND the
@@ -283,7 +283,7 @@ run stalling in Phase 2.
   binding).
 - **How to drive the operator's browser (CDP).** Point Plobi's browser tools at the operator's real
   Chrome over the DevTools protocol: launch
-  `chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.hermes/chrome-debug"` and connect the
+  `chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.plobi/chrome-debug"` and connect the
   browser backend to `127.0.0.1:9222`. Use a **dedicated debug profile** (`chrome-debug`), NOT the
   operator's Default Chrome profile, and have the operator sign into their webmail (and any needed
   broker accounts) in that profile once. That single browser then carries residential IP + real

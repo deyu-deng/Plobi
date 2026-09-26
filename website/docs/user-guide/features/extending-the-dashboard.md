@@ -6,9 +6,9 @@ description: "Build themes and plugins for the Plobi web dashboard — palettes,
 
 # Extending the Dashboard
 
-The Plobi web dashboard (`hermes dashboard`) is built to be reskinned and extended without forking the codebase. Three layers are exposed:
+The Plobi web dashboard (`plobi dashboard`) is built to be reskinned and extended without forking the codebase. Three layers are exposed:
 
-1. **Themes** — YAML files that repaint the dashboard's palette, typography, layout, and per-component chrome. Drop a file in `~/.hermes/dashboard-themes/`; it appears in the theme switcher.
+1. **Themes** — YAML files that repaint the dashboard's palette, typography, layout, and per-component chrome. Drop a file in `~/.plobi/dashboard-themes/`; it appears in the theme switcher.
 2. **UI plugins** — a directory with `manifest.json` + a JavaScript bundle that registers a tab, replaces a built-in page, augments one via page-scoped slots, or injects components into named shell slots.
 3. **Backend plugins** — a Python file inside that plugin directory that exposes a FastAPI `router`; routes are mounted under `/api/plugins/<name>/` and called from the plugin's UI.
 
@@ -17,7 +17,7 @@ All three are **drop-in at runtime**: no repo clone, no `npm run build`, no patc
 If you just want to use the dashboard, see [Web Dashboard](./web-dashboard). If you want to reskin the terminal CLI (not the web dashboard), see [Skins & Themes](./skins) — the CLI skin system is unrelated to dashboard themes.
 
 :::note How the pieces compose
-Themes and plugins are independent but synergistic. A theme can stand alone (just a YAML file). A plugin can stand alone (just a tab). Together they let you build a complete visual reskin with custom HUDs — the example `strike-freedom-cockpit` demo (lives in the `hermes-example-plugins` companion repo — see [Combined theme + plugin demo](#combined-theme--plugin-demo) for install steps) does exactly that.
+Themes and plugins are independent but synergistic. A theme can stand alone (just a YAML file). A plugin can stand alone (just a tab). Together they let you build a complete visual reskin with custom HUDs — the example `strike-freedom-cockpit` demo (lives in the `plobi-example-plugins` companion repo — see [Combined theme + plugin demo](#combined-theme--plugin-demo) for install steps) does exactly that.
 :::
 
 ---
@@ -54,16 +54,16 @@ Themes and plugins are independent but synergistic. A theme can stand alone (jus
 
 ## Themes
 
-Themes are YAML files stored in `~/.hermes/dashboard-themes/`. The file name doesn't matter (the theme's `name:` field is what the system uses), but convention is `<name>.yaml`. Every field is optional — missing keys fall back to the built-in `default` theme, so a theme can be as small as one color.
+Themes are YAML files stored in `~/.plobi/dashboard-themes/`. The file name doesn't matter (the theme's `name:` field is what the system uses), but convention is `<name>.yaml`. Every field is optional — missing keys fall back to the built-in `default` theme, so a theme can be as small as one color.
 
 ### Quick start — your first theme
 
 ```bash
-mkdir -p ~/.hermes/dashboard-themes
+mkdir -p ~/.plobi/dashboard-themes
 ```
 
 ```yaml
-# ~/.hermes/dashboard-themes/neon.yaml
+# ~/.plobi/dashboard-themes/neon.yaml
 name: neon
 label: Neon
 description: Pure magenta on black
@@ -272,7 +272,7 @@ customCSS: |
   }
 ```
 
-The CSS is injected as a single scoped `<style data-hermes-theme-css>` tag on theme apply and cleaned up on theme switch. **Capped at 32 KiB per theme.**
+The CSS is injected as a single scoped `<style data-plobi-theme-css>` tag on theme apply and cleaned up on theme switch. **Capped at 32 KiB per theme.**
 
 ### Built-in themes
 
@@ -295,7 +295,7 @@ Themes that reference Google Fonts (all except Plobi Teal) load the stylesheet o
 Every knob in one file — copy and trim what you don't need:
 
 ```yaml
-# ~/.hermes/dashboard-themes/ocean.yaml
+# ~/.plobi/dashboard-themes/ocean.yaml
 name: ocean
 label: Ocean Deep
 description: Deep sea blues with coral accents
@@ -357,22 +357,22 @@ Refresh the dashboard after creating the file. Switch themes live from the heade
 
 ## Plugins
 
-A dashboard plugin is a directory with a `manifest.json`, a pre-built JS bundle, and optionally a CSS file and a Python file with FastAPI routes. Plugins live next to other Plobi plugins in `~/.hermes/plugins/<name>/` — the dashboard extension is a `dashboard/` subfolder inside that plugin directory, so one plugin can extend both the CLI/gateway and the dashboard from a single install.
+A dashboard plugin is a directory with a `manifest.json`, a pre-built JS bundle, and optionally a CSS file and a Python file with FastAPI routes. Plugins live next to other Plobi plugins in `~/.plobi/plugins/<name>/` — the dashboard extension is a `dashboard/` subfolder inside that plugin directory, so one plugin can extend both the CLI/gateway and the dashboard from a single install.
 
-Plugins don't bundle React or UI components. They use the **Plugin SDK** exposed on `window.__HERMES_PLUGIN_SDK__`. This keeps plugin bundles tiny (typically a few KB) and avoids version conflicts.
+Plugins don't bundle React or UI components. They use the **Plugin SDK** exposed on `window.__PLOBI_PLUGIN_SDK__`. This keeps plugin bundles tiny (typically a few KB) and avoids version conflicts.
 
 ### Quick start — your first plugin
 
 Create the directory structure:
 
 ```bash
-mkdir -p ~/.hermes/plugins/my-plugin/dashboard/dist
+mkdir -p ~/.plobi/plugins/my-plugin/dashboard/dist
 ```
 
 Write the manifest:
 
 ```json
-// ~/.hermes/plugins/my-plugin/dashboard/manifest.json
+// ~/.plobi/plugins/my-plugin/dashboard/manifest.json
 {
   "name": "my-plugin",
   "label": "My Plugin",
@@ -389,11 +389,11 @@ Write the manifest:
 Write the JS bundle (a plain IIFE — no build step needed):
 
 ```javascript
-// ~/.hermes/plugins/my-plugin/dashboard/dist/index.js
+// ~/.plobi/plugins/my-plugin/dashboard/dist/index.js
 (function () {
   "use strict";
 
-  const SDK = window.__HERMES_PLUGIN_SDK__;
+  const SDK = window.__PLOBI_PLUGIN_SDK__;
   const { React } = SDK;
   const { Card, CardHeader, CardTitle, CardContent } = SDK.components;
 
@@ -410,7 +410,7 @@ Write the JS bundle (a plain IIFE — no build step needed):
     );
   }
 
-  window.__HERMES_PLUGINS__.register("my-plugin", MyPage);
+  window.__PLOBI_PLUGINS__.register("my-plugin", MyPage);
 })();
 ```
 
@@ -423,7 +423,7 @@ If you prefer JSX, use any bundler (esbuild, Vite, rollup) with React as an exte
 ### Directory layout
 
 ```
-~/.hermes/plugins/my-plugin/
+~/.plobi/plugins/my-plugin/
 ├── plugin.yaml              # optional — existing CLI/gateway plugin manifest
 ├── __init__.py              # optional — existing CLI/gateway hooks
 └── dashboard/               # dashboard extension
@@ -490,10 +490,10 @@ Need a different icon? Open a PR to `web/src/App.tsx`'s `ICON_MAP` — pure addi
 
 ### The Plugin SDK
 
-Everything a plugin needs is on `window.__HERMES_PLUGIN_SDK__`. Plugins should never import React directly.
+Everything a plugin needs is on `window.__PLOBI_PLUGIN_SDK__`. Plugins should never import React directly.
 
 ```javascript
-const SDK = window.__HERMES_PLUGIN_SDK__;
+const SDK = window.__PLOBI_PLUGIN_SDK__;
 
 // React + hooks
 SDK.React                    // the React instance
@@ -564,8 +564,8 @@ Slots let a plugin inject components into named locations of the app shell — t
 Register from inside the plugin bundle:
 
 ```javascript
-window.__HERMES_PLUGINS__.registerSlot("my-plugin", "sidebar", MySidebar);
-window.__HERMES_PLUGINS__.registerSlot("my-plugin", "header-left", MyCrest);
+window.__PLOBI_PLUGINS__.registerSlot("my-plugin", "sidebar", MySidebar);
+window.__PLOBI_PLUGINS__.registerSlot("my-plugin", "header-left", MyCrest);
 ```
 
 #### Slot catalogue
@@ -609,7 +609,7 @@ function PinnedSessionsBanner() {
   );
 }
 
-window.__HERMES_PLUGINS__.registerSlot("my-plugin", "sessions:top", PinnedSessionsBanner);
+window.__PLOBI_PLUGINS__.registerSlot("my-plugin", "sessions:top", PinnedSessionsBanner);
 ```
 
 Combine page-scoped slots with `tab.hidden: true` if your plugin only augments existing pages and doesn't need a sidebar tab of its own.
@@ -658,7 +658,7 @@ Available slots: `sessions:*`, `analytics:*`, `logs:*`, `cron:*`, `skills:*`, `c
 Minimal example — pin a banner to the top of the Sessions page:
 
 ```json
-// ~/.hermes/plugins/session-notes/dashboard/manifest.json
+// ~/.plobi/plugins/session-notes/dashboard/manifest.json
 {
   "name": "session-notes",
   "label": "Session Notes",
@@ -669,9 +669,9 @@ Minimal example — pin a banner to the top of the Sessions page:
 ```
 
 ```javascript
-// ~/.hermes/plugins/session-notes/dashboard/dist/index.js
+// ~/.plobi/plugins/session-notes/dashboard/dist/index.js
 (function () {
-  const SDK = window.__HERMES_PLUGIN_SDK__;
+  const SDK = window.__PLOBI_PLUGIN_SDK__;
   const { React } = SDK;
   const { Card, CardContent } = SDK.components;
 
@@ -683,10 +683,10 @@ Minimal example — pin a banner to the top of the Sessions page:
   }
 
   // Placeholder for the hidden tab.
-  window.__HERMES_PLUGINS__.register("session-notes", function () { return null; });
+  window.__PLOBI_PLUGINS__.register("session-notes", function () { return null; });
 
   // The real work.
-  window.__HERMES_PLUGINS__.registerSlot("session-notes", "sessions:top", Banner);
+  window.__PLOBI_PLUGINS__.registerSlot("session-notes", "sessions:top", Banner);
 })();
 ```
 
@@ -724,7 +724,7 @@ The bundle still calls `register()` with a placeholder component (good practice 
 Plugins can register FastAPI routes by setting `api` in the manifest. Create the file and export a `router`:
 
 ```python
-# ~/.hermes/plugins/my-plugin/dashboard/plugin_api.py
+# ~/.plobi/plugins/my-plugin/dashboard/plugin_api.py
 from fastapi import APIRouter
 
 router = APIRouter()
@@ -747,12 +747,12 @@ Plugin API routes bypass session-token authentication since the dashboard server
 
 #### Accessing Plobi internals
 
-Backend routes run inside the dashboard process, so they can import from the hermes-agent codebase directly:
+Backend routes run inside the dashboard process, so they can import from the plobi-agent codebase directly:
 
 ```python
 from fastapi import APIRouter
-from hermes_state import SessionDB
-from hermes_cli.config import load_config
+from plobi_state import SessionDB
+from plobi_cli.config import load_config
 
 router = APIRouter()
 
@@ -804,10 +804,10 @@ The dashboard scans three directories for `dashboard/manifest.json`:
 
 | Priority | Directory | Source label |
 |----------|-----------|--------------|
-| 1 (wins on conflict) | `~/.hermes/plugins/<name>/dashboard/` | `user` |
+| 1 (wins on conflict) | `~/.plobi/plugins/<name>/dashboard/` | `user` |
 | 2 | `<repo>/plugins/memory/<name>/dashboard/` | `bundled` |
 | 2 | `<repo>/plugins/<name>/dashboard/` | `bundled` |
-| 3 | `./.hermes/plugins/<name>/dashboard/` | `project` — only when `HERMES_ENABLE_PROJECT_PLUGINS` is set |
+| 3 | `./.plobi/plugins/<name>/dashboard/` | `project` — only when `PLOBI_ENABLE_PROJECT_PLUGINS` is set |
 
 Discovery results are cached per dashboard process. After adding a new plugin, either:
 
@@ -816,14 +816,14 @@ Discovery results are cached per dashboard process. After adding a new plugin, e
 curl http://127.0.0.1:9119/api/dashboard/plugins/rescan
 ```
 
-…or restart `hermes dashboard`.
+…or restart `plobi dashboard`.
 
 #### Plugin load lifecycle
 
-1. Dashboard loads. `main.tsx` exposes the SDK on `window.__HERMES_PLUGIN_SDK__` and the registry on `window.__HERMES_PLUGINS__`.
+1. Dashboard loads. `main.tsx` exposes the SDK on `window.__PLOBI_PLUGIN_SDK__` and the registry on `window.__PLOBI_PLUGINS__`.
 2. `App.tsx` calls `usePlugins()` → fetches `GET /api/dashboard/plugins`.
 3. For each manifest: CSS `<link>` is injected (if declared), then a `<script>` tag loads the JS bundle.
-4. The plugin's IIFE runs and calls `window.__HERMES_PLUGINS__.register(name, Component)` — and optionally `.registerSlot(name, slot, Component)` for each slot.
+4. The plugin's IIFE runs and calls `window.__PLOBI_PLUGINS__.register(name, Component)` — and optionally `.registerSlot(name, slot, Component)` for each slot.
 5. The dashboard resolves the registered component against the manifest, adds the tab to navigation (unless `hidden`), and mounts the component as a route.
 
 Plugins have up to **2 seconds** after their script loads to call `register()`. After that the dashboard stops waiting and finishes initial render. If a plugin later registers, it still appears — the nav is reactive.
@@ -834,7 +834,7 @@ If a plugin's script fails to load (404, syntax error, exception during IIFE), t
 
 ## Combined theme + plugin demo
 
-The [`strike-freedom-cockpit`](https://github.com/NousResearch/hermes-example-plugins/tree/main/strike-freedom-cockpit) plugin (companion repo `hermes-example-plugins`) is a complete reskin demo. It pairs a theme YAML with a slot-only plugin to produce a cockpit-style HUD without forking the dashboard.
+The [`strike-freedom-cockpit`](https://github.com/NousResearch/hermes-example-plugins/tree/main/strike-freedom-cockpit) plugin (companion repo `plobi-example-plugins`) is a complete reskin demo. It pairs a theme YAML with a slot-only plugin to produce a cockpit-style HUD without forking the dashboard.
 
 **What it demonstrates:**
 
@@ -851,11 +851,11 @@ The [`strike-freedom-cockpit`](https://github.com/NousResearch/hermes-example-pl
 git clone https://github.com/NousResearch/hermes-example-plugins.git
 
 # Theme
-cp hermes-example-plugins/strike-freedom-cockpit/theme/strike-freedom.yaml \
-   ~/.hermes/dashboard-themes/
+cp plobi-example-plugins/strike-freedom-cockpit/theme/strike-freedom.yaml \
+   ~/.plobi/dashboard-themes/
 
 # Plugin
-cp -r hermes-example-plugins/strike-freedom-cockpit ~/.hermes/plugins/
+cp -r plobi-example-plugins/strike-freedom-cockpit ~/.plobi/plugins/
 ```
 
 Open the dashboard, pick **Strike Freedom** from the theme switcher. The cockpit sidebar appears, the crest shows in the header, the tagline replaces the footer. Switch back to **Plobi Teal** and the plugin remains installed but invisible (the `sidebar` slot only renders under the `cockpit` layout variant).
@@ -886,32 +886,32 @@ Read the plugin source (`strike-freedom-cockpit/dashboard/dist/index.js` in the 
 
 | Global | Type | Provider |
 |--------|------|----------|
-| `window.__HERMES_PLUGIN_SDK__` | object | `registry.ts` — React, hooks, UI components, API client, utils. |
-| `window.__HERMES_PLUGINS__.register(name, Component)` | function | Register a plugin's main component. |
-| `window.__HERMES_PLUGINS__.registerSlot(name, slot, Component)` | function | Register into a named shell slot. |
+| `window.__PLOBI_PLUGIN_SDK__` | object | `registry.ts` — React, hooks, UI components, API client, utils. |
+| `window.__PLOBI_PLUGINS__.register(name, Component)` | function | Register a plugin's main component. |
+| `window.__PLOBI_PLUGINS__.registerSlot(name, slot, Component)` | function | Register into a named shell slot. |
 
 ---
 
 ## Troubleshooting
 
 **My theme doesn't appear in the picker.**
-Check that the file is in `~/.hermes/dashboard-themes/` and ends in `.yaml` or `.yml`. Refresh the page. Run `curl http://127.0.0.1:9119/api/dashboard/themes` — your theme should be in the response. If the YAML has a parse error, the dashboard logs to `errors.log` under `~/.hermes/logs/`.
+Check that the file is in `~/.plobi/dashboard-themes/` and ends in `.yaml` or `.yml`. Refresh the page. Run `curl http://127.0.0.1:9119/api/dashboard/themes` — your theme should be in the response. If the YAML has a parse error, the dashboard logs to `errors.log` under `~/.plobi/logs/`.
 
 **My plugin's tab doesn't show up.**
-1. Check the manifest is at `~/.hermes/plugins/<name>/dashboard/manifest.json` (note the `dashboard/` subdirectory).
+1. Check the manifest is at `~/.plobi/plugins/<name>/dashboard/manifest.json` (note the `dashboard/` subdirectory).
 2. `curl http://127.0.0.1:9119/api/dashboard/plugins/rescan` to force re-discovery.
 3. Open browser dev tools → Network — confirm `manifest.json`, `index.js`, and any CSS loaded without 404s.
-4. Open browser dev tools → Console — look for errors during the IIFE or `window.__HERMES_PLUGINS__ is undefined` (indicates the SDK didn't initialize, usually a React render crash earlier).
-5. Verify your bundle calls `window.__HERMES_PLUGINS__.register(...)` with the **same name** as `manifest.json:name`.
+4. Open browser dev tools → Console — look for errors during the IIFE or `window.__PLOBI_PLUGINS__ is undefined` (indicates the SDK didn't initialize, usually a React render crash earlier).
+5. Verify your bundle calls `window.__PLOBI_PLUGINS__.register(...)` with the **same name** as `manifest.json:name`.
 
 **Slot-registered components don't render.**
 The `sidebar` slot only renders when the active theme has `layoutVariant: cockpit`. Other slots always render. If you're registering into a slot with no hits, add `console.log` inside `registerSlot` to confirm the plugin bundle ran at all.
 
 **Plugin backend routes return 404.**
 1. Confirm the manifest has `"api": "plugin_api.py"` pointing to an existing file inside `dashboard/`.
-2. Restart `hermes dashboard` — plugin API routes are mounted once at startup, **not** on rescan.
+2. Restart `plobi dashboard` — plugin API routes are mounted once at startup, **not** on rescan.
 3. Check that `plugin_api.py` exports a module-level `router = APIRouter()`. Other export names are not picked up.
-4. Tail `~/.hermes/logs/errors.log` for `Failed to load plugin <name> API routes` — import errors are logged there.
+4. Tail `~/.plobi/logs/errors.log` for `Failed to load plugin <name> API routes` — import errors are logged there.
 
 **Theme change drops my color overrides.**
 `colorOverrides` are scoped to the active theme and cleared on theme switch — that's by design. If you want overrides that persist, put them in your theme's YAML, not in the live switcher.
@@ -920,4 +920,4 @@ The `sidebar` slot only renders when the active theme has `layoutVariant: cockpi
 The `customCSS` block is capped at 32 KiB per theme. Split large stylesheets across multiple themes, or switch to a plugin that injects a full stylesheet via its `css` field (no size cap).
 
 **I want to ship a plugin on PyPI.**
-Dashboard plugins are installed by directory layout, not by pip entry point. The cleanest distribution path today is a git repo the user clones into `~/.hermes/plugins/`. A pip-based installer for dashboard plugins is not currently wired up.
+Dashboard plugins are installed by directory layout, not by pip entry point. The cleanest distribution path today is a git repo the user clones into `~/.plobi/plugins/`. A pip-based installer for dashboard plugins is not currently wired up.

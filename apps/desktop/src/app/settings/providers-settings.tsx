@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { RowButton } from '@/components/ui/row-button'
 import { SearchField } from '@/components/ui/search-field'
-import { disconnectOAuthProvider, listOAuthProviders } from '@/hermes'
+import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { Check, ChevronDown, ChevronRight, Globe, KeyRound, Loader2, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
@@ -27,7 +27,7 @@ import {
   refreshAllConnectedAppModels,
   refreshConnectedAppModels
 } from '@/store/desktop-quotas'
-import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
+import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
 import { isKeyVar, ProviderKeyRows, CREDENTIAL_CONTROL_CLASS } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
@@ -36,7 +36,7 @@ import { LoadingState, SettingsContent } from './primitives'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
-const canRunInTerminal = () => typeof window !== 'undefined' && Boolean(window.hermesDesktop?.terminal)
+const canRunInTerminal = () => typeof window !== 'undefined' && Boolean(window.plobiDesktop?.terminal)
 
 // Parallel group headers ("Connected", "Other providers") so the expanded list
 // reads as its own section instead of bleeding into the connected group.
@@ -96,8 +96,8 @@ export type ProviderView = (typeof PROVIDER_VIEWS)[number]
 //
 // Grouping key precedence:
 //   1. Backend `provider_label` / `provider` (from the unified provider catalog
-//      in hermes_cli/provider_catalog.py) — the SAME provider identity
-//      `hermes model` uses. This is authoritative: a provider tagged by the
+//      in plobi_cli/provider_catalog.py) — the SAME provider identity
+//      `plobi model` uses. This is authoritative: a provider tagged by the
 //      backend always renders a card, even with no PROVIDER_GROUPS row.
 //   2. Desktop prefix match (`providerGroup`) — legacy fallback for provider
 //      env vars that predate the backend tagging.
@@ -368,11 +368,11 @@ function DesktopQuotasView() {
   // CLI is installed and starts the local gateway. No token is returned, so
   // success is keyed on `res.ok` alone.
   const handleConnect = async (appId: string) => {
-    if (!window.hermesDesktop?.plobiGateway?.auth) return
+    if (!window.plobiDesktop?.plobiGateway?.auth) return
     setConn((prev) => ({ ...prev, [appId]: 'connecting' }))
     setErrInfo((prev) => { const n = { ...prev }; delete n[appId]; return n })
     try {
-      const res = await window.hermesDesktop.plobiGateway.auth(appId)
+      const res = await window.plobiDesktop.plobiGateway.auth(appId)
       if (res.ok) {
         // Persist the connected app so its models surface in the chat selector
         // (see store/desktop-quotas) and the gateway baseUrl for live routing.

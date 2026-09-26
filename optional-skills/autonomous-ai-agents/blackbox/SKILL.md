@@ -6,9 +6,9 @@ author: Plobi Agent (Nous Research)
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [Coding-Agent, Blackbox, Multi-Agent, Judge, Multi-Model]
-    related_skills: [claude-code, codex, hermes-agent]
+    related_skills: [claude-code, codex, plobi-agent]
 ---
 
 # Blackbox CLI

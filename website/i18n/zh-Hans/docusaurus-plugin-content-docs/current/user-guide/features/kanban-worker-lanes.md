@@ -30,19 +30,19 @@ Plobi Kanban 拥有生命周期的真实状态——`ready` → `running` → `b
 
 ### 2. 生成机制
 
-对于 Plobi profile 通道，调度器的 `_default_spawn` 会在任务固定的工作区内运行 `hermes -p <assignee> chat -q <prompt>`（或当 `hermes` shim 不在 `$PATH` 时使用等效的模块形式），并设置以下环境变量：
+对于 Plobi profile 通道，调度器的 `_default_spawn` 会在任务固定的工作区内运行 `plobi -p <assignee> chat -q <prompt>`（或当 `plobi` shim 不在 `$PATH` 时使用等效的模块形式），并设置以下环境变量：
 
 | 变量 | 携带内容 |
 |---|---|
-| `HERMES_KANBAN_TASK` | worker 正在操作的任务 id |
-| `HERMES_KANBAN_DB` | 每个看板 SQLite 文件的绝对路径 |
-| `HERMES_KANBAN_BOARD` | 看板 slug |
-| `HERMES_KANBAN_WORKSPACES_ROOT` | 看板工作区树的根目录 |
-| `HERMES_KANBAN_WORKSPACE` | *本*任务工作区的绝对路径 |
-| `HERMES_KANBAN_RUN_ID` | 当前运行的 id（用于生命周期门控） |
-| `HERMES_KANBAN_CLAIM_LOCK` | claim 锁字符串（`<host>:<pid>:<uuid>`） |
-| `HERMES_PROFILE` | worker 自身的 profile 名称（用于 `kanban_comment` 作者归因） |
-| `HERMES_TENANT` | 租户命名空间（如果任务有的话） |
+| `PLOBI_KANBAN_TASK` | worker 正在操作的任务 id |
+| `PLOBI_KANBAN_DB` | 每个看板 SQLite 文件的绝对路径 |
+| `PLOBI_KANBAN_BOARD` | 看板 slug |
+| `PLOBI_KANBAN_WORKSPACES_ROOT` | 看板工作区树的根目录 |
+| `PLOBI_KANBAN_WORKSPACE` | *本*任务工作区的绝对路径 |
+| `PLOBI_KANBAN_RUN_ID` | 当前运行的 id（用于生命周期门控） |
+| `PLOBI_KANBAN_CLAIM_LOCK` | claim 锁字符串（`<host>:<pid>:<uuid>`） |
+| `PLOBI_PROFILE` | worker 自身的 profile 名称（用于 `kanban_comment` 作者归因） |
+| `PLOBI_TENANT` | 租户命名空间（如果任务有的话） |
 
 对于非 Plobi 通道（通过插件注册），插件提供自己的 `spawn_fn` 可调用对象，接收 `task`、`workspace` 和 `board`，并返回可选的 pid 用于崩溃检测。
 
@@ -60,7 +60,7 @@ kanban 内核强制要求每次运行恰好由其中一项终止。既未调用�
 
 对于大多数涉及代码变更的任务，worker 完成的那一刻并不意味着真正*完成*——还需要人工审查。kanban 内核不强制执行这一区分（"涉及代码变更的任务"定义模糊，且在每个代码 worker 上强制 block 而非 complete 会破坏不需要审查的流程）。这是叠加在上层的约定：
 
-- **使用 block 而非 complete**，`reason` 以 `review-required: ` 为前缀，使仪表板 / `hermes kanban show` 将该行显示为等待审查。
+- **使用 block 而非 complete**，`reason` 以 `review-required: ` 为前缀，使仪表板 / `plobi kanban show` 将该行显示为等待审查。
 - **先将结构化元数据写入 `kanban_comment`**，因为 `kanban_block` 只携带人类可读的 `reason`。Comment 是持久的注解通道——所有与审计相关的字段（changed_files、tests_run、diff_path 或 PR url、决策记录）都应放在这里。
 - **Reviewer 批准并解除阻塞**，这将重新生成 worker 并附带 comment 线程用于后续跟进；或通过另一条 comment 要求修改，下一次 worker 运行时将通过 `kanban_show` 的上下文看到这些内容。
 
@@ -74,15 +74,15 @@ kanban 内核强制要求每次运行恰好由其中一项终止。既未调用�
 - `task_events` 行携带每次状态转换（`promoted`、`claimed`、`heartbeat`、`completed`、`blocked`、`gave_up`、`crashed`、`timed_out`、`reclaimed`、`claim_extended`）。
 - `kanban_show` 同时返回两者，因此 reviewer（或后续 worker）读取任务时无需访问仪表板即可获得完整历史。
 
-仪表板以摘要、元数据块和退出状态徽章渲染运行历史。CLI 用户可运行 `hermes kanban tail <task_id>` 实时跟踪，或运行 `hermes kanban runs <task_id>` 查看历史尝试列表。
+仪表板以摘要、元数据块和退出状态徽章渲染运行历史。CLI 用户可运行 `plobi kanban tail <task_id>` 实时跟踪，或运行 `plobi kanban runs <task_id>` 查看历史尝试列表。
 
 ## 现有通道形态
 
 ### Plobi profile 通道（默认）
 
-当前所有 kanban worker 采用的形态：assignee 是 profile 名称，调度器生成 `hermes -p <profile>`，worker 会自动获得注入的 `KANBAN_GUIDANCE` 系统提示块，并使用 `kanban_*` 工具终止运行。除定义 profile 外无需任何额外配置。
+当前所有 kanban worker 采用的形态：assignee 是 profile 名称，调度器生成 `plobi -p <profile>`，worker 会自动获得注入的 `KANBAN_GUIDANCE` 系统提示块，并使用 `kanban_*` 工具终止运行。除定义 profile 外无需任何额外配置。
 
-为你的 fleet 创建 profile 时，选择与你希望 orchestrator 路由到的*角色*相匹配的名称。orchestrator（如果存在）通过 `hermes profile list` 发现你的 profile 名称——系统不假设固定的名单（orchestrator 侧的契约也是注入的 `KANBAN_GUIDANCE` 的一部分）。
+为你的 fleet 创建 profile 时，选择与你希望 orchestrator 路由到的*角色*相匹配的名称。orchestrator（如果存在）通过 `plobi profile list` 发现你的 profile 名称——系统不假设固定的名单（orchestrator 侧的契约也是注入的 `KANBAN_GUIDANCE` 的一部分）。
 
 ### Orchestrator profile 通道
 
@@ -90,7 +90,7 @@ profile 通道的特化形态：orchestrator 是一个 Plobi profile，其工具
 
 ## 添加外部 CLI worker 通道
 
-将非 Plobi CLI 工具（Codex CLI、Claude Code CLI、OpenCode CLI、本地编码模型运行器等）接入 kanban worker 通道*尚未形成成熟路径*。调度器的 spawn 函数是可插拔的（`spawn_fn` 是 `dispatch_once` 的参数），插件可以为非 Plobi assignee 注册自己的 `spawn_fn`，但周边集成工作——将 CLI 的退出码封装为 `kanban_complete` / `kanban_block` 调用、将 CLI 的工作区/沙箱约定映射到调度器的 `HERMES_KANBAN_WORKSPACE` 环境变量、处理认证和每个 CLI 的策略——仍是每个集成各自的设计工作。
+将非 Plobi CLI 工具（Codex CLI、Claude Code CLI、OpenCode CLI、本地编码模型运行器等）接入 kanban worker 通道*尚未形成成熟路径*。调度器的 spawn 函数是可插拔的（`spawn_fn` 是 `dispatch_once` 的参数），插件可以为非 Plobi assignee 注册自己的 `spawn_fn`，但周边集成工作——将 CLI 的退出码封装为 `kanban_complete` / `kanban_block` 调用、将 CLI 的工作区/沙箱约定映射到调度器的 `PLOBI_KANBAN_WORKSPACE` 环境变量、处理认证和每个 CLI 的策略——仍是每个集成各自的设计工作。
 
 如果你考虑添加 CLI 通道，请提交一个 issue，描述具体的 CLI 以及你希望实现的工作流。上述契约是任何此类通道必须满足的约束；实现形态（每个 CLI 一个插件，还是通过配置参数化的通用 CLI 运行器插件）尚未确定。
 
@@ -104,7 +104,7 @@ profile 通道的特化形态：orchestrator 是一个 Plobi profile，其工具
 - **Worker 崩溃** — 宿主本地 PID 已消失的 worker 由 `detect_crashed_workers` 检测并回收；任务的 `consecutive_failures` 递增，断路器触发时可能自动阻塞。
 - **运行级重试** — 任务重试时（post-block、post-crash、post-reclaim），worker 可在终止工具上使用 `expected_run_id` 参数，在自身运行已被取代时快速失败。
 - **每任务最大运行时间** — `task.max_runtime_seconds` 对每次运行的挂钟时间进行硬性限制，与 PID 存活状态无关。可捕获真正死锁的 worker——否则存活 PID 延期机制会让其持续运行。
-- **滞留任务检测** — assignee 在 `kanban.stranded_threshold_seconds`（默认 30 分钟）内始终未产生 claim 的 ready 任务，会在 `hermes kanban diagnostics` 中显示为 `stranded_in_ready` 警告。严重程度在 2 倍阈值时升级为 error，在 6 倍时升级为 critical。可通过单一信号捕获拼写错误的 assignee、已删除的 profile 以及宕机的外部 worker 池——与标识无关，无需维护每个看板的白名单。
+- **滞留任务检测** — assignee 在 `kanban.stranded_threshold_seconds`（默认 30 分钟）内始终未产生 claim 的 ready 任务，会在 `plobi kanban diagnostics` 中显示为 `stranded_in_ready` 警告。严重程度在 2 倍阈值时升级为 error，在 6 倍时升级为 critical。可通过单一信号捕获拼写错误的 assignee、已删除的 profile 以及宕机的外部 worker 池——与标识无关，无需维护每个看板的白名单。
 
 ## 相关资源
 

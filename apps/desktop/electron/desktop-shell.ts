@@ -57,7 +57,7 @@ export function shouldQuitOnAllWindowsClosed({
 
 /**
  * Boot straight into the tray. A packaged autostart passes `--hidden`; the dev
- * Startup script sets HERMES_DESKTOP_START_HIDDEN=1 instead, because `npm run
+ * Startup script sets PLOBI_DESKTOP_START_HIDDEN=1 instead, because `npm run
  * dev` goes through concurrently and there is no clean way to append an argv
  * flag to the Electron child. The window is still created and the renderer
  * still loads — it just never shows until the user picks "Show" from the tray.
@@ -67,7 +67,7 @@ export function startHiddenFromLaunch({ argv, env }: { argv?: string[]; env?: Re
     return true
   }
 
-  const flag = env?.HERMES_DESKTOP_START_HIDDEN
+  const flag = env?.PLOBI_DESKTOP_START_HIDDEN
 
   return Boolean(flag) && flag !== '0' && flag.toLowerCase() !== 'false'
 }
@@ -172,7 +172,7 @@ export const DEV_AUTOSTART_FILENAME = 'plobi_desktop_autostart.vbs'
  * register with, so we drop a hidden-window launcher in the user's Startup
  * folder — the same WScript.Shell pattern the existing chatlog / aigw
  * autostart scripts use. Window style 0 keeps the console hidden; the Electron
- * window is what the user is meant to see (and HERMES_DESKTOP_START_HIDDEN
+ * window is what the user is meant to see (and PLOBI_DESKTOP_START_HIDDEN
  * keeps even that in the tray on a cold boot).
  */
 export function buildDevAutostartScript({

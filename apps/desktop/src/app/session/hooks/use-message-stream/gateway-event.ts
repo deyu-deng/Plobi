@@ -44,7 +44,7 @@ import { clearActiveSessionTodos } from '@/store/todos'
 import { recordToolDiff } from '@/store/tool-diffs'
 import { reportInstallMethodWarning } from '@/store/updates'
 import { notifyWorkspaceChanged, toolMayMutateFiles } from '@/store/workspace-events'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/plobi'
 
 import type { ClientSessionState } from '../../../types'
 
@@ -61,7 +61,7 @@ interface GatewayEventDeps {
   failAssistantMessage: (sessionId: string, errorMessage: string) => void
   flushQueuedDeltas: (sessionId?: string) => void
   queryClient: QueryClient
-  refreshHermesConfig: () => Promise<void>
+  refreshPlobiConfig: () => Promise<void>
   sessionInterrupted: (sessionId: string) => boolean
   updateSessionState: (
     sessionId: string,
@@ -89,7 +89,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
     failAssistantMessage,
     flushQueuedDeltas,
     queryClient,
-    refreshHermesConfig,
+    refreshPlobiConfig,
     sessionInterrupted,
     updateSessionState,
     upsertToolCall
@@ -121,8 +121,8 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
 
         if (apply) {
           // Desktop-quota providers (Antigravity/…) route their chat to the
-          // local aigw hub, not the Hermes backend — the composer's model and
-          // provider are sticky *local* state that drive routing. The Hermes
+          // local aigw hub, not the Plobi backend — the composer's model and
+          // provider are sticky *local* state that drive routing. The Plobi
           // session created alongside (a transcript container) reports its own
           // default model/provider, so syncing it would clobber the user's
           // pick and silently mis-route the next turn. Keep the local selection.
@@ -232,7 +232,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
           reportInstallMethodWarning(payload?.install_warning)
         }
 
-        void refreshHermesConfig()
+        void refreshPlobiConfig()
 
         if (modelChanged || providerChanged) {
           void queryClient.invalidateQueries({
@@ -668,7 +668,7 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
       lastCwdInfoSessionRef,
       nativeSubagentSessionsRef,
       queryClient,
-      refreshHermesConfig,
+      refreshPlobiConfig,
       sessionInterrupted,
       updateSessionState,
       upsertToolCall

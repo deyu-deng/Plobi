@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const createAgendaEvent = vi.hoisted(() => vi.fn())
 const upsertAgendaEvent = vi.hoisted(() => vi.fn())
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/plobi', () => ({
   createAgendaEvent: (...args: unknown[]) => createAgendaEvent(...args)
 }))
 vi.mock('@/store/agenda', () => ({

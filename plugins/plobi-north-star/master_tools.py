@@ -10,7 +10,7 @@ WP-BE-5: ``plobi_secretary_ask`` is the §8.2 path for 「明天安排」/
 registered but those two phrases are not implemented by the board.
 
 Each kanban handler is a thin wrapper over the SAME code path the CLI and
-dashboard use (``hermes_cli.kanban_db``), so the three surfaces cannot
+dashboard use (``plobi_cli.kanban_db``), so the three surfaces cannot
 drift:
 
 - ``plobi_master_preview``  → ``kanban_db.dispatch_once(dry_run=True)``
@@ -25,7 +25,7 @@ drift:
 Service gate: the tools are registered under the ``plobi_north_star``
 toolset with ``check_plobi_master_mode()``. They appear only for
 non-worker agents whose profile enables that toolset; dispatcher-spawned
-workers (``HERMES_KANBAN_TASK`` set) never see them.
+workers (``PLOBI_KANBAN_TASK`` set) never see them.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def _toolset_enabled_in_config(cfg: dict) -> bool:
 
 def _profile_has_plobi_toolset() -> bool:
     try:
-        from hermes_cli.config import load_config
+        from plobi_cli.config import load_config
 
         cfg = load_config()
         return _toolset_enabled_in_config(cfg)
@@ -94,7 +94,7 @@ def check_plobi_master_mode() -> bool:
     ``default``) must enable ``plobi_north_star`` — a ``master`` profile
     is not required and must not be created as a prerequisite.
     """
-    if os.environ.get("HERMES_KANBAN_TASK"):
+    if os.environ.get("PLOBI_KANBAN_TASK"):
         return False
     return _profile_has_plobi_toolset()
 
@@ -150,7 +150,7 @@ def check_plobi_l1_mouth_disabled() -> bool:
 def _connect(board: Optional[str] = None):
     """Import + connect lazily so the module imports cleanly in non-kanban
     contexts (mirrors tools/kanban_tools._connect)."""
-    from hermes_cli import kanban_db as kb
+    from plobi_cli import kanban_db as kb
 
     return kb, kb.connect(board=board)
 
@@ -200,7 +200,7 @@ def _board_name(board: Optional[str]) -> str:
     if board:
         return board
     try:
-        from hermes_cli import kanban_db as kb
+        from plobi_cli import kanban_db as kb
 
         return kb.get_current_board()
     except Exception:

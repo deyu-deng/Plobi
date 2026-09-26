@@ -7,11 +7,11 @@ const config: Config = {
   tagline: 'The self-improving AI agent',
   favicon: 'img/favicon.ico',
 
-  url: 'https://hermes-agent.nousresearch.com',
+  url: 'https://plobi-agent.nousresearch.com',
   baseUrl: '/docs/',
 
   organizationName: 'NousResearch',
-  projectName: 'hermes-agent',
+  projectName: 'plobi-agent',
 
   onBrokenLinks: 'warn',
 
@@ -81,7 +81,7 @@ const config: Config = {
           {
             // Moved when the Plugins subcategory was created under
             // Developer Guide > Extending (docs restructure, July 2026)
-            from: '/guides/build-a-hermes-plugin',
+            from: '/guides/build-a-plobi-plugin',
             to: '/developer-guide/plugins',
           },
         ],
@@ -107,7 +107,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/hermes-agent-banner.png',
+    image: 'img/plobi-agent-banner.png',
     colorMode: {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
@@ -137,7 +137,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com/',
+          href: 'https://plobi-agent.nousresearch.com/',
           label: 'Download',
           position: 'left',
         },
@@ -146,7 +146,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://hermes-agent.nousresearch.com',
+          href: 'https://plobi-agent.nousresearch.com',
           label: 'Home',
           position: 'right',
         },
@@ -185,7 +185,7 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            { label: 'Desktop Download', href: 'https://hermes-agent.nousresearch.com/' },
+            { label: 'Desktop Download', href: 'https://plobi-agent.nousresearch.com/' },
             { label: 'GitHub', href: 'https://github.com/NousResearch/hermes-agent' },
             { label: 'Nous Research', href: 'https://nousresearch.com' },
           ],

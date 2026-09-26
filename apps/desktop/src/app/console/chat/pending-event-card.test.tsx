@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 vi.mock('@/i18n', () => ({
   useI18n: () => ({

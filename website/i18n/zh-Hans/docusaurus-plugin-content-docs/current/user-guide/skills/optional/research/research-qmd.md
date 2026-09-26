@@ -14,7 +14,7 @@ description: "使用 qmd 在本地搜索个人知识库、笔记、文档和会�
 
 | | |
 |---|---|
-| 来源 | 可选 — 通过 `hermes skills install official/research/qmd` 安装 |
+| 来源 | 可选 — 通过 `plobi skills install official/research/qmd` 安装 |
 | 路径 | `optional-skills/research/qmd` |
 | 版本 | `1.0.0` |
 | 作者 | Plobi Agent + Teknium |
@@ -236,7 +236,7 @@ qmd 提供 MCP 服务器，可通过原生 MCP 客户端直接向 Plobi Agent �
 
 ### 方案 A：Stdio 模式（简单）
 
-在 `~/.hermes/config.yaml` 中添加：
+在 `~/.plobi/config.yaml` 中添加：
 
 ```yaml
 mcp_servers:

@@ -6,7 +6,7 @@
  * factor = 1.2 ^ level.
  */
 
-export const ZOOM_STORAGE_KEY = 'hermes:desktop:zoomLevel'
+export const ZOOM_STORAGE_KEY = 'plobi:desktop:zoomLevel'
 
 const ZOOM_FACTOR_BASE = 1.2
 const MIN_ZOOM_LEVEL = -9

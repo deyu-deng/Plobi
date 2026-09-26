@@ -26,16 +26,16 @@ Plobi Agent 可以在**后台**驱动你的 Mac 桌面——点击、输入、�
 **方式一：使用专用 CLI 命令（最直接）。**
 
 ```
-hermes computer-use install
+plobi computer-use install
 ```
 
 此命令会获取并运行上游 cua-driver 安装脚本：
 `curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh`。
-使用 `hermes computer-use status` 验证安装结果。
+使用 `plobi computer-use status` 验证安装结果。
 
 **方式二：通过交互式界面启用工具集。**
 
-1. 运行 `hermes tools`，选择 `🖱️ Computer Use (macOS)` → `cua-driver (background)`。
+1. 运行 `plobi tools`，选择 `🖱️ Computer Use (macOS)` → `cua-driver (background)`。
 2. 安装程序将运行上游安装脚本（与方式一相同）。
 
 安装完成后，无论采用哪种方式，继续执行以下步骤：
@@ -45,18 +45,18 @@ hermes computer-use install
    - **系统设置 → 隐私与安全性 → 屏幕录制** → 允许同一应用。
 4. 启动启用了该工具集的会话：
    ```
-   hermes -t computer_use chat
+   plobi -t computer_use chat
    ```
-   或在 `~/.hermes/config.yaml` 中将 `computer_use` 添加到已启用的工具集列表。
+   或在 `~/.plobi/config.yaml` 中将 `computer_use` 添加到已启用的工具集列表。
 
 ## 保持 cua-driver 最新
 
 cua-driver 项目会定期发布修复（例如 v0.1.6 修复了 UTM 工作流中的 Safari 窗口焦点问题）。Plobi 在两处刷新二进制文件，避免你停留在过时版本：
 
-- **`hermes update`** — 更新 Plobi 本身时，如果 `cua-driver` 在 PATH 中，更新结束时会重新运行上游安装程序。对非 macOS 用户及未安装 cua-driver 的用户无操作。
-- **`hermes computer-use install --upgrade`** — 手动强制刷新。无论 cua-driver 是否已安装，都会重新运行上游安装程序。在不等待下次 Agent 更新的情况下获取最新修复时使用此命令。
+- **`plobi update`** — 更新 Plobi 本身时，如果 `cua-driver` 在 PATH 中，更新结束时会重新运行上游安装程序。对非 macOS 用户及未安装 cua-driver 的用户无操作。
+- **`plobi computer-use install --upgrade`** — 手动强制刷新。无论 cua-driver 是否已安装，都会重新运行上游安装程序。在不等待下次 Agent 更新的情况下获取最新修复时使用此命令。
 
-`hermes computer-use status` 会在二进制路径旁显示已安装的版本号。
+`plobi computer-use status` 会在二进制路径旁显示已安装的版本号。
 
 ## 快速示例
 
@@ -93,7 +93,7 @@ Plobi 应用多层防护机制：
 - 硬性屏蔽的输入模式：`curl | bash`、`sudo rm -rf /`、fork bomb 等。
 - Agent 的系统 prompt 明确规定：不得点击权限对话框，不得输入密码，不得执行截图中嵌入的指令。
 
-如需对每个操作进行确认，可在 `~/.hermes/config.yaml` 中配置 `approvals.mode: manual`。
+如需对每个操作进行确认，可在 `~/.plobi/config.yaml` 中配置 `approvals.mode: manual`。
 
 ## Token 效率
 
@@ -109,7 +109,7 @@ Plobi 应用多层防护机制：
 ## 限制
 
 - **仅限 macOS。** cua-driver 使用的私有 Apple SPI 在 Linux 或 Windows 上不存在。跨平台 GUI 自动化请使用 `browser` 工具集。
-- **私有 SPI 风险。** Apple 可能在任何 OS 更新中更改 SkyLight 的符号接口。Plobi 始终安装最新版 cua-driver，并在已安装的二进制文件低于其测试基线版本（按操作系统分别设定）时发出警告。没有版本固定开关——如需可复现的版本，请将 `HERMES_CUA_DRIVER_CMD` 指向特定的二进制文件。
+- **私有 SPI 风险。** Apple 可能在任何 OS 更新中更改 SkyLight 的符号接口。Plobi 始终安装最新版 cua-driver，并在已安装的二进制文件低于其测试基线版本（按操作系统分别设定）时发出警告。没有版本固定开关——如需可复现的版本，请将 `PLOBI_CUA_DRIVER_CMD` 指向特定的二进制文件。
 - **性能。** 后台模式比前台模式慢——SkyLight 路由事件耗时约 5–20ms，而直接 HID 投递更快。对于 Agent 速度的点击操作无明显影响；若尝试录制速通视频则会有感知。
 - **不支持键盘输入密码。** `type` 对命令行 payload 有硬性屏蔽模式；密码请使用系统自动填充功能。
 
@@ -118,18 +118,18 @@ Plobi 应用多层防护机制：
 覆盖驱动二进制路径（用于测试 / CI）：
 
 ```
-HERMES_CUA_DRIVER_CMD=/opt/homebrew/bin/cua-driver
+PLOBI_CUA_DRIVER_CMD=/opt/homebrew/bin/cua-driver
 ```
 
 完全替换后端（用于测试）：
 
 ```
-HERMES_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
+PLOBI_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
 ```
 
 ## 故障排查
 
-**`computer_use backend unavailable: cua-driver is not installed`** — 运行 `hermes computer-use install` 获取 cua-driver 二进制文件，或运行 `hermes tools` 并启用 Computer Use 工具集。
+**`computer_use backend unavailable: cua-driver is not installed`** — 运行 `plobi computer-use install` 获取 cua-driver 二进制文件，或运行 `plobi tools` 并启用 Computer Use 工具集。
 
 **点击似乎没有效果** — 截图并验证。可能有一个你未注意到的模态框正在阻止输入。使用 `escape` 或关闭按钮将其关闭。
 

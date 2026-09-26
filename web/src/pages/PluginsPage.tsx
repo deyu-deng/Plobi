@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { usePageHeader } from "@/contexts/usePageHeader";
 
 /** Select value for built-in memory (`config` uses empty string). Never use `""` — UI Select maps empty value to an empty label. */
-const MEMORY_PROVIDER_BUILTIN = "__hermes_memory_builtin__";
+const MEMORY_PROVIDER_BUILTIN = "__plobi_memory_builtin__";
 
 type MemoryFormValue = string | boolean;
 

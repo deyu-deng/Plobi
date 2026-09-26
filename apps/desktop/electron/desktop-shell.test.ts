@@ -77,12 +77,12 @@ test('--hidden (packaged autostart) boots into the tray', () => {
 })
 
 test('the dev Startup script signals the tray boot through the environment', () => {
-  assert.equal(startHiddenFromLaunch({ env: { HERMES_DESKTOP_START_HIDDEN: '1' } }), true)
+  assert.equal(startHiddenFromLaunch({ env: { PLOBI_DESKTOP_START_HIDDEN: '1' } }), true)
 })
 
 test('an explicit off value does not hide the window', () => {
-  assert.equal(startHiddenFromLaunch({ env: { HERMES_DESKTOP_START_HIDDEN: '0' } }), false)
-  assert.equal(startHiddenFromLaunch({ env: { HERMES_DESKTOP_START_HIDDEN: '' } }), false)
+  assert.equal(startHiddenFromLaunch({ env: { PLOBI_DESKTOP_START_HIDDEN: '0' } }), false)
+  assert.equal(startHiddenFromLaunch({ env: { PLOBI_DESKTOP_START_HIDDEN: '' } }), false)
 })
 
 test('a normal launch shows the window', () => {
@@ -162,12 +162,12 @@ test('the dev autostart script relaunches hidden in the right working directory'
   const script = buildDevAutostartScript({
     workingDirectory: 'D:\\Projects\\Plobi\\Code\\apps\\desktop',
     command: 'cmd /c npm run dev',
-    environment: { HERMES_DESKTOP_START_HIDDEN: '1' }
+    environment: { PLOBI_DESKTOP_START_HIDDEN: '1' }
   })
 
   assert.ok(script.includes('sh.CurrentDirectory = "D:\\Projects\\Plobi\\Code\\apps\\desktop"'))
   assert.ok(script.includes('sh.Run "cmd /c npm run dev", 0, False'))
-  assert.ok(script.includes('env.Item("HERMES_DESKTOP_START_HIDDEN") = "1"'))
+  assert.ok(script.includes('env.Item("PLOBI_DESKTOP_START_HIDDEN") = "1"'))
   // Window style 0 is what keeps the console from flashing on every boot.
   assert.ok(script.includes(', 0, False'))
   assert.ok(script.includes('Option Explicit'))

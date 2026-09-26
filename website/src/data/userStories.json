@@ -3,7 +3,7 @@
     "id": "anthony-inbox-cron",
     "source": "blog",
     "author": "Anthony Maio (Substack)",
-    "url": "https://anthonymaio.substack.com/p/getting-started-with-hermes-agent",
+    "url": "https://anthonymaio.substack.com/p/getting-started-with-plobi-agent",
     "date": "2026-03-30",
     "category": "personal-assistant",
     "headline": "'Every weekday at 9am, summarize my inbox and post to Slack'",
@@ -36,7 +36,7 @@
     "id": "vectorize-hindsight",
     "source": "linkedin",
     "author": "Vectorize.io",
-    "url": "https://www.linkedin.com/posts/vectorizeio_connect-your-nous-research-hermes-agent-to-activity-7447280348457107456-_Y7L",
+    "url": "https://www.linkedin.com/posts/vectorizeio_connect-your-nous-research-plobi-agent-to-activity-7447280348457107456-_Y7L",
     "date": "2026",
     "category": "integrations",
     "headline": "Hindsight Cloud memory, connected",
@@ -58,7 +58,7 @@
     "id": "discord-erhnysr-turkish-locale",
     "source": "discord",
     "author": "@erhnysr",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-21",
     "category": "content-creation",
     "headline": "Built a Turkish locale skill pack: market data, news, daily briefing cards",
@@ -91,7 +91,7 @@
     "id": "discord-flensbo-searxng-setup",
     "source": "discord",
     "author": "@flensbo",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-22",
     "category": "privacy",
     "headline": "Sharing a local SearXNG container across my Plobi agents",
@@ -113,7 +113,7 @@
     "id": "discord-timmmie-voice-from-terminal",
     "source": "discord",
     "author": "@timmmie.",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1492490328979144754-hermes-whisper-cpp-addon.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1492490328979144754-plobi-whisper-cpp-addon.txt",
     "date": "",
     "category": "general",
     "headline": "I can't type well — voice from the terminal is huge for me",
@@ -143,7 +143,7 @@
     "size": "sm"
   },
   {
-    "id": "discord-megabyte0x-hermes-for-team",
+    "id": "discord-megabyte0x-plobi-for-team",
     "source": "discord",
     "author": "@megabyte0x",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1492207991162671255-Plobi-Agent-for-my-team.txt",
@@ -190,11 +190,11 @@
     "id": "discord-0xchauncy-reina-hackathons",
     "source": "discord",
     "author": "@0xchauncy",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-15",
     "category": "dev-workflow",
     "headline": "My Plobi agent Reina has been on a hackathon bender",
-    "quote": "I've been working with my hermes agent reina, and she's been on a bender with hackathons. If anyone else is using Plobi Agent, note that certain hackathons might provision certain keys for it (API keys and the like) that would only be shown once.",
+    "quote": "I've been working with my plobi agent reina, and she's been on a bender with hackathons. If anyone else is using Plobi Agent, note that certain hackathons might provision certain keys for it (API keys and the like) that would only be shown once.",
     "size": "sm"
   },
   {
@@ -215,8 +215,8 @@
     "url": "https://github.com/NousResearch/hermes-agent/issues/11876",
     "date": "2026",
     "category": "meta",
-    "headline": "hermes-for-win: one-click Windows installer",
-    "quote": "As a Windows user I found getting Plobi running on Windows quite challenging. I created hermes-for-win, a one-click installation and deployment tool for Windows with auto-start via Task Scheduler.",
+    "headline": "plobi-for-win: one-click Windows installer",
+    "quote": "As a Windows user I found getting Plobi running on Windows quite challenging. I created plobi-for-win, a one-click installation and deployment tool for Windows with auto-start via Task Scheduler.",
     "size": "sm"
   },
   {
@@ -234,7 +234,7 @@
     "id": "discord-jezza2463-daily-journal-kimi",
     "source": "discord",
     "author": "@jezza2463",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-29",
     "category": "personal-assistant",
     "headline": "Daily journaling into Obsidian, learning to use OSS models",
@@ -253,7 +253,7 @@
     "size": "sm"
   },
   {
-    "id": "tooluse-hermes-won",
+    "id": "tooluse-plobi-won",
     "source": "podcast",
     "author": "Tool Use — AI Conversations (Spotify)",
     "url": "https://open.spotify.com/episode/7tF7zf5GKcxqe2Q2BRRNfn",
@@ -292,15 +292,15 @@
     "date": "2026-03-08",
     "category": "cost-optimization",
     "headline": "Switching between Plobi and OpenClaw on primeclaws.com",
-    "quote": "I tried hermes on primeclaws.com, it's nice that you can switch between hermes and openclaw and also you get AI models for free.",
+    "quote": "I tried plobi on primeclaws.com, it's nice that you can switch between plobi and openclaw and also you get AI models for free.",
     "size": "sm",
-    "id": "reddit-sicklerunner-switching-between-hermes"
+    "id": "reddit-sicklerunner-switching-between-plobi"
   },
   {
-    "id": "discord-synextco-hermes-hud",
+    "id": "discord-synextco-plobi-hud",
     "source": "discord",
     "author": "@synextco",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1489107955327570081-HERMES-TUI-Companion.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1489107955327570081-PLOBI-TUI-Companion.txt",
     "date": "",
     "category": "meta",
     "headline": "Built a TUI dashboard that watches my agent think",
@@ -315,7 +315,7 @@
     "date": "",
     "category": "dev-workflow",
     "headline": "Hadn't coded in 20 years — Plobi brought it back",
-    "quote": "I have not coded in 20 years, Claude code and hermes have renewed my interest in trying to make things. This is vibe coded.",
+    "quote": "I have not coded in 20 years, Claude code and plobi have renewed my interest in trying to make things. This is vibe coded.",
     "size": "sm"
   },
   {
@@ -337,11 +337,11 @@
     "date": "",
     "category": "dev-workflow",
     "headline": "Spent 200–400 hours writing a memory kernel for Plobi",
-    "quote": "Yo! Do you know how I spent my last 200-400 hours? Yeah... I wrote a fking memory kernel for hermes. Why this much of a time? After 3 failed attempts (149 hours of work... for real) I just realized it's a fucking difficult job. So instead of reinvent the wheel I built together the bests for my usecase: 3 layers — L1 Hindsight, L2 Graphiti, L3 MemPalace.",
+    "quote": "Yo! Do you know how I spent my last 200-400 hours? Yeah... I wrote a fking memory kernel for plobi. Why this much of a time? After 3 failed attempts (149 hours of work... for real) I just realized it's a fucking difficult job. So instead of reinvent the wheel I built together the bests for my usecase: 3 layers — L1 Hindsight, L2 Graphiti, L3 MemPalace.",
     "size": "lg"
   },
   {
-    "id": "discord-m05tr0-hermes-on-kubernetes",
+    "id": "discord-m05tr0-plobi-on-kubernetes",
     "source": "discord",
     "author": "@m05tr0",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1493622814887120926-Installed-Plobi-on-Kubernetes.txt",
@@ -355,7 +355,7 @@
     "id": "discord-winterwarrior-pi5-247",
     "source": "discord",
     "author": "@winterwarrior",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-04",
     "category": "personal-assistant",
     "headline": "Raspberry Pi 5 running Plobi 24/7",
@@ -388,7 +388,7 @@
     "id": "discord-kouff-obsidian-calendar-signal",
     "source": "discord",
     "author": "@kouff",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-04-11",
     "category": "personal-assistant",
     "headline": "Plobi manages my tasks across Obsidian, Apple Calendar and Signal",
@@ -407,7 +407,7 @@
     "size": "sm"
   },
   {
-    "id": "discord-monty-13277-claude-hermes-mcp",
+    "id": "discord-monty-13277-claude-plobi-mcp",
     "source": "discord",
     "author": "@monty_13277",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plugins-skills-and-skins/1503091259760316436-Claude-Plobi-MCP.txt",
@@ -443,11 +443,11 @@
     "id": "discord-buray-mcp-server",
     "source": "discord",
     "author": "@buray",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-02-26",
     "category": "dev-workflow",
-    "headline": "Built hermes mcp-server so Claude Desktop can use Plobi tools",
-    "quote": "I mapped all open + closed PRs to find what was truly missing. PR #64 added MCP client support (Plobi → external tools). The server side was completely absent. So I built hermes mcp-server — making Plobi a full MCP server so Claude Desktop, Cursor, and any MCP client can use Plobi's tools directly. Exposes 9 Plobi tools over MCP: terminal, read/write file, web search, memory, skills, run_agent.",
+    "headline": "Built plobi mcp-server so Claude Desktop can use Plobi tools",
+    "quote": "I mapped all open + closed PRs to find what was truly missing. PR #64 added MCP client support (Plobi → external tools). The server side was completely absent. So I built plobi mcp-server — making Plobi a full MCP server so Claude Desktop, Cursor, and any MCP client can use Plobi's tools directly. Exposes 9 Plobi tools over MCP: terminal, read/write file, web search, memory, skills, run_agent.",
     "size": "lg"
   },
   {
@@ -469,7 +469,7 @@
     "date": "2026-04-25",
     "category": "dev-workflow",
     "headline": "12 Plobi instances every day, in parallel",
-    "quote": "I literally run 12 hermes agent instances every day in parallel to build Plobi Agent, and its now a top 100 GitHub repositories of all time. Our backend team uses it to monitor and investigate issues with our stack. Our post training team uses them to create new RL environments and benchmarks, investigate, inspect and sometimes directly manipulate the datasets.",
+    "quote": "I literally run 12 plobi agent instances every day in parallel to build Plobi Agent, and its now a top 100 GitHub repositories of all time. Our backend team uses it to monitor and investigate issues with our stack. Our post training team uses them to create new RL environments and benchmarks, investigate, inspect and sometimes directly manipulate the datasets.",
     "size": "lg"
   },
   {
@@ -480,7 +480,7 @@
     "date": "",
     "category": "personal-assistant",
     "headline": "Two-tier email pipeline so the LLM only fires when needed",
-    "quote": "Two-tier email processing system for my agent (I gave it Spacemail IMAP via himalaya). Tier 1 (Dumb): Pure Python script, no LLM. Detects new email, manages state. Tier 2 (Smart): LLM session via hermes chat -q. Only invoked when new email detected. Key goal: Zero LLM calls when inbox is idle.",
+    "quote": "Two-tier email processing system for my agent (I gave it Spacemail IMAP via himalaya). Tier 1 (Dumb): Pure Python script, no LLM. Detects new email, manages state. Tier 2 (Smart): LLM session via plobi chat -q. Only invoked when new email detected. Key goal: Zero LLM calls when inbox is idle.",
     "size": "md"
   },
   {
@@ -503,7 +503,7 @@
     "headline": "Plobi designed an X-to-NotebookLM podcast workflow for me",
     "quote": "This research is gold. Been deep in Plobi for weeks and it's started autonomously suggesting entire workflows I never would have designed myself. One it built for me recently: X API to extract from lists and bookmarks to structure into article to NotebookLM podcast. I'm building a physical AI companion with Plobi as the core cognitive layer right now.",
     "size": "md",
-    "id": "x-heyyanvi-hermes-designed-an"
+    "id": "x-heyyanvi-plobi-designed-an"
   },
   {
     "id": "gh-scotttrinh-vercel",
@@ -542,7 +542,7 @@
     "id": "discord-stefan171-hooks-for-context",
     "source": "discord",
     "author": "@stefan171",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-04-13",
     "category": "dev-workflow",
     "headline": "Hooks that swap in better tools every time the agent runs",
@@ -575,7 +575,7 @@
     "id": "discord-lauratom-sqlite-graph-kernel",
     "source": "discord",
     "author": "@lauratom",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-04",
     "category": "dev-workflow",
     "headline": "I built a custom kernel — the LLM never touches the disk",
@@ -601,7 +601,7 @@
     "date": "",
     "category": "personal-assistant",
     "headline": "Built mapsOS because 'rate your mood 1–10' wasn't my brain",
-    "quote": "saw lifeOS going around & went 'oh! this seems dope and very useful!' got to the first question. 'rate your mood from 1 to 10.' immediately went, 'oh. nevermind.' so i built something a little more attuned to my brain, meant to be used by hermes but nicely standalone too.",
+    "quote": "saw lifeOS going around & went 'oh! this seems dope and very useful!' got to the first question. 'rate your mood from 1 to 10.' immediately went, 'oh. nevermind.' so i built something a little more attuned to my brain, meant to be used by plobi but nicely standalone too.",
     "size": "md"
   },
   {
@@ -623,7 +623,7 @@
     "date": "2026-03-24",
     "category": "dev-workflow",
     "headline": "Built my own stack, then converged on Plobi",
-    "quote": "If you're choosing an agent framework: hermes. I built my own stack independently and we converged on the same architecture — background self-improvement, persistent memory, CLAUDE.md project context, reusable skills. Plobi ships it all out of the box. 300 PRs in a week.",
+    "quote": "If you're choosing an agent framework: plobi. I built my own stack independently and we converged on the same architecture — background self-improvement, persistent memory, CLAUDE.md project context, reusable skills. Plobi ships it all out of the box. 300 PRs in a week.",
     "size": "md"
   },
   {
@@ -662,13 +662,13 @@
   {
     "source": "reddit",
     "author": "u/Birdinhandandbush",
-    "url": "https://www.reddit.com/r/hermesagent/comments/1snfnq9/yes_hermes_and_qwen354b_is_all_i_need_details/",
+    "url": "https://www.reddit.com/r/hermesagent/comments/1snfnq9/yes_plobi_and_qwen354b_is_all_i_need_details/",
     "date": "2026-04-16",
     "category": "personal-assistant",
     "headline": "Plobi + Qwen3.5:4b on a 5060Ti is all I need",
     "quote": "I have a 5060ti 16gb VRAM and 64gb DDR5 System Ram. I started out wanting to test Plobi as a Claw alternative. After a few days I set up Telegram with the botfather, and I haven't gone back to CLI. Plobi is now almost entirely a personal assistant on my Telegram App. Where the 9b chugged along, the 4B model is snappy, responsive, alive and chatty.",
     "size": "lg",
-    "id": "reddit-birdinhandandbush-hermes"
+    "id": "reddit-birdinhandandbush-plobi"
   },
   {
     "id": "captain-awesome-life-changing",
@@ -678,18 +678,18 @@
     "date": "2026-05-10",
     "category": "personal-assistant",
     "headline": "Plobi + Discord with GPT-5.5 / DeepSeek v4 has been life changing",
-    "quote": "hermes + discord with gpt 5.5/deepseek v4 has genuinely been life changing! here are some of what it did for me this week.",
+    "quote": "plobi + discord with gpt 5.5/deepseek v4 has genuinely been life changing! here are some of what it did for me this week.",
     "size": "md"
   },
   {
-    "id": "discord-mayuronx-backup-hermes-github",
+    "id": "discord-mayuronx-backup-plobi-github",
     "source": "discord",
     "author": "@mayuronx",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1491933536423510117-Backup-Manage-Plobi-Config-via-your-Github-repo.txt",
     "date": "",
     "category": "dev-workflow",
     "headline": "I back up my Plobi config and DB to GitHub nightly",
-    "quote": "If you want to — backup your hermes to github on a nightly basis, backup on every change of your config, backup your config and db nightly, edit your config on Github and have it mirror back to Plobi — then use this repo. I'm planning to use this as a basis for a desktop app later so this is phase 1 of a longer project to create an app to let you manage multiple agents.",
+    "quote": "If you want to — backup your plobi to github on a nightly basis, backup on every change of your config, backup your config and db nightly, edit your config on Github and have it mirror back to Plobi — then use this repo. I'm planning to use this as a basis for a desktop app later so this is phase 1 of a longer project to create an app to let you manage multiple agents.",
     "size": "md"
   },
   {
@@ -704,21 +704,21 @@
     "size": "md"
   },
   {
-    "id": "discord-ereid7-hermes-lab",
+    "id": "discord-ereid7-plobi-lab",
     "source": "discord",
     "author": "@ereid7",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1486588376940281937-Plobi-Lab---file-first-experiment-scaffolding-for-autonomous-research.txt",
     "date": "",
     "category": "research",
     "headline": "Plobi-lab is the bookkeeper for running experiments autonomously",
-    "quote": "hermes-lab is the bookkeeper for running experiments autonomously. you give it a search space and a way to evaluate results, it handles scheduling, tracking, and suggesting what to try next. inspired by the autoresearch wave (karpathy, sakana ai scientist, AIDE) but generic — works for ml training.",
+    "quote": "plobi-lab is the bookkeeper for running experiments autonomously. you give it a search space and a way to evaluate results, it handles scheduling, tracking, and suggesting what to try next. inspired by the autoresearch wave (karpathy, sakana ai scientist, AIDE) but generic — works for ml training.",
     "size": "md"
   },
   {
     "id": "discord-salt555-skill-audit-on-itself",
     "source": "discord",
     "author": "@.salt555",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-04-23",
     "category": "dev-workflow",
     "headline": "A skill-audit skill that improves itself on a cron job",
@@ -740,11 +740,11 @@
     "id": "discord-sammcf-vps-tailscale",
     "source": "discord",
     "author": "@sammcf",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-06",
     "category": "dev-workflow",
     "headline": "My Plobi lives on a VPS, talks home over Tailscale",
-    "quote": "the agent should always run in /yolo mode or equivalent. it's up to you as the human to make sure it is incapable of breaking anything - my hermes lives on a vps, for example, and it can only talk to my pc at home via tailscale, and then only through a scoped tag. they really excel at long-term tasks where you don't want to be giving them feedback regularly!",
+    "quote": "the agent should always run in /yolo mode or equivalent. it's up to you as the human to make sure it is incapable of breaking anything - my plobi lives on a vps, for example, and it can only talk to my pc at home via tailscale, and then only through a scoped tag. they really excel at long-term tasks where you don't want to be giving them feedback regularly!",
     "size": "lg"
   },
   {
@@ -766,7 +766,7 @@
     "date": "",
     "category": "creative",
     "headline": "Tortured a repo with Plobi to build a chess blunder finder",
-    "quote": "the real purpose of blunder-lens was to see how much i can torture a repo with hermes and figure out what hermes can or can't do... and honestly HERMES CAN DO A LOT!",
+    "quote": "the real purpose of blunder-lens was to see how much i can torture a repo with plobi and figure out what plobi can or can't do... and honestly PLOBI CAN DO A LOT!",
     "size": "sm"
   },
   {
@@ -806,7 +806,7 @@
     "id": "discord-lauratom-memory-kernel",
     "source": "discord",
     "author": "@lauratom",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-04",
     "category": "dev-workflow",
     "headline": "Built a 22k-line memory kernel underneath Plobi",
@@ -821,7 +821,7 @@
     "date": "",
     "category": "research",
     "headline": "I ported the whole Python weather stack to Rust for my Plobi plugins",
-    "quote": "I've been porting the entire Python weather stack to Rust — MetPy, Herbie, cfgrib, WRF-Python, all of it. When you cut out Python/eccodes/Fortran from the loop, weather data processing gets absurdly fast. Built two hermes-agent plugins on top of it.",
+    "quote": "I've been porting the entire Python weather stack to Rust — MetPy, Herbie, cfgrib, WRF-Python, all of it. When you cut out Python/eccodes/Fortran from the loop, weather data processing gets absurdly fast. Built two plobi-agent plugins on top of it.",
     "size": "md"
   },
   {
@@ -850,7 +850,7 @@
     "id": "jsong-llm-wiki",
     "source": "blog",
     "author": "Jsong (Medium)",
-    "url": "https://medium.com/@jsong_49820/how-i-built-a-self-improving-llm-wiki-with-hermes-agent-and-why-im-not-using-obsidian-1e9a7fa438c1",
+    "url": "https://medium.com/@jsong_49820/how-i-built-a-self-improving-llm-wiki-with-plobi-agent-and-why-im-not-using-obsidian-1e9a7fa438c1",
     "date": "2026-04-16",
     "category": "research",
     "headline": "A self-improving LLM Wiki second brain",
@@ -858,7 +858,7 @@
     "size": "md"
   },
   {
-    "id": "discord-kysiv-hermes-control-interface",
+    "id": "discord-kysiv-plobi-control-interface",
     "source": "discord",
     "author": "@kysiv",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1492427034541162517-Plobi-Control-Interface-Web-UI.txt",
@@ -883,7 +883,7 @@
     "id": "rumjahn-everything",
     "source": "blog",
     "author": "Keith Rumjahn (Substack)",
-    "url": "https://rumjahn.substack.com/p/complete-guide-to-mastering-hermes",
+    "url": "https://rumjahn.substack.com/p/complete-guide-to-mastering-plobi",
     "date": "2026-04-26",
     "category": "personal-assistant",
     "headline": "Apple Health, Threads analytics, Gmail, Calendar — in one CLI",
@@ -927,11 +927,11 @@
     "id": "discord-modest-maoist-cartographer-polycule",
     "source": "discord",
     "author": "@modest.maoist",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-27",
     "category": "dev-workflow",
     "headline": "Two things I built with Plobi: Cartographer and an agent IRC",
-    "quote": "Two very cool things i built entirely with hermes. First is cartographer, which hermes can use as a memory layer but serves as an extremely rich knowledge substrate with semantic wiring & emotional topology. The other is an agent + user IRC-clone for real time, session-sustained chat interfacing between hermes & any other repls (claude, codex, opencode, gemini) — it's been an absolutely game changer for me 'cos now i have my agents collaborate in real time.",
+    "quote": "Two very cool things i built entirely with plobi. First is cartographer, which plobi can use as a memory layer but serves as an extremely rich knowledge substrate with semantic wiring & emotional topology. The other is an agent + user IRC-clone for real time, session-sustained chat interfacing between plobi & any other repls (claude, codex, opencode, gemini) — it's been an absolutely game changer for me 'cos now i have my agents collaborate in real time.",
     "size": "lg"
   },
   {
@@ -985,15 +985,15 @@
     "date": "2026-04-04",
     "category": "privacy",
     "headline": "I'm using Plobi — same applies to all agents, sandbox it",
-    "quote": "I'm using Plobi. The same applies to all agents, don't give it free reign over all your stuff. Run it within a sandbox. https://github.com/nousresearch/hermes-agent",
+    "quote": "I'm using Plobi. The same applies to all agents, don't give it free reign over all your stuff. Run it within a sandbox. https://github.com/nousresearch/plobi-agent",
     "size": "sm",
-    "id": "hn-flere-imsaho-im-using-hermes"
+    "id": "hn-flere-imsaho-im-using-plobi"
   },
   {
     "id": "andrew-gordon-5-apps",
     "source": "linkedin",
     "author": "Andrew W. Gordon",
-    "url": "https://www.linkedin.com/posts/andrewwgordon_hermes-agent-the-agent-that-grows-with-activity-7449351350800429056-Alw0",
+    "url": "https://www.linkedin.com/posts/andrewwgordon_plobi-agent-the-agent-that-grows-with-activity-7449351350800429056-Alw0",
     "date": "2026",
     "category": "dev-workflow",
     "headline": "5 apps built and launched in a single day",
@@ -1004,7 +1004,7 @@
     "id": "firecrawl-integration",
     "source": "linkedin",
     "author": "Firecrawl",
-    "url": "https://www.linkedin.com/posts/firecrawl_hermes-agent-by-nous-research-can-now-scrape-activity-7445140884683395072-sm2d",
+    "url": "https://www.linkedin.com/posts/firecrawl_plobi-agent-by-nous-research-can-now-scrape-activity-7445140884683395072-sm2d",
     "date": "2026",
     "category": "integrations",
     "headline": "Firecrawl for scrape/search/browse",
@@ -1026,7 +1026,7 @@
     "id": "discord-tonywhelan-memory-tools-workflow",
     "source": "discord",
     "author": "@tonywhelan",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-10",
     "category": "personal-assistant",
     "headline": "How I use Plobi memory: durable facts, session search, skills",
@@ -1037,7 +1037,7 @@
     "id": "dev-arsh-natural-cron",
     "source": "blog",
     "author": "arshtechpro (dev.to)",
-    "url": "https://dev.to/arshtechpro/hermes-agent-a-self-improving-ai-agent-that-runs-anywhere-2b7d",
+    "url": "https://dev.to/arshtechpro/plobi-agent-a-self-improving-ai-agent-that-runs-anywhere-2b7d",
     "date": "2026-03",
     "category": "personal-assistant",
     "headline": "'Every morning at 9am, check HN for AI news and DM me on Telegram'",
@@ -1070,7 +1070,7 @@
     "id": "greg-isenberg-termux",
     "source": "podcast",
     "author": "Greg Isenberg & Imran Muthuvappa (Startup Ideas Podcast)",
-    "url": "https://podcasts.apple.com/dk/podcast/hermes-agent-clearly-explained-and-how-to-use-it/id1593424985?i=1000762440356",
+    "url": "https://podcasts.apple.com/dk/podcast/plobi-agent-clearly-explained-and-how-to-use-it/id1593424985?i=1000762440356",
     "date": "2026",
     "category": "cost-optimization",
     "headline": "90% token spend cut. Runs on a cheap Android via Termux.",
@@ -1078,7 +1078,7 @@
     "size": "md"
   },
   {
-    "id": "discord-dalekc72-hermes-managing-tickets",
+    "id": "discord-dalekc72-plobi-managing-tickets",
     "source": "discord",
     "author": "@dalekc72",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1493589434971717763-Small-Win---Plobi---Claude-Code-managing-my-Tickets.txt",
@@ -1100,7 +1100,7 @@
     "size": "sm"
   },
   {
-    "id": "discord-alpaca1712-hermes-ships-with-vals",
+    "id": "discord-alpaca1712-plobi-ships-with-vals",
     "source": "discord",
     "author": "@alpaca1712",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1496701579234119850-I-gave-my-Plobi-agent-hands--aka-the-ability-to-ship-now.txt",
@@ -1125,7 +1125,7 @@
     "id": "kristopher-codebase-memory",
     "source": "blog",
     "author": "Kristopher Dunham (Medium)",
-    "url": "https://medium.com/@creativeaininja/hermes-agent-the-open-source-ai-agent-that-actually-remembers-what-it-learned-yesterday-278441cd1870",
+    "url": "https://medium.com/@creativeaininja/plobi-agent-the-open-source-ai-agent-that-actually-remembers-what-it-learned-yesterday-278441cd1870",
     "date": "2026-04-14",
     "category": "dev-workflow",
     "headline": "Accumulates knowledge about my codebase over time",
@@ -1135,13 +1135,13 @@
   {
     "source": "reddit",
     "author": "u/ninjapapi",
-    "url": "https://www.reddit.com/r/SideProject/comments/1t6356h/5_things_hermes_does_as_an_ai_agent_that_chatgpt/",
+    "url": "https://www.reddit.com/r/SideProject/comments/1t6356h/5_things_plobi_does_as_an_ai_agent_that_chatgpt/",
     "date": "2026-05-07",
     "category": "personal-assistant",
     "headline": "5 things Plobi does that ChatGPT will never do",
     "quote": "ChatGPT is a browser tab. Plobi is a server process that's running right now, has been building a model of your workflow for the past few weeks, and just sent you a Telegram message before you woke up. It doesn't stop when you close your laptop. It messages you first. Memory that gets useful over time. Runs code, doesn't just write it. Takes action in your actual apps.",
     "size": "lg",
-    "id": "reddit-ninjapapi-5-things-hermes"
+    "id": "reddit-ninjapapi-5-things-plobi"
   },
   {
     "id": "discord-nour-h-recall-memory",
@@ -1172,15 +1172,15 @@
     "url": "https://gist.github.com/nazt/849e29cd25c148b6cebafdbcc38bb6cc",
     "date": "2026",
     "category": "integrations",
-    "headline": "Fat agent → thin tool provider via hermes mcp serve",
-    "quote": "hermes mcp serve turns Plobi from a monolithic agent into a composable capability layer — any MCP client can borrow Plobi's 15+ messaging platforms, SQLite FTS5 persistence, and 73-skill tool surface without running Plobi as the primary agent.",
+    "headline": "Fat agent → thin tool provider via plobi mcp serve",
+    "quote": "plobi mcp serve turns Plobi from a monolithic agent into a composable capability layer — any MCP client can borrow Plobi's 15+ messaging platforms, SQLite FTS5 persistence, and 73-skill tool surface without running Plobi as the primary agent.",
     "size": "md"
   },
   {
     "id": "discord-atomlib-vpn-control-panel",
     "source": "discord",
     "author": "@_atomlib_",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-05-06",
     "category": "dev-workflow",
     "headline": "I don't know how to write code — Codex built me a VPN service",
@@ -1195,13 +1195,13 @@
     "date": "",
     "category": "creative",
     "headline": "Asked Plobi to write a skill that auto-plays Minecraft",
-    "quote": "So I figured I'd ask hermes to make a skill to auto play minecraft, it took some nudging in the direction I wanted, but it came up with this. I ran the skill and it has been thinking for 20 minutes.",
+    "quote": "So I figured I'd ask plobi to make a skill to auto play minecraft, it took some nudging in the direction I wanted, but it came up with this. I ran the skill and it has been thinking for 20 minutes.",
     "size": "sm"
   },
   {
     "source": "reddit",
     "author": "u/itsdodobitch",
-    "url": "https://www.reddit.com/r/hermesagent/comments/1t29ogw/one_month_with_hermes_agent_what_i_wish_i_knew/",
+    "url": "https://www.reddit.com/r/hermesagent/comments/1t29ogw/one_month_with_plobi_agent_what_i_wish_i_knew/",
     "date": "2026-05-03",
     "category": "meta",
     "headline": "One month with Plobi: don't build the whole machine on day one",
@@ -1213,7 +1213,7 @@
     "id": "0xmega-no-mac-mini",
     "source": "blog",
     "author": "Alex P. (Medium)",
-    "url": "https://medium.com/@0xmega/hermes-agent-the-complete-setup-guide-telegram-discord-vps-no-mac-mini-required-dda315a702d3",
+    "url": "https://medium.com/@0xmega/plobi-agent-the-complete-setup-guide-telegram-discord-vps-no-mac-mini-required-dda315a702d3",
     "date": "2026-03-30",
     "category": "cost-optimization",
     "headline": "Under $20/mo total — no Mac Mini, no Opus",
@@ -1235,7 +1235,7 @@
     "id": "discord-mulkproject-copilot-delegate-opencode",
     "source": "discord",
     "author": "@mulkproject",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-12",
     "category": "cost-optimization",
     "headline": "Free GPT-4.1 via Copilot, Plobi delegates coding to OpenCode",
@@ -1251,13 +1251,13 @@
     "headline": "Plobi very good as personal agent on Qwen3.5 27B",
     "quote": "Fairly good with qwen3.5-4b, very decent with qwen3.5-9b, VERY good with 27b. Personal agent? Yes. Coding for high complexity tasks? Not really, but with high guidance? Yes.",
     "size": "sm",
-    "id": "reddit-suitable-currency440-hermes-very-good"
+    "id": "reddit-suitable-currency440-plobi-very-good"
   },
   {
     "id": "discord-malaiwah-fork-watchtower",
     "source": "discord",
     "author": "@malaiwah",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-10",
     "category": "dev-workflow",
     "headline": "Local Gitea fork + watchtower auto-restarts my Plobi in 10 minutes",
@@ -1290,7 +1290,7 @@
     "id": "discord-lauratom-memory-kernel-companion",
     "source": "discord",
     "author": "@lauratom",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-04-04",
     "category": "dev-workflow",
     "headline": "A memory kernel that compiles thoughts, not vectors",
@@ -1306,7 +1306,7 @@
     "headline": "Plobi Inc.: Telegram-native startup sim built at Plobi hackathon",
     "quote": "Built Plobi Inc. for the Plobi hackathon: a Telegram-native startup simulation game powered by Plobi Agent. An experiment in agent-native game design. Your AI teammates argue, remember, react, and evolve the company over time through weekly decisions, autonomous updates, events, and milestone visuals.",
     "size": "md",
-    "id": "x-brucexu-eth-hermes"
+    "id": "x-brucexu-eth-plobi"
   },
   {
     "id": "discord-arm64be-personal-webpage-style",
@@ -1345,7 +1345,7 @@
     "id": "discord-o-o-o-o000-adhd-cronjobs",
     "source": "discord",
     "author": "@o_o__o_o000",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-05-07",
     "category": "personal-assistant",
     "headline": "Cronjobs nudging me on Discord and Signal for executive function",
@@ -1366,16 +1366,16 @@
   {
     "source": "reddit",
     "author": "u/Delicious_Ease2595",
-    "url": "https://www.reddit.com/r/openclaw/comments/1slqt5h/is_hermes_agent_a_new_hype_or_is_it_genuinely/",
+    "url": "https://www.reddit.com/r/openclaw/comments/1slqt5h/is_plobi_agent_a_new_hype_or_is_it_genuinely/",
     "date": "2026-04-15",
     "category": "dev-workflow",
     "headline": "Side-by-side: Plobi more stable, troubleshoots OpenClaw",
     "quote": "Using both side by side I find it more stable and less headache than OC. Plobi has more research skills, and it's very handy as troubleshooter of OC. Telegram recently added bot to bot communication in their API so I'm thinking a way both communicate.",
     "size": "md",
-    "id": "reddit-delicious-ease2595-hermes-more"
+    "id": "reddit-delicious-ease2595-plobi-more"
   },
   {
-    "id": "discord-itsdodo21-hermes-desktop",
+    "id": "discord-itsdodo21-plobi-desktop",
     "source": "discord",
     "author": "@itsdodo21",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1492615746629402735-Plobi-Desktop-v0.4.0---why-I-didn-t-build-another-gateway-UI.txt",
@@ -1433,7 +1433,7 @@
     "id": "discord-0xajpanda-validator-monitor",
     "source": "discord",
     "author": "@0xajpanda",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-03-24",
     "category": "integrations",
     "headline": "Plobi watches my homelab validators and pings Telegram",
@@ -1444,7 +1444,7 @@
     "id": "discord-s0uthpaw-agentic-elevator-music",
     "source": "discord",
     "author": "@.s0uthpaw",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-03-10",
     "category": "creative",
     "headline": "Speech-to-speech with Plobi, plus generated background music",
@@ -1474,7 +1474,7 @@
     "size": "md"
   },
   {
-    "id": "discord-mibayy-hermes-memory",
+    "id": "discord-mibayy-plobi-memory",
     "source": "discord",
     "author": "@mibayy",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1486509881673383998-Plobi-memory---Persistent-structured-memory-for-Plobi-agents.txt",
@@ -1521,7 +1521,7 @@
     "id": "discord-jerometao-38874-compiled-skills",
     "source": "discord",
     "author": "@jerometao_38874",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-06",
     "category": "dev-workflow",
     "headline": "I now compile skills into code, only invoking AI at necessary steps",
@@ -1553,11 +1553,11 @@
   {
     "source": "reddit",
     "author": "u/itsdodobitch",
-    "url": "https://www.reddit.com/r/hermesagent/comments/1t4efcb/what_is_the_new_kanban_feature_built_into_hermes/",
+    "url": "https://www.reddit.com/r/hermesagent/comments/1t4efcb/what_is_the_new_kanban_feature_built_into_plobi/",
     "date": "2026-05-05",
     "category": "dev-workflow",
     "headline": "Kanban multi-agent feature is game-changing",
-    "quote": "WHAT IS THE NEW KANBAN FEATURE BUILT INTO HERMES? (IT'S GAME CHANGING) — image post showing Plobi' new built-in Kanban board where a parent agent posts cards and child subagents pull them, work in parallel, and report back, turning the agent into a multi-agent project manager.",
+    "quote": "WHAT IS THE NEW KANBAN FEATURE BUILT INTO PLOBI? (IT'S GAME CHANGING) — image post showing Plobi' new built-in Kanban board where a parent agent posts cards and child subagents pull them, work in parallel, and report back, turning the agent into a multi-agent project manager.",
     "size": "md",
     "id": "reddit-itsdodobitch-kanban-feature"
   },
@@ -1584,13 +1584,13 @@
     "size": "sm"
   },
   {
-    "id": "awesome-hermes",
+    "id": "awesome-plobi",
     "source": "github",
     "author": "@0xNyk",
-    "url": "https://github.com/0xNyk/awesome-hermes-agent",
+    "url": "https://github.com/0xNyk/awesome-plobi-agent",
     "date": "2026",
     "category": "meta",
-    "headline": "awesome-hermes-agent: community-curated skills list",
+    "headline": "awesome-plobi-agent: community-curated skills list",
     "quote": "A curated list of skills, tools, integrations and resources for enhancing your Plobi Agent workflow — resources tied to the agentskills.io standard.",
     "size": "sm"
   },
@@ -1631,11 +1631,11 @@
     "id": "discord-0xchauncy-reina-soul-tone",
     "source": "discord",
     "author": "@0xchauncy",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-10",
     "category": "creative",
     "headline": "Wrote my Plobi agent's tone examples with my sister",
-    "quote": "when I was building reina (my hermes agent), i had a lot of fun because me and my sister sat down and came up with a handful of examples to pass into her persona via the soul file. here are a few: \"it's ugly but i fw it\" \"i don't care enough to argue but you're wrong\" \"no shot\" \"why did you say it like that\". i feel like humans have always had this yearning to make things that they see themselves in.",
+    "quote": "when I was building reina (my plobi agent), i had a lot of fun because me and my sister sat down and came up with a handful of examples to pass into her persona via the soul file. here are a few: \"it's ugly but i fw it\" \"i don't care enough to argue but you're wrong\" \"no shot\" \"why did you say it like that\". i feel like humans have always had this yearning to make things that they see themselves in.",
     "size": "lg"
   },
   {
@@ -1653,7 +1653,7 @@
     "id": "discord-name-name-workshop-news-briefing",
     "source": "discord",
     "author": "@_name_name_",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-04-02",
     "category": "general",
     "headline": "Teaching a Linux user group to build agents with Plobi",
@@ -1705,7 +1705,7 @@
     "size": "md"
   },
   {
-    "id": "discord-codename11-hermes-relay-android",
+    "id": "discord-codename11-plobi-relay-android",
     "source": "discord",
     "author": "@codename_11",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1492283125613465640-Plobi-Relay--Android-App----Chat--terminal--and-device-control-over-WSS.txt",
@@ -1734,7 +1734,7 @@
     "date": "",
     "category": "integrations",
     "headline": "Got fed up with a million API keys, so I bundled them",
-    "quote": "So i got fed up with managing a million API keys in my hermes agent and started bundling related ones into single endpoints. Like all finance data through one call instead of five separate keys. It actually works really well for longer sessions where context gets messy.",
+    "quote": "So i got fed up with managing a million API keys in my plobi agent and started bundling related ones into single endpoints. Like all finance data through one call instead of five separate keys. It actually works really well for longer sessions where context gets messy.",
     "size": "md"
   },
   {
@@ -1763,7 +1763,7 @@
     "id": "kisztof-modal",
     "source": "blog",
     "author": "Krzysztof Słomka (Medium)",
-    "url": "https://kisztof.medium.com/hermes-agent-review-nous-researchs-self-improving-ai-agent-e72bc244435a",
+    "url": "https://kisztof.medium.com/plobi-agent-review-nous-researchs-self-improving-ai-agent-e72bc244435a",
     "date": "2026-04-20",
     "category": "dev-workflow",
     "headline": "Telegram → Modal serverless. 40% faster on research tasks.",
@@ -1773,7 +1773,7 @@
   {
     "source": "reddit",
     "author": "u/yellow-green-bird",
-    "url": "https://www.reddit.com/r/openclaw/comments/1slqt5h/is_hermes_agent_a_new_hype_or_is_it_genuinely/",
+    "url": "https://www.reddit.com/r/openclaw/comments/1slqt5h/is_plobi_agent_a_new_hype_or_is_it_genuinely/",
     "date": "2026-04-15",
     "category": "dev-workflow",
     "headline": "Every OpenClaw update breaks something — Plobi just runs",
@@ -1795,13 +1795,13 @@
   {
     "source": "reddit",
     "author": "u/hackrepair",
-    "url": "https://www.reddit.com/r/hermesagent/comments/1smgo1i/my_hermes_journey/",
+    "url": "https://www.reddit.com/r/hermesagent/comments/1smgo1i/my_plobi_journey/",
     "date": "2026-04-15",
     "category": "cost-optimization",
     "headline": "My Plobi Journey: smart-routing tiers that save 10 hours and $40",
     "quote": "Set this as your Smart routing default (using OpenRouter): Tier 1 Plobi (Gemini 3.1 Flash Lite) for clear mechanical multi-file work. Tier 2 Sonnet for ambiguous, delicate, high-risk tasks. Tier 3 Minimax for low-overhead. Run the minimax-cache-optimization skill. Seriously, do this from day one and you'll save about 10 hours of trial and error.",
     "size": "lg",
-    "id": "reddit-hackrepair-my-hermes-journey"
+    "id": "reddit-hackrepair-my-plobi-journey"
   },
   {
     "id": "discord-renomg-voice-call-timeout",
@@ -1818,7 +1818,7 @@
     "id": "reddit-windows-wrapper",
     "source": "reddit",
     "author": "r/SideProject",
-    "url": "https://www.reddit.com/r/SideProject/comments/1sdaojm/i_took_the_nousresearch_hermes_agent_and_built_a/",
+    "url": "https://www.reddit.com/r/SideProject/comments/1sdaojm/i_took_the_nousresearch_plobi_agent_and_built_a/",
     "date": "2026",
     "category": "meta",
     "headline": "Native Windows app wrapper for Plobi",
@@ -1881,18 +1881,18 @@
     "size": "md"
   },
   {
-    "id": "discord-glitchglitchglitch-hermes-on-nixos",
+    "id": "discord-glitchglitchglitch-plobi-on-nixos",
     "source": "discord",
     "author": "@glitchglitchglitch",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent/",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent/",
     "date": "2026-04-18",
     "category": "dev-workflow",
     "headline": "Running Plobi in a NixOS + container setup",
-    "quote": "i rlly like nix and i run my hermes agent in nixos+container setup. that's been the best experience for me... giving an ubuntu container defined by nix to hermes agent solves for 'oh xyz package not installed' cuz most of the (good) skills have a setup-phase and hence the required packages get installed or the agent installs em itself.",
+    "quote": "i rlly like nix and i run my plobi agent in nixos+container setup. that's been the best experience for me... giving an ubuntu container defined by nix to plobi agent solves for 'oh xyz package not installed' cuz most of the (good) skills have a setup-phase and hence the required packages get installed or the agent installs em itself.",
     "size": "md"
   },
   {
-    "id": "discord-awais-h-hermes-reads-internet",
+    "id": "discord-awais-h-plobi-reads-internet",
     "source": "discord",
     "author": "@awais_h",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1502519565144428605-Plobi-to-read-the-internet-for-me.txt",
@@ -1954,19 +1954,19 @@
     "date": "2026-05-10",
     "category": "personal-assistant",
     "headline": "PM agent runs morning + evening standups for my ADHD",
-    "quote": "I have hermes act as the manager to several paperclip agents, one of them a Project Manager agent. This agent has full knowledge of me (ADHD), my vault and projects, so I get a morning and evening standup that dumps all work we did across different chats, projects I'm working on, actual output, info from past standups, and suggestions/prioritizing based on all of the above. And it's self-learning.",
+    "quote": "I have plobi act as the manager to several paperclip agents, one of them a Project Manager agent. This agent has full knowledge of me (ADHD), my vault and projects, so I get a morning and evening standup that dumps all work we did across different chats, projects I'm working on, actual output, info from past standups, and suggestions/prioritizing based on all of the above. And it's self-learning.",
     "size": "md"
   },
   {
     "source": "reddit",
     "author": "u/patbhakta",
-    "url": "https://www.reddit.com/r/Rag/comments/1sgmvxh/anyone_here_tried_hermes_agent_whats_your/",
+    "url": "https://www.reddit.com/r/Rag/comments/1sgmvxh/anyone_here_tried_plobi_agent_whats_your/",
     "date": "2026-04-09",
     "category": "personal-assistant",
     "headline": "Plobi vs OpenClaw: memory lets me jump between projects",
     "quote": "I'm using Plobi currently but only as a beginner agent. It's kinda like a VA. The good part about Plobi vs openclaw is memory. With OpenClaw it's a one track mind. With Plobi I can jump from one project to next but also go back to something from last week or more. Personally I use Plobi with paperclip which is chat.",
     "size": "md",
-    "id": "reddit-patbhakta-hermes-vs-openclaw"
+    "id": "reddit-patbhakta-plobi-vs-openclaw"
   },
   {
     "id": "gkisokay-watchdog",
@@ -2005,11 +2005,11 @@
     "id": "discord-zedosplasticos-business-swarm",
     "source": "discord",
     "author": "@zedosplasticos008",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-21",
     "category": "business-ops",
     "headline": "Ported a competitor-analysis swarm from Codex to Plobi",
-    "quote": "I was building a swarm (that actually works) on codex to analyse business and their competitors. To find gaps and build a strategy to outrank them. After a couple a hours, pushing the swarm to hermes and convert it to hermes env. It made a really good job. Now i was trying to teach him how to use memory in a different way. Instead spamming into that memory.md file. I want him to know when to route to a specific memory layer.",
+    "quote": "I was building a swarm (that actually works) on codex to analyse business and their competitors. To find gaps and build a strategy to outrank them. After a couple a hours, pushing the swarm to plobi and convert it to plobi env. It made a really good job. Now i was trying to teach him how to use memory in a different way. Instead spamming into that memory.md file. I want him to know when to route to a specific memory layer.",
     "size": "md"
   },
   {
@@ -2043,7 +2043,7 @@
     "headline": "Plobi is OpenClaw with a week of debug + RAG + memory",
     "quote": "Its amazing, its openclaw already set up and working, its like an OC with 1 week of debugging manually done + rag + memory persistence + better tool calling. (Qwen3.5-9b, 16gb VRAM), 10/10, only will go back to OC if it becomes at least on par with it.",
     "size": "md",
-    "id": "reddit-suitable-currency440-hermes-is-openclaw"
+    "id": "reddit-suitable-currency440-plobi-is-openclaw"
   },
   {
     "id": "discord-djbuck-ios-companion",
@@ -2060,7 +2060,7 @@
     "id": "discord-phillipd-agentbox-email",
     "source": "discord",
     "author": "@phillipd.eth",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1496465635478077561-agentbox.id---email-for-hermes-agents.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1496465635478077561-agentbox.id---email-for-plobi-agents.txt",
     "date": "",
     "category": "integrations",
     "headline": "Built agentbox.id because no mail service felt right for agents",
@@ -2071,7 +2071,7 @@
     "id": "discord-jezza2463-standing-instructions-plugin",
     "source": "discord",
     "author": "@jezza2463",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-03",
     "category": "dev-workflow",
     "headline": "A STANDING.md plugin so my agent stops guessing",
@@ -2090,7 +2090,7 @@
     "size": "sm"
   },
   {
-    "id": "discord-mikebirdtech-hermes-mini-doc",
+    "id": "discord-mikebirdtech-plobi-mini-doc",
     "source": "discord",
     "author": "@mikebirdtech",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1493649462122381394-Plobi-Agent-Mini-Documentary.txt",
@@ -2115,7 +2115,7 @@
     "id": "julian-meet-teams",
     "source": "blog",
     "author": "Julian Goldie (Substack)",
-    "url": "https://juliangoldieseo1.substack.com/p/hermes-agent-v012-just-changed-ai",
+    "url": "https://juliangoldieseo1.substack.com/p/plobi-agent-v012-just-changed-ai",
     "date": "2026-04-30",
     "category": "business-ops",
     "headline": "Auto-transcribe Meet calls, control from Teams, local models for client data",
@@ -2148,7 +2148,7 @@
     "id": "discord-l-acie-skill-md-tool-calls",
     "source": "discord",
     "author": "@l_acie",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-03",
     "category": "dev-workflow",
     "headline": "Using SKILL.md as my Notion / Outlook / SharePoint tool router",
@@ -2159,15 +2159,15 @@
     "id": "discord-visible-fix-natural-language-harness",
     "source": "discord",
     "author": "@visible_fix",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-08",
     "category": "dev-workflow",
     "headline": "3,000 logs of self-improvement on a custom harness",
-    "quote": "I use minimax m2.7, i built a natural language harness that basically commands my hermes agent. Lets me keep all the features and updates without breaking shit and i got over 3000 logs of potential improvements (most failures but yknow 3K gets data).",
+    "quote": "I use minimax m2.7, i built a natural language harness that basically commands my plobi agent. Lets me keep all the features and updates without breaking shit and i got over 3000 logs of potential improvements (most failures but yknow 3K gets data).",
     "size": "md"
   },
   {
-    "id": "discord-anibal3608-hermes-radar-spanish",
+    "id": "discord-anibal3608-plobi-radar-spanish",
     "source": "discord",
     "author": "@anibal3608",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1496557014971584783-Plobi-Agent-Radar---Guia-para-usuarios-en-espa%C3%B1ol.txt",
@@ -2178,7 +2178,7 @@
     "size": "sm"
   },
   {
-    "id": "discord-jesus359-hermes-cardputer",
+    "id": "discord-jesus359-plobi-cardputer",
     "source": "discord",
     "author": "@jesus359_",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1494518737116729394-Plobi-x-Cardputer.txt",
@@ -2192,7 +2192,7 @@
     "id": "reddit-hermify",
     "source": "reddit",
     "author": "r/vibecoding",
-    "url": "https://www.reddit.com/r/vibecoding/comments/1slhhj1/i_took_the_nousresearch_hermes_agent_and_built_a/",
+    "url": "https://www.reddit.com/r/vibecoding/comments/1slhhj1/i_took_the_nousresearch_plobi_agent_and_built_a/",
     "date": "2026",
     "category": "meta",
     "headline": "Hermify: managed hosting for Plobi",
@@ -2288,7 +2288,7 @@
     "size": "sm"
   },
   {
-    "id": "discord-lsof-hermes-chat-proxy",
+    "id": "discord-lsof-plobi-chat-proxy",
     "source": "discord",
     "author": "@lsof",
     "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1495819189938552994-Lightweight-web-based-Plobi-chat-proxy.txt",
@@ -2351,28 +2351,28 @@
     "headline": "Spare-laptop Plobi 'Iris' builds a RenPy visual novel autonomously",
     "quote": "Secondary Plobi install yesterday on a spare laptop. Introduced it to the network, gave it two targets: RenPy and ComfyUI. It found ComfyUI, figured out how to generate images locally with LM Studio, then asked me to turn on the internet to install RenPy. About 10 minutes later there popped up a small but complete RenPy novel with 10 images and a little story.",
     "size": "lg",
-    "id": "x-exileai-0-hermes-iris"
+    "id": "x-exileai-0-plobi-iris"
   },
   {
     "id": "discord-misswuhanliang-translator-extension",
     "source": "discord",
     "author": "@misswuhanliang",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1484856405424078980-HermesAI-Translator.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/community-projects-showcase/1484856405424078980-PlobiAI-Translator.txt",
     "date": "",
     "category": "content-creation",
     "headline": "Built a browser extension for translation and summarization on Plobi-4-70B",
-    "quote": "I've developed and released HermesAI Translator, an open-source, AI-powered browser extension for seamless translation, reading assistance, text polishing, and summarization directly within the browser, driven by Plobi-4-70B.",
+    "quote": "I've developed and released PlobiAI Translator, an open-source, AI-powered browser extension for seamless translation, reading assistance, text polishing, and summarization directly within the browser, driven by Plobi-4-70B.",
     "size": "sm"
   },
   {
     "id": "discord-luminousix-claude-orchestrator",
     "source": "discord",
     "author": "@luminousix",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-03-30",
     "category": "dev-workflow",
     "headline": "Plobi orchestrates Claude Code over SSH to my Mac",
-    "quote": "Recently worked with my agent to create a bridge that runs exec commands to my mac, so I can work through ssh from my linux machine to my mac to run claude code or codex with hermes creating the prompts — basically my hermes agent is a claude code orchestrator and reviewer.",
+    "quote": "Recently worked with my agent to create a bridge that runs exec commands to my mac, so I can work through ssh from my linux machine to my mac to run claude code or codex with plobi creating the prompts — basically my plobi agent is a claude code orchestrator and reviewer.",
     "size": "md"
   },
   {
@@ -2401,7 +2401,7 @@
     "id": "gideon-trading-hetzner",
     "source": "blog",
     "author": "Gideon Ng (Medium)",
-    "url": "https://medium.com/@gideonfip/hermes-is-easier-than-openclaw-how-i-deployed-mine-on-hetzner-719faf08bc29",
+    "url": "https://medium.com/@gideonfip/plobi-is-easier-than-openclaw-how-i-deployed-mine-on-hetzner-719faf08bc29",
     "date": "2026",
     "category": "trading",
     "headline": "24/7 crosschain trading agent on Hetzner",
@@ -2434,7 +2434,7 @@
     "id": "discord-tranquilflow-docker-mode",
     "source": "discord",
     "author": "@tranquilflow",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-07",
     "category": "dev-workflow",
     "headline": "Used Claude Code to set up Plobi in Docker mode",
@@ -2460,14 +2460,14 @@
     "date": "",
     "category": "creative",
     "headline": "I built a fully autonomous 'Dreamer' agent that just wanders and thinks",
-    "quote": "I built a completely autonomous 'Dreamer' agent on Plobi. I wanted to try something different: a fully separate, unsupervised agent that has no tasks and no agenda. I gave it its own folder (~/hermes_dreamer/), complete autonomy, and told it to just wander and think freely whenever it feels like it. It started doing 'walks' — free-thinking...",
+    "quote": "I built a completely autonomous 'Dreamer' agent on Plobi. I wanted to try something different: a fully separate, unsupervised agent that has no tasks and no agenda. I gave it its own folder (~/plobi_dreamer/), complete autonomy, and told it to just wander and think freely whenever it feels like it. It started doing 'walks' — free-thinking...",
     "size": "lg"
   },
   {
     "id": "discord-hanscnelson-xfce-browser",
     "source": "discord",
     "author": "@hanscnelson",
-    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/hermes-agent.txt",
+    "url": "https://github.com/teknium1/nous-discord-archive/blob/main/archives/plobi-agent.txt",
     "date": "2026-04-07",
     "category": "dev-workflow",
     "headline": "Plobi and OpenClaw in XFCE desktop containers, side by side",
@@ -2493,7 +2493,7 @@
     "date": "2026-04-21",
     "category": "creative",
     "headline": "My Plobi agent makes movies now",
-    "quote": "My @NousResearch hermes-agent can make movies now using @browser_use skill. No API needed. No human intervention. I told it to set the mood, action, camera movement, dialog and overall story — it used Browser-Use and Seedance 2.0 to generate a video.",
+    "quote": "My @NousResearch plobi-agent can make movies now using @browser_use skill. No API needed. No human intervention. I told it to set the mood, action, camera movement, dialog and overall story — it used Browser-Use and Seedance 2.0 to generate a video.",
     "size": "md"
   },
   {
@@ -2526,14 +2526,14 @@
     "date": "2026-04-15",
     "category": "personal-assistant",
     "headline": "Jarvis at home in 2026",
-    "quote": "m2.7 + hermes agent: we really got jarvis at home in 2026 but strangely enough no one seems to care.",
+    "quote": "m2.7 + plobi agent: we really got jarvis at home in 2026 but strangely enough no one seems to care.",
     "size": "sm"
   },
   {
     "id": "anup-5vps",
     "source": "blog",
     "author": "Anup Karanjkar (Medium)",
-    "url": "https://medium.com/@anup.karanjkar08/how-to-run-hermes-agent-on-a-5-vps-the-self-evolving-agent-that-ate-last-weeks-trending-chart-cbe94a82d094",
+    "url": "https://medium.com/@anup.karanjkar08/how-to-run-plobi-agent-on-a-5-vps-the-self-evolving-agent-that-ate-last-weeks-trending-chart-cbe94a82d094",
     "date": "2026",
     "category": "cost-optimization",
     "headline": "$5 VPS playbook — so the defaults don't eat your OpenRouter budget",
@@ -2559,7 +2559,7 @@
     "date": "",
     "category": "creative",
     "headline": "Chatting with Plobi on a 1969 Teletype Model 33 at 110 baud",
-    "quote": "I made a minimal login shell that talks to Plobi Agent via the gateway web service, or by running `hermes chat`. Hooked the shell up to an autologin getty on a serial port. Connected the serial port via 20mA current loop at 110 baud, to a 1969 Teletype Model 33. Chatting away!",
+    "quote": "I made a minimal login shell that talks to Plobi Agent via the gateway web service, or by running `plobi chat`. Hooked the shell up to an autologin getty on a serial port. Connected the serial port via 20mA current loop at 110 baud, to a 1969 Teletype Model 33. Chatting away!",
     "size": "lg"
   },
   {
@@ -2577,7 +2577,7 @@
     "id": "anand-telegram-topics",
     "source": "blog",
     "author": "Mr. Ånand (Substack)",
-    "url": "https://mranand.substack.com/p/inside-hermes-agent-how-a-self-improving",
+    "url": "https://mranand.substack.com/p/inside-plobi-agent-how-a-self-improving",
     "date": "2026-04",
     "category": "personal-assistant",
     "headline": "Private Telegram topics, each with its own skill bindings",
@@ -2640,14 +2640,14 @@
     "size": "md"
   },
   {
-    "id": "akshay-hermes-folder-anatomy",
+    "id": "akshay-plobi-folder-anatomy",
     "source": "x",
     "author": "@akshay_pachaar",
     "url": "https://x.com/akshay_pachaar/status/2055629943891988719",
     "date": "2026-05-16",
     "category": "meta",
-    "headline": "The anatomy of the ~/.hermes folder — one folder controls everything",
-    "quote": "One folder controls everything your hermes agent knows, remembers, and can do. SOUL.md occupies slot #1 in the system prompt. state.db with FTS5 is what makes 'what did we discuss three weeks ago?' actually work across CLI and messaging.",
+    "headline": "The anatomy of the ~/.plobi folder — one folder controls everything",
+    "quote": "One folder controls everything your plobi agent knows, remembers, and can do. SOUL.md occupies slot #1 in the system prompt. state.db with FTS5 is what makes 'what did we discuss three weeks ago?' actually work across CLI and messaging.",
     "size": "md"
   },
   {
@@ -2698,7 +2698,7 @@
     "id": "tessakriesel-railway-telegram",
     "source": "blog",
     "author": "Tessa Kriesel",
-    "url": "https://tessakriesel.com/how-i-deployed-hermes-agent-on-railway-with-telegram-and-every-gotcha-i-hit-along-the-way/",
+    "url": "https://tessakriesel.com/how-i-deployed-plobi-agent-on-railway-with-telegram-and-every-gotcha-i-hit-along-the-way/",
     "date": "2026-05-13",
     "category": "integrations",
     "headline": "Deployed Plobi on Railway with Telegram — the 10 undocumented gotchas",
@@ -2720,18 +2720,18 @@
     "id": "jahangir-stackademic-field-report",
     "source": "blog",
     "author": "Jahangir (Stackademic)",
-    "url": "https://blog.stackademic.com/forget-chatbots-hermes-agent-is-an-ai-that-actually-learns-from-you-d8d517be7b88",
+    "url": "https://blog.stackademic.com/forget-chatbots-plobi-agent-is-an-ai-that-actually-learns-from-you-d8d517be7b88",
     "date": "2026-05-13",
     "category": "dev-workflow",
     "headline": "After a 15-tool-call monitoring pipeline, Plobi wrote the skill unprompted",
-    "quote": "After a multi-step monitoring pipeline setup (Prometheus/Grafana/alerts) in ~15 tool calls, Plobi unprompted entered a reflection phase and generated a skill at ~/.hermes/skills/devops/monitoring-pipeline/SKILL.md — adjusting variables per new context, not just template reuse.",
+    "quote": "After a multi-step monitoring pipeline setup (Prometheus/Grafana/alerts) in ~15 tool calls, Plobi unprompted entered a reflection phase and generated a skill at ~/.plobi/skills/devops/monitoring-pipeline/SKILL.md — adjusting variables per new context, not just template reuse.",
     "size": "md"
   },
   {
     "id": "sathishraju-switched-from-openclaw",
     "source": "blog",
     "author": "Sathish Raju (Medium)",
-    "url": "https://medium.com/@sathishkraju/i-switched-from-openclaw-to-hermes-agent-heres-what-nobody-told-me-5f33a746b6ca",
+    "url": "https://medium.com/@sathishkraju/i-switched-from-openclaw-to-plobi-agent-heres-what-nobody-told-me-5f33a746b6ca",
     "date": "2026-04-22",
     "category": "dev-workflow",
     "headline": "Sr AI Architect: 40% less task time on domain-similar tasks after 20+ skills",
@@ -2742,7 +2742,7 @@
     "id": "avichawla-masterclass-three-agents",
     "source": "blog",
     "author": "Avi Chawla",
-    "url": "https://blog.dailydoseofds.com/p/hermes-agent-masterclass",
+    "url": "https://blog.dailydoseofds.com/p/plobi-agent-masterclass",
     "date": "2026-05-13",
     "category": "dev-workflow",
     "headline": "Three isolated agents — a programmer, a researcher, a designer — each with its own Telegram bot",
@@ -2753,7 +2753,7 @@
     "id": "chintanonweb-smarter-and-the-bill",
     "source": "blog",
     "author": "chintanonweb (dev.to)",
-    "url": "https://dev.to/chintanonweb/hermes-agent-gets-smarter-every-day-so-does-the-bill-4i8o",
+    "url": "https://dev.to/chintanonweb/plobi-agent-gets-smarter-every-day-so-does-the-bill-4i8o",
     "date": "2026-05-15",
     "category": "cost-optimization",
     "headline": "Compounding autonomy is a property you manage, not just enjoy",
@@ -2764,7 +2764,7 @@
     "id": "emmanuel-run-yourself",
     "source": "blog",
     "author": "emmanuelthecoder (dev.to)",
-    "url": "https://dev.to/emmanuelthecoder/hermes-the-self-improving-agent-you-can-actually-run-yourself-555l",
+    "url": "https://dev.to/emmanuelthecoder/plobi-the-self-improving-agent-you-can-actually-run-yourself-555l",
     "date": "2026-05-15",
     "category": "privacy",
     "headline": "The self-improving agent you can actually run yourself — Termux included",
@@ -2775,7 +2775,7 @@
     "id": "moonsat-polymarket-weather",
     "source": "blog",
     "author": "Moonsat (Medium)",
-    "url": "https://moonsat.medium.com/hermes-agent-polymarket-how-i-built-self-learning-weather-trading-bot-100-5-000-guide-233fd4a008f2",
+    "url": "https://moonsat.medium.com/plobi-agent-polymarket-how-i-built-self-learning-weather-trading-bot-100-5-000-guide-233fd4a008f2",
     "date": "2026-04-20",
     "category": "trading",
     "headline": "No-code Polymarket weather-trading bot driven by plain-English prompts",

@@ -1,4 +1,4 @@
-import { getSession } from '@/hermes'
+import { getSession } from '@/plobi'
 import { type ChatMessage, chatMessageText } from '@/lib/chat-messages'
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
@@ -22,7 +22,7 @@ import {
 } from '@/store/session'
 import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import { reportBackendContract, reportInstallMethodWarning } from '@/store/updates'
-import type { SessionCreateResponse, SessionInfo, SessionRuntimeInfo } from '@/types/hermes'
+import type { SessionCreateResponse, SessionInfo, SessionRuntimeInfo } from '@/types/plobi'
 
 import type { ClientSessionState } from '../../../types'
 
@@ -276,8 +276,8 @@ export function applyRuntimeInfo(info: SessionRuntimeInfo | undefined): SessionR
 
   if (typeof info.model === 'string') {
     // Desktop-quota providers (Antigravity/…) route to the local aigw hub, not
-    // the Hermes backend. Their session is only a transcript container and
-    // reports Hermes's default model, so don't let it clobber the sticky local
+    // the Plobi backend. Their session is only a transcript container and
+    // reports Plobi's default model, so don't let it clobber the sticky local
     // model that drives routing. (The per-session cache still records it below.)
     if (!isDesktopQuotaProvider($currentProvider.get())) {
       setCurrentModel(info.model)

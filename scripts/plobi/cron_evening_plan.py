@@ -1,6 +1,6 @@
 """cron no_agent 脚本：每晚 20:00 用已有 events 写次日计划 → 钉钉。
 
-由 ``scripts/plobi/register_butler.py`` 复制到 ``HERMES_HOME/scripts/`` 并注册
+由 ``scripts/plobi/register_butler.py`` 复制到 ``PLOBI_HOME/scripts/`` 并注册
 为每日 20:00 任务。stdout 为 JSON 结果，进 cron 输出留痕。
 
 正文 = 计划段（原有输出，一字不改）+ 空行 + **次日可抄进手机日历的清单**
@@ -27,7 +27,7 @@ def _bootstrap() -> None:
     except ImportError:
         pass
 
-    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    home = Path(os.environ.get("PLOBI_HOME") or Path.home() / ".plobi")
     runtime = home / "plobi" / "runtime.json"
     try:
         code_root = json.loads(runtime.read_text(encoding="utf-8"))["code_root"]

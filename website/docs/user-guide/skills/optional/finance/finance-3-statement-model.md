@@ -14,7 +14,7 @@ Build fully-integrated 3-statement models (IS, BS, CF) in Excel with working cap
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/finance/3-statement-model` |
+| Source | Optional — install with `plobi skills install official/finance/3-statement-model` |
 | Path | `optional-skills/finance/3-statement-model` |
 | Version | `1.0.0` |
 | Author | Anthropic (adapted by Nous Research) |

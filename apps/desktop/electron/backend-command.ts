@@ -2,10 +2,10 @@
 
 // Backend subcommand routing for the desktop-managed Plobi process.
 //
-// The desktop app launches its own headless backend via `hermes serve` — it
+// The desktop app launches its own headless backend via `plobi serve` — it
 // must NEVER depend on or launch the browser `dashboard`. But `serve` is a
 // newer subcommand: a runtime that predates it (an older managed install the
-// app hasn't updated yet, or an older `hermes` resolved from PATH) only knows
+// app hasn't updated yet, or an older `plobi` resolved from PATH) only knows
 // `dashboard --no-open`. To avoid bricking those users mid-upgrade we detect
 // whether the resolved runtime understands `serve` and, only when it does not,
 // fall back to the legacy `dashboard --no-open` invocation. Both produce the
@@ -14,15 +14,15 @@
 // These helpers are pure so they can be unit-tested without Electron.
 //
 // WP-H1-LAN: when the user opts into the LAN App by setting PLOBI_LAN=1
-// (typically via $HERMES_HOME/.env), the serve subprocess binds
+// (typically via $PLOBI_HOME/.env), the serve subprocess binds
 // 0.0.0.0:8787 instead of the default 127.0.0.1:<ephemeral>.  The Electron
 // main process already passes through env vars — see main.ts spawn() — but
-// we ALSO honour $HERMES_HOME/.env so a user who set PLOBI_LAN in that
+// we ALSO honour $PLOBI_HOME/.env so a user who set PLOBI_LAN in that
 // file before starting Electron still gets the LAN bind.
 
 import fs from 'node:fs'
 
-/** Token name we honour in $HERMES_HOME/.env (single-line KEY=VALUE). */
+/** Token name we honour in $PLOBI_HOME/.env (single-line KEY=VALUE). */
 const LAN_ENV_KEY = 'PLOBI_LAN'
 
 /** LAN-mode host/port — see WP-H1-LAN contract. */
@@ -38,7 +38,7 @@ const LOOPBACK_PORT = '0'
  * the key is present and well-formed, ``null`` otherwise.
  *
  * Intentionally tiny — we only parse `PLOBI_LAN` from the user's
- * ``$HERMES_HOME/.env`` so a desktop process that did not inherit the env
+ * ``$PLOBI_HOME/.env`` so a desktop process that did not inherit the env
  * (Electron launchers, packaged installers, custom wrappers) can still
  * opt into the LAN bind. Five lines of regex, no dotenv dependency: the
  * deserialization surface stays narrow enough to review in one sitting.
@@ -99,7 +99,7 @@ export function readEnvValue(path: string | undefined, key: string): string | nu
 
 /**
  * Resolve the PLOBI_LAN truthy value, preferring the inherited process env
- * and falling back to *hermesHomeEnvPath* (typically ``$HERMES_HOME/.env``).
+ * and falling back to *plobiHomeEnvPath* (typically ``$PLOBI_HOME/.env``).
  *
  * Equality check is intentionally strict: only the literal string ``"1"``
  * opts into the LAN bind, matching the contract spelled out in
@@ -108,7 +108,7 @@ export function readEnvValue(path: string | undefined, key: string): string | nu
  * switch", not a truthy-string set — the dashboard / API layer can do
  * more elaborate parsing if it ever needs to.
  */
-export function resolveLanMode(env: NodeJS.ProcessEnv, hermesHomeEnvPath?: string): boolean {
+export function resolveLanMode(env: NodeJS.ProcessEnv, plobiHomeEnvPath?: string): boolean {
   const inherited = typeof env.PLOBI_LAN === 'string' ? env.PLOBI_LAN.trim() : ''
   if (inherited === '1') {
     return true
@@ -117,7 +117,7 @@ export function resolveLanMode(env: NodeJS.ProcessEnv, hermesHomeEnvPath?: strin
     // Explicit non-truthy value in the shell wins — don't second-guess it.
     return false
   }
-  const fromFile = readEnvValue(hermesHomeEnvPath, LAN_ENV_KEY)
+  const fromFile = readEnvValue(plobiHomeEnvPath, LAN_ENV_KEY)
   return fromFile === '1'
 }
 
@@ -128,25 +128,25 @@ export function resolveLanMode(env: NodeJS.ProcessEnv, hermesHomeEnvPath?: strin
  * ephemeral port, matching pre-WP-H1-LAN behaviour).
  *
  * When :data:`PLOBI_LAN` is set to ``"1"`` (in either the inherited
- * process env or ``$HERMES_HOME/.env``), returns ``serve --host 0.0.0.0
+ * process env or ``$PLOBI_HOME/.env``), returns ``serve --host 0.0.0.0
  * --port 8787`` so the Plobi App on the same Wi-Fi can reach the
  * desktop. Any other value leaves the bind on loopback.
  *
  * @param {string} [profile] optional Plobi profile to pin via ``--profile``.
  * @param {object} [options] optional overrides for testing.
  * @param {NodeJS.ProcessEnv} [options.env] process env to read (default ``process.env``).
- * @param {string} [options.hermesHomeEnvPath] path to ``$HERMES_HOME/.env`` to fall back on.
+ * @param {string} [options.plobiHomeEnvPath] path to ``$PLOBI_HOME/.env`` to fall back on.
  */
 export function serveBackendArgs(
   profile?: string,
-  options?: { env?: NodeJS.ProcessEnv; hermesHomeEnvPath?: string },
+  options?: { env?: NodeJS.ProcessEnv; plobiHomeEnvPath?: string },
 ) {
   const head = profile ? ['--profile', profile] : []
   const env = options?.env ?? process.env
-  const hermesHomeEnvPath =
-    options?.hermesHomeEnvPath ?? (env.HERMES_HOME ? `${env.HERMES_HOME}/.env` : undefined)
+  const plobiHomeEnvPath =
+    options?.plobiHomeEnvPath ?? (env.PLOBI_HOME ? `${env.PLOBI_HOME}/.env` : undefined)
 
-  if (resolveLanMode(env, hermesHomeEnvPath)) {
+  if (resolveLanMode(env, plobiHomeEnvPath)) {
     return [...head, 'serve', '--host', LAN_BIND_HOST, '--port', LAN_BIND_PORT]
   }
   return [...head, 'serve', '--host', LOOPBACK_HOST, '--port', LOOPBACK_PORT]
@@ -155,7 +155,7 @@ export function serveBackendArgs(
 /**
  * Rewrite a resolved backend argv from `serve` to the legacy
  * `dashboard --no-open` form, preserving every other argument (incl. a leading
- * `-m hermes_cli.main` and any `--profile <name>`). Returns a copy; if there is
+ * `-m plobi_cli.main` and any `--profile <name>`). Returns a copy; if there is
  * no `serve` token the argv is returned unchanged.
  */
 export function dashboardFallbackArgs(args) {
@@ -169,7 +169,7 @@ export function dashboardFallbackArgs(args) {
 }
 
 /**
- * True when a runtime's `hermes_cli/subcommands/dashboard.py` source registers
+ * True when a runtime's `plobi_cli/subcommands/dashboard.py` source registers
  * the `serve` subcommand. Matches `add_parser("serve"` / `add_parser('serve'`
  * specifically so the substring "server" (e.g. "start_server", "web server")
  * never produces a false positive.

@@ -6,7 +6,7 @@ author: Plobi Agent
 license: MIT
 platforms: [macos]
 metadata:
-  hermes:
+  plobi:
     tags: [FindMy, AirTag, location, tracking, macOS, Apple]
 ---
 

@@ -136,13 +136,13 @@ class GatewayKanbanWatchersMixin:
         # in the dispatch owner's per-board DBs. This prevents N-gateway -shm contention.
         # TODO: gate per-board when per-board dispatcher_owner tracking lands.
         try:
-            from hermes_cli.config import load_config as _load_config
+            from plobi_cli.config import load_config as _load_config
         except Exception:
             logger.warning("kanban notifier: config loader unavailable; disabled")
             return
-        env_override = os.environ.get("HERMES_KANBAN_DISPATCH_IN_GATEWAY", "").strip().lower()
+        env_override = os.environ.get("PLOBI_KANBAN_DISPATCH_IN_GATEWAY", "").strip().lower()
         if env_override in {"0", "false", "no", "off"}:
-            logger.info("kanban notifier: disabled via HERMES_KANBAN_DISPATCH_IN_GATEWAY env")
+            logger.info("kanban notifier: disabled via PLOBI_KANBAN_DISPATCH_IN_GATEWAY env")
             return
         try:
             cfg = _load_config()
@@ -157,7 +157,7 @@ class GatewayKanbanWatchersMixin:
             return
         from gateway.config import Platform as _Platform
         try:
-            from hermes_cli import kanban_db as _kb
+            from plobi_cli import kanban_db as _kb
         except Exception:
             logger.warning("kanban notifier: kanban_db not importable; notifier disabled")
             return
@@ -208,7 +208,7 @@ class GatewayKanbanWatchersMixin:
 
                     # Enumerate every board on disk, but poll each resolved DB
                     # path once. Multiple slugs can point at the same DB when
-                    # HERMES_KANBAN_DB pins the board path; without this guard
+                    # PLOBI_KANBAN_DB pins the board path; without this guard
                     # one gateway could collect the same subscription/event
                     # more than once before advancing the cursor.
                     try:
@@ -581,7 +581,7 @@ class GatewayKanbanWatchersMixin:
         ``board`` scopes the DB connection to the board that owns this
         subscription. Unsub cursors in one board can't touch another's.
         """
-        from hermes_cli import kanban_db as _kb
+        from plobi_cli import kanban_db as _kb
         conn = _kb.connect(board=board)
         try:
             _kb.advance_notify_cursor(
@@ -596,7 +596,7 @@ class GatewayKanbanWatchersMixin:
             conn.close()
 
     def _kanban_unsub(self, sub: dict, board: Optional[str] = None) -> None:
-        from hermes_cli import kanban_db as _kb
+        from plobi_cli import kanban_db as _kb
         conn = _kb.connect(board=board)
         try:
             _kb.remove_notify_sub(
@@ -617,7 +617,7 @@ class GatewayKanbanWatchersMixin:
         board: Optional[str] = None,
     ) -> None:
         """Sync helper: undo a claimed notification cursor after send failure."""
-        from hermes_cli import kanban_db as _kb
+        from plobi_cli import kanban_db as _kb
         conn = _kb.connect(board=board)
         try:
             _kb.rewind_notify_cursor(
@@ -746,7 +746,7 @@ class GatewayKanbanWatchersMixin:
 
         Gated by `kanban.dispatch_in_gateway` in config.yaml (default True).
         When true, the gateway hosts the single dispatcher for this profile:
-        no separate `hermes kanban daemon` process needed. When false, the
+        no separate `plobi kanban daemon` process needed. When false, the
         loop exits immediately and an external daemon is expected.
 
         Each tick calls :func:`kanban_db.dispatch_once` inside
@@ -761,16 +761,16 @@ class GatewayKanbanWatchersMixin:
         """
         # Read config once at boot. If the user flips the flag later, they
         # restart the gateway; same pattern as every other background
-        # watcher here. Honours HERMES_KANBAN_DISPATCH_IN_GATEWAY env var
+        # watcher here. Honours PLOBI_KANBAN_DISPATCH_IN_GATEWAY env var
         # as an escape hatch (false-y value disables without editing YAML).
         try:
-            from hermes_cli.config import load_config as _load_config
+            from plobi_cli.config import load_config as _load_config
         except Exception:
             logger.warning("kanban dispatcher: config loader unavailable; disabled")
             return
-        env_override = os.environ.get("HERMES_KANBAN_DISPATCH_IN_GATEWAY", "").strip().lower()
+        env_override = os.environ.get("PLOBI_KANBAN_DISPATCH_IN_GATEWAY", "").strip().lower()
         if env_override in {"0", "false", "no", "off"}:
-            logger.info("kanban dispatcher: disabled via HERMES_KANBAN_DISPATCH_IN_GATEWAY env")
+            logger.info("kanban dispatcher: disabled via PLOBI_KANBAN_DISPATCH_IN_GATEWAY env")
             return
 
         try:
@@ -786,7 +786,7 @@ class GatewayKanbanWatchersMixin:
             return
 
         try:
-            from hermes_cli import kanban_db as _kb
+            from plobi_cli import kanban_db as _kb
         except Exception:
             logger.warning("kanban dispatcher: kanban_db not importable; dispatcher disabled")
             return
@@ -1031,7 +1031,7 @@ class GatewayKanbanWatchersMixin:
                         "SQLite database; pausing dispatch for this board until "
                         "the file changes, the gateway restarts, or the "
                         "quarantine timer expires. Move or restore the file, "
-                        "then run `hermes kanban init` if you need a fresh board.",
+                        "then run `plobi kanban init` if you need a fresh board.",
                         slug,
                         fingerprint[0],
                     )
@@ -1046,7 +1046,7 @@ class GatewayKanbanWatchersMixin:
                         "SQLite database; pausing dispatch for this board until "
                         "the file changes, the gateway restarts, or the "
                         "quarantine timer expires. Move or restore the file, "
-                        "then run `hermes kanban init` if you need a fresh board.",
+                        "then run `plobi kanban init` if you need a fresh board.",
                         slug,
                         fingerprint[0],
                     )
@@ -1137,7 +1137,7 @@ class GatewayKanbanWatchersMixin:
             successfully decomposed or specified this tick.
             """
             try:
-                from hermes_cli import kanban_decompose as _decomp
+                from plobi_cli import kanban_decompose as _decomp
             except Exception as exc:  # pragma: no cover
                 logger.warning(
                     "kanban auto-decompose: import failed (%s); skipping", exc,
@@ -1157,9 +1157,9 @@ class GatewayKanbanWatchersMixin:
                 # pattern as the dashboard specify endpoint. The
                 # decomposer module connects with no board kwarg and
                 # relies on the env var.
-                prev_env = os.environ.get("HERMES_KANBAN_BOARD")
+                prev_env = os.environ.get("PLOBI_KANBAN_BOARD")
                 try:
-                    os.environ["HERMES_KANBAN_BOARD"] = slug
+                    os.environ["PLOBI_KANBAN_BOARD"] = slug
                     try:
                         triage_ids = _decomp.list_triage_ids()
                     except Exception as exc:
@@ -1203,9 +1203,9 @@ class GatewayKanbanWatchersMixin:
                             )
                 finally:
                     if prev_env is None:
-                        os.environ.pop("HERMES_KANBAN_BOARD", None)
+                        os.environ.pop("PLOBI_KANBAN_BOARD", None)
                     else:
-                        os.environ["HERMES_KANBAN_BOARD"] = prev_env
+                        os.environ["PLOBI_KANBAN_BOARD"] = prev_env
             return successes
 
         logger.info(
@@ -1263,7 +1263,7 @@ class GatewayKanbanWatchersMixin:
                             "kanban dispatcher stuck: ready queue non-empty for "
                             "%d consecutive ticks but 0 workers spawned. Check "
                             "profile health (venv, PATH, credentials) and "
-                            "`hermes kanban list --status ready`.",
+                            "`plobi kanban list --status ready`.",
                             bad_ticks,
                         )
                         last_warn_at = now

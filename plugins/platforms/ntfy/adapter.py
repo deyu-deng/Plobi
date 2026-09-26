@@ -18,8 +18,8 @@ Configuration in config.yaml::
         enabled: true
         extra:
           server: "https://ntfy.sh"       # or self-hosted URL
-          topic: "hermes-in"              # subscribe topic (incoming)
-          publish_topic: "hermes-out"     # optional — defaults to topic
+          topic: "plobi-in"              # subscribe topic (incoming)
+          publish_topic: "plobi-out"     # optional — defaults to topic
           token: "..."                    # optional Bearer / Basic auth token
           markdown: true                  # optional — enable markdown (default: false)
 
@@ -81,7 +81,7 @@ DEDUP_WINDOW_SECONDS = 300
 DEDUP_MAX_SIZE = 1000
 RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 STREAM_TIMEOUT_SECONDS = 90  # ntfy keepalive default is 55s; give margin
-_ECHO_TAG = "hermes-agent"  # tag added to outgoing messages for echo-loop prevention
+_ECHO_TAG = "plobi-agent"  # tag added to outgoing messages for echo-loop prevention
 
 
 def _build_auth_header(token: str) -> Dict[str, str]:
@@ -500,7 +500,7 @@ async def _standalone_send(
 
     Used by ``tools/send_message_tool._send_via_adapter`` and the cron
     scheduler when the gateway runner is not in this process (e.g.
-    ``hermes cron`` running standalone). Without this hook,
+    ``plobi cron`` running standalone). Without this hook,
     ``deliver=ntfy`` cron jobs fail with ``No live adapter for platform``.
 
     ``thread_id`` and ``media_files`` are accepted for signature parity
@@ -564,7 +564,7 @@ def register(ctx) -> None:
         required_env=["NTFY_TOPIC"],
         install_hint="pip install httpx   # already a Plobi dependency",
         # Env-driven auto-configuration: seeds PlatformConfig.extra so
-        # env-only setups show up in `hermes gateway status` without
+        # env-only setups show up in `plobi gateway status` without
         # instantiating the HTTP client.
         env_enablement_fn=_env_enablement,
         # Cron home-channel delivery support — `deliver=ntfy` cron jobs

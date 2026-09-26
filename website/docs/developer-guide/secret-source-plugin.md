@@ -6,7 +6,7 @@ description: "How to build a secret-manager backend plugin for Plobi Agent"
 
 # Building a Secret Source Plugin
 
-Secret sources resolve provider credentials from an external secret manager (a vault, a password manager, an OS keystore, a custom script) into environment variables at process startup — after `~/.hermes/.env` loads, before Plobi reads credentials. Bitwarden and 1Password ship in-tree; **every other backend is a plugin**. This guide covers building one.
+Secret sources resolve provider credentials from an external secret manager (a vault, a password manager, an OS keystore, a custom script) into environment variables at process startup — after `~/.plobi/.env` loads, before Plobi reads credentials. Bitwarden and 1Password ship in-tree; **every other backend is a plugin**. This guide covers building one.
 
 :::tip
 The bundled set is deliberately closed, same policy as [memory providers](/developer-guide/memory-provider-plugin): PRs adding new vault backends under `agent/secret_sources/` are closed with a pointer to this guide. Publish your backend as a standalone plugin repo and share it in the Nous Research Discord (`#plugins-skills-and-skins`).
@@ -29,7 +29,7 @@ The orchestrator (`agent.secret_sources.registry.apply_all`) owns everything sec
 ## Directory structure
 
 ```
-~/.hermes/plugins/my-vault/
+~/.plobi/plugins/my-vault/
 ├── plugin.yaml      # name, description
 └── __init__.py      # SecretSource subclass + register(ctx)
 ```
@@ -126,7 +126,7 @@ def register(ctx):
 Registration is rejected (with a log warning, never a crash) for: non-`SecretSource` instances, invalid/duplicate names, a `scheme` another source owns, wrong `api_version`, or a `shape` outside `mapped`/`bulk`.
 
 :::note Timing
-Plugin discovery runs later in startup than the first `load_hermes_dotenv()` call, so a plugin source is not consulted by the very first env load of the process that discovers it. It IS consulted by every subsequently spawned Plobi process (gateway children, cron sessions, subagents). Bundled sources cover first-process bootstrap.
+Plugin discovery runs later in startup than the first `load_plobi_dotenv()` call, so a plugin source is not consulted by the very first env load of the process that discovers it. It IS consulted by every subsequently spawned Plobi process (gateway children, cron sessions, subagents). Bundled sources cover first-process bootstrap.
 :::
 
 ## Users configure it like any other source

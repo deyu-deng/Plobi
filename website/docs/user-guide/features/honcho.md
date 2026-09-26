@@ -33,19 +33,19 @@ Honcho is integrated into the [Memory Providers](./memory-providers.md) system. 
 ## Setup
 
 ```bash
-hermes memory setup    # select "honcho" from the provider list
+plobi memory setup    # select "honcho" from the provider list
 ```
 
 Or configure manually:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.plobi/config.yaml
 memory:
   provider: honcho
 ```
 
 ```bash
-echo 'HONCHO_API_KEY=***' >> ~/.hermes/.env
+echo 'HONCHO_API_KEY=***' >> ~/.plobi/.env
 ```
 
 Get an API key at [honcho.dev](https://honcho.dev).
@@ -104,11 +104,11 @@ The auto-injected dialectic scales `dialecticReasoningLevel` by query length: +1
 
 ## Configuration Options
 
-Honcho is configured in `~/.honcho/config.json` (global) or `$HERMES_HOME/honcho.json` (profile-local). The setup wizard handles this for you.
+Honcho is configured in `~/.honcho/config.json` (global) or `$PLOBI_HOME/honcho.json` (profile-local). The setup wizard handles this for you.
 
 ### Self-Hosted Honcho with Authentication
 
-When pointing Plobi at a self-hosted Honcho server, `hermes honcho setup` (and `hermes memory setup`) ask for a **local JWT / bearer token** after the base URL. Paste a JWT signed with the server's `AUTH_JWT_SECRET` (the Honcho compose env var) to enable authenticated access; leave it blank for servers running with `AUTH_USE_AUTH=false`. The local token is stored under the host block (`hosts.<host>.apiKey` in `honcho.json`), separate from any cloud `apiKey`, so you can flip the `Cloud or local?` prompt back to `cloud` later without losing either credential.
+When pointing Plobi at a self-hosted Honcho server, `plobi honcho setup` (and `plobi memory setup`) ask for a **local JWT / bearer token** after the base URL. Paste a JWT signed with the server's `AUTH_JWT_SECRET` (the Honcho compose env var) to enable authenticated access; leave it blank for servers running with `AUTH_USE_AUTH=false`. The local token is stored under the host block (`hosts.<host>.apiKey` in `honcho.json`), separate from any cloud `apiKey`, so you can flip the `Cloud or local?` prompt back to `cloud` later without losing either credential.
 
 ### Full Config Reference
 
@@ -134,7 +134,7 @@ When pointing Plobi at a self-hosted Honcho server, `hermes honcho setup` (and `
 | `runtimePeerPrefix` | `""` | Gateway only. Namespaces unknown runtime IDs (`telegram_7654321`) when no alias matches |
 
 **Session strategy** controls how Honcho sessions map to your work:
-- `per-session` — each `hermes` run gets a fresh session. Clean starts, memory via tools. Recommended for new users.
+- `per-session` — each `plobi` run gets a fresh session. Clean starts, memory via tools. Recommended for new users.
 - `per-directory` — one Honcho session per working directory. Context accumulates across runs.
 - `per-repo` — one session per git repository.
 - `global` — single session across all directories.
@@ -230,35 +230,35 @@ When Honcho is active as the memory provider, five tools become available:
 
 ## CLI Commands
 
-The `hermes honcho` subcommand is **only registered when Honcho is the active memory provider** (`memory.provider: honcho` in `config.yaml`). On a fresh install, configure Honcho directly with `hermes memory setup honcho` (or run `hermes memory setup` and pick it from the list); the `hermes honcho` subcommand then appears on the next invocation.
+The `plobi honcho` subcommand is **only registered when Honcho is the active memory provider** (`memory.provider: honcho` in `config.yaml`). On a fresh install, configure Honcho directly with `plobi memory setup honcho` (or run `plobi memory setup` and pick it from the list); the `plobi honcho` subcommand then appears on the next invocation.
 
 ```bash
-hermes memory setup honcho    # Configure Honcho directly (works before activation)
-hermes honcho status          # Connection status, config, and key settings
-hermes honcho setup           # Redirects to `hermes memory setup` (post-activation alias)
-hermes honcho strategy        # Show or set session strategy (per-session/per-directory/per-repo/global)
-hermes honcho peer            # Show or update peer names + dialectic reasoning level
-hermes honcho mode            # Show or set recall mode (hybrid/context/tools)
-hermes honcho tokens          # Show or set token budget for context and dialectic
-hermes honcho identity        # Seed or show the AI peer's Honcho identity
-hermes honcho sync            # Sync Honcho config to all existing profiles
-hermes honcho peers           # Show peer identities across all profiles
-hermes honcho sessions        # List known Honcho session mappings
-hermes honcho map             # Map current directory to a Honcho session name
-hermes honcho enable          # Enable Honcho for the active profile
-hermes honcho disable         # Disable Honcho for the active profile
-hermes honcho migrate         # Step-by-step migration guide from openclaw-honcho
+plobi memory setup honcho    # Configure Honcho directly (works before activation)
+plobi honcho status          # Connection status, config, and key settings
+plobi honcho setup           # Redirects to `plobi memory setup` (post-activation alias)
+plobi honcho strategy        # Show or set session strategy (per-session/per-directory/per-repo/global)
+plobi honcho peer            # Show or update peer names + dialectic reasoning level
+plobi honcho mode            # Show or set recall mode (hybrid/context/tools)
+plobi honcho tokens          # Show or set token budget for context and dialectic
+plobi honcho identity        # Seed or show the AI peer's Honcho identity
+plobi honcho sync            # Sync Honcho config to all existing profiles
+plobi honcho peers           # Show peer identities across all profiles
+plobi honcho sessions        # List known Honcho session mappings
+plobi honcho map             # Map current directory to a Honcho session name
+plobi honcho enable          # Enable Honcho for the active profile
+plobi honcho disable         # Disable Honcho for the active profile
+plobi honcho migrate         # Step-by-step migration guide from openclaw-honcho
 ```
 
-## Migrating from `hermes honcho`
+## Migrating from `plobi honcho`
 
-If you previously used the standalone `hermes honcho setup`:
+If you previously used the standalone `plobi honcho setup`:
 
 1. Your existing configuration (`honcho.json` or `~/.honcho/config.json`) is preserved
 2. Your server-side data (memories, conclusions, user profiles) is intact
 3. Set `memory.provider: honcho` in config.yaml to reactivate
 
-No re-login or re-setup needed. Run `hermes memory setup` and select "honcho" — the wizard detects your existing config.
+No re-login or re-setup needed. Run `plobi memory setup` and select "honcho" — the wizard detects your existing config.
 
 ## Full Documentation
 

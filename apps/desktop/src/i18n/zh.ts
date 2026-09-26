@@ -69,7 +69,7 @@ export const zh: Translations = {
       loadingSettings: '正在加载 Plobi 设置',
       loadingSessions: '正在加载最近会话',
       startingDesktopConnection: '正在启动桌面连接',
-      startingHermesDesktop: '正在启动 Plobi 桌面版…'
+      startingPlobiDesktop: '正在启动 Plobi 桌面版…'
     },
     errors: {
       backgroundExited: 'Plobi 后台进程已退出。',
@@ -117,7 +117,7 @@ export const zh: Translations = {
     backendOutOfDateTitle: '后端版本过旧',
     backendOutOfDateMessage: '你的 Plobi 后端早于当前桌面构建，可能无法正常工作。请更新以保持一致。',
     installMethodUnsupportedTitle: '不受支持的安装方式',
-    updateHermes: '更新 Plobi',
+    updatePlobi: '更新 Plobi',
     updateReadyTitle: '有可用更新',
     updateReadyMessage: count => `有 ${count} 项新更改可用。`,
     seeWhatsNew: '查看更新内容',
@@ -720,7 +720,7 @@ export const zh: Translations = {
       defaultConnection: '默认连接会用于所有没有自定义覆盖的 profile。',
       profileConnection: profile => `仅当“${profile}”是当前 profile 时使用此连接。设为本地即可继承默认连接。`,
       envOverrideTitle: '环境变量正在控制此桌面会话。',
-      envOverrideDesc: '取消设置 HERMES_DESKTOP_REMOTE_URL 和 HERMES_DESKTOP_REMOTE_TOKEN 后才会使用下面保存的设置。',
+      envOverrideDesc: '取消设置 PLOBI_DESKTOP_REMOTE_URL 和 PLOBI_DESKTOP_REMOTE_TOKEN 后才会使用下面保存的设置。',
       modeTitle: '连接模式',
       localTitle: '本地网关',
       localDesc: '在 localhost 启动私有 Plobi 后端。这是默认方式，并且可离线工作。',
@@ -759,7 +759,7 @@ export const zh: Translations = {
       cloudAgentProvisioning: '正在配置…',
       cloudStatusLabel: status => `状态：${status}`,
       remoteUrlTitle: '远程 URL',
-      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀，例如 /hermes。',
+      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀，例如 /plobi。',
       probing: '正在检查此网关的认证方式…',
       probeError: '暂时无法访问此网关。请检查 URL；网关响应后会显示认证方式。',
       signedIn: '已登录',
@@ -1056,7 +1056,7 @@ export const zh: Translations = {
     edit: '编辑',
     archive: '归档',
     skillArchivedTitle: '技能已归档',
-    skillArchivedMessage: '可通过 hermes curator restore 恢复。',
+    skillArchivedMessage: '可通过 plobi curator restore 恢复。',
     hub: {
       searchPlaceholder: '搜索技能中心',
       search: '搜索',
@@ -1267,10 +1267,10 @@ export const zh: Translations = {
     noSessions: '暂无会话。',
     gatewayRunning: '消息网关运行中',
     gatewayStopped: '消息网关已停止',
-    hermesActiveSessions: (version, count) => `Plobi ${version} · 活跃会话 ${count}`,
+    plobiActiveSessions: (version, count) => `Plobi ${version} · 活跃会话 ${count}`,
     restartGateway: '重启网关',
     gatewayRestartFailed: '网关重启失败。',
-    updateHermes: '更新 Plobi',
+    updatePlobi: '更新 Plobi',
     actionRunning: '运行中',
     actionDone: '完成',
     actionFailed: '失败',
@@ -1435,7 +1435,7 @@ export const zh: Translations = {
       MATTERMOST_ALLOWED_USERS: { label: '允许的用户 ID', help: '推荐。逗号分隔的 Mattermost 用户 ID。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '访问令牌' },
-      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@plobi:example.org' },
       MATRIX_ALLOWED_USERS: { label: '允许的 Matrix 用户 ID', help: '推荐。@user:server 格式的逗号分隔用户 ID。' },
       SIGNAL_HTTP_URL: {
         label: 'Signal 桥接 URL',
@@ -1468,7 +1468,7 @@ export const zh: Translations = {
       wecom: '在企业微信中添加群机器人，复制其 webhook key 作为 WECOM_BOT_ID。仅可发送——双向请用企业微信 (应用) 选项。',
       wecom_callback: '设置一个企业微信自建应用，暴露其回调 URL，并提供 corp ID、secret、agent ID 和 AES key。',
       weixin:
-        '运行 `hermes gateway setup`，选择 Weixin，然后使用个人微信账号扫描并确认二维码。Plobi 会通过腾讯 iLink Bot API 连接并保存凭据。',
+        '运行 `plobi gateway setup`，选择 Weixin，然后使用个人微信账号扫描并确认二维码。Plobi 会通过腾讯 iLink Bot API 连接并保存凭据。',
       qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
       api_server:
         '把 Plobi 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
@@ -2087,7 +2087,7 @@ export const zh: Translations = {
       '/resume': '恢复之前的会话',
       '/details': '控制对话记录的详细程度',
       '/copy': '复制所选内容或最后一条助手消息',
-      '/quit': '退出 hermes'
+      '/quit': '退出 plobi'
     },
     hotkeyDescs: {
       'composer.mention': '引用文件、文件夹、URL、git',
@@ -2689,7 +2689,7 @@ export const zh: Translations = {
       reject: '拒绝',
       alwaysTitle: '始终允许此命令？',
       alwaysDescription: pattern =>
-        `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Plobi 对类似命令将不再询问，包括当前会话和未来会话。`,
+        `这会将“${pattern}”模式加入永久允许列表 (~/.plobi/config.yaml)。Plobi 对类似命令将不再询问，包括当前会话和未来会话。`,
       alwaysAllow: '始终允许'
     },
     clarify: {
@@ -2904,7 +2904,7 @@ export const zh: Translations = {
       success: platform => `已移交到 ${platform}。随时可在此处恢复。`,
       systemNote: platform => `↻ 已移交到 ${platform} — 随时可在此处恢复。`,
       failed: error => `移交失败：${error}`,
-      timedOut: '等待网关超时。`hermes gateway` 是否正在运行？'
+      timedOut: '等待网关超时。`plobi gateway` 是否正在运行？'
     }
   },
 

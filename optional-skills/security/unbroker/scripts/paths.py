@@ -1,6 +1,6 @@
 """Filesystem paths for the unbroker skill (stdlib only).
 
-All per-subject data lives under PDD_DATA_DIR (default: $HERMES_HOME/unbroker),
+All per-subject data lives under PDD_DATA_DIR (default: $PLOBI_HOME/unbroker),
 which is the same trust boundary Plobi uses for .env and OAuth tokens.
 """
 from __future__ import annotations
@@ -9,13 +9,13 @@ import os
 from pathlib import Path
 
 
-def hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
+def plobi_home() -> Path:
+    return Path(os.environ.get("PLOBI_HOME") or (Path.home() / ".plobi"))
 
 
 def data_dir() -> Path:
     override = os.environ.get("PDD_DATA_DIR")
-    return Path(override) if override else hermes_home() / "unbroker"
+    return Path(override) if override else plobi_home() / "unbroker"
 
 
 def config_path() -> Path:

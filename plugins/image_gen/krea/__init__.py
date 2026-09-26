@@ -119,7 +119,7 @@ _TERMINAL_STATES = {"completed", "failed", "cancelled"}
 def _load_krea_config() -> Dict[str, Any]:
     """Read ``image_gen.krea`` (with fallthrough to ``image_gen``) from config.yaml."""
     try:
-        from hermes_cli.config import load_config
+        from plobi_cli.config import load_config
 
         cfg = load_config()
         section = cfg.get("image_gen") if isinstance(cfg, dict) else None
@@ -342,11 +342,11 @@ class KreaImageGenProvider(ImageGenProvider):
             if not auth_token:
                 return error_response(
                     error=(
-                        "KREA_API_KEY not set. Run `hermes tools` → Image "
+                        "KREA_API_KEY not set. Run `plobi tools` → Image "
                         "Generation → Krea to configure, get a key at "
                         "https://www.krea.ai/settings/api-tokens, or sign in to "
                         "a Nous account with the managed Krea gateway enabled "
-                        "(`hermes setup`)."
+                        "(`plobi setup`)."
                     ),
                     error_type="auth_required",
                     provider="krea",
@@ -473,7 +473,7 @@ class KreaImageGenProvider(ImageGenProvider):
                         f"Model '{model_id}' may not be enabled/priced on the "
                         "Nous Portal's Krea gateway. Set KREA_API_KEY to use "
                         "Krea directly, or pick a different model via "
-                        "`hermes tools` → Image Generation."
+                        "`plobi tools` → Image Generation."
                     )
                 )
                 return error_response(

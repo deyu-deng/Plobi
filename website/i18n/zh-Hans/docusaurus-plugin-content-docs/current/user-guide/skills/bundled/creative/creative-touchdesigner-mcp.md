@@ -21,7 +21,7 @@ description: "通过 twozero MCP 控制运行中的 TouchDesigner 实例——�
 | 许可证 | MIT |
 | 平台 | linux, macos, windows |
 | 标签 | `TouchDesigner`, `MCP`, `twozero`, `creative-coding`, `real-time-visuals`, `generative-art`, `audio-reactive`, `VJ`, `installation`, `GLSL` |
-| 相关 skill | [`native-mcp`](/user-guide/skills/bundled/mcp/mcp-native-mcp), [`ascii-video`](/user-guide/skills/bundled/creative/creative-ascii-video), [`manim-video`](/user-guide/skills/bundled/creative/creative-manim-video), `hermes-video` |
+| 相关 skill | [`native-mcp`](/user-guide/skills/bundled/mcp/mcp-native-mcp), [`ascii-video`](/user-guide/skills/bundled/creative/creative-ascii-video), [`manim-video`](/user-guide/skills/bundled/creative/creative-manim-video), `plobi-video` |
 
 ## 参考：完整 SKILL.md
 
@@ -54,7 +54,7 @@ Hub 健康检查：`GET http://localhost:40404/mcp` 返回包含实例 PID、项
 运行设置脚本处理所有事项：
 
 ```bash
-bash "${HERMES_HOME:-$HOME/.hermes}/skills/creative/touchdesigner-mcp/scripts/setup.sh"
+bash "${PLOBI_HOME:-$HOME/.plobi}/skills/creative/touchdesigner-mcp/scripts/setup.sh"
 ```
 
 脚本将：

@@ -649,8 +649,8 @@ class TestPayloadFilters:
 
     @pytest.mark.asyncio
     async def test_filter_accepts_nested_any_and_in_file(self, tmp_path, monkeypatch):
-        """Nested any groups can match dynamic watchlists under HERMES_HOME."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        """Nested any groups can match dynamic watchlists under PLOBI_HOME."""
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
         watchlist = tmp_path / "data" / "watchlist.json"
         watchlist.parent.mkdir()
         watchlist.write_text(json.dumps(["chat-1", "chat-2"]), encoding="utf-8")
@@ -663,11 +663,11 @@ class TestPayloadFilters:
                         "any": [
                             {
                                 "field": "payload.chatId",
-                                "in_file": "~/.hermes/data/watchlist.json",
+                                "in_file": "~/.plobi/data/watchlist.json",
                             },
                             {
                                 "field": "payload.id.remote",
-                                "in_file": "~/.hermes/data/watchlist.json",
+                                "in_file": "~/.plobi/data/watchlist.json",
                             },
                         ]
                     },
@@ -737,7 +737,7 @@ class TestPayloadFilters:
     @pytest.mark.asyncio
     async def test_script_transforms_payload_before_prompt_rendering(self, tmp_path, monkeypatch):
         """A script can replace the payload used by prompt templates."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
         scripts = tmp_path / "scripts"
         scripts.mkdir()
         script = scripts / "todoist_filter.py"
@@ -777,9 +777,9 @@ class TestPayloadFilters:
         assert captured[0].raw_message["body"] == "PAY BILLS"
 
     @pytest.mark.asyncio
-    async def test_script_tilde_hermes_path_resolves_to_active_profile_home(self, tmp_path, monkeypatch):
-        """~/.hermes/scripts paths must resolve through HERMES_HOME for profiles."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    async def test_script_tilde_plobi_path_resolves_to_active_profile_home(self, tmp_path, monkeypatch):
+        """~/.plobi/scripts paths must resolve through PLOBI_HOME for profiles."""
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
         scripts = tmp_path / "scripts"
         scripts.mkdir()
         (scripts / "todoist_filter.py").write_text(
@@ -792,7 +792,7 @@ class TestPayloadFilters:
         routes = {
             "todoist": {
                 "secret": _INSECURE_NO_AUTH,
-                "script": "~/.hermes/scripts/todoist_filter.py",
+                "script": "~/.plobi/scripts/todoist_filter.py",
                 "prompt": "Task: {body}",
             }
         }
@@ -819,7 +819,7 @@ class TestPayloadFilters:
     @pytest.mark.asyncio
     async def test_script_silent_stdout_ignores_without_idempotency_hit(self, tmp_path, monkeypatch):
         """Empty or [SILENT] script stdout filters the webhook out."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
         scripts = tmp_path / "scripts"
         scripts.mkdir()
         (scripts / "skip.py").write_text("print('[SILENT]')\n", encoding="utf-8")
@@ -854,7 +854,7 @@ class TestPayloadFilters:
     @pytest.mark.asyncio
     async def test_script_nonzero_exit_ignores_webhook(self, tmp_path, monkeypatch):
         """A script can fail closed by exiting nonzero."""
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
         scripts = tmp_path / "scripts"
         scripts.mkdir()
         (scripts / "skip.py").write_text(

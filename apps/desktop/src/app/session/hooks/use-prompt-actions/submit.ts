@@ -1,6 +1,6 @@
 import { type MutableRefObject, useCallback } from 'react'
 
-import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS } from '@/hermes'
+import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS } from '@/plobi'
 import type { Translations } from '@/i18n'
 import { type ChatMessage, textPart } from '@/lib/chat-messages'
 import { optimisticAttachmentRef } from '@/lib/chat-runtime'
@@ -317,7 +317,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       // --- Desktop-quota routing (Antigravity / Cursor / Workbuddy) ---
       //
       // When the selected provider is a connected desktop-quota app, the turn
-      // never reaches the Hermes backend's `prompt.submit` — the model lives
+      // never reaches the Plobi backend's `prompt.submit` — the model lives
       // behind the local aigw hub (an OpenAI-compatible gateway aggregating the
       // closed-source apps' subscription quotas). We stream directly from aigw
       // and feed the deltas into the same message-stream mutators a normal

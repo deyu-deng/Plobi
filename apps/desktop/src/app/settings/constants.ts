@@ -34,7 +34,7 @@ interface ProviderPrefix {
   priority: number
 }
 
-export const EMPTY_SELECT_VALUE = '__hermes_empty__'
+export const EMPTY_SELECT_VALUE = '__plobi_empty__'
 export const CONTROL_TEXT = 'text-xs'
 
 export const PROVIDER_GROUPS: ProviderPrefix[] = [
@@ -88,7 +88,7 @@ export const PROVIDER_GROUPS: ProviderPrefix[] = [
     docsUrl: 'https://modelstudio.console.alibabacloud.com/',
     priority: 6
   },
-  { prefix: 'HERMES_QWEN_', name: 'DashScope (Qwen)', priority: 6 },
+  { prefix: 'PLOBI_QWEN_', name: 'DashScope (Qwen)', priority: 6 },
   {
     prefix: 'GLM_',
     name: 'GLM / Z.AI',
@@ -246,7 +246,7 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'stt.elevenlabs.model_id': ['scribe_v2', 'scribe_v1'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
   // Speech-to-text backends — kept in sync with the stt block in
-  // hermes_cli/config.py (local/groq/openai/mistral/elevenlabs).
+  // plobi_cli/config.py (local/groq/openai/mistral/elevenlabs).
   'stt.provider': ['local', 'groq', 'openai', 'mistral', 'xai', 'elevenlabs'],
   'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   // Text-to-speech backends — kept in sync with the built-in source of truth

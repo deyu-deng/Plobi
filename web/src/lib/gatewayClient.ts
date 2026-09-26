@@ -15,13 +15,13 @@
 
 import {
   JsonRpcGatewayClient,
-  buildHermesWebSocketUrl,
+  buildPlobiWebSocketUrl,
   type ConnectionState,
   type GatewayEvent,
   type GatewayEventName,
-} from "@hermes/shared";
+} from "@plobi/shared";
 
-import { HERMES_BASE_PATH, buildWsAuthParam } from "@/lib/api";
+import { PLOBI_BASE_PATH, buildWsAuthParam } from "@/lib/api";
 
 export type { ConnectionState, GatewayEvent, GatewayEventName };
 
@@ -51,9 +51,9 @@ export class GatewayClient extends JsonRpcGatewayClient {
     }
 
     await super.connect(
-      buildHermesWebSocketUrl({
+      buildPlobiWebSocketUrl({
         authParam,
-        basePath: HERMES_BASE_PATH,
+        basePath: PLOBI_BASE_PATH,
         path: "/api/ws",
       }),
     );

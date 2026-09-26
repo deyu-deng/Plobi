@@ -2,7 +2,7 @@
 
 为什么这是单独文件：test_agent_registry.py 的现有 ``AgentRegistry.spawn``
 测试栈已经够厚，加 cwd 一组容易让 setup 互相干扰；这一组走最小夹具
-（stub ``hermes_cli.profiles``），只验 cwd 的「写 / 保留 / 跳过 / 幂等 /
+（stub ``plobi_cli.profiles``），只验 cwd 的「写 / 保留 / 跳过 / 幂等 /
 不抢已有 model 字段」五条契约。
 """
 
@@ -17,13 +17,13 @@ import pytest
 import yaml
 
 
-def _stub_hermes_profiles(monkeypatch, home: Path):
-    """Stub the ``hermes_cli.profiles`` helpers used by ``AgentRegistry.spawn``."""
-    fake = types.ModuleType("hermes_cli.profiles")
-    fake.create_profile = lambda name, **kw: home / ".hermes" / "profiles" / name
-    fake.get_profile_dir = lambda name: home / ".hermes" / "profiles" / name
-    fake.profile_exists = lambda name: (home / ".hermes" / "profiles" / name).is_dir()
-    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", fake)
+def _stub_plobi_profiles(monkeypatch, home: Path):
+    """Stub the ``plobi_cli.profiles`` helpers used by ``AgentRegistry.spawn``."""
+    fake = types.ModuleType("plobi_cli.profiles")
+    fake.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
+    fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
+    fake.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
+    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
 
 
 def _read_cwd(profile_dir) -> str | None:
@@ -161,7 +161,7 @@ def test_l2_diet_does_not_touch_terminal_cwd(tmp_path):
         "    - terminal\n"
         "    - web\n"
         "  gateway:\n"
-        "    - hermes-cli\n"
+        "    - plobi-cli\n"
         "terminal:\n"
         "  cwd: D:/keep/me/here\n",
         encoding="utf-8",
@@ -172,7 +172,7 @@ def test_l2_diet_does_not_touch_terminal_cwd(tmp_path):
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     assert "terminal" not in cfg["toolsets"]
     assert "terminal" not in cfg["platform_toolsets"]["cli"]
-    assert "hermes-cli" not in cfg["platform_toolsets"]["gateway"]
+    assert "plobi-cli" not in cfg["platform_toolsets"]["gateway"]
     # cwd 必须原样保留——它不是工具集。
     assert cfg["terminal"]["cwd"] == "D:/keep/me/here"
 
@@ -185,14 +185,14 @@ def test_l2_diet_does_not_touch_terminal_cwd(tmp_path):
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    hermes = tmp_path / ".hermes"
-    hermes.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(hermes))
+    plobi = tmp_path / ".plobi"
+    plobi.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(plobi))
     monkeypatch.setenv(
-        "PLOBI_PROJECTS_CONFIG", str(hermes / "plobi" / "projects.yaml")
+        "PLOBI_PROJECTS_CONFIG", str(plobi / "plobi" / "projects.yaml")
     )
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
-    _stub_hermes_profiles(monkeypatch, tmp_path)
+    _stub_plobi_profiles(monkeypatch, tmp_path)
     return tmp_path
 
 
@@ -206,7 +206,7 @@ def test_spawn_writes_terminal_cwd_into_config_yaml(home):
 
     project_dir = home / "workspace"
     project_dir.mkdir()
-    profile_dir = home / ".hermes" / "profiles" / "l2-Plobi"
+    profile_dir = home / ".plobi" / "profiles" / "l2-Plobi"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 
@@ -236,7 +236,7 @@ def test_spawn_creates_minimal_yaml_when_profile_is_fresh(home):
 
     project_dir = home / "fresh_workspace"
     project_dir.mkdir()
-    profile_dir = home / ".hermes" / "profiles" / "l2-Fresh"
+    profile_dir = home / ".plobi" / "profiles" / "l2-Fresh"
     profile_dir.mkdir(parents=True)
     # 没有 config.yaml —— spawn 的 create_profile 也不创建它。
 
@@ -263,7 +263,7 @@ def test_spawn_skips_terminal_cwd_for_agenda_role(home):
 
     project_dir = home / "agenda_workspace"
     project_dir.mkdir()
-    profile_dir = home / ".hermes" / "profiles" / "l2-agenda-secretary"
+    profile_dir = home / ".plobi" / "profiles" / "l2-agenda-secretary"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [terminal]\n", encoding="utf-8")
 
@@ -304,19 +304,19 @@ def test_ensure_mind_project_agents_does_not_write_cwd_for_butler(tmp_path, monk
     from plobi.agents import registry as registry_mod
     from plobi.agents.registry import AgentEntry
 
-    home = tmp_path / "hermes_home"
+    home = tmp_path / "plobi_home"
     home.mkdir()
     monkeypatch.setattr("pathlib.Path.home", lambda: home)
-    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("PLOBI_HOME", str(home))
     monkeypatch.setenv(
         "PLOBI_PROJECTS_CONFIG", str(home / "plobi" / "projects.yaml")
     )
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
 
-    fake = types.ModuleType("hermes_cli.profiles")
-    fake.get_profile_dir = lambda name: home / ".hermes" / "profiles" / name
+    fake = types.ModuleType("plobi_cli.profiles")
+    fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
     fake.profile_exists = lambda name: False  # profile 不存在 → 静默跳过
-    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", fake)
+    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
 
     butler = AgentEntry(
         name="Butler",
@@ -339,7 +339,7 @@ def test_spawn_does_not_fabricate_cwd_for_nonexistent_project_path(home):
     """project_path 不存在 → spawn 不写假 cwd。"""
     from plobi.agents.registry import AgentEntry, AgentRegistry
 
-    profile_dir = home / ".hermes" / "profiles" / "l2-Bogus"
+    profile_dir = home / ".plobi" / "profiles" / "l2-Bogus"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 
@@ -367,7 +367,7 @@ def test_spawn_idempotent_cwd_value_unchanged_on_repeat_spawn(home):
 
     project_dir = home / "idempotent_workspace"
     project_dir.mkdir()
-    profile_dir = home / ".hermes" / "profiles" / "l2-Idem"
+    profile_dir = home / ".plobi" / "profiles" / "l2-Idem"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 

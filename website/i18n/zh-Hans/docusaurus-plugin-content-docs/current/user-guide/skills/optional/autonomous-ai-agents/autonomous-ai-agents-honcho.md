@@ -14,14 +14,14 @@ description: "配置并使用 Honcho 记忆功能与 Plobi -- 跨会话用户建
 
 | | |
 |---|---|
-| 来源 | 可选 — 通过 `hermes skills install official/autonomous-ai-agents/honcho` 安装 |
+| 来源 | 可选 — 通过 `plobi skills install official/autonomous-ai-agents/honcho` 安装 |
 | 路径 | `optional-skills/autonomous-ai-agents/honcho` |
 | 版本 | `2.0.0` |
 | 作者 | Plobi Agent |
 | 许可证 | MIT |
 | 平台 | linux, macos, windows |
 | 标签 | `Honcho`, `Memory`, `Profiles`, `Observation`, `Dialectic`, `User-Modeling`, `Session-Summary` |
-| 相关 skills | [`hermes-agent`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent) |
+| 相关 skills | [`plobi-agent`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-plobi-agent) |
 
 ## 参考：完整 SKILL.md
 
@@ -47,23 +47,23 @@ Honcho 提供 AI 原生的跨会话用户建模。它在多次对话中学习用
 ### 云端（app.honcho.dev）
 
 ```bash
-hermes honcho setup
+plobi honcho setup
 # select "cloud", paste API key from https://app.honcho.dev
 ```
 
 ### 自托管
 
 ```bash
-hermes honcho setup
+plobi honcho setup
 # select "local", enter base URL (e.g. http://localhost:8000)
 ```
 
-参见：https://docs.honcho.dev/v3/guides/integrations/hermes#running-honcho-locally-with-hermes
+参见：https://docs.honcho.dev/v3/guides/integrations/plobi#running-honcho-locally-with-plobi
 
 ### 验证
 
 ```bash
-hermes honcho status    # shows resolved config, connection test, peer info
+plobi honcho status    # shows resolved config, connection test, peer info
 ```
 
 ## 架构
@@ -138,7 +138,7 @@ Honcho 会话限定消息和观察的落点。策略选项：
 | `per-session` | 每次 Plobi 运行创建新的 Honcho 会话 |
 | `global` | 跨所有目录使用单一会话 |
 
-手动覆盖：`hermes honcho map my-project-name`
+手动覆盖：`plobi honcho map my-project-name`
 
 ### 召回模式
 
@@ -220,12 +220,12 @@ Honcho 的辩证行为由三个独立维度控制。每个维度可单独调整�
 ### 创建带 Honcho peer 的配置文件
 
 ```bash
-hermes profile create coder --clone
-# creates host block hermes.coder, AI peer "coder", inherits config from default
+plobi profile create coder --clone
+# creates host block plobi.coder, AI peer "coder", inherits config from default
 ```
 
 `--clone` 对 Honcho 的作用：
-1. 在 `honcho.json` 中创建 `hermes.coder` host 块
+1. 在 `honcho.json` 中创建 `plobi.coder` host 块
 2. 设置 `aiPeer: "coder"`（配置文件名称）
 3. 从默认值继承 `workspace`、`peerName`、`writeFrequency`、`recallMode` 等
 4. 在 Honcho 中预先创建 peer，使其在第一条消息之前就已存在
@@ -233,7 +233,7 @@ hermes profile create coder --clone
 ### 为现有配置文件补充创建
 
 ```bash
-hermes honcho sync    # creates host blocks for all profiles that don't have one yet
+plobi honcho sync    # creates host blocks for all profiles that don't have one yet
 ```
 
 ### 按配置文件配置
@@ -243,7 +243,7 @@ hermes honcho sync    # creates host blocks for all profiles that don't have one
 ```json
 {
   "hosts": {
-    "hermes.coder": {
+    "plobi.coder": {
       "aiPeer": "coder",
       "recallMode": "tools",
       "dialecticDepth": 2,
@@ -352,7 +352,7 @@ honcho_reasoning query="<question>"  → synthesized answer, use when search isn
 
 ## 配置参考
 
-配置文件：`$HERMES_HOME/honcho.json`（配置文件本地）或 `~/.honcho/config.json`（全局）。
+配置文件：`$PLOBI_HOME/honcho.json`（配置文件本地）或 `~/.honcho/config.json`（全局）。
 
 ### 关键设置
 
@@ -404,13 +404,13 @@ Honcho 在注入前对 `memory-context` 块进行净化，以防止 prompt 注�
 ## 故障排查
 
 ### "Honcho not configured"
-运行 `hermes honcho setup`。确保 `~/.hermes/config.yaml` 中包含 `memory.provider: honcho`。
+运行 `plobi honcho setup`。确保 `~/.plobi/config.yaml` 中包含 `memory.provider: honcho`。
 
 ### 记忆未跨会话持久化
-检查 `hermes honcho status` -- 验证 `saveMessages: true` 且 `writeFrequency` 不是 `session`（该选项仅在退出时写入）。
+检查 `plobi honcho status` -- 验证 `saveMessages: true` 且 `writeFrequency` 不是 `session`（该选项仅在退出时写入）。
 
 ### 配置文件未获得自己的 peer
-创建时使用 `--clone`：`hermes profile create <name> --clone`。对于现有配置文件：`hermes honcho sync`。
+创建时使用 `--clone`：`plobi profile create <name> --clone`。对于现有配置文件：`plobi honcho sync`。
 
 ### 控制台中的观察更改未生效
 观察配置在每次会话初始化时从服务器同步。在 Honcho UI 中更改设置后，启动新会话。
@@ -428,19 +428,19 @@ Honcho 在注入前对 `memory-context` 块进行净化，以防止 prompt 注�
 
 | 命令 | 描述 |
 |---------|-------------|
-| `hermes honcho setup` | 交互式设置向导（云端/本地、身份、观察、召回、会话） |
-| `hermes honcho status` | 显示当前配置文件的已解析配置、连接测试、peer 信息 |
-| `hermes honcho enable` | 为当前配置文件启用 Honcho（如需则创建 host 块） |
-| `hermes honcho disable` | 为当前配置文件禁用 Honcho |
-| `hermes honcho peer` | 显示或更新 peer 名称（`--user <name>`、`--ai <name>`、`--reasoning <level>`） |
-| `hermes honcho peers` | 显示所有配置文件的 peer 身份 |
-| `hermes honcho mode` | 显示或设置召回模式（`hybrid`、`context`、`tools`） |
-| `hermes honcho tokens` | 显示或设置 token 预算（`--context <N>`、`--dialectic <N>`） |
-| `hermes honcho sessions` | 列出已知的目录到会话名称映射 |
-| `hermes honcho map <name>` | 将当前工作目录映射到 Honcho 会话名称 |
-| `hermes honcho identity` | 为 AI peer 身份播种，或显示两个 peer 的表示 |
-| `hermes honcho sync` | 为所有尚未拥有 host 块的 Plobi 配置文件创建 host 块 |
-| `hermes honcho migrate` | 从 OpenClaw 原生记忆迁移到 Plobi + Honcho 的分步指南 |
-| `hermes memory setup` | 通用记忆提供商选择器（选择 "honcho" 运行相同向导） |
-| `hermes memory status` | 显示当前活跃的记忆提供商及配置 |
-| `hermes memory off` | 禁用外部记忆提供商 |
+| `plobi honcho setup` | 交互式设置向导（云端/本地、身份、观察、召回、会话） |
+| `plobi honcho status` | 显示当前配置文件的已解析配置、连接测试、peer 信息 |
+| `plobi honcho enable` | 为当前配置文件启用 Honcho（如需则创建 host 块） |
+| `plobi honcho disable` | 为当前配置文件禁用 Honcho |
+| `plobi honcho peer` | 显示或更新 peer 名称（`--user <name>`、`--ai <name>`、`--reasoning <level>`） |
+| `plobi honcho peers` | 显示所有配置文件的 peer 身份 |
+| `plobi honcho mode` | 显示或设置召回模式（`hybrid`、`context`、`tools`） |
+| `plobi honcho tokens` | 显示或设置 token 预算（`--context <N>`、`--dialectic <N>`） |
+| `plobi honcho sessions` | 列出已知的目录到会话名称映射 |
+| `plobi honcho map <name>` | 将当前工作目录映射到 Honcho 会话名称 |
+| `plobi honcho identity` | 为 AI peer 身份播种，或显示两个 peer 的表示 |
+| `plobi honcho sync` | 为所有尚未拥有 host 块的 Plobi 配置文件创建 host 块 |
+| `plobi honcho migrate` | 从 OpenClaw 原生记忆迁移到 Plobi + Honcho 的分步指南 |
+| `plobi memory setup` | 通用记忆提供商选择器（选择 "honcho" 运行相同向导） |
+| `plobi memory status` | 显示当前活跃的记忆提供商及配置 |
+| `plobi memory off` | 禁用外部记忆提供商 |

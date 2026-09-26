@@ -1,5 +1,5 @@
 """
-`hermes computer-use doctor` — thin client for cua-driver's `health_report` MCP tool.
+`plobi computer-use doctor` — thin client for cua-driver's `health_report` MCP tool.
 
 cua-driver owns the health model (#1908 / be761fac on `main`). This module
 just drives the stdio JSON-RPC handshake, calls `health_report`, and
@@ -240,7 +240,7 @@ def run_doctor(
 ) -> int:
     """Resolve the cua-driver binary, call `health_report`, render the result.
 
-    Honors `HERMES_CUA_DRIVER_CMD` via the same `_cua_driver_cmd()` resolver
+    Honors `PLOBI_CUA_DRIVER_CMD` via the same `_cua_driver_cmd()` resolver
     that `install_cua_driver` + the runtime backend use, so the doctor
     diagnoses what your `computer_use` toolset will actually invoke.
     """
@@ -257,15 +257,15 @@ def run_doctor(
             pass
     if driver_cmd is None:
         try:
-            from hermes_cli.tools_config import _cua_driver_cmd
+            from plobi_cli.tools_config import _cua_driver_cmd
             driver_cmd = _cua_driver_cmd()
         except Exception:
-            driver_cmd = os.environ.get("HERMES_CUA_DRIVER_CMD") or "cua-driver"
+            driver_cmd = os.environ.get("PLOBI_CUA_DRIVER_CMD") or "cua-driver"
 
     binary = shutil.which(driver_cmd)
     if not binary:
         print(f"cua-driver: not installed (looked for {driver_cmd!r}).")
-        print("  Run: hermes computer-use install")
+        print("  Run: plobi computer-use install")
         return 2
 
     try:

@@ -8,12 +8,12 @@ network I/O.
 
 Coverage:
 
-1. :func:`hermes_cli.web_server._load_or_mint_app_token` reads an
+1. :func:`plobi_cli.web_server._load_or_mint_app_token` reads an
    existing single-line file unchanged, mints a fresh
    ``secrets.token_urlsafe(32)`` when the file is missing, and keeps the
    mint idempotent across two calls (the second call returns the same
    token).
-2. :func:`hermes_cli.web_server._verify_token` is constant-time-style
+2. :func:`plobi_cli.web_server._verify_token` is constant-time-style
    hmac.compare_digest under the hood — we just assert True / False for
    the obvious inputs.
 3. ``GET /api/agenda`` accepts the App token in two header shapes (the
@@ -23,18 +23,18 @@ Coverage:
    response with ``X-Plobi-Api-Version: 1``.
 4. The SPA session token keeps working unchanged — we never broke the
    dashboard's existing auth flow.
-5. :func:`hermes_cli.web_server._enforce_lan_app_token_gate` downgrades
+5. :func:`plobi_cli.web_server._enforce_lan_app_token_gate` downgrades
    a non-loopback bind to ``127.0.0.1`` when the App token is ``None``,
    keeps the requested host when the token exists, and never touches a
    loopback bind. This guards the regression where a desktop with a
-   read-only ``$HERMES_HOME`` could expose the dashboard to the LAN
+   read-only ``$PLOBI_HOME`` could expose the dashboard to the LAN
    unauthenticated (the gate's contract with WP-H1-LAN).
 
 Test isolation:
 
-- The conftest redirects HERMES_HOME to a per-test tempdir, so the App
+- The conftest redirects PLOBI_HOME to a per-test tempdir, so the App
   token file is written into a sandbox and never touches the developer's
-  real HERMES_HOME.
+  real PLOBI_HOME.
 - The agenda service singleton is replaced with a per-test fixture so we
   can hit ``/api/agenda`` without standing up SQLite on disk.
 - The LAN gate tests don't spin up a server — they call the gate
@@ -47,8 +47,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hermes_cli import web_server
-from hermes_cli.web_server import (
+from plobi_cli import web_server
+from plobi_cli.web_server import (
     API_VERSION,
     API_VERSION_HEADER,
     APP_TOKEN_FILENAME,
@@ -121,8 +121,8 @@ def app_client(tmp_path, monkeypatch):
     The fixture mounts ``/api/agenda`` on a *new* FastAPI instance — same
     shape as the production app — and patches the agenda service so the
     DB doesn't need to exist on disk. It then patches
-    ``hermes_cli.web_server._APP_TOKEN`` so the gate consults our known
-    value (the freshly minted one we just wrote to the sandbox HERMES_HOME).
+    ``plobi_cli.web_server._APP_TOKEN`` so the gate consults our known
+    value (the freshly minted one we just wrote to the sandbox PLOBI_HOME).
     """
     monkeypatch.setattr(
         agenda_service, "_DEFAULT", AgendaService(tmp_path / "agenda.db")
@@ -256,16 +256,16 @@ def test_status_path_is_public_and_still_versioned(app_client):
 def test_lan_gate_refuses_when_mint_failed(caplog):
     """A non-loopback bind without an App token must downgrade to 127.0.0.1.
 
-    The regression we're guarding: a desktop whose ``$HERMES_HOME/plobi/``
+    The regression we're guarding: a desktop whose ``$PLOBI_HOME/plobi/``
     is read-only or whose token file got wiped could otherwise expose the
     dashboard on 0.0.0.0:8787 with **no** shared secret — the App token
     path would 401 every caller (good) but ``/api/status`` is public, so
     the LAN would see a half-authenticated dashboard. The gate clamps
     the bind to loopback AND logs a WARNING so the user can fix the FS.
     """
-    from hermes_cli.web_server import _enforce_lan_app_token_gate
+    from plobi_cli.web_server import _enforce_lan_app_token_gate
 
-    caplog.set_level("WARNING", logger="hermes_cli.web_server")
+    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     new_host, downgraded = _enforce_lan_app_token_gate("0.0.0.0", 8787, None)
     assert downgraded is True
     assert new_host == "127.0.0.1"
@@ -280,9 +280,9 @@ def test_lan_gate_refuses_when_mint_failed(caplog):
 
 def test_lan_gate_refuses_for_unscoped_hostname(monkeypatch, caplog):
     """Same downgrade for ``0.0.0.0`` (the actual desktop LAN bind target)."""
-    from hermes_cli.web_server import _enforce_lan_app_token_gate
+    from plobi_cli.web_server import _enforce_lan_app_token_gate
 
-    caplog.set_level("WARNING", logger="hermes_cli.web_server")
+    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     new_host, downgraded = _enforce_lan_app_token_gate("0.0.0.0", 8787, None)
     assert new_host == "127.0.0.1"
     assert downgraded is True
@@ -292,11 +292,11 @@ def test_lan_gate_refuses_for_unscoped_hostname(monkeypatch, caplog):
 def test_lan_gate_passes_when_token_present():
     """Mint succeeded → LAN bind is left as the caller asked.
 
-    This is the happy-path: a desktop whose ``$HERMES_HOME`` was writable
+    This is the happy-path: a desktop whose ``$PLOBI_HOME`` was writable
     at startup should still bind 0.0.0.0:8787 (the whole point of WP-H1-LAN).
     The gate must not short-circuit legitimate LAN binds.
     """
-    from hermes_cli.web_server import _enforce_lan_app_token_gate
+    from plobi_cli.web_server import _enforce_lan_app_token_gate
 
     new_host, downgraded = _enforce_lan_app_token_gate(
         "0.0.0.0", 8787, "freshly-minted-app-token"
@@ -307,9 +307,9 @@ def test_lan_gate_passes_when_token_present():
 
 def test_lan_gate_does_not_touch_loopback_when_token_missing(caplog):
     """Loopback binds are NEVER downgraded — the dashboard SPA is fine on its own."""
-    from hermes_cli.web_server import _enforce_lan_app_token_gate
+    from plobi_cli.web_server import _enforce_lan_app_token_gate
 
-    caplog.set_level("WARNING", logger="hermes_cli.web_server")
+    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     for host in ("127.0.0.1", "localhost", "::1"):
         new_host, downgraded = _enforce_lan_app_token_gate(host, 0, None)
         assert new_host == host, f"loopback host {host} was rewritten"
@@ -325,7 +325,7 @@ def test_get_app_token_indirection_reads_module_state(monkeypatch):
     Without the indirection, the gate would close over the import-time
     value and tests couldn't exercise the downgrade path.
     """
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.setattr(web_server, "_APP_TOKEN", "monkeypatched-token")
     assert web_server._get_app_token() == "monkeypatched-token"
@@ -337,7 +337,7 @@ def test_get_app_token_indirection_reads_module_state(monkeypatch):
 def test_lan_gate_for_dual_stack_ip_literal_with_token_present():
     """IPv6 literal like ``::`` (which ``should_require_auth`` would flag
     as non-loopback) is preserved when the token is present."""
-    from hermes_cli.web_server import _enforce_lan_app_token_gate
+    from plobi_cli.web_server import _enforce_lan_app_token_gate
 
     new_host, downgraded = _enforce_lan_app_token_gate("::", 8787, "token-here")
     assert new_host == "::"
@@ -352,9 +352,9 @@ def test_lan_gate_downgrade_message_mentions_writable_check(caplog):
     can ``chmod`` / free disk / etc. without grepping logs for the
     function name.
     """
-    from hermes_cli.web_server import _enforce_lan_app_token_gate
+    from plobi_cli.web_server import _enforce_lan_app_token_gate
 
-    caplog.set_level("WARNING", logger="hermes_cli.web_server")
+    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     _enforce_lan_app_token_gate("0.0.0.0", 8787, None)
     combined = " | ".join(r.getMessage() for r in caplog.records)
     assert "plobi" in combined, f"WARNING did not name the plobi dir; saw: {combined!r}"
@@ -393,7 +393,7 @@ def _set_auth_required(monkeypatch, client) -> None:
     module-level ``web_server.app`` global, NOT from the test client's
     app — so we have to point the module global at the test app first.
     """
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.setattr(web_server, "app", client.app)
     client.app.state.auth_required = True
@@ -401,7 +401,7 @@ def _set_auth_required(monkeypatch, client) -> None:
 
 def test_ws_auth_reason_accepts_app_token_via_dedicated_header(monkeypatch, app_client, caplog):
     """Tablet reaches ``/api/ws`` with ``X-Plobi-Session-Token`` → accept."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     client, token = app_client
     ws = _FakeWebSocket(headers={"X-Plobi-Session-Token": token})
@@ -410,41 +410,41 @@ def test_ws_auth_reason_accepts_app_token_via_dedicated_header(monkeypatch, app_
     # Patch the lazy-imported audit loggers to a no-op (we don't need the
     # dashboard_auth layer in this test).
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
+        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_internal_credential",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
         lambda *_a, **_k: None,
         raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_ticket",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
         lambda *_a, **_k: None,
         raising=False,
     )
 
-    caplog.set_level("WARNING", logger="hermes_cli.web_server")
+    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     reason, cred = web_server._ws_auth_reason(ws)
     assert reason is None, f"expected accept, got reason={reason!r}"
     assert cred == "app_token"
 
 
 def test_ws_auth_reason_accepts_app_token_via_bearer(monkeypatch, app_client):
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     client, token = app_client
     ws = _FakeWebSocket(headers={"Authorization": f"Bearer {token}"})
     _set_auth_required(monkeypatch, client)
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
+        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_internal_credential",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
         lambda *_a, **_k: None,
         raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_ticket",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
         lambda *_a, **_k: None,
         raising=False,
     )
@@ -460,7 +460,7 @@ def test_ws_auth_reason_rejects_wrong_app_token_without_falling_through(
     """A wrong App token explicitly presented must be rejected with a distinct
     reason (``app_token_invalid``) — not silently fall through to SPA / ticket
     paths. The audit-log reason must contain no part of the token."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     captured: list[dict] = []
 
@@ -471,20 +471,20 @@ def test_ws_auth_reason_rejects_wrong_app_token_without_falling_through(
     ws = _FakeWebSocket(headers={"X-Plobi-Session-Token": "wrong-token"})
     _set_auth_required(monkeypatch, client)
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.audit.audit_log", fake_audit, raising=False,
+        "plobi_cli.dashboard_auth.audit.audit_log", fake_audit, raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_internal_credential",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
         lambda *_a, **_k: None,
         raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_ticket",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
         lambda *_a, **_k: None,
         raising=False,
     )
 
-    caplog.set_level("WARNING", logger="hermes_cli.web_server")
+    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     reason, cred = web_server._ws_auth_reason(ws)
     assert reason == "app_token_invalid"
     assert cred == "app_token"
@@ -501,21 +501,21 @@ def test_ws_auth_reason_rejects_wrong_app_token_without_falling_through(
 
 def test_ws_auth_reason_missing_credential_still_rejected(monkeypatch, app_client):
     """No headers + no ticket/internal ⇒ still ``no_credential``."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     client = app_client[0]
     ws = _FakeWebSocket()
     _set_auth_required(monkeypatch, client)
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
+        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_internal_credential",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
         lambda *_a, **_k: None,
         raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_ticket",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
         lambda *_a, **_k: None,
         raising=False,
     )
@@ -533,7 +533,7 @@ def test_ws_auth_reason_does_not_accept_legacy_query_token_in_gated_mode(monkeyp
     ``no_credential``. This is what the docstring promises ("unconditionally
     rejected") and is what stops a leaked SPA token from granting WS access.
     """
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     import secrets as _secrets
     spa_token = _secrets.token_urlsafe(32)
@@ -544,15 +544,15 @@ def test_ws_auth_reason_does_not_accept_legacy_query_token_in_gated_mode(monkeyp
     fake_app = type("App", (), {"state": type("S", (), {"auth_required": True})()})()
     monkeypatch.setattr(web_server, "app", fake_app)
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
+        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_internal_credential",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
         lambda *_a, **_k: None,
         raising=False,
     )
     monkeypatch.setattr(
-        "hermes_cli.dashboard_auth.ws_tickets.consume_ticket",
+        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
         lambda *_a, **_k: None,
         raising=False,
     )
@@ -581,14 +581,14 @@ def _write_profile_yaml(profile_home, *, cwd_value: str) -> None:
 
 def test_fs_default_cwd_uses_profile_yaml_when_provided(tmp_path, monkeypatch):
     """Profile-home cwd wins over the launch-profile env / load_config path."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     # Launch-profile side: set a misleading terminal.cwd via env that should
     # NOT be returned when the caller pins a profile_home.
     monkeypatch.setenv("TERMINAL_CWD", "/this/should/not/win")
 
     # Per-profile yaml points at tmp.
-    profile_home = tmp_path / "hermes" / "profiles" / "l2-agenda"
+    profile_home = tmp_path / "plobi" / "profiles" / "l2-agenda"
     profile_home.mkdir(parents=True)
     _write_profile_yaml(profile_home, cwd_value=str(tmp_path))
 
@@ -597,11 +597,11 @@ def test_fs_default_cwd_uses_profile_yaml_when_provided(tmp_path, monkeypatch):
 
 def test_fs_default_cwd_falls_back_when_profile_yaml_missing_cwd(tmp_path, monkeypatch):
     """Profile yaml exists but has no ``terminal.cwd`` → fall back."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.delenv("TERMINAL_CWD", raising=False)
     monkeypatch.chdir(tmp_path)
-    profile_home = tmp_path / "hermes" / "profiles" / "l2-empty"
+    profile_home = tmp_path / "plobi" / "profiles" / "l2-empty"
     profile_home.mkdir(parents=True)
     (profile_home / "config.yaml").write_text(
         "model: {}\n", encoding="utf-8"
@@ -612,7 +612,7 @@ def test_fs_default_cwd_falls_back_when_profile_yaml_missing_cwd(tmp_path, monke
 
 def test_fs_default_cwd_ignores_placeholder_values(tmp_path, monkeypatch):
     """``.`` / ``auto`` / ``cwd`` placeholders never pretend to be a directory."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.delenv("TERMINAL_CWD", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -629,7 +629,7 @@ def test_fs_default_cwd_ignores_placeholder_values(tmp_path, monkeypatch):
 
 def test_fs_default_cwd_ignores_nonexistent_path(tmp_path, monkeypatch):
     """A yaml path that doesn't resolve to a real dir must not be returned."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.delenv("TERMINAL_CWD", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -643,7 +643,7 @@ def test_fs_default_cwd_ignores_nonexistent_path(tmp_path, monkeypatch):
 
 def test_fs_default_cwd_no_profile_home_uses_launch_env(tmp_path, monkeypatch):
     """No profile_home → existing launch-profile / env / Path.cwd() chain."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.delenv("TERMINAL_CWD", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -655,7 +655,7 @@ def test_fs_default_cwd_no_profile_home_uses_launch_env(tmp_path, monkeypatch):
 
 def test_fs_default_cwd_broken_profile_yaml_does_not_crash(tmp_path, monkeypatch):
     """Malformed yaml in the profile home must NOT break the file API."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     monkeypatch.delenv("TERMINAL_CWD", raising=False)
     monkeypatch.chdir(tmp_path)

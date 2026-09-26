@@ -6,7 +6,7 @@ exactly ``{agent, sessionId, todayCostUsd, todayTokens}``. A field added here
 without a matching contract change is a bug, not an improvement.
 
 The app under test is a minimal FastAPI instance mounting only the console
-router — importing the full ``hermes_cli.web_server`` would drag in its
+router — importing the full ``plobi_cli.web_server`` would drag in its
 lifespan and background services for what is a routing/shape test. One test at
 the bottom asserts the real server actually mounts these paths, so a missing
 ``include_router`` fails here rather than in the desktop app.
@@ -360,7 +360,7 @@ def test_session_attribution_uses_entry_profile_name(_isolated_state, monkeypatc
 
 def test_latest_session_missing_db_is_empty(tmp_path, monkeypatch):
     """profile home 无 state.db → 诚实空串（不建库、不伪造）。"""
-    import hermes_cli.profiles as profiles_mod
+    import plobi_cli.profiles as profiles_mod
 
     monkeypatch.setattr(profiles_mod, "get_profile_dir", lambda name: tmp_path)
     assert console_router._latest_session_for_profile("agenda") == ""
@@ -480,7 +480,7 @@ def test_quota_summary_today_usd_sums_usage_db(client, monkeypatch, tmp_path):
 
 
 def test_quota_summary_mounted_on_real_server():
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     assert web_server.app.url_path_for("quota_summary") == "/api/quota/summary"
 
@@ -497,7 +497,7 @@ def test_real_web_server_mounts_console_routes():
     1.0 keeps ``include_router`` results nested (``_IncludedRouter``) instead
     of flattening them, so a path scan silently sees nothing.
     """
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     app = web_server.app
     assert app.url_path_for("list_agents") == "/api/agents"
@@ -514,7 +514,7 @@ def test_real_web_server_mounts_console_routes():
 
 def test_agenda_routes_still_mounted():
     """Guard against clobbering the live /api/agenda surface."""
-    from hermes_cli import web_server
+    from plobi_cli import web_server
 
     assert web_server.app.url_path_for("list_agenda").startswith("/api/agenda")
 

@@ -305,8 +305,8 @@ def test_uid_dedupes_across_confirmed_and_pending(ics_file, service):
 def api_client(tmp_path, monkeypatch):
     service = AgendaService(tmp_path / "agenda.db")
     monkeypatch.setattr(timetable_api, "_get_service", lambda: service)
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
-    monkeypatch.setattr(timetable_api, "_status_path", lambda: tmp_path / "hermes-home" / "plobi" / "timetable.json")
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "plobi-home"))
+    monkeypatch.setattr(timetable_api, "_status_path", lambda: tmp_path / "plobi-home" / "plobi" / "timetable.json")
 
     app = FastAPI()
     app.include_router(collect_api.router, prefix="/api/collect")

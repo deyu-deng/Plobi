@@ -11,25 +11,25 @@ import {
   getGlobalModelOptions,
   getMoaModels,
   getRecommendedDefaultModel,
-  saveHermesConfig,
+  savePlobiConfig,
   saveMoaModels,
   setEnvVar,
   setModelAssignment
-} from '@/hermes'
+} from '@/plobi'
 import type {
   AuxiliaryModelsResponse,
   MoaConfigResponse,
   MoaModelSlot,
   ModelOptionProvider,
   StaleAuxAssignment
-} from '@/hermes'
+} from '@/plobi'
 import { useI18n } from '@/i18n'
 import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notifyError } from '@/store/notifications'
 import { startManualLocalEndpoint, startManualProviderOAuth } from '@/store/onboarding'
 
-import { invalidateHermesConfig, setHermesConfigCache, useHermesConfigRecord } from '../hooks/use-config-record'
+import { invalidatePlobiConfig, setPlobiConfigCache, usePlobiConfigRecord } from '../hooks/use-config-record'
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
 
 import { CONTROL_TEXT } from './constants'
@@ -97,14 +97,14 @@ const isFastTier = (tier: unknown): boolean =>
 const effortLabelKey = (v: string) => (v === 'xhigh' ? 'max' : v) as 'high' | 'low' | 'max' | 'medium' | 'minimal'
 
 // A provider row is "ready" to pick a model from when it reports models. The
-// backend now surfaces the full `hermes model` universe (every canonical
+// backend now surfaces the full `plobi model` universe (every canonical
 // provider), so unconfigured providers come back with `authenticated:false`
 // and an empty `models` list — those need a setup step before a model exists.
 function isProviderReady(p?: ModelOptionProvider): boolean {
   return !!p && (p.authenticated !== false || (p.models?.length ?? 0) > 0)
 }
 
-// Mirrors `_AUX_TASK_SLOTS` in hermes_cli/web_server.py. Friendly labels and
+// Mirrors `_AUX_TASK_SLOTS` in plobi_cli/web_server.py. Friendly labels and
 // hints make the assignments readable; raw task keys (vision, mcp, …) are
 // opaque to most users.
 interface AuxTaskMeta {
@@ -184,8 +184,8 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   const [newMoaPresetName, setNewMoaPresetName] = useState('')
   // agent.* defaults round-trip through the shared config cache (read → write
   // back the whole record), so a save here shows in the MCP/config surfaces.
-  const { data: config } = useHermesConfigRecord()
-  const setConfig = setHermesConfigCache
+  const { data: config } = usePlobiConfigRecord()
+  const setConfig = setPlobiConfigCache
   const [applying, setApplying] = useState(false)
   const [editingAuxTask, setEditingAuxTask] = useState<null | string>(null)
   const [auxDraft, setAuxDraft] = useState<{ model: string; provider: string }>({ model: '', provider: '' })
@@ -232,7 +232,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
 
       // The config record loads via its own shared query; a model switch can
       // change it server-side (aux slots), so nudge that cache to refetch.
-      void invalidateHermesConfig()
+      void invalidatePlobiConfig()
     } catch (err) {
       if (profileEpoch.current === epoch) {
         setError(err instanceof Error ? err.message : String(err))
@@ -403,7 +403,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
       setConfig(next)
 
       try {
-        await saveHermesConfig(next)
+        await savePlobiConfig(next)
       } catch (err) {
         setConfig(prev)
         notifyError(err, m.defaultsFailed)
@@ -432,7 +432,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
       setApiKeyDraft('')
 
       // Pick a sensible default for the freshly-activated provider (mirrors
-      // `hermes model` curation). Best-effort — fall through to the refreshed
+      // `plobi model` curation). Best-effort — fall through to the refreshed
       // model list if it fails.
       let nextModel = ''
 

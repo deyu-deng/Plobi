@@ -7,8 +7,8 @@ import { Codecs, persistentAtom } from '@/lib/persisted'
  * beside the atom that owns it (DESIGN.md, "State (TypeScript)").
  */
 
-const LEFT_COLLAPSED_KEY = 'hermes.desktop.consoleLeftCollapsed'
-const RIGHT_COLLAPSED_KEY = 'hermes.desktop.consoleRightCollapsed'
+const LEFT_COLLAPSED_KEY = 'plobi.desktop.consoleLeftCollapsed'
+const RIGHT_COLLAPSED_KEY = 'plobi.desktop.consoleRightCollapsed'
 
 export const $consoleLeftCollapsed = persistentAtom(LEFT_COLLAPSED_KEY, false, Codecs.bool)
 

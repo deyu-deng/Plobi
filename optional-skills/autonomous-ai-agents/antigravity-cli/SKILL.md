@@ -6,9 +6,9 @@ author: Tony Simons (asimons81), Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [Coding-Agent, Antigravity, CLI, Auth, Plugins, Sandbox]
-    related_skills: [grok, codex, claude-code, hermes-agent]
+    related_skills: [grok, codex, claude-code, plobi-agent]
 ---
 
 # Antigravity CLI (`agy`)

@@ -1,8 +1,8 @@
-import { isGatewayReauthRequired, resolveGatewayWsUrl } from '@hermes/shared'
+import { isGatewayReauthRequired, resolveGatewayWsUrl } from '@plobi/shared'
 import { useEffect, useRef } from 'react'
 
-import type { HermesConnection } from '@/global'
-import { HermesGateway } from '@/hermes'
+import type { PlobiConnection } from '@/global'
+import { PlobiGateway } from '@/plobi'
 import { translateNow } from '@/i18n'
 import { desktopDefaultCwd } from '@/lib/desktop-fs'
 import {
@@ -39,7 +39,7 @@ import {
   setCurrentCwd,
   setSessionsLoading
 } from '@/store/session'
-import type { RpcEvent } from '@/types/hermes'
+import type { RpcEvent } from '@/types/plobi'
 
 // After this many consecutive failed reconnects (≈45s with the 1→15s backoff)
 // raise a recoverable boot error. Otherwise a dropped remote gateway loops the
@@ -51,10 +51,10 @@ const RECONNECT_ESCALATE_AFTER = 6
 interface GatewayBootOptions {
   handleGatewayEvent: (event: RpcEvent) => void
   onConnectionReady: (
-    connection: Awaited<ReturnType<NonNullable<typeof window.hermesDesktop>['getConnection']>> | null
+    connection: Awaited<ReturnType<NonNullable<typeof window.plobiDesktop>['getConnection']>> | null
   ) => void
-  onGatewayReady: (gateway: HermesGateway | null) => void
-  refreshHermesConfig: () => Promise<void>
+  onGatewayReady: (gateway: PlobiGateway | null) => void
+  refreshPlobiConfig: () => Promise<void>
   refreshSessions: () => Promise<void>
 }
 
@@ -62,14 +62,14 @@ export function useGatewayBoot({
   handleGatewayEvent,
   onConnectionReady,
   onGatewayReady,
-  refreshHermesConfig,
+  refreshPlobiConfig,
   refreshSessions
 }: GatewayBootOptions) {
   const callbacksRef = useRef({
     handleGatewayEvent,
     onConnectionReady,
     onGatewayReady,
-    refreshHermesConfig,
+    refreshPlobiConfig,
     refreshSessions
   })
 
@@ -77,15 +77,15 @@ export function useGatewayBoot({
     handleGatewayEvent,
     onConnectionReady,
     onGatewayReady,
-    refreshHermesConfig,
+    refreshPlobiConfig,
     refreshSessions
   }
 
   useEffect(() => {
     let cancelled = false
-    const desktop = window.hermesDesktop
+    const desktop = window.plobiDesktop
 
-    const publish = (next: HermesConnection | null) => {
+    const publish = (next: PlobiConnection | null) => {
       callbacksRef.current.onConnectionReady(next)
       setConnection(next)
     }
@@ -168,7 +168,7 @@ export function useGatewayBoot({
 
         reconnectAttempt = 0
         // Resync state that may have moved on the backend while we were asleep.
-        await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
+        await callbacksRef.current.refreshPlobiConfig().catch(() => undefined)
         await callbacksRef.current.refreshSessions().catch(() => undefined)
       } catch (err) {
         // OAuth session expired mid-reconnect: surface the actionable "sign in
@@ -284,7 +284,7 @@ export function useGatewayBoot({
 
         await adoptPrimaryProfile()
         await seedDefaultCwd()
-        await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
+        await callbacksRef.current.refreshPlobiConfig().catch(() => undefined)
         await callbacksRef.current.refreshSessions().catch(() => undefined)
         completeDesktopBoot()
         bootCompleted = true
@@ -301,7 +301,7 @@ export function useGatewayBoot({
     }
 
     const offBootProgress = desktop.onBootProgress(payload => {
-      // Soft switch / post-boot startHermes re-emits progress — ignore so the
+      // Soft switch / post-boot startPlobi re-emits progress — ignore so the
       // cold-boot CONNECTING overlay stays down. Errors still surface.
       if ($gatewaySwitching.get() || bootCompleted) {
         if (payload.error) {
@@ -324,7 +324,7 @@ export function useGatewayBoot({
       progress: 6
     })
 
-    const gateway = new HermesGateway()
+    const gateway = new PlobiGateway()
     callbacksRef.current.onGatewayReady(gateway)
     setPrimaryGateway(gateway, normalizeProfileKey($activeGatewayProfile.get()))
     // Secondary (background-profile) sockets funnel into the same handler.
@@ -462,7 +462,7 @@ export function useGatewayBoot({
         })
         await seedDefaultCwd()
 
-        await callbacksRef.current.refreshHermesConfig()
+        await callbacksRef.current.refreshPlobiConfig()
 
         if (cancelled) {
           return

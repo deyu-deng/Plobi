@@ -9,7 +9,7 @@ prerequisites:
   env_vars: [TENOR_API_KEY]
   commands: [curl, jq]
 metadata:
-  hermes:
+  plobi:
     tags: [GIF, Media, Search, Tenor, API]
 ---
 
@@ -23,7 +23,7 @@ Useful for finding reaction GIFs, creating visual content, and sending GIFs in c
 
 ## Setup
 
-Set your Tenor API key in your environment (add to `${HERMES_HOME:-~/.hermes}/.env`):
+Set your Tenor API key in your environment (add to `${PLOBI_HOME:-~/.plobi}/.env`):
 
 ```bash
 TENOR_API_KEY=your_key_here

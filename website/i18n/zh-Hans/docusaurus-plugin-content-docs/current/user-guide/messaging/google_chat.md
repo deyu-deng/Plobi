@@ -47,10 +47,10 @@ Google Chat 是 Google Workspace 的一部分。你可以在个人 Workspace（�
 
 **IAM & Admin → Service Accounts → Create Service Account。**
 
-- 名称：`hermes-chat-bot`
+- 名称：`plobi-chat-bot`
 - 跳过"Grant this service account access to project"步骤。你只需要在特定订阅上配置 IAM，**不要**授予项目级别的 Pub/Sub 角色。
 
-创建完成后，打开该 SA，进入 **Keys → Add Key → Create new key → JSON**，下载文件。将其保存到只有 Plobi 可读的位置（例如 `~/.hermes/google-chat-sa.json`，`chmod 600`）。
+创建完成后，打开该 SA，进入 **Keys → Add Key → Create new key → JSON**，下载文件。将其保存到只有 Plobi 可读的位置（例如 `~/.plobi/google-chat-sa.json`，`chmod 600`）。
 
 :::caution 不存在"Chat Bot Caller"角色
 一个常见错误是搜索 Chat 专属 IAM 角色并在项目级别授予。该角色并不存在。Chat 机器人的权限来自被安装到某个 space（空间），而非 IAM。你的 SA 只需要在下一步创建的订阅上具有 Pub/Sub subscriber 权限。
@@ -62,12 +62,12 @@ Google Chat 是 Google Workspace 的一部分。你可以在个人 Workspace（�
 
 **Pub/Sub → Topics → Create topic。**
 
-- Topic ID：`hermes-chat-events`
+- Topic ID：`plobi-chat-events`
 - 其余选项保持默认。
 
 创建完成后，topic 详情页有 **Subscriptions** 标签页。在此创建一个订阅：
 
-- Subscription ID：`hermes-chat-events-sub`
+- Subscription ID：`plobi-chat-events-sub`
 - 投递类型：**Pull**
 - 消息保留：**7 天**（这样 Plobi 重启后积压消息不会丢失）
 - 其余保持默认。
@@ -89,7 +89,7 @@ Google Chat 是 Google Workspace 的一部分。你可以在个人 Workspace（�
 
 在 **订阅** 上，将你自己的 Service Account 添加为主体：
 
-- 主体：`hermes-chat-bot@<your-project>.iam.gserviceaccount.com`
+- 主体：`plobi-chat-bot@<your-project>.iam.gserviceaccount.com`
 - 角色：`Pub/Sub Subscriber`
 
 同时在同一订阅上授予 `Pub/Sub Viewer`——Plobi 在启动时会调用 `subscription.get()` 进行可达性检查。
@@ -104,7 +104,7 @@ Google Chat 是 Google Workspace 的一部分。你可以在个人 Workspace（�
 - **Avatar URL**：任意公开 PNG 图片（Google 提供了一些默认选项）。
 - **Description**：显示在应用目录中的简短说明。
 - **Functionality**：启用 **Receive 1:1 messages** 和 **Join spaces and group conversations**。
-- **Connection settings**：选择 **Cloud Pub/Sub**，输入 topic 名称 `projects/<your-project>/topics/hermes-chat-events`。
+- **Connection settings**：选择 **Cloud Pub/Sub**，输入 topic 名称 `projects/<your-project>/topics/plobi-chat-events`。
 - **Visibility**：限制为你的 Workspace（或特定用户）——测试期间不要向所有人开放。
 
 保存。
@@ -119,13 +119,13 @@ Google Chat 是 Google Workspace 的一部分。你可以在个人 Workspace（�
 
 ## 第九步：配置 Plobi
 
-在 `~/.hermes/.env` 中添加 Google Chat 配置段：
+在 `~/.plobi/.env` 中添加 Google Chat 配置段：
 
 ```bash
 # 必填
 GOOGLE_CHAT_PROJECT_ID=my-chat-bot-123
-GOOGLE_CHAT_SUBSCRIPTION_NAME=projects/my-chat-bot-123/subscriptions/hermes-chat-events-sub
-GOOGLE_CHAT_SERVICE_ACCOUNT_JSON=/home/you/.hermes/google-chat-sa.json
+GOOGLE_CHAT_SUBSCRIPTION_NAME=projects/my-chat-bot-123/subscriptions/plobi-chat-events-sub
+GOOGLE_CHAT_SERVICE_ACCOUNT_JSON=/home/you/.plobi/google-chat-sa.json
 
 # 授权 — 粘贴允许与机器人对话的用户邮箱
 GOOGLE_CHAT_ALLOWED_USERS=you@yourdomain.com,coworker@yourdomain.com
@@ -147,7 +147,7 @@ pip install google-cloud-pubsub google-api-python-client google-auth google-auth
 启动 gateway（网关）：
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
 你应该会看到如下日志：
@@ -204,7 +204,7 @@ python -m gateway.platforms.google_chat_user_oauth \
     --client-secret /path/to/client_secret.json
 ```
 
-该命令会写入 `~/.hermes/google_chat_user_client_secret.json`。这是共享基础设施——它标识 OAuth *应用*，而非某个具体用户。无论后续有多少用户授权，每台宿主机只需一个文件。
+该命令会写入 `~/.plobi/google_chat_user_client_secret.json`。这是共享基础设施——它标识 OAuth *应用*，而非某个具体用户。无论后续有多少用户授权，每台宿主机只需一个文件。
 
 ### 每用户授权（在 Chat 中操作）
 
@@ -215,7 +215,7 @@ python -m gateway.platforms.google_chat_user_oauth \
 3. 打开该 URL，点击 **Allow**，浏览器会尝试加载 `http://localhost:1/?...&code=...` 并失败。这是预期行为——auth code 在地址栏的 URL 中。
 4. 复制失败的 URL（或仅复制 `code=...` 的值），粘贴回 Chat 中作为 `/setup-files <PASTED_URL>`。机器人将其换取 refresh token。
 
-token 保存在 `~/.hermes/google_chat_user_tokens/<sanitized_email>.json`。该用户私信中后续的文件请求将使用*其*token，机器人以其身份上传，消息投递到其 space。
+token 保存在 `~/.plobi/google_chat_user_tokens/<sanitized_email>.json`。该用户私信中后续的文件请求将使用*其*token，机器人以其身份上传，消息投递到其 space。
 
 如需撤销：`/setup-files revoke` 仅删除该用户的 token，其他用户的 token 不受影响。
 
@@ -225,7 +225,7 @@ token 保存在 `~/.hermes/google_chat_user_tokens/<sanitized_email>.json`。该
 
 ### 多用户行为
 
-当请求者尚无每用户 token 时，机器人会回退到 `~/.hermes/google_chat_user_token.json` 中的旧版单用户 token（如果存在于多用户支持之前的安装中）。两者均不可用时，机器人会发送清晰的文字提示，告知请求者运行 `/setup-files`。
+当请求者尚无每用户 token 时，机器人会回退到 `~/.plobi/google_chat_user_token.json` 中的旧版单用户 token（如果存在于多用户支持之前的安装中）。两者均不可用时，机器人会发送清晰的文字提示，告知请求者运行 `/setup-files`。
 
 用户撤销只清除自己的槽位。某用户 token 产生的 401/403 只驱逐该用户的缓存，不影响其他用户。
 
@@ -237,7 +237,7 @@ token 保存在 `~/.hermes/google_chat_user_tokens/<sanitized_email>.json`。该
 
 1. 在控制台检查 Pub/Sub 订阅是否有未投递消息。如果有，说明 Plobi 未通过认证——验证 `GOOGLE_CHAT_SERVICE_ACCOUNT_JSON`，并确认 SA 在订阅上具有 `Pub/Sub Subscriber` 角色。
 2. 如果订阅中消息数为零，说明 Google Chat 没有发布消息。再次检查 **topic** 上的 IAM 绑定：`chat-api-push@system.gserviceaccount.com` 必须具有 `Pub/Sub Publisher` 角色。
-3. 检查 `hermes gateway` 日志中是否有 `[GoogleChat] Connected`。如果看到 `[GoogleChat] Config validation failed`，错误信息会告诉你需要修复哪个环境变量。
+3. 检查 `plobi gateway` 日志中是否有 `[GoogleChat] Connected`。如果看到 `[GoogleChat] Config validation failed`，错误信息会告诉你需要修复哪个环境变量。
 
 **机器人有回复，但显示的是错误信息而非 agent 的答案。**
 
@@ -278,4 +278,4 @@ auth code 是一次性的且有效期很短（通常几分钟）。发送 `/setu
 - **附件下载保护**：Plobi 只会将 SA bearer token 附加到主机名匹配 Google 自有域名短名单的 URL（`googleapis.com`、`drive.google.com`、`lh[3-6].googleusercontent.com` 等）。其他主机在发起 HTTP 请求前即被拒绝，以防范 SSRF 场景——即精心构造的事件将 bearer token 重定向到 GCE 元数据服务。
 - **脱敏处理**：Service Account 邮箱、订阅路径和 topic 路径会被 `agent/redact.py` 从日志输出中剥离。调试信封转储（`GOOGLE_CHAT_DEBUG_RAW=1`）经过同一脱敏过滤器，以 DEBUG 级别记录。
 - **合规性**：如果你计划将此机器人接入受监管的 Workspace（任何有数据驻留或 AI 治理政策的环境），请在首次安装前获得相应审批。
-- **用户 OAuth scope**：每用户附件流程*仅*请求 `chat.messages.create`——覆盖 `media.upload` 及后续 `messages.create` 所需的最小权限。token 以明文 JSON 形式持久化在 `~/.hermes/google_chat_user_tokens/<sanitized_email>.json`（文件系统权限是保护手段——与 SA 密钥文件采用相同模型）。每个 token 归属于唯一一位用户；撤销操作仅限于该用户。
+- **用户 OAuth scope**：每用户附件流程*仅*请求 `chat.messages.create`——覆盖 `media.upload` 及后续 `messages.create` 所需的最小权限。token 以明文 JSON 形式持久化在 `~/.plobi/google_chat_user_tokens/<sanitized_email>.json`（文件系统权限是保护手段——与 SA 密钥文件采用相同模型）。每个 token 归属于唯一一位用户；撤销操作仅限于该用户。

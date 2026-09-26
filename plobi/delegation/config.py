@@ -66,14 +66,14 @@ def _section() -> dict[str, Any]:
     """Read the ``delegation:`` block through the profile-aware loader.
 
     Mirrors ``tools.delegate_tool._load_config``: the shared
-    ``load_config_readonly`` follows the active HERMES_HOME/profile, and
-    ``HERMES_IGNORE_USER_CONFIG=1`` keeps its contract of suppressing
+    ``load_config_readonly`` follows the active PLOBI_HOME/profile, and
+    ``PLOBI_IGNORE_USER_CONFIG=1`` keeps its contract of suppressing
     user config.yaml.
     """
-    if os.environ.get("HERMES_IGNORE_USER_CONFIG") == "1":
+    if os.environ.get("PLOBI_IGNORE_USER_CONFIG") == "1":
         return {}
     try:
-        from hermes_cli.config import load_config_readonly
+        from plobi_cli.config import load_config_readonly
     except Exception:
         return {}
     try:

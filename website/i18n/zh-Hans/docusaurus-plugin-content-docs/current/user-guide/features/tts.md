@@ -9,7 +9,7 @@ description: "跨所有平台的文字转语音与语音消息转录"
 Plobi Agent 支持跨所有消息平台的文字转语音（TTS）输出和语音消息转录（STT）。
 
 :::tip Nous 订阅用户
-如果你拥有付费的 [Nous Portal](https://portal.nousresearch.com) 订阅，OpenAI TTS 可通过 **[Tool Gateway](tool-gateway.md)** 使用，无需单独的 OpenAI API 密钥。新安装可运行 `hermes setup --portal` 登录并一次性开启所有 gateway 工具；已有安装可通过 `hermes model` 或 `hermes tools` 选择 **Nous Subscription** 仅启用 TTS。
+如果你拥有付费的 [Nous Portal](https://portal.nousresearch.com) 订阅，OpenAI TTS 可通过 **[Tool Gateway](tool-gateway.md)** 使用，无需单独的 OpenAI API 密钥。新安装可运行 `plobi setup --portal` 登录并一次性开启所有 gateway 工具；已有安装可通过 `plobi model` 或 `plobi tools` 选择 **Nous Subscription** 仅启用 TTS。
 :::
 
 ## 文字转语音（TTS）
@@ -36,12 +36,12 @@ Plobi Agent 支持跨所有消息平台的文字转语音（TTS）输出和语�
 | Telegram | 语音气泡（内联播放） | Opus `.ogg` |
 | Discord | 语音气泡（Opus/OGG），回退为文件附件 | Opus/MP3 |
 | WhatsApp | 音频文件附件 | MP3 |
-| CLI | 保存至 `~/.hermes/audio_cache/` | MP3 |
+| CLI | 保存至 `~/.plobi/audio_cache/` | MP3 |
 
 ### 配置
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.plobi/config.yaml
 tts:
   provider: "edge"              # "edge" | "elevenlabs" | "openai" | "minimax" | "mistral" | "gemini" | "xai" | "neutts" | "kittentts" | "piper"
   speed: 1.0                    # Global speed multiplier (provider-specific settings override this)
@@ -86,7 +86,7 @@ tts:
     clean_text: true                            # Expand numbers, currencies, units
   piper:
     voice: en_US-lessac-medium                  # voice name (auto-downloaded) OR absolute path to .onnx
-    # voices_dir: ''                            # default: ~/.hermes/cache/piper-voices/
+    # voices_dir: ''                            # default: ~/.plobi/cache/piper-voices/
     # use_cuda: false                           # requires onnxruntime-gpu
     # length_scale: 1.0                         # 2.0 = twice as slow
     # noise_scale: 0.667
@@ -181,7 +181,7 @@ tts:
 
 Piper 是来自 Open Home Foundation（Home Assistant 维护者）的快速本地神经网络 TTS 引擎。它完全在 CPU 上运行，支持 **44 种语言**的预训练声音，无需 API 密钥。
 
-**通过 `hermes tools` 安装** → Voice & TTS → Piper — Plobi 会自动为你运行 `pip install piper-tts`。或手动安装：`pip install piper-tts`。
+**通过 `plobi tools` 安装** → Voice & TTS → Piper — Plobi 会自动为你运行 `pip install piper-tts`。或手动安装：`pip install piper-tts`。
 
 **切换至 Piper：**
 
@@ -192,7 +192,7 @@ tts:
     voice: en_US-lessac-medium
 ```
 
-首次对未在本地缓存的声音进行 TTS 调用时，Plobi 会运行 `python -m piper.download_voices <name>` 并将模型（约 20-90MB，取决于质量等级）下载至 `~/.hermes/cache/piper-voices/`。后续调用将复用已缓存的模型。
+首次对未在本地缓存的声音进行 TTS 调用时，Plobi 会运行 `python -m piper.download_voices <name>` 并将模型（约 20-90MB，取决于质量等级）下载至 `~/.plobi/cache/piper-voices/`。后续调用将复用已缓存的模型。
 
 **选择声音。** [完整声音目录](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md) 涵盖英语、西班牙语、法语、德语、意大利语、荷兰语、葡萄牙语、俄语、波兰语、土耳其语、中文、阿拉伯语、印地语等——每种语言均有 `x_low` / `low` / `medium` / `high` 质量等级。可在 [rhasspy.github.io/piper-samples](https://rhasspy.github.io/piper-samples/) 试听声音样本。
 
@@ -309,14 +309,14 @@ tts:
 | 两三个通过 shell 管道串联的 CLI | **命令提供商** |
 | 仅有 Python SDK，没有 CLI | **插件** |
 | 你希望分块投递的流式字节（生成中的语音气泡） | **插件**（覆盖 `stream()`） |
-| `hermes setup` 使用的声音列表 API | **插件**（覆盖 `list_voices()`） |
+| `plobi setup` 使用的声音列表 API | **插件**（覆盖 `list_voices()`） |
 | OAuth 刷新流程（非静态 bearer token） | **插件** |
 
 内置提供商始终优先，命令提供商优先于同名插件——因此插件可以安全地注册任何非内置名称，无需担心覆盖现有配置。
 
 #### 最小插件
 
-将以下内容放入 `~/.hermes/plugins/my-tts/`：
+将以下内容放入 `~/.plobi/plugins/my-tts/`：
 
 `plugin.yaml`：
 ```yaml
@@ -362,15 +362,15 @@ def register(ctx):
     ctx.register_tts_provider(MyTTSProvider())
 ```
 
-启用它（`hermes plugins enable my-tts`），将 `tts.provider` 指向它（在 `config.yaml` 中设置 `tts.provider: my-tts`），`text_to_speech` 工具将通过你的插件路由。
+启用它（`plobi plugins enable my-tts`），将 `tts.provider` 指向它（在 `config.yaml` 中设置 `tts.provider: my-tts`），`text_to_speech` 工具将通过你的插件路由。
 
 #### 可选 hook
 
 在你的提供商类上覆盖以下方法以获得更丰富的集成：
 
-- `list_voices()` → 返回 `{id, display, language, gender, preview_url}` 字典列表，显示在 `hermes tools` 中。
+- `list_voices()` → 返回 `{id, display, language, gender, preview_url}` 字典列表，显示在 `plobi tools` 中。
 - `list_models()` → 返回 `{id, display, languages, max_text_length}` 字典列表。
-- `get_setup_schema()` → 返回 `{name, badge, tag, env_vars: [{key, prompt, url}]}` 以驱动 `hermes tools` / `hermes setup` 中的选择器行。若不提供，插件仍可正常工作，但其在选择器中的行信息会很简略。
+- `get_setup_schema()` → 返回 `{name, badge, tag, env_vars: [{key, prompt, url}]}` 以驱动 `plobi tools` / `plobi setup` 中的选择器行。若不提供，插件仍可正常工作，但其在选择器中的行信息会很简略。
 - `stream(text, *, voice, model, format, **extra)` → 迭代器，产出音频字节用于流式投递（默认抛出 `NotImplementedError`）。
 - `voice_compatible` 属性 → 若你的输出与 Opus 兼容且 gateway 应将其作为语音气泡投递，则设为 `True`（默认 `False` = 普通音频附件）。
 
@@ -387,13 +387,13 @@ def register(ctx):
 | **OpenAI Whisper API** | 良好至最佳 | 付费 | `VOICE_TOOLS_OPENAI_KEY` 或 `OPENAI_API_KEY` |
 
 :::info 零配置
-安装了 `faster-whisper` 后，本地转录即可开箱即用。若不可用，Plobi 也可使用常见安装位置（如 `/opt/homebrew/bin`）的本地 `whisper` CLI，或通过 `HERMES_LOCAL_STT_COMMAND` 指定的自定义命令。
+安装了 `faster-whisper` 后，本地转录即可开箱即用。若不可用，Plobi 也可使用常见安装位置（如 `/opt/homebrew/bin`）的本地 `whisper` CLI，或通过 `PLOBI_LOCAL_STT_COMMAND` 指定的自定义命令。
 :::
 
 ### 配置
 
 ```yaml
-# In ~/.hermes/config.yaml
+# In ~/.plobi/config.yaml
 stt:
   provider: "local"           # "local" | "groq" | "openai" | "mistral" | "xai"
   local:
@@ -422,11 +422,11 @@ stt:
 
 **OpenAI API** — 优先使用 `VOICE_TOOLS_OPENAI_KEY`，回退至 `OPENAI_API_KEY`。支持 `whisper-1`、`gpt-4o-mini-transcribe` 和 `gpt-4o-transcribe`。
 
-**Mistral API（Voxtral Transcribe）** — 需要 `MISTRAL_API_KEY`。使用 Mistral 的 [Voxtral Transcribe](https://docs.mistral.ai/capabilities/audio/speech_to_text/) 模型。支持 13 种语言、说话人分离和词级时间戳。通过 `cd ~/.hermes/hermes-agent && uv pip install -e ".[mistral]"` 安装。
+**Mistral API（Voxtral Transcribe）** — 需要 `MISTRAL_API_KEY`。使用 Mistral 的 [Voxtral Transcribe](https://docs.mistral.ai/capabilities/audio/speech_to_text/) 模型。支持 13 种语言、说话人分离和词级时间戳。通过 `cd ~/.plobi/plobi-agent && uv pip install -e ".[mistral]"` 安装。
 
 **xAI Grok STT** — 需要 `XAI_API_KEY`。以 multipart/form-data 格式发送至 `https://api.x.ai/v1/stt`。如果你已在使用 xAI 进行聊天或 TTS 并希望一个 API 密钥搞定一切，这是个好选择。自动检测顺序将其排在 Groq 之后——显式设置 `stt.provider: xai` 可强制使用。
 
-**自定义本地 CLI 回退** — 若你希望 Plobi 直接调用本地转录命令，请设置 `HERMES_LOCAL_STT_COMMAND`。命令模板支持 `{input_path}`、`{output_dir}`、`{language}` 和 `{model}` 占位符。你的命令必须在 `{output_dir}` 下某处写入 `.txt` 转录文件。
+**自定义本地 CLI 回退** — 若你希望 Plobi 直接调用本地转录命令，请设置 `PLOBI_LOCAL_STT_COMMAND`。命令模板支持 `{input_path}`、`{output_dir}`、`{language}` 和 `{model}` 占位符。你的命令必须在 `{output_dir}` 下某处写入 `.txt` 转录文件。
 
 #### 示例：Doubao / Volcengine ASR
 
@@ -436,7 +436,7 @@ stt:
 pip install doubao-speech
 export VOLCENGINE_APP_ID="your-app-id"
 export VOLCENGINE_ACCESS_TOKEN="your-access-token"
-export HERMES_LOCAL_STT_COMMAND='doubao-speech transcribe {input_path} --out {output_dir}/transcript.txt'
+export PLOBI_LOCAL_STT_COMMAND='doubao-speech transcribe {input_path} --out {output_dir}/transcript.txt'
 ```
 
 ```yaml
@@ -449,7 +449,7 @@ Plobi 将传入的语音消息写入 `{input_path}`，运行命令，并读取 `
 ### 回退行为
 
 若配置的提供商不可用，Plobi 会自动回退：
-- **本地 faster-whisper 不可用** → 在云端提供商之前尝试本地 `whisper` CLI 或 `HERMES_LOCAL_STT_COMMAND`
+- **本地 faster-whisper 不可用** → 在云端提供商之前尝试本地 `whisper` CLI 或 `PLOBI_LOCAL_STT_COMMAND`
 - **未设置 Groq 密钥** → 回退至本地转录，然后是 OpenAI
 - **未设置 OpenAI 密钥** → 回退至本地转录，然后是 Groq
 - **未设置 Mistral 密钥/SDK** → 在自动检测中跳过；回退至下一个可用提供商

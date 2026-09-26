@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from tools.environments.local import hermes_subprocess_env
+from tools.environments.local import plobi_subprocess_env
 
 # Default minimum codex version we test against. The PR sets this from the
 # `codex --version` parsed at install time; bumping is a one-line change here.
@@ -87,7 +87,7 @@ class CodexAppServerClient:
         # centralized helper so Tier-1 + dynamic-internal secrets are always
         # stripped while provider creds still flow, matching copilot_acp_client
         # (#29157 sibling spawn-site gap).
-        spawn_env = hermes_subprocess_env(inherit_credentials=True)
+        spawn_env = plobi_subprocess_env(inherit_credentials=True)
         if env:
             spawn_env.update(env)
         if codex_home:
@@ -99,15 +99,15 @@ class CodexAppServerClient:
         # Codex sandbox on, but add the Kanban root as the only extra writable
         # root. Without this, codex-runtime workers finish their actual work
         # but crash/block when kanban_complete/kanban_block writes SQLite.
-        if spawn_env.get("HERMES_KANBAN_TASK"):
-            kanban_db = spawn_env.get("HERMES_KANBAN_DB")
+        if spawn_env.get("PLOBI_KANBAN_TASK"):
+            kanban_db = spawn_env.get("PLOBI_KANBAN_DB")
             kanban_root = (
                 os.path.dirname(kanban_db)
                 if kanban_db
                 else spawn_env.get(
-                    "HERMES_KANBAN_ROOT",
+                    "PLOBI_KANBAN_ROOT",
                     os.path.join(
-                        spawn_env.get("HERMES_HOME", os.path.expanduser("~/.hermes")),
+                        spawn_env.get("PLOBI_HOME", os.path.expanduser("~/.plobi")),
                         "kanban",
                     ),
                 )
@@ -154,7 +154,7 @@ class CodexAppServerClient:
 
     def initialize(
         self,
-        client_name: str = "hermes",
+        client_name: str = "plobi",
         client_title: str = "Plobi Agent",
         client_version: str = "0.1",
         capabilities: Optional[dict] = None,

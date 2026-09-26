@@ -5,7 +5,7 @@ version: 0.2.0
 author: Plobi
 license: MIT
 metadata:
-  hermes:
+  plobi:
     tags: [plobi, butler, quota, aigw]
 ---
 

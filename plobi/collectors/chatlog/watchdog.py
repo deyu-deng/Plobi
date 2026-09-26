@@ -9,11 +9,11 @@
       → 仍未恢复 → 推钉钉告警（限频：默认 1 小时最多一条）
 
 无模型调用（ADR-0011 成本纪律）；失败计数与告警限频状态落
-``HERMES_HOME/plobi/watchdog_state.json``。恢复健康即重置计数。
+``PLOBI_HOME/plobi/watchdog_state.json``。恢复健康即重置计数。
 
 WP-DT-DIGEST：10 分钟 tick 是开机后最早、最稳定的心跳，所以「今天 07:30 那条
 早报没发过」的补发挂在它末尾（``maybe_send_morning_catchup``）。标记文件
-``HERMES_HOME/plobi/digest_state.json`` 与 07:30 的 cron 共用——谁先发谁写，
+``PLOBI_HOME/plobi/digest_state.json`` 与 07:30 的 cron 共用——谁先发谁写，
 另一边看到标记就不再发。发送失败不写标记（下个 tick 再试）。
 
 微信 ToS 红线：本模块不改变采集节奏，tick 由 10 分钟 cron 驱动（≥30s）。
@@ -48,11 +48,11 @@ def _repo_root() -> Path:
 
 def _default_state_path() -> Path:
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / "watchdog_state.json"
 
 
@@ -97,7 +97,7 @@ class Watchdog:
         self.failure_threshold = max(1, int(failure_threshold))
         self.alert_interval_seconds = int(alert_interval_seconds)
         self.morning_catchup = bool(morning_catchup)
-        # None = derive from HERMES_HOME (same file the 07:30 cron writes).
+        # None = derive from PLOBI_HOME (same file the 07:30 cron writes).
         self.digest_state_path = Path(digest_state_path) if digest_state_path else None
 
     # --- self-heal ----------------------------------------------------------

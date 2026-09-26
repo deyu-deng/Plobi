@@ -59,7 +59,7 @@ class FakeClock:
 def _clean_env(monkeypatch):
     """Isolate config resolution and reset process-wide singletons.
 
-    ``HERMES_IGNORE_USER_CONFIG`` suppresses whatever config.yaml says (that is
+    ``PLOBI_IGNORE_USER_CONFIG`` suppresses whatever config.yaml says (that is
     the loader's own contract) so these tests assert on DEFAULTS/env rather
     than on the developer's machine. Note we do NOT stub ``config.load``
     here — the config tests need the real resolution path.
@@ -67,7 +67,7 @@ def _clean_env(monkeypatch):
     for key in list(os.environ):
         if key.startswith(config._ENV_PREFIX):
             monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("HERMES_IGNORE_USER_CONFIG", "1")
+    monkeypatch.setenv("PLOBI_IGNORE_USER_CONFIG", "1")
     yield
     guard_mod.set_guard(None)
     quota_mod.set_quota_circuit(None)

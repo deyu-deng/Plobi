@@ -413,6 +413,6 @@ class MindProvider(MemoryProvider):
     # -- backup integration ---------------------------------------------
 
     def backup_paths(self) -> List[str]:
-        """Declare Mind root so `hermes backup` includes it (outside HERMES_HOME)."""
+        """Declare Mind root so `plobi backup` includes it (outside PLOBI_HOME)."""
         root = _resolve_root()
         return [str(root)] if root.is_dir() else []

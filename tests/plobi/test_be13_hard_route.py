@@ -25,7 +25,7 @@ import pytest
 # Fixtures / loaders
 # --------------------------------------------------------------------------
 
-_PLUGIN_NAME = "hermes_plugins.plobi_north_star"
+_PLUGIN_NAME = "plobi_plugins.plobi_north_star"
 
 
 def _load_plugin():
@@ -33,10 +33,10 @@ def _load_plugin():
     if _PLUGIN_NAME in sys.modules and hasattr(sys.modules[_PLUGIN_NAME], "register"):
         return sys.modules[_PLUGIN_NAME]
 
-    if "hermes_plugins" not in sys.modules:
-        namespace = types.ModuleType("hermes_plugins")
+    if "plobi_plugins" not in sys.modules:
+        namespace = types.ModuleType("plobi_plugins")
         namespace.__path__ = []  # type: ignore[attr-defined]
-        sys.modules["hermes_plugins"] = namespace
+        sys.modules["plobi_plugins"] = namespace
 
     plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star"
     spec = importlib.util.spec_from_file_location(
@@ -191,7 +191,7 @@ def test_hook_is_a_noop_for_blank_text(hard_route):
 
 
 def test_valid_hooks_include_pre_prompt_submit():
-    from hermes_cli.plugins import VALID_HOOKS
+    from plobi_cli.plugins import VALID_HOOKS
 
     assert "pre_prompt_submit" in VALID_HOOKS
 
@@ -216,7 +216,7 @@ def seam():
 
 
 def test_prompt_submit_seam_applies_a_plugin_rewrite(seam, monkeypatch):
-    import hermes_cli.plugins as plugins_module
+    import plobi_cli.plugins as plugins_module
 
     seen: list[dict] = []
 
@@ -247,7 +247,7 @@ def test_prompt_submit_seam_applies_a_plugin_rewrite(seam, monkeypatch):
 def test_prompt_submit_seam_leaves_text_untouched_without_a_rewrite(
     seam, monkeypatch, hook_result
 ):
-    import hermes_cli.plugins as plugins_module
+    import plobi_cli.plugins as plugins_module
 
     monkeypatch.setattr(
         plugins_module, "invoke_hook", lambda name, **kwargs: hook_result
@@ -257,7 +257,7 @@ def test_prompt_submit_seam_leaves_text_untouched_without_a_rewrite(
 
 
 def test_prompt_submit_seam_is_fail_open(seam, monkeypatch):
-    import hermes_cli.plugins as plugins_module
+    import plobi_cli.plugins as plugins_module
 
     def _boom(name, **kwargs):
         raise RuntimeError("plugin exploded")
@@ -269,7 +269,7 @@ def test_prompt_submit_seam_is_fail_open(seam, monkeypatch):
 
 @pytest.mark.parametrize("payload", [None, 42, "", "   "])
 def test_prompt_submit_seam_ignores_non_text_payloads(seam, monkeypatch, payload):
-    import hermes_cli.plugins as plugins_module
+    import plobi_cli.plugins as plugins_module
 
     def _never_called(name, **kwargs):  # pragma: no cover - must not fire
         raise AssertionError("hook must not fire for a non-text payload")

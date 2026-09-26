@@ -14,7 +14,7 @@ description: "通过 Yahoo 获取股票报价、历史、搜索、比较及加�
 
 | | |
 |---|---|
-| 来源 | 可选 — 使用 `hermes skills install official/finance/stocks` 安装 |
+| 来源 | 可选 — 使用 `plobi skills install official/finance/stocks` 安装 |
 | 路径 | `optional-skills/finance/stocks` |
 | 版本 | `0.1.0` |
 | 作者 | Mibay (Mibayy), Plobi Agent |
@@ -52,7 +52,7 @@ description: "通过 Yahoo 获取股票报价、历史、搜索、比较及加�
 通过 `terminal` 工具调用。安装完成后：
 
 ```
-SCRIPT=~/.hermes/skills/finance/stocks/scripts/stocks_client.py
+SCRIPT=~/.plobi/skills/finance/stocks/scripts/stocks_client.py
 python3 $SCRIPT quote AAPL
 ```
 
@@ -102,7 +102,7 @@ python3 $SCRIPT crypto BTC ETH SOL
 ## 验证
 
 ```
-python3 ~/.hermes/skills/finance/stocks/scripts/stocks_client.py quote AAPL
+python3 ~/.plobi/skills/finance/stocks/scripts/stocks_client.py quote AAPL
 ```
 
 返回包含 `symbol: "AAPL"` 及数值型 `price` 字段的 JSON 对象。

@@ -4,7 +4,7 @@
 # (Google's official Antigravity / Cloud Code CLI) as a subprocess and
 # translates its stdout into OpenAI-compatible responses. `agy` owns its own
 # Google auth + quota, so there is zero reverse-engineering and minimal ToS
-# risk — the same pattern Open Design uses to drive claude/codex/cursor/hermes.
+# risk — the same pattern Open Design uses to drive claude/codex/cursor/plobi.
 #
 #   Install agy once:  curl -fsSL https://antigravity.google/cli/install.sh | bash
 #   (first run opens a browser to do the Google OAuth login interactively)

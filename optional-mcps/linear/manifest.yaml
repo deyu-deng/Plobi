@@ -35,4 +35,4 @@ post_install: |
   After auth, restart your Plobi session so the Linear tools are loaded.
 
   You can re-run the tool checklist any time with:
-    hermes mcp configure linear
+    plobi mcp configure linear

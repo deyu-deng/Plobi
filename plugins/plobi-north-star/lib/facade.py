@@ -24,7 +24,7 @@ from .queue import TaskQueue, TaskStatus
 class NorthStar:
     """Narrow façade over risk queue, HID fleet, preview, and ops.
 
-    Reuses Hermes where possible:
+    Reuses Plobi where possible:
     - execution/collaboration board → optional kanban mirror
     - 24/7 messaging → gateway + cron (not reimplemented here)
     - desktop shell → existing Electron preview rail via bus + HTTP

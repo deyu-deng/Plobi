@@ -2,7 +2,7 @@
 
 Resolve provider credentials from 1Password ``op://vault/item/field``
 references at process startup so they don't have to live in plaintext in
-``~/.hermes/.env``.
+``~/.plobi/.env``.
 
 Design summary
 --------------
@@ -31,8 +31,8 @@ Design summary
 
 The atomic-write / ``0600`` / TTL cache mechanics are shared with the other
 backends via :mod:`agent.secret_sources._cache` — successful, complete pulls
-are cached in-process and on disk under ``<hermes_home>/cache/op_cache.json``
-so back-to-back short-lived ``hermes`` invocations don't re-shell ``op`` for
+are cached in-process and on disk under ``<plobi_home>/cache/op_cache.json``
+so back-to-back short-lived ``plobi`` invocations don't re-shell ``op`` for
 every reference.  The disk file holds only resolved secret *values*; auth
 material is fingerprinted, never stored.
 """
@@ -105,7 +105,7 @@ _OP_ENV_ALLOWLIST = (
 # Cache
 # ---------------------------------------------------------------------------
 
-# In-process cache.  The key folds in str(home_path) so a HERMES_HOME switch
+# In-process cache.  The key folds in str(home_path) so a PLOBI_HOME switch
 # inside one long-lived process (e.g. the gateway) can't return another
 # profile's secrets from L1.  The disk layer omits home from its serialized
 # key because the file already lives under the home dir (see _disk_key_str).
@@ -378,7 +378,7 @@ def fetch_onepassword_secrets(
 
 
 # ---------------------------------------------------------------------------
-# Public entry point — called from hermes_cli.env_loader
+# Public entry point — called from plobi_cli.env_loader
 # ---------------------------------------------------------------------------
 
 
@@ -395,7 +395,7 @@ def apply_onepassword_secrets(
 ) -> FetchResult:
     """Resolve configured ``op://`` references and set them on ``os.environ``.
 
-    Called by ``load_hermes_dotenv()`` after the .env files have loaded.
+    Called by ``load_plobi_dotenv()`` after the .env files have loaded.
     Intentionally defensive — any failure returns a :class:`FetchResult` with
     ``error`` set (or surfaces warnings); it never raises.
 

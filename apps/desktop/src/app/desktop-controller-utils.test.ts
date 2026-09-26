@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { SessionInfo } from '@/hermes'
+import type { SessionInfo } from '@/plobi'
 
 import {
   bindL1GatewayIfMasterExists,

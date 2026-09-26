@@ -111,7 +111,7 @@ let
       );
 
   editableOverlay = workspace.mkEditablePyprojectOverlay {
-    root = "$HERMES_PYTHON_SRC_ROOT"; # resolved at shellHook time
+    root = "$PLOBI_PYTHON_SRC_ROOT"; # resolved at shellHook time
   };
 
   workspaceRoot = ./..;
@@ -119,7 +119,7 @@ let
     lib.composeManyExtensions [
       editableOverlay
       (final: prev: {
-        hermes-agent = prev.hermes-agent.overrideAttrs (old: {
+        plobi-agent = prev.plobi-agent.overrideAttrs (old: {
           # point straight at the real source instead of the filtered nix store copy
           src = workspaceRoot;
           nativeBuildInputs = old.nativeBuildInputs ++ final.resolveBuildSystem { editables = [ ]; };
@@ -129,10 +129,10 @@ let
   );
 in
 {
-  venv = pythonSet.mkVirtualEnv "hermes-agent-env" {
-    hermes-agent = dependency-groups;
+  venv = pythonSet.mkVirtualEnv "plobi-agent-env" {
+    plobi-agent = dependency-groups;
   };
-  editableVenv = editableSet.mkVirtualEnv "hermes-agent-editable-env" {
-    hermes-agent = dependency-groups;
+  editableVenv = editableSet.mkVirtualEnv "plobi-agent-editable-env" {
+    plobi-agent = dependency-groups;
   };
 }

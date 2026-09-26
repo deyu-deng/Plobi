@@ -29,10 +29,10 @@ load_dotenv()
 # Default datasets to sample from
 DEFAULT_DATASETS = [
     "NousResearch/swe-terminus-agent-glm-kimi-minimax",
-    "NousResearch/hermes-agent-megascience-sft1",
+    "NousResearch/plobi-agent-megascience-sft1",
     "NousResearch/Plobi-Agent-Thinking-GLM-4.7-SFT2",
     "NousResearch/Plobi-Agent-Thinking-GLM-4.7-SFT1",
-    "NousResearch/terminal-tasks-glm-hermes-agent"
+    "NousResearch/terminal-tasks-glm-plobi-agent"
 ]
 
 

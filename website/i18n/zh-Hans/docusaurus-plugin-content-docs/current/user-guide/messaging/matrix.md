@@ -100,12 +100,12 @@ MATRIX_REACTIONS=true          # 默认：true——处理过程中发送 emoji 
 register_new_matrix_user -c /etc/synapse/homeserver.yaml http://localhost:8008
 ```
 
-2. 选择一个用户名，例如 `hermes`——完整的用户 ID 将是 `@hermes:your-server.org`。
+2. 选择一个用户名，例如 `plobi`——完整的用户 ID 将是 `@plobi:your-server.org`。
 
 ### 方式 B：使用 matrix.org 或其他公共 Homeserver
 
 1. 前往 [Element Web](https://app.element.io) 创建新账户。
-2. 为机器人选择一个用户名（例如 `hermes-bot`）。
+2. 为机器人选择一个用户名（例如 `plobi-bot`）。
 
 ### 方式 C：使用你自己的账户
 
@@ -132,7 +132,7 @@ curl -X POST https://your-server/_matrix/client/v3/login \
   -H "Content-Type: application/json" \
   -d '{
     "type": "m.login.password",
-    "user": "@hermes:your-server.org",
+    "user": "@plobi:your-server.org",
     "password": "your-password"
   }'
 ```
@@ -148,7 +148,7 @@ curl -X POST https://your-server/_matrix/client/v3/login \
 你可以不提供访问令牌，而是提供机器人的用户 ID 和密码。Plobi 会在启动时自动登录。这种方式更简单，但密码会存储在你的 `.env` 文件中。
 
 ```bash
-MATRIX_USER_ID=@hermes:your-server.org
+MATRIX_USER_ID=@plobi:your-server.org
 MATRIX_PASSWORD=your-password
 ```
 
@@ -173,14 +173,14 @@ Matrix 用户 ID 始终以 `@` 开头，并包含 `:` 后跟服务器名称。�
 运行引导式设置命令：
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 在提示时选择 **Matrix**，然后按提示提供你的 homeserver URL、访问令牌（或用户 ID + 密码）以及允许的用户 ID。
 
 ### 方式 B：手动配置
 
-将以下内容添加到你的 `~/.hermes/.env` 文件：
+将以下内容添加到你的 `~/.plobi/.env` 文件：
 
 **使用访问令牌：**
 
@@ -190,7 +190,7 @@ MATRIX_HOMESERVER=https://matrix.example.org
 MATRIX_ACCESS_TOKEN=***
 
 # 可选：用户 ID（如省略则从令牌自动检测）
-# MATRIX_USER_ID=@hermes:matrix.example.org
+# MATRIX_USER_ID=@plobi:matrix.example.org
 
 # 安全：限制可与机器人交互的用户
 MATRIX_ALLOWED_USERS=@alice:matrix.example.org
@@ -204,14 +204,14 @@ MATRIX_ALLOWED_USERS=@alice:matrix.example.org
 ```bash
 # 必填
 MATRIX_HOMESERVER=https://matrix.example.org
-MATRIX_USER_ID=@hermes:matrix.example.org
+MATRIX_USER_ID=@plobi:matrix.example.org
 MATRIX_PASSWORD=***
 
 # 安全
 MATRIX_ALLOWED_USERS=@alice:matrix.example.org
 ```
 
-`~/.hermes/config.yaml` 中的可选行为设置：
+`~/.plobi/config.yaml` 中的可选行为设置：
 
 ```yaml
 group_sessions_per_user: true
@@ -224,13 +224,13 @@ group_sessions_per_user: true
 配置完成后，启动 Matrix gateway：
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
 机器人应在几秒内连接到你的 homeserver 并开始同步。发送一条消息——DM 或机器人已加入的房间——进行测试。
 
 :::tip
-你可以在后台运行 `hermes gateway`，或将其作为 systemd 服务以持续运行。详情请参阅部署文档。
+你可以在后台运行 `plobi gateway`，或将其作为 systemd 服务以持续运行。详情请参阅部署文档。
 :::
 
 ## 端对端加密（E2EE）
@@ -245,8 +245,8 @@ E2EE 需要带有加密扩展的 `mautrix` 库以及 `libolm` C 库：
 # 安装带 E2EE 支持的 mautrix
 pip install 'mautrix[encryption]'
 
-# 或通过 hermes extras 安装
-cd ~/.hermes/hermes-agent && uv pip install -e ".[matrix]"
+# 或通过 plobi extras 安装
+cd ~/.plobi/plobi-agent && uv pip install -e ".[matrix]"
 ```
 
 你还需要在系统上安装 `libolm`：
@@ -264,7 +264,7 @@ sudo dnf install libolm-devel
 
 ### 启用 E2EE
 
-在 `~/.hermes/.env` 中添加：
+在 `~/.plobi/.env` 中添加：
 
 ```bash
 MATRIX_ENCRYPTION=true
@@ -272,7 +272,7 @@ MATRIX_ENCRYPTION=true
 
 启用 E2EE 后，Plobi 会：
 
-- 将加密密钥存储在 `~/.hermes/platforms/matrix/store/`（旧版安装：`~/.hermes/matrix/store/`）
+- 将加密密钥存储在 `~/.plobi/platforms/matrix/store/`（旧版安装：`~/.plobi/matrix/store/`）
 - 在首次连接时上传设备密钥
 - 自动解密传入消息并加密传出消息
 - 被邀请时自动加入加密房间
@@ -290,7 +290,7 @@ MATRIX_RECOVERY_KEY=EsT... 你的恢复密钥
 每次启动时，如果设置了 `MATRIX_RECOVERY_KEY`，Plobi 会从 homeserver 的安全密钥存储中导入交叉签名密钥并对当前设备进行签名。此操作是幂等的，可以永久启用。
 
 :::warning[删除加密存储]
-如果你删除了 `~/.hermes/platforms/matrix/store/crypto.db`，机器人将失去其加密身份。仅使用相同的设备 ID 重启**不能**完全恢复——homeserver 仍持有使用旧身份密钥签名的一次性密钥，对等方无法建立新的 Olm 会话。
+如果你删除了 `~/.plobi/platforms/matrix/store/crypto.db`，机器人将失去其加密身份。仅使用相同的设备 ID 重启**不能**完全恢复——homeserver 仍持有使用旧身份密钥签名的一次性密钥，对等方无法建立新的 Olm 会话。
 
 Plobi 在启动时会检测到此情况并拒绝启用 E2EE，日志显示：`device XXXX has stale one-time keys on the server signed with a previous identity key`。
 
@@ -302,24 +302,24 @@ Plobi 在启动时会检测到此情况并拒绝启用 E2EE，日志显示：`de
    ```bash
    sudo systemctl stop matrix-synapse
    sudo sqlite3 /var/lib/matrix-synapse/homeserver.db "
-     DELETE FROM e2e_device_keys_json WHERE device_id = 'DEVICE_ID' AND user_id = '@hermes:your-server';
-     DELETE FROM e2e_one_time_keys_json WHERE device_id = 'DEVICE_ID' AND user_id = '@hermes:your-server';
-     DELETE FROM e2e_fallback_keys_json WHERE device_id = 'DEVICE_ID' AND user_id = '@hermes:your-server';
-     DELETE FROM devices WHERE device_id = 'DEVICE_ID' AND user_id = '@hermes:your-server';
+     DELETE FROM e2e_device_keys_json WHERE device_id = 'DEVICE_ID' AND user_id = '@plobi:your-server';
+     DELETE FROM e2e_one_time_keys_json WHERE device_id = 'DEVICE_ID' AND user_id = '@plobi:your-server';
+     DELETE FROM e2e_fallback_keys_json WHERE device_id = 'DEVICE_ID' AND user_id = '@plobi:your-server';
+     DELETE FROM devices WHERE device_id = 'DEVICE_ID' AND user_id = '@plobi:your-server';
    "
    sudo systemctl start matrix-synapse
    ```
    或通过 Synapse 管理员 API（注意 URL 编码的用户 ID）：
    ```bash
    curl -X DELETE -H "Authorization: Bearer ADMIN_TOKEN" \
-     'https://your-server/_synapse/admin/v2/users/%40hermes%3Ayour-server/devices/DEVICE_ID'
+     'https://your-server/_synapse/admin/v2/users/%40plobi%3Ayour-server/devices/DEVICE_ID'
    ```
    注意：通过管理员 API 删除设备也可能使关联的访问令牌失效。之后你可能需要生成新令牌。
 
 2. 删除本地加密存储并重启 Plobi：
    ```bash
-   rm -f ~/.hermes/platforms/matrix/store/crypto.db*
-   # 重启 hermes
+   rm -f ~/.plobi/platforms/matrix/store/crypto.db*
+   # 重启 plobi
    ```
 
 其他 Matrix 客户端（Element、matrix-commander）可能缓存了旧的设备密钥。恢复后，在 Element 中输入 `/discardsession` 以强制与机器人建立新的加密会话。
@@ -339,7 +339,7 @@ Plobi 在启动时会检测到此情况并拒绝启用 E2EE，日志显示：`de
 
 ### 手动配置
 
-在 `~/.hermes/.env` 中添加：
+在 `~/.plobi/.env` 中添加：
 
 ```bash
 MATRIX_HOME_ROOM=!abc123def456:matrix.example.org
@@ -427,7 +427,7 @@ pip install 'mautrix[encryption]'
 或通过 Plobi extras：
 
 ```bash
-cd ~/.hermes/hermes-agent && uv pip install -e ".[matrix]"
+cd ~/.plobi/plobi-agent && uv pip install -e ".[matrix]"
 ```
 
 ### 加密错误/"无法解密事件"
@@ -461,22 +461,22 @@ cd ~/.hermes/hermes-agent && uv pip install -e ".[matrix]"
      -H "Content-Type: application/json" \
      -d '{
        "type": "m.login.password",
-       "identifier": {"type": "m.id.user", "user": "@hermes:your-server.org"},
+       "identifier": {"type": "m.id.user", "user": "@plobi:your-server.org"},
        "password": "***",
        "initial_device_display_name": "Plobi Agent"
      }'
    ```
 
-   复制新的 `access_token` 并更新 `~/.hermes/.env` 中的 `MATRIX_ACCESS_TOKEN`。
+   复制新的 `access_token` 并更新 `~/.plobi/.env` 中的 `MATRIX_ACCESS_TOKEN`。
 
 2. **删除旧的加密状态**：
 
    ```bash
-   rm -f ~/.hermes/platforms/matrix/store/crypto.db
-   rm -f ~/.hermes/platforms/matrix/store/crypto_store.*
+   rm -f ~/.plobi/platforms/matrix/store/crypto.db
+   rm -f ~/.plobi/platforms/matrix/store/crypto_store.*
    ```
 
-3. **设置恢复密钥**（如果你使用交叉签名——大多数 Element 用户都使用）。在 `~/.hermes/.env` 中添加：
+3. **设置恢复密钥**（如果你使用交叉签名——大多数 Element 用户都使用）。在 `~/.plobi/.env` 中添加：
 
    ```bash
    MATRIX_RECOVERY_KEY=EsT... 你的恢复密钥
@@ -489,7 +489,7 @@ cd ~/.hermes/hermes-agent && uv pip install -e ".[matrix]"
 5. **重启 gateway**：
 
    ```bash
-   hermes gateway run
+   plobi gateway run
    ```
 
    如果设置了 `MATRIX_RECOVERY_KEY`，你应在日志中看到 `Matrix: cross-signing verified via recovery key`。
@@ -508,20 +508,20 @@ cd ~/.hermes/hermes-agent && uv pip install -e ".[matrix]"
 
 ## 代理模式（macOS 上的 E2EE）
 
-Matrix E2EE 需要 `libolm`，而该库无法在 macOS ARM64（Apple Silicon）上编译。`hermes-agent[matrix]` extra 仅限 Linux。如果你在 macOS 上，代理模式允许你在 Linux 虚拟机的 Docker 容器中运行 E2EE，而实际的 agent 在 macOS 上原生运行，可完整访问你的本地文件、记忆和技能。
+Matrix E2EE 需要 `libolm`，而该库无法在 macOS ARM64（Apple Silicon）上编译。`plobi-agent[matrix]` extra 仅限 Linux。如果你在 macOS 上，代理模式允许你在 Linux 虚拟机的 Docker 容器中运行 E2EE，而实际的 agent 在 macOS 上原生运行，可完整访问你的本地文件、记忆和技能。
 
 ### 工作原理
 
 ```
 macOS（主机）：
-  └─ hermes gateway
+  └─ plobi gateway
        ├─ api_server 适配器 ← 监听 0.0.0.0:8642
        ├─ AIAgent ← 单一数据源
        ├─ 会话、记忆、技能
        └─ 本地文件访问（Obsidian、项目等）
 
 Linux 虚拟机（Docker）：
-  └─ hermes gateway（代理模式）
+  └─ plobi gateway（代理模式）
        ├─ Matrix 适配器 ← E2EE 解密/加密
        └─ HTTP 转发 → macOS:8642/v1/chat/completions
            （无 LLM API 密钥，无 agent，无推理）
@@ -533,7 +533,7 @@ Docker 容器仅处理 Matrix 协议和 E2EE。消息到达时，容器解密消
 
 启用 API 服务器，使主机接受来自 Docker 容器的请求。
 
-在 `~/.hermes/.env` 中添加：
+在 `~/.plobi/.env` 中添加：
 
 ```bash
 API_SERVER_ENABLED=true
@@ -548,7 +548,7 @@ API_SERVER_HOST=0.0.0.0
 启动 gateway：
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
 你应该看到 API 服务器与其他已配置的平台一起启动。从虚拟机验证其可达性：
@@ -566,7 +566,7 @@ curl http://<mac-ip>:8642/health
 
 ```yaml
 services:
-  hermes-matrix:
+  plobi-matrix:
     build: .
     environment:
       # Matrix 凭据
@@ -574,13 +574,13 @@ services:
       MATRIX_ACCESS_TOKEN: "syt_..."
       MATRIX_ALLOWED_USERS: "@you:matrix.example.org"
       MATRIX_ENCRYPTION: "true"
-      MATRIX_DEVICE_ID: "HERMES_BOT"
+      MATRIX_DEVICE_ID: "PLOBI_BOT"
 
       # 代理模式——转发到主机 agent
       GATEWAY_PROXY_URL: "http://192.168.1.100:8642"
       GATEWAY_PROXY_KEY: "your-secret-key-here"
     volumes:
-      - ./matrix-store:/root/.hermes/platforms/matrix/store
+      - ./matrix-store:/root/.plobi/platforms/matrix/store
 ```
 
 **`Dockerfile`：**
@@ -589,9 +589,9 @@ services:
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y libolm-dev && rm -rf /var/lib/apt/lists/*
-RUN cd ~/.hermes/hermes-agent && uv pip install -e ".[matrix]"
+RUN cd ~/.plobi/plobi-agent && uv pip install -e ".[matrix]"
 
-CMD ["hermes", "gateway"]
+CMD ["plobi", "gateway"]
 ```
 
 这就是整个容器。无需 OpenRouter、Anthropic 或任何推理提供商的 API 密钥。
@@ -600,7 +600,7 @@ CMD ["hermes", "gateway"]
 
 1. 先启动主机 gateway：
    ```bash
-   hermes gateway
+   plobi gateway
    ```
 
 2. 启动 Docker 容器：
@@ -651,13 +651,13 @@ CMD ["hermes", "gateway"]
 
 **原因**：Plobi gateway 未运行，或连接失败。
 
-**解决方法**：检查 `hermes gateway` 是否正在运行。查看终端输出中的错误消息。常见问题：homeserver URL 错误、访问令牌过期、homeserver 不可达。
+**解决方法**：检查 `plobi gateway` 是否正在运行。查看终端输出中的错误消息。常见问题：homeserver URL 错误、访问令牌过期、homeserver 不可达。
 
 ### "用户不被允许"/机器人忽略你
 
 **原因**：你的用户 ID 不在 `MATRIX_ALLOWED_USERS` 中。
 
-**解决方法**：将你的用户 ID 添加到 `~/.hermes/.env` 中的 `MATRIX_ALLOWED_USERS` 并重启 gateway。使用完整的 `@user:server` 格式。
+**解决方法**：将你的用户 ID 添加到 `~/.plobi/.env` 中的 `MATRIX_ALLOWED_USERS` 并重启 gateway。使用完整的 `@user:server` 格式。
 
 ## 安全
 

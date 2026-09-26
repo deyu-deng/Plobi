@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Canonical test runner for hermes-agent. Run this instead of calling
+# Canonical test runner for plobi-agent. Run this instead of calling
 # `pytest` directly to guarantee your local run matches CI behavior.
 #
 # What this script enforces:
@@ -11,7 +11,7 @@
 #   * Env vars blanked (conftest.py also does this, but this
 #     is belt-and-suspenders for anyone running pytest outside our
 #     conftest path — e.g. on a single file)
-#   * Proper venv activation (probes .venv, venv, then ~/.hermes/...)
+#   * Proper venv activation (probes .venv, venv, then ~/.plobi/...)
 #
 # Usage:
 #   scripts/run_tests.sh                            # full suite
@@ -47,7 +47,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # acceptance command is `scripts/run_tests.sh`.
 VENV=""
 PYTHON=""
-for candidate in "$REPO_ROOT/.venv" "$REPO_ROOT/venv" "$HOME/.hermes/hermes-agent/venv"; do
+for candidate in "$REPO_ROOT/.venv" "$REPO_ROOT/venv" "$HOME/.plobi/plobi-agent/venv"; do
   if [ -x "$candidate/bin/python" ]; then
     VENV="$candidate"
     PYTHON="$candidate/bin/python"
@@ -61,7 +61,7 @@ for candidate in "$REPO_ROOT/.venv" "$REPO_ROOT/venv" "$HOME/.hermes/hermes-agen
 done
 
 if [ -z "$VENV" ]; then
-  echo "error: no virtualenv found in $REPO_ROOT/.venv, $REPO_ROOT/venv or $HOME/.hermes/hermes-agent/venv" >&2
+  echo "error: no virtualenv found in $REPO_ROOT/.venv, $REPO_ROOT/venv or $HOME/.plobi/plobi-agent/venv" >&2
   echo "       (probed both bin/python and Scripts/python.exe in each)" >&2
   exit 1
 fi
@@ -70,8 +70,8 @@ fi
 # ── Live-gateway plugin (computed before we drop env) ───────────────────────
 EXTRA_PYTHONPATH=""
 EXTRA_PYTEST_PLUGINS=""
-if [ -f "$HOME/.hermes/pytest_live_guard.py" ]; then
-  EXTRA_PYTHONPATH="$HOME/.hermes"
+if [ -f "$HOME/.plobi/pytest_live_guard.py" ]; then
+  EXTRA_PYTHONPATH="$HOME/.plobi"
   EXTRA_PYTEST_PLUGINS="pytest_live_guard"
 fi
 
@@ -92,7 +92,7 @@ exec env -i \
   LC_ALL=C.UTF-8 \
   PYTHONHASHSEED=0 \
   PYTHONDONTWRITEBYTECODE=1 \
-  ${HERMES_RUN_SLOW_PET_TESTS:+HERMES_RUN_SLOW_PET_TESTS="$HERMES_RUN_SLOW_PET_TESTS"} \
+  ${PLOBI_RUN_SLOW_PET_TESTS:+PLOBI_RUN_SLOW_PET_TESTS="$PLOBI_RUN_SLOW_PET_TESTS"} \
   ${EXTRA_PYTHONPATH:+PYTHONPATH="$EXTRA_PYTHONPATH"} \
   ${EXTRA_PYTEST_PLUGINS:+PYTEST_PLUGINS="$EXTRA_PYTEST_PLUGINS"} \
   "$PYTHON" "$SCRIPT_DIR/run_tests_parallel.py" "$@"

@@ -6,7 +6,7 @@ author: community
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [MCP, Tools, API, Integrations, Interop]
     homepage: https://mcporter.dev
 prerequisites:

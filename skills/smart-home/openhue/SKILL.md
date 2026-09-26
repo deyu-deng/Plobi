@@ -6,7 +6,7 @@ author: community
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [Smart-Home, Hue, Lights, IoT, Automation]
     homepage: https://www.openhue.io/cli
 prerequisites:

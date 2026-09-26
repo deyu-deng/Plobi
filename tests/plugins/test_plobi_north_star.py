@@ -20,13 +20,13 @@ def _plugin_dir() -> Path:
 
 
 def _load_plugin():
-    name = "hermes_plugins.plobi_north_star"
+    name = "plobi_plugins.plobi_north_star"
     if name in sys.modules and hasattr(sys.modules[name], "register"):
         return sys.modules[name]
-    if "hermes_plugins" not in sys.modules:
-        ns = types.ModuleType("hermes_plugins")
+    if "plobi_plugins" not in sys.modules:
+        ns = types.ModuleType("plobi_plugins")
         ns.__path__ = []  # type: ignore[attr-defined]
-        sys.modules["hermes_plugins"] = ns
+        sys.modules["plobi_plugins"] = ns
     plugin_dir = _plugin_dir()
     spec = importlib.util.spec_from_file_location(
         name,
@@ -44,9 +44,9 @@ def _load_plugin():
 
 @pytest.fixture()
 def tmp_home(tmp_path, monkeypatch):
-    home = tmp_path / "hermes"
+    home = tmp_path / "plobi"
     home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("PLOBI_HOME", str(home))
     monkeypatch.setenv("PLOBI_HID_MOCK", "1")
     return home
 
@@ -54,20 +54,20 @@ def tmp_home(tmp_path, monkeypatch):
 @pytest.fixture()
 def ns(tmp_home):
     mod = _load_plugin()
-    import hermes_plugins.plobi_north_star.lib.facade as facade  # type: ignore
+    import plobi_plugins.plobi_north_star.lib.facade as facade  # type: ignore
 
     facade._SERVICE = None
     return mod
 
 
 def test_public_export_is_narrow(ns):
-    from hermes_plugins.plobi_north_star.lib import __all__ as public
+    from plobi_plugins.plobi_north_star.lib import __all__ as public
 
     assert set(public) == {"NorthStar", "get_north_star"}
 
 
 def test_deep_tool_task_and_compute(ns, tmp_home):
-    from hermes_plugins.plobi_north_star import tools as T
+    from plobi_plugins.plobi_north_star import tools as T
 
     enq = json.loads(
         T.plobi(
@@ -98,7 +98,7 @@ def test_deep_tool_task_and_compute(ns, tmp_home):
 
 
 def test_stage_gate_via_facade(ns, tmp_home):
-    from hermes_plugins.plobi_north_star.lib.facade import get_north_star
+    from plobi_plugins.plobi_north_star.lib.facade import get_north_star
 
     svc = get_north_star()
     enq = svc.task("enqueue", goal="ship", risk="L1", domain="code", mirror_kanban=False)
@@ -111,8 +111,8 @@ def test_stage_gate_via_facade(ns, tmp_home):
 
 
 def test_night_blocks_high_risk(ns, tmp_home):
-    from hermes_plugins.plobi_north_star.lib.facade import get_north_star
-    from hermes_plugins.plobi_north_star.lib.queue import TaskStatus
+    from plobi_plugins.plobi_north_star.lib.facade import get_north_star
+    from plobi_plugins.plobi_north_star.lib.queue import TaskStatus
 
     svc = get_north_star()
     high = svc.task("enqueue", goal="publish", risk="L3", mirror_kanban=False)
@@ -124,7 +124,7 @@ def test_night_blocks_high_risk(ns, tmp_home):
 
 
 def test_preview_priority(ns, tmp_home):
-    from hermes_plugins.plobi_north_star.lib.facade import get_north_star
+    from plobi_plugins.plobi_north_star.lib.facade import get_north_star
 
     svc = get_north_star()
     svc.preview("push", title="res", priority="resource")
@@ -134,7 +134,7 @@ def test_preview_priority(ns, tmp_home):
 
 
 def test_learn_and_diagnose(ns, tmp_home):
-    from hermes_plugins.plobi_north_star.lib.facade import get_north_star
+    from plobi_plugins.plobi_north_star.lib.facade import get_north_star
 
     svc = get_north_star()
     for _ in range(3):

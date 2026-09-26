@@ -3,21 +3,21 @@
 每项目一个常驻 profile（底座 profiles 机制）；角色→模型路由配置化；
 独立会话；L2 直读 Mind 项目子树。
 
-注册表持久化在 ``$HERMES_HOME/plobi/projects.yaml``（profile-safe：一律走
-``get_hermes_home()``，不写死盘符）。格式::
+注册表持久化在 ``$PLOBI_HOME/plobi/projects.yaml``（profile-safe：一律走
+``get_plobi_home()``，不写死盘符）。格式::
 
     version: 1
     agents:
       agenda:
         role: l2_agenda
-        profile: l2-agenda          # 对应 hermes profile（省略 = 用 agent 名）
+        profile: l2-agenda          # 对应 plobi profile（省略 = 用 agent 名）
         provider: deepseek          # 可选覆盖默认路由；省略 = 用 DEFAULT_ROUTES
         model: deepseek-chat
         mind_subtree: Vault/projects/Plobi   # 相对 MIND_ROOT（L2 直读）
         skills: [morning-report, message-digest]
         description: 日程闭环 Agent
 
-``spawn`` 做三件事：确保 profile 存在（复用 ``hermes_cli.profiles.create_profile``）、
+``spawn`` 做三件事：确保 profile 存在（复用 ``plobi_cli.profiles.create_profile``）、
 把该 agent 的模型路由写进 profile 的 ``plobi/models.json``（ADR-0011 断言绿）、
 输出启动命令。路由断言 ``ModelRouter.assert_valid()`` 保证 L1≠L2 模型。
 """
@@ -87,16 +87,16 @@ def _normalize_category(raw: str | None) -> str:
 
 
 def default_path() -> Path:
-    """注册表文件路径：$HERMES_HOME/plobi/projects.yaml。"""
+    """注册表文件路径：$PLOBI_HOME/plobi/projects.yaml。"""
     override = os.environ.get("PLOBI_PROJECTS_CONFIG", "").strip()
     if override:
         return Path(override)
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / "projects.yaml"
 
 
@@ -106,7 +106,7 @@ class AgentEntry:
 
     name: str
     role: str = "l2_project"
-    profile: str = ""  # hermes profile 名；空 = 用 name
+    profile: str = ""  # plobi profile 名；空 = 用 name
     provider: str = ""  # 可选覆盖；空 = 默认路由
     model: str = ""  # 可选覆盖；空 = 默认路由
     mind_subtree: str = ""  # 相对 MIND_ROOT 的项目子树（L2 直读）
@@ -306,7 +306,7 @@ class AgentRegistry:
 
         把注册表条目标记 ``archived=True``（保留，列表默认不显示）。
         profile 目录的物理搬运由调用方（console router）在标记前后做，
-        因为路径解析依赖 ``hermes_cli.profiles`` —— registry 保持纯数据。
+        因为路径解析依赖 ``plobi_cli.profiles`` —— registry 保持纯数据。
         返回归档后的 entry；找不到则 ``RegistryError``。
         """
         entry = self.get(name)
@@ -356,7 +356,7 @@ class AgentRegistry:
     def router(self) -> "ModelRouter":
         """合并默认路由 + 注册表覆盖，返回 ModelRouter。
 
-        惰性 import 避免 hermes_cli 依赖方向问题。profile 级 models.json
+        惰性 import 避免 plobi_cli 依赖方向问题。profile 级 models.json
         由 ``spawn`` 写，这里只负责在默认路由之上叠加覆盖。
         """
         from plobi.routing import ModelRouter
@@ -439,14 +439,14 @@ class AgentRegistry:
             "role": entry.role,
             "profile": entry.profile_name,
             "profile_dir": str(profile_dir),
-            "command": f"hermes -p {entry.profile_name} chat",
+            "command": f"plobi -p {entry.profile_name} chat",
             "routing_ok": True,
         }
 
     def _ensure_profile(
         self, entry: AgentEntry, *, clone_from: Optional[str] = None
     ) -> Path:
-        from hermes_cli.profiles import (
+        from plobi_cli.profiles import (
             create_profile,
             get_profile_dir,
             profile_exists,
@@ -599,7 +599,7 @@ def ensure_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEnt
         existing = template
         spawned = True
 
-    from hermes_cli.profiles import profile_exists
+    from plobi_cli.profiles import profile_exists
 
     if not profile_exists(existing.profile_name):
         reg.spawn(existing.name)
@@ -614,7 +614,7 @@ def ensure_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEnt
                 existing.name,
             )
     try:
-        from hermes_cli.profiles import get_profile_dir
+        from plobi_cli.profiles import get_profile_dir
 
         l2_dir = get_profile_dir(existing.profile_name)
         ensure_aigw_provider(l2_dir)
@@ -639,7 +639,7 @@ DEFAULT_CLOUD_PROJECTS_ROOT = r"D:\Cloud\Projects"
 
 
 def _project_safe_id(raw: str) -> str:
-    """Project dir name -> hermes profile-safe id (``[a-zA-Z0-9_-]+``).
+    """Project dir name -> plobi profile-safe id (``[a-zA-Z0-9_-]+``).
 
     Falls back to a hex digest when the dir name is entirely punctuation, so
     the registry never carries an invalid identifier. The original raw name is
@@ -839,10 +839,10 @@ def ensure_mind_project_agents(
             spawn_result = reg.spawn(safe_id)
         except RegistryError as exc:
             logger.warning("plobi: spawn failed for %s: %s", safe_id, exc)
-        except Exception as exc:  # spawn may import hermes_cli (not in tests)
+        except Exception as exc:  # spawn may import plobi_cli (not in tests)
             logger.warning("plobi: spawn skipped for %s: %s", safe_id, exc)
         # WP-L2-DIET / 裁定 33.3: spawn 成功后立刻把 terminal / computer_use /
-        # code_execution / session_search / hermes-* 从该 profile config.yaml
+        # code_execution / session_search / plobi-* 从该 profile config.yaml
         # 剥掉。L2-agenda 不走这条路（保证 agenda 仍能 spawn terminal），它
         # 有自己的 ensure_l2_agenda_toolsets。
         if spawn_result and category in ("projects", "research"):
@@ -2040,7 +2040,7 @@ def run_secretary_ask(
     if intent == "write_briefing":
         try:
             ensure_aigw_provider()
-            from hermes_cli.profiles import get_profile_dir as _gpd
+            from plobi_cli.profiles import get_profile_dir as _gpd
 
             ensure_aigw_provider(_gpd(entry.profile_name))
         except Exception as exc:
@@ -2097,14 +2097,14 @@ def append_n3_dispatch(
 ) -> str:
     """Append user original + L1 briefing to the L2 profile's session store.
 
-    Reuses Hermes ``SessionDB.append_message`` (the same ``state.db`` WP-BE-3
+    Reuses Plobi ``SessionDB.append_message`` (the same ``state.db`` WP-BE-3
     maps onto ``GET /api/agents/:id/overview`` ``sessionId``). Does not copy
     the L1 transcript and does not create a parallel chat table.
     """
     import uuid
 
-    from hermes_cli.profiles import get_profile_dir
-    from hermes_state import SessionDB
+    from plobi_cli.profiles import get_profile_dir
+    from plobi_state import SessionDB
 
     profile_dir = get_profile_dir(entry.profile_name)
     db = SessionDB(db_path=profile_dir / "state.db")
@@ -2365,7 +2365,7 @@ def generate_morning_briefing(
 
 
 def ensure_aigw_provider(profile_dir: Path | str | None = None) -> bool:
-    """Register aigw as an OpenAI-compatible Hermes provider (base_url).
+    """Register aigw as an OpenAI-compatible Plobi provider (base_url).
 
     ``desktop-quotas.ts`` only affects the desktop model picker. L2 generation
     in the gateway must have ``providers.aigw.base_url`` (or custom_providers)
@@ -2374,9 +2374,9 @@ def ensure_aigw_provider(profile_dir: Path | str | None = None) -> bool:
     import yaml
 
     if profile_dir is None:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home()
+        root = get_plobi_home()
     else:
         root = Path(profile_dir)
 
@@ -2445,9 +2445,9 @@ L1_DROP_TOOLSETS = frozenset(
 )
 
 
-def _is_full_hermes_composite(name: str) -> bool:
-    """True for platform composites like ``hermes-cli`` that embed terminal/search."""
-    return name.startswith("hermes-")
+def _is_full_plobi_composite(name: str) -> bool:
+    """True for platform composites like ``plobi-cli`` that embed terminal/search."""
+    return name.startswith("plobi-")
 
 
 # 中收默认名单（对齐 docs/plobi/profiles/master/config.yaml，略宽于「只剩一个」）。
@@ -2517,7 +2517,7 @@ L1_SOUL_BLOCK = f"""{L1_SOUL_BEGIN}
 
 - 你是总秘书，不是工人。日程 / 项目 / 排天 / 待确认 **第一动作**只有 `plobi_secretary_ask`（含七个 intent：`refresh_agenda` / `write_briefing` / `mutate_agenda` / `query_agenda` / `decide_pending` / `project_status` / `plan_day`）。**不要**直接调 `plobi_master_dispatch` / `plobi_master_preview` / `plobi_master_status` / `plobi_master_approve` 抢活——那是 L1 派工到 kanban 的窄入口，不是日程/项目入口。
 - 不准调用 `memory` 工具（即使它还在活动 profile 的 toolsets 配置里也不准用；裁定 33.2 已把它从 L1 中收里拿掉）。日程/项目答案只能来自 `plobi_secretary_ask` 的工具回传。
-- 不准对 `D:\\Projects\\Plobi\\Code` 开 `terminal`「我去改产品」——WP-L2-DIET（裁定 33.3）已把项目 L2 的 `terminal` / `computer_use` / `code_execution` / `session_search` 和所有 `hermes-*` 复合工具集剥掉；L1 同样没有 terminal。需要改主树只能通过人批（你负责派工，不负责提交）。
+- 不准对 `D:\\Projects\\Plobi\\Code` 开 `terminal`「我去改产品」——WP-L2-DIET（裁定 33.3）已把项目 L2 的 `terminal` / `computer_use` / `code_execution` / `session_search` 和所有 `plobi-*` 复合工具集剥掉；L1 同样没有 terminal。需要改主树只能通过人批（你负责派工，不负责提交）。
 
 ## 查今天/明天/某天要把饭和觉一并念出来（WP-QUERY-DAY，硬规则，不可绕过）
 
@@ -2560,13 +2560,13 @@ def _strip_l1_soul_spans(text: str) -> str:
 def mid_narrow_toolset_names(names: list[str] | None) -> list[str]:
     """Rewrite a toolset name list for L1 mid-narrow (reversible)."""
     raw = [str(n) for n in (names or []) if str(n).strip()]
-    if not raw or any(_is_full_hermes_composite(n) for n in raw) or any(
+    if not raw or any(_is_full_plobi_composite(n) for n in raw) or any(
         n in L1_DROP_TOOLSETS for n in raw
     ):
         extras = [
             n
             for n in raw
-            if not _is_full_hermes_composite(n)
+            if not _is_full_plobi_composite(n)
             and n not in L1_DROP_TOOLSETS
             and n not in L1_MID_TOOLSETS
         ]
@@ -2594,8 +2594,8 @@ def apply_l1_mid_toolsets(config: dict) -> bool:
     for platform in ("cli", "gateway"):
         current = platforms.get(platform)
         as_list = list(current) if isinstance(current, list) else []
-        # Missing platform list falls back to hermes-cli at runtime — write mid.
-        next_list = mid_narrow_toolset_names(as_list if as_list else ["hermes-cli"])
+        # Missing platform list falls back to plobi-cli at runtime — write mid.
+        next_list = mid_narrow_toolset_names(as_list if as_list else ["plobi-cli"])
         if as_list != next_list:
             platforms[platform] = next_list
             changed = True
@@ -2603,8 +2603,8 @@ def apply_l1_mid_toolsets(config: dict) -> bool:
 
 
 # WP-L2-DIET / 裁定 33.3：项目 L2（不是 L2-agenda）必须没有 terminal /
-# 跑命令 / 截屏 / 会话搜索，也不带 hermes-* 复合工具集。L1 的中收逻辑把
-# ``hermes-cli`` / ``terminal`` / ``session_search`` 都视为污染源；这里
+# 跑命令 / 截屏 / 会话搜索，也不带 plobi-* 复合工具集。L1 的中收逻辑把
+# ``plobi-cli`` / ``terminal`` / ``session_search`` 都视为污染源；这里
 # 复用同一份口径，删掉得彻底——留 terminal 是把 L2 重新变回工人。
 L2_PROJECT_DROP_TOOLSETS = frozenset(
     {
@@ -2617,7 +2617,7 @@ L2_PROJECT_DROP_TOOLSETS = frozenset(
 
 
 def _filter_l2_project_toolsets(names) -> list[str]:
-    """Drop the diet list + every ``hermes-*`` composite from a name list.
+    """Drop the diet list + every ``plobi-*`` composite from a name list.
 
     Preserves any other name (file / web / skills / todo / clarify / …) in
     the original order so config diffs stay minimal. Returns a new list.
@@ -2625,13 +2625,13 @@ def _filter_l2_project_toolsets(names) -> list[str]:
     return [
         n
         for n in names
-        if not _is_full_hermes_composite(n) and n not in L2_PROJECT_DROP_TOOLSETS
+        if not _is_full_plobi_composite(n) and n not in L2_PROJECT_DROP_TOOLSETS
     ]
 
 
 def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
     """WP-L2-DIET: strip terminal / computer_use / code_execution /
-    session_search + every ``hermes-*`` composite from a project L2
+    session_search + every ``plobi-*`` composite from a project L2
     profile's ``config.yaml``.
 
     Touches both the top-level ``toolsets`` and the per-platform
@@ -2767,13 +2767,13 @@ def _diet_existing_l2_project(entry: "AgentEntry") -> None:
     if not profile_name:
         return
     try:
-        from hermes_cli.profiles import get_profile_dir, profile_exists
+        from plobi_cli.profiles import get_profile_dir, profile_exists
 
         if not profile_exists(profile_name):
             return
         apply_l2_project_diet(get_profile_dir(profile_name))
     except Exception as exc:
-        # hermes_cli may not be importable in the test env; treat as a
+        # plobi_cli may not be importable in the test env; treat as a
         # silent no-op so the registry row stays visible.
         logger.debug("plobi: l2 diet (existing) skipped for %s: %s", entry.name, exc)
 
@@ -2794,7 +2794,7 @@ def _cwd_existing_l2_project(entry: "AgentEntry") -> None:
     if not profile_name:
         return
     try:
-        from hermes_cli.profiles import get_profile_dir, profile_exists
+        from plobi_cli.profiles import get_profile_dir, profile_exists
 
         if not profile_exists(profile_name):
             return
@@ -2806,7 +2806,7 @@ def _cwd_existing_l2_project(entry: "AgentEntry") -> None:
 def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
     """Keep terminal available on agenda L2 profiles (do not inherit L1 mid-narrow).
 
-    Reversible: only appends ``terminal`` when neither ``hermes-cli`` nor
+    Reversible: only appends ``terminal`` when neither ``plobi-cli`` nor
     ``terminal`` is listed. Never rewrites L1/default.
     """
     import yaml
@@ -2834,7 +2834,7 @@ def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
             platforms[platform] = listed
             changed = True
         names = [str(n) for n in listed]
-        if "hermes-cli" in names or "terminal" in names:
+        if "plobi-cli" in names or "terminal" in names:
             continue
         listed.append("terminal")
         changed = True
@@ -2842,7 +2842,7 @@ def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
     top = cfg.get("toolsets")
     if isinstance(top, list):
         names = [str(n) for n in top]
-        if "hermes-cli" not in names and "terminal" not in names:
+        if "plobi-cli" not in names and "terminal" not in names:
             top.append("terminal")
             changed = True
 
@@ -2856,9 +2856,9 @@ def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
 
 def ensure_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
     """Upsert soft-routing instructions into the active profile ``SOUL.md``."""
-    from hermes_constants import get_hermes_home
+    from plobi_constants import get_plobi_home
 
-    soul_path = Path(home) / "SOUL.md" if home is not None else get_hermes_home() / "SOUL.md"
+    soul_path = Path(home) / "SOUL.md" if home is not None else get_plobi_home() / "SOUL.md"
     existing = ""
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
@@ -2878,7 +2878,7 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
     L1 toolsets (drop terminal / session_search / command runners) and upserts
     soft-routing SOUL instructions. Idempotent and reversible via config lists.
     """
-    from hermes_cli.config import load_config, save_config
+    from plobi_cli.config import load_config, save_config
 
     config = load_config()
     changed = apply_l1_mid_toolsets(config)

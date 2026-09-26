@@ -18,11 +18,11 @@ const setModelAssignment = vi.fn()
 const getRecommendedDefaultModel = vi.fn()
 const saveMoaModels = vi.fn()
 const setEnvVar = vi.fn()
-const getHermesConfigRecord = vi.fn()
-const saveHermesConfig = vi.fn()
+const getPlobiConfigRecord = vi.fn()
+const savePlobiConfig = vi.fn()
 const startManualProviderOAuth = vi.fn()
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/plobi', () => ({
   getGlobalModelInfo: () => getGlobalModelInfo(),
   getGlobalModelOptions: () => getGlobalModelOptions(),
   getAuxiliaryModels: () => getAuxiliaryModels(),
@@ -31,8 +31,8 @@ vi.mock('@/hermes', () => ({
   getRecommendedDefaultModel: (slug: string) => getRecommendedDefaultModel(slug),
   saveMoaModels: (body: unknown) => saveMoaModels(body),
   setEnvVar: (key: string, value: string) => setEnvVar(key, value),
-  getHermesConfigRecord: () => getHermesConfigRecord(),
-  saveHermesConfig: (config: unknown) => saveHermesConfig(config)
+  getPlobiConfigRecord: () => getPlobiConfigRecord(),
+  savePlobiConfig: (config: unknown) => savePlobiConfig(config)
 }))
 
 vi.mock('@/store/onboarding', () => ({
@@ -60,8 +60,8 @@ beforeEach(() => {
   setModelAssignment.mockResolvedValue({ provider: 'nous', model: 'hermes-4', gateway_tools: [] })
   getRecommendedDefaultModel.mockResolvedValue({ provider: 'nous', model: 'hermes-4', free_tier: null })
   setEnvVar.mockResolvedValue({ ok: true })
-  getHermesConfigRecord.mockResolvedValue({ agent: { reasoning_effort: 'medium', service_tier: 'normal' } })
-  saveHermesConfig.mockResolvedValue({ ok: true })
+  getPlobiConfigRecord.mockResolvedValue({ agent: { reasoning_effort: 'medium', service_tier: 'normal' } })
+  savePlobiConfig.mockResolvedValue({ ok: true })
 })
 
 afterEach(() => {
@@ -93,13 +93,13 @@ describe('ModelSettings', () => {
 
   it('writes the profile default speed (service_tier) when the fast switch is toggled', async () => {
     await renderModelSettings()
-    await waitFor(() => expect(getHermesConfigRecord).toHaveBeenCalled())
+    await waitFor(() => expect(getPlobiConfigRecord).toHaveBeenCalled())
 
     const fastSwitch = await screen.findByRole('switch')
     fireEvent.click(fastSwitch)
 
     await waitFor(() =>
-      expect(saveHermesConfig).toHaveBeenCalledWith(
+      expect(savePlobiConfig).toHaveBeenCalledWith(
         expect.objectContaining({ agent: expect.objectContaining({ service_tier: 'fast' }) })
       )
     )
@@ -119,7 +119,7 @@ describe('ModelSettings', () => {
     })
 
     await renderModelSettings()
-    await waitFor(() => expect(getHermesConfigRecord).toHaveBeenCalled())
+    await waitFor(() => expect(getPlobiConfigRecord).toHaveBeenCalled())
 
     expect(screen.queryByRole('switch')).toBeNull()
   })

@@ -26,7 +26,7 @@ from agent.secret_scope import get_secret as _get_secret, is_multiplex_active
 # Ensure google-auth is installed before importing. The [vertex] extra is no
 # longer in [all] per the lazy-install policy added 2026-05-12 — lazy_deps
 # handles on-demand installation so the Vertex provider still works for users
-# who installed plain `hermes-agent` and only later selected a Gemini model.
+# who installed plain `plobi-agent` and only later selected a Gemini model.
 try:
     from tools.lazy_deps import ensure as _lazy_ensure
     _lazy_ensure("provider.vertex", prompt=False)
@@ -55,7 +55,7 @@ def _vertex_config() -> dict:
     directly at the call sites below, with config.yaml as the fallback.
     """
     try:
-        from hermes_cli.config import load_config
+        from plobi_cli.config import load_config
 
         section = load_config().get("vertex")
         return section if isinstance(section, dict) else {}

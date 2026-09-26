@@ -77,12 +77,12 @@ def _day(offset: int) -> str:
 
 @pytest.fixture()
 def secretary_home(tmp_path, monkeypatch):
-    """Isolate HERMES_HOME so a stray read/spawn can never touch the real home."""
+    """Isolate PLOBI_HOME so a stray read/spawn can never touch the real home."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    hermes = tmp_path / ".hermes"
-    hermes.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(hermes))
-    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(hermes / "plobi" / "projects.yaml"))
+    plobi = tmp_path / ".plobi"
+    plobi.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(plobi))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(plobi / "plobi" / "projects.yaml"))
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     return tmp_path
 
@@ -231,7 +231,7 @@ def test_query_does_not_spawn_l2_or_write_n3(secretary_home, tmp_path):
     out = run_query_agenda("今天有什么", range="today", pipeline=pipe)
 
     assert "sessionId" not in out
-    assert not (Path(secretary_home) / ".hermes" / "profiles").exists(), "查询不派工、不 spawn"
+    assert not (Path(secretary_home) / ".plobi" / "profiles").exists(), "查询不派工、不 spawn"
 
 
 # ---------------------------------------------------------------------------

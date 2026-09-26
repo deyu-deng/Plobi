@@ -17,7 +17,7 @@ P0-2: 把 L1 的压缩触发阈值从默认 0.50 拉到 0.35，让一条 L1 桌�
        审计与 ``tests/plobi/test_l1_budget.py`` 断言。
 
 判定 L1：**profile name 是 ``default``** 且 **plobi_north_star 工具集启用**。
-L2-agenda / L3 通常有自己的 hermes profile（不在 ``default``），自然不会被误伤。
+L2-agenda / L3 通常有自己的 plobi profile（不在 ``default``），自然不会被误伤。
 
 钩子位置：``on_session_start`` —— brand-new 会话创建后第一回合开头跑一次。
 agent 在 kwargs 里传入（``agent/conversation_loop.py`` 修改后提供），其它
@@ -46,8 +46,8 @@ L1_COMPRESSION_THRESHOLD: float = 0.35
 #: 与 ``plugins/plobi-north-star/__init__.py::TOOLSET`` 同名。
 L1_TOOLSET: str = "plobi_north_star"
 
-#: L1 默认 profile 名。``hermes_cli.profiles.get_active_profile_name`` 在
-#: ``HERMES_HOME`` 是 ``~/.hermes`` 或 ``~/.hermes/profiles/default/`` 时
+#: L1 默认 profile 名。``plobi_cli.profiles.get_active_profile_name`` 在
+#: ``PLOBI_HOME`` 是 ``~/.plobi`` 或 ``~/.plobi/profiles/default/`` 时
 #: 都返回这个字符串。L2/L3 用自定义 profile 名，自动豁免。
 L1_PROFILE_NAME: str = "default"
 
@@ -105,7 +105,7 @@ def _profile_name(agent: Any) -> Optional[str]:
         if isinstance(value, str) and value:
             return value
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from plobi_cli.profiles import get_active_profile_name
 
         return get_active_profile_name()
     except Exception:  # pragma: no cover - 解析失败按 None 计
@@ -115,7 +115,7 @@ def _profile_name(agent: Any) -> Optional[str]:
 def is_l1_default_profile(agent: Any) -> bool:
     """Return True iff ``agent`` 看起来是 default profile 上的 L1 总秘书。
 
-    判定纯读 agent 属性 + ``hermes_cli.profiles.get_active_profile_name``
+    判定纯读 agent 属性 + ``plobi_cli.profiles.get_active_profile_name``
     回落；不引入新 import 风暴。L2-agenda / L3 通常在自定义 profile 上
     （profile name != "default"），自动豁免。
     """

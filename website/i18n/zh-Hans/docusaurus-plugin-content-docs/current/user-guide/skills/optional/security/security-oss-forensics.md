@@ -17,7 +17,7 @@ GitHub 仓库的供应链调查、证据恢复与取证分析。
 
 | | |
 |---|---|
-| 来源 | 可选 — 通过 `hermes skills install official/security/oss-forensics` 安装 |
+| 来源 | 可选 — 通过 `plobi skills install official/security/oss-forensics` 安装 |
 | 路径 | `optional-skills/security/oss-forensics` |
 | 平台 | linux, macos, windows |
 
@@ -58,7 +58,7 @@ GitHub 仓库的供应链调查、证据恢复与取证分析。
 
 ---
 
-> **路径约定**：在本 skill 中，`SKILL_DIR` 指本 skill 安装目录的根目录（包含此 `SKILL.md` 的文件夹）。加载 skill 时，请将 `SKILL_DIR` 解析为实际路径——例如 `~/.hermes/skills/security/oss-forensics/` 或对应的 `optional-skills/` 路径。所有脚本和模板引用均相对于该目录。
+> **路径约定**：在本 skill 中，`SKILL_DIR` 指本 skill 安装目录的根目录（包含此 `SKILL.md` 的文件夹）。加载 skill 时，请将 `SKILL_DIR` 解析为实际路径——例如 `~/.plobi/skills/security/oss-forensics/` 或对应的 `optional-skills/` 路径。所有脚本和模板引用均相对于该目录。
 
 ## 阶段 0：初始化
 

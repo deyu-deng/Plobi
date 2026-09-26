@@ -1,4 +1,4 @@
-"""Load the plugin package the same way Hermes PluginManager does."""
+"""Load the plugin package the same way Plobi PluginManager does."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ from pathlib import Path
 
 
 def load_package():
-    """Return the loaded ``hermes_plugins.plobi_north_star`` module."""
-    name = "hermes_plugins.plobi_north_star"
+    """Return the loaded ``plobi_plugins.plobi_north_star`` module."""
+    name = "plobi_plugins.plobi_north_star"
     if name in sys.modules and hasattr(sys.modules[name], "register"):
         return sys.modules[name]
 
     root = Path(__file__).resolve().parent.parent
-    if "hermes_plugins" not in sys.modules:
-        ns = types.ModuleType("hermes_plugins")
+    if "plobi_plugins" not in sys.modules:
+        ns = types.ModuleType("plobi_plugins")
         ns.__path__ = []  # type: ignore[attr-defined]
-        sys.modules["hermes_plugins"] = ns
+        sys.modules["plobi_plugins"] = ns
 
     spec = importlib.util.spec_from_file_location(
         name,
@@ -37,6 +37,6 @@ def load_package():
 
 def get_north_star():
     load_package()
-    from hermes_plugins.plobi_north_star.lib.facade import get_north_star as _get
+    from plobi_plugins.plobi_north_star.lib.facade import get_north_star as _get
 
     return _get()

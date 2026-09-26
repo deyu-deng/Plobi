@@ -27,7 +27,7 @@ Webhook payload 包含攻击者可控的数据——PR 标题、commit 消息和
 
 ## 前提条件
 
-- Plobi Agent 已安装并运行（`hermes gateway`）
+- Plobi Agent 已安装并运行（`plobi gateway`）
 - [`gh` CLI](https://cli.github.com/) 已安装并在 gateway 主机上完成认证（`gh auth login`）
 - 你的 Plobi 实例有一个可公网访问的 URL（如果在本地运行，请参阅[使用 ngrok 进行本地测试](#local-testing-with-ngrok)）
 - 对 GitHub 仓库的管理员权限（管理 webhook 所需）
@@ -36,7 +36,7 @@ Webhook payload 包含攻击者可控的数据——PR 标题、commit 消息和
 
 ## 第一步——启用 webhook 平台
 
-在你的 `~/.hermes/config.yaml` 中添加以下内容：
+在你的 `~/.plobi/config.yaml` 中添加以下内容：
 
 ```yaml
 platforms:
@@ -88,7 +88,7 @@ platforms:
 | `deliver_extra.pr_number` | 从 payload 中解析为 PR 编号。 |
 
 :::note Payload 中不包含代码
-GitHub webhook payload 包含 PR 元数据（标题、描述、分支名、URL），但**不包含 diff**。上方的 prompt 指示 agent 运行 `gh pr diff` 来获取实际变更。`terminal` 工具已包含在默认的 `hermes-webhook` 工具集中，无需额外配置。
+GitHub webhook payload 包含 PR 元数据（标题、描述、分支名、URL），但**不包含 diff**。上方的 prompt 指示 agent 运行 `gh pr diff` 来获取实际变更。`terminal` 工具已包含在默认的 `plobi-webhook` 工具集中，无需额外配置。
 :::
 
 ---
@@ -96,7 +96,7 @@ GitHub webhook payload 包含 PR 元数据（标题、描述、分支名、URL�
 ## 第二步——启动 gateway
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
 你应该看到：
@@ -135,7 +135,7 @@ GitHub 会立即发送一个 `ping` 事件以确认连接。该事件会被安�
 要实时跟踪 agent 的进度：
 
 ```bash
-tail -f "${HERMES_HOME:-$HOME/.hermes}/logs/gateway.log"
+tail -f "${PLOBI_HOME:-$HOME/.plobi}/logs/gateway.log"
 ```
 
 ---
@@ -171,11 +171,11 @@ curl -s -X POST http://localhost:8644/webhooks/github-pr-review \
 
 然后观察 agent 运行：
 ```bash
-tail -f "${HERMES_HOME:-$HOME/.hermes}/logs/gateway.log"
+tail -f "${PLOBI_HOME:-$HOME/.plobi}/logs/gateway.log"
 ```
 
 :::note
-`hermes webhook test <name>` 仅适用于通过 `hermes webhook subscribe` 创建的**动态订阅**。它不读取 `config.yaml` 中的路由。
+`plobi webhook test <name>` 仅适用于通过 `plobi webhook subscribe` 创建的**动态订阅**。它不读取 `config.yaml` 中的路由。
 :::
 
 ---

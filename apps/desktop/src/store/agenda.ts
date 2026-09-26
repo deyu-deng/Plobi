@@ -1,12 +1,12 @@
 import { atom, computed } from 'nanostores'
 
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 /**
  * Agenda board state (AI-secretary M1).
  *
  * The backend owns the truth; this store is a render cache refreshed by a
- * short poll. Anything that mutates goes through `@/hermes` and then writes
+ * short poll. Anything that mutates goes through `@/plobi` and then writes
  * the server's answer back here — never optimistic-only.
  */
 

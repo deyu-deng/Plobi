@@ -266,7 +266,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
       return
     }
 
-    const desktop = window.hermesDesktop
+    const desktop = window.plobiDesktop
 
     if (!desktop || typeof desktop.onBootstrapEvent !== 'function') {
       return
@@ -369,7 +369,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
               </Button>
               <Button
                 onClick={() => {
-                  window.hermesDesktop?.openExternal?.(ups.docsUrl)
+                  window.plobiDesktop?.openExternal?.(ups.docsUrl)
                 }}
                 size="sm"
                 variant="ghost"
@@ -512,7 +512,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
                   setCancelling(true)
 
                   try {
-                    await window.hermesDesktop?.cancelBootstrap?.()
+                    await window.plobiDesktop?.cancelBootstrap?.()
                   } catch {
                     // ignore -- the failed/cancelled event will surface the result
                   }
@@ -533,7 +533,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
                 {copy.transcriptSaved}{' '}
-                <code className="font-mono text-(--ui-text-secondary)">%LOCALAPPDATA%\hermes\logs\</code>
+                <code className="font-mono text-(--ui-text-secondary)">%LOCALAPPDATA%\plobi\logs\</code>
               </span>
               <div className="flex gap-2">
                 <Button
@@ -564,7 +564,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
                     // and main short-circuits to the latched error without
                     // re-running install.ps1.
                     try {
-                      await window.hermesDesktop?.resetBootstrap?.()
+                      await window.plobiDesktop?.resetBootstrap?.()
                     } catch {
                       // best-effort -- continue with reload regardless
                     }

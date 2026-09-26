@@ -15,7 +15,7 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { HermesGateway } from '@/hermes'
+import type { PlobiGateway } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { requestModelOptions } from '@/lib/model-options'
 import {
@@ -44,7 +44,7 @@ import {
   $currentProvider,
   $currentReasoningEffort
 } from '@/store/session'
-import type { ModelOptionProvider, ModelOptionsResponse } from '@/types/hermes'
+import type { ModelOptionProvider, ModelOptionsResponse } from '@/types/plobi'
 
 import { ModelEditSubmenu, resolveFastControl } from './model-edit-submenu'
 import { humanizeProviders } from './model-provider-label'
@@ -55,7 +55,7 @@ import { humanizeProviders } from './model-provider-label'
 export const ModelMenuCloseContext = createContext<() => void>(() => {})
 
 interface ModelMenuPanelProps {
-  gateway?: HermesGateway
+  gateway?: PlobiGateway
   onSelectModel: (selection: { model: string; provider: string }) => Promise<boolean> | void
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
@@ -92,7 +92,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   })
 
   // Desktop-quota providers (Antigravity/…) route to the local aigw hub, so the
-  // gateway's `model.options` (which reports the Hermes default, not the user's
+  // gateway's `model.options` (which reports the Plobi default, not the user's
   // picked desktop-quota model) must not win the "current" highlight. When the
   // active provider is one of these, the sticky local selection is authoritative.
   const isDesktopQuota = isDesktopQuotaProvider(currentProvider)

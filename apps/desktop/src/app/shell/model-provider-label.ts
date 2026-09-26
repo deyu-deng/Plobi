@@ -1,4 +1,4 @@
-import type { ModelOptionProvider } from '@/types/hermes'
+import type { ModelOptionProvider } from '@/types/plobi'
 
 /**
  * R-017 — humanize the model selector. The gateway's /v1/models catalog speaks

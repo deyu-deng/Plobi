@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 import { liveSessionProjectId, type SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
-import type { HermesGitBranch } from '@/global'
+import type { PlobiGitBranch } from '@/global'
 import { translateNow } from '@/i18n'
 import { desktopDefaultCwd, selectDesktopPaths, writeDesktopFileText } from '@/lib/desktop-fs'
 import { desktopGit } from '@/lib/desktop-git'
@@ -12,7 +12,7 @@ import { setSidebarAgentsGrouped } from '@/store/layout'
 import { notify } from '@/store/notifications'
 import { requestFreshSession } from '@/store/profile'
 import { $selectedStoredSessionId, $sessions, workspaceCwdForNewSession } from '@/store/session'
-import type { ProjectInfo, ProjectsPayload } from '@/types/hermes'
+import type { ProjectInfo, ProjectsPayload } from '@/types/plobi'
 
 // First-class, per-profile Projects (named, multi-folder workspaces). State is
 // served by the live gateway's `projects.*` JSON-RPC methods, which wrap the
@@ -105,7 +105,7 @@ export const $reposScanning = atom(false)
 // chats land there, exactly as selecting a profile does.
 export const ALL_PROJECTS = '__all_projects__'
 
-const PROJECT_SCOPE_KEY = 'hermes.desktop.projectScope'
+const PROJECT_SCOPE_KEY = 'plobi.desktop.projectScope'
 
 export const $projectScope = persistentAtom<string>(PROJECT_SCOPE_KEY, ALL_PROJECTS, {
   decode: raw => raw || ALL_PROJECTS,
@@ -699,7 +699,7 @@ export async function startWorkInRepo(
 
 // Local branches for the composer's "convert a branch into a worktree" picker.
 // Empty on a remote backend / non-repo (the Electron probe can't run).
-export async function listRepoBranches(repoPath: string): Promise<HermesGitBranch[]> {
+export async function listRepoBranches(repoPath: string): Promise<PlobiGitBranch[]> {
   const git = desktopGit()
 
   if (!git?.branchList || !repoPath) {
@@ -776,14 +776,14 @@ export async function removeWorktreePath(
 // Reveal a project/worktree path in the OS file manager (git-GUI standard).
 export async function revealPath(path: null | string): Promise<void> {
   if (path) {
-    await window.hermesDesktop?.revealPath?.(path)
+    await window.plobiDesktop?.revealPath?.(path)
   }
 }
 
 // Copy a path to the clipboard (git-GUI standard).
 export async function copyPath(path: null | string): Promise<void> {
   if (path) {
-    await window.hermesDesktop?.writeClipboard?.(path)
+    await window.plobiDesktop?.writeClipboard?.(path)
   }
 }
 

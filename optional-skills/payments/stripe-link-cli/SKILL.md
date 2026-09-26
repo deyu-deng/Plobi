@@ -6,7 +6,7 @@ author: Teknium (teknium1), Plobi Agent
 license: MIT
 platforms: [linux, macos]
 metadata:
-  hermes:
+  plobi:
     tags: [Payments, Stripe, Link, Checkout, MPP]
     related_skills: [mpp-agent, stripe-projects]
 ---
@@ -161,10 +161,10 @@ rm -f /tmp/link-card.json
 `@stripe/link-cli --mcp` exposes the same commands as MCP tools over stdio. To register it with Plobi' native MCP:
 
 ```
-hermes mcp add stripe-link --command "npx" --args "@stripe/link-cli --mcp"
+plobi mcp add stripe-link --command "npx" --args "@stripe/link-cli --mcp"
 ```
 
-Then `hermes mcp list` should show `stripe-link`. The same approval rules apply — MCP doesn't bypass the Link app approval step.
+Then `plobi mcp list` should show `stripe-link`. The same approval rules apply — MCP doesn't bypass the Link app approval step.
 
 ## Pitfalls
 

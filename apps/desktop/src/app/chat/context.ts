@@ -1,7 +1,7 @@
 import type { ReadableAtom, WritableAtom } from 'nanostores'
 import { createContext, useContext } from 'react'
 
-import type { HermesGateway } from '@/hermes'
+import type { PlobiGateway } from '@/plobi'
 import type { ChatMessage } from '@/lib/chat-messages'
 import type { ComposerAttachment } from '@/store/composer'
 
@@ -36,7 +36,7 @@ export interface ChatContextValue {
   focusKey?: string | null
   maxRecordingSeconds?: number
   state: ChatBarState
-  gateway?: HermesGateway | null
+  gateway?: PlobiGateway | null
   queueSessionKey?: string | null
   sessionId?: string | null
   cwd?: string | null

@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-from cli import HermesCLI
+from cli import PlobiCLI
 
 
-def _make_cli() -> HermesCLI:
-    cli_obj = HermesCLI.__new__(HermesCLI)
+def _make_cli() -> PlobiCLI:
+    cli_obj = PlobiCLI.__new__(PlobiCLI)
     cli_obj.config = {}
     cli_obj.console = MagicMock()
     cli_obj.agent = None

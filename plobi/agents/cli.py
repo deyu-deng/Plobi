@@ -1,6 +1,6 @@
-"""``hermes plobi agents list/spawn`` CLI 处理逻辑。
+"""``plobi plobi agents list/spawn`` CLI 处理逻辑。
 
-薄壳 ``cmd_plobi``（在 hermes_cli/main.py）把 argparse 结果转发到这里。
+薄壳 ``cmd_plobi``（在 plobi_cli/main.py）把 argparse 结果转发到这里。
 表格/文案保持简洁，不发明样式。
 """
 
@@ -34,7 +34,7 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
 def run_plobi(args: Any) -> None:
     action = getattr(args, "plobi_action", None)
     if action is None:
-        print("usage: hermes plobi <agents> ...")
+        print("usage: plobi plobi <agents> ...")
         print("  agents list              list resident L2 agents")
         print("  agents register NAME     add/update a registry entry")
         print("  agents spawn NAME        materialize profile + model routing")
@@ -52,7 +52,7 @@ def _run_agents(args: Any) -> None:
     registry = load_registry(getattr(args, "registry", None))
 
     if sub in (None, ""):
-        print("usage: hermes plobi agents <list|register|spawn>")
+        print("usage: plobi plobi agents <list|register|spawn>")
         return
 
     if sub == "list":
@@ -70,7 +70,7 @@ def _list(registry: AgentRegistry) -> None:
     if not registry.agents:
         print("No resident agents registered.")
         print(f"Registry: {registry.path}")
-        print("Add one:  hermes plobi agents register <name> --role l2_agenda")
+        print("Add one:  plobi plobi agents register <name> --role l2_agenda")
         return
 
     problems = registry.routing_problems()
@@ -109,7 +109,7 @@ def _register(registry: AgentRegistry, args: Any) -> None:
     registry.save()
     print(f"Registered {name} (role={entry.role}, profile={entry.profile_name})")
     print(f"Registry: {registry.path}")
-    print(f"Materialize: hermes plobi agents spawn {name}")
+    print(f"Materialize: plobi plobi agents spawn {name}")
 
 
 def _spawn(registry: AgentRegistry, args: Any) -> None:

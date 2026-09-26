@@ -59,8 +59,8 @@ interface SessionStateCacheOptions {
 
 function syncRuntimeMetadataToView(state: ClientSessionState) {
   // Desktop-quota providers (Antigravity/…) route to the local aigw hub, not
-  // the Hermes backend; their session is only a transcript container and
-  // reports Hermes's default model/provider. Don't let it overwrite the sticky
+  // the Plobi backend; their session is only a transcript container and
+  // reports Plobi's default model/provider. Don't let it overwrite the sticky
   // local model/provider that drives routing.
   if (!isDesktopQuotaProvider($currentProvider.get())) {
     setCurrentModel(state.model ?? '')

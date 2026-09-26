@@ -6,9 +6,9 @@ description: "随 Plobi Agent 附带的内置技能目录"
 
 # 内置技能目录
 
-Plobi 附带一个大型内置技能库，安装时会复制到 `~/.hermes/skills/`。下方每个技能均链接至专属页面，包含完整定义、配置和用法说明。
+Plobi 附带一个大型内置技能库，安装时会复制到 `~/.plobi/skills/`。下方每个技能均链接至专属页面，包含完整定义、配置和用法说明。
 
-Plobi 在执行 `hermes update` 时也会同步内置技能，但同步清单会尊重本地删除和用户编辑。如果此处列出的某个技能在你的 `~/.hermes/skills/` 目录树中缺失，它仍随 Plobi 一同发布；可通过 `hermes skills reset <name> --restore` 恢复。
+Plobi 在执行 `plobi update` 时也会同步内置技能，但同步清单会尊重本地删除和用户编辑。如果此处列出的某个技能在你的 `~/.plobi/skills/` 目录树中缺失，它仍随 Plobi 一同发布；可通过 `plobi skills reset <name> --restore` 恢复。
 
 如果某个技能未出现在此列表中但存在于仓库中，目录由 `website/scripts/generate-skill-docs.py` 重新生成。
 
@@ -28,7 +28,7 @@ Plobi 在执行 `hermes update` 时也会同步内置技能，但同步清单会
 |-------|-------------|------|
 | [`claude-code`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code) | 将编码任务委托给 Claude Code CLI（功能开发、PR）。 | `autonomous-ai-agents/claude-code` |
 | [`codex`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex) | 将编码任务委托给 OpenAI Codex CLI（功能开发、PR）。 | `autonomous-ai-agents/codex` |
-| [`hermes-agent`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent) | 配置、扩展或贡献 Plobi Agent。 | `autonomous-ai-agents/hermes-agent` |
+| [`plobi-agent`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-plobi-agent) | 配置、扩展或贡献 Plobi Agent。 | `autonomous-ai-agents/plobi-agent` |
 | [`opencode`](/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode) | 将编码任务委托给 OpenCode CLI（功能开发、PR 审查）。 | `autonomous-ai-agents/opencode` |
 
 ## creative
@@ -163,9 +163,9 @@ Plobi 在执行 `hermes update` 时也会同步内置技能，但同步清单会
 
 | 技能 | 描述 | 路径 |
 |-------|-------------|------|
-| [`hermes-agent-skill-authoring`](/user-guide/skills/bundled/software-development/software-development-hermes-agent-skill-authoring) | 编写仓库内 SKILL.md：frontmatter、验证器、结构规范。 | `software-development/hermes-agent-skill-authoring` |
+| [`plobi-agent-skill-authoring`](/user-guide/skills/bundled/software-development/software-development-plobi-agent-skill-authoring) | 编写仓库内 SKILL.md：frontmatter、验证器、结构规范。 | `software-development/plobi-agent-skill-authoring` |
 | [`node-inspect-debugger`](/user-guide/skills/bundled/software-development/software-development-node-inspect-debugger) | 通过 --inspect + Chrome DevTools Protocol CLI 调试 Node.js。 | `software-development/node-inspect-debugger` |
-| [`plan`](/user-guide/skills/bundled/software-development/software-development-plan) | 计划模式：将 Markdown 计划写入 `.hermes/plans/`，不执行。 | `software-development/plan` |
+| [`plan`](/user-guide/skills/bundled/software-development/software-development-plan) | 计划模式：将 Markdown 计划写入 `.plobi/plans/`，不执行。 | `software-development/plan` |
 | [`python-debugpy`](/user-guide/skills/bundled/software-development/software-development-python-debugpy) | 调试 Python：pdb REPL + debugpy 远程调试（DAP）。 | `software-development/python-debugpy` |
 | [`requesting-code-review`](/user-guide/skills/bundled/software-development/software-development-requesting-code-review) | 提交前审查：安全扫描、质量门控、自动修复。 | `software-development/requesting-code-review` |
 | [`spike`](/user-guide/skills/bundled/software-development/software-development-spike) | 一次性实验，在正式构建前验证想法。 | `software-development/spike` |

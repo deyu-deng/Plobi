@@ -1,10 +1,10 @@
 # Plobi L1 (secretary) knobs — merge into the **active/default** profile
-# Copy relevant keys into $HERMES_HOME/config.yaml (usually the default profile).
-# Do NOT run `hermes profile create master` (ARCH-RULINGS 2026-09-04 裁定 6).
+# Copy relevant keys into $PLOBI_HOME/config.yaml (usually the default profile).
+# Do NOT run `plobi profile create master` (ARCH-RULINGS 2026-09-04 裁定 6).
 # L1 is the current activity profile; open toolset plobi_north_star there.
-# Register as the resident L1 via: hermes plobi agents register secretary
+# Register as the resident L1 via: plobi plobi agents register secretary
 #   --role l1_secretary --profile default --provider moonshot --model kimi-k3
-#   (or copy docs/plobi/profiles/projects.yaml to $HERMES_HOME/plobi/projects.yaml)
+#   (or copy docs/plobi/profiles/projects.yaml to $PLOBI_HOME/plobi/projects.yaml)
 # Intent: best available model, narrow tool surface, clean orchestrator context.
 # Contract: docs/plobi/north_star/GRILL_FREEZE.md; routing rationale: ADR-0011.
 

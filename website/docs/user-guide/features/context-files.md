@@ -1,26 +1,26 @@
 ---
 sidebar_position: 8
 title: "Context Files"
-description: "Project context files — .hermes.md, AGENTS.md, CLAUDE.md, global SOUL.md, and .cursorrules — automatically injected into every conversation"
+description: "Project context files — .plobi.md, AGENTS.md, CLAUDE.md, global SOUL.md, and .cursorrules — automatically injected into every conversation"
 ---
 
 # Context Files
 
-Plobi Agent automatically discovers and loads context files that shape how it behaves. Some are project-local and discovered from your working directory. `SOUL.md` is now global to the Plobi instance and is loaded from `HERMES_HOME` only.
+Plobi Agent automatically discovers and loads context files that shape how it behaves. Some are project-local and discovered from your working directory. `SOUL.md` is now global to the Plobi instance and is loaded from `PLOBI_HOME` only.
 
 ## Supported Context Files
 
 | File | Purpose | Discovery |
 |------|---------|-----------| 
-| **.hermes.md** / **HERMES.md** | Project instructions (highest priority) | Walks to git root |
+| **.plobi.md** / **PLOBI.md** | Project instructions (highest priority) | Walks to git root |
 | **AGENTS.md** | Project instructions, conventions, architecture | CWD at startup + subdirectories progressively |
 | **CLAUDE.md** | Claude Code context files (also detected) | CWD at startup + subdirectories progressively |
-| **SOUL.md** | Global personality and tone customization for this Plobi instance | `HERMES_HOME/SOUL.md` only |
+| **SOUL.md** | Global personality and tone customization for this Plobi instance | `PLOBI_HOME/SOUL.md` only |
 | **.cursorrules** | Cursor IDE coding conventions | CWD only |
 | **.cursor/rules/*.mdc** | Cursor IDE rule modules | CWD only |
 
 :::info Priority system
-Only **one** project context type is loaded per session (first match wins): `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`. **SOUL.md** is always loaded independently as the agent identity (slot #1).
+Only **one** project context type is loaded per session (first match wins): `.plobi.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`. **SOUL.md** is always loaded independently as the agent identity (slot #1).
 :::
 
 ## AGENTS.md
@@ -83,20 +83,20 @@ This is a Next.js 14 web application with a Python FastAPI backend.
 
 **Location:**
 
-- `~/.hermes/SOUL.md`
-- or `$HERMES_HOME/SOUL.md` if you run Plobi with a custom home directory
+- `~/.plobi/SOUL.md`
+- or `$PLOBI_HOME/SOUL.md` if you run Plobi with a custom home directory
 
 Important details:
 
 - Plobi seeds a default `SOUL.md` automatically if one does not exist yet
-- Plobi loads `SOUL.md` only from `HERMES_HOME`
+- Plobi loads `SOUL.md` only from `PLOBI_HOME`
 - Plobi does not probe the working directory for `SOUL.md`
 - If the file is empty, nothing from `SOUL.md` is added to the prompt
 - If the file has content, the content is injected verbatim after scanning and truncation
 
 ## .cursorrules
 
-Plobi is compatible with Cursor IDE's `.cursorrules` file and `.cursor/rules/*.mdc` rule modules. If these files exist in your project root and no higher-priority context file (`.hermes.md`, `AGENTS.md`, or `CLAUDE.md`) is found, they're loaded as the project context.
+Plobi is compatible with Cursor IDE's `.cursorrules` file and `.cursor/rules/*.mdc` rule modules. If these files exist in your project root and no higher-priority context file (`.plobi.md`, `AGENTS.md`, or `CLAUDE.md`) is found, they're loaded as the project context.
 
 This means your existing Cursor conventions automatically apply when using Plobi.
 
@@ -106,7 +106,7 @@ This means your existing Cursor conventions automatically apply when using Plobi
 
 Context files are loaded by `build_context_files_prompt()` in `agent/prompt_builder.py`:
 
-1. **Scan working directory** — checks for `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules` (first match wins)
+1. **Scan working directory** — checks for `.plobi.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules` (first match wins)
 2. **Content is read** — each file is read as UTF-8 text
 3. **Security scan** — content is checked for prompt injection patterns
 4. **Truncation** — files exceeding `context_file_max_chars` characters (default 20,000) are head/tail truncated (70% head, 20% tail, with a marker in the middle)

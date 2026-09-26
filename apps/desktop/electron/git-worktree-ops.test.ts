@@ -29,7 +29,7 @@ test('parseWorktrees: main checkout + linked worktree', () => {
     '',
     'worktree /repo/.worktrees/feat',
     'HEAD def456',
-    'branch refs/heads/hermes/feat',
+    'branch refs/heads/plobi/feat',
     ''
   ].join('\n')
 
@@ -39,7 +39,7 @@ test('parseWorktrees: main checkout + linked worktree', () => {
   assert.equal(trees[0].path, '/repo')
   assert.equal(trees[0].branch, 'main')
   assert.equal(trees[1].path, '/repo/.worktrees/feat')
-  assert.equal(trees[1].branch, 'hermes/feat')
+  assert.equal(trees[1].branch, 'plobi/feat')
 })
 
 test('parseWorktrees: detached + locked flags', () => {
@@ -57,7 +57,7 @@ test('parseWorktrees: empty input', () => {
 })
 
 test('ensureGitRepo: inits a plain dir with a root commit so worktrees branch', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-wt-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-wt-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
 
   try {
@@ -77,7 +77,7 @@ test('ensureGitRepo: inits a plain dir with a root commit so worktrees branch', 
 })
 
 test('switchBranch: switches a normal checkout branch', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-switch-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-switch-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
 
   try {
@@ -93,7 +93,7 @@ test('switchBranch: switches a normal checkout branch', async () => {
 })
 
 test('listBranches: lists locals and flags the checked-out branch', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-branches-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-branches-'))
 
   try {
     await ensureGitRepo('git', dir)
@@ -117,7 +117,7 @@ test('listBranches: lists locals and flags the checked-out branch', async () => 
 })
 
 test('listBranches: flags a free default branch as default, not checked out', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-branches-default-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-branches-default-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
 
   try {
@@ -137,7 +137,7 @@ test('listBranches: flags a free default branch as default, not checked out', as
 })
 
 test('listBranches: a branch claimed by a worktree is flagged checked out', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-branches-wt-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-branches-wt-'))
 
   try {
     await ensureGitRepo('git', dir)
@@ -157,7 +157,7 @@ test('listBranches: a branch claimed by a worktree is flagged checked out', asyn
 })
 
 test('listBranches: empty on a non-repo path', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-nonrepo-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-nonrepo-'))
 
   try {
     assert.deepEqual(await listBranches(dir, 'git'), [])
@@ -167,7 +167,7 @@ test('listBranches: empty on a non-repo path', async () => {
 })
 
 test('addWorktree: existingBranch checks the branch out without a new branch', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-convert-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-convert-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
 
   try {
@@ -192,7 +192,7 @@ test('addWorktree: existingBranch checks the branch out without a new branch', a
 })
 
 test('addWorktree: existing default branch switches the main checkout, not .worktrees/main', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-convert-default-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-convert-default-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
 
   try {

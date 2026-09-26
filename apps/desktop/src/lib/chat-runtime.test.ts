@@ -13,7 +13,7 @@ import {
   sessionTitle,
   toBranchableMessageRepository
 } from './chat-runtime'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/plobi'
 
 describe('sessionTitle (WP-UI-NO-INTERNALS)', () => {
   const session = (title: null | string, preview: null | string = null) => ({ preview, title }) as SessionInfo

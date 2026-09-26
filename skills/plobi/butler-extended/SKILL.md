@@ -5,7 +5,7 @@ version: 0.2.0
 author: Plobi
 license: MIT
 metadata:
-  hermes:
+  plobi:
     tags: [plobi, butler, email, calendar, disk]
 ---
 
@@ -15,5 +15,5 @@ metadata:
 
 1. `plobi` `area=ops` `action=domain_list` kind=butler.
 2. Enqueue with domain default_risk via `area=task` `action=enqueue`.
-3. Prefer existing Hermes/Mind integrations for mail/calendar when present.
+3. Prefer existing Plobi/Mind integrations for mail/calendar when present.
 4. Destructive disk ops need approval (L2+).

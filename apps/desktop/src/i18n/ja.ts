@@ -69,7 +69,7 @@ export const ja = defineLocale({
       loadingSettings: 'Plobi の設定を読み込み中',
       loadingSessions: '最近のセッションを読み込み中',
       startingDesktopConnection: 'デスクトップ接続を開始中',
-      startingHermesDesktop: 'Plobi Desktop を起動中…'
+      startingPlobiDesktop: 'Plobi Desktop を起動中…'
     },
     errors: {
       backgroundExited: 'Plobi バックグラウンドプロセスが終了しました。',
@@ -121,7 +121,7 @@ export const ja = defineLocale({
     backendOutOfDateMessage:
       'Plobi バックエンドがこのデスクトップビルドより古く、正常に動作しない場合があります。更新して揃えてください。',
     installMethodUnsupportedTitle: 'サポート対象外のインストール方法',
-    updateHermes: 'Plobi を更新',
+    updatePlobi: 'Plobi を更新',
     updateReadyTitle: '更新の準備ができました',
     updateReadyMessage: count => `${count} 件の新しい変更が利用可能です。`,
     seeWhatsNew: '新機能を見る',
@@ -643,7 +643,7 @@ export const ja = defineLocale({
         `"${profile}" がアクティブプロファイルのときのみ使用される接続。ローカルに設定するとデフォルトを継承します。`,
       envOverrideTitle: '環境変数がこのデスクトップセッションを制御しています。',
       envOverrideDesc:
-        '保存された設定を使用するには HERMES_DESKTOP_REMOTE_URL と HERMES_DESKTOP_REMOTE_TOKEN の設定を解除してください。',
+        '保存された設定を使用するには PLOBI_DESKTOP_REMOTE_URL と PLOBI_DESKTOP_REMOTE_TOKEN の設定を解除してください。',
       localTitle: 'ローカルゲートウェイ',
       localDesc:
         'ローカルホストでプライベートな Plobi バックエンドを起動します。これがデフォルトで、オフラインでも動作します。',
@@ -652,7 +652,7 @@ export const ja = defineLocale({
         'このデスクトップシェルをリモートの Plobi バックエンドに接続します。ホスト型ゲートウェイは OAuth またはユーザー名とパスワードを使用します。自己ホスト型はセッショントークンを使用する場合があります。',
       remoteUrlTitle: 'リモート URL',
       remoteUrlDesc:
-        'リモートダッシュボードバックエンドのベース URL。/hermes などのパスプレフィックスもサポートしています。',
+        'リモートダッシュボードバックエンドのベース URL。/plobi などのパスプレフィックスもサポートしています。',
       probing: 'このゲートウェイの認証方法を確認中…',
       probeError: 'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
       signedIn: 'サインイン済み',
@@ -919,7 +919,7 @@ export const ja = defineLocale({
     edit: '編集',
     archive: 'アーカイブ',
     skillArchivedTitle: 'スキルをアーカイブしました',
-    skillArchivedMessage: 'hermes curator restore で復元できます。'
+    skillArchivedMessage: 'plobi curator restore で復元できます。'
   },
 
   starmap: {
@@ -1070,10 +1070,10 @@ export const ja = defineLocale({
     noSessions: 'セッションはまだありません。',
     gatewayRunning: 'メッセージングゲートウェイが実行中',
     gatewayStopped: 'メッセージングゲートウェイが停止中',
-    hermesActiveSessions: (version, count) => `Plobi ${version} · アクティブセッション ${count}`,
+    plobiActiveSessions: (version, count) => `Plobi ${version} · アクティブセッション ${count}`,
     restartGateway: 'ゲートウェイを再起動',
     gatewayRestartFailed: 'ゲートウェイの再起動に失敗しました。',
-    updateHermes: 'Plobi を更新',
+    updatePlobi: 'Plobi を更新',
     actionRunning: '実行中',
     actionDone: '完了',
     actionFailed: '失敗',
@@ -1213,7 +1213,7 @@ export const ja = defineLocale({
       },
       MATRIX_HOMESERVER: { label: 'ホームサーバー URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'アクセストークン' },
-      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@plobi:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '許可する Matrix ユーザー ID',
         help: '推奨。@user:server 形式のカンマ区切りユーザー ID。'
@@ -1854,7 +1854,7 @@ export const ja = defineLocale({
       '/resume': '以前のセッションを再開',
       '/details': 'トランスクリプトの詳細レベルを制御',
       '/copy': '選択または最後のアシスタントメッセージをコピー',
-      '/quit': 'hermes を終了'
+      '/quit': 'plobi を終了'
     },
     hotkeyDescs: {
       'composer.mention': 'ファイル、フォルダー、URL、Git を参照',
@@ -2473,7 +2473,7 @@ export const ja = defineLocale({
       reject: '拒否',
       alwaysTitle: 'このコマンドを常に許可しますか？',
       alwaysDescription: pattern =>
-        `これにより "${pattern}" パターンが永続的な許可リスト (~/.hermes/config.yaml) に追加されます。Plobi はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
+        `これにより "${pattern}" パターンが永続的な許可リスト (~/.plobi/config.yaml) に追加されます。Plobi はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
       alwaysAllow: '常に許可'
     },
     clarify: {
@@ -2720,7 +2720,7 @@ export const ja = defineLocale({
       success: platform => `${platform} に引き継ぎました。いつでもここで再開できます。`,
       systemNote: platform => `↻ ${platform} に引き継ぎました — いつでもここで再開できます。`,
       failed: error => `引き継ぎに失敗しました: ${error}`,
-      timedOut: 'ゲートウェイの待機がタイムアウトしました。`hermes gateway` は起動していますか？'
+      timedOut: 'ゲートウェイの待機がタイムアウトしました。`plobi gateway` は起動していますか？'
     }
   },
 

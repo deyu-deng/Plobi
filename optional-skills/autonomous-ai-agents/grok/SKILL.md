@@ -6,9 +6,9 @@ author: Matt Maximo (MattMaximo), Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [Coding-Agent, Grok, xAI, Code-Review, Refactoring, Automation]
-    related_skills: [codex, claude-code, hermes-agent]
+    related_skills: [codex, claude-code, plobi-agent]
 ---
 
 # Grok Build CLI — Plobi Orchestration Guide

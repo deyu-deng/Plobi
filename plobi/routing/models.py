@@ -11,7 +11,7 @@ into something the code can enforce:
   classification, extraction and tool loops.
 - **L3** spends no tokens at all — it drives GUIs.
 
-Config: ``$HERMES_HOME/plobi/models.json`` (ids only; API keys stay in env,
+Config: ``$PLOBI_HOME/plobi/models.json`` (ids only; API keys stay in env,
 per AGENTS.md).
 """
 
@@ -58,11 +58,11 @@ def config_path() -> Path:
     if override:
         return Path(override)
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / "models.json"
 
 

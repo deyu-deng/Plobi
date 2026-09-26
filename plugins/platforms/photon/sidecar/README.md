@@ -20,7 +20,7 @@ cd plugins/platforms/photon/sidecar
 npm install
 ```
 
-The Plobi plugin's `hermes photon setup` command runs `npm install`
+The Plobi plugin's `plobi photon setup` command runs `npm install`
 here automatically.
 
 ## Run standalone

@@ -15,7 +15,7 @@ Plobi Agent 与 Telegram 集成，作为功能完整的对话机器人。连接�
 1. 打开 Telegram，搜索 **@BotFather**，或访问 [t.me/BotFather](https://t.me/BotFather)
 2. 发送 `/newbot`
 3. 选择一个**显示名称**（例如 "Plobi Agent"）——可以是任意名称
-4. 选择一个**用户名**——必须唯一且以 `bot` 结尾（例如 `my_hermes_bot`）
+4. 选择一个**用户名**——必须唯一且以 `bot` 结尾（例如 `my_plobi_bot`）
 5. BotFather 会回复你的 **API token**，格式如下：
 
 ```
@@ -116,14 +116,14 @@ Plobi Agent 使用 Telegram 数字用户 ID 来控制访问权限。你的用户
 ### 方式 A：交互式设置（推荐）
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 在提示时选择 **Telegram**。向导会询问你的机器人 token 和允许的用户 ID，然后为你写入配置。
 
 ### 方式 B：手动配置
 
-将以下内容添加到 `~/.hermes/.env`：
+将以下内容添加到 `~/.plobi/.env`：
 
 ```bash
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
@@ -133,7 +133,7 @@ TELEGRAM_ALLOWED_USERS=123456789    # 多个用户用逗号分隔
 ### 启动 Gateway
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
 机器人应在几秒内上线。在 Telegram 上向它发送消息以验证。
@@ -154,14 +154,14 @@ hermes gateway
 terminal:
   backend: docker
   docker_volumes:
-    - "/home/user/.hermes/cache/documents:/output"
+    - "/home/user/.plobi/cache/documents:/output"
 ```
 
 然后：
 
 - 在 Docker 内将文件写入 `/output/...`
 - 在 `MEDIA:` 中使用**宿主机可见**的路径，例如：
-  `MEDIA:/home/user/.hermes/cache/documents/report.txt`
+  `MEDIA:/home/user/.plobi/cache/documents/report.txt`
 
 如果你已有 `docker_volumes:` 部分，将新挂载添加到同一列表中。YAML 重复键会静默覆盖之前的值。
 
@@ -196,7 +196,7 @@ gateway 从 Agent 回复中提取 `MEDIA:/path/to/file` 标签，并将引用的
 
 ### 配置
 
-将以下内容添加到 `~/.hermes/.env`：
+将以下内容添加到 `~/.plobi/.env`：
 
 ```bash
 TELEGRAM_WEBHOOK_URL=https://my-app.fly.dev/telegram
@@ -266,7 +266,7 @@ TELEGRAM_PROXY=socks5://127.0.0.1:1080
 
 在任意 Telegram 聊天（私聊或群组）中使用 `/sethome` 命令，将其指定为**主频道**。定时任务（cron 任务）的结果会投递到此频道。
 
-也可以在 `~/.hermes/.env` 中手动设置：
+也可以在 `~/.plobi/.env` 中手动设置：
 
 ```bash
 TELEGRAM_HOME_CHANNEL=-1001234567890
@@ -299,7 +299,7 @@ TELEGRAM_CRON_THREAD_ID=<topic_thread_id>
 
 #### 跳过 STT：将原始音频文件传递给 Agent
 
-如果你希望由 **Agent 本身**处理音频——用于说话人分离、自定义转录工具或仅存档录音——请在 `~/.hermes/config.yaml` 中设置 `stt.enabled: false`：
+如果你希望由 **Agent 本身**处理音频——用于说话人分离、自定义转录工具或仅存档录音——请在 `~/.plobi/config.yaml` 中设置 `stt.enabled: false`：
 
 ```yaml
 stt:
@@ -309,7 +309,7 @@ stt:
 禁用 STT 后，gateway 仍会将语音/音频附件下载到 Plobi 的音频缓存中，但**不进行转录**。Agent 收到的消息带有如下标记：
 
 ```
-[The user sent a voice message: /home/<user>/.hermes/cache/audio/<hash>.ogg]
+[The user sent a voice message: /home/<user>/.plobi/cache/audio/<hash>.ogg]
 ```
 
 你的工具或技能可以直接读取该路径（例如，将其传递给本地说话人分离管道、更丰富的转录模型，或上传到长期存储）。文件扩展名反映 Telegram 投递的原始格式（语音备忘录为 `.ogg`，音频附件为 `.mp3`/`.m4a` 等）。
@@ -404,7 +404,7 @@ curl "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/getMe"
 
 ### 第四步：将 Plobi 指向本地服务器
 
-在 `~/.hermes/config.yaml` 的 `platforms.telegram.extra` 下添加 URL：
+在 `~/.plobi/config.yaml` 的 `platforms.telegram.extra` 下添加 URL：
 
 ```yaml
 platforms:
@@ -429,8 +429,8 @@ platforms:
 重启 gateway 并查找确认日志行：
 
 ```bash
-hermes gateway restart
-grep -E "Using custom Telegram base_url|Using Telegram local_mode" ~/.hermes/logs/gateway.log | tail
+plobi gateway restart
+grep -E "Using custom Telegram base_url|Using Telegram local_mode" ~/.plobi/logs/gateway.log | tail
 ```
 
 ### 第五步：`local_mode`——磁盘上的文件访问
@@ -459,10 +459,10 @@ telegram.error.InvalidToken: Not Found
 向机器人发送一个超过 20 MB 的语音备忘录或音频文件。查看 gateway 日志：
 
 ```bash
-tail -f ~/.hermes/logs/gateway.log | grep -iE "telegram|cache"
+tail -f ~/.plobi/logs/gateway.log | grep -iE "telegram|cache"
 ```
 
-你应该看到 `[Telegram] Cached user voice at /home/<user>/.hermes/cache/audio/...` 行，且**没有**"文件过大"拒绝。结合上方的 `stt.enabled: false`，原始音频文件的路径会出现在 Agent 的入站消息中，供下游处理使用。
+你应该看到 `[Telegram] Cached user voice at /home/<user>/.plobi/cache/audio/...` 行，且**没有**"文件过大"拒绝。结合上方的 `stt.enabled: false`，原始音频文件的路径会出现在 Agent 的入站消息中，供下游处理使用。
 
 ## 群聊使用
 
@@ -501,17 +501,17 @@ telegram:
 
 ```bash
 # 默认配置文件
-hermes gateway start
-hermes gateway status
-hermes gateway stop
+plobi gateway start
+plobi gateway status
+plobi gateway stop
 
 # 命名配置文件
-hermes -p research gateway start
-hermes -p research gateway status
-hermes -p research gateway stop
+plobi -p research gateway start
+plobi -p research gateway status
+plobi -p research gateway stop
 ```
 
-对于小型固定机器人集群，使用 shell 循环或脚本，对默认配置文件调用 `hermes gateway <action>`，对每个命名配置文件调用 `hermes -p <profile> gateway <action>`。这比假设单个进程级命令在每个服务管理器上控制所有命名配置文件更可靠。
+对于小型固定机器人集群，使用 shell 循环或脚本，对默认配置文件调用 `plobi gateway <action>`，对每个命名配置文件调用 `plobi -p <profile> gateway <action>`。这比假设单个进程级命令在每个服务管理器上控制所有命名配置文件更可靠。
 
 ### 故障排除：私聊正常但群组无响应
 
@@ -527,7 +527,7 @@ Telegram 群组和超级群组的负数聊天 ID 是正常的。如果你使用�
 
 ### 群组触发配置示例
 
-将以下内容添加到 `~/.hermes/config.yaml`：
+将以下内容添加到 `~/.plobi/config.yaml`：
 
 ```yaml
 telegram:
@@ -577,7 +577,7 @@ Telegram Bot API 9.4（2026 年 2 月）引入了**私聊话题**——机器人
 没有此设置，Plobi 会在启动时记录 `The chat is not a forum` 并跳过话题创建。这是 Telegram 客户端设置——机器人无法以编程方式启用它。
 :::
 
-在 `~/.hermes/config.yaml` 的 `platforms.telegram.extra.dm_topics` 下添加话题：
+在 `~/.plobi/config.yaml` 的 `platforms.telegram.extra.dm_topics` 下添加话题：
 
 ```yaml
 platforms:
@@ -718,7 +718,7 @@ gateway:
         disable_topic_auto_rename: true
 ```
 
-启用此标志后，Plobi 仍会生成内部会话标题（供 `hermes sessions`、TUI 等使用），但永远不会编辑 Telegram 话题名称。当你在 BotFather Threaded Mode 下手动整理话题，且不希望每次第一次回复都覆盖标题时，此功能很有用。
+启用此标志后，Plobi 仍会生成内部会话标题（供 `plobi sessions`、TUI 等使用），但永远不会编辑 Telegram 话题名称。当你在 BotFather Threaded Mode 下手动整理话题，且不希望每次第一次回复都覆盖标题时，此功能很有用。
 
 ### 话题内的 `/new`
 
@@ -767,7 +767,7 @@ Plobi 会确认会话标题，并重放最后一条助手消息以提供上下�
 如果你需要手动清理（例如跨多个聊天的批量重置），直接删除行：
 
 ```bash
-sqlite3 ~/.hermes/state.db \
+sqlite3 ~/.plobi/state.db \
   "UPDATE telegram_dm_topic_mode SET enabled = 0 WHERE chat_id = '<your_chat_id>'; \
    DELETE FROM telegram_dm_topic_bindings WHERE chat_id = '<your_chat_id>';"
 ```
@@ -790,7 +790,7 @@ sqlite3 ~/.hermes/state.db \
 
 ### 配置
 
-在 `~/.hermes/config.yaml` 的 `platforms.telegram.extra.group_topics` 下添加话题绑定：
+在 `~/.plobi/config.yaml` 的 `platforms.telegram.extra.group_topics` 下添加话题绑定：
 
 ```yaml
 platforms:
@@ -858,7 +858,7 @@ platforms:
 | `edit` | 对所有聊天类型使用旧版渐进式 `editMessageText` 轮询。 |
 | `off` | 完全禁用流式传输（仅最终回复，无渐进更新）。 |
 
-在 `~/.hermes/config.yaml` 中：
+在 `~/.plobi/config.yaml` 中：
 
 ```yaml
 gateway:
@@ -1065,7 +1065,7 @@ gateway:
 TELEGRAM_FALLBACK_IPS=149.154.167.220,149.154.167.221
 ```
 
-或在 `~/.hermes/config.yaml` 中：
+或在 `~/.plobi/config.yaml` 中：
 
 ```yaml
 platforms:
@@ -1098,10 +1098,10 @@ platforms:
 
 ```bash
 export HTTPS_PROXY=http://proxy.example.com:8080
-hermes gateway
+plobi gateway
 ```
 
-或添加到 `~/.hermes/.env`：
+或添加到 `~/.plobi/.env`：
 
 ```bash
 HTTPS_PROXY=http://proxy.example.com:8080
@@ -1169,10 +1169,10 @@ telegram:
 
 | 问题 | 解决方案 |
 |---------|----------|
-| 机器人完全不响应 | 验证 `TELEGRAM_BOT_TOKEN` 是否正确。检查 `hermes gateway` 日志中的错误。 |
+| 机器人完全不响应 | 验证 `TELEGRAM_BOT_TOKEN` 是否正确。检查 `plobi gateway` 日志中的错误。 |
 | 机器人回复"unauthorized" | 你的用户 ID 不在 `TELEGRAM_ALLOWED_USERS` 中。用 @userinfobot 再次确认。 |
 | 机器人忽略群组消息 | 隐私模式可能已开启。禁用它（第三步）或将机器人设为群组管理员。**记住更改隐私设置后要移除并重新添加机器人。** |
-| 语音消息未转录 | 验证 STT 是否可用：安装 `faster-whisper` 进行本地转录，或在 `~/.hermes/.env` 中设置 `GROQ_API_KEY` / `VOICE_TOOLS_OPENAI_KEY`。 |
+| 语音消息未转录 | 验证 STT 是否可用：安装 `faster-whisper` 进行本地转录，或在 `~/.plobi/.env` 中设置 `GROQ_API_KEY` / `VOICE_TOOLS_OPENAI_KEY`。 |
 | 语音回复是文件而非气泡 | 安装 `ffmpeg`（Edge TTS Opus 转换所需）。 |
 | 机器人 token 被撤销/无效 | 通过 BotFather 的 `/revoke` 然后 `/newbot` 或 `/token` 生成新 token。更新你的 `.env` 文件。 |
 | Webhook 未接收更新 | 验证 `TELEGRAM_WEBHOOK_URL` 是否可公开访问（用 `curl` 测试）。确保你的平台/反向代理将来自 URL 端口的入站 HTTPS 流量路由到 `TELEGRAM_WEBHOOK_PORT` 配置的本地监听端口（两者不需要是相同的数字）。确保 SSL/TLS 已激活——Telegram 只向 HTTPS URL 发送。检查防火墙规则。 |
@@ -1196,7 +1196,7 @@ telegram:
 
 点击按钮回答，或点击 **Other** 输入自由形式的回复（你发送的下一条消息成为答案）。开放式 `clarify` 调用（无预设选项）跳过按钮，直接捕获你的下一条消息。
 
-通过 `~/.hermes/config.yaml` 中的 `agent.clarify_timeout` 配置响应超时（默认 `600` 秒）。如果你在超时内没有响应，Agent 会以哨兵消息解除阻塞并适应，而不是挂起。
+通过 `~/.plobi/config.yaml` 中的 `agent.clarify_timeout` 配置响应超时（默认 `600` 秒）。如果你在超时内没有响应，Agent 会以哨兵消息解除阻塞并适应，而不是挂起。
 
 ## 推送通知音量
 
@@ -1207,7 +1207,7 @@ Telegram 对机器人发送的每条消息都会触发推送通知。对于发�
 | `important`（默认） | 只有**最终响应**、**审批 prompt** 和**斜杠命令确认**会响铃。工具进度、流式块和状态消息以 `disable_notification=true` 投递。 |
 | `all` | 每条出站消息都触发推送通知。旧版行为；如果你确实想听到每次工具调用，请选择此项。 |
 
-在 `~/.hermes/config.yaml` 中配置：
+在 `~/.plobi/config.yaml` 中配置：
 
 ```yaml
 display:
@@ -1219,7 +1219,7 @@ display:
 环境变量覆盖（便于快速 A/B 测试）：
 
 ```bash
-HERMES_TELEGRAM_NOTIFICATIONS=all
+PLOBI_TELEGRAM_NOTIFICATIONS=all
 ```
 
 未知值会记录警告并回退到 `important`。

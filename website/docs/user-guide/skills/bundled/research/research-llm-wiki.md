@@ -52,7 +52,7 @@ Use this skill when the user:
 
 ## Wiki Location
 
-**Location:** Set via `WIKI_PATH` environment variable (e.g. in `${HERMES_HOME:-~/.hermes}/.env`).
+**Location:** Set via `WIKI_PATH` environment variable (e.g. in `${PLOBI_HOME:-~/.plobi}/.env`).
 
 If unset, defaults to `~/wiki`.
 

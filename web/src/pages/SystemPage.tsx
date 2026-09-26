@@ -42,7 +42,7 @@ import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
 import { ConfirmDialog } from "@nous-research/ui/ui/components/confirm-dialog";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
-import { HermesConsoleModal } from "@/components/HermesConsoleModal";
+import { PlobiConsoleModal } from "@/components/PlobiConsoleModal";
 import { cn, themedBody } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type {
@@ -224,7 +224,7 @@ export default function SystemPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPath, setImportPath] = useState("");
   // Restore-from-backup is destructive (overwrites the live config) and the
-  // spawned `hermes import` runs non-interactively (stdin is /dev/null), so
+  // spawned `plobi import` runs non-interactively (stdin is /dev/null), so
   // its CLI "Continue? [y/N]" prompt would auto-abort. The dashboard owns the
   // consent: confirm here, then call the endpoint with force=true.
   const [importingBackup, setImportingBackup] = useState(false);
@@ -264,7 +264,7 @@ export default function SystemPage() {
       api.getPortal(),
       // Cached (non-forced) check so the version row shows update status on
       // load without a separate effect / a forced network round-trip.
-      api.checkHermesUpdate(false),
+      api.checkPlobiUpdate(false),
     ])
       .then(([s, st, m, p, c, h, cur, prt, upd]) => {
         if (s.status === "fulfilled") setStatus(s.value);
@@ -512,10 +512,10 @@ export default function SystemPage() {
   // ── Update check / apply ───────────────────────────────────────────
   const checkForUpdate = useCallback(
     async (force = false) => {
-      if (status?.can_update_hermes === false) return;
+      if (status?.can_update_plobi === false) return;
       setCheckingUpdate(true);
       try {
-        const info = await api.checkHermesUpdate(force);
+        const info = await api.checkPlobiUpdate(force);
         setUpdateInfo(info);
         if (force) {
           if (info.update_available) {
@@ -537,14 +537,14 @@ export default function SystemPage() {
         setCheckingUpdate(false);
       }
     },
-    [showToast, status?.can_update_hermes],
+    [showToast, status?.can_update_plobi],
   );
 
   // Auto-check (cached) runs inside loadAll on mount; this is the
   // user-triggered forced re-check from the "Check for updates" button.
   const applyUpdate = async () => {
     setUpdateConfirmOpen(false);
-    if (status?.can_update_hermes === false) {
+    if (status?.can_update_plobi === false) {
       showToast(
         "Plobi updates are managed outside this dashboard.",
         "success",
@@ -552,7 +552,7 @@ export default function SystemPage() {
       return;
     }
     try {
-      const resp = await api.updateHermes();
+      const resp = await api.updatePlobi();
       if (!resp.ok) {
         showToast(
           resp.message ??
@@ -561,7 +561,7 @@ export default function SystemPage() {
         );
         return;
       }
-      setActiveAction(resp.name ?? "hermes-update");
+      setActiveAction(resp.name ?? "plobi-update");
       showToast("Update started", "success");
     } catch (e) {
       showToast(`Update failed: ${e}`, "error");
@@ -637,7 +637,7 @@ export default function SystemPage() {
   }
 
   const gatewayRunning = status?.gateway_running;
-  const canUpdateHermes = status?.can_update_hermes !== false;
+  const canUpdatePlobi = status?.can_update_plobi !== false;
   const activeMemoryProvider = memory?.active
     ? memory.providers.find((provider) => provider.name === memory.active)
     : null;
@@ -659,14 +659,14 @@ export default function SystemPage() {
       />
 
       <ConfirmDialog
-        open={canUpdateHermes && updateConfirmOpen}
+        open={canUpdatePlobi && updateConfirmOpen}
         onCancel={() => setUpdateConfirmOpen(false)}
         onConfirm={() => void applyUpdate()}
         title="Update Plobi?"
         description={
           updateInfo && updateInfo.behind && updateInfo.behind > 0
-            ? `This will run 'hermes update' (${updateInfo.update_command}) and pull ${updateInfo.behind} new commit${updateInfo.behind === 1 ? "" : "s"}. The gateway restarts when the update finishes; the current session keeps its prompt cache until then.`
-            : `This will run 'hermes update' (${updateInfo?.update_command ?? "hermes update"}) and restart the gateway when it finishes.`
+            ? `This will run 'plobi update' (${updateInfo.update_command}) and pull ${updateInfo.behind} new commit${updateInfo.behind === 1 ? "" : "s"}. The gateway restarts when the update finishes; the current session keeps its prompt cache until then.`
+            : `This will run 'plobi update' (${updateInfo?.update_command ?? "plobi update"}) and restart the gateway when it finishes.`
         }
         confirmLabel="Update now"
       />
@@ -703,7 +703,7 @@ export default function SystemPage() {
         description="Remove this hook from config and revoke its consent? It stops firing on the next restart."
         loading={hookDelete.isDeleting}
       />
-      <HermesConsoleModal
+      <PlobiConsoleModal
         open={consoleOpen}
         onClose={() => setConsoleOpen(false)}
       />
@@ -848,8 +848,8 @@ export default function SystemPage() {
               <div>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">Plobi</div>
                 <div className="flex items-center gap-2">
-                  <span>v{stats?.hermes_version}</span>
-                  {canUpdateHermes &&
+                  <span>v{stats?.plobi_version}</span>
+                  {canUpdatePlobi &&
                     updateInfo &&
                     (updateInfo.update_available ? (
                       <Badge tone="warning">
@@ -910,7 +910,7 @@ export default function SystemPage() {
                 CPU / memory / disk metrics.
               </p>
             )}
-            {canUpdateHermes && (
+            {canUpdatePlobi && (
               <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
                 <Button
                   size="sm"
@@ -995,7 +995,7 @@ export default function SystemPage() {
             )}
             {!portal?.logged_in && (
               <p className="text-xs text-muted-foreground">
-                Log in with <span className="font-mono">hermes portal</span>.
+                Log in with <span className="font-mono">plobi portal</span>.
               </p>
             )}
           </CardContent>
@@ -1308,7 +1308,7 @@ export default function SystemPage() {
                   id="import-path"
                   value={importPath}
                   onChange={(e) => setImportPath(e.target.value)}
-                  placeholder="$HERMES_HOME/backups/hermes-backup.zip"
+                  placeholder="$PLOBI_HOME/backups/plobi-backup.zip"
                 />
               </div>
               <Button

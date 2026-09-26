@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Input } from '@/components/ui/input'
 import { RowButton } from '@/components/ui/row-button'
-import { getGlobalModelOptions } from '@/hermes'
+import { getGlobalModelOptions } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, KeyRound, Loader2 } from '@/lib/icons'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
@@ -26,7 +26,7 @@ import {
   setOnboardingMode,
   startProviderOAuth
 } from '@/store/onboarding'
-import type { ModelOptionProvider, OAuthProvider } from '@/types/hermes'
+import type { ModelOptionProvider, OAuthProvider } from '@/types/plobi'
 
 import { DocsLink, FlowPanel, Status } from './flow'
 import { FeaturedProviderRow, KeyProviderRow, PROVIDER_ROW_CLASS, ProviderRow, sortProviders } from './providers'
@@ -96,7 +96,7 @@ const API_KEY_OPTIONS: ApiKeyOption[] = [
 ]
 
 // Build the FULL API-key provider catalog from the backend model options so the
-// onboarding / Providers key form lists every `api_key` provider `hermes model`
+// onboarding / Providers key form lists every `api_key` provider `plobi model`
 // knows about — not just the hand-curated five. Curated entries keep their
 // richer copy + placeholders and float to the top (recommended defaults); every
 // other api_key provider is appended with a generic "paste {KEY}" affordance.
@@ -384,9 +384,9 @@ function Header() {
 }
 
 // No provider is hard-promoted as "recommended" — Plobi stays neutral and
-// lets the user pick. Was 'nous' (Nous Portal) in the upstream Hermes build.
+// lets the user pick. Was 'nous' (Nous Portal) in the upstream Plobi build.
 export const FEATURED_ID: string | null = null
-const SHOW_ALL_KEY = 'hermes-onboarding-show-all-v1'
+const SHOW_ALL_KEY = 'plobi-onboarding-show-all-v1'
 
 const readShowAll = () => {
   try {

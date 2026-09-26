@@ -156,7 +156,7 @@ def test_run_direct_pair_with_mock_ask(monkeypatch, tmp_path):
             "agenda": {"events": [{"title": "课"}]},
         }
 
-    monkeypatch.setattr(E, "hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(E, "plobi_home", lambda: tmp_path)
     monkeypatch.setattr(E, "agenda_state_db", lambda home=None: tmp_path / "state.db")
     monkeypatch.setattr(
         E,

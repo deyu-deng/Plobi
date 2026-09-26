@@ -1,4 +1,4 @@
-"""Persistent slash-command worker — one HermesCLI per TUI session.
+"""Persistent slash-command worker — one PlobiCLI per TUI session.
 
 Protocol: reads JSON lines from stdin {id, command}, writes {id, ok, output|error} to stdout.
 """
@@ -7,14 +7,14 @@ Protocol: reads JSON lines from stdin {id, command}, writes {id, ok, output|erro
 # from shadowing Plobi's own top-level modules.  This worker is spawned as
 # ``-m tui_gateway.slash_worker`` and inherits the user's CWD, so the ``import
 # cli`` below would otherwise resolve ``utils`` to a colliding local package
-# and crash the child in a retry loop (issue #51286).  ``hermes_bootstrap``
+# and crash the child in a retry loop (issue #51286).  ``plobi_bootstrap``
 # lives at the repo root, so importing it is safe before the guard runs (its
 # name won't collide with a user package), and it owns the canonical
 # path-hardening logic shared with the other entry points — #51693 added the
 # guard to ``entry.py``/``acp_adapter/entry.py`` but missed this child.
-import hermes_bootstrap
+import plobi_bootstrap
 
-hermes_bootstrap.harden_import_path()
+plobi_bootstrap.harden_import_path()
 
 import argparse
 import contextlib
@@ -28,14 +28,14 @@ import time
 import psutil
 
 import cli as cli_mod
-from cli import HermesCLI
+from cli import PlobiCLI
 from rich.console import Console
 
 # Env-overridable so the integration test can drive sub-second timing.
 def _env_float(name: str, default: float) -> float:
     """Parse a float env knob, falling back to ``default`` on absent/malformed
     values. A bare ``float(os.environ.get(...))`` would raise ValueError at
-    import time on a typo (e.g. ``HERMES_SLASH_WATCHDOG_POLL_S=2s``) and kill
+    import time on a typo (e.g. ``PLOBI_SLASH_WATCHDOG_POLL_S=2s``) and kill
     the worker before it can serve a single command."""
     raw = os.environ.get(name)
     if not raw:
@@ -46,8 +46,8 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-_WATCHDOG_POLL_S = max(0.05, _env_float("HERMES_SLASH_WATCHDOG_POLL_S", 2.0))
-_ORPHAN_GRACE_S = max(0.0, _env_float("HERMES_SLASH_WATCHDOG_GRACE_S", 5.0))
+_WATCHDOG_POLL_S = max(0.05, _env_float("PLOBI_SLASH_WATCHDOG_POLL_S", 2.0))
+_ORPHAN_GRACE_S = max(0.0, _env_float("PLOBI_SLASH_WATCHDOG_GRACE_S", 5.0))
 _in_flight = threading.Event()  # set while a command is executing
 
 
@@ -66,14 +66,14 @@ def _is_orphaned(original_ppid, parent_create_time, getppid=os.getppid) -> bool:
 
 
 def _prepare_slash_worker_runtime() -> None:
-    """Start bounded MCP discovery before HermesCLI snapshots tools.
+    """Start bounded MCP discovery before PlobiCLI snapshots tools.
 
-    Each slash_worker child is its own process — the parent ``hermes serve``
+    Each slash_worker child is its own process — the parent ``plobi serve``
     discovery thread does not populate this registry (issue #61891).
     """
     import logging
 
-    from hermes_cli.mcp_startup import (
+    from plobi_cli.mcp_startup import (
         start_background_mcp_discovery,
         wait_for_mcp_discovery,
     )
@@ -98,7 +98,7 @@ def _start_parent_death_watchdog(original_ppid, parent_create_time) -> None:
     threading.Thread(target=_loop, daemon=True).start()
 
 
-def _run(cli: HermesCLI, command: str) -> str:
+def _run(cli: PlobiCLI, command: str) -> str:
     cmd = (command or "").strip()
     if not cmd:
         return ""
@@ -139,10 +139,10 @@ def main():
     p.add_argument("--model", default="")
     args = p.parse_args()
 
-    os.environ["HERMES_SESSION_KEY"] = args.session_key
-    os.environ["HERMES_INTERACTIVE"] = "1"
+    os.environ["PLOBI_SESSION_KEY"] = args.session_key
+    os.environ["PLOBI_INTERACTIVE"] = "1"
 
-    # Start before the (hundreds-of-ms) HermesCLI build — that window is itself
+    # Start before the (hundreds-of-ms) PlobiCLI build — that window is itself
     # an orphan risk if the gateway dies mid-spawn.
     orig_ppid = os.getppid()
     try:
@@ -153,7 +153,7 @@ def main():
     _prepare_slash_worker_runtime()
 
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        cli = HermesCLI(model=args.model or None, compact=True, resume=args.session_key, verbose=False)
+        cli = PlobiCLI(model=args.model or None, compact=True, resume=args.session_key, verbose=False)
 
     for raw in sys.stdin:
         line = raw.strip()

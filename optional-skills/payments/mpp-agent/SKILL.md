@@ -6,7 +6,7 @@ author: Teknium (teknium1), Plobi Agent
 license: MIT
 platforms: [linux, macos]
 metadata:
-  hermes:
+  plobi:
     tags: [Payments, MPP, HTTP-402, Tempo, Stripe]
     related_skills: [stripe-link-cli, stripe-projects]
 ---

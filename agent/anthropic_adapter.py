@@ -21,7 +21,7 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-from hermes_constants import get_hermes_home
+from plobi_constants import get_plobi_home
 from typing import Any, Dict, List, Optional, Tuple
 from utils import base_url_host_matches, normalize_proxy_env_vars
 
@@ -489,7 +489,7 @@ def _is_kimi_family_endpoint(base_url: str | None, model: str | None = None) -> 
 
     Used to decide whether to drop Anthropic's ``thinking`` kwarg and to
     preserve unsigned reasoning_content-derived thinking blocks on replay.
-    See hermes-agent#13848, #17057.
+    See plobi-agent#13848, #17057.
     """
     if _is_kimi_coding_endpoint(base_url):
         return True
@@ -518,7 +518,7 @@ def _is_deepseek_anthropic_endpoint(base_url: str | None) -> bool:
     policy used for Kimi's ``/coding`` endpoint.  The match is pinned to
     the ``/anthropic`` path so the OpenAI-compatible ``api.deepseek.com``
     base URL (which never reaches this adapter) is not misclassified.
-    See hermes-agent#16748.
+    See plobi-agent#16748.
     """
     if not base_url_host_matches(base_url or "", "api.deepseek.com"):
         return False
@@ -673,7 +673,7 @@ def _build_anthropic_client_with_bearer_hook(
     kwargs = {
         "timeout": timeout_obj,
         "http_client": http_client,
-        # Delegate retry to hermes's outer loop (honors Retry-After); the SDK
+        # Delegate retry to plobi's outer loop (honors Retry-After); the SDK
         # default max_retries=2 ignores it and double-retries. (#26293)
         "max_retries": 0,
         # The SDK requires *something* for api_key/auth_token. Our
@@ -760,7 +760,7 @@ def build_anthropic_client(
     _read_timeout = timeout if (isinstance(timeout, (int, float)) and timeout > 0) else 900.0
     kwargs = {
         "timeout": Timeout(timeout=float(_read_timeout), connect=10.0),
-        # Delegate all rate-limit / 5xx retry to hermes's outer conversation
+        # Delegate all rate-limit / 5xx retry to plobi's outer conversation
         # loop, which honors Retry-After. The SDK default (max_retries=2) uses
         # its own 1-2s backoff that ignores Retry-After and double-retries
         # inside our loop — burning request slots against a bucket that won't
@@ -861,7 +861,7 @@ def build_anthropic_bedrock_client(region: str):
     return _anthropic_sdk.AnthropicBedrock(
         aws_region=region,
         timeout=Timeout(timeout=900.0, connect=10.0),
-        # Delegate retry to hermes's outer loop (honors Retry-After); the SDK
+        # Delegate retry to plobi's outer loop (honors Retry-After); the SDK
         # default max_retries=2 ignores it and double-retries. (#26293)
         max_retries=0,
         default_headers={"anthropic-beta": ",".join([*_COMMON_BETAS, _CONTEXT_1M_BETA])},
@@ -1236,7 +1236,7 @@ def _resolve_anthropic_pool_token() -> Optional[str]:
 
     Read-only: enumerates with ``clear_expired=False, refresh=False`` so a bare
     token *resolve* (which runs from diagnostic/read-only call sites such as
-    ``account_usage`` and ``hermes models``) never mutates ``~/.hermes/auth.json``
+    ``account_usage`` and ``plobi models``) never mutates ``~/.plobi/auth.json``
     or makes a network refresh call. Refresh-on-expiry is owned by the API call
     path's pool recovery, not the resolver.
     """
@@ -1279,7 +1279,7 @@ def resolve_anthropic_token() -> Optional[str]:
       2. CLAUDE_CODE_OAUTH_TOKEN env var
       3. Claude Code credentials (~/.claude.json or ~/.claude/.credentials.json)
          — with automatic refresh if expired and a refresh token is available
-      4. Anthropic credential_pool OAuth entry (~/.hermes/auth.json)
+      4. Anthropic credential_pool OAuth entry (~/.plobi/auth.json)
       5. ANTHROPIC_API_KEY env var (regular API key, or legacy fallback)
 
     Returns the token string or None.
@@ -1366,7 +1366,7 @@ def run_oauth_setup_token() -> Optional[str]:
 
 # ── Plobi-native PKCE OAuth flow ────────────────────────────────────────
 # Mirrors the flow used by Claude Code, pi-ai, and OpenCode.
-# Stores credentials in ~/.hermes/.anthropic_oauth.json (our own file).
+# Stores credentials in ~/.plobi/.anthropic_oauth.json (our own file).
 
 _OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 # Anthropic migrated the OAuth token endpoint to platform.claude.com;
@@ -1390,8 +1390,8 @@ _OAUTH_TOKEN_URL = _OAUTH_TOKEN_URLS[0]
 _OAUTH_TOKEN_USER_AGENT = "axios/1.7.9"
 _OAUTH_REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback"
 _OAUTH_SCOPES = "org:create_api_key user:profile user:inference"
-def _get_hermes_oauth_file() -> Path:
-    return get_hermes_home() / ".anthropic_oauth.json"
+def _get_plobi_oauth_file() -> Path:
+    return get_plobi_home() / ".anthropic_oauth.json"
 
 
 def _generate_pkce() -> tuple:
@@ -1407,7 +1407,7 @@ def _generate_pkce() -> tuple:
     return verifier, challenge
 
 
-def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
+def run_plobi_oauth_login_pure() -> Optional[Dict[str, Any]]:
     """Run Plobi-native OAuth PKCE flow and return credential state."""
     import secrets
     import time
@@ -1442,7 +1442,7 @@ def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
     print()
 
     try:
-        from hermes_cli.auth import _can_open_graphical_browser as _can_open_gui
+        from plobi_cli.auth import _can_open_graphical_browser as _can_open_gui
     except Exception:
         _can_open_gui = lambda: True  # noqa: E731 — degrade to prior behavior
 
@@ -1537,9 +1537,9 @@ def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
     }
 
 
-def read_hermes_oauth_credentials() -> Optional[Dict[str, Any]]:
-    """Read Plobi-managed OAuth credentials from ~/.hermes/.anthropic_oauth.json."""
-    oauth_file = _get_hermes_oauth_file()
+def read_plobi_oauth_credentials() -> Optional[Dict[str, Any]]:
+    """Read Plobi-managed OAuth credentials from ~/.plobi/.anthropic_oauth.json."""
+    oauth_file = _get_plobi_oauth_file()
     if oauth_file.exists():
         try:
             data = json.loads(oauth_file.read_text(encoding="utf-8"))
@@ -2006,7 +2006,7 @@ def _convert_assistant_message(m: Dict[str, Any]) -> Dict[str, Any]:
     # Kimi's /coding endpoint (Anthropic protocol) requires assistant
     # tool-call messages to carry reasoning_content when thinking is
     # enabled server-side.  Preserve it as a thinking block so Kimi
-    # can validate the message history.  See hermes-agent#13848.
+    # can validate the message history.  See plobi-agent#13848.
     #
     # Accept empty string "" — _copy_reasoning_content_for_api()
     # injects "" as a tier-3 fallback for Kimi tool-call messages
@@ -2163,7 +2163,7 @@ def _strip_orphaned_tool_blocks(result: List[Dict[str, Any]]) -> None:
         # Anthropic rejects the replayed turn with HTTP 400 "thinking blocks in
         # the latest assistant message cannot be modified".  Flag the turn so
         # _manage_thinking_signatures can demote the dead signature instead of
-        # replaying it verbatim.  See hermes-agent: extended-thinking + parallel
+        # replaying it verbatim.  See plobi-agent: extended-thinking + parallel
         # tool batch interrupted mid-flight → non-retryable 400 crash-loop.
         if len(kept) != len(m["content"]) and any(
             isinstance(b, dict) and b.get("type") in {"thinking", "redacted_thinking"}
@@ -2262,8 +2262,8 @@ def _manage_thinking_signatures(
     and will reject them outright.  Kimi's /coding and DeepSeek's /anthropic
     endpoints speak the Anthropic protocol upstream but require unsigned
     thinking blocks (synthesised from ``reasoning_content``) to round-trip on
-    replayed assistant tool-call messages.  See hermes-agent#13848 (Kimi) and
-    hermes-agent#16748 (DeepSeek).
+    replayed assistant tool-call messages.  See plobi-agent#13848 (Kimi) and
+    plobi-agent#16748 (DeepSeek).
 
     Mutates ``result`` in place.
     """
@@ -2544,7 +2544,7 @@ def build_anthropic_kwargs(
                 text = block.get("text", "")
                 text = text.replace("Plobi Agent", "Claude Code")
                 text = text.replace("Plobi agent", "Claude Code")
-                text = text.replace("hermes-agent", "claude-code")
+                text = text.replace("plobi-agent", "claude-code")
                 # The upstream brand name no longer appears in Plobi identity
                 # strings, so this replacement is intentionally removed.
                 block["text"] = text

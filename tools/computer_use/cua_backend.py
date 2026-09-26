@@ -14,7 +14,7 @@ Linux is the most recent runtime (X11 today, Wayland via XWayland; pure-
 Wayland progress tracked upstream). It is enabled in
 `check_computer_use_requirements` alongside macOS and Windows. The plumbing
 in this file is OS-agnostic; per-host gaps (no DISPLAY, missing AT-SPI,
-etc.) surface as specific blocked checks via `hermes computer-use doctor`
+etc.) surface as specific blocked checks via `plobi computer-use doctor`
 rather than failing silently.
 
 Install:
@@ -69,11 +69,11 @@ logger = logging.getLogger(__name__)
 # hardcoded version floor, which would rot and can't know what "latest" is.
 #
 # There is intentionally no version *pin* knob: the upstream installer always
-# fetches the latest release, so a `HERMES_CUA_DRIVER_VERSION` env var would
+# fetches the latest release, so a `PLOBI_CUA_DRIVER_VERSION` env var would
 # only have *looked* like it pinned. For a reproducible version, point
-# `HERMES_CUA_DRIVER_CMD` at a specific binary instead.
+# `PLOBI_CUA_DRIVER_CMD` at a specific binary instead.
 
-_CUA_DRIVER_CMD = os.environ.get("HERMES_CUA_DRIVER_CMD", "cua-driver")
+_CUA_DRIVER_CMD = os.environ.get("PLOBI_CUA_DRIVER_CMD", "cua-driver")
 _CUA_DRIVER_ARGS = ["mcp"]  # stdio MCP transport (fallback when the
                             # driver doesn't expose `manifest` — see
                             # `_resolve_mcp_invocation` below)
@@ -115,7 +115,7 @@ def _cua_telemetry_disabled() -> bool:
     privacy-preserving default of telemetry disabled.
     """
     try:
-        from hermes_cli.config import load_config
+        from plobi_cli.config import load_config
 
         cfg = load_config() or {}
         cu = cfg.get("computer_use") or {}
@@ -148,7 +148,7 @@ def _resolve_mcp_invocation(
 ) -> Tuple[str, List[str]]:
     """Return ``(command, args)`` that spawn cua-driver's stdio MCP server.
 
-    Surface 8 of NousResearch/hermes-agent#47072: instead of hardcoding
+    Surface 8 of NousResearch/plobi-agent#47072: instead of hardcoding
     ``["mcp"]`` we ask the driver itself via ``cua-driver manifest``
     (trycua/cua#1961). The manifest carries a stable ``mcp_invocation``
     pointer with both ``command`` and ``args``, so a future cua-driver
@@ -234,7 +234,7 @@ def _is_macos() -> bool:
 
 
 def cua_driver_binary_available() -> bool:
-    """True if `cua-driver` is on $PATH or HERMES_CUA_DRIVER_CMD resolves."""
+    """True if `cua-driver` is on $PATH or PLOBI_CUA_DRIVER_CMD resolves."""
     return bool(shutil.which(_CUA_DRIVER_CMD))
 
 
@@ -289,7 +289,7 @@ def cua_driver_update_nudge() -> Optional[str]:
     current = state.get("current_version") or "?"
     return (
         f"cua-driver {latest} is available (you have {current}); "
-        f"update with `hermes computer-use install --upgrade`."
+        f"update with `plobi computer-use install --upgrade`."
     )
 
 
@@ -331,10 +331,10 @@ def cua_driver_install_hint() -> str:
         )
     return (
         "cua-driver is not installed. Install with one of:\n"
-        "  hermes computer-use install\n"
+        "  plobi computer-use install\n"
         "Or run the upstream installer directly:\n"
         f"{installer}\n"
-        "Or run `hermes tools` and enable the Computer Use toolset to install it automatically."
+        "Or run `plobi tools` and enable the Computer Use toolset to install it automatically."
     )
 
 
@@ -367,7 +367,7 @@ def _parse_elements_from_tree(markdown: str) -> List[UIElement]:
 
 
 def _parse_elements_from_structured(raw_elements: List[Dict[str, Any]]) -> List[UIElement]:
-    """Surface 2 of NousResearch/hermes-agent#47072: read the canonical
+    """Surface 2 of NousResearch/plobi-agent#47072: read the canonical
     ``structuredContent.elements`` array cua-driver-rs emits on every
     ``get_window_state`` response (trycua/cua#1961).
 
@@ -565,7 +565,7 @@ class _CuaDriverSession:
         self._session = None
         self._lock = threading.Lock()
         self._started = False
-        # Surface 4 of NousResearch/hermes-agent#47072: per-tool
+        # Surface 4 of NousResearch/plobi-agent#47072: per-tool
         # capability-token sets, populated from `tools/list` at session
         # init. Keys are tool names (e.g. "click", "get_window_state");
         # values are sets of capability strings (e.g.
@@ -728,12 +728,12 @@ class _CuaDriverSession:
             # passes but the wrapper times out" reports are undiagnosable
             # from a bare "never reached ready".
             phase = getattr(self, "_startup_phase", "unknown")
-            from hermes_constants import display_hermes_home
+            from plobi_constants import display_plobi_home
             raise RuntimeError(
                 "cua-driver session never reached ready (timeout 30s; "
                 f"stuck in phase: {phase}). "
-                "Run `hermes computer-use doctor` and check "
-                f"{display_hermes_home()}/logs/agent.log for the phase timings."
+                "Run `plobi computer-use doctor` and check "
+                f"{display_plobi_home()}/logs/agent.log for the phase timings."
             )
         # If setup failed, the lifecycle coroutine set _setup_error
         # before setting _ready_event. Re-raise it on the caller's thread.
@@ -1034,7 +1034,7 @@ def _extract_tool_result(mcp_result: Any) -> Dict[str, Any]:
 
     `image_mime_types` is the explicit `mimeType` cua-driver emits on every
     image part as of trycua/cua#1961 (Surface 7 of
-    NousResearch/hermes-agent#47072). Each entry corresponds index-for-index
+    NousResearch/plobi-agent#47072). Each entry corresponds index-for-index
     with `images`; an empty string entry signals the part carried no
     mimeType (older cua-driver build), and the caller should fall back to
     base64-prefix sniffing.
@@ -1158,7 +1158,7 @@ class CuaDriverBackend(ComputerUseBackend):
         self._active_pid: Optional[int] = None
         self._active_window_id: Optional[int] = None
         self._last_app: Optional[str] = None  # last app name targeted via capture/focus_app
-        # Surface 6 of NousResearch/hermes-agent#47072: per-snapshot
+        # Surface 6 of NousResearch/plobi-agent#47072: per-snapshot
         # `element_index -> element_token` map populated on capture().
         # Action tools (click/scroll/set_value/...) attach the matching
         # token alongside `element_index` so cua-driver detects "stale"
@@ -1183,7 +1183,7 @@ class CuaDriverBackend(ComputerUseBackend):
         # unknown to the driver (older builds), the tool calls
         # degrade to the anonymous / unsynced path documented in the
         # MCP server instructions.
-        self._session_id: str = f"hermes-{uuid.uuid4().hex[:12]}"
+        self._session_id: str = f"plobi-{uuid.uuid4().hex[:12]}"
 
     # ── Lifecycle ──────────────────────────────────────────────────
     def start(self) -> None:
@@ -1247,11 +1247,11 @@ class CuaDriverBackend(ComputerUseBackend):
     def capture(self, mode: str = "som", app: Optional[str] = None) -> CaptureResult:
         """Capture the frontmost on-screen window (optionally filtered by app name).
 
-        Maps hermes `capture(mode, app)` → cua-driver `list_windows` +
+        Maps plobi `capture(mode, app)` → cua-driver `list_windows` +
         `get_window_state` (ax/som) or `screenshot` (vision).
         """
         # Step 1: enumerate on-screen windows to find target pid/window_id.
-        # Surface 3 of NousResearch/hermes-agent#47072: read the canonical
+        # Surface 3 of NousResearch/plobi-agent#47072: read the canonical
         # `structuredContent.windows` array directly. Pre-fix the wrapper
         # also kept a text-line regex (`_WINDOW_LINE_RE`) as a fallback for
         # cua-driver builds that predated structuredContent; the supersede
@@ -1512,7 +1512,7 @@ class CuaDriverBackend(ComputerUseBackend):
             # Parse element count from summary e.g. "✅ AppName — 42 elements, turn 3..."
             m = re.search(r'(\d+)\s+elements?', summary)
 
-            # Surface 2 of NousResearch/hermes-agent#47072: prefer the
+            # Surface 2 of NousResearch/plobi-agent#47072: prefer the
             # canonical structuredContent.elements array (trycua/cua#1961).
             # Falls back to markdown regex parsing for cua-driver builds
             # that didn't carry the structured shape — those bounds come
@@ -1586,7 +1586,7 @@ class CuaDriverBackend(ComputerUseBackend):
 
         # Choose tool by click_count only — single-vs-double — and pass the
         # button through to `click`'s `button` enum (Surface 5 of
-        # NousResearch/hermes-agent#47072). cua-driver-rs gained an explicit
+        # NousResearch/plobi-agent#47072). cua-driver-rs gained an explicit
         # `button: "left"|"right"|"middle"` arg on `click` in trycua/cua#1961
         # which rejects unknown buttons; before that, `middle` was silently
         # mapped to a left-click via name-routing through `right_click`.

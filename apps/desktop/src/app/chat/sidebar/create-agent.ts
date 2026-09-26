@@ -33,7 +33,7 @@ export function agentIdFromName(name: string): string {
  *
  * 2026-09-16: we now also send the typed `name` **as typed** (the backend reads
  * `body["name"]` into `display`). `id` stays the lowercased slug — it doubles as
- * the Hermes profile name — but the human's casing no longer disappears at the
+ * the Plobi profile name — but the human's casing no longer disappears at the
  * dialog. The rail still prints the id until the backend serves a display name
  * (handoff: `Docs/AGENT-TASK-AGENT-DISPLAY-NAME.md`).
  */

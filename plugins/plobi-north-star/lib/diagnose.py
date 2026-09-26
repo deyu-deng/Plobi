@@ -21,13 +21,13 @@ def scan_basic() -> List[Finding]:
     findings: List[Finding] = []
     # Queue file growth / HID mock mode as examples
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        home = get_hermes_home()
+        home = get_plobi_home()
     except Exception:
         from pathlib import Path
 
-        home = Path.home() / ".hermes"
+        home = Path.home() / ".plobi"
 
     tasks = home / "plobi" / "tasks.json"
     if tasks.exists() and tasks.stat().st_size > 2_000_000:
@@ -45,7 +45,7 @@ def scan_basic() -> List[Finding]:
             module="hid_worker",
             symptom="Calibrate Marvis focus hotkeys per host",
             severity="low",
-            proposal="Store per-host HID calibration under ~/.hermes/plobi/hid_calibration.json",
+            proposal="Store per-host HID calibration under ~/.plobi/plobi/hid_calibration.json",
             risk="L1_local_mutate",
         )
     )

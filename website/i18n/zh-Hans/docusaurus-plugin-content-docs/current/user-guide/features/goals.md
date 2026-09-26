@@ -24,7 +24,7 @@ description: "设置一个持续目标，让 Plobi 跨轮次持续工作直到�
 ## 快速开始
 
 ```
-/goal Fix every failing test in tests/hermes_cli/ and make sure scripts/run_tests.sh passes for that directory
+/goal Fix every failing test in tests/plobi_cli/ and make sure scripts/run_tests.sh passes for that directory
 ```
 
 你将看到：
@@ -106,7 +106,7 @@ agent 正在运行时，`/goal status`、`/goal pause` 和 `/goal clear` 可以�
 
 ## 配置
 
-在 `~/.hermes/config.yaml` 中添加：
+在 `~/.plobi/config.yaml` 中添加：
 
 ```yaml
 goals:

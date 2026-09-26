@@ -75,16 +75,16 @@ from acp_adapter.provenance import session_provenance_meta
 from acp_adapter.session import SessionManager, SessionState, _expand_acp_enabled_toolsets
 from acp_adapter.tools import build_tool_complete, build_tool_start
 from tools.approval import (
-    reset_hermes_interactive_context,
-    set_hermes_interactive_context,
+    reset_plobi_interactive_context,
+    set_plobi_interactive_context,
 )
 
 logger = logging.getLogger(__name__)
 
 try:
-    from hermes_cli import __version__ as HERMES_VERSION
+    from plobi_cli import __version__ as PLOBI_VERSION
 except Exception:
-    HERMES_VERSION = "0.0.0"
+    PLOBI_VERSION = "0.0.0"
 
 # Thread pool for running AIAgent (synchronous) in parallel.
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="acp-agent")
@@ -447,7 +447,7 @@ def _content_blocks_to_openai_user_content(
     return parts
 
 
-class HermesACPAgent(acp.Agent):
+class PlobiACPAgent(acp.Agent):
     """ACP Agent implementation wrapping Plobi AIAgent."""
 
     _SLASH_COMMANDS = {
@@ -586,7 +586,7 @@ class HermesACPAgent(acp.Agent):
         provider = getattr(state.agent, "provider", None) or detect_provider() or "openrouter"
 
         try:
-            from hermes_cli.models import curated_models_for_provider, normalize_provider, provider_label
+            from plobi_cli.models import curated_models_for_provider, normalize_provider, provider_label
 
             normalized_provider = normalize_provider(provider)
             provider_name = provider_label(normalized_provider)
@@ -649,7 +649,7 @@ class HermesACPAgent(acp.Agent):
         new_model = raw_model.strip()
 
         try:
-            from hermes_cli.models import detect_provider_for_model, parse_model_input
+            from plobi_cli.models import detect_provider_for_model, parse_model_input
 
             target_provider, new_model = parse_model_input(new_model, current_provider)
             if target_provider == current_provider:
@@ -717,16 +717,16 @@ class HermesACPAgent(acp.Agent):
     def _provenance_meta(
         self,
         acp_session_id: str,
-        current_hermes_session_id: str,
-        previous_hermes_session_id: Optional[str] = None,
+        current_plobi_session_id: str,
+        previous_plobi_session_id: Optional[str] = None,
     ) -> Optional[dict]:
-        """Best-effort ``_meta.hermes.sessionProvenance`` for an ACP session."""
+        """Best-effort ``_meta.plobi.sessionProvenance`` for an ACP session."""
         try:
             return session_provenance_meta(
                 self.session_manager._get_db(),
                 acp_session_id,
-                current_hermes_session_id,
-                previous_hermes_session_id=previous_hermes_session_id,
+                current_plobi_session_id,
+                previous_plobi_session_id=previous_plobi_session_id,
             )
         except Exception:
             logger.debug(
@@ -738,14 +738,14 @@ class HermesACPAgent(acp.Agent):
         self,
         session_id: str,
         *,
-        current_hermes_session_id: Optional[str] = None,
-        previous_hermes_session_id: Optional[str] = None,
+        current_plobi_session_id: Optional[str] = None,
+        previous_plobi_session_id: Optional[str] = None,
     ) -> None:
         """Send ACP native session metadata after Plobi changes it.
 
         When the internal Plobi head rotated (e.g. compression-driven session
-        split during a turn), pass ``previous_hermes_session_id`` so the
-        attached ``_meta.hermes.sessionProvenance`` flags the rotation reason.
+        split during a turn), pass ``previous_plobi_session_id`` so the
+        attached ``_meta.plobi.sessionProvenance`` flags the rotation reason.
         """
         if not self._conn:
             return
@@ -759,14 +759,14 @@ class HermesACPAgent(acp.Agent):
 
         title = row.get("title")
         # The `sessions` table does not have an `updated_at` column (see
-        # hermes_state.py schema — only started_at/ended_at). Use "now" as
+        # plobi_state.py schema — only started_at/ended_at). Use "now" as
         # the updated_at since we're emitting this notification precisely
         # because the title was just refreshed.
         updated_at = datetime.now(timezone.utc).isoformat()
         meta = self._provenance_meta(
             session_id,
-            current_hermes_session_id or session_id,
-            previous_hermes_session_id,
+            current_plobi_session_id or session_id,
+            previous_plobi_session_id,
         )
         update = SessionInfoUpdate(
             session_update="session_info_update",
@@ -831,7 +831,7 @@ class HermesACPAgent(acp.Agent):
             from agent.memory_manager import inject_memory_provider_tools
 
             enabled_toolsets = _expand_acp_enabled_toolsets(
-                getattr(state.agent, "enabled_toolsets", None) or ["hermes-acp"],
+                getattr(state.agent, "enabled_toolsets", None) or ["plobi-acp"],
                 mcp_server_names=[server.name for server in mcp_servers],
             )
             state.agent.enabled_toolsets = enabled_toolsets
@@ -883,7 +883,7 @@ class HermesACPAgent(acp.Agent):
 
         return InitializeResponse(
             protocol_version=acp.PROTOCOL_VERSION,
-            agent_info=Implementation(name="hermes-agent", version=HERMES_VERSION),
+            agent_info=Implementation(name="plobi-agent", version=PLOBI_VERSION),
             agent_capabilities=AgentCapabilities(
                 load_session=True,
                 prompt_capabilities=PromptCapabilities(image=True),
@@ -1451,14 +1451,14 @@ class HermesACPAgent(acp.Agent):
         # Set it INSIDE _run_agent so the TLS write happens in the executor
         # thread — setting it here would write to the event-loop thread's TLS,
         # not the executor's. Interactive routing uses a contextvar in
-        # tools.approval (set_hermes_interactive_context) rather than
-        # os.environ["HERMES_INTERACTIVE"], so concurrent executor workers can't
+        # tools.approval (set_plobi_interactive_context) rather than
+        # os.environ["PLOBI_INTERACTIVE"], so concurrent executor workers can't
         # race on a process-global flag — one session's restore can't drop
         # another onto the non-interactive auto-approve path mid-run
         # (GHSA-96vc-wcxf-jjff). The contextvar write is isolated by the
         # contextvars.copy_context() wrapper around the executor call below.
         # ACP's conn.request_permission maps cleanly to the interactive
-        # callback shape — not the gateway-queue HERMES_EXEC_ASK path,
+        # callback shape — not the gateway-queue PLOBI_EXEC_ASK path,
         # which requires a notify_cb registered in _gateway_notify_cbs.
         previous_approval_cb = None
         interactive_token = None
@@ -1467,7 +1467,7 @@ class HermesACPAgent(acp.Agent):
 
         def _run_agent() -> dict:
             nonlocal previous_approval_cb, interactive_token, edit_approval_token, previous_session_id
-            # Bind HERMES_SESSION_KEY for this session so per-session caches
+            # Bind PLOBI_SESSION_KEY for this session so per-session caches
             # (e.g. the interactive sudo password cache in tools.terminal_tool)
             # scope to the ACP session rather than leaking across sessions
             # that land on the same reused executor thread. This call runs
@@ -1501,14 +1501,14 @@ class HermesACPAgent(acp.Agent):
             # and the non-interactive auto-approve path must not fire. Uses a
             # contextvar (not os.environ) so concurrent executor workers don't
             # race on the flag (GHSA-96vc-wcxf-jjff).
-            interactive_token = set_hermes_interactive_context(True)
+            interactive_token = set_plobi_interactive_context(True)
             # Propagate the originating ACP session id to tools that want to
             # tag side-effects with it (e.g. ``kanban_create`` stamps it on
             # the new task so clients can render a per-session board). Save
             # and restore around the agent call so a re-used executor thread
             # never leaks one session's id into the next session's tools.
-            previous_session_id = os.environ.get("HERMES_SESSION_ID")
-            os.environ["HERMES_SESSION_ID"] = session_id
+            previous_session_id = os.environ.get("PLOBI_SESSION_ID")
+            os.environ["PLOBI_SESSION_ID"] = session_id
             try:
                 result = agent.run_conversation(
                     user_message=user_content,
@@ -1523,12 +1523,12 @@ class HermesACPAgent(acp.Agent):
             finally:
                 # Restore the interactive contextvar for this context.
                 if interactive_token is not None:
-                    reset_hermes_interactive_context(interactive_token)
-                # Restore HERMES_SESSION_ID symmetrically.
+                    reset_plobi_interactive_context(interactive_token)
+                # Restore PLOBI_SESSION_ID symmetrically.
                 if previous_session_id is None:
-                    os.environ.pop("HERMES_SESSION_ID", None)
+                    os.environ.pop("PLOBI_SESSION_ID", None)
                 else:
-                    os.environ["HERMES_SESSION_ID"] = previous_session_id
+                    os.environ["PLOBI_SESSION_ID"] = previous_session_id
                 if approval_cb:
                     try:
                         from tools import terminal_tool as _terminal_tool
@@ -1553,10 +1553,10 @@ class HermesACPAgent(acp.Agent):
             # can detect a compression-driven session rotation afterwards. The
             # ACP `session_id` stays the stable client handle; agent.session_id
             # is the live internal head that compression may rotate.
-            pre_turn_hermes_id = getattr(state.agent, "session_id", None)
+            pre_turn_plobi_id = getattr(state.agent, "session_id", None)
             # Wrap the executor call in a fresh copy of the current context so
             # concurrent ACP sessions on the shared ThreadPoolExecutor don't
-            # stomp on each other's ContextVar writes (HERMES_SESSION_KEY in
+            # stomp on each other's ContextVar writes (PLOBI_SESSION_KEY in
             # particular — used by the interactive sudo password cache scope).
             ctx = contextvars.copy_context()
             result = await loop.run_in_executor(_executor, ctx.run, _run_agent)
@@ -1574,20 +1574,20 @@ class HermesACPAgent(acp.Agent):
 
         # Detect a compression-driven internal session rotation. If the agent's
         # DB head moved during the turn, emit a session_info_update carrying
-        # _meta.hermes.sessionProvenance so ACP clients can render the boundary
+        # _meta.plobi.sessionProvenance so ACP clients can render the boundary
         # and keep old/new ids in lineage. The ACP session_id is unchanged.
-        post_turn_hermes_id = getattr(state.agent, "session_id", None)
+        post_turn_plobi_id = getattr(state.agent, "session_id", None)
         if (
             conn
-            and post_turn_hermes_id
-            and pre_turn_hermes_id
-            and post_turn_hermes_id != pre_turn_hermes_id
+            and post_turn_plobi_id
+            and pre_turn_plobi_id
+            and post_turn_plobi_id != pre_turn_plobi_id
         ):
             try:
                 await self._send_session_info_update(
                     session_id,
-                    current_hermes_session_id=post_turn_hermes_id,
-                    previous_hermes_session_id=pre_turn_hermes_id,
+                    current_plobi_session_id=post_turn_plobi_id,
+                    previous_plobi_session_id=pre_turn_plobi_id,
                 )
             except Exception:
                 logger.debug(
@@ -1791,7 +1791,7 @@ class HermesACPAgent(acp.Agent):
             from agent.memory_manager import inject_memory_provider_tools
 
             toolsets = _expand_acp_enabled_toolsets(
-                getattr(state.agent, "enabled_toolsets", None) or ["hermes-acp"]
+                getattr(state.agent, "enabled_toolsets", None) or ["plobi-acp"]
             )
             tools = get_tool_definitions(enabled_toolsets=toolsets, quiet_mode=True)
             tool_view = SimpleNamespace(
@@ -1988,7 +1988,7 @@ class HermesACPAgent(acp.Agent):
         return f"Queued for the next turn. ({depth} queued)"
 
     def _cmd_version(self, args: str, state: SessionState) -> str:
-        return f"Plobi Agent v{HERMES_VERSION}"
+        return f"Plobi Agent v{PLOBI_VERSION}"
 
     # ---- Model switching (ACP protocol method) -------------------------------
 

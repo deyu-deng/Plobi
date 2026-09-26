@@ -1,9 +1,9 @@
 # nix/desktop.nix — Plobi Desktop (Electron) app build + wrapper
 #
-# `hermesAgent` is the fully-built `.#default` package — it ships the
-# `hermes` binary with the venv, runtime PATH, bundled skills/plugins, etc.
+# `plobiAgent` is the fully-built `.#default` package — it ships the
+# `plobi` binary with the venv, runtime PATH, bundled skills/plugins, etc.
 # already wired up.  We point the desktop at it via the existing
-# `HERMES_DESKTOP_HERMES` override env var, so the desktop's resolver
+# `PLOBI_DESKTOP_PLOBI` override env var, so the desktop's resolver
 # uses our fully wrapped binary at step 4 ("existing Plobi CLI").
 # No reimplementation of the agent resolution in this wrapper.
 {
@@ -11,16 +11,16 @@
   lib,
   stdenv,
   makeWrapper,
-  hermesNpmLib,
+  plobiNpmLib,
   electron,
-  hermesAgent,
+  plobiAgent,
   ...
 }:
 let
-  npm = hermesNpmLib.mkNpmPassthru {
+  npm = plobiNpmLib.mkNpmPassthru {
     folder = "apps/desktop";
     attr = "desktop";
-    pname = "hermes-desktop";
+    pname = "plobi-desktop";
   };
 
   packageJson = builtins.fromJSON (builtins.readFile (npm.src + "/apps/desktop/package.json"));
@@ -40,7 +40,7 @@ let
     else if stdenv.hostPlatform.isLinux then
       "linux"
     else
-      throw "hermes-desktop: unsupported host platform for node-pty staging";
+      throw "plobi-desktop: unsupported host platform for node-pty staging";
 
   targetArch =
     if stdenv.hostPlatform.isAarch64 then
@@ -48,13 +48,13 @@ let
     else if stdenv.hostPlatform.isx86_64 then
       "x64"
     else
-      throw "hermes-desktop: unsupported host arch for node-pty staging";
+      throw "plobi-desktop: unsupported host arch for node-pty staging";
 
   # Build the renderer (dist/ + electron/ + package.json).
   renderer = pkgs.buildNpmPackage (
     npm
     // {
-      pname = "hermes-desktop-renderer";
+      pname = "plobi-desktop-renderer";
       inherit version;
       doCheck = true;
 
@@ -142,7 +142,7 @@ in
 
 # Electron wrapper: nixpkgs' electron binary pointed at the renderer dir.
 stdenv.mkDerivation {
-  pname = "hermes-desktop";
+  pname = "plobi-desktop";
   inherit version;
 
   dontUnpack = true;
@@ -153,24 +153,24 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p $out/share/hermes-desktop $out/bin
-    cp -r ${renderer}/* $out/share/hermes-desktop/
+    mkdir -p $out/share/plobi-desktop $out/bin
+    cp -r ${renderer}/* $out/share/plobi-desktop/
 
     # Standard nixpkgs pattern for electron-builder apps: patch process.resourcesPath
     # to point to the app's directory. In Nix, unpackaged electron defaults this
     # to the electron distribution's resources path, breaking extraResources lookups.
-    substituteInPlace $out/share/hermes-desktop/dist/electron-main.mjs \
-      --replace-fail "process.resourcesPath" "'$out/share/hermes-desktop'"
+    substituteInPlace $out/share/plobi-desktop/dist/electron-main.mjs \
+      --replace-fail "process.resourcesPath" "'$out/share/plobi-desktop'"
 
     # Wrap the nixpkgs electron binary to launch our app.  Set
-    # HERMES_DESKTOP_HERMES to the absolute path of the nix-built `hermes`
+    # PLOBI_DESKTOP_PLOBI to the absolute path of the nix-built `plobi`
     # binary so the desktop's resolver step 4 ("existing Plobi CLI on
     # PATH") uses our fully wrapped binary — venv with all deps,
     # bundled skills/plugins, runtime PATH (ripgrep/git/ffmpeg/etc).
     # No reimplementation of the agent resolver in the wrapper.
-    makeWrapper ${lib.getExe electron} $out/bin/hermes-desktop \
-      --add-flags "$out/share/hermes-desktop" \
-      --set HERMES_DESKTOP_HERMES "${lib.getExe hermesAgent}" \
+    makeWrapper ${lib.getExe electron} $out/bin/plobi-desktop \
+      --add-flags "$out/share/plobi-desktop" \
+      --set PLOBI_DESKTOP_PLOBI "${lib.getExe plobiAgent}" \
       --set ELECTRON_IS_DEV 0
 
     runHook postInstall
@@ -185,6 +185,6 @@ stdenv.mkDerivation {
     homepage = "https://github.com/NousResearch/hermes-agent";
     license = licenses.mit;
     platforms = platforms.unix;
-    mainProgram = "hermes-desktop";
+    mainProgram = "plobi-desktop";
   };
 }

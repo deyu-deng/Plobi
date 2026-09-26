@@ -14,7 +14,7 @@ Create HTML-based video compositions, animated title cards, social overlays, cap
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/creative/hyperframes` |
+| Source | Optional — install with `plobi skills install official/creative/hyperframes` |
 | Path | `optional-skills/creative/hyperframes` |
 | Version | `1.0.0` |
 | Author | heygen-com |
@@ -69,7 +69,7 @@ Full CLI reference: [references/cli.md](https://github.com/NousResearch/hermes-a
 ## Setup (one-time)
 
 ```bash
-bash "$(dirname "$(find ~/.hermes/skills -path '*/hyperframes/SKILL.md' 2>/dev/null | head -1)")/scripts/setup.sh"
+bash "$(dirname "$(find ~/.plobi/skills -path '*/hyperframes/SKILL.md' 2>/dev/null | head -1)")/scripts/setup.sh"
 ```
 
 The script:

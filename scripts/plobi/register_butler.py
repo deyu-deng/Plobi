@@ -1,6 +1,6 @@
 """B5 管家包任务注册（由 register_cron.py --all 调用；幂等）。
 
-把三个 cron 脚本复制到 ``HERMES_HOME/scripts/`` 并按 name 幂等注册/更新任务。
+把三个 cron 脚本复制到 ``PLOBI_HOME/scripts/`` 并按 name 幂等注册/更新任务。
 """
 
 from __future__ import annotations
@@ -54,9 +54,9 @@ def _upsert(cron_jobs, *, name: str, schedule: str, script: str) -> str:
 
 
 def register_butler_jobs() -> list[str]:
-    from hermes_constants import get_hermes_home
+    from plobi_constants import get_plobi_home
 
-    home = get_hermes_home()
+    home = get_plobi_home()
     scripts_dir = home / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 

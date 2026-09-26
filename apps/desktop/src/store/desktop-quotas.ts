@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 import { persistString, storedString } from '@/lib/storage'
-import type { ModelOptionProvider, ModelPricing } from '@/types/hermes'
+import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 
 // ---------------------------------------------------------------------------
 // Desktop Quotas — connected-app registry (renderer-side, persisted)
@@ -10,7 +10,7 @@ import type { ModelOptionProvider, ModelPricing } from '@/types/hermes'
 // Workbuddy) in Settings → Providers → Desktop Quotas, its served models are
 // injected into the chat model selector here. Selecting one sets *local* model
 // state and routes the chat through the aigw hub (the hidden Local Hub) — the
-// Hermes backend never learns about these providers.
+// Plobi backend never learns about these providers.
 //
 // The model list is no longer hardcoded. It is fetched live from the aigw
 // gateway's `/v1/models` endpoint (which itself discovers the real catalog from

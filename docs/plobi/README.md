@@ -6,7 +6,7 @@
 
 本目录（`Code/docs/plobi/`）曾在 2026-09 按 Diátaxis 建过 `adr/ specs/ runbooks/ reference/
 audit/ templates/ plans/ archive/ north_star/` 树，内容已整体迁到上面的 `Docs/`，树本身随
-`.git` 被 `hermes update` 摧毁的事故清空——**现在只剩本文件与 `profiles/` 两份 yaml**。
+`.git` 被 `plobi update` 摧毁的事故清空——**现在只剩本文件与 `profiles/` 两份 yaml**。
 2026-09-19 已按新纪律把 `Docs/` 从 238 份砍到 100 份，其中就包括曾挂在这条链上的旧 Plobi 叙事
 （`plobi-BULEPRINT.md`、`plobi-CONTEXT.md`、`plobi-AUDIT.md`、`plobi-README.md`、
 `UI_DESIGN_SPEC.md` ×2、`INDEX.md`、`SLICES.md`）与失真的 `IMPLEMENTED_FEATURES.md`

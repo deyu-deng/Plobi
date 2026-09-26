@@ -64,7 +64,7 @@ These two tools live in the `browser` toolset but only register when a Chrome De
 
 ## `feishu_doc` toolset
 
-Scoped to the Feishu document-comment intelligent-reply handler (`gateway/platforms/feishu_comment.py`). Not exposed on `hermes-cli` or the regular Feishu chat adapter.
+Scoped to the Feishu document-comment intelligent-reply handler (`gateway/platforms/feishu_comment.py`). Not exposed on `plobi-cli` or the regular Feishu chat adapter.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -103,7 +103,7 @@ Scoped to the Feishu document-comment handler. Drives comment read/write operati
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `computer_use` | Background desktop control via cua-driver — screenshots (SOM / vision / AX), click / drag / scroll / type / key / wait, list_apps, focus_app. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model. macOS, Windows, and Linux. | `cua-driver` on `$PATH` (install via `hermes tools`). |
+| `computer_use` | Background desktop control via cua-driver — screenshots (SOM / vision / AX), click / drag / scroll / type / key / wait, list_apps, focus_app. Does NOT steal the user's cursor or keyboard focus. Works with any tool-capable model. macOS, Windows, and Linux. | `cua-driver` on `$PATH` (install via `plobi tools`). |
 
 
 :::note
@@ -118,18 +118,18 @@ Scoped to the Feishu document-comment handler. Drives comment read/write operati
 
 ## `kanban` toolset
 
-Registered when the agent is either (a) spawned by the kanban dispatcher (`HERMES_KANBAN_TASK` env set) or (b) running in a profile that explicitly enables the `kanban` toolset. Task-scoped workers use lifecycle tools for their assigned task; orchestrator profiles additionally get board-routing tools like `kanban_list` and `kanban_unblock`. See [Kanban Multi-Agent](/user-guide/features/kanban) for the full workflow.
+Registered when the agent is either (a) spawned by the kanban dispatcher (`PLOBI_KANBAN_TASK` env set) or (b) running in a profile that explicitly enables the `kanban` toolset. Task-scoped workers use lifecycle tools for their assigned task; orchestrator profiles additionally get board-routing tools like `kanban_list` and `kanban_unblock`. See [Kanban Multi-Agent](/user-guide/features/kanban) for the full workflow.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `kanban_show` | Show the active kanban task assigned to this worker (title, description, comments, dependencies). | `HERMES_KANBAN_TASK` or `kanban` toolset |
+| `kanban_show` | Show the active kanban task assigned to this worker (title, description, comments, dependencies). | `PLOBI_KANBAN_TASK` or `kanban` toolset |
 | `kanban_list` | List board tasks with filters. Orchestrator-only; hidden from dispatcher-spawned task workers. | profile with `kanban` toolset |
-| `kanban_complete` | Mark the current task done with a structured handoff payload (results, artifacts, follow-ups). | `HERMES_KANBAN_TASK` or `kanban` toolset |
-| `kanban_block` | Block the current task on a question for the user — the dispatcher pauses, surfaces the question, and resumes once a human replies. | `HERMES_KANBAN_TASK` or `kanban` toolset |
-| `kanban_heartbeat` | Send a progress heartbeat during a long-running operation so the dispatcher knows the worker is still alive. | `HERMES_KANBAN_TASK` or `kanban` toolset |
-| `kanban_comment` | Add a comment to the task thread without changing its state — useful for surfacing intermediate findings. | `HERMES_KANBAN_TASK` or `kanban` toolset |
-| `kanban_create` | Fan out child tasks from the current task. Used by orchestrators and follow-up-spawning workers. | `HERMES_KANBAN_TASK` or `kanban` toolset |
-| `kanban_link` | Link tasks with a parent → child dependency edge. | `HERMES_KANBAN_TASK` or `kanban` toolset |
+| `kanban_complete` | Mark the current task done with a structured handoff payload (results, artifacts, follow-ups). | `PLOBI_KANBAN_TASK` or `kanban` toolset |
+| `kanban_block` | Block the current task on a question for the user — the dispatcher pauses, surfaces the question, and resumes once a human replies. | `PLOBI_KANBAN_TASK` or `kanban` toolset |
+| `kanban_heartbeat` | Send a progress heartbeat during a long-running operation so the dispatcher knows the worker is still alive. | `PLOBI_KANBAN_TASK` or `kanban` toolset |
+| `kanban_comment` | Add a comment to the task thread without changing its state — useful for surfacing intermediate findings. | `PLOBI_KANBAN_TASK` or `kanban` toolset |
+| `kanban_create` | Fan out child tasks from the current task. Used by orchestrators and follow-up-spawning workers. | `PLOBI_KANBAN_TASK` or `kanban` toolset |
+| `kanban_link` | Link tasks with a parent → child dependency edge. | `PLOBI_KANBAN_TASK` or `kanban` toolset |
 | `kanban_unblock` | Return a blocked task to `ready`. Orchestrator-only; hidden from dispatcher-spawned task workers. | profile with `kanban` toolset |
 
 ## `project` toolset
@@ -158,7 +158,7 @@ Tools for driving desktop [Projects](../user-guide/cli.md) — named, multi-fold
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `skill_manage` | Manage skills (create, update, delete). Skills are your procedural memory — reusable approaches for recurring task types. New skills go to ~/.hermes/skills/; existing skills can be modified wherever they live. Actions: create (full SKILL.m… | — |
+| `skill_manage` | Manage skills (create, update, delete). Skills are your procedural memory — reusable approaches for recurring task types. New skills go to ~/.plobi/skills/; existing skills can be modified wherever they live. Actions: create (full SKILL.m… | — |
 | `skill_view` | Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a… | — |
 | `skills_list` | List available skills (name + description). Use skill_view(name) to load full content. | — |
 
@@ -184,7 +184,7 @@ Tools for driving desktop [Projects](../user-guide/cli.md) — named, multi-fold
 
 ## `video` toolset
 
-Opt-in toolset (not loaded in the default `hermes-cli` set). Add via `--toolsets video` or include `video` in your `toolsets:` config.
+Opt-in toolset (not loaded in the default `plobi-cli` set). Add via `--toolsets video` or include `video` in your `toolsets:` config.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -192,7 +192,7 @@ Opt-in toolset (not loaded in the default `hermes-cli` set). Add via `--toolsets
 
 ## `video_gen` toolset
 
-Opt-in toolset (not loaded in the default `hermes-cli` set). Add via `--toolsets video_gen` or enable it in `hermes tools` → Video Generation, which also walks you through picking a backend.
+Opt-in toolset (not loaded in the default `plobi-cli` set). Add via `--toolsets video_gen` or enable it in `plobi tools` → Video Generation, which also walks you through picking a backend.
 
 Backends ship as plugins under `plugins/video_gen/<name>/`:
 
@@ -216,7 +216,7 @@ The single `video_generate` tool covers both modalities — pass `image_url` to 
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
-| `x_search` | Search X (Twitter) posts, profiles, and threads using xAI's built-in `x_search` Responses tool. Use this for current discussion, reactions, or claims on X rather than general web pages. Off by default — opt in via `hermes tools` → 🐦 X (Twitter) Search. Schema is only registered when xAI credentials are configured (check_fn-gated). | XAI_API_KEY **or** xAI Grok OAuth (SuperGrok / Premium+) login |
+| `x_search` | Search X (Twitter) posts, profiles, and threads using xAI's built-in `x_search` Responses tool. Use this for current discussion, reactions, or claims on X rather than general web pages. Off by default — opt in via `plobi tools` → 🐦 X (Twitter) Search. Schema is only registered when xAI credentials are configured (check_fn-gated). | XAI_API_KEY **or** xAI Grok OAuth (SuperGrok / Premium+) login |
 
 ## `tts` toolset
 
@@ -226,7 +226,7 @@ The single `video_generate` tool covers both modalities — pass `image_url` to 
 
 ## `discord` toolset
 
-Registered on the `hermes-discord` platform toolset (gateway only). Uses the same bot token as the messaging adapter.
+Registered on the `plobi-discord` platform toolset (gateway only). Uses the same bot token as the messaging adapter.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -234,7 +234,7 @@ Registered on the `hermes-discord` platform toolset (gateway only). Uses the sam
 
 ## `discord_admin` toolset
 
-Registered on the `hermes-discord` platform toolset. Moderation actions require the bot to hold the matching Discord permissions.
+Registered on the `plobi-discord` platform toolset. Moderation actions require the bot to hold the matching Discord permissions.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -242,7 +242,7 @@ Registered on the `hermes-discord` platform toolset. Moderation actions require 
 
 ## `spotify` toolset
 
-Registered by the bundled `spotify` plugin. Requires an OAuth token — run `hermes spotify setup` once to authorize.
+Registered by the bundled `spotify` plugin. Requires an OAuth token — run `plobi spotify setup` once to authorize.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|
@@ -254,9 +254,9 @@ Registered by the bundled `spotify` plugin. Requires an OAuth token — run `her
 | `spotify_albums` | Fetch Spotify album metadata or album tracks. | Spotify OAuth |
 | `spotify_library` | List, save, or remove the user's saved Spotify tracks or albums. | Spotify OAuth |
 
-## `hermes-yuanbao` toolset
+## `plobi-yuanbao` toolset
 
-Registered only on the `hermes-yuanbao` platform toolset. Yuanbao is Tencent's chat app; these tools drive its DM/group/sticker APIs.
+Registered only on the `plobi-yuanbao` platform toolset. Yuanbao is Tencent's chat app; these tools drive its DM/group/sticker APIs.
 
 | Tool | Description | Requires environment |
 |------|-------------|----------------------|

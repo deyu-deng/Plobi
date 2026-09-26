@@ -6,7 +6,7 @@ author: Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [web, javascript, agent, browser, gui, alibaba, embed, copilot, saas]
     category: web-development
 ---
