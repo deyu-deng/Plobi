@@ -95,8 +95,14 @@ PROTECT = [
     r"https?://(?!" + _OURS_URL + r")[^\s\"'`)\]]*",
     # Upstream issue references: ``hermes-agent#1234`` / ``NousResearch/hermes-agent#1234``.
     r"\b(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]*[Hh]ermes[A-Za-z0-9_.-]*#\d+",
-    # Container images published by other people — we cannot retag them.
-    r"(?:ghcr\.io/|docker\.io/|hub\.docker\.com/r/)?nousresearch/[A-Za-z0-9_.:/-]+",
+    # Container images, GitHub remotes and HuggingFace repos published by other
+    # people — we cannot retag them. Case-insensitive and SSH-form aware on
+    # purpose: the first pass missed ``git@github.com:NousResearch/...`` (no
+    # scheme) and the capitalised ``NousResearch/`` namespace, which silently
+    # broke scripts/install.sh's clone URL and the fork detection in
+    # plobi_cli/main.py.
+    r"(?i:(?:ghcr\.io/|docker\.io/|hub\.docker\.com/r/|git@github\.com:)?"
+    r"nousresearch/[A-Za-z0-9_.:/-]+)",
     # Mentioning the *word* rather than using it as an identifier:
     # ``"Hermes" and "Nous Research" are the names of that upstream project``
     # (LICENSE/README attribution) must survive, and so does "the upstream
@@ -104,7 +110,23 @@ PROTECT = [
     # Case-sensitive on purpose: a lowercase quoted 'hermes' is usually an
     # identifier in argv/config (`['hermes', 'gateway']`), which MUST rename.
     "[\"'`\u201c\u2018](?:Hermes|Vaelis)[\"'`\u201d\u2019]",
+    # A quoted brand word inside an inline-code span is a *mention* of somebody
+    # else's string (` `"hermes" in name.lower()` ` describing the check we
+    # replaced), not a command name. Real argv strings never carry backticks.
+    r"`{1,2}[^`\n]*(?:\"|')(?i:hermes|vaelis)(?:\"|')[^`\n]*`{1,2}",
     r"\b(?:upstream|原)\s+(?:the\s+)?(?:[Hh]ermes|[Vv]aelis)\b",
+    # Remaining verbatim-needed shapes found while auditing the residue
+    # (all of them were rewritten once and had to be restored by hand):
+    #   * the upstream docs host without a scheme, e.g. inside a UI-title test;
+    #   * "Nous Hermes" prose naming their model family;
+    #   * the non-agentic matcher's own character-class pattern
+    #     ``hermes[-_ ]?[34]`` and its Ollama tag counterexamples
+    #     ``hermes-brain:qwen3-...`` -- rewriting a matcher to prove it matches
+    #     is how a green suite hides a dead warning.
+    r"(?i:hermes-agent\.nousresearch\.com)",
+    r"(?i:nous[\s_-]+hermes\b)",
+    r"(?i:hermes\[[^\]]*\]\??\[\d+\])",
+    r"(?i:hermes[-_](?:brain|honcho):)",
 ]
 PROTECT_RE = re.compile("|".join(f"(?:{p})" for p in PROTECT))
 

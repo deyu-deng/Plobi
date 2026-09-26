@@ -41,17 +41,17 @@ No clone needed. Nix fetches, builds, and runs everything:
 
 ```bash
 # Run the desktop app
-nix run github:NousResearch/plobi-agent#desktop
+nix run github:NousResearch/hermes-agent#desktop
 
 # Or install persistently
-nix profile install github:NousResearch/plobi-agent#desktop
+nix profile install github:NousResearch/hermes-agent#desktop
 
 # run the tui
-nix run github:NousResearch/plobi-agent -- setup
-nix run github:NousResearch/plobi-agent -- --tui
+nix run github:NousResearch/hermes-agent -- setup
+nix run github:NousResearch/hermes-agent -- --tui
 
 # or install it in your profile
-nix profile install github:NousResearch/plobi-agent
+nix profile install github:NousResearch/hermes-agent
 plobi setup
 plobi --tui
 ```
@@ -94,7 +94,7 @@ This module requires NixOS. For non-NixOS systems (macOS, other Linux distros), 
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    plobi-agent.url = "github:NousResearch/plobi-agent";
+    plobi-agent.url = "github:NousResearch/hermes-agent";
   };
 
   outputs = { nixpkgs, plobi-agent, ... }: {
@@ -733,7 +733,7 @@ External flakes can override the package directly:
 
 ```nix
 {
-  inputs.plobi-agent.url = "github:NousResearch/plobi-agent";
+  inputs.plobi-agent.url = "github:NousResearch/hermes-agent";
   outputs = { plobi-agent, nixpkgs, ... }: {
     nixpkgs.overlays = [ plobi-agent.overlays.default ];
     # Then:

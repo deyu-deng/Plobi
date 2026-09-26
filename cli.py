@@ -3488,8 +3488,8 @@ def _build_compact_banner() -> str:
     dim_color = _skin.get_color("banner_dim", "#B8860B") if _skin else "#B8860B"
 
     if skin_name == "default":
-        line1 = "⚕ NOUS PLOBI - AI Agent Framework"
-        tiny_line = "⚕ NOUS PLOBI"
+        line1 = "⚕ PLOBI - AI Agent Framework"
+        tiny_line = "⚕ PLOBI"
     else:
         agent_name = _skin.get_branding("agent_name", "Plobi Agent") if _skin else "Plobi Agent"
         line1 = f"{agent_name} - AI Agent Framework"
@@ -6228,14 +6228,14 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     "[dim]   Fix: Set model.context_length in config.yaml, or increase your server's context setting[/]"
                 )
 
-        # Warn if the configured model is a Nous Plobi LLM (not agentic)
+        # Warn if the configured model is a Nous Hermes LLM (not agentic)
         from plobi_cli.model_switch import is_nous_plobi_non_agentic
 
         model_name = getattr(self, "model", "") or ""
         if is_nous_plobi_non_agentic(model_name):
             self._console_print()
             self._console_print(
-                "[bold yellow]⚠  Plobi 3 & 4 chat models are NOT agentic and are not "
+                "[bold yellow]⚠  Hermes 3 & 4 chat models are NOT agentic and are not "
                 "designed for use with Plobi Agent.[/]"
             )
             self._console_print(

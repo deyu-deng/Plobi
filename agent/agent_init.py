@@ -1852,7 +1852,7 @@ def init_agent(
             f"(this must be at least {MINIMUM_CONTEXT_LENGTH // 1000}K)."
         )
 
-    # Nous Plobi 3/4 are chat models, not tool-call-tuned. The interactive
+    # Nous hermes 3/4 are chat models, not tool-call-tuned. The interactive
     # CLI already warns via cli.py show_banner() (richer output + /model hint),
     # so skip platform=="cli" here to avoid emitting the warning twice per
     # startup. (Gateway/TUI/cron construct with quiet_mode=True and are already
@@ -1866,7 +1866,7 @@ def init_agent(
             _plobi_warn = _check_plobi_model_warning(agent.model or "")
             if _plobi_warn:
                 _user_msg = (
-                    "⚠ Plobi 3 & 4 chat models are NOT agentic — they "
+                    "⚠ Hermes 3 & 4 chat models are NOT agentic — they "
                     "lack reliable tool-calling for agent workflows (delegation, "
                     "cron, proactive tools). Consider an agentic model instead "
                     "(Claude, GPT, Gemini, Qwen-Coder, etc.)."

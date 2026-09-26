@@ -3053,7 +3053,7 @@ class OptionalSkillSource(SkillSource):
     (search / install / inspect) and labelled "official" with "builtin" trust.
     """
 
-    OFFICIAL_REPO = "NousResearch/plobi-agent"
+    OFFICIAL_REPO = "NousResearch/hermes-agent"
 
     def __init__(self):
         from plobi_constants import get_optional_skills_dir

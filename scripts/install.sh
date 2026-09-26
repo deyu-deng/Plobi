@@ -43,7 +43,7 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-REPO_URL_SSH="git@github.com:NousResearch/plobi-agent.git"
+REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
 REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
 PLOBI_HOME="${PLOBI_HOME:-$HOME/.plobi}"
 # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an

@@ -697,7 +697,7 @@ class TestGetModelContextLengthLocalFallback:
         """Stale disk cache must yield to a live local max_model_len probe."""
         from agent.model_metadata import get_model_context_length
 
-        model = "NousResearch/Plobi-3-Llama-3.1-70B"
+        model = "NousResearch/Hermes-3-Llama-3.1-70B"
         base = "http://192.168.1.50:8000/v1"
 
         with patch("agent.model_metadata.get_cached_context_length", return_value=131072), \
@@ -719,7 +719,7 @@ class TestGetModelContextLengthLocalFallback:
         """Live probes at or above the 64K minimum are persisted."""
         from agent.model_metadata import get_model_context_length
 
-        model = "NousResearch/Plobi-3-Llama-3.1-70B"
+        model = "NousResearch/Hermes-3-Llama-3.1-70B"
         base = "http://192.168.1.50:8000/v1"
 
         with patch("agent.model_metadata.get_cached_context_length", return_value=131072), \
@@ -738,10 +738,10 @@ class TestGetModelContextLengthLocalFallback:
         mock_save.assert_called_once_with(model, base, 65536)
 
     def test_local_endpoint_bypasses_stale_persistent_cache(self):
-        """Plobi-3-Llama names must not inherit the generic llama 131072 default."""
+        """Hermes-3-Llama names must not inherit the generic llama 131072 default."""
         from agent.model_metadata import get_model_context_length
 
-        model = "NousResearch/Plobi-3-Llama-3.1-70B"
+        model = "NousResearch/Hermes-3-Llama-3.1-70B"
         base = "http://spark1:8000/v1"
 
         with patch("agent.model_metadata.get_cached_context_length", return_value=None), \

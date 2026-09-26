@@ -99,6 +99,19 @@ PRESERVE = [
     # build -- both denote the real Hermes, never our product.
     '"Hermes" and "Nous Research" are the names of that upstream project',
     "Was 'nous' (Nous Portal) in the upstream Hermes build.",
+    # The first pass missed the capitalised namespace and the SSH remote form,
+    # which broke scripts/install.sh's clone URL and plobi_cli/main.py's fork
+    # detection. Both shapes must survive a re-run.
+    'REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"',
+    "NousResearch/Hermes-3-Llama-3.1-405B",
+    "NousResearch/terminal-tasks-glm-hermes-agent",
+    # Verbatim shapes found by auditing the residue after the first rollback:
+    # a scheme-less docs host, "Nous Hermes" prose, and the non-agentic
+    # matcher's own pattern + its Ollama tag counterexamples.
+    "expect(view.title).toBe('Failed to open hermes-agent.nousresearch.com/docs')",
+    "# Warn if the configured model is a Nous Hermes LLM (not agentic)",
+    'r"(?:^|[/:])hermes[-_ ]?[34](?:[-_.:]|$)"',
+    "hermes-brain:qwen3-14b-ctx16k",
 ]
 
 
