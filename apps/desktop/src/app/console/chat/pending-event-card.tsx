@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 /**
  * Pending event card — the chat-embedded form of a schedule change

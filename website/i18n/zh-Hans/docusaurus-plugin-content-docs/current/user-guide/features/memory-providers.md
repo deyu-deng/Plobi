@@ -11,14 +11,14 @@ Plobi Agent 内置 8 个外部记忆提供者插件，为 Agent 提供跨会话�
 ## 快速开始
 
 ```bash
-hermes memory setup      # 交互式选择器 + 配置
-hermes memory status     # 查看当前激活状态
-hermes memory off        # 禁用外部提供者
+plobi memory setup      # 交互式选择器 + 配置
+plobi memory status     # 查看当前激活状态
+plobi memory off        # 禁用外部提供者
 ```
 
-也可以通过 `hermes plugins` → Provider Plugins → Memory Provider 选择激活的记忆提供者。
+也可以通过 `plobi plugins` → Provider Plugins → Memory Provider 选择激活的记忆提供者。
 
-或在 `~/.hermes/config.yaml` 中手动设置：
+或在 `~/.plobi/config.yaml` 中手动设置：
 
 ```yaml
 memory:
@@ -63,12 +63,12 @@ AI 原生的跨会话用户建模，具备辩证推理、会话范围上下文�
 
 **安装向导：**
 ```bash
-hermes memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装后配置
+plobi memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装后配置
 ```
 
-旧版 `hermes honcho setup` 命令仍然有效（现在会重定向到 `hermes memory setup`），但只有在 Honcho 被选为激活记忆提供者后才会注册。
+旧版 `plobi honcho setup` 命令仍然有效（现在会重定向到 `plobi memory setup`），但只有在 Honcho 被选为激活记忆提供者后才会注册。
 
-**配置：** `$HERMES_HOME/honcho.json`（profile 本地）或 `~/.honcho/config.json`（全局）。解析顺序：`$HERMES_HOME/honcho.json` > `~/.hermes/honcho.json` > `~/.honcho/config.json`。参见[配置参考](https://github.com/hermes-ai/hermes-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/hermes)。
+**配置：** `$PLOBI_HOME/honcho.json`（profile 本地）或 `~/.honcho/config.json`（全局）。解析顺序：`$PLOBI_HOME/honcho.json` > `~/.plobi/honcho.json` > `~/.honcho/config.json`。参见[配置参考](https://github.com/plobi-ai/plobi-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/plobi)。
 
 <details>
 <summary>完整配置参考</summary>
@@ -105,11 +105,11 @@ hermes memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装�
 {
   "apiKey": "your-key-from-app.honcho.dev",
   "hosts": {
-    "hermes": {
+    "plobi": {
       "enabled": true,
-      "aiPeer": "hermes",
+      "aiPeer": "plobi",
       "peerName": "your-name",
-      "workspace": "hermes"
+      "workspace": "plobi"
     }
   }
 }
@@ -124,11 +124,11 @@ hermes memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装�
 {
   "baseUrl": "http://localhost:8000",
   "hosts": {
-    "hermes": {
+    "plobi": {
       "enabled": true,
-      "aiPeer": "hermes",
+      "aiPeer": "plobi",
       "peerName": "your-name",
-      "workspace": "hermes"
+      "workspace": "plobi"
     }
   }
 }
@@ -136,8 +136,8 @@ hermes memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装�
 
 </details>
 
-:::tip 从 `hermes honcho` 迁移
-如果你之前使用过 `hermes honcho setup`，你的配置和所有服务端数据均完好无损。只需通过安装向导重新启用，或手动设置 `memory.provider: honcho`，即可通过新系统重新激活。
+:::tip 从 `plobi honcho` 迁移
+如果你之前使用过 `plobi honcho setup`，你的配置和所有服务端数据均完好无损。只需通过安装向导重新启用，或手动设置 `memory.provider: honcho`，即可通过新系统重新激活。
 :::
 
 **多 peer 配置：**
@@ -150,31 +150,31 @@ Honcho 将对话建模为 peer 之间的消息交换——每个 Plobi profile �
 |---------|-----------|
 | **Workspace** | 共享环境。同一 workspace 下的所有 Plobi profile 共享同一用户身份。 |
 | **用户 peer**（`peerName`） | 人类用户。在 workspace 内跨 profile 共享。 |
-| **AI peer**（`aiPeer`） | 每个 Plobi profile 一个。host key `hermes` → 默认；其他 profile 使用 `hermes.<profile>`。 |
+| **AI peer**（`aiPeer`） | 每个 Plobi profile 一个。host key `plobi` → 默认；其他 profile 使用 `plobi.<profile>`。 |
 | **Observation** | 每个 peer 的开关，控制 Honcho 从哪些消息中建模。`directional`（默认，全部开启）或 `unified`（单一观察者池）。 |
 
 ### 新建 profile，创建新 Honcho peer
 
 ```bash
-hermes profile create coder --clone
+plobi profile create coder --clone
 ```
 
-`--clone` 在 `honcho.json` 中创建一个 `hermes.coder` host 块，包含 `aiPeer: "coder"`、共享的 `workspace`、继承的 `peerName`、`recallMode`、`writeFrequency`、`observation` 等。AI peer 会在 Honcho 中提前创建，确保在第一条消息之前就已存在。
+`--clone` 在 `honcho.json` 中创建一个 `plobi.coder` host 块，包含 `aiPeer: "coder"`、共享的 `workspace`、继承的 `peerName`、`recallMode`、`writeFrequency`、`observation` 等。AI peer 会在 Honcho 中提前创建，确保在第一条消息之前就已存在。
 
 ### 为现有 profile 补充 Honcho peer
 
 ```bash
-hermes honcho sync
+plobi honcho sync
 ```
 
-扫描所有 Plobi profile，为没有 host 块的 profile 创建 host 块，从默认 `hermes` 块继承设置，并提前创建新的 AI peer。幂等操作——跳过已有 host 块的 profile。
+扫描所有 Plobi profile，为没有 host 块的 profile 创建 host 块，从默认 `plobi` 块继承设置，并提前创建新的 AI peer。幂等操作——跳过已有 host 块的 profile。
 
 ### 每个 profile 的 observation 配置
 
 每个 host 块可以独立覆盖 observation 配置。示例：一个以代码为中心的 profile，AI peer 观察用户但不自我建模：
 
 ```json
-"hermes.coder": {
+"plobi.coder": {
   "aiPeer": "coder",
   "observation": {
     "user": { "observeMe": true, "observeOthers": true },
@@ -205,13 +205,13 @@ hermes honcho sync
 ```json
 {
   "apiKey": "your-key",
-  "workspace": "hermes",
+  "workspace": "plobi",
   "peerName": "eri",
   "hosts": {
-    "hermes": {
+    "plobi": {
       "enabled": true,
-      "aiPeer": "hermes",
-      "workspace": "hermes",
+      "aiPeer": "plobi",
+      "workspace": "plobi",
       "peerName": "eri",
       "recallMode": "hybrid",
       "writeFrequency": "async",
@@ -229,10 +229,10 @@ hermes honcho sync
       "messageMaxChars": 25000,
       "saveMessages": true
     },
-    "hermes.coder": {
+    "plobi.coder": {
       "enabled": true,
       "aiPeer": "coder",
-      "workspace": "hermes",
+      "workspace": "plobi",
       "peerName": "eri",
       "recallMode": "tools",
       "observation": {
@@ -240,10 +240,10 @@ hermes honcho sync
         "ai": { "observeMe": true, "observeOthers": true }
       }
     },
-    "hermes.writer": {
+    "plobi.writer": {
       "enabled": true,
       "aiPeer": "writer",
-      "workspace": "hermes",
+      "workspace": "plobi",
       "peerName": "eri"
     }
   },
@@ -255,7 +255,7 @@ hermes honcho sync
 
 </details>
 
-参见[配置参考](https://github.com/hermes-ai/hermes-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/hermes)。
+参见[配置参考](https://github.com/plobi-ai/plobi-agent/blob/main/plugins/memory/honcho/README.md)和 [Honcho 集成指南](https://docs.honcho.dev/v3/guides/integrations/plobi)。
 
 
 ---
@@ -280,10 +280,10 @@ pip install openviking
 openviking-server
 
 # 然后配置 Plobi
-hermes memory setup    # 选择 "openviking"
+plobi memory setup    # 选择 "openviking"
 # 或手动配置：
-hermes config set memory.provider openviking
-echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.hermes/.env
+plobi config set memory.provider openviking
+echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.plobi/.env
 ```
 
 **主要特性：**
@@ -308,18 +308,18 @@ echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.hermes/.env
 
 **安装：**
 ```bash
-hermes memory setup    # 选择 "mem0"
+plobi memory setup    # 选择 "mem0"
 # 或手动配置：
-hermes config set memory.provider mem0
-echo "MEM0_API_KEY=your-key" >> ~/.hermes/.env
+plobi config set memory.provider mem0
+echo "MEM0_API_KEY=your-key" >> ~/.plobi/.env
 ```
 
-**配置：** `$HERMES_HOME/mem0.json`
+**配置：** `$PLOBI_HOME/mem0.json`
 
 | 键 | 默认值 | 描述 |
 |-----|---------|-------------|
-| `user_id` | `hermes-user` | 用户标识符 |
-| `agent_id` | `hermes` | Agent 标识符 |
+| `user_id` | `plobi-user` | 用户标识符 |
+| `agent_id` | `plobi` | Agent 标识符 |
 
 ---
 
@@ -338,22 +338,22 @@ echo "MEM0_API_KEY=your-key" >> ~/.hermes/.env
 
 **安装：**
 ```bash
-hermes memory setup    # 选择 "hindsight"
+plobi memory setup    # 选择 "hindsight"
 # 或手动配置：
-hermes config set memory.provider hindsight
-echo "HINDSIGHT_API_KEY=your-key" >> ~/.hermes/.env
+plobi config set memory.provider hindsight
+echo "HINDSIGHT_API_KEY=your-key" >> ~/.plobi/.env
 ```
 
 安装向导会自动安装依赖，并仅安装所选模式所需的内容（云端用 `hindsight-client`，本地用 `hindsight-all`）。需要 `hindsight-client >= 0.4.22`（会话启动时若版本过旧则自动升级）。
 
-**本地模式 UI：** `hindsight-embed -p hermes ui start`
+**本地模式 UI：** `hindsight-embed -p plobi ui start`
 
-**配置：** `$HERMES_HOME/hindsight/config.json`
+**配置：** `$PLOBI_HOME/hindsight/config.json`
 
 | 键 | 默认值 | 描述 |
 |-----|---------|-------------|
 | `mode` | `cloud` | `cloud` 或 `local` |
-| `bank_id` | `hermes` | 记忆库标识符 |
+| `bank_id` | `plobi` | 记忆库标识符 |
 | `recall_budget` | `mid` | 召回彻底程度：`low` / `mid` / `high` |
 | `memory_mode` | `hybrid` | `hybrid`（上下文 + 工具）、`context`（仅自动注入）、`tools`（仅工具） |
 | `auto_retain` | `true` | 自动保留对话轮次 |
@@ -385,16 +385,16 @@ echo "HINDSIGHT_API_KEY=your-key" >> ~/.hermes/.env
 
 **安装：**
 ```bash
-hermes memory setup    # 选择 "holographic"
+plobi memory setup    # 选择 "holographic"
 # 或手动配置：
-hermes config set memory.provider holographic
+plobi config set memory.provider holographic
 ```
 
-**配置：** `plugins.hermes-memory-store` 下的 `config.yaml`
+**配置：** `plugins.plobi-memory-store` 下的 `config.yaml`
 
 | 键 | 默认值 | 描述 |
 |-----|---------|-------------|
-| `db_path` | `$HERMES_HOME/memory_store.db` | SQLite 数据库路径 |
+| `db_path` | `$PLOBI_HOME/memory_store.db` | SQLite 数据库路径 |
 | `auto_extract` | `false` | 会话结束时自动提取事实 |
 | `default_trust` | `0.5` | 默认信任评分（0.0–1.0） |
 
@@ -421,10 +421,10 @@ hermes config set memory.provider holographic
 
 **安装：**
 ```bash
-hermes memory setup    # 选择 "retaindb"
+plobi memory setup    # 选择 "retaindb"
 # 或手动配置：
-hermes config set memory.provider retaindb
-echo "RETAINDB_API_KEY=your-key" >> ~/.hermes/.env
+plobi config set memory.provider retaindb
+echo "RETAINDB_API_KEY=your-key" >> ~/.plobi/.env
 ```
 
 ---
@@ -448,14 +448,14 @@ echo "RETAINDB_API_KEY=your-key" >> ~/.hermes/.env
 curl -fsSL https://byterover.dev/install.sh | sh
 
 # 然后配置 Plobi
-hermes memory setup    # 选择 "byterover"
+plobi memory setup    # 选择 "byterover"
 # 或手动配置：
-hermes config set memory.provider byterover
+plobi config set memory.provider byterover
 ```
 
 **主要特性：**
 - 自动预压缩提取（在上下文压缩丢弃内容前保存洞察）
-- 知识树存储于 `$HERMES_HOME/byterover/`（profile 范围隔离）
+- 知识树存储于 `$PLOBI_HOME/byterover/`（profile 范围隔离）
 - SOC2 Type II 认证的云端同步（可选）
 
 ---
@@ -467,7 +467,7 @@ hermes config set memory.provider byterover
 | | |
 |---|---|
 | **适合场景** | 带用户 profile 和会话级图谱构建的语义召回 |
-| **依赖** | `pip install supermemory` + [API key](http://app.supermemory.ai/integrations?connect=hermes) |
+| **依赖** | `pip install supermemory` + [API key](http://app.supermemory.ai/integrations?connect=plobi) |
 | **数据存储** | Supermemory Cloud |
 | **费用** | Supermemory 定价 |
 
@@ -475,17 +475,17 @@ hermes config set memory.provider byterover
 
 **安装：**
 ```bash
-hermes memory setup    # 选择 "supermemory"
+plobi memory setup    # 选择 "supermemory"
 # 或手动配置：
-hermes config set memory.provider supermemory
-echo 'SUPERMEMORY_API_KEY=***' >> ~/.hermes/.env
+plobi config set memory.provider supermemory
+echo 'SUPERMEMORY_API_KEY=***' >> ~/.plobi/.env
 ```
 
-**配置：** `$HERMES_HOME/supermemory.json`
+**配置：** `$PLOBI_HOME/supermemory.json`
 
 | 键 | 默认值 | 描述 |
 |-----|---------|-------------|
-| `container_tag` | `hermes` | 用于搜索和写入的容器标签。支持 `{identity}` 模板用于 profile 范围隔离。 |
+| `container_tag` | `plobi` | 用于搜索和写入的容器标签。支持 `{identity}` 模板用于 profile 范围隔离。 |
 | `auto_recall` | `true` | 在每轮对话前注入相关记忆上下文 |
 | `auto_capture` | `true` | 每次响应后存储清理过的用户-助手轮次 |
 | `max_recall_results` | `10` | 格式化为上下文的最大召回条目数 |
@@ -501,7 +501,7 @@ echo 'SUPERMEMORY_API_KEY=***' >> ~/.hermes/.env
 - 在会话边界时将整个会话**一次性导入**
 - 会话结束时同时导入到对话端点（`/v4/conversations`），用于 Supermemory 的 profile 和图谱构建
 - 在第一轮及可配置间隔注入 profile 事实
-- **Profile 范围容器**——在 `container_tag` 中使用 `{identity}`（例如 `hermes-{identity}` → `hermes-coder`），按 Plobi profile 隔离记忆
+- **Profile 范围容器**——在 `container_tag` 中使用 `{identity}`（例如 `plobi-{identity}` → `plobi-coder`），按 Plobi profile 隔离记忆
 - **多容器模式**——启用 `enable_custom_container_tags` 并配置 `custom_containers` 列表，让 Agent 跨命名容器读写。自动操作（同步、预取）保持在主容器上。
 
 <details>
@@ -509,7 +509,7 @@ echo 'SUPERMEMORY_API_KEY=***' >> ~/.hermes/.env
 
 ```json
 {
-  "container_tag": "hermes",
+  "container_tag": "plobi",
   "enable_custom_container_tags": true,
   "custom_containers": ["project-alpha", "shared-knowledge"],
   "custom_container_instructions": "Use project-alpha for coding context."
@@ -539,8 +539,8 @@ echo 'SUPERMEMORY_API_KEY=***' >> ~/.hermes/.env
 
 每个提供者的数据按 [profile](/user-guide/profiles) 隔离：
 
-- **本地存储提供者**（Holographic、ByteRover）使用 `$HERMES_HOME/` 路径，各 profile 路径不同
-- **配置文件提供者**（Honcho、Mem0、Hindsight、Supermemory）将配置存储在 `$HERMES_HOME/` 中，每个 profile 拥有独立凭证
+- **本地存储提供者**（Holographic、ByteRover）使用 `$PLOBI_HOME/` 路径，各 profile 路径不同
+- **配置文件提供者**（Honcho、Mem0、Hindsight、Supermemory）将配置存储在 `$PLOBI_HOME/` 中，每个 profile 拥有独立凭证
 - **云端提供者**（RetainDB）自动派生 profile 范围的项目名称
 - **环境变量提供者**（OpenViking）通过每个 profile 的 `.env` 文件配置
 

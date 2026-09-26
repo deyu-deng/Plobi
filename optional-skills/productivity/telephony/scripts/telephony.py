@@ -2,7 +2,7 @@
 """Telephony helper for the Plobi optional telephony skill.
 
 Capabilities:
-- Persist telephony provider credentials to the Plobi .env file ($HERMES_HOME/.env)
+- Persist telephony provider credentials to the Plobi .env file ($PLOBI_HOME/.env)
 - Search for, buy, and remember Twilio phone numbers
 - Make direct Twilio calls (TwiML <Say> or <Play>)
 - Send SMS / MMS via Twilio
@@ -68,20 +68,20 @@ class OwnedTwilioNumber:
     capabilities: dict[str, Any]
 
 
-def _hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+def _plobi_home() -> Path:
+    return Path(os.environ.get("PLOBI_HOME", "~/.plobi")).expanduser()
 
 
 def _env_path() -> Path:
-    return _hermes_home() / ".env"
+    return _plobi_home() / ".env"
 
 
 def _config_path() -> Path:
-    return _hermes_home() / "config.yaml"
+    return _plobi_home() / "config.yaml"
 
 
 def _state_path() -> Path:
-    return _hermes_home() / "telephony_state.json"
+    return _plobi_home() / "telephony_state.json"
 
 
 def _load_root_config() -> dict[str, Any]:

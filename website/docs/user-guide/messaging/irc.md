@@ -4,18 +4,18 @@ The IRC adapter connects Plobi to any IRC server and relays messages between an 
 
 IRC is plain text: there is no voice, image, file, thread, reaction, typing, or streaming support — replies are sent as `PRIVMSG` lines, with long messages split to fit the IRC line limit.
 
-> Run `hermes gateway setup` and pick **IRC** for a guided walk-through.
+> Run `plobi gateway setup` and pick **IRC** for a guided walk-through.
 
 ## Prerequisites
 
 - An IRC server to connect to (e.g. `irc.libera.chat`)
-- A channel to join (e.g. `#hermes`) — comma-separate to join several
-- A nickname for the bot (default: `hermes-bot`)
+- A channel to join (e.g. `#plobi`) — comma-separate to join several
+- A nickname for the bot (default: `plobi-bot`)
 - Optional: a registered nick + NickServ password if your network requires identification
 
 ## Configure Plobi
 
-You can configure IRC two ways — environment variables (for a quick env-only setup) or the `gateway` block in `~/.hermes/gateway-config.yaml`.
+You can configure IRC two ways — environment variables (for a quick env-only setup) or the `gateway` block in `~/.plobi/gateway-config.yaml`.
 
 ### Option A — gateway-config.yaml
 
@@ -27,8 +27,8 @@ gateway:
       extra:
         server: irc.libera.chat
         port: 6697
-        nickname: hermes-bot
-        channel: "#hermes"
+        nickname: plobi-bot
+        channel: "#plobi"
         use_tls: true
         server_password: ""       # optional server password
         nickserv_password: ""     # optional NickServ identification
@@ -42,7 +42,7 @@ gateway:
 |----------|:--------:|-------------|
 | `IRC_SERVER` | ✅ | IRC server hostname (e.g. `irc.libera.chat`) |
 | `IRC_CHANNEL` | ✅ | Channel(s) to join — comma-separate for multiple |
-| `IRC_NICKNAME` | ✅ | Bot nickname (default: `hermes-bot`) |
+| `IRC_NICKNAME` | ✅ | Bot nickname (default: `plobi-bot`) |
 | `IRC_PORT` | — | Server port (default: `6697` with TLS, `6667` without) |
 | `IRC_USE_TLS` | — | Use TLS (`true`/`false`; default `true` on port 6697) |
 | `IRC_SERVER_PASSWORD` | — | Server password for the `PASS` command |
@@ -67,10 +67,10 @@ Cron jobs and notifications are delivered to the **home channel** — `IRC_HOME_
 ## Run the gateway
 
 ```bash
-hermes gateway start
+plobi gateway start
 ```
 
-Check status with `hermes gateway status` — IRC connection state is reported there, including for env-only setups.
+Check status with `plobi gateway status` — IRC connection state is reported there, including for env-only setups.
 
 ## Notes
 

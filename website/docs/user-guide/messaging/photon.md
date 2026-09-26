@@ -52,14 +52,14 @@ That's it — there is no public URL or tunnel to set up.
 Either run the unified gateway wizard and pick **Photon iMessage**:
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 …or run the Photon setup directly (the wizard calls the same flow):
 
 ```bash
 # Device-code login + project + user + sidecar deps, all in one
-hermes photon setup --phone +15551234567
+plobi photon setup --phone +15551234567
 ```
 
 The setup, in order:
@@ -75,10 +75,10 @@ The setup, in order:
    your agent.
 6. **Runs `npm install`** inside the plugin's sidecar directory.
 
-Runtime credentials are written to `~/.hermes/.env`
+Runtime credentials are written to `~/.plobi/.env`
 (`PHOTON_PROJECT_ID` = the Spectrum project id, `PHOTON_PROJECT_SECRET`),
 the same place every other channel keeps its token. Management metadata
-(device token, dashboard project id) lives in `~/.hermes/auth.json` under
+(device token, dashboard project id) lives in `~/.plobi/auth.json` under
 `credential_pool.photon` / `credential_pool.photon_project`.
 
 ## Authorizing users
@@ -90,18 +90,18 @@ channel. Choose one approach:
 line, Plobi replies with a pairing code. Approve it with:
 
 ```bash
-hermes pairing approve photon <CODE>
+plobi pairing approve photon <CODE>
 ```
 
-Use `hermes pairing list` to see pending codes and approved users.
+Use `plobi pairing list` to see pending codes and approved users.
 
-**Pre-authorize specific numbers** (in `~/.hermes/.env`):
+**Pre-authorize specific numbers** (in `~/.plobi/.env`):
 
 ```bash
 PHOTON_ALLOWED_USERS=+15551234567,+15559876543
 ```
 
-**Open access** (dev only, in `~/.hermes/.env`):
+**Open access** (dev only, in `~/.plobi/.env`):
 
 ```bash
 PHOTON_ALLOW_ALL_USERS=true
@@ -145,7 +145,7 @@ BlueBubbles iMessage channel uses.
 ## Start the gateway
 
 ```bash
-hermes gateway start
+plobi gateway start
 ```
 
 You'll see something like:
@@ -159,7 +159,7 @@ Send an iMessage to your assigned number and Plobi will reply.
 ## Status & troubleshooting
 
 ```bash
-hermes photon status
+plobi photon status
 ```
 
 Prints saved credentials, sidecar health, your registered number, and the
@@ -182,14 +182,14 @@ Photon iMessage status
 
 Common issues:
 
-- **`sidecar deps : ✗ run hermes photon install-sidecar`** — Node is
+- **`sidecar deps : ✗ run plobi photon install-sidecar`** — Node is
   installed but `spectrum-ts` isn't. Run the suggested command.
-- **`device token : ✗ missing`** — run `hermes photon setup` to log in.
+- **`device token : ✗ missing`** — run `plobi photon setup` to log in.
 - **`No iMessage line assigned yet`** — Spectrum is enabled but no line
-  has been provisioned; re-run `hermes photon setup` or check the
+  has been provisioned; re-run `plobi photon setup` or check the
   [dashboard][app].
 - **Sidecar won't start** — confirm `node --version` is 18.17+ and that
-  `hermes photon install-sidecar` completed without errors.
+  `plobi photon install-sidecar` completed without errors.
 
 ## Limits today
 

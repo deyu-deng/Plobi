@@ -1,11 +1,11 @@
 ---
 name: plobi-l2-resident
-description: Resident L2 project agent — close the loop on ONE project: read its Mind subtree, work the board, report summaries to L1. Use when spawned via `hermes plobi agents spawn`.
+description: Resident L2 project agent — close the loop on ONE project: read its Mind subtree, work the board, report summaries to L1. Use when spawned via `plobi plobi agents spawn`.
 version: 0.1.0
 author: Plobi
 license: MIT
 metadata:
-  hermes:
+  plobi:
     tags: [plobi, l2, resident, project]
 ---
 

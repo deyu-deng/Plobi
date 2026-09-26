@@ -5,7 +5,7 @@ import { mediaDisplayLabel, mediaMarkdownHref } from '@/lib/media'
 import { normalize } from '@/lib/text'
 import { parseTodos } from '@/lib/todos'
 import { stripInternalDirectives } from '@/lib/visible-user-text'
-import type { SessionMessage, UsageStats } from '@/types/hermes'
+import type { SessionMessage, UsageStats } from '@/types/plobi'
 
 export type ChatMessagePart = Exclude<ThreadMessageLike['content'], string>[number]
 

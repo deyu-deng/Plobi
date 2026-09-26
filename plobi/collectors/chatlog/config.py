@@ -1,6 +1,6 @@
 """Collector configuration.
 
-Two collection modes (config key ``mode`` in ``$HERMES_HOME/plobi/chatlog.json``):
+Two collection modes (config key ``mode`` in ``$PLOBI_HOME/plobi/chatlog.json``):
 
 * ``"whitelist"`` — only the explicitly-named ``talkers`` are ever read.
   Fail-closed: an empty whitelist collects nothing. This is the strict,
@@ -8,7 +8,7 @@ Two collection modes (config key ``mode`` in ``$HERMES_HOME/plobi/chatlog.json``
 * ``"blacklist"`` — read every conversation except those in ``blacklist``.
   An empty blacklist collects *everything* (first-run full ingestion).
 
-Config lives in ``$HERMES_HOME/plobi/chatlog.json``; env vars override for
+Config lives in ``$PLOBI_HOME/plobi/chatlog.json``; env vars override for
 tests and unusual deployments. No drive letters are hardcoded.
 """
 
@@ -31,11 +31,11 @@ def config_path() -> Path:
     if override:
         return Path(override)
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / "chatlog.json"
 
 

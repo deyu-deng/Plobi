@@ -5,7 +5,7 @@ import { chatMessageText } from '@/lib/chat-messages'
 // Desktop-quota chat streaming client
 //
 // When the selected provider is a connected desktop-quota app (Antigravity,
-// Cursor, Workbuddy), the chat submit pipeline bypasses the Hermes backend's
+// Cursor, Workbuddy), the chat submit pipeline bypasses the Plobi backend's
 // `prompt.submit` and instead streams directly from the local aigw hub — an
 // OpenAI-compatible gateway that aggregates the closed-source desktop apps'
 // subscription quotas into one `http://127.0.0.1:<port>/v1` endpoint.
@@ -22,7 +22,7 @@ import { chatMessageText } from '@/lib/chat-messages'
 // attachments are NOT forwarded to aigw (the composer still shows them, but
 // only the textual context reaches the model). Tool calls are not supported —
 // the response is plain text + optional reasoning. The assistant turn is NOT
-// persisted to the Hermes backend's session transcript (it lives in renderer
+// persisted to the Plobi backend's session transcript (it lives in renderer
 // state only), so a session resume after the app restarts won't replay it.
 // ---------------------------------------------------------------------------
 

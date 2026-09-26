@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Run a Plobi instance in an isolated sandbox — separate HERMES_HOME,
+# Run a Plobi instance in an isolated sandbox — separate PLOBI_HOME,
 # separate Electron userData, and a distinct Desktop app name so it doesn't compete
 # with your main desktop instance's single-instance lock.
 #
 # By default the sandbox is throwaway: a temp dir is created and removed on
 # exit. Use --persistent to keep the sandbox across restarts (stored under
-# .hermes-sandbox/ in the worktree git root).
+# .plobi-sandbox/ in the worktree git root).
 #
 # Usage:
-#   scripts/dev-sandbox.sh python -m hermes_cli.main
-#   scripts/dev-sandbox.sh hermes desktop
+#   scripts/dev-sandbox.sh python -m plobi_cli.main
+#   scripts/dev-sandbox.sh plobi desktop
 #   scripts/dev-sandbox.sh electron .
 #   scripts/dev-sandbox.sh -- npm run dev   # from apps/desktop/
-#   scripts/dev-sandbox.sh --persistent hermes desktop
+#   scripts/dev-sandbox.sh --persistent plobi desktop
 #   scripts/dev-sandbox.sh --persistent -- npm run dev
 #
-# Override the app name (default: HermesSandbox):
-#   HERMES_DEV_SANDBOX_NAME=Staging scripts/dev-sandbox.sh hermes desktop
+# Override the app name (default: PlobiSandbox):
+#   PLOBI_DEV_SANDBOX_NAME=Staging scripts/dev-sandbox.sh plobi desktop
 #
-# Override the persistent sandbox dir name (default: .hermes-sandbox):
-#   HERMES_DEV_SANDBOX_DIR=.staging-sandbox scripts/dev-sandbox.sh --persistent hermes desktop
+# Override the persistent sandbox dir name (default: .plobi-sandbox):
+#   PLOBI_DEV_SANDBOX_DIR=.staging-sandbox scripts/dev-sandbox.sh --persistent plobi desktop
 
 set -euo pipefail
 
@@ -33,18 +33,18 @@ Run a Plobi instance in an isolated sandbox.
 
 Options:
   --persistent    Keep the sandbox dir across restarts (under the worktree
-                  git root, in .hermes-sandbox/). Without this flag the
+                  git root, in .plobi-sandbox/). Without this flag the
                   sandbox is a temp dir that is removed on exit.
-  --delete        Delete the existing persistent sandbox in .hermes-sandbox.
+  --delete        Delete the existing persistent sandbox in .plobi-sandbox.
   -h, --help      Show this help message.
 
 Environment:
-  HERMES_DEV_SANDBOX_NAME  Override the app name (default: HermesSandbox)
-  HERMES_DEV_SANDBOX_DIR   Override the persistent dir name (default: .hermes-sandbox)
+  PLOBI_DEV_SANDBOX_NAME  Override the app name (default: PlobiSandbox)
+  PLOBI_DEV_SANDBOX_DIR   Override the persistent dir name (default: .plobi-sandbox)
 
 Examples:
-  dev-sandbox.sh hermes desktop
-  dev-sandbox.sh --persistent hermes desktop
+  dev-sandbox.sh plobi desktop
+  dev-sandbox.sh --persistent plobi desktop
   dev-sandbox.sh -- npm run dev
 EOF
 }
@@ -82,7 +82,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 
-SANDBOX_DIR_NAME="${HERMES_DEV_SANDBOX_DIR:-.hermes-sandbox}"
+SANDBOX_DIR_NAME="${PLOBI_DEV_SANDBOX_DIR:-.plobi-sandbox}"
 GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/..")"
 GIT_ROOT="$(cd "$GIT_ROOT" && pwd)"
 PERSISTENT_SANDBOX_ROOT="$GIT_ROOT/$SANDBOX_DIR_NAME"
@@ -113,25 +113,25 @@ WORKTREE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/
 WORKTREE_ROOT="$(cd "$WORKTREE_ROOT" && pwd)"
 WORKTREE_HASH="$(printf '%s' "$WORKTREE_ROOT" | cksum | cut -d' ' -f1)"
 WORKTREE_NAME="$(basename "$WORKTREE_ROOT")"
-DEFAULT_SANDBOX_NAME="HermesSandbox-${WORKTREE_NAME}-${WORKTREE_HASH}"
+DEFAULT_SANDBOX_NAME="PlobiSandbox-${WORKTREE_NAME}-${WORKTREE_HASH}"
 
-SANDBOX_NAME="${HERMES_DEV_SANDBOX_NAME:-$DEFAULT_SANDBOX_NAME}"
+SANDBOX_NAME="${PLOBI_DEV_SANDBOX_NAME:-$DEFAULT_SANDBOX_NAME}"
 
 if [ "$PERSISTENT" = true ]; then
   SANDBOX_ROOT="$PERSISTENT_SANDBOX_ROOT"
 else
-  SANDBOX_ROOT="$(mktemp -d -t hermes-sandbox.XXXXXX)"
+  SANDBOX_ROOT="$(mktemp -d -t plobi-sandbox.XXXXXX)"
 fi
 
-export HERMES_HOME="$SANDBOX_ROOT/hermes-home"
-export HERMES_DESKTOP_USER_DATA_DIR="$SANDBOX_ROOT/user-data"
-export HERMES_DESKTOP_APP_NAME="$SANDBOX_NAME"
+export PLOBI_HOME="$SANDBOX_ROOT/plobi-home"
+export PLOBI_DESKTOP_USER_DATA_DIR="$SANDBOX_ROOT/user-data"
+export PLOBI_DESKTOP_APP_NAME="$SANDBOX_NAME"
 
-mkdir -p "$HERMES_HOME" "$HERMES_DESKTOP_USER_DATA_DIR"
+mkdir -p "$PLOBI_HOME" "$PLOBI_DESKTOP_USER_DATA_DIR"
 
-echo "[sandbox] HERMES_HOME=$HERMES_HOME" >&2
-echo "[sandbox] userData=$HERMES_DESKTOP_USER_DATA_DIR" >&2
-echo "[sandbox] appName=$HERMES_DESKTOP_APP_NAME" >&2
+echo "[sandbox] PLOBI_HOME=$PLOBI_HOME" >&2
+echo "[sandbox] userData=$PLOBI_DESKTOP_USER_DATA_DIR" >&2
+echo "[sandbox] appName=$PLOBI_DESKTOP_APP_NAME" >&2
 if [ "$PERSISTENT" = true ]; then
   echo "[sandbox] persistent: $SANDBOX_ROOT" >&2
 else

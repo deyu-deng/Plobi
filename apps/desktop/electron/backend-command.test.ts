@@ -52,13 +52,13 @@ test('serveBackendArgs falls back to loopback when PLOBI_LAN is anything other t
   }
 })
 
-test('serveBackendArgs honours PLOBI_LAN=1 from $HERMES_HOME/.env when env is unset', () => {
+test('serveBackendArgs honours PLOBI_LAN=1 from $PLOBI_HOME/.env when env is unset', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-backend-cmd-'))
   try {
     const envPath = path.join(dir, '.env')
     fs.writeFileSync(envPath, 'PLOBI_LAN=1\n', 'utf8')
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: {}, hermesHomeEnvPath: envPath }),
+      serveBackendArgs(undefined, { env: {}, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '0.0.0.0', '--port', '8787'],
     )
   } finally {
@@ -81,7 +81,7 @@ test('serveBackendArgs reads PLOBI_LAN=1 even when commented-style noise surroun
       'utf8',
     )
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: {}, hermesHomeEnvPath: envPath }),
+      serveBackendArgs(undefined, { env: {}, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '0.0.0.0', '--port', '8787'],
     )
   } finally {
@@ -95,7 +95,7 @@ test('serveBackendArgs ignores malformed .env lines and stays loopback', () => {
     const envPath = path.join(dir, '.env')
     fs.writeFileSync(envPath, 'this is not a kv line\n', 'utf8')
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: {}, hermesHomeEnvPath: envPath }),
+      serveBackendArgs(undefined, { env: {}, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '127.0.0.1', '--port', '0'],
     )
   } finally {
@@ -110,7 +110,7 @@ test('serveBackendArgs inherits process.env.PLOBI_LAN when explicitly overridden
     const envPath = path.join(dir, '.env')
     fs.writeFileSync(envPath, 'PLOBI_LAN=1\n', 'utf8')
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: { PLOBI_LAN: '0' }, hermesHomeEnvPath: envPath }),
+      serveBackendArgs(undefined, { env: { PLOBI_LAN: '0' }, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '127.0.0.1', '--port', '0'],
     )
   } finally {
@@ -119,10 +119,10 @@ test('serveBackendArgs inherits process.env.PLOBI_LAN when explicitly overridden
 })
 
 test('dashboardFallbackArgs rewrites serve -> dashboard --no-open, keeping the -m prefix', () => {
-  const serve = ['-m', 'hermes_cli.main', 'serve', '--host', '127.0.0.1', '--port', '0']
+  const serve = ['-m', 'plobi_cli.main', 'serve', '--host', '127.0.0.1', '--port', '0']
   assert.deepEqual(dashboardFallbackArgs(serve), [
     '-m',
-    'hermes_cli.main',
+    'plobi_cli.main',
     'dashboard',
     '--no-open',
     '--host',
@@ -133,10 +133,10 @@ test('dashboardFallbackArgs rewrites serve -> dashboard --no-open, keeping the -
 })
 
 test('dashboardFallbackArgs preserves a --profile flag ahead of serve', () => {
-  const serve = ['-m', 'hermes_cli.main', '--profile', 'worker', 'serve', '--host', '127.0.0.1', '--port', '0']
+  const serve = ['-m', 'plobi_cli.main', '--profile', 'worker', 'serve', '--host', '127.0.0.1', '--port', '0']
   assert.deepEqual(dashboardFallbackArgs(serve), [
     '-m',
-    'hermes_cli.main',
+    'plobi_cli.main',
     '--profile',
     'worker',
     'dashboard',
@@ -149,7 +149,7 @@ test('dashboardFallbackArgs preserves a --profile flag ahead of serve', () => {
 })
 
 test('dashboardFallbackArgs is a no-op (copy) when there is no serve token', () => {
-  const args = ['-m', 'hermes_cli.main', 'dashboard', '--no-open']
+  const args = ['-m', 'plobi_cli.main', 'dashboard', '--no-open']
   const out = dashboardFallbackArgs(args)
   assert.deepEqual(out, args)
   assert.notEqual(out, args, 'should return a copy, not the same reference')
@@ -164,7 +164,7 @@ test('sourceDeclaresServe detects the serve subparser registration', () => {
 test('sourceDeclaresServe does not false-positive on the substring "server"', () => {
   const oldSource = `
     dashboard_parser = subparsers.add_parser("dashboard", help="Start the web UI dashboard")
-    from hermes_cli.web_server import start_server  # web server
+    from plobi_cli.web_server import start_server  # web server
   `
 
   assert.equal(sourceDeclaresServe(oldSource), false)

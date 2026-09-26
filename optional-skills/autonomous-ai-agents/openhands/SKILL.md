@@ -6,9 +6,9 @@ author: Tim Koepsel (xzessmedia), Plobi Agent
 license: MIT
 platforms: [linux, macos]
 metadata:
-  hermes:
+  plobi:
     tags: [Coding-Agent, OpenHands, Model-Agnostic, LiteLLM]
-    related_skills: [claude-code, codex, opencode, hermes-agent]
+    related_skills: [claude-code, codex, opencode, plobi-agent]
 ---
 
 # OpenHands CLI
@@ -146,4 +146,4 @@ If the JSONL stream ends with a `FinishAction` whose `action.message` mentions `
 
 - [OpenHands GitHub](https://github.com/All-Hands-AI/OpenHands)
 - [OpenHands CLI command reference](https://docs.openhands.dev/openhands/usage/cli/command-reference)
-- Sibling skills: `claude-code` (Anthropic-only), `codex` (OpenAI-only), `opencode` (multi-provider via OpenCode), `hermes-agent` (Plobi subagents via `delegate_task`).
+- Sibling skills: `claude-code` (Anthropic-only), `codex` (OpenAI-only), `opencode` (multi-provider via OpenCode), `plobi-agent` (Plobi subagents via `delegate_task`).

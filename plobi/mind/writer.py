@@ -219,7 +219,7 @@ class MindWriter:
 
         if add_completed.returncode != 0:
             # git add 非零通常意味着仓库被锁 / 路径不在仓内——文件已经在盘上，
-            # 不该因此让主回合去撞 Hermes memory 补课。
+            # 不该因此让主回合去撞 Plobi memory 补课。
             output = (add_completed.stdout or "") + (add_completed.stderr or "")
             logger.warning(
                 "mind: commit skipped (git add failed): %s",
@@ -247,7 +247,7 @@ class MindWriter:
                 return True, "nothing to commit"
             # WP-MIND-HOT（裁定 33.2）：脏工作区 / 锁 / untracked / 冲突是日常
             # 运行环境噪音，git 本身可用、只是 commit 这一笔不收——文件已经写
-            # 盘，主回合不该因此再去撞 Hermes memory 补课。下面这些标记命中即
+            # 盘，主回合不该因此再去撞 Plobi memory 补课。下面这些标记命中即
             # 视作环境层面的 skip 而非 git 不可用，``ok=True``、``detail`` 留
             # 现场供运维追查。
             skip_markers = (

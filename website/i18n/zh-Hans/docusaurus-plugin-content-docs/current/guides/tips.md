@@ -48,7 +48,7 @@ CLI 会自动检测多行粘贴。直接粘贴代码块或错误堆栈——不�
 
 ### 使用 `-c` 恢复会话
 
-上次会话有遗漏？运行 `hermes -c` 可精确恢复到上次离开的位置，完整对话历史全部还原。也可以按标题恢复：`hermes -r "my research project"`。
+上次会话有遗漏？运行 `plobi -c` 可精确恢复到上次离开的位置，完整对话历史全部还原。也可以按标题恢复：`plobi -r "my research project"`。
 
 ### 剪贴板图片粘贴
 
@@ -78,9 +78,9 @@ CLI 会自动检测多行粘贴。直接粘贴代码块或错误堆栈——不�
 
 ### SOUL.md：自定义个性
 
-想让 Plobi 拥有稳定的默认风格？编辑 `~/.hermes/SOUL.md`（如果使用自定义 Plobi home，则为 `$HERMES_HOME/SOUL.md`）。Plobi 现在会自动生成一个初始 SOUL 文件，并将该全局文件作为实例级个性来源。
+想让 Plobi 拥有稳定的默认风格？编辑 `~/.plobi/SOUL.md`（如果使用自定义 Plobi home，则为 `$PLOBI_HOME/SOUL.md`）。Plobi 现在会自动生成一个初始 SOUL 文件，并将该全局文件作为实例级个性来源。
 
-完整说明请参阅 [在 Plobi 中使用 SOUL.md](/guides/use-soul-with-hermes)。
+完整说明请参阅 [在 Plobi 中使用 SOUL.md](/guides/use-soul-with-plobi)。
 
 ```markdown
 # Soul
@@ -159,18 +159,18 @@ Plobi 在会话启动时从当前工作目录加载顶层 `AGENTS.md`。子目�
 
 ### 使用 /title 整理会话
 
-用 `/title auth-refactor` 或 `/title research-llm-quantization` 为会话命名。命名后的会话可通过 `hermes sessions list` 轻松找到，并用 `hermes -r "auth-refactor"` 恢复。未命名的会话会堆积起来，难以区分。
+用 `/title auth-refactor` 或 `/title research-llm-quantization` 为会话命名。命名后的会话可通过 `plobi sessions list` 轻松找到，并用 `plobi -r "auth-refactor"` 恢复。未命名的会话会堆积起来，难以区分。
 
 ### DM 配对实现团队访问
 
-不要手动收集用户 ID 来维护白名单，而是启用 DM 配对。当团队成员向 bot 发送私信时，他们会收到一次性配对码。你用 `hermes pairing approve telegram XKGH5N7P` 批准即可——简单且安全。
+不要手动收集用户 ID 来维护白名单，而是启用 DM 配对。当团队成员向 bot 发送私信时，他们会收到一次性配对码。你用 `plobi pairing approve telegram XKGH5N7P` 批准即可——简单且安全。
 
 ### 工具进度显示模式
 
 使用 `/verbose` 控制工具活动的显示详细程度。在消息平台上，通常越简洁越好——保持"new"模式只查看新的工具调用。在 CLI 中，"all" 模式可以实时查看 agent 的所有操作。
 
 :::tip
-默认情况下，消息平台的会话永不自动重置 —— 上下文会一直保留，直到你手动 `/reset` 或触发上下文压缩。如需自动重置（空闲超时或每天固定时间），可在 `~/.hermes/config.yaml` 的 `session_reset` 部分选择启用。
+默认情况下，消息平台的会话永不自动重置 —— 上下文会一直保留，直到你手动 `/reset` 或触发上下文压缩。如需自动重置（空闲超时或每天固定时间），可在 `~/.plobi/config.yaml` 的 `session_reset` 部分选择启用。
 :::
 
 ## 安全
@@ -182,7 +182,7 @@ Plobi 在会话启动时从当前工作目录加载顶层 `AGENTS.md`。子目�
 ```bash
 # In your .env:
 TERMINAL_BACKEND=docker
-TERMINAL_DOCKER_IMAGE=hermes-sandbox:latest
+TERMINAL_DOCKER_IMAGE=plobi-sandbox:latest
 ```
 
 ### 避免 Windows 编码陷阱

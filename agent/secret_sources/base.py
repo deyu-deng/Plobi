@@ -3,7 +3,7 @@
 A *secret source* resolves credentials from an external secret manager
 (Bitwarden Secrets Manager, 1Password, an OS keystore, a user script, ...)
 into environment-variable-shaped values at process startup, AFTER
-``~/.hermes/.env`` has loaded and BEFORE the rest of Plobi reads
+``~/.plobi/.env`` has loaded and BEFORE the rest of Plobi reads
 ``os.environ``.
 
 Scope of the contract (deliberate, please do not widen):
@@ -13,7 +13,7 @@ Scope of the contract (deliberate, please do not widen):
   mid-session secret API.  If a future need for rotation/refresh appears
   it will arrive as a versioned optional hook — do not bolt it on.
 * **Startup-time, synchronous.**  ``fetch()`` is called once per process
-  (per HERMES_HOME) by the orchestrator in
+  (per PLOBI_HOME) by the orchestrator in
   :mod:`agent.secret_sources.registry`, which enforces a wall-clock
   timeout around it.  Sources must not spawn background refreshers.
 * **Never raises, never prompts.**  ``fetch()`` returns a
@@ -62,7 +62,7 @@ DEFAULT_CLI_TIMEOUT_SECONDS = 30.0
 class ErrorKind(str, Enum):
     """Machine-readable failure taxonomy for :class:`FetchResult.error`.
 
-    A fixed vocabulary keeps startup warnings and ``hermes secrets status``
+    A fixed vocabulary keeps startup warnings and ``plobi secrets status``
     uniform across backends, and lets the orchestrator implement
     kind-dependent policy (e.g. a future stale-cache fallback on
     ``NETWORK``/``TIMEOUT`` but not on ``AUTH_FAILED``) exactly once.
@@ -116,7 +116,7 @@ class SecretSource(ABC):
             Lowercase ``[a-z0-9_]+``.  Also the provenance label stored
             for every var this source supplies.
         label: Human-readable name used in startup messages and
-            ``hermes secrets status`` (e.g. ``"Bitwarden Secrets Manager"``).
+            ``plobi secrets status`` (e.g. ``"Bitwarden Secrets Manager"``).
         shape: ``"mapped"`` when the user explicitly binds env-var names
             to refs (1Password ``env:`` map, command source) or
             ``"bulk"`` when the backend injects whole projects/folders
@@ -146,7 +146,7 @@ class SecretSource(ABC):
 
         ``cfg`` is the source's raw config section (``secrets.<name>``)
         from config.yaml — treat every field defensively, the section
-        may be malformed.  ``home_path`` is the resolved HERMES_HOME.
+        may be malformed.  ``home_path`` is the resolved PLOBI_HOME.
         """
 
     # -- optional hooks (defaults are correct for most sources) ------------

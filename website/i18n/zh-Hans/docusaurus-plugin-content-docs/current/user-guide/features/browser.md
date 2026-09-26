@@ -34,7 +34,7 @@ Plobi Agent 内置完整的浏览器自动化工具集，支持多种后端选�
 ## 配置
 
 :::tip Nous 订阅用户
-如果您拥有付费 [Nous Portal](https://portal.nousresearch.com) 订阅，可通过 **[Tool Gateway](tool-gateway.md)** 使用浏览器自动化功能，无需单独的 API 密钥。新安装可运行 `hermes setup --portal` 登录并一次性开启所有 gateway 工具；已有安装可通过 `hermes model` 或 `hermes tools` 选择 **Nous Subscription** 作为浏览器提供商。
+如果您拥有付费 [Nous Portal](https://portal.nousresearch.com) 订阅，可通过 **[Tool Gateway](tool-gateway.md)** 使用浏览器自动化功能，无需单独的 API 密钥。新安装可运行 `plobi setup --portal` 登录并一次性开启所有 gateway 工具；已有安装可通过 `plobi model` 或 `plobi tools` 选择 **Nous Subscription** 作为浏览器提供商。
 :::
 
 ### Browserbase 云端模式
@@ -42,7 +42,7 @@ Plobi Agent 内置完整的浏览器自动化工具集，支持多种后端选�
 要使用 Browserbase 托管的云端浏览器，请添加：
 
 ```bash
-# Add to ~/.hermes/.env
+# Add to ~/.plobi/.env
 BROWSERBASE_API_KEY=***
 BROWSERBASE_PROJECT_ID=your-project-id-here
 ```
@@ -54,7 +54,7 @@ BROWSERBASE_PROJECT_ID=your-project-id-here
 要使用 Browser Use 作为云端浏览器提供商，请添加：
 
 ```bash
-# Add to ~/.hermes/.env
+# Add to ~/.plobi/.env
 BROWSER_USE_API_KEY=***
 ```
 
@@ -65,14 +65,14 @@ BROWSER_USE_API_KEY=***
 要使用 Firecrawl 作为云端浏览器提供商，请添加：
 
 ```bash
-# Add to ~/.hermes/.env
+# Add to ~/.plobi/.env
 FIRECRAWL_API_KEY=fc-***
 ```
 
 在 [firecrawl.dev](https://firecrawl.dev) 获取 API 密钥，然后选择 Firecrawl 作为浏览器提供商：
 
 ```bash
-hermes setup tools
+plobi setup tools
 # → Browser Automation → Firecrawl
 ```
 
@@ -95,7 +95,7 @@ FIRECRAWL_BROWSER_TTL=600
 该功能**默认开启**。如需禁用（所有 URL 均走已配置的云端提供商，与之前行为一致）：
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.plobi/config.yaml
 browser:
   cloud_provider: browserbase
   auto_local_for_private_urls: false
@@ -103,7 +103,7 @@ browser:
 
 禁用自动路由后，私有 URL 将被拒绝并返回 `"Blocked: URL targets a private or internal address"`，除非同时设置 `browser.allow_private_urls: true`（允许云端提供商尝试访问，但通常无法成功，因为 Browserbase 等无法访问您的 LAN）。
 
-要求：本地辅助进程使用与纯本地模式相同的 `agent-browser` CLI，因此需要先安装（`hermes setup tools → Browser Automation` 会自动安装）。从公网 URL 导航后重定向到私有地址的情况仍会被阻止（无法通过公网路径的重定向访问 LAN）。
+要求：本地辅助进程使用与纯本地模式相同的 `agent-browser` CLI，因此需要先安装（`plobi setup tools → Browser Automation` 会自动安装）。从公网 URL 导航后重定向到私有地址的情况仍会被阻止（无法通过公网路径的重定向访问 LAN）。
 
 ### Camofox 本地模式
 
@@ -164,19 +164,19 @@ make down
 # then run the custom docker run command above
 ```
 
-然后在 `~/.hermes/.env` 中设置：
+然后在 `~/.plobi/.env` 中设置：
 
 ```bash
 CAMOFOX_URL=http://localhost:9377
 ```
 
-或通过 `hermes tools` → Browser Automation → Camofox 进行配置。
+或通过 `plobi tools` → Browser Automation → Camofox 进行配置。
 
 设置 `CAMOFOX_URL` 后，所有浏览器工具将自动通过 Camofox 路由，而非 Browserbase 或 agent-browser。
 
 #### 持久化浏览器会话
 
-默认情况下，每个 Camofox 会话使用随机身份 — Cookie 和登录状态不会在 Agent 重启后保留。要启用持久化浏览器会话，请在 `~/.hermes/config.yaml` 中添加：
+默认情况下，每个 Camofox 会话使用随机身份 — Cookie 和登录状态不会在 Agent 重启后保留。要启用持久化浏览器会话，请在 `~/.plobi/config.yaml` 中添加：
 
 ```yaml
 browser:
@@ -218,7 +218,7 @@ managed_persistence: true
 
 ##### 状态存储位置
 
-Plobi 从 profile 范围目录 `~/.hermes/browser_auth/camofox/`（非默认 profile 则在 `$HERMES_HOME` 下的对应位置）派生稳定的 `userId`。实际浏览器 profile 数据存储在 Camofox 服务器端，以该 `userId` 为键。要完全重置持久化 profile，请在 Camofox 服务器端清除对应数据，并删除相应 Plobi profile 的状态目录。
+Plobi 从 profile 范围目录 `~/.plobi/browser_auth/camofox/`（非默认 profile 则在 `$PLOBI_HOME` 下的对应位置）派生稳定的 `userId`。实际浏览器 profile 数据存储在 Camofox 服务器端，以该 `userId` 为键。要完全重置持久化 profile，请在 Camofox 服务器端清除对应数据，并删除相应 Plobi profile 的状态目录。
 
 #### 外部管理的 Camofox 会话
 
@@ -275,7 +275,7 @@ CAMOFOX_ADOPT_EXISTING_TAB=true
 除云端提供商外，您还可以通过 Chrome DevTools Protocol（CDP）将 Plobi 浏览器工具连接到本地运行的 Chrome、Brave、Chromium 或 Edge 实例。当您希望实时查看 Agent 操作、与需要自身 Cookie/会话的页面交互，或避免云端浏览器费用时，此方式非常有用。
 
 :::note
-`/browser connect` 是**交互式 CLI 斜杠命令** — 不由 gateway 分发。若在 WebUI、Telegram、Discord 或其他 gateway 聊天中尝试运行，消息将作为纯文本发送给 Agent，命令不会执行。请从终端启动 Plobi（`hermes` 或 `hermes chat`）并在那里执行 `/browser connect`。
+`/browser connect` 是**交互式 CLI 斜杠命令** — 不由 gateway 分发。若在 WebUI、Telegram、Discord 或其他 gateway 聊天中尝试运行，消息将作为纯文本发送给 Agent，命令不会执行。请从终端启动 Plobi（`plobi` 或 `plobi chat`）并在那里执行 `/browser connect`。
 :::
 
 在 CLI 中使用：
@@ -296,28 +296,28 @@ CAMOFOX_ADOPT_EXISTING_TAB=true
 # Linux — Brave
 brave-browser \
   --remote-debugging-port=9222 \
-  --user-data-dir=$HOME/.hermes/chrome-debug \
+  --user-data-dir=$HOME/.plobi/chrome-debug \
   --no-first-run \
   --no-default-browser-check &
 
 # Linux — Google Chrome
 google-chrome \
   --remote-debugging-port=9222 \
-  --user-data-dir=$HOME/.hermes/chrome-debug \
+  --user-data-dir=$HOME/.plobi/chrome-debug \
   --no-first-run \
   --no-default-browser-check &
 
 # macOS — Brave
 "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.hermes/chrome-debug" \
+  --user-data-dir="$HOME/.plobi/chrome-debug" \
   --no-first-run \
   --no-default-browser-check &
 
 # macOS — Google Chrome
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.hermes/chrome-debug" \
+  --user-data-dir="$HOME/.plobi/chrome-debug" \
   --no-first-run \
   --no-default-browser-check &
 ```
@@ -343,7 +343,7 @@ google-chrome \
 
 具体配置请参阅 MCP 指南：
 
-- [在 Plobi 中使用 MCP](../../guides/use-mcp-with-hermes.md#wsl2-bridge-hermes-in-wsl-to-windows-chrome)
+- [在 Plobi 中使用 MCP](../../guides/use-mcp-with-plobi.md#wsl2-bridge-plobi-in-wsl-to-windows-chrome)
 
 ### 本地浏览器模式
 
@@ -385,7 +385,7 @@ npm install
 ```
 
 :::info
-`browser` 工具集必须包含在配置的 `toolsets` 列表中，或通过 `hermes config set toolsets '["hermes-cli", "browser"]'` 启用。
+`browser` 工具集必须包含在配置的 `toolsets` 列表中，或通过 `plobi config set toolsets '["plobi-cli", "browser"]'` 启用。
 :::
 
 ## 可用工具
@@ -424,7 +424,7 @@ Click @e5 to press the "Sign In" button
 向输入框输入文本。先清空字段，再输入新文本。
 
 ```
-Type "hermes agent" into the search field @e3
+Type "plobi agent" into the search field @e3
 ```
 
 ### `browser_scroll`
@@ -463,7 +463,7 @@ Press Enter to submit the form
 What does the chart on this page show?
 ```
 
-截图存储在 `~/.hermes/cache/screenshots/`，24 小时后自动清理。
+截图存储在 `~/.plobi/cache/screenshots/`，24 小时后自动清理。
 
 ### `browser_console`
 
@@ -593,7 +593,7 @@ browser:
   record_sessions: true  # default: false
 ```
 
-启用后，录制在首次 `browser_navigate` 时自动开始，会话关闭时保存到 `~/.hermes/browser_recordings/`。本地模式和云端模式（Browserbase）均支持。超过 72 小时的录制文件自动清理。
+启用后，录制在首次 `browser_navigate` 时自动开始，会话关闭时保存到 `~/.plobi/browser_recordings/`。本地模式和云端模式（Browserbase）均支持。超过 72 小时的录制文件自动清理。
 
 ## 隐身功能
 

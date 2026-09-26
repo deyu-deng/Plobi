@@ -1,4 +1,4 @@
-import type { SessionInfo } from '@/hermes'
+import type { SessionInfo } from '@/plobi'
 import { persistString, storedString } from '@/lib/storage'
 import { normalizeProfileKey } from '@/store/profile'
 
@@ -27,7 +27,7 @@ export function sameCronSignature(a: SessionInfo[], b: SessionInfo[]): boolean {
   })
 }
 
-/** True only when a Hermes profile named `master` is actually installed. */
+/** True only when a Plobi profile named `master` is actually installed. */
 export function profileListHasMaster(profiles: Array<{ name: string }>): boolean {
   return profiles.some(profile => normalizeProfileKey(profile.name) === 'master')
 }
@@ -65,7 +65,7 @@ export function findKnownOverviewSession<T extends { id: string; _lineage_root_i
 }
 
 /**
- * Latest non-lineage session for a Hermes profile (L1 bind after 裁定 6).
+ * Latest non-lineage session for a Plobi profile (L1 bind after 裁定 6).
  * Prefers tip sessions (`!_lineage_root_id`); falls back to any row on that profile.
  */
 export function findLatestSessionForProfile<

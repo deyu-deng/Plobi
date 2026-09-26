@@ -13,7 +13,7 @@ If you haven't installed Plobi Agent yet, begin with the [Installation guide](/g
 :::
 
 :::tip First-time provider setup
-First-time users almost always want `hermes setup --portal` — one OAuth covers a model plus the four Tool Gateway tools (search/image/TTS/browser). See [Nous Portal](/integrations/nous-portal).
+First-time users almost always want `plobi setup --portal` — one OAuth covers a model plus the four Tool Gateway tools (search/image/TTS/browser). See [Nous Portal](/integrations/nous-portal).
 :::
 
 ## How to Use This Page
@@ -59,7 +59,7 @@ Deploy Plobi Agent as a bot on your favorite messaging platform.
 4. [Telegram Setup](/user-guide/messaging/telegram)
 5. [Discord Setup](/user-guide/messaging/discord)
 6. [Voice Mode](/user-guide/features/voice-mode)
-7. [Use Voice Mode with Plobi](/guides/use-voice-mode-with-hermes)
+7. [Use Voice Mode with Plobi](/guides/use-voice-mode-with-plobi)
 8. [Security](/user-guide/security)
 
 For full project examples, see:

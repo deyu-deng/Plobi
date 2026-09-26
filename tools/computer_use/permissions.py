@@ -18,7 +18,7 @@ something different on each:
 The universal signal on every platform is ``cua-driver doctor --json`` (binary
 integrity + platform support). ``computer_use_status`` folds that together with
 the macOS permission detail into one payload for the desktop card, the
-``hermes computer-use permissions`` CLI, and ``/api/tools/computer-use/status``.
+``plobi computer-use permissions`` CLI, and ``/api/tools/computer-use/status``.
 """
 
 from __future__ import annotations
@@ -39,11 +39,11 @@ def _driver_cmd(override: Optional[str]) -> str:
     if override:
         return override
     try:
-        from hermes_cli.tools_config import _cua_driver_cmd
+        from plobi_cli.tools_config import _cua_driver_cmd
 
         return _cua_driver_cmd()
     except Exception:
-        return os.environ.get("HERMES_CUA_DRIVER_CMD", "").strip() or "cua-driver"
+        return os.environ.get("PLOBI_CUA_DRIVER_CMD", "").strip() or "cua-driver"
 
 
 def _child_env() -> Dict[str, str]:
@@ -177,7 +177,7 @@ def request_permissions_grant(driver_cmd: Optional[str] = None) -> int:
 
     binary = shutil.which(_driver_cmd(driver_cmd))
     if not binary:
-        print("cua-driver: not installed. Run: hermes computer-use install")
+        print("cua-driver: not installed. Run: plobi computer-use install")
         return 2
 
     print(

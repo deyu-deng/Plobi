@@ -2,7 +2,7 @@ import type { MutableRefObject } from 'react'
 import { useCallback, useRef } from 'react'
 import type { NavigateFunction } from 'react-router-dom'
 
-import { deleteSession, getSessionMessages, setSessionArchived } from '@/hermes'
+import { deleteSession, getSessionMessages, setSessionArchived } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
 import { setSessionYolo } from '@/lib/yolo-session'
@@ -44,7 +44,7 @@ import {
 } from '@/store/session'
 import { broadcastSessionsChanged } from '@/store/session-sync'
 import { isWatchWindow } from '@/store/windows'
-import type { SessionCreateResponse, SessionResumeResponse, UsageStats } from '@/types/hermes'
+import type { SessionCreateResponse, SessionResumeResponse, UsageStats } from '@/types/plobi'
 
 import { NEW_CHAT_ROUTE, pathnameFromRouteToken, sessionRoute, SETTINGS_ROUTE, shouldSyncSessionUrl } from '../../../routes'
 import type { ClientSessionState, SidebarNavItem } from '../../../types'
@@ -175,7 +175,7 @@ export function useSessionActions({
         const uiEffort = $currentReasoningEffort.get().trim()
         const uiFast = $currentFastMode.get()
 
-        // Desktop-quota providers (Antigravity, …) are not known to the Hermes
+        // Desktop-quota providers (Antigravity, …) are not known to the Plobi
         // backend — their chat is routed to the aigw hub, not prompt.submit.
         // Strip the model/provider/effort/fast params so session.create doesn't
         // 400 on an unknown provider. The session is still created (it serves

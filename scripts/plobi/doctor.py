@@ -23,7 +23,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Ensure hermes_cli is importable when running `python scripts/plobi/doctor.py`
+# Ensure plobi_cli is importable when running `python scripts/plobi/doctor.py`
 # from the repo root without the project on PYTHONPATH. The web_server
 # import lives behind ``--print-app-token`` only (lazy), but if it fails we
 # fall back to minting the token in-process so a fresh checkout still gets a
@@ -50,16 +50,16 @@ WHITELIST_PROPOSAL_FILENAME = "whitelist_proposal.json"
 WHITELIST_PROPOSAL_FRESH_HOURS = 36
 
 
-def hermes_home() -> Path:
-    override = (os.environ.get("HERMES_HOME") or "").strip()
+def plobi_home() -> Path:
+    override = (os.environ.get("PLOBI_HOME") or "").strip()
     if override:
         return Path(override)
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        return get_hermes_home()
+        return get_plobi_home()
     except Exception:
-        return Path.home() / ".hermes"
+        return Path.home() / ".plobi"
 
 
 # ---------------------------------------------------------------------------
@@ -79,14 +79,14 @@ APP_TOKEN_FILENAME = "app_token"
 def app_token_path(home: Path | None = None) -> Path:
     """Absolute path to the persistent App token file.
 
-    Mirrors ``hermes_cli.web_server._app_token_path`` so the file the App
+    Mirrors ``plobi_cli.web_server._app_token_path`` so the file the App
     pairs against is the same file the backend verifies against.
     """
-    return (home or hermes_home()) / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
+    return (home or plobi_home()) / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
 
 
 def _resolve_plobi_lan(env: dict[str, str] | None = None) -> str:
-    """Return the effective PLOBI_LAN setting, honouring $HERMES_HOME/.env.
+    """Return the effective PLOBI_LAN setting, honouring $PLOBI_HOME/.env.
 
     Same logic as the Electron ``resolveLanMode``: literal ``"1"`` only.
     A non-truthy shell value wins over a truthy .env entry because the
@@ -97,7 +97,7 @@ def _resolve_plobi_lan(env: dict[str, str] | None = None) -> str:
     if inherited:
         return inherited
     # Fall back to the user's .env (single-line `PLOBI_LAN=1`).
-    parsed = load_env_file((hermes_home()) / ".env")
+    parsed = load_env_file((plobi_home()) / ".env")
     return (parsed.get("PLOBI_LAN") or "").strip()
 
 
@@ -163,7 +163,7 @@ def collect_app_pairing_info() -> dict[str, Any]:
     Pure read-only helper so tests and other tools can call it without
     going through argparse.
     """
-    home = hermes_home()
+    home = plobi_home()
     plobi_lan = _resolve_plobi_lan()
     lan_on = plobi_lan == "1"
     token_path_value = app_token_path(home)
@@ -177,7 +177,7 @@ def collect_app_pairing_info() -> dict[str, Any]:
         except OSError:
             token_tail = ""
     return {
-        "hermes_home": str(home),
+        "plobi_home": str(home),
         "plobi_lan_env": plobi_lan,
         "plobi_lan_on": lan_on,
         "bind_host": LAN_BIND_HOST_DEFAULT if lan_on else "127.0.0.1",
@@ -195,7 +195,7 @@ def collect_app_pairing_info() -> dict[str, Any]:
 def format_app_pairing_text(info: dict[str, Any]) -> str:
     """Human-readable multi-line summary used by `doctor --app-info`."""
     lines = [
-        f"HERMES_HOME      = {info['hermes_home']}",
+        f"PLOBI_HOME      = {info['plobi_home']}",
         f"PLOBI_LAN       = {info['plobi_lan_env'] or '(unset)'} "
         f"({'on — bind 0.0.0.0:8787' if info['plobi_lan_on'] else 'off — bind 127.0.0.1:0 (loopback only)'})",
         f"Bind             = {info['bind_host']}:{info['bind_port']}",
@@ -223,7 +223,7 @@ def format_app_pairing_text(info: dict[str, Any]) -> str:
 def print_app_token() -> int:
     """Print the persistent App token to stdout — explicit user opt-in.
 
-    Reads ``$HERMES_HOME/plobi/app_token`` and writes the *full* value
+    Reads ``$PLOBI_HOME/plobi/app_token`` and writes the *full* value
     (no redaction) to stdout, one line. If the file does not exist we
     mint a new token first using the same path-resolution the desktop
     uses, so a freshly cloned repo can still produce a token without
@@ -239,9 +239,9 @@ def print_app_token() -> int:
             return 1
     if not text:
         try:
-            from hermes_cli.web_server import _load_or_mint_app_token  # type: ignore
+            from plobi_cli.web_server import _load_or_mint_app_token  # type: ignore
 
-            minted = _load_or_mint_app_token(hermes_home())
+            minted = _load_or_mint_app_token(plobi_home())
             if minted:
                 text = minted
         except Exception as exc:  # pragma: no cover — defensive
@@ -282,9 +282,9 @@ def load_env_file(path: Path) -> dict[str, str]:
 
 
 def apply_env_files(home: Path | None = None) -> list[str]:
-    """Fill missing os.environ from HERMES_HOME/.env then repo .env."""
+    """Fill missing os.environ from PLOBI_HOME/.env then repo .env."""
     loaded: list[str] = []
-    for path in ( (home or hermes_home()) / ".env", REPO_ROOT / ".env"):
+    for path in ( (home or plobi_home()) / ".env", REPO_ROOT / ".env"):
         parsed = load_env_file(path)
         if not parsed:
             continue
@@ -424,7 +424,7 @@ def check_dingtalk() -> dict[str, Any]:
         return {
             "id": "dingtalk",
             "color": RED,
-            "detail": "DINGTALK_WEBHOOK_URL missing — add to HERMES_HOME/.env or Code/.env (never commit)",
+            "detail": "DINGTALK_WEBHOOK_URL missing — add to PLOBI_HOME/.env or Code/.env (never commit)",
         }
     if not secret:
         return {
@@ -464,7 +464,7 @@ def _toolsets_from_config(cfg: dict) -> set[str]:
 
 
 def check_north_star(home: Path | None = None) -> dict[str, Any]:
-    root = home or hermes_home()
+    root = home or plobi_home()
     cfg_path = root / "config.yaml"
     if not cfg_path.is_file():
         return {
@@ -502,7 +502,7 @@ def check_north_star(home: Path | None = None) -> dict[str, Any]:
 
 
 def check_chatlog_config(home: Path | None = None) -> dict[str, Any]:
-    root = home or hermes_home()
+    root = home or plobi_home()
     path = root / "plobi" / "chatlog.json"
     if not path.is_file():
         return {
@@ -546,12 +546,12 @@ def _whitelist_proposal_path(home: Path | None = None) -> Path:
 
     Honours ``PLOBI_CHATLOG_CONFIG`` (per-file override) the same way the
     collector's :func:`config_path` does, so this never points at the wrong
-    ``HERMES_HOME`` when the operator has pinned chatlog.json elsewhere.
+    ``PLOBI_HOME`` when the operator has pinned chatlog.json elsewhere.
     """
     override = (os.environ.get("PLOBI_CHATLOG_CONFIG") or "").strip()
     if override:
         return Path(override).parent / WHITELIST_PROPOSAL_FILENAME
-    return (home or hermes_home()) / "plobi" / WHITELIST_PROPOSAL_FILENAME
+    return (home or plobi_home()) / "plobi" / WHITELIST_PROPOSAL_FILENAME
 
 
 def _read_proposal_age_hours(path: Path) -> float | None:
@@ -753,19 +753,19 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = run_checks(send_test=args.send_test)
     if args.app_info:
-        # Apply env files first so a PLOBI_LAN set in HERMES_HOME/.env
+        # Apply env files first so a PLOBI_LAN set in PLOBI_HOME/.env
         # is visible to ``_resolve_plobi_lan`` via ``os.environ``.
         apply_env_files()
         info = collect_app_pairing_info()
         print(format_app_pairing_text(info))
         if args.json:
-            print(json.dumps({"hermes_home": str(hermes_home()), "app_info": info}, ensure_ascii=False, indent=2))
+            print(json.dumps({"plobi_home": str(plobi_home()), "app_info": info}, ensure_ascii=False, indent=2))
         return 0
 
     if args.json:
-        print(json.dumps({"hermes_home": str(hermes_home()), "checks": rows}, ensure_ascii=False, indent=2))
+        print(json.dumps({"plobi_home": str(plobi_home()), "checks": rows}, ensure_ascii=False, indent=2))
     else:
-        print(f"HERMES_HOME={hermes_home()}")
+        print(f"PLOBI_HOME={plobi_home()}")
         print(format_table(rows))
         parsed = urlparse(aigw_base_from_env_or_config())
         print(f"aigw probe host={parsed.hostname} port={parsed.port or DEFAULT_AIGW_PORT}")

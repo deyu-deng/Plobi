@@ -14,7 +14,7 @@ P0-2: ``plugins/plobi-north-star/l1_profile_template.yaml`` 是仓库内唯一
 P0-3: ``plobi/agenda/mind_sync.py::publish_project_daily_summary`` /
        ``publish_daily_summary`` 把 ``SubprocessError`` / ``OSError`` /
        ``ValueError`` 等异常兜底成 ``(False, "summary skipped: ...")``，
-       **不**抛——主回合不会再去撞 Hermes memory 工具。
+       **不**抛——主回合不会再去撞 Plobi memory 工具。
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import yaml
 from plobi.agenda.service import AgendaService
 
 
-# ─── plugin loader (hermes_plugins.*) ───────────────────────────────────────
+# ─── plugin loader (plobi_plugins.*) ───────────────────────────────────────
 
 
 def _plugin_dir() -> Path:
@@ -48,20 +48,20 @@ def _load_l1_budget():
     ``hard_route`` / ``tools`` / ``master_tools`` and fail in tests where
     the rest of the plugin isn't on sys.path.
     """
-    name = "hermes_plugins.plobi_north_star.l1_budget"
+    name = "plobi_plugins.plobi_north_star.l1_budget"
     if name in sys.modules:
         return sys.modules[name]
-    if "hermes_plugins" not in sys.modules:
-        ns = types.ModuleType("hermes_plugins")
+    if "plobi_plugins" not in sys.modules:
+        ns = types.ModuleType("plobi_plugins")
         ns.__path__ = []  # type: ignore[attr-defined]
-        sys.modules["hermes_plugins"] = ns
+        sys.modules["plobi_plugins"] = ns
     # Fake parent package so the leaf module's relative-import resolution
     # (none today, but defensive) finds a package — no parent __init__ exec.
-    parent_name = "hermes_plugins.plobi_north_star"
+    parent_name = "plobi_plugins.plobi_north_star"
     if parent_name not in sys.modules:
         parent_mod = types.ModuleType(parent_name)
         parent_mod.__path__ = [str(_plugin_dir())]  # type: ignore[attr-defined]
-        parent_mod.__package__ = "hermes_plugins"
+        parent_mod.__package__ = "plobi_plugins"
         sys.modules[parent_name] = parent_mod
 
     l1_path = _plugin_dir() / "l1_budget.py"
@@ -157,7 +157,7 @@ def test_north_star_hook_disables_memory_nudge_for_l1(l1_budget):
 def test_north_star_hook_does_not_touch_l2(l1_budget):
     """L2-agenda / 自定义 profile → nudge intervals 不动。
 
-    L2 通常有自己的 hermes profile（不在 ``default`` 上），自动豁免；这里
+    L2 通常有自己的 plobi profile（不在 ``default`` 上），自动豁免；这里
     还多覆盖一个"profile 是 default 但工具集不是 north-star"的边缘情况——
     那不是 L1（可能是别的 default 用户），hook 必须不碰。
     """
@@ -312,7 +312,7 @@ class TestApplyL1BudgetEveryTurn:
         conversation_history 非空 + 已有 system_prompt 命中 → 走早退 return。
         在 production 代码里早退前已加 apply_l1_budget(agent)；
         这里直接验``is_l1_default_profile`` + ``apply_l1_budget`` 的端到端
-        行为（因为 production 早退路径通过 ``hermes_plugins.*`` 命名空间
+        行为（因为 production 早退路径通过 ``plobi_plugins.*`` 命名空间
         拉函数，import 失败会 swallow——见 conftest 的 sys.path 注入）。
         """
         # 记录 apply_l1_budget 调用次数
@@ -529,7 +529,7 @@ def test_mind_summary_fails_open_on_dirty_tree(vault, monkeypatch):
 
     任务书 §3：dirty tree（无关 untracked / modified 工作区）→ git commit
     返回 128（其它非 0）时只 logger.warning，**不**抛；主回合不能再去撞
-    Hermes memory 工具。
+    Plobi memory 工具。
     """
     from plobi.agenda.mind_sync import publish_project_daily_summary
     from plobi.mind import writer as writer_module
@@ -591,7 +591,7 @@ def test_mind_summary_fails_open_when_commit_raises(vault, monkeypatch):
     """``_commit`` 自己抛异常 → ``publish_*`` 兜底回 ``(False, ...)``，不冒泡。
 
     这是任务书 §3 红线测试：mind 摘要路径**任何**异常都不能让主回合去
-    撞 Hermes memory 工具。
+    撞 Plobi memory 工具。
     """
     from plobi.agenda.mind_sync import publish_project_daily_summary
     from plobi.mind import writer as writer_module

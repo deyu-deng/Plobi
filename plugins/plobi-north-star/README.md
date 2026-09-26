@@ -1,6 +1,6 @@
 # plobi-north-star
 
-Deep edge module for the Plobi North Star. **Reuse Hermes**; expose a narrow API.
+Deep edge module for the Plobi North Star. **Reuse Plobi**; expose a narrow API.
 
 ## Public interfaces only
 
@@ -24,9 +24,9 @@ Include toolset `plobi_north_star` (see `docs/plobi/profiles/master/config.yaml`
 
 ## Reuse
 
-- Board collaboration → Hermes **kanban** (mirrored on enqueue)
-- Messaging / mobile → Hermes **gateway** + `/plobi …`
-- Schedules → Hermes **cron** + `skills/plobi/*`
+- Board collaboration → Plobi **kanban** (mirrored on enqueue)
+- Messaging / mobile → Plobi **gateway** + `/plobi …`
+- Schedules → Plobi **cron** + `skills/plobi/*`
 - Antigravity → **aigw**
 - Marvis GUI → HID (owned here)
 

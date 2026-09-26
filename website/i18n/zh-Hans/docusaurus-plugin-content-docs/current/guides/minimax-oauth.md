@@ -34,24 +34,24 @@ Plobi Agent 通过基于浏览器的 OAuth 登录流程支持 **MiniMax**，使�
 
 ```bash
 # 启动 provider 和模型选择器
-hermes model
+plobi model
 # → 从 provider 列表中选择 "MiniMax (OAuth)"
 # → Plobi 在浏览器中打开 MiniMax 授权页面
 # → 在浏览器中批准访问
 # → 选择模型（MiniMax-M2.7 或 MiniMax-M2.7-highspeed）
 # → 开始对话
 
-hermes
+plobi
 ```
 
-首次登录后，凭据将存储在 `~/.hermes/auth.json` 下，并在每次会话前自动刷新。
+首次登录后，凭据将存储在 `~/.plobi/auth.json` 下，并在每次会话前自动刷新。
 
 ## 手动登录
 
 您可以在不经过模型选择器的情况下触发登录：
 
 ```bash
-hermes auth add minimax-oauth
+plobi auth add minimax-oauth
 ```
 
 ### 中国区域
@@ -59,9 +59,9 @@ hermes auth add minimax-oauth
 如果您的账户在中国平台（`minimaxi.com`），请改用中国区域 OAuth provider id `minimax-cn`，或跳过 OAuth 直接配置 `MINIMAX_CN_API_KEY` / `MINIMAX_CN_BASE_URL`。旧版文档中描述的 `--region cn` 标志**未**接入 CLI 的参数解析器；请改用 `minimax-cn` provider：
 
 ```bash
-hermes auth add minimax-cn --type oauth   # 如果您的中国账户支持 OAuth
+plobi auth add minimax-cn --type oauth   # 如果您的中国账户支持 OAuth
 # 或更简单的方式：
-echo 'MINIMAX_CN_API_KEY=your-key' >> ~/.hermes/.env
+echo 'MINIMAX_CN_API_KEY=your-key' >> ~/.plobi/.env
 ```
 
 ### 远程/无头会话
@@ -69,7 +69,7 @@ echo 'MINIMAX_CN_API_KEY=your-key' >> ~/.hermes/.env
 在没有浏览器的服务器或容器上：
 
 ```bash
-hermes auth add minimax-oauth --no-browser
+plobi auth add minimax-oauth --no-browser
 ```
 
 Plobi 将打印验证 URL 和用户码——在任意设备上打开该 URL，并在提示时输入用户码。
@@ -82,14 +82,14 @@ Plobi 针对 MiniMax OAuth 端点实现了 PKCE 设备码流程：
 2. 携带 challenge 向 `{base_url}/oauth/code` 发送 POST 请求，获取 `user_code` 和 `verification_uri`。
 3. 浏览器打开 `verification_uri`。如有提示，输入 `user_code`。
 4. Plobi 轮询 `{base_url}/oauth/token`，直到令牌到达（或超过截止时间）。
-5. 令牌（`access_token`、`refresh_token`、过期时间）以 `minimax-oauth` 为键保存到 `~/.hermes/auth.json`。
+5. 令牌（`access_token`、`refresh_token`、过期时间）以 `minimax-oauth` 为键保存到 `~/.plobi/auth.json`。
 
 令牌刷新（标准 OAuth `refresh_token` 授权）在每次会话启动时自动执行，当 access token 距过期不足 60 秒时触发。
 
 ## 检查登录状态
 
 ```bash
-hermes doctor
+plobi doctor
 ```
 
 `◆ Auth Providers` 部分将显示：
@@ -107,7 +107,7 @@ hermes doctor
 ## 切换模型
 
 ```bash
-hermes model
+plobi model
 # → 选择 "MiniMax (OAuth)"
 # → 从模型列表中选择
 ```
@@ -115,13 +115,13 @@ hermes model
 或直接设置模型：
 
 ```bash
-hermes config set model MiniMax-M2.7
-hermes config set provider minimax-oauth
+plobi config set model MiniMax-M2.7
+plobi config set provider minimax-oauth
 ```
 
 ## 配置参考
 
-登录后，`~/.hermes/config.yaml` 将包含类似如下的条目：
+登录后，`~/.plobi/config.yaml` 将包含类似如下的条目：
 
 ```yaml
 model:
@@ -142,10 +142,10 @@ model:
 以下所有别名均解析为 `minimax-oauth`：
 
 ```bash
-hermes --provider minimax-oauth    # 规范名称
-hermes --provider minimax-portal   # 别名
-hermes --provider minimax-global   # 别名
-hermes --provider minimax_oauth    # 别名（下划线形式）
+plobi --provider minimax-oauth    # 规范名称
+plobi --provider minimax-portal   # 别名
+plobi --provider minimax-global   # 别名
+plobi --provider minimax_oauth    # 别名（下划线形式）
 ```
 
 ## 环境变量
@@ -157,10 +157,10 @@ hermes --provider minimax_oauth    # 别名（下划线形式）
 | `MINIMAX_API_KEY` | 仅用于 `minimax` provider——对 `minimax-oauth` 无效 |
 | `MINIMAX_CN_API_KEY` | 仅用于 `minimax-cn` provider——对 `minimax-oauth` 无效 |
 
-要将 `minimax-oauth` 设为活跃 provider，请在 `config.yaml` 中设置 `model.provider: minimax-oauth`（使用 `hermes setup` 进行引导式配置），或在单次调用时传入 `--provider minimax-oauth`：
+要将 `minimax-oauth` 设为活跃 provider，请在 `config.yaml` 中设置 `model.provider: minimax-oauth`（使用 `plobi setup` 进行引导式配置），或在单次调用时传入 `--provider minimax-oauth`：
 
 ```bash
-hermes --provider minimax-oauth
+plobi --provider minimax-oauth
 ```
 
 ## 模型
@@ -182,13 +182,13 @@ Plobi 在每次会话启动时，若 access token 距过期不足 60 秒则刷�
 
 当刷新失败为终态（HTTP 4xx、`invalid_grant`、授权已撤销等）时，Plobi 将 refresh token 标记为失效并在本地隔离，避免持续重放注定失败的交换。Agent 会显示一条"需要重新认证"的消息，并在您再次登录之前保持等待。
 
-**解决方法：** 再次运行 `hermes auth add minimax-oauth` 以开始全新登录。下一次成功交换后隔离状态将自动清除。
+**解决方法：** 再次运行 `plobi auth add minimax-oauth` 以开始全新登录。下一次成功交换后隔离状态将自动清除。
 
 ### 授权超时
 
 设备码流程有有限的过期窗口。如果您未在规定时间内批准登录，Plobi 将抛出超时错误。
 
-**解决方法：** 重新运行 `hermes auth add minimax-oauth`（或 `hermes model`）。流程将重新开始。
+**解决方法：** 重新运行 `plobi auth add minimax-oauth`（或 `plobi model`）。流程将重新开始。
 
 ### State 不匹配（可能的 CSRF）
 
@@ -198,10 +198,10 @@ Plobi 检测到授权服务器返回的 `state` 值与其发送的值不匹配�
 
 ### 从远程服务器登录
 
-如果 `hermes` 无法打开浏览器窗口，请使用 `--no-browser`：
+如果 `plobi` 无法打开浏览器窗口，请使用 `--no-browser`：
 
 ```bash
-hermes auth add minimax-oauth --no-browser
+plobi auth add minimax-oauth --no-browser
 ```
 
 Plobi 将打印 URL 和用户码。在任意设备上打开该 URL 并在那里完成流程。
@@ -210,14 +210,14 @@ Plobi 将打印 URL 和用户码。在任意设备上打开该 URL 并在那里�
 
 auth 存储中没有 `minimax-oauth` 的凭据。您尚未登录，或凭据文件已被删除。
 
-**解决方法：** 运行 `hermes model` 并选择 MiniMax (OAuth)，或运行 `hermes auth add minimax-oauth`。
+**解决方法：** 运行 `plobi model` 并选择 MiniMax (OAuth)，或运行 `plobi auth add minimax-oauth`。
 
 ## 退出登录
 
 要移除已存储的 MiniMax OAuth 凭据：
 
 ```bash
-hermes auth logout minimax-oauth
+plobi auth logout minimax-oauth
 ```
 
 ## 另请参阅
@@ -225,4 +225,4 @@ hermes auth logout minimax-oauth
 - [AI Providers 参考](../integrations/providers.md)
 - [环境变量](../reference/environment-variables.md)
 - [配置](../user-guide/configuration.md)
-- [hermes doctor](../reference/cli-commands.md)
+- [plobi doctor](../reference/cli-commands.md)

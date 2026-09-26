@@ -1,6 +1,6 @@
 """§5 console data API — HTTP + row assembly in ONE module (ARCH-UI-MASTER §3.5).
 
-Mounted at ``/api`` by ``hermes_cli.web_server`` so the routes are exactly the
+Mounted at ``/api`` by ``plobi_cli.web_server`` so the routes are exactly the
 contract paths: ``/api/agents``, ``/api/agents/{id}/subagents``,
 ``/api/agents/{id}/overview``.
 
@@ -23,7 +23,7 @@ field           source
 ``sessionId``   attributed sessions (see ``sessions_for_agent``)
 ==============  ============================================================
 
-Usage numbers come from ``session_model_usage`` in ``$HERMES_HOME/state.db``,
+Usage numbers come from ``session_model_usage`` in ``$PLOBI_HOME/state.db``,
 the same table the base CLI's own ``/usage`` surfaces read. No estimation
 layer is added and no figure is invented when the table has nothing to say.
 
@@ -187,19 +187,19 @@ def status_for(agent_id: str) -> str:
 def _latest_session_for_profile(profile: str) -> str:
     """该 profile 的 state.db 里最近活跃的 session id（ARCH-RULINGS 裁定 1）。
 
-    Hermes 的会话隶属 **profile**（每个 profile home 一份 ``state.db``，
+    Plobi 的会话隶属 **profile**（每个 profile home 一份 ``state.db``，
     ``sessions`` 表没有 profile 列——隔离是天然的）。这里按
-    ``hermes_cli.profiles.get_profile_dir`` 解析 profile home 后只读查询
+    ``plobi_cli.profiles.get_profile_dir`` 解析 profile home 后只读查询
     （``mode=ro``，与底座跨 profile 聚合同一语义：不建库、不拿写锁、
     db 不存在诚实返回空串）。"最近活跃" = ``COALESCE(ended_at, started_at)``
     最大——进行中的会话 ``ended_at`` 为空，天然排前。
     """
     try:
-        from hermes_cli.profiles import get_profile_dir
+        from plobi_cli.profiles import get_profile_dir
 
         db_path = get_profile_dir(profile) / "state.db"
     except (ImportError, KeyError) as exc:
-        # ImportError: hermes_cli not installed; KeyError: unknown profile name
+        # ImportError: plobi_cli not installed; KeyError: unknown profile name
         logger.debug("plobi console: cannot resolve profile dir for %s: %s", profile, exc)
         return ""
     if not db_path.exists():
@@ -278,7 +278,7 @@ def agent_display_name(entry: AgentEntry) -> str:
 def agent_row(entry: AgentEntry) -> dict:
     """``Agent`` in console/types.ts — id/name/status/model/todayCalls + profile.
 
-    ``profile`` is the Hermes profile the desktop must switch onto before
+    ``profile`` is the Plobi profile the desktop must switch onto before
     resuming or creating that agent's session (ARCH-RULINGS 裁定 1/3;
     registry ``profile_name`` = ``profile or name``).
 
@@ -352,7 +352,7 @@ def agent_overview(agent_id: str, *, db_path=None) -> Optional[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# today's token / cost accounting (from Hermes' own usage tables)
+# today's token / cost accounting (from Plobi' own usage tables)
 # --------------------------------------------------------------------------- #
 
 USAGE_TABLE = "session_model_usage"
@@ -384,8 +384,8 @@ class UsageTotals:
 
 
 def default_db_path() -> Path:
-    """``$HERMES_HOME/state.db`` — the canonical Hermes state database."""
-    from hermes_state import DEFAULT_DB_PATH
+    """``$PLOBI_HOME/state.db`` — the canonical Plobi state database."""
+    from plobi_state import DEFAULT_DB_PATH
 
     return Path(DEFAULT_DB_PATH)
 
@@ -743,7 +743,7 @@ def _archive_profile_dir(entry: AgentEntry, *, move: bool) -> Optional[Path]:
     archived, just with no folder to carry over.
     """
     try:
-        from hermes_cli.profiles import get_profile_dir
+        from plobi_cli.profiles import get_profile_dir
     except ImportError:
         return None
     try:

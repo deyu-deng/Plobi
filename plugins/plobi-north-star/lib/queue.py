@@ -65,16 +65,16 @@ class TaskRecord:
 
 
 class TaskQueue:
-    """JSON-file backed queue under HERMES_HOME/plobi/tasks.json."""
+    """JSON-file backed queue under PLOBI_HOME/plobi/tasks.json."""
 
     def __init__(self, path: Optional[Path] = None):
         if path is None:
             try:
-                from hermes_constants import get_hermes_home
+                from plobi_constants import get_plobi_home
 
-                root = get_hermes_home() / "plobi"
+                root = get_plobi_home() / "plobi"
             except Exception:
-                root = Path.home() / ".hermes" / "plobi"
+                root = Path.home() / ".plobi" / "plobi"
             path = root / "tasks.json"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)

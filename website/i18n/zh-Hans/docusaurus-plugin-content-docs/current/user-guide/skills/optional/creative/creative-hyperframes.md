@@ -14,7 +14,7 @@ description: "使用 HyperFrames 创建基于 HTML 的视频合成、动画标�
 
 | | |
 |---|---|
-| 来源 | 可选 — 通过 `hermes skills install official/creative/hyperframes` 安装 |
+| 来源 | 可选 — 通过 `plobi skills install official/creative/hyperframes` 安装 |
 | 路径 | `optional-skills/creative/hyperframes` |
 | 版本 | `1.0.0` |
 | 作者 | heygen-com |
@@ -69,7 +69,7 @@ npx hyperframes doctor                      # 诊断环境问题
 ## 初始设置（一次性）
 
 ```bash
-bash "$(dirname "$(find ~/.hermes/skills -path '*/hyperframes/SKILL.md' 2>/dev/null | head -1)")/scripts/setup.sh"
+bash "$(dirname "$(find ~/.plobi/skills -path '*/hyperframes/SKILL.md' 2>/dev/null | head -1)")/scripts/setup.sh"
 ```
 
 该脚本执行以下操作：

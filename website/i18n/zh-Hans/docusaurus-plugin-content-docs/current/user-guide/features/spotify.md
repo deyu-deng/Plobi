@@ -1,8 +1,8 @@
 # Spotify
 
-Plobi 可以直接控制 Spotify——播放、队列、搜索、播放列表、已保存的曲目/专辑以及收听历史——通过 Spotify 官方 Web API 配合 PKCE OAuth 实现。Token（令牌）存储在 `~/.hermes/auth.json` 中，遇到 401 时自动刷新；每台机器只需登录一次。
+Plobi 可以直接控制 Spotify——播放、队列、搜索、播放列表、已保存的曲目/专辑以及收听历史——通过 Spotify 官方 Web API 配合 PKCE OAuth 实现。Token（令牌）存储在 `~/.plobi/auth.json` 中，遇到 401 时自动刷新；每台机器只需登录一次。
 
-与 Plobi 内置的 OAuth 集成（Google、GitHub Copilot、Codex）不同，Spotify 要求每位用户自行注册一个轻量级开发者应用。Spotify 不允许第三方发布可供所有人使用的公共 OAuth 应用。整个过程大约需要两分钟，`hermes auth spotify` 会全程引导你完成。
+与 Plobi 内置的 OAuth 集成（Google、GitHub Copilot、Codex）不同，Spotify 要求每位用户自行注册一个轻量级开发者应用。Spotify 不允许第三方发布可供所有人使用的公共 OAuth 应用。整个过程大约需要两分钟，`plobi auth spotify` 会全程引导你完成。
 
 ## 前提条件
 
@@ -12,15 +12,15 @@ Plobi 可以直接控制 Spotify——播放、队列、搜索、播放列表、
 
 ## 设置
 
-### 一键完成：`hermes tools` 或首次运行设置
+### 一键完成：`plobi tools` 或首次运行设置
 
 最快捷的方式。运行：
 
 ```bash
-hermes tools
+plobi tools
 ```
 
-滚动到 `🎵 Spotify`，按空格键启用，再按 `s` 保存。同样的开关也可在首次运行 `hermes setup` / `hermes setup tools` 流程中找到。Spotify 默认为可选启用，在此处启用会触发与 `hermes tools` 相同的提供商感知配置流程。
+滚动到 `🎵 Spotify`，按空格键启用，再按 `s` 保存。同样的开关也可在首次运行 `plobi setup` / `plobi setup tools` 流程中找到。Spotify 默认为可选启用，在此处启用会触发与 `plobi tools` 相同的提供商感知配置流程。
 
 Plobi 会直接进入 OAuth 流程——如果你还没有 Spotify 应用，它会内联引导你创建一个。完成后，工具集即被启用并完成认证，一步到位。
 
@@ -31,7 +31,7 @@ Plobi 会直接进入 OAuth 流程——如果你还没有 Spotify 应用，它�
 #### 1. 启用工具集
 
 ```bash
-hermes tools
+plobi tools
 ```
 
 启用 `🎵 Spotify`，保存，当内联向导弹出时关闭它（Ctrl+C）。工具集保持开启状态，仅跳过认证步骤。
@@ -39,20 +39,20 @@ hermes tools
 #### 2. 运行登录向导
 
 ```bash
-hermes auth spotify
+plobi auth spotify
 ```
 
 7 个 Spotify 工具只有在完成第 1 步后才会出现在 agent 的工具集中——它们默认关闭，以避免不需要它们的用户在每次 API 调用时额外传输工具 schema。
 
-若未设置 `HERMES_SPOTIFY_CLIENT_ID`，Plobi 会内联引导你完成应用注册：
+若未设置 `PLOBI_SPOTIFY_CLIENT_ID`，Plobi 会内联引导你完成应用注册：
 
 1. 在浏览器中打开 `https://developer.spotify.com/dashboard`
 2. 打印需要粘贴到 Spotify "Create app" 表单中的确切值
 3. 提示你输入获得的 Client ID
-4. 将其保存到 `~/.hermes/.env`，后续运行时跳过此步骤
+4. 将其保存到 `~/.plobi/.env`，后续运行时跳过此步骤
 5. 直接进入 OAuth 授权流程
 
-授权完成后，token 将写入 `~/.hermes/auth.json` 的 `providers.spotify` 下。当前推理提供商不会改变——Spotify 认证与你的 LLM 提供商无关。
+授权完成后，token 将写入 `~/.plobi/auth.json` 的 `providers.spotify` 下。当前推理提供商不会改变——Spotify 认证与你的 LLM 提供商无关。
 
 ### 创建 Spotify 应用（向导所需内容）
 
@@ -60,7 +60,7 @@ hermes auth spotify
 
 | 字段 | 值 |
 |-------|-------|
-| App name | 任意（例如 `hermes-agent`） |
+| App name | 任意（例如 `plobi-agent`） |
 | App description | 任意（例如 `personal Plobi integration`） |
 | Website | 留空 |
 | Redirect URI | `http://127.0.0.1:43827/spotify/callback` |
@@ -81,10 +81,10 @@ ssh -N -L 43827:127.0.0.1:43827 user@remote-host
 ## 验证
 
 ```bash
-hermes auth status spotify
+plobi auth status spotify
 ```
 
-显示 token 是否存在以及 access token 的过期时间。刷新是自动的：当任何 Spotify API 调用返回 401 时，客户端会用 refresh token 换取新 token 并重试一次。Refresh token 在 Plobi 重启后仍然有效，只有在你的 Spotify 账号设置中撤销该应用，或运行 `hermes auth logout spotify` 后才需要重新认证。
+显示 token 是否存在以及 access token 的过期时间。刷新是自动的：当任何 Spotify API 调用返回 401 时，客户端会用 refresh token 换取新 token 并重试一次。Refresh token 在 Plobi 重启后仍然有效，只有在你的 Spotify 账号设置中撤销该应用，或运行 `plobi auth logout spotify` 后才需要重新认证。
 
 ## 使用方法
 
@@ -190,7 +190,7 @@ hermes auth status spotify
 ### 早晨唤醒播放列表
 
 ```bash
-hermes cron add \
+plobi cron add \
   --name "morning-commute" \
   "0 7 * * 1-5" \
   "Transfer playback to my kitchen speaker and start my 'Morning Commute' playlist. Volume to 40. Shuffle on."
@@ -204,7 +204,7 @@ hermes cron add \
 ### 夜间收尾
 
 ```bash
-hermes cron add \
+plobi cron add \
   --name "wind-down" \
   "30 22 * * *" \
   "Pause Spotify. Then set volume to 20 so it's quiet when I start it again tomorrow."
@@ -214,7 +214,7 @@ hermes cron add \
 
 - **cron 触发时必须存在活跃设备。** 若没有 Spotify 客户端在运行（手机/桌面端/Connect 音箱），播放操作将返回 `403 no active device`。对于早晨播放列表，建议指定一个始终开机的设备（Sonos、Echo、智能音箱），而非手机。
 - **任何修改播放状态的操作都需要 Premium**——播放、暂停、跳曲、音量、切换设备。只读 cron 任务（例如定时"发送我最近播放的曲目"）在免费版上可正常使用。
-- **cron agent 继承你的活跃工具集。** Spotify 必须在 `hermes tools` 中启用，cron 会话才能看到 Spotify 工具。
+- **cron agent 继承你的活跃工具集。** Spotify 必须在 `plobi tools` 中启用，cron 会话才能看到 Spotify 工具。
 - **Cron 任务以 `skip_memory=True` 运行**，不会写入你的记忆存储。
 
 完整 cron 参考：[Cron Jobs](./cron)。
@@ -222,10 +222,10 @@ hermes cron add \
 ## 退出登录
 
 ```bash
-hermes auth logout spotify
+plobi auth logout spotify
 ```
 
-从 `~/.hermes/auth.json` 中移除 token。若还需清除应用配置，请从 `~/.hermes/.env` 中删除 `HERMES_SPOTIFY_CLIENT_ID`（以及 `HERMES_SPOTIFY_REDIRECT_URI`，如果你设置了的话），或重新运行向导。
+从 `~/.plobi/auth.json` 中移除 token。若还需清除应用配置，请从 `~/.plobi/.env` 中删除 `PLOBI_SPOTIFY_CLIENT_ID`（以及 `PLOBI_SPOTIFY_REDIRECT_URI`，如果你设置了的话），或重新运行向导。
 
 若要在 Spotify 侧撤销应用，请访问[已连接到你账号的应用](https://www.spotify.com/account/apps/)并点击 **REMOVE ACCESS**。
 
@@ -237,11 +237,11 @@ hermes auth logout spotify
 
 **`get_currently_playing` 返回 `204 No Content`** — 当前所有设备上均无内容播放。这是 Spotify 的正常响应，不是错误；Plobi 将其呈现为说明性的空结果（`is_playing: false`）。
 
-**`INVALID_CLIENT: Invalid redirect URI`** — 你的 Spotify 应用设置中的 redirect URI 与 Plobi 使用的不匹配。默认值为 `http://127.0.0.1:43827/spotify/callback`。请将其添加到应用的允许 redirect URI 列表中，或在 `~/.hermes/.env` 中将 `HERMES_SPOTIFY_REDIRECT_URI` 设置为你注册的值。
+**`INVALID_CLIENT: Invalid redirect URI`** — 你的 Spotify 应用设置中的 redirect URI 与 Plobi 使用的不匹配。默认值为 `http://127.0.0.1:43827/spotify/callback`。请将其添加到应用的允许 redirect URI 列表中，或在 `~/.plobi/.env` 中将 `PLOBI_SPOTIFY_REDIRECT_URI` 设置为你注册的值。
 
 **`429 Too Many Requests`** — Spotify 的速率限制。Plobi 会返回友好的错误提示；等待一分钟后重试。若持续出现，你可能在脚本中运行了紧密循环——Spotify 的配额大约每 30 秒重置一次。
 
-**`401 Unauthorized` 持续出现** — 你的 refresh token 已被撤销（通常是因为你从账号中移除了该应用，或应用被删除）。重新运行 `hermes auth spotify`。
+**`401 Unauthorized` 持续出现** — 你的 refresh token 已被撤销（通常是因为你从账号中移除了该应用，或应用被删除）。重新运行 `plobi auth spotify`。
 
 **向导未打开浏览器** — 若你通过 SSH 连接或在没有显示器的容器中运行，Plobi 会检测到并跳过自动打开。复制它打印的 dashboard URL 并手动打开。
 
@@ -250,7 +250,7 @@ hermes auth logout spotify
 默认情况下，Plobi 会请求所有已发布工具所需的 scope。若需限制访问权限，可覆盖默认值：
 
 ```bash
-hermes auth spotify --scope "user-read-playback-state user-modify-playback-state playlist-read-private"
+plobi auth spotify --scope "user-read-playback-state user-modify-playback-state playlist-read-private"
 ```
 
 Scope 参考：[Spotify Web API scopes](https://developer.spotify.com/documentation/web-api/concepts/scopes)。若请求的 scope 少于某个工具所需，该工具的调用将以 403 失败。
@@ -258,14 +258,14 @@ Scope 参考：[Spotify Web API scopes](https://developer.spotify.com/documentat
 ## 进阶：自定义 client ID / redirect URI
 
 ```bash
-hermes auth spotify --client-id <id> --redirect-uri http://localhost:3000/callback
+plobi auth spotify --client-id <id> --redirect-uri http://localhost:3000/callback
 ```
 
-或在 `~/.hermes/.env` 中永久设置：
+或在 `~/.plobi/.env` 中永久设置：
 
 ```
-HERMES_SPOTIFY_CLIENT_ID=<your_id>
-HERMES_SPOTIFY_REDIRECT_URI=http://localhost:3000/callback
+PLOBI_SPOTIFY_CLIENT_ID=<your_id>
+PLOBI_SPOTIFY_REDIRECT_URI=http://localhost:3000/callback
 ```
 
 Redirect URI 必须在你的 Spotify 应用设置中加入白名单。默认值适用于绝大多数情况——只有在 43827 端口被占用时才需要更改。
@@ -274,6 +274,6 @@ Redirect URI 必须在你的 Spotify 应用设置中加入白名单。默认值�
 
 | 文件 | 内容 |
 |------|----------|
-| `~/.hermes/auth.json` → `providers.spotify` | access token、refresh token、过期时间、scope、redirect URI |
-| `~/.hermes/.env` | `HERMES_SPOTIFY_CLIENT_ID`，可选 `HERMES_SPOTIFY_REDIRECT_URI` |
+| `~/.plobi/auth.json` → `providers.spotify` | access token、refresh token、过期时间、scope、redirect URI |
+| `~/.plobi/.env` | `PLOBI_SPOTIFY_CLIENT_ID`，可选 `PLOBI_SPOTIFY_REDIRECT_URI` |
 | Spotify 应用 | 由你在 [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) 管理；包含 Client ID 和 redirect URI 白名单 |

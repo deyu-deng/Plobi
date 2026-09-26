@@ -39,7 +39,7 @@ const deleteAgendaEvent = vi.hoisted(() => vi.fn())
 const dismissAgendaEvent = vi.hoisted(() => vi.fn())
 const updateAgendaEvent = vi.hoisted(() => vi.fn())
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/plobi', () => ({
   confirmAgendaEvent: (...args: unknown[]) => confirmAgendaEvent(...args),
   createAgendaEvent: (...args: unknown[]) => createAgendaEvent(...args),
   deleteAgendaEvent: (...args: unknown[]) => deleteAgendaEvent(...args),

@@ -44,7 +44,7 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      # 安装整个 workspace（含 apps/desktop 及其依赖 @hermes/shared）
+      # 安装整个 workspace（含 apps/desktop 及其依赖 @plobi/shared）
       - name: Install dependencies
         run: npm ci
 

@@ -24,7 +24,7 @@ from acp.schema import (
     ToolCallStart,
 )
 
-from acp_adapter.server import HermesACPAgent
+from acp_adapter.server import PlobiACPAgent
 from acp_adapter.session import SessionManager
 from acp_adapter.tools import build_tool_start
 
@@ -41,7 +41,7 @@ def mock_manager():
 
 @pytest.fixture()
 def acp_agent(mock_manager):
-    return HermesACPAgent(session_manager=mock_manager)
+    return PlobiACPAgent(session_manager=mock_manager)
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +298,7 @@ class TestSessionLifecycleMcpE2E:
             return []
 
         state = mock_manager.get_session(sid)
-        state.agent.enabled_toolsets = ["hermes-acp"]
+        state.agent.enabled_toolsets = ["plobi-acp"]
         state.agent.disabled_toolsets = None
         state.agent.tools = []
         state.agent.valid_tool_names = set()
@@ -325,7 +325,7 @@ class TestSessionLifecycleMcpE2E:
             return []
 
         state = mock_manager.get_session(sid)
-        state.agent.enabled_toolsets = ["hermes-acp"]
+        state.agent.enabled_toolsets = ["plobi-acp"]
         state.agent.disabled_toolsets = None
         state.agent.tools = []
         state.agent.valid_tool_names = set()

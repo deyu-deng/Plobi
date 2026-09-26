@@ -30,7 +30,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem
 } from '@/components/ui/sidebar'
-import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { comboTokens } from '@/lib/keybinds/combo'
 import { profileColor } from '@/lib/profile-color'
@@ -394,10 +394,10 @@ export function ChatSidebar({
       timeout = setTimeout(() => setNewSessionKbdFlash(false), 140)
     }
 
-    window.addEventListener('hermes:new-session-shortcut', onShortcut)
+    window.addEventListener('plobi:new-session-shortcut', onShortcut)
 
     return () => {
-      window.removeEventListener('hermes:new-session-shortcut', onShortcut)
+      window.removeEventListener('plobi:new-session-shortcut', onShortcut)
       clearTimeout(timeout)
     }
   }, [])
@@ -1664,7 +1664,7 @@ export function ChatSidebar({
           <SidebarBlankState actionLabel={s.projects.newButton} onAction={openProjectCreate} />
         )}
 
-        {/* WP-STUDIO (裁定 36.0): the secretary shell is not a Hermes profile
+        {/* WP-STUDIO (裁定 36.0): the secretary shell is not a Plobi profile
             switcher — no ProfileRail under L1 or L2. The mainline keeps it. */}
         {contentVisible && shouldRenderProfileRail(level) && (
           <div className="shrink-0 px-0.5 pb-1 pt-0.5">

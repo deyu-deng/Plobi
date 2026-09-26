@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { gitRootForIpc } from './git-root'
 
 function mkTmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-git-root-'))
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-git-root-'))
 }
 
 test('gitRootForIpc returns null for invalid and device paths', async () => {

@@ -9,7 +9,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $agendaEvents } from '@/store/agenda'
-import type { AgendaDay } from '@/types/hermes'
+import type { AgendaDay } from '@/types/plobi'
 
 import { fetchAllAgendaEvents } from '../api'
 import {
@@ -28,15 +28,15 @@ let restoreDesktopApi: (() => void) | null = null
 
 function installDesktopApi() {
   const api = vi.fn().mockResolvedValue(DAY)
-  const previous = (window as { hermesDesktop?: unknown }).hermesDesktop
+  const previous = (window as { plobiDesktop?: unknown }).plobiDesktop
 
-  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { api } })
+  Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: { api } })
 
   restoreDesktopApi = () => {
     if (previous) {
-      Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previous })
+      Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: previous })
     } else {
-      Reflect.deleteProperty(window, 'hermesDesktop')
+      Reflect.deleteProperty(window, 'plobiDesktop')
     }
   }
 

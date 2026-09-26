@@ -3,7 +3,7 @@
 Instead of reverse-engineering a desktop app's private API or scraping its tokens,
 a CliProvider drives a *locally-installed, already-authenticated* coding-agent CLI
 as a subprocess -- the same pattern Open Design uses to drive claude/codex/
-cursor-agent/hermes. The CLI consumes its own quota; we only do process I/O and
+cursor-agent/plobi. The CLI consumes its own quota; we only do process I/O and
 translate the result into the OpenAI ChatCompletion shape. Zero reverse-
 engineering, minimal ToS risk.
 

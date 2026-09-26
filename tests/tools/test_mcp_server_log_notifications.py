@@ -39,7 +39,7 @@ class TestLogLevelMap:
 
 class TestLoggingCallback:
     @pytest.mark.asyncio
-    async def test_routes_to_hermes_logger_with_server_tag(self, caplog):
+    async def test_routes_to_plobi_logger_with_server_tag(self, caplog):
         server = MCPServerTask("log_srv")
         callback = server._make_logging_callback()
         with caplog.at_level(logging.INFO, logger="tools.mcp_tool"):

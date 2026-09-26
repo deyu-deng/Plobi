@@ -6,7 +6,7 @@ author: Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [cloudflare, workers, wrangler, deploy, temporary, agent, serverless, web-development]
     category: web-development
 ---

@@ -14,7 +14,7 @@ Search personal knowledge bases, notes, docs, and meeting transcripts locally us
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/research/qmd` |
+| Source | Optional — install with `plobi skills install official/research/qmd` |
 | Path | `optional-skills/research/qmd` |
 | Version | `1.0.0` |
 | Author | Plobi Agent + Teknium |
@@ -244,7 +244,7 @@ without needing to load this skill.
 
 ### Option A: Stdio Mode (Simple)
 
-Add to `~/.hermes/config.yaml`:
+Add to `~/.plobi/config.yaml`:
 
 ```yaml
 mcp_servers:

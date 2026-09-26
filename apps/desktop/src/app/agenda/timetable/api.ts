@@ -5,7 +5,7 @@
  * The **backend owns the whole truth**: it parses the ICS, counts the entries
  * and decides what is new. This module never reads the file, never counts and
  * never invents a clock — it only carries the payload through
- * `window.hermesDesktop.api` (the desktop's single data channel).
+ * `window.plobiDesktop.api` (the desktop's single data channel).
  *
  * Preview → confirm → import is deliberately two calls: the board shows the
  * calendar's own name and first/last date before anything reaches the agenda,
@@ -48,7 +48,7 @@ export interface TimetableStatus {
 
 export async function getTimetable(): Promise<null | TimetableStatus> {
   try {
-    return await window.hermesDesktop.api<TimetableStatus>({ path: '/api/collect/timetable' })
+    return await window.plobiDesktop.api<TimetableStatus>({ path: '/api/collect/timetable' })
   } catch {
     // 404 / empty is the normal "never imported" case — not an error to surface.
     return null
@@ -56,7 +56,7 @@ export async function getTimetable(): Promise<null | TimetableStatus> {
 }
 
 export async function previewTimetable(path: string): Promise<TimetablePreview> {
-  return window.hermesDesktop.api<TimetablePreview>({
+  return window.plobiDesktop.api<TimetablePreview>({
     path: '/api/collect/timetable/preview',
     method: 'POST',
     body: { path }
@@ -64,7 +64,7 @@ export async function previewTimetable(path: string): Promise<TimetablePreview> 
 }
 
 export async function importTimetable(path: string): Promise<TimetableImportResult> {
-  return window.hermesDesktop.api<TimetableImportResult>({
+  return window.plobiDesktop.api<TimetableImportResult>({
     path: '/api/collect/timetable/import',
     method: 'POST',
     body: { path }

@@ -6,7 +6,7 @@ This module is the single home for BOTH blueprint flavors:
    frontmatter additionally declares an automation schedule:
 
        metadata:
-         hermes:
+         plobi:
            blueprint:
              schedule: "0 9 * * *"     # presence of `blueprint:` marks it runnable
              deliver: origin            # optional (default "origin")
@@ -16,7 +16,7 @@ This module is the single home for BOTH blueprint flavors:
    Because a blueprint is just a skill, it flows through the ENTIRE existing
    skills-hub pipeline for free — search, inspect, quarantine, security scan,
    install, lock-file provenance, audit log, taps, the centralized index, and
-   `hermes skills publish` for sharing. No new source type, no new store, no
+   `plobi skills publish` for sharing. No new source type, no new store, no
    new transport.
 
 2. Parameterized blueprint catalog (merged from the former
@@ -26,7 +26,7 @@ This module is the single home for BOTH blueprint flavors:
    ``{slot}`` placeholders. ``fill_blueprint`` validates user-supplied values
    and turns a blueprint into ``cron.jobs.create_job`` kwargs; renderers emit
    the dashboard form schema, the one-line ``/blueprint`` slash command, and a
-   ``hermes://`` deep-link. Both flavors translate into the SAME existing cron
+   ``plobi://`` deep-link. Both flavors translate into the SAME existing cron
    ``create_job()`` API — there is no second job engine.
 
 The dev guide's "Extend, Don't Duplicate" rule is the whole design: the blueprint
@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # skill-frontmatter blueprints (Hermes native)
+    # skill-frontmatter blueprints (Plobi native)
     "BlueprintSpec",
     "parse_blueprint",
     "blueprint_spec_for_installed",
@@ -75,7 +75,7 @@ class BlueprintError(ValueError):
 
 @dataclass
 class BlueprintSpec:
-    """Parsed ``metadata.hermes.blueprint`` automation spec for a skill."""
+    """Parsed ``metadata.plobi.blueprint`` automation spec for a skill."""
 
     skill_name: str
     schedule: str
@@ -114,7 +114,7 @@ def _split_frontmatter(text: str) -> Optional[Dict[str, Any]]:
 def parse_blueprint(skill_md_text: str) -> Optional[BlueprintSpec]:
     """Extract a BlueprintSpec from a SKILL.md string, or None if not a blueprint.
 
-    A skill is a blueprint iff ``metadata.hermes.blueprint`` is a mapping containing
+    A skill is a blueprint iff ``metadata.plobi.blueprint`` is a mapping containing
     a non-empty ``schedule``. Raises BlueprintError if the block exists but is
     structurally invalid (so a typo surfaces instead of silently no-op'ing).
     """
@@ -125,12 +125,12 @@ def parse_blueprint(skill_md_text: str) -> Optional[BlueprintSpec]:
     name = str(fm.get("name", "")).strip()
 
     meta = fm.get("metadata")
-    hermes = meta.get("hermes") if isinstance(meta, dict) else None
-    blueprint = hermes.get("blueprint") if isinstance(hermes, dict) else None
+    plobi = meta.get("plobi") if isinstance(meta, dict) else None
+    blueprint = plobi.get("blueprint") if isinstance(plobi, dict) else None
     if blueprint is None:
         return None
     if not isinstance(blueprint, dict):
-        raise BlueprintError("metadata.hermes.blueprint must be a mapping")
+        raise BlueprintError("metadata.plobi.blueprint must be a mapping")
 
     schedule = str(blueprint.get("schedule", "")).strip()
     if not schedule:
@@ -266,8 +266,8 @@ def export_blueprint(job: Dict[str, Any], body: str, *, blueprint_name: Optional
     """Render a shareable blueprint SKILL.md from an existing cron job dict.
 
     The inverse of ``create_blueprint_job``: take a cron job a user already built
-    and emit a SKILL.md (with a ``metadata.hermes.blueprint`` block) they can hand
-    to ``hermes skills publish`` to share. ``body`` is the plain-language
+    and emit a SKILL.md (with a ``metadata.plobi.blueprint`` block) they can hand
+    to ``plobi skills publish`` to share. ``body`` is the plain-language
     description / instructions that become the SKILL.md body.
     """
     import yaml
@@ -307,7 +307,7 @@ def export_blueprint(job: Dict[str, Any], body: str, *, blueprint_name: Optional
         "version": "1.0.0",
         "license": "MIT",
         "metadata": {
-            "hermes": {
+            "plobi": {
                 "tags": ["blueprint", "automation"],
                 "blueprint": blueprint_block,
             }
@@ -842,7 +842,7 @@ def blueprint_slash_command(blueprint: AutomationBlueprint, values: Optional[Dic
 
 
 def blueprint_deeplink(blueprint: AutomationBlueprint, values: Optional[Dict[str, Any]] = None) -> str:
-    """Build the ``hermes://blueprint/<key>?slot=val`` deep-link URL."""
+    """Build the ``plobi://blueprint/<key>?slot=val`` deep-link URL."""
     from urllib.parse import quote, urlencode
 
     values = values or {}
@@ -852,7 +852,7 @@ def blueprint_deeplink(blueprint: AutomationBlueprint, values: Optional[Dict[str
         if val not in (None, ""):
             query[s.name] = str(val)
     qs = ("?" + urlencode(query)) if query else ""
-    return f"hermes://blueprint/{quote(blueprint.key)}{qs}"
+    return f"plobi://blueprint/{quote(blueprint.key)}{qs}"
 
 
 def _humanize_schedule(blueprint: AutomationBlueprint) -> str:

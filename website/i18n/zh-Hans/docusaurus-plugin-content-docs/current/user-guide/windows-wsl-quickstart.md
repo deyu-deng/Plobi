@@ -100,9 +100,9 @@ wsl --shutdown
 打开 WSL2 shell 后执行：
 
 ```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://plobi-agent.nousresearch.com/install.sh | bash
 source ~/.bashrc
-hermes
+plobi
 ```
 
 安装程序将 WSL2 视为普通 Linux —— 无需任何 WSL 专属配置。完整目录结构请参阅[安装说明](/getting-started/installation)。
@@ -124,7 +124,7 @@ hermes
 
 **经验法则：将所有 Linux 相关内容保留在 Linux 文件系统内。**
 
-- 你的 Plobi 安装目录（`~/.hermes/`）—— Linux 侧。安装程序已自动处理。
+- 你的 Plobi 安装目录（`~/.plobi/`）—— Linux 侧。安装程序已自动处理。
 - 你在 WSL 中开发的 git 仓库 —— Linux 侧（`~/code/...`、`~/projects/...`）。
 - 你的模型、数据集、venv —— Linux 侧。
 
@@ -186,9 +186,9 @@ dos2unix path/to/script.sh
 
 ### "在 WSL 内 clone 还是在 `/mnt/c` 上 clone？"
 
-在 WSL 内 clone。始终如此，除非有特殊原因。典型的 Plobi 工作流（`hermes chat`、调用 `rg`/`ripgrep` 搜索仓库的工具、文件监听器、后台 gateway）在 `~/code/myrepo` 下会比在 `/mnt/c/Users/you/myrepo` 下快得多，也更可靠。
+在 WSL 内 clone。始终如此，除非有特殊原因。典型的 Plobi 工作流（`plobi chat`、调用 `rg`/`ripgrep` 搜索仓库的工具、文件监听器、后台 gateway）在 `~/code/myrepo` 下会比在 `/mnt/c/Users/you/myrepo` 下快得多，也更可靠。
 
-一个例外：**启动 Windows 二进制文件的 MCP bridge。** 如果你通过 `cmd.exe` 使用 `chrome-devtools-mcp`（参见 [MCP 指南：WSL → Windows Chrome](/guides/use-mcp-with-hermes#wsl2-bridge-hermes-in-wsl-to-windows-chrome)），当 Plobi 的当前工作目录是 `~` 时，Windows 可能会报 `UNC` 警告。此时请从 `/mnt/c/` 下的某个目录启动 Plobi，以便 Windows 进程拥有一个带盘符的工作目录。
+一个例外：**启动 Windows 二进制文件的 MCP bridge。** 如果你通过 `cmd.exe` 使用 `chrome-devtools-mcp`（参见 [MCP 指南：WSL → Windows Chrome](/guides/use-mcp-with-plobi#wsl2-bridge-plobi-in-wsl-to-windows-chrome)），当 Plobi 的当前工作目录是 `~` 时，Windows 可能会报 `UNC` 警告。此时请从 `/mnt/c/` 下的某个目录启动 Plobi，以便 Windows 进程拥有一个带盘符的工作目录。
 
 ## 网络：WSL ↔ Windows
 
@@ -214,7 +214,7 @@ WSL2 在轻量级虚拟机中运行，拥有独立的网络栈。这意味着 WS
 这是反向情况，其他地方较少记录，但以下场景需要用到：
 
 - 从 Windows 浏览器使用 Plobi **Web Dashboard**。
-- 从 Windows 侧工具使用 **OpenAI 兼容 API 服务器**（当 `API_SERVER_ENABLED=true` 时由 `hermes gateway` 暴露）。参见 [API Server 功能页](/user-guide/features/api-server)。
+- 从 Windows 侧工具使用 **OpenAI 兼容 API 服务器**（当 `API_SERVER_ENABLED=true` 时由 `plobi gateway` 暴露）。参见 [API Server 功能页](/user-guide/features/api-server)。
 - 测试**消息 gateway**（Telegram、Discord 等），平台会向本地 webhook URL 发送请求 —— 通常建议使用 `cloudflared`/`ngrok` 而非原始端口转发。
 
 #### 子情况 2a：从 Windows 宿主机本身访问
@@ -262,10 +262,10 @@ Plobi 的 [Tool Gateway](/user-guide/features/tool-gateway) 和 API 服务器都
 
 ### 在 WSL 内使用 systemd（推荐）
 
-如果你按照上面的安装步骤启用了 systemd，`hermes gateway` 和 API 服务器的使用方式与任何 Linux 机器上完全相同。使用 gateway 设置向导：
+如果你按照上面的安装步骤启用了 systemd，`plobi gateway` 和 API 服务器的使用方式与任何 Linux 机器上完全相同。使用 gateway 设置向导：
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 它会提示是否安装 systemd 用户单元，以便在 WSL 启动时自动拉起 gateway。
@@ -294,7 +294,7 @@ AMD ROCm 和 Intel Arc 在 WSL2 内的支持仍在发展中，不在 Plobi 的�
 **连接 Windows 上的 Ollama / LM Studio 时报"Connection refused"。**
 参见 [WSL2 网络配置](/integrations/providers#wsl2-networking-windows-users)。九成情况是服务绑定在 `127.0.0.1` 上，需要改为 `0.0.0.0`（Ollama：`OLLAMA_HOST=0.0.0.0`），或者缺少防火墙规则。
 
-**`git status` / `hermes chat` 在仓库中极慢。**
+**`git status` / `plobi chat` 在仓库中极慢。**
 你很可能在 `/mnt/c/...` 下工作。将仓库移到 `~/code/...`（Linux 侧），速度会有数量级的提升。
 
 **脚本报错 `bad interpreter: /bin/bash^M`。**
@@ -315,7 +315,7 @@ sudo hwclock -s
 **启用镜像模式后或连接 VPN 时 DNS 停止工作。**
 镜像模式会将宿主机网络设置代理到 WSL —— 如果 Windows DNS 有问题（VPN 分流隧道、企业解析器），WSL 会继承这些问题。解决方法：手动覆盖 `resolv.conf`（在 `/etc/wsl.conf` 中设置 `generateResolvConf=false`，然后手动编写 `/etc/resolv.conf`，填入 `1.1.1.1` 或你的 VPN DNS）。
 
-**运行安装程序后找不到 `hermes` 命令。**
+**运行安装程序后找不到 `plobi` 命令。**
 安装程序通过 `~/.bashrc` 将 `~/.local/bin` 添加到 shell 的 PATH 中。需要执行 `source ~/.bashrc`（或打开新终端）才能在当前会话中生效。
 
 **Windows Defender 对 WSL 文件扫描很慢。**
@@ -328,5 +328,5 @@ WSL2 将虚拟机磁盘存储为 `%LOCALAPPDATA%\Packages\...` 下的稀疏 VHDX
 
 - **[安装说明](/getting-started/installation)** —— 实际安装步骤（Linux/WSL2/Termux 均使用同一安装程序）。
 - **[集成 → Providers → WSL2 网络配置](/integrations/providers#wsl2-networking-windows-users)** —— 本地模型服务器网络配置的权威深度说明。
-- **[MCP 指南 → WSL → Windows Chrome](/guides/use-mcp-with-hermes#wsl2-bridge-hermes-in-wsl-to-windows-chrome)** —— 从 WSL 中的 Plobi 控制你已登录的 Windows Chrome。
+- **[MCP 指南 → WSL → Windows Chrome](/guides/use-mcp-with-plobi#wsl2-bridge-plobi-in-wsl-to-windows-chrome)** —— 从 WSL 中的 Plobi 控制你已登录的 Windows Chrome。
 - **[Tool Gateway](/user-guide/features/tool-gateway)** 和 **[Web Dashboard](/user-guide/features/web-dashboard)** —— 你最常需要从 WSL 暴露到网络其他部分的长期运行服务。

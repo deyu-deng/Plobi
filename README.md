@@ -93,7 +93,7 @@ npm install
 
 ```bash
 # Terminal agent (CLI)
-hermes
+plobi
 
 # Desktop app (dev mode with hot reload)
 cd apps/desktop
@@ -159,7 +159,7 @@ Code/
 ├── skills/             # Reusable agent skills
 ├── tools/              # Tool implementations
 ├── gateway/            # Multi-platform messaging gateway
-├── hermes_cli/         # CLI interface
+├── plobi_cli/         # CLI interface
 └── tests/              # Test suite
 ```
 

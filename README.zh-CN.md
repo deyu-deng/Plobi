@@ -14,7 +14,7 @@
 
 **由 Plobi 构建的自进化 AI 代理。** 它是唯一内置学习闭环的智能代理——从经验中创建技能，在使用中改进技能，主动持久化知识，搜索过往对话，并在跨会话中逐步构建对你的深度理解。可以在 $5 的 VPS 上运行，也可以在 GPU 集群上运行，或者使用几乎零成本的 Serverless 基础设施。它不绑定你的笔记本——你可以在 Telegram 上与它对话，而它在云端 VM 上工作。
 
-支持任意模型——[Nous Portal]([Plobi Portal 占位])、[OpenRouter](https://openrouter.ai)（200+ 模型）、[NVIDIA NIM](https://build.nvidia.com)（Nemotron）、[小米 MiMo](https://platform.xiaomimimo.com)、[z.ai/GLM](https://z.ai)、[Kimi/Moonshot](https://platform.moonshot.ai)、[MiniMax](https://www.minimax.io)、[Hugging Face](https://huggingface.co)、OpenAI，或自定义端点。使用 `hermes model` 即可切换——无需改代码，无锁定。
+支持任意模型——[Nous Portal]([Plobi Portal 占位])、[OpenRouter](https://openrouter.ai)（200+ 模型）、[NVIDIA NIM](https://build.nvidia.com)（Nemotron）、[小米 MiMo](https://platform.xiaomimimo.com)、[z.ai/GLM](https://z.ai)、[Kimi/Moonshot](https://platform.moonshot.ai)、[MiniMax](https://www.minimax.io)、[Hugging Face](https://huggingface.co)、OpenAI，或自定义端点。使用 `plobi model` 即可切换——无需改代码，无锁定。
 
 <table>
 <tr><td><b>真正的终端界面</b></td><td>完整的 TUI，支持多行编辑、斜杠命令自动补全、对话历史、中断重定向和流式工具输出。</td></tr>
@@ -42,13 +42,13 @@ curl -fsSL https://github.com/deyu-deng/Plobi/install.sh | bash
 > ```powershell
 > iex (irm https://github.com/deyu-deng/Plobi/install.ps1)
 > ```
-> 安装完成后，可能需要重启终端，然后运行 `hermes` 开始对话。
+> 安装完成后，可能需要重启终端，然后运行 `plobi` 开始对话。
 
 安装后：
 
 ```bash
 source ~/.bashrc    # 重新加载 shell（或: source ~/.zshrc）
-hermes              # 开始对话！
+plobi              # 开始对话！
 ```
 
 ---
@@ -56,15 +56,15 @@ hermes              # 开始对话！
 ## 快速入门
 
 ```bash
-hermes              # 交互式 CLI — 开始对话
-hermes model        # 选择 LLM 提供商和模型
-hermes tools        # 配置启用的工具
-hermes config set   # 设置单个配置项
-hermes gateway      # 启动消息网关（Telegram、Discord 等）
-hermes setup        # 运行完整设置向导（一次性配置所有内容）
-hermes claw migrate # 从 OpenClaw 迁移（如果来自 OpenClaw）
-hermes update       # 更新到最新版本
-hermes doctor       # 诊断问题
+plobi              # 交互式 CLI — 开始对话
+plobi model        # 选择 LLM 提供商和模型
+plobi tools        # 配置启用的工具
+plobi config set   # 设置单个配置项
+plobi gateway      # 启动消息网关（Telegram、Discord 等）
+plobi setup        # 运行完整设置向导（一次性配置所有内容）
+plobi claw migrate # 从 OpenClaw 迁移（如果来自 OpenClaw）
+plobi update       # 更新到最新版本
+plobi doctor       # 诊断问题
 ```
 
 📖 **[完整文档 →](https://github.com/deyu-deng/Plobi/docs/)**
@@ -74,11 +74,11 @@ hermes doctor       # 诊断问题
 
 ## CLI 与消息平台 快速对照
 
-Plobi 有两种入口：用 `hermes` 启动终端 UI，或运行网关从 Telegram、Discord、Slack、WhatsApp、Signal 或 Email 与之对话。进入对话后，许多斜杠命令在两种界面中通用。
+Plobi 有两种入口：用 `plobi` 启动终端 UI，或运行网关从 Telegram、Discord、Slack、WhatsApp、Signal 或 Email 与之对话。进入对话后，许多斜杠命令在两种界面中通用。
 
 | 操作 | CLI | 消息平台 |
 |------|-----|----------|
-| 开始对话 | `hermes` | 运行 `hermes gateway setup` + `hermes gateway start`，然后给机器人发消息 |
+| 开始对话 | `plobi` | 运行 `plobi gateway setup` + `plobi gateway start`，然后给机器人发消息 |
 | 开始新对话 | `/new` 或 `/reset` | `/new` 或 `/reset` |
 | 更换模型 | `/model [provider:model]` | `/model [provider:model]` |
 | 设置人格 | `/personality [name]` | `/personality [name]` |
@@ -120,28 +120,28 @@ Plobi 有两种入口：用 `hermes` 启动终端 UI，或运行网关从 Telegr
 
 如果你来自 OpenClaw，Plobi 可以自动导入你的设置、记忆、技能和 API 密钥。
 
-**首次安装时：** 安装向导（`hermes setup`）会自动检测 `~/.openclaw` 并在配置开始前提供迁移选项。
+**首次安装时：** 安装向导（`plobi setup`）会自动检测 `~/.openclaw` 并在配置开始前提供迁移选项。
 
 **安装后任意时间：**
 
 ```bash
-hermes claw migrate              # 交互式迁移（完整预设）
-hermes claw migrate --dry-run    # 预览将要迁移的内容
-hermes claw migrate --preset user-data   # 仅迁移用户数据，不含密钥
-hermes claw migrate --overwrite  # 覆盖已有冲突
+plobi claw migrate              # 交互式迁移（完整预设）
+plobi claw migrate --dry-run    # 预览将要迁移的内容
+plobi claw migrate --preset user-data   # 仅迁移用户数据，不含密钥
+plobi claw migrate --overwrite  # 覆盖已有冲突
 ```
 
 导入内容：
 - **SOUL.md** — 人格文件
 - **记忆** — MEMORY.md 和 USER.md 条目
-- **技能** — 用户创建的技能 → `~/.hermes/skills/openclaw-imports/`
+- **技能** — 用户创建的技能 → `~/.plobi/skills/openclaw-imports/`
 - **命令白名单** — 审批模式
 - **消息设置** — 平台配置、允许用户、工作目录
 - **API 密钥** — 白名单中的密钥（Telegram、OpenRouter、OpenAI、Anthropic、ElevenLabs）
 - **TTS 资产** — 工作区音频文件
 - **工作区指令** — AGENTS.md（使用 `--workspace-target`）
 
-使用 `hermes claw migrate --help` 查看所有选项，或使用 `openclaw-migration` 技能进行交互式代理引导迁移（含干运行预览）。
+使用 `plobi claw migrate --help` 查看所有选项，或使用 `openclaw-migration` 技能进行交互式代理引导迁移（含干运行预览）。
 
 ---
 
@@ -150,12 +150,12 @@ hermes claw migrate --overwrite  # 覆盖已有冲突
 欢迎贡献！请参阅 [贡献指南](https://github.com/deyu-deng/Plobi/docs/developer-guide/contributing) 了解开发设置、代码风格和 PR 流程。
 
 贡献者快速开始——使用标准安装器，然后在它创建的完整 git checkout 中开发：
-`$HERMES_HOME/hermes-agent`（通常是 `~/.hermes/hermes-agent`）。这会匹配
-`hermes update`、托管 venv、lazy dependencies、gateway 和 docs tooling 使用的布局。
+`$PLOBI_HOME/plobi-agent`（通常是 `~/.plobi/plobi-agent`）。这会匹配
+`plobi update`、托管 venv、lazy dependencies、gateway 和 docs tooling 使用的布局。
 
 ```bash
 curl -fsSL https://github.com/deyu-deng/Plobi/install.sh | bash
-cd "${HERMES_HOME:-$HOME/.hermes}/hermes-agent"
+cd "${PLOBI_HOME:-$HOME/.plobi}/plobi-agent"
 uv pip install -e ".[all,dev]"
 scripts/run_tests.sh
 ```
@@ -178,7 +178,7 @@ python -m pytest tests/ -q
 - 📚 [技能中心](https://agentskills.io)
 - 🐛 [问题反馈](https://github.com/deyu-deng/Plobi/issues)
 - 💡 [讨论区](https://github.com/deyu-deng/Plobi/discussions)
-- 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — 社区微信桥接：在同一微信账号上运行 Plobi Agent 和 OpenClaw。
+- 🔌 [PlobiClaw](https://github.com/AaronWong1999/hermesclaw) — 社区微信桥接：在同一微信账号上运行 Plobi Agent 和 OpenClaw。
 
 ---
 

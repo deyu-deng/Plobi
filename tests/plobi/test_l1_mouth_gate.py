@@ -144,7 +144,7 @@ def test_l1_default_profile_cannot_use_master_tools(MT, PI, monkeypatch):
     """
     # 模拟 L1 profile + plobi_north_star toolset 启用
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "plobi_cli.config.load_config",
         lambda: {"toolsets": ["plobi_north_star"]},
     )
 
@@ -178,7 +178,7 @@ def test_l1_default_profile_secretary_ask_still_visible(MT, PI, monkeypatch):
     """L1 default profile：``plobi_secretary_ask`` + ``plobi_checkin_respond``
     仍用 ``check_plobi_master_mode``，工具可见（不是 mouth-disabled）。"""
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "plobi_cli.config.load_config",
         lambda: {"toolsets": ["plobi_north_star"]},
     )
 
@@ -208,10 +208,10 @@ def test_l2_profile_unaffected(MT, monkeypatch):
     """
     # L2 + plobi_north_star toolset 启用
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "plobi_cli.config.load_config",
         lambda: {"toolsets": ["plobi_north_star"]},
     )
-    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    monkeypatch.delenv("PLOBI_KANBAN_TASK", raising=False)
     assert MT.check_plobi_master_mode() is True
     # mouth-disabled 不依赖 profile / toolset（恒 False）
     assert MT.check_plobi_l1_mouth_disabled() is False

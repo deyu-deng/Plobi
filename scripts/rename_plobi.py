@@ -61,8 +61,11 @@ PROTECT = [
     # covered by the rule above.
     r"\[(?=[^\]\n]*(?i:hermes))[^\]\n]*\]\(\s*https?://github\.com/NousResearch/[^\)]*\)",
     # Real third-party model identifiers (Nous Hermes 2/3/4, openrouter/hermes3).
-    # Renaming these makes the product address a nonexistent model.
-    r"(?:nous[\s_-]+)?[Hh][Ee][Rr][Mm][Ee][Ss][\s_-]*\d[\w.:-]*",
+    # Renaming these makes the product address a model that does not exist.
+    # The separator is at most one character on purpose: allowing arbitrary
+    # whitespace once swallowed `${cfg.stateDir}/.hermes` in nix/nixosModules.nix
+    # because a permission number happened to follow it on the same line.
+    r"(?:nous[\s_-]+)?[Hh][Ee][Rr][Mm][Ee][Ss][\s_-]?\d[\w.:-]*",
 ]
 PROTECT_RE = re.compile("|".join(f"(?:{p})" for p in PROTECT))
 
@@ -96,6 +99,26 @@ ROOTED = {name: stem_pattern(src) for name, (src, _dst) in FAMILIES.items()}
 def loose_pattern(src: str) -> re.Pattern:
     """Any occurrence of the stem, for the post-apply residual audit."""
     return re.compile(src, re.IGNORECASE)
+
+
+# Content rules that must run before the generic stem sweep, because their
+# target is not a plain stem-for-stem substitution.
+SPECIFIC = [
+    # The repo-root launcher `./hermes` cannot become `./plobi`: S2 already made
+    # `plobi/` the package directory. It lands on plobi.py, in the style of the
+    # other root entry points (cli.py, run_agent.py).
+    #
+    # Must be anchored on BOTH sides. An unanchored `\./hermes\b` fired inside
+    # longer paths: it ate `'../hermes'` (a TypeScript module import),
+    # `.../hermes-gateway.service`, `C:/Users/.../hermes-snap-*.sh` and
+    # `./hermes-agent.nix`, producing `plobi.py-agent.nix` and friends. So: no
+    # path separator, dot (including ellipses) or word character in front, and
+    # nothing that would make it part of a longer name after it.
+    (re.compile(r"(?<![\w./])\./hermes\b(?![\w./-])"), "./plobi.py", "hermes"),
+]
+
+# Path rename exceptions, mirroring SPECIFIC.
+PATH_OVERRIDES = {"hermes": "plobi.py"}
 
 LEGAL_BASENAMES = {"LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING", "NOTICE"}
 LOCK_BASENAMES = {"package-lock.json", "uv.lock", "bun.lockb", "pnpm-lock.yaml"}
@@ -146,19 +169,26 @@ def rewrite_text(text: str, families: list[str]) -> tuple[str, dict[str, int]]:
         return f"\x00P{len(slots) - 1}\x00"
 
     body = PROTECT_RE.sub(stash, text)
-    counts: dict[str, int] = {}
+    counts: dict[str, int] = {f: 0 for f in families}
+    for pat, repl, fam in SPECIFIC:
+        if fam not in counts:
+            continue
+        body, cnt = pat.subn(repl, body)
+        counts[fam] += cnt
     for fam in families:
         _src, dst = FAMILIES[fam]
         body, cnt = ROOTED[fam].subn(lambda m, d=dst: _match_case(d, m.group(0)), body)
-        counts[fam] = cnt
+        counts[fam] += cnt
     if slots:
         body = re.sub(r"\x00P(\d+)\x00", lambda m: slots[int(m.group(1))], body)
     return body, counts
 
 
 def rename_component(name: str, families: list[str]) -> str:
+    if name in PATH_OVERRIDES:
+        return PATH_OVERRIDES[name]
     for fam in families:
-        src, dst = FAMILIES[fam]
+        _src, dst = FAMILIES[fam]
         name = ROOTED[fam].sub(lambda m, d=dst: _match_case(d, m.group(0)), name)
     return name
 
@@ -173,6 +203,17 @@ def plan_renames(rels: list[str], families: list[str]) -> list[tuple[str, str]]:
 
 
 def apply_renames(root: Path, pairs: list[tuple[str, str]]) -> int:
+    # Fail before moving anything if two sources want one destination, or a
+    # destination is already occupied -- a half-applied rename tree is much
+    # harder to read than a refused one.
+    seen: dict[str, str] = {}
+    for src, dst in pairs:
+        if dst in seen:
+            sys.exit(f"rename collision: {src} and {seen[dst]} both target {dst}")
+        seen[dst] = src
+        if (root / dst).exists():
+            sys.exit(f"rename collision: {dst} already exists (source {src})")
+
     moved = 0
     # Longest source path first: files inside a renamed directory move before
     # the directory itself would need to exist.

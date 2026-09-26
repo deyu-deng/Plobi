@@ -1,4 +1,4 @@
-"""注册 Plobi 调度任务到 Hermes cron（切片 A2/A5，幂等）。
+"""注册 Plobi 调度任务到 Plobi cron（切片 A2/A5，幂等）。
 
 用法（仓库根，开发 venv）::
 
@@ -6,8 +6,8 @@
     python scripts/plobi/register_cron.py --all      # A2+A5：含每日改动率日报
 
 做三件事，全部可重复执行：
-1. 写 ``HERMES_HOME/plobi/runtime.json``（记录本仓库位置，供 cron 子进程引导）；
-2. 把 ``scripts/plobi/cron_watchdog.py`` 复制到 ``HERMES_HOME/scripts/``；
+1. 写 ``PLOBI_HOME/plobi/runtime.json``（记录本仓库位置，供 cron 子进程引导）；
+2. 把 ``scripts/plobi/cron_watchdog.py`` 复制到 ``PLOBI_HOME/scripts/``；
 3. 按 ``cron.jobs.create_job`` 注册/更新任务（按 name 幂等，改了 schedule/script
    会原地 update，不产生重复任务）。
 
@@ -106,10 +106,10 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="also register the A5 daily report job")
     args = parser.parse_args()
 
-    from hermes_constants import get_hermes_home
+    from plobi_constants import get_plobi_home
 
-    home = get_hermes_home()
-    print(f"[register] HERMES_HOME = {home}")
+    home = get_plobi_home()
+    print(f"[register] PLOBI_HOME = {home}")
 
     _ensure_runtime_files(home)
     script = _install_script(home)

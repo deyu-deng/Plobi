@@ -24,7 +24,7 @@ def _make_adapter(tmp_path=None):
         token="syt_test_token",
         extra={
             "homeserver": "https://matrix.example.org",
-            "user_id": "@hermes:example.org",
+            "user_id": "@plobi:example.org",
         },
     )
     adapter = MatrixAdapter(config)

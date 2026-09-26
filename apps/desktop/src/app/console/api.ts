@@ -4,7 +4,7 @@
  * Backend wiring is meant to replace this file's implementations and nothing
  * else: every endpoint below mirrors the hard-frozen contract in
  * `docs/specs/ui-l1-console-spec.md` §5 and returns the same `{ ok, data }`
- * envelope shape. Callers never touch `window.hermesDesktop.api` directly.
+ * envelope shape. Callers never touch `window.plobiDesktop.api` directly.
  *
  * Current state per endpoint:
  * - `/api/agents` — MOCKED (the backend's agent/:id surface — subagents /
@@ -13,7 +13,7 @@
  *   per ARCH-RULINGS 2026-09-02 裁定 2 there is deliberately no
  *   `POST /api/chat` here — the center reuses the base session store + gateway
  *   path (the same `submitText` / `$messages` the full-screen chat uses).
- * - `/api/agenda/*` — LIVE, delegated to `@/hermes`, which already speaks to
+ * - `/api/agenda/*` — LIVE, delegated to `@/plobi`, which already speaks to
  *   the real `plobi/agenda` backend. Delegating (rather than mocking) is what
  *   keeps the console and the full-screen board on one data source.
  *
@@ -21,9 +21,9 @@
  * memory; live endpoints reuse the existing request helpers.
  */
 
-import { confirmAgendaEvent, dismissAgendaEvent, getAgenda } from '@/hermes'
+import { confirmAgendaEvent, dismissAgendaEvent, getAgenda } from '@/plobi'
 import { removeAgendaEvent, upsertAgendaEvent } from '@/store/agenda'
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 import type {
   Agent,
@@ -109,7 +109,7 @@ function unwrapEnvelope<T>(payload: unknown): T {
  */
 export async function fetchAgents(): Promise<Agent[]> {
   try {
-    const payload = await window.hermesDesktop.api<unknown>({ path: '/api/agents' })
+    const payload = await window.plobiDesktop.api<unknown>({ path: '/api/agents' })
     const rows = unwrapEnvelope<Agent[]>(payload)
 
     if (Array.isArray(rows) && rows.length > 0) {
@@ -124,7 +124,7 @@ export async function fetchAgents(): Promise<Agent[]> {
 
 /** §5 POST /api/agents — human-created project L2 (裁定 18). */
 export async function createAgent(req: AgentCreateRequest): Promise<Agent> {
-  const payload = await window.hermesDesktop.api<unknown>({
+  const payload = await window.plobiDesktop.api<unknown>({
     body: req,
     method: 'POST',
     path: '/api/agents'
@@ -135,7 +135,7 @@ export async function createAgent(req: AgentCreateRequest): Promise<Agent> {
 
 /**
  * [SPEC-QUESTION] spec §5 names this `GET /api/agenda/events?day=today|tomorrow`
- * while the live backend (see `getAgenda` in `@/hermes`) answers
+ * while the live backend (see `getAgenda` in `@/plobi`) answers
  * `GET /api/agenda?from=&to=`. Built as specified at the call site (day-based)
  * and translated here, so a contract change touches this function alone.
  */
@@ -149,8 +149,8 @@ export async function fetchAgendaEvents(day: 'today' | 'tomorrow'): Promise<Agen
  * Console-only alias for "the whole agenda, no day window" — delegates to the
  * same `getAgenda()` the full-screen board uses, so the right rail and the
  * board share one source of truth (spec §3.3). The right-rail hook calls THIS
- * (not `@/hermes` directly) so the console keeps a single data-entry point and
- * never speaks to `window.hermesDesktop.api` outside this file.
+ * (not `@/plobi` directly) so the console keeps a single data-entry point and
+ * never speaks to `window.plobiDesktop.api` outside this file.
  */
 export async function fetchAllAgendaEvents(): Promise<AgendaEvent[]> {
   return getAgenda()
@@ -161,7 +161,7 @@ export async function fetchAllAgendaEvents(): Promise<AgendaEvent[]> {
  * /api/agenda/events/:id/confirm` with `action: confirm|dismiss`).
  *
  * [SPEC-QUESTION] the live backend exposes confirm and dismiss as two separate
- * endpoints (`@/hermes` → `/api/agenda/:id/confirm|dismiss`), not one endpoint
+ * endpoints (`@/plobi` → `/api/agenda/:id/confirm|dismiss`), not one endpoint
  * with an `action` body. Translated here so a contract change touches this
  * function alone. Dismissing a proposed event answers `{ deleted: true }`
  * instead of a row — normalized to `ok: true` for the caller.
@@ -308,7 +308,7 @@ function lookupOne<T>(table: Record<string, T>, id: string): T {
 
 export async function getAgentOverview(agentId: string): Promise<AgentOverview> {
   try {
-    const payload = await window.hermesDesktop.api<unknown>({
+    const payload = await window.plobiDesktop.api<unknown>({
       path: `/api/agents/${encodeURIComponent(agentId)}/overview`
     })
 
@@ -331,7 +331,7 @@ export async function getAgentOutsourced(agentId: string): Promise<OutsourcedApp
  *
  * [WAIT-BACKEND] spec §5 has no endpoint for this. Mocked locally so the
  * click-through interaction the spec hard-freezes actually exists; swap the
- * body for `window.hermesDesktop.api({ path: '/api/agents/:id/subagents/:sid/log' })`
+ * body for `window.plobiDesktop.api({ path: '/api/agents/:id/subagents/:sid/log' })`
  * once the backend grows it. An unknown sub-agent rejects so the dialog can
  * show its error state.
  */

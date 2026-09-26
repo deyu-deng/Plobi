@@ -20,7 +20,7 @@ The SMS gateway shares credentials with the optional [telephony skill](/referenc
 - **Twilio account** — [Sign up at twilio.com](https://www.twilio.com/try-twilio) (free trial available)
 - **A Twilio phone number** with SMS capability
 - **A publicly accessible server** — Twilio sends webhooks to your server when SMS arrives
-- **aiohttp** — `cd ~/.hermes/hermes-agent && uv pip install -e ".[sms]"`
+- **aiohttp** — `cd ~/.plobi/plobi-agent && uv pip install -e ".[sms]"`
 
 ---
 
@@ -37,14 +37,14 @@ The SMS gateway shares credentials with the optional [telephony skill](/referenc
 ### Interactive setup (recommended)
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 Select **SMS (Twilio)** from the platform list. The wizard will prompt for your credentials.
 
 ### Manual setup
 
-Add to `~/.hermes/.env`:
+Add to `~/.plobi/.env`:
 
 ```bash
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -102,7 +102,7 @@ SMS_WEBHOOK_PORT=3000
 ## Step 4: Start the Gateway
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
 You should see:

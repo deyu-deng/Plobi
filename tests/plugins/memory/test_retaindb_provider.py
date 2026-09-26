@@ -7,12 +7,12 @@ import agent.file_safety as fs
 from plugins.memory.retaindb import RetainDBMemoryProvider
 
 
-def test_upload_file_rejects_hermes_credential_store(tmp_path, monkeypatch):
-    hermes_home = tmp_path / "hermes_home"
-    hermes_home.mkdir()
-    auth_json = hermes_home / "auth.json"
+def test_upload_file_rejects_plobi_credential_store(tmp_path, monkeypatch):
+    plobi_home = tmp_path / "plobi_home"
+    plobi_home.mkdir()
+    auth_json = plobi_home / "auth.json"
     auth_json.write_text('{"OPENAI_API_KEY":"sk-test-secret"}', encoding="utf-8")
-    monkeypatch.setattr(fs, "_hermes_home_path", lambda: hermes_home)
+    monkeypatch.setattr(fs, "_plobi_home_path", lambda: plobi_home)
 
     provider = RetainDBMemoryProvider()
     provider._client = MagicMock()

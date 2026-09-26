@@ -2,7 +2,7 @@
  * Right-rail agenda timeline (U3, spec §3.3).
  *
  * The data is the SAME store the full-screen board (`app/agenda`) renders
- * (`@/store/agenda` → `getAgenda` in `@/hermes`) — there is exactly one
+ * (`@/store/agenda` → `getAgenda` in `@/plobi`) — there is exactly one
  * `events` source of truth, per spec §3.3 "完全同一份". This hook just makes
  * sure that store is populated and kept fresh (≤10s, ADR-0008) when the
  * console is the only mounted consumer. The board's own poll is independent
@@ -25,7 +25,7 @@ import {
   setAgendaLoading
 } from '@/store/agenda'
 import { $busy } from '@/store/session'
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaDay, AgendaPlanItem } from '@/types/hermes'
+import type { AgendaAnchor, AgendaAvoidWindow, AgendaDay, AgendaPlanItem } from '@/types/plobi'
 
 import { fetchAllAgendaEvents } from '../api'
 
@@ -65,7 +65,7 @@ async function fetchDayPayload(date: string): Promise<AgendaDay | null> {
   }, DAY_TIMEOUT_MS)
 
   try {
-    return await window.hermesDesktop.api<AgendaDay>({
+    return await window.plobiDesktop.api<AgendaDay>({
       method: 'GET',
       path: `${DAY_ENDPOINT}?date=${encodeURIComponent(date)}`
     })

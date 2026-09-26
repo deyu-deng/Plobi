@@ -14,7 +14,7 @@ Build, test, inspect, install, and deploy MCP servers with FastMCP in Python. Us
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/mcp/fastmcp` |
+| Source | Optional — install with `plobi skills install official/mcp/fastmcp` |
 | Path | `optional-skills/mcp/fastmcp` |
 | Version | `1.0.0` |
 | Author | Plobi Agent |
@@ -95,7 +95,7 @@ Prefer a thin server with good names, docstrings, and schemas over a large serve
 Copy a template directly or use the scaffold helper:
 
 ```bash
-python ~/.hermes/skills/mcp/fastmcp/scripts/scaffold_fastmcp.py \
+python ~/.plobi/skills/mcp/fastmcp/scripts/scaffold_fastmcp.py \
   --template api_wrapper \
   --name "Acme API" \
   --output ./acme_server.py
@@ -104,7 +104,7 @@ python ~/.hermes/skills/mcp/fastmcp/scripts/scaffold_fastmcp.py \
 Available templates:
 
 ```bash
-python ~/.hermes/skills/mcp/fastmcp/scripts/scaffold_fastmcp.py --list
+python ~/.plobi/skills/mcp/fastmcp/scripts/scaffold_fastmcp.py --list
 ```
 
 If copying manually, replace `__SERVER_NAME__` with a real server name.
@@ -187,7 +187,7 @@ Use `fastmcp discover` to inspect named MCP servers already configured on the ma
 
 When the goal is Plobi integration, either:
 
-- configure the server in `~/.hermes/config.yaml` using the `native-mcp` skill, or
+- configure the server in `~/.plobi/config.yaml` using the `native-mcp` skill, or
 - keep using FastMCP CLI commands during development until the interface stabilizes
 
 ### 7. Deploy After the Local Contract Is Stable
@@ -308,7 +308,7 @@ This usually exposes naming mismatches, missing required arguments, or non-seria
 
 ### Plobi cannot see the deployed server
 
-The server-building part may be correct while the Plobi config is not. Load the `native-mcp` skill and configure the server in `~/.hermes/config.yaml`, then restart Plobi.
+The server-building part may be correct while the Plobi config is not. Load the `native-mcp` skill and configure the server in `~/.plobi/config.yaml`, then restart Plobi.
 
 ## References
 

@@ -29,17 +29,17 @@ proxy when you just want **the model** through your subscription.
 ### 1. Log into your provider (one-time)
 
 ```bash
-hermes portal
+plobi portal
 ```
 
 This opens your browser for the Nous Portal OAuth flow. Plobi stores
-the refresh token in `~/.hermes/auth.json` — the same place all Plobi
+the refresh token in `~/.plobi/auth.json` — the same place all Plobi
 provider logins live.
 
 ### 2. Start the proxy
 
 ```bash
-hermes proxy start
+plobi proxy start
 ```
 
 ```
@@ -69,17 +69,17 @@ automatically when the bearer approaches expiry.
 ## Available providers
 
 ```bash
-hermes proxy providers
+plobi proxy providers
 ```
 
 Currently shipped: `nous` (Nous Portal) and `xai` (xAI / Grok). More
 OAuth providers can be added by implementing the `UpstreamAdapter`
-interface in `hermes_cli/proxy/adapters/`.
+interface in `plobi_cli/proxy/adapters/`.
 
 ## Check status
 
 ```bash
-hermes proxy status
+plobi proxy status
 ```
 
 ```
@@ -88,10 +88,10 @@ Plobi proxy upstream adapters
   [nous    ] Nous Portal — ready (bearer expires 2026-05-15T06:43:21Z)
 ```
 
-If you see `not logged in`, run `hermes portal`. If you see
+If you see `not logged in`, run `plobi portal`. If you see
 `credentials need attention`, your refresh token was revoked (rare —
 happens if you signed out from the Portal web UI) — just re-run
-`hermes portal`.
+`plobi portal`.
 
 ## Allowed paths
 
@@ -133,7 +133,7 @@ Then start your proxy in a terminal alongside `openviking-server`:
 
 ```bash
 # Terminal 1
-hermes proxy start
+plobi proxy start
 
 # Terminal 2
 openviking-server
@@ -165,7 +165,7 @@ By default the proxy binds `127.0.0.1` (localhost only). To let other
 machines on your network use it:
 
 ```bash
-hermes proxy start --host 0.0.0.0 --port 8645
+plobi proxy start --host 0.0.0.0 --port 8645
 ```
 
 ⚠ **Be aware:** anyone on your network can now use your Portal
@@ -197,7 +197,7 @@ proxy is a credential-attaching pass-through.
 The adapter system is pluggable. Adding a new provider (e.g.
 HuggingFace, GitHub Copilot's chat endpoint, Anthropic via OAuth)
 requires implementing `UpstreamAdapter` in
-`hermes_cli/proxy/adapters/<provider>.py` and registering it in
+`plobi_cli/proxy/adapters/<provider>.py` and registering it in
 `adapters/__init__.py`. Providers that aren't OpenAI-compatible at the
 protocol level (Anthropic Messages API, for example) would need a
 transformation layer, which is out of scope for the current shape.

@@ -356,7 +356,7 @@ def run_codex_app_server_turn(
         # requests through, so codex app-server exec / apply_patch requests
         # fail closed (silently decline) by default. When the user has
         # explicitly opted out of Plobi approvals — via `approvals.mode: off`
-        # in config, the /yolo session toggle, or --yolo / HERMES_YOLO_MODE —
+        # in config, the /yolo session toggle, or --yolo / PLOBI_YOLO_MODE —
         # honor that and let codex's own sandbox permission profile
         # (~/.codex/config.toml) be the policy gate instead of double-gating
         # with a missing Plobi UI. Defaults (manual/smart/unset) preserve the

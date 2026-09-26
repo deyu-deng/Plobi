@@ -12,14 +12,14 @@ import pytest
 
 
 def _load_plugin():
-    name = "hermes_plugins.plobi_agenda"
+    name = "plobi_plugins.plobi_agenda"
     if name in sys.modules and hasattr(sys.modules[name], "register"):
         return sys.modules[name]
 
-    if "hermes_plugins" not in sys.modules:
-        namespace = types.ModuleType("hermes_plugins")
+    if "plobi_plugins" not in sys.modules:
+        namespace = types.ModuleType("plobi_plugins")
         namespace.__path__ = []  # type: ignore[attr-defined]
-        sys.modules["hermes_plugins"] = namespace
+        sys.modules["plobi_plugins"] = namespace
 
     plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-agenda"
     spec = importlib.util.spec_from_file_location(

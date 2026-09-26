@@ -114,8 +114,8 @@ _TYPING_COOLDOWN_SECONDS = 5.0
 # behavior and defaults as the BlueBubbles iMessage channel so the two
 # iMessage adapters gate group chats identically.
 _DEFAULT_MENTION_PATTERNS = [
-    r"(?<![\w@])@?hermes\s+agent\b[,:\-]?",
-    r"(?<![\w@])@?hermes\b[,:\-]?",
+    r"(?<![\w@])@?plobi\s+agent\b[,:\-]?",
+    r"(?<![\w@])@?plobi\b[,:\-]?",
 ]
 
 
@@ -136,9 +136,9 @@ def check_requirements() -> bool:
     if not shutil.which(os.getenv("PHOTON_NODE_BIN") or "node"):
         return False
     if not (_SIDECAR_DIR / "node_modules").exists():
-        # spectrum-ts not installed yet — `hermes photon setup` will
+        # spectrum-ts not installed yet — `plobi photon setup` will
         # install it.  check_fn still returns False so the gateway
-        # surfaces the missing-deps state in `hermes setup` / status.
+        # surfaces the missing-deps state in `plobi setup` / status.
         return False
     return True
 
@@ -146,7 +146,7 @@ def check_requirements() -> bool:
 def _sidecar_deps_stale() -> bool:
     """True when node_modules exists but is older than the committed lockfile.
 
-    `hermes update` rewrites ``package-lock.json`` when the spectrum-ts pin is
+    `plobi update` rewrites ``package-lock.json`` when the spectrum-ts pin is
     bumped, but does not reinstall ``node_modules``. npm records the state of
     the last install in ``node_modules/.package-lock.json``; when the top-level
     lockfile is newer than that marker, the install is out of date. This is the
@@ -164,7 +164,7 @@ def _sidecar_deps_stale() -> bool:
 def _reinstall_sidecar_deps() -> None:
     """Reinstall the sidecar's node_modules from the lockfile (blocking).
 
-    Mirrors ``hermes photon install-sidecar``: ``npm ci`` for an exact,
+    Mirrors ``plobi photon install-sidecar``: ``npm ci`` for an exact,
     reproducible install, falling back to ``npm install`` if the lockfile is
     missing or drifted. Runs the postinstall patch as part of the install.
     Best-effort — a failure here just leaves the (stale) deps in place and the
@@ -421,7 +421,7 @@ class PhotonAdapter(BasePlatformAdapter):
             self._set_fatal_error(
                 "MISSING_CREDENTIALS",
                 "PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET are required. "
-                "Run: hermes photon setup",
+                "Run: plobi photon setup",
                 retryable=False,
             )
             return False
@@ -916,9 +916,9 @@ class PhotonAdapter(BasePlatformAdapter):
         if not (_SIDECAR_DIR / "node_modules").exists():
             raise RuntimeError(
                 f"Photon sidecar deps not installed. Run: "
-                f"cd {_SIDECAR_DIR} && npm install   (or `hermes photon setup`)"
+                f"cd {_SIDECAR_DIR} && npm install   (or `plobi photon setup`)"
             )
-        # A `hermes update` that bumps the spectrum-ts pin rewrites
+        # A `plobi update` that bumps the spectrum-ts pin rewrites
         # package-lock.json but never reinstalls node_modules, so the sidecar
         # spawns against stale deps and dies on every reconnect (the v8 patch
         # script can't find @spectrum-ts/imessage/dist that only v8 ships).
@@ -1745,7 +1745,7 @@ async def _standalone_send(
 def register(ctx) -> None:
     """Called by the Plobi plugin loader at startup."""
     # Local import to avoid argparse work at module load; reused for both the
-    # gateway-setup hook and the `hermes photon` CLI command below.
+    # gateway-setup hook and the `plobi photon` CLI command below.
     from . import cli as _cli
 
     ctx.register_platform(
@@ -1757,11 +1757,11 @@ def register(ctx) -> None:
         is_connected=is_connected,
         required_env=["PHOTON_PROJECT_ID", "PHOTON_PROJECT_SECRET"],
         install_hint=(
-            "Run: hermes photon setup  (logs in via device flow, creates a "
+            "Run: plobi photon setup  (logs in via device flow, creates a "
             "Spectrum project, links your phone number, installs the "
             "spectrum-ts sidecar)."
         ),
-        # Surfaces Photon in `hermes gateway setup` alongside every other
+        # Surfaces Photon in `plobi gateway setup` alongside every other
         # channel — same unified onboarding wizard, no Photon-only detour.
         setup_fn=_cli.gateway_setup,
         env_enablement_fn=_env_enablement,
@@ -1786,7 +1786,7 @@ def register(ctx) -> None:
         ),
     )
 
-    # Register CLI subcommands — `hermes photon ...`
+    # Register CLI subcommands — `plobi photon ...`
     ctx.register_cli_command(
         name="photon",
         help="Set up and manage the Photon iMessage integration",

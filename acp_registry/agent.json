@@ -1,5 +1,5 @@
 {
-  "id": "hermes-agent",
+  "id": "plobi-agent",
   "name": "Plobi Agent",
   "version": "0.18.2",
   "description": "Self-improving open-source AI agent by Plobi with ACP editor integration, persistent memory, skills, and rich tool support.",
@@ -9,8 +9,8 @@
   "license": "MIT",
   "distribution": {
     "uvx": {
-      "package": "hermes-agent[acp]==0.18.2",
-      "args": ["hermes-acp"]
+      "package": "plobi-agent[acp]==0.18.2",
+      "args": ["plobi-acp"]
     }
   }
 }

@@ -106,7 +106,7 @@ describe('buildToolView browser_navigate title', () => {
     const view = buildToolView(
       part({
         toolName: 'browser_navigate',
-        args: { url: 'https://hermes-agent.nousresearch.com/docs' },
+        args: { url: 'https://plobi-agent.nousresearch.com/docs' },
         result: { success: false, error: 'Command timed out after 60 seconds' }
       }),
       ''
@@ -115,21 +115,21 @@ describe('buildToolView browser_navigate title', () => {
     expect(view.status).toBe('error')
     // WP-FE-TESTROT: the row label is host + path by design (see `hostnameOf`),
     // so the page is identifiable — the assertion was the stale half.
-    expect(view.title).toBe('Failed to open hermes-agent.nousresearch.com/docs')
+    expect(view.title).toBe('Failed to open plobi-agent.nousresearch.com/docs')
   })
 
   it('shows opened title on success', () => {
     const view = buildToolView(
       part({
         toolName: 'browser_navigate',
-        args: { url: 'https://hermes-agent.nousresearch.com/docs' },
-        result: { success: true, url: 'https://hermes-agent.nousresearch.com/docs', title: 'Docs' }
+        args: { url: 'https://plobi-agent.nousresearch.com/docs' },
+        result: { success: true, url: 'https://plobi-agent.nousresearch.com/docs', title: 'Docs' }
       }),
       ''
     )
 
     expect(view.status).toBe('success')
-    expect(view.title).toBe('Opened hermes-agent.nousresearch.com/docs')
+    expect(view.title).toBe('Opened plobi-agent.nousresearch.com/docs')
   })
 })
 

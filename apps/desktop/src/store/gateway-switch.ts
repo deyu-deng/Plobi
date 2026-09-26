@@ -21,7 +21,7 @@ import {
 
 // True while a soft gateway-mode apply is mid-flight (wipe → re-dial). Lets the
 // boot hook suppress the backend-exit toast and keeps the cold-boot CONNECTING
-// overlay from resurrecting when startHermes re-emits boot progress.
+// overlay from resurrecting when startPlobi re-emits boot progress.
 export const $gatewaySwitching = atom(false)
 
 const PREVIEW_HOLD_MS = 1400

@@ -1,7 +1,7 @@
 """B2: L2 常驻 Agent 注册表 — registry round-trip / routing 断言 / spawn。
 
-注册表 = $HERMES_HOME/plobi/projects.yaml（profile-safe）；spawn 落地 profile
-（复用 hermes_cli.profiles.create_profile）+ 写 profile 级 plobi/models.json
+注册表 = $PLOBI_HOME/plobi/projects.yaml（profile-safe）；spawn 落地 profile
+（复用 plobi_cli.profiles.create_profile）+ 写 profile 级 plobi/models.json
 （ADR-0011 断言绿）+ 同步 config.yaml 模型。
 """
 
@@ -18,9 +18,9 @@ from plobi.agents.registry import AgentEntry, AgentRegistry, RegistryError, defa
 
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
-    """隔离 HERMES_HOME + Path.home()（run_tests.sh 的 env -i 丢 USERPROFILE）。"""
+    """隔离 PLOBI_HOME + Path.home()（run_tests.sh 的 env -i 丢 USERPROFILE）。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / ".plobi"))
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
     return tmp_path
@@ -37,8 +37,8 @@ def _entry(**kw):
 # ---------------------------------------------------------------------------
 
 
-def test_default_path_is_hermes_home_anchored(home):
-    assert default_path() == Path(home) / ".hermes" / "plobi" / "projects.yaml"
+def test_default_path_is_plobi_home_anchored(home):
+    assert default_path() == Path(home) / ".plobi" / "plobi" / "projects.yaml"
 
 
 def test_load_missing_returns_empty(home):
@@ -106,22 +106,22 @@ def spawn_env(home, monkeypatch):
     spawn 在测试里必须验证 profile 目录 + models.json + config.yaml 三个产物。
     create_profile 会走 seed skills / clone 等重逻辑，直接替换成 mkdir 即可。
     """
-    import hermes_cli.profiles as profiles_mod
+    import plobi_cli.profiles as profiles_mod
 
     def fake_create_profile(name, **kwargs):
-        profile_dir = Path(home) / ".hermes" / "profiles" / name
+        profile_dir = Path(home) / ".plobi" / "profiles" / name
         profile_dir.mkdir(parents=True, exist_ok=True)
         (profile_dir / "plobi").mkdir(exist_ok=True)
         (profile_dir / "config.yaml").write_text("model: {}\n", encoding="utf-8")
         return profile_dir
 
     def fake_profile_exists(name):
-        return (Path(home) / ".hermes" / "profiles" / name).is_dir()
+        return (Path(home) / ".plobi" / "profiles" / name).is_dir()
 
     monkeypatch.setattr(profiles_mod, "create_profile", fake_create_profile)
     monkeypatch.setattr(profiles_mod, "profile_exists", fake_profile_exists)
-    monkeypatch.setattr("hermes_cli.profiles.create_profile", fake_create_profile)
-    monkeypatch.setattr("hermes_cli.profiles.profile_exists", fake_profile_exists)
+    monkeypatch.setattr("plobi_cli.profiles.create_profile", fake_create_profile)
+    monkeypatch.setattr("plobi_cli.profiles.profile_exists", fake_profile_exists)
     return home
 
 
@@ -214,7 +214,7 @@ def test_cli_register_then_spawn(spawn_env, capsys, monkeypatch):
     run_plobi(_Args(plobi_action="agents", agents_action="spawn", name="agenda"))
     out = capsys.readouterr().out
     assert "Spawned agenda" in out
-    assert "hermes -p agenda chat" in out
+    assert "plobi -p agenda chat" in out
     # 落盘后注册表可见
     reg = AgentRegistry.load()
     assert set(reg.names()) == {"agenda", "secretary"}
@@ -370,20 +370,20 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     from plobi.agents.registry import AgentEntry, AgentRegistry
     import sys, types, yaml
 
-    # Stub hermes_cli.profiles 让 reg.spawn 能找到 profile_dir。
-    fake = types.ModuleType("hermes_cli.profiles")
-    fake.create_profile = lambda name, **kw: home / ".hermes" / "profiles" / name
-    fake.get_profile_dir = lambda name: home / ".hermes" / "profiles" / name
-    fake.profile_exists = lambda name: (home / ".hermes" / "profiles" / name).is_dir()
-    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", fake)
-    monkeypatch.setenv("HERMES_HOME", str(home / ".hermes"))
+    # Stub plobi_cli.profiles 让 reg.spawn 能找到 profile_dir。
+    fake = types.ModuleType("plobi_cli.profiles")
+    fake.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
+    fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
+    fake.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
+    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
+    monkeypatch.setenv("PLOBI_HOME", str(home / ".plobi"))
     monkeypatch.setenv(
-        "PLOBI_PROJECTS_CONFIG", str(home / ".hermes" / "plobi" / "projects.yaml")
+        "PLOBI_PROJECTS_CONFIG", str(home / ".plobi" / "plobi" / "projects.yaml")
     )
 
     project_dir = home / "workspace"
     project_dir.mkdir()
-    profile_dir = home / ".hermes" / "profiles" / "l2-Plobi"
+    profile_dir = home / ".plobi" / "profiles" / "l2-Plobi"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 

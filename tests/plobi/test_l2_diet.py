@@ -6,7 +6,7 @@ skills / todo / clarify / delegation / plobi_north_star。
 
 裁定 33.3（项目 L2）：每个 Mind 项目 L2 的 profile config.yaml 必须没
 有 ``terminal`` / ``computer_use`` / ``code_execution`` / ``session_search``，
-且任何 ``hermes-*`` 复合工具集都被剥掉。L2-agenda 不走这条——管家自己
+且任何 ``plobi-*`` 复合工具集都被剥掉。L2-agenda 不走这条——管家自己
 有 ``ensure_l2_agenda_toolsets`` 单独管 terminal 准入。
 """
 
@@ -54,11 +54,11 @@ def test_mid_narrow_still_drops_terminal_session_search_code_execution_computer_
         assert "web" in out
 
 
-def test_mid_narrow_drops_hermes_cli_composite():
+def test_mid_narrow_drops_plobi_cli_composite():
     from plobi.agents.registry import mid_narrow_toolset_names
 
-    out = mid_narrow_toolset_names(["hermes-cli", "web"])
-    assert "hermes-cli" not in out
+    out = mid_narrow_toolset_names(["plobi-cli", "web"])
+    assert "plobi-cli" not in out
     assert "web" in out
     assert "plobi_north_star" in out
 
@@ -108,7 +108,7 @@ def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_sessi
     _write_config(
         profile_dir,
         top=["terminal", "computer_use", "web", "skills", "code_execution", "session_search", "clarify"],
-        platforms={"cli": ["terminal", "web", "session_search"], "gateway": ["hermes-cli", "code_execution"]},
+        platforms={"cli": ["terminal", "web", "session_search"], "gateway": ["plobi-cli", "code_execution"]},
     )
 
     assert apply_l2_project_diet(profile_dir) is True
@@ -126,24 +126,24 @@ def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_sessi
     assert "terminal" not in cfg["platform_toolsets"]["cli"]
     assert "session_search" not in cfg["platform_toolsets"]["cli"]
     assert "web" in cfg["platform_toolsets"]["cli"]
-    assert "hermes-cli" not in cfg["platform_toolsets"]["gateway"]
+    assert "plobi-cli" not in cfg["platform_toolsets"]["gateway"]
     assert "code_execution" not in cfg["platform_toolsets"]["gateway"]
 
 
-def test_apply_l2_project_diet_strips_hermes_composite_toolsets(tmp_path):
+def test_apply_l2_project_diet_strips_plobi_composite_toolsets(tmp_path):
     from plobi.agents.registry import apply_l2_project_diet
 
     profile_dir = tmp_path / "l2-Animation"
     _write_config(
         profile_dir,
-        top=["hermes-cli", "hermes-cli-gateway", "web"],
+        top=["plobi-cli", "plobi-cli-gateway", "web"],
     )
 
     assert apply_l2_project_diet(profile_dir) is True
 
     cfg = _read_toolsets(profile_dir)
-    assert "hermes-cli" not in cfg["toolsets"]
-    assert "hermes-cli-gateway" not in cfg["toolsets"]
+    assert "plobi-cli" not in cfg["toolsets"]
+    assert "plobi-cli-gateway" not in cfg["toolsets"]
     assert "web" in cfg["toolsets"]
 
 
@@ -231,10 +231,10 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     from plobi.agents import registry as registry_mod
 
     # 临时 home + Mind 根目录。
-    home = tmp_path / "hermes_home"
+    home = tmp_path / "plobi_home"
     home.mkdir()
     monkeypatch.setattr("pathlib.Path.home", lambda: home)
-    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("PLOBI_HOME", str(home))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(home / "plobi" / "projects.yaml"))
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
 
@@ -260,7 +260,7 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     # 先准备两个「l2-Plobi / l2-Animation」假 profile，配置里塞 terminal，
     # 让 diet 必须干活才能清理。
     for name in ("Plobi", "Animation"):
-        profile_dir = home / ".hermes" / "profiles" / f"l2-{name}"
+        profile_dir = home / ".plobi" / "profiles" / f"l2-{name}"
         profile_dir.mkdir(parents=True)
         (profile_dir / "config.yaml").write_text(
             "toolsets:\n  - terminal\n  - web\n  - skills\n",
@@ -269,15 +269,15 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
         (profile_dir / "plobi").mkdir(exist_ok=True)
         (profile_dir / "plobi" / "models.json").write_text("{}", encoding="utf-8")
 
-    # stub hermes_cli.profiles（让 reg.spawn 走通；不真克隆）
+    # stub plobi_cli.profiles（让 reg.spawn 走通；不真克隆）
     import sys
     import types
 
-    fake_profiles = types.ModuleType("hermes_cli.profiles")
-    fake_profiles.create_profile = lambda name, **kw: home / ".hermes" / "profiles" / name
-    fake_profiles.get_profile_dir = lambda name: home / ".hermes" / "profiles" / name
-    fake_profiles.profile_exists = lambda name: (home / ".hermes" / "profiles" / name).is_dir()
-    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", fake_profiles)
+    fake_profiles = types.ModuleType("plobi_cli.profiles")
+    fake_profiles.create_profile = lambda name, **kw: home / ".plobi" / "profiles" / name
+    fake_profiles.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
+    fake_profiles.profile_exists = lambda name: (home / ".plobi" / "profiles" / name).is_dir()
+    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake_profiles)
 
     # stub AgentRegistry.spawn 走通到返回 profile_dir。
     original_spawn = registry_mod.AgentRegistry.spawn
@@ -292,7 +292,7 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
             "role": "l2_project",
             "profile": f"l2-{name}",
             "profile_dir": str(profile_dir),
-            "command": f"hermes -p l2-{name} chat",
+            "command": f"plobi -p l2-{name} chat",
             "routing_ok": True,
         }
     monkeypatch.setattr(registry_mod.AgentRegistry, "spawn", _spawn)
@@ -306,7 +306,7 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
 
     assert set(seeded) == {"Plobi", "Animation"}
     for name in ("Plobi", "Animation"):
-        profile_dir = home / ".hermes" / "profiles" / f"l2-{name}"
+        profile_dir = home / ".plobi" / "profiles" / f"l2-{name}"
         cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
         assert "terminal" not in cfg.get("toolsets", []), name
         assert "web" in cfg["toolsets"], name

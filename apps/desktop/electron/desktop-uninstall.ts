@@ -2,7 +2,7 @@
  * desktop-uninstall.ts
  *
  * Pure, electron-free helpers for the desktop Chat GUI uninstaller. These map
- * the three user-facing uninstall modes to the `hermes uninstall` CLI flags,
+ * the three user-facing uninstall modes to the `plobi uninstall` CLI flags,
  * resolve the running app bundle/exe so a detached cleanup script can remove
  * it after the app quits, and build that cleanup script for each OS.
  *
@@ -12,14 +12,14 @@
  *
  * The three modes mirror the CLI's options exactly:
  *   - 'gui'  → remove ONLY the Chat GUI, keep the agent + all user data.
- *              `hermes uninstall --gui --yes`
+ *              `plobi uninstall --gui --yes`
  *   - 'lite' → remove the GUI + agent code, KEEP user data (config / sessions
- *              / .env) for a future reinstall. `hermes uninstall --yes`
+ *              / .env) for a future reinstall. `plobi uninstall --yes`
  *   - 'full' → remove everything: GUI + agent + all user data.
- *              `hermes uninstall --full --yes`
+ *              `plobi uninstall --full --yes`
  *
  * Why a detached cleanup script: 'lite'/'full' delete the very venv the
- * `hermes` command runs from, and every mode may need to delete the running
+ * `plobi` command runs from, and every mode may need to delete the running
  * app bundle (locked on macOS/Windows while the process is alive). So we hand
  * the work to a detached child that waits for this app's PID to exit, runs the
  * Python uninstall, then removes the app bundle — then the app quits. Same
@@ -31,9 +31,9 @@ import path from 'node:path'
 const UNINSTALL_MODES = ['gui', 'lite', 'full']
 
 /**
- * Map an uninstall mode to the `python -m hermes_cli.uninstall` argv (after the
+ * Map an uninstall mode to the `python -m plobi_cli.uninstall` argv (after the
  * python executable). Uses the dedicated lightweight module entrypoint (not
- * `hermes_cli.main`) so it can run under a system Python OUTSIDE the venv that
+ * `plobi_cli.main`) so it can run under a system Python OUTSIDE the venv that
  * lite/full delete — see the Finding-3 note in buildWindowsCleanupScript.
  * Throws on an unknown mode so a typo can't silently become a full wipe.
  */
@@ -42,7 +42,7 @@ function uninstallArgsForMode(mode) {
     throw new Error(`Unknown uninstall mode: ${mode}`)
   }
 
-  return ['-m', 'hermes_cli.uninstall', '--mode', mode]
+  return ['-m', 'plobi_cli.uninstall', '--mode', mode]
 }
 
 /** True when `mode` removes the agent (lite/full), false for gui-only. */
@@ -95,7 +95,7 @@ function resolveRemovableAppPath(execPath, platform, env: any = {}) {
     // NSIS per-user installs Plobi.exe directly in the install dir.
     const dir = p.dirname(exe)
 
-    if (/[\\/]Plobi$/i.test(dir) || /[\\/]hermes-desktop$/i.test(dir)) {
+    if (/[\\/]Plobi$/i.test(dir) || /[\\/]plobi-desktop$/i.test(dir)) {
       return dir
     }
 
@@ -106,7 +106,7 @@ function resolveRemovableAppPath(execPath, platform, env: any = {}) {
   if (env.APPIMAGE) {
     return env.APPIMAGE
   }
-  // Unpacked electron-builder tree: …/linux-unpacked/hermes
+  // Unpacked electron-builder tree: …/linux-unpacked/plobi
   const dir = p.dirname(exe)
 
   if (/-unpacked$/.test(dir)) {
@@ -133,11 +133,11 @@ function shouldRemoveAppBundle(isPackaged, appPath) {
  *   3. removes the app bundle if one was resolved.
  *
  * `pythonExe` should be a Python OUTSIDE the venv for lite/full (the venv is
- * being deleted); `pythonPath` is prepended to PYTHONPATH so `import hermes_cli`
+ * being deleted); `pythonPath` is prepended to PYTHONPATH so `import plobi_cli`
  * resolves from the agent source. `q()` single-quote-escapes for the shell
  * (closes-escapes-reopens any embedded apostrophe), defending against spaces.
  */
-function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot, uninstallArgs, appPath, hermesHome }) {
+function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot, uninstallArgs, appPath, plobiHome }) {
   const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`
 
   const lines = [
@@ -152,7 +152,7 @@ function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot,
     '    sleep 0.5',
     '  done',
     'fi',
-    `export HERMES_HOME=${q(hermesHome)}`
+    `export PLOBI_HOME=${q(plobiHome)}`
   ]
 
   if (pythonPath) {
@@ -179,7 +179,7 @@ function buildPosixCleanupScript({ desktopPid, pythonExe, pythonPath, agentRoot,
  * the venv that contains `python.exe`. A running .exe is mandatory-locked on
  * Windows, so running the uninstall from the venv's OWN python half-fails. The
  * desktop passes a system Python (findSystemPython) as `pythonExe` for those
- * modes + `pythonPath`=agentRoot so `import hermes_cli` resolves from source
+ * modes + `pythonPath`=agentRoot so `import plobi_cli` resolves from source
  * while the venv is torn down. gui-only doesn't touch the venv, so it can use
  * either interpreter.
  *
@@ -197,7 +197,7 @@ function buildWindowsCleanupScript({
   agentRoot,
   uninstallArgs,
   appPath,
-  hermesHome
+  plobiHome
 }) {
   const pid = Number(desktopPid) || 0
   // cmd.exe has no string escaping inside quotes; strip embedded quotes (paths
@@ -208,7 +208,7 @@ function buildWindowsCleanupScript({
   const lines = [
     '@echo off',
     'setlocal enableextensions',
-    `set "HERMES_HOME=${String(hermesHome).replace(/"/g, '')}"`,
+    `set "PLOBI_HOME=${String(plobiHome).replace(/"/g, '')}"`,
     `set "PID=${pid}"`
   ]
 

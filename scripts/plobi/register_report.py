@@ -12,9 +12,9 @@ REPORT_SCRIPT = "plobi_report.py"
 
 
 def register_report_job() -> str:
-    from hermes_constants import get_hermes_home
+    from plobi_constants import get_plobi_home
 
-    home = get_hermes_home()
+    home = get_plobi_home()
     scripts_dir = home / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
     target = scripts_dir / REPORT_SCRIPT

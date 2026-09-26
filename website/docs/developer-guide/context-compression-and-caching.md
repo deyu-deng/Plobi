@@ -30,7 +30,7 @@ Selection is config-driven via `context.engine` in `config.yaml`. The resolution
 
 Plugin engines are **never auto-activated** — the user must explicitly set `context.engine` to the plugin's name. The default `"compressor"` always uses the built-in.
 
-Configure via `hermes plugins` → Provider Plugins → Context Engine, or edit `config.yaml` directly.
+Configure via `plobi plugins` → Provider Plugins → Context Engine, or edit `config.yaml` directly.
 
 For building a context engine plugin, see [Context Engine Plugins](/developer-guide/context-engine-plugin).
 
@@ -86,7 +86,7 @@ compression:
   protect_last_n: 20         # Minimum protected tail messages (default: 20)
   codex_gpt55_autoraise: true  # gpt-5.5 on Codex OAuth: raise trigger to 85% (default: true)
   codex_gpt55_autoraise_notice: true  # Show the one-time autoraise notice (default: true)
-  codex_app_server_auto: native  # native|hermes|off for Codex app-server thread compaction
+  codex_app_server_auto: native  # native|plobi|off for Codex app-server thread compaction
 
 # Summarization model/provider configured under auxiliary:
 auxiliary:
@@ -106,7 +106,7 @@ auxiliary:
 | `protect_first_n` | `3` | (hardcoded) | System prompt + first exchange always preserved |
 | `codex_gpt55_autoraise` | `true` | bool | Raise the trigger to 85% for gpt-5.5 on the ChatGPT Codex OAuth route (see below). Set `false` to keep the global `threshold` |
 | `codex_gpt55_autoraise_notice` | `true` | bool | Show the one-time Codex gpt-5.5 autoraise notice. Set `false` to keep the 85% autoraise but suppress the banner |
-| `codex_app_server_auto` | `native` | `native`, `hermes`, `off` | Thread-compaction mode for Codex app-server sessions (see below) |
+| `codex_app_server_auto` | `native` | `native`, `plobi`, `off` | Thread-compaction mode for Codex app-server sessions (see below) |
 
 ### Codex gpt-5.5 threshold autoraise
 
@@ -116,7 +116,7 @@ GitHub Copilot). At the default 50% trigger, compaction would fire at ~136K —
 half the window the model can actually use. When the active route is Codex
 OAuth (`provider: openai-codex`) and the model is gpt-5.5, Plobi raises the
 trigger to **85%** (~231K) and shows a notice with the opt-out command. The
-notice is shown once per profile — a marker under `$HERMES_HOME`
+notice is shown once per profile — a marker under `$PLOBI_HOME`
 (`.codex_gpt55_autoraise_notice`) records that it ran, so repeated agent/session
 inits (e.g. every inbound gateway message) don't re-emit it; if the raised
 threshold later changes it re-notifies once. Only this exact route is affected;
@@ -124,13 +124,13 @@ gpt-5.5 on any other provider keeps your global `threshold`. To opt back down to
 the global value:
 
 ```bash
-hermes config set compression.codex_gpt55_autoraise false
+plobi config set compression.codex_gpt55_autoraise false
 ```
 
 To keep the 85% autoraise but hide only the one-time notice:
 
 ```bash
-hermes config set compression.codex_gpt55_autoraise_notice false
+plobi config set compression.codex_gpt55_autoraise_notice false
 ```
 
 ### Codex app-server thread compaction
@@ -147,7 +147,7 @@ mechanism instead:
 - Automatic compaction is controlled by `compression.codex_app_server_auto`:
   the default `native` lets the app-server decide when to compact and Plobi
   records the resulting compaction events (compression counters, session
-  events). Set `hermes` to let Plobi' compression threshold initiate
+  events). Set `plobi` to let Plobi' compression threshold initiate
   app-server compaction, or `off` to disable Plobi-initiated automatic
   compaction entirely (codex may still compact natively).
 

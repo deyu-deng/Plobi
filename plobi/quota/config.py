@@ -3,13 +3,13 @@
 额度池 = 便宜 API（zhipu air 档）+ aigw 聚合（antigravity / workbuddy 免费额度）。
 L1 按策略挑源（便宜优先、aigw 兜底）；L2 在源失效时自动切换。
 
-配置真源：``$HERMES_HOME/plobi/quota.yaml``（profile-safe，走 ``get_hermes_home()``，
+配置真源：``$PLOBI_HOME/plobi/quota.yaml``（profile-safe，走 ``get_plobi_home()``，
 ``PLOBI_QUOTA_CONFIG`` 可覆盖）。每个源的 ``base_url`` / ``api_key`` 是敏感信息，
 一律从环境变量读（``url_env`` / ``key_env``），配置文件只放非敏感字段（kind/model/
 base_url 默认值）。优先级：quota.yaml > 环境变量 > credential_pool 只读桥 > 默认值。
 
-WP-BE-2 凭证桥：UI 存 key 走 Hermes ``auth.json`` 的 ``credential_pool``（条目可以是
-``env:VAR`` 引用，token 本体在 ``$HERMES_HOME/.env``），而额度池此前只认
+WP-BE-2 凭证桥：UI 存 key 走 Plobi ``auth.json`` 的 ``credential_pool``（条目可以是
+``env:VAR`` 引用，token 本体在 ``$PLOBI_HOME/.env``），而额度池此前只认
 ``PLOBI_QUOTA_*`` 环境变量——两套凭证面互不相通，三源 probe 全部 unavailable。
 ``_resolve_source`` 在 env 未设时按 ``credential_provider`` 只读查询
 ``read_credential_pool``（纯读，不写盘不 seed），补齐 ``api_key`` / 空缺的
@@ -88,16 +88,16 @@ DEFAULT_FAIL_OPEN = True
 
 
 def config_path() -> Path:
-    """额度池配置文件路径：$HERMES_HOME/plobi/quota.yaml（profile-safe）。"""
+    """额度池配置文件路径：$PLOBI_HOME/plobi/quota.yaml（profile-safe）。"""
     override = os.environ.get("PLOBI_QUOTA_CONFIG", "").strip()
     if override:
         return Path(override)
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / "quota.yaml"
 
 
@@ -105,16 +105,16 @@ def config_path() -> Path:
 
 
 def _lookup_credential(provider: str) -> tuple[str, str]:
-    """只读查询 Hermes credential_pool 中某 provider 的 ``(token, base_url)``。
+    """只读查询 Plobi credential_pool 中某 provider 的 ``(token, base_url)``。
 
-    复用底座 ``hermes_cli.auth.read_credential_pool``（纯读：profile 优先 +
+    复用底座 ``plobi_cli.auth.read_credential_pool``（纯读：profile 优先 +
     全局回退，不写盘不 seed）。条目可能没有内联 token 而是 ``env:VAR`` 引用
-    （UI 存 key 的形态），此时按底座同样的语义解析：``$HERMES_HOME/.env``
+    （UI 存 key 的形态），此时按底座同样的语义解析：``$PLOBI_HOME/.env``
     （``load_env()``）优先，``os.environ`` 兜底。查不到诚实返回 ``("", "")``，
     不伪造凭据。
     """
     try:
-        from hermes_cli.auth import read_credential_pool
+        from plobi_cli.auth import read_credential_pool
 
         entries = read_credential_pool(provider)
     except Exception:
@@ -138,7 +138,7 @@ def _lookup_credential(provider: str) -> tuple[str, str]:
             var = source[len("env:"):].strip()
             dotenv: dict[str, str] = {}
             try:
-                from hermes_cli.config import load_env
+                from plobi_cli.config import load_env
 
                 dotenv = load_env() or {}
             except Exception:

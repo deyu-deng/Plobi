@@ -1,7 +1,7 @@
-"""Optional mirror into Hermes kanban — do not reinvent the board.
+"""Optional mirror into Plobi kanban — do not reinvent the board.
 
 North Star keeps a small risk/stage overlay for night autonomy and Master
-summaries. Execution collaboration still belongs to ``hermes_cli.kanban_db``
+summaries. Execution collaboration still belongs to ``plobi_cli.kanban_db``
 when available.
 """
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 def mirror_enqueue_to_kanban(rec: "TaskRecord") -> Optional[str]:
     """Best-effort create a kanban card. Returns kanban task id or None."""
     try:
-        from hermes_cli import kanban_db
+        from plobi_cli import kanban_db
     except Exception:
         return None
     try:

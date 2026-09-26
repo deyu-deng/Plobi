@@ -63,11 +63,11 @@ def _at(offset_days: int, hour: int, minute: int = 0) -> str:
 @pytest.fixture()
 def secretary_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    hermes = tmp_path / ".hermes"
-    hermes.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(hermes))
+    plobi = tmp_path / ".plobi"
+    plobi.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(plobi))
     monkeypatch.setenv(
-        "PLOBI_PROJECTS_CONFIG", str(hermes / "plobi" / "projects.yaml")
+        "PLOBI_PROJECTS_CONFIG", str(plobi / "plobi" / "projects.yaml")
     )
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     return tmp_path
@@ -75,10 +75,10 @@ def secretary_home(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def stub_spawn(secretary_home, monkeypatch):
-    import hermes_cli.profiles as profiles_mod
+    import plobi_cli.profiles as profiles_mod
 
     def fake_create_profile(name, **kwargs):
-        profile_dir = Path(secretary_home) / ".hermes" / "profiles" / name
+        profile_dir = Path(secretary_home) / ".plobi" / "profiles" / name
         profile_dir.mkdir(parents=True, exist_ok=True)
         (profile_dir / "plobi").mkdir(exist_ok=True)
         (profile_dir / "config.yaml").write_text("model: {}\n", encoding="utf-8")
@@ -87,12 +87,12 @@ def stub_spawn(secretary_home, monkeypatch):
     def fake_profile_exists(name):
         if name == "default":
             return True
-        return (Path(secretary_home) / ".hermes" / "profiles" / name).is_dir()
+        return (Path(secretary_home) / ".plobi" / "profiles" / name).is_dir()
 
     def fake_get_profile_dir(name):
         if name == "default":
-            return Path(secretary_home) / ".hermes"
-        return Path(secretary_home) / ".hermes" / "profiles" / name
+            return Path(secretary_home) / ".plobi"
+        return Path(secretary_home) / ".plobi" / "profiles" / name
 
     monkeypatch.setattr(profiles_mod, "create_profile", fake_create_profile)
     monkeypatch.setattr(profiles_mod, "profile_exists", fake_profile_exists)

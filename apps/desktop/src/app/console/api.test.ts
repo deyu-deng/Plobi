@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $agendaEvents } from '@/store/agenda'
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 const confirmAgendaEvent = vi.hoisted(() => vi.fn())
 const dismissAgendaEvent = vi.hoisted(() => vi.fn())
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/plobi', () => ({
   confirmAgendaEvent: (...args: unknown[]) => confirmAgendaEvent(...args),
   dismissAgendaEvent: (...args: unknown[]) => dismissAgendaEvent(...args)
 }))
@@ -80,9 +80,9 @@ describe('createAgent (WP-L2-FE)', () => {
       data: { id: 'plobi-code', name: 'plobi-code', status: 'idle', todayCalls: 0 },
       ok: true
     })
-    const previous = (window as { hermesDesktop?: unknown }).hermesDesktop
+    const previous = (window as { plobiDesktop?: unknown }).plobiDesktop
 
-    Object.defineProperty(window, 'hermesDesktop', {
+    Object.defineProperty(window, 'plobiDesktop', {
       configurable: true,
       value: { api }
     })
@@ -98,9 +98,9 @@ describe('createAgent (WP-L2-FE)', () => {
       expect(created.id).toBe('plobi-code')
     } finally {
       if (previous) {
-        Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previous })
+        Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: previous })
       } else {
-        Reflect.deleteProperty(window, 'hermesDesktop')
+        Reflect.deleteProperty(window, 'plobiDesktop')
       }
     }
   })
@@ -130,19 +130,19 @@ describe('S2 mock endpoints (U4)', () => {
 // fallback has no binding, so the field stays absent (file tree must stay
 // empty instead of inheriting the previous cwd).
 describe('getAgentOverview projectPath (WP-R013-FE)', () => {
-  function stubHermesDesktop(api: ReturnType<typeof vi.fn>): () => void {
-    const previous = (window as { hermesDesktop?: unknown }).hermesDesktop
+  function stubPlobiDesktop(api: ReturnType<typeof vi.fn>): () => void {
+    const previous = (window as { plobiDesktop?: unknown }).plobiDesktop
 
-    Object.defineProperty(window, 'hermesDesktop', {
+    Object.defineProperty(window, 'plobiDesktop', {
       configurable: true,
       value: { api }
     })
 
     return () => {
       if (previous) {
-        Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previous })
+        Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: previous })
       } else {
-        Reflect.deleteProperty(window, 'hermesDesktop')
+        Reflect.deleteProperty(window, 'plobiDesktop')
       }
     }
   }
@@ -158,7 +158,7 @@ describe('getAgentOverview projectPath (WP-R013-FE)', () => {
       },
       ok: true
     })
-    const restore = stubHermesDesktop(api)
+    const restore = stubPlobiDesktop(api)
 
     try {
       const overview = await getAgentOverview('plobi-code')
@@ -171,7 +171,7 @@ describe('getAgentOverview projectPath (WP-R013-FE)', () => {
 
   it('keeps the butler mock fallback free of a bound folder', async () => {
     const api = vi.fn().mockRejectedValue(new Error('offline'))
-    const restore = stubHermesDesktop(api)
+    const restore = stubPlobiDesktop(api)
 
     try {
       const overview = await getAgentOverview('agenda-secretary')

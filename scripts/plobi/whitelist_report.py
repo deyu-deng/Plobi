@@ -7,7 +7,7 @@ result with the collector's whitelist.
 The script deliberately reuses :mod:`plobi.collectors.chatlog.config` and
 :mod:`plobi.collectors.chatlog.client` so the "true source" of the
 collector config is resolved exactly the way the running collector would
-resolve it (env override, then ``HERMES_HOME``, then platform default).
+resolve it (env override, then ``PLOBI_HOME``, then platform default).
 No new dependencies, no third-party HTTP libs.
 
 Usage::
@@ -20,7 +20,7 @@ Outputs:
 
 * Human table on stdout: active config path, mode, Top-N by message count,
   the most recent active talkers NOT in the current whitelist.
-* :data:`PROPOSAL_PATH` (``$HERMES_HOME/plobi/whitelist_proposal.json``)
+* :data:`PROPOSAL_PATH` (``$PLOBI_HOME/plobi/whitelist_proposal.json``)
   with the same data in a deterministic JSON shape.
 
 Discipline (per ``Docs/PROMPT-CHATLOG-WHITELIST-REPORT.md``):
@@ -65,38 +65,38 @@ from plobi.collectors.chatlog.config import (  # noqa: E402
     config_path,
 )
 
-# On Windows the platform default is ``%LOCALAPPDATA%\hermes``. Before
-# ``hermes_constants`` is importable, ``config_path`` already remembers that
+# On Windows the platform default is ``%LOCALAPPDATA%\plobi``. Before
+# ``plobi_constants`` is importable, ``config_path`` already remembers that
 # fallback; we re-derive it here only to surface candidate paths the operator
 # may have left behind after a migration.
-def _platform_default_hermes_home() -> Path | None:
+def _platform_default_plobi_home() -> Path | None:
     if sys.platform == "win32":
         local = os.environ.get("LOCALAPPDATA", "").strip()
         if local:
-            return Path(local) / "hermes"
-        return Path.home() / "AppData" / "Local" / "hermes"
-    return Path.home() / ".hermes"
+            return Path(local) / "plobi"
+        return Path.home() / "AppData" / "Local" / "plobi"
+    return Path.home() / ".plobi"
 
 
-def _hermes_home_resolved() -> Path:
+def _plobi_home_resolved() -> Path:
     """Best-effort value matching what ``config_path`` will use.
 
     Prefers the same resolution chain the collector follows:
 
     1. ``PLOBI_CHATLOG_CONFIG`` env (config file override — gives the parent).
-    2. ``hermes_constants.get_hermes_home()`` (honours ``HERMES_HOME`` env).
-    3. Platform default (``%LOCALAPPDATA%/hermes`` on Win, ``~/.hermes`` elsewhere).
+    2. ``plobi_constants.get_plobi_home()`` (honours ``PLOBI_HOME`` env).
+    3. Platform default (``%LOCALAPPDATA%/plobi`` on Win, ``~/.plobi`` elsewhere).
     """
     cfg_override = os.environ.get("PLOBI_CHATLOG_CONFIG", "").strip()
     if cfg_override:
         return Path(cfg_override).parent.parent
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        return get_hermes_home()
+        return get_plobi_home()
     except Exception:
-        fallback = _platform_default_hermes_home()
-        return fallback if fallback is not None else Path.home() / ".hermes"
+        fallback = _platform_default_plobi_home()
+        return fallback if fallback is not None else Path.home() / ".plobi"
 
 
 PROPOSAL_FILENAME = "whitelist_proposal.json"
@@ -104,7 +104,7 @@ PROPOSAL_FILENAME = "whitelist_proposal.json"
 
 def proposal_path() -> Path:
     """Where the JSON proposal is written. Created on first run."""
-    return _hermes_home_resolved() / "plobi" / PROPOSAL_FILENAME
+    return _plobi_home_resolved() / "plobi" / PROPOSAL_FILENAME
 
 
 @dataclass(frozen=True)
@@ -232,9 +232,9 @@ def stale_candidates(true_source: Path) -> list[Path]:
     """
     candidates: list[Path] = []
     roots = [
-        _hermes_home_resolved(),
-        Path.home() / ".hermes",
-        _platform_default_hermes_home() or Path.home() / ".hermes",
+        _plobi_home_resolved(),
+        Path.home() / ".plobi",
+        _platform_default_plobi_home() or Path.home() / ".plobi",
     ]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -250,7 +250,7 @@ def stale_candidates(true_source: Path) -> list[Path]:
 
 def seen_state_counts() -> dict[str, int]:
     """Return ``{seen_messages, known_talkers, known_status}`` from chatlog_state.db."""
-    state_db = _hermes_home_resolved() / "plobi" / "chatlog_state.db"
+    state_db = _plobi_home_resolved() / "plobi" / "chatlog_state.db"
     out = {"seen_messages": 0, "known_talkers": 0, "excluded_talkers": 0, "pending_talkers": 0}
     if not state_db.is_file():
         return out

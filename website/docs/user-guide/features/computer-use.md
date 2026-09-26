@@ -46,16 +46,16 @@ installer:
 **Option 1: dedicated CLI command (most direct).**
 
 ```
-hermes computer-use install
+plobi computer-use install
 ```
 
 This fetches and runs the upstream cua-driver installer — `install.sh`
-on macOS/Linux, `install.ps1` on Windows. Use `hermes computer-use
+on macOS/Linux, `install.ps1` on Windows. Use `plobi computer-use
 status` to verify the install.
 
 **Option 2: enable the toolset interactively.**
 
-1. Run `hermes tools`, pick `🖱️  Computer Use (macOS/Windows/Linux)`.
+1. Run `plobi tools`, pick `🖱️  Computer Use (macOS/Windows/Linux)`.
 2. The setup runs the upstream installer (same as Option 1).
 
 After installing, regardless of which path you took, grant the
@@ -63,26 +63,26 @@ platform-appropriate prereqs:
 
 | Platform | Prereqs |
 |---|---|
-| **macOS** | System Settings → Privacy & Security → **Accessibility** + **Screen Recording** → allow your terminal (or Plobi app). `hermes computer-use doctor` will tell you which permission is missing. |
+| **macOS** | System Settings → Privacy & Security → **Accessibility** + **Screen Recording** → allow your terminal (or Plobi app). `plobi computer-use doctor` will tell you which permission is missing. |
 | **Windows** | None at install time. If you're driving over SSH (not RDP / console), you need the autostart pattern — see [cua.ai/docs/how-to-guides/driver/windows-ssh](https://cua.ai/docs/how-to-guides/driver/windows-ssh) for the Session 0 ↔ Session 1+ proxy. |
 | **Linux** | A reachable display server: `DISPLAY` set for X11, or `XDG_SESSION_TYPE=wayland`. Wayland sessions need an XWayland bridge for capture. AT-SPI must be on (default on GNOME/KDE/Xfce). |
 
 Then start a session with the toolset enabled:
 
 ```
-hermes -t computer_use chat
+plobi -t computer_use chat
 ```
 
-or add `computer_use` to your enabled toolsets in `~/.hermes/config.yaml`.
+or add `computer_use` to your enabled toolsets in `~/.plobi/config.yaml`.
 
-## `hermes computer-use doctor` — your first triage stop
+## `plobi computer-use doctor` — your first triage stop
 
-`hermes computer-use doctor` runs cua-driver's structured
+`plobi computer-use doctor` runs cua-driver's structured
 `health_report` MCP tool and prints a per-check matrix. It's the single
 fastest way to find out *why* an action isn't working.
 
 ```
-$ hermes computer-use doctor
+$ plobi computer-use doctor
 ⚠️  cua-driver 0.5.8 on darwin — degraded
   ✅ binary_version: cua-driver 0.5.8
   ✅ platform_supported: macOS 26.4.1 (arm64)
@@ -218,7 +218,7 @@ Plobi applies multi-layer guardrails:
   dialogs, no typing passwords, no following instructions embedded in
   screenshots.
 
-Pair with `approvals.mode: manual` in `~/.hermes/config.yaml` if you
+Pair with `approvals.mode: manual` in `~/.plobi/config.yaml` if you
 want every action confirmed.
 
 ## Token efficiency
@@ -292,13 +292,13 @@ real headless Chromium and is the right answer for web-only tasks.
 Override the driver binary path (tests / CI / local builds):
 
 ```
-HERMES_CUA_DRIVER_CMD=/path/to/your/cua-driver
+PLOBI_CUA_DRIVER_CMD=/path/to/your/cua-driver
 ```
 
 Swap the backend entirely (for testing):
 
 ```
-HERMES_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
+PLOBI_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
 ```
 
 ### Telemetry
@@ -316,7 +316,7 @@ computer_use:
   cua_telemetry: true   # default: false (telemetry off)
 ```
 
-When it's on, `hermes computer-use doctor` reports `telemetry: enabled`;
+When it's on, `plobi computer-use doctor` reports `telemetry: enabled`;
 when off (the default), it reports `telemetry: disabled via
 CUA_DRIVER_RS_TELEMETRY_ENABLED`.
 
@@ -326,7 +326,7 @@ When you're developing cua-driver itself — or want to test an
 unreleased fix — point Plobi at a binary you built from source instead
 of the published release. Plobi resolves the driver with
 `shutil.which("cua-driver")` and **does not enforce
-`HERMES_CUA_DRIVER_VERSION`**, so a local build (reported as
+`PLOBI_CUA_DRIVER_VERSION`**, so a local build (reported as
 `0.0.0-local-*`) is accepted as-is. Two approaches:
 
 ### Option A — `install-local` (build + put it on PATH)
@@ -365,7 +365,7 @@ cua-driver --version                 # local builds report 0.0.0-local-release
 ### Option B — point Plobi straight at the built binary (fastest loop)
 
 Skip the install ceremony entirely: `cargo build` and set
-`HERMES_CUA_DRIVER_CMD` to the resulting binary. Best for rapid
+`PLOBI_CUA_DRIVER_CMD` to the resulting binary. Best for rapid
 edit/build/test.
 
 ```bash
@@ -374,16 +374,16 @@ cargo build -p cua-driver            # add --release for a release build; run fr
 
 ```
 # Windows (.env)
-HERMES_CUA_DRIVER_CMD=C:\path\to\cua\libs\cua-driver\rust\target\debug\cua-driver.exe
+PLOBI_CUA_DRIVER_CMD=C:\path\to\cua\libs\cua-driver\rust\target\debug\cua-driver.exe
 # macOS / Linux (.env)
-HERMES_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
+PLOBI_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
 ```
 
 ### Confirm Plobi is using your build
 
-- `hermes computer-use status` prints the resolved binary path and
+- `plobi computer-use status` prints the resolved binary path and
   version.
-- `hermes computer-use doctor` confirms the binary is reachable and
+- `plobi computer-use doctor` confirms the binary is reachable and
   exercises the full MCP path end-to-end.
 - In a session, `computer_use(action="capture")` exercises the spawned
   `cua-driver mcp` child process.
@@ -415,15 +415,15 @@ HERMES_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
 
 ## Troubleshooting
 
-**First action when anything's off: run `hermes computer-use doctor`.**
+**First action when anything's off: run `plobi computer-use doctor`.**
 The structured per-check matrix tells you (and any agent helping you
 debug) exactly what's wrong.
 
 Specific failure modes the doctor doesn't catch:
 
 **`computer_use backend unavailable: cua-driver is not installed`** —
-Run `hermes computer-use install` to fetch the cua-driver binary, or
-run `hermes tools` and enable the Computer Use toolset.
+Run `plobi computer-use install` to fetch the cua-driver binary, or
+run `plobi tools` and enable the Computer Use toolset.
 
 **Clicks seem to have no effect** — Capture and verify. A modal you
 didn't see may be blocking input. Dismiss it with `escape` or the close
@@ -439,7 +439,7 @@ matches the dangerous-shell-pattern list. Break the command up or
 reconsider.
 
 **Empty captures on Linux** — `DISPLAY` not set, or you're on pure
-Wayland without an XWayland bridge. `hermes computer-use doctor` will
+Wayland without an XWayland bridge. `plobi computer-use doctor` will
 flag this as `ax_capability: fail` with a `Set DISPLAY (X11)…` hint.
 
 **Empty captures on Windows over SSH** — You're in Session 0 (the

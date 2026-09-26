@@ -1,6 +1,6 @@
 /**
  * Manual agenda entry (U3, spec §3.3). Reuses the live backend
- * `createAgendaEvent` (`@/hermes`) and writes the answer back into the shared
+ * `createAgendaEvent` (`@/plobi`) and writes the answer back into the shared
  * `agenda` store via `upsertAgendaEvent` — same path the board uses, so the
  * new row appears in both the rail and the full board.
  */
@@ -8,7 +8,7 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { createAgendaEvent } from '@/hermes'
+import { createAgendaEvent } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { upsertAgendaEvent } from '@/store/agenda'
 

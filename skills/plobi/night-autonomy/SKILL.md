@@ -5,13 +5,13 @@ version: 0.2.0
 author: Plobi
 license: MIT
 metadata:
-  hermes:
+  plobi:
     tags: [plobi, night, cron]
 ---
 
 # Plobi Night Autonomy
 
-Schedule with Hermes **cron** (do not build a new scheduler).
+Schedule with Plobi **cron** (do not build a new scheduler).
 
 1. `plobi` `area=ops` `action=night_tick`.
 2. If claimed: `area=compute` `action=route` then workers; `area=task` `action=complete` with summary only.

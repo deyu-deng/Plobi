@@ -5,7 +5,7 @@ import { secretaryShortName } from '@/app/desktop-controller-utils'
 import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { cn } from '@/lib/utils'
-import type { SessionInfo } from '@/types/hermes'
+import type { SessionInfo } from '@/types/plobi'
 
 import type { AgentCategory } from './agent-groups'
 import { SidebarCount } from './chrome'
@@ -38,7 +38,7 @@ export interface AgentCategoryGroupProps {
    * 裁定 38/39 (WP-AGENT-MOUTH): in the secretary shell an Agent row is one
    * mouth — never a session drawer, never a session count. The only call site
    * passes `hidesAgentSessions(level)`, so this is true for L1 *and* L2 there;
-   * only a Hermes mainline consumer would pass false.
+   * only a Plobi mainline consumer would pass false.
    */
   hideSessions?: boolean
   label: string

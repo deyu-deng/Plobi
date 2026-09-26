@@ -1,6 +1,6 @@
 """North Star HTTP API for the desktop / dashboard frontend.
 
-Mounted at ``/api/plugins/plobi-north-star/`` by Hermes dashboard plugin
+Mounted at ``/api/plugins/plobi-north-star/`` by Plobi dashboard plugin
 discovery. Auth uses the same session-token middleware as all
 ``/api/plugins/*`` routes.
 

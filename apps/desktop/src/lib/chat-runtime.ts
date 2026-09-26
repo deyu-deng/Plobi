@@ -8,7 +8,7 @@ import { stripInternalDirectives } from '@/lib/visible-user-text'
 import { normalize } from '@/lib/text'
 import type { ComposerAttachment } from '@/store/composer'
 import { desktopQuotaProviders } from '@/store/desktop-quotas'
-import type { ModelOptionsResponse, SessionInfo } from '@/types/hermes'
+import type { ModelOptionsResponse, SessionInfo } from '@/types/plobi'
 
 export const SLASH_COMMAND_RE = /^\/[^\s/]*(?:\s|$)/
 export const BUILTIN_PERSONALITIES = [

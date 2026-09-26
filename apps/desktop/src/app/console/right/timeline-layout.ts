@@ -35,7 +35,7 @@ export interface TimelineAvoidBand {
  *   MUST apply it, otherwise every block stacks at the top (裁定 32.1).
  */
 
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/hermes'
+import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 export const TIMELINE_START_HOUR = 8
 export const TIMELINE_END_HOUR = 23

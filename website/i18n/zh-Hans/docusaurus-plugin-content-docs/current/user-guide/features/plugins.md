@@ -16,10 +16,10 @@ Plobi 提供了一套插件系统，可在不修改核心代码的情况下添�
 
 ## 快速概览
 
-在 `~/.hermes/plugins/` 下放入一个目录，包含 `plugin.yaml` 和 Python 代码：
+在 `~/.plobi/plugins/` 下放入一个目录，包含 `plugin.yaml` 和 Python 代码：
 
 ```
-~/.hermes/plugins/my-plugin/
+~/.plobi/plugins/my-plugin/
 ├── plugin.yaml      # manifest（清单）
 ├── __init__.py      # register() — 将 schema 与处理器绑定
 ├── schemas.py       # tool schema（LLM 所见的内容）
@@ -32,7 +32,7 @@ Plobi 提供了一套插件系统，可在不修改核心代码的情况下添�
 
 以下是一个完整插件，添加了一个 `hello_world` 工具，并通过 hook 记录每次工具调用。
 
-**`~/.hermes/plugins/hello-world/plugin.yaml`**
+**`~/.plobi/plugins/hello-world/plugin.yaml`**
 
 ```yaml
 name: hello-world
@@ -40,7 +40,7 @@ version: "1.0"
 description: A minimal example plugin
 ```
 
-**`~/.hermes/plugins/hello-world/__init__.py`**
+**`~/.plobi/plugins/hello-world/__init__.py`**
 
 ```python
 """Minimal Plobi plugin — registers a tool and a hook."""
@@ -85,9 +85,9 @@ def register(ctx):
     ctx.register_hook("post_tool_call", on_tool_call)
 ```
 
-将两个文件放入 `~/.hermes/plugins/hello-world/`，重启 Plobi，模型即可立即调用 `hello_world`。每次工具调用后，hook 会打印一行日志。
+将两个文件放入 `~/.plobi/plugins/hello-world/`，重启 Plobi，模型即可立即调用 `hello_world`。每次工具调用后，hook 会打印一行日志。
 
-`./.hermes/plugins/` 下的项目本地插件默认禁用。仅对可信仓库启用，方法是在启动 Plobi 前设置 `HERMES_ENABLE_PROJECT_PLUGINS=true`。
+`./.plobi/plugins/` 下的项目本地插件默认禁用。仅对可信仓库启用，方法是在启动 Plobi 前设置 `PLOBI_ENABLE_PROJECT_PLUGINS=true`。
 
 ## 插件能做什么
 
@@ -99,12 +99,12 @@ def register(ctx):
 | 添加 hook | `ctx.register_hook("post_tool_call", callback)` |
 | 添加斜杠命令 | `ctx.register_command(name, handler, description)` — 在 CLI 和 gateway 会话中添加 `/name` |
 | 从命令中调度工具 | `ctx.dispatch_tool(name, args)` — 调用已注册的工具，自动注入父 agent 上下文 |
-| 添加 CLI 命令 | `ctx.register_cli_command(name, help, setup_fn, handler_fn)` — 添加 `hermes <plugin> <subcommand>` |
+| 添加 CLI 命令 | `ctx.register_cli_command(name, help, setup_fn, handler_fn)` — 添加 `plobi <plugin> <subcommand>` |
 | 注入消息 | `ctx.inject_message(content, role="user")` — 参见 [注入消息](#injecting-messages) |
 | 附带数据文件 | `Path(__file__).parent / "data" / "file.yaml"` |
 | 打包 skill | `ctx.register_skill(name, path)` — 命名空间为 `plugin:skill`，通过 `skill_view("plugin:skill")` 加载 |
-| 按环境变量控制 | 在 plugin.yaml 中设置 `requires_env: [API_KEY]` — 在 `hermes plugins install` 时提示输入 |
-| 通过 pip 分发 | `[project.entry-points."hermes_agent.plugins"]` |
+| 按环境变量控制 | 在 plugin.yaml 中设置 `requires_env: [API_KEY]` — 在 `plobi plugins install` 时提示输入 |
+| 通过 pip 分发 | `[project.entry-points."plobi_agent.plugins"]` |
 | 注册 gateway 平台（Discord、Telegram、IRC 等） | `ctx.register_platform(name, label, adapter_factory, check_fn, ...)` — 参见 [Adding Platform Adapters](/developer-guide/adding-platform-adapters) |
 | 注册图像生成后端 | `ctx.register_image_gen_provider(provider)` — 参见 [Image Generation Provider Plugins](/developer-guide/image-gen-provider-plugin) |
 | 注册视频生成后端 | `ctx.register_video_gen_provider(provider)` — 参见 [Video Generation Provider Plugins](/developer-guide/video-gen-provider-plugin) |
@@ -118,10 +118,10 @@ def register(ctx):
 | 来源 | 路径 | 使用场景 |
 |--------|------|----------|
 | 内置 | `<repo>/plugins/` | 随 Plobi 附带 — 参见 [Built-in Plugins](/user-guide/features/built-in-plugins) |
-| 用户 | `~/.hermes/plugins/` | 个人插件 |
-| 项目 | `.hermes/plugins/` | 项目专属插件（需要 `HERMES_ENABLE_PROJECT_PLUGINS=true`） |
-| pip | `hermes_agent.plugins` entry_points | 分发包 |
-| Nix | `services.hermes-agent.extraPlugins` / `extraPythonPackages` | NixOS 声明式安装 — 参见 [Nix Setup](/getting-started/nix-setup#plugins) |
+| 用户 | `~/.plobi/plugins/` | 个人插件 |
+| 项目 | `.plobi/plugins/` | 项目专属插件（需要 `PLOBI_ENABLE_PROJECT_PLUGINS=true`） |
+| pip | `plobi_agent.plugins` entry_points | 分发包 |
+| Nix | `services.plobi-agent.extraPlugins` / `extraPythonPackages` | NixOS 声明式安装 — 参见 [Nix Setup](/getting-started/nix-setup#plugins) |
 
 名称冲突时，后面的来源会覆盖前面的，因此与内置插件同名的用户插件会替换它。
 
@@ -138,13 +138,13 @@ def register(ctx):
 | `plugins/context_engine/<name>/` | 上下文压缩引擎（`ctx.register_context_engine()`） | **独立加载器**，位于 `plugins/context_engine/__init__.py`（同时只有一个激活） |
 | `plugins/model-providers/<name>/` | LLM provider profile（`register_provider(ProviderProfile(...))`） | **独立加载器**，位于 `providers/__init__.py`（首次调用 `get_provider_profile()` 时懒加载扫描） |
 
-`~/.hermes/plugins/model-providers/<name>/` 和 `~/.hermes/plugins/memory/<name>/` 下的用户插件会覆盖同名内置插件 — `register_provider()` / `register_memory_provider()` 中后写者胜出。放入一个目录即可替换内置实现，无需修改仓库。
+`~/.plobi/plugins/model-providers/<name>/` 和 `~/.plobi/plugins/memory/<name>/` 下的用户插件会覆盖同名内置插件 — `register_provider()` / `register_memory_provider()` 中后写者胜出。放入一个目录即可替换内置实现，无需修改仓库。
 
-子分类插件在 `hermes plugins list` 和交互式 `hermes plugins` UI 中以**路径派生的 key** 显示 — 例如 `observability/langfuse`、`image_gen/openai`、`platforms/teams`。该 key（而非 manifest 中的 `name:`）是传给 `hermes plugins enable …` / `disable …` 的值，也是在 `config.yaml` 的 `plugins.enabled` 下填写的字符串。
+子分类插件在 `plobi plugins list` 和交互式 `plobi plugins` UI 中以**路径派生的 key** 显示 — 例如 `observability/langfuse`、`image_gen/openai`、`platforms/teams`。该 key（而非 manifest 中的 `name:`）是传给 `plobi plugins enable …` / `disable …` 的值，也是在 `config.yaml` 的 `plugins.enabled` 下填写的字符串。
 
 ## 插件默认关闭（少数例外）
 
-**通用插件和用户安装的后端默认禁用** — 发现系统会找到它们（因此它们会出现在 `hermes plugins` 和 `/plugins` 中），但在你将插件名称添加到 `~/.hermes/config.yaml` 的 `plugins.enabled` 之前，任何带有 hook 或工具的内容都不会加载。这可防止第三方代码在未经明确同意的情况下运行。
+**通用插件和用户安装的后端默认禁用** — 发现系统会找到它们（因此它们会出现在 `plobi plugins` 和 `/plugins` 中），但在你将插件名称添加到 `~/.plobi/config.yaml` 的 `plugins.enabled` 之前，任何带有 hook 或工具的内容都不会加载。这可防止第三方代码在未经明确同意的情况下运行。
 
 ```yaml
 plugins:
@@ -158,12 +158,12 @@ plugins:
 切换状态的三种方式：
 
 ```bash
-hermes plugins                    # 交互式切换（空格勾选/取消勾选）
-hermes plugins enable <name>      # 添加到允许列表
-hermes plugins disable <name>     # 从允许列表移除并添加到禁用列表
+plobi plugins                    # 交互式切换（空格勾选/取消勾选）
+plobi plugins enable <name>      # 添加到允许列表
+plobi plugins disable <name>     # 从允许列表移除并添加到禁用列表
 ```
 
-执行 `hermes plugins install owner/repo` 后，会询问 `Enable 'name' now? [y/N]` — 默认为否。脚本化安装时可用 `--enable` 或 `--no-enable` 跳过提示。
+执行 `plobi plugins install owner/repo` 后，会询问 `Enable 'name' now? [y/N]` — 默认为否。脚本化安装时可用 `--enable` 或 `--no-enable` 跳过提示。
 
 ### 允许列表不控制的内容
 
@@ -177,13 +177,13 @@ hermes plugins disable <name>     # 从允许列表移除并添加到禁用列�
 | **Context engine**（`plugins/context_engine/`） | 全部发现；同时只有一个激活，由 `config.yaml` 中的 `context.engine` 选择。 |
 | **Model provider**（`plugins/model-providers/`） | `plugins/model-providers/` 下的所有内置 provider 在首次调用 `get_provider_profile()` 时发现并注册。用户通过 `--provider` 或 `config.yaml` 一次选择一个。 |
 | **pip 安装的 `backend` 插件** | 通过 `plugins.enabled` 选择加入（与通用插件相同）。 |
-| **用户安装的平台**（位于 `~/.hermes/plugins/platforms/`） | 通过 `plugins.enabled` 选择加入 — 第三方 gateway 适配器需要明确同意。 |
+| **用户安装的平台**（位于 `~/.plobi/plugins/platforms/`） | 通过 `plugins.enabled` 选择加入 — 第三方 gateway 适配器需要明确同意。 |
 
-简而言之：**内置的"始终可用"基础设施自动加载；第三方通用插件需选择加入。** `plugins.enabled` 允许列表专门用于控制用户放入 `~/.hermes/plugins/` 的任意代码。
+简而言之：**内置的"始终可用"基础设施自动加载；第三方通用插件需选择加入。** `plugins.enabled` 允许列表专门用于控制用户放入 `~/.plobi/plugins/` 的任意代码。
 
 ### 现有用户的迁移
 
-当你升级到支持选择加入插件的 Plobi 版本（config schema v21+）时，已安装在 `~/.hermes/plugins/` 下且不在 `plugins.disabled` 中的用户插件会**自动纳入** `plugins.enabled`。你的现有配置继续正常工作。内置独立插件**不会**自动纳入 — 即使是现有用户也需要明确选择加入。（内置平台/后端插件从未需要纳入，因为它们从未被控制。）
+当你升级到支持选择加入插件的 Plobi 版本（config schema v21+）时，已安装在 `~/.plobi/plugins/` 下且不在 `plugins.disabled` 中的用户插件会**自动纳入** `plugins.enabled`。你的现有配置继续正常工作。内置独立插件**不会**自动纳入 — 即使是现有用户也需要明确选择加入。（内置平台/后端插件从未需要纳入，因为它们从未被控制。）
 
 ## 可用 hook
 
@@ -208,7 +208,7 @@ Plobi 有四种插件：
 
 | 类型 | 作用 | 选择方式 | 位置 |
 |------|-------------|-----------|----------|
-| **通用插件** | 添加工具、hook、斜杠命令、CLI 命令 | 多选（启用/禁用） | `~/.hermes/plugins/` |
+| **通用插件** | 添加工具、hook、斜杠命令、CLI 命令 | 多选（启用/禁用） | `~/.plobi/plugins/` |
 | **Memory provider** | 替换或增强内置 memory | 单选（同时只有一个激活） | `plugins/memory/` |
 | **Context engine** | 替换内置上下文压缩器 | 单选（同时只有一个激活） | `plugins/context_engine/` |
 | **Model provider** | 声明推理后端（OpenRouter、Anthropic 等） | 多注册，通过 `--provider` / `config.yaml` 选择 | `plugins/model-providers/` |
@@ -224,7 +224,7 @@ Memory provider 和 context engine 是 **provider 插件** — 每种类型同�
 | LLM 可调用的**工具** | Python 插件 — `ctx.register_tool()` | [Build a Plobi Plugin](/developer-guide/plugins) · [Adding Tools](/developer-guide/adding-tools) |
 | **生命周期 hook**（LLM 前后、会话开始/结束、工具过滤） | Python 插件 — `ctx.register_hook()` | [Hooks reference](/user-guide/features/hooks) · [Build a Plobi Plugin](/developer-guide/plugins) |
 | CLI / gateway 的**斜杠命令** | Python 插件 — `ctx.register_command()` | [Build a Plobi Plugin](/developer-guide/plugins) · [Extending the CLI](/developer-guide/extending-the-cli) |
-| `hermes <thing>` 的**子命令** | Python 插件 — `ctx.register_cli_command()` | [Extending the CLI](/developer-guide/extending-the-cli) |
+| `plobi <thing>` 的**子命令** | Python 插件 — `ctx.register_cli_command()` | [Extending the CLI](/developer-guide/extending-the-cli) |
 | 插件附带的**skill** | Python 插件 — `ctx.register_skill()` | [Creating Skills](/developer-guide/creating-skills) |
 | **推理后端**（LLM provider：OpenAI 兼容、Codex、Anthropic-Messages、Bedrock） | Provider 插件 — 在 `plugins/model-providers/<name>/` 中调用 `register_provider(ProviderProfile(...))` | **[Model Provider Plugins](/developer-guide/model-provider-plugin)** · [Adding Providers](/developer-guide/adding-providers) |
 | **Gateway 频道**（Discord / Telegram / IRC / Teams 等） | 平台插件 — 在 `plugins/platforms/<name>/` 中调用 `ctx.register_platform()` | [Adding Platform Adapters](/developer-guide/adding-platform-adapters) |
@@ -233,10 +233,10 @@ Memory provider 和 context engine 是 **provider 插件** — 每种类型同�
 | **图像生成后端**（DALL·E、SDXL 等） | 后端插件 — `ctx.register_image_gen_provider()` | [Image Generation Provider Plugins](/developer-guide/image-gen-provider-plugin) |
 | **视频生成后端**（Veo、Kling、Pixverse、Grok-Imagine、Runway 等） | 后端插件 — `ctx.register_video_gen_provider()` | [Video Generation Provider Plugins](/developer-guide/video-gen-provider-plugin) |
 | **TTS 后端**（任意 CLI — Piper、VoxCPM、Kokoro、xtts、语音克隆脚本等） | 配置驱动（推荐）— 在 `config.yaml` 的 `tts.providers.<name>` 下以 `type: command` 声明。或 Python 后端插件 — 对需要超出 shell 模板的 Python SDK / 流式引擎使用 `ctx.register_tts_provider()`。 | [TTS Setup](/user-guide/features/tts#custom-command-providers) · [Python plugin guide](/user-guide/features/tts#python-plugin-providers) |
-| **STT 后端**（自定义 whisper 二进制、本地 ASR CLI） | 配置驱动 — 将 `HERMES_LOCAL_STT_COMMAND` 环境变量设置为 shell 模板 | [Voice Message Transcription (STT)](/user-guide/features/tts#voice-message-transcription-stt) |
+| **STT 后端**（自定义 whisper 二进制、本地 ASR CLI） | 配置驱动 — 将 `PLOBI_LOCAL_STT_COMMAND` 环境变量设置为 shell 模板 | [Voice Message Transcription (STT)](/user-guide/features/tts#voice-message-transcription-stt) |
 | **通过 MCP 使用外部工具**（文件系统、GitHub、Linear、Notion、任意 MCP 服务器） | 配置驱动 — 在 `config.yaml` 中以 `command:` / `url:` 声明 `mcp_servers.<name>`。Plobi 自动发现服务器的工具并与内置工具一同注册。 | [MCP](/user-guide/features/mcp) |
-| **额外 skill 来源**（自定义 GitHub 仓库、私有 skill 索引） | CLI — `hermes skills tap add <repo>` | [Skills Hub](/user-guide/features/skills#skills-hub) · [发布自定义 tap](/user-guide/features/skills#publishing-a-custom-skill-tap) |
-| **Gateway 事件 hook**（在 `gateway:startup`、`session:start`、`agent:end`、`command:*` 时触发） | 将 `HOOK.yaml` + `handler.py` 放入 `~/.hermes/hooks/<name>/` | [Event Hooks](/user-guide/features/hooks#gateway-event-hooks) |
+| **额外 skill 来源**（自定义 GitHub 仓库、私有 skill 索引） | CLI — `plobi skills tap add <repo>` | [Skills Hub](/user-guide/features/skills#skills-hub) · [发布自定义 tap](/user-guide/features/skills#publishing-a-custom-skill-tap) |
+| **Gateway 事件 hook**（在 `gateway:startup`、`session:start`、`agent:end`、`command:*` 时触发） | 将 `HOOK.yaml` + `handler.py` 放入 `~/.plobi/hooks/<name>/` | [Event Hooks](/user-guide/features/hooks#gateway-event-hooks) |
 | **Shell hook**（在事件时运行 shell 命令 — 通知、审计日志、桌面提醒） | 配置驱动 — 在 `config.yaml` 的 `hooks:` 下声明 | [Shell Hooks](/user-guide/features/hooks#shell-hooks) |
 
 :::note
@@ -245,10 +245,10 @@ Memory provider 和 context engine 是 **provider 插件** — 每种类型同�
 
 ## NixOS 声明式插件
 
-在 NixOS 上，插件可通过模块选项声明式安装 — 无需 `hermes plugins install`。完整详情请参见 **[Nix Setup 指南](/getting-started/nix-setup#plugins)**。
+在 NixOS 上，插件可通过模块选项声明式安装 — 无需 `plobi plugins install`。完整详情请参见 **[Nix Setup 指南](/getting-started/nix-setup#plugins)**。
 
 ```nix
-services.hermes-agent = {
+services.plobi-agent = {
   # 目录插件（包含 plugin.yaml 的源码树）
   extraPlugins = [ (pkgs.fetchFromGitHub { ... }) ];
   # 入口点插件（pip 包）
@@ -263,23 +263,23 @@ services.hermes-agent = {
 ## 管理插件
 
 ```bash
-hermes plugins                                       # 统一交互式 UI
-hermes plugins list                                  # 表格：已启用 / 已禁用 / 未启用
-hermes plugins install user/repo                     # 从 Git 安装，然后提示 Enable? [y/N]
-hermes plugins install user/repo --enable            # 安装并启用（无提示）
-hermes plugins install user/repo --no-enable         # 安装但保持禁用（无提示）
-hermes plugins update my-plugin                      # 拉取最新版本
-hermes plugins remove my-plugin                      # 卸载
-hermes plugins enable my-plugin                      # 添加到允许列表（普通插件）
-hermes plugins enable observability/langfuse         # 添加到允许列表（子分类插件）
-hermes plugins disable my-plugin                     # 从允许列表移除并添加到禁用列表
+plobi plugins                                       # 统一交互式 UI
+plobi plugins list                                  # 表格：已启用 / 已禁用 / 未启用
+plobi plugins install user/repo                     # 从 Git 安装，然后提示 Enable? [y/N]
+plobi plugins install user/repo --enable            # 安装并启用（无提示）
+plobi plugins install user/repo --no-enable         # 安装但保持禁用（无提示）
+plobi plugins update my-plugin                      # 拉取最新版本
+plobi plugins remove my-plugin                      # 卸载
+plobi plugins enable my-plugin                      # 添加到允许列表（普通插件）
+plobi plugins enable observability/langfuse         # 添加到允许列表（子分类插件）
+plobi plugins disable my-plugin                     # 从允许列表移除并添加到禁用列表
 ```
 
-对于子分类目录下的插件（例如 `plugins/observability/langfuse/`、`plugins/image_gen/openai/`），使用完整的 `<category>/<plugin>` key — 这正是 `hermes plugins list` 在 **Name** 列中显示的内容。
+对于子分类目录下的插件（例如 `plugins/observability/langfuse/`、`plugins/image_gen/openai/`），使用完整的 `<category>/<plugin>` key — 这正是 `plobi plugins list` 在 **Name** 列中显示的内容。
 
 ### 交互式 UI
 
-不带参数运行 `hermes plugins` 会打开一个复合交互界面：
+不带参数运行 `plobi plugins` 会打开一个复合交互界面：
 
 ```
 Plugins
@@ -320,7 +320,7 @@ context:
 | `disabled` | 明确关闭 — 即使同时在 `enabled` 中也不会加载 | （无关） | 是 |
 | `not enabled` | 已发现但从未选择加入 | 否 | 否 |
 
-新安装或内置插件的默认状态为 `not enabled`。`hermes plugins list` 显示全部三种状态，便于区分明确关闭的插件和等待启用的插件。
+新安装或内置插件的默认状态为 `not enabled`。`plobi plugins list` 显示全部三种状态，便于区分明确关闭的插件和等待启用的插件。
 
 在运行中的会话里，`/plugins` 显示当前已加载的插件。
 

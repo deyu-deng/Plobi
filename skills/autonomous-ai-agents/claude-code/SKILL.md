@@ -6,9 +6,9 @@ author: Plobi Agent + Teknium
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  plobi:
     tags: [Coding-Agent, Claude, Anthropic, Code-Review, Refactoring, PTY, Automation]
-    related_skills: [codex, hermes-agent, opencode]
+    related_skills: [codex, plobi-agent, opencode]
 ---
 
 # Claude Code — Plobi Orchestration Guide

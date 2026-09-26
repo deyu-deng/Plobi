@@ -33,7 +33,7 @@ import {
   $updateStatus,
   openUpdateOverlayFor
 } from '@/store/updates'
-import type { StatusResponse } from '@/types/hermes'
+import type { StatusResponse } from '@/types/plobi'
 
 import { $agendaPendingCount } from '@/store/agenda'
 

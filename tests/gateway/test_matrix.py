@@ -349,14 +349,14 @@ class TestMatrixConfigLoading:
     def test_matrix_user_id_stored_in_extra(self, monkeypatch):
         monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_abc123")
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
-        monkeypatch.setenv("MATRIX_USER_ID", "@hermes:example.org")
+        monkeypatch.setenv("MATRIX_USER_ID", "@plobi:example.org")
 
         from gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
         mc = config.platforms[Platform.MATRIX]
-        assert mc.extra.get("user_id") == "@hermes:example.org"
+        assert mc.extra.get("user_id") == "@plobi:example.org"
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +585,7 @@ class TestMatrixDmDetection:
             if event_type == "m.room.name":
                 raise Exception("no name")
             if event_type == "m.room.canonical_alias":
-                return {"content": {"alias": "#hermes:ex.org"}}
+                return {"content": {"alias": "#plobi:ex.org"}}
             raise Exception("unknown")
 
         self.adapter._client.get_state_event = AsyncMock(side_effect=get_state_event)
@@ -594,7 +594,7 @@ class TestMatrixDmDetection:
 
         identity = await self.adapter._resolve_room_identity("!alias:ex.org")
 
-        assert identity.display_name == "#hermes:ex.org"
+        assert identity.display_name == "#plobi:ex.org"
         assert identity.chat_type == "room"
 
     @pytest.mark.asyncio
@@ -1678,11 +1678,11 @@ class TestMatrixDeviceId:
             token="syt_test",
             extra={
                 "homeserver": "https://matrix.example.org",
-                "device_id": "HERMES_BOT_STABLE",
+                "device_id": "PLOBI_BOT_STABLE",
             },
         )
         adapter = MatrixAdapter(config)
-        assert adapter._device_id == "HERMES_BOT_STABLE"
+        assert adapter._device_id == "PLOBI_BOT_STABLE"
 
     def test_device_id_from_env(self, monkeypatch):
         monkeypatch.setenv("MATRIX_DEVICE_ID", "FROM_ENV")
@@ -1832,14 +1832,14 @@ class TestMatrixDeviceIdConfig:
     def test_device_id_in_config_extra(self, monkeypatch):
         monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_abc123")
         monkeypatch.setenv("MATRIX_HOMESERVER", "https://matrix.example.org")
-        monkeypatch.setenv("MATRIX_DEVICE_ID", "HERMES_BOT")
+        monkeypatch.setenv("MATRIX_DEVICE_ID", "PLOBI_BOT")
 
         from gateway.config import GatewayConfig, _apply_env_overrides
         config = GatewayConfig()
         _apply_env_overrides(config)
 
         mc = config.platforms[Platform.MATRIX]
-        assert mc.extra.get("device_id") == "HERMES_BOT"
+        assert mc.extra.get("device_id") == "PLOBI_BOT"
 
     def test_device_id_not_set_when_env_empty(self, monkeypatch):
         monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_abc123")

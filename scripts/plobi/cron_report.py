@@ -1,10 +1,10 @@
 """cron no_agent 脚本：连续 7 天改动率日报 → 钉钉（切片 A5）。
 
-由 ``scripts/plobi/register_cron.py --all`` 复制到 ``HERMES_HOME/scripts/`` 并
+由 ``scripts/plobi/register_cron.py --all`` 复制到 ``PLOBI_HOME/scripts/`` 并
 注册为每日 21:00 任务。stdout 为 JSON 结果，进 cron 输出留痕。
 
 引导规则与 plobi_watchdog.py 相同：优先 editable 安装，失败则按
-``HERMES_HOME/plobi/runtime.json`` 的 ``code_root`` 定位仓库。
+``PLOBI_HOME/plobi/runtime.json`` 的 ``code_root`` 定位仓库。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def _bootstrap() -> None:
     except ImportError:
         pass
 
-    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    home = Path(os.environ.get("PLOBI_HOME") or Path.home() / ".plobi")
     runtime = home / "plobi" / "runtime.json"
     try:
         code_root = json.loads(runtime.read_text(encoding="utf-8"))["code_root"]

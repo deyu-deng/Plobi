@@ -54,7 +54,7 @@ platforms: [macos, linux]          # Optional — restrict to specific OS platfo
                                    #   Valid: macos, linux, windows
                                    #   Omit to load on all platforms (default)
 metadata:
-  hermes:
+  plobi:
     tags: [Category, Subcategory, Keywords]
     related_skills: [other-skill-name]
     requires_toolsets: [web]            # Optional — only show when these toolsets are active
@@ -116,7 +116,7 @@ Skills can declare dependencies on specific tools or toolsets. This controls whe
 
 ```yaml
 metadata:
-  hermes:
+  plobi:
     requires_toolsets: [web]           # Hide if the web toolset is NOT active
     requires_tools: [web_search]       # Hide if web_search tool is NOT available
     fallback_for_toolsets: [browser]   # Hide if the browser toolset IS active
@@ -189,7 +189,7 @@ Skills can declare non-secret settings that are stored in `config.yaml` under th
 
 ```yaml
 metadata:
-  hermes:
+  plobi:
     config:
       - key: myplugin.path
         description: Path to the plugin data directory
@@ -205,7 +205,7 @@ Each entry supports:
 - `key` (required) — dotpath for the setting (e.g., `myplugin.path`)
 - `description` (required) — explains what the setting controls
 - `default` (optional) — default value if the user doesn't configure it
-- `prompt` (optional) — prompt text shown during `hermes config migrate`; falls back to `description`
+- `prompt` (optional) — prompt text shown during `plobi config migrate`; falls back to `description`
 
 **How it works:**
 
@@ -217,11 +217,11 @@ Each entry supports:
          path: ~/my-data
    ```
 
-2. **Discovery:** `hermes config migrate` scans all enabled skills, finds unconfigured settings, and prompts the user. Settings also appear in `hermes config show` under "Skill Settings."
+2. **Discovery:** `plobi config migrate` scans all enabled skills, finds unconfigured settings, and prompts the user. Settings also appear in `plobi config show` under "Skill Settings."
 
 3. **Runtime injection:** When a skill loads, its config values are resolved and appended to the skill message:
    ```
-   [Skill config (from ~/.hermes/config.yaml):
+   [Skill config (from ~/.plobi/config.yaml):
      myplugin.path = /home/user/my-data
    ]
    ```
@@ -229,11 +229,11 @@ Each entry supports:
 
 4. **Manual setup:** Users can also set values directly:
    ```bash
-   hermes config set skills.config.myplugin.path ~/my-data
+   plobi config set skills.config.myplugin.path ~/my-data
    ```
 
 :::tip When to use which
-Use `required_environment_variables` for API keys, tokens, and other **secrets** (stored in `~/.hermes/.env`, never shown to the model). Use `config` for **paths, preferences, and non-sensitive settings** (stored in `config.yaml`, visible in config show).
+Use `required_environment_variables` for API keys, tokens, and other **secrets** (stored in `~/.plobi/.env`, never shown to the model). Use `config` for **paths, preferences, and non-sensitive settings** (stored in `config.yaml`, visible in config show).
 :::
 
 ### Credential File Requirements (OAuth tokens, etc.)
@@ -249,7 +249,7 @@ required_credential_files:
 ```
 
 Each entry supports:
-- `path` (required) — file path relative to `~/.hermes/`
+- `path` (required) — file path relative to `~/.plobi/`
 - `description` (optional) — explains what the file is and how it's created
 
 When loaded, Plobi checks if these files exist. Missing files trigger `setup_needed`. Existing files are automatically:
@@ -258,7 +258,7 @@ When loaded, Plobi checks if these files exist. Missing files trigger `setup_nee
 - Available on **local** backend without any special handling
 
 :::tip When to use which
-Use `required_environment_variables` for simple API keys and tokens (strings stored in `~/.hermes/.env`). Use `required_credential_files` for OAuth token files, client secrets, service account JSON, certificates, or any credential that's a file on disk.
+Use `required_environment_variables` for simple API keys and tokens (strings stored in `~/.plobi/.env`). Use `required_credential_files` for OAuth token files, client secrets, service account JSON, certificates, or any credential that's a file on disk.
 :::
 
 See the `skills/productivity/google-workspace/SKILL.md` for a complete example using both.
@@ -287,15 +287,15 @@ When a skill is loaded, the activation message exposes the absolute skill direct
 
 | Token | Replaced with |
 |---|---|
-| `${HERMES_SKILL_DIR}` | Absolute path to the skill's directory |
-| `${HERMES_SESSION_ID}` | The active session id (left in place if there is no session) |
+| `${PLOBI_SKILL_DIR}` | Absolute path to the skill's directory |
+| `${PLOBI_SESSION_ID}` | The active session id (left in place if there is no session) |
 
 So a SKILL.md can tell the agent to run a bundled script directly with:
 
 ```markdown
 To analyse the input, run:
 
-    node ${HERMES_SKILL_DIR}/scripts/analyse.js <input>
+    node ${PLOBI_SKILL_DIR}/scripts/analyse.js <input>
 ```
 
 The agent sees the substituted absolute path and invokes the `terminal` tool with a ready-to-run command — no path math, no extra `skill_view` round-trip. Disable substitution globally with `skills.template_vars: false` in `config.yaml`.
@@ -306,7 +306,7 @@ Skills can also embed inline shell snippets written as `` !`cmd` `` in the SKILL
 
 ```markdown
 Current date: !`date -u +%Y-%m-%d`
-Git branch: !`git -C ${HERMES_SKILL_DIR} rev-parse --abbrev-ref HEAD`
+Git branch: !`git -C ${PLOBI_SKILL_DIR} rev-parse --abbrev-ref HEAD`
 ```
 
 This is **off by default** — any snippet in a SKILL.md runs on the host without approval, so only enable it for skill sources you trust:
@@ -325,7 +325,7 @@ Snippets run with the skill directory as their working directory, and output is 
 Run the skill and verify the agent follows the instructions correctly:
 
 ```bash
-hermes chat --toolsets skills -q "Use the X skill to do Y"
+plobi chat --toolsets skills -q "Use the X skill to do Y"
 ```
 
 ## Where Should the Skill Live?
@@ -335,17 +335,17 @@ Bundled skills (in `skills/`) ship with every Plobi install. They should be **br
 - Document handling, web research, common dev workflows, system administration
 - Used regularly by a wide range of people
 
-If your skill is official and useful but not universally needed (e.g., a paid service integration, a heavyweight dependency), put it in **`optional-skills/`** — it ships with the repo, is discoverable via `hermes skills browse` (labeled "official"), and installs with built-in trust.
+If your skill is official and useful but not universally needed (e.g., a paid service integration, a heavyweight dependency), put it in **`optional-skills/`** — it ships with the repo, is discoverable via `plobi skills browse` (labeled "official"), and installs with built-in trust.
 
-If your skill is specialized, community-contributed, or niche, it's better suited for a **Skills Hub** — upload it to a registry and share it via `hermes skills install`.
+If your skill is specialized, community-contributed, or niche, it's better suited for a **Skills Hub** — upload it to a registry and share it via `plobi skills install`.
 
 ## Blueprints: skills that are also automations
 
-A **blueprint** is an ordinary skill that additionally declares a schedule in its frontmatter. Add a `metadata.hermes.blueprint` block and the skill becomes a shareable, runnable automation:
+A **blueprint** is an ordinary skill that additionally declares a schedule in its frontmatter. Add a `metadata.plobi.blueprint` block and the skill becomes a shareable, runnable automation:
 
 ```yaml
 metadata:
-  hermes:
+  plobi:
     tags: [blueprint, email]
     blueprint:
       schedule: "0 8 * * *"     # presence of `blueprint:` marks it runnable
@@ -354,12 +354,12 @@ metadata:
       no_agent: false            # optional
 ```
 
-Because a blueprint **is** a skill, it flows through the entire skills pipeline unchanged — search, inspect, install, security scan, provenance, taps, the centralized index, and `hermes skills publish` for sharing. Nothing new to learn.
+Because a blueprint **is** a skill, it flows through the entire skills pipeline unchanged — search, inspect, install, security scan, provenance, taps, the centralized index, and `plobi skills publish` for sharing. Nothing new to learn.
 
 **Installing a blueprint.** When you install a skill that carries a `blueprint:` block, Plobi registers it as a **suggested cron job** rather than scheduling it. Scheduling is **opt-in** — installing never silently creates a recurring job. You review and accept it via `/suggestions`:
 
 ```bash
-hermes skills install owner/morning-brief
+plobi skills install owner/morning-brief
 # → Blueprint: 'morning-brief' is an automation (schedule 0 8 * * *).
 #   Added to your suggestions — run /suggestions to schedule or dismiss it.
 
@@ -371,7 +371,7 @@ hermes skills install owner/morning-brief
 
 Blueprints are one **source** of the unified Suggested Cron Jobs surface — the same place curated starter automations and (later) usage-pattern and integration suggestions appear. See [Suggested Cron Jobs](#suggested-cron-jobs) below.
 
-**Sharing an automation you built.** A blueprint loaded by a cron job (`hermes cron create --skill <name> ...`) can be exported back to a SKILL.md and published like any other skill, so an automation you tuned for yourself becomes a one-command install for someone else.
+**Sharing an automation you built.** A blueprint loaded by a cron job (`plobi cron create --skill <name> ...`) can be exported back to a SKILL.md and published like any other skill, so an automation you tuned for yourself becomes a one-command install for someone else.
 
 The blueprint layer adds no new object type, store, or transport — the blueprint is a skill, the schedule is a cron job, and sharing is the existing publish/tap/index path.
 
@@ -402,7 +402,7 @@ The **important-mail monitor** catalog entry is the poll→classify→surface pa
 ### To the Skills Hub
 
 ```bash
-hermes skills publish skills/my-skill --to github --repo owner/repo
+plobi skills publish skills/my-skill --to github --repo owner/repo
 ```
 
 ### To a Custom Repository
@@ -410,7 +410,7 @@ hermes skills publish skills/my-skill --to github --repo owner/repo
 Add your repo as a tap:
 
 ```bash
-hermes skills tap add owner/repo
+plobi skills tap add owner/repo
 ```
 
 Users can then search and install from your repository.

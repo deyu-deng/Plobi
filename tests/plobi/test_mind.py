@@ -257,7 +257,7 @@ def _subprocess_run_stub(output: str, returncode: int = 1):
 
 def test_commit_skipped_when_index_locked(git_vault, monkeypatch):
     """真窗口（9-15 Mind 摘要）：``git commit`` 撞 ``.git/index.lock`` →
-    ``ok=True``，文件已在盘上，主回合不去撞 Hermes memory。
+    ``ok=True``，文件已在盘上，主回合不去撞 Plobi memory。
     """
     _bypass_lock(monkeypatch)
     import plobi.mind.writer as mw

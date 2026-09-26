@@ -17,7 +17,7 @@ file-backed). It is the native-adaptation path discussed in
 - The loader (`plugins/memory/__init__.py`) discovers this plugin dynamically
   by scanning `plugins/memory/<name>/` and instantiates it via `register()`.
 - Activation is pure config: set `memory.provider: mind` in `config.yaml`
-  (or via `hermes memory setup`).
+  (or via `plobi memory setup`).
 
 ## Compliance boundary (read before implementing)
 
@@ -28,7 +28,7 @@ Mind has a git pre-commit verifier (`Loom/scripts/verifier.py`) that
 2. `Loom/skills` skill count ≠ `AGENTS.md` declaration.
 
 All real writes must stay inside `SAFE_PREFIXES` (defined in `mind.py`):
-`Vault/projects/Plobi/` (capital V — the official vault's current Hermes fork
+`Vault/projects/Plobi/` (capital V — the official vault's current Plobi fork
 Plobi project dir; the lowercase `plobi` dir is a legacy Plobi archive, do
 not write there), `Vault/{meta,notes,journal,inbox}`,
 `Loom/wiki/{concepts,entities,sources,comparisons}`,
@@ -49,7 +49,7 @@ no `Vault → Loom` wikilinks.
 ## Activation
 
 ```yaml
-# config.yaml (HERMES_HOME, e.g. D:\Data\AppData\Plobi\config.yaml)
+# config.yaml (PLOBI_HOME, e.g. D:\Data\AppData\Plobi\config.yaml)
 memory:
   provider: mind
 ```

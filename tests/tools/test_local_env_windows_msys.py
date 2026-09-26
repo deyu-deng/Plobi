@@ -29,7 +29,7 @@ from tools.environments.local import (
     _resolve_safe_cwd,
     _sanitize_subprocess_env,
     _windows_to_msys_path,
-    hermes_subprocess_env,
+    plobi_subprocess_env,
 )
 
 
@@ -255,9 +255,9 @@ class TestWindowsMsysPathconvDefaults:
         env = _sanitize_subprocess_env({})
         assert env.get("MSYS_NO_PATHCONV") == "1"
 
-    def test_hermes_subprocess_env_sets_msys_no_pathconv_on_windows(self, monkeypatch):
+    def test_plobi_subprocess_env_sets_msys_no_pathconv_on_windows(self, monkeypatch):
         monkeypatch.setattr(local_mod, "_IS_WINDOWS", True)
-        env = hermes_subprocess_env()
+        env = plobi_subprocess_env()
         assert env.get("MSYS_NO_PATHCONV") == "1"
 
     def test_no_pathconv_not_set_on_posix(self, monkeypatch):
@@ -275,7 +275,7 @@ class TestWindowsMsysPathconvDefaults:
         monkeypatch.setattr(local_mod, "_IS_WINDOWS", True)
         assert _make_run_env({}).get("MSYS2_ARG_CONV_EXCL") == "*"
         assert _sanitize_subprocess_env({}).get("MSYS2_ARG_CONV_EXCL") == "*"
-        assert hermes_subprocess_env().get("MSYS2_ARG_CONV_EXCL") == "*"
+        assert plobi_subprocess_env().get("MSYS2_ARG_CONV_EXCL") == "*"
 
     def test_msys2_arg_conv_excl_not_set_on_posix(self, monkeypatch):
         monkeypatch.setattr(local_mod, "_IS_WINDOWS", False)

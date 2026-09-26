@@ -4,7 +4,7 @@ Provides the agent with the ability to interact with Discord servers
 when running on the Discord gateway. Uses Discord REST API directly
 with the bot token — no dependency on the gateway adapter's client.
 
-Only included in the hermes-discord toolset, so it has zero cost
+Only included in the plobi-discord toolset, so it has zero cost
 for users on other platforms.
 
 The schema exposed to the model is filtered by two gates:
@@ -174,9 +174,9 @@ _capability_bg_lock = threading.Lock()
 def _capability_disk_cache_path() -> "Path":
     from pathlib import Path
 
-    from hermes_constants import get_hermes_home
+    from plobi_constants import get_plobi_home
 
-    return get_hermes_home() / "cache" / "discord_capabilities.json"
+    return get_plobi_home() / "cache" / "discord_capabilities.json"
 
 
 def _token_cache_key(token: str) -> str:
@@ -711,7 +711,7 @@ def _load_allowed_actions_config() -> Optional[List[str]]:
     Unknown action names are dropped with a log warning.
     """
     try:
-        from hermes_cli.config import load_config
+        from plobi_cli.config import load_config
         cfg = load_config()
     except Exception as exc:
         logger.debug("discord: could not load config (%s); allowing all actions.", exc)

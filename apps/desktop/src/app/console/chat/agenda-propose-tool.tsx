@@ -15,7 +15,7 @@
 import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 import { confirmAgendaEventAction } from '../api'
 

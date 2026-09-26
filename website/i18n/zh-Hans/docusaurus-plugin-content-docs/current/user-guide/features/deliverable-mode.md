@@ -41,7 +41,7 @@ Agent 默认不会主动生成 artifacts——需要明确告知。有两种方�
 
 **单次会话：** 明确提出请求（"以图表形式发给我对比结果"、"将数据以 CSV 格式返回"），或编写自定义指令/个性化条目，使其在消息平台上倾向于以 artifact 形式回复。
 
-**项目级别：** 将偏好设置添加到项目中的 `AGENTS.md` / `CLAUDE.md` / `.cursorrules`（agent 从该项目工作），或添加到 `~/.hermes/config.yaml` 中 `agent.custom_instructions` 下的全局自定义指令。
+**项目级别：** 将偏好设置添加到项目中的 `AGENTS.md` / `CLAUDE.md` / `.cursorrules`（agent 从该项目工作），或添加到 `~/.plobi/config.yaml` 中 `agent.custom_instructions` 下的全局自定义指令。
 
 Agent 需要使用的机制很简单：将文件渲染到绝对路径（例如 `/tmp/q3-revenue.png`），并在回复中以纯文本形式提及该路径。Gateway 负责其余工作。围栏代码块或反引号中的路径会被忽略，以避免代码示例被破坏。
 
@@ -78,7 +78,7 @@ kanban_complete(
 | **Snowflake / BigQuery** | 对数据仓库执行 SQL |
 | **Google Drive** | 文件搜索、内容读取、共享管理 |
 
-通过 `~/.hermes/config.yaml` 中的 `mcp_servers` 部分安装 MCP 服务器。完整配置指南请参阅 [MCP 集成](./mcp.md)。
+通过 `~/.plobi/config.yaml` 中的 `mcp_servers` 部分安装 MCP 服务器。完整配置指南请参阅 [MCP 集成](./mcp.md)。
 
 ## 与 Perplexity Computer in Slack 的对比
 

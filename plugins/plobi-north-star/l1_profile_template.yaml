@@ -5,7 +5,7 @@
 # ``tests/plobi/test_l1_budget.py::test_compression_threshold_in_default_profile_template``
 # 的解析对象。
 #
-# 不要把 HERMES_HOME 下的运行时 config.yaml 当作交付物（任务书禁令）。
+# 不要把 PLOBI_HOME 下的运行时 config.yaml 当作交付物（任务书禁令）。
 # 也不要改 ``agent/context_compressor.py`` 的默认 ``threshold_percent=0.50``——
 # L1 的覆盖只对 default profile + plobi_north_star 工具集启用时生效，
 # 其它 profile / 工具集仍走 0.50 默认值。

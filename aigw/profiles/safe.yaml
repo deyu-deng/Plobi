@@ -37,7 +37,7 @@ scheduler:
   strategy: least_fail
 
 aliases:
-  # Friendly names for Plobi / Hermes clients
+  # Friendly names for Plobi / Plobi clients
   plobi/mock: mock/static
   plobi/echo: mock/echo
   plobi/fast: antigravity_cli/gemini-3-flash

@@ -22,22 +22,22 @@ ACP 适配器将 Plobi 的同步 `AIAgent` 封装为异步 JSON-RPC stdio 服务
 ## 启动流程
 
 ```text
-hermes acp / hermes-acp / python -m acp_adapter
+plobi acp / plobi-acp / python -m acp_adapter
   -> acp_adapter.entry.main()
   -> parse --version / --check / --setup before server startup
-  -> load ~/.hermes/.env
+  -> load ~/.plobi/.env
   -> configure stderr logging
-  -> construct HermesACPAgent
+  -> construct PlobiACPAgent
   -> acp.run_agent(agent, use_unstable_protocol=True)
 ```
 
-Zed ACP Registry 路径通过 `uvx --from 'hermes-agent[acp]==<version>' hermes-acp` 启动同一适配器，指向 `hermes-agent` PyPI 发布包。
+Zed ACP Registry 路径通过 `uvx --from 'plobi-agent[acp]==<version>' plobi-acp` 启动同一适配器，指向 `plobi-agent` PyPI 发布包。
 
 stdout 保留用于 ACP JSON-RPC 传输。人类可读的日志输出至 stderr。
 
 ## 主要组件
 
-### `HermesACPAgent`
+### `PlobiACPAgent`
 
 `acp_adapter/server.py` 实现 ACP agent 协议。
 
@@ -116,7 +116,7 @@ asyncio.run_coroutine_threadsafe(...)
 ```text
 new_session(cwd)
   -> create SessionState
-  -> create AIAgent(platform="acp", enabled_toolsets=["hermes-acp"])
+  -> create AIAgent(platform="acp", enabled_toolsets=["plobi-acp"])
   -> bind task_id/session_id to cwd override
 
 prompt(..., session_id)
@@ -147,9 +147,9 @@ ACP 不实现自己的认证存储。
 而是复用 Plobi 的运行时解析器：
 
 - `acp_adapter/auth.py`
-- `hermes_cli/runtime_provider.py`
+- `plobi_cli/runtime_provider.py`
 
-因此 ACP 通告并使用当前配置的 Plobi provider/凭据。它还始终通告一个终端 setup 认证方法（`hermes-setup`，参数 `--setup`），以便首次运行的 registry 客户端在启动正常 ACP 会话前可以打开 Plobi 的交互式模型/provider 配置。
+因此 ACP 通告并使用当前配置的 Plobi provider/凭据。它还始终通告一个终端 setup 认证方法（`plobi-setup`，参数 `--setup`），以便首次运行的 registry 客户端在启动正常 ACP 会话前可以打开 Plobi 的交互式模型/provider 配置。
 
 ## 工作目录绑定
 
@@ -172,13 +172,13 @@ ACP 在 prompt 执行期间临时在终端工具上安装审批回调，执行�
 
 ## 当前限制
 
-- ACP 会话持久化至共享的 `~/.hermes/state.db`（SessionDB），在进程重启后透明恢复；它们会出现在 `session_search` 中
+- ACP 会话持久化至共享的 `~/.plobi/state.db`（SessionDB），在进程重启后透明恢复；它们会出现在 `session_search` 中
 - 非文本 prompt 块在请求文本提取时当前被忽略
 - 编辑器特定的 UX 因 ACP 客户端实现而异
 
 ## 相关文件
 
 - `tests/acp/` — ACP 测试套件
-- `toolsets.py` — `hermes-acp` toolset 定义
-- `hermes_cli/main.py` — `hermes acp` CLI 子命令
-- `pyproject.toml` — `[acp]` 可选依赖 + `hermes-acp` 脚本
+- `toolsets.py` — `plobi-acp` toolset 定义
+- `plobi_cli/main.py` — `plobi acp` CLI 子命令
+- `pyproject.toml` — `[acp]` 可选依赖 + `plobi-acp` 脚本

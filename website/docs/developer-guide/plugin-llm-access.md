@@ -188,7 +188,7 @@ def _paste_to_tasks(ctx, raw_args: str) -> str:
 A third worked example, this time with image input, lives in the
 [`hermes-example-plugins`](https://github.com/NousResearch/hermes-example-plugins/tree/main/plugin-llm-example)
 repo (companion repo for reference plugins — not bundled with
-hermes-agent itself). For the async surface (`acomplete()` /
+plobi-agent itself). For the async surface (`acomplete()` /
 `acomplete_structured()` with `asyncio.gather()`), see
 [`plugin-llm-async-example`](https://github.com/NousResearch/hermes-example-plugins/tree/main/plugin-llm-async-example)
 in the same repo.
@@ -337,7 +337,7 @@ plugins:
       llm:
         # Allow this plugin to choose a different Plobi provider
         # (must be one Plobi already knows about — same names as
-        # `hermes model` and config.yaml model.provider).
+        # `plobi model` and config.yaml model.provider).
         allow_provider_override: true
 
         # Optionally restrict which providers. Use ["*"] for any.
@@ -402,7 +402,7 @@ don't have to:
 * **Provider resolution.** Reads `model.provider` + `model.model`
   from the user's config (or the explicit overrides when trusted).
 * **Auth.** Pulls API keys, OAuth tokens, or refresh tokens from
-  `~/.hermes/auth.json` / env, including the credential pool when
+  `~/.plobi/auth.json` / env, including the credential pool when
   one is configured. The plugin never sees them.
 * **Vision routing.** When image input is supplied and the user's
   active text model is text-only, the host falls back to the

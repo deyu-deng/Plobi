@@ -1,6 +1,6 @@
 # Secrets
 
-Plobi can pull API keys from external secret managers at process startup instead of storing them in `~/.hermes/.env`. The bootstrap token for the secret manager lives in `.env`; every other provider key (OpenAI, Anthropic, OpenRouter, etc.) can stay in the manager and rotate centrally.
+Plobi can pull API keys from external secret managers at process startup instead of storing them in `~/.plobi/.env`. The bootstrap token for the secret manager lives in `.env`; every other provider key (OpenAI, Anthropic, OpenRouter, etc.) can stay in the manager and rotate centrally.
 
 Supported:
 
@@ -25,7 +25,7 @@ secrets:
     project_id: "..."
 ```
 
-Every credential injected by a source is labelled with its origin — setup flows and `hermes model` show `(from Bitwarden)` next to detected keys so you always know where a value came from.
+Every credential injected by a source is labelled with its origin — setup flows and `plobi model` show `(from Bitwarden)` next to detected keys so you always know where a value came from.
 
 ## Adding your own backend
 

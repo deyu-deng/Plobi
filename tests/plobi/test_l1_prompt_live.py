@@ -22,7 +22,7 @@ import pytest
 def _load_conversation_loop():
     """``agent/conversation_loop.py`` — direct spec_from_file_location 装载。
 
-    Real ``hermes_constants`` / ``hermes_cli`` live on sys.path in this venv
+    Real ``plobi_constants`` / ``plobi_cli`` live on sys.path in this venv
     (the codebase depends on them); we don't stub either — the import chain
     pulls in real, which has every symbol needed.
     """
@@ -53,14 +53,14 @@ def _load_conversation_loop():
 
 def _load_l1_budget():
     """``plugins/plobi-north-star/l1_budget.py`` —— 拿真实的 ``is_l1_default_profile``。"""
-    name = "hermes_plugins.plobi_north_star.l1_budget"
+    name = "plobi_plugins.plobi_north_star.l1_budget"
     if name in sys.modules:
         return sys.modules[name]
-    if "hermes_plugins" not in sys.modules:
-        ns = types.ModuleType("hermes_plugins")
+    if "plobi_plugins" not in sys.modules:
+        ns = types.ModuleType("plobi_plugins")
         ns.__path__ = []
-        sys.modules["hermes_plugins"] = ns
-    parent_name = "hermes_plugins.plobi_north_star"
+        sys.modules["plobi_plugins"] = ns
+    parent_name = "plobi_plugins.plobi_north_star"
     if parent_name not in sys.modules:
         parent_mod = types.ModuleType(parent_name)
         parent_mod.__path__ = [
@@ -69,7 +69,7 @@ def _load_l1_budget():
                 / "plugins" / "plobi-north-star"
             )
         ]
-        parent_mod.__package__ = "hermes_plugins"
+        parent_mod.__package__ = "plobi_plugins"
         sys.modules[parent_name] = parent_mod
     l1_path = (
         Path(__file__).resolve().parents[2]

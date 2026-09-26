@@ -43,19 +43,19 @@ talks to it over loopback.
 
 ```bash
 # One-shot setup: device login (opens browser) + project + user + sidecar deps
-hermes photon setup --phone +15551234567
+plobi photon setup --phone +15551234567
 
 # Start the gateway
-hermes gateway start
+plobi gateway start
 ```
 
-`hermes photon setup` does, in order:
+`plobi photon setup` does, in order:
 
 1. **Device login** (RFC 8628, `client_id=photon-cli`) — opens
    `https://app.photon.codes/` for approval and stores the bearer token.
 2. **Find or create** the `Plobi Agent` project on the Photon dashboard.
 3. **Provision the project secret** — mint a fresh project secret (the
-   dashboard reveals it only once) and persist it to `~/.hermes/.env` so the
+   dashboard reveals it only once) and persist it to `~/.plobi/.env` so the
    sidecar can authenticate `spectrum-ts`. Spectrum is always on, so there's no
    separate enable step.
 4. **Register your phone number** as a Spectrum user (idempotent — skipped if
@@ -69,11 +69,11 @@ hermes gateway start
 There is no separate `login` command; like every other Plobi channel,
 onboarding goes through one setup surface. Re-running `setup` reuses an
 existing token/project, so it's safe to run again to finish a partial setup.
-Run `hermes photon status` to see what's configured.
+Run `plobi photon status` to see what's configured.
 
 ## Credentials
 
-Runtime SDK credentials live in `~/.hermes/.env` (the same place every other
+Runtime SDK credentials live in `~/.plobi/.env` (the same place every other
 channel keeps its token), and the adapter reads them from the environment:
 
 ```bash
@@ -81,7 +81,7 @@ PHOTON_PROJECT_ID=<projectId>   # the SDK's projectId (same as the dashboard pro
 PHOTON_PROJECT_SECRET=<projectSecret>
 ```
 
-Management metadata lives in `~/.hermes/auth.json` under `credential_pool`:
+Management metadata lives in `~/.plobi/auth.json` under `credential_pool`:
 
 ```jsonc
 {
@@ -121,7 +121,7 @@ All env vars are documented in `plugin.yaml`. The most important:
 | `PHOTON_ALLOWED_USERS`    | your number (set by setup) | Comma-separated E.164 allowlist      |
 | `PHOTON_REQUIRE_MENTION`  | false                      | Gate group chats on a wake word      |
 | `PHOTON_MAX_INLINE_ATTACHMENT_BYTES` | 20 MB           | Max inbound attachment size the sidecar reads & inlines |
-| `PHOTON_TELEMETRY`        | false                      | Spectrum SDK telemetry — toggle with `hermes photon telemetry on\|off` (restart the gateway to apply) |
+| `PHOTON_TELEMETRY`        | false                      | Spectrum SDK telemetry — toggle with `plobi photon telemetry on\|off` (restart the gateway to apply) |
 | `PHOTON_MARKDOWN`         | true                       | Send agent replies as markdown (iMessage renders natively). `false` strips formatting to plain text |
 | `PHOTON_REACTIONS`        | false                      | Tapback 👀/👍/👎 as processing status; tapbacks on bot messages reach the agent as `reaction:added:<emoji>` |
 
@@ -183,7 +183,7 @@ deliberate:
    fails loudly if the anchors no longer match — update them to the new output
    (`test_spectrum_patch.py` covers the patch).
 5. Run `pytest tests/plugins/platforms/photon/`.
-6. Verify end-to-end: `hermes photon status`, a DM and a group roundtrip,
+6. Verify end-to-end: `plobi photon status`, a DM and a group roundtrip,
    and an agent reply into a group right after a gateway restart (exercises
    `space.get` rehydration).
 

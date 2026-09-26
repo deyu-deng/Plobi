@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run ARCH-UI-MASTER §3.5 architecture gates. Exit 1 on failure.
 
-Used by git pre-commit and CI. Does not need the full hermes-agent install —
+Used by git pre-commit and CI. Does not need the full plobi-agent install —
 the pytest file only inspects the filesystem.
 
 Skip (last resort, never for Agents): SKIP_ARCH_GATES=1

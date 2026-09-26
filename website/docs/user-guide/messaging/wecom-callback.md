@@ -14,7 +14,7 @@ Plobi supports two WeCom integration modes:
 
 See also: [WeCom Bot](./wecom.md) for the bot-style integration.
 
-> Run `hermes gateway setup` and pick **WeCom Callback** for a guided walk-through.
+> Run `plobi gateway setup` and pick **WeCom Callback** for a guided walk-through.
 
 ## How It Works
 
@@ -64,10 +64,10 @@ WECOM_CALLBACK_ALLOWED_USERS=user1,user2
 ### 3. Start the Gateway
 
 ```bash
-hermes gateway
+plobi gateway
 ```
 
-(Use `hermes gateway start` only after `hermes gateway install` has registered the systemd/launchd service.)
+(Use `plobi gateway start` only after `plobi gateway install` has registered the systemd/launchd service.)
 
 The callback adapter starts an HTTP server on the configured port. WeCom will verify the callback URL via a GET request, then begin sending messages via POST.
 
@@ -159,8 +159,8 @@ WeCom signs every request with the **Token** you registered in the admin
 console. A mismatch between the token configured in Plobi and the token the
 admin console expects is the most common cause. Re-copy both the **Token** and
 **EncodingAESKey** from the admin console — they're easy to truncate. Whitespace
-in `~/.hermes/.env` values around `=` will also break signature checks. After
-fixing, restart `hermes gateway run`.
+in `~/.plobi/.env` values around `=` will also break signature checks. After
+fixing, restart `plobi gateway run`.
 
 **Callback URL not reachable / verification step fails.**
 WeCom hits the public URL you registered. Confirm:
@@ -171,7 +171,7 @@ WeCom hits the public URL you registered. Confirm:
    it just means the listener is reachable).
 
 **Port not reachable / listener not bound.**
-Check `hermes gateway run` logs for the bound host/port. If the adapter bound to
+Check `plobi gateway run` logs for the bound host/port. If the adapter bound to
 `127.0.0.1` you must front it with a reverse proxy or tunnel — WeCom's servers
 can't reach loopback. Set `extra.host: 0.0.0.0` in `config.yaml` (plus
 `allowed_source_cidrs` if exposing directly) or keep loopback and use a tunnel

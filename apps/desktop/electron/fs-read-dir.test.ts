@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 import { readDirForIpc } from './fs-read-dir'
 
 function mkTmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-fs-read-dir-'))
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'plobi-fs-read-dir-'))
 }
 
 function fakeDirent(name, flags: any = {}) {

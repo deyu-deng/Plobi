@@ -6,7 +6,7 @@ ntfy 是 Plobi 的轻量级推送渠道的理想选择：通过 [ntfy 移动应�
 
 ## 前提条件
 
-- 一个 topic 名称（任意唯一字符串——`hermes-myname-2026` 即可）
+- 一个 topic 名称（任意唯一字符串——`plobi-myname-2026` 即可）
 - 已安装 [ntfy 移动应用](https://ntfy.sh/docs/subscribe/phone/) 并订阅该 topic
 - 可选：自托管的 ntfy 服务器，或用于私有/保留 topic 的 `ntfy.sh` 账户 token
 
@@ -17,19 +17,19 @@ ntfy 是 Plobi 的轻量级推送渠道的理想选择：通过 [ntfy 移动应�
 ### 通过设置向导
 
 ```bash
-hermes gateway setup
+plobi gateway setup
 ```
 
 选择 **ntfy** 并按提示操作。
 
 ### 通过环境变量
 
-将以下内容添加到 `~/.hermes/.env`：
+将以下内容添加到 `~/.plobi/.env`：
 
 ```
-NTFY_TOPIC=hermes-myname-2026
-NTFY_ALLOWED_USERS=hermes-myname-2026
-NTFY_HOME_CHANNEL=hermes-myname-2026
+NTFY_TOPIC=plobi-myname-2026
+NTFY_ALLOWED_USERS=plobi-myname-2026
+NTFY_HOME_CHANNEL=plobi-myname-2026
 ```
 
 | 变量 | 是否必填 | 说明 |
@@ -60,13 +60,13 @@ ntfy 没有原生的已认证用户身份。已发布消息中的 `title` 字段
 
 ## 快速开始——从手机与 agent 对话
 
-1. 选择一个 topic 名称：`hermes-myname-2026`
-2. 在手机上：安装 [ntfy 应用](https://ntfy.sh/docs/subscribe/phone/)，点击 **+**，输入 `hermes-myname-2026`
+1. 选择一个 topic 名称：`plobi-myname-2026`
+2. 在手机上：安装 [ntfy 应用](https://ntfy.sh/docs/subscribe/phone/)，点击 **+**，输入 `plobi-myname-2026`
 3. 在主机上：
    ```bash
-   echo 'NTFY_TOPIC=hermes-myname-2026' >> ~/.hermes/.env
-   echo 'NTFY_ALLOWED_USERS=hermes-myname-2026' >> ~/.hermes/.env
-   hermes gateway restart
+   echo 'NTFY_TOPIC=plobi-myname-2026' >> ~/.plobi/.env
+   echo 'NTFY_ALLOWED_USERS=plobi-myname-2026' >> ~/.plobi/.env
+   plobi gateway restart
    ```
 4. 从 ntfy 应用向该 topic 发送一条消息。agent 的回复将以推送通知的形式送达。
 
@@ -108,7 +108,7 @@ ntfy serve
 
 ```
 NTFY_SERVER_URL=https://ntfy.mydomain.com
-NTFY_TOPIC=hermes
+NTFY_TOPIC=plobi
 NTFY_TOKEN=tk_abc123  # if you've set up access control
 ```
 

@@ -139,10 +139,10 @@ def test_lookup_credential_resolves_env_ref(monkeypatch):
             "base_url": "https://api.z.ai/api/paas/v4",
         }
     ]
-    monkeypatch.setattr("hermes_cli.auth.read_credential_pool", lambda p: fake)
-    import hermes_cli.config
+    monkeypatch.setattr("plobi_cli.auth.read_credential_pool", lambda p: fake)
+    import plobi_cli.config
 
-    monkeypatch.setattr(hermes_cli.config, "load_env", lambda: {"GLM_API_KEY": "dot-key"})
+    monkeypatch.setattr(plobi_cli.config, "load_env", lambda: {"GLM_API_KEY": "dot-key"})
     token, url = quota_config._lookup_credential("zai")
     assert token == "dot-key"
     assert url == "https://api.z.ai/api/paas/v4"
@@ -155,7 +155,7 @@ def test_lookup_credential_prefers_inline_token_and_highest_priority(monkeypatch
         {"id": "low", "priority": 0, "access_token": "inline-low", "base_url": "u0"},
         {"id": "high", "priority": 2, "access_token": "inline-high", "base_url": "u2"},
     ]
-    monkeypatch.setattr("hermes_cli.auth.read_credential_pool", lambda p: fake)
+    monkeypatch.setattr("plobi_cli.auth.read_credential_pool", lambda p: fake)
     token, url = quota_config._lookup_credential("zai")
     assert (token, url) == ("inline-high", "u2")
 
@@ -163,7 +163,7 @@ def test_lookup_credential_prefers_inline_token_and_highest_priority(monkeypatch
 def test_lookup_credential_missing_provider_is_empty(monkeypatch):
     from plobi.quota import config as quota_config
 
-    monkeypatch.setattr("hermes_cli.auth.read_credential_pool", lambda p: [])
+    monkeypatch.setattr("plobi_cli.auth.read_credential_pool", lambda p: [])
     assert quota_config._lookup_credential("zai") == ("", "")
 
 

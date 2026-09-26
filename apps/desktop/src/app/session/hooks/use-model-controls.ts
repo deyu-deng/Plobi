@@ -1,12 +1,12 @@
 import { type QueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
-import { getGlobalModelInfo } from '@/hermes'
+import { getGlobalModelInfo } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { notifyError } from '@/store/notifications'
 import { $activeSessionId, $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
-import type { ModelOptionsResponse } from '@/types/hermes'
+import type { ModelOptionsResponse } from '@/types/plobi'
 
 interface ModelSelection {
   model: string
@@ -77,7 +77,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
   // silently mutate global config.
   const selectModel = useCallback(
     async (selection: ModelSelection): Promise<boolean> => {
-      // Desktop-quota providers (Antigravity, …) are not known to the Hermes
+      // Desktop-quota providers (Antigravity, …) are not known to the Plobi
       // backend — their chat is routed to the aigw hub instead. Selecting one is
       // pure local UI state: skip the backend config.set so it doesn't 400.
       if (isDesktopQuotaProvider(selection.provider)) {

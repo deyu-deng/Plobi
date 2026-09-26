@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
-import { bulkDeleteSessions, getSessionMessages, listAllProfileSessions, type SessionMessage, triggerCronJob } from '../hermes'
+import { bulkDeleteSessions, getSessionMessages, listAllProfileSessions, type SessionMessage, triggerCronJob } from '../plobi'
 import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { isMessagingSource, MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
@@ -149,7 +149,7 @@ import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
-import { useHermesConfig } from './session/hooks/use-hermes-config'
+import { usePlobiConfig } from './session/hooks/use-plobi-config'
 import { useMessageStream } from './session/hooks/use-message-stream'
 import { useModelControls } from './session/hooks/use-model-controls'
 import { usePreviewRouting } from './session/hooks/use-preview-routing'
@@ -384,7 +384,7 @@ export function DesktopController() {
   const { connectionRef, gatewayRef, requestGateway } = useGatewayRequest()
 
   useEffect(() => {
-    window.hermesDesktop?.setPreviewShortcutActive?.(
+    window.plobiDesktop?.setPreviewShortcutActive?.(
       Boolean(secretaryShellOpen && previewRailContent)
     )
   }, [previewRailContent, secretaryShellOpen])
@@ -400,7 +400,7 @@ export function DesktopController() {
 
   useEffect(() => {
     startUpdatePoller()
-    const unsubscribe = window.hermesDesktop?.onOpenUpdatesRequested?.(() => openUpdatesWindow())
+    const unsubscribe = window.plobiDesktop?.onOpenUpdatesRequested?.(() => openUpdatesWindow())
 
     return () => {
       unsubscribe?.()
@@ -449,7 +449,7 @@ export function DesktopController() {
   // resumes a non-existent stored session ("session not found") and strands the
   // user. Translate runtime -> stored before navigating.
   useEffect(() => {
-    const unsubscribe = window.hermesDesktop?.onFocusSession?.(sessionId => {
+    const unsubscribe = window.plobiDesktop?.onFocusSession?.(sessionId => {
       if (sessionId) {
         navigate(sessionRoute(storedSessionIdForNotification(sessionId, runtimeIdByStoredSessionIdRef.current)))
       }
@@ -460,20 +460,20 @@ export function DesktopController() {
 
   // Notification action button (Approve/Reject) — resolve in place, no navigation.
   useEffect(() => {
-    const unsubscribe = window.hermesDesktop?.onNotificationAction?.(({ actionId, sessionId }) => {
+    const unsubscribe = window.plobiDesktop?.onNotificationAction?.(({ actionId, sessionId }) => {
       void respondToApprovalAction(sessionId ?? null, actionId)
     })
 
     return () => unsubscribe?.()
   }, [])
 
-  // hermes:// deep links (e.g. a docs "Send to App" button for an automation blueprint).
+  // plobi:// deep links (e.g. a docs "Send to App" button for an automation blueprint).
   // Build the equivalent /blueprint slash command from the payload and drop
   // it into the composer — the user reviews/edits, then sends; the agent (or
   // the shared command handler) creates the job. Signal readiness so a link
   // that arrived during boot is flushed exactly once.
   useEffect(() => {
-    const unsubscribe = window.hermesDesktop?.onDeepLink?.(payload => {
+    const unsubscribe = window.plobiDesktop?.onDeepLink?.(payload => {
       if (!payload || payload.kind !== 'blueprint' || !payload.name) {
         return
       }
@@ -492,7 +492,7 @@ export function DesktopController() {
     })
 
     // Tell the main process the renderer is ready to receive deep links.
-    void window.hermesDesktop?.signalDeepLinkReady?.()
+    void window.plobiDesktop?.signalDeepLinkReady?.()
 
     return () => unsubscribe?.()
   }, [])
@@ -524,7 +524,7 @@ export function DesktopController() {
       }
     }
 
-    const unsubscribe = window.hermesDesktop?.onClosePreviewRequested?.(closeActiveRightRailTab)
+    const unsubscribe = window.plobiDesktop?.onClosePreviewRequested?.(closeActiveRightRailTab)
 
     window.addEventListener('keydown', onKeyDown, { capture: true })
 
@@ -598,7 +598,7 @@ export function DesktopController() {
     requestGateway
   })
 
-  const { refreshHermesConfig, sttEnabled, voiceMaxRecordingSeconds } = useHermesConfig({
+  const { refreshPlobiConfig, sttEnabled, voiceMaxRecordingSeconds } = usePlobiConfig({
     activeSessionIdRef,
     refreshProjectBranch
   })
@@ -734,7 +734,7 @@ export function DesktopController() {
     activeSessionIdRef,
     hydrateFromStoredSession,
     queryClient,
-    refreshHermesConfig,
+    refreshPlobiConfig,
     refreshSessions,
     sessionStateByRuntimeIdRef,
     updateSessionState
@@ -1356,7 +1356,7 @@ export function DesktopController() {
     onGatewayReady: g => {
       gatewayRef.current = g
     },
-    refreshHermesConfig,
+    refreshPlobiConfig,
     refreshSessions
   })
 
@@ -1446,9 +1446,9 @@ export function DesktopController() {
   useEffect(() => {
     if (gatewayState === 'open' && !activeSessionId && freshDraftReady) {
       void refreshCurrentModel()
-      void refreshHermesConfig()
+      void refreshPlobiConfig()
     }
-  }, [activeSessionId, freshDraftReady, gatewayState, refreshCurrentModel, refreshHermesConfig])
+  }, [activeSessionId, freshDraftReady, gatewayState, refreshCurrentModel, refreshPlobiConfig])
 
   useRouteResume({
     activeSessionId,
@@ -1535,7 +1535,7 @@ export function DesktopController() {
         <DesktopOnboardingOverlay
           enabled={gatewayState === 'open'}
           onCompleted={() => {
-            void refreshHermesConfig()
+            void refreshPlobiConfig()
             void refreshCurrentModel()
             void queryClient.invalidateQueries({ queryKey: ['model-options'] })
           }}
@@ -1560,7 +1560,7 @@ export function DesktopController() {
             gateway={gatewayRef.current}
             onClose={closeOverlayToPreviousRoute}
             onConfigSaved={() => {
-              void refreshHermesConfig()
+              void refreshPlobiConfig()
               void refreshCurrentModel()
               void queryClient.invalidateQueries({ queryKey: ['model-options'] })
             }}
@@ -1857,7 +1857,7 @@ export function DesktopController() {
         <Pane
           // WP-A: the base sidebar is the shell's left rail for L1/L2 and the
           // legacy chat alike. Overlay modals cover the shell; skills/messaging/
-          // artifacts keep this rail (Hermes original) so the page is escapable.
+          // artifacts keep this rail (Plobi original) so the page is escapable.
           disabled={!sidebarPaneOpen}
           forceCollapsed={narrowViewport}
           hoverReveal

@@ -1,7 +1,7 @@
 """User-authorization methods for ``GatewayRunner``.
 
 Extracted from ``gateway/run.py`` as part of the god-file decomposition campaign
-(``~/.hermes/plans/god-file-decomposition.md``, Phase 3 mechanical mixin lifts).
+(``~/.plobi/plans/god-file-decomposition.md``, Phase 3 mechanical mixin lifts).
 This mixin holds the inbound-message authorization cluster: whether a user/chat
 is allowed to talk to the agent, the per-adapter DM policy, and the
 unauthorized-DM behavior.
@@ -438,7 +438,7 @@ class GatewayAuthorizationMixin:
 
         # Check pairing store. A pairing entry is a first-class authorization
         # grant, created only by a trusted operator approving a pairing code
-        # (hermes gateway pairing approve / the authenticated dashboard) — an
+        # (plobi gateway pairing approve / the authenticated dashboard) — an
         # inbound sender can never reach approve_code, so this is not an
         # attacker-controlled path. Honored as a UNION with the allowlist: a
         # paired user is authorized regardless of the allowlist, and when an

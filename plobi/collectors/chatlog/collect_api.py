@@ -1,6 +1,6 @@
 """Board-facing collection API: the first-run review and the pending queue.
 
-Mounted at ``/api/collect`` (see ``hermes_cli/web_server.py``). Consumed by
+Mounted at ``/api/collect`` (see ``plobi_cli/web_server.py``). Consumed by
 ``apps/desktop/src/app/agenda/talker/api.ts`` — the desktop board's "session
 collection" entry (A7 slice).
 

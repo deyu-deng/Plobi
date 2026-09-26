@@ -7,7 +7,7 @@ tools array by three bridge tools — ``tool_search``, ``tool_describe``,
 Design constraints this module is built around (see ``openclaw-tool-search-report``
 for the full rationale):
 
-* Core tools defined in ``toolsets._HERMES_CORE_TOOLS`` are *never* deferred.
+* Core tools defined in ``toolsets._PLOBI_CORE_TOOLS`` are *never* deferred.
   Always-load means always-load. No exceptions.
 * The threshold gate runs every assembly: when deferrable tools would consume
   less than ``threshold_pct`` of the model's context window (default 10%),
@@ -131,7 +131,7 @@ def _safe_float(value: Any, fallback: float) -> float:
 def load_config() -> ToolSearchConfig:
     """Load tool-search config from the user config file."""
     try:
-        from hermes_cli.config import load_config as _load
+        from plobi_cli.config import load_config as _load
         cfg = _load() or {}
         tools_cfg = cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}
         if not isinstance(tools_cfg, dict):
@@ -154,8 +154,8 @@ def _core_tool_names() -> frozenset[str]:
     and we don't want a hard cycle.
     """
     try:
-        from toolsets import _HERMES_CORE_TOOLS
-        return frozenset(_HERMES_CORE_TOOLS)
+        from toolsets import _PLOBI_CORE_TOOLS
+        return frozenset(_PLOBI_CORE_TOOLS)
     except Exception:
         return frozenset()
 
@@ -164,7 +164,7 @@ def is_deferrable_tool_name(name: str) -> bool:
     """Return True if a tool with this name is *eligible* for deferral.
 
     A tool is deferrable iff it is registered with an MCP toolset prefix
-    OR it is not in ``_HERMES_CORE_TOOLS``. Core tools are never deferred
+    OR it is not in ``_PLOBI_CORE_TOOLS``. Core tools are never deferred
     even when their toolset is technically plugin-provided (this protects
     against accidental shadowing).
     """

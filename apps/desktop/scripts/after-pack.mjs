@@ -3,7 +3,7 @@
  *
  * Stamps the Plobi icon + identity onto the packed Windows Plobi.exe via
  * rcedit (delegated to set-exe-identity.mjs). This runs for EVERY packed build
- * — first install, `hermes desktop`, the installer's --update rebuild, and a
+ * — first install, `plobi desktop`, the installer's --update rebuild, and a
  * dev's manual `npm run pack` — so the branded exe can never silently revert
  * to the stock "Electron" icon/name (the bug when the stamp lived only in
  * install.ps1, which the update path doesn't use).

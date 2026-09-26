@@ -192,7 +192,7 @@ class Registry:
                     "permission": [],
                     "root": m,
                     "parent": None,
-                    # Plobi / Hermes extensions (OpenAI clients ignore unknown keys)
+                    # Plobi / Plobi extensions (OpenAI clients ignore unknown keys)
                     "provider": prov_name,
                     "capabilities": caps,
                 }

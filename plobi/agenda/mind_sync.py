@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 PROJECT_DAILY_PREFIX = "Vault/projects/Plobi/daily"
 
 #: 任务书 WP-L1-BUDGET §3 红线：mind 摘要路径抛任何异常都会让主回合去撞
-#: Hermes memory 工具补课——所以这里在 ``publish_*`` 里把 SubprocessError /
+#: Plobi memory 工具补课——所以这里在 ``publish_*`` 里把 SubprocessError /
 #: OSError / ValueError / 一般 Exception 都吞掉，统一回 ``(False,
 #: "summary skipped: ...")``。Mind ``_commit`` 自身已经 catch 了
 #: ``(OSError, subprocess.SubprocessError)`` 并返回 ``(False, ...)``；这里
@@ -72,7 +72,7 @@ def publish_daily_summary(
     WP-L1-BUDGET §3 fail-open：摘要失败（含 ``.plobi-mind.lock`` 持锁、
     脏树、untracked、``safe_target`` 抛 ``UnsafeMindPath`` 等任意
     ``_FALLBACK_EXC`` 命中）一律返回 ``(False, "summary skipped: ..."))``
-    而**不**抛异常——主回合不该再去撞 Hermes memory 工具补课。
+    而**不**抛异常——主回合不该再去撞 Plobi memory 工具补课。
     """
     rel = summary_relative_path(day)
     try:

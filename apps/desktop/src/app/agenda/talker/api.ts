@@ -3,7 +3,7 @@
  * `docs/specs/slice-map-v1.md` A7).
  *
  * Backed by the collector's `plobi/collectors/chatlog/state.py` status table
- * through `/api/collect/*` (mounted in `hermes_cli/web_server.py`). The board
+ * through `/api/collect/*` (mounted in `plobi_cli/web_server.py`). The board
  * entry consumes this module unchanged; the backend owns the truth.
  *
  * Privacy contract (ADR-0010, fail-closed): a brand-new talker is NEVER
@@ -30,11 +30,11 @@ export interface TalkerCollection {
 }
 
 export async function getTalkerCollection(): Promise<TalkerCollection> {
-  return window.hermesDesktop.api<TalkerCollection>({ path: '/api/collect/talkers' })
+  return window.plobiDesktop.api<TalkerCollection>({ path: '/api/collect/talkers' })
 }
 
 export async function setTalkerMode(id: string, mode: TalkerMode): Promise<void> {
-  await window.hermesDesktop.api<{ id: string; status: TalkerStatus }>({
+  await window.plobiDesktop.api<{ id: string; status: TalkerStatus }>({
     path: `/api/collect/talkers/${encodeURIComponent(id)}/mode`,
     method: 'POST',
     body: { mode }
@@ -50,7 +50,7 @@ export async function bulkSetTalkerMode(
   ids: string[],
   status: Extract<TalkerStatus, 'excluded' | 'known'>
 ): Promise<void> {
-  await window.hermesDesktop.api<{ status: TalkerStatus; updated: number }>({
+  await window.plobiDesktop.api<{ status: TalkerStatus; updated: number }>({
     path: '/api/collect/talkers/bulk',
     method: 'POST',
     body: { status, talkers: ids }
@@ -58,7 +58,7 @@ export async function bulkSetTalkerMode(
 }
 
 export async function completeReview(): Promise<void> {
-  await window.hermesDesktop.api<{ reviewComplete: boolean }>({
+  await window.plobiDesktop.api<{ reviewComplete: boolean }>({
     path: '/api/collect/review-complete',
     method: 'POST'
   })

@@ -1,11 +1,11 @@
 """Soft-route acceptance for the two §8.2 utterances (A line).
 
-Does not open the desktop. Default live path is ``hermes -z`` against the
+Does not open the desktop. Default live path is ``plobi -z`` against the
 active profile (no new REST). Unit tests mock ``send_turn``.
 
     python scripts/plobi/e2e_secretary.py --json
     python scripts/plobi/e2e_secretary.py --repeat 10 --json
-    python scripts/plobi/e2e_secretary.py --direct --json   # no hermes -z; real chatlog + aigw
+    python scripts/plobi/e2e_secretary.py --direct --json   # no plobi -z; real chatlog + aigw
     python scripts/plobi/e2e_secretary.py --no-live   # score helpers only
 
 Exit: 0 pass · 1 assertion/routing fail · 2 could not run (env/model).
@@ -176,7 +176,7 @@ def score_direct_turn(
     *,
     n3_messages: list[dict[str, Any]] | None = None,
 ) -> TurnScore:
-    """Score a live ``run_secretary_ask`` payload (no hermes -z)."""
+    """Score a live ``run_secretary_ask`` payload (no plobi -z)."""
     stdout = json.dumps(payload, ensure_ascii=False)
     dead = bool(payload.get("dead"))
     has_events = _agenda_has_events(payload)
@@ -240,16 +240,16 @@ def score_turn(
     )
 
 
-def hermes_home() -> Path:
-    val = (os.environ.get("HERMES_HOME") or "").strip()
+def plobi_home() -> Path:
+    val = (os.environ.get("PLOBI_HOME") or "").strip()
     if val:
         return Path(val)
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        return get_hermes_home()
+        return get_plobi_home()
     except Exception:
-        return Path.home() / ".hermes"
+        return Path.home() / ".plobi"
 
 
 def _load_messages_from_db(db_path: Path, since_unix: float | None = None) -> list[dict[str, Any]]:
@@ -276,12 +276,12 @@ def _load_messages_from_db(db_path: Path, since_unix: float | None = None) -> li
 
 
 def default_state_db(home: Path | None = None) -> Path:
-    root = home or hermes_home()
+    root = home or plobi_home()
     return root / "state.db"
 
 
 def agenda_state_db(home: Path | None = None) -> Path:
-    root = home or hermes_home()
+    root = home or plobi_home()
     profile = "l2-agenda"
     try:
         from plobi.agents.registry import find_agenda_agent
@@ -292,7 +292,7 @@ def agenda_state_db(home: Path | None = None) -> Path:
     except Exception:
         pass
     try:
-        from hermes_cli.profiles import get_profile_dir
+        from plobi_cli.profiles import get_profile_dir
 
         return get_profile_dir(profile) / "state.db"
     except Exception:
@@ -301,9 +301,9 @@ def agenda_state_db(home: Path | None = None) -> Path:
 
 def send_turn_oneshot(text: str, *, timeout: int = 180) -> str:
     env = os.environ.copy()
-    home = hermes_home()
-    env.setdefault("HERMES_HOME", str(home))
-    cmd = [sys.executable, "-m", "hermes_cli", "-z", text]
+    home = plobi_home()
+    env.setdefault("PLOBI_HOME", str(home))
+    cmd = [sys.executable, "-m", "plobi_cli", "-z", text]
     proc = subprocess.run(
         cmd,
         cwd=str(REPO_ROOT),
@@ -315,19 +315,19 @@ def send_turn_oneshot(text: str, *, timeout: int = 180) -> str:
     )
     out = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if proc.returncode != 0 and not out.strip():
-        raise RuntimeError(f"hermes -z exited {proc.returncode}")
+        raise RuntimeError(f"plobi -z exited {proc.returncode}")
     return out
 
 
 def run_direct_pair(
     ask: Callable[..., dict[str, Any]] | None = None,
 ) -> list[TurnScore]:
-    """Call ``run_secretary_ask`` twice — real chatlog + aigw, no hermes -z."""
+    """Call ``run_secretary_ask`` twice — real chatlog + aigw, no plobi -z."""
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     if ask is None:
         from plobi.agents.registry import run_secretary_ask as ask
-    home = hermes_home()
+    home = plobi_home()
     l2_db = agenda_state_db(home)
     scores: list[TurnScore] = []
     for utterance, intent in UTTERANCES:
@@ -411,7 +411,7 @@ def run_pair(
     sender = send_turn or (send_turn_oneshot if live else None)
     if sender is None:
         raise RuntimeError("no send_turn; pass a mock or --live")
-    home = hermes_home()
+    home = plobi_home()
     l1_db = default_state_db(home)
     l2_db = agenda_state_db(home)
     scores: list[TurnScore] = []
@@ -467,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--direct",
         action="store_true",
-        help="skip hermes -z; call run_secretary_ask (real chatlog + aigw)",
+        help="skip plobi -z; call run_secretary_ask (real chatlog + aigw)",
     )
     args = parser.parse_args(argv)
     if args.no_live and not args.direct:

@@ -10,7 +10,7 @@ Plobi can optionally hand `openai/*` and `openai-codex/*` turns to the [Codex CL
 This is **opt-in only**. Default Plobi behavior is unchanged unless you flip the flag. Plobi never auto-routes you onto this runtime.
 
 :::tip
-Not using OpenAI Codex? `hermes setup --portal` configures a non-Codex backend with Claude/Gemini/etc. in one step. See [Nous Portal](/integrations/nous-portal).
+Not using OpenAI Codex? `plobi setup --portal` configures a non-Codex backend with Claude/Gemini/etc. in one step. See [Nous Portal](/integrations/nous-portal).
 :::
 
 ## Why
@@ -66,7 +66,7 @@ Plobi registers itself as an MCP server so codex can call back for tools codex d
 - **`skill_view` / `skills_list`** — read from Plobi' skill library.
 - **`text_to_speech`** — TTS through Plobi' configured provider.
 
-When the model wants one of these, codex spawns the `hermes_tools_mcp_server` subprocess via stdio MCP, the call is dispatched through `model_tools.handle_function_call()` (same code path as Plobi' default runtime), and the result is returned to codex like any other MCP response.
+When the model wants one of these, codex spawns the `plobi_tools_mcp_server` subprocess via stdio MCP, the call is dispatched through `model_tools.handle_function_call()` (same code path as Plobi' default runtime), and the result is returned to codex like any other MCP response.
 
 ### What's NOT available on this runtime
 
@@ -87,7 +87,7 @@ These four Plobi tools require the running AIAgent context (mid-loop state) to d
 
 ### Kanban (multi-agent worktree dispatch)
 
-**Works on this runtime, with one subtle dependency.** The kanban dispatcher spawns each worker as a separate `hermes chat -q` subprocess that reads the user's config — which means if `model.openai_runtime: codex_app_server` is set globally, workers also come up on the codex runtime.
+**Works on this runtime, with one subtle dependency.** The kanban dispatcher spawns each worker as a separate `plobi chat -q` subprocess that reads the user's config — which means if `model.openai_runtime: codex_app_server` is set globally, workers also come up on the codex runtime.
 
 What works inside a codex-runtime worker:
 - Codex's full toolset (shell, apply_patch, update_plan, view_image, web_search) — the worker does its actual task work natively
@@ -95,11 +95,11 @@ What works inside a codex-runtime worker:
 - The Plobi tool callback for browser_*, vision, image_gen, skills, TTS
 
 What also works because the MCP callback exposes them:
-- **`kanban_complete` / `kanban_block` / `kanban_comment` / `kanban_heartbeat`** — the worker handoff tools. These read `HERMES_KANBAN_TASK` from env (set by the dispatcher), gate access correctly, and write to the per-board SQLite DB pinned by `HERMES_KANBAN_DB`. Without these in the callback, a worker on this runtime could do its task but couldn't report back, hanging until the dispatcher's timeout.
+- **`kanban_complete` / `kanban_block` / `kanban_comment` / `kanban_heartbeat`** — the worker handoff tools. These read `PLOBI_KANBAN_TASK` from env (set by the dispatcher), gate access correctly, and write to the per-board SQLite DB pinned by `PLOBI_KANBAN_DB`. Without these in the callback, a worker on this runtime could do its task but couldn't report back, hanging until the dispatcher's timeout.
 - **`kanban_show` / `kanban_list`** — read-only board queries for the worker to check its own context.
 - **`kanban_create` / `kanban_unblock` / `kanban_link`** — orchestrator-only operations. Available for orchestrator agents running on the codex runtime that need to dispatch new tasks.
 
-The kanban tools are gated by `HERMES_KANBAN_TASK` env var the dispatcher sets — that var is propagated to the codex subprocess (codex inherits env) and from there to the spawned `hermes-tools` MCP server subprocess. So the tools see the right task id and gate correctly. For Codex app-server workers, Plobi also passes narrow app-server sandbox overrides when `HERMES_KANBAN_TASK` is present: keep `workspace-write` sandboxing, add the **board DB directory plus every Kanban path the dispatcher pinned** as extra writable roots (`HERMES_KANBAN_WORKSPACES_ROOT`, `HERMES_KANBAN_WORKSPACE`, legacy `HERMES_KANBAN_ROOT` — deduplicated, DB-dir first), and keep network disabled by default. This avoids the brittle `:danger-no-sandbox` workaround while letting `kanban_complete` / `kanban_block` update the board DB **and** letting workers write reports/artifacts under workspace mounts that live outside the DB directory (e.g. `/media/.../kanban-workspaces/...` on a separate drive — [issue #27941](https://github.com/NousResearch/hermes-agent/issues/27941)).
+The kanban tools are gated by `PLOBI_KANBAN_TASK` env var the dispatcher sets — that var is propagated to the codex subprocess (codex inherits env) and from there to the spawned `plobi-tools` MCP server subprocess. So the tools see the right task id and gate correctly. For Codex app-server workers, Plobi also passes narrow app-server sandbox overrides when `PLOBI_KANBAN_TASK` is present: keep `workspace-write` sandboxing, add the **board DB directory plus every Kanban path the dispatcher pinned** as extra writable roots (`PLOBI_KANBAN_WORKSPACES_ROOT`, `PLOBI_KANBAN_WORKSPACE`, legacy `PLOBI_KANBAN_ROOT` — deduplicated, DB-dir first), and keep network disabled by default. This avoids the brittle `:danger-no-sandbox` workaround while letting `kanban_complete` / `kanban_block` update the board DB **and** letting workers write reports/artifacts under workspace mounts that live outside the DB directory (e.g. `/media/.../kanban-workspaces/...` on a separate drive — [issue #27941](https://github.com/NousResearch/hermes-agent/issues/27941)).
 
 ### Cron jobs
 
@@ -143,7 +143,7 @@ The kanban tools are gated by `HERMES_KANBAN_TASK` env var the dispatcher sets �
    ```bash
    codex login                  # writes tokens to ~/.codex/auth.json
    ```
-   Plobi' own `hermes auth login codex` writes to `~/.hermes/auth.json` — that's a separate session. **Run `codex login` separately** if you haven't.
+   Plobi' own `plobi auth login codex` writes to `~/.plobi/auth.json` — that's a separate session. **Run `codex login` separately** if you haven't.
 
 3. **(Optional) Install the Codex plugins you want.** When you enable the runtime, Plobi auto-migrates whichever curated plugins you've already installed via Codex CLI:
    ```bash
@@ -163,7 +163,7 @@ In a Plobi session:
 That command:
 - Verifies the `codex` CLI is installed (blocks with an install hint if not).
 - Persists `model.openai_runtime: codex_app_server` to your config.yaml.
-- Migrates user MCP servers from `~/.hermes/config.yaml` to `~/.codex/config.toml`.
+- Migrates user MCP servers from `~/.plobi/config.yaml` to `~/.codex/config.toml`.
 - **Discovers and migrates installed native Codex plugins** (Linear, GitHub, Gmail, Calendar, Canva, etc.) by querying Codex's `plugin/list` RPC.
 - **Registers Plobi' own tools as an MCP server** so the codex subprocess can call back for tools codex doesn't ship with.
 - **Writes `default_permissions = ":workspace"`** so the sandbox allows writes within the workspace without prompting for every operation.
@@ -176,7 +176,7 @@ To check current state without changing anything:
 /codex-runtime
 ```
 
-You can also set it manually in `~/.hermes/config.yaml`:
+You can also set it manually in `~/.plobi/config.yaml`:
 ```yaml
 model:
   openai_runtime: codex_app_server   # default is "auto" (= Plobi runtime)
@@ -242,7 +242,7 @@ You can override the default in `~/.codex/config.toml` outside Plobi' managed bl
 default_permissions = ":read-only"
 ```
 
-(Plobi will preserve your override on re-migration as long as it lives outside the `# managed by hermes-agent` markers.)
+(Plobi will preserve your override on re-migration as long as it lives outside the `# managed by plobi-agent` markers.)
 
 ## Auxiliary tasks and ChatGPT subscription token cost
 
@@ -250,7 +250,7 @@ When this runtime is on with the `openai-codex` provider, **auxiliary tasks (tit
 
 This isn't specific to `codex_app_server` — it's true for the existing `codex_responses` path too — but it's more visible here because you're explicitly opting in for the subscription billing.
 
-To route specific aux tasks to a cheaper / different model, set explicit overrides in `~/.hermes/config.yaml`:
+To route specific aux tasks to a cheaper / different model, set explicit overrides in `~/.plobi/config.yaml`:
 
 ```yaml
 auxiliary:
@@ -275,13 +275,13 @@ The self-improvement review fork inherits the main runtime via `_current_main_ru
 Plobi wraps everything it manages between two marker comments:
 
 ```toml
-# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section
+# managed by plobi-agent — `plobi codex-runtime migrate` regenerates this section
 default_permissions = ":workspace"
 [mcp_servers.filesystem]
 ...
 [plugins."github@openai-curated"]
 ...
-# end hermes-agent managed section
+# end plobi-agent managed section
 ```
 
 Anything **outside** that block is yours. Re-running migration (via `/codex-runtime codex_app_server` or whenever you toggle the runtime on) replaces the managed block in place but preserves user content above and below it verbatim. This means you can:
@@ -295,16 +295,16 @@ Anything you add **inside** the managed block will get clobbered on the next mig
 
 ## Multi-profile / multi-tenant setups
 
-By default, Plobi points the codex subprocess at `~/.codex/` regardless of which Plobi profile is active. This means `hermes -p work` and `hermes -p personal` share the same Codex auth, plugins, and config. For most users this is the right behavior — it matches what running `codex` CLI directly would do.
+By default, Plobi points the codex subprocess at `~/.codex/` regardless of which Plobi profile is active. This means `plobi -p work` and `plobi -p personal` share the same Codex auth, plugins, and config. For most users this is the right behavior — it matches what running `codex` CLI directly would do.
 
-If you want per-profile Codex isolation (separate auth, separate installed plugins, separate config), set `CODEX_HOME` explicitly per profile. The cleanest way is to point at a directory under your `HERMES_HOME`:
+If you want per-profile Codex isolation (separate auth, separate installed plugins, separate config), set `CODEX_HOME` explicitly per profile. The cleanest way is to point at a directory under your `PLOBI_HOME`:
 
 ```bash
-# Inside the work profile, you might wrap hermes:
-CODEX_HOME=~/.hermes/profiles/work/codex hermes chat
+# Inside the work profile, you might wrap plobi:
+CODEX_HOME=~/.plobi/profiles/work/codex plobi chat
 ```
 
-You'll need to re-run `codex login` once with that `CODEX_HOME` set so the OAuth tokens land in the profile-scoped location. After that, `hermes -p work` will operate on isolated Codex state.
+You'll need to re-run `codex login` once with that `CODEX_HOME` set so the OAuth tokens land in the profile-scoped location. After that, `plobi -p work` will operate on isolated Codex state.
 
 We don't auto-scope this because moving an existing user's `~/.codex/` would silently invalidate their Codex CLI auth — anyone who already ran `codex login` would have to re-authenticate. Opt-in feels safer than surprising users.
 
@@ -351,15 +351,15 @@ What's NOT migrated:
 Codex's built-in toolset covers shell/file ops/patches but doesn't have web search, browser automation, vision, image generation, etc. To keep those usable in a codex turn, Plobi registers itself as an MCP server in `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.hermes-tools]
+[mcp_servers.plobi-tools]
 command = "/path/to/python"
-args = ["-m", "agent.transports.hermes_tools_mcp_server"]
-env = { HERMES_HOME = "/your/.hermes", PYTHONPATH = "...", HERMES_QUIET = "1" }
+args = ["-m", "agent.transports.plobi_tools_mcp_server"]
+env = { PLOBI_HOME = "/your/.plobi", PYTHONPATH = "...", PLOBI_QUIET = "1" }
 startup_timeout_sec = 30.0
 tool_timeout_sec = 600.0
 ```
 
-When the model calls `web_search` (or another exposed Plobi tool), codex spawns the `hermes_tools_mcp_server` subprocess via stdio, the request is dispatched through `model_tools.handle_function_call()`, and the result is projected back to codex like any other MCP response.
+When the model calls `web_search` (or another exposed Plobi tool), codex spawns the `plobi_tools_mcp_server` subprocess via stdio, the request is dispatched through `model_tools.handle_function_call()`, and the result is projected back to codex like any other MCP response.
 
 **Tools available via the callback:** `web_search`, `web_extract`, `browser_navigate`, `browser_click`, `browser_type`, `browser_press`, `browser_snapshot`, `browser_scroll`, `browser_back`, `browser_get_images`, `browser_console`, `browser_vision`, `vision_analyze`, `image_generate`, `skill_view`, `skills_list`, `text_to_speech`.
 
@@ -381,7 +381,7 @@ This runtime is **opt-in beta**. Working as of Plobi Agent 2026.5 + Codex CLI 0.
 
 - Multi-turn conversations
 - `commandExecution` and `fileChange` (apply_patch) approvals via Plobi UI
-- MCP tool calls (verified against `@modelcontextprotocol/server-filesystem` and the new `hermes-tools` callback)
+- MCP tool calls (verified against `@modelcontextprotocol/server-filesystem` and the new `plobi-tools` callback)
 - Native Codex plugin migration (verified against Linear / GitHub / Calendar inventory)
 - Deny/cancel paths
 - Toggle on/off cycle
@@ -390,12 +390,12 @@ This runtime is **opt-in beta**. Working as of Plobi Agent 2026.5 + Codex CLI 0.
 
 Known limitations:
 
-- **Plobi auth and codex auth are separate sessions.** You need both `codex login` AND `hermes auth login codex` for the cleanest UX (the runtime uses codex's session for the LLM call). This is a deliberate design choice in Plobi' `_import_codex_cli_tokens` — Plobi won't share OAuth state with codex CLI to avoid clobbering each other on token refresh.
+- **Plobi auth and codex auth are separate sessions.** You need both `codex login` AND `plobi auth login codex` for the cleanest UX (the runtime uses codex's session for the LLM call). This is a deliberate design choice in Plobi' `_import_codex_cli_tokens` — Plobi won't share OAuth state with codex CLI to avoid clobbering each other on token refresh.
 - **`delegate_task`, `memory`, `session_search`, `todo` are unavailable on this runtime.** They need the running AIAgent context which a stateless MCP callback can't provide. Use `/codex-runtime auto` when you need these.
 - **No inline patch preview in approval prompts when codex doesn't track the changeset.** Codex's `fileChange` approval params don't always carry the changeset. Plobi caches the data from the corresponding `item/started` notification when possible, but if approval arrives before the item has streamed, the prompt falls back to whatever `reason` codex provides.
 - **Sub-second cancellation isn't guaranteed.** Mid-stream interrupts (Ctrl+C while codex is responding) are sent via `turn/interrupt`, but if codex has already flushed the final message, you get the response anyway.
 
-If you find a bug, [open an issue](https://github.com/NousResearch/hermes-agent/issues) with the output of `hermes logs --since 5m`. Mention `codex-runtime` in the title so it's easy to triage.
+If you find a bug, [open an issue](https://github.com/NousResearch/hermes-agent/issues) with the output of `plobi logs --since 5m`. Mention `codex-runtime` in the title so it's easy to triage.
 
 ## Architecture
 
@@ -427,7 +427,7 @@ If you find a bug, [open an issue](https://github.com/NousResearch/hermes-agent/
         │   │  │   (linear, github,   │     │
         │   │  │    gmail, calendar,  │     │
         │   │  │    canva, ...)       │     │
-        │   │  └─ hermes-tools ───────┼─────────────────┐
+        │   │  └─ plobi-tools ───────┼─────────────────┐
         │   │       (callback to     │     │           │
         │   │        Plobi' richer  │     │           │
         │   │        tools)          │     │           │
@@ -436,7 +436,7 @@ If you find a bug, [open an issue](https://github.com/NousResearch/hermes-agent/
                                                         │
                                                         ▼
         ┌──────────────────────────────────────────────────────────┐
-        │  hermes_tools_mcp_server.py (subprocess on demand)        │
+        │  plobi_tools_mcp_server.py (subprocess on demand)        │
         │   web_search, web_extract, browser_*, vision_analyze,    │
         │   image_generate, skill_view, skills_list, text_to_speech│
         └──────────────────────────────────────────────────────────┘

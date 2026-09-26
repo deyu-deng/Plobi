@@ -24,15 +24,15 @@ description: "将你的 Nous Portal 订阅（或其他 OAuth 提供商）用作�
 ### 1. 登录你的提供商（仅需一次）
 
 ```bash
-hermes portal
+plobi portal
 ```
 
-这会打开浏览器进行 Nous Portal OAuth 流程。Plobi 将刷新令牌存储在 `~/.hermes/auth.json` 中——与所有 Plobi 提供商登录信息存放在同一位置。
+这会打开浏览器进行 Nous Portal OAuth 流程。Plobi 将刷新令牌存储在 `~/.plobi/auth.json` 中——与所有 Plobi 提供商登录信息存放在同一位置。
 
 ### 2. 启动代理
 
 ```bash
-hermes proxy start
+plobi proxy start
 ```
 
 ```
@@ -59,15 +59,15 @@ Model:      Plobi-4-70B    # 或 Plobi-4.3-36B、Plobi-4-405B
 ## 可用提供商
 
 ```bash
-hermes proxy providers
+plobi proxy providers
 ```
 
-当前已内置：`nous`（Nous Portal）。更多 OAuth 提供商可通过在 `hermes_cli/proxy/adapters/` 中实现 `UpstreamAdapter` 接口来添加。
+当前已内置：`nous`（Nous Portal）。更多 OAuth 提供商可通过在 `plobi_cli/proxy/adapters/` 中实现 `UpstreamAdapter` 接口来添加。
 
 ## 检查状态
 
 ```bash
-hermes proxy status
+plobi proxy status
 ```
 
 ```
@@ -76,7 +76,7 @@ Plobi proxy upstream adapters
   [nous    ] Nous Portal — ready (bearer expires 2026-05-15T06:43:21Z)
 ```
 
-如果显示 `not logged in`，请运行 `hermes portal`。如果显示 `credentials need attention`，说明你的刷新令牌已被撤销（较少见——通常发生在你从 Portal Web UI 退出登录时）——重新运行 `hermes portal` 即可。
+如果显示 `not logged in`，请运行 `plobi portal`。如果显示 `credentials need attention`，说明你的刷新令牌已被撤销（较少见——通常发生在你从 Portal Web UI 退出登录时）——重新运行 `plobi portal` 即可。
 
 ## 允许的路径
 
@@ -112,7 +112,7 @@ Plobi proxy upstream adapters
 
 ```bash
 # 终端 1
-hermes proxy start
+plobi proxy start
 
 # 终端 2
 openviking-server
@@ -138,7 +138,7 @@ INFERENCE_TEXT_MODEL=Plobi-4-70B
 默认情况下，代理绑定 `127.0.0.1`（仅限本机）。若要让网络中的其他机器使用：
 
 ```bash
-hermes proxy start --host 0.0.0.0 --port 8645
+plobi proxy start --host 0.0.0.0 --port 8645
 ```
 
 ⚠ **注意：** 你网络中的任何人现在都可以使用你的 Portal 订阅。代理本身没有认证机制——它接受任意 bearer。如果你将其暴露在可信网络之外，请使用防火墙、VPN 或带有适当认证的反向代理。
@@ -160,4 +160,4 @@ hermes proxy start --host 0.0.0.0 --port 8645
 
 ## 未来：更多 OAuth 提供商
 
-适配器系统是可插拔的。添加新提供商（例如 HuggingFace、GitHub Copilot 的聊天端点、通过 OAuth 接入的 Anthropic）需要在 `hermes_cli/proxy/adapters/<provider>.py` 中实现 `UpstreamAdapter`，并在 `adapters/__init__.py` 中注册。协议层面不兼容 OpenAI 的提供商（例如 Anthropic Messages API）需要额外的转换层，这超出了当前版本的范围。
+适配器系统是可插拔的。添加新提供商（例如 HuggingFace、GitHub Copilot 的聊天端点、通过 OAuth 接入的 Anthropic）需要在 `plobi_cli/proxy/adapters/<provider>.py` 中实现 `UpstreamAdapter`，并在 `adapters/__init__.py` 中注册。协议层面不兼容 OpenAI 的提供商（例如 Anthropic Messages API）需要额外的转换层，这超出了当前版本的范围。

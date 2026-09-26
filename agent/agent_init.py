@@ -47,9 +47,9 @@ from agent.tool_guardrails import (
     ToolCallGuardrailController,
     ToolGuardrailDecision,
 )
-from hermes_cli.config import cfg_get
-from hermes_cli.timeouts import get_provider_request_timeout
-from hermes_constants import get_hermes_home
+from plobi_cli.config import cfg_get
+from plobi_cli.timeouts import get_provider_request_timeout
+from plobi_constants import get_plobi_home
 from utils import base_url_host_matches, is_truthy_value
 
 # Use the same logger name as run_agent so tests patching ``run_agent.logger``
@@ -86,7 +86,7 @@ def _build_codex_gpt5_autoraise_notice(autoraise: Dict[str, Any]) -> str:
         f"ℹ Codex {model} caps context at {cap}, so auto-compaction was raised "
         f"to {to_pct}% (from {from_pct}%) to use more of the window before "
         f"summarizing.\n"
-        f"  Opt back out: hermes config set compression.codex_gpt55_autoraise false"
+        f"  Opt back out: plobi config set compression.codex_gpt55_autoraise false"
     )
 
 
@@ -128,11 +128,11 @@ def _resolve_compression_threshold(
 def _codex_gpt55_autoraise_notice_marker():
     """Path to the per-profile marker recording that the autoraise notice ran.
 
-    Lives under ``$HERMES_HOME`` (which is profile-scoped) alongside the other
+    Lives under ``$PLOBI_HOME`` (which is profile-scoped) alongside the other
     internal markers like ``.container-mode`` — so it is not a user-facing config
     key, and every profile tracks its own notice state independently.
     """
-    return get_hermes_home() / ".codex_gpt55_autoraise_notice"
+    return get_plobi_home() / ".codex_gpt55_autoraise_notice"
 
 
 def _codex_gpt55_autoraise_notice_state(autoraise: Dict[str, Any]) -> str:
@@ -167,7 +167,7 @@ def _codex_gpt55_autoraise_notice_seen(autoraise: Dict[str, Any]) -> bool:
 def _record_codex_gpt55_autoraise_notice(autoraise: Dict[str, Any]) -> None:
     """Persist that the autoraise notice was shown for this profile/config state.
 
-    Best-effort: a read-only or missing ``$HERMES_HOME`` just means the notice
+    Best-effort: a read-only or missing ``$PLOBI_HOME`` just means the notice
     may show again next init, which is preferable to breaking agent init.
     """
     try:
@@ -373,10 +373,10 @@ def init_agent(
         platform (str): The interface platform the user is on (e.g. "cli", "telegram", "discord", "whatsapp").
             Used to inject platform-specific formatting hints into the system prompt.
         skip_context_files (bool): If True, skip auto-injection of project context files
-            (SOUL.md, .hermes.md, AGENTS.md, CLAUDE.md, .cursorrules) from the cwd / HERMES_HOME
+            (SOUL.md, .plobi.md, AGENTS.md, CLAUDE.md, .cursorrules) from the cwd / PLOBI_HOME
             into the system prompt. Use this for batch processing and data generation to avoid
             polluting trajectories with user-specific persona or project instructions.
-        load_soul_identity (bool): If True, still use ~/.hermes/SOUL.md as the primary
+        load_soul_identity (bool): If True, still use ~/.plobi/SOUL.md as the primary
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
     """
@@ -462,7 +462,7 @@ def init_agent(
         pass  # Non-fatal — transport may not exist for all modes yet
 
     try:
-        from hermes_cli.model_normalize import (
+        from plobi_cli.model_normalize import (
             _AGGREGATOR_PROVIDERS,
             normalize_model_for_provider,
         )
@@ -614,7 +614,7 @@ def init_agent(
     # sessions with >5-minute pauses between turns (#14971).
     agent._cache_ttl = "5m"
     try:
-        from hermes_cli.config import load_config as _load_pc_cfg
+        from plobi_cli.config import load_config as _load_pc_cfg
 
         _pc_cfg = _load_pc_cfg().get("prompt_caching", {}) or {}
         _ttl = _pc_cfg.get("cache_ttl", "5m")
@@ -655,7 +655,7 @@ def init_agent(
     # Credits tracking (dev-only, L0 usage-aware-credits) — updated from
     # x-nous-credits-* response headers after each API call.  Session-start
     # remaining is latched the first time a header is ever seen so we can
-    # report cumulative micros spent.  Surfaced behind HERMES_DEV_CREDITS.
+    # report cumulative micros spent.  Surfaced behind PLOBI_DEV_CREDITS.
     agent._credits_state = None
     agent._credits_session_start_micros = None
     # Threshold-notice latch (L4): active sticky-notice keys + the warn90 crossing gate.
@@ -666,10 +666,10 @@ def init_agent(
     agent._or_cache_hits: int = 0
 
     # Centralized logging — agent.log (INFO+) and errors.log (WARNING+)
-    # both live under ~/.hermes/logs/.  Idempotent, so gateway mode
+    # both live under ~/.plobi/logs/.  Idempotent, so gateway mode
     # (which creates a new AIAgent per message) won't duplicate handlers.
-    from hermes_logging import setup_logging, setup_verbose_logging
-    setup_logging(hermes_home=_ra()._hermes_home)
+    from plobi_logging import setup_logging, setup_verbose_logging
+    setup_logging(plobi_home=_ra()._plobi_home)
 
     if agent.verbose_logging:
         setup_verbose_logging()
@@ -680,11 +680,11 @@ def init_agent(
         # root logger's file handlers (agent.log, errors.log) from
         # ever seeing the records, because Python checks
         # logger.isEnabledFor() before handler propagation. We rely
-        # on the fact that hermes_logging.setup_logging() does not
+        # on the fact that plobi_logging.setup_logging() does not
         # install a console StreamHandler in quiet mode — so INFO
         # records flow to the file handlers but never reach a
         # console. Any future noise reduction belongs at the
-        # handler level inside hermes_logging.py, not here.
+        # handler level inside plobi_logging.py, not here.
         pass
     
     # Internal stream callback (set during streaming TTS).
@@ -776,7 +776,7 @@ def init_agent(
             # state cost is one file read + one timestamp compare per request.
             if agent.provider == "minimax-oauth" and isinstance(effective_key, str) and effective_key:
                 try:
-                    from hermes_cli.auth import build_minimax_oauth_token_provider
+                    from plobi_cli.auth import build_minimax_oauth_token_provider
                     effective_key = build_minimax_oauth_token_provider()
                 except Exception as _mm_exc:  # noqa: BLE001 — never block startup on this
                     import logging as _logging
@@ -872,7 +872,7 @@ def init_agent(
         # Guardrail config — read from config.yaml at init time.
         agent._bedrock_guardrail_config = None
         try:
-            from hermes_cli.config import load_config as _load_br_cfg
+            from plobi_cli.config import load_config as _load_br_cfg
             _gr = _load_br_cfg().get("bedrock", {}).get("guardrail", {})
             if _gr.get("guardrail_identifier") and _gr.get("guardrail_version"):
                 agent._bedrock_guardrail_config = {
@@ -925,7 +925,7 @@ def init_agent(
             elif base_url_host_matches(effective_base, "api.routermint.com"):
                 client_kwargs["default_headers"] = _ra()._routermint_headers()
             elif base_url_host_matches(effective_base, "githubcopilot.com"):
-                from hermes_cli.models import copilot_default_headers
+                from plobi_cli.models import copilot_default_headers
 
                 client_kwargs["default_headers"] = copilot_default_headers()
             elif base_url_host_matches(effective_base, "api.kimi.com"):
@@ -982,7 +982,7 @@ def init_agent(
                     # (e.g. alibaba → DASHSCOPE_API_KEY, not ALIBABA_API_KEY).
                     _env_hint = f"{_explicit.upper()}_API_KEY"
                     try:
-                        from hermes_cli.auth import PROVIDER_REGISTRY
+                        from plobi_cli.auth import PROVIDER_REGISTRY
                         _pcfg = PROVIDER_REGISTRY.get(_explicit)
                         if _pcfg and _pcfg.api_key_env_vars:
                             _env_hint = _pcfg.api_key_env_vars[0]
@@ -1032,13 +1032,13 @@ def init_agent(
                         raise RuntimeError(
                             f"Provider '{_explicit}' is set in config.yaml but no API key "
                             f"was found. Set the {_env_hint} environment "
-                            f"variable, or switch to a different provider with `hermes model`."
+                            f"variable, or switch to a different provider with `plobi model`."
                         )
                 if not getattr(agent, "_fallback_activated", False):
                     # No provider configured — reject with a clear message.
                     raise RuntimeError(
-                        "No LLM provider configured. Run `hermes model` to "
-                        "select a provider, or run `hermes setup` for first-time "
+                        "No LLM provider configured. Run `plobi model` to "
+                        "select a provider, or run `plobi setup` for first-time "
                         "configuration."
                     )
         
@@ -1071,7 +1071,7 @@ def init_agent(
         agent._apply_user_default_headers()
 
         try:
-            from hermes_cli.config import (
+            from plobi_cli.config import (
                 apply_custom_provider_extra_headers_to_client_kwargs,
                 apply_custom_provider_tls_to_client_kwargs,
                 get_compatible_custom_providers,
@@ -1181,7 +1181,7 @@ def init_agent(
 
     # Kanban worker/orchestrator lifecycle guidance is session-static:
     # the dispatcher decides at spawn time whether this process is a kanban
-    # worker (kanban_show tool is present iff HERMES_KANBAN_TASK is set).
+    # worker (kanban_show tool is present iff PLOBI_KANBAN_TASK is set).
     # Resolving the ~835-token block once here avoids re-running the
     # membership test + reference on every system-prompt rebuild
     # (init + each context compression).
@@ -1236,19 +1236,19 @@ def init_agent(
 
         set_current_session_id(agent.session_id)
     except Exception:
-        os.environ["HERMES_SESSION_ID"] = agent.session_id
+        os.environ["PLOBI_SESSION_ID"] = agent.session_id
 
-    # Session logs go into ~/.hermes/sessions/ alongside gateway sessions
-    hermes_home = get_hermes_home()
-    agent.logs_dir = hermes_home / "sessions"
+    # Session logs go into ~/.plobi/sessions/ alongside gateway sessions
+    plobi_home = get_plobi_home()
+    agent.logs_dir = plobi_home / "sessions"
     agent.logs_dir.mkdir(parents=True, exist_ok=True)
-    # Per-session JSON snapshot writer (~/.hermes/sessions/session_{sid}.json)
+    # Per-session JSON snapshot writer (~/.plobi/sessions/session_{sid}.json)
     # is opt-in via sessions.write_json_snapshots (default False).  state.db
     # is canonical — the snapshot is only useful for external tooling that
     # reads the JSON files directly.  See run_agent._save_session_log.
     agent._session_json_enabled = False
     try:
-        from hermes_cli.config import load_config as _load_sess_cfg
+        from plobi_cli.config import load_config as _load_sess_cfg
         _sess_cfg = (_load_sess_cfg().get("sessions") or {})
         agent._session_json_enabled = bool(_sess_cfg.get("write_json_snapshots", False))
     except Exception:
@@ -1308,7 +1308,7 @@ def init_agent(
     
     # Load config once for memory, skills, and compression sections
     try:
-        from hermes_cli.config import load_config as _load_agent_config
+        from plobi_cli.config import load_config as _load_agent_config
         _agent_cfg = _load_agent_config()
     except Exception:
         _agent_cfg = {}
@@ -1368,7 +1368,7 @@ def init_agent(
                     _init_kwargs = {
                         "session_id": agent.session_id,
                         "platform": platform or "cli",
-                        "hermes_home": str(get_hermes_home()),
+                        "plobi_home": str(get_plobi_home()),
                         "agent_context": "primary",
                     }
                     if _init_kwargs["platform"] == "cli":
@@ -1403,10 +1403,10 @@ def init_agent(
                         _init_kwargs["gateway_session_key"] = agent._gateway_session_key
                     # Profile identity for per-profile provider scoping
                     try:
-                        from hermes_cli.profiles import get_active_profile_name
+                        from plobi_cli.profiles import get_active_profile_name
                         _profile = get_active_profile_name()
                         _init_kwargs["agent_identity"] = _profile
-                        _init_kwargs["agent_workspace"] = "hermes"
+                        _init_kwargs["agent_workspace"] = "plobi"
                     except Exception:
                         pass
                     agent._memory_manager.initialize_all(**_init_kwargs)
@@ -1575,10 +1575,10 @@ def init_agent(
     codex_app_server_auto_compaction = str(
         _compression_cfg.get("codex_app_server_auto", "native") or "native"
     ).lower()
-    if codex_app_server_auto_compaction not in {"native", "hermes", "off"}:
+    if codex_app_server_auto_compaction not in {"native", "plobi", "off"}:
         _ra().logger.warning(
             "Invalid compression.codex_app_server_auto=%r; using 'native'. "
-            "Valid values are: native, hermes, off.",
+            "Valid values are: native, plobi, off.",
             codex_app_server_auto_compaction,
         )
         codex_app_server_auto_compaction = "native"
@@ -1655,7 +1655,7 @@ def init_agent(
     # Resolve custom_providers list once for reuse below (startup
     # context-length override and plugin context-engine init).
     try:
-        from hermes_cli.config import get_compatible_custom_providers
+        from plobi_cli.config import get_compatible_custom_providers
         _custom_providers = get_compatible_custom_providers(_agent_cfg)
     except Exception:
         _custom_providers = _agent_cfg.get("custom_providers")
@@ -1670,7 +1670,7 @@ def init_agent(
     # Check custom_providers per-model context_length
     if _config_context_length is None and _custom_providers:
         try:
-            from hermes_cli.config import get_custom_provider_context_length
+            from plobi_cli.config import get_custom_provider_context_length
             _cp_ctx_resolved = get_custom_provider_context_length(
                 model=agent.model,
                 base_url=agent.base_url,
@@ -1750,7 +1750,7 @@ def init_agent(
         if _selected_engine is None:
             _candidate = None
             try:
-                from hermes_cli.plugins import get_plugin_context_engine
+                from plobi_cli.plugins import get_plugin_context_engine
                 _candidate = get_plugin_context_engine()
             except Exception:
                 _candidate = None
@@ -1861,10 +1861,10 @@ def init_agent(
     # non-CLI surface to still surface the warning.)
     if not agent.quiet_mode and (agent.platform or "cli") != "cli":
         try:
-            from hermes_cli.model_switch import _check_hermes_model_warning
+            from plobi_cli.model_switch import _check_plobi_model_warning
 
-            _hermes_warn = _check_hermes_model_warning(agent.model or "")
-            if _hermes_warn:
+            _plobi_warn = _check_plobi_model_warning(agent.model or "")
+            if _plobi_warn:
                 _user_msg = (
                     "⚠ Plobi 3 & 4 chat models are NOT agentic — they "
                     "lack reliable tool-calling for agent workflows (delegation, "
@@ -1875,7 +1875,7 @@ def init_agent(
                     agent._emit_warning(_user_msg)
                 else:
                     print(f"\n{_user_msg}\n", file=sys.stderr)
-                _ra().logger.warning(_hermes_warn)
+                _ra().logger.warning(_plobi_warn)
         except Exception:
             pass
 
@@ -1935,7 +1935,7 @@ def init_agent(
         try:
             agent.context_compressor.on_session_start(
                 agent.session_id,
-                hermes_home=str(get_hermes_home()),
+                plobi_home=str(get_plobi_home()),
                 platform=agent.platform or "cli",
                 model=agent.model,
                 context_length=getattr(agent.context_compressor, "context_length", 0),
@@ -2108,7 +2108,7 @@ def init_agent(
     # open. Idempotent and a no-op for L2 / non-default profiles. See
     # ``plugins/plobi-north-star/l1_budget.py::apply_l1_budget``.
     try:
-        from hermes_plugins.plobi_north_star.l1_budget import (
+        from plobi_plugins.plobi_north_star.l1_budget import (
             apply_l1_budget as _apply_l1_budget_init,
         )
         _apply_l1_budget_init(agent)

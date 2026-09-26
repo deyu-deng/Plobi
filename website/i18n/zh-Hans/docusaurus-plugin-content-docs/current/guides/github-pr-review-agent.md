@@ -37,9 +37,9 @@ description: "构建一个自动化 AI 代码审查器，监控你的仓库、�
 - **已安装 Plobi Agent** — 参见[安装指南](/getting-started/installation)
 - **Gateway 已运行**（用于 cron 任务）：
   ```bash
-  hermes gateway install   # Install as a service
+  plobi gateway install   # Install as a service
   # or
-  hermes gateway           # Run in foreground
+  plobi gateway           # Run in foreground
   ```
 - **已安装并认证 GitHub CLI（`gh`）**：
   ```bash
@@ -53,7 +53,7 @@ description: "构建一个自动化 AI 代码审查器，监控你的仓库、�
 - **已配置消息通知**（可选）— [Telegram](/user-guide/messaging/telegram) 或 [Discord](/user-guide/messaging/discord)
 
 :::tip 没有消息通知？没关系
-使用 `deliver: "local"` 将审查结果保存到 `~/.hermes/cron/output/`。在接入通知之前用于测试非常方便。
+使用 `deliver: "local"` 将审查结果保存到 `~/.plobi/cron/output/`。在接入通知之前用于测试非常方便。
 :::
 
 ---
@@ -63,13 +63,13 @@ description: "构建一个自动化 AI 代码审查器，监控你的仓库、�
 确保 Plobi 可以访问 GitHub。启动对话：
 
 ```bash
-hermes
+plobi
 ```
 
 用一个简单命令测试：
 
 ```
-Run: gh pr list --repo NousResearch/hermes-agent --state open --limit 3
+Run: gh pr list --repo NousResearch/plobi-agent --state open --limit 3
 ```
 
 你应该能看到一个开放 PR 的列表。如果成功，就可以继续了。
@@ -84,7 +84,7 @@ Run: gh pr list --repo NousResearch/hermes-agent --state open --limit 3
 Review this pull request. Read the diff, check for bugs, security issues,
 and code quality. Be specific about line numbers and quote problematic code.
 
-Run: gh pr diff 3888 --repo NousResearch/hermes-agent
+Run: gh pr diff 3888 --repo NousResearch/plobi-agent
 ```
 
 Plobi 将会：
@@ -101,10 +101,10 @@ Plobi 将会：
 Skill 为 Plobi 提供一致的审查准则，在会话和 cron 运行之间持久保存。没有 skill，审查质量会参差不齐。
 
 ```bash
-mkdir -p ~/.hermes/skills/code-review
+mkdir -p ~/.plobi/skills/code-review
 ```
 
-创建 `~/.hermes/skills/code-review/SKILL.md`：
+创建 `~/.plobi/skills/code-review/SKILL.md`：
 
 ```markdown
 ---
@@ -137,7 +137,7 @@ For each finding:
 - End with: APPROVE / REQUEST_CHANGES / COMMENT
 ```
 
-验证是否已加载——启动 `hermes`，你应该能在启动时的 skill 列表中看到 `code-review`。
+验证是否已加载——启动 `plobi`，你应该能在启动时的 skill 列表中看到 `code-review`。
 
 ---
 
@@ -167,7 +167,7 @@ We use React Query for data fetching, never useEffect for API calls.
 现在把所有内容串联起来。创建一个每 2 小时运行一次的 cron 任务：
 
 ```bash
-hermes cron create "0 */2 * * *" \
+plobi cron create "0 */2 * * *" \
   "Check for new open PRs and review them.
 
 Repos to monitor:
@@ -196,7 +196,7 @@ If no new PRs found, say: No new PRs to review." \
 验证任务已调度：
 
 ```bash
-hermes cron list
+plobi cron list
 ```
 
 ### 其他常用调度计划
@@ -215,7 +215,7 @@ hermes cron list
 不想等待调度？手动触发：
 
 ```bash
-hermes cron run pr-review
+plobi cron run pr-review
 ```
 
 或在对话会话中：
@@ -250,7 +250,7 @@ After reviewing, post your review:
 创建一个每周一早上的仓库概览：
 
 ```bash
-hermes cron create "0 9 * * 1" \
+plobi cron create "0 9 * * 1" \
   "Generate a weekly PR dashboard:
 - myorg/backend-api
 - myorg/frontend-app
@@ -285,8 +285,8 @@ Gateway 在精简环境中运行。请确保 `gh` 在系统 PATH 中，然后重
 
 ### Cron 任务未运行
 ```bash
-hermes gateway status    # Is the gateway running?
-hermes cron list         # Is the job enabled?
+plobi gateway status    # Is the gateway running?
+plobi cron list         # Is the job enabled?
 ```
 
 ### 速率限制

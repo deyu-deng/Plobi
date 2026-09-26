@@ -20,7 +20,7 @@ import {
   dismissAgendaEvent,
   getAgenda,
   updateAgendaEvent
-} from '@/hermes'
+} from '@/plobi'
 import { type Translations, useI18n } from '@/i18n'
 import { selectDesktopPaths } from '@/lib/desktop-fs'
 import {
@@ -37,7 +37,7 @@ import {
   upsertAgendaEvent
 } from '@/store/agenda'
 import { notify, notifyError } from '@/store/notifications'
-import type { AgendaEvent, AgendaKind } from '@/types/hermes'
+import type { AgendaEvent, AgendaKind } from '@/types/plobi'
 
 import {
   Panel,

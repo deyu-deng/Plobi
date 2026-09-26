@@ -5,7 +5,7 @@ version: 0.2.0
 author: Plobi
 license: MIT
 metadata:
-  hermes:
+  plobi:
     tags: [plobi, learning, skills]
 ---
 
@@ -16,4 +16,4 @@ metadata:
 1. `plobi` `area=ops` `action=learn_observe` with title + steps.
 2. `action=learn_drafts` after repeats.
 3. Human approves → `action=learn_resolve` approve=true.
-4. Materialize with Hermes `skill_manage` only after approval.
+4. Materialize with Plobi `skill_manage` only after approval.

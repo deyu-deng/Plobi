@@ -375,9 +375,9 @@ class WebhookAdapter(BasePlatformAdapter):
 
     def _reload_dynamic_routes(self) -> None:
         """Reload agent-created subscriptions from disk if the file changed."""
-        from hermes_constants import get_hermes_home
-        hermes_home = get_hermes_home()
-        subs_path = hermes_home / _DYNAMIC_ROUTES_FILENAME
+        from plobi_constants import get_plobi_home
+        plobi_home = get_plobi_home()
+        subs_path = plobi_home / _DYNAMIC_ROUTES_FILENAME
         if not subs_path.exists():
             if self._dynamic_routes:
                 self._dynamic_routes = {}
@@ -453,7 +453,7 @@ class WebhookAdapter(BasePlatformAdapter):
             # the single-profile gateway (don't 404 a would-be valid route).
             return None
         try:
-            from hermes_cli.profiles import profiles_to_serve
+            from plobi_cli.profiles import profiles_to_serve
             served = {name for name, _ in profiles_to_serve(multiplex=True)}
         except Exception:
             return _PROFILE_REJECTED

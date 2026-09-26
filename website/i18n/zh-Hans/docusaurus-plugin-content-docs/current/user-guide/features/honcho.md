@@ -33,19 +33,19 @@ Honcho 已集成到 [Memory Providers](./memory-providers.md) 系统中。以下
 ## 设置
 
 ```bash
-hermes memory setup    # 从 provider 列表中选择 "honcho"
+plobi memory setup    # 从 provider 列表中选择 "honcho"
 ```
 
 或手动配置：
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.plobi/config.yaml
 memory:
   provider: honcho
 ```
 
 ```bash
-echo 'HONCHO_API_KEY=***' >> ~/.hermes/.env
+echo 'HONCHO_API_KEY=***' >> ~/.plobi/.env
 ```
 
 在 [honcho.dev](https://honcho.dev) 获取 API key。
@@ -104,7 +104,7 @@ echo 'HONCHO_API_KEY=***' >> ~/.hermes/.env
 
 ## 配置选项
 
-Honcho 在 `~/.honcho/config.json`（全局）或 `$HERMES_HOME/honcho.json`（profile 本地）中配置。设置向导会自动处理。
+Honcho 在 `~/.honcho/config.json`（全局）或 `$PLOBI_HOME/honcho.json`（profile 本地）中配置。设置向导会自动处理。
 
 ### 完整配置参考
 
@@ -127,7 +127,7 @@ Honcho 在 `~/.honcho/config.json`（全局）或 `$HERMES_HOME/honcho.json`（p
 | `sessionStrategy` | `'per-directory'` | `per-directory`、`per-repo`、`per-session` 或 `global` |
 
 **会话策略**控制 Honcho 会话与工作内容的映射方式：
-- `per-session` — 每次 `hermes` 运行获得一个新会话。干净启动，通过 tools 访问记忆。推荐新用户使用。
+- `per-session` — 每次 `plobi` 运行获得一个新会话。干净启动，通过 tools 访问记忆。推荐新用户使用。
 - `per-directory` — 每个工作目录对应一个 Honcho 会话，上下文跨运行积累。
 - `per-repo` — 每个 git 仓库对应一个会话。
 - `global` — 所有目录共用一个会话。
@@ -199,34 +199,34 @@ Honcho 将对话建模为 peer 之间的消息交换。每个 peer 有两个观�
 
 ## CLI 命令
 
-`hermes honcho` 子命令**仅在 Honcho 为当前活跃 memory provider 时注册**（`config.yaml` 中 `memory.provider: honcho`）。先运行 `hermes memory setup` 并选择 Honcho，子命令将在下次调用时出现。
+`plobi honcho` 子命令**仅在 Honcho 为当前活跃 memory provider 时注册**（`config.yaml` 中 `memory.provider: honcho`）。先运行 `plobi memory setup` 并选择 Honcho，子命令将在下次调用时出现。
 
 ```bash
-hermes honcho status          # 连接状态、配置及关键设置
-hermes honcho setup           # 重定向到 `hermes memory setup`
-hermes honcho strategy        # 查看或设置会话策略（per-session/per-directory/per-repo/global）
-hermes honcho peer            # 查看或更新 peer 名称及辩证推理级别
-hermes honcho mode            # 查看或设置 recall 模式（hybrid/context/tools）
-hermes honcho tokens          # 查看或设置上下文和辩证的 token 预算
-hermes honcho identity        # 初始化或查看 AI peer 的 Honcho 身份
-hermes honcho sync            # 将 Honcho 配置同步到所有现有 profile
-hermes honcho peers           # 查看所有 profile 中的 peer 身份
-hermes honcho sessions        # 列出已知的 Honcho 会话映射
-hermes honcho map             # 将当前目录映射到 Honcho 会话名称
-hermes honcho enable          # 为当前 profile 启用 Honcho
-hermes honcho disable         # 为当前 profile 禁用 Honcho
-hermes honcho migrate         # 从 openclaw-honcho 迁移的分步指南
+plobi honcho status          # 连接状态、配置及关键设置
+plobi honcho setup           # 重定向到 `plobi memory setup`
+plobi honcho strategy        # 查看或设置会话策略（per-session/per-directory/per-repo/global）
+plobi honcho peer            # 查看或更新 peer 名称及辩证推理级别
+plobi honcho mode            # 查看或设置 recall 模式（hybrid/context/tools）
+plobi honcho tokens          # 查看或设置上下文和辩证的 token 预算
+plobi honcho identity        # 初始化或查看 AI peer 的 Honcho 身份
+plobi honcho sync            # 将 Honcho 配置同步到所有现有 profile
+plobi honcho peers           # 查看所有 profile 中的 peer 身份
+plobi honcho sessions        # 列出已知的 Honcho 会话映射
+plobi honcho map             # 将当前目录映射到 Honcho 会话名称
+plobi honcho enable          # 为当前 profile 启用 Honcho
+plobi honcho disable         # 为当前 profile 禁用 Honcho
+plobi honcho migrate         # 从 openclaw-honcho 迁移的分步指南
 ```
 
-## 从 `hermes honcho` 迁移
+## 从 `plobi honcho` 迁移
 
-如果你之前使用了独立的 `hermes honcho setup`：
+如果你之前使用了独立的 `plobi honcho setup`：
 
 1. 你的现有配置（`honcho.json` 或 `~/.honcho/config.json`）已保留
 2. 你的服务端数据（记忆、结论、用户画像）完好无损
 3. 在 config.yaml 中设置 `memory.provider: honcho` 即可重新激活
 
-无需重新登录或重新设置。运行 `hermes memory setup` 并选择"honcho"——向导会自动检测你的现有配置。
+无需重新登录或重新设置。运行 `plobi memory setup` 并选择"honcho"——向导会自动检测你的现有配置。
 
 ## 完整文档
 

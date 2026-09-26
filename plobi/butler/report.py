@@ -243,13 +243,13 @@ def build_day_digest(
 
 
 def digest_state_path() -> Path:
-    """``HERMES_HOME/plobi/digest_state.json``（与看门狗同一套 home 解析）。"""
+    """``PLOBI_HOME/plobi/digest_state.json``（与看门狗同一套 home 解析）。"""
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / DIGEST_STATE_FILENAME
 
 

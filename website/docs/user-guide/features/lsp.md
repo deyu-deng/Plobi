@@ -91,7 +91,7 @@ agent sees a syntax-clean file with semantic problems as
 For "manual" entries, install the server through whatever toolchain
 manager makes sense for that language (rustup, ghcup, opam, brew,
 …). Plobi auto-detects the binary on PATH or in
-`<HERMES_HOME>/lsp/bin/`.
+`<PLOBI_HOME>/lsp/bin/`.
 
 ### PowerShell
 
@@ -108,10 +108,10 @@ host. Setup:
    `PowerShellEditorServices/Start-EditorServices.ps1`. Either:
    - set `lsp.servers.powershell.command: ["/path/to/bundle"]` in
      `config.yaml`, or
-   - extract it to `<HERMES_HOME>/lsp/PowerShellEditorServices`, or
+   - extract it to `<PLOBI_HOME>/lsp/PowerShellEditorServices`, or
    - export `PSES_BUNDLE_PATH=/path/to/bundle`.
 
-`hermes lsp status` reports `installed` once `pwsh` is found; if the
+`plobi lsp status` reports `installed` once `pwsh` is found; if the
 bundle is missing you'll see a one-time warning in the logs with the
 download link.
 
@@ -119,21 +119,21 @@ A few servers are installed alongside a peer dependency that npm
 won't auto-pull. The current case is `typescript-language-server`,
 which requires the `typescript` SDK importable from the same
 `node_modules` tree — Plobi installs both packages together when you
-run `hermes lsp install typescript` or auto-install fires on first
+run `plobi lsp install typescript` or auto-install fires on first
 use.
 
 ## CLI
 
 ```
-hermes lsp status          # service state + per-server install status
-hermes lsp list            # registry, optionally --installed-only
-hermes lsp install <id>    # eagerly install one server
-hermes lsp install-all     # try every server with a known recipe
-hermes lsp restart         # tear down running clients
-hermes lsp which <id>      # print resolved binary path
+plobi lsp status          # service state + per-server install status
+plobi lsp list            # registry, optionally --installed-only
+plobi lsp install <id>    # eagerly install one server
+plobi lsp install-all     # try every server with a known recipe
+plobi lsp restart         # tear down running clients
+plobi lsp which <id>      # print resolved binary path
 ```
 
-`hermes lsp status` is the best starting point — it shows which
+`plobi lsp status` is the best starting point — it shows which
 languages will get semantic diagnostics today and which need a
 binary installed.
 
@@ -154,7 +154,7 @@ lsp:
   wait_timeout: 5.0
 
   # How to handle missing server binaries.
-  #   auto    — install via npm/pip/go install into <HERMES_HOME>/lsp/bin
+  #   auto    — install via npm/pip/go install into <PLOBI_HOME>/lsp/bin
   #   manual  — only use binaries already on PATH
   install_strategy: auto
 
@@ -186,8 +186,8 @@ lsp:
 ## Installation locations
 
 When `install_strategy: auto`, Plobi installs binaries into
-`<HERMES_HOME>/lsp/bin/`. NPM packages land in
-`<HERMES_HOME>/lsp/node_modules/` with bin symlinks one level up.
+`<PLOBI_HOME>/lsp/bin/`. NPM packages land in
+`<PLOBI_HOME>/lsp/node_modules/` with bin symlinks one level up.
 Go binaries come from `go install` with `GOBIN` pointed at the
 staging dir.
 
@@ -231,19 +231,19 @@ lsp:
 
 ## Troubleshooting
 
-**`hermes lsp status` shows a server as "missing"**
+**`plobi lsp status` shows a server as "missing"**
 
-The binary isn't on PATH and isn't in `<HERMES_HOME>/lsp/bin/`. Run
-`hermes lsp install <server_id>` to attempt an auto-install, or
+The binary isn't on PATH and isn't in `<PLOBI_HOME>/lsp/bin/`. Run
+`plobi lsp install <server_id>` to attempt an auto-install, or
 install the binary manually through the language's normal toolchain.
 
-**`Backend warnings` section in `hermes lsp status`**
+**`Backend warnings` section in `plobi lsp status`**
 
 Some servers ship as thin wrappers around an external CLI for actual
 diagnostics — they spawn cleanly and accept requests but never emit
 errors when the sidecar binary is missing. The most common case is
 `bash-language-server`, which delegates diagnostics to `shellcheck`.
-When `hermes lsp status` shows a `Backend warnings` section, install
+When `plobi lsp status` shows a `Backend warnings` section, install
 the named tool through your OS package manager:
 
 ```
@@ -253,11 +253,11 @@ scoop install shellcheck    # Windows
 ```
 
 The same warning is logged once at server spawn time in
-`~/.hermes/logs/agent.log`.
+`~/.plobi/logs/agent.log`.
 
 **Server starts but never returns diagnostics**
 
-Check `~/.hermes/logs/agent.log` for `[agent.lsp.client]` entries —
+Check `~/.plobi/logs/agent.log` for `[agent.lsp.client]` entries —
 both stderr from the language server and protocol errors land
 there. Some servers (rust-analyzer especially) need to finish a
 project-wide index before they emit per-file diagnostics; the first
@@ -267,7 +267,7 @@ subsequent edits picking them up.
 **Server crashed**
 
 A crashed server is added to the broken-set and won't be retried for
-the rest of the session. Run `hermes lsp restart` to clear the set;
+the rest of the session. Run `plobi lsp restart` to clear the set;
 the next edit re-spawns.
 
 **Editing a file outside any git repo**

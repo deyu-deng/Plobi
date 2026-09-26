@@ -1,8 +1,8 @@
 """B1: L1 Master 窄接口 — plobi_master_dispatch/status/preview/approve.
 
-四个薄工具包装 hermes kanban（kanban_db.dispatch_once / promote_task /
+四个薄工具包装 plobi kanban（kanban_db.dispatch_once / promote_task /
 specify_triage_task / board_stats），service-gated 注册：worker 上下文
-（HERMES_KANBAN_TASK）不可见，profile 需启用 ``plobi_north_star`` toolset。
+（PLOBI_KANBAN_TASK）不可见，profile 需启用 ``plobi_north_star`` toolset。
 L1 只看到这四个窄工具，不暴露原始 ``kanban_*`` 生命周期工具。
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_cli import kanban_db as kb
+from plobi_cli import kanban_db as kb
 
 
 def _load_master_tools():
@@ -38,10 +38,10 @@ MT = _load_master_tools()
 
 @pytest.fixture()
 def board(monkeypatch, tmp_path):
-    """Per-test kanban board under the redirected HERMES_HOME.
+    """Per-test kanban board under the redirected PLOBI_HOME.
 
     ``dispatch_once`` 校验 assignee 是否为真实 profile（测试环境无
-    ``~/.hermes/profiles/*``），monkeypatch 视为全部存在，便于观察
+    ``~/.plobi/profiles/*``），monkeypatch 视为全部存在，便于观察
     ``spawned`` 候选。
 
     ``run_tests.sh`` 用 ``env -i`` 起子进程（无 USERPROFILE），``Path.home()``
@@ -52,7 +52,7 @@ def board(monkeypatch, tmp_path):
     monkeypatch.setattr(_Path, "home", lambda: tmp_path)
     kb.init_db()
     conn = kb.connect()
-    monkeypatch.setattr("hermes_cli.profiles.profile_exists", lambda name: True)
+    monkeypatch.setattr("plobi_cli.profiles.profile_exists", lambda name: True)
     yield conn
     conn.close()
 
@@ -61,7 +61,7 @@ def board(monkeypatch, tmp_path):
 def master_mode(monkeypatch):
     """模拟 L1 profile：toolsets 启用 plobi_north_star。"""
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "plobi_cli.config.load_config",
         lambda: {"toolsets": ["plobi_north_star"]},
     )
 
@@ -78,8 +78,8 @@ def _call(handler, **args):
 def test_gate_off_without_toolset(monkeypatch):
     """默认 profile 未打开 plobi_north_star 时看不到工具。"""
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
-        lambda: {"toolsets": ["hermes-cli"]},
+        "plobi_cli.config.load_config",
+        lambda: {"toolsets": ["plobi-cli"]},
     )
     assert MT.check_plobi_master_mode() is False
 
@@ -91,12 +91,12 @@ def test_gate_on_with_toolset(master_mode):
 def test_gate_on_default_profile_without_master(monkeypatch):
     """裁定 6：无 master 时，当前 default 打开 toolset 即可看见 secretary 工具。"""
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "plobi_cli.config.load_config",
         lambda: {
-            "toolsets": ["hermes-cli", "plobi_north_star"],
+            "toolsets": ["plobi-cli", "plobi_north_star"],
             "platform_toolsets": {
-                "cli": ["hermes-cli", "plobi_north_star"],
-                "gateway": ["hermes-cli", "plobi_north_star"],
+                "cli": ["plobi-cli", "plobi_north_star"],
+                "gateway": ["plobi-cli", "plobi_north_star"],
             },
         },
     )
@@ -105,9 +105,9 @@ def test_gate_on_default_profile_without_master(monkeypatch):
 
 def test_gate_on_platform_toolsets_only(monkeypatch):
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "plobi_cli.config.load_config",
         lambda: {
-            "toolsets": ["hermes-cli"],
+            "toolsets": ["plobi-cli"],
             "platform_toolsets": {"gateway": ["plobi_north_star"]},
         },
     )
@@ -117,22 +117,22 @@ def test_gate_on_platform_toolsets_only(monkeypatch):
 def test_ensure_north_star_toolset_writes_default_config(monkeypatch):
     from plobi.agents.registry import L1_MID_TOOLSETS, ensure_north_star_toolset
 
-    stored = {"toolsets": ["hermes-cli"]}
+    stored = {"toolsets": ["plobi-cli"]}
     saved: dict = {}
-    monkeypatch.setattr("hermes_cli.config.load_config", lambda: stored)
+    monkeypatch.setattr("plobi_cli.config.load_config", lambda: stored)
 
     def fake_save(cfg, **_kwargs):
         saved.clear()
         saved.update(cfg)
 
-    monkeypatch.setattr("hermes_cli.config.save_config", fake_save)
+    monkeypatch.setattr("plobi_cli.config.save_config", fake_save)
     monkeypatch.setattr(
         "plobi.agents.registry.ensure_l1_secretary_routing_soul",
         lambda **_kwargs: False,
     )
     ensure_north_star_toolset()
     assert saved["toolsets"] == list(L1_MID_TOOLSETS)
-    assert "hermes-cli" not in saved["toolsets"]
+    assert "plobi-cli" not in saved["toolsets"]
     assert "terminal" not in saved["platform_toolsets"]["cli"]
     assert "session_search" not in saved["platform_toolsets"]["gateway"]
     assert "plobi_north_star" in saved["platform_toolsets"]["cli"]
@@ -143,7 +143,7 @@ def test_ensure_north_star_toolset_writes_default_config(monkeypatch):
 def test_l1_mid_narrow_drops_terminal_and_session_search():
     from plobi.agents.registry import apply_l1_mid_toolsets, mid_narrow_toolset_names
 
-    narrowed = mid_narrow_toolset_names(["hermes-cli", "spotify"])
+    narrowed = mid_narrow_toolset_names(["plobi-cli", "spotify"])
     assert "terminal" not in narrowed
     assert "session_search" not in narrowed
     assert "code_execution" not in narrowed
@@ -152,9 +152,9 @@ def test_l1_mid_narrow_drops_terminal_and_session_search():
     assert "spotify" in narrowed
 
     cfg = {
-        "toolsets": ["hermes-cli"],
+        "toolsets": ["plobi-cli"],
         "platform_toolsets": {
-            "cli": ["hermes-cli", "plobi_north_star"],
+            "cli": ["plobi-cli", "plobi_north_star"],
             "gateway": ["terminal", "session_search", "clarify"],
         },
     }
@@ -201,7 +201,7 @@ def test_ensure_l2_agenda_toolsets_restores_terminal(tmp_path):
     assert ensure_l2_agenda_toolsets(tmp_path) is False
 
 
-def test_ensure_l2_agenda_keeps_hermes_cli(tmp_path):
+def test_ensure_l2_agenda_keeps_plobi_cli(tmp_path):
     import yaml
 
     from plobi.agents.registry import ensure_l2_agenda_toolsets
@@ -209,14 +209,14 @@ def test_ensure_l2_agenda_keeps_hermes_cli(tmp_path):
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(
         yaml.safe_dump(
-            {"platform_toolsets": {"cli": ["hermes-cli"], "gateway": ["hermes-cli"]}},
+            {"platform_toolsets": {"cli": ["plobi-cli"], "gateway": ["plobi-cli"]}},
             sort_keys=False,
         ),
         encoding="utf-8",
     )
     assert ensure_l2_agenda_toolsets(tmp_path) is False
     loaded = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert loaded["platform_toolsets"]["cli"] == ["hermes-cli"]
+    assert loaded["platform_toolsets"]["cli"] == ["plobi-cli"]
 
 
 def test_l1_secretary_soul_upsert(tmp_path):
@@ -286,7 +286,7 @@ def test_secretary_ask_schema_steers_soft_routing():
 
 def test_gate_hides_from_worker(master_mode, monkeypatch):
     """dispatcher-spawned worker 即使启用 toolset 也不可见。"""
-    monkeypatch.setenv("HERMES_KANBAN_TASK", "t_abc")
+    monkeypatch.setenv("PLOBI_KANBAN_TASK", "t_abc")
     assert MT.check_plobi_master_mode() is False
 
 
@@ -483,12 +483,12 @@ def _tomorrow_iso(hour: int = 9) -> str:
 
 @pytest.fixture()
 def secretary_home(tmp_path, monkeypatch):
-    """Isolate HERMES_HOME so spawn / registry never touch the real home."""
+    """Isolate PLOBI_HOME so spawn / registry never touch the real home."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    hermes = tmp_path / ".hermes"
-    hermes.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(hermes))
-    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(hermes / "plobi" / "projects.yaml"))
+    plobi = tmp_path / ".plobi"
+    plobi.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(plobi))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(plobi / "plobi" / "projects.yaml"))
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
     return tmp_path
 
@@ -496,10 +496,10 @@ def secretary_home(tmp_path, monkeypatch):
 @pytest.fixture()
 def stub_spawn(secretary_home, monkeypatch):
     """Shrink create_profile to mkdir so tests don't clone a real profile."""
-    import hermes_cli.profiles as profiles_mod
+    import plobi_cli.profiles as profiles_mod
 
     def fake_create_profile(name, **kwargs):
-        profile_dir = Path(secretary_home) / ".hermes" / "profiles" / name
+        profile_dir = Path(secretary_home) / ".plobi" / "profiles" / name
         profile_dir.mkdir(parents=True, exist_ok=True)
         (profile_dir / "plobi").mkdir(exist_ok=True)
         (profile_dir / "config.yaml").write_text("model: {}\n", encoding="utf-8")
@@ -508,19 +508,19 @@ def stub_spawn(secretary_home, monkeypatch):
     def fake_profile_exists(name):
         if name == "default":
             return True
-        return (Path(secretary_home) / ".hermes" / "profiles" / name).is_dir()
+        return (Path(secretary_home) / ".plobi" / "profiles" / name).is_dir()
 
     def fake_get_profile_dir(name):
         if name == "default":
-            return Path(secretary_home) / ".hermes"
-        return Path(secretary_home) / ".hermes" / "profiles" / name
+            return Path(secretary_home) / ".plobi"
+        return Path(secretary_home) / ".plobi" / "profiles" / name
 
     monkeypatch.setattr(profiles_mod, "create_profile", fake_create_profile)
     monkeypatch.setattr(profiles_mod, "profile_exists", fake_profile_exists)
     monkeypatch.setattr(profiles_mod, "get_profile_dir", fake_get_profile_dir)
-    monkeypatch.setattr("hermes_cli.profiles.create_profile", fake_create_profile)
-    monkeypatch.setattr("hermes_cli.profiles.profile_exists", fake_profile_exists)
-    monkeypatch.setattr("hermes_cli.profiles.get_profile_dir", fake_get_profile_dir)
+    monkeypatch.setattr("plobi_cli.profiles.create_profile", fake_create_profile)
+    monkeypatch.setattr("plobi_cli.profiles.profile_exists", fake_profile_exists)
+    monkeypatch.setattr("plobi_cli.profiles.get_profile_dir", fake_get_profile_dir)
     return secretary_home
 
 
@@ -666,8 +666,8 @@ def test_n3_writes_user_text_and_briefing(stub_spawn, tmp_path):
     sid = out["sessionId"]
     assert sid
 
-    from hermes_cli.profiles import get_profile_dir
-    from hermes_state import SessionDB
+    from plobi_cli.profiles import get_profile_dir
+    from plobi_state import SessionDB
 
     db = SessionDB(db_path=get_profile_dir(out["agent"]["profile"]) / "state.db")
     msgs = db.get_messages(sid)
@@ -697,7 +697,7 @@ def test_n3_session_is_the_profile_latest(stub_spawn, tmp_path):
     out = run_secretary_ask("refresh_agenda", "明天安排", pipeline=pipe)
     assert out["ok"] is True
 
-    from hermes_cli.profiles import get_profile_dir
+    from plobi_cli.profiles import get_profile_dir
     from plobi.console.router import _latest_session_for_profile
 
     latest = _latest_session_for_profile(out["agent"]["profile"])

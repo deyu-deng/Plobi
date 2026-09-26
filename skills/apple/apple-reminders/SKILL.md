@@ -6,7 +6,7 @@ author: Plobi Agent
 license: MIT
 platforms: [macos]
 metadata:
-  hermes:
+  plobi:
     tags: [Reminders, tasks, todo, macOS, Apple]
 prerequisites:
   commands: [remindctl]

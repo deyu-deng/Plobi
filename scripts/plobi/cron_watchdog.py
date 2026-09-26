@@ -1,10 +1,10 @@
 """cron no_agent 脚本：采集巡检 + chatlog 健康看门狗（切片 A2）。
 
-由 ``scripts/plobi/register_cron.py`` 复制到 ``HERMES_HOME/scripts/`` 并注册为
+由 ``scripts/plobi/register_cron.py`` 复制到 ``PLOBI_HOME/scripts/`` 并注册为
 10 分钟 ``no_agent`` 任务。stdout（JSON 摘要）即任务产出，进 cron 输出留痕。
 
 引导规则：优先信任当前解释器环境（开发 venv 的 editable 安装可直接
-``import plobi``）；失败则按 ``HERMES_HOME/plobi/runtime.json`` 的
+``import plobi``）；失败则按 ``PLOBI_HOME/plobi/runtime.json`` 的
 ``code_root`` 定位仓库。不写死盘符。
 """
 
@@ -24,7 +24,7 @@ def _bootstrap() -> None:
     except ImportError:
         pass
 
-    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    home = Path(os.environ.get("PLOBI_HOME") or Path.home() / ".plobi")
     runtime = home / "plobi" / "runtime.json"
     try:
         code_root = json.loads(runtime.read_text(encoding="utf-8"))["code_root"]

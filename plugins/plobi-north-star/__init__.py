@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 TOOLSET = "plobi_north_star"
 
 # L1 Master narrow surface (B1): dispatch / status / preview / approve are
-# thin wrappers over Hermes kanban, registered under the same toolset so the
+# thin wrappers over Plobi kanban, registered under the same toolset so the
 # secretary gets them WITHOUT the raw ``kanban_*`` lifecycle tools.
 #
 # WP-L1-EVERY-TURN (裁定 33.1 / 33.4): 4 个 Master 工具 + 深工具 ``plobi``
@@ -78,7 +78,7 @@ _PLOBI_SCHEMA = {
     "description": (
         "Plobi North Star deep tool. Pass area=task|compute|preview|ops and an action. "
         "See docs/plobi/north_star/API.md. Prefer summaries for Master; use HID/aigw "
-        "via compute; reuse Hermes kanban/gateway/cron instead of reinventing them."
+        "via compute; reuse Plobi kanban/gateway/cron instead of reinventing them."
     ),
     "parameters": {
         "type": "object",

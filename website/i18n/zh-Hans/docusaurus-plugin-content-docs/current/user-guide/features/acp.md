@@ -19,7 +19,7 @@ Plobi Agent 可作为 ACP 服务器运行，让兼容 ACP 的编辑器通过 std
 
 ## Plobi 在 ACP 模式下暴露的内容
 
-Plobi 使用专为编辑器工作流设计的精选 `hermes-acp` 工具集运行，包括：
+Plobi 使用专为编辑器工作流设计的精选 `plobi-acp` 工具集运行，包括：
 
 - 文件工具：`read_file`、`write_file`、`patch`、`search_files`
 - 终端工具：`terminal`、`process`
@@ -41,14 +41,14 @@ pip install -e '.[acp]'
 
 这将安装 `agent-client-protocol` 依赖并启用：
 
-- `hermes acp`
-- `hermes-acp`
+- `plobi acp`
+- `plobi-acp`
 - `python -m acp_adapter`
 
 对于 Zed registry 安装，Zed 通过官方 ACP Registry 条目启动 Plobi。该条目使用 `uvx` 发行版运行：
 
 ```bash
-uvx --from 'hermes-agent[acp]==<version>' hermes-acp
+uvx --from 'plobi-agent[acp]==<version>' plobi-acp
 ```
 
 使用 registry 安装路径前，请确保 `uv` 已在 `PATH` 中可用。
@@ -58,11 +58,11 @@ uvx --from 'hermes-agent[acp]==<version>' hermes-acp
 以下任意命令均可以 ACP 模式启动 Plobi：
 
 ```bash
-hermes acp
+plobi acp
 ```
 
 ```bash
-hermes-acp
+plobi-acp
 ```
 
 ```bash
@@ -74,8 +74,8 @@ Plobi 将日志输出到 stderr，以保留 stdout 用于 ACP JSON-RPC 流量。
 非交互式检查：
 
 ```bash
-hermes acp --version
-hermes acp --check
+plobi acp --version
+plobi acp --check
 ```
 
 ### 浏览器工具（可选）
@@ -83,15 +83,15 @@ hermes acp --check
 浏览器工具（`browser_navigate`、`browser_click` 等）依赖 `agent-browser` npm 包和 Chromium，这些不包含在 Python wheel 中。通过以下命令安装：
 
 ```bash
-hermes acp --setup-browser           # 交互式（下载约 400 MB 前会提示确认）
-hermes acp --setup-browser --yes     # 非交互式接受下载
+plobi acp --setup-browser           # 交互式（下载约 400 MB 前会提示确认）
+plobi acp --setup-browser --yes     # 非交互式接受下载
 ```
 
-这是独立命令。Zed registry 的终端认证流程（`hermes acp --setup`）在模型选择后也会将浏览器引导作为后续问题提供，因此大多数用户无需直接运行 `--setup-browser`。
+这是独立命令。Zed registry 的终端认证流程（`plobi acp --setup`）在模型选择后也会将浏览器引导作为后续问题提供，因此大多数用户无需直接运行 `--setup-browser`。
 
 具体操作：
 
-- 若缺少 Node.js 22 LTS，将其安装到 `~/.hermes/node/`
+- 若缺少 Node.js 22 LTS，将其安装到 `~/.plobi/node/`
 - 将 `npm install -g agent-browser @askjo/camofox-browser` 安装到该前缀（无需 sudo — `npm` 的 `--prefix` 指向用户可写的 Plobi 管理 Node）
 - 安装 Playwright Chromium，或在检测到系统 Chrome/Chromium 时使用已有版本
 
@@ -115,7 +115,7 @@ hermes acp --setup-browser --yes     # 非交互式接受下载
 {
   "acp.agents": {
     "Plobi Agent": {
-      "command": "hermes",
+      "command": "plobi",
       "args": ["acp"]
     }
   }
@@ -133,17 +133,17 @@ Zed v0.221.x 及更新版本通过官方 ACP Registry 安装外部 agent。
 
 前提条件：
 
-- 先通过 `hermes model` 配置 Plobi provider 凭据，或在 `~/.hermes/.env` / `~/.hermes/config.yaml` 中设置。
-- 安装 `uv`，以便 registry 启动器可以运行 `uvx --from 'hermes-agent[acp]==<version>' hermes-acp`。
+- 先通过 `plobi model` 配置 Plobi provider 凭据，或在 `~/.plobi/.env` / `~/.plobi/config.yaml` 中设置。
+- 安装 `uv`，以便 registry 启动器可以运行 `uvx --from 'plobi-agent[acp]==<version>' plobi-acp`。
 
 在 registry 条目可用之前进行本地开发时，在 Zed 设置中使用自定义 agent 服务器：
 
 ```json
 {
   "agent_servers": {
-    "hermes-agent": {
+    "plobi-agent": {
       "type": "custom",
-      "command": "hermes",
+      "command": "plobi",
       "args": ["acp"]
     }
   }
@@ -155,7 +155,7 @@ Zed v0.221.x 及更新版本通过官方 ACP Registry 安装外部 agent。
 使用兼容 ACP 的插件并将其指向：
 
 ```text
-/path/to/hermes-agent/acp_registry
+/path/to/plobi-agent/acp_registry
 ```
 
 ## Registry 清单
@@ -167,12 +167,12 @@ acp_registry/agent.json
 acp_registry/icon.svg
 ```
 
-上游 registry PR 将这些文件复制到 `agentclientprotocol/registry` 中的顶层 `hermes-agent/` 目录。
+上游 registry PR 将这些文件复制到 `agentclientprotocol/registry` 中的顶层 `plobi-agent/` 目录。
 
-Registry 条目使用直接指向 `hermes-agent` PyPI 发行版的 `uvx` 发行版：
+Registry 条目使用直接指向 `plobi-agent` PyPI 发行版的 `uvx` 发行版：
 
 ```text
-uvx --from 'hermes-agent[acp]==<version>' hermes-acp
+uvx --from 'plobi-agent[acp]==<version>' plobi-acp
 ```
 
 Registry CI 会验证固定版本是否存在于 PyPI，因此清单的 `version` 和 uvx `package` 固定版本必须始终与 `pyproject.toml` 匹配。`scripts/release.py` 会自动保持它们同步。
@@ -181,10 +181,10 @@ Registry CI 会验证固定版本是否存在于 PyPI，因此清单的 `version
 
 ACP 模式使用与 CLI 相同的 Plobi 配置：
 
-- `~/.hermes/.env`
-- `~/.hermes/config.yaml`
-- `~/.hermes/skills/`
-- `~/.hermes/state.db`
+- `~/.plobi/.env`
+- `~/.plobi/config.yaml`
+- `~/.plobi/skills/`
+- `~/.plobi/state.db`
 
 Provider 解析使用 Plobi 的正常运行时解析器，因此 ACP 继承当前配置的 provider 和凭据。Plobi 还为首次运行的 registry 客户端提供终端认证方法（`--setup`）；这将打开 Plobi 的交互式模型/provider 设置。
 
@@ -238,7 +238,7 @@ ACP 桥接将这些选项映射到 Plobi 的内部审批语义——`allow_alway
 检查：
 
 - 在 Zed 中，使用 `zed: acp registry` 打开 ACP Registry 并搜索 **Plobi Agent**。
-- 对于手动/本地开发，验证自定义 `agent_servers` 命令是否指向 `hermes acp`。
+- 对于手动/本地开发，验证自定义 `agent_servers` 命令是否指向 `plobi acp`。
 - Plobi 已安装且在 PATH 中。
 - ACP 扩展已安装（`pip install -e '.[acp]'`）。
 - 如果从官方 Zed registry 条目启动，`uv` 已安装。
@@ -248,10 +248,10 @@ ACP 桥接将这些选项映射到 Plobi 的内部审批语义——`allow_alway
 尝试以下检查：
 
 ```bash
-hermes acp --version
-hermes acp --check
-hermes doctor
-hermes status
+plobi acp --version
+plobi acp --check
+plobi doctor
+plobi status
 ```
 
 ### 缺少凭据
@@ -259,10 +259,10 @@ hermes status
 ACP 模式使用 Plobi 现有的 provider 设置。通过以下方式配置凭据：
 
 ```bash
-hermes model
+plobi model
 ```
 
-或编辑 `~/.hermes/.env`。Registry 客户端也可以触发 Plobi 的终端认证流程，该流程运行相同的交互式 provider/模型设置。
+或编辑 `~/.plobi/.env`。Registry 客户端也可以触发 Plobi 的终端认证流程，该流程运行相同的交互式 provider/模型设置。
 
 ### Zed registry 启动器找不到 uv
 

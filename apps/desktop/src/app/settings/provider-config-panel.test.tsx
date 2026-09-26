@@ -1,12 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { MemoryProviderConfig } from '@/types/hermes'
+import type { MemoryProviderConfig } from '@/types/plobi'
 
 const getMemoryProviderConfig = vi.fn()
 const saveMemoryProviderConfig = vi.fn()
 
-vi.mock('@/hermes', () => ({
+vi.mock('@/plobi', () => ({
   getMemoryProviderConfig: (provider: string) => getMemoryProviderConfig(provider),
   saveMemoryProviderConfig: (provider: string, values: unknown) => saveMemoryProviderConfig(provider, values)
 }))
@@ -55,7 +55,7 @@ function hindsightSchema(overrides: Partial<MemoryProviderConfig['fields'][numbe
       key: 'bank_id',
       label: 'Bank ID',
       kind: 'text',
-      value: 'hermes',
+      value: 'plobi',
       description: '',
       placeholder: '',
       is_set: true,
@@ -105,7 +105,7 @@ describe('ProviderConfigPanel', () => {
     await renderPanel()
 
     expect(await screen.findByDisplayValue('https://api.hindsight.vectorize.io')).toBeTruthy()
-    expect(screen.getByDisplayValue('hermes')).toBeTruthy()
+    expect(screen.getByDisplayValue('plobi')).toBeTruthy()
     expect(screen.getByText('Cloud')).toBeTruthy()
     expect(screen.getAllByText('Hindsight Cloud API (lightweight, just needs an API key)').length).toBeGreaterThan(0)
     expect(screen.getByText('mid')).toBeTruthy()

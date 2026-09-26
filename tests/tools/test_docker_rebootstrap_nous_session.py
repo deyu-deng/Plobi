@@ -23,7 +23,7 @@ def _terminal_nous_state():
     """On-disk shape after a terminal quarantine: tokens cleared, marker set."""
     return {
         "portal_base_url": "https://portal.example.com",
-        "client_id": "hermes-cli-vps",
+        "client_id": "plobi-cli-vps",
         "last_auth_error": {
             "provider": "nous",
             "code": "invalid_grant",
@@ -35,7 +35,7 @@ def _terminal_nous_state():
 def _healthy_nous_state():
     return {
         "portal_base_url": "https://portal.example.com",
-        "client_id": "hermes-cli-vps",
+        "client_id": "plobi-cli-vps",
         "access_token": "live-at",
         "refresh_token": "live-rt",
     }
@@ -52,7 +52,7 @@ _FRESH_SEED = json.dumps({
     "providers": {
         "nous": {
             "portal_base_url": "https://portal.example.com",
-            "client_id": "hermes-cli-vps",
+            "client_id": "plobi-cli-vps",
             "access_token": "FRESH-at",
             "refresh_token": "FRESH-rt",
         }
@@ -136,5 +136,5 @@ def test_unreadable_auth_file_is_left_alone(tmp_path):
 def test_terminal_entry_missing_marker_is_not_terminal(tmp_path):
     """No last_auth_error at all (e.g. a merely-expired but not-quarantined
     entry) → not terminal, no re-seed."""
-    auth = _write_auth(tmp_path, {"nous": {"client_id": "hermes-cli-vps"}})
+    auth = _write_auth(tmp_path, {"nous": {"client_id": "plobi-cli-vps"}})
     assert mod.reseed_if_terminal(auth, _FRESH_SEED) == "not_terminal"

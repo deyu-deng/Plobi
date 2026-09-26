@@ -14,7 +14,7 @@ Control Blender directly from Plobi via socket connection to the blender-mcp add
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/creative/blender-mcp` |
+| Source | Optional — install with `plobi skills install official/creative/blender-mcp` |
 | Path | `optional-skills/creative/blender-mcp` |
 | Version | `1.0.0` |
 | Author | alireza78a |

@@ -13,7 +13,7 @@ Plobi Agent 包含一套丰富的能力，远超基础聊天范畴。从持久�
 - **[工具与工具集](tools.md)** — 工具是扩展 Agent 能力的函数。它们被组织成逻辑工具集，可按平台启用或禁用，涵盖网络搜索、终端执行、文件编辑、记忆、委派等功能。
 - **[技能系统](skills.md)** — Agent 可按需加载的知识文档。技能遵循渐进式披露模式以最小化 token 用量，并兼容 [agentskills.io](https://agentskills.io/specification) 开放标准。
 - **[持久化记忆](memory.md)** — 跨会话持久保存的有界、精选记忆。Plobi 通过 `MEMORY.md` 和 `USER.md` 记住你的偏好、项目、环境及已学习的内容。
-- **[上下文文件](context-files.md)** — Plobi 自动发现并加载项目上下文文件（`.hermes.md`、`AGENTS.md`、`CLAUDE.md`、`SOUL.md`、`.cursorrules`），这些文件决定了它在你项目中的行为方式。
+- **[上下文文件](context-files.md)** — Plobi 自动发现并加载项目上下文文件（`.plobi.md`、`AGENTS.md`、`CLAUDE.md`、`SOUL.md`、`.cursorrules`），这些文件决定了它在你项目中的行为方式。
 - **[上下文引用](context-references.md)** — 输入 `@` 后跟引用内容，可将文件、文件夹、git diff 和 URL 直接注入消息中。Plobi 会内联展开引用并自动附加相应内容。
 - **[检查点](../checkpoints-and-rollback.md)** — Plobi 在进行文件更改前自动为工作目录创建快照，提供安全网，可通过 `/rollback` 回滚至出错前的状态。
 
@@ -30,7 +30,7 @@ Plobi Agent 包含一套丰富的能力，远超基础聊天范畴。从持久�
 - **[语音模式](voice-mode.md)** — 跨 CLI 和消息平台的完整语音交互。使用麦克风与 Agent 对话，收听语音回复，并在 Discord 语音频道中进行实时语音对话。
 - **[浏览器自动化](browser.md)** — 支持多种后端的完整浏览器自动化：Browserbase 云端、Browser Use 云端、通过 CDP 连接的本地 Chrome/Brave/Chromium/Edge，或本地 Chromium。可导航网站、填写表单并提取信息。
 - **[视觉与图片粘贴](vision.md)** — 多模态视觉支持。将剪贴板中的图片粘贴到 CLI，并使用任意支持视觉的模型请求 Agent 分析、描述或处理图片。
-- **[图像生成](image-generation.md)** — 使用 FAL.ai 从文本 prompt 生成图像。支持九种模型（FLUX 2 Klein/Pro、GPT-Image 1.5/2、Nano Banana Pro、Ideogram V3、Recraft V4 Pro、Qwen、Z-Image Turbo）；可通过 `hermes tools` 选择。
+- **[图像生成](image-generation.md)** — 使用 FAL.ai 从文本 prompt 生成图像。支持九种模型（FLUX 2 Klein/Pro、GPT-Image 1.5/2、Nano Banana Pro、Ideogram V3、Recraft V4 Pro、Qwen、Z-Image Turbo）；可通过 `plobi tools` 选择。
 - **[语音与 TTS](tts.md)** — 跨所有消息平台的文字转语音输出和语音消息转录，提供十种原生提供商选项：Edge TTS（免费）、ElevenLabs、OpenAI TTS、MiniMax、Mistral Voxtral、Google Gemini、xAI、NeuTTS、KittenTTS 和 Piper——以及支持任意本地 TTS CLI 的自定义命令提供商。
 
 ## 集成
@@ -49,4 +49,4 @@ Plobi Agent 包含一套丰富的能力，远超基础聊天范畴。从持久�
 
 - **[个性与 SOUL.md](personality.md)** — 完全可自定义的 Agent 个性。`SOUL.md` 是主要身份文件——系统提示词中的第一项——你可以在每个会话中切换内置或自定义的 `/personality` 预设。
 - **[皮肤与主题](skins.md)** — 自定义 CLI 的视觉呈现：横幅颜色、加载动画图标和动词、响应框标签、品牌文字，以及工具活动前缀。
-- **[插件](plugins.md)** — 无需修改核心代码即可添加自定义工具、hook 和集成。三种插件类型：通用插件（工具/hook）、记忆提供商（跨会话知识）和上下文引擎（替代上下文管理）。通过统一的 `hermes plugins` 交互式界面管理。
+- **[插件](plugins.md)** — 无需修改核心代码即可添加自定义工具、hook 和集成。三种插件类型：通用插件（工具/hook）、记忆提供商（跨会话知识）和上下文引擎（替代上下文管理）。通过统一的 `plobi plugins` 交互式界面管理。

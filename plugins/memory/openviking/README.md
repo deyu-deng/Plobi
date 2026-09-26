@@ -11,7 +11,7 @@ Context database by Volcengine (ByteDance) with filesystem-style knowledge hiera
 ## Setup
 
 ```bash
-hermes memory setup    # select "openviking"
+plobi memory setup    # select "openviking"
 ```
 
 The setup can link to an existing `~/.openviking/ovcli.conf`, copy its current
@@ -20,8 +20,8 @@ not exist.
 
 Or manually:
 ```bash
-hermes config set memory.provider openviking
-echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.hermes/.env
+plobi config set memory.provider openviking
+echo "OPENVIKING_ENDPOINT=http://localhost:1933" >> ~/.plobi/.env
 ```
 
 ## Config
@@ -34,7 +34,7 @@ All config via environment variables in `.env`:
 | `OPENVIKING_API_KEY` | (none) | User/admin API key for authenticated servers |
 | `OPENVIKING_ACCOUNT` | `default` | Tenant account for local/trusted mode |
 | `OPENVIKING_USER` | `default` | Tenant user for local/trusted mode |
-| `OPENVIKING_AGENT` | `hermes` | Plobi peer ID in OpenViking, used for peer-scoped memories |
+| `OPENVIKING_AGENT` | `plobi` | Plobi peer ID in OpenViking, used for peer-scoped memories |
 
 When `OPENVIKING_API_KEY` is set, Plobi lets OpenViking derive account/user
 identity from the key. In local or trusted deployments without an API key,
@@ -74,8 +74,8 @@ memory URI.
 
 `viking_forget` is intentionally narrow. It only accepts concrete user memory
 file URIs, such as
-`viking://user/peers/hermes/memories/preferences/mem_abc123.md` or the canonical
-`viking://user/default/peers/hermes/memories/preferences/mem_abc123.md`. Files
+`viking://user/peers/plobi/memories/preferences/mem_abc123.md` or the canonical
+`viking://user/default/peers/plobi/memories/preferences/mem_abc123.md`. Files
 directly under `memories/`, such as `viking://user/default/memories/profile.md`,
 are also allowed because OpenViking supports them. The tool rejects directories,
 resources, skills, sessions, generated summary files, and URIs with query

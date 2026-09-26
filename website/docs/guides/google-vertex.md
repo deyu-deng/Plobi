@@ -18,36 +18,36 @@ Vertex has **no static API key** for the standard endpoint. Every request needs 
 - **Credentials**, one of:
   - a **service-account JSON** key file with the `roles/aiplatform.user` role, or
   - **Application Default Credentials** via `gcloud auth application-default login` (or the metadata server when running on a GCP VM).
-- **`google-auth`** — installed automatically the first time you select Vertex (lazy install), or explicitly with `pip install 'hermes-agent[vertex]'`.
+- **`google-auth`** — installed automatically the first time you select Vertex (lazy install), or explicitly with `pip install 'plobi-agent[vertex]'`.
 
 ## Quick Start
 
 ```bash
 # Option A — service account JSON (recommended for servers / gateways)
-echo "VERTEX_CREDENTIALS_PATH=/path/to/service-account.json" >> ~/.hermes/.env
+echo "VERTEX_CREDENTIALS_PATH=/path/to/service-account.json" >> ~/.plobi/.env
 
 # Option B — Application Default Credentials (good for local dev)
 gcloud auth application-default login
 
 # Select Vertex as your provider
-hermes model
+plobi model
 # → Choose "More providers..." → "Google Vertex AI"
 # → Enter your GCP project ID (or leave blank to use the one in your credentials)
 # → Choose a region (default: global)
 # → Select a Gemini model
 
 # Start chatting
-hermes chat
+plobi chat
 ```
 
 ## Configuration
 
 Vertex splits its settings by sensitivity:
 
-- The **credential path** is a pointer to a secret and lives in `~/.hermes/.env`.
-- **Project ID and region** are non-secret routing settings and live in `~/.hermes/config.yaml`.
+- The **credential path** is a pointer to a secret and lives in `~/.plobi/.env`.
+- **Project ID and region** are non-secret routing settings and live in `~/.plobi/config.yaml`.
 
-`~/.hermes/.env`:
+`~/.plobi/.env`:
 
 ```bash
 # One of these (checked in this order); omit both to use ADC:
@@ -55,7 +55,7 @@ VERTEX_CREDENTIALS_PATH=/path/to/service-account.json
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
-`~/.hermes/config.yaml`:
+`~/.plobi/config.yaml`:
 
 ```yaml
 model:
@@ -84,7 +84,7 @@ vertex:
 
 ## Available Models
 
-Vertex requires the `google/` vendor prefix on model IDs. The `hermes model` picker offers:
+Vertex requires the `google/` vendor prefix on model IDs. The `plobi model` picker offers:
 
 | Model | ID |
 |-------|----|
@@ -106,7 +106,7 @@ The Gemini 3.x preview models are served through the `global` endpoint. Regional
 /model google/gemini-3-flash-preview
 ```
 
-`/model` switches among already-configured providers and models; it does not collect new credentials. Configure Vertex with `hermes model` first.
+`/model` switches among already-configured providers and models; it does not collect new credentials. Configure Vertex with `plobi model` first.
 
 ## Reasoning / Thinking
 
@@ -115,7 +115,7 @@ Vertex exposes Gemini's thinking budget through the OpenAI-compatible surface. P
 ## Diagnostics
 
 ```bash
-hermes doctor
+plobi doctor
 ```
 
 The doctor reports whether Vertex credentials can be resolved (service-account path or ADC) and whether the provider is configured.
@@ -124,11 +124,11 @@ The doctor reports whether Vertex credentials can be resolved (service-account p
 
 ### "Vertex AI credentials could not be resolved"
 
-Plobi found neither a service-account JSON nor working ADC. Either set `VERTEX_CREDENTIALS_PATH` in `~/.hermes/.env`, or run `gcloud auth application-default login`. If your project isn't embedded in the credentials, set `vertex.project_id` in `config.yaml`.
+Plobi found neither a service-account JSON nor working ADC. Either set `VERTEX_CREDENTIALS_PATH` in `~/.plobi/.env`, or run `gcloud auth application-default login`. If your project isn't embedded in the credentials, set `vertex.project_id` in `config.yaml`.
 
 ### `google-auth` not installed
 
-Install the extra: `pip install 'hermes-agent[vertex]'`. Plobi also lazy-installs it the first time you select the Vertex provider.
+Install the extra: `pip install 'plobi-agent[vertex]'`. Plobi also lazy-installs it the first time you select the Vertex provider.
 
 ### 404 on Gemini 3.x models
 

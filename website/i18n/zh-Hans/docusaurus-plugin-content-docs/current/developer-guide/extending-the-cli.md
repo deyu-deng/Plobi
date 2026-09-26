@@ -6,7 +6,7 @@ description: "构建包装 CLI，通过自定义 widget、快捷键和布局变�
 
 # 扩展 CLI
 
-Plobi 在 `HermesCLI` 上暴露了受保护的扩展 hook（钩子），使包装 CLI 可以添加 widget、快捷键和布局自定义，而无需覆盖超过 1000 行的 `run()` 方法。这样可以让你的扩展与内部变更解耦。
+Plobi 在 `PlobiCLI` 上暴露了受保护的扩展 hook（钩子），使包装 CLI 可以添加 widget、快捷键和布局自定义，而无需覆盖超过 1000 行的 `run()` 方法。这样可以让你的扩展与内部变更解耦。
 
 ## 扩展点
 
@@ -28,12 +28,12 @@ Plobi 在 `HermesCLI` 上暴露了受保护的扩展 hook（钩子），使包�
 #!/usr/bin/env python3
 """my_cli.py — Example wrapper CLI that extends Plobi."""
 
-from cli import HermesCLI
+from cli import PlobiCLI
 from prompt_toolkit.layout import FormattedTextControl, Window
 from prompt_toolkit.filters import Condition
 
 
-class MyCLI(HermesCLI):
+class MyCLI(PlobiCLI):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 运行：
 
 ```bash
-cd ~/.hermes/hermes-agent
+cd ~/.plobi/plobi-agent
 source .venv/bin/activate
 python my_cli.py
 ```

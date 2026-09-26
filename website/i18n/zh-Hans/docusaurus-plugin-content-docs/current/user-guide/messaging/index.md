@@ -8,7 +8,7 @@ description: "通过 Telegram、Discord、Slack、WhatsApp、Signal、SMS、Emai
 
 通过 Telegram、Discord、Slack、WhatsApp、Signal、SMS、Email、Home Assistant、Mattermost、Matrix、DingTalk、Feishu/Lark、WeCom、Weixin、BlueBubbles（iMessage）、QQ、Yuanbao、Microsoft Teams、LINE、ntfy 或浏览器与 Plobi 对话。网关是一个单一后台进程，连接所有已配置的平台，管理会话，运行 cron 任务，并传递语音消息。
 
-完整的语音功能集——包括 CLI 麦克风模式、消息中的语音回复以及 Discord 语音频道对话——请参阅 [Voice Mode](/user-guide/features/voice-mode) 和 [Use Voice Mode with Plobi](/guides/use-voice-mode-with-hermes)。
+完整的语音功能集——包括 CLI 麦克风模式、消息中的语音回复以及 Discord 语音频道对话——请参阅 [Voice Mode](/user-guide/features/voice-mode) 和 [Use Voice Mode with Plobi](/guides/use-voice-mode-with-plobi)。
 
 ## 平台对比
 
@@ -107,7 +107,7 @@ flowchart TB
 配置消息平台最简单的方式是使用交互式向导：
 
 ```bash
-hermes gateway setup        # 交互式配置所有消息平台
+plobi gateway setup        # 交互式配置所有消息平台
 ```
 
 该向导引导你通过方向键选择配置各平台，显示哪些平台已配置，并在完成后提示启动/重启网关。
@@ -115,14 +115,14 @@ hermes gateway setup        # 交互式配置所有消息平台
 ## 网关命令
 
 ```bash
-hermes gateway              # 在前台运行
-hermes gateway setup        # 交互式配置消息平台
-hermes gateway install      # 安装为用户服务（Linux）/ launchd 服务（macOS）
-sudo hermes gateway install --system   # 仅 Linux：安装开机启动的系统服务
-hermes gateway start        # 启动默认服务
-hermes gateway stop         # 停止默认服务
-hermes gateway status       # 检查默认服务状态
-hermes gateway status --system         # 仅 Linux：显式检查系统服务
+plobi gateway              # 在前台运行
+plobi gateway setup        # 交互式配置消息平台
+plobi gateway install      # 安装为用户服务（Linux）/ launchd 服务（macOS）
+sudo plobi gateway install --system   # 仅 Linux：安装开机启动的系统服务
+plobi gateway start        # 启动默认服务
+plobi gateway stop         # 停止默认服务
+plobi gateway status       # 检查默认服务状态
+plobi gateway status --system         # 仅 Linux：显式检查系统服务
 ```
 
 ## 聊天命令（在消息平台内使用）
@@ -162,7 +162,7 @@ hermes gateway status --system         # 仅 Linux：显式检查系统服务
 
 ### 重置策略
 
-**默认情况下会话永不自动重置** —— 上下文会一直保留，直到你手动 `/reset` 或触发上下文压缩。如果你希望会话自动重置，可在 `~/.hermes/config.yaml` 的 `session_reset` 部分选择启用：
+**默认情况下会话永不自动重置** —— 上下文会一直保留，直到你手动 `/reset` 或触发上下文压缩。如果你希望会话自动重置，可在 `~/.plobi/config.yaml` 的 `session_reset` 部分选择启用：
 
 ```yaml
 session_reset:
@@ -178,7 +178,7 @@ session_reset:
 | `idle` | 空闲 N 分钟后重置 |
 | `both` | 以先触发者为准 |
 
-在 `~/.hermes/gateway.json` 中配置各平台的覆盖设置：
+在 `~/.plobi/gateway.json` 中配置各平台的覆盖设置：
 
 ```json
 {
@@ -222,11 +222,11 @@ GATEWAY_ALLOW_ALL_USERS=true
 ```bash
 # 用户看到："Pairing code: XKGH5N7P"
 # 你通过以下命令批准：
-hermes pairing approve telegram XKGH5N7P
+plobi pairing approve telegram XKGH5N7P
 
 # 其他配对命令：
-hermes pairing list          # 查看待审核和已批准的用户
-hermes pairing revoke telegram 123456789  # 撤销访问权限
+plobi pairing list          # 查看待审核和已批准的用户
+plobi pairing revoke telegram 123456789  # 撤销访问权限
 ```
 
 配对码 1 小时后过期，有频率限制，并使用密码学随机数生成。
@@ -295,7 +295,7 @@ display:
 
 ## 工具进度通知
 
-在 `~/.hermes/config.yaml` 中控制显示多少工具活动信息：
+在 `~/.plobi/config.yaml` 中控制显示多少工具活动信息：
 
 ```yaml
 display:
@@ -338,7 +338,7 @@ Plobi 立即确认：
 
 ### 后台进程通知
 
-当运行后台会话的 agent 使用 `terminal(background=true)` 启动长时间运行的进程（服务器、构建等）时，网关可以向你的聊天推送状态更新。通过 `~/.hermes/config.yaml` 中的 `display.background_process_notifications` 控制：
+当运行后台会话的 agent 使用 `terminal(background=true)` 启动长时间运行的进程（服务器、构建等）时，网关可以向你的聊天推送状态更新。通过 `~/.plobi/config.yaml` 中的 `display.background_process_notifications` 控制：
 
 ```yaml
 display:
@@ -355,7 +355,7 @@ display:
 也可通过环境变量设置：
 
 ```bash
-HERMES_BACKGROUND_NOTIFICATIONS=result
+PLOBI_BACKGROUND_NOTIFICATIONS=result
 ```
 
 ### 使用场景
@@ -374,20 +374,20 @@ HERMES_BACKGROUND_NOTIFICATIONS=result
 ### Linux（systemd）
 
 ```bash
-hermes gateway install               # 安装为用户服务
-hermes gateway start                 # 启动服务
-hermes gateway stop                  # 停止服务
-hermes gateway status                # 检查状态
-journalctl --user -u hermes-gateway -f  # 查看日志
+plobi gateway install               # 安装为用户服务
+plobi gateway start                 # 启动服务
+plobi gateway stop                  # 停止服务
+plobi gateway status                # 检查状态
+journalctl --user -u plobi-gateway -f  # 查看日志
 
 # 启用 lingering（注销后保持运行）
 sudo loginctl enable-linger $USER
 
 # 或安装开机启动的系统服务，仍以你的用户身份运行
-sudo hermes gateway install --system
-sudo hermes gateway start --system
-sudo hermes gateway status --system
-journalctl -u hermes-gateway -f
+sudo plobi gateway install --system
+sudo plobi gateway start --system
+sudo plobi gateway status --system
+journalctl -u plobi-gateway -f
 ```
 
 笔记本和开发机使用用户服务。VPS 或无头主机（需要开机自动启动而不依赖 systemd linger）使用系统服务。
@@ -395,31 +395,31 @@ journalctl -u hermes-gateway -f
 除非你确实有此需要，否则避免同时安装用户和系统网关单元。Plobi 检测到两者同时存在时会发出警告，因为 start/stop/status 行为会变得不明确。
 
 :::info 多个安装
-如果你在同一台机器上运行多个 Plobi 安装（使用不同的 `HERMES_HOME` 目录），每个安装都有自己的 systemd 服务名称。默认的 `~/.hermes` 使用 `hermes-gateway`；其他安装使用 `hermes-gateway-<hash>`。`hermes gateway` 命令会自动针对当前 `HERMES_HOME` 对应的正确服务。
+如果你在同一台机器上运行多个 Plobi 安装（使用不同的 `PLOBI_HOME` 目录），每个安装都有自己的 systemd 服务名称。默认的 `~/.plobi` 使用 `plobi-gateway`；其他安装使用 `plobi-gateway-<hash>`。`plobi gateway` 命令会自动针对当前 `PLOBI_HOME` 对应的正确服务。
 :::
 
 ### macOS（launchd）
 
 ```bash
-hermes gateway install               # 安装为 launchd agent
-hermes gateway start                 # 启动服务
-hermes gateway stop                  # 停止服务
-hermes gateway status                # 检查状态
-tail -f ~/.hermes/logs/gateway.log   # 查看日志
+plobi gateway install               # 安装为 launchd agent
+plobi gateway start                 # 启动服务
+plobi gateway stop                  # 停止服务
+plobi gateway status                # 检查状态
+tail -f ~/.plobi/logs/gateway.log   # 查看日志
 ```
 
-生成的 plist 文件位于 `~/Library/LaunchAgents/ai.hermes.gateway.plist`。它包含三个环境变量：
+生成的 plist 文件位于 `~/Library/LaunchAgents/ai.plobi.gateway.plist`。它包含三个环境变量：
 
 - **PATH** — 安装时你的完整 shell PATH，并在前面添加了 venv `bin/` 和 `node_modules/.bin`。这确保用户安装的工具（Node.js、ffmpeg 等）可供网关子进程（如 WhatsApp 桥接）使用。
 - **VIRTUAL_ENV** — 指向 Python 虚拟环境，使工具能正确解析包。
-- **HERMES_HOME** — 将网关限定到你的 Plobi 安装。
+- **PLOBI_HOME** — 将网关限定到你的 Plobi 安装。
 
 :::tip 安装后 PATH 变更
-launchd plist 是静态的——如果你在配置网关后安装了新工具（例如通过 nvm 安装新版 Node.js，或通过 Homebrew 安装 ffmpeg），请重新运行 `hermes gateway install` 以捕获更新后的 PATH。网关会检测到过时的 plist 并自动重新加载。
+launchd plist 是静态的——如果你在配置网关后安装了新工具（例如通过 nvm 安装新版 Node.js，或通过 Homebrew 安装 ffmpeg），请重新运行 `plobi gateway install` 以捕获更新后的 PATH。网关会检测到过时的 plist 并自动重新加载。
 :::
 
 :::info 多个安装
-与 Linux systemd 服务类似，每个 `HERMES_HOME` 目录都有自己的 launchd 标签。默认的 `~/.hermes` 使用 `ai.hermes.gateway`；其他安装使用 `ai.hermes.gateway-<suffix>`。
+与 Linux systemd 服务类似，每个 `PLOBI_HOME` 目录都有自己的 launchd 标签。默认的 `~/.plobi` 使用 `ai.plobi.gateway`；其他安装使用 `ai.plobi.gateway-<suffix>`。
 :::
 
 ## 平台专属工具集
@@ -428,29 +428,29 @@ launchd plist 是静态的——如果你在配置网关后安装了新工具（
 
 | 平台 | 工具集 | 功能 |
 |----------|---------|--------------|
-| CLI | `hermes-cli` | 完全访问 |
-| Telegram | `hermes-telegram` | 完整工具，包括终端 |
-| Discord | `hermes-discord` | 完整工具，包括终端 |
-| WhatsApp | `hermes-whatsapp` | 完整工具，包括终端 |
-| Slack | `hermes-slack` | 完整工具，包括终端 |
-| Google Chat | `hermes-google_chat` | 完整工具，包括终端 |
-| Signal | `hermes-signal` | 完整工具，包括终端 |
-| SMS | `hermes-sms` | 完整工具，包括终端 |
-| Email | `hermes-email` | 完整工具，包括终端 |
-| Home Assistant | `hermes-homeassistant` | 完整工具 + HA 设备控制（ha_list_entities、ha_get_state、ha_call_service、ha_list_services） |
-| Mattermost | `hermes-mattermost` | 完整工具，包括终端 |
-| Matrix | `hermes-matrix` | 完整工具，包括终端 |
-| DingTalk | `hermes-dingtalk` | 完整工具，包括终端 |
-| Feishu/Lark | `hermes-feishu` | 完整工具，包括终端 |
-| WeCom | `hermes-wecom` | 完整工具，包括终端 |
-| WeCom Callback | `hermes-wecom-callback` | 完整工具，包括终端 |
-| Weixin | `hermes-weixin` | 完整工具，包括终端 |
-| BlueBubbles | `hermes-bluebubbles` | 完整工具，包括终端 |
-| QQBot | `hermes-qqbot` | 完整工具，包括终端 |
-| Yuanbao | `hermes-yuanbao` | 完整工具，包括终端 |
-| Microsoft Teams | `hermes-teams` | 完整工具，包括终端 |
-| API Server | `hermes-api-server` | 完整工具（去除 `clarify`、`send_message`、`text_to_speech`——程序化访问没有交互用户） |
-| Webhooks | `hermes-webhook` | 完整工具，包括终端 |
+| CLI | `plobi-cli` | 完全访问 |
+| Telegram | `plobi-telegram` | 完整工具，包括终端 |
+| Discord | `plobi-discord` | 完整工具，包括终端 |
+| WhatsApp | `plobi-whatsapp` | 完整工具，包括终端 |
+| Slack | `plobi-slack` | 完整工具，包括终端 |
+| Google Chat | `plobi-google_chat` | 完整工具，包括终端 |
+| Signal | `plobi-signal` | 完整工具，包括终端 |
+| SMS | `plobi-sms` | 完整工具，包括终端 |
+| Email | `plobi-email` | 完整工具，包括终端 |
+| Home Assistant | `plobi-homeassistant` | 完整工具 + HA 设备控制（ha_list_entities、ha_get_state、ha_call_service、ha_list_services） |
+| Mattermost | `plobi-mattermost` | 完整工具，包括终端 |
+| Matrix | `plobi-matrix` | 完整工具，包括终端 |
+| DingTalk | `plobi-dingtalk` | 完整工具，包括终端 |
+| Feishu/Lark | `plobi-feishu` | 完整工具，包括终端 |
+| WeCom | `plobi-wecom` | 完整工具，包括终端 |
+| WeCom Callback | `plobi-wecom-callback` | 完整工具，包括终端 |
+| Weixin | `plobi-weixin` | 完整工具，包括终端 |
+| BlueBubbles | `plobi-bluebubbles` | 完整工具，包括终端 |
+| QQBot | `plobi-qqbot` | 完整工具，包括终端 |
+| Yuanbao | `plobi-yuanbao` | 完整工具，包括终端 |
+| Microsoft Teams | `plobi-teams` | 完整工具，包括终端 |
+| API Server | `plobi-api-server` | 完整工具（去除 `clarify`、`send_message`、`text_to_speech`——程序化访问没有交互用户） |
+| Webhooks | `plobi-webhook` | 完整工具，包括终端 |
 
 ## 运营多平台网关
 
@@ -480,7 +480,7 @@ launchd plist 是静态的——如果你在配置网关后安装了新工具（
 
 当适配器暂停时，检查：
 
-1. **网关日志**（`~/.hermes/logs/gateway.log` 或 systemd / launchd 单元日志）。搜索平台名称以及 `circuit breaker`、`paused` 或 `disabled`。触发事件包含失败次数和最后一个错误。
+1. **网关日志**（`~/.plobi/logs/gateway.log` 或 systemd / launchd 单元日志）。搜索平台名称以及 `circuit breaker`、`paused` 或 `disabled`。触发事件包含失败次数和最后一个错误。
 2. **`/platform list`** 输出——显示当前状态和最后原因。
 3. **提供商状态页面**（Telegram bot API 状态、Discord 状态等）。熔断器触发是因为平台不健康；在平台恢复之前不要尝试恢复。
 

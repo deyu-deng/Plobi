@@ -43,24 +43,24 @@ xAI 的后端对 OAuth API 接口维护自己的白名单，已有记录显示�
 
 ```bash
 # 启动 provider 和模型选择器
-hermes model
+plobi model
 # → 从 provider 列表中选择 "xAI Grok OAuth (SuperGrok / X Premium+)"
 # → Plobi 打开或打印 accounts.x.ai 验证 URL
 # → 如有提示，输入显示的代码，然后在浏览器中批准访问
 # → 选择模型（grok-build-0.1 在列表顶部）
 # → 开始对话
 
-hermes
+plobi
 ```
 
-首次登录后，凭据存储在 `~/.hermes/auth.json` 中，并在过期前自动刷新。
+首次登录后，凭据存储在 `~/.plobi/auth.json` 中，并在过期前自动刷新。
 
 ## 手动登录
 
 你可以不经过模型选择器直接触发登录：
 
 ```bash
-hermes auth add xai-oauth
+plobi auth add xai-oauth
 ```
 
 ### 远程 / 无头会话
@@ -68,7 +68,7 @@ hermes auth add xai-oauth
 在没有浏览器的服务器、容器、仅限浏览器的远程控制台（Cloud Shell、Codespaces、EC2 Instance Connect）或 SSH 会话中，Plobi 会打印 xAI 验证 URL 和用户代码。在笔记本电脑或云控制台的任意浏览器中打开该 URL，如有提示则输入代码，Plobi 会持续轮询直到 xAI 批准登录。无需 SSH 隧道或本地回调监听器。
 
 ```bash
-hermes auth add xai-oauth --no-browser
+plobi auth add xai-oauth --no-browser
 # 在浏览器中打开打印出的验证 URL。
 ```
 
@@ -78,13 +78,13 @@ Web 仪表盘和桌面应用使用相同的设备代码流程：显示验证 URL
 
 1. Plobi 向 `auth.x.ai` 请求设备代码。
 2. 你打开验证 URL，登录，如有提示则输入显示的代码，并批准访问。
-3. Plobi 轮询 xAI 直到批准，然后将 token 保存到 `~/.hermes/auth.json`。
-4. 此后，Plobi 在后台刷新 access token——你将保持登录状态，直到执行 `hermes auth logout xai-oauth` 或在 xAI 账号设置中撤销访问。
+3. Plobi 轮询 xAI 直到批准，然后将 token 保存到 `~/.plobi/auth.json`。
+4. 此后，Plobi 在后台刷新 access token——你将保持登录状态，直到执行 `plobi auth logout xai-oauth` 或在 xAI 账号设置中撤销访问。
 
 ## 检查登录状态
 
 ```bash
-hermes doctor
+plobi doctor
 ```
 
 `◆ Auth Providers` 部分将显示每个 provider 的当前状态，包括 `xai-oauth`。
@@ -92,7 +92,7 @@ hermes doctor
 ## 切换模型
 
 ```bash
-hermes model
+plobi model
 # → 选择 "xAI Grok OAuth (SuperGrok / X Premium+)"
 # → 从模型列表中选择（grok-build-0.1 固定在顶部）
 ```
@@ -100,13 +100,13 @@ hermes model
 或直接设置模型：
 
 ```bash
-hermes config set model.default grok-build-0.1
-hermes config set model.provider xai-oauth
+plobi config set model.default grok-build-0.1
+plobi config set model.provider xai-oauth
 ```
 
 ## 配置参考
 
-登录后，`~/.hermes/config.yaml` 将包含：
+登录后，`~/.plobi/config.yaml` 将包含：
 
 ```yaml
 model:
@@ -120,10 +120,10 @@ model:
 以下所有别名均解析为 `xai-oauth`：
 
 ```bash
-hermes --provider xai-oauth        # 规范名称
-hermes --provider grok-oauth       # 别名
-hermes --provider x-ai-oauth       # 别名
-hermes --provider xai-grok-oauth   # 别名
+plobi --provider xai-oauth        # 规范名称
+plobi --provider grok-oauth       # 别名
+plobi --provider x-ai-oauth       # 别名
+plobi --provider xai-grok-oauth   # 别名
 ```
 
 ## 直连 xAI 工具（TTS / 图像 / 视频 / 转录 / X 搜索）
@@ -133,7 +133,7 @@ hermes --provider xai-grok-oauth   # 别名
 为每个工具选择后端：
 
 ```bash
-hermes tools
+plobi tools
 # → Text-to-Speech       → "xAI TTS"
 # → Image Generation     → "xAI Grok Imagine (image)"
 # → Video Generation     → "xAI Grok Imagine"
@@ -143,11 +143,11 @@ hermes tools
 如果 OAuth token 已存储，选择器会确认并跳过凭据提示。如果既没有 OAuth 也没有设置 `XAI_API_KEY`，选择器会提供三选一菜单：OAuth 登录、粘贴 API 密钥或跳过。
 
 :::note 视频生成默认关闭
-`video_gen` 工具集默认禁用。在 `hermes tools` → `🎬 Video Generation`（按空格键）中启用后，agent 才能调用 `video_generate`。否则 agent 可能回退到内置的 ComfyUI 技能，该技能同样标记为视频生成。
+`video_gen` 工具集默认禁用。在 `plobi tools` → `🎬 Video Generation`（按空格键）中启用后，agent 才能调用 `video_generate`。否则 agent 可能回退到内置的 ComfyUI 技能，该技能同样标记为视频生成。
 :::
 
 :::note 配置 xAI 凭据后 X 搜索自动启用
-只要配置了 xAI 凭据（SuperGrok / X Premium+ OAuth token 或 `XAI_API_KEY`），`x_search` 工具集就会自动启用。如不需要，请通过 `hermes tools` → `🐦 X (Twitter) Search`（按空格键）显式禁用。该工具通过 xAI 内置的 `x_search` Responses API 路由——支持 **SuperGrok / X Premium+ OAuth 登录**或付费 `XAI_API_KEY`，两者同时配置时优先使用 OAuth（消耗订阅配额而非 API 费用）。未配置任何 xAI 凭据时，无论工具集是否启用，工具 schema 都对模型隐藏。
+只要配置了 xAI 凭据（SuperGrok / X Premium+ OAuth token 或 `XAI_API_KEY`），`x_search` 工具集就会自动启用。如不需要，请通过 `plobi tools` → `🐦 X (Twitter) Search`（按空格键）显式禁用。该工具通过 xAI 内置的 `x_search` Responses API 路由——支持 **SuperGrok / X Premium+ OAuth 登录**或付费 `XAI_API_KEY`，两者同时配置时优先使用 OAuth（消耗订阅配额而非 API 费用）。未配置任何 xAI 凭据时，无论工具集是否启用，工具 schema 都对模型隐藏。
 :::
 
 ### 模型
@@ -173,7 +173,7 @@ hermes tools
 |----------|--------|
 | `XAI_BASE_URL` | 覆盖默认的 `https://api.x.ai/v1` 端点（极少需要）。 |
 
-要将 xAI 设为活跃 provider，请在 `config.yaml` 中设置 `model.provider: xai-oauth`（使用 `hermes setup` 进行引导配置），或在单次调用时传入 `--provider xai-oauth`。
+要将 xAI 设为活跃 provider，请在 `config.yaml` 中设置 `model.provider: xai-oauth`（使用 `plobi setup` 进行引导配置），或在单次调用时传入 `--provider xai-oauth`。
 
 ## 故障排查
 
@@ -183,20 +183,20 @@ Plobi 在每次会话前刷新 token，并在收到 401 时响应式地再次刷
 
 当刷新失败是终态时（HTTP 4xx、`invalid_grant`、授权被撤销等），Plobi 将刷新 token 标记为失效并在本地隔离——后续调用跳过注定失败的刷新尝试，而不是反复重放同一个 401。agent 显示一条"需要重新认证"消息，并在你再次登录前保持等待。
 
-**修复方法：** 再次运行 `hermes auth add xai-oauth` 开始全新登录。下次成功交换后隔离状态自动清除。
+**修复方法：** 再次运行 `plobi auth add xai-oauth` 开始全新登录。下次成功交换后隔离状态自动清除。
 
 ### 授权超时
 
 设备代码批准有有限的过期窗口（xAI 在设备代码响应中设置 `expires_in`，通常为数十分钟量级）。如果你未在时限内批准登录，Plobi 会抛出超时错误。
 
-**修复方法：** 重新运行 `hermes auth add xai-oauth`（或 `hermes model`）。流程重新开始。
+**修复方法：** 重新运行 `plobi auth add xai-oauth`（或 `plobi model`）。流程重新开始。
 
 ### 从远程服务器登录
 
 在 SSH 或容器会话中，Plobi 打印验证 URL 和用户代码，而不是打开浏览器。在笔记本电脑或云控制台的浏览器中打开该 URL——xAI Grok OAuth 无需 SSH 端口转发。
 
 ```bash
-hermes auth add xai-oauth --no-browser
+plobi auth add xai-oauth --no-browser
 ```
 
 回环重定向类 provider（Spotify、MCP 服务器）请参阅 [OAuth over SSH / Remote Hosts](./oauth-over-ssh.md)。
@@ -205,13 +205,13 @@ hermes auth add xai-oauth --no-browser
 
 浏览器中 OAuth 完成，token 已保存，但推理或 token 刷新返回 `HTTP 403`，消息类似于 *"The caller does not have permission to execute the specified operation"*。
 
-这**不是** token 过期问题——重新运行 `hermes model` 不会改变结果。xAI 的后端已被观察到将 OAuth API 访问限制在特定 SuperGrok 套餐，即使应用内订阅处于激活状态（issue [#26847](https://github.com/NousResearch/hermes-agent/issues/26847)）。
+这**不是** token 过期问题——重新运行 `plobi model` 不会改变结果。xAI 的后端已被观察到将 OAuth API 访问限制在特定 SuperGrok 套餐，即使应用内订阅处于激活状态（issue [#26847](https://github.com/NousResearch/hermes-agent/issues/26847)）。
 
 **修复方法：** 设置 `XAI_API_KEY` 并切换到 API 密钥路径：
 
 ```bash
 export XAI_API_KEY=xai-...
-hermes config set model.provider xai
+plobi config set model.provider xai
 ```
 
 或在 [x.ai/grok](https://x.ai/grok) 升级订阅（如果必须使用 OAuth 路径）。
@@ -220,17 +220,17 @@ hermes config set model.provider xai
 
 auth 存储中没有 `xai-oauth` 条目，也未设置 `XAI_API_KEY`。你尚未登录，或凭据文件已被删除。
 
-**修复方法：** 运行 `hermes model` 并选择 xAI Grok OAuth provider，或运行 `hermes auth add xai-oauth`。
+**修复方法：** 运行 `plobi model` 并选择 xAI Grok OAuth provider，或运行 `plobi auth add xai-oauth`。
 
 ## 退出登录
 
 删除所有已存储的 xAI Grok OAuth 凭据：
 
 ```bash
-hermes auth logout xai-oauth
+plobi auth logout xai-oauth
 ```
 
-这会清除 `auth.json` 中的单例 OAuth 条目以及 `xai-oauth` 的所有凭据池行。如果只想删除单个池条目，请使用 `hermes auth remove xai-oauth <index|id|label>`（运行 `hermes auth list xai-oauth` 查看列表）。
+这会清除 `auth.json` 中的单例 OAuth 条目以及 `xai-oauth` 的所有凭据池行。如果只想删除单个池条目，请使用 `plobi auth remove xai-oauth <index|id|label>`（运行 `plobi auth list xai-oauth` 查看列表）。
 
 ## 另请参阅
 

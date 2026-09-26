@@ -2,14 +2,14 @@
  * backend-probes.ts
  *
  * Cheap "does this candidate backend actually work" checks used by
- * resolveHermesBackend (main.ts). The resolver walks a ladder of
- * candidates -- bootstrap marker, `hermes` on PATH, system Python with
- * hermes_cli installed -- and historically returned the first candidate
+ * resolvePlobiBackend (main.ts). The resolver walks a ladder of
+ * candidates -- bootstrap marker, `plobi` on PATH, system Python with
+ * plobi_cli installed -- and historically returned the first candidate
  * whose binary existed on disk. That assumption breaks when a user has
  * a pre-installed Python 3.11-3.13 (so findSystemPython() returns a
- * path) but no hermes_cli in its site-packages: the resolver hands back
+ * path) but no plobi_cli in its site-packages: the resolver hands back
  * a backend the spawn step can't actually run, and the user gets a
- * dead-on-arrival "ModuleNotFoundError: No module named 'hermes_cli'"
+ * dead-on-arrival "ModuleNotFoundError: No module named 'plobi_cli'"
  * instead of the first-launch installer.
  *
  * These probes give the resolver a way to verify a candidate before
@@ -23,7 +23,7 @@
  *   - 5s timeout (a hung interpreter beats forever, but we still give
  *     slow disks / cold caches room to breathe)
  *   - stdio ignored (we only care about exit code; stdout/stderr are
- *     not surfaced to the user, just to recentHermesLog for forensics
+ *     not surfaced to the user, just to recentPlobiLog for forensics
  *     via the caller's catch block if it chooses)
  *   - any throw -> false (never propagate -- resolver wants a boolean)
  *
@@ -43,21 +43,21 @@ const PROBE_TIMEOUT_MS = 5000
  *
  * @returns {string}
  */
-function hermesRuntimeImportProbe() {
-  return 'import yaml; import dotenv; import hermes_cli.config'
+function plobiRuntimeImportProbe() {
+  return 'import yaml; import dotenv; import plobi_cli.config'
 }
 
 /**
  * Return true iff the Plobi runtime import probe exits 0.
  *
- * Used to gate the "fallback to system Python with hermes_cli installed"
- * rung of resolveHermesBackend. Without this, a system Python 3.11-3.13
+ * Used to gate the "fallback to system Python with plobi_cli installed"
+ * rung of resolvePlobiBackend. Without this, a system Python 3.11-3.13
  * registered in PEP 514 makes findSystemPython() succeed regardless of
- * whether hermes_cli has actually been pip-installed into its
+ * whether plobi_cli has actually been pip-installed into its
  * site-packages -- and the resolver returns a backend that immediately
  * dies on spawn.
  *
- * The probe intentionally imports hermes_cli.config, not just the top-level
+ * The probe intentionally imports plobi_cli.config, not just the top-level
  * package: a broken/empty Windows launcher venv can still see the source tree
  * through PYTHONPATH but lack PyYAML, then die on the first real CLI import.
  *
@@ -65,13 +65,13 @@ function hermesRuntimeImportProbe() {
  * @param {object} [opts.env] - Additional environment for the probe.
  * @returns {boolean}
  */
-function canImportHermesCli(pythonPath: string, opts: { env?: Record<string, string> } = {}) {
+function canImportPlobiCli(pythonPath: string, opts: { env?: Record<string, string> } = {}) {
   if (!pythonPath) {
     return false
   }
 
   try {
-    execFileSync(pythonPath, ['-c', hermesRuntimeImportProbe()], {
+    execFileSync(pythonPath, ['-c', plobiRuntimeImportProbe()], {
       env: { ...process.env, ...(opts.env || {}) },
       stdio: 'ignore',
       timeout: PROBE_TIMEOUT_MS,
@@ -85,32 +85,32 @@ function canImportHermesCli(pythonPath: string, opts: { env?: Record<string, str
 }
 
 /**
- * Return true iff `<hermesCommand> --version` exits 0.
+ * Return true iff `<plobiCommand> --version` exits 0.
  *
- * Used to gate the "existing `hermes` on PATH" rung. Without this, a
- * stale hermes.cmd shim left behind by an uninstalled pip install (or
- * a half-built venv whose `hermes` entry-point points at a deleted
+ * Used to gate the "existing `plobi` on PATH" rung. Without this, a
+ * stale plobi.cmd shim left behind by an uninstalled pip install (or
+ * a half-built venv whose `plobi` entry-point points at a deleted
  * Python) survives findOnPath() and gets selected as the backend.
  *
  * We intentionally avoid invoking the command with the dashboard args
  * here -- `--version` is the cheapest "is this binary alive" smoke
- * test that every hermes_cli entry-point has supported since 0.1.
+ * test that every plobi_cli entry-point has supported since 0.1.
  *
- * @param {string} hermesCommand - Resolved absolute path to a hermes
+ * @param {string} plobiCommand - Resolved absolute path to a plobi
  *   executable (or an interpreter+script wrapper).
  * @param {boolean} [opts.shell] - Whether to run through a shell. For
  *   .cmd/.bat shims on Windows execFileSync needs shell:true to find
  *   the cmd interpreter; mirrors the same flag isCommandScript() drives
- *   in resolveHermesBackend.
+ *   in resolvePlobiBackend.
  * @returns {boolean}
  */
-function verifyHermesCli(hermesCommand: string, opts?: { shell?: boolean }) {
-  if (!hermesCommand) {
+function verifyPlobiCli(plobiCommand: string, opts?: { shell?: boolean }) {
+  if (!plobiCommand) {
     return false
   }
 
   try {
-    execFileSync(hermesCommand, ['--version'], {
+    execFileSync(plobiCommand, ['--version'], {
       stdio: 'ignore',
       timeout: PROBE_TIMEOUT_MS,
       shell: Boolean(opts?.shell),
@@ -123,4 +123,4 @@ function verifyHermesCli(hermesCommand: string, opts?: { shell?: boolean }) {
   }
 }
 
-export { canImportHermesCli, hermesRuntimeImportProbe, PROBE_TIMEOUT_MS, verifyHermesCli }
+export { canImportPlobiCli, plobiRuntimeImportProbe, PROBE_TIMEOUT_MS, verifyPlobiCli }

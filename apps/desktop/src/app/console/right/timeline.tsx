@@ -20,7 +20,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { PanelSectionLabel } from '@/app/overlays/panel'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/hermes'
+import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 import {
   dayKeysOf,

@@ -1,26 +1,26 @@
 ---
 sidebar_position: 8
 title: "上下文文件"
-description: "项目上下文文件 — .hermes.md、AGENTS.md、CLAUDE.md、全局 SOUL.md 以及 .cursorrules — 自动注入每次对话"
+description: "项目上下文文件 — .plobi.md、AGENTS.md、CLAUDE.md、全局 SOUL.md 以及 .cursorrules — 自动注入每次对话"
 ---
 
 # 上下文文件
 
-Plobi Agent 会自动发现并加载上下文文件，以塑造其行为方式。部分文件属于项目本地文件，从工作目录中发现。`SOUL.md` 现在对整个 Plobi 实例全局生效，仅从 `HERMES_HOME` 加载。
+Plobi Agent 会自动发现并加载上下文文件，以塑造其行为方式。部分文件属于项目本地文件，从工作目录中发现。`SOUL.md` 现在对整个 Plobi 实例全局生效，仅从 `PLOBI_HOME` 加载。
 
 ## 支持的上下文文件
 
 | 文件 | 用途 | 发现方式 |
 |------|---------|-----------| 
-| **.hermes.md** / **HERMES.md** | 项目指令（最高优先级） | 向上遍历至 git 根目录 |
+| **.plobi.md** / **PLOBI.md** | 项目指令（最高优先级） | 向上遍历至 git 根目录 |
 | **AGENTS.md** | 项目指令、规范、架构说明 | 启动时的 CWD 及子目录（渐进式） |
 | **CLAUDE.md** | Claude Code 上下文文件（同样支持检测） | 启动时的 CWD 及子目录（渐进式） |
-| **SOUL.md** | 当前 Plobi 实例的全局个性与语气定制 | 仅 `HERMES_HOME/SOUL.md` |
+| **SOUL.md** | 当前 Plobi 实例的全局个性与语气定制 | 仅 `PLOBI_HOME/SOUL.md` |
 | **.cursorrules** | Cursor IDE 编码规范 | 仅 CWD |
 | **.cursor/rules/*.mdc** | Cursor IDE 规则模块 | 仅 CWD |
 
 :::info 优先级系统
-每次会话仅加载**一种**项目上下文类型（先匹配先生效）：`.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`。**SOUL.md** 始终作为 agent 身份独立加载（插槽 #1）。
+每次会话仅加载**一种**项目上下文类型（先匹配先生效）：`.plobi.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`。**SOUL.md** 始终作为 agent 身份独立加载（插槽 #1）。
 :::
 
 ## AGENTS.md
@@ -83,20 +83,20 @@ This is a Next.js 14 web application with a Python FastAPI backend.
 
 **位置：**
 
-- `~/.hermes/SOUL.md`
-- 或 `$HERMES_HOME/SOUL.md`（若使用自定义主目录运行 Plobi）
+- `~/.plobi/SOUL.md`
+- 或 `$PLOBI_HOME/SOUL.md`（若使用自定义主目录运行 Plobi）
 
 重要说明：
 
 - 若 `SOUL.md` 尚不存在，Plobi 会自动生成一个默认文件
-- Plobi 仅从 `HERMES_HOME` 加载 `SOUL.md`
+- Plobi 仅从 `PLOBI_HOME` 加载 `SOUL.md`
 - Plobi 不会在工作目录中探测 `SOUL.md`
 - 若文件为空，`SOUL.md` 中的内容不会添加到 prompt
 - 若文件有内容，内容在扫描和截断后原样注入
 
 ## .cursorrules
 
-Plobi 兼容 Cursor IDE 的 `.cursorrules` 文件和 `.cursor/rules/*.mdc` 规则模块。若这些文件存在于项目根目录，且未找到更高优先级的上下文文件（`.hermes.md`、`AGENTS.md` 或 `CLAUDE.md`），则将其作为项目上下文加载。
+Plobi 兼容 Cursor IDE 的 `.cursorrules` 文件和 `.cursor/rules/*.mdc` 规则模块。若这些文件存在于项目根目录，且未找到更高优先级的上下文文件（`.plobi.md`、`AGENTS.md` 或 `CLAUDE.md`），则将其作为项目上下文加载。
 
 这意味着使用 Plobi 时，现有的 Cursor 规范会自动生效。
 
@@ -106,7 +106,7 @@ Plobi 兼容 Cursor IDE 的 `.cursorrules` 文件和 `.cursor/rules/*.mdc` 规�
 
 上下文文件由 `agent/prompt_builder.py` 中的 `build_context_files_prompt()` 加载：
 
-1. **扫描工作目录** — 依次检查 `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`（先匹配先生效）
+1. **扫描工作目录** — 依次检查 `.plobi.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`（先匹配先生效）
 2. **读取内容** — 以 UTF-8 文本读取每个文件
 3. **安全扫描** — 检查内容是否存在 prompt 注入模式
 4. **截断** — 超过 20,000 个字符的文件进行首尾截断（70% 头部，20% 尾部，中间插入标记）

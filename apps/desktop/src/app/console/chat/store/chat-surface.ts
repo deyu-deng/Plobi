@@ -12,7 +12,7 @@
  */
 
 import type { ChatMessagePart } from '@/lib/chat-messages'
-import type { AgendaEvent } from '@/types/hermes'
+import type { AgendaEvent } from '@/types/plobi'
 
 /** Tool name the assistant uses to propose a pending agenda event (U2). */
 export const AGENDA_PROPOSE_TOOL = 'agenda_propose'

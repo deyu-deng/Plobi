@@ -1,6 +1,6 @@
 name: nemo_relay
 version: "0.1.0"
-description: "Optional NeMo Relay observability for Plobi. Opt in with `hermes plugins enable observability/nemo_relay`; HERMES_NEMO_RELAY_* env vars configure exports after the plugin is enabled."
+description: "Optional NeMo Relay observability for Plobi. Opt in with `plobi plugins enable observability/nemo_relay`; PLOBI_NEMO_RELAY_* env vars configure exports after the plugin is enabled."
 author: NousResearch
 hooks:
   - on_session_start

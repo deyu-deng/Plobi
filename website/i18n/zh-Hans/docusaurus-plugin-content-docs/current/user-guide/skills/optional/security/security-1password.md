@@ -14,7 +14,7 @@ description: "设置并使用 1Password CLI (op)"
 
 | | |
 |---|---|
-| 来源 | 可选 — 通过 `hermes skills install official/security/1password` 安装 |
+| 来源 | 可选 — 通过 `plobi skills install official/security/1password` 安装 |
 | 路径 | `optional-skills/security/1password` |
 | 版本 | `1.0.0` |
 | 作者 | arceus77-7，由 Plobi Agent 增强 |
@@ -51,7 +51,7 @@ description: "设置并使用 1Password CLI (op)"
 
 ### 服务账户（推荐用于 Plobi）
 
-在 `~/.hermes/.env` 中设置 `OP_SERVICE_ACCOUNT_TOKEN`（skill 首次加载时会提示输入）。
+在 `~/.plobi/.env` 中设置 `OP_SERVICE_ACCOUNT_TOKEN`（skill 首次加载时会提示输入）。
 无需桌面应用。支持 `op read`、`op inject`、`op run`。
 
 ```bash
@@ -103,9 +103,9 @@ Plobi 终端命令默认为非交互式，且在多次调用之间可能丢失�
 注意：使用 `OP_SERVICE_ACCOUNT_TOKEN` 时**无需**此操作 — 令牌会在终端调用之间自动持久化。
 
 ```bash
-SOCKET_DIR="${TMPDIR:-/tmp}/hermes-tmux-sockets"
+SOCKET_DIR="${TMPDIR:-/tmp}/plobi-tmux-sockets"
 mkdir -p "$SOCKET_DIR"
-SOCKET="$SOCKET_DIR/hermes-op.sock"
+SOCKET="$SOCKET_DIR/plobi-op.sock"
 SESSION="op-auth-$(date +%Y%m%d-%H%M%S)"
 
 tmux -S "$SOCKET" new -d -s "$SESSION" -n shell

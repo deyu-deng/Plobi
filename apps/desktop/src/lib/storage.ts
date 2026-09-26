@@ -4,13 +4,13 @@
 // of it without instrumenting each call site. No listeners by default → no cost.
 
 /**
- * Central prefix for all localStorage keys. Currently `hermes.` — a future
+ * Central prefix for all localStorage keys. Currently `plobi.` — a future
  * rebrand to `plobi.` only needs to change this constant plus add a one-time
  * migration in the app entry point. Every store file should construct keys as:
  *   `${STORAGE_PREFIX}desktop.foo`
- * rather than hard-coding `hermes.desktop.foo`.
+ * rather than hard-coding `plobi.desktop.foo`.
  */
-export const STORAGE_PREFIX = 'hermes.'
+export const STORAGE_PREFIX = 'plobi.'
 
 /** Helper to build a fully-qualified storage key. Prefer over hard-coding. */
 export function storageKey(suffix: string): string {

@@ -38,7 +38,7 @@ interface MessageStreamOptions {
     runtimeSessionId?: string | null
   ) => Promise<void>
   queryClient: QueryClient
-  refreshHermesConfig: () => Promise<void>
+  refreshPlobiConfig: () => Promise<void>
   refreshSessions: () => Promise<void>
   sessionStateByRuntimeIdRef: MutableRefObject<Map<string, ClientSessionState>>
   updateSessionState: (
@@ -57,7 +57,7 @@ export function useMessageStream({
   activeSessionIdRef,
   hydrateFromStoredSession,
   queryClient,
-  refreshHermesConfig,
+  refreshPlobiConfig,
   refreshSessions,
   sessionStateByRuntimeIdRef,
   updateSessionState
@@ -524,7 +524,7 @@ export function useMessageStream({
     failAssistantMessage,
     flushQueuedDeltas,
     queryClient,
-    refreshHermesConfig,
+    refreshPlobiConfig,
     sessionInterrupted,
     updateSessionState,
     upsertToolCall

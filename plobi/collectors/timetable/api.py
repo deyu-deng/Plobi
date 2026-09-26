@@ -94,13 +94,13 @@ def _preview_payload(occurrences: list, stats: dict) -> dict:
 
 
 def _status_path() -> Path:
-    """``HERMES_HOME/plobi/timetable.json`` — the last-import state file."""
+    """``PLOBI_HOME/plobi/timetable.json`` — the last-import state file."""
     try:
-        from hermes_constants import get_hermes_home
+        from plobi_constants import get_plobi_home
 
-        root = get_hermes_home() / "plobi"
+        root = get_plobi_home() / "plobi"
     except Exception:  # pragma: no cover - fallback mirrors store.agenda_db_path
-        root = Path.home() / ".hermes" / "plobi"
+        root = Path.home() / ".plobi" / "plobi"
     return root / "timetable.json"
 
 

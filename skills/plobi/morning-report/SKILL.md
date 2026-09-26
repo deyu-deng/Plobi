@@ -5,7 +5,7 @@ version: 0.2.0
 author: Plobi
 license: MIT
 metadata:
-  hermes:
+  plobi:
     tags: [plobi, butler, night, report]
 ---
 
@@ -16,4 +16,4 @@ metadata:
 1. Call `plobi` with `area=ops` `action=morning_report`.
 2. Optionally `area=task` `action=board` for fresher counts.
 3. Deliver markdown; lead with **awaiting approvals**.
-4. Do not auto-approve L2+ items. Use Hermes gateway to deliver — do not invent a notifier.
+4. Do not auto-approve L2+ items. Use Plobi gateway to deliver — do not invent a notifier.
