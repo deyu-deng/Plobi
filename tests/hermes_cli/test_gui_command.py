@@ -40,9 +40,9 @@ def _make_packaged_executable(root: Path, monkeypatch, platform: str = "darwin")
     monkeypatch.setattr(cli_main.sys, "platform", platform)
     desktop_dir = root / "apps" / "desktop"
     if platform == "darwin":
-        exe = desktop_dir / "release" / "mac-arm64" / "Vaelis.app" / "Contents" / "MacOS" / "Vaelis"
+        exe = desktop_dir / "release" / "mac-arm64" / "Plobi.app" / "Contents" / "MacOS" / "Plobi"
     elif platform == "win32":
-        exe = desktop_dir / "release" / "win-unpacked" / "Vaelis.exe"
+        exe = desktop_dir / "release" / "win-unpacked" / "Plobi.exe"
     else:
         exe = desktop_dir / "release" / "linux-unpacked" / "hermes"
     exe.parent.mkdir(parents=True)
@@ -709,7 +709,7 @@ def test_gui_does_not_retry_after_packaged_executable_exists(tmp_path, monkeypat
     Electron-download problem the cache purge + mirror retries exist to repair.
 
     Regression for #40187: a late failure such as macOS code signing leaves
-    Vaelis.app/Contents/MacOS/Vaelis in place. Re-downloading Electron can't
+    Plobi.app/Contents/MacOS/Plobi in place. Re-downloading Electron can't
     repair a signing failure, so the destructive purge + slow mirror retry must
     be skipped — we fail directly instead of grinding through an identical retry.
     """
@@ -931,9 +931,9 @@ def test_stop_desktop_build_lock_terminates_only_release_procs(tmp_path, monkeyp
     desktop_dir = tmp_path / "apps" / "desktop"
     release = desktop_dir / "release" / "win-unpacked"
     release.mkdir(parents=True)
-    locker_exe = release / "Vaelis.exe"
+    locker_exe = release / "Plobi.exe"
     locker_exe.write_text("", encoding="utf-8")
-    other_exe = tmp_path / "elsewhere" / "Vaelis.exe"
+    other_exe = tmp_path / "elsewhere" / "Plobi.exe"
     other_exe.parent.mkdir(parents=True)
     other_exe.write_text("", encoding="utf-8")
 

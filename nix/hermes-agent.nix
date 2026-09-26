@@ -1,4 +1,4 @@
-# nix/hermes-agent.nix — Overridable Vaelis Agent package
+# nix/hermes-agent.nix — Overridable Plobi Agent package
 #
 # callPackage auto-wires nixpkgs args; flake inputs are passed explicitly.
 # Users override via:

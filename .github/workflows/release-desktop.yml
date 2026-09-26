@@ -65,7 +65,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: vaelis-${{ matrix.platform }}
+          name: plobi-${{ matrix.platform }}
           path: apps/desktop/release/*
           if-no-files-found: error
 

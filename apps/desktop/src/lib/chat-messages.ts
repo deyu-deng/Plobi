@@ -677,7 +677,7 @@ function storedToolMessagePart(toolMessage: SessionMessage, fallbackIndex: numbe
   // The stored row carries the tool's full result payload (usually a JSON
   // string). Parse it so a transcript rebuild that lost the assistant
   // tool_calls row (compaction / rewind) still surfaces the real structured
-  // card — intent/route/briefing on `vaelis_secretary_ask` — instead of a
+  // card — intent/route/briefing on `plobi_secretary_ask` — instead of a
   // `{context: "<raw json>"}` wrapper that renders like an empty result.
   const parsed = parseStoredToolResult(toolMessage.content || toolMessage.text || toolMessage.context)
   const parsedRecord = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null

@@ -56,9 +56,9 @@ def check_sms_requirements() -> bool:
 
 class SmsAdapter(BasePlatformAdapter):
     """
-    Twilio SMS <-> Vaelis gateway adapter.
+    Twilio SMS <-> Plobi gateway adapter.
 
-    Each inbound phone number gets its own Vaelis session (multi-tenant).
+    Each inbound phone number gets its own Plobi session (multi-tenant).
     Replies are always sent from the configured TWILIO_PHONE_NUMBER.
     """
 
@@ -490,7 +490,7 @@ def _build_adapter(config):
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Vaelis plugin system."""
+    """Plugin entry point — called by the Plobi plugin system."""
     ctx.register_platform(
         name="sms",
         label="SMS (Twilio)",

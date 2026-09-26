@@ -375,7 +375,7 @@ def _filter_explicit_provider_rows(rows: list[dict], ctx: ConfigContext) -> list
 
     ``list_authenticated_providers`` intentionally discovers ambient / auto-
     seeded credentials (for example GitHub CLI -> Copilot). Desktop chat model
-    pickers want the narrower subset the user explicitly configured for Vaelis.
+    pickers want the narrower subset the user explicitly configured for Plobi.
     """
     from hermes_cli.auth import is_provider_explicitly_configured
 

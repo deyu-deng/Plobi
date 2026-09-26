@@ -8,7 +8,7 @@ description: "Use your Nous Portal subscription (or other OAuth provider) as an 
 
 The subscription proxy is a local HTTP server that lets external apps —
 OpenViking, Karakeep, Open WebUI, anything that speaks OpenAI-compatible
-chat completions — use your Vaelis-managed provider subscription as their
+chat completions — use your Plobi-managed provider subscription as their
 LLM endpoint. The proxy attaches the right credentials (refreshing them
 automatically) so the app never needs a static API key.
 
@@ -17,7 +17,7 @@ This is different from the [API server](./api-server.md):
 | | API server | Subscription proxy |
 |---|---|---|
 | What it serves | Your agent (full toolset, memory, skills) | Raw model inference |
-| Use case | "Use Vaelis as a chat backend" | "Use my Portal sub from another app" |
+| Use case | "Use Plobi as a chat backend" | "Use my Portal sub from another app" |
 | Auth | Your `API_SERVER_KEY` | Any bearer (proxy attaches the real one) |
 | Tool calls | Yes — the agent runs tools | No — passthrough only |
 
@@ -32,8 +32,8 @@ proxy when you just want **the model** through your subscription.
 hermes portal
 ```
 
-This opens your browser for the Nous Portal OAuth flow. Vaelis stores
-the refresh token in `~/.hermes/auth.json` — the same place all Vaelis
+This opens your browser for the Nous Portal OAuth flow. Plobi stores
+the refresh token in `~/.hermes/auth.json` — the same place all Plobi
 provider logins live.
 
 ### 2. Start the proxy
@@ -43,7 +43,7 @@ hermes proxy start
 ```
 
 ```
-Starting Vaelis proxy for Nous Portal
+Starting Plobi proxy for Nous Portal
   Listening on:  http://127.0.0.1:8645/v1
   Forwarding to: (resolved per-request from your subscription)
   Use any bearer token in the client — the proxy attaches your real credential.
@@ -59,7 +59,7 @@ Any OpenAI-compatible app config takes the same triple:
 ```
 Base URL:   http://127.0.0.1:8645/v1
 API key:    anything (e.g. "sk-unused")
-Model:      Vaelis-4-70B    # or Vaelis-4.3-36B, Vaelis-4-405B
+Model:      Plobi-4-70B    # or Plobi-4.3-36B, Plobi-4-405B
 ```
 
 The proxy ignores the `Authorization` header from your app and attaches
@@ -83,7 +83,7 @@ hermes proxy status
 ```
 
 ```
-Vaelis proxy upstream adapters
+Plobi proxy upstream adapters
 
   [nous    ] Nous Portal — ready (bearer expires 2026-05-15T06:43:21Z)
 ```
@@ -122,7 +122,7 @@ Edit `~/.openviking/ov.conf`:
 {
   "vlm": {
     "provider": "openai",
-    "model": "Vaelis-4-70B",
+    "model": "Plobi-4-70B",
     "api_base": "http://127.0.0.1:8645/v1",
     "api_key": "unused-proxy-attaches-real-creds"
   }
@@ -153,7 +153,7 @@ bookmark summarization. In its config:
 # Karakeep .env
 OPENAI_API_BASE_URL=http://127.0.0.1:8645/v1
 OPENAI_API_KEY=any-non-empty-string
-INFERENCE_TEXT_MODEL=Vaelis-4-70B
+INFERENCE_TEXT_MODEL=Plobi-4-70B
 ```
 
 Same pattern works for Open WebUI, LobeChat, NextChat, or any other

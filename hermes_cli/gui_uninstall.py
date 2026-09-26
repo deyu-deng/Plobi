@@ -1,5 +1,5 @@
 """
-Vaelis Desktop (Chat GUI) uninstaller.
+Plobi Desktop (Chat GUI) uninstaller.
 
 The desktop GUI ships in two shapes and this module knows how to find and
 remove the artifacts of both, on Linux, macOS, and Windows, WITHOUT touching
@@ -17,15 +17,15 @@ the Python agent or the user's config/data:
   2. Packaged distributable (DMG / NSIS / AppImage / deb / rpm)
      Installed by the OS to a standard application location and carrying its
      own bundled Electron + a per-user Electron ``userData`` directory:
-       - macOS:   ``/Applications/Vaelis.app`` or ``~/Applications/Vaelis.app``
-       - Windows: ``%LOCALAPPDATA%\\Programs\\Vaelis`` (NSIS per-user)
+       - macOS:   ``/Applications/Plobi.app`` or ``~/Applications/Plobi.app``
+       - Windows: ``%LOCALAPPDATA%\\Programs\\Plobi`` (NSIS per-user)
        - Linux:   ``~/.local/share/applications`` .desktop entry + AppImage
 
 In both shapes the Electron runtime keeps a ``userData`` directory keyed on
-the app name ("Vaelis"), separate from ``$HERMES_HOME``:
-  - macOS:   ``~/Library/Application Support/Vaelis``
-  - Windows: ``%APPDATA%\\Vaelis``
-  - Linux:   ``$XDG_CONFIG_HOME/Vaelis`` (default ``~/.config/Vaelis``)
+the app name ("Plobi"), separate from ``$HERMES_HOME``:
+  - macOS:   ``~/Library/Application Support/Plobi``
+  - Windows: ``%APPDATA%\\Plobi``
+  - Linux:   ``$XDG_CONFIG_HOME/Plobi`` (default ``~/.config/Plobi``)
 
 This holds the desktop's own ``connection.json`` / ``updates.json`` and
 Chromium cache — pure GUI state, safe to remove on a GUI uninstall.
@@ -70,21 +70,21 @@ def _agent_root(hermes_home: Path) -> Path:
 def desktop_userdata_dir() -> Path:
     """Return the Electron ``userData`` directory for the desktop app.
 
-    Mirrors Electron's ``app.getPath('userData')`` for an app named "Vaelis"
+    Mirrors Electron's ``app.getPath('userData')`` for an app named "Plobi"
     on each platform. This is GUI-only state (connection.json, updates.json,
     Chromium cache) and never holds agent config or sessions.
     """
     home = Path.home()
     if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "Vaelis"
+        return home / "Library" / "Application Support" / "Plobi"
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         base = Path(appdata) if appdata else (home / "AppData" / "Roaming")
-        return base / "Vaelis"
+        return base / "Plobi"
     # Linux / other POSIX — XDG config home.
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else (home / ".config")
-    return base / "Vaelis"
+    return base / "Plobi"
 
 
 def source_built_gui_artifacts(hermes_home: Path) -> "list[Path]":
@@ -113,28 +113,28 @@ def packaged_gui_app_paths() -> "list[Path]":
 
     Returns every candidate for the current OS; the caller filters to those
     that actually exist. We never glob system-wide — only the well-known
-    electron-builder output locations for the "Vaelis" product.
+    electron-builder output locations for the "Plobi" product.
     """
     home = Path.home()
     paths: list[Path] = []
     if sys.platform == "darwin":
         paths += [
-            Path("/Applications/Vaelis.app"),
-            home / "Applications" / "Vaelis.app",
+            Path("/Applications/Plobi.app"),
+            home / "Applications" / "Plobi.app",
         ]
     elif sys.platform == "win32":
         local = os.environ.get("LOCALAPPDATA")
         local_base = Path(local) if local else (home / "AppData" / "Local")
         paths += [
-            # NSIS per-user install (perMachine=false → Programs\Vaelis).
-            local_base / "Programs" / "Vaelis",
+            # NSIS per-user install (perMachine=false → Programs\Plobi).
+            local_base / "Programs" / "Plobi",
             # Older / alternate layout some builds used.
             local_base / "hermes-desktop",
         ]
         program_files = os.environ.get("ProgramFiles")
         if program_files:
             # NSIS per-machine fallback (needs admin to remove).
-            paths.append(Path(program_files) / "Vaelis")
+            paths.append(Path(program_files) / "Plobi")
     else:
         # Linux: AppImage is a single file the user placed somewhere; we can
         # only reliably clean the desktop entry + icon we know the name of.
@@ -146,7 +146,7 @@ def packaged_gui_app_paths() -> "list[Path]":
         data_base = Path(data) if data else (home / ".local" / "share")
         paths += [
             data_base / "applications" / "hermes.desktop",
-            data_base / "applications" / "Vaelis.desktop",
+            data_base / "applications" / "Plobi.desktop",
         ]
     return paths
 

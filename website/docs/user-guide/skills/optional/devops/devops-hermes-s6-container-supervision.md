@@ -1,14 +1,14 @@
 ---
-title: "Vaelis S6 Container Supervision"
-sidebar_label: "Vaelis S6 Container Supervision"
-description: "Modify, debug, or extend the s6-overlay supervision tree inside the Vaelis Agent Docker image — adding new services, debugging profile gateways, understandin..."
+title: "Plobi S6 Container Supervision"
+sidebar_label: "Plobi S6 Container Supervision"
+description: "Modify, debug, or extend the s6-overlay supervision tree inside the Plobi Agent Docker image — adding new services, debugging profile gateways, understandin..."
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
-# Vaelis S6 Container Supervision
+# Plobi S6 Container Supervision
 
-Modify, debug, or extend the s6-overlay supervision tree inside the Vaelis Agent Docker image — adding new services, debugging profile gateways, understanding the Architecture B main-program pattern.
+Modify, debug, or extend the s6-overlay supervision tree inside the Plobi Agent Docker image — adding new services, debugging profile gateways, understanding the Architecture B main-program pattern.
 
 ## Skill metadata
 
@@ -17,7 +17,7 @@ Modify, debug, or extend the s6-overlay supervision tree inside the Vaelis Agent
 | Source | Optional — install with `hermes skills install official/devops/hermes-s6-container-supervision` |
 | Path | `optional-skills/devops/hermes-s6-container-supervision` |
 | Version | `1.0.0` |
-| Author | Vaelis Agent |
+| Author | Plobi Agent |
 | License | MIT |
 | Platforms | linux |
 | Tags | `docker`, `s6`, `supervision`, `gateway`, `profiles` |
@@ -26,21 +26,21 @@ Modify, debug, or extend the s6-overlay supervision tree inside the Vaelis Agent
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Vaelis loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Plobi loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
-# Vaelis s6-overlay Container Supervision
+# Plobi s6-overlay Container Supervision
 
 ## When to use this skill
 
 Load this skill when you're working on:
-- Adding or removing a static service in the Vaelis Docker image (something that should be supervised at every container start, like the dashboard)
+- Adding or removing a static service in the Plobi Docker image (something that should be supervised at every container start, like the dashboard)
 - Diagnosing why a per-profile gateway isn't starting, restarting, or surviving `docker restart`
 - Understanding why the container's CMD is `/opt/hermes/docker/main-wrapper.sh` and how leading-dash args reach the user's program
 - Modifying `cont-init.d` boot scripts (UID remap, volume seeding, profile reconciliation)
 - Changing the rendered run-script for per-profile gateways (Phase 4)
 
-If you're just running the Vaelis Agent and want to use Docker, see `website/docs/user-guide/docker.md` instead.
+If you're just running the Plobi Agent and want to use Docker, see `website/docs/user-guide/docker.md` instead.
 
 ## Architecture at a glance
 
@@ -194,4 +194,4 @@ Check whether something is invoking `s6-svscanctl -t` or `/run/s6/basedir/bin/ha
 ## Related skills
 
 - `hermes-agent-dev`: General hermes-agent codebase navigation
-- `hermes-tool-quirks`: Specific Vaelis-tool workarounds (sed/grep/etc.) — load when debugging the s6 stack's interaction with hermes built-in tools.
+- `hermes-tool-quirks`: Specific Plobi-tool workarounds (sed/grep/etc.) — load when debugging the s6 stack's interaction with hermes built-in tools.

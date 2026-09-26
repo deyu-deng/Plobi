@@ -15,7 +15,7 @@ def test_tini_compat_symlink_exists(built_image: str) -> None:
     """/usr/bin/tini must exist as a symlink to /init.
 
     Regression for #34192: orchestration templates (e.g. Hostinger's
-    'Vaelis WebUI' catalog) still pin /usr/bin/tini as the entrypoint.
+    'Plobi WebUI' catalog) still pin /usr/bin/tini as the entrypoint.
     The shim symlinks it to /init so legacy wrappers exec the right
     PID-1 reaper without behavior change.
     """

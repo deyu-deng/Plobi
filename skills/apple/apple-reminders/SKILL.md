@@ -2,7 +2,7 @@
 name: apple-reminders
 description: "Apple Reminders via remindctl: add, list, complete."
 version: 1.0.0
-author: Vaelis Agent
+author: Plobi Agent
 license: MIT
 platforms: [macos]
 metadata:

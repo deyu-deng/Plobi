@@ -1,0 +1,45 @@
+# WP-L1-BUDGET — L1 总秘书（default profile）运行时预算模板
+#
+# 这是仓库内唯一的 "L1 默认 profile 模板"：被
+# ``plugins/plobi-north-star/l1_budget.py`` 引用，也是
+# ``tests/plobi/test_l1_budget.py::test_compression_threshold_in_default_profile_template``
+# 的解析对象。
+#
+# 不要把 HERMES_HOME 下的运行时 config.yaml 当作交付物（任务书禁令）。
+# 也不要改 ``agent/context_compressor.py`` 的默认 ``threshold_percent=0.50``——
+# L1 的覆盖只对 default profile + plobi_north_star 工具集启用时生效，
+# 其它 profile / 工具集仍走 0.50 默认值。
+#
+# 模型窗口与触发换算（参考）：
+#   200K ctx × 0.35 = ~70K token 触发压缩（任务书目标：6–8 万 token 前切开）
+#   128K ctx × 0.35 = ~44K 触发
+#   64K  ctx × 0.35 → 触发 floored 到 MINIMUM_CONTEXT_LENGTH（32K）或 85% 窗口
+
+context:
+  compressor:
+    # L1 总秘书专属压缩阈值：0.50 → 0.35。
+    # ``plugins/plobi-north-star/l1_budget.py::L1_COMPRESSION_THRESHOLD``
+    # 的文档源。两者必须保持同步（CI 测试断言这个值 ≤ 0.40）。
+    threshold_percent: 0.35
+    # 保护尾部不变；L1 长会话更需要保留最新一轮而不是历史头。
+    protect_last_n: 20
+    # L1 头部只保留系统提示 + 第一条用户消息；长会话滚动压缩时不要
+    # 把开场三轮都钉死。
+    protect_first_n: 1
+
+# 回合后 skill / memory curator——L1 关闭。
+# ``l1_budget._disable_curators`` 把 ``agent._memory_nudge_interval`` 与
+# ``agent._skill_nudge_interval`` 置 0，对应 ``agent/turn_context.py:307-314``
+# 与 ``agent/turn_finalizer.py:480-485`` 的两段 ``_should_review_*`` 判定：
+# 间隔 ≤ 0 时直接跳过 ``_spawn_background_review``，不会再 fork
+# 「Review the conversation above and update the skill library / saving to memory」。
+#
+# WP-L1-EVERY-TURN (33.1 / 33.4): ``memory_enabled`` 也关——把内置 memory
+# 总开关一并关掉（即便外部路径不小心再触发，配置层先挡住）。
+memory:
+  memory_enabled: false      # L1 关闭内置 memory 总开关（WP-L1-EVERY-TURN）
+  user_profile_enabled: false # 同步关 user profile 注入
+  nudge_interval: 0           # 关 L1 回合后 memory nudge
+
+skills:
+  creation_nudge_interval: 0  # 关 L1 回合后 skill nudge

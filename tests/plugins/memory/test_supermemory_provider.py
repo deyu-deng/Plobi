@@ -117,12 +117,12 @@ def test_clean_text_for_capture_strips_injected_context():
 def test_format_prefetch_context_deduplicates_overlap():
     result = _format_prefetch_context(
         static_facts=["Jordan prefers short answers"],
-        dynamic_facts=["Jordan prefers short answers", "Uses Vaelis"],
-        search_results=[{"memory": "Uses Vaelis", "similarity": 0.9}],
+        dynamic_facts=["Jordan prefers short answers", "Uses Plobi"],
+        search_results=[{"memory": "Uses Plobi", "similarity": 0.9}],
         max_results=10,
     )
     assert result.count("Jordan prefers short answers") == 1
-    assert result.count("Uses Vaelis") == 1
+    assert result.count("Uses Plobi") == 1
     assert "<supermemory-context>" in result
 
 
@@ -130,7 +130,7 @@ def test_prefetch_includes_profile_on_first_turn(provider):
     provider._client.profile_response = {
         "static": ["Jordan prefers short answers"],
         "dynamic": ["Current project is Supermemory provider"],
-        "search_results": [{"memory": "Working on Vaelis memory provider", "similarity": 0.88}],
+        "search_results": [{"memory": "Working on Plobi memory provider", "similarity": 0.88}],
     }
     provider.on_turn_start(1, "start")
     result = provider.prefetch("what am I working on?")
@@ -143,7 +143,7 @@ def test_prefetch_skips_profile_between_frequency(provider):
     provider._client.profile_response = {
         "static": ["Jordan prefers short answers"],
         "dynamic": ["Current project is Supermemory provider"],
-        "search_results": [{"memory": "Working on Vaelis memory provider", "similarity": 0.88}],
+        "search_results": [{"memory": "Working on Plobi memory provider", "similarity": 0.88}],
     }
     provider.on_turn_start(2, "next")
     result = provider.prefetch("what am I working on?")
@@ -197,7 +197,7 @@ def test_on_session_end_ingests_clean_messages(provider):
 
 
 def test_merge_metadata_stamps_sm_source():
-    # sm_source routes Vaelis writes into the "Vaelis" Space in the Supermemory
+    # sm_source routes Plobi writes into the "Plobi" Space in the Supermemory
     # app (functional routing, not telemetry) — must always be present.
     from plugins.memory.supermemory import _SupermemoryClient
 
@@ -539,7 +539,7 @@ def test_probe_supermemory_connection_success(monkeypatch, tmp_path):
         def get_profile(self, query=None, *, container_tag=None):
             return {
                 "static": ["Prefers TypeScript"],
-                "dynamic": ["", "Working on Vaelis"],
+                "dynamic": ["", "Working on Plobi"],
                 "search_results": [],
             }
 

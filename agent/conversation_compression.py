@@ -255,7 +255,7 @@ def check_compression_model_feasibility(agent: Any) -> None:
             raise ValueError(
                 f"Auxiliary compression model {aux_model} has a context "
                 f"window of {aux_context:,} tokens, which is below the "
-                f"minimum {MINIMUM_CONTEXT_LENGTH:,} required by Vaelis "
+                f"minimum {MINIMUM_CONTEXT_LENGTH:,} required by Plobi "
                 f"Agent.  Choose a compression model with at least "
                 f"{MINIMUM_CONTEXT_LENGTH // 1000}K context (set "
                 f"auxiliary.compression.model in config.yaml), or set "
@@ -466,7 +466,7 @@ def compress_context(
         no-op via ``len(returned) == len(input)`` and stop the retry loop.
     """
     # Codex app-server sessions: the codex agent owns the real thread context;
-    # Vaelis' summarizer would only rewrite a local mirror without shrinking
+    # Plobi' summarizer would only rewrite a local mirror without shrinking
     # the actual thread (#36801). Route compaction to the app server's own
     # thread/compact mechanism. Behavior is controlled by
     # ``compression.codex_app_server_auto`` (native|hermes|off).
@@ -1017,9 +1017,9 @@ def _compress_context_via_codex_app_server(
 ) -> Tuple[list, str]:
     """Route compaction to Codex app-server for Codex-owned threads.
 
-    Vaelis' normal compressor rewrites the local OpenAI-style transcript.
+    Plobi' normal compressor rewrites the local OpenAI-style transcript.
     That does not shrink the actual Codex app-server thread context. For this
-    runtime, ask Codex to compact its own thread and keep Vaelis' transcript
+    runtime, ask Codex to compact its own thread and keep Plobi' transcript
     unchanged.
     """
     auto_mode = str(

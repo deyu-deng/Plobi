@@ -1,7 +1,7 @@
 """
 Weixin platform adapter.
 
-Connects Vaelis Agent to WeChat personal accounts via Tencent's iLink Bot API.
+Connects Plobi Agent to WeChat personal accounts via Tencent's iLink Bot API.
 
 Design notes:
 - Long-poll ``getupdates`` drives inbound delivery.
@@ -1136,7 +1136,7 @@ async def qr_login(
 
 
 class WeixinAdapter(BasePlatformAdapter):
-    """Native Vaelis adapter for Weixin personal accounts."""
+    """Native Plobi adapter for Weixin personal accounts."""
 
     supports_code_blocks = True  # Weixin renders fenced code blocks
     splits_long_messages = True  # send() chunks via _split_text()
@@ -1301,9 +1301,9 @@ class WeixinAdapter(BasePlatformAdapter):
                 "[%s] WEIXIN_GROUP_POLICY=%s is set, but QR-login connects an iLink bot "
                 "identity (e.g. ...@im.bot) which typically cannot be invited into ordinary "
                 "WeChat groups. iLink usually does not deliver ordinary-group events for "
-                "these accounts, so group messages may never reach Vaelis regardless of this "
+                "these accounts, so group messages may never reach Plobi regardless of this "
                 "policy. If group delivery doesn't work, the limitation is on the iLink side, "
-                "not in Vaelis.",
+                "not in Plobi.",
                 self.name,
                 self._group_policy,
             )

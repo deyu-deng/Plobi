@@ -809,7 +809,7 @@ describe('upsertToolPart', () => {
 })
 
 // WP-G6 (裁定 21.2): sentence ② real payload shape — SessionDB stores
-// tool_name=vaelis_secretary_ask + intent=write_briefing; the transcript must
+// tool_name=plobi_secretary_ask + intent=write_briefing; the transcript must
 // rebuild a tool-call part whose card carries 派给谁 / intent / route / briefing.
 const SECRETARY_RESULT = {
   ok: true,
@@ -826,7 +826,7 @@ const SECRETARY_RESULT = {
 function secretaryToolRow(overrides: Partial<SessionMessage> = {}): SessionMessage {
   return {
     role: 'tool',
-    tool_name: 'vaelis_secretary_ask',
+    tool_name: 'plobi_secretary_ask',
     tool_call_id: 'call_abc',
     content: JSON.stringify(SECRETARY_RESULT),
     timestamp: 3,
@@ -838,12 +838,12 @@ function secretaryToolPart(messages: ChatMessage[]): Extract<ChatMessagePart, { 
   const parts = messages.flatMap(m => m.parts).filter((part): part is Extract<ChatMessagePart, { type: 'tool-call' }> => part.type === 'tool-call')
 
   expect(parts.length).toBe(1)
-  expect(parts[0].toolName).toBe('vaelis_secretary_ask')
+  expect(parts[0].toolName).toBe('plobi_secretary_ask')
 
   return parts[0]
 }
 
-describe('toChatMessages vaelis_secretary_ask (WP-G6 transcript → tool-call part)', () => {
+describe('toChatMessages plobi_secretary_ask (WP-G6 transcript → tool-call part)', () => {
   it('rebuilds the C3 card fields from a full assistant tool_calls + tool row transcript', () => {
     const messages = toChatMessages([
       { role: 'user', content: '根据明天的日程写一段早报', timestamp: 1 },
@@ -856,7 +856,7 @@ describe('toChatMessages vaelis_secretary_ask (WP-G6 transcript → tool-call pa
             id: 'call_abc',
             type: 'function',
             function: {
-              name: 'vaelis_secretary_ask',
+              name: 'plobi_secretary_ask',
               arguments: JSON.stringify({ intent: 'write_briefing', user_text: '根据明天的日程写一段早报' })
             }
           }
@@ -902,7 +902,7 @@ describe('toChatMessages vaelis_secretary_ask (WP-G6 transcript → tool-call pa
         tool_calls: [
           {
             function: {
-              name: 'vaelis_secretary_ask',
+              name: 'plobi_secretary_ask',
               arguments: JSON.stringify({ intent: 'write_briefing', user_text: '根据明天的日程写一段早报' })
             }
           }

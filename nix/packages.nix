@@ -1,4 +1,4 @@
-# nix/packages.nix — Vaelis Agent package built with uv2nix
+# nix/packages.nix — Plobi Agent package built with uv2nix
 { inputs, ... }:
 {
   perSystem =

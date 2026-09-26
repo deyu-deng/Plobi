@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_url_for_request(url: str) -> str:
-    """Return an ASCII-safe HTTP URL for Vaelis-owned URL tools.
+    """Return an ASCII-safe HTTP URL for Plobi-owned URL tools.
 
     Browsers and HTTP clients expect URIs, but users and models often provide
     IRIs such as ``https://wttr.in/Köln``.  Preserve URL syntax and existing

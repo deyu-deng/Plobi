@@ -100,7 +100,7 @@ async def _models_and_healthz():
         m0 = body["data"][0]
         assert m0["object"] == "model" and m0["owned_by"] == "aigw"
         assert m0["root"] == m0["id"] and m0["parent"] is None
-        # Vaelis extension: capability flags for model picker filtering
+        # Plobi extension: capability flags for model picker filtering
         assert m0.get("provider") == "mock"
         caps = m0.get("capabilities") or {}
         assert caps.get("stream") is True

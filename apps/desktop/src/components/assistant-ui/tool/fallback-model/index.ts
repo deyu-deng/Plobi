@@ -40,7 +40,7 @@ export function isFileEditTool(toolName: string): boolean {
 
 /** L1 silent-dispatch tool (MVP §8.2 C3). Keep this list tight — kanban tools stay generic. */
 export function isSecretaryDispatchTool(name: string): boolean {
-  return name === 'vaelis_secretary_ask' || name === 'secretary_ask'
+  return name === 'plobi_secretary_ask' || name === 'secretary_ask'
 }
 
 /**
@@ -613,7 +613,7 @@ function firstStringField(record: Record<string, unknown>, keys: readonly string
   return ''
 }
 
-/** Known L2 short labels (裁定 13) — mirror `vaelis/console/router.py` `_AGENT_SHORT_NAMES`. */
+/** Known L2 short labels (裁定 13) — mirror `plobi/console/router.py` `_AGENT_SHORT_NAMES`. */
 const SECRETARY_AGENT_SHORT_NAMES: Record<string, string> = {
   agenda: '日程秘书',
   'agenda-secretary': '日程秘书',
@@ -1186,7 +1186,7 @@ function planDaySubtitleLine(result: Record<string, unknown>): string {
 /* -------------------------------------------------------------------------- */
 /* checkin proposal card (WP-STUDIO, 裁定 36.3)                                */
 /*                                                                            */
-/* `vaelis_checkin_respond` turns "别中午排会" into a proposal card the user   */
+/* `plobi_checkin_respond` turns "别中午排会" into a proposal card the user   */
 /* confirms with the existing 「确认 N」 path — it never writes config itself.  */
 /* The card must read like a card you can repeat back, not a nameless tool row.*/
 /* -------------------------------------------------------------------------- */
@@ -1194,7 +1194,7 @@ function planDaySubtitleLine(result: Record<string, unknown>): string {
 const CHECKIN_PREVIEW_ROWS = 2
 
 function isCheckinTool(toolName: string): boolean {
-  return toolName === 'vaelis_checkin_respond' || toolName === 'checkin_respond'
+  return toolName === 'plobi_checkin_respond' || toolName === 'checkin_respond'
 }
 
 /** `questions` entries are `{key,text,evidence}`; tolerate a bare string too. */
@@ -2053,7 +2053,7 @@ function dynamicTitle(
   const titledAction = (action: string, title: string): ToolTitleParts =>
     titlePartsFromAction(title, part.result === undefined ? action : undefined)
 
-  // 裁定 36.3: 「别中午排会」走 vaelis_checkin_respond —— 中栏是一张能念的
+  // 裁定 36.3: 「别中午排会」走 plobi_checkin_respond —— 中栏是一张能念的
   // 提案卡（待你确认 · 确认 N），不是无名工具行。
   if (isCheckinTool(part.toolName)) {
     return checkinHeadline(result, part)

@@ -1,6 +1,6 @@
-"""Shared Vaelis-side execution flow for Modal transports.
+"""Shared Plobi-side execution flow for Modal transports.
 
-This module deliberately stops at the Vaelis boundary:
+This module deliberately stops at the Plobi boundary:
 - command preparation
 - cwd/timeout normalization
 - stdin/sudo shell wrapping

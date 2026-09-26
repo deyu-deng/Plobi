@@ -688,7 +688,7 @@ class TestMatrixReplyFallbackStripping:
 # ---------------------------------------------------------------------------
 
 class TestMatrixBangCommandAlias:
-    """Matrix clients may reserve /commands, so Vaelis supports !commands."""
+    """Matrix clients may reserve /commands, so Plobi supports !commands."""
 
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -2730,7 +2730,7 @@ class TestMatrixEncryptedEventHandler:
         # Verify inbound event handlers were registered as sync-awaited
         # callbacks. mautrix only returns waited handler tasks from
         # handle_sync(), so background-only handlers leave _dispatch_sync()
-        # without a completion point for Vaelis' Matrix intake.
+        # without a completion point for Plobi' Matrix intake.
         handler_calls = mock_client.add_event_handler.call_args_list
         waited_types = {
             str(call.args[0])
@@ -4028,7 +4028,7 @@ class TestMatrixSystemBridgeFilter:
         ) is False
 
     def test_bot_account_is_not_bridge(self):
-        # The Vaelis bot itself (no leading underscore) must not be
+        # The Plobi bot itself (no leading underscore) must not be
         # classified as a bridge — that filter is a pairing guard, not
         # a self-filter.
         assert self.adapter._is_system_or_bridge_sender(

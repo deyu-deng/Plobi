@@ -193,7 +193,7 @@ def test_write_through_helper_is_noop_in_classic_mode(monkeypatch, tmp_path):
 def test_codex_pool_refresh_holds_auth_store_lock_across_post(monkeypatch, tmp_path):
     """The Codex OAuth pool refresh must POST under the cross-process auth lock.
 
-    Codex refresh tokens are single-use. If two Vaelis processes both read the
+    Codex refresh tokens are single-use. If two Plobi processes both read the
     same on-disk token and both POST it, the loser gets ``refresh_token_reused``.
     Serializing the sync -> refresh POST -> write-back sequence through the
     shared ``_auth_store_lock`` closes that window: a second process blocks on

@@ -1,5 +1,5 @@
 """
-Skills configuration for Vaelis Agent.
+Skills configuration for Plobi Agent.
 `hermes skills` enters this module.
 
 Toggle individual skills or categories on/off, globally or per-platform.

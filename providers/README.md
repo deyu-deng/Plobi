@@ -1,6 +1,6 @@
 # providers/
 
-Registry and ABC for every inference provider Vaelis knows about.
+Registry and ABC for every inference provider Plobi knows about.
 
 Each provider is declared once as a `ProviderProfile`. Every other layer —
 auth resolution, transport kwargs, model listing, runtime routing — reads from

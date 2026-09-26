@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Skills Hub CLI — Unified interface for the Vaelis Skills Hub.
+Skills Hub CLI — Unified interface for the Plobi Skills Hub.
 
 Powers both:
   - `hermes skills <subcommand>` (CLI argparse entry point)
@@ -440,7 +440,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     c.print(f"\n[bold]Skills Hub — Browse {source_label}[/]"
             f"  [dim]({loaded_label}, page {page}/{total_pages})[/]")
     if official_count > 0 and page == 1:
-        c.print(f"[bright_cyan]★ {official_count} official optional skill(s) from the Vaelis team[/]")
+        c.print(f"[bright_cyan]★ {official_count} official optional skill(s) from the Plobi team[/]")
     c.print()
 
     # Build table
@@ -674,7 +674,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         c.print()
         if bundle.source == "official":
             c.print(Panel(
-                "[bold bright_cyan]This is an official optional skill maintained by the Vaelis team.[/]\n\n"
+                "[bold bright_cyan]This is an official optional skill maintained by the Plobi team.[/]\n\n"
                 "It ships with hermes-agent but is not activated by default.\n"
                 "Installing will copy it to your skills directory where the agent can use it.\n\n"
                 f"Files will be at: [cyan]{display_hermes_home()}/skills/{category + '/' if category else ''}{bundle.name}/[/]",
@@ -1577,8 +1577,8 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
             headers=headers, timeout=15,
             json={
                 "title": f"Add skill: {skill_name}",
-                "body": f"Submitting the `{skill_name}` skill via Vaelis Skills Hub.\n\n"
-                        f"This skill was scanned by the Vaelis Skills Guard before submission.",
+                "body": f"Submitting the `{skill_name}` skill via Plobi Skills Hub.\n\n"
+                        f"This skill was scanned by the Plobi Skills Guard before submission.",
                 "head": f"{fork_repo.split('/')[0]}:{branch_name}",
                 "base": default_branch,
             },

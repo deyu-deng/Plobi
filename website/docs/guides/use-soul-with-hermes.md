@@ -1,14 +1,14 @@
 ---
 sidebar_position: 7
-title: "Use SOUL.md with Vaelis"
-description: "How to use SOUL.md to shape Vaelis Agent's default voice, what belongs there, and how it differs from AGENTS.md and /personality"
+title: "Use SOUL.md with Plobi"
+description: "How to use SOUL.md to shape Plobi Agent's default voice, what belongs there, and how it differs from AGENTS.md and /personality"
 ---
 
-# Use SOUL.md with Vaelis
+# Use SOUL.md with Plobi
 
-`SOUL.md` is the **primary identity** for your Vaelis instance. It's the first thing in the system prompt — it defines who the agent is, how it speaks, and what it avoids.
+`SOUL.md` is the **primary identity** for your Plobi instance. It's the first thing in the system prompt — it defines who the agent is, how it speaks, and what it avoids.
 
-If you want Vaelis to feel like the same assistant every time you talk to it — or if you want to replace the Vaelis persona entirely with your own — this is the file to use.
+If you want Plobi to feel like the same assistant every time you talk to it — or if you want to replace the Plobi persona entirely with your own — this is the file to use.
 
 ## What SOUL.md is for
 
@@ -16,12 +16,12 @@ Use `SOUL.md` for:
 - tone
 - personality
 - communication style
-- how direct or warm Vaelis should be
-- what Vaelis should avoid stylistically
-- how Vaelis should relate to uncertainty, disagreement, and ambiguity
+- how direct or warm Plobi should be
+- what Plobi should avoid stylistically
+- how Plobi should relate to uncertainty, disagreement, and ambiguity
 
 In short:
-- `SOUL.md` is about who Vaelis is and how Vaelis speaks
+- `SOUL.md` is about who Plobi is and how Plobi speaks
 
 ## What SOUL.md is not for
 
@@ -41,13 +41,13 @@ A good rule:
 
 ## Where it lives
 
-Vaelis now uses only the global SOUL file for the current instance:
+Plobi now uses only the global SOUL file for the current instance:
 
 ```text
 ~/.hermes/SOUL.md
 ```
 
-If you run Vaelis with a custom home directory, it becomes:
+If you run Plobi with a custom home directory, it becomes:
 
 ```text
 $HERMES_HOME/SOUL.md
@@ -55,19 +55,19 @@ $HERMES_HOME/SOUL.md
 
 ## First-run behavior
 
-Vaelis automatically seeds a starter `SOUL.md` for you if one does not already exist.
+Plobi automatically seeds a starter `SOUL.md` for you if one does not already exist.
 
 That means most users now begin with a real file they can read and edit immediately.
 
 Important:
-- if you already have a `SOUL.md`, Vaelis does not overwrite it
-- if the file exists but is empty, Vaelis adds nothing from it to the prompt
+- if you already have a `SOUL.md`, Plobi does not overwrite it
+- if the file exists but is empty, Plobi adds nothing from it to the prompt
 
-## How Vaelis uses it
+## How Plobi uses it
 
-When Vaelis starts a session, it reads `SOUL.md` from `HERMES_HOME`, scans it for prompt-injection patterns, truncates it if needed, and uses it as the **agent identity** — slot #1 in the system prompt. This means SOUL.md completely replaces the built-in default identity text.
+When Plobi starts a session, it reads `SOUL.md` from `HERMES_HOME`, scans it for prompt-injection patterns, truncates it if needed, and uses it as the **agent identity** — slot #1 in the system prompt. This means SOUL.md completely replaces the built-in default identity text.
 
-If SOUL.md is missing, empty, or cannot be loaded, Vaelis falls back to a built-in default identity.
+If SOUL.md is missing, empty, or cannot be loaded, Plobi falls back to a built-in default identity.
 
 No wrapper language is added around the file. The content itself matters — write the way you want your agent to think and speak.
 
@@ -84,7 +84,7 @@ Push back clearly when an idea is weak.
 Keep answers compact unless deeper detail is useful.
 ```
 
-That alone can noticeably change how Vaelis feels.
+That alone can noticeably change how Plobi feels.
 
 ## Example styles
 
@@ -159,7 +159,7 @@ A weak `SOUL.md` is:
 - trying to micro-manage every response shape
 - mostly generic filler like "be helpful" and "be clear"
 
-Vaelis already tries to be helpful and clear. `SOUL.md` should add real personality and style, not restate obvious defaults.
+Plobi already tries to be helpful and clear. `SOUL.md` should add real personality and style, not restate obvious defaults.
 
 ## Suggested structure
 
@@ -169,16 +169,16 @@ A simple structure that works well:
 
 ```markdown
 # Identity
-Who Vaelis is.
+Who Plobi is.
 
 # Style
-How Vaelis should sound.
+How Plobi should sound.
 
 # Avoid
-What Vaelis should not do.
+What Plobi should not do.
 
 # Defaults
-How Vaelis should behave when ambiguity appears.
+How Plobi should behave when ambiguity appears.
 ```
 
 ## SOUL.md vs /personality
@@ -221,21 +221,21 @@ or
 vim ~/.hermes/SOUL.md
 ```
 
-Then restart Vaelis or start a new session.
+Then restart Plobi or start a new session.
 
 ## A practical workflow
 
 1. Start with the seeded default file
 2. Trim anything that does not feel like the voice you want
 3. Add 4–8 lines that clearly define tone and defaults
-4. Talk to Vaelis for a while
+4. Talk to Plobi for a while
 5. Adjust based on what still feels off
 
 That iterative approach works better than trying to design the perfect personality in one shot.
 
 ## Troubleshooting
 
-### I edited SOUL.md but Vaelis still sounds the same
+### I edited SOUL.md but Plobi still sounds the same
 
 Check:
 - you edited `~/.hermes/SOUL.md` or `$HERMES_HOME/SOUL.md`
@@ -244,7 +244,7 @@ Check:
 - your session was restarted after the edit
 - a `/personality` overlay is not dominating the result
 
-### Vaelis is ignoring parts of my SOUL.md
+### Plobi is ignoring parts of my SOUL.md
 
 Possible causes:
 - higher-priority instructions are overriding it

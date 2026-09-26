@@ -98,7 +98,7 @@ export function useGatewayRequest() {
       const gateway = gatewayRef.current
 
       if (!gateway) {
-        throw new Error('Vaelis gateway unavailable')
+        throw new Error('Plobi gateway unavailable')
       }
 
       try {

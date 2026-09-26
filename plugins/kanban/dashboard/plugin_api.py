@@ -1759,7 +1759,7 @@ def _configured_home_channels() -> list[dict]:
 
 
 def _active_profile_name() -> str:
-    """Return the current Vaelis profile name for notify-sub ownership."""
+    """Return the current Plobi profile name for notify-sub ownership."""
     try:
         from hermes_cli.profiles import get_active_profile_name
         return get_active_profile_name() or "default"

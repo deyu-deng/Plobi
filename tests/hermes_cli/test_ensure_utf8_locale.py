@@ -19,7 +19,7 @@ import hermes_cli
 
 
 # The exact glyphs the setup wizard / banners print (setup.py ~line 2962+).
-_BANNER = "┌─────┐\n│ ⚕ Vaelis │\n└─────┘"
+_BANNER = "┌─────┐\n│ ⚕ Plobi │\n└─────┘"
 
 
 class _FakeStream:

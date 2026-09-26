@@ -51,7 +51,7 @@ function GroupLabel({ children }: { children: ReactNode }) {
 // Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
 export const PROVIDER_VIEWS = ['accounts', 'keys', 'desktop'] as const
 
-// Catalog of closed-source desktop apps whose subscription quota Vaelis can
+// Catalog of closed-source desktop apps whose subscription quota Plobi can
 // route through (aigw upstream adapters). This is the *presentation* list —
 // the backend aigw registry (PROVIDER_CLASSES in aigw/registry.py) is the
 // source of truth and should stay in sync with it.
@@ -273,9 +273,9 @@ function ConnectedProviderRow({
   const copy = t.settings.providers
   const title = providerTitle(provider)
   const Trail = provider.flow === 'external' ? Terminal : ChevronRight
-  // Vaelis can clear this provider's creds via the API.
+  // Plobi can clear this provider's creds via the API.
   const canDisconnect = provider.disconnectable ?? provider.flow !== 'external'
-  // External (CLI-managed) provider Vaelis can't clear via the API, but ships a
+  // External (CLI-managed) provider Plobi can't clear via the API, but ships a
   // command we can run in the embedded terminal (Electron shell only).
   const terminalDisconnect = !canDisconnect && Boolean(provider.disconnect_command) && canRunInTerminal()
   // Only fall back to a static "remove it elsewhere" hint when we offer no button.
@@ -341,7 +341,7 @@ function NoProviderKeys() {
 }
 
 // Desktop Quotas — third provider pillar (parallel to Account / API key).
-// Lists the closed-source desktop apps whose subscription quota Vaelis can
+// Lists the closed-source desktop apps whose subscription quota Plobi can
 // route through. The Local Hub (aigw aggregator) is auto-managed by the
 // backend once an app is connected, so it is intentionally not surfaced here.
 // Frontend stays thin: it triggers backend OAuth and shows status; all token
@@ -368,11 +368,11 @@ function DesktopQuotasView() {
   // CLI is installed and starts the local gateway. No token is returned, so
   // success is keyed on `res.ok` alone.
   const handleConnect = async (appId: string) => {
-    if (!window.hermesDesktop?.vaelisGateway?.auth) return
+    if (!window.hermesDesktop?.plobiGateway?.auth) return
     setConn((prev) => ({ ...prev, [appId]: 'connecting' }))
     setErrInfo((prev) => { const n = { ...prev }; delete n[appId]; return n })
     try {
-      const res = await window.hermesDesktop.vaelisGateway.auth(appId)
+      const res = await window.hermesDesktop.plobiGateway.auth(appId)
       if (res.ok) {
         // Persist the connected app so its models surface in the chat selector
         // (see store/desktop-quotas) and the gateway baseUrl for live routing.
@@ -569,7 +569,7 @@ export function ProvidersSettings({ onClose, onViewChange, view }: ProvidersSett
   }, [onboardingActive])
 
   // External (CLI-managed) providers can't be cleared via the API by design —
-  // Vaelis never deletes creds another tool owns behind a silent API call.
+  // Plobi never deletes creds another tool owns behind a silent API call.
   // Instead we run the documented removal command in the embedded terminal so
   // the user sees exactly what executes, then return them to chat to watch it.
   function handleTerminalDisconnect(provider: OAuthProvider) {

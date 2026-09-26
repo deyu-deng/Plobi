@@ -6,8 +6,8 @@ import { expandWindowsEnvRefs, parseRegQueryValue, readWindowsUserEnvVar } from 
 // ── parseRegQueryValue ─────────────────────────────────────────────────────
 
 test('parseRegQueryValue extracts a REG_SZ value', () => {
-  const out = ['', 'HKEY_CURRENT_USER\\Environment', '    HERMES_HOME    REG_SZ    F:\\Vaelis\\data', ''].join('\r\n')
-  assert.equal(parseRegQueryValue(out, 'HERMES_HOME'), 'F:\\Vaelis\\data')
+  const out = ['', 'HKEY_CURRENT_USER\\Environment', '    HERMES_HOME    REG_SZ    F:\\Plobi\\data', ''].join('\r\n')
+  assert.equal(parseRegQueryValue(out, 'HERMES_HOME'), 'F:\\Plobi\\data')
 })
 
 test('parseRegQueryValue matches the name case-insensitively', () => {
@@ -16,8 +16,8 @@ test('parseRegQueryValue matches the name case-insensitively', () => {
 })
 
 test('parseRegQueryValue preserves spaces inside the value', () => {
-  const out = '    HERMES_HOME    REG_SZ    C:\\Program Files\\Vaelis\r\n'
-  assert.equal(parseRegQueryValue(out, 'HERMES_HOME'), 'C:\\Program Files\\Vaelis')
+  const out = '    HERMES_HOME    REG_SZ    C:\\Program Files\\Plobi\r\n'
+  assert.equal(parseRegQueryValue(out, 'HERMES_HOME'), 'C:\\Program Files\\Plobi')
 })
 
 test('parseRegQueryValue returns null when the value line is absent', () => {
@@ -34,7 +34,7 @@ test('expandWindowsEnvRefs expands %VAR% case-insensitively', () => {
 })
 
 test('expandWindowsEnvRefs leaves literal paths and unknown refs intact', () => {
-  assert.equal(expandWindowsEnvRefs('F:\\Vaelis\\data', {}), 'F:\\Vaelis\\data')
+  assert.equal(expandWindowsEnvRefs('F:\\Plobi\\data', {}), 'F:\\Plobi\\data')
   assert.equal(expandWindowsEnvRefs('%NOPE%\\x', {}), '%NOPE%\\x')
 })
 
@@ -59,7 +59,7 @@ test('readWindowsUserEnvVar queries HKCU\\Environment and expands the value', ()
   const exec = (cmd, args) => {
     calls.push([cmd, args])
 
-    return 'HKEY_CURRENT_USER\\Environment\r\n    HERMES_HOME    REG_EXPAND_SZ    %DRIVE%\\Vaelis\r\n'
+    return 'HKEY_CURRENT_USER\\Environment\r\n    HERMES_HOME    REG_EXPAND_SZ    %DRIVE%\\Plobi\r\n'
   }
 
   const value = readWindowsUserEnvVar('HERMES_HOME', {
@@ -68,7 +68,7 @@ test('readWindowsUserEnvVar queries HKCU\\Environment and expands the value', ()
     exec
   })
 
-  assert.equal(value, 'F:\\Vaelis')
+  assert.equal(value, 'F:\\Plobi')
   assert.deepEqual(calls, [['reg', ['query', 'HKCU\\Environment', '/v', 'HERMES_HOME']]])
 })
 

@@ -1,4 +1,4 @@
-# nix/tui.nix — Vaelis TUI (Ink/React) compiled with tsc and bundled
+# nix/tui.nix — Plobi TUI (Ink/React) compiled with tsc and bundled
 { pkgs, hermesNpmLib, ... }:
 let
   npm = hermesNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "hermes-tui"; };

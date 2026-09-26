@@ -1,6 +1,6 @@
 """
 SQLite-backed fact store with entity resolution and trust scoring.
-Single-user Vaelis memory store plugin.
+Single-user Plobi memory store plugin.
 """
 
 import re

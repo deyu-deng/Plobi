@@ -14,7 +14,7 @@
  *   `POST /api/chat` here — the center reuses the base session store + gateway
  *   path (the same `submitText` / `$messages` the full-screen chat uses).
  * - `/api/agenda/*` — LIVE, delegated to `@/hermes`, which already speaks to
- *   the real `vaelis/agenda` backend. Delegating (rather than mocking) is what
+ *   the real `plobi/agenda` backend. Delegating (rather than mocking) is what
  *   keeps the console and the full-screen board on one data source.
  *
  * Reuse note: no new HTTP plumbing here. Mocked endpoints answer from module
@@ -266,8 +266,8 @@ const MOCK_SUBAGENT_LOGS: Record<string, string[]> = {
 
 const MOCK_FILES: Record<string, ProjectFile[]> = {
   'agenda-secretary': [
-    { name: '秋季课表.md', path: 'vaelis/agenda/秋季课表.md', sizeBytes: 4096, updatedAt: '2026-08-30T09:10:00' },
-    { name: '待确认事件.json', path: 'vaelis/agenda/待确认事件.json', sizeBytes: 2048, updatedAt: '2026-08-30T10:02:00' }
+    { name: '秋季课表.md', path: 'plobi/agenda/秋季课表.md', sizeBytes: 4096, updatedAt: '2026-08-30T09:10:00' },
+    { name: '待确认事件.json', path: 'plobi/agenda/待确认事件.json', sizeBytes: 2048, updatedAt: '2026-08-30T10:02:00' }
   ]
 }
 
@@ -357,7 +357,7 @@ export async function getOutsourcedSessionTarget(
   appId: string,
   sessionId: string
 ): Promise<OutsourcedSessionTarget> {
-  return settle({ url: `https://example.com/vaelis/outsourced/${encodeURIComponent(appId)}/${encodeURIComponent(sessionId)}` })
+  return settle({ url: `https://example.com/plobi/outsourced/${encodeURIComponent(appId)}/${encodeURIComponent(sessionId)}` })
 }
 
 export async function getAgentFiles(agentId: string): Promise<ProjectFile[]> {

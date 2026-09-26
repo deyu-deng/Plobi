@@ -62,18 +62,18 @@ export const zhHant = defineLocale({
   },
 
   boot: {
-    ready: 'Vaelis Desktop 已就緒',
+    ready: 'Plobi Desktop 已就緒',
     desktopBootFailedWithMessage: message => `桌面啟動失敗：${message}`,
     steps: {
       connectingGateway: '正在連線桌面閘道',
-      loadingSettings: '正在載入 Vaelis 設定',
+      loadingSettings: '正在載入 Plobi 設定',
       loadingSessions: '正在載入最近工作階段',
       startingDesktopConnection: '正在啟動桌面連線',
-      startingHermesDesktop: '正在啟動 Vaelis Desktop…'
+      startingHermesDesktop: '正在啟動 Plobi Desktop…'
     },
     errors: {
-      backgroundExited: 'Vaelis 背景程序已結束。',
-      backgroundExitedDuringStartup: 'Vaelis 背景程序在啟動期間結束。',
+      backgroundExited: 'Plobi 背景程序已結束。',
+      backgroundExitedDuringStartup: 'Plobi 背景程序在啟動期間結束。',
       backendStopped: '後端已停止',
       desktopBootFailed: '桌面啟動失敗',
       gatewayConnectionLost: '與閘道的連線已中斷',
@@ -81,7 +81,7 @@ export const zhHant = defineLocale({
       ipcBridgeUnavailable: '桌面 IPC 橋接器不可用。'
     },
     failure: {
-      title: 'Vaelis 無法啟動',
+      title: 'Plobi 無法啟動',
       description: '背景閘道未啟動。請嘗試下面的復原步驟。這裡的操作不會刪除您的聊天或設定。',
       remoteTitle: '需要重新登入遠端閘道',
       remoteDescription: '您的遠端閘道工作階段已過期。請重新登入以重新連線。這裡的操作不會刪除您的聊天或設定。',
@@ -115,16 +115,16 @@ export const zhHant = defineLocale({
     copyDetail: '複製詳情',
     copyDetailFailed: '無法複製通知詳情',
     backendOutOfDateTitle: '後端版本過舊',
-    backendOutOfDateMessage: '您的 Vaelis 後端早於目前的桌面版本，可能無法正常運作。請更新以保持一致。',
+    backendOutOfDateMessage: '您的 Plobi 後端早於目前的桌面版本，可能無法正常運作。請更新以保持一致。',
     installMethodUnsupportedTitle: '不受支援的安裝方式',
-    updateHermes: '更新 Vaelis',
+    updateHermes: '更新 Plobi',
     updateReadyTitle: '有可用更新',
     updateReadyMessage: count => `有 ${count} 項新變更可用。`,
     seeWhatsNew: '查看新增內容',
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒絕了該 API 金鑰 (401)。',
-      methodNotAllowed: '桌面後端拒絕了該請求 (405 Method Not Allowed)。請嘗試重新啟動 Vaelis Desktop。',
+      methodNotAllowed: '桌面後端拒絕了該請求 (405 Method Not Allowed)。請嘗試重新啟動 Plobi Desktop。',
       microphonePermission: '麥克風權限已被拒絕。',
       openaiRejectedApiKey: 'OpenAI 拒絕了該 API 金鑰。',
       openaiRejectedApiKeyWithStatus: status => `OpenAI 拒絕了該 API 金鑰 (${status} invalid_api_key)。`,
@@ -154,8 +154,8 @@ export const zhHant = defineLocale({
       approveAction: '核准',
       rejectAction: '拒絕',
       inputTitle: '需要輸入',
-      inputBody: 'Vaelis 正在等待你的回應。',
-      turnDoneTitle: 'Vaelis 已完成',
+      inputBody: 'Plobi 正在等待你的回應。',
+      turnDoneTitle: 'Plobi 已完成',
       turnDoneBody: '回覆已就緒。',
       turnErrorTitle: '本輪失敗',
       backgroundDoneTitle: '背景工作已完成',
@@ -197,7 +197,7 @@ export const zhHant = defineLocale({
     exportConfig: '匯出設定',
     importConfig: '匯入設定',
     resetToDefaults: '恢復預設值',
-    resetConfirm: '要將所有設定恢復為 Vaelis 預設值嗎？',
+    resetConfirm: '要將所有設定恢復為 Plobi 預設值嗎？',
     exportFailed: '匯出失敗',
     resetFailed: '重設失敗',
     nav: {
@@ -219,7 +219,7 @@ export const zhHant = defineLocale({
       intro: '原生桌面通知，與應用程式內提示不同。設定會依裝置保存，每台電腦各自獨立。',
       enableAll: '啟用通知',
       enableAllDesc: '總開關。關閉後會靜音下方所有通知。',
-      focusedHint: '完成提醒僅在 Vaelis 位於背景時觸發。',
+      focusedHint: '完成提醒僅在 Plobi 位於背景時觸發。',
       kinds: {
         approval: {
           label: '需要核准',
@@ -227,11 +227,11 @@ export const zhHant = defineLocale({
         },
         input: {
           label: '需要輸入',
-          description: 'Vaelis 提出了問題，或需要密碼或密鑰。'
+          description: 'Plobi 提出了問題，或需要密碼或密鑰。'
         },
         turnDone: {
           label: '回覆就緒',
-          description: 'Vaelis 在背景時完成了一輪對話。'
+          description: 'Plobi 在背景時完成了一輪對話。'
         },
         turnError: {
           label: '本輪失敗',
@@ -243,7 +243,7 @@ export const zhHant = defineLocale({
         }
       },
       test: '傳送測試通知',
-      testTitle: 'Vaelis',
+      testTitle: 'Plobi',
       testBody: '通知運作正常。',
       testSent: '測試已傳送。若沒有出現，請檢查系統通知權限與專注模式／勿擾模式。',
       testUnsupported: '此系統不支援原生通知。',
@@ -262,7 +262,7 @@ export const zhHant = defineLocale({
       advanced: '進階'
     },
     searchPlaceholder: {
-      about: '關於 Vaelis Desktop',
+      about: '關於 Plobi Desktop',
       config: '搜尋設定…',
       gateway: '閘道連線…',
       keys: '搜尋 API 金鑰…',
@@ -278,7 +278,7 @@ export const zhHant = defineLocale({
       title: '外觀',
       intro: '這些是僅限桌面端的顯示偏好。模式控制亮度；主題控制強調色與聊天介面樣式。',
       colorMode: '色彩模式',
-      colorModeDesc: '選擇固定模式，或讓 Vaelis 跟隨系統設定。',
+      colorModeDesc: '選擇固定模式，或讓 Plobi 跟隨系統設定。',
       toolViewTitle: '工具呼叫顯示',
       toolViewDesc: '產品模式會隱藏原始工具 payload；技術模式會顯示完整輸入/輸出。',
       uiScaleTitle: '介面縮放',
@@ -312,8 +312,8 @@ export const zhHant = defineLocale({
       pet: {
         title: '寵物',
         intro:
-          '領養一隻懸浮在應用上的 petdex 動畫寵物，它會根據 Vaelis 的狀態做出反應——工具執行時奔跑、成功時歡呼、出錯時沮喪。',
-        restartHint: '寵物功能需要重新啟動——目前執行的應用在此功能加入前啟動。請結束並重新開啟 Vaelis，然後回到此處。',
+          '領養一隻懸浮在應用上的 petdex 動畫寵物，它會根據 Plobi 的狀態做出反應——工具執行時奔跑、成功時歡呼、出錯時沮喪。',
+        restartHint: '寵物功能需要重新啟動——目前執行的應用在此功能加入前啟動。請結束並重新開啟 Plobi，然後回到此處。',
         scaleTitle: '大小',
         scaleDesc: '調整懸浮寵物的大小，所有介面即時生效。',
         roamTitle: '漫遊',
@@ -508,10 +508,10 @@ export const zhHant = defineLocale({
         personality: '新工作階段的預設助手風格。',
         showReasoning: '後端提供推理內容時顯示該區塊。'
       },
-      timezone: 'Vaelis 需要本機時間上下文時使用。留空則使用系統時區。',
+      timezone: 'Plobi 需要本機時間上下文時使用。留空則使用系統時區。',
       agent: {
         imageInputMode: '控制圖片附件如何傳送給模型。',
-        maxTurns: 'Vaelis 停止一次執行前的工具呼叫輪次上限。'
+        maxTurns: 'Plobi 停止一次執行前的工具呼叫輪次上限。'
       },
       terminal: {
         cwd: '工具與終端機操作的預設專案資料夾。',
@@ -521,9 +521,9 @@ export const zhHant = defineLocale({
       codeExecution: {
         mode: '程式碼執行被限制在目前專案中的嚴格程度。'
       },
-      fileReadMaxChars: 'Vaelis 單次檔案讀取可讀取的最大字元數。',
+      fileReadMaxChars: 'Plobi 單次檔案讀取可讀取的最大字元數。',
       approvals: {
-        mode: 'Vaelis 如何處理需要明確批准的指令。',
+        mode: 'Plobi 如何處理需要明確批准的指令。',
         timeout: '批准提示逾時前等待的時間。'
       },
       security: {
@@ -553,11 +553,11 @@ export const zhHant = defineLocale({
       },
       updates: {
         nonInteractiveLocalChanges:
-          'Vaelis 從應用程式內更新自身時，保留本機原始碼變更（stash）或丟棄（discard）。終端機更新一律會詢問。'
+          'Plobi 從應用程式內更新自身時，保留本機原始碼變更（stash）或丟棄（discard）。終端機更新一律會詢問。'
       }
     }),
     about: {
-      heading: 'Vaelis Desktop',
+      heading: 'Plobi Desktop',
       version: value => `版本 ${value}`,
       versionUnavailable: '版本不可用',
       updates: '更新',
@@ -575,7 +575,7 @@ export const zhHant = defineLocale({
       lastChecked: age => `上次檢查：${age}`,
       justNowSuffix: ' · 剛剛',
       automaticUpdates: '自動更新',
-      automaticUpdatesDesc: 'Vaelis 會在背景自動檢查更新，並在有可用更新時通知你。',
+      automaticUpdatesDesc: 'Plobi 會在背景自動檢查更新，並在有可用更新時通知你。',
       branchCommit: (branch, commit) => `分支 ${branch} · 提交 ${commit}`,
       never: '從未',
       justNow: '剛剛',
@@ -588,7 +588,7 @@ export const zhHant = defineLocale({
       noneParen: '(無)',
       notSet: '未設定',
       commaSeparated: '逗號分隔的值',
-      loading: '正在載入 Vaelis 設定...',
+      loading: '正在載入 Plobi 設定...',
       emptyTitle: '無可設定項目',
       emptyDesc: '此區段沒有可調整的設定。',
       failedLoad: '設定載入失敗',
@@ -623,7 +623,7 @@ export const zhHant = defineLocale({
       title: '閘道連線',
       envOverride: '環境變數覆寫',
       intro:
-        'Vaelis Desktop 預設會啟動自己的本機閘道。如果您希望此應用程式控制另一台機器或可信代理後面已執行的 Vaelis 後端，請使用遠端閘道。在下方按設定檔指定各自的遠端主機。',
+        'Plobi Desktop 預設會啟動自己的本機閘道。如果您希望此應用程式控制另一台機器或可信代理後面已執行的 Plobi 後端，請使用遠端閘道。在下方按設定檔指定各自的遠端主機。',
       appliesTo: '套用至',
       allProfiles: '全部設定檔',
       defaultConnection: '預設連線適用於所有沒有自訂覆寫的設定檔。',
@@ -631,10 +631,10 @@ export const zhHant = defineLocale({
       envOverrideTitle: '環境變數正在控制此桌面工作階段。',
       envOverrideDesc: '取消設定 HERMES_DESKTOP_REMOTE_URL 和 HERMES_DESKTOP_REMOTE_TOKEN 後才會使用下方儲存的設定。',
       localTitle: '本機閘道',
-      localDesc: '在 localhost 啟動私有 Vaelis 後端。這是預設方式，可離線使用。',
+      localDesc: '在 localhost 啟動私有 Plobi 後端。這是預設方式，可離線使用。',
       remoteTitle: '遠端閘道',
       remoteDesc:
-        '將此桌面殼層連線至遠端 Vaelis 後端。託管閘道使用 OAuth 或帳號密碼；自託管閘道也可使用工作階段 Token。',
+        '將此桌面殼層連線至遠端 Plobi 後端。託管閘道使用 OAuth 或帳號密碼；自託管閘道也可使用工作階段 Token。',
       remoteUrlTitle: '遠端 URL',
       remoteUrlDesc: '遠端儀表板後端的基礎 URL。支援路徑前綴，例如 /hermes。',
       probing: '正在檢查此閘道的驗證方式…',
@@ -667,9 +667,9 @@ export const zhHant = defineLocale({
       enterUrlFirst: '請先輸入遠端 URL。',
       restartingTitle: '閘道連線正在重新啟動',
       savedTitle: '閘道設定已儲存',
-      restartingMessage: 'Vaelis Desktop 將使用已儲存的設定重新連線。',
+      restartingMessage: 'Plobi Desktop 將使用已儲存的設定重新連線。',
       savedMessage: '已儲存，下次重新啟動後生效。',
-      connectedTo: (baseUrl, version) => `已連線至 ${baseUrl}${version ? ` · Vaelis ${version}` : ''}`,
+      connectedTo: (baseUrl, version) => `已連線至 ${baseUrl}${version ? ` · Plobi ${version}` : ''}`,
       reachableTitle: '遠端閘道可連線',
       signedOutTitle: '已登出',
       signedOutMessage: '已清除遠端閘道工作階段。',
@@ -755,7 +755,7 @@ export const zhHant = defineLocale({
     providers: {
       connectAccount: '連結帳號',
       haveApiKey: '改用 API 金鑰？',
-      intro: '使用訂閱登入，無需複製 API 金鑰。Vaelis 會在應用程式中為您完成瀏覽器登入。',
+      intro: '使用訂閱登入，無需複製 API 金鑰。Plobi 會在應用程式中為您完成瀏覽器登入。',
       connected: '已連線',
       collapse: '收合',
       connectAnother: '連結其他提供方',
@@ -771,7 +771,7 @@ export const zhHant = defineLocale({
       loading: '正在載入提供方...',
       desktopQuotas: {
         title: '桌面額度',
-        intro: '連線那些訂閱額度可被 Vaelis 直接路由的桌面軟體。只需登入一次，其餘技術細節由 Vaelis 在背景處理。',
+        intro: '連線那些訂閱額度可被 Plobi 直接路由的桌面軟體。只需登入一次，其餘技術細節由 Plobi 在背景處理。',
         connect: '連線',
         connected: '已連線',
         notConnected: '未連線',
@@ -907,7 +907,7 @@ export const zhHant = defineLocale({
     loadFailed: '無法載入記憶圖譜',
     loading: '載入中…',
     emptyTitle: '尚無學習內容',
-    emptyDesc: '當 Vaelis 為你的工作建立技能與記憶時，會顯示在這裡。'
+    emptyDesc: '當 Plobi 為你的工作建立技能與記憶時，會顯示在這裡。'
   },
   agents: {
     close: '關閉代理',
@@ -958,7 +958,7 @@ export const zhHant = defineLocale({
       placeholder: '搜尋寵物…',
       loading: '正在載入 petdex 畫廊…',
       error: '無法連線至 petdex 畫廊。',
-      staleBackend: '請重新啟動 Vaelis 以使用寵物功能。',
+      staleBackend: '請重新啟動 Plobi 以使用寵物功能。',
       empty: '沒有符合的寵物。',
       turnOff: '關閉',
       turnOn: '開啟',
@@ -985,8 +985,8 @@ export const zhHant = defineLocale({
       hatchComposing: '正在拼合……',
       hatchSaving: '快好了……',
       namePlaceholder: '為寵物命名',
-      staleBackend: '請更新 Vaelis 以生成寵物。',
-      backgroundHint: '你可以關閉此視窗——完成後 Vaelis 會通知你。',
+      staleBackend: '請更新 Plobi 以生成寵物。',
+      backgroundHint: '你可以關閉此視窗——完成後 Plobi 會通知你。',
       slowProviderHint: '這可能需要幾分鐘',
       remix: '混合生成',
       remixConfirmTitle: '以此造型混合生成？',
@@ -1020,7 +1020,7 @@ export const zhHant = defineLocale({
     },
     nav: {
       newChat: { title: '新工作階段', detail: '開始新的工作階段' },
-      settings: { title: '設定', detail: '設定 Vaelis 桌面端' },
+      settings: { title: '設定', detail: '設定 Plobi 桌面端' },
       skills: { title: '技能與工具', detail: '啟用技能、工具集和提供方' },
       messaging: { title: '訊息平台', detail: '設定 Telegram、Slack、Discord 等' },
       artifacts: { title: '成品', detail: '瀏覽產生的輸出' }
@@ -1042,10 +1042,10 @@ export const zhHant = defineLocale({
     noSessions: '暫無工作階段。',
     gatewayRunning: '訊息閘道執行中',
     gatewayStopped: '訊息閘道已停止',
-    hermesActiveSessions: (version, count) => `Vaelis ${version} · 活躍工作階段 ${count}`,
+    hermesActiveSessions: (version, count) => `Plobi ${version} · 活躍工作階段 ${count}`,
     restartGateway: '重新啟動閘道',
     gatewayRestartFailed: '閘道重新啟動失敗。',
-    updateHermes: '更新 Vaelis',
+    updateHermes: '更新 Plobi',
     actionRunning: '執行中',
     actionDone: '完成',
     actionFailed: '失敗',
@@ -1245,7 +1245,7 @@ export const zhHant = defineLocale({
     deleteDescMid: ' 並移除其 ',
     deleteDescSuffix: ' 目錄。此操作無法復原。',
     deleting: '刪除中…',
-    createDesc: '設定檔是獨立的 Vaelis 環境：各自擁有獨立的設定、技能和 SOUL.md。',
+    createDesc: '設定檔是獨立的 Plobi 環境：各自擁有獨立的設定、技能和 SOUL.md。',
     nameLabel: '名稱',
     cloneFrom: '複製來源',
     cloneFromNone: '無（空白）',
@@ -1541,7 +1541,7 @@ export const zhHant = defineLocale({
     topOfHour: '每個整點',
     everyHourAt: minute => `每小時的 :${minute}`,
     newCron: '新排程工作',
-    emptyDescNew: '按 cron 表達式排程一個提示詞。Vaelis 會執行它，並將結果傳送至您選擇的目的地。',
+    emptyDescNew: '按 cron 表達式排程一個提示詞。Plobi 會執行它，並將結果傳送至您選擇的目的地。',
     emptyDescSearch: '請嘗試更廣泛的搜尋詞。',
     emptyTitleNew: '暫無排程工作',
     emptyTitleSearch: '無相符項目',
@@ -1687,8 +1687,8 @@ export const zhHant = defineLocale({
       copyPath: '複製路徑',
       removeFromSidebar: '從側邊欄移除',
       createFailed: '無法建立專案',
-      staleBackend: '請更新 Vaelis 後端以建立專案——目前後端比桌面應用舊（設定 → 更新 → 後端）。',
-      deleteConfirm: '這會從 Vaelis 中移除已儲存的專案。檔案、git 儲存庫和工作樹維持不變。',
+      staleBackend: '請更新 Plobi 後端以建立專案——目前後端比桌面應用舊（設定 → 更新 → 後端）。',
+      deleteConfirm: '這會從 Plobi 中移除已儲存的專案。檔案、git 儲存庫和工作樹維持不變。',
       startWork: '新增工作樹',
       newWorktreeTitle: '新增工作樹',
       newWorktreeDesc: '為這個工作樹命名分支。',
@@ -1748,14 +1748,14 @@ export const zhHant = defineLocale({
   composer: {
     message: '訊息',
     wakingProfile: profile => `正在喚醒 ${profile}…`,
-    placeholderStarting: '正在啟動 Vaelis...',
-    placeholderReconnecting: '正在重新連線至 Vaelis…',
+    placeholderStarting: '正在啟動 Plobi...',
+    placeholderReconnecting: '正在重新連線至 Plobi…',
     placeholderFollowUp: '傳送後續訊息',
     secretaryL1Placeholder: '對總秘書說…',
     secretaryL2Placeholder: name => `對${name}說…`,
     newSessionPlaceholders: [
       '我們要建立什麼？',
-      '給 Vaelis 一個任務',
+      '給 Plobi 一個任務',
       '您在想什麼？',
       '描述您需要什麼',
       '我們該處理什麼？',
@@ -1817,7 +1817,7 @@ export const zhHant = defineLocale({
       'composer.history': '循環彈出視窗 / 歷史記錄'
     },
     attachUrlTitle: '附加 URL',
-    attachUrlDesc: 'Vaelis 將擷取該頁面並作為此回合的脈絡。',
+    attachUrlDesc: 'Plobi 將擷取該頁面並作為此回合的脈絡。',
     urlPlaceholder: 'https://example.com/post',
     urlHintPre: '請輸入完整 URL，例如 ',
     attach: '附加',
@@ -1922,7 +1922,7 @@ export const zhHant = defineLocale({
       createPr: '建立 PR',
       openPr: '開啟 PR',
       ghMissing: '安裝 GitHub CLI (gh) 並登入後可開啟 PR',
-      agentShip: '讓 Vaelis 提交並開 PR',
+      agentShip: '讓 Plobi 提交並開 PR',
       agentShipPrompt: '檢查目前的變更，使用清晰的約定式提交訊息提交，推送分支，並開啟一個拉取請求。',
       newBranch: '新增分支',
       branchOffFrom: base => `從 ${base} 建立新分支`,
@@ -1939,9 +1939,9 @@ export const zhHant = defineLocale({
       fetch: '下載中…',
       pull: '快完成了…',
       pydeps: '收尾中…',
-      update: '正在更新 Vaelis…',
+      update: '正在更新 Plobi…',
       rebuild: '正在重新建置桌面應用程式…',
-      restart: '正在重新啟動 Vaelis…',
+      restart: '正在重新啟動 Plobi…',
       done: '更新完成',
       manual: '從終端機更新',
       guiSkew: '請更新桌面應用程式',
@@ -1951,32 +1951,32 @@ export const zhHant = defineLocale({
     checkFailedTitle: '無法檢查更新',
     tryAgain: '重試',
     notAvailableTitle: '更新不可用',
-    unsupportedMessage: '此版本的 Vaelis 無法在應用程式內自行更新。',
+    unsupportedMessage: '此版本的 Plobi 無法在應用程式內自行更新。',
     connectionRetry: '請檢查網路連線後重試。',
     latestBody: '您正在執行最新版本。',
     latestBodyBackend: '後端正在執行最新版本。',
     allSetTitle: '已是最新版本',
     availableTitle: '有可用更新',
-    availableBody: '新版 Vaelis 已可安裝。',
+    availableBody: '新版 Plobi 已可安裝。',
     availableTitleBackend: '後端有可用更新',
-    availableBodyBackend: '已連接的 Vaelis 後端有新版本可安裝。',
+    availableBodyBackend: '已連接的 Plobi 後端有新版本可安裝。',
     availableBodyNoChangelog: '已有新版本可用。此安裝方式無法顯示更新日誌。',
     updateNow: '立即更新',
     maybeLater: '稍後再說',
     moreChanges: count => `另有 ${count} 項變更。`,
     manualTitle: '從終端機更新',
-    manualBody: '您是從命令列安裝的 Vaelis，因此更新也需要在那裡執行。請將此指令貼到終端機：',
-    manualPickedUp: '下次啟動 Vaelis 時會使用新版本。',
+    manualBody: '您是從命令列安裝的 Plobi，因此更新也需要在那裡執行。請將此指令貼到終端機：',
+    manualPickedUp: '下次啟動 Plobi 時會使用新版本。',
     guiSkewTitle: '請更新桌面應用程式',
     guiSkewBody:
-      '後端已更新，但此桌面應用程式套件未變更。請更新或重新安裝 Vaelis 桌面應用程式（你的 AppImage / .deb / .rpm）以保持一致。',
+      '後端已更新，但此桌面應用程式套件未變更。請更新或重新安裝 Plobi 桌面應用程式（你的 AppImage / .deb / .rpm）以保持一致。',
     copy: '複製',
     copied: '已複製',
     done: '完成',
     applyingBody:
-      'Vaelis 更新程式會在自己的視窗中接管，並在完成後自動重新開啟 Vaelis。更新期間請勿自行重新開啟 Vaelis。',
-    applyingBodyBackend: '遠端後端正在套用更新並將重新啟動。恢復後 Vaelis 會自動重新連線。',
-    applyingClose: '此視窗會在更新期間關閉，隨後 Vaelis 會自動重新開啟。',
+      'Plobi 更新程式會在自己的視窗中接管，並在完成後自動重新開啟 Plobi。更新期間請勿自行重新開啟 Plobi。',
+    applyingBodyBackend: '遠端後端正在套用更新並將重新啟動。恢復後 Plobi 會自動重新連線。',
+    applyingClose: '此視窗會在更新期間關閉，隨後 Plobi 會自動重新開啟。',
     errorTitle: '更新未完成',
     errorBody: '沒有資料遺失。您可以現在重試。',
     notNow: '暫不',
@@ -1998,7 +1998,7 @@ export const zhHant = defineLocale({
       skipped: '已略過',
       failed: '失敗'
     },
-    oneTimeTitle: 'Vaelis 需要一次性安裝',
+    oneTimeTitle: 'Plobi 需要一次性安裝',
     unsupportedDesc: platform =>
       `${platform} 暫不支援自動首次啟動安裝。請開啟終端機並執行下面的指令，然後重新啟動此應用程式。之後啟動會略過此步驟。`,
     installCommand: '安裝指令',
@@ -2007,11 +2007,11 @@ export const zhHant = defineLocale({
     installTo: '將安裝至',
     retryAfterRun: '我已執行 -- 重試',
     failedTitle: '安裝失敗',
-    settingUpTitle: '正在設定 Vaelis Agent',
+    settingUpTitle: '正在設定 Plobi Agent',
     finishingTitle: '正在收尾',
     failedDesc:
-      '某個安裝步驟失敗。在 Windows 上，如果另一個 Vaelis CLI 或桌面執行個體正在執行，可能會出現這種情況。請停止正在執行的 Vaelis 執行個體後重試。可查看下方的詳細資訊或 desktop 記錄中的完整記錄。',
-    activeDesc: '這是一次性設定。Vaelis 安裝程式正在下載相依套件並設定您的電腦。之後啟動會略過此步驟。',
+      '某個安裝步驟失敗。在 Windows 上，如果另一個 Plobi CLI 或桌面執行個體正在執行，可能會出現這種情況。請停止正在執行的 Plobi 執行個體後重試。可查看下方的詳細資訊或 desktop 記錄中的完整記錄。',
+    activeDesc: '這是一次性設定。Plobi 安裝程式正在下載相依套件並設定您的電腦。之後啟動會略過此步驟。',
     progress: (completed, total) => `${completed}/${total} 個步驟已完成`,
     currentStage: stage => ` -- 目前：${stage}`,
     fetchingManifest: '正在取得安裝程式 manifest...',
@@ -2029,10 +2029,10 @@ export const zhHant = defineLocale({
   },
 
   onboarding: {
-    headerTitle: '開始設定 Vaelis Agent',
+    headerTitle: '開始設定 Plobi Agent',
     headerDesc: '連線模型提供方即可開始聊天。大多數選項只需一次點擊。',
-    preparingInstall: 'Vaelis 正在完成安裝。首次執行通常不到一分鐘。',
-    starting: '正在啟動 Vaelis…',
+    preparingInstall: 'Plobi 正在完成安裝。首次執行通常不到一分鐘。',
+    starting: '正在啟動 Plobi…',
     lookingUpProviders: '正在查詢提供方...',
     collapse: '收合',
     otherProviders: '其他提供方',
@@ -2040,7 +2040,7 @@ export const zhHant = defineLocale({
     chooseLater: '稍後再選擇提供方',
     recommended: '建議',
     connected: '已連線',
-    featuredPitch: '一個訂閱，300+ 前沿模型 — 執行 Vaelis 的建議方式',
+    featuredPitch: '一個訂閱，300+ 前沿模型 — 執行 Plobi 的建議方式',
     openRouterPitch: '一個金鑰，數百個模型 — 穩定的預設選擇',
     apiKeyOptions: {
       fireworks: { short: '直接模型 API', description: '直接存取 Fireworks AI 託管的模型。' },
@@ -2050,7 +2050,7 @@ export const zhHant = defineLocale({
       xai: { short: 'Grok 模型', description: '直接存取 xAI Grok 模型。' },
       local: {
         short: '自託管',
-        description: '將 Vaelis 指向本機或自託管的 OpenAI 相容端點（vLLM、llama.cpp、Ollama 等）。'
+        description: '將 Plobi 指向本機或自託管的 OpenAI 相容端點（vLLM、llama.cpp、Ollama 等）。'
       }
     },
     backToSignIn: '返回登入',
@@ -2062,7 +2062,7 @@ export const zhHant = defineLocale({
     update: '更新',
     flowSubtitles: {
       pkce: '開啟瀏覽器登入，然後回到這裡繼續',
-      device_code: '在瀏覽器中開啟驗證頁面 — Vaelis 會自動連線',
+      device_code: '在瀏覽器中開啟驗證頁面 — Plobi 會自動連線',
       external: '先在終端機登入一次，然後回來繼續聊天'
     },
     startingSignIn: provider => `正在為 ${provider} 啟動登入...`,
@@ -2073,11 +2073,11 @@ export const zhHant = defineLocale({
     pickDifferentProvider: '選擇其他提供方',
     signInWith: provider => `使用 ${provider} 登入`,
     openedBrowser: provider => `已在瀏覽器中開啟 ${provider}。`,
-    authorizeThere: '請在那裡授權 Vaelis。',
+    authorizeThere: '請在那裡授權 Plobi。',
     copyAuthCode: '複製授權碼並貼到下方。',
     pasteAuthCode: '貼上授權碼',
     reopenAuthPage: '重新開啟授權頁面',
-    autoBrowser: provider => `已在瀏覽器中開啟 ${provider}。請在那裡授權 Vaelis，連線會自動完成，無需複製或貼上。`,
+    autoBrowser: provider => `已在瀏覽器中開啟 ${provider}。請在那裡授權 Plobi，連線會自動完成，無需複製或貼上。`,
     reopenSignInPage: '重新開啟登入頁面',
     waitingAuthorize: '等待您授權...',
     externalPending: provider => `${provider} 透過自己的 CLI 登入。請在終端機執行此指令，然後回來選擇「我已登入」：`,
@@ -2165,7 +2165,7 @@ export const zhHant = defineLocale({
       update: '更新',
       updateInProgress: '更新中',
       commitsBehind: (count, branch) => `落後 ${branch} ${count} 個提交`,
-      desktopVersion: version => `Vaelis Desktop v${version}`,
+      desktopVersion: version => `Plobi Desktop v${version}`,
       backendVersion: version => `後端 v${version}`,
       clientLabel: version => `用戶端 v${version}`,
       backendLabel: version => `後端 v${version}`,
@@ -2182,7 +2182,7 @@ export const zhHant = defineLocale({
       gatewayConnecting: '連線中',
       gatewayOffline: '離線',
       gatewayRestarting: '重新啟動中…',
-      gatewayTitle: 'Vaelis 推論閘道狀態',
+      gatewayTitle: 'Plobi 推論閘道狀態',
       agents: '代理',
       closeAgents: '關閉代理',
       openAgents: '開啟代理',
@@ -2289,7 +2289,7 @@ export const zhHant = defineLocale({
     binaryTitle: '這看起來像二進位檔案',
     binaryBody: label => `預覽 ${label} 可能會顯示無法讀取的文字。`,
     largeTitle: '此檔案較大',
-    largeBody: (label, size) => `${label} 大小為 ${size}。Vaelis 只會顯示前 512 KB。`,
+    largeBody: (label, size) => `${label} 大小為 ${size}。Plobi 只會顯示前 512 KB。`,
     previewAnyway: '仍然預覽',
     truncated: '顯示前 512 KB。',
     noInlineTitle: '沒有行內預覽',
@@ -2327,25 +2327,25 @@ export const zhHant = defineLocale({
       serverNotFound: '找不到伺服器',
       failedToLoad: '預覽載入失敗',
       tryAgain: '重試',
-      restarting: 'Vaelis 正在重新啟動...',
-      askRestart: '請 Vaelis 重新啟動伺服器',
-      lookingRestart: taskId => `Vaelis 正在尋找要重新啟動的預覽伺服器 (${taskId})`,
+      restarting: 'Plobi 正在重新啟動...',
+      askRestart: '請 Plobi 重新啟動伺服器',
+      lookingRestart: taskId => `Plobi 正在尋找要重新啟動的預覽伺服器 (${taskId})`,
       restartingTitle: '正在重新啟動預覽伺服器',
-      restartingMessage: 'Vaelis 正在背景執行。可在預覽主控台查看進度。',
+      restartingMessage: 'Plobi 正在背景執行。可在預覽主控台查看進度。',
       startRestartFailed: message => `無法啟動伺服器重新啟動：${message}`,
       restartFailed: '伺服器重新啟動失敗',
       hideConsole: '隱藏預覽主控台',
       showConsole: '顯示預覽主控台',
       hideDevTools: '隱藏預覽 DevTools',
       openDevTools: '開啟預覽 DevTools',
-      finishedRestarting: message => `Vaelis 已完成預覽伺服器重新啟動${message ? `：${message}` : ''}`,
+      finishedRestarting: message => `Plobi 已完成預覽伺服器重新啟動${message ? `：${message}` : ''}`,
       failedRestarting: message => `伺服器重新啟動失敗：${message}`,
       unknownError: '未知錯誤',
       restartedTitle: '預覽伺服器已重新啟動',
       reloadingNow: '正在重新載入預覽。',
       restartFailedTitle: '預覽重新啟動失敗',
-      restartFailedMessage: 'Vaelis 無法重新啟動伺服器。',
-      stillWorking: 'Vaelis 仍在執行，但尚未收到重新啟動結果。伺服器指令可能正在前台執行。',
+      restartFailedMessage: 'Plobi 無法重新啟動伺服器。',
+      stillWorking: 'Plobi 仍在執行，但尚未收到重新啟動結果。伺服器指令可能正在前台執行。',
       workspaceReloading: '工作區已變更，正在重新載入預覽',
       fileChanged: url => `檔案已變更，正在重新載入預覽：${url}`,
       filesChanged: (count, url) => `${count} 個檔案變更，正在重新載入預覽：${url}`,
@@ -2363,7 +2363,7 @@ export const zhHant = defineLocale({
     thread: {
       loadingSession: '正在載入工作階段',
       showEarlier: '顯示較早的訊息',
-      loadingResponse: 'Vaelis 正在載入回覆',
+      loadingResponse: 'Plobi 正在載入回覆',
       resumeWhenBackgroundDone: count =>
         count === 1 ? '背景工作完成後將自動繼續' : `${count} 個背景工作完成後將自動繼續`,
       thinking: '思考中',
@@ -2392,7 +2392,7 @@ export const zhHant = defineLocale({
       attachingFile: '正在附加…'
     },
     approval: {
-      gatewayDisconnected: 'Vaelis 閘道未連線',
+      gatewayDisconnected: 'Plobi 閘道未連線',
       sendFailed: '無法傳送核准回應',
       run: '執行',
       command: '指令',
@@ -2403,12 +2403,12 @@ export const zhHant = defineLocale({
       reject: '拒絕',
       alwaysTitle: '一律允許此指令？',
       alwaysDescription: pattern =>
-        `這會將「${pattern}」模式加入永久允許清單（~/.hermes/config.yaml）。Vaelis 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
+        `這會將「${pattern}」模式加入永久允許清單（~/.hermes/config.yaml）。Plobi 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
       alwaysAllow: '一律允許'
     },
     clarify: {
       notReady: '澄清請求尚未就緒',
-      gatewayDisconnected: 'Vaelis 閘道未連線',
+      gatewayDisconnected: 'Plobi 閘道未連線',
       sendFailed: '無法傳送澄清回應',
       loadingQuestion: '正在載入問題…',
       other: '其他（輸入您的答案）',
@@ -2545,14 +2545,14 @@ export const zhHant = defineLocale({
   },
 
   prompts: {
-    gatewayDisconnected: 'Vaelis 閘道未連線',
+    gatewayDisconnected: 'Plobi 閘道未連線',
     sudoSendFailed: '無法傳送 sudo 密碼',
     secretSendFailed: '無法傳送密鑰',
     sudoTitle: '管理員密碼',
-    sudoDesc: 'Vaelis 需要您的 sudo 密碼來執行特權指令。它只會傳送給您的本機代理。',
+    sudoDesc: 'Plobi 需要您的 sudo 密碼來執行特權指令。它只會傳送給您的本機代理。',
     sudoPlaceholder: 'sudo 密碼',
     secretTitle: '需要密鑰',
-    secretDesc: 'Vaelis 需要一個憑證才能繼續。',
+    secretDesc: 'Plobi 需要一個憑證才能繼續。',
     secretPlaceholder: '密鑰值'
   },
 
@@ -2602,8 +2602,8 @@ export const zhHant = defineLocale({
     sessionExportFailed: '無法匯出工作階段',
     imageSaved: '圖片已儲存',
     downloadStarted: '下載已開始',
-    restartToUseSaveImage: '重新啟動 Vaelis Desktop 後可使用儲存圖片。',
-    restartToSaveImages: '重新啟動 Vaelis Desktop 以儲存圖片',
+    restartToUseSaveImage: '重新啟動 Plobi Desktop 後可使用儲存圖片。',
+    restartToSaveImages: '重新啟動 Plobi Desktop 以儲存圖片',
     imageDownloadFailed: '圖片下載失敗',
     openImage: '開啟圖片',
     downloadImage: '下載圖片',

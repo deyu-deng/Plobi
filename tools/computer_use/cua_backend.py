@@ -108,7 +108,7 @@ _CUA_TELEMETRY_ENV_VAR = "CUA_DRIVER_RS_TELEMETRY_ENABLED"
 
 
 def _cua_telemetry_disabled() -> bool:
-    """True when Vaelis should disable cua-driver telemetry for this user.
+    """True when Plobi should disable cua-driver telemetry for this user.
 
     Reads ``computer_use.cua_telemetry`` from config.yaml. Default is False
     (telemetry off). Any failure to read config fails SAFE — toward the
@@ -153,7 +153,7 @@ def _resolve_mcp_invocation(
     (trycua/cua#1961). The manifest carries a stable ``mcp_invocation``
     pointer with both ``command`` and ``args``, so a future cua-driver
     that renames or relocates the subcommand keeps working without a
-    Vaelis patch.
+    Plobi patch.
 
     Falls back to ``(driver_cmd, ["mcp"])`` for older drivers that don't
     expose ``manifest``, or any indeterminate failure — the wrapper must
@@ -620,7 +620,7 @@ class _CuaDriverSession:
                 command=command,
                 args=args,
                 # Apply the telemetry policy first (default: disabled), then
-                # sanitize Vaelis-managed secrets out of the child env.
+                # sanitize Plobi-managed secrets out of the child env.
                 env=_sanitize_subprocess_env(cua_driver_child_env()),
             )
 
@@ -1170,14 +1170,14 @@ class CuaDriverBackend(ComputerUseBackend):
         # instructions ask every consumer to declare a stable session
         # at the start of a run (start_session) and tear it down at
         # the end (end_session). Doing so:
-        #   - Gets a distinct agent-cursor color per Vaelis run, with
+        #   - Gets a distinct agent-cursor color per Plobi run, with
         #     overlay rendering visualising where actions land
         #     (without moving the real OS cursor).
         #   - Isolates per-session config + recording ownership so
-        #     concurrent Vaelis runs / subagents don't step on each
+        #     concurrent Plobi runs / subagents don't step on each
         #     other.
         # We mint a UUID4-based id once per CuaDriverBackend instance —
-        # one Vaelis run = one backend = one session — and pass it as
+        # one Plobi run = one backend = one session — and pass it as
         # `session` on every cua-driver tool call. Sessions are an
         # additive feature on the cua-driver side: when our id is
         # unknown to the driver (older builds), the tool calls
@@ -1189,7 +1189,7 @@ class CuaDriverBackend(ComputerUseBackend):
     def start(self) -> None:
         _maybe_nudge_update()
         # The MCP client SDK (`mcp`) is an optional dependency (the
-        # `computer-use` / `mcp` extras), not part of Vaelis' minimal core.
+        # `computer-use` / `mcp` extras), not part of Plobi' minimal core.
         # Lazy-install it on first use — the same pattern every other optional
         # backend uses — so users never hit an opaque `No module named 'mcp'`
         # at invoke time. Auto-install is gated by `security.allow_lazy_installs`

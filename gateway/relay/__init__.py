@@ -1,4 +1,4 @@
-"""Relay/connector support package for the Vaelis gateway.
+"""Relay/connector support package for the Plobi gateway.
 
 EXPERIMENTAL. This package implements the gateway side of the "Gateway Gateway"
 relay design: a generic ``RelayAdapter`` plus the wire-serializable

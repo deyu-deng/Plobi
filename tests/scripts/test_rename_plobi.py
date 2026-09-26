@@ -39,6 +39,10 @@ REWRITE = [
     ("vaelis_secretary_ask", "plobi_secretary_ask"),
     ("VAELIS_DELEGATION_GLOBAL_MAX", "PLOBI_DELEGATION_GLOBAL_MAX"),
     ("com.vaelis.desktop", "com.plobi.desktop"),
+    # A label naming us glued to an upstream URL: the label is ours (rewrite),
+    # the URL is theirs (survive).
+    ("[Vaelis Agent](https://github.com/NousResearch/hermes-agent)",
+     "[Plobi Agent](https://github.com/NousResearch/hermes-agent)"),
 ]
 
 PRESERVE = [

@@ -1,13 +1,13 @@
 # BlueBubbles (iMessage)
 
-Connect Vaelis to Apple iMessage via [BlueBubbles](https://bluebubbles.app/) — a free, open-source macOS server that bridges iMessage to any device.
+Connect Plobi to Apple iMessage via [BlueBubbles](https://bluebubbles.app/) — a free, open-source macOS server that bridges iMessage to any device.
 
 ## Prerequisites
 
 - A **Mac** (always on) running [BlueBubbles Server](https://bluebubbles.app/)
 - Apple ID signed into Messages.app on that Mac
 - BlueBubbles Server v1.0.0+ (webhooks require this version)
-- Network connectivity between Vaelis and the BlueBubbles server
+- Network connectivity between Plobi and the BlueBubbles server
 
 ## Setup
 
@@ -21,7 +21,7 @@ In BlueBubbles Server → **Settings → API**, note:
 - **Server URL** (e.g., `http://192.168.1.10:1234`)
 - **Server Password**
 
-### 3. Configure Vaelis
+### 3. Configure Plobi
 
 Run the setup wizard:
 
@@ -40,7 +40,7 @@ BLUEBUBBLES_PASSWORD=your-server-password
 
 #### Optional: Require mentions in group chats
 
-By default, Vaelis responds to every authorized BlueBubbles/iMessage DM or group message. To make group chats opt-in, enable mention gating:
+By default, Plobi responds to every authorized BlueBubbles/iMessage DM or group message. To make group chats opt-in, enable mention gating:
 
 ```yaml
 platforms:
@@ -50,7 +50,7 @@ platforms:
       require_mention: true
 ```
 
-With `require_mention: true`, DMs still work normally, but group-chat messages are ignored unless they match a mention pattern. If you do not configure custom patterns, Vaelis uses conservative defaults for `Vaelis` and `@Vaelis agent` variants.
+With `require_mention: true`, DMs still work normally, but group-chat messages are ignored unless they match a mention pattern. If you do not configure custom patterns, Plobi uses conservative defaults for `Plobi` and `@Plobi agent` variants.
 
 For a custom agent name, set regex patterns:
 
@@ -68,7 +68,7 @@ platforms:
 Choose one approach:
 
 **DM Pairing (recommended):**
-When someone messages your iMessage, Vaelis automatically sends them a pairing code. Approve it with:
+When someone messages your iMessage, Plobi automatically sends them a pairing code. Approve it with:
 ```bash
 hermes pairing approve bluebubbles <CODE>
 ```
@@ -90,17 +90,17 @@ BLUEBUBBLES_ALLOW_ALL_USERS=true
 hermes gateway run
 ```
 
-Vaelis will connect to your BlueBubbles server, register a webhook, and start listening for iMessage messages.
+Plobi will connect to your BlueBubbles server, register a webhook, and start listening for iMessage messages.
 
 ## How It Works
 
 ```
-iMessage → Messages.app → BlueBubbles Server → Webhook → Vaelis
-Vaelis → BlueBubbles REST API → Messages.app → iMessage
+iMessage → Messages.app → BlueBubbles Server → Webhook → Plobi
+Plobi → BlueBubbles REST API → Messages.app → iMessage
 ```
 
 - **Inbound:** BlueBubbles sends webhook events to a local listener when new messages arrive. No polling — instant delivery.
-- **Outbound:** Vaelis sends messages via the BlueBubbles REST API.
+- **Outbound:** Plobi sends messages via the BlueBubbles REST API.
 - **Media:** Images, voice messages, videos, and documents are supported in both directions. Inbound attachments are downloaded and cached locally for the agent to process.
 
 ## Environment Variables
@@ -116,7 +116,7 @@ Vaelis → BlueBubbles REST API → Messages.app → iMessage
 | `BLUEBUBBLES_ALLOWED_USERS` | No | — | Comma-separated authorized users |
 | `BLUEBUBBLES_ALLOW_ALL_USERS` | No | `false` | Allow all users |
 | `BLUEBUBBLES_REQUIRE_MENTION` | No | `false` | Require a mention pattern before responding in group chats |
-| `BLUEBUBBLES_MENTION_PATTERNS` | No | Vaelis wake words | JSON array, newline-separated, or comma-separated regex patterns for group mention matching |
+| `BLUEBUBBLES_MENTION_PATTERNS` | No | Plobi wake words | JSON array, newline-separated, or comma-separated regex patterns for group mention matching |
 
 Auto-marking messages as read is controlled by the `send_read_receipts` key under `platforms.bluebubbles.extra` in `~/.hermes/config.yaml` (default: `true`). There is no corresponding environment variable.
 
@@ -141,7 +141,7 @@ Shows "typing..." in the iMessage conversation while the agent is processing. Re
 Automatically marks messages as read after processing. Requires Private API.
 
 ### Chat Addressing
-You can address chats by email or phone number — Vaelis resolves them to BlueBubbles chat GUIDs automatically. No need to use raw GUID format.
+You can address chats by email or phone number — Plobi resolves them to BlueBubbles chat GUIDs automatically. No need to use raw GUID format.
 
 ## Private API
 

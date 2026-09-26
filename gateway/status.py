@@ -219,7 +219,7 @@ def _read_process_cmdline(pid: int) -> Optional[str]:
 
 
 def _gateway_command_subcommand(command: str | None) -> str | None:
-    """Return the Vaelis gateway lifecycle subcommand from a command line.
+    """Return the Plobi gateway lifecycle subcommand from a command line.
 
     Lifecycle decisions (is the gateway up? did restart relaunch it?) must not
     fire on loose substring matches.  The previous ``"... gateway" in cmdline``
@@ -233,7 +233,7 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
 
     Tokenizes quote-aware (``shlex``) so quoted Windows paths with spaces
     (``"C:\\Program Files\\...\\hermes-gateway.exe"``) survive, and strips
-    ``--profile``/``-p`` selectors from anywhere in argv -- Vaelis's
+    ``--profile``/``-p`` selectors from anywhere in argv -- Plobi's
     ``_apply_profile_override`` removes them before argparse, so the profile
     flag (and a profile literally named ``gateway``) can legally appear on
     either side of the ``gateway`` subcommand.
@@ -305,14 +305,14 @@ def looks_like_gateway_runtime_command_line(command: str | None) -> bool:
     fallback executes ``run_gateway()`` in that same process, so its argv stays
     as ``gateway restart`` while it owns the webhook port and writes runtime
     state. Keep the public ``looks_like_gateway_command_line()`` strict, and
-    use this broader matcher only when validating Vaelis-owned runtime records
+    use this broader matcher only when validating Plobi-owned runtime records
     or no-supervisor cleanup scans.
     """
     return _gateway_command_subcommand(command) in {"run", "restart"}
 
 
 def _looks_like_gateway_process(pid: int) -> bool:
-    """Return True when the live PID still looks like the Vaelis gateway."""
+    """Return True when the live PID still looks like the Plobi gateway."""
     cmdline = _read_process_cmdline(pid)
     if not cmdline:
         return False
@@ -1245,7 +1245,7 @@ def _consume_pid_marker_for_self(
     # PID + start_time by coincidence of a shared PID namespace, and make
     # profile A exit 0 — only to be revived by systemd Restart=always,
     # which then races the replacer again, flapping indefinitely. The
-    # field is absent in markers written by older Vaelis versions; treat
+    # field is absent in markers written by older Plobi versions; treat
     # absent as "same home" so old markers and single-profile setups are
     # unaffected. Leave a mismatched marker in place so the correct
     # profile can still consume it.

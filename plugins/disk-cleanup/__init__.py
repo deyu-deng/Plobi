@@ -1,4 +1,4 @@
-"""disk-cleanup plugin — auto-cleanup of ephemeral Vaelis session files.
+"""disk-cleanup plugin — auto-cleanup of ephemeral Plobi session files.
 
 Wires three behaviours:
 
@@ -312,5 +312,5 @@ def register(ctx) -> None:
     ctx.register_command(
         "disk-cleanup",
         handler=_handle_slash,
-        description="Track and clean up ephemeral Vaelis session files.",
+        description="Track and clean up ephemeral Plobi session files.",
     )

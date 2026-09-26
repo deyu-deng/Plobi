@@ -18,7 +18,7 @@ Edit PDFs using natural-language instructions. Point it at a page and describe w
 ## Prerequisites
 
 ```bash
-# Install with uv (recommended — already available in Vaelis)
+# Install with uv (recommended — already available in Plobi)
 uv pip install nano-pdf
 
 # Or with pip

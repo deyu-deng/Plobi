@@ -4,7 +4,7 @@
 server:
   host: 127.0.0.1
   port: 8000
-  api_key: sk-local-dev-key        # 与 Vaelis 默认 AIGW_API_KEY 一致
+  api_key: sk-local-dev-key        # 与 Plobi 默认 AIGW_API_KEY 一致
 
 logging:
   level: INFO
@@ -22,7 +22,7 @@ scheduler:
   strategy: least_fail
 
 # 通配路由：任何模型名都改写为 mock/echo 交给 mock 处理
-# （mock 不校验具体模型，直接回 OpenAI 格式；Vaelis 发的 deepseek-chat 等会被映射到 mock/echo）
+# （mock 不校验具体模型，直接回 OpenAI 格式；Plobi 发的 deepseek-chat 等会被映射到 mock/echo）
 routing:
   rules:
     - match: "*"
@@ -33,7 +33,7 @@ providers:
   mock:
     enabled: true
     mode: echo                     # 默认回显用户最后一条消息
-    reply: "（Vaelis 本地 mock 回应）已收到你的消息，闭源额度通道验证通过。"
+    reply: "（Plobi 本地 mock 回应）已收到你的消息，闭源额度通道验证通过。"
     latency_ms: 0
     embedding_dim: 8
     models: ["mock/echo", "mock/static", "mock/fail", "mock/dead", "mock/embedding", "workbuddy/deepseek-chat"]

@@ -6,7 +6,7 @@ description: "外部记忆提供者插件 — Honcho、OpenViking、Mem0、Hinds
 
 # Memory Providers
 
-Vaelis Agent 内置 8 个外部记忆提供者插件，为 Agent 提供跨会话的持久化知识，超越内置的 MEMORY.md 和 USER.md。同一时间只能激活**一个**外部提供者——内置记忆始终与其并行工作。
+Plobi Agent 内置 8 个外部记忆提供者插件，为 Agent 提供跨会话的持久化知识，超越内置的 MEMORY.md 和 USER.md。同一时间只能激活**一个**外部提供者——内置记忆始终与其并行工作。
 
 ## 快速开始
 
@@ -27,7 +27,7 @@ memory:
 
 ## 工作原理
 
-当记忆提供者激活时，Vaelis 会自动：
+当记忆提供者激活时，Plobi 会自动：
 
 1. **注入提供者上下文**到系统 prompt（提示词）中（提供者已知的内容）
 2. **在每轮对话前预取相关记忆**（后台非阻塞）
@@ -142,15 +142,15 @@ hermes memory setup        # 选择 "honcho" — 运行 Honcho 专属的安装�
 
 **多 peer 配置：**
 
-Honcho 将对话建模为 peer 之间的消息交换——每个 Vaelis profile 对应一个用户 peer 加一个 AI peer，共享同一个 workspace。workspace 是共享环境：用户 peer 在各 profile 间全局共享，每个 AI peer 拥有独立身份。每个 AI peer 从自身的观察中独立构建表示/card，因此 `coder` profile 保持代码导向，而 `writer` profile 针对同一用户保持编辑导向。
+Honcho 将对话建模为 peer 之间的消息交换——每个 Plobi profile 对应一个用户 peer 加一个 AI peer，共享同一个 workspace。workspace 是共享环境：用户 peer 在各 profile 间全局共享，每个 AI peer 拥有独立身份。每个 AI peer 从自身的观察中独立构建表示/card，因此 `coder` profile 保持代码导向，而 `writer` profile 针对同一用户保持编辑导向。
 
 映射关系：
 
 | 概念 | 含义 |
 |---------|-----------|
-| **Workspace** | 共享环境。同一 workspace 下的所有 Vaelis profile 共享同一用户身份。 |
+| **Workspace** | 共享环境。同一 workspace 下的所有 Plobi profile 共享同一用户身份。 |
 | **用户 peer**（`peerName`） | 人类用户。在 workspace 内跨 profile 共享。 |
-| **AI peer**（`aiPeer`） | 每个 Vaelis profile 一个。host key `hermes` → 默认；其他 profile 使用 `hermes.<profile>`。 |
+| **AI peer**（`aiPeer`） | 每个 Plobi profile 一个。host key `hermes` → 默认；其他 profile 使用 `hermes.<profile>`。 |
 | **Observation** | 每个 peer 的开关，控制 Honcho 从哪些消息中建模。`directional`（默认，全部开启）或 `unified`（单一观察者池）。 |
 
 ### 新建 profile，创建新 Honcho peer
@@ -167,7 +167,7 @@ hermes profile create coder --clone
 hermes honcho sync
 ```
 
-扫描所有 Vaelis profile，为没有 host 块的 profile 创建 host 块，从默认 `hermes` 块继承设置，并提前创建新的 AI peer。幂等操作——跳过已有 host 块的 profile。
+扫描所有 Plobi profile，为没有 host 块的 profile 创建 host 块，从默认 `hermes` 块继承设置，并提前创建新的 AI peer。幂等操作——跳过已有 host 块的 profile。
 
 ### 每个 profile 的 observation 配置
 
@@ -279,7 +279,7 @@ hermes honcho sync
 pip install openviking
 openviking-server
 
-# 然后配置 Vaelis
+# 然后配置 Plobi
 hermes memory setup    # 选择 "openviking"
 # 或手动配置：
 hermes config set memory.provider openviking
@@ -359,7 +359,7 @@ echo "HINDSIGHT_API_KEY=your-key" >> ~/.hermes/.env
 | `auto_retain` | `true` | 自动保留对话轮次 |
 | `auto_recall` | `true` | 每轮对话前自动召回记忆 |
 | `retain_async` | `true` | 在服务器上异步处理保留操作 |
-| `retain_context` | `conversation between Vaelis Agent and the User` | 保留记忆的上下文标签 |
+| `retain_context` | `conversation between Plobi Agent and the User` | 保留记忆的上下文标签 |
 | `retain_tags` | — | 应用于保留记忆的默认标签；与每次工具调用的标签合并 |
 | `retain_source` | — | 附加到保留记忆的可选 `metadata.source` |
 | `retain_user_prefix` | `User` | 自动保留的对话记录中用户轮次前的标签 |
@@ -447,7 +447,7 @@ echo "RETAINDB_API_KEY=your-key" >> ~/.hermes/.env
 # 先安装 CLI
 curl -fsSL https://byterover.dev/install.sh | sh
 
-# 然后配置 Vaelis
+# 然后配置 Plobi
 hermes memory setup    # 选择 "byterover"
 # 或手动配置：
 hermes config set memory.provider byterover
@@ -501,7 +501,7 @@ echo 'SUPERMEMORY_API_KEY=***' >> ~/.hermes/.env
 - 在会话边界时将整个会话**一次性导入**
 - 会话结束时同时导入到对话端点（`/v4/conversations`），用于 Supermemory 的 profile 和图谱构建
 - 在第一轮及可配置间隔注入 profile 事实
-- **Profile 范围容器**——在 `container_tag` 中使用 `{identity}`（例如 `hermes-{identity}` → `hermes-coder`），按 Vaelis profile 隔离记忆
+- **Profile 范围容器**——在 `container_tag` 中使用 `{identity}`（例如 `hermes-{identity}` → `hermes-coder`），按 Plobi profile 隔离记忆
 - **多容器模式**——启用 `enable_custom_container_tags` 并配置 `custom_containers` 列表，让 Agent 跨命名容器读写。自动操作（同步、预取）保持在主容器上。
 
 <details>

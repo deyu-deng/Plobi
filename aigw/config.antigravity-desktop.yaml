@@ -4,7 +4,7 @@
 # Cloud Code / Gemini protocol). The refresh token is obtained via Google OAuth
 # (`aigw auth antigravity`) and injected at runtime through the
 # ANTIGRAVITY_REFRESH_TOKEN environment variable by the desktop's
-# vaelis-gateway:auth handler.
+# plobi-gateway:auth handler.
 #
 # This replaces the CLI route (config.antigravity.yaml) which depends on a
 # fictional `agy` binary that does not exist.

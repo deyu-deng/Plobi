@@ -1,4 +1,4 @@
-"""Thin Spotify Web API helper used by Vaelis native tools."""
+"""Thin Spotify Web API helper used by Plobi native tools."""
 
 from __future__ import annotations
 

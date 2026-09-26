@@ -47,7 +47,7 @@ DEFAULT_CODEX_MODELS: List[str] = [
     # crashes on selection. The Codex CLI public catalog still references
     # these slugs, which is why they survived previously — but those entries
     # describe the public OpenAI API, not the OAuth-backed Codex backend
-    # Vaelis uses. Removed here. If OpenAI re-enables them on Codex backend,
+    # Plobi uses. Removed here. If OpenAI re-enables them on Codex backend,
     # live discovery will pick them up automatically via _fetch_models_from_api.
 ]
 
@@ -64,7 +64,7 @@ _FORWARD_COMPAT_TEMPLATE_MODELS: List[tuple[str, tuple[str, ...]]] = [
     # Surface Spark whenever any compatible Codex template is present so
     # accounts hitting the live endpoint with an older lineup still see
     # Spark in the picker. Backend gates real availability by ChatGPT Pro
-    # entitlement; Vaelis does not.
+    # entitlement; Plobi does not.
     ("gpt-5.3-codex-spark", ("gpt-5.3-codex",)),
 ]
 
@@ -171,7 +171,7 @@ def _read_cache_models(codex_home: Path) -> List[str]:
                 continue
             slug = slug.strip()
             # Do not filter on ``supported_in_api`` here.  It describes the
-            # public OpenAI API, while Vaelis openai-codex talks to the same
+            # public OpenAI API, while Plobi openai-codex talks to the same
             # OAuth-backed Codex backend as Codex CLI.
             visibility = item.get("visibility")
             if isinstance(visibility, str) and visibility.strip().lower() in {"hide", "hidden"}:

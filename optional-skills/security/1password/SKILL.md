@@ -2,7 +2,7 @@
 name: 1password
 description: Set up and use 1Password CLI (op). Use when installing the CLI, enabling desktop app integration, signing in, and reading/injecting secrets for commands.
 version: 1.0.0
-author: arceus77-7, enhanced by Vaelis Agent
+author: arceus77-7, enhanced by Plobi Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -27,7 +27,7 @@ Use this skill when the user wants secrets managed through 1Password instead of 
 - 1Password account
 - 1Password CLI (`op`) installed
 - One of: desktop app integration, service account token (`OP_SERVICE_ACCOUNT_TOKEN`), or Connect server
-- `tmux` available for stable authenticated sessions during Vaelis terminal calls (desktop app flow only)
+- `tmux` available for stable authenticated sessions during Plobi terminal calls (desktop app flow only)
 
 ## When to Use
 
@@ -39,7 +39,7 @@ Use this skill when the user wants secrets managed through 1Password instead of 
 
 ## Authentication Methods
 
-### Service Account (recommended for Vaelis)
+### Service Account (recommended for Plobi)
 
 Set `OP_SERVICE_ACCOUNT_TOKEN` in `${HERMES_HOME:-~/.hermes}/.env` (the skill will prompt for this on first load).
 No desktop app needed. Supports `op read`, `op inject`, `op run`.
@@ -85,9 +85,9 @@ op --version
 
 3. Choose an auth method above and configure it.
 
-## Vaelis Execution Pattern (desktop app flow)
+## Plobi Execution Pattern (desktop app flow)
 
-Vaelis terminal commands are non-interactive by default and can lose auth context between calls.
+Plobi terminal commands are non-interactive by default and can lose auth context between calls.
 For reliable `op` use with desktop app integration, run sign-in and secret operations inside a dedicated tmux session.
 
 Note: This is NOT needed when using `OP_SERVICE_ACCOUNT_TOKEN` — the token persists across terminal calls automatically.

@@ -1,4 +1,4 @@
-"""Shared helpers for attaching Vaelis to a local Chromium-family CDP port."""
+"""Shared helpers for attaching Plobi to a local Chromium-family CDP port."""
 
 from __future__ import annotations
 

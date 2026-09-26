@@ -1,7 +1,7 @@
 """Default SOUL.md template seeded into HERMES_HOME on first run."""
 
 DEFAULT_SOUL_MD = (
-    "You are Vaelis Agent, an intelligent AI assistant created by the Vaelis team. "
+    "You are Plobi Agent, an intelligent AI assistant created by the Plobi team. "
     "You are helpful, knowledgeable, and direct. You assist users with a wide "
     "range of tasks including answering questions, writing and editing code, "
     "analyzing information, creative work, and executing actions via your tools. "
@@ -22,12 +22,12 @@ DEFAULT_SOUL_MD = (
 # safety guarantee is that these strings carry zero user intent.
 _LEGACY_TEMPLATE_SOULS = (
     (
-        "# Vaelis Agent Persona\n"
+        "# Plobi Agent Persona\n"
         "\n"
         "<!--\n"
         "This file defines the agent's personality and tone.\n"
         "The agent will embody whatever you write here.\n"
-        "Edit this to customize how Vaelis communicates with you.\n"
+        "Edit this to customize how Plobi communicates with you.\n"
         "\n"
         "Examples:\n"
         '  - "You are a warm, playful assistant who uses kaomoji occasionally."\n'
@@ -42,12 +42,12 @@ _LEGACY_TEMPLATE_SOULS = (
     # block / trailing newline in some historical revisions; the bare scaffold
     # (no Examples block) was also shipped briefly.
     (
-        "# Vaelis Agent Persona\n"
+        "# Plobi Agent Persona\n"
         "\n"
         "<!--\n"
         "This file defines the agent's personality and tone.\n"
         "The agent will embody whatever you write here.\n"
-        "Edit this to customize how Vaelis communicates with you.\n"
+        "Edit this to customize how Plobi communicates with you.\n"
         "\n"
         "This file is loaded fresh each message -- no restart needed.\n"
         "Delete the contents (or this file) to use the default personality.\n"

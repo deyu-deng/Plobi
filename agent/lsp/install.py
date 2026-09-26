@@ -1,7 +1,7 @@
 """Auto-installation of LSP server binaries.
 
 Tries to install missing servers using whatever package manager is
-appropriate.  All installs go to a Vaelis-owned bin staging dir,
+appropriate.  All installs go to a Plobi-owned bin staging dir,
 ``<HERMES_HOME>/lsp/bin/``, so we don't pollute the user's global
 toolchain.
 
@@ -121,7 +121,7 @@ def _is_windows() -> bool:
 
 
 def hermes_lsp_bin_dir() -> Path:
-    """Return the Vaelis-owned bin staging dir for LSP servers."""
+    """Return the Plobi-owned bin staging dir for LSP servers."""
     home = os.environ.get("HERMES_HOME")
     if home is None:
         home = os.path.join(os.path.expanduser("~"), ".hermes")

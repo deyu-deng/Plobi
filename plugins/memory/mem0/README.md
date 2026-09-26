@@ -60,7 +60,7 @@ Connect the plugin to a standalone Mem0 server you run yourself — the Docker-s
      "api_key": "your-admin-api-key"
    }
    ```
-3. Start a fresh Vaelis session and call `mem0_search` — it connects to your server.
+3. Start a fresh Plobi session and call `mem0_search` — it connects to your server.
 
 The plugin authenticates with `X-API-Key` and uses the server's `/search` and `/memories` routes. `api_key` is optional — omit it only for servers running with `AUTH_DISABLED`.
 

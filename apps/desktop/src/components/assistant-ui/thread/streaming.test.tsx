@@ -224,7 +224,7 @@ function assistantBriefingMessage(running = true): ThreadMessage {
       {
         type: 'tool-call',
         toolCallId: 'secretary-briefing-1',
-        toolName: 'vaelis_secretary_ask',
+        toolName: 'plobi_secretary_ask',
         args: { intent: 'write_briefing', user_text: '根据明天的日程写一段早报', route: 'workbuddy' },
         argsText: JSON.stringify({
           intent: 'write_briefing',
@@ -265,7 +265,7 @@ function assistantDispatchMessage(running = true): ThreadMessage {
       {
         type: 'tool-call',
         toolCallId: 'secretary-1',
-        toolName: 'vaelis_secretary_ask',
+        toolName: 'plobi_secretary_ask',
         args: { intent: 'refresh_agenda', user_text: '明天的日常安排是什么' },
         argsText: JSON.stringify({ intent: 'refresh_agenda', user_text: '明天的日常安排是什么' }),
         ...(running
@@ -477,7 +477,7 @@ describe('assistant-ui streaming renderer', () => {
   it('renders assistant text incrementally before completion', async () => {
     const { container } = render(<StreamingHarness />)
 
-    expect(screen.getByRole('status', { name: 'Vaelis is loading a response' })).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Plobi is loading a response' })).toBeTruthy()
 
     await wait(80)
 
@@ -485,7 +485,7 @@ describe('assistant-ui streaming renderer', () => {
       expect(container.textContent).toContain('first chunk')
     })
     expect(container.textContent).not.toContain('second chunk')
-    expect(screen.queryByRole('status', { name: 'Vaelis is loading a response' })).toBeNull()
+    expect(screen.queryByRole('status', { name: 'Plobi is loading a response' })).toBeNull()
 
     await wait(500)
 

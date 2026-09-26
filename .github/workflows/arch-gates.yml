@@ -28,7 +28,7 @@ jobs:
         run: pip install pytest==9.0.2
 
       - name: Backend arch guard
-        run: python -m pytest tests/vaelis/test_console_arch_guard.py -q --basetemp=.pytest-run
+        run: python -m pytest tests/plobi/test_console_arch_guard.py -q --basetemp=.pytest-run
 
       - name: Setup Node.js
         uses: actions/setup-node@0a44ba7841729c0fd30e6440a8344e1f727b5b64  # v4

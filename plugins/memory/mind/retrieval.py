@@ -2,7 +2,7 @@
 
 Real implementation (P0):
   - case-insensitive keyword grep across every ``.md`` file inside
-    ``SAFE_PREFIXES`` (Vault/projects/Vaelis, Vault/meta, Vault/notes,
+    ``SAFE_PREFIXES`` (Vault/projects/Plobi, Vault/meta, Vault/notes,
     Loom/wiki/*, Loom/raw/chat-logs/*, ...).
   - Each hit is scored by total keyword occurrence count and rendered as a
     bounded markdown snippet (file header + surrounding lines of the first
@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 from typing import List
 
-from vaelis.mind.paths import SAFE_PREFIXES
+from plobi.mind.paths import SAFE_PREFIXES
 
 MAX_SNIPPET_CHARS = 1200
 MAX_TOTAL_CHARS = 6000

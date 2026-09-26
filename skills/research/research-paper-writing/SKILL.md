@@ -2114,13 +2114,13 @@ The main pipeline above targets empirical ML papers. Other paper types require d
 
 ---
 
-## Vaelis Agent Integration
+## Plobi Agent Integration
 
-This skill is designed for the Vaelis agent. It uses Vaelis tools, delegation, scheduling, and memory for the full research lifecycle.
+This skill is designed for the Plobi agent. It uses Plobi tools, delegation, scheduling, and memory for the full research lifecycle.
 
 ### Related Skills
 
-Compose this skill with other Vaelis skills for specific phases:
+Compose this skill with other Plobi skills for specific phases:
 
 | Skill | When to Use | How to Load |
 |-------|-------------|-------------|
@@ -2133,7 +2133,7 @@ Compose this skill with other Vaelis skills for specific phases:
 
 **This skill supersedes `ml-paper-writing`** — it contains all of ml-paper-writing's content plus the full experiment/analysis pipeline and autoreason methodology.
 
-### Vaelis Tools Reference
+### Plobi Tools Reference
 
 | Tool | Usage in This Pipeline |
 |------|----------------------|

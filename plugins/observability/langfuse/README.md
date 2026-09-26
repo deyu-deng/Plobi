@@ -1,6 +1,6 @@
 # Langfuse Observability Plugin
 
-This plugin ships bundled with Vaelis but is **opt-in** — it only loads when
+This plugin ships bundled with Plobi but is **opt-in** — it only loads when
 you explicitly enable it.
 
 ## Enable
@@ -33,7 +33,7 @@ open.
 
 ```bash
 hermes plugins list                 # observability/langfuse should show "enabled"
-hermes chat -q "hello"              # then check Langfuse for a "Vaelis turn" trace
+hermes chat -q "hello"              # then check Langfuse for a "Plobi turn" trace
 ```
 
 ## Optional tuning

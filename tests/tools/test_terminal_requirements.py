@@ -35,7 +35,7 @@ def _clear_terminal_env(monkeypatch):
 
 
 def test_local_terminal_requirements(monkeypatch, caplog):
-    """Local backend uses Vaelis' own LocalEnvironment wrapper."""
+    """Local backend uses Plobi' own LocalEnvironment wrapper."""
     _clear_terminal_env(monkeypatch)
     monkeypatch.setenv("TERMINAL_ENV", "local")
 

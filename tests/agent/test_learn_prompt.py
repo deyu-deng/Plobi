@@ -71,10 +71,10 @@ class TestBuildLearnPrompt:
         assert "count" in std and "60" in std
         # #3 platforms gating against OS-bound primitives.
         assert "platforms" in std
-        # author is always the literal Vaelis, never the host/OS identity (#52368).
+        # author is always the literal Plobi, never the host/OS identity (#52368).
         assert "author: always the literal value `hermes`" in std
         assert "never fill it from the host" in std
-        # #2 Vaelis-tool framing names the wrapped tools, not shell utilities.
+        # #2 Plobi-tool framing names the wrapped tools, not shell utilities.
         for tool in ("read_file", "search_files", "patch", "write_file"):
             assert tool in std
         # #6 scripts/references/templates layout.

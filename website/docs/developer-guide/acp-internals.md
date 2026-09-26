@@ -6,7 +6,7 @@ description: "How the ACP adapter works: lifecycle, sessions, event bridge, appr
 
 # ACP Internals
 
-The ACP adapter wraps Vaelis' synchronous `AIAgent` in an async JSON-RPC stdio server.
+The ACP adapter wraps Plobi' synchronous `AIAgent` in an async JSON-RPC stdio server.
 
 Key implementation files:
 
@@ -94,15 +94,15 @@ asyncio.run_coroutine_threadsafe(...)
 
 Mapping:
 
-- `allow_once` -> Vaelis `once`
-- `allow_always` -> Vaelis `always`
-- reject options -> Vaelis `deny`
+- `allow_once` -> Plobi `once`
+- `allow_always` -> Plobi `always`
+- reject options -> Plobi `deny`
 
 Timeouts and bridge failures deny by default.
 
 ### Tool rendering helpers
 
-`acp_adapter/tools.py` maps Vaelis tools to ACP tool kinds and builds editor-facing content.
+`acp_adapter/tools.py` maps Plobi tools to ACP tool kinds and builds editor-facing content.
 
 Examples:
 
@@ -144,12 +144,12 @@ prompt(..., session_id)
 
 ACP does not implement its own auth store.
 
-Instead it reuses Vaelis' runtime resolver:
+Instead it reuses Plobi' runtime resolver:
 
 - `acp_adapter/auth.py`
 - `hermes_cli/runtime_provider.py`
 
-So ACP advertises and uses the currently configured Vaelis provider/credentials. It also always advertises a terminal setup auth method (`hermes-setup`, args `--setup`) so first-run registry clients can open Vaelis' interactive model/provider configuration before starting a normal ACP session.
+So ACP advertises and uses the currently configured Plobi provider/credentials. It also always advertises a terminal setup auth method (`hermes-setup`, args `--setup`) so first-run registry clients can open Plobi' interactive model/provider configuration before starting a normal ACP session.
 
 ## Working directory binding
 

@@ -1,4 +1,4 @@
-"""``hermes debug`` debug tools for Vaelis Agent.
+"""``hermes debug`` debug tools for Plobi Agent.
 
 Currently supports:
     hermes debug share    Upload debug report (system info + logs) to a
@@ -876,13 +876,13 @@ def run_debug_share(args):
     # Manual delete fallback
     print("To delete now:  hermes debug delete <url>")
 
-    print("\nShare these links with the Vaelis team for support.")
+    print("\nShare these links with the Plobi team for support.")
 
 
 _NOUS_PRIVACY_NOTICE = """\
 ⚠️  --nous: This uploads your debug bundle to Nous-INTERNAL storage (AWS S3),
     NOT a public paste service. The following is included:
-  • System info (OS, Python/Vaelis version, provider, which API keys are
+  • System info (OS, Python/Plobi version, provider, which API keys are
     configured — NOT the actual keys)
   • Full agent.log, gateway.log, and desktop.log (up to 512 KB each — likely
     contains conversation content, tool outputs, and file paths)

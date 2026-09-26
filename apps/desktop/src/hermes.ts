@@ -66,7 +66,7 @@ import type {
 // /api/profiles runs list_profiles(), which does a recursive skill-tree walk
 // per profile — so the 15s default (DEFAULT_FETCH_TIMEOUT_MS in hardening.ts)
 // times out a backend that is alive-but-busy, surfacing as a spurious
-// "Timed out connecting to Vaelis backend" that hangs the UI (#48504).
+// "Timed out connecting to Plobi backend" that hangs the UI (#48504).
 //
 // Give the boot burst a generous per-call timeout instead of raising the
 // global default: interactive/runtime calls and the liveness poll (/api/status)
@@ -173,10 +173,10 @@ export type {
 export class HermesGateway extends JsonRpcGatewayClient {
   constructor() {
     super({
-      closedErrorMessage: 'Vaelis gateway connection closed',
-      connectErrorMessage: 'Could not connect to Vaelis gateway',
+      closedErrorMessage: 'Plobi gateway connection closed',
+      connectErrorMessage: 'Could not connect to Plobi gateway',
       createRequestId: nextId => nextId,
-      notConnectedErrorMessage: 'Vaelis gateway is not connected',
+      notConnectedErrorMessage: 'Plobi gateway is not connected',
       requestTimeoutMs: DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS
     })
   }

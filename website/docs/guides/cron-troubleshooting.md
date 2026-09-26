@@ -1,7 +1,7 @@
 ---
 sidebar_position: 12
 title: "Cron Troubleshooting"
-description: "Diagnose and fix common Vaelis cron issues — jobs not firing, delivery failures, skill loading errors, and performance problems"
+description: "Diagnose and fix common Plobi cron issues — jobs not firing, delivery failures, skill loading errors, and performance problems"
 ---
 
 # Cron Troubleshooting
@@ -144,7 +144,7 @@ If a job ran and failed, you may see error context in:
 ### Check 2: Common error patterns
 
 **"No such file or directory" for scripts**
-The `script` path must be an absolute path (or relative to the Vaelis config directory). Verify:
+The `script` path must be an absolute path (or relative to the Plobi config directory). Verify:
 ```bash
 ls ~/.hermes/scripts/your-script.py   # Must exist
 hermes cron edit <job_id> --script ~/.hermes/scripts/your-script.py
@@ -202,7 +202,7 @@ Scripts that dump megabytes of output will slow down the agent and may hit token
 hermes cron list                    # Show all jobs, states, next_run times
 hermes cron run <job_id>            # Schedule for next tick (for testing)
 hermes cron edit <job_id>           # Fix configuration issues
-hermes logs                         # View recent Vaelis logs
+hermes logs                         # View recent Plobi logs
 hermes skills list                  # Verify installed skills
 ```
 

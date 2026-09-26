@@ -1,4 +1,4 @@
-"""Native Spotify tools for Vaelis (registered via plugins/spotify)."""
+"""Native Spotify tools for Plobi (registered via plugins/spotify)."""
 
 from __future__ import annotations
 

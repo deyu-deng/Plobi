@@ -93,7 +93,7 @@ def test_run_gateway_refuses_root_in_official_docker(monkeypatch, tmp_path, caps
 
     assert exc_info.value.code == 1
     out = capsys.readouterr().out
-    assert "Refusing to run the Vaelis gateway as root" in out
+    assert "Refusing to run the Plobi gateway as root" in out
     assert "/opt/hermes/docker/entrypoint.sh" in out
 
 
@@ -1034,7 +1034,7 @@ def test_scan_gateway_pids_detects_windows_hermes_exe_case_variants(monkeypatch)
             return SimpleNamespace(
                 returncode=0,
                 stdout=(
-                    "CommandLine=C:\\Program Files\\Vaelis\\Vaelis.EXE gateway run --replace\n"
+                    "CommandLine=C:\\Program Files\\Plobi\\Plobi.EXE gateway run --replace\n"
                     "ProcessId=2468\n\n"
                 ),
                 stderr="",

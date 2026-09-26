@@ -169,7 +169,7 @@ class TestApplyProfileOverrideHermesHomeGuard:
 
         Docker Desktop's MCP Toolkit uses `docker mcp gateway run --profile ...`.
         When that argv is passed through `hermes mcp add --args`, the early
-        profile pre-parser must not interpret the Docker profile as a Vaelis
+        profile pre-parser must not interpret the Docker profile as a Plobi
         profile.
         """
         hermes_root = tmp_path / ".hermes"
@@ -200,7 +200,7 @@ class TestApplyProfileOverrideHermesHomeGuard:
         assert sys.argv == argv
 
     def test_profile_after_chat_subcommand_is_still_consumed(self, tmp_path, monkeypatch):
-        """Profile flags historically work after normal Vaelis subcommands."""
+        """Profile flags historically work after normal Plobi subcommands."""
         result = _run_apply_profile_override(
             tmp_path,
             monkeypatch,

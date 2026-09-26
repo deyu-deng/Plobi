@@ -1,7 +1,7 @@
 """
 Status command for hermes CLI.
 
-Shows the status of all Vaelis Agent components.
+Shows the status of all Plobi Agent components.
 """
 
 import os
@@ -103,12 +103,12 @@ from hermes_constants import is_termux as _is_termux
 
 
 def show_status(args):
-    """Show status of all Vaelis Agent components."""
+    """Show status of all Plobi Agent components."""
     deep = getattr(args, 'deep', False)
 
     print()
     print(color("┌─────────────────────────────────────────────────────────┐", Colors.CYAN))
-    print(color("│                 ⚕ Vaelis Agent Status                  │", Colors.CYAN))
+    print(color("│                 ⚕ Plobi Agent Status                  │", Colors.CYAN))
     print(color("└─────────────────────────────────────────────────────────┘", Colors.CYAN))
 
     # =========================================================================

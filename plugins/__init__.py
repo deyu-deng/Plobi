@@ -1,1 +1,1 @@
-# Vaelis plugins package
+# Plobi plugins package

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Launches the vendored chatlog server subcommand as a headless HTTP service
-    listening on 127.0.0.1:5030 by default. Designed for Vaelis data ingestion
+    listening on 127.0.0.1:5030 by default. Designed for Plobi data ingestion
     (MVP WeChat message collection).
 
     Keys are NEVER hardcoded: they are read from environment variables

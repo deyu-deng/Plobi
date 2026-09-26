@@ -643,7 +643,7 @@ def test_repl_runs_non_interactive_lines_without_prompts(_isolate_hermes_home):
     )
 
     assert code == 0
-    assert "Vaelis Console" in stdout.getvalue()
+    assert "Plobi Console" in stdout.getvalue()
     assert "hermes>" not in stdout.getvalue()
     assert stderr.getvalue() == ""
 
@@ -678,4 +678,4 @@ def test_main_console_subcommand_smoke(_isolate_hermes_home):
     )
 
     assert result.returncode == 0
-    assert "Vaelis Console" in result.stdout
+    assert "Plobi Console" in result.stdout

@@ -77,7 +77,7 @@ describe('confirmAgendaEventAction (U5-seg1 write-back)', () => {
 describe('createAgent (WP-L2-FE)', () => {
   it('POSTs /api/agents with the create request', async () => {
     const api = vi.fn().mockResolvedValue({
-      data: { id: 'vaelis-code', name: 'vaelis-code', status: 'idle', todayCalls: 0 },
+      data: { id: 'plobi-code', name: 'plobi-code', status: 'idle', todayCalls: 0 },
       ok: true
     })
     const previous = (window as { hermesDesktop?: unknown }).hermesDesktop
@@ -88,14 +88,14 @@ describe('createAgent (WP-L2-FE)', () => {
     })
 
     try {
-      const created = await createAgent({ id: 'vaelis-code', role: 'l2_project' })
+      const created = await createAgent({ id: 'plobi-code', role: 'l2_project' })
 
       expect(api).toHaveBeenCalledWith({
-        body: { id: 'vaelis-code', role: 'l2_project' },
+        body: { id: 'plobi-code', role: 'l2_project' },
         method: 'POST',
         path: '/api/agents'
       })
-      expect(created.id).toBe('vaelis-code')
+      expect(created.id).toBe('plobi-code')
     } finally {
       if (previous) {
         Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: previous })
@@ -150,8 +150,8 @@ describe('getAgentOverview projectPath (WP-R013-FE)', () => {
   it('surfaces the backend-bound folder from the live envelope', async () => {
     const api = vi.fn().mockResolvedValue({
       data: {
-        agent: { id: 'vaelis-code', name: 'vaelis-code', status: 'idle', todayCalls: 0 },
-        projectPath: 'D:\\projects\\vaelis',
+        agent: { id: 'plobi-code', name: 'plobi-code', status: 'idle', todayCalls: 0 },
+        projectPath: 'D:\\projects\\plobi',
         sessionId: 'sess-1',
         todayCostUsd: 0,
         todayTokens: 0
@@ -161,9 +161,9 @@ describe('getAgentOverview projectPath (WP-R013-FE)', () => {
     const restore = stubHermesDesktop(api)
 
     try {
-      const overview = await getAgentOverview('vaelis-code')
+      const overview = await getAgentOverview('plobi-code')
 
-      expect(overview.projectPath).toBe('D:\\projects\\vaelis')
+      expect(overview.projectPath).toBe('D:\\projects\\plobi')
     } finally {
       restore()
     }

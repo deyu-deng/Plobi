@@ -1,5 +1,5 @@
 """
-Session-scoped context variables for the Vaelis gateway.
+Session-scoped context variables for the Plobi gateway.
 
 Replaces the previous ``os.environ``-based session state
 (``HERMES_SESSION_PLATFORM``, ``HERMES_SESSION_CHAT_ID``, etc.) with

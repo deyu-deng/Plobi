@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   probeConnectionConfig: remoteUrl => ipcRenderer.invoke('hermes:connection-config:probe', remoteUrl),
   oauthLoginConnectionConfig: remoteUrl => ipcRenderer.invoke('hermes:connection-config:oauth-login', remoteUrl),
   oauthLogoutConnectionConfig: remoteUrl => ipcRenderer.invoke('hermes:connection-config:oauth-logout', remoteUrl),
-  // Vaelis Cloud: one portal login powers discovery + silent per-agent sign-in
+  // Plobi Cloud: one portal login powers discovery + silent per-agent sign-in
   // (cloud-auto-discovery Phase 3).
   cloud: {
     status: () => ipcRenderer.invoke('hermes:cloud:status'),
@@ -261,12 +261,12 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     fetchMarketplace: id => ipcRenderer.invoke('hermes:vscode-theme:fetch', id),
     searchMarketplace: query => ipcRenderer.invoke('hermes:vscode-theme:search', query)
   },
-  // Vaelis Gateway (aigw) — local desktop-quota aggregator. Lets the renderer
+  // Plobi Gateway (aigw) — local desktop-quota aggregator. Lets the renderer
   // spawn / stop / query the user's own aigw OpenAI-compatible gateway.
-  vaelisGateway: {
-    start: () => ipcRenderer.invoke('vaelis-gateway:start'),
-    stop: () => ipcRenderer.invoke('vaelis-gateway:stop'),
-    status: () => ipcRenderer.invoke('vaelis-gateway:status'),
-    auth: (appId: string) => ipcRenderer.invoke('vaelis-gateway:auth', appId)
+  plobiGateway: {
+    start: () => ipcRenderer.invoke('plobi-gateway:start'),
+    stop: () => ipcRenderer.invoke('plobi-gateway:stop'),
+    status: () => ipcRenderer.invoke('plobi-gateway:status'),
+    auth: (appId: string) => ipcRenderer.invoke('plobi-gateway:auth', appId)
   }
 })

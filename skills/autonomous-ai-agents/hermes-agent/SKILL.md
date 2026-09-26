@@ -1,8 +1,8 @@
 ---
 name: hermes-agent
-description: "Configure, extend, or contribute to Vaelis Agent."
+description: "Configure, extend, or contribute to Plobi Agent."
 version: 2.3.0
-author: Vaelis Agent + Teknium
+author: Plobi Agent + Teknium
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -12,29 +12,29 @@ metadata:
     related_skills: [claude-code, codex, opencode]
 ---
 
-# Vaelis Agent
+# Plobi Agent
 
-Vaelis Agent is an open-source AI agent framework that runs in your terminal, a native desktop app, messaging platforms, and IDEs. It's in the same category as Claude Code (Anthropic), Codex (OpenAI), and OpenClaw — autonomous coding and task-execution agents that use tool calling to interact with your system. Vaelis works with any LLM provider (OpenRouter, Anthropic, OpenAI, Google, DeepSeek, xAI, local models, and 20+ others) and runs on Linux, macOS, Windows, and WSL.
+Plobi Agent is an open-source AI agent framework that runs in your terminal, a native desktop app, messaging platforms, and IDEs. It's in the same category as Claude Code (Anthropic), Codex (OpenAI), and OpenClaw — autonomous coding and task-execution agents that use tool calling to interact with your system. Plobi works with any LLM provider (OpenRouter, Anthropic, OpenAI, Google, DeepSeek, xAI, local models, and 20+ others) and runs on Linux, macOS, Windows, and WSL.
 
-What makes Vaelis different:
+What makes Plobi different:
 
-- **Self-improving through skills** — Vaelis learns from experience by saving reusable procedures as skills. When it solves a complex problem, discovers a workflow, or gets corrected, it can persist that knowledge as a skill document that loads into future sessions. Skills accumulate over time, making the agent better at your specific tasks and environment.
+- **Self-improving through skills** — Plobi learns from experience by saving reusable procedures as skills. When it solves a complex problem, discovers a workflow, or gets corrected, it can persist that knowledge as a skill document that loads into future sessions. Skills accumulate over time, making the agent better at your specific tasks and environment.
 - **Persistent memory across sessions** — remembers who you are, your preferences, environment details, and lessons learned. Pluggable memory backends (built-in, Honcho, Mem0, and more) let you choose how memory works.
 - **Multi-platform gateway** — the same agent runs on Telegram, Discord, Slack, WhatsApp, iMessage, Signal, Matrix, Teams, Email, and a dozen more platforms with full tool access, not just chat.
 - **Many surfaces** — the same agent core drives the CLI, the Ink TUI, a native Electron desktop app, a web dashboard, and an ACP server for IDEs (VS Code / Zed / JetBrains).
 - **Provider-agnostic** — swap models and providers mid-workflow without changing anything else. Credential pools rotate across multiple API keys automatically.
-- **Profiles** — run multiple independent Vaelis instances with isolated configs, sessions, skills, and memory.
+- **Profiles** — run multiple independent Plobi instances with isolated configs, sessions, skills, and memory.
 - **Extensible** — plugins, MCP servers, custom tools, webhook triggers, cron scheduling, and the full Python ecosystem.
 
-People use Vaelis for software development, research, system administration, data analysis, content creation, home automation, and anything else that benefits from an AI agent with persistent context and full system access.
+People use Plobi for software development, research, system administration, data analysis, content creation, home automation, and anything else that benefits from an AI agent with persistent context and full system access.
 
-**This skill helps you work with Vaelis Agent effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
+**This skill helps you work with Plobi Agent effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
 
 **Docs:** https://hermes-agent.nousresearch.com/docs/
 
 ## Scope & Verification
 
-This skill is a concise operating guide, not the complete source of truth for every Vaelis feature. If a Vaelis feature, command, or setting is not mentioned here, do not treat that absence as evidence that it does not exist. Check the live repository and official docs before giving a negative answer.
+This skill is a concise operating guide, not the complete source of truth for every Plobi feature. If a Plobi feature, command, or setting is not mentioned here, do not treat that absence as evidence that it does not exist. Check the live repository and official docs before giving a negative answer.
 
 Good verification targets:
 
@@ -145,7 +145,7 @@ hermes skills tap add REPO  Add a GitHub repo as skill source
 ### MCP Servers
 
 ```
-hermes mcp serve            Run Vaelis as an MCP server
+hermes mcp serve            Run Plobi as an MCP server
 hermes mcp add NAME         Add an MCP server (--url or --command)
 hermes mcp remove NAME      Remove an MCP server
 hermes mcp list             List configured servers
@@ -253,7 +253,7 @@ hermes send                 Send a one-off message through a gateway platform
 hermes completion bash|zsh  Shell completions
 hermes acp                  ACP server (IDE integration)
 hermes claw migrate         Migrate from OpenClaw
-hermes uninstall            Uninstall Vaelis
+hermes uninstall            Uninstall Plobi
 ```
 
 For the full, authoritative command list run `hermes --help` (and `hermes <command> --help`). Plugin- and provider-supplied subcommands (e.g. `hermes photon setup` for iMessage) only appear once their plugin is installed/active.
@@ -278,13 +278,13 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /compress            Manually compress context
 /stop                Kill background processes
 /rollback [N]        Restore filesystem checkpoint
-/snapshot [sub]      Create or restore state snapshots of Vaelis config/state (CLI)
+/snapshot [sub]      Create or restore state snapshots of Plobi config/state (CLI)
 /background <prompt> Run prompt in background
 /queue <prompt>      Queue for next turn
 /steer <prompt>      Inject a message after the next tool call without interrupting
 /agents (/tasks)     Show active agents and running tasks
 /resume [name]       Resume a named session
-/goal [text|sub]     Set a standing goal Vaelis works on across turns until achieved
+/goal [text|sub]     Set a standing goal Plobi works on across turns until achieved
                      (subcommands: status, pause, resume, clear)
 /redraw              Force a full UI repaint (CLI)
 ```
@@ -298,7 +298,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /verbose             Cycle: off → new → all → verbose
 /voice [on|off|tts]  Voice mode
 /yolo                Toggle approval bypass
-/busy [sub]          Control what Enter does while Vaelis is working (CLI)
+/busy [sub]          Control what Enter does while Plobi is working (CLI)
                      (subcommands: queue, steer, interrupt, status)
 /indicator [style]   Pick the TUI busy-indicator style (CLI)
                      (styles: kaomoji, emoji, unicode, ascii)
@@ -328,7 +328,7 @@ The registry of record is `hermes_cli/commands.py` — every consumer
 /deny                Deny a pending command (gateway)
 /restart             Restart gateway (gateway)
 /sethome             Set current chat as home channel (gateway)
-/update              Update Vaelis to latest (gateway)
+/update              Update Plobi to latest (gateway)
 /topic [sub]         Enable or inspect Telegram DM topic sessions (gateway)
 /platforms (/gateway) Show platform connection status (gateway)
 ```
@@ -475,12 +475,12 @@ Tool changes take effect on `/reset` (new session). They do NOT apply mid-conver
 
 ## Project Context Files
 
-Vaelis injects project-level instructions into the system prompt by reading context files from the working directory. The discovery order is **first match wins** — only one project context source is loaded per session.
+Plobi injects project-level instructions into the system prompt by reading context files from the working directory. The discovery order is **first match wins** — only one project context source is loaded per session.
 
 | File (in priority order) | Discovery | Use when |
 |---|---|---|
 | `.hermes.md` / `HERMES.md` | Walks parents up to the git root, stops at git root | You want hierarchical project rules (root + per-package overrides) |
-| `AGENTS.md` / `agents.md` | **Cwd only** — subdirectory and parent copies are ignored | You want portable agent instructions that work the same in Vaelis, Claude Code, Codex, etc. |
+| `AGENTS.md` / `agents.md` | **Cwd only** — subdirectory and parent copies are ignored | You want portable agent instructions that work the same in Plobi, Claude Code, Codex, etc. |
 | `CLAUDE.md` / `claude.md` | Cwd only | Same as AGENTS.md, Claude-flavored |
 | `.cursorrules` / `.cursor/rules/*.mdc` | Cwd only | Migrating from Cursor |
 
@@ -488,9 +488,9 @@ Vaelis injects project-level instructions into the system prompt by reading cont
 
 ### Pick the right one
 
-- **Use `.hermes.md`** when you want Vaelis-specific behavior that lives above the cwd (root + subtree), or when you want rules to inherit from a parent directory. The parent walk stops at the git root, so a home-level `.hermes.md` won't leak into every project (a git repo's root is the boundary).
+- **Use `.hermes.md`** when you want Plobi-specific behavior that lives above the cwd (root + subtree), or when you want rules to inherit from a parent directory. The parent walk stops at the git root, so a home-level `.hermes.md` won't leak into every project (a git repo's root is the boundary).
 - **Use `AGENTS.md`** when the same project will also be worked on by other agents (Codex, Claude Code, OpenCode). Those tools all have their own conventions for `AGENTS.md`, and the "cwd only" contract keeps the file portable.
-- **Don't put project rules in `~/.hermes/AGENTS.md`** (or any other home-level location). When Vaelis runs with that directory as cwd, the file loads — but only for that one directory. For cross-project context, use `SOUL.md` (in `$HERMES_HOME`, identity-only) or install a skill via `hermes skills install`.
+- **Don't put project rules in `~/.hermes/AGENTS.md`** (or any other home-level location). When Plobi runs with that directory as cwd, the file loads — but only for that one directory. For cross-project context, use `SOUL.md` (in `$HERMES_HOME`, identity-only) or install a skill via `hermes skills install`.
 
 ### Size and truncation
 
@@ -502,14 +502,14 @@ All context files pass through the threat-pattern scanner before reaching the sy
 
 ### Disable for one session
 
-`hermes --ignore-rules` skips auto-injection of all project context files (`.hermes.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`) **and** `SOUL.md` identity, plus user config, plugins, and MCP servers. Use it to isolate whether a problem is your setup or Vaelis itself.
+`hermes --ignore-rules` skips auto-injection of all project context files (`.hermes.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`) **and** `SOUL.md` identity, plus user config, plugins, and MCP servers. Use it to isolate whether a problem is your setup or Plobi itself.
 
 ### Example: a small `.hermes.md`
 
 ```markdown
 # My Project
 
-Vaelis: when working in this repo, follow these rules.
+Plobi: when working in this repo, follow these rules.
 
 ## Build
 - Always run `make test` before declaring a change done.
@@ -520,11 +520,11 @@ Vaelis: when working in this repo, follow these rules.
 - No `print()` in production code — use the `logger`.
 ```
 
-That file at `/home/me/projects/myrepo/.hermes.md` is auto-loaded when Vaelis runs in any subdirectory of `/home/me/projects/myrepo`, but not when it runs in `/home/me/other-project`.
+That file at `/home/me/projects/myrepo/.hermes.md` is auto-loaded when Plobi runs in any subdirectory of `/home/me/projects/myrepo`, but not when it runs in `/home/me/other-project`.
 
 ## Security & Privacy Toggles
 
-Common "why is Vaelis doing X to my output / tool calls / commands?" toggles — and the exact commands to change them. Most of these need a fresh session (`/reset` in chat, or start a new `hermes` invocation) because they're read once at startup.
+Common "why is Plobi doing X to my output / tool calls / commands?" toggles — and the exact commands to change them. Most of these need a fresh session (`/reset` in chat, or start a new `hermes` invocation) because they're read once at startup.
 
 ### Secret redaction in tool output
 
@@ -552,7 +552,7 @@ hermes config set privacy.redact_pii false   # disable (default)
 
 ### Command approval prompts
 
-By default (`approvals.mode: manual`), Vaelis prompts the user before running shell commands flagged as destructive (`rm -rf`, `git reset --hard`, etc.). The modes are:
+By default (`approvals.mode: manual`), Plobi prompts the user before running shell commands flagged as destructive (`rm -rf`, `git reset --hard`, etc.). The modes are:
 
 - `manual` — always prompt (default)
 - `smart` — use an auxiliary LLM to auto-approve low-risk commands, prompt on high-risk
@@ -615,9 +615,9 @@ Voice commands: `/voice on` (voice-to-voice), `/voice tts` (always voice), `/voi
 
 ---
 
-## Spawning Additional Vaelis Instances
+## Spawning Additional Plobi Instances
 
-Run additional Vaelis processes as fully independent subprocesses — separate sessions, tools, and environments.
+Run additional Plobi processes as fully independent subprocesses — separate sessions, tools, and environments.
 
 ### When to Use This vs delegate_task
 
@@ -640,7 +640,7 @@ terminal(command="hermes chat -q 'Set up CI/CD for ~/myapp'", background=true)
 
 ### Interactive PTY Mode (via tmux)
 
-Vaelis uses prompt_toolkit, which requires a real terminal. Use tmux for interactive spawning:
+Plobi uses prompt_toolkit, which requires a real terminal. Use tmux for interactive spawning:
 
 ```
 # Start
@@ -817,7 +817,7 @@ Beyond the CLI and gateway, a few things worth knowing about:
   `http://localhost:port` OpenAI API backed by whichever OAuth provider
   you're signed into (Claude Pro, ChatGPT Pro, SuperGrok). Point Codex
   CLI, Aider, Cline, Continue, or any script at it — no API key.
-- **Automation Blueprints** — pick a named automation and Vaelis asks for
+- **Automation Blueprints** — pick a named automation and Plobi asks for
   what it needs (no cron syntax). One definition renders as a dashboard
   form, a slash command, an agent conversation, and a docs-catalog entry.
 - **`memory` tool batch operations** — pass an `operations` array of
@@ -834,7 +834,7 @@ Beyond the CLI and gateway, a few things worth knowing about:
 
 ## Windows-Specific Quirks
 
-Vaelis runs natively on Windows (PowerShell, cmd, Windows Terminal, git-bash
+Plobi runs natively on Windows (PowerShell, cmd, Windows Terminal, git-bash
 mintty, VS Code integrated terminal). Most of it just works, but a handful
 of differences between Win32 and POSIX have bitten us — document new ones
 here as you hit them so the next person (or the next session) doesn't
@@ -857,7 +857,7 @@ a UTF-8 BOM (Notepad does this). Re-save as UTF-8 without BOM;
 ### `execute_code` / Sandbox
 
 **WinError 10106** from the sandbox child process — it can't create an
-`AF_INET` socket. Root cause is usually Vaelis's env scrubber dropping
+`AF_INET` socket. Root cause is usually Plobi's env scrubber dropping
 `SYSTEMROOT`/`WINDIR`/`COMSPEC` (Python's `socket` needs `SYSTEMROOT` to find
 `mswsock.dll`), not a broken Winsock LSP. The `_WINDOWS_ESSENTIAL_ENV_VARS`
 allowlist in `tools/code_execution_tool.py` covers it; if you still hit it,
@@ -866,7 +866,7 @@ echo `os.environ` inside an `execute_code` block to confirm `SYSTEMROOT` is set.
 ### Testing on Windows
 
 `scripts/run_tests.sh` is POSIX-only (expects `.venv/bin/activate`); the
-Vaelis-installed `venv/Scripts/` has no pip/pytest (stripped for size).
+Plobi-installed `venv/Scripts/` has no pip/pytest (stripped for size).
 Install pytest into a system Python and run directly with `-n 0`
 (`pyproject.toml`'s `addopts` already sets `-n`):
 
@@ -886,7 +886,7 @@ repo's `.gitattributes` normalizes. Don't let editors auto-convert committed
 POSIX-newline files to CRLF.
 
 **Forward slashes work almost everywhere.** `C:/Users/...` is accepted by
-every Vaelis tool and most Windows APIs. Prefer forward slashes in code
+every Plobi tool and most Windows APIs. Prefer forward slashes in code
 and logs — avoids shell-escaping backslashes in bash.
 
 ---

@@ -141,8 +141,8 @@ class TestBlueBubblesHelpers:
         adapter = _make_adapter(monkeypatch, require_mention=True)
 
         assert adapter.require_mention is True
-        assert adapter._message_matches_mention_patterns("Vaelis, summarize this")
-        assert adapter._message_matches_mention_patterns("@Vaelis agent help")
+        assert adapter._message_matches_mention_patterns("Plobi, summarize this")
+        assert adapter._message_matches_mention_patterns("@Plobi agent help")
         assert not adapter._message_matches_mention_patterns("casual family chatter")
         assert not adapter._message_matches_mention_patterns("antihermes should not match")
 
@@ -154,14 +154,14 @@ class TestBlueBubblesHelpers:
         )
 
         assert adapter._message_matches_mention_patterns("Amos what is next?")
-        assert not adapter._message_matches_mention_patterns("Vaelis what is next?")
+        assert not adapter._message_matches_mention_patterns("Plobi what is next?")
 
     def test_clean_mention_text_strips_leading_wake_word(self, monkeypatch):
         adapter = _make_adapter(monkeypatch, require_mention=True)
 
-        assert adapter._clean_mention_text("Vaelis, summarize this") == "summarize this"
-        assert adapter._clean_mention_text("Vaelis agent: summarize this") == "summarize this"
-        assert adapter._clean_mention_text("please ask Vaelis about this") == "please ask Vaelis about this"
+        assert adapter._clean_mention_text("Plobi, summarize this") == "summarize this"
+        assert adapter._clean_mention_text("Plobi agent: summarize this") == "summarize this"
+        assert adapter._clean_mention_text("please ask Plobi about this") == "please ask Plobi about this"
 
 
 class _FakeBlueBubblesRequest:
@@ -221,7 +221,7 @@ class TestBlueBubblesMentionGating:
             "type": "new-message",
             "data": {
                 "guid": "msg-2",
-                "text": "Vaelis, summarize this",
+                "text": "Plobi, summarize this",
                 "handle": {"address": "+15555550100"},
                 "isFromMe": False,
                 "isGroup": True,

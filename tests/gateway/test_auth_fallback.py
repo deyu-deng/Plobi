@@ -80,7 +80,7 @@ class TestResolveRuntimeAgentKwargsAuthFallback:
             "    model: anthropic/claude-sonnet-4.6\n"
             "fallback_model:\n"
             "  provider: nous\n"
-            "  model: Vaelis-4\n"
+            "  model: Plobi-4\n"
         )
 
         monkeypatch.setattr("gateway.run._hermes_home", tmp_path)
@@ -112,4 +112,4 @@ class TestResolveRuntimeAgentKwargsAuthFallback:
 
         assert calls == ["openrouter", "nous"]
         assert result["provider"] == "nous"
-        assert result["model"] == "Vaelis-4"
+        assert result["model"] == "Plobi-4"

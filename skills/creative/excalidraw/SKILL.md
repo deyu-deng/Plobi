@@ -2,7 +2,7 @@
 name: excalidraw
 description: "Hand-drawn Excalidraw JSON diagrams (arch, flow, seq)."
 version: 1.0.0
-author: Vaelis Agent
+author: Plobi Agent
 license: MIT
 dependencies: []
 platforms: [linux, macos, windows]

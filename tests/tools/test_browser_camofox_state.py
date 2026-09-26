@@ -1,4 +1,4 @@
-"""Tests for Vaelis-managed Camofox state helpers."""
+"""Tests for Plobi-managed Camofox state helpers."""
 
 from unittest.mock import patch
 

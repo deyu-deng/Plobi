@@ -1,18 +1,18 @@
 ---
 sidebar_position: 17
 title: "OAuth over SSH / Remote Hosts"
-description: "How to complete browser-based OAuth (Spotify, MCP servers) when Vaelis runs on a remote machine, container, or behind a jump box"
+description: "How to complete browser-based OAuth (Spotify, MCP servers) when Plobi runs on a remote machine, container, or behind a jump box"
 ---
 
 # OAuth over SSH / Remote Hosts
 
-Some Vaelis providers — **Spotify** and **remote MCP servers** (Linear, Sentry, Atlassian, Asana, Figma, …) — use a *loopback redirect* OAuth flow. The auth server redirects your browser to `http://127.0.0.1:<port>/callback` so a tiny HTTP listener started by Vaelis can grab the authorization code.
+Some Plobi providers — **Spotify** and **remote MCP servers** (Linear, Sentry, Atlassian, Asana, Figma, …) — use a *loopback redirect* OAuth flow. The auth server redirects your browser to `http://127.0.0.1:<port>/callback` so a tiny HTTP listener started by Plobi can grab the authorization code.
 
-This works perfectly when Vaelis and your browser are on the same machine. It breaks the moment they aren't: your laptop's browser tries to reach `127.0.0.1` on **your laptop**, but the listener is bound to `127.0.0.1` on **the remote server**.
+This works perfectly when Plobi and your browser are on the same machine. It breaks the moment they aren't: your laptop's browser tries to reach `127.0.0.1` on **your laptop**, but the listener is bound to `127.0.0.1` on **the remote server**.
 
 The fix is a one-line SSH local-forward. For MCP servers on an interactive terminal, you can often paste the redirect URL back instead (no tunnel).
 
-**xAI Grok OAuth (`xai-oauth`) uses OAuth device code**, not a loopback callback — open the printed verification URL in any browser and Vaelis polls until approval. No SSH tunnel is required. See [xAI Grok OAuth](./xai-grok-oauth.md).
+**xAI Grok OAuth (`xai-oauth`) uses OAuth device code**, not a loopback callback — open the printed verification URL in any browser and Plobi polls until approval. No SSH tunnel is required. See [xAI Grok OAuth](./xai-grok-oauth.md).
 
 ## TL;DR
 
@@ -22,19 +22,19 @@ ssh -N -L 43827:127.0.0.1:43827 user@remote-host
 
 # In your existing SSH session on the remote machine:
 hermes auth add spotify --no-browser
-# → Vaelis prints an authorize URL. Open it in a browser on your laptop.
+# → Plobi prints an authorize URL. Open it in a browser on your laptop.
 # → Your browser redirects to 127.0.0.1:43827/callback, the tunnel forwards
 #   the request to the remote listener, login completes.
 ```
 
-Vaelis prints the exact port it bound to on the `Waiting for callback on ...` line — copy it from there. Spotify defaults to port `43827`.
+Plobi prints the exact port it bound to on the `Waiting for callback on ...` line — copy it from there. Spotify defaults to port `43827`.
 
 ## Which Providers Need This
 
 | Provider | Loopback port | Tunnel needed? |
 |----------|---------------|----------------|
-| Spotify | `43827` (default) | Yes, when Vaelis is remote |
-| MCP servers (`auth: oauth`) | auto-picked per server | Yes, when Vaelis is remote (or paste redirect URL) |
+| Spotify | `43827` (default) | Yes, when Plobi is remote |
+| MCP servers (`auth: oauth`) | auto-picked per server | Yes, when Plobi is remote (or paste redirect URL) |
 | `xai-oauth` (Grok SuperGrok) | n/a | No — device code flow |
 | `anthropic` (Claude Pro/Max) | n/a | No — paste-the-code flow |
 | `openai-codex` (ChatGPT Plus/Pro) | n/a | No — device code flow |
@@ -44,11 +44,11 @@ If your provider isn't in the table, you don't need a tunnel.
 
 ## MCP Servers
 
-Remote MCP servers (Linear, Sentry, Atlassian, Asana, Figma, etc.) use the same loopback redirect flow. Vaelis auto-picks a free port per server and prints the authorize URL when the OAuth flow kicks off — either at startup (when a new server appears in `mcp_servers:`) or when you run `hermes mcp login <server>`.
+Remote MCP servers (Linear, Sentry, Atlassian, Asana, Figma, etc.) use the same loopback redirect flow. Plobi auto-picks a free port per server and prints the authorize URL when the OAuth flow kicks off — either at startup (when a new server appears in `mcp_servers:`) or when you run `hermes mcp login <server>`.
 
 You have two ways to complete it from a remote host:
 
-**Option 1 — paste the redirect URL back (no setup, works anywhere).** On an interactive terminal, Vaelis prompts you to paste the redirect URL alongside running the local listener. After approving in your browser, the redirect to `http://127.0.0.1:<port>/callback` will show a connection error — that's expected. Copy the **full URL from the browser's address bar** and paste it at the Vaelis prompt:
+**Option 1 — paste the redirect URL back (no setup, works anywhere).** On an interactive terminal, Plobi prompts you to paste the redirect URL alongside running the local listener. After approving in your browser, the redirect to `http://127.0.0.1:<port>/callback` will show a connection error — that's expected. Copy the **full URL from the browser's address bar** and paste it at the Plobi prompt:
 
 ```
   MCP OAuth: authorization required.
@@ -63,7 +63,7 @@ You have two ways to complete it from a remote host:
 
 A bare `?code=...&state=...` query string is accepted too. This works for any MCP server with `auth: oauth` and requires no SSH config changes.
 
-**Option 2 — SSH port forward (same as Spotify).** Vaelis prints the exact port it bound to in the SSH-session hint. Open a separate terminal on your laptop:
+**Option 2 — SSH port forward (same as Spotify).** Plobi prints the exact port it bound to in the SSH-session hint. Open a separate terminal on your laptop:
 
 ```bash
 ssh -N -L <port>:127.0.0.1:<port> user@remote-host
@@ -71,7 +71,7 @@ ssh -N -L <port>:127.0.0.1:<port> user@remote-host
 
 Then open the authorize URL in your browser as normal; the redirect tunnels through and the listener picks it up. Use this when you need the flow to complete unattended (e.g. scripted re-auth where you can't paste interactively).
 
-**Pitfall — the 30s config-reload race.** If you edit `~/.hermes/config.yaml` to add an OAuth MCP server from inside a running Vaelis session, the CLI auto-reloads MCP connections with a 30s timeout. That's not enough time to complete an interactive OAuth flow, and the reload will give up. Use `hermes mcp login <server>` from a fresh terminal instead — it has no such cap and waits the full 5 min for you to paste back.
+**Pitfall — the 30s config-reload race.** If you edit `~/.hermes/config.yaml` to add an OAuth MCP server from inside a running Plobi session, the CLI auto-reloads MCP connections with a 30s timeout. That's not enough time to complete an interactive OAuth flow, and the reload will give up. Use `hermes mcp login <server>` from a fresh terminal instead — it has no such cap and waits the full 5 min for you to paste back.
 
 ## Why the listener can't just bind 0.0.0.0
 
@@ -95,17 +95,17 @@ ssh user@remote-host
 hermes auth add spotify --no-browser
 ```
 
-Vaelis detects the SSH session, skips the browser auto-open, and prints an authorize URL plus a `Waiting for callback on http://127.0.0.1:<port>/callback` line.
+Plobi detects the SSH session, skips the browser auto-open, and prints an authorize URL plus a `Waiting for callback on http://127.0.0.1:<port>/callback` line.
 
 ### 3. Open the URL in your local browser
 
-Copy the authorize URL from the remote terminal and paste it into the browser on your laptop. Approve the consent screen. The auth server redirects to `http://127.0.0.1:<port>/callback`. Your browser hits the tunnel, the request is forwarded to the remote listener, and Vaelis prints `Login successful!`.
+Copy the authorize URL from the remote terminal and paste it into the browser on your laptop. Approve the consent screen. The auth server redirects to `http://127.0.0.1:<port>/callback`. Your browser hits the tunnel, the request is forwarded to the remote listener, and Plobi prints `Login successful!`.
 
 You can tear down the tunnel (Ctrl+C in the first terminal) once you see the success line.
 
 ## Step-by-step: through a jump box
 
-If you reach Vaelis through a bastion / jump host, use SSH's built-in `-J` (ProxyJump):
+If you reach Plobi through a bastion / jump host, use SSH's built-in `-J` (ProxyJump):
 
 ```bash
 ssh -N -L 43827:127.0.0.1:43827 -J jump-user@jump-host user@final-host
@@ -124,7 +124,7 @@ ssh -N \
 
 ## Mosh, tmux, ssh ControlMaster
 
-The tunnel is a property of the underlying SSH connection. If you're running Vaelis inside `tmux` over a mosh session, the mosh roaming doesn't carry the `-L` forwarding. Open a *separate* plain SSH session **only** for the `-L` tunnel — that's the connection that has to stay alive during the auth flow. Your interactive mosh/tmux session can keep running Vaelis normally.
+The tunnel is a property of the underlying SSH connection. If you're running Plobi inside `tmux` over a mosh session, the mosh roaming doesn't carry the `-L` forwarding. Open a *separate* plain SSH session **only** for the `-L` tunnel — that's the connection that has to stay alive during the auth flow. Your interactive mosh/tmux session can keep running Plobi normally.
 
 If you use `ssh -o ControlMaster=auto`, port forwards on a multiplexed connection share the master's lifetime. Restart the master if the tunnel doesn't come up:
 
@@ -137,7 +137,7 @@ ssh -N -L 43827:127.0.0.1:43827 user@remote-host
 
 ### `bind [127.0.0.1]:43827: Address already in use`
 
-Something on your laptop is already using that port. Either the previous tunnel didn't shut down cleanly, or a local Vaelis is also listening on it. Find and kill the offender:
+Something on your laptop is already using that port. Either the previous tunnel didn't shut down cleanly, or a local Plobi is also listening on it. Find and kill the offender:
 
 ```bash
 # macOS / Linux
@@ -149,7 +149,7 @@ Then retry the `ssh -L` command.
 
 ### Authorization timed out waiting for the local callback
 
-The redirect never made it back to the remote listener. Check the tunnel is still alive (`ssh -N` doesn't show output, so look at the terminal you started it from), confirm you used the port from the latest `Waiting for callback on ...` line (Vaelis may auto-bump if the preferred port is busy), restart the tunnel if needed, and re-run the auth command.
+The redirect never made it back to the remote listener. Check the tunnel is still alive (`ssh -N` doesn't show output, so look at the terminal you started it from), confirm you used the port from the latest `Waiting for callback on ...` line (Plobi may auto-bump if the preferred port is busy), restart the tunnel if needed, and re-run the auth command.
 
 ### Tokens land in the wrong `~/.hermes`
 

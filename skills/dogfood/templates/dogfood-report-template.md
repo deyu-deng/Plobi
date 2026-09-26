@@ -3,7 +3,7 @@
 **Target:** {target_url}
 **Date:** {date}
 **Scope:** {scope_description}
-**Tester:** Vaelis Agent (automated exploratory QA)
+**Tester:** Plobi Agent (automated exploratory QA)
 
 ---
 

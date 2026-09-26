@@ -26,7 +26,7 @@ def test_cli_claim_active_session_respects_global_limit(tmp_path, monkeypatch):
     try:
         assert cli._claim_active_session("cli") is False
         assert printed == [
-            "[bold red]Vaelis is at the active session limit (1/1). "
+            "[bold red]Plobi is at the active session limit (1/1). "
             "Try again when another session finishes.[/]"
         ]
 

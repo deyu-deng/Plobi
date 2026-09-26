@@ -1,17 +1,17 @@
-# Mind memory provider (Vaelis plugin)
+# Mind memory provider (Plobi plugin)
 
-**Status: P0 IMPLEMENTED (2026-08-29).** Structure, compliance boundaries, and all lifecycle methods are in place: keyword retrieval, per-turn note export, session digest, and memory mirror all write through `vaelis.mind.writer.MindWriter` under `_is_safe` guards.
+**Status: P0 IMPLEMENTED (2026-08-29).** Structure, compliance boundaries, and all lifecycle methods are in place: keyword retrieval, per-turn note export, session digest, and memory mirror all write through `plobi.mind.writer.MindWriter` under `_is_safe` guards.
 
 ## What this is
 
-A Vaelis `MemoryProvider` plugin that bridges the agent to your
-[Mind](file:///D:/Projects/Vaelis/Code/mind) second-brain vault (Obsidian markdown,
+A Plobi `MemoryProvider` plugin that bridges the agent to your
+[Mind](file:///D:/Projects/Plobi/Code/mind) second-brain vault (Obsidian markdown,
 file-backed). It is the native-adaptation path discussed in
 `docs/specs/MIND_ADAPTER_PLAN.md`.
 
 ## Architecture fit
 
-- Vaelis memory is **provider-pluginized** — adding this folder is the *only*
+- Plobi memory is **provider-pluginized** — adding this folder is the *only*
   integration step. No changes to `agent/memory_provider.py`,
   `agent/memory_manager.py`, or `run_agent.py`.
 - The loader (`plugins/memory/__init__.py`) discovers this plugin dynamically
@@ -28,8 +28,8 @@ Mind has a git pre-commit verifier (`Loom/scripts/verifier.py`) that
 2. `Loom/skills` skill count ≠ `AGENTS.md` declaration.
 
 All real writes must stay inside `SAFE_PREFIXES` (defined in `mind.py`):
-`Vault/projects/Vaelis/` (capital V — the official vault's current Hermes fork
-Vaelis project dir; the lowercase `vaelis` dir is a legacy Plobi archive, do
+`Vault/projects/Plobi/` (capital V — the official vault's current Hermes fork
+Plobi project dir; the lowercase `plobi` dir is a legacy Plobi archive, do
 not write there), `Vault/{meta,notes,journal,inbox}`,
 `Loom/wiki/{concepts,entities,sources,comparisons}`,
 `Loom/raw/chat-logs/{exports,digested}`.
@@ -49,19 +49,19 @@ no `Vault → Loom` wikilinks.
 ## Activation
 
 ```yaml
-# config.yaml (HERMES_HOME, e.g. D:\Data\AppData\Vaelis\config.yaml)
+# config.yaml (HERMES_HOME, e.g. D:\Data\AppData\Plobi\config.yaml)
 memory:
   provider: mind
 ```
 
 Optional env override: `MIND_ROOT=/path/to/Mind` (not required — without it
-`resolve_root()` resolves the sibling `Code/mind` → `D:/Projects/Vaelis/Code/mind`).
+`resolve_root()` resolves the sibling `Code/mind` → `D:/Projects/Plobi/Code/mind`).
 
 ## Verification (implemented)
 
 Run Mind's verifier to confirm no knowledge-base pollution:
 
 ```bash
-cd D:/Projects/Vaelis/Code/mind && python Loom/scripts/verifier.py --strict
+cd D:/Projects/Plobi/Code/mind && python Loom/scripts/verifier.py --strict
 # expect exit code 0 (no BLOCKER, no new WARN)
 ```

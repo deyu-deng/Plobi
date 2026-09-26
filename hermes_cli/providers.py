@@ -1,5 +1,5 @@
 """
-Single source of truth for provider identity in Vaelis Agent.
+Single source of truth for provider identity in Plobi Agent.
 
 Two data sources, merged at runtime:
 
@@ -7,7 +7,7 @@ Two data sources, merged at runtime:
    names, and full model metadata (context, cost, capabilities).  This is
    the primary database.
 
-2. **Vaelis overlays** — transport type, auth patterns, aggregator flags,
+2. **Plobi overlays** — transport type, auth patterns, aggregator flags,
    and additional env vars that models.dev doesn't track.  Small dict,
    maintained here.
 
@@ -28,12 +28,12 @@ from utils import base_url_host_matches, base_url_hostname
 logger = logging.getLogger(__name__)
 
 
-# -- Vaelis overlay ----------------------------------------------------------
-# Vaelis-specific metadata that models.dev doesn't provide.
+# -- Plobi overlay ----------------------------------------------------------
+# Plobi-specific metadata that models.dev doesn't provide.
 
 @dataclass(frozen=True)
 class HermesOverlay:
-    """Vaelis-specific provider metadata layered on top of models.dev."""
+    """Plobi-specific provider metadata layered on top of models.dev."""
 
     transport: str = "openai_chat"        # openai_chat | anthropic_messages | codex_responses
     is_aggregator: bool = False
@@ -411,8 +411,8 @@ def get_provider(name: str) -> Optional[ProviderDef]:
     """Look up a built-in provider by id or alias.
 
     Resolution order:
-      1. Vaelis overlays (for providers not in models.dev: nous, openai-codex, etc.)
-      2. models.dev catalog + Vaelis overlay
+      1. Plobi overlays (for providers not in models.dev: nous, openai-codex, etc.)
+      2. models.dev catalog + Plobi overlay
 
     User-defined providers from config.yaml (``providers:`` / ``custom_providers:``)
     are resolved by :func:`resolve_provider_full`, which layers ``resolve_user_provider``
@@ -461,7 +461,7 @@ def get_provider(name: str) -> Optional[ProviderDef]:
         )
 
     if overlay is not None:
-        # Vaelis-only provider (not in models.dev)
+        # Plobi-only provider (not in models.dev)
         return ProviderDef(
             id=canonical,
             name=_LABEL_OVERRIDES.get(canonical, canonical),

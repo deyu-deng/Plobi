@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { stripInternalDirectives } from './visible-user-text'
 
-// Shape produced by plugins/vaelis-north-star/hard_route.py (WP-BE-13).
+// Shape produced by plugins/plobi-north-star/hard_route.py (WP-BE-13).
 const DIRECTIVE =
-  '明天的日常安排是什么\n\n[§8.2 硬路由 · 本回合强制] 上面这句话命中总秘书冻结话术，必须严格按序执行：\n1. 第一动作只能是调用工具 vaelis_secretary_ask'
+  '明天的日常安排是什么\n\n[§8.2 硬路由 · 本回合强制] 上面这句话命中总秘书冻结话术，必须严格按序执行：\n1. 第一动作只能是调用工具 plobi_secretary_ask'
 
 describe('stripInternalDirectives (WP-UI-NO-INTERNALS)', () => {
   it('keeps only the pre-rewrite sentence of a hard-routed turn', () => {

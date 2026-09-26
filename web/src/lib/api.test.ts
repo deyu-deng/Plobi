@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "./api";
 
-const SESSION_HEADER = "X-Vaelis-Session-Token";
+const SESSION_HEADER = "X-Plobi-Session-Token";
 
 afterEach(() => {
   vi.restoreAllMocks();

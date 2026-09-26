@@ -83,7 +83,7 @@ HINDSIGHT = MemoryProvider(
             label="Mode",
             kind=KIND_SELECT,
             default="cloud",
-            description="How Vaelis connects to Hindsight.",
+            description="How Plobi connects to Hindsight.",
             options=(
                 ProviderFieldOption(
                     "cloud",

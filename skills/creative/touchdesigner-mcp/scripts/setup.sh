@@ -43,14 +43,14 @@ else
     fi
 fi
 
-# ── 3. Ensure Vaelis config has twozero_td MCP entry ──
+# ── 3. Ensure Plobi config has twozero_td MCP entry ──
 if [[ ! -f "$HERMES_CFG" ]]; then
-    echo -e " ${FAIL} Vaelis config not found at ${HERMES_CFG}"
+    echo -e " ${FAIL} Plobi config not found at ${HERMES_CFG}"
     manual_steps+=("Create ${HERMES_CFG} with twozero_td MCP server entry")
 elif grep -q 'twozero_td' "$HERMES_CFG" 2>/dev/null; then
-    echo -e " ${OK} twozero_td MCP entry exists in Vaelis config"
+    echo -e " ${OK} twozero_td MCP entry exists in Plobi config"
 else
-    echo -e " ${WARN} Adding twozero_td MCP entry to Vaelis config..."
+    echo -e " ${WARN} Adding twozero_td MCP entry to Plobi config..."
     python3 -c "
 import yaml, sys, copy
 
@@ -72,7 +72,7 @@ if 'twozero_td' not in cfg['mcp_servers']:
 " 2>/dev/null && echo -e " ${OK} twozero_td MCP entry added to config" \
               || { echo -e " ${FAIL} Could not update config (is PyYAML installed?)"; \
                    manual_steps+=("Add twozero_td MCP entry to ${HERMES_CFG} manually"); }
-    manual_steps+=("Restart Vaelis session to pick up config change")
+    manual_steps+=("Restart Plobi session to pick up config change")
 fi
 
 # ── 4. Test if MCP port is responding ──

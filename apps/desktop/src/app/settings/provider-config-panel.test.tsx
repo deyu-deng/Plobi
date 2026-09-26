@@ -23,7 +23,7 @@ function hindsightSchema(overrides: Partial<MemoryProviderConfig['fields'][numbe
       label: 'Mode',
       kind: 'select',
       value: 'cloud',
-      description: 'How Vaelis connects to Hindsight.',
+      description: 'How Plobi connects to Hindsight.',
       placeholder: '',
       is_set: true,
       options: [

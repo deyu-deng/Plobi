@@ -5,7 +5,7 @@ sidebar_position: 16
 
 # Computer Use
 
-Vaelis Agent can drive your desktop — clicking, typing, scrolling,
+Plobi Agent can drive your desktop — clicking, typing, scrolling,
 dragging — in the **background** on **macOS, Windows, and Linux**. Your
 cursor doesn't move, keyboard focus doesn't change, and your virtual
 desktops / Spaces don't switch on you. You and the agent co-work on the
@@ -63,7 +63,7 @@ platform-appropriate prereqs:
 
 | Platform | Prereqs |
 |---|---|
-| **macOS** | System Settings → Privacy & Security → **Accessibility** + **Screen Recording** → allow your terminal (or Vaelis app). `hermes computer-use doctor` will tell you which permission is missing. |
+| **macOS** | System Settings → Privacy & Security → **Accessibility** + **Screen Recording** → allow your terminal (or Plobi app). `hermes computer-use doctor` will tell you which permission is missing. |
 | **Windows** | None at install time. If you're driving over SSH (not RDP / console), you need the autostart pattern — see [cua.ai/docs/how-to-guides/driver/windows-ssh](https://cua.ai/docs/how-to-guides/driver/windows-ssh) for the Session 0 ↔ Session 1+ proxy. |
 | **Linux** | A reachable display server: `DISPLAY` set for X11, or `XDG_SESSION_TYPE=wayland`. Wayland sessions need an XWayland bridge for capture. AT-SPI must be on (default on GNOME/KDE/Xfce). |
 
@@ -116,7 +116,7 @@ each with the right diagnostic hint when it can't reach.
 When the agent acts, you'll see a **tinted overlay cursor** glide
 across the screen to where each click / type / scroll lands. The real
 OS cursor never moves — the overlay is a visual cue that says "the
-agent is acting here." Each Vaelis run declares its own cua-driver
+agent is acting here." Each Plobi run declares its own cua-driver
 **session id** (something like `hermes-3a7b9c14d2e8`); the cursor's
 identity is keyed to that session, so concurrent runs / subagents each
 get their own cursor without stepping on each other.
@@ -130,8 +130,8 @@ halo).
 
 ## Going deeper — the cua-driver skill pack
 
-Vaelis intentionally keeps its skill (`skills/computer-use/SKILL.md`)
-focused on the Vaelis-side `computer_use` action vocabulary — the
+Plobi intentionally keeps its skill (`skills/computer-use/SKILL.md`)
+focused on the Plobi-side `computer_use` action vocabulary — the
 single source of truth the agent loads. For the deeper material —
 platform-specific deep dives, recording semantics, browser page
 interaction — point your agent harness at the cua-driver skill pack
@@ -154,14 +154,14 @@ running it, an agent gets access to:
 | `WEB_APPS.md` | Browser-page interaction tips |
 | `TESTS.md` | Replay-by-trajectory workflow |
 
-These are **platform deep dives, not duplicates of the Vaelis skill** —
+These are **platform deep dives, not duplicates of the Plobi skill** —
 when an agent reports "on Windows, my click landed on the wrong
 element," it reads `WINDOWS.md` for the UIA / UWP context that
 explains why and what to do differently.
 
 `cua-driver skills status` shows what's installed and which agent
 harnesses it's linked into. Today the autodetect list covers Claude
-Code, Codex, OpenCode, OpenClaw, and Antigravity; **Vaelis
+Code, Codex, OpenCode, OpenClaw, and Antigravity; **Plobi
 autodetection is planned as a follow-up in `trycua/cua`** — until
 then, run `cua-driver skills install` once and point your harness at
 the resulting `~/.cua-driver/skills/cua-driver` directory (or symlink
@@ -205,7 +205,7 @@ magic-byte sniffing.
 
 ## Safety
 
-Vaelis applies multi-layer guardrails:
+Plobi applies multi-layer guardrails:
 
 - Destructive actions (click, type, drag, scroll, key, focus_app)
   require approval — either interactively via the CLI dialog or via the
@@ -223,7 +223,7 @@ want every action confirmed.
 
 ## Token efficiency
 
-Screenshots are expensive. Vaelis applies four layers of optimisation:
+Screenshots are expensive. Plobi applies four layers of optimisation:
 
 - **Screenshot eviction** — the Anthropic adapter keeps only the 3 most
   recent screenshots in context; older ones become `[screenshot removed
@@ -258,7 +258,7 @@ of screenshot context, not ~600K.
 - **Windows: elevated (admin) windows can't be driven from a normal
   agent.** Windows UIPI (User Interface Privilege Isolation) enforces
   integrity-level boundaries: a Medium-integrity process (the default
-  Vaelis agent) cannot enumerate the UIA tree of, or inject mouse input
+  Plobi agent) cannot enumerate the UIA tree of, or inject mouse input
   into, a window owned by a High-integrity (Administrator) process.
   Symptom: `capture(mode='som')` returns 0 elements and `click(...)`
   reports success while doing nothing, even though the screenshot
@@ -266,14 +266,14 @@ of screenshot context, not ~600K.
   events partially bypass UIPI, so Tab / Enter can still navigate an
   elevated dialog. This is an OS constraint, not a cua-driver bug — it
   affects every Windows automation stack. To drive elevated windows,
-  run the Vaelis agent itself at High integrity (launch from an
+  run the Plobi agent itself at High integrity (launch from an
   elevated terminal); otherwise target non-elevated windows.
 - **Platform-specific deployment gotchas:**
   - **macOS** uses private SkyLight SPIs. Apple can change them in any
-    OS update. Vaelis warns when the installed cua-driver is older than
+    OS update. Plobi warns when the installed cua-driver is older than
     the version it was tested against.
   - **Windows** SSH sessions run in **Session 0**, which has no
-    interactive desktop. Drive Vaelis from inside the RDP / console
+    interactive desktop. Drive Plobi from inside the RDP / console
     session, or set up cua-driver's autostart Scheduled Task —
     [windows-ssh](https://cua.ai/docs/how-to-guides/driver/windows-ssh)
     has the recipe.
@@ -304,8 +304,8 @@ HERMES_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
 ### Telemetry
 
 cua-driver ships with anonymous usage telemetry (PostHog) enabled by default
-upstream. **Vaelis disables it for you** — on every cua-driver invocation
-(the MCP backend, `status`, `doctor`, and install) Vaelis sets
+upstream. **Plobi disables it for you** — on every cua-driver invocation
+(the MCP backend, `status`, `doctor`, and install) Plobi sets
 `CUA_DRIVER_RS_TELEMETRY_ENABLED=0` in the driver's environment.
 
 To opt back in (let cua-driver use its own default and send telemetry), set
@@ -323,8 +323,8 @@ CUA_DRIVER_RS_TELEMETRY_ENABLED`.
 ## Testing against a local cua-driver build
 
 When you're developing cua-driver itself — or want to test an
-unreleased fix — point Vaelis at a binary you built from source instead
-of the published release. Vaelis resolves the driver with
+unreleased fix — point Plobi at a binary you built from source instead
+of the published release. Plobi resolves the driver with
 `shutil.which("cua-driver")` and **does not enforce
 `HERMES_CUA_DRIVER_VERSION`**, so a local build (reported as
 `0.0.0-local-*`) is accepted as-is. Two approaches:
@@ -352,7 +352,7 @@ to your PATH:
   PATH) to it. macOS/Linux symlinks `cua-driver` into `~/.local/bin`
   (override with `--bin-dir <path>`).
 - `-NoAutoStart` skips registering the `cua-driver-serve` logon daemon
-  — you don't need it for Vaelis testing (see notes).
+  — you don't need it for Plobi testing (see notes).
 
 Then open a fresh shell (so the PATH change is visible) and confirm:
 
@@ -362,7 +362,7 @@ cua-driver --version                 # local builds report 0.0.0-local-release
 # macOS/Linux:  which cua-driver
 ```
 
-### Option B — point Vaelis straight at the built binary (fastest loop)
+### Option B — point Plobi straight at the built binary (fastest loop)
 
 Skip the install ceremony entirely: `cargo build` and set
 `HERMES_CUA_DRIVER_CMD` to the resulting binary. Best for rapid
@@ -379,7 +379,7 @@ HERMES_CUA_DRIVER_CMD=C:\path\to\cua\libs\cua-driver\rust\target\debug\cua-drive
 HERMES_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
 ```
 
-### Confirm Vaelis is using your build
+### Confirm Plobi is using your build
 
 - `hermes computer-use status` prints the resolved binary path and
   version.
@@ -390,7 +390,7 @@ HERMES_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
 
 ### Notes & gotchas
 
-- **Vaelis spawns its own `cua-driver mcp` child over stdio** — it does
+- **Plobi spawns its own `cua-driver mcp` child over stdio** — it does
   *not* attach to the long-running `cua-driver serve` autostart daemon
   or its named pipe. So the scheduled task / LaunchAgent is unnecessary
   for testing (`-NoAutoStart` is fine). The autostart daemon and the
@@ -406,9 +406,9 @@ HERMES_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
   cua-driver-serve`).
 - **Rebuild loop.** After editing cua-driver source, re-run
   `install-local` (rebuilds, restages, flips the `current` junction)
-  for Option A, or just re-`cargo build` for Option B — no Vaelis
+  for Option A, or just re-`cargo build` for Option B — no Plobi
   change needed either way.
-- **Local builds skip the version check.** Vaelis warns when the
+- **Local builds skip the version check.** Plobi warns when the
   installed cua-driver is older than its per-OS tested baseline, but
   exempts `0.0.0-local-*` dev builds — so your local build never
   triggers that warning.
@@ -449,14 +449,14 @@ autostart pattern — see
 
 ## See also
 
-- **Vaelis-side skill** — `skills/computer-use/SKILL.md` — teaches the
-  Vaelis `computer_use` action vocabulary; this is what the agent loads.
+- **Plobi-side skill** — `skills/computer-use/SKILL.md` — teaches the
+  Plobi `computer_use` action vocabulary; this is what the agent loads.
 - **cua-driver skill pack** — for platform-specific deep dives
   (macOS no-foreground contract, Windows UIA + Session 0, Linux AT-SPI
   + X11/Wayland, recording, browser pages), run
   `cua-driver skills install` and read `MACOS.md` / `WINDOWS.md` /
   `LINUX.md` / `RECORDING.md` / `WEB_APPS.md`. Once `cua-driver skills
-  install` autodetects Vaelis (planned follow-up), this happens
+  install` autodetects Plobi (planned follow-up), this happens
   automatically on install.
 - **cua.ai/docs** — the cua-driver project's documentation:
   - [What is computer use?](https://cua.ai/docs/explanation/what-is-computer-use) — concept intro
@@ -465,6 +465,6 @@ autostart pattern — see
   - [Personalize the agent cursor](https://cua.ai/docs/how-to-guides/driver/personalize-cursor) — built-in shapes, custom assets, runtime overrides
   - [Drive Windows over SSH](https://cua.ai/docs/how-to-guides/driver/windows-ssh) — the Session 0 → Session 1+ autostart pattern
   - [Keep cua-driver running](https://cua.ai/docs/how-to-guides/driver/keep-running) — autostart / daemon lifecycle
-  - [Connect your agent](https://cua.ai/docs/how-to-guides/driver/connect-your-agent) — register cua-driver with various harnesses (Vaelis among them)
+  - [Connect your agent](https://cua.ai/docs/how-to-guides/driver/connect-your-agent) — register cua-driver with various harnesses (Plobi among them)
 - [cua-driver source (trycua/cua)](https://github.com/trycua/cua)
 - [Browser automation](./browser.md) for cross-platform web tasks where you don't need to drive native apps.

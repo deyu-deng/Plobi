@@ -339,7 +339,7 @@ TOOLSETS = {
         "includes": ["web", "vision", "image_gen"]
     },
 
-    # Coding posture (base Vaelis — CLI/TUI/desktop/ACP). Auto-selected in a
+    # Coding posture (base Plobi — CLI/TUI/desktop/ACP). Auto-selected in a
     # code workspace; see agent/coding_context.py. Keeps everything you reach
     # for while pairing on code and drops the rest (messaging, tts, image_gen,
     # spotify, home-assistant, cron, computer-use).
@@ -367,7 +367,7 @@ TOOLSETS = {
     },
     
     # ==========================================================================
-    # Full Vaelis toolsets (CLI + messaging platforms)
+    # Full Plobi toolsets (CLI + messaging platforms)
     #
     # All platforms share the same core tools. Note: agents do NOT get an
     # agent-callable send_message tool — outbound platform messaging is handled
@@ -490,7 +490,7 @@ TOOLSETS = {
     },
 
     "hermes-email": {
-        "description": "Email bot toolset - interact with Vaelis via email (IMAP/SMTP)",
+        "description": "Email bot toolset - interact with Plobi via email (IMAP/SMTP)",
         "tools": _HERMES_CORE_TOOLS,
         "includes": []
     },
@@ -563,7 +563,7 @@ TOOLSETS = {
     },
 
     "hermes-sms": {
-        "description": "SMS bot toolset - interact with Vaelis via SMS (Twilio)",
+        "description": "SMS bot toolset - interact with Plobi via SMS (Twilio)",
         "tools": _HERMES_CORE_TOOLS,
         "includes": []
     },

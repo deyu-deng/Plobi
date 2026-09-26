@@ -75,7 +75,7 @@ _MODELS: Dict[str, Dict[str, Any]] = {
 
 DEFAULT_MODEL = "krea-2-medium"
 
-# Vaelis uses 3 abstract aspect ratios. Map to Krea's enum (which is wider).
+# Plobi uses 3 abstract aspect ratios. Map to Krea's enum (which is wider).
 # Krea accepts: 1:1, 4:3, 3:2, 16:9, 2.35:1, 4:5, 2:3, 9:16
 _ASPECT_MAP = {
     "landscape": "16:9",
@@ -429,7 +429,7 @@ class KreaImageGenProvider(ImageGenProvider):
         headers = {
             "Authorization": f"Bearer {auth_token}",
             "Content-Type": "application/json",
-            "User-Agent": "Vaelis-Agent/1.0 (krea-image-gen)",
+            "User-Agent": "Plobi-Agent/1.0 (krea-image-gen)",
         }
         if managed is not None:
             # The gateway derives the per-generation billing idempotency
@@ -543,7 +543,7 @@ class KreaImageGenProvider(ImageGenProvider):
         job_url = f"{base_url}/jobs/{job_id}"
         poll_headers = {
             "Authorization": f"Bearer {auth_token}",
-            "User-Agent": "Vaelis-Agent/1.0 (krea-image-gen)",
+            "User-Agent": "Plobi-Agent/1.0 (krea-image-gen)",
         }
         interval = _POLL_INITIAL_INTERVAL
         deadline = time.monotonic() + _POLL_TIMEOUT_SECONDS

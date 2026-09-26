@@ -80,7 +80,7 @@ class TestEnvFileReadBlocking:
             assert error is None, f"{path} should be allowed"
 
     def test_allowed_hermes_env(self):
-        """Vaelis' own .env inside HERMES_HOME is NOT blocked by this rule
+        """Plobi' own .env inside HERMES_HOME is NOT blocked by this rule
         (it's handled by other mechanisms). Only project-local .env is blocked."""
         # Note: hermes internal .env is in ~/.hermes/.env which is NOT a project-local
         # path, but the basename check applies to ANY .env. This is intentional —
@@ -100,7 +100,7 @@ class TestEnvFileReadBlocking:
 
 
 class TestCacheFileReadBlocking:
-    """Internal Vaelis cache files must remain blocked."""
+    """Internal Plobi cache files must remain blocked."""
 
     def test_hub_index_cache_blocked(self, tmp_path):
         """Hub index-cache reads are blocked."""
@@ -112,7 +112,7 @@ class TestCacheFileReadBlocking:
         with patch("agent.file_safety._hermes_home_path", return_value=hermes_home):
             error = get_read_block_error(str(cache))
             assert error is not None
-            assert "internal Vaelis cache" in error
+            assert "internal Plobi cache" in error
 
     def test_hub_directory_blocked(self, tmp_path):
         """Hub directory reads are blocked."""
@@ -158,4 +158,4 @@ class TestCombinedGuards:
         with patch("agent.file_safety._hermes_home_path", return_value=hermes_home):
             error = get_read_block_error(str(cache))
             assert error is not None
-            assert "internal Vaelis cache" in error
+            assert "internal Plobi cache" in error

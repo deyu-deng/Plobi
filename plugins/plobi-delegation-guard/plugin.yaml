@@ -1,0 +1,14 @@
+name: plobi-delegation-guard
+version: "0.1.0"
+description: >-
+  B4 — caps how many L3 children run at once process-wide (core only caps a
+  single delegate_task call), waits briefly so overflow queues instead of
+  failing, trips a quota breaker, and tracks child lifecycle for the L2 left
+  rail. Never limits how many children an L2 may delegate in total — only
+  concurrency and budget.
+author: Plobi
+hooks:
+  - pre_tool_call
+  - subagent_start
+  - subagent_stop
+  - on_session_end

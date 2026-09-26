@@ -3,7 +3,7 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Vaelis Agent',
+  title: 'Plobi Agent',
   tagline: 'The self-improving AI agent',
   favicon: 'img/favicon.ico',
 
@@ -119,9 +119,9 @@ const config: Config = {
       },
     },
     navbar: {
-      title: 'Vaelis Agent',
+      title: 'Plobi Agent',
       logo: {
-        alt: 'Vaelis Agent',
+        alt: 'Plobi Agent',
         src: 'img/logo.png',
       },
       items: [

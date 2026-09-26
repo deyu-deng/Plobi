@@ -125,7 +125,7 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str
     tool_count = len(getattr(agent, "tools", None) or [])
 
     logger.warning(
-        "Ollama runtime context too small for Vaelis tool use: "
+        "Ollama runtime context too small for Plobi tool use: "
         "model=%s provider=%s base_url=%s runtime_context=%d "
         "minimum_context=%d estimated_request_tokens=%d tool_count=%d "
         "session=%s",
@@ -141,11 +141,11 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str
 
     return (
         f"Ollama loaded `{model}` with only {runtime_ctx:,} tokens of runtime "
-        f"context, but Vaelis needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens "
+        f"context, but Plobi needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens "
         "for reliable tool use.\n\n"
         "Increase the Ollama context for this model and restart/reload the "
         "model before trying again. A known-good starting point is 65,536 "
-        "tokens. In Vaelis config, set `model.ollama_num_ctx: 65536` "
+        "tokens. In Plobi config, set `model.ollama_num_ctx: 65536` "
         "(and `model.context_length: 65536` if you also override the displayed "
         "model context). If you manage the model through an Ollama Modelfile, "
         "set `PARAMETER num_ctx 65536` there instead."
@@ -338,10 +338,10 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
         # sessions. Without this in-line call, the long-lived 9-5 L1
         # session never re-tightens its compressor (and keeps its
         # post-finalize curator count over budget). Idempotent + no-op
-        # for L2 / non-default profiles. See plugins/vaelis-north-star/
+        # for L2 / non-default profiles. See plugins/plobi-north-star/
         # l1_budget.py::apply_l1_budget.
         try:
-            from hermes_plugins.vaelis_north_star.l1_budget import (
+            from hermes_plugins.plobi_north_star.l1_budget import (
                 apply_l1_budget as _apply_l1_budget,
             )
             _apply_l1_budget(agent)
@@ -379,7 +379,7 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
     # Plugin hook: on_session_start — fired once when a brand-new
     # session is created (not on continuation).  Plugins can use this
     # to initialise session-scoped state (e.g. warm a memory cache).
-    # WP-L1-BUDGET: also pass ``agent=`` so ``plugins/vaelis-north-star/
+    # WP-L1-BUDGET: also pass ``agent=`` so ``plugins/plobi-north-star/
     # l1_budget.py`` can tighten the L1 default-profile knobs in-place.
     # Existing handlers accept ``**kwargs`` so the new kwarg is
     # backwards-compatible.
@@ -430,7 +430,7 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
     Stale = one of:
     1. Model / Provider line changed (model / provider rotated by the user).
     2. Identity drift: agent is the L1 default-profile secretary **and** the
-       persisted prompt does not declare the new Vaelis 总秘书 identity
+       persisted prompt does not declare the new Plobi 总秘书 identity
        (WP-L1-PROMPT-LIVE / 裁定 40). When this trips, the conversation-loop
        falls back to ``_build_system_prompt`` so the next turn runs the
        fresh identity — at the cost of one prefix-cache miss. Long-lived
@@ -438,7 +438,7 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
        short-returning on Model/Provider alone.
 
     L2 / non-default profile callers are not subject to the identity rule —
-    they may legitimately run agents without the Vaelis 总秘书 marker
+    they may legitimately run agents without the Plobi 总秘书 marker
     (e.g. an L3 helper, or an L2 with a stripped ``SOUL.md``).
     """
 
@@ -475,7 +475,7 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
 # rephrase of the SOUL still keeps the L1 marker recognisable. If you
 # change this token, also update ``L1_SOUL_BLOCK`` (the token must remain
 # present) and the assertion in ``test_l1_prompt_live.py``.
-_L1_IDENTITY_MARKER = "Vaelis 总秘书"
+_L1_IDENTITY_MARKER = "Plobi 总秘书"
 
 # Lazy import so we don't pull l1_budget into every conversation-loop call
 # path when the agent is L2 / non-default.
@@ -484,7 +484,7 @@ _l1_default_check_cache = {"impl": None}
 
 def _l1_identity_is_stale(agent, prompt: str) -> bool:
     """True iff ``agent`` is the L1 default secretary and the persisted
-    prompt does not declare the Vaelis 总秘书 identity marker.
+    prompt does not declare the Plobi 总秘书 identity marker.
 
     False for L2 / non-default / agents with a blank prompt (the early-return
     branch is never reached with a blank ``stored_prompt`` so this is the
@@ -498,7 +498,7 @@ def _l1_identity_is_stale(agent, prompt: str) -> bool:
     impl = _l1_default_check_cache["impl"]
     if impl is None:
         try:
-            from hermes_plugins.vaelis_north_star.l1_budget import (
+            from hermes_plugins.plobi_north_star.l1_budget import (
                 is_l1_default_profile,
             )
             impl = is_l1_default_profile
@@ -712,7 +712,7 @@ def run_conversation(
 
     # Optional opt-in runtime: if api_mode == codex_app_server, hand the
     # turn to the codex app-server subprocess (terminal/file ops/patching
-    # all run inside Codex). Default Vaelis path is bypassed entirely.
+    # all run inside Codex). Default Plobi path is bypassed entirely.
     # See agent/transports/codex_app_server_session.py for the adapter
     # and references/codex-app-server-runtime.md for the rationale.
     if agent.api_mode == "codex_app_server":
@@ -926,9 +926,9 @@ def run_conversation(
         # NOTE: Plugin context from pre_llm_call hooks is injected into the
         # user message (see injection block above), NOT the system prompt.
         # This is intentional — system prompt modifications break the prompt
-        # cache prefix.  The system prompt is reserved for Vaelis internals.
+        # cache prefix.  The system prompt is reserved for Plobi internals.
         #
-        # Vaelis invariant: the system prompt is built ONCE per session
+        # Plobi invariant: the system prompt is built ONCE per session
         # (cached on ``_cached_system_prompt``) and replayed verbatim on
         # every turn.  We send it as a single content string so the
         # bytes are byte-stable across turns and upstream prompt caches
@@ -1060,7 +1060,7 @@ def run_conversation(
             failed = True
             _turn_exit_reason = "ollama_runtime_context_too_small"
             messages.append({"role": "assistant", "content": final_response})
-            agent._emit_status("❌ Ollama runtime context is too small for Vaelis tool use")
+            agent._emit_status("❌ Ollama runtime context is too small for Plobi tool use")
             api_call_count -= 1
             agent._api_call_count = api_call_count
             try:
@@ -1824,7 +1824,7 @@ def run_conversation(
                     )
                     _refusal_response = (
                         "⚠️  The model declined to respond to this request "
-                        "(safety refusal — not a Vaelis/gateway failure).\n\n"
+                        "(safety refusal — not a Plobi/gateway failure).\n\n"
                         f"{_refusal_detail}\n\n"
                         f"{_CONTENT_POLICY_RECOVERY_HINT}"
                     )
@@ -2910,7 +2910,7 @@ def run_conversation(
                     print(f"{agent.log_prefix}   Troubleshooting:")
                     from hermes_constants import display_hermes_home as _dhh_fn
                     _dhh = _dhh_fn()
-                    print(f"{agent.log_prefix}     • Check ANTHROPIC_TOKEN in {_dhh}/.env for Vaelis-managed OAuth/setup tokens")
+                    print(f"{agent.log_prefix}     • Check ANTHROPIC_TOKEN in {_dhh}/.env for Plobi-managed OAuth/setup tokens")
                     print(f"{agent.log_prefix}     • Check ANTHROPIC_API_KEY in {_dhh}/.env for API keys or legacy token values")
                     print(f"{agent.log_prefix}     • For API keys: verify at https://platform.claude.com/settings/keys")
                     print(f"{agent.log_prefix}     • For Claude Code: run 'claude /login' to refresh, then retry")
@@ -3360,7 +3360,7 @@ def run_conversation(
                 # this on the next pass and try fallback or bail.
                 #
                 # IMPORTANT: Nous Portal multiplexes multiple upstream
-                # providers (DeepSeek, Kimi, MiMo, Vaelis).  A 429 can
+                # providers (DeepSeek, Kimi, MiMo, Plobi).  A 429 can
                 # also mean an UPSTREAM provider is out of capacity
                 # for one specific model -- transient, clears in
                 # seconds, nothing to do with the caller's quota.
@@ -3424,7 +3424,7 @@ def run_conversation(
 
                 # Actionable hint for GitHub Models (Azure) 413 errors.
                 # The free tier enforces a hard 8K token cap per request,
-                # which Vaelis' system prompt + tool schemas alone exceed.
+                # which Plobi' system prompt + tool schemas alone exceed.
                 # Compression can't help — the floor is the system prompt
                 # itself, not the conversation — so surface a clear "not
                 # compatible" message instead of looping into three futile
@@ -3439,7 +3439,7 @@ def run_conversation(
                         force=True,
                     )
                     agent._vprint(
-                        f"{agent.log_prefix}      request at ~8K tokens. Vaelis' system prompt + tool schemas baseline",
+                        f"{agent.log_prefix}      request at ~8K tokens. Plobi' system prompt + tool schemas baseline",
                         force=True,
                     )
                     agent._vprint(
@@ -3987,7 +3987,7 @@ def run_conversation(
                     if classified.reason == FailoverReason.content_policy_blocked:
                         _policy_response = (
                             "⚠️  The model provider's safety filter blocked this request "
-                            "(not a Vaelis/gateway failure).\n\n"
+                            "(not a Plobi/gateway failure).\n\n"
                             f"Provider message: {_nonretryable_summary}\n\n"
                             f"{_CONTENT_POLICY_RECOVERY_HINT}"
                         )
@@ -4131,7 +4131,7 @@ def run_conversation(
                             f"{agent.log_prefix}      1. Set "
                             f"`providers.{_provider}.models.{_model}.stale_timeout_seconds: 900` "
                             f"in `~/.hermes/config.yaml` to extend the per-call "
-                            f"timeout. (Vaelis's built-in floor is 600s for "
+                            f"timeout. (Plobi's built-in floor is 600s for "
                             f"known reasoning models — if you still see this "
                             f"after raising, the upstream cap is even shorter.)",
                             force=True,
@@ -4773,7 +4773,7 @@ def run_conversation(
                 try:
                     # Persist the assistant tool-call turn before any tool
                     # side effects run. If a destructive tool restarts or
-                    # terminates Vaelis mid-turn, resume logic still sees the
+                    # terminates Plobi mid-turn, resume logic still sees the
                     # exact tool-call block that already executed.
                     agent._flush_messages_to_session_db(messages, conversation_history)
                 except Exception as exc:

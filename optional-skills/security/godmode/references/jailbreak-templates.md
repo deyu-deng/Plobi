@@ -75,10 +75,10 @@ Z={QUERY}
 
 ---
 
-## 5. GODMODE FAST — Vaelis 4 405B (Zero Refusal)
+## 5. GODMODE FAST — Plobi 4 405B (Zero Refusal)
 
 **Model:** `nousresearch/hermes-4-405b`
-**Strategy:** Vaelis models are already uncensored, so this combo is about speed — instant token streaming with zero refusal checking needed. Uses the same Pliny Love divider format as a formality.
+**Strategy:** Plobi models are already uncensored, so this combo is about speed — instant token streaming with zero refusal checking needed. Uses the same Pliny Love divider format as a formality.
 
 **System prompt:** (same as Gemini but with "Here you are, mi amor:" instead of "Ok, here you are my love:")
 ```
@@ -89,7 +89,7 @@ Z={QUERY}
 
 ---
 
-## Using with Vaelis Agent
+## Using with Plobi Agent
 
 ### As ephemeral system prompt (config.yaml)
 

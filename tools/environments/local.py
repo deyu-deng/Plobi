@@ -99,12 +99,12 @@ def _resolve_safe_cwd(cwd: str) -> str:
     return tempfile.gettempdir()
 
 
-# Vaelis-internal env vars that should NOT leak into terminal subprocesses.
+# Plobi-internal env vars that should NOT leak into terminal subprocesses.
 _HERMES_PROVIDER_ENV_FORCE_PREFIX = "_HERMES_FORCE_"
 
-# Vaelis-managed AWS *inference* credentials for ``auth_type="aws_sdk"``
+# Plobi-managed AWS *inference* credentials for ``auth_type="aws_sdk"``
 # providers (Bedrock).  Scoped DELIBERATELY NARROW: this lists only the
-# Bedrock-specific bearer token, which is a Vaelis inference secret exactly
+# Bedrock-specific bearer token, which is a Plobi inference secret exactly
 # analogous to ``OPENAI_API_KEY`` — nobody drives the ``aws``/``terraform``/
 # ``boto3`` toolchain off it, so stripping it from terminal/execute_code
 # subprocesses costs no user capability.
@@ -221,8 +221,8 @@ def _build_provider_env_blocklist() -> frozenset:
     })
     # CLAUDE_CODE_OAUTH_TOKEN is deliberately NOT stripped.  It is set and
     # owned by the user's Claude Code install (subscription OAuth), not a
-    # Vaelis-managed inference credential — Claude subscription auth is not a
-    # working Vaelis provider path.  Stripping it broke agent-spawned
+    # Plobi-managed inference credential — Claude subscription auth is not a
+    # working Plobi provider path.  Stripping it broke agent-spawned
     # ``claude`` CLIs: the child fell through to the shared macOS Keychain /
     # ``~/.claude/.credentials.json`` store and, on auth failure, cleared it,
     # logging the user out of their interactive Claude sessions (#55878).
@@ -239,16 +239,16 @@ _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 # VIRTUAL_ENV (and possibly CONDA_PREFIX). If those leak into commands the
 # agent runs against OTHER Python projects, tools like ``uv``/``poetry`` treat
 # the inherited value as the active environment and build/sync that other
-# project's dependencies into the Vaelis venv path instead of the project's own
-# ``.venv`` — silently clobbering the Vaelis environment (e.g. a project pinned
+# project's dependencies into the Plobi venv path instead of the project's own
+# ``.venv`` — silently clobbering the Plobi environment (e.g. a project pinned
 # to a different Python version overwrites it and breaks the gateway). The
-# Vaelis venv stays reachable via PATH (its bin dir is first), so stripping
+# Plobi venv stays reachable via PATH (its bin dir is first), so stripping
 # these markers is safe and only prevents the cross-project clobber (#23473).
 _ACTIVE_VENV_MARKER_VARS = ("VIRTUAL_ENV", "CONDA_PREFIX")
 
 
 def _is_hermes_internal_secret(key: str) -> bool:
-    """Return True for Vaelis-internal secrets injected under *dynamic* names.
+    """Return True for Plobi-internal secrets injected under *dynamic* names.
 
     ``_HERMES_PROVIDER_ENV_BLOCKLIST`` is name-based and derived from the
     provider/tool registries, but the gateway and CLI also inject secrets into
@@ -272,7 +272,7 @@ def _is_hermes_internal_secret(key: str) -> bool:
     ``KEY`` / ``SECRET`` / ``TOKEN``; the terminal backend's narrower name-based
     blocklist did not, which is the leak this predicate closes.
 
-    This is the single source of truth for "Vaelis-internal dynamic secret"
+    This is the single source of truth for "Plobi-internal dynamic secret"
     across every spawn path — the terminal ``_make_run_env`` /
     ``_sanitize_subprocess_env`` filters, the Docker passthrough filter, and the
     non-terminal :func:`hermes_subprocess_env` helper all call it, so the
@@ -293,7 +293,7 @@ def _is_hermes_internal_secret(key: str) -> bool:
 
 
 def _inject_context_hermes_home(env: dict) -> None:
-    """Bridge the context-local Vaelis home override into subprocess env."""
+    """Bridge the context-local Plobi home override into subprocess env."""
     try:
         from hermes_constants import get_hermes_home_override
 
@@ -352,7 +352,7 @@ def _inject_session_context_env(env: dict) -> None:
 
 
 def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = None) -> dict:
-    """Filter Vaelis-managed secrets from a subprocess environment."""
+    """Filter Plobi-managed secrets from a subprocess environment."""
     try:
         from tools.env_passthrough import is_env_passthrough as _is_passthrough
     except Exception:
@@ -399,7 +399,7 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
 # Tier-1 secrets: stripped from EVERY spawned subprocess unconditionally —
 # even when the caller opts into credential inheritance for a model-driving
 # CLI (claude / codex / gemini).  These are not LLM provider credentials; no
-# legitimate child Vaelis spawns needs them, and they are the highest-value
+# legitimate child Plobi spawns needs them, and they are the highest-value
 # secrets to keep out of a compromised dependency's reach (gateway bot tokens,
 # GitHub auth, remote-compute tokens, dashboard session secret).  The set is a
 # narrow subset of _HERMES_PROVIDER_ENV_BLOCKLIST; provider keys are handled by
@@ -455,7 +455,7 @@ def hermes_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str
 
     * **Tier 1 (always):** ``_ALWAYS_STRIP_KEYS`` — gateway bot tokens, GitHub
       auth, and remote-compute secrets are removed regardless of
-      ``inherit_credentials``.  No child Vaelis spawns legitimately needs them.
+      ``inherit_credentials``.  No child Plobi spawns legitimately needs them.
     * **Tier 2 (conditional):** the rest of ``_HERMES_PROVIDER_ENV_BLOCKLIST``
       (LLM provider API keys, tool secrets) is removed unless the caller passes
       ``inherit_credentials=True``.
@@ -476,7 +476,7 @@ def hermes_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str
     # Tier 1 — always strip.
     for key in _ALWAYS_STRIP_KEYS:
         env.pop(key, None)
-    # Internal routing hints and Vaelis-internal dynamic secrets
+    # Internal routing hints and Plobi-internal dynamic secrets
     # (``AUXILIARY_<TASK>_API_KEY`` / ``_BASE_URL`` side-LLM credentials,
     # ``GATEWAY_RELAY_*`` relay-auth material) must never reach a child,
     # regardless of ``inherit_credentials`` — a model-driving CLI has no
@@ -569,7 +569,7 @@ def _find_bash() -> str:
         return found
 
     raise RuntimeError(
-        "Git Bash not found. Vaelis Agent requires Git for Windows on Windows.\n"
+        "Git Bash not found. Plobi Agent requires Git for Windows on Windows.\n"
         "Install it from: https://git-scm.com/download/win\n"
         "Or set HERMES_GIT_BASH_PATH to your bash.exe location."
     )
@@ -763,7 +763,7 @@ def _apply_windows_msys_bash_env_defaults(env: dict) -> None:
 
     Git Bash rewrites arguments that look like Unix paths (``/FO``, ``/TN``,
     ``/Create``) into ``C:/.../git/FO``-style paths, which breaks native
-    Windows commands such as ``tasklist``, ``schtasks``, and ``wmic``.  Vaelis
+    Windows commands such as ``tasklist``, ``schtasks``, and ``wmic``.  Plobi
     runs terminal commands through bash on Windows, so set the standard MSYS
     opt-out by default.  Users who need conversion can override in their env.
     Refs #56700.
@@ -870,7 +870,7 @@ def _resolve_shell_init_files() -> list[str]:
     Expands ``~`` and ``${VAR}`` references and drops anything that doesn't
     exist on disk, so a missing ``~/.bashrc`` never breaks the snapshot.
     The ``auto_source_bashrc`` path runs only when the user hasn't supplied
-    an explicit list — once they have, Vaelis trusts them.
+    an explicit list — once they have, Plobi trusts them.
     """
     explicit, auto_bashrc = _read_terminal_shell_init_config()
 

@@ -16,9 +16,9 @@ def build_import_cmd_parser(subparsers, *, cmd_import: Callable) -> None:
     # =========================================================================
     import_parser = subparsers.add_parser(
         "import",
-        help="Restore a Vaelis backup from a zip file",
-        description="Extract a previously created Vaelis backup into your "
-        "Vaelis home directory, restoring configuration, skills, "
+        help="Restore a Plobi backup from a zip file",
+        description="Extract a previously created Plobi backup into your "
+        "Plobi home directory, restoring configuration, skills, "
         "sessions, and data",
     )
     import_parser.add_argument("zipfile", help="Path to the backup zip file")

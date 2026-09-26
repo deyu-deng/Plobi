@@ -1472,7 +1472,7 @@ def init_agent(
             pass
 
     # Per-platform prompt-hint overrides (config.yaml → platform_hints).
-    # Lets an enterprise admin append to or replace Vaelis' built-in
+    # Lets an enterprise admin append to or replace Plobi' built-in
     # platform hint for a single messaging platform (e.g. WhatsApp) without
     # affecting other platforms. Shape:
     #   platform_hints:
@@ -1845,14 +1845,14 @@ def init_agent(
         raise ValueError(
             f"Model {agent.model} has a context window of {_ctx:,} tokens, "
             f"which is below the minimum {MINIMUM_CONTEXT_LENGTH:,} required "
-            f"by Vaelis Agent.  Choose a model with at least "
+            f"by Plobi Agent.  Choose a model with at least "
             f"{MINIMUM_CONTEXT_LENGTH // 1000}K context.  If your server "
             f"reports a window smaller than the model's true window, set "
             f"model.context_length in config.yaml to the real value "
             f"(this must be at least {MINIMUM_CONTEXT_LENGTH // 1000}K)."
         )
 
-    # Nous Vaelis 3/4 are chat models, not tool-call-tuned. The interactive
+    # Nous Plobi 3/4 are chat models, not tool-call-tuned. The interactive
     # CLI already warns via cli.py show_banner() (richer output + /model hint),
     # so skip platform=="cli" here to avoid emitting the warning twice per
     # startup. (Gateway/TUI/cron construct with quiet_mode=True and are already
@@ -1866,7 +1866,7 @@ def init_agent(
             _hermes_warn = _check_hermes_model_warning(agent.model or "")
             if _hermes_warn:
                 _user_msg = (
-                    "⚠ Vaelis 3 & 4 chat models are NOT agentic — they "
+                    "⚠ Plobi 3 & 4 chat models are NOT agentic — they "
                     "lack reliable tool-calling for agent workflows (delegation, "
                     "cron, proactive tools). Consider an agentic model instead "
                     "(Claude, GPT, Gemini, Qwen-Coder, etc.)."
@@ -2106,9 +2106,9 @@ def init_agent(
     # the 9-5 L1 conversation (and any continuation turn) tightens the
     # compressor + zeros the curator nudges every turn, not just session
     # open. Idempotent and a no-op for L2 / non-default profiles. See
-    # ``plugins/vaelis-north-star/l1_budget.py::apply_l1_budget``.
+    # ``plugins/plobi-north-star/l1_budget.py::apply_l1_budget``.
     try:
-        from hermes_plugins.vaelis_north_star.l1_budget import (
+        from hermes_plugins.plobi_north_star.l1_budget import (
             apply_l1_budget as _apply_l1_budget_init,
         )
         _apply_l1_budget_init(agent)

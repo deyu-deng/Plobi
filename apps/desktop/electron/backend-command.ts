@@ -1,6 +1,6 @@
 'use strict'
 
-// Backend subcommand routing for the desktop-managed Vaelis process.
+// Backend subcommand routing for the desktop-managed Plobi process.
 //
 // The desktop app launches its own headless backend via `hermes serve` — it
 // must NEVER depend on or launch the browser `dashboard`. But `serve` is a
@@ -13,17 +13,17 @@
 //
 // These helpers are pure so they can be unit-tested without Electron.
 //
-// WP-H1-LAN: when the user opts into the LAN App by setting VAELIS_LAN=1
+// WP-H1-LAN: when the user opts into the LAN App by setting PLOBI_LAN=1
 // (typically via $HERMES_HOME/.env), the serve subprocess binds
 // 0.0.0.0:8787 instead of the default 127.0.0.1:<ephemeral>.  The Electron
 // main process already passes through env vars — see main.ts spawn() — but
-// we ALSO honour $HERMES_HOME/.env so a user who set VAELIS_LAN in that
+// we ALSO honour $HERMES_HOME/.env so a user who set PLOBI_LAN in that
 // file before starting Electron still gets the LAN bind.
 
 import fs from 'node:fs'
 
 /** Token name we honour in $HERMES_HOME/.env (single-line KEY=VALUE). */
-const LAN_ENV_KEY = 'VAELIS_LAN'
+const LAN_ENV_KEY = 'PLOBI_LAN'
 
 /** LAN-mode host/port — see WP-H1-LAN contract. */
 const LAN_BIND_HOST = '0.0.0.0'
@@ -37,7 +37,7 @@ const LOOPBACK_PORT = '0'
  * Read a single KEY=VALUE line from *path*. Returns the trimmed value when
  * the key is present and well-formed, ``null`` otherwise.
  *
- * Intentionally tiny — we only parse `VAELIS_LAN` from the user's
+ * Intentionally tiny — we only parse `PLOBI_LAN` from the user's
  * ``$HERMES_HOME/.env`` so a desktop process that did not inherit the env
  * (Electron launchers, packaged installers, custom wrappers) can still
  * opt into the LAN bind. Five lines of regex, no dotenv dependency: the
@@ -98,7 +98,7 @@ export function readEnvValue(path: string | undefined, key: string): string | nu
 }
 
 /**
- * Resolve the VAELIS_LAN truthy value, preferring the inherited process env
+ * Resolve the PLOBI_LAN truthy value, preferring the inherited process env
  * and falling back to *hermesHomeEnvPath* (typically ``$HERMES_HOME/.env``).
  *
  * Equality check is intentionally strict: only the literal string ``"1"``
@@ -109,7 +109,7 @@ export function readEnvValue(path: string | undefined, key: string): string | nu
  * more elaborate parsing if it ever needs to.
  */
 export function resolveLanMode(env: NodeJS.ProcessEnv, hermesHomeEnvPath?: string): boolean {
-  const inherited = typeof env.VAELIS_LAN === 'string' ? env.VAELIS_LAN.trim() : ''
+  const inherited = typeof env.PLOBI_LAN === 'string' ? env.PLOBI_LAN.trim() : ''
   if (inherited === '1') {
     return true
   }
@@ -127,12 +127,12 @@ export function resolveLanMode(env: NodeJS.ProcessEnv, hermesHomeEnvPath?: strin
  * Default: ``serve --host 127.0.0.1 --port 0`` (loopback + OS-assigned
  * ephemeral port, matching pre-WP-H1-LAN behaviour).
  *
- * When :data:`VAELIS_LAN` is set to ``"1"`` (in either the inherited
+ * When :data:`PLOBI_LAN` is set to ``"1"`` (in either the inherited
  * process env or ``$HERMES_HOME/.env``), returns ``serve --host 0.0.0.0
- * --port 8787`` so the Vaelis App on the same Wi-Fi can reach the
+ * --port 8787`` so the Plobi App on the same Wi-Fi can reach the
  * desktop. Any other value leaves the bind on loopback.
  *
- * @param {string} [profile] optional Vaelis profile to pin via ``--profile``.
+ * @param {string} [profile] optional Plobi profile to pin via ``--profile``.
  * @param {object} [options] optional overrides for testing.
  * @param {NodeJS.ProcessEnv} [options.env] process env to read (default ``process.env``).
  * @param {string} [options.hermesHomeEnvPath] path to ``$HERMES_HOME/.env`` to fall back on.

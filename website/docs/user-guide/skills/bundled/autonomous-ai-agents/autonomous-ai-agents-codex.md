@@ -17,7 +17,7 @@ Delegate coding to OpenAI Codex CLI (features, PRs).
 | Source | Bundled (installed by default) |
 | Path | `skills/autonomous-ai-agents/codex` |
 | Version | `1.0.0` |
-| Author | Vaelis Agent |
+| Author | Plobi Agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
 | Tags | `Coding-Agent`, `Codex`, `OpenAI`, `Code-Review`, `Refactoring` |
@@ -26,12 +26,12 @@ Delegate coding to OpenAI Codex CLI (features, PRs).
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Vaelis loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that Plobi loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Codex CLI
 
-Delegate coding tasks to [Codex](https://github.com/openai/codex) via the Vaelis terminal. Codex is OpenAI's autonomous coding agent CLI.
+Delegate coding tasks to [Codex](https://github.com/openai/codex) via the Plobi terminal. Codex is OpenAI's autonomous coding agent CLI.
 
 ## When to use
 
@@ -50,7 +50,7 @@ Requires the codex CLI and a git repository.
 - **Must run inside a git repository** — Codex refuses to run outside one
 - Use `pty=true` in terminal calls — Codex is an interactive terminal app
 
-For Vaelis itself, `model.provider: openai-codex` uses Vaelis-managed Codex
+For Plobi itself, `model.provider: openai-codex` uses Plobi-managed Codex
 OAuth from `~/.hermes/auth.json` after `hermes auth add openai-codex`. For the
 standalone Codex CLI, a valid CLI OAuth session may live under
 `~/.codex/auth.json`; do not treat a missing `OPENAI_API_KEY` alone as proof
@@ -94,9 +94,9 @@ process(action="kill", session_id="<id>")
 | `--yolo` | No sandbox, no approvals (fastest, most dangerous) |
 | `--sandbox danger-full-access` | No Codex sandbox; useful when the host service context breaks bubblewrap |
 
-## Vaelis Gateway Caveat
+## Plobi Gateway Caveat
 
-When invoking the Codex CLI from a Vaelis gateway/service context (for example,
+When invoking the Codex CLI from a Plobi gateway/service context (for example,
 Telegram-driven agent sessions), Codex `workspace-write` sandboxing may fail even
 when the same command works in the user's interactive shell. A typical symptom is
 bubblewrap/user-namespace errors such as `setting up uid map: Permission denied`

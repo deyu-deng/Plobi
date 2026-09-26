@@ -1,6 +1,6 @@
 # Trajectory Format
 
-Vaelis Agent saves conversation trajectories in ShareGPT-compatible JSONL format
+Plobi Agent saves conversation trajectories in ShareGPT-compatible JSONL format
 for use as training data, debugging artifacts, and reinforcement learning datasets.
 
 Source files: `agent/trajectory.py`, `run_agent.py` (search for `_save_trajectory`), `batch_runner.py`
@@ -165,7 +165,7 @@ turn with XML-wrapped JSON responses:
 ### System Message
 
 The system message is generated at save time (not taken from the conversation).
-It follows the Vaelis function-calling prompt template with:
+It follows the Plobi function-calling prompt template with:
 
 - Preamble explaining the function-calling protocol
 - `<tools>` XML block containing the JSON tool definitions

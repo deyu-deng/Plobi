@@ -383,7 +383,7 @@ function Header() {
   )
 }
 
-// No provider is hard-promoted as "recommended" — Vaelis stays neutral and
+// No provider is hard-promoted as "recommended" — Plobi stays neutral and
 // lets the user pick. Was 'nous' (Nous Portal) in the upstream Hermes build.
 export const FEATURED_ID: string | null = null
 const SHOW_ALL_KEY = 'hermes-onboarding-show-all-v1'

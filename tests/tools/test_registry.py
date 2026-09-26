@@ -774,7 +774,7 @@ class TestDeregisterAuthorization:
         assert reg._tools.get("mcp_srv_list") is None
 
     def test_core_code_deregister_always_allowed(self):
-        """Non-plugin callers (core Vaelis code) are never gated."""
+        """Non-plugin callers (core Plobi code) are never gated."""
         reg = self._reg()
         with patch.object(ToolRegistry, "_caller_module", return_value="tools.mcp_tool"):
             reg.deregister("protected")

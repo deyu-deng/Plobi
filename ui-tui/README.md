@@ -1,6 +1,6 @@
-# Vaelis TUI
+# Plobi TUI
 
-React + Ink terminal UI for Vaelis. TypeScript owns the screen. Python owns sessions, tools, model calls, and most command logic.
+React + Ink terminal UI for Plobi. TypeScript owns the screen. Python owns sessions, tools, model calls, and most command logic.
 
 ```bash
 hermes --tui

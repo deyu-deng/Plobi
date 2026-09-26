@@ -1,12 +1,12 @@
-"""Mind memory provider — Vaelis ↔ Mind second-brain vault adapter.
+"""Mind memory provider — Plobi ↔ Mind second-brain vault adapter.
 
 ============================================================================
 STATUS: IMPLEMENTED (P0).
 ============================================================================
 This file wires ``MindProvider`` to the ``MemoryProvider`` ABC so the plugin
-is discoverable, loadable, and activatable by Vaelis. P0 implements the real
+is discoverable, loadable, and activatable by Plobi. P0 implements the real
 disk I/O for every lifecycle method while respecting the compliance boundary
-below. All writes funnel through :class:`vaelis.mind.writer.MindWriter`
+below. All writes funnel through :class:`plobi.mind.writer.MindWriter`
 (serialized + verifier + commit switch) and are pre-checked with ``_is_safe``.
 
 Full spec + evidence:  docs/specs/MIND_ADAPTER_PLAN.md  (repo root)
@@ -15,7 +15,7 @@ Mind repo (official):  ``mind/`` (lowercase, inside the repository;
 Mind verifier:         Loom/scripts/verifier.py (inside the Mind repo)
 
 Why a plugin and not core changes?
-  Vaelis memory is provider-pluginized (AGENTS.md: "capability at the edges").
+  Plobi memory is provider-pluginized (AGENTS.md: "capability at the edges").
   Adding ``plugins/memory/mind/`` + setting ``memory.provider: mind`` in
   config.yaml is the *only* integration step — agent/memory_provider.py,
   memory_manager.py, and run_agent.py are NOT touched.  (Verified 2026-07-13.)
@@ -39,8 +39,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
-from vaelis.mind.paths import SAFE_PREFIXES
-from vaelis.mind.writer import MindWriter
+from plobi.mind.paths import SAFE_PREFIXES
+from plobi.mind.writer import MindWriter
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +49,10 @@ logger = logging.getLogger(__name__)
 # MIND_ROOT). These are the zones Mind's verifier does NOT block. Do not add
 # Vault/projects/<new> or Loom/skills/<new> here — those require editing Mind's
 # own AGENTS.md declarations, which this plugin must never do automatically.
-# NOTE: the Vaelis project zone is the official capitalised ``Vaelis`` dir —
-# the lowercase ``vaelis`` dir is a legacy Plobi archive and must never be
+# NOTE: the Plobi project zone is the official capitalised ``Plobi`` dir —
+# the lowercase ``plobi`` dir is a legacy Plobi archive and must never be
 # created by accident (writing there would pollute the knowledge base).
-# SAFE_PREFIXES is imported from vaelis.mind.paths — the single source of
+# SAFE_PREFIXES is imported from plobi.mind.paths — the single source of
 # truth. Do NOT redefine it here; updating one without the other causes
 # security checks to diverge.
 
@@ -69,10 +69,10 @@ def _profile_block(root: Path) -> str:
     """画像/项目状态的窄切读取（无模型、纯文件）。
 
     来源：``Vault/meta/Persona.md`` + ``Vault/projects/<项目>/plan.md``/
-    ``progress.md``（MindReader，大写 Vaelis 是当前项目写入位）。为空返回
+    ``progress.md``（MindReader，大写 Plobi 是当前项目写入位）。为空返回
     ``""``——调用方据此跳过注入，不产生空块。
     """
-    from vaelis.mind.reader import MindReader
+    from plobi.mind.reader import MindReader
 
     ctx = MindReader(root).context(project_limit=PROFILE_PROJECT_LIMIT)
     if ctx.is_empty:
@@ -99,12 +99,12 @@ def _profile_block(root: Path) -> str:
 def _resolve_root() -> Path:
     """Resolve the Mind root.
 
-    Delegates to :mod:`vaelis.mind.paths` so there is one resolver and no
+    Delegates to :mod:`plobi.mind.paths` so there is one resolver and no
     hardcoded drive letters (the North Star contract requires ``MIND_ROOT``).
     Returns a non-existent placeholder when nothing is configured, so callers
     can keep using ``.is_dir()`` as the availability check.
     """
-    from vaelis.mind.paths import resolve_root as _shared_resolve
+    from plobi.mind.paths import resolve_root as _shared_resolve
 
     root = _shared_resolve()
     if root is not None:
@@ -154,7 +154,7 @@ def _render_digest(messages: List[Dict[str, Any]]) -> str:
 
 
 class MindProvider(MemoryProvider):
-    """Vaelis memory provider that bridges to the Mind vault."""
+    """Plobi memory provider that bridges to the Mind vault."""
 
     def __init__(self) -> None:
         self._session_id: str = ""
@@ -265,8 +265,8 @@ class MindProvider(MemoryProvider):
     def _maybe_publish_daily_agenda(self) -> None:
         """WP-MIND 写接缝：每会话每天一次，把当日日程摘要发进 Mind。
 
-        走既有 ``vaelis.agenda.mind_sync`` 通道（MindWriter 串行服务、无模型
-        渲染、目标 ``Vault/projects/Vaelis/daily/<date>.md``）。不新增 API、
+        走既有 ``plobi.agenda.mind_sync`` 通道（MindWriter 串行服务、无模型
+        渲染、目标 ``Vault/projects/Plobi/daily/<date>.md``）。不新增 API、
         不并行写。任何失败只降级为日志告警，绝不阻塞主对话流；非 primary
         上下文（cron/flush）直接跳过，运行时状态真源始终是 SQLite（ADR-0007）。
         """
@@ -277,12 +277,12 @@ class MindProvider(MemoryProvider):
             return
         self._agenda_published_date = today  # 当天不再重试，避免失败刷屏/每轮重写
         try:
-            from vaelis.agenda.mind_sync import publish_project_daily_summary
+            from plobi.agenda.mind_sync import publish_project_daily_summary
 
             result = publish_project_daily_summary()
             if result.ok:
                 logger.info(
-                    "[mind] daily agenda summary published to Vault/projects/Vaelis"
+                    "[mind] daily agenda summary published to Vault/projects/Plobi"
                 )
             else:
                 logger.warning(
@@ -368,12 +368,12 @@ class MindProvider(MemoryProvider):
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Mirror Vaelis MEMORY.md/USER.md writes into the Mind vault.
+        """Mirror Plobi MEMORY.md/USER.md writes into the Mind vault.
 
         - ``remove`` actions never delete from the second brain (log only).
         - concept/entity/source-kind metadata routes to ``Loom/wiki/concepts/``
-          (``vaelis-<slug>.md``); everything else lands in
-          ``Vault/projects/Vaelis/<slug>.md``.
+          (``plobi-<slug>.md``); everything else lands in
+          ``Vault/projects/Plobi/<slug>.md``.
         - Writes go through MindWriter after an ``_is_safe`` assertion.
 
         Triggered by MemoryManager.notify_memory_tool_write (verified caller
@@ -393,9 +393,9 @@ class MindProvider(MemoryProvider):
             meta = metadata or {}
             kind = str(meta.get("kind", "")).lower()
             if kind in ("concept", "entity", "source") or "concepts" in str(target).lower():
-                rel = f"Loom/wiki/concepts/vaelis-{slug}.md"
+                rel = f"Loom/wiki/concepts/plobi-{slug}.md"
             else:
-                rel = f"Vault/projects/Vaelis/{slug}.md"
+                rel = f"Vault/projects/Plobi/{slug}.md"
 
             if not _is_safe((root / rel).resolve(), root):
                 logger.warning("[mind] refused on_memory_write: %s", rel)

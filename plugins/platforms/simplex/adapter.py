@@ -1,11 +1,11 @@
-"""SimpleX Chat platform adapter (Vaelis plugin).
+"""SimpleX Chat platform adapter (Plobi plugin).
 
 Connects to a simplex-chat daemon running in WebSocket mode.
 Inbound messages arrive via a persistent WebSocket connection.
 Outbound messages use the same WebSocket with JSON commands.
 
-This adapter ships as a Vaelis platform plugin under
-``plugins/platforms/simplex/``. The Vaelis plugin loader scans the
+This adapter ships as a Plobi platform plugin under
+``plugins/platforms/simplex/``. The Plobi plugin loader scans the
 directory at startup, calls ``register(ctx)``, and the platform
 becomes available to ``gateway/run.py`` and ``tools/send_message_tool``
 through the registry — no edits to core files are required.
@@ -57,7 +57,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Lazy import: BasePlatformAdapter and friends live in the main repo.
-# Imported at module top because they're stdlib-only inside Vaelis — no
+# Imported at module top because they're stdlib-only inside Plobi — no
 # external dependency that would block the plugin from loading.
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
@@ -1275,7 +1275,7 @@ def interactive_setup() -> None:
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Vaelis plugin system at startup."""
+    """Plugin entry point — called by the Plobi plugin system at startup."""
     ctx.register_platform(
         name="simplex",
         label="SimpleX Chat",

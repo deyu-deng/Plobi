@@ -42,7 +42,7 @@ Wire protocol
 
     # Block a pre_tool_call (either shape accepted; normalised internally):
     {"decision": "block", "reason":  "Forbidden command"}   # Claude-Code-style
-    {"action":   "block", "message": "Forbidden command"}   # Vaelis-canonical
+    {"action":   "block", "message": "Forbidden command"}   # Plobi-canonical
 
     # Inject context for pre_llm_call:
     {"context": "Today is Friday"}
@@ -564,10 +564,10 @@ def _block_message(primary: Any, secondary: Any) -> str:
 
 
 def _parse_response(event: str, stdout: str) -> Optional[Dict[str, Any]]:
-    """Translate stdout JSON into a Vaelis wire-shape dict.
+    """Translate stdout JSON into a Plobi wire-shape dict.
 
     For ``pre_tool_call`` the Claude-Code-style ``{"decision": "block",
-    "reason": "..."}`` payload is translated into the canonical Vaelis
+    "reason": "..."}`` payload is translated into the canonical Plobi
     ``{"action": "block", "message": "..."}`` shape expected by
     :func:`hermes_cli.plugins.get_pre_tool_call_block_message`.  This is
     the single most important correctness invariant in this module —
@@ -603,7 +603,7 @@ def _parse_response(event: str, stdout: str) -> Optional[Dict[str, Any]]:
         return None
 
     if event == "pre_verify":
-        # "continue" (Vaelis) / "block" (Claude-Code Stop: block the stop) both
+        # "continue" (Plobi) / "block" (Claude-Code Stop: block the stop) both
         # mean keep going; the message/reason is the follow-up for the model. A
         # continue with no message is a no-op — let the turn finish.
         action = str(data.get("action") or data.get("decision") or "").strip().lower()
@@ -737,7 +737,7 @@ def _prompt_and_record(
         return False
 
     print(
-        f"\n⚠ Vaelis is about to register a shell hook that will run a\n"
+        f"\n⚠ Plobi is about to register a shell hook that will run a\n"
         f"  command on your behalf.\n\n"
         f"    Event:   {event}\n"
         f"    Command: {command}\n\n"
@@ -921,7 +921,7 @@ def run_once(
     diverge silently from production behaviour.
 
     Returns the :func:`_spawn` diagnostic dict plus a ``parsed`` field
-    holding the canonical Vaelis-wire-shape response."""
+    holding the canonical Plobi-wire-shape response."""
     stdin_json = _serialize_payload(spec.event, kwargs)
     result = _spawn(spec, stdin_json)
     result["parsed"] = _parse_response(spec.event, result["stdout"])

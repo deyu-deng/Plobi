@@ -17,7 +17,7 @@ import { setModelPreset } from '@/store/model-presets'
 import { notifyError } from '@/store/notifications'
 import { $activeSessionId, setCurrentFastMode, setCurrentReasoningEffort } from '@/store/session'
 
-// Vaelis' real reasoning levels (see VALID_REASONING_EFFORTS); `none` is owned
+// Plobi' real reasoning levels (see VALID_REASONING_EFFORTS); `none` is owned
 // by the Thinking toggle, not the radio.
 const EFFORT_OPTIONS = [
   { value: 'minimal', labelKey: 'minimal' },
@@ -233,7 +233,7 @@ export function ModelEditSubmenu({
 }
 
 function isThinkingEnabled(effort: string): boolean {
-  // Empty = Vaelis default (medium) = on; only an explicit "none" is off.
+  // Empty = Plobi default (medium) = on; only an explicit "none" is off.
   return normalize(effort || 'medium') !== 'none'
 }
 

@@ -2,7 +2,7 @@
  * Talker collection status — the data side of A7 (see
  * `docs/specs/slice-map-v1.md` A7).
  *
- * Backed by the collector's `vaelis/collectors/chatlog/state.py` status table
+ * Backed by the collector's `plobi/collectors/chatlog/state.py` status table
  * through `/api/collect/*` (mounted in `hermes_cli/web_server.py`). The board
  * entry consumes this module unchanged; the backend owns the truth.
  *

@@ -71,7 +71,7 @@ mcporter call --stdio "bun run ./server.ts" scrape url=https://example.com
 # JSON payload
 mcporter call <server.tool> --args '{"limit": 5}'
 
-# Machine-readable output (recommended for Vaelis)
+# Machine-readable output (recommended for Plobi)
 mcporter call <server.tool> key=value --output json
 ```
 

@@ -174,9 +174,9 @@ export default function UserStoriesCollage(): JSX.Element {
       <div className={styles.hero}>
         <h1>User Stories &amp; Use Cases</h1>
         <p>
-          What the Vaelis Agent community is actually building. Every tile
+          What the Plobi Agent community is actually building. Every tile
           below links to a real post, issue, video, or gist where someone
-          describes how they use Vaelis &mdash; scraped from X, GitHub, Reddit,
+          describes how they use Plobi &mdash; scraped from X, GitHub, Reddit,
           Hacker News, YouTube, blogs, and podcasts.
         </p>
         <div className={styles.meta}>
@@ -293,7 +293,7 @@ export default function UserStoriesCollage(): JSX.Element {
       )}
 
       <div className={styles.footer}>
-        Built something with Vaelis?{' '}
+        Built something with Plobi?{' '}
         <a
           href="https://github.com/NousResearch/hermes-agent/edit/main/website/src/data/userStories.json"
           target="_blank"

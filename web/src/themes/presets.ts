@@ -40,8 +40,8 @@ const DEFAULT_LAYOUT: ThemeLayout = {
 
 export const defaultTheme: DashboardTheme = {
   name: "default",
-  label: "Vaelis Teal",
-  description: "Classic dark teal — the canonical Vaelis look",
+  label: "Plobi Teal",
+  description: "Classic dark teal — the canonical Plobi look",
   palette: {
     background: { hex: "#041c1c", alpha: 1 },
     midground: { hex: "#ffe6cb", alpha: 1 },
@@ -214,8 +214,8 @@ export const nousBlueTheme: DashboardTheme = {
  */
 export const defaultLargeTheme: DashboardTheme = {
   name: "default-large",
-  label: "Vaelis Teal (Large)",
-  description: "Vaelis Teal with bigger fonts and roomier spacing",
+  label: "Plobi Teal (Large)",
+  description: "Plobi Teal with bigger fonts and roomier spacing",
   palette: defaultTheme.palette,
   typography: {
     ...DEFAULT_TYPOGRAPHY,
