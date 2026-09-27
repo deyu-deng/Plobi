@@ -6734,10 +6734,8 @@ OFFICIAL_REPO_URLS = {
     "https://github.com/deyu-deng/Plobi.git",
     "git@github.com:deyu-deng/Plobi.git",
     "https://github.com/deyu-deng/Plobi",
-    "git@github.com:NousResearch/hermes-agent",
 }
 OFFICIAL_REPO_URL = "https://github.com/deyu-deng/Plobi.git"
-SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
 
 
 def _get_origin_url(git_cmd: list[str], cwd: Path) -> Optional[str]:
@@ -6771,215 +6769,6 @@ def _is_fork(origin_url: Optional[str]) -> bool:
         if normalized == official_normalized:
             return False
     return True
-
-
-def _has_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
-    """Check if an 'upstream' remote already exists."""
-    try:
-        result = subprocess.run(
-            git_cmd + ["remote", "get-url", "upstream"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
-
-
-def _add_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
-    """Add the official repo as the 'upstream' remote. Returns True on success."""
-    try:
-        result = subprocess.run(
-            git_cmd + ["remote", "add", "upstream", OFFICIAL_REPO_URL],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
-
-
-def _count_commits_between(git_cmd: list[str], cwd: Path, base: str, head: str) -> int:
-    """Count commits on `head` that are not on `base`. Returns -1 on error."""
-    try:
-        result = subprocess.run(
-            git_cmd + ["rev-list", "--count", f"{base}..{head}"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            return int(result.stdout.strip())
-    except Exception:
-        pass
-    return -1
-
-
-def _should_skip_upstream_prompt() -> bool:
-    """Check if user previously declined to add upstream."""
-    from plobi_constants import get_plobi_home
-
-    return (get_plobi_home() / SKIP_UPSTREAM_PROMPT_FILE).exists()
-
-
-def _mark_skip_upstream_prompt():
-    """Create marker file to skip future upstream prompts."""
-    try:
-        from plobi_constants import get_plobi_home
-
-        (get_plobi_home() / SKIP_UPSTREAM_PROMPT_FILE).touch()
-    except Exception:
-        pass
-
-
-def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
-    """Attempt to push updated main to origin (sync fork).
-
-    Returns True if push succeeded, False otherwise.
-
-    FROZEN in local dev builds: runtime git push is a self-update-adjacent
-    mutation and is disabled (see ``_SELF_UPDATE_DISABLED_MSG``). This
-    function is currently unreachable (only called from the disabled update
-    machinery); the guard is belt-and-suspenders against future callers.
-    """
-    print(_SELF_UPDATE_DISABLED_MSG)
-    return False
-    try:
-        result = subprocess.run(
-            git_cmd + ["push", "origin", "main", "--force-with-lease"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
-
-
-def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
-    """Check if fork is behind upstream and sync if safe.
-
-    This implements the fork upstream sync logic:
-    - If upstream remote doesn't exist, ask user if they want to add it
-    - Compare origin/main with upstream/main
-    - If origin/main is strictly behind upstream/main, pull from upstream
-    - Try to sync fork back to origin if possible
-
-    FROZEN in local dev builds: runtime ``git fetch``/``git pull`` are
-    self-update-adjacent mutations and are disabled (see
-    ``_SELF_UPDATE_DISABLED_MSG``). This function is currently unreachable
-    (only called from the disabled update machinery); the guard is
-    belt-and-suspenders against future callers.
-    """
-    print(_SELF_UPDATE_DISABLED_MSG)
-    return
-    has_upstream = _has_upstream_remote(git_cmd, cwd)
-
-    if not has_upstream:
-        # Check if user previously declined
-        if _should_skip_upstream_prompt():
-            return
-
-        # Ask user if they want to add upstream
-        print()
-        print("ℹ Your fork is not tracking the official Plobi repository.")
-        print("  This means you may miss updates from NousResearch/hermes-agent.")
-        print()
-        try:
-            response = (
-                input("Add official repo as 'upstream' remote? [Y/n]: ").strip().lower()
-            )
-        except (EOFError, KeyboardInterrupt):
-            print()
-            response = "n"
-
-        if response in {"", "y", "yes"}:
-            print("→ Adding upstream remote...")
-            if _add_upstream_remote(git_cmd, cwd):
-                print(
-                    "  ✓ Added upstream: https://github.com/deyu-deng/Plobi.git"
-                )
-                has_upstream = True
-            else:
-                print("  ✗ Failed to add upstream remote. Skipping upstream sync.")
-                return
-        else:
-            print(
-                "  Skipped. Run 'git remote add upstream https://github.com/deyu-deng/Plobi.git' to add later."
-            )
-            _mark_skip_upstream_prompt()
-            return
-
-    # Fetch upstream main only. This sync compares upstream/main with
-    # origin/main, so there's no reason to pull every upstream ref — and a bare
-    # fetch drags in thousands of auto-generated branches.
-    print()
-    print("→ Fetching upstream...")
-    try:
-        subprocess.run(
-            git_cmd + ["fetch", "upstream", "main", "--quiet"],
-            cwd=cwd,
-            capture_output=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError:
-        print("  ✗ Failed to fetch upstream. Skipping upstream sync.")
-        return
-
-    # Compare origin/main with upstream/main
-    origin_ahead = _count_commits_between(git_cmd, cwd, "upstream/main", "origin/main")
-    upstream_ahead = _count_commits_between(
-        git_cmd, cwd, "origin/main", "upstream/main"
-    )
-
-    if origin_ahead < 0 or upstream_ahead < 0:
-        print("  ✗ Could not compare branches. Skipping upstream sync.")
-        return
-
-    # If origin/main has commits not on upstream, don't trample
-    if origin_ahead > 0:
-        print()
-        print(f"ℹ Your fork has {origin_ahead} commit(s) not on upstream.")
-        print("  Skipping upstream sync to preserve your changes.")
-        print("  If you want to merge upstream changes, run:")
-        print("    git pull upstream main")
-        return
-
-    # If upstream is not ahead, fork is up to date
-    if upstream_ahead == 0:
-        print("  ✓ Fork is up to date with upstream")
-        return
-
-    # origin/main is strictly behind upstream/main (can fast-forward)
-    print()
-    print(f"→ Fork is {upstream_ahead} commit(s) behind upstream")
-    print("→ Pulling from upstream...")
-
-    try:
-        subprocess.run(
-            git_cmd + ["pull", "--ff-only", "upstream", "main"],
-            cwd=cwd,
-            check=True,
-        )
-    except subprocess.CalledProcessError:
-        print(
-            "  ✗ Failed to pull from upstream. You may need to resolve conflicts manually."
-        )
-        return
-
-    print("  ✓ Updated from upstream")
-
-    # Try to sync fork back to origin
-    print("→ Syncing fork...")
-    if _sync_fork_with_upstream(git_cmd, cwd):
-        print("  ✓ Fork synced with upstream")
-    else:
-        print(
-            "  ℹ Got updates from upstream but couldn't push to fork (no write access?)"
-        )
-        print("    Your local repo is updated, but your fork on GitHub may be behind.")
 
 
 def _invalidate_update_cache():
@@ -9709,9 +9498,6 @@ def _cmd_update_impl(args, gateway_mode: bool):
         if commit_count == 0:
             _invalidate_update_cache()
 
-            # Even if origin is up to date, the fork may be behind upstream
-            if is_fork and branch == "main":
-                _sync_with_upstream_if_needed(git_cmd, PROJECT_ROOT)
 
             # Restore stash and switch back to original branch if we moved
             if auto_stash_ref is not None:
@@ -9920,9 +9706,6 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
             )
 
-        # Fork upstream sync logic (only for main branch on forks)
-        if is_fork and branch == "main":
-            _sync_with_upstream_if_needed(git_cmd, PROJECT_ROOT)
 
         # Reinstall Python dependencies. Prefer .[all], but if one optional extra
         # breaks on this machine, keep base deps and reinstall the remaining extras
