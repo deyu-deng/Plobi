@@ -86,7 +86,10 @@ test('desktop backend teardown tree-kills Windows backend descendants', () => {
   assert.match(helperSnippet, /forceKillProcessTree\(child\.pid\)/)
   assert.match(helperSnippet, /child\.kill\('SIGTERM'\)/)
 
-  const resetIndex = source.indexOf('function resetPlobiConnection()')
+    // Match the declaration by name, not by an exact parameter list: the
+  // signature carries `{ soft = false } = {}` today, and pinning the parens
+  // made this assertion dead (it predates R-038 — this suite never ran).
+  const resetIndex = source.indexOf('function resetPlobiConnection(')
   assert.notEqual(resetIndex, -1, 'missing resetPlobiConnection')
   const resetSnippet = source.slice(resetIndex, resetIndex + 300)
   assert.match(resetSnippet, /stopBackendChild\(plobiProcess\)/)
@@ -94,7 +97,10 @@ test('desktop backend teardown tree-kills Windows backend descendants', () => {
 
   const quitIndex = source.indexOf("app.on('before-quit'")
   assert.notEqual(quitIndex, -1, 'missing before-quit handler')
-  const quitSnippet = source.slice(quitIndex, quitIndex + 900)
+  // The handler is long (tray teardown, pet overlay, installer abort, log
+  // flush...) and the backend stop sits near its end, so the window has to
+  // cover the whole body — 900 chars cut it off and made this dead.
+  const quitSnippet = source.slice(quitIndex, quitIndex + 3000)
   assert.match(quitSnippet, /stopBackendChild\(plobiProcess\)/)
   assert.doesNotMatch(quitSnippet, /plobiProcess\.kill\('SIGTERM'\)/)
 })
