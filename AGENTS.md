@@ -1283,7 +1283,7 @@ guards and be dispatched inline, not via `_process_message_background()`
 
 ### Squash merges from stale branches silently revert recent fixes
 Before squash-merging a PR, ensure the branch is up to date with `main`
-(`git fetch origin main && git reset --hard origin/main` in the worktree,
+(`git fetch github main && git reset --hard github/main` in the worktree,
 then re-apply the PR's commits). A stale branch's version of an unrelated
 file will silently overwrite recent fixes on main when squashed. Verify
 with `git diff HEAD~1..HEAD` after merging — unexpected deletions are a
@@ -1295,7 +1295,12 @@ unused module into a live code path, E2E test the real resolution chain
 with actual imports (not mocks) against a temp `PLOBI_HOME`.
 
 ### Tests must not write to `~/.plobi/`
-The `_isolate_plobi_home` autouse fixture in `tests/conftest.py` redirects `PLOBI_HOME` to a temp dir. Never hardcode `~/.plobi/` paths in tests.
+Isolation is the **runner's** job: `scripts/run_tests.sh` creates a throwaway `HOME` and
+`PLOBI_HOME` per run and removes them on exit (`tests/scripts/test_run_tests_home_isolation.py`
+applies the contract). Inside pytest, `_hermetic_environment` redirects `PLOBI_HOME`; the
+`_isolate_plobi_home` fixture is a **no-op compatibility alias** (conftest.py:400) — do not
+rely on its name as proof of isolation. Never hardcode `~/.plobi/` paths in tests, and never
+call `pytest` directly to get around the wrapper.
 
 **Profile tests**: When testing profile features, also mock `Path.home()` so that
 `_get_profiles_root()` and `_get_default_plobi_home()` resolve within the temp dir.
@@ -1316,9 +1321,12 @@ def profile_env(tmp_path, monkeypatch):
 
 **ALWAYS use `scripts/run_tests.sh`** — do not call `pytest` directly. The script enforces
 hermetic environment parity with CI (unset credential vars, TZ=UTC, LANG=C.UTF-8,
-`-n auto` xdist workers, in-tree subprocess-isolation plugin). Direct `pytest`
+subprocess-per-test-file via `run_tests_parallel.py`, **no xdist**, and a throwaway
+`HOME`/`PLOBI_HOME` it creates and removes itself). Direct `pytest`
 on a 16+ core developer machine with API keys set diverges from CI in ways
 that have caused multiple "works locally, fails in CI" incidents (and the reverse).
+It also writes into your real `~/.plobi` — that pollution is a security problem,
+not just a hygiene one (one run landed a live `gh` token in `auth.json`).
 
 ```bash
 scripts/run_tests.sh                                  # full suite, CI-parity
@@ -1393,7 +1401,8 @@ them into invariants before re-requesting review.
 
 ## Documentation Discipline
 
-**项目级文档真源不在本仓，在 `D:\Projects\Plobi\Docs\`**（平铺目录，索引 = `Docs/README.md`，
+**项目级文档真源不在本仓，在仓外的 `../Docs/`**（与 `Code/` 同级的平铺目录，机器布局见
+`Docs/README.md` 头部；索引 = `Docs/README.md`，
 纪律 = 其 §0）。那里登记排期、需求、裁定、验收与交接；本仓 `docs/` 只剩 `docs/plobi/README.md`
 一个指针文件（历史上曾按 Diátaxis 建过 `adr/ specs/ runbooks/ …` 树，内容已整体迁出到上面的
 `Docs/`，树本身随 `.git` 事故清空）。**不要在本仓 `docs/` 下新建项目级文档**；实现级细节
