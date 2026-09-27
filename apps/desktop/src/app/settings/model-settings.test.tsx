@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,7 +33,11 @@ vi.mock('@/plobi', () => ({
   saveMoaModels: (body: unknown) => saveMoaModels(body),
   setEnvVar: (key: string, value: string) => setEnvVar(key, value),
   getPlobiConfigRecord: () => getPlobiConfigRecord(),
-  savePlobiConfig: (config: unknown) => savePlobiConfig(config)
+  savePlobiConfig: (config: unknown) => savePlobiConfig(config),
+  // The panel calls this on mount/unmount to pin API requests to a profile.
+  // The mock factory must export every name the module imports, or vitest
+  // throws "No ... export is defined on the mock" for the whole file.
+  setApiRequestProfile: () => undefined
 }))
 
 vi.mock('@/store/onboarding', () => ({
@@ -72,7 +77,14 @@ afterEach(() => {
 async function renderModelSettings() {
   const { ModelSettings } = await import('./model-settings')
 
-  return render(<ModelSettings />)
+  // The panel loads config/models through useQuery (react-query), so it needs a
+  // client; retry:false keeps a failing query from stalling the assertions.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <ModelSettings />
+    </QueryClientProvider>
+  )
 }
 
 describe('ModelSettings', () => {

@@ -1,4 +1,6 @@
-import { defineConfig } from 'vite'
+// `vitest/config` re-exports vite's defineConfig with the `test` key typed;
+// plain `vite` would reject it.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
@@ -77,5 +79,13 @@ export default defineConfig({
   preview: {
     host: '127.0.0.1',
     port: 4174
+  },
+  test: {
+    environment: 'jsdom',
+    // Scoped to src on purpose: the electron/*.test.ts files are node:test
+    // suites (run by `npm run test:desktop:platforms`). When vitest collected
+    // them it reported "No test suite found" — a silently unrun file.
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['./src/test/jsdom-globals.ts'],
   }
 })

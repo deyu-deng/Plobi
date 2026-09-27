@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MessagingPlatformInfo } from '@/types/plobi'
 
@@ -41,6 +41,12 @@ function platform(patch: Partial<MessagingPlatformInfo> = {}): MessagingPlatform
     ...patch
   }
 }
+
+beforeAll(async () => {
+  // Warm the lazily-imported view here, not inside the first test: a cold
+  // transform of its import graph costs ~3s and would eat the 5s test budget.
+  await import('./index')
+}, 30000)
 
 beforeEach(() => {
   updateMessagingPlatform.mockResolvedValue({ ok: true, platform: 'teams' })
