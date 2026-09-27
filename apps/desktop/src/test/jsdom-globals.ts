@@ -6,14 +6,13 @@
  * implemented by jsdom; without it the whole thread renderer dies with
  * "Cannot read properties of undefined (reading 'escape'".
  *
- * `localStorage` / `sessionStorage` — Node >= 22.4 ships its own experimental
- *
- * Node >= 22.4 ships its own experimental `globalThis.localStorage`, which is
- * `undefined` unless the process was started with `--localstorage-file`. Vitest
- * copies the global onto the jsdom window, so `window.localStorage` — what
- * `src/lib/storage.ts` actually calls — resolves to that undefined value and
- * every storage-backed test dies with
- * "Cannot read properties of undefined (reading 'clear')".
+ * `localStorage` / `sessionStorage` — Node >= 22.4 defines an experimental
+ * `globalThis.localStorage` that is `undefined` unless the process was started
+ * with `--localstorage-file` (it prints "localStorage is not available…" on
+ * every run), and that undefined value reaches the jsdom window too: with the
+ * storage install below commented out, `src/lib/storage.test.ts` and
+ * `src/store/preview.test.ts` die with "Cannot read properties of undefined
+ * (reading 'clear')" even though `environment: 'jsdom'` is set in the config.
  *
  * The one-line fix would be `NODE_OPTIONS=--no-experimental-webstorage`, but
  * that flag does not exist on older Node, so it would break the very machines
