@@ -571,7 +571,7 @@ def recommended_update_command() -> str:
 # banner, the TUI/desktop session info panel, and ``plobi update``. NixOS
 # stays fully supported (Tier 2) and must never hit this path.
 
-PLATFORM_SUPPORT_DOCS_URL = "https://hermes-agent.nousresearch.com/docs/getting-started/platform-support"
+PLATFORM_SUPPORT_DOCS_URL = "https://github.com/deyu-deng/Plobi/blob/main/website/docs/getting-started/platform-support.md"
 
 _UNSUPPORTED_INSTALL_METHODS = frozenset({"pip", "homebrew"})
 
@@ -2818,7 +2818,7 @@ DEFAULT_CONFIG = {
     # The default URL is served by the docs site GitHub Pages deploy.
     "model_catalog": {
         "enabled": True,
-        "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
+        "url": "https://raw.githubusercontent.com/deyu-deng/Plobi/main/website/static/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
         # next /model or `plobi model` invocation; network failures
         # silently fall back to the stale cache.

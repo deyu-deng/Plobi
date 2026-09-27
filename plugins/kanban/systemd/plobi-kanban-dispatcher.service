@@ -15,7 +15,7 @@
 
 [Unit]
 Description=Plobi Kanban dispatcher (DEPRECATED standalone daemon — prefer gateway-embedded dispatch)
-Documentation=https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
+Documentation=https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/kanban.md
 After=network.target
 
 [Service]
