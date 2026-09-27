@@ -92,7 +92,7 @@ import numpy as np
 from segment_anything import sam_model_registry, SamPredictor
 
 # 加载模型
-sam = sam_model_registry["vit_h"](https://github.com/deyu-deng/Plobi/blob/main/skills/mlops/models/segment-anything/checkpoint="sam_vit_h_4b8939.pth")
+sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
 sam.to(device="cuda")
 
 # 创建预测器
@@ -478,7 +478,7 @@ decoded_mask = mask_utils.decode(rle)
 
 ```python
 # 在 VRAM 有限时使用较小模型
-sam = sam_model_registry["vit_b"](https://github.com/deyu-deng/Plobi/blob/main/skills/mlops/models/segment-anything/checkpoint="sam_vit_b_01ec64.pth")
+sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b_01ec64.pth")
 
 # 批量处理图像
 # 在大批量之间清空 CUDA 缓存
