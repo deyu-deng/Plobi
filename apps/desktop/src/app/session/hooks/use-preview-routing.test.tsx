@@ -139,6 +139,10 @@ describe('usePreviewRouting', () => {
     act(() => handleEvent({ payload: { path: './dist/index.html' }, session_id: 'session-1', type: 'tool.complete' }))
 
     expect($previewTarget.get()).toBeNull()
-    expect(window.localStorage.getItem('plobi.desktop.sessionPreviews.v1')).toBeNull()
+    // The registry atom persists eagerly (module-load subscribe), so an empty
+    // `{}` row is expected; what must not happen is a session entry.
+    const stored = window.localStorage.getItem('plobi.desktop.sessionPreviews.v1')
+
+    expect(JSON.parse(stored ?? '{}')).toEqual({})
   })
 })

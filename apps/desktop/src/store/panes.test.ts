@@ -97,14 +97,24 @@ describe('panes store', () => {
       expect(getPaneStateSnapshot('files')?.widthOverride).toBeUndefined()
     })
 
-    it('width override is in-memory only — not persisted across reloads', () => {
+    // panes.ts persists the whole snapshot (open + resize overrides) and load()
+    // re-validates it, so a hand-resized pane keeps its width across reloads.
+    it('width override is persisted for the next reload', () => {
       ensurePaneRegistered('files', { open: true })
       setPaneWidthOverride('files', 300)
 
       const persisted = window.localStorage.getItem(STORAGE_KEY)
 
       expect(persisted).not.toBeNull()
-      expect(JSON.parse(persisted ?? '{}')).toEqual({ files: { open: true } })
+      expect(JSON.parse(persisted ?? '{}')).toEqual({ files: { open: true, widthOverride: 300 } })
+    })
+
+    it('cleared width override is not persisted', () => {
+      ensurePaneRegistered('files', { open: true })
+      setPaneWidthOverride('files', 300)
+      clearPaneWidthOverride('files')
+
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual({ files: { open: true } })
     })
 
     it('open flag is persisted across changes', () => {
