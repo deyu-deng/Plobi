@@ -39,11 +39,20 @@ def test_check_chatlog_green(monkeypatch):
     assert row["color"] == D.GREEN
 
 
-def test_check_chatlog_red_when_down(monkeypatch):
+def test_check_chatlog_deferred_when_no_listener(monkeypatch):
+    """R-047: nothing listening is the postponed state, not a fault."""
     monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5: (None, None))
     row = D.check_chatlog()
-    assert row["color"] == D.RED
+    assert row["color"] == D.DEFERRED
     assert "unreachable" in row["detail"]
+    assert "R-047" in row["detail"]
+
+
+def test_check_chatlog_stays_red_when_answered_wrongly(monkeypatch):
+    """A service that is up and returning 503 is a real fault, so it stays red."""
+    monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5: (503, None))
+    row = D.check_chatlog()
+    assert row["color"] == D.RED
 
 
 def test_check_aigw_yellow_without_workbuddy(monkeypatch):
@@ -65,6 +74,20 @@ def test_check_aigw_green_with_workbuddy(monkeypatch):
     )
     row = D.check_aigw("http://127.0.0.1:8000/v1")
     assert row["color"] == D.GREEN
+
+
+def test_check_aigw_deferred_when_no_listener(monkeypatch):
+    monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5, headers=None: (None, None))
+    row = D.check_aigw("http://127.0.0.1:8000/v1")
+    assert row["color"] == D.DEFERRED
+    assert "unreachable" in row["detail"]
+    assert row["url"] == "http://127.0.0.1:8000/v1/models"
+
+
+def test_check_aigw_stays_red_when_answered_wrongly(monkeypatch):
+    monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5, headers=None: (500, None))
+    row = D.check_aigw("http://127.0.0.1:8000/v1")
+    assert row["color"] == D.RED
 
 
 def test_load_env_file_does_not_need_quotes(tmp_path: Path):
@@ -103,6 +126,45 @@ def test_check_chatlog_config_blacklist(tmp_path: Path):
     assert row["color"] == D.GREEN
 
 
+def test_check_chatlog_config_deferred_when_never_set_up(tmp_path: Path):
+    """Absent config == postponed (R-047); the collector was never turned on."""
+    row = D.check_chatlog_config(tmp_path)
+    assert row["color"] == D.DEFERRED
+    assert "missing" in row["detail"]
+
+
+def test_check_chatlog_config_stays_red_when_misconfigured(tmp_path: Path):
+    """A config that exists but is the wrong mode means someone switched the
+    collector on and it is broken — deferral must not swallow that."""
+    cfg = tmp_path / "plobi" / "chatlog.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"mode": "whitelist"}), encoding="utf-8")
+    row = D.check_chatlog_config(tmp_path)
+    assert row["color"] == D.RED
+
+
+def test_check_whitelist_eff_deferred_when_never_swept(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("PLOBI_CHATLOG_CONFIG", raising=False)
+    row = D.check_chatlog_whitelist_efficiency(tmp_path)
+    assert row["color"] == D.DEFERRED
+    assert "no sweep has ever run" in row["detail"]
+
+
+def test_deferred_ids_all_have_an_enable_hint_and_no_windows_launcher():
+    """Deferred rows must say how to switch the capability on *here*.
+
+    The Windows box was decommissioned on 2026-09-27, so any hint pointing at a
+    ``.ps1`` launcher is advice nobody on this machine can follow — that is how
+    the old red rows lied.
+    """
+    assert D.DEFERRED_CAPABILITY_IDS == {"chatlog", "aigw", "collect", "whitelist_eff"}
+    for check_id in D.DEFERRED_CAPABILITY_IDS:
+        hint = D.DEFERRED_ENABLE_HINTS[check_id]
+        assert hint.strip()
+        assert ".ps1" not in hint
+        assert D.deferred_row(check_id, "observed")["color"] == D.DEFERRED
+
+
 def test_soul_has_routing_block_old_html_fence():
     assert D.soul_has_routing_block("<!-- PLOBI_L1_SECRETARY_ROUTING -->\n")
 
@@ -136,6 +198,19 @@ def test_check_north_star_new_colon_fence(tmp_path: Path):
 def test_worst_exit():
     assert D.worst_exit([{"color": "yellow"}]) == 0
     assert D.worst_exit([{"color": "red"}]) == 1
+
+
+def test_worst_exit_deferred_does_not_fail_the_run():
+    """R-047: a fully healthy machine with the collection stack postponed must
+    still exit 0. Red is the only failing colour."""
+    rows = [
+        {"color": D.GREEN},
+        {"color": D.DEFERRED},
+        {"color": D.DEFERRED},
+        {"color": D.YELLOW},
+    ]
+    assert D.worst_exit(rows) == 0
+    assert D.worst_exit(rows + [{"color": D.RED}]) == 1
 
 
 def test_main_json(monkeypatch, capsys):

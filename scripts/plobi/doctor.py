@@ -1,6 +1,7 @@
 """Plobi environment doctor — chatlog / aigw / DingTalk / profile (C line).
 
-One command, three-color table. Exit 0 only when nothing is red.
+One command, one status table. Exit 0 when nothing is red — ``deferred`` rows
+do NOT fail the run (see :data:`DEFERRED`).
 Does not send DingTalk unless ``--send-test``. Never prints secrets.
 
     python scripts/plobi/doctor.py
@@ -40,6 +41,75 @@ DEFAULT_AIGW_PORT = 8000
 NORTH_STAR = "plobi_north_star"
 
 GREEN, YELLOW, RED = "green", "yellow", "red"
+
+# ---------------------------------------------------------------------------
+# R-047 — a fourth status: DEFERRED ("后置，不是坏了").
+#
+# The product owner explicitly postponed the WeChat collection stack:
+# 「先不要做采集的功能了 … 等应用打磨得比较完整了，我才会提供数据的。」
+# Reporting those rows red was a *false* red — it destroyed the meaning of
+# "red == something broke" and drowned the two rows that genuinely need fixing
+# (``dingtalk`` missing its webhook secret, ``north_star`` not wired into a
+# toolset).
+#
+# This is NOT the LAN row's trick (see ``collect_app_pairing_info`` above):
+# LAN is dropped from the table entirely because it is opt-in read-out. A
+# deferred capability stays in the table, still gets probed, and still goes
+# GREEN the moment it is really live — deferral is a product decision about
+# priority, not a permanent disable. Only a *failed* probe is downgraded from
+# red to deferred.
+#
+# ``DEFERRED`` is 8 chars, so it fills the existing ``{'color':<8}`` column
+# exactly and the table keeps its alignment.
+# ---------------------------------------------------------------------------
+DEFERRED = "deferred"
+
+# One line per deferred capability: what it would take to switch it on *on this
+# machine*. These must never name a PowerShell launcher — the Windows box was
+# decommissioned on 2026-09-27 and macOS is now the only true source, so advice
+# like "run scripts/chatlog_server.ps1" is unactionable and misleading. Every
+# hint below was verified against this checkout.
+DEFERRED_ENABLE_HINTS: dict[str, str] = {
+    "chatlog": (
+        "install Go (absent on this machine), `cd tools/chatlog && "
+        "go build -o bin/chatlog ./cmd/chatlog`, log into WeChat, export "
+        "CHATLOG_DATA_KEY, serve on :5030"
+    ),
+    "aigw": (
+        "`cd aigw && uv run python -m aigw start --config config.yaml` "
+        "(port 8000 = config.yaml server.port), then move `routing.rules` off "
+        "the `mock` provider"
+    ),
+    "collect": (
+        "do the first-run blacklist review so $PLOBI_HOME/plobi/chatlog.json "
+        "exists with mode=blacklist (needs chatlog live first)"
+    ),
+    "whitelist_eff": (
+        "`uv run python scripts/plobi/whitelist_report.py` once the collector "
+        "has real traffic to sweep"
+    ),
+}
+
+# The four R-047 ids. Kept as a set so ``worst_exit`` and any future consumer
+# share one definition of "which capabilities are deferred".
+DEFERRED_CAPABILITY_IDS = frozenset(DEFERRED_ENABLE_HINTS)
+
+
+def deferred_row(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
+    """Build a DEFERRED row: the real probe result + why it is not a fault.
+
+    ``observed`` is the honest outcome of the probe that was still performed
+    (port refused, file absent, HTTP 503, …). It is never elided — a deferred
+    row that hides what it found is indistinguishable from a skipped check.
+    """
+    hint = DEFERRED_ENABLE_HINTS[check_id]
+    detail = (
+        f"{observed} — deferred by R-047 (postponed, not a fault; turns green "
+        f"on its own once live). Enable: {hint}"
+    )
+    row: dict[str, Any] = {"id": check_id, "color": DEFERRED, "detail": detail}
+    row.update(extra)
+    return row
 
 # Below this share of active traffic being captured by the collector counts
 # as "whitelist is leaking chat" — spec from
@@ -364,11 +434,10 @@ def check_chatlog(base_url: str = DEFAULT_CHATLOG_URL) -> dict[str, Any]:
                 "detail": f"{base}{path} ok",
             }
     if last_code is None:
-        return {
-            "id": "chatlog",
-            "color": RED,
-            "detail": f"{base} unreachable — start scripts/chatlog_server.ps1 (WeChat login + CHATLOG_DATA_KEY)",
-        }
+        # R-047: nothing is listening because the collection stack is postponed,
+        # not because anything broke. A *reachable* service answering non-200
+        # still reports red below — that one is a real fault.
+        return deferred_row("chatlog", f"{base} unreachable (no listener)")
     return {
         "id": "chatlog",
         "color": RED,
@@ -383,11 +452,15 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
         models_url,
         headers={"Authorization": f"Bearer {aigw_api_key()}"},
     )
+    if code is None:
+        # R-047: no listener at all. Deferral covers "not started yet"; an
+        # answered-but-wrong request below is still a real fault.
+        return deferred_row("aigw", f"{models_url} unreachable (no listener)", url=models_url)
     if code != 200 or payload is None:
         return {
             "id": "aigw",
             "color": RED,
-            "detail": f"{models_url} down — run scripts/plobi/aigw_start.ps1",
+            "detail": f"{models_url} HTTP {code}",
             "url": models_url,
         }
     names: list[str] = []
@@ -505,11 +578,11 @@ def check_chatlog_config(home: Path | None = None) -> dict[str, Any]:
     root = home or plobi_home()
     path = root / "plobi" / "chatlog.json"
     if not path.is_file():
-        return {
-            "id": "collect",
-            "color": RED,
-            "detail": f"{path} missing — first-run blacklist review not done",
-        }
+        # R-047: absent means "never set up", which is what deferral looks like.
+        # A file that exists but is unreadable / not an object / in the wrong
+        # mode means someone did turn the collector on and it is misconfigured,
+        # so those branches below stay red.
+        return deferred_row("collect", f"{path} missing (first-run blacklist review never done)")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -582,13 +655,13 @@ def check_chatlog_whitelist_efficiency(home: Path | None = None) -> dict[str, An
     """
     proposal_path_value = _whitelist_proposal_path(home)
     if not proposal_path_value.is_file():
-        return {
-            "id": "whitelist_eff",
-            "color": YELLOW,
-            "detail": (
-                f"no {proposal_path_value} — run scripts/plobi/whitelist_report.py to seed it"
-            ),
-        }
+        # R-047: there is no sweep because there is no collector running, and the
+        # collector is postponed. Once chatlog serves and a sweep has run, the
+        # ratio branches below take over and report green/yellow normally.
+        return deferred_row(
+            "whitelist_eff",
+            f"no {proposal_path_value} (no sweep has ever run)",
+        )
     try:
         data = json.loads(proposal_path_value.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -710,6 +783,8 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
 
 
 def worst_exit(rows: list[dict[str, Any]]) -> int:
+    # Only red fails the run. ``deferred`` is a product decision (R-047), not a
+    # fault, so a table of green + deferred must still exit 0.
     if any(row.get("color") == RED for row in rows):
         return 1
     return 0
