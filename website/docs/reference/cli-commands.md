@@ -89,7 +89,7 @@ plobi [global-options] <command> [subcommand/options]
 | `plobi profile` | Manage profiles — multiple isolated Plobi instances. |
 | `plobi completion` | Print shell completion scripts (bash/zsh/fish). |
 | `plobi version` | Show version information. |
-| `plobi update` | Pull latest code and reinstall dependencies. `--check` previews without installing; `--backup` takes a pre-pull `PLOBI_HOME` snapshot. |
+| `plobi update` | **Disabled (no-op)** — prints a notice and exits. Upgrade steps: [Updating & Uninstalling](../getting-started/updating.md). |
 | `plobi uninstall` | Remove Plobi from the system. |
 
 ## `plobi chat`
@@ -237,7 +237,7 @@ Options:
 
 | Option | Description |
 |--------|-------------|
-| `--all` | On `start` / `restart` / `stop`: act on **every profile's** gateway, not just the active `PLOBI_HOME`. Useful if you run multiple profiles side-by-side and want to restart them all after `plobi update`. |
+| `--all` | On `start` / `restart` / `stop`: act on **every profile's** gateway, not just the active `PLOBI_HOME`. Useful if you run multiple profiles side-by-side and want to restart them all after you upgrade manually. |
 | `--no-supervise` | On `run`: inside the s6-overlay Docker image, opt out of auto-supervision and use pre-s6 foreground semantics — gateway runs as the container's main process with no auto-restart. No-op outside the s6 image. Equivalent to setting `PLOBI_GATEWAY_NO_SUPERVISE=1`. |
 
 `plobi gateway enroll` accepts `--token`, `--connector-url`, `--gateway-id`, and `--wake-url`. It exchanges the enrollment token with the connector and writes the resulting `GATEWAY_RELAY_ID`, `GATEWAY_RELAY_SECRET`, `GATEWAY_RELAY_DELIVERY_KEY`, optional `GATEWAY_RELAY_URL`, and (when `--wake-url` is given) `GATEWAY_RELAY_WAKE_URL` values to the active profile's `.env`.
@@ -352,7 +352,7 @@ reinstall if scopes or slash commands changed.
 | `--description DESC` | default blurb | Bot description shown in the Slack app directory. |
 | `--slashes-only` | off | Emit only `features.slash_commands` for merging into a manually-maintained manifest. |
 
-Run `plobi slack manifest --write` again after `plobi update` to pick
+Run `plobi slack manifest --write` again after a manual upgrade to pick
 up any new commands.
 
 
@@ -1047,8 +1047,8 @@ Subcommands:
 | `audit` | Re-scan installed hub skills. |
 | `uninstall` | Remove a hub-installed skill. |
 | `reset` | Un-stick a bundled skill flagged as `user_modified` by clearing its manifest entry. With `--restore`, also replaces the user copy with the bundled version. |
-| `opt-out` | Stop bundled skills from being seeded into the active profile. Writes a `.no-bundled-skills` marker so the installer, `plobi update`, and any sync skip bundled-skill seeding. Safe by default — nothing on disk is touched. With `--remove`, also deletes already-present bundled skills that are **unmodified** (user-edited, hub-installed, and hand-written skills are never removed; previews and confirms first, `--yes` to skip). |
-| `opt-in` | Undo `opt-out` by removing the `.no-bundled-skills` marker so bundled skills are seeded again on the next `plobi update`. With `--sync`, re-seed immediately. |
+| `opt-out` | Stop bundled skills from being seeded into the active profile. Writes a `.no-bundled-skills` marker so the installer and any sync skip bundled-skill seeding. Safe by default — nothing on disk is touched. With `--remove`, also deletes already-present bundled skills that are **unmodified** (user-edited, hub-installed, and hand-written skills are never removed; previews and confirms first, `--yes` to skip). |
+| `opt-in` | Undo `opt-out` by removing the `.no-bundled-skills` marker so bundled skills are seeded again on the next installer run. With `--sync`, re-seed immediately. |
 | `publish` | Publish a skill to a registry. |
 | `snapshot` | Export/import skill configurations. |
 | `tap` | Manage custom skill sources. |
@@ -1147,7 +1147,7 @@ The curator is an auxiliary-model background task that periodically reviews agen
 | `prune` | Manually prune skills the curator would normally clean up |
 | `list-archived` | List archived skills (recoverable via `restore`) |
 
-On a fresh install the first scheduled pass is deferred by one full `interval_hours` (7 days by default) — the gateway will not curate immediately on the first tick after `plobi update`. Use `plobi curator run --dry-run` to preview before that happens.
+On a fresh install the first scheduled pass is deferred by one full `interval_hours` (7 days by default) — the gateway will not curate immediately on the first tick after an upgrade. Use `plobi curator run --dry-run` to preview before that happens.
 
 See [Curator](../user-guide/features/curator.md) for behavior and config.
 
@@ -1325,7 +1325,7 @@ Subcommands:
 to use for re-running the install if the toolset toggle didn't trigger
 it (for example, on returning-user setups).
 
-`plobi update` automatically re-runs the upstream installer at the end
+A manual upgrade re-runs the installer at the end
 of the update if cua-driver is on PATH, so most users will not need to
 call `--upgrade` manually. Use it when upstream ships a fix you want
 right now without waiting for the next Plobi update.
@@ -1539,40 +1539,38 @@ plobi completion zsh >> ~/.zshrc
 plobi completion fish > ~/.config/fish/completions/plobi.fish
 ```
 
-## `plobi update`
+## `plobi update` — disabled (no-op)
 
 ```bash
-plobi update [--gateway] [--check] [--no-backup] [--backup] [--yes]
+plobi update            # prints a disabled notice, then exits 0
 ```
 
-Pulls the latest `plobi-agent` code and reinstalls dependencies in the managed venv, then re-runs the post-install hooks (MCP servers, skills sync, completion install). Safe to run on a live install. Use `--check` to see whether your checkout is behind `origin/main` without installing.
+:::danger
+This build has **no self-update**. The subcommand is still registered (other code
+references the command name), but its body only prints
+「Plobi 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。」
+and returns 0. The flags `--gateway` / `--check` / `--backup` / `--no-backup` / `--yes`
+are accepted by the parser and **never read**: nothing is pulled, no dependency is
+reinstalled, no backup runs, no gateway restarts, and no rollback machinery executes.
+:::
 
-`plobi update` pulls the configured update branch (default: `main`). If your checkout is on another branch, Plobi may check out the update branch before pulling. Commit branch work before updating when you want to keep it outside the update autostash flow.
+Why it is frozen rather than patched: on 2026-09-06 and 2026-09-07 the runtime git
+path destroyed a working tree and `.git` during a routine update, so every
+runtime-git-mutating path was disabled as a class. This fork also no longer tracks
+an upstream repository, so syncing code is an explicit human/Agent step.
 
-| Option | Description |
-|--------|-------------|
-| `--gateway` | Internal mode used by the messaging `/update` command. Uses file-based IPC for prompts and progress streaming instead of reading from terminal stdin. Not a gateway restart flag. |
-| `--check` | Check whether an update is available without pulling, installing dependencies, or restarting anything. |
-| `--no-backup` | Skip the pre-update backup for this run, even if `updates.pre_update_backup` is enabled in `config.yaml`. |
-| `--backup` | Create a labeled pre-update snapshot of `PLOBI_HOME` (config, auth, sessions, skills, pairing data) before pulling. Default is **off** — the previous always-backup behavior was adding minutes to every update on large homes. Flip it on permanently via `updates.pre_update_backup: true` in `config.yaml`. |
-| `--yes`, `-y` | Assume yes for interactive prompts such as config migration and stash restore. API-key entry is skipped; run `plobi config migrate` separately for those. |
-
-Additional behavior:
-
-- **Gateway restart.** After a successful update, Plobi attempts to restart all running gateway profiles automatically so they pick up the new code. Use `plobi gateway restart` when you want to restart a gateway without applying an update.
-- **Local source changes.** For git installs, dirty tracked files and untracked files are auto-stashed before branch checkout or pull (`git stash push --include-untracked`). Interactive terminal updates ask before restoring the stash. Non-interactive updates restore it by default; set `updates.non_interactive_local_changes: discard` only on managed installs where local source edits should be thrown away after a successful pull. If stash restore conflicts or the pull fails, the stash is left in place for manual recovery.
-- **npm lockfile churn.** Before stashing or switching branches, Plobi makes a best-effort cleanup of tracked `package-lock.json` diffs produced by npm install/build steps. Commit or manually stash intentional lockfile edits before running `plobi update`.
-- **Pairing data snapshot.** Even when `--backup` is off, `plobi update` takes a lightweight snapshot of `~/.plobi/pairing/` and the Feishu comment rules before `git pull`. You can roll it back with `plobi backup restore --state pre-update` if a pull rewrites a file you were editing.
-- **Legacy `plobi.service` warning.** If Plobi detects a pre-rename `plobi.service` systemd unit (instead of the current `plobi-gateway.service`), it prints a one-time migration hint so you can avoid flap-loop issues.
-- **Exit codes.** `0` on success, `1` on pull/install/post-install errors, `2` on unexpected working-tree changes that block `git pull`.
+Use the steps in [Updating & Uninstalling](../getting-started/updating.md) instead
+(desktop installer: install the newer package over the top; source install:
+`git fetch github && git reset --hard github/main` + `uv sync`), then run
+`plobi config check` and `python scripts/plobi/doctor.py` yourself after upgrading.
 
 ## Maintenance commands
 
 | Command | Description |
 |---------|-------------|
 | `plobi version` | Print version information. |
-| `plobi update` | Pull latest changes and reinstall dependencies. |
-| `plobi postinstall` | Internal bootstrap. Runs once after the install script provisions Plobi (or after `plobi update`) to install non-Python dependencies that pip cannot provide — Node.js runtime, headless browser, ripgrep, ffmpeg — and then trigger `plobi setup` if the profile has not been configured yet. Safe to re-run idempotently. |
+| `plobi update` | **Disabled (no-op)**; see `plobi update` above. |
+| `plobi postinstall` | Internal bootstrap. Runs once after the install script provisions Plobi (or after a manual upgrade) to install non-Python dependencies that pip cannot provide — Node.js runtime, headless browser, ripgrep, ffmpeg — and then trigger `plobi setup` if the profile has not been configured yet. Safe to re-run idempotently. |
 | `plobi uninstall [--full] [--gui] [--yes]` | Remove Plobi, optionally deleting all config/data. `--gui` removes only the desktop Chat GUI, leaving the agent intact; `--full` also deletes config/data; `--yes` skips prompts. |
 
 ## See also

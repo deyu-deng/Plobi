@@ -204,4 +204,4 @@ plobi setup --portal
 
 ## 安装方式自动检测
 
-Plobi 会自动检测安装方式（`pip`、git 安装程序、Homebrew 或 NixOS），`plobi update` 会打印对应路径的更新命令。无需设置任何环境变量——检测基于安装目录结构（Python site-packages、`~/.plobi/plobi-agent/`、Homebrew 前缀或 Nix store 路径）。`plobi doctor` 也会在其环境摘要中显示检测到的安装方式。
+Plobi 会自动检测安装方式（`pip`、git 安装程序、Homebrew 或 NixOS），`plobi doctor` 会在环境摘要里显示检测到的方式。检测基于安装目录结构（Python site-packages、`~/.plobi/plobi-agent/`、Homebrew 前缀或 Nix store 路径）——无需设置环境变量。注意：检测只用于诊断。本构建的 `plobi update` 是已停用的 no-op，升级永远是手动一步（见[更新与卸载](./updating.md)）。

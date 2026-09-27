@@ -2,10 +2,14 @@ class PlobiAgent < Formula
   include Language::Python::Virtualenv
 
   desc "Self-improving AI agent that creates skills from experience"
-  homepage "https://hermes-agent.nousresearch.com"
-  # Stable source should point at the semver-named sdist asset attached by
-  # scripts/release.py, not the CalVer tag tarball.
-  url "https://github.com/NousResearch/hermes-agent/releases/download/v2026.3.30/hermes_agent-0.6.0.tar.gz"
+  homepage "https://github.com/deyu-deng/Plobi"
+  # ---- NOT PUBLISHED (placeholder) -------------------------------------------
+  # This formula has never shipped a Plobi artifact. The URL below is a template
+  # for where it *will* point once scripts/release.py attaches a semver-named
+  # sdist to a GitHub release. Until then `brew install plobi-agent` cannot work,
+  # and nothing here should be installed from any third-party tarball.
+  # ---------------------------------------------------------------------------
+  url "https://github.com/deyu-deng/Plobi/releases/download/vX.Y.Z/plobi_agent-X.Y.Z.tar.gz"
   sha256 "<replace-with-release-asset-sha256>"
   license "MIT"
 
@@ -41,8 +45,10 @@ class PlobiAgent < Formula
   test do
     assert_match "Plobi Agent v#{version}", shell_output("#{bin}/plobi version")
 
-    managed = shell_output("#{bin}/plobi update 2>&1")
-    assert_match "managed by Homebrew", managed
-    assert_match "brew upgrade plobi-agent", managed
+    # `plobi update` is a disabled no-op in this build (no self-update), so the
+    # managed-install proof comes from `plobi version` instead: PLOBI_MANAGED is
+    # reported back as the install method.
+    managed = shell_output("#{bin}/plobi version 2>&1", 30, env: { "PLOBI_MANAGED" => "homebrew" })
+    assert_match "Install method: homebrew", managed
   end
 end

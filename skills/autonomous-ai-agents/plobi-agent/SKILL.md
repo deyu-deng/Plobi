@@ -239,7 +239,7 @@ Multiple credentials per provider form a pool that rotates automatically and ski
 
 ```
 plobi insights [--days N]  Usage analytics
-plobi update               Update to latest version
+plobi doctor               Environment self-check (this build has no self-update)
 plobi desktop / gui        Launch the native desktop app
 plobi dashboard            Web admin panel + embedded chat
 plobi proxy                OpenAI-compatible local proxy backed by an OAuth provider

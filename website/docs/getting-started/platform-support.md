@@ -16,10 +16,10 @@ We strive to never break installations and updates for these. Issues & regressio
 
 | OS / Architecture                                                             | Installation methods                                                                                                           | Notes                                                                                                                                                     |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS** (Apple Silicon)                                                     | [Plobi Desktop](https://hermes-agent.nousresearch.com/), [`install.sh`](./installation.md#linux--macos--wsl2--android-termux) |
-| [**Windows 10 / 11**](../user-guide/windows-native.md) (x86_64, aarch64)      | [Plobi Desktop](https://hermes-agent.nousresearch.com/), [`install.ps1`](./installation.md#windows-native)                    | A few features are [not available](../user-guide/windows-native.md#feature-matrix).                                                                       |
+| **macOS** (Apple Silicon)                                                     | [Plobi Desktop](https://github.com/deyu-deng/Plobi/releases), [`install.sh`](./installation.md#linux--macos--wsl2--android-termux) |
+| [**Windows 10 / 11**](../user-guide/windows-native.md) (x86_64, aarch64)      | [Plobi Desktop](https://github.com/deyu-deng/Plobi/releases), [`install.ps1`](./installation.md#windows-native)                    | A few features are [not available](../user-guide/windows-native.md#feature-matrix).                                                                       |
 | **Linux / [WSL2](../user-guide/windows-wsl-quickstart.md)** (x86_64, aarch64) | [`install.sh`](./installation.md#linux--macos--wsl2--android-termux)                                                           | We test on the latest Ubuntu and WSL2. If your distro has glibc, systemd, and follows the Filesystem Hierarchy Standard, it's likely to work pretty well. |
-| [**Docker Container**](../user-guide/docker.md#quick-start) (x86_64, aarch64) | [`docker pull`](../user-guide/docker.md#quick-start)                                                                           | Docker installs do not support `plobi update`. Updating is done by running a new image.                                                                  |
+| [**Docker Container**](../user-guide/docker.md#quick-start) (x86_64, aarch64) | *not published yet*                                                                                                             | **本项目还没有发布过任何镜像**，compose 里的 `plobi-agent` 需要你自己 build。渠道本身保留，发布推迟。 |
 
 ---
 
@@ -44,7 +44,7 @@ PRs to fix them will _not_ be accepted, and any code that keeps compatibility wi
 
 - installs via the AUR (we might upstream patches if it helps out &lt;3)
 - macOS on x86 (Intel) processors
-- installs via `pypi` (e.g. `uv tool install plobi-agent`, `pip install hermse-agent`, etc.)
-- installs via `brew` (`brew install plobi-agent`)
+- installs via `pypi` (e.g. `uv tool install plobi-agent`) — no PyPI package is published by this project either
+- installs via `brew` — **not published**: `packaging/homebrew/plobi-agent.rb` is a placeholder whose `url:` still points at someone else's source tarball. Do not `brew install plobi-agent` and expect our build.
 
 If you are using an unsupported distribution method, please read the [the installation guide](./installation.md) to learn how to switch to a supported one.

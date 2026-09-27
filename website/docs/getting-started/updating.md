@@ -1,241 +1,110 @@
 ---
 sidebar_position: 3
 title: "Updating & Uninstalling"
-description: "How to update Plobi Agent to the latest version or uninstall it"
+description: "There is no automatic update in this build — here is how to actually move versions, and how to uninstall"
 ---
 
 # Updating & Uninstalling
 
-## Updating
+## Read this first: `plobi update` does not update anything
 
-Update to the latest version with a single command:
+This build has **no self-update**. `plobi update` is still registered as a
+subcommand (other code references the command name), but its body prints one
+notice and exits successfully:
 
-```bash
-plobi update
+```
+Plobi 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。
 ```
 
-This pulls the latest code from `main`, updates dependencies, and prompts you to configure any new options that were added since your last update.
+Every flag you may see documented elsewhere — `--branch`, `--check`, `--backup`,
+`--force`, `--all` — is accepted by the argument parser and **never consumed**.
+Nothing is fetched, nothing is reinstalled, and no rollback machinery runs.
 
-:::tip
-`plobi update` automatically detects new configuration options and prompts you to add them. If you skipped that prompt, you can manually run `plobi config check` to see missing options, then `plobi config migrate` to interactively add them.
+Two reasons, both deliberate:
+
+1. **Incident protection.** Two past incidents (2026-09-06 and 2026-09-07) had the
+   runtime git path destroy a working tree / `.git` during a routine "update". The
+   whole class of runtime git-mutating paths was frozen rather than patched.
+2. **This is a fork that does not track upstream.** Code sync is a human/Agent
+   decision made per release, never an automatic pull.
+
+:::danger
+Do not treat `plobi update` as your security-patch path. A command that exits `0`
+while changing nothing is worse than a failing command — it looks like it worked.
+Watch [Releases](https://github.com/deyu-deng/Plobi/releases) and update
+explicitly with the steps below.
 :::
 
-### What happens during an update
+## How to actually move to a new version
 
-When you run `plobi update`, the following steps occur:
+Pick the row matching how you installed. None of them touch your data directory.
 
-1. **Pairing-data snapshot** — a lightweight pre-update state snapshot is saved (covers `~/.plobi/pairing/`, Feishu comment rules, and other state files that get modified at runtime). Recoverable via the snapshot restore flow described under [Snapshots and rollback](../user-guide/checkpoints-and-rollback.md), or by extracting the most recent quick-snapshot zip Plobi wrote next to your `~/.plobi/` directory.
-2. **Git pull** — pulls the latest code from the `main` branch and updates submodules
-3. **Post-pull syntax validation + auto-rollback** — after the pull, Plobi compiles the eight critical files every `plobi` invocation imports at startup. If any fails to parse (e.g. an orphan merge-conflict marker, an accidentally truncated file), Plobi runs `git reset --hard <pre-pull-sha>` to roll the install back so your shell stays bootable. Re-run `plobi update` once the upstream fix lands.
-4. **Dependency install** — runs `uv pip install -e ".[all]"` to pick up new or changed dependencies
-5. **Config migration** — detects new config options added since your version and prompts you to set them
-6. **Gateway auto-restart** — running gateways are refreshed after the update completes so the new code takes effect immediately. Service-managed gateways (systemd on Linux, launchd on macOS) are restarted through the service manager. Manual gateways are relaunched automatically when Plobi can map the running PID back to a profile.
+| 安装方式 | 更新动作 | 你的数据 |
+| --- | --- | --- |
+| **Desktop installer** (`.dmg` / `.exe`) | Download the newer installer from [Releases](https://github.com/deyu-deng/Plobi/releases) and install over the top. | Untouched — it lives in `~/.plobi` (`%APPDATA%\Plobi` on Windows). |
+| **Source install** (`git` + `uv`/venv) | The four steps below. | Untouched. |
+| **Docker / Homebrew** | **Not published yet.** See [Release channels](#release-channels-are-not-published-yet). | n/a |
 
-### Updating against a non-default branch: `--branch`
-
-By default `plobi update` tracks `origin/main`. Pass `--branch <name>` to update against a different branch — useful for QA channels, feature branches, or release-candidate testing:
+### Source install, step by step
 
 ```bash
-plobi update --branch release-candidate
-plobi update --check --branch experimental   # preview behindness only
+cd /path/to/Plobi                 # the checkout you made with git clone
+
+# 1. Back up first — config, keys, sessions, skills all live outside the repo.
+cp -a ~/.plobi ~/plobi-backup-$(date +%F)
+
+# 2. Move the working tree. The clone's remote is named `github`, not `origin`.
+git fetch github && git checkout main && git reset --hard github/main
+
+# 3. Re-resolve dependencies for the extras you installed.
+uv sync --extra dev --extra acp --extra messaging --extra web --extra anthropic
+
+# 4. Self-check. Red rows here are what actually broke between versions.
+python scripts/plobi/doctor.py
 ```
 
-If your local checkout is on a different branch, Plobi auto-stashes any uncommitted work, switches HEAD to the target branch, and then pulls. Branches that don't exist locally are auto-tracked from `origin/<name>` (`git checkout -B <name> origin/<name>`). Branches that don't exist anywhere fail cleanly — your stashed changes are restored before exit so you're never stranded in a weird state. The `main`-only fork-upstream sync logic is automatically skipped on non-`main` branches.
+`plobi config check` will list config keys your file is missing after a bump, and
+`plobi config migrate` walks you through adding them interactively. Neither runs
+by itself any more — that prompt used to be part of `plobi update`.
 
-### Local changes on non-interactive updates
-
-When you run `plobi update` in a terminal, Plobi stashes any uncommitted source-tree changes, pulls, then **asks** whether to restore them — exactly as it always has. Nothing changes for interactive updates.
-
-When the update runs **without a terminal** — from the desktop/chat app's "Update" button or a gateway-triggered update — there's no prompt to answer. The `updates.non_interactive_local_changes` setting decides what happens to your stashed changes:
-
-```yaml
-# ~/.plobi/config.yaml
-updates:
-  non_interactive_local_changes: stash   # default: keep + auto-restore
-  # non_interactive_local_changes: discard  # throw local source edits away
-```
-
-- `stash` (default) — auto-stash, pull, then auto-restore your changes on top of the updated code. Nothing is lost; if a restore hits conflicts they're preserved in a git stash for manual recovery.
-- `discard` — auto-stash and drop the stash after the pull, so the update always lands on a clean tree. Use this only on machines where you never intend to keep local edits to the Plobi source. It stash-drops (not `git reset --hard` + `git clean -fd`), so ignored paths like `node_modules`, `venv`, and build outputs are never touched.
-
-In the desktop app this is **Settings → Advanced → In-App Update Local Changes**.
-
-### Preview-only: `plobi update --check`
-
-Want to know if an update is available before pulling? Run `plobi update --check` — it fetches and compares commits against `origin/main`. No files are modified, no gateway is restarted. Useful in scripts and cron jobs that gate on "is there an update".
-
-### Full pre-update backup: `--backup`
-
-For high-value profiles (production gateways, shared team installs) you can opt into a full pre-pull backup of `PLOBI_HOME` (config, auth, sessions, skills, pairing):
+### Restart what was running
 
 ```bash
-plobi update --backup
+plobi gateway restart     # messaging gateway
+# The desktop app: quit from the tray, then relaunch.
 ```
 
-Or make it the default for every run:
+## Release channels are not published yet
 
-```yaml
-# ~/.plobi/config.yaml
-updates:
-  pre_update_backup: true
-```
+Two channels exist in the tree but have **never shipped a Plobi artifact**, so no
+install command through them will work today. They are kept on purpose while
+packaging is still moving; this section is the honest status, not an invitation.
 
-`--backup` was the always-on behavior in earlier builds, but it was adding minutes to every update on large homes, so it's now opt-in. The lightweight pairing-data snapshot above still runs unconditionally.
+| 渠道 | 现状 | 别照抄的东西 |
+| --- | --- | --- |
+| Docker image | 我方镜像**未发布**。仓库里的 `docker-compose.yml` 已指向 `plobi-agent`，但 `docker pull` 拿不到它。 | 任何 `docker pull …/hermes-agent` 形式的命令——那是别人发布的镜像，不是本项目的构建物。见 [Docker](../user-guide/docker.md)。 |
+| Homebrew formula | `packaging/homebrew/plobi-agent.rb` 是**占位**：它的 `url:` 仍指向别人的源码包。 | `brew install plobi-agent`。发布流程本身也还没跑过，见 `packaging/homebrew/README.md` 顶部说明。 |
 
-### Windows: another `plobi.exe` is running
-
-On Windows, `plobi update` will refuse to run if it detects another `plobi.exe` process holding the venv's entry-point executable open — most commonly the Plobi Desktop app's spawned backend, an open `plobi` REPL in another terminal, or a running gateway:
-
-```
-$ plobi update
-✗ Another plobi.exe is running:
-    PID 12345  plobi.exe
-
-  Updating now would fail to overwrite ...\venv\Scripts\plobi.exe because
-  Windows blocks REPLACE on a running executable.
-
-  Close Plobi Desktop, exit any open `plobi` REPLs, and
-  stop the gateway (`plobi gateway stop`) before retrying.
-  Override with `plobi update --force` if you've already
-  confirmed those processes will not write to the venv.
-```
-
-Close the listed processes and re-run. If you're sure the concurrent process won't interfere (rare — usually only useful when an antivirus shim is mis-attributed), pass `--force` to skip the check. In that case the updater will still retry the `.exe` rename with exponential backoff and, on stubborn locks, schedule the replacement for next reboot via `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)` so the update can complete.
-
-A second, separate guard refuses to touch the venv while any process is running from its Python interpreter (the Desktop app's backend, a gateway, a Python REPL). Those processes keep native extension files (`.pyd`) locked, and a dependency sync that dies partway on an access-denied error strands the install between versions. This guard is **not** bypassed by `--force`; if you're certain the detected holders are false positives, use the explicit `plobi update --force-venv`.
-
-Expected output looks like:
-
-```
-$ plobi update
-Updating Plobi Agent...
-📥 Pulling latest code...
-Already up to date.  (or: Updating abc1234..def5678)
-📦 Updating dependencies...
-✅ Dependencies updated
-🔍 Checking for new config options...
-✅ Config is up to date  (or: Found 2 new options — running migration...)
-🔄 Restarting gateways...
-✅ Gateway restarted
-✅ Plobi Agent updated successfully!
-```
-
-### Recommended Post-Update Validation
-
-`plobi update` handles the main update path, but a quick validation confirms everything landed cleanly:
-
-1. `git status --short` — if the tree is unexpectedly dirty, inspect before continuing
-2. `plobi doctor` — checks config, dependencies, and service health
-3. `plobi --version` — confirm the version bumped as expected
-4. If you use the gateway: `plobi gateway status`
-5. If `doctor` reports npm audit issues: run `npm audit fix` in the flagged directory
-
-:::warning Dirty working tree after update
-If `git status --short` shows unexpected changes after `plobi update`, stop and inspect them before continuing. This usually means local modifications were reapplied on top of the updated code, or a dependency step refreshed lockfiles.
-:::
-
-### If your terminal disconnects mid-update
-
-`plobi update` protects itself against accidental terminal loss:
-
-- The update ignores `SIGHUP`, so closing your SSH session or terminal window no longer kills it mid-install. `pip` and `git` child processes inherit this protection, so the Python environment cannot be left half-installed by a dropped connection.
-- All output is mirrored to `~/.plobi/logs/update.log` while the update runs. If your terminal disappears, reconnect and inspect the log to see whether the update finished and whether the gateway restart succeeded:
+## Rolling back
 
 ```bash
-tail -f ~/.plobi/logs/update.log
-```
-
-- `Ctrl-C` (SIGINT) and system shutdown (SIGTERM) are still honored — those are deliberate cancellations, not accidents.
-
-You no longer need to wrap `plobi update` in `screen` or `tmux` to survive a terminal drop.
-
-### Checking your current version
-
-```bash
-plobi version
-```
-
-Compare against the latest release at the [GitHub releases page](https://github.com/deyu-deng/Plobi/releases).
-
-### Updating from Messaging Platforms
-
-You can also update directly from Telegram, Discord, Slack, WhatsApp, or Teams by sending:
-
-```
-/update
-```
-
-This pulls the latest code, updates dependencies, and restarts running gateways. The bot will briefly go offline during the restart (typically 5–15 seconds) and then resume.
-
-### Manual Update
-
-If you installed manually (not via the quick installer):
-
-```bash
-cd /path/to/plobi-agent
-# Activate the venv you created during install (outside the source tree)
-export VIRTUAL_ENV="$HOME/.plobi/venvs/plobi-dev"
-export PATH="$VIRTUAL_ENV/bin:$PATH"
-
-# Pull latest code
-git pull origin main
-
-# Reinstall (picks up new dependencies)
-uv pip install -e ".[all]"
-
-# Check for new config options
-plobi config check
-plobi config migrate   # Interactively add any missing options
-```
-
-### Rollback instructions
-
-If an update introduces a problem, you can roll back to a previous version:
-
-```bash
-cd /path/to/plobi-agent
-
-# List recent versions
+cd /path/to/Plobi
 git log --oneline -10
-
-# Roll back to a specific commit
-git checkout <commit-hash>
-uv pip install -e ".[all]"
-
-# Restart the gateway if running
-plobi gateway restart
+git checkout <commit-hash>        # or a release tag from `git tag --sort=-version:refname`
+uv sync --extra dev
+plobi doctor
 ```
 
-To roll back to a specific release tag (substitute your previous tag — e.g. a recent release like `v2026.5.16`, or any earlier tag from `git tag --sort=-version:refname`):
+If the older version predates config keys you now have, `plobi config check` will
+name the unrecognized ones; remove them from `config.yaml` if the old build errors
+out. Your `~/.plobi` backup above is the fast way out.
 
-```bash
-git checkout vX.Y.Z
-uv pip install -e ".[all]"
-```
-
-:::warning
-Rolling back may cause config incompatibilities if new options were added. Run `plobi config check` after rolling back and remove any unrecognized options from `config.yaml` if you encounter errors.
+:::note Nix
+Nix is no longer an explicitly supported install path (best-effort only) — see
+[Nix Setup](./nix-setup.md). If you installed via Nix flake, upgrades and rollback
+go through `nix flake update plobi-agent` / `nix profile upgrade plobi-agent` /
+`nix profile rollback`.
 :::
-
-### Note for Nix users
-
-Nix is no longer an explicitly supported install path (best-effort only) — see [Nix Setup](./nix-setup.md). If you installed via Nix flake, updates are managed through the Nix package manager:
-
-```bash
-# Update the flake input
-nix flake update plobi-agent
-
-# Or rebuild with the latest
-nix profile upgrade plobi-agent
-```
-
-Nix installations are immutable — rollback is handled by Nix's generation system:
-
-```bash
-nix profile rollback
-```
-
-See [Nix Setup](./nix-setup.md) for more details.
 
 ---
 
@@ -251,7 +120,7 @@ The uninstaller gives you the option to keep your configuration files (`~/.plobi
 
 ```bash
 rm -f ~/.local/bin/plobi
-rm -rf /path/to/plobi-agent
+rm -rf /path/to/Plobi
 rm -rf ~/.plobi            # Optional — keep if you plan to reinstall
 ```
 

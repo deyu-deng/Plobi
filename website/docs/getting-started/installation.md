@@ -158,4 +158,4 @@ For more diagnostics, run `plobi doctor` — it will tell you exactly what's mis
 
 ## Install method auto-detection
 
-Plobi auto-detects whether it was installed via `pip`, the git installer, Homebrew, or NixOS, and `plobi update` prints the matching update command for that path. There's no env var to set — the detection is based on the install layout (Python site-packages, `~/.plobi/plobi-agent/`, Homebrew prefix, or Nix store path). `plobi doctor` also surfaces the detected method under its environment summary.
+Plobi auto-detects whether it was installed via `pip`, the git installer, Homebrew, or NixOS, and `plobi doctor` surfaces the detected method under its environment summary. Detection is based on the install layout (Python site-packages, `~/.plobi/plobi-agent/`, Homebrew prefix, or Nix store path) — no env var to set. Note that detection exists for diagnostics only: `plobi update` is a disabled no-op in this build, so upgrading is always a manual step (see [Updating & Uninstalling](./updating.md)).

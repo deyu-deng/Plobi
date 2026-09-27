@@ -79,7 +79,7 @@ plobi [global-options] <command> [subcommand/options]
 | `plobi profile` | 管理 profile——多个隔离的 Plobi 实例。 |
 | `plobi completion` | 打印 shell 补全脚本（bash/zsh/fish）。 |
 | `plobi version` | 显示版本信息。 |
-| `plobi update` | 拉取最新代码并重新安装依赖。`--check` 预览而不安装；`--backup` 在拉取前对 `PLOBI_HOME` 进行快照。 |
+| `plobi update` | **已停用（no-op）** —— 只打印停用提示。升级步骤见[更新与卸载](../getting-started/updating.md)。 |
 | `plobi uninstall` | 从系统中删除 Plobi。 |
 
 ## `plobi chat`
@@ -223,7 +223,7 @@ plobi gateway <subcommand>
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--all` | 在 `start` / `restart` / `stop` 时：对**每个 profile** 的 gateway 执行操作，而不仅限于活跃的 `PLOBI_HOME`。当你并行运行多个 profile 并希望在 `plobi update` 后全部重启时很有用。 |
+| `--all` | 在 `start` / `restart` / `stop` 时：对**每个 profile** 的 gateway 执行操作，而不仅限于活跃的 `PLOBI_HOME`。当你并行运行多个 profile 并希望在手动升级后全部重启时很有用。 |
 | `--no-supervise` | 在 `run` 时：在 s6-overlay Docker 镜像内部，跳过 s6 自动监管，退回到 pre-s6 前台语义——gateway 作为容器主进程运行，无自动重启。在 s6 镜像之外为空操作。等同于设置 `PLOBI_GATEWAY_NO_SUPERVISE=1`。 |
 
 :::tip WSL 用户
@@ -322,7 +322,7 @@ plobi slack manifest --slashes-only  # 仅输出 features.slash_commands 数组
 | `--description DESC` | 默认简介 | Slack app 目录中显示的机器人描述。 |
 | `--slashes-only` | 关闭 | 仅输出 `features.slash_commands`，用于合并到手动维护的 manifest 中。 |
 
-`plobi update` 后重新运行 `plobi slack manifest --write` 以获取新增命令。
+手动升级后重新运行 `plobi slack manifest --write` 以获取新增命令。
 
 
 ## `plobi login` / `plobi logout` *（已弃用）*
@@ -899,7 +899,7 @@ Curator 是一个辅助模型后台任务，定期审查 agent 创建的 skill�
 | `prune` | 手动修剪 curator 通常会清理的 skill |
 | `list-archived` | 列出已归档的 skill（可通过 `restore` 恢复） |
 
-在全新安装时，第一次计划运行会延迟一个完整的 `interval_hours`（默认 7 天）——gateway 不会在 `plobi update` 后的第一次 tick 时立即执行 curator。使用 `plobi curator run --dry-run` 在此之前预览。
+在全新安装时，第一次计划运行会延迟一个完整的 `interval_hours`（默认 7 天）——gateway 不会在升级后的第一次 tick 时立即执行 curator。使用 `plobi curator run --dry-run` 在此之前预览。
 
 行为和配置请参阅 [Curator](../user-guide/features/curator.md)。
 
@@ -1057,7 +1057,7 @@ plobi computer-use <subcommand>
 
 `plobi computer-use install` 是安装 `computer_use` toolset 使用的 [cua-driver](https://github.com/trycua/cua) 二进制文件的稳定入口。它运行与首次启用 Computer Use 时 `plobi tools` 调用的相同上游安装程序，因此如果 toolset 切换未触发安装（例如在已配置用户的设置中），可以安全地用于重新运行安装。
 
-`plobi update` 在更新结束时，如果 cua-driver 在 PATH 中，会自动重新运行上游安装程序，因此大多数用户不需要手动调用 `--upgrade`。当上游发布了你现在就想要的修复，而不想等待下次 Plobi 更新时，使用此选项。
+手动升级结束时，如果 cua-driver 在 PATH 中，安装程序会重新运行它，因此大多数用户不需要手动调用 `--upgrade`。（注意：`plobi update` 本身已停用，不会替你跑这一步。）
 
 ## `plobi sessions`
 
@@ -1222,32 +1222,31 @@ plobi completion zsh >> ~/.zshrc
 plobi completion fish > ~/.config/fish/completions/plobi.fish
 ```
 
-## `plobi update`
+## `plobi update` —— 已停用（no-op）
 
 ```bash
-plobi update [--check] [--backup] [--restart-gateway]
+plobi update            # 只打印一行停用提示，然后返回 0
 ```
 
-拉取最新的 `plobi-agent` 代码并在受管理的 venv 中重新安装依赖，然后重新运行安装后 hook（MCP 服务器、skill 同步、补全安装）。可在运行中的安装上安全执行。使用 `--check` 查看你的检出是否落后于 `origin/main`，而不安装。
+:::danger
+本构建**没有自更新**。这条命令仍然注册（别处代码引用命令名），但函数体只打印
+「Plobi 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。」然后 `return 0`。
+`--check` / `--backup` / `--restart-gateway` 等旗标会被解析器接受，但**从不被读取**：
+不拉代码、不重装依赖、不备份、不重启网关、不跑回滚。
+:::
 
-| 选项 | 说明 |
-|--------|-------------|
-| `--check` | 并排打印当前 commit 和最新 `origin/main` commit，同步时退出码为 0，落后时为 1。不拉取、不安装、不重启任何内容。 |
-| `--backup` | 在拉取前创建 `PLOBI_HOME` 的带标签预更新快照（config、auth、会话、skill、配对数据）。默认**关闭**——之前的始终备份行为在大型主目录上每次更新会增加数分钟。通过 `config.yaml` 中的 `update.backup: true` 永久开启。 |
-| `--restart-gateway` | 成功更新后重启正在运行的 gateway 服务。如果安装了多个 profile，隐含 `--all` 语义。 |
+为什么是冻结而不是修补：2026-09-06 与 2026-09-07 两次事故里，运行期 git 路径在一次普通更新中摧毁过工作树与 `.git`，
+所以整类"运行期改 git 状态"的路径被停掉。本项目也不再同步上游仓库。
 
-附加行为：
-
-- **配对数据快照。** 即使 `--backup` 关闭，`plobi update` 也会在 `git pull` 前对 `~/.plobi/pairing/` 和 Feishu 评论规则进行轻量快照。如果拉取覆盖了你正在编辑的文件，可以用 `plobi backup restore --state pre-update` 回滚。
-- **旧版 `plobi.service` 警告。** 如果 Plobi 检测到预重命名的 `plobi.service` systemd 单元（而非当前的 `plobi-gateway.service`），会打印一次性迁移提示，帮助你避免循环重启问题。
-- **退出码。** 成功时为 `0`，拉取/安装/安装后错误时为 `1`，阻止 `git pull` 的意外工作树变更时为 `2`。
-
+请改用[更新与卸载](../getting-started/updating.md)里的显式步骤（桌面装：覆盖安装新包；
+源码装：`git fetch github && git reset --hard github/main` + `uv sync`），
+升级后自己跑 `plobi config check` 与 `python scripts/plobi/doctor.py`。
 ## 维护命令
 
 | 命令 | 说明 |
 |---------|-------------|
 | `plobi version` | 打印版本信息。 |
-| `plobi update` | 拉取最新变更并重新安装依赖。 |
+| `plobi update` | **已停用（no-op）**；见上文。 |
 | `plobi uninstall [--full] [--yes]` | 删除 Plobi，可选择删除所有 config/数据。 |
 
 ## 另请参阅

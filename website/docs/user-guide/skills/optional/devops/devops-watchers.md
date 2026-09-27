@@ -81,7 +81,7 @@ Watch a GitHub repo (set `GITHUB_TOKEN` in `${PLOBI_HOME:-~/.plobi}/.env` to avo
 
 ```bash
 python $PLOBI_HOME/skills/devops/watchers/scripts/watch_github.py \
-  --name plobi-issues --repo NousResearch/hermes-agent --scope issues
+  --name plobi-issues --repo deyu-deng/Plobi --scope issues
 ```
 
 Poll an arbitrary JSON API:

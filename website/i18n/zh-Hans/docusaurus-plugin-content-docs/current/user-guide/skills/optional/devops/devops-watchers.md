@@ -81,7 +81,7 @@ python $PLOBI_HOME/skills/devops/watchers/scripts/watch_rss.py \
 
 ```bash
 python $PLOBI_HOME/skills/devops/watchers/scripts/watch_github.py \
-  --name plobi-issues --repo NousResearch/hermes-agent --scope issues
+  --name plobi-issues --repo deyu-deng/Plobi --scope issues
 ```
 
 轮询任意 JSON API：
