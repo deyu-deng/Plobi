@@ -76,13 +76,15 @@ Every AI tool gives away free quota, but using them all means constant context-s
 
 ```bash
 git clone https://github.com/deyu-deng/Plobi.git
-cd Plobi/Code
+cd Plobi                       # 仓库根本身就是 Code/，没有再套一层 Code
 
-# Python backend
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate  # macOS/Linux
-pip install -e ".[all]"
+# Python backend（本机推荐 uv，见 docs 里的环境口径）
+uv venv --python 3.13 && uv sync --extra dev --extra acp --extra messaging --extra web --extra anthropic
+source .venv/bin/activate                # macOS/Linux
+# .venv\Scripts\activate                # Windows
+
+# 必补，否则 SOCKS 代理那一族测试整片 ImportError（uv sync 换 extras 会把它裁掉）
+uv pip install aiohttp-socks==0.11.0 python-socks
 
 # Desktop app
 cd apps/desktop

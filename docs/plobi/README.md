@@ -1,7 +1,7 @@
 # Plobi — 文档指针（本目录已清空）
 
 **Plobi 的项目级文档真源不在这里。** 全部平铺在仓库外的
-`D:\Projects\Plobi\Docs\`，索引 = [`Docs/README.md`](../../../Docs/README.md)，
+与本仓同级的 `../Docs/`（Windows 那台机器已损坏下线，历史文档里出现的 `D:\Projects\Plobi\*` 都是**当时那台机器**的路径，不再是真源），索引 = [`Docs/README.md`](../../../Docs/README.md)，
 纪律 = 其 §0，入口链 = `Docs/HANDOVER.md` → `Docs/MASTER-PLAN.md` → `Docs/REQUIREMENTS.md`。
 
 本目录（`Code/docs/plobi/`）曾在 2026-09 按 Diátaxis 建过 `adr/ specs/ runbooks/ reference/
