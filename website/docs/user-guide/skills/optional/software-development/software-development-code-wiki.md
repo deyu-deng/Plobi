@@ -165,8 +165,8 @@ reader has the source README.>
 
 ## Entry Points
 
-- [`path/to/main.py`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>) — <what runs when you start it>
-- [`path/to/cli.py`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>) — <CLI surface>
+- [`path/to/main.py`](<link>) — <what runs when you start it>
+- [`path/to/cli.py`](<link>) — <CLI surface>
 
 ## High-Level Architecture
 
@@ -211,8 +211,8 @@ flowchart TD
 
 ## Data Flow
 
-1. **<Step>** — [`<file>`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
-2. **<Step>** — [`<file>`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
+1. **<Step>** — [`<file>`](<link>)
+2. **<Step>** — [`<file>`](<link>)
 
 ## Key Design Decisions
 
@@ -244,7 +244,7 @@ For each selected module, inspect its layout with `ls`, identify 3–5 most impo
 
 ## Key Files
 
-- [`<module>/<file>`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>) — <what it does>
+- [`<module>/<file>`](<link>) — <what it does>
 
 ## Public API
 
@@ -325,8 +325,8 @@ sequenceDiagram
 
 ### Walkthrough
 
-1. **User input** — [`cli.py:PlobiCLI.run_session`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
-2. **Message dispatch** — [`run_agent.py:AIAgent.chat`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
+1. **User input** — [`cli.py:PlobiCLI.run_session`](<link>)
+2. **Message dispatch** — [`run_agent.py:AIAgent.chat`](<link>)
 ````
 
 Don't invent participants. Every box must correspond to a real component the reader can find in the code.
