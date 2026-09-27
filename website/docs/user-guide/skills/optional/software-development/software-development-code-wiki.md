@@ -325,7 +325,7 @@ sequenceDiagram
 
 ### Walkthrough
 
-1. **User input** — [`cli.py:HermesCLI.run_session`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
+1. **User input** — [`cli.py:PlobiCLI.run_session`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
 2. **Message dispatch** — [`run_agent.py:AIAgent.chat`](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/software-development/code-wiki/<link>)
 ````
 

@@ -105,6 +105,9 @@ PRESERVE = [
     'REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"',
     "NousResearch/Hermes-3-Llama-3.1-405B",
     "NousResearch/terminal-tasks-glm-hermes-agent",
+    # Line-level escape hatch: the vendor tuple matches other people's model
+    # ids, so a human has to say "keep this one".
+    '         "hermes", "llama", "mistral"),  # rename: keep',
     # Verbatim shapes found by auditing the residue after the first rollback:
     # a scheme-less docs host, "Nous Hermes" prose, and the non-agentic
     # matcher's own pattern + its Ollama tag counterexamples.

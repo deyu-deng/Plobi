@@ -127,6 +127,12 @@ PROTECT = [
     r"(?i:nous[\s_-]+hermes\b)",
     r"(?i:hermes\[[^\]]*\]\??\[\d+\])",
     r"(?i:hermes[-_](?:brain|honcho):)",
+    # Line-level escape hatch, for the cases no shape rule can decide:
+    # ``agent/coding_context.py`` keeps "hermes" in a tuple of *vendor* names
+    # because that string is matched against other people's model ids, while a
+    # quoted 'hermes' elsewhere is a command name that MUST rename. Only a
+    # human knows which is which.
+    r"[^\n]*# rename: keep[^\n]*",
 ]
 PROTECT_RE = re.compile("|".join(f"(?:{p})" for p in PROTECT))
 
