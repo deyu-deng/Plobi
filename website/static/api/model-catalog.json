@@ -3,7 +3,7 @@
   "updated_at": "2026-07-09T18:38:59Z",
   "metadata": {
     "source": "plobi-agent repo",
-    "docs": "https://hermes-agent.nousresearch.com/docs/reference/model-catalog"
+    "docs": "https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/model-catalog.md"
   },
   "providers": {
     "openrouter": {

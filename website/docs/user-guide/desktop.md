@@ -110,7 +110,7 @@ The app also surfaces the broader Plobi management surface so you don't have to 
 
 The app checks for updates in the background and offers a one-click update when one is ready.
 
-The [manual update process](https://hermes-agent.nousresearch.com/docs/getting-started/updating) also works with the GUI.
+The [manual update process](https://github.com/deyu-deng/Plobi/blob/main/website/docs/getting-started/updating.md) also works with the GUI.
 
 ## Uninstalling
 

@@ -13,7 +13,7 @@ required_credential_files:
 metadata:
   plobi:
     tags: [Google, Gmail, Calendar, Drive, Sheets, Docs, Contacts, Email, OAuth]
-    homepage: https://github.com/NousResearch/hermes-agent
+    homepage: https://github.com/deyu-deng/Plobi
     related_skills: [himalaya]
 ---
 

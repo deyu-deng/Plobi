@@ -5,7 +5,7 @@ REM ============================================================================
 REM This batch file launches the PowerShell installer for users running CMD.
 REM
 REM Usage:
-REM   curl -fsSL https://raw.githubusercontent.com/deyu-deng/Plobi/main/main/scripts/install.cmd -o install.cmd && install.cmd && del install.cmd
+REM   curl -fsSL https://raw.githubusercontent.com/deyu-deng/Plobi/main/scripts/install.cmd -o install.cmd && install.cmd && del install.cmd
 REM
 REM Or if you're already in PowerShell, use the direct command instead:
 REM   iex (irm https://raw.githubusercontent.com/deyu-deng/Plobi/main/scripts/install.ps1)

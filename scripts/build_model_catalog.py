@@ -18,6 +18,8 @@ Output: ``website/static/api/model-catalog.json``
 
 Live URL (after ``deploy-site.yml`` runs on merge to main):
 ``https://hermes-agent.nousresearch.com/docs/api/model-catalog.json``
+   (那是**数据来源**，不是我们的站点；生成出来的快照随仓走，见
+   ``website/static/api/model-catalog.json``)
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ def build_catalog() -> dict:
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "metadata": {
             "source": "plobi-agent repo",
-            "docs": "https://hermes-agent.nousresearch.com/docs/reference/model-catalog",
+            "docs": "https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/model-catalog.md",
         },
         "providers": {
             "openrouter": {

@@ -8,7 +8,7 @@ platforms: [linux, macos, windows]
 metadata:
   plobi:
     tags: [plobi, setup, configuration, multi-agent, spawning, cli, gateway, development]
-    homepage: https://github.com/NousResearch/hermes-agent
+    homepage: https://github.com/deyu-deng/Plobi
     related_skills: [claude-code, codex, opencode]
 ---
 
@@ -30,7 +30,7 @@ People use Plobi for software development, research, system administration, data
 
 **This skill helps you work with Plobi Agent effectively** — setting it up, configuring features, spawning additional agent instances, troubleshooting issues, finding the right commands and settings, and understanding how the system works when you need to extend or contribute to it.
 
-**Docs:** https://hermes-agent.nousresearch.com/docs/
+**Docs:** https://github.com/deyu-deng/Plobi/tree/main/website/docs
 
 ## Scope & Verification
 
@@ -39,14 +39,14 @@ This skill is a concise operating guide, not the complete source of truth for ev
 Good verification targets:
 
 - CLI commands: `plobi --help`, `plobi <command> --help`, and `plobi_cli/main.py`
-- User documentation: https://hermes-agent.nousresearch.com/docs/
-- Source tree: https://github.com/NousResearch/hermes-agent
+- User documentation: https://github.com/deyu-deng/Plobi/tree/main/website/docs
+- Source tree: https://github.com/deyu-deng/Plobi
 
 ## Quick Start
 
 ```bash
 # Install (shell installer — sets up uv, Python, the venv, and the launcher)
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/deyu-deng/Plobi/main/scripts/install.sh | bash
 
 # Or via PyPI (ships the TUI bundle + shell launcher)
 pip install plobi-agent       # or: uv pip install plobi-agent
@@ -170,7 +170,7 @@ plobi gateway setup        Configure platforms
 
 Supported platforms (20+): Telegram, Discord, Slack, WhatsApp (Baileys bridge + official Business Cloud API), iMessage (Photon — `plobi photon setup`, the BlueBubbles successor with no Mac relay), Signal, Email, SMS, Matrix, Mattermost, Microsoft Teams, LINE, SimpleX, ntfy, Google Chat, Home Assistant, DingTalk, Feishu, WeCom, Weixin (WeChat), Raft (agent network), API Server, Webhooks. Open WebUI connects via the API Server adapter. Most adapters ship under `plugins/platforms/`, so new ones drop in without touching core.
 
-Platform docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
+Platform docs: https://github.com/deyu-deng/Plobi/tree/main/website/docs/user-guide/messaging
 
 ### Sessions
 
@@ -264,7 +264,7 @@ For the full, authoritative command list run `plobi --help` (and `plobi <command
 
 Type these during an interactive chat session. New commands land fairly
 often; if something below looks stale, run `/help` in-session for the
-authoritative list or see the [live slash commands reference](https://hermes-agent.nousresearch.com/docs/reference/slash-commands).
+authoritative list or see the [live slash commands reference](https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/slash-commands.md).
 The registry of record is `plobi_cli/commands.py` — every consumer
 (autocomplete, Telegram menu, Slack mapping, `/help`) derives from it.
 
@@ -398,7 +398,7 @@ Edit with `plobi config edit` or `plobi config set section.key value`.
 | `checkpoints` | `enabled`, `max_snapshots` (50) |
 | `curator` | `enabled`, `consolidate` (false — opt-in aux-model skill consolidation), `interval_hours`, `stale_after_days` |
 
-Full config reference: https://hermes-agent.nousresearch.com/docs/user-guide/configuration
+Full config reference: https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/configuration.md
 
 ### Providers
 
@@ -428,7 +428,7 @@ Full config reference: https://hermes-agent.nousresearch.com/docs/user-guide/con
 | Custom endpoint | Config | `model.base_url` + `model.api_key` in config.yaml |
 | GitHub Copilot ACP | External | `COPILOT_CLI_PATH` or Copilot CLI |
 
-Full provider docs: https://hermes-agent.nousresearch.com/docs/integrations/providers
+Full provider docs: https://github.com/deyu-deng/Plobi/blob/main/website/docs/integrations/providers.md
 
 ### Toolsets
 
@@ -740,7 +740,7 @@ the `cronjob` tool, the `plobi cron` CLI (`list`, `add`, `edit`,
   header/footer instead of being mirrored into the target gateway
   session (keeps role alternation intact).
 
-User docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/cron
+User docs: https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/cron.md
 
 ### Curator (skill lifecycle)
 
@@ -766,7 +766,7 @@ so nothing is lost.
 
 Config: `curator.*` (`enabled`, `interval_hours`, `min_idle_hours`,
 `stale_after_days`, `archive_after_days`, `backup.*`).
-User docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/curator
+User docs: https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/curator.md
 
 ### Kanban (multi-agent work queue)
 
@@ -795,7 +795,7 @@ sessions still have zero `kanban_*` schema footprint unless configured.
   `PLOBI_KANBAN_BOARD` pinned in env); tenant is a soft namespace
   within a board for workspace-path + memory-key isolation.
 
-User docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
+User docs: https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/kanban.md
 
 ---
 
@@ -948,18 +948,18 @@ plobi config set auxiliary.vision.model <model_name>
 
 | Looking for... | Location |
 |----------------|----------|
-| Config options | `plobi config edit` or [Configuration docs](https://hermes-agent.nousresearch.com/docs/user-guide/configuration) |
-| Available tools | `plobi tools list` or [Tools reference](https://hermes-agent.nousresearch.com/docs/reference/tools-reference) |
-| Slash commands | `/help` in session or [Slash commands reference](https://hermes-agent.nousresearch.com/docs/reference/slash-commands) |
-| Skills catalog | `plobi skills browse` or [Skills catalog](https://hermes-agent.nousresearch.com/docs/reference/skills-catalog) |
-| Provider setup | `plobi model` or [Providers guide](https://hermes-agent.nousresearch.com/docs/integrations/providers) |
-| Platform setup | `plobi gateway setup` or [Messaging docs](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/) |
-| MCP servers | `plobi mcp list` or [MCP guide](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) |
-| Profiles | `plobi profile list` or [Profiles docs](https://hermes-agent.nousresearch.com/docs/user-guide/profiles) |
-| Cron jobs | `plobi cron list` or [Cron docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron) |
-| Memory | `plobi memory status` or [Memory docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) |
-| Env variables | `plobi config env-path` or [Env vars reference](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) |
-| CLI commands | `plobi --help` or [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) |
+| Config options | `plobi config edit` or [Configuration docs](https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/configuration.md) |
+| Available tools | `plobi tools list` or [Tools reference](https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/tools-reference.md) |
+| Slash commands | `/help` in session or [Slash commands reference](https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/slash-commands.md) |
+| Skills catalog | `plobi skills browse` or [Skills catalog](https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/skills-catalog.md) |
+| Provider setup | `plobi model` or [Providers guide](https://github.com/deyu-deng/Plobi/blob/main/website/docs/integrations/providers.md) |
+| Platform setup | `plobi gateway setup` or [Messaging docs](https://github.com/deyu-deng/Plobi/tree/main/website/docs/user-guide/messaging) |
+| MCP servers | `plobi mcp list` or [MCP guide](https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/mcp.md) |
+| Profiles | `plobi profile list` or [Profiles docs](https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/profiles.md) |
+| Cron jobs | `plobi cron list` or [Cron docs](https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/cron.md) |
+| Memory | `plobi memory status` or [Memory docs](https://github.com/deyu-deng/Plobi/blob/main/website/docs/user-guide/features/memory.md) |
+| Env variables | `plobi config env-path` or [Env vars reference](https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/environment-variables.md) |
+| CLI commands | `plobi --help` or [CLI reference](https://github.com/deyu-deng/Plobi/blob/main/website/docs/reference/cli-commands.md) |
 | Gateway logs | `~/.plobi/logs/gateway.log` |
 | Session files | `plobi sessions browse` (reads state.db) |
 | Source code | `~/.plobi/plobi-agent/` |
@@ -968,7 +968,7 @@ plobi config set auxiliary.vision.model <model_name>
 
 ## Contributor Quick Reference
 
-For occasional contributors and PR authors. Full developer docs: https://hermes-agent.nousresearch.com/docs/developer-guide/
+For occasional contributors and PR authors. Full developer docs: https://github.com/deyu-deng/Plobi/tree/main/website/docs/developer-guide
 
 ### Project Layout
 
