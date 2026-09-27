@@ -180,11 +180,13 @@ class TestFallbackChain:
     releases (opus 4.8, etc.) never reach the picker.
     """
 
-    PRIMARY = "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json"
-    FALLBACK = (
-        "https://raw.githubusercontent.com/NousResearch/hermes-agent"
+    # R-043: both ends of the chain are ours now — the raw copy in our repo and
+    # (once Pages is on) our own docs site. Nothing here points upstream.
+    PRIMARY = (
+        "https://raw.githubusercontent.com/deyu-deng/Plobi"
         "/main/website/static/api/model-catalog.json"
     )
+    FALLBACK = "https://deyu-deng.github.io/Plobi/docs/api/model-catalog.json"
 
     def test_uses_primary_when_it_succeeds(self, isolated_home):
         from plobi_cli import model_catalog
@@ -211,7 +213,9 @@ class TestFallbackChain:
             return _valid_manifest()
 
         with patch.object(model_catalog, "_fetch_manifest", side_effect=fake_fetch):
-            result = model_catalog._fetch_manifest_with_fallback(self.PRIMARY, 5.0)
+            result = model_catalog._fetch_manifest_with_fallback(
+                self.PRIMARY, 5.0, fallback_urls=(self.FALLBACK,)
+            )
 
         assert result is not None
         assert calls == [self.PRIMARY, self.FALLBACK]
@@ -223,8 +227,12 @@ class TestFallbackChain:
             result = model_catalog._fetch_manifest_with_fallback(self.PRIMARY, 5.0)
 
         assert result is None
-        # Primary + every fallback URL was attempted exactly once.
-        assert fetch.call_count == 1 + len(model_catalog.DEFAULT_CATALOG_FALLBACK_URLS)
+        # Primary + every *distinct* fallback URL, exactly once each. R-043 left
+        # the chain single-source (primary == the repo's own raw copy), so the
+        # dedupe branch applies and nothing upstream is ever contacted.
+        distinct = [u for u in model_catalog.DEFAULT_CATALOG_FALLBACK_URLS
+                    if u and u != model_catalog.DEFAULT_CATALOG_URL]
+        assert fetch.call_count == 1 + len(distinct)
 
     def test_dedupes_when_primary_equals_fallback(self, isolated_home):
         """Operator who configured ``model_catalog.url`` to the raw GitHub URL
@@ -232,7 +240,10 @@ class TestFallbackChain:
         from plobi_cli import model_catalog
 
         with patch.object(model_catalog, "_fetch_manifest", return_value=None) as fetch:
-            model_catalog._fetch_manifest_with_fallback(self.FALLBACK, 5.0)
+            # Primary == the module's own fallback entry -> deduped to one fetch.
+            model_catalog._fetch_manifest_with_fallback(
+                model_catalog.DEFAULT_CATALOG_URL, 5.0
+            )
 
         assert fetch.call_count == 1, f"expected 1 call, got {fetch.call_count}"
 
@@ -243,17 +254,22 @@ class TestFallbackChain:
         manifest = _valid_manifest()
         calls: list[str] = []
 
+        # fallback_urls is a def-time default argument, so patching the module
+        # global would not change it. Patch the *primary* to a site URL the fake
+        # fails on, and let the real default fallback — the raw copy in our own
+        # repo — serve the manifest.
+        site = "https://deyu-deng.github.io/Plobi/docs/api/model-catalog.json"
+
         def fake_fetch(url, timeout):
             calls.append(url)
-            if url == self.PRIMARY:
-                return None
-            return manifest
+            return None if url == site else manifest
 
-        with patch.object(model_catalog, "_fetch_manifest", side_effect=fake_fetch):
+        with patch.object(model_catalog, "_fetch_manifest", side_effect=fake_fetch), \
+             patch.object(model_catalog, "DEFAULT_CATALOG_URL", site):
             result = model_catalog.get_catalog(force_refresh=True)
 
         assert result == manifest
-        assert self.FALLBACK in calls
+        assert model_catalog.DEFAULT_CATALOG_FALLBACK_URLS[0] in calls
 
 
 class TestCuratedAccessors:

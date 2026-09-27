@@ -31,7 +31,7 @@ WEBSITE = SCRIPT_DIR.parent
 DOCS = WEBSITE / "docs"
 STATIC = WEBSITE / "static"
 
-SITE_BASE = "https://hermes-agent.nousresearch.com/docs"
+SITE_BASE = "https://github.com/deyu-deng/Plobi"
 
 # Curated sections for llms.txt — mirrors the product story, not the filesystem.
 # Each entry: (docs-relative path without .md, display title, optional short desc).
@@ -248,7 +248,7 @@ def emit_llms_full() -> str:
             "Started, Using Plobi, Features, Messaging, Integrations, Guides, "
             "Developer Guide, Reference, then everything else.\n"
         ),
-        "Canonical site: https://hermes-agent.nousresearch.com/docs\n",
+        "Canonical site: https://github.com/deyu-deng/Plobi",
         "Short index: https://hermes-agent.nousresearch.com/docs/llms.txt\n",
         "\n---\n\n",
     ]

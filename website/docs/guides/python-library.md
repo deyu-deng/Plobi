@@ -15,19 +15,19 @@ Plobi isn't just a CLI tool. You can import `AIAgent` directly and use it progra
 Install Plobi directly from the repository:
 
 ```bash
-pip install git+https://github.com/NousResearch/hermes-agent.git
+pip install git+https://github.com/deyu-deng/Plobi.git
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install git+https://github.com/NousResearch/hermes-agent.git
+uv pip install git+https://github.com/deyu-deng/Plobi.git
 ```
 
 You can also pin it in your `requirements.txt`:
 
 ```text
-plobi-agent @ git+https://github.com/NousResearch/hermes-agent.git
+plobi-agent @ git+https://github.com/deyu-deng/Plobi.git
 ```
 
 :::tip

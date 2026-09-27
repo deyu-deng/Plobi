@@ -50,7 +50,7 @@ plobi chat
 <summary><strong>从本地克隆构建</strong></summary>
 
 ```bash
-git clone https://github.com/NousResearch/hermes-agent.git
+git clone https://github.com/deyu-deng/Plobi.git
 cd plobi-agent
 nix build
 ./result/bin/plobi setup

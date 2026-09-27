@@ -64,7 +64,7 @@ npx hyperframes doctor                      # 诊断环境问题
 
 渲染参数：`--quality draft|standard|high` · `--fps 24|30|60` · `--format mp4|webm` · `--docker`（可复现）· `--strict`。
 
-完整 CLI 参考：[references/cli.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/cli.md)。
+完整 CLI 参考：[references/cli.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/cli.md)。
 
 ## 初始设置（一次性）
 
@@ -78,7 +78,7 @@ bash "$(dirname "$(find ~/.plobi/skills -path '*/hyperframes/SKILL.md' 2>/dev/nu
 3. 通过 Puppeteer 预缓存 `chrome-headless-shell` — **必需**，用于通过 Chrome 的 `HeadlessExperimental.beginFrame` 捕获路径实现最高质量渲染。
 4. 运行 `npx hyperframes doctor` 并报告结果。
 
-若设置失败，请参阅 [references/troubleshooting.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/troubleshooting.md)。
+若设置失败，请参阅 [references/troubleshooting.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/troubleshooting.md)。
 
 ## 操作流程
 
@@ -115,7 +115,7 @@ npx hyperframes init my-video --non-interactive
 
 只有在主帧看起来正确之后，才添加 `gsap.from()` 入场动画（**向** CSS 位置动画）和 `gsap.to()` 退场动画（**从** CSS 位置动画）。
 
-完整的 data 属性 schema 和合成规则见 [references/composition.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/composition.md)。
+完整的 data 属性 schema 和合成规则见 [references/composition.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/composition.md)。
 
 ### 4. 使用 GSAP 制作动画
 
@@ -126,7 +126,7 @@ npx hyperframes init my-video --non-interactive
 - 具有确定性 — 禁止 `Math.random()`、`Date.now()` 或挂钟逻辑。如需伪随机数，使用带种子的 PRNG。
 - 同步构建 — 时间轴构建过程中禁止 `async`/`await`、`setTimeout` 或 Promise。
 
-核心 GSAP API（tween、ease、stagger、timeline）见 [references/gsap.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/gsap.md)。
+核心 GSAP API（tween、ease、stagger、timeline）见 [references/gsap.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/gsap.md)。
 
 ### 5. 场景间转场
 
@@ -162,7 +162,7 @@ npx hyperframes render --quality high --output final.mp4     # 最终交付
 
 ### 8. 网站转视频（若用户提供 URL）
 
-使用 [references/website-to-video.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/website-to-video.md) 中的 7 步捕获转视频工作流：捕获 → DESIGN.md → SCRIPT.md → 分镜 → 合成 → 渲染 → 交付。
+使用 [references/website-to-video.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/website-to-video.md) 中的 7 步捕获转视频工作流：捕获 → DESIGN.md → SCRIPT.md → 分镜 → 合成 → 渲染 → 交付。
 
 ## 常见陷阱
 
@@ -197,9 +197,9 @@ npx hyperframes render --quality high --output final.mp4     # 最终交付
 
 ## 参考资料
 
-- [composition.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/composition.md) — data 属性、时间轴契约、不可违反的规则、排版/资源规则
-- [cli.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/cli.md) — 所有 CLI 命令（init、capture、lint、validate、inspect、preview、render、transcribe、tts、doctor、browser、info、upgrade、benchmark）
-- [gsap.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/gsap.md) — HyperFrames 的 GSAP 核心 API（tween、ease、stagger、timeline、matchMedia）
-- [features.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/features.md) — 字幕、TTS、音频响应、标记高亮、转场（按需加载）
-- [website-to-video.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/website-to-video.md) — 7 步捕获转视频工作流
-- [troubleshooting.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/references/troubleshooting.md) — OpenClaw 修复、环境变量、常见渲染错误
+- [composition.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/composition.md) — data 属性、时间轴契约、不可违反的规则、排版/资源规则
+- [cli.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/cli.md) — 所有 CLI 命令（init、capture、lint、validate、inspect、preview、render、transcribe、tts、doctor、browser、info、upgrade、benchmark）
+- [gsap.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/gsap.md) — HyperFrames 的 GSAP 核心 API（tween、ease、stagger、timeline、matchMedia）
+- [features.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/features.md) — 字幕、TTS、音频响应、标记高亮、转场（按需加载）
+- [website-to-video.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/website-to-video.md) — 7 步捕获转视频工作流
+- [troubleshooting.md](https://github.com/deyu-deng/Plobi/blob/main/optional-skills/creative/hyperframes/references/troubleshooting.md) — OpenClaw 修复、环境变量、常见渲染错误
