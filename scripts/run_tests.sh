@@ -79,14 +79,31 @@ fi
 # ── Run in hermetic env ──────────────────────────────────────────────────────
 # env -i: start with empty environment, opt-in only what we need.
 # No credential var can leak — you'd have to explicitly add it here.
+#
+# HOME is NOT passed through. AGENTS.md promises "HOME / ~/.plobi → Temp dir
+# per test", and tests/conftest.py's _isolate_plobi_home honours that for code
+# going through get_plobi_home(). It does not cover import-time module
+# constants, the logging setup, or anything that reads Path.home() — a full
+# suite run was observed creating a real ~/.plobi with config.yaml, logs,
+# cron/jobs.json, state.db and an auth.json holding a live `gh` token (R-041).
+# That both pollutes the developer's machine and makes "fails closed without
+# credentials" tests depend on what a previous run left behind. Redirecting
+# HOME here closes the hole for every path, whatever a module does at import.
+SCRATCH_HOME="$(mktemp -d "${TMPDIR:-/tmp}/plobi-tests-home.XXXXXX")"
+mkdir -p "$SCRATCH_HOME/.plobi"
+cleanup_scratch_home() { rm -rf "$SCRATCH_HOME"; }
+trap cleanup_scratch_home EXIT INT TERM
+
 echo "▶ running per-file parallel test suite via run_tests_parallel.py"
-echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env)"
+echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env; HOME=$SCRATCH_HOME)"
 
 cd "$REPO_ROOT"
 
-exec env -i \
+env -i \
   PATH="$PATH" \
-  HOME="$HOME" \
+  HOME="$SCRATCH_HOME" \
+  USERPROFILE="$SCRATCH_HOME" \
+  PLOBI_HOME="$SCRATCH_HOME/.plobi" \
   TZ=UTC \
   LANG=C.UTF-8 \
   LC_ALL=C.UTF-8 \
@@ -96,3 +113,7 @@ exec env -i \
   ${EXTRA_PYTHONPATH:+PYTHONPATH="$EXTRA_PYTHONPATH"} \
   ${EXTRA_PYTEST_PLUGINS:+PYTEST_PLUGINS="$EXTRA_PYTEST_PLUGINS"} \
   "$PYTHON" "$SCRIPT_DIR/run_tests_parallel.py" "$@"
+STATUS=$?
+cleanup_scratch_home
+trap - EXIT INT TERM
+exit $STATUS
