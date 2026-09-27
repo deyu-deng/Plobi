@@ -136,7 +136,7 @@ To launch via the CLI, simply run `plobi desktop`. By default it installs worksp
 | -------------------- | ----------------------------------------------------------------------------------------- |
 | `--skip-build`       | Skip npm install/package and launch the existing unpacked app from `apps/desktop/release` |
 | `--force-build`      | Force a full rebuild even if the content stamp matches                                    |
-| `--build-only`       | Build the desktop app but do not launch it (used by `plobi update`)                      |
+| `--build-only`       | Build the desktop app but do not launch it                                              |
 | `--source`           | Launch via `electron .` against `apps/desktop/dist` instead of the packaged app           |
 | `--cwd PATH`         | Initial project directory for desktop chat sessions (sets `PLOBI_DESKTOP_CWD`)           |
 | `--plobi-root PATH` | Override the Plobi source root the app uses (sets `PLOBI_DESKTOP_PLOBI_ROOT`)          |

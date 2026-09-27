@@ -1,207 +1,102 @@
 ---
 sidebar_position: 3
 title: "更新与卸载"
-description: "如何将 Plobi Agent 更新至最新版本或将其卸载"
+description: "本构建没有自动更新 —— 这里写清真正可用的升级方式，以及卸载"
 ---
 
 # 更新与卸载
 
-## 更新
+## 先读这条：`plobi update` 什么都不会更新
 
-使用单条命令更新至最新版本：
+本构建**没有自更新**。`plobi update` 仍然注册为子命令（别处代码引用这个命令名），
+但它的函数体只打印一行提示然后正常退出：
 
-```bash
-plobi update
+```
+Plobi 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。
 ```
 
-此命令会从 `main` 拉取最新代码、更新依赖项，并提示你配置自上次更新以来新增的选项。
+你在别处看到的旗标 —— `--branch`、`--check`、`--backup`、`--force`、`--all` ——
+参数解析器照收，但**从不被读取**。不拉代码、不重装依赖、也不会跑任何回滚机制。
 
-:::tip
-`plobi update` 会自动检测新的配置选项并提示你添加。如果跳过了该提示，可手动运行 `plobi config check` 查看缺失的选项，再运行 `plobi config migrate` 以交互方式添加。
+两个原因，都是有意的：
+
+1. **事故防护。** 2026-09-06 与 2026-09-07 两次事故里，运行期 git 路径在一次普通
+   "更新"中摧毁过工作树 / `.git`。所以整类"运行期改 git 状态"的路径是被**冻结**，不是被修补。
+2. **本 fork 不再同步上游。** 代码同步是每次发布时人 / Agent 的显式决定，不会自动 pull。
+
+:::danger
+不要把 `plobi update` 当成你的安全补丁通道。一条什么都不改却返回 0 的命令，
+比一条报错的命令更糟 —— 它看起来像是成功了。请关注
+[Releases](https://github.com/deyu-deng/Plobi/releases)，用下面的步骤显式更新。
 :::
 
-### 更新过程
+## 真正可用的升级方式
 
-运行 `plobi update` 时，将依次执行以下步骤：
+按你的安装方式选一行。任何一种都**不会碰**你的数据目录。
 
-1. **配对数据快照** — 保存一份轻量级的更新前状态快照（涵盖 `~/.plobi/pairing/`、飞书评论规则及其他运行时修改的状态文件）。可通过 [快照与回滚](../user-guide/checkpoints-and-rollback.md) 中描述的快照恢复流程进行恢复，或从 Plobi 写入 `~/.plobi/` 目录旁的最新快速快照 zip 文件中提取。
-2. **Git pull** — 从 `main` 分支拉取最新代码并更新子模块
-3. **依赖安装** — 运行 `uv pip install -e ".[all]"` 以获取新增或变更的依赖项
-4. **配置迁移** — 检测自当前版本以来新增的配置选项并提示设置
-5. **Gateway 自动重启** — 更新完成后刷新正在运行的 gateway，使新代码立即生效。由服务管理的 gateway（Linux 上的 systemd、macOS 上的 launchd）通过服务管理器重启；手动启动的 gateway 在 Plobi 能将运行中的 PID 映射回某个 profile 时会自动重新启动。
+| 安装方式 | 更新动作 | 你的数据 |
+| --- | --- | --- |
+| **桌面安装包**（`.dmg` / `.exe`） | 从 [Releases](https://github.com/deyu-deng/Plobi/releases) 下载新版安装包覆盖安装。 | 不动 —— 数据在 `~/.plobi`（Windows 是 `%APPDATA%\Plobi`）。 |
+| **源码安装**（`git` + `uv`/venv） | 见下面四步。 | 不动。 |
+| **Docker / Homebrew** | **尚未发布**。见下方「发布渠道现状」。 | 不适用 |
 
-### 仅预览：`plobi update --check`
-
-想在拉取前确认是否有更新？运行 `plobi update --check` — 它会获取并与 `origin/main` 比较提交。不修改任何文件，不重启 gateway。适合在以"是否有更新"为条件的脚本和 cron 任务中使用。
-
-### 完整更新前备份：`--backup`
-
-对于高价值 profile（生产环境 gateway、团队共享安装），可选择在拉取前对 `PLOBI_HOME`（配置、认证、会话、技能、配对数据）进行完整备份：
+### 源码安装四步
 
 ```bash
-plobi update --backup
+cd /path/to/Plobi                 # 你 git clone 出来的那份
+
+# 1. 先备份 —— 配置、密钥、会话、技能都在仓库之外。
+cp -a ~/.plobi ~/plobi-backup-$(date +%F)
+
+# 2. 移动工作树。本仓远端名字叫 `github`，不是 `origin`。
+git fetch github && git checkout main && git reset --hard github/main
+
+# 3. 按你装过的 extras 重新解析依赖。
+uv sync --extra dev --extra acp --extra messaging --extra web --extra anthropic
+
+# 4. 自检。这里的红项才是版本之间真的坏掉的东西。
+python scripts/plobi/doctor.py
 ```
 
-或将其设为每次运行的默认行为：
+升级后 `plobi config check` 会列出你的配置文件缺了哪些新键，
+`plobi config migrate` 带你逐项补齐。这两件事**都不再自动跑** —— 以前它们是
+`plobi update` 流程的一部分。
 
-```yaml
-# ~/.plobi/config.yaml
-updates:
-  pre_update_backup: true
-```
-
-`--backup` 在早期版本中是始终开启的行为，但在大型 home 目录上会给每次更新增加数分钟时间，因此现已改为按需启用。上述轻量级配对数据快照仍会无条件执行。
-
-### Windows：另一个 `plobi.exe` 正在运行
-
-在 Windows 上，如果 `plobi update` 检测到另一个 `plobi.exe` 进程持有 venv 入口点可执行文件的句柄，它将拒绝运行 — 最常见的情况是 Plobi Desktop 应用启动的后端进程、另一个终端中打开的 `plobi` REPL，或正在运行的 gateway：
-
-```
-$ plobi update
-✗ Another plobi.exe is running:
-    PID 12345  plobi.exe
-
-  Updating now would fail to overwrite ...\venv\Scripts\plobi.exe because
-  Windows blocks REPLACE on a running executable.
-
-  Close Plobi Desktop, exit any open `plobi` REPLs, and
-  stop the gateway (`plobi gateway stop`) before retrying.
-  Override with `plobi update --force` if you've already
-  confirmed those processes will not write to the venv.
-```
-
-关闭列出的进程后重试。如果你确定并发进程不会造成干扰（极少见 — 通常仅在杀毒软件 shim 被误判时有用），可传入 `--force` 跳过检查。此时更新程序仍会以指数退避方式重试 `.exe` 重命名操作，对于顽固的文件锁，会通过 `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)` 将替换操作安排在下次重启时执行，以确保更新能够完成。
-
-预期输出如下：
-
-```
-$ plobi update
-Updating Plobi Agent...
-📥 Pulling latest code...
-Already up to date.  (or: Updating abc1234..def5678)
-📦 Updating dependencies...
-✅ Dependencies updated
-🔍 Checking for new config options...
-✅ Config is up to date  (or: Found 2 new options — running migration...)
-🔄 Restarting gateways...
-✅ Gateway restarted
-✅ Plobi Agent updated successfully!
-```
-
-### 更新后建议的验证步骤
-
-`plobi update` 处理主要的更新流程，但快速验证可确认一切正常落地：
-
-1. `git status --short` — 若工作树出现意外的脏状态，请在继续前检查
-2. `plobi doctor` — 检查配置、依赖项和服务健康状态
-3. `plobi --version` — 确认版本已按预期更新
-4. 如果使用 gateway：`plobi gateway status`
-5. 如果 `doctor` 报告 npm audit 问题：在标记的目录中运行 `npm audit fix`
-
-:::warning 更新后工作树出现脏状态
-如果 `plobi update` 后 `git status --short` 显示意外变更，请在继续前停下来检查。这通常意味着本地修改被重新应用到了更新后的代码之上，或依赖步骤刷新了锁文件。
-:::
-
-### 终端在更新中途断开连接
-
-`plobi update` 针对意外终端断开进行了保护：
-
-- 更新会忽略 `SIGHUP`，因此关闭 SSH 会话或终端窗口不再会在安装中途终止它。`pip` 和 `git` 子进程继承此保护，因此 Python 环境不会因连接断开而处于半安装状态。
-- 更新运行期间，所有输出会同步镜像到 `~/.plobi/logs/update.log`。如果终端消失，重新连接后检查日志，确认更新是否完成以及 gateway 重启是否成功：
+### 把在跑的东西重启
 
 ```bash
-tail -f ~/.plobi/logs/update.log
+plobi gateway restart     # 消息网关
+# 桌面端：从托盘退出，再重新打开。
 ```
 
-- `Ctrl-C`（SIGINT）和系统关机（SIGTERM）仍会被响应 — 这些是主动取消操作，而非意外中断。
+## 发布渠道现状（还没发布）
 
-你不再需要将 `plobi update` 包裹在 `screen` 或 `tmux` 中来应对终端断开。
+仓库里有两条渠道，但它们**从未发布过任何一个 Plobi 构建物**，所以今天照命令敲是拿不到东西的。
+打包还在推进中，这两条渠道是有意保留的；本节给的是实话，不是邀请。
 
-### 查看当前版本
+| 渠道 | 现状 | 别照抄 |
+| --- | --- | --- |
+| Docker 镜像 | 我方镜像**未发布**。仓内 `docker-compose.yml` 已指向 `plobi-agent`，但 `docker pull` 拉不到它。 | 任何 `docker pull …/hermes-agent` 形式的命令 —— 那是别人发布的镜像，不是本项目的构建物。见 [Docker](../user-guide/docker.md)。 |
+| Homebrew formula | `packaging/homebrew/plobi-agent.rb` 是**占位**：它的 `url:` 仍指向别人的源码包。 | `brew install plobi-agent`。发布流程本身也还没跑过，见 `packaging/homebrew/README.md` 顶部说明。 |
+
+## 回滚
 
 ```bash
-plobi version
-```
-
-与 [GitHub releases 页面](https://github.com/deyu-deng/Plobi/releases) 上的最新版本进行比较。
-
-### 从消息平台更新
-
-你也可以直接从 Telegram、Discord、Slack、WhatsApp 或 Teams 发送以下命令进行更新：
-
-```
-/update
-```
-
-此命令会拉取最新代码、更新依赖项并重启正在运行的 gateway。Bot 在重启期间会短暂下线（通常为 5–15 秒），之后恢复服务。
-
-### 手动更新
-
-如果你是手动安装的（未使用快速安装脚本）：
-
-```bash
-cd /path/to/plobi-agent
-export VIRTUAL_ENV="$(pwd)/venv"
-
-# Pull latest code
-git pull origin main
-
-# Reinstall (picks up new dependencies)
-uv pip install -e ".[all]"
-
-# Check for new config options
-plobi config check
-plobi config migrate   # Interactively add any missing options
-```
-
-### 回滚说明
-
-如果更新引入了问题，可以回滚到之前的版本：
-
-```bash
-cd /path/to/plobi-agent
-
-# List recent versions
+cd /path/to/Plobi
 git log --oneline -10
-
-# Roll back to a specific commit
-git checkout <commit-hash>
-uv pip install -e ".[all]"
-
-# Restart the gateway if running
-plobi gateway restart
+git checkout <commit-hash>        # 或从 `git tag --sort=-version:refname` 里挑一个发布标签
+uv sync --extra dev
+plobi doctor
 ```
 
-回滚到特定发布标签：
+如果回到的版本还没有你现在的某些配置键，`plobi config check` 会点出不认识的项；
+旧构建报错时把它们从 `config.yaml` 里删掉即可。上面那份 `~/.plobi` 备份是最快的退路。
 
-```bash
-git checkout v0.6.0
-uv pip install -e ".[all]"
-```
-
-:::warning
-如果新增了配置选项，回滚可能导致配置不兼容。回滚后运行 `plobi config check`，如果遇到错误，请从 `config.yaml` 中删除无法识别的选项。
+:::note Nix
+Nix 不再是显式支持的安装路径（尽力而为）—— 见 [Nix Setup](./nix-setup.md)。
+用 Nix flake 安装的话，升级与回滚走
+`nix flake update plobi-agent` / `nix profile upgrade plobi-agent` / `nix profile rollback`。
 :::
-
-### Nix 用户注意事项
-
-如果你通过 Nix flake 安装，更新由 Nix 包管理器负责：
-
-```bash
-# Update the flake input
-nix flake update plobi-agent
-
-# Or rebuild with the latest
-nix profile upgrade plobi-agent
-```
-
-Nix 安装是不可变的 — 回滚由 Nix 的 generation 系统处理：
-
-```bash
-nix profile rollback
-```
-
-详情参见 [Nix 安装](./nix-setup.md)。
 
 ---
 
@@ -211,18 +106,18 @@ nix profile rollback
 plobi uninstall
 ```
 
-卸载程序会提供选项，让你保留配置文件（`~/.plobi/`）以便将来重新安装。
+卸载程序会让你选择是否保留配置文件目录（`~/.plobi/`），以便将来重装。
 
 ### 手动卸载
 
 ```bash
 rm -f ~/.local/bin/plobi
-rm -rf /path/to/plobi-agent
-rm -rf ~/.plobi            # 可选 — 如计划重新安装则保留
+rm -rf /path/to/Plobi
+rm -rf ~/.plobi            # 可选 —— 打算重装就留着
 ```
 
 :::info
-如果你将 gateway 安装为系统服务，请先停止并禁用它：
+如果你把网关装成了系统服务，先停掉并禁用：
 ```bash
 plobi gateway stop
 # Linux: systemctl --user disable plobi-gateway

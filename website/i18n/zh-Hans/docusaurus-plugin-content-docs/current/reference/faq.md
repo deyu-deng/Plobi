@@ -630,7 +630,7 @@ Profiles 是构建在 `PLOBI_HOME` 之上的托管层。您*可以*在每次命�
 
 ### 运行 `plobi update` 时会发生什么？
 
-`plobi update` 拉取最新代码并重新安装依赖项**一次**（不是每个 profile 各一次）。然后自动将更新的技能同步到所有 profiles。您只需运行一次 `plobi update` — 它覆盖机器上的每个 profile。
+什么都不发生。本构建禁用了自更新：这条命令只打印一行提示然后返回 0，它的旗标从不被读取。本 fork 也不再同步上游，所以没有东西可以自动拉取。请显式升级 —— 桌面装：用新安装包覆盖安装；源码装：`git fetch github && git reset --hard github/main` 再 `uv sync` —— 然后跑 `plobi config check` 与 `plobi doctor`。见[更新与卸载](../getting-started/updating.md)。
 
 ### 可以运行多少个 profiles？
 

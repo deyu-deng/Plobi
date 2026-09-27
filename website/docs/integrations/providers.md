@@ -74,7 +74,7 @@ Don't have a subscription yet? Get one at [portal.nousresearch.com/manage-subscr
 
 **For full details:** see the dedicated [Nous Portal integration page](/integrations/nous-portal) (what's in the subscription, model catalog, troubleshooting) and the step-by-step [Run Plobi Agent with Nous Portal guide](/guides/run-plobi-with-nous-portal).
 
-**Client identification.** Every Portal request from Plobi Agent carries a `client=plobi-client-v<version>` tag (e.g. `client=plobi-client-v0.13.0`) auto-aligned to your installed release. This is sent on all Portal pathways — main chat loop, auxiliary calls, compression summarizer, web extraction — and lets Portal-side telemetry distinguish Plobi traffic from other clients. No config required; the tag updates automatically when you `plobi update`.
+**Client identification.** Every Portal request from Plobi Agent carries a `client=plobi-client-v<version>` tag (e.g. `client=plobi-client-v0.13.0`) auto-aligned to your installed release. This is sent on all Portal pathways — main chat loop, auxiliary calls, compression summarizer, web extraction — and lets Portal-side telemetry distinguish Plobi traffic from other clients. No config required; the tag follows whatever version you have installed (this build has no self-update — see [Updating & Uninstalling](../getting-started/updating.md)).
 
 **JWT auth (automatic).** Plobi prefers scoped `inference:invoke` JWTs for Portal requests with the legacy opaque session-key path as a fallback. No configuration is required — credentials are managed by the OAuth flow and rotate transparently. Revoked refresh tokens are quarantined to avoid replay loops.
 

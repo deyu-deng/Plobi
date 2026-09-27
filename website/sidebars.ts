@@ -143,7 +143,6 @@ const sidebars: SidebarsConfig = {
                     'user-guide/skills/bundled/apple/apple-apple-reminders',
                     'user-guide/skills/bundled/apple/apple-findmy',
                     'user-guide/skills/bundled/apple/apple-imessage',
-                    'user-guide/skills/bundled/apple/apple-macos-computer-use',
                   ],
                 },
                 {
@@ -154,8 +153,17 @@ const sidebars: SidebarsConfig = {
                   items: [
                     'user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code',
                     'user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex',
-                    'user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-plobi-agent',
                     'user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode',
+                    'user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-plobi-agent',
+                  ],
+                },
+                {
+                  type: 'category',
+                  label: 'computer-use',
+                  key: 'skills-bundled-computer-use',
+                  collapsed: true,
+                  items: [
+                    'user-guide/skills/bundled/computer-use/computer-use-computer-use',
                   ],
                 },
                 {
@@ -261,6 +269,23 @@ const sidebars: SidebarsConfig = {
                 },
                 {
                   type: 'category',
+                  label: 'plobi',
+                  key: 'skills-bundled-plobi',
+                  collapsed: true,
+                  items: [
+                    'user-guide/skills/bundled/plobi/plobi-butler-extended',
+                    'user-guide/skills/bundled/plobi/plobi-info-scout',
+                    'user-guide/skills/bundled/plobi/plobi-l2-resident',
+                    'user-guide/skills/bundled/plobi/plobi-message-digest',
+                    'user-guide/skills/bundled/plobi/plobi-morning-report',
+                    'user-guide/skills/bundled/plobi/plobi-night-autonomy',
+                    'user-guide/skills/bundled/plobi/plobi-passive-learn',
+                    'user-guide/skills/bundled/plobi/plobi-quota-alert',
+                    'user-guide/skills/bundled/plobi/plobi-self-upgrade',
+                  ],
+                },
+                {
+                  type: 'category',
                   label: 'productivity',
                   key: 'skills-bundled-productivity',
                   collapsed: true,
@@ -313,9 +338,9 @@ const sidebars: SidebarsConfig = {
                   key: 'skills-bundled-software-development',
                   collapsed: true,
                   items: [
-                    'user-guide/skills/bundled/software-development/software-development-plobi-agent-skill-authoring',
                     'user-guide/skills/bundled/software-development/software-development-node-inspect-debugger',
                     'user-guide/skills/bundled/software-development/software-development-plan',
+                    'user-guide/skills/bundled/software-development/software-development-plobi-agent-skill-authoring',
                     'user-guide/skills/bundled/software-development/software-development-python-debugpy',
                     'user-guide/skills/bundled/software-development/software-development-requesting-code-review',
                     'user-guide/skills/bundled/software-development/software-development-simplify-code',
@@ -398,8 +423,8 @@ const sidebars: SidebarsConfig = {
                   items: [
                     'user-guide/skills/optional/devops/devops-cli',
                     'user-guide/skills/optional/devops/devops-docker-management',
-                    'user-guide/skills/optional/devops/devops-plobi-s6-container-supervision',
                     'user-guide/skills/optional/devops/devops-pinggy-tunnel',
+                    'user-guide/skills/optional/devops/devops-plobi-s6-container-supervision',
                     'user-guide/skills/optional/devops/devops-watchers',
                   ],
                 },
@@ -569,6 +594,7 @@ const sidebars: SidebarsConfig = {
                     'user-guide/skills/optional/security/security-godmode',
                     'user-guide/skills/optional/security/security-oss-forensics',
                     'user-guide/skills/optional/security/security-sherlock',
+                    'user-guide/skills/optional/security/security-unbroker',
                     'user-guide/skills/optional/security/security-web-pentest',
                   ],
                 },
@@ -589,6 +615,7 @@ const sidebars: SidebarsConfig = {
                   key: 'skills-optional-web-development',
                   collapsed: true,
                   items: [
+                    'user-guide/skills/optional/web-development/web-development-cloudflare-temporary-deploy',
                     'user-guide/skills/optional/web-development/web-development-page-agent',
                   ],
                 },

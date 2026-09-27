@@ -221,7 +221,7 @@ to edit a profile from the dashboard, use the switcher instead.
 
 ## Updating
 
-`plobi update` pulls code once (shared) and syncs new bundled skills to **all** profiles automatically:
+Code is shared across profiles, but there is **no automatic skill sync in this build** — `plobi update` is a disabled no-op. After a manual upgrade, bundled skills are re-seeded per profile by the installer / `plobi skills` commands:
 
 ```bash
 plobi update

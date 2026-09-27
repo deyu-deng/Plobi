@@ -20,7 +20,6 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 | [`apple-reminders`](/docs/user-guide/skills/bundled/apple/apple-apple-reminders) | Apple Reminders via remindctl: add, list, complete. | `apple/apple-reminders` |
 | [`findmy`](/docs/user-guide/skills/bundled/apple/apple-findmy) | Track Apple devices/AirTags via FindMy.app on macOS. | `apple/findmy` |
 | [`imessage`](/docs/user-guide/skills/bundled/apple/apple-imessage) | Send and receive iMessages/SMS via the imsg CLI on macOS. | `apple/imessage` |
-| [`macos-computer-use`](/docs/user-guide/skills/bundled/apple/apple-macos-computer-use) | Drive the macOS desktop in the background — screenshots, mouse, keyboard, scroll, drag — without stealing the user's cursor, keyboard focus, or Space. Works with any tool-capable model. Load this skill whenever the `computer_use` tool is... | `apple/macos-computer-use` |
 
 ## autonomous-ai-agents
 
@@ -28,8 +27,14 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 |-------|-------------|------|
 | [`claude-code`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-claude-code) | Delegate coding to Claude Code CLI (features, PRs). | `autonomous-ai-agents/claude-code` |
 | [`codex`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-codex) | Delegate coding to OpenAI Codex CLI (features, PRs). | `autonomous-ai-agents/codex` |
-| [`plobi-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-plobi-agent) | Configure, extend, or contribute to Plobi Agent. | `autonomous-ai-agents/plobi-agent` |
 | [`opencode`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-opencode) | Delegate coding to OpenCode CLI (features, PR review). | `autonomous-ai-agents/opencode` |
+| [`plobi-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-plobi-agent) | Configure, extend, or contribute to Plobi Agent. | `autonomous-ai-agents/plobi-agent` |
+
+## computer-use
+
+| Skill | Description | Path |
+|-------|-------------|------|
+| [`computer-use`](/docs/user-guide/skills/bundled/computer-use/computer-use-computer-use) | Drive the user's desktop in the background — clicking, typing, scrolling, dragging — without stealing the cursor, keyboard focus, or switching virtual desktops / Spaces. Cross-platform: macOS, Windows, Linux. Works with any tool-capable... | `computer-use` |
 
 ## creative
 
@@ -57,12 +62,6 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 | Skill | Description | Path |
 |-------|-------------|------|
 | [`jupyter-live-kernel`](/docs/user-guide/skills/bundled/data-science/data-science-jupyter-live-kernel) | Iterative Python via live Jupyter kernel (hamelnb). | `data-science/jupyter-live-kernel` |
-
-## devops
-
-| Skill | Description | Path |
-|-------|-------------|------|
-
 
 ## dogfood
 
@@ -114,6 +113,20 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 |-------|-------------|------|
 | [`obsidian`](/docs/user-guide/skills/bundled/note-taking/note-taking-obsidian) | Read, search, create, and edit notes in the Obsidian vault. | `note-taking/obsidian` |
 
+## plobi
+
+| Skill | Description | Path |
+|-------|-------------|------|
+| [`plobi-butler-extended`](/docs/user-guide/skills/bundled/plobi/plobi-butler-extended) | Extended invisible butler — email triage, parcels, calendar conflicts, disk hygiene. Uses domain slots and risk gates. | `plobi/butler-extended` |
+| [`plobi-info-scout`](/docs/user-guide/skills/bundled/plobi/plobi-info-scout) | Proactive information hound — competitor moves, customer signals, asset expiries. Push; do not wait to be asked. | `plobi/info-scout` |
+| [`plobi-l2-resident`](/docs/user-guide/skills/bundled/plobi/plobi-l2-resident) | Resident L2 project agent — close the loop on ONE project: read its Mind subtree, work the board, report summaries to L1. Use when spawned via `plobi plobi agents spawn`. | `plobi/l2-resident` |
+| [`plobi-message-digest`](/docs/user-guide/skills/bundled/plobi/plobi-message-digest) | Extract hard deadlines and todos from WeChat/DingTalk/email digests into the North Star task queue. Use for butler message扫描 / DDL extraction. | `plobi/message-digest` |
+| [`plobi-morning-report`](/docs/user-guide/skills/bundled/plobi/plobi-morning-report) | Build and deliver the Plobi overnight/morning report (completed, failed, awaiting human). Use after night autonomy or when user asks for 早报. | `plobi/morning-report` |
+| [`plobi-night-autonomy`](/docs/user-guide/skills/bundled/plobi/plobi-night-autonomy) | Night mode tick — run low-risk queued work, hold high-risk, prepare morning report. | `plobi/night-autonomy` |
+| [`plobi-passive-learn`](/docs/user-guide/skills/bundled/plobi/plobi-passive-learn) | Observe repeated human/agent operations and draft Skills for human confirmation. Do not auto-install Skills. | `plobi/passive-learn` |
+| [`plobi-quota-alert`](/docs/user-guide/skills/bundled/plobi/plobi-quota-alert) | Warn when AI free-tier or paid subscription quotas are low. Use for 额度预警 / subscription burn alerts. | `plobi/quota-alert` |
+| [`plobi-self-upgrade`](/docs/user-guide/skills/bundled/plobi/plobi-self-upgrade) | Run self-diagnosis, propose module upgrades, enqueue L4 changes for human acceptance after tests. | `plobi/self-upgrade` |
+
 ## productivity
 
 | Skill | Description | Path |
@@ -154,9 +167,9 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 
 | Skill | Description | Path |
 |-------|-------------|------|
-| [`plobi-agent-skill-authoring`](/docs/user-guide/skills/bundled/software-development/software-development-plobi-agent-skill-authoring) | Author in-repo SKILL.md: frontmatter, validator, structure. | `software-development/plobi-agent-skill-authoring` |
 | [`node-inspect-debugger`](/docs/user-guide/skills/bundled/software-development/software-development-node-inspect-debugger) | Debug Node.js via --inspect + Chrome DevTools Protocol CLI. | `software-development/node-inspect-debugger` |
 | [`plan`](/docs/user-guide/skills/bundled/software-development/software-development-plan) | Plan mode: write an actionable markdown plan to .plobi/plans/, no execution. Bite-sized tasks, exact paths, complete code. | `software-development/plan` |
+| [`plobi-agent-skill-authoring`](/docs/user-guide/skills/bundled/software-development/software-development-plobi-agent-skill-authoring) | Author in-repo SKILL.md: frontmatter, validator, structure, and writing-quality principles. | `software-development/plobi-agent-skill-authoring` |
 | [`python-debugpy`](/docs/user-guide/skills/bundled/software-development/software-development-python-debugpy) | Debug Python: pdb REPL + debugpy remote (DAP). | `software-development/python-debugpy` |
 | [`requesting-code-review`](/docs/user-guide/skills/bundled/software-development/software-development-requesting-code-review) | Pre-commit review: security scan, quality gates, auto-fix. | `software-development/requesting-code-review` |
 | [`simplify-code`](/docs/user-guide/skills/bundled/software-development/software-development-simplify-code) | Parallel 3-agent cleanup of recent code changes. | `software-development/simplify-code` |

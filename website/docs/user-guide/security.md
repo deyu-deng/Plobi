@@ -635,7 +635,7 @@ Blocked files show a warning:
 7. **Set `terminal.cwd`** — don't let the agent operate from sensitive directories
 8. **Run as non-root** — never run the gateway as root
 9. **Monitor logs** — check `~/.plobi/logs/` for unauthorized access attempts
-10. **Keep updated** — run `plobi update` regularly for security patches
+10. **Keep updated — deliberately.** `plobi update` is a disabled no-op in this build and will not patch anything. Watch the releases page, upgrade with the manual steps in [Updating & Uninstalling](../getting-started/updating.md), and treat the absence of auto-update as a maintenance responsibility, not a checkbox.
 
 ### Securing API Keys
 

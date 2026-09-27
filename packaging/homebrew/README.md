@@ -1,5 +1,13 @@
 Homebrew packaging notes for Plobi Agent.
 
+> **STATUS: not published.** No Plobi Homebrew formula has ever been released.
+> `plobi-agent.rb` in this directory is a **placeholder** — its `url:` is a
+> template pointing at a GitHub release asset that does not exist yet, and its
+> `sha256:` is a literal placeholder. Users must not be told to run
+> `brew install plobi-agent`; the channel is kept on purpose while packaging is
+> still being decided, and this note is the honest status. The steps below are
+> the flow for *when we do publish*, not a description of today.
+
 Use `packaging/homebrew/plobi-agent.rb` as a tap or `homebrew-core` starting point.
 
 Key choices:

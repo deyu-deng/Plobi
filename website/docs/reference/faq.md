@@ -611,7 +611,7 @@ No. Each profile has its own memory store, session database, and skills director
 
 ### What happens when I run `plobi update`?
 
-`plobi update` pulls the latest code and reinstalls dependencies **once** (not per-profile). It then syncs updated skills to all profiles automatically. You only need to run `plobi update` once — it covers every profile on the machine.
+Nothing. Self-update is disabled in this build: the command prints a notice and exits 0, and its flags are never read. This fork also does not track upstream, so there is nothing to pull automatically. Upgrade explicitly — desktop installs are updated by installing a newer package over the top, source installs by `git fetch github && git reset --hard github/main` plus `uv sync` — then run `plobi config check` and `plobi doctor`. See [Updating & Uninstalling](../getting-started/updating.md).
 
 
 ### How many profiles can I run?
