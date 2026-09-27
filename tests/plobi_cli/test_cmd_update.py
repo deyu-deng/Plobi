@@ -225,30 +225,38 @@ class TestCmdUpdateBranchFallback:
 
     @patch("shutil.which", return_value=None)
     @patch("subprocess.run")
-    def test_update_on_fork_checks_upstream_when_origin_up_to_date(
+    def test_update_never_consults_an_upstream_remote(
         self, mock_run, _mock_which, mock_args, capsys
     ):
-        """Regression for issue #26172: forks whose local HEAD already matches
-        origin/main must still consult upstream/main before printing
-        "Already up to date!" — otherwise a fork that's caught up to its own
-        origin but behind NousResearch/hermes-agent silently misses updates.
+        """R-043: route A (no upstream sync) is a signed decision, and the
+        destroy path that killed .git twice worked through an `upstream` remote.
+        So the invariant is negative: `plobi update` must never shell out to git
+        about an upstream, and the machinery must not come back.
         """
         from plobi_cli import main as hm
+
+        assert not hasattr(hm, "_sync_with_upstream_if_needed")
+        assert not hasattr(hm, "_add_upstream_remote")
+        assert "git@github.com:NousResearch/hermes-agent" not in repr(hm.OFFICIAL_REPO_URLS)
 
         mock_run.side_effect = _make_run_side_effect(
             branch="main", verify_ok=True, commit_count="0"
         )
-
         with patch.object(
-            hm,
-            "_get_origin_url",
+            hm, "_get_origin_url",
             return_value="https://github.com/example/plobi-agent.git",
-        ), patch.object(hm, "_sync_with_upstream_if_needed") as sync_mock:
+        ):
             _cmd_update_impl(mock_args, gateway_mode=False)
 
-        sync_mock.assert_called_once_with(["git"], PROJECT_ROOT)
-        captured = capsys.readouterr()
-        assert "Already up to date!" in captured.out
+        for call in mock_run.call_args_list:
+            joined = " ".join(str(a) for a in (call.args[0] if call.args else []))
+            assert "upstream" not in joined.lower(), f"git touched upstream: {joined}"
+
+        # Should NOT have called pull
+        commands = [" ".join(str(a) for a in c.args[0]) for c in mock_run.call_args_list]
+        pull_cmds = [c for c in commands if "pull" in c]
+        assert len(pull_cmds) == 0
+
 
     @patch("shutil.which")
     @patch("subprocess.run")
