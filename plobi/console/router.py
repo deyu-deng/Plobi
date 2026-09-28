@@ -169,6 +169,42 @@ def model_for(entry: AgentEntry) -> Optional[str]:
     return route.qualified if route else None
 
 
+def resolve_model_override(
+    body: dict, existing: Optional[AgentEntry]
+) -> tuple[str, str, Optional[str]]:
+    """裁定 42 §42.2 第 6 项：把请求里的 provider/model 规范成 ``(provider, model, error)``。
+
+    存进 ``AgentEntry`` 已有的那两个字段（``projects.yaml`` 里的 ``provider:`` /
+    ``model:`` 两行），消费点是 ``session.create`` 的既有参数。这里只收字与校验，
+    不新增路由键、不碰 ``plobi/routing``。
+
+    语义（前端只需记这四条）：
+      * 两个字段都不给 —— 不动这条记录已有的覆盖（编辑时最容易误踩的点）。
+      * ``model`` 给空串 —— 清掉覆盖，回到该角色的默认路由。
+      * ``model`` 给非空 —— 生效；此时不给 ``provider`` 就沿用记录里那个。
+      * 只给 ``provider`` 不给 ``model`` —— 400。光有 provider 定位不到模型。
+    """
+    has_model = "model" in body
+    has_provider = "provider" in body
+    prev_provider = existing.provider if existing is not None else ""
+    prev_model = existing.model if existing is not None else ""
+
+    if not has_model and not has_provider:
+        return prev_provider, prev_model, None
+    if has_provider and not has_model:
+        return "", "", "provider override needs a model id — provider alone cannot pick a model"
+
+    model = str(body.get("model") or "").strip() if has_model else prev_model
+    if not model:
+        return "", "", None  # 清了 model 就一起清 provider，别留个定位不到模型的 provider
+    provider = str(body.get("provider") or "").strip() if has_provider else prev_provider
+
+    for field, value in (("provider", provider), ("model", model)):
+        if any(ch.isspace() for ch in value):
+            return "", "", f"{field} must not contain whitespace"
+    return provider, model, None
+
+
 def status_for(agent_id: str) -> str:
     """Derive an L2's state from its live L3 children (B4 tracker).
 
@@ -616,6 +652,10 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
                     f"at most {MAX_LIVE_EVENTS_AGENTS} live events agents allowed",
                 )
 
+    provider_override, model_override, model_err = resolve_model_override(body, existing)
+    if model_err:
+        return _error(400, model_err)
+
     proposed = AgentEntry(
         name=agent_id,
         role=role,
@@ -625,6 +665,8 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         category=category,
         project_path=project_path_override,
         source_event_id=source_event_id,
+        provider=provider_override,
+        model=model_override,
     )
     creating_agenda = role == _AGENDA_ROLE or is_agenda_entry(proposed)
     if creating_agenda:
