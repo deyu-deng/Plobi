@@ -83,10 +83,27 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # 原先用 softprops/action-gh-release（第三方个人仓库）完成这一步，而它恰好跑在
+      # 带 contents: write 的任务上。改用 runner 自带的 gh（官方镜像清单里的
+      # "GitHub CLI 2.101.0"），把「陌生人的代码 + 写权限」这个组合从发布路径上拿掉。
       - name: Create release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(artifacts/*)
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::error::artifacts/ 为空，build 任务没有产出任何文件，拒绝创建空 release"
+            exit 1
+          fi
+
+          printf '挂到 release 的文件 (%d 个):\n' "${#assets[@]}"
+          printf '  %s\n' "${assets[@]}"
+
+          # 不加 --verify-tag：本 job 没有 checkout、没有本地 git，而它只在
+          # refs/tags/v* 上被触发，标签必然已存在。
+          gh release create "$TAG" --generate-notes --title "$TAG" "${assets[@]}"
