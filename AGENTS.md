@@ -146,12 +146,25 @@ doubt, leave it open for a human). They are distilled from real closes.
 
 - **"Intentional design, not a gap."** A limitation that looks like an
   oversight is often deliberate. Before "fixing" a missing link or a
-  restriction, ask whether the isolation IS the design. Example: profiles are
+  restriction, ask whether the isolation IS the design. Read the original commit's intent
+  (`git log -p -S "<symbol>"`) before assuming something is unfinished.
+  Example that used to hold and was formally overturned: profiles were
   independent islands on purpose — a PR adding live config inheritance from the
   default profile was closed because coupling profiles together is exactly what
-  the design prevents (the copy-at-creation `--clone` path already covers the
-  legitimate "start from my default" case). Read the original commit's intent
-  (`git log -p -S "<symbol>"`) before assuming something is unfinished.
+  the design prevented (the copy-at-creation `--clone` path already covered the
+  legitimate "start from my default" case). On 2026-09-28 the owner ruled
+  otherwise — see `Docs/ARCH-RULINGS_2026-09-08.md` **裁定 42**: an L2 project
+  分身 is demoted to a project *record* (slug, real disk path, Mind subtree,
+  role/category, archive marker, plus at most three per-project overrides:
+  identity fragment, model, secret), while skills, `config.yaml`, memory ledgers,
+  usage, sessions, plans, skins, workspace and cron become a single shared layer.
+  Do not cite the old island rule to reject that refactor — measured on 2026-09-28,
+  the isolation was empty anyway: 14 `MEMORY.md` copies with one identical MD5,
+  13 identical `.env`, identical `config.yaml`/`models.json`, 84 MB of duplicated
+  skills, and `sessions`/`logs`/`workspace`/`plans`/`cron` holding 0 files.
+  Isolation that *is* still load-bearing: kanban board boundaries (workers are
+  pinned with `PLOBI_KANBAN_BOARD`) and the profile mechanism itself as an
+  opt-in user feature — 裁定 42 removes "one profile per project", not profiles.
 - **"The premise doesn't hold against how X actually works."** A PR's
   justification frequently rests on a wrong mental model of an existing
   mechanism. Trace the real code/runtime before accepting the rationale. Two
@@ -1244,6 +1257,15 @@ in config.yaml (or `PLOBI_BACKGROUND_NOTIFICATIONS` env var):
 
 Plobi supports **profiles** — multiple fully isolated instances, each with its own
 `PLOBI_HOME` directory (config, API keys, memory, sessions, skills, gateway, etc.).
+
+**Scope note (2026-09-28, `Docs/ARCH-RULINGS_2026-09-08.md` 裁定 42):** everything below
+still governs profiles as a *user-facing* feature and governs profile-safe code. What the
+ruling removed is **one-profile-per-L2-project**: a project 分身 is now a record in
+`$PLOBI_HOME/plobi/projects.yaml` plus at most three overrides (identity fragment, model,
+secret), and skills / `config.yaml` / memory ledgers / usage / sessions / plans / skins /
+workspace / cron are one shared layer. `AgentRegistry.spawn` must not `clone_config` for a
+project agent; use `create_profile(no_skills=True)` plus `skills.external_dirs` instead.
+Never delete `~/.plobi/profiles/*` as part of that migration — mark it retired instead.
 
 The core mechanism: `_apply_profile_override()` in `plobi_cli/main.py` sets
 `PLOBI_HOME` before any module imports. All `get_plobi_home()` references
