@@ -1,0 +1,56 @@
+# Runs the real pytest suite from a fresh environment built out of uv.lock.
+#
+# Why this exists: arch-gates only runs the two architecture guards, so a green
+# arch-gates says nothing about whether a dependency bump broke behaviour. Before
+# touching any pinned dependency this job needs a green baseline on main — without one
+# there is no way to tell "the upgrade broke it" from "it was already broken".
+#
+# Environment comes from `uv sync --frozen`, never from a developer's .venv: local venvs
+# drift away from the lock, and a test run against a drifted env verifies nothing.
+
+name: Test suite
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 2 * * 1"          # Mondays ~02:43 UTC, before the dependency-health run
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/run_tests.sh"
+      - "scripts/run_tests_parallel.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: Full suite from uv.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Install uv
+        run: |
+          set -euo pipefail
+          pipx install uv
+          uv --version
+
+      - name: Build environment from the lockfile
+        run: |
+          set -euo pipefail
+          uv sync --frozen --all-extras
+          uv run --no-sync python -c "import sys; print(sys.version)"
+
+      - name: Run suite
+        run: |
+          set -euo pipefail
+          nproc
+          scripts/run_tests.sh -j "$(nproc)" --file-timeout 300
