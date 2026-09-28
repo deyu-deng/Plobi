@@ -7,4 +7,4 @@
 #
 # After installing, discover the real control selectors with:
 #     aigw marvis-dump
-uiautomation>=2.0
+uiautomation>=2.0.29
