@@ -1,0 +1,65 @@
+# 自动换号机器人。存在意义是让「钉死编号」的过期代价由机器承担，见
+# AGENTS.md 的 Dependency Pinning Policy。
+#
+# github-actions 这一条会同时改写 `uses:` 里的 40 位编号和行尾的 `# vX.Y.Z` 注释，
+# 所以注释必须留在同一行——注释丢了，机器人就认不出版本了。
+#
+# 已知盲点：SHA 钉死的 action 不会触发 Dependabot 安全告警（只有语义化版本写法才会）。
+# 版本更新覆盖，安全告警不覆盖。补这一块的目前是 .github/workflows/action-pin-audit.yml。
+
+version: 2
+updates:
+  # 覆盖 .github/workflows/ 下全部工作流，不需要逐个目录列
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(ci)"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # 根 Python 依赖：pyproject.toml + uv.lock（uv 需 >= v0.11）
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(py)"
+    groups:
+      py-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # aigw 是裸 requirements.txt，没有锁文件
+  - package-ecosystem: "pip"
+    directory: "/aigw"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(aigw)"
+
+  # 三处 npm 锁文件各自一条：Dependabot 要求 directory 指向含 lockfile 的目录
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(root)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(website)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/scripts/whatsapp-bridge"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps(wa)"
+    open-pull-requests-limit: 5
