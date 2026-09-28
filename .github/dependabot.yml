@@ -4,6 +4,10 @@
 # github-actions 这一条会同时改写 `uses:` 里的 40 位编号和行尾的 `# vX.Y.Z` 注释，
 # 所以注释必须留在同一行——注释丢了，机器人就认不出版本了。
 #
+# 噪音控制：上限是「每个生态各自计算」的，默认 5 个，6 个生态就意味着最多 30 个
+# PR 同时挂着（实测一次涌出 19 个）。所以每条都显式压到 3，并把 minor/patch
+# 合并成单个 PR；跨大版本的升级保持一条一个 PR，留给人判断。
+#
 # 已知盲点：SHA 钉死的 action 不会触发 Dependabot 安全告警（只有语义化版本写法才会）。
 # 版本更新覆盖，安全告警不覆盖。补这一块的目前是 .github/workflows/action-pin-audit.yml。
 
@@ -14,10 +18,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(ci)"
     groups:
-      actions-minor-patch:
+      ci_minor_patch:
         update-types: ["minor", "patch"]
 
   # 根 Python 依赖：pyproject.toml + uv.lock（uv 需 >= v0.11）
@@ -25,10 +30,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(py)"
     groups:
-      py-minor-patch:
+      py_minor_patch:
         update-types: ["minor", "patch"]
 
   # aigw 是裸 requirements.txt，没有锁文件
@@ -36,30 +42,43 @@ updates:
     directory: "/aigw"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(aigw)"
+    groups:
+      aigw_minor_patch:
+        update-types: ["minor", "patch"]
 
   # 三处 npm 锁文件各自一条：Dependabot 要求 directory 指向含 lockfile 的目录
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(root)"
-    open-pull-requests-limit: 5
+    groups:
+      root_minor_patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(website)"
-    open-pull-requests-limit: 5
+    groups:
+      website_minor_patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "npm"
     directory: "/scripts/whatsapp-bridge"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(wa)"
-    open-pull-requests-limit: 5
+    groups:
+      wa_minor_patch:
+        update-types: ["minor", "patch"]
