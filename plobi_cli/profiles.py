@@ -1010,23 +1010,29 @@ def create_profile(
     clone_config:
         If True, copy config files (config.yaml, .env, SOUL.md), installed
         skills, and selected profile identity files from the source profile.
+        Skills are skipped when ``no_skills`` is also set.
     no_alias:
         If True, skip wrapper script creation.
     no_skills:
-        If True, create an empty profile with no bundled skills, and write
-        a marker file so ``plobi update`` skips re-seeding this profile's
-        skills. Mutually exclusive with ``clone_config``/``clone_all`` (those
-        explicitly copy skills from the source).
+        If True, the profile owns **no skills**: nothing is copied from a clone
+        source and nothing is seeded, and a marker file is written so
+        ``plobi update`` skips re-seeding this profile's bundled skills. Point
+        ``skills.external_dirs`` at a shared skill root in the profile's
+        config.yaml to make its skills visible without copying them.
+        Composable with ``clone_config``/``clone_from`` — those then copy the
+        config files (config.yaml, .env, SOUL.md) but not the skills.
+        Mutually exclusive with ``clone_all`` (a full copytree snapshots
+        everything, skills included).
 
     Returns
     -------
     Path
         The newly created profile directory.
     """
-    if no_skills and (clone_from is not None or clone_config or clone_all):
+    if no_skills and clone_all:
         raise ValueError(
-            "--no-skills is mutually exclusive with --clone / --clone-from / --clone-all "
-            "(cloning explicitly copies skills from the source profile)."
+            "--no-skills is mutually exclusive with --clone-all "
+            "(a full copytree snapshots everything, skills included)."
         )
     canon = normalize_profile_name(name)
     validate_profile_name(canon)
@@ -1094,8 +1100,12 @@ def create_profile(
             # "clone from default" flow is expected to preserve both bundled
             # and user-installed skills so the new profile immediately has the
             # same agent capabilities as the source profile.
+            # ``no_skills`` suppresses exactly this copy — the profile then
+            # owns no skill tree and reads a shared root via
+            # ``skills.external_dirs`` instead of carrying a copy
+            # (裁定 42 §42.3).
             source_skills = source_dir / "skills"
-            if source_skills.is_dir():
+            if source_skills.is_dir() and not no_skills:
                 shutil.copytree(source_skills, profile_dir / "skills", symlinks=True, dirs_exist_ok=True)
 
             # Clone memory and other subdirectory files

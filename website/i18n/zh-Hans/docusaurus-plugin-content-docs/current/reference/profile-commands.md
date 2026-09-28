@@ -84,7 +84,7 @@ plobi profile create <name> [options]
 | `--clone-from <profile>` | 从指定 profile 克隆 config/skills/SOUL，而非当前 profile。除非与 `--clone-all` 配合使用，否则会隐含 `--clone`。 |
 | `--no-alias` | 跳过 wrapper 脚本创建。 |
 | `--description "<text>"` | 一到两句话描述该 profile 的用途。供 kanban 编排器根据角色而非仅凭 profile 名称来路由任务。可跳过，稍后通过 `plobi profile describe` 添加。持久化保存在 `<profile_dir>/profile.yaml` 中。 |
-| `--no-skills` | 创建一个**空** profile，不启用任何内置 skill。会在 profile 目录中写入 `.no-bundled-skills` 标记，使后续 `plobi update` 不再重新植入内置 skill 集，且拒绝与 `--clone`、`--clone-from` 或 `--clone-all` 组合使用（因为这些选项会复制 skill）。适用于不应继承完整 skill 目录的窄化编排器 profile 或沙箱 profile。 |
+| `--no-skills` | 让该 profile **不自带技能目录**：既不植入也不复制，并在 profile 目录写入 `.no-bundled-skills` 标记，使后续 `plobi update` 不再重新植入内置 skill 集。可与 `--clone`、`--clone-from` 组合使用——此时只复制 `config.yaml`、`.env`、`SOUL.md`，不复制 skill；仍拒绝与 `--clone-all` 组合（整树 copytree 会连 skill 一起快照）。把该 profile 的 `config.yaml` 里的 `skills.external_dirs` 指向共享技能根，即可在不持有复印件的前提下继续看到这些 skill。适用于不应继承完整 skill 目录的窄化编排器 profile、沙箱 profile 与项目分身。已创建的 profile（含默认 `~/.plobi`）可用 `plobi skills opt-out` / `plobi skills opt-in` 切换。 |
 
 创建 profile **不会**将该 profile 目录设为终端命令的默认项目/工作目录。如需让某个 profile 从特定项目目录启动，请在该 profile 的 `config.yaml` 中设置 `terminal.cwd`。
 
