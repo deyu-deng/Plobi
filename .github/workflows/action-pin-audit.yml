@@ -1,0 +1,118 @@
+# Enforces AGENTS.md "Dependency Pinning Policy" for workflow files: every action ref
+# must be a full-length commit SHA, and that SHA must actually exist upstream.
+#
+# This job deliberately declares NO `uses:` steps. A pinned action can itself be
+# unresolvable — which is exactly how arch-gates.yml died at "Prepare all required
+# actions" before checkout and stayed blind for weeks. Checking pins with an action
+# would let the same bug disable its own detector.
+
+name: Action pin audit
+
+on:
+  push:
+    branches: [main, master, windows]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-pins:
+    name: Action refs are real, full-length SHAs
+    runs-on: ubuntu-latest
+    env:
+      API_ROOT: https://api.github.com
+      # Fork PRs keep their head commit in the fork, so scan that repo@sha, not this one.
+      TARGET_REPO: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+      TARGET_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Audit workflow action pins
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, re, sys, urllib.request
+
+          root = os.environ["API_ROOT"]
+          repo = os.environ["TARGET_REPO"]
+          sha = os.environ["TARGET_SHA"]
+          token = os.environ["GITHUB_TOKEN"]
+
+          def api(path):
+              req = urllib.request.Request(
+                  f"{root}{path}",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "User-Agent": "action-pin-audit",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return r.status, json.load(r)
+              except urllib.error.HTTPError as e:
+                  return e.code, None
+
+          status, listing = api(f"/repos/{repo}/contents/.github/workflows?ref={sha}")
+          if status != 200 or not isinstance(listing, list):
+              print(f"::error::cannot list .github/workflows in {repo}@{sha} (HTTP {status})")
+              sys.exit(1)
+
+          uses_re = re.compile(r"^\s*(?:-\s+)?uses:\s*([^\s#]+)", re.M)
+          pin_re = re.compile(r"^([^/]+)/([^/@]+)(?:/\S*)?@([0-9a-f]{40})$")
+          files = [f for f in listing
+                   if f["name"].endswith((".yml", ".yaml")) and f["name"] != "action-pin-audit.yml"]
+
+          unpinned, broken = [], []
+          seen = {}
+          read_failed = False
+          for entry in files:
+              # The directory listing carries no `content` field; fetch each file itself.
+              st, blob = api(f"/repos/{repo}/contents/{entry['path']}?ref={sha}")
+              if st != 200 or not isinstance(blob, dict) or "content" not in blob:
+                  print(f"::error file={entry['name']}::cannot read file (HTTP {st})")
+                  read_failed = True
+                  continue
+              text = base64.b64decode(blob["content"]).decode("utf-8", "replace")
+              for lineno, line in enumerate(text.splitlines(), 1):
+                  m = uses_re.match(line)
+                  if not m:
+                      continue
+                  ref = m.group(1)
+                  if ref.startswith("./"):
+                      continue  # local action, no upstream fetch
+                  loc = f"{entry['name']}:{lineno}"
+                  p = pin_re.match(ref)
+                  if not p:
+                      unpinned.append((loc, ref))
+                      print(f"::error file={entry['name']},line={lineno}::"
+                            f"'{ref}' is not pinned to a full-length SHA "
+                            f"(AGENTS.md: Dependency Pinning Policy)")
+                      continue
+                  owner, aname, commit = p.groups()
+                  key = f"{owner}/{aname}/{commit}"
+                  if key not in seen:
+                      ok, _ = api(f"/repos/{owner}/{aname}/commits/{commit}")
+                      seen[key] = ok in (200, 301, 302)
+                  if not seen[key]:
+                      broken.append((loc, ref))
+                      print(f"::error file={entry['name']},line={lineno}::"
+                            f"'{owner}/{aname}@{commit[:12]}…' does not exist upstream — "
+                            f"this job dies before checkout")
+
+          print()
+          print(f"scanned {len(files)} workflow file(s) in {repo}@{sha[:7]}")
+          print(f"  unpinned refs : {len(unpinned)}")
+          print(f"  nonexistent   : {len(broken)}")
+          print(f"  unreadable    : {len(files) if read_failed else 0}")
+          print(f"  verified SHAs : {len(seen)}")
+
+          if unpinned or broken or read_failed:
+              print()
+              print("Fix: resolve the real commit and pin it, e.g.")
+              print("  gh api repos/<owner>/<repo>/commits/<tag> --jq .sha")
+              sys.exit(1)
+          print("\nAll action refs are pinned to SHAs that exist upstream.")
+          PY
