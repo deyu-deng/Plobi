@@ -7,7 +7,7 @@
 # 噪音控制：上限是「每个生态各自计算」的，默认 5 个，当时 6 个生态就意味着最多 30 个
 # PR 同时挂着（实测一次涌出 19 个）。所以每条都显式压到 3，并把 minor/patch
 # 合并成单个 PR；跨大版本的升级保持一条一个 PR，留给人判断。
-# 现在共 6 条（github-actions / uv / pip / npm×3）。Python 那条带三条 ignore，原因见其注释。
+# 现在共 5 条（github-actions / pip / npm×3）。Python 不接机器人，原因见下方长注释。
 #
 # 已知盲点：SHA 钉死的 action 不会触发 Dependabot 安全告警（只有语义化版本写法才会）。
 # 版本更新覆盖，安全告警不覆盖。补这一块的目前是 .github/workflows/action-pin-audit.yml。
@@ -26,32 +26,22 @@ updates:
       ci_minor_patch:
         update-types: ["minor", "patch"]
 
-  # 根 Python 依赖：pyproject.toml + uv.lock（uv 需 >= v0.11）
+  # Python 依赖不接机器人。原因经两轮实测确定，别再加重试、也别再试图用 ignore 修：
   #
-  # uv 生态对本仓库是可用的：实测产出过 PR #20（一次带 44 项更新，同时正确改写
-  # pyproject.toml 与 uv.lock）、#21、#22，分支名 dependabot/uv/*。
-  # 但它每轮都会把任务整体标成 failure，因为下面三个包 Dependabot 侧解析不动
-  # （均发生在 python_full_version == '3.13.*' 分支）：
-  #   daytona 0.217.0        要 aiohttp>=3.14.3   而 [all] 钉   aiohttp==3.14.1
-  #   microsoft-teams-apps   要 cryptography>=50  而项目钉      cryptography==46.0.7
-  #   daytona 0.155.0        要 websockets<16     而项目钉      websockets==17.1
-  # 同一份 pyproject 用本机 uv 复核正常：`uv lock --check` → Resolved 234 packages。
-  # 所以是机器人侧解析口径与 uv 不一致，不是仓库依赖坏了。
-  # 下面 ignore 这三个名字，让机器人不去碰它们，从而保住其余全部 Python 依赖的自动更新。
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "deps(py)"
-    ignore:
-      - dependency-name: "daytona"
-      - dependency-name: "microsoft-teams-apps"
-      - dependency-name: "websockets"
-    groups:
-      py_minor_patch:
-        update-types: ["minor", "patch"]
+  # 第一轮（无 ignore）：报 3 个 dependency_file_not_resolvable
+  #   （daytona / microsoft-teams-apps / websockets，均在 python 3.13 解析分支上
+  #    与项目里 aiohttp==3.14.1 / cryptography==46.0.7 / websockets==17.1 的精确钉死冲突）
+  #   外加 3 个 dependency_file_content_not_changed（markdown / pillow / pyjwt[crypto]）。
+  # 第二轮（把上面那 3 个名字 ignore 掉）：not_resolvable 全部消失——ignore 确实生效了——
+  #   但任务**仍然 failure**，只剩 content_not_changed 那三个。
+  # 而这三个包**根本不在 pyproject.toml 里**，是被带进来的间接依赖：PyPI 上确有新版
+  #   （markdown 3.10.2→3.11、pillow 12.2.0→12.3.0、pyjwt 2.13.0→2.15.0），
+  #   但在现有约束下解析不动，uv 产出"无变化"，而 Dependabot 把"无变化"计为错误。
+  # 结论：本仓库刻意采用「精确钉死 + 上限」策略（见 AGENTS.md），"尝试后无变化"是常态，
+  #   ignore 多少个名字都治不完，这条无法稳定转绿。
+  # 它确实能产出 PR（PR #20 一次 44 项、#21、#22，连 uv.lock 都改对了），
+  #   所以这不是"没用"，是"每轮必然报红"——留着就是又一处"看着有、实际不可信"的闸门。
+  # Python 依赖按 AGENTS.md《Dependency Pinning Policy》第 4 条走手动 `uv lock`。
 
   # aigw 是裸 requirements.txt，没有锁文件（这个 Dependabot 解析得动）
   - package-ecosystem: "pip"
