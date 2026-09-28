@@ -48,6 +48,42 @@ function plobiRuntimeImportProbe() {
 }
 
 /**
+ * Shared import-probe body: run `<python> -c <code>` and report only whether it
+ * exited 0. Never throws -- the resolver treats an exception the same as a
+ * non-zero exit ("skip this rung, try the next one").
+ *
+ * @param {string} pythonPath - Absolute path to a python.exe / python.
+ * @param {string} code - Import snippet to execute.
+ * @param {object} [opts]
+ * @param {string} [opts.cwd] - Working directory for the probe.
+ * @param {object} [opts.env] - Additional environment for the probe.
+ * @returns {boolean}
+ */
+function importProbePasses(
+  pythonPath: string,
+  code: string,
+  opts: { cwd?: string; env?: Record<string, string> } = {}
+) {
+  if (!pythonPath || !code) {
+    return false
+  }
+
+  try {
+    execFileSync(pythonPath, ['-c', code], {
+      cwd: opts.cwd || undefined,
+      env: { ...process.env, ...(opts.env || {}) },
+      stdio: 'ignore',
+      timeout: PROBE_TIMEOUT_MS,
+      windowsHide: true
+    })
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Return true iff the Plobi runtime import probe exits 0.
  *
  * Used to gate the "fallback to system Python with plobi_cli installed"
@@ -65,13 +101,48 @@ function plobiRuntimeImportProbe() {
  * @param {object} [opts.env] - Additional environment for the probe.
  * @returns {boolean}
  */
-function canImportPlobiCli(pythonPath: string, opts: { env?: Record<string, string> } = {}) {
+function canImportPlobiCli(pythonPath: string, opts: { cwd?: string; env?: Record<string, string> } = {}) {
+  return importProbePasses(pythonPath, plobiRuntimeImportProbe(), opts)
+}
+
+/**
+ * Python snippet that proves an interpreter can actually load the aigw
+ * gateway, as opposed to merely existing. `aigw.cli` is the module that pulls
+ * in the OAuth providers and therefore httpx -- the exact import chain that
+ * raised `ModuleNotFoundError: No module named 'httpx'` on macOS when the
+ * desktop resolved the CommandLineTools 3.9 interpreter (R-051). Probing
+ * `<python> -m aigw --help` would be slower and would also parse config; a
+ * plain import is enough to separate "has the dependencies" from "does not".
+ *
+ * @returns {string}
+ */
+function aigwRuntimeImportProbe() {
+  return 'import aigw.cli'
+}
+
+/**
+ * Return true iff `pythonPath` can import aigw's CLI module, run with *cwd*
+ * pointing at the aigw checkout so `-m aigw` / `import aigw` resolve the local
+ * package exactly the way the gateway spawn does.
+ *
+ * Used by R-051's aigw interpreter resolution: a candidate venv that fails
+ * this probe is skipped instead of spawned, turning a 20-second health-poll
+ * timeout into an immediate, explainable `deferred` row.
+ *
+ * @param {string} pythonPath - Absolute path to a python binary.
+ * @param {object} [opts]
+ * @param {string} [opts.cwd] - Directory to probe from (the aigw checkout).
+ * @param {object} [opts.env] - Extra environment for the probe.
+ * @returns {boolean}
+ */
+function canImportAigwCli(pythonPath: string, opts: { cwd?: string; env?: Record<string, string> } = {}) {
   if (!pythonPath) {
     return false
   }
 
   try {
-    execFileSync(pythonPath, ['-c', plobiRuntimeImportProbe()], {
+    execFileSync(pythonPath, ['-c', aigwRuntimeImportProbe()], {
+      cwd: opts.cwd || undefined,
       env: { ...process.env, ...(opts.env || {}) },
       stdio: 'ignore',
       timeout: PROBE_TIMEOUT_MS,
@@ -123,4 +194,11 @@ function verifyPlobiCli(plobiCommand: string, opts?: { shell?: boolean }) {
   }
 }
 
-export { canImportPlobiCli, plobiRuntimeImportProbe, PROBE_TIMEOUT_MS, verifyPlobiCli }
+export {
+  aigwRuntimeImportProbe,
+  canImportAigwCli,
+  canImportPlobiCli,
+  plobiRuntimeImportProbe,
+  PROBE_TIMEOUT_MS,
+  verifyPlobiCli
+}

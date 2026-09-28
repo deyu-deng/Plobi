@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import type { DesktopBootProgress } from '@/global'
+import type { DesktopBootProgress, DesktopDeferredSubsystem } from '@/global'
 import { translateNow } from '@/i18n'
 
 export interface DesktopBootState extends DesktopBootProgress {
@@ -40,6 +40,19 @@ export function applyDesktopBootProgress(progress: DesktopBootProgress) {
     progress: mergedProgress,
     visible: progress.running || mergedProgress < 100 || Boolean(progress.error)
   })
+}
+
+/**
+ * R-051 — update ONLY the deferred-subsystem rows.
+ *
+ * `applyDesktopBootProgress` refuses to move progress backwards while running and
+ * the boot-progress listener stops forwarding payloads once cold boot has
+ * completed; the sidecars, however, are probed *after* the backend is ready. So
+ * the rows need their own path onto the same atom — deliberately the same
+ * `sidecars` field, never a second store.
+ */
+export function setDesktopDeferredSubsystems(rows: DesktopDeferredSubsystem[]) {
+  $desktopBoot.set({ ...$desktopBoot.get(), sidecars: rows })
 }
 
 export function setDesktopBootStep(step: {

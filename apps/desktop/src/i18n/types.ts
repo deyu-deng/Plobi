@@ -109,6 +109,10 @@ export interface Translations {
   boot: {
     ready: string
     desktopBootFailedWithMessage: (message: string) => string
+    sidecars: {
+      deferredHint: string
+      deferredTitle: string
+    }
     steps: {
       connectingGateway: string
       loadingSettings: string

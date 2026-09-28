@@ -34,6 +34,16 @@ export function setRuntimeI18nLocale(locale: Locale) {
   runtimeLocale = locale
 }
 
+/**
+ * The locale `translateNow` is currently resolving against. Needed by non-hook
+ * modules (e.g. src/lib/desktop-deferred-sidecars.ts) that render a string
+ * supplied by the Electron main process in *two* languages and must pick one
+ * outside of React.
+ */
+export function currentI18nLocale(): Locale {
+  return runtimeLocale
+}
+
 export function translateNow(key: string, ...args: unknown[]): string {
   const active = renderTranslation(resolvePath(TRANSLATIONS[runtimeLocale], key), args)
 

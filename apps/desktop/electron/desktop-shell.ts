@@ -128,6 +128,12 @@ export interface TrayStrings {
   quit: string
   balloonTitle: string
   balloonBody: string
+  /**
+   * R-051 — heading of the deferred-subsystem submenu. The rows underneath come
+   * from the main-process ledger (electron/deferred-sidecars.ts), which is the
+   * SAME array the boot-progress payload renders — this string only labels it.
+   */
+  deferredGroup: string
 }
 
 // The Electron main process has no i18n layer of its own (only the renderer
@@ -141,7 +147,8 @@ const TRAY_STRINGS: Record<TrayLanguage, TrayStrings> = {
     openAtLogin: '开机自启',
     quit: '退出 Plobi',
     balloonTitle: 'Plobi 仍在运行',
-    balloonBody: '窗口已收进托盘，后台服务继续运行。'
+    balloonBody: '窗口已收进托盘，后台服务继续运行。',
+    deferredGroup: '后置服务（R-047 延后，非故障）'
   },
   en: {
     tooltip: 'Plobi',
@@ -149,7 +156,8 @@ const TRAY_STRINGS: Record<TrayLanguage, TrayStrings> = {
     openAtLogin: 'Launch at login',
     quit: 'Quit Plobi',
     balloonTitle: 'Plobi is still running',
-    balloonBody: 'The window is in the tray; background services keep running.'
+    balloonBody: 'The window is in the tray; background services keep running.',
+    deferredGroup: 'Deferred services (postponed, not faults)'
   }
 }
 

@@ -64,6 +64,11 @@ export const ja = defineLocale({
   boot: {
     ready: 'Plobi Desktop の準備ができました',
     desktopBootFailedWithMessage: message => `デスクトップの起動に失敗しました: ${message}`,
+    sidecars: {
+      deferredTitle: '後回しにしているサービスが起動しませんでした',
+      deferredHint:
+        'チャットは影響を受けません。トレイメニューに、後回しにしているサービスとその理由がすべて表示されます。'
+    },
     steps: {
       connectingGateway: 'ライブデスクトップゲートウェイに接続中',
       loadingSettings: 'Plobi の設定を読み込み中',

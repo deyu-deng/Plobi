@@ -64,6 +64,10 @@ export const zhHant = defineLocale({
   boot: {
     ready: 'Plobi Desktop 已就緒',
     desktopBootFailedWithMessage: message => `桌面啟動失敗：${message}`,
+    sidecars: {
+      deferredTitle: '延後啟動的服務沒有起來',
+      deferredHint: '主要聊天不受影響。系統托盤選單會列出每個延後啟動的服務，以及它們未啟動的原因。'
+    },
     steps: {
       connectingGateway: '正在連線桌面閘道',
       loadingSettings: '正在載入 Plobi 設定',

@@ -64,6 +64,10 @@ export const en: Translations = {
   boot: {
     ready: 'Plobi Desktop is ready',
     desktopBootFailedWithMessage: message => `Desktop boot failed: ${message}`,
+    sidecars: {
+      deferredTitle: 'A postponed service did not come up',
+      deferredHint: 'Chat is unaffected. The tray menu lists every deferred service with its reason.'
+    },
     steps: {
       connectingGateway: 'Connecting live desktop gateway',
       loadingSettings: 'Loading Plobi settings',

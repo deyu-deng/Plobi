@@ -64,6 +64,10 @@ export const zh: Translations = {
   boot: {
     ready: 'Plobi 桌面版已就绪',
     desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
+    sidecars: {
+      deferredTitle: '后置服务没有起来',
+      deferredHint: '主对话不受影响。托盘菜单会列出每个后置服务以及未启动的原因。'
+    },
     steps: {
       connectingGateway: '正在连接桌面网关',
       loadingSettings: '正在加载 Plobi 设置',
