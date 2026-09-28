@@ -1,0 +1,50 @@
+# Weekly dependency-health report: which known-vulnerable pins can actually move, and
+# which "security pins" have quietly rotted. See scripts/dependency_health.py.
+#
+# Red means the instrument broke (a lookup failed, so the report is incomplete).
+# Findings are emitted as warnings, never as a permanent red — a gate that is always
+# red gets ignored, and an ignored gate is the failure mode that hid arch-gates for
+# weeks.
+
+name: Dependency health
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"          # Mondays ~03:17 UTC, off the :00 mark
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/dependency_health.py"
+      - ".github/workflows/dependency-health.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Classify vulnerable pins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: Install uv
+        run: |
+          set -euo pipefail
+          pipx install uv
+          uv --version            # fail loudly if the toolchain is not actually usable
+
+      - name: Audit and classify
+        run: |
+          set -euo pipefail
+          uv run --with pip-audit --with packaging \
+            python scripts/dependency_health.py | tee /tmp/dh.txt
+          {
+            echo "## 依赖健康度"
+            echo
+            echo '```'
+            cat /tmp/dh.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

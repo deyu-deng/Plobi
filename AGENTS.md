@@ -604,6 +604,28 @@ workflow files, hand-written pins, and anything reconstructed during the
 `[WP-ENV-REBASELINE]` snapshot after the git object-store loss. Treat every
 identifier-shaped value from that snapshot as unverified until you have re-checked it.
 
+Two checks carry this, and you should not redo their work by hand:
+
+- `.github/workflows/action-pin-audit.yml` — every action ref in every workflow must be a
+  full-length SHA **that exists upstream**. That job declares no `uses:` steps on purpose:
+  a pinned action can be the thing that is broken, and then the checker would be blinded
+  by its own subject.
+- `scripts/dependency_health.py` + `.github/workflows/dependency-health.yml` — weekly.
+  Classifies every vulnerable pinned dependency into A (nothing blocks it) / B (our own
+  `==` blocks it; prints every line, including the second and third declaration) /
+  C (names the parent and specifier that blocks it) / D (needs a human), and flags
+  **stale security pins**: lines whose comment cites CVEs they dodged, where the pinned
+  version is itself now flagged. Those comments read as "handled" while the dependency is
+  exposed — the most misleading state this repo can be in.
+
+  ```bash
+  uv run --with pip-audit --with packaging python scripts/dependency_health.py
+  ```
+
+Both are deliberately **yellow, not red**: red means the instrument broke. A gate that is
+permanently red gets ignored, and an ignored gate is exactly how the architecture guard
+stayed dead for weeks without anyone noticing.
+
 ---
 
 ## Adding Configuration
