@@ -6,11 +6,19 @@
 
 本目录（`Code/docs/plobi/`）曾在 2026-09 按 Diátaxis 建过 `adr/ specs/ runbooks/ reference/
 audit/ templates/ plans/ archive/ north_star/` 树，内容已整体迁到上面的 `Docs/`，树本身随
-`.git` 被 `plobi update` 摧毁的事故清空——**现在只剩本文件与 `profiles/` 两份 yaml**。
+`.git` 被 `plobi update` 摧毁的事故清空。
 2026-09-19 已按新纪律把 `Docs/` 从 238 份砍到 100 份，其中就包括曾挂在这条链上的旧 Plobi 叙事
 （`plobi-BULEPRINT.md`、`plobi-CONTEXT.md`、`plobi-AUDIT.md`、`plobi-README.md`、
 `UI_DESIGN_SPEC.md` ×2、`INDEX.md`、`SLICES.md`）与失真的 `IMPLEMENTED_FEATURES.md`
 （2026-07-13 快照，早已不反映代码）。
+
+**2026-09-28 本目录重新有了内容**：`Docs/` 减仓时，把 7 份**底座机制说明**搬了进来
+（`session-lifecycle.md`、`streaming-support.md`、`openai-api-server.md`、`multi-gateway.md`、
+`relay-connector-contract.md`、`chronos-managed-cron-contract.md`、`network-egress-isolation.md`，
+共 2,637 行）。它们是**上游 Hermes 底座的英文机制文档**（标题里的 "Plobi Agent" 是 R-038
+改名扫描换上去的），讲的是底座形状、不随我们的 MVP 排期变，所以按 AGENTS.md 那条
+「实现级细节若确需随代码走才写进本仓」随代码走。**注意**：路线 A（R-038，放弃同步上游）之后，
+底座的真实行为以本仓代码为准，这 7 份只当"懂底座"的参考，不当契约。`Docs/README.md` §5 留了指针。
 
 ## 要找的东西在哪
 
