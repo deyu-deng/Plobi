@@ -541,6 +541,24 @@ export interface DesktopCloudAgentSignInResult {
   connected: boolean
 }
 
+// R-051 — one row per subsystem R-047 postponed (aigw :8000, chatlog :5030).
+// Owned by the MAIN process ledger in electron/deferred-sidecars.ts, which mirrors
+// the `deferred` fourth status of scripts/plobi/doctor.py. The renderer never
+// derives these; it renders what it was told, so the tray menu and the boot
+// progress are two renderings of the same rows.
+export interface DesktopDeferredSubsystem {
+  enableHint: string
+  id: string
+  /** Localized name supplied by the main process. */
+  name: { en: string; zh: string }
+  /** 'ready': what was observed. 'deferred': observed cause + R-047 wording. */
+  detail: string
+  observed: string
+  port: number
+  state: 'deferred' | 'probing' | 'ready'
+  timestamp: number
+}
+
 export interface DesktopBootProgress {
   error: string | null
   fakeMode: boolean
@@ -548,6 +566,8 @@ export interface DesktopBootProgress {
   phase: string
   progress: number
   running: boolean
+  /** Deferred-subsystem rows — see DesktopDeferredSubsystem above. */
+  sidecars?: DesktopDeferredSubsystem[]
   timestamp: number
 }
 

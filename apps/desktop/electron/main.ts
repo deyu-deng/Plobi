@@ -33,7 +33,7 @@ import nodePty from 'node-pty'
 
 import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './backend-command'
 import { buildDesktopBackendEnv, normalizePlobiHomeRoot } from './backend-env'
-import { canImportPlobiCli, verifyPlobiCli } from './backend-probes'
+import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { runBootstrap } from './bootstrap-runner'
@@ -55,6 +55,7 @@ import {
   tokenPreview
 } from './connection-config'
 import { adoptServedDashboardToken } from './dashboard-token'
+import { createDeferredSubsystemLedger } from './deferred-sidecars'
 import {
   buildDevAutostartScript,
   DEV_AUTOSTART_FILENAME,
@@ -63,6 +64,7 @@ import {
   shouldHideOnClose,
   shouldQuitOnAllWindowsClosed,
   startHiddenFromLaunch,
+  trayLanguage,
   trayStrings
 } from './desktop-shell'
 import {
@@ -106,6 +108,7 @@ import {
 } from './hardening'
 import { createLinkTitleWindow, guardLinkTitleSession, readLinkTitleWindowTitle } from './link-title-window'
 import { serializeJsonBody, setJsonRequestHeaders } from './oauth-net-request'
+import { resolveProjectInterpreter } from './python-resolution'
 import {
   buildSessionWindowUrl,
   chatWindowWebPreferences,
@@ -868,6 +871,14 @@ let desktopLogFlushTimer = null
 let desktopLogFlushPromise = Promise.resolve()
 let nativeThemeListenerInstalled = false
 
+// R-051 — the single source of truth for the two subsystems R-047 pushed to the
+// last tier (aigw :8000, chatlog :5030). Declared here, next to bootProgressState,
+// so the very first boot payload already carries both rows as `probing`: a
+// subsystem that was never reached must read as "not checked yet", never as
+// absent. Both surfaces — the tray menu and the renderer — read rows() from this
+// one ledger; there is deliberately no second status store.
+const deferredSidecarLedger = createDeferredSubsystemLedger()
+
 let bootProgressState = {
   error: null,
   fakeMode: BOOT_FAKE_MODE,
@@ -875,6 +886,12 @@ let bootProgressState = {
   phase: 'idle',
   progress: 0,
   running: false,
+  // R-051 — the deferred-subsystem rows (aigw :8000, chatlog :5030). This is the
+  // SAME array the tray menu renders; see ./deferred-sidecars.ts and
+  // refreshTrayMenu(). One ledger, two renderings, never two status systems.
+  // Seeded from the ledger so both rows are on screen as `probing` from the very
+  // first payload — an unchecked subsystem must never render as an absent one.
+  sidecars: deferredSidecarLedger.rows(),
   timestamp: Date.now()
 }
 
@@ -1636,26 +1653,38 @@ function isPlobiSourceRoot(root) {
   return directoryExists(root) && fileExists(path.join(root, 'plobi_cli', 'main.py'))
 }
 
-function findPythonForRoot(root) {
-  const override = process.env.PLOBI_DESKTOP_PYTHON
+/**
+ * R-051 — the ONE interpreter ladder for every Python the desktop spawns lives in
+ * ./python-resolution.ts. This wrapper is the main-backend rung set:
+ * `$PLOBI_DESKTOP_PYTHON`, then `<root>/.venv`, `<root>/venv`, then the
+ * bootstrap install's venv — and *every* candidate has to pass `canImportPlobiCli`
+ * before it is handed back.
+ *
+ * The old final rung was a bare, unguarded `findSystemPython()`. On macOS that is
+ * `/usr/bin/python3` (CommandLineTools 3.9, none of Plobi's dependencies), so the
+ * "fallback" produced a guaranteed `ModuleNotFoundError` in the child and an
+ * unexplainable boot failure in the UI. Returning `null` instead is the fix:
+ * `createPythonBackend` propagates it, `resolvePlobiBackend` falls through to the
+ * remaining rungs and ultimately the bootstrap UI, and the reason from the resolver
+ * is logged verbatim so it is findable. Never a doomed argv.
+ *
+ * @param {string} root - Checkout / install root whose venv we want.
+ * @param {string[]} [extraRoots] - Additional roots, e.g. the bootstrap install.
+ */
+function resolveBackendPython(root, extraRoots = []) {
+  const resolution = resolveProjectInterpreter({
+    extraRoots,
+    label: 'the Plobi backend',
+    platform: process.platform,
+    startDir: root,
+    usable: (python: string) => canImportPlobiCli(python, { cwd: root })
+  })
 
-  if (override && fileExists(override)) {
-    return override
+  if (!resolution.python && resolution.reason) {
+    rememberLog(`[python] no usable interpreter for ${root}: ${resolution.reason}`)
   }
 
-  const relativePaths = IS_WINDOWS
-    ? [path.join('.venv', 'Scripts', 'python.exe'), path.join('venv', 'Scripts', 'python.exe')]
-    : [path.join('.venv', 'bin', 'python'), path.join('venv', 'bin', 'python')]
-
-  for (const relativePath of relativePaths) {
-    const candidate = path.join(root, relativePath)
-
-    if (fileExists(candidate)) {
-      return candidate
-    }
-  }
-
-  return findSystemPython()
+  return resolution
 }
 
 function findSystemPython() {
@@ -3432,7 +3461,7 @@ function writeDefaultProjectDir(dir) {
 }
 
 function createPythonBackend(root, label, backendArgs, options: any = {}) {
-  const python = findPythonForRoot(root)
+  const { python } = resolveBackendPython(root)
 
   if (!python) {
     return null
@@ -3463,13 +3492,21 @@ function createPythonBackend(root, label, backendArgs, options: any = {}) {
 // VENV_ROOT may not exist yet on first run; bootstrap=true tells
 // ensureRuntime() to create / refresh it before launch.
 function createActiveBackend(backendArgs) {
-  const venvPython = getVenvPython(VENV_ROOT)
-  const command = fileExists(venvPython) ? venvPython : findSystemPython()
+  // Same gated ladder as the source checkout, rooted at the bootstrap install so
+  // `<install>/venv` and `<install>/.venv` are both candidates. The previous
+  // `findSystemPython()` tail was the second ungated rung of the R-051 bug.
+  const { python } = resolveBackendPython(ACTIVE_PLOBI_ROOT, [ACTIVE_PLOBI_ROOT])
+
+  if (!python) {
+    // Returning null lets resolvePlobiBackend fall through to PATH `plobi`, the
+    // probed plobi_cli module, and finally the bootstrap UI — all honest states.
+    return null
+  }
 
   return {
     kind: 'python',
     label: `Plobi at ${ACTIVE_PLOBI_ROOT}`,
-    command,
+    command: python,
     args: ['-m', 'plobi_cli.main', ...backendArgs],
     env: buildDesktopBackendEnv({
       plobiHome: PLOBI_HOME,
@@ -3514,7 +3551,14 @@ function resolvePlobiBackend(backendArgs) {
   //    to spawning plobi. Updates flow through the in-app update path
   //    (applyUpdates -> git pull) or `plobi update` from the CLI.
   if (isBootstrapComplete()) {
-    return createActiveBackend(backendArgs)
+    const active = createActiveBackend(backendArgs)
+
+    // A bootstrap-complete marker can still point at a half-installed venv
+    // (nothing in it imports plobi_cli). Falling through is better than spawning
+    // an interpreter we already proved cannot run the backend.
+    if (active) {
+      return active
+    }
   }
 
   // 4. Existing `plobi` on PATH -- installed via install.ps1 / install.sh from
@@ -7391,6 +7435,11 @@ function consumePendingStartMaximize() {
   }
 }
 
+/** Tray display language: pick the ledger row name matching the tray locale. */
+function deferredRowName(row: { name: { en: string; zh: string } }, language: ReturnType<typeof trayLanguage>) {
+  return language === 'zh' ? row.name.zh : row.name.en
+}
+
 // Build the tray menu from the persisted settings. Rebuilt (not just once) so
 // the checkbox can never disagree with what actually got written to disk.
 function refreshTrayMenu() {
@@ -7399,6 +7448,7 @@ function refreshTrayMenu() {
   }
 
   const labels = trayStrings(app.getLocale())
+  const language = trayLanguage(app.getLocale())
   const { openAtLogin } = readShellSettingsState()
 
   try {
@@ -7406,6 +7456,19 @@ function refreshTrayMenu() {
       Menu.buildFromTemplate([
         { label: labels.show, click: () => showMainWindow() },
         { label: labels.openAtLogin, type: 'checkbox', checked: openAtLogin, click: item => applyAutostart(item.checked) },
+        // R-051 — rendering #1 of the deferred-subsystem ledger. The boot-progress
+        // payload is rendering #2 of the very same rows(); adding a row here must
+        // never need a parallel status store. A subsystem that was postponed by
+        // R-047 is shown as "deferred", never hidden and never coloured green.
+        { type: 'separator' },
+        {
+          label: labels.deferredGroup,
+          submenu: deferredSidecarLedger.rows().map(row => ({
+            enabled: false,
+            label: `${deferredRowName(row, language)} · ${row.state} (:${row.port})`,
+            toolTip: row.detail
+          }))
+        },
         { type: 'separator' },
         {
           label: labels.quit,
@@ -7931,6 +7994,37 @@ ipcMain.handle('plobi:bootstrap:get', async () => getBootstrapState())
 // — a red sidecar must never block the Plobi backend or the window.
 let chatlogChild: ReturnType<typeof spawn> | null = null
 
+/**
+ * R-051 — record one real observation and re-render BOTH surfaces of the ledger.
+ *
+ * Every call site below passes what it actually saw (`observed`), never an
+ * assumption. Failure of a postponed subsystem downgrades the row to `deferred`;
+ * it is never elided and never recoloured as success, and a live port flips the
+ * same row to `ready` immediately. This is the desktop mirror of
+ * `deferred_row()` in scripts/plobi/doctor.py.
+ *
+ * @param {string} id - 'aigw' | 'chatlog'
+ * @param {'deferred'|'probing'|'ready'} state
+ * @param {string} observed - the observed outcome, shown verbatim in the UI
+ */
+function reportDeferredSubsystem(id, state, observed) {
+  const row = deferredSidecarLedger.record(id, { observed, state })
+
+  if (!row) {
+    return null
+  }
+
+  // Rendering #2: the boot-progress payload, on the channel the renderer already
+  // subscribes to. Deliberately does NOT touch `running` / `progress` / `error`,
+  // so a deferred sidecar can never hold the boot screen open or fail the boot.
+  updateBootProgress({ sidecars: deferredSidecarLedger.rows() })
+
+  // Rendering #1: the tray menu, from the same rows().
+  refreshTrayMenu()
+
+  return row
+}
+
 async function probeLocalHttp(url: string, timeoutMs = 2000): Promise<boolean> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
@@ -8021,6 +8115,7 @@ function killStrayChatlogProcesses(): void {
 
 async function ensureChatlogServer(): Promise<void> {
   if (await chatlogHealthy()) {
+    reportDeferredSubsystem('chatlog', 'ready', 'answered on :5030 before boot reached the sidecars')
     rememberLog('[sidecar] chatlog already healthy on :5030')
     return
   }
@@ -8028,6 +8123,7 @@ async function ensureChatlogServer(): Promise<void> {
   const exe = resolveChatlogBinary()
 
   if (!exe) {
+    reportDeferredSubsystem('chatlog', 'deferred', 'no chatlog binary on this machine (checked PLOBI_CHATLOG_BIN, CHATLOG_BIN, tools/chatlog/bin)')
     rememberLog('[sidecar] chatlog binary not found; skip (set PLOBI_CHATLOG_BIN)')
     return
   }
@@ -8036,6 +8132,7 @@ async function ensureChatlogServer(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 400))
 
   if (await chatlogHealthy()) {
+    reportDeferredSubsystem('chatlog', 'ready', 'answered on :5030 after clearing a stray process')
     rememberLog('[sidecar] chatlog became healthy after clearing stray process')
     return
   }
@@ -8088,12 +8185,16 @@ async function ensureChatlogServer(): Promise<void> {
     chatlogChild.on('exit', (code: number | null) => {
       rememberLog(`[chatlog] exited code=${code}`)
       chatlogChild = null
+      // No ledger write here on purpose: a child that dies before the port ever
+      // answers is already reported by the poll below, and reporting from the exit
+      // handler as well would let a teardown we initiated ourselves flip a row.
     })
 
     const deadline = Date.now() + 15000
 
     while (Date.now() < deadline) {
       if (await chatlogHealthy()) {
+        reportDeferredSubsystem('chatlog', 'ready', `spawned and answered on :5030 (pid=${chatlogChild?.pid ?? '?'})`)
         rememberLog('[sidecar] chatlog healthy on :5030')
         return
       }
@@ -8101,8 +8202,10 @@ async function ensureChatlogServer(): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 500))
     }
 
+    reportDeferredSubsystem('chatlog', 'deferred', `spawned ${exe} but :5030 never answered (WeChat login / CHATLOG_DATA_KEY?)`)
     rememberLog('[sidecar] chatlog spawned but :5030 still red (WeChat login / key?)')
   } catch (error) {
+    reportDeferredSubsystem('chatlog', 'deferred', `spawn failed: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] chatlog spawn failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
@@ -8112,6 +8215,7 @@ async function ensureProductAigw(): Promise<void> {
     (await probeLocalHttp('http://127.0.0.1:8000/healthz')) ||
     (await probeLocalHttp('http://127.0.0.1:8000/v1/models'))
   ) {
+    reportDeferredSubsystem('aigw', 'ready', 'answered on :8000 before boot reached the sidecars')
     rememberLog('[sidecar] product aigw already healthy on :8000')
     return
   }
@@ -8120,6 +8224,7 @@ async function ensureProductAigw(): Promise<void> {
   const configPath = path.join(aigwDir, 'config.yaml')
 
   if (!fs.existsSync(configPath)) {
+    reportDeferredSubsystem('aigw', 'deferred', `no gateway config at ${configPath}`)
     rememberLog(`[sidecar] product aigw config missing at ${configPath}`)
     return
   }
@@ -8132,8 +8237,13 @@ async function ensureProductAigw(): Promise<void> {
   })
 
   if (result.ok) {
+    reportDeferredSubsystem('aigw', 'ready', `healthy on :8000 (pid=${result.pid ?? '?'})`)
     rememberLog(`[sidecar] product aigw ready on :8000 pid=${result.pid ?? '?'}`)
   } else {
+    // `result.error` is the R-051 payoff: with a gated interpreter ladder this is
+    // now a specific, human-readable reason ("no project Python under …, run uv
+    // sync") instead of the old 20-second "did not become healthy in time".
+    reportDeferredSubsystem('aigw', 'deferred', result.error || 'gateway did not become healthy in time')
     rememberLog(`[sidecar] product aigw failed: ${result.error || 'unknown'}`)
   }
 }
@@ -8141,9 +8251,11 @@ async function ensureProductAigw(): Promise<void> {
 /** Fire-and-forget; safe to call on every backend.ready. */
 function ensureLocalSidecars(): void {
   void ensureChatlogServer().catch(error => {
+    reportDeferredSubsystem('chatlog', 'deferred', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] chatlog ensure error: ${error instanceof Error ? error.message : String(error)}`)
   })
   void ensureProductAigw().catch(error => {
+    reportDeferredSubsystem('aigw', 'deferred', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] aigw ensure error: ${error instanceof Error ? error.message : String(error)}`)
   })
 }
@@ -8234,49 +8346,40 @@ function resolveAigwDir(): string {
   return devPath
 }
 
-function resolveAigwPython(aigwDir: string): string {
-  // Prefer the aigw-local venv. Layout differs by OS:
-  //   POSIX:   .venv/bin/python
-  //   Windows: .venv/Scripts/python.exe
-  const venvCandidates = IS_WINDOWS
-    ? [
-        path.join(aigwDir, '.venv', 'Scripts', 'python.exe'),
-        path.join(aigwDir, '.venv', 'Scripts', 'python'),
-      ]
-    : [
-        path.join(aigwDir, '.venv', 'bin', 'python'),
-        path.join(aigwDir, '.venv', 'bin', 'python3'),
-      ]
+/**
+ * R-051 — resolve the interpreter for the aigw gateway through the SAME ladder as
+ * the main backend (./python-resolution.ts), gated by `canImportAigwCli` instead of
+ * `canImportPlobiCli`.
+ *
+ * This is the exact bug the old shape caused on macOS: `Code/aigw/.venv` holds only
+ * a Windows `Scripts/` tree copied off the decommissioned box, so the two POSIX
+ * candidates never existed, the bootstrap-clone rung existed but was skipped by the
+ * walk order, and the final unguarded `findSystemPython()` returned
+ * `/usr/bin/python3` (CommandLineTools 3.9). The child then died at
+ * `aigw/auth/antigravity_oauth.py:37` on `ModuleNotFoundError: No module named
+ * 'httpx'` — a guaranteed failure dressed up as a fallback.
+ *
+ * Walking *up* from the aigw checkout reaches `<repoRoot>/.venv` (uv-managed 3.13,
+ * httpx present), which is the interpreter `uv sync` owns and what `cd aigw &&
+ * uv run python -m aigw start` uses.
+ *
+ * @param {string} aigwDir - The aigw checkout that will be the child's cwd.
+ * @returns {{python: null | string, reason: null | string}}
+ */
+function resolveAigwInterpreter(aigwDir: string) {
+  const resolution = resolveProjectInterpreter({
+    extraRoots: [path.join(PLOBI_HOME, 'plobi-agent')],
+    label: 'the aigw gateway',
+    platform: process.platform,
+    startDir: aigwDir,
+    usable: (python: string) => canImportAigwCli(python, { cwd: aigwDir })
+  })
 
-  for (const candidate of venvCandidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate
-    }
+  if (!resolution.python && resolution.reason) {
+    rememberLog(`[python] no usable interpreter for aigw at ${aigwDir}: ${resolution.reason}`)
   }
 
-  // Fall back to the bootstrap backend's venv (PLOBI_HOME/plobi-agent/venv),
-  // which has the full Python environment installed by first-launch bootstrap.
-  // aigw must be importable there (installed or on PYTHONPATH) — the caller
-  // sets cwd to aigwDir so `python -m aigw` resolves the local package.
-  const plobiHome = process.env.PLOBI_HOME
-  if (plobiHome) {
-    const plobiVenv = IS_WINDOWS
-      ? [
-          path.join(plobiHome, 'plobi-agent', 'venv', 'Scripts', 'python.exe'),
-          path.join(plobiHome, 'plobi-agent', 'venv', 'Scripts', 'python'),
-        ]
-      : [
-          path.join(plobiHome, 'plobi-agent', 'venv', 'bin', 'python'),
-          path.join(plobiHome, 'plobi-agent', 'venv', 'bin', 'python3'),
-        ]
-    for (const candidate of plobiVenv) {
-      if (fs.existsSync(candidate)) {
-        return candidate
-      }
-    }
-  }
-
-  return findSystemPython()
+  return resolution
 }
 
 function resolveAigwConfig(aigwDir: string, appId?: string): string {
@@ -8416,7 +8519,15 @@ async function startAigwGateway(
   }
 
   const aigwDir = path.dirname(configPath)
-  const python = resolveAigwPython(aigwDir)
+  // R-051: a gateway we cannot even import must fail *now*, with the reason, rather
+  // than spawning an interpreter that dies on the first import and burns the whole
+  // health-poll timeout. The reason string is what the deferred ledger shows.
+  const { python, reason } = resolveAigwInterpreter(aigwDir)
+
+  if (!python) {
+    return { ok: false, error: reason || 'no usable Python interpreter for aigw' }
+  }
+
   // Prefer an explicitly-passed token (e.g. from the auth flow); fall back to a
   // previously persisted one so a restart can self-heal without re-login.
   const token = extraEnv.ANTIGRAVITY_REFRESH_TOKEN ?? loadAigwToken() ?? ''
@@ -8573,7 +8684,12 @@ async function authAntigravity(aigwDir: string): Promise<{
     return { ok: false, error: `aigw desktop config not found at ${configPath}` }
   }
 
-  const python = resolveAigwPython(aigwDir)
+  const { python, reason } = resolveAigwInterpreter(aigwDir)
+
+  if (!python) {
+    return { ok: false, code: 'NO_INTERPRETER', error: reason || 'no usable Python interpreter for aigw' }
+  }
+
 
   // Reuse any previously persisted token so the user doesn't have to re-login
   // on every reconnect / app restart.

@@ -4,13 +4,15 @@ import { useEffect, useRef } from 'react'
 import type { PlobiConnection } from '@/global'
 import { PlobiGateway } from '@/plobi'
 import { translateNow } from '@/i18n'
+import { reportDeferredSubsystems } from '@/lib/desktop-deferred-sidecars'
 import { desktopDefaultCwd } from '@/lib/desktop-fs'
 import {
   $desktopBoot,
   applyDesktopBootProgress,
   completeDesktopBoot,
   failDesktopBoot,
-  setDesktopBootStep
+  setDesktopBootStep,
+  setDesktopDeferredSubsystems
 } from '@/store/boot'
 import {
   $gateway,
@@ -301,6 +303,13 @@ export function useGatewayBoot({
     }
 
     const offBootProgress = desktop.onBootProgress(payload => {
+      // R-051 — the deferred-subsystem rows are forwarded BEFORE the boot latch,
+      // because the sidecars are probed after the backend is already ready. They
+      // must reach the window even when cold boot finished long ago, and they must
+      // never be able to re-open the boot overlay or set boot.error.
+      setDesktopDeferredSubsystems(payload.sidecars ?? [])
+      reportDeferredSubsystems(payload.sidecars)
+
       // Soft switch / post-boot startPlobi re-emits progress — ignore so the
       // cold-boot CONNECTING overlay stays down. Errors still surface.
       if ($gatewaySwitching.get() || bootCompleted) {
@@ -315,7 +324,11 @@ export function useGatewayBoot({
     })
     void desktop
       .getBootProgress()
-      .then(snapshot => applyDesktopBootProgress(snapshot))
+      .then(snapshot => {
+        applyDesktopBootProgress(snapshot)
+        setDesktopDeferredSubsystems(snapshot.sidecars ?? [])
+        reportDeferredSubsystems(snapshot.sidecars)
+      })
       .catch(() => undefined)
 
     setDesktopBootStep({
