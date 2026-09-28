@@ -109,7 +109,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/plobi-agent-banner.png',
+    image: 'img/logo.png',
     colorMode: {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
