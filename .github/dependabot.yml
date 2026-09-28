@@ -4,9 +4,10 @@
 # github-actions 这一条会同时改写 `uses:` 里的 40 位编号和行尾的 `# vX.Y.Z` 注释，
 # 所以注释必须留在同一行——注释丢了，机器人就认不出版本了。
 #
-# 噪音控制：上限是「每个生态各自计算」的，默认 5 个，6 个生态就意味着最多 30 个
+# 噪音控制：上限是「每个生态各自计算」的，默认 5 个，当时 6 个生态就意味着最多 30 个
 # PR 同时挂着（实测一次涌出 19 个）。所以每条都显式压到 3，并把 minor/patch
 # 合并成单个 PR；跨大版本的升级保持一条一个 PR，留给人判断。
+# 现在共 5 条（github-actions / pip / npm×3），Python 那条见下方说明已被摘除。
 #
 # 已知盲点：SHA 钉死的 action 不会触发 Dependabot 安全告警（只有语义化版本写法才会）。
 # 版本更新覆盖，安全告警不覆盖。补这一块的目前是 .github/workflows/action-pin-audit.yml。
@@ -25,19 +26,17 @@ updates:
       ci_minor_patch:
         update-types: ["minor", "patch"]
 
-  # 根 Python 依赖：pyproject.toml + uv.lock（uv 需 >= v0.11）
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "deps(py)"
-    groups:
-      py_minor_patch:
-        update-types: ["minor", "patch"]
+  # Python 依赖**故意不接机器人**，别顺手加回来。
+  # package-ecosystem: "uv" 能被 Dependabot 接受并真的运行，但它解析不了本项目的
+  # extras 组合：报 daytona[0.217.0] 要 aiohttp>=3.14.3 而 [all] 钉死 3.14.1、
+  # microsoft-teams-apps 2.1.0 要 cryptography>=50 而项目钉 46.0.7、
+  # daytona[0.155.0] 要 websockets<16 而项目钉 17.1（均限 python 3.13 分支）。
+  # 同一份 pyproject 用本机 uv 复核是正常的：`uv lock --check` → Resolved 234 packages。
+  # 所以是机器人侧的解析口径与 uv 不一致，不是仓库坏了。留着只会「每周报红但从不产出 PR」。
+  # 2026-09-28 连跑两轮（run 36364132114 / 36365364675）均为 failure，且失败项完全相同，
+  # 不是偶发。Python 依赖按 AGENTS.md《Dependency Pinning Policy》第 4 条走手动 `uv lock`。
 
-  # aigw 是裸 requirements.txt，没有锁文件
+  # aigw 是裸 requirements.txt，没有锁文件（这个 Dependabot 解析得动）
   - package-ecosystem: "pip"
     directory: "/aigw"
     schedule:
