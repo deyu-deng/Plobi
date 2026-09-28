@@ -11061,9 +11061,12 @@ def cmd_profile(args):
                         "(excluding session history, backups, and snapshots)."
                     )
                 else:
-                    print(
-                        f"Cloned config, .env, SOUL.md, and skills from {source_label}."
+                    skills_note = (
+                        "config, .env and SOUL.md"
+                        if no_skills
+                        else "config, .env, SOUL.md, and skills"
                     )
+                    print(f"Cloned {skills_note} from {source_label}.")
 
             # Auto-clone Honcho config for the new profile (only with clone operations)
             if clone_config or clone_all:

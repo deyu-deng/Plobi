@@ -414,14 +414,44 @@ class TestNoSkillsOptOut:
         assert (profile_dir / "skills").is_dir()
         assert list((profile_dir / "skills").iterdir()) == []
 
-    def test_no_skills_conflicts_with_clone(self, profile_env):
-        with pytest.raises(ValueError, match="mutually exclusive"):
-            create_profile(
-                "orchestrator",
-                no_alias=True,
-                no_skills=True,
-                clone_config=True,
-            )
+    def test_no_skills_composes_with_clone_config(self, profile_env):
+        """``--no-skills`` + ``--clone``: the config layer is still cloned, the
+        skill tree is not. A 分身 that reads a shared root via
+        ``skills.external_dirs`` must not end up with a private copy (裁定 42).
+        """
+        default_home = profile_env / ".plobi"
+        (default_home / "skills" / "demo-skill").mkdir(parents=True)
+        (default_home / "skills" / "demo-skill" / "SKILL.md").write_text(
+            "---\nname: demo-skill\n---\n", encoding="utf-8"
+        )
+        (default_home / "config.yaml").write_text("model: gpt-4\n", encoding="utf-8")
+        (default_home / "SOUL.md").write_text("cloned persona\n", encoding="utf-8")
+
+        profile_dir = create_profile(
+            "orchestrator", no_alias=True, no_skills=True, clone_config=True
+        )
+
+        # config layer survives the clone (the clone is then schema-migrated,
+        # so assert the cloned value made it through, not byte equality) ...
+        assert "model: gpt-4" in (profile_dir / "config.yaml").read_text(encoding="utf-8")
+        assert (profile_dir / "SOUL.md").read_text(encoding="utf-8") == "cloned persona\n"
+        # ... the skills do not.
+        assert list((profile_dir / "skills").rglob("SKILL.md")) == []
+        assert (profile_dir / NO_BUNDLED_SKILLS_MARKER).is_file()
+
+    def test_no_skills_clone_copies_skills_without_the_flag(self, profile_env):
+        """Counterpart: without ``--no-skills`` a clone still brings the skills,
+        so the opt-out above is the only thing that changed."""
+        default_home = profile_env / ".plobi"
+        (default_home / "skills" / "demo-skill").mkdir(parents=True)
+        (default_home / "skills" / "demo-skill" / "SKILL.md").write_text(
+            "---\nname: demo-skill\n---\n", encoding="utf-8"
+        )
+
+        profile_dir = create_profile("coder", no_alias=True, clone_config=True)
+
+        assert (profile_dir / "skills" / "demo-skill" / "SKILL.md").is_file()
+        assert not (profile_dir / NO_BUNDLED_SKILLS_MARKER).exists()
 
     def test_no_skills_conflicts_with_clone_all(self, profile_env):
         with pytest.raises(ValueError, match="mutually exclusive"):

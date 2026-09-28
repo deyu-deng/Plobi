@@ -613,8 +613,10 @@ class AgentRegistry:
     ) -> dict:
         """把一个注册条目落地为常驻 profile + 模型路由。
 
-        1. 若 profile 不存在则 ``create_profile``（默认克隆当前 profile 的
-           config/.env/SOUL/skills，让 L2 继承基础能力）。
+        1. 若 profile 不存在则 ``create_profile``：克隆当前 profile 的
+           config/.env/SOUL（让 L2 继承基础能力），但**不复制技能**——
+           技能走顶层共享根（裁定 42 §42.3，见
+           :meth:`_ensure_profile` / :func:`apply_shared_skills_root`）。
         2. 把该 agent 的路由写进 profile 的 ``plobi/models.json``。
         3. ADR-0011 断言（L1≠L2 模型）必须绿，否则抛 RegistryError。
         4. 返回 dict：profile 路径、启动命令、routing 断言。
@@ -673,17 +675,30 @@ class AgentRegistry:
         name = entry.profile_name
         if profile_exists(name):
             return get_profile_dir(name)
-        # 首次落地：克隆现有 profile（默认克隆活动 profile）作为能力底座。
-        kwargs: dict = {}
+        # 首次落地：克隆现有 profile 的**配置**（config.yaml / .env / SOUL.md）作为
+        # 能力底座，但**不复制技能**——裁定 42 §42.2 把技能划进共享层，§42.3 指定的
+        # 两个现成钩子就是 ``create_profile(no_skills=True)``（不拷贝 + 写
+        # ``.no-bundled-skills`` 标记，``plobi update`` 不再重新播种）与
+        # ``skills.external_dirs``（下面 ``apply_shared_skills_root`` 写）。
+        # SOUL.md / .env 的归属是 2b，本刀保持原样。
+        kwargs: dict = {"no_skills": True}
         if clone_from:
             kwargs["clone_from"] = clone_from
             kwargs["clone_config"] = True
         else:
-            kwargs["clone_config"] = True  # 默认克隆配置（含 .env / skills）
+            kwargs["clone_config"] = True  # 默认克隆配置（不含 skills）
         try:
-            return create_profile(name=name, **kwargs)
+            profile_dir = create_profile(name=name, **kwargs)
         except FileExistsError:
+            # Someone else landed it first — don't rewrite their config.
             return get_profile_dir(name)
+        try:
+            apply_shared_skills_root(profile_dir)
+        except Exception as exc:  # 兜底：共享根写不进去也不该让 spawn 失败
+            logger.warning(
+                "plobi: shared skills root not wired for %s: %s", name, exc
+            )
+        return profile_dir
 
     def _write_profile_models(self, profile_dir: Path, entry: AgentEntry) -> Path:
         """把注册表整体路由写进 profile 的 plobi/models.json。"""
@@ -2965,6 +2980,90 @@ def apply_l2_project_cwd(profile_dir: Path | str | None, project_path: str | Non
         return False
     terminal["cwd"] = abs_path
     cfg["terminal"] = terminal
+    cfg_path.write_text(
+        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+    return True
+
+
+def shared_skills_root() -> Path:
+    """The one skill root every L2 分身 reads (裁定 42 §42.2 共享层).
+
+    Anchored to the **default** profile home, not to the active ``PLOBI_HOME``:
+    ``spawn`` may itself run inside a profile, and a 分身 must not inherit
+    another 分身's copy as the shared root.
+    """
+    from plobi_cli.profiles import get_profile_dir
+
+    return get_profile_dir("default") / "skills"
+
+
+def apply_shared_skills_root(profile_dir: Path | str | None) -> bool:
+    """Point an L2 分身's ``config.yaml`` at :func:`shared_skills_root`.
+
+    裁定 42 §42.3 第 2 条：分身不再自带技能，可见性来自
+    ``skills.external_dirs``（``agent/skill_utils.get_external_skills_dirs``
+    读取；``tools/skills_tool.py`` 与 ``agent/prompt_builder.py`` 都按
+    「本地主根优先、同名外部技能跳过」合并，所以列表不会翻倍）。
+
+    Idempotent and preserves every other key:
+    - profile dir is ``None`` → no-op.
+    - shared root missing (fresh install, nothing seeded) → still written; the
+      scanner skips non-existent dirs, and the binding self-heals once the
+      root exists.
+    - the root is already listed (compared after ``expanduser`` + ``absolute``)
+      → no-op, so repeated ``spawn`` never appends a second entry.
+    - any external dir the user listed themselves is preserved; we only append
+      ours, never reorder or drop.
+    """
+    if profile_dir is None:
+        return False
+
+    import yaml
+
+    root = str(shared_skills_root().expanduser().absolute())
+    cfg_path = Path(profile_dir) / "config.yaml"
+
+    if not cfg_path.is_file():
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {"skills": {"external_dirs": [root]}},
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+        return True
+
+    try:
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return False
+    if not isinstance(cfg, dict):
+        return False
+
+    skills = cfg.get("skills")
+    if not isinstance(skills, dict):
+        skills = {}
+    external = skills.get("external_dirs")
+    if isinstance(external, str):
+        external = [external]
+    if not isinstance(external, list):
+        external = []
+
+    def _same_path(entry: object) -> bool:
+        try:
+            return Path(os.path.expanduser(str(entry))).absolute() == Path(root)
+        except (OSError, RuntimeError):
+            return False
+
+    # Idempotent: the shared root is already there → nothing to do.
+    if any(_same_path(entry) for entry in external):
+        return False
+
+    skills["external_dirs"] = [*external, root]
+    cfg["skills"] = skills
     cfg_path.write_text(
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )
