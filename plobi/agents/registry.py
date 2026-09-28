@@ -48,17 +48,74 @@ class RegistryError(ValueError):
 AGENT_CATEGORIES: tuple[str, ...] = ("projects", "butler", "events", "research")
 DEFAULT_CATEGORY = "butler"
 
+# --------------------------------------------------------------------------- #
 # R-013: default folder binding per category. ``butler`` has none (it is the
 # housekeeping agent, not project-scoped). A caller may always override
 # ``project_path`` on the entry; this map only seeds the default.
-# NOTE: drive letters are intentionally NOT hardcoded in tests — the registry
-# resolves these verbatim; tests inject override paths.
-DEFAULT_PROJECT_PATHS: dict[str, str] = {
+#
+# The binding is PLATFORM-AWARE. The original table hardcoded a Windows drive
+# layout (``D:\...``) for a machine that has since been retired — the repo was
+# re-baselined onto this macOS workspace in 2026-09. On macOS/Linux that string
+# is just a relative path with a colon in it, so it can never exist;
+# ``apply_l2_project_cwd`` then refused to fabricate a cwd and every project
+# 分身 silently lost its working directory. Windows keeps the historic bindings
+# verbatim; POSIX anchors under the user's home.
+#
+# Override route (no new PLOBI_* env var — AGENTS.md reserves env/.env for
+# secrets): the per-entry ``project_path`` persisted in projects.yaml always
+# wins over this table, and ``POST /api/agents`` ``projectPath`` is the
+# user-facing way to set it. The table is only the seed for a row that has
+# never been bound.
+# --------------------------------------------------------------------------- #
+
+_WINDOWS_DEFAULT_PROJECT_PATHS: dict[str, str] = {
     "projects": r"D:\projects",
     "events": r"D:\Cloud\Events",
     "research": r"D:\Cloud\Research",
     "butler": "",
 }
+
+# Directory under the user's home that anchors projects on macOS/Linux.
+POSIX_PROJECTS_ROOT_NAME = "Projects"
+
+# Category → directory name relative to that root. ``projects`` *is* the root;
+# ``butler`` has no binding. Table-driven so a new category needs one row here,
+# not a condition ladder in the resolver.
+_POSIX_CATEGORY_DIRNAME: dict[str, str] = {
+    "projects": "",
+    "events": "Events",
+    "research": "Research",
+    "butler": "",
+}
+
+
+def build_default_project_paths(
+    *, home: Path | str | None = None, is_windows: bool | None = None
+) -> dict[str, str]:
+    r"""Category → default folder binding, resolved for one platform.
+
+    Pure and side-effect free: it never touches (or creates) the filesystem,
+    because a binding that does not exist must stay a no-op downstream rather
+    than a fabricated directory. ``home`` / ``is_windows`` are injectable so a
+    test can assert both platforms' invariants without faking ``os.name``.
+    """
+    if is_windows is None:
+        is_windows = os.name == "nt"
+    if is_windows:
+        return dict(_WINDOWS_DEFAULT_PROJECT_PATHS)
+    root = Path(home).expanduser() if home is not None else Path.home()
+    projects = root / POSIX_PROJECTS_ROOT_NAME
+    resolved: dict[str, str] = {}
+    for category in AGENT_CATEGORIES:
+        if category == "butler":
+            resolved[category] = ""
+            continue
+        subdir = _POSIX_CATEGORY_DIRNAME.get(category, category)
+        resolved[category] = str(projects / subdir) if subdir else str(projects)
+    return resolved
+
+
+DEFAULT_PROJECT_PATHS: dict[str, str] = build_default_project_paths()
 
 # 裁定 19: events 生命周期护栏。一个 events 类代理必须挂到一条用户已确认的
 # agenda 事项；同时存活 events 类代理上限（超即 400）。
@@ -68,6 +125,106 @@ MAX_LIVE_EVENTS_AGENTS = 5
 def default_project_path(category: str) -> str:
     """Default folder binding for a category; ``""`` when none (butler)."""
     return DEFAULT_PROJECT_PATHS.get(category, "")
+
+
+# --------------------------------------------------------------------------- #
+# Self-heal: re-anchor rows whose bound folder is not on this machine
+#
+# Why this exists: ``apply_l2_project_cwd`` degrades a non-existent
+# ``project_path`` to a silent no-op ("NEVER fabricate a cwd"). That is the
+# right guard, but it makes stale bindings invisible — the 分身 starts up fine,
+# it just never works in its own project directory. Rows went stale wholesale
+# when the Windows box was retired and the workspace was re-baselined onto mac:
+# every entry still pointed at ``D:\...``, so not one profile got a cwd.
+# Re-basing at load time fixes the whole class (Windows-era rows, hand-edited
+# yaml, rows imported from another machine) instead of just the seed table.
+#
+# Contract:
+#   * a binding that resolves to a real directory is NEVER touched — a human
+#     may have pointed it anywhere they like;
+#   * a stale binding is re-resolved as ``<platform default root>/<entry name>``
+#     (the entry's own category root first, then the projects root, because the
+#     Mind scanner has always filed research projects under the projects root;
+#     ``display_name`` is tried after ``name`` for rows renamed by 裁定 37.1);
+#   * a re-resolution that does not land on an existing directory is neither
+#     written back NOR created — the original value stays so nothing is lost,
+#     and the row keeps degrading to a cwd no-op;
+#   * idempotent: a healed binding exists on disk, so the next load skips it and
+#     writes nothing.
+# --------------------------------------------------------------------------- #
+
+
+def _stale_path_candidate_roots(category: str) -> tuple[str, ...]:
+    """Ordered, deduped platform roots a stale binding may be re-based on.
+
+    Empty for a category with no folder binding at all (``butler``) — there is
+    nothing to re-base against, so such a row is left alone. ``projects`` is
+    always offered after the category's own root because the Mind scanner has
+    historically filed research projects there too, not in a research subdir.
+    """
+    own = default_project_path(category)
+    if not own:
+        return ()
+    roots = [own]
+    fallback = default_project_path("projects")
+    if fallback and fallback not in roots:
+        roots.append(fallback)
+    return tuple(roots)
+
+
+def _is_bindable_name(raw: str) -> bool:
+    """Guard the heal against a path-traversal / absolute entry name.
+
+    Entry ids are normally produced by :func:`_project_safe_id`
+    (``[A-Za-z0-9_-]+``), but a hand-edited ``projects.yaml`` is untrusted
+    input and must not be able to steer the heal outside the default root.
+    """
+    if not raw or raw in (".", ".."):
+        return False
+    separators = {os.sep, os.altsep, "/", "\\"} - {None, ""}
+    return not any(sep in raw for sep in separators)
+
+
+def _first_existing_dir(candidates) -> str:
+    """First candidate that is an existing directory, else ``""``.
+
+    Read-only by construction — nothing in here creates a directory.
+    """
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            path = Path(candidate).expanduser()
+        except (OSError, ValueError):
+            continue
+        try:
+            if path.is_dir():
+                return str(path)
+        except OSError:
+            continue
+    return ""
+
+
+def resolve_stale_project_path(entry: "AgentEntry") -> str:
+    """Re-base a stale ``project_path`` onto this platform's default root(s).
+
+    Returns the corrected path, or ``""`` when no candidate directory actually
+    exists — the caller then keeps the original value rather than writing a
+    path it made up.
+    """
+    names = [n for n in (entry.name, entry.display_name) if n and _is_bindable_name(n)]
+    return _first_existing_dir(
+        str(Path(root).expanduser() / name)
+        for root in _stale_path_candidate_roots(entry.category)
+        for name in names
+    )
+
+
+def _project_path_is_stale(raw: str) -> bool:
+    """True when a binding is set but does not point at a directory here."""
+    if not (raw or "").strip():
+        return False
+    return not _first_existing_dir((raw,))
 
 
 def _dt_today_iso() -> str:
@@ -259,7 +416,68 @@ class AgentRegistry:
                                 logger.warning("plobi registry: %s", exc)
             except Exception:
                 logger.warning("plobi: could not read %s; treating as empty", target)
-        return cls(path=target, agents=agents)
+        registry = cls(path=target, agents=agents)
+        # Self-heal bindings left over from another machine / an older OS.
+        # Best-effort: a read-only home or an unreadable volume must not stop
+        # the registry from loading, same as the read above.
+        try:
+            registry.heal_stale_project_paths()
+        except Exception as exc:
+            logger.warning("plobi registry: project_path self-heal skipped: %s", exc)
+        return registry
+
+    def heal_stale_project_paths(self, *, save: bool = True) -> list[str]:
+        """Re-anchor rows whose ``project_path`` is not a directory here.
+
+        See the *Self-heal* block above :func:`resolve_stale_project_path` for
+        the full contract (never touch a live binding, never fabricate a path,
+        never create a directory, idempotent). Returns the names corrected on
+        this call and writes the registry back to ``self.path`` **only** when
+        something was actually corrected — a second load rewrites nothing.
+        """
+        from dataclasses import replace
+
+        healed: list[str] = []
+        for name, entry in list(self.agents.items()):
+            current = (entry.project_path or "").strip()
+            if not _project_path_is_stale(current):
+                # Either unbound (butler / never seeded) or a real directory a
+                # human chose. Both are left exactly as they are.
+                continue
+            fixed = resolve_stale_project_path(entry)
+            if fixed:
+                self.agents[name] = replace(entry, project_path=fixed)
+                healed.append(name)
+                logger.warning(
+                    "plobi registry: %s project_path %r is not a directory on "
+                    "this machine; re-based to %r",
+                    name,
+                    current,
+                    fixed,
+                )
+            else:
+                # Fail-closed: keep the original value, create nothing. The row
+                # stays unbound in practice because apply_l2_project_cwd skips
+                # a path that does not exist, so the 分身 gets no cwd instead of
+                # a fabricated one.
+                logger.warning(
+                    "plobi registry: %s project_path %r is not a directory and "
+                    "no default root matches it; leaving the binding as-is "
+                    "(terminal.cwd stays unset for this profile)",
+                    name,
+                    current,
+                )
+        if healed and save:
+            try:
+                self.save()
+            except Exception as exc:
+                logger.warning(
+                    "plobi registry: project_path self-heal write-back skipped "
+                    "for %s: %s",
+                    healed,
+                    exc,
+                )
+        return healed
 
     def save(self, path: Path | str | None = None) -> Path:
         target = Path(path) if path else self.path
