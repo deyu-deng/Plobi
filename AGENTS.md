@@ -577,6 +577,33 @@ reinforced after the Mini Shai-Hulud worm campaign (May 2026).
 
 Reference: #2810 (bounds pass), #9801 (SHA pinning + audit CI).
 
+### Never write an identifier from memory
+
+Any 40-char commit SHA, package digest, or version literal must be **produced by a
+command in the same session and pasted** — never typed from recall. Then re-check the
+exact value you wrote, once, against the source.
+
+This is not a stylistic preference. On 2026-09-28 `.github/workflows/arch-gates.yml`
+was found to pin two actions with SHAs whose **first 12 hex characters were correct and
+last 28 were fabricated**. GitHub could not resolve them, so the job died at
+`Prepare all required actions` — before `checkout` — and the architecture gate had never
+executed a single step since it was written. A dead gate and a red gate look identical
+in the notifications, which is how it stayed unnoticed.
+
+```bash
+gh api repos/actions/setup-node/commits/v4.4.0 --jq .sha          # get the real SHA
+gh api repos/actions/setup-node/commits/<sha> --jq .commit.committer.date   # prove it exists
+```
+
+If you only have a truncated prefix, resolve the tag to a full SHA with the first
+command — do not complete it yourself.
+
+Machine-generated lockfiles are not the exposure here (`uv.lock` verified clean:
+1897/1897 hashes matched PyPI on 2026-09-28). The exposure is **hand-authored config**:
+workflow files, hand-written pins, and anything reconstructed during the
+`[WP-ENV-REBASELINE]` snapshot after the git object-store loss. Treat every
+identifier-shaped value from that snapshot as unverified until you have re-checked it.
+
 ---
 
 ## Adding Configuration
