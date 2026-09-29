@@ -738,12 +738,34 @@ class AgentRegistry:
         仅当 entry 显式给了 provider/model（或默认路由解析出模型）才写；
         不动其他配置。config.yaml 可能不存在（新 profile 也可能没有），
         不存在则跳过 —— 会话仍可用 models.json 路由。
+
+        落笔前还有一道**可解析闸门**（:func:`provider_is_resolvable`）：底座运行时
+        认不出来的 provider 名字**不写进 model 节**，让该分身继续沿用它自己
+        （克隆来的 / 上层）那份 model 配置，只留一条 warning。写进一个解析不出来的
+        名字 = 分身一启动就是一条「Unknown provider」红条；不写 = 顶多用继承的模型，
+        功能不塌。任何情况下都不因为这道闸让 ``spawn`` 失败。
         """
         try:
             route = self.router().resolve(entry.role)
         except Exception:
             route = None
         if route is None or not route.configured:
+            return
+
+        provider = (route.provider or "").strip()
+        if provider and not provider_is_resolvable(provider):
+            logger.warning(
+                "plobi: model section NOT written to %s/config.yaml — the runtime "
+                "provider resolver does not know provider %r (model %r), and writing "
+                "it would make the profile fail with \"Unknown provider '%s'\" on "
+                "every start. Skipping keeps this 分身 on the model config it already "
+                "inherits. Run 'plobi model' for the list of resolvable providers or "
+                "'plobi doctor' to diagnose. Registration itself continues.",
+                profile_dir,
+                provider,
+                route.model,
+                provider,
+            )
             return
 
         cfg_path = profile_dir / "config.yaml"
@@ -766,6 +788,53 @@ class AgentRegistry:
         cfg_path.write_text(
             yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
         )
+
+
+# ---------------------------------------------------------------------------
+# 可解析闸门：这个 provider 名字底座认不认
+# ---------------------------------------------------------------------------
+
+
+def provider_is_resolvable(provider: str) -> bool:
+    """问底座那个唯一权威：``provider`` 这个名字运行时解析得出来吗？
+
+    权威 = :func:`plobi_cli.auth.resolve_provider`（``plobi_cli/auth.py:1625``）——
+    也就是桌面上那条「Unknown provider '<x>'. Check 'plobi model' …」红条的出处
+    （``plobi_cli/auth.py:1704``，抛 ``AuthError(code="invalid_provider")``）。
+    只有它能判，因为它一个函数里做完了别名归一（``glm`` → ``zai``、
+    ``moonshot`` → ``kimi-coding``）、插件 provider 发现（``PROVIDER_REGISTRY`` 在
+    ``plobi_cli/auth.py:447`` 起被 ``plugins/model-providers/`` 扩展）以及 ``custom``
+    / ``openrouter`` 特例。本层**不抄一份 provider 名单**（那是第二真源，插件装掉
+    一个 provider 我们就判错），也只问不判。
+
+    拿不到权威时按**能写**处理（fail-open）：import 不了 plobi_cli（本层刻意不在
+    模块级依赖它，见 :meth:`AgentRegistry._ensure_profile` 的惰性 import 与 51ff7f0
+    的教训）不等于权威说了"不行"；一道闸门不许把注册/派生流程弄失败。
+    """
+    name = (provider or "").strip()
+    if not name:
+        return True
+    try:
+        from plobi_cli.auth import resolve_provider
+    except Exception as exc:  # pragma: no cover — 环境缺底座时不拦
+        logger.debug(
+            "plobi: provider resolver unavailable (%s); model write allowed", exc
+        )
+        return True
+    try:
+        resolve_provider(name)
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        if code == "invalid_provider":
+            return False
+        # 解析器自己出错（读配置炸了等）≠ 这个名字不可解析。别拿它当否决票。
+        logger.debug(
+            "plobi: provider resolver errored for %r (%s); model write allowed",
+            name,
+            exc,
+        )
+        return True
+    return True
 
 
 # ---------------------------------------------------------------------------

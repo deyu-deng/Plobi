@@ -419,6 +419,141 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     assert cfg.get("terminal", {}).get("cwd") == str(project_dir.absolute())
 
 
+# ---------------------------------------------------------------------------
+# 可解析闸门：底座认不出来的 provider **不写进 model 节**
+# （症状：桌面点进分身 → 「Unknown provider 'aigw'. Check 'plobi model' …」）
+# ---------------------------------------------------------------------------
+
+_UNRESOLVABLE_PROVIDER = "no-such-provider-gate-check"
+
+
+def _resolvable_provider_name() -> str:
+    """从底座那个权威自己的注册表里取一个它认的名字（不写死 provider 名单）。"""
+    from plobi_cli.auth import PROVIDER_REGISTRY, resolve_provider
+
+    assert PROVIDER_REGISTRY, "底座注册表为空 —— 闸门无从验证"
+    name = sorted(PROVIDER_REGISTRY)[0]
+    assert resolve_provider(name) == name
+    return name
+
+
+def _seed_profile_dir(home, profile: str, config_text: str) -> Path:
+    """预建 profile 目录 + 一份 config.yaml（spawn 见目录已存在就直接用）。"""
+    profile_dir = Path(home) / ".plobi" / "profiles" / profile
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    (profile_dir / "plobi").mkdir(exist_ok=True)
+    (profile_dir / "config.yaml").write_text(config_text, encoding="utf-8")
+    return profile_dir
+
+
+def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
+    """① provider 可解析 → 照原样写进 config.yaml 的 model 节（原行为不变）。"""
+    import yaml
+
+    provider = _resolvable_provider_name()
+    reg = AgentRegistry.load()
+    reg.upsert(
+        _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
+    )
+    reg.upsert(
+        _entry(name="proj", role="l2_project", profile="l2-proj", provider=provider, model="a-model")
+    )
+    reg.save()
+
+    result = reg.spawn("proj")
+
+    cfg = yaml.safe_load(
+        (Path(result["profile_dir"]) / "config.yaml").read_text(encoding="utf-8")
+    )
+    assert cfg["model"]["provider"] == provider
+    assert cfg["model"]["default"] == "a-model"
+
+
+def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, caplog):
+    """② provider 不可解析 → 不写 model 节、spawn 照常返回、留一条点名 warning。"""
+    import logging
+    import yaml
+    from plobi_cli.auth import AuthError, resolve_provider
+
+    # 前提自证（不是写死的名字表）：底座权威确实拒这个名字，红条就是它抛的。
+    with pytest.raises(AuthError) as excinfo:
+        resolve_provider(_UNRESOLVABLE_PROVIDER)
+    assert excinfo.value.code == "invalid_provider"
+
+    profile_dir = _seed_profile_dir(spawn_env, "l2-proj", "toolsets: [web]\n")
+    reg = AgentRegistry.load()
+    reg.upsert(
+        _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
+    )
+    reg.upsert(
+        _entry(
+            name="proj",
+            role="l2_project",
+            profile="l2-proj",
+            provider=_UNRESOLVABLE_PROVIDER,
+            model="a-model",
+        )
+    )
+    reg.save()
+
+    with caplog.at_level(logging.WARNING, logger="plobi.agents.registry"):
+        result = reg.spawn("proj")  # 不许抛
+
+    assert result["routing_ok"] is True
+    assert Path(result["profile_dir"]) == profile_dir
+    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
+    assert "model" not in cfg, "不可解析的 provider 被写进了 model 节"
+    assert cfg["toolsets"] == ["web"], "跳过 model 节不许动 config 的其他键"
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(_UNRESOLVABLE_PROVIDER in m for m in warnings), warnings
+    assert any("plobi model" in m for m in warnings), warnings
+
+
+def test_unresolvable_provider_skip_leaves_terminal_cwd_and_inherited_model(spawn_env, home):
+    """③ 跳过 model 节不影响 terminal.cwd；分身留着它继承来的 model 配置。
+
+    cwd 与模型是两件事（WP-STUDIO-CWD / 裁定 36.1 已拆开）：模型不可解析不许把
+    工作目录一起带走；而"不写"的语义正是**继承**——克隆来的 model 节原样保留。
+    """
+    import yaml
+
+    inherited_provider = _resolvable_provider_name()
+    project_dir = Path(home) / "workspace"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    profile_dir = _seed_profile_dir(
+        spawn_env,
+        "l2-proj",
+        yaml.safe_dump(
+            {"model": {"provider": inherited_provider, "default": "inherited-model"}},
+            allow_unicode=True,
+        ),
+    )
+
+    reg = AgentRegistry.load()
+    reg.upsert(
+        _entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3")
+    )
+    reg.upsert(
+        _entry(
+            name="proj",
+            role="l2_project",
+            profile="l2-proj",
+            provider=_UNRESOLVABLE_PROVIDER,
+            model="a-model",
+            project_path=str(project_dir),
+            category="projects",
+        )
+    )
+    reg.save()
+
+    result = reg.spawn("proj")
+
+    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
+    assert cfg["terminal"]["cwd"] == str(project_dir.absolute())
+    assert cfg["model"] == {"provider": inherited_provider, "default": "inherited-model"}
+    assert result["routing_ok"] is True
+
+
 def test_profile_name_is_normalized_to_the_on_disk_id():
     """注册表键可以是首字母大写的显示名，但发出去的 profile 名必须是磁盘上那个小写 id。
 
