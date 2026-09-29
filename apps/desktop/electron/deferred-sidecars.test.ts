@@ -19,12 +19,16 @@ import {
   createDeferredSubsystemLedger,
   DEFERRED_SUBSYSTEMS,
   DEFERRED_SUFFIX,
+  RED_SUFFIX,
   deferredDetail,
   definitionFor
 } from './deferred-sidecars'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const DOCTOR_PATH = path.join(REPO_ROOT, 'scripts', 'plobi', 'doctor.py')
+/** The renderer's copy of the state union — `src/global.d.ts`. */
+const GLOBAL_DTS_PATH = path.join(REPO_ROOT, 'apps', 'desktop', 'src', 'global.d.ts')
+const LEDGER_PATH = path.join(REPO_ROOT, 'apps', 'desktop', 'electron', 'deferred-sidecars.ts')
 
 /** Observation fixtures — the shape the main process passes in from a real probe. */
 function observation(id: string, state: 'deferred' | 'probing' | 'ready', observed: string) {
@@ -178,4 +182,80 @@ test('the doctor.py hint table still covers every desktop deferred subsystem', (
   for (const id of Object.keys(DEFERRED_SUBSYSTEMS)) {
     assert.ok(doctorIds.has(id), `${id} is deferred on the desktop but not in doctor.py`)
   }
+})
+
+// ── R-052: `red` — the state that was missing ───────────────────────────────
+// doctor.py calls "reachable (or attempted) but not healthy" RED and reserves
+// `deferred` for "nothing here could even be started". Before this, the desktop
+// ledger had no way to say the first thing, so every real sidecar fault was
+// reported as a postponement.
+
+test('red is a state the ledger can actually hold, and it is worded as a fault', () => {
+  const ledger = createDeferredSubsystemLedger({ now: () => 3 })
+
+  const row = ledger.record('chatlog', {
+    observed: 'spawned /bin/chatlog but :5030 never answered',
+    state: 'red'
+  })
+
+  assert.ok(row, 'record() must accept red — refusing it is what hid the fault')
+  assert.equal(row.state, 'red')
+  assert.match(row.detail, /spawned \/bin\/chatlog but :5030 never answered/)
+  assert.match(row.detail, /RED/)
+  // The enable steps stay in the detail for every non-ready row.
+  assert.match(row.detail, /Enable: /)
+  assert.ok(!row.detail.includes(DEFERRED_SUFFIX), 'a real fault must never read as "postponed, not a fault"')
+})
+
+test('a red row with no recorded observation still says it is a fault', () => {
+  const red = deferredDetail({ ...observation('aigw', 'ready', ''), observed: '', state: 'red' })
+
+  assert.match(red, /RED/)
+  assert.match(red, /Enable: /)
+  assert.ok(!red.includes(DEFERRED_SUFFIX))
+})
+
+test('red and deferred coexist in the union and are rendered by different branches', () => {
+  // Anti-regression, and the reason this test reads the source: the one bug worth
+  // protecting against is someone folding `red` back into `deferred` to quiet the
+  // UI. Both copies of the union must carry both states.
+  const statesOf = (source: string) => {
+    const line = source.split('\n').find(candidate => candidate.includes("'probing'") && candidate.includes('|'))
+
+    assert.ok(line, 'the subsystem state union must stay a single declared line')
+
+    return [...line.matchAll(/'([^']+)'/g)].map(match => match[1])
+  }
+
+  for (const file of [LEDGER_PATH, GLOBAL_DTS_PATH]) {
+    const states = statesOf(fs.readFileSync(file, 'utf8'))
+
+    assert.ok(states.includes('red'), `${file} must declare 'red'`)
+    assert.ok(states.includes('deferred'), `${file} must still declare 'deferred'`)
+    assert.deepEqual(states, ['deferred', 'probing', 'ready', 'red'])
+  }
+
+  assert.notEqual(RED_SUFFIX, DEFERRED_SUFFIX)
+
+  const observed = 'http://127.0.0.1:5030 answered 500'
+  const asDeferred = deferredDetail(observation('chatlog', 'deferred', observed))
+  const asRed = deferredDetail({ ...observation('chatlog', 'deferred', observed), state: 'red' })
+
+  assert.ok(asDeferred.includes(DEFERRED_SUFFIX) && !asDeferred.includes(RED_SUFFIX))
+  assert.ok(asRed.includes(RED_SUFFIX) && !asRed.includes(DEFERRED_SUFFIX))
+  assert.notEqual(asDeferred, asRed, 'two states that render identically are one state lying')
+})
+
+test('a red row that starts answering turns ready on the same row, without a second one', () => {
+  const ledger = createDeferredSubsystemLedger()
+
+  ledger.record('aigw', { observed: 'answered 500 on /healthz', state: 'red' })
+  ledger.record('aigw', { observed: 'healthy on :8000', state: 'ready' })
+
+  const rows = ledger.rows()
+  const aigw = rows.find(row => row.id === 'aigw')
+
+  assert.equal(rows.length, 2, 'a state change replaces the row, it never adds an event row')
+  assert.equal(aigw?.state, 'ready')
+  assert.equal(aigw?.detail, 'healthy on :8000')
 })

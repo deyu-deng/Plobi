@@ -65,8 +65,12 @@ export const en: Translations = {
     ready: 'Plobi Desktop is ready',
     desktopBootFailedWithMessage: message => `Desktop boot failed: ${message}`,
     sidecars: {
-      deferredTitle: 'A postponed service did not come up',
-      deferredHint: 'Chat is unaffected. The tray menu lists every deferred service with its reason.'
+      deferredTitle: 'Postponed services (not faults)',
+      deferredHint: 'Not a fault: nothing on this machine could even be started. Chat is unaffected; the tray menu and this dot list every postponed service with its reason and its enable steps.',
+      redTitle: 'Service fault',
+      redHint: 'Chat is unaffected, but this service was started and never came up healthy. This is a real fault, not a postponement — the enable steps are in the status bar gateway menu.',
+      enableLabel: 'Enable',
+      statusbarDeferred: (count: number) => `${count} sidecar${count === 1 ? '' : 's'} not running`
     },
     steps: {
       connectingGateway: 'Connecting live desktop gateway',

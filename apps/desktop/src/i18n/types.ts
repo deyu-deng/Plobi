@@ -112,6 +112,12 @@ export interface Translations {
     sidecars: {
       deferredHint: string
       deferredTitle: string
+      /** Card heading for a `red` row — the one state that may alarm. */
+      redTitle: string
+      redHint: string
+      /** Prefix for the enable steps carried by every non-ready row. */
+      enableLabel: string
+      statusbarDeferred: (count: number) => string
     }
     steps: {
       connectingGateway: string

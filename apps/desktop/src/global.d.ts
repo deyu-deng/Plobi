@@ -551,11 +551,18 @@ export interface DesktopDeferredSubsystem {
   id: string
   /** Localized name supplied by the main process. */
   name: { en: string; zh: string }
-  /** 'ready': what was observed. 'deferred': observed cause + R-047 wording. */
+  /** 'ready': what was observed. 'deferred': observed cause + R-047 wording. 'red': observed cause + fault wording. */
   detail: string
   observed: string
   port: number
-  state: 'deferred' | 'probing' | 'ready'
+  /**
+   * Same union as `DeferredSubsystemState` in electron/deferred-sidecars.ts — keep
+   * the two in lockstep. `red` (attempted and never came up healthy) is a real
+   * fault and MUST stay distinguishable from `deferred` (nothing on this machine
+   * could even be attempted); the renderer branches on this field, never on the
+   * detail string.
+   */
+  state: 'deferred' | 'probing' | 'ready' | 'red'
   timestamp: number
 }
 

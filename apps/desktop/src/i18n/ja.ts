@@ -65,9 +65,14 @@ export const ja = defineLocale({
     ready: 'Plobi Desktop の準備ができました',
     desktopBootFailedWithMessage: message => `デスクトップの起動に失敗しました: ${message}`,
     sidecars: {
-      deferredTitle: '後回しにしているサービスが起動しませんでした',
+      deferredTitle: '後回しのサービス（障害ではありません）',
       deferredHint:
-        'チャットは影響を受けません。トレイメニューに、後回しにしているサービスとその理由がすべて表示されます。'
+        '障害ではありません。このマシンにはそもそも起動できるものが見つかりませんでした。チャットは影響を受けず、トレイメニューとこのインジケーターに、後回しのサービスとその理由と有効化手順がすべて表示されます。',
+      redTitle: 'サービスの障害',
+      redHint:
+        'チャットは影響を受けませんが、このサービスは起動が試みられ、正常な状態には至りませんでした。後回しではなく実際の障害です。有効化手順はステータスバーのゲートウェイレンズにあります。',
+      enableLabel: '有効化手順',
+      statusbarDeferred: (count: number) => `未起動のサービス ${count} 件`
     },
     steps: {
       connectingGateway: 'ライブデスクトップゲートウェイに接続中',

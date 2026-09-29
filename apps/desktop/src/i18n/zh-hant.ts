@@ -65,8 +65,12 @@ export const zhHant = defineLocale({
     ready: 'Plobi Desktop 已就緒',
     desktopBootFailedWithMessage: message => `桌面啟動失敗：${message}`,
     sidecars: {
-      deferredTitle: '延後啟動的服務沒有起來',
-      deferredHint: '主要聊天不受影響。系統托盤選單會列出每個延後啟動的服務，以及它們未啟動的原因。'
+      deferredTitle: '延後啟動的服務（非故障）',
+      deferredHint: '不是故障：這台電腦上根本沒有可以啟動的東西。主要聊天不受影響；系統托盤選單與這裡會列出每個延後啟動的服務、未啟動的原因與啟用步驟。',
+      redTitle: '服務故障',
+      redHint: '主要聊天不受影響，但這個服務確實被嘗試啟動過，卻沒有健康地跑起來。這是真正的故障，不是延後；啟用步驟請見狀態列閘道選單。',
+      enableLabel: '啟用步驟',
+      statusbarDeferred: (count: number) => `${count} 個後台服務未執行`
     },
     steps: {
       connectingGateway: '正在連線桌面閘道',
