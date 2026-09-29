@@ -163,7 +163,7 @@ export function useStatusbarItems({
               {sidecarView.noted.map(row => (
                 <li className="flex flex-col gap-0.5 text-xs" key={row.id}>
                   <span className="flex items-center justify-between gap-2">
-                    <span className="truncate">{`${deferredRowLabel(row)} (:${row.port})`}</span>
+                    <span className="truncate">{`${deferredRowLabel(row)}${row.port > 0 ? ` (:${row.port})` : ''}`}</span>
                     <span
                       className={cn(
                         'shrink-0 text-[0.66rem]',
