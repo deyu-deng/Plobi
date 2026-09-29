@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import ntpath
+import os
 import re
 import sqlite3
 import time
@@ -637,8 +639,18 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     entry = registry.upsert(proposed)
     registry.save()
 
-    # R-013: ensure the bound folder exists (butler has none → skip).
-    if entry.project_path:
+    # R-013: ensure the bound folder exists (butler has none → skip) — but only
+    # when this platform can actually mean the binding. A Windows-shaped binding
+    # is skipped (see :func:`_project_path_is_windows_shaped`); the record stays
+    # valid, the folder is just not this machine's business.
+    if entry.project_path and _project_path_is_windows_shaped(entry.project_path):
+        logger.warning(
+            "plobi console: not creating project_path %s for %s — a Windows "
+            "binding cannot be a directory on this platform, so no folder was "
+            "made",
+            entry.project_path, entry.name,
+        )
+    elif entry.project_path:
         try:
             Path(entry.project_path).mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -656,6 +668,40 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     row = agent_row(entry)
     reload_registry()
     return {"ok": True, "data": row}
+
+
+def _project_path_is_windows_shaped(raw: str) -> bool:
+    r"""True when a folder binding is a Windows path this machine cannot mean.
+
+    Legacy rows still carry ``D:\Cloud\Projects\<name>`` — the retired Win box's
+    layout, which ``registry.DEFAULT_CLOUD_PROJECTS_ROOT``
+    (plobi/agents/registry.py:968, applied at :1062) keeps seeding, and which
+    ``~/.plobi/plobi/projects.yaml`` still holds three of. On POSIX a backslash
+    is an ordinary filename character, so ``Path(r"D:\Cloud\Projects").mkdir()``
+    creates ONE directory literally named ``D:\Cloud\Projects`` inside whatever
+    cwd the server happens to run from (measured on macOS, 2026-09-29). R-013
+    must not fabricate that.
+
+    None of registry's self-heal helpers answers this question, so the check is
+    local instead of imported: ``_project_path_is_stale`` (:223) is equally true
+    for the legitimate not-yet-created ``~/Projects/Aura`` that R-013 exists to
+    make, and ``_is_bindable_name`` (:175) rejects every multi-segment path on
+    BOTH platforms — both ask "does this resolve here" / "is this a bare entry
+    name", never "could this ever mean a directory here".
+    ``resolve_stale_project_path`` (:208) re-bases onto an existing root; it is
+    a heal, not a refusal, and returns "" for a brand-new project too.
+
+    ``ntpath.splitdrive`` is Windows' own drive grammar (no hand-rolled regex),
+    and nothing is skipped on ``nt`` — there the historic bindings are correct
+    and R-013 keeps creating them.
+    """
+    if os.name == "nt":
+        return False
+    text = (raw or "").strip()
+    if not text:
+        return False
+    drive, _rest = ntpath.splitdrive(text)
+    return bool(drive) or "\\" in text
 
 
 def _agenda_event_is_confirmed(event_id: str) -> bool:
