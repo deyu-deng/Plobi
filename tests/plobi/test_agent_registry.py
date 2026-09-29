@@ -636,6 +636,34 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     ctrl_cfg = yaml.safe_load((controlled / "config.yaml").read_text(encoding="utf-8"))
     assert ctrl_cfg["model"]["provider"] == provider
     assert ctrl_cfg["model"]["default"] == "a-chosen-model"
+
+
+def test_agenda_template_carries_no_model_override(spawn_env, home):
+    """日程秘书模板不许硬写 provider/model —— 它抄的是 DEFAULT_ROUTES 的 L2 兜底，
+    落进 config.yaml 就是「用户没选过的提供商」+ 一个会当分组标题上屏的 aigw。
+    """
+    from plobi.agents.registry import AGENDA_TEMPLATE_PROFILE, agenda_template_entry
+
+    template = agenda_template_entry()
+    assert template.has_model_override is False, (template.provider, template.model)
+
+    import yaml
+
+    profile_dir = _seed_profile_dir(
+        spawn_env,
+        AGENDA_TEMPLATE_PROFILE,
+        yaml.safe_dump({"model": dict(_CONFIGURED_DEFAULT)}, allow_unicode=True),
+    )
+    reg = AgentRegistry.load()
+    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
+    reg.upsert(_entry(name=template.name, role=template.role, profile=template.profile,
+                      provider="", model=""))
+    reg.save()
+    reg.spawn(template.name)
+
+    text = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+    assert yaml.safe_load(text)["model"] == _CONFIGURED_DEFAULT
+    assert "aigw" not in text and "workbuddy" not in text, text
     assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
     assert AgentEntry(name="Default", role="l2_project").profile_name == "default"
     # 空值不许炸（未设 profile 的老行）
