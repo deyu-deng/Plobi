@@ -101,7 +101,7 @@ describe('readDeferredLedgerView', () => {
       row({
         detail:
           'no chatlog binary on this machine — deferred by R-047. ' +
-          'Enable: install Go, cd tools/chatlog && go build -o bin/chatlog ./cmd/chatlog, then serve on :5030',
+          'How it comes back: install Go, cd tools/chatlog && go build -o bin/chatlog ./cmd/chatlog, then serve on :5030',
         enableHint: 'install Go, cd tools/chatlog && go build -o bin/chatlog ./cmd/chatlog, then serve on :5030',
         id: 'chatlog',
         state: 'deferred'
@@ -109,7 +109,7 @@ describe('readDeferredLedgerView', () => {
     ]).noted
 
     expect(only?.enableHint).toContain('go build')
-    expect(only?.detail).toContain('Enable: ')
+    expect(only?.detail).toContain('How it comes back: ')
   })
 })
 

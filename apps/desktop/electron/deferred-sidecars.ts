@@ -177,10 +177,10 @@ function deferredDetail(row: Omit<DeferredSubsystemRow, 'detail'>): string {
   const suffix = row.state === 'red' ? RED_SUFFIX : DEFERRED_SUFFIX
 
   if (!row.observed) {
-    return `${suffix}. Enable: ${row.enableHint}`
+    return `${suffix}. How it comes back: ${row.enableHint}`
   }
 
-  return `${row.observed} — ${suffix}. Enable: ${row.enableHint}`
+  return `${row.observed} — ${suffix}. How it comes back: ${row.enableHint}`
 }
 
 /**
