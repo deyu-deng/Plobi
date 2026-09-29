@@ -2704,6 +2704,7 @@ export const zh: Translations = {
       notReady: '澄清请求尚未就绪',
       gatewayDisconnected: 'Plobi 网关未连接',
       sendFailed: '无法发送澄清响应',
+      expired: '这个澄清已经失效（回合已停止或后端已重启），请再问一次。',
       loadingQuestion: '正在加载问题…',
       other: '其他 (输入你的答案)',
       placeholder: '输入你的答案…',
