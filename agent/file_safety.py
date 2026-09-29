@@ -333,9 +333,9 @@ def raise_if_read_blocked(path: str) -> None:
 #
 # Plobi profiles are separate PLOBI_HOME dirs under
 # ``<root>/profiles/<name>/``. Each profile has its own skills/, plugins/,
-# cron/, memories/. When an agent runs under one profile, writing into
+# and cron/. When an agent runs under one profile, writing into
 # ANOTHER profile's directories is almost always wrong — those skills /
-# plugins / cron jobs / memories affect a different session the user runs
+# plugins / cron jobs affect a different session the user runs
 # from a different shell.
 #
 # Soft guard, NOT a security boundary: the agent runs as the same OS user
@@ -353,7 +353,11 @@ def raise_if_read_blocked(path: str) -> None:
 # Profile-scoped directories under PLOBI_HOME / <root> / <root>/profiles/<X>/
 # that should be guarded. Adding a new area here extends the guard with no
 # other code change.
-PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
+#
+# ``memories`` is deliberately NOT here: long-term memory is one shared ledger
+# at ``<root>/memories/`` for every profile (裁定 44), so guarding it would
+# refuse a named-profile agent write to its own memory file.
+PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron")
 
 
 def _resolve_active_profile_name() -> str:
@@ -383,7 +387,7 @@ def _resolve_active_profile_name() -> str:
 
 def classify_cross_profile_target(path: str) -> Optional[dict]:
     """Classify a write target as cross-profile if it lands in another
-    profile's scoped area (skills/plugins/cron/memories).
+    profile's scoped area (skills/plugins/cron).
 
     Returns ``None`` when the target is outside Plobi scope, or is inside
     the ACTIVE profile, or doesn't hit a profile-scoped area. Otherwise

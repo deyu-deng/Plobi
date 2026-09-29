@@ -61,12 +61,11 @@ _CLONE_CONFIG_FILES = [
 ]
 
 # Subdirectory files copied during --clone (path relative to profile root).
-# Memory files are part of the agent's curated identity — just as important
-# as SOUL.md for continuity when cloning a profile.
-_CLONE_SUBDIR_FILES = [
-    "memories/MEMORY.md",
-    "memories/USER.md",
-]
+# Memory ledgers are NOT copied: MEMORY.md/USER.md are one shared brain rooted
+# at ``<root>/memories/`` for every profile (裁定 44). Cloning them per profile
+# is what produced 14 byte-identical ledgers, each carrying another alter-ego's
+# first-person role claims. A profile-level copy is now a bug, not continuity.
+_CLONE_SUBDIR_FILES: list[str] = []
 
 # Runtime files stripped after --clone-all (shouldn't carry over).
 # Kept as a post-copy step rather than in the ignore filter because they

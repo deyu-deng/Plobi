@@ -915,3 +915,60 @@ class TestLoadTimeSnapshotSanitization:
         # Block marker appears exactly once, not nested
         assert snapshot.count("[BLOCKED:") == 1
         assert "Clean fact" in snapshot
+
+
+# =========================================================================
+# One shared ledger, not one per profile (裁定 44)
+# =========================================================================
+
+class TestMemoryDirIsSharedRoot:
+    """get_memory_dir() resolves to <root>/memories, never to the active
+    profile's own memories dir — memory attaches to the person, so every
+    alter-ego reads and writes the SAME MEMORY.md/USER.md. Per-profile copies
+    are what made 14 byte-identical ledgers on one machine."""
+
+    def _profile_home(self, monkeypatch, tmp_path, name="aura"):
+        """Fake install: root = tmp_path/.plobi, active profile = <root>/profiles/<name>."""
+        root = tmp_path / ".plobi"
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("PLOBI_HOME", str(root / "profiles" / name))
+        return root
+
+    def test_named_profile_resolves_to_root_memories(self, tmp_path, monkeypatch):
+        from tools.memory_tool import get_memory_dir
+        root = self._profile_home(monkeypatch, tmp_path)
+        assert get_memory_dir().resolve() == (root / "memories").resolve()
+
+    def test_default_profile_behaviour_unchanged(self, tmp_path, monkeypatch):
+        """Non-profile installs (PLOBI_HOME == the root) keep the same path."""
+        from tools.memory_tool import get_memory_dir
+        root = self._profile_home(monkeypatch, tmp_path)
+        monkeypatch.setenv("PLOBI_HOME", str(root))
+        assert get_memory_dir().resolve() == (root / "memories").resolve()
+
+    def test_named_profile_roundtrip_writes_shared_ledger(self, tmp_path, monkeypatch):
+        """End-to-end through the real code path: load + mutate + persist
+        lands in <root>/memories, not in the profile dir."""
+        from tools.memory_tool import get_memory_dir
+        root = self._profile_home(monkeypatch, tmp_path)
+        profile_home = root / "profiles" / "aura"
+
+        store = MemoryStore(memory_char_limit=500, user_char_limit=300)
+        store.load_from_disk()
+        assert store.add("memory", "Shared fact across every profile")["success"] is True
+
+        shared = get_memory_dir() / "MEMORY.md"
+        assert shared.read_text(encoding="utf-8").find("Shared fact across every profile") != -1
+        assert not (profile_home / "memories" / "MEMORY.md").exists()
+
+    def test_second_profile_reads_the_same_ledger(self, tmp_path, monkeypatch):
+        """A different profile, same root — sees the entry the first wrote."""
+        root = self._profile_home(monkeypatch, tmp_path)
+        first = MemoryStore(memory_char_limit=500, user_char_limit=300)
+        first.load_from_disk()
+        first.add("memory", "Written by aura")
+
+        monkeypatch.setenv("PLOBI_HOME", str(root / "profiles" / "l2"))
+        second = MemoryStore(memory_char_limit=500, user_char_limit=300)
+        second.load_from_disk()
+        assert any("Written by aura" in entry for entry in second.memory_entries)

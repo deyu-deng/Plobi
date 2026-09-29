@@ -1934,3 +1934,26 @@ def test_registry_profile_name_matches_base_normalizer():
 
     for raw in ("Aura", "L2-Aura", "default", "DEFAULT", "  Prism  "):
         assert AgentEntry(name=raw, role="l2_project").profile_name == normalize_profile_name(raw)
+
+
+# ===================================================================
+# Shared memory ledger — --clone must not copy memory files (裁定 44)
+# ===================================================================
+
+
+def test_clone_subdir_files_carry_no_memory_ledgers():
+    """MEMORY.md/USER.md are one shared brain at <root>/memories/. Copying them
+    into each profile is what produced 14 byte-identical ledgers."""
+    assert not any("memories" in rel for rel in profiles._CLONE_SUBDIR_FILES)
+
+
+def test_clone_config_does_not_copy_memory_files(profile_env):
+    default_home = profile_env / ".plobi"
+    (default_home / "memories").mkdir(exist_ok=True)
+    (default_home / "memories" / "MEMORY.md").write_text("I am the L1 secretary")
+    (default_home / "memories" / "USER.md").write_text("User facts")
+
+    profile_dir = create_profile("coder", clone_config=True, no_alias=True)
+
+    assert not (profile_dir / "memories" / "MEMORY.md").exists()
+    assert not (profile_dir / "memories" / "USER.md").exists()
