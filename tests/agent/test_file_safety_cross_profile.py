@@ -152,7 +152,7 @@ class TestClassifyCrossProfileTarget:
         assert result is not None
         assert result["target_profile"] == "coder"
 
-    @pytest.mark.parametrize("area", ["skills", "plugins", "cron", "memories"])
+    @pytest.mark.parametrize("area", ["skills", "plugins", "cron"])
     def test_all_profile_scoped_areas_classified(self, fake_plobi, monkeypatch, area):
         _set_active_home(monkeypatch, fake_plobi["security_home"])
         from agent.file_safety import classify_cross_profile_target
@@ -216,3 +216,49 @@ class TestGetCrossProfileWarning:
         # Must self-document as defense-in-depth so future reviewers
         # don't promote it to a hard block.
         assert "not a security boundary" in warn.lower()
+
+
+# ---------------------------------------------------------------------------
+# memories is NOT a profile-scoped area (裁定 44 — one shared ledger)
+# ---------------------------------------------------------------------------
+
+
+class TestMemoriesIsNotProfileScoped:
+    """Long-term memory lives at <root>/memories/ for every profile. Guarding
+    it as a per-profile area made the file tools refuse a named-profile agent's
+    write to its OWN memory file, because the target resolved to the default
+    profile. These tests pin that the guard no longer touches memory while the
+    surviving areas stay protected."""
+
+    def test_memories_absent_from_scoped_areas(self):
+        from agent.file_safety import PROFILE_SCOPED_AREAS
+        assert "memories" not in PROFILE_SCOPED_AREAS
+        assert set(PROFILE_SCOPED_AREAS) == {"skills", "plugins", "cron"}
+
+    def test_shared_root_memories_not_classified(self, fake_plobi, monkeypatch):
+        _set_active_home(monkeypatch, fake_plobi["security_home"])
+        from agent.file_safety import classify_cross_profile_target
+        assert classify_cross_profile_target(
+            str(fake_plobi["root"] / "memories" / "MEMORY.md")
+        ) is None
+
+    def test_named_profile_memories_not_classified(self, fake_plobi, monkeypatch):
+        """The measured fault: <root>/profiles/aura/memories/MEMORY.md."""
+        _set_active_home(monkeypatch, fake_plobi["security_home"])
+        from agent.file_safety import classify_cross_profile_target
+        aura_memories = fake_plobi["root"] / "profiles" / "aura" / "memories"
+        aura_memories.mkdir(parents=True)
+        target = aura_memories / "MEMORY.md"
+        target.write_text("# aura ledger\n")
+        assert classify_cross_profile_target(str(target)) is None
+
+    def test_surviving_areas_still_guarded(self, fake_plobi, monkeypatch):
+        """Regression guard: dropping memories must not weaken skills/plugins/cron."""
+        _set_active_home(monkeypatch, fake_plobi["security_home"])
+        from agent.file_safety import classify_cross_profile_target
+        result = classify_cross_profile_target(
+            str(fake_plobi["root"] / "skills" / "foo" / "SKILL.md")
+        )
+        assert isinstance(result, dict)
+        assert result["area"] == "skills"
+        assert result["target_profile"] == "default"

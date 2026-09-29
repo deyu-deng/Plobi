@@ -30,7 +30,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from plobi_constants import get_plobi_home
+from plobi_constants import get_default_plobi_root
 from typing import Dict, Any, List, Optional
 
 from utils import atomic_replace
@@ -53,8 +53,12 @@ logger = logging.getLogger(__name__)
 # constant was cached at import time and could go stale if a profile switch
 # happened after the first import.
 def get_memory_dir() -> Path:
-    """Return the profile-scoped memories directory."""
-    return get_plobi_home() / "memories"
+    """Return the shared memories directory at the Plobi root.
+
+    Long-term memory attaches to the person, not to a profile or a session
+    window (裁定 44), so every profile resolves to the same MEMORY.md/USER.md.
+    """
+    return get_default_plobi_root() / "memories"
 
 ENTRY_DELIMITER = "\n§\n"
 

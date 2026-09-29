@@ -395,9 +395,9 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         stable_parts.append(
             "Active Plobi profile: default. Other profiles (if any) live "
             "under ~/.plobi/profiles/<name>/. Each profile has its own "
-            "skills/, plugins/, cron/, and memories/ that affect a different "
+            "skills/, plugins/, and cron/ that affect a different "
             "session than this one. Do not modify another profile's "
-            "skills/plugins/cron/memories unless the user explicitly directs "
+            "skills/plugins/cron unless the user explicitly directs "
             "you to."
         )
     else:
@@ -405,9 +405,9 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             f"Active Plobi profile: {active_profile}. This session reads "
             f"and writes ~/.plobi/profiles/{active_profile}/. The default "
             f"profile's data lives at ~/.plobi/skills/, ~/.plobi/plugins/, "
-            f"~/.plobi/cron/, ~/.plobi/memories/ — those belong to a "
+            f"~/.plobi/cron/ — those belong to a "
             f"different session run from a different shell. Do NOT modify "
-            f"another profile's skills/plugins/cron/memories unless the user "
+            f"another profile's skills/plugins/cron unless the user "
             f"explicitly directs you to. The cross-profile write guard will "
             f"refuse such writes by default; pass cross_profile=True only "
             f"after explicit direction."
