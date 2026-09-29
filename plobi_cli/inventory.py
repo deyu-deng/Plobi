@@ -185,6 +185,15 @@ def build_models_payload(
     if moa_row is not None:
         rows = [moa_row] + [r for r in rows if str(r.get("slug", "")).lower() != "moa"]
 
+    # A provider whose only remaining credential is a deleted env var must not
+    # render as a selectable group (measured 2026-09-29: a DEEPSEEK group with 5
+    # models after DEEPSEEK_API_KEY was removed from .env, the shell and
+    # launchctl). Runs before the explicit filter so it applies to EVERY picker
+    # surface — the desktop's chat/settings pickers (explicit_only=1) and the
+    # session-scoped ``model.options`` RPC (no explicit_only) alike — while the
+    # setup universe appended below via ``include_unconfigured`` is untouched.
+    rows = _drop_unusable_credential_rows(rows, ctx)
+
     if explicit_only:
         rows = _filter_explicit_provider_rows(rows, ctx)
         # Desktop chat pickers request the explicit subset without the full
@@ -401,6 +410,77 @@ def _filter_explicit_provider_rows(rows: list[dict], ctx: ConfigContext) -> list
                 kept.append(row)
             continue
         if is_provider_explicitly_configured(slug):
+            kept.append(row)
+    return kept
+
+
+def _drop_unusable_credential_rows(rows: list[dict], ctx: ConfigContext) -> list[dict]:
+    """Drop picker rows whose only credential evidence is a dead ``env:<VAR>`` pool entry.
+
+    ``list_authenticated_providers`` asks the runtime pool whether a provider is
+    usable (``load_pool(slug).has_credentials()``), and the pool deliberately
+    *retains* ``env:<VAR>`` entries after the variable disappears — a
+    non-destructive read (#9331: a process that merely lacks the var must not
+    delete another process's on-disk credential). The visible consequence on
+    screen: a provider whose key was deleted still renders as a full model
+    group, because ``~/.plobi/auth.json`` still carries
+    ``credential_pool.<slug>`` with ``source="env:<VAR>"`` and a stale
+    ``last_status``.
+
+    This is the screen-level correction: ignore an ``env:``-sourced pool entry
+    whose variable does not resolve to a usable secret *right now* — the same
+    rule :func:`plobi_cli.auth.is_provider_explicitly_configured` already applies
+    (#55790) — and drop the row when that was its only evidence. It never
+    rewrites ``auth.json``; the stale row is ignored, not deleted.
+
+    Deliberately narrow, and fail-open on anything it cannot judge:
+      - the current provider's row always survives (a picker that silently
+        snaps to another provider is the failure this module guards elsewhere);
+      - user-defined rows survive — an endpoint in ``providers:`` /
+        ``custom_providers:`` is a choice the user made, key inline or not;
+      - a provider with no pool entries survives — its credential may live in
+        ``auth.json``'s ``providers`` store or an external file (gh_cli, OAuth);
+      - a pool entry from any other source (manual / device_code / PKCE) counts
+        as live.
+
+    Setup discovery is untouched: the ``include_unconfigured`` skeletons appended
+    later by :func:`_append_unconfigured_rows` are how the setup flow *finds* a
+    provider to paste a key into, and they carry no selectable models.
+    """
+    import os
+
+    from plobi_cli.auth import has_usable_secret, read_credential_pool
+
+    current = str(ctx.current_provider or "").strip().lower()
+    kept: list[dict] = []
+    for row in rows:
+        slug = str(row.get("slug") or "").strip().lower()
+        if not slug or slug == current or row.get("is_user_defined"):
+            kept.append(row)
+            continue
+        try:
+            entries = [
+                entry
+                for entry in (read_credential_pool(slug) or [])
+                if isinstance(entry, dict)
+            ]
+        except Exception:
+            kept.append(row)
+            continue
+        if not entries:
+            kept.append(row)
+            continue
+        live = False
+        for entry in entries:
+            source = str(entry.get("source") or "").strip()
+            if not source.lower().startswith("env:"):
+                live = True
+                break
+            env_var = source.split(":", 1)[1].strip()
+            if env_var and has_usable_secret(os.getenv(env_var, "")):
+                live = True
+                break
+        if live:
             kept.append(row)
     return kept
 

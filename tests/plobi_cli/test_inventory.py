@@ -994,3 +994,123 @@ def test_list_authenticated_providers_refresh_busts_cache():
         assert clear.call_count == 0
         model_switch.list_authenticated_providers(refresh=True)
         assert clear.call_count == 1
+
+
+# ─── 凭据已失效的提供商不许当成可选分组（裁定 45 病症）────────────────
+
+
+def _dead_key_row(slug: str = "deepseek") -> dict:
+    """A row list_authenticated_providers emits when the runtime pool still has
+    entries — 5 curated models, no ``is_user_defined``, not the current provider."""
+    return {
+        "slug": slug,
+        "name": "DeepSeek",
+        "models": ["deepseek-chat", "deepseek-reasoner", "m3", "m4", "m5"],
+        "total_models": 5,
+        "is_current": False,
+        "is_user_defined": False,
+        "source": "built-in",
+    }
+
+
+def _pool_with(*entries: dict):
+    """Patch the credential pool read (auth.json 的那本账) — never the file."""
+    return patch(
+        "plobi_cli.auth.read_credential_pool",
+        side_effect=lambda provider=None: [
+            e for e in entries if (provider or "").lower() == str(e.get("_for", "deepseek")).lower()
+        ],
+    )
+
+
+def _env_sourced_entry(**over) -> dict:
+    entry = {
+        "_for": "deepseek",
+        "id": "ec3b1d",
+        "label": "DEEPSEEK_API_KEY",
+        "source": "env:DEEPSEEK_API_KEY",
+        "last_status": "ok",
+        "secret_fingerprint": "sha256:033a1c07c7e1bb24",
+    }
+    entry.update(over)
+    return entry
+
+
+def test_dead_env_sourced_pool_credential_is_not_a_selectable_group(monkeypatch):
+    """密钥删了（.env / shell / launchctl 三处都没有），auth.json 里那条
+    ``source="env:DEEPSEEK_API_KEY"`` 的行还活着、``last_status`` 还是 ok ——
+    池子为了让别的进程不丢凭据会**故意**留着它（#9331），于是选择器把一个
+    用户用不了的提供商渲染成一整组可选模型（2026-09-29 实测 DEEPSEEK 5 条）。
+    屏幕上按「现在解析不解析得出」处理：整组消失，auth.json 一个字不改。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    ctx = _empty_ctx(provider="minimax-cn")
+    with _list_auth_returning([_dead_key_row()]), _pool_with(_env_sourced_entry()):
+        payload = build_models_payload(ctx, picker_hints=True, canonical_order=True)
+    assert payload["provider"] == "minimax-cn"
+    assert not [r for r in payload["providers"] if r["slug"] == "deepseek"], payload["providers"]
+
+
+def test_live_env_var_keeps_the_group(monkeypatch):
+    """控制组：同一条判定在变量真的在的时候**保留**这一组。
+    没有这条，上一条可能是「筛选器什么都不留」的假绿。"""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-real-looking-value")
+    ctx = _empty_ctx(provider="minimax-cn")
+    with _list_auth_returning([_dead_key_row()]), _pool_with(_env_sourced_entry()):
+        payload = build_models_payload(ctx, picker_hints=True, canonical_order=True)
+    rows = [r for r in payload["providers"] if r["slug"] == "deepseek"]
+    assert len(rows) == 1
+    assert rows[0]["total_models"] == 5
+
+
+def test_non_env_pool_source_keeps_the_group(monkeypatch):
+    """设置页粘进去的 key（manual）、设备码、PKCE 都是活的凭据 —— 不看环境变量。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    ctx = _empty_ctx(provider="minimax-cn")
+    with _list_auth_returning([_dead_key_row()]), _pool_with(
+        _env_sourced_entry(), _env_sourced_entry(source="manual")
+    ):
+        payload = build_models_payload(ctx, picker_hints=True)
+    assert [r for r in payload["providers"] if r["slug"] == "deepseek"]
+
+
+def test_no_pool_entries_leaves_the_row_alone(monkeypatch):
+    """凭据可能在 auth.json 的 providers 账本或外部文件里（gh_cli / OAuth）——
+    本层判不了就**不动**（fail-open），免得把能用的一起藏了。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    ctx = _empty_ctx(provider="minimax-cn")
+    with _list_auth_returning([_dead_key_row()]), _pool_with():
+        payload = build_models_payload(ctx, picker_hints=True)
+    assert [r for r in payload["providers"] if r["slug"] == "deepseek"]
+
+
+def test_current_provider_with_dead_key_stays_visible(monkeypatch):
+    """当前提供商即使掉密钥也要留在屏上（带 saved model + 重新粘 key 的提示），
+    这是 inventory 一直守着的「界面不许悄悄跳到别家」那条。"""
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    ctx = _empty_ctx(provider="deepseek", model="deepseek-chat")
+    with _list_auth_returning([_dead_key_row()]), _pool_with(_env_sourced_entry()):
+        payload = build_models_payload(ctx, explicit_only=True, picker_hints=True)
+    rows = [r for r in payload["providers"] if r["slug"] == "deepseek"]
+    assert len(rows) == 1
+    assert rows[0]["total_models"] == 5, "当前提供商的分组被一起藏掉了"
+
+
+def test_dead_key_provider_is_still_findable_for_setup(monkeypatch):
+    """设置/引导那条面（``include_unconfigured=1``，explicit_only 不开）负责让人
+    **找得到**提供商去粘 key：骨架行（无可选模型 + 「paste DEEPSEEK_API_KEY」）
+    必须照常出现。收口的是可选分组，不是设置入口。"""
+    from plobi_cli.models import CANONICAL_PROVIDERS
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    ctx = _empty_ctx(provider="minimax-cn")
+    with _list_auth_returning([_dead_key_row()]), _pool_with(_env_sourced_entry()):
+        payload = build_models_payload(
+            ctx, include_unconfigured=True, picker_hints=True, canonical_order=True
+        )
+    rows = [r for r in payload["providers"] if r["slug"] == "deepseek"]
+    assert [e.slug for e in CANONICAL_PROVIDERS].count("deepseek") == 1
+    assert len(rows) == 1, rows
+    assert rows[0]["source"] == "canonical"
+    assert rows[0]["models"] == []
+    assert rows[0]["authenticated"] is False
+    assert "DEEPSEEK_API_KEY" in rows[0]["warning"]
