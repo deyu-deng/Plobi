@@ -405,6 +405,131 @@ def test_l2_identity_soul_uses_slug_when_no_display_name(tmp_path):
     assert "Vault/projects/Aura" not in text
 
 
+# --------------------------------------------------------------------------- #
+# WP-L2-IDENTITY 第二刀（裁定 45 / 裁定 42 §42.2 第 6 项 / 裁定 44）：
+# 身份段要像个「人」——不念内部字段值、不拿占位描述当用途、不盖掉人自己写的设定。
+# --------------------------------------------------------------------------- #
+
+
+def test_l2_identity_block_carries_no_internal_field_vocabulary():
+    """内部字段值不进提示词：模型会原样念给用户听（裁定 45）。"""
+    from plobi.agents.registry import L2_PLACEHOLDER_DESCRIPTION_PREFIX, build_l2_identity_soul_block
+
+    entry = _l2_entry(description=f"{L2_PLACEHOLDER_DESCRIPTION_PREFIX}Aura")
+    block = build_l2_identity_soul_block(entry)
+
+    assert "l2_project" not in block
+    assert "role " not in block
+    assert "id `" not in block
+    assert f"`{entry.name}`" not in block  # 反引号包起来的 slug
+    assert "`l2_project`" not in block
+    assert entry.role not in block
+    # 真路径 / Mind 子树不是字段名，用户自己也这么说话——留着。
+    assert "/Users/ciel/Projects/Aura" in block
+    assert "Vault/projects/Aura" in block
+    # L1 / L2 是用户自己的说法，围栏标记也依赖它。
+    assert "L1" in block
+
+
+def test_l2_placeholder_description_is_not_rendered_as_the_purpose():
+    """注册表自动填的那句占位话不是「这个项目在做什么」——不许当用途念。"""
+    import inspect
+
+    from plobi.agents.registry import (
+        L2_PLACEHOLDER_DESCRIPTION_PREFIX,
+        _is_placeholder_project_description,
+        build_l2_identity_soul_block,
+        ensure_mind_project_agents,
+    )
+
+    stub = f"{L2_PLACEHOLDER_DESCRIPTION_PREFIX}Aura"
+    assert _is_placeholder_project_description(stub) is True
+    # ``ensure_mind_project_agents`` 在 slug 与目录名不一致时还会缀一句 raw 名。
+    assert _is_placeholder_project_description(f"{stub} (raw dir name:  Aura! )") is True
+    assert _is_placeholder_project_description("本机生活助手") is False
+    assert _is_placeholder_project_description("") is False
+
+    # 占位句只有 ``ensure_mind_project_agents`` 里那一份真源：它必须用常量拼，
+    # 不许在渲染端再抄一遍字面量（抄一遍就会漂）。
+    src = inspect.getsource(ensure_mind_project_agents)
+    assert "L2_PLACEHOLDER_DESCRIPTION_PREFIX" in src
+    assert '"l2_project for Mind project' not in src
+
+    block = build_l2_identity_soul_block(_l2_entry(description=stub))
+    assert "l2_project" not in block
+    assert "这个项目在做的事" not in block
+    assert "目前没有人写下来" in block
+
+    real = build_l2_identity_soul_block(_l2_entry())
+    assert "这个项目在做的事：本机生活助手" in real
+    assert "目前没有人写下来" not in real
+
+
+def test_l2_identity_block_reads_as_a_person_not_a_job_description():
+    """观测到的 bug：分身把共享账本里别人的分工当成自己的身份。"""
+    from plobi.agents.registry import build_l2_identity_soul_block
+
+    block = build_l2_identity_soul_block(_l2_entry())
+
+    assert "职责不是从共享记忆里挑一个来当" in block
+    assert "架构 + 验证 + 文档 + 测试 + 小修" in block  # 举的就是总秘书那套
+    assert "「我是谁」不看账本，看这份文件" in block
+    assert "同一时刻只有一条现在" in block  # 裁定 44：自己那条「现在」
+    assert "你在忙什么" in block
+    assert len(block.splitlines()) <= 15
+
+
+def test_l2_identity_soul_keeps_handwritten_persona_and_stays_idempotent(tmp_path):
+    """围栏之外是人自己写的（裁定 42 §42.2 第 6 项）——重新生成不许盖掉。"""
+    from plobi.agents.registry import (
+        L1_SOUL_BEGIN,
+        L2_SOUL_BEGIN,
+        L2_SOUL_END,
+        ensure_l2_identity_soul,
+    )
+
+    persona = "- 说话短，先给结论，偶尔损人一句。"
+    stale = f"{L2_SOUL_BEGIN}\n## 旧版身份段\n- 过期的一行。\n{L2_SOUL_END}\n"
+    (tmp_path / "SOUL.md").write_text(
+        _STUB_SOUL + "\n" + persona + "\n" + stale, encoding="utf-8"
+    )
+
+    assert ensure_l2_identity_soul(_l2_entry(), home=tmp_path) is True
+    text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+
+    assert persona in text  # 人设原样留着
+    assert "过期的一行" not in text  # 只剥自己那道围栏
+    assert text.count(L2_SOUL_BEGIN) == 1
+    assert text.count(L2_SOUL_END) == 1
+    assert L1_SOUL_BEGIN not in text
+    assert "那才算你自己" in text  # 承认人设已经在了
+    assert "那里还空着" not in text
+
+    assert ensure_l2_identity_soul(_l2_entry(), home=tmp_path) is False
+    assert (tmp_path / "SOUL.md").read_text(encoding="utf-8") == text
+
+
+def test_l2_identity_soul_does_not_mistake_upstream_stub_for_a_persona(tmp_path):
+    """出厂那段 512 B 样板不是人设——14 个分身围栏外目前只有它。"""
+    from plobi.agents.registry import _soul_persona_text, ensure_l2_identity_soul
+
+    (tmp_path / "SOUL.md").write_text(_STUB_SOUL, encoding="utf-8")
+    assert _soul_persona_text(_STUB_SOUL) == ""
+
+    assert ensure_l2_identity_soul(_l2_entry(), home=tmp_path) is True
+    text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert "那里还空着" in text
+    assert "那才算你自己" not in text
+    # 上游样板一个字都没动。
+    assert _STUB_SOUL.strip() in text
+
+    from plobi.agents.registry import L2_SOUL_BEGIN, L2_SOUL_END
+
+    after = _soul_persona_text(text)
+    assert after == ""
+    assert text.count(L2_SOUL_BEGIN) == text.count(L2_SOUL_END) == 1
+
+
 def test_l2_identity_soul_replaces_cloned_l1_fence(tmp_path):
     """同一文件里两段合同不许共存——L2 落笔即纠 L1 克隆。"""
     from plobi.agents.registry import (

@@ -1080,6 +1080,12 @@ def _resolve_project_path(name: str, front: dict[str, str]) -> str:
     return f"{DEFAULT_CLOUD_PROJECTS_ROOT}\\{name}"
 
 
+# 注册表给每条项目分身自动填的**占位**描述。唯一一份定义：写在这里、用在下面
+# ``ensure_mind_project_agents``，渲染身份段时再认它一次（见
+# :func:`_is_placeholder_project_description`）——占位句不是「这个项目在做什么」。
+L2_PLACEHOLDER_DESCRIPTION_PREFIX = "l2_project for Mind project "
+
+
 def ensure_mind_project_agents(
     registry: "AgentRegistry | None" = None,
     *,
@@ -1123,7 +1129,7 @@ def ensure_mind_project_agents(
         if _project_is_skipped(front):
             continue
         safe_id = _project_safe_id(entry.name)
-        description = f"l2_project for Mind project {entry.name}"
+        description = f"{L2_PLACEHOLDER_DESCRIPTION_PREFIX}{entry.name}"
         if safe_id != entry.name:
             description += f" (raw dir name: {entry.name})"
         project_path = _resolve_project_path(entry.name, front)
@@ -2756,6 +2762,14 @@ L1_SOUL_LEGACY_END = "<!-- /PLOBI_L1_SECRETARY_ROUTING -->"
 # :func:`build_l2_identity_soul_block`, never shared between 分身.
 L2_SOUL_BEGIN = ":::PLOBI_L2_IDENTITY:::"
 L2_SOUL_END = ":::PLOBI_L2_IDENTITY_END:::"
+# 上游出厂就塞在每个 profile ``SOUL.md`` 里的那段样板身份（512 B，无一句人设）。
+# 两个品牌变体（``plobi_cli/default_soul.py:4`` 的 "the Plobi team" 与旧装机写下的
+# "Nous Research"）句式同一个头，历史模板脚手架另起一行标题——只认**行头**，多写的
+# 一个字都算用户自己的话（:func:`_soul_persona_text` 用它把样板剔掉）。
+_SOUL_BOILERPLATE_HEADS = (
+    "You are Plobi Agent",
+    "# Plobi Agent Persona",
+)
 L1_SOUL_BLOCK = f"""{L1_SOUL_BEGIN}
 ## 身份（WP-L1-IDENTITY，硬规则，不可绕过；写在最前）
 
@@ -3285,41 +3299,112 @@ def strip_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
     return True
 
 
-def build_l2_identity_soul_block(entry: AgentEntry) -> str:
-    """Render one 分身's own identity contract from **existing** registry fields.
+def _is_placeholder_project_description(description: str) -> bool:
+    """True when ``description`` is the seed stub, not a written project purpose.
 
-    Only what ``AgentEntry`` already carries (name / display_name / role /
-    description / project_path / mind_subtree) — no new schema, no config keys.
+    Single source of truth: :data:`L2_PLACEHOLDER_DESCRIPTION_PREFIX` — the exact
+    string :func:`ensure_mind_project_agents` writes (the `` (raw dir name: …)``
+    variant still starts with it, so one prefix check covers both shapes).
+    """
+    return (description or "").strip().startswith(L2_PLACEHOLDER_DESCRIPTION_PREFIX)
+
+
+def _soul_persona_text(text: str) -> str:
+    """Return the part of ``SOUL.md`` that counts as this 分身's own character.
+
+    Both generated fences and the upstream boilerplate come out; whatever is
+    left was written by a person — 裁定 42 §42.2 第 6 项 reserves 人设片段 as one
+    of the only three per-project overrides (实测 14 个分身目前都还没有).
+    ``_SOUL_BOILERPLATE_HEADS`` is the 512-byte upstream stub shipped into every
+    profile, so a plain "anything outside the fence" test would mistake it for a
+    persona.
+    """
+    body = _strip_l1_soul_spans(_strip_l2_soul_spans(text))
+    try:
+        # 旧装机种过一版纯注释脚手架（同样是零人设）。判据复用底座那一份，
+        # 不在这里再抄一遍模板。
+        from plobi_cli.default_soul import is_legacy_template_soul
+
+        if is_legacy_template_soul(body):
+            return ""
+    except ImportError:  # pragma: no cover - plobi_cli 在部分测试环境不可解析
+        logger.debug("plobi: legacy SOUL template check skipped", exc_info=True)
+    kept = [
+        line
+        for line in body.splitlines()
+        if not line.strip().startswith(_SOUL_BOILERPLATE_HEADS)
+    ]
+    return "\n".join(kept).strip()
+
+
+def build_l2_identity_soul_block(
+    entry: AgentEntry, *, persona_written: bool = False
+) -> str:
+    """Render one 分身's **assignment** from fields the registry already has.
+
+    Only ``AgentEntry`` columns (name / display_name / description /
+    project_path / mind_subtree) — no new schema, no config keys. Two rulings
+    shape the text:
+
+    * 裁定 45 — 内部字段值不进提示词。``id`` / ``role`` / ``l2_project`` 这类词
+      模型会原样念给用户听（实测已经发作过），用户听不懂也不该听见；
+      L1 / L2 是他自己的说法，留着。
+    * 这一段是**分工**，不是整个人。围栏之外那份人设才是这个人说话的样子，
+      生成器一个字都不碰它；``persona_written`` 只决定最后一条怎么说。
     """
     who = entry.display_name or entry.name
+    # ``name`` 是 slug、``display_name`` 是人名（裁定 37.1）；项目自己的名字落在
+    # Mind 那棵子树的末段上。
+    project = (entry.mind_subtree or "").rstrip("/").rsplit("/", 1)[-1].strip() or who
     lines = [
         L2_SOUL_BEGIN,
-        "## 身份（WP-L2-IDENTITY，硬规则，不可绕过）",
+        "## 你负责的这一摊（WP-L2-IDENTITY，硬规则，不可绕过）",
         "",
-        f"- 你是 **{who}**（id `{entry.name}`），Plobi 的项目分身（L2，role `{entry.role}`）——本项目这一摊由你这一张嘴回答。",
+        f"- 你是 **{who}**。用户这么叫你，你就这么自称；这个名字之外没有别的身份等着你认领。",
     ]
-    if entry.description:
-        lines.append(f"- 这个项目在做的事：{entry.description}。")
     if entry.project_path:
+        # 裁定 42.1：注册表里那 12 条 ``project_path`` 还是报废 Windows 机的路径。
+        # 所以这句只说「登记的是哪里」，打不打得开交给分身自己判——它得问，不能跑到
+        # 别的项目目录里去干活。
         lines.append(
-            f"- 你的项目目录是 `{entry.project_path}`：代码、文件、命令都在这里发生，别的项目的目录不是你的。"
+            f"- 你手上只有 **{project}** 这一个项目，它登记的工作目录是 `{entry.project_path}`：代码、文件、命令都在这个地方发生，别的目录不归你动。这个目录打不开，就是路径还没对本平台改过来——问用户一句，不要去别的项目里干活。"
+        )
+    else:
+        lines.append(
+            f"- 你手上只有 **{project}** 这一个项目，但它的工作目录还没定下来。要动文件先问用户一句，不要替他猜一个路径。"
         )
     if entry.mind_subtree:
         lines.append(
-            f"- 你在 Mind 知识库里拥有 `{entry.mind_subtree}` 这一棵子树：本项目的计划、进度、事实写这里，别处的子树只读不改。"
+            f"- 你在 Mind 知识库里的地方是 `{entry.mind_subtree}`：这个项目的计划、进度、结论写在这棵树里，别的树只读不改。"
+        )
+    if entry.description and not _is_placeholder_project_description(entry.description):
+        lines.append(f"- 这个项目在做的事：{entry.description}")
+    else:
+        lines.append(
+            "- 这个项目到底在做什么，目前没有人写下来。别拿任何一句现成的模板话当用途：先读你自己那棵树，读不出来就问用户一句，他说了你记下来。"
         )
     lines += [
-        "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。不许另立分身专属账本，也不要把没有本项目标签的条目当成本项目的既定事实。",
+        "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",
+        "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，不要拿别的项目的进度顶。",
+        "- **职责不是从共享记忆里挑一个来当**。账本里写着别人的分工——比如总秘书那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位，不是你的。上面没写你的职责，就照项目归属说话；说不准就问用户一句，不要自己认领一个头衔。",
         "- 你**不是**本机 Plobi 总秘书（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）；不要转述调度器的角色，不要替别的项目作答，也不要自称总秘书。",
-        L2_SOUL_END,
     ]
+    if persona_written:
+        lines.append(
+            "- 上面这些是你的**分工**，不是你这个人。这份文件围栏之外还写着你说话的样子、你的脾气——那才算你自己，照它说，别改它。"
+        )
+    else:
+        lines.append(
+            "- 上面这些是你的**分工**，不是你这个人。你说话的样子、你的脾气写在这份文件围栏之外；那里还空着，用户想让你更像个人的时候就补在那里。"
+        )
+    lines.append(L2_SOUL_END)
     return "\n".join(lines) + "\n"
 
 
 def ensure_l2_identity_soul(
     entry: AgentEntry, *, home: Path | str | None = None
 ) -> bool:
-    """Upsert a project 分身's OWN identity into its profile ``SOUL.md``.
+    """Upsert a project 分身's OWN assignment into its profile ``SOUL.md``.
 
     ``agent/prompt_builder.load_soul_md()`` reads ``get_plobi_home()/SOUL.md``
     and nothing else, so a 分身's identity can only come from its own file — the
@@ -3327,6 +3412,12 @@ def ensure_l2_identity_soul(
     :func:`ensure_l1_secretary_routing_soul`: strip the known fences, then
     append; the two contracts never coexist in one file. No-op when the content
     already matches, and never written onto the default (L1) profile.
+
+    裁定 42 §42.2 第 6 项 reserves a per-project 人设片段, and that fragment lives
+    in this same file **outside** the fence. Only this function's own fence is
+    stripped, so hand-written character text survives regeneration; whether such
+    text exists is decided by :func:`_soul_persona_text` (the upstream stub is
+    not a persona) and handed to the renderer as ``persona_written``.
     """
     from plobi_constants import get_plobi_home
 
@@ -3343,7 +3434,9 @@ def ensure_l2_identity_soul(
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
     stripped = _strip_l1_soul_spans(_strip_l2_soul_spans(existing)).rstrip()
-    block = build_l2_identity_soul_block(entry).strip()
+    block = build_l2_identity_soul_block(
+        entry, persona_written=bool(_soul_persona_text(existing))
+    ).strip()
     updated = (stripped + "\n\n" if stripped else "") + block + "\n"
     if updated == existing:
         return False
