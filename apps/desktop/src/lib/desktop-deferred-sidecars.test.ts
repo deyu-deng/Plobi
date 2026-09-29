@@ -31,7 +31,7 @@ function row(overrides: Partial<DesktopDeferredSubsystem> & { id: string }): Des
   // to win over them. `id` therefore needs no explicit key — the spread carries it.
   return {
     enableHint: 'cd aigw && uv run python -m aigw start --config config.yaml',
-    name: { en: 'aigw quota gateway', zh: '额度网关 aigw' },
+    name: { en: 'Local Quota Hub', zh: '本地额度网关' },
     detail: overrides.detail ?? `${overrides.observed ?? ''} — deferred by R-047`,
     observed: overrides.observed ?? 'unreachable (no listener)',
     port: overrides.id === 'aigw' ? 8000 : 5030,
@@ -182,7 +182,7 @@ describe('reportDeferredSubsystems', () => {
     expect(notices).toHaveLength(1)
     expect(notices[0].kind).toBe('warning')
     expect(notices[0].id).toBe(deferredNoticeId('aigw'))
-    expect(notices[0].title).toContain('aigw quota gateway')
+    expect(notices[0].title).toContain('Local Quota Hub')
     expect(notices[0].title).toContain('8000')
     expect(notices[0].message).toContain('RED')
   })
@@ -235,9 +235,9 @@ describe('deferredRowLabel', () => {
   it('picks the tray language matching the active locale', () => {
     const subject = row({ id: 'aigw' })
 
-    expect(deferredRowLabel(subject, 'zh')).toBe('额度网关 aigw')
-    expect(deferredRowLabel(subject, 'zh-hant')).toBe('额度网关 aigw')
-    expect(deferredRowLabel(subject, 'en')).toBe('aigw quota gateway')
-    expect(deferredRowLabel(subject, 'ja')).toBe('aigw quota gateway')
+    expect(deferredRowLabel(subject, 'zh')).toBe('本地额度网关')
+    expect(deferredRowLabel(subject, 'zh-hant')).toBe('本地额度网关')
+    expect(deferredRowLabel(subject, 'en')).toBe('Local Quota Hub')
+    expect(deferredRowLabel(subject, 'ja')).toBe('Local Quota Hub')
   })
 })

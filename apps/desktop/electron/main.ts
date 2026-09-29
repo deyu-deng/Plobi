@@ -8384,7 +8384,7 @@ function resolveAigwDir(): string {
 function resolveAigwInterpreter(aigwDir: string) {
   const resolution = resolveProjectInterpreter({
     extraRoots: [path.join(PLOBI_HOME, 'plobi-agent')],
-    label: 'the aigw gateway',
+    label: 'the local quota hub',
     platform: process.platform,
     startDir: aigwDir,
     usable: (python: string) => canImportAigwCli(python, { cwd: aigwDir })
@@ -8511,7 +8511,7 @@ async function startAigwGateway(
   opts: { port: number; apiKey: string; timeoutMs?: number } = { port: 8019, apiKey: 'sk-local-antigravity', timeoutMs: 20000 }
 ): Promise<{ ok: boolean; baseUrl?: string; pid?: number | null; error?: string }> {
   if (!fs.existsSync(configPath)) {
-    return { ok: false, error: `aigw config not found at ${configPath}` }
+    return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   // If a gateway for this app is already running, reuse it instead of spawning
@@ -8540,7 +8540,7 @@ async function startAigwGateway(
   const { python, reason } = resolveAigwInterpreter(aigwDir)
 
   if (!python) {
-    return { ok: false, error: reason || 'no usable Python interpreter for aigw' }
+    return { ok: false, error: reason || 'no usable Python interpreter for the local quota hub' }
   }
 
   // Prefer an explicitly-passed token (e.g. from the auth flow); fall back to a
@@ -8558,7 +8558,7 @@ async function startAigwGateway(
       { cwd: aigwDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
     )
   } catch (err) {
-    return { ok: false, error: `failed to spawn aigw: ${String(err)}` }
+    return { ok: false, error: `failed to spawn the local quota hub: ${String(err)}` }
   }
 
   child.stdout?.on('data', (d: Buffer) => logAigw(d.toString()))
@@ -8630,7 +8630,7 @@ ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravit
   const configPath = resolveAigwConfig(aigwDir, appId)
 
   if (!fs.existsSync(configPath)) {
-    return { ok: false, error: `aigw config not found at ${configPath}` }
+    return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   // Reuse a previously persisted composite token so Start after a restart works
@@ -8643,7 +8643,7 @@ ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravit
     { port, apiKey, timeoutMs: 20000 }
   )
   if (!gw.ok) {
-    return { ok: false, error: gw.error || 'aigw gateway failed to start' }
+    return { ok: false, error: gw.error || 'local quota hub failed to start' }
   }
 
   return { ok: true, running: true, baseUrl: gw.baseUrl, pid: gw.pid ?? null }
@@ -8696,13 +8696,13 @@ async function authAntigravity(aigwDir: string): Promise<{
   const configPath = path.join(aigwDir, 'config.antigravity-desktop.yaml')
 
   if (!fs.existsSync(configPath)) {
-    return { ok: false, error: `aigw desktop config not found at ${configPath}` }
+    return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   const { python, reason } = resolveAigwInterpreter(aigwDir)
 
   if (!python) {
-    return { ok: false, code: 'NO_INTERPRETER', error: reason || 'no usable Python interpreter for aigw' }
+    return { ok: false, code: 'NO_INTERPRETER', error: reason || 'no usable Python interpreter for the local quota hub' }
   }
 
 
@@ -8756,7 +8756,7 @@ async function authWorkbuddy(aigwDir: string): Promise<{
   const configPath = path.join(aigwDir, 'config.workbuddy-desktop.yaml')
 
   if (!fs.existsSync(configPath)) {
-    return { ok: false, error: `aigw desktop config not found at ${configPath}` }
+    return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   const route = detectLocalWorkbuddy()
@@ -8788,7 +8788,7 @@ async function authCursor(aigwDir: string): Promise<{
   const configPath = path.join(aigwDir, 'config.cursor-desktop.yaml')
 
   if (!fs.existsSync(configPath)) {
-    return { ok: false, error: `aigw desktop config not found at ${configPath}` }
+    return { ok: false, error: `Local quota hub config not found at ${configPath}` }
   }
 
   const found = detectLocalCursor()
@@ -8837,7 +8837,7 @@ async function finishGatewayAuth(
   const gw = await startAigwGateway(appId, configPath, extraEnv, { port, apiKey, timeoutMs: 20000 })
 
   if (!gw.ok) {
-    return { ok: false, error: gw.error || 'aigw gateway failed to start' }
+    return { ok: false, error: gw.error || 'local quota hub failed to start' }
   }
 
   const models = await fetchGatewayModels(gw.baseUrl ?? `http://127.0.0.1:${port}/v1`, apiKey, appId)
@@ -8928,7 +8928,7 @@ function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<string
       clearTimeout(timeout)
 
       if (code !== 0) {
-        reject(new Error(stderr.trim() || `aigw auth exited with code ${code}`))
+        reject(new Error(stderr.trim() || `local quota hub auth exited with code ${code}`))
         return
       }
 

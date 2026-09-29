@@ -67,7 +67,7 @@ const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
     enableHint:
       'cd aigw && uv run python -m aigw start --config config.yaml (port 8000 = config.yaml server.port), then move routing.rules off the mock provider',
     id: 'aigw',
-    name: { en: 'aigw quota gateway', zh: '额度网关 aigw' },
+    name: { en: 'Local Quota Hub', zh: '本地额度网关' },
     port: 8000
   },
   chatlog: {
