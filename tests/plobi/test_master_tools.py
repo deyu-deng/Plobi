@@ -958,24 +958,83 @@ def test_write_briefing_route_fallback(stub_spawn, tmp_path):
     assert "组会" in out["briefing"] or "便宜" in out["briefing"]
 
 
-def test_ensure_aigw_provider_writes_openai_base_url(tmp_path):
-    from plobi.agents.registry import ensure_aigw_provider
+def test_quota_gateway_provider_block_is_no_longer_hand_written_into_config():
+    """裁定 45 第②半 + 「配置模型的入口一定要收敛成一个」。
 
-    profile = tmp_path / "l2-agenda"
-    profile.mkdir()
-    (profile / "config.yaml").write_text("model: {}\n", encoding="utf-8")
-    assert ensure_aigw_provider(profile) is True
-    import yaml
+    ``ensure_aigw_provider`` 以前往根 config.yaml 和分身 config.yaml 里手搓一份
+    ``providers.aigw`` + 一条 ``custom_providers`` 条目，其 ``"name": "aigw"`` 会被
+    自定义提供商行按自己的名字**原样渲染成选择器分组标题**（屏幕上出现 aigw 的活路径）。
+    自 ``e9b6034`` 起 aigw 是注册过的 provider 插件
+    （``plugins/model-providers/aigw``，``display_name="Local Quota Hub"``），那份手搓
+    块就是第二真源，所以整套机制连同两处调用一起退役；早报直连
+    :func:`aigw_base_url` / :func:`aigw_api_key`，不读那份 config。
 
-    cfg = yaml.safe_load((profile / "config.yaml").read_text(encoding="utf-8"))
-    assert cfg["providers"]["aigw"]["base_url"].rstrip("/").endswith("/v1")
-    assert str(cfg["providers"]["aigw"]["model"]).startswith("workbuddy/")
-    assert any(
-        str(row.get("base_url", "")).rstrip("/").endswith("/v1")
-        for row in cfg["custom_providers"]
+    控制组在同一条 grep 里：`aigw_base_url` 仍在源码里（证明这条扫描看得见 aigw
+    相关代码，不是恒真）。
+    """
+    import pathlib
+
+    import plobi.agents.registry as registry_mod
+
+    source = pathlib.Path(registry_mod.__file__).read_text(encoding="utf-8")
+    # 只看可执行行——解释这次退役的注释本身会提到被删掉的那些字面量。
+    code = "\n".join(
+        line for line in source.splitlines() if not line.strip().startswith("#")
     )
-    # idempotent
-    assert ensure_aigw_provider(profile) is False
+    assert "ensure_aigw_provider" not in code
+    assert '"name": "aigw"' not in code
+    assert 'providers["aigw"]' not in code
+    assert 'cfg["custom_providers"]' not in code
+    # 控制组
+    assert "def aigw_base_url" in code
+    assert "aigw_base_url()" in code
+
+
+def test_quota_gateway_error_text_names_the_gateway_not_the_internal_slug(monkeypatch):
+    """错误卡会把异常文本原样上屏（裁定 45.3 露出点），所以里面不许有内部 slug。"""
+    import json
+    import urllib.request
+
+    from plobi.agents.registry import _openai_chat_complete
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def read(self):
+            return json.dumps(self._payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _call(request, timeout=None):
+        return _Resp(_FAKE_PAYLOAD["value"])
+
+    _FAKE_PAYLOAD = {"value": {"choices": [{"message": {"content": "明早组会。"}}]}}
+    monkeypatch.setattr(urllib.request, "urlopen", _call)
+
+    # 控制组：这条函数在正常响应下走通 —— 下面「消息里没有 aigw」不是因为根本没跑到。
+    assert _openai_chat_complete(
+        "http://127.0.0.1:8000/v1", "k", "workbuddy/deepseek-chat",
+        [{"role": "user", "content": "hi"}],
+    ) == "明早组会。"
+
+    for payload, needle in (
+        ({"choices": []}, "候选"),
+        ({"choices": [{"message": {"content": "   "}}]}, "空"),
+    ):
+        _FAKE_PAYLOAD["value"] = payload
+        with pytest.raises(RuntimeError) as excinfo:
+            _openai_chat_complete(
+                "http://127.0.0.1:8000/v1", "k", "workbuddy/deepseek-chat",
+                [{"role": "user", "content": "hi"}],
+            )
+        message = str(excinfo.value)
+        assert "aigw" not in message, message
+        assert needle in message, message
 
 
 def test_pick_workbuddy_prefers_listed_id():

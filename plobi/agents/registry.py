@@ -750,12 +750,24 @@ class AgentRegistry:
         不动其他配置。config.yaml 可能不存在（新 profile 也可能没有），
         不存在则跳过 —— 会话仍可用 models.json 路由。
 
-        落笔前还有一道**可解析闸门**（:func:`provider_is_resolvable`）：底座运行时
-        认不出来的 provider 名字**不写进 model 节**，让该分身继续沿用它自己
-        （克隆来的 / 上层）那份 model 配置，只留一条 warning。写进一个解析不出来的
-        名字 = 分身一启动就是一条「Unknown provider」红条；不写 = 顶多用继承的模型，
-        功能不塌。任何情况下都不因为这道闸让 ``spawn`` 失败。
+        落笔前有两道闸，任一不过就**什么都不写**（分身继续用它克隆来的 model 节）：
+
+        ① 只有注册表那条记录真的写了模型覆盖才落笔（裁定 42 §42.2 ⑥：「模型」是分身的
+           三个允许覆盖项之一，省略 = 没有覆盖）。以前省略时会落到 :data:`DEFAULT_ROUTES`
+           的硬编码 ``aigw`` / ``workbuddy/*`` —— 那套路由和用户在本机选的默认提供商
+           毫无关系，而 ``e9b6034`` 把 aigw 注册成真 provider 之后下面那道可解析闸门已经
+           拦不住它，于是每个新分身都被盖上一份「``provider: aigw`` 而 ``base_url`` 还是
+           克隆来的 minimax」的自相矛盾 model 节（2026-09-29 实测新落的 Framelet / Plobi
+           两条）。不写 = 继承 ``create_profile(clone_config=True)`` 拷来的根
+           ``config.yaml`` model 节，那**就是**用户当前配置的默认 provider/model，
+           也不会配上第二个 base_url。
+        ② 可解析闸门（:func:`provider_is_resolvable`）：底座运行时认不出来的 provider
+           名字不写进 model 节。写进一个解析不出来的名字 = 分身一启动就是一条
+           「Unknown provider」红条；不写 = 顶多用继承的模型，功能不塌。
+           任何情况下都不因为这道闸让 ``spawn`` 失败。
         """
+        if not entry.has_model_override:
+            return
         try:
             route = self.router().resolve(entry.role)
         except Exception:
@@ -947,11 +959,10 @@ def ensure_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEnt
         from plobi_cli.profiles import get_profile_dir
 
         l2_dir = get_profile_dir(existing.profile_name)
-        ensure_aigw_provider(l2_dir)
         # L1 mid-narrow must not stick on a cloned agenda profile (裁定 12).
         ensure_l2_agenda_toolsets(l2_dir)
     except Exception as exc:
-        logger.warning("plobi: aigw/L2 toolsets not written for %s: %s", existing.name, exc)
+        logger.warning("plobi: L2 toolsets not written for %s: %s", existing.name, exc)
     return existing, spawned
 
 
@@ -2368,13 +2379,13 @@ def run_secretary_ask(
         payload["n3_error"] = str(exc)
 
     if intent == "write_briefing":
-        try:
-            ensure_aigw_provider()
-            from plobi_cli.profiles import get_profile_dir as _gpd
-
-            ensure_aigw_provider(_gpd(entry.profile_name))
-        except Exception as exc:
-            logger.warning("plobi aigw provider register skipped: %s", exc)
+        # 裁定 45 第②半：这里原来先调两次 ``ensure_aigw_provider()`` 往根 config 和
+        # 分身 config 里手搓一份 ``providers.aigw`` + ``custom_providers`` 条目。
+        # aigw 自 ``e9b6034`` 起是注册过的 provider 插件（``plugins/model-providers/aigw``，
+        # 对外名 Local Quota Hub），那份手搓块就是「配置模型的入口」的第二真源，
+        # 而且它的 ``"name": "aigw"`` 会被自定义提供商行按自己的名字原样渲染上屏。
+        # 早报本身走 :func:`aigw_base_url` / :func:`aigw_api_key` 直连，不读那份 config，
+        # 所以删掉写入不影响功能。
         briefing = generate_morning_briefing(
             summary,
             user_text,
@@ -2510,10 +2521,10 @@ def _openai_chat_complete(
         payload = _json.loads(response.read().decode("utf-8"))
     choices = payload.get("choices") or []
     if not choices:
-        raise RuntimeError("aigw returned no choices")
+        raise RuntimeError("本地额度网关没有返回候选 (quota gateway returned no choices)")
     content = (choices[0].get("message") or {}).get("content")
     if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("aigw returned empty content")
+        raise RuntimeError("本地额度网关返回的内容是空的 (quota gateway returned empty content)")
     return content.strip()
 
 
@@ -2692,71 +2703,6 @@ def generate_morning_briefing(
         "route": "fallback",
         "model": "template",
     }
-
-
-def ensure_aigw_provider(profile_dir: Path | str | None = None) -> bool:
-    """Register aigw as an OpenAI-compatible Plobi provider (base_url).
-
-    ``desktop-quotas.ts`` only affects the desktop model picker. L2 generation
-    in the gateway must have ``providers.aigw.base_url`` (or custom_providers)
-    pointing at the local aigw ``/v1``. Idempotent. Returns True if written.
-    """
-    import yaml
-
-    if profile_dir is None:
-        from plobi_constants import get_plobi_home
-
-        root = get_plobi_home()
-    else:
-        root = Path(profile_dir)
-
-    cfg_path = root / "config.yaml"
-    try:
-        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
-    except Exception:
-        cfg = {}
-    if not isinstance(cfg, dict):
-        cfg = {}
-
-    base = aigw_base_url()
-    key = aigw_api_key()
-    provider_entry = {
-        "name": "aigw",
-        "base_url": base,
-        "api_key": key,
-        "model": WORKBUDDY_DEFAULT_MODEL,
-        "models": {WORKBUDDY_DEFAULT_MODEL: {}},
-    }
-
-    changed = False
-    providers = cfg.get("providers")
-    if not isinstance(providers, dict):
-        providers = {}
-        cfg["providers"] = providers
-    existing = providers.get("aigw")
-    if not isinstance(existing, dict) or str(existing.get("base_url") or "").rstrip("/") != base.rstrip("/"):
-        providers["aigw"] = dict(provider_entry)
-        changed = True
-
-    customs = cfg.get("custom_providers")
-    if not isinstance(customs, list):
-        customs = []
-        cfg["custom_providers"] = customs
-    if not any(
-        isinstance(row, dict)
-        and str(row.get("base_url") or "").rstrip("/") == base.rstrip("/")
-        for row in customs
-    ):
-        customs.append(dict(provider_entry))
-        changed = True
-
-    if not changed:
-        return False
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(
-        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
-    )
-    return True
 
 
 MASTER_TOOLSET_NAME = "plobi_north_star"
