@@ -21,8 +21,8 @@ import { TRANSLATIONS } from '@/i18n/catalog'
 //      them can reach the DOM by themselves, and
 //   3. every string literal in the main process (`electron/**`, non-test) that is not
 //      part of a log call must not contain `aigw`, EXCEPT the checked-in allow-list
-//      below (a ledger id, a Python module name, a filename on disk, one operator
-//      command line). Those are machine-read identifiers per §45.4, not display copy.
+//      below (a ledger id, a Python module name, a filename on disk). Those are
+//      machine-read identifiers per §45.4, not display copy.
 //
 // What this does NOT cover — said out loud instead of pretended away:
 //   * a provider id/label arriving at *runtime* from the Python backend (picker rows
@@ -130,14 +130,15 @@ function isLogLine(lines: string[], line: number): boolean {
 
 /**
  * The checked-in exceptions for the main process. Every entry is an identifier the
- * machine reads — a ledger id, a Python module name, a filename on disk, the command
- * a user pastes into a terminal — never a word the UI invents for itself.
+ * machine reads — a ledger id, a Python module name, a filename on disk — never a
+ * word the UI invents for itself. The operator command line that used to be the
+ * fourth entry is gone: 裁定 (2026-09-29) turned that hint into a statement about
+ * what the app does by itself, so do not re-add it.
  */
 const ALLOWED_LITERALS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /^aigw$/, reason: 'machine-read sidecar ledger id (reportDeferredSubsystem / DEFERRED_SUBSYSTEMS key)' },
   { pattern: /^import aigw\.cli$/, reason: 'Python module name used by the interpreter liveness probe' },
-  { pattern: /^aigw-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' },
-  { pattern: /^cd aigw && uv run python -m aigw start/, reason: 'operator command line — checkout dir and module name' }
+  { pattern: /^aigw-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' }
 ]
 
 function allowedLiteral(text: string): boolean {

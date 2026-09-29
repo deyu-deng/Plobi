@@ -32,6 +32,26 @@
 // Electron, and so the main process stays the single source of truth: the tray
 // menu and the boot-progress payload are two renderings of the SAME rows, never
 // two separate status systems.
+//
+// ── Profile backends (framelet crash-loop, 2026-09-29) ───────────────────────
+// Rule 2 above was enforced for the two sidecars and for the primary backend
+// (`backendStartFailure` in main.ts latches a failed boot), but NOT for a
+// per-profile pool backend: a profile whose directory had never been
+// materialised exited 1, its pool entry was deleted, and the very next renderer
+// request spawned it again — 1173 identical Start/Error/exit cycles in
+// `~/.plobi/logs/desktop.log` while the panel stayed on "checking". That is a
+// 真故障 that never reached `red`, which is exactly the state ac05264 was added
+// to make visible. Two things live here for it now:
+//
+//   * a lazily-created `backend:<profile>` row, so a crash-looping profile
+//     backend reports through the SAME four states and the SAME two renderings
+//     as the sidecars — no fifth state, no parallel status store;
+//   * `createBackendRespawnGuard()`, the exponential backoff the spawn path was
+//     missing. It is pure clock state (arm / blockReason / clear) so the retry
+//     interval is testable without Electron, and it deliberately keeps the
+//     failure *recoverable*: the gate only blocks until the next attempt is due,
+//     so the profile coming back to life — or the user asking again — gets
+//     through on its own.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type DeferredSubsystemState = 'deferred' | 'probing' | 'ready' | 'red'
@@ -50,6 +70,10 @@ export interface DeferredSubsystemDefinition {
    * `DEFERRED_ENABLE_HINTS` in scripts/plobi/doctor.py — keep the two in sync;
    * neither may name a Windows-only artifact, since the Windows box was
    * decommissioned on 2026-09-27.
+   *
+   * For the quota hub this is a *statement*, not a command line: 裁定 (2026-09-29)
+   * 「改成不可执行的说明，由软件自行拉起」 — the app brings it up itself, so the
+   * panel must not hand the user a shell command to run.
    */
   enableHint: string
 }
@@ -64,8 +88,7 @@ export interface DeferredSubsystemRow extends DeferredSubsystemDefinition {
 
 const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
   aigw: {
-    enableHint:
-      'cd aigw && uv run python -m aigw start --config config.yaml (port 8000 = config.yaml server.port), then move routing.rules off the mock provider',
+    enableHint: 'Plobi starts this service itself when it is needed — there is nothing to run by hand.',
     id: 'aigw',
     name: { en: 'Local Quota Hub', zh: '本地额度网关' },
     port: 8000
@@ -78,6 +101,18 @@ const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
     port: 5030
   }
 }
+
+/**
+ * Row ids for per-profile Plobi backends, spawned by `spawnPoolBackend()` in
+ * main.ts. They share this ledger (and therefore `red`) with the sidecars, but
+ * they are NOT part of `DEFERRED_SUBSYSTEMS`: which profiles get attempted is
+ * only known at runtime, and they belong to no R-047 deferral tier.
+ */
+const PROFILE_BACKEND_ID_PREFIX = 'backend:'
+
+/** Same shape as the quota hub hint: the app owns the lifecycle, nothing to run. */
+const PROFILE_BACKEND_ENABLE_HINT =
+  'Plobi brings this profile backend up itself and backs off between attempts — there is nothing to run by hand.'
 
 /** R-047's wording, kept identical to doctor.py's `deferred_row` detail. */
 const DEFERRED_SUFFIX = 'deferred by R-047 (postponed, not a fault; turns green on its own once live)'
@@ -92,7 +127,36 @@ const DEFERRED_SUFFIX = 'deferred by R-047 (postponed, not a fault; turns green 
 const RED_SUFFIX = 'RED — real fault, not a deferral (it was attempted here and never came up healthy)'
 
 function definitionFor(id: string): DeferredSubsystemDefinition | null {
-  return DEFERRED_SUBSYSTEMS[id] ?? null
+  return DEFERRED_SUBSYSTEMS[id] ?? profileBackendDefinition(id)
+}
+
+/**
+ * A profile backend row, synthesised from its id so main.ts never has to keep a
+ * second definition table. `port` is 0 while the backend never got to announce
+ * one — the renderers omit a non-positive port rather than printing "(:0)".
+ */
+function profileBackendDefinition(id: string): DeferredSubsystemDefinition | null {
+  if (!id.startsWith(PROFILE_BACKEND_ID_PREFIX)) {
+    return null
+  }
+
+  const profile = id.slice(PROFILE_BACKEND_ID_PREFIX.length).trim()
+
+  if (!profile) {
+    return null
+  }
+
+  return {
+    enableHint: PROFILE_BACKEND_ENABLE_HINT,
+    id,
+    name: { en: `Profile backend · ${profile}`, zh: `项目后端 · ${profile}` },
+    port: 0
+  }
+}
+
+/** The ledger id a profile backend reports under. */
+function profileBackendRowId(profile: string): string {
+  return `${PROFILE_BACKEND_ID_PREFIX}${String(profile).trim()}`
 }
 
 /**
@@ -159,6 +223,10 @@ function createDeferredSubsystemLedger({
      * not part of the deferred tier must not silently acquire a row). Accepts
      * every state in `DeferredSubsystemState`, `red` included — the ledger
      * physically cannot swallow a real fault into `deferred`.
+     *
+     * A `backend:<profile>` row is created by its first observation, since the
+     * set of profiles this machine attempts is runtime data. Any other unknown
+     * id is still refused.
      */
     record(
       id: string,
@@ -166,7 +234,7 @@ function createDeferredSubsystemLedger({
     ): DeferredSubsystemRow | null {
       const definition = definitionFor(id)
 
-      if (!definition || !rows.has(id)) {
+      if (!definition || (!rows.has(id) && !id.startsWith(PROFILE_BACKEND_ID_PREFIX))) {
         return null
       }
 
@@ -176,8 +244,112 @@ function createDeferredSubsystemLedger({
         state,
         timestamp: now()
       })
+    },
+
+    /**
+     * Drop a row we no longer intend to attempt (a profile backend the user
+     * deleted or the pool reaped). Returns whether anything was removed, so the
+     * caller only re-renders when the ledger actually changed.
+     */
+    forget(id: string): boolean {
+      return rows.delete(id)
     }
   }
 }
 
-export { createDeferredSubsystemLedger, DEFERRED_SUBSYSTEMS, DEFERRED_SUFFIX, RED_SUFFIX, deferredDetail, definitionFor }
+// ── Respawn backoff ─────────────────────────────────────────────────────────
+// The pool backend path had none: `ensureBackend()` deleted the failed entry and
+// the next caller spawned again, so a profile that exits 1 on startup was
+// respawned as fast as the renderer asked (a 15 s status poll plus every REST
+// call). Exponential, capped, and *not* a permanent stop — see the module header.
+
+const RESPAWN_BASE_DELAY_MS = 2_000
+const RESPAWN_MAX_DELAY_MS = 120_000
+
+/**
+ * Attempts after which we stop *scheduling* retries on our own. The gate still
+ * expires, so the next user action re-attempts — "bounded retry" rather than a
+ * latch that outlives the fix.
+ */
+const RESPAWN_MAX_AUTO_RETRIES = 8
+
+interface RespawnGate {
+  attempt: number
+  message: string
+  nextAttemptAt: number
+}
+
+/**
+ * Pure exponential backoff keyed by profile, with an injectable clock.
+ * `arm()` is the only place the interval is computed, which is what makes the
+ * "does not retry immediately, and the gap grows" behaviour unit-testable.
+ */
+function createBackendRespawnGuard({
+  baseDelayMs = RESPAWN_BASE_DELAY_MS,
+  maxAutoRetries = RESPAWN_MAX_AUTO_RETRIES,
+  maxDelayMs = RESPAWN_MAX_DELAY_MS,
+  now = () => Date.now()
+}: {
+  baseDelayMs?: number
+  maxAutoRetries?: number
+  maxDelayMs?: number
+  now?: () => number
+} = {}) {
+  const gates = new Map<string, RespawnGate>()
+
+  return {
+    /**
+     * Record one more failed attempt and return the schedule for the next one.
+     * `autoRetry` says whether the caller should arm a timer at all.
+     */
+    arm(profile: string, message: string): { attempt: number; autoRetry: boolean; delayMs: number } {
+      const attempt = (gates.get(profile)?.attempt ?? 0) + 1
+      const delayMs = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1))
+
+      gates.set(profile, { attempt, message, nextAttemptAt: now() + delayMs })
+
+      return { attempt, autoRetry: attempt <= maxAutoRetries, delayMs }
+    },
+
+    /**
+     * Why this profile may not be spawned right now, or `null` when a spawn is
+     * allowed. The message carries the previous failure verbatim so a caller who
+     * is blocked still learns the cause instead of getting a bare refusal.
+     */
+    blockReason(profile: string): string | null {
+      const gate = gates.get(profile)
+
+      if (!gate || now() >= gate.nextAttemptAt) {
+        return null
+      }
+
+      const waitSeconds = Math.ceil((gate.nextAttemptAt - now()) / 1000)
+
+      return (
+        `Plobi backend for profile "${profile}" failed (attempt ${gate.attempt}; ` +
+        `next try in ${waitSeconds}s): ${gate.message}`
+      )
+    },
+
+    /** True when a gate existed — so the caller only re-renders on a real change. */
+    clear(profile: string): boolean {
+      return gates.delete(profile)
+    }
+  }
+}
+
+export {
+  createBackendRespawnGuard,
+  createDeferredSubsystemLedger,
+  DEFERRED_SUBSYSTEMS,
+  DEFERRED_SUFFIX,
+  PROFILE_BACKEND_ENABLE_HINT,
+  PROFILE_BACKEND_ID_PREFIX,
+  RED_SUFFIX,
+  RESPAWN_BASE_DELAY_MS,
+  RESPAWN_MAX_AUTO_RETRIES,
+  RESPAWN_MAX_DELAY_MS,
+  deferredDetail,
+  definitionFor,
+  profileBackendRowId
+}

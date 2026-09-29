@@ -16,12 +16,15 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import {
+  createBackendRespawnGuard,
   createDeferredSubsystemLedger,
   DEFERRED_SUBSYSTEMS,
   DEFERRED_SUFFIX,
+  PROFILE_BACKEND_ID_PREFIX,
   RED_SUFFIX,
   deferredDetail,
-  definitionFor
+  definitionFor,
+  profileBackendRowId
 } from './deferred-sidecars'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -258,4 +261,160 @@ test('a red row that starts answering turns ready on the same row, without a sec
   assert.equal(rows.length, 2, 'a state change replaces the row, it never adds an event row')
   assert.equal(aigw?.state, 'ready')
   assert.equal(aigw?.detail, 'healthy on :8000')
+})
+
+// ── Profile backends: the framelet crash loop ───────────────────────────────
+// A per-profile backend that exits 1 is a 真故障 in exactly the sense ac05264
+// added `red` for. It reports through this ledger (no fifth state, no second
+// status store) and the respawn guard below is the backoff the spawn path lacked.
+
+const MISSING_PROFILE_LINE = "Profile 'framelet' does not exist. Create it with: plobi profile create framelet"
+
+test('a profile backend gets a lazily-created red row that quotes the CLI itself', () => {
+  const ledger = createDeferredSubsystemLedger({ now: () => 5 })
+
+  assert.deepEqual(
+    ledger
+      .rows()
+      .map(row => row.id)
+      .sort(),
+    ['aigw', 'chatlog'],
+    'no profile row exists before anything was attempted'
+  )
+
+  const row = ledger.record(profileBackendRowId('framelet'), { observed: MISSING_PROFILE_LINE, state: 'red' })
+
+  assert.ok(row, 'record() must accept a backend:<profile> id')
+  assert.equal(row.state, 'red')
+  assert.match(row.detail, /Profile 'framelet' does not exist/)
+  assert.ok(row.detail.includes(RED_SUFFIX))
+  assert.ok(!row.detail.includes(DEFERRED_SUFFIX), 'a crash loop must never read as a postponement')
+
+  // Replacing the observation, not stacking an event row per attempt — otherwise
+  // 1173 cycles would become 1173 rows.
+  ledger.record(profileBackendRowId('framelet'), { observed: 'still missing', state: 'red' })
+
+  assert.equal(ledger.rows().filter(candidate => candidate.id.startsWith(PROFILE_BACKEND_ID_PREFIX)).length, 1)
+})
+
+test('an unknown id still cannot acquire a row now that profile ids are dynamic', () => {
+  const ledger = createDeferredSubsystemLedger()
+
+  assert.equal(ledger.record('backend:', { observed: 'x', state: 'red' }), null)
+  assert.equal(ledger.record('dingtalk', { observed: 'x', state: 'deferred' }), null)
+  assert.deepEqual(
+    ledger
+      .rows()
+      .map(row => row.id)
+      .sort(),
+    ['aigw', 'chatlog']
+  )
+})
+
+test('forget() drops a profile row we no longer intend to attempt', () => {
+  const ledger = createDeferredSubsystemLedger()
+
+  ledger.record(profileBackendRowId('framelet'), { observed: MISSING_PROFILE_LINE, state: 'red' })
+
+  assert.equal(ledger.forget(profileBackendRowId('framelet')), true)
+  assert.equal(ledger.forget(profileBackendRowId('framelet')), false, 'a second drop must report no change')
+  assert.equal(ledger.rows().find(row => row.id.startsWith(PROFILE_BACKEND_ID_PREFIX)), undefined)
+})
+
+test('the respawn gate blocks a retry immediately after a failure', () => {
+  let clock = 1_000
+  const guard = createBackendRespawnGuard({ now: () => clock })
+
+  guard.arm('framelet', MISSING_PROFILE_LINE)
+
+  assert.ok(guard.blockReason('framelet'), 'a failing backend must not be respawned on the spot')
+  assert.match(guard.blockReason('framelet') ?? '', /Profile 'framelet' does not exist/, 'the reason carries the cause')
+
+  // One millisecond short of the first delay is still blocked.
+  clock += 2_000 - 1
+
+  assert.ok(guard.blockReason('framelet'))
+
+  clock += 1
+
+  assert.equal(guard.blockReason('framelet'), null, 'the next attempt must be allowed once it is due')
+})
+
+test('the respawn interval grows with consecutive failures and is capped', () => {
+  let clock = 0
+  const guard = createBackendRespawnGuard({ now: () => clock })
+
+  const gaps = [1, 2, 3, 4].map(attempt => {
+    const { delayMs } = guard.arm('framelet', MISSING_PROFILE_LINE)
+
+    clock += delayMs
+
+    return delayMs
+  })
+
+  assert.deepEqual(gaps, gaps.slice().sort((a, b) => a - b), 'the delay must never shrink as it fails again')
+  assert.ok(gaps[1] > gaps[0], `attempt 2 (${gaps[1]}ms) must wait longer than attempt 1 (${gaps[0]}ms)`)
+  assert.equal(gaps[0], 2_000, 'the first retry is a couple of seconds out, not immediate')
+
+  // Keep arming: the growth is bounded so the worst-case block is predictable.
+  for (let index = 0; index < 40; index += 1) {
+    assert.ok(guard.arm('framelet', MISSING_PROFILE_LINE).delayMs <= 120_000)
+  }
+})
+
+test('auto-retry is bounded, but a later request still gets through', () => {
+  let clock = 0
+  const guard = createBackendRespawnGuard({ maxAutoRetries: 3, now: () => clock })
+
+  const schedules = [1, 2, 3, 4].map(() => {
+    const schedule = guard.arm('framelet', MISSING_PROFILE_LINE)
+
+    clock += schedule.delayMs
+
+    return schedule
+  })
+
+  assert.deepEqual(schedules.map(schedule => schedule.autoRetry), [true, true, true, false])
+
+  // The gate expired with the last schedule, so the next user action re-attempts
+  // — a capped retry, never a permanent latch that outlives the fix.
+  assert.equal(guard.blockReason('framelet'), null)
+})
+
+test('clear() only reports a real change, so a healthy backend stays silent', () => {
+  const guard = createBackendRespawnGuard({ now: () => 0 })
+
+  assert.equal(guard.clear('framelet'), false)
+
+  guard.arm('framelet', MISSING_PROFILE_LINE)
+
+  assert.equal(guard.clear('framelet'), true)
+  assert.equal(guard.clear('framelet'), false)
+})
+
+// ── 裁定 (2026-09-29) 「改成不可执行的说明，由软件自行拉起」 ─────────────────
+
+test('the quota hub enable hint is a statement, not a command the user is handed', () => {
+  const hint = definitionFor('aigw')?.enableHint ?? ''
+
+  assert.match(hint, /Plobi starts this service itself/)
+  assert.ok(!/cd |uv run|python -m|\$ /.test(hint), 'a runnable-looking line is what made this read as TODO')
+  assert.ok(!/aigw/.test(hint), '裁定 45: the internal word must not reach user-visible copy')
+})
+
+test('the desktop quota-hub hint is byte-equal to the one in doctor.py', () => {
+  // chatlog keeps doctor-only phrasing ("absent on this machine"), so the drift
+  // guard covers the one hint that is a claim about app behaviour and must match
+  // wherever the user reads it.
+  const doctorSource = fs.readFileSync(DOCTOR_PATH, 'utf8')
+  const block = /"aigw": \(([\s\S]*?)\n\s*\),/.exec(doctorSource)
+
+  assert.ok(block, 'doctor.py must still carry an aigw entry in DEFERRED_ENABLE_HINTS')
+
+  const doctorHint = [...block[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+    .map(match => match[1])
+    .join('')
+    .trim()
+
+  assert.equal(definitionFor('aigw')?.enableHint, doctorHint)
 })

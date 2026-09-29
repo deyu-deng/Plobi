@@ -55,7 +55,7 @@ import {
   tokenPreview
 } from './connection-config'
 import { adoptServedDashboardToken } from './dashboard-token'
-import { createDeferredSubsystemLedger } from './deferred-sidecars'
+import { createBackendRespawnGuard, createDeferredSubsystemLedger, profileBackendRowId } from './deferred-sidecars'
 import {
   buildDevAutostartScript,
   DEV_AUTOSTART_FILENAME,
@@ -6603,6 +6603,82 @@ function primaryProfileKey() {
   return readActiveDesktopProfile() || 'default'
 }
 
+// Per-profile respawn backoff. A pool backend that exits 1 used to be re-spawned
+// by the very next caller (every 15 s status poll and every REST call routes
+// through ensureBackend), which turned "the profile directory was never
+// materialised" into 1173 identical Start/Error/exit cycles in desktop.log and a
+// panel stuck on "checking" — a real fault that never reached a visible state.
+// The guard owns the interval math (see ./deferred-sidecars.ts); the timers live
+// here because this is the only place that can spawn.
+const backendRespawnGuard = createBackendRespawnGuard()
+const backendRespawnTimers = new Map()
+
+// Stop tracking a profile's failed attempts. Returns whether a gate was held, so
+// a success that never failed stays silent.
+function clearPoolBackendRespawn(profile) {
+  const timer = backendRespawnTimers.get(profile)
+
+  if (timer) {
+    clearTimeout(timer)
+    backendRespawnTimers.delete(profile)
+  }
+
+  return backendRespawnGuard.clear(profile)
+}
+
+// Called when the pool stops *intending* to serve a profile (delete, LRU evict,
+// idle reap): the backoff ends and its row leaves the ledger, so a profile the
+// user removed does not stay red forever with nothing left to fix.
+function forgetPoolBackendRow(profile) {
+  clearPoolBackendRespawn(profile)
+
+  if (deferredSidecarLedger.forget(profileBackendRowId(profile))) {
+    updateBootProgress({ sidecars: deferredSidecarLedger.rows() })
+    refreshTrayMenu()
+  }
+}
+
+// Record one failed attempt: the visible `red` row first, then the schedule.
+function reportPoolBackendFailure(profile, error) {
+  const message = error instanceof Error ? error.message : String(error)
+  const { attempt, autoRetry, delayMs } = backendRespawnGuard.arm(profile, message)
+
+  reportDeferredSubsystem(profileBackendRowId(profile), 'red', message)
+
+  if (!autoRetry) {
+    rememberLog(
+      `Plobi backend for profile "${profile}" gave up auto-retry after ${attempt} attempts; ` +
+        'it will be tried again on the next request for this profile'
+    )
+
+    return
+  }
+
+  rememberLog(
+    `Plobi backend for profile "${profile}" is on respawn backoff (attempt ${attempt}, ` +
+      `retrying in ${Math.round(delayMs / 1000)}s)`
+  )
+
+  const previous = backendRespawnTimers.get(profile)
+
+  if (previous) {
+    clearTimeout(previous)
+  }
+
+  const timer = setTimeout(() => {
+    backendRespawnTimers.delete(profile)
+    // Recovery path: if the profile directory appeared in the meantime, this
+    // spawn succeeds and the red row flips back to ready on its own.
+    ensureBackend(profile).catch(() => {})
+  }, delayMs)
+
+  if (typeof timer.unref === 'function') {
+    timer.unref()
+  }
+
+  backendRespawnTimers.set(profile, timer)
+}
+
 // Resolve a backend connection for the given profile. Routes the primary
 // profile to startPlobi() (the window backend: boot UI, bootstrap, remote
 // mode), and any OTHER profile to a lazily-spawned pool backend. An empty /
@@ -6622,13 +6698,38 @@ async function ensureBackend(profile) {
     return existing.connectionPromise
   }
 
+  // Backoff gate: refuse to spawn again until the next attempt is due, and say
+  // why. Returning null here is what stops the crash loop; the thrown message
+  // carries the CLI's own error line so a blocked caller is not left guessing.
+  const blocked = backendRespawnGuard.blockReason(key)
+
+  if (blocked) {
+    rememberLog(blocked)
+
+    throw new Error(blocked)
+  }
+
   evictLruPoolBackends(POOL_MAX_BACKENDS - 1)
 
   const entry = { process: null, port: null, token: null, connectionPromise: null, lastActiveAt: Date.now() }
-  entry.connectionPromise = spawnPoolBackend(key, entry).catch(error => {
-    backendPool.delete(key)
-    throw error
-  })
+  entry.connectionPromise = spawnPoolBackend(key, entry)
+    .then(connection => {
+      // Up again: drop the gate and let the red row go quiet by itself.
+      if (clearPoolBackendRespawn(key)) {
+        reportDeferredSubsystem(
+          profileBackendRowId(key),
+          'ready',
+          `Plobi backend for profile "${key}" is up on port ${entry.port ?? '?'}`
+        )
+      }
+
+      return connection
+    })
+    .catch(error => {
+      backendPool.delete(key)
+      reportPoolBackendFailure(key, error)
+      throw error
+    })
   backendPool.set(key, entry)
   startPoolIdleReaper()
 
@@ -6773,6 +6874,24 @@ async function spawnPoolBackend(profile, entry) {
   child.stdout.on('data', rememberLog)
   child.stderr.on('data', rememberLog)
 
+  // The CLI's own reason — e.g. `Profile 'framelet' does not exist. Create it
+  // with: plobi profile create framelet` — is the only honest thing to put in the
+  // panel. It was already being written to desktop.log while the UI showed
+  // nothing but "checking"; keep the last line so the failure state can quote it.
+  let lastStderrLine = ''
+  const captureStderrLine = chunk => {
+    const lines = String(chunk)
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+
+    if (lines.length > 0) {
+      lastStderrLine = lines[lines.length - 1]
+    }
+  }
+
+  child.stderr.on('data', captureStderrLine)
+
   let ready = false
   let rejectStart = null
 
@@ -6791,7 +6910,11 @@ async function spawnPoolBackend(profile, entry) {
 
     if (!ready) {
       rejectStart?.(
-        new Error(`Plobi backend for profile "${profile}" exited before it became ready (${signal || code}).`)
+        new Error(
+          `Plobi backend for profile "${profile}" exited before it became ready (${signal || code})${
+            lastStderrLine ? `: ${lastStderrLine}` : ''
+          }.`
+        )
       )
     }
   })
@@ -6834,9 +6957,12 @@ function stopPoolBackend(profile) {
   const entry = backendPool.get(profile)
 
   if (!entry) {
+    forgetPoolBackendRow(profile)
+
     return
   }
   backendPool.delete(profile)
+  forgetPoolBackendRow(profile)
   stopBackendChild(entry.process)
 }
 
@@ -6844,10 +6970,13 @@ async function teardownPoolBackendAndWait(profile) {
   const entry = backendPool.get(profile)
 
   if (!entry) {
+    forgetPoolBackendRow(profile)
+
     return
   }
   backendPool.delete(profile)
 
+  forgetPoolBackendRow(profile)
   stopBackendChild(entry.process)
 
   await waitForBackendExit(entry.process)
@@ -7465,7 +7594,7 @@ function refreshTrayMenu() {
           label: labels.deferredGroup,
           submenu: deferredSidecarLedger.rows().map(row => ({
             enabled: false,
-            label: `${deferredRowName(row, language)} · ${row.state} (:${row.port})`,
+            label: `${deferredRowName(row, language)} · ${row.state}${row.port > 0 ? ` (:${row.port})` : ''}`,
             toolTip: row.detail
           }))
         },

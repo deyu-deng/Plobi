@@ -76,9 +76,8 @@ DEFERRED_ENABLE_HINTS: dict[str, str] = {
         "CHATLOG_DATA_KEY, serve on :5030"
     ),
     "aigw": (
-        "`cd aigw && uv run python -m aigw start --config config.yaml` "
-        "(port 8000 = config.yaml server.port), then move `routing.rules` off "
-        "the `mock` provider"
+        "Plobi starts this service itself when it is needed — there is nothing "
+        "to run by hand."
     ),
     "collect": (
         "do the first-run blacklist review so $PLOBI_HOME/plobi/chatlog.json "

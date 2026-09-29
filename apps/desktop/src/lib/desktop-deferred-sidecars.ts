@@ -147,7 +147,9 @@ export function reportDeferredSubsystems(rows?: DesktopDeferredSubsystem[]): voi
       // unlike `error` it does not gate or fail the boot.
       kind: 'warning',
       message: row.detail,
-      title: `${translateNow('boot.sidecars.redTitle')} · ${deferredRowLabel(row)} (:${row.port})`
+      title: `${translateNow('boot.sidecars.redTitle')} · ${deferredRowLabel(row)}${
+        row.port > 0 ? ` (:${row.port})` : ''
+      }`
     })
   }
 }
