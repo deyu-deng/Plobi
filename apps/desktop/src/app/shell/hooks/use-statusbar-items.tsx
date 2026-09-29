@@ -8,11 +8,13 @@ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
 import { Codicon } from '@/components/ui/codicon'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import { useI18n } from '@/i18n'
+import { deferredRowLabel, readDeferredLedgerView } from '@/lib/desktop-deferred-sidecars'
 import { Activity, AlertCircle, Clock, Command, Hash, Loader2, Terminal, Zap, ZapFilled } from '@/lib/icons'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { setGlobalYolo, setSessionYolo } from '@/lib/yolo-session'
+import { $desktopBoot } from '@/store/boot'
 import {
   $activeSessionId,
   $busy,
@@ -92,6 +94,12 @@ export function useStatusbarItems({
   const backendUpdateApply = useStore($backendUpdateApply)
   const desktopVersion = useStore($desktopVersion)
   const connection = useStore($connection)
+  // R-048/R-052 — the sidecar ledger rides this SAME gateway dot instead of
+  // raising a card: `deferred` means "nothing here could even be started", which
+  // is a priority decision, not a fault. `red` rows are listed beside them so the
+  // dot menu carries the reason and the enable steps for both.
+  const bootSidecars = useStore($desktopBoot).sidecars
+  const sidecarView = useMemo(() => readDeferredLedgerView(bootSidecars), [bootSidecars])
 
   const contextUsage = useMemo(() => usageContextLabel(currentUsage), [currentUsage])
   const contextBar = useMemo(() => contextBarLabel(currentUsage), [currentUsage])
@@ -137,16 +145,52 @@ export function useStatusbarItems({
 
   const gatewayMenuContent = useMemo(
     () => (close: () => void) => (
-      <GatewayMenuPanel
-        gatewayState={gatewayState}
-        inferenceStatus={inferenceStatus}
-        onClose={close}
-        onOpenSystem={() => openCommandCenterSection('system')}
-        statusSnapshot={statusSnapshot}
-      />
+      <>
+        <GatewayMenuPanel
+          gatewayState={gatewayState}
+          inferenceStatus={inferenceStatus}
+          onClose={close}
+          onOpenSystem={() => openCommandCenterSection('system')}
+          statusSnapshot={statusSnapshot}
+        />
+        {sidecarView.noted.length > 0 && (
+          <div className="border-t border-border/50 px-3 py-2">
+            <div className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">
+              {t.boot.sidecars.deferredTitle}
+            </div>
+            <p className="mt-1 text-[0.66rem] leading-snug text-muted-foreground">{t.boot.sidecars.deferredHint}</p>
+            <ul className="mt-1.5 space-y-1.5">
+              {sidecarView.noted.map(row => (
+                <li className="flex flex-col gap-0.5 text-xs" key={row.id}>
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate">{`${deferredRowLabel(row)} (:${row.port})`}</span>
+                    <span
+                      className={cn(
+                        'shrink-0 text-[0.66rem]',
+                        row.state === 'red' ? 'text-destructive' : 'text-muted-foreground'
+                      )}
+                    >
+                      {row.state}
+                    </span>
+                  </span>
+                  <span className="leading-snug text-muted-foreground">{row.observed}</span>
+                  <span className="leading-snug text-muted-foreground/80">
+                    {`${t.boot.sidecars.enableLabel}: ${row.enableHint}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </>
     ),
-    [gatewayState, inferenceStatus, openCommandCenterSection, statusSnapshot]
+    [gatewayState, inferenceStatus, openCommandCenterSection, sidecarView, statusSnapshot, t.boot.sidecars]
   )
+
+  // The dot's one-line note: how many sidecars the gateway is carrying for. Null
+  // when every row is ready/probing, which is what makes the dot go quiet again.
+  const sidecarNote =
+    sidecarView.noted.length > 0 ? t.boot.sidecars.statusbarDeferred(sidecarView.noted.length) : null
 
   // The indicator must speak the same scope as the Spawn-tree panel it opens:
   // every session's subagents, never background system actions (gateway
@@ -289,8 +333,16 @@ export function useStatusbarItems({
         variant: 'action'
       },
       {
-        className: gatewayRestarting ? undefined : gatewayClassName,
-        detail: gatewayRestarting ? copy.gatewayRestarting : gatewayDetail,
+        className: gatewayRestarting
+          ? undefined
+          : sidecarView.red.length > 0
+            ? 'text-destructive hover:text-destructive'
+            : gatewayClassName,
+        detail: gatewayRestarting
+          ? copy.gatewayRestarting
+          : sidecarNote
+            ? `${gatewayDetail} · ${sidecarNote}`
+            : gatewayDetail,
         icon: gatewayRestarting ? (
           <GlyphSpinner ariaLabel={copy.gatewayRestarting} className="size-3" />
         ) : inferenceReady ? (
@@ -363,6 +415,8 @@ export function useStatusbarItems({
       inferenceReady,
       inferenceStatus?.reason,
       openAgents,
+      sidecarNote,
+      sidecarView.red.length,
       subagentsFailed,
       subagentsRunning,
       toggleCommandCenter

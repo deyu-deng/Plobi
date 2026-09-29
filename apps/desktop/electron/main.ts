@@ -8202,10 +8202,16 @@ async function ensureChatlogServer(): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 500))
     }
 
-    reportDeferredSubsystem('chatlog', 'deferred', `spawned ${exe} but :5030 never answered (WeChat login / CHATLOG_DATA_KEY?)`)
+    // RED, not deferred: the binary EXISTS on this machine and we did spawn it, so
+    // this is "attempted and not healthy" — doctor.py's `reachable but non-200 =
+    // RED` judgement, not R-047's "nothing here could even be started". Reporting
+    // it as deferred is what painted a yellow warning card on every single boot.
+    reportDeferredSubsystem('chatlog', 'red', `spawned ${exe} but :5030 never answered (WeChat login / CHATLOG_DATA_KEY?)`)
     rememberLog('[sidecar] chatlog spawned but :5030 still red (WeChat login / key?)')
   } catch (error) {
-    reportDeferredSubsystem('chatlog', 'deferred', `spawn failed: ${error instanceof Error ? error.message : String(error)}`)
+    // RED: a spawn that threw is a fault on a service we deliberately tried to
+    // bring up. The only chatlog row that stays `deferred` is the no-binary one.
+    reportDeferredSubsystem('chatlog', 'red', `spawn failed: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] chatlog spawn failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
@@ -8243,19 +8249,28 @@ async function ensureProductAigw(): Promise<void> {
     // `result.error` is the R-051 payoff: with a gated interpreter ladder this is
     // now a specific, human-readable reason ("no project Python under …, run uv
     // sync") instead of the old 20-second "did not become healthy in time".
-    reportDeferredSubsystem('aigw', 'deferred', result.error || 'gateway did not become healthy in time')
+    // RED, not deferred: the config EXISTS at this point (the no-config path
+    // returned earlier as `deferred`), so a gateway that config promises but
+    // never delivers is a fault the user has to see.
+    reportDeferredSubsystem('aigw', 'red', result.error || 'gateway did not become healthy in time')
     rememberLog(`[sidecar] product aigw failed: ${result.error || 'unknown'}`)
   }
 }
 
 /** Fire-and-forget; safe to call on every backend.ready. */
 function ensureLocalSidecars(): void {
+  // Both `ensure*` helpers already report their own legitimate deferrals from
+  // inside (chatlog: no binary; aigw: no gateway config) and `return` there. So
+  // reaching either catch below means the probe itself raised — an unhandled
+  // throw in code that was genuinely trying to bring the service up. Same
+  // judgement as doctor.py's reachable-but-non-200 rule: that is RED, not
+  // deferred, and must not be folded back into "postponed, not a fault".
   void ensureChatlogServer().catch(error => {
-    reportDeferredSubsystem('chatlog', 'deferred', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
+    reportDeferredSubsystem('chatlog', 'red', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] chatlog ensure error: ${error instanceof Error ? error.message : String(error)}`)
   })
   void ensureProductAigw().catch(error => {
-    reportDeferredSubsystem('aigw', 'deferred', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
+    reportDeferredSubsystem('aigw', 'red', `ensure raised: ${error instanceof Error ? error.message : String(error)}`)
     rememberLog(`[sidecar] aigw ensure error: ${error instanceof Error ? error.message : String(error)}`)
   })
 }

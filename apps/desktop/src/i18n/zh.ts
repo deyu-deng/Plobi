@@ -65,8 +65,12 @@ export const zh: Translations = {
     ready: 'Plobi 桌面版已就绪',
     desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
     sidecars: {
-      deferredTitle: '后置服务没有起来',
-      deferredHint: '主对话不受影响。托盘菜单会列出每个后置服务以及未启动的原因。'
+      deferredTitle: '后置服务（押后，非故障）',
+      deferredHint: '不是故障：这台机器上根本没有可以启动的东西。主对话不受影响；托盘菜单和这里都会列出每个后置服务、未启动的原因与启用步骤。',
+      redTitle: '服务故障',
+      redHint: '主对话不受影响，但这个服务确实被尝试启动过，却没有健康起来。这是真故障，不是押后；启用步骤见状态栏网关菜单。',
+      enableLabel: '启用步骤',
+      statusbarDeferred: (count: number) => `${count} 个后置服务未运行`
     },
     steps: {
       connectingGateway: '正在连接桌面网关',
