@@ -104,7 +104,7 @@ def _read_toolsets(profile_dir):
 def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_session_search(tmp_path):
     from plobi.agents.registry import apply_l2_project_diet
 
-    profile_dir = tmp_path / "l2-Plobi"
+    profile_dir = tmp_path / "l2-plobi"
     _write_config(
         profile_dir,
         top=["terminal", "computer_use", "web", "skills", "code_execution", "session_search", "clarify"],
@@ -133,7 +133,7 @@ def test_apply_l2_project_diet_strips_terminal_computer_use_code_execution_sessi
 def test_apply_l2_project_diet_strips_plobi_composite_toolsets(tmp_path):
     from plobi.agents.registry import apply_l2_project_diet
 
-    profile_dir = tmp_path / "l2-Animation"
+    profile_dir = tmp_path / "l2-animation"
     _write_config(
         profile_dir,
         top=["plobi-cli", "plobi-cli-gateway", "web"],
@@ -150,7 +150,7 @@ def test_apply_l2_project_diet_strips_plobi_composite_toolsets(tmp_path):
 def test_apply_l2_project_diet_preserves_allowed_toolsets(tmp_path):
     from plobi.agents.registry import apply_l2_project_diet
 
-    profile_dir = tmp_path / "l2-Nuclide"
+    profile_dir = tmp_path / "l2-nuclide"
     _write_config(
         profile_dir,
         top=["file", "web", "skills", "todo", "clarify", "delegation", "plobi_north_star"],
@@ -167,7 +167,7 @@ def test_apply_l2_project_diet_preserves_allowed_toolsets(tmp_path):
 def test_apply_l2_project_diet_is_idempotent(tmp_path):
     from plobi.agents.registry import apply_l2_project_diet
 
-    profile_dir = tmp_path / "l2-Prism"
+    profile_dir = tmp_path / "l2-prism"
     _write_config(
         profile_dir,
         top=["terminal", "web"],
@@ -202,7 +202,7 @@ def test_apply_l2_project_diet_survives_garbage_yaml(tmp_path):
 def test_apply_l2_project_diet_preserves_other_keys(tmp_path):
     from plobi.agents.registry import apply_l2_project_diet
 
-    profile_dir = tmp_path / "l2-Stithy"
+    profile_dir = tmp_path / "l2-stithy"
     _write_config(
         profile_dir,
         top=["terminal", "web"],
@@ -257,7 +257,7 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
             encoding="utf-8",
         )
 
-    # 先准备两个「l2-Plobi / l2-Animation」假 profile，配置里塞 terminal，
+    # 先准备两个「l2-plobi / l2-animation」假 profile，配置里塞 terminal，
     # 让 diet 必须干活才能清理。
     for name in ("Plobi", "Animation"):
         profile_dir = home / ".plobi" / "profiles" / f"l2-{name}"

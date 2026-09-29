@@ -1926,3 +1926,11 @@ class TestProfilesToServe:
     def test_on_no_named_profiles_returns_just_default(self, profile_env):
         serve = profiles_to_serve(multiplex=True)
         assert [n for n, _ in serve] == ["default"]
+
+def test_registry_profile_name_matches_base_normalizer():
+    """registry 的内联规范化必须与底座那个函数同一个口径（防漂移）。"""
+    from plobi.agents.registry import AgentEntry
+    from plobi_cli.profiles import normalize_profile_name
+
+    for raw in ("Aura", "L2-Aura", "default", "DEFAULT", "  Prism  "):
+        assert AgentEntry(name=raw, role="l2_project").profile_name == normalize_profile_name(raw)

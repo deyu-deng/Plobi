@@ -383,7 +383,7 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
 
     project_dir = home / "workspace"
     project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-Plobi"
+    profile_dir = home / ".plobi" / "profiles" / "l2-plobi"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 
@@ -405,7 +405,7 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
         AgentEntry(
             name="Plobi",
             role="l2_project",
-            profile="l2-Plobi",
+            profile="l2-plobi",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
@@ -417,3 +417,18 @@ def test_studio_cwd_still_lands_when_agent_has_display_name(home, monkeypatch):
     cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
     assert isinstance(cfg, dict)
     assert cfg.get("terminal", {}).get("cwd") == str(project_dir.absolute())
+
+
+def test_profile_name_is_normalized_to_the_on_disk_id():
+    """注册表键可以是首字母大写的显示名，但发出去的 profile 名必须是磁盘上那个小写 id。
+
+    否则桌面 ``plobi --profile Aura serve`` 会被 CLI 的 ``-p`` 预扫描（main.py 的
+    ``_PROFILE_ID_RE``）判为非法而**不摘 token**，argparse 接着把 ``Aura`` 当成子命令
+    → 退出码 2 → 分身后端永远起不来、界面一直停在「网关 检查中」。
+    与底座那个函数的等价性钉在 tests/plobi_cli/test_profiles.py（本层不 import plobi_cli）。
+    """
+    assert AgentEntry(name="Aura", role="l2_project", profile="L2-Aura").profile_name == "l2-aura"
+    assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
+    assert AgentEntry(name="Default", role="l2_project").profile_name == "default"
+    # 空值不许炸（未设 profile 的老行）
+    assert AgentEntry(name="", role="l2_project").profile_name == ""

@@ -292,7 +292,24 @@ class AgentEntry:
 
     @property
     def profile_name(self) -> str:
-        return self.profile or self.name
+        # Profiles are stored lowercase on disk and the CLI's ``-p`` pre-scan
+        # drops any value failing ``_PROFILE_ID_RE`` — so handing out the
+        # registry key verbatim (``Aura``) makes ``plobi --profile Aura serve``
+        # fall through to argparse, which then reads ``Aura`` as a subcommand
+        # and exits 2. The base documents the same requirement: normalize before
+        # validation / subprocess spawn (plobi_cli/profiles.py:303-318, #18498).
+        #
+        # Normalized inline instead of importing that helper: this module
+        # deliberately avoids depending on plobi_cli at attribute time (see the
+        # lazy imports below), and even a lazy import breaks under the test
+        # harness, where ``plobi_cli`` does not resolve to the real module.
+        # tests/plobi_cli/test_profiles.py pins the two rules together.
+        raw = (self.profile or self.name).strip()
+        if not raw:
+            return ""
+        if raw.casefold() == "default":
+            return "default"
+        return raw.lower()
 
     @property
     def has_model_override(self) -> bool:
