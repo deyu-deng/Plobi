@@ -647,6 +647,17 @@ class AgentRegistry:
 
         profile_dir = self._ensure_profile(entry, clone_from=clone_from)
 
+        # WP-L2-IDENTITY / 裁定 42 §6(c): 分身缺的是「我是谁」。SOUL.md 是
+        # ``load_soul_md()`` 唯一的身份来源，而 profile 里那份要么是 512 B 上游
+        # 残桩、要么是 --clone 抄来的 L1 合同。每次 spawn 都纠一次（幂等），
+        # 后端一起就把身份落好，不靠人手抄文本。
+        try:
+            ensure_l2_identity_soul(entry, home=profile_dir)
+        except Exception as exc:
+            logger.warning(
+                "plobi: L2 identity SOUL not written for %s: %s", entry.name, exc
+            )
+
         # 1) profile 级 models.json（ADRD-0011 断言基于它）
         profile_models = self._write_profile_models(profile_dir, entry)
 
@@ -2787,6 +2798,11 @@ L1_SOUL_BEGIN = ":::PLOBI_L1_ASK_ROUTING:::"
 L1_SOUL_END = ":::PLOBI_L1_ASK_END:::"
 L1_SOUL_LEGACY_BEGIN = "<!-- PLOBI_L1_SECRETARY_ROUTING -->"
 L1_SOUL_LEGACY_END = "<!-- /PLOBI_L1_SECRETARY_ROUTING -->"
+# L2 counterpart: same colon-fence style (no HTML comments — the threat scanner
+# flags them, see the comment above). Rendered per agent by
+# :func:`build_l2_identity_soul_block`, never shared between 分身.
+L2_SOUL_BEGIN = ":::PLOBI_L2_IDENTITY:::"
+L2_SOUL_END = ":::PLOBI_L2_IDENTITY_END:::"
 L1_SOUL_BLOCK = f"""{L1_SOUL_BEGIN}
 ## 身份（WP-L1-IDENTITY，硬规则，不可绕过；写在最前）
 
@@ -2856,13 +2872,18 @@ def _l1_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
     )
 
 
-def _strip_l1_soul_spans(text: str) -> str:
-    """Remove every known L1 routing fence (old HTML or current colon markers)."""
+def _l2_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
+    """The L2 identity fence (colon style, same reason as L1's)."""
+    return ((L2_SOUL_BEGIN, L2_SOUL_END),)
+
+
+def _strip_soul_spans(text: str, pairs: tuple[tuple[str, str], ...]) -> str:
+    """Remove every fenced span named in ``pairs`` (colon markers or comments)."""
     remaining = text
     changed = True
     while changed:
         changed = False
-        for begin, end in _l1_soul_fence_pairs():
+        for begin, end in pairs:
             if begin not in remaining or end not in remaining:
                 continue
             start = remaining.index(begin)
@@ -2874,6 +2895,16 @@ def _strip_l1_soul_spans(text: str) -> str:
             changed = True
             break
     return remaining
+
+
+def _strip_l1_soul_spans(text: str) -> str:
+    """Remove every known L1 routing fence (old HTML or current colon markers)."""
+    return _strip_soul_spans(text, _l1_soul_fence_pairs())
+
+
+def _strip_l2_soul_spans(text: str) -> str:
+    """Remove every L2 identity fence from ``text``."""
+    return _strip_soul_spans(text, _l2_soul_fence_pairs())
 
 
 def mid_narrow_toolset_names(names: list[str] | None) -> list[str]:
@@ -3258,15 +3289,109 @@ def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
 
 
 def ensure_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
-    """Upsert soft-routing instructions into the active profile ``SOUL.md``."""
+    """Upsert soft-routing instructions into the active profile ``SOUL.md``.
+
+    L1 and L2 contracts are mutually exclusive: writing the L1 block also drops
+    any L2 identity fence in the same file (see :func:`ensure_l2_identity_soul`).
+    """
     from plobi_constants import get_plobi_home
 
     soul_path = Path(home) / "SOUL.md" if home is not None else get_plobi_home() / "SOUL.md"
     existing = ""
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
-    stripped = _strip_l1_soul_spans(existing).rstrip()
+    stripped = _strip_l1_soul_spans(_strip_l2_soul_spans(existing)).rstrip()
     updated = (stripped + "\n\n" if stripped else "") + L1_SOUL_BLOCK.strip() + "\n"
+    if updated == existing:
+        return False
+    soul_path.parent.mkdir(parents=True, exist_ok=True)
+    soul_path.write_text(updated, encoding="utf-8")
+    return True
+
+
+def strip_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
+    """Drop the L1 secretary contract from a **non-default** profile's SOUL.md.
+
+    ``--clone`` copies the root ``SOUL.md`` whole, L1 fence included, and the
+    root file is an **L1-only** contract — its first line declares 「你是本机
+    Plobi 总秘书（L1）」. A 分身 carrying it claims to be the secretary (the
+    ``profiles/l2-agenda`` clone; ``Docs/ARCH-RULINGS_2026-09-08.md`` §6(a)).
+    Whatever identity survives the strip is left alone. Idempotent.
+    """
+    from plobi_constants import get_plobi_home
+
+    soul_path = Path(home) / "SOUL.md" if home is not None else get_plobi_home() / "SOUL.md"
+    if not soul_path.is_file():
+        return False
+    existing = soul_path.read_text(encoding="utf-8")
+    stripped = _strip_l1_soul_spans(existing)
+    if stripped == existing:
+        return False
+    stripped = stripped.strip()
+    soul_path.write_text(stripped + "\n" if stripped else "", encoding="utf-8")
+    return True
+
+
+def build_l2_identity_soul_block(entry: AgentEntry) -> str:
+    """Render one 分身's own identity contract from **existing** registry fields.
+
+    Only what ``AgentEntry`` already carries (name / display_name / role /
+    description / project_path / mind_subtree) — no new schema, no config keys.
+    """
+    who = entry.display_name or entry.name
+    lines = [
+        L2_SOUL_BEGIN,
+        "## 身份（WP-L2-IDENTITY，硬规则，不可绕过）",
+        "",
+        f"- 你是 **{who}**（id `{entry.name}`），Plobi 的项目分身（L2，role `{entry.role}`）——本项目这一摊由你这一张嘴回答。",
+    ]
+    if entry.description:
+        lines.append(f"- 这个项目在做的事：{entry.description}。")
+    if entry.project_path:
+        lines.append(
+            f"- 你的项目目录是 `{entry.project_path}`：代码、文件、命令都在这里发生，别的项目的目录不是你的。"
+        )
+    if entry.mind_subtree:
+        lines.append(
+            f"- 你在 Mind 知识库里拥有 `{entry.mind_subtree}` 这一棵子树：本项目的计划、进度、事实写这里，别处的子树只读不改。"
+        )
+    lines += [
+        "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。不许另立分身专属账本，也不要把没有本项目标签的条目当成本项目的既定事实。",
+        "- 你**不是**本机 Plobi 总秘书（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）；不要转述调度器的角色，不要替别的项目作答，也不要自称总秘书。",
+        L2_SOUL_END,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def ensure_l2_identity_soul(
+    entry: AgentEntry, *, home: Path | str | None = None
+) -> bool:
+    """Upsert a project 分身's OWN identity into its profile ``SOUL.md``.
+
+    ``agent/prompt_builder.load_soul_md()`` reads ``get_plobi_home()/SOUL.md``
+    and nothing else, so a 分身's identity can only come from its own file — the
+    profiles shipped a 512-byte upstream stub (裁定 42 §6(c)). Shape copied from
+    :func:`ensure_l1_secretary_routing_soul`: strip the known fences, then
+    append; the two contracts never coexist in one file. No-op when the content
+    already matches, and never written onto the default (L1) profile.
+    """
+    from plobi_constants import get_plobi_home
+
+    if entry.role == L1_SECRETARY_ROLE or entry.profile_name == "default":
+        return False
+
+    target = Path(home) if home is not None else get_plobi_home()
+    if not target.is_dir():
+        # 分身还没落地（spawn 未跑 / profile 目录被移走）。不要为了一份 SOUL.md
+        # 凭空建 profile 目录 —— 那是第二真源，见 ``apply_l2_project_cwd`` 的同款判据。
+        return False
+    soul_path = target / "SOUL.md"
+    existing = ""
+    if soul_path.is_file():
+        existing = soul_path.read_text(encoding="utf-8")
+    stripped = _strip_l1_soul_spans(_strip_l2_soul_spans(existing)).rstrip()
+    block = build_l2_identity_soul_block(entry).strip()
+    updated = (stripped + "\n\n" if stripped else "") + block + "\n"
     if updated == existing:
         return False
     soul_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3313,7 +3438,18 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
     if changed and save:
         save_config(config)
     try:
-        ensure_l1_secretary_routing_soul()
+        # 裁定 42 §42.2 / §6(b): default profile 是唯一 L1 总秘书的座位。这道闸之
+        # 前任何 profile 只要启用本插件就被永久盖成总秘书（l2-agenda 那份 --clone
+        # 的 SOUL 就是已经发作的实例）。非 default profile 不仅要跳过写入，还要把
+        # 已经印上去的 L1 合同纠掉。判据与
+        # ``plugins/plobi-north-star/l1_budget.py:115 is_l1_default_profile()``
+        # 同源（get_active_profile_name() == L1_PROFILE_NAME），只是没有 agent 实例。
+        from plobi_cli.profiles import get_active_profile_name
+
+        if get_active_profile_name() == "default":
+            ensure_l1_secretary_routing_soul()
+        else:
+            strip_l1_secretary_routing_soul()
     except Exception:
         logger.debug("plobi: L1 secretary SOUL routing upsert skipped", exc_info=True)
     return config

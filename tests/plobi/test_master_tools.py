@@ -276,6 +276,221 @@ def test_l1_secretary_soul_replaces_legacy_html_fence(tmp_path):
     assert text.count(L1_SOUL_BEGIN) == 1
 
 
+# ---------------------------------------------------------------------------
+# WP-L2-IDENTITY / 裁定 42 §6: L1 身份围栏只许盖在默认 profile；分身盖自己的
+# ---------------------------------------------------------------------------
+
+
+_STUB_SOUL = "You are Plobi Agent, an intelligent AI assistant created by Nous Research.\n"
+
+
+def _use_profile(tmp_path, monkeypatch, name):
+    """Point PLOBI_HOME at ``~/.plobi/profiles/<name>`` (real resolution path)."""
+    home = tmp_path / (".plobi" if name == "default" else f".plobi/profiles/{name}")
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    return home
+
+
+def _stub_toolset_config(monkeypatch):
+    """Keep the config half of ensure_north_star_toolset off the real profile."""
+    monkeypatch.setattr("plobi_cli.config.load_config", lambda: {"toolsets": ["plobi-cli"]})
+    monkeypatch.setattr("plobi_cli.config.save_config", lambda *_a, **_k: None)
+
+
+def _l2_entry(**overrides):
+    """An ``AgentEntry`` built only from fields the registry already has."""
+    from plobi.agents.registry import AgentEntry
+
+    data = {
+        "name": "aura",
+        "role": "l2_project",
+        "mind_subtree": "Vault/projects/Aura",
+        "description": "本机生活助手",
+        "display_name": "Aura",
+        "project_path": "/Users/ciel/Projects/Aura",
+    }
+    data.update(overrides)
+    return AgentEntry(**data)
+
+
+def test_north_star_toolset_strips_cloned_l1_fence_on_project_profile(tmp_path, monkeypatch):
+    """非 default profile 启用 north-star：不盖 L1，还要把 --clone 抄来的那份纠掉。
+
+    模拟 ``profiles/l2-agenda/SOUL.md`` —— 它与正本 ``~/.plobi/SOUL.md`` 字节相同，
+    所以日程 L2 现在自称「Plobi 总秘书」。
+    """
+    from plobi.agents.registry import (
+        L1_SOUL_BEGIN,
+        ensure_l1_secretary_routing_soul,
+        ensure_north_star_toolset,
+    )
+
+    home = _use_profile(tmp_path, monkeypatch, "l2-agenda")
+    _stub_toolset_config(monkeypatch)
+    (home / "SOUL.md").write_text(_STUB_SOUL, encoding="utf-8")
+    assert ensure_l1_secretary_routing_soul(home=home) is True  # the clone
+    assert L1_SOUL_BEGIN in (home / "SOUL.md").read_text(encoding="utf-8")
+
+    ensure_north_star_toolset()
+
+    text = (home / "SOUL.md").read_text(encoding="utf-8")
+    assert L1_SOUL_BEGIN not in text
+    assert "Plobi 总秘书" not in text
+    assert _STUB_SOUL.strip() in text  # 围栏之外的内容一个字都不丢
+
+
+def test_north_star_toolset_does_not_create_l1_fence_on_project_profile(tmp_path, monkeypatch):
+    """门禁也要挡住「新建」：没有 SOUL.md 的分身 profile 不能因为装插件长出一份。"""
+    from plobi.agents.registry import ensure_north_star_toolset
+
+    home = _use_profile(tmp_path, monkeypatch, "aura")
+    _stub_toolset_config(monkeypatch)
+
+    ensure_north_star_toolset()
+
+    assert not (home / "SOUL.md").exists()
+
+
+def test_north_star_toolset_still_stamps_default_profile(tmp_path, monkeypatch):
+    """WP-L1-PROMPT-LIVE 防回归：default profile 照旧拿到 L1 合同。"""
+    from plobi.agents.registry import L1_SOUL_BEGIN, ensure_north_star_toolset
+
+    home = _use_profile(tmp_path, monkeypatch, "default")
+    _stub_toolset_config(monkeypatch)
+    (home / "SOUL.md").write_text(_STUB_SOUL, encoding="utf-8")
+
+    ensure_north_star_toolset()
+
+    text = (home / "SOUL.md").read_text(encoding="utf-8")
+    assert L1_SOUL_BEGIN in text
+    assert "Plobi 总秘书" in text
+    assert text.count(L1_SOUL_BEGIN) == 1
+
+
+def test_l2_identity_soul_upsert_is_idempotent_and_self_naming(tmp_path):
+    from plobi.agents.registry import (
+        L2_SOUL_BEGIN,
+        L2_SOUL_END,
+        ensure_l2_identity_soul,
+    )
+
+    entry = _l2_entry()
+    assert ensure_l2_identity_soul(entry, home=tmp_path) is True
+    text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert L2_SOUL_BEGIN in text
+    assert "Aura" in text
+    assert "/Users/ciel/Projects/Aura" in text
+    assert "Vault/projects/Aura" in text
+    assert "本机 Plobi 总秘书（L1）" in text
+    assert "不要自称总秘书" in text
+    assert "共享账本" in text
+
+    assert ensure_l2_identity_soul(entry, home=tmp_path) is False
+    again = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert again == text
+    assert again.count(L2_SOUL_BEGIN) == 1
+    assert again.count(L2_SOUL_END) == 1
+
+
+def test_l2_identity_soul_uses_slug_when_no_display_name(tmp_path):
+    from plobi.agents.registry import ensure_l2_identity_soul
+
+    assert ensure_l2_identity_soul(
+        _l2_entry(display_name="", project_path="", mind_subtree=""), home=tmp_path
+    ) is True
+    text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert "**aura**" in text
+    assert "Vault/projects/Aura" not in text
+
+
+def test_l2_identity_soul_replaces_cloned_l1_fence(tmp_path):
+    """同一文件里两段合同不许共存——L2 落笔即纠 L1 克隆。"""
+    from plobi.agents.registry import (
+        L1_SOUL_BEGIN,
+        L2_SOUL_BEGIN,
+        ensure_l1_secretary_routing_soul,
+        ensure_l2_identity_soul,
+    )
+
+    (tmp_path / "SOUL.md").write_text(_STUB_SOUL, encoding="utf-8")
+    assert ensure_l1_secretary_routing_soul(home=tmp_path) is True
+    assert ensure_l2_identity_soul(_l2_entry(), home=tmp_path) is True
+
+    text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert L2_SOUL_BEGIN in text
+    assert L1_SOUL_BEGIN not in text
+    assert "WP-L1-IDENTITY" not in text
+
+
+def test_l1_soul_upsert_drops_l2_fence(tmp_path):
+    """反向也一样：L1 落笔即纠 L2 身份段。"""
+    from plobi.agents.registry import (
+        L1_SOUL_BEGIN,
+        L2_SOUL_BEGIN,
+        ensure_l1_secretary_routing_soul,
+        ensure_l2_identity_soul,
+    )
+
+    assert ensure_l2_identity_soul(_l2_entry(), home=tmp_path) is True
+    assert ensure_l1_secretary_routing_soul(home=tmp_path) is True
+
+    text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert L1_SOUL_BEGIN in text
+    assert L2_SOUL_BEGIN not in text
+
+
+def test_l2_identity_soul_never_written_on_default_profile(tmp_path):
+    """default profile 是 L1 的座位——分身身份段永不落笔。"""
+    from plobi.agents.registry import (
+        L2_SOUL_BEGIN,
+        ensure_l2_identity_soul,
+    )
+
+    assert ensure_l2_identity_soul(_l2_entry(profile="default"), home=tmp_path) is False
+    assert ensure_l2_identity_soul(
+        _l2_entry(role="l1_secretary", name="secretary"), home=tmp_path
+    ) is False
+    assert not (tmp_path / "SOUL.md").exists() or L2_SOUL_BEGIN not in (
+        tmp_path / "SOUL.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_l2_identity_soul_skips_unmaterialized_profile(tmp_path):
+    """profile 目录还没落地 → 不动磁盘（不许为一份 SOUL 凭空建 profile）。"""
+    from plobi.agents.registry import ensure_l2_identity_soul
+
+    missing = tmp_path / "profiles" / "aura"
+    assert ensure_l2_identity_soul(_l2_entry(), home=missing) is False
+    assert not missing.exists()
+
+
+def test_l2_identity_fence_avoids_html_comment_injection():
+    """围栏形状照 L1：冒号围栏，不带 HTML 注释（威胁扫描会拦）。"""
+    from tools.threat_patterns import scan_for_threats
+
+    from plobi.agents.registry import (
+        L2_SOUL_BEGIN,
+        L2_SOUL_END,
+        build_l2_identity_soul_block,
+    )
+
+    block = build_l2_identity_soul_block(_l2_entry())
+    assert "<!--" not in L2_SOUL_BEGIN
+    assert "secret" not in L2_SOUL_BEGIN.lower()
+    assert "secret" not in L2_SOUL_END.lower()
+    assert "PLOBI_L2" in L2_SOUL_BEGIN
+    assert "html_comment_injection" not in scan_for_threats(L2_SOUL_BEGIN)
+    assert "html_comment_injection" not in scan_for_threats(L2_SOUL_END)
+    assert "html_comment_injection" not in scan_for_threats(block)
+    assert "html_comment_injection" in scan_for_threats(
+        "<!-- PLOBI_L2_SECRETARY_ROUTING -->"
+    )
+    # 身份段是 SOUL.md 里的一段，不是整篇——行数必须小（L1 那份是长篇合同）。
+    assert len(block.splitlines()) <= 15
+
+
 def test_secretary_ask_schema_steers_soft_routing():
     desc = MT.SECRETARY_ASK_SCHEMA["description"]
     assert MT.SECRETARY_ASK_SCHEMA["name"] == "plobi_secretary_ask"
