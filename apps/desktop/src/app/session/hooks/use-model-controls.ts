@@ -2,9 +2,18 @@ import { type QueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
 import { getGlobalModelInfo } from '@/plobi'
+import { type ChatScope } from '@/app/console/chat/scope'
 import { useI18n } from '@/i18n'
 import { notifyError } from '@/store/notifications'
-import { $activeSessionId, $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
+import {
+  $activeSessionId,
+  $currentModel,
+  $currentProvider,
+  setCurrentModel,
+  setCurrentProvider,
+  setComposerModelScope,
+  storedScopedComposerSelection
+} from '@/store/session'
 import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import type { ModelOptionsResponse } from '@/types/plobi'
 
@@ -23,6 +32,13 @@ interface ModelControlsOptions {
    * True). Non-L2 conversations keep the previous session-scoped behaviour.
    */
   isAgentSession?: boolean
+  /**
+   * The conversation's chat scope (the controller's memoized `chatScope`).
+   * 裁定 44: it decides WHICH localStorage cell the selection is sticky in —
+   * an agent's own cell inside a project, the flat global cell otherwise. It
+   * never decides what gets sent to the backend.
+   */
+  scope?: ChatScope | null
   queryClient: QueryClient
   requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
@@ -30,6 +46,7 @@ interface ModelControlsOptions {
 export function useModelControls({
   activeSessionId,
   isAgentSession = false,
+  scope = null,
   queryClient,
   requestGateway
 }: ModelControlsOptions) {
@@ -50,14 +67,33 @@ export function useModelControls({
   )
 
   // Seed the composer's model state from the profile default. `force` reseeds
-  // for a profile swap (the new profile has its own default); otherwise this
+  // for a profile swap (the new profile has its own default) and for an agent
+  // swap (that agent's OWN persisted cell is the seed — 裁定 44); otherwise this
   // only fills an EMPTY selection so a user's pick (plain UI state in
   // $currentModel) survives the lifecycle refreshes that fire on boot / fresh
   // draft / session events. A live session owns the footer, so skip entirely.
   const refreshCurrentModel = useCallback(async (force = false) => {
     try {
+      // Pin the storage cell for this scope FIRST: every read and write below
+      // (and in the early returns) has to land in the same person's cell.
+      setComposerModelScope(scope)
+
       if ($activeSessionId.get()) {
         return
+      }
+
+      if (force) {
+        // Inside a project the agent's own cell outranks the profile default.
+        // Flat scope returns null here, so a profile swap keeps reseeding
+        // exactly as it did before.
+        const own = storedScopedComposerSelection()
+
+        if (own) {
+          setCurrentModel(own.model)
+          setCurrentProvider(own.provider)
+
+          return
+        }
       }
 
       if (!force && $currentModel.get()) {
@@ -80,7 +116,7 @@ export function useModelControls({
     } catch {
       // The delayed session.info event still updates this once the agent is ready.
     }
-  }, [])
+  }, [scope])
 
   // Returns whether the switch succeeded so callers can await it before applying
   // follow-up changes. The composer model is plain UI state: with no live
@@ -92,6 +128,11 @@ export function useModelControls({
   // touches the profile default that Settings → Model owns.
   const selectModel = useCallback(
     async (selection: ModelSelection): Promise<boolean> => {
+      // Same cell the rest of this scope reads (the controller's scope effect
+      // already pinned it; this is the belt-and-braces so a click that beats the
+      // effect can never write into another agent's box).
+      setComposerModelScope(scope)
+
       // Desktop-quota providers (Antigravity, …) are not known to the Plobi
       // backend — their chat is routed to the aigw hub instead. Selecting one is
       // pure local UI state: skip the backend config.set so it doesn't 400.
@@ -142,7 +183,7 @@ export function useModelControls({
         return false
       }
     },
-    [activeSessionId, copy.modelSwitchFailed, isAgentSession, queryClient, requestGateway, updateModelOptionsCache]
+    [activeSessionId, copy.modelSwitchFailed, isAgentSession, queryClient, requestGateway, scope, updateModelOptionsCache]
   )
 
   return { refreshCurrentModel, selectModel, updateModelOptionsCache }
