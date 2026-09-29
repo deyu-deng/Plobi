@@ -3,12 +3,21 @@ import { cleanup, render, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getGlobalModelInfo } from '@/plobi'
-import { $activeSessionId, $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
+import { agentScope, L1_SCOPE } from '@/app/console/chat/scope'
+import {
+  $activeSessionId,
+  $currentModel,
+  $currentProvider,
+  setComposerModelScope,
+  setCurrentModel,
+  setCurrentProvider
+} from '@/store/session'
 
 import { useModelControls } from './use-model-controls'
 
 const setGlobalModel = vi.fn()
 const notifyError = vi.fn()
+const quotaProvider = vi.fn((_slug: string): boolean => false)
 
 vi.mock('@/plobi', () => ({
   getGlobalModelInfo: vi.fn(),
@@ -29,22 +38,34 @@ vi.mock('@/store/notifications', () => ({
   notifyError: (...args: Parameters<typeof notifyError>) => notifyError(...args)
 }))
 
+// The desktop-quota catalog belongs to `store/desktop-quotas`; this hook only
+// asks "is this a quota app?". Mock the predicate so the branch pinned below is
+// the real early-return branch without dragging the quota store in.
+vi.mock('@/store/desktop-quotas', () => ({
+  isDesktopQuotaProvider: (slug: string) => quotaProvider(slug)
+}))
+
 type Controls = ReturnType<typeof useModelControls>
+
+type ScopeProp = Parameters<typeof useModelControls>[0]['scope']
 
 function Harness({
   activeSessionId,
   isAgentSession,
   onReady,
-  requestGateway
+  requestGateway,
+  scope
 }: {
   activeSessionId: string | null
   isAgentSession?: boolean
   onReady: (controls: Controls) => void
   requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+  scope?: ScopeProp
 }) {
   const controls = useModelControls({
     activeSessionId,
     isAgentSession,
+    scope,
     queryClient: new QueryClient(),
     requestGateway
   })
@@ -56,6 +77,10 @@ function Harness({
 
 describe('useModelControls', () => {
   beforeEach(() => {
+    window.localStorage.clear()
+    quotaProvider.mockReset().mockReturnValue(false)
+    // Back to the flat (secretary) cell so no test inherits another scope's box.
+    setComposerModelScope(null)
     $activeSessionId.set(null)
     setCurrentModel('')
     setCurrentProvider('')
@@ -64,9 +89,11 @@ describe('useModelControls', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    setComposerModelScope(null)
     $activeSessionId.set(null)
     setCurrentModel('')
     setCurrentProvider('')
+    window.localStorage.clear()
   })
 
   it('applies the global model when there is no active runtime session', async () => {
@@ -233,5 +260,155 @@ describe('useModelControls', () => {
     // A profile swap forces a reseed to the new profile's default.
     await result.current.refreshCurrentModel(true)
     expect($currentModel.get()).toBe('openai/gpt-5.5')
+  })
+
+  // ── 裁定 44:「一个 Agent 一张嘴 / 习惯是人的属性，不是对话窗口的属性」────────
+  // The composer's model + provider persist per chat scope (`agentScope`), while
+  // the L1 secretary and every chat outside a project keep the ORIGINAL flat
+  // keys — no migration, no rename, no per-session-id cell.
+  const agentCells = () =>
+    Object.keys(window.localStorage).filter(key => /^plobi\.desktop\.composer\.(model|provider)\./.test(key))
+
+  it('stores an agent pick in that agent\'s own cell and leaves every other cell alone', async () => {
+    window.localStorage.setItem('plobi.desktop.composer.model', 'openai/gpt-5.5')
+    window.localStorage.setItem('plobi.desktop.composer.provider', 'openai-codex')
+    window.localStorage.setItem('plobi.desktop.composer.model.agent:prism', 'kimi-k2')
+    window.localStorage.setItem('plobi.desktop.composer.provider.agent:prism', 'moonshot')
+
+    const requestGateway = vi.fn()
+    let controls!: Controls
+
+    render(
+      <Harness
+        activeSessionId={null}
+        scope={agentScope('aura')}
+        onReady={value => (controls = value)}
+        requestGateway={requestGateway}
+      />
+    )
+
+    await expect(
+      controls.selectModel({ model: 'gemini-3-pro', provider: 'google' })
+    ).resolves.toBe(true)
+
+    expect(window.localStorage.getItem('plobi.desktop.composer.model.agent:aura')).toBe('gemini-3-pro')
+    expect(window.localStorage.getItem('plobi.desktop.composer.provider.agent:aura')).toBe('google')
+    // Prism keeps its own pick — the whole point of the report.
+    expect(window.localStorage.getItem('plobi.desktop.composer.model.agent:prism')).toBe('kimi-k2')
+    // The secretary's flat cell is neither written nor moved.
+    expect(window.localStorage.getItem('plobi.desktop.composer.model')).toBe('openai/gpt-5.5')
+    expect(window.localStorage.getItem('plobi.desktop.composer.provider')).toBe('openai-codex')
+    expect(requestGateway).not.toHaveBeenCalled()
+  })
+
+  it('reads and writes the original flat keys for the L1 secretary', async () => {
+    window.localStorage.setItem('plobi.desktop.composer.model', 'deepseek/deepseek-v4-pro')
+    window.localStorage.setItem('plobi.desktop.composer.provider', 'deepseek')
+
+    let controls!: Controls
+
+    render(<Harness activeSessionId={null} scope={L1_SCOPE} onReady={value => (controls = value)} requestGateway={vi.fn()} />)
+
+    await expect(
+      controls.selectModel({ model: 'anthropic/claude-sonnet-4.6', provider: 'anthropic' })
+    ).resolves.toBe(true)
+
+    expect(window.localStorage.getItem('plobi.desktop.composer.model')).toBe('anthropic/claude-sonnet-4.6')
+    expect(window.localStorage.getItem('plobi.desktop.composer.provider')).toBe('anthropic')
+    // A chat with no agent in front of you never grows an agent-scoped cell.
+    expect(agentCells()).toEqual([])
+  })
+
+  it('never lets the flat cell outrank a forced profile reseed', async () => {
+    // Regression guard for the "forgets the LLM setting" profile-swap fix: the
+    // secretary scope resolves to the flat keys, and the flat keys are NOT
+    // authoritative over `force` — the new profile's default is.
+    window.localStorage.setItem('plobi.desktop.composer.model', 'deepseek/deepseek-v4-pro')
+    vi.mocked(getGlobalModelInfo).mockResolvedValue({ model: 'openai/gpt-5.5', provider: 'openai-codex' })
+
+    const { result } = renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        scope: L1_SCOPE,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await result.current.refreshCurrentModel(true)
+
+    expect($currentModel.get()).toBe('openai/gpt-5.5')
+    expect(window.localStorage.getItem('plobi.desktop.composer.model')).toBe('openai/gpt-5.5')
+  })
+
+  it('re-seeds the pill from the other agent\'s own cell on an agent switch', async () => {
+    window.localStorage.setItem('plobi.desktop.composer.model.agent:prism', 'kimi-k2')
+    window.localStorage.setItem('plobi.desktop.composer.provider.agent:prism', 'moonshot')
+    vi.mocked(getGlobalModelInfo).mockResolvedValue({ model: 'openai/gpt-5.5', provider: 'openai-codex' })
+
+    const { result, rerender } = renderHook(
+      ({ scope }: { scope: ScopeProp }) =>
+        useModelControls({
+          activeSessionId: null,
+          scope,
+          queryClient: new QueryClient(),
+          requestGateway: vi.fn()
+        }),
+      { initialProps: { scope: agentScope('aura') as ScopeProp } }
+    )
+
+    // Aura has no cell of its own yet → the profile default seeds it.
+    await result.current.refreshCurrentModel(true)
+    expect($currentModel.get()).toBe('openai/gpt-5.5')
+
+    await expect(
+      result.current.selectModel({ model: 'gemini-3-pro', provider: 'google' })
+    ).resolves.toBe(true)
+    expect($currentModel.get()).toBe('gemini-3-pro')
+
+    // Switching to Prism shows Prism's model, not Aura's — and the agent's own
+    // cell outranks the profile default, so the backend is not even asked.
+    const profileLookupsBefore = vi.mocked(getGlobalModelInfo).mock.calls.length
+
+    rerender({ scope: agentScope('prism') })
+    await result.current.refreshCurrentModel(true)
+
+    expect($currentModel.get()).toBe('kimi-k2')
+    expect($currentProvider.get()).toBe('moonshot')
+    expect(vi.mocked(getGlobalModelInfo).mock.calls).toHaveLength(profileLookupsBefore)
+
+    // Back to Aura: Aura kept its own pick.
+    rerender({ scope: agentScope('aura') })
+    await result.current.refreshCurrentModel(true)
+    expect($currentModel.get()).toBe('gemini-3-pro')
+  })
+
+  it('keeps the desktop-quota branch local-only under any scope', async () => {
+    quotaProvider.mockImplementation((slug: string) => slug === 'antigravity')
+    const requestGateway = vi.fn()
+    let controls!: Controls
+
+    render(
+      <Harness
+        activeSessionId="session-1"
+        isAgentSession
+        scope={agentScope('aura')}
+        onReady={value => (controls = value)}
+        requestGateway={requestGateway}
+      />
+    )
+
+    await expect(
+      controls.selectModel({ model: 'gemini-3-pro', provider: 'antigravity' })
+    ).resolves.toBe(true)
+
+    // Still a pure early return: no config.set, no profile write, no error toast.
+    expect(requestGateway).not.toHaveBeenCalled()
+    expect(setGlobalModel).not.toHaveBeenCalled()
+    expect(notifyError).not.toHaveBeenCalled()
+    expect($currentModel.get()).toBe('gemini-3-pro')
+    // ...it just lands in Aura's cell instead of the shared one.
+    expect(window.localStorage.getItem('plobi.desktop.composer.model.agent:aura')).toBe('gemini-3-pro')
+    expect(window.localStorage.getItem('plobi.desktop.composer.model')).toBeNull()
   })
 })

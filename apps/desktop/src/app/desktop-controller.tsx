@@ -606,6 +606,7 @@ export function DesktopController() {
   const { refreshCurrentModel, selectModel, updateModelOptionsCache } = useModelControls({
     activeSessionId,
     isAgentSession: isL2,
+    scope: chatScope,
     queryClient,
     requestGateway
   })
@@ -830,6 +831,18 @@ export function DesktopController() {
     void refreshCurrentModel(true)
     void refreshActiveProfile()
   }, [activeGatewayProfile, refreshCurrentModel])
+
+  // 裁定 44:「一个 Agent 一张嘴」— the composer's model/provider stickiness is an
+  // attribute of the person you're talking to, not of this window. `chatScope` is
+  // memoized on the route, so this runs on mount and on every L1 ↔ L2 / L2 ↔ L2
+  // switch. `refreshCurrentModel` first re-points the persistence cell at that
+  // scope (and re-hydrates the pill from it, so leaving a project restores the
+  // secretary's own last pick), then: `force` for an agent = that agent's cell
+  // outranks the profile default; `false` for the flat scope = fill only when
+  // empty, so boot and profile-swap behaviour is unchanged.
+  useEffect(() => {
+    void refreshCurrentModel(chatScope?.kind === 'agent')
+  }, [chatScope, refreshCurrentModel])
 
   const composer = useComposerActions({
     activeSessionId,
