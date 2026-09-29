@@ -51,7 +51,7 @@ def test_apply_l2_project_cwd_writes_minimal_yaml_when_missing(tmp_path):
     """Profile 还没有 config.yaml → 落地最小 yaml（terminal.cwd only）。"""
     from plobi.agents.registry import apply_l2_project_cwd
 
-    profile_dir = tmp_path / "l2-Plobi"
+    profile_dir = tmp_path / "l2-plobi"
     profile_dir.mkdir()
     project_dir = tmp_path / "workspace"
     project_dir.mkdir()
@@ -65,7 +65,7 @@ def test_apply_l2_project_cwd_preserves_other_keys(tmp_path):
     """已有 config.yaml → 只加 / 更新 terminal.cwd，其它字段一字不改。"""
     from plobi.agents.registry import apply_l2_project_cwd
 
-    profile_dir = tmp_path / "l2-Nuclide"
+    profile_dir = tmp_path / "l2-nuclide"
     profile_dir.mkdir()
     project_dir = tmp_path / "workspace"
     project_dir.mkdir()
@@ -100,7 +100,7 @@ def test_apply_l2_project_cwd_is_idempotent(tmp_path):
     """同一个绝对路径再写一次 → 返回 False，不重写文件。"""
     from plobi.agents.registry import apply_l2_project_cwd
 
-    profile_dir = tmp_path / "l2-Prism"
+    profile_dir = tmp_path / "l2-prism"
     profile_dir.mkdir()
     project_dir = tmp_path / "workspace"
     project_dir.mkdir()
@@ -148,7 +148,7 @@ def test_l2_diet_does_not_touch_terminal_cwd(tmp_path):
     """WP-L2-DIET 仍剥 terminal 工具集——cwd 是配置字段，不是工具集。"""
     from plobi.agents.registry import apply_l2_project_diet
 
-    profile_dir = tmp_path / "l2-Stithy"
+    profile_dir = tmp_path / "l2-stithy"
     profile_dir.mkdir()
     cfg_path = profile_dir / "config.yaml"
     cfg_path.write_text(
@@ -206,7 +206,7 @@ def test_spawn_writes_terminal_cwd_into_config_yaml(home):
 
     project_dir = home / "workspace"
     project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-Plobi"
+    profile_dir = home / ".plobi" / "profiles" / "l2-plobi"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 
@@ -215,7 +215,7 @@ def test_spawn_writes_terminal_cwd_into_config_yaml(home):
         AgentEntry(
             name="Plobi",
             role="l2_project",
-            profile="l2-Plobi",
+            profile="l2-plobi",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
@@ -236,7 +236,7 @@ def test_spawn_creates_minimal_yaml_when_profile_is_fresh(home):
 
     project_dir = home / "fresh_workspace"
     project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-Fresh"
+    profile_dir = home / ".plobi" / "profiles" / "l2-fresh"
     profile_dir.mkdir(parents=True)
     # 没有 config.yaml —— spawn 的 create_profile 也不创建它。
 
@@ -245,7 +245,7 @@ def test_spawn_creates_minimal_yaml_when_profile_is_fresh(home):
         AgentEntry(
             name="Fresh",
             role="l2_project",
-            profile="l2-Fresh",
+            profile="l2-fresh",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
@@ -321,7 +321,7 @@ def test_ensure_mind_project_agents_does_not_write_cwd_for_butler(tmp_path, monk
     butler = AgentEntry(
         name="Butler",
         role="l2_butler",
-        profile="l2-Butler",
+        profile="l2-butler",
         model="",
         project_path="",
         category="butler",
@@ -339,7 +339,7 @@ def test_spawn_does_not_fabricate_cwd_for_nonexistent_project_path(home):
     """project_path 不存在 → spawn 不写假 cwd。"""
     from plobi.agents.registry import AgentEntry, AgentRegistry
 
-    profile_dir = home / ".plobi" / "profiles" / "l2-Bogus"
+    profile_dir = home / ".plobi" / "profiles" / "l2-bogus"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 
@@ -348,7 +348,7 @@ def test_spawn_does_not_fabricate_cwd_for_nonexistent_project_path(home):
         AgentEntry(
             name="Bogus",
             role="l2_project",
-            profile="l2-Bogus",
+            profile="l2-bogus",
             model="deepseek-chat",
             project_path=str(home / "nope_does_not_exist"),
             category="projects",
@@ -367,7 +367,7 @@ def test_spawn_idempotent_cwd_value_unchanged_on_repeat_spawn(home):
 
     project_dir = home / "idempotent_workspace"
     project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-Idem"
+    profile_dir = home / ".plobi" / "profiles" / "l2-idem"
     profile_dir.mkdir(parents=True)
     (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
 
@@ -376,7 +376,7 @@ def test_spawn_idempotent_cwd_value_unchanged_on_repeat_spawn(home):
         AgentEntry(
             name="Idem",
             role="l2_project",
-            profile="l2-Idem",
+            profile="l2-idem",
             model="deepseek-chat",
             project_path=str(project_dir),
             category="projects",
