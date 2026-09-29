@@ -872,13 +872,20 @@ _AGENDA_ROLE_MARKERS = ("l2_agenda", "secretary-agenda")
 
 
 def agenda_template_entry() -> AgentEntry:
-    """The only L2 ``spawn`` is allowed to create for §8.2 S2."""
+    """The only L2 ``spawn`` is allowed to create for §8.2 S2.
+
+    这里原来硬写着 ``provider="aigw", model="workbuddy/deepseek-chat"``。那是
+    :data:`plobi.routing.models.DEFAULT_ROUTES` 的 L2 兜底抄进了**记录本身**：
+    一旦覆盖写在记录上，`_write_profile_config` 就会把 ``model.provider: aigw`` 盖进
+    日程分身的 config.yaml（2026-09-29 实测他的 l2-agenda 那条一度就是这样，被手工
+    纠回 minimax-cn），而 provider 值会成为选择器的分组标题——裁定 45.4 要保留的
+    是**日志与配置里机器读的 id**，不是替用户决定他没用过哪个提供商。日程 L2 的
+    路由账本（profile 的 plobi/models.json）照旧从 DEFAULT_ROUTES 取，不带上屏。
+    """
     return AgentEntry(
         name=AGENDA_TEMPLATE_NAME,
         role=AGENDA_TEMPLATE_ROLE,
         profile=AGENDA_TEMPLATE_PROFILE,
-        provider="aigw",
-        model="workbuddy/deepseek-chat",
         mind_subtree="Vault/projects/Plobi",
         skills=("plobi-l2-resident",),
         description="日程采集 → SQLite → 看板 → 钉钉 闭环",
