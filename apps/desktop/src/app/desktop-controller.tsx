@@ -605,6 +605,7 @@ export function DesktopController() {
 
   const { refreshCurrentModel, selectModel, updateModelOptionsCache } = useModelControls({
     activeSessionId,
+    isAgentSession: isL2,
     queryClient,
     requestGateway
   })

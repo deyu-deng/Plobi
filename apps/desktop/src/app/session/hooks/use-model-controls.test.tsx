@@ -33,15 +33,18 @@ type Controls = ReturnType<typeof useModelControls>
 
 function Harness({
   activeSessionId,
+  isAgentSession,
   onReady,
   requestGateway
 }: {
   activeSessionId: string | null
+  isAgentSession?: boolean
   onReady: (controls: Controls) => void
   requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
 }) {
   const controls = useModelControls({
     activeSessionId,
+    isAgentSession,
     queryClient: new QueryClient(),
     requestGateway
   })
@@ -130,6 +133,36 @@ describe('useModelControls', () => {
       value: 'claude-sonnet-4.6 --provider anthropic --session'
     })
     expect(requestGateway).not.toHaveBeenCalledWith('slash.exec', expect.anything())
+  })
+
+  // 裁定 43: an L2 分身 is its own profile and owns its own model default. The
+  // base already persists by default (`model.persist_switch_by_default`), so the
+  // only thing an agent conversation must drop is the explicit `--session` opt-out.
+  it('persists the pick for an L2 conversation instead of session-scoping it', async () => {
+    const requestGateway = vi.fn(async () => ({ key: 'model', value: 'kimi-k2' }) as never)
+    let controls!: Controls
+
+    render(
+      <Harness
+        activeSessionId="session-1"
+        isAgentSession
+        onReady={value => (controls = value)}
+        requestGateway={requestGateway}
+      />
+    )
+
+    await expect(
+      controls.selectModel({
+        model: 'kimi-k2',
+        provider: 'moonshot'
+      })
+    ).resolves.toBe(true)
+
+    expect(requestGateway).toHaveBeenCalledWith('config.set', {
+      session_id: 'session-1',
+      key: 'model',
+      value: 'kimi-k2 --provider moonshot'
+    })
   })
 
   it('session-scopes MoA preset selections so they cannot persist as the global gateway default', async () => {

@@ -15,11 +15,24 @@ interface ModelSelection {
 
 interface ModelControlsOptions {
   activeSessionId: string | null
+  /**
+   * True when this conversation belongs to an L2 project 分身 (the controller
+   * already derives it from the route — `isL2`). An L2 is its own profile and
+   * owns its own `config.yaml`, so a model picked here persists to **that
+   * 分身 only** via the base's existing default (`model.persist_switch_by_default`,
+   * True). Non-L2 conversations keep the previous session-scoped behaviour.
+   */
+  isAgentSession?: boolean
   queryClient: QueryClient
   requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
 
-export function useModelControls({ activeSessionId, queryClient, requestGateway }: ModelControlsOptions) {
+export function useModelControls({
+  activeSessionId,
+  isAgentSession = false,
+  queryClient,
+  requestGateway
+}: ModelControlsOptions) {
   const { t } = useI18n()
   const copy = t.desktop
 
@@ -72,9 +85,11 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
   // Returns whether the switch succeeded so callers can await it before applying
   // follow-up changes. The composer model is plain UI state: with no live
   // session it's just stored (and shipped on the next session.create); with one
-  // it's scoped to that session via config.set. It NEVER writes the profile
-  // default — that lives in Settings → Model — so picking a model here can't
-  // silently mutate global config.
+  // it goes through config.set. Scope follows the base's own default rule
+  // (`model.persist_switch_by_default`): an L2 分身 persists the pick into
+  // **its own** profile config, so the project keeps the model next time;
+  // every other conversation stays session-scoped (`--session`) and never
+  // touches the profile default that Settings → Model owns.
   const selectModel = useCallback(
     async (selection: ModelSelection): Promise<boolean> => {
       // Desktop-quota providers (Antigravity, …) are not known to the Plobi
@@ -105,10 +120,14 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       }
 
       try {
+        // An L2 分身 persists by default (that profile's own config.yaml); every
+        // other conversation stays session-scoped with `--session`.
+        const scope = isAgentSession ? '' : ' --session'
+
         await requestGateway('config.set', {
           session_id: activeSessionId,
           key: 'model',
-          value: `${selection.model} --provider ${selection.provider} --session`
+          value: `${selection.model} --provider ${selection.provider}${scope}`
         })
 
         void queryClient.invalidateQueries({ queryKey: ['model-options', activeSessionId] })
@@ -123,7 +142,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
         return false
       }
     },
-    [activeSessionId, copy.modelSwitchFailed, queryClient, requestGateway, updateModelOptionsCache]
+    [activeSessionId, copy.modelSwitchFailed, isAgentSession, queryClient, requestGateway, updateModelOptionsCache]
   )
 
   return { refreshCurrentModel, selectModel, updateModelOptionsCache }
