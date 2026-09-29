@@ -14,9 +14,11 @@ the bottom asserts the real server actually mounts these paths, so a missing
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -187,6 +189,60 @@ def test_post_invalid_id_is_400(client):
     assert response.status_code == 400
     assert response.json()["ok"] is False
     assert "error" in response.json()
+
+
+# --------------------------------------------------------------------------- #
+# R-013: creating an agent must never fabricate a directory this platform
+# cannot mean. Windows-era rows (``D:\Cloud\Projects\<name>``, still seeded by
+# registry.DEFAULT_CLOUD_PROJECTS_ROOT) survive in projects.yaml, and on POSIX a
+# backslash is a legal filename character — so a naive mkdir drops ONE junk dir
+# literally named ``D:\Cloud\Projects\...`` into the server's cwd.
+# --------------------------------------------------------------------------- #
+
+
+WINDOWS_BINDING = r"D:\Cloud\Projects\Gone-Project"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a D:\\ binding is legitimate on Windows")
+def test_post_windows_project_path_creates_no_directory(
+    client, _isolated_state, monkeypatch, tmp_path
+):
+    """Stale Windows binding → record saved, create succeeds, NOTHING on disk."""
+    calls = _stub_spawn(_isolated_state, monkeypatch)
+    # Stand-ins for the server cwd; the registry yaml lives in tmp_path itself.
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+
+    response = client.post(
+        "/api/agents",
+        json={"id": "gone", "category": "projects", "projectPath": WINDOWS_BINDING},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert calls == [("gone", None)]
+    assert _isolated_state.get("gone") is not None
+    # The cwd is untouched, and specifically no literal backslash artefact.
+    assert [p.name for p in cwd.iterdir()] == []
+    assert [p.name for p in Path.cwd().iterdir() if "\\" in p.name] == []
+
+
+def test_post_missing_posix_project_path_is_created(
+    client, _isolated_state, monkeypatch, tmp_path
+):
+    """R-013 preserved: a normal, platform-meaningful binding still gets made."""
+    _stub_spawn(_isolated_state, monkeypatch)
+    target = tmp_path / "Projects" / "Aura"
+
+    response = client.post(
+        "/api/agents",
+        json={"id": "aura", "category": "projects", "projectPath": str(target)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert target.is_dir()
 
 
 def test_post_missing_category_is_400(client, _isolated_state, monkeypatch):
