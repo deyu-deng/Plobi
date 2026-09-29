@@ -1935,6 +1935,7 @@ export function DesktopController() {
               <SecretaryCenterPane
                 cancel={stableCancel}
                 chatScope={chatScope}
+                composer={composer}
                 modelMenuContent={modelMenuContent}
                 submit={stableSubmit}
               />
@@ -1960,11 +1961,13 @@ export function DesktopController() {
 function SecretaryCenterPane({
   cancel,
   chatScope,
+  composer,
   modelMenuContent,
   submit
 }: {
   cancel?: ChatSurfaceProps['cancel']
   chatScope: ChatScope | null
+  composer?: ChatSurfaceProps['composer']
   modelMenuContent?: ChatSurfaceProps['modelMenuContent']
   submit?: ChatSurfaceProps['submit']
 }) {
@@ -1974,7 +1977,13 @@ function SecretaryCenterPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col pt-[var(--titlebar-height)]">
-      <ChatSurface cancel={cancel} modelMenuContent={modelMenuContent} scope={chatScope} submit={submit} />
+      <ChatSurface
+        cancel={cancel}
+        composer={composer}
+        modelMenuContent={modelMenuContent}
+        scope={chatScope}
+        submit={submit}
+      />
     </div>
   )
 }

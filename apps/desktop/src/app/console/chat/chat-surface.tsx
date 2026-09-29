@@ -37,7 +37,7 @@ import { cn } from '@/lib/utils'
 import { $busy, $messages } from '@/store/session'
 
 import { type ChatScope, chatScopeKey } from './scope'
-import { type CancelFn, ScopeChatContext, type SubmitFn } from './scope-context'
+import { type CancelFn, ScopeChatContext, type ScopeComposerActions, type SubmitFn } from './scope-context'
 
 /**
  * Owns the store subscription and the assistant-ui runtime — same parent-chain
@@ -98,6 +98,12 @@ export interface ChatSurfaceProps {
   submit?: SubmitFn
   /** Injected by the desktop controller — the real cancelRun path. */
   cancel?: CancelFn
+  /**
+   * Injected by the desktop controller — its single `useComposerActions`
+   * instance, so the composer's attach surface (files / folders / images /
+   * clipboard image / drops) is wired instead of greyed out.
+   */
+  composer?: ScopeComposerActions
 }
 
 export function ChatSurface({
@@ -105,6 +111,7 @@ export function ChatSurface({
   scope,
   submit,
   cancel,
+  composer,
   modelMenuContent
 }: ChatSurfaceProps): React.ReactElement {
   return (
@@ -114,7 +121,7 @@ export function ChatSurface({
     >
       <ChatRuntimeBoundary cancel={cancel} submit={submit}>
         <Thread clampToComposer />
-        <ScopeChatContext cancel={cancel} modelMenuContent={modelMenuContent} submit={submit}>
+        <ScopeChatContext cancel={cancel} composer={composer} modelMenuContent={modelMenuContent} submit={submit}>
           <ChatBar />
         </ScopeChatContext>
       </ChatRuntimeBoundary>
