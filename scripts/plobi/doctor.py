@@ -102,9 +102,16 @@ def deferred_row(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
     row that hides what it found is indistinguishable from a skipped check.
     """
     hint = DEFERRED_ENABLE_HINTS[check_id]
+    # "Enable:" promised *steps* in front of a hint that is frequently a
+    # statement — the aigw row reads "…Plobi starts this service itself when it
+    # is needed — there is nothing to run by hand", so an imperative label
+    # contradicted the sentence after it. The prefix is an explanation of the
+    # path back to green, which is true for both shapes (real steps for chatlog,
+    # a statement for the app-owned services). Wording is byte-pinned to
+    # apps/desktop/electron/deferred-sidecars.ts — change both together.
     detail = (
         f"{observed} — deferred by R-047 (postponed, not a fault; turns green "
-        f"on its own once live). Enable: {hint}"
+        f"on its own once live). How it comes back: {hint}"
     )
     row: dict[str, Any] = {"id": check_id, "color": DEFERRED, "detail": detail}
     row.update(extra)

@@ -74,7 +74,7 @@ test('a failed probe downgrades the row but never hides what was observed', () =
 
   assert.match(row, /http:\/\/127\.0\.0\.1:8000 unreachable \(no listener\)/)
   assert.match(row, /deferred by R-047/)
-  assert.match(row, /Enable: /)
+  assert.match(row, /How it comes back: /)
 })
 
 test('a ready row reports the observation plainly, with no deferred wording', () => {
@@ -205,8 +205,8 @@ test('red is a state the ledger can actually hold, and it is worded as a fault',
   assert.equal(row.state, 'red')
   assert.match(row.detail, /spawned \/bin\/chatlog but :5030 never answered/)
   assert.match(row.detail, /RED/)
-  // The enable steps stay in the detail for every non-ready row.
-  assert.match(row.detail, /Enable: /)
+  // The "how it comes back" line stays in the detail for every non-ready row.
+  assert.match(row.detail, /How it comes back: /)
   assert.ok(!row.detail.includes(DEFERRED_SUFFIX), 'a real fault must never read as "postponed, not a fault"')
 })
 
@@ -214,7 +214,7 @@ test('a red row with no recorded observation still says it is a fault', () => {
   const red = deferredDetail({ ...observation('aigw', 'ready', ''), observed: '', state: 'red' })
 
   assert.match(red, /RED/)
-  assert.match(red, /Enable: /)
+  assert.match(red, /How it comes back: /)
   assert.ok(!red.includes(DEFERRED_SUFFIX))
 })
 
