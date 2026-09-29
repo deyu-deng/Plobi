@@ -563,6 +563,79 @@ def test_profile_name_is_normalized_to_the_on_disk_id():
     与底座那个函数的等价性钉在 tests/plobi_cli/test_profiles.py（本层不 import plobi_cli）。
     """
     assert AgentEntry(name="Aura", role="l2_project", profile="L2-Aura").profile_name == "l2-aura"
+
+
+# ---------------------------------------------------------------------------
+# 裁定 45 / 42 §42.2 ⑥：没有模型覆盖的分身继承用户配置的默认，不落硬编码路由
+# ---------------------------------------------------------------------------
+
+# 用户 2026-09-29 在本机设置的默认（根 config.yaml 与 13 个分身的实测值）。
+_CONFIGURED_DEFAULT = {
+    "provider": "minimax-cn",
+    "default": "MiniMax-M3",
+    "base_url": "https://api.minimaxi.com/anthropic",
+}
+
+
+def test_spawn_without_model_override_inherits_the_configured_default(spawn_env, home):
+    """注册表那条记录没写 provider/model 时，分身 config.yaml 的 model 节一字不改。
+
+    反例（本次修掉的病症）：新落的 Framelet / Plobi 两条被盖成
+    ``provider: aigw`` + ``default: workbuddy/deepseek-chat``，而 ``base_url`` 还是
+    克隆来的 minimax —— 一个自相矛盾的三元组，用户从没选过它。它来自
+    :data:`plobi.routing.models.DEFAULT_ROUTES` 的硬编码兜底：省略覆盖被当成了
+    「用默认路由」，而那个默认路由和「用户当前配置的默认模型」不是一回事
+    （``e9b6034`` 把 aigw 注册成真 provider 后，可解析闸门也不再拦它）。
+    """
+    import yaml
+
+    profile_dir = _seed_profile_dir(
+        spawn_env,
+        "l2-proj",
+        yaml.safe_dump({"model": dict(_CONFIGURED_DEFAULT)}, allow_unicode=True),
+    )
+    reg = AgentRegistry.load()
+    reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
+    reg.upsert(
+        _entry(name="proj", role="l2_project", profile="l2-proj", provider="", model="")
+    )
+    reg.save()
+
+    result = reg.spawn("proj")
+
+    text = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+    cfg = yaml.safe_load(text)
+    assert cfg["model"] == _CONFIGURED_DEFAULT, "分身被盖上了它没被选择的模型"
+    assert "aigw" not in text, text
+    assert "workbuddy" not in text, text
+    assert result["routing_ok"] is True
+    # ADR-0011 那张路由账本（profile 的 plobi/models.json）照旧落 DEFAULT_ROUTES——
+    # 收口的是屏幕上那份 model 配置，不是路由账本。
+    models = json.loads((profile_dir / "plobi" / "models.json").read_text(encoding="utf-8"))
+    assert "l2_project" in models["roles"]
+
+    # 控制组：同一条 spawn 路径在记录**确实**写了覆盖时照旧落笔。没有这一段，
+    # 上面那句「没写」可能只是 spawn 根本不写 config 的假绿。
+    controlled = _seed_profile_dir(
+        spawn_env,
+        "l2-ctrl",
+        yaml.safe_dump({"model": dict(_CONFIGURED_DEFAULT)}, allow_unicode=True),
+    )
+    provider = _resolvable_provider_name()
+    reg.upsert(
+        _entry(
+            name="ctrl",
+            role="l2_planner",
+            profile="l2-ctrl",
+            provider=provider,
+            model="a-chosen-model",
+        )
+    )
+    reg.save()
+    reg.spawn("ctrl")
+    ctrl_cfg = yaml.safe_load((controlled / "config.yaml").read_text(encoding="utf-8"))
+    assert ctrl_cfg["model"]["provider"] == provider
+    assert ctrl_cfg["model"]["default"] == "a-chosen-model"
     assert AgentEntry(name="Aura", role="l2_project").profile_name == "aura"
     assert AgentEntry(name="Default", role="l2_project").profile_name == "default"
     # 空值不许炸（未设 profile 的老行）
