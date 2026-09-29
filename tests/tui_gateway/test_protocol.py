@@ -274,6 +274,59 @@ def test_clear_pending(server):
     assert server._answers["r1"] == ""
 
 
+# ── A released prompt must be distinguishable from a busy session ─────
+#
+# The pending request only ever lives in this process's memory, so it is gone
+# long before the card leaves the screen: session.interrupt releases it via
+# _clear_pending, and an idle profile backend gets reaped (>600s) or restarted
+# outright.  That used to answer with 4009 — the same code "session busy"
+# returns — and the desktop submit path *deliberately* swallows 4009 and
+# retries (apps/desktop/src/app/session/hooks/use-prompt-actions/utils.ts
+# isSessionBusyError).  A renderer cannot retry a prompt that no longer
+# exists, so 4028 was carved out for "the request is gone".
+
+
+@pytest.mark.parametrize(
+    ("method", "key"),
+    [
+        ("clarify.respond", "answer"),
+        ("sudo.respond", "password"),
+        ("secret.respond", "value"),
+        ("terminal.read.respond", "text"),
+    ],
+)
+def test_answer_for_a_released_prompt_gets_its_own_code(server, method, key):
+    resp = server.handle_request(
+        {"id": "1", "method": method, "params": {"request_id": "gone", key: "typed"}}
+    )
+
+    assert resp["error"]["code"] == 4028, f"{method} must not answer 4009"
+    assert resp["error"]["message"] == f"no pending {key} request"
+
+
+def test_released_prompt_is_not_reported_like_a_busy_session(server):
+    """The renderer's only other signal is the message text (no transport
+    carries the numeric code), so the two cases must stay separable there."""
+    expired = server._respond("r1", {"request_id": "gone", "answer": "x"}, "answer")
+    busy = server._err("r1", 4009, "session busy")
+
+    assert expired["error"]["code"] != busy["error"]["code"]
+    assert "session busy" not in expired["error"]["message"].lower()
+    assert "session busy" not in expired["error"]["message"]
+
+
+def test_answering_a_live_prompt_still_succeeds(server):
+    """Guard the other side of the branch: 4028 means gone, not 'refused'."""
+    ev = threading.Event()
+    server._pending["r1"] = ("sid-x", ev)
+
+    resp = server._respond("r1", {"request_id": "r1", "answer": "yes"}, "answer")
+
+    assert resp["result"] == {"status": "ok"}
+    assert server._answers["r1"] == "yes"
+    assert ev.is_set()
+
+
 # ── Session lookup ───────────────────────────────────────────────────
 
 

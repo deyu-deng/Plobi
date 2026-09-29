@@ -10204,7 +10204,17 @@ def _respond(rid, params, key):
     with _prompt_lock:
         entry = _pending.get(r)
         if not entry:
-            return _err(rid, 4009, f"no pending {key} request")
+            # 4028, NOT 4009.  The pending prompt lives only in this process's
+            # memory, so it is routinely gone while a renderer still shows its
+            # card: the user pressed Stop (_clear_pending in session.interrupt),
+            # or an idle profile backend was reaped/restarted.  4009 means
+            # "session busy" — a *transient* guard that prompt.submit swallows
+            # and retries (see apps/desktop .../use-prompt-actions/utils.ts
+            # isSessionBusyError).  Sharing one code made the two
+            # indistinguishable, so the renderer could only toast this English
+            # string instead of retiring its own dead card.  The message stays
+            # as-is: it is what the client-side predicates match on.
+            return _err(rid, 4028, f"no pending {key} request")
         _, ev = entry
         _answers[r] = params.get(key, "")
         ev.set()

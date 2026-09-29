@@ -2418,6 +2418,7 @@ export const zhHant = defineLocale({
       notReady: '澄清請求尚未就緒',
       gatewayDisconnected: 'Plobi 閘道未連線',
       sendFailed: '無法傳送澄清回應',
+      expired: '這個澄清已失效（回合已停止或後端已重啟），請再問一次。',
       loadingQuestion: '正在載入問題…',
       other: '其他（輸入您的答案）',
       placeholder: '輸入您的答案…',

@@ -68,6 +68,23 @@ const FREEFORM_INPUT_CLASS =
 const CLARIFY_SHELL_CLASS =
   'my-1.5 rounded-md border border-primary/20 bg-(--ui-chat-surface-background) text-[length:var(--conversation-text-font-size)] text-(--ui-text-primary)'
 
+// The gateway releases a pending prompt as soon as the turn is stopped, and
+// drops it entirely when an idle profile backend is reaped or restarted — the
+// pending request only ever lives in the backend's memory. Answering after that
+// is rejected with "no pending <key> request" (tui_gateway/server.py:_respond,
+// error 4028). Match the message, not the code: neither transport keeps the
+// JSON-RPC code on the rejection the renderer sees (apps/shared
+// json-rpc-gateway.ts rebuilds `new Error(frame.error.message)`, and Electron
+// IPC serialises it to a string), which is why every gateway predicate in this
+// app is a message test — cf. isSessionBusyError. Deliberately NOT "session
+// busy": that one is transient and the submit path retries it; this one is
+// final, so the card has to retire itself.
+const EXPIRED_ANSWER_REQUEST = /no pending \w+ request/i
+
+function isExpiredAnswerRequest(error: unknown): boolean {
+  return EXPIRED_ANSWER_REQUEST.test(error instanceof Error ? error.message : String(error))
+}
+
 function ClarifyShell({ children, className, ...props }: ComponentProps<'div'>) {
   return (
     <div className={cn(CLARIFY_SHELL_CLASS, className)} data-slot="clarify-inline" {...props}>
@@ -141,9 +158,18 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
 
   const [draft, setDraft] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // Set when the gateway reports the request is already gone. The answer can
+  // never land, so the panel stops pretending it can: every control goes dead
+  // and one localised line says why, in place of the toast.
+  const [expired, setExpired] = useState(false)
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null)
   const [otherFocused, setOtherFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Single lock for every control in the panel: an answer in flight, or a
+  // request that no longer exists behind it. Keyboard shortcuts obey it too,
+  // so an expired card cannot be answered by pressing A/B/C + Enter.
+  const controlsLocked = submitting || expired
 
   // Race: tool.start fires a tick before clarify.request, so request_id
   // arrives slightly after the tool block mounts. Hold the whole panel on a
@@ -178,6 +204,16 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
         // The matching tool.complete will land shortly after, swapping this
         // panel for the ToolFallback view above.
       } catch (error) {
+        if (isExpiredAnswerRequest(error)) {
+          // Nothing sent from this card will ever be accepted again, and the
+          // backend's message is an internal English string the user can
+          // neither read nor act on. Retire the card where it stands.
+          setSubmitting(false)
+          setExpired(true)
+
+          return
+        }
+
         notifyError(error, copy.sendFailed)
         setSubmitting(false)
       }
@@ -236,7 +272,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
   // field is focused (you're typing, not navigating) so it never eats keystrokes
   // meant for the composer or the Other box.
   useEffect(() => {
-    if (!ready || !hasChoices || submitting) {
+    if (!ready || !hasChoices || controlsLocked) {
       return
     }
 
@@ -276,7 +312,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
     window.addEventListener('keydown', onKeyDown)
 
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [choices, hasChoices, pendingAnswer, ready, selectChoice, submitAnswer, submitting])
+  }, [choices, controlsLocked, hasChoices, pendingAnswer, ready, selectChoice, submitAnswer])
 
   if (loading) {
     return (
@@ -318,7 +354,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
                   selectedChoice === choice && 'text-(--ui-text-primary)'
                 )}
                 data-choice
-                disabled={submitting}
+                disabled={controlsLocked}
                 key={`${index}-${choice}`}
                 onClick={() => selectChoice(choice)}
                 type="button"
@@ -332,7 +368,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
               <KeyBadge char={letterFor(choices.length)} preview={otherFocused} selected={Boolean(trimmedDraft)} />
               <textarea
                 className={FREEFORM_INPUT_CLASS}
-                disabled={submitting}
+                disabled={controlsLocked}
                 onBlur={() => setOtherFocused(false)}
                 onChange={event => onDraftChange(event.target.value)}
                 // Focusing "Other" is a switch to typing your own answer, so it
@@ -353,7 +389,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
         ) : (
           <Textarea
             className={FREEFORM_INPUT_CLASS}
-            disabled={submitting}
+            disabled={controlsLocked}
             onChange={event => onDraftChange(event.target.value)}
             onKeyDown={handleTextareaKey}
             placeholder={copy.placeholder}
@@ -364,10 +400,10 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
         )}
 
         <div className="flex items-center justify-end gap-1">
-          <Button disabled={submitting} onClick={() => void respond('')} size="xs" type="button" variant="text">
+          <Button disabled={controlsLocked} onClick={() => void respond('')} size="xs" type="button" variant="text">
             {copy.skip}
           </Button>
-          <Button disabled={submitting || !pendingAnswer} size="xs" type="submit">
+          <Button disabled={controlsLocked || !pendingAnswer} size="xs" type="submit">
             {submitting ? (
               <Loader2 className="size-3 animate-spin" />
             ) : (
@@ -380,6 +416,12 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
             )}
           </Button>
         </div>
+
+        {expired ? (
+          <p className="leading-snug text-(--ui-text-tertiary)" role="status">
+            {copy.expired}
+          </p>
+        ) : null}
       </form>
     </ClarifyShell>
   )

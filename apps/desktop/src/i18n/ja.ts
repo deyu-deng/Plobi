@@ -2490,6 +2490,7 @@ export const ja = defineLocale({
       notReady: '明確化リクエストはまだ準備できていません',
       gatewayDisconnected: 'Plobi ゲートウェイが接続されていません',
       sendFailed: '明確化応答を送信できませんでした',
+      expired: 'この確認は失効しました（ターンが停止されたか、バックエンドが再起動しました）。もう一度質問してください。',
       loadingQuestion: '質問を読み込み中…',
       other: 'その他（回答を入力）',
       placeholder: '回答を入力…',

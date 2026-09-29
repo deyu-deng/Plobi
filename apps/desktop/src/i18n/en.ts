@@ -2546,6 +2546,7 @@ export const en: Translations = {
       notReady: 'Clarify request is not ready yet',
       gatewayDisconnected: 'Plobi gateway is not connected',
       sendFailed: 'Could not send clarify response',
+      expired: 'This question has expired (the turn was stopped or the backend restarted) — please ask again.',
       loadingQuestion: 'Loading question…',
       other: 'Other (type your answer)',
       placeholder: 'Type your answer…',
