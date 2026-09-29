@@ -1,0 +1,5 @@
+name: aigw-provider
+kind: model-provider
+version: 1.0.0
+description: Local quota gateway (aigw) — OpenAI-compatible, quota-backed channels
+author: Plobi
