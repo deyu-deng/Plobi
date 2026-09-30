@@ -1333,24 +1333,42 @@ def _run_post_setup(post_setup_key: str):
         _print_info("    Switch voices by setting tts.piper.voice in ~/.plobi/config.yaml")
 
     elif post_setup_key == "ddgs":
+        # Install through the tools.lazy_deps allowlist, NOT a hand-rolled
+        # `_pip_install(["-U", "ddgs"])`. A bare `-U ddgs` violates the
+        # Dependency Pinning Policy in AGENTS.md: it installs whatever PyPI
+        # serves today with no ceiling, and it skips both the allowlist and
+        # the exact pin that `search.ddgs` carries. Same call style as the web
+        # provider plugins (plugins/web/exa/provider.py, firecrawl, parallel):
+        # prompt=False, and FeatureUnavailable becomes a clear "not available"
+        # message rather than a traceback.
+        try:
+            from tools.lazy_deps import (
+                ensure as _lazy_ensure,
+                feature_install_command as _lazy_install_command,
+            )
+        except ImportError:
+            _print_warning("    ddgs installer unavailable (tools.lazy_deps not importable)")
+            return
+        # Read the manual remediation command from the mechanism itself, so the
+        # printed pin can never drift from LAZY_DEPS["search.ddgs"].
+        manual_cmd = _lazy_install_command("search.ddgs") or ""
         try:
             __import__("ddgs")
             _print_success("    ddgs is already installed")
         except ImportError:
             _print_info("    Installing ddgs (DuckDuckGo search package)...")
             try:
-                result = _pip_install(["-U", "ddgs", "--quiet"], timeout=300)
-                if result.returncode == 0:
-                    _print_success("    ddgs installed")
-                else:
-                    _print_warning("    ddgs install failed:")
-                    _print_info(f"      {(result.stderr or '').strip()[:300]}")
-                    _print_info("    Run manually: uv pip install -U ddgs")
-                    return
-            except subprocess.TimeoutExpired:
-                _print_warning("    ddgs install timed out (>5min)")
-                _print_info("    Run manually: uv pip install -U ddgs")
+                _lazy_ensure("search.ddgs", prompt=False)
+            except Exception as exc:  # noqa: BLE001 — FeatureUnavailable et al.
+                # Lazy installs may also be refused because the user set
+                # security.allow_lazy_installs=false; exc.reason says which.
+                _print_warning("    ddgs is not available:")
+                _print_info(f"      {str(exc).strip()[:300]}")
+                if manual_cmd:
+                    _print_info(f"    Run manually: {manual_cmd}")
                 return
+            else:
+                _print_success("    ddgs installed")
         _print_info("    No API key required. DuckDuckGo enforces server-side rate limits.")
         _print_info("    Pair with an extract provider if you also need web_extract.")
 

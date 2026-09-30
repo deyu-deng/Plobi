@@ -1,6 +1,11 @@
 """Tests for plobi_cli.tools_config platform tool persistence."""
 
+import ast
+import builtins
+import inspect
 import logging
+import re
+import types
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -1830,3 +1835,180 @@ def test_save_platform_tools_disabling_a_toolset_does_not_touch_disabled_toolset
     assert "todo" not in config["platform_toolsets"]["cli"]
     # disabled_toolsets is untouched by a disable action.
     assert config["agent"]["disabled_toolsets"] == ["memory"]
+
+
+# ---------------------------------------------------------------------------
+# Dependency pinning: the post-setup install path must not bypass lazy_deps
+#
+# Why this exists: `_run_post_setup("ddgs")` used to shell out to
+# `_pip_install(["-U", "ddgs"])`, i.e. "install whatever is newest today".
+# AGENTS.md's Dependency Pinning Policy (and the header of tools/lazy_deps.py)
+# forbid that, and the hand-rolled call also skipped the LAZY_DEPS allowlist +
+# hashes entirely. These tests assert the *relationship* — anything the
+# post-setup path pip-installs must either be absent from LAZY_DEPS or be
+# installed at exactly the pin LAZY_DEPS declares — rather than a snapshot.
+# ---------------------------------------------------------------------------
+
+
+def _lazy_deps_pkg_index():
+    """Map canonical package name -> the exact specs LAZY_DEPS pins it at."""
+    from tools.lazy_deps import LAZY_DEPS
+
+    index = {}
+    for specs in LAZY_DEPS.values():
+        for spec in specs:
+            name = re.match(r"^[A-Za-z0-9_.\-]+", spec)
+            if not name:
+                continue
+            index.setdefault(name.group(0).lower().replace("_", "-"), set()).add(spec)
+    return index
+
+
+def _post_setup_pip_install_specs():
+    """Return every literal spec list passed to _pip_install() in _run_post_setup.
+
+    Parsed with `ast` off the real function source, so the assertion tracks the
+    code rather than a hand-maintained list. Non-literal args (variables such as
+    the kittentts wheel URL) are reported as their enclosing expression name.
+    """
+    tree = ast.parse(inspect.getsource(_run_post_setup))
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "id", None) != "_pip_install" or not node.args:
+            continue
+        first = node.args[0]
+        if not isinstance(first, ast.List):
+            continue
+        specs = [
+            elt.value
+            for elt in first.elts
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+        ]
+        found.append(specs)
+    return found
+
+
+def test_post_setup_never_installs_a_lazy_deps_package_unpinned():
+    """Invariant: every post-setup `_pip_install` spec that names a package with
+    a LAZY_DEPS entry must carry exactly that pinned spec.
+
+    A bare name or `-U <name>` for such a package is the unpinned-install bug
+    class (it let `-U ddgs` through); packages with no LAZY_DEPS entry are out
+    of scope for this file and reported separately.
+    """
+    index = _lazy_deps_pkg_index()
+    assert index, "LAZY_DEPS should not be empty"
+
+    violations = []
+    for specs in _post_setup_pip_install_specs():
+        for spec in specs:
+            if spec.startswith("-") or "://" in spec or spec.startswith(("/", ".")):
+                continue  # flag, direct wheel URL, or local path
+            name = re.match(r"^[A-Za-z0-9_.\-]+", spec)
+            if not name:
+                continue
+            key = name.group(0).lower().replace("_", "-")
+            if key in index and spec not in index[key]:
+                violations.append((key, spec, sorted(index[key])))
+
+    assert not violations, (
+        "post-setup installs packages that tools.lazy_deps pins, but not at the "
+        f"pinned version: {violations}"
+    )
+
+
+def test_ddgs_post_setup_routes_through_lazy_deps_ensure(monkeypatch, capsys):
+    """ddgs has a LAZY_DEPS entry (search.ddgs), so the post-setup hook must go
+    through ensure() with prompt=False and never touch _pip_install."""
+    import tools.lazy_deps as lazy_deps
+
+    calls = []
+
+    def fake_ensure(feature, *, prompt=True):
+        calls.append((feature, prompt))
+
+    monkeypatch.setattr(lazy_deps, "ensure", fake_ensure)
+    monkeypatch.setattr(
+        "plobi_cli.tools_config._pip_install",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("post-setup must not hand-roll _pip_install for ddgs")
+        ),
+    )
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        # Only `ddgs` is reported missing; every other import (including
+        # tools.lazy_deps itself) must reach the real importer.
+        if name == "ddgs":
+            raise ImportError("no module named ddgs")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    _run_post_setup("ddgs")
+
+    assert calls == [("search.ddgs", False)]
+    assert "ddgs installed" in capsys.readouterr().out
+
+
+def test_ddgs_post_setup_skips_install_when_already_importable(monkeypatch, capsys):
+    """Already-installed ddgs must not trigger an install at all."""
+    import tools.lazy_deps as lazy_deps
+
+    calls = []
+    monkeypatch.setattr(
+        lazy_deps, "ensure",
+        lambda feature, **kw: calls.append(feature),
+    )
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "ddgs":
+            return types.ModuleType("ddgs")  # deterministic "already installed"
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    _run_post_setup("ddgs")
+
+    assert calls == []
+    assert "already installed" in capsys.readouterr().out
+
+
+def test_ddgs_post_setup_reports_the_pinned_manual_command(monkeypatch, capsys):
+    """When ensure() refuses (offline, or security.allow_lazy_installs=false),
+    the message must state the exact LAZY_DEPS pin — never `-U ddgs`."""
+    import tools.lazy_deps as lazy_deps
+
+    from tools.lazy_deps import FeatureUnavailable
+
+    pin = lazy_deps.feature_specs("search.ddgs")[0]
+
+    def _boom(feature, *, prompt=True):
+        raise FeatureUnavailable(
+            feature, (pin,), "lazy installs disabled (security.allow_lazy_installs=false)"
+        )
+
+    monkeypatch.setattr(lazy_deps, "ensure", _boom)
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "ddgs":
+            raise ImportError("no module named ddgs")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    _run_post_setup("ddgs")
+
+    out = capsys.readouterr().out
+    assert pin in out, f"expected the pinned spec {pin!r} in: {out}"
+    assert "-U ddgs" not in out
+    # The remediation hint is derived from the mechanism, so it must not be a
+    # hardcoded second copy of the version literal.
+    assert "not available" in out
