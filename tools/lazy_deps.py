@@ -113,6 +113,15 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "search.exa": ("exa-py==2.10.2",),
     "search.firecrawl": ("firecrawl-py==4.17.0",),
     "search.parallel": ("parallel-web==0.4.2",),
+    # DuckDuckGo through the `ddgs` package — the only web backend that needs
+    # no API key, and the only one whose availability is decided by *package
+    # presence* (see tools.web_tools._ddgs_package_importable) instead of an
+    # env var. That makes this allowlist entry load-bearing rather than
+    # cosmetic: with nothing to install and no key to detect, a fresh install
+    # leaves the backend permanently dark and the tool dead-ends on
+    # "ddgs package is not installed — run `pip install ddgs`". The install
+    # site is tools.web_tools._ensure_ddgs_package.
+    "search.ddgs": ("ddgs==9.16.0",),
 
     # ─── TTS providers ─────────────────────────────────────────────────────
     # Pinned to exact versions to match pyproject.toml's no-ranges policy

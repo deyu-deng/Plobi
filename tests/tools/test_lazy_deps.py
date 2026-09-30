@@ -448,3 +448,157 @@ class TestRefreshActiveFeatures:
         result = ld.refresh_active_features()
         assert result["a.ok"] == "current"
         assert result["b.fail"].startswith("failed:")
+
+
+# ---------------------------------------------------------------------------
+# Every web search backend that needs an external package must be
+# lazy-installable (the `ddgs` gap)
+#
+# ``tools.web_tools._LEGACY_WEB_BACKENDS`` is eight search backends. Seven are
+# gated on an API key, so on a fresh install they are dark for a *user* reason
+# — no credentials — and ``plobi tools`` exists to fix that. ``ddgs`` is the
+# one backend gated on nothing but whether its Python package imports, which
+# makes its absence a bug in THIS file rather than a setup step: with no
+# allowlist entry there is no feature name for the backend to ``ensure()``
+# against, so the only keyless search backend can never light up on a fresh
+# install.
+#
+# Don't snapshot the SDK list (that breaks the moment a backend is added).
+# Derive "needs an external package" from the provider sources minus the core
+# dependency list, then assert the relationship, so the next backend wired
+# without an entry fails here too.
+# ---------------------------------------------------------------------------
+
+
+def _repo_root():
+    from pathlib import Path
+    return Path(__file__).resolve().parents[2]
+
+
+def _third_party_imports_in_web_providers() -> dict[str, set[str]]:
+    """Map provider backend name -> third-party top-level modules it imports.
+
+    "Third-party" = not stdlib and not a top-level directory/module of this
+    repo. Reads the provider *source* rather than importing it, so a missing
+    SDK cannot hide the fact that the provider needs one.
+    """
+    import ast
+    import sys
+    from pathlib import Path
+
+    root = _repo_root()
+    internal = {
+        p.name for p in root.iterdir()
+        if p.is_dir() and not p.name.startswith((".", "__"))
+    } | {p.stem for p in root.glob("*.py")} | {"tests"}
+
+    out: dict[str, set[str]] = {}
+    for provider_py in sorted((root / "plugins" / "web").glob("*/provider.py")):
+        tree = ast.parse(provider_py.read_text(encoding="utf-8"))
+        mods: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    mods.add(alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                mods.add(node.module.split(".")[0])
+        external = {
+            m for m in mods
+            if m not in sys.stdlib_module_names and m not in internal
+        }
+        if external:
+            out[provider_py.parent.name] = external
+    return out
+
+
+def _core_dependency_names() -> set[str]:
+    """Every package the base install already ships (both name spellings)."""
+    import tomllib
+
+    data = tomllib.loads(
+        (_repo_root() / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    names = set()
+    for spec in data["project"]["dependencies"]:
+        pkg = ld._pkg_name_from_spec(spec).lower()
+        names.add(pkg)
+        names.add(pkg.replace("-", "_"))
+    return names
+
+
+class TestWebBackendLazyDepCoverage:
+    def test_every_package_gated_web_backend_has_a_lazy_entry(self):
+        """The invariant whose absence let ddgs ship un-installable."""
+        core = _core_dependency_names()
+        coverage = _third_party_imports_in_web_providers()
+        # Sanity: the scan works, or this test would pass vacuously.
+        assert coverage, "source scan found no web provider imports at all"
+
+        missing = []
+        for backend, modules in coverage.items():
+            # httpx / aiohttp etc. are core deps — any backend may use them
+            # without an opt-in install. Only a module the base install does
+            # NOT ship makes this backend lazy-deps-dependent.
+            if not {m for m in modules if m not in core}:
+                continue
+            if f"search.{backend}" not in ld.LAZY_DEPS:
+                missing.append(
+                    f"search.{backend} (needs {sorted(m for m in modules if m not in core)})"
+                )
+        assert not missing, (
+            "web search backends that import a package outside the core "
+            f"dependencies have no LAZY_DEPS entry: {missing}"
+        )
+
+    def test_every_web_search_feature_names_a_known_backend(self):
+        """Reverse direction: no orphan / mistyped ``search.*`` keys.
+
+        A feature name nothing resolves to is a dead allowlist entry — the
+        ``ensure()`` call site has to match it by hand.
+        """
+        import tools.web_tools as wt
+
+        for feature in ld.LAZY_DEPS:
+            if not feature.startswith("search."):
+                continue
+            backend = feature.split(".", 1)[1]
+            assert backend in wt._LEGACY_WEB_BACKENDS, (
+                f"{feature!r} is not a web backend tools.web_tools knows about"
+            )
+
+    def test_ddgs_is_the_keyless_package_gated_backend(self):
+        """Why ddgs specifically needs an entry: no env var, needs a package.
+
+        A provider that asks for no credentials is only reachable through the
+        lazy-install path — there is no key for ``plobi tools`` to prompt for.
+        """
+        from plugins.web.ddgs.provider import DDGSWebSearchProvider
+
+        schema = DDGSWebSearchProvider().get_setup_schema()
+        assert schema["env_vars"] == [], (
+            "ddgs is supposed to need no API key; if it now requires one it is "
+            "gated like the paid backends and the lazy-deps rationale moves"
+        )
+        assert _third_party_imports_in_web_providers()["ddgs"] == {"ddgs"}
+        assert "search.ddgs" in ld.LAZY_DEPS
+
+    def test_search_backend_specs_are_exact_pins(self):
+        """Policy stated in LAZY_DEPS: exact pins, no ranges.
+
+        Asserts the *shape* the file documents, not the version literal, so a
+        routine pin bump does not break CI.
+        """
+        for feature, specs in ld.LAZY_DEPS.items():
+            if not feature.startswith("search."):
+                continue
+            for spec in specs:
+                name, _, pinned = spec.partition("==")
+                assert pinned, (
+                    f"{feature}: spec {spec!r} is not an exact pin; LAZY_DEPS "
+                    "pins to exact versions to match pyproject's no-ranges policy"
+                )
+                assert not any(op in pinned for op in (">", "<", "~", "!")), (
+                    f"{feature}: spec {spec!r} stacks a range on top of the pin"
+                )
+                assert ld._pkg_name_from_spec(spec) == name
+
