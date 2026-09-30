@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from . import agent_ask as AA
 from . import hard_route as HR
 from . import master_tools as MT
 from . import tools as T
@@ -70,6 +71,17 @@ _MASTER_TOOLS = (
         MT.handle_checkin_respond,
         MT.CHECKIN_RESPOND_SCHEMA["description"],
         "🗓",
+    ),
+    # ── 裁定 50.4（甲）：总秘书当面问某个项目分身 ─────────────────────
+    # Not a board handoff and not a note read-off-disk: the 分身 itself runs as
+    # a subprocess and its own session is the record. Gated by its own
+    # ``check_fn`` below, so the schema is absent when there is nobody to ask.
+    (
+        "plobi_agent_ask",
+        AA.AGENT_ASK_SCHEMA,
+        AA.handle_agent_ask,
+        AA.AGENT_ASK_SCHEMA["description"],
+        "🙋",
     ),
 )
 
@@ -159,14 +171,21 @@ def register(ctx) -> None:
     # check_fn。Master 组 (status / preview / dispatch / approve) 切到
     # 恒 False；secretary 组 (secretary_ask / checkin_respond) 保持
     # ``check_plobi_master_mode``——L1 这周只剩这两张嘴。
+    # ``plobi_agent_ask``（裁定 50.4 甲）自带门槛：在那道嘴门之外还要求
+    # 名册里真有一个没归档的项目分身，否则零 schema 足迹。
     _L1_MOUTH_CLOSED = {
         "plobi_master_status",
         "plobi_master_preview",
         "plobi_master_dispatch",
         "plobi_master_approve",
     }
+    _OWN_CHECK_FN = {
+        "plobi_agent_ask": AA.check_agent_ask_available,
+    }
     for name, schema, handler, description, emoji in _MASTER_TOOLS:
-        if name in _L1_MOUTH_CLOSED:
+        if name in _OWN_CHECK_FN:
+            check_fn = _OWN_CHECK_FN[name]
+        elif name in _L1_MOUTH_CLOSED:
             check_fn = MT.check_plobi_l1_mouth_disabled
         else:
             # plobi_secretary_ask / plobi_checkin_respond
@@ -197,8 +216,9 @@ def register(ctx) -> None:
     from . import l1_budget as _l1b
     ctx.register_hook("on_session_start", _l1b.on_session_start)
     logger.info(
-        "plobi-north-star: registered deep tool 'plobi' + 5 master "
-        "narrow tools (incl. plobi_secretary_ask) + gateway hook + §8.2 hard route"
+        "plobi-north-star: registered deep tool 'plobi' + 6 narrow tools "
+        "(incl. plobi_secretary_ask, plobi_agent_ask) + gateway hook "
+        "+ §8.2 hard route"
         " + L1 budget hook"
     )
 
