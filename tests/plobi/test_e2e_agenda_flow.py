@@ -1,7 +1,7 @@
 """M1 全链路端到端：一条群消息走完 采集→规则→确认→入库(pending)→推送→看板→落定。
 
-对应验收：docs/specs/MVP-AI-Secretary-Requirements.md §3.2/§3.3 与 §8 第 6 项；
-状态机对齐 docs/specs/ui-l1-console-spec.md §4（确认入口三处等价）。
+对应验收：Docs/ROADMAP.md §4 M1 的四条可测量标准与验收表（原 MVP-AI-Secretary-Requirements §3.2/§3.3 与 §8 第 6 项）；
+状态机对齐 Docs/specs/console-ui.md §4（确认入口三处等价）。
 
 "群里通知明天调课" 场景：
     微信班级群消息「明天的高数课调到下午3点」
