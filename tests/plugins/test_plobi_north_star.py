@@ -164,14 +164,16 @@ def test_register_deep_tool_and_secretary_surface(ns):
             return None
 
     ns.register(Ctx())
+    # Relationship, not a snapshot: the deep tool ships first, and everything
+    # the plugin declares in ``_MASTER_TOOLS`` gets registered after it, in
+    # order. The old literal list drifted the moment
+    # ``plobi_checkin_respond`` landed.
     assert registered[0] == "plobi"
-    assert registered[1:] == [
-        "plobi_master_status",
-        "plobi_master_preview",
-        "plobi_master_dispatch",
-        "plobi_master_approve",
-        "plobi_secretary_ask",
-    ]
+    assert registered[1:] == [name for name, *_rest in ns._MASTER_TOOLS]
+    # The secretary's mouths: 裁定 33.x's two, plus 裁定 50.4's face-to-face
+    # question to a project 分身. Dropping any of them is a product regression.
+    for mouth in ("plobi_secretary_ask", "plobi_checkin_respond", "plobi_agent_ask"):
+        assert mouth in registered, mouth
 
 
 def test_boot_get_north_star(tmp_home):

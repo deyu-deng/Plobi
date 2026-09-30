@@ -89,6 +89,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from plobi_cli.plobi_bin import resolve_plobi_argv
 from plobi_cli.sqlite_util import add_column_if_missing as _add_column_if_missing
 from toolsets import get_toolset_names
 
@@ -7497,120 +7498,12 @@ def _rotate_worker_log(
         pass
 
 
-def _module_plobi_argv() -> list[str]:
-    """Return the interpreter-bound Plobi CLI invocation."""
-    # ``plobi_cli.main`` is the console-script target declared in
-    # pyproject.toml, NOT a top-level ``plobi`` package — there is no
-    # ``plobi`` package to import.
-    return [sys.executable, "-m", "plobi_cli.main"]
-
-
-def _absolute_plobi_path(path: str) -> str:
-    """Return an absolute filesystem path for a resolved Plobi shim."""
-    expanded = os.path.expanduser(path)
-    return expanded if os.path.isabs(expanded) else os.path.abspath(expanded)
-
-
-def _looks_like_path(value: str) -> bool:
-    """Return true when a command override is an explicit path, not a name."""
-    expanded = os.path.expanduser(value)
-    return (
-        expanded.startswith("~")
-        or os.path.isabs(expanded)
-        or bool(os.path.dirname(expanded))
-        or "\\" in expanded
-        or bool(re.match(r"^[A-Za-z]:", expanded))
-    )
-
-
-def _is_windows_batch_shim(path: str) -> bool:
-    """Return true for Windows shell/batch shims that should not be argv[0]."""
-    return path.lower().endswith((".cmd", ".bat"))
-
-
-def _path_search_names(command: str) -> list[str]:
-    """Return executable names to try for an unqualified command."""
-    if not _IS_WINDOWS or os.path.splitext(command)[1]:
-        return [command]
-    raw = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
-    exts = [ext for ext in raw.split(";") if ext]
-    return [command + ext for ext in exts]
-
-
-def _safe_which_no_cwd(command: str) -> Optional[str]:
-    """Resolve a bare command from PATH without implicit current-dir search.
-
-    ``shutil.which`` follows platform search behavior. On Windows that can
-    include the current directory before PATH for bare names, which is not a
-    safe dispatcher primitive. This resolver only considers explicit PATH
-    entries and skips empty / ``.`` entries.
-    """
-    path_env = os.environ.get("PATH", "")
-    for raw_dir in path_env.split(os.pathsep):
-        if not raw_dir or raw_dir == ".":
-            continue
-        directory = os.path.expanduser(raw_dir)
-        for name in _path_search_names(command):
-            candidate = os.path.join(directory, name)
-            if not os.path.isfile(candidate):
-                continue
-            if _IS_WINDOWS or os.access(candidate, os.X_OK):
-                return candidate
-    return None
-
-
-def _plobi_path_argv(path: str) -> list[str]:
-    """Return argv for a resolved Plobi executable path.
-
-    Windows batch shims (`.cmd` / `.bat`) are not safe as argv[0] for
-    worker launches because the argument vector includes task-derived
-    values. Prefer the interpreter-bound module form whenever the resolved
-    executable is only a shell shim.
-    """
-    if _IS_WINDOWS and _is_windows_batch_shim(path):
-        return _module_plobi_argv()
-    return [_absolute_plobi_path(path)]
-
-
-def _resolve_plobi_argv() -> list[str]:
-    """Resolve the ``plobi`` invocation as argv parts for ``Popen``.
-
-    Tries in order:
-
-    1. ``$PLOBI_BIN`` — explicit operator override. Path-like values are
-       normalized to absolute paths; bare command names keep normal PATH
-       semantics and never prefer a same-directory file before ``PATH``.
-    2. ``shutil.which("plobi")`` — the console-script shim, normalized to
-       an absolute path. On Windows, ``which`` can return a relative
-       ``.\\plobi.CMD`` when the current directory is on ``PATH``; directly
-       launching batch shims is also unsafe with task-derived argv. The
-       dispatcher therefore falls back to the interpreter-bound module form
-       for implicit ``.cmd`` / ``.bat`` shims.
-    3. ``sys.executable -m plobi_cli.main`` — fallback for setups where
-       Plobi is launched from a venv and the ``plobi`` shim is not on
-       the dispatcher's ``$PATH`` (cron, systemd ``User=`` services,
-       launchd jobs, detached processes, etc.). Goes through the running
-       interpreter so the result is independent of ``$PATH``.
-
-    Mirrors ``gateway.run._resolve_plobi_bin`` for the same reason. Kept
-    local (not imported from gateway) because ``plobi_cli`` sits below
-    ``gateway`` in the dependency order.
-    """
-    import shutil
-
-    env_bin = os.environ.get("PLOBI_BIN", "").strip()
-    if env_bin:
-        if _looks_like_path(env_bin):
-            return _plobi_path_argv(env_bin)
-        resolved_env_bin = _safe_which_no_cwd(env_bin)
-        if resolved_env_bin:
-            return _plobi_path_argv(resolved_env_bin)
-        return _module_plobi_argv()
-
-    plobi_bin = _safe_which_no_cwd("plobi") if _IS_WINDOWS else shutil.which("plobi")
-    if plobi_bin:
-        return _plobi_path_argv(plobi_bin)
-    return _module_plobi_argv()
+# ``plobi`` argv resolution lives in the shared ``plobi_cli.plobi_bin`` helper
+# so that other child-spawning surfaces (e.g. the L1 secretary's
+# ``plobi_agent_ask`` tool) reuse the exact same recipe instead of copying it a
+# third time. This alias keeps the dispatcher's call site — and the tests that
+# monkeypatch ``kanban_db._resolve_plobi_argv`` — working unchanged.
+_resolve_plobi_argv = resolve_plobi_argv
 
 
 def _worker_terminal_timeout_env(
