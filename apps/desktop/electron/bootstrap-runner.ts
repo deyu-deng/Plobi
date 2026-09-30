@@ -249,6 +249,21 @@ async function resolveInstallScript({
     // not cached; download
   }
 
+  // A locally-built desktop app is stamped source:"local" (and usually
+  // dirty:true) against a commit that exists only on the builder's machine and
+  // was never pushed. raw.githubusercontent.com can only serve pushed commits,
+  // so downloading install.sh at that SHA is a guaranteed 404 and the user is
+  // handed an HTTP error instead of anything they can act on. Short-circuit
+  // before touching the network for those builds; genuine distributed
+  // (source:"ci", clean) stamps fall through to the download below.
+  if (installStamp.source === 'local' || installStamp.dirty) {
+    throw new Error(
+      'This Plobi desktop build was made from an unpublished local checkout, so it cannot install its gateway from GitHub. ' +
+        'Use the Plobi CLI already on this machine (usually ~/.local/bin/plobi), choose "Use local gateway", ' +
+        'or rebuild the app from a pushed commit.'
+    )
+  }
+
   emit({
     type: 'log',
     line: `[bootstrap] fetching ${installScriptName()} for ${installStamp.commit.slice(0, 12)} from GitHub`

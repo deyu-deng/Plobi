@@ -32,7 +32,7 @@ import {
 import nodePty from 'node-pty'
 
 import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './backend-command'
-import { buildDesktopBackendEnv, normalizePlobiHomeRoot } from './backend-env'
+import { buildDesktopBackendEnv, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
@@ -1426,7 +1426,7 @@ function unpackedPathFor(filePath) {
   return filePath.replace(/app\.asar(?=$|[\\/])/, 'app.asar.unpacked')
 }
 
-function findOnPath(command) {
+function findOnPath(command, options: any = {}) {
   if (!command) {
     return null
   }
@@ -1443,7 +1443,7 @@ function findOnPath(command) {
     return command
   }
 
-  const pathEntries = String(process.env.PATH || '')
+  const pathEntries = String(options.searchPath || process.env.PATH || '')
     .split(path.delimiter)
     .filter(Boolean)
 
@@ -3581,7 +3581,19 @@ function resolvePlobiBackend(backendArgs) {
         rememberLog(`Ignoring Windows Plobi override under WSL: ${plobiOverride}`)
       }
     } else {
-      plobiCommand = findOnPath('plobi')
+      // A Finder/Dock launch inherits launchd's minimal PATH, which omits the
+      // per-user bin dirs where an existing CLI install lives (~/.local/bin).
+      // Search an augmented PATH that reuses the backend's sane-PATH builder so
+      // an already-installed `plobi` is reachable from the GUI exactly as it is
+      // from a shell. Resolution order is unchanged -- this only widens step 4.
+      plobiCommand = findOnPath('plobi', {
+        searchPath: desktopCliSearchPath({
+          home: app.getPath('home'),
+          plobiHome: PLOBI_HOME,
+          venvRoot: VENV_ROOT,
+          currentPath: String(process.env.PATH || '')
+        })
+      })
     }
 
     if (plobiCommand) {

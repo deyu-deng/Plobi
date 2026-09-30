@@ -73,6 +73,34 @@ function buildDesktopBackendPath({
   return appendUniquePathEntries([plobiNodeBin, venvBin, currentPath, saneEntries], { delimiter })
 }
 
+// desktopCliSearchPath — the PATH an already-installed `plobi` CLI is discovered
+// against. Reuses buildDesktopBackendPath's sane-PATH surface (which already
+// folds in Homebrew, the Plobi-managed node/venv bins, and the system dirs) and
+// additionally prepends the well-known per-user install bins. A GUI app launched
+// from Finder/Dock inherits launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
+// that omits ~/.local/bin and ~/.cargo/bin — exactly where a CLI install lives —
+// so widening the search here mirrors the reachability a shell launch has.
+// POSIX only; Windows CLI discovery runs off the installer/registry probes and a
+// bare dir scan would pick up the wrong (extensionless) file.
+function desktopCliSearchPath({
+  home,
+  plobiHome,
+  venvRoot,
+  currentPath = '',
+  platform = process.platform,
+  pathModule = pathModuleForPlatform(platform)
+}: any = {}) {
+  const base = buildDesktopBackendPath({ plobiHome, venvRoot, currentPath, platform, pathModule })
+
+  if (platform === 'win32' || !home) {
+    return base
+  }
+
+  const userBins = [pathModule.join(home, '.local', 'bin'), pathModule.join(home, '.cargo', 'bin')]
+
+  return appendUniquePathEntries([userBins, base], { delimiter: delimiterForPlatform(platform) })
+}
+
 function normalizePlobiHomeRoot(plobiHome, { pathModule = pathModuleForPlatform(process.platform) }: any = {}) {
   if (!plobiHome) {
     return plobiHome
@@ -116,6 +144,7 @@ export {
   buildDesktopBackendEnv,
   buildDesktopBackendPath,
   delimiterForPlatform,
+  desktopCliSearchPath,
   normalizePlobiHomeRoot,
   pathEnvKey,
   POSIX_SANE_PATH_ENTRIES
