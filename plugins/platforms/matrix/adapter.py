@@ -355,9 +355,23 @@ _OUTBOUND_MENTION_RE = re.compile(
     r"(?<![\w/])(@[0-9A-Za-z._=/-]+:[0-9A-Za-z.-]+(?::\d+)?)"
 )
 
+# Remediation text shown when the E2EE package group is missing.
+#
+# This must NOT hand out a `pip install <names>` command. Every one of those
+# packages is version-pinned in tools/lazy_deps.py under
+# ``LAZY_DEPS["platform.matrix"]``, and that entry carries the
+# ``aiohttp==3.14.1`` floor that dodges CVE-2026-34993 (RCE) plus
+# CVE-2026-47265/34513/34518/34519/34520/34525. A hand-typed pip line resolves
+# aiohttp freely and can overwrite the patched copy already in the venv — and
+# it tells a human to run a command Plobi is supposed to run itself. So state
+# what is missing and which in-app action installs it.
 _E2EE_INSTALL_HINT = (
-    "Install with: pip install 'mautrix[encryption]' asyncpg aiosqlite  "
-    "(requires libolm C library)"
+    "The Matrix encryption packages (mautrix with its encryption support, "
+    "plus the database and proxy libraries) are not installed. Plobi installs "
+    "them itself — run `plobi setup` and configure Matrix under Messaging "
+    "Platforms. Encrypted rooms additionally need the libolm C library. "
+    "If installs stay refused, set security.allow_lazy_installs back to true "
+    "in config.yaml."
 )
 
 _MATRIX_IMAGE_FILENAME_EXTS = frozenset({
@@ -478,7 +492,8 @@ def _create_matrix_session(proxy_url: str | None):
         except ImportError:
             logger.warning(
                 "aiohttp_socks not installed — SOCKS proxy %s ignored. "
-                "Run: pip install aiohttp-socks",
+                "It ships with the Matrix package group, which Plobi installs "
+                "during `plobi setup` (Messaging Platforms → Matrix).",
                 proxy_url,
             )
             return aiohttp.ClientSession(trust_env=True)
@@ -720,10 +735,9 @@ def check_matrix_requirements() -> bool:
             return False
         if not ensure_and_bind("platform.matrix", _import, globals(), prompt=False):
             logger.warning(
-                "Matrix: required packages not installed (%s). "
-                "Run: pip install 'mautrix[encryption]' asyncpg aiosqlite "
-                "Markdown aiohttp-socks",
+                "Matrix: required packages not installed (%s). %s",
                 ", ".join(missing) if missing else "platform.matrix",
+                _E2EE_INSTALL_HINT,
             )
             return False
 
@@ -4392,7 +4406,16 @@ async def _standalone_send(
     try:
         import aiohttp
     except ImportError:
-        return {"error": "aiohttp not installed. Run: pip install aiohttp"}
+        # No raw pip command: aiohttp is pinned inside
+        # LAZY_DEPS["platform.matrix"], and Plobi runs that install itself.
+        return {
+            "error": (
+                "Matrix sending is unavailable because its HTTP library is not "
+                "installed. Plobi installs the Matrix packages during setup — "
+                "run `plobi setup` and configure Matrix under Messaging "
+                "Platforms, then retry."
+            )
+        }
     try:
         homeserver = (extra.get("homeserver") or os.getenv("MATRIX_HOMESERVER", "")).rstrip("/")
         token = token or os.getenv("MATRIX_ACCESS_TOKEN", "")
@@ -4478,35 +4501,44 @@ def interactive_setup() -> None:
             print_success("E2EE enabled")
 
         matrix_pkg = "mautrix[encryption]" if want_e2ee else "mautrix"
+        # Every install here goes through tools/lazy_deps: the allowlist, the
+        # security.allow_lazy_installs gate, and the exact pins in
+        # LAZY_DEPS["platform.matrix"] — including aiohttp==3.14.1, the patched
+        # floor for CVE-2026-34993 (RCE). There is deliberately NO hand-rolled
+        # `_pip_install([matrix_pkg])` fallback on this path: pip resolving a
+        # bare `mautrix` is free to pick a different aiohttp and overwrite the
+        # pinned copy the venv already has. Same call style as the web provider
+        # plugins and plobi_cli.tools_config's ddgs post-setup.
         try:
-            from tools.lazy_deps import ensure as _lazy_ensure, feature_missing
+            from tools.lazy_deps import (
+                ensure as _lazy_ensure,
+                feature_install_command as _lazy_install_command,
+                feature_missing,
+            )
+        except ImportError:
+            print_warning(
+                "Matrix package installer is unavailable (tools.lazy_deps not "
+                "importable) — installing nothing. Matrix will stay disabled "
+                "until its packages are present."
+            )
+        else:
+            # Read the manual remediation line from the mechanism itself, so the
+            # printed pins can never drift from LAZY_DEPS["platform.matrix"].
+            manual_cmd = _lazy_install_command("platform.matrix") or ""
             _missing_before = feature_missing("platform.matrix")
             if _missing_before:
                 print_info(f"Installing {matrix_pkg} (+ {len(_missing_before)} runtime deps)...")
                 try:
                     _lazy_ensure("platform.matrix", prompt=False)
-                    print_success(f"{matrix_pkg} installed")
-                except Exception as exc:
-                    print_warning(
-                        "Install failed — run manually: pip install "
-                        "'mautrix[encryption]' asyncpg aiosqlite Markdown aiohttp-socks"
-                    )
-                    print_info(f"  Error: {exc}")
-        except ImportError:
-            try:
-                __import__("mautrix")
-            except ImportError:
-                print_info(f"Installing {matrix_pkg}...")
-                from plobi_cli.tools_config import _pip_install
-
-                result = _pip_install([matrix_pkg])
-                if result.returncode == 0:
-                    print_success(f"{matrix_pkg} installed")
+                except Exception as exc:  # noqa: BLE001 — FeatureUnavailable et al.
+                    # Lazy installs can also be refused because the user set
+                    # security.allow_lazy_installs=false; exc says which.
+                    print_warning("Matrix packages could not be installed:")
+                    print_info(f"  {str(exc).strip()[:300]}")
+                    if manual_cmd:
+                        print_info(f"  Run manually: {manual_cmd}")
                 else:
-                    print_warning(
-                        f"Install failed — run manually: uv pip install "
-                        f"'{matrix_pkg}' asyncpg aiosqlite Markdown aiohttp-socks"
-                    )
+                    print_success(f"{matrix_pkg} installed")
 
         print_info("🔒 Security: Restrict who can use your bot")
         print_info("   Matrix user IDs look like @username:server")
@@ -4600,7 +4632,10 @@ def register(ctx) -> None:
         check_fn=check_matrix_requirements,
         is_connected=_is_connected,
         required_env=["MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN"],
-        install_hint="pip install 'mautrix[encryption]'",
+        install_hint=(
+            "Plobi installs the Matrix packages during setup — run "
+            "`plobi setup` and configure Matrix under Messaging Platforms."
+        ),
         setup_fn=interactive_setup,
         apply_yaml_config_fn=_apply_yaml_config,
         allowed_users_env="MATRIX_ALLOWED_USERS",
