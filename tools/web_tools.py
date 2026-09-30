@@ -359,12 +359,76 @@ def _ddgs_package_importable() -> bool:
     presence rather than an env var / config entry.  Wrapped in a helper
     so auto-detect and ``_is_backend_available`` share the same check
     (and tests can monkeypatch a single symbol).
+
+    This stays a *pure probe*: it runs at tool-registration time (via
+    ``check_web_api_key``) and on every ``plobi tools`` repaint, so it must
+    never side-effect an install. Installation lives in
+    :func:`_ensure_ddgs_package`, which is only reached when a search is
+    actually dispatched to ddgs — the same split the paid SDKs use
+    (``is_available()`` reads an env var; the client loader calls
+    ``ensure()``).
     """
     try:
         import ddgs  # noqa: F401
         return True
     except ImportError:
         return False
+
+
+def _ensure_ddgs_package() -> bool:
+    """Lazy-install the ``ddgs`` package on first use, then report if it imports.
+
+    Mirrors the lazy-deps call sites in the other search SDK loaders
+    (``plugins/web/exa/provider.py::_get_exa_client``,
+    ``plugins/web/firecrawl/provider.py::_load_firecrawl_cls``,
+    ``plugins/web/parallel/provider.py::_ensure_parallel_sdk_installed``):
+    ``ensure()`` runs at the top of the first-import path, a benign
+    ImportError coming from ``tools.lazy_deps`` itself is swallowed, and any
+    other failure — ``FeatureUnavailable`` when the user set
+    ``security.allow_lazy_installs: false``, or a failed pip run carrying the
+    real stderr — is reported instead of being mistaken for "not installed".
+
+    Ordering is the reason this is a separate function rather than an extra
+    line inside the probe. ``plobi tools`` registers the ddgs provider whether
+    or not the package is importable, and the registry resolves an explicitly
+    configured backend ignoring ``is_available()`` (see
+    ``agent.web_search_registry._resolve`` rule 1), so the dispatch path stays
+    reachable with the package absent — the gate never closes the door on the
+    installer. The install then has to happen *before* anything tries to import
+    ``ddgs``, with ``importlib.invalidate_caches()`` in between: a venv-scoped
+    pip install drops files into a directory ``sys.path`` already covers, and
+    the path finder caches that listing, so without the invalidation a
+    freshly-installed ddgs can stay impossible to import for the life of the
+    process and the fresh install would look like it did nothing.
+
+    Returns True when the package is importable. False means "make no further
+    attempt" — the caller lets the provider's own error message surface the
+    cause, so a user who disabled lazy installs still gets one clear hint.
+    """
+    if _ddgs_package_importable():
+        return True
+
+    try:
+        from tools.lazy_deps import ensure as _lazy_ensure
+
+        _lazy_ensure("search.ddgs", prompt=False)
+    except ImportError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — lazy_deps surfaces install hints
+        logger.info("ddgs lazy install did not complete: %s", exc)
+        return False
+
+    try:
+        import importlib
+
+        importlib.invalidate_caches()
+    except Exception:  # pragma: no cover — defensive; best-effort refresh
+        pass
+
+    installed = _ddgs_package_importable()
+    if installed:
+        logger.info("Lazy install complete for ddgs (DuckDuckGo web search)")
+    return installed
 
 # ─── Firecrawl Client ────────────────────────────────────────────────────────
 
@@ -716,6 +780,15 @@ def web_search_tool(query: str, limit: int = 5) -> str:
                     ),
                 }
         else:
+            # ddgs is gated by a package instead of an API key, so it is the
+            # one backend that can be selected — and dispatched to — while still
+            # uninstalled. Install it here, at the top of the first-import path,
+            # the way the firecrawl / exa / parallel loaders do it; if the user
+            # opted out of lazy installs we let the provider's own precise
+            # "package is not installed" error surface rather than dead-ending
+            # on a bare ImportError.
+            if provider.name == "ddgs":
+                _ensure_ddgs_package()
             logger.info(
                 "Web search via %s: '%s' (limit: %d)",
                 provider.name, query, limit,
