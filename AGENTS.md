@@ -1482,7 +1482,7 @@ them into invariants before re-requesting review.
 四条防腐规则（对两个目录同时生效）：
 
 1. **New docs must use a template.** Any new document starts from
-   `Docs/*-template.md`; do not invent ad-hoc formats or drop files at random
+   `Docs/templates/*.md`; do not invent ad-hoc formats or drop files at random
    locations.
 2. **Every doc must be registered.** Anything added, renamed, or moved gets a
    row in `Docs/README.md`（唯一索引）。`scripts/check-docs.sh` + `scripts/check_arch_gates.py`

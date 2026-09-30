@@ -6,12 +6,13 @@
 #   --role l1_secretary --profile default --provider moonshot --model kimi-k3
 #   (or copy docs/plobi/profiles/projects.yaml to $PLOBI_HOME/plobi/projects.yaml)
 # Intent: best available model, narrow tool surface, clean orchestrator context.
-# Contract: docs/plobi/north_star/GRILL_FREEZE.md; routing rationale: ADR-0011.
+# Contract: Docs/SPEC-FINAL.md; routing rationale: ADR-0011.
 
-# L1 = best available model (currently Kimi K3). Cost discipline matters more
-# than model choice: K3 bills reasoning as output (~CNY 100/M) and always
-# thinks, so L1 must stay OUT of tool loops and per-message classification.
-model: ""  # e.g. moonshot/kimi-k3 — set when key is available
+# L1 = best available model. **Contract does not pin a model name** (2026-08-29
+# revision; 裁定 47 removed "L1 and L2 must differ"): the default follows code
+# config and is switchable per agent in the UI Pill. Cost discipline is the
+# real constraint — L1 stays OUT of tool loops and per-message classification.
+model: ""  # e.g. a flagship chat-completions model — set when a key is available
 
 # L2 (project / specialist agents) run cheap models or aigw-aggregated quota.
 # Keep L1 and L2 on SEPARATE sessions — never switch models mid reasoning chain.

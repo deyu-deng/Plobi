@@ -2,7 +2,7 @@
  * L1 console domain types.
  *
  * Shapes follow the hard-frozen public API contract in
- * `docs/specs/ui-l1-console-spec.md` §5 (response envelope `{ ok, data }`) and
+ * `Docs/specs/console-ui.md` §5 (response envelope `{ ok, data }`) and
  * the agent state machine in §4.2.
  *
  * Reuse note: agenda events are NOT re-declared here — the console shares

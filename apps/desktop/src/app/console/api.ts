@@ -3,7 +3,7 @@
  *
  * Backend wiring is meant to replace this file's implementations and nothing
  * else: every endpoint below mirrors the hard-frozen contract in
- * `docs/specs/ui-l1-console-spec.md` §5 and returns the same `{ ok, data }`
+ * `Docs/specs/console-ui.md` §5 and returns the same `{ ok, data }`
  * envelope shape. Callers never touch `window.plobiDesktop.api` directly.
  *
  * Current state per endpoint:

@@ -1,6 +1,6 @@
 """改动率仪表（切片 A5）。
 
-MVP 成功标准 §3.1（docs/specs/MVP-AI-Secretary-Requirements.md）::
+MVP 成功标准（现行登记在 ../Docs/ROADMAP.md §4 M1；原 MVP-AI-Secretary-Requirements §3.1）::
 
     系统维护的日程条目中，用户手动删除或修改的比例 ≤ 20%（连续 7 天统计）
     采集方式：用户对「待确认」条目的确认/忽略动作即数据（ADR-0009 副产品）

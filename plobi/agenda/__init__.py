@@ -9,7 +9,7 @@ Public surface — import from here, not from submodules:
 ``store`` (SQLite), ``rules`` (local keyword filter) and ``router`` (HTTP) are
 implementation details. Neither ``store`` nor ``rules`` may call a model.
 
-Spec: docs/specs/agenda-board.md
+Spec: Docs/specs/agenda-board.md
 """
 
 from .service import (

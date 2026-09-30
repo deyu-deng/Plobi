@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-# --- vocabulary (mirrors docs/specs/agenda-board.md) ------------------------
+# --- vocabulary (mirrors Docs/specs/agenda-board.md) ------------------------
 
 KINDS = ("meeting", "ddl", "class", "task")
 STATUSES = ("pending", "confirmed", "cancelled")

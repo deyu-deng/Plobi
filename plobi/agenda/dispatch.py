@@ -2,7 +2,7 @@
 
 Implements the short-sequence protocol from
 docs/adr/0009-agenda-change-pending-confirmation.md; the card format is
-hard-frozen by docs/specs/ui-l1-console-spec.md §7:
+hard-frozen by Docs/specs/console-ui.md §7:
 
     【待确认 #12】高数课改期
     原值: 明日 08:00  →  新值: 明日 10:00

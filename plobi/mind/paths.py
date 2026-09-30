@@ -3,7 +3,7 @@
 Two rules from the North Star contract:
 
 - the vault path is resolved from ``MIND_ROOT``; **no drive letters in code**
-  (docs/plobi/north_star/GRILL_FREEZE.md, Mind path rule)
+  (Docs/SPEC-FINAL.md, Mind path rule)
 - writes stay inside the prefixes Mind's own verifier tolerates; creating a new
   ``Vault/projects/<x>`` or ``Loom/skills/<x>`` would require editing Mind's
   AGENTS.md declarations, which no agent may do automatically
@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-# Relative to MIND_ROOT. Mirrors docs/specs/MIND_ADAPTER_PLAN.md §3.
+# Relative to MIND_ROOT. Mirrors Docs/specs/memory-adapter.md §3.
 SAFE_PREFIXES: tuple[str, ...] = (
     "Vault/projects/Plobi",
     "Vault/meta",

@@ -9,7 +9,7 @@ disk I/O for every lifecycle method while respecting the compliance boundary
 below. All writes funnel through :class:`plobi.mind.writer.MindWriter`
 (serialized + verifier + commit switch) and are pre-checked with ``_is_safe``.
 
-Full spec + evidence:  docs/specs/MIND_ADAPTER_PLAN.md  (repo root)
+Full spec + evidence:  Docs/specs/memory-adapter.md  (repo root)
 Mind repo (official):  ``mind/`` (lowercase, inside the repository;
                        env ``MIND_ROOT`` overrides — never hardcode drive letters)
 Mind verifier:         Loom/scripts/verifier.py (inside the Mind repo)

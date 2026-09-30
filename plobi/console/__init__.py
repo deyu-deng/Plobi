@@ -5,7 +5,7 @@ tracker (B4) and the model router (ADR-0011) already own that. Per
 ARCH-UI-MASTER §3.5 the whole surface lives in ONE module:
 :mod:`plobi.console.router` (HTTP + row assembly + usage aggregation).
 
-Contract: ``docs/specs/ui-l1-console-spec.md`` §5 — every response is the
+Contract: ``Docs/specs/console-ui.md`` §5 — every response is the
 envelope ``{ ok: bool, data | error }`` and the row shapes mirror
 ``apps/desktop/src/app/console/types.ts`` exactly (``Agent``,
 ``AgentOverview``, ``AgentSubagent``). Neither file is edited from here: when
