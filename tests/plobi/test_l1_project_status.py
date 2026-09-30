@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -370,23 +371,109 @@ def test_l1_mid_toolsets_no_longer_advertises_memory():
     assert "memory" in L1_DROP_TOOLSETS
 
 
-def test_soul_block_keeps_memory_out_of_l1_reach():
-    """L1 的派工 SOUL 必须显式禁止 memory 工具 + 不准直接调 plobi_master_*。"""
+def test_soul_block_bans_memory_as_an_agenda_source_not_as_a_tool():
+    """裁定 49 收回「收工具」：SOUL 仍不许拿 memory 当日程/项目的答案源，
+    但不得再宣布 `memory` 这件工具被禁——长记忆挂在 L1 这个人身上
+    （裁定 42 / 44 / 48）。"""
     from plobi.agents.registry import L1_SOUL_BLOCK
 
-    # 不在「准用」段里；硬规则显式禁止。
     assert "派工不是工人" in L1_SOUL_BLOCK
-    assert "memory" in L1_SOUL_BLOCK
-    for forbidden in (
+    # 入口规矩不变：plobi_master_* 仍被点名不是日程 / 项目入口。
+    for not_an_entry_point in (
         "plobi_master_dispatch",
         "plobi_master_preview",
         "plobi_master_status",
         "plobi_master_approve",
     ):
-        assert forbidden in L1_SOUL_BLOCK, forbidden
-    # 不准对项目主树开 terminal。
+        assert not_an_entry_point in L1_SOUL_BLOCK, not_an_entry_point
+    # 主树治理规矩仍在（人批才许改），但它不再是「你没有工具」的说辞。
     assert r"D:\Projects\Plobi\Code" in L1_SOUL_BLOCK
-    assert "terminal" in L1_SOUL_BLOCK
+    assert "人批" in L1_SOUL_BLOCK
+    # 能力层：整块里不许再出现「某件工具 L1 用不了」的句子。
+    assert _capability_denials(L1_SOUL_BLOCK) == []
+
+
+def _capability_denials(block: str) -> list[str]:
+    """返回宣称 L1 **没有 / 用不了**某件工具的子句；裁定 49 之后必须为空。
+
+    只认能力声明（没有 / 剥掉 / 不准调用 / 不可用），不认入口路由
+    （「不要开 `terminal` 跑命令」「不准用 memory 回答日程」是派工规矩，
+    裁定 32 / 33 / 40 / 44 没被推翻）。按子句扫，不做整句快照匹配。
+    """
+    tools = ("terminal", "memory", "computer_use", "code_execution", "session_search")
+    denials = (
+        "没有",
+        "拿不到",
+        "无权限",
+        "不可用",
+        "不准调用",
+        "禁止调用",
+        "工具被禁",
+        "剥掉",
+        "收里拿掉",
+    )
+    hits = []
+    for clause in re.split(r"[。；，、\n]", block):
+        if not any(tool in clause for tool in tools):
+            continue
+        if any(mark in clause for mark in denials):
+            hits.append(clause.strip())
+    return hits
+
+
+def test_soul_block_grants_tools_from_the_product_not_from_a_diet_list():
+    """正向合同：工具由用户在产品里给，给了就用，没给就直说——
+    并且这段必须同时覆盖 `terminal` 和 `memory`（裁定 49）。"""
+    from plobi.agents.registry import L1_SOUL_BLOCK
+
+    assert "工具由用户在产品里给" in L1_SOUL_BLOCK
+    assert "给了就用" in L1_SOUL_BLOCK
+    assert not _capability_denials(L1_SOUL_BLOCK)
+    for tool in ("terminal", "memory"):
+        sentences = [
+            s for s in re.split(r"[。\n]", L1_SOUL_BLOCK) if tool in s
+        ]
+        assert sentences, f"SOUL 里再没有一句关于 {tool} 的正面交代"
+        assert any(
+            ("用户" in s and ("给" in s or "勾" in s)) or "挂在" in s
+            for s in sentences
+        ), f"{tool} 的归属必须写在用户 / 产品这一侧，不在减肥名单那一侧"
+
+
+def test_soul_block_keeps_both_fences_and_the_secretary_entry_point():
+    """改工具合同不许顺手改掉路由合同：两道围栏 + `plobi_secretary_ask`
+    单入口 + 「不给用户挑菜单」都在（裁定 32 / 33 / 40 / 44）。"""
+    from plobi.agents.registry import L1_SOUL_BEGIN, L1_SOUL_BLOCK, L1_SOUL_END
+
+    assert L1_SOUL_BLOCK.count(L1_SOUL_BEGIN) == 1
+    assert L1_SOUL_BLOCK.count(L1_SOUL_END) == 1
+    assert L1_SOUL_BLOCK.index(L1_SOUL_BEGIN) < L1_SOUL_BLOCK.index(L1_SOUL_END)
+    assert "plobi_secretary_ask" in L1_SOUL_BLOCK
+    assert "第一动作" in L1_SOUL_BLOCK
+    assert "开工具菜单" in L1_SOUL_BLOCK
+    assert "终答像秘书说话" in L1_SOUL_BLOCK
+
+
+def test_l1_soul_upsert_is_idempotent_and_keeps_the_tool_contract(tmp_path):
+    """strip-then-append 跑第二遍必须一字不差，且用户自己的人格文字仍在——
+    改的是块内文字，不是写盘机制。"""
+    from plobi.agents.registry import (
+        L1_SOUL_BEGIN,
+        L1_SOUL_BLOCK,
+        ensure_l1_secretary_routing_soul,
+    )
+
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("我自己写的人设：说话短。\n", encoding="utf-8")
+    assert ensure_l1_secretary_routing_soul(home=tmp_path) is True
+    once = soul.read_text(encoding="utf-8")
+    assert ensure_l1_secretary_routing_soul(home=tmp_path) is False
+    assert soul.read_text(encoding="utf-8") == once
+    assert once.count(L1_SOUL_BEGIN) == 1
+    assert L1_SOUL_BLOCK.strip() in once
+    assert "说话短" in once
+    assert not _capability_denials(once)
+
 
 
 # ---------------------------------------------------------------------------
@@ -453,20 +540,25 @@ def test_soul_block_identity_bans_menu_lists_when_user_asks_who():
     assert 'MCP' in section
 
 
-def test_soul_block_identity_bars_no_terminal_blame():
-    """裁定 39:你没有 terminal 不是故障——不准解释框架、不准让用户改配置。"""
-    """必须显式声明「terminal 早被 WP-L2-DIET(裁定 33.3)剥掉了」。"""
+def test_soul_block_identity_section_holds_the_new_tool_contract():
+    """裁定 39 的身份段规矩仍在（不给菜单、不吹身份），但「你没有 terminal
+    不是故障」那一套（裁定 33.3）已被裁定 49 作废：身份段不许宣布缺工具，
+    也不许叫用户去改配置。"""
     from plobi.agents.registry import L1_SOUL_BLOCK
 
     H2 = '\n## '
     idx = L1_SOUL_BLOCK.find("## 身份（WP-L1-IDENTITY")
     end = L1_SOUL_BLOCK.find(H2, idx)
     section = L1_SOUL_BLOCK[idx:end]
-    assert '不是故障' in section
-    assert '解释框架' in section  # markup 抗性
-    assert '让用户改配置' in section
-    assert 'WP-L2-DIET' in section
-    assert '33.3' in section
+    # 身份段本身不再有能力否定句。
+    assert not _capability_denials(section)
+    # 用户是自己工具的唯一来源——这句话必须落在身份段里。
+    assert '工具由用户在产品里给' in section
+    assert '给了就用' in section
+    # 老说辞的字面残留一律不许回来。
+    for retired in ('不是故障', '自证清白', 'WP-L2-DIET', '剥掉了'):
+        assert retired not in section, retired
+
 
 
 def test_soul_block_identity_delegates_work_to_l2_not_self():
