@@ -192,8 +192,70 @@ test('resolveInstallScript rethrows when the 404 fallback is unavailable', async
           throw new Error('Failed to download install.sh: HTTP 404')
         }
       }),
-      /HTTP 404|Failed to download/
     )
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('resolveInstallScript refuses the network bootstrap for a local/dirty build stamp', async () => {
+  // Defect B: a locally-built app stamped to an unpushed commit would 404 against
+  // raw.githubusercontent.com and hand the user an HTTP error. It must fail fast
+  // with actionable copy instead — and never call the downloader.
+  const home = mkTmpHome()
+
+  try {
+    let downloaded = false
+
+    for (const installStamp of [
+      { commit: 'a'.repeat(40), source: 'local' },
+      { commit: 'a'.repeat(40), dirty: true }
+    ]) {
+      await assert.rejects(
+        resolveInstallScript({
+          installStamp,
+          sourceRepoRoot: null,
+          plobiHome: home,
+          emit: () => {},
+          _download: async () => {
+            downloaded = true
+            throw new Error('downloader must not run for a local build')
+          }
+        }),
+        /unpublished local checkout|~\/\.local\/bin\/plobi|Use local gateway/i
+      )
+    }
+
+    assert.equal(downloaded, false, 'the network downloader is never invoked for a local build')
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('resolveInstallScript still downloads for a genuine distributed (clean ci) stamp', async () => {
+  // No-regression guard: only local/dirty stamps short-circuit. A clean CI build
+  // keeps the existing download path.
+  const home = mkTmpHome()
+
+  try {
+    let downloaded = false
+
+    const result = await resolveInstallScript({
+      installStamp: { commit: 'a'.repeat(40), source: 'ci' },
+      sourceRepoRoot: null,
+      plobiHome: home,
+      emit: () => {},
+      _download: async (_commit, dest) => {
+        downloaded = true
+        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        fs.writeFileSync(dest, '#!/bin/sh\necho ci\n')
+
+        return dest
+      }
+    })
+
+    assert.equal(downloaded, true, 'CI builds keep the network bootstrap path')
+    assert.equal(result.source, 'download')
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
   }

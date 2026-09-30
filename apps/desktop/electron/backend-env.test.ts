@@ -6,6 +6,7 @@ import {
   appendUniquePathEntries,
   buildDesktopBackendEnv,
   buildDesktopBackendPath,
+  desktopCliSearchPath,
   normalizePlobiHomeRoot,
   pathEnvKey,
   POSIX_SANE_PATH_ENTRIES
@@ -103,3 +104,47 @@ test('Windows PATH casing and delimiter are preserved without POSIX sane entries
 test('appendUniquePathEntries drops empty entries and keeps first occurrence', () => {
   assert.equal(appendUniquePathEntries([':/a::/b', ['/a', '/c']], { delimiter: ':' }), '/a:/b:/c')
 })
+
+test('desktopCliSearchPath finds a plobi under ~/.local/bin when the GUI PATH omits it', () => {
+  // The exact Finder/Dock case: launchd hands the app /usr/bin:/bin:/usr/sbin:/sbin,
+  // which never includes ~/.local/bin — where the user's working `plobi` symlink
+  // lives. The injected per-user dirs make an already-installed CLI reachable
+  // without a shell. Nothing here touches the real filesystem or PATH.
+  const guiPath = '/usr/bin:/bin:/usr/sbin:/sbin'
+  const search = desktopCliSearchPath({
+    home: '/Users/test',
+    plobiHome: '/Users/test/.plobi',
+    venvRoot: '/Users/test/.plobi/plobi-agent/venv',
+    currentPath: guiPath,
+    platform: 'darwin',
+    pathModule: path.posix
+  })
+
+  const dirs = search.split(':')
+  assert.ok(dirs.includes('/Users/test/.local/bin'), 'per-user ~/.local/bin is added')
+  assert.ok(dirs.includes('/Users/test/.cargo/bin'), 'per-user ~/.cargo/bin is added')
+  assert.ok(dirs.includes('/opt/homebrew/bin'), 'the backend sane-PATH dirs are reused')
+
+  // findOnPath-equivalent probe over that PATH, with a plobi present only in the
+  // injected ~/.local/bin, must locate it.
+  const present = new Set(['/Users/test/.local/bin/plobi'])
+  const found = dirs.map(dir => path.posix.join(dir, 'plobi')).find(candidate => present.has(candidate))
+  assert.equal(found, '/Users/test/.local/bin/plobi', 'a CLI in ~/.local/bin is discovered')
+})
+
+test('desktopCliSearchPath leaves the Windows search path unchanged', () => {
+  // Windows CLI discovery is installer/registry-driven; a bare dir scan there can
+  // resolve the wrong extensionless file, so no per-user dirs are prepended.
+  const search = desktopCliSearchPath({
+    home: 'C:\\Users\\test',
+    plobiHome: 'C:\\Users\\test\\.plobi',
+    venvRoot: 'C:\\Users\\test\\.plobi\\plobi-agent\\venv',
+    currentPath: 'C:\\Windows\\System32',
+    platform: 'win32',
+    pathModule: path.win32
+  })
+
+  assert.equal(search.includes('.local'), false)
+  assert.equal(search.includes('.cargo'), false)
+})
+
