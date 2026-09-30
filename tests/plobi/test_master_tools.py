@@ -211,8 +211,10 @@ def _snapshot(cfg: dict) -> dict:
 
 
 def test_l1_mid_narrow_still_narrows_a_fresh_profile_everywhere():
-    """首落无回归：继承来的顶层带着 terminal / memory（``create_profile
-    (clone_config=True)`` 就是这么三份一起写的），一次 pass 必须三处全剥掉。"""
+    """首落无回归：继承来的顶层带着 terminal（``create_profile
+    (clone_config=True)`` 就是这么三份一起写的），一次 pass 必须三处都把
+    terminal 剥掉。``memory`` 不再是「被剥掉的那个」——裁定 49 之后它是
+    「默认不给 / 携带着就留着」，所以跟着 profile 一起活下来。"""
     from plobi.agents.registry import apply_l1_mid_toolsets
 
     cfg = {
@@ -228,7 +230,7 @@ def test_l1_mid_narrow_still_narrows_a_fresh_profile_everywhere():
         [cfg["toolsets"], cfg["platform_toolsets"]["cli"], cfg["platform_toolsets"]["gateway"]]
     ):
         assert "terminal" not in names
-        assert "memory" not in names
+        assert "memory" in names
         assert "web" in names
         assert "plobi_north_star" in names
     # 三份一致 = 策略写入的形状 → 第二次无事可做。
@@ -1551,3 +1553,112 @@ def test_write_briefing_dismissed_uses_agenda_summary(stub_spawn, tmp_path):
     assert out["plan"]["status"] == "dismissed"
     assert "高数课" in captured["prompt"]
     assert "昨夜计划已被忽略" not in captured["prompt"]
+
+
+# ---------------------------------------------------------------------------
+# 裁定 49：模型侧 schema 描述不许宣布「某件工具没有」
+# （``plobi_secretary_ask`` 的描述每次 API call 都发一遍——留在里面就是把
+# 「收工具」重新教给模型，跟 L1_SOUL_BLOCK（432a3414）互相打脸。）
+# ---------------------------------------------------------------------------
+
+_ABSENCE_TOOLS = (
+    "terminal",
+    "memory",
+    "computer_use",
+    "code_execution",
+    "session_search",
+)
+# 只认**能力声明**；派工规矩（「不要开 terminal 跑命令」）不算缺席声明，
+# 口径与 tests/plobi/test_l1_project_status.py::_capability_denials 一致。
+_ABSENCE_MARKS = (
+    "没有",
+    "拿不到",
+    "无权限",
+    "不可用",
+    "不准调用",
+    "禁止调用",
+    "工具被禁",
+    "剥掉",
+    "不是故障",
+)
+
+
+def _walk_descriptions(node, out):
+    """Collect every ``description`` string in a schema tree — all of it is
+    model-facing on every API call, parameters included."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "description" and isinstance(value, str):
+                out.append(value)
+            else:
+                _walk_descriptions(value, out)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_descriptions(item, out)
+    return out
+
+
+def _absence_claims(text: str) -> list[str]:
+    import re
+
+    return [
+        clause.strip()
+        for clause in re.split(r"[。；，、\n]", text)
+        if any(tool in clause for tool in _ABSENCE_TOOLS)
+        and any(mark in clause for mark in _ABSENCE_MARKS)
+    ]
+
+
+def _master_schemas():
+    module = _load_master_tools()
+    return {
+        name: value
+        for name, value in vars(module).items()
+        if name.endswith("_SCHEMA") and isinstance(value, dict)
+    }
+
+
+def test_no_master_schema_description_denies_a_tool():
+    """关系断言，不是快照：本文件任何 schema 的任何描述都不许声称某件工具
+    缺席——工具给不给由用户在产品里决定（裁定 49）。"""
+    schemas = _master_schemas()
+    assert schemas, "no *_SCHEMA discovered — this walk would be vacuous"
+    for name, schema in schemas.items():
+        for text in _walk_descriptions(schema, []):
+            assert _absence_claims(text) == [], (name, _absence_claims(text))
+
+
+def test_master_schema_descriptions_cite_no_diet_ruling_as_an_absence():
+    """裁定 33.2 / 33.3 的「收工具」那半死了，描述里不该再拿它当缺席的理由。"""
+    for name, schema in _master_schemas().items():
+        for text in _walk_descriptions(schema, []):
+            assert "33.2" not in text, name
+            assert "33.3" not in text, name
+
+
+def test_master_schema_description_still_routes_instead_of_opening_a_menu():
+    """改掉「你没有 terminal」那句不许顺手改掉它的本职：路由进本工具，
+    不开工具菜单 / 不列 MCP+skills 让用户挑 / 不把内部机制端到用户面前。"""
+    description = _load_master_tools().SECRETARY_ASK_SCHEMA["description"]
+    for job in ("不要开工具菜单", "不要列 MCP/skills 让用户手动选", "不要让用户改配置"):
+        assert job in description, job
+    # 裁定 45：屏幕上不出现内部代号。
+    for internal in ("aigw", "toolset", "profile", "WP-L2-DIET"):
+        assert internal not in description, internal
+
+
+def test_user_granted_memory_is_not_stripped_by_the_l1_mid_pass():
+    """「勾了必须生效且不许被自动策略抹掉」（裁定 49）：memory 退出禁单后，
+    用户在产品里勾上的 memory 活得过中收；没勾的 terminal 那四件照旧剥掉。"""
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = _narrowed_l1_config()
+    _simulate_ui_toggle(cfg, "cli", "memory")
+    granted = list(cfg["platform_toolsets"]["cli"])
+
+    # 中收对这份列表无事可做 = 它不再和用户的选择打架。
+    assert apply_l1_mid_toolsets(cfg) is False
+    assert set(granted) <= set(cfg["platform_toolsets"]["cli"])
+    assert "memory" in cfg["platform_toolsets"]["cli"]
+    for denied_default in ("terminal", "session_search", "code_execution", "computer_use"):
+        assert denied_default not in cfg["platform_toolsets"]["cli"]

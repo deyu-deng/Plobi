@@ -356,19 +356,19 @@ def test_existing_registry_path_is_honored(mind_root, fresh_registry, monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# WP-L2-DIET / 裁定 33.2：加 L1 中收的「memory」断言（不影响 project_status /
-# plan_day 行为；只补加硬规则不变的部分）。
+# 裁定 49 收回 33.2 的「收工具」那半：memory 退出 L1 禁单，仍不在中收默认
+# 名单里（默认不铺 ≠ 不许有）。不影响 project_status / plan_day 行为。
 # ---------------------------------------------------------------------------
 
 
-def test_l1_mid_toolsets_no_longer_advertises_memory():
-    """WP-L2-DIET / 裁定 33.2：L1 是总秘书不是 LLM 长记忆——memory 工具从
-    L1 中收里拿掉。L1 仍能报项目（project_status），但答案只能来自
-    plobi_secretary_ask 的工具回传，不准用 memory 答日程 / 答项目。"""
+def test_l1_memory_is_default_off_not_denied():
+    """``memory`` 不再待在禁单里，也不被默认名单白送——用户勾了才生效，
+    勾了就不许被自动策略抹掉。答案源规矩不变：日程 / 项目仍只能来自
+    plobi_secretary_ask 的工具回传，不准用 memory 代答。"""
     from plobi.agents.registry import L1_MID_TOOLSETS, L1_DROP_TOOLSETS
 
     assert "memory" not in L1_MID_TOOLSETS
-    assert "memory" in L1_DROP_TOOLSETS
+    assert "memory" not in L1_DROP_TOOLSETS
 
 
 def test_soul_block_bans_memory_as_an_agenda_source_not_as_a_tool():

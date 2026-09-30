@@ -1,8 +1,9 @@
-"""WP-L2-DIET — L1 中收去掉 memory；项目 L2 减肥到没有 terminal / code runner。
+"""WP-L2-DIET — L1 中收的默认名单；项目 L2 减肥到没有 terminal / code runner。
 
-裁定 33.2（L1）：``memory`` 工具不再出现在 L1 中收；活动 default 的
-toolsets 跑一遍 ``mid_narrow_toolset_names`` 之后只剩 web / file /
-skills / todo / clarify / delegation / plobi_north_star。
+裁定 33.2 的「收回 memory」那半已被 **裁定 49** 推翻：``memory`` 不在
+``L1_DROP_TOOLSETS``（禁单 = 一律收回），也不在 ``L1_MID_TOOLSETS``（中收默认
+名单）——它属于「默认不铺、用户在产品里勾了就必须生效」那一类。本文件钉住的
+就是这条区别：默认名单不白送，携带着就不许被自动策略抹掉。
 
 裁定 33.3（项目 L2）：每个 Mind 项目 L2 的 profile config.yaml 必须没
 有 ``terminal`` / ``computer_use`` / ``code_execution`` / ``session_search``，
@@ -17,27 +18,34 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# L1 中收：memory 必须进 L1_DROP_TOOLSETS，不得进 L1_MID_TOOLSETS
+# L1 中收（裁定 49）：memory 退出禁单，默认名单不铺它，携带它就留着
 # ---------------------------------------------------------------------------
 
 
-def test_memory_is_dropped_from_l1_mid_toolsets():
-    from plobi.agents.registry import L1_MID_TOOLSETS
+def test_memory_is_not_denied_to_l1():
+    """禁单是「一律收回」；长期记忆挂在 L1 这个人身上（裁定 42 / 44 / 48），
+    而 432a3414 的 ``L1_SOUL_BLOCK`` 已经命令它「该用 ``memory`` 记就记」——
+    两边不许互相打脸。"""
+    from plobi.agents.registry import L1_DROP_TOOLSETS, L1_SOUL_BLOCK
 
-    assert "memory" not in L1_MID_TOOLSETS
-
-
-def test_memory_is_in_l1_drop_toolsets():
-    from plobi.agents.registry import L1_DROP_TOOLSETS
-
-    assert "memory" in L1_DROP_TOOLSETS
+    assert "memory" not in L1_DROP_TOOLSETS
+    assert "memory" in L1_SOUL_BLOCK
 
 
-def test_mid_narrow_drops_memory_when_already_in_raw():
+def test_memory_toolset_backs_the_name_with_a_real_tool():
+    """「勾了必须生效」的前提：``memory`` 不是个假开关——这个名字在 toolsets
+    里真有一件工具（或一个 include）撑着。"""
+    from toolsets import TOOLSETS
+
+    entry = TOOLSETS["memory"]
+    assert entry["tools"] or entry["includes"]
+
+
+def test_mid_narrow_keeps_memory_when_the_profile_carries_it():
     from plobi.agents.registry import mid_narrow_toolset_names
 
     out = mid_narrow_toolset_names(["memory", "web", "file"])
-    assert "memory" not in out
+    assert "memory" in out
     # 其它 L1_MID_TOOLSETS 应当被补齐（包括 plobi_north_star + clarify）。
     assert "web" in out
     assert "file" in out
@@ -45,7 +53,20 @@ def test_mid_narrow_drops_memory_when_already_in_raw():
     assert "clarify" in out
 
 
+def test_memory_survives_the_reset_branch_as_an_extra():
+    """勾了 memory 又带着禁单名字（terminal / plobi-cli）时，列表会被打回
+    「默认名单 + extras」——memory 必须作为 extra 活下来，这是裁定 49
+    「不许被自动策略抹掉」在这一刀上的落点。"""
+    from plobi.agents.registry import mid_narrow_toolset_names
+
+    for raw in (["plobi-cli", "memory"], ["terminal", "memory", "web"]):
+        out = mid_narrow_toolset_names(raw)
+        assert "memory" in out, raw
+
+
 def test_mid_narrow_still_drops_terminal_session_search_code_execution_computer_use():
+    """这四件仍是**默认不给**（不是「不许有」）：没勾就剥掉；用户真勾了由
+    ``_explicit_toolset_optins`` 那条路活着——见 tests/plobi/test_master_tools.py。"""
     from plobi.agents.registry import mid_narrow_toolset_names
 
     for forbidden in ("terminal", "session_search", "code_execution", "computer_use"):
@@ -64,12 +85,18 @@ def test_mid_narrow_drops_plobi_cli_composite():
 
 
 def test_mid_narrow_default_when_input_empty():
-    from plobi.agents.registry import mid_narrow_toolset_names, L1_MID_TOOLSETS
+    from plobi.agents.registry import (
+        L1_DROP_TOOLSETS,
+        L1_MID_TOOLSETS,
+        mid_narrow_toolset_names,
+    )
 
     out = mid_narrow_toolset_names(None)
-    # 不含 memory 也不再含任何 drop-set。
-    for forbidden in ("memory", "terminal", "session_search", "code_execution", "computer_use"):
+    # 默认名单不铺任何 drop-set 名字；memory 同样不白送——它只是不再被禁
+    # （见 test_memory_is_not_denied_to_l1），「默认不给」不等于「不许有」。
+    for forbidden in L1_DROP_TOOLSETS:
         assert forbidden not in out
+    assert "memory" not in out
     for allowed in L1_MID_TOOLSETS:
         assert allowed in out
 

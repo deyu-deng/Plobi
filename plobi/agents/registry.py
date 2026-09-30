@@ -2722,14 +2722,19 @@ MASTER_TOOLSET_NAME = "plobi_north_star"
 
 # WP-BE-9 / 裁定 12：L1 中收（可逆）。拿掉 terminal / 跑命令类 / 会话搜索；
 # clarify 保留。改 platform_toolsets 列表即可加回，不删插件代码。
-# WP-L2-DIET / 裁定 33.2：``memory`` 也进 L1 禁单——L1 是总秘书不是 LLM 长记忆。
+# 裁定 49 收回「收工具」：这张名单是**默认不给**，不是**不许有**——用户在产品里
+# 勾上的名字活得过中收（``_explicit_toolset_optins`` → ``mid_narrow_toolset_names``
+# 的 ``keep=``，见 8e01e9a / ddc4ff8），所以留在这里只会让每次开机多剥一层、
+# 用户多勾一次，不会再抹掉他的选择。
+# ``memory`` 按裁定 42 / 44 / 48（长期记忆挂在每个人身上）从禁单里拿出来：
+# 上一笔 432a3414 的 SOUL 已经写明「该用 ``memory`` 记就记，不用等用户催」，
+# 再把它留在禁单里就是 prompt 和 toolset 互相打脸。
 L1_DROP_TOOLSETS = frozenset(
     {
         "terminal",
         "session_search",
         "code_execution",
         "computer_use",
-        "memory",
     }
 )
 
@@ -2740,8 +2745,8 @@ def _is_full_plobi_composite(name: str) -> bool:
 
 
 # 中收默认名单（对齐 docs/plobi/profiles/master/config.yaml，略宽于「只剩一个」）。
-# ``memory`` 已搬进 L1_DROP_TOOLSETS——任何携带它进来的活动 profile 都会在
-# ``mid_narrow_toolset_names`` 里被剥掉，不在此名单里再列。
+# ``memory`` 既不在这里、也不在禁单里（裁定 49）：默认不铺给 L1，可 profile 一旦
+# 携带它（含用户在产品里勾上），``mid_narrow_toolset_names`` 就当 extras 留着。
 L1_MID_TOOLSETS: tuple[str, ...] = (
     "web",
     "file",
