@@ -1177,6 +1177,49 @@ def setup_tts(config: dict):
 # =============================================================================
 
 
+def _install_terminal_backend_sdk(feature: str, label: str) -> None:
+    """Install a terminal backend's SDK through the tools/lazy_deps allowlist.
+
+    Used by the Modal and Daytona branches of `setup_terminal_backend`. There is
+    deliberately no hand-rolled `_pip_install([<bare name>])` here: a bare name
+    hands pip a free resolve, so setup can leave the venv holding a different
+    build than the one `LAZY_DEPS` pins for that package everywhere else in the
+    app. `ensure()` is the only path that applies the allowlist, the exact pin,
+    and the `security.allow_lazy_installs` gate — and it is the same call the
+    runtime backends make (tools/environments/modal.py, daytona.py).
+    """
+    try:
+        from tools.lazy_deps import (
+            ensure as _lazy_ensure,
+            feature_specs as _lazy_feature_specs,
+        )
+    except ImportError:
+        print_warning(
+            f"Could not install {label} — Plobi's dependency installer is "
+            "unavailable (tools.lazy_deps not importable)."
+        )
+        return
+
+    print_info(f"Installing {label}...")
+    try:
+        _lazy_ensure(feature, prompt=False)
+    except Exception as exc:  # noqa: BLE001 — FeatureUnavailable et al.
+        # Refused either because security.allow_lazy_installs=false or because
+        # the install itself failed; exc says which, pip's own error included.
+        print_warning(f"Could not install {label}:")
+        print_info(f"  {str(exc).strip()[:300]}")
+        # Name the packages at the pins read from LAZY_DEPS at runtime, so this
+        # line can never drift from what the rest of the app installs — and so
+        # it hands the user no bare command to run by hand.
+        print_info(
+            f"  Needs {' '.join(_lazy_feature_specs(feature))}. Plobi installs "
+            "it when you pick this backend again in `plobi setup`, or the first "
+            "time the terminal runs on it."
+        )
+    else:
+        print_success(f"{label} installed")
+
+
 def setup_terminal_backend(config: dict):
     """Configure the terminal execution backend."""
     import platform as _platform
@@ -1313,14 +1356,7 @@ def setup_terminal_backend(config: dict):
             try:
                 __import__("modal")
             except ImportError:
-                print_info("Installing modal SDK...")
-                from plobi_cli.tools_config import _pip_install
-
-                result = _pip_install(["modal"])
-                if result.returncode == 0:
-                    print_success("modal SDK installed")
-                else:
-                    print_warning("Install failed — run manually: uv pip install modal")
+                _install_terminal_backend_sdk("terminal.modal", "Modal sandbox SDK")
 
             # Modal token
             print()
@@ -1354,16 +1390,7 @@ def setup_terminal_backend(config: dict):
         try:
             __import__("daytona")
         except ImportError:
-            print_info("Installing daytona SDK...")
-            from plobi_cli.tools_config import _pip_install
-
-            result = _pip_install(["daytona"])
-            if result.returncode == 0:
-                print_success("daytona SDK installed")
-            else:
-                print_warning("Install failed — run manually: uv pip install daytona")
-                if result.stderr:
-                    print_info(f"  Error: {result.stderr.strip().splitlines()[-1]}")
+            _install_terminal_backend_sdk("terminal.daytona", "Daytona sandbox SDK")
 
         # Daytona API key
         print()
