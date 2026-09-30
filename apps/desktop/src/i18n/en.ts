@@ -2706,6 +2706,8 @@ export const en: Translations = {
     sessionUnavailable: 'Session unavailable',
     createSessionFailed: 'Could not create a new session',
     promptFailed: 'Prompt failed',
+    conversationEnded: 'This conversation has been closed. Click “Continue” to reopen it, then send your message again.',
+    conversationEndedAction: 'Continue',
     providerCredentialRequired: 'Add a provider credential before sending your first message.',
     emptySlashCommand: 'empty slash command',
     desktopCommands: 'Desktop commands',

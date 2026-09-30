@@ -2284,6 +2284,11 @@ export interface Translations {
     sessionUnavailable: string
     createSessionFailed: string
     promptFailed: string
+    /** A conversation the backend closed (app restart / idle reap) rejected the
+     *  send. Shown instead of the gateway's raw internal string, and paired with
+     *  `conversationEndedAction` so the user has something to click. */
+    conversationEnded: string
+    conversationEndedAction: string
     providerCredentialRequired: string
     emptySlashCommand: string
     desktopCommands: string

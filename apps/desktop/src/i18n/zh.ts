@@ -2852,6 +2852,8 @@ export const zh: Translations = {
     sessionUnavailable: '会话不可用',
     createSessionFailed: '无法创建新会话',
     promptFailed: '提示词发送失败',
+    conversationEnded: '这段对话已经结束了。点「继续」把它接回来，然后再发一次。',
+    conversationEndedAction: '继续',
     providerCredentialRequired: '发送第一条消息前请先添加提供方凭据。',
     emptySlashCommand: '空 slash 命令',
     desktopCommands: '桌面端命令',
