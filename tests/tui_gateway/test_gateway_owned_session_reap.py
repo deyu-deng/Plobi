@@ -81,3 +81,83 @@ class TestFinalizeSkipsGatewaySessions:
         _finalize_session(_make_session(), end_reason="tui_close")
 
         db.end_session.assert_called_once_with("sess_1", "tui_close")
+
+
+class TestOrphanReapIsReversible:
+    """A ``ws_orphan_reap`` must stay a *liveness* marker, never a tombstone.
+
+    Reproduces the desktop symptom: quit and relaunch the app, the renderer's
+    websocket drops, ``_schedule_ws_orphan_reap`` closes the session after the
+    grace window (``ended_at`` + ``end_reason=ws_orphan_reap``), and the
+    conversation is still on screen with its 446 messages. The next send then
+    hit a binding the gateway no longer has.
+
+    The relationship these tests pin — and the reason the fix is *not* "stop
+    reaping":
+      1. the reap legitimately drops the LIVE binding, so ``prompt.submit``
+         answers 4001 ``session not found``. That rejection is actionable, not
+         terminal: the stored row is still there and still holds every message.
+      2. ``session.resume`` heals it — it goes through
+         ``SessionDB.reopen_session``, which clears ``ended_at``/``end_reason``.
+         So the client recovers by resuming, and the reaper keeps releasing the
+         agent, its slash worker and its active-session slot for conversations
+         nobody is connected to.
+    """
+
+    def test_reaped_row_survives_with_its_messages(self, tmp_path):
+        from plobi_state import SessionDB
+
+        db = SessionDB(tmp_path / "state.db")
+        db.create_session("reaped", source="desktop")
+
+        for i in range(3):
+            db.append_message("reaped", role="user", content=f"msg {i}")
+
+        db.end_session("reaped", "ws_orphan_reap")
+
+        row = db.get_session("reaped")
+        assert row is not None, "the reap must not delete the row"
+        assert row["end_reason"] == "ws_orphan_reap"
+        assert row["ended_at"] is not None
+        assert row["message_count"] == 3, "the reap must not touch the transcript"
+
+    def test_reopen_clears_the_reap_marker_so_resume_can_rebind(self, tmp_path):
+        """What ``session.resume`` calls (``db.reopen_session``) reverses the reap."""
+        from plobi_state import SessionDB
+
+        db = SessionDB(tmp_path / "state.db")
+        db.create_session("reaped", source="desktop")
+        db.append_message("reaped", role="user", content="still here")
+        db.end_session("reaped", "ws_orphan_reap")
+
+        db.reopen_session("reaped")
+
+        row = db.get_session("reaped")
+        assert row["ended_at"] is None
+        assert row["end_reason"] is None
+        assert row["message_count"] == 1
+
+    def test_a_reaped_id_stays_resumable_as_itself(self, tmp_path):
+        """The client resumes the id it is showing; the chain walk must not
+        bounce it to a stale sibling and strand that conversation."""
+        from plobi_state import SessionDB
+
+        db = SessionDB(tmp_path / "state.db")
+        db.create_session("reaped", source="desktop")
+        db.append_message("reaped", role="user", content="hello")
+        db.end_session("reaped", "ws_orphan_reap")
+
+        assert db.resolve_resume_session_id("reaped") == "reaped"
+
+    def test_submit_after_reap_returns_the_actionable_signal(self):
+        """``prompt.submit``/attachments resolve the live binding only, and the
+        rejection they raise carries exactly the code+message the desktop keys
+        its recovery on (``isSessionNotFoundError`` in
+        apps/desktop/src/app/session/hooks/use-prompt-actions/utils.ts)."""
+        from tui_gateway.server import _sess_nowait
+
+        session, err = _sess_nowait({"session_id": "no-such-live-id"}, "rid")
+
+        assert session is None
+        assert err["error"]["code"] == 4001
+        assert err["error"]["message"] == "session not found"

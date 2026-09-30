@@ -3,9 +3,11 @@ import type { MutableRefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { translateNow } from '@/i18n'
 import { textPart } from '@/lib/chat-messages'
 import { $composerAttachments, $composerDraft, type ComposerAttachment, setComposerDraft } from '@/store/composer'
 import { $connectedDesktopApps, isDesktopQuotaProvider } from '@/store/desktop-quotas'
+import { $notifications } from '@/store/notifications'
 import { $busy, $connection, $currentModel, $currentProvider, $messages, $sessions, setSessions } from '@/store/session'
 import { streamDesktopQuotaChat } from '@/lib/desktop-quota-chat'
 import type { SessionInfo } from '@/types/plobi'
@@ -1697,5 +1699,139 @@ describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
     expect(vi.mocked(streamDesktopQuotaChat).mock.calls).toHaveLength(0)
     const submitCalls = vi.mocked(requestGateway).mock.calls.filter(c => c[0] === 'prompt.submit')
     expect(submitCalls.length).toBeGreaterThan(0)
+  })
+})
+
+// Quit + relaunch the desktop app: the renderer's websocket drops, the backend's
+// orphan reaper closes the conversation after its grace window (state.db:
+// end_reason=ws_orphan_reap) and the chat still on screen keeps the dead live id.
+// The next send used to answer with the gateway's raw internal string. It must
+// instead reopen the conversation — session.resume -> db.reopen_session — and the
+// reap itself stays strict, because what it releases is the agent, its slash
+// worker and its active-session slot for conversations nobody is connected to.
+describe('usePromptActions ws-orphan-reap recovery', () => {
+  const STORED_SESSION_ID = '20260713_103040_c5379e'
+  const RECOVERED_SESSION_ID = 'rt-recovered-after-reap'
+  // Both transports wrap the JSON-RPC rejection the same way, and the numeric
+  // code never survives it — which is why every predicate here is a message test.
+  const DEAD_BINDING = "Error invoking remote method 'gateway:request': Error: session not found"
+
+  beforeEach(() => {
+    setSessions(() => [sessionInfo()])
+    $composerAttachments.set([])
+    $notifications.set([])
+  })
+
+  afterEach(() => {
+    cleanup()
+    $composerAttachments.set([])
+    $notifications.set([])
+    $connection.set(null)
+    vi.restoreAllMocks()
+  })
+
+  it('reopens the conversation when the ATTACHMENT rpc reports the dead binding', async () => {
+    // The reproducer behind the 「提示词发送失败 / session not found」 toast: a
+    // message WITH a screenshot. image.attach resolves the live session exactly
+    // like prompt.submit does, so the send died one RPC before the retry that
+    // covers prompt.submit could ever run.
+    $composerAttachments.set([{ id: 'image:shot.png', kind: 'image', label: 'shot.png', path: '/Users/me/shot.png' }])
+
+    const calls: { method: string; params?: Record<string, unknown> }[] = []
+
+    const requestGateway = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      calls.push({ method, params })
+
+      if (method === 'image.attach') {
+        if (params?.session_id === RUNTIME_SESSION_ID) {
+          throw new Error(DEAD_BINDING)
+        }
+
+        return { attached: true, path: '/gateway/img.png' } as never
+      }
+
+      if (method === 'session.resume') {
+        expect(params).toEqual({ session_id: STORED_SESSION_ID, source: 'desktop' })
+
+        return { session_id: RECOVERED_SESSION_ID } as never
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness
+        onReady={h => (handle = h)}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+        storedSessionId={STORED_SESSION_ID}
+      />
+    )
+
+    const ok = await handle!.submitText('what is in this screenshot?')
+
+    expect(ok).toBe(true)
+    // The conversation was reopened on the SELECTED stored id, not abandoned.
+    expect(calls.map(c => c.method)).toContain('session.resume')
+    // ...and the screenshot was re-staged against the reopened conversation before
+    // the send — the last thing that leaves is prompt.submit on the live id.
+    const last = calls[calls.length - 1]
+    expect(last?.method).toBe('prompt.submit')
+    expect(last?.params).toMatchObject({ session_id: RECOVERED_SESSION_ID })
+    const restaged = calls.filter(c => c.method === 'image.attach' && c.params?.session_id === RECOVERED_SESSION_ID)
+    expect(restaged.length).toBeGreaterThan(0)
+    // Recovery is invisible: nothing toasted.
+    expect($notifications.get()).toHaveLength(0)
+  })
+
+  it('shows localised, actionable copy instead of the raw internal string', async () => {
+    // Nothing to reopen (no selected conversation), so automatic recovery is
+    // impossible — the send still must not surface "session not found".
+    const calls: string[] = []
+    const seeds: Record<string, unknown>[] = []
+
+    const requestGateway = vi.fn(async (method: string) => {
+      calls.push(method)
+
+      if (method === 'prompt.submit') {
+        throw new Error(DEAD_BINDING)
+      }
+
+      return {} as never
+    })
+
+    let handle: HarnessHandle | null = null
+    render(
+      <Harness
+        onReady={h => (handle = h)}
+        onSeedState={s => seeds.push(s)}
+        refreshSessions={async () => undefined}
+        requestGateway={requestGateway}
+        storedSessionId={null}
+      />
+    )
+
+    expect(await handle!.submitText('message')).toBe(false)
+    // No stored conversation selected → nothing to resume.
+    expect(calls).not.toContain('session.resume')
+
+    const ended = translateNow('desktop.conversationEnded')
+
+    // The inline bubble carries the localised line, not the gateway's English.
+    const bubbles = seeds
+      .flatMap(s => (s.messages as { error?: string; role?: string }[]) ?? [])
+      .filter(message => message.role === 'assistant' && message.error !== undefined)
+
+    expect(bubbles.length).toBeGreaterThan(0)
+    expect(bubbles[bubbles.length - 1]?.error).toBe(ended)
+    expect(bubbles[bubbles.length - 1]?.error).not.toMatch(/session not found/i)
+
+    // The toast too — with a working action, and no internal vocabulary.
+    const toast = $notifications.get().find(item => item.kind === 'error')
+    expect(toast?.message).toBe(ended)
+    expect(toast?.detail).toBeUndefined()
+    expect(toast?.action?.label).toBeTruthy()
+    expect(toast?.action?.onClick).toBeTypeOf('function')
   })
 })

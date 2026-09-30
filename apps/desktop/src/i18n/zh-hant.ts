@@ -2570,6 +2570,8 @@ export const zhHant = defineLocale({
     sessionUnavailable: '工作階段不可用',
     createSessionFailed: '無法建立新工作階段',
     promptFailed: '提示詞傳送失敗',
+    conversationEnded: '這段對話已經結束了。點「繼續」把它接回來，然後再傳一次。',
+    conversationEndedAction: '繼續',
     providerCredentialRequired: '傳送第一則訊息前請先新增提供方憑證。',
     emptySlashCommand: '空的斜線指令',
     desktopCommands: '桌面端指令',

@@ -368,10 +368,77 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         return true
       }
 
+      // The gateway resolves the *live* session id on every RPC this pipeline
+      // makes — the attachment staging calls (`image.attach`, `image.attach_bytes`
+      // and `file.attach`, all of them through `_sess()`) exactly like
+      // `prompt.submit`. Quitting and relaunching the app drops the websocket, and
+      // once the grace window passes the orphan reaper
+      // (tui_gateway/server.py:_schedule_ws_orphan_reap -> _close_session_by_id)
+      // tears the session down for real: it is popped from `_sessions`, its agent
+      // and slash worker are closed, its active-session slot is released and the
+      // stored row is marked `end_reason=ws_orphan_reap` — while this renderer is
+      // still showing the conversation and still holding the dead live id. Every
+      // one of those calls then answers "session not found".
+      //
+      // Do NOT relax the reap to fix this: what it protects is the agent process,
+      // its worker and its session-slot lease for conversations nobody is
+      // connected to. The sanctioned way back in is `session.resume`, which calls
+      // `db.reopen_session` and clears `ended_at`/`end_reason` — so a reap is a
+      // liveness marker, not a tombstone, and the backend stays strict.
+      //
+      // The retry below used to cover `prompt.submit` only, so an attached
+      // screenshot killed the send one RPC earlier and the recovery never ran.
+      const resumeLostSession = async (): Promise<null | string> => {
+        if (!startingStoredSessionId) {
+          return null
+        }
+
+        try {
+          const resumed = await requestGateway<{ session_id: string }>('session.resume', {
+            session_id: startingStoredSessionId,
+            source: 'desktop'
+          })
+          const recoveredId = resumed?.session_id
+
+          if (!recoveredId || sessionContextDrifted()) {
+            return null
+          }
+
+          activeSessionIdRef.current = recoveredId
+
+          return recoveredId
+        } catch {
+          return null
+        }
+      }
+
       try {
-        const syncedAttachments = await syncAttachmentsForSubmit(sessionId, attachments, {
-          updateComposerAttachments: usingComposerAttachments
-        })
+        // Attachments stage against the live session, so a dead binding surfaces
+        // HERE — recover the binding and stage again, otherwise the message ships
+        // without the attachment or (previously) not at all.
+        let liveSessionId = sessionId
+        let syncedAttachments: ComposerAttachment[]
+
+        try {
+          syncedAttachments = await syncAttachmentsForSubmit(liveSessionId, attachments, {
+            updateComposerAttachments: usingComposerAttachments
+          })
+        } catch (attachErr) {
+          if (sessionContextDrifted()) {
+            return abortForSessionSwitch(sessionId)
+          }
+
+          const recoveredId = await resumeLostSession()
+
+          if (!recoveredId) {
+            throw attachErr
+          }
+
+          liveSessionId = recoveredId
+          syncedAttachments = await syncAttachmentsForSubmit(liveSessionId, attachments, {
+            updateComposerAttachments: usingComposerAttachments
+          })
+        }
 
         if (sessionContextDrifted()) {
           return abortForSessionSwitch(sessionId)
@@ -391,34 +458,23 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
 
         try {
           await withSessionBusyRetry(() =>
-            requestGateway('prompt.submit', { session_id: sessionId, text }, PROMPT_SUBMIT_REQUEST_TIMEOUT_MS)
+            requestGateway('prompt.submit', { session_id: liveSessionId, text }, PROMPT_SUBMIT_REQUEST_TIMEOUT_MS)
           )
         } catch (firstErr) {
-          if (
-            (isSessionNotFoundError(firstErr) || isGatewayTimeoutError(firstErr)) &&
-            startingStoredSessionId
-          ) {
-            // Re-register the session in the gateway and get a fresh live ID.
-            // Timeouts recover the same way as "session not found": a starved
-            // backend loop (#55578 symptom d) rejects the submit even though
-            // the stored session is fine — resume + retry instead of erroring
-            // out and losing the session binding.
-            const resumed = await requestGateway<{ session_id: string }>('session.resume', {
-              session_id: startingStoredSessionId,
-              source: 'desktop'
-            })
-
-            if (sessionContextDrifted()) {
-              return abortForSessionSwitch(sessionId)
-            }
-
-            const recoveredId = resumed?.session_id
+          // Timeouts recover the same way as "session not found": a starved
+          // backend loop (#55578 symptom d) rejects the submit even though the
+          // stored session is fine — resume + retry instead of erroring out and
+          // losing the session binding.
+          if (isSessionNotFoundError(firstErr) || isGatewayTimeoutError(firstErr)) {
+            const recoveredId = await resumeLostSession()
 
             if (recoveredId) {
-              activeSessionIdRef.current = recoveredId
+              liveSessionId = recoveredId
               await withSessionBusyRetry(() =>
                 requestGateway('prompt.submit', { session_id: recoveredId, text }, PROMPT_SUBMIT_REQUEST_TIMEOUT_MS)
               )
+            } else if (sessionContextDrifted()) {
+              return abortForSessionSwitch(sessionId)
             } else {
               submitErr = firstErr
             }
@@ -450,7 +506,15 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
           return false
         }
 
-        const message = inlineErrorMessage(err, copy.promptFailed)
+        // A "session not found" the recovery above could not heal must still not
+        // surface the backend's raw internal English string: the user can neither
+        // read it nor act on it. Same treatment the expired clarify card got
+        // (d58d2d9, error 4028) — recognise the rejection by message text (the
+        // JSON-RPC code never reaches the renderer), replace it with localised
+        // copy and put the reopen action next to it instead of a second error
+        // surface.
+        const conversationEnded = isSessionNotFoundError(err)
+        const message = conversationEnded ? copy.conversationEnded : inlineErrorMessage(err, copy.promptFailed)
 
         updateSessionState(sessionId, state => ({
           ...state,
@@ -472,6 +536,17 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
 
         if (isProviderSetupError(err)) {
           requestDesktopOnboarding(copy.providerCredentialRequired)
+
+          return false
+        }
+
+        if (conversationEnded) {
+          notify({
+            action: { label: copy.conversationEndedAction, onClick: () => void resumeLostSession() },
+            kind: 'error',
+            message: copy.conversationEnded,
+            title: copy.promptFailed
+          })
 
           return false
         }

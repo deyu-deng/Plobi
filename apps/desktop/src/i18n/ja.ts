@@ -2667,6 +2667,8 @@ export const ja = defineLocale({
     sessionUnavailable: 'セッションが利用できません',
     createSessionFailed: '新しいセッションを作成できませんでした',
     promptFailed: 'プロンプトに失敗しました',
+    conversationEnded: 'この会話は終了しました。「続ける」を押して再開し、もう一度送信してください。',
+    conversationEndedAction: '続ける',
     providerCredentialRequired: '最初のメッセージを送信する前にプロバイダー認証情報を追加してください。',
     emptySlashCommand: '空のスラッシュコマンド',
     desktopCommands: 'デスクトップコマンド',
