@@ -486,23 +486,34 @@ def test_ensure_l2_agenda_toolsets_still_keeps_terminal(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_soul_block_mentions_no_memory_tool_and_no_master_dispatch():
+def test_soul_block_bans_master_tools_as_entry_but_not_any_tool():
+    """裁定 49 推翻 33.2 / 33.3 的**收工具**部分：SOUL 仍点名 `plobi_master_*`
+    不是日程 / 项目入口，但不再宣布 L1 没有 `terminal` 或不准调用 `memory`。
+    机制层（``L1_DROP_TOOLSETS`` / ``L1_MID_TOOLSETS``）是另一刀，本测试仍按
+    原样钉住，见文件头。"""
+    import re
+
     from plobi.agents.registry import L1_SOUL_BLOCK
 
     assert "派工不是工人" in L1_SOUL_BLOCK
-    # memory 工具被禁。
-    assert "memory" in L1_SOUL_BLOCK
-    # plobi_master_dispatch / preview / status / approve 都被点名禁止。
-    for forbidden in (
+    for not_an_entry_point in (
         "plobi_master_dispatch",
         "plobi_master_preview",
         "plobi_master_status",
         "plobi_master_approve",
     ):
-        assert forbidden in L1_SOUL_BLOCK, forbidden
-    # 不准对项目主树开 terminal。
+        assert not_an_entry_point in L1_SOUL_BLOCK, not_an_entry_point
+    # 主树治理（人批）留着；「L1 同样没有 terminal」那句死了。
     assert "D:\\Projects\\Plobi\\Code" in L1_SOUL_BLOCK
-    assert "terminal" in L1_SOUL_BLOCK
+    assert "人批" in L1_SOUL_BLOCK
+    denial_shaped = [
+        clause
+        for clause in re.split(r"[。；，、\n]", L1_SOUL_BLOCK)
+        if any(t in clause for t in ("terminal", "memory", "computer_use"))
+        and any(m in clause for m in ("没有", "不准调用", "禁止调用", "剥掉", "不可用"))
+    ]
+    assert denial_shaped == [], denial_shaped
+    assert "工具由用户在产品里给" in L1_SOUL_BLOCK
 
 
 def test_soul_block_first_action_is_plobi_secretary_ask():
