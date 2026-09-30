@@ -7,7 +7,7 @@
 A Plobi `MemoryProvider` plugin that bridges the agent to your
 [Mind](file:///D:/Projects/Plobi/Code/mind) second-brain vault (Obsidian markdown,
 file-backed). It is the native-adaptation path discussed in
-`docs/specs/MIND_ADAPTER_PLAN.md`.
+`Docs/specs/memory-adapter.md`.
 
 ## Architecture fit
 

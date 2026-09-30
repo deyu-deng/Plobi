@@ -2,7 +2,8 @@
 
 **Plobi 的项目级文档真源不在这里。** 全部平铺在仓库外的
 与本仓同级的 `../Docs/`（Windows 那台机器已损坏下线，历史文档里出现的 `D:\Projects\Plobi\*` 都是**当时那台机器**的路径，不再是真源），索引 = [`Docs/README.md`](../../../Docs/README.md)，
-纪律 = 其 §0，入口链 = `Docs/HANDOVER.md` → `Docs/MASTER-PLAN.md` → `Docs/REQUIREMENTS.md`。
+纪律与布局规矩 = 其 §0，必读链 = `Docs/ROADMAP.md`（现状+排期）→ `Docs/REQUIREMENTS.md`（需求）→ `Docs/SPEC-FINAL.md`（形态契约）→ `Docs/DECISIONS.md`（裁定与 ADR 现行结论）→ `Docs/PROGRESS.md`（流水）。
+**2026-09-30 起 `Docs/` 已布局标准化**：顶层只留那 6 份全局真源，其余进标准目录（`adr/` `rulings/` `specs/` `runbooks/` …），文件名不再带日期/波次。
 
 本目录（`Code/docs/plobi/`）曾在 2026-09 按 Diátaxis 建过 `adr/ specs/ runbooks/ reference/
 audit/ templates/ plans/ archive/ north_star/` 树，内容已整体迁到上面的 `Docs/`，树本身随
@@ -24,14 +25,15 @@ audit/ templates/ plans/ archive/ north_star/` 树，内容已整体迁到上面
 
 | 你要的 | 现在在哪 |
 |---|---|
-| 最终形态契约（三层 Agent / 额度派工 / HID / 人机面） | `Docs/GRILL_FREEZE.md` |
-| MVP 与 M1 范围、§8.2 派工骨架 | `Docs/MVP-AI-Secretary-Requirements.md` |
-| 排期、每刀 WP、决策点 | `Docs/MASTER-PLAN.md` |
-| 需求登记（用户原话 → 判定 → 去向） | `Docs/REQUIREMENTS.md` |
-| 架构裁定（现至裁定 41；**裁定 2：禁 `POST /api/chat`，聊天走 gateway RPC**） | `Docs/ARCH-RULINGS_2026-09-08.md` |
-| UI 冻结规格（三栏、§3.6 单一 Shell + 单一 ChatSurface、状态机、API 契约） | `Docs/ui-l1-console-spec.md` + `Docs/ARCH-UI-MASTER.md` |
-| ADR（含 ADR-0010 采集黑名单/隐私边界、0011 三层 Agent） | `Docs/00xx-*.md` |
+| 最终形态契约（三层 Agent / 额度派工 / HID / 人机面 / P1–P8 人格条款） | `Docs/SPEC-FINAL.md` |
+| M1 范围与关门、四条可测量标准、派工骨架 | `Docs/ROADMAP.md` §4 M1 + `Docs/SPEC-FINAL.md` §派工骨架冻结 |
+| 排期、每刀 WP、决策点、埋雷 | `Docs/ROADMAP.md` |
+| 需求登记（用户原话 → 判定 → 状态） | `Docs/REQUIREMENTS.md` |
+| 裁定现行结论 + **作废链**（谁作废了谁） | `Docs/DECISIONS.md`（原文在 `Docs/rulings/architecture-rulings.md`，现至裁定 48；**裁定 2：禁 `POST /api/chat`，聊天走 gateway RPC**） |
+| UI 冻结规格（三栏、单一 Shell + 单一 ChatSurface、状态机、API 契约） | `Docs/specs/console-ui.md` + `Docs/specs/ui-master.md` |
+| ADR（含 0010 采集黑名单/隐私边界、0011 三层 Agent） | `Docs/adr/00xx-*.md`，现行结论看 `Docs/DECISIONS.md` §3 |
 | 代码实际实现了什么 | **读代码**（不再有逐模块清单；旧清单已因失真删除） |
+| 海报 / 原型 / 上游 PR 图 | `Docs/design/` 与 `Docs/reference/upstream-pr/`（2026-09-30 从仓外裸目录收进仓，仍不上云） |
 | Master profile 模板 | `profiles/master/config.yaml` 文件还在，但**裁定 6：不创建 `master` profile**——勿据此启用，L1 留在当前 profile |
 
 实现级细节（模块说明、运行手册）若确实要随代码走，可以新增在本目录，并在 `Docs/README.md` 挂一行；

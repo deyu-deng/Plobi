@@ -1,6 +1,6 @@
 """chatlog 服务健康看门狗：巡检 + 连续失败告警 + 一次自愈尝试。
 
-切片 A2（docs/specs/slice-map-v1.md）。巡检轨道（pipeline.run_once）最常见的
+切片 A2（Docs/ROADMAP.md）。巡检轨道（pipeline.run_once）最常见的
 失败原因是 chatlog 服务断了——微信退出登录、进程没起来。本模块把「发现断连」
 从静默 warning 变成主动行为：
 

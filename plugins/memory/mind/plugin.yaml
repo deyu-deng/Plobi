@@ -1,6 +1,6 @@
 name: mind
 version: 0.1.0
-description: "Native adapter for the Mind second-brain vault (Obsidian markdown, file-backed, zero external deps). P0 implemented: keyword retrieval + chat-log export/digest + memory mirror via MindWriter. Spec: docs/specs/MIND_ADAPTER_PLAN.md."
+description: "Native adapter for the Mind second-brain vault (Obsidian markdown, file-backed, zero external deps). P0 implemented: keyword retrieval + chat-log export/digest + memory mirror via MindWriter. Spec: Docs/specs/memory-adapter.md."
 hooks:
   - on_session_end
   - on_memory_write
