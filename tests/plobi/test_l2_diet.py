@@ -218,6 +218,153 @@ def test_apply_l2_project_diet_preserves_other_keys(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 用户显式开启的工具不得被下一次 diet 悄悄收回（裁定 33.3 的机制诚实性）
+# ---------------------------------------------------------------------------
+
+
+def _simulate_ui_toggle(profile_dir, platform, name):
+    """Reproduce the exact write shape of ``_save_platform_tools`` — the helper
+    behind both ``plobi tools`` and ``PUT /api/tools/toolsets/{name}`` (the
+    desktop Toolsets panel): a *sorted* list for that ONE platform, and never
+    the top-level ``toolsets``.
+    """
+    cfg = _read_toolsets(profile_dir)
+    listed = set(cfg.setdefault("platform_toolsets", {}).get(platform, []))
+    listed.add(name)
+    cfg["platform_toolsets"][platform] = sorted(listed)
+    (profile_dir / "config.yaml").write_text(
+        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+
+def test_diet_strips_a_freshly_materialised_profile_everywhere(tmp_path):
+    """首落无回归：clone 来的 profile 顶层 + cli + gateway 三处同时带
+    terminal（``apply_l1_mid_toolsets`` / ``create_profile(clone_config=True)``
+    就是这么三份一起写的），一次 diet 必须三处全剥掉。"""
+    from plobi.agents.registry import apply_l2_project_diet
+
+    profile_dir = tmp_path / "l2-framelet"
+    _write_config(
+        profile_dir,
+        top=["terminal", "web", "skills"],
+        platforms={
+            "cli": ["terminal", "web", "skills"],
+            "gateway": ["terminal", "web", "skills"],
+        },
+    )
+
+    assert apply_l2_project_diet(profile_dir) is True
+
+    cfg = _read_toolsets(profile_dir)
+    for key in ("toolsets",):
+        assert "terminal" not in cfg[key]
+    for platform in ("cli", "gateway"):
+        assert "terminal" not in cfg["platform_toolsets"][platform], platform
+        assert "web" in cfg["platform_toolsets"][platform], platform
+
+
+def test_user_enabled_toolset_survives_the_next_diet_pass(tmp_path):
+    """The toggle must stop being a lie: enable ``terminal`` after the diet ran,
+    then re-run it (registration re-applies the diet on every backend start) —
+    the user's choice stays put and nothing is rewritten.
+    """
+    from plobi.agents.registry import apply_l2_project_diet
+
+    profile_dir = tmp_path / "l2-aura"
+    _write_config(
+        profile_dir,
+        top=["terminal", "web", "skills"],
+        platforms={"cli": ["terminal", "web", "skills"]},
+    )
+    assert apply_l2_project_diet(profile_dir) is True
+    assert "terminal" not in _read_toolsets(profile_dir)["platform_toolsets"]["cli"]
+
+    _simulate_ui_toggle(profile_dir, "cli", "terminal")
+    assert apply_l2_project_diet(profile_dir) is False
+
+    cfg = _read_toolsets(profile_dir)
+    assert "terminal" in cfg["platform_toolsets"]["cli"]
+    # 顶层基线仍是 diet 的产物——opt-in 只覆盖那一个平台列表。
+    assert "terminal" not in cfg["toolsets"]
+
+
+def test_user_enabled_toolset_survives_repeated_passes_and_other_strips(tmp_path):
+    """The opt-in is not a one-shot exemption: it survives any number of later
+    passes, while the diet keeps policing names the profile actually inherited.
+    """
+    from plobi.agents.registry import apply_l2_project_diet
+
+    profile_dir = tmp_path / "l2-aura"
+    _write_config(
+        profile_dir,
+        top=["terminal", "web", "skills"],
+        platforms={"cli": ["terminal", "web", "skills"]},
+    )
+    assert apply_l2_project_diet(profile_dir) is True
+
+    _simulate_ui_toggle(profile_dir, "cli", "terminal")
+    _simulate_ui_toggle(profile_dir, "gateway", "terminal")
+    # 顶层基线里仍然声明着的名字 = 这个 profile 继承来的，照剥；只出现在
+    # 单个平台列表里的 terminal = 用户勾选，保留。
+    cfg = _read_toolsets(profile_dir)
+    for name in ("code_execution", "session_search"):
+        cfg["toolsets"].append(name)
+        cfg["platform_toolsets"]["cli"].append(name)
+        cfg["platform_toolsets"]["gateway"].append(name)
+    (profile_dir / "config.yaml").write_text(
+        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+    assert apply_l2_project_diet(profile_dir) is True
+    cfg = _read_toolsets(profile_dir)
+    assert "terminal" in cfg["platform_toolsets"]["cli"]
+    assert "terminal" in cfg["platform_toolsets"]["gateway"]
+    for name in ("code_execution", "session_search"):
+        assert name not in cfg["toolsets"], name
+        for platform in ("cli", "gateway"):
+            assert name not in cfg["platform_toolsets"][platform], (name, platform)
+    # 第三遍无事可做 = idempotent，不再重写文件。
+    before = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+    assert apply_l2_project_diet(profile_dir) is False
+    assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == before
+
+
+def test_plobi_composite_is_never_treated_as_user_opt_in(tmp_path):
+    """``plobi-*`` 复合工具集把 L2 变回工人，且面板根本写不出它
+    （``_save_platform_tools`` 先丢掉 platform default toolsets），所以即便
+    只出现在单个平台列表里也照剥。"""
+    from plobi.agents.registry import apply_l2_project_diet
+
+    profile_dir = tmp_path / "l2-prism"
+    _write_config(
+        profile_dir,
+        top=["web", "skills"],
+        platforms={"cli": ["plobi-cli", "web"]},
+    )
+
+    assert apply_l2_project_diet(profile_dir) is True
+    cfg = _read_toolsets(profile_dir)
+    assert "plobi-cli" not in cfg["platform_toolsets"]["cli"]
+    assert "web" in cfg["platform_toolsets"]["cli"]
+
+
+def test_diet_leaves_an_untouched_profile_file_byte_identical(tmp_path):
+    """用户没碰过的干净 profile：返回 False，且文件一个字节都不动。"""
+    from plobi.agents.registry import apply_l2_project_diet
+
+    profile_dir = tmp_path / "l2-lean"
+    _write_config(
+        profile_dir,
+        top=["web", "file", "skills", "todo", "clarify"],
+        platforms={"cli": ["web", "file"], "gateway": ["web"]},
+    )
+    before = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+
+    assert apply_l2_project_diet(profile_dir) is False
+    assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == before
+
+
+# ---------------------------------------------------------------------------
 # ensure_mind_project_agents 集成
 # ---------------------------------------------------------------------------
 
