@@ -5309,3 +5309,198 @@ class TestMatrixDispatchSyncIsolation:
 
         assert ran["ok"] is True  # the sibling handler still ran
         assert "event handler failed" in caplog.text  # failure surfaced, not swallowed
+
+
+# ---------------------------------------------------------------------------
+# Dependency pinning: the Matrix install path must not bypass tools/lazy_deps
+#
+# Why this exists: LAZY_DEPS["platform.matrix"] carries the exact pins —
+# including aiohttp==3.14.1, the floor that dodges CVE-2026-34993 (RCE) plus
+# CVE-2026-47265/34513/34518/34519/34520/34525. Two bypasses used to sit here:
+# `interactive_setup()` answered a failed install by printing a hand-written
+# `pip install 'mautrix[encryption]' asyncpg aiosqlite Markdown aiohttp-socks`
+# line, and its `except ImportError` fallback ran `_pip_install(["mautrix[encryption]"])`.
+# That pip call resolves aiohttp freely, so it can overwrite the CVE-pinned
+# copy already in the venv. These tests assert the *relationship* (any install
+# routes through ensure(); any rendered install command carries the pins), not
+# a snapshot of the pin table.
+# ---------------------------------------------------------------------------
+
+
+def _lazy_deps_pkg_index():
+    """Map canonical package name -> the exact specs LAZY_DEPS pins it at."""
+    from tools.lazy_deps import LAZY_DEPS
+
+    index = {}
+    for specs in LAZY_DEPS.values():
+        for spec in specs:
+            m = re.match(r"^[A-Za-z0-9_.\-]+", spec)
+            if m:
+                index.setdefault(m.group(0).lower().replace("_", "-"), set()).add(spec)
+    return index
+
+
+def _runtime_strings(module):
+    """Every non-docstring str literal in a module, parsed from its real source.
+
+    Comments and docstrings are developer-facing prose; this returns the strings
+    the product actually renders (log messages, tool errors, install hints).
+    """
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(module))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                docstrings.add(id(first.value))
+    return [
+        n.value
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings
+    ]
+
+
+def _pip_install_calls(module):
+    """Names of every `_pip_install(...)` call site in a module's source."""
+    import ast
+    import inspect
+
+    return [
+        node for node in ast.walk(ast.parse(inspect.getsource(module)))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_pip_install"
+    ]
+
+
+class TestMatrixInstallRoutesThroughLazyDeps:
+    @staticmethod
+    def _drive(monkeypatch, *, ensure_impl, answers=("https://matrix.example.org", "syt_token")):
+        """Run MatrixAdapter.interactive_setup() with the CLI layer stubbed out.
+
+        Returns (ensure_calls, printed_lines). `print_*` and `prompt` are
+        captured rather than rendered so the assertions are deterministic.
+        """
+        import plobi_cli.cli_output as cli_output
+        import plobi_cli.config as cli_config
+        import tools.lazy_deps as lazy_deps
+
+        from plugins.platforms.matrix.adapter import interactive_setup
+
+        calls = []
+        printed = []
+
+        def fake_ensure(feature, *, prompt=True):
+            calls.append((feature, prompt))
+            if ensure_impl is not None:
+                return ensure_impl(feature)
+
+        remaining = list(answers)
+        monkeypatch.setattr(lazy_deps, "ensure", fake_ensure)
+        # Force the "some deps are missing" branch so the install path runs.
+        monkeypatch.setattr(
+            lazy_deps, "feature_missing",
+            lambda feature: lazy_deps.LAZY_DEPS[feature][:1],
+        )
+        monkeypatch.setattr(
+            cli_output, "prompt", lambda *a, **k: remaining.pop(0) if remaining else ""
+        )
+        monkeypatch.setattr(cli_output, "prompt_yes_no", lambda *a, **k: True)
+        for name in ("print_header", "print_info", "print_success", "print_warning"):
+            monkeypatch.setattr(
+                cli_output, name,
+                lambda *a, _b=None, **k: printed.append(" ".join(str(x) for x in a)),
+            )
+        monkeypatch.setattr(cli_config, "get_env_value", lambda key, *a, **k: "")
+        monkeypatch.setattr(cli_config, "save_env_value", lambda *a, **k: None)
+        # Any surviving hand-rolled pip call must fail the test loudly.
+        monkeypatch.setattr(
+            "plobi_cli.tools_config._pip_install",
+            lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("Matrix setup must not hand-roll _pip_install")
+            ),
+        )
+
+        interactive_setup()
+        return calls, "\n".join(printed)
+
+    def test_setup_installs_via_ensure_with_the_matrix_key(self, monkeypatch):
+        calls, out = self._drive(monkeypatch, ensure_impl=None)
+        assert calls == [("platform.matrix", False)], (
+            "Matrix setup must install through lazy_deps.ensure('platform.matrix') "
+            f"with prompt=False, got {calls}"
+        )
+        assert "installed" in out
+
+    def test_setup_refusal_states_the_pins_not_a_bare_name_list(self, monkeypatch):
+        """When ensure() refuses, the fallback line comes from the mechanism.
+
+        It must contain the aiohttp CVE floor exactly as LAZY_DEPS declares it,
+        and never the old hand-written unpinned package list.
+        """
+        from tools.lazy_deps import LAZY_DEPS, FeatureUnavailable
+
+        matrix_pins = LAZY_DEPS["platform.matrix"]
+
+        def _boom(feature):
+            raise FeatureUnavailable(
+                feature, matrix_pins, "lazy installs disabled (security.allow_lazy_installs=false)"
+            )
+
+        calls, out = self._drive(monkeypatch, ensure_impl=_boom)
+        assert calls == [("platform.matrix", False)]
+        # The pinned aiohttp floor survives into the message, read from LAZY_DEPS.
+        assert "aiohttp==3.14.1" in out, out
+        # The old unpinned remediation list is gone.
+        assert "asyncpg aiosqlite Markdown aiohttp-socks" not in out
+        assert "pip install 'mautrix[encryption]' asyncpg" not in out
+        assert "could not be installed" in out
+
+    def test_adapter_source_has_no_hand_rolled_pip_install(self):
+        """Invariant: the adapter no longer contains a `_pip_install(...)` call.
+
+        The ImportError fallback that used to sit here installed a bare
+        `mautrix[encryption]`, letting pip pick a different aiohttp and clobber
+        the CVE-pinned copy in the venv.
+        """
+        from plugins.platforms.matrix import adapter as matrix_mod
+
+        assert _pip_install_calls(matrix_mod) == []
+
+    def test_no_rendered_string_offers_an_unpinned_install(self):
+        """Invariant: a string the product renders may name a lazy_deps-pinned
+        package in an install command only at that package's exact pin.
+
+        Catches the whole class — the E2EE hint, the requirements-check warning,
+        the standalone-send error payload and the plugin's install_hint — rather
+        than one line at a time.
+        """
+        from plugins.platforms.matrix import adapter as matrix_mod
+
+        index = _lazy_deps_pkg_index()
+        assert index
+        offenders = []
+        for text in _runtime_strings(matrix_mod):
+            if "pip install" not in text:
+                continue
+            for chunk in re.findall(r"pip install[^\n]*", text):
+                for token in re.findall(r"[A-Za-z][A-Za-z0-9_.\-]*", chunk):
+                    key = token.lower().replace("_", "-")
+                    if key not in index:
+                        continue
+                    if not re.search(rf"{re.escape(token)}(\[[^\]]*\])?\s*==", chunk):
+                        offenders.append((token, chunk, sorted(index[key])))
+        assert not offenders, f"unpinned install command offered to the user: {offenders}"
+
+    def test_e2ee_hint_names_the_in_app_action_not_a_pip_line(self):
+        """The owner's standing ruling: on-screen text must not tell a human to
+        run a command the software runs itself."""
+        from plugins.platforms.matrix.adapter import _E2EE_INSTALL_HINT
+
+        assert "pip install" not in _E2EE_INSTALL_HINT
+        assert "plobi setup" in _E2EE_INSTALL_HINT

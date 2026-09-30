@@ -77,8 +77,23 @@ def _prompt(label: str, default: str | None = None, secret: bool = False) -> str
 # Provider discovery
 # ---------------------------------------------------------------------------
 
+def _lazy_feature_key(provider_name: str) -> str | None:
+    """Return the tools/lazy_deps feature key for a memory provider, or None.
+
+    Resolved by the ``memory.<provider>`` naming convention and validated
+    against the LAZY_DEPS allowlist itself, so there is no second list here to
+    drift out of sync with the pin table.
+    """
+    try:
+        from tools.lazy_deps import LAZY_DEPS
+    except ImportError:
+        return None
+    key = f"memory.{provider_name}"
+    return key if key in LAZY_DEPS else None
+
+
 def _install_dependencies(provider_name: str) -> None:
-    """Install pip dependencies declared in plugin.yaml."""
+    """Install the Python dependencies a memory provider plugin needs."""
     import subprocess
     from plugins.memory import find_provider_dir
 
@@ -120,24 +135,52 @@ def _install_dependencies(provider_name: str) -> None:
     if not missing:
         return
 
-    print(f"\n  Installing dependencies: {', '.join(missing)}")
-
-    from plobi_cli.tools_config import _pip_install
-
-    manual_cmd = f"uv pip install {' '.join(missing)}"
-    try:
-        result = _pip_install(["--quiet"] + missing, timeout=120)
-        if result.returncode == 0:
-            print(f"  ✓ Installed {', '.join(missing)}")
+    # Installs go through tools/lazy_deps.ensure(), never a hand-rolled
+    # `_pip_install(missing)`. plugin.yaml declares these names bare or with an
+    # open range ("honcho-ai", "mem0ai>=2.0.10,<3"), so installing them straight
+    # from there hands pip a free resolve — no exact pin, no allowlist, and it
+    # can silently move a dependency the app already pins elsewhere. LAZY_DEPS
+    # holds the exact pins and `ensure()` applies the
+    # security.allow_lazy_installs gate.
+    feature = _lazy_feature_key(provider_name)
+    if feature is None:
+        print(f"\n  ⚠ {', '.join(missing)} not installed.")
+        print(
+            "    Plobi has no pinned install entry for this provider, so it is "
+            "installing nothing — an unpinned resolve could move packages the "
+            "app pins by version."
+        )
+        print(
+            "    The provider will report itself unavailable until its packages "
+            "are present."
+        )
+    else:
+        try:
+            from tools.lazy_deps import (
+                ensure as _lazy_ensure,
+                feature_install_command as _lazy_install_command,
+            )
+        except ImportError:
+            print(
+                "  ⚠ Installer unavailable (tools.lazy_deps not importable) — "
+                "installing nothing."
+            )
         else:
-            print(f"  ⚠ Failed to install {', '.join(missing)}")
-            stderr = (result.stderr or "")[:200]
-            if stderr:
-                print(f"    {stderr}")
-            print(f"  Run manually: {manual_cmd}")
-    except Exception as e:
-        print(f"  ⚠ Install failed: {e}")
-        print(f"  Run manually: {manual_cmd}")
+            # Read the manual remediation line from the mechanism itself, so the
+            # printed pins can never drift from LAZY_DEPS[feature].
+            manual_cmd = _lazy_install_command(feature) or ""
+            print(f"\n  Installing dependencies: {', '.join(missing)}")
+            try:
+                _lazy_ensure(feature, prompt=False)
+            except Exception as exc:  # noqa: BLE001 — FeatureUnavailable et al.
+                # Lazy installs can also be refused because the user set
+                # security.allow_lazy_installs=false; exc says which.
+                print(f"  ⚠ Could not install {', '.join(missing)}:")
+                print(f"    {str(exc).strip()[:300]}")
+                if manual_cmd:
+                    print(f"    Run manually: {manual_cmd}")
+            else:
+                print(f"  ✓ Installed {', '.join(missing)}")
 
     # Also show external dependencies (non-pip) if any
     ext_deps = meta.get("external_dependencies", [])

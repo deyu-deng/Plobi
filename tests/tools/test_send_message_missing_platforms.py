@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -406,3 +407,95 @@ class TestSendDingtalk:
         assert result["success"] is True
         call_kwargs = client.post.await_args
         assert "access_token=env" in call_kwargs[0][0]
+
+
+# ---------------------------------------------------------------------------
+# Missing-dependency errors must not hand out an unpinned pip command
+#
+# These strings are returned to the model and relayed to the user, so they are
+# user-facing text. `pip install 'mautrix[encryption]'` names a package that
+# tools/lazy_deps pins exactly (mautrix[encryption]==0.21.0 plus the
+# aiohttp==3.14.1 floor for CVE-2026-34993 (RCE)); a bare name invites an
+# unpinned resolve, and it tells a human to run an install Plobi performs
+# itself during `plobi setup`.
+# ---------------------------------------------------------------------------
+
+
+def _runtime_strings(module):
+    """Non-docstring str literals — the text this module actually renders."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(module))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                docstrings.add(id(first.value))
+    return [
+        n.value
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings
+    ]
+
+
+def _lazy_deps_pkg_index():
+    from tools.lazy_deps import LAZY_DEPS
+
+    index = {}
+    for specs in LAZY_DEPS.values():
+        for spec in specs:
+            name = re.match(r"^[A-Za-z0-9_.\-]+", spec)
+            if name:
+                index.setdefault(name.group(0).lower().replace("_", "-"), set()).add(spec)
+    return index
+
+
+def test_no_returned_error_offers_an_unpinned_install():
+    """Invariant: a rendered string may name a lazy_deps-pinned package in an
+    install command only at that package's exact pin."""
+    import tools.send_message_tool as send_mod
+
+    index = _lazy_deps_pkg_index()
+    assert index
+    offenders = []
+    for text in _runtime_strings(send_mod):
+        if "pip install" not in text:
+            continue
+        for chunk in re.findall(r"pip install[^\n]*", text):
+            for token in re.findall(r"[A-Za-z][A-Za-z0-9_.\-]*", chunk):
+                key = token.lower().replace("_", "-")
+                if key not in index:
+                    continue
+                if not re.search(rf"{re.escape(token)}(\[[^\]]*\])?\s*==", chunk):
+                    offenders.append((token, chunk, sorted(index[key])))
+    assert not offenders, f"unpinned install command handed to the user: {offenders}"
+
+
+def test_missing_matrix_deps_points_at_setup(monkeypatch):
+    """The MatrixAdapter import failure names the in-app action, not a pip line."""
+    import builtins
+
+    from tools.send_message_tool import _send_matrix_via_adapter
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "plugins.platforms.matrix.adapter":
+            raise ImportError("blocked: matrix deps missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    pconfig = SimpleNamespace(token=None, extra={})
+    result = asyncio.run(_send_matrix_via_adapter(pconfig, "!room:example.com", "hi"))
+
+    assert "error" in result
+    assert "pip install" not in result["error"]
+    assert "plobi setup" in result["error"]
+    assert "Matrix" in result["error"]

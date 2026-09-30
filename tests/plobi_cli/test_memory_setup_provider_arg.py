@@ -51,55 +51,57 @@ class TestMemorySetupProviderRouting:
 
 
 class TestInstallDependenciesRunner:
-    """`_install_dependencies` must route through the canonical
-    ``_pip_install`` ladder (uv → pip → ensurepip): uv when present, standard
-    pip when uv is unavailable, and an ensurepip bootstrap for pip-less venvs
-    instead of dead-ending with "cannot install"."""
+    """`_install_dependencies` must route through ``tools/lazy_deps.ensure()``.
 
-    def _run_with_missing_dep(self, tmp_path, which_side_effect, run_behavior=None):
-        """Drive _install_dependencies for a plugin that declares one missing
-        pip dep, capturing every subprocess.run argv issued by the ladder."""
-        import sys
+    It used to call ``plobi_cli.tools_config._pip_install`` with the names read
+    straight out of plugin.yaml. Those names are bare or open-ranged
+    ("honcho-ai", "mem0ai>=2.0.10,<3"), so the install resolved freely with no
+    exact pin and no allowlist — the bypass AGENTS.md's Dependency Pinning
+    Policy exists to stop.
 
+    The uv → pip → ensurepip runner ladder this class used to assert is not
+    lost: it lives in ``tools/lazy_deps._venv_pip_install`` (its own docstring
+    says it mirrors ``_pip_install``), and ``ensure()`` is the only way to reach
+    it from here now. Asserting the ladder through the mock would only test
+    lazy_deps internals from the wrong side of the boundary.
+    """
+
+    def _run_with_missing_dep(self, tmp_path, monkeypatch, provider_name):
         (tmp_path / "plugin.yaml").write_text(
             "pip_dependencies:\n  - definitely-not-installed-xyz\n", encoding="utf-8"
         )
+        import tools.lazy_deps as lazy_deps
+
         calls = []
-
-        def fake_run(cmd, **kw):
-            calls.append(cmd)
-            if run_behavior:
-                return run_behavior(cmd)
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        with patch("plugins.memory.find_provider_dir", return_value=tmp_path), \
-             patch("plobi_cli.tools_config.shutil.which", side_effect=which_side_effect), \
-             patch("plobi_cli.tools_config.subprocess.run", fake_run):
-            memory_setup._install_dependencies("x")
-        return calls, sys.executable
-
-    def test_uses_uv_when_available(self, tmp_path):
-        calls, _ = self._run_with_missing_dep(
-            tmp_path, lambda b: "/usr/bin/uv" if b == "uv" else None
+        monkeypatch.setattr(
+            lazy_deps, "ensure",
+            lambda feature, *, prompt=True: calls.append((feature, prompt)),
         )
-        assert calls
-        assert calls[0][:3] == ["/usr/bin/uv", "pip", "install"]
+        monkeypatch.setattr("plugins.memory.find_provider_dir", lambda name: tmp_path)
+        monkeypatch.setattr(
+            "plobi_cli.tools_config._pip_install",
+            lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("_install_dependencies must not hand-roll _pip_install")
+            ),
+        )
+        memory_setup._install_dependencies(provider_name)
+        return calls
 
-    def test_falls_back_to_pip_when_uv_missing(self, tmp_path):
-        """No uv but pip importable -> python -m pip install."""
-        calls, py = self._run_with_missing_dep(tmp_path, lambda b: None)
-        assert calls
-        # Ladder probes pip first, then installs with it.
-        assert calls[0][:3] == [py, "-m", "pip"]
-        assert calls[-1][:4] == [py, "-m", "pip", "install"]
+    def test_pinned_provider_installs_through_ensure(self, tmp_path, monkeypatch):
+        """honcho has a LAZY_DEPS entry, so ensure() gets its key — not a pip call."""
+        assert self._run_with_missing_dep(tmp_path, monkeypatch, "honcho") == [
+            ("memory.honcho", False)
+        ]
 
-    def test_bootstraps_pip_via_ensurepip_when_missing(self, tmp_path):
-        """Neither uv nor pip -> ensurepip bootstrap, then pip install."""
-        def behavior(cmd):
-            if cmd[-1] == "--version":
-                return SimpleNamespace(returncode=1, stdout="", stderr="")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+    def test_provider_without_an_entry_installs_nothing(self, tmp_path, monkeypatch):
+        """No allowlist entry → no known-safe pin → no install, no hand-rolled pip."""
+        assert self._run_with_missing_dep(tmp_path, monkeypatch, "x") == []
 
-        calls, py = self._run_with_missing_dep(tmp_path, lambda b: None, behavior)
-        assert any("ensurepip" in c for c in calls)
-        assert calls[-1][:4] == [py, "-m", "pip", "install"]
+    def test_ensure_runs_non_interactively(self, tmp_path, monkeypatch):
+        """Setup owns the terminal; a blocking install prompt would deadlock it."""
+        from tools.lazy_deps import LAZY_DEPS
+
+        for provider in ("mem0", "supermemory", "hindsight"):
+            assert f"memory.{provider}" in LAZY_DEPS, provider
+            calls = self._run_with_missing_dep(tmp_path, monkeypatch, provider)
+            assert calls == [(f"memory.{provider}", False)]

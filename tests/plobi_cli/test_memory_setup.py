@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 import plobi_cli.memory_setup as memory_setup
 from plobi_cli.memory_setup import _CANCELLED, _curses_select
 
@@ -196,3 +198,168 @@ def test_cmd_setup_generic_choice_cancel_writes_nothing(tmp_path, monkeypatch):
     save_config.assert_not_called()
     provider.save_config.assert_not_called()
     assert not (tmp_path / ".env").exists()
+
+
+# ---------------------------------------------------------------------------
+# Dependency pinning: memory provider installs must not bypass tools/lazy_deps
+#
+# `_install_dependencies()` used to read the bare / open-range names straight
+# out of plugin.yaml ("honcho-ai", "mem0ai>=2.0.10,<3") and hand them to
+# `_pip_install(["--quiet"] + missing)`, then print
+# `uv pip install <those same names>` as the manual fallback. That skips the
+# LAZY_DEPS allowlist and its exact pins, and lets pip move a dependency the
+# app pins elsewhere. The pins for these providers do exist
+# (memory.honcho / memory.mem0 / memory.supermemory / memory.hindsight), so the
+# fix is to route through ensure(), not to add anything.
+# ---------------------------------------------------------------------------
+
+_MISSING_DEP = "definitely-not-installed-xyz"
+
+
+def _drive_install_dependencies(
+    monkeypatch, capsys, tmp_path, provider_name, *, ensure_impl=None, dep=_MISSING_DEP
+):
+    """Run _install_dependencies() for a fake plugin dir, installer mocked.
+
+    Returns (ensure_calls, printed output). Any surviving hand-rolled pip call
+    raises instead of shelling out, so a regression fails loudly.
+    """
+    import tools.lazy_deps as lazy_deps
+
+    (tmp_path / "plugin.yaml").write_text(
+        f"pip_dependencies:\n  - {dep}\n", encoding="utf-8"
+    )
+    calls = []
+
+    def fake_ensure(feature, *, prompt=True):
+        calls.append((feature, prompt))
+        if ensure_impl is not None:
+            return ensure_impl(feature)
+
+    monkeypatch.setattr(lazy_deps, "ensure", fake_ensure)
+    monkeypatch.setattr("plugins.memory.find_provider_dir", lambda name: tmp_path)
+    monkeypatch.setattr(
+        "plobi_cli.tools_config._pip_install",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("memory setup must not hand-roll _pip_install")
+        ),
+    )
+
+    memory_setup._install_dependencies(provider_name)
+    return calls, capsys.readouterr().out
+
+
+@pytest.mark.parametrize("provider", ["honcho", "mem0", "supermemory", "hindsight"])
+def test_missing_provider_deps_install_through_ensure(monkeypatch, capsys, tmp_path, provider):
+    """Each provider whose packages LAZY_DEPS pins must install via ensure(),
+    with prompt=False (setup already owns the terminal)."""
+    calls, out = _drive_install_dependencies(monkeypatch, capsys, tmp_path, provider)
+    assert calls == [(f"memory.{provider}", False)], (
+        f"{provider} must install through lazy_deps.ensure('memory.{provider}'), got {calls}"
+    )
+    assert _MISSING_DEP not in out or "uv pip install" not in out
+
+
+def test_provider_without_a_lazy_deps_entry_installs_nothing(monkeypatch, capsys, tmp_path):
+    """No allowlist entry means no known-safe pin, so nothing gets installed.
+
+    openviking/retaindb declare httpx and requests — core dependencies that
+    ship pinned with the app. Installing them from plugin.yaml here would be an
+    unpinned resolve of a package pyproject already fixes, so the correct
+    behaviour is to say so plainly and install nothing.
+    """
+    from tools.lazy_deps import LAZY_DEPS
+
+    assert "memory.openviking" not in LAZY_DEPS
+    calls, out = _drive_install_dependencies(monkeypatch, capsys, tmp_path, "openviking")
+    assert calls == []
+    assert "uv pip install" not in out
+    assert "pip install" not in out
+    assert "installing nothing" in out
+
+
+def test_refused_install_reports_the_pinned_spec(monkeypatch, capsys, tmp_path):
+    """When ensure() refuses (offline, or security.allow_lazy_installs=false),
+    the manual line must come from LAZY_DEPS — never a bare package name."""
+    from tools.lazy_deps import LAZY_DEPS, FeatureUnavailable
+
+    pin = LAZY_DEPS["memory.honcho"][0]
+
+    def _boom(feature):
+        raise FeatureUnavailable(
+            feature, LAZY_DEPS[feature], "lazy installs disabled (security.allow_lazy_installs=false)"
+        )
+
+    calls, out = _drive_install_dependencies(
+        monkeypatch, capsys, tmp_path, "honcho", ensure_impl=_boom
+    )
+    assert calls == [("memory.honcho", False)]
+    assert pin in out, f"expected the pinned spec {pin!r} in: {out}"
+    # The old shape was `uv pip install <name>` with no version at all.
+    assert f"uv pip install {_MISSING_DEP}" not in out
+    assert "Could not install" in out
+
+
+def test_already_importable_deps_trigger_no_install(monkeypatch, capsys, tmp_path):
+    """A provider whose packages are present must not touch the installer."""
+    calls, out = _drive_install_dependencies(
+        # `json` stands in for an already-satisfied dependency: the probe here
+        # is `__import__(<pip name>)`, and stdlib names always resolve.
+        monkeypatch, capsys, tmp_path, "honcho", dep="json"
+    )
+    assert calls == []
+    assert "pip install" not in out
+
+
+def _pip_install_references(module):
+    """Every import or call of _pip_install in a module's real source."""
+    import ast
+    import inspect
+
+    found = []
+    for node in ast.walk(ast.parse(inspect.getsource(module))):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_pip_install":
+            found.append(("call", node.lineno))
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names or ():
+                if alias.name == "_pip_install":
+                    found.append(("import", node.lineno))
+    return found
+
+
+def _runtime_strings(module):
+    """Non-docstring str literals — the text this module actually renders."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(module))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                docstrings.add(id(first.value))
+    return [
+        n.value
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings
+    ]
+
+
+def test_memory_setup_contains_no_hand_rolled_pip_install():
+    """Invariant: this module neither calls nor imports _pip_install any more."""
+    assert _pip_install_references(memory_setup) == []
+
+
+def test_memory_setup_hardcodes_no_install_command_string():
+    """Invariant: no literal in this module may spell out a pip install line.
+
+    The remediation command has to come from lazy_deps.feature_install_command()
+    at runtime, which reads LAZY_DEPS — so it cannot drift from the pins.
+    """
+    offenders = [s for s in _runtime_strings(memory_setup) if "pip install" in s]
+    assert not offenders, f"hardcoded install command literal, will drift from LAZY_DEPS: {offenders}"

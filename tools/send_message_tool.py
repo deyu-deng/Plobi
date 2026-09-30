@@ -1420,7 +1420,16 @@ async def _send_telegram(token, chat_id, message, media_files=None, thread_id=No
             result["warnings"] = warnings
         return result
     except ImportError:
-        return {"error": "python-telegram-bot not installed. Run: pip install python-telegram-bot"}
+        # Sibling of the Matrix branch above: same rule — python-telegram-bot is
+        # pinned under LAZY_DEPS["platform.telegram"] and Plobi installs it during
+        # setup, so this string names no pip command.
+        return {
+            "error": (
+                "Telegram sending is unavailable because the telegram library is "
+                "not installed. Plobi installs it on its own — run `plobi setup` "
+                "and configure Telegram under Messaging Platforms, then retry."
+            )
+        }
     except Exception as e:
         return _error(f"Telegram send failed: {e}")
 
@@ -1703,7 +1712,22 @@ async def _send_matrix_via_adapter(pconfig, chat_id, message, media_files=None, 
     try:
         from plugins.platforms.matrix.adapter import MatrixAdapter
     except ImportError:
-        return {"error": "Matrix dependencies not installed. Run: pip install 'mautrix[encryption]'"}
+        # No pip command in this string. The Matrix package set is version-pinned
+        # in tools/lazy_deps.py under LAZY_DEPS["platform.matrix"] — that entry is
+        # what keeps aiohttp at 3.14.1, the patched floor for CVE-2026-34993
+        # (RCE). Telling a human (or the model relaying it) to type a bare
+        # `pip install 'mautrix[encryption]'` invites an unpinned resolve that
+        # overwrites the CVE-pinned copy, and it asks them to run an install
+        # Plobi performs itself during setup.
+        return {
+            "error": (
+                "Matrix dependencies are not installed, so this message could "
+                "not be sent. Plobi installs them on its own — run `plobi setup` "
+                "and configure Matrix under Messaging Platforms. If it stays "
+                "unavailable, lazy installs may be switched off; set "
+                "security.allow_lazy_installs: true in config.yaml."
+            )
+        }
 
     adapter = MatrixAdapter(pconfig)
     try:
