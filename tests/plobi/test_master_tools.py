@@ -174,6 +174,225 @@ def test_l1_mid_narrow_preserves_already_mid_list():
     assert mid_narrow_toolset_names(mid) == mid
 
 
+# ---------------------------------------------------------------------------
+# L1 中收也要认「用户自己勾的」——复用 8e01e9a 的同一个判据
+# （``_explicit_toolset_optins``），与 tests/plobi/test_l2_diet.py 成对。
+# ---------------------------------------------------------------------------
+
+
+def _simulate_ui_toggle(cfg: dict, platform: str, name: str) -> None:
+    """Reproduce the exact write shape of ``_save_platform_tools`` — the helper
+    behind both ``plobi tools`` and the desktop Toolsets panel
+    (``PUT /api/tools/toolsets/...`` writes ``platform_toolsets.cli``): a
+    *sorted* list for that ONE platform, and never the top-level ``toolsets``.
+    """
+    listed = set(cfg.setdefault("platform_toolsets", {}).get(platform, []))
+    listed.add(name)
+    cfg["platform_toolsets"][platform] = sorted(listed)
+
+
+def _narrowed_l1_config() -> dict:
+    """The resting shape ``apply_l1_mid_toolsets`` leaves on disk — measured on
+    ``~/.plobi/config.yaml`` (主秘书) and ``~/.plobi/profiles/l2-agenda/config.yaml``:
+    all three lists equal, no drop-set name anywhere."""
+    from plobi.agents.registry import L1_MID_TOOLSETS
+
+    mid = list(L1_MID_TOOLSETS)
+    return {
+        "toolsets": list(mid),
+        "platform_toolsets": {"cli": list(mid), "gateway": list(mid)},
+    }
+
+
+def _snapshot(cfg: dict) -> dict:
+    import copy
+
+    return copy.deepcopy(cfg)
+
+
+def test_l1_mid_narrow_still_narrows_a_fresh_profile_everywhere():
+    """首落无回归：继承来的顶层带着 terminal / memory（``create_profile
+    (clone_config=True)`` 就是这么三份一起写的），一次 pass 必须三处全剥掉。"""
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = {
+        "toolsets": ["terminal", "memory", "web", "skills"],
+        "platform_toolsets": {
+            "cli": ["terminal", "memory", "web", "skills"],
+            "gateway": ["terminal", "memory", "web", "skills"],
+        },
+    }
+    assert apply_l1_mid_toolsets(cfg) is True
+
+    for names in (
+        [cfg["toolsets"], cfg["platform_toolsets"]["cli"], cfg["platform_toolsets"]["gateway"]]
+    ):
+        assert "terminal" not in names
+        assert "memory" not in names
+        assert "web" in names
+        assert "plobi_north_star" in names
+    # 三份一致 = 策略写入的形状 → 第二次无事可做。
+    after = _snapshot(cfg)
+    assert apply_l1_mid_toolsets(cfg) is False
+    assert cfg == after
+
+
+def test_inherited_composite_top_level_is_never_read_as_an_opt_in():
+    """顶层是 ``plobi-cli``（``DEFAULT_CONFIG`` 合并进来的继承形状）时**不认**
+    opt-in：复合工具集不列举任何东西，「不在基线里」证明不了是人工勾的。
+    这一份正是 ``plobi-cli`` profile 今天的行为，一个字都不放宽。"""
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = {
+        "toolsets": ["plobi-cli"],
+        "platform_toolsets": {
+            "cli": ["plobi-cli", "terminal"],
+            "gateway": ["terminal", "session_search", "clarify"],
+        },
+    }
+    assert apply_l1_mid_toolsets(cfg) is True
+    for platform in ("cli", "gateway"):
+        names = cfg["platform_toolsets"][platform]
+        assert "terminal" not in names, platform
+        assert "session_search" not in names, platform
+        assert "plobi_north_star" in names, platform
+
+
+def test_absent_top_level_toolsets_narrows_exactly_as_before():
+    """顶层根本没写 ``toolsets``：没有可比较的基线 → 照旧全剥（不新增判据）。"""
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = {"platform_toolsets": {"cli": ["terminal", "web"]}}
+    assert apply_l1_mid_toolsets(cfg) is True
+    assert "terminal" not in cfg["toolsets"]
+    assert "terminal" not in cfg["platform_toolsets"]["cli"]
+    assert "web" in cfg["platform_toolsets"]["cli"]
+
+
+def test_user_enabled_toolset_survives_the_next_l1_mid_pass():
+    """The toggle must stop being a lie: ``apply_l1_mid_toolsets`` re-runs at
+    every plugin load (``ensure_north_star_toolset``), and the ``terminal`` the
+    user switched on afterwards has to still be there.
+    """
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = _narrowed_l1_config()
+    assert apply_l1_mid_toolsets(cfg) is False
+
+    _simulate_ui_toggle(cfg, "cli", "terminal")
+    apply_l1_mid_toolsets(cfg)
+
+    assert "terminal" in cfg["platform_toolsets"]["cli"]
+    # 顶层基线仍是策略写入的产物——opt-in 只覆盖那一个平台列表。
+    assert "terminal" not in cfg["toolsets"]
+    assert "terminal" not in cfg["platform_toolsets"]["gateway"]
+    # 归位之后完全稳定（idempotent）。
+    after = _snapshot(cfg)
+    assert apply_l1_mid_toolsets(cfg) is False
+    assert cfg == after
+
+
+def test_user_enabled_toolset_survives_repeated_l1_passes_and_other_strips():
+    """The opt-in is not a one-shot exemption: it survives any number of later
+    passes, while the pass keeps policing names the profile actually inherited.
+    """
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = _narrowed_l1_config()
+
+    _simulate_ui_toggle(cfg, "cli", "terminal")
+    _simulate_ui_toggle(cfg, "gateway", "terminal")
+    # 顶层重新出现 ``session_search`` = 这个 profile 继承/被改回来的，照剥；
+    # 只出现在两个平台列表里的 terminal = 用户勾选，保留。
+    cfg["toolsets"].append("session_search")
+    for platform in ("cli", "gateway"):
+        cfg["platform_toolsets"][platform].append("session_search")
+
+    assert apply_l1_mid_toolsets(cfg) is True
+    assert "session_search" not in cfg["toolsets"]
+    for platform in ("cli", "gateway"):
+        names = cfg["platform_toolsets"][platform]
+        assert "terminal" in names, platform
+        assert "session_search" not in names, platform
+    # 再跑一遍无事可做 = idempotent。
+    after = _snapshot(cfg)
+    assert apply_l1_mid_toolsets(cfg) is False
+    assert cfg == after
+
+
+def test_plobi_composite_is_never_a_user_opt_in_for_l1_mid():
+    """``plobi-*`` 复合工具集把 L1 变回工人，且面板根本写不出它
+    （``_save_platform_tools`` 先丢掉 platform default toolsets），所以即便
+    只出现在单个平台列表里也照剥。"""
+    from plobi.agents.registry import L1_MID_TOOLSETS, apply_l1_mid_toolsets
+
+    cfg = {
+        "toolsets": list(L1_MID_TOOLSETS),
+        "platform_toolsets": {"cli": ["plobi-cli", "web"]},
+    }
+    assert apply_l1_mid_toolsets(cfg) is True
+    assert "plobi-cli" not in cfg["platform_toolsets"]["cli"]
+    assert "web" in cfg["platform_toolsets"]["cli"]
+
+
+def test_l1_mid_narrow_leaves_an_untouched_profile_untouched():
+    """用户没碰过的干净 profile：返回 False，内容一个字节都不动。"""
+    from plobi.agents.registry import apply_l1_mid_toolsets
+
+    cfg = _narrowed_l1_config()
+    cfg["platform_toolsets"]["cli"] = sorted(
+        set(cfg["platform_toolsets"]["cli"]) | {"kanban", "tts", "vision"}
+    )
+    before = _snapshot(cfg)
+
+    assert apply_l1_mid_toolsets(cfg) is False
+    assert cfg == before
+
+
+def test_ensure_north_star_toolset_keeps_ui_opt_in_across_restarts(tmp_path, monkeypatch):
+    """E2E through the real plugin-load path: 主秘书 / 日程 each run
+    ``ensure_north_star_toolset()`` at every start, so the toggle has to survive
+    the *second* startup against a config file on disk.
+    """
+    import yaml
+
+    from plobi.agents.registry import L1_MID_TOOLSETS, ensure_north_star_toolset
+
+    cfg_path = tmp_path / "config.yaml"
+
+    def _dump(cfg):
+        cfg_path.write_text(
+            yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
+        )
+
+    _dump({"toolsets": list(L1_MID_TOOLSETS), "platform_toolsets": {"cli": list(L1_MID_TOOLSETS)}})
+    monkeypatch.setattr(
+        "plobi_cli.config.load_config",
+        lambda: yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {},
+    )
+    monkeypatch.setattr("plobi_cli.config.save_config", lambda cfg, **_kw: _dump(cfg))
+    monkeypatch.setattr(
+        "plobi.agents.registry.ensure_l1_secretary_routing_soul", lambda **_kw: False
+    )
+
+    # start #1 — the profile is already mid-narrowed; only the plugin record lands.
+    ensure_north_star_toolset()
+
+    # user opens terminal in the desktop Toolsets panel (writes cli only)
+    on_disk = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    _simulate_ui_toggle(on_disk, "cli", "terminal")
+    _dump(on_disk)
+
+    # start #2 and #3 — the re-apply used to revert the toggle.
+    ensure_north_star_toolset()
+    ensure_north_star_toolset()
+
+    saved = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert "terminal" in saved["platform_toolsets"]["cli"]
+    assert "terminal" not in saved["toolsets"]
+    assert "plobi-north-star" in saved["plugins"]["enabled"]
+
+
 def test_ensure_l2_agenda_toolsets_restores_terminal(tmp_path):
     import yaml
 

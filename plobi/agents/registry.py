@@ -2874,9 +2874,18 @@ def _strip_l2_soul_spans(text: str) -> str:
     return _strip_soul_spans(text, _l2_soul_fence_pairs())
 
 
-def mid_narrow_toolset_names(names: list[str] | None) -> list[str]:
-    """Rewrite a toolset name list for L1 mid-narrow (reversible)."""
+def mid_narrow_toolset_names(names: list[str] | None, keep=()) -> list[str]:
+    """Rewrite a toolset name list for L1 mid-narrow (reversible).
+
+    ``keep`` is the same explicit user opt-in escape hatch as
+    :func:`_filter_l2_project_toolsets` (both passes share the discriminator in
+    :func:`_explicit_toolset_optins`): drop-set names in it survive the narrow,
+    but only ``L1_DROP_TOOLSETS`` ones — a ``plobi-*`` composite is never an
+    opt-in, because ``_save_platform_tools`` refuses to write platform default
+    toolsets (see :func:`apply_l1_mid_toolsets` for the baseline).
+    """
     raw = [str(n) for n in (names or []) if str(n).strip()]
+    keep_names = set(keep)
     if not raw or any(_is_full_plobi_composite(n) for n in raw) or any(
         n in L1_DROP_TOOLSETS for n in raw
     ):
@@ -2887,7 +2896,11 @@ def mid_narrow_toolset_names(names: list[str] | None) -> list[str]:
             and n not in L1_DROP_TOOLSETS
             and n not in L1_MID_TOOLSETS
         ]
-        return list(L1_MID_TOOLSETS) + extras
+        # ``kept`` is only ever non-empty on this branch: an opt-in name is by
+        # definition a drop-set name, which is what sent us here. The tail
+        # ``extras + kept`` is a fixed point, so re-running stays unchanged.
+        kept = [n for n in raw if n in keep_names and n in L1_DROP_TOOLSETS]
+        return list(L1_MID_TOOLSETS) + extras + kept
     result = [n for n in raw if n not in L1_DROP_TOOLSETS]
     for required in (MASTER_TOOLSET_NAME, "clarify"):
         if required not in result:
@@ -2896,8 +2909,35 @@ def mid_narrow_toolset_names(names: list[str] | None) -> list[str]:
 
 
 def apply_l1_mid_toolsets(config: dict) -> bool:
-    """Mutate active-profile config: mid-narrow cli/gateway + top-level toolsets."""
+    """Mutate active-profile config: mid-narrow cli/gateway + top-level toolsets.
+
+    Runs at every plugin load via :func:`ensure_north_star_toolset`, so it is
+    the pass that actually reverted the 主秘书 / 日程 toggles. It now honours
+    explicit user opt-ins exactly like :func:`apply_l2_project_diet` does —
+    same discriminator (:func:`_explicit_toolset_optins`, reused as-is), so
+    ``terminal`` switched on in ``plobi tools`` / the desktop Toolsets panel
+    after a narrowing survives the next start instead of being silently
+    stripped. The policy itself is unchanged: names the profile inherited in its
+    top-level ``toolsets`` baseline are still narrowed everywhere.
+
+    Baseline caveat, because this pass reads ``load_config()`` (merged with
+    ``DEFAULT_CONFIG``) rather than the raw profile file like the diet does: a
+    profile that never authored a top-level ``toolsets`` inherits
+    ``DEFAULT_CONFIG``'s ``["plobi-cli"]`` composite. A composite enumerates
+    nothing, so absence from it proves nothing and no opt-in can be attributed —
+    in that case (empty or composite baseline) there is no trustworthy baseline
+    and the pass narrows exactly as it did before, so the first-ever pass on a
+    fresh install and on every ``plobi-cli`` profile is bit-for-bit today's
+    behaviour. Once this pass has written a real top-level list, later toggles
+    are recognised. Idempotent: nothing to change returns False without writing.
+    """
     changed = False
+    # Read the baseline BEFORE the top-level narrow below, otherwise the first
+    # pass would mistake the very name it is about to remove for an opt-in.
+    baseline = [str(n) for n in (config.get("toolsets") or []) if str(n).strip()]
+    has_baseline = bool(baseline) and not any(
+        _is_full_plobi_composite(n) for n in baseline
+    )
     narrowed = mid_narrow_toolset_names(list(config.get("toolsets") or []))
     if list(config.get("toolsets") or []) != narrowed:
         config["toolsets"] = narrowed
@@ -2911,8 +2951,13 @@ def apply_l1_mid_toolsets(config: dict) -> bool:
     for platform in ("cli", "gateway"):
         current = platforms.get(platform)
         as_list = list(current) if isinstance(current, list) else []
+        keep = (
+            _explicit_toolset_optins([str(n) for n in as_list], baseline)
+            if has_baseline
+            else ()
+        )
         # Missing platform list falls back to plobi-cli at runtime — write mid.
-        next_list = mid_narrow_toolset_names(as_list if as_list else ["plobi-cli"])
+        next_list = mid_narrow_toolset_names(as_list if as_list else ["plobi-cli"], keep=keep)
         if as_list != next_list:
             platforms[platform] = next_list
             changed = True
@@ -2953,19 +2998,25 @@ def _filter_l2_project_toolsets(names, keep=()) -> list[str]:
     ]
 
 
-def _l2_explicit_optins(platform_names, baseline_names) -> set:
+def _explicit_toolset_optins(platform_names, baseline_names) -> set:
     """Names the user opted into through the product's own toggle.
 
-    The diet's own output — and every policy pass that seeds a project
-    profile's ``config.yaml`` — writes the top-level ``toolsets`` together
-    with the platform lists (:func:`apply_l1_mid_toolsets` does exactly that
-    triple write, and ``create_profile(clone_config=True)`` clones all three
-    from root together). So a diet name that shows up in ONE platform list
-    while absent from the profile's top-level ``toolsets`` baseline cannot
-    have come from any of those passes: the only writer with that shape is
-    ``_save_platform_tools`` (``plobi tools`` / the desktop Toolsets panel),
-    which writes a single named platform and never the top level. Treat those
-    as the user's explicit choice, so a re-run cannot silently revert it.
+    Shared discriminator for BOTH narrowing passes — :func:`apply_l2_project_diet`
+    and :func:`apply_l1_mid_toolsets` — so there is only one rule about who
+    wrote what. Their own output, and every policy pass that seeds a profile's
+    ``config.yaml``, writes the top-level ``toolsets`` together with the platform
+    lists (:func:`apply_l1_mid_toolsets` does exactly that triple write, and
+    ``create_profile(clone_config=True)`` clones all three from root together).
+    So a drop-set name that shows up in ONE platform list while absent from the
+    profile's top-level ``toolsets`` baseline cannot have come from any of those
+    passes: the only writer with that shape is ``_save_platform_tools``
+    (``plobi tools`` / the desktop Toolsets panel), which writes a single named
+    platform and never the top level. Treat those as the user's explicit choice,
+    so a re-run cannot silently revert it.
+
+    ``baseline_names`` must be an *authored enumeration* — the caller decides
+    what counts (the diet reads the raw profile file; the L1 pass refuses to use
+    ``DEFAULT_CONFIG``'s composite fallback, which proves nothing).
     """
     return set(platform_names) - set(baseline_names)
 
@@ -2979,7 +3030,7 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
     ``platform_toolsets`` (cli + gateway). Idempotent and reversible: a tool
     the user (re-)enabled **after** the diet ran is left alone, so the toggle
     in ``plobi tools`` / the desktop Toolsets panel actually sticks. See
-    :func:`_l2_explicit_optins` for how a later opt-in is recognised without
+    :func:`_explicit_toolset_optins` for how a later opt-in is recognised without
     keeping a second copy of the diet's removals — a name present in a
     platform list but missing from that profile's top-level ``toolsets``
     baseline was written by the toggle, not by a policy pass, so re-running
@@ -3028,7 +3079,7 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
             if isinstance(listed, list):
                 new_listed = _filter_l2_project_toolsets(
                     listed,
-                    keep=_l2_explicit_optins([str(n) for n in listed], baseline),
+                    keep=_explicit_toolset_optins([str(n) for n in listed], baseline),
                 )
                 if new_listed != listed:
                     platforms[platform] = new_listed
