@@ -2933,27 +2933,60 @@ L2_PROJECT_DROP_TOOLSETS = frozenset(
 )
 
 
-def _filter_l2_project_toolsets(names) -> list[str]:
+def _filter_l2_project_toolsets(names, keep=()) -> list[str]:
     """Drop the diet list + every ``plobi-*`` composite from a name list.
 
     Preserves any other name (file / web / skills / todo / clarify / …) in
     the original order so config diffs stay minimal. Returns a new list.
+
+    ``keep`` names an *explicit user opt-in* (see :func:`apply_l2_project_diet`):
+    drop-set names in it survive, but only the diet-set ones — a ``plobi-*``
+    composite is never an opt-in, because the product's toggle refuses to write
+    platform default toolsets and 裁定 33.3 calls composites out separately.
     """
+    keep_names = set(keep)
     return [
         n
         for n in names
-        if not _is_full_plobi_composite(n) and n not in L2_PROJECT_DROP_TOOLSETS
+        if not _is_full_plobi_composite(n)
+        and (n not in L2_PROJECT_DROP_TOOLSETS or n in keep_names)
     ]
+
+
+def _l2_explicit_optins(platform_names, baseline_names) -> set:
+    """Names the user opted into through the product's own toggle.
+
+    The diet's own output — and every policy pass that seeds a project
+    profile's ``config.yaml`` — writes the top-level ``toolsets`` together
+    with the platform lists (:func:`apply_l1_mid_toolsets` does exactly that
+    triple write, and ``create_profile(clone_config=True)`` clones all three
+    from root together). So a diet name that shows up in ONE platform list
+    while absent from the profile's top-level ``toolsets`` baseline cannot
+    have come from any of those passes: the only writer with that shape is
+    ``_save_platform_tools`` (``plobi tools`` / the desktop Toolsets panel),
+    which writes a single named platform and never the top level. Treat those
+    as the user's explicit choice, so a re-run cannot silently revert it.
+    """
+    return set(platform_names) - set(baseline_names)
 
 
 def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
     """WP-L2-DIET: strip terminal / computer_use / code_execution /
     session_search + every ``plobi-*`` composite from a project L2
-    profile's ``config.yaml``.
+    profile's ``config.yaml``。
 
     Touches both the top-level ``toolsets`` and the per-platform
-    ``platform_toolsets`` (cli + gateway). Idempotent and reversible — just
-    edit the config file to add a tool back; the function only strips.
+    ``platform_toolsets`` (cli + gateway). Idempotent and reversible: a tool
+    the user (re-)enabled **after** the diet ran is left alone, so the toggle
+    in ``plobi tools`` / the desktop Toolsets panel actually sticks. See
+    :func:`_l2_explicit_optins` for how a later opt-in is recognised without
+    keeping a second copy of the diet's removals — a name present in a
+    platform list but missing from that profile's top-level ``toolsets``
+    baseline was written by the toggle, not by a policy pass, so re-running
+    the diet on an untouched profile strips exactly what it strips today.
+    Editing ``toolsets`` at the top level is *not* how you add a tool back
+    (the baseline is the profile's own worker bundle, and the diet polices
+    it); use ``plobi tools``.
 
     Returns True if the file was rewritten, False if no changes were needed
     (or the profile directory has no readable config — silent no-op so the
@@ -2976,6 +3009,12 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
     changed = False
 
     top = cfg.get("toolsets")
+    # The baseline the toggle never writes: whatever this profile's top-level
+    # toolsets declares *as authored* is what it inherited, so anything else
+    # in a platform list can only be the user's explicit opt-in. Read it
+    # BEFORE the strip below, otherwise the first pass would mistake the very
+    # name it is about to remove for an opt-in and leave it in place.
+    baseline = [str(n) for n in top] if isinstance(top, list) else []
     if isinstance(top, list):
         new_top = _filter_l2_project_toolsets(top)
         if new_top != top:
@@ -2987,7 +3026,10 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
         for platform in ("cli", "gateway"):
             listed = platforms.get(platform)
             if isinstance(listed, list):
-                new_listed = _filter_l2_project_toolsets(listed)
+                new_listed = _filter_l2_project_toolsets(
+                    listed,
+                    keep=_l2_explicit_optins([str(n) for n in listed], baseline),
+                )
                 if new_listed != listed:
                     platforms[platform] = new_listed
                     changed = True
