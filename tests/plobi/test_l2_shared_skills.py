@@ -153,7 +153,11 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
         assert name in index
 
     # The clone of the *config* layer is untouched by this slice (2b owns it).
-    assert (profile_dir / "SOUL.md").read_text(encoding="utf-8") == "shared persona\n"
+    # spawn appends the L2 identity segment after the cloned persona, so the
+    # contract is "the persona survived the clone", not byte-equality.
+    soul = (profile_dir / "SOUL.md").read_text(encoding="utf-8")
+    assert soul.startswith("shared persona\n")
+    assert "PLOBI_L2_IDENTITY" in soul
     assert "TEST_KEY=1" in (profile_dir / ".env").read_text(encoding="utf-8")
 
 
