@@ -1537,6 +1537,9 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "_select_systemd_scope", lambda system=False: False)
         monkeypatch.setattr(gateway_cli, "_require_service_installed", lambda action, system=False: None)
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: calls.append(("refresh", system)))
+        # Bypass systemd availability checks — this test targets the graceful
+        # restart routing, not D-Bus reachability (fails on macOS/WSL/Docker).
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda **kw: None)
         monkeypatch.setattr(gateway_cli, "_get_restart_drain_timeout", lambda: 12.0)
         monkeypatch.setattr(
             "gateway.status.get_running_pid",
@@ -1582,6 +1585,9 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "_select_systemd_scope", lambda system=False: False)
         monkeypatch.setattr(gateway_cli, "_require_service_installed", lambda action, system=False: None)
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
+        # Bypass systemd availability checks — this test targets MainPID
+        # fallback, not D-Bus reachability (fails on macOS/WSL/Docker).
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda **kw: None)
         monkeypatch.setattr(gateway_cli, "_get_restart_drain_timeout", lambda: 10.0)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: None)
         monkeypatch.setattr(
@@ -1641,6 +1647,10 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "_select_systemd_scope", lambda system=False: False)
         monkeypatch.setattr(gateway_cli, "_require_service_installed", lambda action, system=False: None)
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
+        # Bypass systemd availability checks — this test targets the
+        # start-limit-hit reporting, not D-Bus reachability (fails on
+        # macOS/WSL/Docker).
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda **kw: None)
         monkeypatch.setattr("gateway.status.get_running_pid", lambda: None)
         monkeypatch.setattr(gateway_cli, "_recover_pending_systemd_restart", lambda system=False, previous_pid=None: False)
 
@@ -1671,6 +1681,10 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "_select_systemd_scope", lambda system=False: False)
         monkeypatch.setattr(gateway_cli, "_require_service_installed", lambda action, system=False: None)
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
+        # Bypass systemd availability checks — this test targets recovery of a
+        # failed planned restart, not D-Bus reachability (fails on
+        # macOS/WSL/Docker).
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda **kw: None)
         monkeypatch.setattr(
             "gateway.status.read_runtime_status",
             lambda: {"restart_requested": True, "gateway_state": "stopped"},

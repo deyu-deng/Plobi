@@ -181,8 +181,27 @@ def insecure_explicit_host_app():
     web_server.app.state.auth_required = prev_required
 
 
-def _fake_ws(*, query: dict, client_host: str = "127.0.0.1", path: str = "/api/pty"):
-    """Build a stand-in for starlette.WebSocket good enough for _ws_auth_ok."""
+def _fake_ws(
+    *,
+    query: dict,
+    client_host: str = "127.0.0.1",
+    path: str = "/api/pty",
+    headers: dict | None = None,
+):
+    """Build a stand-in for starlette.WebSocket good enough for _ws_auth_ok.
+
+    ``headers`` is not decoration. In gated mode ``_ws_auth_reason`` reads the
+    upgrade request headers *first* (WP-H3-WS: persistent App token via
+    ``X-Plobi-Session-Token`` / ``Authorization: Bearer``) whenever the process
+    holds an App token — which any normally-started server does, since it is
+    minted at import from ``$PLOBI_HOME/plobi/app_token``. A stand-in without
+    ``headers`` therefore raised ``AttributeError`` before ever reaching the
+    ticket / internal-credential paths this class is about. Default ``{}``
+    means "no credential headers presented", which is what a browser WS
+    upgrade actually sends. Starlette ``Headers`` are case-insensitive, so
+    keys are normalised here too (mirrors ``_FakeWebSocket`` in
+    ``tests/plobi/test_app_token.py``).
+    """
 
     class _QP:
         def __init__(self, q):
@@ -195,6 +214,7 @@ def _fake_ws(*, query: dict, client_host: str = "127.0.0.1", path: str = "/api/p
         query_params=_QP(query),
         client=SimpleNamespace(host=client_host),
         url=SimpleNamespace(path=path),
+        headers={str(k).lower(): v for k, v in (headers or {}).items()},
     )
 
 
