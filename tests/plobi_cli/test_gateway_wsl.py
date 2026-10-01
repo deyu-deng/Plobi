@@ -120,10 +120,32 @@ class TestWslSystemdOperational:
 # =============================================================================
 
 class TestSupportsSystemdServicesWSL:
-    """Test that supports_systemd_services() handles WSL correctly."""
+    """Test that supports_systemd_services() handles WSL correctly.
+
+    Every input the function consults must be stubbed, or the function
+    short-circuits on the host's real state and the assertions pass for the
+    wrong reason. ``supports_systemd_services()`` gates on ``systemctl`` being
+    installed *before* it reaches the WSL/container branch, so ``_stub_systemctl``
+    is part of the premise of all three positive/negative WSL cases — without
+    it, a host with no ``systemctl`` (macOS) makes even the "→ False" test pass
+    vacuously.
+    """
+
+    @staticmethod
+    def _stub_systemctl(monkeypatch):
+        """Make ``systemctl`` look installed, leaving other lookups real."""
+        real_which = gateway.shutil.which
+        monkeypatch.setattr(
+            gateway.shutil,
+            "which",
+            lambda name, *a, **kw: "/usr/bin/systemctl"
+            if name == "systemctl"
+            else real_which(name, *a, **kw),
+        )
 
     def test_wsl_with_systemd(self, monkeypatch):
         """WSL + working systemd → True."""
+        self._stub_systemctl(monkeypatch)
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: True)
@@ -132,6 +154,7 @@ class TestSupportsSystemdServicesWSL:
 
     def test_wsl_without_systemd(self, monkeypatch):
         """WSL + no systemd → False."""
+        self._stub_systemctl(monkeypatch)
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: True)
@@ -139,10 +162,15 @@ class TestSupportsSystemdServicesWSL:
         assert gateway.supports_systemd_services() is False
 
     def test_native_linux(self, monkeypatch):
-        """Native Linux (not WSL) → True without checking systemd."""
+        """Native Linux (not WSL, not a container) → True without checking systemd."""
+        self._stub_systemctl(monkeypatch)
         monkeypatch.setattr(gateway, "is_linux", lambda: True)
         monkeypatch.setattr(gateway, "is_termux", lambda: False)
         monkeypatch.setattr(gateway, "is_wsl", lambda: False)
+        # Without this, a containerised dev host diverts into the
+        # _container_systemd_operational() branch and this stops testing the
+        # native-Linux path it names.
+        monkeypatch.setattr(gateway, "is_container", lambda: False)
         assert gateway.supports_systemd_services() is True
 
     def test_termux_still_excluded(self, monkeypatch):

@@ -436,6 +436,51 @@ def test_s6_manager_kind_and_supports_registration() -> None:
 # tests/docker/test_s6_profile_gateway_integration.py.
 
 
+def _granted_mode(parent, requested: int) -> int:
+    """The mode this filesystem actually grants for ``chmod(requested)`` in ``parent``.
+
+    Relationship, not snapshot: the helper asks for ``03730`` (setgid +
+    g+rwx + sticky); we require that the dir it created carries exactly the
+    bits ``chmod`` of the same request yields in the same parent directory.
+    A missing or wrong chmod still fails (a fresh ``mkdir`` gives ``0755``),
+    but a bit the kernel refuses this caller does not turn the test red.
+
+    Why ``== 0o3730`` is not portable: macOS ``chmod()`` clears ``S_ISGID``
+    when the caller is not a member of the file's group — including on
+    directories. pytest's ``tmp_path`` hangs off ``/tmp``, which is sticky
+    ``1777`` and group-owned by ``wheel`` on macOS, so a directory created
+    there inherits ``wheel`` and settles at ``01730``. Linux clears
+    ``S_ISGID`` only for a caller who doesn't own the file, so there — and in
+    the s6-overlay container, where the slot's group is ``plobi`` and the
+    caller is root — the probe returns ``03730`` and this assertion is
+    bit-exact to the old snapshot. Measured, not assumed: ``chmod(03730)`` on
+    a caller-owned dir under ``$TMPDIR`` (group ``staff``) does keep
+    ``S_ISGID`` on the same macOS host.
+    """
+    import os
+    import stat
+
+    probe = parent / f"_chmod_probe_{os.urandom(3).hex()}"
+    probe.mkdir()
+    try:
+        probe.chmod(requested)
+        granted = stat.S_IMODE(probe.stat().st_mode)
+    finally:
+        probe.rmdir()
+
+    # Guard the guard: if the platform won't even honour the access bits the
+    # s6 permission model depends on, the probe measures nothing.
+    assert granted & 0o0777 == requested & 0o0777, (
+        f"chmod({oct(requested)}) in {parent} yielded {oct(granted)} — the "
+        "access bits themselves are not grantable here, so this probe is void"
+    )
+    assert granted & stat.S_ISVTX, f"sticky bit is not grantable in {parent}"
+    return granted
+
+
+_EVENT_MODE = 0o3730  # setgid + g+rwx + sticky, as s6-supervise lays it down
+
+
 def test_seed_supervise_skeleton_creates_expected_layout(tmp_path) -> None:
     """Verifies the dirs + FIFO + modes the helper lays down."""
     import stat
@@ -447,11 +492,14 @@ def test_seed_supervise_skeleton_creates_expected_layout(tmp_path) -> None:
 
     _seed_supervise_skeleton(svc_dir)
 
+    expected_event_mode = _granted_mode(tmp_path, _EVENT_MODE)
+
     # Top-level event/ — s6-svlisten1 event subscription dir.
     event = svc_dir / "event"
     assert event.is_dir(), "missing top-level event/"
-    assert stat.S_IMODE(event.stat().st_mode) == 0o3730, (
-        f"event/ mode = {oct(event.stat().st_mode)}, want 03730"
+    assert stat.S_IMODE(event.stat().st_mode) == expected_event_mode, (
+        f"event/ mode = {oct(event.stat().st_mode)}, "
+        f"want {oct(expected_event_mode)} (requested {oct(_EVENT_MODE)})"
     )
 
     # supervise/ dir.
@@ -462,7 +510,7 @@ def test_seed_supervise_skeleton_creates_expected_layout(tmp_path) -> None:
     # supervise/event/.
     supervise_event = supervise / "event"
     assert supervise_event.is_dir(), "missing supervise/event/"
-    assert stat.S_IMODE(supervise_event.stat().st_mode) == 0o3730
+    assert stat.S_IMODE(supervise_event.stat().st_mode) == expected_event_mode
 
     # supervise/control FIFO.
     control = supervise / "control"
@@ -490,6 +538,10 @@ def test_seed_supervise_skeleton_handles_log_subservice(tmp_path) -> None:
 
     _seed_supervise_skeleton(svc_dir)
 
+    # log/ inherits its group from svc_dir, i.e. from tmp_path, so the same
+    # probe governs the event dirs under it.
+    expected_event_mode = _granted_mode(tmp_path, _EVENT_MODE)
+
     # Logger's own supervise tree is seeded the same way.
     log_event = svc_dir / "log" / "event"
     log_supervise = svc_dir / "log" / "supervise"
@@ -497,9 +549,10 @@ def test_seed_supervise_skeleton_handles_log_subservice(tmp_path) -> None:
     log_control = log_supervise / "control"
 
     assert log_event.is_dir()
-    assert stat.S_IMODE(log_event.stat().st_mode) == 0o3730
+    assert stat.S_IMODE(log_event.stat().st_mode) == expected_event_mode
     assert log_supervise.is_dir()
     assert log_supervise_event.is_dir()
+    assert stat.S_IMODE(log_supervise_event.stat().st_mode) == expected_event_mode
     assert log_control.exists() and stat.S_ISFIFO(log_control.stat().st_mode)
 
 
