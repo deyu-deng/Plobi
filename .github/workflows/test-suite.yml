@@ -1,12 +1,19 @@
-# Runs the real pytest suite from a fresh environment built out of uv.lock.
+# Runs the real pytest suite from a fresh environment built out of uv.lock, then
+# compares the failing set against ci/known-test-failures.yml.
 #
 # Why this exists: arch-gates only runs the two architecture guards, so a green
-# arch-gates says nothing about whether a dependency bump broke behaviour. Before
-# touching any pinned dependency this job needs a green baseline on main — without one
-# there is no way to tell "the upgrade broke it" from "it was already broken".
+# arch-gates says nothing about whether a dependency bump broke behaviour.
 #
-# Environment comes from `uv sync --frozen`, never from a developer's .venv: local venvs
-# drift away from the lock, and a test run against a drifted env verifies nothing.
+# Why it is NOT "fail if any test fails": main already carries 19 pre-existing
+# failures across 7 files. A check that can never go green gets ignored, and an
+# ignored gate is exactly how arch-gates stayed dead for weeks. So red here means
+# specifically: a NEW failing file appeared, or the suite didn't complete.
+# Baseline entries that disappear are reported as fixed, so the baseline cannot
+# silently rot in the other direction either.
+#
+# Environment comes from `uv sync --frozen`, never a developer's .venv: local venvs
+# drift away from the lock (this repo's .venv demonstrably did), and testing against a
+# drifted environment verifies nothing.
 
 name: Test suite
 
@@ -18,8 +25,10 @@ on:
     paths:
       - "pyproject.toml"
       - "uv.lock"
+      - "ci/known-test-failures.yml"
       - "scripts/run_tests.sh"
       - "scripts/run_tests_parallel.py"
+      - ".github/workflows/test-suite.yml"
 
 permissions:
   contents: read
@@ -51,6 +60,74 @@ jobs:
 
       - name: Run suite
         run: |
-          set -euo pipefail
+          set -uo pipefail
           nproc
-          scripts/run_tests.sh -j "$(nproc)" --file-timeout 300
+          scripts/run_tests.sh -j "$(nproc)" --file-timeout 300 2>&1 | tee /tmp/suite.log
+          echo "${PIPESTATUS[0]}" > /tmp/suite.rc
+
+      - name: Compare against known-failure baseline
+        if: always()
+        run: |
+          set -euo pipefail
+          uv run --quiet --with pyyaml python - <<'PY' | tee /tmp/verdict.txt
+          import re, sys, yaml, pathlib, os
+
+          log = pathlib.Path('/tmp/suite.log')
+          text = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
+
+          summary = re.search(r'===\s*Summary:\s*(\d+) files,\s*(\d+) tests passed,\s*(\d+) failed'
+                              r'(?:.*?complete)?\s*in\s*([\d.]+)s', text)
+          failed = dict((m.group(1), int(m.group(2)))
+                        for m in re.finditer(r'^\s{2}(tests/\S+\.py)\s+\((\d+) tests? failed\)',
+                                             text, re.M))
+          rc = int(pathlib.Path('/tmp/suite.rc').read_text().strip() or '1')
+
+          base = yaml.safe_load(pathlib.Path('ci/known-test-failures.yml')
+                                .read_text(encoding='utf-8'))
+          known = {e['path']: e for e in base.get('known_failures') or []}
+
+          if not summary:
+              print('::error::没能从输出里解析出 Summary 行 —— 套件没跑完或被中断，'
+                    f'退出码 {rc}。这种情况不能当成"通过"。')
+              print(f'# 测试套件：无法判定\n\n- 退出码 `{rc}`\n- 未找到 Summary 行')
+              sys.exit(1)
+
+          files, passed, failures, secs = summary.groups()
+          new = sorted(set(failed) - set(known))
+          fixed = sorted(set(known) - set(failed))
+          same = sorted(set(failed) & set(known))
+
+          print(f'套件：{files} 文件 / {passed} 通过 / {failures} 失败 / {float(secs)/60:.1f} 分钟')
+          print(f'基线内 {len(same)} · 新增 {len(new)} · 已修好 {len(fixed)}')
+          for p in new:
+              print(f'::warning title=新增失败::{p}（{failed[p]} 个测试）')
+          for p in fixed:
+              print(f'::notice title=基线里的已消失::{p} —— 请把它从 '
+                    f'ci/known-test-failures.yml 删掉，别让基线虚胖')
+
+          out = ['# 测试套件\n',
+                 f'- 文件 **{files}**，通过 **{passed}**，失败 **{failures}**，'
+                 f'用时 **{float(secs)/60:.1f} 分钟**',
+                 f'- 与基线一致 **{len(same)}** · **新增 {len(new)}** · 已修好 {len(fixed)}\n']
+          for title, items in (('新增失败', new), ('基线内仍失败', same), ('已修好（记得清理基线）', fixed)):
+              if items:
+                  out.append(f'## {title}')
+                  out += [f'- `{p}` ({failed.get(p, known.get(p,{}).get("tests","?"))} 个测试)'
+                          f' — {known.get(p,{}).get("note","")}'.rstrip(' —')
+                          for p in items]
+                  out.append('')
+
+          pathlib.Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('\n'.join(out), encoding='utf-8')
+
+          if new:
+              print(f'::error::有 {len(new)} 个新增失败文件，本次改动破坏了行为')
+              sys.exit(1)
+          if failures != sum(failed.values()):
+              print('::error::汇总的失败数与逐文件清单不一致，比对结果不可信')
+              sys.exit(1)
+          print('没有新增失败。')
+          PY
+
+      - name: Show verdict
+        if: always()
+        run: cat /tmp/verdict.txt
