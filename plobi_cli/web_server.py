@@ -277,6 +277,13 @@ app.include_router(_agenda_router, prefix="/api/agenda", tags=["agenda"])
 # declared in ``dashboard_auth/pairing.py``, not here.
 app.include_router(_agenda_router, prefix="/api/handset/agenda", tags=["handset"])
 
+# Task identity + event stream, read-only (骨架第 2、3 根). The kanban kernel
+# already owns tasks/runs/task_events; this only projects them onto the five
+# outward classes for the handset. Contract: Docs/specs/task-events.md.
+from plobi.tasks.router import router as _handset_tasks_router  # noqa: E402
+
+app.include_router(_handset_tasks_router, prefix="/api/handset", tags=["handset"])
+
 # chatlog pushes new WeChat messages here; the collector owns all the logic.
 from plobi.collectors.chatlog.webhook import router as _chatlog_router  # noqa: E402
 
