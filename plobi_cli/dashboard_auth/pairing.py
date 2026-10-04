@@ -46,25 +46,34 @@ _log = logging.getLogger(__name__)
 
 PROVIDER_NAME = "pairing"
 HANDSET_PRINCIPAL = "handset"
-HANDSET_SCOPES = ("agenda:read", "agenda:confirm")
+HANDSET_SCOPES = ("agenda:read", "agenda:confirm", "task:read")
 
 # Device-facing prefix. The agenda handlers are mounted here as well as under
 # ``/api/agenda`` (browser session); this is the half the pairing token opens.
 HANDSET_API_PREFIX = "/api/handset"
 
-# Reads today's list, tomorrow's list, the pending queue, and the assembled day.
+# Reads today's list, tomorrow's list, the pending queue, the assembled day, and
+# the task/event stream (``plobi/tasks`` — Docs/specs/task-events.md).
 _TOKEN_ROUTES = (
     f"{HANDSET_API_PREFIX}/agenda",
     f"{HANDSET_API_PREFIX}/agenda/pending",
     f"{HANDSET_API_PREFIX}/agenda/day",
+    f"{HANDSET_API_PREFIX}/tasks",
+    f"{HANDSET_API_PREFIX}/events",
 )
 
-# Approve or discard one pending item. Everything else under the agenda API
-# (create, PATCH, DELETE) deliberately stays off the token path — the handset
-# does not need write access to the board to show and confirm a day.
-_TOKEN_ROUTE_PATTERNS = (
+# Approve or discard one pending item — POST only. Everything else under the
+# agenda API (create, PATCH, DELETE) deliberately stays off the token path: the
+# handset does not need write access to the board to show and confirm a day.
+_TOKEN_ROUTE_PATTERNS_POST = (
     rf"{HANDSET_API_PREFIX}/agenda/[^/]+/confirm",
     rf"{HANDSET_API_PREFIX}/agenda/[^/]+/dismiss",
+)
+
+# One task's replayable event history — a read that happens to carry a path
+# parameter, so it cannot be an exact route.
+_TOKEN_ROUTE_PATTERNS_GET = (
+    rf"{HANDSET_API_PREFIX}/tasks/[^/]+/events",
 )
 
 
@@ -156,13 +165,15 @@ def install_pairing_auth() -> bool:
         registry.register_provider(HandsetPairingProvider())
     for path in _TOKEN_ROUTES:
         register_token_route(path, methods=("GET",))
-    for pattern in _TOKEN_ROUTE_PATTERNS:
+    for pattern in _TOKEN_ROUTE_PATTERNS_POST:
         register_token_route_pattern(pattern, methods=("POST",))
+    for pattern in _TOKEN_ROUTE_PATTERNS_GET:
+        register_token_route_pattern(pattern, methods=("GET",))
 
     _log.info(
         "dashboard-auth: pairing provider armed — %d exact route(s), %d pattern(s) "
         "accept the handset pairing token",
         len(_TOKEN_ROUTES),
-        len(_TOKEN_ROUTE_PATTERNS),
+        len(_TOKEN_ROUTE_PATTERNS_POST) + len(_TOKEN_ROUTE_PATTERNS_GET),
     )
     return True
