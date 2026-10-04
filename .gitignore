@@ -199,3 +199,4 @@ DataDefault.doubaoagent_mode*
 .mind-*.log
 .morn-*.log
 .pp-*.log
+.env.example

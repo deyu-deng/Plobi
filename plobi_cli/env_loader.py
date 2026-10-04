@@ -217,6 +217,18 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
         pass  # best-effort — don't block gateway startup
 
 
+def _project_env_enabled() -> bool:
+    """Whether a source-tree `.env` may act as a credential/settings source.
+
+    Off by default: the desktop UI writes `$PLOBI_HOME/.env`, and a second,
+    git-tracked-adjacent file that also feeds the credential pool means a key
+    can stay live in the picker after the user deletes it elsewhere. Opt in
+    with `PLOBI_DEV=1` in the shell — it cannot be opted in from the project
+    `.env` itself, since that file is what this gates.
+    """
+    return os.environ.get("PLOBI_DEV") == "1"
+
+
 def load_plobi_dotenv(
     *,
     plobi_home: str | os.PathLike | None = None,
@@ -226,15 +238,16 @@ def load_plobi_dotenv(
 
     Behavior:
     - `~/.plobi/.env` overrides stale shell-exported values when present.
-    - project `.env` acts as a dev fallback and only fills missing values when
-      the user env exists.
+    - project `.env` is a dev-checkout fallback, loaded only under
+      `PLOBI_DEV=1` (see `_project_env_enabled`); when enabled it fills missing
+      values if the user env exists.
     - if no user env exists, the project `.env` also overrides stale shell vars.
     """
     loaded: list[Path] = []
 
     home_path = Path(plobi_home or os.getenv("PLOBI_HOME", Path.home() / ".plobi"))
     user_env = home_path / ".env"
-    project_env_path = Path(project_env) if project_env else None
+    project_env_path = Path(project_env) if project_env and _project_env_enabled() else None
 
     # Fix corrupted .env files before python-dotenv parses them (#8908).
     if user_env.exists():
