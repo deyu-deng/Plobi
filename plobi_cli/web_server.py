@@ -270,6 +270,13 @@ from plobi.agenda.router import router as _agenda_router  # noqa: E402
 
 app.include_router(_agenda_router, prefix="/api/agenda", tags=["agenda"])
 
+# Same handlers on the device-facing surface (WP-APP-GATE). A route registered on
+# the token-auth seam accepts *only* a bearer token — the browser session is
+# turned away there — so the handset gets its own prefix instead of sharing
+# ``/api/agenda`` with the board. Which of these paths the pairing token opens is
+# declared in ``dashboard_auth/pairing.py``, not here.
+app.include_router(_agenda_router, prefix="/api/handset/agenda", tags=["handset"])
+
 # chatlog pushes new WeChat messages here; the collector owns all the logic.
 from plobi.collectors.chatlog.webhook import router as _chatlog_router  # noqa: E402
 
@@ -295,7 +302,8 @@ app.include_router(_console_router, prefix="/api", tags=["console"])
 # injected into the SPA HTML so only the legitimate web UI can use it.
 # ---------------------------------------------------------------------------
 _SESSION_TOKEN = os.environ.get("PLOBI_DASHBOARD_SESSION_TOKEN") or secrets.token_urlsafe(32)
-_SESSION_HEADER_NAME = "X-Plobi-Session-Token"
+# Wire name shared with the token-auth seam (the paired handset sends it there too).
+from plobi_cli.dashboard_auth.headers import SESSION_HEADER_NAME as _SESSION_HEADER_NAME  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Persistent App token (WP-H1-LAN).
@@ -445,6 +453,12 @@ try:
 except Exception as _exc:  # pragma: no cover — defensive: never block import
     _log.debug("App token bootstrap skipped: %s", _exc)
     _APP_TOKEN = None
+
+# Handset pairing (WP-APP-GATE): the App token above is what a paired
+# phone/tablet presents. It is armed inside :func:`start_server`, AFTER the
+# "a non-loopback bind needs a human auth provider" check — arming here at
+# import would put a token-only provider in the registry and let that check
+# pass on a dashboard nobody can log in to. See ``dashboard_auth/pairing.py``.
 
 
 def _get_app_token() -> str | None:
@@ -17404,6 +17418,17 @@ def start_server(
             host,
             ", ".join(p.name for p in list_providers()),
         )
+
+    # Arm handset pairing (WP-APP-GATE) only now that the bind has a human auth
+    # provider: the pairing token opens ``/api/handset/*`` on the token-auth seam,
+    # and it must never be the credential that satisfies the check above. Fails
+    # closed inside — with no App token under $PLOBI_HOME nothing is registered.
+    try:
+        from plobi_cli.dashboard_auth.pairing import install_pairing_auth
+
+        install_pairing_auth()
+    except Exception as _exc:  # pragma: no cover — pairing is optional surface
+        _log.warning("Handset pairing auth not armed: %s", _exc)
 
     # Record the bound host so host_header_middleware can validate incoming
     # Host headers against it. Defends against DNS rebinding (GHSA-ppp5-vxwm-4cf7).

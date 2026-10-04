@@ -118,8 +118,9 @@ class _FakeClient:
 class _FakeRequest:
     """Minimal Request stand-in for the seam (no real Starlette needed)."""
 
-    def __init__(self, path="/api/gateway/drain", headers=None):
+    def __init__(self, path="/api/gateway/drain", headers=None, method="POST"):
         self.url = _FakeURL(path)
+        self.method = method
         self.headers = headers or {}
         self.client = _FakeClient()
 
@@ -299,6 +300,27 @@ def test_seam_accepts_valid_token_on_registered_route():
     assert resp.status_code == 200
     assert req.state.token_authenticated is True
     assert req.state.token_principal.provider == "tok"
+
+
+def test_seam_leaves_unregistered_method_to_downstream_gates():
+    """A route registered for GET only does not own the path's other methods.
+
+    The seam is the authority for the verbs it was given; anything else falls
+    through to the cookie/session gates untouched (which is how a device read and
+    a human write can share one URL).
+    """
+    register_provider(_TokenProvider(secret="good"))
+    token_auth.register_token_route("/api/gateway/drain", methods=("GET",))
+    req = _FakeRequest(
+        path="/api/gateway/drain",
+        headers={"authorization": "Bearer good"},
+        method="POST",
+    )
+    resp = _run(token_auth.token_auth_middleware(req, _call_next_ok))
+    assert resp.status_code == 200
+    assert getattr(req.state, "token_authenticated", False) is False
+    assert token_auth.is_token_route("/api/gateway/drain", "GET") is True
+    assert token_auth.is_token_route("/api/gateway/drain", "POST") is False
 
 
 def test_seam_rejects_missing_token_401():
