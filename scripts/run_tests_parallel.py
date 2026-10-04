@@ -51,6 +51,17 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+# Windows under zh_CN gives this process a cp936 stdout even when its output is
+# piped, so the progress line's "✓ 9 | ✗ 1" raised UnicodeEncodeError *after*
+# the results were already collected — the run then reported "counts are NOT
+# trustworthy" and lost the failure detail. UTF-8 with replacement can never
+# crash on what we print.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # pragma: no cover — stdout swapped for a non-TextIO object
+        pass
+
 
 # Default test discovery roots.
 _DEFAULT_ROOTS = ["tests"]
