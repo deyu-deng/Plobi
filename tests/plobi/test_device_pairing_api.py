@@ -258,19 +258,27 @@ def test_a_browser_session_stays_off_the_device_surface(gated):
     assert "paired device token required" in refused.json()["detail"]
 
 
-def test_the_shared_app_token_no_longer_opens_the_device_surface(gated, monkeypatch):
-    """The old credential is deliberately not honoured here (裁定 64).
+def test_the_retired_shared_app_token_does_not_open_the_device_surface(
+    gated, tmp_path
+):
+    """The credential a handset from before pairing still might be carrying is inert.
 
-    ``app_token`` stays valid for the endpoints that already used it; on the
-    handset namespace it must not read as a paired device, or revoking one device
-    would still mean rotating a secret every device shares.
+    Written at the *old* path and read back rather than invented, because a leftover
+    ``<home>/plobi/app_token`` is the normal state after an upgrade. On the handset
+    namespace it must not read as a paired device: revoking one device would otherwise
+    mean rotating a secret every device shares — and since 裁定 68 that secret does not
+    exist anywhere, so the file opens nothing at all.
     """
     client, _store = gated
-    shared = "shared-app-token-value"
-    monkeypatch.setattr(web_server, "_APP_TOKEN", shared)
-    assert client.get(
-        f"{HANDSET_API_PREFIX}/agenda/day", headers=_bearer(shared)
-    ).status_code == 401
+    legacy_dir = tmp_path / "plobi"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    legacy = legacy_dir / "app_token"
+    legacy.write_text("shared-app-token-value", encoding="utf-8")
+
+    refused = client.get(
+        f"{HANDSET_API_PREFIX}/agenda/day", headers=_bearer(legacy.read_text())
+    )
+    assert refused.status_code == 401
 
 
 # ---------------------------------------------------------------- the budget

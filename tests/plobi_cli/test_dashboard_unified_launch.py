@@ -7,6 +7,8 @@ launching profile preselected. `--isolated` opts out.
 """
 import sys
 import types
+from pathlib import Path
+
 import pytest
 
 
@@ -24,6 +26,40 @@ def _args(**kw):
     )
     defaults.update(kw)
     return types.SimpleNamespace(**defaults)
+
+
+def _capture_reroute(main_mod, monkeypatch) -> list:
+    """Record how ``cmd_dashboard`` relaunches the machine dashboard, on any OS.
+
+    The reroute uses ``os.execvpe`` everywhere except Windows, where
+    ``execvpe`` doesn't really replace the process (and can crash with
+    STATUS_ACCESS_VIOLATION on 3.14+), so it spawns via ``subprocess.Popen`` and
+    exits with the child's status. Patching only ``execvpe`` therefore left this
+    machine running a **real** dashboard child mid-suite — the two reroute tests
+    passed on POSIX in ~1.4s and burned the full per-file timeout here.
+
+    Any test that expects a reroute must capture it here. The "never re-execs"
+    tests below only watch ``execvpe``; they are safe because the attach/guard
+    paths return before reaching the spawn, not because a stray Windows spawn
+    would be noticed.
+    """
+    launches: list = []
+
+    def fake_exec(exe, argv, env):
+        launches.append((exe, list(argv), env))
+        raise SystemExit(0)  # execvpe never returns
+
+    class _FakeChild:
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(argv, **kwargs):
+        launches.append((sys.executable, list(argv), kwargs.get("env")))
+        return _FakeChild()
+
+    monkeypatch.setattr(main_mod.os, "execvpe", fake_exec)
+    monkeypatch.setattr(main_mod.subprocess, "Popen", fake_popen)
+    return launches
 
 
 class TestUnifiedDashboardRouting:
@@ -62,19 +98,13 @@ class TestUnifiedDashboardRouting:
             "plobi_cli.profiles.get_active_profile_name", lambda: "worker_x"
         )
         monkeypatch.setattr(main_mod, "_dashboard_listening", lambda host, port: False)
-        execs = []
-
-        def fake_exec(exe, argv, env):
-            execs.append((exe, argv, env))
-            raise SystemExit(0)  # execvpe never returns
-
-        monkeypatch.setattr(main_mod.os, "execvpe", fake_exec)
+        launches = _capture_reroute(main_mod, monkeypatch)
 
         with pytest.raises(SystemExit):
             main_mod.cmd_dashboard(_args())
 
-        assert len(execs) == 1
-        exe, argv, env = execs[0]
+        assert len(launches) == 1
+        exe, argv, env = launches[0]
         assert exe == sys.executable
         # Pinned to the default profile + launching profile preselected.
         assert "-p" in argv and argv[argv.index("-p") + 1] == "default"
@@ -103,23 +133,20 @@ class TestUnifiedDashboardRouting:
             "plobi_cli.profiles.get_active_profile_name", lambda: "oracle"
         )
         monkeypatch.setattr(main_mod, "_dashboard_listening", lambda host, port: False)
-        execs = []
-
-        def fake_exec(exe, argv, env):
-            execs.append((exe, argv, env))
-            raise SystemExit(0)
-
-        monkeypatch.setattr(main_mod.os, "execvpe", fake_exec)
+        launches = _capture_reroute(main_mod, monkeypatch)
 
         with pytest.raises(SystemExit):
             main_mod.cmd_dashboard(_args())
 
-        assert len(execs) == 1
-        _exe, _argv, env = execs[0]
+        assert len(launches) == 1
+        _exe, _argv, env = launches[0]
         # get_default_plobi_root() strips the trailing profiles/<name>, so the
         # child binds /opt/data — where the real default/oracle/saga profiles
         # and the .install_method stamp actually live.
-        assert env.get("PLOBI_HOME") == "/opt/data"
+        # Compared as a path, not a string: on Windows ``str(Path(...))`` renders
+        # this as ``\\opt\\data``, and the layout being asserted only exists inside
+        # a Linux container, so separator equality would test the OS, not the code.
+        assert Path(env.get("PLOBI_HOME") or "") == Path("/opt/data")
 
     def test_desktop_profile_backend_skips_machine_dashboard_reroute(self, main_mod, monkeypatch):
         """A desktop-spawned named-profile backend (PLOBI_DESKTOP=1) must NOT

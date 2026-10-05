@@ -1,104 +1,101 @@
-"""WP-H1-LAN: persistent App token + API version header + LAN gate.
+"""The shared App token is retired (WP-APP-TOKEN, 裁定 68); this file proves it.
 
-These tests exercise the App token path the Plobi tablet/phone uses to
-reach the desktop backend on the LAN. They do NOT start any LAN bind —
-the test client speaks to the FastAPI app in-process, which is the
-FastAPI-recommended way to assert gate behaviour without involving real
-network I/O.
+History: WP-H1-LAN kept ONE long-lived secret at ``$PLOBI_HOME/plobi/app_token`` and
+handed it to every LAN client — the HTTP gate, the WS upgrade, and the bind-time LAN
+safety net all consulted it. WP-APP-PAIR (裁定 64) made the credential per-device and
+individually revocable (``dashboard_auth/devices.py``), which left the shared secret
+with no role: revoking it means locking every device out at once. 裁定 68 removed it.
 
-Coverage:
+Coverage now:
 
-1. :func:`plobi_cli.web_server._load_or_mint_app_token` reads an
-   existing single-line file unchanged, mints a fresh
-   ``secrets.token_urlsafe(32)`` when the file is missing, and keeps the
-   mint idempotent across two calls (the second call returns the same
-   token).
-2. :func:`plobi_cli.web_server._verify_token` is constant-time-style
-   hmac.compare_digest under the hood — we just assert True / False for
-   the obvious inputs.
-3. ``GET /api/agenda`` accepts the App token in two header shapes (the
-   dedicated ``X-Plobi-Session-Token`` header and the legacy
-   ``Authorization: Bearer …`` form), rejects an unknown token with
-   ``401``, rejects an absent token with ``401``, and stamps every
-   response with ``X-Plobi-Api-Version: 1``.
-4. The SPA session token keeps working unchanged — we never broke the
-   dashboard's existing auth flow.
-5. :func:`plobi_cli.web_server._enforce_lan_app_token_gate` downgrades
-   a non-loopback bind to ``127.0.0.1`` when the App token is ``None``,
-   keeps the requested host when the token exists, and never touches a
-   loopback bind. This guards the regression where a desktop with a
-   read-only ``$PLOBI_HOME`` could expose the dashboard to the LAN
-   unauthenticated (the gate's contract with WP-H1-LAN).
+1. **The retired symbols must not exist.** A leftover accessor is how a dead secret
+   gets re-armed by accident.
+2. **A stale ``app_token`` file is not a credential.** This is the real upgrade case:
+   an installed home still has the file from the previous version. Presenting its
+   bytes must 401 over HTTP and be refused over WS.
+3. **The dashboard session token still works** in both header shapes
+   (``X-Plobi-Session-Token`` / ``Authorization: Bearer …``), wrong and absent values
+   still 401, ``/api/status`` stays public, and every response keeps carrying
+   ``X-Plobi-Api-Version: 1`` — 401s included.
+4. :func:`plobi_cli.web_server._verify_token` stays the one constant-time comparison
+   behind that gate.
+5. **The LAN bind gate is re-keyed on pairing, not on a secret**
+   (:func:`plobi_cli.web_server._enforce_lan_pairing_gate`): a non-loopback bind
+   whose pairing store cannot be written is downgraded to loopback with one WARNING;
+   loopback binds are never touched. Authentication does not depend on this gate —
+   ``start_server`` separately refuses a gated bind with no human auth provider.
+6. **WS gated mode**: paired device token accepted; retired App token refused; the
+   desktop's ephemeral session token is *not* a WS credential; legacy ``?token=``
+   still refused; no presented secret reaches the reason text.
 
-Test isolation:
+Test isolation: conftest redirects ``PLOBI_HOME`` to a per-test tempdir, the agenda
+service singleton is replaced, and the device store is monkeypatched to that tempdir
+(restored automatically) — nothing here writes to the developer's real home.
 
-- The conftest redirects PLOBI_HOME to a per-test tempdir, so the App
-  token file is written into a sandbox and never touches the developer's
-  real PLOBI_HOME.
-- The agenda service singleton is replaced with a per-test fixture so we
-  can hit ``/api/agenda`` without standing up SQLite on disk.
-- The LAN gate tests don't spin up a server — they call the gate
-  function directly so the assertion is hermetic and runs in milliseconds.
+Placement note: the ``WP-FS-PROFILE-CWD`` block at the bottom has nothing to do with
+credentials and has lived in this file for a long time. It stays put rather than
+churning two files inside a retirement commit.
 """
 
 from __future__ import annotations
 
+import secrets
+
 import pytest
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
 from plobi_cli import web_server
+from plobi_cli.dashboard_auth import devices as device_store_module
 from plobi_cli.web_server import (
     API_VERSION,
     API_VERSION_HEADER,
-    APP_TOKEN_FILENAME,
-    APP_TOKEN_REL_DIR,
-    _load_or_mint_app_token,
     _verify_token,
 )
 from plobi.agenda import router as agenda_router
 from plobi.agenda import service as agenda_service
 from plobi.agenda.service import AgendaService
 
+OLD_APP_TOKEN_REL_PATH = ("plobi", "app_token")
+SPA_TOKEN = "known-spa-session-token"
+AGENDA_RANGE = {"from": "2026-09-14", "to": "2026-09-15"}
+
+
+def _use_store(monkeypatch, home) -> device_store_module.DeviceStore:
+    """Point the process-wide device store at *home* for this test only."""
+    store = device_store_module.DeviceStore(home)
+    monkeypatch.setattr(device_store_module, "_DEFAULT", store)
+    return store
+
 
 # ---------------------------------------------------------------------------
-# Pure-function helpers
+# 1. The retired surface must not exist any more
 # ---------------------------------------------------------------------------
 
 
-def test_load_or_mint_returns_existing_single_line_token(tmp_path):
-    """An existing single-line token is returned unchanged, no rewrite."""
-    target = tmp_path / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
-    target.parent.mkdir(parents=True)
-    target.write_text("preexisting-app-token", encoding="utf-8")
-
-    assert _load_or_mint_app_token(tmp_path) == "preexisting-app-token"
-
-
-def test_load_or_mint_mints_when_file_missing(tmp_path):
-    """Missing file ⇒ a fresh token_urlsafe(32) is written and returned."""
-    minted = _load_or_mint_app_token(tmp_path)
-    assert minted is not None
-    assert len(minted) >= 32  # token_urlsafe(32) yields a >=43-char ASCII string
-    target = tmp_path / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
-    assert target.is_file()
-    assert target.read_text(encoding="utf-8").strip() == minted
-
-
-def test_load_or_mint_is_idempotent(tmp_path):
-    """Two calls return the same value — never re-mint over a live token."""
-    first = _load_or_mint_app_token(tmp_path)
-    second = _load_or_mint_app_token(tmp_path)
-    assert first == second
-    assert first is not None
+@pytest.mark.parametrize(
+    "symbol",
+    [
+        "_APP_TOKEN",
+        "_app_token_path",
+        "_load_or_mint_app_token",
+        "_get_app_token",
+        "_enforce_lan_app_token_gate",
+        "APP_TOKEN_FILENAME",
+        "APP_TOKEN_REL_DIR",
+    ],
+)
+def test_the_app_token_surface_is_fully_removed(symbol):
+    assert not hasattr(web_server, symbol), (
+        f"web_server still exposes {symbol!r}; the shared App token was retired, "
+        "so the accessor goes with it"
+    )
 
 
-def test_load_or_mint_strips_whitespace(tmp_path):
-    """Trailing newline / whitespace must not leak into the paired value."""
-    target = tmp_path / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
-    target.parent.mkdir(parents=True)
-    target.write_text("  whitespacey-app-token  \n", encoding="utf-8")
-    assert _load_or_mint_app_token(tmp_path) == "whitespacey-app-token"
+# ---------------------------------------------------------------------------
+# 4. Constant-time comparison helper (still used by the session gate)
+# ---------------------------------------------------------------------------
 
 
 def test_verify_token_matches_only_equal_strings():
@@ -110,34 +107,27 @@ def test_verify_token_matches_only_equal_strings():
 
 
 # ---------------------------------------------------------------------------
-# HTTP gate: /api/agenda via the App token (WP-H1-LAN contract)
+# 2 + 3. HTTP gate: /api/agenda via the dashboard session token
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
-def app_client(tmp_path, monkeypatch):
-    """Per-test FastAPI app with the agenda router + a known App token.
+def gate_client(monkeypatch, tmp_path):
+    """Per-test app wired like production, gated by ``_has_valid_session_token``.
 
-    The fixture mounts ``/api/agenda`` on a *new* FastAPI instance — same
-    shape as the production app — and patches the agenda service so the
-    DB doesn't need to exist on disk. It then patches
-    ``plobi_cli.web_server._APP_TOKEN`` so the gate consults our known
-    value (the freshly minted one we just wrote to the sandbox PLOBI_HOME).
+    Installs the same two middlewares as the real app — auth gate inside, API-version
+    stamping outside it, so the header lands on 401s as well as 200s — and pins
+    ``web_server._SESSION_TOKEN`` to a known value. ``/api/status`` is mounted as a
+    stub because what is under test here is the gate's exemption, not the payload.
     """
     monkeypatch.setattr(
         agenda_service, "_DEFAULT", AgendaService(tmp_path / "agenda.db")
     )
-
-    minted = _load_or_mint_app_token(tmp_path)
-    assert minted is not None
-    monkeypatch.setattr(web_server, "_APP_TOKEN", minted)
+    monkeypatch.setattr(web_server, "_SESSION_TOKEN", SPA_TOKEN)
 
     app = FastAPI()
-    # Wire the same auth middlewares the production app installs so the
-    # gate exercises the real ``_has_valid_session_token`` (and only that,
-    # not the SPA-token-injection side or the gated-auth cookie path).
     app.add_middleware(
-        __import__("fastapi.middleware.cors", fromlist=["CORSMiddleware"]).CORSMiddleware,
+        CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_methods=["*"],
         allow_headers=["*"],
@@ -145,17 +135,13 @@ def app_client(tmp_path, monkeypatch):
 
     @app.middleware("http")
     async def _gate(request, call_next):
-        from fastapi import HTTPException
         from fastapi.responses import JSONResponse
 
         path = request.url.path
         if path.startswith("/api/") and path != "/api/status":
-            # Mirror the legacy ``auth_middleware`` shape exactly enough
-            # to exercise _has_valid_session_token. The X-Plobi-Api-Version
-            # middleware under test sits OUTSIDE this gate so the header is
-            # stamped on both 401 and 200 responses.
-            ok = web_server._has_valid_session_token(request)
-            if not ok:
+            # Mirror the legacy ``auth_middleware`` shape exactly enough to
+            # exercise _has_valid_session_token and nothing else.
+            if not web_server._has_valid_session_token(request):
                 return JSONResponse(
                     status_code=401, content={"detail": "Unauthorized"}
                 )
@@ -167,201 +153,162 @@ def app_client(tmp_path, monkeypatch):
         response.headers[API_VERSION_HEADER] = API_VERSION
         return response
 
+    @app.get("/api/status")
+    async def _status():
+        return {"ok": True}
+
     app.include_router(agenda_router.router, prefix="/api/agenda")
 
     with TestClient(app) as client:
-        yield client, minted
+        yield client
 
 
-def test_agenda_accepts_app_token_via_dedicated_header(app_client):
-    client, token = app_client
-    resp = client.get(
+def _write_old_app_token(home, value: str) -> str:
+    """Put a file at the *old* App-token path and hand back its contents."""
+    path = home.joinpath(*OLD_APP_TOKEN_REL_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(value, encoding="utf-8")
+    return value
+
+
+def test_agenda_accepts_session_token_via_dedicated_header(gate_client):
+    resp = gate_client.get(
         "/api/agenda",
-        params={"from": "2026-09-14", "to": "2026-09-15"},
-        headers={"X-Plobi-Session-Token": token},
+        params=AGENDA_RANGE,
+        headers={"X-Plobi-Session-Token": SPA_TOKEN},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
     assert resp.headers.get(API_VERSION_HEADER) == API_VERSION
 
 
-def test_agenda_accepts_app_token_via_bearer(app_client):
-    client, token = app_client
-    resp = client.get(
+def test_agenda_accepts_session_token_via_bearer(gate_client):
+    resp = gate_client.get(
         "/api/agenda",
-        params={"from": "2026-09-14", "to": "2026-09-15"},
-        headers={"Authorization": f"Bearer {token}"},
+        params=AGENDA_RANGE,
+        headers={"Authorization": f"Bearer {SPA_TOKEN}"},
     )
-    assert resp.status_code == 200
-    assert resp.headers.get(API_VERSION_HEADER) == API_VERSION
+    assert resp.status_code == 200, resp.text
 
 
-def test_agenda_rejects_wrong_token(app_client):
-    client, _ = app_client
-    resp = client.get(
+def test_agenda_rejects_wrong_token(gate_client):
+    resp = gate_client.get(
         "/api/agenda",
-        params={"from": "2026-09-14", "to": "2026-09-15"},
+        params=AGENDA_RANGE,
         headers={"X-Plobi-Session-Token": "this-is-not-the-token"},
     )
     assert resp.status_code == 401
     assert resp.headers.get(API_VERSION_HEADER) == API_VERSION
 
 
-def test_agenda_rejects_missing_token(app_client):
-    client, _ = app_client
-    resp = client.get(
-        "/api/agenda",
-        params={"from": "2026-09-14", "to": "2026-09-15"},
-    )
+def test_agenda_rejects_missing_token(gate_client):
+    resp = gate_client.get("/api/agenda", params=AGENDA_RANGE)
     assert resp.status_code == 401
     assert resp.headers.get(API_VERSION_HEADER) == API_VERSION
 
 
-def test_agenda_accepts_spa_session_token_unchanged(app_client):
-    """The SPA session token must keep working — no regression on the
-    existing dashboard flow. The patched web_server._SESSION_TOKEN still
-    lives at module scope, so we read it via the import above."""
-    client, _ = app_client
-    spa_token = web_server._SESSION_TOKEN
-    resp = client.get(
-        "/api/agenda",
-        params={"from": "2026-09-14", "to": "2026-09-15"},
-        headers={"X-Plobi-Session-Token": spa_token},
+def test_a_stale_app_token_file_grants_nothing_over_http(gate_client, tmp_path):
+    """Both header shapes are checked: the retired secret used to be accepted in both.
+
+    A half-removal would still pass one of them, and the file being there is the
+    normal state after an upgrade rather than a contrived input.
+    """
+    stale = _write_old_app_token(tmp_path, "left-over-shared-app-token")
+
+    dedicated = gate_client.get(
+        "/api/agenda", params=AGENDA_RANGE, headers={"X-Plobi-Session-Token": stale}
     )
-    assert resp.status_code == 200
-    assert resp.headers.get(API_VERSION_HEADER) == API_VERSION
-
-
-def test_status_path_is_public_and_still_versioned(app_client):
-    """``/api/status`` is in ``PUBLIC_API_PATHS`` — the gated gate above
-    must let it through, and the version header must still stamp it.
-
-    The minimal app fixture doesn't mount /api/status, but it does
-    exercise the version-header middleware on every other response — so
-    we just confirm the header is present on the agenda 200 above by
-    re-asserting on a freshly fetched route (covers the route-200 path)."""
-    client, token = app_client
-    resp = client.get(
-        "/api/agenda/pending",
-        headers={"X-Plobi-Session-Token": token},
+    bearer = gate_client.get(
+        "/api/agenda", params=AGENDA_RANGE, headers={"Authorization": f"Bearer {stale}"}
     )
-    assert resp.status_code == 200
+    assert dedicated.status_code == 401, "the retired shared token still opens HTTP"
+    assert bearer.status_code == 401, "the retired shared token still opens Bearer HTTP"
+
+
+def test_status_path_is_public_and_still_versioned(gate_client):
+    """``/api/status`` is in ``PUBLIC_API_PATHS`` — the gate exempts it, and the
+    version middleware still stamps it."""
+    resp = gate_client.get("/api/status")
+    assert resp.status_code == 200, resp.text
     assert resp.headers.get(API_VERSION_HEADER) == "1"
 
 
 # ---------------------------------------------------------------------------
-# LAN gate (start_server downgrade path, WP-H1-LAN safety net)
+# 5. LAN gate — keyed on pairing, not on a secret
 # ---------------------------------------------------------------------------
 
 
-def test_lan_gate_refuses_when_mint_failed(caplog):
-    """A non-loopback bind without an App token must downgrade to 127.0.0.1.
+def _unwritable_home(home):
+    """Make the pairing dir impossible: ``<home>/plobi`` is already a file.
 
-    The regression we're guarding: a desktop whose ``$PLOBI_HOME/plobi/``
-    is read-only or whose token file got wiped could otherwise expose the
-    dashboard on 0.0.0.0:8787 with **no** shared secret — the App token
-    path would 401 every caller (good) but ``/api/status`` is public, so
-    the LAN would see a half-authenticated dashboard. The gate clamps
-    the bind to loopback AND logs a WARNING so the user can fix the FS.
+    The honest stand-in for a read-only / broken ``$PLOBI_HOME`` — it makes the
+    store's own ``mkdir`` fail, which is exactly what the gate asks about.
     """
-    from plobi_cli.web_server import _enforce_lan_app_token_gate
+    (home / "plobi").write_text("not a directory", encoding="utf-8")
+    return home
 
+
+def test_lan_gate_refuses_when_devices_cannot_pair(monkeypatch, tmp_path, caplog):
+    """Non-loopback bind + unwritable pairing store ⇒ loopback + one WARNING.
+
+    The regression guarded: LAN mode exists so a handset can reach the desktop. If no
+    device can ever be recorded, that bind is a surface nobody can join, so it is
+    clamped and the operator gets a signal instead of a silently useless URL.
+    """
+    _use_store(monkeypatch, _unwritable_home(tmp_path))
     caplog.set_level("WARNING", logger="plobi_cli.web_server")
-    new_host, downgraded = _enforce_lan_app_token_gate("0.0.0.0", 8787, None)
+
+    new_host, downgraded = web_server._enforce_lan_pairing_gate("0.0.0.0", 8787)
     assert downgraded is True
     assert new_host == "127.0.0.1"
-
-    # WARNING was emitted with the port and the "LAN bind refused" sentinel
-    # so log-scrapers (and humans reading doctor output) can find it.
-    messages = [record.getMessage() for record in caplog.records]
     assert any(
-        "LAN bind refused" in msg and "8787" in msg for msg in messages
-    ), f"missing WARNING; saw: {messages!r}"
+        "LAN bind refused" in r.getMessage() and "8787" in r.getMessage()
+        for r in caplog.records
+    ), f"missing WARNING; saw: {[r.getMessage() for r in caplog.records]!r}"
 
 
-def test_lan_gate_refuses_for_unscoped_hostname(monkeypatch, caplog):
-    """Same downgrade for ``0.0.0.0`` (the actual desktop LAN bind target)."""
-    from plobi_cli.web_server import _enforce_lan_app_token_gate
+def test_lan_gate_passes_when_pairing_is_possible(monkeypatch, tmp_path):
+    """A writable home keeps the bind the caller asked for — no silent clamp."""
+    _use_store(monkeypatch, tmp_path)
 
+    new_host, downgraded = web_server._enforce_lan_pairing_gate("0.0.0.0", 8787)
+    assert (new_host, downgraded) == ("0.0.0.0", False)
+
+
+def test_lan_gate_preserves_ipv6_literal_when_pairing_is_possible(monkeypatch, tmp_path):
+    """``::`` is non-loopback to ``should_require_auth`` but a valid bind target."""
+    _use_store(monkeypatch, tmp_path)
+
+    new_host, downgraded = web_server._enforce_lan_pairing_gate("::", 8787)
+    assert (new_host, downgraded) == ("::", False)
+
+
+def test_lan_gate_never_touches_loopback(monkeypatch, tmp_path, caplog):
+    """Loopback binds stay alone even with a broken home — the SPA needs no pairing."""
+    _use_store(monkeypatch, _unwritable_home(tmp_path))
     caplog.set_level("WARNING", logger="plobi_cli.web_server")
-    new_host, downgraded = _enforce_lan_app_token_gate("0.0.0.0", 8787, None)
-    assert new_host == "127.0.0.1"
-    assert downgraded is True
-    assert any("LAN bind refused" in r.getMessage() for r in caplog.records)
 
-
-def test_lan_gate_passes_when_token_present():
-    """Mint succeeded → LAN bind is left as the caller asked.
-
-    This is the happy-path: a desktop whose ``$PLOBI_HOME`` was writable
-    at startup should still bind 0.0.0.0:8787 (the whole point of WP-H1-LAN).
-    The gate must not short-circuit legitimate LAN binds.
-    """
-    from plobi_cli.web_server import _enforce_lan_app_token_gate
-
-    new_host, downgraded = _enforce_lan_app_token_gate(
-        "0.0.0.0", 8787, "freshly-minted-app-token"
-    )
-    assert new_host == "0.0.0.0"
-    assert downgraded is False
-
-
-def test_lan_gate_does_not_touch_loopback_when_token_missing(caplog):
-    """Loopback binds are NEVER downgraded — the dashboard SPA is fine on its own."""
-    from plobi_cli.web_server import _enforce_lan_app_token_gate
-
-    caplog.set_level("WARNING", logger="plobi_cli.web_server")
     for host in ("127.0.0.1", "localhost", "::1"):
-        new_host, downgraded = _enforce_lan_app_token_gate(host, 0, None)
+        new_host, downgraded = web_server._enforce_lan_pairing_gate(host, 0)
         assert new_host == host, f"loopback host {host} was rewritten"
         assert downgraded is False, f"loopback host {host} flagged as downgraded"
-    # No WARNING should fire on the loopback path — only on the LAN-refusal path.
     assert all("LAN bind refused" not in r.getMessage() for r in caplog.records)
 
 
-def test_get_app_token_indirection_reads_module_state(monkeypatch):
-    """``_get_app_token()`` must read the current module-level value so a
-    ``monkeypatch.setattr`` on ``_APP_TOKEN`` is visible to the LAN gate.
-
-    Without the indirection, the gate would close over the import-time
-    value and tests couldn't exercise the downgrade path.
-    """
-    from plobi_cli import web_server
-
-    monkeypatch.setattr(web_server, "_APP_TOKEN", "monkeypatched-token")
-    assert web_server._get_app_token() == "monkeypatched-token"
-
-    monkeypatch.setattr(web_server, "_APP_TOKEN", None)
-    assert web_server._get_app_token() is None
-
-
-def test_lan_gate_for_dual_stack_ip_literal_with_token_present():
-    """IPv6 literal like ``::`` (which ``should_require_auth`` would flag
-    as non-loopback) is preserved when the token is present."""
-    from plobi_cli.web_server import _enforce_lan_app_token_gate
-
-    new_host, downgraded = _enforce_lan_app_token_gate("::", 8787, "token-here")
-    assert new_host == "::"
-    assert downgraded is False
-
-
-def test_lan_gate_downgrade_message_mentions_writable_check(caplog):
-    """The WARNING points the operator at the most likely fix (FS writability).
-
-    The downgrade message is the user's only signal that their LAN bind
-    silently fell back to loopback — it must name the file path so they
-    can ``chmod`` / free disk / etc. without grepping logs for the
-    function name.
-    """
-    from plobi_cli.web_server import _enforce_lan_app_token_gate
-
+def test_lan_gate_warning_names_the_pairing_store(monkeypatch, tmp_path, caplog):
+    """The WARNING is the operator's only signal; it must name what to fix."""
+    _use_store(monkeypatch, _unwritable_home(tmp_path))
     caplog.set_level("WARNING", logger="plobi_cli.web_server")
-    _enforce_lan_app_token_gate("0.0.0.0", 8787, None)
+
+    web_server._enforce_lan_pairing_gate("0.0.0.0", 8787)
     combined = " | ".join(r.getMessage() for r in caplog.records)
-    assert "plobi" in combined, f"WARNING did not name the plobi dir; saw: {combined!r}"
+    assert "plobi" in combined, f"WARNING did not name the pairing dir; saw: {combined!r}"
+    assert "PLOBI_HOME" in combined, (
+        f"WARNING did not point at $PLOBI_HOME; saw: {combined!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
-# WP-H3-WS — WS handshake accepts the persistent App token (tablet reach)
+# 6. WP-H3-WS — WS handshake credentials in gated mode
 # ---------------------------------------------------------------------------
 
 
@@ -386,31 +333,17 @@ class _FakeWebSocket:
         self.url = type("URL", (), {"path": "/api/ws"})()
 
 
-def _set_auth_required(monkeypatch, client) -> None:
-    """Mark ``web_server.app.state.auth_required = True`` so the gated path runs.
-
-    ``_ws_auth_reason`` reads ``app.state.auth_required`` from the
-    module-level ``web_server.app`` global, NOT from the test client's
-    app — so we have to point the module global at the test app first.
-    """
-    from plobi_cli import web_server
-
-    monkeypatch.setattr(web_server, "app", client.app)
-    client.app.state.auth_required = True
+def _gated_mode(monkeypatch) -> None:
+    """Put ``web_server.app.state.auth_required`` True without starting a server."""
+    fake_app = type("App", (), {"state": type("S", (), {"auth_required": True})()})()
+    monkeypatch.setattr(web_server, "app", fake_app)
 
 
-def test_ws_auth_reason_accepts_app_token_via_dedicated_header(monkeypatch, app_client, caplog):
-    """Tablet reaches ``/api/ws`` with ``X-Plobi-Session-Token`` → accept."""
-    from plobi_cli import web_server
-
-    client, token = app_client
-    ws = _FakeWebSocket(headers={"X-Plobi-Session-Token": token})
-    _set_auth_required(monkeypatch, client)
-
-    # Patch the lazy-imported audit loggers to a no-op (we don't need the
-    # dashboard_auth layer in this test).
+@pytest.fixture()
+def _no_other_way_in(monkeypatch):
+    """Neutralise the ticket / internal paths so only the header branch is under test."""
     monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
+        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False
     )
     monkeypatch.setattr(
         "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
@@ -423,148 +356,106 @@ def test_ws_auth_reason_accepts_app_token_via_dedicated_header(monkeypatch, app_
         raising=False,
     )
 
-    caplog.set_level("WARNING", logger="plobi_cli.web_server")
-    reason, cred = web_server._ws_auth_reason(ws)
-    assert reason is None, f"expected accept, got reason={reason!r}"
-    assert cred == "app_token"
+
+def _pair_a_device(store) -> str:
+    """Pair a handset in-process and return its plaintext token."""
+    code, _expires = store.issue_code()
+    device_id, token = store.redeem(code, name="ws-probe-tablet")
+    assert device_id and token
+    return token
 
 
-def test_ws_auth_reason_accepts_app_token_via_bearer(monkeypatch, app_client):
-    from plobi_cli import web_server
-
-    client, token = app_client
-    ws = _FakeWebSocket(headers={"Authorization": f"Bearer {token}"})
-    _set_auth_required(monkeypatch, client)
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
-    )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-
-    reason, cred = web_server._ws_auth_reason(ws)
-    assert reason is None
-    assert cred == "app_token"
-
-
-def test_ws_auth_reason_rejects_wrong_app_token_without_falling_through(
-    monkeypatch, app_client, caplog
+def test_ws_auth_reason_accepts_a_paired_device_token(
+    monkeypatch, tmp_path, _no_other_way_in
 ):
-    """A wrong App token explicitly presented must be rejected with a distinct
-    reason (``app_token_invalid``) — not silently fall through to SPA / ticket
-    paths. The audit-log reason must contain no part of the token."""
-    from plobi_cli import web_server
+    store = _use_store(monkeypatch, tmp_path)
+    token = _pair_a_device(store)
+    _gated_mode(monkeypatch)
 
-    captured: list[dict] = []
-
-    def fake_audit(*args, **kwargs):
-        captured.append(kwargs)
-
-    client, token = app_client
-    ws = _FakeWebSocket(headers={"X-Plobi-Session-Token": "wrong-token"})
-    _set_auth_required(monkeypatch, client)
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.audit.audit_log", fake_audit, raising=False,
+    reason, cred = web_server._ws_auth_reason(
+        _FakeWebSocket(headers={"X-Plobi-Session-Token": token})
     )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
+    assert reason is None, f"expected accept, got reason={reason!r}"
+    assert cred == "device_token"
 
-    caplog.set_level("WARNING", logger="plobi_cli.web_server")
-    reason, cred = web_server._ws_auth_reason(ws)
-    assert reason == "app_token_invalid"
-    assert cred == "app_token"
-    # Audit log was written; its ``reason`` does NOT contain the bad token.
-    assert any("mismatch" in (kw.get("reason", "")).lower() for kw in captured), (
-        "expected an audit log with reason containing 'mismatch'"
+    bearer_reason, bearer_cred = web_server._ws_auth_reason(
+        _FakeWebSocket(headers={"Authorization": f"Bearer {token}"})
     )
-    for kw in captured:
-        assert "wrong-token" not in (kw.get("reason") or ""), (
-            "audit-log reason leaked the rejected App token"
-        )
-    assert token not in (reason or ""), "the real token leaked into the response"
+    assert (bearer_reason, bearer_cred) == (None, "device_token")
 
 
-def test_ws_auth_reason_missing_credential_still_rejected(monkeypatch, app_client):
-    """No headers + no ticket/internal ⇒ still ``no_credential``."""
-    from plobi_cli import web_server
+def test_ws_auth_reason_refuses_the_retired_app_token(
+    monkeypatch, tmp_path, _no_other_way_in
+):
+    """A handset still holding the old shared secret must be turned away.
 
-    client = app_client[0]
-    ws = _FakeWebSocket()
-    _set_auth_required(monkeypatch, client)
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
-    )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
+    It is not treated as an unknown-but-fatal credential either: the header simply is
+    not a credential this path knows, so auth falls through to the ticket / internal
+    checks and ends at ``no_credential``. Either way the presented secret must not
+    reach the reason text.
+    """
+    stale = _write_old_app_token(tmp_path, "left-over-shared-app-token")
+    _use_store(monkeypatch, tmp_path)
+    _gated_mode(monkeypatch)
 
-    reason, cred = web_server._ws_auth_reason(ws)
+    reason, cred = web_server._ws_auth_reason(
+        _FakeWebSocket(headers={"X-Plobi-Session-Token": stale})
+    )
+    assert reason == "no_credential", f"retired token changed the WS outcome: {reason!r}"
+    assert cred == "none"
+    assert stale not in f"{reason}/{cred}"
+
+
+def test_ws_auth_reason_refuses_the_session_token_as_a_header_credential(
+    monkeypatch, tmp_path, _no_other_way_in
+):
+    """The desktop's ephemeral token is an HTTP credential, not a WS one.
+
+    Pinned so the retirement did not quietly widen the header branch to "whatever this
+    process also accepts on HTTP".
+    """
+    spa_token = secrets.token_urlsafe(32)
+    monkeypatch.setattr(web_server, "_SESSION_TOKEN", spa_token)
+    _use_store(monkeypatch, tmp_path)
+    _gated_mode(monkeypatch)
+
+    reason, cred = web_server._ws_auth_reason(
+        _FakeWebSocket(headers={"X-Plobi-Session-Token": spa_token})
+    )
     assert reason == "no_credential"
     assert cred == "none"
 
 
-def test_ws_auth_reason_does_not_accept_legacy_query_token_in_gated_mode(monkeypatch):
+def test_ws_auth_reason_missing_credential_still_rejected(monkeypatch, _no_other_way_in):
+    _gated_mode(monkeypatch)
+
+    reason, cred = web_server._ws_auth_reason(_FakeWebSocket())
+    assert reason == "no_credential"
+    assert cred == "none"
+
+
+def test_ws_auth_reason_does_not_accept_legacy_query_token_in_gated_mode(
+    monkeypatch, _no_other_way_in
+):
     """``?token=<SPA token>`` must NOT grant WS access in gated mode.
 
-    Gated mode ignores the legacy ``?token=`` query param entirely — even
-    when the presented value matches ``_SESSION_TOKEN`` — and early-returns
-    ``no_credential``. This is what the docstring promises ("unconditionally
-    rejected") and is what stops a leaked SPA token from granting WS access.
+    The session token is still a real HTTP credential, but gated mode ignores the
+    query param outright — a leaked ``_SESSION_TOKEN`` must not buy socket access.
     """
-    from plobi_cli import web_server
-
-    import secrets as _secrets
-    spa_token = _secrets.token_urlsafe(32)
-    app_token = _secrets.token_urlsafe(32)
-    monkeypatch.setattr(web_server, "_APP_TOKEN", app_token)
+    spa_token = secrets.token_urlsafe(32)
     monkeypatch.setattr(web_server, "_SESSION_TOKEN", spa_token)
+    _gated_mode(monkeypatch)
 
-    fake_app = type("App", (), {"state": type("S", (), {"auth_required": True})()})()
-    monkeypatch.setattr(web_server, "app", fake_app)
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.audit.audit_log", lambda *a, **k: None, raising=False,
+    reason, cred = web_server._ws_auth_reason(
+        _FakeWebSocket(query_params={"token": spa_token})
     )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_internal_credential",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "plobi_cli.dashboard_auth.ws_tickets.consume_ticket",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-
-    ws = _FakeWebSocket(query_params={"token": spa_token})
-    reason, cred = web_server._ws_auth_reason(ws)
     assert reason == "no_credential"
     assert cred == "none"
 
 
 # ---------------------------------------------------------------------------
 # WP-FS-PROFILE-CWD — file API cwd follows the active profile's terminal.cwd
+# (unrelated to credentials; kept in this file for history, see module docstring)
 # ---------------------------------------------------------------------------
 
 
