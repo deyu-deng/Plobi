@@ -576,6 +576,77 @@ def test_agenda_routes_still_mounted():
 
 
 # --------------------------------------------------------------------------- #
+# startup seeding — the agenda L2 is a permanent registry row, not rail fiction
+# --------------------------------------------------------------------------- #
+
+
+def _stub_agenda_profile(monkeypatch) -> list[str]:
+    """Confine the seed to the registry write it is supposed to guarantee.
+
+    Profile materialization (``spawn`` + the L2 toolset write) is
+    test_agent_registry's subject; running it here would only drop real profile
+    directories under the temp HOME.
+    """
+    spawned: list[str] = []
+
+    def fake_spawn(self, name, **kwargs):
+        spawned.append(name)
+        return {"name": name}
+
+    monkeypatch.setattr(AgentRegistry, "spawn", fake_spawn)
+    monkeypatch.setattr("plobi_cli.profiles.profile_exists", lambda name: False)
+    monkeypatch.setattr("plobi.agents.registry.ensure_l2_agenda_toolsets", lambda path: None)
+    return spawned
+
+
+def test_startup_seed_surfaces_agenda_row(_isolated_state, monkeypatch):
+    """The desktop/serve backend must seed the agenda L2 before it serves.
+
+    ``GET /api/agents`` reads ``projects.yaml`` and writes nothing, so without
+    this seed a home whose registry only holds human projects shows a rail with
+    no 日程管家 at all.
+    """
+    from plobi_cli import web_server
+
+    spawned = _stub_agenda_profile(monkeypatch)
+    console_router.set_registry(None)  # a fresh server reads the row back off disk
+
+    with TestClient(web_server.app):
+        rows = console_router.list_agents()
+
+    assert [row["id"] for row in rows] == ["agenda"]
+    assert rows[0]["name"] == "日程秘书"
+    assert spawned == ["agenda"]
+
+
+def test_seed_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
+    """A failed seed may not take the backend down with it.
+
+    The agenda L2 ships with the product, and the secretary write paths re-seed
+    on first use, so startup logs and keeps serving.
+    """
+    import logging
+
+    from plobi_cli import web_server
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("registry offline")
+
+    monkeypatch.setattr("plobi.agents.registry.ensure_agenda_agent", explode)
+
+    with caplog.at_level(logging.WARNING, logger="plobi_cli.web_server"):
+        with TestClient(
+            web_server.app,
+            headers={web_server._SESSION_HEADER_NAME: web_server._SESSION_TOKEN},
+        ) as test_client:
+            response = test_client.get("/api/agents")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert any("agenda L2" in record.getMessage() for record in caplog.records), caplog.text
+
+
+# --------------------------------------------------------------------------- #
 # C4 routine template CRUD endpoints
 # --------------------------------------------------------------------------- #
 
