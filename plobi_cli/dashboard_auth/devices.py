@@ -122,6 +122,23 @@ class DeviceStore:
     def _save(self, path: Path, data: dict) -> None:
         _secure_write(path, json.dumps(data, indent=2, ensure_ascii=False))
 
+    def root_writable(self) -> bool:
+        """Whether a device could actually be paired into this home.
+
+        Pairing writes two files under ``<home>/plobi``, so a read-only or
+        uncreatable home means the LAN surface would open with no way for any
+        handset to join it. Asked before binding (``web_server._enforce_lan_pairing_gate``)
+        instead of at pairing time, so the operator learns at startup.
+
+        Probing creates the directory if it is missing — every real store write
+        does that anyway, so this adds no new state to the filesystem.
+        """
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
+        return os.access(self._dir, os.W_OK)
+
     # ----- pairing codes -----
     #
     # One file, two top-level keys: ``active`` (the code that is on screen, or

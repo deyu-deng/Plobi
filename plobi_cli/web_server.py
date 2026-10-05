@@ -348,126 +348,30 @@ _SESSION_TOKEN = os.environ.get("PLOBI_DASHBOARD_SESSION_TOKEN") or secrets.toke
 from plobi_cli.dashboard_auth.headers import SESSION_HEADER_NAME as _SESSION_HEADER_NAME  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Persistent App token (WP-H1-LAN).
+# Credentials, and the LAN bind gate that outlived the shared App token.
 #
-# The Plobi App (iOS / HarmonyOS / any HTTP client on the same Wi-Fi) needs
-# a *long-lived* token it can pair with once and reuse across restarts. The
-# SPA session token above dies with the process and is intentionally not
-# suitable for that — every desktop restart would force a re-pair.
+# WP-H1-LAN used to keep one long-lived secret at ``$PLOBI_HOME/plobi/app_token``:
+# mint it on first need, share it across every process on the same home, paste it
+# into the handset so the handset could reach the desktop over Wi-Fi. It is
+# retired — once the credential became per-device and individually revocable
+# (``dashboard_auth/devices.py``, 裁定 64), a one-for-everything secret had no role
+# left: revoking it means locking every device out at once.
 #
-# The App token is stored on disk under ``$PLOBI_HOME/plobi/app_token`` so
-# it survives backend restarts and is shared by every process bound to the
-# same PLOBI_HOME. The first process to need it mints the token; subsequent
-# processes read the existing value. Mint failures are non-fatal — they
-# surface via :data:`_APP_TOKEN` being ``None``. When the LAN bind is
-# requested (``start_server(host=..., port=8787)`` with a non-loopback
-# host) the gate at :func:`_enforce_lan_app_token_gate` downgrades the
-# bind to ``127.0.0.1`` and logs a WARNING so the user knows the App
-# cannot pair against this desktop until the file-system problem is
-# fixed. Loopback binds (the default desktop case) are unaffected: the
-# dashboard SPA uses its own session token and never needed this path.
-#
-# Security notes:
-# * Never logged, never written to /api/status, never read back into git.
-# * Compared with :func:`hmac.compare_digest` only — same constant-time
-#   treatment as the SPA token.
-# * Same wire protocol as the SPA token (X-Plobi-Session-Token / Bearer):
-#   no new header, no new endpoint, no new CORS rule.
+# What survives from that design:
+# * **Credentials** — the SPA session token above (desktop shell, loopback) and one
+#   paired device token per handset. Nothing else is honoured on these wire names.
+# * **The LAN bind gate** (:func:`_enforce_lan_pairing_gate`) — a non-loopback bind
+#   whose home cannot store a pairing is a surface no device can join, so it is
+#   downgraded to ``127.0.0.1`` with a WARNING. Loopback binds are unaffected.
+# * **Same wire protocol** — ``X-Plobi-Session-Token`` / ``Authorization: Bearer``,
+#   compared with :func:`hmac.compare_digest`; no new header, no new endpoint.
 # ---------------------------------------------------------------------------
 API_VERSION = "1"
 API_VERSION_HEADER = "X-Plobi-Api-Version"
-APP_TOKEN_FILENAME = "app_token"
-APP_TOKEN_REL_DIR = "plobi"
-
-
-def _app_token_path(plobi_home: Path) -> Path:
-    """Absolute path to the persistent App token file under *plobi_home*.
-
-    Centralised so :func:`_load_or_mint_app_token`, the LAN bind guard in
-    :func:`serveBackendArgs` (Electron side), and ``doctor --app-info`` all
-    resolve the same location. We refuse to point at a path whose parent
-    already exists as a *file* (would be a deployment mix-up, not a real
-    install) — fall back to ``<plobi_home>/plobi``-equivalent which the
-    caller will create.
-    """
-    target = Path(plobi_home) / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
-    parent = target.parent
-    if parent.exists() and not parent.is_dir():
-        # Extremely defensive: refuse to use a path whose parent collides with
-        # a regular file. Caller will treat the mint as failed and the LAN
-        # bind will stay loopback.
-        return Path(plobi_home) / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
-    return target
-
-
-def _load_or_mint_app_token(plobi_home: Path) -> str | None:
-    """Return the persistent App token, minting one on first call.
-
-    Reads ``$PLOBI_HOME/plobi/app_token`` (a single line, no whitespace
-    noise). If the file is missing or empty, mints a fresh
-    ``secrets.token_urlsafe(32)`` and atomically writes it back. Existing
-    tokens are returned unchanged so a relaunched backend keeps the same
-    secret the App already paired with.
-
-    Returns ``None`` if mint/IO failed — callers (LAN bind gate, doctor
-    ``--app-info``) must treat ``None`` as "cannot safely expose LAN", not
-    as a hard error. The failure is logged at WARNING so the user can find
-    it, but the desktop still boots on loopback.
-
-    On Windows, ``os.chmod`` to 0o600 is best-effort — most filesystems
-    honour only the read-only bit, but we still issue the call so POSIX
-    installs get the restrictive permission they need.
-    """
-    token_path = _app_token_path(plobi_home)
-    # 1. Read path — cheap path, no IO when the file is present and valid.
-    try:
-        if token_path.is_file():
-            text = token_path.read_text(encoding="utf-8").strip()
-            if text:
-                return text
-    except OSError as exc:
-        _log.warning("App token file at %s unreadable: %s", token_path, exc)
-
-    # 2. Mint path. Try to write atomically — but tolerate the heredoc-of-
-    # deployments where the parent dir is a regular file or write fails
-    # entirely (e.g. read-only filesystem in CI).
-    try:
-        token_path.parent.mkdir(parents=True, exist_ok=True)
-        new_token = secrets.token_urlsafe(32)
-        # Single-line, no trailing newline noise — App compares bytewise.
-        tmp_path = token_path.with_suffix(token_path.suffix + ".tmp")
-        tmp_path.write_text(new_token, encoding="utf-8")
-        try:
-            os.replace(tmp_path, token_path)
-        except OSError:
-            # os.replace can fail across volumes; fall back to a direct
-            # write which is fine for a single-line secret on a small file.
-            token_path.write_text(new_token, encoding="utf-8")
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-        try:
-            os.chmod(token_path, 0o600)
-        except (OSError, AttributeError):
-            # chmod unsupported on Windows or restricted FS — best-effort.
-            pass
-        try:
-            os.chmod(token_path.parent, 0o700)
-        except (OSError, AttributeError):
-            pass
-        return new_token
-    except OSError as exc:
-        _log.warning(
-            "App token mint failed at %s: %s; LAN binding will stay loopback",
-            token_path,
-            exc,
-        )
-        return None
 
 
 def _verify_token(presented: str, expected: str) -> bool:
-    """Constant-time compare for the SPA + App token gates.
+    """Constant-time compare for the dashboard session-token gate.
 
     Pulled out of :func:`_has_valid_session_token` so the same comparison
     logic is reused by the two branches (header / Bearer) and by tests
@@ -478,73 +382,40 @@ def _verify_token(presented: str, expected: str) -> bool:
     return hmac.compare_digest(presented.encode(), expected.encode())
 
 
-# Module-level App token. Loaded eagerly at import time so the LAN bind
-# guard (which runs before the FastAPI app even starts) can short-circuit
-# cleanly. Failures degrade to ``None``; :func:`_verify_token` then refuses
-# every presented App token, but the SPA flow keeps working unchanged.
-#
-# If :func:`_load_or_mint_app_token` returns ``None`` (mint failed /
-# permission denied / read-only FS), LAN bindings (any non-loopback host)
-# are downgraded to ``127.0.0.1`` at startup — see
-# :func:`_enforce_lan_app_token_gate` called from :func:`start_server`.
-# Loopback binds are unaffected: the dashboard SPA already has its own
-# session token and never needed the App token path.
-try:
-    from plobi_constants import get_plobi_home as _get_plobi_home
-    _APP_TOKEN: str | None = _load_or_mint_app_token(_get_plobi_home())
-except Exception as _exc:  # pragma: no cover — defensive: never block import
-    _log.debug("App token bootstrap skipped: %s", _exc)
-    _APP_TOKEN = None
-
-# Handset pairing (WP-APP-GATE / WP-APP-PAIR): the App token above is *not* what a
-# paired phone/tablet presents any more — each device keeps its own revocable token
-# (``dashboard_auth/devices.py``) and the seam recognises those. It stays accepted
-# for the desktop shell and for apps that predate pairing. The seam is armed inside
-# :func:`start_server`, AFTER the "a non-loopback bind needs a human auth provider"
-# check — arming here at import would put a token-only provider in the registry and
-# let that check pass on a dashboard nobody can log in to. See
-# ``dashboard_auth/pairing.py``.
+# Handset credentials (WP-APP-GATE / WP-APP-PAIR): a paired phone or tablet
+# presents **its own** token, recognised by the token-auth seam
+# (``dashboard_auth/pairing.py`` backed by ``devices.py``). The seam is armed
+# inside :func:`start_server`, AFTER the "a non-loopback bind needs a human auth
+# provider" check — arming at import would put a token-only provider in the
+# registry and let that check pass on a dashboard nobody can log in to.
 
 
-def _get_app_token() -> str | None:
-    """Return the module-level persistent App token, or ``None`` if mint failed.
+def _enforce_lan_pairing_gate(host: str, port: int) -> tuple[str, bool]:
+    """WP-H1-LAN safety net, re-keyed on pairing: no writable pairing store, no LAN bind.
 
-    Indirection so the LAN gate in :func:`start_server` can read the
-    current token value through a stable symbol — even if tests have
-    replaced ``_APP_TOKEN`` with a ``monkeypatch.setattr`` shim that
-    only intercepts attribute access (not module import).
-    """
-    return _APP_TOKEN
+    Returns ``(effective_host, was_downgraded)``. A non-loopback bind (LAN mode —
+    ``host`` not in :data:`_LOOPBACK_HOST_VALUES`) exists so handsets can reach the
+    desktop. If ``<PLOBI_HOME>/plobi`` cannot be written no device can ever pair, so
+    that surface is pointless: downgrade to ``127.0.0.1`` and emit a single WARNING
+    explaining why the LAN-mode URL stopped working. Never raises — the dashboard
+    must still boot on loopback so the operator can fix the file-system problem from
+    the local UI. Loopback binds are untouched, and the separate fail-closed check in
+    :func:`start_server` still refuses a gated bind that has no human auth provider.
 
-
-def _enforce_lan_app_token_gate(
-    host: str, port: int, token: str | None
-) -> tuple[str, bool]:
-    """WP-H1-LAN safety net: refuse a non-loopback bind when the App token is gone.
-
-    Returns ``(effective_host, was_downgraded)``. When the caller asks for a
-    non-loopback bind (LAN mode — `host` not in :data:`_LOOPBACK_HOST_VALUES`)
-    AND the persistent App token is ``None`` (mint failed at startup, the
-    token file is unreadable, or the user wiped ``$PLOBI_HOME/plobi/``),
-    we downgrade the bind to ``127.0.0.1`` and emit a single WARNING log so
-    the user understands why their LAN-mode shortcut URL stops working.
-    Never raises — the dashboard must still boot on loopback so the
-    operator can fix the underlying file-system / permission problem from
-    the local UI.
-
-    The check is intentionally fast and side-effect-free: it reads the
-    already-bootstrapped module-level token via :func:`_get_app_token` so
-    tests can monkeypatch ``_APP_TOKEN`` to ``None`` and exercise the
-    downgrade path without touching the disk.
+    Reads the store through :func:`plobi_cli.dashboard_auth.devices.get_store` so
+    tests can point it at a tempdir (``reset_store_for_tests``) instead of the disk.
     """
     if host in _LOOPBACK_HOST_VALUES:
         return host, False
-    if token:
+
+    from plobi_cli.dashboard_auth.devices import get_store
+
+    if get_store().root_writable():
         return host, False
     _log.warning(
-        "LAN bind refused: app token mint failed at startup; "
-        "falling back to loopback 127.0.0.1:%s. "
-        "Check that $PLOBI_HOME/plobi/ is writable so the App can pair.",
+        "LAN bind refused: the device pairing store under $PLOBI_HOME/plobi/ is not "
+        "writable, so no handset could pair against this bind. "
+        "Falling back to loopback 127.0.0.1:%s — check that $PLOBI_HOME is writable.",
         port,
     )
     return "127.0.0.1", True
@@ -592,37 +463,30 @@ from plobi_cli.dashboard_auth.public_paths import (
 
 
 def _has_valid_session_token(request: Request) -> bool:
-    """True if the request carries a valid dashboard session or App token.
+    """True if the request carries a valid dashboard session token.
 
-    Accepts two secrets on the same wire (no new header, no new path):
+    One secret on this wire: the **SPA session token** — ephemeral, injected into
+    the SPA HTML and into the desktop shell's own ``/api`` calls, killed when the
+    backend process exits.
 
-    * **SPA session token** — ephemeral, injected into the SPA HTML by the
-      desktop shell. Killed when the backend process exits.
-    * **App token** (WP-H1-LAN) — long-lived, stored at
-      ``$PLOBI_HOME/plobi/app_token``. Survives restarts so a paired
-      tablet never has to re-pair.
+    It used to accept a second one, the persistent shared App token
+    (``$PLOBI_HOME/plobi/app_token``, WP-H1-LAN). Retired: a handset now pairs for a
+    token of its own and goes through the token-auth seam
+    (``dashboard_auth/pairing.py``), where the desktop can revoke it alone. Nothing
+    on this path is revocable per caller, so nothing on this path takes a
+    long-lived secret.
 
-    Both flow through :func:`_verify_token` (constant-time) so the SPA
-    flow and the App flow cannot be distinguished by timing, and so the
-    legacy ``Authorization: Bearer <token>`` header works for both.
-
-    The dedicated session header (``X-Plobi-Session-Token``) avoids
-    collisions with reverse proxies that already use ``Authorization``
-    (for example Caddy ``basic_auth``).
+    Both header shapes still work for the session token, so a reverse proxy that
+    owns ``Authorization`` (for example Caddy ``basic_auth``) doesn't break the
+    dashboard: ``X-Plobi-Session-Token`` or ``Authorization: Bearer …``.
     """
     session_header = request.headers.get(_SESSION_HEADER_NAME, "")
-    if session_header:
-        if _verify_token(session_header, _SESSION_TOKEN):
-            return True
-        if _APP_TOKEN and _verify_token(session_header, _APP_TOKEN):
-            return True
+    if session_header and _verify_token(session_header, _SESSION_TOKEN):
+        return True
 
     auth = request.headers.get("authorization", "")
-    if auth:
-        if _verify_token(auth, f"Bearer {_SESSION_TOKEN}"):
-            return True
-        if _APP_TOKEN and _verify_token(auth, f"Bearer {_APP_TOKEN}"):
-            return True
+    if auth and _verify_token(auth, f"Bearer {_SESSION_TOKEN}"):
+        return True
     return False
 
 
@@ -14780,10 +14644,9 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
 
     ``reason`` is None when the credential is accepted, else a short
     machine-parseable token explaining the rejection (``no_credential``,
-    ``token_mismatch``, ``ticket_invalid``, ``internal_invalid``,
-    ``app_token_invalid``).
+    ``token_mismatch``, ``ticket_invalid``, ``internal_invalid``).
     ``credential`` names which credential type was presented (``ticket``,
-    ``internal``, ``token``, ``app_token``, or ``none``) so the accepted
+    ``internal``, ``token``, ``device_token``, or ``none``) so the accepted
     path can log *how* a peer authed, not just that it did.
 
     Loopback / ``--insecure``: legacy ``?token=<_SESSION_TOKEN>`` query
@@ -14800,19 +14663,15 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
       is multi-use and never expires so the child can reconnect, and is never
       injected into the SPA — see ``dashboard_auth.ws_tickets`` for the
       threat model.
-    * Upgrade request headers carrying the **persistent App token**
-      (``X-Plobi-Session-Token`` or ``Authorization: Bearer …``) — the same
-      credential the Plobi tablet / phone uses for HTTP LAN access
-      (WP-H1-LAN) and which is persisted at ``$PLOBI_HOME/plobi/app_token``.
-      The tablet reaches ``ws://<LAN-IP>:8787/api/ws`` with this header so
-      it does not need a SPA-issued ticket. Compared with
-      :func:`_verify_token` (constant-time hmac); the token never appears in
-      the WS URL, in audit-log reason text, or in the upgrade query string
-      (per WP-H3-WS).
-    * The same headers carrying a **paired device token** (WP-APP-PAIR,
-      ``dashboard_auth.devices``). Checked first, because it is the credential a
-      paired handset keeps and the only one the desktop can revoke on its own —
-      logged as ``device_token`` so the audit line names which handset attached.
+    * Upgrade request headers (``X-Plobi-Session-Token`` or ``Authorization:
+      Bearer …``) carrying a **paired device token** (WP-APP-PAIR,
+      ``dashboard_auth.devices``) — what a handset uses, because a browser cannot
+      set headers on a WS upgrade and has to mint a ticket instead. The store is
+      asked on every upgrade rather than answered from a cache, so a revoke lands on
+      the next attach instead of the next restart; logged as ``device_token`` so the
+      audit line names which handset attached. The token never appears in the WS URL
+      or in audit reason text (WP-H3-WS). The shared App token that used to be
+      honoured here is retired — see :func:`_has_valid_session_token` for why.
 
     The legacy ``?token=`` path is unconditionally rejected in gated mode
     (the SPA bundle isn't carrying the token any longer, and a leaked
@@ -14833,11 +14692,14 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
             consume_ticket,
         )
 
-        # WP-H3-WS / WP-APP-PAIR: the header credentials a device presents at
-        # upgrade time, mirroring the HTTP path in ``_has_valid_session_token``.
-        # A handset has no way to mint a SPA ticket, so its own device token is
-        # honoured first and the shared App token stays accepted behind it; either
+        # WP-H3-WS / WP-APP-PAIR: a native client presents its credential in the
+        # upgrade headers, since a browser cannot set headers on an upgrade and has
+        # to mint a ticket instead. A paired handset presents its own device token,
+        # and the store is asked on every upgrade rather than answered from a cache,
+        # so a revoke lands on the next attach instead of the next restart. Either
         # way the credential never enters the WS URL or the audit reason text.
+        # Anything else in these headers is not a credential this path knows, so it
+        # falls through to the ticket / internal checks — the only other ways in.
         session_header = ws.headers.get("x-plobi-session-token", "")
         auth_header = ws.headers.get("authorization", "")
         bearer = (
@@ -14846,25 +14708,8 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
             else ""
         )
         presented = session_header or bearer
-        if presented:
-            # Revocation must land on the next upgrade, not on the next restart,
-            # so the store is asked directly rather than a cached principal.
-            if get_store().verify_token(presented) is not None:
-                return None, "device_token"
-            app_token = _get_app_token()
-            if app_token:
-                if _verify_token(presented, app_token):
-                    return None, "app_token"
-                # A wrong App token explicitly presented must NOT silently
-                # downgrade to the SPA paths below — fail-closed with a
-                # distinguishable reason so the operator / log can spot it.
-                audit_log(
-                    AuditEvent.WS_TICKET_REJECTED,
-                    reason="app_token mismatch",
-                    ip=(ws.client.host if ws.client else ""),
-                    path=ws.url.path,
-                )
-                return "app_token_invalid", "app_token"
+        if presented and get_store().verify_token(presented) is not None:
+            return None, "device_token"
 
         # Server-spawned children (PTY child → /api/ws, /api/pub) present the
         # multi-use internal credential rather than a single-use ticket, so
@@ -17395,15 +17240,15 @@ def start_server(
     # banner, and enable uvicorn proxy_headers.
     app.state.auth_required = should_require_auth(host)
 
-    # Phase 0.5 (WP-H1-LAN): if the caller asked for a non-loopback bind
-    # but the persistent App token never minted (or got wiped), downgrade
-    # to loopback so a LAN-mode desktop never opens 0.0.0.0:8787 with no
-    # secret. Without this guard a freshly installed desktop with a
-    # read-only ``$PLOBI_HOME`` could expose the dashboard unauthenticated
-    # to the entire LAN — the exact regression WP-H1-LAN is designed to
-    # prevent. The dashboard still boots (on loopback) so the operator can
-    # fix the FS issue.
-    host, _lan_downgraded = _enforce_lan_app_token_gate(host, port, _get_app_token())
+    # Phase 0.5 (WP-H1-LAN, re-keyed by 裁定 68): if the caller asked for a
+    # non-loopback bind but this home cannot store a pairing, downgrade to
+    # loopback — a LAN surface that no handset can ever join is not what
+    # LAN mode is for, and the operator gets one WARNING instead of a
+    # silently unusable bind. Authentication itself does NOT depend on this:
+    # the check below still refuses the bind outright when the gate engages
+    # with no human auth provider registered, so a read-only
+    # ``$PLOBI_HOME`` can never expose an open dashboard to the LAN.
+    host, _lan_downgraded = _enforce_lan_pairing_gate(host, port)
 
     # ``--insecure`` no longer disables the auth gate (June 2026 hardening:
     # the hermes-0day MCP-persistence campaign abused unauthenticated public

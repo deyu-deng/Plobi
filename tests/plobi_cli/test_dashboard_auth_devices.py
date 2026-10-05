@@ -223,3 +223,20 @@ def test_a_parseable_but_bogus_record_is_refused_not_a_500(store):
     )
     assert store.redeem("123456", name="handset") is None
     assert store._failed_attempts()[0] == 1  # a guess against a live window is charged
+
+
+def test_root_writable_answers_yes_and_prepares_the_dir(store, tmp_path):
+    """A fresh home is pairable, and checking it leaves the dir ready to write."""
+    assert store.root_writable() is True
+    assert (tmp_path / "plobi").is_dir()
+
+
+def test_root_writable_answers_no_when_the_dir_path_is_taken_by_a_file(store, tmp_path):
+    """The read-only-home case the LAN bind gate asks about, without chmod.
+
+    ``<home>/plobi`` existing as a regular file makes the store's own ``mkdir``
+    raise, which is the honest signal for "no device can ever be recorded here".
+    A ``chmod`` probe would be a no-op on Windows and prove nothing there.
+    """
+    (tmp_path / "plobi").write_text("not a directory", encoding="utf-8")
+    assert store.root_writable() is False

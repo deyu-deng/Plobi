@@ -25,10 +25,9 @@ from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Ensure plobi_cli is importable when running `python scripts/plobi/doctor.py`
-# from the repo root without the project on PYTHONPATH. The web_server
-# import lives behind ``--print-app-token`` only (lazy), but if it fails we
-# fall back to minting the token in-process so a fresh checkout still gets a
-# usable App token.  See ``--print-app-token`` in :func:`main`.
+# from the repo root without the project on PYTHONPATH. ``--app-info`` reads the
+# device pairing store through ``plobi_cli.dashboard_auth.devices`` (lazy), so a
+# fresh checkout can report handset access without installing anything.
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 AIGW_CONFIG_CANDIDATES = (
@@ -139,26 +138,36 @@ def plobi_home() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# WP-H1-LAN — pairing info for the Plobi App (tablet / phone / any LAN
-# HTTP client). Kept out of the regular green/yellow/red table because
-# it's an *opt-in* read-out, not a health check: a user who never opens
-# PLOBI_LAN should never see a red row for "LAN off". Behaviour mirrors
-# the desktop-side `_load_or_mint_app_token` so the path the App pairs
-# against is byte-for-byte the same path the backend reads.
+# WP-H1-LAN — handset access info for the Plobi App (tablet / phone / any LAN
+# client). Kept out of the regular green/yellow/red table because it's an
+# *opt-in* read-out, not a health check: a user who never opens PLOBI_LAN should
+# never see a red row for "LAN off". The credential is no longer a file here —
+# each device pairs for its own token, so this reads the pairing store itself
+# through ``plobi_cli.dashboard_auth.devices`` (single source for where those
+# records live; the desktop writes the same files).
 # ---------------------------------------------------------------------------
 LAN_BIND_HOST_DEFAULT = "0.0.0.0"
 LAN_BIND_PORT_DEFAULT = 8787
-APP_TOKEN_REL_DIR = "plobi"
-APP_TOKEN_FILENAME = "app_token"
 
 
-def app_token_path(home: Path | None = None) -> Path:
-    """Absolute path to the persistent App token file.
+def _pairing_state(home: Path) -> dict[str, Any]:
+    """Device count + writability for this home's pairing store.
 
-    Mirrors ``plobi_cli.web_server._app_token_path`` so the file the App
-    pairs against is the same file the backend verifies against.
+    Writability is what the backend's LAN gate asks before binding, so reporting
+    it here answers "why did my LAN bind silently fall back to loopback" without
+    the operator having to read the log.
     """
-    return (home or plobi_home()) / APP_TOKEN_REL_DIR / APP_TOKEN_FILENAME
+    try:
+        from plobi_cli.dashboard_auth.devices import DeviceStore
+
+        store = DeviceStore(home)
+        return {
+            "pairing_store_writable": store.root_writable(),
+            "paired_devices": len(store.list_devices()),
+        }
+    except Exception as exc:  # pragma: no cover — diagnostic read-out, never fatal
+        return {"pairing_store_writable": False, "paired_devices": 0,
+                "pairing_error": str(exc)}
 
 
 def _resolve_plobi_lan(env: dict[str, str] | None = None) -> str:
@@ -234,7 +243,7 @@ def _lan_ipv4_addresses() -> list[str]:
 
 
 def collect_app_pairing_info() -> dict[str, Any]:
-    """Build the `--app-info` payload (LAN IPv4, URL, PLOBI_LAN, token tail).
+    """Build the `--app-info` payload (LAN IPv4, URL, PLOBI_LAN, paired devices).
 
     Pure read-only helper so tests and other tools can call it without
     going through argparse.
@@ -242,96 +251,54 @@ def collect_app_pairing_info() -> dict[str, Any]:
     home = plobi_home()
     plobi_lan = _resolve_plobi_lan()
     lan_on = plobi_lan == "1"
-    token_path_value = app_token_path(home)
-    token_exists = token_path_value.is_file()
-    token_tail = ""
-    if token_exists:
-        try:
-            text = token_path_value.read_text(encoding="utf-8").strip()
-            if text:
-                token_tail = text[-4:] if len(text) >= 4 else text
-        except OSError:
-            token_tail = ""
-    return {
+    info = {
         "plobi_home": str(home),
         "plobi_lan_env": plobi_lan,
         "plobi_lan_on": lan_on,
         "bind_host": LAN_BIND_HOST_DEFAULT if lan_on else "127.0.0.1",
         "bind_port": LAN_BIND_PORT_DEFAULT if lan_on else 0,
         "lan_ipv4_addresses": _lan_ipv4_addresses(),
-        "app_token_path": str(token_path_value),
-        "app_token_exists": token_exists,
-        "app_token_tail": token_tail,
+        "pairing_store_path": str(home / "plobi"),
         "urls": [
             f"http://{ip}:{LAN_BIND_PORT_DEFAULT}" for ip in _lan_ipv4_addresses()
         ] if lan_on else [],
     }
+    info.update(_pairing_state(home))
+    return info
 
 
 def format_app_pairing_text(info: dict[str, Any]) -> str:
     """Human-readable multi-line summary used by `doctor --app-info`."""
+    writable = "writable" if info["pairing_store_writable"] else (
+        "NOT WRITABLE — no handset can pair, so a LAN bind is downgraded to loopback"
+    )
     lines = [
         f"PLOBI_HOME      = {info['plobi_home']}",
         f"PLOBI_LAN       = {info['plobi_lan_env'] or '(unset)'} "
         f"({'on — bind 0.0.0.0:8787' if info['plobi_lan_on'] else 'off — bind 127.0.0.1:0 (loopback only)'})",
         f"Bind             = {info['bind_host']}:{info['bind_port']}",
-        f"App token file   = {info['app_token_path']} "
-        f"({'present, tail=…' + info['app_token_tail'] if info['app_token_exists'] else 'MISSING — mint requires a live desktop run'})",
+        f"Paired devices   = {info['paired_devices']} "
+        f"({info['pairing_store_path']}: {writable})",
     ]
+    if info.get("pairing_error"):
+        lines.append(f"Pairing store    = unreadable: {info['pairing_error']}")
     addresses = info.get("lan_ipv4_addresses") or []
     if addresses:
         lines.append("LAN IPv4         =")
         for ip in addresses:
             lines.append(f"  - {ip}")
         if info["plobi_lan_on"]:
-            lines.append("Pair URL(s)      =")
+            lines.append("Handset URL(s)   =")
             for url in info.get("urls") or []:
                 lines.append(f"  - {url}")
     else:
         lines.append("LAN IPv4         = (none detected — check NIC / VPN / WSL)")
     lines.append(
-        "Full token       = run `python scripts/plobi/doctor.py --print-app-token` "
-        "(paired device only — never commit)"
+        "How to pair      = desktop PAIRING page -> 'Pair a device' -> type the 6-digit "
+        "code on the handset (5 min, one token per device, revoke one without locking out "
+        "the rest). There is no shared App token any more."
     )
     return "\n".join(lines)
-
-
-def print_app_token() -> int:
-    """Print the persistent App token to stdout — explicit user opt-in.
-
-    Reads ``$PLOBI_HOME/plobi/app_token`` and writes the *full* value
-    (no redaction) to stdout, one line. If the file does not exist we
-    mint a new token first using the same path-resolution the desktop
-    uses, so a freshly cloned repo can still produce a token without
-    starting the desktop.
-    """
-    token_path_value = app_token_path()
-    text = ""
-    if token_path_value.is_file():
-        try:
-            text = token_path_value.read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            print(f"error: cannot read {token_path_value}: {exc}", file=sys.stderr)
-            return 1
-    if not text:
-        try:
-            from plobi_cli.web_server import _load_or_mint_app_token  # type: ignore
-
-            minted = _load_or_mint_app_token(plobi_home())
-            if minted:
-                text = minted
-        except Exception as exc:  # pragma: no cover — defensive
-            print(f"error: token mint failed: {exc}", file=sys.stderr)
-            return 1
-    if not text:
-        print(
-            f"error: no App token at {token_path_value} and mint refused to write one",
-            file=sys.stderr,
-        )
-        return 1
-    sys.stdout.write(text + "\n")
-    sys.stdout.flush()
-    return 0
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -811,26 +778,12 @@ def main(argv: list[str] | None = None) -> int:
         "--app-info",
         action="store_true",
         help=(
-            "print WP-H1-LAN pairing info (LAN IPv4 / URL / PLOBI_LAN state / "
-            "App token file status, with the token's last 4 chars only). "
-            "Does NOT post DingTalk and does NOT print the full token."
-        ),
-    )
-    parser.add_argument(
-        "--print-app-token",
-        action="store_true",
-        help=(
-            "print the full persistent App token to stdout (one line). "
-            "Explicit user opt-in — never auto-run."
+            "print WP-H1-LAN handset access info (LAN IPv4 / URL / PLOBI_LAN state / "
+            "how many devices are paired into this home and whether pairing is "
+            "possible). Does NOT post DingTalk and prints no secrets."
         ),
     )
     args = parser.parse_args(argv)
-
-    if args.print_app_token:
-        # Print to stdout ONLY. Never combine with the table — this is a
-        # machine-readable secret. The companion ``--app-info`` is the
-        # safe human-readable view.
-        return print_app_token()
 
     rows = run_checks(send_test=args.send_test)
     if args.app_info:
