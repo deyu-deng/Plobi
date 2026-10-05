@@ -11,14 +11,15 @@ Two things are pinned here that the design depends on:
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from plobi.tasks import router as tasks_router
 from plobi_cli import kanban_db
-from plobi_cli import web_server
+from plobi_cli.dashboard_auth import devices as dev
 from plobi_cli.dashboard_auth import registry
 from plobi_cli.dashboard_auth.pairing import install_pairing_auth
+from plobi_cli.dashboard_auth.scopes import enforce
 from plobi_cli.dashboard_auth.token_auth import (
     SESSION_HEADER_NAME,
     clear_token_routes,
@@ -59,8 +60,7 @@ def gated_client(tmp_path, monkeypatch, board):
     registry.clear_providers()
 
     monkeypatch.setattr(tasks_router, "_db_path", lambda: db)
-    token = web_server._load_or_mint_app_token(tmp_path)
-    monkeypatch.setattr(web_server, "_APP_TOKEN", token)
+    monkeypatch.setattr(dev, "_DEFAULT", dev.DeviceStore(tmp_path))
 
     app = FastAPI()
     app.state.auth_required = True
@@ -72,9 +72,18 @@ def gated_client(tmp_path, monkeypatch, board):
         return await gated_auth_middleware(request, call_next)
 
     app.middleware("http")(token_auth_middleware)  # registered last ⇒ outermost
-    app.include_router(tasks_router.router, prefix="/api/handset")
+    app.include_router(
+        tasks_router.router,
+        prefix="/api/handset",
+        dependencies=[Depends(enforce)],
+    )
 
     assert install_pairing_auth() is True
+    # The device's token, minted the way a real handset mints it: open a pairing
+    # window on the desktop, redeem it once.
+    store = dev.get_store()
+    code, _expires_at = store.issue_code()
+    _device_id, token = store.redeem(code, name="test handset")
 
     with TestClient(app) as client:
         yield client, token, first, second

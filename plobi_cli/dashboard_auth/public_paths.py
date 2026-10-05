@@ -52,4 +52,15 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # the NAS relay's bearer-only callback reaches the verifier instead of a
     # 401 no_cookie. The JWT — not this allowlist — is the security boundary.
     "/api/cron/fire",
+    # Handset pairing bootstrap (WP-APP-PAIR, 裁定 64). A device that has no
+    # credential yet is the caller, so nothing can gate this route but the code
+    # itself — which is exactly the pattern ``/api/cron/fire`` above sets: the
+    # allowlist lets the request *reach the verifier*, and the verifier is the
+    # boundary. Here that is ``DeviceStore.redeem``: one 6-digit code, 5-minute
+    # TTL, single use, salted hash on disk, and five wrong guesses lock pairing
+    # for an hour. Reaching it anonymously is the design, not a hole in it; the
+    # guess budget is what keeps a 6-digit code out of brute-force range, which
+    # is why the code travels in the body (counted where it is rejected) rather
+    # than as a bearer token on the seam (401'd before anything counts).
+    "/api/handset/pair/redeem",
 })

@@ -88,7 +88,7 @@ from utils import env_var_enabled
 
 try:
     from fastapi import (
-        FastAPI, File, Form, HTTPException, Request, UploadFile,
+        FastAPI, Depends, File, Form, HTTPException, Request, UploadFile,
         WebSocket, WebSocketDisconnect,
     )
     from fastapi.middleware.cors import CORSMiddleware
@@ -104,7 +104,7 @@ except ImportError:
         from tools.lazy_deps import ensure as _lazy_ensure
         _lazy_ensure("tool.dashboard", prompt=False)
         from fastapi import (
-            FastAPI, File, Form, HTTPException, Request, UploadFile,
+            FastAPI, Depends, File, Form, HTTPException, Request, UploadFile,
             WebSocket, WebSocketDisconnect,
         )
         from fastapi.middleware.cors import CORSMiddleware
@@ -270,19 +270,54 @@ from plobi.agenda.router import router as _agenda_router  # noqa: E402
 
 app.include_router(_agenda_router, prefix="/api/agenda", tags=["agenda"])
 
-# Same handlers on the device-facing surface (WP-APP-GATE). A route registered on
-# the token-auth seam accepts *only* a bearer token — the browser session is
-# turned away there — so the handset gets its own prefix instead of sharing
-# ``/api/agenda`` with the board. Which of these paths the pairing token opens is
-# declared in ``dashboard_auth/pairing.py``, not here.
-app.include_router(_agenda_router, prefix="/api/handset/agenda", tags=["handset"])
+# Same handlers on the device-facing surface (WP-APP-GATE / WP-APP-PAIR). A route
+# registered on the token-auth seam accepts *only* a bearer token — the browser
+# session is turned away there — so the handset gets its own prefix instead of
+# sharing ``/api/agenda`` with the board. Which of these paths a paired device's
+# token opens is declared in ``dashboard_auth/pairing.py``, and what each opened
+# path is allowed to do in ``dashboard_auth/scopes.py`` — the dependency attached
+# below, which also keeps a browser session out of a device-only namespace.
+from plobi_cli.dashboard_auth.pairing import HANDSET_API_PREFIX  # noqa: E402
+from plobi_cli.dashboard_auth.pairing_api import (  # noqa: E402
+    DESKTOP_PAIRING_PREFIX,
+    HANDSET_PAIR_PREFIX,
+    desktop_router as _device_pairing_router,
+    handset_router as _handset_pairing_router,
+)
+from plobi_cli.dashboard_auth.scopes import enforce as _handset_scope_enforce  # noqa: E402
+
+# Both device-facing mounts are spelled from ``HANDSET_API_PREFIX`` — the same
+# symbol ``pairing.py`` builds its registered token routes from. A mount renamed
+# here while the seam still registers the old paths would not 404: it would mean
+# no credential the backend recognises can reach those routes, forever.
+app.include_router(
+    _agenda_router,
+    prefix=f"{HANDSET_API_PREFIX}/agenda",
+    tags=["handset"],
+    dependencies=[Depends(_handset_scope_enforce)],
+)
+
+# Pairing bootstrap: the device's one credential-free call (code in, token out).
+# Mounted outside the scope-guarded pair above on purpose — the caller has no
+# principal yet, which is exactly the state ``_handset_scope_enforce`` refuses.
+app.include_router(_handset_pairing_router, prefix=HANDSET_PAIR_PREFIX, tags=["handset"])
 
 # Task identity + event stream, read-only (骨架第 2、3 根). The kanban kernel
 # already owns tasks/runs/task_events; this only projects them onto the five
 # outward classes for the handset. Contract: Docs/specs/task-events.md.
 from plobi.tasks.router import router as _handset_tasks_router  # noqa: E402
 
-app.include_router(_handset_tasks_router, prefix="/api/handset", tags=["handset"])
+app.include_router(
+    _handset_tasks_router,
+    prefix=HANDSET_API_PREFIX,
+    tags=["handset"],
+    dependencies=[Depends(_handset_scope_enforce)],
+)
+
+# Desktop half of pairing — list / open / revoke devices. Gated like every other
+# ``/api/pairing`` route (browser session or session token), never by a device
+# credential: a paired handset cannot mint peers of itself.
+app.include_router(_device_pairing_router, prefix=DESKTOP_PAIRING_PREFIX, tags=["pairing"])
 
 # chatlog pushes new WeChat messages here; the collector owns all the logic.
 from plobi.collectors.chatlog.webhook import router as _chatlog_router  # noqa: E402
@@ -461,11 +496,14 @@ except Exception as _exc:  # pragma: no cover — defensive: never block import
     _log.debug("App token bootstrap skipped: %s", _exc)
     _APP_TOKEN = None
 
-# Handset pairing (WP-APP-GATE): the App token above is what a paired
-# phone/tablet presents. It is armed inside :func:`start_server`, AFTER the
-# "a non-loopback bind needs a human auth provider" check — arming here at
-# import would put a token-only provider in the registry and let that check
-# pass on a dashboard nobody can log in to. See ``dashboard_auth/pairing.py``.
+# Handset pairing (WP-APP-GATE / WP-APP-PAIR): the App token above is *not* what a
+# paired phone/tablet presents any more — each device keeps its own revocable token
+# (``dashboard_auth/devices.py``) and the seam recognises those. It stays accepted
+# for the desktop shell and for apps that predate pairing. The seam is armed inside
+# :func:`start_server`, AFTER the "a non-loopback bind needs a human auth provider"
+# check — arming here at import would put a token-only provider in the registry and
+# let that check pass on a dashboard nobody can log in to. See
+# ``dashboard_auth/pairing.py``.
 
 
 def _get_app_token() -> str | None:
@@ -14771,6 +14809,10 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
       :func:`_verify_token` (constant-time hmac); the token never appears in
       the WS URL, in audit-log reason text, or in the upgrade query string
       (per WP-H3-WS).
+    * The same headers carrying a **paired device token** (WP-APP-PAIR,
+      ``dashboard_auth.devices``). Checked first, because it is the credential a
+      paired handset keeps and the only one the desktop can revoke on its own —
+      logged as ``device_token`` so the audit line names which handset attached.
 
     The legacy ``?token=`` path is unconditionally rejected in gated mode
     (the SPA bundle isn't carrying the token any longer, and a leaked
@@ -14784,32 +14826,38 @@ def _ws_auth_reason(ws: "WebSocket") -> tuple[Optional[str], str]:
         # Lazy import — keeps this function importable in test harnesses
         # that don't bring in the dashboard_auth layer.
         from plobi_cli.dashboard_auth.audit import AuditEvent, audit_log
+        from plobi_cli.dashboard_auth.devices import get_store
         from plobi_cli.dashboard_auth.ws_tickets import (
             TicketInvalid,
             consume_internal_credential,
             consume_ticket,
         )
 
-        # WP-H3-WS: persistent App token from the upgrade request headers.
-        # Mirrors the HTTP path in ``_has_valid_session_token`` — checked
-        # FIRST so a tablet / phone reaching ws://<LAN-IP>:8787/api/ws with
-        # the same ``$PLOBI_HOME/plobi/app_token`` they already use for
-        # ``GET /api/agenda`` is accepted without a SPA-issued ticket.
-        # Audit-logs rejection with a non-token reason string.
-        app_token = _get_app_token()
-        if app_token:
-            session_header = ws.headers.get("x-plobi-session-token", "")
-            if session_header and _verify_token(session_header, app_token):
-                return None, "app_token"
-            auth_header = ws.headers.get("authorization", "")
-            if auth_header.lower().startswith("bearer "):
-                presented = auth_header.split(" ", 1)[1].strip()
-                if presented and _verify_token(presented, app_token):
+        # WP-H3-WS / WP-APP-PAIR: the header credentials a device presents at
+        # upgrade time, mirroring the HTTP path in ``_has_valid_session_token``.
+        # A handset has no way to mint a SPA ticket, so its own device token is
+        # honoured first and the shared App token stays accepted behind it; either
+        # way the credential never enters the WS URL or the audit reason text.
+        session_header = ws.headers.get("x-plobi-session-token", "")
+        auth_header = ws.headers.get("authorization", "")
+        bearer = (
+            auth_header.split(" ", 1)[1].strip()
+            if auth_header.lower().startswith("bearer ")
+            else ""
+        )
+        presented = session_header or bearer
+        if presented:
+            # Revocation must land on the next upgrade, not on the next restart,
+            # so the store is asked directly rather than a cached principal.
+            if get_store().verify_token(presented) is not None:
+                return None, "device_token"
+            app_token = _get_app_token()
+            if app_token:
+                if _verify_token(presented, app_token):
                     return None, "app_token"
-            # A wrong App token explicitly presented must NOT silently
-            # downgrade to the SPA paths below — fail-closed with a
-            # distinguishable reason so the operator / log can spot it.
-            if session_header or auth_header.lower().startswith("bearer "):
+                # A wrong App token explicitly presented must NOT silently
+                # downgrade to the SPA paths below — fail-closed with a
+                # distinguishable reason so the operator / log can spot it.
                 audit_log(
                     AuditEvent.WS_TICKET_REJECTED,
                     reason="app_token mismatch",
@@ -17426,10 +17474,12 @@ def start_server(
             ", ".join(p.name for p in list_providers()),
         )
 
-    # Arm handset pairing (WP-APP-GATE) only now that the bind has a human auth
-    # provider: the pairing token opens ``/api/handset/*`` on the token-auth seam,
-    # and it must never be the credential that satisfies the check above. Fails
-    # closed inside — with no App token under $PLOBI_HOME nothing is registered.
+    # Arm handset pairing (WP-APP-GATE / WP-APP-PAIR) only now that the bind has a
+    # human auth provider: a device token opens ``/api/handset/*`` on the token-auth
+    # seam, and it must never be the credential that satisfies the check above.
+    # Arming is unconditional — with no paired device there is simply no credential
+    # that verifies, which is the state a device pairs out of (it fails closed
+    # inside ``dashboard_auth/devices.py``, not by skipping registration).
     try:
         from plobi_cli.dashboard_auth.pairing import install_pairing_auth
 
