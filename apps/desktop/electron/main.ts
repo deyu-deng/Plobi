@@ -301,18 +301,12 @@ if (INSTALL_STAMP) {
 // This is the first step in severing Plobi from Plobi.
 //
 // Resolution order:
-//   1. PLOBI_HOME env var          (explicit Plobi override)
-//   2. PLOBI_HOME env var          (fallback — kept so we can share data with
-//                                    an existing Plobi install during a
-//                                    transitional period; remove once severed)
-//   3. USER_DATA_OVERRIDE (tests)   -> <override>/plobi-home
+//   1. PLOBI_HOME env var          (explicit override — what install.ps1 pins)
+//   2. USER_DATA_OVERRIDE (tests)   -> <override>/plobi-home
+//   3. Windows: HKCU\Environment PLOBI_HOME (see the note in the function)
 //   4. Windows: %LOCALAPPDATA%\plobi
 //      macOS/Linux: ~/.plobi
 function resolvePlobiHome() {
-  if (process.env.PLOBI_HOME) {
-    return normalizePlobiHomeRoot(process.env.PLOBI_HOME)
-  }
-
   if (process.env.PLOBI_HOME) {
     return normalizePlobiHomeRoot(process.env.PLOBI_HOME)
   }
@@ -323,10 +317,10 @@ function resolvePlobiHome() {
 
   if (IS_WINDOWS) {
     // A GUI app launched from Explorer inherits the environment block captured
-    // at login, so a PLOBI_HOME/PLOBI_HOME set via `setx` AFTER login is
-    // invisible in process.env even though the CLI (a fresh shell) sees it.
-    const fromRegistry =
-      readWindowsUserEnvVar('PLOBI_HOME') || readWindowsUserEnvVar('PLOBI_HOME')
+    // at login, so a PLOBI_HOME set via `setx` AFTER login is invisible in
+    // process.env even though the CLI (a fresh shell) sees it. Reading the
+    // registry keeps the desktop and the CLI on the same home.
+    const fromRegistry = readWindowsUserEnvVar('PLOBI_HOME')
 
     if (fromRegistry) {
       return normalizePlobiHomeRoot(fromRegistry)
