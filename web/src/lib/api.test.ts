@@ -104,3 +104,37 @@ describe("api OAuth helpers", () => {
     }
   });
 });
+
+// WP-APP-PAIR: the desktop half of device pairing. These paths and the camelCase
+// body keys are the contract the backend reads — a silent rename here is a 422
+// at the moment the operator presses "Pair a device", not a visible failure.
+describe("api device pairing", () => {
+  it("lists, opens and revokes on the desktop pairing surface", async () => {
+    vi.stubGlobal("window", {});
+    const fetchMock = jsonFetchMock({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.getPairedDevices();
+    await api.startDevicePairing();
+    await api.revokePairedDevice("dev-abc123");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/pairing/devices",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/pairing/device/start",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/pairing/device/revoke",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ deviceId: "dev-abc123" }),
+      }),
+    );
+  });
+});
