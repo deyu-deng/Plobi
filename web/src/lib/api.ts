@@ -1041,6 +1041,20 @@ export const api = {
       method: "POST",
     }),
 
+  // ── Admin: Paired handsets (WP-APP-PAIR) ─────────────────────────────
+  // The desktop half of device pairing. Each device carries its own token, so
+  // revoking one ends one device — unlike the shared app_token these routes
+  // replaced on the handset surface.
+  getPairedDevices: () => fetchJSON<DevicePairingResponse>("/api/pairing/devices"),
+  startDevicePairing: () =>
+    fetchJSON<DevicePairCode>("/api/pairing/device/start", { method: "POST" }),
+  revokePairedDevice: (deviceId: string) =>
+    fetchJSON<{ ok: boolean }>("/api/pairing/device/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId }),
+    }),
+
   // ── Admin: Webhooks ─────────────────────────────────────────────────
   getWebhooks: () => fetchJSON<WebhooksResponse>("/api/webhooks"),
   enableWebhooks: () =>
@@ -1505,6 +1519,26 @@ export interface PairingUser {
 export interface PairingResponse {
   pending: PairingUser[];
   approved: PairingUser[];
+}
+
+export interface PairedDevice {
+  deviceId: string;
+  name: string;
+  pairedAt: number;
+  lastSeenAt: number;
+}
+
+export interface DevicePairingResponse {
+  devices: PairedDevice[];
+  // 0 when no pairing window is open / pairing isn't locked, else an epoch.
+  codeExpiresAt: number;
+  pairingLockedUntil: number;
+}
+
+export interface DevicePairCode {
+  code: string;
+  expiresAt: number;
+  ttlSeconds: number;
 }
 
 export interface WebhookRoute {
