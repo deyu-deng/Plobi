@@ -142,13 +142,17 @@ def _conn(board: Optional[str] = None):
 # Columns shown by the dashboard, in left-to-right order. "archived" is
 # available via a filter toggle rather than a visible column.
 #
-# Keep this in sync with kanban_db.VALID_STATUSES.  In particular,
+# Keep this in sync with kanban_db.VALID_STATUSES
+# (tests/plugins/test_kanban_dashboard_columns.py enforces it).  In particular,
 # ``scheduled`` is a first-class waiting column used for time-based follow-ups;
-# if it is omitted here, the board-level fallback below mis-buckets scheduled
-# tasks into ``todo`` and makes the dashboard look like the Scheduled column
-# disappeared.
+# omitting a status here used to mis-bucket its tasks into ``todo`` and make the
+# dashboard look like the Scheduled column disappeared — the bucketing below no
+# longer lies about that, but the column would still be missing from the board.
 BOARD_COLUMNS: list[str] = [
     "triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done",
+    # Identity without dispatchability (裁定 59.1 / 62): secretary turns are
+    # recorded here. They never enter ``ready``, so nothing spawns against them.
+    "logged",
 ]
 
 
@@ -475,8 +479,11 @@ def get_board(
                 # needs the summary.
                 d["diagnostics"] = diags
                 d["warnings"] = _warnings_summary_from_diagnostics(diags)
-            col = t.status if t.status in columns else "todo"
-            columns[col].append(d)
+            # A status with no declared column still gets *its own* column
+            # rather than being filed under ``todo`` — which would claim the
+            # task is waiting to be dispatched when the board simply hasn't
+            # caught up.
+            columns.setdefault(t.status, []).append(d)
 
         # Stable per-column ordering already applied by list_tasks
         # (priority DESC, created_at ASC), keep as-is.

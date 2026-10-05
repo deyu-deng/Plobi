@@ -2263,7 +2263,57 @@ def run_decide_pending(
     return payload
 
 
-def run_secretary_ask(
+SECRETARY_RECORD_BODY_MAX_CHARS = 2000
+
+
+def _record_secretary_turn(intent: str, user_text: str, result: dict) -> None:
+    """Give a finished secretary turn an identity in the kanban kernel.
+
+    裁定 59.1: one secretary work unit counts as a task. 裁定 62: it lands in
+    ``logged`` — listable, replayable, and never claimed by the dispatcher or
+    promoted by ``recompute_ready``, so recording work cannot queue work.
+
+    The board is a *record*, never something the answer depends on: a write
+    failure is logged and swallowed, the same posture as the N3 session write
+    below.
+    """
+    if not isinstance(result, dict) or not result.get("ok"):
+        return
+    agent = result.get("agent") or {}
+    body = json.dumps(
+        {
+            "intent": intent,
+            "user_text": user_text,
+            "agent": agent,
+            "result": result,
+        },
+        ensure_ascii=False,
+    )[:SECRETARY_RECORD_BODY_MAX_CHARS]
+    try:
+        from plobi_cli import kanban_db as kb
+
+        with kb.connect_closing() as conn:
+            kb.create_task(
+                conn,
+                title=f"secretary:{intent} · {user_text[:60]}",
+                body=body,
+                assignee=agent.get("profile"),
+                created_by="secretary",
+                initial_status="logged",
+                session_id=result.get("sessionId") or None,
+            )
+    except Exception as exc:
+        logger.warning("plobi: secretary turn record failed: %s", exc)
+
+
+def run_secretary_ask(intent: str, user_text: str, **kwargs) -> dict:
+    """§8.2 secretary routing, with the turn recorded as a ``logged`` task."""
+    result = _secretary_ask(intent, user_text, **kwargs)
+    _record_secretary_turn(intent, user_text, result)
+    return result
+
+
+def _secretary_ask(
     intent: str,
     user_text: str,
     *,
@@ -2286,7 +2336,9 @@ def run_secretary_ask(
 
     ``refresh_agenda`` and ``write_briefing`` both refresh. write_briefing
     then generates via aigw ``workbuddy/*`` (F2 fallback = L2 cheap API).
-    No kanban. No chat REST. Dead chatlog returns ``ok: False``.
+    No kanban *dispatch* — :func:`run_secretary_ask` files a non-dispatchable
+    ``logged`` record of the turn, nothing here queues work for a worker.
+    No chat REST. Dead chatlog returns ``ok: False``.
     ``mutate_agenda`` never reaches this chatlog path — see
     :func:`run_mutate_agenda` (writes must survive a dead collector).
     ``query_agenda`` / ``decide_pending`` (WP-SEC-VOCAB) don't either: they

@@ -100,8 +100,13 @@ _log = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-VALID_STATUSES = {"triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done", "archived"}
-VALID_INITIAL_STATUSES = {"running", "blocked"}
+VALID_STATUSES = {"triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done", "archived", "logged"}
+# ``logged`` is the one status that carries identity without dispatchability:
+# the dispatcher only claims ``ready`` and :func:`recompute_ready` only
+# promotes ``todo``/``blocked``, so a logged task is listable, linkable and
+# eventful yet can never be picked up as work. That is where a secretary turn
+# lands (Docs 裁定 59.1 / 62) — recorded, not queued.
+VALID_INITIAL_STATUSES = {"running", "blocked", "logged"}
 
 # Typed block reasons. Distinguishes the two fundamentally different things a
 # worker (or human) means by "blocked", so each can be routed differently
@@ -2416,6 +2421,9 @@ def create_task(
     If ``triage=True``, status is forced to ``triage`` regardless of
     parents — a specifier/triager is expected to promote the task to
     ``todo`` once the spec is fleshed out.
+    ``initial_status="logged"`` likewise ignores parents and records the task
+    in :data:`VALID_STATUSES`' non-dispatchable ``logged`` state; it never
+    becomes ``ready`` on its own, so nothing will ever spawn against it.
 
     If ``idempotency_key`` is provided and a non-archived task with the
     same key already exists, returns the existing task's id instead of
@@ -2580,10 +2588,11 @@ def create_task(
         try:
             with write_txn(conn):
                 # Determine task status from parent status, unless the caller
-                # parks it directly in blocked for human-ops review or in
-                # triage for a specifier.
-                if initial_status == "blocked":
-                    task_status = "blocked"
+                # parks it directly in blocked for human-ops review, in
+                # ``logged`` as an identity-without-dispatchability record, or
+                # in triage for a specifier.
+                if initial_status in ("blocked", "logged"):
+                    task_status = initial_status
                     if parents:
                         missing = _find_missing_parents(conn, parents)
                         if missing:

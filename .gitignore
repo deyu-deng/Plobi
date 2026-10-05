@@ -26,13 +26,20 @@ compose.plobi.local.yml
 __pycache__/model_tools.cpython-310.pyc
 __pycache__/web_tools.cpython-310.pyc
 logs/
-/data/               # 只忽略仓库根运行数据；曾写作 `data/`，会吞掉 website/src/data/ 这类真源码
+# 只忽略仓库根运行数据；曾写作 `data/`（不含斜杠 = 任意层级），会吞掉
+# website/src/data/ 这类真源码。行尾注释会把这个模式变成死规则（git 不支持
+# 行内注释），本行改成裸模式 + 注释上移；下方 `data/*` 一条同样按根锚定。
+/data/
 .pytest_cache/
 test_durations.json
 .pytest-cache/
 tmp/
 temp_vision_images/
-plobi-*/*
+# 只忽略仓库根的 plobi-<x>/ 运行目录。前导斜杠是显式锚定：模式含斜杠时 git
+# 本来就按根锚定，但第三方 gitignore 实现会把它当全路径匹配，连带吞掉
+# plugins/plobi-*/ 里的真源码（2026-10-05 实测：索引器因此看不见秘书插件）。
+# 注意本行不能加行尾注释——git 的 .gitignore 不支持行内注释，加了就变成死规则。
+/plobi-*/*
 examples/
 tests/quick_test_dataset.jsonl
 tests/sample_dataset.jsonl
