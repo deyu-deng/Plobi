@@ -14,10 +14,29 @@ vi.mock('@/plobi', () => ({
 import {
   confirmAgendaEventAction,
   createAgent,
+  fetchAgents,
   getAgentOverview,
   getAgentSubagentLog,
   getOutsourcedSessionTarget
 } from './api'
+
+/** Installs a fake `window.plobiDesktop.api` for one test; returns the restore. */
+function stubPlobiDesktop(api: ReturnType<typeof vi.fn>): () => void {
+  const previous = (window as { plobiDesktop?: unknown }).plobiDesktop
+
+  Object.defineProperty(window, 'plobiDesktop', {
+    configurable: true,
+    value: { api }
+  })
+
+  return () => {
+    if (previous) {
+      Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: previous })
+    } else {
+      Reflect.deleteProperty(window, 'plobiDesktop')
+    }
+  }
+}
 
 function baseEvent(): AgendaEvent {
   const now = '2026-08-30T08:00:00Z'
@@ -130,23 +149,6 @@ describe('S2 mock endpoints (U4)', () => {
 // fallback has no binding, so the field stays absent (file tree must stay
 // empty instead of inheriting the previous cwd).
 describe('getAgentOverview projectPath (WP-R013-FE)', () => {
-  function stubPlobiDesktop(api: ReturnType<typeof vi.fn>): () => void {
-    const previous = (window as { plobiDesktop?: unknown }).plobiDesktop
-
-    Object.defineProperty(window, 'plobiDesktop', {
-      configurable: true,
-      value: { api }
-    })
-
-    return () => {
-      if (previous) {
-        Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: previous })
-      } else {
-        Reflect.deleteProperty(window, 'plobiDesktop')
-      }
-    }
-  }
-
   it('surfaces the backend-bound folder from the live envelope', async () => {
     const api = vi.fn().mockResolvedValue({
       data: {
@@ -178,6 +180,42 @@ describe('getAgentOverview projectPath (WP-R013-FE)', () => {
 
       expect(overview.projectPath).toBeUndefined()
       expect(overview.agent.id).toBe('agenda-secretary')
+    } finally {
+      restore()
+    }
+  })
+})
+
+// The rail renders whatever `GET /api/agents` actually holds. There is no
+// fallback row: an offline backend and a registry without L2s both produce the
+// same honest empty state instead of a secretary that was never registered.
+describe('fetchAgents (WP-BE-1)', () => {
+  it('passes the registry rows through unchanged', async () => {
+    const rows = [{ id: 'nymo', name: 'Nymo', status: 'idle', todayCalls: 0 }]
+    const restore = stubPlobiDesktop(vi.fn().mockResolvedValue({ data: rows, ok: true }))
+
+    try {
+      expect(await fetchAgents()).toEqual(rows)
+    } finally {
+      restore()
+    }
+  })
+
+  it('returns an empty array when the registry holds no L2 rows', async () => {
+    const restore = stubPlobiDesktop(vi.fn().mockResolvedValue({ data: [], ok: true }))
+
+    try {
+      expect(await fetchAgents()).toEqual([])
+    } finally {
+      restore()
+    }
+  })
+
+  it('returns an empty array when the request fails', async () => {
+    const restore = stubPlobiDesktop(vi.fn().mockRejectedValue(new Error('offline')))
+
+    try {
+      expect(await fetchAgents()).toEqual([])
     } finally {
       restore()
     }

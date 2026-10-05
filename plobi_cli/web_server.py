@@ -161,6 +161,22 @@ def _warm_gateway_module() -> None:
         pass
 
 
+def _seed_agenda_agent() -> None:
+    """Idempotently register the agenda L2 so ``GET /api/agents`` always sees it.
+
+    The registry YAML is the source of truth and the row used to be created only
+    by the secretary write paths, so a home that never routed through them shows
+    an empty AGENTS rail. Seeding failure must not take the backend down — the
+    secretary paths still seed on first use, so log and carry on.
+    """
+    try:
+        from plobi.agents.registry import ensure_agenda_agent
+
+        ensure_agenda_agent()
+    except Exception as exc:
+        _log.warning("plobi: agenda L2 startup seed skipped: %s", exc)
+
+
 def _resolve_restart_drain_timeout() -> float:
     try:
         from plobi_cli.gateway import _get_restart_drain_timeout
@@ -180,6 +196,10 @@ async def _lifespan(app: "FastAPI"):
     # On app.state (not a module global) so the Lock binds to the running
     # event loop during lifespan startup — see _get_event_state's docstring.
     app.state.chat_argv_lock = asyncio.Lock()
+
+    # Synchronous, before `yield`: the console left rail reads GET /api/agents
+    # on first paint, so the seeded row has to be on disk by then.
+    _seed_agenda_agent()
 
     # Fire plobi_cli.gateway import into a background thread so the event
     # loop is not blocked and PLOBI_DASHBOARD_READY fires without delay.

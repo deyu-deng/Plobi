@@ -7,12 +7,13 @@
  * envelope shape. Callers never touch `window.plobiDesktop.api` directly.
  *
  * Current state per endpoint:
- * - `/api/agents` — MOCKED (the backend's agent/:id surface — subagents /
- *   outsourced / files / board / artifacts — is not built yet; U4, the S2 L2
- *   workbench). The L1 center does NOT use a console chat endpoint at all:
- *   per ARCH-RULINGS 2026-09-02 裁定 2 there is deliberately no
- *   `POST /api/chat` here — the center reuses the base session store + gateway
- *   path (the same `submitText` / `$messages` the full-screen chat uses).
+ * - `/api/agents` — LIVE (`GET /api/agents`, WP-BE-1). The backend seeds the
+ *   agenda L2 into the registry at startup, so an empty answer here really does
+ *   mean "no L2 registered yet" and the rail shows its empty state.
+ *   The L1 center does NOT use a console chat endpoint at all: per
+ *   ARCH-RULINGS 2026-09-02 裁定 2 there is deliberately no `POST /api/chat`
+ *   here — the center reuses the base session store + gateway path (the same
+ *   `submitText` / `$messages` the full-screen chat uses).
  * - `/api/agenda/*` — LIVE, delegated to `@/plobi`, which already speaks to
  *   the real `plobi/agenda` backend. Delegating (rather than mocking) is what
  *   keeps the console and the full-screen board on one data source.
@@ -61,21 +62,6 @@ function dayWindow(day: 'today' | 'tomorrow'): { from: string; to: string } {
   return { from: localIso(start), to: localIso(end) }
 }
 
-// --- mock data (U1) --------------------------------------------------------
-// One L2 worker exists at M1: the schedule secretary (spec §3.1). The 「+」
-// entry is reserved for M2, so the mock deliberately ships a single row rather
-// than inventing agents the backend cannot yet name.
-
-const MOCK_AGENTS: Agent[] = [
-  {
-    id: 'agenda-secretary',
-    model: MOCK_L2_MODEL,
-    name: '日程秘书',
-    status: 'working',
-    todayCalls: 37
-  }
-]
-
 /** Stand-in latency so the loading state is actually observable in dev. */
 const MOCK_LATENCY_MS = 120
 
@@ -102,24 +88,21 @@ function unwrapEnvelope<T>(payload: unknown): T {
 }
 
 /**
- * Prefer the live `GET /api/agents` (WP-BE-1). Fall back to the U1 mock when
- * the gateway is offline, the route is missing, or the registry has no L2
- * rows yet — otherwise the left rail goes empty and L2 is unreachable in
- * dogfood environments that still rely on the mock agenda-secretary.
+ * §5 GET /api/agents — exactly what the registry holds, nothing invented.
+ *
+ * An unreachable backend and an empty registry both answer `[]`: the rail's
+ * empty state is then honest, where a fabricated fallback row would hide both
+ * the offline case and the "never registered" case it replaced.
  */
 export async function fetchAgents(): Promise<Agent[]> {
   try {
     const payload = await window.plobiDesktop.api<unknown>({ path: '/api/agents' })
     const rows = unwrapEnvelope<Agent[]>(payload)
 
-    if (Array.isArray(rows) && rows.length > 0) {
-      return rows
-    }
+    return Array.isArray(rows) ? rows : []
   } catch {
-    // fall through to mock
+    return []
   }
-
-  return settle([...MOCK_AGENTS])
 }
 
 /** §5 POST /api/agents — human-created project L2 (裁定 18). */
@@ -210,7 +193,13 @@ export async function confirmAgendaEventAction(
 
 const MOCK_OVERVIEW: Record<string, AgentOverview> = {
   'agenda-secretary': {
-    agent: { ...MOCK_AGENTS[0] },
+    agent: {
+      id: 'agenda-secretary',
+      model: MOCK_L2_MODEL,
+      name: '日程秘书',
+      status: 'working',
+      todayCalls: 37
+    },
     sessionId: 'sess-agenda-secretary-7f3a9c',
     todayCostUsd: 0.42,
     todayTokens: 18420
