@@ -1,16 +1,15 @@
-"""Handset pairing token — the in-tree consumer of the token-auth seam (WP-APP-GATE).
+"""Handset pairing — the in-tree consumer of the token-auth seam (WP-APP-GATE / WP-APP-PAIR).
 
-The HarmonyOS handset pairs once with the desktop backend and keeps a long-lived
-token at ``$PLOBI_HOME/plobi/app_token``. On a non-loopback bind the cookie gate is
-authoritative and never consults that token (``web_server.py`` passes gated
-requests straight to ``gated_auth_middleware``, and
-``auth_middleware`` short-circuits on ``auth_required``), so every handset call to
-the agenda API was rejected with 401 no matter which header it presented.
+A handset pairs once with the desktop backend by typing a short numeric code, and
+keeps its **own** long-lived device token after that (``dashboard_auth.devices``).
+On a non-loopback bind the cookie gate is authoritative and never consults device
+credentials (``web_server.py`` passes gated requests straight to
+``gated_auth_middleware``, and ``auth_middleware`` short-circuits on
+``auth_required``), so the seam below is the only thing a device can knock on.
 
-This provider puts the pairing token on the generic bearer seam and registers
-exactly the handset-facing routes. It **fails closed**: when this backend has no
-pairing token, nothing is registered and those routes keep requiring a browser
-session.
+It **fails closed**: with no paired device and no open pairing code, every route
+registered here demands a credential that nothing can present, so the handset API
+returns 401 — it never falls through to "browser session accepted".
 
 Why the device has its own ``/api/handset/*`` namespace instead of reusing
 ``/api/agenda``: a token route is *owned* by the seam — for a registered path, a
@@ -21,13 +20,12 @@ handset, so the two surfaces are separated by path instead of one of them being
 locked out. Handlers are shared verbatim (same router, second mount); only the
 auth scheme differs.
 
-Scopes are attached but not yet enforced by the handlers — they exist so the
-handset's authority can be narrowed later without touching the seam.
+Scopes are enforced by :mod:`plobi_cli.dashboard_auth.scopes`, which is what keeps
+a pairing code from reading the agenda while it is supposed to only redeem itself.
 """
 
 from __future__ import annotations
 
-import hmac
 import logging
 from typing import Optional
 
@@ -37,6 +35,7 @@ from plobi_cli.dashboard_auth.base import (
     Session,
     TokenPrincipal,
 )
+from plobi_cli.dashboard_auth.devices import get_store
 from plobi_cli.dashboard_auth.token_auth import (
     register_token_route,
     register_token_route_pattern,
@@ -46,10 +45,20 @@ _log = logging.getLogger(__name__)
 
 PROVIDER_NAME = "pairing"
 HANDSET_PRINCIPAL = "handset"
-HANDSET_SCOPES = ("agenda:read", "agenda:confirm", "task:read")
+
+SCOPE_AGENDA_READ = "agenda:read"
+SCOPE_AGENDA_CONFIRM = "agenda:confirm"
+SCOPE_TASK_READ = "task:read"
+
+# A paired device may read the board and the task stream, confirm or dismiss a
+# pending item, and nothing else. Re-pairing is deliberately *not* among the
+# grants: a device that is already paired has no business minting peers, and a
+# pairing code is not a credential at all here — it is consumed by
+# ``pairing_api.redeem`` before any token exists (裁定 64).
+HANDSET_SCOPES = (SCOPE_AGENDA_READ, SCOPE_AGENDA_CONFIRM, SCOPE_TASK_READ)
 
 # Device-facing prefix. The agenda handlers are mounted here as well as under
-# ``/api/agenda`` (browser session); this is the half the pairing token opens.
+# ``/api/agenda`` (browser session); this is the half the device token opens.
 HANDSET_API_PREFIX = "/api/handset"
 
 # Reads today's list, tomorrow's list, the pending queue, the assembled day, and
@@ -77,41 +86,26 @@ _TOKEN_ROUTE_PATTERNS_GET = (
 )
 
 
-def pairing_token() -> Optional[str]:
-    """The persisted handset token for this backend, or ``None`` if there is none.
-
-    Read through :func:`plobi_cli.web_server._get_app_token` so a test that swaps
-    the module-level token with a monkeypatched attribute is still honoured, and so
-    a failed mint (``None``) never becomes an empty-string credential.
-    """
-    from plobi_cli import web_server
-
-    token = (web_server._get_app_token() or "").strip()
-    return token or None
-
-
 class HandsetPairingProvider(DashboardAuthProvider):
-    """Non-interactive provider that recognises the handset's pairing token."""
+    """Non-interactive provider for the device tokens a paired handset keeps."""
 
     name = PROVIDER_NAME
     display_name = "Plobi handset (pairing token)"
     supports_token = True
     # Not an interactive login: excluded from the /login chooser and from the
-    # gate's cookie-verify loop, exactly like the drain service credential.
+    # cookie-verify loop, exactly like the drain service credential.
     supports_session = False
 
     def verify_token(self, *, token: str) -> Optional[TokenPrincipal]:
-        expected = pairing_token()
-        if not expected or not token:
+        if not token:
             return None
-        # Bytes, not str: compare_digest on str raises TypeError for non-ASCII,
-        # which a hostile header would turn into a 500 instead of a 401.
-        if not hmac.compare_digest(
-            token.encode("utf-8"), expected.encode("utf-8")
-        ):
+        device = get_store().verify_token(token)
+        if device is None:
             return None
+        # The device id is in the principal so an audit line names *which* handset
+        # was at the door — the thing the shared app_token could never do.
         return TokenPrincipal(
-            principal=HANDSET_PRINCIPAL,
+            principal=f"{HANDSET_PRINCIPAL}:{device.device_id}",
             provider=self.name,
             scopes=HANDSET_SCOPES,
         )
@@ -138,28 +132,22 @@ class HandsetPairingProvider(DashboardAuthProvider):
         raise NotImplementedError("HandsetPairingProvider is a paired-device credential.")
 
     def revoke_session(self, *, refresh_token: str) -> None:
-        # Best-effort by contract: pairing tokens live in $PLOBI_HOME and are
-        # rotated by re-pairing on the desktop, not by this provider.
+        # Best-effort by contract: devices are revoked by name from the desktop's
+        # pairing surface (dashboard_auth.devices), not through a session.
         return None
 
 
 def install_pairing_auth() -> bool:
     """Register the provider and the handset routes. Returns whether it armed.
 
-    Fails closed: no pairing token on this backend means no route is opened and no
-    provider is registered, so the handset API keeps demanding a browser session.
+    Unlike the previous single-shared-token design this always arms: the store
+    itself is what fails closed, so a backend with no paired device simply has no
+    credential that verifies — which is also the state a device must pair out of.
     Idempotent — ``start_server`` may run more than once in a process, and routes
     are re-declared each call so a caller that only cleared the route registry
     still ends up with an armed surface.
     """
     from plobi_cli.dashboard_auth import registry
-
-    if not pairing_token():
-        _log.info(
-            "dashboard-auth: pairing provider not armed (no app token under "
-            "$PLOBI_HOME/plobi/app_token); handset-facing routes stay session-only"
-        )
-        return False
 
     if registry.get_provider(PROVIDER_NAME) is None:
         registry.register_provider(HandsetPairingProvider())
@@ -172,8 +160,9 @@ def install_pairing_auth() -> bool:
 
     _log.info(
         "dashboard-auth: pairing provider armed — %d exact route(s), %d pattern(s) "
-        "accept the handset pairing token",
+        "accept device tokens",
         len(_TOKEN_ROUTES),
         len(_TOKEN_ROUTE_PATTERNS_POST) + len(_TOKEN_ROUTE_PATTERNS_GET),
     )
     return True
+
