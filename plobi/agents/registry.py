@@ -921,32 +921,50 @@ def find_agenda_agent(registry: AgentRegistry | None = None) -> Optional[AgentEn
     return found[0]
 
 
+def register_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEntry, bool]:
+    """Put the agenda L2 row in ``projects.yaml`` — and write nothing else.
+
+    The left rail's ``GET /api/agents`` reads that one YAML file, so a visible
+    日程管家 needs the row, not the profile. Materializing ``profiles/l2-agenda``
+    is a separate promise (a directory, ``models.json``, a config), and a boot
+    that makes it on a home whose secretary never ran has built a profile the
+    user never asked for. ``spawned`` is True only when this call registered
+    the template; idempotent, and never touches the filesystem below the YAML.
+    """
+    reg = registry or load_registry()
+    existing = find_agenda_agent(reg)
+    if existing is not None:
+        return existing, False
+
+    template = agenda_template_entry()
+    if template.name in reg.agents:
+        template = AgentEntry(
+            name="secretary-agenda",
+            role=template.role,
+            profile=template.profile,
+            provider=template.provider,
+            model=template.model,
+            mind_subtree=template.mind_subtree,
+            skills=template.skills,
+            description=template.description,
+        )
+    reg.upsert(template)
+    reg.save()
+    return template, True
+
+
 def ensure_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEntry, bool]:
     """Return the agenda L2, spawning **one** template entry if none exists (S2).
 
     Never creates any other L2. ``spawned`` is True only when this call
     registered the template. Profile materialization is idempotent.
+
+    The secretary write paths are what need the profile to exist (the L2 runs
+    the collection); startup only needs the row — see
+    :func:`register_agenda_agent` for that half.
     """
     reg = registry or load_registry()
-    existing = find_agenda_agent(reg)
-    spawned = False
-    if existing is None:
-        template = agenda_template_entry()
-        if template.name in reg.agents:
-            template = AgentEntry(
-                name="secretary-agenda",
-                role=template.role,
-                profile=template.profile,
-                provider=template.provider,
-                model=template.model,
-                mind_subtree=template.mind_subtree,
-                skills=template.skills,
-                description=template.description,
-            )
-        reg.upsert(template)
-        reg.save()
-        existing = template
-        spawned = True
+    existing, spawned = register_agenda_agent(reg)
 
     from plobi_cli.profiles import profile_exists
 
@@ -3414,6 +3432,10 @@ def ensure_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
     from plobi_constants import get_plobi_home
 
     soul_path = Path(home) / "SOUL.md" if home is not None else get_plobi_home() / "SOUL.md"
+    if not soul_path.parent.is_dir():
+        # 家目录都还没落地就没有 L1 可写：为了一份 SOUL.md 把 profile 建出来是
+        # 第二真源（同 :func:`ensure_l2_identity_soul` 的判据），交给播种方跳过。
+        return False
     existing = ""
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
@@ -3421,7 +3443,6 @@ def ensure_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
     updated = (stripped + "\n\n" if stripped else "") + L1_SOUL_BLOCK.strip() + "\n"
     if updated == existing:
         return False
-    soul_path.parent.mkdir(parents=True, exist_ok=True)
     soul_path.write_text(updated, encoding="utf-8")
     return True
 
@@ -3595,30 +3616,56 @@ def ensure_l2_identity_soul(
     return True
 
 
-def ensure_north_star_toolset(*, save: bool = True) -> dict:
-    """Open ``plobi_north_star`` on the **active** profile (usually default).
+# ---------------------------------------------------------------------------
+# WP-L1-SECRETARY-FORM — one definition of "L1 秘书形态", applied from two doors
+# ---------------------------------------------------------------------------
 
-    Does not create a ``master`` profile (裁定 6). WP-BE-9 also mid-narrows
-    L1 toolsets (drop terminal / session_search / command runners) and upserts
-    soft-routing SOUL instructions. Idempotent and reversible via config lists.
+#: The only L1 default-profile template in the repo. Its own comment says the
+#: runtime config.yaml is not the deliverable — the point of reading it here is
+#: that *nothing used to*: the file existed, the budget hook only touched a live
+#: agent, and the plugin that would have persisted these knobs never loaded
+#: because the plugin itself was the thing missing.
+L1_PROFILE_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star" / "l1_profile_template.yaml"
+)
+
+
+def load_l1_profile_template() -> dict:
+    """Parse :data:`L1_PROFILE_TEMPLATE_PATH` (the template is the single source)."""
+    import yaml
+
+    return yaml.safe_load(L1_PROFILE_TEMPLATE_PATH.read_text(encoding="utf-8")) or {}
+
+
+def _merge_l1_profile_template(config: dict) -> bool:
+    """Deep-merge the L1 template into ``config`` in place; True when it changed.
+
+    Merged rather than assigned so every key the user already wrote — model
+    routing, credentials, his own ``compression`` tuning — survives the boot.
     """
-    from plobi_cli.config import load_config, save_config
+    from plobi_cli.config import _deep_merge
 
-    config = load_config()
-    changed = apply_l1_mid_toolsets(config)
+    merged = _deep_merge(config, load_l1_profile_template())
+    if merged == config:
+        return False
+    config.clear()
+    config.update(merged)
+    return True
 
+
+def _enable_north_star_plugin(config: dict) -> bool:
+    """List ``plobi-north-star`` in ``plugins.enabled`` (+ its entry) — opt-in flipped on."""
     plugins = config.get("plugins")
     if not isinstance(plugins, dict):
         plugins = {}
         config["plugins"] = plugins
-        changed = True
     enabled = plugins.get("enabled")
     if not isinstance(enabled, list):
         enabled = []
         plugins["enabled"] = enabled
-    if "plobi-north-star" not in enabled:
+    changed = "plobi-north-star" not in enabled
+    if changed:
         enabled.append("plobi-north-star")
-        changed = True
     entries = plugins.get("entries")
     if not isinstance(entries, dict):
         entries = {}
@@ -3630,6 +3677,66 @@ def ensure_north_star_toolset(*, save: bool = True) -> dict:
     if not entry.get("enabled"):
         entry["enabled"] = True
         changed = True
+    return changed
+
+
+def _apply_l1_secretary_config(config: dict) -> bool:
+    """Fold one config dict into L1 secretary shape. True when anything changed.
+
+    One body, two callers (:func:`ensure_north_star_toolset` and
+    :func:`ensure_l1_secretary_form`) so the plugin path and the boot path
+    cannot disagree about what the shape is.
+    """
+    changed = _merge_l1_profile_template(config)
+    changed = apply_l1_mid_toolsets(config) or changed
+    changed = _enable_north_star_plugin(config) or changed
+    return changed
+
+
+def ensure_l1_secretary_form() -> bool:
+    """Give the **default profile** its L1 secretary shape, inside its own home.
+
+    Boot-time bootstrap for a chicken-and-egg: ``plobi-north-star`` is a bundled
+    plugin and therefore opt-in, so a home that never listed it runs no
+    ``register()`` — and ``register()`` is the only thing that ever narrowed L1's
+    toolsets, applied the profile template, or wrote the SOUL fence. Such a
+    machine gets a generalist holding ``terminal`` and no dispatch entry, which
+    is exactly what was measured. Never creates a profile (裁定 6: L1 *is* the
+    default profile, not a ``master`` one), never writes outside a home that
+    already exists, and returns False once the shape is in place.
+    """
+    from plobi_cli.config import load_config, save_config
+    from plobi_cli.profiles import get_active_profile_name
+    from plobi_constants import get_plobi_home
+
+    if get_active_profile_name() != "default":
+        # 后端跑在某个分身的家目录里：L1 那把椅子不在这，写它就是把总秘书合同印到
+        # 分身身上（裁定 42 §6(b)）。``ensure_north_star_toolset`` 同口径。
+        return False
+    if not get_plobi_home().is_dir():
+        return False
+    config = load_config()
+    changed = _apply_l1_secretary_config(config)
+    if changed:
+        save_config(config)
+    return ensure_l1_secretary_routing_soul() or changed
+
+
+def ensure_north_star_toolset(*, save: bool = True) -> dict:
+    """Open ``plobi_north_star`` on the **active** profile (usually default).
+
+    Does not create a ``master`` profile (裁定 6). WP-BE-9 also mid-narrows
+    L1 toolsets (drop terminal / session_search / command runners) and upserts
+    soft-routing SOUL instructions. Idempotent and reversible via config lists.
+
+    Reachable only once the plugin is enabled, which is why the boot-time door
+    is :func:`ensure_l1_secretary_form` — bundled plugins are opt-in, so a home
+    that never opted in would otherwise never write this shape at all.
+    """
+    from plobi_cli.config import load_config, save_config
+
+    config = load_config()
+    changed = _apply_l1_secretary_config(config)
 
     if changed and save:
         save_config(config)

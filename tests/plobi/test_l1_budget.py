@@ -292,6 +292,115 @@ def test_l1_template_memory_disabled():
     )
 
 
+# ─── WP-L1-SECRETARY-FORM: 模板被**应用**，不只是被人读 ────────────────────────
+#
+# 上面两组测试只证明文件里写了什么。文件从来没有代码去落它：唯一会写这套键的
+# ``ensure_north_star_toolset`` 挂在插件 ``register()`` 上，而 bundled 插件是
+# opt-in——没启用的家永远不会启用它。所以下面钉的是「开机那一趟真把它落成了
+# 秘书形态，而且没有为此新建 profile」。
+
+
+@pytest.fixture()
+def l1_home(tmp_path, monkeypatch):
+    """一个从未启用过 plobi-north-star 的 default profile 家目录。"""
+    home = tmp_path / ".plobi"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
+    monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
+    return home
+
+
+def _loaded_yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _template_leaves(node: dict, prefix: tuple[str, ...] = ()):
+    """模板每个叶子键的完整路径——加一个键断言自动跟着长，不用改测试。"""
+    for key, value in node.items():
+        if isinstance(value, dict):
+            yield from _template_leaves(value, prefix + (key,))
+        else:
+            yield prefix + (key,), value
+
+
+def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
+    """``ensure_l1_secretary_form`` 必须把模板的**每一个**叶子落到 config.yaml。
+
+    逐叶遍历而不是写死 0.35：写死就把「模板被应用」退化成又一条模板快照检查。
+    """
+    from plobi.agents.registry import ensure_l1_secretary_form
+
+    assert ensure_l1_secretary_form() is True
+
+    written = _loaded_yaml(l1_home / "config.yaml")
+    for path, expected in _template_leaves(_loaded_yaml(_template_path())):
+        node = written
+        for key in path:
+            assert isinstance(node, dict) and key in node, f"template leaf never applied: {path}"
+            node = node[key]
+        assert node == expected, f"{path}: config says {node!r}, template says {expected!r}"
+
+
+def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):
+    """窄名单 + 插件启用是同一趟播种的另外两件产物，缺一件 L1 就还是工人。"""
+    from plobi.agents.registry import L1_DROP_TOOLSETS, L1_MID_TOOLSETS, ensure_l1_secretary_form
+
+    ensure_l1_secretary_form()
+
+    written = _loaded_yaml(l1_home / "config.yaml")
+    assert "plobi-north-star" in written["plugins"]["enabled"]
+    assert written["toolsets"] == list(L1_MID_TOOLSETS)
+    for platform in ("cli", "gateway"):
+        listed = written["platform_toolsets"][platform]
+        assert not set(listed) & L1_DROP_TOOLSETS, f"{platform} keeps worker tools: {listed}"
+        assert "plobi_north_star" in listed
+
+
+def test_l1_secretary_form_keeps_the_keys_the_user_wrote(l1_home):
+    """补齐不是覆盖：他自己写过的键必须原样活着。"""
+    from plobi.agents.registry import ensure_l1_secretary_form
+
+    (l1_home / "config.yaml").write_text(
+        "terminal:\n  cwd: /srv/his-workspace\n  timeout: 90\n", encoding="utf-8"
+    )
+
+    ensure_l1_secretary_form()
+
+    written = _loaded_yaml(l1_home / "config.yaml")
+    assert written["terminal"]["cwd"] == "/srv/his-workspace"
+    assert written["terminal"]["timeout"] == 90
+
+
+def test_l1_secretary_form_is_idempotent_and_never_creates_a_profile(l1_home):
+    """已经启用的家重复开机：不重写 config，不把 SOUL 栅栏写两遍，也不建 profile。"""
+    from plobi.agents.registry import L1_SOUL_BEGIN, ensure_l1_secretary_form
+
+    assert ensure_l1_secretary_form() is True
+    config_bytes = (l1_home / "config.yaml").read_bytes()
+    soul_text = (l1_home / "SOUL.md").read_text(encoding="utf-8")
+    assert soul_text.count(L1_SOUL_BEGIN) == 1
+
+    assert ensure_l1_secretary_form() is False
+
+    assert (l1_home / "config.yaml").read_bytes() == config_bytes
+    assert (l1_home / "SOUL.md").read_text(encoding="utf-8") == soul_text
+    assert not (l1_home / "profiles").exists()
+
+
+def test_l1_secretary_form_does_not_create_a_missing_home(tmp_path, monkeypatch):
+    """家目录不存在就当这台上没有 L1 可写——为一份 SOUL.md 建 profile 是第二真源。"""
+    from plobi.agents.registry import ensure_l1_secretary_form
+
+    missing = tmp_path / ".plobi"
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("PLOBI_HOME", str(missing))
+
+    assert ensure_l1_secretary_form() is False
+    assert not missing.exists()
+
+
 # ─── P0-1: every-turn coverage (WP-L1-EVERY-TURN) ──────────────────────────
 
 

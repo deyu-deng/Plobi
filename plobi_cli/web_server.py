@@ -168,13 +168,37 @@ def _seed_agenda_agent() -> None:
     by the secretary write paths, so a home that never routed through them shows
     an empty AGENTS rail. Seeding failure must not take the backend down — the
     secretary paths still seed on first use, so log and carry on.
+
+    Registration only: the left rail needs the row, and ``profiles/l2-agenda``
+    is the secretary's own promise to make the first time it lands a 日程. A boot
+    that materialized it shipped every user a 12K empty profile they never asked
+    for (see :func:`plobi.agents.registry.register_agenda_agent`).
     """
     try:
-        from plobi.agents.registry import ensure_agenda_agent
+        from plobi.agents.registry import register_agenda_agent
 
-        ensure_agenda_agent()
+        register_agenda_agent()
     except Exception as exc:
         _log.warning("plobi: agenda L2 startup seed skipped: %s", exc)
+
+
+def _apply_l1_secretary_form() -> None:
+    """Put the default profile into L1 secretary shape before serving a turn.
+
+    The shape itself lives in :func:`plobi.agents.registry.ensure_l1_secretary_form`;
+    what belongs here is *when* it happens. ``plobi-north-star`` is opt-in, and the
+    only code that used to narrow L1 / write its SOUL fence ran from that plugin's
+    ``register()`` — so on a home that never opted in, nothing was ever going to
+    make L1 a secretary. Same no-cost rule as ``_seed_agenda_agent``: a failed
+    pass must not take the backend down, the plugin re-applies it on every load.
+    """
+    try:
+        from plobi.agents.registry import ensure_l1_secretary_form
+
+        if ensure_l1_secretary_form():
+            _log.info("plobi: default profile brought into L1 secretary shape")
+    except Exception as exc:
+        _log.warning("plobi: L1 secretary shape skipped: %s", exc)
 
 
 def _resolve_restart_drain_timeout() -> float:
@@ -200,6 +224,9 @@ async def _lifespan(app: "FastAPI"):
     # Synchronous, before `yield`: the console left rail reads GET /api/agents
     # on first paint, so the seeded row has to be on disk by then.
     _seed_agenda_agent()
+    # Same reason, same shape: L1 answers the very first desktop turn, so its
+    # narrow toolsets + secretary SOUL fence have to be on disk before it does.
+    _apply_l1_secretary_form()
 
     # Fire plobi_cli.gateway import into a background thread so the event
     # loop is not blocked and PLOBI_DASHBOARD_READY fires without delay.
