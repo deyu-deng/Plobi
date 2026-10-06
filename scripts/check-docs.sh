@@ -12,7 +12,9 @@
 # 退化成 WARN 跳过，等于空转；登记归仓外 Docs/README.md，本仓 hook 无法在 CI
 # 里访问 ../Docs/，所以不在这里查。
 #
-# 安装：cp scripts/check-docs.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# 安装：python scripts/install_arch_hooks.py
+#   （它装的是 scripts/git-hooks/pre-commit，会串起 check-docs.sh + check_arch_gates.py。
+#    不要 cp 本文件到 .git/hooks/pre-commit —— 那会把架构闸门挤掉，只剩文档检查。）
 # 手动跑：bash scripts/check-docs.sh
 
 set -uo pipefail
