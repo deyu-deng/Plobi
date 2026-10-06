@@ -195,6 +195,41 @@ def test_check_north_star_new_colon_fence(tmp_path: Path):
     assert row["color"] == D.GREEN
 
 
+def test_check_l1_secretary_form_green(tmp_path: Path):
+    (tmp_path / "config.yaml").write_text(
+        "plugins:\n  enabled:\n    - plobi-north-star\n"
+        "toolsets:\n  - web\n  - clarify\n  - plobi_north_star\n"
+        "platform_toolsets:\n  cli:\n    - plobi_north_star\n  gateway:\n    - clarify\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
+    row = D.check_l1_secretary_form(tmp_path)
+    assert row["color"] == D.GREEN
+    assert row["plugin_enabled"] and row["narrow_toolsets"] and row["soul_fence"]
+
+
+def test_check_l1_secretary_form_names_which_question_failed(tmp_path: Path):
+    """三问三答：`terminal` 还在名单里就只能否掉窄名单那一条，另外两条照实说 yes。"""
+    (tmp_path / "config.yaml").write_text(
+        "plugins:\n  enabled:\n    - plobi-north-star\n"
+        "toolsets:\n  - terminal\n  - plobi_north_star\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "SOUL.md").write_text(":::PLOBI_L1_ASK_ROUTING:::\n", encoding="utf-8")
+    row = D.check_l1_secretary_form(tmp_path)
+    assert row["color"] == D.RED
+    assert "plugin=yes" in row["detail"]
+    assert "narrow toolsets=NO" in row["detail"]
+    assert "SOUL fence=yes" in row["detail"]
+    assert "terminal" in row["detail"]
+
+
+def test_check_l1_secretary_form_red_when_shape_never_applied(tmp_path: Path):
+    row = D.check_l1_secretary_form(tmp_path)
+    assert row["color"] == D.RED
+    assert "never applied" in row["detail"]
+
+
 def test_worst_exit():
     assert D.worst_exit([{"color": "yellow"}]) == 0
     assert D.worst_exit([{"color": "red"}]) == 1

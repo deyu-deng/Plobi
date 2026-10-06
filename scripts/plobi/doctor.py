@@ -38,6 +38,9 @@ CHATLOG_HEALTH_PATHS = ("/health", "/api/v1/health")
 DEFAULT_CHATLOG_URL = "http://127.0.0.1:5030"
 DEFAULT_AIGW_PORT = 8000
 NORTH_STAR = "plobi_north_star"
+#: Plugin *manifest* name — the key ``plugins.enabled`` lists, distinct from the
+#: toolset name above (the two differ by ``-`` vs ``_`` and are easy to swap).
+NORTH_STAR_PLUGIN = "plobi-north-star"
 
 GREEN, YELLOW, RED = "green", "yellow", "red"
 
@@ -504,7 +507,7 @@ def _toolsets_from_config(cfg: dict) -> set[str]:
     plugins = cfg.get("plugins") or {}
     if isinstance(plugins, dict):
         enabled = plugins.get("enabled") or []
-        if isinstance(enabled, list) and "plobi-north-star" in enabled:
+        if isinstance(enabled, list) and NORTH_STAR_PLUGIN in enabled:
             found.add(NORTH_STAR)
     return found
 
@@ -544,6 +547,92 @@ def check_north_star(home: Path | None = None) -> dict[str, Any]:
         "color": color,
         "detail": f"{cfg_path}: {extra}",
         "toolsets": sorted(names),
+    }
+
+
+def _authored_l1_toolsets(cfg: dict) -> set[str]:
+    """Toolset names this profile's config actually lists (no defaults merged in).
+
+    Deliberately *not* :func:`_toolsets_from_config`: that one infers
+    ``plobi_north_star`` from ``plugins.enabled`` because it asks "would the
+    toolset be visible". This asks "is what landed on disk the narrow L1 list",
+    and an inference would grade its own homework.
+    """
+    names: set[str] = set()
+    top = cfg.get("toolsets")
+    if isinstance(top, list):
+        names.update(str(item) for item in top)
+    platforms = cfg.get("platform_toolsets") or {}
+    if isinstance(platforms, dict):
+        for key in ("cli", "gateway"):
+            listed = platforms.get(key)
+            if isinstance(listed, list):
+                names.update(str(item) for item in listed)
+    return names
+
+
+def check_l1_secretary_form(home: Path | None = None) -> dict[str, Any]:
+    """Three questions about this machine's L1, answered in one read-only row.
+
+    总秘书形态 is not a profile — it is a handful of keys in the default home's
+    ``config.yaml`` plus a fence in its ``SOUL.md``. The backend applies them at
+    boot (:func:`plobi.agents.registry.ensure_l1_secretary_form`), so a red row
+    here means that pass never ran, was skipped, or something reverted it after.
+    """
+    from plobi.agents.registry import (
+        L1_DROP_TOOLSETS,
+        MASTER_TOOLSET_NAME,
+        _is_full_plobi_composite,
+    )
+
+    root = home or plobi_home()
+    cfg_path = root / "config.yaml"
+    if not cfg_path.is_file():
+        return {
+            "id": "l1_form",
+            "color": RED,
+            "detail": f"no {cfg_path}: plugin=NO; narrow toolsets=NO; SOUL fence=NO "
+            "(L1 秘书形态 never applied — start `plobi serve` / `plobi dashboard`)",
+        }
+    try:
+        import yaml
+
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        return {"id": "l1_form", "color": RED, "detail": f"cannot parse {cfg_path}: {exc}"}
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    plugins = cfg.get("plugins") or {}
+    enabled = plugins.get("enabled") if isinstance(plugins, dict) else None
+    plugin_on = isinstance(enabled, list) and NORTH_STAR_PLUGIN in {str(n) for n in enabled}
+
+    names = _authored_l1_toolsets(cfg)
+    workers = sorted(n for n in names if n in L1_DROP_TOOLSETS or _is_full_plobi_composite(n))
+    narrow = bool(names) and MASTER_TOOLSET_NAME in names and not workers
+
+    soul = (root / "SOUL.md").read_text(encoding="utf-8") if (root / "SOUL.md").is_file() else ""
+    has_fence = soul_has_routing_block(soul)
+    answers = (
+        ("plugin", plugin_on),
+        ("narrow toolsets", narrow),
+        ("SOUL fence", has_fence),
+    )
+    missing = [label for label, ok in answers if not ok]
+    detail = f"{cfg_path}: " + "; ".join(
+        f"{label}={'yes' if ok else 'NO'}" for label, ok in answers
+    )
+    if workers:
+        detail += f" (worker toolsets still listed: {', '.join(workers)})"
+    if missing:
+        detail += f" — missing: {', '.join(missing)}"
+    return {
+        "id": "l1_form",
+        "color": GREEN if not missing else RED,
+        "detail": detail,
+        "plugin_enabled": plugin_on,
+        "narrow_toolsets": narrow,
+        "soul_fence": has_fence,
     }
 
 
@@ -747,6 +836,7 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
         check_aigw(),
         check_dingtalk(),
         check_north_star(),
+        check_l1_secretary_form(),
         check_chatlog_config(),
         check_chatlog_whitelist_efficiency(),
     ]

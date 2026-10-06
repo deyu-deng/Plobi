@@ -580,35 +580,45 @@ def test_agenda_routes_still_mounted():
 # --------------------------------------------------------------------------- #
 
 
-def _stub_agenda_profile(monkeypatch) -> list[str]:
-    """Confine the seed to the registry write it is supposed to guarantee.
+def _stub_agenda_materialisation(monkeypatch) -> dict[str, list[str]]:
+    """Record — never run — the two writes that build a profile on disk.
 
-    Profile materialization (``spawn`` + the L2 toolset write) is
-    test_agent_registry's subject; running it here would only drop real profile
-    directories under the temp HOME.
+    ``spawn`` clones a whole profile home and the L2 toolset pass writes inside
+    it. Both are the secretary's promise when it lands a 日程, not a backend's,
+    and a startup test cannot assert "neither happened" against the real
+    functions, so they are watched instead.
     """
-    spawned: list[str] = []
+    calls: dict[str, list[str]] = {"spawn": [], "toolsets": []}
 
     def fake_spawn(self, name, **kwargs):
-        spawned.append(name)
+        calls["spawn"].append(name)
         return {"name": name}
+
+    def fake_toolsets(path):
+        calls["toolsets"].append(str(path))
+        return False
 
     monkeypatch.setattr(AgentRegistry, "spawn", fake_spawn)
     monkeypatch.setattr("plobi_cli.profiles.profile_exists", lambda name: False)
-    monkeypatch.setattr("plobi.agents.registry.ensure_l2_agenda_toolsets", lambda path: None)
-    return spawned
+    monkeypatch.setattr("plobi.agents.registry.ensure_l2_agenda_toolsets", fake_toolsets)
+    monkeypatch.setattr("plobi.agents.registry.ensure_l1_secretary_form", lambda: False)
+    return calls
 
 
-def test_startup_seed_surfaces_agenda_row(_isolated_state, monkeypatch):
-    """The desktop/serve backend must seed the agenda L2 before it serves.
+def test_startup_seed_registers_agenda_without_materialising_a_profile(
+    _isolated_state, monkeypatch
+):
+    """The desktop/serve backend must seed the agenda L2 before it serves — as a row.
 
     ``GET /api/agents`` reads ``projects.yaml`` and writes nothing, so without
     this seed a home whose registry only holds human projects shows a rail with
-    no 日程管家 at all.
+    no 日程管家 at all. Visibility, though, is the whole of what the rail needs:
+    materializing ``profiles/l2-agenda`` at boot handed every user an empty
+    12K profile skeleton they never asked for, so both writes are pinned absent.
     """
     from plobi_cli import web_server
 
-    spawned = _stub_agenda_profile(monkeypatch)
+    calls = _stub_agenda_materialisation(monkeypatch)
     console_router.set_registry(None)  # a fresh server reads the row back off disk
 
     with TestClient(web_server.app):
@@ -616,7 +626,42 @@ def test_startup_seed_surfaces_agenda_row(_isolated_state, monkeypatch):
 
     assert [row["id"] for row in rows] == ["agenda"]
     assert rows[0]["name"] == "日程秘书"
-    assert spawned == ["agenda"]
+    assert calls == {"spawn": [], "toolsets": []}
+
+
+def test_startup_puts_the_default_home_into_l1_secretary_shape(
+    _isolated_state, monkeypatch, tmp_path
+):
+    """Boot flips a never-opted-in home into L1 秘书形态, in place, with no new profile.
+
+    ``plobi-north-star`` is a bundled plugin and therefore opt-in, and the only
+    code that narrowed L1 / wrote its SOUL fence ran from that plugin's
+    ``register()`` — so the shape was unreachable on exactly the machines that
+    needed it (measured: L1 called ``terminal`` and never dispatched). The
+    desktop backend is where that has to break, and breaking it must not buy
+    visibility with a fresh profile home.
+    """
+    import yaml
+
+    from plobi.agents.registry import L1_MID_TOOLSETS, L1_SOUL_BEGIN
+    from plobi_cli import web_server
+
+    home = tmp_path / ".plobi"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    console_router.set_registry(None)
+
+    with TestClient(web_server.app):
+        rows = console_router.list_agents()
+
+    assert [row["id"] for row in rows] == ["agenda"]
+    cfg = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert "plobi-north-star" in cfg["plugins"]["enabled"]
+    assert cfg["toolsets"] == list(L1_MID_TOOLSETS)
+    assert "terminal" not in cfg["platform_toolsets"]["cli"]
+    assert (home / "SOUL.md").read_text(encoding="utf-8").count(L1_SOUL_BEGIN) == 1
+    assert not (home / "profiles").exists()
 
 
 def test_seed_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
@@ -632,7 +677,7 @@ def test_seed_failure_does_not_break_startup(_isolated_state, monkeypatch, caplo
     def explode(*args, **kwargs):
         raise RuntimeError("registry offline")
 
-    monkeypatch.setattr("plobi.agents.registry.ensure_agenda_agent", explode)
+    monkeypatch.setattr("plobi.agents.registry.register_agenda_agent", explode)
 
     with caplog.at_level(logging.WARNING, logger="plobi_cli.web_server"):
         with TestClient(
@@ -644,6 +689,36 @@ def test_seed_failure_does_not_break_startup(_isolated_state, monkeypatch, caplo
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert any("agenda L2" in record.getMessage() for record in caplog.records), caplog.text
+
+
+def test_l1_secretary_shape_failure_does_not_break_startup(_isolated_state, monkeypatch, caplog):
+    """Same rule for the secretary-shape pass: it is boot garnish, not a dependency.
+
+    ``ensure_north_star_toolset`` re-applies the shape on every plugin load, so a
+    home that fails this pass at boot still gets it before the first turn — the
+    backend must not die over a config write.
+    """
+    import logging
+
+    from plobi_cli import web_server
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("config offline")
+
+    monkeypatch.setattr("plobi.agents.registry.register_agenda_agent", lambda: (None, False))
+    monkeypatch.setattr("plobi.agents.registry.ensure_l1_secretary_form", explode)
+
+    with caplog.at_level(logging.WARNING, logger="plobi_cli.web_server"):
+        with TestClient(
+            web_server.app,
+            headers={web_server._SESSION_HEADER_NAME: web_server._SESSION_TOKEN},
+        ) as test_client:
+            response = test_client.get("/api/agents")
+
+    assert response.status_code == 200
+    assert any("L1 secretary shape" in record.getMessage() for record in caplog.records), (
+        caplog.text
+    )
 
 
 # --------------------------------------------------------------------------- #
