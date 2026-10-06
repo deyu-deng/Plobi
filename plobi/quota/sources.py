@@ -197,6 +197,11 @@ class AigwSource(QuotaSource):
 
     No dollar balance exists — only health (token valid / account schedulable).
     ``remaining_usd()`` is always ``None`` (unknown), per the B4 seam contract.
+
+    ``derived`` marks a source the gateway itself reported via ``/v1/models``
+    (裁定 46: the gateway is the single source of truth for which apps exist).
+    Either way the honest ceiling is DEGRADED — the catalog entry proves the
+    adapter is *registered*, not that a chat round-trip succeeds.
     """
 
     def __init__(
@@ -207,11 +212,17 @@ class AigwSource(QuotaSource):
         base_url: str = "",
         api_key: str = "",
         probe_fn: Optional[Callable[["QuotaSource"], SourceStatus]] = None,
+        models: Optional[list[str]] = None,
+        capabilities: Optional[dict] = None,
+        derived: bool = False,
     ) -> None:
         super().__init__(
             name, kind="aigw", model=model,
             base_url=base_url, api_key=api_key, probe_fn=probe_fn,
         )
+        self.models = list(models or ([model] if model else []))
+        self.capabilities = dict(capabilities or {})
+        self.derived = derived
 
     def _default_probe(self) -> SourceStatus:
         # aigw 的 antigravity / workbuddy 真机未跑通；诚实标注 DEGRADED。
@@ -219,6 +230,11 @@ class AigwSource(QuotaSource):
             return SourceStatus(
                 self.name, self.kind, HealthStatus.UNAVAILABLE, None,
                 "aigw gateway not configured", time.time(),
+            )
+        if self.derived:
+            return SourceStatus(
+                self.name, self.kind, HealthStatus.DEGRADED, None,
+                f"listed by gateway as {self.model}; chat not proven", time.time(),
             )
         return SourceStatus(
             self.name, self.kind, HealthStatus.DEGRADED, None,
@@ -231,14 +247,19 @@ def build_sources(config: dict) -> dict[str, QuotaSource]:
     sources: dict[str, QuotaSource] = {}
     for name, scfg in config.get("sources", {}).items():
         kind = scfg.get("kind", "aigw")
+        common = {
+            "model": str(scfg.get("model") or ""),
+            "base_url": str(scfg.get("base_url") or ""),
+            "api_key": str(scfg.get("api_key") or ""),
+        }
         if kind == "cheap_api":
-            cls = CheapApiSource
+            sources[name] = CheapApiSource(name, **common)
         else:
-            cls = AigwSource
-        sources[name] = cls(
-            name,
-            model=str(scfg.get("model") or ""),
-            base_url=str(scfg.get("base_url") or ""),
-            api_key=str(scfg.get("api_key") or ""),
-        )
+            sources[name] = AigwSource(
+                name,
+                **common,
+                models=scfg.get("models") or None,
+                capabilities=scfg.get("capabilities") or None,
+                derived=bool(scfg.get("derived")),
+            )
     return sources

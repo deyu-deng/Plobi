@@ -9,6 +9,11 @@ aigw sources stay "unknown" (never block).
 Failover is real, not decorative: :meth:`mark_failed` flips a source to
 UNAVAILABLE immediately, so the next :meth:`resolve` walks on to the next
 healthy candidate. The daily alert cron (B5) consumes :meth:`alert_statuses`.
+
+The desktop-quota half of the pool is **not configured here** — it is derived
+from the gateway's own catalog by :meth:`refresh_gateway` (see
+:mod:`plobi.quota.gateway`, 裁定 46). Probing and resolving stay offline; only
+:meth:`refresh_gateway` and ``probe_sources()`` reach the network.
 """
 
 from __future__ import annotations
@@ -16,9 +21,10 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from plobi.quota.config import load
+from plobi.quota.gateway import CatalogState, GatewayOutcome, fetch_sources
 from plobi.quota.sources import (
     HealthStatus,
     QuotaSource,
@@ -28,6 +34,16 @@ from plobi.quota.sources import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: How long a derived desktop-quota catalog stays trusted before the next spend
+#: re-reads it. The catalog only changes when the user connects/disconnects a
+#: desktop app, so this is a latency bound, not a freshness requirement.
+GATEWAY_TTL_SECONDS = 300.0
+
+#: A failed read retries soon — the common case is the gateway still booting,
+#: and caching that for the full TTL would keep the desktop channels invisible
+#: for minutes after they came up.
+GATEWAY_RETRY_SECONDS = 15.0
 
 
 class QuotaPool:
@@ -40,13 +56,20 @@ class QuotaPool:
         order: Optional[list[str]] = None,
         fail_open: bool = True,
         alert_threshold: str = "degraded",
+        gateway: Optional[dict] = None,
+        gateway_ttl: float = GATEWAY_TTL_SECONDS,
     ) -> None:
         self.sources: dict[str, QuotaSource] = dict(sources or {})
         self.order: list[str] = list(order or list(self.sources))
         self.fail_open = fail_open
         self.alert_threshold = alert_threshold
+        self.gateway = gateway or {}
+        self.gateway_ttl = gateway_ttl
         self._status: dict[str, SourceStatus] = {}
         self._failed: set[str] = set()
+        # Last catalog read. ``None`` means "never asked" — which the console
+        # surface must be able to tell apart from "asked, and it was empty".
+        self._catalog: Optional[GatewayOutcome] = None
         # RLock (not Lock): resolve() may call probe_all() while already holding
         # the lock to lazily populate the probe cache — a plain Lock would
         # self-deadlock there and hang the process.
@@ -72,6 +95,93 @@ class QuotaPool:
     def names(self) -> list[str]:
         with self._lock:
             return list(self.sources)
+
+    # ------------------------------------------------------------------ #
+    # gateway derivation (裁定 46: the gateway owns the desktop-quota list)
+    # ------------------------------------------------------------------ #
+
+    def catalog_status(self) -> Optional[dict]:
+        """The last catalog read, or ``None`` when the gateway was never asked.
+
+        Offline and non-raising on purpose: ``GET /api/quota/summary`` documents
+        itself as 「探针是状态推导而非网络请求」 (WP-BE-4), so it reports the last
+        known outcome instead of triggering a fetch. ``None`` must stay
+        distinguishable from "asked and it had nothing" — an unchecked subsystem
+        that renders as an absent one is the R-051 failure this mirrors.
+        """
+        with self._lock:
+            return self._catalog.as_dict() if self._catalog is not None else None
+
+    def refresh_gateway(
+        self,
+        *,
+        force: bool = False,
+        fetch: Optional[Callable[..., GatewayOutcome]] = None,
+    ) -> GatewayOutcome:
+        """Re-derive the desktop-quota half of the pool from the gateway catalog.
+
+        Never raises — an unreachable gateway is data, not an exception. When the
+        read fails the previously derived sources are **kept**: the router marks
+        them failed on the first real error and fails over, whereas dropping them
+        here would silently convert "gateway down" into "no quota apps".
+        """
+        settings = self.gateway or {}
+        enabled = bool(settings.get("enabled", True))
+        base_url = str(settings.get("base_url") or "")
+
+        with self._lock:
+            if self._catalog is not None and not force:
+                bound = (
+                    self.gateway_ttl
+                    if self._catalog.answered
+                    else min(self.gateway_ttl, GATEWAY_RETRY_SECONDS)
+                )
+                if time.time() - self._catalog.checked_at < bound:
+                    return self._catalog
+
+            if not enabled:
+                self._catalog = GatewayOutcome(
+                    CatalogState.DISABLED, {}, "gateway disabled by config", time.time()
+                )
+                self._apply_catalog({})
+                return self._catalog
+            if not base_url:
+                self._catalog = GatewayOutcome(
+                    CatalogState.UNREACHABLE, {}, "no gateway endpoint configured", time.time()
+                )
+                return self._catalog
+
+            fetcher = fetch or fetch_sources
+            outcome = fetcher(base_url, str(settings.get("api_key") or ""))
+            self._catalog = outcome
+            if outcome.answered:
+                exclude = {str(x).strip().lower() for x in (settings.get("exclude") or [])}
+                kept = {
+                    name: cfg
+                    for name, cfg in sorted(outcome.sources.items())
+                    if name not in exclude
+                }
+                self._apply_catalog(kept)
+            return outcome
+
+    def _apply_catalog(self, catalog: dict[str, dict]) -> None:
+        """Swap the derived sources; leave config-owned ones untouched."""
+        for name in [
+            n for n, s in self.sources.items() if getattr(s, "derived", False) and n not in catalog
+        ]:
+            self.sources.pop(name, None)
+            self._status.pop(name, None)
+            self._failed.discard(name)
+            if name in self.order:
+                self.order.remove(name)
+        if not catalog:
+            return
+        for name, source in build_sources({"sources": catalog}).items():
+            self.sources[name] = source
+            # A replaced source must be re-probed, not reported from the old cache.
+            self._status.pop(name, None)
+            if name not in self.order:
+                self.order.append(name)
 
     # ------------------------------------------------------------------ #
     # probing
@@ -189,7 +299,13 @@ _POOL_LOCK = threading.Lock()
 
 
 def get_quota_pool() -> QuotaPool:
-    """Process-wide pool, lazily built from ``plobi.quota.config.load()``."""
+    """Process-wide pool, lazily built from ``plobi.quota.config.load()``.
+
+    Reaching this singleton never touches the network — the config-owned sources
+    (``cheap_api``) are built and the gateway stays un-asked until something
+    calls :meth:`QuotaPool.refresh_gateway`. That keeps the console quota surface
+    and every unit test hermetic.
+    """
     global _POOL
     if _POOL is None:
         with _POOL_LOCK:
@@ -200,6 +316,7 @@ def get_quota_pool() -> QuotaPool:
                     order=cfg["order"],
                     fail_open=cfg["fail_open"],
                     alert_threshold=cfg["alert_threshold"],
+                    gateway=cfg.get("gateway") or {},
                 )
     return _POOL
 
@@ -210,11 +327,13 @@ def set_quota_pool(pool: Optional[QuotaPool]) -> None:
 
 
 def probe_sources() -> list[SourceStatus]:
-    """Convenience: probe the process-wide pool (used by the alert cron)."""
+    """Convenience for the alert cron: take a fresh catalog, then probe.
+
+    This is the observational entry point, so it is allowed to reach the gateway
+    (the read never raises). Status surfaces keep using the offline
+    :meth:`QuotaPool.catalog_status` instead.
+    """
     pool = get_quota_pool()
+    pool.refresh_gateway()
     pool.probe_all()
-    # Refresh the timestamp to make the probe observable for debugging.
-    for status in pool.statuses():
-        if status.checked_at <= 0:
-            continue
     return pool.statuses()

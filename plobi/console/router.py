@@ -491,10 +491,16 @@ def quota_summary_data() -> dict:
     数据源 = 进程级 ``QuotaPool`` 的 probe 结果（``SourceStatus.as_dict()``
     原样透出，含 ``checked_at``——超集字段，前端按需取）。探针是状态推导
     而非网络请求，此调用离线且幂等。
+
+    ``gateway`` 是最近一次目录读取的结果（同样不触发请求）：``None`` = 还没问过
+    网关，``state=ok`` + 空 ``source_names`` = 问过且它一个额度源都没供。这两格
+    必须能分开，否则「没接」和「坏了」在界面上长成同一个样子（R-048 那条口径）。
     """
-    statuses = get_quota_pool().probe_all()
+    pool = get_quota_pool()
+    statuses = pool.probe_all()
     return {
         "sources": [status.as_dict() for status in statuses],
+        "gateway": pool.catalog_status(),
         "todayUsd": today_usd(),
     }
 
