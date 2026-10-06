@@ -496,11 +496,43 @@ def test_usage_day_bounds_cover_local_calendar_day():
 
 
 class _StubPool:
-    def __init__(self, statuses):
+    def __init__(self, statuses, catalog=None):
         self._statuses = statuses
+        self._catalog = catalog
 
     def probe_all(self):
         return list(self._statuses)
+
+    def catalog_status(self):
+        """Last gateway catalog read — ``None`` means the gateway was never asked."""
+        return self._catalog
+
+
+def test_quota_summary_gateway_separates_unasked_from_empty(
+    client, monkeypatch, tmp_path
+):
+    """「还没问过网关」与「问过、它一个额度源都没供」必须是两格（R-048 口径）。
+
+    否则界面上「没接」和「坏了」会长成同一个样子，而这两种情况的下一步完全不同。
+    """
+    from plobi.quota.sources import HealthStatus, SourceStatus
+
+    statuses = [SourceStatus("zhipu-air", "cheap_api", HealthStatus.HEALTHY, 1.0, "ok", 1.0)]
+    monkeypatch.setattr(console_router, "default_db_path", lambda: tmp_path / "missing.db")
+
+    monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool(statuses))
+    assert client.get("/api/quota/summary").json()["data"]["gateway"] is None
+
+    answered_empty = {
+        "state": "ok", "detail": "answered with 6 models, 0 quota app(s)",
+        "checked_at": 1.0, "models_seen": 6, "source_names": [],
+    }
+    monkeypatch.setattr(
+        console_router, "get_quota_pool", lambda: _StubPool(statuses, answered_empty)
+    )
+    got = client.get("/api/quota/summary").json()["data"]["gateway"]
+    assert got == answered_empty
+    assert got["state"] == "ok" and got["source_names"] == []
 
 
 def test_quota_summary_envelope(client, monkeypatch, tmp_path):

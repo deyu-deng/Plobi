@@ -1,7 +1,13 @@
 """Plobi-owned quota source pool configuration (B3: quota source management).
 
-额度池 = 便宜 API（zhipu air 档）+ aigw 聚合（antigravity / workbuddy 免费额度）。
-L1 按策略挑源（便宜优先、aigw 兜底）；L2 在源失效时自动切换。
+额度池 = 便宜 API（zhipu air 档）+ 桌面端免费额度（经本地网关）。
+L1 按策略挑源（便宜优先、网关兜底）；L2 在源失效时自动切换。
+
+**桌面端那一半的清单不在这里**：按裁定 46，"有哪些软件在供额度"的唯一真源是网关自己
+的 ``GET /v1/models``，由 :mod:`plobi.quota.gateway` 派生。本文件只留两类东西：
+① 非网关源（``cheap_api``，它有真余额、跟网关无关）；② 策略（顺序 / fail_open /
+预警阈值 / 要不要把某个派生源排除在外）。以前这里硬编过 ``antigravity`` / ``workbuddy``
+两条源——那份硬编就是裁定 46.3 记着「未落地」的第二份清单，现已删。
 
 配置真源：``$PLOBI_HOME/plobi/quota.yaml``（profile-safe，走 ``get_plobi_home()``，
 ``PLOBI_QUOTA_CONFIG`` 可覆盖）。每个源的 ``base_url`` / ``api_key`` 是敏感信息，
@@ -19,36 +25,33 @@ WP-BE-2 凭证桥：UI 存 key 走 Plobi ``auth.json`` 的 ``credential_pool``�
 
     version: 1
     strategy:
-      order: [zhipu-air, antigravity, workbuddy]   # 便宜优先
-      fail_open: true                               # 全失效时降级（不硬 block）
+      order: [zhipu-air]          # 便宜优先；网关派生的源排在已列出的之后
+      fail_open: true             # 全失效时降级（不硬 block）
+    alert_threshold: degraded
+    gateway:
+      enabled: true               # false = 完全不问网关
+      exclude: [cursor]           # 派生出来但不进池子
     sources:
       zhipu-air:
         kind: cheap_api
         model: glm-4-air
         base_url: ""          # 留空 = 从 PLOBI_QUOTA_ZHIPU_URL 读
         api_key: ""           # 留空 = 从 PLOBI_QUOTA_ZHIPU_KEY 读
-      antigravity:
-        kind: aigw
-        model: antigravity/gemini-3-pro
-        base_url: http://127.0.0.1:8000/v1   # aigw 本地网关
-        api_key: ""           # 留空 = 从 PLOBI_QUOTA_AIGW_KEY 读
-      workbuddy:
-        kind: aigw
-        model: workbuddy/deepseek-chat
-        base_url: http://127.0.0.1:8000/v1
-        api_key: ""
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
 
+logger = logging.getLogger(__name__)
+
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 
-# 三源默认结构。model 名是配置默认值，可在 quota.yaml 覆盖（不硬编码到路由）。
+# 本文件拥有的源。桌面额度源不在这里——那半份由网关派生（见模块 docstring）。
 DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
     "zhipu-air": {
         "kind": "cheap_api",
@@ -59,26 +62,10 @@ DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
         "key_env": "PLOBI_QUOTA_ZHIPU_KEY",
         "credential_provider": "zai",  # WP-BE-2 只读桥的 provider 名
     },
-    "antigravity": {
-        "kind": "aigw",
-        "model": "antigravity/gemini-3-pro",
-        "base_url": "http://127.0.0.1:8000/v1",  # aigw 本地网关
-        "api_key": "",
-        "url_env": "PLOBI_QUOTA_AIGW_URL",
-        "key_env": "PLOBI_QUOTA_AIGW_KEY",
-    },
-    "workbuddy": {
-        "kind": "aigw",
-        "model": "workbuddy/deepseek-chat",
-        "base_url": "http://127.0.0.1:8000/v1",
-        "api_key": "",
-        "url_env": "PLOBI_QUOTA_AIGW_URL",
-        "key_env": "PLOBI_QUOTA_AIGW_KEY",
-    },
 }
 
-# 便宜优先：zhipu-air（便宜 API）→ antigravity（aigw 已验证）→ workbuddy（aigw）。
-DEFAULT_ORDER: list[str] = ["zhipu-air", "antigravity", "workbuddy"]
+# 便宜优先：zhipu-air 在前，网关派生的桌面额度源排在它后面（pool.refresh_gateway）。
+DEFAULT_ORDER: list[str] = ["zhipu-air"]
 
 # 预警阈值：健康度低于该档即触发预警（进早报，B5 消费）。
 DEFAULT_ALERT_THRESHOLD = "degraded"
@@ -191,11 +178,53 @@ def _resolve_source(
     return merged
 
 
+def gateway_settings(file_cfg: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Resolve how to reach the gateway + which derived apps to keep out.
+
+    ``base_url`` / ``api_key`` are read from the agents layer
+    (``plobi.agents.registry.aigw_base_url()`` / ``aigw_api_key()``) — the *same*
+    single source ``plugins/model-providers/aigw`` already uses, including the
+    legacy ``PLOBI_QUOTA_AIGW_*`` aliases. Deliberately not re-implemented here.
+
+    The lazy import avoids an import cycle (the agents layer reaches back into
+    the pool), and a failure is surfaced as a warning rather than swallowed: an
+    unreadable endpoint means "no desktop quota sources", which must not look
+    like a silently-empty gateway.
+    """
+    raw = file_cfg if isinstance(file_cfg, dict) else {}
+    cfg = raw.get("gateway") if isinstance(raw.get("gateway"), dict) else {}
+    # Same convention as ``strategy.fail_open`` above: a non-bool is not coerced,
+    # it falls back to the default — so a quoted "false" cannot silently mean the
+    # opposite of what the user wrote.
+    enabled = cfg.get("enabled", True)
+    if not isinstance(enabled, bool):
+        enabled = True
+    exclude = {
+        str(item).strip().lower() for item in (cfg.get("exclude") or []) if str(item).strip()
+    }
+    base_url = ""
+    api_key = ""
+    try:
+        from plobi.agents.registry import aigw_api_key, aigw_base_url
+
+        base_url, api_key = aigw_base_url(), aigw_api_key()
+    except Exception as exc:  # pragma: no cover — depends on the installed runtime
+        logger.warning("plobi quota: gateway endpoint unreadable (%s)", exc)
+    return {
+        "enabled": bool(enabled),
+        "exclude": sorted(exclude),
+        "base_url": base_url,
+        "api_key": api_key,
+    }
+
+
 def load() -> dict[str, Any]:
-    """解析整个额度池配置，返回 ``{order, fail_open, alert_threshold, sources}``。
+    """解析整个额度池配置，返回 ``{order, fail_open, alert_threshold, sources, gateway}``。
 
     ``sources`` 是一个 ``{name: {kind, model, base_url, api_key}}`` 映射，其中
-    ``base_url`` / ``api_key`` 已按「文件 > env > 默认」解析完成。
+    ``base_url`` / ``api_key`` 已按「文件 > env > 默认」解析完成。**只含本文件拥有的
+    源**（现在是 ``cheap_api`` 那一档）；桌面额度源由 :func:`plobi.quota.gateway.fetch_sources`
+    在运行时派生，不在配置里登记。
     """
     path = config_path()
     file_cfg = _read_file(path)
@@ -220,6 +249,23 @@ def load() -> dict[str, Any]:
             env,
         )
 
+    # A quota.yaml that still declares desktop apps the way this file used to
+    # document them is not silently dropped — those names now come from the
+    # gateway, so say so and point at the knob that still works.
+    stale = sorted(
+        name
+        for name, scfg in raw_sources.items()
+        if name not in DEFAULT_SOURCES and isinstance(scfg, dict)
+        and str(scfg.get("kind") or "aigw") != "cheap_api"
+    )
+    if stale:
+        logger.warning(
+            "plobi quota: %s declared in %s are now derived from the gateway and "
+            "are ignored; use 'gateway.exclude' to drop one",
+            ", ".join(stale),
+            path,
+        )
+
     alert_threshold = file_cfg.get("alert_threshold", DEFAULT_ALERT_THRESHOLD)
     if not isinstance(alert_threshold, str) or not alert_threshold:
         alert_threshold = DEFAULT_ALERT_THRESHOLD
@@ -229,6 +275,7 @@ def load() -> dict[str, Any]:
         "fail_open": fail_open,
         "alert_threshold": alert_threshold,
         "sources": sources,
+        "gateway": gateway_settings(file_cfg),
     }
 
 

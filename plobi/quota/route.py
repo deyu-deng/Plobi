@@ -34,8 +34,12 @@ def resolve_l2_endpoint(pool: Optional[QuotaPool] = None) -> Optional[dict]:
     """Return ``{base_url, api_key, model}`` for the source the pool picks.
 
     ``None`` when no source is usable (caller degrades — never hard-block).
+
+    Takes a catalog read first (TTL-guarded, never raises) so a desktop app the
+    user just connected is spendable without restarting the process.
     """
     pool = pool or get_quota_pool()
+    pool.refresh_gateway()
     source = pool.resolve()
     if source is None:
         return None
@@ -107,6 +111,7 @@ class QuotaAwareCompleter:
         send = self._send or (
             lambda p, s: _default_send(p, s, timeout=self._timeout)
         )
+        pool.refresh_gateway()
 
         for _ in range(self._max_attempts):
             source = pool.resolve()

@@ -54,14 +54,18 @@ def _pool(**healths) -> QuotaPool:
 # ── registry ─────────────────────────────────────────────────────────────────
 
 
-def test_default_sources_are_three():
-    assert set(DEFAULT_SOURCES) == {"zhipu-air", "antigravity", "workbuddy"}
-    assert DEFAULT_SOURCES["zhipu-air"]["kind"] == "cheap_api"
-    assert DEFAULT_SOURCES["antigravity"]["kind"] == "aigw"
-    assert DEFAULT_SOURCES["workbuddy"]["kind"] == "aigw"
+def test_config_owns_no_desktop_quota_sources():
+    """裁定 46: 桌面额度源名单的唯一真源是网关，配置里不许再存一份硬编副本。
+
+    这条是判据而不是快照——将来加第三个 ``cheap_api`` 源不会弄红它，而任何人把
+    ``kind: aigw`` 写回 ``DEFAULT_SOURCES``（也就是把第二份清单搬回来）会当场红。
+    """
+    assert DEFAULT_SOURCES  # 便宜档仍归本配置管
+    assert {cfg["kind"] for cfg in DEFAULT_SOURCES.values()} == {"cheap_api"}
+    assert set(DEFAULT_SOURCES) == set(DEFAULT_ORDER)
 
 
-def test_build_sources_three_sources():
+def test_build_sources_dispatches_by_kind():
     cfg = {
         "sources": {
             "zhipu-air": {"kind": "cheap_api", "model": "glm-4-air", "base_url": "u", "api_key": "k"},
@@ -70,7 +74,6 @@ def test_build_sources_three_sources():
         }
     }
     sources = build_sources(cfg)
-    assert set(sources) == {"zhipu-air", "antigravity", "workbuddy"}
     assert isinstance(sources["zhipu-air"], CheapApiSource)
     assert isinstance(sources["antigravity"], AigwSource)
     assert isinstance(sources["workbuddy"], AigwSource)
