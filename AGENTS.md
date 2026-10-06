@@ -89,9 +89,6 @@ conservative at the waist.
   message role alternation (never two same-role messages in a row; never a
   synthetic user message injected mid-loop), and a system prompt that is
   byte-stable for the life of a conversation.
-- **Contributor credit preserved.** Salvage external work by cherry-picking
-  (rebase-merge) so authorship survives in git history; don't reimplement from
-  scratch when you can build on top.
 
 ### What we don't want (rejected even when well-built)
 
@@ -153,7 +150,7 @@ doubt, leave it open for a human). They are distilled from real closes.
   default profile was closed because coupling profiles together is exactly what
   the design prevented (the copy-at-creation `--clone` path already covered the
   legitimate "start from my default" case). On 2026-09-28 the owner ruled
-  otherwise — see `Docs/ARCH-RULINGS_2026-09-08.md` **裁定 42**: an L2 project
+  otherwise — see `Docs/rulings/architecture-rulings.md` **裁定 42**: an L2 project
   分身 is demoted to a project *record* (slug, real disk path, Mind subtree,
   role/category, archive marker, plus at most three per-project overrides:
   identity fragment, model, secret), while skills, `config.yaml`, memory ledgers,
@@ -218,17 +215,18 @@ Each rung adds more permanent surface than the one above. Choose the highest
    Examples of correct core tools: terminal, read_file, web_search,
    browser_navigate.
 
-When 3+ open PRs try to integrate the same *category* of thing (memory
-backends, providers, notifiers), don't merge them one at a time — design an
-ABC + orchestrator, wrap the existing built-in as the first provider, and turn
-the competing PRs into plugins against that interface.
-
 ## Development Environment
 
 ```bash
-# Prefer .venv; fall back to venv if that's what your checkout has.
-source .venv/bin/activate   # or: source venv/bin/activate
+# POSIX (macOS/Linux):
+source .venv/bin/activate          # or: source venv/bin/activate
+# Windows —— 2026-10-03 起正主机就是这台，别照抄上面的形式：
+.venv\Scripts\activate
+.venv\Scripts\python.exe -m pytest <files> --basetemp=<仓库外目录>
 ```
+`scripts/run_tests.sh` 两种布局都探（`bin/python` 与 `Scripts/python.exe`）。
+这台机器跑 POSIX 类测试会成片红（chmod / `/opt` / HOME / worktree），**动手前先取自己的基线**，
+基线与用法见 `Docs/runbooks/environment.md`「这台 Windows 的测试基线」+ `scripts/plobi/check_test_baseline.py`（文件级红名单，只认新增红）。
 
 `scripts/run_tests.sh` probes `.venv` first, then `venv`, then
 `$HOME/.plobi/plobi-agent/venv` (for worktrees that share a venv with the
@@ -242,10 +240,10 @@ entry points you'll actually edit.
 
 ```
 plobi-agent/
-├── run_agent.py          # AIAgent class — core conversation loop (~12k LOC)
+├── run_agent.py          # AIAgent class — core conversation loop (6.1k LOC, 2026-10-06 实测)
 ├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
 ├── toolsets.py           # Toolset definitions, _PLOBI_CORE_TOOLS list
-├── cli.py                # PlobiCLI class — interactive CLI orchestrator (~11k LOC)
+├── cli.py                # PlobiCLI class — interactive CLI orchestrator (16.3k LOC, 2026-10-06 实测)
 ├── plobi_state.py       # SessionDB — SQLite session store (FTS5 search)
 ├── plobi_constants.py   # get_plobi_home(), display_plobi_home() — profile-aware paths
 ├── plobi_logging.py     # setup_logging() — agent.log / errors.log / gateway.log (profile-aware)
@@ -255,10 +253,11 @@ plobi-agent/
 ├── tools/                # Tool implementations — auto-discovered via tools/registry.py
 │   └── environments/     # Terminal backends (local, docker, ssh, modal, daytona, singularity)
 ├── gateway/              # Messaging gateway — run.py + session.py + platforms/
-│   ├── platforms/        # Adapter per platform (telegram, discord, slack, whatsapp,
-│   │                     #   homeassistant, signal, matrix, mattermost, email, sms,
-│   │                     #   dingtalk, wecom, weixin, feishu, qqbot, bluebubbles,
-│   │                     #   yuanbao, webhook, api_server, ...). See ADDING_A_PLATFORM.md.
+│   ├── platforms/        # 只剩少数适配器（signal, weixin, whatsapp_cloud, yuanbao,
+│   │                     #   bluebubbles, qqbot/, webhook, api_server）。telegram / discord /
+│   │                     #   slack / dingtalk / feishu / matrix 等大部分平台适配器现在在
+│   │                     #   plugins/platforms/<name>/（2026-10-06 实测 20 个目录）。
+│   │                     #   加平台手册在 gateway/platforms/ADDING_A_PLATFORM.md（不在仓根）。
 │   └── builtin_hooks/    # Extension point for always-registered gateway hooks (none shipped)
 ├── plugins/              # Plugin system (see "Plugins" section below)
 │   ├── memory/           # Memory-provider plugins (honcho, mem0, supermemory, ...)
@@ -279,7 +278,7 @@ plobi-agent/
 ├── cron/                 # Scheduler — jobs.py, scheduler.py
 ├── scripts/              # run_tests.sh, release.py, auxiliary scripts
 ├── website/              # Docusaurus docs site
-└── tests/                # Pytest suite (~17k tests across ~900 files as of May 2026)
+└── tests/                # Pytest suite (2078 test files, 2026-10-06 实测；条数未重测，别引用旧数)
 ```
 
 **User config:** `~/.plobi/config.yaml` (settings), `~/.plobi/.env` (API keys only).
@@ -588,8 +587,6 @@ reinforced after the Mini Shai-Hulud worm campaign (May 2026).
 3. Never commit a bare `>=X.Y.Z` without a ceiling — CI and reviewers will reject it.
 4. Run `uv lock` to regenerate `uv.lock` with hashes.
 
-Reference: #2810 (bounds pass), #9801 (SHA pinning + audit CI).
-
 ### Never write an identifier from memory
 
 Any 40-char commit SHA, package digest, or version literal must be **produced by a
@@ -745,10 +742,8 @@ plobi_cli/skin_engine.py    # SkinConfig dataclass, built-in skins, YAML loader
 
 ### Built-in skins
 
-- `default` — Classic Plobi gold/kawaii (the current look)
-- `ares` — Crimson/bronze war-god theme with custom spinner wings
-- `mono` — Clean grayscale monochrome
-- `slate` — Cool blue developer-focused theme
+`_BUILTIN_SKINS` 实测 9 个（2026-10-06）：`default`（现在这套金色）、`ares`、`mono`、`slate`、
+`daylight`、`warm-lightmode`、`poseidon`、`sisyphus`、`charizard`。名单以 `plobi_cli/skin_engine.py` 为准。
 
 ### Adding a built-in skin
 
@@ -905,10 +900,9 @@ Full authoring guide: `website/docs/developer-guide/model-provider-plugin.md`.
 pattern (ABC + orchestrator + per-plugin directory). Context engines
 plug into `agent/context_engine.py`; image-gen providers into
 `agent/image_gen_provider.py`. Reference / docs-companion plugins
-(`example-dashboard`, `strike-freedom-cockpit`, `plugin-llm-example`,
-`plugin-llm-async-example`) live in the
-[`hermes-example-plugins`](https://github.com/NousResearch/hermes-example-plugins)
-companion repo, not in this tree.
+(`example-dashboard`, `plugin-llm-example`,
+`plugin-llm-async-example`) are not in this tree. 上游 companion repo 的具名指针已按
+R-043 去上游指向的要求清掉，不要再往本仓补上游 URL。
 
 ---
 
@@ -985,13 +979,6 @@ violate them.
    of `grep`. Gate to a narrower set only when the dependency is
    genuinely platform-bound.
 
-4. **`author` credits the human contributor first.** For external
-   contributions, the contributor's real name + GitHub handle goes
-   first; "Plobi Agent" is the secondary collaborator. If the
-   contributor's commit shows "Plobi Agent" as author (because they
-   used Plobi to draft the skill), replace it with their actual name
-   — credit the human, not the tool.
-
 5. **SKILL.md body uses the modern section order.** `# <Skill> Skill`
    title, 2-3 sentence intro stating what it does and doesn't do,
    `## When to Use`, `## Prerequisites`, `## How to Run`,
@@ -1011,15 +998,9 @@ violate them.
    stdlib + pytest + `unittest.mock`. No live network calls. Run via
    `scripts/run_tests.sh tests/skills/test_<skill>_skill.py -q`.
 
-8. **`.env.example` additions are isolated to a clearly delimited
-   block.** Don't touch the surrounding file — contributor-supplied
-   `.env.example` versions are usually stale and edits outside the
-   skill's own block must be dropped during salvage.
-
-The full salvage / modernization checklist for external skill PRs
-lives in the `plobi-agent-dev` skill at
-`references/new-skill-pr-salvage.md` — load it before polishing
-contributor skill PRs.
+（2026-10-06 实测：本仓**没有** `plobi-agent-dev` 这个技能，也没有
+`references/new-skill-pr-salvage.md`——那是上游时期的指针。本仓不收外部贡献者 PR，
+salvage 流程整条不适用。）
 
 ---
 
@@ -1030,11 +1011,10 @@ Each platform's adapter picks a base toolset (e.g. Telegram uses
 `"messaging"`); `_PLOBI_CORE_TOOLS` is the default bundle most
 platforms inherit from.
 
-Current toolset keys: `browser`, `clarify`, `code_execution`, `cronjob`,
-`debugging`, `delegation`, `discord`, `discord_admin`, `feishu_doc`,
-`feishu_drive`, `file`, `homeassistant`, `image_gen`, `kanban`, `memory`,
-`messaging`, `moa`, `rl`, `safe`, `search`, `session_search`, `skills`,
-`spotify`, `terminal`, `todo`, `tts`, `video`, `vision`, `web`, `yuanbao`.
+**别在这份文档里抄 toolset 名单**——2026-10-06 实测 `TOOLSETS` 有 57 个键，而下面这段旧名单里
+的 `messaging` / `moa` / `rl` 三个键在 `toolsets.py` 里**已经不存在**。平台维度的键现在是
+`plobi-*` 形状（Telegram 是 `plobi-telegram`，见 `toolsets.py:447`），所以"Telegram 用 messaging"
+这句也是错的。现行名单以 `toolsets.py` 为准。
 
 Enable/disable per platform via `plobi tools` (the curses UI) or the
 `tools.<platform>.enabled` / `tools.<platform>.disabled` lists in
@@ -1069,6 +1049,8 @@ Key config knobs (under `delegation:` in `config.yaml`):
 `max_concurrent_children`, `max_spawn_depth`, `child_timeout_seconds`,
 `orchestrator_enabled`, `subagent_auto_approve`, `inherit_mcp_toolsets`,
 `max_iterations`.
+`delegation.max_spawn_depth` **默认是 1**（`plobi_cli/config.py:2253`），不是 2：
+默认形态就是平的（L1→L2），要 orchestrator 再往下生必须显式配。
 
 Durability rule: background `delegate_task` is detached from the current
 turn but still process-local. For work that must survive process restart, use
@@ -1258,7 +1240,7 @@ in config.yaml (or `PLOBI_BACKGROUND_NOTIFICATIONS` env var):
 Plobi supports **profiles** — multiple fully isolated instances, each with its own
 `PLOBI_HOME` directory (config, API keys, memory, sessions, skills, gateway, etc.).
 
-**Scope note (2026-09-28, `Docs/ARCH-RULINGS_2026-09-08.md` 裁定 42):** everything below
+**Scope note (2026-09-28, `Docs/rulings/architecture-rulings.md` 裁定 42):** everything below
 still governs profiles as a *user-facing* feature and governs profile-safe code. What the
 ruling removed is **one-profile-per-L2-project**: a project 分身 is now a record in
 `$PLOBI_HOME/plobi/projects.yaml` plus at most three overrides (identity fragment, model,
@@ -1313,8 +1295,10 @@ automatically scope to the active profile.
    `disconnect()`/`stop()`. This prevents two profiles from using the same credential.
    See `plugins/platforms/irc/adapter.py` for the canonical pattern.
 
-6. **Profile operations are HOME-anchored, not PLOBI_HOME-anchored** — `_get_profiles_root()`
-   returns `Path.home() / ".plobi" / "profiles"`, NOT `get_plobi_home() / "profiles"`.
+6. **Profile operations anchor on the platform-native Plobi root**, not on `PLOBI_HOME` —
+   `_get_profiles_root()` 走 `plobi_cli/profiles.py:274` → `_get_default_plobi_home()` →
+   `plobi_constants.py:_get_platform_default_plobi_home()`：**Windows 是 `%LOCALAPPDATA%\plobi`**，
+   POSIX 才是 `~/.plobi`。
    This is intentional — it lets `plobi -p coder profile list` see all profiles regardless
    of which one is active.
 
@@ -1351,14 +1335,6 @@ When an agent is running, messages pass through two sequential guards:
 while the agent is blocked (e.g. approval prompts) MUST bypass BOTH
 guards and be dispatched inline, not via `_process_message_background()`
 (which races session lifecycle).
-
-### Squash merges from stale branches silently revert recent fixes
-Before squash-merging a PR, ensure the branch is up to date with `main`
-(`git fetch github main && git reset --hard github/main` in the worktree,
-then re-apply the PR's commits). A stale branch's version of an unrelated
-file will silently overwrite recent fixes on main when squashed. Verify
-with `git diff HEAD~1..HEAD` after merging — unexpected deletions are a
-red flag.
 
 ### Don't wire in dead code without E2E validation
 Unused code that was never shipped was dead for a reason. Before wiring an
@@ -1487,8 +1463,10 @@ them into invariants before re-requesting review.
 2. **Every doc must be registered.** Anything added, renamed, or moved gets a
    row in `Docs/README.md`（唯一索引）。`scripts/check-docs.sh` + `scripts/check_arch_gates.py`
    （ARCH-UI-MASTER §3.5：禁复活 LeftRail/service.py）仍是**可选**闸门：
-   `python scripts/install_arch_hooks.py` 才会装进 `.git/hooks/`（当前**未安装**，
-   所以别把 hook 挡住当成别人的错）。若闸门挡住你：merge 进已有文件或修架构闸门，
+   `python scripts/install_arch_hooks.py` 才会装进 `.git/hooks/`（**2026-10-06 实测这台三仓钩子已装**：
+   `.git/hooks/` 里有 `pre-commit`/`post-commit`/`post-checkout`）。但注意 `check_arch_gates.py` 在
+   `apps/desktop/node_modules/.package-lock.json` 缺位时只打 WARNING 就 `return 0`——前端那道闸是**空转**的，
+   别把「commit 过了」读成「闸门绿了」（R-053）。若闸门挡住你：merge 进已有文件或修架构闸门，
    不要 `--no-verify` 绕过。GitHub Actions `arch-gates.yml` 跑同一套闸门。
 3. **Outdated docs are absorbed, then deleted.** Before removing an outdated doc,
    fold any still-useful content (checklists, glossaries, requirements) into the
