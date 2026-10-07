@@ -40,4 +40,9 @@ if [ ! -f "$PY" ]; then
   PY="python3"
 fi
 
+# 提交范围 = 认领范围（裁定 77）：暂存文件落在别人「在派」认领族内即红。
+# 真源是 ../Docs/reference/agent-register.md，登记册不在场（独立 clone）自己会跳过，不拦人。
+# 放在架构闸门之前——它只读一个小文件，秒级都不到，越界的事没必要等两道闸门跑完才知道。
+"$PY" "$ROOT/scripts/check_claim_scope.py"
+
 "$PY" "$ROOT/scripts/check_arch_gates.py"
