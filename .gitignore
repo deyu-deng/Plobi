@@ -165,9 +165,6 @@ backup/
 # Desktop compiled JS artifacts (bare tsc output next to .ts/.tsx sources; keep out of git)
 apps/desktop/src/**/*.js
 
-# nested Mind repo (independent git, never commit into Code)
-/mind/
-
 # Leaked Windows env-var literal directory (never commit system caches)
 %SystemDrive%/
 

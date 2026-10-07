@@ -99,6 +99,9 @@ echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; clean env; HOME=$SCRATCH_HOME)"
 
 cd "$REPO_ROOT"
 
+# MIND_ROOT is a location pointer, not a credential: a few tests reuse the
+# brain's own gate script (Loom/scripts/verifier.py), and the vault may live
+# outside the repo. Stripped, those tests skip and still report green.
 env -i \
   PATH="$PATH" \
   HOME="$SCRATCH_HOME" \
@@ -109,6 +112,7 @@ env -i \
   LC_ALL=C.UTF-8 \
   PYTHONHASHSEED=0 \
   PYTHONDONTWRITEBYTECODE=1 \
+  ${MIND_ROOT:+MIND_ROOT="$MIND_ROOT"} \
   ${PLOBI_RUN_SLOW_PET_TESTS:+PLOBI_RUN_SLOW_PET_TESTS="$PLOBI_RUN_SLOW_PET_TESTS"} \
   ${EXTRA_PYTHONPATH:+PYTHONPATH="$EXTRA_PYTHONPATH"} \
   ${EXTRA_PYTEST_PLUGINS:+PYTEST_PLUGINS="$EXTRA_PYTEST_PLUGINS"} \

@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -109,7 +110,9 @@ def _resolve_root() -> Path:
     root = _shared_resolve()
     if root is not None:
         return root
-    return Path(os.environ.get("MIND_ROOT") or "mind-root-not-configured")
+    # Absolute and non-existent: every caller gates on ``.is_dir()``, and a
+    # relative placeholder would answer against whatever cwd the host has.
+    return Path(tempfile.gettempdir()) / "plobi-mind-root-not-configured"
 
 
 def _is_safe(target: Path, root: Path) -> bool:

@@ -46,8 +46,9 @@ def resolve_root(explicit: Path | str | None = None) -> Path | None:
     """Resolve the vault root, or ``None`` when it is not configured.
 
     Order: explicit argument → ``MIND_ROOT`` → sibling ``mind/`` under the
-    repository root (the official brain now lives at ``<repo>/mind``).
-    Never guesses a drive letter.
+    repository root → legacy ``Mind/`` beside the repository root. A layout
+    that keeps the vault in the data directory is addressed by ``MIND_ROOT``,
+    never by guessing where the repo happens to sit.
     """
     if explicit:
         candidate = Path(explicit)
@@ -58,9 +59,9 @@ def resolve_root(explicit: Path | str | None = None) -> Path | None:
         candidate = Path(env)
         return candidate if candidate.is_dir() else None
 
-    # <workspace>/Code/plobi/mind/paths.py -> <workspace>/Code/mind
-    # (the official brain moved under the repo; legacy <workspace>/Mind kept
-    #  as a fallback so pre-migration layouts still resolve)
+    # In-repo layouts: <repo>/mind, then the pre-migration <workspace>/Mind.
+    # An unset MIND_ROOT with neither present means "no brain configured here"
+    # — callers get ``None``, not a guessed path.
     sibling = Path(__file__).resolve().parents[2] / "mind"
     if (sibling / "AGENTS.md").is_file():
         return sibling
