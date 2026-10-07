@@ -152,13 +152,12 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
     for name in SHARED_SKILLS:
         assert name in index
 
-    # The clone of the *config* layer is untouched by this slice (2b owns it).
-    # spawn appends the L2 identity segment after the cloned persona, so the
-    # contract is "the persona survived the clone", not byte-equality.
+    # 裁定 42 第二刀：config / .env / SOUL 这一层也不再是复印件（§42.2 只留三个
+    # 按项目不同的覆盖：人设片段、模型、密钥）。
     soul = (profile_dir / "SOUL.md").read_text(encoding="utf-8")
-    assert soul.startswith("shared persona\n")
     assert "PLOBI_L2_IDENTITY" in soul
-    assert "TEST_KEY=1" in (profile_dir / ".env").read_text(encoding="utf-8")
+    assert "shared persona" not in soul  # 顶层那份没有跟着搬进来
+    assert "TEST_KEY=1" not in (profile_dir / ".env").read_text(encoding="utf-8")
 
 
 def test_shared_root_is_written_into_the_profile_config(l2_home, in_profile):
@@ -289,3 +288,72 @@ def test_shared_skills_are_read_only_to_the_profile_curator(l2_home, in_profile)
     from tools import skill_usage
 
     assert skill_usage.is_external_skill_path(shared_md) is False
+
+
+# --------------------------------------------------------------------------- #
+# 裁定 42 第二刀：config.yaml / .env 不再是复印件，密钥只以覆盖的形状存在
+# --------------------------------------------------------------------------- #
+
+
+def _md5(path: Path) -> str:
+    import hashlib
+
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def _assignment_lines(path: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.strip().startswith("#")
+    ]
+
+
+def test_spawn_lands_no_env_or_config_copy(l2_home):
+    """新建的项目分身上不许有根 ``.env`` / 根 ``config.yaml`` 的副本。
+
+    断的是内容，不是「文件在不在」：``create_profile`` 本来就会种一份只有注释
+    表头的 ``.env``，那一句「有 .env」既测不出复印件也测不出覆盖丢了。
+    """
+    reg, _ = _registry_with_l2(l2_home)
+    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+
+    profile_env = profile_dir / ".env"
+    assert _md5(profile_env) != _md5(l2_home / ".env")
+    assert _assignment_lines(profile_env) == []
+
+    profile_cfg = profile_dir / "config.yaml"
+    assert _md5(profile_cfg) != _md5(l2_home / "config.yaml")
+    # 顶层那份 model 节没有跟进来（这一格要么是空的，要么是注册表声明的覆盖）。
+    assert "test-model" not in profile_cfg.read_text(encoding="utf-8")
+
+
+def test_secret_override_never_lands_on_disk(l2_home):
+    """密钥覆盖读得到、注得进环境，但分身的家里一个字都不留。"""
+    from dataclasses import replace as _replace
+
+    from plobi.agents.registry import apply_secret_overrides
+
+    reg, _ = _registry_with_l2(l2_home)
+    reg.upsert(
+        _replace(
+            reg.get("demo"),
+            secret_overrides={"GLM_API_KEY": "sk-project-only"},
+        )
+    )
+    reg.save()
+
+    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    needle = b"sk-project-only"
+    leftovers = [
+        str(path)
+        for path in profile_dir.rglob("*")
+        if path.is_file() and needle in path.read_bytes()
+    ]
+    assert leftovers == []
+
+    # 记录里带着它，运行时注进环境——两件事都成立才算「覆盖」而不是复印件。
+    assert reg.get("demo").secret_overrides == {"GLM_API_KEY": "sk-project-only"}
+    env: dict[str, str] = {}
+    apply_secret_overrides(env, reg.get("demo"))
+    assert env == {"GLM_API_KEY": "sk-project-only"}

@@ -613,6 +613,20 @@ def _cron_mirror_delivery_enabled(job: dict, cfg: Optional[dict] = None) -> bool
         return False
 
 
+def _resolve_cron_skip_memory(job: dict) -> bool:
+    """这一条 cron 任务要不要关掉记忆（默认关，和以前写死的值一样）。
+
+    裁定 42 §42.3：「消化要有独立运行上下文、不污染对话记忆」原本打算用 profile
+    承载；profile 不再是分身单位之后，这条需求只能落在这一行——所以它必须是**按
+    job 读**的，而不是一个字面量。默认值保持 ``True``（系统提示词会写坏用户画像
+    这条理由没变），只有 job 自己显式写了布尔值才翻。
+    """
+    per_job = job.get("skip_memory")
+    if isinstance(per_job, bool):
+        return per_job
+    return True
+
+
 def _target_matches_origin(origin: dict, platform_name: str, chat_id: str,
                            thread_id: Optional[str]) -> bool:
     """True when a delivery target is the job's own origin conversation.
@@ -3070,7 +3084,7 @@ def run_job(
             # Without a workdir, keep cwd context discovery disabled.
             skip_context_files=not bool(_job_workdir),
             load_soul_identity=True,
-            skip_memory=True,  # Cron system prompts would corrupt user representations
+            skip_memory=_resolve_cron_skip_memory(job),
             platform="cron",
             session_id=_cron_session_id,
             session_db=_session_db,

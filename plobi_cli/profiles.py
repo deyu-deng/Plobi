@@ -141,6 +141,39 @@ def has_bundled_skills_opt_out(profile_dir: Path) -> bool:
         return False
 
 
+# 裁定 42 §42.4：一个项目分身的「家」被收走复印件之后，存量目录**只标失效、绝不
+# 删除**（要真清理得用户单独点头）。这一枚章就是那个失效标记：目录仍在盘上，
+# ``plobi profile list`` 把它报成退役，好让人知道那不是还在用的分身。
+PROFILE_RETIREMENT_MARKER = ".retired"
+
+
+def mark_profile_retired(profile_dir: Path | str, *, reason: str = "") -> bool:
+    """给一个 profile 目录盖退役章；已经盖过则原样不动（返回是否新写）。
+
+    只写这一个标记文件——不动 config.yaml、不搬目录、不删任何东西（§42.4）。
+    """
+    directory = Path(profile_dir)
+    marker = directory / PROFILE_RETIREMENT_MARKER
+    if marker.exists():
+        return False
+    directory.mkdir(parents=True, exist_ok=True)
+    marker.write_text(
+        "This profile is retired: it is kept on disk, nothing here was deleted.\n"
+        f"Reason: {reason or '(none given)'}\n"
+        "Delete this file to bring the profile back into use.\n",
+        encoding="utf-8",
+    )
+    return True
+
+
+def is_profile_retired(profile_dir: Path | str) -> bool:
+    """这个 profile 目录被标过退役吗（判据只有这一枚标记文件）。"""
+    try:
+        return (Path(profile_dir) / PROFILE_RETIREMENT_MARKER).exists()
+    except OSError:
+        return False
+
+
 def _clone_all_copytree_ignore(source_dir: Path):
     """Exclude infrastructure artifacts when cloning a profile via --clone-all.
 
@@ -649,6 +682,8 @@ class ProfileInfo:
     # surfaces a "review" badge in this case so the user can edit or
     # accept.
     description_auto: bool = False
+    # 裁定 42 §42.4：目录还在盘上，但已经被标成退役（见 PROFILE_RETIREMENT_MARKER）。
+    retired: bool = False
 
 
 def _read_distribution_meta(profile_dir: Path) -> tuple:
@@ -940,6 +975,7 @@ def list_profiles() -> List[ProfileInfo]:
                 distribution_source=dist_source,
                 description=meta.get("description", ""),
                 description_auto=meta.get("description_auto", False),
+                retired=is_profile_retired(entry),
             ))
 
     return profiles
