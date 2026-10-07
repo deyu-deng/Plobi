@@ -51,6 +51,9 @@ class WorkbuddyHybridProvider(Provider):
         gui_cfg.setdefault("models", list(self.served_models))
 
         self._cli = WorkbuddyCliProvider(cli_cfg, http)
+        # The hybrid owns the public id space, so the inner CLI must discover models
+        # under `workbuddy/...`, not its own registry key `workbuddy_cli/...`.
+        self._cli.model_prefix = self.name
         self._gui = WorkbuddyGuiProvider(gui_cfg, http) if gui_cfg else None
         # acc.id -> owning sub-provider (filled in discover_accounts)
         self._owner: dict[str, Provider] = {}
@@ -83,6 +86,24 @@ class WorkbuddyHybridProvider(Provider):
         if owner is None:
             raise UpstreamError(503, f"{self.name}: unknown account {acc.id}")
         await owner.ensure_fresh(acc)
+
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        """Forward the catalog read to the owning sub-provider and copy it up.
+
+        The Registry reads ``served_models`` off *this* object, so a successful
+        discovery by the inner CLI has to be lifted here — otherwise the
+        recommended ``workbuddy`` route would keep answering from its config seed
+        while only the pure-CLI provider went out to look.
+        """
+        owner = self._owner.get(acc.id)
+        if owner is None:
+            return None
+        short = await owner.refresh_models(acc)
+        if not short:
+            return None
+        self.served_models = tuple(f"{self.name}/{m}" for m in short)
+        self.models_refreshed = True
+        return short
 
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         owner = self._owner.get(acc.id)

@@ -23,6 +23,7 @@ gets full context each turn (correct for a gateway, which is itself stateless).
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import shutil
@@ -32,6 +33,19 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from .base import Account, Capabilities, Credential, Provider, UpstreamError
+
+# Phrases a CLI prints when it has no session. Deliberately narrow: matching only
+# what real CLIs emit, so an odd model answer that happens to contain the word
+# "login" is not mistaken for an auth failure.
+_NOT_SIGNED_IN = re.compile(
+    r"authentication required|please use /login|please run .?/login|not logged in"
+    r"|sign in to your account|please (?:log|sign) in",
+    re.IGNORECASE,
+)
+
+# The model list a CLI prints in its own --help (CodeBuddy Code wording).
+_SUPPORTED_MODELS = re.compile(r"Currently supported:\s*\(([^)]*)\)", re.IGNORECASE)
+_HELP_TIMEOUT = 20.0
 
 
 def _as_text(content) -> str:
@@ -87,6 +101,11 @@ class CliProvider(Provider):
     timeout: float = 120.0
     cwd: str | None = None
     model_map: dict[str, str] = {}
+    #: Public id prefix for discovered models. A composed provider (WorkbuddyHybrid)
+    #: sets this to its own name so this class's registry key never leaks into the
+    #: model ids clients see. Empty = fall back to ``self.name``.
+    model_prefix: str = ""
+    models_refreshed: bool = False
 
     def __init__(self, config, http):
         super().__init__(config, http)
@@ -150,6 +169,61 @@ class CliProvider(Provider):
         # The CLI owns its own session/auth; nothing to refresh here.
         if not self.binary_path:
             raise UpstreamError(401, f"{self.name}: CLI binary missing", reauth=True)
+
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        """Read the CLI's own advertised catalog and replace our served list.
+
+        A seeded catalog rots on the first CLI upgrade — measured on this machine:
+        the WorkBuddy-embedded CLI advertises ``glm-5.0 / kimi-k2.5`` while the
+        standalone package 2.161.4 advertises an entirely different set
+        (``glm-5.3 / kimi-k3-1 / deepseek-v4-pro …``). Hand-copying that list into
+        config would be 裁定 46's second-copy problem moved one layer down, so the
+        catalog is re-read from the CLI's own ``--help``.
+
+        Follows the Provider contract set by AntigravityProvider.refresh_models:
+        return the **short** ids on success and replace ``served_models`` +
+        ``model_map`` here, or return ``None`` on any failure so the Registry keeps
+        the seed. Never raises — a model-list read must not break chat routing.
+        """
+        if not self.binary_path:
+            return None
+        argv = ([self.interpreter] if self.interpreter else []) + [self.binary_path, "--help"]
+        env = dict(os.environ)
+        env.update(self.env_extra)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                cwd=self.cwd,
+                env=env,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=_HELP_TIMEOUT)
+        except (OSError, ValueError) as exc:
+            logging.getLogger("aigw").warning(
+                "%s model refresh skipped: %s: %s", self.name, type(exc).__name__, exc
+            )
+            return None
+        match = _SUPPORTED_MODELS.search(_strip_ansi(stdout.decode(errors="replace")))
+        if not match:
+            return None
+        short = [n.strip() for n in match.group(1).split(",") if n.strip()]
+        if not short:
+            logging.getLogger("aigw").warning(
+                "%s model refresh returned an empty list; keeping seed", self.name
+            )
+            return None
+        # A composed provider (WorkbuddyHybrid) owns the public id space, so it sets
+        # model_prefix; without that the inner "workbuddy_cli" name would leak into
+        # the unified model ids and change what clients see.
+        prefix = self.model_prefix or self.name
+        self.served_models = tuple(f"{prefix}/{m}" for m in short)
+        self.model_map = {f"{prefix}/{m}": m for m in short}
+        self.models_refreshed = True
+        logging.getLogger("aigw").info(
+            "%s: live model catalog = %d model(s)", self.name, len(short)
+        )
+        return short
 
     # --- prompt / invocation --------------------------------------------
     def format_prompt(self, oai_req: dict) -> str:
@@ -242,7 +316,40 @@ class CliProvider(Provider):
         if proc.returncode != 0:
             err = (stderr or b"").decode(errors="replace").strip()[:500]
             raise UpstreamError(502, f"{self.name}: CLI exited {proc.returncode}: {err}")
-        return self.parse_response(stdout.decode(errors="replace"), oai_req)
+        text = stdout.decode(errors="replace")
+        self._assert_usable(text, (stderr or b"").decode(errors="replace"))
+        return self.parse_response(text, oai_req)
+
+    def _assert_usable(self, stdout_text: str, stderr_text: str) -> None:
+        """Refuse to turn a broken CLI run into a plausible-looking answer.
+
+        Measured on CodeBuddy Code: a signed-out CLI exits **0** and puts
+        "Authentication required. Please use /login …" on stderr (embedded build) or
+        on stdout (some paths) — so a returncode check alone lets it through, and the
+        gateway serves either the hint text or an empty string as a real completion.
+        That is the worst possible failure shape: upstream code cannot tell it apart
+        from a model that chose to say nothing.
+
+        Two rules, both honest about what we know:
+          * the run *mentions* being signed out -> reauth, so the scheduler marks the
+            account REAUTH instead of answering;
+          * the run succeeded but produced no text -> a failure too. An empty
+            completion is never a legitimate gateway answer for a chat channel.
+        """
+        combined = f"{stdout_text}\n{stderr_text}"
+        if _NOT_SIGNED_IN.search(combined):
+            raise UpstreamError(
+                401,
+                f"{self.name}: CLI is not signed in — run its login flow on this machine",
+                reauth=True,
+            )
+        if not stdout_text.strip():
+            raise UpstreamError(
+                502,
+                f"{self.name}: CLI exited 0 but printed nothing",
+                retryable=True,
+                cooldown=15.0,
+            )
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         try:
@@ -252,6 +359,8 @@ class CliProvider(Provider):
         cid = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         model = oai_req["model"]
         stdout = proc.stdout
+        collected: list[str] = []
+        stderr_text = ""
         try:
             assert stdout is not None
             while True:
@@ -265,13 +374,19 @@ class CliProvider(Provider):
                     break
                 text = _strip_ansi(line.decode(errors="replace"))
                 if text:
+                    collected.append(text)
                     yield _chunk(cid, model, text)
             # flush any trailing bytes emitted without a final newline
             rest = await stdout.read()
             if rest:
                 text = _strip_ansi(rest.decode(errors="replace"))
                 if text:
+                    collected.append(text)
                     yield _chunk(cid, model, text)
+            # Drain stderr before waiting: a CLI that complains loudly on stderr
+            # would otherwise fill the unread pipe buffer and block the child.
+            if proc.stderr is not None:
+                stderr_text = (await proc.stderr.read()).decode(errors="replace")
             try:
                 await asyncio.wait_for(proc.wait(), 5.0)
             except asyncio.TimeoutError:
@@ -286,4 +401,13 @@ class CliProvider(Provider):
                     with_proc = False
                 if with_proc:
                     await proc.wait()
+        if proc.returncode != 0:
+            raise UpstreamError(
+                502,
+                f"{self.name}: CLI exited {proc.returncode}: {stderr_text.strip()[:500]}",
+            )
+        # Same rule as the non-stream path: a signed-out or silent CLI run is a
+        # failure, not an answer. Raising here means the client gets an error
+        # instead of a clean finish on empty content.
+        self._assert_usable("".join(collected), stderr_text)
         yield _chunk(cid, model, None, finish="stop")
