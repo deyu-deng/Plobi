@@ -246,6 +246,11 @@ def test_run_uninstall_yes_keep_data_is_non_interactive(tmp_path, monkeypatch):
     monkeypatch.setattr(uninstall, "remove_wrapper_script", lambda: [])
     monkeypatch.setattr(uninstall, "remove_node_symlinks", lambda h: [])
     monkeypatch.setattr(uninstall, "_discover_named_profiles", lambda: [])
+    # Windows-only registry sweeps. These two would delete the REAL
+    # HKCU\Environment values (PLOBI_HOME / PLOBI_GIT_BASH_PATH) and edit the
+    # user's PATH — running this test file must never touch the user's env.
+    monkeypatch.setattr(uninstall, "remove_plobi_env_vars_windows", lambda: [])
+    monkeypatch.setattr(uninstall, "remove_path_from_windows_registry", lambda *_a, **_k: [])
     # Make input() blow up so a regression that reaches a prompt fails loudly.
     monkeypatch.setattr("builtins.input", lambda *a, **k: pytest.fail("prompted in --yes mode"))
 
@@ -280,6 +285,10 @@ def test_run_uninstall_yes_full_wipes_home(tmp_path, monkeypatch):
     monkeypatch.setattr(uninstall, "remove_wrapper_script", lambda: [])
     monkeypatch.setattr(uninstall, "remove_node_symlinks", lambda h: [])
     monkeypatch.setattr(uninstall, "_discover_named_profiles", lambda: [])
+    # Windows-only registry sweeps — same reason as above: a test run must
+    # never delete the real HKCU\Environment values or edit the user's PATH.
+    monkeypatch.setattr(uninstall, "remove_plobi_env_vars_windows", lambda: [])
+    monkeypatch.setattr(uninstall, "remove_path_from_windows_registry", lambda *_a, **_k: [])
     monkeypatch.setattr("builtins.input", lambda *a, **k: pytest.fail("prompted in --yes mode"))
 
     from plobi_cli import gui_uninstall as gu_mod
