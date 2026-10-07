@@ -55,25 +55,50 @@ def test_check_chatlog_stays_red_when_answered_wrongly(monkeypatch):
     assert row["color"] == D.RED
 
 
-def test_check_aigw_yellow_without_workbuddy(monkeypatch):
+def test_check_aigw_is_not_green_for_the_gateway_demo_channel(monkeypatch):
+    """这条钉死一个实测复现过的假绿：mock 通道也供 workbuddy/deepseek-chat。
+
+    旧实现按 id 前缀判渠道，于是零真渠道的网关被报成绿——正是 R-048 说的「把没接
+    画成好了」。判据必须是 provider 字段，跟 plobi.quota.gateway 派生用同一条。
+    """
     monkeypatch.setattr(
         D,
         "http_get_json",
-        lambda url, timeout=2.5, headers=None: (200, {"data": [{"id": "mock/echo"}]}),
+        lambda url, timeout=2.5, headers=None: (
+            200,
+            {"data": [{"id": "mock/echo", "provider": "mock"},
+                     {"id": "workbuddy/deepseek-chat", "provider": "mock"}]},
+        ),
     )
     row = D.check_aigw("http://127.0.0.1:8000/v1")
     assert row["color"] == D.YELLOW
-    assert "workbuddy" in row["detail"]
+    assert row["apps"] == []
+    assert "no quota app wired" in row["detail"]
 
 
-def test_check_aigw_green_with_workbuddy(monkeypatch):
+def test_check_aigw_green_only_when_a_real_provider_is_served(monkeypatch):
     monkeypatch.setattr(
         D,
         "http_get_json",
-        lambda url, timeout=2.5, headers=None: (200, {"data": [{"id": "workbuddy/deepseek-chat"}]}),
+        lambda url, timeout=2.5, headers=None: (
+            200,
+            {"data": [{"id": "mock/echo", "provider": "mock"},
+                     {"id": "workbuddy/glm-5.3", "provider": "workbuddy"}]},
+        ),
     )
     row = D.check_aigw("http://127.0.0.1:8000/v1")
     assert row["color"] == D.GREEN
+    assert row["apps"] == ["workbuddy"]
+
+
+def test_check_aigw_does_not_guess_a_channel_from_the_id(monkeypatch):
+    """没有 provider 字段的条目按「不是渠道」处理——宁可黄，不许靠 id 前缀猜绿。"""
+    monkeypatch.setattr(
+        D,
+        "http_get_json",
+        lambda url, timeout=2.5, headers=None: (200, {"data": [{"id": "workbuddy/x"}]}),
+    )
+    assert D.check_aigw("http://127.0.0.1:8000/v1")["color"] == D.YELLOW
 
 
 def test_check_aigw_deferred_when_no_listener(monkeypatch):

@@ -421,6 +421,33 @@ def check_chatlog(base_url: str = DEFAULT_CHATLOG_URL) -> dict[str, Any]:
     }
 
 
+def _aigw_quota_apps(rows: list[Any]) -> tuple[list[str], list[str]]:
+    """Split a gateway catalog into (model ids, real quota apps).
+
+    Grouping is by the ``provider`` field, **not** by the ``<app>/`` id prefix.
+    This is not a style choice: the gateway's mock channel serves
+    ``workbuddy/deepseek-chat`` (see ``aigw/config.yaml``), so prefix matching
+    reports a demo channel as a real one and the row goes green with zero actual
+    quota. Same rule ``plobi.quota.gateway`` derives by.
+    """
+    ids: list[str] = []
+    apps: set[str] = set()
+    for row in rows:
+        if isinstance(row, str):
+            ids.append(row)
+            continue
+        if not isinstance(row, dict):
+            continue
+        model_id = str(row.get("id") or "")
+        if not model_id:
+            continue
+        ids.append(model_id)
+        provider = str(row.get("provider") or "").strip().lower()
+        if provider and provider != "mock":
+            apps.add(provider)
+    return ids, sorted(apps)
+
+
 def check_aigw(base_url: str | None = None) -> dict[str, Any]:
     base = (base_url or aigw_base_from_env_or_config()).rstrip("/")
     models_url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
@@ -429,7 +456,7 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
         headers={"Authorization": f"Bearer {aigw_api_key()}"},
     )
     if code is None:
-        # R-047: no listener at all. Deferral covers "not started yet"; an
+        # No listener at all. Deferral covers "not started yet"; an
         # answered-but-wrong request below is still a real fault.
         return deferred_row("aigw", f"{models_url} unreachable (no listener)", url=models_url)
     if code != 200 or payload is None:
@@ -439,30 +466,31 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
             "detail": f"{models_url} HTTP {code}",
             "url": models_url,
         }
-    names: list[str] = []
     if isinstance(payload, dict):
-        data = payload.get("data") or payload.get("models") or []
-        if isinstance(data, list):
-            for row in data:
-                if isinstance(row, dict) and row.get("id"):
-                    names.append(str(row["id"]))
-                elif isinstance(row, str):
-                    names.append(row)
-    has_workbuddy = any(name.startswith("workbuddy/") for name in names)
-    color = GREEN if has_workbuddy else YELLOW
-    detail = f"{models_url} {len(names)} models"
-    if has_workbuddy:
-        detail += "; workbuddy/* present"
-    elif names:
-        detail += "; no workbuddy/* yet (mock ok for wiring)"
+        rows = payload.get("data") or payload.get("models") or []
+    elif isinstance(payload, list):
+        rows = payload
     else:
-        detail += "; empty catalog"
+        rows = []
+    ids, apps = _aigw_quota_apps(rows if isinstance(rows, list) else [])
+    if apps:
+        verdict = f"quota app(s): {', '.join(apps)}"
+        color = GREEN
+    elif ids:
+        # Up and answering, but everything it serves is the gateway's own demo
+        # channel. Not green (nothing is spendable), not red (nothing is broken).
+        verdict = "no quota app wired (catalog is only the gateway demo channel)"
+        color = YELLOW
+    else:
+        verdict = "empty catalog"
+        color = YELLOW
     return {
         "id": "aigw",
         "color": color,
-        "detail": detail,
+        "detail": f"{models_url} {len(ids)} models; {verdict}",
         "url": models_url,
-        "models": names[:20],
+        "models": ids[:20],
+        "apps": apps,
     }
 
 
