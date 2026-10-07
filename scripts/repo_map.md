@@ -9,7 +9,7 @@
 <!-- BEGIN meta -->
 ## 口径与盲区自陈
 
-- 块 = 仓根带 `__init__.py` 的包根 + 仓根不带它的散 `.py`，各算一块；包根 11 + 散模块 17，撞名合并后 27 块。模块节点 2805，模块级边 7571。
+- 块 = 仓根带 `__init__.py` 的包根 + 仓根不带它的散 `.py`，各算一块；包根 11 + 散模块 17，撞名合并后 27 块。模块节点 2805，模块级边 7572。
   散模块的**出边**由本生成器跑一层 ast 补（grimp 只扫包，扫不到它们当引用方）；入边取 grimp 视图。
 - `入 / 出` = 指向本块 / 本块指出的边数（含块内部）；`内` = 其中两端同块的那部分。
   热点按含块内的总边数排；**只有一个文件的块不列热点**（概览行就是它的全部）。
@@ -26,7 +26,7 @@
 
 | 块 | 入 | 出 | 内 | 主要指向（块，边数） |
 |---|---:|---:|---:|---|
-| plobi_cli | 1995 | 933 | 544 | agent 132, tools 77, plobi_constants 48 |
+| plobi_cli | 1996 | 933 | 544 | agent 132, tools 77, plobi_constants 48 |
 | gateway | 1337 | 375 | 162 | plobi_cli 76, tools 45, agent 38 |
 | agent | 1236 | 504 | 254 | plobi_cli 95, tools 68, plobi_constants 29 |
 | tools | 1128 | 488 | 233 | plobi_cli 78, agent 66, plobi_constants 39 |
@@ -38,7 +38,7 @@
 | plobi_state | 110 | 2 | 0 | agent 1, plobi_constants 1 |
 | utils | 91 | 0 | 0 | — |
 | cron | 89 | 57 | 10 | plobi_cli 13, agent 8, gateway 8 |
-| tests | 64 | 4498 | 64 | gateway 1077, plobi_cli 1040, tools 607 |
+| tests | 64 | 4499 | 64 | gateway 1077, plobi_cli 1041, tools 607 |
 | tui_gateway | 47 | 106 | 9 | plobi_cli 37, agent 32, tools 15 |
 | model_tools | 46 | 14 | 0 | tools 8, plobi_cli 3, acp_adapter 1 |
 | toolsets | 37 | 2 | 0 | gateway 1, tools 1 |
