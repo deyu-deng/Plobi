@@ -43,4 +43,12 @@ def build_uninstall_parser(subparsers, *, cmd_uninstall: Callable) -> None:
         action="store_true",
         help="Print what uninstall would remove without changing anything",
     )
+    uninstall_parser.add_argument(
+        "--purge-user-env",
+        action="store_true",
+        help="Windows only: also clear this install's User-scope environment "
+        "(User PATH entries, PLOBI_HOME, PLOBI_GIT_BASH_PATH) from the registry. "
+        "Off by default — those values are inherited by every future process, so "
+        "removing them is a machine-level change and must be asked for.",
+    )
     uninstall_parser.set_defaults(func=cmd_uninstall)

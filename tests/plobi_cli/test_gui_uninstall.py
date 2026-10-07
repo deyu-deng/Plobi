@@ -211,11 +211,20 @@ def test_remove_path_handles_symlink(tmp_path):
 class _Args:
     """Minimal argparse-Namespace stand-in for run_uninstall."""
 
-    def __init__(self, *, yes=False, full=False, gui=False, gui_summary=False):
+    def __init__(
+        self,
+        *,
+        yes=False,
+        full=False,
+        gui=False,
+        gui_summary=False,
+        purge_user_env=False,
+    ):
         self.yes = yes
         self.full = full
         self.gui = gui
         self.gui_summary = gui_summary
+        self.purge_user_env = purge_user_env
 
 
 def test_run_uninstall_yes_keep_data_is_non_interactive(tmp_path, monkeypatch):
@@ -354,4 +363,144 @@ def test_uninstall_args_namespace_mode_mapping():
 
     full = uninstall._UninstallArgs(mode="full")
     assert full.gui is False and full.full is True and full.yes is True
+    # The desktop launches this module entrypoint, so a routine "uninstall the
+    # app" click must never imply a User-environment wipe (裁定 75).
+    assert full.purge_user_env is False
+
+
+class _FakeKeyHandle:
+    """What ``winreg.OpenKey`` hands back: usable as a context manager, no-op body."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return None
+
+    def Close(self):  # noqa: N802 — some callers close explicitly
+        return None
+
+
+class _FakeWinreg:
+    """Stand-in for the ``winreg`` module: records calls, never touches HKCU.
+
+    ``remove_plobi_env_vars_windows`` imports ``winreg`` *inside* the function, so
+    putting this in ``sys.modules`` lets the real code path run on any OS. That is
+    the point: "an uninstall leaves the user's environment alone unless asked" is a
+    behavior contract, and a contract we only assert on Windows would go untested
+    on the machine that broke (and on every CI runner that isn't Windows).
+    """
+
+    KEY_READ = 0x20019
+    KEY_WRITE = 0x20006
+    REG_SZ = 1
+    # Real winreg exposes these; the code under test passes them to OpenKey, so a
+    # fake missing them fails with AttributeError instead of recording the call.
+    HKEY_CURRENT_USER = -2147483647  # 0x80000001
+
+    def __init__(self):
+        self.opened: list[str] = []
+        self.deleted: list[str] = []
+
+    def OpenKey(self, root, sub_key, reserved=0, access=0):  # noqa: N802 (winreg spelling)
+        self.opened.append(sub_key)
+        # Real winreg handles are context managers (`with winreg.OpenKey(...) as k`),
+        # so the fake has to be one too — a bare string fails inside the code under
+        # test with a TypeError and hides the behavior we are asserting.
+        return _FakeKeyHandle()
+
+    def CloseKey(self, handle):  # noqa: N802
+        return None
+
+    def QueryValueEx(self, handle, name):  # noqa: N802 — assume every value exists
+        return (r"D:\Data\AppData\plobi", self.REG_SZ)
+
+    def DeleteValue(self, handle, name):  # noqa: N802
+        self.deleted.append(name)
+
+
+def _stub_everything_except_the_registry(monkeypatch, *, plobi_home, fake_code):
+    """Stub every destructive external *except* the two Windows registry sweeps.
+
+    Deliberately does **not** patch ``remove_plobi_env_vars_windows`` — that one is
+    under test and runs for real against :class:`_FakeWinreg`.
+    """
+    import plobi_cli.uninstall as uninstall
+
+    monkeypatch.setattr(uninstall, "get_plobi_home", lambda: plobi_home)
+    monkeypatch.setattr(uninstall, "get_project_root", lambda: fake_code)
+    monkeypatch.setattr(uninstall, "uninstall_gateway_service", lambda: False)
+    monkeypatch.setattr(uninstall, "remove_path_from_shell_configs", lambda: [])
+    monkeypatch.setattr(uninstall, "remove_wrapper_script", lambda: [])
+    monkeypatch.setattr(uninstall, "remove_node_symlinks", lambda h: [])
+    monkeypatch.setattr(uninstall, "remove_portable_tooling_windows", lambda h: [])
+    monkeypatch.setattr(uninstall, "_discover_named_profiles", lambda: [])
+    # The PATH sweep reads and rewrites a multi-string value; that is not the
+    # behavior this cut is about, so it is recorded rather than faked in full.
+    path_calls: list[object] = []
+    monkeypatch.setattr(
+        uninstall,
+        "remove_path_from_windows_registry",
+        lambda home: path_calls.append(home) or [],
+    )
+    # Force the Windows branch on so this asserts the same way on every OS.
+    monkeypatch.setattr(uninstall, "_is_windows", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda *a, **k: pytest.fail("prompted in --yes mode"))
+
+    from plobi_cli import gui_uninstall as gu_mod
+
+    monkeypatch.setattr(gu_mod, "packaged_gui_app_paths", lambda: [])
+    monkeypatch.setattr(gu_mod, "desktop_userdata_dir", lambda: Path("<unused>"))
+    return path_calls
+
+
+def _make_throwaway_home(tmp_path):
+    plobi_home = tmp_path / ".plobi"
+    (plobi_home / "plobi-agent" / "plobi_cli").mkdir(parents=True)
+    (plobi_home / "config.yaml").write_text("x: 1\n")
+    fake_code = tmp_path / "checkout"
+    fake_code.mkdir()
+    return plobi_home, fake_code
+
+
+def test_uninstall_default_never_opens_the_user_environment_key(tmp_path, monkeypatch):
+    """默认卸载打开都不打开 HKCU\\Environment —— 不是"打开了但没删"。
+
+    回归的是 2026-10-07 的实际事故：跑一次测试就真删一次 PLOBI_HOME，之后新起的进程
+    静默落回 %LOCALAPPDATA%\\plobi，盘上长出第二个家（症状是「左栏只剩日程管家」那三条）。
+    """
+    import plobi_cli.uninstall as uninstall
+
+    fake = _FakeWinreg()
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    plobi_home, fake_code = _make_throwaway_home(tmp_path)
+    path_calls = _stub_everything_except_the_registry(
+        monkeypatch, plobi_home=plobi_home, fake_code=fake_code
+    )
+
+    uninstall.run_uninstall(_Args(yes=True, full=False))
+
+    assert fake.opened == [], f"默认卸载碰了注册表：{fake.opened}"
+    assert fake.deleted == [], f"默认卸载删了用户环境变量：{fake.deleted}"
+    assert path_calls == [], "默认卸载碰了 User PATH"
+    # 数据仍然照旧保留（本刀不许改的其它卸载行为）
+    assert plobi_home.exists()
+
+
+@pytest.mark.parametrize("full", [False, True])
+def test_purge_user_env_flag_is_the_only_way_to_clear_it(tmp_path, monkeypatch, full):
+    """带 --purge-user-env 才清，且删的就是那两个名字——不是"任意 PLOBI_* 全清"。"""
+    import plobi_cli.uninstall as uninstall
+
+    fake = _FakeWinreg()
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    plobi_home, fake_code = _make_throwaway_home(tmp_path)
+    path_calls = _stub_everything_except_the_registry(
+        monkeypatch, plobi_home=plobi_home, fake_code=fake_code
+    )
+
+    uninstall.run_uninstall(_Args(yes=True, full=full, purge_user_env=True))
+
+    assert sorted(fake.deleted) == ["PLOBI_GIT_BASH_PATH", "PLOBI_HOME"], fake.deleted
+    assert len(path_calls) == 1, "显式清理时 User PATH 那一趟应当被走到一次"
 

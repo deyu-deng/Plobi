@@ -604,6 +604,7 @@ def run_uninstall(args):
             full_uninstall=full_uninstall,
             remove_profiles=False,
             named_profiles=named_profiles,
+            purge_user_env=bool(getattr(args, "purge_user_env", False)),
         )
         return
 
@@ -709,6 +710,7 @@ def run_uninstall(args):
         full_uninstall=full_uninstall,
         remove_profiles=remove_profiles,
         named_profiles=named_profiles,
+        purge_user_env=bool(getattr(args, "purge_user_env", False)),
     )
 
 
@@ -743,6 +745,7 @@ def _perform_uninstall(
     full_uninstall: bool,
     remove_profiles: bool,
     named_profiles: list,
+    purge_user_env: bool = False,
 ) -> None:
     """Execute the uninstall steps. Shared by the interactive and ``--yes``
     paths so the destructive sequence lives in exactly one place.
@@ -751,6 +754,9 @@ def _perform_uninstall(
     ``plobi`` wrapper + node symlinks → remove the desktop Chat GUI artifacts →
     delete the code checkout → (Windows) remove PortableGit/Node → optionally
     wipe ``$PLOBI_HOME`` data and named profiles on full uninstall.
+
+    ``purge_user_env`` defaults to False and gates the two Windows registry
+    writes (裁定 75) — see the comment at the call site.
     """
     print()
     print(color("Uninstalling...", Colors.CYAN, Colors.BOLD))
@@ -772,25 +778,35 @@ def _perform_uninstall(
     else:
         log_info("No PATH entries found to remove in shell rc files")
 
+    # Editing HKCU\Environment is not a file delete: it changes values every
+    # future process inherits, and ``PLOBI_HOME`` there decides where the agent's
+    # home is. A test run or a mistyped ``plobi uninstall`` must not do that
+    # (裁定 75) — the default is keep, said out loud, and clearing is opt-in.
     if _is_windows():
-        log_info("Removing PATH entries from Windows User environment...")
-        # Expand %LOCALAPPDATA% etc. in plobi_home so the marker matching is
-        # against fully resolved paths — installer writes literal strings
-        # like C:\Users\<u>\AppData\Local\plobi\git\cmd, not %LOCALAPPDATA%.
-        removed_path_entries = remove_path_from_windows_registry(Path(os.path.expandvars(str(plobi_home))))
-        if removed_path_entries:
-            for entry in removed_path_entries:
-                log_success(f"Removed from User PATH: {entry}")
-        else:
-            log_info("No Plobi-owned PATH entries in User environment")
+        if purge_user_env:
+            log_info("Removing PATH entries from Windows User environment...")
+            # Expand %LOCALAPPDATA% etc. in plobi_home so the marker matching is
+            # against fully resolved paths — installer writes literal strings
+            # like C:\Users\<u>\AppData\Local\plobi\git\cmd, not %LOCALAPPDATA%.
+            removed_path_entries = remove_path_from_windows_registry(Path(os.path.expandvars(str(plobi_home))))
+            if removed_path_entries:
+                for entry in removed_path_entries:
+                    log_success(f"Removed from User PATH: {entry}")
+            else:
+                log_info("No Plobi-owned PATH entries in User environment")
 
-        log_info("Removing PLOBI_HOME / PLOBI_GIT_BASH_PATH User env vars...")
-        removed_env = remove_plobi_env_vars_windows()
-        if removed_env:
-            for name in removed_env:
-                log_success(f"Removed User env var: {name}")
+            log_info("Removing PLOBI_HOME / PLOBI_GIT_BASH_PATH User env vars...")
+            removed_env = remove_plobi_env_vars_windows()
+            if removed_env:
+                for name in removed_env:
+                    log_success(f"Removed User env var: {name}")
+            else:
+                log_info("No Plobi-set User env vars to remove")
         else:
-            log_info("No Plobi-set User env vars to remove")
+            log_info(
+                "Kept Windows User environment (User PATH, PLOBI_HOME, "
+                "PLOBI_GIT_BASH_PATH) — pass --purge-user-env to clear them"
+            )
     
     # 3. Remove wrapper script
     log_info("Removing plobi command...")
@@ -923,6 +939,11 @@ class _UninstallArgs:
         self.gui_summary = False
         self.full = mode == "full"
         self.yes = True  # the module entrypoint is always non-interactive
+        # The desktop launches this path, so it is the one place where an
+        # implicit HKCU\Environment wipe would silently follow a routine
+        # "uninstall the app" click. Clearing user env vars is opt-in only
+        # (裁定 75), and there is no UI affordance for it — keep it False.
+        self.purge_user_env = False
 
 
 def main(argv=None) -> int:
