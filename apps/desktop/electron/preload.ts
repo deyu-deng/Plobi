@@ -224,6 +224,15 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
 
     return () => ipcRenderer.removeListener('plobi:boot-progress', listener)
   },
+  // Local quota hub catalog, pushed by the main process once the hub is live.
+  // The renderer subscribes so apps the hub serves connect themselves — no manual
+  // click, and no second catalog copied into the UI (it renders what the hub says).
+  onQuotaApps: callback => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('plobi:quota-apps', listener)
+
+    return () => ipcRenderer.removeListener('plobi:quota-apps', listener)
+  },
   // First-launch bootstrap progress -- emitted by the install.ps1 stage
   // runner in main.ts (apps/desktop/electron/bootstrap-runner.ts).
   // Renderer's install overlay subscribes to live events and queries the

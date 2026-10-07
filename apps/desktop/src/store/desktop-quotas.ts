@@ -123,6 +123,36 @@ export function markDisconnected(id: string): void {
   persistString(STORE_KEY, JSON.stringify(next))
 }
 
+/**
+ * Apply the catalog the main process pushed from the live quota hub. This is the
+ * "connect once, auto-connect on every launch" path: the hub is the single source
+ * (裁定 46), so every app it currently serves becomes connected here — no manual
+ * click, and no model list copied into the UI.
+ *
+ * Additive: it never disconnects an app the hub simply hasn't reported yet this
+ * frame, so a transient empty/failed read cannot wipe a good persisted list.
+ */
+export function applyDiscoveredQuotaApps(
+  apps: Array<{ apiKey: string; baseUrl: string; id: string; models: string[] }>
+): void {
+  if (!apps || apps.length === 0) {
+    return
+  }
+
+  for (const app of apps) {
+    if (isMockProvider({ slug: app.id })) {
+      continue
+    }
+
+    markConnected({
+      id: app.id,
+      models: app.models,
+      baseUrl: app.baseUrl,
+      apiKey: app.apiKey
+    })
+  }
+}
+
 /** True when `slug` is a connected desktop-quota app (its models route to aigw). */
 export function isDesktopQuotaProvider(slug: string): boolean {
   return Boolean($connectedDesktopApps.get()[slug]?.connected)

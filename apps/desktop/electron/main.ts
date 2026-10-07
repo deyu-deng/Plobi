@@ -8351,6 +8351,82 @@ async function ensureChatlogServer(): Promise<void> {
   }
 }
 
+// The product quota hub is the single catalog source (裁定 46): the renderer must
+// render what it serves, never keep its own copy. So the hub's coordinates live
+// here, next to the code that spawns it — the one place that knows the port/key —
+// and are handed to the renderer rather than hardcoded there.
+const PRODUCT_QUOTA_PORT = 8000
+const PRODUCT_QUOTA_BASE = `http://127.0.0.1:${PRODUCT_QUOTA_PORT}/v1`
+
+function productQuotaApiKey(): string {
+  return process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
+}
+
+// Derive the connected quota apps from the live hub catalog, grouped by `provider`
+// (never by id prefix — a mock channel serves `workbuddy/...` ids, so a prefix
+// match invents a channel that isn't there) with the `<provider>/` prefix stripped.
+// `mock` and empty providers never reach the selector (R-017). Returns [] when the
+// hub is down, so callers keep the last good list rather than wipe it.
+async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: string[]; baseUrl: string; apiKey: string }>> {
+  try {
+    const res = await fetch(`${PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')}/v1/models`, {
+      headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
+      signal: AbortSignal.timeout(8000)
+    })
+
+    if (!res.ok) {
+      return []
+    }
+
+    const data = (await res.json()) as { data?: Array<{ id?: string; provider?: string }> }
+    const byProvider = new Map<string, string[]>()
+
+    for (const row of data.data ?? []) {
+      const provider = (row?.provider ?? '').trim()
+      const id = (row?.id ?? '').trim()
+
+      if (!provider || provider === 'mock' || !id) {
+        continue
+      }
+
+      const models = byProvider.get(provider) ?? []
+
+      models.push(id.startsWith(`${provider}/`) ? id.slice(provider.length + 1) : id)
+      byProvider.set(provider, models)
+    }
+
+    return [...byProvider.entries()].map(([id, models]) => ({
+      id,
+      models,
+      baseUrl: PRODUCT_QUOTA_BASE,
+      apiKey: productQuotaApiKey()
+    }))
+  } catch {
+    return []
+  }
+}
+
+// Push the derived catalog to every window. The renderer subscribes on the same
+// channel the boot overlay already uses, so a hub that comes up after cold boot
+// still connects its apps without a manual click.
+async function broadcastProductQuotaApps(): Promise<void> {
+  const apps = await discoverProductQuotaApps()
+
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) {
+      continue
+    }
+
+    const { webContents } = window
+
+    if (!webContents || webContents.isDestroyed()) {
+      continue
+    }
+
+    webContents.send('plobi:quota-apps', apps)
+  }
+}
+
 async function ensureProductAigw(): Promise<void> {
   if (
     (await probeLocalHttp('http://127.0.0.1:8000/healthz')) ||
@@ -8358,6 +8434,9 @@ async function ensureProductAigw(): Promise<void> {
   ) {
     reportDeferredSubsystem('aigw', 'ready', 'answered on :8000 before boot reached the sidecars')
     rememberLog('[sidecar] product aigw already healthy on :8000')
+    // Already up — still hand the catalog to the renderer so a hub that started
+    // before the window subscribed doesn't leave the selector empty.
+    void broadcastProductQuotaApps()
     return
   }
 
@@ -8370,9 +8449,9 @@ async function ensureProductAigw(): Promise<void> {
     return
   }
 
-  const apiKey = process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
+  const apiKey = productQuotaApiKey()
   const result = await startAigwGateway('product', configPath, {}, {
-    port: 8000,
+    port: PRODUCT_QUOTA_PORT,
     apiKey,
     timeoutMs: 20000
   })
@@ -8380,6 +8459,10 @@ async function ensureProductAigw(): Promise<void> {
   if (result.ok) {
     reportDeferredSubsystem('aigw', 'ready', `healthy on :8000 (pid=${result.pid ?? '?'})`)
     rememberLog(`[sidecar] product aigw ready on :8000 pid=${result.pid ?? '?'}`)
+    // The hub just came up: derive + push its catalog so the model selector
+    // populates itself. Fire-and-forget — a slow CLI discovery must not stall
+    // the boot ledger's ready flip.
+    void broadcastProductQuotaApps()
   } else {
     // `result.error` is the R-051 payoff: with a gated interpreter ladder this is
     // now a specific, human-readable reason ("no project Python under …, run uv
@@ -8811,7 +8894,7 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
     return authAntigravity(aigwDir)
   }
   if (appId === 'workbuddy') {
-    return authWorkbuddy(aigwDir)
+    return authWorkbuddy()
   }
   if (appId === 'cursor') {
     return authCursor(aigwDir)
@@ -8877,36 +8960,34 @@ async function authAntigravity(aigwDir: string): Promise<{
   )
 }
 
-// Workbuddy: no OAuth — it rides on the user's already-logged-in Workbuddy (CLI
-// on PATH, or the Desktop app via Windows UI Automation). Detect which route is
-// available, then start the hybrid gateway on 8020.
-async function authWorkbuddy(aigwDir: string): Promise<{
+// Workbuddy: rides on the product quota hub (:8000), which already serves the real
+// Workbuddy catalog (its `config.yaml` spawns the local CodeBuddy CLI). This is the
+// single catalog source (裁定 46) — the app does NOT start a second per-app gateway
+// or copy a model list here. The hub is brought up by the boot sidecar, so a manual
+// "Connect" only needs to re-derive its catalog and hand the coordinates (including
+// the hub's api key) back to the renderer.
+async function authWorkbuddy(): Promise<{
   ok: boolean
   baseUrl?: string
+  apiKey?: string
   models?: string[]
   code?: string
   installHint?: string
   error?: string
 }> {
-  const configPath = path.join(aigwDir, 'config.workbuddy-desktop.yaml')
+  const apps = await discoverProductQuotaApps()
+  const workbuddy = apps.find(app => app.id === 'workbuddy')
 
-  if (!fs.existsSync(configPath)) {
-    return { ok: false, error: `Local quota hub config not found at ${configPath}` }
-  }
-
-  const route = detectLocalWorkbuddy()
-  logAigw(`auth: workbuddy local detection -> ${route ?? 'none'}`)
-
-  if (!route) {
+  if (!workbuddy || workbuddy.models.length === 0) {
     return {
       ok: false,
       code: 'WORKBUDDY_NOT_FOUND',
-      installHint: '未检测到本地 Workbuddy：请把 workbuddy CLI 加入 PATH，或确保 Workbuddy 桌面端正在运行。',
-      error: 'No local Workbuddy detected (CLI not on PATH and no Workbuddy/Plobi process running).'
+      installHint: '本地额度网关当前没有 Workbuddy 渠道。请确认 Workbuddy 已安装并登录，稍后网关会自动带出它的额度。',
+      error: 'The local quota hub is not serving a Workbuddy channel yet.'
     }
   }
 
-  return finishGatewayAuth('workbuddy', configPath, { AIGW_KEY: 'sk-local-workbuddy' })
+  return { ok: true, baseUrl: workbuddy.baseUrl, apiKey: workbuddy.apiKey, models: workbuddy.models }
 }
 
 // Cursor: no OAuth — it rides on the user's already-logged-in Cursor session
@@ -8978,28 +9059,6 @@ async function finishGatewayAuth(
   const models = await fetchGatewayModels(gw.baseUrl ?? `http://127.0.0.1:${port}/v1`, apiKey, appId)
 
   return { ok: true, baseUrl: gw.baseUrl, models: models ?? [] }
-}
-
-// Detect a locally-available Workbuddy: prefer the CLI on PATH, else a running
-// Workbuddy/Plobi desktop process (Windows UI Automation route).
-function detectLocalWorkbuddy(): 'cli' | 'gui' | null {
-  try {
-    execFileSync('where.exe', ['workbuddy'], { windowsHide: true, timeout: 5000 })
-    return 'cli'
-  } catch {
-    /* CLI not on PATH — fall through to process check */
-  }
-
-  try {
-    const out = execFileSync('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true, timeout: 5000 }).toString()
-    if (/\b(?:workbuddy|plobi)\.exe/i.test(out)) {
-      return 'gui'
-    }
-  } catch {
-    /* tasklist unavailable */
-  }
-
-  return null
 }
 
 // Fetch the live model catalog for one app from its aigw gateway's /v1/models.
