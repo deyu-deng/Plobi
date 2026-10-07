@@ -186,6 +186,11 @@ declare global {
       onConnectionApplied?: (callback: () => void) => () => void
       onPowerResume?: (callback: () => void) => () => void
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
+      // One quota app the local hub serves, pushed when the hub is live. `models`
+      // is the hub's catalog for `id` with the `<id>/` prefix already stripped.
+      onQuotaApps?: (
+        callback: (apps: Array<{ apiKey: string; baseUrl: string; id: string; models: string[] }>) => void
+      ) => () => void
       getBootstrapState: () => Promise<DesktopBootstrapState>
       resetBootstrap: () => Promise<{ ok: boolean }>
       repairBootstrap: () => Promise<{ ok: boolean }>
@@ -222,6 +227,8 @@ declare global {
           token?: string
           baseUrl?: string
           models?: string[]
+          /** Hub api key. Present when the app rides the shared product hub. */
+          apiKey?: string
           /** Machine-readable failure code, e.g. 'AGY_NOT_FOUND'. */
           code?: string
           /** One-line install command shown to the user when the CLI is missing. */

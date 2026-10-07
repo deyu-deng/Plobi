@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   $connectedDesktopApps,
+  applyDiscoveredQuotaApps,
   DESKTOP_QUOTA_MODELS,
   desktopQuotaProviders,
   markConnected
@@ -62,5 +63,48 @@ describe('desktopQuotaProviders', () => {
     expect(row.free_tier).toBe(true)
     expect(Object.values(row.pricing ?? {})).toEqual([{ free: true }, { free: true }])
     expect(row.total_models).toBe(2)
+  })
+})
+
+// applyDiscoveredQuotaApps is the "connect once, auto-connect on every launch"
+// path: the main process pushes the live hub catalog and apps become selectable
+// with no manual click. These assert that contract end-to-end into the picker.
+describe('applyDiscoveredQuotaApps', () => {
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('surfaces a hub-served app in the picker without any manual connect', () => {
+    applyDiscoveredQuotaApps([
+      { id: 'workbuddy', models: ['hy3', 'glm-5.3'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+    ])
+
+    const [row] = desktopQuotaProviders()
+
+    expect(row.slug).toBe('workbuddy')
+    expect(row.models).toEqual(['hy3', 'glm-5.3'])
+    // the hub's coordinates must ride through so the submit path routes to :8000
+    expect(row.authenticated).toBe(true)
+    expect($connectedDesktopApps.get().workbuddy?.baseUrl).toBe('http://127.0.0.1:8000/v1')
+    expect($connectedDesktopApps.get().workbuddy?.apiKey).toBe('sk-local-dev-key')
+  })
+
+  it('never lets a pushed demo channel reach the selector', () => {
+    applyDiscoveredQuotaApps([
+      { id: 'mock', models: ['echo'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' },
+      { id: 'workbuddy', models: ['hy3'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+    ])
+
+    expect(desktopQuotaProviders().map(provider => provider.slug)).toEqual(['workbuddy'])
+  })
+
+  it('keeps an existing connection when a push comes back empty (a transient read is not a wipe)', () => {
+    applyDiscoveredQuotaApps([
+      { id: 'workbuddy', models: ['hy3'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+    ])
+
+    applyDiscoveredQuotaApps([])
+
+    expect(desktopQuotaProviders().map(provider => provider.slug)).toEqual(['workbuddy'])
   })
 })

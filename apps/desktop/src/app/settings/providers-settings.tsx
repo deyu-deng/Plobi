@@ -84,7 +84,7 @@ const DESKTOP_QUOTA_APPS: DesktopQuotaApp[] = [
     id: 'workbuddy',
     name: 'Workbuddy',
     description: 'Workbuddy desktop agent — routes through your local Workbuddy (CLI or Desktop) quota, no sign-in needed.',
-    verified: true   // hybrid CLI/GUI route wired: aigw workbuddy provider -> gateway on 8020
+    verified: true   // rides the shared product hub on :8000 (its config.yaml spawns the Workbuddy CLI)
   }
 ]
 
@@ -376,12 +376,15 @@ function DesktopQuotasView() {
       if (res.ok) {
         // Persist the connected app so its models surface in the chat selector
         // (see store/desktop-quotas) and the gateway baseUrl for live routing.
-        // The api key is per-app (sk-local-<appId>) — never the Antigravity one.
+        // Workbuddy rides the shared product hub, so it carries its own hub key
+        // (`sk-local-dev-key`) — use whatever the hub returned, and only fall
+        // back to the per-app key (`sk-local-<appId>`) for the standalone gateways
+        // (Antigravity / Cursor) that still mint their own.
         markConnected({
           id: appId,
           models: res.models ?? DESKTOP_QUOTA_MODELS[appId],
           baseUrl: res.baseUrl,
-          apiKey: `sk-local-${appId}`
+          apiKey: res.apiKey ?? `sk-local-${appId}`
         })
         setConn((prev) => ({ ...prev, [appId]: 'connected' }))
         // Replace the placeholder/fallback list with the gateway's live catalog

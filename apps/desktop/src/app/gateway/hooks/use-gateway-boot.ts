@@ -14,6 +14,7 @@ import {
   setDesktopBootStep,
   setDesktopDeferredSubsystems
 } from '@/store/boot'
+import { applyDiscoveredQuotaApps } from '@/store/desktop-quotas'
 import {
   $gateway,
   closeSecondaryGateways,
@@ -331,6 +332,12 @@ export function useGatewayBoot({
       })
       .catch(() => undefined)
 
+    // The quota hub is probed after the backend is ready, so its catalog can land
+    // after cold boot completed. Subscribe unconditionally (not gated on the boot
+    // latch) so apps the hub serves connect themselves on every launch — the
+    // "configure once" path. A pushed empty/failed read is ignored, never a wipe.
+    const offQuotaApps = desktop.onQuotaApps?.(apps => applyDiscoveredQuotaApps(apps))
+
     setDesktopBootStep({
       phase: 'renderer.boot',
       message: translateNow('boot.steps.startingDesktopConnection'),
@@ -518,6 +525,7 @@ export function useGatewayBoot({
       offExit()
       offWindowState?.()
       offBootProgress()
+      offQuotaApps?.()
       closeSecondaryGateways()
       gateway.close()
       publish(null)
