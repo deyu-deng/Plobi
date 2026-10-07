@@ -1462,12 +1462,12 @@ them into invariants before re-requesting review.
    locations.
 2. **Every doc must be registered.** Anything added, renamed, or moved gets a
    row in `Docs/README.md`（唯一索引）。`scripts/check-docs.sh` + `scripts/check_arch_gates.py`
-   （ARCH-UI-MASTER §3.5：禁复活 LeftRail/service.py）仍是**可选**闸门：
-   `python scripts/install_arch_hooks.py` 才会装进 `.git/hooks/`（**2026-10-06 实测这台三仓钩子已装**：
-   `.git/hooks/` 里有 `pre-commit`/`post-commit`/`post-checkout`）。但注意 `check_arch_gates.py` 在
-   `apps/desktop/node_modules/.package-lock.json` 缺位时只打 WARNING 就 `return 0`——前端那道闸是**空转**的，
-   别把「commit 过了」读成「闸门绿了」（R-053）。若闸门挡住你：merge 进已有文件或修架构闸门，
-   不要 `--no-verify` 绕过。GitHub Actions `arch-gates.yml` 跑同一套闸门。
+   （ARCH-UI-MASTER §3.5：禁复活 LeftRail/service.py）是**可选**闸门，要
+   `python scripts/install_arch_hooks.py` 才装进 `.git/hooks/`（这台已装）。`check_arch_gates.py`
+   曾查 `apps/desktop/node_modules/.package-lock.json`，缺位时只打 WARNING 就 `return 0`；本仓是
+   workspace 提升布局，那个 marker 永远不存在，所以前端那道闸从建立起空转过（R-053）——2026-10-07
+   已修成查仓库根 `node_modules/vitest`，缺依赖即红。闸门挡住你时：merge 进已有文件或修闸门，
+   不要 `--no-verify` 绕。CI `arch-gates.yml` 跑同一套。
 3. **Outdated docs are absorbed, then deleted.** Before removing an outdated doc,
    fold any still-useful content (checklists, glossaries, requirements) into the
    active doc set, then **delete the original — 不归档**。2026-09-19 已按此把 `Docs/`
