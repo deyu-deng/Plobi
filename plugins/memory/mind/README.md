@@ -5,8 +5,8 @@
 ## What this is
 
 A Plobi `MemoryProvider` plugin that bridges the agent to your
-[Mind](file:///D:/Projects/Plobi/Code/mind) second-brain vault (Obsidian markdown,
-file-backed). It is the native-adaptation path discussed in
+Mind second-brain vault (Obsidian markdown, file-backed). It is the
+native-adaptation path discussed in
 `Docs/specs/memory-adapter.md`.
 
 ## Architecture fit
@@ -54,14 +54,17 @@ memory:
   provider: mind
 ```
 
-Optional env override: `MIND_ROOT=/path/to/Mind` (not required — without it
-`resolve_root()` resolves the sibling `Code/mind` → `D:/Projects/Plobi/Code/mind`).
+`MIND_ROOT` is how you point at the vault, and the vault does not live in this
+repo — on this Windows box it sits in the data home next to `PLOBI_HOME`.
+Without the env var, `resolve_root()` falls back to an in-repo `mind/`
+checkout; when neither resolves, the brain is simply not configured
+(`resolve_root()` returns `None`, `require_root()` raises `MindUnavailable`).
 
 ## Verification (implemented)
 
 Run Mind's verifier to confirm no knowledge-base pollution:
 
 ```bash
-cd D:/Projects/Plobi/Code/mind && python Loom/scripts/verifier.py --strict
+cd "$MIND_ROOT" && python Loom/scripts/verifier.py --strict
 # expect exit code 0 (no BLOCKER, no new WARN)
 ```
