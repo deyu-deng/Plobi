@@ -48,6 +48,10 @@ class RegistryError(ValueError):
 AGENT_CATEGORIES: tuple[str, ...] = ("projects", "butler", "events", "research")
 DEFAULT_CATEGORY = "butler"
 
+# R-013 扩写（2026-10-06）：哪几类分身是「Mind 里的一个项目」——只有这两类建册时
+# 要在 ``Vault/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
+MIND_PROJECT_CATEGORIES: frozenset[str] = frozenset({"projects", "research"})
+
 # --------------------------------------------------------------------------- #
 # R-013: default folder binding per category. ``butler`` has none (it is the
 # housekeeping agent, not project-scoped). A caller may always override
@@ -289,6 +293,22 @@ class AgentEntry:
     # events 生命周期：建册时指向一条用户已确认的 agenda 事项 id。
     # Non-empty only for category=events (validated at the API layer).
     source_event_id: str = ""
+    # 裁定 42 §42.2 第 6 项的三个允许覆盖里的第三个（人设片段 = 分身的 SOUL.md
+    # 围栏外那段、模型 = ``provider`` / ``model``、密钥 = 这一段）。以前密钥
+    # 没有字段，靠 ``create_profile(clone_config=True)`` 整份拷根 ``.env``——
+    # 实测 13 个分身的 ``.env`` MD5 全同，等于没有覆盖只有复印件。这里的键值
+    # 只在运行时注入子进程环境（:func:`apply_secret_overrides`），不落盘成
+    # 第二份 ``.env``。
+    secret_overrides: dict = field(default_factory=dict)
+    # R-072（2026-10-07 用户实测）：名册成员资格是**盖过章的事实**，不是猜出来的。
+    # 只有两个写入方——「新建 / 登记一个 Agent」那一步盖 ``True``（控制台建册、
+    # ``plobi plobi agents register``、系统自带的 agenda 模板），Mind 播种机的投影
+    # 盖 ``False``（:func:`ensure_mind_project_agents`）。判据**不看 description
+    # 里那句话长什么样**：以前 ``is_mind_placeholder`` 靠占位句前缀认「用户配的」，
+    # 那句话一抖（改措辞、用户补了说明、播种机多缀一段 raw 名）手下就从名单里消失。
+    # 老数据没盖过章时按 ``True`` 读：宁可多列一行让他问一句，也不许把用户建过的
+    # 分身悄悄藏掉——藏掉才是这次要修的那个 bug。
+    registered: bool = True
 
     @property
     def profile_name(self) -> str:
@@ -358,6 +378,11 @@ class AgentEntry:
                 data["archived_at"] = self.archived_at
         if self.source_event_id:
             data["source_event_id"] = self.source_event_id
+        if self.secret_overrides:
+            data["secret_overrides"] = dict(self.secret_overrides)
+        # R-072: 名册成员资格永远写进 yaml（和 ``category`` 同一口径）——这一格
+        # 是「谁把这条登记成手下」的账面证据，读 yaml 的人要能直接看见，不靠猜。
+        data["registered"] = bool(self.registered)
         return data
 
     @classmethod
@@ -384,6 +409,9 @@ class AgentEntry:
             pace = {"weekly_hours": hours}
         else:
             pace = None
+        secrets = raw.get("secret_overrides")
+        if secrets is not None and not isinstance(secrets, dict):
+            raise RegistryError(f"agent {name!r}: secret_overrides must be a mapping")
         return cls(
             name=name,
             role=str(raw.get("role") or "l2_project"),
@@ -400,7 +428,49 @@ class AgentEntry:
             archived=bool(raw.get("archived") or False),
             archived_at=str(raw.get("archived_at") or ""),
             source_event_id=str(raw.get("source_event_id") or ""),
+            registered=_normalize_registered(name, raw.get("registered")),
+            secret_overrides={
+                str(key): str(value)
+                for key, value in (secrets or {}).items()
+                if str(key).strip() and str(value).strip()
+            },
         )
+
+
+#: ``registered`` 里认得下的真话写法（人手写 yaml 时 ``yes`` / ``1`` 都会出现）。
+_TRUTHY_REGISTERED = ("true", "yes", "y", "on", "1")
+_FALSY_REGISTERED = ("false", "no", "n", "off", "0")
+
+
+def _normalize_registered(name: str, value: object) -> bool:
+    """读 ``registered`` 那一格：只认明确的写法，读不懂就报错，不猜。
+
+    缺格 = :data:`True`（老数据没盖过章 → 按「用户登记过」读，见
+    :attr:`AgentEntry.registered`：宁可多列一行，也不悄悄把手下藏掉）。
+    一句 ``registered: maybe`` 不能既不当真话也不当假话——那是这次要拆掉的
+    那种「靠猜」，所以直接 :class:`RegistryError`。
+    """
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().casefold()
+    if text in _TRUTHY_REGISTERED:
+        return True
+    if text in _FALSY_REGISTERED:
+        return False
+    raise RegistryError(
+        f"agent {name!r}: registered must be true or false (got {value!r})"
+    )
+
+
+def _case_twin_message(new_key: str, existing_key: str, home: str) -> str:
+    """只差大小写撞了已有键那句话（唯一一份措辞：``upsert`` 兜底与创建门都读它）。"""
+    return (
+        f"「{new_key}」和已有的「{existing_key}」只差大小写——两个的名字落到盘上是同一个家"
+        f"（{home or new_key}），登记两条就谁也问不到。"
+        f"要么直接用「{existing_key}」那条，要么换一个真正不同的名字。"
+    )
 
 
 @dataclass
@@ -518,7 +588,51 @@ class AgentRegistry:
     def get(self, name: str) -> Optional[AgentEntry]:
         return self.agents.get(name)
 
+    def find_case_twin(self, name: str) -> str:
+        """已存在的、与 *name* 只差大小写的注册键（没有则空串）。
+
+        profile 家一律按小写名落盘（:attr:`AgentEntry.profile_name`），所以
+        ``Nymo`` 与 ``nymo`` 是**同一个家的两条记录**：问分身时两条一起命中，
+        秘书谁都问不到（R-071 实测的「对上了好几个分身（Nymo、Nymo）」）。
+        """
+        needle = (name or "").strip().casefold()
+        if not needle:
+            return ""
+        for key in self.agents:
+            if key != name and key.strip().casefold() == needle:
+                return key
+        return ""
+
+    def find_mind_subtree_owner(
+        self, relative: str, *, exclude: str = ""
+    ) -> str:
+        """哪条**没归档**的分身已经挂着这棵 Mind 树（大小写归一比，没有则空串）。
+
+        一个项目一棵树：``Vault/projects/Nymo`` 挂了 ``Nymo`` 之后再建一条挂同一棵树的分身，
+        就是用户 2026-10-06 报的「左栏两个 nymo」。比的是归一后的整串相对路径——不分大小写的
+        盘上 ``Vault/projects/nymo`` 与 ``Vault/projects/Nymo`` 也是同一棵树。
+        """
+        needle = (relative or "").strip().casefold()
+        if not needle:
+            return ""
+        for other in self.live_entries():
+            if other.name == exclude:
+                continue
+            if (other.mind_subtree or "").strip().casefold() == needle:
+                return other.name
+        return ""
+
     def upsert(self, entry: AgentEntry) -> AgentEntry:
+        # 新键不许只差大小写地撞上已有条目——那等于给同一个 profile 家登记两个
+        # 分身。改已有条目（键相同）不在此列：存量 ``Nymo``/``nymo`` 已经成对躺在
+        # projects.yaml 里，读它们 / 补它们的字段不许报错（R-071 要的是不再新增，
+        # 不是替用户改他的数据）。
+        if entry.name not in self.agents:
+            twin = self.find_case_twin(entry.name)
+            if twin:
+                raise RegistryError(
+                    _case_twin_message(entry.name, twin, entry.profile_name)
+                )
         # R-013: when the caller did not supply project_path, seed it from
         # the category default. butler stays empty (no bound folder). The
         # actual directory is created at the API layer (console router),
@@ -621,19 +735,14 @@ class AgentRegistry:
     # spawn
     # ------------------------------------------------------------------ #
 
-    def spawn(
-        self,
-        name: str,
-        *,
-        clone_from: Optional[str] = None,
-        write_config: bool = True,
-    ) -> dict:
+    def spawn(self, name: str, *, write_config: bool = True) -> dict:
         """把一个注册条目落地为常驻 profile + 模型路由。
 
-        1. 若 profile 不存在则 ``create_profile``：克隆当前 profile 的
-           config/.env/SOUL（让 L2 继承基础能力），但**不复制技能**——
-           技能走顶层共享根（裁定 42 §42.3，见
-           :meth:`_ensure_profile` / :func:`apply_shared_skills_root`）。
+        1. 若 profile 不存在则 ``create_profile``：**裸建**（不拷 config.yaml /
+           .env / SOUL.md，也不拷技能）——裁定 42 §42.2 把「一整套 Plobi 文件」
+           从分身这一层收走，技能走顶层共享根，身份走 :func:`ensure_l2_identity_soul`
+           写的那段围栏，密钥走 :func:`apply_secret_overrides` 注入子进程环境。
+           见 :meth:`_ensure_profile` / :func:`apply_shared_skills_root`。
         2. 把该 agent 的路由写进 profile 的 ``plobi/models.json``。
         3. ADR-0011 断言（L1≠L2 模型）必须绿，否则抛 RegistryError。
         4. 返回 dict：profile 路径、启动命令、routing 断言。
@@ -645,11 +754,11 @@ class AgentRegistry:
         if entry is None:
             raise RegistryError(f"agent {name!r} is not registered")
 
-        profile_dir = self._ensure_profile(entry, clone_from=clone_from)
+        profile_dir = self._ensure_profile(entry)
 
         # WP-L2-IDENTITY / 裁定 42 §6(c): 分身缺的是「我是谁」。SOUL.md 是
-        # ``load_soul_md()`` 唯一的身份来源，而 profile 里那份要么是 512 B 上游
-        # 残桩、要么是 --clone 抄来的 L1 合同。每次 spawn 都纠一次（幂等），
+        # ``load_soul_md()`` 唯一的身份来源，而裸建的 profile 里那份只有上游
+        # 512 B 残桩。每次 spawn 都纠一次（幂等），
         # 后端一起就把身份落好，不靠人手抄文本。
         try:
             ensure_l2_identity_soul(entry, home=profile_dir)
@@ -691,9 +800,7 @@ class AgentRegistry:
             "routing_ok": True,
         }
 
-    def _ensure_profile(
-        self, entry: AgentEntry, *, clone_from: Optional[str] = None
-    ) -> Path:
+    def _ensure_profile(self, entry: AgentEntry) -> Path:
         from plobi_cli.profiles import (
             create_profile,
             get_profile_dir,
@@ -703,20 +810,18 @@ class AgentRegistry:
         name = entry.profile_name
         if profile_exists(name):
             return get_profile_dir(name)
-        # 首次落地：克隆现有 profile 的**配置**（config.yaml / .env / SOUL.md）作为
-        # 能力底座，但**不复制技能**——裁定 42 §42.2 把技能划进共享层，§42.3 指定的
-        # 两个现成钩子就是 ``create_profile(no_skills=True)``（不拷贝 + 写
+        blocker = profile_name_blocker(entry)
+        if blocker:
+            raise RegistryError(blocker)
+        # 裁定 42 §42.2：一个项目分身 = projects.yaml 一条记录 + 最多三个覆盖，
+        # **不再是一整套 Plobi 家的复印件**（实测 13 个分身的 .env MD5 全同、
+        # config.yaml 逐字一致，从来没有一样东西是这个项目独有的）。所以这里
+        # 裸建：不拷 config.yaml / .env / SOUL.md。§42.3 指定的两个现成钩子仍然
+        # 是落地方式——``create_profile(no_skills=True)``（不拷技能 + 写
         # ``.no-bundled-skills`` 标记，``plobi update`` 不再重新播种）与
         # ``skills.external_dirs``（下面 ``apply_shared_skills_root`` 写）。
-        # SOUL.md / .env 的归属是 2b，本刀保持原样。
-        kwargs: dict = {"no_skills": True}
-        if clone_from:
-            kwargs["clone_from"] = clone_from
-            kwargs["clone_config"] = True
-        else:
-            kwargs["clone_config"] = True  # 默认克隆配置（不含 skills）
         try:
-            profile_dir = create_profile(name=name, **kwargs)
+            profile_dir = create_profile(name=name, no_skills=True)
         except FileExistsError:
             # Someone else landed it first — don't rewrite their config.
             return get_profile_dir(name)
@@ -750,20 +855,18 @@ class AgentRegistry:
         不动其他配置。config.yaml 可能不存在（新 profile 也可能没有），
         不存在则跳过 —— 会话仍可用 models.json 路由。
 
-        落笔前有两道闸，任一不过就**什么都不写**（分身继续用它克隆来的 model 节）：
+        落笔前有两道闸，任一不过就**什么都不写**（分身那份 config.yaml 就没有 model 节）：
 
         ① 只有注册表那条记录真的写了模型覆盖才落笔（裁定 42 §42.2 ⑥：「模型」是分身的
            三个允许覆盖项之一，省略 = 没有覆盖）。以前省略时会落到 :data:`DEFAULT_ROUTES`
            的硬编码 ``aigw`` / ``workbuddy/*`` —— 那套路由和用户在本机选的默认提供商
            毫无关系，而 ``e9b6034`` 把 aigw 注册成真 provider 之后下面那道可解析闸门已经
            拦不住它，于是每个新分身都被盖上一份「``provider: aigw`` 而 ``base_url`` 还是
-           克隆来的 minimax」的自相矛盾 model 节（2026-09-29 实测新落的 Framelet / Plobi
-           两条）。不写 = 继承 ``create_profile(clone_config=True)`` 拷来的根
-           ``config.yaml`` model 节，那**就是**用户当前配置的默认 provider/model，
-           也不会配上第二个 base_url。
+           复印件那套」的自相矛盾 model 节（2026-09-29 实测新落的 Framelet / Plobi
+           两条）。不写 = 这一格留空，底座按它自己的默认解析走，也不会配上第二个 base_url。
         ② 可解析闸门（:func:`provider_is_resolvable`）：底座运行时认不出来的 provider
            名字不写进 model 节。写进一个解析不出来的名字 = 分身一启动就是一条
-           「Unknown provider」红条；不写 = 顶多用继承的模型，功能不塌。
+           「Unknown provider」红条；不写 = 顶多按底座默认选模型，功能不塌。
            任何情况下都不因为这道闸让 ``spawn`` 失败。
         """
         if not entry.has_model_override:
@@ -811,6 +914,178 @@ class AgentRegistry:
         cfg_path.write_text(
             yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
         )
+
+
+# ---------------------------------------------------------------------------
+# 分身的 profile 名能不能在这台机器上落地（R-071 保留名撞车）
+# ---------------------------------------------------------------------------
+
+
+def suggested_profile_name(entry: AgentEntry) -> str:
+    """给这条记录推荐一个能用的 profile 名（推荐不出来为空串）。"""
+    from plobi_cli.profiles import validate_profile_name
+
+    for candidate in (f"l2-{entry.profile_name}", f"l2-{entry.name.strip().lower()}"):
+        try:
+            validate_profile_name(candidate)
+        except ValueError:
+            continue
+        return candidate
+    return ""
+
+
+def profile_name_blocker(entry: AgentEntry) -> str:
+    """这条记录的 profile 家**永远建不出来**时，返回一句能行动的话（没问题返回空串）。
+
+    判据只有一份：``plobi_cli.profiles`` 的 profile 名校验。这里加的只有「改什么」——
+    项目分身叫 ``Plobi`` 时小写化就是保留名 ``plobi``（和 Plobi 自己的安装撞），
+    以前用户只看到一句 "Profile name 'plobi' is reserved"，不知道要改哪一格，
+    于是那个分身永远问不到（R-071 实测第二条）。
+    """
+    from plobi_cli.profiles import validate_profile_name
+
+    canon = entry.profile_name
+    try:
+        validate_profile_name(canon)
+    except ValueError as exc:
+        hint = suggested_profile_name(entry)
+        advice = f"给这条记录单独填一个能用的 profile 名，比如 ``{hint}``；" if hint else ""
+        return (
+            f"分身「{entry.display_name or entry.name}」建不出自己的家：profile 名"
+            f" ``{canon}`` 不能用（{exc}）。{advice}改完再登记一次就能问到它了。"
+        )
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# 「这一条现在问得到吗」——名册与 ``plobi_agent_ask`` 共用的唯一判据（R-072）
+# ---------------------------------------------------------------------------
+
+#: 只有项目分身接受当面提问。日程 L2 有它自己那张嘴（``plobi_secretary_ask``），
+#: default profile 是提问的那一个。判据看的是**角色**不是名字——``agenda`` 不是
+#: 因为叫 ``agenda`` 被排除，任何非项目角色都同样走不到这条路上（裁定 69：
+#: 日程秘书与其他 L2 地位平等，两边都不给它开后门、也不给它挂特殊牌子）。
+ASKABLE_ROLE = "l2_project"
+
+
+def _profile_landed(entry: AgentEntry) -> Optional[bool]:
+    """这条记录的家在盘上落地了吗（探不到时返回 None，不瞎判）。"""
+    canon = entry.profile_name
+    if not canon or canon == "default":
+        return None
+    try:
+        from plobi_cli.profiles import profile_exists
+
+        return bool(profile_exists(canon))
+    except Exception:  # pragma: no cover - plobi_cli 解析不了的那套测试环境
+        logger.debug("plobi: profile_exists probe skipped for %s", canon, exc_info=True)
+        return None
+
+
+def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
+    """L1 现在能不能用 ``plobi_agent_ask`` 问到这一条；问不到就给一句原因。
+
+    只看结构性事实，不看任何一句文本：归档 / 角色 / profile 名建不建得出来
+    （:func:`profile_name_blocker`）/ 家在不在盘上。名单与工具**必须读同一份判据**
+    ——以前 ``run_project_status`` 报「有这个人」而 ``plobi_agent_ask`` 报「问不到」，
+    两边各判一次，秘书就只能靠试（R-072）。
+
+    探不到盘（``plobi_cli`` 解析不了的那套测试环境）时**不判成问不到**：宁可留一行
+    可以试的，也不能把手下从名单里悄悄抹掉——抹掉才是这一刀要修的 bug。家真的在
+    这一步之后被人收走时，``plobi_agent_ask`` 建命令那一步还会再拒一次。
+    """
+    if entry.archived:
+        return False, "这一条已经归档，问不到它。"
+    if entry.role != ASKABLE_ROLE:
+        return False, (
+            f"这一条的角色是 ``{entry.role}``，不是项目分身，不归 plobi_agent_ask 问"
+            "（日程走 plobi_secretary_ask）。"
+        )
+    if not entry.profile_name or entry.profile_name == "default":
+        return False, "这一条没有自己的家（profile 名空或撞了 default），问不到。"
+    blocker = profile_name_blocker(entry)
+    if blocker:
+        return False, blocker
+    if _profile_landed(entry) is False:
+        return False, (
+            f"「{entry.display_name or entry.name}」还没在这台机器上落地"
+            f"（profiles/{entry.profile_name} 不存在）——登记 / 新建一次就问到它。"
+        )
+    return True, ""
+
+
+def is_askable_agent(entry: AgentEntry) -> bool:
+    """:func:`agent_askability` 的布尔口径（只要「能不能」，不要原因）。"""
+    return agent_askability(entry)[0]
+
+
+def _normalized_project_name(entry: AgentEntry) -> str:
+    """这一条主张的「项目名」归一形：``display_name`` 优先，空时回退注册键。"""
+    return (entry.display_name or entry.name or "").strip().casefold()
+
+
+def registration_blocker(registry: AgentRegistry, entry: AgentEntry) -> str:
+    """这一条**不该进名册**时，说清它撞了哪一条、该改什么（没问题返回空串）。
+
+    用户 2026-10-06 的要求：重名在**创建那一刻**就禁止，而不是等 ``upsert`` 兜。
+    判据只有这一份，创建门（``POST /api/agents``）调它，桌面弹窗不另算一套——它只
+    负责把这里的话显示出来。:meth:`AgentRegistry.upsert` 里那条大小写闸门留着，
+    是给 CLI / Mind 播种机兜底的，两处共用 :func:`_case_twin_message` 同一句措辞。
+
+    存量那对 ``Nymo``/``nymo`` 不在射程内：本函数只拦**新增**。改已有条目（键相同、
+    名字也还是它自己的）照样放行——真实数据只读，不替用户合并也不替他删。
+    """
+    held = registry.get(entry.name)
+    creating = held is None
+
+    if creating:
+        twin = registry.find_case_twin(entry.name)
+        if twin:
+            return _case_twin_message(entry.name, twin, entry.profile_name)
+
+    subtree = (entry.mind_subtree or "").strip()
+    if subtree:
+        owner = registry.find_mind_subtree_owner(subtree, exclude=entry.name)
+        if owner:
+            return (
+                f"Mind 那棵树（``{subtree}``）已经挂在分身「{owner}」名下——同一个项目不登记"
+                f"第二条：要推进它就是去编辑「{owner}」，真另起一个项目请换一个项目名。"
+            )
+
+    incoming = _normalized_project_name(entry)
+    if creating:
+        for other in registry.live_entries():
+            if other.name == entry.name or not incoming:
+                continue
+            if incoming == _normalized_project_name(other):
+                return (
+                    f"名册里已经有一条叫「{other.display_name or other.name}」的分身"
+                    f"（注册键 ``{other.name}``）——重名不许再建第二条：要改它就是编辑那一条，"
+                    f"想真的另起炉灶请换一个项目名。"
+                )
+        return ""
+
+    # 命中已有键、但这条槽位属于另一个项目名：那是「顶替」，不是「编辑」。
+    held_name = _normalized_project_name(held)
+    if incoming and held_name and incoming != held_name:
+        return (
+            f"注册键「{entry.name}」已经是分身「{held.display_name or held.name}」——"
+            f"新建请换一个名字；要改那一条，请带着它自己的名字来编辑它。"
+        )
+    return ""
+
+
+def apply_secret_overrides(env: "dict[str, str]", entry: AgentEntry) -> None:
+    """把这条记录声明的密钥覆盖注进一份子进程环境（就地改，不落盘）。
+
+    裁定 42 §42.2 第 6 项允许按项目不同的三样里，密钥这一样以前靠整份拷根
+    ``.env`` 实现（实测 13 个分身一把自己的密钥都没有）。分身不再拷家之后，共享的
+    那部分密钥仍由继承来的进程环境提供，只有这里声明的几条是**这个项目的覆盖**；
+    写进 profile 的 ``.env`` / ``config.yaml`` 等于又造出一份复印件，故禁止。
+    """
+    for key, value in (entry.secret_overrides or {}).items():
+        if key and value:
+            env[str(key)] = str(value)
 
 
 # ---------------------------------------------------------------------------
@@ -1098,10 +1373,31 @@ def _resolve_project_path(name: str, front: dict[str, str]) -> str:
     return f"{DEFAULT_CLOUD_PROJECTS_ROOT}\\{name}"
 
 
-# 注册表给每条项目分身自动填的**占位**描述。唯一一份定义：写在这里、用在下面
-# ``ensure_mind_project_agents``，渲染身份段时再认它一次（见
-# :func:`_is_placeholder_project_description`）——占位句不是「这个项目在做什么」。
+# 播种机给每条**投影**（``registered=False``）填的占位描述。它只是「这行是谁写的」
+# 的账面备注，**不是名册判据**：谁算手下只看 :attr:`AgentEntry.registered` 那一格
+# （R-072 拆掉的就是「靠这句话长什么样猜手下」），能不能当面问只看
+# :func:`agent_askability` 那四条结构性事实——两处都不读 ``description``。
+#
+# 这句桩话**唯一**的用途是渲染：分身那段身份里「这个项目在做的事」不能印机器写的
+# 备注（实测会把 ``l2_project for Mind project Aura`` 当用途念出来）。所以「生成桩」
+# 和「识别桩」共用下面这一份常量——识别只在 :func:`build_l2_identity_soul_block` 里
+# 用，别拿它当任何判据。
 L2_PLACEHOLDER_DESCRIPTION_PREFIX = "l2_project for Mind project "
+
+
+def _is_placeholder_project_description(description: str) -> bool:
+    """True when ``description`` is the seed stub, not a written project purpose.
+
+    **只服务渲染**：这一句判断的是「这行文字是不是播种机自己写的备注」，所以它不进
+    名册成员资格（:attr:`AgentEntry.registered`）、也不进可问性判据
+    （:func:`agent_askability`）——那两处读的是盘上的事实，一个字都不看 ``description``
+    （R-072；:mod:`tests.plobi.test_l1_roster_source` 钉的就是这条边界）。
+
+    Single source of truth: :data:`L2_PLACEHOLDER_DESCRIPTION_PREFIX` — the exact
+    string :func:`ensure_mind_project_agents` writes (the `` (raw dir name: …)``
+    variant still starts with it, so one prefix check covers both shapes).
+    """
+    return (description or "").strip().startswith(L2_PLACEHOLDER_DESCRIPTION_PREFIX)
 
 
 def ensure_mind_project_agents(
@@ -1123,6 +1419,10 @@ def ensure_mind_project_agents(
     only blank fields are filled in. ``spawn`` is attempted for each new row
     so the profile + models.json land; failures log and the registry row is
     still kept so the sidebar keeps showing the project.
+
+    投影出来的每一条都盖 ``registered=False``（R-072）：Mind 里有这个项目不等于
+    用户给它登记过分身，所以它进 ``mind_candidates`` 而不是 ``roster``。已有行的
+    章一个都不改——那是用户的账面。
     """
     from plobi.mind.paths import resolve_root
 
@@ -1153,6 +1453,12 @@ def ensure_mind_project_agents(
         project_path = _resolve_project_path(entry.name, front)
         category = _project_category(front)
 
+        # R-071: ``Nymo`` 与 ``nymo`` 落到盘上是同一个 profile 家，所以 Mind 这一侧
+        # 的名字要先归到已有那条记录的键上，不许因为大小写差异再生出第二条同名分身。
+        twin = reg.find_case_twin(safe_id)
+        if twin:
+            safe_id = twin
+
         existing = reg.get(safe_id)
         if existing is not None and not existing.archived:
             # Honor user edits: only fill blanks.
@@ -1166,7 +1472,11 @@ def ensure_mind_project_agents(
                 )
             if not patched.project_path and patched.category != "butler":
                 patched = _replace(patched, project_path=project_path)
-            if not patched.description:
+            # 占位句只补在**投影**那一类格子上（``registered=False``，就是这条播种机
+            # 自己落下的行）。用户登记过的行留空就是留空：不许把我的样板话写进他的
+            # 说明里——名册判据已经不看文本了，身份段也不再看文本，这句一旦写进去
+            # 就成了会被当成「这个项目在做什么」念出来的东西。
+            if not patched.description and not patched.registered:
                 patched = _replace(patched, description=description)
             if patched.category == "butler" and category != "butler":
                 patched = _replace(patched, category=category)
@@ -1199,6 +1509,9 @@ def ensure_mind_project_agents(
             archived=False,
             archived_at="",
             source_event_id="",
+            # R-072：Mind 投影**不是登记**。这一格就是「谁把这条算成手下」的章：
+            # 只有用户/产品在新建那一步盖 ``True``，播种机盖 ``False``。
+            registered=False,
         )
         reg.upsert(entry_obj)
         seeded.append(safe_id)
@@ -1241,7 +1554,7 @@ def run_project_status(
     pipeline=None,
     registry: AgentRegistry | None = None,
 ) -> dict:
-    r"""List every active Mind project as a L2 agent.
+    r"""Report the project 分身: who is on the roster and who can actually be asked.
 
     Calls :func:`ensure_mind_project_agents` first (idempotent) and then
     returns the live ``l2_project`` rows whose category is ``projects`` or
@@ -1249,6 +1562,16 @@ def run_project_status(
     (≤400 chars) so the L1 final answer can quote real evidence without
     ever dumping the whole plan.md into context. Never touches chatlog and
     never spawns an agenda L2 — task: "ChatlogDead 下仍 ok".
+
+    两格分开的判据（R-070 / R-072）：
+    * ``roster`` = :attr:`AgentEntry.registered` 为真的行——新建 / 登记那一步盖过章的
+      手下。这一格是账面事实，**不看 description 里那句话长什么样**（旧的
+      ``is_mind_placeholder`` 靠占位句前缀猜，那句话一抖手下就从名单里消失）。
+    * ``mind_candidates`` = 播种机投影下来的占位（``registered=False``），只是候选。
+
+    每一行还带 ``askable`` + ``not_askable_because``（:func:`agent_askability`，与
+    ``plobi_agent_ask`` 同一份判据）：问不到的行**留在名单里并写明为什么问不到**，
+    不偷偷删行——删行等于秘书没有手下。
     """
     user_text = (user_text or "").strip()
     reg, seeded = ensure_mind_project_agents(registry)
@@ -1264,10 +1587,13 @@ def run_project_status(
     for entry in reg.entries():
         if entry.archived:
             continue
-        if entry.role != "l2_project":
+        if entry.role != ASKABLE_ROLE:
             continue
-        if entry.category not in {"projects", "research"}:
+        if entry.category not in MIND_PROJECT_CATEGORIES:
             continue
+        # 这一行现在问得到吗？判据只有 :func:`agent_askability` 那一份，
+        # 和 ``plobi_agent_ask`` 用来筛名单的是同一个函数——名单和嘴不许各判一次。
+        askable, why_not_askable = agent_askability(entry)
         plan_text = ""
         progress_text = ""
         has_mind = False
@@ -1296,16 +1622,43 @@ def run_project_status(
                 "project_path": entry.project_path,
                 "mind_subtree": entry.mind_subtree,
                 "has_mind": has_mind,
+                # R-072：这一条算不算「他的手下」看的是名册上盖的那一章
+                # （:attr:`AgentEntry.registered`），不是 description 里那句话的
+                # 长相。名单里问不到的行**留在名单里并标出来**（``askable`` +
+                # ``not_askable_because``），不悄悄删行——删行就是秘书看不见手下。
+                "registered": entry.registered,
+                "askable": askable,
+                "not_askable_because": why_not_askable,
                 "plan_excerpt": plan_text[:PROJECT_EXCERPT_MAX_CHARS],
                 "progress_excerpt": progress_text[:PROJECT_EXCERPT_MAX_CHARS],
             }
         )
+
+    roster = [row["id"] for row in rows if row["registered"]]
+    mind_candidates = [row["id"] for row in rows if not row["registered"]]
+    # 「名单里的每一行都真的能问」这一条不许靠秘书自己试：能问的那几行直接给出来，
+    # 判据和 ``plobi_agent_ask`` 用的是同一份（:func:`agent_askability`）。
+    askable_roster = [row["id"] for row in rows if row["registered"] and row["askable"]]
 
     return {
         "ok": True,
         "intent": "project_status",
         "user_text": user_text,
         "seeded": seeded,
+        # 裁定 69 把基本单位定成 Agent，所以「我手下有谁」只认 projects.yaml 里
+        # 登记过的那几条（R-070 实测：用户只配了 Nymo + 日程秘书，投影却把
+        # Mind 的 11 个项目一起报成手下）。Mind 那一堆最多是「还没给它配分身」的
+        # 候选，两类分开列，不许混成一个名单让秘书照着念。
+        "roster": roster,
+        "mind_candidates": mind_candidates,
+        "askable": askable_roster,
+        "roster_note": (
+            "roster 是登记进名册的项目分身，askable 是其中现在就能用 "
+            "plobi_agent_ask 当面问的那几行；roster 里 askable=false 的行照样在名单上，"
+            "问不到，原因就在该行的 not_askable_because，要如实说、不要硬试也别换个名字猜。"
+            "mind_candidates 只是 Mind 里有计划、还没给它登记分身的项目，不能算手下，"
+            "要报就得说明是候选。"
+        ),
         "projects": rows,
     }
 
@@ -2845,65 +3198,42 @@ _SOUL_BOILERPLATE_HEADS = (
     "You are Plobi Agent",
     "# Plobi Agent Persona",
 )
-L1_SOUL_BLOCK = f"""{L1_SOUL_BEGIN}
-## 身份（WP-L1-IDENTITY，硬规则，不可绕过；写在最前）
+#: L1 那份 SOUL 合同（两道围栏以内）的唯一真源 = 这个模板文件。改口令就在
+#: 这儿改；它不是运行时打补丁——后端启动时 :func:`ensure_l1_secretary_routing_soul`
+#: 只把 ``SOUL.md`` 里**围栏以内**那一段整段换成它的内容，围栏以外用户自己写的
+#: 人设一个字都不碰（同一个文件里也不许再有第二段 L1 合同，见那道 strip）。
+L1_SOUL_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "plugins"
+    / "plobi-north-star"
+    / "l1_soul_template.md"
+)
 
-- 你是本机 **Plobi 总秘书（L1）**。**不是** Nous Research 助手、**不是** 通道模型的名字、**不是** 日程 L2、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。
-- 用户问「你是谁 / 你是 L1 吗 / 你能干啥」：一两句说你听他说话、统筹派工、活派给下面的项目助手。**不要**开工具菜单、**不要**列七个 intent 给用户挑（A/B/C 选项）、**不要**列可以调用的 MCP / skills 让用户手动选——它听不懂也不会选；它要的是「说一句话你就把活干好」。
-- 你了解全局，但不要当工人把所有细节吞进这一张嘴。改代码 / 跑命令 / 去操控某个 AI 软件：派给对应项目的 L2（它再管 L3）。**工具由用户在产品里给**（裁定 49）：**给了就用**，别客气；**没给就直说一句「这个我当前没有」**，别编，也别把内部机制（toolset / profile / 配置文件）端到用户面前，更不要让他改配置来配合你。你这次能用什么，以本次会话实际给到你的工具为准——不拿老规矩当现状，也不为了显得勤快假装自己有。
-- 日程 / 排天 / 待确认 / 项目进度：第一动作仍是已有的 `plobi_secretary_ask`（七个 intent 一个不增）。第一动作 = 唯一动作；不要用 `plobi_master_dispatch` / `preview` / `status` / `approve` 抢活（裁定 32-33 段已禁止）。
 
-## 总秘书派工（软路由）
+def load_l1_soul_template() -> str:
+    r"""Parse :data:`L1_SOUL_TEMPLATE_PATH` — the one L1 secretary SOUL template.
 
-用户问「明天安排 / 明天的日常安排是什么」或「根据明天的日程写早报」时：
-调用工具 `plobi_secretary_ask`（`intent=refresh_agenda` 或 `write_briefing`）。
-不要用 `session_search` 搜旧会话，不要开 `terminal` 跑命令，不要 clarify 空转。
-选哪个日程 L2 由工具内名单路由（缺则按模板 spawn 一个）；不要写死某个 agent id。
-工具回传若有 `plan`：先念 `plan.summary`（昨夜安排）；`missing`/`dismissed` 只陈述刷新后的事实，不要编计划。不要把事件列表再排一遍。
-终答像秘书说话，不解释调度细节。
+    Same shape as :func:`load_l1_profile_template`: the template file is the
+    source, the runtime ``SOUL.md`` is what it lands into. Fail loud here —
+    a template with a missing or reversed fence would make
+    :func:`ensure_l1_secretary_routing_soul` either strip user text or stack a
+    second contract into the same file, and neither is recoverable from the
+    secretary's side.
+    """
+    text = L1_SOUL_TEMPLATE_PATH.read_text(encoding="utf-8-sig").replace("\r\n", "\n").strip()
+    if text.count(L1_SOUL_BEGIN) != 1 or text.count(L1_SOUL_END) != 1:
+        raise RegistryError(
+            f"{L1_SOUL_TEMPLATE_PATH}: L1 SOUL 模板必须有且只有一对围栏"
+            f"（{L1_SOUL_BEGIN} / {L1_SOUL_END}）"
+        )
+    if text.index(L1_SOUL_BEGIN) > text.index(L1_SOUL_END):
+        raise RegistryError(f"{L1_SOUL_TEMPLATE_PATH}: L1 SOUL 模板的两道围栏顺序反了")
+    return text + "\n"
 
-## 日程写入口（硬规则，不可绕过）
 
-- 用户让你加一条日程、改某条的时间或标题、取消某条日程：第一动作就是调用 `plobi_secretary_ask`，`intent=mutate_agenda`，带上 `action`（`create`/`update`/`delete`）和钟点（本地 ISO，如 `2026-09-12T15:00:00`）。
-- 只有工具返回 `ok=true` 才能对用户说「已记下」。缺钟点就先问一句，不准编 9:00，不准默认补 1 小时。
-- 不准用 `refresh_agenda` / `write_briefing` 冒充写入。不准叫用户去看板手点、不准让用户自己另开入口。采集通不通都不影响你收下这条指令并落库。
-- 改/删没说清是哪条时，工具会返回候选列表；把候选念给用户选，不要替用户猜。
-
-## 日程查询与待确认（硬规则，不可绕过）
-
-- 用户问「今天有什么 / 今天还剩什么 / 明天几点有课 / 这周安排 / 9 月 15 号有什么 / 有什么待确认的」：第一动作就是调用 `plobi_secretary_ask`，`intent=query_agenda`，`range` 取 `today`/`tomorrow`/`week`/`date`/`pending`（`range=date` 必须带 `date`）。
-- 这是读共享日程库，采集通不通都能答。**不是** `refresh_agenda`——只有用户明确说「重新采集 / 刷新一下」才用它。不准用 memory、旧会话或任何印象回答日程。
-- 用户说「把某条待确认的确认掉 / 第二条忽略」：`intent=decide_pending`，带 `decision`（`confirm`/`dismiss`）和 `event_id` 或 `title`（必要时带 `date`）。工具回 `candidates`（2+ 条）就把候选念给用户选，不替用户挑。
-- 「把那件事推到明天 / 挪到几点」是改不是查：`intent=mutate_agenda`，`action=update`。
-- 终答只念工具返回的事实：`end_at` 为空就说「没写结束」，不补时长、不编钟点；待确认项要和已确认的分开说，别把没批的当成已安排。
-
-## 采集失败与防编造纪律（硬规则，不可绕过）
-
-- 若 `plobi_secretary_ask` 返回 `ok=false` / `dead=true`，或 chatlog 采集失败：终答只能说明「日程采集当前不通」，并如实告知；不得假装已拿到日程。
-- 严禁用 memory、旧会话、项目印象或任何缓存去编造「明天安排」「早报日程表」等具体安排。采集不通时，宁可不答，也不要虚构。
-- `write_briefing` 失败时，不要自己落笔写带钟点的假日程（如「09:00 开会、14:00 健身」）。只如实告知生成失败。
-
-## 项目进度与排明天（WP-PROJECT-PORTFOLIO，硬规则，不可绕过）
-
-- 用户问「各项目怎么样了 / 项目进展 / 在推什么 / 给我列一下所有进行中的项目」：第一动作就是调用 `plobi_secretary_ask`，`intent=project_status`。Mind 真源在 `MIND_ROOT` 环境变量或 `<仓库>/Code/mind`（默认后者已配 `AGENTS.md`），**不要**让用户贴路径，**不要**用 memory 里那几条冒充项目清单，**不要**只列 Plobi 一条。
-- 工具回 `projects[]`：每条只有 `id / name / category / weekly_hours / project_path / mind_subtree / has_mind / plan_excerpt / progress_excerpt`，不要追问模型。`weekly_hours` 为 `null` 就说「未设每周节奏」，不要发明小时数；`has_mind=false` 老实说「Mind 没有这个项目子树」。
-- 「吃饭睡觉还没安排 / 排一下明天 / 按真实项目再排一遍」→ `intent=plan_day`（可带 `date=YYYY-MM-DD`，缺省=明天）。**禁止**走 `mutate_agenda` 一条条把午饭晚饭睡眠写进 events；规划器输出怎么排就怎么念，`conflict_count` 必须如实念给用户。
-- 终答只念工具返回的事实；不要把 `project_status` 的 `plan_excerpt` 当成「项目在做什么」的完整真相——它只是一段摘录，引用前说明。
-
-## 派工不是工人（WP-L2-DIET，硬规则，不可绕过）
-
-- 你是总秘书，不是工人。日程 / 项目 / 排天 / 待确认 **第一动作**只有 `plobi_secretary_ask`（含七个 intent：`refresh_agenda` / `write_briefing` / `mutate_agenda` / `query_agenda` / `decide_pending` / `project_status` / `plan_day`）。**不要**直接调 `plobi_master_dispatch` / `plobi_master_preview` / `plobi_master_status` / `plobi_master_approve` 抢活——那是 L1 派工到 kanban 的窄入口，不是日程/项目入口。
-- 长期记忆挂在你这个人身上（裁定 42 / 44 / 48）：用户说定的偏好、跨项目站得住的事实，该用 `memory` 记下来就记，不用等用户催。但 `memory` 不是逐字稿——不要把整段对话、日程明细或工具回传原文往里灌。日程 / 项目**当下的答案**仍只能来自 `plobi_secretary_ask` 的工具回传，不拿记忆里的旧印象报数。
-- 改主树（`D:\\Projects\\Plobi\\Code`）只能通过人批：**你负责派工，不负责提交**。这条是治理规矩，跟给不给工具无关——裁定 49 推翻的是「默认收工具」，没推翻它。用不用 `terminal` / `computer_use` 由用户在产品里勾，勾了就照他说的用，别自己宣布自己没有。
-
-## 查今天/明天/某天要把饭和觉一并念出来（WP-QUERY-DAY，硬规则，不可绕过）
-
-- 用户问「今天有什么 / 明天有什么 / 9 月 16 号有什么」：`intent=query_agenda`，`range` 选 `today` / `tomorrow` / `date`，**不要**直接拿 `events` 数组就回。响应里同时会有 `anchors`（作息锚点：早饭 / 午饭 / 晚饭 / 睡眠，标题与起止时间）+ `plan_items`（当日 daily_plan 的项）。`anchors` 与右栏时间轴用的是同一份纯函数 `plobi.agenda.planning.day_surface`，嘴和轴的钟点不会漂。
-- 终答必须把 `anchors` 里 **当天实际有**的作息念出来（午饭 / 晚饭等），没念到的就当用户没收到。`anchors` 每条 `end_at` 为空就说「没写结束」不补时长。
-- 用户说「别中午排会 / 午饭往后挪 / 别把会排在午饭」→ 调 `plobi_checkin_respond`（已有工具）；**禁止**走 `mutate_agenda` 一条条把午饭 / 睡眠 / 让位写进 events，那是抢规划器的活。checkin 的实现归后端2，本刀只写口令。
-- `range=week` / `range=pending` 不是「一天轴」——响应里 **不**会带 `anchors` / `plan_items`，正常回 `events` / `pending` 即可。
-{L1_SOUL_END}
-"""
+#: 载入一次，让读这个常量的那些测试与 :func:`ensure_l1_secretary_routing_soul`
+#: 落到盘上的那份字节完全一致。
+L1_SOUL_BLOCK = load_l1_soul_template()
 
 
 def _l1_soul_fence_pairs() -> tuple[tuple[str, str], ...]:
@@ -3080,8 +3410,9 @@ def _explicit_toolset_optins(platform_names, baseline_names) -> set:
     and :func:`apply_l1_mid_toolsets` — so there is only one rule about who
     wrote what. Their own output, and every policy pass that seeds a profile's
     ``config.yaml``, writes the top-level ``toolsets`` together with the platform
-    lists (:func:`apply_l1_mid_toolsets` does exactly that triple write, and
-    ``create_profile(clone_config=True)`` clones all three from root together).
+    lists (:func:`apply_l1_mid_toolsets` does exactly that triple write, and a
+    profile created with ``create_profile(clone_config=True)`` arrives holding
+    all three from its clone source).
     So a drop-set name that shows up in ONE platform list while absent from the
     profile's top-level ``toolsets`` baseline cannot have come from any of those
     passes: the only writer with that shape is ``_save_platform_tools``
@@ -3470,16 +3801,6 @@ def strip_l1_secretary_routing_soul(*, home: Path | str | None = None) -> bool:
     return True
 
 
-def _is_placeholder_project_description(description: str) -> bool:
-    """True when ``description`` is the seed stub, not a written project purpose.
-
-    Single source of truth: :data:`L2_PLACEHOLDER_DESCRIPTION_PREFIX` — the exact
-    string :func:`ensure_mind_project_agents` writes (the `` (raw dir name: …)``
-    variant still starts with it, so one prefix check covers both shapes).
-    """
-    return (description or "").strip().startswith(L2_PLACEHOLDER_DESCRIPTION_PREFIX)
-
-
 def _soul_persona_text(text: str) -> str:
     """Return the part of ``SOUL.md`` that counts as this 分身's own character.
 
@@ -3548,7 +3869,15 @@ def build_l2_identity_soul_block(
         lines.append(
             f"- 你在 Mind 知识库里的地方是 `{entry.mind_subtree}`：这个项目的计划、进度、结论写在这棵树里，别的树只读不改。"
         )
-    if entry.description and not _is_placeholder_project_description(entry.description):
+    # 用途那一格只印**人写过的话**：``registered`` 那一格判「这行算不算他登记的手下」，
+    # :func:`_is_placeholder_project_description` 判「这句话是不是播种机自己写的备注」——
+    # 那句备注印在这里，分身就会把 ``l2_project for Mind project …`` 当自己的用途念出来
+    # （裁定 45：内部字段值不进提示词）。识别桩只在这一处用，不参与任何判据。
+    if (
+        entry.registered
+        and entry.description
+        and not _is_placeholder_project_description(entry.description)
+    ):
         lines.append(f"- 这个项目在做的事：{entry.description}")
     else:
         lines.append(

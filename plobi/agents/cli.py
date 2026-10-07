@@ -19,6 +19,8 @@ from .registry import (
 
 
 def _entry_from_args(name: str, args: Any) -> AgentEntry:
+    # ``agents register`` 这一步**就是**登记（R-072）：名册成员资格在这儿盖成
+    # ``True``，和「Mind 投影不是登记」的 ``registered=False`` 是同一枚章的两面。
     return AgentEntry(
         name=name,
         role=getattr(args, "role", None) or "l2_project",
@@ -28,6 +30,7 @@ def _entry_from_args(name: str, args: Any) -> AgentEntry:
         mind_subtree=getattr(args, "mind_subtree", None) or "",
         skills=tuple(getattr(args, "skills", None) or ()),
         description=getattr(args, "description", None) or "",
+        registered=True,
     )
 
 
@@ -125,9 +128,8 @@ def _spawn(registry: AgentRegistry, args: Any) -> None:
         registry.upsert(_entry_from_args(name, args))
         registry.save()
 
-    clone_from = getattr(args, "clone_from", None)
     try:
-        result = registry.spawn(name, clone_from=clone_from)
+        result = registry.spawn(name)
     except RegistryError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
