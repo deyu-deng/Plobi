@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt, _resolve_cron_enabled_toolsets, _merge_mcp_into_per_job_toolsets
+from cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt, _resolve_cron_enabled_toolsets, _resolve_cron_skip_memory, _merge_mcp_into_per_job_toolsets
 from tools.env_passthrough import clear_env_passthrough
 from tools.credential_files import clear_credential_files
 
@@ -4868,3 +4868,24 @@ class TestMultiTargetDeliveryContinuesOnFailure:
         assert "a@example.com" in result
         assert "b@example.com" in result
         assert mock_pool.submit.call_count == 2
+
+
+class TestPerJobSkipMemory:
+    """裁定 42 §42.3: 记忆这一格从字面量改成按 job 读，默认值一字未动。
+
+    「消化要有独立运行上下文、不污染对话记忆」以前打算用 profile 承载；profile
+    不再是分身单位之后只剩这一行能表达它，所以 job 自己得能说话——但没写就等于
+    以前的 ``skip_memory=True``。
+    """
+
+    def test_unset_job_keeps_memory_off(self):
+        assert _resolve_cron_skip_memory({}) is True
+        assert _resolve_cron_skip_memory({"prompt": "digest"}) is True
+
+    def test_job_can_opt_into_memory(self):
+        assert _resolve_cron_skip_memory({"skip_memory": False}) is False
+
+    def test_non_bool_does_not_flip_the_default(self):
+        # jobs.json 可以手改；``"false"`` 当布尔读会反转语义，所以只认布尔。
+        assert _resolve_cron_skip_memory({"skip_memory": "false"}) is True
+        assert _resolve_cron_skip_memory({"skip_memory": 0}) is True

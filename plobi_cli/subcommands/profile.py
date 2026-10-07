@@ -69,6 +69,19 @@ def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
         "-y", "--yes", action="store_true", help="Skip confirmation prompt"
     )
 
+    # 裁定 42 §42.4：分身的家不再按项目复制之后，存量目录只标失效、绝不删除——
+    # 这一格就是那个「点头」动作本身（清理目录仍是另一件要单独确认的事）。
+    profile_retire = profile_subparsers.add_parser(
+        "retire",
+        help="Mark a profile as retired (directory kept on disk, never deleted)",
+    )
+    profile_retire.add_argument("profile_name", help="Profile to retire")
+    profile_retire.add_argument(
+        "--reason",
+        default="",
+        help="Why this profile is retired; written into the profile's .retired marker",
+    )
+
     profile_describe = profile_subparsers.add_parser(
         "describe",
         help="Read or set a profile's description (used by the kanban orchestrator)",

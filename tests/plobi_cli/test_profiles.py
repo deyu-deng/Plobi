@@ -44,6 +44,9 @@ from plobi_cli.profiles import (
     NO_BUNDLED_SKILLS_MARKER,
     backfill_profile_envs,
     profiles_to_serve,
+    is_profile_retired,
+    mark_profile_retired,
+    PROFILE_RETIREMENT_MARKER,
 )
 from plobi_cli.config import DEFAULT_CONFIG
 
@@ -1957,3 +1960,51 @@ def test_clone_config_does_not_copy_memory_files(profile_env):
 
     assert not (profile_dir / "memories" / "MEMORY.md").exists()
     assert not (profile_dir / "memories" / "USER.md").exists()
+
+
+# ===================================================================
+# 裁定 42 §42.4 — 退役只盖章，存量目录一个都不删
+# ===================================================================
+
+
+class TestRetireProfile:
+    def test_marking_keeps_the_directory_and_every_file_in_it(self, profile_env):
+        profile_dir = create_profile("coder", no_alias=True)
+        (profile_dir / "sessions" / "keep.txt").write_text("user data\n", encoding="utf-8")
+        before = sorted(p.name for p in profile_dir.iterdir())
+
+        assert mark_profile_retired(profile_dir, reason="legacy clone home") is True
+
+        assert profile_dir.is_dir()
+        assert (profile_dir / "sessions" / "keep.txt").read_text(encoding="utf-8") == "user data\n"
+        assert sorted(p.name for p in profile_dir.iterdir()) == sorted(
+            [*before, PROFILE_RETIREMENT_MARKER]
+        )
+        assert is_profile_retired(profile_dir) is True
+
+    def test_reason_is_recorded_and_marking_is_idempotent(self, profile_env):
+        profile_dir = create_profile("coder", no_alias=True)
+        assert mark_profile_retired(profile_dir, reason="one") is True
+        marker_text = (profile_dir / PROFILE_RETIREMENT_MARKER).read_text(encoding="utf-8")
+        assert "one" in marker_text
+
+        assert mark_profile_retired(profile_dir, reason="two") is False
+        assert (
+            profile_dir / PROFILE_RETIREMENT_MARKER
+        ).read_text(encoding="utf-8") == marker_text
+
+    def test_profile_list_reports_retired_profiles(self, profile_env):
+        """读的一头只有 ``plobi profile list`` 这一处（判据是同一枚标记文件）。
+
+        ``list_profiles`` 永远带回 default 那一行（它是安装本身，不是分身，CLI 也拒绝
+        退役它），所以这里只盯自己建的两条命名分身：盖了章的报退役，没盖的当常用。
+        """
+        retired_dir = create_profile("old-clone", no_alias=True)
+        create_profile("still-used", no_alias=True)
+
+        def retired_by_name() -> dict:
+            return {p.name: p.retired for p in list_profiles() if not p.is_default}
+
+        assert retired_by_name() == {"old-clone": False, "still-used": False}
+        mark_profile_retired(retired_dir)
+        assert retired_by_name() == {"old-clone": True, "still-used": False}
