@@ -24,6 +24,7 @@ if str(_ROOT) not in sys.path:
 
 import aigw.main as main
 from aigw.providers.antigravity_cli import AntigravityCliProvider
+from aigw.providers.base import UpstreamError
 from aigw.providers.marvis_cli import MarvisCliProvider
 from aigw.providers.marvis_gui import MarvisGuiProvider
 from aigw.providers.workbuddy_cli import WorkbuddyCliProvider
@@ -235,12 +236,166 @@ def test_workbuddy_hybrid_disables_without_cli_or_gui():
     print("  ok: WorkbuddyHybrid disables cleanly with no CLI and no GUI")
 
 
+# ── a broken CLI run is a failure, never an answer ───────────────────────────
+# Measured on the real CodeBuddy Code CLI: signed out it exits **0** and puts the
+# hint on stderr; the WorkBuddy-embedded build puts the same hint on stdout. A
+# returncode check alone lets both through, and the gateway would serve an empty
+# (or hint-text) completion that upstream code cannot tell from a real answer.
+
+_SENTINEL_MODELS = ["workbuddy_cli/m"]
+_SENTINEL_MAP = {"workbuddy_cli/m": "m"}
+
+
+def _fake_prov(**extra):
+    prov = WorkbuddyCliProvider(_cli_cfg(_SENTINEL_MODELS, _SENTINEL_MAP, **extra), None)
+    asyncio.run(prov.discover_accounts())
+    return prov
+
+
+def _req(prompt: str) -> dict:
+    return {"model": "workbuddy_cli/m", "messages": [{"role": "user", "content": prompt}]}
+
+
+def test_signed_out_cli_is_a_failure_not_an_answer():
+    for sentinel in ("SIMULATE_SIGNED_OUT_STDERR", "SIMULATE_SIGNED_OUT_STDOUT"):
+        prov = _fake_prov()
+        try:
+            asyncio.run(prov.chat(prov.accounts[0], _req(f"{sentinel} hi")))
+            raise AssertionError(f"{sentinel}: a signed-out CLI must not answer")
+        except UpstreamError as exc:
+            assert exc.reauth is True, f"{sentinel}: expected reauth, got {exc}"
+            assert exc.status == 401, f"{sentinel}: {exc.status}"
+    print("  ok: signed-out CLI -> reauth on both stdout and stderr shapes")
+
+
+def test_silent_cli_is_a_failure():
+    prov = _fake_prov()
+    try:
+        asyncio.run(prov.chat(prov.accounts[0], _req("SIMULATE_EMPTY hi")))
+        raise AssertionError("an exit-0-says-nothing CLI must raise")
+    except UpstreamError as exc:
+        assert exc.status == 502, exc.status
+        assert exc.reauth is False, "no auth hint -> not a reauth"
+    print("  ok: empty stdout -> failure, not an empty completion")
+
+
+def test_stream_raises_when_cli_is_signed_out():
+    prov = _fake_prov()
+
+    async def _drive():
+        async for _ in prov.chat_stream(prov.accounts[0], _req("SIMULATE_SIGNED_OUT_STDERR hi")):
+            pass
+
+    try:
+        asyncio.run(_drive())
+        raise AssertionError("signed-out stream must raise instead of finishing clean")
+    except UpstreamError as exc:
+        assert exc.reauth is True, exc
+    print("  ok: chat_stream() refuses to finish clean when the CLI is signed out")
+
+
+def test_stream_raises_on_nonzero_exit():
+    prov = _fake_prov()
+
+    async def _drive():
+        async for _ in prov.chat_stream(prov.accounts[0], _req("SIMULATE_FAIL_EXIT hi")):
+            pass
+
+    try:
+        asyncio.run(_drive())
+        raise AssertionError("non-zero CLI exit must surface in stream mode too")
+    except UpstreamError as exc:
+        assert exc.status == 502, exc.status
+    print("  ok: chat_stream() propagates a non-zero exit")
+
+
+def test_stream_drains_stderr_and_still_answers():
+    """A chatty stderr used to be unread -> the child blocks on a full pipe buffer."""
+    prov = _fake_prov()
+    chunks: list[dict] = []
+
+    async def _drive():
+        async def _inner():
+            async for c in prov.chat_stream(prov.accounts[0], _req("SIMULATE_STDERR_NOISE hi")):
+                chunks.append(c)
+
+        await asyncio.wait_for(_inner(), timeout=60)
+
+    asyncio.run(_drive())
+    content = "".join(
+        c["choices"][0]["delta"].get("content", "")
+        for c in chunks
+        if "content" in c["choices"][0]["delta"]
+    )
+    assert "SIMULATE_STDERR_NOISE" in content, content
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    print("  ok: large stderr is drained, the answer still streams")
+
+
+def test_refresh_models_reads_the_clis_own_list():
+    """裁定 46 的同一条判据往下层用一次：模型名单由被调方声明，不抄进配置。"""
+    prov = _fake_prov()
+    short = asyncio.run(prov.refresh_models(prov.accounts[0]))
+    assert short == ["alpha-1", "beta-2", "gamma-3"], short
+    assert prov.served_models == (
+        "workbuddy_cli/alpha-1",
+        "workbuddy_cli/beta-2",
+        "workbuddy_cli/gamma-3",
+    ), prov.served_models
+    assert prov.model_map["workbuddy_cli/beta-2"] == "beta-2"
+    assert prov.models_refreshed is True
+    print("  ok: refresh_models() takes the CLI's advertised list and replaces the seed")
+
+
+def test_hybrid_keeps_the_public_id_prefix_when_discovering():
+    """The inner CLI's registry key must not leak into ids clients see."""
+    cfg = {
+        "prefer": "cli",
+        "models": ["workbuddy/seed"],
+        "cli": {
+            "binary": FAKE,
+            "interpreter": PY,
+            "prompt_flag": "-p",
+            "model_flag": "--model",
+            "models": ["workbuddy/seed"],
+            "accounts": [{"id": "c"}],
+        },
+    }
+    prov = WorkbuddyHybridProvider(cfg, None)
+    asyncio.run(prov.discover_accounts())
+    short = asyncio.run(prov.refresh_models(prov.accounts[0]))
+    assert short == ["alpha-1", "beta-2", "gamma-3"], short
+    assert prov.served_models == (
+        "workbuddy/alpha-1",
+        "workbuddy/beta-2",
+        "workbuddy/gamma-3",
+    ), prov.served_models
+    assert prov._cli.served_models[0] == "workbuddy/alpha-1", prov._cli.served_models
+    print("  ok: hybrid lifts the discovered catalog under its own public prefix")
+
+
+def test_refresh_models_keeps_the_seed_when_nothing_is_advertised():
+    prov = _fake_prov(env={"FAKE_CLI_HELP_NO_LIST": "1"})
+    assert asyncio.run(prov.refresh_models(prov.accounts[0])) is None
+    assert prov.served_models == tuple(_SENTINEL_MODELS), "seed must survive"
+    assert prov.models_refreshed is False
+    print("  ok: no advertised list -> seed catalog kept")
+
+
 def main_run():
     print("=== cli provider verification ===")
     test_binary_missing_disables()
     test_chat_captures_stdout()
     test_stream_yields_chunks()
     test_e2e_through_gateway()
+    test_signed_out_cli_is_a_failure_not_an_answer()
+    test_silent_cli_is_a_failure()
+    test_stream_raises_when_cli_is_signed_out()
+    test_stream_raises_on_nonzero_exit()
+    test_stream_drains_stderr_and_still_answers()
+    test_refresh_models_reads_the_clis_own_list()
+    test_hybrid_keeps_the_public_id_prefix_when_discovering()
+    test_refresh_models_keeps_the_seed_when_nothing_is_advertised()
     test_marvis_cli_via_fake()
     test_marvis_gui_graceful_disable()
     test_workbuddy_cli_via_fake()

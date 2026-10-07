@@ -1,0 +1,90 @@
+# aigw — WorkBuddy (CodeBuddy Code CLI) gateway config — REAL channel, no mock
+#
+# Route: spawn the standalone CodeBuddy Code CLI (compliant, opendesign-style).
+# The CLI consumes the user's own Buddy AI 积分 — measured against the vendors'
+# own pricing pages, "WorkBuddy 和 CodeBuddy 同一账号积分共享，无需分别订阅", so
+# this spends the same subscription the desktop app already pays for, not API money.
+#
+#   binary:  D:\Portables\cli\CodeBuddy\node_modules\@tencent-ai\codebuddy-code\bin\codebuddy
+#   version: 2.161.4, installed 2026-10-07 via
+#            npm install --prefix D:\Portables\cli\CodeBuddy @tencent-ai/codebuddy-code
+#            (registry npmmirror; the box has a TLS-intercepting proxy)
+#   Location rationale: D:\_POLICY\directory-map.json `tools` — "语言运行时的全局
+#   CLI 包（npm i -g）不算此类默认落点：本机 npm 全局 prefix 是
+#   D:\Runtimes\Languages\Node，会把工具混进运行时" → portable tool dir, not the runtime.
+#
+# Why the desktop's embedded CLI is NOT used: it ships only the headless bundle
+# (no `dist/codebuddy.js`), so it has no interactive login surface, and its model
+# list differs from the standalone build's.
+#
+# Login: completed on this machine 2026-10-07 (browser OAuth). Verified live:
+#   `-p --tools ""` -> exit 0, stdout "pong", 5.9-8.8s
+# Credentials resolve at machine level, so they work under either config dir;
+# CODEBUDDY_CONFIG_DIR below keeps logs/sessions/traces off C: (D:\_POLICY forbids
+# runtime data on C:).
+#
+# `--tools ""` is deliberate: it strips the CLI's tool set so one gateway request
+# cannot read files or run commands — this is a text channel, not an agent. When
+# Plobi needs L3 machine control that is a different provider, not this one.
+#
+# Run:  python -m aigw start --config config.workbuddy-cli.yaml
+
+server:
+  host: 127.0.0.1
+  port: 8022
+  api_key: ${AIGW_KEY:-sk-local-workbuddy-cli}
+
+logging:
+  level: INFO
+
+# The CLI must reach its own endpoint and this box intercepts TLS, so honour the
+# system proxy (same call as config.cursor-desktop.yaml).
+trust_env: true
+
+scheduler:
+  max_retries: 2
+  global_concurrency: 4
+  per_account_concurrency: 1          # one subprocess at a time; a CLI run is not cheap
+  sticky_ttl: 1800
+  strategy: least_fail
+
+# No mock block at all: /v1/models must only list the real channel, so an empty
+# catalog means "nothing wired up" rather than pretending.
+providers:
+  workbuddy:
+    enabled: true
+    prefer: cli
+    # Seed only. On startup the Registry calls Provider.refresh_models, and
+    # CliProvider now re-reads the CLI's own advertised list from `--help`
+    # (`Currently supported: …`), so this cannot silently rot on a CLI upgrade.
+    # Values below are the list that `codebuddy --help` printed on this machine
+    # for 2.161.4 on 2026-10-07 — used only if that read fails.
+    models:
+      - workbuddy/glm-5.3
+      - workbuddy/glm-5.2
+      - workbuddy/glm-5.1
+      - workbuddy/kimi-k3-1
+      - workbuddy/deepseek-v4-pro
+    cli:
+      interpreter: D:\Runtimes\Languages\Node\node.exe
+      binary: D:\Portables\cli\CodeBuddy\node_modules\@tencent-ai\codebuddy-code\bin\codebuddy
+      prompt_flag: -p                 # boolean --print; the prompt rides as a positional
+      model_flag: --model
+      extra_args:
+        - --output-format
+        - text
+        - --tools
+        - ""                          # no tool set: a text channel, not an agent
+      timeout: 180
+      cwd: D:\Temp
+      env:
+        CODEBUDDY_CONFIG_DIR: D:\Data\AppData\CodeBuddy
+        DISABLE_TELEMETRY: "1"
+    # `gui:` intentionally absent — that keeps the UI-Automation fallback off, so
+    # this provider can never start typing into the user's screen. (Measured: UI
+    # Automation from a service context cannot see these windows anyway.)
+    accounts:
+      - { id: workbuddy-cli }
+
+routing:
+  rules: []
