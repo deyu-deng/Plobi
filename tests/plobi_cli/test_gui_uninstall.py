@@ -381,6 +381,14 @@ class _FakeKeyHandle:
         return None
 
 
+# What the Windows installer wrote for itself, plus one bystander that belongs to
+# somebody else. The assertions below are written as *relations* against these,
+# not as a snapshot of the uninstall's cleanup list: that list is expected to grow,
+# and it may only ever grow with Plobi-owned names.
+_PLOBI_OWNED_ENV_NAMES = ("PLOBI_HOME", "PLOBI_GIT_BASH_PATH")
+_FOREIGN_ENV_NAME = "UNRELATED_TOOL_HOME"
+
+
 class _FakeWinreg:
     """Stand-in for the ``winreg`` module: records calls, never touches HKCU.
 
@@ -399,6 +407,12 @@ class _FakeWinreg:
     HKEY_CURRENT_USER = -2147483647  # 0x80000001
 
     def __init__(self):
+        # HKCU\Environment as the uninstall would find it: the values Plobi owns,
+        # plus one it must never touch.
+        self.values: dict[str, str] = {
+            **{name: r"D:\Data\AppData\plobi" for name in _PLOBI_OWNED_ENV_NAMES},
+            _FOREIGN_ENV_NAME: r"C:\Users\tester\unrelated-tool",
+        }
         self.opened: list[str] = []
         self.deleted: list[str] = []
 
@@ -412,11 +426,19 @@ class _FakeWinreg:
     def CloseKey(self, handle):  # noqa: N802
         return None
 
-    def QueryValueEx(self, handle, name):  # noqa: N802 — assume every value exists
-        return (r"D:\Data\AppData\plobi", self.REG_SZ)
+    def QueryValueEx(self, handle, name):  # noqa: N802
+        # Real winreg raises FileNotFoundError for a value that isn't there, and the
+        # code under test keys its whole delete list off that. Faking it as
+        # "everything exists" would let the test pass for a name no installer ever
+        # wrote, so the lookup goes through the seeded values.
+        try:
+            return self.values[name], self.REG_SZ
+        except KeyError:
+            raise FileNotFoundError(name)
 
     def DeleteValue(self, handle, name):  # noqa: N802
         self.deleted.append(name)
+        self.values.pop(name, None)
 
 
 def _stub_everything_except_the_registry(monkeypatch, *, plobi_home, fake_code):
@@ -443,8 +465,10 @@ def _stub_everything_except_the_registry(monkeypatch, *, plobi_home, fake_code):
         "remove_path_from_windows_registry",
         lambda home: path_calls.append(home) or [],
     )
-    # Force the Windows branch on so this asserts the same way on every OS.
-    monkeypatch.setattr(uninstall, "_is_windows", lambda: True)
+    # Force the Windows branch on so this asserts the same way on every OS — via
+    # sys.platform, the same trick test_userdata_dir_windows uses, which keeps the
+    # real ``_is_windows()`` predicate in the path under test.
+    monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr("builtins.input", lambda *a, **k: pytest.fail("prompted in --yes mode"))
 
     from plobi_cli import gui_uninstall as gu_mod
@@ -483,13 +507,19 @@ def test_uninstall_default_never_opens_the_user_environment_key(tmp_path, monkey
     assert fake.opened == [], f"默认卸载碰了注册表：{fake.opened}"
     assert fake.deleted == [], f"默认卸载删了用户环境变量：{fake.deleted}"
     assert path_calls == [], "默认卸载碰了 User PATH"
+    # 家目录指针必须原样在位——就是被抹掉后会长出第二个家的那个值。
+    assert fake.values["PLOBI_HOME"] == r"D:\Data\AppData\plobi"
     # 数据仍然照旧保留（本刀不许改的其它卸载行为）
     assert plobi_home.exists()
 
 
 @pytest.mark.parametrize("full", [False, True])
 def test_purge_user_env_flag_is_the_only_way_to_clear_it(tmp_path, monkeypatch, full):
-    """带 --purge-user-env 才清，且删的就是那两个名字——不是"任意 PLOBI_* 全清"。"""
+    """带 --purge-user-env 才清；清的只会是 Plobi 自己写下的变量，别人的不碰。
+
+    ``full`` 两种取值都要过：``--full``（删数据）不等于"顺手把用户环境变量抹了"，
+    这两件事在裁定 75 之前被混成一件，就是这次事故的形状。
+    """
     import plobi_cli.uninstall as uninstall
 
     fake = _FakeWinreg()
@@ -501,6 +531,60 @@ def test_purge_user_env_flag_is_the_only_way_to_clear_it(tmp_path, monkeypatch, 
 
     uninstall.run_uninstall(_Args(yes=True, full=full, purge_user_env=True))
 
-    assert sorted(fake.deleted) == ["PLOBI_GIT_BASH_PATH", "PLOBI_HOME"], fake.deleted
+    # 开关打开才允许真删（正面断言，不是"没跳过"的反证）。
+    assert fake.deleted, "显式 --purge-user-env 必须真的写到 HKCU\\Environment"
+    # 断言写成关系而不是键名单快照：卸载的清理名单以后会长，长出的任何东西都只能
+    # 是 Plobi 自己写下的变量，别人的一个都不许碰。
+    assert set(fake.deleted) <= set(_PLOBI_OWNED_ENV_NAMES), fake.deleted
+    assert _FOREIGN_ENV_NAME not in fake.deleted
+    assert _FOREIGN_ENV_NAME in fake.values
+    # 本刀要守的那一条：家目录指针只有在被明确要求时才被清。
+    assert "PLOBI_HOME" in fake.deleted
     assert len(path_calls) == 1, "显式清理时 User PATH 那一趟应当被走到一次"
+
+
+def test_uninstall_default_says_the_user_env_was_kept(tmp_path, monkeypatch, capsys):
+    """跳过必须说出来，不能静默默认。
+
+    必做 2 要求默认不抹时打印一句「保留了用户环境变量（要清请加 --purge-user-env）」。
+    静默跳过会让用户以为卸载已经把机器擦干净了，之后 ``PLOBI_HOME`` 缺失长出的第二个家
+    就会被算成别的毛病。断言只锁这句话必须同时给到「保留了」和「怎么才能清」，不锁措辞。
+    """
+    import plobi_cli.uninstall as uninstall
+
+    fake = _FakeWinreg()
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    plobi_home, fake_code = _make_throwaway_home(tmp_path)
+    _stub_everything_except_the_registry(
+        monkeypatch, plobi_home=plobi_home, fake_code=fake_code
+    )
+
+    uninstall.run_uninstall(_Args(yes=True, full=True))
+
+    out = capsys.readouterr().out
+    # 得告诉用户怎么才会清——否则这个开关等于不存在。
+    assert "--purge-user-env" in out, out
+    # 而且不能一面跳过一面报告已清理。
+    assert "Removed User env var" not in out
+    assert "Removed from User PATH" not in out
+    assert fake.deleted == []
+
+
+def test_uninstall_cli_flag_defaults_to_keeping_the_user_env():
+    """``plobi uninstall`` 的默认值必须是「不抹」，只能由命令行显式置真。
+
+    裁定 75 禁止默认开、也禁止做成配置项默认 true，所以默认值本身要有测试守着，而不是
+    靠读代码确认。``--full`` 那一行是同一条契约的另一半：删数据不等于抹用户环境。
+    """
+    import argparse
+
+    from plobi_cli.subcommands.uninstall import build_uninstall_parser
+
+    parser = argparse.ArgumentParser(prog="plobi")
+    sub = parser.add_subparsers(dest="command")
+    build_uninstall_parser(sub, cmd_uninstall=lambda args: args)
+
+    assert parser.parse_args(["uninstall"]).purge_user_env is False
+    assert parser.parse_args(["uninstall", "--yes", "--full"]).purge_user_env is False
+    assert parser.parse_args(["uninstall", "--purge-user-env"]).purge_user_env is True
 
