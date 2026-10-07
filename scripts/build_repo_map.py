@@ -155,12 +155,25 @@ def dynamic_import_counts(repo: Path) -> dict[str, int]:
 
     用 `git grep` 数：范围就是「进了版本管理的 Python」，不受 .venv / node_modules /
     本地未跟踪垃圾影响，也能被测试用另一套实现（自己走目录 + 正则）独立复核。
+    **排除本生成器自己**：它的源码里就写着这三个模式串（正则、标签、注释各一处），
+    把它们数进「产品代码有多少处动态导入」既不是事实，还会让图件在「生成器进仓」那一笔
+    自己变脏——计数器不该是它自己计量的对象。
     `git grep` 无命中时 exit 1（不是错误），exit ≥2 才是真失败。
     """
     counts: dict[str, int] = {}
     for label, pat in DYNAMIC_PATTERNS:
         proc = subprocess.run(
-            ["git", "grep", "-I", "-o", "-E", pat.pattern, "--", "*.py"],
+            [
+                "git",
+                "grep",
+                "-I",
+                "-o",
+                "-E",
+                pat.pattern,
+                "--",
+                "*.py",
+                f":(exclude){GENERATOR_RELPATH}",
+            ],
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -631,7 +644,8 @@ def render_python_regions(repo: Path, py: dict, blind: dict[str, int]) -> dict[s
         "  散模块的**出边**由本生成器跑一层 ast 补（grimp 只扫包，扫不到它们当引用方）；入边取 grimp 视图。",
         "- `入 / 出` = 指向本块 / 本块指出的边数（含块内部）；`内` = 其中两端同块的那部分。",
         "  热点按含块内的总边数排；**只有一个文件的块不列热点**（概览行就是它的全部）。",
-        "- 盲区（静态图天生看不见；处数当场数，范围 = 全仓 tracked `.py`，用 `git grep`）：",
+        "- 盲区（静态图天生看不见；处数当场数，范围 = 全仓 tracked `.py` 再减本生成器自己——"
+        "计数器不数自己，否则本文件进仓那一笔就会把图件弄脏；用 `git grep`）：",
     ]
     for label in sorted(blind):
         meta.append(f"  - `{label}` {blind[label]} 处")
