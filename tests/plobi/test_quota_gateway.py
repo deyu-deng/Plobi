@@ -15,6 +15,7 @@ Every fetch here goes through the ``fetch`` seam — no test touches the network
 
 from __future__ import annotations
 
+import json
 import time
 import urllib.error
 
@@ -444,3 +445,48 @@ def test_load_routes_legacy_desktop_entries_to_the_gateway(monkeypatch, tmp_path
     assert "gateway" in loaded
     assert "antigravity" in caplog.text
     assert "gateway.exclude" in caplog.text
+
+
+# ── the spend path must aim at the completions endpoint, not the base ────────
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = json.dumps(payload).encode()
+
+    def read(self):
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _send_probe(monkeypatch, base_url):
+    from plobi.quota.route import _default_send
+    from plobi.quota.sources import AigwSource
+
+    seen = {}
+
+    def fake_urlopen(request, timeout=None):
+        seen["url"] = request.full_url
+        return _FakeResponse({"choices": [{"message": {"role": "assistant", "content": "pong"}}]})
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    src = AigwSource("workbuddy", model="workbuddy/glm-5.3", base_url=base_url, api_key="k")
+    out = _default_send("hi", src)
+    return out, seen["url"]
+
+
+def test_default_send_appends_the_completions_path(monkeypatch):
+    """base_url 是 OpenAI base（…/v1），直接 POST 它会 404 —— 派生出来的源全是这个形状。"""
+    out, url = _send_probe(monkeypatch, "http://127.0.0.1:8022/v1")
+    assert url == "http://127.0.0.1:8022/v1/chat/completions"
+    assert out == "pong"
+
+
+def test_default_send_does_not_double_an_explicit_endpoint(monkeypatch):
+    _out, url = _send_probe(monkeypatch, "http://127.0.0.1:8022/v1/chat/completions/")
+    assert url == "http://127.0.0.1:8022/v1/chat/completions"

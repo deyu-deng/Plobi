@@ -1,5 +1,6 @@
 import { atom } from 'nanostores'
 
+import { isMockProvider } from '@/app/shell/model-provider-label'
 import { persistString, storedString } from '@/lib/storage'
 import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 
@@ -143,13 +144,20 @@ export function desktopQuotaProviders(): ModelOptionProvider[] {
   const out: ModelOptionProvider[] = []
 
   for (const app of Object.values(apps)) {
-    // The canonical model list lives in DESKTOP_QUOTA_MODELS (kept in sync with
-    // the aigw adapter's `served_models`). Always prefer it over the snapshot
-    // persisted at connect time, so a model-list update ships without forcing
-    // the user to disconnect/reconnect. The persisted `app.models` is only a
-    // fallback for apps not present in the registry.
-    // Prefer the live list we persisted from the gateway (app.models); fall
-    // back to the registry constant only if the live fetch never populated it.
+    // A demo channel is not a quota the user owns, so it never reaches the
+    // selector — from any of its three call sites. This is the single place that
+    // rule lives for desktop-quota rows (the backend provider rows are filtered
+    // by humanizeProviders(), and the gateway itself already excludes its mock
+    // channel when Plobi derives the source list).
+    if (isMockProvider({ slug: app.id })) {
+      continue
+    }
+
+    // The authoritative list is the gateway's live `/v1/models` (it discovers the
+    // real catalog upstream), persisted into `app.models` at connect/refresh.
+    // DESKTOP_QUOTA_MODELS below is only a last-resort seed for the window before
+    // that read has ever succeeded — it is NOT canonical, and a model that only
+    // exists there must never be offered as if it were.
     const models =
       app.models && app.models.length
         ? app.models

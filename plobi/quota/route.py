@@ -63,8 +63,17 @@ def _default_send(prompt: str, source: QuotaSource, *, timeout: float = _DEFAULT
         ensure_ascii=False,
     ).encode("utf-8")
 
+    # ``base_url`` is an OpenAI **base** (``…/v1``), not a request target — every
+    # gateway-facing config in this repo stores it that way, including the derived
+    # sources from ``plobi.quota.gateway``. Same normalisation as
+    # ``plobi.agents.registry._openai_chat_complete``; posting to the bare base
+    # returns 404, which a caller would otherwise read as "this source is dead".
+    url = source.base_url.rstrip("/")
+    if not url.endswith("/chat/completions"):
+        url = f"{url}/chat/completions"
+
     request = urllib.request.Request(
-        source.base_url,
+        url,
         data=body,
         headers={
             "Content-Type": "application/json",
