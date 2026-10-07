@@ -59,9 +59,13 @@ logger = logging.getLogger(__name__)
 PLUGIN_KEY = "plobi-north-star"
 ASK_TOOLSET = "plobi_north_star"
 
-#: Only project 分身 take questions. ``l2_agenda`` already has its own mouth
-#: (``plobi_secretary_ask``) and the default profile *is* the asking secretary.
-ASKABLE_ROLE = "l2_project"
+#: 「谁能被当面问」的判据**不在这里**——那是名册的事，一份在
+#: ``plobi.agents.registry.agent_askability``（角色 / 归档 / profile 名 / 家在不在
+#: 盘上，四条都是结构性事实）。名单 ``plobi_secretary_ask(intent=project_status)``
+#: 与这张嘴读同一份，才不会出现「名单说有这个人、问到跟前说问不到」（R-072）。
+#: 项目分身之外都不放行：日程 L2 有它自己那张嘴（``plobi_secretary_ask``），
+#: default profile 就是提问的那一个——挡的是**角色**，不是名字，日程秘书不因
+#: 自己是系统自带的就特殊一分（裁定 69）。
 
 #: Bounded wait for the child. ``timeout_seconds`` is a ``config.yaml`` knob
 #: (``plugins.entries.plobi-north-star.agent_ask.timeout_seconds``) — behavioural
@@ -89,11 +93,14 @@ AGENT_ASK_SCHEMA = {
     "description": (
         "当面问一个项目分身一句话，拿回它本人现在的回答。用户问「某个项目现在怎么样」"
         "「这件事你手上是什么情况」时用它——别只读硬盘上那份笔记，那只是上次有人写字那一天"
-        "的话，这个分身会自己回答。项目名照用户说的那样填就行（大小写、显示名都认），"
+        "的话，这个分身会自己回答。能问谁看名册：plobi_secretary_ask（intent=project_status）"
+        "回的 roster 就是手下名单，其中 askable 那几行现在问得到；一次问一个分身，"
+        "要问几个项目就分别问几次。项目名照用户说的那样填就行（大小写、显示名都认），"
         "问题尽量用他的原话，不要替他改写。这次问答会留在被问的那个分身自己的会话记录里，"
         "回答同时带回它的会话号，方便事后回看。"
-        "问不到（名字不对、已经归档、它答不上来、超时）会明确回错，并列出现在能问的项目名——"
-        "照实说，不要拿笔记冒充分身的回答。"
+        "问不到（名字不对、已经归档、家还没在这台机器上落地、它答不上来、超时）会明确回错，"
+        "并列出现在能问的项目名——照实说那一句原因，不要拿笔记冒充分身的回答，"
+        "也不要换个名字硬试或转去问日程秘书。"
     ),
     "parameters": {
         "type": "object",
@@ -221,13 +228,35 @@ def _load_registry():
 
 
 def askable_entries(registry=None) -> list:
-    """Live project 分身 rows — the ones a question can be addressed to."""
+    """Live project 分身这一条嘴问得到的那些行。
+
+    判据 = :func:`plobi.agents.registry.agent_askability`，和名册那一格同源：
+    名单里标了 ``askable=false`` 的行不会出现在这儿（反之亦然）。
+    """
+    from plobi.agents.registry import is_askable_agent
+
     reg = registry if registry is not None else _load_registry()
-    return [
-        entry
-        for entry in reg.entries()
-        if not entry.archived and entry.role == ASKABLE_ROLE
-    ]
+    return [entry for entry in reg.entries() if is_askable_agent(entry)]
+
+
+def unaskable_project_entries(registry=None) -> list:
+    """名册里那些**项目分身但此刻问不到**的行：``[(entry, 原因), …]``。
+
+    就是名单里 ``askable=false`` 的那几行（角色是项目、没归档，却缺家 / profile 名
+    建不出来）。拒答时把它们点出来，秘书看到的是「名单里有这个人，但它现在问不到，
+    因为……」——不是「查无此人」，也不用换个名字再试一次。
+    """
+    from plobi.agents.registry import ASKABLE_ROLE, agent_askability
+
+    reg = registry if registry is not None else _load_registry()
+    found = []
+    for entry in reg.entries():
+        if entry.archived or entry.role != ASKABLE_ROLE:
+            continue
+        askable, reason = agent_askability(entry)
+        if not askable:
+            found.append((entry, reason))
+    return found
 
 
 def _available_names(entries) -> list[str]:
@@ -244,6 +273,37 @@ def _matches(entry, needle: str) -> bool:
     return needle in {name.strip().casefold() for name in names if name}
 
 
+def _same_home_identity(entry) -> str:
+    """一个分身在这台机器上的家（小写 profile 名）——两条记录撞上同一个家就是同一个人。"""
+    return (entry.profile_name or entry.name).strip().casefold()
+
+
+def _pick_row_for_one_home(entries, asked: str):
+    """同一个 profile 家被登记成多条时，定一条代表它。
+
+    顺序说得出理由：用户登记过的那条（``registered`` 为真——新建 / 登记那一步盖的
+    章，Mind 播种机的投影是 ``False``）→ 大小写正好对上他输入的那条 → 名字最小的
+    一条。没有这一步，``Nymo`` / ``nymo`` 一起命中就会报「对上了好几个分身
+    （Nymo、Nymo）」，而它们本来就是同一个家（R-071 第一条）。
+    """
+    registered = [entry for entry in entries if entry.registered]
+    pool = registered or list(entries)
+    exact = [entry for entry in pool if entry.name.strip() == asked.strip()]
+    if len(exact) == 1:
+        return exact[0]
+    return sorted(pool, key=lambda entry: entry.name.casefold())[0]
+
+
+def _collapse_same_home(hits, asked: str) -> list:
+    """把只差大小写（同一个家）的多条命中收成一条；真的属于不同家时原样返回。"""
+    by_home: dict[str, list] = {}
+    for entry in hits:
+        by_home.setdefault(_same_home_identity(entry), []).append(entry)
+    if len(by_home) == 1:
+        return [_pick_row_for_one_home(next(iter(by_home.values())), asked)]
+    return hits
+
+
 def _roster_hint(entries) -> str:
     names = _available_names(entries)
     return "、".join(names) if names else "（现在一个都没有）"
@@ -253,9 +313,12 @@ def resolve_target(name: str, *, registry=None, entries=None):
     """Map what the model asked for onto exactly one live registry row.
 
     Raises :class:`AskRefusal` — never a bare ``KeyError``/``AttributeError`` —
-    for an unknown name, an archived row, or a row that is not a project 分身,
-    always listing the names that *are* askable so the secretary can correct
-    itself instead of guessing at an identifier it never saw.
+    for an unknown name, an archived row, a row that is not a project 分身, or a
+    row whose profile home can never be created on this machine (a 分身 named
+    ``Plobi`` collides with the reserved profile name ``plobi``, so it has no
+    home to ask — R-071 第二条), always listing the names that *are* askable so
+    the secretary can correct itself instead of guessing at an identifier it
+    never saw.
     """
     needle = (name or "").strip().casefold()
     reg = registry if registry is not None else _load_registry()
@@ -268,27 +331,41 @@ def resolve_target(name: str, *, registry=None, entries=None):
             f"要问哪个项目分身？现在能问的有：{_roster_hint(entries)}", available
         )
 
-    hits = [entry for entry in entries if _matches(entry, needle)]
+    hits = _collapse_same_home(
+        [entry for entry in entries if _matches(entry, needle)], name or ""
+    )
     if len(hits) == 1:
-        return hits[0]
+        entry = hits[0]
+        from plobi.agents.registry import profile_name_blocker
+
+        blocker = profile_name_blocker(entry)
+        if blocker:
+            raise AskRefusal(blocker, available)
+        return entry
     if len(hits) > 1:
-        who = "、".join(sorted(_label(entry) for entry in hits))
+        # 报「（Nymo、Nymo）」那种谁也不具体的名单没用：这里带上的必须是能拿去
+        # 改的注册键，不是显示名。
+        who = "、".join(sorted(f"{_label(entry)}（{entry.name}）" for entry in hits))
         raise AskRefusal(
             f"「{name}」对上了好几个分身（{who}），说个更具体的名字。", available
         )
 
-    # Not askable — but is it a row that exists? Archived rows are refused by
-    # name (裁定 19: they stay on disk and hide from the default list), and a
-    # non-project row belongs to a different mouth.
+    # Not askable — but is it a row that exists? 名字对上了却不在这张嘴的名单里，
+    # 就用名册那份同一判据给**这一条自己的**原因（归档 / 角色 / 家没落地 / profile
+    # 名建不出来），而不是回一句含混的「不是项目分身」让秘书再试一次别的名字。
     others = [entry for entry in reg.entries() if _matches(entry, needle)]
-    if any(entry.archived for entry in others):
-        raise AskRefusal(
-            f"「{name}」已经归档了，问不到它。现在能问的有：{_roster_hint(entries)}",
-            available,
-        )
     if others:
+        from plobi.agents.registry import agent_askability
+
+        entry, reason = others[0], ""
+        for candidate in others:
+            askable, why_not = agent_askability(candidate)
+            if not askable:
+                entry, reason = candidate, why_not
+                break
         raise AskRefusal(
-            f"「{name}」不是能当面问的项目分身。现在能问的有：{_roster_hint(entries)}",
+            f"「{name}」问不到：{reason or '这一条不在能当面问的名单里。'}"
+            f"现在能问的有：{_roster_hint(entries)}",
             available,
         )
     raise AskRefusal(
@@ -363,11 +440,20 @@ def build_child_command(entry, prompt: str) -> tuple[list[str], dict[str, str], 
     try:
         child_env["PLOBI_HOME"] = resolve_profile_env(profile)
     except FileNotFoundError as exc:
+        # 名单在筛选时就用同一份判据把这种行标成 ``askable=false`` 了（
+        # :func:`plobi.agents.registry.agent_askability`），走到这一步还不存在
+        # 只剩一种情况：家是在这次问答之间被人收走的。这里照旧拒，别让半路消失
+        # 的分身变成一次崩掉的回合。
         raise AskRefusal(
-            f"「{_label(entry)}」还没在这台机器上落地，问不到它。",
+            f"「{_label(entry)}」还没在这台机器上落地，问不到它——登记 / 新建一次就问到。",
             _available_names(askable_entries()),
         ) from exc
     child_env["PLOBI_PROFILE"] = profile
+    # 裁定 42 §42.2 第 6 项的「密钥」这一样：只有这条记录声明的覆盖进得到子进程，
+    # 共享的那几把我从继承来的环境里拿——分身的家里不留第二份 .env。
+    from plobi.agents.registry import apply_secret_overrides
+
+    apply_secret_overrides(child_env, entry)
 
     cwd = _project_cwd(entry)
     if cwd:

@@ -7,6 +7,9 @@ graft locales
 # built from the sdist (e.g. Homebrew, downstream packagers). package-data
 # below covers the wheel; this covers the sdist. See #34034 / #28149.
 recursive-include plugins plugin.yaml plugin.yml
+# L1 总秘书的两份模板（见 pyproject 的 package-data 同名条目）：registry.py 按
+# parents[2]/plugins/plobi-north-star/ 读它们，sdist 里缺了就是 import 期炸。
+recursive-include plugins l1_profile_template.yaml l1_soul_template.md
 # Gateway assets include images plus YAML catalogs such as status_phrases.yaml.
 recursive-include gateway/assets *
 global-exclude __pycache__
