@@ -5,6 +5,29 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 
+# 未提交工作的「不碰工作区」快照（Docs 裁定 71.6 / R-076）。
+# `git stash create` 只写对象，不 stash、不改文件、不需要 pop —— 所以不会跟并发的 Agent 抢工作区，
+# 也不碰这仓里禁用的 `git stash`。作用是把「谁跑了一句 checkout -- / restore 就把别人的半句话清掉」
+# 从不可恢复变成可恢复：每个提交点留一份最近 20 份工作树快照在 refs/undo/。
+# 恢复：git diff <快照 oid> HEAD -- <路径> 先看差异，再用 git show <快照 oid>:<路径> > <路径> 单文件取回。
+# 有锁就让路：并发场景下抢 index.lock 会把别人的提交顶掉，那比少一份快照糟得多。
+GDIR="$(git rev-parse --git-dir)"
+if [ -e "$GDIR/index.lock" ]; then
+  echo "undo 快照跳过：index.lock 正在被别人用（这次不留底，不抢锁）"
+else
+  SNAP="$(git stash create --include-untracked 2>/dev/null | tail -n 1 || true)"
+  if [ -n "${SNAP:-}" ]; then
+    KEY="refs/undo/$(date +%Y%m%d-%H%M%S)-$$"
+    if git update-ref "$KEY" "$SNAP" 2>/dev/null; then
+      git for-each-ref --format='%(refname)' refs/undo/ | sort | head -n -20 |
+        while read -r STALE; do git update-ref -d "$STALE" 2>/dev/null || true; done
+      echo "undo 快照：$KEY -> ${SNAP:0:8}（工作树未提交内容已留底，恢复见本文件头注释）"
+    else
+      echo "WARN: undo 快照没写成（refs/undo/ 被占或对象库异常）——未提交工作这次没有底" >&2
+    fi
+  fi
+fi
+
 if [ -f "$ROOT/scripts/check-docs.sh" ]; then
   bash "$ROOT/scripts/check-docs.sh"
 fi
