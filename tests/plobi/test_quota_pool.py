@@ -130,7 +130,12 @@ def test_bridge_empty_pool_stays_unconfigured(monkeypatch):
 
 
 def test_lookup_credential_resolves_env_ref(monkeypatch):
-    """``env:VAR`` 引用条目：token 从 load_env()/os.environ 解析，url 取条目。"""
+    """``env:VAR`` 引用条目：token 走**同一个凭据入口**解析，url 取条目。
+
+    入口是 ``plobi_cli.config.get_env_value_prefer_dotenv``（注入 > 根家目录 ``.env``
+    > 作用域 > shell）。以前这里直接桩 ``load_env()`` —— 那条路认不出注入名单，
+    分身家的旧复印件就会在便宜源上赢回来（WP-AGENT-SECRET-SOURCE 的洞 B）。
+    """
     from plobi.quota import config as quota_config
 
     fake = [
@@ -145,7 +150,9 @@ def test_lookup_credential_resolves_env_ref(monkeypatch):
     monkeypatch.setattr("plobi_cli.auth.read_credential_pool", lambda p: fake)
     import plobi_cli.config
 
-    monkeypatch.setattr(plobi_cli.config, "load_env", lambda: {"GLM_API_KEY": "dot-key"})
+    monkeypatch.setattr(
+        plobi_cli.config, "load_env", lambda env_path=None: {"GLM_API_KEY": "dot-key"}
+    )
     token, url = quota_config._lookup_credential("zai")
     assert token == "dot-key"
     assert url == "https://api.z.ai/api/paas/v4"

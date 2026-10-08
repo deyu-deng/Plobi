@@ -13,6 +13,7 @@ This module provides:
 """
 
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -7256,16 +7257,20 @@ def _parse_env_value(raw_value: str) -> str:
     return value
 
 
-def load_env() -> Dict[str, str]:
-    """Load environment variables from ~/.plobi/.env.
+def load_env(env_path: Optional[Path] = None) -> Dict[str, str]:
+    """Load environment variables from ``~/.plobi/.env`` (or *env_path*).
 
     Sanitizes lines before parsing so that corrupted files (e.g.
     concatenated KEY=VALUE pairs on a single line) are handled
     gracefully instead of producing mangled values such as duplicated
     bot tokens.  See #8908.
 
-    The parsed dict is memoised keyed on the .env file mtime, because
-    ``get_env_value()`` is called dozens-to-hundreds of times per
+    ``env_path`` lets a caller read a specific file — used by
+    :func:`credential_env_path`, which must read the ROOT home's ``.env`` even
+    when this process is pointed at an agent's home.
+
+    The parsed dict is memoised per file, keyed on ``(path, mtime, size)``,
+    because ``get_env_value()`` is called dozens-to-hundreds of times per
     interactive menu render (`plobi tools`, `plobi setup`, status
     panels). Sanitisation is O(lines × known-keys), so re-parsing the
     same file on every call was burning ~300ms of CPU per `plobi tools`
@@ -7273,21 +7278,24 @@ def load_env() -> Dict[str, str]:
     invalidates the cache when the user edits .env mid-process.
     """
     global _env_cache
-    env_path = get_env_path()
+    if env_path is None:
+        env_path = get_env_path()
+    else:
+        env_path = Path(env_path)
+    cache_id = str(env_path)
 
     try:
-        mtime = env_path.stat().st_mtime
-        size = env_path.stat().st_size
-        cache_key = (str(env_path), mtime, size)
+        stat = env_path.stat()
+        cache_key = (cache_id, stat.st_mtime, stat.st_size)
     except FileNotFoundError:
-        cache_key = (str(env_path), None, None)
+        cache_key = (cache_id, None, None)
     except Exception:
         cache_key = None
 
-    if cache_key is not None and _env_cache is not None:
-        cached_key, cached_vars = _env_cache
-        if cached_key == cache_key:
-            return dict(cached_vars)
+    if cache_key is not None:
+        cached = _env_cache.get(cache_id)
+        if cached is not None and cached[0] == cache_key:
+            return dict(cached[1])
 
     env_vars: Dict[str, str] = {}
 
@@ -7313,17 +7321,18 @@ def load_env() -> Dict[str, str]:
                 env_vars[key.strip()] = _parse_env_value(value)
 
     if cache_key is not None:
-        _env_cache = (cache_key, dict(env_vars))
+        _env_cache[cache_id] = (cache_key, dict(env_vars))
 
     return env_vars
 
 
-# Module-level memo for load_env(), keyed on (path, mtime, size).
-# Editing .env bumps mtime → next load_env() rebuilds. invalidate_env_cache()
+# Module-level memo for load_env(): one slot per .env path, each keyed on
+# (path, mtime, size). Editing a .env bumps its mtime → the next read of THAT
+# file rebuilds; other cached files are untouched. invalidate_env_cache()
 # is the explicit knob for writers that update .env via this module
 # (set_env_value, save_env, etc.) without relying on filesystem mtime
 # resolution.
-_env_cache: Optional[Tuple[Tuple[str, Optional[float], Optional[int]], Dict[str, str]]] = None
+_env_cache: Dict[str, Tuple[Tuple[str, Optional[float], Optional[int]], Dict[str, str]]] = {}
 
 
 def invalidate_env_cache() -> None:
@@ -7335,7 +7344,7 @@ def invalidate_env_cache() -> None:
     via the mtime/size check.
     """
     global _env_cache
-    _env_cache = None
+    _env_cache = {}
 
 
 _STRUCTURED_VALUE_MARKERS = ("://", "?", "&")
@@ -7765,24 +7774,118 @@ def get_env_value(key: str) -> Optional[str]:
     return env_vars.get(key)
 
 
-def get_env_value_prefer_dotenv(key: str) -> Optional[str]:
-    """Resolve a credential env value, preferring ``~/.plobi/.env`` over ``os.environ``.
+# Names a parent process deliberately injected into this one, comma-separated and
+# **names only** (see ``plobi.agents.registry.apply_secret_overrides``).
+INJECTED_SECRETS_ENV = "PLOBI_INJECTED_SECRETS"
 
-    Used for Plobi-managed credentials where a deliberate edit to ``.env``
+
+def injected_secret_names() -> frozenset:
+    """Which env vars this process was *handed* on purpose by its parent."""
+    raw = (os.environ.get(INJECTED_SECRETS_ENV) or "").strip()
+    if not raw:
+        return frozenset()
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+def credential_env_path() -> Path:
+    """The one ``.env`` credentials may come from: the **root** Plobi home.
+
+    裁定 89 甲: an agent's own home is not a credential source.  Eight code paths
+    repoint ``PLOBI_HOME`` at ``<root>/profiles/<name>`` (agent 问答、kanban worker、
+    桌面 console、cron、CLI ``-p``、gateway unit……), and homes created before that
+    ruling each carry their own copy of ``GLM_API_KEY`` — so reading the active
+    home would silently pick one of twelve copies and the copy could be stale.
+    Reading the root is what makes "换 key 只换一处" true on every path at once,
+    which is why this is a read-side rule instead of one injection call per spawner.
+    """
+    from plobi_constants import get_default_plobi_root
+
+    return get_default_plobi_root() / ".env"
+
+
+_mismatched_agent_copies_warned: set = set()
+
+
+def _warn_agent_home_copy(key: str, root_path: Path) -> None:
+    """Say out loud when an agent home still carries its own copy of a credential.
+
+    The copy is deliberately ignored (see :func:`credential_env_path`), but ignoring
+    it silently is how "I edited the key and nothing changed" becomes next week's
+    misdiagnosis — so the warning names the file, the variable and both
+    fingerprints. Never the values.
+    """
+    home_path = get_env_path()
+    if home_path == root_path:
+        return
+    already_warned = (str(home_path), key)
+    if already_warned in _mismatched_agent_copies_warned:
+        return
+    try:
+        home_vars = load_env(home_path)
+    except Exception:
+        return
+    home_val = str(home_vars.get(key) or "").strip()
+    if not home_val:
+        return
+    root_val = str(load_env(root_path).get(key) or "").strip()
+    _mismatched_agent_copies_warned.add(already_warned)
+    logging.getLogger(__name__).warning(
+        "agent home carries its own %s (%s, …%s); credentials come from %s (…%s) — "
+        "the copy is ignored. Per-agent credentials belong in the roster's "
+        "secret_overrides, not in %s",
+        key,
+        home_path,
+        hashlib.sha256(home_val.encode()).hexdigest()[:8],
+        root_path,
+        hashlib.sha256(root_val.encode()).hexdigest()[:8] if root_val else "-",
+        home_path,
+    )
+
+
+def get_env_value_prefer_dotenv(key: str) -> Optional[str]:
+    """Resolve a credential env value, preferring the root ``.env`` over ``os.environ``.
+
+    Used for Plobi-managed credentials where a deliberate edit to the root ``.env``
     must take precedence over a stale value inherited from the parent shell
     (Codex CLI, test scripts, login profile exports). Without this, rotating
     a key in ``.env`` mid-session leaves callers serving the stale shell
     value and produces persistent 401s.
+
+    ``.env`` means the **root** home (:func:`credential_env_path`), never the
+    agent's own home: an agent home's copy is not a credential source (裁定 89 甲).
+
+    One thing outranks it: a credential the parent explicitly injected
+    (``injected_secret_names``).  Homes created before that ruling do carry a
+    copy, and it is often stale — letting that copy win is what made the secretary
+    authenticate fine while every face to face question it asked came back
+    ``HTTP 401``.
+
+    An ``.env`` value that is still an unresolved ``op://`` reference is not a
+    credential either: the resolved value lives in the process env (1Password
+    seeding), and sending the reference itself fails every provider attempt with a
+    URL where a key belongs.
 
     The ``os.environ`` fallback routes through ``secret_scope.get_secret`` so
     that, under an active profile scope (multiplexed gateway turn), this read
     is scope-checked rather than leaking another profile's raw ``os.environ``
     value — matching the credential-pool seeding path's behaviour.
     """
-    env_vars = load_env()
-    val = env_vars.get(key)
-    if val:
+    if key in injected_secret_names():
+        injected = (os.environ.get(key) or "").strip()
+        if injected:
+            return injected
+
+    dotenv_path = credential_env_path()
+    env_vars = load_env(dotenv_path)
+    val = str(env_vars.get(key) or "").strip()
+    if val.startswith("op://"):
+        resolved = (os.environ.get(key) or "").strip()
+        if resolved:
+            return resolved
+    elif val:
+        _warn_agent_home_copy(key, dotenv_path)
         return val
+
     try:
         from agent.secret_scope import get_secret as _get_secret
 

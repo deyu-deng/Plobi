@@ -1076,6 +1076,32 @@ def registration_blocker(registry: AgentRegistry, entry: AgentEntry) -> str:
     return ""
 
 
+# 什么算「共享凭据」：家目录 `.env` 里这些后缀的项。名单按后缀而不按具体 provider，
+# 是为了不再造一份 provider 真源（那是裁定 81 刚清掉的东西）。
+SHARED_SECRET_SUFFIXES = ("_API_KEY", "_KEY", "_TOKEN", "_SECRET")
+
+
+def home_shared_secrets() -> dict[str, str]:
+    """家目录 ``.env`` 里的共享凭据 —— 一分身一份拷贝的话，真源就这一处。
+
+    调用方随后把子进程的 ``PLOBI_HOME`` 指向 profile 家，届时子进程读到的 ``.env``
+    是那个家自己的文件；裁定 42 §42.2 明令那里不留第二份密钥，可早先建的家确实
+    留过（实测 11 个分身的家是同一把旧 key 的拷贝）。所以共享的那几把**在这里**
+    读出来、注进去，而不是指望分身自己去继承。
+    """
+    try:
+        from plobi_cli.config import credential_env_path, load_env
+
+        entries = load_env(credential_env_path()) or {}
+    except Exception:
+        return {}
+    return {
+        str(name): str(value)
+        for name, value in entries.items()
+        if value and str(name).upper().endswith(SHARED_SECRET_SUFFIXES)
+    }
+
+
 def apply_secret_overrides(env: "dict[str, str]", entry: AgentEntry) -> None:
     """把这条记录声明的密钥覆盖注进一份子进程环境（就地改，不落盘）。
 
@@ -1083,10 +1109,30 @@ def apply_secret_overrides(env: "dict[str, str]", entry: AgentEntry) -> None:
     ``.env`` 实现（实测 13 个分身一把自己的密钥都没有）。分身不再拷家之后，共享的
     那部分密钥仍由继承来的进程环境提供，只有这里声明的几条是**这个项目的覆盖**；
     写进 profile 的 ``.env`` / ``config.yaml`` 等于又造出一份复印件，故禁止。
+
+    顺序（本刀定的唯一顺序）：**家目录的共享凭据 < 这条记录声明的覆盖**，
+    两者都进子进程环境并登记进 ``PLOBI_INJECTED_SECRETS``——那份登记让它们在
+    子进程里赢过它自己家里的 ``.env`` 旧拷贝（:func:`plobi_cli.config
+    .get_env_value_prefer_dotenv`）。不登记就会出这种局面：秘书自己认证得过，
+    它问出去的每一句都 ``HTTP 401``，而盘上没有任何一行说明用的是两把不同的 key。
     """
-    for key, value in (entry.secret_overrides or {}).items():
-        if key and value:
-            env[str(key)] = str(value)
+    merged = dict(home_shared_secrets())
+    merged.update(
+        {
+            str(key): str(value)
+            for key, value in (entry.secret_overrides or {}).items()
+            if key and value
+        }
+    )
+    if not merged:
+        return
+
+    from plobi_cli.config import INJECTED_SECRETS_ENV
+
+    for name, value in merged.items():
+        env[name] = value
+    already = {n.strip() for n in (env.get(INJECTED_SECRETS_ENV) or "").split(",") if n.strip()}
+    env[INJECTED_SECRETS_ENV] = ",".join(sorted(already | set(merged)))
 
 
 # ---------------------------------------------------------------------------
