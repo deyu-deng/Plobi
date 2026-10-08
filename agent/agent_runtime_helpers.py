@@ -1702,6 +1702,35 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
             agent._client_log_context(),
         )
         return client
+    # seam B: CodeBuddy ACP backend. Identified by the base_url marker (a
+    # registered provider name is intentionally NOT added — the CLI
+    # auth/models/menu integration is a separate slice). The client self-resolves
+    # its command/args from env, so nothing extra is threaded through
+    # client_kwargs. The approval callback is the same thread-local hook
+    # tools/terminal_tool exposes for codex (#350): a human approver installed by
+    # the hosting surface; when absent the client FAILS CLOSED (denies), it never
+    # auto-allows a delegated shell/file tool.
+    if str(client_kwargs.get("base_url", "")).startswith("acp://codebuddy"):
+        from agent.codebuddy_acp_client import CodeBuddyACPClient
+
+        try:
+            from tools.terminal_tool import _get_approval_callback
+            approval_callback = _get_approval_callback()
+        except Exception:  # noqa: BLE001 — no approver reachable -> fail-closed
+            approval_callback = None
+        safe_kwargs = {
+            k: v for k, v in client_kwargs.items()
+            if k in {"api_key", "base_url", "acp_command", "acp_args", "acp_cwd"}
+        }
+        client = CodeBuddyACPClient(approval_callback=approval_callback, **safe_kwargs)
+        _ra().logger.info(
+            "CodeBuddy ACP client created (%s, shared=%s, approver=%s) %s",
+            reason,
+            shared,
+            "present" if approval_callback else "absent(fail-closed)",
+            agent._client_log_context(),
+        )
+        return client
     if agent.provider == "gemini":
         from agent.gemini_native_adapter import GeminiNativeClient, is_native_gemini_base_url
 
