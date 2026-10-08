@@ -8363,25 +8363,40 @@ function productQuotaApiKey(): string {
   return process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
 }
 
+// WP-AIGW-KEY-LITERALS (consumer's half, 裁定 94). Both sides of one rule:
+// reconcile before every send, and make the result a surface the user actually
+// sees. `rememberLog` alone was not enough -- that lands in `logs/desktop.log`
+// and the log ring, which nobody opens while the app looks healthy. The boot
+// ledger (`reportDeferredSubsystem` -> boot payload + tray menu) is the existing
+// chain, so no new UI and no new REST endpoint is invented here.
+//
+// There is no fs.watch on `config.yaml`, and nothing is cached: "reconcile again"
+// means the *next send* re-reads the bytes from disk, not that an edit becomes
+// red on its own. Say it that way in any report.
+function reportAigwKeyReconciliation() {
+  let check
+  try {
+    const cfgPath = path.join(resolveAigwDir(), 'config.yaml')
+    check = reconcileGatewayKey(fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null)
+  } catch (error) {
+    // Anything the read itself throws is "we could not look", never "consistent".
+    check = reconcileGatewayKey(null)
+    check = { ...check, summary: `${check.summary}; read error ${String(error)}` }
+  }
+  if (!check.match) rememberLog(`[aigw-key] ${check.summary}`)
+  reportDeferredSubsystem('aigw-key', check.match ? 'ready' : 'red', check.summary)
+  return check
+}
+
 // Derive the connected quota apps from the live hub catalog, grouped by `provider`
 // (never by id prefix — a mock channel serves `workbuddy/...` ids, so a prefix
 // match invents a channel that isn't there) with the `<provider>/` prefix stripped.
 // `mock` and empty providers never reach the selector (R-017). Returns [] when the
 // hub is down, so callers keep the last good list rather than wipe it.
 async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: string[]; baseUrl: string; apiKey: string }>> {
-  // WP-AIGW-KEY-LITERALS (consumer's half): this is the one place the shell
-  // sends the key it resolved, so it is where a stale copy shows up before the
-  // user reads a 401 as a dead key. Fingerprint only — the summary never
-  // carries either value. Checked per discovery, not once at boot: a config
-  // edit while the shell runs still comes out red.
-  try {
-    const cfgPath = path.join(resolveAigwDir(), 'config.yaml')
-    const configText = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null
-    const check = reconcileGatewayKey(configText)
-    if (!check.match) rememberLog(`[aigw-key] ${check.summary}`)
-  } catch (error) {
-    rememberLog(`[aigw-key] aigw key NOT CHECKED: config unreadable (${String(error)})`)
-  }
+  // Reconcile first, then send: this is one of the two places the shell hands
+  // its key to the hub.
+  reportAigwKeyReconciliation()
   try {
     const res = await fetch(`${PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')}/v1/models`, {
       headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
@@ -8389,6 +8404,18 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
     })
 
     if (!res.ok) {
+      // A hub that rejects our key answered 401, not "no apps". Swallowing it
+      // into `[]` is what let a stale key read as "config is fine, the hub is
+      // just empty" (裁定 94 item 4), so the auth-shaped statuses are reported
+      // against the reconciliation instead of disappearing.
+      if (res.status === 401 || res.status === 403) {
+        const check = reportAigwKeyReconciliation()
+        reportDeferredSubsystem(
+          'aigw-key',
+          'red',
+          `hub rejected the shell key (HTTP ${res.status}); ${check.summary}`
+        )
+      }
       return []
     }
 
@@ -8415,7 +8442,11 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
       baseUrl: PRODUCT_QUOTA_BASE,
       apiKey: productQuotaApiKey()
     }))
-  } catch {
+  } catch (error) {
+    // Unreachable/timeout is not "our key was accepted": say which of the two it
+    // was, so a hub that is simply down never reads as a key problem -- or the
+    // other way round.
+    rememberLog(`[sidecar] product quota catalog unavailable (${String(error)}); key state unchanged by this call`)
     return []
   }
 }
@@ -8463,6 +8494,9 @@ async function ensureProductAigw(): Promise<void> {
     return
   }
 
+  // The other place the shell hands its key out (裁定 94 item 4): the hub is
+  // started with it, so it reconciles first too.
+  reportAigwKeyReconciliation()
   const apiKey = productQuotaApiKey()
   const result = await startAigwGateway('product', configPath, {}, {
     port: PRODUCT_QUOTA_PORT,

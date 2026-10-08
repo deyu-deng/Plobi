@@ -14,21 +14,33 @@
  *
  * So this module answers one question before the shell uses its key: does the
  * value I resolved match the value the gateway declares? The declaration is
- * read the same narrow way the Python side reads it (`server.api_key`, no YAML
- * dependency, `${VAR:-default}` expanded from the environment) so the two
- * consumers cannot drift by disagreeing about how to parse the file.
+ * parsed to be **byte-identical with the Python reader** --
+ * `plobi/agents/registry.py` `_GATEWAY_KEY_PLACEHOLDER` / `gateway_declared_api_key()`
+ * -- because a second parser that merely *looks* the same is how a legitimate
+ * config produces a phantom mismatch (裁定 94 measured four such drifts: a
+ * lowercase placeholder name, a default containing `}`, doubled quotes, and an
+ * empty value). `aigw-key-reconcile.parity.test.ts` pins both sides to one
+ * table; changing Python's semantics without that table goes red on purpose.
  *
  * Nothing here returns or logs a secret. Every value that leaves this module
  * is either a source label or a SHA-256 prefix, so the reconciliation result
  * is safe to put in the log ring, in `doctor` output, and in test snapshots.
- * An unreadable config is reported as `unknown` rather than as a pass — "we
- * could not tell" must not become "we assume consistent".
+ * A config we could not read is reported as `NOT CHECKED` rather than as a
+ * pass -- "we could not tell" must not become "we assume consistent". An empty
+ * declared value is a different fact: Python treats it as *no declaration* and
+ * falls back to the shared development default, so we do the same, and calling
+ * that a mismatch would be the false red 裁定 94 item 2 exists to kill.
  */
 import { createHash } from 'node:crypto'
 
-const ENV_ORDER = ['AIGW_API_KEY', 'PLOBI_AIGW_API_KEY'] as const
+/** Same order, same names as `main.ts`'s `productQuotaApiKey()` -- pinned there. */
+export const ENV_ORDER = ['AIGW_API_KEY', 'PLOBI_AIGW_API_KEY'] as const
+/** Same literal as Python's `AIGW_DEV_DEFAULT_API_KEY`. */
+export const DEV_DEFAULT_API_KEY = 'sk-local-dev-key'
+/** Same label Python's `aigw_credential_source()` prints, so one report has one vocabulary. */
+export const DEV_DEFAULT_SOURCE_LABEL = 'development default'
 
-/** The gateway's declared key, or null when the config declares nothing we can read. */
+/** The gateway's declared key, or `''` when the config declares nothing usable (Python's own semantics). */
 export function declaredGatewayApiKey(
   configText: string | null,
   env: NodeJS.ProcessEnv = process.env,
@@ -49,27 +61,30 @@ export function declaredGatewayApiKey(
 
     const match = /^\s+api_key:\s*(.+?)\s*$/.exec(line)
     if (!match) continue
-    const value = match[1].replace(/^["']|["']$/g, '').trim()
-    const placeholder = /^\$\{([A-Za-z_][A-Za-z0-9_]*):-([\s\S]*)\}$/.exec(value)
+    // Python: `value.strip("\"'")` -- every leading/trailing quote char, not one.
+    const value = match[1].replace(/^["']+|["']+$/g, '').trim()
+    // Python: `^\$\{([A-Z0-9_]+):-([^}]*)\}$` -- uppercase-only name, and a
+    // default that cannot contain `}`. Anything else is not a placeholder here.
+    const placeholder = /^\$\{([A-Z0-9_]+):-([^}]*)\}$/.exec(value)
     if (placeholder) {
       const fromEnv = (env[placeholder[1]] || '').trim()
       return fromEnv || placeholder[2].trim()
     }
     return value
   }
-  return null
+  return ''
 }
 
 /** What the shell itself would use, plus which rung of its ladder produced it. */
 export function usedGatewayKey(
   env: NodeJS.ProcessEnv = process.env,
-  devDefault = 'sk-local-dev-key',
+  devDefault = DEV_DEFAULT_API_KEY,
 ): { value: string; source: string } {
   for (const name of ENV_ORDER) {
     const v = (env[name] || '').trim()
     if (v) return { value: v, source: `env:${name}` }
   }
-  return { value: devDefault, source: 'shell_default' }
+  return { value: devDefault, source: DEV_DEFAULT_SOURCE_LABEL }
 }
 
 /** Short enough to recognise, long enough to compare, never reversible. */
@@ -82,6 +97,8 @@ export interface KeyReconciliation {
   usedSource: string
   usedFp: string
   declaredFp: string | null
+  /** True when the config file itself could not be read -- the one case that is "we don't know". */
+  declaredReadable: boolean
   /** Safe to log verbatim: never contains either key. */
   summary: string
 }
@@ -89,7 +106,7 @@ export interface KeyReconciliation {
 export function reconcileGatewayKey(
   configText: string | null,
   env: NodeJS.ProcessEnv = process.env,
-  devDefault = 'sk-local-dev-key',
+  devDefault = DEV_DEFAULT_API_KEY,
 ): KeyReconciliation {
   const used = usedGatewayKey(env, devDefault)
   const declared = declaredGatewayApiKey(configText, env)
@@ -101,19 +118,27 @@ export function reconcileGatewayKey(
       usedSource: used.source,
       usedFp,
       declaredFp: null,
-      summary: `aigw key NOT CHECKED: gateway config declares no server.api_key (used ${used.source}, fp=${usedFp}) — say so, never assume consistent`,
+      declaredReadable: false,
+      summary: `aigw key NOT CHECKED: gateway config unreadable (used ${used.source}, fp=${usedFp}) — say so, never assume consistent`,
     }
   }
 
-  const declaredFp = fingerprintKey(declared)
+  // `''` means the gateway declares nothing usable. Python then falls back to
+  // the same shared development default this ladder's last rung holds, so the
+  // comparable value is the default -- not an empty string, which would make a
+  // perfectly valid config look broken.
+  const effective = declared || devDefault
+  const declaredFp = fingerprintKey(effective)
   const match = declaredFp === usedFp
+  const declaredNote = declared ? `declared fp=${declaredFp}` : `declares nothing → default fp=${declaredFp}`
   return {
     match,
     usedSource: used.source,
     usedFp,
     declaredFp,
+    declaredReadable: true,
     summary: match
-      ? `aigw key ok: ${used.source} fp=${usedFp} == gateway declared fp=${declaredFp}`
-      : `aigw key MISMATCH: shell uses ${used.source} fp=${usedFp} but gateway declares fp=${declaredFp} — one of them is stale, and auth failures will look like a dead key`,
+      ? `aigw key ok: ${used.source} fp=${usedFp} == gateway ${declaredNote}`
+      : `aigw key MISMATCH: shell uses ${used.source} fp=${usedFp} but gateway ${declaredNote} — one of them is stale, and auth failures will look like a dead key`,
   }
 }
