@@ -100,46 +100,50 @@ def check_plobi_master_mode() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# WP-L1-EVERY-TURN — L1 mouth gate (33.1 / 33.4)
+# WP-L1-MOUTH-SWITCH — L1 派工-family mouths ride a product switch (裁定 78)
 # ---------------------------------------------------------------------------
 #
-# Background: 33.1 + 33.4 裁定把这周 L1 的"嘴"收成只剩
-# ``plobi_secretary_ask`` 与 ``plobi_checkin_respond``。其余 4 个 Master
-# 工具（status / preview / dispatch / approve）+ 深工具 ``plobi`` 在 L1
-# default profile 上**不可见**——把它们的 ``check_fn`` 切到下面这个恒 False
-# 的函数，模型就分不到这几张嘴。``SECRETARY_ASK_*`` / intent 表 / handler
-# / schema 全部保留（M3 才开；handler 保留是任务书 §3 的硬要求）。
-# 详见 ``plobi/mind/writer.py`` 禁碰清单 + 任务书 WP-L1-EVERY-TURN。
+# Five tools sit behind a user-facing switch instead of a hardcoded gate:
+# ``plobi_master_status`` / ``plobi_master_preview`` / ``plobi_master_dispatch``
+# / ``plobi_master_approve`` and the deep ``plobi`` tool. Handlers, schemas,
+# ``SECRETARY_ASK_*`` and the intent table are all kept — that is exactly what
+# 裁定 33.4 decided to keep ("handler 不删"); what it never decided was that the
+# switch should live in this file. See the merged 33 / 33.1 / 33.2 row and the
+# 33.4 row in ``Docs/DECISIONS.md``.
 
-def check_plobi_l1_mouth_disabled() -> bool:
-    """恒 False — L1 default profile 的嘴门（M3 才开；handler 保留）。
+def check_plobi_l1_master_tools() -> bool:
+    """True ⇔ the user turned these mouths on in the product.
 
-    裁定 **33.1 + 33.4**：本周 L1 总秘书的"嘴"收成只剩
-    ``plobi_secretary_ask`` + ``plobi_checkin_respond`` 两张。其余 4 个
-    Master 工具 + 深工具 ``plobi`` 在 L1 default profile 上**不可见**——
-    切到下面这个恒 False 的 ``check_fn`` 即可，模型就分不到。
+    Reads ``agent.l1_master_tools_enabled`` (config.yaml, default False) and still
+    requires the service gate underneath it, so a profile without the
+    ``plobi_north_star`` toolset — or a dispatcher-spawned kanban worker — gets
+    nothing from this switch. Composition, not a second policy: this answers
+    "did the user want these", ``check_plobi_master_mode`` answers "can this
+    profile serve them at all".
 
-    用作以下 5 个工具的 ``check_fn``：
+    Why a real predicate rather than ``return False``: a hardcoded False is not a
+    legal carrier for a policy (裁定 78). While it was in place the user could
+    tick these tools in ``plobi tools`` / config and they still would not appear
+    — which is what P7 ("用户在 UI 上打开的东西，不得被下一次启动悄悄抹掉") and
+    裁定 49 ("勾了就生效") forbid. Off stays the default; **reopening is ticking
+    the switch, not editing this plugin.**
 
-    * ``plobi_master_status`` / ``plobi_master_preview`` /
-      ``plobi_master_dispatch`` / ``plobi_master_approve``（4 个 Master 窄工具）
-    * ``plobi``（深工具）
-
-    配套保留的（仍用 ``check_plobi_master_mode``）：
-
-    * ``plobi_secretary_ask``
-    * ``plobi_checkin_respond``
-
-    本函数**永远返回 False**——WP-L1-EVERY-TURN 之前它会返回 True，模型
-    会分心去试 Master 工具。切到 False 之后，``tools/registry.py`` 的
-    ``check_fn`` 流程直接把工具对 L1 隐藏，模型分不到。
-
-    为什么不直接 unregister？任务书 §3 明确：「**不删** handler / schema
-    / SECRETARY_ASK_* / intent 表」——M3 切回 True 只需要把 ``check_fn``
-    改回 ``check_plobi_master_mode`` 即可（注册点见
-    ``plugins/plobi-north-star/__init__.py::register``）。
+    Registered by ``plugins/plobi-north-star/__init__.py::register`` for the five
+    tools listed above. ``plobi_secretary_ask`` / ``plobi_checkin_respond`` keep
+    their own gate (``check_plobi_master_mode``) and are untouched here.
     """
-    return False
+    try:
+        from plobi_cli.config import cfg_get, load_config
+
+        enabled = bool(
+            cfg_get(load_config(), "agent", "l1_master_tools_enabled", default=False)
+        )
+    except Exception:
+        # A config read that fails must not hand L1 extra mouths.
+        return False
+    if not enabled:
+        return False
+    return check_plobi_master_mode()
 
 
 # ---------------------------------------------------------------------------
