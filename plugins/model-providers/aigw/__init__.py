@@ -14,10 +14,16 @@ Boundaries (ARCH ruling 45):
   row ids and route values all keep it.  Only *display* text uses the outward
   name (``display_name`` below); the UI-layer renaming/regrouping is a separate
   cut, so the slug still reaches picker rows via ``plobi_cli/models.py``.
-* No new env vars: the endpoint and key come from the same source of truth the
-  agents layer already uses (``plobi.agents.registry.aigw_base_url()`` /
-  ``aigw_api_key()``, reading ``PLOBI_AIGW_URL`` / ``AIGW_API_KEY`` and their
-  legacy quota aliases).  We deliberately do not re-implement that chain here.
+* No new env vars: the endpoint and key names are declared once by the agents
+  layer (``plobi.agents.registry.AIGW_KEY_ENV_VARS`` / ``AIGW_URL_ENV_VARS``) and
+  imported here.
+* One credential order (ruling 81): ``resolve_api_key_provider_credentials``
+  asks the user's explicit sources first (auth.json pool, ``~/.plobi/.env``, shell
+  export) and, when none of them carries a value, calls ``fallback_api_key()``
+  below.  That hook is this profile's whole job on the credential question — it
+  delegates to ``plobi.agents.registry.aigw_api_key()``, the single definition
+  point for the gateway's env names, the key its own config declares and the
+  shipped development default.  Nothing on this side re-reads the environment.
 * The gateway currently only fronts ``mock/echo`` channels (R-047 defers the
   real quota capture), so nothing here claims a live commercial channel.
 """
@@ -28,13 +34,18 @@ from urllib.parse import urlparse
 from providers import register_provider
 from providers.base import ProviderProfile
 
-from plobi.agents.registry import aigw_api_key, aigw_base_url
+from plobi.agents.registry import (
+    AIGW_KEY_ENV_VARS,
+    AIGW_URL_ENV_VARS,
+    aigw_api_key,
+    aigw_base_url,
+)
 
-# Env var *names* already defined by the agents layer — declared here so the
-# generic api-key credential path (auth.json pool, ~/.plobi/.env, shell export)
-# can find them.  Order mirrors aigw_base_url()/aigw_api_key() precedence.
-_KEY_VARS = ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY")
-_URL_VARS = ("PLOBI_AIGW_URL", "PLOBI_QUOTA_AIGW_URL")
+# Names owned by the agents layer; declared on the profile so the generic api-key
+# credential path knows which vars to look for *before* it asks this profile for
+# its fallback.
+_KEY_VARS = AIGW_KEY_ENV_VARS
+_URL_VARS = AIGW_URL_ENV_VARS
 
 # Resolved once at plugin-import time (discovery is lazy, so the process env is
 # already final by then). Trailing slash stripped by aigw_base_url().
@@ -58,25 +69,16 @@ def _host_and_port(base_url: str) -> str:
 class AigwProfile(ProviderProfile):
     """Local quota gateway — OpenAI-compatible endpoint on loopback."""
 
-    def fetch_models(
-        self,
-        *,
-        api_key: str | None = None,
-        base_url: str | None = None,
-        timeout: float = 8.0,
-    ) -> list[str] | None:
-        """List gateway models, filling in the gateway's own endpoint/key.
+    def fallback_api_key(self) -> str:
+        """The gateway's own answer when the user set no explicit credential.
 
-        The gateway is a local service with a fixed development key rather than
-        a per-user secret, so callers that pass nothing still get the canonical
-        values from the agents layer (single source of truth — no second copy
-        of the env parsing here).
+        This is the declared fallback that
+        ``plobi_cli.auth.resolve_api_key_provider_credentials`` reaches *last*, so
+        the chat path and the model-probing path resolve through the same entry.
+        The value comes from the agents layer; the resolution order and its labels
+        live in ``plobi.agents.registry.aigw_api_key`` / ``aigw_credential_source``.
         """
-        return super().fetch_models(
-            api_key=api_key or aigw_api_key(),
-            base_url=base_url or self.base_url,
-            timeout=timeout,
-        )
+        return aigw_api_key()
 
 
 aigw = AigwProfile(

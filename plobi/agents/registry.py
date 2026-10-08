@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -2902,21 +2903,93 @@ AIGW_DEFAULT_BASE = "http://127.0.0.1:8000/v1"
 WORKBUDDY_PREFIX = "workbuddy/"
 WORKBUDDY_DEFAULT_MODEL = "workbuddy/deepseek-chat"
 
+# The only list of env var *names* for this endpoint — the ``model-providers/aigw``
+# profile and ``scripts/plobi/doctor.py`` import it instead of writing their own.
+AIGW_URL_ENV_VARS: tuple[str, ...] = ("PLOBI_AIGW_URL", "PLOBI_QUOTA_AIGW_URL")
+
 
 def aigw_base_url() -> str:
-    return (
-        os.environ.get("PLOBI_AIGW_URL")
-        or os.environ.get("PLOBI_QUOTA_AIGW_URL")
-        or AIGW_DEFAULT_BASE
-    ).rstrip("/")
+    for env_var in AIGW_URL_ENV_VARS:
+        value = (os.environ.get(env_var) or "").strip()
+        if value:
+            return value.rstrip("/")
+    return AIGW_DEFAULT_BASE.rstrip("/")
+
+
+# Single definition point for the local quota gateway's credential
+# (WP-AIGW-CRED-SOURCE / 裁定 81).  Order, and only order:
+#   1. an explicit env var, in ``AIGW_KEY_ENV_VARS`` precedence;
+#   2. the gateway's own configured key (``aigw/config.yaml`` → ``server.api_key``);
+#   3. the development default that ships with the gateway config.
+# Anything that needs "which key do we send to aigw" calls :func:`aigw_api_key` —
+# the agents layer, the ``model-providers/aigw`` profile (as the api-key
+# resolver's declared fallback), ``scripts/plobi/doctor.py`` and
+# ``plobi.quota.config``.  None of them re-implements this chain.
+AIGW_KEY_ENV_VARS: tuple[str, ...] = ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY")
+AIGW_DEV_DEFAULT_API_KEY = "sk-local-dev-key"
+AIGW_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "aigw" / "config.yaml"
+
+# ``api_key: ${AIGW_KEY:-sk-local-dev-key}`` is a valid form in the gateway's own
+# config (the gateway expands it at startup), so the reader expands it too —
+# otherwise we would send the placeholder text verbatim.
+_GATEWAY_KEY_PLACEHOLDER = re.compile(r"^\$\{([A-Z0-9_]+):-([^}]*)\}$")
+
+
+def gateway_declared_api_key(config_path: Path | None = None) -> str:
+    """Return the key the gateway is configured to accept, or ``""``.
+
+    Reads only ``server.api_key`` from the gateway config with no YAML
+    dependency (the same no-dep reading ``parse_aigw_port`` in ``doctor.py``
+    does).  Missing file, missing key or unreadable file all mean "the gateway
+    declares nothing" — the caller decides the fallback.
+    """
+    path = config_path or AIGW_GATEWAY_CONFIG_PATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+    in_server = False
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        if re.match(r"^server:\s*$", line):
+            in_server = True
+            continue
+        if in_server and re.match(r"^\S", line):
+            in_server = False
+        if in_server:
+            match = re.match(r"^\s+api_key:\s*(.+?)\s*$", line)
+            if match:
+                value = match.group(1).strip("\"'")
+                placeholder = _GATEWAY_KEY_PLACEHOLDER.match(value)
+                if placeholder:
+                    env_name, default = placeholder.group(1), placeholder.group(2)
+                    return (os.environ.get(env_name) or "").strip() or default.strip()
+                return value
+    return ""
+
+
+def aigw_credential_source() -> str:
+    """Label of where :func:`aigw_api_key` would read its value from.
+
+    Observability without the secret: callers log and report this, never the key.
+    """
+    for env_var in AIGW_KEY_ENV_VARS:
+        if (os.environ.get(env_var) or "").strip():
+            return f"env:{env_var}"
+    if gateway_declared_api_key():
+        return "gateway config"
+    return "development default"
 
 
 def aigw_api_key() -> str:
-    return (
-        os.environ.get("AIGW_API_KEY")
-        or os.environ.get("PLOBI_QUOTA_AIGW_KEY")
-        or "sk-local-dev-key"
-    )
+    for env_var in AIGW_KEY_ENV_VARS:
+        value = (os.environ.get(env_var) or "").strip()
+        if value:
+            return value
+    return gateway_declared_api_key() or AIGW_DEV_DEFAULT_API_KEY
 
 
 def pick_workbuddy_model(model_ids: list[str]) -> str:

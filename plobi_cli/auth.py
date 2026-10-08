@@ -606,6 +606,22 @@ def _resolve_api_key_provider_secret(
     except Exception:
         pass
 
+    # Last step, and the only place a provider may fall back: a profile that
+    # declares ``fallback_api_key()`` owns "where the credential comes from when
+    # the user gave nothing explicit" (ruling 81).  Everything else — including
+    # profiles without the hook — still resolves to no secret here.
+    try:
+        from providers import get_provider_profile
+
+        profile = get_provider_profile(provider_id)
+        resolve_fallback = getattr(profile, "fallback_api_key", None)
+        if callable(resolve_fallback):
+            val = str(resolve_fallback() or "").strip()
+            if has_usable_secret(val):
+                return val, f"profile_fallback:{provider_id}"
+    except Exception as exc:
+        logger.debug("Profile fallback for %r unavailable: %s", provider_id, exc)
+
     return "", ""
 
 
