@@ -7882,6 +7882,20 @@ def get_env_value_prefer_dotenv(key: str) -> Optional[str]:
         resolved = (os.environ.get(key) or "").strip()
         if resolved:
             return resolved
+        # Nothing resolved the reference. Surfacing it is the contract the
+        # credential pool has always had (`test_env_loader_op_bootstrap`): an
+        # unseeded provider silently disappears, while the reference itself is
+        # at least traceable in the failure. Loud, not silent — and this stays
+        # the single read site, because falling back to a second copy of the
+        # order is exactly the fourth credential source we deleted.
+        logger.warning(
+            "credential %s is an unresolved op:// reference in %s and no resolved "
+            "value is in the environment; surfacing it as-is (fp=%s)",
+            key,
+            dotenv_path,
+            hashlib.sha256(val.encode()).hexdigest()[:8],
+        )
+        return val
     elif val:
         _warn_agent_home_copy(key, dotenv_path)
         return val

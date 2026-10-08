@@ -102,19 +102,21 @@ def test_missing_op_env_is_a_noop(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _seed_openrouter_token(monkeypatch, dotenv_value, environ_value):
+def _seed_openrouter_token(monkeypatch, tmp_path, dotenv_value, environ_value):
     """Drive _seed_from_env('openrouter') and return the seeded access_token.
 
-    _get_env_prefer_dotenv is a closure inside _seed_from_env, so we exercise
-    it through the openrouter seeding path, which calls
-    _get_env_prefer_dotenv('OPENROUTER_API_KEY') and stores the result as the
-    pooled credential's access_token.
+    The ``.env`` is a real file and the seam patched is
+    ``plobi_cli.config.credential_env_path`` -- the one place that says *which*
+    ``.env`` counts (the root home's, never an agent home's; 裁定 89 甲). These
+    three used to patch ``credential_pool.load_env`` instead, which worked only
+    because the pool kept its own copy of the ".env wins" order; that copy was the
+    fourth credential source and is gone, so the old seam now intercepts nothing
+    and every case silently reads the developer's real home. Pin the seam, not the
+    internal name: what these钉 is the order, not which module the pool imports.
     """
-    monkeypatch.setattr(
-        credential_pool,
-        "load_env",
-        lambda: {"OPENROUTER_API_KEY": dotenv_value},
-    )
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"OPENROUTER_API_KEY={dotenv_value}\n", encoding="utf-8")
+    monkeypatch.setattr("plobi_cli.config.credential_env_path", lambda: env_file)
     if environ_value is None:
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     else:
@@ -130,35 +132,40 @@ def _seed_openrouter_token(monkeypatch, dotenv_value, environ_value):
     return entries[0].access_token
 
 
-def test_credential_pool_prefers_resolved_env_over_raw_op_ref(monkeypatch):
+def test_credential_pool_prefers_resolved_env_over_raw_op_ref(monkeypatch, tmp_path):
     """A raw op:// reference in .env must lose to the resolved os.environ value."""
     token = _seed_openrouter_token(
         monkeypatch,
+        tmp_path,
         dotenv_value="op://Vault/Item/field",
         environ_value="resolved-value",
     )
     assert token == "resolved-value"
 
 
-def test_credential_pool_still_prefers_dotenv_for_non_op_values(monkeypatch):
+def test_credential_pool_still_prefers_dotenv_for_non_op_values(monkeypatch, tmp_path):
     """Regression guard: .env still beats os.environ for ordinary values."""
     token = _seed_openrouter_token(
         monkeypatch,
+        tmp_path,
         dotenv_value="dotenv-value",
         environ_value="shell-value",
     )
     assert token == "dotenv-value"
 
 
-def test_credential_pool_falls_back_to_env_when_dotenv_is_only_op_ref(monkeypatch):
+def test_credential_pool_falls_back_to_env_when_dotenv_is_only_op_ref(monkeypatch, tmp_path):
     """An unresolved op:// in .env with no resolved env value yields the raw ref.
 
     This is the pre-resolution / misconfigured edge: there is nothing better
     to return, so behaviour is unchanged (the raw reference is surfaced rather
-    than silently dropping the credential).
+    than silently dropping the credential). Surfacing it is also logged --
+    an unseeded provider would just vanish from the pool, which is the silent
+    shape this workspace keeps having to come back for.
     """
     token = _seed_openrouter_token(
         monkeypatch,
+        tmp_path,
         dotenv_value="op://Vault/Item/field",
         environ_value=None,
     )
