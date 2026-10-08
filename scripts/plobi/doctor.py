@@ -361,7 +361,9 @@ def parse_aigw_port(config_text: str) -> int:
 
 
 def aigw_base_from_env_or_config() -> str:
-    for key in ("PLOBI_AIGW_URL", "PLOBI_QUOTA_AIGW_URL"):
+    from plobi.agents.registry import AIGW_URL_ENV_VARS
+
+    for key in AIGW_URL_ENV_VARS:
         raw = (os.environ.get(key) or "").strip()
         if raw:
             return raw.rstrip("/")
@@ -372,9 +374,39 @@ def aigw_base_from_env_or_config() -> str:
     return f"http://127.0.0.1:{DEFAULT_AIGW_PORT}/v1"
 
 
+# The credential itself is NOT resolved here.  ``plobi.agents.registry`` holds the
+# one order (explicit env vars → the gateway's own configured key → the shipped
+# development default); this table only reports on it, so a rotated
+# ``aigw/config.yaml`` key cannot leave doctor and the runtime disagreeing
+# (WP-AIGW-CRED-SOURCE / 裁定 81).
 def aigw_api_key() -> str:
+    from plobi.agents.registry import aigw_api_key as _shared
+
+    return _shared()
+
+
+def aigw_credential_source() -> str:
+    """Which source the credential above would come from — a label, never a value."""
+    from plobi.agents.registry import aigw_credential_source as _shared
+
+    return _shared()
+
+
+def aigw_key_conflict() -> str:
+    """Return a one-line explanation when the key we send is not the gateway's.
+
+    ``""`` means aligned.  Never includes either value — only which two sources
+    disagree, because a mismatch is a 401 the operator can fix.
+    """
+    from plobi.agents.registry import AIGW_GATEWAY_CONFIG_PATH, gateway_declared_api_key
+
+    declared = gateway_declared_api_key()
+    sending = aigw_api_key()
+    if not declared or not sending or declared == sending:
+        return ""
     return (
-        (os.environ.get("AIGW_API_KEY") or os.environ.get("AIGW_KEY") or "sk-local-dev-key").strip()
+        f"sending {aigw_credential_source()}, but "
+        f"{AIGW_GATEWAY_CONFIG_PATH} declares a different server.api_key"
     )
 
 
@@ -451,6 +483,7 @@ def _aigw_quota_apps(rows: list[Any]) -> tuple[list[str], list[str]]:
 def check_aigw(base_url: str | None = None) -> dict[str, Any]:
     base = (base_url or aigw_base_from_env_or_config()).rstrip("/")
     models_url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+    conflict = aigw_key_conflict()
     code, payload = http_get_json(
         models_url,
         headers={"Authorization": f"Bearer {aigw_api_key()}"},
@@ -458,12 +491,30 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
     if code is None:
         # No listener at all. Deferral covers "not started yet"; an
         # answered-but-wrong request below is still a real fault.
-        return deferred_row("aigw", f"{models_url} unreachable (no listener)", url=models_url)
+        detail = f"{models_url} unreachable (no listener)"
+        if conflict:
+            # Unreachable tells us nothing about the credential; the config
+            # comparison does, and it would otherwise stay invisible until the
+            # gateway is up and answers 401.
+            detail = f"{detail}; {conflict}"
+        return deferred_row("aigw", detail, url=models_url)
+    if code == 401:
+        # The one failure mode this row used to describe as a bare number.
+        return {
+            "id": "aigw",
+            "color": RED,
+            "detail": (
+                f"{models_url} HTTP 401 — the gateway rejected our credential"
+                + (f" ({conflict})" if conflict else " (no gateway config to compare against)")
+            ),
+            "url": models_url,
+            "credential": aigw_credential_source(),
+        }
     if code != 200 or payload is None:
         return {
             "id": "aigw",
             "color": RED,
-            "detail": f"{models_url} HTTP {code}",
+            "detail": f"{models_url} HTTP {code}" + (f"; {conflict}" if conflict else ""),
             "url": models_url,
         }
     if isinstance(payload, dict):
@@ -473,7 +524,13 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
     else:
         rows = []
     ids, apps = _aigw_quota_apps(rows if isinstance(rows, list) else [])
-    if apps:
+    if conflict:
+        # It answered, so *this* gateway takes the key we send — but the config
+        # in the tree says otherwise. Not green: the next gateway started from
+        # that file will 401, and nothing in the table would have said why.
+        color = YELLOW
+        verdict = conflict
+    elif apps:
         verdict = f"quota app(s): {', '.join(apps)}"
         color = GREEN
     elif ids:
@@ -491,6 +548,7 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
         "url": models_url,
         "models": ids[:20],
         "apps": apps,
+        "credential": aigw_credential_source(),
     }
 
 

@@ -2468,20 +2468,50 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     # Handles any provider registered in providers/ with auth_type="api_key".
     # Replaces per-provider copy-paste blocks (stepfun, gmi, zai, etc.).
     try:
-        from providers import get_provider_profile
-        from plobi_cli.auth import resolve_api_key_provider_credentials
+        import logging
 
+        from providers import get_provider_profile
+        from plobi_cli.auth import PROVIDER_REGISTRY, resolve_api_key_provider_credentials
+
+        _probe_log = logging.getLogger(__name__)
         _p = get_provider_profile(normalized)
         if _p and _p.auth_type == "api_key" and _p.base_url:
+            # Prefer the credential table's key-only names; a profile that never
+            # reached the table still declares which names it answers to.
+            _candidate_names = (
+                getattr(PROVIDER_REGISTRY.get(normalized), "api_key_env_vars", ())
+                or getattr(_p, "env_vars", ())
+                or ()
+            )
+            _key_vars = ", ".join(_candidate_names) or "no declared env vars"
+            key_source = ""
             try:
                 creds = resolve_api_key_provider_credentials(normalized)
                 api_key = str(creds.get("api_key") or "").strip()
                 base_url = str(creds.get("base_url") or "").strip()
-            except Exception:
+                key_source = str(creds.get("source") or "")
+            except Exception as exc:
+                # An unconfigured provider is normal here, but "normal" is not
+                # "invisible": name the credential that is missing instead of
+                # returning a catalog that looks like it came from thin air.
+                _probe_log.info(
+                    "model probe %s: credential resolution raised %s (looks for %s)",
+                    normalized,
+                    type(exc).__name__,
+                    _key_vars,
+                )
                 api_key, base_url = "", _p.base_url
             if not base_url:
                 base_url = _p.base_url
             if api_key:
+                if key_source.startswith("profile_fallback:"):
+                    # The user set nothing and this provider is allowed to answer
+                    # for itself (ruling 81) — worth one line when it happens.
+                    _probe_log.info(
+                        "model probe %s: no explicit credential set, using this "
+                        "provider profile's declared fallback",
+                        normalized,
+                    )
                 live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
                 if live:
                     # Merge static curated list with live API results so
@@ -2516,6 +2546,16 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                                 merged_lower.add(m.lower())
                         return merged
                     return live
+            else:
+                # No credential from the explicit sources and no declared
+                # fallback: don't pretend the catalog came from the endpoint.
+                # One line, and the static list below is labelled as static.
+                _probe_log.info(
+                    "model probe %s: no credential (looks for %s) — live catalog "
+                    "skipped, serving the static list instead",
+                    normalized,
+                    _key_vars,
+                )
             # Use profile's fallback_models if defined
             if _p.fallback_models:
                 return list(_p.fallback_models)
