@@ -360,6 +360,17 @@ def _hermetic_environment(tmp_path, monkeypatch):
     (fake_plobi_home / "skills").mkdir()
     monkeypatch.setenv("PLOBI_HOME", str(fake_plobi_home))
 
+    # 3c. Redirect MIND_ROOT to a per-test fake vault. The brain is the one store
+    #     that cannot be regenerated from code (ruling 72), so a test reaching the
+    #     real one is an experiment on user data — same shape as the PLOBI_HOME
+    #     leak (ruling 75 / WP-UNINSTALL-USERENV). Deliberately NOT a git repo:
+    #     MindWriter's ``_git_toplevel`` guard then refuses to commit into it,
+    #     which is exactly what we want in a test.
+    fake_mind = tmp_path / "mind_vault"
+    (fake_mind / "Vault" / "projects").mkdir(parents=True)
+    (fake_mind / "AGENTS.md").write_text("# Mind — fake vault for tests\n", encoding="utf-8")
+    monkeypatch.setenv("MIND_ROOT", str(fake_mind))
+
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with
     #    C.UTF-8 locale; local dev often doesn't. Pin everything.
     monkeypatch.setenv("TZ", "UTC")
