@@ -19,6 +19,7 @@ fcntl/termios、`/opt`、osascript/launchctl、符号链接特权）本来就成
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -72,7 +73,7 @@ def main() -> int:
         return 1
 
     if args.write:
-        payload = {"date": "2026-10-06", "code_head": code_head() or None,
+        payload = {"date": datetime.date.today().isoformat(), "code_head": code_head() or None,
                    "machine": "Windows (Cycle)", "entry": "scripts/run_tests.sh -q", **run}
         json.dump(payload, open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"基线已登记：{run['files_with_failures']} 个文件 / {run['tests_failed']} 条红 "
