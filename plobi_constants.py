@@ -725,6 +725,69 @@ def _iter_real_home_candidates(env: dict[str, str] | None = None) -> list[str]:
     return candidates
 
 
+def _is_usable_temp_root(raw: str) -> bool:
+    """Return True when *raw* names a directory that is safe to use as a temp root.
+
+    "Safe" rules out the two shapes that put files where they must not be
+    (WP-D-ROOT-RESIDUE, 裁定 79):
+
+    * a POSIX literal on Windows — ``/tmp`` is *not* a path there, Python
+      resolves it against the **current drive**, so a machine sitting on ``D:\\``
+      gets ``D:\\tmp`` on the drive root;
+    * a bare filesystem or drive root (``/``, ``D:\\``), which would spray
+      everything across the root of a volume.
+
+    Anything else has to exist, be a directory and be writable, so a stale
+    ``TMP=`` pointer is skipped instead of handed to a caller that would then
+    have to create it somewhere unexpected.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return False
+    if os.name == "nt" and raw.startswith("/") and not raw.startswith("//"):
+        # Not UNC — a drive-relative POSIX literal, the bug this helper exists for.
+        return False
+    try:
+        absolute = os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+    except (OSError, ValueError):
+        return False
+    if absolute == os.path.dirname(absolute):
+        return False  # filesystem root or drive root
+    return os.path.isdir(absolute) and os.access(absolute, os.W_OK)
+
+
+def get_temp_root() -> str:
+    """Return the platform's temp directory, resolved the same way everywhere.
+
+    This is the **one** temp root shared by the product runtime (the last-resort
+    answer of :func:`get_real_home`) and the test runner
+    (``scripts/run_tests.sh`` asks this function instead of guessing), so the
+    two cannot drift apart.
+
+    ``"/tmp"`` must never be hardcoded as a fallback: on Windows it resolves
+    against the current drive, and a process whose cwd is on ``D:\\`` then
+    creates ``D:\\tmp`` on the drive root and writes user data into it.
+    Resolution order mirrors what the platform's own temp handling honours —
+    ``TMPDIR`` → ``TEMP`` → ``TMP``, then :func:`tempfile.gettempdir`, which is
+    ``/tmp`` on POSIX (semantics unchanged) and ``%TEMP%`` on Windows.
+
+    Read-only: it never creates a directory.
+    """
+    for var in ("TMPDIR", "TEMP", "TMP"):
+        raw = (os.environ.get(var) or "").strip()
+        if _is_usable_temp_root(raw):
+            return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+
+    # ``import tempfile`` pulls in random/functools/collections; kept local so
+    # this module stays as import-light as its docstring promises.
+    import tempfile
+
+    # gettempdir() walks the same env vars, then the OS-specific system temp
+    # (``%SYSTEMROOT%\\temp`` on Windows, ``/tmp`` on POSIX) and never returns a
+    # drive-relative POSIX literal on Windows.
+    return tempfile.gettempdir()
+
+
 def get_real_home(env: dict[str, str] | None = None) -> str:
     """Return the OS user's real home directory, avoiding Plobi profile HOME.
 
@@ -742,7 +805,10 @@ def get_real_home(env: dict[str, str] | None = None) -> str:
         seen.add(key)
         if not _is_profile_home(candidate, profile_home):
             return candidate
-    return "/tmp"
+    # Last resort: a real, existing directory. A hardcoded "/tmp" here became
+    # "D:\\tmp" on Windows (drive-relative), i.e. a service with no resolvable
+    # account home wrote its runtime state onto the drive root.
+    return get_temp_root()
 
 
 def get_subprocess_home(env: dict[str, str] | None = None) -> str | None:

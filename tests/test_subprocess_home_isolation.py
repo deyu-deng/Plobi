@@ -14,7 +14,19 @@ import os
 import threading
 from pathlib import Path
 
+import pytest
+
 import plobi_constants
+
+
+def _is_volume_root(path: str) -> bool:
+    """True for ``/`` or a drive root like ``D:\\`` — where abspath stops moving."""
+    absolute = os.path.abspath(path)
+    return absolute == os.path.dirname(absolute)
+
+
+def _same_path(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
 
 
 
@@ -169,6 +181,159 @@ class TestGetSubprocessHome:
 
         assert seen == [str(root)]
         assert get_plobi_home() == root
+
+
+# ---------------------------------------------------------------------------
+# get_temp_root() — the one temp root shared by tests and the runtime
+# ---------------------------------------------------------------------------
+
+class TestTempRoot:
+    """"/tmp" is a POSIX literal, not a fallback.
+
+    Native Python resolves it against the *current drive*, so on a machine whose
+    cwd is on ``D:\\`` the last-resort home became ``D:\\tmp`` and a live gateway
+    wrote its runtime state there (WP-D-ROOT-RESIDUE, 裁定 79). The invariant is
+    pinned here, not a list of forbidden directory names: whatever comes back has
+    to be an existing, writable directory that is not a volume root, and it has to
+    be derived from the environment so a machine can point it at its own policy
+    temp area (no drive letter in the code, 裁定 48.1).
+    """
+
+    def _strip_temp_env(self, monkeypatch):
+        for var in ("TMPDIR", "TEMP", "TMP"):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_env_var_is_honoured_rather_than_a_literal(self, tmp_path, monkeypatch):
+        """A machine's policy temp area wins, whatever the OS default is."""
+        policy_root = tmp_path / "Temp"
+        policy_root.mkdir()
+        self._strip_temp_env(monkeypatch)
+        monkeypatch.setenv("TMPDIR", str(policy_root))
+        assert _same_path(plobi_constants.get_temp_root(), str(policy_root))
+
+    def test_precedence_follows_the_platform_temp_order(self, tmp_path, monkeypatch):
+        """TMPDIR > TEMP > TMP, the same order tempfile.gettempdir() uses."""
+        roots = {}
+        for name in ("first", "second", "third"):
+            roots[name] = tmp_path / name
+            roots[name].mkdir()
+        self._strip_temp_env(monkeypatch)
+        monkeypatch.setenv("TMPDIR", str(roots["first"]))
+        monkeypatch.setenv("TEMP", str(roots["second"]))
+        monkeypatch.setenv("TMP", str(roots["third"]))
+        assert _same_path(plobi_constants.get_temp_root(), str(roots["first"]))
+        monkeypatch.delenv("TMPDIR")
+        assert _same_path(plobi_constants.get_temp_root(), str(roots["second"]))
+        monkeypatch.delenv("TEMP")
+        assert _same_path(plobi_constants.get_temp_root(), str(roots["third"]))
+
+    def test_missing_dir_and_plain_file_are_skipped(self, tmp_path, monkeypatch):
+        missing = tmp_path / "does-not-exist"
+        a_file = tmp_path / "not-a-dir"
+        a_file.write_text("x")
+        usable = tmp_path / "usable"
+        usable.mkdir()
+        self._strip_temp_env(monkeypatch)
+        monkeypatch.setenv("TMPDIR", str(missing))
+        monkeypatch.setenv("TEMP", str(a_file))
+        monkeypatch.setenv("TMP", str(usable))
+        assert _same_path(plobi_constants.get_temp_root(), str(usable))
+
+    def test_nothing_set_yields_an_existing_non_root_directory(self, monkeypatch):
+        self._strip_temp_env(monkeypatch)
+        root = plobi_constants.get_temp_root()
+        assert os.path.isabs(root)
+        assert os.path.isdir(root), f"{root} is not a directory we can write into"
+        assert not _is_volume_root(root)
+
+    def test_resolving_creates_nothing(self, tmp_path, monkeypatch):
+        """Import-time / pre-run helper: it must not mkdir on the way by."""
+        would_be = tmp_path / "must-not-be-created"
+        self._strip_temp_env(monkeypatch)
+        monkeypatch.setenv("TMPDIR", str(would_be))
+        plobi_constants.get_temp_root()
+        assert not would_be.exists()
+
+    def test_posix_literal_is_never_handed_back_on_windows(self, monkeypatch):
+        """The regression itself: TEMP=/tmp (what Git Bash sets) must not win."""
+        if os.name != "nt":
+            pytest.skip("only Windows resolves a leading '/' against the current drive")
+        self._strip_temp_env(monkeypatch)
+        monkeypatch.setenv("TMPDIR", "/tmp")
+        monkeypatch.setenv("TEMP", "/tmp")
+        root = plobi_constants.get_temp_root()
+        assert root != "/tmp"
+        assert os.path.splitdrive(os.path.abspath(root))[0], f"{root} is drive-relative"
+        assert os.path.isdir(root)
+        assert not _is_volume_root(root)
+
+    def test_posix_keeps_the_old_tmp_semantics(self, monkeypatch):
+        """POSIX behaviour is unchanged: TMPDIR=/tmp is a real directory there."""
+        if os.name == "nt":
+            pytest.skip("/tmp is not a directory on Windows")
+        if not os.path.isdir("/tmp"):
+            pytest.skip("no /tmp on this POSIX host")
+        self._strip_temp_env(monkeypatch)
+        monkeypatch.setenv("TMPDIR", "/tmp")
+        assert plobi_constants.get_temp_root() == "/tmp"
+
+
+# ---------------------------------------------------------------------------
+# get_real_home() last resort
+# ---------------------------------------------------------------------------
+
+class TestRealHomeLastResort:
+    """A process with no resolvable account home must not invent a drive-root path.
+
+    This is the runtime half of the bug: a service started without HOME /
+    USERPROFILE fell through every candidate and got the literal that became
+    ``D:\\tmp``, and the live gateway kept writing ``active_sessions.json`` there.
+    """
+
+    def _no_candidates(self, monkeypatch):
+        monkeypatch.delenv("PLOBI_REAL_HOME", raising=False)
+        monkeypatch.setattr(plobi_constants, "_iter_real_home_candidates", lambda env=None: [])
+
+    def test_last_resort_is_the_shared_temp_root(self, monkeypatch):
+        self._no_candidates(monkeypatch)
+        assert plobi_constants.get_real_home() == plobi_constants.get_temp_root()
+
+    def test_last_resort_is_a_real_directory_and_not_a_volume_root(self, monkeypatch):
+        self._no_candidates(monkeypatch)
+        home = plobi_constants.get_real_home()
+        assert os.path.isabs(home)
+        assert os.path.isdir(home)
+        assert not _is_volume_root(home)
+
+    def test_last_resort_is_not_a_drive_relative_literal_on_windows(self, monkeypatch):
+        if os.name != "nt":
+            pytest.skip("POSIX keeps /tmp as its temp root")
+        self._no_candidates(monkeypatch)
+        home = plobi_constants.get_real_home()
+        assert not home.startswith("/"), f"{home} would resolve against the current drive"
+        assert os.path.splitdrive(home)[0]
+
+    def test_subprocess_home_never_becomes_the_tmp_literal(self, tmp_path, monkeypatch):
+        """Auto mode, HOME already at the profile home, no real home to repair to."""
+        monkeypatch.setattr(plobi_constants, "is_container", lambda: False)
+        monkeypatch.delenv("TERMINAL_HOME_MODE", raising=False)
+        monkeypatch.delenv("PLOBI_REAL_HOME", raising=False)
+        profile_dir = tmp_path / ".plobi" / "profiles" / "coder"
+        profile_home = profile_dir / "home"
+        profile_home.mkdir(parents=True)
+        monkeypatch.setenv("PLOBI_HOME", str(profile_dir))
+        monkeypatch.setenv("HOME", str(profile_home))
+        monkeypatch.setattr(plobi_constants, "_iter_real_home_candidates", lambda env=None: [])
+
+        home = plobi_constants.get_subprocess_home()
+
+        assert home is not None
+        assert os.path.abspath(home) != os.path.abspath(str(profile_home))
+        assert os.path.isdir(home)
+        assert not _is_volume_root(home)
+        if os.name == "nt":
+            assert home != "/tmp"
+            assert os.path.splitdrive(home)[0]
 
 
 # ---------------------------------------------------------------------------
