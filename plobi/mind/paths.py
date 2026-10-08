@@ -12,6 +12,7 @@ Two rules from the North Star contract:
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -78,6 +79,33 @@ def require_root(explicit: Path | str | None = None) -> Path:
     if root is None:
         raise MindUnavailable("MIND_ROOT is not set and no Mind vault was found")
     return root
+
+
+def git_toplevel(path: Path) -> Optional[str]:
+    """Top-level of the git repository enclosing ``path``, or ``None``.
+
+    ``None`` means ``path`` sits in no repository at all. Two guards need this and
+    they are not the same question: the writer must not commit into a repo it does
+    not own, while declaration sync must not run a vault's own gate against — or
+    edit files inside — an *enclosing* checkout that merely happens to sit above
+    ``MIND_ROOT`` (ruling 72 tail; REQUIREMENTS R-013 edge case ②). A directory in
+    no repo at all is neither case, so callers compare against ``path`` rather than
+    merely testing for ``None``.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    lines = (completed.stdout or "").strip().splitlines()
+    return lines[0] if lines else None
 
 
 def is_safe_relative(relative: str) -> bool:

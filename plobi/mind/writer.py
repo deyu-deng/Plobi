@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .lock import mind_write_lock
-from .paths import MindUnavailable, UnsafeMindPath, require_root, resolve_root, safe_target
+from .paths import MindUnavailable, UnsafeMindPath, git_toplevel, require_root, resolve_root, safe_target
 
 logger = logging.getLogger(__name__)
 
@@ -146,25 +146,11 @@ class MindWriter:
 
         ``None`` means ``root`` is not inside any git repository (rev-parse
         failed or git is unavailable). This is used purely as a guard: we only
-        ever commit when ``root`` *is* the repository top-level.
+        ever commit when ``root`` *is* the repository top-level. Single
+        implementation lives in :func:`plobi.mind.paths.git_toplevel` — the
+        declaration sync path has to ask the identical question.
         """
-        try:
-            completed = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=str(root),
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            logger.warning("mind: git rev-parse failed for %s: %s", root, exc)
-            return None
-
-        if completed.returncode != 0:
-            return None
-
-        lines = (completed.stdout or "").strip().splitlines()
-        return lines[0] if lines else None
+        return git_toplevel(root)
 
     def _commit(self, root: Path, paths: list[str]) -> tuple[bool, str]:
         # Guard: only commit when ``root`` is itself the git top-level. If it is
