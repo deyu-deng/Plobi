@@ -1,22 +1,34 @@
 /**
- * Tests for electron/aigw-key-reconcile.ts.
+ * Tests for electron/aigw-key-reconcile.ts  +  the cross-language parity table.
  *
  * Run with: node --test electron/aigw-key-reconcile.test.ts
  * (Wired into npm test:desktop:platforms in package.json.)
  *
- * These钉 are relationships, not value lists: whatever the shell resolves must
- * either match what the gateway declares, or come back as a mismatch. A test
- * that only pinned `sk-local-dev-key` would keep passing after the two sides
- * drifted onto a *different* shared value -- which is the failure being guarded.
+ * Two jobs. The first is the ordinary one: what the reconciler reports. The
+ * second is 裁定 94's: this TS parser and `plobi/agents/registry.py`'s
+ * `gateway_declared_api_key()` are two parsers for one file, so they are pinned
+ * to a single byte-for-byte table. Python's side carries the same table in
+ * `tests/plobi/test_aigw_key_parse_parity.py`. Deliberate cost, accepted by
+ * 裁定 94: change Python's parsing semantics without updating both tables and a
+ * test goes red -- that is the point, not a tax.
  *
- * Also pinned: the reconciliation output never carries key material. That is
- * not decoration -- the summary goes into the log ring, and the log ring ships
- * inside support bundles.
+ * Four rows below are the drifts 裁定 94 measured (and this file re-measured on
+ * 2026-10-08 against the real Python function): a lowercase placeholder name, a
+ * default containing `}`, doubled quotes, and an empty value. Each is a
+ * legitimately-shaped config that used to produce a phantom mismatch.
+ *
+ * Also pinned: nothing this module returns carries key material -- the summary
+ * goes into the log ring, and the log ring ships inside support bundles.
  */
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import {
+  DEV_DEFAULT_API_KEY,
+  ENV_ORDER,
   declaredGatewayApiKey,
   fingerprintKey,
   reconcileGatewayKey,
@@ -29,33 +41,68 @@ const OTHER = 'a-value-that-is-not-the-declared-one'
 const configWith = (key: string) =>
   `server:\n  host: 127.0.0.1\n  port: 8000\n  api_key: ${key}\n\nlogging:\n  level: INFO\n`
 
-test('declaredGatewayApiKey reads server.api_key and not a same-named key elsewhere', () => {
-  const text = `${configWith(DECLARED)}other:\n  api_key: should-be-ignored\n`
-  assert.equal(declaredGatewayApiKey(text, {}), DECLARED)
-})
+/**
+ * Measured against `gateway_declared_api_key()` on this machine, not copied from
+ * a comment. `''` is Python's "declares nothing usable" (missing file, missing
+ * block, missing key and an empty scalar all collapse to it, and the caller then
+ * falls back to `AIGW_DEV_DEFAULT_API_KEY`).
+ */
+const PARITY: Array<[string, string, Record<string, string>, string]> = [
+  ['placeholder-caps', '${AIGW_KEY:-sk-from-placeholder}', {}, 'sk-from-placeholder'],
+  ['placeholder-lower', '${aigw_key:-X}', {}, '${aigw_key:-X}'],
+  ['brace-in-default', '${AIGW_KEY:-a}b}', {}, '${AIGW_KEY:-a}b}'],
+  ['double-quoted', "''k''", {}, 'k'],
+  ['empty-string', '""', {}, ''],
+  ['plain', 'sk-local-dev-key', {}, 'sk-local-dev-key'],
+  ['placeholder-env-set', '${AIGW_KEY:-fallback}', { AIGW_KEY: 'from-env' }, 'from-env'],
+  ['trailing-comment', `${DECLARED}  # rotated 2026-10-08`, {}, DECLARED],
+]
 
-test('declaredGatewayApiKey expands ${VAR:-default} through the environment', () => {
-  const text = configWith('${AIGW_KEY:-fallback-from-config}')
-  assert.equal(declaredGatewayApiKey(text, { AIGW_KEY: 'from-env' }), 'from-env')
-  assert.equal(declaredGatewayApiKey(text, {}), 'fallback-from-config')
-})
+// Structural shapes carry whole files rather than a scalar: Python returns `''`
+// for "no api_key line", "no server: block", an empty file and even a missing
+// file, all indistinguishable, and its caller then uses the shared default.
+const PARITY_WHOLE_FILE: Array<[string, string, string]> = [
+  ['no-api-key-line', 'server:\n  port: 8000\n', ''],
+  ['no-server-block', 'logging:\n  level: INFO\n', ''],
+  ['empty-file', '', ''],
+]
 
-test('declaredGatewayApiKey strips trailing comments and quotes like the Python reader', () => {
-  assert.equal(declaredGatewayApiKey(configWith(`${DECLARED}  # rotated 2026-10-08`), {}), DECLARED)
-  assert.equal(declaredGatewayApiKey(configWith(`"${DECLARED}"`), {}), DECLARED)
-})
+for (const [name, scalar, env, expected] of PARITY) {
+  test(`parity ${name}: TS parses byte-identically to the Python reader`, () => {
+    assert.equal(declaredGatewayApiKey(configWith(scalar), env as NodeJS.ProcessEnv), expected)
+  })
+}
 
-test('declaredGatewayApiKey returns null for missing file, block or key', () => {
+for (const [name, text, expected] of PARITY_WHOLE_FILE) {
+  test(`parity ${name}: TS parses byte-identically to the Python reader`, () => {
+    assert.equal(declaredGatewayApiKey(text, {}), expected)
+  })
+}
+
+test('one deliberate difference stays documented: an unreadable file is NOT CHECKED in TS', () => {
+  // Python's reader swallows the OSError and returns '' like any other
+  // "declares nothing"; the shell knows whether the file is there, and
+  // `main.ts` already reports a missing gateway config as a deferred sidecar.
+  // So "we could not look" is kept distinct from "it declares nothing".
   assert.equal(declaredGatewayApiKey(null, {}), null)
-  assert.equal(declaredGatewayApiKey('logging:\n  level: INFO\n', {}), null)
-  assert.equal(declaredGatewayApiKey('server:\n  port: 8000\n', {}), null)
+  assert.equal(declaredGatewayApiKey('', {}), '')
 })
 
 test('reconcile passes when the shell fallback equals what the gateway declares', () => {
   const r = reconcileGatewayKey(configWith(DECLARED), {})
   assert.equal(r.match, true)
-  assert.equal(r.usedSource, 'shell_default')
+  assert.equal(r.usedSource, 'development default')
   assert.equal(r.declaredFp, fingerprintKey(DECLARED))
+})
+
+test('an empty declared value is "no declaration", not a mismatch (裁定 94 item 2)', () => {
+  // `api_key: ""` is a valid config. Python resolves it to the shared
+  // development default; treating it as a declared-but-empty string used to
+  // fingerprint against '' and report a red that no user caused.
+  const r = reconcileGatewayKey(configWith('""'), {})
+  assert.equal(r.declaredReadable, true)
+  assert.equal(r.match, true)
+  assert.equal(r.declaredFp, fingerprintKey(DEV_DEFAULT_API_KEY))
 })
 
 test('reconcile goes red when the environment carries a different key', () => {
@@ -65,16 +112,15 @@ test('reconcile goes red when the environment carries a different key', () => {
   assert.match(r.summary, /MISMATCH/)
 })
 
-test('an unreadable declaration is reported as NOT CHECKED, never as a pass', () => {
+test('an unreadable config is NOT CHECKED, never a pass, and never a fake mismatch', () => {
   const r = reconcileGatewayKey(null, {})
   assert.equal(r.match, false)
-  assert.equal(r.declaredFp, null)
+  assert.equal(r.declaredReadable, false)
   assert.match(r.summary, /NOT CHECKED/)
 })
 
 test('no field returned by reconcile carries key material', () => {
-  const r = reconcileGatewayKey(configWith(DECLARED), { AIGW_API_KEY: OTHER })
-  const dump = JSON.stringify(r)
+  const dump = JSON.stringify(reconcileGatewayKey(configWith(DECLARED), { AIGW_API_KEY: OTHER }))
   assert.ok(!dump.includes(DECLARED), 'summary leaked the declared key')
   assert.ok(!dump.includes(OTHER), 'summary leaked the shell key')
   assert.ok(dump.includes(fingerprintKey(OTHER)), 'fingerprints are the point of the report')
@@ -83,4 +129,25 @@ test('no field returned by reconcile carries key material', () => {
 test('the shell ladder keeps AIGW_API_KEY ahead of PLOBI_AIGW_API_KEY', () => {
   assert.equal(usedGatewayKey({ AIGW_API_KEY: 'first', PLOBI_AIGW_API_KEY: 'second' }).source, 'env:AIGW_API_KEY')
   assert.equal(usedGatewayKey({ PLOBI_AIGW_API_KEY: 'second' }).source, 'env:PLOBI_AIGW_API_KEY')
+})
+
+// ── 镜像钉住（裁定 94 第 1 条后半）：main.ts 那份手抄必须与本模块同字面量 ──────────
+const mainTs = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.ts'), 'utf-8')
+
+test('main.ts productQuotaApiKey() is still the ladder this module mirrors', () => {
+  const wanted = `process.env.${ENV_ORDER[0]} || process.env.${ENV_ORDER[1]} || '${DEV_DEFAULT_API_KEY}'`
+  assert.ok(mainTs.includes(wanted), `main.ts 的取值阶梯与本模块不同：要找「${wanted}」`)
+})
+
+// ── 已知分叉，钉住而不是悄悄抹平（要合并就两处一起改，本行同步更新） ────────────────
+test('known divergence: the Python ladder names a different second variable', () => {
+  // registry.py `AIGW_KEY_ENV_VARS` = ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY"),
+  // while the shell's second rung is PLOBI_AIGW_API_KEY. Reported to 治理线 rather
+  // than fixed here: quietly changing which variable the shell honours would move
+  // behaviour under a user who set one of them.
+  assert.equal(ENV_ORDER[1], 'PLOBI_AIGW_API_KEY')
+  assert.ok(
+    mainTs.includes('PLOBI_AIGW_API_KEY'),
+    'main.ts 不再认 PLOBI_AIGW_API_KEY —— 那就与本表与 Python 名单一起统一，别只改一边',
+  )
 })
