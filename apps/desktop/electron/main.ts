@@ -34,6 +34,7 @@ import nodePty from 'node-pty'
 import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './backend-command'
 import { buildDesktopBackendEnv, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
+import { reconcileGatewayKey } from './aigw-key-reconcile'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { runBootstrap } from './bootstrap-runner'
@@ -8368,6 +8369,19 @@ function productQuotaApiKey(): string {
 // `mock` and empty providers never reach the selector (R-017). Returns [] when the
 // hub is down, so callers keep the last good list rather than wipe it.
 async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: string[]; baseUrl: string; apiKey: string }>> {
+  // WP-AIGW-KEY-LITERALS (consumer's half): this is the one place the shell
+  // sends the key it resolved, so it is where a stale copy shows up before the
+  // user reads a 401 as a dead key. Fingerprint only — the summary never
+  // carries either value. Checked per discovery, not once at boot: a config
+  // edit while the shell runs still comes out red.
+  try {
+    const cfgPath = path.join(resolveAigwDir(), 'config.yaml')
+    const configText = fs.existsSync(cfgPath) ? fs.readFileSync(cfgPath, 'utf-8') : null
+    const check = reconcileGatewayKey(configText)
+    if (!check.match) rememberLog(`[aigw-key] ${check.summary}`)
+  } catch (error) {
+    rememberLog(`[aigw-key] aigw key NOT CHECKED: config unreadable (${String(error)})`)
+  }
   try {
     const res = await fetch(`${PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')}/v1/models`, {
       headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
