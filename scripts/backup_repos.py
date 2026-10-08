@@ -86,12 +86,50 @@ def bundle_one(name: str, repo: Path | None, dest: Path, stamp: str) -> tuple[bo
     return True, f"{name}: {out.name} {size_mb:.1f} MB @ {tip_txt} (verified)", ""
 
 
+def rotate(dest: Path, name: str, keep: int) -> list[str]:
+    """Prune this script's own bundles for ``name`` down to the newest ``keep``.
+
+    Naming carries the timestamp (``plobi-<name>-YYYYmmdd-HHMM.bundle``), so a
+    lexicographic sort is a chronological one. Only that exact pattern is touched:
+    ``keep/data/*.enc`` archives, ``docs-*.bundle`` from the off-disk script and
+    ``vaelis-*.bundle`` from the dead machine all survive untouched.
+    """
+    if keep <= 0:
+        return []
+    ours = sorted(dest.glob(f"plobi-{name}-*.bundle"))
+    removed = []
+    for old in ours[:-keep] if len(ours) > keep else []:
+        try:
+            old.unlink()
+            removed.append(old.name)
+        except OSError as exc:
+            print(f"rotate: could not prune {old.name}: {exc}", file=sys.stderr)
+    return removed
+
+
+def log_run(dest: Path, stamp: str, results: list[tuple[str, bool]], removed: list[str]) -> None:
+    """Append one durable line per run, so a scheduled run that failed leaves evidence.
+
+    The scheduled task's stdout goes nowhere; a backup nobody can prove ran is the
+    failure this whole knife is about (ruling 81: 坏了要可见).
+    """
+    line = " ".join(f"{name}={'ok' if ok else 'FAIL'}" for name, ok in results)
+    pruned = f" pruned={len(removed)}" if removed else ""
+    try:
+        with (dest / "backup-run.log").open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"{stamp} {line}{pruned}\n")
+    except OSError as exc:
+        print(f"FAIL cannot write backup-run.log: {exc}", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dest", type=Path, default=DESKTOP / "bundles" / "keep",
                     help="bundle landing directory (default: Plobi-Desktop/bundles/keep)")
     ap.add_argument("--only", action="append", choices=sorted(repos()),
                     help="bundle just these repos (repeatable); default is all four")
+    ap.add_argument("--keep", type=int, default=14,
+                    help="how many newest bundles to keep per repo (0 disables pruning)")
     args = ap.parse_args(argv)
 
     if shutil.which("git") is None:
@@ -105,11 +143,25 @@ def main(argv: list[str] | None = None) -> int:
 
     args.dest.mkdir(parents=True, exist_ok=True)
     failures: list[tuple[str, str]] = []
+    results: list[tuple[str, bool]] = []
     for name, repo in selected.items():
         ok, line, cause = bundle_one(name, repo, args.dest, stamp)
         print(("ok   " if ok else "FAIL ") + line)
+        results.append((name, ok))
         if not ok:
             failures.append((cause, line))
+
+    # Prune only what this run actually produced history for: a repo that failed
+    # today must keep the older bundles it has.
+    removed: list[str] = []
+    for name, ok in results:
+        if ok:
+            removed += rotate(args.dest, name, args.keep)
+    if removed:
+        print(f"pruned {len(removed)} older bundle(s) (keep={args.keep}): "
+              + ", ".join(removed))
+
+    log_run(args.dest, stamp, results, removed)
 
     if failures:
         print("", file=sys.stderr)
