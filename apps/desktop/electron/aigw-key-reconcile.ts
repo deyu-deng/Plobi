@@ -3,13 +3,14 @@
  *
  * The desktop shell resolves a gateway key from its environment and, when
  * nothing is set, falls back to a literal it carries itself. That default is
- * allowed (裁定 92 的形状：网关本体是值的拥有者只留一处，消费者可以留默认) —
- * what is *not* allowed is the shell silently keeping a copy that no longer
- * matches what the gateway actually accepts. Today that consistency is held
- * up by a sentence in `aigw/config.yaml`'s comment, not by code, so a changed
- * gateway key and an unchanged shell default produce auth failures that read
- * like a dead key (the exact misdiagnosis this workspace has already paid
- * for twice).
+ * allowed -- the user ruled on 2026-10-08 that the gateway itself owns the only
+ * definition (甲) while consumers may keep a fallback as long as they reconcile
+ * against it (乙); see the `WP-AIGW-KEY-LITERALS` task brief. What is *not*
+ * allowed is the shell silently keeping a copy that no longer matches what the
+ * gateway actually accepts. Today that consistency is held up by a sentence in
+ * `aigw/config.yaml`'s comment, not by code, so a changed gateway key and an
+ * unchanged shell default produce auth failures that read like a dead key (the
+ * exact misdiagnosis this workspace has already paid for twice).
  *
  * So this module answers one question before the shell uses its key: does the
  * value I resolved match the value the gateway declares? The declaration is
