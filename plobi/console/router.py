@@ -66,13 +66,17 @@ from plobi.agents.registry import (
     AGENT_CATEGORIES,
     DEFAULT_CATEGORY,
     MAX_LIVE_EVENTS_AGENTS,
+    MIND_PROJECT_CATEGORIES,
     AgentEntry,
     AgentRegistry,
     L1_SECRETARY_ROLE,
+    RegistryError,
     default_project_path,
     find_agenda_agent,
     is_agenda_entry,
     load_registry,
+    profile_name_blocker,
+    registration_blocker,
 )
 from plobi.delegation.tracker import (
     STATUS_AWAITING_APPROVAL,
@@ -80,6 +84,15 @@ from plobi.delegation.tracker import (
     STATUS_IDLE,
     STATUS_WORKING,
     get_tracker,
+)
+from plobi.mind.project_declarations import (
+    DeclarationSyncError,
+    sync_project_declarations,
+)
+from plobi.mind.project_tree import (
+    ProjectTreeConflict,
+    ProjectTreeUnwritable,
+    ensure_project_tree,
 )
 from plobi.quota.pool import get_quota_pool
 from plobi.routing import ModelRoute
@@ -287,6 +300,10 @@ def agent_row(entry: AgentEntry) -> dict:
     R-012: ``category`` is always present (butler default) so the left rail
     can group rows. ``project_path`` lives on the overview (S2 right rail),
     not the row — it is a per-workbench mount, not a sidebar concern.
+
+    R-013 扩写（2026-10-06）: ``mindSubtree`` 行上必带（没挂就是空串）。左栏那对
+    ``Nymo``/``nymo`` 之所以看着像两个项目，是因为真数据里只有一条挂了 Mind——把这一格
+    透出去，前端才辨得出「同一个项目登记了两条」，不用替用户猜。
     """
     totals = totals_for_agent(entry.name)
     row: dict = {
@@ -297,6 +314,7 @@ def agent_row(entry: AgentEntry) -> dict:
         "todayCalls": totals.calls,
         "profile": entry.profile_name,
         "category": entry.category,
+        "mindSubtree": entry.mind_subtree,
     }
     # Omit None values so the frontend receives absent keys (not JSON null),
     # matching the `model?: string` optional contract in types.ts.
@@ -549,9 +567,20 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     callers that omit it get a 400 — the desktop always sends one.
     R-013: ``project_path`` is optional; when absent the registry seeds it from
     the category default. The bound folder is created on disk if missing.
+    R-013 扩写（2026-10-06）: a ``projects`` / ``research`` row is registered in
+    Mind first — ``Vault/projects/<项目名>`` with its 三件套 — and the registry
+    only gets written once that tree exists, so no row ever claims a subtree that
+    is not on disk. Mind unreachable / unwritable means the create fails.
     裁定 19: ``category=events`` requires ``source_event_id`` pointing to a
     confirmed agenda event, and live events agents are capped at
     :data:`MAX_LIVE_EVENTS_AGENTS` (5).
+    裁定 42 §42.2 ⑥: ``secretOverrides`` (env name → value) is the 密钥 override —
+    it is injected into the 分身's process environment when it is started and is
+    never written into the profile home; the values are deliberately not echoed
+    back by ``agent_row``.
+    R-071 / R-013 扩写: 重名在这道门就拒（409），措辞来自
+    :func:`plobi.agents.registry.registration_blocker` —— 命中已有键、只差大小写的
+    键、同一个项目名、同一棵 Mind 树，以及建不出家的保留 profile 名（400）。
     """
     raw_id = body.get("id") if isinstance(body, dict) else None
     if raw_id is None or not str(raw_id).strip():
@@ -586,18 +615,42 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     display = str(body.get("name") or "").strip()
     blurb = str(body.get("description") or "").strip()
     mind_subtree = str(body.get("mindSubtree") or "").strip()
-    clone_raw = body.get("cloneFrom")
-    clone_from = str(clone_raw).strip() if clone_raw else None
-    if not clone_from:
-        clone_from = None
 
     # R-013: optional override of the category default folder binding.
     project_path_override = str(body.get("projectPath") or "").strip()
+
+    # 裁定 42 §42.2 第 6 项的三个覆盖里，密钥这一样以前没有字段——它靠
+    # ``create_profile(clone_config=True)`` 整份拷根 ``.env`` 实现（实测 13 个分身
+    # 一把自己的密钥都没有）。这一格填的键值只在起分身时注进子进程环境
+    # （``plobi.agents.registry.apply_secret_overrides``），不会落进 profile 家。
+    secret_overrides: dict = {}
+    secrets_raw = body.get("secretOverrides")
+    if isinstance(secrets_raw, dict):
+        secret_overrides = {
+            str(key).strip(): str(value).strip()
+            for key, value in secrets_raw.items()
+            if str(key).strip() and str(value).strip()
+        }
 
     registry = get_registry()
     existing = registry.get(agent_id)
     if existing is not None and is_agenda_entry(existing):
         return {"ok": True, "data": agent_row(existing)}
+    # 桌面不会把密钥读回来（``agent_row`` 不吐这一格），所以一次编辑不该把它抹掉：
+    # body 没带这一键时沿用已有那条的覆盖。
+    if existing is not None and "secretOverrides" not in body:
+        secret_overrides = dict(existing.secret_overrides)
+    # 同理，弹窗从不填 ``mindSubtree``（那一格是 Mind 的位置，不是给人打的字）。不带
+    # 这一键的编辑若把它抹成空串，那条分身就从「挂了 Mind 的项目」退化成用户 10-06
+    # 手建的那种没有 ``mind_subtree`` 的记录——左栏于是又看不出它是同一个项目。
+    if existing is not None and "mindSubtree" not in body:
+        mind_subtree = existing.mind_subtree
+
+    # R-072「新建了 Agent 就自动登记好」：建册这一步**就是**登记，章在这儿盖，
+    # 不靠任何一句 description 的长相反推（那一套以前会让手下从名单里消失）。
+    # 编辑一条已有记录不改章——桌面从不回传这一格，改个标语不该把一条 Mind 投影
+    # 晋升成手下，也不该把用户建过的手下降级。
+    registered = True if existing is None else existing.registered
 
     # 裁定 19: events lifecycle guards.
     source_event_id = ""
@@ -633,6 +686,8 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         category=category,
         project_path=project_path_override,
         source_event_id=source_event_id,
+        secret_overrides=secret_overrides,
+        registered=registered,
     )
     creating_agenda = role == _AGENDA_ROLE or is_agenda_entry(proposed)
     if creating_agenda:
@@ -642,8 +697,73 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
                 return {"ok": True, "data": agent_row(found)}
             return _error(409, "agenda L2 already exists")
 
-    entry = registry.upsert(proposed)
-    registry.save()
+    # 重名禁止落在**创建那一刻**（R-013 扩写，用户 2026-10-06：「如果有出现重名的就直接
+    # 禁止创建」）。判据只有一份，在 :func:`registration_blocker`——命中已有键、只差
+    # 大小写的键、同一个项目名、同一棵 Mind 树都在这里拒，桌面弹窗不另算一套，只把
+    # 这句显示出来。registry.upsert 里那条大小写闸门留着给 CLI / 播种机兜底。
+    duplicate = registration_blocker(registry, proposed)
+    if duplicate:
+        return _error(409, duplicate)
+
+    # R-071：项目分身叫 ``Plobi`` 这类记录登记了也永远问不到——它的 profile 家
+    # 撞上保留名，永远建不出来。在这道门就说清「改哪一格」，别把底座那句
+    # "Profile name 'plobi' is reserved" 原样丢给人，也别先落一条查不着的记录。
+    blocker = profile_name_blocker(proposed)
+    if blocker:
+        return _error(400, blocker)
+
+    # 「每创建一个 project 类型的 L2 agent，mind 里面要自动创建对应的文件夹和相关文件」：
+    # 先立项、后落册——树建不成就直接拒绝，压根不往名册里写，自然留不下「有名册没目录」
+    # 的孤儿行（反过来落册在前就得替用户回滚 yaml，那才是给自己找麻烦）。
+    tree = None
+    declarations = None
+    if existing is None and category in MIND_PROJECT_CATEGORIES:
+        from dataclasses import replace as _replace
+
+        try:
+            tree = ensure_project_tree(
+                raw_name=display or agent_id,
+                summary=blurb,
+                category=category,
+            )
+        except (ProjectTreeConflict, ProjectTreeUnwritable) as exc:
+            return _error(409 if isinstance(exc, ProjectTreeConflict) else 400, str(exc))
+
+        owner = registry.find_mind_subtree_owner(tree.relative, exclude=agent_id)
+        if owner:
+            # 磁盘上那棵树已经属于别条分身：不许认领，也不许覆盖（reused 时没写过东西，
+            # 写过的那几份由 rollback 收回）。
+            tree.rollback()
+            return _error(
+                409,
+                f"Mind 里 ``{tree.relative}`` 已经挂在分身「{owner}」名下——同一个项目不登记"
+                f"第二条：要推进它就是去编辑「{owner}」，真另起一个项目请换一个项目名。",
+            )
+        # 建完必须同步脑仓自己那两处声明（``AGENTS.md`` §1 那一行 + ``Vault/projects/INDEX.md``）：
+        # 脑仓的门禁 ``Loom/scripts/verifier.py`` 把「§1 声明 ≠ 磁盘」判成 BLOCKER，pre-commit
+        # 就在跑它——只建目录不同步声明，用户在脑仓的下一次提交会被这个**我们**造的洞拦下。
+        # 顺序固定在落册之前：同步不成 = 这次创建不成，树收回、名册一个字都不写。
+        try:
+            declarations = sync_project_declarations(dir_name=tree.dir_path.name)
+        except DeclarationSyncError as exc:
+            tree.rollback()
+            return _error(400, str(exc))
+        proposed = _replace(proposed, mind_subtree=tree.relative)
+
+    try:
+        entry = registry.upsert(proposed)
+        registry.save()
+    except (RegistryError, OSError) as exc:
+        # 名册没落成：内存里那条也撤掉（否则 singleton 带着一条 yaml 里没有的行跑到下次
+        # reload），刚改过的两处声明与刚建的树一并收回——它们现在谁也不是了，别在 Mind 里
+        # 留下「声明里有、名册里没有」的孤儿目录。
+        if existing is None:
+            registry.remove(agent_id)
+        if declarations is not None:
+            declarations.rollback()
+        if tree is not None:
+            tree.rollback()
+        return _error(400, str(exc))
 
     # R-013: ensure the bound folder exists (butler has none → skip) — but only
     # when this platform can actually mean the binding. A Windows-shaped binding
@@ -666,7 +786,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
             )
 
     try:
-        registry.spawn(entry.name, clone_from=clone_from)
+        registry.spawn(entry.name)
     except Exception as exc:
         logger.warning("plobi console: spawn failed for %s: %s", entry.name, exc)
         return _error(400, str(exc) or "spawn failed")

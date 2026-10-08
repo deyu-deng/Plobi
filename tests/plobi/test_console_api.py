@@ -40,7 +40,13 @@ def client():
 @pytest.fixture(autouse=True)
 def _isolated_state(tmp_path, monkeypatch):
     """Fresh registry + tracker per test; nothing leaks into the real home."""
+    monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
     monkeypatch.setattr("plobi.agents.registry.default_path", lambda: tmp_path / "projects.yaml")
+    # R-013 扩写（2026-10-06）：建 project 分身现在要在 Mind 立项（Vault/projects/<名>
+    # + 三件套）。MIND_ROOT 指到 tmp 里一个**存在**的假库（resolve_root 只认存在的目录），
+    # 否则每个 project 用例都会往真的脑仓里写目录。
+    (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
     set_registry = AgentRegistry(path=tmp_path / "projects.yaml")
     console_router.set_registry(set_registry)
     set_tracker(SubagentTracker())
@@ -73,13 +79,17 @@ def test_agents_empty_registry_is_ok_envelope(client):
 def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     register(_isolated_state, agenda=AGENDA)
     row = client.get("/api/agents").json()["data"][0]
-    assert set(row) == {"id", "name", "status", "model", "todayCalls", "profile", "category"}
+    assert set(row) == {
+        "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+    }
     assert row["id"] == "agenda"
     assert row["name"] == "日程秘书"
     assert row["status"] == "idle"  # no L3 children in flight
     assert row["model"] == "aigw/workbuddy/deepseek-chat"  # ADR-0011 default route
     assert row["todayCalls"] == 0
     assert row["profile"] == "l2-agenda"
+    # R-013 扩写：行上必带 mind_subtree（没挂是空串），左栏才辨得出同一项目登记了两条。
+    assert row["mindSubtree"] == ""
 
 
 def test_agents_excludes_l1_secretary(client, _isolated_state):
@@ -155,7 +165,9 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     assert body["ok"] is True
     assert body["data"]["id"] == "plobi-code"
     assert body["data"]["category"] == "projects"
-    assert set(body["data"]) == {"id", "name", "status", "model", "todayCalls", "profile", "category"}
+    assert set(body["data"]) == {
+        "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+    }
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
     assert "plobi-code" in ids
     assert _isolated_state.get("plobi-code").role == "l2_project"
