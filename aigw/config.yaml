@@ -1,42 +1,82 @@
-# aigw — 本地开发配置（mock 模式，无需任何外部 token / 网络）
-# 用途：验证「闭源软件额度通道」是否打通。真实 Cursor / Antigravity 额度需要在
-# config.example.yaml 的基础上补抓包得到的协议与令牌（下一步工作）。
+# aigw — 这台机器上的额度网关配置（产品起的就是这一份）
+#
+# 这里**故意不放 mock**。裁定 46 说额度清单只有一份真源、来自网关；R-017 说 mock
+# 模型不许进选择框。上一版这份配置用 `routing.rules: match "*"` 把任何模型都改写成
+# `mock/echo`，于是：网关活着 ≠ 有任何能用的渠道，而 doctor 还会把这种状态报成绿
+# （mock 自己也挂着 `workbuddy/deepseek-chat` 这个 id，见 commit c7bae4a9 之前）。
+# 没有适配的软件就不显示——宁可目录为空，也不要一条假的"成功"。
+#
+# 模型名单不在这里手抄。`workbuddy` hybrid provider 在启动时经
+# `Registry.ensure_models_refreshed()` → `WorkbuddyHybridProvider.refresh_models`
+# → `CliProvider.refresh_models` 从 CLI 自己的声明里拿（这台实测 17 条，
+# 含 hy4-preview / glm-5.3 / kimi-k3-1 等配置里写不出来的 id）。
+# 所以本文件只留：端口、这把本地钥匙、走哪条路线、并发口径。
+#
+# 路线与合规性（2026-10-07 实查）：
+# - 只装得上、又只在这台跑着、且带 headless 入口的桌面额度软件是 WorkBuddy。
+#   它自带终端 CLI（`D:\Software\WorkBuddy\resources\app.asar.unpacked\cli\bin\codebuddy`）。
+#   spawn 自己的 CLI = 吃自己的订阅，不扒 token、不逆向协议。
+# - Cursor 装了但 `%APPDATA%\Cursor` 不存在（没会话），且这个版本没有 CLI 实体；
+#   Marvis 装了在跑，但 UIA 从服务上下文看不见它的窗口；Antigravity 没装，
+#   且 `config.antigravity-desktop.yaml` 自己写着 `agy` 那个 CLI 并不存在。
+# - WorkBuddy 与 CodeBuddy 同一账号积分共享（两家定价页各写了一遍），所以吃的
+#   确实是你桌面订阅那份，不是另开的一笔钱。
+# - 已知限制：CodeBuddy 的凭据是**机器级**的——空的 CODEBUDDY_CONFIG_DIR 照样已
+#   登录。所以"另拿一个隔离账号专门跑聚合"目前做不到，厂商不改行为就不行。
+#
+# `--tools ""` 是刻意的：关掉工具集，一条网关请求才是"一次文本补全"，而不是一个
+# 会读写这台机器文件的完整编码 agent。`gui:` 段整段不写 = 禁用 UI 自动化兜底，
+# 所以这条通道永远不会去抢你的屏幕。
+#
+# 钥匙保持 `sk-local-dev-key`，与 Plobi 侧的默认值（plobi/agents/registry.py
+# `aigw_api_key()` 的兜底）一致——这样产品开箱就能连上自己起的网关，不需要谁再
+# 往环境里钉一遍。端口同理保持 8000：绑端口的是这份文件，别处只该引用它。
+
 server:
   host: 127.0.0.1
   port: 8000
-  api_key: sk-local-dev-key        # 与 Plobi 默认 AIGW_API_KEY 一致
+  api_key: sk-local-dev-key
 
 logging:
   level: INFO
 
-trust_env: false
+# CLI 要出网到 www.workbuddy.cn；这台有 TLS 拦截代理，所以照 Cursor 那份一样认系统代理。
+trust_env: true
 
 vault:
-  enabled: false                   # 开发期不需要加密凭证库
+  enabled: false          # spawn-CLI 路线不落任何 token，没有需要加密落盘的东西
 
 scheduler:
-  max_retries: 3
-  global_concurrency: 32
-  per_account_concurrency: 4
+  max_retries: 2
+  global_concurrency: 4
+  per_account_concurrency: 1     # 一次一个子进程，一个 CLI 会话不便宜
   sticky_ttl: 1800
   strategy: least_fail
 
-# 通配路由：任何模型名都改写为 mock/echo 交给 mock 处理
-# （mock 不校验具体模型，直接回 OpenAI 格式；Plobi 发的 deepseek-chat 等会被映射到 mock/echo）
 routing:
-  rules:
-    - match: "*"
-      providers: [mock]
-      model: mock/echo
+  # 不再有 match "*"。`workbuddy/<模型>` 由 registry 的"provider/任意名"规则直接命中；
+  # 认不出的名字应当报错，不该被通配悄悄改写成别的东西。
+  rules: []
 
 providers:
-  mock:
+  workbuddy:
     enabled: true
-    mode: echo                     # 默认回显用户最后一条消息
-    reply: "（Plobi 本地 mock 回应）已收到你的消息，闭源额度通道验证通过。"
-    latency_ms: 0
-    embedding_dim: 8
-    models: ["mock/echo", "mock/static", "mock/fail", "mock/dead", "mock/embedding", "workbuddy/deepseek-chat"]
+    prefer: cli
+    # 不写 models：名单由 CLI 自己声明（见文件头）。
+    cli:
+      interpreter: D:\Runtimes\Languages\Node\node.exe
+      # 独立版 CodeBuddy CLI，不是 WorkBuddy 内嵌那一份。两者广告 different 模型集
+      # ——内嵌版说 glm-5.0 / kimi-k2.5，独立版 2.161.4 说 glm-5.3 / kimi-k3-1 /
+      # deepseek-v4-pro——而目录由 `--help` 现读，指错一份就等于拿错名单。
+      binary: D:\Portables\cli\CodeBuddy\node_modules\@tencent-ai\codebuddy-code\bin\codebuddy
+      prompt_flag: -p                 # 布尔 --print，提示词按位置参数跟着走
+      model_flag: --model
+      extra_args:
+        - --output-format
+        - text
+        - --tools
+        - ""
+      timeout: 180
+      cwd: D:\Temp
     accounts:
-      - { id: mock-echo, mode: echo }
-      - { id: mock-ok, mode: static }
+      - { id: workbuddy-cli }
