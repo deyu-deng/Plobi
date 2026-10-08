@@ -10,6 +10,7 @@ exactly as before.
 """
 
 import os
+import contextlib
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -58,14 +59,33 @@ def _seed(db, sid, title, n=8):
         )
 
 
+
+@contextlib.contextmanager
+def _tmp_session_db(db_filename: str):
+    """A TemporaryDirectory plus a SessionDB that is closed on the way out.
+
+    Windows refuses to unlink a file another handle still holds (WinError 32),
+    so the cleanup at the end of ``with tempfile.TemporaryDirectory()`` fails
+    loudly here, while POSIX silently deletes an open file and stays green --
+    exactly the platform gap R-043 says we can no longer borrow evidence over.
+    Closing in ``finally`` keeps the guard honest: a test that never closes this
+    DB still goes red, instead of leaving undeletable junk in the temp area.
+    """
+    from plobi_state import SessionDB
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = SessionDB(db_path=Path(tmp) / db_filename)
+        try:
+            yield tmp, db
+        finally:
+            db.close()
 class TestInPlaceCompaction:
     def test_in_place_keeps_same_session_id(self):
         """In-place mode: id unchanged, no child row, no rename, history kept."""
         from plobi_state import SessionDB
         from agent.conversation_compression import compress_context
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             sid = "20260619_120000_aaaaaa"
             _seed(db, sid, "my-research")
             agent = _make_agent(db, sid, in_place=True)
@@ -129,8 +149,7 @@ class TestInPlaceCompaction:
         from plobi_state import SessionDB
         from agent.conversation_compression import compress_context
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             sid = "20260619_120500_cccccc"
             _seed(db, sid, "alt")
             agent = _make_agent(db, sid, in_place=True)
@@ -149,8 +168,7 @@ class TestInPlaceCompaction:
         from plobi_state import SessionDB
         from agent.conversation_compression import compress_context
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             _seed(db, "ip_flush", "f")
             agent = _make_agent(db, "ip_flush", in_place=True)
             calls = {"n": 0}
@@ -169,8 +187,7 @@ class TestInPlaceCompaction:
         from plobi_state import SessionDB
         from agent.conversation_compression import compress_context
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             _seed(db, "rot_flush", "f")
             agent = _make_agent(db, "rot_flush", in_place=False)
             calls = {"n": 0}
@@ -192,8 +209,7 @@ class TestRotationFallbackWhenFlagOff:
         from plobi_state import SessionDB
         from agent.conversation_compression import compress_context
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             sid = "20260619_130000_bbbbbb"
             _seed(db, sid, "my-research")
             agent = _make_agent(db, sid, in_place=False)
@@ -227,8 +243,7 @@ class TestInPlaceSignalForGateway:
         from plobi_state import SessionDB
         from agent.conversation_compression import compress_context
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             # in-place → flag True
             _seed(db, "s_ip", "ip")
             a_ip = _make_agent(db, "s_ip", in_place=True)
@@ -267,8 +282,7 @@ class TestCompactedTurnsStaySearchable:
     def test_compacted_turns_found_by_default_search(self):
         from plobi_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             sid = "20260619_search"
             db.create_session(sid, "cli", model="test/model")
             for r, c in [
@@ -304,8 +318,7 @@ class TestCompactedTurnsStaySearchable:
         search — the distinction the compacted flag preserves."""
         from plobi_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmp:
-            db = SessionDB(db_path=Path(tmp) / "t.db")
+        with _tmp_session_db("t.db") as (tmp, db):
             sid = "20260619_undo"
             db.create_session(sid, "cli", model="test/model")
             db.append_message(session_id=sid, role="user", content="ZEBRAWORD remember this")

@@ -12,12 +12,33 @@ this from a real user-initiated /new.
 """
 
 import os
+import contextlib
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
 
+
+@contextlib.contextmanager
+def _tmp_session_db(db_filename: str):
+    """A TemporaryDirectory plus a SessionDB that is closed on the way out.
+
+    Windows refuses to unlink a file another handle still holds (WinError 32),
+    so the cleanup at the end of ``with tempfile.TemporaryDirectory()`` fails
+    loudly here, while POSIX silently deletes an open file and stays green --
+    exactly the platform gap R-043 says we can no longer borrow evidence over.
+    Closing in ``finally`` keeps the guard honest: a test that never closes this
+    DB still goes red, instead of leaving undeletable junk in the temp area.
+    """
+    from plobi_state import SessionDB
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = SessionDB(db_path=Path(tmp) / db_filename)
+        try:
+            yield tmp, db
+        finally:
+            db.close()
 class TestCompressionBoundaryHook:
     def _make_agent(self, session_db):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
@@ -39,8 +60,7 @@ class TestCompressionBoundaryHook:
     def test_on_session_start_called_with_compression_boundary(self):
         from plobi_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = SessionDB(db_path=Path(tmpdir) / "test.db")
+        with _tmp_session_db("test.db") as (tmpdir, db):
             agent = self._make_agent(db)
 
             # Stub the context compressor: we only need to observe the hook.
@@ -134,8 +154,7 @@ class TestCompressionBoundaryHook:
         """If the context engine raises from on_session_start, compression still completes."""
         from plobi_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = SessionDB(db_path=Path(tmpdir) / "test.db")
+        with _tmp_session_db("test.db") as (tmpdir, db):
             agent = self._make_agent(db)
 
             compressor = MagicMock()
@@ -202,8 +221,7 @@ class TestSessionCompressEvent:
         from plobi_state import SessionDB
 
         events = []
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = SessionDB(db_path=Path(tmpdir) / "test.db")
+        with _tmp_session_db("test.db") as (tmpdir, db):
             agent = self._make_agent(
                 db, event_callback=lambda et, ctx: events.append((et, ctx))
             )
@@ -227,8 +245,7 @@ class TestSessionCompressEvent:
         """Compression must work when no event_callback is wired."""
         from plobi_state import SessionDB
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = SessionDB(db_path=Path(tmpdir) / "test.db")
+        with _tmp_session_db("test.db") as (tmpdir, db):
             agent = self._make_agent(db, event_callback=None)
             agent.context_compressor = self._stub_compressor()
             compressed, _ = agent._compress_context(
@@ -242,8 +259,7 @@ class TestSessionCompressEvent:
         def _boom(event_type, ctx):
             raise RuntimeError("hook exploded")
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db = SessionDB(db_path=Path(tmpdir) / "test.db")
+        with _tmp_session_db("test.db") as (tmpdir, db):
             agent = self._make_agent(db, event_callback=_boom)
             original_sid = agent.session_id
             agent.context_compressor = self._stub_compressor()
