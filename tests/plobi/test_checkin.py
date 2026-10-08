@@ -256,6 +256,14 @@ class _FakePool:
     def mark_failed(self, name):
         pass
 
+    def refresh_gateway(self):
+        # No-op, mirroring the real QuotaPool contract introduced by
+        # 2ae490c4 [WP-AIGW-DERIVE]: route.py calls pool.refresh_gateway()
+        # (catalog read) before resolve()/each attempt and ignores the return.
+        # The fixture must keep pace with the real pool or the L2-draft tests
+        # fall into checkin.py's broad except and surface as fallback:error.
+        pass
+
 
 def test_l2_draft_keeps_only_evidenced_lines(env):
     def fake_send(prompt, source):
