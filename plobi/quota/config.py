@@ -123,14 +123,15 @@ def _lookup_credential(provider: str) -> tuple[str, str]:
         source = str(best.get("source") or "").strip()
         if source.startswith("env:"):
             var = source[len("env:"):].strip()
-            dotenv: dict[str, str] = {}
+            # 同一个入口，不自己抄顺序：注入 > 根家目录 .env > 作用域 > shell。
+            # 以前这里是 `load_env()` 优先 —— 于是分身家那份旧 `.env` 副本会在
+            # 便宜源这条路上赢回来（任务书洞 B，实测第四条源）。
             try:
-                from plobi_cli.config import load_env
+                from plobi_cli.config import get_env_value_prefer_dotenv
 
-                dotenv = load_env() or {}
+                token = (get_env_value_prefer_dotenv(var) or "").strip()
             except Exception:
-                dotenv = {}
-            token = (dotenv.get(var) or os.environ.get(var) or "").strip()
+                token = (os.environ.get(var) or "").strip()
 
     url = str(best.get("inference_base_url") or best.get("base_url") or "").strip()
     return token, url
@@ -218,6 +219,35 @@ def gateway_settings(file_cfg: Optional[dict[str, Any]] = None) -> dict[str, Any
     }
 
 
+def _env_with_credentials() -> dict[str, str]:
+    """进程环境，外加用**同一个凭据入口**解析出来的 ``key_env`` / ``url_env``。
+
+    这几条环境变量以前只看 ``os.environ``，于是「把 key 写进根 ``.env``」这条官方口径
+    （裁定 85 / 88）在便宜源这条路上不算数；而它自己读 ``.env`` 的那份抄本又不认识注入
+    名单（任务书洞 B）。两个方向都偏，所以这里只问一次同一个入口：
+    注入 > 根家目录 ``.env`` > profile 作用域 > shell。名字只取 :data:`DEFAULT_SOURCES`
+    自己声明的那几个，不在这里另立一份名单。
+    """
+    env = dict(os.environ)
+    names: set[str] = set()
+    for source in DEFAULT_SOURCES.values():
+        for field in ("key_env", "url_env"):
+            name = str(source.get(field) or "").strip()
+            if name:
+                names.add(name)
+    if not names:
+        return env
+    try:
+        from plobi_cli.config import get_env_value_prefer_dotenv
+    except Exception:
+        return env
+    for name in names:
+        resolved = (get_env_value_prefer_dotenv(name) or "").strip()
+        if resolved:
+            env[name] = resolved
+    return env
+
+
 def load() -> dict[str, Any]:
     """解析整个额度池配置，返回 ``{order, fail_open, alert_threshold, sources, gateway}``。
 
@@ -240,7 +270,7 @@ def load() -> dict[str, Any]:
         fail_open = DEFAULT_FAIL_OPEN
 
     raw_sources = file_cfg.get("sources") if isinstance(file_cfg.get("sources"), dict) else {}
-    env = dict(os.environ)
+    env = _env_with_credentials()
     sources: dict[str, dict[str, Any]] = {}
     for name in DEFAULT_SOURCES:
         sources[name] = _resolve_source(

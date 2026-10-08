@@ -356,4 +356,11 @@ def test_secret_override_never_lands_on_disk(l2_home):
     assert reg.get("demo").secret_overrides == {"GLM_API_KEY": "sk-project-only"}
     env: dict[str, str] = {}
     apply_secret_overrides(env, reg.get("demo"))
-    assert env == {"GLM_API_KEY": "sk-project-only"}
+    from plobi_cli.config import INJECTED_SECRETS_ENV
+
+    assert env["GLM_API_KEY"] == "sk-project-only"
+    # 注入要登记名字，否则分身体里那份旧 .env 会压过它（见 WP-AGENT-SECRET-SOURCE）。
+    # 登记的是名字集合，共享家目录里还有哪些凭据就一并登记，所以只判这一条在里面。
+    registered = env[INJECTED_SECRETS_ENV].split(",")
+    assert "GLM_API_KEY" in registered
+    assert "sk-project-only" not in registered

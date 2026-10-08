@@ -2104,21 +2104,15 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
     # processes (Codex CLI, test scripts, etc.) should not override deliberate
     # changes to the .env file.
     def _get_env_prefer_dotenv(key: str) -> str:
-        env_file = load_env()
-        raw = env_file.get(key, "").strip()
-        env_val = os.environ.get(key, "").strip()
-        # If .env contains an unresolved op:// reference, prefer the
-        # already-resolved value from os.environ (set by
-        # load_plobi_dotenv() -> apply_onepassword_secrets()).  The raw
-        # "op://Vault/Item/field" string would otherwise win and every
-        # provider auth attempt would receive a URL instead of a key.  This
-        # happens during a partial migration, or when the user wrote op://
-        # references straight into .env rather than the secrets.onepassword
-        # config block.  For every non-op:// value the original
-        # .env-takes-precedence behaviour is preserved unchanged.
-        if raw.startswith("op://") and env_val:
-            return env_val
-        return raw or _get_secret(key, "") or env_val
+        # 凭据解析只有一条顺序，正文在 ``plobi_cli.config.get_env_value_prefer_dotenv``：
+        # 注入 > ``.env``（``op://`` 未展开时除外）> profile 作用域 > shell。
+        # 这里以前自己抄了一份「.env 优先」——那份副本不认识「注入」，于是分身的家
+        # 里那份旧 key 通过池子重新赢了回来（WP-AGENT-SECRET-SOURCE 实测的第四条源）。
+        # 保留 ``or os.environ`` 这一层兜底，是因为池子过去就拿得到 shell 的值；
+        # 顺序本身不再在这里重复一遍。
+        from plobi_cli.config import get_env_value_prefer_dotenv
+
+        return (get_env_value_prefer_dotenv(key) or os.environ.get(key, "")).strip()
 
     # Honour user suppression — `plobi auth remove <provider> <N>` for an
     # env-seeded credential marks the env:<VAR> source as suppressed so it
