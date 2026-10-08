@@ -237,6 +237,24 @@ def test_config_without_a_declaration_is_not_checked_and_never_a_pass(tmp_path: 
     assert declared_by_the_shared_reader(config) == ""
 
 
+def test_empty_declaration_is_not_checked_and_not_called_a_mismatch(tmp_path: Path):
+    """`server.api_key: ""` means "not configured yet" (裁定 94 ④), not "disagrees".
+
+    The script inherits that reading because it *is* the Python reader's answer —
+    that is the point of going through the shared source instead of imitating it:
+    a second parser would have to re-decide this edge, and the one written in
+    TypeScript called the same file a MISMATCH.
+    """
+    config = write_config(tmp_path, "empty.yaml", 'server:\n  api_key: ""\n')
+    result = run_key_check(config, env_extra={"AIGW_API_KEY": FAKE_DECLARED})
+
+    out = output_of(result)
+    assert result.returncode != 0, out
+    assert "AIGW_KEY_VERDICT=NOT_CHECKED" in out
+    assert "AIGW_KEY_VERDICT=MISMATCH" not in out
+    assert declared_by_the_shared_reader(config) == ""
+
+
 def test_unreadable_gateway_config_is_not_checked(tmp_path: Path):
     """A config that cannot be decoded is a read failure, not a match."""
     config = write_config(tmp_path, "garbage.yaml", b"server:\n  api_key: \xff\xfe\x00broken\n")
