@@ -23,12 +23,13 @@ TOOLSET = "plobi_north_star"
 # thin wrappers over Plobi kanban, registered under the same toolset so the
 # secretary gets them WITHOUT the raw ``kanban_*`` lifecycle tools.
 #
-# WP-L1-EVERY-TURN (裁定 33.1 / 33.4): 4 个 Master 工具 + 深工具 ``plobi``
-# 本周对 L1 关闭——check_fn 切到 ``check_plobi_l1_mouth_disabled``（恒
-# False）。``plobi_secretary_ask`` + ``plobi_checkin_respond`` 仍用
-# ``check_plobi_master_mode``——L1 本周只剩这两张嘴。
+# WP-L1-MOUTH-SWITCH (裁定 78): the 4 Master tools + the deep ``plobi`` tool ride
+# the product switch ``agent.l1_master_tools_enabled`` (default off) — see
+# ``master_tools.check_plobi_l1_master_tools``. ``plobi_secretary_ask`` +
+# ``plobi_checkin_respond`` keep ``check_plobi_master_mode``; those two are L1's
+# first-action mouth regardless of how the switch sits.
 _MASTER_TOOLS = (
-    # ── 4 个 Master 工具（M3 才开；handler 保留） ─────────────────────
+    # ── 4 个 Master 工具（handler / schema 保留，门由用户勾） ─────────
     (
         "plobi_master_status",
         MT.MASTER_STATUS_SCHEMA,
@@ -57,7 +58,7 @@ _MASTER_TOOLS = (
         MT.MASTER_APPROVE_SCHEMA["description"],
         "✅",
     ),
-    # ── L1 这周仍开放的两张嘴（§8.2 硬路由路径） ────────────────────
+    # ── 秘书这两张嘴不受派工开关影响（§8.2 硬路由路径） ──────────────
     (
         "plobi_secretary_ask",
         MT.SECRETARY_ASK_SCHEMA,
@@ -155,25 +156,28 @@ _PLOBI_SCHEMA = {
 
 
 def register(ctx) -> None:
-    # WP-L1-EVERY-TURN: deep tool ``plobi`` 本周也对 L1 关闭（与 4 个
-    # Master 工具同口径）—— ``check_plobi_l1_mouth_disabled`` 恒 False。
-    # M3 切回开放时把 check_fn 改回 None 即可。
+    # WP-L1-MOUTH-SWITCH: the deep tool ``plobi`` belongs to the same switched
+    # family as the 4 Master tools — it is visible exactly when the user's
+    # switch says so (``check_plobi_l1_master_tools``), never by editing here.
     ctx.register_tool(
         name="plobi",
         toolset=TOOLSET,
         schema=_PLOBI_SCHEMA,
         handler=T.plobi,
-        check_fn=MT.check_plobi_l1_mouth_disabled,
+        check_fn=MT.check_plobi_l1_master_tools,
         description=_PLOBI_SCHEMA["description"],
         emoji="🧭",
     )
-    # WP-L1-EVERY-TURN: 4 个 Master 工具 + 2 个 secretary 工具分组挂
-    # check_fn。Master 组 (status / preview / dispatch / approve) 切到
-    # 恒 False；secretary 组 (secretary_ask / checkin_respond) 保持
-    # ``check_plobi_master_mode``——L1 这周只剩这两张嘴。
+    # WP-L1-MOUTH-SWITCH: 4 个 Master 工具 + 2 个 secretary 工具分组挂
+    # check_fn。Master 组 (status / preview / dispatch / approve) 走产品开关；
+    # secretary 组 (secretary_ask / checkin_respond) 保持
+    # ``check_plobi_master_mode``——秘书这两张嘴不受开关影响。
     # ``plobi_agent_ask``（裁定 50.4 甲）自带门槛：在那道嘴门之外还要求
     # 名册里真有一个没归档的项目分身，否则零 schema 足迹。
-    _L1_MOUTH_CLOSED = {
+    #
+    # 这份名单只回答"开关管的是哪几张嘴"，不表达开还是关——开关的真源是
+    # ``agent.l1_master_tools_enabled``，不是这里。
+    _L1_SWITCHED_MOUTHS = {
         "plobi_master_status",
         "plobi_master_preview",
         "plobi_master_dispatch",
@@ -185,8 +189,8 @@ def register(ctx) -> None:
     for name, schema, handler, description, emoji in _MASTER_TOOLS:
         if name in _OWN_CHECK_FN:
             check_fn = _OWN_CHECK_FN[name]
-        elif name in _L1_MOUTH_CLOSED:
-            check_fn = MT.check_plobi_l1_mouth_disabled
+        elif name in _L1_SWITCHED_MOUTHS:
+            check_fn = MT.check_plobi_l1_master_tools
         else:
             # plobi_secretary_ask / plobi_checkin_respond
             check_fn = MT.check_plobi_master_mode
