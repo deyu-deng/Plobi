@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 
 import pytest
 
@@ -269,6 +270,48 @@ def test_subprocess_pkill_with_unrelated_pattern_passes_through():
     # would duplicate the guard; instead spawn a noop to confirm no raise.
     # Use 'true' so it succeeds quickly.
     r = subprocess.run(["true"], capture_output=True)
+    assert r.returncode == 0
+
+
+def test_killer_word_inside_an_argument_is_not_a_killer(tmp_path):
+    """C 类的反向牙齿：搜索词长得像杀手、路径里有 plobi，都不许拦。
+
+    这正是 `tests/tools/test_search_hidden_dirs.py:118` 的形状 -- argv 里
+    出现裸 `skill`，scratch 家目录名又含 `plobi`。修之前守卫把它判成"要打死
+    活网关"，判据却只是参数长得像。这里用 `sys.executable -c pass` 跑一条
+    无害命令，但把那两个特征原样放进参数：守卫必须放行，命令本身不杀任何东西。
+    """
+    fake_home = tmp_path / "plobi-tests-home.FAKE"
+    fake_home.mkdir()
+    r = subprocess.run(
+        [sys.executable, "-c", "pass", "--no-heading", "real skill", str(fake_home)],
+        capture_output=True,
+    )
+    assert r.returncode == 0, r.stderr.decode(errors="replace")
+
+
+def test_pkill_wrapped_in_a_shell_is_still_blocked():
+    """收窄到 argv[0] 不许把 `bash -c "pkill -f plobi"` 变成漏网 -- 它真会打死活网关。"""
+    with pytest.raises(RuntimeError, match="live-system guard"):
+        subprocess.run(["bash", "-c", "pkill -f plobi"])
+
+
+def test_pkill_behind_sudo_or_env_is_still_blocked():
+    """argv[0] 收窄不许把 `sudo pkill -f plobi` / `env FOO=1 pkill -f plobi` 放过去。"""
+    for argv in (
+        ["sudo", "pkill", "-f", "plobi"],
+        ["env", "FOO=1", "pkill", "-f", "plobi-gateway"],
+    ):
+        with pytest.raises(RuntimeError, match="live-system guard"):
+            subprocess.run(argv)
+
+
+def test_pkill_targeting_an_unrelated_word_is_not_blocked(tmp_path):
+    """真杀手但目标与 plobi 无关时仍放行（收窄不能顺手把守卫放宽成摆设）。"""
+    r = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.exit(0)", "pkill-never-runs"],
+        capture_output=True,
+    )
     assert r.returncode == 0
 
 

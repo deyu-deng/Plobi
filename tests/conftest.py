@@ -722,25 +722,74 @@ def _live_system_guard(request, monkeypatch):
         return any(verb in tokens for verb in _MUTATING_VERBS)
 
     def _is_process_killer(cmd) -> bool:
-        cmd_str = _cmd_to_string(cmd)
-        try:
-            tokens = _shlex.split(cmd_str)
-        except ValueError:
-            tokens = cmd_str.split()
+        # Judge on the real argv boundary. The old path joined the argv list
+        # with spaces and re-split it, which is where the quoting went away:
+        # an argument "real skill" came back as a bare `skill` token (a killer
+        # on Linux), and a wrapper payload `bash -c "pkill -f plobi"` came back
+        # already flattened so the payload could no longer be unwrapped at all.
+        if isinstance(cmd, (list, tuple)):
+            tokens = [str(t) for t in cmd]
+        else:
+            cmd_str = _cmd_to_string(cmd)
+            try:
+                tokens = _shlex.split(cmd_str)
+            except ValueError:
+                tokens = cmd_str.split()
+        return _looks_like_process_killer(tokens)
+
+    # A killer is the program being executed -- argv[0] -- never a word that
+    # happens to appear later. Scanning every token meant a search term like
+    # `rg --no-heading "real skill" <path>` was read as "skill" (a killer on
+    # Linux) and then condemned by the scratch home's own name containing
+    # "plobi" -- the guard blocking a test for the shape of its arguments
+    # (WP-TEST-HERMETIC-LIVE, C 类). Shell wrappers are unwrapped one level,
+    # because `bash -c "pkill -f plobi"` really does kill the live gateway and
+    # the guard's own self-test pins that.
+    _SHELL_WRAPPERS = ("sh", "bash", "dash", "zsh", "cmd", "powershell", "pwsh")
+    # Narrowing to argv[0] must not become a hole: `sudo pkill -f plobi` and
+    # `env FOO=1 pkill -f plobi` still execute a killer, so these prefixes are
+    # stepped over before the program name is read.
+    _COMMAND_PREFIXES = ("sudo", "doas", "env", "nohup", "time", "command")
+
+    def _program_name(token) -> str:
+        return str(token).rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower()
+
+    def _skip_prefixes(tokens):
+        i = 0
+        while i < len(tokens):
+            head = _program_name(tokens[i])
+            if head in _COMMAND_PREFIXES:
+                i += 1
+                continue
+            if head and "=" in tokens[i] and not str(tokens[i]).startswith("-"):
+                i += 1  # `env FOO=1 ...` assignments
+                continue
+            break
+        return tokens[i:]
+
+    def _targets_live_plobi(args) -> bool:
+        low = " ".join(str(a) for a in args).lower()
+        if "plobi" in low or "gateway" in low:
+            return True
+        return "python" in low and any(str(a) == "-f" for a in args)
+
+    def _looks_like_process_killer(tokens, depth=0) -> bool:
+        tokens = _skip_prefixes(list(tokens))
         if not tokens:
             return False
-        for tok in tokens:
-            head = tok.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-            if head in _PROCESS_KILLERS:
-                low = cmd_str.lower()
-                # pkill -f pattern: catch plobi-themed patterns + a
-                # plain "python" -f which would catch the live gateway
-                # whose cmdline contains "python -m plobi_cli.main".
-                if (
-                    "plobi" in low
-                    or "gateway" in low
-                    or ("python" in low and "-f" in tokens)
-                ):
+        head = _program_name(tokens[0])
+        if head in _PROCESS_KILLERS:
+            return _targets_live_plobi(tokens[1:])
+        if head in _SHELL_WRAPPERS and depth < 2:
+            for payload in tokens[1:]:
+                text = str(payload).strip()
+                if not text or text.startswith("-"):
+                    continue
+                try:
+                    inner = _shlex.split(text)
+                except ValueError:
+                    inner = text.split()
+                if _looks_like_process_killer(inner, depth + 1):
                     return True
         return False
 
