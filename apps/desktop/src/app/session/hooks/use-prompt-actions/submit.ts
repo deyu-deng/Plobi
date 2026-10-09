@@ -343,7 +343,9 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         try {
           await streamDesktopQuotaChat({
             baseUrl: app?.baseUrl ?? '',
-            apiKey: app?.apiKey ?? '',
+            // No key here on purpose: the hub key stays in the main process,
+            // which also makes the request (the renderer cannot reach the hub
+            // directly — see desktop-quota-chat.ts:quotaStreamRequest).
             // aigw's unified model namespace is `<provider>/<model>`; the UI
             // store strips the prefix (the provider slug carries it), so we
             // re-join here.

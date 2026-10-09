@@ -1659,14 +1659,17 @@ describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
     const req = vi.mocked(streamDesktopQuotaChat).mock.calls[0][0] as unknown as {
       model: string
       baseUrl: string
-      apiKey: string
+      apiKey?: string
       messages: Array<{ role: string; content: string }>
     }
     // aigw's unified namespace is `<provider>/<model>`; the UI store strips the
     // prefix, so submit must re-join it.
     expect(req.model).toBe('antigravity/gemini-3-pro')
     expect(req.baseUrl).toBe('http://127.0.0.1:8019/v1')
-    expect(req.apiKey).toBe('sk-local-antigravity')
+    // The hub key must NOT reach the streaming client: main makes the request
+    // and injects it, both because the hub sends no CORS headers and so the
+    // credential stays out of renderer state.
+    expect(req.apiKey).toBeUndefined()
 
     const messages = req.messages
     expect(messages.at(-1)).toEqual({ role: 'user', content: 'hello from the desktop quota' })
