@@ -12,6 +12,7 @@ Does not send DingTalk unless ``--send-test``. Never prints secrets.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -427,6 +428,249 @@ def http_get_json(url: str, timeout: float = 2.5, headers: dict[str, str] | None
         return code, json.loads(body)
     except json.JSONDecodeError:
         return code, body[:200]
+
+
+# ---------------------------------------------------------------------------
+# WP-QUOTA-KEY-LIVENESS — two rows that did not exist before:
+#
+#   * ``cred_refs``   : the root ``.env`` still holds an unexpanded 1Password
+#     reference (裁定 95 一: hand the reference out AND say so in the table — a
+#     ``logger.warning`` is not a surface, the log ring ships inside support bundles).
+#   * ``quota_liveness``: per-source credential liveness, probed with a
+#     **zero-generation** GET ``/models`` (裁定 88: "the key exists / is long enough /
+#     the static check is green" is not evidence of life — ``has_usable_secret()``
+#     returns True for a dead key).
+#
+# Both follow 裁定 95 的判据最终形状: RED only from an error code that came back on a
+# real request. Absent from ``/models`` is not a fault on this machine — measured:
+# ``glm-4-air`` and ``glm-5v-turbo`` are missing from the listing yet answer 200 with
+# real ``tool_calls``, so ``/models`` under-reports. Nothing here spends a token and
+# nothing here prints a secret — variable names and fingerprints only.
+# ---------------------------------------------------------------------------
+OP_REFERENCE_PREFIX = "op://"
+
+#: Upstream's "key is fine, this model id is not served" answer. Matching is on the
+#: body text because ``http_get_json`` throws the body away (and its signature is
+#: stubbed in tests, so it must not change).
+UNKNOWN_MODEL_MARKERS = ("unknown model", "1211")
+
+_COLOR_ORDER = {GREEN: 0, YELLOW: 1, RED: 2}
+
+
+def _worse(left: str, right: str) -> str:
+    """Aggregate row colors: red beats yellow beats green."""
+    return left if _COLOR_ORDER[left] >= _COLOR_ORDER[right] else right
+
+
+def _fingerprint_bytes(data: bytes) -> str:
+    """12 hex of sha256 — enough to tell two files apart, never the content."""
+    return hashlib.sha256(data).hexdigest()[:12]
+
+
+def _credential_env_file() -> Path:
+    """The root credential ``.env`` — the same source the read path uses (裁定 89 甲)."""
+    from plobi_cli.config import credential_env_path
+
+    return Path(credential_env_path())
+
+
+def _models_probe(
+    url: str, api_key: str, timeout: float = 2.5
+) -> tuple[int | None, Any, str]:
+    """Zero-generation GET that KEEPS the error body, so 400/1211 is readable.
+
+    Returns ``(code, payload, body_text)``; ``code`` is ``None`` when nothing
+    answered — which is "not proven", never red.
+    """
+    request = urllib.request.Request(
+        url, headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            code = getattr(response, "status", 200)
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:  # a body we cannot read is still a real code
+            body = ""
+        return exc.code, None, body
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return None, None, ""
+    try:
+        return code, json.loads(body), body
+    except json.JSONDecodeError:
+        return code, None, body[:200]
+
+
+def _looks_like_unknown_model(body_text: str) -> bool:
+    low = (body_text or "").lower()
+    return any(marker in low for marker in UNKNOWN_MODEL_MARKERS)
+
+
+def _model_ids(payload: Any) -> list[str]:
+    if isinstance(payload, dict):
+        rows = payload.get("data") or payload.get("models") or []
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        rows = []
+    ids: list[str] = []
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict):
+            value = row.get("id") or row.get("model") or row.get("name")
+            if value:
+                ids.append(str(value))
+        elif row:
+            ids.append(str(row))
+    return ids
+
+
+def check_credential_refs() -> dict[str, Any]:
+    """Unexpanded ``op://`` references in the root credential ``.env`` (裁定 95 一)."""
+    path = _credential_env_file()
+    if not path.is_file():
+        return {
+            "id": "cred_refs",
+            "color": GREEN,
+            "detail": "root credential .env not present — nothing to expand; keys come from the process environment",
+        }
+
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return {
+            "id": "cred_refs",
+            "color": YELLOW,
+            "detail": f"root credential .env unreadable ({type(exc).__name__}) — cannot tell whether a reference was expanded",
+        }
+
+    fingerprint = _fingerprint_bytes(data)
+    unresolved: list[str] = []
+    shadowed: list[str] = []
+    for key, value in sorted(load_env_file(path).items()):
+        if not str(value).startswith(OP_REFERENCE_PREFIX):
+            continue
+        # apply_env_files() may have copied the reference itself into os.environ,
+        # so "present in the environment" is NOT resolution — only a value that is
+        # not itself an op:// reference counts as the expanded one.
+        from_env = str(os.environ.get(key) or "").strip()
+        if from_env and not from_env.startswith(OP_REFERENCE_PREFIX):
+            shadowed.append(key)
+        else:
+            unresolved.append(key)
+
+    if unresolved:
+        return {
+            "id": "cred_refs",
+            "color": RED,
+            "detail": (
+                f"{len(unresolved)} 个键在根 .env 里仍是未展开的 {OP_REFERENCE_PREFIX} 引用："
+                f"{', '.join(unresolved)}（.env fp={fingerprint}）—— 发出去的就是那串引用本身，"
+                f"provider 一定拒。改法：让 1Password 把这些引用展开成实值，或把这几行直接写成实值"
+            ),
+            "keys": unresolved,
+            "env_fingerprint": fingerprint,
+        }
+    if shadowed:
+        return {
+            "id": "cred_refs",
+            "color": GREEN,
+            "detail": f"{len(shadowed)} 个键的 .env 值仍是 {OP_REFERENCE_PREFIX} 引用，但进程环境里有展开后的值（{', '.join(shadowed)}）—— 走的是环境那一份",
+            "keys": shadowed,
+            "env_fingerprint": fingerprint,
+        }
+    return {"id": "cred_refs", "color": GREEN, "detail": "根 .env 里没有未展开的引用（查过全部键）", "env_fingerprint": fingerprint}
+
+
+def check_quota_liveness() -> dict[str, Any]:
+    """Per-source credential liveness over a zero-generation GET /models."""
+    try:
+        from plobi.quota import config as quota_config
+
+        cfg = quota_config.load()
+    except Exception as exc:
+        return {
+            "id": "quota_liveness",
+            "color": YELLOW,
+            "detail": f"读不到额度池配置，探不了（{type(exc).__name__}）—— 没有真请求回来的错误码，不判红",
+        }
+
+    sources = cfg.get("sources") or {}
+    if not sources:
+        return {"id": "quota_liveness", "color": GREEN, "detail": "额度池里没有源可探"}
+
+    cheap = sorted(
+        (name, src) for name, src in sources.items() if str(src.get("kind") or "") != "aigw"
+    )
+    derived = sorted(
+        name for name, src in sources.items() if str(src.get("kind") or "") == "aigw"
+    )
+
+    color = GREEN
+    parts: list[str] = []
+    for name, src in cheap:
+        base = str(src.get("base_url") or "").rstrip("/")
+        model = str(src.get("model") or "")
+        api_key = str(src.get("api_key") or "")
+        if not base or not api_key:
+            color = _worse(color, YELLOW)
+            parts.append(f"{name}: 未验（base_url 或 key 没配齐）")
+            continue
+        url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+        code, payload, body_text = _models_probe(url, api_key)
+
+        if code is None:
+            # Nothing answered proves nothing about the credential — 裁定 95: red only
+            # from a code that came back on a real request.
+            color = _worse(color, YELLOW)
+            parts.append(f"{name}: 未验（{url} 拿不到监听者）")
+            continue
+        if code in (401, 403):
+            color = RED
+            parts.append(
+                f"{name}: HTTP {code} —— 这条 key 被拒。改法：把新值写进根 .env"
+                f"（.env 压过进程环境，shell 里 export 无效），"
+                f"且两条路要读同一个变量名（这里读的是 {src.get('key_env') or '该源的 key_env'}）"
+            )
+            continue
+        if code == 400 and _looks_like_unknown_model(body_text):
+            color = RED
+            parts.append(
+                f"{name}: HTTP 400 上游回「模型不认识」—— model={model or '(未设)'} 不被这条 key 服务。"
+                f"改法：把该源的 model 换成这条 key 真服务的 id"
+            )
+            continue
+        if code != 200:
+            color = _worse(color, YELLOW)
+            parts.append(f"{name}: 未验（HTTP {code}，没有可判的错误码）")
+            continue
+
+        ids = _model_ids(payload)
+        note = f"{name}: 活着（目录 {len(ids)} 条）"
+        if model and ids and model.lower() not in {i.lower() for i in ids}:
+            # A listing that omits an id is NOT a dead id on this machine — measured:
+            # /models under-reports. Reporting this as missing would be a false red.
+            note += f"；model={model} 目录未列、服务性未验"
+        parts.append(note)
+
+    if derived:
+        # These sources exist *because* one /models listed them, and share base_url +
+        # key, so a probe here can only re-prove the gateway. Saying so beats a row
+        # per app that would look like evidence (裁定 81: no silent skips, no fake green).
+        sample = "、".join(derived[:3]) + ("…" if len(derived) > 3 else "")
+        parts.append(
+            f"aigw 派生 {len(derived)} 源（{sample}）：同 base_url 同 key，探一次只等于重探网关，"
+            f"per-app 存活要真流量才能证"
+        )
+
+    return {
+        "id": "quota_liveness",
+        "color": color,
+        "detail": "; ".join(parts),
+        "sources_probed": len(cheap),
+        "sources_derived": len(derived),
+    }
 
 
 def check_chatlog(base_url: str = DEFAULT_CHATLOG_URL) -> dict[str, Any]:
@@ -920,6 +1164,8 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
     rows = [
         check_chatlog(),
         check_aigw(),
+        check_credential_refs(),
+        check_quota_liveness(),
         check_dingtalk(),
         check_north_star(),
         check_l1_secretary_form(),
