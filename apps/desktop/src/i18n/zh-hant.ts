@@ -1027,7 +1027,7 @@ export const zhHant = defineLocale({
       usage: '一段時間內的詞元、費用和技能活動'
     },
     nav: {
-      newChat: { title: '新工作階段', detail: '開始新的工作階段' },
+      newChat: { title: '重新開始', detail: '清空目前內容，另起一個新對話' },
       settings: { title: '設定', detail: '設定 Plobi 桌面端' },
       skills: { title: '技能與工具', detail: '啟用技能、工具集和提供方' },
       messaging: { title: '訊息平台', detail: '設定 Telegram、Slack、Discord 等' },

@@ -1252,7 +1252,7 @@ export const zh: Translations = {
       usage: '一段时间内的词元、成本与技能活动'
     },
     nav: {
-      newChat: { title: '新建会话', detail: '开始一个新会话' },
+      newChat: { title: '重新开始', detail: '清空当前内容，另起一个新对话' },
       settings: { title: '设置', detail: '配置 Plobi 桌面端' },
       skills: { title: '技能与工具', detail: '启用技能、工具集与提供方' },
       messaging: { title: '消息平台', detail: '配置 Telegram、Slack、Discord 等' },

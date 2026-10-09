@@ -1057,7 +1057,7 @@ export const ja = defineLocale({
       usage: 'トークン、コスト、スキルの活動履歴'
     },
     nav: {
-      newChat: { title: '新しいセッション', detail: '新しいセッションを開始' },
+      newChat: { title: 'まっさらにする', detail: '現在の内容を消して、新しい会話を始める' },
       settings: { title: '設定', detail: 'Plobi デスクトップを設定' },
       skills: { title: 'スキルとツール', detail: 'スキル、ツールセット、プロバイダーを有効化' },
       messaging: { title: 'メッセージング', detail: 'Telegram、Slack、Discord などを設定' },

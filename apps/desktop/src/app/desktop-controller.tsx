@@ -113,9 +113,11 @@ import {
   bindL1GatewayIfMasterExists,
   collectL1BypassSessionIds,
   findKnownOverviewSession,
+  forgetL1MainSession,
   pickL1MainSession,
   readL1MainSessionId,
   resolveL1HomeProfile,
+  restartsMouthInPlace,
   secretaryShellLabel,
   writeL1MainSessionId
 } from './desktop-controller-utils'
@@ -779,20 +781,60 @@ export function DesktopController() {
     updateSessionState
   })
 
+  // The "nothing to resume yet" state of a secretary shell: an empty draft under
+  // the current route. Shared by the level-keyed bind below and 「重新开始」 so a
+  // reset lands exactly where a fresh shell lands. The refs — not just the atoms
+  // — are what the submit pipeline pins its session context to; leaving them on
+  // the previous context made the next message resume a stale id and abort with
+  // "context drifted".
+  const prepareFreshDraftInPlace = useCallback(() => {
+    // `busyRef` gates the composer's send and no atom write clears it: left armed
+    // here, the empty draft would stay unsendable until the retired run reported.
+    busyRef.current = false
+    setBusy(false)
+    setAwaitingResponse(false)
+    setActiveSessionId(null)
+    setSelectedStoredSessionId(null)
+    activeSessionIdRef.current = null
+    selectedStoredSessionIdRef.current = null
+    setMessages([])
+    setFreshDraftReady(true)
+    setCurrentCwd(resolveNewSessionCwd())
+    setCurrentBranch('')
+  }, [activeSessionIdRef, busyRef, selectedStoredSessionIdRef])
+
+  // 「重新开始」 for every path that asks for it (⌘N, the palette, `/new` and its
+  // `/reset` alias, a profile switch): see `restartsMouthInPlace` for why the
+  // secretary shell resets where it stands instead of routing `/new`.
+  const startFreshConversation = useCallback(() => {
+    if (!restartsMouthInPlace(level)) {
+      startFreshSessionDraft()
+
+      return
+    }
+
+    if (level === 'l1') {
+      forgetL1MainSession(normalizeProfileKey($activeGatewayProfile.get() || 'default'))
+      prepareFreshDraftInPlace()
+
+      return
+    }
+
+    // An L2 mouth keeps its agent's bound folder; the draft's project
+    // re-resolve would point the file tree at the last project visited.
+    const agentCwd = $currentCwd.get()
+
+    prepareFreshDraftInPlace()
+    setCurrentCwd(agentCwd)
+  }, [level, prepareFreshDraftInPlace, startFreshSessionDraft])
+
   // Single global listener for every rebindable hotkey (incl. profile switching)
   // plus the on-screen keybind editor's capture mode.
   useKeybinds({
-    // 裁定 38/39 (WP-AGENT-MOUTH): ⌘N is a *session* product action. On a
-    // secretary route it must not open a second conversation for an agent —
-    // the Agent row already opens its one mouth. Gate only; the keybind
-    // plumbing itself is untouched.
-    startFreshSession: () => {
-      if (level) {
-        return
-      }
-
-      startFreshSessionDraft()
-    },
+    // 裁定 38/39 (WP-AGENT-MOUTH): ⌘N must not open a second conversation for an
+    // Agent. On a secretary route it restarts the one mouth that Agent already
+    // has, in place; off it (mainline session chat) it still starts a new chat.
+    startFreshSession: startFreshConversation,
     toggleCommandCenter,
     toggleSelectedPin
   })
@@ -808,8 +850,8 @@ export function DesktopController() {
     }
 
     lastFreshRef.current = freshSessionRequest
-    startFreshSessionDraft()
-  }, [freshSessionRequest, startFreshSessionDraft])
+    startFreshConversation()
+  }, [freshSessionRequest, startFreshConversation])
 
   // Swapping the live gateway to another profile must re-pull that profile's
   // global model + active-profile pill. Both are nanostores, so the blanket
@@ -998,7 +1040,9 @@ export function DesktopController() {
     requestGateway,
     resumeStoredSession: resumeSession,
     selectedStoredSessionIdRef,
-    startFreshSessionDraft,
+    // `/new` and its `/reset` alias restart the mouth this shell is showing
+    // instead of routing to the retired `/new` chat surface.
+    startFreshSessionDraft: startFreshConversation,
     sttEnabled,
     updateSessionState
   })
@@ -1042,24 +1086,6 @@ export function DesktopController() {
     }
 
     let cancelled = false
-
-    const prepareFreshDraftInPlace = () => {
-      setBusy(false)
-      setAwaitingResponse(false)
-      setActiveSessionId(null)
-      setSelectedStoredSessionId(null)
-      // The refs — not the atoms — are what the submit pipeline pins its session
-      // context to. Leaving them on the previous context (an L1 session, or the
-      // last agent visited) made the first L2 message resume that stale id and
-      // then read "context drifted", aborting before prompt.submit. Mirror
-      // startFreshSessionDraft() and drop them too.
-      activeSessionIdRef.current = null
-      selectedStoredSessionIdRef.current = null
-      setMessages([])
-      setFreshDraftReady(true)
-      setCurrentCwd(resolveNewSessionCwd())
-      setCurrentBranch('')
-    }
 
     void (async () => {
       if (level === 'l1') {
@@ -1321,7 +1347,7 @@ export function DesktopController() {
     return () => {
       cancelled = true
     }
-  }, [level, gatewayState])
+  }, [level, gatewayState, prepareFreshDraftInPlace])
 
   useEffect(() => {
     if (isSecondaryWindow()) {
