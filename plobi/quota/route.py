@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 20.0
 
+#: Spend bound per source kind. A desktop-quota channel fronting a spawn-CLI
+#: adapter boots a whole agent process per request — measured on this machine
+#: 2026-10-07: 43.2 s and 43.4 s for the bare CLI, 41.1–62.2 s through the
+#: gateway, on three different models. One flat 20 s bound therefore timed out
+#: *every* desktop-quota spend, and because a timeout is swallowed into
+#: ``None`` the failure was silent. HTTP-backed cheap APIs keep the short bound.
+_KIND_TIMEOUTS = {"aigw": 120.0}
+
+
+def spend_timeout(source: QuotaSource) -> float:
+    return _KIND_TIMEOUTS.get(source.kind, _DEFAULT_TIMEOUT)
+
 
 def resolve_l2_endpoint(pool: Optional[QuotaPool] = None) -> Optional[dict]:
     """Return ``{base_url, api_key, model}`` for the source the pool picks.
@@ -46,12 +58,16 @@ def resolve_l2_endpoint(pool: Optional[QuotaPool] = None) -> Optional[dict]:
     return source.endpoint
 
 
-def _default_send(prompt: str, source: QuotaSource, *, timeout: float = _DEFAULT_TIMEOUT) -> Optional[str]:
+def _default_send(prompt: str, source: QuotaSource, *, timeout: Optional[float] = None) -> Optional[str]:
     """POST ``prompt`` to ``source`` as an OpenAI-compatible completion.
 
-    Raises on any transport/HTTP error (so the caller can fail over); returns
-    ``None`` when the model returned no text (a legitimate empty answer).
+    Raises on any transport/HTTP error (so the caller can fail over). An empty
+    answer is *not* treated as success here: the gateway already turns
+    "the CLI exited 0 but printed nothing" into a 502, so a 200 with no text
+    would mean something upstream regressed — let it surface as a failure.
     """
+    if timeout is None:
+        timeout = spend_timeout(source)
     if not source.base_url or not source.api_key:
         raise RuntimeError(f"source {source.name!r} has no endpoint credential")
     body = json.dumps(
@@ -85,11 +101,17 @@ def _default_send(prompt: str, source: QuotaSource, *, timeout: float = _DEFAULT
         payload = json.loads(response.read().decode("utf-8"))
 
     choices = payload.get("choices") or []
-    if not choices:
-        return None
-    message = choices[0].get("message") or {}
+    message = choices[0].get("message") or {} if choices else {}
     content = message.get("content")
-    return content if isinstance(content, str) else None
+    text = content if isinstance(content, str) else ""
+
+    if not text.strip():
+        # The gateway turns "the CLI exited 0 but printed nothing" into a 502, so
+        # an empty 200 means something regressed upstream. Raising here keeps a
+        # blank response from arriving as a *successful* answer the UI then shows.
+        raise RuntimeError(f"source {source.name!r} returned an empty completion")
+
+    return text
 
 
 class QuotaAwareCompleter:
@@ -108,11 +130,12 @@ class QuotaAwareCompleter:
         *,
         send: Optional[Callable[[str, QuotaSource], Optional[str]]] = None,
         max_attempts: int = 3,
-        timeout: float = _DEFAULT_TIMEOUT,
+        timeout: Optional[float] = None,
     ) -> None:
         self._pool = pool
         self._send = send
         self._max_attempts = max(1, max_attempts)
+        # ``None`` = decide per source (see :data:`_KIND_TIMEOUTS`).
         self._timeout = timeout
 
     def __call__(self, prompt: str, route) -> Optional[str]:
