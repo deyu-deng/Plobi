@@ -127,7 +127,7 @@ const DEFERRED_SUFFIX = 'deferred by R-047 (postponed, not a fault; turns green 
 const RED_SUFFIX = 'RED — real fault, not a deferral (it was attempted here and never came up healthy)'
 
 function definitionFor(id: string): DeferredSubsystemDefinition | null {
-  return DEFERRED_SUBSYSTEMS[id] ?? profileBackendDefinition(id)
+  return DEFERRED_SUBSYSTEMS[id] ?? profileBackendDefinition(id) ?? keyReconcileDefinition(id)
 }
 
 /**
@@ -157,6 +157,35 @@ function profileBackendDefinition(id: string): DeferredSubsystemDefinition | nul
 /** The ledger id a profile backend reports under. */
 function profileBackendRowId(profile: string): string {
   return `${PROFILE_BACKEND_ID_PREFIX}${String(profile).trim()}`
+}
+
+/**
+ * The gateway-key reconciliation row (`WP-AIGW-KEY-LITERALS`, 裁定 94 ③: a red has
+ * to land on a surface the user actually has, not only in `logs/*.log`). Like a
+ * profile backend row it is NOT part of `DEFERRED_SUBSYSTEMS` — that table is the
+ * R-047 deferral tier, is mirrored by `doctor.py`'s `DEFERRED_ENABLE_HINTS`, and
+ * this row is neither a sidecar nor a postponement. It has no port either, so it
+ * is created by its first observation rather than seeded as `probing`: the check
+ * only exists at the moment the shell is about to send a key, and a row that said
+ * "still probing" forever would be its own kind of silence.
+ */
+export const KEY_RECONCILE_ROW_ID = 'aigw-key'
+
+/** Same shape as the quota hub hint: the app owns the lifecycle, nothing to run. */
+const KEY_RECONCILE_ENABLE_HINT =
+  'make the two sides agree — point aigw/config.yaml `server.api_key` at the same `${VAR:-…}` reference the shell exports, or set AIGW_API_KEY / PLOBI_AIGW_API_KEY to the value the gateway declares'
+
+function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null {
+  if (id !== KEY_RECONCILE_ROW_ID) {
+    return null
+  }
+
+  return {
+    enableHint: KEY_RECONCILE_ENABLE_HINT,
+    id,
+    name: { en: 'Gateway key check', zh: '网关 key 对账' },
+    port: 0
+  }
 }
 
 /**
@@ -225,16 +254,18 @@ function createDeferredSubsystemLedger({
      * physically cannot swallow a real fault into `deferred`.
      *
      * A `backend:<profile>` row is created by its first observation, since the
-     * set of profiles this machine attempts is runtime data. Any other unknown
-     * id is still refused.
+     * set of profiles this machine attempts is runtime data — as is the moment
+     * the shell first tries to send a key, which creates `aigw-key`. Any other
+     * unknown id is still refused.
      */
     record(
       id: string,
       { observed, state }: { observed: string; state: DeferredSubsystemState }
     ): DeferredSubsystemRow | null {
       const definition = definitionFor(id)
+      const lazy = id.startsWith(PROFILE_BACKEND_ID_PREFIX) || id === KEY_RECONCILE_ROW_ID
 
-      if (!definition || (!rows.has(id) && !id.startsWith(PROFILE_BACKEND_ID_PREFIX))) {
+      if (!definition || (!rows.has(id) && !lazy)) {
         return null
       }
 

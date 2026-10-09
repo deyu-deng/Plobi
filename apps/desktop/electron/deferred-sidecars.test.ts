@@ -154,8 +154,20 @@ test('enable hints name no Windows-only artifact', () => {
   }
 })
 
+/**
+ * Read doctor.py the way these parity rows actually mean it. Every git blob is
+ * LF, while a Windows checkout puts CRLF in the working tree — and `/…\)\n/`
+ * then finds nothing, so both rows below fail on that box for a reason that has
+ * nothing to do with the wording they exist to guard. Measured here on
+ * 2026-10-09: same bytes, HEAD blob matches, worktree file does not (986 CRLF).
+ * A permanently red gate on one platform is a gate nobody reads.
+ */
+function readDoctorSource(): string {
+  return fs.readFileSync(DOCTOR_PATH, 'utf8').replace(/\r\n/g, '\n')
+}
+
 test('desktop deferred wording matches scripts/plobi/doctor.py exactly', () => {
-  const doctorSource = fs.readFileSync(DOCTOR_PATH, 'utf8')
+  const doctorSource = readDoctorSource()
   const block = /def deferred_row[\s\S]*?detail = \(([\s\S]*?)\)\n/.exec(doctorSource)
 
   assert.ok(block, 'doctor.py must still build the deferred detail inside deferred_row()')
@@ -175,7 +187,7 @@ test('the doctor.py hint table still covers every desktop deferred subsystem', (
   // One shared definition of "which capabilities are deferred" — if doctor.py
   // renames or drops an id, the desktop tray must not keep asserting it is
   // postponed.
-  const doctorSource = fs.readFileSync(DOCTOR_PATH, 'utf8')
+  const doctorSource = readDoctorSource()
   const hints = /DEFERRED_ENABLE_HINTS: dict\[str, str\] = \{([\s\S]*?)\n\}/.exec(doctorSource)
 
   assert.ok(hints, 'doctor.py must still define DEFERRED_ENABLE_HINTS')

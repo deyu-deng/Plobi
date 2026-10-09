@@ -56,7 +56,7 @@ import {
   tokenPreview
 } from './connection-config'
 import { adoptServedDashboardToken } from './dashboard-token'
-import { createBackendRespawnGuard, createDeferredSubsystemLedger, profileBackendRowId } from './deferred-sidecars'
+import { createBackendRespawnGuard, createDeferredSubsystemLedger, KEY_RECONCILE_ROW_ID, profileBackendRowId } from './deferred-sidecars'
 import {
   buildDevAutostartScript,
   DEV_AUTOSTART_FILENAME,
@@ -8383,8 +8383,8 @@ function reportAigwKeyReconciliation() {
     check = reconcileGatewayKey(null)
     check = { ...check, summary: `${check.summary}; read error ${String(error)}` }
   }
-  if (!check.match) rememberLog(`[aigw-key] ${check.summary}`)
-  reportDeferredSubsystem('aigw-key', check.match ? 'ready' : 'red', check.summary)
+  if (!check.match) rememberLog(`[${KEY_RECONCILE_ROW_ID}] ${check.summary}`)
+  reportDeferredSubsystem(KEY_RECONCILE_ROW_ID, check.match ? 'ready' : 'red', check.summary)
   return check
 }
 
@@ -8411,7 +8411,7 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
       if (res.status === 401 || res.status === 403) {
         const check = reportAigwKeyReconciliation()
         reportDeferredSubsystem(
-          'aigw-key',
+          KEY_RECONCILE_ROW_ID,
           'red',
           `hub rejected the shell key (HTTP ${res.status}); ${check.summary}`
         )
