@@ -33,16 +33,45 @@ from .tokens.vault import Vault
 
 logger = logging.getLogger("aigw")
 
-# Keys that are fine for local mock demos but dangerous if left in place.
+# Keys that are fine for local mock demos but dangerous if left in place. This is
+# a *classification* of known-insecure values, not a source of the gateway's key:
+# the shipped local default lives in exactly one place — `server.api_key` in the
+# config this process is started with (裁定 86 甲: this service owns the value).
+# It is deliberately NOT repeated here; the `sk-local-` prefix check below already
+# covers every `<app>/config*.yaml` default of that shape, so listing it would add
+# a second copy that goes stale the moment someone changes the config.
 _WEAK_API_KEYS = frozenset(
     {
-        "sk-local-dev-key",
-        "sk-local-antigravity",
         "sk-test",
         "changeme",
         "secret",
     }
 )
+
+
+def _declared_api_key(cfg: dict) -> str:
+    """Read the gateway's downstream key from its one owner: ``server.api_key``.
+
+    No built-in fallback (裁定 86 甲). A config that omits the key, or declares it
+    empty, is a startup error rather than an open hub: 裁定 94 reads an empty string
+    as "not declared", never as "declared as no authentication". Failing here also
+    means `_auth()` can never compare against a value nobody configured.
+    """
+    server = cfg.get("server") if isinstance(cfg.get("server"), dict) else {}
+    if "api_key" not in server:
+        raise RuntimeError(
+            "aigw: server.api_key is not declared in the gateway config. This service "
+            "owns that value and carries no built-in fallback — set it (or "
+            "${AIGW_KEY:-…} in the YAML) before starting the hub."
+        )
+    key = str(server.get("api_key") or "").strip()
+    if not key:
+        raise RuntimeError(
+            "aigw: server.api_key is declared empty. An empty string means 'not "
+            "declared' (裁定 94), not 'no authentication' — refuse to start rather "
+            "than serve an unauthenticated quota hub."
+        )
+    return key
 
 
 def setup_logging(cfg: dict | None = None) -> None:
@@ -68,10 +97,14 @@ STATE: dict = {}
 
 
 def _startup_safety_checks(cfg: dict) -> None:
-    """Warn (do not hard-fail) on common footguns so demos still boot."""
+    """Warn (do not hard-fail) on common footguns so demos still boot.
+
+    One exception, deliberately: a missing or empty ``server.api_key`` is not a
+    warning but a startup error — see :func:`_declared_api_key`.
+    """
     server = cfg.get("server") or {}
     host = str(server.get("host", "127.0.0.1"))
-    key = str(server.get("api_key") or "")
+    key = _declared_api_key(cfg)
     if host in ("0.0.0.0", "::", "[::]"):
         logger.warning(
             "server.host=%s exposes aigw on all interfaces — keep a strong api_key "
@@ -132,7 +165,7 @@ async def _startup():
         http=http,
         reg=reg,
         sched=sched,
-        api_key=cfg["server"]["api_key"],
+        api_key=_declared_api_key(cfg),
         tokenmgr=tokenmgr,
     )
 
