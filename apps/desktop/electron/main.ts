@@ -35,6 +35,14 @@ import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './
 import { buildDesktopBackendEnv, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
+import {
+  buildWindowsRestartHandoff,
+  createRestartGuard,
+  planRelaunch,
+  planRestartConfirmation,
+  restartLabels,
+  waitForTreeGone
+} from './tray-restart'
 import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { runBootstrap } from './bootstrap-runner'
@@ -56,7 +64,13 @@ import {
   tokenPreview
 } from './connection-config'
 import { adoptServedDashboardToken } from './dashboard-token'
-import { createBackendRespawnGuard, createDeferredSubsystemLedger, KEY_RECONCILE_ROW_ID, profileBackendRowId } from './deferred-sidecars'
+import {
+  createBackendRespawnGuard,
+  createDeferredSubsystemLedger,
+  KEY_RECONCILE_ROW_ID,
+  profileBackendRowId,
+  TRAY_RESTART_ROW_ID
+} from './deferred-sidecars'
 import {
   buildDevAutostartScript,
   DEV_AUTOSTART_FILENAME,
@@ -7576,6 +7590,223 @@ function deferredRowName(row: { name: { en: string; zh: string } }, language: Re
   return language === 'zh' ? row.name.zh : row.name.en
 }
 
+// ─── WP-TRAY-RESTART —「重启应用」 ────────────────────────────────────────────
+//
+// Why this is not `app.relaunch()`: this box runs the desktop in DEV mode, where
+// Electron is a *child* of `cmd /c npm run dev` → `concurrently` → Vite + this
+// process (the very chain `syncAutostartArtifacts` writes into the Startup folder).
+// Relaunching only Electron would leave the old Vite and the old backend running
+// and point a fresh window at a server that is about to die — a button that reports
+// success while the code stays old, which is the complaint that produced this task.
+//
+// The confirmation is unconditional (甲), on purpose: proving "nothing is in
+// flight" needs a cross-process read of cron ticks, L2 delegation trees and
+// TUI/gateway sessions, and every one of those lives in another process's memory
+// (`cron/scheduler.py:299`, `plobi/delegation/tracker.py:71-75`,
+// `tui_gateway/server.py:5954`), while the one readable summary
+// (`gateway/status.py:887-890`) fail-OPENs to "not busy". See ./tray-restart.ts
+// for the full citation list; do not invert that default.
+const restartGuard = createRestartGuard()
+
+function listPlobiTreeProcesses(): Array<{ pid: number; name: string; commandLine: string }> {
+  if (!IS_WINDOWS) {
+    return []
+  }
+
+  // Keyed on the COMMAND LINE, never on an image name — the gateway runs as
+  // `pythonw.exe -m plobi_cli.main gateway run` and a `python.exe` filter does not
+  // see it at all (裁定 92; my own live probe hit exactly that blind spot today).
+  const script =
+    'Get-CimInstance Win32_Process | ForEach-Object { if ($_.CommandLine) { ' +
+    '"{0}`t{1}`t{2}" -f $_.ProcessId, $_.Name, $_.CommandLine } }'
+  const out = execFileSync(
+    windowsPowerShellPath() || 'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', script],
+    hiddenWindowsChildOptions({ encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 24 * 1024 * 1024 })
+  )
+  const rows: Array<{ pid: number; name: string; commandLine: string }> = []
+
+  for (const line of String(out || '').split(/\r?\n/)) {
+    const [pidRaw, name, ...rest] = line.split('\t')
+    const pid = Number(pidRaw)
+
+    if (!Number.isInteger(pid) || pid <= 0) {
+      continue
+    }
+
+    rows.push({ pid, name: name || '', commandLine: rest.join('\t') })
+  }
+
+  return rows
+}
+
+function ownedBackendPids(): number[] {
+  const pids: number[] = []
+
+  if (plobiProcess && Number.isInteger(plobiProcess.pid)) {
+    pids.push(plobiProcess.pid)
+  }
+
+  for (const entry of backendPool.values()) {
+    if (entry.process && Number.isInteger(entry.process.pid)) {
+      pids.push(entry.process.pid)
+    }
+  }
+
+  return pids
+}
+
+function teardownOwnedBackends(): void {
+  // SIGTERM first so Python can flush, then the tree kill that catches
+  // grandchildren — the same order the updater hand-off uses (releaseBackendLock).
+  if (plobiProcess && !plobiProcess.killed) {
+    try {
+      plobiProcess.kill('SIGTERM')
+    } catch {
+      void 0
+    }
+  }
+
+  stopAllPoolBackends()
+
+  for (const pid of ownedBackendPids()) {
+    forceKillProcessTree(pid)
+  }
+}
+
+function announceRestart(labels, detail) {
+  try {
+    if (tray && !tray.isDestroyed()) {
+      tray.displayBalloon({ iconType: 'info', title: labels.restart, content: detail })
+    }
+  } catch (err) {
+    rememberLog(`[tray-restart] balloon failed: ${err?.message || err}`)
+  }
+}
+
+async function restartFromTray() {
+  const labels = restartLabels(app.getLocale())
+
+  if (!restartGuard.begin()) {
+    rememberLog('[tray-restart] refused: a restart is already in flight')
+
+    return
+  }
+
+  const report = (state, observed) => {
+    const row = reportDeferredSubsystem(TRAY_RESTART_ROW_ID, state, observed)
+
+    if (!row) {
+      rememberLog(`[tray-restart] LEDGER DROPPED the result "${state}": ${observed}`)
+    }
+
+    announceRestart(labels, observed)
+  }
+
+  try {
+    const gate = planRestartConfirmation({
+      probeErrors: ['这台没有跨进程可读的「有没有活在跑」面：cron 本轮、未回的子分身委派、TUI 会话都在各自进程的内存里']
+    })
+
+    if (gate.ask) {
+      const options = {
+        buttons: [labels.confirmGo, labels.confirmCancel],
+        cancelId: 1,
+        defaultId: 1,
+        detail: [labels.confirmBody, ...gate.reasons.map((reason) => `· ${reason}`)].join('\n'),
+        message: labels.confirmTitle,
+        title: labels.confirmTitle,
+        type: 'warning' as const
+      }
+      const host = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+      const choice = host ? await dialog.showMessageBox(host, options) : await dialog.showMessageBox(options)
+
+      if (choice.response !== 0) {
+        // Cancelled: nothing was touched — say so on the same surface, quietly
+        // succeeding at "did nothing" is how a button gets distrusted.
+        report('deferred', labels.cancelled)
+        rememberLog('[tray-restart] cancelled by user')
+
+        return
+      }
+    }
+
+    report('probing', labels.restarting)
+    teardownOwnedBackends()
+
+    let gone
+
+    try {
+      gone = await waitForTreeGone(listPlobiTreeProcesses, {
+        intervalMs: 500,
+        selfPid: process.pid,
+        timeoutMs: 15000
+      })
+    } catch (err) {
+      // A process table we cannot read is not proof of an empty one: relaunching
+      // into a live tree collides on ports and file locks.
+      report('red', `${labels.failedNotGone}（读不到进程表：${String(err?.message || err)}）`)
+
+      return
+    }
+
+    if (!gone.ok) {
+      const who = gone.lingering.slice(0, 3).map((entry) => `${entry.pid}/${entry.name}`).join('、')
+
+      report('red', `${labels.failedNotGone}（残留 ${gone.lingering.length} 个：${who}）`)
+
+      return
+    }
+
+    const plan = planRelaunch({
+      devCommand: IS_PACKAGED ? undefined : DEV_DESKTOP_COMMAND,
+      devCwd: IS_PACKAGED ? undefined : APP_ROOT,
+      devLauncherAvailable: IS_WINDOWS,
+      execPath: process.execPath,
+      isPackaged: IS_PACKAGED,
+      isWindows: IS_WINDOWS
+    })
+
+    if (plan.kind === 'unsupported') {
+      report('red', `${labels.unsupported}（${plan.note}）`)
+
+      return
+    }
+
+    if (plan.kind === 'packaged') {
+      report('ready', labels.donePackaged)
+      isQuittingForHandoff = true
+      app.relaunch()
+      app.exit(0)
+
+      return
+    }
+
+    // Dev: hand off to a detached script, because the tree we must replace is our
+    // own ancestry — we cannot kill it from inside without dying mid-teardown, and
+    // the new Vite cannot bind port 5174 while the old one still holds it.
+    const scriptPath = path.join(app.getPath('temp'), `plobi-desktop-restart-${Date.now()}.bat`)
+
+    fs.writeFileSync(scriptPath, buildWindowsRestartHandoff({
+      command: plan.command,
+      waitPid: process.pid,
+      workingDirectory: plan.cwd
+    }), 'utf8')
+
+    const child = spawn('cmd.exe', ['/c', scriptPath], { detached: true, stdio: 'ignore' })
+
+    child.unref()
+    report('ready', `${labels.doneDev}（handoff=${path.basename(scriptPath)}）`)
+    rememberLog(`[tray-restart] handoff launched: ${scriptPath}`)
+    isQuittingForHandoff = true
+    setTimeout(() => app.quit(), 300)
+  } catch (err) {
+    report('red', `${labels.failedRelaunch}：${String(err?.message || err)}`)
+  } finally {
+    restartGuard.end()
+  }
+}
+
 // Build the tray menu from the persisted settings. Rebuilt (not just once) so
 // the checkbox can never disagree with what actually got written to disk.
 function refreshTrayMenu() {
@@ -7592,6 +7823,10 @@ function refreshTrayMenu() {
       Menu.buildFromTemplate([
         { label: labels.show, click: () => showMainWindow() },
         { label: labels.openAtLogin, type: 'checkbox', checked: openAtLogin, click: item => applyAutostart(item.checked) },
+        // WP-TRAY-RESTART — the whole-tree restart. Its outcome is reported through
+        // the same ledger row as the sidecars (rendering #1 tray, #2 boot payload), so
+        // "restarted" never lives only in desktop.log.
+        { label: restartLabels(app.getLocale()).restart, click: () => void restartFromTray() },
         // R-051 — rendering #1 of the deferred-subsystem ledger. The boot-progress
         // payload is rendering #2 of the very same rows(); adding a row here must
         // never need a parallel status store. A subsystem that was postponed by
