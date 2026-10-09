@@ -81,7 +81,7 @@ def _outcome(state, sources=None, models_seen=0, checked_at=None):
 def _pool(gateway, sources=None):
     return QuotaPool(
         sources if sources is not None else {"zhipu-air": CheapApiSource(
-            "zhipu-air", model="glm-4-air", base_url="http://x/v1", api_key="k"
+            "zhipu-air", model="glm-5.3-flash", base_url="http://x/v1", api_key="k"
         )},
         order=["zhipu-air"],
         gateway=gateway,
@@ -433,7 +433,7 @@ def test_load_routes_legacy_desktop_entries_to_the_gateway(monkeypatch, tmp_path
     cfg = tmp_path / "quota.yaml"
     cfg.write_text(
         "sources:\n"
-        "  zhipu-air: {kind: cheap_api, model: glm-4-air}\n"
+        "  zhipu-air: {kind: cheap_api, model: glm-5.3-flash}\n"
         "  antigravity: {kind: aigw, model: antigravity/gemini-3-pro}\n",
         encoding="utf-8",
     )

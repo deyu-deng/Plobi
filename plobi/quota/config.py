@@ -34,7 +34,7 @@ WP-BE-2 凭证桥：UI 存 key 走 Plobi ``auth.json`` 的 ``credential_pool``�
     sources:
       zhipu-air:
         kind: cheap_api
-        model: glm-4-air
+        model: glm-5.3-flash      # 便宜档要选价目表里有条目的 id（见 DEFAULT_SOURCES 的注释）
         base_url: ""          # 留空 = 从 PLOBI_QUOTA_ZHIPU_URL 读
         api_key: ""           # 留空 = 从 PLOBI_QUOTA_ZHIPU_KEY 读
 """
@@ -55,7 +55,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_SOURCES: dict[str, dict[str, Any]] = {
     "zhipu-air": {
         "kind": "cheap_api",
-        "model": "glm-4-air",
+        # 便宜档定 `glm-5.3-flash`（用户 10-08 拍，裁定 95）。**理由不是 `glm-4-air` 死了**——
+        # 实测它被这把 key 服务且真回 `tool_calls`（176 入 / 18 出，一发就中）；真正的后果是
+        # 它**在价目表里没有条目**（`agent/usage_pricing.py:637-640`：没价就报 unknown），
+        # 而 `glm-5.3-flash` 是全仓 zai 唯一有价的那一条（`usage_pricing.py:643`）。
+        # 换 id 前先确认新 id 有价目条目，否则早报/记账那一路会重新变成 unknown。
+        "model": "glm-5.3-flash",
         "base_url": "",  # 留空 → 走 PLOBI_QUOTA_ZHIPU_URL → credential_pool(zai)
         "api_key": "",  # 留空 → 走 PLOBI_QUOTA_ZHIPU_KEY → credential_pool(zai)
         "url_env": "PLOBI_QUOTA_ZHIPU_URL",

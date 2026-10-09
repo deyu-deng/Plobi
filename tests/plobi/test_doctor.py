@@ -445,3 +445,174 @@ def test_every_red_from_the_two_new_rows_names_a_fix(monkeypatch, tmp_path):
     for row in (D.check_credential_refs(), D.check_quota_liveness()):
         if row["color"] == D.RED:
             assert "改法" in row["detail"], f"{row['id']} 判红了却没说改哪一处"
+
+
+# ---------------------------------------------------------------------------
+# WP-QUOTA-KEY-LIVENESS — the two quota rows (cred_refs / quota_liveness).
+#
+# The judgement these pin is the whole point of the knife: red may only come
+# from an error code that came back on a real request (裁定 95), a key that is
+# merely unreachable is NOT dead, and a model missing from /models is NOT a dead
+# model (this box's catalog under-reports — measured). Every probe is stubbed, so
+# nothing here touches the network or spends a token.
+# ---------------------------------------------------------------------------
+
+
+def _quota_cfg(sources=None, gateway=None):
+    return {
+        "order": list(sources or {}),
+        "fail_open": True,
+        "alert_threshold": "degraded",
+        "sources": sources or {},
+        "gateway": gateway or {"enabled": False, "base_url": ""},
+    }
+
+
+def _cheap(name="zhipu-air", model="glm-4-air"):
+    return {
+        name: {
+            "kind": "cheap_api",
+            "model": model,
+            "base_url": "https://api.invalid.test/v1",
+            "api_key": "sk-whatever",
+            "key_env": "PLOBI_QUOTA_ZHIPU_KEY",
+        }
+    }
+
+
+def _patch_quota_config(monkeypatch, cfg):
+    from plobi.quota import config as quota_config
+
+    monkeypatch.setattr(quota_config, "load", lambda: cfg)
+
+
+def test_cred_refs_red_when_a_reference_was_never_expanded(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("GLM_API_KEY=op://Plobi/GLM/credential\nOTHER=keepme\n", encoding="utf-8")
+    monkeypatch.setattr(D, "_credential_env_file", lambda: env)
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+
+    row = D.check_credential_refs()
+
+    assert row["color"] == D.RED
+    assert "GLM_API_KEY" in row["detail"]
+    # The row must name a fix, and must not leak anything spendable.
+    assert "改法" in row["detail"]
+    assert "keepme" not in row["detail"]
+
+
+def test_cred_refs_not_red_when_the_environment_carries_the_resolved_value(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("GLM_API_KEY=op://Plobi/GLM/credential\n", encoding="utf-8")
+    monkeypatch.setattr(D, "_credential_env_file", lambda: env)
+    monkeypatch.setenv("GLM_API_KEY", "real-resolved-value")
+
+    assert D.check_credential_refs()["color"] == D.GREEN
+
+
+def test_cred_refs_green_and_still_reports_what_it_checked(tmp_path, monkeypatch):
+    # 裁定 81: a passing row must still say what it looked at — no silent absence.
+    env = tmp_path / ".env"
+    env.write_text("GLM_API_KEY=plain-value\n", encoding="utf-8")
+    monkeypatch.setattr(D, "_credential_env_file", lambda: env)
+
+    row = D.check_credential_refs()
+    assert row["color"] == D.GREEN
+    assert row["detail"]
+
+
+def test_quota_liveness_red_on_refused_key_and_names_where_to_fix_it(monkeypatch):
+    _patch_quota_config(monkeypatch, _quota_cfg(_cheap()))
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (401, None, ""))
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.RED
+    # The two traps this row exists to defuse: .env beats the process env, and a
+    # shell export therefore does nothing.
+    assert "export" in row["detail"]
+    assert ".env" in row["detail"]
+
+
+def test_quota_liveness_is_not_red_when_nothing_listens(monkeypatch):
+    # The judgement-reversal guard: unreachable proves nothing about a credential.
+    _patch_quota_config(monkeypatch, _quota_cfg(_cheap()))
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (None, None, ""))
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] != D.RED
+    assert "未验" in row["detail"]
+
+
+def test_quota_liveness_not_red_and_not_missing_model_when_catalog_omits_it(monkeypatch):
+    # Measured on this box: /models under-reports, so "not listed" is neither a
+    # dead key nor a missing model. This is the easiest judgement to get wrong.
+    _patch_quota_config(monkeypatch, _quota_cfg(_cheap(model="glm-4-air")))
+    listed = {"data": [{"id": "glm-5.3-flash"}, {"id": "glm-4.6"}]}
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (200, listed, ""))
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.GREEN
+    assert "目录未列" in row["detail"]
+    assert "缺" not in row["detail"]
+
+
+def test_quota_liveness_red_on_an_upstream_unknown_model_code(monkeypatch):
+    _patch_quota_config(monkeypatch, _quota_cfg(_cheap(model="glm-9-nope")))
+    body = '{"error": {"code": "1211", "message": "Unknown Model"}}'
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (400, None, body))
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.RED
+    assert "glm-9-nope" in row["detail"]
+    assert "改法" in row["detail"]
+
+
+def test_quota_liveness_names_derived_apps_without_faking_evidence(monkeypatch):
+    cfg = _quota_cfg(
+        {
+            **_cheap(),
+            "workbuddy": {
+                "kind": "aigw",
+                "model": "workbuddy/deepseek-chat",
+                "base_url": "http://127.0.0.1:8000/v1",
+                "api_key": "sk-hub",
+            },
+        }
+    )
+    _patch_quota_config(monkeypatch, cfg)
+    calls = []
+
+    def probe(url, key, timeout=2.5):
+        calls.append(url)
+        return 200, {"data": [{"id": "glm-4-air"}]}, ""
+
+    monkeypatch.setattr(D, "_models_probe", probe)
+    row = D.check_quota_liveness()
+
+    assert "aigw" in row["detail"] and "派生" in row["detail"]
+    # One probe for the one cheap source; the derived app is NOT probed as if it
+    # were independent evidence.
+    assert len(calls) == 1
+
+
+def test_every_red_quota_row_carries_an_actionable_fix(monkeypatch, tmp_path):
+    """Invariant: a red row must tell a human what to change, never just a code."""
+    env = tmp_path / ".env"
+    env.write_text("GLM_API_KEY=op://V/I/f\n", encoding="utf-8")
+    monkeypatch.setattr(D, "_credential_env_file", lambda: env)
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+    rows = [D.check_credential_refs()]
+
+    _patch_quota_config(monkeypatch, _quota_cfg(_cheap()))
+    for code, body in ((401, ""), (403, ""), (400, '{"code":"1211","message":"Unknown Model"}')):
+        monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5, c=code, b=body: (c, None, b))
+        rows.append(D.check_quota_liveness())
+
+    for row in rows:
+        assert row["color"] == D.RED, row
+        assert "改" in row["detail"], row["detail"]
+        assert len(row["detail"].splitlines()) == 1, "the table does not wrap rows"
