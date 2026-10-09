@@ -130,15 +130,19 @@ function isLogLine(lines: string[], line: number): boolean {
 
 /**
  * The checked-in exceptions for the main process. Every entry is an identifier the
- * machine reads — a ledger id, a Python module name, a filename on disk — never a
- * word the UI invents for itself. The operator command line that used to be the
- * fourth entry is gone: 裁定 (2026-09-29) turned that hint into a statement about
- * what the app does by itself, so do not re-add it.
+ * machine reads — a ledger id, a Python or TypeScript module name, a filename on disk,
+ * an environment variable name — never a word the UI invents for itself. The operator
+ * command line that used to be the fourth entry is gone: 裁定 (2026-09-29) turned that
+ * hint into a statement about what the app does by itself, so do not re-add it.
  */
 const ALLOWED_LITERALS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /^aigw$/, reason: 'machine-read sidecar ledger id (reportDeferredSubsystem / DEFERRED_SUBSYSTEMS key)' },
+  { pattern: /^aigw-key$/, reason: 'machine-read sidecar ledger id of the key-reconcile row (KEY_RECONCILE_ROW_ID)' },
   { pattern: /^import aigw\.cli$/, reason: 'Python module name used by the interpreter liveness probe' },
-  { pattern: /^aigw-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' }
+  { pattern: /^aigw-token\.txt$/, reason: 'filename of the persisted OAuth token on disk' },
+  { pattern: /^\.\/aigw-key-reconcile$/, reason: 'TypeScript module path the main process imports (filename on disk)' },
+  { pattern: /^AIGW_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' },
+  { pattern: /^PLOBI_AIGW_API_KEY$/, reason: 'environment variable name the credential ladder reads (never display copy)' }
 ]
 
 function allowedLiteral(text: string): boolean {

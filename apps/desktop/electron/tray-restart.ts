@@ -67,7 +67,7 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
     confirmCancel: '取消',
     confirmTitle: '重启 Plobi？',
     confirmBody:
-      '这会关掉整个后端树（会话后端 / 网关 / cron / chatlog / aigw）再用新代码重起。' +
+      '这会关掉整个后端树（会话后端 / 额度网关 / cron / chatlog）再用新代码重起。' +
       '这台机器上没有可靠的「现在有没有活在跑」信号可读（详见 electron/tray-restart.ts 顶部），' +
       '所以无论有没有任务，重启前都要确认一次：正在跑的会话、未回的子分身委派、cron 本轮都可能被打断。',
     cancelled: '未重启：确认框取消，什么都没动。',
@@ -84,7 +84,7 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
     confirmCancel: 'Cancel',
     confirmTitle: 'Restart Plobi?',
     confirmBody:
-      'This tears down the whole backend tree (session backend / gateway / cron / chatlog / aigw) ' +
+      'This tears down the whole backend tree (session backend / quota gateway / cron / chatlog) ' +
       'and brings it back on new code. There is no trustworthy "is anything running right now" signal ' +
       'readable on this machine (see the top of electron/tray-restart.ts), so the app confirms before ' +
       'every restart — an in-flight chat turn, an unanswered L2 delegation or a cron tick can all be interrupted.',

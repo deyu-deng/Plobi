@@ -112,6 +112,7 @@ export function reconcileGatewayKey(
   const declared = declaredGatewayApiKey(configText, env)
   const usedFp = fingerprintKey(used.value)
 
+  // These summaries reach the tray menu and the boot ledger, so they carry no internal side name (裁定 45.4).
   if (declared === null) {
     return {
       match: false,
@@ -119,7 +120,7 @@ export function reconcileGatewayKey(
       usedFp,
       declaredFp: null,
       declaredReadable: false,
-      summary: `aigw key NOT CHECKED: gateway config unreadable (used ${used.source}, fp=${usedFp}) — say so, never assume consistent`,
+      summary: `key NOT CHECKED: gateway config unreadable (used ${used.source}, fp=${usedFp}) — say so, never assume consistent`,
     }
   }
 
@@ -138,7 +139,7 @@ export function reconcileGatewayKey(
     declaredFp,
     declaredReadable: true,
     summary: match
-      ? `aigw key ok: ${used.source} fp=${usedFp} == gateway ${declaredNote}`
-      : `aigw key MISMATCH: shell uses ${used.source} fp=${usedFp} but gateway ${declaredNote} — one of them is stale, and auth failures will look like a dead key`,
+      ? `key ok: ${used.source} fp=${usedFp} == gateway ${declaredNote}`
+      : `key MISMATCH: shell uses ${used.source} fp=${usedFp} but gateway ${declaredNote} — one of them is stale, and auth failures will look like a dead key`,
   }
 }
