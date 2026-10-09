@@ -2053,6 +2053,37 @@ print(','.join(scripts))
     Write-Success "All dependencies installed"
 }
 
+function Set-MindRootEnv {
+    # The official brain is data, not code, so it does not travel with the repo:
+    # plobi/mind/paths.py::resolve_root() honours MIND_ROOT and deliberately does
+    # NOT fall back once it is set-but-missing.  Nothing else in the tree registers
+    # it, so a machine installed by this script would wake up with the brain
+    # resolving to the (long removed) in-repo sibling directory.  Pin it here, by
+    # the same mechanism and in the same scope as PLOBI_HOME, derived from whichever
+    # home actually won.
+    param(
+        [Parameter(Mandatory=$true)][string]$PlobiHomePath,
+        [string]$Scope = "User"
+    )
+
+    $mindRoot = Join-Path $PlobiHomePath "mind"
+    $existing = [Environment]::GetEnvironmentVariable("MIND_ROOT", $Scope)
+    if (-not $existing -or $existing -ne $mindRoot) {
+        [Environment]::SetEnvironmentVariable("MIND_ROOT", $mindRoot, $Scope)
+        Write-Success "Set MIND_ROOT=$mindRoot"
+    } else {
+        Write-Info "MIND_ROOT already configured"
+    }
+    $env:MIND_ROOT = $mindRoot
+
+    # Deliberately NOT created: an empty directory resolves to a path that is not a
+    # git repo, which fails two layers away from the cause.  "Not configured yet" is
+    # the honest state, and the brain has to come from its own remote anyway.
+    if (-not (Test-Path -LiteralPath $mindRoot)) {
+        Write-Info "The brain is not at $mindRoot yet -- restore it there from its own git repository."
+    }
+}
+
 function Set-PathVariable {
     Write-Info "Setting up plobi command..."
     
@@ -2086,6 +2117,9 @@ function Set-PathVariable {
         Write-Success "Set PLOBI_HOME=$PlobiHome"
     }
     $env:PLOBI_HOME = $PlobiHome
+
+    # Same registration mechanism for the brain's location, derived from that home.
+    Set-MindRootEnv -PlobiHomePath $PlobiHome
     
     # Update current session
     $env:Path = "$plobiBin;$env:Path"
