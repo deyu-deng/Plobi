@@ -191,6 +191,14 @@ declare global {
       onQuotaApps?: (
         callback: (apps: Array<{ apiKey: string; baseUrl: string; id: string; models: string[] }>) => void
       ) => () => void
+      // Quota hub traffic proxied by the main process (the renderer's own fetch
+      // is preflighted and the hub sends no CORS headers). Exactly one `status`
+      // arrives first; then `chunk` frames of raw SSE bytes, ending in `done` —
+      // or a non-OK reply arrives as one `body` frame, and a transport failure
+      // as one `error` frame.
+      onQuotaStreamFrame?: (callback: (frame: DesktopQuotaStreamFrame) => void) => () => void
+      quotaStream?: (requestId: string, url: string, body: unknown) => Promise<boolean>
+      quotaStreamAbort?: (requestId: string) => Promise<boolean>
       getBootstrapState: () => Promise<DesktopBootstrapState>
       resetBootstrap: () => Promise<{ ok: boolean }>
       repairBootstrap: () => Promise<{ ok: boolean }>
@@ -571,6 +579,17 @@ export interface DesktopDeferredSubsystem {
    */
   state: 'deferred' | 'probing' | 'ready' | 'red'
   timestamp: number
+}
+
+/** One frame of a main-proxied quota hub stream, keyed by `requestId`. */
+export interface DesktopQuotaStreamFrame {
+  requestId: string
+  kind: 'status' | 'chunk' | 'body' | 'done' | 'error'
+  status?: number
+  statusText?: string
+  bytes?: Uint8Array
+  text?: string
+  error?: string
 }
 
 export interface DesktopBootProgress {

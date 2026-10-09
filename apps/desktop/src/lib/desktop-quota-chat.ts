@@ -1,3 +1,4 @@
+import type { DesktopQuotaStreamFrame } from '@/global'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { chatMessageText } from '@/lib/chat-messages'
 
@@ -37,8 +38,6 @@ export interface DesktopQuotaStreamHandlers {
 export interface DesktopQuotaChatRequest {
   /** aigw OpenAI-compatible base URL, e.g. http://127.0.0.1:8019/v1 */
   baseUrl: string
-  /** aigw api key (sk-...) */
-  apiKey: string
   /** Full served model id WITH the provider prefix, e.g. antigravity/gemini-3-pro */
   model: string
   /** OpenAI-format messages (system/user/assistant). */
@@ -122,6 +121,132 @@ export function buildDesktopQuotaMessages(
   return out
 }
 
+interface QuotaProxiedReply {
+  ok: boolean
+  status: number
+  statusText: string
+  /** Present when the hub answered without a stream (a non-2xx body). */
+  text: string
+  body: ReadableStream<Uint8Array> | null
+  /** Unsubscribes the frame listener. Must run once the stream is finished. */
+  dispose: () => void
+}
+
+let streamSeq = 0
+
+/**
+ * POST to the local quota hub *through the main process*.
+ *
+ * A browser-origin POST with `Authorization` + `application/json` is not a
+ * CORS-"simple" request, so Chromium preflights it; the hub has no CORS layer,
+ * so the preflight can never pass and the turn dies before a token is spent.
+ * The main process has no same-origin policy and already holds the hub key, so
+ * it makes the request and forwards the raw bytes back as frames.
+ */
+async function quotaStreamRequest(
+  url: string,
+  payload: unknown,
+  signal: AbortSignal
+): Promise<QuotaProxiedReply> {
+  const { quotaStream, quotaStreamAbort, onQuotaStreamFrame } = window.plobiDesktop ?? {}
+
+  if (!quotaStream || !quotaStreamAbort || !onQuotaStreamFrame) {
+    throw new Error('quota hub proxy is only available inside the desktop shell')
+  }
+
+  const requestId = `quota-${Date.now()}-${(streamSeq += 1)}`
+  const pending: Array<DesktopQuotaStreamFrame> = []
+  let wake: (() => void) | null = null
+  let ended = false
+
+  const unsubscribe = onQuotaStreamFrame(frame => {
+    if (frame.requestId !== requestId || ended) {
+      return
+    }
+
+    pending.push(frame)
+    wake?.()
+  })
+
+  const take = async (): Promise<DesktopQuotaStreamFrame | null> => {
+    while (!pending.length) {
+      if (ended) {
+        return null
+      }
+
+      await new Promise<void>(resolve => {
+        wake = resolve
+      })
+    }
+
+    return pending.shift() ?? null
+  }
+
+  // Declared as arrow consts (not `function`) so the narrowed bridge members
+  // stay non-optional inside their bodies.
+  const onAbort = (): void => {
+    void quotaStreamAbort(requestId)
+    dispose()
+  }
+
+  signal.addEventListener('abort', onAbort)
+
+  const dispose = (): void => {
+    if (ended) {
+      return
+    }
+
+    ended = true
+    wake?.()
+    unsubscribe()
+    signal.removeEventListener('abort', onAbort)
+  }
+
+  void quotaStream(requestId, url, payload)
+
+  const first = await take()
+
+  if (!first || first.kind === 'error') {
+    dispose()
+    throw new Error(first?.error ?? 'quota hub request failed before answering')
+  }
+
+  const status = first.status ?? 0
+  const statusText = first.statusText ?? ''
+  const ok = status >= 200 && status < 300
+
+  if (!ok) {
+    const bodyFrame = await take()
+    const text = bodyFrame?.text ?? ''
+
+    dispose()
+
+    return { ok, status, statusText, text, body: null, dispose }
+  }
+
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const frame = await take()
+
+      if (!frame || frame.kind === 'done') {
+        controller.close()
+      } else if (frame.kind === 'chunk' && frame.bytes) {
+        controller.enqueue(frame.bytes)
+      } else if (frame.kind === 'error') {
+        controller.error(new Error(frame.error ?? 'quota hub stream failed'))
+      } else {
+        controller.close()
+      }
+    },
+    cancel() {
+      void quotaStreamAbort(requestId)
+      dispose()
+    }
+  })
+
+  return { ok, status, statusText, text: '', body, dispose }
+}
+
 /**
  * Stream a desktop-quota chat completion from the aigw hub. Resolves once the
  * stream finishes (the assistant message has been finalized via the handlers).
@@ -130,22 +255,18 @@ export function buildDesktopQuotaMessages(
  * busy lock).
  */
 export async function streamDesktopQuotaChat(req: DesktopQuotaChatRequest): Promise<void> {
-  const { baseUrl, apiKey, model, messages, sessionId, signal, handlers } = req
+  const { baseUrl, model, messages, sessionId, signal, handlers } = req
 
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 
-  let response: Response
+  let response: QuotaProxiedReply
 
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({ model, messages, stream: true }),
+    response = await quotaStreamRequest(
+      url,
+      { model, messages, stream: true },
       signal
-    })
+    )
   } catch (err) {
     if (signal.aborted) {
       return
@@ -157,18 +278,18 @@ export async function streamDesktopQuotaChat(req: DesktopQuotaChatRequest): Prom
   }
 
   if (!response.ok) {
-    const body = await response.text().catch(() => '')
-
     handlers.failAssistantMessage(
       sessionId,
-      `Quota hub returned ${response.status} ${response.statusText}${body ? `: ${body.slice(0, 300)}` : ''}`
+      `Quota hub returned ${response.status} ${response.statusText}${response.text ? `: ${response.text.slice(0, 300)}` : ''}`
     )
+    response.dispose()
 
     return
   }
 
   if (!response.body) {
     handlers.failAssistantMessage(sessionId, 'Quota hub returned an empty stream.')
+    response.dispose()
 
     return
   }
@@ -249,6 +370,10 @@ export async function streamDesktopQuotaChat(req: DesktopQuotaChatRequest): Prom
     }
 
     handlers.failAssistantMessage(sessionId, friendlyAigwError(err, 'Quota hub stream failed.'))
+  } finally {
+    // The frame listener is per-request; leaving it subscribed would leak a
+    // listener (and a requestId) for every turn the app runs.
+    response.dispose()
   }
 }
 

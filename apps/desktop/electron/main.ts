@@ -8436,11 +8436,19 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
       byProvider.set(provider, models)
     }
 
+    const productKey = productQuotaApiKey()
+
+    // Registering here (not only at spawn time) means a hub the user started
+    // themselves — which this shell never spawned and so never handed a key to
+    // — still gets a key for the proxy, because we reconciled against the very
+    // same source the catalog read used.
+    rememberQuotaHubKey(PRODUCT_QUOTA_BASE, productKey)
+
     return [...byProvider.entries()].map(([id, models]) => ({
       id,
       models,
       baseUrl: PRODUCT_QUOTA_BASE,
-      apiKey: productQuotaApiKey()
+      apiKey: productKey
     }))
   } catch (error) {
     // Unreachable/timeout is not "our key was accepted": say which of the two it
@@ -8471,6 +8479,126 @@ async function broadcastProductQuotaApps(): Promise<void> {
     webContents.send('plobi:quota-apps', apps)
   }
 }
+
+// ---------------------------------------------------------------------------
+// Quota hub request proxy
+//
+// The renderer must not open the hub connection itself. A POST carrying
+// `Authorization` plus `application/json` is not a CORS-"simple" request, so
+// Chromium preflights it — and the hub serves no CORS layer at all (nothing in
+// aigw's app adds an Access-Control-Allow-Origin), so the preflight fails and
+// the turn dies as "Failed to fetch" before a single token is spent. Node has
+// no same-origin policy, so the socket belongs here; the hub key stays here too
+// instead of being handed out to every window.
+//
+// The origin allow-list is what keeps this from being a general HTTP proxy: only
+// origins this process itself published resolve to a key, and an unpublished
+// origin is refused before any request is made.
+// ---------------------------------------------------------------------------
+
+const quotaHubKeys = new Map<string, string>()
+const quotaStreams = new Map<string, AbortController>()
+
+function quotaHubOrigin(rawUrl: string): string {
+  return new URL(rawUrl).origin
+}
+
+function rememberQuotaHubKey(baseUrl: string, apiKey: string): void {
+  if (!baseUrl || !apiKey) {
+    return
+  }
+
+  try {
+    quotaHubKeys.set(quotaHubOrigin(baseUrl), apiKey)
+  } catch {
+    rememberLog(`[sidecar] not registering unparseable quota hub url ${baseUrl}`)
+  }
+}
+
+type QuotaStreamRequest = { requestId?: string; url?: string; body?: unknown }
+
+ipcMain.handle('plobi:quota-stream', async (event, req: QuotaStreamRequest) => {
+  const requestId = String(req?.requestId ?? '')
+  const target = String(req?.url ?? '')
+  const { sender } = event
+  const post = (payload: Record<string, unknown>): void => {
+    if (!sender.isDestroyed()) {
+      sender.send('plobi:quota-stream-frame', payload)
+    }
+  }
+
+  let origin = ''
+
+  try {
+    origin = quotaHubOrigin(target)
+  } catch {
+    post({ requestId, kind: 'error', error: `not a valid quota hub url: ${target}` })
+    return false
+  }
+
+  const apiKey = quotaHubKeys.get(origin)
+
+  if (!apiKey) {
+    post({ requestId, kind: 'error', error: `quota hub ${origin} was not started by this app` })
+    return false
+  }
+
+  const controller = new AbortController()
+
+  quotaStreams.set(requestId, controller)
+
+  try {
+    const response = await fetch(target, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(req?.body ?? {}),
+      signal: controller.signal
+    })
+
+    post({
+      requestId,
+      kind: 'status',
+      status: response.status,
+      statusText: response.statusText
+    })
+
+    if (!response.ok || !response.body) {
+      post({ requestId, kind: 'body', text: await response.text().catch(() => '') })
+      return true
+    }
+
+    const reader = response.body.getReader()
+
+    for (;;) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        break
+      }
+
+      if (value) {
+        post({ requestId, kind: 'chunk', bytes: new Uint8Array(value) })
+      }
+    }
+
+    post({ requestId, kind: 'done' })
+
+    return true
+  } catch (error) {
+    post({ requestId, kind: 'error', error: String(error) })
+    return false
+  } finally {
+    quotaStreams.delete(requestId)
+  }
+})
+
+ipcMain.handle('plobi:quota-stream:abort', (_event, requestId: string) => {
+  quotaStreams.get(String(requestId ?? ''))?.abort()
+  return true
+})
 
 async function ensureProductAigw(): Promise<void> {
   if (
