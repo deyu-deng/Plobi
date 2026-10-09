@@ -238,12 +238,13 @@ File counts shift constantly — don't treat the tree below as exhaustive.
 The canonical source is the filesystem. The notes call out the load-bearing
 entry points you'll actually edit.
 
+**谁依赖谁、改动影响面：先读 `scripts/repo_map.md`**——脚本生成，pre-commit 每次提交重算 Python 半并
+逐字节比对，陈旧即红（TS 半慢，要显式 `--with-ts`）。它给到「块 + 每块 fan-in/fan-out 前 5 的文件」
+为止，再往下钻交给 Serena。本文不再抄第二份结构清单：下面这棵树只留需要一句文字解释的入口点。
+
 ```
 plobi-agent/
-├── run_agent.py          # AIAgent class — core conversation loop (6.1k LOC, 2026-10-06 实测)
 ├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
-├── toolsets.py           # Toolset definitions, _PLOBI_CORE_TOOLS list
-├── cli.py                # PlobiCLI class — interactive CLI orchestrator (16.3k LOC, 2026-10-06 实测)
 ├── plobi_state.py       # SessionDB — SQLite session store (FTS5 search)
 ├── plobi_constants.py   # get_plobi_home(), display_plobi_home() — profile-aware paths
 ├── plobi_logging.py     # setup_logging() — agent.log / errors.log / gateway.log (profile-aware)
@@ -308,18 +309,6 @@ Applies to TypeScript across Plobi: desktop, TUI, website, and future TS package
 - `src/app` owns routes, pages, and page-specific components.
 - `src/store` owns shared atoms.
 - `src/lib` owns shared pure helpers.
-
-## File Dependency Chain
-
-```
-tools/registry.py  (no deps — imported by all tool files)
-       ↑
-tools/*.py  (each calls registry.register() at import time)
-       ↑
-model_tools.py  (imports tools/registry + triggers tool discovery)
-       ↑
-run_agent.py, cli.py, batch_runner.py, environments/
-```
 
 ---
 
