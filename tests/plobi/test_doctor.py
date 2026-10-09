@@ -278,3 +278,170 @@ def test_main_json(monkeypatch, capsys):
     assert D.main(["--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["checks"][0]["id"] == "x"
+
+
+# ── WP-QUOTA-KEY-LIVENESS：cred_refs 与 quota_liveness 两行的判据 ─────────────────
+# 判据形状（裁定 95 的最终形状）：**红只来自真请求回来的错误码**。下面特意有两条例外
+# 反证 —— 拿不到监听者、以及 model 不在 /models 清单里 —— 都不许判红：这台实测过
+# `/models` 会少报（glm-4-air / glm-5v-turbo 目录里没有而照样 200）。探针一律零生成。
+
+SECRET_STANDIN = "sk-should-never-appear-in-a-row"
+
+
+def _dotenv(monkeypatch, tmp_path: Path, text: str) -> Path:
+    env = tmp_path / ".env"
+    env.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(D, "_credential_env_file", lambda: env)
+    return env
+
+
+def test_credential_refs_red_when_reference_was_never_expanded(monkeypatch, tmp_path):
+    _dotenv(monkeypatch, tmp_path, f"GLM_API_KEY=op://Vault/Item/field\nOTHER={SECRET_STANDIN}\n")
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+
+    row = D.check_credential_refs()
+
+    assert row["color"] == D.RED
+    assert "GLM_API_KEY" in row["detail"], "得点名是哪个键"
+    assert "改法" in row["detail"], "红必须说清改哪一处，不许只报状态"
+    assert SECRET_STANDIN not in json.dumps(row, ensure_ascii=False), "行里不许出现任何凭据值"
+    assert "op://" in row["detail"] and "Vault" not in row["detail"], (
+        "只报形态与键名，不把引用指向的库/条目结构抄进表里"
+    )
+
+
+def test_credential_refs_green_when_the_environment_has_the_expanded_value(monkeypatch, tmp_path):
+    _dotenv(monkeypatch, tmp_path, "GLM_API_KEY=op://Vault/Item/field\n")
+    monkeypatch.setenv("GLM_API_KEY", SECRET_STANDIN)
+
+    row = D.check_credential_refs()
+
+    assert row["color"] == D.GREEN
+    assert "GLM_API_KEY" in row["detail"]
+    assert SECRET_STANDIN not in json.dumps(row, ensure_ascii=False)
+
+
+def test_credential_refs_copy_into_environ_is_not_resolution(monkeypatch, tmp_path):
+    """apply_env_files() 会把未展开的引用原样灌进 os.environ —— 那不算"有解析值"。
+
+    判反了就会把一条真故障读成绿：环境里那份和 .env 里那份是同一条引用。
+    """
+    _dotenv(monkeypatch, tmp_path, "GLM_API_KEY=op://Vault/Item/field\n")
+    monkeypatch.setenv("GLM_API_KEY", "op://Vault/Item/field")
+
+    assert D.check_credential_refs()["color"] == D.RED
+
+
+def test_credential_refs_green_when_no_reference_at_all(monkeypatch, tmp_path):
+    _dotenv(monkeypatch, tmp_path, f"GLM_API_KEY={SECRET_STANDIN}\n")
+
+    row = D.check_credential_refs()
+
+    assert row["color"] == D.GREEN
+    assert SECRET_STANDIN not in json.dumps(row, ensure_ascii=False)
+
+
+def _sources(monkeypatch, sources: dict) -> None:
+    monkeypatch.setattr("plobi.quota.config.load", lambda: {"sources": sources, "order": list(sources)})
+
+
+def test_quota_liveness_red_only_on_a_rejected_key(monkeypatch):
+    _sources(monkeypatch, {"zhipu-air": {
+        "kind": "cheap_api", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN,
+        "model": "glm-4-air", "key_env": "PLOBI_QUOTA_ZHIPU_KEY",
+    }})
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (401, None, '{"error":"invalid"}'))
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.RED
+    assert "HTTP 401" in row["detail"]
+    assert "改法" in row["detail"] and ".env" in row["detail"], "要指名 .env 优先、shell export 无效"
+    assert SECRET_STANDIN not in json.dumps(row, ensure_ascii=False)
+
+
+def test_quota_liveness_dead_model_name_is_red_because_it_came_back_as_an_error(monkeypatch):
+    """这条是"红只来自真请求回来的错误码"的正例：400 + 上游的 Unknown Model。"""
+    _sources(monkeypatch, {"zhipu-air": {
+        "kind": "cheap_api", "base_url": "https://example.invalid/v1", "api_key": SECRET_STANDIN,
+        "model": "glm-4-air",
+    }})
+    monkeypatch.setattr(
+        D, "_models_probe",
+        lambda url, key, timeout=2.5: (400, None, '{"error":{"code":"1211","message":"Unknown Model"}}'),
+    )
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.RED
+    assert "glm-4-air" in row["detail"] and "改法" in row["detail"]
+
+
+def test_quota_liveness_no_listener_is_not_red(monkeypatch):
+    _sources(monkeypatch, {"zhipu-air": {
+        "kind": "cheap_api", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN,
+        "model": "glm-4-air",
+    }})
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (None, None, ""))
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.YELLOW, "拿不到监听者证明不了任何事 —— 判红就是假红"
+
+
+def test_quota_liveness_absent_from_catalog_is_not_red(monkeypatch):
+    """`/models` 少报是这台实测过的事实：目录里没有 ≠ 不服务。"""
+    _sources(monkeypatch, {"zhipu-air": {
+        "kind": "cheap_api", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN,
+        "model": "glm-4-air",
+    }})
+    monkeypatch.setattr(
+        D, "_models_probe",
+        lambda url, key, timeout=2.5: (200, {"data": [{"id": "glm-5.3-flash"}, {"id": "glm-5"}]}, ""),
+    )
+
+    row = D.check_quota_liveness()
+
+    assert row["color"] == D.GREEN, "不许把「目录未列」升成红，也不许判成「缺这个模型」"
+    assert "活着" in row["detail"] and "服务性未验" in row["detail"]
+
+
+def test_quota_liveness_does_not_invent_evidence_for_derived_sources(monkeypatch):
+    """aigw 派生源同 base_url 同 key：探一次只等于重探网关，不许造出"证明了单个 app"的行。"""
+    _sources(monkeypatch, {
+        "zhipu-air": {"kind": "cheap_api", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN, "model": "glm-4-air"},
+        "workbuddy": {"kind": "aigw", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN, "model": "workbuddy/glm-5.3-flash"},
+    })
+    seen: list[str] = []
+
+    def fake_probe(url, key, timeout=2.5):
+        seen.append(url)
+        return 200, {"data": [{"id": "glm-4-air"}]}, ""
+
+    monkeypatch.setattr(D, "_models_probe", fake_probe)
+
+    row = D.check_quota_liveness()
+
+    assert len(seen) == 1, "派生源不该被单独探一次 —— 那是把网关那一腿重报一遍当新证据"
+    assert "workbuddy" in row["detail"] and "真流量" in row["detail"], "要照实说这一腿证不了"
+    assert row["color"] == D.GREEN
+
+
+def test_worse_aggregates_red_over_yellow_and_never_downgrades():
+    assert D._worse(D.GREEN, D.YELLOW) == D.YELLOW
+    assert D._worse(D.YELLOW, D.RED) == D.RED
+    assert D._worse(D.RED, D.YELLOW) == D.RED
+
+
+def test_every_red_from_the_two_new_rows_names_a_fix(monkeypatch, tmp_path):
+    """不变量（不是快照清单）：这两行只要判红，detail 里就得有改法。"""
+    _dotenv(monkeypatch, tmp_path, "GLM_API_KEY=op://Vault/Item/field\n")
+    monkeypatch.delenv("GLM_API_KEY", raising=False)
+    _sources(monkeypatch, {"zhipu-air": {
+        "kind": "cheap_api", "base_url": "https://example.invalid", "api_key": SECRET_STANDIN, "model": "glm-4-air",
+    }})
+    monkeypatch.setattr(D, "_models_probe", lambda url, key, timeout=2.5: (403, None, ""))
+
+    for row in (D.check_credential_refs(), D.check_quota_liveness()):
+        if row["color"] == D.RED:
+            assert "改法" in row["detail"], f"{row['id']} 判红了却没说改哪一处"
