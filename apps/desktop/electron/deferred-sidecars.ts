@@ -127,7 +127,9 @@ const DEFERRED_SUFFIX = 'deferred by R-047 (postponed, not a fault; turns green 
 const RED_SUFFIX = 'RED — real fault, not a deferral (it was attempted here and never came up healthy)'
 
 function definitionFor(id: string): DeferredSubsystemDefinition | null {
-  return DEFERRED_SUBSYSTEMS[id] ?? profileBackendDefinition(id) ?? keyReconcileDefinition(id)
+  return (
+    DEFERRED_SUBSYSTEMS[id] ?? profileBackendDefinition(id) ?? keyReconcileDefinition(id) ?? restartRowDefinition(id)
+  )
 }
 
 /**
@@ -187,6 +189,34 @@ function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null 
     port: 0
   }
 }
+
+/**
+ * The restart row (`WP-TRAY-RESTART`). The tray button must report its outcome on a
+ * surface the user already has — the boot ledger plus the tray menu are those two
+ * renderings — instead of only in `logs/desktop.log` (裁定 94 第二款: 只在日志里可见
+ * 不算可见). Like the key row it is neither a sidecar with a port nor an R-047
+ * deferral, so it is created by its first observation.
+ */
+export const TRAY_RESTART_ROW_ID = 'tray-restart'
+
+const TRAY_RESTART_ENABLE_HINT =
+  'no action needed — the restart re-launches the same tree; if it says it aborted, open Plobi again by hand'
+
+function restartRowDefinition(id: string): DeferredSubsystemDefinition | null {
+  if (id !== TRAY_RESTART_ROW_ID) {
+    return null
+  }
+
+  return {
+    enableHint: TRAY_RESTART_ENABLE_HINT,
+    id,
+    name: { en: 'App restart', zh: '应用重启' },
+    port: 0
+  }
+}
+
+/** Ids that may materialise from their first observation rather than at boot. */
+const LAZY_ROW_IDS = new Set<string>([KEY_RECONCILE_ROW_ID, TRAY_RESTART_ROW_ID])
 
 /**
  * The user-facing reason line for a row. `ready` rows must never carry the
@@ -263,7 +293,7 @@ function createDeferredSubsystemLedger({
       { observed, state }: { observed: string; state: DeferredSubsystemState }
     ): DeferredSubsystemRow | null {
       const definition = definitionFor(id)
-      const lazy = id.startsWith(PROFILE_BACKEND_ID_PREFIX) || id === KEY_RECONCILE_ROW_ID
+      const lazy = id.startsWith(PROFILE_BACKEND_ID_PREFIX) || LAZY_ROW_IDS.has(id)
 
       if (!definition || (!rows.has(id) && !lazy)) {
         return null
