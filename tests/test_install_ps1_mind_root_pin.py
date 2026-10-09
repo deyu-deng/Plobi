@@ -13,6 +13,7 @@ Windows), **and** by running the derivation for real in PowerShell — against a
 home and the in-process env scope only, never the live user registry.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -148,7 +149,8 @@ def _run_derivation(tmp_path: Path, preexisting: str | None = None) -> tuple[str
         timeout=180,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    return completed.stdout, expected
+    # stderr is folded in so a child that died quietly still shows up in the assertion.
+    return completed.stdout + completed.stderr, expected
 
 
 @pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
@@ -169,6 +171,53 @@ def test_powershell_is_idempotent_when_already_registered(tmp_path: Path):
     assert f"RESULT:{expected}" in out, out
     assert "INFO:MIND_ROOT already configured" in out, out
     assert "OK:Set MIND_ROOT=" not in out, out
+
+
+@pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
+def test_pinned_value_is_what_the_real_resolver_returns(tmp_path: Path):
+    """Hand the value PowerShell pinned to the real resolver, in a fresh process.
+
+    Two halves, both measured rather than quoted from the docs:
+      * brain directory absent  → resolve_root() is None.  It must NOT silently fall
+        back into the repo — that fallback is what 裁定 72 removed.
+      * brain directory present → resolve_root() is exactly what the installer pinned.
+    """
+    import sys
+
+    out, expected = _run_derivation(tmp_path)
+    pinned = [ln for ln in out.splitlines() if ln.startswith("RESULT:")]
+    assert pinned and pinned[0] == f"RESULT:{expected}", out
+
+    probe = tmp_path / "resolver_probe.py"
+    probe.write_text(
+        "import sys\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "from plobi.mind.paths import resolve_root\n"
+        'print("RESOLVED:" + str(resolve_root()))\n',
+        encoding="ascii",
+    )
+    repo = str(_INSTALL_PS1.parents[1])
+
+    def resolve_with(value: str) -> str:
+        env = dict(os.environ)
+        env["MIND_ROOT"] = value
+        done = subprocess.run(
+            [sys.executable, str(probe), repo],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=env,
+        )
+        lines = [ln for ln in done.stdout.splitlines() if ln.startswith("RESOLVED:")]
+        assert lines, f"resolver printed nothing: {done.stdout!r} {done.stderr[-400:]!r}"
+        return lines[0][len("RESOLVED:"):]
+
+    assert resolve_with(pinned[0][len("RESULT:"):]) == "None", (
+        "set-but-missing must resolve to None instead of falling back into the repo"
+    )
+    (tmp_path / "plobi-home" / "mind").mkdir(exist_ok=True)
+    got = resolve_with(pinned[0][len("RESULT:"):])
+    assert os.path.normcase(got) == os.path.normcase(expected), got
 
 
 @pytest.mark.skipif(_POWERSHELL is None, reason="no PowerShell on this machine")
