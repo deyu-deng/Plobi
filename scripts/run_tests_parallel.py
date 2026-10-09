@@ -66,6 +66,31 @@ for _stream in (sys.stdout, sys.stderr):
 # Default test discovery roots.
 _DEFAULT_ROOTS = ["tests"]
 
+
+def _split_path_list(raw: str) -> List[str]:
+    """Split a caller-supplied list of paths without mangling absolute ones.
+
+    ':' was hardcoded as the separator, which is right on POSIX and destructive on
+    Windows: an absolute root there contains a drive-letter colon (``D:\\repos\\tests``),
+    so ``split(':')`` handed discovery ``['D', '\\\\repos\\\\tests']``, the second piece got
+    joined onto the repo root, and the runner reported ``No test files to run`` —
+    a fake green the machine hid (WP-D-ROOT-RESIDUE, 裁定 79).
+
+    Rule: split on the platform's PATH separator; additionally split on ':' only
+    inside a *relative* fragment, so CI payloads written POSIX-style still work on
+    Windows while absolute roots survive intact.
+    """
+    parts: List[str] = []
+    for chunk in raw.split(os.pathsep):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if os.path.isabs(chunk):
+            parts.append(chunk)
+        else:
+            parts.extend(piece.strip() for piece in chunk.split(":") if piece.strip())
+    return parts
+
 # Directories to skip during discovery — these suites require real
 # external services (a model gateway, a docker daemon with a prebuilt
 # image, etc.) and are run in their own dedicated CI jobs:
@@ -617,8 +642,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--paths",
-        default=os.environ.get("PLOBI_TEST_PATHS", ":".join(_DEFAULT_ROOTS)),
-        help="Colon-separated discovery roots (default: 'tests')",
+        default=os.environ.get("PLOBI_TEST_PATHS", os.pathsep.join(_DEFAULT_ROOTS)),
+        help=(
+            "Discovery roots, joined the way this platform joins PATH entries "
+            "(';' on Windows, ':' on POSIX); ':' is still accepted for "
+            "repo-relative lists so CI payloads keep working (default: 'tests')"
+        ),
     )
     parser.add_argument(
         "--include-integration",
@@ -791,7 +820,7 @@ def main() -> int:
 
     # --files: explicit file list from the CI generate job — skip discovery.
     if args.files:
-        files = [repo_root / f for f in args.files.split(":") if f.strip()]
+        files = [repo_root / f for f in _split_path_list(args.files)]
         roots = []
     else:
         # Resolve discovery roots: positional path args override --paths if any
@@ -799,7 +828,7 @@ def main() -> int:
         if args.paths_positional:
             roots = [repo_root / p for p in args.paths_positional]
         else:
-            roots = [repo_root / p for p in args.paths.split(":") if p]
+            roots = [repo_root / p for p in _split_path_list(args.paths)]
 
         if args.include_integration:
             # Caller takes responsibility — typically used via explicit -k filter.

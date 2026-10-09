@@ -339,18 +339,27 @@ class TestHonchoUserIdScoping:
 class TestAIAgentUserIdPropagation:
     """Verify AIAgent stores user_id and passes it to memory init kwargs."""
 
-    def test_user_id_stored_on_agent(self):
+    def test_user_id_stored_on_agent(self, tmp_path):
         """AIAgent should store user_id as instance attribute."""
-        with patch.dict(os.environ, {"PLOBI_HOME": "/tmp/test_plobi"}):
+        # An isolated PLOBI_HOME, but derived — "/tmp/test_plobi" here is a POSIX
+        # literal, and on Windows Python resolves it against the current drive, so
+        # importing run_agent built a whole home skeleton at D:\tmp\test_plobi
+        # (SOUL.md + 11 dirs, found 2026-10-08). These tests only touch instance
+        # attributes; they need an isolated home, not a guessed path. 裁定 79.
+        home = tmp_path / "plobi-home"
+        home.mkdir()
+        with patch.dict(os.environ, {"PLOBI_HOME": str(home)}):
             from run_agent import AIAgent
             agent = object.__new__(AIAgent)
             # Manually set the attribute as __init__ does
             agent._user_id = "test_user_42"
             assert agent._user_id == "test_user_42"
 
-    def test_user_id_none_by_default(self):
+    def test_user_id_none_by_default(self, tmp_path):
         """AIAgent should have None user_id when not provided (CLI mode)."""
-        with patch.dict(os.environ, {"PLOBI_HOME": "/tmp/test_plobi"}):
+        home = tmp_path / "plobi-home"
+        home.mkdir()
+        with patch.dict(os.environ, {"PLOBI_HOME": str(home)}):
             from run_agent import AIAgent
             agent = object.__new__(AIAgent)
             agent._user_id = None

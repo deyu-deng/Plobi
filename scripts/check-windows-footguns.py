@@ -324,6 +324,33 @@ FOOTGUNS: list[Footgun] = [
             "    pass  # Windows asyncio doesn't support signal handlers"
         ),
     ),
+    Footgun(
+        name="POSIX-literal temp path as a fallback/default",
+        # Narrow on purpose. The broad shape (any "/tmp", "/proc", "/opt" literal)
+        # matches ~2,120 legitimate lines in this tree — reading /proc/version to
+        # detect a container, Homebrew cert paths on macOS, docker mount examples —
+        # and a permanently red rule is a dead rule (this repo's own doctrine).
+        # These two shapes are the ones that actually sprayed D:\tmp on a volume
+        # root: 9 in-tree `return "/tmp"` fallbacks, zero env-default ones.
+        pattern=re.compile(
+            r'^\s*return\s+["\'](?:/tmp|/var/tmp|/proc)["\']\s*$'
+            r'|\b(?:getenv|environ\.get)\([^)]{0,40},\s*["\'](?:/tmp|/var/tmp)["\']\s*\)'
+        ),
+        message=(
+            "On Windows a bare POSIX literal is not an absolute path: Python "
+            "resolves it against the *current drive*, so `return \"/tmp\"` hands "
+            "the caller D:\\tmp (or C:\\tmp) — a directory on a volume root — and "
+            "`os.environ.get(X, \"/tmp\")` buries the same mistake in a default. "
+            "Live on 2026-10-08: test and product code both wrote into D:\\tmp and "
+            "D:\\proc this way (裁定 79)."
+        ),
+        fix=(
+            "Derive the location instead of naming it: tempfile.gettempdir(), "
+            "plobi_constants.get_temp_root(), or tmp_path in tests. If a POSIX "
+            "default is genuinely only reachable on POSIX, gate the branch and "
+            'mark the line: return "/tmp"  # windows-footgun: ok — POSIX-only branch'
+        ),
+    ),
 ]
 
 

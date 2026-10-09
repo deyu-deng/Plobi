@@ -59,9 +59,20 @@ class TestWriteUsageFile:
         _write_usage_file(str(path), _result())
         assert json.loads(path.read_text())["total_tokens"] == 1250
 
-    def test_unwritable_path_never_raises(self):
-        # Root-owned path — the write must be swallowed, not raised.
-        _write_usage_file("/proc/definitely/not/writable/usage.json", _result())
+    def test_unwritable_path_never_raises(self, tmp_path):
+        # The parent chain must be genuinely impossible on BOTH platforms. The old
+        # literal here was "/proc/definitely/not/writable/usage.json", which on
+        # Windows is not a POSIX path at all — Python resolved it drive-relative
+        # against the cwd's volume and *created* D:\proc\...\usage.json (410 B of
+        # real billing JSON, found on 2026-10-08). So the test was asserting that a
+        # write it actually performed had "failed" — 裁定 79.
+        blocker = tmp_path / "not-a-directory"
+        blocker.write_text("", encoding="utf-8")
+        doomed = str(blocker / "nested" / "usage.json")
+
+        _write_usage_file(doomed, _result())  # must swallow, not raise
+
+        assert not (blocker / "nested").exists(), "nothing may be created on the way down"
 
     def test_result_failed_flag_carries_through(self, tmp_path):
         path = tmp_path / "usage.json"
