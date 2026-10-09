@@ -65,12 +65,24 @@ def test_nested_category_skill_add_invalidates(tmp_path):
     assert [s["name"] for s in first] == ["skill-one"]
 
     # Freeze the ROOT dir's mtime so only the category-child signature moves
-    # (guards against filesystems bumping the parent too).
+    # (guards against filesystems bumping the parent too). ns= is load-bearing:
+    # os.utime with float seconds lands ~100ns off the value it was handed on
+    # NTFS (measured here: asked ...258800, got ...258700) and that drift is
+    # itself a signature change, which would make this pass for the wrong reason.
     root = tmp_path / "skills"
+    cat = root / "cat-a"
     root_stat = root.stat()
     _write_skill(tmp_path, "cat-a", "skill-two")
     import os
-    os.utime(root, (root_stat.st_atime, root_stat.st_mtime))
+    os.utime(root, ns=(root_stat.st_atime_ns, root_stat.st_mtime_ns))
+
+    # The category's own bump is not something this machine guarantees to
+    # *record*: two writes issued into the same directory back-to-back stat back
+    # with an identical mtime here (a 50ms gap is what makes it move). The claim
+    # under test is that a change visible only on an immediate child
+    # invalidates, so drive that signal instead of betting on filesystem timing.
+    cat_stat = cat.stat()
+    os.utime(cat, ns=(cat_stat.st_atime_ns, cat_stat.st_mtime_ns + 1_000_000_000))
 
     names = sorted(s["name"] for s in st._find_all_skills())
     assert names == ["skill-one", "skill-two"], (
@@ -107,8 +119,13 @@ def test_ttl_expiry_forces_rescan(tmp_path, monkeypatch):
         "---\nname: skill-one\ndescription: new description\n---\n# skill-one\n",
         encoding="utf-8",
     )
+    # ns= again: restoring float seconds can move a directory's mtime by a
+    # 100ns tick, and under load that lands on the other side of the float
+    # quantum the signature compares — the "within TTL: stale" line below would
+    # then rescan and read the new description (this is what made the test flip
+    # between -j 1 and -j 6 rather than a real timing flake).
     for p, s in stats.items():
-        os.utime(p, (s.st_atime, s.st_mtime))
+        os.utime(p, ns=(s.st_atime_ns, s.st_mtime_ns))
 
     # Within TTL: stale (documented trade-off).
     assert st._find_all_skills()[0]["description"] == "old description"
