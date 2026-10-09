@@ -34,6 +34,7 @@ import {
   reconcileGatewayKey,
   usedGatewayKey,
 } from './aigw-key-reconcile'
+import { KEY_RECONCILE_ROW_ID, createDeferredSubsystemLedger } from './deferred-sidecars'
 
 const DECLARED = 'sk-local-dev-key'
 const OTHER = 'a-value-that-is-not-the-declared-one'
@@ -149,5 +150,53 @@ test('known divergence: the Python ladder names a different second variable', ()
   assert.ok(
     mainTs.includes('PLOBI_AIGW_API_KEY'),
     'main.ts 不再认 PLOBI_AIGW_API_KEY —— 那就与本表与 Python 名单一起统一，别只改一边',
+  )
+})
+
+// ── 裁定 94 ③ 的牙：那条红必须真能落到面上（本文件 10-09 实测补的） ────────────────
+// `reportDeferredSubsystem()` returns null and keeps nothing when the id has no
+// definition — so "main.ts calls it" proves nothing on its own. Measured on
+// 2026-10-09 while rebuilding the app for the owner: the call was live, the row
+// was silently dropped, and the tray/boot surfaces stayed exactly as green as
+// they had been. These rows pin the ledger accepts the id, and that it still
+// refuses one nobody declared.
+test('the ledger accepts the key-check id, so a red actually materialises', () => {
+  const ledger = createDeferredSubsystemLedger()
+
+  assert.ok(
+    !ledger.rows().some(row => row.id === KEY_RECONCILE_ROW_ID),
+    '这一格由第一次真实观察建行，不在启动时就挂一条 "probing"（它没人探）',
+  )
+
+  const row = ledger.record(KEY_RECONCILE_ROW_ID, {
+    observed: 'MISMATCH — sent fp 9f3a1c22, gateway declares fp 4c1e07aa',
+    state: 'red',
+  })
+
+  assert.ok(row, 'record() 丢掉了这个 id ⇒ reportDeferredSubsystem() 无处可渲染，那条红就只活在日志里')
+  assert.equal(row.id, KEY_RECONCILE_ROW_ID)
+  assert.equal(row.port, 0, '这一格没有端口；渲染侧按非正端口省略，不许印成 ":0"')
+  assert.match(row.detail, /RED — real fault/, '不许被读成 R-047 那种"故意推迟"')
+  assert.match(row.detail, /server\.api_key/, 'detail 要指名改哪一处，不然用户看到了红却不知道动哪')
+  assert.ok(!JSON.stringify(row).includes(DEV_DEFAULT_API_KEY), '面上只准出指纹与变量名，key 材料一行都不许进')
+})
+
+test('an id nobody declared is still refused — registering one must not open the door', () => {
+  const ledger = createDeferredSubsystemLedger()
+
+  assert.equal(ledger.record('totally-unregistered-subsystem', { observed: 'x', state: 'red' }), null)
+  assert.equal(ledger.rows().some(row => row.id === 'totally-unregistered-subsystem'), false)
+})
+
+test('main.ts reports under the exported id, not a hand-typed string', () => {
+  // A literal here could drift from the ledger's registered id and the red would
+  // go back to being dropped — which is precisely the failure these rows exist for.
+  assert.ok(
+    /reportDeferredSubsystem\(\s*KEY_RECONCILE_ROW_ID\b/.test(mainTs),
+    "main.ts 必须用 ./deferred-sidecars 导出的那个 id 常量上报，别再手写字符串",
+  )
+  assert.ok(
+    !/reportDeferredSubsystem\(\s*['"]aigw-key['"]\s*,/.test(mainTs),
+    'main.ts 里又写回字面量了：常量和 ledger 的登记表可能不同步',
   )
 })
