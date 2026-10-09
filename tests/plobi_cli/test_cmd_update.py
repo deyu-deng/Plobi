@@ -84,6 +84,27 @@ def _no_live_venv_holder_gate(monkeypatch):
     monkeypatch.setattr(plobi_main, "_detect_venv_python_processes", lambda *a, **k: [])
 
 
+# ---------------------------------------------------------------------------
+# Node-resolution compatibility for tests that patch shutil.which
+# ---------------------------------------------------------------------------
+# ``plobi_constants.find_node_executable`` does not go through ``shutil.which``
+# on Windows: it re-walks PATH preferring the launchable ``npm.cmd`` shim, and
+# checks for a Plobi-managed Node tree first. So patching ``shutil.which`` alone
+# leaves the update path reading whatever Node this machine really has installed
+# (and the assertion is green on POSIX, red here — 裁定 79's family). This
+# bridge keeps the node lookup on the same mocked seam the uv bridge uses.
+@pytest.fixture(autouse=True)
+def _patch_node_lookup():
+    """Make node/npm resolution follow shutil.which mocking in tests."""
+    import shutil
+
+    with patch(
+        "plobi_constants.find_node_executable",
+        side_effect=lambda command: shutil.which(command),
+    ):
+        yield
+
+
 class TestCmdUpdatePip:
     """Regression tests for pip-install update flows."""
 
@@ -289,6 +310,7 @@ class TestCmdUpdateBranchFallback:
         import subprocess as _subprocess
         build_ok = _subprocess.CompletedProcess([], 0, stdout="", stderr="")
         with patch.object(hm, "_is_termux_env", return_value=False), \
+             patch.object(hm, "_web_ui_build_needed", return_value=True), \
              patch.object(hm, "_run_with_idle_timeout", return_value=build_ok) as mock_idle:
             _cmd_update_impl(mock_args, gateway_mode=False)
 

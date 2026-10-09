@@ -42,12 +42,33 @@ from plobi.mind.project_declarations import (
 
 # 被测的生成器就是脑仓自己那一份（读它、复制进临时根；绝不改它）。
 # 脑住在哪归 resolve_root() 说：MIND_ROOT 指哪儿算哪儿，没设时回退仓内 mind/。
-_MIND_ROOT = resolve_root()
-REAL_VERIFIER = (
-    _MIND_ROOT / VERIFIER_RELATIVE
-    if _MIND_ROOT is not None
-    else Path("mind-root-not-configured") / VERIFIER_RELATIVE
-)
+#
+# 这句读取必须在 session 作用域做，不能在模块级：模块级跑在 collection 期，那时
+# autouse 的 _hermetic_environment 还没把 MIND_ROOT 指到"每测一个假库"，结果就由
+# "import 这个文件时环境里恰好有什么"决定（裁定 95 三 —— 与 skill 误拦、活进程门
+# 同族）。session 夹具先于 function 作用域的 monkeypatch 建立，所以它读到的仍是
+# 配置里那个真脑；解析不到就报得出理由的红，不许静默 skip（裁定 91）。
+
+
+@pytest.fixture(scope="session")
+def brain_generator() -> tuple[Path, Path]:
+    """真脑的根 + 它自己的 ``Loom/scripts/verifier.py``（只读，绝不改）。"""
+    root = resolve_root()
+    if root is None:
+        pytest.fail(
+            "resolve_root() 取不到脑仓根（MIND_ROOT 未设且仓内无 mind/）—— 这台没有可复用的"
+            "生成器，这条声明纪律就没人验；报红而不是 skip，免得"
+            "少跑被当成绿（裁定 91）。"
+        )
+    verifier = root / VERIFIER_RELATIVE
+    if not verifier.is_file():
+        pytest.fail(
+            f"脑仓已配置在 {root}，但那里找不到 {VERIFIER_RELATIVE} —— 脑仓的门禁脚本本身缺位，"
+            "跳过就等于让这条声明纪律没人验"
+        )
+    return root, verifier
+
+
 PLACEHOLDER_INDEX = "# Projects · 索引（自动生成，勿手改）\n\n（这一版是人手放的占位）\n"
 
 
@@ -100,26 +121,19 @@ def make_plan(directory: Path, name: str) -> None:
 
 
 def build_brain(
-    root: Path, *, disk: list[str], declared: list[str] | None = None
+    root: Path, *, disk: list[str], generator: Path, declared: list[str] | None = None
 ) -> Path:
     """一个「装了门禁」的 Mind 根：AGENTS.md §1 + Loom/scripts/verifier.py + Vault/projects。
 
     ``disk`` 是盘上真有的项目目录，``declared`` 是 §1 那行此刻写着的那些——两者故意可以不一致
     （存量漂移），用来验「对齐到盘」而不是「在旧名单上加一项」。
-    """
-    if _MIND_ROOT is None:
-        pytest.skip(
-            "这台没配脑仓（MIND_ROOT 未设且仓内无 mind/），没有可复用的生成器"
-        )
-    if not REAL_VERIFIER.is_file():
-        pytest.fail(
-            f"脑仓已配置在 {_MIND_ROOT}，但那里找不到 {VERIFIER_RELATIVE} —— "
-            "脑仓的门禁脚本本身缺位，跳过就等于让这条声明纪律没人验"
-        )
 
+    ``generator`` 是真脑自己那份门禁脚本（由 ``brain_generator`` 夹具在 session 作用域
+    解析后传进来），这里只复制、不发明第二份生成器。
+    """
     script = root / VERIFIER_RELATIVE
     script.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(REAL_VERIFIER, script)
+    shutil.copyfile(generator, script)
 
     # 门禁的其余检查项要有东西可查，否则退出码 2（脚本自身异常）掩盖我们要验的那一条。
     skills = root / "Loom" / "skills"
@@ -177,12 +191,12 @@ def isolated_registry(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def make_brain(tmp_path, monkeypatch, isolated_registry):
+def make_brain(tmp_path, monkeypatch, isolated_registry, brain_generator):
     """造假脑仓并把 MIND_ROOT 指过去，返回那份隔离名册。"""
 
     def _make(*, disk: list[str], declared: list[str] | None = None) -> Path:
         root = build_brain(
-            tmp_path / "mind", disk=disk, declared=declared
+            tmp_path / "mind", disk=disk, declared=declared, generator=brain_generator[1]
         )
         monkeypatch.setenv("MIND_ROOT", str(root))
         return root
@@ -443,11 +457,11 @@ def test_a_verifier_that_cannot_run_fails_the_creation_and_leaves_no_orphan(
 
 
 def test_a_brain_without_its_generator_refuses_to_invent_one(
-    client, tmp_path, monkeypatch, isolated_registry
+    client, tmp_path, monkeypatch, isolated_registry, brain_generator
 ):
     """带着 AGENTS.md 却没有 verifier：不许自己另写一套 INDEX 生成器，直接判创建失败。"""
     root = tmp_path / "half-brain"
-    build_brain(root, disk=["Aura"])
+    build_brain(root, disk=["Aura"], generator=brain_generator[1])
     (root / VERIFIER_RELATIVE).unlink()
     monkeypatch.setenv("MIND_ROOT", str(root))
     before = snapshot(root)
