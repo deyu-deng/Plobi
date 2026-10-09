@@ -4208,6 +4208,37 @@ def _strip_session_list_rows(sessions: List[Dict[str, Any]]) -> List[Dict[str, A
     return sessions
 
 
+def _honest_session_cost(s: Dict[str, Any]) -> None:
+    """Mark an unpriceable session's cost unknown instead of leaving it 0.0.
+
+    ``sessions.estimated_cost_usd`` is ``NOT NULL DEFAULT 0``, so a session on a
+    model with no pricing entry is stored as 0 — byte-identical to a session that
+    really cost nothing. ``cost_status`` is the only column that tells them apart,
+    so every session readout routes the amount through ``project_cost`` before it
+    leaves the process: ``None`` + ``"unknown"`` when nothing could be priced.
+    """
+    from agent.usage_pricing import (
+        PRICED_COST_STATUSES,
+        project_cost,
+    )
+
+    status = s.get("cost_status")
+    amount = s.get("estimated_cost_usd")
+    has_usage = any(
+        (s.get(key) or 0)
+        for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+    )
+    priced = status in PRICED_COST_STATUSES
+    projected, projected_status = project_cost(
+        amount,
+        1 if priced else 0,
+        1 if (not priced and has_usage) else 0,
+        1 if status == "included" else 0,
+    )
+    s["estimated_cost_usd"] = projected
+    s["cost_status"] = projected_status if not priced else status
+
+
 @app.get("/api/sessions")
 def get_sessions(
     limit: int = 20,
@@ -4295,6 +4326,7 @@ def get_sessions(
                     s["is_default_profile"] = profile_name == "default"
                 # SQLite stores the flag as 0/1; expose a real JSON boolean.
                 s["archived"] = bool(s.get("archived"))
+                _honest_session_cost(s)
             if not full:
                 _strip_session_list_rows(sessions)
             return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
@@ -4413,6 +4445,7 @@ def get_profiles_sessions(
                     and (now - s.get("last_active", s.get("started_at", 0))) < 300
                 )
                 s["archived"] = bool(s.get("archived"))
+                _honest_session_cost(s)
                 merged.append(s)
         except Exception as exc:
             errors.append({"profile": name, "error": str(exc)})
@@ -9962,6 +9995,7 @@ async def get_session_detail(session_id: str, profile: Optional[str] = None):
             raise HTTPException(status_code=404, detail="Session not found")
         if profile:
             session["profile"] = _cron_profile_home(profile)[0]
+        _honest_session_cost(session)
         return session
     finally:
         db.close()
@@ -14176,6 +14210,60 @@ async def update_config_raw(body: RawConfigUpdate, profile: Optional[str] = None
 # ---------------------------------------------------------------------------
 
 
+def _cost_partition_sql() -> str:
+    """SELECT fragments splitting a grouped cost into priced vs unpriced rows.
+
+    ``sessions.cost_status`` is the only place that distinguishes "this model
+    has a price and the spend came to $0" from "this model has no price" — the
+    amount column stores 0 for both. Built from ``PRICED_COST_STATUSES`` so the
+    SQL cannot drift from the Python-side status set; the values interpolated
+    here are our own literals, never caller input.
+
+    A row with no price *and* no consumed tokens is neither: nothing was
+    billable, so 0 is its real cost. That guard keeps an idle session from
+    dragging a whole window to "unknown".
+    """
+    from agent.usage_pricing import PRICED_COST_STATUSES
+
+    listed = ", ".join(f"'{status}'" for status in PRICED_COST_STATUSES)
+    consumed = (
+        "COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)"
+        " + COALESCE(cache_read_tokens, 0) + COALESCE(cache_write_tokens, 0)"
+    )
+    return (
+        f"SUM(CASE WHEN cost_status IN ({listed}) THEN 1 ELSE 0 END) "
+        "as priced_sessions, "
+        "SUM(CASE WHEN cost_status = 'included' THEN 1 ELSE 0 END) "
+        "as included_sessions, "
+        f"SUM(CASE WHEN (cost_status IS NULL OR cost_status NOT IN ({listed})) "
+        f"AND ({consumed}) > 0 THEN 1 ELSE 0 END) "
+        "as unpriced_sessions"
+    )
+
+
+def _project_row_cost(
+    row: Dict[str, Any],
+    cost_key: str,
+) -> Tuple[Optional[float], str]:
+    """Replace a grouped cost number with ``(amount | None, cost_status)``.
+
+    Unknown is reported as unknown instead of as $0.00 — a caller that only
+    reads the amount must not be able to mistake "we have no price for this
+    model" for "this chat was free".
+    """
+    from agent.usage_pricing import project_cost
+
+    amount, status = project_cost(
+        row.get(cost_key),
+        int(row.get("priced_sessions") or 0),
+        int(row.get("unpriced_sessions") or 0),
+        int(row.get("included_sessions") or 0),
+    )
+    for counter in ("priced_sessions", "included_sessions", "unpriced_sessions"):
+        row.pop(counter, None)
+    return amount, status
+
+
 @app.get("/api/analytics/usage")
 async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
     from agent.insights import InsightsEngine
@@ -14183,7 +14271,8 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
     db = _open_session_db_for_profile(profile)
     try:
         cutoff = time.time() - (days * 86400)
-        cur = db._conn.execute("""
+        cost_cols = _cost_partition_sql()
+        cur = db._conn.execute(f"""
             SELECT date(started_at, 'unixepoch') as day,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
@@ -14192,25 +14281,31 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
                    COALESCE(SUM(estimated_cost_usd), 0) as estimated_cost,
                    COALESCE(SUM(actual_cost_usd), 0) as actual_cost,
                    COUNT(*) as sessions,
-                   SUM(COALESCE(api_call_count, 0)) as api_calls
+                   SUM(COALESCE(api_call_count, 0)) as api_calls,
+                   {cost_cols}
             FROM sessions WHERE started_at > ?
             GROUP BY day ORDER BY day
         """, (cutoff,))
         daily = [dict(r) for r in cur.fetchall()]
+        for row in daily:
+            row["estimated_cost"], row["cost_status"] = _project_row_cost(row, "estimated_cost")
 
-        cur2 = db._conn.execute("""
+        cur2 = db._conn.execute(f"""
             SELECT model,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
                    COALESCE(SUM(estimated_cost_usd), 0) as estimated_cost,
                    COUNT(*) as sessions,
-                   SUM(COALESCE(api_call_count, 0)) as api_calls
+                   SUM(COALESCE(api_call_count, 0)) as api_calls,
+                   {cost_cols}
             FROM sessions WHERE started_at > ? AND model IS NOT NULL
             GROUP BY model ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
         """, (cutoff,))
         by_model = [dict(r) for r in cur2.fetchall()]
+        for row in by_model:
+            row["estimated_cost"], row["cost_status"] = _project_row_cost(row, "estimated_cost")
 
-        cur3 = db._conn.execute("""
+        cur3 = db._conn.execute(f"""
             SELECT SUM(input_tokens) as total_input,
                    SUM(output_tokens) as total_output,
                    SUM(cache_read_tokens) as total_cache_read,
@@ -14218,10 +14313,12 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
                    COALESCE(SUM(estimated_cost_usd), 0) as total_estimated_cost,
                    COALESCE(SUM(actual_cost_usd), 0) as total_actual_cost,
                    COUNT(*) as total_sessions,
-                   SUM(COALESCE(api_call_count, 0)) as total_api_calls
+                   SUM(COALESCE(api_call_count, 0)) as total_api_calls,
+                   {cost_cols}
             FROM sessions WHERE started_at > ?
         """, (cutoff,))
         totals = dict(cur3.fetchone())
+        totals["total_estimated_cost"], totals["cost_status"] = _project_row_cost(totals, "total_estimated_cost")
         insights_report = InsightsEngine(db).generate(days=days)
         skills = insights_report.get("skills", {
             "summary": {
@@ -14257,8 +14354,9 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
     db = _open_session_db_for_profile(profile)
     try:
         cutoff = time.time() - (days * 86400)
+        cost_cols = _cost_partition_sql()
 
-        cur = db._conn.execute("""
+        cur = db._conn.execute(f"""
             SELECT model,
                    billing_provider,
                    SUM(input_tokens) as input_tokens,
@@ -14271,7 +14369,8 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                    SUM(COALESCE(api_call_count, 0)) as api_calls,
                    SUM(tool_call_count) as tool_calls,
                    MAX(started_at) as last_used_at,
-                   AVG(input_tokens + output_tokens) as avg_tokens_per_session
+                   AVG(input_tokens + output_tokens) as avg_tokens_per_session,
+                   {cost_cols}
             FROM sessions WHERE started_at > ? AND model IS NOT NULL AND model != ''
             GROUP BY model, billing_provider
             ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
@@ -14312,6 +14411,11 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                     if has_usage:
                         continue
                     target["sessions"] = (target.get("sessions") or 0) + (row.get("sessions") or 0)
+                    # Carry the cost partition along with the session count, or
+                    # the folded-in rows would be counted as unpriced spend the
+                    # target row never had.
+                    for key in ("priced_sessions", "included_sessions", "unpriced_sessions"):
+                        target[key] = (target.get(key) or 0) + (row.get(key) or 0)
                     target["last_used_at"] = max(target.get("last_used_at") or 0, row.get("last_used_at") or 0)
                     total_tokens = (target.get("input_tokens") or 0) + (target.get("output_tokens") or 0)
                     sessions = target.get("sessions") or 0
@@ -14362,6 +14466,8 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
             except Exception:
                 pass
 
+            estimated_cost, cost_status = _project_row_cost(row, "estimated_cost")
+
             models.append({
                 "model": model_name,
                 "provider": provider,
@@ -14369,7 +14475,8 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                 "output_tokens": row["output_tokens"],
                 "cache_read_tokens": row["cache_read_tokens"],
                 "reasoning_tokens": row["reasoning_tokens"],
-                "estimated_cost": row["estimated_cost"],
+                "estimated_cost": estimated_cost,
+                "cost_status": cost_status,
                 "actual_cost": row["actual_cost"],
                 "sessions": row["sessions"],
                 "api_calls": row["api_calls"],
@@ -14379,7 +14486,7 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                 "capabilities": caps,
             })
 
-        totals_cur = db._conn.execute("""
+        totals_cur = db._conn.execute(f"""
             SELECT COUNT(DISTINCT model) as distinct_models,
                    SUM(input_tokens) as total_input,
                    SUM(output_tokens) as total_output,
@@ -14388,10 +14495,12 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                    COALESCE(SUM(estimated_cost_usd), 0) as total_estimated_cost,
                    COALESCE(SUM(actual_cost_usd), 0) as total_actual_cost,
                    COUNT(*) as total_sessions,
-                   SUM(COALESCE(api_call_count, 0)) as total_api_calls
+                   SUM(COALESCE(api_call_count, 0)) as total_api_calls,
+                   {cost_cols}
             FROM sessions WHERE started_at > ? AND model IS NOT NULL AND model != ''
         """, (cutoff,))
         totals = dict(totals_cur.fetchone())
+        totals["total_estimated_cost"], totals["cost_status"] = _project_row_cost(totals, "total_estimated_cost")
 
         return {
             "models": models,

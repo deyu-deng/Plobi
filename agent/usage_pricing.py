@@ -26,6 +26,19 @@ CostSource = Literal[
     "none",
 ]
 
+# Cost statuses that mean "a number exists for this spend". Anything else —
+# ``unknown``, NULL, or a status a future version adds — means the spend was
+# never priced. Readouts must key off this set rather than off the number,
+# because an unpriced session stores ``estimated_cost_usd = 0`` (the column is
+# ``NOT NULL DEFAULT 0``), so 0.0 alone cannot tell "this chat was free" apart
+# from "we have no price for this model".
+PRICED_COST_STATUSES = ("actual", "estimated", "included")
+
+# Readout-only status: the group is a mix of priced and unpriced spend.
+COST_STATUS_PARTIAL = "partial"
+# Readout-only status: nothing in the group was billable, so 0.0 is a total.
+COST_STATUS_NO_USAGE = "none"
+
 
 @dataclass(frozen=True)
 class CanonicalUsage:
@@ -609,6 +622,34 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
         source="official_docs_snapshot",
         pricing_version="minimax-pricing-2026-04",
     ),
+    # ── Z.ai GLM ─────────────────────────────────────────────────────────
+    # GLM-5.3-Flash. Rates read off the official table on 2026-10-07, whose
+    # header is "| Model | Input | Cached Input | Cached Input Storage | Output |":
+    #   https://docs.z.ai/guides/overview/pricing — "| GLM-5.3-Flash | $0.15 |
+    #   $0.03 | Limited-time Free | $0.50 |" per 1M tokens. "Cached Input" is the
+    #   cache-read rate and the storage column is flagged free, so cache writes
+    #   are an explicit 0 rather than unset: leaving them None would void every
+    #   session that reports a cache-write count, and a lapsed promo is a one-line
+    #   edit instead of a silent regression.
+    # Cache reads are priced separately on purpose — the session that motivated
+    # this row read 634k cached tokens against 193k fresh input, so a table that
+    # priced only input/output would miss most of the prompt.
+    # Only the route actually in the usage table is priced. The same page lists
+    # glm-5.3 / glm-5.2 / glm-5 / glm-4.6 / glm-4.5-air and the FlashX variants;
+    # they stay unpriced until a session records them, so an absent price shows
+    # up as "unknown" rather than as a guessed number.
+    (
+        "zai",
+        "glm-5.3-flash",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.15"),
+        output_cost_per_million=Decimal("0.50"),
+        cache_read_cost_per_million=Decimal("0.03"),
+        cache_write_cost_per_million=_ZERO,
+        source="official_docs_snapshot",
+        source_url="https://docs.z.ai/guides/overview/pricing",
+        pricing_version="zai-glm-5.3-flash-2026-10",
+    ),
 }
 
 # GPT-5.6 "-pro" high-effort variants bill at the same per-token rates as
@@ -1002,6 +1043,42 @@ def has_known_pricing(
         return True
     entry = get_pricing_entry(model_name, provider=provider, base_url=base_url, api_key=api_key)
     return entry is not None
+
+
+def project_cost(
+    total_usd: Any,
+    priced_sessions: int,
+    unpriced_sessions: int,
+    included_sessions: int = 0,
+) -> tuple[Optional[float], str]:
+    """Fold grouped cost counters into ``(amount | None, cost_status)``.
+
+    The single rule this encodes: **an absence of pricing is not a zero cost.**
+    ``estimated_cost_usd`` defaults to 0 in storage, so a naive ``SUM`` reports
+    an unpriced model as "$0.00" and the user reads that as "free". Only a group
+    whose every member was priced may be reported as a number; a group with
+    nothing priced but real spend reports the money it does know about as
+    ``partial`` and otherwise reports ``None`` + ``unknown``.
+
+    Returns ``(0.0, "none")`` when the group holds no priced and no unpriced
+    member at all — an empty window really does cost nothing, which is a
+    different claim from "we cannot price this".
+    """
+    amount = float(total_usd or 0.0)
+    priced = int(priced_sessions or 0)
+    unpriced = int(unpriced_sessions or 0)
+
+    if not priced and not unpriced:
+        return 0.0, COST_STATUS_NO_USAGE
+    if unpriced and not priced:
+        # Never hide money that a mixed route (e.g. MoA advisor spend priced at
+        # the advisor's model) already folded into the group.
+        return (amount, COST_STATUS_PARTIAL) if amount > 0 else (None, "unknown")
+    if unpriced:
+        return amount, COST_STATUS_PARTIAL
+    if priced and int(included_sessions or 0) == priced:
+        return amount, "included"
+    return amount, "estimated"
 
 
 

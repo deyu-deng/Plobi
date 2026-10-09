@@ -110,3 +110,70 @@ def test_final_response_closes_tool_tail_before_persistence(monkeypatch):
     assert result["messages"][-1] == {"role": "assistant", "content": "Done."}
     assert agent.persisted_messages is not None
     assert agent.persisted_messages[-1] == {"role": "assistant", "content": "Done."}
+
+
+def test_turn_result_carries_cost_alongside_its_status(monkeypatch):
+    """"What did this turn cost" must be readable together with whether we know.
+
+    ``session_estimated_cost_usd`` starts at 0 and only ever accumulates priced
+    amounts, so on an unpriced route the amount alone is a placeholder that reads
+    as "free". The amount and ``cost_status`` have to leave on the same readout
+    or a consumer cannot tell unknown from zero.
+    """
+    monkeypatch.setattr("plobi_cli.plugins.invoke_hook", lambda *_a, **_kw: [])
+    agent = FakeAgent()
+    agent.session_input_tokens = 193_009
+    agent.session_output_tokens = 25_237
+    agent.session_cache_read_tokens = 634_496
+
+    result = finalize_turn(
+        agent,
+        final_response="Done.",
+        api_call_count=21,
+        interrupted=False,
+        failed=False,
+        messages=[{"role": "user", "content": "do it"}],
+        conversation_history=[],
+        effective_task_id="task",
+        turn_id="turn",
+        user_message="do it",
+        original_user_message="do it",
+        _should_review_memory=False,
+        _turn_exit_reason="normal",
+    )
+
+    assert result["input_tokens"] == 193_009
+    assert result["output_tokens"] == 25_237
+    assert result["cache_read_tokens"] == 634_496
+    assert result["cost_status"] == agent.session_cost_status
+    assert result["cost_source"] == agent.session_cost_source
+    assert "estimated_cost_usd" in result
+
+
+def test_priced_turn_result_reports_a_real_amount_and_its_source(monkeypatch):
+    """Same readout, priced route: a positive amount plus where it came from."""
+    monkeypatch.setattr("plobi_cli.plugins.invoke_hook", lambda *_a, **_kw: [])
+    agent = FakeAgent()
+    agent.session_estimated_cost_usd = 0.0606
+    agent.session_cost_status = "estimated"
+    agent.session_cost_source = "official_docs_snapshot"
+
+    result = finalize_turn(
+        agent,
+        final_response="Done.",
+        api_call_count=1,
+        interrupted=False,
+        failed=False,
+        messages=[{"role": "user", "content": "do it"}],
+        conversation_history=[],
+        effective_task_id="task",
+        turn_id="turn",
+        user_message="do it",
+        original_user_message="do it",
+        _should_review_memory=False,
+        _turn_exit_reason="normal",
+    )
+
+    assert result["estimated_cost_usd"] > 0
+    assert result["cost_status"] == "estimated"
+    assert result["cost_source"] == "official_docs_snapshot"
