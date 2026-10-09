@@ -121,23 +121,58 @@ def map_permission_outcome(options: list[dict[str, Any]], decision: str) -> dict
     return {"outcome": {"outcome": "cancelled"}}
 
 
-def ask_approval(callback: Optional[Callable[..., str]], tool_name: str, arguments: dict) -> str:
-    """Consult the injected Plobi approver. Fail-closed when absent or it errors.
+def _tls_approval_callback():
+    """This thread's CLI approver, or ``None``. Lazy so an approver installed
+    after construction is still honoured."""
+    try:
+        from tools.terminal_tool import _get_approval_callback
 
-    callback matches Plobi's prompt_dangerous_approval shape:
-    (command, description, *, allow_permanent=True) -> once|session|always|deny
+        return _get_approval_callback()
+    except Exception:  # noqa: BLE001 - no approver reachable on this thread
+        return None
+
+
+def ask_approval(callback: Optional[Callable[..., str]], tool_name: str, arguments: dict) -> str:
+    """Escalate one delegated tool call to Plobi's human-approval gate.
+
+    The gate is :func:`tools.approval.request_tool_approval` — the same one a
+    ``pre_tool_call`` plugin hook uses — because it already knows how to reach a
+    human in *this* host: ``prompt_dangerous_approval`` when a CLI owns the
+    terminal, the per-session queue when a gateway/desktop session does, and
+    fail-closed on timeout. This layer therefore must NOT decide which channel
+    to use: an approver that is absent from ``tools.terminal_tool``'s thread-local
+    is the normal state in gateway mode, not a reason to refuse.
+
+    Resolution order for the CLI approver: the one handed to the client at
+    construction, else this thread's thread-local, else let the gate route it.
     """
-    if callback is None:
+    approver = callback if callback is not None else _tls_approval_callback()
+    name = tool_name or "delegated_tool"
+    reason = (
+        "外部代理（CodeBuddy）请求调用 Plobi 工具 "
+        + name
+        + "："
+        + json.dumps(arguments, ensure_ascii=False)[:200]
+    )
+    try:
+        from tools.approval import request_tool_approval
+
+        verdict = request_tool_approval(
+            name, reason, rule_key="codebuddy:" + name, approval_callback=approver
+        )
+    except Exception as exc:  # noqa: BLE001 - fail closed if the gate is unreachable
         logger.warning(
-            "codebuddy-acp: permission request but no approver in-process -> deny "
-            "(install an approval callback to allow delegated tools)"
+            "codebuddy-acp: approval gate unavailable (%s) -> deny (tool=%s)", exc, name
         )
         return "deny"
-    try:
-        return callback(tool_name, json.dumps(arguments, ensure_ascii=False)[:200]) or "deny"
-    except Exception:  # noqa: BLE001 - fail-closed on any approver error
-        logger.exception("codebuddy-acp: approval callback raised; denying")
-        return "deny"
+    approved = isinstance(verdict, dict) and bool(verdict.get("approved"))
+    if not approved:
+        logger.info(
+            "codebuddy-acp: approver denied the delegated tool %s (%s)",
+            name,
+            str((verdict or {}).get("message") if isinstance(verdict, dict) else verdict)[:120],
+        )
+    return "once" if approved else "deny"
 
 
 def flatten_messages(messages: list[dict[str, Any]]) -> str:
