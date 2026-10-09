@@ -40,6 +40,7 @@ import {
   type AgentCategory,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
+  createAgentErrorMessage,
   isCreateAgentCategoryBlocked,
   isCreateAgentSubmitDisabled
 } from './create-agent'
@@ -879,7 +880,9 @@ export function ChatSidebar({
       setCreateAgentPath('')
       navigate(agentRoute(body.id))
     } catch (cause) {
-      setCreateAgentError(cause instanceof Error ? cause.message : String(cause))
+      // 后端拒绝创建（重名 / 撞了 Mind 里别人的树）时这句话必须出现在弹窗里，
+      // 不许静默（R-013 扩写 2026-10-06）。判据在后端，这里只摊平显示。
+      setCreateAgentError(createAgentErrorMessage(cause))
     } finally {
       setCreateAgentBusy(false)
     }

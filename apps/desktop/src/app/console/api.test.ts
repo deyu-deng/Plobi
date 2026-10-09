@@ -123,6 +123,23 @@ describe('createAgent (WP-L2-FE)', () => {
       }
     }
   })
+
+  // R-013 扩写（2026-10-06）：重名在这道门就被拒，回包是 `{ ok: false, error }` 且
+  // **没有 data 这一格**。旧判据要 ok + data 同时在场才认信封，于是拒绝被原样当成
+  // Agent 返回，弹窗什么都不显示——「静默」就是这条要钉死的。
+  it('rejects with the backend sentence when the refusal envelope has no data', async () => {
+    const restore = stubPlobiDesktop(
+      vi.fn().mockResolvedValue({ ok: false, error: '「nymo」和已有的「Nymo」只差大小写' })
+    )
+
+    try {
+      await expect(createAgent({ id: 'nymo', name: 'nymo' })).rejects.toThrow(
+        '「nymo」和已有的「Nymo」只差大小写'
+      )
+    } finally {
+      restore()
+    }
+  })
 })
 
 describe('S2 mock endpoints (U4)', () => {

@@ -6,6 +6,7 @@ import {
   agentIdFromName,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
+  createAgentErrorMessage,
   isCreateAgentCategoryBlocked,
   isCreateAgentSubmitDisabled,
   type AgentCategory
@@ -118,5 +119,32 @@ describe('isCreateAgentSubmitDisabled (WP-STUDIO, 裁定 36.1)', () => {
   it('always keeps submit disabled for events and for an empty name', () => {
     expect(isCreateAgentSubmitDisabled('Whatever', 'events', 'D:/x')).toBe(true)
     expect(isCreateAgentSubmitDisabled('   ', 'butler')).toBe(true)
+  })
+})
+
+// R-013 扩写（2026-10-06）：重名在这道门就被后端拒，弹窗必须把后端那句话显示出来。
+// 判据在 `plobi.agents.registry.registration_blocker`，前端不许另算一套——这里只钉
+// 「摊平显示」这一件事：两种到达形态都得落到后端写的原话上，且永不返回空串。
+describe('createAgentErrorMessage', () => {
+  const refusal = '「nymo」和已有的「Nymo」只差大小写——要么直接用「Nymo」那条'
+
+  it('unwraps the envelope the desktop main bridge prefixes with the status code', () => {
+    // electron/main.ts 的 fetchJson 对非 2xx 抛的是 `400: {"ok":false,"error":"…"}`。
+    const raw = `409: ${JSON.stringify({ error: refusal, ok: false })}`
+
+    expect(createAgentErrorMessage(new Error(raw))).toBe(refusal)
+  })
+
+  it('keeps the sentence when the bridge already unwrapped it', () => {
+    expect(createAgentErrorMessage(new Error(refusal))).toBe(refusal)
+  })
+
+  it('leaves a non-JSON message alone instead of inventing one', () => {
+    expect(createAgentErrorMessage('backend offline')).toBe('backend offline')
+  })
+
+  it('never returns an empty string — empty means the dialog shows nothing', () => {
+    expect(createAgentErrorMessage(new Error('   '))).not.toBe('')
+    expect(createAgentErrorMessage(null)).not.toBe('')
   })
 })
