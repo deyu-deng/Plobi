@@ -175,7 +175,7 @@ export const KEY_RECONCILE_ROW_ID = 'aigw-key'
 
 /** Same shape as the quota hub hint: the app owns the lifecycle, nothing to run. */
 const KEY_RECONCILE_ENABLE_HINT =
-  'make the two sides agree — point aigw/config.yaml `server.api_key` at the same `${VAR:-…}` reference the shell exports, or set AIGW_API_KEY / PLOBI_AIGW_API_KEY to the value the gateway declares'
+  'make the two sides agree — point the gateway config.yaml `server.api_key` at the same `${VAR:-…}` reference the shell exports, or set the value the gateway declares to the key the shell already uses'
 
 function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null {
   if (id !== KEY_RECONCILE_ROW_ID) {
