@@ -68,7 +68,7 @@ def test_config_owns_no_desktop_quota_sources():
 def test_build_sources_dispatches_by_kind():
     cfg = {
         "sources": {
-            "zhipu-air": {"kind": "cheap_api", "model": "glm-4-air", "base_url": "u", "api_key": "k"},
+            "zhipu-air": {"kind": "cheap_api", "model": "glm-5.3-flash", "base_url": "u", "api_key": "k"},
             "antigravity": {"kind": "aigw", "model": "antigravity/gemini-3-pro", "base_url": "u", "api_key": "k"},
             "workbuddy": {"kind": "aigw", "model": "workbuddy/deepseek-chat", "base_url": "u", "api_key": "k"},
         }
@@ -295,7 +295,7 @@ def test_mark_failed_triggers_failover():
 
 def test_wire_circuit_cheap_api_balance_trips():
     src = CheapApiSource(
-        "zhipu-air", model="glm-4-air", base_url="http://x/v1", api_key="k",
+        "zhipu-air", model="glm-5.3-flash", base_url="http://x/v1", api_key="k",
         balance_fn=lambda s: 0.0,  # exhausted
     )
     circuit = QuotaCircuit()
@@ -320,7 +320,7 @@ def test_wire_circuit_aigw_unknown_allows():
 
 def test_cheap_api_remaining_usd_reflects_balance():
     src = CheapApiSource(
-        "zhipu-air", model="glm-4-air", base_url="http://x/v1", api_key="k",
+        "zhipu-air", model="glm-5.3-flash", base_url="http://x/v1", api_key="k",
         balance_fn=lambda s: 12.5,
     )
     src.probe()
