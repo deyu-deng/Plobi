@@ -1,4 +1,4 @@
-import type { AgentCreateRequest } from '../../console/types'
+import type { AgentCreateRequest, ApiEnvelope } from '../../console/types'
 import { slug } from '@/lib/sanitize'
 
 /**
@@ -66,7 +66,6 @@ export function buildCreateAgentBody(
 export function categoryNeedsProjectPath(category: AgentCategory): boolean {
   return category === 'projects' || category === 'research'
 }
-
 /**
  * The `events` category cannot be created from this dialog yet — it needs a
  * `source_event_id` from the schedule. The dialog disables submit and shows a
@@ -95,4 +94,35 @@ export function isCreateAgentSubmitDisabled(
   }
 
   return categoryNeedsProjectPath(category) && !projectPath?.trim()
+}
+
+/**
+ * 拒绝创建时要显示的那句话（R-013 扩写，2026-10-06）。
+ *
+ * 判据在后端（`plobi.agents.registry.registration_blocker`），这里不许再算一套重名规则；
+ * 本函数只做**摊平显示**这一件事，因为同一条拒绝有两种到达形态：
+ * - 桥直接 fulfilled 回 `{ ok: false, error }` → `unwrapEnvelope` 抛出，message 已是那句话；
+ * - 桌面主进程对非 2xx 拼的是 `400: {"ok":false,"error":"…"}`（`electron/main.ts` 的
+ *   `fetchJson`）→ 能行动的那句埋在 JSON 里，原样显示等于甩给用户一串状态码 + JSON。
+ * 两种都要落到后端写的那句话上，且**永不返回空串**——空串会让弹窗什么都不显示，
+ * 正是用户报的「静默」。
+ */
+export function createAgentErrorMessage(cause: unknown): string {
+  const raw = (cause instanceof Error ? cause.message : String(cause ?? '')).trim()
+
+  const embedded = /\{[\s\S]*\}/.exec(raw)
+
+  if (embedded) {
+    try {
+      const envelope = JSON.parse(embedded[0]) as ApiEnvelope<unknown>
+
+      if (envelope.ok === false && typeof envelope.error === 'string' && envelope.error.trim()) {
+        return envelope.error.trim()
+      }
+    } catch {
+      // 不是 JSON 就照原文显示，不替后端编一句解释。
+    }
+  }
+
+  return raw || 'console API request failed'
 }

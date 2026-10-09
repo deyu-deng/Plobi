@@ -74,10 +74,17 @@ function settle<T>(value: T): Promise<T> {
 // --- §5 endpoints ----------------------------------------------------------
 
 function unwrapEnvelope<T>(payload: unknown): T {
-  if (payload && typeof payload === 'object' && 'ok' in payload && 'data' in payload) {
+  if (payload && typeof payload === 'object' && 'ok' in payload) {
     const envelope = payload as { ok: boolean; data?: T; error?: string }
 
-    if (!envelope.ok || envelope.data === undefined) {
+    // R-013 扩写（2026-10-06）：拒绝创建的回包是 `{ ok: false, error }`——**没有**
+    // `data` 这一格。旧判据要求 `ok` 和 `data` 同时在场才算信封，于是它原样被当成
+    // Agent 返回，弹窗拿到一个没有 id 的对象，重名被静默吞掉。`ok: false` 先拒。
+    if (!envelope.ok) {
+      throw new Error(envelope.error || 'console API request failed')
+    }
+
+    if (!('data' in envelope) || envelope.data === undefined) {
       throw new Error(envelope.error || 'console API request failed')
     }
 
