@@ -24,13 +24,44 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from agent.usage_pricing import (
+    PRICED_COST_STATUSES,
     CanonicalUsage,
     estimate_usage_cost,
     format_duration_compact,
     has_known_pricing,
+    project_cost,
 )
 
 
+
+# Token buckets that make a session billable. A session that consumed nothing
+# has a known cost of $0 whether or not we hold a price for its model — that is
+# a different claim from "this model has no price, so we cannot name the spend".
+_USAGE_TOKEN_KEYS = (
+    "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
+)
+
+
+def _has_billable_usage(row: Dict[str, Any]) -> bool:
+    return any((row.get(key) or 0) for key in _USAGE_TOKEN_KEYS)
+
+
+def _is_recorded_measurement(stored: Any, cost_status: Any) -> bool:
+    """True when a stored amount is a measurement, not the unpriced placeholder.
+
+    ``estimated_cost_usd`` carries 0 for every route that had no pricing entry
+    when the call happened. A positive amount is money computed at call time and
+    a priced status with a 0 is a real $0 (a subscription-included route), so
+    both are kept; anything else has to be re-priced, which is what makes
+    history written before a model had a price answerable once one lands.
+    """
+    return (stored or 0.0) > 0 or (cost_status or "") in PRICED_COST_STATUSES
+
+
+def _recorded_cost(row: Dict[str, Any]) -> Optional[float]:
+    """The cost a usage row really recorded, or ``None`` to price it now."""
+    stored = row.get("estimated_cost_usd")
+    return stored if _is_recorded_measurement(stored, row.get("cost_status")) else None
 
 
 def _estimate_cost(
@@ -42,8 +73,12 @@ def _estimate_cost(
     cache_write_tokens: int = 0,
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
-) -> tuple[float, str]:
-    """Estimate the USD cost for a session row or a model/token tuple."""
+) -> tuple[Optional[float], str]:
+    """Estimate the USD cost for a session row or a model/token tuple.
+
+    Returns ``None`` — never ``0.0`` — when the route has no pricing entry, so
+    the caller can render "unknown" instead of silently reporting free.
+    """
     if isinstance(session_or_model, dict):
         session = session_or_model
         model = session.get("model") or ""
@@ -69,7 +104,9 @@ def _estimate_cost(
         provider=provider,
         base_url=base_url,
     )
-    return float(result.amount_usd or 0.0), result.status
+    if result.amount_usd is None:
+        return None, result.status
+    return float(result.amount_usd), result.status
 
 
 
@@ -415,17 +452,27 @@ class InsightsEngine:
         total_tool_calls = sum(s.get("tool_call_count") or 0 for s in sessions)
         total_messages = sum(s.get("message_count") or 0 for s in sessions)
 
-        # Cost estimation (weighted by model)
+        # Cost estimation (weighted by model). ``total_cost`` only ever sums
+        # amounts we could actually price: an unpriced route contributes no
+        # number, so a window of unpriced sessions projects to None + "unknown"
+        # instead of a convincing $0.00.
         total_cost = 0.0
         actual_cost = 0.0
         models_with_pricing = set()
         models_without_pricing = set()
         unknown_cost_sessions = 0
         included_cost_sessions = 0
+        priced_sessions = 0
+        unpriced_sessions = 0
         for s in sessions:
             model = s.get("model") or ""
             estimated, status = _estimate_cost(s)
-            total_cost += estimated
+            if estimated is None:
+                if _has_billable_usage(s):
+                    unpriced_sessions += 1
+            else:
+                total_cost += estimated
+                priced_sessions += 1
             actual_cost += s.get("actual_cost_usd") or 0.0
             display = model.split("/")[-1] if "/" in model else (model or "unknown")
             if status == "included":
@@ -437,8 +484,21 @@ class InsightsEngine:
             else:
                 models_without_pricing.add(display)
 
+        estimated_cost, cost_status = project_cost(
+            total_cost, priced_sessions, unpriced_sessions, included_cost_sessions,
+        )
         if models:
-            total_cost = sum(float(m.get("cost") or 0.0) for m in models)
+            # Per-model attribution is the authoritative split (it follows a
+            # mid-session /model switch), so the overview must report the same
+            # priced/unpriced partition the breakdown produced.
+            priced_models = [m for m in models if m.get("cost") is not None]
+            unpriced_models = [m for m in models if m.get("cost") is None]
+            estimated_cost, cost_status = project_cost(
+                sum(float(m.get("cost") or 0.0) for m in models),
+                len(priced_models),
+                len(unpriced_models),
+                sum(1 for m in priced_models if m.get("cost_status") == "included"),
+            )
 
         # Session duration stats (guard against negative durations from clock drift)
         durations = []
@@ -465,7 +525,8 @@ class InsightsEngine:
             "total_cache_read_tokens": total_cache_read,
             "total_cache_write_tokens": total_cache_write,
             "total_tokens": total_tokens,
-            "estimated_cost": total_cost,
+            "estimated_cost": estimated_cost,
+            "cost_status": cost_status,
             "actual_cost": actual_cost,
             "total_hours": total_hours,
             "avg_session_duration": avg_duration,
@@ -541,6 +602,9 @@ class InsightsEngine:
             "cache_read_tokens": 0, "cache_write_tokens": 0,
             "reasoning_tokens": 0, "total_tokens": 0, "api_calls": 0,
             "tool_calls": 0, "cost": 0.0, "actual_cost": 0.0,
+            # Partition counters feeding project_cost(): they are what lets a
+            # readout say "this model has no price" instead of "$0.00".
+            "_priced_rows": 0, "_unpriced_rows": 0, "_included_rows": 0,
         })
 
         def _accumulate(model, provider, base_url, session_id, inp, out,
@@ -566,9 +630,19 @@ class InsightsEngine:
             else:
                 estimate = float(stored_cost or 0.0)
                 status = cost_status or "unknown"
-            d["cost"] += estimate
+            # ``cost`` keeps every cent the rows carry, even from unpriced
+            # routes (MoA advisor spend and mixed-model sessions fold money in
+            # here). Whether that money is *all* the spend is what the
+            # priced/unpriced partition answers at projection time.
+            d["cost"] += estimate or 0.0
             d["actual_cost"] += float(actual_cost or 0.0)
             d["cost_status"] = status
+            if status in PRICED_COST_STATUSES:
+                d["_priced_rows"] += 1
+                if status == "included":
+                    d["_included_rows"] += 1
+            elif inp or out or cache_read or cache_write:
+                d["_unpriced_rows"] += 1
             if has_known_pricing(model, provider or None, base_url):
                 d["has_pricing"] = True
             else:
@@ -596,11 +670,7 @@ class InsightsEngine:
                 r["session_id"], r["input_tokens"] or 0, r["output_tokens"] or 0,
                 r["cache_read_tokens"] or 0, r["cache_write_tokens"] or 0,
                 r["reasoning_tokens"] or 0,
-                stored_cost=(
-                    r["estimated_cost_usd"]
-                    if r.get("cost_status") or r.get("cost_source")
-                    else None
-                ),
+                stored_cost=_recorded_cost(r),
                 actual_cost=r["actual_cost_usd"],
                 cost_status=r.get("cost_status"),
             )
@@ -639,7 +709,13 @@ class InsightsEngine:
                 s.get("model"), s.get("billing_provider"),
                 s.get("billing_base_url"), s["id"],
                 inp, out, cache_read, cache_write, 0,
-                stored_cost=residual_cost,
+                # A legacy aggregate row is only a measurement when it actually
+                # priced something; otherwise the leftover tokens have to be
+                # re-priced, or a model that gained a price keeps reporting its
+                # pre-price history as unknown next to has_pricing=True.
+                stored_cost=residual_cost if _is_recorded_measurement(
+                    residual_cost, s.get("cost_status")
+                ) else None,
                 actual_cost=residual_actual,
                 cost_status=s.get("cost_status"),
             )
@@ -663,7 +739,12 @@ class InsightsEngine:
             # rows) won't have these set by _accumulate — default them so the
             # output shape is uniform for downstream/JSON consumers.
             entry.setdefault("has_pricing", False)
-            entry.setdefault("cost_status", "unknown")
+            entry["cost"], entry["cost_status"] = project_cost(
+                data["cost"], data["_priced_rows"], data["_unpriced_rows"],
+                data["_included_rows"],
+            )
+            for internal in ("_priced_rows", "_unpriced_rows", "_included_rows"):
+                entry.pop(internal, None)
             result.append(entry)
         # Sort by tokens first, fall back to session count when tokens are 0
         result.sort(key=lambda x: (x["total_tokens"], x["sessions"]), reverse=True)

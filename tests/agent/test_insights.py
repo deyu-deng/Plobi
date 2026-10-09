@@ -617,7 +617,10 @@ class TestEdgeCases:
         report = engine.generate(days=30)
         assert report["empty"] is False
         assert report["overview"]["total_tokens"] == 0
+        # Nothing was consumed, so 0.0 is a real total — not the "unknown" the
+        # same model would report once it has billable tokens and no price.
         assert report["overview"]["estimated_cost"] == 0.0
+        assert report["overview"]["cost_status"] == "none"
 
     def test_session_with_no_end_time(self, db):
         """Active (non-ended) sessions should be included but duration = 0."""
@@ -648,20 +651,27 @@ class TestEdgeCases:
         assert models[0]["model"] == "unknown"
         assert models[0]["has_pricing"] is False
 
-    def test_custom_model_shows_zero_cost(self, db):
-        """Custom/self-hosted models should show $0 cost, not fake estimates."""
+    def test_custom_model_reports_unknown_cost(self, db):
+        """Custom/self-hosted models report no cost — never a fabricated one.
+
+        Invariant, not a number: a route with no pricing entry must not be
+        projected as 0.0, because 0.0 is indistinguishable from "free" for every
+        consumer that reads the amount alone.
+        """
         db.create_session(session_id="s1", source="cli", model="FP16_Hermes_4.5")
         db.update_token_counts("s1", input_tokens=100000, output_tokens=50000)
         db._conn.commit()
 
         engine = InsightsEngine(db)
         report = engine.generate(days=30)
-        assert report["overview"]["estimated_cost"] == 0.0
+        assert report["overview"]["estimated_cost"] is None
+        assert report["overview"]["cost_status"] == "unknown"
         assert "FP16_Hermes_4.5" in report["overview"]["models_without_pricing"]
 
         models = report["models"]
         custom = next(m for m in models if m["model"] == "FP16_Hermes_4.5")
-        assert custom["cost"] == 0.0
+        assert custom["cost"] is None
+        assert custom["cost_status"] == "unknown"
         assert custom["has_pricing"] is False
 
     def test_tool_usage_from_tool_calls_json(self, db):
@@ -731,9 +741,11 @@ class TestEdgeCases:
         engine = InsightsEngine(db)
         report = engine.generate(days=30)
 
-        # Cost should only come from gpt-4o, not from the custom model
+        # Cost comes only from the priced model, and the window says out loud
+        # that part of it could not be priced at all.
         overview = report["overview"]
         assert overview["estimated_cost"] > 0
+        assert overview["cost_status"] == "partial"
         assert "claude-sonnet-4-20250514" in overview["models_with_pricing"]  # list now, not set
         assert "my-local-llama" in overview["models_without_pricing"]
 
@@ -744,7 +756,8 @@ class TestEdgeCases:
 
         llama = next(m for m in report["models"] if m["model"] == "my-local-llama")
         assert llama["has_pricing"] is False
-        assert llama["cost"] == 0.0
+        assert llama["cost"] is None
+        assert llama["cost_status"] == "unknown"
 
     def test_single_session_streak(self, db):
         """Single session should have streak of 0 or 1."""
@@ -800,3 +813,115 @@ class TestEdgeCases:
         # Depending on timing, might catch the session if created <1s ago
         # Just verify it doesn't crash
         assert "empty" in report
+
+
+class TestPlaceholderCostRepricesButRecordedCostWins:
+    """A stored 0 from an unpriced route is a placeholder, not a measurement."""
+
+    def test_placeholder_zero_reprices_once_the_model_has_a_price(self, db):
+        """History written before a model had a price becomes answerable.
+
+        Invariant rather than a number: the row was stored as 0/unknown, and the
+        readout must come back with a positive amount and a priced status instead
+        of continuing to claim there is no cost.
+        """
+        db.create_session(session_id="legacy", source="cli", model="gpt-4o")
+        db.update_token_counts(
+            "legacy", input_tokens=100_000, output_tokens=20_000,
+            model="gpt-4o", billing_provider="openai",
+            estimated_cost_usd=None, cost_status="unknown",
+            cost_source="none", api_call_count=3,
+        )
+        db._conn.commit()
+
+        report = InsightsEngine(db).generate(days=30)
+        model = next(m for m in report["models"] if m["model"] == "gpt-4o")
+        assert model["cost"] is not None
+        assert model["cost"] > 0
+        assert model["cost_status"] == "estimated"
+        assert report["overview"]["estimated_cost"] == pytest.approx(model["cost"])
+
+    def test_recorded_cost_is_never_overwritten_by_a_fresh_estimate(self, db):
+        """A number the agent actually computed at call time wins."""
+        db.create_session(session_id="recorded", source="cli", model="gpt-4o")
+        db.update_token_counts(
+            "recorded", input_tokens=10, output_tokens=5,
+            model="gpt-4o", billing_provider="openai",
+            estimated_cost_usd=7.5, cost_status="estimated",
+            cost_source="provider_cost_api", api_call_count=1,
+        )
+        db._conn.commit()
+
+        report = InsightsEngine(db).generate(days=30)
+        model = next(m for m in report["models"] if m["model"] == "gpt-4o")
+        assert model["cost"] == pytest.approx(7.5)
+
+    def test_route_with_no_price_anywhere_stays_unknown(self, db):
+        """No price and real spend: None — never the placeholder 0."""
+        db.create_session(session_id="local", source="cli", model="my-local-llama")
+        db.update_token_counts(
+            "local", input_tokens=80_000, output_tokens=8_000,
+            model="my-local-llama", billing_provider="custom",
+            estimated_cost_usd=None, cost_status="unknown",
+            cost_source="none", api_call_count=2,
+        )
+        db._conn.commit()
+
+        report = InsightsEngine(db).generate(days=30)
+        model = next(m for m in report["models"] if m["model"] == "my-local-llama")
+        assert model["cost"] is None
+        assert model["cost_status"] == "unknown"
+
+
+class TestLegacyAggregateRow:
+    """A sessions-only row is priced by the same rule as a usage row.
+
+    Before ``session_model_usage`` existed the cost lived solely on
+    ``sessions.estimated_cost_usd``, which stores the unpriced placeholder 0.
+    Invariant: which table a session's numbers came from must not decide whether
+    the readout can name a price — and ``has_pricing`` must never contradict
+    ``cost_status`` on the same row.
+    """
+
+    def _legacy(self, db, session_id, model, provider):
+        db.create_session(session_id=session_id, source="cli", model=model)
+        # Deliberately no session_model_usage rows: this is the legacy shape,
+        # where the aggregate row is the only record of the spend.
+        db._conn.execute(
+            "UPDATE sessions SET input_tokens = ?, output_tokens = ?,"
+            " cache_read_tokens = ?, billing_provider = ?, api_call_count = ?,"
+            " estimated_cost_usd = 0, cost_status = 'unknown', cost_source = 'none'"
+            " WHERE id = ?",
+            (100_000, 20_000, 50_000, provider, 3, session_id),
+        )
+        db._conn.commit()
+
+    def test_priced_route_is_repriced_not_unknown(self, db):
+        self._legacy(db, "legacy", "gpt-4o", "openai")
+        report = InsightsEngine(db).generate(days=30)
+        model = next(m for m in report["models"] if m["model"] == "gpt-4o")
+
+        assert model["has_pricing"] is True
+        assert model["cost"] is not None and model["cost"] > 0
+        assert model["cost_status"] == "estimated"
+        assert report["overview"]["estimated_cost"] == pytest.approx(model["cost"])
+
+    def test_unpriced_route_stays_unknown(self, db):
+        self._legacy(db, "legacy", "my-local-llama", "custom")
+        report = InsightsEngine(db).generate(days=30)
+        model = next(m for m in report["models"] if m["model"] == "my-local-llama")
+
+        assert model["has_pricing"] is False
+        assert model["cost"] is None
+        assert model["cost_status"] == "unknown"
+
+    def test_has_pricing_and_cost_status_cannot_disagree(self, db):
+        """The two flags are read together; one cannot claim a price the other
+        says is unnamed, whichever table the numbers arrived from."""
+        self._legacy(db, "legacy_priced", "gpt-4o", "openai")
+        self._legacy(db, "legacy_unpriced", "my-local-llama", "custom")
+        report = InsightsEngine(db).generate(days=30)
+
+        assert len(report["models"]) >= 2
+        for model in report["models"]:
+            assert not (model["has_pricing"] and model["cost_status"] == "unknown"), model

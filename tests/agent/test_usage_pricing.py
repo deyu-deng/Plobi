@@ -322,3 +322,123 @@ def test_bedrock_claude_cached_session_estimates_cost_not_unknown():
     )
     assert result.status == "estimated"
     assert result.amount_usd is not None
+
+
+# ── Z.ai / GLM pricing: the route the desktop's default chat model bills on ──
+#
+# Invariants only, deliberately: the rates live in the pricing table with a
+# source URL, and freezing a dollar figure here would make a legitimate price
+# change look like a regression. What must not regress is *shape* — that this
+# route prices at all, that cached input is valued, and that a route we cannot
+# price yields None rather than 0.
+
+_ZAI_CODING_BASE_URL = "https://api.z.ai/api/paas/v4"
+
+
+def test_zai_glm_53_flash_route_is_priced_end_to_end(monkeypatch):
+    """A real z.ai chat session must yield a dollar amount, not unknown.
+
+    Regression guard: ``session_model_usage`` rows for glm-5.3-flash carried
+    ``cost_status='unknown'`` with ``estimated_cost_usd=0`` because the pricing
+    table had no ``zai`` row at all — the user's "chatting is too expensive"
+    complaint could not be answered with a number.
+    """
+    monkeypatch.setattr(
+        "agent.usage_pricing.fetch_endpoint_model_metadata",
+        lambda base_url, api_key=None: {},
+    )
+    usage = CanonicalUsage(
+        input_tokens=193_009,
+        output_tokens=25_237,
+        cache_read_tokens=634_496,
+        cache_write_tokens=0,
+        reasoning_tokens=20_163,
+        request_count=21,
+    )
+
+    result = estimate_usage_cost(
+        "glm-5.3-flash", usage, provider="zai", base_url=_ZAI_CODING_BASE_URL
+    )
+
+    assert result.status == "estimated"
+    assert result.source == "official_docs_snapshot"
+    assert result.amount_usd is not None
+    assert float(result.amount_usd) > 0
+
+
+def test_zai_glm_53_flash_cache_reads_are_valued_not_dropped(monkeypatch):
+    """Invariant: cached input is billed, and billed below uncached input.
+
+    The user's session read 634k cached tokens against 193k fresh input
+    tokens — most of the prompt was cache hits. A table that priced only
+    input/output would understate (or, with the None-rate guard, void) the whole
+    session, so the cache-read rate has to be present and sit strictly under the
+    input rate.
+    """
+    monkeypatch.setattr(
+        "agent.usage_pricing.fetch_endpoint_model_metadata",
+        lambda base_url, api_key=None: {},
+    )
+
+    def _cost(*, input_tokens, cache_read_tokens):
+        return float(estimate_usage_cost(
+            "glm-5.3-flash",
+            CanonicalUsage(
+                input_tokens=input_tokens,
+                output_tokens=1000,
+                cache_read_tokens=cache_read_tokens,
+            ),
+            provider="zai",
+            base_url=_ZAI_CODING_BASE_URL,
+        ).amount_usd)
+
+    baseline = _cost(input_tokens=100_000, cache_read_tokens=0)
+    with_cache = _cost(input_tokens=100_000, cache_read_tokens=100_000)
+    cached_only = _cost(input_tokens=0, cache_read_tokens=100_000)
+    # What the same 100k tokens would cost billed as fresh, uncached input.
+    fresh_input_only = baseline - _cost(input_tokens=0, cache_read_tokens=0)
+
+    assert with_cache > baseline, "cache-read tokens are not being billed"
+    # Cached tokens must be worth something, and strictly less than the same
+    # tokens billed as uncached input — otherwise the row has its rates swapped
+    # and the session total is wrong in a way that looks plausible.
+    assert 0 < cached_only < fresh_input_only
+
+
+def test_zai_glm_53_flash_writes_are_priced_so_sessions_stay_computable():
+    """Cache writes need a rate (the promo bills them at 0) or the session voids.
+
+    ``estimate_usage_cost`` refuses to produce a partial number when a token
+    bucket has no rate, so a missing cache-write rate would flip every session
+    that reports cache_creation tokens to unknown.
+    """
+    entry = get_pricing_entry("glm-5.3-flash", provider="zai")
+
+    assert entry is not None
+    assert entry.cache_write_cost_per_million is not None
+    assert entry.cache_read_cost_per_million is not None
+
+    result = estimate_usage_cost(
+        "glm-5.3-flash",
+        CanonicalUsage(input_tokens=10, output_tokens=10, cache_write_tokens=5000),
+        provider="zai",
+    )
+    assert result.status == "estimated"
+    assert result.amount_usd is not None
+
+
+def test_unpriced_zai_model_yields_none_not_zero():
+    """Invariant: no pricing entry means "unknown", and the amount is absent.
+
+    Returning 0.0 here is what makes an unpriceable model indistinguishable
+    from a free one, downstream in every readout.
+    """
+    result = estimate_usage_cost(
+        "glm-5.2",
+        CanonicalUsage(input_tokens=193_009, output_tokens=25_237, cache_read_tokens=634_496),
+        provider="zai",
+    )
+
+    assert result.status == "unknown"
+    assert result.amount_usd is None
+    assert get_pricing_entry("glm-5.2", provider="zai") is None
