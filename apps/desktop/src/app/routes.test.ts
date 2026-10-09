@@ -44,6 +44,10 @@ describe('routes (U6 landing inversion)', () => {
     expect(routeSessionId('/new')).toBeNull()
     // WP-E: /new no longer hosts a chat shell — bounce reports console, not chat.
     expect(appViewForPath('/new')).toBe('console')
+    // Why this also rules out routing a 秘书「重新开始」 through /new: with no
+    // secretary identity the center's `*` route gets a null `chatScope` and
+    // `<Navigate to="/">` back, which re-runs the level-keyed bind effect.
+    expect(shellLevelForPath('/new')).toBeNull()
   })
 
   it('parses session deep links but does not enable the legacy chat shell view', () => {

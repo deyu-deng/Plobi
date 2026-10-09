@@ -1073,7 +1073,7 @@ export const en: Translations = {
       usage: 'Token, cost, and skill activity over time'
     },
     nav: {
-      newChat: { title: 'New session', detail: 'Start a fresh session' },
+      newChat: { title: 'Start over', detail: 'Clear this and begin a new conversation' },
       settings: { title: 'Settings', detail: 'Configure Plobi desktop' },
       skills: { title: 'Capabilities', detail: 'Skills, tools, and MCP servers' },
       messaging: { title: 'Messaging', detail: 'Set up Telegram, Slack, Discord, and more' },

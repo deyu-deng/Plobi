@@ -2,6 +2,8 @@ import type { SessionInfo } from '@/plobi'
 import { persistString, storedString } from '@/lib/storage'
 import { normalizeProfileKey } from '@/store/profile'
 
+import type { ShellLevel } from './routes'
+
 // Cheap signature compare so a poll only swaps the atom (and re-renders the
 // sidebar) when the visible rows actually changed.
 export function sameCronSignature(a: SessionInfo[], b: SessionInfo[]): boolean {
@@ -94,6 +96,29 @@ export function readL1MainSessionId(profile: string): null | string {
 
 export function writeL1MainSessionId(profile: string, id: null | string): void {
   persistString(l1MainSessionKey(profile), id)
+}
+
+/**
+ * 「重新开始」 retires the transcript this profile's mouth points at. Every L1
+ * bind prefers the remembered mainline over "latest" (`pickL1MainSession`), so
+ * leaving it set hands the retired conversation back on the next re-bind. The
+ * next message re-seeds it from the session it creates.
+ */
+export function forgetL1MainSession(profile: string): void {
+  writeL1MainSessionId(profile, null)
+}
+
+/**
+ * 裁定 69: 「重新开始」 restarts the Agent's one mouth under the route it is
+ * already on. Only the mainline session chat (`shellLevelForPath` → null) keeps
+ * the `/new` draft route; a secretary shell detouring through `/new` nulls its
+ * level, bounces the center home, flashes the rails, and lets the level-keyed
+ * bind resume the transcript the user just retired.
+ *
+ * Pure predicate so the rule is testable without rendering the shell.
+ */
+export function restartsMouthInPlace(level: null | ShellLevel): boolean {
+  return level !== null
 }
 
 /** Known L2 short labels (裁定 13). Never use description / model as identity. */

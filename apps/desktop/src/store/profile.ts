@@ -154,10 +154,11 @@ export const $activeGatewayProfile = atom<string>('default')
 // / default, so single-profile users are unaffected.
 export const $newChatProfile = atom<string | null>(null)
 
-// Bumped whenever the open session should be dropped for a fresh new-session
-// draft: a profile switch/create (below), or deleting the project that owns the
-// currently-open session (store/projects). The chat controller subscribes and
-// resets to the intro draft, so we never strand the user in an orphaned view.
+// Bumped whenever the open conversation should be dropped for a fresh draft: a
+// profile switch/create (below), deleting the project that owns the currently-open
+// session (store/projects), or the command palette's 「重新开始」 row. The chat
+// controller subscribes and resets — in place on a secretary route, to `/new` on
+// the mainline session chat — so we never strand the user in an orphaned view.
 export const $freshSessionRequest = atom(0)
 
 export function requestFreshSession(): void {

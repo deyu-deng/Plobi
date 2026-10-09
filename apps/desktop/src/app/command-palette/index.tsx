@@ -56,6 +56,7 @@ import {
 } from '@/store/command-palette'
 import { $bindings } from '@/store/keybinds'
 import { openPetGenerate } from '@/store/pet-generate'
+import { requestFreshSession } from '@/store/profile'
 import { requestStartWorkSession } from '@/store/projects'
 import { runGatewayRestart } from '@/store/system-actions'
 import { applyBackendUpdate } from '@/store/updates'
@@ -69,7 +70,6 @@ import {
   COMMAND_CENTER_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
-  NEW_CHAT_ROUTE,
   PROFILES_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
@@ -400,13 +400,16 @@ export function CommandPalette() {
       {
         heading: cc.goTo,
         items: [
+          // 「重新开始」 asks for a fresh conversation; the controller resets the
+          // secretary's mouth in place instead of routing `/new` (a dead chat
+          // route that bounces home and brings the old transcript back).
           {
             action: 'session.new',
             icon: Plus,
             id: 'nav-new',
-            keywords: ['chat', 'create'],
+            keywords: ['start over', 'restart', 'reset', 'clean'],
             label: cc.nav.newChat.title,
-            run: go(NEW_CHAT_ROUTE)
+            run: requestFreshSession
           },
           {
             action: 'view.showTerminal',

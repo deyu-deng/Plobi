@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SessionInfo } from '@/plobi'
 
@@ -7,13 +7,18 @@ import {
   collectL1BypassSessionIds,
   findKnownOverviewSession,
   findLatestSessionForProfile,
+  forgetL1MainSession,
   pickL1MainSession,
   profileListHasMaster,
+  readL1MainSessionId,
   resolveL1HomeProfile,
+  restartsMouthInPlace,
   sameCronSignature,
   secretaryShellLabel,
-  secretaryShortName
+  secretaryShortName,
+  writeL1MainSessionId
 } from './desktop-controller-utils'
+import { shellLevelForPath } from './routes'
 
 const session = (id: string, title: string | null): SessionInfo => ({ id, title }) as SessionInfo
 
@@ -154,6 +159,56 @@ describe('pickL1MainSession (WP-G7)', () => {
     ]
 
     expect(pickL1MainSession(rows, 'default', 'l2')?.id).toBe('l1')
+  })
+})
+
+// 裁定 69 「重新开始」: the L1 bind reads exactly
+// `pickL1MainSession(sessions, profile, readL1MainSessionId(profile))`, so the
+// pointer is the only thing that pins the mouth to a transcript. A reset that
+// leaves it set hands the retired conversation straight back.
+describe('forgetL1MainSession (restart this mouth)', () => {
+  const rows = [
+    { id: 'retired', profile: 'default', started_at: 100 },
+    { id: 'fresh', profile: 'default', started_at: 200 }
+  ]
+
+  beforeEach(() => {
+    localStorage.clear()
+    writeL1MainSessionId('default', 'retired')
+  })
+
+  it('drops the pointer the reset relies on', () => {
+    expect(readL1MainSessionId('default')).toBe('retired')
+
+    forgetL1MainSession('default')
+
+    expect(readL1MainSessionId('default')).toBeNull()
+  })
+
+  it('binds the post-reset transcript instead of the retired mouth', () => {
+    forgetL1MainSession('default')
+
+    expect(pickL1MainSession(rows, 'default', readL1MainSessionId('default'))?.id).toBe('fresh')
+  })
+
+  it('keeps outranking a newer session for the mainline until the user restarts', () => {
+    expect(pickL1MainSession(rows, 'default', readL1MainSessionId('default'))?.id).toBe('retired')
+  })
+})
+
+// 裁定 69: 「重新开始」 belongs to the mouth that is on screen, so it must not be
+// expressed as a trip to `/new` — that is the mainline chat's draft route.
+describe('restartsMouthInPlace (restart this mouth)', () => {
+  it('resets every secretary route under the path it is already on', () => {
+    for (const path of ['/', '/console', '/agent/agenda']) {
+      expect(restartsMouthInPlace(shellLevelForPath(path)), path).toBe(true)
+    }
+  })
+
+  it('leaves the mainline session chat to the /new draft route', () => {
+    for (const path of ['/new', '/sess-123']) {
+      expect(restartsMouthInPlace(shellLevelForPath(path)), path).toBe(false)
+    }
   })
 })
 
