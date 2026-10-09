@@ -70,6 +70,20 @@ def _patch_managed_uv(request):
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_live_venv_holder_gate(monkeypatch):
+    """Keep `plobi update`'s Windows venv-holder gate from reading this machine.
+
+    The gate is deliberate and stays intact -- `test_windows_venv_holder_gate_still_exits`
+    (test_update_autostash.py) pins that it still exits 2 when there *are* holders.
+    These tests are about branch fallback and dependency sync, not about what else
+    happens to be running while pytest runs.
+    """
+    from plobi_cli import main as plobi_main
+
+    monkeypatch.setattr(plobi_main, "_detect_venv_python_processes", lambda *a, **k: [])
+
+
 class TestCmdUpdatePip:
     """Regression tests for pip-install update flows."""
 

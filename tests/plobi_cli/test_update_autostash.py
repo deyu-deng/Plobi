@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from subprocess import CalledProcessError
 from types import SimpleNamespace
@@ -396,9 +397,65 @@ def _setup_update_mocks(monkeypatch, tmp_path):
     monkeypatch.setattr(plobi_main, "_refresh_active_lazy_features", lambda: None)
 
 
+
+def _git(*args):
+    """The argv `plobi update` really builds on this platform.
+
+    On Windows the product prefixes ``-c windows.appendAtomically=false`` (a real
+    fix for AV/NTFS rename locking), so a fake comparing against a bare
+    ``["git", ...]`` misses *every* git call and answers from the fallthrough
+    branch with an empty stdout -- which is how
+    ``int(result.stdout.strip())`` raised ``ValueError: invalid literal for
+    int() with base 10: ''``. Build the same argv the product builds instead of
+    loosening the assertion.
+    """
+    if sys.platform == "win32":
+        return ["git", "-c", "windows.appendAtomically=false", *args]
+    return ["git", *args]
+
+
+def _stub_git_env(monkeypatch):
+    """Make the update path independent of what else is running on this box.
+
+    The venv-holder gate is deliberate (a live desktop backend holds files
+    ``git pull`` needs) and is never weakened: tests that are not *about* the gate
+    step around it by reporting no holders, while
+    ``test_windows_venv_holder_gate_still_exits`` pins that the gate fires when
+    there are some.
+    """
+    monkeypatch.setattr(plobi_main, "_detect_venv_python_processes", lambda *a, **k: [])
+
+
+def test_windows_venv_holder_gate_still_exits(monkeypatch, tmp_path, capsys):
+    """钉住门本身：有占用者时 `plobi update` 仍以 exit 2 停手，且不碰 git。"""
+    _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
+    calls = []
+    detected = []
+    monkeypatch.setattr(plobi_main, "_is_windows", lambda: True)
+
+    def _detect(*a, **k):
+        detected.append(1)
+        return [(4242, "pythonw.exe", "D:\Projects\Plobi\Plobi-Desktop\Code\.venv\Scripts\pythonw.exe -m plobi_cli.main gateway run")]
+
+    monkeypatch.setattr(plobi_main, "_detect_venv_python_processes", _detect)
+    monkeypatch.setattr(plobi_main, "_resume_windows_gateways_after_update", lambda *a, **k: None)
+    monkeypatch.setattr(plobi_main.subprocess, "run", lambda cmd, **k: calls.append(cmd) or SimpleNamespace(returncode=0, stdout="", stderr=""))
+
+    with pytest.raises(SystemExit) as exc:
+        plobi_main._cmd_update_impl(SimpleNamespace(), gateway_mode=False)
+
+    assert exc.value.code == 2, "门不生效了：Windows 上占用中的文件会把 git pull 弄成半损坏"
+    assert detected, "门根本没做探测：它已经不在 update 的路径上了"
+    assert not [c for c in calls if "pull" in [str(x) for x in c]], (
+        "门判停之后还在 git pull —— 那正是这道门要拦的半损坏事故"
+    )
+    assert "python" in capsys.readouterr().out.lower()
+
 def test_cmd_update_retries_optional_extras_individually_when_all_fails(monkeypatch, tmp_path, capsys):
     """When .[all] fails, update should keep base deps and retry extras individually."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
     monkeypatch.setattr(plobi_main, "_is_termux_env", lambda env=None: False)
     monkeypatch.setattr(plobi_main, "_load_installable_optional_extras", lambda group="all": ["matrix", "mcp"])
@@ -407,13 +464,13 @@ def test_cmd_update_retries_optional_extras_individually_when_all_fails(monkeypa
 
     def fake_run(cmd, **kwargs):
         recorded.append(cmd)
-        if cmd == ["git", "fetch", "origin", "main"]:
+        if cmd == _git("fetch", "origin", "main"):
             return SimpleNamespace(stdout="", stderr="", returncode=0)
-        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+        if cmd == _git("rev-parse", "--abbrev-ref", "HEAD"):
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if cmd == _git("rev-list", "HEAD..origin/main", "--count"):
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if cmd == _git("pull", "--ff-only", "origin", "main"):
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         if cmd == ["/usr/bin/uv", "pip", "install", "-e", ".[all]"]:
             raise CalledProcessError(returncode=1, cmd=cmd)
@@ -449,6 +506,7 @@ def test_cmd_update_retries_optional_extras_individually_when_all_fails(monkeypa
 def test_cmd_update_succeeds_with_extras(monkeypatch, tmp_path):
     """When .[all] succeeds, no fallback should be attempted."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
     monkeypatch.setattr(plobi_main, "_is_termux_env", lambda env=None: False)
 
@@ -456,13 +514,13 @@ def test_cmd_update_succeeds_with_extras(monkeypatch, tmp_path):
 
     def fake_run(cmd, **kwargs):
         recorded.append(cmd)
-        if cmd == ["git", "fetch", "origin", "main"]:
+        if cmd == _git("fetch", "origin", "main"):
             return SimpleNamespace(stdout="", stderr="", returncode=0)
-        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+        if cmd == _git("rev-parse", "--abbrev-ref", "HEAD"):
             return SimpleNamespace(stdout="main\n", stderr="", returncode=0)
-        if cmd == ["git", "rev-list", "HEAD..origin/main", "--count"]:
+        if cmd == _git("rev-list", "HEAD..origin/main", "--count"):
             return SimpleNamespace(stdout="1\n", stderr="", returncode=0)
-        if cmd == ["git", "pull", "--ff-only", "origin", "main"]:
+        if cmd == _git("pull", "--ff-only", "origin", "main"):
             return SimpleNamespace(stdout="Updating\n", stderr="", returncode=0)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -571,6 +629,7 @@ def _make_update_side_effect(
 def test_cmd_update_falls_back_to_reset_when_ff_only_fails(monkeypatch, tmp_path, capsys):
     """When --ff-only fails (diverged history), update resets to origin/{branch}."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     side_effect, recorded = _make_update_side_effect(ff_only_fails=True)
@@ -580,7 +639,7 @@ def test_cmd_update_falls_back_to_reset_when_ff_only_fails(monkeypatch, tmp_path
 
     reset_calls = [c for c in recorded if "reset" in c and "--hard" in c]
     assert len(reset_calls) == 1
-    assert reset_calls[0] == ["git", "reset", "--hard", "origin/main"]
+    assert reset_calls[0] == _git("reset", "--hard", "origin/main")
 
     out = capsys.readouterr().out
     assert "Fast-forward not possible" in out
@@ -589,6 +648,7 @@ def test_cmd_update_falls_back_to_reset_when_ff_only_fails(monkeypatch, tmp_path
 def test_cmd_update_no_reset_when_ff_only_succeeds(monkeypatch, tmp_path):
     """When --ff-only succeeds, no reset is attempted."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     side_effect, recorded = _make_update_side_effect()
@@ -607,6 +667,7 @@ def test_cmd_update_no_reset_when_ff_only_succeeds(monkeypatch, tmp_path):
 def test_cmd_update_switches_to_main_from_feature_branch(monkeypatch, tmp_path, capsys):
     """When on a feature branch, update checks out main before pulling."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     side_effect, recorded = _make_update_side_effect(current_branch="fix/something")
@@ -625,6 +686,7 @@ def test_cmd_update_switches_to_main_from_feature_branch(monkeypatch, tmp_path, 
 def test_cmd_update_switches_to_main_from_detached_head(monkeypatch, tmp_path, capsys):
     """When in detached HEAD state, update checks out main before pulling."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     side_effect, recorded = _make_update_side_effect(current_branch="HEAD")
@@ -642,6 +704,7 @@ def test_cmd_update_switches_to_main_from_detached_head(monkeypatch, tmp_path, c
 def test_cmd_update_restores_stash_and_branch_when_already_up_to_date(monkeypatch, tmp_path, capsys):
     """When on a feature branch with no updates, stash is restored and branch switched back."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     # Enable stash so it returns a ref
@@ -676,6 +739,7 @@ def test_cmd_update_restores_stash_and_branch_when_already_up_to_date(monkeypatc
 def test_cmd_update_no_checkout_when_already_on_main(monkeypatch, tmp_path):
     """When already on main, no checkout is needed."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     side_effect, recorded = _make_update_side_effect()
@@ -692,6 +756,7 @@ def test_cmd_update_fetch_is_scoped_to_target_branch(monkeypatch, tmp_path):
     pulls every ref, and this repo has thousands of auto-generated branches, so
     an unscoped fetch can stall for minutes on a non-single-branch checkout."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     side_effect, recorded = _make_update_side_effect()
@@ -700,7 +765,7 @@ def test_cmd_update_fetch_is_scoped_to_target_branch(monkeypatch, tmp_path):
     plobi_main._cmd_update_impl(SimpleNamespace(), gateway_mode=False)
 
     fetch_calls = [c for c in recorded if "fetch" in c]
-    assert fetch_calls == [["git", "fetch", "origin", "main"]]
+    assert fetch_calls == [_git("fetch", "origin", "main")]
     assert ["git", "fetch", "origin"] not in recorded
 
 
@@ -711,6 +776,7 @@ def test_cmd_update_fetch_is_scoped_to_target_branch(monkeypatch, tmp_path):
 def test_cmd_update_network_error_shows_friendly_message(monkeypatch, tmp_path, capsys):
     """Network failures during fetch show a user-friendly message."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
 
     side_effect, _ = _make_update_side_effect(
         fetch_fails=True,
@@ -728,6 +794,7 @@ def test_cmd_update_network_error_shows_friendly_message(monkeypatch, tmp_path, 
 def test_cmd_update_auth_error_shows_friendly_message(monkeypatch, tmp_path, capsys):
     """Auth failures during fetch show a user-friendly message."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
 
     side_effect, _ = _make_update_side_effect(
         fetch_fails=True,
@@ -749,6 +816,7 @@ def test_cmd_update_auth_error_shows_friendly_message(monkeypatch, tmp_path, cap
 def test_cmd_update_skips_stash_restore_when_reset_fails(monkeypatch, tmp_path, capsys):
     """When reset --hard fails, stash restore is skipped with a helpful message."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     # Re-enable stash so it actually returns a ref
     monkeypatch.setattr(
         plobi_main, "_stash_local_changes_if_needed",
@@ -785,6 +853,7 @@ def _setup_setting_test(monkeypatch, tmp_path, mode):
     recorded, and load_config reports the given non_interactive_local_changes
     mode."""
     _setup_update_mocks(monkeypatch, tmp_path)
+    _stub_git_env(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
     monkeypatch.setattr(
         plobi_main, "_stash_local_changes_if_needed",
