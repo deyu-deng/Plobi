@@ -54,8 +54,11 @@ def test_falls_back_to_any_allow_kind():
     assert map_permission_outcome(odd, "once")["outcome"]["optionId"] == "weird_ok"
 
 
-def test_approval_fail_closed_when_no_callback():
-    # THE safety invariant: absent approver => deny, never auto-allow.
+def test_approval_fail_closed_when_no_approver_reachable():
+    # THE safety invariant, end to end: no injected approver, no thread-local
+    # approver, and no interactive host => the canonical gate must refuse.
+    # Nothing is monkeypatched here, so this asserts the real gate's behaviour
+    # in a bare (non-CLI, non-gateway) context — deny, never auto-allow.
     assert ask_approval(None, "terminal", {"command": "rm -rf /"}) == "deny"
 
 
@@ -65,8 +68,86 @@ def test_approval_fail_closed_when_callback_raises():
     assert ask_approval(boom, "write_file", {"path": "x"}) == "deny"
 
 
-def test_approval_passes_through_callback_decision():
-    assert ask_approval(lambda *a, **k: "always", "terminal", {}) == "always"
+def test_approval_fail_closed_when_the_gate_itself_is_unavailable(monkeypatch):
+    import tools.approval as approval
+
+    def raise_always(*a, **k):
+        raise OSError("approval module broken")
+
+    monkeypatch.setattr(approval, "request_tool_approval", raise_always)
+    assert ask_approval(None, "write_file", {"path": "x"}) == "deny"
+
+
+def test_delegated_call_asks_the_canonical_gate_even_with_no_approver(monkeypatch):
+    """The regression this knife fixes.
+
+    A desktop/gateway host registers its approver in the per-session queue, NOT
+    in ``tools.terminal_tool``'s thread-local. Asking that thread-local and
+    refusing when it is empty made every delegated tool call in that host die
+    before a human was ever consulted — so the gate had to be reached instead.
+    """
+    seen = {}
+
+    def fake_gate(tool_name, reason, *, rule_key="", approval_callback=None):
+        seen["tool_name"] = tool_name
+        seen["rule_key"] = rule_key
+        seen["approval_callback"] = approval_callback
+        return {"approved": True, "message": None}
+
+    import tools.approval as approval
+
+    monkeypatch.setattr(approval, "request_tool_approval", fake_gate)
+    monkeypatch.setattr("agent.codebuddy_acp_client._tls_approval_callback", lambda: None)
+
+    assert ask_approval(None, "write_file", {"path": "a.md"}) == "once"
+    assert seen["tool_name"] == "write_file"
+    assert seen["rule_key"] == "codebuddy:write_file"
+    assert seen["approval_callback"] is None
+
+
+def test_gate_denial_maps_to_deny(monkeypatch):
+    import tools.approval as approval
+
+    monkeypatch.setattr(
+        approval,
+        "request_tool_approval",
+        lambda *a, **k: {"approved": False, "message": "human said no"},
+    )
+    assert ask_approval(None, "terminal", {"command": "ls"}) == "deny"
+
+
+def test_injected_approver_is_forwarded_to_the_gate(monkeypatch):
+    captured = {}
+
+    def fake_gate(tool_name, reason, *, rule_key="", approval_callback=None):
+        captured["cb"] = approval_callback
+        return {"approved": True}
+
+    import tools.approval as approval
+
+    monkeypatch.setattr(approval, "request_tool_approval", fake_gate)
+    approver = lambda *a, **k: "always"  # noqa: E731
+    assert ask_approval(approver, "terminal", {}) == "once"
+    assert captured["cb"] is approver
+
+
+def test_thread_local_approver_is_resolved_at_call_time(monkeypatch):
+    """A CLI approver installed after the client was built must still be honoured."""
+    captured = {}
+
+    def fake_gate(tool_name, reason, *, rule_key="", approval_callback=None):
+        captured["cb"] = approval_callback
+        return {"approved": True}
+
+    import tools.approval as approval
+    import tools.terminal_tool as terminal_tool
+
+    late = lambda *a, **k: "session"  # noqa: E731
+    monkeypatch.setattr(terminal_tool, "_get_approval_callback", lambda: late)
+    monkeypatch.setattr(approval, "request_tool_approval", fake_gate)
+
+    assert ask_approval(None, "terminal", {}) == "once"
+    assert captured["cb"] is late
 
 
 def test_flatten_messages_handles_list_and_roles():
