@@ -768,24 +768,64 @@ def get_temp_root() -> str:
     against the current drive, and a process whose cwd is on ``D:\\`` then
     creates ``D:\\tmp`` on the drive root and writes user data into it.
     Resolution order mirrors what the platform's own temp handling honours —
-    ``TMPDIR`` → ``TEMP`` → ``TMP``, then :func:`tempfile.gettempdir`, which is
-    ``/tmp`` on POSIX (semantics unchanged) and ``%TEMP%`` on Windows.
+    ``TMPDIR`` → ``TEMP`` → ``TMP``, then :func:`tempfile.gettempdir`. On Windows
+    that last one is **not** safe to take on faith: it walks the same env vars and
+    normalises them, so a POSIX literal pointer yields a child of the current
+    drive's root. Any answer that resolves to a directory we refused above is
+    discarded in favour of the OS's own temp area (then the account home). On
+    POSIX the semantics are unchanged — ``/tmp`` stays ``/tmp``.
 
     Read-only: it never creates a directory.
     """
+    refused: set[str] = set()
     for var in ("TMPDIR", "TEMP", "TMP"):
         raw = (os.environ.get(var) or "").strip()
         if _is_usable_temp_root(raw):
             return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+        if raw:
+            # Remember where the literal we just refused actually lands, so the
+            # stdlib walk below can't hand the same directory back already-absolutised.
+            try:
+                refused.add(os.path.normcase(os.path.abspath(raw)))
+            except (OSError, ValueError):
+                pass
 
     # ``import tempfile`` pulls in random/functools/collections; kept local so
     # this module stays as import-light as its docstring promises.
     import tempfile
 
-    # gettempdir() walks the same env vars, then the OS-specific system temp
-    # (``%SYSTEMROOT%\\temp`` on Windows, ``/tmp`` on POSIX) and never returns a
-    # drive-relative POSIX literal on Windows.
-    return tempfile.gettempdir()
+    # CPython's walk reads the very env vars refused above and normalises them,
+    # so on Windows ``TMP=/tmp`` comes back as ``D:\tmp`` — a child of the current
+    # drive's root, the exact shape 裁定 79 is about. Trust it only when it is not
+    # one of those refused resolutions.
+    derived = tempfile.gettempdir()
+    # them, so on Windows ``TMP=/tmp`` comes back as ``D:\tmp`` — the current
+    # drive's root child, which is the exact shape 裁定 79 is about. Trust it only
+    # when it is not one of those refused resolutions.
+    if _is_usable_temp_root(derived) and os.path.normcase(os.path.abspath(derived)) not in refused:
+        return os.path.abspath(derived)
+
+    for candidate in _last_resort_temp_candidates():
+        if _is_usable_temp_root(candidate):
+            return os.path.abspath(candidate)
+    return derived
+
+
+def _last_resort_temp_candidates() -> list[str]:
+    """Directories to try when every env-derived answer was refused or unusable.
+
+    Ordered deliberately: the OS's own temp area first, then the account home.
+    ``SYSTEMROOT`` is read from the environment rather than guessed, so nothing
+    here bakes in a drive letter (裁定 48.1).
+    """
+    candidates: list[str] = []
+    systemroot = (os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR") or "").strip()
+    if systemroot:
+        candidates.append(os.path.join(systemroot, "Temp"))
+    expanded = os.path.expanduser("~")
+    if expanded and expanded != "~":
+        candidates.append(expanded)
+    return candidates
 
 
 def get_real_home(env: dict[str, str] | None = None) -> str:

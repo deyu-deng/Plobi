@@ -118,7 +118,11 @@ if ! is_safe_temp_root "$TEMP_ROOT"; then
   TEMP_ROOT=""
   for candidate in "${TMPDIR:-}" "${TEMP:-}" "${TMP:-}"; do
     [ -n "$candidate" ] || continue
-    resolved="$(to_posix "$candidate")"
+    # Judge the NATIVE shape. Under MSYS a POSIX literal like /tmp is a bash view
+    # of some other volume path, and is_safe_temp_root on the bash view happily
+    # accepts it — while every Windows child would then resolve it against its own
+    # current drive. Round-tripping makes the two agree on one real directory.
+    resolved="$(to_posix "$(to_native "$candidate")")"
     if is_safe_temp_root "$resolved"; then TEMP_ROOT="$resolved"; break; fi
   done
 fi
@@ -158,9 +162,20 @@ mkdir -p "$SCRATCH_HOME/.plobi" "$SCRATCH_TMP" "$SCRATCH_LOCALAPPDATA"
 cleanup_scratch_home() {
   [ -n "${SCRATCH_HOME:-}" ] || return 0
   if ! rm -rf "$SCRATCH_HOME" 2>/dev/null; then
-    # Loud, because a leftover scratch home is exactly the residue this
-    # script is supposed to leave no trace of.
-    echo "warning: could not remove scratch test home: $SCRATCH_HOME" >&2
+    # Loud, and in BOTH path shapes: a Windows child cannot cd to or delete a
+    # "/tmp/…" string, so telling it that is telling it nothing (裁定 79). The
+    # leftover usually means something still holds a handle — a live gateway or a
+    # test that spawned and forgot to reap.
+    echo "warning: could not remove scratch test home" >&2
+    echo "           bash:   $SCRATCH_HOME" >&2
+    echo "           native: $(to_native "$SCRATCH_HOME")" >&2
+    echo "         leftovers under $(to_native "$TEMP_ROOT"): $(find "$TEMP_ROOT" -maxdepth 1 -name 'plobi-tests-home.*' 2>/dev/null | wc -l | tr -d ' ') plobi-tests-home.* dir(s)" >&2
+    # Name what actually survived — that is the handle holder's address, and twice
+    # now (10-09 11:2x, 12:5x) this warning fired with nobody able to say why.
+    echo "         still present inside it:" >&2
+    find "$SCRATCH_HOME" -mindepth 1 -maxdepth 3 2>/dev/null | head -n 8 |
+      while read -r LEFT; do echo "           $(to_native "$LEFT")" >&2; done
+    echo "         safe to delete once nothing is running; it is inside the temp root, not the drive root." >&2
   fi
 }
 trap cleanup_scratch_home EXIT INT TERM HUP

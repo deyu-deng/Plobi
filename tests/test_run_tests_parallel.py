@@ -31,15 +31,16 @@ from pathlib import Path
 import pytest
 
 
-# Both tests share the same handoff file: the leaker writes here, the
-# verifier reads here. We park it in $TMPDIR with a unique-per-run name
-# so concurrent invocations of the suite don't clobber each other.
-_HANDOFF_DIR = Path(os.environ.get("TMPDIR", "/tmp")) / "plobi-isolation-probe"
-_HANDOFF_DIR.mkdir(exist_ok=True)
-
-
-def _handoff_path_for(nonce: str) -> Path:
-    return _HANDOFF_DIR / f"grandchild-{nonce}.json"
+# The leaker writes its handoff file, the verifier reads it back. It used to be
+# parked in a module-level `$TMPDIR or /tmp` directory, which did two things we
+# did not want: the mkdir ran at *import* time — before the POSIX-only skip could
+# fire — so a Windows run created D:\tmp\plobi-isolation-probe on the drive root
+# (裁定 79), and nothing ever removed it. It now lives under the test's own
+# tmp_path, which is inside the runner's temp area and is cleaned up by pytest.
+def _handoff_path_for(tmp_path: Path, nonce: str) -> Path:
+    handoff = tmp_path / "plobi-isolation-probe" / f"grandchild-{nonce}.json"
+    handoff.parent.mkdir(parents=True, exist_ok=True)
+    return handoff
 
 
 def _pid_alive(pid: int) -> bool:
@@ -84,7 +85,7 @@ def test_grandchild_leak_is_killed_by_runner(tmp_path: Path) -> None:
     probe_dir.mkdir()
     probe = probe_dir / "test_probe_leaker.py"
     nonce = f"{os.getpid()}-{int(time.time() * 1000)}"
-    handoff = _handoff_path_for(nonce)
+    handoff = _handoff_path_for(tmp_path, nonce)
     if handoff.exists():
         handoff.unlink()
 
