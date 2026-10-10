@@ -32,7 +32,7 @@ class StubClient:
 @pytest.fixture()
 def client(tmp_path):
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=StubClient(),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),

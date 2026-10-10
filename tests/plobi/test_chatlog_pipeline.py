@@ -64,7 +64,7 @@ def message(content: str, *, talker: str = "班级群", msg_id: str = "m1") -> C
 @pytest.fixture()
 def pipeline(tmp_path):
     return ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient(),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -207,7 +207,7 @@ def test_unrelated_change_does_not_hijack_an_event(pipeline):
 
 def test_run_once_respects_enabled_flag(tmp_path):
     disabled = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=False),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=False),
         client=FakeClient({"班级群": [message("明天下午三点开组会")]}),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -227,7 +227,7 @@ def test_run_once_sweeps_each_whitelisted_talker(tmp_path):
         }
     )
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群", "项目群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群", "项目群"], enabled=True),
         client=client,
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -241,7 +241,7 @@ def test_run_once_sweeps_each_whitelisted_talker(tmp_path):
 
 def test_run_once_survives_chatlog_being_down(tmp_path):
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient(fail=True),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -254,7 +254,7 @@ def test_run_once_survives_chatlog_being_down(tmp_path):
 
 def test_empty_whitelist_collects_nothing(tmp_path):
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=[], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=[], enabled=True),
         client=FakeClient({"班级群": [message("明天下午三点开组会")]}),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -494,7 +494,7 @@ def test_config_blacklist_env_override(tmp_path, monkeypatch):
 
 def test_config_whitelist_and_env_override(tmp_path, monkeypatch):
     path = tmp_path / "chatlog.json"
-    CollectorConfig(talkers=["群A"], enabled=True).save(path)
+    CollectorConfig(mode="whitelist", talkers=["群A"], enabled=True).save(path)
 
     loaded = CollectorConfig.load(path)
     assert loaded.talkers == ["群A"]
@@ -505,11 +505,18 @@ def test_config_whitelist_and_env_override(tmp_path, monkeypatch):
     assert CollectorConfig.load(path).talkers == ["群B", "群C"]
 
 
-def test_config_defaults_to_collecting_nothing(tmp_path):
+def test_config_defaults_to_collecting_everything(tmp_path):
+    """没有配置文件时 = ADR-0010 现行口径（黑名单 + 空表即全采 + 默认开）。
+
+    这条以前叫 ``defaults_to_collecting_nothing``：钉的是 2026-08-30 / 09-30 两次修订
+    之前的旧默认值（白名单 fail-closed）。代码默认值改到现行口径后，那条断言就成了
+    "把被推翻的口径当规格"——判据 7 要修的正是这件事（WP-SOCIAL-SOURCES-PLUGGABLE）。
+    """
     empty = CollectorConfig.load(tmp_path / "missing.json")
-    assert empty.enabled is False
-    assert empty.talkers == []
-    assert empty.allows("任何人") is False
+    assert empty.enabled is True
+    assert empty.mode == "blacklist"
+    assert empty.blacklist == []
+    assert empty.allows("任何人") is True
 
 
 @pytest.mark.parametrize(
@@ -614,7 +621,7 @@ def test_message_sent_last_night_anchors_tomorrow_on_its_sent_time(tmp_path):
         content="明天下午三点开会",
     )
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient({"班级群": [sent]}),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -644,7 +651,7 @@ def test_neighbours_are_capped_at_one_each_side(tmp_path):
         message("明天下午三点开会丁", msg_id="a4"),
     ]
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient({"班级群": msgs}),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),

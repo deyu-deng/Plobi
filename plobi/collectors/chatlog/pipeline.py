@@ -80,6 +80,9 @@ def _topic_tokens(text: str) -> set[str]:
     return {word for word in _MATCH_KEYWORDS if word in text}
 
 
+from . import sidecar
+
+
 class ChatlogPipeline:
     # Collector protocol (WP-COLLECTOR-ICS): the chatlog source is the first
     # implementation of the pluggable collector surface.
@@ -105,14 +108,16 @@ class ChatlogPipeline:
         self._talker_names: Optional[dict[str, str]] = None
 
     def health(self) -> dict:
-        """Collector-protocol health — reuses the existing chatlog probe."""
+        """Collector-protocol health：探活仍复用已有那一条，**多答一句"为什么"**。
+
+        以前不健康只回 "chatlog unreachable (/health failed)"——四种完全不同的原因
+        （没 Go / 没产物 / 没密钥 / 没在听）在面上是同一句话，判据 8 要的就是拆开它。
+        """
         ok = chatlog_is_healthy(self.client)
-        return {
-            "ok": ok,
-            "detail": (
-                "chatlog /health ok" if ok else "chatlog unreachable (/health failed)"
-            ),
-        }
+        if ok:
+            return {"ok": True, "detail": "chatlog /health ok", "state": sidecar.STATE_READY}
+        state, why = sidecar.diagnose(healthy=False)
+        return {"ok": False, "detail": f"chatlog 采不到：{why}", "state": state}
 
     def _default_confirmer(self) -> Confirmer:
         """Heuristic first, L2 model for the remainder.

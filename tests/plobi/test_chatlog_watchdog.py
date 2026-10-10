@@ -35,7 +35,7 @@ def _make(tmp_path, fail: bool, notifier: RecordingNotifier):
     service = AgendaService(tmp_path / "agenda.db")
     client = FakeClient(fail=fail)
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=client,
         service=service,
         seen=SeenStore(tmp_path / "seen.db"),
@@ -129,7 +129,7 @@ def test_sweep_results_are_notified_through_dispatcher(tmp_path):
 
     client = SeededClient()
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=client,
         service=service,
         seen=SeenStore(tmp_path / "seen.db"),
