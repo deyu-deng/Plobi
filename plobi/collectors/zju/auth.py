@@ -286,7 +286,7 @@ def authenticate(transport: Transport, username: str, password: str) -> tuple[st
                 return STATE_READY, _safe_url(probe.url), rows
             return (
                 STATE_LOGIN_CHANGED,
-                f"GET {entry.url} 的 {entry.status} 回话里既没有登录表单，业务端点也不是作业清单",
+                f"GET {_safe_url(entry.url)} 的 {entry.status} 回话里既没有登录表单，业务端点也不是作业清单",
                 [],
             )
 
