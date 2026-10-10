@@ -74,6 +74,10 @@ class IngestReport:
         }
 
 
+# 首启存量审查那道闸的那句人话（裁定 102 三缓解条）。句子只在这里生成一次：
+# `/api/collect/talkers` 的 `collector.gate` 与桌面台账都逐字转述它——与 sidecar 那四句同一规矩。
+REVIEW_GATE_NOTE = "首启存量审查还没做完：{count} 个会话我先一条都不采，等你过一遍再进待确认。"
+
 def _topic_tokens(text: str) -> set[str]:
     return {word for word in _MATCH_KEYWORDS if word in text}
 
@@ -104,6 +108,23 @@ class ChatlogPipeline:
         self.confirmer = confirmer or self._default_confirmer()
         # talker id → chatlog display name, resolved once, best-effort.
         self._talker_names: Optional[dict[str, str]] = None
+
+    def review_gate(self, candidates: Optional[int] = None) -> dict:
+        """首启存量审查那道闸的**人话读数**（裁定 102 三缓解条：不许变成"什么都不显示"）。
+
+        句子只在这里生成一次：`/api/collect/sweep` 的 `review_gated` 与 `/api/collect/talkers`
+        的 `collector.gate` 都读它，桌面与看板只许逐字转述——与 sidecar 那四句同一规矩
+        （`WP-SIDECAR-STATE-SINGLE-SOURCE` 判据 1/2）。
+        """
+        complete = self.talkers.review_done()
+        gated = 0 if complete else (
+            candidates if candidates is not None else len(self.talkers.pending())
+        )
+        return {
+            "complete": complete,
+            "gatedTalkers": gated,
+            "note": "" if complete or gated <= 0 else REVIEW_GATE_NOTE.format(count=gated),
+        }
 
     def health(self) -> dict:
         """Collector-protocol health：探活仍复用已有那一条，**多答一句"为什么"**。
