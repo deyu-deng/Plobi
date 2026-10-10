@@ -54,6 +54,14 @@ import {
   type CollectorAnswer
 } from './chatlog-status'
 import {
+  chatlogConfigDir,
+  handoffServerConfig,
+  keyFingerprint,
+  SIDECAR_ADDR,
+  serverConfigReady,
+  type HandoffOutcome
+} from './chatlog-keys'
+import {
   authModeFromStatus,
   buildGatewayWsUrl,
   buildGatewayWsUrlWithTicket,
@@ -8556,6 +8564,50 @@ function killStrayChatlogProcesses(): void {
   }
 }
 
+/** 密钥值的指纹：只用来在台账上回答"取到没取到、和上一把是不是同一把"，不可逆推。 */
+function keysFingerprintOf(value: string): string {
+  return keyFingerprint(value)
+}
+
+/**
+ * 让 sidecar 拿到微信数据密钥，并且**不经由命令行、不落 stdout**。
+ *
+ * 顺序是有意的：先认 `chatlog-server.json`（已经交接过就别再摸一次微信进程内存），
+ * 没有才跑 `chatlog key`。跑 `key` 时 stdio 全丢——它把密钥原样打到 stdout
+ * （`cmd_key.go:34`），而我们只关心它写没写自己的配置文件（`UpdateConfig`）。
+ */
+function prepareChatlogSidecar(exe: string, legacyDataKey?: string): HandoffOutcome {
+  const configDir = chatlogConfigDir(PLOBI_HOME)
+  const workDir = path.join(configDir, 'work')
+
+  if (!serverConfigReady(configDir) && !legacyDataKey) {
+    try {
+      execFileSync(exe, ['key'], {
+        cwd: path.dirname(exe),
+        env: { ...process.env, CHATLOG_DIR: configDir },
+        stdio: ['ignore', 'ignore', 'ignore'],
+        timeout: 90000,
+        windowsHide: true
+      })
+    } catch (error) {
+      // 认不出的失败只说"这一格是什么"，不猜原因：最常见的两因是 PC 微信没登录、
+      // 或它扫不到微信进程，两者都不是"这台没装 Go / 没产物"。
+      const message = String((error as Error)?.message || error).slice(0, 160)
+
+      return {
+        ok: false,
+        reason: 'no-key',
+        detail: `chatlog key 没跑成（PC 微信在登录态吗）：${message}`,
+        fingerprint: '',
+        dataDir: '',
+        wroteServerConfig: false
+      }
+    }
+  }
+
+  return handoffServerConfig(configDir, workDir)
+}
+
 async function ensureChatlogServer(): Promise<void> {
   const answer = await chatlogCollectorAnswer()
   const row = chatlogLedgerRow(answer)
@@ -8587,23 +8639,27 @@ async function ensureChatlogServer(): Promise<void> {
   }
 
   const keys = loadChatlogCliKeys()
-  const args = ['server', '--addr', '127.0.0.1:5030', '--auto-decrypt']
+  const sidecar = prepareChatlogSidecar(exe, keys.dataKey)
 
-  if (keys.dataDir) {
-    args.push('--data-dir', keys.dataDir)
+  if (!sidecar.ok) {
+    // 起不来的真原因就说这个原因，不许冒充"没产物"或"没配 CHATLOG_DATA_KEY"那一格：
+    // `server` 在没有 data_key 时是直接退出（上游 manager.go:349）。
+    reportDeferredSubsystem('chatlog', 'red', `微信数据密钥没到手：${sidecar.detail}`)
+    rememberLog(`[sidecar] chatlog key handoff failed: ${sidecar.detail}`)
+
+    return
   }
 
-  if (keys.dataKey) {
-    args.push('--data-key', keys.dataKey)
+  if (keys.dataKey && keysFingerprintOf(keys.dataKey) !== sidecar.fingerprint) {
+    rememberLog(
+      `[sidecar] chatlog: 环境变量/家目录那把密钥（…${keysFingerprintOf(keys.dataKey)}）与 sidecar 自己取到的（…${sidecar.fingerprint}）不是同一把 —— 服务端用的是后者`
+    )
   }
 
-  if (keys.imgKey) {
-    args.push('--img-key', keys.imgKey)
-  }
+  rememberLog(`[sidecar] chatlog key ready …${sidecar.fingerprint}（${sidecar.detail}）`)
 
-  if (!keys.dataKey) {
-    rememberLog('[sidecar] chatlog: no CHATLOG_DATA_KEY / ~/.chatlog key; spawning anyway')
-  }
+  // 命令行里只出现地址，不出现密钥：地址不是秘密，密钥是（裁定 110 一）。
+  const args = ['server', '--addr', SIDECAR_ADDR]
 
   try {
     if (chatlogChild && !chatlogChild.killed) {
@@ -8615,22 +8671,17 @@ async function ensureChatlogServer(): Promise<void> {
       cwd: path.dirname(exe),
       env: {
         ...process.env,
-        ...(keys.dataKey ? { CHATLOG_DATA_KEY: keys.dataKey } : {}),
-        ...(keys.imgKey ? { CHATLOG_IMG_KEY: keys.imgKey } : {})
+        // 钉死配置目录，省得 sidecar 往 C:\Users\<user>\.chatlog 写（裁定 109 三：运行数据禁残留 C 盘）
+        CHATLOG_DIR: chatlogConfigDir(PLOBI_HOME)
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // stdout/stderr 一律丢掉：上游把合并后的整包服务配置打进日志（conf.go:93 那句里就含
+      // data_key/img_key），逐行 rememberLog 等于把微信数据密钥抄进台账。
+      // 面上"活着没活着"由 :5030 的探活说了算，不靠它打了什么。
+      stdio: ['ignore', 'ignore', 'ignore'],
       detached: false,
       windowsHide: true
     })
 
-    chatlogChild.stdout?.on('data', (chunk: Buffer) => {
-      const line = chunk.toString().trim()
-      if (line) rememberLog(`[chatlog] ${line}`)
-    })
-    chatlogChild.stderr?.on('data', (chunk: Buffer) => {
-      const line = chunk.toString().trim()
-      if (line) rememberLog(`[chatlog] ${line}`)
-    })
     chatlogChild.on('exit', (code: number | null) => {
       rememberLog(`[chatlog] exited code=${code}`)
       chatlogChild = null
