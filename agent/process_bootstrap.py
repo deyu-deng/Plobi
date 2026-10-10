@@ -12,9 +12,11 @@ Three concerns, all tied to ``AIAgent`` boot-time / runtime IO setup:
    thread teardown races) cannot crash the agent.  ``_install_safe_stdio``
    applies the wrapper.
 
-3. **HTTP proxy resolution** — ``_get_proxy_from_env`` reads
-   ``HTTPS_PROXY`` / ``HTTP_PROXY`` / ``ALL_PROXY``;
-   ``_get_proxy_for_base_url`` respects ``NO_PROXY`` for the given base URL.
+3. **HTTP proxy resolution** — ``_get_proxy_for_base_url`` answers per
+   destination: a declared ``network.egress`` rule table wins
+   (``agent.egress.rules``), otherwise ``_get_proxy_from_env`` reads
+   ``HTTPS_PROXY`` / ``HTTP_PROXY`` / ``ALL_PROXY`` and ``NO_PROXY`` can
+   exclude the given base URL.
 
 ``run_agent`` re-exports every name so existing
 ``from run_agent import _get_proxy_from_env`` imports keep working
@@ -124,7 +126,24 @@ def _get_proxy_from_env() -> Optional[str]:
 
 
 def _get_proxy_for_base_url(base_url: Optional[str]) -> Optional[str]:
-    """Return an env-configured proxy unless NO_PROXY excludes this base URL."""
+    """Return the proxy for this base URL, or None when it must go direct.
+
+    A declared ``network.egress`` rule table wins per destination, and answers
+    with its catch-all rule when the caller has no destination to name —
+    ``agent.external_offload.resolve_proxy`` asks exactly that, and a table that
+    only answered named URLs would silently not apply to it (裁定 94).  With no
+    table the env-only path below is used unchanged, so merging this resolver
+    cannot alter behaviour for anyone who has not written a rule yet.
+    """
+    from agent.egress import rules as _egress
+
+    table = _egress.load_table()
+    if table.active:
+        decision = _egress.decide_for_url(table, base_url) if base_url else None
+        if decision is None:
+            decision = _egress.default_decision(table)
+        return decision.proxy_url
+
     proxy = _get_proxy_from_env()
     if not proxy or not base_url:
         return proxy

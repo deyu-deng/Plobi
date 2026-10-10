@@ -393,6 +393,8 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
 
     _apply_windows_msys_bash_env_defaults(sanitized)
 
+    _apply_egress_routing(sanitized)
+
     return sanitized
 
 
@@ -437,6 +439,20 @@ _ALWAYS_STRIP_KEYS: frozenset[str] = frozenset({
     "MODAL_TOKEN_SECRET",
     "DAYTONA_API_KEY",
 })
+
+
+def _apply_egress_routing(env: dict[str, str]) -> None:
+    """Project the declared egress rule table onto this child's network variables.
+
+    Runs last in both spawn paths so nothing downstream can re-inherit a stale
+    bypass list.  With no table declared the projection is inert; a malformed
+    table raises rather than guessing, because "which exit does this host use"
+    is not a detail a child process can audit after the fact.
+    """
+    from agent.egress.env_projection import apply_egress_env
+    from agent.egress.rules import load_table
+
+    apply_egress_env(env, load_table())
 
 
 def plobi_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str]:
@@ -514,6 +530,8 @@ def plobi_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str]
     # session's identity. Strip _UNSET session vars when engaged so that can't
     # happen; single uniform policy across every spawn surface.
     _inject_session_context_env(env)
+
+    _apply_egress_routing(env)
 
     return env
 
