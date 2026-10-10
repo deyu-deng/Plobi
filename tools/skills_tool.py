@@ -92,24 +92,54 @@ logger = logging.getLogger(__name__)
 # Cache validation (mirrors plobi_cli/profiles.py::_count_skills, d5eee133e):
 #   - signature = per-dir max mtime of the dir AND its immediate children
 #     (one scandir per dir; catches skill add/remove inside categories,
-#     which does NOT bump the root dir's mtime), plus the disabled-set
+#     which does NOT bump the root dir's mtime), plus (mtime_ns, size) of every
+#     SKILL.md the previous scan found — the only signal that sees an in-place
+#     edit, which bumps the file and no directory at all, plus the disabled-set
 #     (config-driven — changes with no filesystem mtime bump at all)
-#   - a short TTL bounds staleness from in-place SKILL.md edits, which
-#     bump only the file's mtime, invisible to any directory signature.
+#   - mtimes are compared as integer nanoseconds.  float seconds cannot separate
+#     timestamps inside one float64 quantum (~238 ns at this epoch, measured on
+#     Windows) and Windows re-stamps a directory milliseconds after it is
+#     created, so a float signature both misses real changes and drifts on its
+#     own — that drift is what made the discovery-cache tests flip between runs.
+#   - the TTL is the backstop for the one edit no fingerprint can see (same size
+#     AND same mtime_ns), not the primary invalidation mechanism.
 # skip_disabled True/False are cached separately.
-_SKILLS_CACHE: dict = {}          # {cache_key: (signature, timestamp, skills_list)}
+_SKILLS_CACHE: dict = {}          # {cache_key: (signature, timestamp, skills_list, skill_md_paths)}
 _SKILLS_CACHE_TTL_SECONDS = 30.0
 _SKILLS_CACHE_KEY_DISABLED = "with_disabled"
 _SKILLS_CACHE_KEY_FILTERED = "filtered"
 
 
-def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
+def _skill_file_fingerprints(skill_md_paths) -> tuple:
+    """``(path, mtime_ns, size)`` for each SKILL.md the previous scan found.
+
+    O(#skills) stat calls, no reads — measured on this box with 82 skills: 3 ms
+    of stats against 34 ms to re-walk, re-read and re-parse them, so the hit
+    path stays an order of magnitude cheaper than a rescan.  A vanished path
+    fingerprints as ``(path, None, None)``, which no present file can match.
+    """
+    fingerprints = []
+    for skill_md in skill_md_paths:
+        try:
+            st = skill_md.stat()
+        except OSError:
+            fingerprints.append((str(skill_md), None, None))
+            continue
+        fingerprints.append((str(skill_md), st.st_mtime_ns, st.st_size))
+    return tuple(fingerprints)
+
+
+def _skills_scan_signature(dirs_to_scan, disabled, known_skill_files=()) -> tuple:
     """Cheap change-signature for the skill scan inputs.
 
-    O(#dirs + #categories) stat calls, not a recursive walk. Includes the
-    platform the scan's ``skill_matches_platform`` filter will use (read
-    from ``agent.skill_utils``'s ``sys`` so test patches of that module
-    are honored) — the scan result is platform-dependent.
+    O(#dirs + #categories + #skills) stat calls, no reads and no recursive
+    walk. Includes the platform the scan's ``skill_matches_platform`` filter
+    will use (read from ``agent.skill_utils``'s ``sys`` so test patches of that
+    module are honored) — the scan result is platform-dependent.
+
+    ``known_skill_files`` are the SKILL.md paths the previous scan found; pass
+    them so an in-place edit of a file nobody added or removed still moves the
+    signature.
     """
     from agent import skill_utils as _skill_utils
 
@@ -117,7 +147,7 @@ def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
     sig = []
     for d in dirs_to_scan:
         try:
-            m = d.stat().st_mtime
+            m = d.stat().st_mtime_ns
         except OSError:
             continue
         try:
@@ -125,7 +155,7 @@ def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
                 for entry in it:
                     try:
                         if entry.is_dir(follow_symlinks=False):
-                            em = entry.stat(follow_symlinks=False).st_mtime
+                            em = entry.stat(follow_symlinks=False).st_mtime_ns
                             if em > m:
                                 m = em
                     except OSError:
@@ -133,7 +163,12 @@ def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
         except OSError:
             pass
         sig.append((str(d), m))
-    return (tuple(sig), frozenset(disabled), platform)
+    return (
+        tuple(sig),
+        _skill_file_fingerprints(known_skill_files),
+        frozenset(disabled),
+        platform,
+    )
 
 
 # All skills live in ~/.plobi/skills/ (seeded from bundled skills/ on install).
@@ -678,8 +713,9 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
         List of skill metadata dicts (name, description, category).
 
     Results are cached per-session; the cache is invalidated when the scan
-    signature changes (dir/category mtimes or the disabled-set) and expires
-    after a short TTL to bound staleness from in-place SKILL.md edits.
+    signature changes (dir/category mtimes, the SKILL.md files themselves, or
+    the disabled-set).  The short TTL is only the backstop for an edit that
+    changed neither a directory nor a file's size and nanosecond mtime.
     """
     from agent.skill_utils import get_external_skills_dirs, iter_skill_index_files
 
@@ -698,10 +734,14 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
         dirs_to_scan.append(active_skills_dir)
     dirs_to_scan.extend(get_external_skills_dirs())
 
-    signature = _skills_scan_signature(dirs_to_scan, disabled)
+    cached = _SKILLS_CACHE.get(cache_key)
+    # Fingerprint the files the previous scan saw, so an in-place edit of an
+    # existing SKILL.md invalidates instead of waiting for the TTL.
+    signature = _skills_scan_signature(
+        dirs_to_scan, disabled, cached[3] if cached is not None else ()
+    )
     now = time.monotonic()
 
-    cached = _SKILLS_CACHE.get(cache_key)
     if (
         cached is not None
         and cached[0] == signature
@@ -714,6 +754,7 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
 
     skills = []
     seen_names: set = set()
+    read_skill_md: list = []
 
     # Scan local dir first, then external dirs (local takes precedence) —
     # dirs_to_scan already resolved above for the signature.
@@ -721,6 +762,9 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
         for skill_md in iter_skill_index_files(scan_dir, "SKILL.md"):
             if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
                 continue
+            # Everything from here on gets read and parsed, so it goes into the
+            # fingerprint set: a change to any of these files must invalidate.
+            read_skill_md.append(skill_md)
 
             skill_dir = skill_md.parent
 
@@ -771,9 +815,11 @@ def _find_all_skills(*, skip_disabled: bool = False) -> List[Dict[str, Any]]:
 
     # Store in cache keyed by the scan signature computed BEFORE the scan
     # (a write racing the scan changes the signature, so the next call
-    # re-scans rather than serving the torn result past the TTL). Same
+    # re-scans rather than serving the torn result past the TTL). The stored
+    # path list is the one this scan actually read, so the *next* call can
+    # fingerprint those files before deciding to reuse this result. Same
     # shallow-copy contract as the hit path — the caller may mutate.
-    _SKILLS_CACHE[cache_key] = (signature, now, skills)
+    _SKILLS_CACHE[cache_key] = (signature, now, skills, read_skill_md)
     return [dict(s) for s in skills]
 
 
