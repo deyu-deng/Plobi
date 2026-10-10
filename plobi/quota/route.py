@@ -23,6 +23,7 @@ import urllib.request
 from typing import Callable, Optional
 
 from plobi.quota.pool import QuotaPool, get_quota_pool
+from plobi.quota import usage_ledger
 from plobi.quota.sources import QuotaSource
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,25 @@ _DEFAULT_TIMEOUT = 20.0
 #: *every* desktop-quota spend, and because a timeout is swallowed into
 #: ``None`` the failure was silent. HTTP-backed cheap APIs keep the short bound.
 _KIND_TIMEOUTS = {"aigw": 120.0}
+
+
+def _cost_of(usage: dict) -> float | None:
+    """Money only if someone actually reported it. Never 0 by default (R-073)."""
+    for key in ("total_cost_usd", "cost", "cost_usd"):
+        value = usage.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _cost_status(usage: dict) -> str:
+    if _cost_of(usage) is not None:
+        return usage_ledger.COST_STATUS_PRICED
+    return (
+        usage_ledger.COST_STATUS_USAGE_NO_PRICE
+        if usage
+        else usage_ledger.COST_STATUS_NO_USAGE
+    )
 
 
 def spend_timeout(source: QuotaSource) -> float:
@@ -104,6 +124,17 @@ def _default_send(prompt: str, source: QuotaSource, *, timeout: Optional[float] 
     message = choices[0].get("message") or {} if choices else {}
     content = message.get("content")
     text = content if isinstance(content, str) else ""
+    # The response almost always carries a usage block; nobody used to read it.
+    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+    usage_ledger.record(
+        source=getattr(source, "name", "?"),
+        kind=getattr(source, "kind", ""),
+        ok=bool(text.strip()),
+        error_class="" if text.strip() else "empty_completion",
+        usage=usage,
+        cost=_cost_of(usage),
+        cost_status=_cost_status(usage),
+    )
 
     if not text.strip():
         # The gateway turns "the CLI exited 0 but printed nothing" into a 502, so
@@ -154,8 +185,25 @@ class QuotaAwareCompleter:
                 reply = send(prompt, source)
             except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, RuntimeError) as exc:
                 logger.warning("plobi quota: source %r failed (%s); failing over", source.name, exc)
+                # One row per attempt: "did we even call it, which source, how many
+                # times" must be answerable even when the sender is injected and no
+                # usage block exists to read.
+                usage_ledger.record(
+                    source=getattr(source, "name", "?"),
+                    kind=getattr(source, "kind", ""),
+                    ok=False,
+                    error_class=type(exc).__name__,
+                    cost_status=usage_ledger.COST_STATUS_NOT_ATTEMPTED,
+                )
                 pool.mark_failed(source.name)
                 continue
+            usage_ledger.record(
+                source=getattr(source, "name", "?"),
+                kind=getattr(source, "kind", ""),
+                ok=bool(reply and reply.strip()),
+                error_class="" if reply and reply.strip() else "empty_reply",
+                cost_status=usage_ledger.COST_STATUS_NO_USAGE,
+            )
             return reply
 
         logger.warning("plobi quota: exhausted %d source attempts", self._max_attempts)
