@@ -57,6 +57,18 @@ def binary_candidates(env: Mapping[str, str] | None = None, repo_root: Path | No
             str(root / "tools" / "chatlog" / "bin" / "chatlog")]
 
 
+def resolved_binary(
+    env: Mapping[str, str] | None = None,
+    repo_root: Path | None = None,
+) -> Optional[str]:
+    """当前真实存在的产物路径，没有就 `None`。
+
+    存在的理由只有一个（`WP-SIDECAR-STATE-SINGLE-SOURCE` 判据 1）：桌面要 spawn 时读**这一个**答案，
+    不许在 `main.ts` 里再列一份候选——那份候选就是第二条真源。
+    """
+    return next((c for c in binary_candidates(env, repo_root) if Path(c).is_file()), None)
+
+
 def diagnose(
     *,
     env: Mapping[str, str] | None = None,

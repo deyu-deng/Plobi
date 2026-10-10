@@ -168,6 +168,32 @@ class TestFourDeadEndsAreFourSentences:
     def test_unrecognised_state_is_not_guessed(self) -> None:
         assert sidecar.note_for("weird").startswith("没记到的采集器状态")
 
+    def test_resolved_binary_is_the_one_answer_the_desktop_reads(self, tmp_path: Path) -> None:
+        """`WP-SIDECAR-STATE-SINGLE-SOURCE` 判据 1 的服务端那一半：产物路径由这里给一次，
+        桌面不许再列一份候选（`main.ts` 原来硬编了 `tools/chatlog/bin` 与 `D:\\Tools\\wechat`）。"""
+        env = _env_with_go(tmp_path, with_binary=True)
+        assert sidecar.resolved_binary(env=env) == str(tmp_path / "chatlog.exe")
+
+    def test_resolved_binary_is_none_when_nothing_exists(self, tmp_path: Path) -> None:
+        assert sidecar.resolved_binary(env={"PATH": str(tmp_path)}, repo_root=tmp_path) is None
+
+    def test_health_carries_the_binary_alongside_the_state(self, monkeypatch, tmp_path: Path) -> None:
+        """桌面一次 `health` 就要拿到"缺哪一步"+"可用的产物"，不必二次问。"""
+        from types import SimpleNamespace
+
+        from plobi.collectors.chatlog import pipeline as pipeline_module
+
+        monkeypatch.setattr(pipeline_module, "chatlog_is_healthy", lambda client: False)
+        env = _env_with_go(tmp_path, with_binary=True)
+        monkeypatch.setattr(sidecar, "resolved_binary", lambda **kw: str(tmp_path / "chatlog.exe"))
+        pipe = pipeline_module.ChatlogPipeline(
+            config=CollectorConfig(), client=SimpleNamespace(), service=SimpleNamespace(),
+            seen=SimpleNamespace(), talkers=SimpleNamespace(), confirmer=SimpleNamespace(),
+        )
+        report = pipe.health()
+        assert report["binary"] == str(tmp_path / "chatlog.exe")
+        assert report["ok"] is False
+
 
 class TestHealthCarriesTheReason:
     def test_unhealthy_health_reports_a_state_key(self, monkeypatch, tmp_path: Path) -> None:

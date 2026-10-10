@@ -112,10 +112,16 @@ class ChatlogPipeline:
         （没 Go / 没产物 / 没密钥 / 没在听）在面上是同一句话，判据 8 要的就是拆开它。
         """
         ok = chatlog_is_healthy(self.client)
+        binary = sidecar.resolved_binary()
         if ok:
-            return {"ok": True, "detail": "chatlog /health ok", "state": sidecar.STATE_READY}
-        state, why = sidecar.diagnose(healthy=False)
-        return {"ok": False, "detail": f"chatlog 采不到：{why}", "state": state}
+            return {
+                "ok": True,
+                "detail": "chatlog /health ok",
+                "state": sidecar.STATE_READY,
+                "binary": binary,
+            }
+        state, why = sidecar.diagnose(healthy=False, repo_root=None)
+        return {"ok": False, "detail": f"chatlog 采不到：{why}", "state": state, "binary": binary}
 
     def _default_confirmer(self) -> Confirmer:
         """Heuristic first, L2 model for the remainder.
