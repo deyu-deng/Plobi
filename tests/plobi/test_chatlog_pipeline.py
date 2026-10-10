@@ -353,10 +353,10 @@ def test_blacklist_mode_gated_until_review_completes(tmp_path):
     )
 
     report = pipeline.run_once()
-    # Nothing is swept before the first-run review; candidates are counted.
-    assert report.review_gated == 2
-    assert client.calls == []
-    assert pipeline.service.list_pending() == []
+    # 裁定 109 一：首启审查那道闸由用户本人退役 ⇒ 没过审也照常扫，不再整轮拦下。
+    assert [call[0] for call in client.calls] == ["班级群", "项目群"]
+    assert client.calls[0][1] is None
+    assert report.scanned >= 2
 
 
 # --------------------------------------------------------------------------
@@ -443,17 +443,23 @@ def test_refresh_agenda_does_not_widen_when_board_has_events(tmp_path):
     assert [event["title"] for event in summary["events"]] == ["组会"]
 
 
-def test_refresh_agenda_does_not_widen_before_review(tmp_path):
+def test_refresh_agenda_ignores_the_retired_review_gate(tmp_path):
+    """闸退役后，"审查做过没有"不该再改变扫描行为——同一个 pipeline、同一种输入，
+    只翻 `review_done` 那一位，两次读数必须一致。钉的是"这一位不再参与决策"。"""
     client = FakeClient({"班级群": []})
     pipeline = blacklist_pipeline(
         tmp_path, client=client, known=["班级群"], review_done=False
     )
 
-    report, summary = refresh_agenda(pipeline=pipeline)
+    _report_a, summary_a = refresh_agenda(pipeline=pipeline)
+    calls_before_review = list(client.calls)
 
-    assert report.review_gated == 1
-    assert client.calls == [], "gated: no fetch at all, and no widening"
-    assert not summary.get("lookback_widened", False)
+    pipeline.talkers.set_review_done(True)
+    client.calls.clear()
+    _report_b, summary_b = refresh_agenda(pipeline=pipeline)
+
+    assert calls_before_review == client.calls != []
+    assert bool(summary_a.get("lookback_widened")) == bool(summary_b.get("lookback_widened"))
 
 
 def test_blacklist_mode_no_talkers_when_enum_empty(tmp_path):
@@ -461,7 +467,6 @@ def test_blacklist_mode_no_talkers_when_enum_empty(tmp_path):
 
     report = pipeline.run_once()
     assert report.scanned == 0
-    assert report.review_gated == 0
     assert pipeline.client.calls == []
 
 
