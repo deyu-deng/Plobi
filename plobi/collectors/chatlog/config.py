@@ -25,6 +25,15 @@ DEFAULT_BASE_URL = "http://127.0.0.1:5030"
 # (docs/adr/0005-incremental-rule-plus-model.md, revision note).
 DEFAULT_POLL_MINUTES = 10
 
+# 采集口径的两个模式。**现行口径是黑名单**：ADR-0010 修订 2026-08-30 把「只采白名单」
+# 改成「黑名单 + 新会话默认采」，2026-09-30 裁定 50 又把新会话那半改成 fail-open
+# （首见即采），`Docs/DECISIONS.md` 待决 #3 已答成「默认全采 + 逐个关」。
+# 代码默认值一直停在被推翻的那一半上——这就是 10-10 判据 7 要修的。
+MODE_WHITELIST = "whitelist"
+MODE_BLACKLIST = "blacklist"
+CURRENT_MODE = MODE_BLACKLIST
+VALID_MODES = (MODE_WHITELIST, MODE_BLACKLIST)
+
 
 def config_path() -> Path:
     override = os.environ.get("PLOBI_CHATLOG_CONFIG", "").strip()
@@ -42,9 +51,9 @@ def config_path() -> Path:
 @dataclass
 class CollectorConfig:
     base_url: str = DEFAULT_BASE_URL
-    # Collection mode: "whitelist" (named-only, fail-closed) or
-    # "blacklist" (collect all except `blacklist`; empty = collect all).
-    mode: str = "whitelist"
+    # Collection mode: "blacklist"（现行默认：采全部，除 `blacklist` 里的；空表＝全采）
+    # 或 "whitelist"（只采点名，fail-closed——要用户显式写下才走这一档）。
+    mode: str = CURRENT_MODE
     # Whitelist set — used when mode == "whitelist". Empty means collect nothing.
     talkers: list[str] = field(default_factory=list)
     # Blacklist set — used when mode == "blacklist". Empty means collect all.
@@ -55,20 +64,25 @@ class CollectorConfig:
     # blacklist); tier does not reopen a closed door. Valid grades: info, task.
     tiers: dict[str, str] = field(default_factory=dict)
     poll_minutes: int = DEFAULT_POLL_MINUTES
-    enabled: bool = False
+    # 主开关默认**开**：用户 10-09 拍「chatlog 启用」、10-10 又拍「全量执行」。
+    # 开着不等于在采——采不到的四种原因由 sidecar 各说一句，不静默、不报"正常"。
+    enabled: bool = True
     # Snapshot of the whitelist as it existed before a blacklist-mode migration.
     # Read-only from the collector's perspective — the original 399-name set
     # is preserved here for audit + future name→ID reconciliation work, but
     # has zero effect on ``allows()``.
     archived_whitelist: list[str] = field(default_factory=list)
     archived_at: str = ""  # ISO-8601 timestamp; "" if never migrated.
+    # 配置里写了但不被认识的 ``mode`` 原值；空串 = 没被纠正过。它存在的唯一理由就是
+    # 「不许静默」：面上要能说出"你写的 X 不认识，我按现行口径 blacklist 在跑"。
+    mode_as_written: str = ""
 
     def allows(self, talker: str) -> bool:
         if not talker:
             return False
         if self.mode == "blacklist":
             return talker not in set(self.blacklist)
-        # whitelist (default): named-only, fail-closed
+        # whitelist：显式选了才走，named-only fail-closed（不再是默认档）
         return talker in set(self.talkers)
 
     def tier_of(self, talker: str) -> str:
@@ -98,12 +112,19 @@ class CollectorConfig:
         if env_talkers:
             talkers = [t.strip() for t in env_talkers.split(",") if t.strip()]
 
-        mode = str(data.get("mode") or "whitelist").strip().lower()
+        mode_raw = str(data.get("mode") or "").strip().lower()
         env_mode = os.environ.get("PLOBI_CHATLOG_MODE", "").strip().lower()
-        if env_mode in ("whitelist", "blacklist"):
-            mode = env_mode
-        if mode not in ("whitelist", "blacklist"):
-            mode = "whitelist"
+        mode = env_mode or mode_raw or CURRENT_MODE
+        # 拼错一个字母**不许静默退回被推翻的旧口径**——那正是"用户以为在采、其实一条
+        # 都没采"的成因。不认识就按现行口径跑，同时把原值留着，让面上说得出"你写的 X 不认识"。
+        mode_as_written = "" if mode in VALID_MODES else mode
+        if mode not in VALID_MODES:
+            mode = CURRENT_MODE
+        if not mode_as_written:
+            # 上一次纠正过的值也要留得住：save/load 往返还是一次，面上那句话就没了。
+            persisted = str(data.get("mode_as_written") or "").strip().lower()
+            if persisted and persisted not in VALID_MODES:
+                mode_as_written = persisted
 
         blacklist = data.get("blacklist")
         env_blacklist = os.environ.get("PLOBI_CHATLOG_BLACKLIST", "").strip()
@@ -133,11 +154,12 @@ class CollectorConfig:
                 or DEFAULT_BASE_URL
             ).rstrip("/"),
             mode=mode,
+            mode_as_written=mode_as_written,
             talkers=[str(t) for t in talkers] if isinstance(talkers, list) else [],
             blacklist=[str(b) for b in blacklist] if isinstance(blacklist, list) else [],
             tiers=tiers,
             poll_minutes=int(data.get("poll_minutes") or DEFAULT_POLL_MINUTES),
-            enabled=bool(data.get("enabled", False)),
+            enabled=bool(data.get("enabled", True)),
             archived_whitelist=[str(a) for a in archived if a],
             archived_at=archived_at,
         )
@@ -148,6 +170,7 @@ class CollectorConfig:
         payload: dict[str, object] = {
             "base_url": self.base_url,
             "mode": self.mode,
+            "mode_as_written": self.mode_as_written,
             "talkers": self.talkers,
             "blacklist": self.blacklist,
             "poll_minutes": self.poll_minutes,

@@ -1,0 +1,145 @@
+"""判据 7/8 的钉：代码默认值等于 ADR 现行口径；四种"采不到"在面上分得开。
+
+跑法：``bash scripts/run_tests.sh tests/plobi/test_chatlog_current_posture.py -q -j 6``
+（唯一入口、不传 ``--basetemp``，裁定 87）。全是关系断言，不冻名单快照。
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from plobi.collectors.chatlog import sidecar
+from plobi.collectors.chatlog.config import CollectorConfig
+
+
+def _env_with_go(tmp_path: Path, with_binary: bool = False) -> dict[str, str]:
+    """造一个"Go 在"的环境：Windows 上 ``shutil.which`` 要真的可执行后缀。"""
+    (tmp_path / "go.cmd").write_text("@echo off\n", encoding="utf-8")
+    env = {"PATH": str(tmp_path), "GO_BINARY": "go.cmd"}
+    if with_binary:
+        binary = tmp_path / "chatlog.exe"
+        binary.write_text("", encoding="utf-8")
+        env["PLOBI_CHATLOG_BIN"] = str(binary)
+    return env
+
+
+@pytest.fixture
+def absent(tmp_path: Path) -> Path:
+    return tmp_path / "no-such-chatlog.json"
+
+
+class TestNoConfigEqualsCurrentPosture:
+    """判据 7 的那条硬要求：没有 ``chatlog.json`` 时，行为就等于 ADR 现行口径。"""
+
+    def test_defaults_are_blacklist_and_enabled(self, absent: Path) -> None:
+        assert absent.exists() is False
+        cfg = CollectorConfig.load(absent)
+        assert cfg.mode == "blacklist"
+        assert cfg.enabled is True
+        assert cfg.blacklist == []
+
+    def test_empty_blacklist_reaches_an_unseen_talker(self, absent: Path) -> None:
+        cfg = CollectorConfig.load(absent)
+        assert cfg.allows("任何第一次见到的群") is True
+        assert cfg.allows("某个个人号") is True
+
+    def test_missing_file_is_not_reported_as_silently_disabled(self, absent: Path) -> None:
+        """静默 fail-closed 就是这次要修的病根：不能既不开也不说。"""
+        cfg = CollectorConfig.load(absent)
+        assert cfg.enabled and cfg.mode == "blacklist"
+
+
+class TestNoSilentFallback:
+    def test_typoed_mode_runs_current_posture_and_is_remembered(self, tmp_path: Path) -> None:
+        path = tmp_path / "chatlog.json"
+        path.write_text(json.dumps({"mode": "backlist"}), encoding="utf-8")
+        cfg = CollectorConfig.load(path)
+        assert cfg.mode == "blacklist"
+        assert cfg.mode_as_written == "backlist"
+
+    def test_explicit_whitelist_is_still_honoured(self, tmp_path: Path) -> None:
+        path = tmp_path / "chatlog.json"
+        path.write_text(json.dumps({"mode": "whitelist", "talkers": ["mom"]}), encoding="utf-8")
+        cfg = CollectorConfig.load(path)
+        assert cfg.mode == "whitelist"
+        assert cfg.allows("mom") is True
+        assert cfg.allows("其他人") is False
+
+    def test_explicit_empty_whitelist_collects_nothing(self, tmp_path: Path) -> None:
+        path = tmp_path / "chatlog.json"
+        path.write_text(json.dumps({"mode": "whitelist", "talkers": []}), encoding="utf-8")
+        cfg = CollectorConfig.load(path)
+        assert cfg.allows("任何东西") is False
+
+    def test_roundtrip_keeps_the_corrected_value_visible(self, tmp_path: Path) -> None:
+        cfg = CollectorConfig(mode="blacklist", mode_as_written="whilsten")
+        path = cfg.save(tmp_path / "rt.json")
+        again = CollectorConfig.load(path)
+        assert again.mode_as_written == "whilsten"
+
+
+class TestFourDeadEndsAreFourSentences:
+    """判据 8：Go / 产物 / 密钥 / 在听 四种状态各一句，且顺序按依赖链。"""
+
+    def test_each_state_has_its_own_sentence(self) -> None:
+        notes = {sidecar.note_for(s) for s in (
+            sidecar.STATE_GO_MISSING, sidecar.STATE_BUILD_MISSING,
+            sidecar.STATE_KEY_MISSING, sidecar.STATE_NOT_LISTENING, sidecar.STATE_READY,
+        )}
+        assert len(notes) == 5
+
+    def test_missing_toolchain_is_reported_before_the_port(self, tmp_path: Path) -> None:
+        state, why = sidecar.diagnose(
+            env={"PATH": "", "GO_BINARY": "definitely-not-installed-go"},
+            healthy=False,
+            repo_root=tmp_path,
+        )
+        assert state == sidecar.STATE_GO_MISSING
+        assert "Go" in why
+
+    def test_build_comes_before_keys(self, tmp_path: Path) -> None:
+        state, _ = sidecar.diagnose(env=_env_with_go(tmp_path), healthy=False, repo_root=tmp_path)
+        assert state == sidecar.STATE_BUILD_MISSING
+
+    def test_keys_are_checked_for_presence_only_never_value(self, tmp_path: Path) -> None:
+        secret = "SHOULD-NEVER-APPEAR-IN-ANY-OUTPUT"
+        env = {**_env_with_go(tmp_path, with_binary=True),
+               "CHATLOG_DATA_KEY": secret, "CHATLOG_IMG_KEY": "   "}
+        state, why = sidecar.diagnose(env=env, healthy=False, repo_root=tmp_path)
+        assert state == sidecar.STATE_KEY_MISSING
+        assert secret not in why
+
+    def test_everything_present_but_not_listening_is_its_own_state(self, tmp_path: Path) -> None:
+        env = {**_env_with_go(tmp_path, with_binary=True),
+               "CHATLOG_DATA_KEY": "set", "CHATLOG_IMG_KEY": "set"}
+        state, why = sidecar.diagnose(env=env, healthy=False, repo_root=tmp_path)
+        assert state == sidecar.STATE_NOT_LISTENING
+        assert "5030" in why
+
+    def test_healthy_probe_says_ready_and_is_not_a_dead_end(self, tmp_path: Path) -> None:
+        assert sidecar.diagnose(env={}, healthy=True) == (sidecar.STATE_READY, sidecar.note_for(sidecar.STATE_READY))
+
+    def test_unrecognised_state_is_not_guessed(self) -> None:
+        assert sidecar.note_for("weird").startswith("没记到的采集器状态")
+
+
+class TestHealthCarriesTheReason:
+    def test_unhealthy_health_reports_a_state_key(self, monkeypatch, tmp_path: Path) -> None:
+        from types import SimpleNamespace
+        from plobi.collectors.chatlog import pipeline as pipeline_module
+
+        monkeypatch.setattr(pipeline_module, "chatlog_is_healthy", lambda client: False)
+        pipe = pipeline_module.ChatlogPipeline(
+            config=CollectorConfig(), client=SimpleNamespace(), service=SimpleNamespace(),
+            seen=SimpleNamespace(), talkers=SimpleNamespace(), confirmer=SimpleNamespace(),
+        )
+        report = pipe.health()
+        assert report["ok"] is False
+        assert report["state"] in {
+            sidecar.STATE_GO_MISSING, sidecar.STATE_BUILD_MISSING,
+            sidecar.STATE_KEY_MISSING, sidecar.STATE_NOT_LISTENING,
+        }
+        assert report["detail"].startswith("chatlog 采不到：")

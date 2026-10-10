@@ -54,7 +54,7 @@ def env(tmp_path, monkeypatch):
     )
 
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         service=service,  # client 不会被 webhook 路径用到
         seen=SeenStore(tmp_path / "seen.db"),
         confirmer=HeuristicConfirmer(),

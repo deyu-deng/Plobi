@@ -117,7 +117,7 @@ def test_task_tier_bare_clock_enters_confirm_with_weight(tmp_path: Path) -> None
     confirmed and carries the higher source weight."""
     pipeline = _pipeline(
         tmp_path,
-        config=CollectorConfig(talkers=["项目群"], tiers={"项目群": "task"}, enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["项目群"], tiers={"项目群": "task"}, enabled=True),
     )
 
     report = IngestReport()
@@ -134,7 +134,7 @@ def test_task_tier_bare_clock_enters_confirm_with_weight(tmp_path: Path) -> None
 
 def test_info_tier_bare_clock_stays_unresolved(tmp_path: Path) -> None:
     """Regression: info-tier behaviour is unchanged — ambiguous clock refused."""
-    pipeline = _pipeline(tmp_path, config=CollectorConfig(talkers=["班级群"], enabled=True))
+    pipeline = _pipeline(tmp_path, config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True))
     report = IngestReport()
     pipeline.handle_message(_message("三点开会吧", talker="班级群", msg_id="i1"), report)
     assert report.unresolved == 1
@@ -142,7 +142,7 @@ def test_info_tier_bare_clock_stays_unresolved(tmp_path: Path) -> None:
 
 
 def test_info_tier_scheduled_message_still_confirmed(tmp_path: Path) -> None:
-    pipeline = _pipeline(tmp_path, config=CollectorConfig(talkers=["班级群"], enabled=True))
+    pipeline = _pipeline(tmp_path, config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True))
     report = IngestReport()
     pipeline.handle_message(_message("明天下午三点开组会", msg_id="i2"), report)
     assert report.unresolved == 0
