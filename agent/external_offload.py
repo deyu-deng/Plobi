@@ -43,7 +43,15 @@ COMMAND_ENV = "PLOBI_OFFLOAD_CODEBUDDY_COMMAND"
 EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CODEBUDDY_EXTRA_ARGS"
 SANDBOX_ENV = "PLOBI_OFFLOAD_CODEBUDDY_SANDBOX"
 
+#: agy has no permission-mode ladder — one switch auto-approves everything, the
+#: absence of it prompts. Which way a run went is therefore a single boolean, and
+#: it still comes from config so a channel can be dialled back to restricted.
+AGY_SKIP_ENV = "PLOBI_OFFLOAD_AGY_SKIP_PERMISSIONS"
+AGY_COMMAND_ENV = "PLOBI_OFFLOAD_AGY_COMMAND"
+AGY_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_AGY_EXTRA_ARGS"
+
 AGENT_CODEBUDDY = "codebuddy"
+AGENT_AGY = "agy"
 
 #: Where an offload may NOT run: the four repositories on this box.
 FORBIDDEN_CWD_NAMES = ("Plobi-Desktop", "Plobi-Harmony-App", "Code", "Docs")
@@ -67,6 +75,8 @@ class OffloadResult:
     text: str
     ok: bool
     error: str
+    #: Whether the run actually left a file behind — an offload with no product did not work.
+    produced: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -87,6 +97,8 @@ def _which_prefer_executable(name: str) -> str:
 
 
 def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
+    if agent == AGENT_AGY:
+        return os.environ.get(AGY_COMMAND_ENV, "").strip() or _which_prefer_executable("agy")
     override = os.environ.get(COMMAND_ENV, "").strip()
     if override:
         return override
@@ -98,9 +110,13 @@ def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
 def permission_flags(agent: str = AGENT_CODEBUDDY, mode: Optional[str] = None) -> tuple[str, ...]:
     """The permissive flags for one run, taken from config — never hardcoded on.
 
-    ``-y`` alone does not satisfy "zero human approval": its own help says
-    HIGH/CRITICAL still prompt. The mode is the lever, and it stays dial-downable.
+    CodeBuddy's ``-y`` alone does not satisfy "zero human approval": its own help
+    says HIGH/CRITICAL still prompt. The mode is the lever, and it stays
+    dial-downable. agy has no ladder — one switch, also config-gated.
     """
+    if agent == AGENT_AGY:
+        skip = os.environ.get(AGY_SKIP_ENV, "1").strip().lower()
+        return ("--dangerously-skip-permissions",) if skip in {"1", "true", "yes"} else ()
     if agent != AGENT_CODEBUDDY:
         return ()
     chosen = (mode or os.environ.get(PERMISSION_MODE_ENV, "").strip() or DEFAULT_PERMISSION_MODE)
@@ -110,7 +126,8 @@ def permission_flags(agent: str = AGENT_CODEBUDDY, mode: Optional[str] = None) -
 
 
 def extra_args(agent: str = AGENT_CODEBUDDY) -> tuple[str, ...]:
-    raw = os.environ.get(EXTRA_ARGS_ENV, "").strip()
+    env = AGY_EXTRA_ARGS_ENV if agent == AGENT_AGY else EXTRA_ARGS_ENV
+    raw = os.environ.get(env, "").strip()
     return tuple(part for part in raw.split() if part) if raw else ()
 
 
@@ -148,7 +165,8 @@ def _digest(path: Path) -> str:
 def _collect_artifacts(root: Path, before: dict[str, float]) -> tuple[dict[str, Any], ...]:
     out = []
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
+        if not path.is_file() or path.name.startswith(".offload-"):
+            # Our own audit files are evidence about the run, not products of it.
             continue
         mtime = path.stat().st_mtime
         if path.name not in before or mtime > before[path.name]:
@@ -157,16 +175,44 @@ def _collect_artifacts(root: Path, before: dict[str, float]) -> tuple[dict[str, 
     return tuple(out)
 
 
+def _keep_evidence(root: Path, completed: "subprocess.CompletedProcess[str]") -> None:
+    """Persist the raw envelope so a finished run can be re-read without paying again."""
+    with contextlib.suppress(OSError):
+        (root / ".offload-envelope.json").write_text(completed.stdout or "", encoding="utf-8")
+        (root / ".offload-stderr.txt").write_text(completed.stderr or "", encoding="utf-8")
+
+
 def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any]]:
-    """Return (answer text, usage dict) from ``--output-format json``."""
-    text = (stdout or "").strip()
+    """Return (answer text, usage dict) from ``--output-format json``.
+
+    The two agents do not share an envelope: agy answers one object, CodeBuddy
+    answers a **list** of turn records. Both shapes are handled, and an
+    unrecognised one yields empty readings rather than a crash — a channel that
+    dies while parsing a finished run loses the evidence for nothing.
+    """
+    text_out = (stdout or "").strip()
     try:
-        payload = json.loads(text)
+        payload = json.loads(text_out)
     except json.JSONDecodeError:
-        return text, {}
-    usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
-    result = payload.get("result") or payload.get("text") or ""
-    return (result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)), dict(usage)
+        return text_out, {}
+
+    records = payload if isinstance(payload, list) else [payload]
+    records = [r for r in records if isinstance(r, dict)]
+
+    usage: dict[str, Any] = {}
+    parts: list[str] = []
+    for record in records:
+        if isinstance(record.get("usage"), dict):
+            usage = record["usage"]
+        for key in ("result", "text", "response"):
+            value = record.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value)
+        error = record.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            parts.append(f"[agent error] {error['message']}")
+
+    return ("\n".join(parts) or text_out), usage
 
 
 def _cost(usage: dict[str, Any]) -> tuple[Optional[float], str]:
@@ -233,14 +279,24 @@ def run_task(
     text, usage = _parse_envelope(completed.stdout or "")
     cost, cost_status = _cost(usage)
     artifacts = _collect_artifacts(workdir, before)
-    ok = completed.returncode == 0 and bool(text or artifacts)
+    _keep_evidence(workdir, completed)
+    # An offload that exits 0 but leaves nothing behind did not do the job.
+    # Measured on this box: codebuddy with `-y --permission-mode=dontAsk` returns
+    # exit 0 after 53s and 114k input tokens, having written nothing, because its
+    # Write/Bash tools are disabled in print mode — it never asked, because it
+    # never could. Reading that as success would silently ship a dead channel.
+    produced = bool(artifacts)
+    ok = completed.returncode == 0 and bool(text or produced)
     error = ""
-    if not ok:
+    if completed.returncode != 0:
         error = ((completed.stderr or "").strip()[:400] or f"exit={completed.returncode}")
+    elif not produced:
+        error = "exit 0 but no artifact was written — the agent did not actually do the work"
+        ok = False
 
     return OffloadResult(
         agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
         exit_code=completed.returncode, duration_s=round(duration, 2), argv=argv,
         usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,
-        text=text, ok=ok, error=error,
+        text=text, ok=ok, error=error, produced=produced,
     )

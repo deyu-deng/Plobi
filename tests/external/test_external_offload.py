@@ -198,3 +198,39 @@ def test_timeout_is_reported_not_swallowed(workdir, monkeypatch):
     monkeypatch.setattr(offload.subprocess, "run", explode)
     result = offload.run_task("slow task", cwd=workdir, timeout=1)
     assert result.ok is False and "did not finish" in result.error
+
+
+# ── 一手跑出来的形状差异：CodeBuddy 的 json 外壳是数组，agy 的是对象 ────────
+
+def test_list_shaped_envelope_does_not_crash_a_finished_run():
+    """Measured on this box: codebuddy --output-format json answers a LIST of turn
+    records. Parsing it with an object-only reader raised AttributeError *after*
+    the run had already completed and already spent — losing the evidence for
+    nothing."""
+    stdout = json.dumps([{"type": "system"}, {"result": "done", "usage": {"total_tokens": 7}}])
+    text, usage = offload._parse_envelope(stdout)
+    assert text == "done" and usage == {"total_tokens": 7}
+
+
+def test_object_shaped_envelope_still_parses():
+    text, usage = offload._parse_envelope(json.dumps({"result": "hi", "usage": {"total_tokens": 3}}))
+    assert text == "hi" and usage == {"total_tokens": 3}
+
+
+def test_unparseable_output_degrades_to_raw_text_not_an_exception():
+    text, usage = offload._parse_envelope("not json at all")
+    assert text == "not json at all" and usage == {}
+
+
+def test_envelope_is_kept_for_audit_without_counting_as_a_product(workdir, monkeypatch):
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+
+    def fake_run(argv, **kwargs):
+        (Path(kwargs["cwd"]) / "made.txt").write_text("x", encoding="utf-8")
+        return _Completed(stdout=json.dumps({"result": "ok"}))
+
+    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    result = offload.run_task("go", cwd=workdir)
+    names = [Path(a["path"]).name for a in result.artifacts]
+    assert names == ["made.txt"]
+    assert (workdir / ".offload-envelope.json").is_file()
