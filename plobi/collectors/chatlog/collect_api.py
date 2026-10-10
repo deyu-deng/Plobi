@@ -120,9 +120,15 @@ async def list_talkers():
     return {
         "reviewComplete": store.review_done(),
         "talkers": talkers,
-        # 能枚举就是活着——`state` 只是把这件事写成消费方读得懂的一位，不再探第二次。
-        # 于是"0 个会话"（这里 ok=True + 空表）与"采集器到不了"（503）在面上分得开。
-        "collector": {"ok": True, "state": sidecar.STATE_READY, "enumerated": len(talkers)},
+        # 能枚举就是活着——`state` 只是把这件事写成消费方读得懂的一位。
+        # `gate` 是裁定 102 三那条缓解：首启审查没过时面上必须说得出"多少个会话卡在闸上、
+        # 一条都还没采"，不许变成"什么都不显示"。句子由 `pipeline.review_gate()` 生成一次。
+        "collector": {
+            "ok": True,
+            "state": sidecar.STATE_READY,
+            "enumerated": len(talkers),
+            "gate": pipeline.review_gate(candidates=len(talkers)),
+        },
     }
 
 
