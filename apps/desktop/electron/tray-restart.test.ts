@@ -15,7 +15,12 @@
  *     hardcoded command string copied into Electron.
  */
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 import {
   RESTART_HANDOFF_MAX_WAIT_SECONDS,
@@ -273,4 +278,38 @@ test('a handoff that would wait on pid 0 is refused', () => {
     () => buildWindowsRestartHandoff({ waitPid: 0, workingDirectory: 'x', command: 'npm run dev' }),
     /pid/,
   )
+})
+
+/**
+ * 裁定 115 的两件无条件修法，钉在源码顺序上（这台没法在测试里真开模态框）：
+ * ① 弹框**之前**必须先上一行台账 —— 否则"点了没反应"与"正在等你回答"在用户面上不可分（裁定 94）；
+ * ② 那条 await 必须有有限出口 —— `restartGuard.end()` 只在 finally 放，
+ *    一条永不返回的 await 会把重启功能永久锁死（现核：两条 18:48 起的后端到 19:52 还活着，卡在弹框前）。
+ */
+test('the tray restart reports "awaiting your answer" before it asks, and can never hang the guard', () => {
+  const source = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8')
+
+  const reportAt = source.indexOf("labels.awaitingConfirm")
+  const dialogAt = source.indexOf('dialog.showMessageBox(host, options)')
+  const raceAt = source.indexOf('Promise.race([')
+  const guardEndAt = source.indexOf('restartGuard.end()')
+
+  assert.ok(reportAt > 0, '缺了 awaiting-confirm 那一行台账')
+  assert.ok(dialogAt > 0, '弹框调用没找到（改名了？）')
+  assert.ok(reportAt < dialogAt, '台账必须先于弹框：否则弹窗不出现时用户什么也看不到')
+  assert.ok(raceAt > 0 && raceAt < dialogAt + 400, '那条 await 必须被 Promise.race 套住，才有有限出口')
+  assert.ok(source.includes('RESTART_CONFIRM_TIMEOUT_MS'), '超时常量不见了 = 闸门又回到可以永久锁死')
+  assert.ok(guardEndAt > 0 && source.includes('} finally {'), '闸门释放仍必须在 finally 里')
+  assert.ok(source.includes('labels.dialogStalled'), '到点那条读数必须有自己的一句话，不能静默当取消')
+})
+
+test('both label sets carry the two new readings (zh and en, no silent fallback)', () => {
+  const zh = restartLabels('zh-CN')
+  const en = restartLabels('en-US')
+
+  for (const [label, set] of [['zh', zh], ['en', en]] as const) {
+    assert.ok(set.awaitingConfirm.length > 0, `${label}: awaitingConfirm 缺`)
+    assert.ok(set.dialogStalled.length > 0, `${label}: dialogStalled 缺`)
+    assert.match(set.dialogStalled, /10|10 分/, `${label}: 超时读数要写清等了多久`)
+  }
 })

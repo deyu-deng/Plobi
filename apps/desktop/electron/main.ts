@@ -7615,6 +7615,9 @@ function deferredRowName(row: { name: { en: string; zh: string } }, language: Re
 // for the full citation list; do not invert that default.
 const restartGuard = createRestartGuard()
 
+/** How long the tray restart waits for an answer before releasing its guard. */
+const RESTART_CONFIRM_TIMEOUT_MS = 10 * 60 * 1000
+
 function listPlobiTreeProcesses(): Array<{ pid: number; name: string; commandLine: string }> {
   if (!IS_WINDOWS) {
     return []
@@ -7716,6 +7719,10 @@ async function restartFromTray() {
     })
 
     if (gate.ask) {
+      // 先上一行台账再弹框：这台是隐藏自启（vbs 里 PLOBI_DESKTOP_START_HIDDEN=1），
+      // 模态框可能压根不出现，用户看到的就是"点了没反应"。那一行必须先把"在等你回答"说出来。
+      report('probing', labels.awaitingConfirm)
+
       const options = {
         buttons: [labels.confirmGo, labels.confirmCancel],
         cancelId: 1,
@@ -7726,7 +7733,23 @@ async function restartFromTray() {
         type: 'warning' as const
       }
       const host = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
-      const choice = host ? await dialog.showMessageBox(host, options) : await dialog.showMessageBox(options)
+      // 有限出口：`restartGuard.end()` 只在下面的 finally 里放，而一条永不返回的 await
+      // 就把重启功能永久锁死（裁定 115 现核到的正是这个形状）。到点按"未确认"收，闸门照放。
+      // 代价照实说：10 分钟后才回来点确认的人，那一下是空点击——台账已写着"闸门已释放"。
+      const stalled = new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), RESTART_CONFIRM_TIMEOUT_MS)
+      })
+      const choice = await Promise.race([
+        host ? dialog.showMessageBox(host, options) : dialog.showMessageBox(options),
+        stalled
+      ])
+
+      if (!choice) {
+        report('deferred', labels.dialogStalled)
+        rememberLog(`[tray-restart] confirm dialog unanswered within ${RESTART_CONFIRM_TIMEOUT_MS}ms; guard released`)
+
+        return
+      }
 
       if (choice.response !== 0) {
         // Cancelled: nothing was touched — say so on the same surface, quietly
