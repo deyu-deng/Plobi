@@ -52,6 +52,10 @@ export type RestartLabelSet = {
   confirmTitle: string
   confirmBody: string
   cancelled: string
+  /** 弹确认框**之前**就要有的那一行：把"点了没反应"与"正在等你回答"分开（裁定 115 / 94）。 */
+  awaitingConfirm: string
+  /** 确认框到点仍没人回答：释放闸门并说清"是我等的超时，不是没反应"。 */
+  dialogStalled: string
   restarting: string
   doneDev: string
   donePackaged: string
@@ -71,6 +75,8 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
       '这台机器上没有可靠的「现在有没有活在跑」信号可读（详见 electron/tray-restart.ts 顶部），' +
       '所以无论有没有任务，重启前都要确认一次：正在跑的会话、未回的子分身委派、cron 本轮都可能被打断。',
     cancelled: '未重启：确认框取消，什么都没动。',
+    awaitingConfirm: '重启应用 · 正在等你在弹窗里确认',
+    dialogStalled: '未重启：等确认框回答等到超时（10 分钟），闸门已释放 —— 再点一次即可。',
     restarting: '正在停整棵树并按命令行确认没了…',
     doneDev: '已重启（开发态：重起 npm run dev 整树，Vite 与后端都是新代码）。',
     donePackaged: '已重启（打包态：应用自己重拉，后端随之起来）。',
@@ -89,6 +95,8 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
       'readable on this machine (see the top of electron/tray-restart.ts), so the app confirms before ' +
       'every restart — an in-flight chat turn, an unanswered L2 delegation or a cron tick can all be interrupted.',
     cancelled: 'Not restarted: confirmation cancelled, nothing was touched.',
+    awaitingConfirm: 'Restart app · waiting for you in the dialog',
+    dialogStalled: 'Not restarted: the confirmation dialog went unanswered for 10 minutes; the guard is released — just click again.',
     restarting: 'Stopping the tree and verifying by command line…',
     doneDev: 'Restarted (dev mode: the whole `npm run dev` tree came back, Vite and backend included).',
     donePackaged: 'Restarted (packaged: the app re-launched itself and the backend came with it).',
