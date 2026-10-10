@@ -20,6 +20,9 @@ from dataclasses import dataclass
 from typing import Iterable, Mapping, Optional
 
 # 人手写、不是采来的——它是日程库里的"非信源信源"，归存储层自己的词表，不进注册表。
+# ⚠️ **这一档允许按名字分支**（`agenda/service.py` 里那两处 `if source == "manual"`）：
+# 它不是平台，是**来源档位**——"人写的条目不许被采集器覆盖"这种规则永远不该改成读能力位，
+# 因为没有任何 collector 会来声明它。下一个读的人别"顺手统一"。
 NON_COLLECTOR_SOURCES: tuple[str, ...] = ("manual",)
 
 #: 每个信源必须逐位声明的能力（缺一位 = 注册时报错，不许留空让人猜）。

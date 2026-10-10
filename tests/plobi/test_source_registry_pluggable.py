@@ -126,7 +126,12 @@ class TestCapabilitiesAreDeclaredNotGuessed:
 
 
 class TestCommonLayerCarriesNoSourceNameBranch:
-    """判据 4 的牙齿：公共层不许写 `if source == "微信"`，改成读能力表。"""
+    """判据 4 的牙齿：公共层不许写 `if source == "微信"`，改成读能力表。
+
+    ⚠️ **`manual` 那一档是例外，而且这个例外是设计不是漏洞**（裁定 103 三）：它不是平台，
+    是**来源档位**——"人手写的条目不被采集器覆盖"这类规则不该、也没法做成能力位，
+    因为不会有 collector 来声明它。所以下面只禁四个真信源名，别"顺手统一"把它也收进来。
+    """
 
     FORBIDDEN = re.compile(r'(==|!=|\bin)\s*\(?\s*"(wechat|timetable|dingtalk|zju)"')
 
