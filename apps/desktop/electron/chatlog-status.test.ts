@@ -127,63 +127,36 @@ test('spawn uses only the binary the server named, and never while it claims rea
   assert.equal(spawnableBinary(NO_ANSWER), null)
 })
 
-/** 裁定 102 三缓解条：`report.review_gated` 必须落到面上，句子仍由 Python 生成一次。 */
-function serverGateNote(): string {
-  const source = fs.readFileSync(path.join(REPO_ROOT, 'plobi', 'collectors', 'chatlog', 'pipeline.py'), 'utf8')
-  const found = source.match(/^REVIEW_GATE_NOTE = "(.*)"$/m)
+test('裁定 109 — the retired first-run gate leaves no never-firing sentence behind', () => {
+  const desktop = fs.readFileSync(STATUS_SOURCE_PATH, 'utf8')
+  const main = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8')
+  const pipeline = fs.readFileSync(path.join(REPO_ROOT, 'plobi', 'collectors', 'chatlog', 'pipeline.py'), 'utf8')
 
-  assert.ok(found, 'test fixture: pipeline.py must own REVIEW_GATE_NOTE')
-  return found[1]
-}
+  // 闸由用户本人退役 ⇒ 那句"卡在审查闸上 N 个会话"永远不会有触发路径。
+  // 留着它当"可见性"正是要避免的形状，所以三处源码里都不许再出现它。
+  for (const [name, source] of [['chatlog-status.ts', desktop], ['main.ts', main], ['pipeline.py', pipeline]] as const) {
+    assert.ok(!source.includes('REVIEW_GATE_NOTE'), `${name} 还引用着已退役的闸门句子`)
+    assert.ok(!source.includes('首启存量审查还没做完'), `${name} 还留着那句永不触发的话`)
+    assert.ok(!source.includes('review_gated'), `${name} 还在读已删的 report.review_gated`)
+  }
 
-test('an alive collector behind the first-run gate is deferred, not "fine, no data"', () => {
-  const template = serverGateNote()
-  const note = template.replace('{count}', '318')
-  const answer = readCollectorAnswer(200, {
+  // 退役之后"枚举到就扫"，ready 就是一句 ready，不再被闸改色。
+  const ready = readCollectorAnswer(200, {
     reviewComplete: false,
     talkers: [],
-    collector: { ok: true, state: 'ready', enumerated: 12, gate: { complete: false, gatedTalkers: 318, note } }
-  })
-
-  assert.equal(answer.state, 'ready')
-  assert.deepEqual(answer.gate, { complete: false, gatedTalkers: 318, note })
-
-  const row = chatlogLedgerRow(answer)
-
-  assert.equal(row.level, 'deferred', '审查没过时一条都不采 ⇒ 不许报成 ready')
-  assert.equal(row.body, note, '桌面改写了服务端那句闸门的话')
-  assert.ok(row.body.includes('318'), '那个数必须看得见，否则面上还是"什么都不显示"')
-})
-
-test('a reviewed collector renders ready, and a malformed gate is treated as unknown', () => {
-  const ready = readCollectorAnswer(200, {
-    reviewComplete: true,
-    talkers: [],
-    collector: { ok: true, state: 'ready', enumerated: 0, gate: { complete: true, gatedTalkers: 0, note: '' } }
+    collector: { ok: true, state: 'ready', enumerated: 0 }
   })
 
   assert.equal(chatlogLedgerRow(ready).level, 'ready')
-
-  const malformed = readCollectorAnswer(200, {
-    reviewComplete: false,
-    talkers: [],
-    collector: { ok: true, state: 'ready', gate: { complete: 'yes' } }
-  })
-
-  assert.equal(malformed.gate, null, '读不懂的形状不许猜一个默认')
 })
 
-test('the desktop owns neither the four states nor the gate sentence', () => {
+test('the desktop owns none of the four states', () => {
   const source = fs.readFileSync(STATUS_SOURCE_PATH, 'utf8')
 
   for (const [state, sentence] of Object.entries(serverNotes())) {
     assert.ok(!source.includes(sentence), `chatlog-status.ts 里出现了服务端那句「${state}」的副本`)
   }
 
-  assert.ok(
-    !source.includes(serverGateNote()),
-    '闸门那句话的副本不该在桌面侧——那正是本刀要删的第二真源形状'
-  )
 })
 
 /**
