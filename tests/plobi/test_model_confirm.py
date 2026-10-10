@@ -261,7 +261,7 @@ def test_the_model_confirmer_resolves_what_the_heuristic_refused(tmp_path):
     ambiguous = "三点实验室开会"
 
     heuristic_only = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=_StaticClient([message(ambiguous)]),
         service=AgendaService(tmp_path / "a.db"),
         seen=SeenStore(tmp_path / "s1.db"),
@@ -272,7 +272,7 @@ def test_the_model_confirmer_resolves_what_the_heuristic_refused(tmp_path):
     assert before.unresolved == 1, "expected the heuristic to refuse a bare clock"
 
     with_model = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=_StaticClient([message(ambiguous)]),
         service=AgendaService(tmp_path / "b.db"),
         seen=SeenStore(tmp_path / "s2.db"),
