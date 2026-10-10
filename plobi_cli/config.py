@@ -2848,6 +2848,40 @@ DEFAULT_CONFIG = {
         # Python tries AAAA records first and hangs for the full TCP timeout
         # before falling back to IPv4.  Set to true to skip IPv6 entirely.
         "force_ipv4": False,
+
+        # Per-destination egress routing.  This table is the only place routing
+        # is declared; the in-process resolver, spawned subprocesses and the
+        # optional rule engine all read it through the same parser.  An empty
+        # rule list means "no opinion", so the inherited environment keeps
+        # working for anyone who has not written a rule yet.
+        "egress": {
+            # Named exits.  Use ``url_env`` when the URL carries credentials —
+            # the value then lives in the root .env, never in this file.
+            "proxies": {},
+            # First match wins.  The last entry must be the catch-all
+            # ``{match: "*", via: ...}``: a spawned subprocess can only be told
+            # "one exit plus a list of hosts that skip it", so a table without
+            # a catch-all has no expressible answer for "everything else".
+            "rules": [],
+            # Mirrors are URL rewrites, not routes — only tools that honor a
+            # registry/index variable can be redirected (npm, electron).  An
+            # https forward proxy cannot rewrite the host of an encrypted
+            # request, and the package-name-only install path deliberately
+            # refuses a mirror for supply-chain reasons, which the parser
+            # enforces rather than documenting.
+            "mirrors": {},
+            "engine": {
+                # Off by default: enabling this supervises an external rule
+                # engine, and a second routing authority on the same host has
+                # to be a user's choice, not an upgrade's side effect.
+                "enabled": False,
+                "binary": "",
+                # No invented default — the config compiler refuses 0, so a
+                # half-declared engine fails visibly instead of colliding with
+                # whatever already holds a port on this machine.
+                "mixed_port": 0,
+            },
+        },
     },
 
     # Gateway settings — control how messaging platforms (Telegram, Discord,
