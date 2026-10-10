@@ -47,6 +47,13 @@ import { waitForDashboardPortAnnouncement } from './backend-ready'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { runBootstrap } from './bootstrap-runner'
 import {
+  chatlogLedgerRow,
+  NO_ANSWER,
+  readCollectorAnswer,
+  spawnableBinary,
+  type CollectorAnswer
+} from './chatlog-status'
+import {
   authModeFromStatus,
   buildGatewayWsUrl,
   buildGatewayWsUrlWithTicket,
@@ -8405,32 +8412,32 @@ async function probeLocalHttp(url: string, timeoutMs = 2000): Promise<boolean> {
   }
 }
 
-async function chatlogHealthy(): Promise<boolean> {
-  return (
-    (await probeLocalHttp('http://127.0.0.1:5030/health')) ||
-    (await probeLocalHttp('http://127.0.0.1:5030/api/v1/health'))
-  )
-}
+/**
+ * The chatlog collector's status has exactly ONE source: the `state` the backend computes in
+ * `plobi/collectors/chatlog/sidecar.py` and hands back through the existing
+ * `/api/collect/talkers` surface (no new REST, §3.3).
+ *
+ * This replaced two local judgements that each kept their own copy of the truth:
+ * `resolveChatlogBinary()` hard-coded candidate paths (`tools/chatlog/bin`, `D:\Tools\wechat\…`)
+ * beside Python's own `binary_candidates()`, and `chatlogHealthy()` probed :5030 a second time
+ * beside the backend's `chatlog_is_healthy`. Both are gone — 桌面不再判第二遍.
+ *
+ * A backend that does not answer is reported as such (`NO_ANSWER` → a deferred row saying the
+ * backend did not answer). It is never quietly treated as "the collector is fine, just idle",
+ * and never re-probed here.
+ */
+async function chatlogCollectorAnswer(): Promise<CollectorAnswer> {
+  try {
+    const connection = await ensureBackend(null)
+    const response = await fetch(`${connection.baseUrl}/api/collect/talkers`, {
+      headers: { 'X-Plobi-Session-Token': connection.token },
+      signal: AbortSignal.timeout(4000)
+    })
 
-function resolveChatlogBinary(): null | string {
-  const candidates = [
-    process.env.PLOBI_CHATLOG_BIN,
-    process.env.CHATLOG_BIN,
-    path.resolve(app.getAppPath(), '..', '..', 'tools', 'chatlog', 'bin', 'chatlog.exe'),
-    path.join('D:', 'Tools', 'wechat', 'chatlog', 'chatlog.exe')
-  ].filter((value): value is string => Boolean(value && value.trim()))
-
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        return candidate
-      }
-    } catch {
-      // keep looking
-    }
+    return readCollectorAnswer(response.status, await response.json().catch(() => null))
+  } catch {
+    return NO_ANSWER
   }
-
-  return null
 }
 
 /** Read decrypt keys for CLI flags. Never log the values. */
@@ -8466,45 +8473,93 @@ function loadChatlogCliKeys(): { dataDir?: string; dataKey?: string; imgKey?: st
   }
 }
 
+/** PIDs currently running under the `chatlog.exe` image name (CSV output, no header). */
+function listChatlogImagePids(): string[] {
+  try {
+    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq chatlog.exe', '/FO', 'CSV', '/NH'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 5000
+    })
+
+    return out
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.startsWith('"'))
+      .map(line => line.split('","')[1])
+      .filter((pid): pid is string => Boolean(pid && /^\d+$/.test(pid)))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 裁定 105 补的三条边界。旧形状是 `taskkill /F /IM chatlog.exe`——**按映像名全局杀**，
+ * 谁起的都杀（包括上一天留下的、归口不明的裸进程），且 `stdio: 'ignore'` ⇒ **杀了谁零记录**。
+ *
+ * 现在：只杀**自己那个子进程**；拿不到它就**只报不清**。清单先取、结果落进当场可见的台账与日志。
+ * 行为变化照实说：过去那种"开机 VBS 起了一具从不监听 :5030 的裸 chatlog.exe"会被静默清掉，
+ * 现在不会被清——它会留在台账那一行里，由用户决定。
+ */
 function killStrayChatlogProcesses(): void {
   if (!IS_WINDOWS) {
     return
   }
 
-  try {
-    // Startup VBS used to launch a bare chatlog.exe that never binds :5030.
-    // Only called when health is already red.
-    execFileSync('taskkill', ['/F', '/IM', 'chatlog.exe'], {
-      stdio: 'ignore',
-      windowsHide: true,
-      timeout: 5000
-    })
-  } catch {
-    // no process / already gone
+  const pids = listChatlogImagePids()
+
+  if (pids.length === 0) {
+    return
+  }
+
+  const owned = chatlogChild && !chatlogChild.killed ? String(chatlogChild.pid) : null
+  const targets = owned ? pids.filter(pid => pid === owned) : []
+
+  if (targets.length === 0) {
+    const observed = `found chatlog.exe process(es) ${pids.join(', ')} — none started by this boot; left alone`
+
+    reportDeferredSubsystem('chatlog', 'deferred', observed)
+    rememberLog(`[sidecar] ${observed}`)
+    return
+  }
+
+  for (const pid of targets) {
+    try {
+      execFileSync('taskkill', ['/F', '/PID', pid], { windowsHide: true, timeout: 5000 })
+      rememberLog(`[sidecar] chatlog: killed our own child pid=${pid}`)
+    } catch (error) {
+      rememberLog(`[sidecar] chatlog: taskkill pid=${pid} failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 }
 
 async function ensureChatlogServer(): Promise<void> {
-  if (await chatlogHealthy()) {
-    reportDeferredSubsystem('chatlog', 'ready', 'answered on :5030 before boot reached the sidecars')
-    rememberLog('[sidecar] chatlog already healthy on :5030')
+  const answer = await chatlogCollectorAnswer()
+  const row = chatlogLedgerRow(answer)
+
+  if (answer.state === 'ready') {
+    reportDeferredSubsystem('chatlog', 'ready', row.body)
+    rememberLog(`[sidecar] chatlog ${row.body}`)
     return
   }
 
-  const exe = resolveChatlogBinary()
+  const exe = spawnableBinary(answer)
 
   if (!exe) {
-    reportDeferredSubsystem('chatlog', 'deferred', 'no chatlog binary on this machine (checked PLOBI_CHATLOG_BIN, CHATLOG_BIN, tools/chatlog/bin)')
-    rememberLog('[sidecar] chatlog binary not found; skip (set PLOBI_CHATLOG_BIN)')
+    // 缺哪一步由服务端说，桌面只转述那一句；这里不再列产物候选、也不再自己探 :5030。
+    reportDeferredSubsystem('chatlog', row.level, row.body)
+    rememberLog(`[sidecar] chatlog skipped: ${row.body}`)
     return
   }
 
   killStrayChatlogProcesses()
   await new Promise(resolve => setTimeout(resolve, 400))
 
-  if (await chatlogHealthy()) {
-    reportDeferredSubsystem('chatlog', 'ready', 'answered on :5030 after clearing a stray process')
-    rememberLog('[sidecar] chatlog became healthy after clearing stray process')
+  const afterClearing = await chatlogCollectorAnswer()
+
+  if (afterClearing.state === 'ready') {
+    reportDeferredSubsystem('chatlog', 'ready', chatlogLedgerRow(afterClearing).body)
+    rememberLog('[sidecar] chatlog became reachable after clearing our own child')
     return
   }
 
@@ -8564,21 +8619,27 @@ async function ensureChatlogServer(): Promise<void> {
     const deadline = Date.now() + 15000
 
     while (Date.now() < deadline) {
-      if (await chatlogHealthy()) {
-        reportDeferredSubsystem('chatlog', 'ready', `spawned and answered on :5030 (pid=${chatlogChild?.pid ?? '?'})`)
-        rememberLog('[sidecar] chatlog healthy on :5030')
+      const polled = await chatlogCollectorAnswer()
+
+      if (polled.state === 'ready') {
+        reportDeferredSubsystem('chatlog', 'ready', `${chatlogLedgerRow(polled).body} (pid=${chatlogChild?.pid ?? '?'})`)
+        rememberLog('[sidecar] chatlog answering on :5030 after spawn')
         return
       }
 
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
     // RED, not deferred: the binary EXISTS on this machine and we did spawn it, so
     // this is "attempted and not healthy" — doctor.py's `reachable but non-200 =
     // RED` judgement, not R-047's "nothing here could even be started". Reporting
     // it as deferred is what painted a yellow warning card on every single boot.
-    reportDeferredSubsystem('chatlog', 'red', `spawned ${exe} but :5030 never answered (WeChat login / CHATLOG_DATA_KEY?)`)
-    rememberLog('[sidecar] chatlog spawned but :5030 still red (WeChat login / key?)')
+    // The *why* is the collector's own sentence, not a desktop guess (it used to
+    // speculate "(WeChat login / CHATLOG_DATA_KEY?)" here).
+    const last = await chatlogCollectorAnswer()
+
+    reportDeferredSubsystem('chatlog', 'red', `spawned ${exe} and it is still not reachable — collector says: ${chatlogLedgerRow(last).body}`)
+    rememberLog(`[sidecar] chatlog spawned but red: ${chatlogLedgerRow(last).body}`)
   } catch (error) {
     // RED: a spawn that threw is a fault on a service we deliberately tried to
     // bring up. The only chatlog row that stays `deferred` is the no-binary one.

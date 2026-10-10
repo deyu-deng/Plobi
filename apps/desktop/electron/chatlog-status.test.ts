@@ -185,3 +185,45 @@ test('the desktop owns neither the four states nor the gate sentence', () => {
     '闸门那句话的副本不该在桌面侧——那正是本刀要删的第二真源形状'
   )
 })
+
+/**
+ * 判据 1 的另一半：那套自判**删掉了，而且要防止它回来**。
+ * 每条都对 `main.ts` 的真实源码断言，不是对我脑子里的记述断言。
+ */
+test('main.ts no longer judges the collector a second time — and may not start again', () => {
+  const main = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8')
+  const code = main
+    .split('\n')
+    .filter(line => !line.trim().startsWith('*') && !line.trim().startsWith('//') && !line.trim().startsWith('/*'))
+    .join('\n')
+
+  const forbidden: Array<[string, string]> = [
+    ['no chatlog binary on this machine', '桌面自己拼的"没产物"文案——那句归服务端'],
+    ["'D:', 'Tools', 'wechat'", '硬编的第二份产物候选（与 Python 的 binary_candidates 并存）'],
+    ["'tools', 'chatlog', 'bin'", '同上，仓内那条候选'],
+    ["'/IM', 'chatlog.exe'", '按映像名全局 taskkill：杀了谁、谁起的都不知道'],
+    ['async function chatlogHealthy', '第二条 :5030 探活（服务端已有 chatlog_is_healthy）'],
+    ['function resolveChatlogBinary', '桌面侧的候选解析函数本体']
+  ]
+
+  for (const [needle, why] of forbidden) {
+    assert.ok(!code.includes(needle), `main.ts 里又出现了「${needle}」：${why}`)
+  }
+
+  // 消费端必须在：状态与句子都从 chatlog-status 那一层拿。
+  assert.ok(code.includes("from './chatlog-status'"), 'main.ts 不再消费 chatlog-status ⇒ 它多半自己判回去了')
+  assert.ok(code.includes('chatlogCollectorAnswer'), '台账那一行必须走服务端答案')
+})
+
+/**
+ * 裁定 105 补的三条杀进程边界——可机器验的那两条：
+ * 只杀自己那个子进程；拿不到就"只报不清"，且清单要在动手之前取。
+ */
+test('stray cleanup kills only its own child and reports what it left alone', () => {
+  const main = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8')
+
+  assert.ok(main.includes('IMAGENAME eq chatlog.exe'), '杀前必须先取 chatlog.exe 的 PID 清单')
+  assert.ok(main.includes('pids.filter(pid => pid === owned)'), '只允许杀自己起的那一个')
+  assert.ok(main.includes('left alone'), '拿不到自己的子进程 PID 时要"只报不清"，并且这条要看得见')
+  assert.ok(!main.includes("'/IM', 'chatlog.exe'"), '按映像名全局杀已经作废，不许回来')
+})
