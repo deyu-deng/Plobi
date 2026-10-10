@@ -234,3 +234,91 @@ def test_envelope_is_kept_for_audit_without_counting_as_a_product(workdir, monke
     names = [Path(a["path"]).name for a in result.artifacts]
     assert names == ["made.txt"]
     assert (workdir / ".offload-envelope.json").is_file()
+
+
+# ── 判据 6/7/8：代理注入位、不写死、连不上就当场说清（不许静默跑完） ─────────
+
+def test_proxy_comes_from_the_knob_and_reaches_the_child(workdir, monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["env"] = kwargs["env"]
+        return _Completed(stdout=json.dumps({"result": "ok"}))
+
+    monkeypatch.setenv(offload.PROXY_ENV, "http://proxy.invalid:8118")
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    result = offload.run_task("go", cwd=workdir)
+
+    assert seen["env"]["HTTPS_PROXY"] == "http://proxy.invalid:8118"
+    assert result.proxy_source == offload.PROXY_ENV
+
+
+def test_no_dev_time_proxy_address_is_hardcoded():
+    """127.0.0.1:7890 is this box's Clash port; baking it breaks on another
+    network or after a reinstall, and hides that no proxy was configured."""
+    code = [
+        line for line in Path(offload.__file__).read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    ]
+    blob = " ".join(code)
+    # Naming the port in a comment is fine; assigning it as a default is not.
+    assert '"7890"' not in blob and ":7890" not in blob
+    assert "://127.0.0.1" not in blob
+
+
+def test_shared_resolver_is_reused_not_recopied():
+    import inspect
+
+    from agent import process_bootstrap
+
+    assert hasattr(process_bootstrap, "_get_proxy_for_base_url")
+    body = inspect.getsource(offload.resolve_proxy)
+    assert "_get_proxy_for_base_url" in body
+    # A second narrow reader would read those names off os.environ itself.
+    for name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy"):
+        assert f'os.environ.get("{name}"' not in body, name
+
+
+def test_unreachable_network_is_named_and_never_a_silent_success(workdir, monkeypatch):
+    monkeypatch.delenv(offload.PROXY_ENV, raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/agy")
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda *a, **k: _Completed(
+            returncode=1,
+            stderr='error: Eligibility check failed: Get "https://www.googleapis.com/'
+                   'oauth2/v2/userinfo": dial tcp 198.18.0.45:443: connectex: '
+                   "A connection attempt failed",
+        ),
+    )
+    result = offload.run_task("go", cwd=workdir)
+
+    assert result.ok is False
+    assert "network unreachable" in result.error
+    assert offload.PROXY_ENV in result.error  # says what to set, not just that it died
+
+
+def test_exit_zero_with_no_artifact_is_not_reported_as_success(workdir, monkeypatch):
+    """Measured on this box: codebuddy returned exit 0 after 53s and 114k input
+    tokens having written nothing, because its tools were disabled in print mode."""
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda *a, **k: _Completed(stdout=json.dumps({"result": "I couldn't complete it"})),
+    )
+    result = offload.run_task("go", cwd=workdir)
+    assert result.ok is False and result.produced is False
+    assert "no artifact" in result.error
+
+
+def test_product_entry_exists_and_reports_the_four_answers():
+    """A D:\Temp script passing is not acceptance — the product call path must exist."""
+    import agent.external_offload as mod
+
+    assert callable(getattr(mod, "main", None))
+    fields = set(offload.OffloadResult.__dataclass_fields__)
+    assert {"agent", "cwd", "permission_flags", "usage", "cost", "cost_status"} <= fields
