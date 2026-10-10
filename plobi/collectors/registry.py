@@ -159,15 +159,28 @@ _declare(
             collecting=False,
         ),
         SourceSpec(
-            # 学在浙大：Web 系统，无客户端可装，走接口直取。判据 5 未验 ⇒ 能力位一律记未实测。
+            # 学在浙大：Web 系统，无客户端可装，走接口直取。采集器在 `collectors/zju/`。
             "zju",
             {
-                "history_backfill": None,
-                "incremental_since": None,
+                # 实测：一发 `GET /api/todos` 就回 48 条（含排到 2027-01-05 的），
+                # 且 `limit=5` 与 `limit=200` 都回 48 ⇒ 不按 limit 截断，历史一次拿全。
+                "history_backfill": True,
+                # **没实测到增量端点**："不按 limit 截断"不等于"认 since"。
+                # 这一格记 False 讲的是**我们这侧的契约**：`pull(since=…)` 收了不用，
+                # 每轮全量 + 按 `uid` 幂等。站方有没有增量端点仍是未测，别把这句读成"学校没有"。
+                "incremental_since": False,
+                # 实测：11 个字段全是文本/布尔/数组，无图片、无附件、无语音。
                 "supports_media": False,
+                # 账密已给（根 .env）；`getKaptchaStatus` 是**站方服务端开关**，不是这信源的性质，
+                # 撞上 true 必须报「要人工验证码」并停手，不许自动识别。
                 "requires_manual_setup": True,
+                # 仍未实测也未拍：11 个字段里没有「已提交/未提交」状态位，「提交后会不会整条消失」
+                # 没测；叠加 `ingest.py:18` 的「本轮缺的不删」⇒「完成即关闭」是产品决定。
+                # 留 `None` 是有意的：**消费方一问就报错**，不许拿猜测当读数。
                 "authoritative_replace": None,
             },
+            # 采集器与入库都真跑过（交账在任务书里），但产品里**没有任何触发方在调它**，
+            # 所以"有没有东西在采它"这句当下仍是 False。触发那一格 = `WP-SCHEDULE-REAL-PLAN`。
             collecting=False,
         ),
     )

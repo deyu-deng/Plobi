@@ -103,10 +103,15 @@ class TestCapabilitiesAreDeclaredNotGuessed:
         assert "manual" not in registry.source_ids()
 
     def test_unmeasured_bit_is_not_silently_false(self) -> None:
-        """sources-shape §3 与网关反着来的那一条：兜底猜一个值＝静默按某种口径跑。"""
-        assert registry.capability("zju", "history_backfill") is None
+        """sources-shape §3 与网关反着来的那一条：兜底猜一个值＝静默按某种口径跑。
+
+        原先这一格举的是 ``zju.history_backfill``——判据 5 之后它**已经实测过了**（一发就回
+        48 条），拿它当"未测"的例子会把这条测试变成一张过期的照片。现在举的这位仍是未测：
+        「提交后这条会不会从清单里消失」没测、且"要不要完成即关闭"是产品决定。
+        """
+        assert registry.capability("zju", "authoritative_replace") is None
         with pytest.raises(registry.CapabilityUnmeasured):
-            registry.require("zju", "history_backfill")
+            registry.require("zju", "authoritative_replace")
 
     def test_registered_but_not_collecting_is_visible_as_such(self) -> None:
         """钉钉/学在浙大在词表里、但没东西在采它们——登记归口 ≠ 假数据占位。"""
