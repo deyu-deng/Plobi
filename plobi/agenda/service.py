@@ -635,7 +635,8 @@ class AgendaService:
         Timetable .ics import is the first user: the calendar file already is
         the truth, so rows skip the pending queue — unlike message-derived
         candidates, which must land as ``pending`` (ADR-0009). ``source``
-        must be a non-manual entry of ``store.SOURCES``; manual creation
+        must be a non-manual entry of ``store.allowed_sources()``（词表由
+        :mod:`plobi.collectors.registry` 派生，不再是 store 里的硬编 tuple）; manual creation
         stays on :meth:`create_manual`.
         """
         if source == "manual":

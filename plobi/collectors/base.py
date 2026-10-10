@@ -20,7 +20,8 @@ from typing import Any, Optional, Protocol, runtime_checkable
 class Occurrence:
     """One concrete event a collector pulled from a source.
 
-    ``source``       — one of ``plobi.agenda.store.SOURCES`` (never ``manual``).
+    ``source``       — one of ``plobi.agenda.store.allowed_sources()``（由
+                       ``plobi.collectors.registry`` 派生，不是硬编 tuple）；never ``manual``.
     ``external_id``  — stable dedupe key (ics UID / WeChat msg_id / …); must
                        survive re-pulls of the same source unchanged.
     ``start_at``     — local naive ISO (``YYYY-MM-DDTHH:MM:SS``), matching how

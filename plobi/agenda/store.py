@@ -22,11 +22,22 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from plobi.collectors import registry
+
 # --- vocabulary (mirrors Docs/specs/agenda-board.md) ------------------------
 
 KINDS = ("meeting", "ddl", "class", "task")
 STATUSES = ("pending", "confirmed", "cancelled")
-SOURCES = ("wechat", "manual", "dingtalk", "timetable")
+# 信源词表**不在这里硬编**（判据 3 / 裁定 98 二）：它由采集面注册表派生，
+# 加一个平台 = `plobi/collectors/registry.py` 登记一行 + 实现 Collector，本文件一行不动。
+# `manual` 是人手写的档，归本模块，不进注册表。
+# 故意**不留**一个 import 时算死的 ``SOURCES`` 常量：那等于第二真源——新登记的信源进不去，
+# 而它看起来还在（判据 7 那个病的另一种形态）。校验一律走下面这个函数。
+def allowed_sources() -> tuple[str, ...]:
+    """读**当时**的注册表。"""
+    return registry.allowed_sources()
+
+
 PLAN_STATUSES = ("empty", "pending", "confirmed", "dismissed")
 
 # Human decision ledger (A5 change-rate metric, ADR-0009 byproduct).
@@ -497,7 +508,7 @@ def create_event(
         raise AgendaValidationError("title is required")
     _validate_enum(kind, KINDS, "kind")
     _validate_enum(status, STATUSES, "status")
-    _validate_enum(source, SOURCES, "source")
+    _validate_enum(source, allowed_sources(), "source")
 
     start = normalize_dt(start_at, field_name="start_at")
     end = normalize_dt(end_at, field_name="end_at", required=False)
@@ -585,7 +596,7 @@ def list_events(
     # WP-COLLECTOR-ICS: optional source narrowing so the shared ingest path
     # can index existing rows per source without dragging the whole table.
     if source:
-        _validate_enum(source, SOURCES, "source")
+        _validate_enum(source, allowed_sources(), "source")
         clauses.append("source = ?")
         params.append(source)
 
@@ -625,7 +636,7 @@ def update_event(conn: sqlite3.Connection, event_id: str, **fields: Any) -> Opti
     params: list[Any] = []
     for name, value in fields.items():
         if name in {"kind", "status", "source"} and value is not None:
-            allowed = {"kind": KINDS, "status": STATUSES, "source": SOURCES}[name]
+            allowed = {"kind": KINDS, "status": STATUSES, "source": allowed_sources()}[name]
             _validate_enum(value, allowed, name)
         if name in {"start_at", "end_at"} and value is not None:
             value = normalize_dt(value, field_name=name, required=(name == "start_at"))

@@ -83,7 +83,7 @@ def message(content, *, mid="m1", sender="导师", sent_at="2026-09-10T23:00",
 def build_pipeline(tmp_path, messages, confirmer, *, tag=""):
     safe = "".join(ch for ch in tag if ch.isalnum())  # Windows-safe db filenames
     return ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient({"班级群": messages}),
         service=AgendaService(tmp_path / f"agenda{safe}.db"),
         seen=SeenStore(tmp_path / f"seen{safe}.db"),
@@ -333,7 +333,7 @@ def test_l1_route_is_rejected_and_confirm_degrades_to_none():
 
 def test_default_production_path_wires_heuristic_then_model(tmp_path):
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient({}),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
@@ -351,7 +351,7 @@ def test_default_confirmer_degrades_gracefully_when_quota_unavailable(tmp_path, 
     monkeypatch.setitem(sys.modules, "plobi.quota.route", None)
 
     pipeline = ChatlogPipeline(
-        config=CollectorConfig(talkers=["班级群"], enabled=True),
+        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient({}),
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
