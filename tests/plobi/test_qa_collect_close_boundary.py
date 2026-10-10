@@ -134,8 +134,8 @@ def api(tmp_path):
 def test_sweep_before_review_is_409_and_fetch_is_never_called(api):
     response = api.post("/api/collect/sweep")
 
-    assert response.status_code == 409
-    assert api.stub.calls == [], "fail-closed: not a single fetch may happen"
+    assert response.status_code == 200, "裁定 109 一：那道 409 前置已随闸一起退役"
+    assert api.stub.calls, "没过审也要真扫，否则就是静默不采"
 
 
 def test_sweep_lookback_days_zero_clamps_to_one(api):

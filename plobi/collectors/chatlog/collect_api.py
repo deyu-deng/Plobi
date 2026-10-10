@@ -29,9 +29,9 @@ Contract (matches the desktop store):
       rolls the review flag back.
 * ``POST /api/collect/sweep``  optional query ``lookback_days`` (default 3)
       -> IngestReport dict
-      On-demand lookback sweep over every in-scope talker. Refuses with 409
-      until the first-run review has completed (ADR-0010 修订 2026-08-30 第 4 条；
-      裁定 50 推翻的是同修订第 2 条"新会话 fail-closed"，不是这条)。
+      On-demand lookback sweep over every in-scope talker. 裁定 109 一：那道
+      "首启审查没做完就 409 拒扫"的前置已退役（ADR-0010 修订 2026-08-30 第 4 条由
+      用户本人作废），现在任何状态下都扫。
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import logging
 import threading
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -121,14 +121,10 @@ async def list_talkers():
         "reviewComplete": store.review_done(),
         "talkers": talkers,
         # 能枚举就是活着——`state` 只是把这件事写成消费方读得懂的一位。
-        # `gate` 是裁定 102 三那条缓解：首启审查没过时面上必须说得出"多少个会话卡在闸上、
-        # 一条都还没采"，不许变成"什么都不显示"。句子由 `pipeline.review_gate()` 生成一次。
-        "collector": {
-            "ok": True,
-            "state": sidecar.STATE_READY,
-            "enumerated": len(talkers),
-            "gate": pipeline.review_gate(candidates=len(talkers)),
-        },
+        # 于是"0 个会话"（这里 ok=True + 空表）与"采集器到不了"（503）在面上分得开。
+        # 裁定 109 一：首启审查闸已退役，`gate` 那一位随之删除——留一句永不触发的话
+        # 当"可见性"正是要避免的形状。
+        "collector": {"ok": True, "state": sidecar.STATE_READY, "enumerated": len(talkers)},
     }
 
 
@@ -211,17 +207,13 @@ async def complete_review():
 
 @router.post("/sweep")
 async def sweep(lookback_days: int = DEFAULT_LOOKBACK_DAYS):
-    """On-demand lookback sweep over every known talker (default 3 days).
+    """On-demand lookback sweep over every in-scope talker (default 3 days).
 
-    Refuses with 409 until the first-run review has completed (ADR-0010:
-    nothing is collected from unreviewed conversations).
+    裁定 109 一：这道端点原先在首启审查没过时返 409 拦采集，那道闸由用户本人退役，
+    所以现在**任何状态下都能扫**；`/review-complete` 仍可调用，但它只是"批量排除"的
+    一个动作，不再是采集前置。
     """
     pipeline = get_pipeline()
-    if not pipeline.talkers.review_done():
-        raise HTTPException(
-            status_code=409,
-            detail="first-run review not completed — POST /api/collect/review-complete first",
-        )
     return await run_in_threadpool(kick_lookback_sweep, pipeline, lookback_days)
 
 

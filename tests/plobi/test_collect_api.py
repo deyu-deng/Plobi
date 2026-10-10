@@ -139,12 +139,16 @@ def test_review_complete_flips_the_gate(client):
 # --------------------------------------------------------------------------
 
 
-def test_sweep_before_review_is_409_and_fetches_nothing(client):
+def test_sweep_runs_even_when_the_first_run_review_was_never_done(client):
+    """裁定 109 一：那道"没审过就 409 / 一条都不拉"的前置由用户本人退役。
+
+    旧档名 `test_sweep_before_review_is_409_and_fetches_nothing` 连同它的 409 一起改名反转——
+    那是被推翻的规格，不是当前形状。
+    """
     response = client.post("/api/collect/sweep")
 
-    assert response.status_code == 409
-    # ADR-0010 fail-closed: nothing is fetched before the review completes.
-    assert client.pipeline.client.fetches == []
+    assert response.status_code == 200, "sweep 不再拒扫"
+    assert client.pipeline.client.fetches, "没过审也要真去拉，否则就是静默不采"
 
 
 def test_sweep_after_review_runs_the_pipeline(client):
@@ -160,7 +164,6 @@ def test_sweep_after_review_runs_the_pipeline(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["review_gated"] == 0
     # Default lookback is 3 days for the only talker left in scope.
     assert [talker for (talker, _day) in client.pipeline.client.fetches] == [
         "班级群",
@@ -248,4 +251,3 @@ def test_kick_lookback_sweep_fetches_three_days_for_known_talkers(client):
     assert all(day is not None for day in days)
     assert len(set(days)) == 3
     assert days == sorted(days), "oldest day first"
-    assert report["review_gated"] == 0

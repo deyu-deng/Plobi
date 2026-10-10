@@ -49,8 +49,6 @@ class IngestReport:
     # ADR-0010 修订 2026-09-30（裁定 50）：黑名单模式下用户明确关掉的会话。
     # 旧形状里那个"新会话也拒采"的 `skipped_new_talker` 计数随 fail-open 一起删了。
     skipped_excluded: int = 0
-    # First-run review not done yet: candidates enumerated but nothing swept.
-    review_gated: int = 0
     filtered_out: int = 0
     unresolved: int = 0
     created: list[str] = field(default_factory=list)
@@ -66,17 +64,12 @@ class IngestReport:
             "skipped_duplicate": self.skipped_duplicate,
             "skipped_not_whitelisted": self.skipped_not_whitelisted,
             "skipped_excluded": self.skipped_excluded,
-            "review_gated": self.review_gated,
             "filtered_out": self.filtered_out,
             "unresolved": self.unresolved,
             "created": list(self.created),
             "updated": list(self.updated),
         }
 
-
-# 首启存量审查那道闸的那句人话（裁定 102 三缓解条）。句子只在这里生成一次：
-# `/api/collect/talkers` 的 `collector.gate` 与桌面台账都逐字转述它——与 sidecar 那四句同一规矩。
-REVIEW_GATE_NOTE = "首启存量审查还没做完：{count} 个会话我先一条都不采，等你过一遍再进待确认。"
 
 def _topic_tokens(text: str) -> set[str]:
     return {word for word in _MATCH_KEYWORDS if word in text}
@@ -108,23 +101,6 @@ class ChatlogPipeline:
         self.confirmer = confirmer or self._default_confirmer()
         # talker id → chatlog display name, resolved once, best-effort.
         self._talker_names: Optional[dict[str, str]] = None
-
-    def review_gate(self, candidates: Optional[int] = None) -> dict:
-        """首启存量审查那道闸的**人话读数**（裁定 102 三缓解条：不许变成"什么都不显示"）。
-
-        句子只在这里生成一次：`/api/collect/sweep` 的 `review_gated` 与 `/api/collect/talkers`
-        的 `collector.gate` 都读它，桌面与看板只许逐字转述——与 sidecar 那四句同一规矩
-        （`WP-SIDECAR-STATE-SINGLE-SOURCE` 判据 1/2）。
-        """
-        complete = self.talkers.review_done()
-        gated = 0 if complete else (
-            candidates if candidates is not None else len(self.talkers.pending())
-        )
-        return {
-            "complete": complete,
-            "gatedTalkers": gated,
-            "note": "" if complete or gated <= 0 else REVIEW_GATE_NOTE.format(count=gated),
-        }
 
     def health(self) -> dict:
         """Collector-protocol health：探活仍复用已有那一条，**多答一句"为什么"**。
@@ -379,16 +355,10 @@ class ChatlogPipeline:
                 )
                 return report
 
-            # First-run review gate: nothing is swept until the user has
-            # reviewed the existing sessions (see /api/collect/review-complete).
-            if not self.talkers.review_done():
-                report.review_gated = len(candidates)
-                logger.info(
-                    "blacklist mode: %d candidate talkers gated until the "
-                    "first-run review completes (POST /api/collect/review-complete)",
-                    report.review_gated,
-                )
-                return report
+            # 裁定 109 一：首启存量审查这道闸由用户本人退役（ADR-0010 修订 2026-08-30
+            # 第 4 条作废）。扫描路**不再等** `review_done`——sidecar 一起来就按现行口径全量采。
+            # `review_done` 与 `/api/collect/review-complete` 还在，但只当"批量排除"的能力与读数，
+            # 不再是采集前置。
 
             talkers = []
             for talker in candidates:
@@ -536,16 +506,14 @@ def refresh_agenda(
         raise ChatlogDead("chatlog 未启动或 /health 失败，采集不通")
     report = pipe.run_once()
     summary = agenda_window_summary(pipe.service, now=now)
-    # One-shot widening (WP-M1-COLLECT-CLOSE): after the first-run review,
-    # an empty today+tomorrow board gets a single 3-day lookback sweep before
-    # L1 reports an honest zero. Boards that already show events — and
-    # states where the review has not completed — are left alone so a
-    # routine ask never pays 3 days × all known talkers.
-    if (
-        pipe.talkers.review_done()
-        and not summary["today_events"]
-        and not summary["tomorrow_events"]
-    ):
+    # One-shot widening (WP-M1-COLLECT-CLOSE): an empty today+tomorrow board gets
+    # a single 3-day lookback sweep before L1 reports an honest zero. Boards that
+    # already show events are left alone so a routine ask never pays 3 days × all
+    # talkers. 裁定 109 一：这里原先还挂着 `review_done()` 当第二个采集前置
+    # （"没审过就不加宽"），那道闸已随首启审查一起退役。
+    # ⚠️ 代价照实说：从今天起，**空板的一次例行提问就会触发那轮 3 天加宽**，
+    # 过去它只发生在"审过之后"；仍是一次性、仍不重叠正常态。
+    if not summary["today_events"] and not summary["tomorrow_events"]:
         report = pipe.run_once(lookback_days=DEFAULT_LOOKBACK_DAYS)
         summary = agenda_window_summary(pipe.service, now=now)
         summary["lookback_widened"] = True
