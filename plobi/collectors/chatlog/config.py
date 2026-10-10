@@ -2,11 +2,10 @@
 
 Two collection modes (config key ``mode`` in ``$PLOBI_HOME/plobi/chatlog.json``):
 
-* ``"whitelist"`` — only the explicitly-named ``talkers`` are ever read.
-  Fail-closed: an empty whitelist collects nothing. This is the strict,
-  privacy-first default.
-* ``"blacklist"`` — read every conversation except those in ``blacklist``.
-  An empty blacklist collects *everything* (first-run full ingestion).
+* ``"blacklist"`` — **现行默认**（ADR-0010 修订 2026-08-30 + 裁定 50 + 裁定 100 一）。
+  读所有会话，只跳过 ``blacklist`` 里点名的；空黑名单＝**全量**。首次见到的会话默认采。
+* ``"whitelist"`` — 只读 ``talkers`` 里点名的，空名单一条不采。这是被推翻的旧默认档，
+  留作用户显式选择的更严一档，**不再是缺省**。
 
 Config lives in ``$PLOBI_HOME/plobi/chatlog.json``; env vars override for
 tests and unusual deployments. No drive letters are hardcoded.

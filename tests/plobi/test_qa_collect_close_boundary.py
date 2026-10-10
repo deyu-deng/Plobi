@@ -144,8 +144,15 @@ def test_sweep_lookback_days_zero_clamps_to_one(api):
     response = api.post("/api/collect/sweep", params={"lookback_days": 0})
 
     assert response.status_code == 200
-    days = [day for (_t, day) in api.stub.calls]
-    assert len(days) == 1, "lookback_days=0 must clamp to a single day"
+    # 这条要钉的是"夹成一天"，不是"只扫一个会话"。裁定 50 之后枚举到的会话除明确
+    # 排除的全扫（fail-open），所以按会话分组数——每个被扫的会话只该被取一次。
+    fetches_per_talker: dict[str, int] = {}
+    for talker, _day in api.stub.calls:
+        fetches_per_talker[talker] = fetches_per_talker.get(talker, 0) + 1
+    assert fetches_per_talker, "sweep 一个会话都没取，等于闸还堵着"
+    assert set(fetches_per_talker.values()) == {1}, (
+        "lookback_days=0 must clamp to a single day"
+    )
 
 
 # ---------------------------------------------------------------------------

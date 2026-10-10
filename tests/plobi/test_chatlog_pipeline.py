@@ -101,8 +101,9 @@ def test_non_whitelisted_talker_is_never_read(pipeline):
     assert pipeline.seen.already_seen("m1") is False
 
 
-def test_blacklist_webhook_new_talker_goes_pending_not_ingested(tmp_path):
-    """Single-message path (webhook) obeys the same fail-closed gate."""
+def test_blacklist_webhook_new_talker_is_collected_and_stays_undecided(tmp_path):
+    """Single-message path is fail-OPEN (裁定 50 / 裁定 100 一): a talker never
+    reviewed is ingested, and only ``excluded`` refuses."""
     pipeline = blacklist_pipeline(
         tmp_path, client=FakeClient(), known=["班级群"], review_done=False
     )
@@ -110,10 +111,10 @@ def test_blacklist_webhook_new_talker_goes_pending_not_ingested(tmp_path):
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点开组会", talker="新冒出来的群"), report)
 
-    assert report.skipped_new_talker == 1
-    assert pipeline.service.list_pending() == []
+    assert report.created, "首次见到的会话必须默认采，不是等用户点名"
+    assert pipeline.seen.already_seen("m1") is True
+    # 记一行 pending = 面上说得出"在采，但还没定过"，它不再是拒采的闸。
     assert "新冒出来的群" in pipeline.talkers.pending()
-    assert pipeline.seen.already_seen("m1") is False
 
 
 def test_blacklist_webhook_excluded_talker_never_ingested(tmp_path):
@@ -321,7 +322,8 @@ def test_blacklist_mode_skips_reviewed_excluded_talkers(tmp_path):
     assert all(event.evidence["talker"] != "广告群" for event in pipeline.service.list_pending())
 
 
-def test_blacklist_mode_new_talker_is_fail_closed(tmp_path):
+def test_blacklist_mode_new_talker_is_collected(tmp_path):
+    """裁定 50 推翻了"未评审即拒采"，裁定 100 一再确认：枚举到的会话除明确排除的全采。"""
     client = FakeClient(
         {
             "班级群": [message("明天下午三点开组会", msg_id="a1")],
@@ -331,13 +333,9 @@ def test_blacklist_mode_new_talker_is_fail_closed(tmp_path):
     pipeline = blacklist_pipeline(tmp_path, client=client, known=["班级群"])
 
     report = pipeline.run_once()
-    # The new talker is never fetched — not even its messages are read.
-    assert [call[0] for call in client.calls] == ["班级群"]
-    assert report.skipped_new_talker == 1
-    # The only ingested event comes from a known talker; the new one is zero.
-    assert all(e.evidence["talker"] != "新冒出来的群" for e in pipeline.service.list_pending())
-    # …but it surfaced on the board as pending for a one-click decision.
-    assert "新冒出来的群" in pipeline.talkers.pending()
+    assert [call[0] for call in client.calls] == ["班级群", "新冒出来的群"]
+    # 闸放开到"读得着这条消息"就是本条要钉的点；后面能不能过启发式确认是另一层。
+    assert pipeline.seen.already_seen("c1") is True
 
 
 def test_blacklist_mode_gated_until_review_completes(tmp_path):

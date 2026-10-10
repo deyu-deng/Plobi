@@ -51,6 +51,49 @@ class TestNoConfigEqualsCurrentPosture:
         cfg = CollectorConfig.load(absent)
         assert cfg.enabled and cfg.mode == "blacklist"
 
+    def test_a_first_seen_talker_is_ingested_with_no_config_file(self, absent: Path, tmp_path: Path) -> None:
+        """判据 7 说的是**行为**，不止默认值：ADR-0010 修订 2026-09-30（裁定 50）把
+        "未评审即拒采"推翻了，所以没有配置文件时，第一次见到的会话也要真进库。
+        闸在 `pipeline.handle_message` 里，不在 `config.allows` 里——只测后者会漏。"""
+        from datetime import datetime
+
+        from plobi.agenda.service import AgendaService
+        from plobi.collectors.chatlog.client import ChatMessage
+        from plobi.collectors.chatlog.confirm import HeuristicConfirmer
+        from plobi.collectors.chatlog.pipeline import ChatlogPipeline, IngestReport
+        from plobi.collectors.chatlog.state import SeenStore, TalkerStore
+
+        class OneMessageClient:
+            def fetch(self, talker: str, day=None):
+                return []
+
+            def list_talkers(self, keyword: str = "", limit: int = 10000):
+                return []
+
+        pipeline = ChatlogPipeline(
+            config=CollectorConfig.load(absent),
+            client=OneMessageClient(),
+            service=AgendaService(tmp_path / "agenda.db"),
+            seen=SeenStore(tmp_path / "seen.db"),
+            talkers=TalkerStore(tmp_path / "talkers.db"),
+            confirmer=HeuristicConfirmer(now_factory=lambda: datetime(2026, 10, 10, 9, 0)),
+        )
+
+        report = IngestReport()
+        pipeline.handle_message(
+            ChatMessage(
+                msg_id="m1",
+                talker="第一次见到的组群",
+                sender="导师",
+                sent_at="2026-10-10 09:00:00",
+                content="周五下午三点答辩",
+            ),
+            report,
+        )
+
+        assert report.created, "新会话默认采：一条都没进库就是闸还停在被推翻的那一版"
+        assert "第一次见到的组群" in pipeline.talkers.pending()
+
 
 class TestNoSilentFallback:
     def test_typoed_mode_runs_current_posture_and_is_remembered(self, tmp_path: Path) -> None:

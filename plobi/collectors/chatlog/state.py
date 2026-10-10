@@ -6,14 +6,18 @@ collector's bookkeeping is not agenda state.
 
 The talker status table (ADR-0010, blacklist mode) is the admission ledger:
 
-* ``known``    — reviewed, collected by default
-* ``excluded`` — reviewed, never collected
-* ``pending``  — fail-closed: a talker we have not reviewed is never
-                 collected; it surfaces here for a one-click collect/exclude
-                 on the board.
+* ``known``    — reviewed, collected
+* ``excluded`` — the user switched it off: never collected, never rules, never
+                 sent to a model
+* ``pending``  — not decided yet, and **collected anyway**. 裁定 50（ADR-0010
+                 修订 2026-09-30）推翻了"未评审即拒采"，裁定 100 一再确认：首次
+                 见到的会话默认采。这一行存在的唯一意义是让看板说得出"这条在采、
+                 但还没定过"，并接一键 collect/exclude。
 
 ``review_done`` records whether the first-run review of existing sessions has
-completed. Nothing is collected in blacklist mode until it is true.
+completed. It gates the **sweep** (historical lookback) only: while it is false
+a blacklist-mode sweep returns without pulling anything. The live webhook path
+does not consult it — that asymmetry is 待拍, not a settled design.
 """
 
 from __future__ import annotations
@@ -97,9 +101,8 @@ class TalkerStore:
     Same database as :class:`SeenStore`; a separate table so the two concerns
     (what we already saw vs. who we are allowed to see) stay independent.
 
-    Fail-closed invariant: a talker whose status is not ``known`` is never
-    collected. An unknown talker is recorded as ``pending`` — surfaced on the
-    board, not ingested.
+    Only ``excluded`` refuses (裁定 50 / 裁定 100 一：新会话默认采，不再要求先点名)。
+    未定过的会话写一行 ``pending`` —— 它在采，只是还没被用户定过。
     """
 
     STATUSES = ("known", "excluded", "pending")
