@@ -3,9 +3,9 @@
 Order matters and is the privacy contract:
 
 1. scope       — `CollectorConfig.mode` decides which talkers are in scope:
-                  blacklist enumerates every conversation and drops blacklisted
-                  ones (empty blacklist = all); whitelist reads only named
-                  talkers (fail-closed).
+                  blacklist (现行默认) enumerates every conversation and drops
+                  blacklisted ones (empty blacklist = all); whitelist reads only
+                  the named talkers and is no longer the default.
 2. dedupe      — webhook and sweep both deliver; only one wins
 3. local rules — on-device; decides what may leave the machine at all
 4. confirm     — heuristic first, model only for the remainder (snippet only)
@@ -46,10 +46,9 @@ class IngestReport:
     scanned: int = 0
     skipped_duplicate: int = 0
     skipped_not_whitelisted: int = 0
-    # ADR-0010 (blacklist mode): a reviewed-but-excluded talker, or a brand-new
-    # talker we refused to touch (fail-closed, recorded as pending).
+    # ADR-0010 修订 2026-09-30（裁定 50）：黑名单模式下用户明确关掉的会话。
+    # 旧形状里那个"新会话也拒采"的 `skipped_new_talker` 计数随 fail-open 一起删了。
     skipped_excluded: int = 0
-    skipped_new_talker: int = 0
     # First-run review not done yet: candidates enumerated but nothing swept.
     review_gated: int = 0
     filtered_out: int = 0
@@ -67,7 +66,6 @@ class IngestReport:
             "skipped_duplicate": self.skipped_duplicate,
             "skipped_not_whitelisted": self.skipped_not_whitelisted,
             "skipped_excluded": self.skipped_excluded,
-            "skipped_new_talker": self.skipped_new_talker,
             "review_gated": self.review_gated,
             "filtered_out": self.filtered_out,
             "unresolved": self.unresolved,
@@ -183,18 +181,17 @@ class ChatlogPipeline:
             report.skipped_not_whitelisted += 1
             return
 
-        # ADR-0010 (blacklist mode): the talker status table gates admission.
-        # Everything that is not `known` is refused — a new talker is recorded
-        # as pending (board-visible) but never ingested.
+        # ADR-0010 修订 2026-09-30（裁定 50）＋ 裁定 100 一：黑名单模式下**只有
+        # `excluded` 拒采**。首次见到的会话默认采（fail-open），同时记一行 pending，
+        # 让看板说得出"这条在采、但还没定过"。旧形状（status != known 一律拒）是被
+        # 推翻的那一版，别再复刻。
         if self.config.mode == "blacklist":
             status = self.talkers.status_of(message.talker)
             if status == "excluded":
                 report.skipped_excluded += 1
                 return
-            if status != "known":
+            if status is None:
                 self.talkers.mark_pending(message.talker)
-                report.skipped_new_talker += 1
-                return
 
         if not self.seen.mark_seen(message.msg_id):
             report.skipped_duplicate += 1
@@ -314,13 +311,14 @@ class ChatlogPipeline:
         exact single-day behaviour the 10-minute watchdog relies on.
 
         Mode drives which talkers are swept:
-          * blacklist — enumerate every conversation (``/api/v1/session``),
-            drop the blacklisted ones, then sweep only ``known`` talkers.
-            Unreviewed talkers are never touched: during the first-run review
-            (``review_done`` false) nothing is swept at all; afterwards a
-            brand-new talker is recorded as ``pending`` for the board instead
-            of being collected (fail-closed, ADR-0010 revision).
-          * whitelist (default, fail-closed) — only the named ``talkers``.
+          * blacklist (现行默认) — enumerate every conversation
+            (``/api/v1/session``), drop the blacklisted and the explicitly
+            ``excluded`` ones, sweep the rest. 裁定 50 / 裁定 100 一：首次见到的
+            会话**默认采**，不再要求先点名。唯一仍会拦下整轮的是首启存量审查
+            （``review_done`` 为假时一度都不拉）——那条是 ADR-0010 修订 2026-08-30
+            第 4 条，裁定 50 只推翻了同修订的第 2 条，所以它还在；而 webhook 实时路
+            不看它，这一处不对称是**待拍**，不是定案。
+          * whitelist — only the named ``talkers``. 显式选了才走，不是缺省。
         """
         report = IngestReport()
 
@@ -355,19 +353,14 @@ class ChatlogPipeline:
 
             talkers = []
             for talker in candidates:
-                status = self.talkers.status_of(talker)
-                if status == "excluded":
+                # 裁定 50 / 裁定 100 一：枚举到的会话除明确排除的全采，不再要求先点名。
+                if self.talkers.status_of(talker) == "excluded":
                     report.skipped_excluded += 1
                     continue
-                if status == "known":
-                    talkers.append(talker)
-                    continue
-                # Fail-closed: never collected, surfaced as pending instead.
-                self.talkers.mark_pending(talker)
-                report.skipped_new_talker += 1
+                talkers.append(talker)
 
             if not talkers:
-                logger.warning("blacklist mode: no known talkers to sweep")
+                logger.warning("blacklist mode: every enumerated talker is excluded")
                 return report
         else:
             if not self.config.talkers:

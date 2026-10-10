@@ -150,6 +150,10 @@ def test_sweep_before_review_is_409_and_fetches_nothing(client):
 def test_sweep_after_review_runs_the_pipeline(client):
     store = client.pipeline.talkers
     store.mark_known("班级群")
+    # 这条要钉的是回看窗口（默认 3 天）。裁定 50 之后枚举到的会话默认全采，所以把
+    # 另外两个显式排除掉，让"只有一个会话被取"成为本条测试声明的前提而不是隐含口径。
+    store.mark_excluded("项目群")
+    store.mark_excluded("广告群")
     store.set_review_done(True)
 
     response = client.post("/api/collect/sweep")
@@ -157,7 +161,7 @@ def test_sweep_after_review_runs_the_pipeline(client):
     assert response.status_code == 200
     body = response.json()
     assert body["review_gated"] == 0
-    # Default lookback is 3 days for the only known talker.
+    # Default lookback is 3 days for the only talker left in scope.
     assert [talker for (talker, _day) in client.pipeline.client.fetches] == [
         "班级群",
         "班级群",
@@ -233,6 +237,8 @@ def test_review_complete_kicks_one_background_lookback_sweep(client, monkeypatch
 def test_kick_lookback_sweep_fetches_three_days_for_known_talkers(client):
     store = client.pipeline.talkers
     store.mark_known("班级群")
+    store.mark_excluded("项目群")  # 同上：把"只扫一个会话"写成前提，不靠隐含口径
+    store.mark_excluded("广告群")
     store.set_review_done(True)
 
     report = collect_api.kick_lookback_sweep(client.pipeline, 3)
