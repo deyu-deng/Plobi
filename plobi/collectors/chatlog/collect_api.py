@@ -22,14 +22,16 @@ Contract (matches the desktop store):
       nothing (ADR-0010 revision). Completing the review also (a) bulk-excludes
       official accounts (``gh_*``) that are still pending — talkers the user
       already marked known/excluded are never rewritten (verdict 23) — and
-      (b) kicks a background 3-day lookback sweep over every known talker so
+      (b) kicks a background 3-day lookback sweep over every talker left in
+      scope (裁定 50 之后：枚举到且未明确排除的都扫，不再要求先点名) so
       the board fills immediately instead of waiting for the next watchdog
       tick. The response returns at once; a failed sweep only logs and never
       rolls the review flag back.
 * ``POST /api/collect/sweep``  optional query ``lookback_days`` (default 3)
       -> IngestReport dict
-      On-demand lookback sweep over every known talker. Refuses with 409
-      until the first-run review has completed (ADR-0010 fail-closed).
+      On-demand lookback sweep over every in-scope talker. Refuses with 409
+      until the first-run review has completed (ADR-0010 修订 2026-08-30 第 4 条；
+      裁定 50 推翻的是同修订第 2 条"新会话 fail-closed"，不是这条)。
 """
 
 from __future__ import annotations
@@ -40,8 +42,10 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from . import sidecar
 from .pipeline import DEFAULT_LOOKBACK_DAYS, ChatlogPipeline
 from . import webhook as _webhook_module
 
@@ -92,7 +96,20 @@ async def list_talkers():
         sessions = await run_in_threadpool(pipeline.client.list_talker_sessions)
     except Exception as exc:  # pragma: no cover - network seam
         logger.warning("collect: session enumeration failed: %s", exc)
-        sessions = []
+        # 判据 2 的原件：到不了 ≠ "你没有会话"。以前这里吞掉异常、返回 200 + 空表，
+        # 于是面板上的"0 个会话"和"一切正常"长得一模一样。现在给 503 + 那句"为什么
+        # 到不了"（复用 `pipeline.health()`，不在这里另判第二遍）。
+        health = pipeline.health()
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "error": health["detail"],
+                "state": health["state"],
+                "reviewComplete": store.review_done(),
+                "talkers": [],
+            },
+        )
 
     talkers = [
         {"id": session.id, "name": session.name or session.id, "status": _status_for(session.id)}
@@ -101,6 +118,9 @@ async def list_talkers():
     return {
         "reviewComplete": store.review_done(),
         "talkers": talkers,
+        # 能枚举就是活着——`state` 只是把这件事写成消费方读得懂的一位，不再探第二次。
+        # 于是"0 个会话"（这里 ok=True + 空表）与"采集器到不了"（503）在面上分得开。
+        "collector": {"ok": True, "state": sidecar.STATE_READY, "enumerated": len(talkers)},
     }
 
 

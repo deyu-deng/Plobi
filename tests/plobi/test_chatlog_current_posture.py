@@ -186,3 +186,102 @@ class TestHealthCarriesTheReason:
             sidecar.STATE_KEY_MISSING, sidecar.STATE_NOT_LISTENING,
         }
         assert report["detail"].startswith("chatlog 采不到：")
+
+
+DEAD_STATES = {
+    sidecar.STATE_GO_MISSING,
+    sidecar.STATE_BUILD_MISSING,
+    sidecar.STATE_KEY_MISSING,
+    sidecar.STATE_NOT_LISTENING,
+}
+
+
+class TestUnreachableIsNotZeroSessions:
+    """判据 2 的负例。`collect_api.py` 曾把枚举异常吞掉、返回 200 + 空表，于是
+    "你一条会话都没有"和"采集器根本到不了"在面上长得一模一样——这条钉住它们必须分得开。"""
+
+    @pytest.fixture
+    def board(self, tmp_path):
+        import contextlib
+        from datetime import datetime
+        from types import SimpleNamespace
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from plobi.agenda.service import AgendaService
+        from plobi.collectors.chatlog import collect_api
+        from plobi.collectors.chatlog import webhook as webhook_module
+        from plobi.collectors.chatlog.confirm import HeuristicConfirmer
+        from plobi.collectors.chatlog.pipeline import ChatlogPipeline
+        from plobi.collectors.chatlog.state import SeenStore, TalkerStore
+
+        @contextlib.contextmanager
+        def build(*, explode: bool, sessions: list[str] | None = None):
+            class StubClient:
+                def list_talker_sessions(self, keyword: str = "", limit: int = 10000):
+                    if explode:
+                        raise RuntimeError("connection refused on :5030")
+                    return [
+                        SimpleNamespace(id=name, name=name) for name in (sessions or [])
+                    ]
+
+                def list_talkers(self, keyword: str = "", limit: int = 10000):
+                    return list(sessions or [])
+
+                def fetch(self, talker, day=None):
+                    return []
+
+                def healthy(self):
+                    return not explode
+
+            pipeline = ChatlogPipeline(
+                config=CollectorConfig(),
+                client=StubClient(),
+                service=AgendaService(tmp_path / "agenda.db"),
+                seen=SeenStore(tmp_path / "seen.db"),
+                talkers=TalkerStore(tmp_path / "talkers.db"),
+                confirmer=HeuristicConfirmer(
+                    now_factory=lambda: datetime(2026, 10, 10, 9, 0)
+                ),
+            )
+            webhook_module.set_pipeline(pipeline)
+            app = FastAPI()
+            app.include_router(collect_api.router, prefix="/api/collect")
+            try:
+                with TestClient(app) as client:
+                    yield client
+            finally:
+                webhook_module.set_pipeline(None)
+
+        return build
+
+    def test_unreachable_sidecar_is_not_an_empty_list_with_http_200(self, board) -> None:
+        with board(explode=True) as client:
+            response = client.get("/api/collect/talkers")
+
+        assert response.status_code == 503, "到不了要说「到不了」，不是 200 装正常"
+        body = response.json()
+        assert body["ok"] is False
+        assert body["state"] in DEAD_STATES
+        assert body["error"], "那句「为什么到不了」必须跟着一起回来"
+        assert body["talkers"] == []
+
+    def test_reachable_but_genuinely_zero_sessions_is_still_distinct(self, board) -> None:
+        with board(explode=False, sessions=[]) as client:
+            response = client.get("/api/collect/talkers")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["talkers"] == []
+        # 同样是空表，这里靠 collector 那一位说清"采集器活着、真的没有会话"。
+        assert body["collector"] == {"ok": True, "state": sidecar.STATE_READY, "enumerated": 0}
+
+    def test_the_two_cases_are_not_the_same_shape(self, board) -> None:
+        with board(explode=True) as client:
+            dead = client.get("/api/collect/talkers").json()
+        with board(explode=False, sessions=["班级群"]) as client:
+            alive = client.get("/api/collect/talkers").json()
+
+        assert dead["state"] != alive["collector"]["state"]
+        assert dead["ok"] is False and alive["collector"]["ok"] is True
