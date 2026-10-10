@@ -17,7 +17,11 @@ export type CollectorAnswer = {
   state: string
   note: string | null
   binary: string | null
+  /** 首启存量审查那道闸的读数（裁定 102 三缓解条）。句子同样来自服务端，桌面不写。 */
+  gate?: ReviewGate | null
 }
+
+export type ReviewGate = { complete: boolean; gatedTalkers: number; note: string }
 
 /** 台账只认这三档（`deferred-sidecars.ts` 的 `DeferredSubsystemState`）。 */
 export type LedgerLevel = 'ready' | 'deferred' | 'red'
@@ -56,10 +60,30 @@ export function readCollectorAnswer(statusCode: number, body: unknown): Collecto
   const collector = payload.collector
 
   if (statusCode === 200 && collector && typeof collector.state === 'string') {
-    return { state: collector.state, note: null, binary: typeof collector.binary === 'string' ? collector.binary : null }
+    return {
+      state: collector.state,
+      note: null,
+      binary: typeof collector.binary === 'string' ? collector.binary : null,
+      gate: readGate(collector.gate)
+    }
   }
 
   return NO_ANSWER
+}
+
+/** 闸那位读数只认服务端给的形状；缺了就当"不知道"，不在这里补一个默认。 */
+function readGate(raw: unknown): ReviewGate | null {
+  if (!raw || typeof raw !== 'object') {
+    return null
+  }
+
+  const gate = raw as Record<string, any>
+
+  if (typeof gate.complete !== 'boolean' || typeof gate.gatedTalkers !== 'number' || typeof gate.note !== 'string') {
+    return null
+  }
+
+  return { complete: gate.complete, gatedTalkers: gate.gatedTalkers, note: gate.note }
 }
 
 /**
@@ -71,6 +95,14 @@ export function readCollectorAnswer(statusCode: number, body: unknown): Collecto
  */
 export function chatlogLedgerRow(answer: CollectorAnswer): { level: LedgerLevel; body: string } {
   if (answer.state === 'ready') {
+    // 采集器活着、但首启审查还没过 ⇒ 一条都不会采。这一格必须说得出"卡在闸上几个"，
+    // 不许因为"库里还是空的"就渲染成一切正常（裁定 102 三缓解条）。
+    if (answer.gate && !answer.gate.complete && answer.gate.gatedTalkers > 0) {
+      return answer.gate.note
+        ? { level: 'deferred', body: answer.gate.note }
+        : { level: 'deferred', body: `gate reports ${answer.gate.gatedTalkers} talkers but arrived without its sentence` }
+    }
+
     return { level: 'ready', body: 'collector says it is answering on :5030' }
   }
 
