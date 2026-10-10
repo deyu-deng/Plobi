@@ -106,6 +106,8 @@ async def list_talkers():
                 "ok": False,
                 "error": health["detail"],
                 "state": health["state"],
+                # 桌面要 spawn 就读这一个答案，不许再自己列一遍产物候选（判据 1）。
+                "binary": health.get("binary"),
                 "reviewComplete": store.review_done(),
                 "talkers": [],
             },
