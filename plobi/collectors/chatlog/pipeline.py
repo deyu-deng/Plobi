@@ -193,17 +193,26 @@ class ChatlogPipeline:
             if status is None:
                 self.talkers.mark_pending(message.talker)
 
-        if not self.seen.mark_seen(message.msg_id):
+        # 判据 6（断电不坏库）：这条账**必须在日程真落下去之后**才写。
+        # 旧形状是 `mark_seen` 先落，于是"进程在写入前被杀"留下的是**已认重、库里却没有**
+        # 的消息——重启后它被当重复跳过，那一条日程就永久丢了（不是"半条脏记录"，是整条没了）。
+        # 现在改成 at-least-once：先看有没有处理过；本轮没有东西要落（规则没命中 / 确认不下来）
+        # 才就地记账；有结果的等 `ingest_occurrences` 提交完再记。崩溃窗口里同一 msg_id 可能
+        # 重跑一次规则与确认，但落点按 (source, uid/msg_id) 幂等（见 `ingest._row_keys`），
+        # 第二次只会是 unchanged，不会多出一条。
+        if self.seen.already_seen(message.msg_id):
             report.skipped_duplicate += 1
             return
 
         hit = rule_match(message.content)
         if hit is None:
+            self.seen.mark_seen(message.msg_id)
             report.filtered_out += 1
             return
 
         candidate = self.confirmer.confirm(message, hit, context)
         if candidate is None:
+            self.seen.mark_seen(message.msg_id)
             report.unresolved += 1
             return
 
@@ -260,6 +269,9 @@ class ChatlogPipeline:
             report.updated.append(result["ids"][0])
         # unchanged (change target matched but nothing moved): no report entry,
         # exactly like the pre-Protocol "not result.changed_fields" early return.
+        # 库里已有这条了才落 seen——判据 6 的另一半（写成功但没记上=重跑幂等，
+        # 记上了但没写=永久丢，所以只有这个方向是安全的）。
+        self.seen.mark_seen(message.msg_id)
 
     def _find_change_target(self, candidate: Candidate) -> Optional[str]:
         """Best-effort: which existing event is this message rescheduling?
