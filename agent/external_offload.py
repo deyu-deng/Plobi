@@ -50,6 +50,11 @@ AGY_SKIP_ENV = "PLOBI_OFFLOAD_AGY_SKIP_PERMISSIONS"
 AGY_COMMAND_ENV = "PLOBI_OFFLOAD_AGY_COMMAND"
 AGY_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_AGY_EXTRA_ARGS"
 
+#: Where an offload child finds the proxy. Deliberately NOT a literal
+#: 127.0.0.1:7890 — that is this box's dev-time Clash port and changes with the
+#: network. Unset, we fall through to the repo's ONE proxy reader.
+PROXY_ENV = "PLOBI_OFFLOAD_PROXY"
+
 AGENT_CODEBUDDY = "codebuddy"
 AGENT_AGY = "agy"
 
@@ -77,6 +82,9 @@ class OffloadResult:
     error: str
     #: Whether the run actually left a file behind — an offload with no product did not work.
     produced: bool = False
+    #: Which proxy (if any) the child was given, and where it came from.
+    proxy: str = ""
+    proxy_source: str = "none"
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -129,6 +137,29 @@ def extra_args(agent: str = AGENT_CODEBUDDY) -> tuple[str, ...]:
     env = AGY_EXTRA_ARGS_ENV if agent == AGENT_AGY else EXTRA_ARGS_ENV
     raw = os.environ.get(env, "").strip()
     return tuple(part for part in raw.split() if part) if raw else ()
+
+
+def resolve_proxy() -> tuple[str, str]:
+    """Return ``(proxy_url, source_label)`` for an offload child.
+
+    Reads the explicit knob first, then the repo's ONE proxy resolver
+    (``agent.process_bootstrap._get_proxy_for_base_url`` — it already honours
+    HTTPS_PROXY/HTTP_PROXY/ALL_PROXY, their lowercase forms and NO_PROXY).
+    Nothing here re-implements that order: a second narrow reader is how a
+    proxy fix silently stops applying to one caller (裁定 94).
+    """
+    explicit = os.environ.get(PROXY_ENV, "").strip()
+    if explicit:
+        return explicit, PROXY_ENV
+    try:
+        from agent.process_bootstrap import _get_proxy_for_base_url
+
+        found = _get_proxy_for_base_url(None)
+        if found:
+            return found, "process env (shared resolver)"
+    except Exception:  # noqa: BLE001 - no resolver means "no proxy", not "no run"
+        pass
+    return "", "none"
 
 
 def is_sandboxed() -> bool:
@@ -225,6 +256,45 @@ def _cost(usage: dict[str, Any]) -> tuple[Optional[float], str]:
     return None, "usage_reported_without_price"
 
 
+_UNREACHABLE_MARKERS = (
+    "dial tcp", "connectex", "connection attempt failed", "timed out",
+    "timeout", "no such host", "unreachable", "econnrefused", "connection refused",
+)
+
+
+def _looks_unreachable(text: str) -> bool:
+    low = (text or "").lower()
+    return any(marker in low for marker in _UNREACHABLE_MARKERS)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """``python -m agent.external_offload --task "..." [--agent agy] [--cwd DIR]``
+
+    The product-side entry the L2 offload call site uses. A scratch script under
+    the temp dir is not a product path: it can pass while the real call site is
+    broken, which is exactly how the proxy gap stayed invisible.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Offload one task to a local external agent")
+    parser.add_argument("--task", required=True)
+    parser.add_argument("--agent", default=AGENT_CODEBUDDY, choices=(AGENT_CODEBUDDY, AGENT_AGY))
+    parser.add_argument("--cwd", default="")
+    parser.add_argument("--permission-mode", default="")
+    parser.add_argument("--timeout", type=float, default=900.0)
+    args = parser.parse_args(argv)
+
+    result = run_task(
+        args.task,
+        cwd=args.cwd or None,
+        agent=args.agent,
+        permission_mode=args.permission_mode or None,
+        timeout=args.timeout,
+    )
+    print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+    return 0 if result.ok else 1
+
+
 def run_task(
     task: str,
     *,
@@ -254,6 +324,11 @@ def run_task(
 
     argv = (binary, "-p", task, "--output-format", "json", *flags, *extra_args(agent))
     env = dict(os.environ)
+    proxy, proxy_source = resolve_proxy()
+    if proxy:
+        for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
+                    "https_proxy", "http_proxy", "all_proxy"):
+            env[key] = proxy
     if sandboxed:
         env["CODEBUDDY_IS_SANDBOX"] = "1"
     before = {p.name: p.stat().st_mtime for p in workdir.rglob("*") if p.is_file()}
@@ -294,9 +369,27 @@ def run_task(
         error = "exit 0 but no artifact was written — the agent did not actually do the work"
         ok = False
 
+    if _looks_unreachable(error):
+        # Measured: agy is a Go binary that dials straight out. With no proxy in
+        # the environment and DNS handing back a Clash fake-IP (198.18.0.0/15),
+        # it dies on oauth2 with a connect error. Saying only "exit=1" sends the
+        # next reader chasing a login or a quota problem that does not exist.
+        hint = (
+            "network unreachable from the offload child"
+            + ("" if proxy else f" — no proxy resolved; set {PROXY_ENV} or export HTTPS_PROXY")
+            + f" ({error[:160]})"
+        )
+        error = hint
+        ok = False
+
     return OffloadResult(
         agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
         exit_code=completed.returncode, duration_s=round(duration, 2), argv=argv,
         usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,
         text=text, ok=ok, error=error, produced=produced,
+        proxy=proxy, proxy_source=proxy_source,
     )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
