@@ -49,13 +49,21 @@ def _message(content: str, *, talker: str = "班级群", msg_id: str = "m1") -> 
 
 
 def _pipeline(tmp_path: Path, *, config: CollectorConfig) -> ChatlogPipeline:
-    """Pipeline wired with fakes; confirmer defaults to config.tier_of."""
+    """Pipeline wired with fakes.
+
+    ⚠️ 这里**必须显式注入启发式确认器**：本档三条 `_pipeline` 用例钉的都是启发式那一段
+    （裸钟算不算得出来、tier 权重）。不注入时 `ChatlogPipeline` 会挂上 `FallbackConfirmer`
+    ——启发式拒掉的会**真去调 L2 模型**，于是同一条用例在模型路可用时绿、路由报错时红
+    （治理线 15:1x 三次跑出三种结果就是这个），而且每跑一次都在花额度。
+    时钟也冻住：`base` 虽取 `sent_at`，但启发式的兜底是墙上时钟，不冻就跟着现场漂。
+    """
     return ChatlogPipeline(
         config=config,
         client=None,  # handle_message is called directly; client unused
         service=AgendaService(tmp_path / "agenda.db"),
         seen=SeenStore(tmp_path / "seen.db"),
         talkers=TalkerStore(tmp_path / "talkers.db"),
+        confirmer=HeuristicConfirmer(now_factory=lambda: NOW, tier_of=config.tier_of),
     )
 
 
