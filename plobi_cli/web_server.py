@@ -53,6 +53,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from plobi_cli import __version__, __release_date__
+from plobi_cli.self_update import SELF_UPDATE_FROZEN_MSG, frozen_refusal, local_self_update_applies
+
 from plobi_cli.config import (
     cfg_get,
     DEFAULT_CONFIG,
@@ -3793,6 +3795,10 @@ async def update_plobi():
             "update_command": recommended_update_command_for_method(install_method),
         }
 
+    if not local_self_update_applies(install_method):
+        # `plobi update` 在这个安装方式上是空转并返回 0；起它就是把谎记成成功台账。
+        return frozen_refusal(install_method, recommended_update_command_for_method(install_method))
+
     try:
         proc = _spawn_plobi_action(["update"], "plobi-update")
     except Exception as exc:
@@ -3901,7 +3907,7 @@ async def check_plobi_update(force: bool = False):
         "current_version": __version__,
         "behind": None,
         "update_available": False,
-        "can_apply": install_method in ("git", "pip"),
+        "can_apply": local_self_update_applies(install_method),
         "update_command": update_command,
         "message": None,
     }
@@ -3939,6 +3945,10 @@ async def check_plobi_update(force: bool = False):
         # best-effort (empty list on any failure).
         if install_method in ("git", "pip"):
             payload["commits"] = await asyncio.to_thread(_recent_upstream_commits)
+
+    if not payload["can_apply"] and install_method == "git":
+        # 看得见落后多少，但这台按不动：说清是谁在同步代码，别让人以为点了就更新。
+        payload["message"] = SELF_UPDATE_FROZEN_MSG
 
     return payload
 
