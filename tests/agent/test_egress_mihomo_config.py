@@ -89,6 +89,88 @@ def test_the_control_plane_is_only_rendered_when_it_is_asked_for():
     assert doc["external-controller"] == "127.0.0.1:9090" and doc["secret"] == "s3cret"
 
 
+def test_a_table_that_points_the_engine_at_itself_is_refused():
+    """The one VERIFIED verdict that means nothing (reproduced 16:40, v1.19.32).
+
+    Same `host:port` reads as "who to hand traffic to" for a spawned process and
+    as "where to forward" for the engine — so the compiled config routes into the
+    engine's own listener.  `mihomo -t` returns rc=0 "test is successful" for it;
+    only the compiler can refuse it, and the supervision slice depends on that,
+    because otherwise starting the engine is starting a dead loop.
+    """
+    self_loop = load_table(
+        config={
+            "network": {
+                "egress": {
+                    "proxies": {"gw": {"url": "http://127.0.0.1:7895"}},
+                    "rules": [{"match": "api.github.com", "via": "direct"},
+                              {"match": "*", "via": "proxy:gw"}],
+                    "engine": {"enabled": True, "mixed_port": 7895},
+                }
+            }
+        }
+    )
+    with pytest.raises(EgressConfigError) as err:
+        compile_config(self_loop)
+    message = str(err.value)
+    assert "gw" in message and "7895" in message and "mixed-port" in message
+    assert "test is successful" in message  # the reason this is not left to -t
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "LOCALHOST", "[::1]", "0.0.0.0"])
+def test_every_loopback_spelling_of_the_same_port_is_caught(host):
+    # IPv6 needs brackets in a URL; `urlparse("http://::1:7897")` yields no host
+    # at all, which would have made this test prove the wrong thing.
+    table = load_table(
+        config={
+            "network": {
+                "egress": {
+                    "proxies": {"gw": {"url": f"http://{host}:7897"}},
+                    "rules": [{"match": "*", "via": "proxy:gw"}],
+                    "engine": {"enabled": True, "mixed_port": 7897},
+                }
+            }
+        }
+    )
+    with pytest.raises(EgressConfigError, match="own mixed-port"):
+        compile_config(table)
+
+
+def test_the_same_port_on_another_machine_is_not_self_reference():
+    """Control group: this guard is about the socket, not about the number."""
+    table = load_table(
+        config={
+            "network": {
+                "egress": {
+                    "proxies": {"gw": {"url": "http://10.0.0.5:7895"}},
+                    "rules": [{"match": "*", "via": "proxy:gw"}],
+                    "engine": {"enabled": True, "mixed_port": 7895},
+                }
+            }
+        }
+    )
+    doc = _render(table)
+    assert doc["mixed-port"] == 7895
+    assert doc["proxies"][0]["server"] == "10.0.0.5"
+
+
+def test_a_distinct_listen_port_still_compiles():
+    """The healthy shape the engine projection needs: engine listens here,
+    the named exit is something else (or the engine's own upstream)."""
+    table = load_table(
+        config={
+            "network": {
+                "egress": {
+                    "proxies": {"upstream": {"url": "http://127.0.0.1:7895"}},
+                    "rules": [{"match": "*", "via": "proxy:upstream"}],
+                    "engine": {"enabled": True, "mixed_port": 7899},
+                }
+            }
+        }
+    )
+    assert _render(table)["rules"] == ["MATCH,upstream"]
+
+
 def test_a_table_without_rules_has_nothing_to_compile():
     inert = load_table(config={"network": {}})
     with pytest.raises(EgressConfigError, match="no egress rules"):

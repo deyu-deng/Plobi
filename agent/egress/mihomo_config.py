@@ -77,7 +77,41 @@ def compile_config(
         # Membership stays where the user keeps it; the table only references it.
         document["include"] = list(table.engine_include)
 
+    _refuse_self_reference(proxies, port)
+
     return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+
+
+#: Hosts that mean "this machine, and specifically the socket we are about to
+#: bind" — `allow-lan: false` makes the engine listen on loopback.
+_SELF_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+
+def _refuse_self_reference(proxies: list[dict[str, Any]], port: int) -> None:
+    """Reject a table that tells the engine to hand traffic to itself.
+
+    The same `(host, port)` is read two different ways by two consumers: a
+    spawned process sees it as "who to hand my traffic to" (correct — that is the
+    engine's listener), while the compiled config sees it as "where to forward"
+    (fatal — the engine forwards into its own accept queue).  Reproduced on this
+    box with v1.19.32 (2026-10-11 16:40): the rendered config passes
+    ``mihomo -t`` with rc=0 "test is successful", then at runtime every request
+    dies with ``dial tcp 127.0.0.1:<port>: bind: Only one usage of each socket
+    address``, and the churn pushed this box's TimeWait to ~15.6k ephemeral
+    sockets.  **A validation that cannot see it is why the compiler must refuse
+    it** — otherwise the supervision slice starts a dead loop as its first act.
+    """
+    for entry in proxies:
+        if entry["port"] == port and str(entry["server"]).lower() in _SELF_HOSTS:
+            raise EgressConfigError(
+                f"network.egress.proxies.{entry['name']} points at "
+                f"{entry['server']}:{port}, which is the engine's own "
+                f"mixed-port — the compiled config would route traffic to the engine "
+                f"itself.  mihomo validates it anyway (observed on this box: rc=0, "
+                f'"test is successful"), then every connection dies at runtime.  '
+                f"Give the engine a listen port of its own and point this exit at "
+                f"whatever really sits upstream, or drop the engine projection."
+            )
 
 
 def _proxy_entry(name: str, url: str) -> dict[str, Any]:
@@ -136,6 +170,16 @@ def verify_with_binary(binary: str, config_path: str) -> tuple[str, str]:
     not a passing test.  It also refuses to report a verdict for a file the
     engine would not read (see :data:`CONFIG_BASENAME`), and confirms from the
     engine's own output which path it validated.
+
+    Two limits measured on this box (v1.19.32) that keep this from meaning
+    "the config works":
+    * ``GEOSITE`` rules make ``-t`` **go to the network** when the directory has
+      no ``GeoSite.dat`` — observed 16:40:40 → 16:40:50, then ``test failed``.
+      Ship or copy the geo data into the workdir, otherwise the verdict depends
+      on this machine's reachability at that moment.
+    * ``-t`` validates syntax and rule resolution only.  It accepts a
+      self-referential config (see :func:`_refuse_self_reference`), so a VERIFIED
+      verdict is never evidence that the engine can carry traffic.
     """
     if not binary:
         return "UNVERIFIED", "network.egress.engine.binary is empty"
