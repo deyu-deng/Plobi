@@ -40,6 +40,11 @@ _THIS_DIR = Path(__file__).resolve().parent
 _WORKTREE_ROOT = _THIS_DIR.parent
 sys.path.insert(0, str(_WORKTREE_ROOT))
 
+# Scenario D's fixture file lives under the OS temp root so the harness
+# never writes into a POSIX-literal path that would resolve to a drive root
+# on Windows (e.g. D:\tmp\livetest\notes.txt).
+_LIVETEST_NOTES = str(Path(tempfile.gettempdir()) / "livetest" / "notes.txt")
+
 # ---------------------------------------------------------------------------
 # Fake MCP tools — realistic shape, varied difficulty for retrieval
 # ---------------------------------------------------------------------------
@@ -228,7 +233,7 @@ SCENARIOS: List[Dict[str, Any]] = [
         "id": "D_core_plus_deferred",
         "description": "Task uses BOTH a core tool (read_file) and a deferred tool",
         "prompt": (
-            "Read the file at /tmp/livetest/notes.txt (it exists, just read it) "
+            f"Read the file at {_LIVETEST_NOTES} (it exists, just read it) "
             "and then post its contents to the #random Slack channel. Tell me you're done."
         ),
         "expected_underlying_tools": ["read_file", "slack_send_message"],
@@ -356,8 +361,8 @@ def run_one_scenario(scenario: Dict[str, Any], enabled: bool, out_dir: Path) -> 
     os.environ["PLOBI_HOME"] = str(home)
 
     # Pre-create the test file used by scenario D.
-    Path("/tmp/livetest").mkdir(exist_ok=True)
-    Path("/tmp/livetest/notes.txt").write_text("Hello from the test fixture.\n", encoding="utf-8")
+    Path(_LIVETEST_NOTES).parent.mkdir(exist_ok=True)
+    Path(_LIVETEST_NOTES).write_text("Hello from the test fixture.\n", encoding="utf-8")
 
     n_registered = register_fake_tools()
 

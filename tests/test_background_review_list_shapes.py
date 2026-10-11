@@ -40,6 +40,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import types
 
 
@@ -47,7 +48,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _isolate_plobi_home():
-    os.environ.setdefault("PLOBI_HOME", "/tmp/plobi-bg-review-test")
+    os.environ.setdefault("PLOBI_HOME", os.path.join(tempfile.gettempdir(), "plobi-bg-review-test"))
 
 
 def _load_module():

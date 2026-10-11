@@ -38,7 +38,25 @@ from tools.budget_config import (
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
 PERSISTED_OUTPUT_CLOSING_TAG = "</persisted-output>"
-STORAGE_DIR = "/tmp/plobi-results"
+
+
+def _platform_temp_root() -> str:
+    """Return a temp root that never resolves to a volume-root child.
+
+    POSIX literal temp roots (``/tmp`` etc.) are rejected by
+    ``plobi_constants.get_temp_root()``; on Windows an unqualified POSIX
+    absolute path would otherwise be resolved relative to the current
+    drive root (e.g. ``D:\\tmp\\plobi-results``) and litter the volume.
+    """
+    try:
+        from plobi_constants import get_temp_root
+        return get_temp_root()
+    except Exception:  # pragma: no cover - standalone contexts
+        import tempfile
+        return tempfile.gettempdir()
+
+
+STORAGE_DIR = os.path.join(_platform_temp_root(), "plobi-results")
 HEREDOC_MARKER = "PLOBI_PERSIST_EOF"
 _BUDGET_TOOL_NAME = "__budget_enforcement__"
 _UNSAFE_RESULT_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
