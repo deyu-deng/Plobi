@@ -67,6 +67,81 @@ def test_an_all_direct_table_short_circuits_every_exit():
     assert "HTTPS_PROXY" not in env
 
 
+# --- the vocabulary ceiling is reported, not silently degraded ---------------
+
+
+_UNEQUAL_TABLE = {
+    "proxies": {"gw": {"url": "http://gw.test:8081"}},
+    "rules": [
+        {"match": "*.googleapis.com", "via": "proxy:gw"},
+        {"match": "*", "via": "direct"},
+    ],
+}
+
+
+def _loaded(raw: dict) -> egress.Table:
+    return load_table(config={"network": {"egress": raw}})
+
+
+def test_catch_all_direct_loses_named_exits_for_children_and_says_so(caplog):
+    """Reported ceiling (reproduced 2026-10-10 22:5x by this line, then by 额度线).
+
+    A child can only be told "one exit, plus hosts that skip it".  With a direct
+    catch-all there is no exit to name, so the proxy rules above it drop.  The
+    in-process resolver is right either way — which is why silence here would be
+    the dangerous version of this bug.
+    """
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="agent.egress.rules"):
+        table = _loaded(_UNEQUAL_TABLE)
+
+    assert [r.match for r in table.env_dropped_rules] == ["*.googleapis.com"]
+    assert "*.googleapis.com" in caplog.text
+    assert "in-process only" in caplog.text
+
+    env: dict[str, str] = {}
+    apply_egress_env(env, table)
+    assert env["NO_PROXY"] == "*"
+    assert "HTTPS_PROXY" not in env  # the loss itself, stated not hidden
+
+    # ... and in-process routing still honours the dropped rule
+    assert egress.decide(table, "oauth2.googleapis.com").proxy_url == "http://gw.test:8081"
+
+
+def test_the_reverse_direction_reports_nothing(caplog):
+    """Control group: exit + bypass list is exactly what the env can express."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="agent.egress.rules"):
+        table = _loaded(
+            {
+                "proxies": {"gw": {"url": "http://gw.test:8081"}},
+                "rules": [
+                    {"match": "api.github.com", "via": "direct"},
+                    {"match": "*", "via": "proxy:gw"},
+                ],
+            }
+        )
+    assert table.env_dropped_rules == ()
+    assert "cannot be told" not in caplog.text
+
+    env: dict[str, str] = {}
+    apply_egress_env(env, table)
+    assert env["HTTPS_PROXY"] == "http://gw.test:8081"
+    assert env["NO_PROXY"] == "api.github.com"
+
+
+def test_a_direct_catch_all_with_only_direct_rules_reports_nothing(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="agent.egress.rules"):
+        table = _loaded({"rules": [{"match": "*", "via": "direct"}]})
+    assert table.env_dropped_rules == ()
+    assert "cannot be told" not in caplog.text
+
+
+
 def test_a_single_exit_is_the_default_and_the_rest_bypass_it():
     env: dict[str, str] = {}
     apply_egress_env(
