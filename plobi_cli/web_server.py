@@ -201,6 +201,28 @@ def _apply_l1_secretary_form() -> None:
         _log.warning("plobi: L1 secretary shape skipped: %s", exc)
 
 
+def _ensure_nightly_plan_job() -> None:
+    """Seed the 20:00 next-day-plan cron job once, on a home that never had it.
+
+    The planner, the script and the idempotent registrar all existed (ADR-0012 把
+    20:00 规划定成日程域 ``no_agent`` cron), but nothing called them from the product:
+    registration was a command a human had to type, so on a machine where nobody typed
+    it the nightly plan never generated itself — measured here as ``cron/jobs.json``
+    missing while the ticker itself ticks every 60s. Seeding lives in
+    :func:`plobi.butler.nightly.ensure_nightly_plan_job`, which marks the home after a
+    real success and never resurrects a job the user deleted or disabled.
+
+    Same no-cost rule as the two seeds above: a failure logs and the backend still
+    boots — next start retries, because the marker is only written on success.
+    """
+    try:
+        from plobi.butler.nightly import ensure_nightly_plan_job
+
+        _log.info("plobi: nightly plan cron job seed → %s", ensure_nightly_plan_job())
+    except Exception as exc:
+        _log.warning("plobi: nightly plan cron job seed skipped: %s", exc)
+
+
 def _resolve_restart_drain_timeout() -> float:
     try:
         from plobi_cli.gateway import _get_restart_drain_timeout
@@ -227,6 +249,14 @@ async def _lifespan(app: "FastAPI"):
     # Same reason, same shape: L1 answers the very first desktop turn, so its
     # narrow toolsets + secretary SOUL fence have to be on disk before it does.
     _apply_l1_secretary_form()
+
+    # The 20:00 planner needs a job row to be due at all — seed it so a fresh home
+    # schedules itself instead of waiting for someone to run register_cron.py. Deliberately
+    # NOT before `yield`: nothing at first paint reads that row, and the first import of
+    # ``cron.jobs`` in this process is exactly the cold-.pyc cost the warm-up below
+    # offloads for the same reason. Fire-and-forget is safe because the helper logs its
+    # own failure and only marks the home after a real success.
+    asyncio.get_event_loop().run_in_executor(None, _ensure_nightly_plan_job)
 
     # Fire plobi_cli.gateway import into a background thread so the event
     # loop is not blocked and PLOBI_DASHBOARD_READY fires without delay.
