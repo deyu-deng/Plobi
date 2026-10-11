@@ -72,6 +72,13 @@ class Table:
     engine_enabled: bool = False
     engine_binary: str = ""
     engine_mixed_port: int = 0
+    #: Extra engine config files to merge (mihomo's top-level ``include``).
+    #: A node pool is not a forward proxy — ss:// and vmess:// cannot live in
+    #: ``proxies``, and pasting 46 cleartext node entries into the routing table
+    #: would put secrets in the file users hand-edit.  So the table names the
+    #: exit and *references* the membership instead of owning it.
+    engine_include: tuple[str, ...] = ()
+
     #: Non-empty when the config could not be read at all, which is a *different*
     #: state from "no table declared": a caller that must not run unrouted (the
     #: external-offload child) has to be able to tell them apart.
@@ -266,7 +273,26 @@ def parse_table(raw: Any) -> Table:
         engine_enabled=bool(engine_raw.get("enabled", False)),
         engine_binary=str(engine_raw.get("binary", "") or "").strip(),
         engine_mixed_port=mixed_port,
+        engine_include=_parse_include(engine_raw),
     )
+
+
+def _parse_include(engine_raw: dict) -> tuple[str, ...]:
+    include = engine_raw.get("include_files", []) or []
+    if isinstance(include, (str, bytes)) or not isinstance(include, (list, tuple)):
+        raise EgressConfigError(
+            "network.egress.engine.include_files must be a list of paths — it is the "
+            "place an engine's own node pool lives, not inline proxy entries"
+        )
+    out: list[str] = []
+    for item in include:
+        text = str(item).strip()
+        if not text:
+            raise EgressConfigError(
+                "network.egress.engine.include_files contains an empty path"
+            )
+        out.append(text)
+    return tuple(out)
 
 
 def load_table(*, config: dict | None = None, force_reload: bool = False) -> Table:

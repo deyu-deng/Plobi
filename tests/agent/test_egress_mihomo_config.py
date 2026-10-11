@@ -138,3 +138,83 @@ def test_verification_reports_unverified_rather_than_passing_without_a_binary(tm
 
     verdict, why = verify_with_binary("mihomo-not-installed-here", str(tmp_path / "gone.yaml"))
     assert verdict == "UNVERIFIED"
+
+
+def test_verification_refuses_a_file_the_engine_would_never_read(tmp_path):
+    """Reproduced on this box with Mihomo Meta v1.19.32 (2026-10-11 15:56).
+
+    ``-t -d <dir>`` validates ``<dir>/config.yaml`` and, when that file is
+    missing, **creates a 16-byte empty one and reports success** — so rendering
+    our config under any other name and trusting the exit code would certify
+    bytes the engine never looked at.
+    """
+    wrong_name = tmp_path / "mihomo-config.yaml"
+    wrong_name.write_text(compile_config(_table()), encoding="utf-8")
+
+    verdict, why = verify_with_binary("mihomo", str(wrong_name))
+    assert verdict == "UNVERIFIED"
+    assert "config.yaml" in why and "report success" in why
+    # the trap must not have left a stray validated file behind either
+    assert not (tmp_path / "config.yaml").exists()
+
+
+def test_membership_lives_in_an_included_file_and_stays_out_of_the_table():
+    """ss:// and vmess:// node pools are not forward proxies.
+
+    The table names the exit (``http://127.0.0.1:<mixed-port>``) and references
+    the engine's own file; the alternative would be cleartext node credentials in
+    the config users hand-edit.
+    """
+    table = load_table(
+        config={
+            "network": {
+                "egress": {
+                    "proxies": {"engine": {"url": "http://127.0.0.1:7895"}},
+                    "rules": [{"match": "*", "via": "proxy:engine"}],
+                    "engine": {
+                        "enabled": True,
+                        "mixed_port": _MIXED,
+                        "include_files": ["D-here-is-not-hardcoded/egress/config.yaml"],
+                    },
+                }
+            }
+        }
+    )
+    doc = _render(table, mixed_port=_MIXED)
+    assert doc["include"] == ["D-here-is-not-hardcoded/egress/config.yaml"]
+    # the rendered config carries routing, not the pool
+    assert doc["proxies"] == [
+        {"name": "engine", "type": "http", "server": "127.0.0.1", "port": 7895}
+    ]
+
+
+@pytest.mark.parametrize("bad", ["some/path.yaml", {"a": 1}, 5])
+def test_a_malformed_include_list_is_refused_at_load(bad):
+    with pytest.raises(EgressConfigError, match="include_files"):
+        load_table(
+            config={
+                "network": {
+                    "egress": {
+                        "proxies": {"e": {"url": "http://127.0.0.1:1"}},
+                        "rules": [{"match": "*", "via": "proxy:e"}],
+                        "engine": {"include_files": bad},
+                    }
+                }
+            }
+        )
+
+
+def test_an_empty_entry_in_the_include_list_is_named_not_dropped():
+    with pytest.raises(EgressConfigError, match="empty path"):
+        load_table(
+            config={
+                "network": {
+                    "egress": {
+                        "proxies": {"e": {"url": "http://127.0.0.1:1"}},
+                        "rules": [{"match": "*", "via": "proxy:e"}],
+                        "engine": {"include_files": ["ok.yaml", "  "]},
+                    }
+                }
+            }
+        )
+

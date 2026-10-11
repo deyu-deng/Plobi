@@ -2876,6 +2876,12 @@ DEFAULT_CONFIG = {
                 # to be a user's choice, not an upgrade's side effect.
                 "enabled": False,
                 "binary": "",
+                # Where the engine's own membership lives (mihomo's top-level
+                # ``include``).  Node entries such as ss:// and vmess:// are not
+                # forward proxies, so they cannot go in ``proxies`` — and pasting
+                # them here would put cleartext node credentials into the file
+                # users hand-edit.  The table names the exit and references this.
+                "include_files": [],
                 # No invented default — the config compiler refuses 0, so a
                 # half-declared engine fails visibly instead of colliding with
                 # whatever already holds a port on this machine.
