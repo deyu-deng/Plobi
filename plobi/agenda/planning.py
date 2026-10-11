@@ -31,6 +31,8 @@ DDL_BLOCK_EVIDENCE_KIND = "ddl_block"
 MAX_BLOCK_MINUTES = 120  # 每块 ≤2h
 MIN_BLOCK_MINUTES = 30  # 不足 30 分钟的零头空窗不排（无意义碎片）
 DDL_LOOKAHEAD_DAYS = 14  # DDL 临近优先的排序窗口
+# 裁定 121 一（用户 10-11 拍）：作业块**当日时长合计**上限，单位分钟。用户给的数，不是我编的。
+DDL_DAILY_BUDGET_MINUTES = 240
 
 
 def _as_dt(value: Any) -> datetime:
@@ -473,58 +475,68 @@ def _next_ddl(conn: Any, entry_name: str, window_from: datetime) -> Optional[dat
     return min(moments) if moments else None
 
 
-def _ddl_study_block_items(
-    conn: Any,
-    paced_names: list[str],
-    free: list[list[datetime]],
-    window_start: datetime,
-    window_end: datetime,
-) -> list[dict]:
-    """给**没挂上任何 pace 项目**的截止事件排一块作业时间，先近后远。
+def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetime) -> list[Event]:
+    """没挂上任何 pace 项目的截止事件，按到期时刻由近到远。
 
-    为什么要有这一格：那 48 条学在浙大的作业标题是课件名（「示波器的使用+声速测定预习报告」），
-    项目名册里 11 个全是代码项目 ⇒ 按 C5 的"标题含项目名"永远关联不上，
-    结果就是"数据进来了、排程挂不上"。用户的原话是**按未提交作业排写作业时间**，
-    不是"按项目名排"，所以无主 DDL 自己就是一等公民，不必先给用户凭空造项目条目。
+    为什么要有这一格：学在浙大那批作业的标题是课件名（「示波器的使用+声速测定预习报告」），
+    项目名册里当时 11 个全是代码项目 ⇒ C5 那句"标题含项目名"永远关联不上，
+    结果就是"数据进来了、排程挂不上"。用户要的是**按未提交作业排写作业时间**，
+    不是"按项目名排"，所以无主 DDL 自己就是一等公民。
 
-    与项目块共用同一份空窗与同一对上下界（``MIN/MAX_BLOCK_MINUTES``），**且先消耗空窗**：
-    截止日优先于每周节奏，这是用户那句话的顺序。
+    裁定 121 二把 ``courses`` 立成品类之后，挂得上课程条目的作业会走项目那一侧；
+    **这一格作为兜底保留**（课程条目是数据，用户没建之前它还得管用）。
     """
     ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
-    blocks: list[dict] = []
+    return [
+        event
+        for event in _ddl_candidates(conn, window_start, ddl_limit)
+        if not any(_matches_project(event, name) for name in paced_names)
+    ]
 
-    for event in _ddl_candidates(conn, window_start, ddl_limit):
-        if any(_matches_project(event, name) for name in paced_names):
-            continue  # 已经驱动某个 pace 项目的优先级，不再排第二块
-        extra = event.evidence if isinstance(event.evidence, dict) else {}
-        course = str(extra.get("course") or "").strip()
-        for gap in free:
-            available = (gap[1] - gap[0]).total_seconds()
-            if available < MIN_BLOCK_MINUTES * 60.0:
-                continue
-            take = min(available, MAX_BLOCK_MINUTES * 60.0)
-            start = gap[0]
-            end = start + timedelta(seconds=take)
-            gap[0] = end
-            blocks.append(
-                {
-                    "event_id": f"ddl:{event.id}",
-                    "title": f"写作业 · {event.title}" + (f"（{course}）" if course else ""),
-                    "start_at": start.isoformat(),
-                    "end_at": end.isoformat(),
-                    "kind": "task",  # 词表不扩（meeting/ddl/class/task 冻结）
-                    "conflict_with": [],
-                    "evidence": {
-                        "kind": DDL_BLOCK_EVIDENCE_KIND,
-                        "ddl_event_id": event.id,
-                        "due_at": event.start_at,
-                        "source": event.source,
-                        **({"course": course} if course else {}),
-                    },
-                }
-            )
-            break
-    return blocks
+
+def _take_gap_block(
+    free: list[list[datetime]], *, cap_seconds: float
+) -> Optional[tuple[datetime, datetime]]:
+    """从第一个装得下的空窗里切一段（不超过 ``cap_seconds`` 与 ``MAX_BLOCK_MINUTES``）并消耗它。
+
+    返回 ``None`` 表示"没有装得下的空窗了"，不是"再往后挪挪"——零头碎片（< MIN）一律不留，
+    也不许为了塞进去而把块排到人家的夜里空档。
+    """
+    floor = MIN_BLOCK_MINUTES * 60.0
+    if cap_seconds < floor:
+        return None
+    for gap in free:
+        available = (gap[1] - gap[0]).total_seconds()
+        if available < floor:
+            continue
+        take = min(available, MAX_BLOCK_MINUTES * 60.0, cap_seconds)
+        if take < floor:
+            continue
+        start = gap[0]
+        end = start + timedelta(seconds=take)
+        gap[0] = end
+        return start, end
+    return None
+
+
+def _ddl_block_item(event: Event, start: datetime, end: datetime) -> dict:
+    extra = event.evidence if isinstance(event.evidence, dict) else {}
+    course = str(extra.get("course") or "").strip()
+    return {
+        "event_id": f"ddl:{event.id}",
+        "title": f"写作业 · {event.title}" + (f"（{course}）" if course else ""),
+        "start_at": start.isoformat(),
+        "end_at": end.isoformat(),
+        "kind": "task",  # 词表不扩（meeting/ddl/class/task 冻结）
+        "conflict_with": [],
+        "evidence": {
+            "kind": DDL_BLOCK_EVIDENCE_KIND,
+            "ddl_event_id": event.id,
+            "due_at": event.start_at,
+            "source": event.source,
+            **({"course": course} if course else {}),
+        },
+    }
 
 
 def _project_block_items(
@@ -534,33 +546,28 @@ def _project_block_items(
     kept_anchors: list[tuple[RoutineTemplate, datetime, datetime]],
     window_start: datetime,
     window_end: datetime,
-) -> tuple[list[dict], list[dict]]:
-    """Fill free windows with project blocks: DDL-nearest first, ≤2h each,
-    total ≤ weekly_hours/7. Overflow lands in ``unscheduled``.
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """作业块与项目块**同池轮转**分配，返回 ``(blocks, unscheduled, deferred)``。
 
-    WP-PLAN-PREFS（裁定 34.1）：人确认过的 avoid 窗（[[start,end]]）对该窗
-    视为占用——只挡**项目推进块**，**不挡**已确认事件 / 作息锚点 / 弹性餐
-    （那三类按现有逻辑继续走）。所以 avoid 窗的区间**不**进 ``_occupied_
-    intervals``（那是事件 + 锚点占用的入口），只在分块前临时合并进 ``free``
-    候选集——避免以后改 ``_occupied_intervals`` 时把弹性餐挡掉。
+    裁定 121 一（用户原话「作业和项目尽量平等。每天安排一点作业时间。上限是 4 个小时」）：
 
-    顺序（今晚补的一条）：先给**无主 DDL** 排作业块，再排 pace 项目块——两者共用
-    同一份空窗，截止日比每周节奏更硬。没有 pace 项目时这一格照样要跑，
-    所以下面不再拿 ``if not paced`` 提前返回。
+    - **轮转**：一轮里每个主体最多拿一块（每条作业一块；每个 pace 项目按 ``weekly_hours/7``
+      的日预算继续拿）。"平等"不等于平均分——是**任何一方都不许因为对方在场而被清零**。
+      旧顺序（作业先把空窗吃光）的现场就是 10-13 那份「11 个项目全部未能安排」。
+    - **上限是 ``DDL_DAILY_BUDGET_MINUTES``**：作业块**当日时长合计**（不是条数）到 4 小时为止，
+      装不下的进 ``deferred`` 并写进 summary，不许偷偷塞进夜里空档。
+    - **"临近截止才多排"不需要新阈值**：作业按到期时刻排序 + 每轮一块 + 4h 上限，
+      近的先在轮次里拿到块、远的只剩余额才有份——排序就是那个"临近"。
+
+    WP-PLAN-PREFS（裁定 34.1）：人确认过的 avoid 窗对该窗视为占用——只挡**分出来的块**，
+    **不挡**已确认事件 / 作息锚点 / 弹性餐。所以 avoid 窗不进 ``_occupied_intervals``
+    （那是事件 + 锚点占用的入口），只在分块前临时合并进 ``free`` 候选集。
     """
     occupied = _occupied_intervals(conn, day, events, kept_anchors, window_start, window_end)
-    avoid_intervals = _avoid_intervals_for_day(
-        conn, day, window_start, window_end
-    )
+    avoid_intervals = _avoid_intervals_for_day(conn, day, window_start, window_end)
     free = _free_windows(occupied + avoid_intervals, window_start, window_end)
 
     paced = paced_projects()
-    ddl_blocks = _ddl_study_block_items(
-        conn, [entry.name for entry, _ in paced], free, window_start, window_end
-    )
-    if not paced:
-        return ddl_blocks, []
-
     ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
 
     def _sort_key(pair):
@@ -570,22 +577,37 @@ def _project_block_items(
         return (ddl is None, ddl or window_start, pair[0].name)
 
     ranked = sorted(paced, key=_sort_key)
+    pending_ddl = _unowned_ddl_events(conn, [entry.name for entry, _ in ranked], window_start)
+    ddl_left = DDL_DAILY_BUDGET_MINUTES * 60.0
+    budgets = {entry.name: weekly_hours / 7.0 * 3600.0 for entry, weekly_hours in ranked}
+    floor = MIN_BLOCK_MINUTES * 60.0
 
     blocks: list[dict] = []
-    unscheduled: list[dict] = []
-    for entry, weekly_hours in ranked:
-        budget = weekly_hours / 7.0 * 3600.0  # 秒
-        for gap in free:
-            if budget <= 0:
+    while True:
+        progressed = False
+
+        for event in list(pending_ddl):
+            if ddl_left < floor:
                 break
-            available = (gap[1] - gap[0]).total_seconds()
-            if available <= 0:
+            slot = _take_gap_block(free, cap_seconds=ddl_left)
+            if slot is None:
+                break
+            start, end = slot
+            blocks.append(_ddl_block_item(event, start, end))
+            ddl_left -= (end - start).total_seconds()
+            pending_ddl.remove(event)
+            progressed = True
+
+        for entry, _weekly in ranked:
+            left = budgets.get(entry.name, 0.0)
+            if left < floor:
                 continue
-            take = min(budget, available, MAX_BLOCK_MINUTES * 60.0)
-            if take < MIN_BLOCK_MINUTES * 60.0:
-                continue  # 剩余预算不足一个最小块，留给下一个项目/放弃
-            start = gap[0]
-            end = start + timedelta(seconds=take)
+            slot = _take_gap_block(free, cap_seconds=left)
+            if slot is None:
+                continue
+            start, end = slot
+            spent = (end - start).total_seconds()
+            budgets[entry.name] = left - spent
             blocks.append(
                 {
                     "event_id": f"project:{entry.name}",
@@ -597,20 +619,25 @@ def _project_block_items(
                     "evidence": {
                         "kind": PROJECT_BLOCK_EVIDENCE_KIND,
                         "project_id": entry.name,
-                        "pace": f"weekly_hours:{weekly_hours:g}",
+                        "pace": f"weekly_hours:{entry.weekly_hours:g}",
                     },
                 }
             )
-            gap[0] = end  # 该空窗被消耗
-            budget -= take
-        if budget > 0:
-            unscheduled.append(
-                {
-                    "project": entry.name,
-                    "missing_hours": round(budget / 3600.0, 1),
-                }
-            )
-    return ddl_blocks + blocks, unscheduled
+            progressed = True
+
+        if not progressed:
+            break
+
+    unscheduled = [
+        {"project": entry.name, "missing_hours": round(budgets[entry.name] / 3600.0, 1)}
+        for entry, _weekly in ranked
+        if budgets.get(entry.name, 0.0) >= floor
+    ]
+    deferred = [
+        {"ddl": event.title, "due_at": event.start_at, "event_id": event.id}
+        for event in pending_ddl
+    ]
+    return blocks, unscheduled, deferred
 
 
 def _pending_summary(event_count: int, conflict_count: int) -> str:
@@ -627,11 +654,23 @@ def _plan_summary(
     blocks: Optional[list[dict]] = None,
     unscheduled: Optional[list[dict]] = None,
     moved: Optional[list[str]] = None,
+    deferred_ddl: Optional[list[dict]] = None,
 ) -> str:
     """One paragraph for L1 / DingTalk (L1 cost discipline unchanged)."""
     blocks = blocks or []
     unscheduled = unscheduled or []
     moved = moved or []
+    deferred_ddl = deferred_ddl or []
+    # 是"到上限了"还是"没空窗了"：前者是政策，后者是当天太满，两句话不一样。
+    ddl_minutes_used = sum(
+        (
+            datetime.fromisoformat(item["end_at"]) - datetime.fromisoformat(item["start_at"])
+        ).total_seconds()
+        / 60.0
+        for item in blocks
+        if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
+    )
+    ddl_cap_hit = deferred_ddl and ddl_minutes_used >= DDL_DAILY_BUDGET_MINUTES - MIN_BLOCK_MINUTES
     # 两句要各说各的数：把作业块报成"项目推进块"是谎，反过来也一样。
     project_block_count = sum(
         1 for item in blocks if (item.get("evidence") or {}).get("kind") == PROJECT_BLOCK_EVIDENCE_KIND
@@ -664,6 +703,14 @@ def _plan_summary(
             text += f"含{len(kept_anchors)}项作息锚点。"
         if block_phrase:
             text += f"另排{block_phrase}。"
+    if deferred_ddl:
+        # 排不下的要说出来并给原因，不许悄悄少排——「上限 4 小时」这条判据就靠这句可见。
+        capped = ddl_cap_hit
+        text += (
+            f"另有{len(deferred_ddl)}条作业今天没排上"
+            + ("（已到当日 4 小时作业上限）" if capped else "（没有装得下的空窗了）")
+            + "。"
+        )
     if yielded:
         titles = "、".join(str(entry.get("title") or "") for entry in yielded)
         text += f"{len(yielded)}项锚点（{titles}）因与日程冲突让位。"
@@ -719,7 +766,7 @@ def generate_evening_plan(
         events = store.list_events(conn, start_from=window_from, start_to=window_to)
         anchors = enabled_anchors_for_day(conn, day)
         kept_anchors, yielded, moved = _place_anchors(conn, day, anchors, events)
-        blocks, unscheduled = _project_block_items(
+        blocks, unscheduled, deferred_ddl = _project_block_items(
             conn, day, events, kept_anchors, window_from, window_to
         )
 
@@ -753,15 +800,36 @@ def generate_evening_plan(
         seq = store.next_confirm_seq(conn)
         seq_at = store.now_iso()
         summary = _plan_summary(
-            len(events), pair_count, kept_anchors, yielded, blocks, unscheduled, moved
+            len(events), pair_count, kept_anchors, yielded, blocks, unscheduled, moved,
+            deferred_ddl,
         )
         evidence: Optional[dict] = None
         if kept_anchors or yielded or blocks or unscheduled:
+            ddl_items = [
+                item for item in blocks if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
+            ]
             evidence = {
                 "kind": "evening_plan",
                 "anchor_count": len(kept_anchors),
                 "block_count": len(blocks),
+                # 治理线的判据要读的就是这两位：作业块的**时长合计**与项目块的数量，
+                # 分开记，别让人从 summary 的中文里再解析一遍。
+                "ddl_block_count": len(ddl_items),
+                "ddl_minutes": round(
+                    sum(
+                        (
+                            datetime.fromisoformat(item["end_at"])
+                            - datetime.fromisoformat(item["start_at"])
+                        ).total_seconds()
+                        / 60.0
+                        for item in ddl_items
+                    ),
+                    1,
+                ),
+                "project_block_count": len(blocks) - len(ddl_items),
             }
+            if deferred_ddl:
+                evidence["ddl_deferred"] = len(deferred_ddl)
             if yielded:
                 evidence["yielded_anchors"] = yielded
             if moved:

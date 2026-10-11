@@ -46,11 +46,24 @@ class RegistryError(ValueError):
 
 # R-012: L2 agent taxonomy. ``butler`` is the default so legacy rows
 # (no category key) fold into the catch-all — no migration required.
-AGENT_CATEGORIES: tuple[str, ...] = ("projects", "butler", "events", "research")
+# ``courses`` 是裁定 121 二那一格（用户拍「新建一个 L2 品类 Courses，把课程放进去」）：
+# 学在浙大的作业要排进写作业时间， planner 的项目关联靠的是名册里的条目，
+# 而这份名册以前只有代码项目 ⇒ 课程以前无处可挂。**品类是代码，条目是数据**：
+# 这一格只是让 ``category: courses`` 过校验，往 ``projects.yaml`` 里写课程条目是用户的数据动作。
+AGENT_CATEGORIES: tuple[str, ...] = ("projects", "butler", "events", "research", "courses")
 DEFAULT_CATEGORY = "butler"
+
+# 无默认目录绑定的两类：``butler`` 是家务、``courses`` 是课业数据——都不该被塞进
+# 某个内容资产目录（这台 ``D:\Cloud`` 是百度网盘，工具读不到它，绑过去等于绑进黑洞）。
+# 建册时想用别的落点：条目自己的 ``project_path`` 永远优先于这张表（见上面那段注释）。
+UNBOUND_CATEGORIES: tuple[str, ...] = ("butler", "courses")
 
 # R-013 扩写（2026-10-06）：哪几类分身是「Mind 里的一个项目」——只有这两类建册时
 # 要在 ``Vault/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
+# **裁定 121 二要我明判的那一格：``courses`` 不进这里。** 三条理由：① 课程条目是
+# 日程侧的数据，不是要写文档/代码的工作区，挂到脑仓没有消费方；② 脑仓自带 `.git` 与
+# 独立远端，`Code` 的闸门碰不到它（裁定 72）——为一个品类去那仓造目录要单独动作，
+# 不该由这张表顺手决定；③ 真要立项只是这里加一格， reversible。
 MIND_PROJECT_CATEGORIES: frozenset[str] = frozenset({"projects", "research"})
 
 # --------------------------------------------------------------------------- #
@@ -78,6 +91,7 @@ _WINDOWS_DEFAULT_PROJECT_PATHS: dict[str, str] = {
     "events": r"D:\Cloud\Events",
     "research": r"D:\Cloud\Research",
     "butler": "",
+    "courses": "",  # 无绑定，抄 butler 那格先例（见 UNBOUND_CATEGORIES）
 }
 
 # Directory under the user's home that anchors projects on macOS/Linux.
@@ -112,7 +126,7 @@ def build_default_project_paths(
     projects = root / POSIX_PROJECTS_ROOT_NAME
     resolved: dict[str, str] = {}
     for category in AGENT_CATEGORIES:
-        if category == "butler":
+        if category in UNBOUND_CATEGORIES:
             resolved[category] = ""
             continue
         subdir = _POSIX_CATEGORY_DIRNAME.get(category, category)
@@ -639,7 +653,7 @@ class AgentRegistry:
         # actual directory is created at the API layer (console router),
         # not here — registry stays pure data + no filesystem mutation
         # beyond its own yaml.
-        if not entry.project_path and entry.category != "butler":
+        if not entry.project_path and entry.category not in UNBOUND_CATEGORIES:
             from dataclasses import replace
 
             seeded = default_project_path(entry.category)
@@ -1517,7 +1531,7 @@ def ensure_mind_project_agents(
                     patched,
                     mind_subtree=f"Vault/projects/{entry.name}",
                 )
-            if not patched.project_path and patched.category != "butler":
+            if not patched.project_path and patched.category not in UNBOUND_CATEGORIES:
                 patched = _replace(patched, project_path=project_path)
             # 占位句只补在**投影**那一类格子上（``registered=False``，就是这条播种机
             # 自己落下的行）。用户登记过的行留空就是留空：不许把我的样板话写进他的
