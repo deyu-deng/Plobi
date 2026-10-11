@@ -45,9 +45,15 @@ def client():
 @pytest.fixture(autouse=True)
 def _isolated_state(tmp_path, monkeypatch):
     """Fresh registry + tracker per test; nothing leaks into the real home."""
+    monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
     monkeypatch.setattr(
         "plobi.agents.registry.default_path", lambda: tmp_path / "projects.yaml"
     )
+    # R-013 扩写（2026-10-06）：projects / research 这一类现在要在 Mind 立项才落册，
+    # MIND_ROOT 指到 tmp 里一个存在的假库（resolve_root 只认存在的目录），否则
+    # proj-1 / res-1 这两个用例会往真的脑仓里写目录。
+    (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
     # Redirect default project folders into the tmp tree so we don't touch the
     # real D:\projects / D:\Cloud during tests. The registry reads
     # DEFAULT_PROJECT_PATHS at create time, so we patch that map.
