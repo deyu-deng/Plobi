@@ -49,20 +49,15 @@ def build_plobi_parser(subparsers, *, cmd_plobi: Callable) -> None:
         "spawn",
         help="Materialize a profile + model routing for a registered agent",
         description=(
-            "Ensure the agent's profile exists (create if missing, cloning "
-            "config/.env/skills from the active profile), write the "
+            "Ensure the agent's profile exists (create it bare — no config / "
+            ".env / skill copies, skills come from the shared root per 裁定 42), "
+            "write the "
             "role→model route into the profile's plobi/models.json, "
             "verify ADR-0011, and sync config.yaml. If the agent is not "
             "registered yet, --role/--model etc. register it first."
         ),
     )
     spawn.add_argument("name", help="Agent name (must match a registry entry)")
-    spawn.add_argument(
-        "--clone-from",
-        metavar="PROFILE",
-        default=None,
-        help="Source profile to clone for a fresh spawn (default: active profile)",
-    )
     _add_entry_args(spawn)
 
     plobi_parser.set_defaults(func=cmd_plobi)

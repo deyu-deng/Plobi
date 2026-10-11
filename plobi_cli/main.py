@@ -10940,6 +10940,9 @@ def cmd_profile(args):
         list_profiles,
         create_profile,
         delete_profile,
+        get_profile_dir,
+        mark_profile_retired,
+        normalize_profile_name,
         seed_profile_skills,
         set_active_profile,
         get_active_profile_name,
@@ -11004,6 +11007,9 @@ def cmd_profile(args):
                 else "  "
             )
             name = p.name
+            if p.retired:
+                # 裁定 42 §42.4: 目录仍在盘上，但它已经不是一只在用的分身。
+                name = f"{p.name} (retired)"
             model = (p.model or "—")[:26]
             gw = "running" if p.gateway_running else "stopped"
             alias = (p.alias_name or p.name) if p.alias_path else "—"
@@ -11152,6 +11158,27 @@ def cmd_profile(args):
         except (ValueError, FileNotFoundError) as e:
             print(f"Error: {e}")
             sys.exit(1)
+
+    elif action == "retire":
+        # 裁定 42 §42.4: 退役只盖章，不删目录 —— 目录里是用户的运行数据。
+        name = args.profile_name
+        try:
+            canon = normalize_profile_name(name)
+            profile_dir = get_profile_dir(name)
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        if canon == "default":
+            print("Error: cannot retire the default profile (~/.plobi) — it is the installation itself.")
+            sys.exit(1)
+        if not profile_dir.is_dir():
+            print(f"Error: profile '{canon}' does not exist.")
+            sys.exit(1)
+        if mark_profile_retired(profile_dir, reason=getattr(args, "reason", "")):
+            print(f"\nProfile '{canon}' marked retired at {profile_dir}")
+            print("Nothing was deleted. Remove .retired in that directory to use it again.\n")
+        else:
+            print(f"Profile '{canon}' is already retired.")
 
     elif action == "describe":
         # Read or write a profile's description. The description is
@@ -12111,7 +12138,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
-        "model", "pairing", "pets", "plugins", "portal", "postinstall", "profile",
+        "model", "pairing", "pets", "plobi", "plugins", "portal", "postinstall", "profile",
         "project", "proxy",
         "prompt-size",
         "send", "sessions", "setup",
