@@ -274,6 +274,78 @@ async def test_load_code_assist_returns_empty_on_the_wrong_shape_instead_of_rais
     assert await prov._load_code_assist(_FakeAccount()) == ""
 
 
+@pytest.mark.asyncio
+async def test_ensure_fresh_picks_up_the_token_the_desktop_app_renewed(monkeypatch):
+    """The leg cannot refresh itself (no OAuth client pair), so the only renewal
+    available is the one agy performs and writes back. Re-reading the local store
+    before each dispatch is what makes the leg survive past ~60 minutes."""
+    import time
+    from aigw.providers.base import AccountState
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec",
+                                    desktop_store=True)
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() + 1800, "expires_in_seconds": 1800})
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: "NEW")
+    await prov.ensure_fresh(acc)
+    assert acc.cred.access_token == "NEW"
+    assert acc.cred.expires_at > time.time(), "the app's own stamp should be trusted"
+    assert acc.state is AccountState.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_refuses_locally_when_the_store_says_expired(monkeypatch):
+    """A known-dead token must not cost a network round-trip, and the verdict has
+    to name the only fix a human can do."""
+    import time
+    from aigw.providers.base import AccountState, UpstreamError
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec",
+                                    desktop_store=True)
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() - 600, "expires_in_seconds": -600})
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: None)
+    with pytest.raises(UpstreamError):
+        await prov.ensure_fresh(acc)
+    assert acc.state is AccountState.REAUTH
+    assert prov.http.calls == [], "an expired desktop token must not be dialed"
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_does_not_invent_a_death_when_the_store_is_unreadable(monkeypatch):
+    """Absent / locked / unreadable is not evidence the token is dead — the old
+    copy may still work, so let the upstream answer instead of pre-judging."""
+    from aigw.providers.base import AccountState
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec",
+                                    desktop_store=True)
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": False,
+        "expires_at": None, "expires_in_seconds": None})
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: None)
+    await prov.ensure_fresh(acc)
+    assert acc.cred.access_token == "OLD"
+    assert acc.state is not AccountState.REAUTH
+
+
+@pytest.mark.asyncio
+async def test_a_token_the_operator_pasted_is_never_overwritten_by_the_store(monkeypatch):
+    """ANTIGRAVITY_ACCESS_TOKEN accounts are the operator's own business: swapping
+    in a desktop app's token behind their back is a second source of truth."""
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    acc = prov._access_only_account("antigravity-env-access", "MINE", "cid", "csec")
+    assert acc.cred.extra["desktop_store"] is False
+
+    def _boom():
+        raise AssertionError("the desktop store must not be consulted")
+
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", _boom)
+    await prov.ensure_fresh(acc)
+    assert acc.cred.access_token == "MINE"
+
+
 def main() -> int:
     print("=== antigravity adapter verification ===")
     p = build_provider()

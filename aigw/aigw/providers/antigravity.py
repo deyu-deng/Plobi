@@ -164,7 +164,8 @@ class AntigravityProvider(Provider):
         if not env_rt:
             kc_at = ds.read_antigravity_access_token()
             if kc_at:
-                accs.append(self._access_only_account("antigravity-keychain", kc_at, cid, csec))
+                accs.append(self._access_only_account("antigravity-keychain", kc_at, cid, csec,
+                                                      desktop_store=True))
 
         # 5) sqlite ~/.antigravity/db.sqlite (compatibility with other setups)
         local = ds.read_antigravity()
@@ -204,7 +205,9 @@ class AntigravityProvider(Provider):
         )
         return Account(id=id, provider=self.name, label=label, cred=cred)
 
-    def _access_only_account(self, id, access_token, client_id, client_secret) -> Account:
+    def _access_only_account(
+        self, id, access_token, client_id, client_secret, desktop_store: bool = False
+    ) -> Account:
         return Account(
             id=id,
             provider=self.name,
@@ -217,6 +220,9 @@ class AntigravityProvider(Provider):
                     "project_id": self.fallback_project,
                     "session_id": uuid.uuid4().hex + str(int(time.time())),
                     "no_refresh": True,
+                    # whose copy this came from decides whether ensure_fresh may go
+                    # back to the desktop app for a newer one.
+                    "desktop_store": bool(desktop_store),
                 },
             ),
         )
@@ -248,7 +254,25 @@ class AntigravityProvider(Provider):
                 if not cred.extra.get("project_id") and res.get("project_id"):
                     cred.extra["project_id"] = res["project_id"]
             return
-        # access-token-only account: cannot refresh
+        # access-token-only account: cannot refresh on its own
+        if cred.extra.get("desktop_store"):
+            # We have no OAuth client pair for this app, so the only renewal we can
+            # ever get is the one the desktop app performs and writes back. Measured
+            # 2026-10-11: agy's Credential Manager entry moved `LastWritten` the same
+            # minute its stored `expiry` moved. Re-reading it is a local CredRead, so
+            # do it before each dispatch instead of trusting the startup copy — that
+            # copy is stale by definition within about an hour.
+            status = ds.antigravity_desktop_token_status()
+            if status.get("present") and status.get("expires_at"):
+                cred.expires_at = status["expires_at"]  # trust the app's own stamp
+            live = status.get("present") and (
+                status.get("expires_in_seconds") is None
+                or status["expires_in_seconds"] > 0
+            )
+            fresh = ds.read_antigravity_access_token() if live else None
+            if fresh and fresh != cred.access_token:
+                cred.access_token = fresh
+                acc.state = AccountState.ACTIVE
         if not cred.access_token:
             raise UpstreamError(
                 401, "antigravity: no access token and no refresh token", reauth=True
@@ -256,7 +280,10 @@ class AntigravityProvider(Provider):
         if cred.is_expired() and cred.extra.get("no_refresh"):
             acc.state = AccountState.REAUTH
             raise UpstreamError(
-                401, "antigravity: access token expired and no refresh token", reauth=True
+                401,
+                "antigravity: access token expired and we cannot refresh it "
+                "(the desktop app renews this entry — open it once, then retry)",
+                reauth=True,
             )
 
     # --- live model catalog (replaces hardcoded names) ------------------

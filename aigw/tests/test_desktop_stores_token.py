@@ -131,3 +131,51 @@ def test_iso_to_ts_shapes():
     assert ds._iso_to_ts("2026-10-11T21:48:27") is None  # naive: refuse to judge
     assert ds._iso_to_ts("") is None
     assert ds._iso_to_ts("tomorrow") is None
+
+
+# --- the status surface the doctor's row reads ------------------------------
+@pytest.fixture
+def as_windows(monkeypatch):
+    """The status dispatcher picks by os.name; CI is not Windows."""
+    monkeypatch.setattr(ds.os, "name", "nt")
+
+
+def test_status_reports_minutes_without_the_token(win_blob, as_windows):
+    win_blob(_payload(_when(1800)))
+    st = ds.antigravity_desktop_token_status()
+    assert st["present"] is True
+    assert st["source"] == "windows-credential-manager"
+    assert 1700 < st["expires_in_seconds"] <= 1800
+    assert st["expires_at"] > time.time()
+    # This dict goes into a doctor row, which goes into logs.
+    assert LIVE not in json.dumps(st), "a token must never reach the status surface"
+    assert "access_token" not in st and "refresh_token" not in st
+
+
+def test_status_reports_an_expired_entry_as_present_and_negative(win_blob, as_windows):
+    """"Expired" is the one thing the operator can act on (run agy once), so the
+    status keeps it visible even though `read_antigravity_access_token()` drops it."""
+    win_blob(_payload(_when(-600)))
+    assert ds.read_antigravity_access_token() is None
+    st = ds.antigravity_desktop_token_status()
+    assert st["present"] is True and -660 <= st["expires_in_seconds"] <= -540
+
+
+def test_status_on_a_missing_or_tokenless_entry(win_blob, as_windows):
+    win_blob(None)
+    st = ds.antigravity_desktop_token_status()
+    assert st["present"] is False and st["expires_in_seconds"] is None
+    assert st["source"] == "windows-credential-manager"
+    win_blob(json.dumps({"auth_method": "oauth", "token": {}}))
+    assert ds.antigravity_desktop_token_status()["present"] is False
+
+
+def test_status_leaves_lifetime_unknown_when_the_store_has_no_stamp(monkeypatch):
+    """The macOS Keychain entry is a bare token: no expiry, so we must say
+    "unknown" rather than invent a lifetime."""
+    monkeypatch.setattr(ds.os, "name", "posix")
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: LIVE)
+    st = ds.antigravity_desktop_token_status()
+    assert st == {"source": "macos-keychain", "present": True,
+                  "expires_at": None, "expires_in_seconds": None}
+    assert LIVE not in json.dumps(st)
