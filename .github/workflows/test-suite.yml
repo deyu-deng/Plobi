@@ -142,7 +142,7 @@ jobs:
           if new:
               print(f'::error::有 {len(new)} 个新增失败文件，本次改动破坏了行为')
               sys.exit(1)
-          if failures != sum(failed.values()):
+          if int(failures) != sum(failed.values()):
               print('::error::汇总的失败数与逐文件清单不一致，比对结果不可信')
               sys.exit(1)
           print('没有新增失败。')
