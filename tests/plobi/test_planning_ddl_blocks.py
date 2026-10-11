@@ -21,6 +21,7 @@ from plobi.agenda.planning import (
     _matches_project,
     _next_ddl,
     generate_evening_plan,
+    paced_projects,
 )
 
 DAY = "2026-10-11"
@@ -308,3 +309,69 @@ def timedelta_hours(hhmm: str):
 
     hour, minute = hhmm.split(":")
     return timedelta(hours=int(hour), minutes=int(minute))
+
+
+class _CourseRoster:
+    """把课程建成名册条目这件事本身——用户 10-11 拍的是「五门课要进、不带 pace」。"""
+
+    @staticmethod
+    def add_course(registry, name: str):
+        from plobi.agents.registry import AgentEntry
+
+        return registry.upsert(
+            AgentEntry.from_dict(
+                name,
+                {"role": "l2_project", "category": "courses", "description": f"课程 {name}"},
+            )
+        )
+
+
+def test_the_course_name_reaches_the_surface_the_desktop_reads(db_path, conn):
+    """判据 2「证据可读」这一格的真读数：桌面走 ``/api/agenda/day`` = ``day_surface``。
+
+    不是只看 ``plan_items`` 多了一行——要看见**界面上那一条**带着课程名，
+    否则"挂上了"只成立在库里。
+    """
+    from plobi.agenda.planning import day_surface
+
+    _ddl(conn, "第5次课后作业-(2.3)", "2026-10-18T23:55:00", course="电工电子学")
+    plan = generate_evening_plan(DAY, db_path=db_path)
+    blocks = _ddl_blocks(db_path, plan.id)
+    assert blocks, "先要有一块作业，否则下面那句面读数没东西可读"
+
+    connection = store.connect(db_path)
+    try:
+        events = store.list_events(
+            connection,
+            start_from=datetime.fromisoformat(f"{DAY}T00:00:00"),
+            start_to=datetime.fromisoformat(f"{DAY}T00:00:00") + timedelta(days=1),
+        )
+        snap = day_surface(connection, DAY, events)
+    finally:
+        connection.close()
+
+    titles = [row["title"] for row in snap["plan_items"]]
+    assert any("电工电子学" in t for t in titles), titles
+    assert any((row.get("evidence") or {}).get("course") == "电工电子学" for row in snap["plan_items"])
+
+
+def test_a_paceless_course_entry_changes_nothing_in_the_schedule(bare_registry, db_path, conn):
+    """名册里多了这门课 ⇒ 排程数学一字不动（块还是那块，仍归"无主作业"）。
+
+    钉两件事：① 不带 pace 的课程**进不了** ``paced_projects()``（那是"每周推进"的入口）；
+    ② 所以它也不会把作业从"无主"里摘走。回访那侧因此不会 nag 这门课。
+    """
+    _ddl(conn, "实验报告提交-实验三", "2026-10-20T23:59:00", course="电工电子学实验")
+
+    before = generate_evening_plan(DAY, db_path=db_path)
+    before_blocks = [(b.title, b.start_at, b.end_at) for b in _ddl_blocks(db_path, before.id)]
+
+    _CourseRoster.add_course(bare_registry, "电工电子学实验")
+    after = generate_evening_plan(DAY, db_path=db_path)
+    after_blocks = [(b.title, b.start_at, b.end_at) for b in _ddl_blocks(db_path, after.id)]
+
+    assert before_blocks == after_blocks and before_blocks, "加条目不该动排程，也不该测出个空集"
+    paced_names = [entry.name for entry, _hours in paced_projects()]
+    assert "电工电子学实验" not in paced_names, (
+        "不带 pace 的课程不该出现在推进池里——它一出现，作业就会从「无主」被摘走"
+    )
