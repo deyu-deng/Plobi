@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -9,7 +10,12 @@ import pytest
 from plobi.delegation.quota import QuotaCircuit
 from plobi.quota.config import DEFAULT_ORDER, DEFAULT_SOURCES, _resolve_source
 from plobi.quota.pool import QuotaPool, get_quota_pool, set_quota_pool
-from plobi.quota.route import QuotaAwareCompleter, resolve_l2_endpoint
+from plobi.quota.route import (
+    QuotaAwareCompleter,
+    _default_send,
+    resolve_l2_endpoint,
+    spend_timeout,
+)
 from plobi.quota.sources import (
     AigwSource,
     CheapApiSource,
@@ -406,3 +412,92 @@ def test_quota_aware_completer_none_when_exhausted():
     )
     completer = QuotaAwareCompleter(pool, max_attempts=3)
     assert completer("hello", None) is None
+
+
+# ── spend bounds per source kind ─────────────────────────────────────────────
+
+
+class _Response:
+    def __init__(self, payload):
+        self._payload = json.dumps(payload).encode()
+
+    def read(self):
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _capture_urlopen(monkeypatch, payload):
+    seen: dict = {}
+
+    def fake_urlopen(request, timeout=None):
+        seen["timeout"] = timeout
+        seen["url"] = request.full_url
+        return _Response(payload)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    return seen
+
+
+def test_spend_timeout_is_per_kind():
+    """A spawn-CLI desktop channel is not a 20-second request. Measured on this
+    machine 2026-10-07: 43.2s / 43.4s for the bare CLI, 41.1–62.2s through the
+    gateway. The old flat bound timed out every desktop-quota spend."""
+    aigw = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k", derived=True)
+    cheap = CheapApiSource("zhipu-air", model="m", base_url="http://h/v1", api_key="k")
+    assert spend_timeout(aigw) > spend_timeout(cheap)
+    assert spend_timeout(cheap) == 20.0
+
+
+def test_default_send_uses_the_kind_specific_bound(monkeypatch):
+    payload = {"choices": [{"message": {"role": "assistant", "content": "收到"}}]}
+
+    seen = _capture_urlopen(monkeypatch, payload)
+    aigw = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k", derived=True)
+    assert _default_send("hi", aigw) == "收到"
+    assert seen["timeout"] == spend_timeout(aigw)
+    assert seen["url"] == "http://h/v1/chat/completions"
+
+    cheap = CheapApiSource("zhipu-air", model="m", base_url="http://h/v1", api_key="k")
+    _default_send("hi", cheap)
+    assert seen["timeout"] == 20.0
+
+
+def test_explicit_timeout_still_wins(monkeypatch):
+    seen = _capture_urlopen(monkeypatch, {"choices": [{"message": {"content": "ok"}}]})
+    src = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
+    _default_send("hi", src, timeout=3.0)
+    assert seen["timeout"] == 3.0
+
+
+def test_empty_completion_is_a_failure_not_an_answer(monkeypatch):
+    """网关已经把"CLI 退出 0 但什么都没打印"判成 502；一个空的 200 说明上游退化了，
+    不许当成"模型选择沉默"往上报。"""
+    _capture_urlopen(monkeypatch, {"choices": [{"message": {"content": "   "}}]})
+    src = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
+    with pytest.raises(RuntimeError, match="empty completion"):
+        _default_send("hi", src)
+
+
+def test_missing_choices_is_a_failure_too(monkeypatch):
+    _capture_urlopen(monkeypatch, {"choices": []})
+    src = AigwSource("workbuddy", model="w/x", base_url="http://h/v1", api_key="k")
+    with pytest.raises(RuntimeError):
+        _default_send("hi", src)
+
+
+def test_completer_fails_over_off_a_blank_channel(monkeypatch):
+    """A blank answer must not be returned as success; the next candidate gets the turn."""
+    pool = _pool(
+        **{
+            "zhipu-air": ("cheap_api", HealthStatus.HEALTHY),
+            "antigravity": ("aigw", HealthStatus.HEALTHY),
+        }
+    )
+    _capture_urlopen(monkeypatch, {"choices": [{"message": {"content": ""}}]})
+    completer = QuotaAwareCompleter(pool, max_attempts=2)
+    assert completer("hello", None) is None  # both blank → exhausted, no fake answer
