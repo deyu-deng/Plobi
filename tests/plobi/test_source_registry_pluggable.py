@@ -141,7 +141,13 @@ class TestCommonLayerCarriesNoSourceNameBranch:
     FORBIDDEN = re.compile(r'(==|!=|\bin)\s*\(?\s*"(wechat|timetable|dingtalk|zju)"')
 
     def scanned(self):
-        roots = [REPO / "plobi" / "collectors", REPO / "plobi" / "agenda" / "store.py"]
+        # 规划层（planning.py）今晚起也算公共层：它新加的"无主 DDL 作业块"与项目关联口径
+        # 一律读字段，不许按信源名字分支（判据 4）。
+        roots = [
+            REPO / "plobi" / "collectors",
+            REPO / "plobi" / "agenda" / "store.py",
+            REPO / "plobi" / "agenda" / "planning.py",
+        ]
         for root in roots:
             if root.is_file():
                 yield root
