@@ -358,7 +358,11 @@ class AntigravityProvider(Provider):
             data = r.json()
         except Exception:
             return ""
-        proj = data.get("cloudaicompanionProject")
+        # Every other failure mode above returns "" (transport, non-200, bad JSON);
+        # a well-formed response of the *wrong shape* used to crash out of here on
+        # ``list.get`` — found while testing the unwrap in chat() (same class of
+        # unguarded-shape assumption, 2026-10-11).
+        proj = data.get("cloudaicompanionProject") if isinstance(data, dict) else None
         if isinstance(proj, dict):
             proj = proj.get("id", "")
         return proj or ""
@@ -497,9 +501,16 @@ class AntigravityProvider(Provider):
                 f"antigravity upstream: {_describe_google_error(e)}",
                 retryable=False,
             )
-            # The API wraps the Gemini payload in a top-level "response" object.
-            data = data.get("response", data)
-            return _gemini_to_oai(data, oai_req["model"], project)
+        # The API wraps the Gemini payload in a top-level "response" object.
+        # These two lines used to sit INSIDE the `if` above, i.e. after its
+        # `raise` — so a *successful* upstream answer fell off the end of chat()
+        # and the caller received None. Measured 2026-10-11: the subscription
+        # answered, `resp["choices"]` was None, and the failure looked like a
+        # translation gap rather than an unreachable return statement.
+        if not isinstance(data, dict):
+            raise UpstreamError(502, "antigravity: upstream returned a non-object payload")
+        data = data.get("response", data)
+        return _gemini_to_oai(data, oai_req["model"], project)
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         project = await self._project_id(acc)

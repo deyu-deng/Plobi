@@ -169,6 +169,111 @@ def test_composite() -> None:
     check(rt2 == "REFONLY" and pid2 == "" and mpid2 == "", "parse plain refresh")
 
 
+class _FakeResponse:
+    """Minimal stand-in for the httpx.Response chat() consumes."""
+
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+        self.headers = {}
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHttp:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    async def post(self, url, headers=None, json=None, timeout=None):
+        self.calls.append({"url": url, "headers": headers, "json": json})
+        return _FakeResponse(self.payload)
+
+
+class _FakeCred:
+    access_token = "ya29.test-token-not-a-secret"
+    extra: dict = {}
+
+    def is_expired(self, skew=60.0):
+        return False
+
+
+class _FakeAccount:
+    cred = _FakeCred()
+    id = "test-account"
+
+
+# Gemini's success shape, exactly as the API wraps it: {"response": {...}}.
+_SUCCESS = {"response": {"candidates": [{"content": {"parts": [
+    {"functionCall": {"name": "get_weather", "args": {"city": "Shanghai"}}}]},
+    "finishReason": "STOP"}],
+    "usageMetadata": {"promptTokenCount": 60, "candidatesTokenCount": 16,
+                      "thoughtsTokenCount": 53, "totalTokenCount": 129}}}
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_a_completion_on_a_successful_upstream():
+    """Regression: the unwrap + return used to sit INSIDE the `if "error" in data`
+    block, after its ``raise`` — so a *successful* answer fell off the end of
+    chat() and the caller got ``None``. The adapter was otherwise believed to
+    work because no test ever called chat(); this is that test.
+
+    Measured for real on 2026-10-11 against the subscription (finish_reason
+    ``tool_calls``), then pinned here offline with the same wire shape.
+    """
+    prov = AntigravityProvider({"host": "https://daily-cloudcode-pa.googleapis.com",
+                                "project_id": "test-project"}, _FakeHttp(_SUCCESS))
+    resp = await prov.chat(_FakeAccount(), {"model": "gemini-3.8-flash-low",
+                                            "messages": [{"role": "user", "content": "weather?"}],
+                                            "tools": [{"type": "function", "function": {"name": "get_weather"}}]})
+    assert resp is not None, "chat() returned None — the success path fell off the end"
+    assert resp.get("choices"), "a successful upstream answer must produce choices"
+    msg = resp["choices"][0]["message"]
+    calls = msg.get("tool_calls") or []
+    assert calls and calls[0]["function"]["name"] == "get_weather", calls
+    assert resp["choices"][0]["finish_reason"] == "tool_calls"
+    assert resp.get("usage", {}).get("prompt_tokens") == 60
+
+
+@pytest.mark.asyncio
+async def test_chat_still_raises_on_an_error_payload():
+    """The other half: the branch that DID run must keep running."""
+    payload = {"error": {"code": 400, "message": "User location is not supported for the API use"}}
+    prov = AntigravityProvider({"host": "https://daily-cloudcode-pa.googleapis.com",
+                                "project_id": "test-project"}, _FakeHttp(payload))
+    from aigw.providers.base import UpstreamError
+    with pytest.raises(UpstreamError):
+        await prov.chat(_FakeAccount(), {"model": "gemini-3.8-flash-low",
+                                         "messages": [{"role": "user", "content": "hi"}]})
+
+
+@pytest.mark.asyncio
+async def test_chat_names_a_non_object_payload_instead_of_crashing():
+    """Moving the unwrap out of the error branch made it reachable for *any*
+    payload shape. A JSON list would then hit ``.get`` and raise AttributeError —
+    which is why the unwrap carries an isinstance guard. This pins that guard.
+
+    The same fake also covers the first POST chat() provokes (loadCodeAssist),
+    which used to crash on ``list.get`` for the same reason.
+    """
+    prov = AntigravityProvider({"host": "https://daily-cloudcode-pa.googleapis.com",
+                                "project_id": "test-project"}, _FakeHttp([1, 2, 3]))
+    from aigw.providers.base import UpstreamError
+    with pytest.raises(UpstreamError):
+        await prov.chat(_FakeAccount(), {"model": "gemini-3.8-flash-low",
+                                         "messages": [{"role": "user", "content": "hi"}]})
+
+
+@pytest.mark.asyncio
+async def test_load_code_assist_returns_empty_on_the_wrong_shape_instead_of_raising():
+    """Its four documented failure modes all return "" (transport, non-200, bad
+    JSON, missing project). A list payload was the fifth shape and it raised."""
+    prov = AntigravityProvider({"host": "https://daily-cloudcode-pa.googleapis.com",
+                                "project_id": "test-project"}, _FakeHttp([1, 2, 3]))
+    assert await prov._load_code_assist(_FakeAccount()) == ""
+
+
 def main() -> int:
     print("=== antigravity adapter verification ===")
     p = build_provider()
