@@ -73,6 +73,9 @@ def compile_config(
         document["external-controller"] = external_controller
     if secret:
         document["secret"] = secret
+    if table.engine_include:
+        # Membership stays where the user keeps it; the table only references it.
+        document["include"] = list(table.engine_include)
 
     return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
 
@@ -117,23 +120,42 @@ def _rule_line(kind: str, value: str, target: str) -> str:
     raise EgressConfigError(f"cannot compile matcher kind '{kind}' for the engine")
 
 
+#: mihomo validates ``<dir>/config.yaml`` — it does not take a config path.
+#: Verified on this box (Mihomo Meta v1.19.32): pointing ``-t`` at a directory
+#: holding only ``mihomo-config.yaml`` **creates** a 16-byte ``config.yaml`` and
+#: reports "successful", so a caller that ignores the filename gets a green
+#: verdict for bytes the engine never read.
+CONFIG_BASENAME = "config.yaml"
+
+
 def verify_with_binary(binary: str, config_path: str) -> tuple[str, str]:
     """Ask the engine itself whether it accepts the rendered config.
 
     Returns ``("UNVERIFIED", why)`` rather than pretending success when no
     binary is available — a compiler that was never accepted by its target is
-    not a passing test.
+    not a passing test.  It also refuses to report a verdict for a file the
+    engine would not read (see :data:`CONFIG_BASENAME`), and confirms from the
+    engine's own output which path it validated.
     """
     if not binary:
         return "UNVERIFIED", "network.egress.engine.binary is empty"
+    if not os.path.isfile(config_path):
+        return "UNVERIFIED", f"no config at '{config_path}' to check"
+    if os.path.basename(config_path) != CONFIG_BASENAME:
+        return (
+            "UNVERIFIED",
+            f"mihomo validates <dir>/{CONFIG_BASENAME}, but the file given is "
+            f"'{os.path.basename(config_path)}' — rendering it under that name would let "
+            f"-t check whatever else is in that directory (it creates an empty "
+            f"{CONFIG_BASENAME} when none exists) and still report success",
+        )
     path = binary if os.path.isabs(binary) else shutil.which(binary)
     if not path or not os.path.isfile(path):
         return "UNVERIFIED", f"engine binary not found at '{binary}'"
-    if not os.path.isfile(config_path):
-        return "UNVERIFIED", f"no config at '{config_path}' to check"
+    workdir = os.path.dirname(config_path) or "."
     try:
         proc = subprocess.run(
-            [path, "-t", "-d", os.path.dirname(config_path) or "."],
+            [path, "-t", "-d", workdir],
             capture_output=True,
             text=True,
             timeout=60,
@@ -141,4 +163,19 @@ def verify_with_binary(binary: str, config_path: str) -> tuple[str, str]:
     except (OSError, subprocess.SubprocessError) as exc:
         return "UNVERIFIED", f"could not run '{path}': {exc}"
     detail = (proc.stdout + proc.stderr).strip()
-    return ("VERIFIED", detail) if proc.returncode == 0 else ("REJECTED", detail)
+    checked = os.path.normcase(os.path.abspath(config_path))
+    named = set()
+    for token in detail.replace("\\", "/").split():
+        candidate = token.strip("\"'")
+        if candidate.lower().endswith(CONFIG_BASENAME):
+            named.add(os.path.normcase(os.path.abspath(candidate)))
+    if proc.returncode != 0:
+        return "REJECTED", detail
+    if checked not in named:
+        return (
+            "UNVERIFIED",
+            f"-t exited 0 but never named this file in its output, so the verdict belongs "
+            f"to some other config: {detail[-200:]}",
+        )
+    return "VERIFIED", detail
+
