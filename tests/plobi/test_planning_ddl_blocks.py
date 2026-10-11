@@ -206,3 +206,105 @@ class TestSummaryDoesNotLie:
 
         assert "作业块" in plan.summary, "把作业块报成「项目推进块」是谎"
         assert "项目推进块" not in plan.summary, "这一轮没有任何 pace 项目"
+
+
+class TestCapAndEquality:
+    """裁定 121 一（用户拍的两条）：作业每天合计 ≤4h；作业在场时项目块**不被清零**。"""
+
+    def test_homework_minutes_are_capped_not_counted(self, bare_registry, db_path, conn) -> None:
+        """六条作业、空窗够大 ⇒ 作业时长**合计**必须 ≤ 240 分钟，剩下的进 deferred。"""
+        from datetime import datetime, timedelta
+
+        base = datetime.fromisoformat(f"{DAY}T08:00:00")
+        for index in range(6):
+            _ddl(conn, f"作业{index}", (base + timedelta(days=index)).isoformat(), course=f"C{index}")
+
+        plan = generate_evening_plan(DAY, db_path=db_path)
+        conn2 = store.connect(db_path)
+        items = store.list_plan_items(conn2, plan.id)
+        conn2.close()
+        ddl_items = [i for i in items if (i.evidence or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND]
+        minutes = sum(
+            (datetime.fromisoformat(i.end_at) - datetime.fromisoformat(i.start_at)).total_seconds() / 60.0
+            for i in ddl_items
+        )
+
+        assert 0 < minutes <= 240, f"作业块当日合计必须 ≤4h，实得 {minutes}"
+        assert len(ddl_items) < 6, "装不下的不该被硬塞进夜里空档"
+        assert plan.evidence["ddl_minutes"] == round(minutes, 1), "判据要能从 evidence 读，不用解析中文"
+        assert plan.evidence["ddl_deferred"] >= 1
+        assert "4 小时" in plan.summary or "没排上" in plan.summary, "排不下的必须说得出，还带原因"
+
+    def test_projects_are_not_zeroed_when_homework_exists(self, bare_registry, db_path, conn) -> None:
+        """同池轮转：两边都有产出才算成（旧顺序会把 11 个项目清零）。"""
+        bare_registry.add("Plobi", 14)  # 14h/周 = 每天 2h，够拿一块
+        for index in range(4):
+            _ddl(conn, f"堆满一天的作业{index}", f"{DAY}T{18 + index}:00:00", course="F")
+
+        plan = generate_evening_plan(DAY, db_path=db_path)
+        conn2 = store.connect(db_path)
+        items = store.list_plan_items(conn2, plan.id)
+        conn2.close()
+        kinds = [(i.evidence or {}).get("kind") for i in items]
+
+        assert kinds.count(DDL_BLOCK_EVIDENCE_KIND) >= 1, "作业要有块"
+        assert kinds.count(PROJECT_BLOCK_EVIDENCE_KIND) >= 1, "有作业在场也不许把项目块清零"
+        assert plan.evidence["ddl_block_count"] >= 1 and plan.evidence["project_block_count"] >= 1
+
+    def test_budget_leftovers_are_reported_per_subject(self, bare_registry, db_path, conn) -> None:
+        """轮转不会把项目的每周预算吞掉：还剩 ≥最小块的项目仍列进未能安排。"""
+        bare_registry.add("Kit", 0.5)  # 日预算 4.3 分钟 < MIN ⇒ 一块都排不上
+        _ddl(conn, "一条作业", f"{DAY}T19:00:00", course="G")
+
+        plan = generate_evening_plan(DAY, db_path=db_path)
+
+        assert "Kit" not in plan.summary, "预算不足最小块的项目不该被报成「欠好几个小时」"
+
+
+class TestCoursesCategoryIsRosterData:
+    """裁定 121 二：新建 L2 品类 ``courses``；**品类是代码，条目是数据**。"""
+
+    def test_courses_survives_validation_instead_of_folding_into_butler(self) -> None:
+        from plobi.agents.registry import AGENT_CATEGORIES, MIND_PROJECT_CATEGORIES, _normalize_category
+
+        assert "courses" in AGENT_CATEGORIES
+        assert _normalize_category("Courses") == "courses", "拼大小写都要认，否则静默降级成 butler"
+        assert "courses" not in MIND_PROJECT_CATEGORIES, (
+            "我明判的那一格：课程条目不在脑仓 Vault/projects/ 立项（那是另一个仓、要单独动作）"
+        )
+
+    def test_courses_has_no_default_folder_binding_on_either_platform(self) -> None:
+        from plobi.agents.registry import build_default_project_paths
+
+        assert build_default_project_paths(is_windows=True)["courses"] == ""
+        assert build_default_project_paths(is_windows=False, home="/tmp/whatever")["courses"] == ""
+
+    def test_a_course_entry_makes_next_ddl_non_none(self, bare_registry, db_path, conn) -> None:
+        """用户那句「把课程放进去」之后的效果：项目名只在 evidence 里也挂得上。"""
+        from datetime import datetime
+
+        bare_registry.add(SCHOOL_COURSE, 4)
+        _ddl(conn, "示波器的使用+声速测定预习报告", f"{DAY}T23:55:00", course=SCHOOL_COURSE)
+
+        moment = datetime.fromisoformat(f"{DAY}T00:00:00")
+        assert _next_ddl(conn, SCHOOL_COURSE, window_from=moment) == moment + timedelta_hours("23:55")
+
+    def test_course_owned_ddl_gets_no_second_homework_block(self, bare_registry, db_path, conn) -> None:
+        """挂上课程项目的作业走项目块那一侧，不许同一件事占两段时间。"""
+        bare_registry.add(SCHOOL_COURSE, 6)
+        _ddl(conn, "示波器的使用", f"{DAY}T23:55:00", course=SCHOOL_COURSE)
+
+        plan = generate_evening_plan(DAY, db_path=db_path)
+        conn2 = store.connect(db_path)
+        kinds = [(i.evidence or {}).get("kind") for i in store.list_plan_items(conn2, plan.id)]
+        conn2.close()
+
+        assert DDL_BLOCK_EVIDENCE_KIND not in kinds
+        assert PROJECT_BLOCK_EVIDENCE_KIND in kinds
+
+
+def timedelta_hours(hhmm: str):
+    from datetime import timedelta
+
+    hour, minute = hhmm.split(":")
+    return timedelta(hours=int(hour), minutes=int(minute))
