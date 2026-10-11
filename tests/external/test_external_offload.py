@@ -274,6 +274,7 @@ def test_proxy_comes_from_the_knob_and_reaches_the_child(workdir, monkeypatch):
         return _Completed(stdout=json.dumps({"result": "ok"}))
 
     monkeypatch.setenv(offload.PROXY_ENV, "http://proxy.invalid:8118")
+    monkeypatch.setattr(offload, "egress_is_reachable", lambda url, timeout=3.0: (True, ""))
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
     monkeypatch.setattr(offload.subprocess, "run", fake_run)
     result = offload.run_task("go", cwd=workdir)
@@ -301,6 +302,7 @@ def test_egress_table_owns_the_child_network_keys(workdir, monkeypatch):
         ],
     })
     monkeypatch.setattr(egress_rules, "load_table", lambda *a, **k: table)
+    monkeypatch.setattr(offload, "egress_is_reachable", lambda url, timeout=3.0: (True, ""))
     monkeypatch.delenv(offload.PROXY_ENV, raising=False)
     monkeypatch.setenv("NO_PROXY", "internal.corp")
     monkeypatch.setenv("HTTPS_PROXY", "http://stale.invalid:1")
@@ -332,6 +334,7 @@ def test_knob_outranks_the_table(workdir, monkeypatch):
     })
     monkeypatch.setattr(egress_rules, "load_table", lambda *a, **k: table)
     monkeypatch.setenv(offload.PROXY_ENV, "http://knob.invalid:9999")
+    monkeypatch.setattr(offload, "egress_is_reachable", lambda url, timeout=3.0: (True, ""))
 
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
@@ -453,3 +456,49 @@ def test_product_entry_exists_and_reports_the_four_answers():
     assert callable(getattr(mod, "main", None))
     fields = set(offload.OffloadResult.__dataclass_fields__)
     assert {"agent", "cwd", "permission_flags", "usage", "cost", "cost_status"} <= fields
+
+def test_dead_egress_is_named_before_anything_is_spent(workdir, monkeypatch):
+    """A child must not get the chance to lie about why it failed.
+
+    ``agy`` reports a dead proxy as "Please sign in to view available models" —
+    measured on this box at 15:4x with the table pointing at a port nothing
+    listens on. The channel has to say "the exit is not reachable" and spend zero.
+    """
+    calls: list = []
+    monkeypatch.setenv(offload.PROXY_ENV, "http://127.0.0.1:1")
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
+    )
+    result = offload.run_task("go", cwd=workdir)
+
+    assert calls == [], "an unreachable exit must stop the run before the child starts"
+    assert result.ok is False
+    assert result.cost_status == "not_started"
+    assert "not reachable" in result.error
+
+
+def test_reachability_probe_uses_a_real_socket():
+    """The probe is the guard, so it gets tested against a real closed port —
+    bind one, release it, and the connect must be refused, not silently accepted."""
+    import socket
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    ok, why = offload.egress_is_reachable(f"http://127.0.0.1:{port}", timeout=2.0)
+    assert ok is False
+    assert f"127.0.0.1:{port}" in why
+
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    try:
+        live_port = listener.getsockname()[1]
+        assert offload.egress_is_reachable(f"http://127.0.0.1:{live_port}", timeout=2.0) == (True, "")
+    finally:
+        listener.close()
+

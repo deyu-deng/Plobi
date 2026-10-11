@@ -209,6 +209,31 @@ def default_workdir() -> Path:
         return base
 
 
+def egress_is_reachable(proxy_url: str, timeout: float = 3.0) -> tuple[bool, str]:
+    """Can we actually open a socket to the exit we are about to hand the child?
+
+    This is checked BEFORE the child spawns because the child cannot be trusted to
+    report it honestly: with a dead proxy, ``agy`` exits 1 saying "Please sign in to
+    view available models" — a credential-sounding message that would send a reader
+    to re-login instead of to the engine that is not listening.  A TCP connect is
+    enough: it separates "nothing is listening there" from "the task failed later",
+    and it costs nothing.
+    """
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(proxy_url)
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme in ("https",) else 1080)
+    if not host:
+        return False, f"egress {proxy_url!r} has no host to connect to"
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True, ""
+    except OSError as exc:
+        return False, f"egress {proxy_url!r} is not reachable ({type(exc).__name__}: {exc})"
+
+
 def project_egress_onto(env: dict[str, str]) -> str:
     """Let the ONE routing table own the child's network keys.
 
@@ -414,6 +439,12 @@ def run_task(
                 env[key] = proxy
     if sandboxed:
         env["CODEBUDDY_IS_SANDBOX"] = "1"
+    # Ask before spending: a dead exit must not turn into a child that reports
+    # something else (agy says "Please sign in") and a task that burns tokens.
+    if proxy:
+        reachable, why = egress_is_reachable(proxy)
+        if not reachable:
+            return fail(why)
     before = {p.name: p.stat().st_mtime for p in workdir.rglob("*") if p.is_file()}
 
     started = time.time()
