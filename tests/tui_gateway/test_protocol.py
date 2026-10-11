@@ -2,7 +2,9 @@
 
 import io
 import json
+import os
 import sys
+import tempfile
 import threading
 import time
 import types
@@ -22,7 +24,7 @@ def _restore_stdout():
 @pytest.fixture()
 def server():
     with patch.dict("sys.modules", {
-        "plobi_constants": MagicMock(get_plobi_home=MagicMock(return_value="/tmp/plobi_test")),
+        "plobi_constants": MagicMock(get_plobi_home=MagicMock(return_value=os.path.join(tempfile.gettempdir(), "plobi_test"))),
         "plobi_cli.env_loader": MagicMock(),
         "plobi_cli.banner": MagicMock(),
         "plobi_state": MagicMock(),

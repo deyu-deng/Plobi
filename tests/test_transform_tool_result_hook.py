@@ -6,6 +6,7 @@ targets the generic tool-result seam that runs for every tool dispatch.
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 import plobi_cli.plugins as plugins_mod
@@ -53,7 +54,7 @@ def _run_handle_function_call(
 
 def test_result_unchanged_when_no_hook_registered(monkeypatch):
     # Real invoke_hook with no plugins loaded returns [].
-    monkeypatch.setenv("PLOBI_HOME", "/tmp/plobi_no_plugins")
+    monkeypatch.setenv("PLOBI_HOME", os.path.join(tempfile.gettempdir(), "plobi_no_plugins"))
     # Force a fresh plugin manager so no stale plugins pollute state.
     plugins_mod._plugin_manager = plugins_mod.PluginManager()
 

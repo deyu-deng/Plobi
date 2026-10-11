@@ -1,5 +1,7 @@
 """Tests for tools/tool_result_storage.py -- 3-layer tool result persistence."""
 
+import os
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -405,9 +407,12 @@ class TestMaybePersistToolResult:
         cmd = env.execute.call_args[0][0]
         target = cmd.split("cat > ", 1)[1].split(" <<", 1)[0]
 
-        assert "Full output saved to: /tmp/plobi-results/outside_whoami_x_" in result
-        assert "/tmp/plobi-results/../" not in result
-        assert target.startswith("/tmp/plobi-results/outside_whoami_x_")
+        assert "Full output saved to: " in result
+        assert "plobi-results" in result
+        assert "outside_whoami_x_" in result
+        assert "/../" not in result
+        assert os.sep + ".." + os.sep not in result
+        assert "plobi-results" in target and "outside_whoami_x_" in target
         assert "/../" not in target
         assert "$(whoami)" not in target
         assert ";" not in target
