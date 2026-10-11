@@ -44,10 +44,11 @@ _EVENT_KIND_LABELS = {
     "ddl": "截止",
     "class": "课",
 }
-# 计划项按其类型标：作息锚点 / 项目推进块（evidence.kind，见 agenda/planning.py）。
+# 计划项按其类型标：作息锚点 / 项目推进块 / 无主 DDL 的作业块（evidence.kind，见 agenda/planning.py）。
 _PLAN_ITEM_LABELS = {
     "routine": "作息",
     "project_block": "项目块",
+    "ddl_block": "作业块",
 }
 _WEEKDAYS = "一二三四五六日"
 # "08:00–09:40" 正好 11 列；单点时间左对齐补空格，正文起始列两版一致。

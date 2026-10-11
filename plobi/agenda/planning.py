@@ -24,6 +24,10 @@ ROUTINE_EVIDENCE_KIND = "routine"
 
 # C5 project pace blocks: deterministic rules only, zero LLM.
 PROJECT_BLOCK_EVIDENCE_KIND = "project_block"
+# 无主 DDL（没挂上任何 pace 项目的截止事件）自己拿一块——用户那句
+# 「未提交作业要排进写作业时间」要的就是这块。它不扩 events 词表（kind 仍是 task），
+# 只在 plan_items.evidence.kind 上标出来，与 project_block 同一手法。
+DDL_BLOCK_EVIDENCE_KIND = "ddl_block"
 MAX_BLOCK_MINUTES = 120  # 每块 ≤2h
 MIN_BLOCK_MINUTES = 30  # 不足 30 分钟的零头空窗不排（无意义碎片）
 DDL_LOOKAHEAD_DAYS = 14  # DDL 临近优先的排序窗口
@@ -421,24 +425,106 @@ def _free_windows(
     return [gap for gap in free if gap[1] - gap[0] >= timedelta(minutes=MIN_BLOCK_MINUTES)]
 
 
-def _next_ddl(conn: Any, entry_name: str, window_from: datetime) -> Optional[datetime]:
-    """该项目的下一个 DDL 事件（kind=ddl 且标题含项目名），确定性启发式。
+def _ddl_candidates(conn: Any, window_from: datetime, window_to: datetime) -> list[Event]:
+    """窗口内的截止事件，按到期时刻排序。机器采的与手写的走同一条口径。"""
+    events = [
+        event
+        for event in store.list_events(
+            conn, start_from=window_from.isoformat(), start_to=window_to.isoformat()
+        )
+        if event.kind == "ddl"
+    ]
+    events.sort(key=lambda event: (_as_dt(event.start_at), event.title))
+    return events
 
-    events 表没有 project 外键，标题包含项目名是 MVP 能落地的确定性关联；
+
+def _matches_project(event: Event, entry_name: str) -> bool:
+    """这条 DDL 属不属于该项目 —— 两条确定性关联口径，都不许按信源名字分支。
+
+    1. 标题含项目名（C5 原口径：events 表没有 project 外键，标题是唯一手写锚点）。
+    2. ``evidence`` 里的**归属字段**等于项目名：采集来的 DDL（课表作业那类）标题是站方给的
+       课件名，项目名压根不在里面 ⇒ 只认口径 1 就永远挂不上。这里读的是通用字段名
+       ``course``/``project``（哪个信源给的都一样），**看的不是这条数据由哪个信源采来**（判据 4）。
+    """
+    needle = entry_name.lower().strip()
+    if not needle:
+        return False
+    if needle in (event.title or "").lower():
+        return True
+    extra = event.evidence if isinstance(event.evidence, dict) else {}
+    for key in ("course", "project"):
+        value = str(extra.get(key) or "").lower().strip()
+        if value and (value == needle or needle in value):
+            return True
+    return False
+
+
+def _next_ddl(conn: Any, entry_name: str, window_from: datetime) -> Optional[datetime]:
+    """该项目的下一个 DDL 事件，确定性启发式。
+
     匹配不到 = 无 DDL（排序垫底，按名称稳定）。
     """
-    events = store.list_events(conn, start_from=window_from.isoformat())
-    needle = entry_name.lower()
-    best: Optional[datetime] = None
-    for event in events:
-        if event.kind != "ddl":
-            continue
-        if needle not in event.title.lower():
-            continue
-        moment = _as_dt(event.start_at)
-        if best is None or moment < best:
-            best = moment
-    return best
+    ddl_limit = window_from + timedelta(days=DDL_LOOKAHEAD_DAYS)
+    moments = [
+        _as_dt(event.start_at)
+        for event in _ddl_candidates(conn, window_from, ddl_limit)
+        if _matches_project(event, entry_name)
+    ]
+    return min(moments) if moments else None
+
+
+def _ddl_study_block_items(
+    conn: Any,
+    paced_names: list[str],
+    free: list[list[datetime]],
+    window_start: datetime,
+    window_end: datetime,
+) -> list[dict]:
+    """给**没挂上任何 pace 项目**的截止事件排一块作业时间，先近后远。
+
+    为什么要有这一格：那 48 条学在浙大的作业标题是课件名（「示波器的使用+声速测定预习报告」），
+    项目名册里 11 个全是代码项目 ⇒ 按 C5 的"标题含项目名"永远关联不上，
+    结果就是"数据进来了、排程挂不上"。用户的原话是**按未提交作业排写作业时间**，
+    不是"按项目名排"，所以无主 DDL 自己就是一等公民，不必先给用户凭空造项目条目。
+
+    与项目块共用同一份空窗与同一对上下界（``MIN/MAX_BLOCK_MINUTES``），**且先消耗空窗**：
+    截止日优先于每周节奏，这是用户那句话的顺序。
+    """
+    ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
+    blocks: list[dict] = []
+
+    for event in _ddl_candidates(conn, window_start, ddl_limit):
+        if any(_matches_project(event, name) for name in paced_names):
+            continue  # 已经驱动某个 pace 项目的优先级，不再排第二块
+        extra = event.evidence if isinstance(event.evidence, dict) else {}
+        course = str(extra.get("course") or "").strip()
+        for gap in free:
+            available = (gap[1] - gap[0]).total_seconds()
+            if available < MIN_BLOCK_MINUTES * 60.0:
+                continue
+            take = min(available, MAX_BLOCK_MINUTES * 60.0)
+            start = gap[0]
+            end = start + timedelta(seconds=take)
+            gap[0] = end
+            blocks.append(
+                {
+                    "event_id": f"ddl:{event.id}",
+                    "title": f"写作业 · {event.title}" + (f"（{course}）" if course else ""),
+                    "start_at": start.isoformat(),
+                    "end_at": end.isoformat(),
+                    "kind": "task",  # 词表不扩（meeting/ddl/class/task 冻结）
+                    "conflict_with": [],
+                    "evidence": {
+                        "kind": DDL_BLOCK_EVIDENCE_KIND,
+                        "ddl_event_id": event.id,
+                        "due_at": event.start_at,
+                        "source": event.source,
+                        **({"course": course} if course else {}),
+                    },
+                }
+            )
+            break
+    return blocks
 
 
 def _project_block_items(
@@ -457,16 +543,23 @@ def _project_block_items(
     （那三类按现有逻辑继续走）。所以 avoid 窗的区间**不**进 ``_occupied_
     intervals``（那是事件 + 锚点占用的入口），只在分块前临时合并进 ``free``
     候选集——避免以后改 ``_occupied_intervals`` 时把弹性餐挡掉。
-    """
-    paced = paced_projects()
-    if not paced:
-        return [], []
 
+    顺序（今晚补的一条）：先给**无主 DDL** 排作业块，再排 pace 项目块——两者共用
+    同一份空窗，截止日比每周节奏更硬。没有 pace 项目时这一格照样要跑，
+    所以下面不再拿 ``if not paced`` 提前返回。
+    """
     occupied = _occupied_intervals(conn, day, events, kept_anchors, window_start, window_end)
     avoid_intervals = _avoid_intervals_for_day(
         conn, day, window_start, window_end
     )
     free = _free_windows(occupied + avoid_intervals, window_start, window_end)
+
+    paced = paced_projects()
+    ddl_blocks = _ddl_study_block_items(
+        conn, [entry.name for entry, _ in paced], free, window_start, window_end
+    )
+    if not paced:
+        return ddl_blocks, []
 
     ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
 
@@ -517,7 +610,7 @@ def _project_block_items(
                     "missing_hours": round(budget / 3600.0, 1),
                 }
             )
-    return blocks, unscheduled
+    return ddl_blocks + blocks, unscheduled
 
 
 def _pending_summary(event_count: int, conflict_count: int) -> str:
@@ -539,13 +632,28 @@ def _plan_summary(
     blocks = blocks or []
     unscheduled = unscheduled or []
     moved = moved or []
+    # 两句要各说各的数：把作业块报成"项目推进块"是谎，反过来也一样。
+    project_block_count = sum(
+        1 for item in blocks if (item.get("evidence") or {}).get("kind") == PROJECT_BLOCK_EVIDENCE_KIND
+    )
+    ddl_block_count = sum(
+        1 for item in blocks if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
+    )
+    block_phrase = "、".join(
+        part
+        for part in (
+            f"{project_block_count}项项目推进块" if project_block_count else "",
+            f"{ddl_block_count}项作业块" if ddl_block_count else "",
+        )
+        if part
+    )
     if not event_count:
         # No events — anchors / blocks alone are still a real plan.
         parts: list[str] = []
         if kept_anchors:
             parts.append(f"按作息模板安排了{len(kept_anchors)}项锚点")
-        if blocks:
-            parts.append(f"排了{len(blocks)}项项目推进块")
+        if block_phrase:
+            parts.append(f"排了{block_phrase}")
         if parts:
             text = "明天没有日程，" + "，".join(parts) + "。"
         else:
@@ -554,8 +662,8 @@ def _plan_summary(
         text = _pending_summary(event_count, pair_count)
         if kept_anchors:
             text += f"含{len(kept_anchors)}项作息锚点。"
-        if blocks:
-            text += f"另排{len(blocks)}项项目推进块。"
+        if block_phrase:
+            text += f"另排{block_phrase}。"
     if yielded:
         titles = "、".join(str(entry.get("title") or "") for entry in yielded)
         text += f"{len(yielded)}项锚点（{titles}）因与日程冲突让位。"
