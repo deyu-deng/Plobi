@@ -1,6 +1,6 @@
 """cron no_agent 脚本：每日早报（当天清单 + 改动率/待批项/额度）→ 钉钉。
 
-由 ``scripts/plobi/register_butler.py`` 复制到 ``PLOBI_HOME/scripts/`` 并注册
+表与脚本复制在 ``plobi/butler/nightly.py``（这里由它放进 ``PLOBI_HOME/scripts/``）并注册
 为每日 07:30 任务。stdout 为 JSON 结果，进 cron 输出留痕。
 
 正文 = **当天可抄进手机日历的清单**（``format_day_digest``，清单在前）+ 空行 +

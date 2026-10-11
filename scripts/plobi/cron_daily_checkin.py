@@ -1,6 +1,6 @@
 """cron no_agent 脚本：每晚 21:30 秘书回访（C6）——确定性选题 → L2 起草 → 卡+推送。
 
-由 ``scripts/plobi/register_butler.py`` 复制到 ``PLOBI_HOME/scripts/`` 并注册
+表与脚本复制在 ``plobi/butler/nightly.py``（这里由它放进 ``PLOBI_HOME/scripts/``）并注册
 为每日 21:30 任务。stdout 为 JSON 结果，进 cron 输出留痕。
 
 选题零 LLM（events diff / 计划状态 / pace 项目推进 / 改动率）；起草走 L2
