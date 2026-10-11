@@ -38,7 +38,16 @@ def workdir(tmp_path):
 # ── 判据 4: 放开是配置，不是写死 ────────────────────────────────────────────
 
 def test_permission_mode_defaults_open_but_is_overridable(monkeypatch):
+    """The default must be the mode MEASURED to do the work, not the one that
+    merely sounds permissive.  ``dontAsk`` here exits 0, spends ~114k input
+    tokens and writes nothing — its meaning is "do not ask: deny"."""
     monkeypatch.delenv(offload.PERMISSION_MODE_ENV, raising=False)
+    assert offload.DEFAULT_PERMISSION_MODE == "bypassPermissions"
+    assert "--permission-mode=bypassPermissions" in offload.permission_flags()
+
+    # The退路 stays: any advertised mode can be dialled back down, including
+    # the one that was the default until it was measured.
+    monkeypatch.setenv(offload.PERMISSION_MODE_ENV, "dontAsk")
     assert "--permission-mode=dontAsk" in offload.permission_flags()
 
     monkeypatch.setenv(offload.PERMISSION_MODE_ENV, "default")
@@ -46,8 +55,27 @@ def test_permission_mode_defaults_open_but_is_overridable(monkeypatch):
 
 
 def test_unknown_mode_never_invents_a_bypass(monkeypatch):
+    """A typo must not silently land on the most open mode — now that the
+    default IS the most open mode, substituting it would be an escalation."""
     monkeypatch.setenv(offload.PERMISSION_MODE_ENV, "yolo-please")
-    assert offload.permission_flags() == ("-y", "--permission-mode=dontAsk")
+    with pytest.raises(ValueError) as exc:
+        offload.permission_flags()
+    assert "yolo-please" in str(exc.value)
+
+
+def test_unknown_mode_refuses_before_anything_is_spawned(workdir, monkeypatch):
+    """Fail closed and reportable: no subprocess, no spend, ok=False."""
+    calls: list = []
+    monkeypatch.setenv(offload.PERMISSION_MODE_ENV, "bypass-permissions")  # typo: dashes
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
+    )
+    result = offload.run_task("say hi", cwd=workdir)
+    assert calls == [], "an invalid permission mode must not reach the child"
+    assert result.ok is False
+    assert result.cost_status == "not_started"
+    assert "bypass-permissions" in result.error
 
 
 def test_every_advertised_mode_is_reachable(monkeypatch):
@@ -252,6 +280,109 @@ def test_proxy_comes_from_the_knob_and_reaches_the_child(workdir, monkeypatch):
 
     assert seen["env"]["HTTPS_PROXY"] == "http://proxy.invalid:8118"
     assert result.proxy_source == offload.PROXY_ENV
+
+
+def test_egress_table_owns_the_child_network_keys(workdir, monkeypatch):
+    """A declared ``network.egress`` table must reach the offload child through
+    the SAME projector the terminal spawn uses — not a re-implementation.
+
+    Asserts the three things that hand-writing proxy keys loses: the proxy comes
+    from the catch-all, the hosts the table sends direct land in ``NO_PROXY``,
+    and a stale inherited ``NO_PROXY`` cannot survive into the child.
+    """
+    import agent.egress.rules as egress_rules
+    from agent.egress.rules import parse_table
+
+    table = parse_table({
+        "proxies": {"gw": {"url": "http://proxy.invalid:8118"}},
+        "rules": [
+            {"match": "github.com", "via": "direct"},
+            {"match": "*", "via": "proxy:gw"},
+        ],
+    })
+    monkeypatch.setattr(egress_rules, "load_table", lambda *a, **k: table)
+    monkeypatch.delenv(offload.PROXY_ENV, raising=False)
+    monkeypatch.setenv("NO_PROXY", "internal.corp")
+    monkeypatch.setenv("HTTPS_PROXY", "http://stale.invalid:1")
+
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["env"] = kwargs["env"]
+        return _Completed(stdout=json.dumps({"result": "ok"}))
+
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    result = offload.run_task("go", cwd=workdir)
+
+    assert seen["env"]["HTTPS_PROXY"] == "http://proxy.invalid:8118"
+    assert "github.com" in seen["env"]["NO_PROXY"]
+    assert "internal.corp" not in seen["env"]["NO_PROXY"], "stale bypass must not survive"
+    assert result.proxy_source == "network.egress"
+
+
+def test_knob_outranks_the_table(workdir, monkeypatch):
+    """The explicit per-channel knob is the user speaking louder than the table."""
+    import agent.egress.rules as egress_rules
+    from agent.egress.rules import parse_table
+
+    table = parse_table({
+        "proxies": {"gw": {"url": "http://proxy.invalid:8118"}},
+        "rules": [{"match": "*", "via": "proxy:gw"}],
+    })
+    monkeypatch.setattr(egress_rules, "load_table", lambda *a, **k: table)
+    monkeypatch.setenv(offload.PROXY_ENV, "http://knob.invalid:9999")
+
+    seen = {}
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda argv, **kw: seen.update(env=kw["env"]) or _Completed(stdout=json.dumps({"result": "ok"})),
+    )
+    result = offload.run_task("go", cwd=workdir)
+
+    assert seen["env"]["HTTPS_PROXY"] == "http://knob.invalid:9999"
+    assert result.proxy_source == offload.PROXY_ENV
+
+
+def test_unreadable_table_refuses_instead_of_running_unrouted(workdir, monkeypatch):
+    """A table that fails to parse must not degrade into "no routing" — that would
+    send the child out through whatever the environment happens to say."""
+    import agent.egress.rules as egress_rules
+
+    def boom(*a, **k):
+        raise egress_rules.EgressConfigError("rule 1 has no catch-all")
+
+    calls: list = []
+    monkeypatch.setattr(egress_rules, "load_table", boom)
+    monkeypatch.delenv(offload.PROXY_ENV, raising=False)
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
+    )
+    result = offload.run_task("go", cwd=workdir)
+
+    assert calls == []
+    assert result.ok is False
+    assert "catch-all" in result.error
+
+
+def test_default_workdir_does_not_land_on_the_temp_volume(monkeypatch, tmp_path):
+    """Offload output is run data, and this box forbids run data on C
+    (``D:\\_POLICY``).  ``PLOBI_HOME`` is the policy-compliant, profile-aware
+    root, so the default landing spot must sit under it rather than under the
+    OS temp dir.  Asserted as a relationship, not a literal path."""
+    import tempfile
+    from pathlib import Path as _P
+
+    home = tmp_path / "plobi-home"
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    monkeypatch.setattr("plobi_constants.get_plobi_home", lambda: home)
+
+    wd = offload.default_workdir()
+    assert wd.is_dir()
+    assert _P(str(wd)).is_relative_to(home), wd
+    assert str(tempfile.gettempdir()) not in str(wd), wd
 
 
 def test_no_dev_time_proxy_address_is_hardcoded():

@@ -35,8 +35,13 @@ from typing import Any, Optional
 #: is a measured fact, not a reading comprehension result — see the task brief.
 PERMISSION_MODES = ("acceptEdits", "bypassPermissions", "default", "plan", "dontAsk", "auto")
 
-#: Openest first guess; override per channel with the env var below.
-DEFAULT_PERMISSION_MODE = "dontAsk"
+#: The default is the mode that was MEASURED to actually do the work, not the one
+#: that merely sounds permissive. ``dontAsk`` was the first guess here and it is
+#: "do not ask — deny": two product-path runs at 22:2x and 19:0x both exited 0,
+#: burned ~114,700 input tokens, wrote zero artifacts, and the agent's own reply
+#: was that Write/Bash/PowerShell were denied. ``bypassPermissions`` is the mode
+#: that produced real files (``fib.py`` + ``out.txt``) with zero approvals.
+DEFAULT_PERMISSION_MODE = "bypassPermissions"
 
 PERMISSION_MODE_ENV = "PLOBI_OFFLOAD_CODEBUDDY_PERMISSION_MODE"
 COMMAND_ENV = "PLOBI_OFFLOAD_CODEBUDDY_COMMAND"
@@ -127,10 +132,18 @@ def permission_flags(agent: str = AGENT_CODEBUDDY, mode: Optional[str] = None) -
         return ("--dangerously-skip-permissions",) if skip in {"1", "true", "yes"} else ()
     if agent != AGENT_CODEBUDDY:
         return ()
-    chosen = (mode or os.environ.get(PERMISSION_MODE_ENV, "").strip() or DEFAULT_PERMISSION_MODE)
-    if chosen not in PERMISSION_MODES:
-        chosen = DEFAULT_PERMISSION_MODE
-    return ("-y", f"--permission-mode={chosen}")
+    requested = (mode or os.environ.get(PERMISSION_MODE_ENV, "").strip())
+    if not requested:
+        requested = DEFAULT_PERMISSION_MODE
+    if requested not in PERMISSION_MODES:
+        # Never fall back to a default here: the default is now the most open
+        # mode, so silently substituting it would turn a typo'd env value into a
+        # full bypass.
+        raise ValueError(
+            f"unknown CodeBuddy permission mode {requested!r}; "
+            f"refusing to guess (advertised: {', '.join(PERMISSION_MODES)})"
+        )
+    return ("-y", f"--permission-mode={requested}")
 
 
 def extra_args(agent: str = AGENT_CODEBUDDY) -> tuple[str, ...]:
@@ -172,6 +185,53 @@ def default_workdir() -> Path:
     base = Path(tempfile.gettempdir()) / "plobi-offload" / time.strftime("%Y%m%d")
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+def default_workdir() -> Path:
+    """Where an offload lands when the caller names no cwd.
+
+    NOT ``tempfile.gettempdir()``: on this box that is ``C:\\Users\\...\\Temp``,
+    and ``D:\\_POLICY`` forbids letting run data land on C.  ``PLOBI_HOME`` is the
+    policy-compliant scratch root and is already profile-aware, so an offload's
+    product lands next to the rest of its data.  Temp is only the fallback for a
+    machine where that root cannot be created.
+    """
+    day = time.strftime("%Y%m%d")
+    try:
+        from plobi_constants import get_plobi_home
+
+        base = get_plobi_home() / "offload" / day
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    except Exception:  # noqa: BLE001 - unreadable home must not kill the run
+        base = Path(tempfile.gettempdir()) / "plobi-offload" / day
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+
+
+def project_egress_onto(env: dict[str, str]) -> str:
+    """Let the ONE routing table own the child's network keys.
+
+    Returns a source label, or ``""`` when the caller declared no table (then the
+    inherited environment stands and nothing here pretends to have decided).
+    This matters because the table can say "these hosts go direct, everything
+    else via the proxy", and hand-writing three proxy keys both drops that bypass
+    list and leaves a stale inherited ``NO_PROXY`` in front of it — which is a
+    routing answer the child cannot audit after the fact.
+    """
+    try:
+        from agent.egress.env_projection import apply_egress_env
+        from agent.egress.rules import load_table
+    except Exception:  # noqa: BLE001 - no egress module means no table to honour
+        return ""
+    try:
+        table = load_table()
+    except Exception as exc:  # a malformed table must not become "no routing"
+        raise ValueError(f"network.egress table is unreadable, refusing to guess routing: {exc}") from exc
+    if not getattr(table, "active", False):
+        return ""
+    apply_egress_env(env, table)
+    return "network.egress"
 
 
 def cwd_is_allowed(path: Path | str) -> tuple[bool, str]:
@@ -306,7 +366,14 @@ def run_task(
     """Hand one real task to a local external agent and report the four answers."""
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     allowed, why = cwd_is_allowed(workdir)
-    flags = permission_flags(agent, permission_mode)
+    try:
+        flags = permission_flags(agent, permission_mode)
+    except ValueError as exc:
+        return OffloadResult(
+            agent=agent, cwd=str(workdir), permission_flags=(), sandboxed=is_sandboxed(),
+            exit_code=None, duration_s=0.0, argv=(), usage={}, cost=None,
+            cost_status="not_started", artifacts=(), text="", ok=False, error=str(exc),
+        )
     sandboxed = is_sandboxed()
 
     def fail(message: str) -> OffloadResult:
@@ -325,10 +392,26 @@ def run_task(
     argv = (binary, "-p", task, "--output-format", "json", *flags, *extra_args(agent))
     env = dict(os.environ)
     proxy, proxy_source = resolve_proxy()
-    if proxy:
+    knob = bool(os.environ.get(PROXY_ENV, "").strip())
+    if proxy and knob:
+        # An explicit per-channel override wins outright — including over a
+        # declared table, because "I named this exit for this channel" is the
+        # user speaking louder than the routing config.
         for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
                     "https_proxy", "http_proxy", "all_proxy"):
             env[key] = proxy
+    elif not knob:
+        try:
+            projected = project_egress_onto(env)
+        except ValueError as exc:
+            return fail(str(exc))
+        if projected:
+            proxy = env.get("HTTPS_PROXY", "") or env.get("https_proxy", "")
+            proxy_source = projected
+        elif proxy:
+            for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
+                        "https_proxy", "http_proxy", "all_proxy"):
+                env[key] = proxy
     if sandboxed:
         env["CODEBUDDY_IS_SANDBOX"] = "1"
     before = {p.name: p.stat().st_mtime for p in workdir.rglob("*") if p.is_file()}
