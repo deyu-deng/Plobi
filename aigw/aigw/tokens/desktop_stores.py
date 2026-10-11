@@ -35,6 +35,7 @@ import re
 import sqlite3
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 
 # Google Code Assist OAuth client (the exact public client the Antigravity desktop
@@ -173,17 +174,151 @@ def parse_composite_refresh(refresh: str) -> tuple[str, str, str]:
     return (parts[0], parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else "")
 
 
-def read_antigravity_access_token() -> str | None:
-    """Read the live access token from the macOS Keychain entry
-    svce="gemini", acct="antigravity" (a go-keyring-base64 blob that wraps a
-    ``ya29.`` token).
+_YA29_RE = re.compile(r"ya29\.[A-Za-z0-9._-]+")
 
-    NOTE: on a headless session this command prompts for the Keychain password and
-    will return None. It is provided for environments where the login Keychain is
-    already unlocked (e.g. an interactive desktop session). Antigravity normally
-    does NOT write a refreshed token back here, so this is mostly useful for a
-    freshly-authenticated session.
+# The Antigravity desktop CLI on Windows persists its OAuth token in the current
+# user's Credential Manager under this target name. Measured 2026-10-11 (this
+# machine): blob = 1,687 bytes of UTF-8 JSON, keys `auth_method` / `id_token` /
+# `token{access_token, refresh_token, expiry, token_type}`, and — unlike the
+# macOS Keychain entry below — it IS written back when the app refreshes
+# (`LastWritten` moved to the same minute `agy models` renewed the token).
+# Nothing here ever prints or persists a token value.
+WIN_ANTIGRAVITY_TARGET = "gemini:antigravity"
+
+
+def _win_credential_text(target: str) -> str | None:
+    """A generic-password blob as text, or None (not Windows / absent / unreadable).
+
+    ctypes rather than `win32cred`: pywin32 reads this entry fine here, but it is
+    not a declared dependency of aigw, and an undeclared import is a feature that
+    works on one machine and ImportErrors on every other one.
     """
+    if os.name != "nt":
+        return None
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class _Attribute(ctypes.Structure):
+        _fields_ = [("Keyword", wt.LPWSTR), ("Flags", wt.DWORD), ("Value", wt.LPWSTR)]
+
+    class _Credential(ctypes.Structure):
+        _fields_ = [
+            ("Flags", wt.DWORD),
+            ("Type", wt.DWORD),
+            ("TargetName", wt.LPWSTR),
+            ("Comment", wt.LPWSTR),
+            ("LastWritten", wt.FILETIME),
+            ("CredentialBlobLength", wt.DWORD),
+            ("CredentialBlob", ctypes.POINTER(ctypes.c_ubyte)),
+            ("Persist", wt.DWORD),
+            ("AttributeCount", wt.DWORD),
+            ("Attributes", ctypes.POINTER(_Attribute)),
+            ("TargetAliasName", wt.LPWSTR),
+            ("UserName", wt.LPWSTR),
+            ("UnspecifiedName", wt.LPWSTR),
+        ]
+
+    try:
+        advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+        advapi.CredReadW.argtypes = [
+            wt.LPCWSTR, wt.DWORD, wt.DWORD, ctypes.POINTER(ctypes.POINTER(_Credential))
+        ]
+        advapi.CredReadW.restype = wt.BOOL
+        advapi.CredFree.argtypes = [ctypes.POINTER(_Credential)]
+        advapi.CredFree.restype = None
+        handle = ctypes.POINTER(_Credential)()
+        if not advapi.CredReadW(target, 1, 0, ctypes.byref(handle)):  # 1 = CRED_TYPE_GENERIC
+            return None
+        try:
+            cred = handle.contents
+            raw = ctypes.string_at(cred.CredentialBlob, cred.CredentialBlobLength)
+        finally:
+            advapi.CredFree(handle)
+        return raw.decode("utf-8", "replace")
+    except Exception:
+        return None
+
+
+def _unwrap_go_keyring(raw: str) -> str:
+    if raw.startswith("go-keyring-base64:"):
+        try:
+            return base64.b64decode(raw[len("go-keyring-base64:") :]).decode("latin1")
+        except Exception:
+            pass
+    return raw
+
+
+def _iso_to_ts(value: str) -> float | None:
+    """Unix seconds for a stored expiry, or None when we cannot tell.
+
+    Tolerant by hand because Google's Go side writes 7-digit fractions and
+    sometimes `Z`, neither of which `datetime.fromisoformat` accepts on Python
+    3.10 (the floor aigw declares). A naive stamp returns None: inventing a
+    timezone here would decide "expired" by coin flip, so the caller keeps the
+    token and lets the upstream answer instead.
+    """
+    s = (value or "").strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    m = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(.*)$", s)
+    if not m:
+        return None
+    frac = (m.group(2) or "")[:6]
+    try:
+        dt = datetime.fromisoformat(m.group(1) + (".%s" % frac if frac else "") + m.group(3))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return None
+    return dt.timestamp()
+
+
+def _read_antigravity_access_token_windows() -> str | None:
+    raw = _win_credential_text(WIN_ANTIGRAVITY_TARGET)
+    if not raw:
+        return None
+    raw = _unwrap_go_keyring(raw)
+    token, expiry = None, None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        inner = data.get("token")
+        if isinstance(inner, dict):
+            token, expiry = inner.get("access_token"), inner.get("expiry")
+        elif isinstance(inner, str):
+            token = inner
+        else:
+            token, expiry = data.get("access_token"), data.get("expiry")
+    if not token:
+        m = _YA29_RE.search(raw)
+        token = m.group(0) if m else None
+    if not token:
+        return None
+    ts = _iso_to_ts(expiry or "")
+    if ts is not None and ts <= time.time():
+        # Known-stale: hand this over and it is a guaranteed 401 round-trip.
+        return None
+    return token
+
+
+def read_antigravity_access_token() -> str | None:
+    """Read the live access token from whichever desktop store this OS uses
+    (Windows: Credential Manager target `gemini:antigravity`; macOS: Keychain
+    entry svce="gemini", acct="antigravity", a `go-keyring-base64` blob wrapping a
+    `ya29.` token). Returns None when there is no entry, it holds no token, or it
+    says the token is already expired.
+
+    NOTE: on macOS a headless session makes `security` prompt for the Keychain
+    password and return nothing, so this is mostly useful for an interactive
+    desktop session — and Antigravity does not normally write a refreshed token
+    back to the Keychain, only to the Windows store (measured above).
+    """
+    if os.name == "nt":
+        return _read_antigravity_access_token_windows()
     try:
         out = subprocess.run(
             ["security", "find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"],
@@ -196,12 +331,8 @@ def read_antigravity_access_token() -> str | None:
     raw = (out.stdout or "").strip()
     if not raw:
         return None
-    if raw.startswith("go-keyring-base64:"):
-        try:
-            raw = base64.b64decode(raw[len("go-keyring-base64:") :]).decode("latin1")
-        except Exception:
-            pass
-    m = re.search(r"ya29\.[A-Za-z0-9._-]+", raw)
+    raw = _unwrap_go_keyring(raw)
+    m = _YA29_RE.search(raw)
     return m.group(0) if m else None
 
 
