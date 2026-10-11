@@ -348,6 +348,59 @@ def test_knob_outranks_the_table(workdir, monkeypatch):
     assert result.proxy_source == offload.PROXY_ENV
 
 
+def test_unreadable_config_refuses_before_spawning(workdir, monkeypatch):
+    """The other half of "unreadable means refuse" — and the half I had not tested.
+
+    The existing test fakes ``load_table`` raising, which is a MALFORMED table.  The
+    path that actually bites on this box is the config pipe failing (unresolvable
+    home, unreadable file): Network's `load_table` deliberately swallows that so a
+    spawn can still start, and marks the verdict in ``Table.unreadable`` instead.
+    So this fakes ``plobi_cli.config.load_config_readonly`` — the real source — and
+    asserts the offload still refuses to run unrouted.
+    """
+    import agent.egress.rules as egress_rules
+    import plobi_cli.config as plobi_config
+
+    calls: list = []
+    monkeypatch.setattr(egress_rules, "_TABLE_CACHE", None, raising=False)
+    monkeypatch.setattr(egress_rules, "_UNREADABLE_REPORTED", False, raising=False)
+    monkeypatch.setattr(
+        plobi_config, "load_config_readonly",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("config.yaml unreadable")),
+    )
+    monkeypatch.delenv(offload.PROXY_ENV, raising=False)
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(
+        offload.subprocess, "run",
+        lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
+    )
+    result = offload.run_task("go", cwd=workdir)
+
+    assert calls == [], "an unreadable config must not start a child with no routing"
+    assert result.ok is False
+    assert result.cost_status == "not_started"
+    assert "could not be read" in result.error
+    assert "RuntimeError" in result.error, "the report must carry the real reason"
+
+    monkeypatch.setattr(egress_rules, "_TABLE_CACHE", None, raising=False)
+    monkeypatch.setattr(egress_rules, "_UNREADABLE_REPORTED", False, raising=False)
+
+
+def test_no_table_declared_is_not_the_same_as_unreadable(monkeypatch):
+    """"The user declared nothing" must stay inert, not a refusal — otherwise this
+    channel breaks for every install that has no ``network.egress`` yet, and the
+    distinction Network built `Table.unreadable` for collapses back into one."""
+    import agent.egress.rules as egress_rules
+    from agent.egress.rules import parse_table
+
+    table = parse_table({"proxies": {}, "rules": []})
+    assert table.active is False and table.unreadable == ""
+    monkeypatch.setattr(egress_rules, "load_table", lambda *a, **k: table)
+    env = {"HTTPS_PROXY": "http://kept.invalid:1"}
+    assert offload.project_egress_onto(env) == ""
+    assert env["HTTPS_PROXY"] == "http://kept.invalid:1", "an empty table must not rewrite the env"
+
+
 def test_unreadable_table_refuses_instead_of_running_unrouted(workdir, monkeypatch):
     """A table that fails to parse must not degrade into "no routing" — that would
     send the child out through whatever the environment happens to say."""

@@ -32,6 +32,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
 
 _SUMMARY = re.compile(r"^  (tests[^\s]+\.py)\s+\((\d+) tests? failed\)", re.M)
 _PROGRESS = re.compile(r"^\[[^\]]+\] ✗ (tests\\[^\s]+\.py) \((\d+)✓ (\d+)✗", re.M)
+#: Any per-file progress line, red or green.  Without this a fully green run looked
+#: identical to "I could not parse this log" — the tool reported RED for success.
+_PROGRESS_ANY = re.compile(r"^\[[^\]]+\] [✓✗] tests[\\/]", re.M)
 _NONZERO = re.compile(r"^  (tests[^\s]+\.py)\s+\((\d+) passed\)", re.M)
 
 
@@ -41,10 +44,16 @@ def parse_log(path: str) -> dict:
     if not files:                                    # 汇总段缺失时退回进度行
         files = {m.group(1): int(m.group(3)) for m in _PROGRESS.finditer(text)}
         files = {k: v for k, v in files.items() if v}
-    totals = re.search(r"100\.0% \| (\d+)/~?\d+ \| ✓(\d+) \| ✗\s*(\d+)\]", text)
+    # The runner pads its progress columns for alignment ("100.0% |   92/~92 | ✓111"),
+    # so every separator has to tolerate runs of spaces — a strict single space made
+    # a real green log parse as "totals unknown".
+    totals = re.search(
+        r"100\.0%\s*\|\s*(\d+)/~?\d+\s*\|\s*✓(\d+)\s*\|\s*✗\s*(\d+)\]", text
+    )
     return {
         "files": dict(sorted(files.items(), key=lambda kv: (-kv[1], kv[0]))),
         "files_with_failures": len(files),
+        "files_seen": len(_PROGRESS_ANY.findall(text)),
         "tests_failed": sum(files.values()),
         "tests_total": int(totals.group(1)) if totals else None,
         "tests_passed": int(totals.group(2)) if totals else None,
@@ -68,9 +77,19 @@ def main() -> int:
 
     run = parse_log(args.from_log)
     if not run["files"]:
-        print("RED — 日志里解析不到任何失败文件，也没解析到进度行。先确认这是 run_tests.sh 的输出，"
-              "别把「解析不出来」当成「全绿」。")
-        return 1
+        if not run["files_seen"]:
+            print("RED — 日志里既没有失败段，也没有任何进度行。先确认这是 run_tests.sh 的输出，"
+                  "别把「解析不出来」当成「全绿」。")
+            return 1
+        # A genuinely green batch: progress lines exist, no file failed.
+        if args.write:
+            print(f"拒绝 --write —— 这一批 {run['files_seen']} 个文件全绿。0 红既可能是真绿，"
+                   "也可能只是你挑了一小批；拿这种日志重登基线会把这台真实存在的 162 档红抹成空账。"
+                   "要重登请给安静窗口里的全量日志。")
+            return 1
+        print(f"GREEN — 本次 {run['files_seen']} 个文件 / {run.get('tests_passed')} 条全绿"
+              f"（0 红，Code HEAD {code_head()}）；无新增红可判。")
+        return 0
 
     if args.write:
         payload = {"date": datetime.date.today().isoformat(), "code_head": code_head() or None,
