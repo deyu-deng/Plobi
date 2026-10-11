@@ -824,8 +824,10 @@ class TestUpdateCheckEndpoint:
         assert body["install_method"] == "git"
         assert body["behind"] == 5
         assert body["update_available"] is True
-        # git/pip installs can apply the update in place from the dashboard.
-        assert body["can_apply"] is True
+        # git self-update is frozen (2026-09-06/07 incidents): the dashboard may
+        # show how far behind we are but must not claim it can apply it. R-046.
+        assert body["can_apply"] is False
+        assert "自更新" in body["message"]
 
     def test_up_to_date(self, monkeypatch):
         import plobi_cli.web_server as ws
@@ -1137,3 +1139,63 @@ class TestToolsConfigEndpoints:
                 kwargs["json"] = payload
             r = fn(path, **kwargs)
             assert r.status_code == 401, f"{method} {path} not gated"
+
+
+class TestUpdateApplyEndpointIsHonest:
+    """``POST /api/plobi/update`` must not spawn a no-op and call it success (R-046).
+
+    ``plobi update`` prints the freeze notice and returns 0 for a git checkout,
+    so spawning it used to produce a completed-action record with exit code 0 —
+    a button that reports success while nothing happened.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, _isolate_plobi_home):
+        self.client, _ = _client()
+
+    def test_git_install_refuses_without_spawning(self, monkeypatch):
+        import plobi_cli.web_server as ws
+
+        monkeypatch.setattr(ws, "detect_install_method", lambda *a, **k: "git")
+        spawned = []
+        monkeypatch.setattr(
+            ws, "_spawn_plobi_action",
+            lambda argv, name: spawned.append(argv) or (_ for _ in ()).throw(AssertionError("spawned")),
+        )
+        recorded = []
+        monkeypatch.setattr(
+            ws, "_record_completed_action",
+            lambda *a, **k: recorded.append((a, k)),
+        )
+
+        r = self.client.post("/api/plobi/update")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is False
+        assert body["error"] == "self_update_frozen"
+        assert body["pid"] is None
+        assert spawned == [], "空转子进程一旦起来，退出码 0 就会被记成成功"
+        assert recorded == [], "按不动这件事不该进「已完成」台账"
+
+    def test_pip_install_still_applies(self, monkeypatch):
+        """别把真能用的那条路一起堵死。"""
+        import plobi_cli.web_server as ws
+
+        monkeypatch.setattr(ws, "detect_install_method", lambda *a, **k: "pip")
+
+        class _Proc:
+            pid = 4242
+
+        monkeypatch.setattr(ws, "_spawn_plobi_action", lambda argv, name: _Proc())
+        body = self.client.post("/api/plobi/update").json()
+        assert body["ok"] is True
+        assert body["pid"] == 4242
+
+    def test_the_two_ends_share_one_predicate(self):
+        """check 的 can_apply 与 POST 的拒绝必须来自同一个判据，不许各写一份。"""
+        from plobi_cli.self_update import local_self_update_applies
+
+        assert local_self_update_applies("git") is False
+        assert local_self_update_applies("pip") is True
+        assert local_self_update_applies("docker") is False
+        assert local_self_update_applies("homebrew") is False
