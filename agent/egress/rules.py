@@ -41,8 +41,10 @@ ALLOWED_MIRROR_KEYS = ("npm", "electron")
 _PYPI_MIRROR_REFUSAL = (
     "mirrors.pypi is refused: injecting PIP_INDEX_URL would bypass the "
     "supply-chain policy in tools/lazy_deps.py (no --index-url overrides), which "
-    "exists because a config-supplied index can hijack what gets installed. "
-    "Pending ruling (Docs/DECISIONS.md 待决 #30)."
+    "exists because a config-supplied index can hijack what gets installed.  "
+    "Ruled: 待决 #30 answered 2026-10-11 — keep the refusal; a mirror for "
+    "user-run pip would need a per-process exemption of that policy, not a "
+    "global env injection."
 )
 
 _PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
