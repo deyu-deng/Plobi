@@ -275,10 +275,17 @@ def _iso_to_ts(value: str) -> float | None:
     return dt.timestamp()
 
 
-def _read_antigravity_access_token_windows() -> str | None:
-    raw = _win_credential_text(WIN_ANTIGRAVITY_TARGET)
+def _win_token_and_expiry(raw: str | None) -> tuple[str | None, float | None]:
+    """(access_token, expires_at) from a Windows credential blob.
+
+    An *expired* token is still returned with its timestamp — the caller decides.
+    `read_antigravity_access_token()` drops it (a guaranteed 401 is not worth a
+    round-trip), while `antigravity_desktop_token_status()` needs it to be able
+    to say "expired 12 minutes ago", which is the one thing an operator can act
+    on (run agy once; it renews and writes the entry back).
+    """
     if not raw:
-        return None
+        return None, None
     raw = _unwrap_go_keyring(raw)
     token, expiry = None, None
     try:
@@ -296,13 +303,40 @@ def _read_antigravity_access_token_windows() -> str | None:
     if not token:
         m = _YA29_RE.search(raw)
         token = m.group(0) if m else None
+    return (token or None), _iso_to_ts(expiry or "")
+
+
+def _read_antigravity_access_token_windows() -> str | None:
+    token, ts = _win_token_and_expiry(_win_credential_text(WIN_ANTIGRAVITY_TARGET))
     if not token:
         return None
-    ts = _iso_to_ts(expiry or "")
     if ts is not None and ts <= time.time():
         # Known-stale: hand this over and it is a guaranteed 401 round-trip.
         return None
     return token
+
+
+def antigravity_desktop_token_status() -> dict:
+    """Lifetime of the desktop-store token, WITHOUT the token itself.
+
+    For the doctor's one-line self-check. Never put a token, a length, or a
+    fingerprint-derived value in here that could end up in a log: this returns
+    presence and timestamps only.
+    """
+    out = {"source": "none", "present": False, "expires_at": None,
+           "expires_in_seconds": None}
+    if os.name == "nt":
+        out["source"] = "windows-credential-manager"
+        token, ts = _win_token_and_expiry(_win_credential_text(WIN_ANTIGRAVITY_TARGET))
+    else:
+        out["source"] = "macos-keychain"
+        token = read_antigravity_access_token()
+        ts = None
+    if token:
+        out["present"] = True
+        out["expires_at"] = ts
+        out["expires_in_seconds"] = (ts - time.time()) if ts else None
+    return out
 
 
 def read_antigravity_access_token() -> str | None:

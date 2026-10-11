@@ -80,3 +80,25 @@ providers:
       cwd: D:\Temp
     accounts:
       - { id: workbuddy-cli }
+
+  # 桌面订阅那条腿（agy / Google）。**默认关着**——不是没做完，是一条硬限制：
+  # 拿不到那对 OAuth client 参数，我们就**不能自己续期**，只能用 agy 自己续出来、
+  # 写回本机凭据存储的那枚 access token（这台实测约 60 分钟就过期，agy 一跑就回写）。
+  # 能力已经通了：Code `a798a37e`（`chat()` 的成功路径原本不可达）+ `85328dfe`
+  # （Windows 上那条腿只在 macOS 存在），2026-10-11 零环境变量实测
+  # `antigravity-keychain` → `finish_reason=tool_calls`。
+  # 打开方式：把 enabled 改成 true，然后重启网关（providers 在启动时建，见
+  # `aigw/aigw/registry.py` 的 enabled 判定）。关掉就完全不进选路，主循环照旧。
+  # `plobi doctor` 的 `subscription_desktop_store` 一行会说凭据还剩几分钟。
+  # 不写 models：名单由上游 `fetchAvailableModels` 现读（这台实测 20 条）。
+  # ⚠️ 别拿目录第一项当默认——顺序不稳，`antigravity/gemini-pro-agent` 这类条目对
+  #    generateContent+tools 回 `Request contains an invalid argument`。
+  antigravity:
+    enabled: false
+    host: https://daily-cloudcode-pa.googleapis.com
+    api_version: v1internal
+    # 不写 refresh_token：这条腿的凭据来自桌面应用自己维护的本机存储
+    # （Windows: Credential Manager `gemini:antigravity`；macOS: Keychain）。
+    # 存储里有活的就用、没有就报「打开 agy 登一次」，不需要任何人粘环境变量。
+    accounts:
+      - { id: desktop-store }

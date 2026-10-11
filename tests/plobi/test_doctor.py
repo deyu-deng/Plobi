@@ -616,3 +616,76 @@ def test_every_red_quota_row_carries_an_actionable_fix(monkeypatch, tmp_path):
         assert row["color"] == D.RED, row
         assert "改" in row["detail"], row["detail"]
         assert len(row["detail"].splitlines()) == 1, "the table does not wrap rows"
+
+
+# --- WP-SUBSCRIPTION-TOOLCALL-BRIDGE: the desktop-subscription leg's own row ---
+def test_aigw_leg_enabled_reads_the_declared_switch():
+    text = ("routing:\n  rules: []\n"
+            "providers:\n  workbuddy:\n    enabled: true\n"
+            "  antigravity:\n    # enabled: true\n    enabled: false\n    host: x\n"
+            "  other:\n    enabled: true\n")
+    assert D.aigw_leg_enabled(text, "antigravity") is False
+    assert D.aigw_leg_enabled(text, "workbuddy") is True
+    assert D.aigw_leg_enabled(text, "nosuch") is None
+    assert D.aigw_leg_enabled("routing:\n  rules: []\n", "antigravity") is None
+    # a leg with no `enabled:` key is not a declaration of false either way
+    assert D.aigw_leg_enabled("providers:\n  antigravity:\n    host: x\n", "antigravity") is None
+
+
+def _sub_status(present=True, left=None):
+    now = __import__("time").time()
+    return {"source": "windows-credential-manager", "present": present,
+            "expires_at": (now + left) if left is not None else None,
+            "expires_in_seconds": left}
+
+
+def _sub_row(monkeypatch, tmp_path, status, cfg="providers:\n  antigravity:\n    enabled: false\n"):
+    path = tmp_path / "config.yaml"
+    path.write_text(cfg, encoding="utf-8")
+    monkeypatch.setattr(D, "AIGW_CONFIG_CANDIDATES", (path,))
+    monkeypatch.setattr(D, "_desktop_token_status", lambda: status)
+    return D.check_subscription_desktop_store()
+
+
+def test_subscription_row_is_green_and_counts_minutes(monkeypatch, tmp_path):
+    row = _sub_row(monkeypatch, tmp_path, _sub_status(left=1800))
+    assert row["id"] == "subscription_desktop_store"
+    assert row["color"] == D.GREEN, row
+    assert "30 分钟" in row["detail"], row["detail"]
+    assert "默认关着" in row["detail"], row["detail"]
+    assert len(row["detail"].splitlines()) == 1, "the table does not wrap rows"
+    assert "ya29." not in json.dumps(row), "the row must not carry token material"
+
+
+def test_subscription_row_says_the_leg_is_wired_when_config_declares_it(monkeypatch, tmp_path):
+    row = _sub_row(monkeypatch, tmp_path, _sub_status(left=1800),
+                   cfg="providers:\n  antigravity:\n    enabled: true\n")
+    assert row["color"] == D.GREEN and "已挂进网关的 providers" in row["detail"]
+
+
+def test_subscription_row_on_an_expired_token_names_the_one_action(monkeypatch, tmp_path):
+    """Not red: an error code we did not get from a real request is not evidence
+    (WP-QUOTA-KEY-LIVENESS 判据), but the row must still say what to do."""
+    row = _sub_row(monkeypatch, tmp_path, _sub_status(left=-600))
+    assert row["color"] == D.YELLOW, row
+    assert "已过期" in row["detail"] and "agy" in row["detail"], row["detail"]
+    assert len(row["detail"].splitlines()) == 1
+
+
+def test_subscription_row_absent_is_yellow_not_red(monkeypatch, tmp_path):
+    row = _sub_row(monkeypatch, tmp_path, _sub_status(present=False))
+    assert row["color"] == D.YELLOW and "不在场" in row["detail"] and "agy" in row["detail"]
+
+
+def test_subscription_row_never_reds_when_the_probe_itself_fails(monkeypatch, tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("providers:\n  antigravity:\n    enabled: false\n", encoding="utf-8")
+    monkeypatch.setattr(D, "AIGW_CONFIG_CANDIDATES", (path,))
+
+    def _boom():
+        raise OSError("credential store locked")
+
+    monkeypatch.setattr(D, "_desktop_token_status", _boom)
+    row = D.check_subscription_desktop_store()
+    assert row["color"] == D.YELLOW and row["color"] != D.RED, row
+    assert "探不动" in row["detail"], row["detail"]

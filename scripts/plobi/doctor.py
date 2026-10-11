@@ -673,6 +673,111 @@ def check_quota_liveness() -> dict[str, Any]:
     }
 
 
+def aigw_leg_enabled(config_text: str, leg: str) -> bool | None:
+    """Read ``providers.<leg>.enabled`` from aigw YAML without requiring PyYAML.
+
+    ``None`` means the leg is not declared at all. aigw's registry treats an
+    *absent* ``enabled`` as true, but an absent **leg** means it is not wired —
+    callers must say which of the two they found instead of guessing.
+    """
+    in_providers = False
+    in_leg = False
+    for raw in config_text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        if re.match(r"^providers:\s*$", line):
+            in_providers = True
+            continue
+        if in_providers and re.match(r"^\S", line):  # next top-level section
+            break
+        if not in_providers:
+            continue
+        if re.match(r"^  \S", line):  # a provider entry ends the previous leg
+            in_leg = bool(re.match(rf"^  {re.escape(leg)}:\s*$", line))
+            continue
+        if in_leg:
+            match = re.match(r"^\s+enabled:\s*(\S+)\s*$", line)
+            if match:
+                return match.group(1).strip().lower() in ("true", "yes", "on")
+    return None
+
+
+def _desktop_token_status() -> dict[str, Any]:
+    """Indirection so tests can pin this probe without a desktop app installed.
+
+    Never returns a token — see ``antigravity_desktop_token_status``.
+    """
+    aigw_root = REPO_ROOT / "aigw"
+    if str(aigw_root) not in sys.path:
+        sys.path.insert(0, str(aigw_root))
+    from aigw.tokens import desktop_stores as ds
+
+    return ds.antigravity_desktop_token_status()
+
+
+def check_subscription_desktop_store() -> dict[str, Any]:
+    """Lifetime of the desktop app's subscription token (no network, no spend,
+    and it never reads a token value).
+
+    Code `85328dfe` made aigw able to use the access token Antigravity renews and
+    writes back on Windows, so "can this leg answer" is settled. The one failure
+    left is that **we cannot renew it ourselves** (no OAuth client pair), which is
+    why this row reports minutes, not reachability. Yellow rather than red
+    throughout: a stale credential is not an error code that came back from a real
+    request (WP-QUOTA-KEY-LIVENESS 判据).
+    """
+    try:
+        status = _desktop_token_status()
+    except Exception as exc:
+        return {
+            "id": "subscription_desktop_store",
+            "color": YELLOW,
+            "detail": f"桌面存储探不动（{type(exc).__name__}）—— 没探到就不判红",
+        }
+
+    leg = None
+    for path in AIGW_CONFIG_CANDIDATES:
+        if path.is_file():
+            leg = aigw_leg_enabled(path.read_text(encoding="utf-8"), "antigravity")
+            break
+    wired = (
+        "已挂进网关的 providers（会进选路）"
+        if leg is True
+        else "默认关着（providers.antigravity.enabled: false）"
+        if leg is False
+        else "config.yaml 里没有 providers.antigravity 这一条"
+    )
+    source = status.get("source")
+    if not status.get("present"):
+        return {
+            "id": "subscription_desktop_store",
+            "color": YELLOW,
+            "detail": f"桌面订阅凭据不在场（source={source}）—— {wired}；"
+                      f"要用这条腿，先打开 agy 登一次（它会把凭据写回本机存储）",
+        }
+    left = status.get("expires_in_seconds")
+    if left is None:
+        return {
+            "id": "subscription_desktop_store",
+            "color": GREEN,
+            "detail": f"桌面订阅凭据在场（source={source}），剩余寿命未知——那份存储不写过期的戳；{wired}",
+        }
+    minutes = int(round(abs(left) / 60.0))
+    if left <= 0:
+        return {
+            "id": "subscription_desktop_store",
+            "color": YELLOW,
+            "detail": f"桌面订阅凭据已过期约 {minutes} 分钟 —— 我们那对 OAuth client 参数取不到，"
+                      f"自己续不了；打开 agy 跑一次就会回写新的。{wired}",
+        }
+    return {
+        "id": "subscription_desktop_store",
+        "color": GREEN,
+        "detail": f"桌面订阅凭据在场，剩余约 {minutes} 分钟（agy 每跑一次就续一期）—— {wired}",
+    }
+
+
 def check_chatlog(base_url: str = DEFAULT_CHATLOG_URL) -> dict[str, Any]:
     base = base_url.rstrip("/")
     last_code = None
@@ -1166,6 +1271,7 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
         check_aigw(),
         check_credential_refs(),
         check_quota_liveness(),
+        check_subscription_desktop_store(),
         check_dingtalk(),
         check_north_star(),
         check_l1_secretary_form(),
