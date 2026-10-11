@@ -1,16 +1,26 @@
 """chatlog sidecar 现在**缺哪一步**——四种状态各给一句不同的话（WP-SOCIAL-SOURCES-PLUGGABLE 判据 8）。
 
 存在的理由只有一个：这台机器上"采不到"有四种完全不同的原因，而产品面以前把它们糊成
-"一切正常只是没数据"。顺序按**依赖链**判（Go → 产物 → 密钥 → 在听），第一个缺的就是该说的那句。
+"一切正常只是没数据"。顺序按**依赖链**判，第一个缺的就是该说的那句——
+**产物 → 密钥 → 在听**，只有**没产物**时才问构建工具 Go（10-11 修正：Go 按落点纪律
+装在 `D:/Runtimes/Languages/Go` 且刻意不进 PATH，产物早已建好，先问 Go 就等于永远怪错人）。
 
 不在这里放安装串：那条链已经在用户看得见的地方（桌面启动台账 / 托盘那一行的 enableHint，
 见 `apps/desktop/electron/deferred-sidecars.ts` 的 chatlog 定义）。**同一句话不在两处真源**
 （裁定 94），本模块只回答"现在缺哪一步"。
 
-⚠️ 两处已知的第二真源，留给收口时合并（本模块不假装它们不存在）：
-- 产物路径：桌面侧 `apps/desktop/electron/main.ts:8419-8420` 另外硬编了两个候选（含
-  ``D:\\Tools\\wechat\\chatlog\\chatlog.exe``），与本模块的"env 优先 + 仓内默认"不是同一份解析。
-- 密钥：桌面侧 `main.ts:8449` 会去读 ``~/.chatlog/chatlog.json``，而这里只看环境变量。
+三个 `chatlog.json` 各归谁（10-11 现核，别再笼统说"配置为空"）：
+1. ``$PLOBI_HOME/plobi/chatlog.json`` = **采集器的配置真源**，由 :func:`config.config_path()` 解析，
+   里面是 ``mode/enabled/talkers/poll_minutes``；这台现核**不空**（148 B，10-10 14:18，
+   ``mode=blacklist`` / ``enabled=true`` / ``poll=10``）。本模块不读它。
+2. ``$PLOBI_HOME/chatlog/chatlog.json`` = **chatlog 引擎自己的**配置，桌面把 `CHATLOG_DIR` 钉到这里
+   （`apps/desktop/electron/chatlog-keys.ts`）；这台现核是空 ``{}``（那次取密钥没成，见下面第 4 点）。
+   引擎写的 ``chatlog-server.json`` 也在这一档，密钥只落这一份。
+3. ``~/.chatlog/chatlog.json`` = 上游的默认落点，也就是 C 盘那份。这台现核**不存在**，
+   而且**不该存在**——运行数据禁残留 C 盘（`D:\_POLICY`），桌面那条钉 `CHATLOG_DIR` 就是为这件事。
+4. 桌面侧那份"第二真源"（旧 `main.ts` 硬编产物候选 + 自己读 ``~/.chatlog`` 判密钥）已经合并掉：
+   产物路径只读本模块 :func:`resolved_binary` 那一格（`WP-SIDECAR-STATE-SINGLE-SOURCE`，`e5ce5ba8`），
+   密钥只走上面第 2 条那一份文件（`7ee37708`）。本模块仍只看环境变量——它答"缺哪一步"，不答"密钥在哪"。
 """
 
 from __future__ import annotations
