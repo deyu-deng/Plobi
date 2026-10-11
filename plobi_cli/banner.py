@@ -154,6 +154,16 @@ def _is_official_ssh_remote(url: str | None) -> bool:
     return _is_ssh_remote(url) and _canonical_github_remote(url) == _OFFICIAL_REPO_CANONICAL
 
 
+def _https_url_from_ssh(url: str) -> str:
+    """Map an official SSH remote back to its https URL (no SSH auth)."""
+    value = url.strip()
+    if value.startswith("git@github.com:"):
+        return "https://github.com/" + value[len("git@github.com:"):]
+    if value.startswith("ssh://git@github.com/"):
+        return "https://github.com/" + value[len("ssh://git@github.com/"):]
+    return value
+
+
 def _git_stdout(args: list[str], *, cwd: Path, timeout: int = 5) -> Optional[str]:
     try:
         result = subprocess.run(
@@ -170,15 +180,18 @@ def _git_stdout(args: list[str], *, cwd: Path, timeout: int = 5) -> Optional[str
     return (result.stdout or "").strip()
 
 
-def _check_via_rev(local_rev: str) -> Optional[int]:
+def _check_via_rev(local_rev: str, repo_url: str = _UPSTREAM_REPO_URL) -> Optional[int]:
     """Compare an embedded git revision to upstream main via ls-remote.
 
     Returns 0 if up-to-date, ``UPDATE_AVAILABLE_NO_COUNT`` if behind,
     or ``None`` on failure.
+
+    ``repo_url`` defaults to the canonical upstream; the official SSH-remote
+    path passes its own https equivalent so the probe never triggers SSH auth.
     """
     try:
         result = subprocess.run(
-            ["git", "ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"],
+            ["git", "ls-remote", repo_url, "refs/heads/main"],
             capture_output=True, text=True, timeout=10,
         )
     except Exception:
@@ -196,7 +209,8 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
     origin_url = _git_stdout(["remote", "get-url", "origin"], cwd=repo_dir)
     if _is_official_ssh_remote(origin_url):
         head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
-        checked = _check_via_rev(head_rev) if head_rev else None
+        checked = (_check_via_rev(head_rev, repo_url=_https_url_from_ssh(origin_url))
+                   if head_rev else None)
         if checked == UPDATE_AVAILABLE_NO_COUNT:
             return 1
         return checked

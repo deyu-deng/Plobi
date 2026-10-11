@@ -1,0 +1,12 @@
+# Known-failure baseline for the Test suite workflow (see
+# .github/workflows/test-suite.yml — "Compare against known-failure baseline").
+#
+# Red means a NEW failing file appeared, or the suite did not complete.
+# Entries here are per-file {path, tests, note}.
+#
+# This baseline is intentionally empty: the six files that used to fail on CI
+# (tests/test_lint_config.py, tests/tools/test_windows_native_support.py,
+# tests/gateway/relay/test_contract_doc_conformance.py, tests/plobi/test_agent_ask.py,
+# tests/plobi_cli/test_startup_plugin_gating.py, tests/plobi_cli/test_update_check.py)
+# were fixed on 2026-10-11.
+known_failures: []
