@@ -483,8 +483,13 @@ def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetim
     结果就是"数据进来了、排程挂不上"。用户要的是**按未提交作业排写作业时间**，
     不是"按项目名排"，所以无主 DDL 自己就是一等公民。
 
-    裁定 121 二把 ``courses`` 立成品类之后，挂得上课程条目的作业会走项目那一侧；
-    **这一格作为兜底保留**（课程条目是数据，用户没建之前它还得管用）。
+    裁定 121 二把 ``courses`` 立成品类之后，课程条目**默认不带 pace**（那是用户 10-11 拍的），
+    所以它们**不在上面那个名字集里**，作业照旧从这里拿块——归属靠 ``_ddl_block_item``
+    写进标题与 evidence 的 ``course`` 字段，不靠排程路由。
+    ⚠️ **别"顺手"只把课程名塞进 ``paced_names``**：那一句会让匹配的 DDL 从"无主"里被摘掉，
+    而预算 ``budgets`` 是跟 ``paced_projects()`` 同一条口径来的 —— 只改名字集不给预算，
+    结果是那批作业**一块都排不出来**（10-11 在真库上探过：窗口内 5 条 → 无主 5 → 0）。
+    真要让课程走项目那一侧，得连"课程要不要每周几小时"一起重新拍，那是另一件产品决定。
     """
     ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
     return [
