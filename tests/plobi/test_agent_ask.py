@@ -255,9 +255,11 @@ def test_argv_shape_and_no_force_approval_flag(roster):
 
     # argv[0] is whatever the shared resolver picked (PLOBI_BIN / PATH shim /
     # interpreter module form); the conversation flags after it are pinned.
-    head = ["-p", LIVE_PROJECT, "--cli", "--accept-hooks", "chat", "-q"]
-    assert argv[1 : 1 + len(head)] == head
-    assert argv[1 + len(head) :] == ["PROMPT"]
+    # Only the "-p LIVE_PROJECT" pair is a stable anchor: on some platforms the
+    # resolver prefixes "-m plobi_cli.main", shifting every later index.
+    p_at = argv.index("-p")
+    assert argv[p_at : p_at + 2] == ["-p", LIVE_PROJECT]
+    assert argv[p_at + 2 :] == ["--cli", "--accept-hooks", "chat", "-q", "PROMPT"]
     # The invariant that matters: a 分身 answers a question, it does not get a
     # blank cheque — holds for every future argv addition too.
     assert not any("yolo" in part.casefold() for part in argv)
@@ -537,6 +539,15 @@ def stub_bin(tmp_path, monkeypatch):
         script = tmp_path / "plobi-stub"
         _write_stub(script, record=record, exit_code=exit_code, persist=persist)
         monkeypatch.setenv("PLOBI_BIN", str(script))
+        if os.name == "nt":
+            # A shebang script without a .cmd/.exe suffix cannot be Popen'd
+            # directly on Windows; point the shared resolver at the running
+            # interpreter so the stub really executes and records its argv.
+            from plobi_cli import plobi_bin
+
+            monkeypatch.setattr(
+                plobi_bin, "resolve_plobi_argv", lambda: [sys.executable, str(script)]
+            )
         return record
 
     return _make

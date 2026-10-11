@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -16,9 +18,17 @@ from plobi.collectors.chatlog.config import CollectorConfig
 
 
 def _env_with_go(tmp_path: Path, with_binary: bool = False) -> dict[str, str]:
-    """造一个"Go 在"的环境：Windows 上 ``shutil.which`` 要真的可执行后缀。"""
-    (tmp_path / "go.cmd").write_text("@echo off\n", encoding="utf-8")
-    env = {"PATH": str(tmp_path), "GO_BINARY": "go.cmd"}
+    """造一个"Go 在"的环境：Windows 上 ``shutil.which`` 要真的可执行后缀；
+    POSIX 上则建一个无后缀的可执行 ``go`` 文件（``shutil.which`` 才能找到它）。"""
+    if os.name == "nt":
+        (tmp_path / "go.cmd").write_text("@echo off\n", encoding="utf-8")
+        go_binary = "go.cmd"
+    else:
+        go = tmp_path / "go"
+        go.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        go.chmod(go.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        go_binary = "go"
+    env = {"PATH": str(tmp_path), "GO_BINARY": go_binary}
     if with_binary:
         binary = tmp_path / "chatlog.exe"
         binary.write_text("", encoding="utf-8")

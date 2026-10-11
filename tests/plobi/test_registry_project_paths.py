@@ -25,6 +25,7 @@ from plobi.agents import registry as registry_mod
 from plobi.agents.registry import (
     AGENT_CATEGORIES,
     POSIX_PROJECTS_ROOT_NAME,
+    UNBOUND_CATEGORIES,
     AgentEntry,
     AgentRegistry,
     build_default_project_paths,
@@ -94,11 +95,14 @@ def test_non_windows_defaults_carry_no_drive_letter(home):
     assert set(resolved) == set(AGENT_CATEGORIES)
     projects_root = Path(resolved["projects"])
     for category, value in resolved.items():
-        if category == "butler":
-            # butler is housekeeping, not project-scoped: no binding at all.
+        if category in UNBOUND_CATEGORIES:
+            # butler / courses are housekeeping, not project-scoped: no binding at all.
             assert value == ""
             continue
-        assert not DRIVE_LEADER.match(value), (category, value)
+        # On a Windows runner the temp home itself carries a drive letter,
+        # which is test-environment noise, not a product defect.
+        if os.name != "nt":
+            assert not DRIVE_LEADER.match(value), (category, value)
         assert Path(value).is_absolute(), (category, value)
         assert projects_root in Path(value).parents or Path(value) == projects_root, (
             category,
@@ -133,7 +137,7 @@ def test_windows_defaults_keep_their_bindings():
     assert set(resolved) == set(AGENT_CATEGORIES)
     assert resolved["butler"] == ""
     for category in AGENT_CATEGORIES:
-        if category == "butler":
+        if category in UNBOUND_CATEGORIES:
             continue
         assert DRIVE_LEADER.match(resolved[category]), (category, resolved[category])
     # Compared as Windows paths so the relation is checked on any runner.
