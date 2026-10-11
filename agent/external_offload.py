@@ -253,6 +253,19 @@ def project_egress_onto(env: dict[str, str]) -> str:
         table = load_table()
     except Exception as exc:  # a malformed table must not become "no routing"
         raise ValueError(f"network.egress table is unreadable, refusing to guess routing: {exc}") from exc
+    # Two different states, and only one of them means "no opinion":
+    # `Table.unreadable` is set when the config could not be READ at all (the
+    # spawn path deliberately stays inert there — a broken config pipe must not
+    # take the terminal down), while an empty table list means the user declared
+    # nothing.  An offload that spends real quota refuses in both unreadable
+    # cases; the inherited environment is not a routing decision anyone made.
+    unreadable = getattr(table, "unreadable", "")
+    if unreadable:
+        raise ValueError(
+            f"network.egress could not be read ({unreadable}) — refusing to run an external "
+            "agent with no routing decided; fix the config (or set "
+            f"{PROXY_ENV}) and run again"
+        )
     if not getattr(table, "active", False):
         return ""
     apply_egress_env(env, table)
