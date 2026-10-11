@@ -88,6 +88,27 @@ class BulkDecision(BaseModel):
 async def list_talkers():
     pipeline = get_pipeline()
     store = pipeline.talkers
+
+    # 判据 2 的真原件（10-11 早上补的第二次修正）：**枚举本身不报错**——
+    # `client.list_talker_sessions()` 把 `ChatlogUnavailable` 吞成 `[]`（client.py:213），
+    # 所以下面那个 except 分支在"采集器没在跑"时**永远不会走**：面上拿到的是
+    # 200 + `state=ready` + 0 个会话。桌面今早 08:47 就照着这句报了
+    # "chatlog collector says it is answering on :5030"，而现核 5030 零监听、无 chatlog 进程。
+    # 到没到只能问那一条真源 `pipeline.health()`，不能拿"枚举没抛异常"当活着。
+    health = pipeline.health()
+    if not health["ok"]:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "error": health["detail"],
+                "state": health["state"],
+                "binary": health.get("binary"),
+                "reviewComplete": store.review_done(),
+                "talkers": [],
+            },
+        )
+
     # Enumerate what chatlog actually has so the review covers every active
     # session; unknown entries surface as pending for a one-click decision.
     # `list_talker_sessions` also carries the chatlog display name (topicName)
@@ -96,9 +117,7 @@ async def list_talkers():
         sessions = await run_in_threadpool(pipeline.client.list_talker_sessions)
     except Exception as exc:  # pragma: no cover - network seam
         logger.warning("collect: session enumeration failed: %s", exc)
-        # 判据 2 的原件：到不了 ≠ "你没有会话"。以前这里吞掉异常、返回 200 + 空表，
-        # 于是面板上的"0 个会话"和"一切正常"长得一模一样。现在给 503 + 那句"为什么
-        # 到不了"（复用 `pipeline.health()`，不在这里另判第二遍）。
+        # 兜底同上：真抛异常时也给 503 + 那句"为什么到不了"，不许 200 + 空表。
         health = pipeline.health()
         return JSONResponse(
             status_code=503,

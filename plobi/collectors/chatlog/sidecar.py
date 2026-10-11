@@ -82,10 +82,16 @@ def diagnose(
         # 5030 都探得活，就不要再回头说"你 Go 没装"——那是自相矛盾的一句话。
         return STATE_READY, note_for(STATE_READY)
 
-    if not shutil.which((env.get("GO_BINARY") or "go"), path=env.get("PATH")):
+    has_binary = any(Path(c).is_file() for c in binary_candidates(env, repo_root))
+
+    # 有产物就不提 Go：Go 只是"建不出产物"的原因，产物都在了还怪 PATH 上没 go，
+    # 说出来的那句"为什么采不到"就是假的（10-11 早上现核到：Go 装在
+    # D:\Runtimes\Languages\Go 且**刻意不进 PATH**，产物已由 WP-CHATLOG-SIDECAR-BUILD 建好，
+    # 而面上仍然报 go_missing）。没产物时才问构建工具在不在——`GO_BINARY` 可以指绝对路径。
+    if not has_binary and not shutil.which((env.get("GO_BINARY") or "go"), path=env.get("PATH")):
         return STATE_GO_MISSING, note_for(STATE_GO_MISSING)
 
-    if not any(Path(c).is_file() for c in binary_candidates(env, repo_root)):
+    if not has_binary:
         return STATE_BUILD_MISSING, note_for(STATE_BUILD_MISSING)
 
     if not all((env.get(name) or "").strip() for name in KEY_ENVS):

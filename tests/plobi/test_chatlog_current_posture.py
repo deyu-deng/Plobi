@@ -143,6 +143,23 @@ class TestFourDeadEndsAreFourSentences:
         assert state == sidecar.STATE_GO_MISSING
         assert "Go" in why
 
+    def test_artifact_present_means_missing_go_is_not_the_story(self, tmp_path: Path) -> None:
+        """有产物还怪 PATH 上没 go，那句"为什么采不到"就是假的。
+
+        这台的真实现场：Go 装在 `D:/Runtimes/Languages/Go` 且**刻意不进 PATH**（治理线
+        10-10 的落点纪律），产物也已建好 —— 旧顺序先问 Go，于是面上永远报 go_missing。
+        """
+        binary = tmp_path / "chatlog.exe"
+        binary.write_bytes(b"MZ")
+
+        state, why = sidecar.diagnose(
+            env={"PATH": "", "GO_BINARY": "definitely-not-installed-go", "PLOBI_CHATLOG_BIN": str(binary)},
+            healthy=False,
+            repo_root=tmp_path,
+        )
+
+        assert state == sidecar.STATE_KEY_MISSING, f"该问密钥了，却报：{state}／{why}"
+
     def test_build_comes_before_keys(self, tmp_path: Path) -> None:
         state, _ = sidecar.diagnose(env=_env_with_go(tmp_path), healthy=False, repo_root=tmp_path)
         assert state == sidecar.STATE_BUILD_MISSING
@@ -243,11 +260,15 @@ class TestUnreachableIsNotZeroSessions:
         from plobi.collectors.chatlog.state import SeenStore, TalkerStore
 
         @contextlib.contextmanager
-        def build(*, explode: bool, sessions: list[str] | None = None):
+        def build(*, explode: bool, sessions: list[str] | None = None, swallow: bool = False):
             class StubClient:
                 def list_talker_sessions(self, keyword: str = "", limit: int = 10000):
                     if explode:
                         raise RuntimeError("connection refused on :5030")
+                    if swallow:
+                        # 生产里真实发生的那一档：client 自己把 ChatlogUnavailable 吞成 []
+                        # （client.py:213-214），所以"到不了"到端点这里已经是 200 + 空表。
+                        return []
                     return [
                         SimpleNamespace(id=name, name=name) for name in (sessions or [])
                     ]
@@ -259,7 +280,7 @@ class TestUnreachableIsNotZeroSessions:
                     return []
 
                 def healthy(self):
-                    return not explode
+                    return not (explode or swallow)
 
             pipeline = ChatlogPipeline(
                 config=CollectorConfig(),
@@ -292,6 +313,22 @@ class TestUnreachableIsNotZeroSessions:
         assert body["state"] in DEAD_STATES
         assert body["error"], "那句「为什么到不了」必须跟着一起回来"
         assert body["talkers"] == []
+
+    def test_a_swallowed_unreachable_is_still_not_a_200_ready(self, board) -> None:
+        """判据 2 的真原件（10-11）：异常被 client 吞掉时，端点**照样**要说"到不了"。
+
+        昨天那一版把修复挂在"枚举抛异常"这条分支上，而 `list_talker_sessions()` 根本不抛
+        （`client.py:213` 吞成 `[]`）⇒ 分支不可达，面上仍是 200 + `state=ready` + 0 会话，
+        桌面今早 08:47 就照着它报了"answering on :5030"（现核 5030 零监听、无 chatlog 进程）。
+        """
+        with board(explode=False, swallow=True) as client:
+            response = client.get("/api/collect/talkers")
+
+        assert response.status_code == 503, "枚举没抛异常不等于采集器活着"
+        body = response.json()
+        assert body["ok"] is False
+        assert body["state"] in DEAD_STATES
+        assert "collector" not in body, "不许同时给一个 ready 的 collector 位"
 
     def test_reachable_but_genuinely_zero_sessions_is_still_distinct(self, board) -> None:
         with board(explode=False, sessions=[]) as client:
