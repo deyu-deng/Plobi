@@ -412,6 +412,12 @@ def test_unreadable_table_refuses_instead_of_running_unrouted(workdir, monkeypat
     calls: list = []
     monkeypatch.setattr(egress_rules, "load_table", boom)
     monkeypatch.delenv(offload.PROXY_ENV, raising=False)
+    # Pin the binary so the flow always reaches the egress-table parse: on CI
+    # ``codebuddy`` is absent and ``resolve_command`` would fail the task
+    # before ``load_table`` ever runs, turning a config error into "no route".
+    monkeypatch.setattr(
+        offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy"
+    )
     monkeypatch.setattr(
         offload.subprocess, "run",
         lambda *a, **k: calls.append(a) or _Completed(stdout="{}"),
@@ -438,7 +444,12 @@ def test_default_workdir_does_not_land_on_the_temp_volume(monkeypatch, tmp_path)
     wd = offload.default_workdir()
     assert wd.is_dir()
     assert _P(str(wd)).is_relative_to(home), wd
-    assert str(tempfile.gettempdir()) not in str(wd), wd
+    # Only the system temp volume itself is rejected: pytest's own temp root
+    # legitimately sits under the OS temp dir (so the parent chain always
+    # contains it), but the landing spot must never *be* the temp volume.
+    # Compare resolved paths to dodge symlink noise.
+    temp_root = _P(tempfile.gettempdir()).resolve()
+    assert wd != temp_root, wd
 
 
 def test_no_dev_time_proxy_address_is_hardcoded():
@@ -503,7 +514,7 @@ def test_exit_zero_with_no_artifact_is_not_reported_as_success(workdir, monkeypa
 
 
 def test_product_entry_exists_and_reports_the_four_answers():
-    """A D:\Temp script passing is not acceptance — the product call path must exist."""
+    r"""A D:\Temp script passing is not acceptance — the product call path must exist."""
     import agent.external_offload as mod
 
     assert callable(getattr(mod, "main", None))
