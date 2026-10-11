@@ -2,9 +2,16 @@
 
 git, npm, pip, uv and the external agent CLIs all read ``HTTPS_PROXY`` /
 ``NO_PROXY`` style variables, so the table's only available vocabulary there is
-"one proxy plus a bypass list".  That is expressive enough because
-:func:`agent.egress.rules.parse_table` requires a catch-all rule, but the
-asymmetry must stay visible:
+"one proxy plus a bypass list".  That vocabulary is **not symmetric**:
+
+* catch-all = a named exit, some hosts direct ⇒ lossless (exit + bypass list).
+* catch-all = direct, some hosts on a named exit ⇒ **inexpressible**; the exit is
+  dropped for children.  ``Table.env_dropped_rules`` names those rules and
+  :func:`agent.egress.rules.load_table` warns about them at load, so this is a
+  reported ceiling rather than a silent degradation (in-process routing is
+  unaffected).
+
+Other asymmetries that stay visible:
 
 * ``geosite:`` rules cannot be projected — only the engine resolves them.
 * CIDR entries are written through (curl honors them;

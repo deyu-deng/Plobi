@@ -72,6 +72,10 @@ class Table:
     engine_enabled: bool = False
     engine_binary: str = ""
     engine_mixed_port: int = 0
+    #: Non-empty when the config could not be read at all, which is a *different*
+    #: state from "no table declared": a caller that must not run unrouted (the
+    #: external-offload child) has to be able to tell them apart.
+    unreadable: str = ""
 
     @property
     def active(self) -> bool:
@@ -80,6 +84,24 @@ class Table:
     @property
     def engine_only_rules(self) -> tuple[Rule, ...]:
         return tuple(r for r in self.rules if r.kind == "geosite")
+
+    @property
+    def env_dropped_rules(self) -> tuple[Rule, ...]:
+        """Rules the subprocess environment cannot carry.
+
+        A child can only be told "one exit, plus a list of hosts that skip it".
+        When the catch-all is ``direct`` there is no exit to name, so every
+        ``via: proxy:...`` rule above it silently loses its meaning for that
+        child — the in-process resolver is unaffected, which is exactly why this
+        must be reported rather than left to the docstring.
+        """
+        if not self.active or self.rules[-1].via != DIRECT:
+            return ()
+        return tuple(
+            r
+            for r in self.rules
+            if r.via.startswith("proxy:") and r.kind != "geosite" and r.kind != "all"
+        )
 
     def proxy_url(self, name: str) -> str:
         try:
@@ -266,7 +288,7 @@ def load_table(*, config: dict | None = None, force_reload: bool = False) -> Tab
     """
     global _TABLE_CACHE, _UNREADABLE_REPORTED
     if config is not None:
-        return _report_engine_only(
+        return _report_unrepresentable(
             parse_table((config.get("network") or {}).get("egress"))
         )
     if _TABLE_CACHE is not None and not force_reload:
@@ -286,27 +308,41 @@ def load_table(*, config: dict | None = None, force_reload: bool = False) -> Tab
                 "restart after fixing it",
                 exc,
             )
-        _TABLE_CACHE = Table()
+        # Marked, not just warned: a caller that must refuse to run unrouted
+        # (the offload child) reads Table.unreadable; the spawn path keeps working.
+        _TABLE_CACHE = Table(unreadable=f"{type(exc).__name__}: {exc}")
         return _TABLE_CACHE
-    _TABLE_CACHE = _report_engine_only(parse_table(raw))
+    _TABLE_CACHE = _report_unrepresentable(parse_table(raw))
     return _TABLE_CACHE
 
 
-def _report_engine_only(table: Table) -> Table:
-    """Name the rules this layer cannot honor, instead of quietly ignoring them.
+def _report_unrepresentable(table: Table) -> Table:
+    """Name what each projection layer cannot honor, instead of quietly dropping it.
 
-    A ``geosite:`` matcher needs the engine's GeoSite data; with the engine off
-    the user believes a rule is routing traffic that is actually falling through
-    to the catch-all.  The one place that asymmetry can still be surfaced before
-    the request goes out is here.
+    Two asymmetries are structural, not bugs, and both would otherwise degrade in
+    silence: ``geosite:`` matchers need the engine's data files, and a table whose
+    catch-all is ``direct`` has no single exit for a spawned child to be told
+    about.  In-process routing is correct in both cases — which is precisely why
+    the loss must be reported at load (裁定 94: only-visible-in-logs is not yet
+    visible to the user, so this text also has to reach the status surface).
     """
+    log = logging.getLogger(__name__)
     if table.engine_only_rules and not table.engine_enabled:
-        logging.getLogger(__name__).warning(
+        log.warning(
             "network.egress: %d rule(s) %s are engine-only and do nothing until "
             "network.egress.engine.enabled is true — traffic matching them falls "
             "through to the catch-all rule",
             len(table.engine_only_rules),
             [r.match for r in table.engine_only_rules],
+        )
+    if table.env_dropped_rules:
+        log.warning(
+            "network.egress: %d rule(s) %s route to a named exit, but the catch-all "
+            "rule is direct — a spawned subprocess cannot be told 'one exit except "
+            "these hosts' in that shape, so those rules apply in-process only and "
+            "are dropped from the child's environment",
+            len(table.env_dropped_rules),
+            [r.match for r in table.env_dropped_rules],
         )
     return table
 

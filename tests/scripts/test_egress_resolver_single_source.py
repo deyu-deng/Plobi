@@ -156,6 +156,35 @@ def test_the_keepalive_builder_inherits_the_answer_without_a_new_reader(
         client.close()
 
 
+def test_unreadable_is_distinguishable_from_undeclared(monkeypatch):
+    """The state a fail-closed caller needs.
+
+    ``load_table`` deliberately does not raise on an unreadable config — the spawn
+    path must survive that (it cost 22 consumer-family reds the first time).  But
+    "I could not read your routing" and "you declared no routing" are different
+    answers, and a caller that refuses to run unrouted (the offload child) cannot
+    tell them apart from an inert table alone.  ``Table.unreadable`` carries it.
+    """
+    import plobi_cli.config as pcfg
+
+    def _boom():
+        raise RuntimeError("Could not determine home directory")
+
+    real = pcfg.load_config_readonly
+    monkeypatch.setattr(egress, "_TABLE_CACHE", None)
+    monkeypatch.setattr(pcfg, "load_config_readonly", _boom)
+    unreadable = egress.load_table()
+
+    pcfg.load_config_readonly = real
+    egress._TABLE_CACHE = None
+    declared_nothing = egress.load_table()
+
+    assert unreadable.unreadable.startswith("RuntimeError")
+    assert unreadable.active is False
+    assert declared_nothing.unreadable == ""
+    assert declared_nothing.active is False
+
+
 def test_external_offload_source_still_delegates():
     text = (REPO / "agent" / "external_offload.py").read_text(encoding="utf-8")
     assert "_get_proxy_for_base_url" in text, "the offload channel stopped using the shared resolver"
