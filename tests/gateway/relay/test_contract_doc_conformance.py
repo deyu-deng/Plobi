@@ -34,7 +34,7 @@ from gateway.session import SessionSource
 
 # Repo root: tests/gateway/relay/ -> repo root is parents[3]
 _CONTRACT_DOC = (
-    Path(__file__).resolve().parents[3] / "docs" / "relay-connector-contract.md"
+    Path(__file__).resolve().parents[3] / "docs" / "plobi" / "relay-connector-contract.md"
 )
 
 

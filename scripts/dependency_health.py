@@ -62,7 +62,7 @@ def run(cmd, ok_codes=(0,), **kw):
 
 def audit() -> dict[str, dict]:
     """package -> {version, count, fix} from pip-audit over the full locked graph."""
-    with tempfile.NamedTemporaryFile('r', suffix='.txt', delete=False) as fh:
+    with tempfile.NamedTemporaryFile('r', suffix='.txt', delete=False, encoding='utf-8') as fh:
         reqs = Path(fh.name)
     try:
         run(['uv', 'export', '--frozen', '--no-hashes', '--no-emit-project',
@@ -189,8 +189,18 @@ def uv_can_move(pkg: str) -> tuple[bool, str]:
     for line in out.splitlines():
         if line.startswith('Update') and re.search(r'(^|\s)' + re.escape(pkg) + r'\s+v', line):
             return True, line.replace('Update ', '').strip()
+    # Newer uv (>= 0.8) collapses the dry-run report to a single line, e.g.
+    #   Resolved 234 packages in 2.25s Lockfile changes detected
+    # or, when nothing would move, just
+    #   Resolved 234 packages in 2.25s
+    # (the older wording for the no-change case is "No lockfile changes detected").
+    # Order matters: the no-change wording also contains "Lockfile changes detected".
     if 'No lockfile changes detected' in out:
         return False, 'uv 未改动（被 == 精确钉死，或父级上限卡住）'
+    if 'Lockfile changes detected' in out:
+        return True, 'uv 检测到锁文件将变化（新版单行汇总，未列出具体更新行）'
+    if re.search(r'Resolved \d+ packages?', out):
+        return False, 'uv 解析完成且未提及锁文件变化（视为未改动）'
     raise RuntimeError(f'uv lock --dry-run 对 {pkg} 输出无法识别:\n{out[:400]}')
 
 

@@ -231,8 +231,12 @@ def test_question_text_carries_no_internal_vocabulary(roster):
 
 
 def test_env_pins_the_entry_not_the_caller(roster, monkeypatch):
-    monkeypatch.setenv("PLOBI_HOME", str(roster.plobi_home / "elsewhere"))
+    # PLOBI_HOME is the machine-level anchor for the whole profile tree —
+    # repointing it elsewhere switches environment instead of testing the
+    # pin.  Dirty the caller's other surface (TUI mode, stray CWD) and
+    # assert none of it leaks into the child.
     monkeypatch.setenv("PLOBI_TUI", "1")
+    monkeypatch.setenv("TERMINAL_CWD", str(roster.plobi_home / "caller-cwd"))
     entry = AA.resolve_target(LIVE_PROJECT, registry=roster.registry)
 
     _argv, env, cwd = AA.build_child_command(entry, "问")

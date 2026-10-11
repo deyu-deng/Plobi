@@ -82,6 +82,8 @@ cd Plobi                       # 仓库根本身就是 Code/，没有再套一�
 uv venv --python 3.13 && uv sync --extra dev --extra acp --extra messaging --extra web --extra anthropic
 source .venv/bin/activate                # macOS/Linux
 # .venv\Scripts\activate                # Windows
+# Windows 用户也可以一键完成上面的环境安装：
+#   powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 # 必补，否则 SOCKS 代理那一族测试整片 ImportError（uv sync 换 extras 会把它裁掉）
 uv pip install aiohttp-socks==0.11.0 python-socks
