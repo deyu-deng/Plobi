@@ -36,10 +36,12 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-#: 默认 profile 的 L1 总秘书压缩触发阈值。
-#: 0.50 → 200K ctx 上 ~100K 触发；0.35 → 200K ctx 上 ~70K 触发。
-#: 不要与 ``ContextCompressor`` 默认 ``threshold_percent=0.50`` 混用——
-#: 这个常量只用于 L1 default profile 的运行时覆盖。
+#: L1 总秘书压缩阈值的**上限**（任务书 §2：6–8 万 token 前切开）。
+#: 0.50 → 200K ctx 上 ~100K 触发；0.35 → ~70K 触发。
+#: 真源是 ``plugins/plobi-north-star/l1_profile_template.yaml`` 的
+#: ``compression.threshold``（那条路径 ``agent/agent_init.py`` 才会读）；这个常量只在
+#: 配置缺席时兜底，并且充当"声明值不许更松"的天花板——``_tighten_compressor`` 取两者较小值。
+#: 不要与 ``ContextCompressor`` 默认 ``threshold_percent=0.50`` 混用。
 L1_COMPRESSION_THRESHOLD: float = 0.35
 
 #: L1 总秘书在 default profile 上对外暴露的工具集名。
@@ -193,7 +195,21 @@ def _tighten_compressor(agent: Any) -> bool:
         return False
 
     max_tokens = getattr(compressor, "max_tokens", None)
-    new_pct = float(L1_COMPRESSION_THRESHOLD)
+    # 数值真源是 profile 模板的 ``compression.threshold``（agent_init 把它交给
+    # ContextCompressor，``_configured_threshold_percent`` 就是那个原始声明值）。
+    # 这里取 min(声明值, 常量)：声明可以更紧，不能更松——常量是任务书的上限
+    # （"6–8 万 token 前切开"），不是默认值。config 缺席（老 compressor 实例、
+    # 单测里的 fake）才落到常量。
+    declared = getattr(compressor, "_configured_threshold_percent", None)
+    try:
+        declared = float(declared) if declared is not None else None
+    except (TypeError, ValueError):
+        declared = None
+    new_pct = (
+        min(declared, float(L1_COMPRESSION_THRESHOLD))
+        if declared is not None
+        else float(L1_COMPRESSION_THRESHOLD)
+    )
 
     # L1 显式跳过 ``_effective_threshold_percent`` 的小窗 floor——
     # 默认 0.75 跟任务书"6–8 万 token 前切开"目标冲突。

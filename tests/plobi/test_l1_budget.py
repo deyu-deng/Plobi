@@ -206,38 +206,85 @@ def _template_path() -> Path:
     return Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star" / "l1_profile_template.yaml"
 
 
-def test_compression_threshold_in_default_profile_template():
-    """``plugins/plobi-north-star/l1_profile_template.yaml`` 必须显式含 0.35。"""
+def _load_l1_template() -> dict:
+    import yaml
+
     template_path = _template_path()
     assert template_path.is_file(), f"L1 template missing: {template_path}"
+    return yaml.safe_load(template_path.read_text(encoding="utf-8")) or {}
 
-    try:
-        import yaml as _yaml  # type: ignore
-    except ImportError:  # pragma: no cover
-        _yaml = None
 
-    if _yaml is not None:
-        config = _yaml.safe_load(template_path.read_text(encoding="utf-8"))
-    else:
-        config = {}
-        for line in template_path.read_text(encoding="utf-8").splitlines():
-            line = line.split("#", 1)[0].rstrip()
-            if not line:
-                continue
-            if ":" not in line:
-                continue
-            key, _, value = line.partition(":")
-            config[key.strip()] = value.strip()
+def test_l1_template_declares_compression_on_the_path_code_reads():
+    """压缩参数必须写在 ``compression.*`` 下——那才是 ``agent_init`` 读的路径。
 
-    threshold = config["context"]["compressor"]["threshold_percent"]
-    # 任务书 §2：阈值降到能在 6–8 万 token 前切开；200K ctx 上 0.35 ≈ 70K。
-    # 留 0.40 余量给将来微调，但不许回到默认 0.50。
-    assert float(threshold) <= 0.40, (
-        f"L1 template threshold_percent must be ≤0.40, got {threshold!r}"
+    这段以前住在 ``context.compressor.*``：``config.context`` 只认 ``engine``
+    （``plobi_cli/config.py``），所以三行键被并进 config 之后没有任何人读，
+    ``protect_first_n: 1`` 的承诺从来没发生过。这条测试防它长回去。
+    """
+    template = _load_l1_template()
+
+    assert "compressor" not in (template.get("context") or {}), (
+        "context.compressor.* 是一条没人读的路径；压缩参数请写在 compression.* 下"
     )
-    assert float(threshold) < 0.50, (
-        "L1 threshold must be strictly below the global default of 0.50"
+
+    compression = template["compression"]
+    threshold = float(compression["threshold"])
+    # 任务书 §2：6–8 万 token 前切开（200K ctx 上 0.35 ≈ 70K）。留 0.40 余量，
+    # 但不许回到全局默认 0.50。
+    assert threshold <= 0.40, f"L1 template threshold must be ≤0.40, got {threshold!r}"
+    assert threshold < 0.50, "L1 threshold must be strictly below the global default of 0.50"
+    assert int(compression["protect_first_n"]) == 1, (
+        "L1 的意图是开场只钉系统提示 + 第一条用户消息；写成别的值就是又一次说谎"
     )
+
+
+def test_every_l1_compression_key_is_actually_read_by_the_agent():
+    """模板里声明的每个 ``compression.*`` 键，都必须能在 ``agent_init`` 的读取点找到。
+
+    关系断言而不是数值快照：任何一边改名（``threshold`` -> 别的、或模板又塞进
+    没人读的键），这条就红——那正是这次要修的病。
+    """
+    import re
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[2] / "agent" / "agent_init.py"
+    ).read_text(encoding="utf-8")
+    for key in _load_l1_template()["compression"]:
+        assert re.search(r'_compression_cfg\.get\(\s*["\']%s["\']' % re.escape(key), source), (
+            f"模板声明了 compression.{key}，但 agent_init 里没有对应的读取点"
+        )
+
+
+def test_tighten_uses_the_declared_value_when_it_is_tighter(l1_budget):
+    """配置声明得更紧时以配置为准；常量是天花板，不是硬覆盖。"""
+    compressor = _FakeCompressor(context_length=200_000)
+    compressor._configured_threshold_percent = 0.25
+    agent = _FakeAgent(
+        profile="default",
+        enabled_toolsets={"plobi_north_star"},
+        valid_tool_names={"memory"},
+        compressor=compressor,
+    )
+
+    assert l1_budget.apply_l1_budget(agent) is True
+    assert compressor.threshold_percent == pytest.approx(0.25)
+    assert compressor._configured_threshold_percent == pytest.approx(0.25)
+
+
+def test_tighten_never_lets_the_config_loosen_past_the_ceiling(l1_budget):
+    """声明得比任务书上限更松时，常量兜住——L1 不许悄悄回到 0.50。"""
+    compressor = _FakeCompressor(context_length=200_000)
+    compressor._configured_threshold_percent = 0.50
+    agent = _FakeAgent(
+        profile="default",
+        enabled_toolsets={"plobi_north_star"},
+        valid_tool_names={"memory"},
+        compressor=compressor,
+    )
+
+    assert l1_budget.apply_l1_budget(agent) is True
+    assert compressor.threshold_percent == pytest.approx(l1_budget.L1_COMPRESSION_THRESHOLD)
 
 
 def test_north_star_hook_tightens_compressor_for_l1(l1_budget):
@@ -263,13 +310,31 @@ def test_north_star_hook_tightens_compressor_for_l1(l1_budget):
     assert compressor._configured_threshold_percent == pytest.approx(0.35)
 
 
-def test_l1_template_threshold_matches_runtime_constant(l1_budget):
-    """模板 YAML 的 threshold_percent 必须等于 ``l1_budget.L1_COMPRESSION_THRESHOLD``。"""
-    template_path = _template_path()
-    config = yaml.safe_load(template_path.read_text(encoding="utf-8"))
-    template_threshold = float(config["context"]["compressor"]["threshold_percent"])
+def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(l1_budget):
+    """模板 ``compression.threshold`` 是数值真源；常量只保证"不许更松"。
 
-    assert template_threshold == pytest.approx(l1_budget.L1_COMPRESSION_THRESHOLD)
+    以前这两处靠人肉同步（模板注释自己写着"两者必须保持同步"），所以模板里那行
+    其实没人读。现在 ``_tighten_compressor`` 取 ``min(声明值, 常量)``：这条断言钉住
+    那个关系——声明漂到比上限还松，或常量被改到比声明还紧而没人发现，都会红。
+    """
+    template_threshold = float(_load_l1_template()["compression"]["threshold"])
+
+    assert template_threshold <= l1_budget.L1_COMPRESSION_THRESHOLD + 1e-9, (
+        "模板声明的值不许比任务书上限更松（否则 L1 会在 6–8 万 token 之后才切开）"
+    )
+
+    compressor = _FakeCompressor(context_length=200_000)
+    compressor._configured_threshold_percent = template_threshold
+    agent = _FakeAgent(
+        profile="default",
+        enabled_toolsets={"plobi_north_star"},
+        valid_tool_names={"memory"},
+        compressor=compressor,
+    )
+    assert l1_budget.apply_l1_budget(agent) is True
+    assert compressor.threshold_percent == pytest.approx(
+        min(template_threshold, l1_budget.L1_COMPRESSION_THRESHOLD)
+    )
 
 
 def test_l1_template_memory_disabled():
