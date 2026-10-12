@@ -311,7 +311,31 @@ export const zh: Translations = {
       mcp: 'MCP',
       archivedChats: '已归档对话',
       about: '关于',
-      notifications: '通知'
+      notifications: '通知',
+      network: '网络'
+    },
+    network: {
+      addExit: '添加出口',
+      addRule: '添加规则',
+      binary: '引擎程序路径',
+      catchAll: '最后一条必须是 "*"——子进程能表达的只有这一个兜底出口。',
+      direct: '直连',
+      engine: '规则引擎',
+      engineOnly: '仅引擎识别',
+      envDropped: '不会传给子进程',
+      exits: '出口',
+      intro: '决定每个目标走哪条出口。这里只管 Plobi 自己发起的流量，你的浏览器和终端不受影响。',
+      match: '匹配（域名、*.后缀、CIDR、geosite:… 或 *）',
+      name: '名称',
+      port: '监听端口',
+      refused: '未保存',
+      remove: '删除',
+      rules: '规则',
+      save: '保存',
+      saved: '已保存',
+      status: '当前状态',
+      title: '网络出口',
+      url: '代理地址'
     },
     notifications: {
       title: '通知',

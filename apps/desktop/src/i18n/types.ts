@@ -284,6 +284,30 @@ export interface Translations {
       archivedChats: string
       about: string
       notifications: string
+      network: string
+    }
+    network: {
+      addExit: string
+      addRule: string
+      binary: string
+      catchAll: string
+      direct: string
+      engine: string
+      engineOnly: string
+      envDropped: string
+      exits: string
+      intro: string
+      match: string
+      name: string
+      port: string
+      refused: string
+      remove: string
+      rules: string
+      save: string
+      saved: string
+      status: string
+      title: string
+      url: string
     }
     notifications: {
       title: string

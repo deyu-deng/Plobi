@@ -220,7 +220,31 @@ export const zhHant = defineLocale({
       mcp: 'MCP',
       archivedChats: '已封存聊天',
       about: '關於',
-      notifications: '通知'
+      notifications: '通知',
+      network: '網路'
+    },
+    network: {
+      addExit: '新增出口',
+      addRule: '新增規則',
+      binary: '引擎程式路徑',
+      catchAll: '最後一條必須是「*」——子行程能表達的只有這個兜底出口。',
+      direct: '直連',
+      engine: '規則引擎',
+      engineOnly: '僅引擎辨識',
+      envDropped: '不會傳給子行程',
+      exits: '出口',
+      intro: '決定每個目標走哪條出口。這裡只管理 Plobi 自己啟動的流量，你的瀏覽器與終端機不受影響。',
+      match: '比對（網域、*.字尾、CIDR、geosite:… 或 *）',
+      name: '名稱',
+      port: '監聽通訊埠',
+      refused: '未儲存',
+      remove: '移除',
+      rules: '規則',
+      save: '儲存',
+      saved: '已儲存',
+      status: '目前狀態',
+      title: '網路出口',
+      url: '代理位置'
     },
     notifications: {
       title: '通知',

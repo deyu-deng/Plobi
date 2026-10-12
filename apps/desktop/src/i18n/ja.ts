@@ -228,7 +228,32 @@ export const ja = defineLocale({
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
       about: '情報',
-      notifications: '通知'
+      notifications: '通知',
+      network: 'ネットワーク'
+    },
+    network: {
+      addExit: '出口を追加',
+      addRule: 'ルールを追加',
+      binary: 'エンジン実行ファイル',
+      catchAll: '最後のルールは "*" である必要があります。起動する子プロセスに表現できるのはこれだけです。',
+      direct: '直接',
+      engine: 'ルールエンジン',
+      engineOnly: 'エンジンのみ',
+      envDropped: '子プロセスに伝わらない',
+      exits: '出口',
+      intro:
+        '接続先をどの出口に置くかを決めます。Plobi が起動するものだけが対象で、ブラウザや通常のターミナルには影響しません。',
+      match: '一致条件（ドメイン、*.suffix、CIDR、geosite:… または *）',
+      name: '名前',
+      port: '待ち受けポート',
+      refused: '保存されませんでした',
+      remove: '削除',
+      rules: 'ルール',
+      save: '保存',
+      saved: '保存しました',
+      status: '現在',
+      title: 'ネットワーク出口',
+      url: 'プロキシ URL'
     },
     notifications: {
       title: '通知',
