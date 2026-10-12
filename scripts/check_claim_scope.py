@@ -40,6 +40,18 @@ FRESH_MSG_SECONDS = 10.0
 LOOKUP_LEVELS = 3
 
 FAMILY_TOKEN = re.compile(r"`([^`]+)`")
+
+# 与 Docs 版同一颗雷（10-12 21:2x）：族列里「**不认领也不改** `Code/aigw/config.yaml`」的那个 X
+# **不是认领**。整列扫反引号时它会被当成认领，于是三条在派格被判成同占一个独占文件——
+# 额度线那笔 Code 提交就是这么被拦下的。截断规则与 `Docs/scripts/check_docs_layout.py` 逐字同一份，
+# 两扇门不许各自长出一套「什么算认领」。
+CLAIM_CUT = re.compile(r"不认领|也不改|只读不改|不许出现|不并|不含")
+
+
+def claims_only(cell: str) -> str:
+    """族列只截到第一个否定/豁免标记之前；之后的文字是说明，不参与比对。"""
+    m = CLAIM_CUT.search(cell)
+    return cell[:m.start()] if m else cell
 WP_NAME = re.compile(r"\*\*(WP-[A-Z0-9-]+)\*\*")
 WP_IN_TEXT = re.compile(r"(WP-[A-Z0-9-]+)")
 WP_IN_SUBJECT = re.compile(r"\[(WP-[A-Z0-9-]+)\]")
@@ -78,7 +90,7 @@ def claim_families(reg_text: str) -> dict[str, list[str]]:
         # 族列里混着中文说明（「的 dev 那一行」「配套测试」）与 `（…）` 注释，
         # 只取反引号里的 token，比按「、，,」切更准，也更不容易把一句白话认成文件族。
         keep: list[str] = []
-        for token in FAMILY_TOKEN.findall(cells[3]):
+        for token in FAMILY_TOKEN.findall(claims_only(cells[3])):
             f = token.strip().strip("`").rstrip("/")
             if not f or f.startswith("（") or f.startswith("("):
                 continue

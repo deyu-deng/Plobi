@@ -12,6 +12,10 @@
 
 外加两条同样要命的：认不出前缀时只在「两条在派线认领同一文件」上判红；
 以及这脚本任何路径都不许写工作区、不许动索引。
+
+还有一条是 10-12 21:2x 真撞上的（与 Docs 版同一颗雷）：族列里「**不认领也不改** `X`」提到的那个 X
+**不是认领**——整列扫反引号会把三条形互不相干的线判成同占一个独占文件，本仓一笔 Code 提交就是这么
+被拦下的。截断只截到否定标记之前，标记**之前**的真认领照常算数（`test_negation_cut_keeps_earlier_claims`）。
 """
 
 from __future__ import annotations
@@ -259,6 +263,65 @@ def test_two_live_lines_claiming_same_file_is_a_hard_conflict(tmp_path: Path) ->
     assert proc.returncode != 0, proc.stdout
     assert "两条在派线同时认领" in proc.stderr, proc.stderr
     assert "WP-ALPHA" in proc.stderr and "WP-BETA" in proc.stderr, proc.stderr
+
+
+def test_negation_clause_is_not_a_claim(tmp_path: Path) -> None:
+    """10-12 21:2x 真被拦下的那笔 Code 提交：族列里「不认领也不改 `X`」的 X 不算认领。
+
+    ALPHA 真认领 `Code/aigw/config.yaml`，BETA / GAMMA 只在豁免说明里提到同一个独占文件。
+    修之前这三家都被判成占它 → 认不出前缀那一档报「两条在派线同时认领」，一笔本来干净的
+    提交被拦住（当事人既不绕 SKIP_ARCH_GATES 也不用 --no-verify，只能来找我翻格）。
+    """
+    repo = _repo(tmp_path, {"aigw/config.yaml": "x\n"})
+    reg = _register(
+        tmp_path,
+        HEADER
+        + _row("WP-ALPHA", "`Code/aigw/config.yaml`")
+        + _row("WP-BETA", "`Code/scripts/b_only.py`；**不认领也不改** `Code/aigw/config.yaml`")
+        + _row("WP-GAMMA", "`Code/agent/insights.py`；**只读不改** `Code/aigw/config.yaml`"),
+    )
+
+    _stage(repo, "aigw/config.yaml")
+    proc = _run(repo, reg)
+
+    assert proc.returncode == 0, f"豁免说明里的路径不许算认领：{proc.stdout}{proc.stderr}"
+    assert proc.stderr == "", proc.stderr
+    assert "在派认领方 3 家" in proc.stdout, proc.stdout
+
+
+def test_negation_cut_keeps_earlier_claims(tmp_path: Path) -> None:
+    """对照组（防修过头）：截断只截到否定标记，标记**之前**的真认领照常算数。"""
+    repo = _repo(tmp_path, {"scripts/b_only.py": "x\n"})
+    reg = _register(
+        tmp_path,
+        HEADER
+        + _row("WP-ALPHA", "`Code/scripts/a_only.py`")
+        + _row("WP-BETA", "`Code/scripts/b_only.py`；**不认领也不改** `Code/scripts/a_only.py`"),
+    )
+
+    _stage(repo, "scripts/b_only.py")
+    proc = _run(repo, reg, WP_COMMIT="[WP-ALPHA] 越界签 BETA 的族")
+
+    assert proc.returncode != 0, f"{proc.stdout}{proc.stderr}"
+    assert "属于在派的 WP-BETA" in proc.stderr, proc.stderr
+
+
+def test_negation_clause_does_not_unclaim_the_real_owner(tmp_path: Path) -> None:
+    """另一个方向的对照组：别人写豁免，不许把真认领方那格也一起清空。"""
+    repo = _repo(tmp_path, {"aigw/config.yaml": "x\n"})
+    reg = _register(
+        tmp_path,
+        HEADER
+        + _row("WP-ALPHA", "`Code/aigw/config.yaml`")
+        + _row("WP-GAMMA", "`Code/agent/insights.py`；**不认领也不改** `Code/aigw/config.yaml`"),
+    )
+
+    _stage(repo, "aigw/config.yaml")
+    proc = _run(repo, reg, WP_COMMIT="[WP-GAMMA] 嘴上说不改还是签了")
+
+    assert proc.returncode != 0, f"{proc.stdout}{proc.stderr}"
+    assert "属于在派的 WP-ALPHA" in proc.stderr, proc.stderr
+    assert "本笔前缀是 [WP-GAMMA]" in proc.stderr, proc.stderr
 
 
 def test_only_live_rows_are_read(tmp_path: Path) -> None:
