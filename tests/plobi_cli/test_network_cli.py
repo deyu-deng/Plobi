@@ -77,3 +77,62 @@ def test_no_table_is_answered_instead_of_crashing(tmp_path, monkeypatch, capsys)
     _home(tmp_path, monkeypatch, {})
     assert cmd_network(_Args()) == 0
     assert "not declared" in capsys.readouterr().out
+
+
+class _Action:
+    def __init__(self, action):
+        self.network_action = action
+
+
+def test_the_switch_actions_reach_the_supervisor_and_print_its_answer(monkeypatch, capsys):
+    """`start` / `stop` / `reload` are thin: they drive engine and print its report.
+
+    Pinned at the call because the whole product value here is that the CLI does
+    not grow its own idea of what "running" means.
+    """
+    from agent.egress import engine
+    from plobi_cli import network_cmd
+
+    calls = []
+
+    def _fake(name):
+        def _fn(table, **kw):
+            calls.append((name, table.engine_mixed_port))
+            state = engine.STOPPED if name == "stop_ours" else engine.OURS
+            return engine.EngineReport(state, name, 7895, "/w", "pool", 4242, "204 via x")
+
+        return _fn
+
+    for name in ("ensure", "stop_ours", "reload_engine"):
+        monkeypatch.setattr(engine, name, _fake(name))
+
+    for action in ("start", "stop", "reload"):
+        assert network_cmd.cmd_network(_Action(action)) == 0
+
+    assert calls == [("ensure", 0), ("stop_ours", 0), ("reload_engine", 0)]
+    printed = capsys.readouterr().out
+    assert "running-ours" in printed and "stopped" in printed
+
+
+def test_stop_reports_a_foreign_engine_and_still_exits_zero(monkeypatch, capsys):
+    """Refusing to kill somebody else's proxy is a normal answer, not a failure."""
+    from agent.egress import engine
+    from plobi_cli import network_cmd
+
+    monkeypatch.setattr(
+        engine, "stop_ours", lambda table, **kw: engine.EngineReport(engine.STOPPED, "nothing of ours", 0)
+    )
+    assert network_cmd.cmd_network(_Action("stop")) == 0
+    assert "stopped" in capsys.readouterr().out
+
+
+def test_a_failed_start_is_a_nonzero_exit(monkeypatch, capsys):
+    """`plobi network start` is used by humans and scripts; it has to say 非零 when it did not work."""
+    from agent.egress import engine
+    from plobi_cli import network_cmd
+
+    monkeypatch.setattr(
+        engine, "ensure", lambda table, **kw: engine.EngineReport(engine.FAILED, "not on disk", 7895)
+    )
+    assert network_cmd.cmd_network(_Action("start")) == 1
+    assert "failed" in capsys.readouterr().out

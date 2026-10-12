@@ -90,11 +90,19 @@ def inert(monkeypatch):
 
 
 class FakePsutil:
-    """Only the surface ``_pid_is_ours`` and ``stop_ours`` use."""
+    """Only the surface ``_pid_is_ours`` and ``stop_ours`` use.
 
-    def __init__(self, procs):
+    ``up``/``port`` are wired in so ``terminate`` also frees the listen port:
+    otherwise the fake keeps answering "somebody is home" after the process is
+    gone, and `ensure` — correctly refusing to steal a port it does not own —
+    turns the test into a false FOREIGN verdict.
+    """
+
+    def __init__(self, procs, up=None, port=None):
         self.procs = procs
         self.terminated = []
+        self.up = up
+        self.port = port
 
     def Process(self, pid):  # noqa: N802 - psutil's own spelling
         if pid not in self.procs:
@@ -111,6 +119,8 @@ class FakePsutil:
 
             def terminate(self):
                 outer.terminated.append(pid)
+                if outer.up is not None:
+                    outer.up.discard(outer.port)
 
             def wait(self, timeout=None):
                 return 0
@@ -339,44 +349,102 @@ def test_a_dead_local_exit_is_not_handed_to_anyone(clean_liveness):
     ]
 
 
-def test_a_live_local_exit_is_used_and_not_logged_as_down(clean_liveness):
-    engine.listening = lambda port, **kw: True
+def test_a_live_local_exit_is_used_and_not_logged_as_down(clean_liveness, monkeypatch):
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: True)
+    monkeypatch.setattr(engine, "_probe_once", lambda port, **kw: (engine.UP, "204 via http://127.0.0.1:7895"))
     exit_url, reason = engine.usable_exit("http://127.0.0.1:7895")
     assert exit_url == "http://127.0.0.1:7895" and reason is None
     assert engine.recent_downgrades() == []
 
 
-def test_somebody_elses_proxy_is_not_probed_from_here(clean_liveness):
+def test_a_port_in_listening_but_not_carrying_is_a_downgrade(clean_liveness, monkeypatch):
+    """Ruled 10-12: the judgement is the known answer, not the socket.
+
+    The old reading stopped at "somebody is home", so an engine that is up but
+    whose nodes are all dead kept getting handed to every child.
+    """
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: True)
+    monkeypatch.setattr(engine, "_probe_once", lambda port, **kw: (engine.DOWN, "10061 via http://127.0.0.1:7895"))
+    exit_url, reason = engine.usable_exit("http://127.0.0.1:7895")
+    assert exit_url is None and reason == "10061 via http://127.0.0.1:7895"
+    assert len(engine.recent_downgrades()) == 1
+
+
+def test_a_timeout_is_unknown_and_keeps_the_table_in_force(clean_liveness, monkeypatch):
+    """Three states, not two: downgrading a slow engine sends children direct.
+
+    That would be worse than the bug — direct is exactly the route the table
+    refuses — so only a refusal steps aside.
+    """
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: True)
+    monkeypatch.setattr(engine, "_probe_once", lambda port, **kw: (engine.UNKNOWN, "timed out after 1.5s"))
+    exit_url, reason = engine.usable_exit("http://127.0.0.1:7895")
+    assert exit_url == "http://127.0.0.1:7895" and reason is None
+    assert engine.recent_downgrades() == []
+
+
+def test_the_spawn_path_probe_is_shorter_than_the_supervision_one():
+    """A command must not stall 8s behind a proxy that is never going to answer."""
+    assert engine.SPAWN_PROBE_TIMEOUT < engine.PROBE_TIMEOUT
+
+
+def test_somebody_elses_proxy_is_not_probed_from_here(clean_liveness, monkeypatch):
     """We do not open a socket to a remote exit on every spawn, and a TCP check
     could not tell reachability from a firewall anyway."""
     calls = []
-    engine.listening = lambda port, **kw: calls.append(port) or False
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: calls.append(port) or False)
+    monkeypatch.setattr(engine, "_probe_once", lambda port, **kw: calls.append(("probe", port)) or (engine.DOWN, "x"))
     for url in ["http://proxy.internal.test:3128", "socks5h://10.9.9.9:1080"]:
         assert engine.usable_exit(url) == (url, None)
     assert calls == []
     assert engine.recent_downgrades() == []
 
 
-def test_the_liveness_reading_is_reused_within_its_ttl(clean_liveness):
+def test_the_liveness_reading_is_reused_within_its_ttl(clean_liveness, monkeypatch):
     seen = []
-    engine.listening = lambda port, **kw: seen.append(port) or True
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: seen.append("listen") or True)
+    monkeypatch.setattr(engine, "_probe_once", lambda port, **kw: seen.append("probe") or (engine.UP, "204"))
     for _ in range(4):
         assert engine.usable_exit("http://127.0.0.1:7895")[0] == "http://127.0.0.1:7895"
-    assert seen == [7895]
-    assert engine.usable_exit("http://127.0.0.1:7895")[0] == "http://127.0.0.1:7895"
+    assert seen == ["listen", "probe"]
 
 
-def test_a_downgrade_is_written_down_once_while_it_stays_down(clean_liveness):
+def test_a_downgrade_is_written_down_once_while_it_stays_down(clean_liveness, monkeypatch):
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: False)
     for _ in range(5):
         assert engine.usable_exit("http://127.0.0.1:7895")[0] is None
     assert len(engine.recent_downgrades()) == 1
-    engine.listening = lambda port, **kw: True
+
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: True)
+    monkeypatch.setattr(engine, "_probe_once", lambda port, **kw: (engine.UP, "204"))
     engine.reset_reach_cache()
     assert engine.usable_exit("http://127.0.0.1:7895")[0] == "http://127.0.0.1:7895"
-    engine.listening = lambda port, **kw: False
+
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: False)
     engine.reset_reach_cache()
     assert engine.usable_exit("http://127.0.0.1:7895")[0] is None
     assert len(engine.recent_downgrades()) == 2
+
+
+def test_reload_restarts_our_engine_and_refuses_a_foreign_one(monkeypatch, tmp_path, pool, fake_binary, inert):
+    home = tmp_path / "home"
+    table = _table(include=[str(pool)], binary=fake_binary)
+    fake = FakePsutil({4242: {"name": "mihomo.exe", "created": 1000.0}}, up=inert["up"], port=_PORT)
+    monkeypatch.setattr(engine, "_psutil", lambda: fake)
+
+    ensure(table, home=home, wait_s=0)
+    rep = engine.reload_engine(table, home=home)
+    assert rep.state == OURS, rep
+    assert fake.terminated == [4242]
+    assert len(inert["spawn"]) == 2
+
+    # a listener we did not start is reported, never taken over
+    monkeypatch.setattr(engine, "_pid_is_ours", lambda rec: (False, "record is stale"))
+    engine._clear_record(home)
+    rep = engine.reload_engine(table, home=home)
+    assert rep.state == FOREIGN
+    assert any("was not started by Plobi" in n for n in rep.notes), rep.notes
+    assert len(inert["spawn"]) == 2
 
 
 def test_the_visible_surface_prints_this_object_not_a_second_reading():

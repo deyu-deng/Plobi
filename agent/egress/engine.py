@@ -144,41 +144,103 @@ def _clear_record(home: str | Path | None = None) -> None:
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
-#: How long a "somebody is home" reading may be reused.  Spawned children are
-#: handed this verdict on every spawn, so a full :func:`probe_engine` (8s) does
-#: not belong here — and a 0.4s connect to loopback does.
+#: The known answer and the patience it needs.  ``ensure``/``status`` may wait
+#: ``PROBE_TIMEOUT``; a **spawn path** may not — a command should not stall 8s
+#: behind a proxy that is never going to answer, so it waits ``SPAWN_PROBE_TIMEOUT``.
+PROBE_TIMEOUT = 8.0
+SPAWN_PROBE_TIMEOUT = 1.5
+#: How long a verdict may be reused across spawns before we shoot again.
 REACH_TTL = 5.0
-_reach_cache: dict[tuple[str, int], tuple[bool, float]] = {}
+
+UP = "up"
+DOWN = "down"
+UNKNOWN = "unknown"
+
+#: (verdict, reason) per local exit, with the moment it was taken.
+_reach_cache: dict[tuple[str, int], tuple[str, str, float]] = {}
 
 
-def exit_reachable(proxy_url: str, *, ttl: float = REACH_TTL) -> tuple[bool, str]:
-    """Can we hand a child this exit right now?
+def _probe_once(
+    port: int, *, url: str = PROBE_URL, timeout: float = PROBE_TIMEOUT
+) -> tuple[str, str]:
+    """Ask the exit its known question and return **three** states, not two.
 
-    Deliberately narrow: only an exit on **this machine** is judged, because that
-    is the case that silently poisons every spawn when the engine is gone — a
-    listening check costs 0.4s and needs no network.  A remote exit is passed
-    through unprobed (we will not open a socket to somebody else's proxy on every
-    spawn, and ``listening`` cannot tell reachability from a firewall anyway).
+    ``up`` is only the known answer (204).  Anything we got back that is not it —
+    a refusal, a reset, a 200 from something that is not the far end — is ``down``,
+    because the exit is demonstrably not carrying traffic the way the table assumes.
+    A **timeout is ``unknown``, and ``unknown`` keeps the table in force**:
+    downgrading a slow-but-alive engine would send children direct precisely when
+    direct is the route the user said not to use, which is worse than the bug we
+    set out to fix.  (用户 10-12 拍的就是这个三态，不是两值。)
+    """
+    proxy = f"http://127.0.0.1:{port}"
+    if port <= 0:
+        return UNKNOWN, "no listen port declared (network.egress.engine.mixed_port)"
+
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+    )
+    try:
+        with opener.open(url, timeout=timeout) as resp:
+            status = resp.status
+    except Exception as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, (TimeoutError, OSError)) and not isinstance(reason, ConnectionError):
+            # socket.timeout is an alias of TimeoutError; a bare 10060 also lands here.
+            return UNKNOWN, f"timed out after {timeout}s via {proxy}"
+        return DOWN, f"via {proxy}: {type(exc).__name__} {str(exc)[:80]}"
+    if status == PROBE_EXPECTED:
+        return UP, f"{status} via {proxy}"
+    return DOWN, f"{status} via {proxy} (expected {PROBE_EXPECTED})"
+
+
+def probe_engine(port: int, *, url: str = PROBE_URL, timeout: float = PROBE_TIMEOUT) -> tuple[bool, str]:
+    """Ask the engine a question with a known answer — the two-state view.
+
+    Returns ``(ok, detail)`` and never raises: a supervision path that dies
+    because a probe timed out would take the product down with it.
+    """
+    if port <= 0:
+        return False, "no listen port declared (network.egress.engine.mixed_port)"
+    verdict, detail = _probe_once(port, url=url, timeout=timeout)
+    return verdict == UP, detail
+
+
+def exit_verdict(proxy_url: str, *, ttl: float = REACH_TTL) -> tuple[str, str]:
+    """``('up'|'down'|'unknown', why)`` for an exit we are about to hand a child.
+
+    Only an exit on **this machine** is judged: that is the case that silently
+    poisons every spawn when the engine is gone, and it is the one we can test in
+    0.4s without touching somebody else's proxy.  A remote exit passes through
+    unprobed — ``listening`` could not tell unreachability from a firewall anyway.
 
     Measured on this box, 2026-10-12 09:3x: the table pointed every child at
     ``http://127.0.0.1:7895`` while no mihomo process existed (count 0), and
-    direct fetches to ``github.com`` / ``www.google.com`` were returning **200** —
-    i.e. the table was making Plobi *worse* than no table.  That is the state this
-    check exists to notice.
+    direct fetches to ``github.com`` / ``www.google.com`` returned **200** — the
+    table was making Plobi worse than no table.  That is what this notices.
     """
     parsed = urlparse(proxy_url)
     host = (parsed.hostname or "").lower()
     if host not in _LOOPBACK_HOSTS:
-        return True, f"{proxy_url} is not a local exit — not probed"
+        return UP, f"{proxy_url} is not a local exit — not probed"
     port = parsed.port or 0
     key = (host, port)
     now = time.monotonic()
     cached = _reach_cache.get(key)
-    if cached is not None and now - cached[1] < ttl:
-        return cached[0], f"cached: {'up' if cached[0] else 'down'} on {host}:{port}"
-    ok = listening(port)
-    _reach_cache[key] = (ok, now)
-    return ok, ("something is listening" if ok else f"nothing is listening on {host}:{port}")
+    if cached is not None and now - cached[2] < ttl:
+        return cached[0], f"cached {ttl:.0f}s: {cached[1]}"
+    if not listening(port):
+        verdict, why = DOWN, f"nothing is listening on {host}:{port}"
+    else:
+        verdict, why = _probe_once(port, timeout=SPAWN_PROBE_TIMEOUT)
+    _reach_cache[key] = (verdict, why, now)
+    return verdict, why
+
+
+def exit_reachable(proxy_url: str, *, ttl: float = REACH_TTL) -> tuple[bool, str]:
+    """Two-state view of :func:`exit_verdict` — ``False`` only on a refusal."""
+    verdict, why = exit_verdict(proxy_url, ttl=ttl)
+    return verdict != DOWN, why
 
 
 def reset_reach_cache() -> None:
@@ -211,11 +273,15 @@ def usable_exit(proxy_url: Optional[str]) -> tuple[Optional[str], Optional[str]]
     (:mod:`agent.egress.env_projection`) and our own in-process HTTP clients
     (``agent.process_bootstrap``) — because the same dead port has to produce the
     same answer in both, and 裁定 94 forbids a second, narrower reading of it.
+
+    Only ``DOWN`` steps aside.  ``UNKNOWN`` (a slow probe) keeps the table in
+    force — downgrading a live-but-slow engine would send children out the route
+    the table explicitly refuses.
     """
     if not proxy_url:
         return None, None
-    ok, why = exit_reachable(proxy_url)
-    if ok:
+    verdict, why = exit_verdict(proxy_url)
+    if verdict != DOWN:
         _currently_down.discard(proxy_url)
         return proxy_url, None
     if proxy_url not in _currently_down:
@@ -223,7 +289,7 @@ def usable_exit(proxy_url: Optional[str]) -> tuple[Optional[str], Optional[str]]
         _DOWNGRADES.append({"exit": proxy_url, "reason": why})
         del _DOWNGRADES[:-_MAX_DOWNGRADES]
         _log.warning(
-            "network.egress: exit %s is not there (%s) — traffic is left unrouted rather than "
+            "network.egress: exit %s is not carrying (%s) — traffic is left unrouted rather than "
             "handed to a dead port",
             proxy_url,
             why,
@@ -273,28 +339,6 @@ def listening(port: int, *, host: str = "127.0.0.1", timeout: float = 0.4) -> bo
             return True
     except OSError:
         return False
-
-
-def probe_engine(port: int, *, url: str = PROBE_URL, timeout: float = 8.0) -> tuple[bool, str]:
-    """Ask the engine a question with a known answer.
-
-    Returns ``(ok, detail)``.  Never raises: a supervision path that dies because
-    a probe timed out would take the product down with it.
-    """
-    if port <= 0:
-        return False, "no listen port declared (network.egress.engine.mixed_port)"
-    proxy = f"http://127.0.0.1:{port}"
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({"http": proxy, "https": proxy})
-    )
-    try:
-        with opener.open(url, timeout=timeout) as resp:
-            status = resp.status
-    except Exception as exc:
-        return False, f"via {proxy}: {type(exc).__name__} {str(exc)[:80]}"
-    if status == PROBE_EXPECTED:
-        return True, f"{status} via {proxy}"
-    return False, f"{status} via {proxy} (expected {PROBE_EXPECTED})"
 
 
 def _pool_config_path(table: Table) -> Optional[Path]:
@@ -507,26 +551,48 @@ def _log_tail(path: Path, limit: int = 400) -> str:
     return " / ".join(lines[-2:])[-limit:]
 
 
+def reload_engine(table: Table, *, home: str | Path | None = None) -> EngineReport:
+    """Pick the engine back up with the current table — only if it is ours to restart.
+
+    A foreign listener is refused rather than killed: the port may be somebody
+    else's proxy, and stealing it is not what "reload" was asked to mean.
+    """
+    snap = snapshot(table, home=home)
+    if not snap.enabled:
+        return EngineReport(OFF, "engine projection is switched off in config", snap.port,
+                            notes=snap.notes)
+    current = status(table, home=home)
+    if current.state == FOREIGN:
+        return replace(current, notes=(*current.notes, "reload refused: this engine was not started by Plobi"))
+    if current.state == OURS:
+        stopped = stop_ours(table, home=home)
+        if stopped.state != STOPPED:
+            return replace(current, notes=(*current.notes, f"reload refused: {stopped.detail}"))
+    return ensure(table, home=home)
+
+
 def stop_ours(table: Table, *, home: str | Path | None = None) -> EngineReport:
     """Stop only an engine Plobi started."""
     snap = snapshot(table, home=home)
     rec = snap.record
     if not rec or rec.get("unreadable"):
-        return EngineReport(STOPPED, "no engine record, so nothing of ours to stop", snap.port)
+        return EngineReport(STOPPED, "no engine record, so nothing of ours to stop", snap.port,
+                            str(snap.workdir or ""), snap.source)
     alive, why = _pid_is_ours(rec)
     if not alive:
         _clear_record(home)
-        return EngineReport(STOPPED, f"recorded engine is gone ({why})", snap.port)
+        return EngineReport(STOPPED, f"recorded engine is gone ({why})", snap.port,
+                            str(snap.workdir or ""), snap.source)
     psutil = _psutil()
     try:
         psutil.Process(int(rec["pid"])).terminate()
         psutil.Process(int(rec["pid"])).wait(10)
     except Exception as exc:
         return EngineReport(FAILED, f"could not stop pid {rec['pid']}: {type(exc).__name__}",
-                            snap.port, pid=rec.get("pid"))
+                            snap.port, str(snap.workdir or ""), snap.source, pid=rec.get("pid"))
     _clear_record(home)
     return EngineReport(STOPPED, f"stopped the engine we started ({why})", snap.port,
-                        pid=rec.get("pid"))
+                        str(snap.workdir or ""), snap.source, pid=rec.get("pid"))
 
 
 def _sha(data: bytes) -> str:
