@@ -189,6 +189,7 @@ export function pickL1MainSession<
 /**
  * Every L1-home local session except the kept mainline. Cron / messaging /
  * subagent / agent-profile threads are left alone — those are not "bypass chats".
+ * Without a mainline to keep, nothing counts as a bypass: see the guard below.
  */
 export function collectL1BypassSessionIds(
   sessions: ReadonlyArray<{ id: string; profile?: null | string }>,
@@ -200,6 +201,14 @@ export function collectL1BypassSessionIds(
 ): string[] {
   const key = normalizeProfileKey(options.profile)
   const keep = (options.keepId || '').trim()
+
+  // Returning every sibling when `keep` is empty is what ate a 63-message
+  // transcript on 2026-10-07 (R-078): the sweep ran while L1 was still a fresh
+  // draft, so there was no mainline and the whole profile went with it.
+  if (!keep) {
+    return []
+  }
+
   const agentSet = new Set(
     [...(options.agentProfiles ?? [])].map(name => normalizeProfileKey(name)).filter(Boolean)
   )
@@ -207,7 +216,7 @@ export function collectL1BypassSessionIds(
   const ids: string[] = []
 
   for (const session of sessions) {
-    if (keep && session.id === keep) {
+    if (session.id === keep) {
       continue
     }
 
@@ -224,6 +233,33 @@ export function collectL1BypassSessionIds(
   }
 
   return ids
+}
+
+/**
+ * Archive the L1 bypass sessions — never delete them. Session lists default to
+ * `archived=exclude`, so the rail still shows one mouth while the transcripts stay
+ * in the DB (裁定 6 / R-078: 会话是 L1 的短时记忆，不许清空).
+ *
+ * Failures are collected, not thrown: a session that did not archive stays visible,
+ * which is the safe direction, and the next L1 entry retries it.
+ */
+export async function archiveL1BypassSessions(
+  ids: ReadonlyArray<string>,
+  archive: (id: string) => Promise<unknown>
+): Promise<{ archived: number; failed: string[] }> {
+  const failed: string[] = []
+  let archived = 0
+
+  for (const id of ids) {
+    try {
+      await archive(id)
+      archived += 1
+    } catch {
+      failed.push(id)
+    }
+  }
+
+  return { archived, failed }
 }
 
 /**

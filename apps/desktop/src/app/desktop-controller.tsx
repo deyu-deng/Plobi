@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
-import { bulkDeleteSessions, getSessionMessages, listAllProfileSessions, type SessionMessage, triggerCronJob } from '../plobi'
+import { getSessionMessages, listAllProfileSessions, setSessionArchived, type SessionMessage, triggerCronJob } from '../plobi'
 import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { isMessagingSource, MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
@@ -110,6 +110,7 @@ import {
 import { getAgentOverview } from './console/api'
 import { $consoleAgents, refreshConsoleAgents } from './console/store/agents'
 import {
+  archiveL1BypassSessions,
   bindL1GatewayIfMasterExists,
   collectL1BypassSessionIds,
   findKnownOverviewSession,
@@ -1184,7 +1185,7 @@ export function DesktopController() {
           prepareFreshDraftInPlace()
         }
 
-        // Drop every other L1 local chat — one conversation only, no bypass drawer.
+        // Archive every other L1 local chat — one conversation only, no bypass drawer.
         try {
           const agentProfiles = $consoleAgents
             .get()
@@ -1199,19 +1200,16 @@ export function DesktopController() {
             profile: profileForSessions
           })
 
-          for (let i = 0; i < bypassIds.length; i += 500) {
-            const chunk = bypassIds.slice(i, i + 500)
-
-            if (chunk.length) {
-              await bulkDeleteSessions(chunk, profileForSessions)
-            }
-          }
+          await archiveL1BypassSessions(bypassIds, id =>
+            setSessionArchived(id, true, profileForSessions)
+          )
 
           if (bypassIds.length) {
             await refreshSessionsRef.current().catch(() => undefined)
           }
         } catch {
-          // Non-fatal: UI already hides bypass lists; purge can retry next L1 enter.
+          // Non-fatal: nothing on this path deletes rows, so a failed archive only
+          // leaves that bypass session visible; the next L1 entry retries it.
         }
 
         if (cancelled) {

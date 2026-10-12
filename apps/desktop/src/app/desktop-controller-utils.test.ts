@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionInfo } from '@/plobi'
 
 import {
+  archiveL1BypassSessions,
   bindL1GatewayIfMasterExists,
   collectL1BypassSessionIds,
   findKnownOverviewSession,
@@ -263,12 +264,49 @@ describe('collectL1BypassSessionIds', () => {
     ).toEqual(['old'])
   })
 
-  it('returns every L1-profile session when there is no keep id', () => {
+  it('collects nothing when there is no keep id — the 2026-10-07 shape (R-078)', () => {
     const rows = [
       { id: 'a', profile: 'default' },
       { id: 'b', profile: 'default' }
     ]
 
-    expect(collectL1BypassSessionIds(rows, { profile: 'default' }).sort()).toEqual(['a', 'b'])
+    // 这条以前断言 `['a','b']`：认不出主线时把整个 profile 交出去，配上硬删就是一次删光。
+    // 63 条对话的原文就是这么没的，所以"没有主线"现在必须等于"没有旁路"。
+    expect(collectL1BypassSessionIds(rows, { profile: 'default' })).toEqual([])
+    expect(collectL1BypassSessionIds(rows, { keepId: '   ', profile: 'default' })).toEqual([])
+  })
+})
+
+describe('archiveL1BypassSessions', () => {
+  it('archives every id exactly once and never deletes', async () => {
+    const calls: string[] = []
+
+    const result = await archiveL1BypassSessions(['a', 'b'], async id => {
+      calls.push(id)
+    })
+
+    expect(calls).toEqual(['a', 'b'])
+    expect(result).toEqual({ archived: 2, failed: [] })
+  })
+
+  it('keeps going when one archive fails and reports it instead of throwing', async () => {
+    const calls: string[] = []
+
+    const result = await archiveL1BypassSessions(['a', 'boom', 'c'], async id => {
+      calls.push(id)
+      if (id === 'boom') {
+        throw new Error('backend 500')
+      }
+    })
+
+    expect(calls).toEqual(['a', 'boom', 'c'])
+    expect(result).toEqual({ archived: 2, failed: ['boom'] })
+  })
+
+  it('does nothing for an empty list', async () => {
+    const archive = vi.fn(async () => undefined)
+
+    await expect(archiveL1BypassSessions([], archive)).resolves.toEqual({ archived: 0, failed: [] })
+    expect(archive).not.toHaveBeenCalled()
   })
 })
