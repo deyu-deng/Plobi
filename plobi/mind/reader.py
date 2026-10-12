@@ -18,7 +18,7 @@ from .paths import resolve_root
 
 logger = logging.getLogger(__name__)
 
-PERSONA_RELATIVE = "Vault/meta/Persona.md"
+PERSONA_RELATIVE = "Vault/meta/profile/profile.md"
 PROJECTS_RELATIVE = "Vault/projects"
 
 # Cap on what any single read may contribute to a prompt.
@@ -67,7 +67,14 @@ class MindReader:
         root = self.root
         if root is None:
             return ""
-        return _read_excerpt(root / PERSONA_RELATIVE)
+        path = root / PERSONA_RELATIVE
+        if not path.is_file():
+            # Loud on purpose: this pointer used to name a file the real vault never
+            # had, while the test fixture created that phantom path — so the slice was
+            # silently empty in production and green in tests.
+            logger.warning("Mind persona slice missing: %s", path)
+            return ""
+        return _read_excerpt(path)
 
     def project(self, name: str) -> Optional[ProjectBrief]:
         root = self.root
