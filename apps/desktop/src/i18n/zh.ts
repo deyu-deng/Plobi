@@ -1697,7 +1697,8 @@ export const zh: Translations = {
       projects: '项目',
       butler: '管家',
       events: '事件',
-      research: '研究'
+      research: '研究',
+      courses: '课程'
     },
     chiefSecretary: '总秘书',
     backToSecretary: '返回总秘书',

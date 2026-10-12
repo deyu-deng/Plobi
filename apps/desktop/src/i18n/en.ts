@@ -1509,7 +1509,8 @@ export const en: Translations = {
       projects: 'Projects',
       butler: 'Butler',
       events: 'Events',
-      research: 'Research'
+      research: 'Research',
+      courses: 'Courses'
     },
     agentsTitle: 'Agents',
     agentsLoading: 'Loading agents',

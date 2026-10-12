@@ -1466,7 +1466,8 @@ export const ja = defineLocale({
       projects: 'プロジェクト',
       butler: 'バトラー',
       events: 'イベント',
-      research: 'リサーチ'
+      research: 'リサーチ',
+      courses: '科目'
     },
     chiefSecretary: '総秘書',
     backToSecretary: '総秘書に戻る',

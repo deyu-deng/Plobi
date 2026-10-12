@@ -564,3 +564,52 @@ def test_create_agent_no_titlecase_no_truncate(client, _isolated_state, monkeypa
     assert resp.status_code == 200, resp.text
     entry = reg.get("iphone-proj")
     assert entry.display_name == "iPhone 项目"  # 原样
+
+
+def test_course_role_is_data_not_a_worker():
+    """``l2_course``（用户 10-11 拍「再加一个角色」）的四条真实后果，逐条钉住。
+
+    课程条目进名册是为了让作业有名有姓，**不是为了多一个手下**：
+    ① 不带 pace ⇒ 不进推进池；② 不是 ``ASKABLE_ROLE`` ⇒ L1 问不到它，且话术点名角色；
+    ③ 不配 model 路由 ⇒ ``resolve`` 抛 RoutingError（三个调用点各自兜住，见
+    ``plobi/routing/models.py`` 那段注释）；④ 品类 ``courses`` 在 ``UNBOUND_CATEGORIES`` 里
+    ⇒ 不会被塞一个默认目录（这台 ``D:\\Cloud`` 是百度网盘，绑过去就是黑洞）。
+    """
+    import pytest
+
+    from plobi.agents.registry import AgentEntry, agent_askability
+    from plobi.routing.models import L2_COURSE, RoutingError, ModelRouter
+
+    entry = AgentEntry(name="电工电子学", role=L2_COURSE, category="courses")
+
+    assert entry.weekly_hours is None, "课程不该自带每周推进目标——那是用户拍的"
+    askable, why = agent_askability(entry)
+    assert askable is False and L2_COURSE in why, (askable, why)
+    assert not entry.project_path, "courses 是无绑定品类，不该被塞默认目录"
+
+    with pytest.raises(RoutingError):
+        ModelRouter.load().resolve(L2_COURSE)
+
+
+def test_the_real_roster_carries_no_course_worker_rows():
+    """真名册上那五门课确实是 ``l2_course`` + ``courses``，而且**没有一条被排进推进池**。
+
+    这条只在真家目录存在名册时跑（缺文件就 skip）——它是"界面上该看见课程栏"这件事
+    在服务端的对应面：前端不再自己抄一份分类名单（``agent-groups.ts``），
+    它按 ``category`` 原值分栏。
+    """
+    from plobi.agents.registry import load_registry, default_path
+    from plobi.agenda.planning import paced_projects
+    from plobi.routing.models import L2_COURSE
+
+    if not default_path().exists():
+        import pytest
+
+        pytest.skip("这台没有真名册，跳过现读核对")
+
+    courses = [e for e in load_registry().entries() if e.category == "courses"]
+    assert courses, "名册里应有课程条目（用户 10-11 拍的五门课）"
+    assert all(e.role == L2_COURSE for e in courses), [e.role for e in courses]
+
+    paced = {e.name for e, _ in paced_projects()}
+    assert not (paced & {e.name for e in courses}), "课程一旦被当成 pace 项目，作业就会从「无主」被摘走又拿不到块"

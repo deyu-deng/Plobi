@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest'
 import type { Agent } from '@/app/console/types'
 
 import {
-  AGENT_CATEGORY_ORDER,
   agentProfileIdSet,
   groupAgentsByCategory,
   isL1SessionProfile,
-  normalizeAgentCategory
+  normalizeAgentCategory,
+  orderedCategories
 } from './agent-groups'
 
 function agent(overrides: Partial<Agent> & { id: string; name: string }): Agent {
@@ -22,16 +22,22 @@ describe('normalizeAgentCategory', () => {
     expect(normalizeAgentCategory('Research')).toBe('research')
   })
 
-  it('folds missing / unknown categories into butler (legacy agents)', () => {
+  it('folds ONLY missing / blank into butler — legacy rows are butler-shaped', () => {
     expect(normalizeAgentCategory(undefined)).toBe('butler')
     expect(normalizeAgentCategory(null)).toBe('butler')
-    expect(normalizeAgentCategory('')).toBe('butler')
-    expect(normalizeAgentCategory('ops')).toBe('butler')
+    expect(normalizeAgentCategory('   ')).toBe('butler')
+  })
+
+  it('keeps an unknown category verbatim (the backend owns the list)', () => {
+    // 这条是现场 bug 的钉子：客户端以前持有一份四类的名单，后端新加一格品类时
+    // 前端把那格折进别的栏目里 —— 名册加了 `courses`，界面上却看不见「课程」。
+    expect(normalizeAgentCategory('ops')).toBe('ops')
+    expect(normalizeAgentCategory(' Courses ')).toBe('courses')
   })
 })
 
 describe('groupAgentsByCategory', () => {
-  it('buckets into the fixed PROJECTS/BUTLER/EVENTS/RESEARCH order', () => {
+  it('buckets into the preferred PROJECTS/BUTLER/EVENTS/RESEARCH order', () => {
     const groups = groupAgentsByCategory([
       agent({ id: 'r1', name: '论文调研', category: 'research' }),
       agent({ id: 'p1', name: '量化交易', category: 'projects' }),
@@ -41,7 +47,20 @@ describe('groupAgentsByCategory', () => {
 
     expect(groups.map(group => group.category)).toEqual(['projects', 'butler', 'events', 'research'])
     expect(groups[1]?.agents.map(row => row.id)).toEqual(['b1'])
-    expect(AGENT_CATEGORY_ORDER).toEqual(['projects', 'butler', 'events', 'research'])
+    expect(orderedCategories(['research', 'courses', 'projects'])).toEqual(['projects', 'research', 'courses'])
+  })
+
+  it('appends a category the client has never heard of, as its own column', () => {
+    const groups = groupAgentsByCategory([
+      agent({ id: 'b1', name: '日程秘书' }),
+      agent({ id: 'c1', name: '电工电子学', category: 'courses' }),
+      agent({ id: 'c2', name: '大学物理（甲）Ⅱ', category: 'courses' })
+    ])
+
+    expect(groups.map(group => group.category)).toEqual(['butler', 'courses'])
+    expect(groups[1]?.agents.map(row => row.id)).toEqual(['c2', 'c1'])
+    // 关键反证：课程没有混进 butler，也没有因为"不认识"被藏起来。
+    expect(groups[0]?.agents.map(row => row.id)).toEqual(['b1'])
   })
 
   it('omits empty groups and sorts agents by name within a group', () => {
@@ -51,9 +70,8 @@ describe('groupAgentsByCategory', () => {
       agent({ id: 'legacy', name: '旧代理', category: 'unknown-cat' })
     ])
 
-    expect(groups).toHaveLength(1)
-    expect(groups[0]?.category).toBe('butler')
-    expect(groups[0]?.agents.map(row => row.id)).toEqual(['b1', 'b2', 'legacy'])
+    expect(groups.map(group => group.category)).toEqual(['butler', 'unknown-cat'])
+    expect(groups[0]?.agents.map(row => row.id)).toEqual(['b1', 'b2'])
   })
 
   it('returns an empty list for no agents', () => {

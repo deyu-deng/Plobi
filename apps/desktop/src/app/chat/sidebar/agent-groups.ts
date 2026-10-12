@@ -1,21 +1,39 @@
 import type { Agent } from '@/app/console/types'
 
 /**
- * R-012 sidebar agent taxonomy. The backend registry owns the `category`
- * field; the client only normalizes and renders it. Unknown / missing values
- * fold into `butler` (日程秘书就是管家 — legacy agents are butler-shaped).
+ * R-012 sidebar agent taxonomy. **The backend registry owns the list of
+ * categories** (`plobi/agents/registry.py::AGENT_CATEGORIES`); the client does
+ * NOT keep a copy of it — that copy is how a new category silently folded into
+ * another column (courses landed in 项目/管家 until the client was patched too).
+ *
+ * So: a non-empty `category` is rendered as its own group, whatever it is.
+ * The only thing left here is *display order*, which is a presentation choice,
+ * not a gate. Unknown categories are appended alphabetically.
  */
-export type AgentCategory = 'butler' | 'events' | 'projects' | 'research'
+export type AgentCategory = string
 
-/** Fixed display order: PROJECTS / BUTLER / EVENTS / RESEARCH. */
-export const AGENT_CATEGORY_ORDER: readonly AgentCategory[] = ['projects', 'butler', 'events', 'research']
+/** Preferred order for the long-standing columns. Not a whitelist. */
+export const AGENT_CATEGORY_PREFERENCE: readonly AgentCategory[] = ['projects', 'butler', 'events', 'research']
 
-const AGENT_CATEGORY_SET: ReadonlySet<string> = new Set(AGENT_CATEGORY_ORDER)
-
+/**
+ * Empty / missing folds into `butler` — legacy rows predate R-012 and are
+ * secretary-shaped (that part of R-012 still holds). An *unknown non-empty*
+ * value is kept verbatim so a new backend category shows up without a client
+ * edit; `i18n` falls back to the raw key when a label is missing.
+ */
 export function normalizeAgentCategory(raw?: null | string): AgentCategory {
   const key = (raw ?? '').trim().toLowerCase()
 
-  return AGENT_CATEGORY_SET.has(key) ? (key as AgentCategory) : 'butler'
+  return key || 'butler'
+}
+
+/** Known-first (preferred order), then anything new, alphabetically. */
+export function orderedCategories(present: Iterable<AgentCategory>): AgentCategory[] {
+  const seen = new Set(present)
+  const known = AGENT_CATEGORY_PREFERENCE.filter(category => seen.has(category))
+  const rest = [...seen].filter(category => !known.includes(category)).sort((a, b) => a.localeCompare(b, 'zh'))
+
+  return [...known, ...rest]
 }
 
 export interface AgentCategoryGroup<T> {
@@ -24,8 +42,9 @@ export interface AgentCategoryGroup<T> {
 }
 
 /**
- * Bucket agents by category. Groups come back in {@link AGENT_CATEGORY_ORDER}
- * (only non-empty ones), each agent list sorted by display name.
+ * Bucket agents by category. Preferred categories come first (see
+ * {@link orderedCategories}), the rest follow alphabetically, and only
+ * non-empty groups are returned. Each agent list is sorted by display name.
  */
 export function groupAgentsByCategory<T extends Pick<Agent, 'category' | 'name'>>(
   agents: readonly T[]
@@ -43,7 +62,7 @@ export function groupAgentsByCategory<T extends Pick<Agent, 'category' | 'name'>
     }
   }
 
-  return AGENT_CATEGORY_ORDER.filter(category => buckets.has(category)).map(category => ({
+  return orderedCategories(buckets.keys()).map(category => ({
     agents: (buckets.get(category) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, 'zh')),
     category
   }))

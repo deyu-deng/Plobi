@@ -1,11 +1,19 @@
 import type { AgentCreateRequest, ApiEnvelope } from '../../console/types'
 import { slug } from '@/lib/sanitize'
 
+import { AGENT_CATEGORY_PREFERENCE } from './agent-groups'
+
 /**
- * R-012 sidebar taxonomy groups. The order is the order the new-agent
- * dialog renders the category <select> options in.
+ * R-012 sidebar taxonomy groups. This is the order the new-agent dialog renders
+ * the category <select> options in — deliberately the **same** client constant
+ * the sidebar renders with, so there is no second copy to keep in sync.
+ *
+ * The authority for which categories exist is the backend registry
+ * (`plobi/agents/registry.py::AGENT_CATEGORIES`). A category missing from this
+ * list is still rendered as its own column (see `agent-groups.ts`); it just
+ * isn't offered in the create dialog until someone adds the label + one entry.
  */
-export const AGENT_CATEGORY_VALUES = ['projects', 'butler', 'events', 'research'] as const
+export const AGENT_CATEGORY_VALUES = AGENT_CATEGORY_PREFERENCE
 
 export type AgentCategory = (typeof AGENT_CATEGORY_VALUES)[number]
 
