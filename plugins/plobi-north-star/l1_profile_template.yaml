@@ -15,17 +15,21 @@
 #   128K ctx × 0.35 = ~44K 触发
 #   64K  ctx × 0.35 → 触发 floored 到 MINIMUM_CONTEXT_LENGTH（32K）或 85% 窗口
 
-context:
-  compressor:
-    # L1 总秘书专属压缩阈值：0.50 → 0.35。
-    # ``plugins/plobi-north-star/l1_budget.py::L1_COMPRESSION_THRESHOLD``
-    # 的文档源。两者必须保持同步（CI 测试断言这个值 ≤ 0.40）。
-    threshold_percent: 0.35
-    # 保护尾部不变；L1 长会话更需要保留最新一轮而不是历史头。
-    protect_last_n: 20
-    # L1 头部只保留系统提示 + 第一条用户消息；长会话滚动压缩时不要
-    # 把开场三轮都钉死。
-    protect_first_n: 1
+# 压缩阈值与开场保护——L1 总秘书专属。
+#
+# 这条路径（``compression.*``）才是有人读的：``agent/agent_init.py:1505`` 取 threshold、
+# ``:1555`` / ``:1563`` 取 protect_last_n / protect_first_n，再传进 ContextCompressor
+# （``agent_init.py:1819-1820``）。这段以前写在 ``context.compressor.*`` 下——那是没人读的
+# 路径（``config.context`` 只认 ``engine``，见 ``plobi_cli/config.py:2181``），所以
+# ``protect_first_n: 1`` 这条承诺从来没发生过（实际一直用默认 3）。10-12 接回真路径。
+compression:
+  # 0.50 → 0.35。声明值可以比这里更紧、不能更松：
+  # ``l1_budget._tighten_compressor`` 取 min(配置值, L1_COMPRESSION_THRESHOLD)，
+  # 并且绕开小窗口的 0.75 floor（任务书要的就是 6–8 万 token 前切开）。
+  threshold: 0.35
+  # 头部只保留系统提示 + 第一条用户消息；长会话滚动压缩时不要把开场三轮钉死。
+  # 不写 protect_last_n：它等于代码默认 20，写进来只是多盖一层用户自己的调参。
+  protect_first_n: 1
 
 # 回合后 skill / memory curator——L1 关闭。
 # ``l1_budget._disable_curators`` 把 ``agent._memory_nudge_interval`` 与
