@@ -79,6 +79,12 @@ class Table:
     #: ``proxies``, and pasting 46 cleartext node entries into the routing table
     #: would put secrets in the file users hand-edit.  So the table names the
     #: exit and *references* the membership instead of owning it.
+    #:
+    #: ⚠️ The reference is **not** rendered into the compiled config: measured on
+    #: this box with mihomo v1.19.32 (2026-10-12 08:46), a top-level ``include``
+    #: key is ignored by the engine.  :mod:`agent.egress.mihomo_config` refuses
+    #: such a table, and :mod:`agent.egress.engine` starts the engine on the
+    #: directory holding that file instead — the pool is mihomo's own workdir.
     engine_include: tuple[str, ...] = ()
 
     #: Non-empty when the config could not be read at all, which is a *different*

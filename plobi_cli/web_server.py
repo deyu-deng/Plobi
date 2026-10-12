@@ -978,7 +978,6 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "context": "agent",
     "skills": "agent",
     "cron": "agent",
-    "network": "agent",
     "checkpoints": "agent",
     "approvals": "security",
     "human_delay": "display",
@@ -1003,7 +1002,7 @@ _CATEGORY_MERGE: Dict[str, str] = {
 
 # Display order for tabs — unlisted categories sort alphabetically after these.
 _CATEGORY_ORDER = [
-    "general", "agent", "terminal", "display", "delegation",
+    "general", "agent", "terminal", "network", "display", "delegation",
     "memory", "compression", "security", "browser", "voice",
     "tts", "stt", "logging", "discord", "auxiliary",
 ]
@@ -1024,6 +1023,24 @@ def _infer_type(value: Any) -> str:
     return "string"
 
 
+#: Keys whose shape the schema-driven generic form cannot round-trip, so they are
+#: not offered as auto fields at all — the structured editor owns them
+#: (``GET``/``PUT /api/network/egress``).  This is not cosmetic: ``list`` renders
+#: as one comma-separated input, so touching ``network.egress.rules`` (a list of
+#: ``{match, via}`` mappings) turns the table into ``["[object Object]"]``, which
+#: ``agent.egress.rules.parse_table`` refuses — and that refusal sits on the
+#: subprocess-spawn path, so the save would break ``terminal`` on every call.
+#: Measured on this box 2026-10-12.
+_SCHEMA_STRUCTURED_ONLY = frozenset(
+    {
+        "network.egress.rules",
+        "network.egress.proxies",
+        "network.egress.mirrors",
+        "network.egress.engine.include_files",
+    }
+)
+
+
 def _build_schema_from_config(
     config: Dict[str, Any],
     prefix: str = "",
@@ -1035,6 +1052,8 @@ def _build_schema_from_config(
 
         # Skip internal / version keys
         if full_key in {"_config_version", "memory.provider"}:
+            continue
+        if full_key in _SCHEMA_STRUCTURED_ONLY:
             continue
 
         # Category is the first path component for nested keys, or "general"
@@ -6249,7 +6268,18 @@ async def update_config(body: ConfigUpdate, profile: Optional[str] = None):
             # frontend can only overwrite what it explicitly sends.
             existing = read_raw_config()
             incoming = _denormalize_config_from_web(body.config)
-            save_config(_deep_merge(existing, incoming))
+            merged = _deep_merge(existing, incoming)
+            # A save that touches `network:` must survive the one parser that
+            # reads the egress table, because load_table() raises on a malformed
+            # table and sits on the subprocess-spawn path — one bad write takes
+            # the terminal tool down on every later call.
+            if "network" in incoming:
+                from plobi_cli.egress_config import validate_egress
+
+                ok, issues = validate_egress(merged.get("network"))
+                if not ok:
+                    raise HTTPException(status_code=400, detail="; ".join(issues))
+            save_config(merged)
         return {"ok": True}
     except HTTPException:
         raise
@@ -14238,11 +14268,65 @@ async def update_config_raw(body: RawConfigUpdate, profile: Optional[str] = None
         parsed = yaml.safe_load(body.yaml_text)
         if not isinstance(parsed, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
+        # Same guard as PUT /api/config: this path replaces the whole file, so a
+        # malformed `network.egress` typed into the YAML editor would reach disk
+        # and break every subprocess spawn.  One bug class, both call sites.
+        if "network" in parsed:
+            from plobi_cli.egress_config import validate_egress
+
+            ok, issues = validate_egress(parsed.get("network"))
+            if not ok:
+                raise HTTPException(status_code=400, detail="; ".join(issues))
         with _profile_scope(body.profile or profile):
             save_config(parsed)
+        from agent.egress.rules import load_table as _reload_egress_table
+
+        _reload_egress_table(force_reload=True)
         return {"ok": True}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+
+
+class NetworkEgressUpdate(BaseModel):
+    # Whole-section replace: deep-merge can add and override but never delete a
+    # rule, an exit or a mirror, so the editor has to state the final table.
+    network: Optional[Dict[str, Any]] = None
+    profile: Optional[str] = None
+
+
+@app.get("/api/network/egress")
+async def get_network_egress(profile: Optional[str] = None):
+    """The egress table as an editor can round-trip it (see PUT below)."""
+    from plobi_cli.egress_config import read_egress
+
+    with _profile_scope(profile):
+        return read_egress()
+
+
+@app.put("/api/network/egress")
+async def put_network_egress(body: NetworkEgressUpdate, profile: Optional[str] = None):
+    """Replace the whole ``network`` section, validated by the runtime's own parser.
+
+    Rejected here rather than at spawn time: ``agent.egress.rules.load_table``
+    raises on a malformed table, and it sits on the subprocess-spawn path — so a
+    save that got through would break the ``terminal`` tool on every later call.
+    """
+    from plobi_cli.egress_config import replace_egress
+
+    with _profile_scope(body.profile or profile):
+        ok, issues = replace_egress(body.network)
+    if not ok:
+        raise HTTPException(status_code=400, detail="; ".join(issues))
+    return {"ok": True}
+
+
+@app.get("/api/network/status")
+async def get_network_status(profile: Optional[str] = None):
+    """What routing is doing right now — the same reading ``plobi network status`` prints."""
+    from agent.egress.status import snapshot
+
+    with _profile_scope(profile):
+        return snapshot()
 
 
 # ---------------------------------------------------------------------------
