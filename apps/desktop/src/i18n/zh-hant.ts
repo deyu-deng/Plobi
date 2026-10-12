@@ -1418,7 +1418,8 @@ export const zhHant = defineLocale({
       projects: '專案',
       butler: '管家',
       events: '事件',
-      research: '研究'
+      research: '研究',
+      courses: '課程'
     },
     chiefSecretary: '總秘書',
     backToSecretary: '返回總秘書',

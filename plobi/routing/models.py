@@ -31,8 +31,15 @@ L1_SECRETARY = "l1_secretary"
 L2_AGENDA = "l2_agenda"
 L2_PLANNER = "l2_planner"
 L2_PROJECT = "l2_project"
+# ``l2_course``（用户 10-11 拍：五门课要进名册，并且"再加一个角色"）。课业条目是**数据**，
+# 不是分身：它故意**不进 ``DEFAULT_ROUTES``**（没有模型路由 ⇒ ``resolve()`` 会抛 RoutingError）。
+# 三个 ``resolve(entry.role)`` 调用点都验过：``plobi/agents/cli.py:85`` 与
+# ``plobi/agents/registry.py:889`` 各自有 try/except 兜住，``registry.py:732`` 只在条目带
+# model override 时才走到（课程条目不带）。它也不是 ``ASKABLE_ROLE`` ⇒ L1 不会去"问一门课干活"，
+# 作业归属靠的是条目名（``planning.py::_matches_project`` 读 ``evidence.course``），不靠分身。
+L2_COURSE = "l2_course"
 
-KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PLANNER, L2_PROJECT)
+KNOWN_ROLES = (L1_SECRETARY, L2_AGENDA, L2_PLANNER, L2_PROJECT, L2_COURSE)
 
 # Surfaces whose quota cannot be converted into an API key. They belong to L3
 # workers; wiring one to L1 would make the secretary depend on GUI automation.
