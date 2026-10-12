@@ -3084,7 +3084,10 @@ class TestWebServerEndpoints:
 
     def test_headless_serve_disables_spa_even_with_a_dist(self, monkeypatch, tmp_path):
         """`plobi serve` (PLOBI_SERVE_HEADLESS) must NOT serve the SPA even
-        when a built dist is present — only the API/WS surface is reachable."""
+        when a built dist is present — only the API/WS surface is reachable.
+        The single exception is ``/``: it returns a minimal ready page carrying
+        the injected dashboard session token so desktop-spawned headless
+        backends can confirm readiness without serving the browser UI."""
         from fastapi import FastAPI
         from starlette.testclient import TestClient
         import plobi_cli.web_server as ws
@@ -3098,7 +3101,12 @@ class TestWebServerEndpoints:
         app_ = FastAPI()
         ws.mount_spa(app_)
 
-        for route in ("/", "/chat"):
+        ready = TestClient(app_).get("/")
+        assert ready.status_code == 200
+        assert "window.__PLOBI_SESSION_TOKEN__=" in ready.text
+        assert "Plobi headless backend ready" in ready.text
+
+        for route in ("/chat", "/assets/app.js"):
             resp = TestClient(app_).get(route)
             assert resp.status_code == 404
             assert "web UI disabled" in resp.json()["error"]

@@ -34,7 +34,7 @@ from typing import List, Optional, Tuple
 
 from agent.skill_utils import is_excluded_skill_path
 
-_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_PROFILE_ID_RE = re.compile(r"^[a-z0-9\u4e00-\u9fff\uff00-\uffef][a-z0-9\u4e00-\u9fff\uff00-\uffef_-]{0,63}$")
 
 # Directories bootstrapped inside every new profile
 _PROFILE_DIRS = [
@@ -370,7 +370,7 @@ def validate_profile_name(name: str) -> None:
     if not _PROFILE_ID_RE.match(name):
         raise ValueError(
             f"Invalid profile name {name!r}. Must match "
-            f"[a-z0-9][a-z0-9_-]{{0,63}}"
+            f"[a-z0-9\\u4e00-\\u9fff\\uff00-\\uffef][a-z0-9\\u4e00-\\u9fff\\uff00-\\uffef_-]{{0,63}}"
         )
     if name in _RESERVED_NAMES:
         raise ValueError(
@@ -392,7 +392,7 @@ def validate_alias_name(name: str) -> None:
     if not _PROFILE_ID_RE.match(name):
         raise ValueError(
             f"Invalid alias name {name!r}. Must match "
-            f"[a-z0-9][a-z0-9_-]{{0,63}}"
+            f"[^\\W_][\\w\\u4e00-\\u9fff\\uff00-\\uffef_-]{{0,63}}"
         )
 
 

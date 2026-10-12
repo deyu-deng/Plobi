@@ -582,6 +582,17 @@ def _find_bash() -> str:
         if candidate and os.path.isfile(candidate):
             return candidate
 
+    # Fall back to the location of the git executable itself: any Git for
+    # Windows install whose `cmd`/`bin` dir is on PATH resolves cleanly this
+    # way, which covers custom install roots (e.g. D:\Software\Git) that no
+    # fixed candidate list can enumerate.
+    git_exe = shutil.which("git")
+    if git_exe:
+        git_root = os.path.dirname(os.path.dirname(os.path.abspath(git_exe)))
+        git_bash = os.path.join(git_root, "bin", "bash.exe")
+        if os.path.isfile(git_bash):
+            return git_bash
+
     found = shutil.which("bash")
     if found:
         return found
