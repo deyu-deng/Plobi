@@ -17460,6 +17460,26 @@ def start_server(
     except Exception as exc:
         _log.debug("Nous auth keepalive did not start: %s", exc)
 
+    # If the egress table names an engine to run, bring it up here — once per
+    # process, before the first request can spawn anything.  Supervision is a
+    # no-op when network.egress.engine.enabled is false, so this line is inert for
+    # every install that has not written a table (WP-EGRESS-ROUTING).
+    # The engine is spawned detached on purpose: closing this server must not cut
+    # the exit out from under children that are still using it.
+    try:
+        from agent.egress import engine as _egress_engine
+        from agent.egress.rules import load_table as _load_egress_table
+
+        _engine_report = _egress_engine.ensure(_load_egress_table())
+        if _engine_report.state == _egress_engine.FAILED:
+            _log.warning(
+                "egress engine did not come up: %s%s",
+                _engine_report.detail,
+                f" | {' / '.join(_engine_report.notes)}" if _engine_report.notes else "",
+            )
+    except Exception as exc:
+        _log.warning("egress engine supervision did not start: %s", exc)
+
     # Phase 0: stash the auth-gate flag on app.state so middleware / SPA-token
     # injection / WS-auth paths can branch on it consistently.  Phase 3.5
     # uses this to decide whether to refuse the bind, log the gate-on

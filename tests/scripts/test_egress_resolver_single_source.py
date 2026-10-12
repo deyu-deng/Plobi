@@ -189,3 +189,31 @@ def test_external_offload_source_still_delegates():
     text = (REPO / "agent" / "external_offload.py").read_text(encoding="utf-8")
     assert "_get_proxy_for_base_url" in text, "the offload channel stopped using the shared resolver"
     assert 'get("egress")' not in text
+
+
+def test_both_consumers_pass_the_one_liveness_gate():
+    """A missing engine must produce the same answer for a child and for us.
+
+    ``agent.egress.engine.usable_exit`` is the only place that decides whether an
+    exit is there; the spawn projection and the in-process resolver both go
+    through it.  A second reader would be 裁定 94 again — and it would be worse
+    than the original bug, because one of the two would keep handing children a
+    port that refuses every connection.
+    """
+    from agent.egress import engine, env_projection
+
+    assert "usable_exit" in inspect.getsource(process_bootstrap._get_proxy_for_base_url)
+    assert "usable_exit" in inspect.getsource(env_projection.apply_egress_env)
+
+    readers = []
+    for directory in PRODUCT_DIRS:
+        base = REPO / directory
+        for path in base.rglob("*.py") if base.is_dir() else []:
+            rel = path.relative_to(REPO).as_posix()
+            if rel in {"agent/egress/engine.py", "agent/egress/env_projection.py",
+                       "agent/process_bootstrap.py"}:
+                continue
+            if "exit_reachable" in path.read_text(encoding="utf-8", errors="replace"):
+                readers.append(rel)
+    assert not readers, f"exit liveness is being decided in a second place: {readers}"
+    assert engine.REACH_TTL <= 5.0, "the reading is cached per spawn; do not let it go stale"

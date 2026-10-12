@@ -134,6 +134,11 @@ def _get_proxy_for_base_url(base_url: Optional[str]) -> Optional[str]:
     only answered named URLs would silently not apply to it (裁定 94).  With no
     table the env-only path below is used unchanged, so merging this resolver
     cannot alter behaviour for anyone who has not written a rule yet.
+
+    A table answer then goes through ``agent.egress.engine.usable_exit``: when the
+    named exit is a local engine that is not there, we return None (direct) rather
+    than a port that refuses every connection.  Spawned children pass the same
+    gate, so one dead engine cannot produce two different answers.
     """
     from agent.egress import rules as _egress
 
@@ -142,7 +147,13 @@ def _get_proxy_for_base_url(base_url: Optional[str]) -> Optional[str]:
         decision = _egress.decide_for_url(table, base_url) if base_url else None
         if decision is None:
             decision = _egress.default_decision(table)
-        return decision.proxy_url
+        # Same liveness gate a spawned child goes through: a table that points at
+        # an engine which is not running must not turn a working direct request
+        # into a connection refused (measured on this box, 2026-10-12 09:3x).
+        from agent.egress.engine import usable_exit
+
+        exit_url, _reason = usable_exit(decision.proxy_url)
+        return exit_url
 
     proxy = _get_proxy_from_env()
     if not proxy or not base_url:

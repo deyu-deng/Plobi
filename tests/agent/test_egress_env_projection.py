@@ -16,11 +16,12 @@ from agent.egress.rules import load_table
 
 _PROXY = "http://exit.test:8234"
 _TABLE_KEYS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "no_proxy")
+_PROXIES = {"local": {"url": _PROXY}, "backup": {"url": "socks5://10.9.9.9:1080"}}
 
 
 def _table(**egress_keys) -> egress.Table:
     raw = {
-        "proxies": {"local": {"url": _PROXY}, "backup": {"url": "socks5://10.9.9.9:1080"}},
+        "proxies": _PROXIES,
         "rules": [
             {"match": "api.github.com", "via": "direct"},
             {"match": "*.internal.test", "via": "proxy:backup"},
@@ -281,3 +282,31 @@ def test_an_unreadable_config_does_not_break_the_spawn_path(monkeypatch, caplog)
     monkeypatch.setattr(pcfg, "load_config_readonly", lambda: (_ for _ in ()).throw(ValueError("again")))
     plobi_subprocess_env()
     assert "again" not in caplog.text  # reported once per process, not per command
+
+
+def test_a_dead_exit_leaves_children_unrouted_rather_than_broken():
+    """Reproduced on this box, 2026-10-12 09:3x: table said 127.0.0.1:7895, zero
+    mihomo processes existed, and direct fetches were returning 200.
+
+    Handing a child a port that refuses every connection is worse than the table
+    not existing, so the five network keys stay unset and the caller goes direct.
+    """
+    dead = _table(proxies={**_PROXIES, "local": {"url": "http://127.0.0.1:7895"}})
+    env = apply_egress_env(
+        {"PATH": "/bin", "NO_PROXY": "stale.from.parent"},
+        dead,
+        gate=lambda url: (None, f"nothing is listening on {url}"),
+    )
+    for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "no_proxy"):
+        assert key not in env, key
+    assert env["PATH"] == "/bin"
+
+
+def test_a_dead_exit_does_not_take_the_mirrors_with_it():
+    """A mirror is a per-tool registry setting, not a route — unrelated to liveness."""
+    table = _table(
+        proxies={**_PROXIES, "local": {"url": "http://127.0.0.1:7895"}},
+        mirrors={"npm": "https://registry.npmmirror.com"},
+    )
+    env = apply_egress_env({}, table, gate=lambda url: (None, "down"))
+    assert env == {"npm_config_registry": "https://registry.npmmirror.com"}
