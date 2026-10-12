@@ -11,6 +11,11 @@ Plobi is a desktop AI agent that orchestrates your free-tier AI tools — Cursor
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](#license)
 
+[![Lint](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/lint.yml?label=Lint)](https://github.com/deyu-deng/Plobi/actions/workflows/lint.yml)
+[![Architecture gates](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/arch-gates.yml?label=Architecture%20gates)](https://github.com/deyu-deng/Plobi/actions/workflows/arch-gates.yml)
+[![Action pin audit](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/action-pin-audit.yml?label=Action%20pin%20audit)](https://github.com/deyu-deng/Plobi/actions/workflows/action-pin-audit.yml)
+[![Dependency health](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/dependency-health.yml?label=Dependency%20health)](https://github.com/deyu-deng/Plobi/actions/workflows/dependency-health.yml)
+
 </div>
 
 ---
@@ -76,16 +81,16 @@ Every AI tool gives away free quota, but using them all means constant context-s
 
 ```bash
 git clone https://github.com/deyu-deng/Plobi.git
-cd Plobi                       # 仓库根本身就是 Code/，没有再套一层 Code
+cd Plobi
 
-# Python backend（本机推荐 uv，见 docs 里的环境口径）
+# Python backend (uv recommended)
 uv venv --python 3.13 && uv sync --extra dev --extra acp --extra messaging --extra web --extra anthropic
 source .venv/bin/activate                # macOS/Linux
 # .venv\Scripts\activate                # Windows
-# Windows 用户也可以一键完成上面的环境安装：
+# One-shot environment setup on Windows:
 #   powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
-# 必补，否则 SOCKS 代理那一族测试整片 ImportError（uv sync 换 extras 会把它裁掉）
+# Required for the SOCKS-proxy test suite (uv sync with these extras drops it)
 uv pip install aiohttp-socks==0.11.0 python-socks
 
 # Desktop app
@@ -149,7 +154,6 @@ export OPENAI_BASE_URL=https://api.example.com/v1
 ## Project Structure
 
 ```
-Code/
 ├── agent/              # Core agent runtime (LangGraph)
 ├── aigw/               # Local AI gateway (OpenAI-compatible)
 ├── apps/desktop/       # Electron desktop app
@@ -196,11 +200,6 @@ gateway, the TUI, the plugin/skill system and the CLI derive. The full text of t
 license and both copyright notices ship in [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE);
 every other third-party dependency is named in `pyproject.toml`, `uv.lock`,
 `package.json` and `package-lock.json`.
-
-"Hermes" and "Nous Research" are the names of that upstream project and its authors.
-They appear only here, in `LICENSE`/`NOTICE`, in the upstream URLs we keep pointing at,
-and in model identifiers such as `hermes-4` that are other people's products — everything
-else in this tree has been renamed to Plobi.
 
 <div align="center">
 
