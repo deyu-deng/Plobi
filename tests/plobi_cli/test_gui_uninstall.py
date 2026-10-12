@@ -382,10 +382,12 @@ class _FakeKeyHandle:
 
 
 # What the Windows installer wrote for itself, plus one bystander that belongs to
-# somebody else. The assertions below are written as *relations* against these,
+# somebody else. The assertions below are written as *relations* against this list,
 # not as a snapshot of the uninstall's cleanup list: that list is expected to grow,
-# and it may only ever grow with Plobi-owned names.
-_PLOBI_OWNED_ENV_NAMES = ("PLOBI_HOME", "PLOBI_GIT_BASH_PATH")
+# and it may only ever grow with Plobi-owned names.  ``MIND_ROOT`` joined it because
+# ``scripts/install.ps1`` pins it — an uninstall that leaves it behind keeps a pointer
+# to a brain vault the same uninstall may have deleted (WP-UNINSTALL-MINDROOT-CLR).
+_PLOBI_OWNED_ENV_NAMES = ("PLOBI_HOME", "PLOBI_GIT_BASH_PATH", "MIND_ROOT")
 _FOREIGN_ENV_NAME = "UNRELATED_TOOL_HOME"
 
 
@@ -509,6 +511,9 @@ def test_uninstall_default_never_opens_the_user_environment_key(tmp_path, monkey
     assert path_calls == [], "默认卸载碰了 User PATH"
     # 家目录指针必须原样在位——就是被抹掉后会长出第二个家的那个值。
     assert fake.values["PLOBI_HOME"] == r"D:\Data\AppData\plobi"
+    # 脑仓指针同理：默认卸载一条都不许碰（2026-10-12 之前卸载名单里根本没有它，
+    # 但那是"清得太少"，不是"该在默认路径上清"）。
+    assert fake.values["MIND_ROOT"] == r"D:\Data\AppData\plobi"
     # 数据仍然照旧保留（本刀不许改的其它卸载行为）
     assert plobi_home.exists()
 
@@ -540,6 +545,9 @@ def test_purge_user_env_flag_is_the_only_way_to_clear_it(tmp_path, monkeypatch, 
     assert _FOREIGN_ENV_NAME in fake.values
     # 本刀要守的那一条：家目录指针只有在被明确要求时才被清。
     assert "PLOBI_HOME" in fake.deleted
+    # 安装钉过的名字，卸载必须认得（WP-UNINSTALL-MINDROOT-CLR：这条以前不在名单里，
+    # --purge-user-env 跑完机器上还剩一条指向已删脑仓的指针）。
+    assert "MIND_ROOT" in fake.deleted, fake.deleted
     assert len(path_calls) == 1, "显式清理时 User PATH 那一趟应当被走到一次"
 
 
@@ -564,6 +572,8 @@ def test_uninstall_default_says_the_user_env_was_kept(tmp_path, monkeypatch, cap
     out = capsys.readouterr().out
     # 得告诉用户怎么才会清——否则这个开关等于不存在。
     assert "--purge-user-env" in out, out
+    # 报了"保留"就得说清保留了哪几个名字，否则用户会以为卸载把机器擦干净了。
+    assert "MIND_ROOT" in out, out
     # 而且不能一面跳过一面报告已清理。
     assert "Removed User env var" not in out
     assert "Removed from User PATH" not in out
@@ -587,4 +597,27 @@ def test_uninstall_cli_flag_defaults_to_keeping_the_user_env():
     assert parser.parse_args(["uninstall"]).purge_user_env is False
     assert parser.parse_args(["uninstall", "--yes", "--full"]).purge_user_env is False
     assert parser.parse_args(["uninstall", "--purge-user-env"]).purge_user_env is True
+
+
+def test_installer_pins_and_uninstall_sweep_name_the_same_set():
+    """安装钉几个名字，卸载就得认得同几个名字——这条管的是下一次，不是这一次。
+
+    ``MIND_ROOT`` 之所以能躺一年多没人发现，是因为"钉"在 PowerShell 里、"清"在 Python 里，
+    两边各一份名单，没有任何东西把它们对起来。这里用一次解析把它们对上：谁再往
+    ``install.ps1`` 加一个 ``SetEnvironmentVariable`` 而卸载名单没跟上，就是红。
+    """
+    import re
+    from pathlib import Path
+
+    from plobi_cli.uninstall import _PLOBI_USER_ENV_NAMES
+
+    ps1 = Path(__file__).resolve().parents[2] / "scripts" / "install.ps1"
+    pins = set(re.findall(r'SetEnvironmentVariable\(\s*"([A-Za-z_][A-Za-z0-9_]*)"',
+                          ps1.read_text(encoding="utf-8")))
+    # 解析式过期会伪装成"两边一致"，所以先证明它确实钉到了东西。
+    assert pins, f"{ps1} 里一个钉子都没解析出来——是解析式坏了，不是没钉子"
+    # ``Path`` 是唯一的例外，而且不是"没人管"：卸载对它是**摘自己那几条条目**
+    # （``remove_path_from_windows_registry``），整值删掉会把用户其它 PATH 一起抹了。
+    assert "Path" in pins, sorted(pins)
+    assert pins - {"Path"} == set(_PLOBI_USER_ENV_NAMES), (sorted(pins), sorted(_PLOBI_USER_ENV_NAMES))
 
