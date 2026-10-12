@@ -1395,6 +1395,13 @@ def _print_tui_exit_summary(
         f"{total_tokens} (in {input_tokens}, out {output_tokens}, "
         f"cache {cache_read_tokens + cache_write_tokens}, reasoning {reasoning_tokens})"
     )
+    # Money, not just tokens: the dashboard has shown this for a while and the
+    # terminal never did.  Folded through project_cost, so an unpriced model
+    # reads as "unknown" here instead of "$0.00".
+    from plobi_cli.cost_readout import epilogue_cost_lines
+
+    for _line in epilogue_cost_lines(session):
+        print(_line)
 
 
 _NPM_LOCK_RUNTIME_KEYS = frozenset({"ideallyInert", "peer"})

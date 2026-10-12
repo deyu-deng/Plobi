@@ -267,6 +267,14 @@ def run_oneshot(
             real_stdout.write("\n")
         real_stdout.flush()
 
+    # One spend line for whoever is watching the terminal.  It goes to stderr so
+    # the stdout contract (`-z` prints only the final content block, pipes and
+    # `jq` included) stays exactly as it was, and it never raises — a display
+    # failure must not change this run's exit code.
+    from plobi_cli.cost_readout import emit_cost_line
+
+    emit_cost_line(result, real_stderr)
+
     if (result.get("failed") or result.get("partial")) and not (response or "").strip():
         return 2
 
