@@ -29,6 +29,7 @@ import type { AgendaEvent } from '@/types/plobi'
 import type {
   Agent,
   AgentCreateRequest,
+  AgentNotesView,
   AgentOverview,
   AgentSubagent,
   AgentSubagentLog,
@@ -320,6 +321,22 @@ export async function getAgentSubagents(agentId: string): Promise<AgentSubagent[
 
 export async function getAgentOutsourced(agentId: string): Promise<OutsourcedApp[]> {
   return settle(lookup(MOCK_OUTSOURCED, agentId))
+}
+
+/**
+ * GET /api/agents/:id/notes (WP-MIND-NOTES-VIEW) — LIVE, no mock.
+ *
+ * Deliberately the one agent endpoint that never falls back to fixture data: an
+ * unreachable brain must show as an error, not as "this agent has no notes".
+ * `unwrapEnvelope` already throws on `{ ok: false, error }`, which is what the
+ * backend returns (503) when `MIND_ROOT` is unset.
+ */
+export async function getAgentNotes(agentId: string): Promise<AgentNotesView> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    path: `/api/agents/${encodeURIComponent(agentId)}/notes`
+  })
+
+  return unwrapEnvelope<AgentNotesView>(payload)
 }
 
 /**
