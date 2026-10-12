@@ -8,18 +8,26 @@ from __future__ import annotations
 
 from typing import Callable
 
+_ACTIONS = ("status", "start", "stop", "reload")
+_HELP = {
+    "status": "Print the declared routing, the engine's live state, and any downgrades",
+    "start": "Bring the engine up if nobody else holds the port",
+    "stop": "Stop the engine Plobi started — never one it did not start",
+    "reload": "Restart our engine with the current table; refuse to touch a foreign one",
+}
+
 
 def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
     """Attach the ``network`` subcommand to ``subparsers``."""
     network_parser = subparsers.add_parser(
         "network",
-        help="Show how egress is routed right now",
-        description="Print the declared network.egress table, which rules the runtime cannot "
-        "honor by itself, and the state of the engine Plobi supervises — the same reading the "
-        "desktop Network pane shows.",
+        help="Show or drive egress routing (the network.egress table)",
+        description="Read and drive the routing table Plobi owns: which exit each destination "
+        "uses, which rules only the engine can honor, and the local proxy Plobi supervises. "
+        "The desktop Network pane reads the same state.",
     )
     network_sub = network_parser.add_subparsers(dest="network_action")
-    status_parser = network_sub.add_parser("status", help="Routing, engine state, and downgrades")
-    status_parser.set_defaults(func=cmd_network)
-    # `plobi network` alone should do the one thing this command knows.
+    for action in _ACTIONS:
+        network_sub.add_parser(action, help=_HELP[action]).set_defaults(func=cmd_network)
+    # `plobi network` alone should do the read-only thing, never the destructive one.
     network_parser.set_defaults(func=cmd_network, network_action="status")
