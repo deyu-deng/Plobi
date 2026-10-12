@@ -454,7 +454,7 @@ def _apply_profile_override() -> None:
     if profile_name is not None and consume == 2:
         import re as _re
 
-        if not _re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", profile_name):
+        if not _re.match(r"^[a-z0-9\u4e00-\u9fff\uff00-\uffef][a-z0-9\u4e00-\u9fff\uff00-\uffef_-]{0,63}$", profile_name):
             profile_name = None
             consume = 0
             profile_index = None

@@ -16170,6 +16170,36 @@ def mount_spa(application: FastAPI):
             else "Frontend not built. Run: cd web && npm run build"
         )
 
+        if _headless:
+            # Desktop spawns `plobi serve --headless` and probes `/` for the
+            # injected dashboard session token to confirm readiness. With no
+            # SPA at all that probe hits the 404 below and the desktop main
+            # process can only survive via a catch-fallback. Serve a minimal
+            # ready page carrying the same bootstrap variables as the real
+            # index.html (token injected unless the OAuth gate is active), so
+            # the desktop readiness probe succeeds deterministically. All
+            # other paths — including any SPA assets — stay 404.
+            _chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
+            _gated_js = "true" if getattr(application.state, "auth_required", False) else "false"
+
+            @application.get("/")
+            async def headless_ready():
+                token_js = (
+                    ""
+                    if getattr(application.state, "auth_required", False)
+                    else f'window.__PLOBI_SESSION_TOKEN__="{_SESSION_TOKEN}";'
+                )
+                html = (
+                    "<!doctype html><html><head><meta charset=\"utf-8\">"
+                    f"<script>{token_js}window.__PLOBI_DASHBOARD_EMBEDDED_CHAT__={_chat_js};"
+                    f'window.__PLOBI_BASE_PATH__="";window.__PLOBI_AUTH_REQUIRED__={_gated_js};</script>'
+                    "</head><body>Plobi headless backend ready</body></html>"
+                )
+                return HTMLResponse(
+                    html,
+                    headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+                )
+
         @application.get("/{full_path:path}")
         async def no_frontend(full_path: str):
             return JSONResponse({"error": _msg}, status_code=404)
