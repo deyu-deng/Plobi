@@ -16,6 +16,7 @@ and the account home.
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -215,3 +216,62 @@ def test_exercising_the_fixed_sites_creates_no_new_volume_root_child(tmp_path):
     for root, was in before.items():
         now = _children(Path(root))
         assert now == was, f"{root} gained {sorted(now - was)} while the fixed code ran"
+
+
+def _footguns():
+    return _load_script("check-windows-footguns.py")
+
+
+def test_shape_classifier_flags_mistranslation_shapes_and_spares_categories():
+    """The drive-root check must judge by shape, never by a remembered name list."""
+    fg = _footguns()
+    classify = fg.classify_drive_root_child
+    cats = {"software", "runtimes", "data", "portables", "projects", "cloud", "studio", "temp"}
+
+    for name in ("tmp", "proc", "var", "usr", "opt", "c"):
+        assert classify("D:\\", name, cats, "c"), "%s must be flagged" % name
+    assert "drive-relative" in classify("D:\\", "tmp", cats, "c").lower()
+    assert "single letter" in classify("D:\\", "c", cats, "c")
+    # A Windows profile path is only residue off the system drive.
+    assert classify("D:\\", "Users", cats, "c")
+    assert classify("C:\\", "Users", cats, "c") == ""
+
+    for name in ("Software", "Runtimes", "Data", "Projects", "Studio", "Temp", "_POLICY",
+                 "$RECYCLE.BIN", "System Volume Information"):
+        assert classify("D:\\", name, cats, "c") == "", "%s must be spared" % name
+    # Non-category names are caught by the policy half, not by shape.
+    assert classify("D:\\", "Research", cats, "c")
+    # Without a parsed policy the check must invent nothing.
+    assert classify("D:\\", "Research", None, "c") == ""
+
+
+def test_state_check_proves_it_scanned_and_reports_what_it_found(tmp_path, monkeypatch, capsys):
+    """A clean-looking '0 findings' has to show that it actually looked."""
+    fg = _footguns()
+    (tmp_path / "tmp").mkdir()
+    (tmp_path / "Projects").mkdir()
+    monkeypatch.setattr(fg, "_drive_roots", lambda: [str(tmp_path) + os.sep])
+    monkeypatch.setattr(fg, "_policy_categories", lambda: ({"projects"}, "test policy (1 declared)"))
+
+    assert fg.check_drive_root_writes() == 1
+    out = capsys.readouterr().out
+    # The exact entry count belongs to the fixture, not to the contract: what
+    # must be true is that the line reports how much it actually looked at.
+    reported = re.search(r"(\d+) volume root\(s\), (\d+) first-level entries scanned", out)
+    assert reported, out
+    assert reported.group(1) == "1" and int(reported.group(2)) >= 2
+    assert str(tmp_path / "tmp") in out
+    assert "Projects" not in out.split("scanned")[-1]
+
+
+def test_state_check_says_when_the_category_half_could_not_run(tmp_path, monkeypatch, capsys):
+    """An unreadable policy file is a degraded check, never a pass."""
+    fg = _footguns()
+    (tmp_path / "Anything").mkdir()
+    monkeypatch.setattr(fg, "_drive_roots", lambda: [str(tmp_path) + os.sep])
+    monkeypatch.setattr(fg, "_policy_categories",
+                        lambda: (None, "no policy file readable — category check did NOT run"))
+
+    assert fg.check_drive_root_writes() == 0
+    err = capsys.readouterr().err
+    assert "could not run" in err and "NOT be flagged" in err
