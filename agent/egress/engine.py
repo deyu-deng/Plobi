@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -31,6 +32,7 @@ import urllib.request
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import yaml
 
@@ -45,6 +47,8 @@ PROBE_EXPECTED = 204
 
 STATE_BASENAME = "plobi-engine.json"
 RUNTIME_BASENAME = "runtime"
+
+_log = logging.getLogger(__name__)
 
 OFF = "off"
 OURS = "running-ours"
@@ -136,6 +140,95 @@ def _clear_record(home: str | Path | None = None) -> None:
         _state_path(home).unlink()
     except FileNotFoundError:
         pass
+
+
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+#: How long a "somebody is home" reading may be reused.  Spawned children are
+#: handed this verdict on every spawn, so a full :func:`probe_engine` (8s) does
+#: not belong here — and a 0.4s connect to loopback does.
+REACH_TTL = 5.0
+_reach_cache: dict[tuple[str, int], tuple[bool, float]] = {}
+
+
+def exit_reachable(proxy_url: str, *, ttl: float = REACH_TTL) -> tuple[bool, str]:
+    """Can we hand a child this exit right now?
+
+    Deliberately narrow: only an exit on **this machine** is judged, because that
+    is the case that silently poisons every spawn when the engine is gone — a
+    listening check costs 0.4s and needs no network.  A remote exit is passed
+    through unprobed (we will not open a socket to somebody else's proxy on every
+    spawn, and ``listening`` cannot tell reachability from a firewall anyway).
+
+    Measured on this box, 2026-10-12 09:3x: the table pointed every child at
+    ``http://127.0.0.1:7895`` while no mihomo process existed (count 0), and
+    direct fetches to ``github.com`` / ``www.google.com`` were returning **200** —
+    i.e. the table was making Plobi *worse* than no table.  That is the state this
+    check exists to notice.
+    """
+    parsed = urlparse(proxy_url)
+    host = (parsed.hostname or "").lower()
+    if host not in _LOOPBACK_HOSTS:
+        return True, f"{proxy_url} is not a local exit — not probed"
+    port = parsed.port or 0
+    key = (host, port)
+    now = time.monotonic()
+    cached = _reach_cache.get(key)
+    if cached is not None and now - cached[1] < ttl:
+        return cached[0], f"cached: {'up' if cached[0] else 'down'} on {host}:{port}"
+    ok = listening(port)
+    _reach_cache[key] = (ok, now)
+    return ok, ("something is listening" if ok else f"nothing is listening on {host}:{port}")
+
+
+def reset_reach_cache() -> None:
+    _reach_cache.clear()
+
+
+#: Downgrades decided by :func:`usable_exit`, newest last, capped so a dead exit
+#: cannot grow memory.  The visible surface reads :func:`recent_downgrades` — a
+#: downgrade that only appears in a log file is not one the user can see (裁定 94).
+_DOWNGRADES: list[dict[str, str]] = []
+_MAX_DOWNGRADES = 20
+#: Exits already recorded as down, so a second failure after a recovery is said
+#: out loud again instead of being swallowed by "same text as last time".
+_currently_down: set[str] = set()
+
+
+def recent_downgrades() -> list[dict[str, str]]:
+    return list(_DOWNGRADES)
+
+
+def reset_downgrades() -> None:
+    _DOWNGRADES.clear()
+    _currently_down.clear()
+
+
+def usable_exit(proxy_url: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """The exit to hand a caller, after liveness.  ``(None, reason)`` = go direct.
+
+    One reader for both consumers — spawned children
+    (:mod:`agent.egress.env_projection`) and our own in-process HTTP clients
+    (``agent.process_bootstrap``) — because the same dead port has to produce the
+    same answer in both, and 裁定 94 forbids a second, narrower reading of it.
+    """
+    if not proxy_url:
+        return None, None
+    ok, why = exit_reachable(proxy_url)
+    if ok:
+        _currently_down.discard(proxy_url)
+        return proxy_url, None
+    if proxy_url not in _currently_down:
+        _currently_down.add(proxy_url)
+        _DOWNGRADES.append({"exit": proxy_url, "reason": why})
+        del _DOWNGRADES[:-_MAX_DOWNGRADES]
+        _log.warning(
+            "network.egress: exit %s is not there (%s) — traffic is left unrouted rather than "
+            "handed to a dead port",
+            proxy_url,
+            why,
+        )
+    return None, why
 
 
 def _psutil():

@@ -318,6 +318,67 @@ def test_a_probe_is_only_a_probe(monkeypatch):
     assert not ok and "mixed_port" in detail
 
 
+@pytest.fixture
+def clean_liveness(monkeypatch):
+    monkeypatch.setattr(engine, "listening", lambda port, **kw: False)
+    engine.reset_reach_cache()
+    engine.reset_downgrades()
+    yield
+    engine.reset_reach_cache()
+    engine.reset_downgrades()
+
+
+def test_a_dead_local_exit_is_not_handed_to_anyone(clean_liveness):
+    """Reproduced on this box, 09:3x: the table pointed everything at 7895, count of
+    mihomo processes was 0, and direct fetches to github.com were returning 200."""
+    exit_url, reason = engine.usable_exit("http://127.0.0.1:7895")
+    assert exit_url is None
+    assert reason == "nothing is listening on 127.0.0.1:7895"
+    assert engine.recent_downgrades() == [
+        {"exit": "http://127.0.0.1:7895", "reason": reason}
+    ]
+
+
+def test_a_live_local_exit_is_used_and_not_logged_as_down(clean_liveness):
+    engine.listening = lambda port, **kw: True
+    exit_url, reason = engine.usable_exit("http://127.0.0.1:7895")
+    assert exit_url == "http://127.0.0.1:7895" and reason is None
+    assert engine.recent_downgrades() == []
+
+
+def test_somebody_elses_proxy_is_not_probed_from_here(clean_liveness):
+    """We do not open a socket to a remote exit on every spawn, and a TCP check
+    could not tell reachability from a firewall anyway."""
+    calls = []
+    engine.listening = lambda port, **kw: calls.append(port) or False
+    for url in ["http://proxy.internal.test:3128", "socks5h://10.9.9.9:1080"]:
+        assert engine.usable_exit(url) == (url, None)
+    assert calls == []
+    assert engine.recent_downgrades() == []
+
+
+def test_the_liveness_reading_is_reused_within_its_ttl(clean_liveness):
+    seen = []
+    engine.listening = lambda port, **kw: seen.append(port) or True
+    for _ in range(4):
+        assert engine.usable_exit("http://127.0.0.1:7895")[0] == "http://127.0.0.1:7895"
+    assert seen == [7895]
+    assert engine.usable_exit("http://127.0.0.1:7895")[0] == "http://127.0.0.1:7895"
+
+
+def test_a_downgrade_is_written_down_once_while_it_stays_down(clean_liveness):
+    for _ in range(5):
+        assert engine.usable_exit("http://127.0.0.1:7895")[0] is None
+    assert len(engine.recent_downgrades()) == 1
+    engine.listening = lambda port, **kw: True
+    engine.reset_reach_cache()
+    assert engine.usable_exit("http://127.0.0.1:7895")[0] == "http://127.0.0.1:7895"
+    engine.listening = lambda port, **kw: False
+    engine.reset_reach_cache()
+    assert engine.usable_exit("http://127.0.0.1:7895")[0] is None
+    assert len(engine.recent_downgrades()) == 2
+
+
 def test_the_visible_surface_prints_this_object_not_a_second_reading():
     """裁定 94: one reader — ``lines()`` is the report's only rendering."""
     rep = engine.EngineReport(OURS, "started by Plobi", _PORT, "/w", "pool", 4242, "204 via x", ("n1",))

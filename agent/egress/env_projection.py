@@ -22,9 +22,13 @@ Other asymmetries that stay visible:
 
 from __future__ import annotations
 
+import logging
+
 from typing import MutableMapping
 
 from agent.egress.rules import Table
+
+_log = logging.getLogger(__name__)
 
 PROXY_KEYS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY")
 BYPASS_KEYS = ("NO_PROXY",)
@@ -37,8 +41,23 @@ MIRROR_ENV_KEYS = {
 }
 
 
-def apply_egress_env(env: MutableMapping[str, str], table: Table) -> MutableMapping[str, str]:
-    """Mutate ``env`` in place to match ``table``; return it for chaining."""
+def apply_egress_env(
+    env: MutableMapping[str, str],
+    table: Table,
+    *,
+    gate=None,
+) -> MutableMapping[str, str]:
+    """Mutate ``env`` in place to match ``table``; return it for chaining.
+
+    ``gate`` is the seam that decides whether the catch-all exit exists right now;
+    it defaults to :func:`agent.egress.engine.usable_exit`, which is the *same*
+    gate our own HTTP clients go through.  Tests pass their own.
+    """
+    if gate is None:
+        from agent.egress.engine import usable_exit
+
+        gate = usable_exit
+
     for key, url in table.mirrors.items():
         env[MIRROR_ENV_KEYS[key]] = url
 
@@ -54,7 +73,10 @@ def apply_egress_env(env: MutableMapping[str, str], table: Table) -> MutableMapp
         env["no_proxy"] = "*"
         return env
 
-    proxy_url = table.proxy_url(catch_all.via[len("proxy:") :])
+    proxy_url, _reason = gate(table.proxy_url(catch_all.via[len("proxy:") :]))
+    if not proxy_url:
+        return env
+
     for key in PROXY_KEYS:
         env[key] = proxy_url
 
