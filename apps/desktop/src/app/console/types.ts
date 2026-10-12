@@ -216,3 +216,36 @@ export const MOCK_L2_MODEL = 'deepseek/deepseek-chat'
 
 /** Re-exported so console modules never import the board's types ad hoc. */
 export type ConsoleAgendaEvent = AgendaEvent
+
+/**
+ * GET /api/agents/:id/notes (WP-MIND-NOTES-VIEW). One note that declared, in its
+ * own frontmatter, that it belongs to this agent — the note is filed where the
+ * human put it, so this list is a label projection, never a copy.
+ */
+export interface AgentNote {
+  belongs: string[]
+  chars: number
+  path: string
+  title: string
+}
+
+export interface AgentNotesView {
+  agent: string
+  budget: {
+    max_entries: number
+    max_payload_bytes: number
+    truncated: boolean
+    used_bytes: number
+  }
+  category: string
+  note_roots: string[]
+  notes: AgentNote[]
+  totals: {
+    matched: number
+    scanned: number
+    skipped: number
+    with_frontmatter: number
+  }
+  /** `belongs:` values naming nothing registered — surfaced, never silently dropped. */
+  unknown_belongs: string[]
+}

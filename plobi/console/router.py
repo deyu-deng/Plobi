@@ -984,6 +984,45 @@ async def agent_overview_route(agent_id: str):
 
 
 # --------------------------------------------------------------------------- #
+# notes view (WP-MIND-NOTES-VIEW) — read-only projection of the brain
+# --------------------------------------------------------------------------- #
+
+
+def agent_notes(agent_id: str) -> Optional[dict]:
+    """One L2's notes-view payload; ``None`` when that agent is not registered.
+
+    ``BrainNotConfigured`` is **not** swallowed here: an unreachable brain must not
+    be rendered as "this agent has no notes".
+    """
+    from plobi.mind.notes_view import build_view
+    from plobi.mind.paths import resolve_root
+
+    registry = get_registry()
+    entry = registry.get(agent_id)
+    if entry is None:
+        return None
+    return build_view(
+        resolve_root(),
+        entry,
+        (item for item in registry.live_entries() if is_l2(item)),
+    )
+
+
+@router.get("/agents/{agent_id}/notes")
+async def agent_notes_route(agent_id: str):
+    """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""
+    from plobi.mind.notes_view import BrainNotConfigured
+
+    try:
+        payload = await run_in_threadpool(agent_notes, agent_id)
+    except BrainNotConfigured as exc:
+        return _error(503, f"mind not configured: {exc}")
+    if payload is None:
+        return _error(404, f"agent {agent_id!r} is not registered")
+    return {"ok": True, "data": payload}
+
+
+# --------------------------------------------------------------------------- #
 # routine templates (C4) — minimal read + write
 # --------------------------------------------------------------------------- #
 
