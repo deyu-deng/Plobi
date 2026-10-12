@@ -240,12 +240,16 @@ def test_verification_refuses_a_file_the_engine_would_never_read(tmp_path):
     assert not (tmp_path / "config.yaml").exists()
 
 
-def test_membership_lives_in_an_included_file_and_stays_out_of_the_table():
-    """ss:// and vmess:// node pools are not forward proxies.
+def test_a_pool_reference_is_refused_rather_than_rendered_as_a_dead_key():
+    """ss:// and vmess:// node pools are not forward proxies, and mihomo ignores `include`.
 
-    The table names the exit (``http://127.0.0.1:<mixed-port>``) and references
-    the engine's own file; the alternative would be cleartext node credentials in
-    the config users hand-edit.
+    The table may not inline cleartext node credentials (that is what the
+    reference exists for), but emitting the reference as a top-level ``include``
+    key is worse than useless: measured on this box with v1.19.32 (2026-10-12
+    08:46), ``mihomo -t`` **ignores** the key and answers
+    ``rules[0] [MATCH,pooled] error: proxy [pooled] not found``.  So the compiler
+    refuses, and the pool is reached as the engine's own ``-d`` workdir by
+    :mod:`agent.egress.engine`.
     """
     table = load_table(
         config={
@@ -262,12 +266,8 @@ def test_membership_lives_in_an_included_file_and_stays_out_of_the_table():
             }
         }
     )
-    doc = _render(table, mixed_port=_MIXED)
-    assert doc["include"] == ["D-here-is-not-hardcoded/egress/config.yaml"]
-    # the rendered config carries routing, not the pool
-    assert doc["proxies"] == [
-        {"name": "engine", "type": "http", "server": "127.0.0.1", "port": 7895}
-    ]
+    with pytest.raises(EgressConfigError, match="ignores"):
+        compile_config(table, mixed_port=_MIXED)
 
 
 @pytest.mark.parametrize("bad", ["some/path.yaml", {"a": 1}, 5])

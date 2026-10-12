@@ -1,9 +1,9 @@
 """Compile the egress table into a mihomo (Clash Meta) configuration.
 
 The table stays the truth; this is one *projection* of it, used only when
-``network.egress.engine.enabled`` is true.  Nothing here downloads or starts a
-binary — see :func:`verify_with_binary` for the honest "did the engine accept
-this?" path.
+``network.egress.engine.enabled`` is true.  Nothing here downloads, starts or
+monitors a binary — that is :mod:`agent.egress.engine` — and
+:func:`verify_with_binary` is the honest "did the engine accept this?" path.
 """
 
 from __future__ import annotations
@@ -74,8 +74,16 @@ def compile_config(
     if secret:
         document["secret"] = secret
     if table.engine_include:
-        # Membership stays where the user keeps it; the table only references it.
-        document["include"] = list(table.engine_include)
+        raise EgressConfigError(
+            f"network.egress.engine.include_files names {len(table.engine_include)} file(s), and "
+            f"this compiler will not emit them: mihomo v1.19.32 on this box (measured 2026-10-12 "
+            f"08:46) **ignores** a top-level 'include' key -- 'mihomo -t' answers "
+            f"'proxy [<name>] not found' and exits 1 for a rule whose node lives only in the "
+            f"referenced file -- so rendering it would hand the supervision slice a config the "
+            f"engine refuses, or an engine running with no upstreams at all.  A node pool is the "
+            f"engine's own workdir: see agent.egress.engine, which starts mihomo with -d set to the "
+            f"directory holding that file."
+        )
 
     _refuse_self_reference(proxies, port)
 
