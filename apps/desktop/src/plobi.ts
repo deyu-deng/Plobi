@@ -28,6 +28,9 @@ import type {
   MemoryProviderConfig,
   MemoryProviderOAuthStatus,
   MemoryStatusResponse,
+  NetworkEgressRecord,
+  NetworkSection,
+  NetworkStatus,
   MessagingPlatformsResponse,
   MessagingPlatformTestResponse,
   MessagingPlatformUpdate,
@@ -426,6 +429,35 @@ export function savePlobiConfig(config: PlobiConfigRecord): Promise<{ ok: boolea
     path: '/api/config',
     method: 'PUT',
     body: { config }
+  })
+}
+
+/** The egress table as an editor can round-trip it (whole-section replace).
+ *
+ *  Not `/api/config`: that endpoint deep-merges, so a rule or exit deleted in
+ *  the UI would survive on disk — the same trap the MCP editor had and fixed
+ *  with its own replace route. */
+export function getNetworkEgress(): Promise<NetworkEgressRecord> {
+  return window.plobiDesktop.api<NetworkEgressRecord>({
+    ...profileScoped(),
+    path: '/api/network/egress'
+  })
+}
+
+export function saveNetworkEgress(network: NetworkSection | null): Promise<{ ok: boolean }> {
+  return window.plobiDesktop.api<{ ok: boolean }>({
+    ...profileScoped(),
+    path: '/api/network/egress',
+    method: 'PUT',
+    body: { network }
+  })
+}
+
+/** What routing is doing right now — the same reading `plobi network status` prints. */
+export function getNetworkStatus(): Promise<NetworkStatus> {
+  return window.plobiDesktop.api<NetworkStatus>({
+    ...profileScoped(),
+    path: '/api/network/status'
   })
 }
 

@@ -320,7 +320,32 @@ export const en: Translations = {
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
       about: 'About',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      network: 'Network'
+    },
+    network: {
+      addExit: 'Add exit',
+      addRule: 'Add rule',
+      binary: 'Engine binary',
+      catchAll: 'The last rule must be "*" — a spawned tool cannot express anything else.',
+      direct: 'Direct',
+      engine: 'Rule engine',
+      engineOnly: 'engine only',
+      envDropped: 'not carried to spawned tools',
+      exits: 'Exits',
+      intro:
+        'Which exit each destination uses. This routes only what Plobi starts — your browser and your own terminal are unaffected.',
+      match: 'Match (domain, *.suffix, CIDR, geosite:…, or *)',
+      name: 'Name',
+      port: 'Listen port',
+      refused: 'Not saved',
+      remove: 'Remove',
+      rules: 'Rules',
+      save: 'Save',
+      saved: 'Saved',
+      status: 'Right now',
+      title: 'Network egress',
+      url: 'Proxy URL'
     },
     notifications: {
       title: 'Notifications',

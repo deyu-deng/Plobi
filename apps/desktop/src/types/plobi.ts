@@ -1184,3 +1184,61 @@ export interface ModelAssignmentResponse {
   stale_aux?: StaleAuxAssignment[]
   tasks?: string[]
 }
+
+/** Egress routing (WP-EGRESS-ROUTING): the `network:` section as the runtime parses it. */
+export interface NetworkEgressRule {
+  match: string
+  via: string
+}
+
+export interface NetworkEgressEngine {
+  binary?: string
+  enabled?: boolean
+  include_files?: string[]
+  mixed_port?: number
+}
+
+export interface NetworkEgressBlock {
+  engine?: NetworkEgressEngine
+  mirrors?: Record<string, string>
+  proxies?: Record<string, { url?: string; url_env?: string }>
+  rules?: NetworkEgressRule[]
+}
+
+export interface NetworkSection {
+  egress?: NetworkEgressBlock
+  force_ipv4?: boolean
+}
+
+export interface NetworkEgressRecord {
+  declared?: boolean
+  engine_only_rules?: string[]
+  env_dropped_rules?: string[]
+  network?: NetworkSection | null
+  unreadable?: string
+}
+
+export interface NetworkStatusRule {
+  engine_only: boolean
+  env_dropped: boolean
+  match: string
+  via: string
+}
+
+export interface NetworkStatus {
+  declared: boolean
+  downgrades: { exit: string; reason: string }[]
+  engine: {
+    config_source?: string
+    detail: string
+    enabled: boolean
+    mixed_port: number
+    notes: string[]
+    pid?: number | null
+    probe: string
+    state: string
+  }
+  mirrors: Record<string, string>
+  rules: NetworkStatusRule[]
+  unreadable: string
+}
