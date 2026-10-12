@@ -34,6 +34,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+import io
 from pathlib import Path
 from typing import Iterable
 
@@ -540,6 +541,138 @@ def get_diff_files(ref: str) -> list[Path]:
     return [REPO_ROOT / f for f in out.splitlines() if f.strip()]
 
 
+# ── drive-root residue: a state check, not a regex ───────────────────────
+#
+# A Footgun pattern can name a suspicious literal; it cannot prove that
+# nothing got created. This bug class resolves a path drive-relative —
+# "/tmp" on Windows becomes <cwd drive>:\tmp, and a "c:\Users\…" literal
+# typed in Git Bash is *relative*, so it lands at <current drive>:\c\Users\…
+# (rulings 79 / 48.1). The invariant lives on disk, so this check reads the
+# disk. It keeps no baseline snapshot of names: a first-level directory is a
+# violation by its SHAPE, or — on the governed drive — by not being a
+# category the policy declares. The category list is parsed from the policy
+# file at run time; if it cannot be read, that half says so out loud instead
+# of reporting a pass (a dead gate and a clean gate look identical, which is
+# how this repo's guards used to stay dead for weeks).
+
+_POSIX_ROOT_NAMES_LOWER = frozenset(
+    "bin boot dev etc home lib lib64 media mnt opt proc root run srv sys tmp usr var".split()
+)
+
+_POLICY_PATH_CANDIDATES = (r"D:\_POLICY\directory-policy.md",)
+_WINDOWS_VOLUME_DIR_LOWER = frozenset(("$recycle.bin", "system volume information", "_policy"))
+
+
+def _drive_roots():
+    """Every present volume root, as 'D:\\' style strings (POSIX: just '/')."""
+    if os.name != "nt":
+        return [os.sep]
+    import string
+
+    return [letter + ":" + os.sep for letter in string.ascii_uppercase
+            if os.path.isdir(letter + ":" + os.sep)]
+
+
+def _system_drive_lower():
+    raw_drive = (os.environ.get("SystemDrive") or "").strip().rstrip(":" + os.sep)
+    return raw_drive.lower()
+
+
+def _policy_categories():
+    """(lowercased declared category names or None, a one-line note)."""
+    for path in _POLICY_PATH_CANDIDATES:
+        try:
+            with io.open(path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        cats = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("|"):
+                continue
+            first = stripped.strip("|").split("|")[0].strip()
+            if not first or set(first) <= set("-: ") or first.lower() in ("目录", "dir", "directory"):
+                continue
+            cats.add(first.lower())
+        if cats:
+            return cats, "categories parsed from %s (%d declared)" % (path, len(cats))
+        return None, "%s has no parseable category table — category check did NOT run" % path
+    return None, "no policy file readable — category check did NOT run"
+
+
+def classify_drive_root_child(drive_root, name, categories, system_drive_lower=""):
+    """Why this first-level directory is drive-root residue, or '' if fine."""
+    low = name.lower()
+    if low in _POSIX_ROOT_NAMES_LOWER:
+        return "POSIX filesystem root created drive-relative (ruling 79)"
+    if len(low) == 1 and low.isalpha():
+        return "single letter — a drive letter that became a directory (ruling 48.1)"
+    is_system_volume = bool(system_drive_lower) and drive_root.lower().startswith(system_drive_lower + ":")
+    if low in ("users", "windows") and not is_system_volume:
+        return "Windows profile path on a non-system volume (drive-relative literal)"
+    if low in _WINDOWS_VOLUME_DIR_LOWER:
+        return ""
+    if drive_root.lower().startswith("d:") and categories is not None and low not in categories:
+        return "not a category declared by the drive policy"
+    return ""
+
+
+def find_drive_root_violations(roots=None, categories=None, system_drive_lower=""):
+    """[(path, reason)] for first-level directories that are residue."""
+    out = []
+    for root in _drive_roots() if roots is None else roots:
+        try:
+            entries = sorted(os.listdir(root))
+        except OSError as exc:
+            out.append((root + "<unreadable>", "could not list volume root: %s" % exc))
+            continue
+        for name in entries:
+            full = os.path.join(root, name)
+            if not os.path.isdir(full):
+                continue
+            reason = classify_drive_root_child(root, name, categories, system_drive_lower)
+            if reason:
+                out.append((full, reason))
+    return out
+
+
+def check_drive_root_writes():
+    """--assert-no-drive-root-writes: non-zero if a volume root holds residue."""
+    roots = _drive_roots()
+    categories, note = _policy_categories()
+    violations = find_drive_root_violations(roots, categories, _system_drive_lower())
+
+    scanned = 0
+    for root in roots:
+        try:
+            scanned += len(os.listdir(root))
+        except OSError:
+            pass
+    # "0 findings" has to prove the scan ran, or a check that never looked is
+    # indistinguishable from a clean machine.
+    print("drive-root check: %d volume root(s), %d first-level entries scanned; %s"
+          % (len(roots), scanned, note))
+    if categories is None:
+        print("  WARNING: the category half could not run, so a non-category "
+              "directory would NOT be flagged this time.", file=sys.stderr)
+    if not violations:
+        print("✓ no drive-root residue (shape violations: 0, non-category dirs: 0)")
+        return 0
+    for path, reason in violations:
+        try:
+            import datetime
+
+            stamp = datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            stamp = "?"
+        print("  %s  [mtime %s]  — %s" % (path, stamp, reason))
+    print("\n✗ %d drive-root residue item(s). Move each into the policy category it belongs "
+          "to; if it holds data, collect evidence on who created it before deleting "
+          "anything." % len(violations), file=sys.stderr)
+    return 1
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Flag Windows cross-platform footguns in Python code."
@@ -559,6 +692,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--diff",
         metavar="REF",
         help="Scan files changed vs. the given git ref (e.g. --diff main).",
+    )
+    p.add_argument(
+        "--assert-no-drive-root-writes",
+        action="store_true",
+        help=(
+            "State check, not a source scan: fail if any volume root holds a "
+            "first-level directory that is drive-relative residue (rulings 79 "
+            "/ 48.1) or, on the governed drive, not a declared policy category."
+        ),
     )
     p.add_argument(
         "--list",
@@ -591,6 +733,9 @@ def main(argv: list[str]) -> int:
     if args.list:
         print_rules()
         return 0
+
+    if args.assert_no_drive_root_writes:
+        return check_drive_root_writes()
 
     if args.all:
         # Scan main Python packages + scripts
