@@ -24,6 +24,11 @@ PRODUCT_DIRS = ("agent", "tools", "gateway", "plobi_cli", "aigw", "plugins")
 
 def test_only_the_egress_parser_reads_the_config_key():
     hits: list[str] = []
+    #: ``plobi_cli/egress_config.py`` names the ``egress`` key only to hand the
+    #: block to :func:`agent.egress.rules.parse_table` for validation — it reads
+    #: no rule/proxy/mirror semantics itself, so it is not a second interpreter.
+    #: Anything else that grows this list is.
+    allowed_non_interpreters = {"plobi_cli/egress_config.py"}
     for directory in PRODUCT_DIRS:
         base = REPO / directory
         if not base.is_dir():
@@ -32,9 +37,10 @@ def test_only_the_egress_parser_reads_the_config_key():
             text = path.read_text(encoding="utf-8", errors="replace")
             if 'get("egress")' in text or '["egress"]' in text:
                 hits.append(path.relative_to(REPO).as_posix())
-    assert hits == ["agent/egress/rules.py"], (
-        "a second module now interprets network.egress itself; route it through "
-        "agent.egress.rules.load_table instead"
+    offenders = [h for h in hits if h not in allowed_non_interpreters]
+    assert offenders == ["agent/egress/rules.py"], (
+        f"a second module now interprets network.egress itself: {offenders}; route it through "
+        "agent.egress.rules.load_table/parse_table instead"
     )
 
 
