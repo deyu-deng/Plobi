@@ -413,6 +413,84 @@ async def refresh_antigravity(
     }
 
 
+# ---------------------------------------------------------------------------
+# CodeBuddy / WorkBuddy: the desktop extension's own auth record
+# ---------------------------------------------------------------------------
+# Measured 2026-10-12 on this machine: the record is PLAINTEXT JSON at
+#   %LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth\Tencent-Cloud.coding-copilot.info
+# holding `auth.accessToken` (JWT, 1361 chars, exp ≈ +28 days), `auth.refreshToken`
+# (JWT, 700 chars, exp ≈ +30 days) and `tokenType: "Bearer"`. The sibling record
+# `workbuddy-desktop.info` is encrypted (`{"$wbEncrypted":1,…}` + a `keyblob` whose
+# slots are `static-v1`, protector under Electron `safeStorage`) — and we do not need
+# it: the plaintext one is accepted by the vendor origin. `POST /v2/chat/completions`
+# with `stream: true` returned `finish_reason=tool_calls` (usage 196/52/248), while
+# `stream: false` was refused with `{"code":11101,"msg":"Non-stream chat request is
+# currently not supported"}` — a 400 that also proves the token passed authentication.
+# Nothing here ever logs, returns into a log line, or persists a token value.
+CODEBUDDY_AUTH_RECORD = os.path.join(
+    "CodeBuddyExtension", "Data", "Public", "auth", "Tencent-Cloud.coding-copilot.info"
+)
+
+
+def codebuddy_auth_record_path() -> "Path | None":
+    """Where the desktop app's auth record lives on this machine, if it is there."""
+    base = os.environ.get("LOCALAPPDATA") or ""
+    if not base:
+        return None
+    p = Path(base) / CODEBUDDY_AUTH_RECORD
+    return p if p.is_file() else None
+
+
+def read_codebuddy_token() -> "tuple[str, str, float] | None":
+    """Return (access_token, refresh_token, expires_at_unix), or None.
+
+    `expires_at` prefers the JWT's own `exp` claim (via `_jwt_exp`, the same helper
+    the cursor path uses) and falls back to the record's millisecond `expiresAt`.
+    Unreadable / unparseable / no access token → None: the caller must report
+    "the desktop app is not logged in", never guess a token.
+    """
+    p = codebuddy_auth_record_path()
+    if p is None:
+        return None
+    try:
+        auth = json.loads(p.read_text(encoding="utf-8")).get("auth") or {}
+    except Exception:
+        return None
+    if not isinstance(auth, dict):
+        return None
+    access = str(auth.get("accessToken") or "")
+    refresh = str(auth.get("refreshToken") or "")
+    if not access:
+        return None
+    exp = _jwt_exp(access) or 0.0
+    if not exp:
+        try:
+            exp = float(auth.get("expiresAt") or 0) / 1000.0
+        except Exception:
+            exp = 0.0
+    return access, refresh, exp
+
+
+def codebuddy_token_status() -> dict:
+    """Presence and lifetime only — the surface the doctor's row reads.
+
+    Never add a token, a length-derived value, or a fingerprint to this dict that
+    could end up in a log: it must stay value-free (a test pins that).
+    """
+    out = {"source": "codebuddy-desktop-store", "present": False, "expires_at": None,
+           "expires_in_seconds": None, "can_refresh": False}
+    got = read_codebuddy_token()
+    if not got:
+        return out
+    _access, refresh, exp = got
+    out["present"] = True
+    out["can_refresh"] = bool(refresh)
+    if exp:
+        out["expires_at"] = exp
+        out["expires_in_seconds"] = exp - time.time()
+    return out
+
+
 def _jwt_exp(token: str) -> float | None:
     try:
         import base64
