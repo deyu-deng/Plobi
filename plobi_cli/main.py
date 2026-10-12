@@ -293,6 +293,8 @@ from plobi_cli.subcommands.login import build_login_parser
 from plobi_cli.subcommands.logout import build_logout_parser
 from plobi_cli.subcommands.auth import build_auth_parser
 from plobi_cli.subcommands.status import build_status_parser
+from plobi_cli.subcommands.network import build_network_parser
+from plobi_cli.network_cmd import cmd_network
 from plobi_cli.subcommands.webhook import build_webhook_parser
 from plobi_cli.subcommands.hooks import build_hooks_parser
 from plobi_cli.subcommands.doctor import build_doctor_parser
@@ -12968,6 +12970,11 @@ def main():
     # dump command  (parser built in plobi_cli/subcommands/dump.py)
     # =========================================================================
     build_dump_parser(subparsers, cmd_dump=cmd_dump)
+
+    # =========================================================================
+    # network command  (parser built in plobi_cli/subcommands/network.py)
+    # =========================================================================
+    build_network_parser(subparsers, cmd_network=cmd_network)
 
     # =========================================================================
     # debug command  (parser built in plobi_cli/subcommands/debug.py)
