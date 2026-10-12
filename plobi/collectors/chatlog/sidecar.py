@@ -20,18 +20,22 @@
    而且**不该存在**——运行数据禁残留 C 盘（`D:\_POLICY`），桌面那条钉 `CHATLOG_DIR` 就是为这件事。
 4. 桌面侧那份"第二真源"（旧 `main.ts` 硬编产物候选 + 自己读 ``~/.chatlog`` 判密钥）已经合并掉：
    产物路径只读本模块 :func:`resolved_binary` 那一格（`WP-SIDECAR-STATE-SINGLE-SOURCE`，`e5ce5ba8`），
-   密钥只走上面第 2 条那一份文件（`7ee37708`）。本模块仍只看环境变量——它答"缺哪一步"，不答"密钥在哪"。
+   密钥只走上面第 2 条那一份文件（`7ee37708`）。本模块判"密钥有没有"时**读的就是那一份文件**
+   （:func:`data_key_present`，只看有没有、绝不读值），环境变量只是它的另一张脸——
+   以前只看环境变量，于是用户手工登进配置的密钥在面上说"没设"。
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
 from typing import Mapping, Optional
 
 __all__ = ["STATE_READY", "STATE_GO_MISSING", "STATE_BUILD_MISSING",
-           "STATE_KEY_MISSING", "STATE_NOT_LISTENING", "diagnose", "note_for"]
+           "STATE_KEY_MISSING", "STATE_NOT_LISTENING", "data_key_present",
+           "diagnose", "engine_config_dir", "note_for"]
 
 STATE_GO_MISSING = "go_missing"
 STATE_BUILD_MISSING = "build_missing"
@@ -49,7 +53,43 @@ _NOTES = {
 }
 
 BIN_ENV = "PLOBI_CHATLOG_BIN"
-KEY_ENVS = ("CHATLOG_DATA_KEY", "CHATLOG_IMG_KEY")
+DATA_KEY_ENV = "CHATLOG_DATA_KEY"
+IMG_KEY_ENV = "CHATLOG_IMG_KEY"
+#: 引擎那一档的两个文件名——桌面 `chatlog-keys.ts` 里是同一对常量，别各写一份。
+ENGINE_CONFIG_FILES = ("chatlog-server.json", "chatlog.json")
+
+
+def engine_config_dir(env: Mapping[str, str]) -> Path:
+    """chatlog 引擎自己读的那一档配置目录（密钥的真源落点）。"""
+    explicit = (env.get("CHATLOG_DIR") or "").strip()
+    if explicit:
+        return Path(explicit)
+    from plobi_constants import get_plobi_home
+
+    return get_plobi_home() / "chatlog"
+
+
+def data_key_present(env: Mapping[str, str]) -> bool:
+    """`data_key` 到底有没有——**只看有没有，绝不读值、绝不外传长度之外的东西**。
+
+    环境变量不是真源：引擎起服务时读的是 `$CHATLOG_DIR/chatlog*.json` 里那一份
+    （桌面 `chatlog-keys.ts::serverConfigReady` 判的就是它），用户手工登进来的值
+    也落在那儿。以前这里只看环境变量，于是"手工填了密钥，面上仍说没设"——
+    那句话把唯一还活着的那条路也判死了。
+    ``img_key`` 不参与判断：`manager.go:323` 硬性要的只有 dataKey，
+    图片是**能力差异**（声明式能力位），不是"缺一步"。
+    """
+    if (env.get(DATA_KEY_ENV) or "").strip():
+        return True
+    directory = engine_config_dir(env)
+    for name in ENGINE_CONFIG_FILES:
+        try:
+            loaded = json.loads((directory / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(loaded, dict) and str(loaded.get("data_key") or "").strip():
+            return True
+    return False
 
 
 def note_for(state: str) -> str:
@@ -104,8 +144,8 @@ def diagnose(
     if not has_binary:
         return STATE_BUILD_MISSING, note_for(STATE_BUILD_MISSING)
 
-    if not all((env.get(name) or "").strip() for name in KEY_ENVS):
-        return STATE_KEY_MISSING, note_for(STATE_KEY_MISSING)   # 只看有没有设，绝不读值
+    if not data_key_present(env):
+        return STATE_KEY_MISSING, note_for(STATE_KEY_MISSING)   # 只看有没有，绝不读值
 
     if healthy is False:
         return STATE_NOT_LISTENING, note_for(STATE_NOT_LISTENING)

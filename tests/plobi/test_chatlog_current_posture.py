@@ -28,7 +28,9 @@ def _env_with_go(tmp_path: Path, with_binary: bool = False) -> dict[str, str]:
         go.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         go.chmod(go.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         go_binary = "go"
-    env = {"PATH": str(tmp_path), "GO_BINARY": go_binary}
+    env = {"PATH": str(tmp_path), "GO_BINARY": go_binary,
+           # 密钥判据现在读引擎那一档文件——测试必须钉死落点，不许摸到这台的真配置。
+           "CHATLOG_DIR": str(tmp_path / "engine-config")}
     if with_binary:
         binary = tmp_path / "chatlog.exe"
         binary.write_text("", encoding="utf-8")
@@ -175,12 +177,44 @@ class TestFourDeadEndsAreFourSentences:
         assert state == sidecar.STATE_BUILD_MISSING
 
     def test_keys_are_checked_for_presence_only_never_value(self, tmp_path: Path) -> None:
+        """只看有没有，绝不把值说出去；图片那把不是"缺一步"（`manager.go:323` 只硬要 dataKey）。"""
         secret = "SHOULD-NEVER-APPEAR-IN-ANY-OUTPUT"
         env = {**_env_with_go(tmp_path, with_binary=True),
                "CHATLOG_DATA_KEY": secret, "CHATLOG_IMG_KEY": "   "}
         state, why = sidecar.diagnose(env=env, healthy=False, repo_root=tmp_path)
-        assert state == sidecar.STATE_KEY_MISSING
+        assert state == sidecar.STATE_NOT_LISTENING, f"数据密钥有了还判缺：{state}／{why}"
         assert secret not in why
+
+    def test_key_written_into_the_engine_config_counts_as_set(self, tmp_path: Path) -> None:
+        """那一条 bug 的反例：用户手工把密钥登进引擎那一档文件，面上不许再说"没设"。
+
+        环境变量不是真源——`chatlog server` 起服务读的是 `$CHATLOG_DIR/chatlog*.json`
+        （桌面 `chatlog-keys.ts::serverConfigReady` 判的同一份）。
+        """
+        cfg_dir = tmp_path / "engine-config"
+        cfg_dir.mkdir()
+        (cfg_dir / "chatlog.json").write_text(
+            '{"data_key": "aabbccddeeff00112233445566778899", "account": "wxid_x"}', encoding="utf-8")
+        env = _env_with_go(tmp_path, with_binary=True)
+
+        state, why = sidecar.diagnose(env=env, healthy=False, repo_root=tmp_path)
+
+        assert state == sidecar.STATE_NOT_LISTENING, f"配置里明明有密钥，却报：{state}／{why}"
+
+    def test_handoff_file_is_read_too(self, tmp_path: Path) -> None:
+        cfg_dir = tmp_path / "engine-config"
+        cfg_dir.mkdir()
+        (cfg_dir / "chatlog-server.json").write_text('{"data_key": "00112233"}', encoding="utf-8")
+
+        assert sidecar.data_key_present({"CHATLOG_DIR": str(cfg_dir)}) is True
+
+    def test_empty_or_broken_engine_config_is_not_a_key_and_not_a_crash(self, tmp_path: Path) -> None:
+        cfg_dir = tmp_path / "engine-config"
+        cfg_dir.mkdir()
+        for body in ('{}', 'not json at all', '{"img_key": "aabb"}', '{"data_key": "   "}'):
+            (cfg_dir / "chatlog.json").write_text(body, encoding="utf-8")
+            assert sidecar.data_key_present({"CHATLOG_DIR": str(cfg_dir)}) is False, body
+        assert sidecar.data_key_present({"CHATLOG_DIR": str(tmp_path / "gone")}) is False
 
     def test_everything_present_but_not_listening_is_its_own_state(self, tmp_path: Path) -> None:
         env = {**_env_with_go(tmp_path, with_binary=True),
