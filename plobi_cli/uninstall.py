@@ -371,8 +371,15 @@ def remove_path_from_windows_registry(plobi_home: Path) -> list[str]:
     return removed
 
 
+#: User-scope env vars Plobi's installer pins — one list so the registry sweep and
+#: the two messages reporting it cannot drift.  ``MIND_ROOT`` is on it because
+#: ``scripts/install.ps1`` writes it (WP-INSTALL-MINDROOT); leaving it behind points
+#: at a brain vault the same uninstall may just have deleted.
+_PLOBI_USER_ENV_NAMES = ("PLOBI_HOME", "PLOBI_GIT_BASH_PATH", "MIND_ROOT")
+
+
 def remove_plobi_env_vars_windows() -> list[str]:
-    """Delete PLOBI_HOME and PLOBI_GIT_BASH_PATH from User-scope env vars."""
+    """Delete :data:`_PLOBI_USER_ENV_NAMES` from the User-scope environment."""
     try:
         import winreg
     except ImportError:
@@ -382,7 +389,7 @@ def remove_plobi_env_vars_windows() -> list[str]:
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0,
                             winreg.KEY_READ | winreg.KEY_WRITE) as key:
-            for name in ("PLOBI_HOME", "PLOBI_GIT_BASH_PATH"):
+            for name in _PLOBI_USER_ENV_NAMES:
                 try:
                     winreg.QueryValueEx(key, name)
                 except FileNotFoundError:
@@ -795,7 +802,7 @@ def _perform_uninstall(
             else:
                 log_info("No Plobi-owned PATH entries in User environment")
 
-            log_info("Removing PLOBI_HOME / PLOBI_GIT_BASH_PATH User env vars...")
+            log_info(f"Removing User env vars: {' / '.join(_PLOBI_USER_ENV_NAMES)}...")
             removed_env = remove_plobi_env_vars_windows()
             if removed_env:
                 for name in removed_env:
@@ -804,8 +811,9 @@ def _perform_uninstall(
                 log_info("No Plobi-set User env vars to remove")
         else:
             log_info(
-                "Kept Windows User environment (User PATH, PLOBI_HOME, "
-                "PLOBI_GIT_BASH_PATH) — pass --purge-user-env to clear them"
+                "Kept Windows User environment (User PATH, "
+                + ", ".join(_PLOBI_USER_ENV_NAMES)
+                + ") — pass --purge-user-env to clear them"
             )
     
     # 3. Remove wrapper script
