@@ -15,6 +15,7 @@ Plobi is a desktop AI agent that orchestrates your free-tier AI tools — Cursor
 [![Architecture gates](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/arch-gates.yml?label=Architecture%20gates)](https://github.com/deyu-deng/Plobi/actions/workflows/arch-gates.yml)
 [![Action pin audit](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/action-pin-audit.yml?label=Action%20pin%20audit)](https://github.com/deyu-deng/Plobi/actions/workflows/action-pin-audit.yml)
 [![Dependency health](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/dependency-health.yml?label=Dependency%20health)](https://github.com/deyu-deng/Plobi/actions/workflows/dependency-health.yml)
+[![Dependency Graph](https://github.com/deyu-deng/Plobi/actions/workflows/dependabot/update-graph/badge.svg)](https://github.com/deyu-deng/Plobi/actions/workflows/dependabot/update-graph)
 
 </div>
 
