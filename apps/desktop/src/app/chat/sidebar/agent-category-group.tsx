@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils'
 import type { SessionInfo } from '@/types/plobi'
 
 import type { AgentCategory } from './agent-groups'
-import { AgentNotesList } from './agent-notes-list'
 import { SidebarCount } from './chrome'
 import { SidebarSessionRow } from './session-row'
 
@@ -77,9 +76,6 @@ export function AgentCategoryGroup({
   const [open, setOpen] = useState(defaultOpen)
   // Which agent's session drawer is expanded (one at a time keeps rows calm).
   const [openAgentId, setOpenAgentId] = useState<null | string>(null)
-  // Notes view (WP-MIND-NOTES-VIEW) is its own toggle: reading the brain and
-  // listing sessions are different questions and must not share one caret.
-  const [notesAgentId, setNotesAgentId] = useState<null | string>(null)
   const categoryKey = `agent-category-${category}`
 
   return (
@@ -106,7 +102,6 @@ export function AgentCategoryGroup({
               : (sessionsByProfile.get((agent.profile ?? '').trim()) ?? [])
 
             const sessionsOpen = !hideSessions && openAgentId === agent.id
-            const notesOpen = notesAgentId === agent.id
             // WP-UI-NO-INTERNALS: the rail shows the short label (「日程秘书」),
             // never a profile id like `l2-agenda`; the raw id lives in `title`.
             const shortName = secretaryShortName(agent.id, agent.name)
@@ -146,21 +141,6 @@ export function AgentCategoryGroup({
                       <Codicon name={sessionsOpen ? 'chevron-down' : 'chevron-right'} size="0.75rem" />
                     </button>
                   )}
-
-                  <button
-                    aria-expanded={notesOpen}
-                    aria-label={`${shortName} 的笔记`}
-                    className={cn(
-                      'flex size-7 shrink-0 items-center justify-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
-                      notesOpen && 'bg-(--ui-control-active-background) text-foreground'
-                    )}
-                    data-testid={`agent-notes-toggle-${agent.id}`}
-                    onClick={() => setNotesAgentId(notesOpen ? null : agent.id)}
-                    title="笔记视图：读脑里标了这条分身的 note"
-                    type="button"
-                  >
-                    <Codicon name="note" size="0.75rem" />
-                  </button>
                 </div>
 
                 {sessionsOpen && (
@@ -178,15 +158,6 @@ export function AgentCategoryGroup({
                         session={session}
                       />
                     ))}
-                  </div>
-                )}
-
-                {notesOpen && (
-                  <div
-                    className="ml-5 flex flex-col gap-px border-l border-(--sidebar-edge-border) py-0.5 pl-1.5"
-                    data-testid={`agent-notes-drawer-${agent.id}`}
-                  >
-                    <AgentNotesList agentId={agent.id} />
                   </div>
                 )}
               </div>
