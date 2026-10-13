@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
-import { ExternalLink } from '@/lib/icons'
+import { Globe } from '@/lib/icons'
 import { getNetworkEgress, getNetworkStatus, saveNetworkEgress } from '@/plobi'
 import type { NetworkEgressRecord, NetworkSection, NetworkStatus } from '@/types/plobi'
 
@@ -123,7 +123,7 @@ export function NetworkSettings() {
 
   return (
     <SettingsContent>
-      <SectionHeading icon={ExternalLink} meta={status?.engine.state ?? ''} title={copy.title} />
+      <SectionHeading icon={Globe} meta={status?.engine.state ?? ''} title={copy.title} />
       <p className={CAPTION}>{copy.intro}</p>
 
       <div className="grid gap-2">

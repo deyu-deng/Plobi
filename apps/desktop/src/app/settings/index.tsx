@@ -6,7 +6,7 @@ import { Tip } from '@/components/ui/tooltip'
 import { getPlobiConfigDefaults, getPlobiConfigRecord, savePlobiConfig } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Download, ExternalLink, Globe, Info, KeyRound, RefreshCw, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
+import { Archive, Bell, Download, Globe, Info, KeyRound, RefreshCw, Send, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -167,14 +167,14 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
     },
     {
       active: activeView === 'gateway',
-      icon: Globe,
+      icon: Send,
       id: 'gateway',
       label: t.settings.nav.gateway,
       onSelect: () => setActiveView('gateway')
     },
     {
       active: activeView === 'network',
-      icon: ExternalLink,
+      icon: Globe,
       id: 'network',
       label: t.settings.nav.network,
       onSelect: () => setActiveView('network')
