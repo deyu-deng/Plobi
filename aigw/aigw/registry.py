@@ -168,7 +168,23 @@ class Registry:
                 return prov, model
         raise KeyError(f"no route for model '{model}'")
 
-    def list_models(self) -> list[dict]:
+    def credential_health(self, prov) -> tuple[bool, str]:
+        """What a provider's own credential says right now — local, no network.
+
+        Providers that hold a desktop-app credential implement `credential_health()`
+        returning `(live, reason)`; anything else is assumed live, because "we did
+        not ask" must not be reported as "it is broken".
+        """
+        probe = getattr(prov, "credential_health", None)
+        if not callable(probe):
+            return True, "ok"
+        try:
+            live, reason = probe()
+            return bool(live), str(reason or ("live" if live else "unavailable"))
+        except Exception as e:  # a broken probe is not evidence the leg works
+            return False, f"probe_error:{type(e).__name__}"
+
+    def list_models(self, selectable_only: bool = False) -> list[dict]:
         out = []
         seen = set()
         now = int(time.time())
@@ -183,6 +199,21 @@ class Registry:
                 prov_name = self.model_to_provider.get(target, prov_name)
             prov = self.providers.get(prov_name) if prov_name else None
             caps = prov.capabilities().as_dict() if prov else {}
+            live, reason = self.credential_health(prov) if prov else (False, "unknown_provider")
+            # A model is *selectable* only when it can actually serve an agent turn.
+            # The owner ruled on 2026-10-12 that no surface needs a `tools=False` leg
+            # (L1, L2 and cron all need tool calls to come back into our loop), so a
+            # text-only transport is not pickable — it stays usable as an offload
+            # channel. Dead credentials drop out of that view too, and reappear on
+            # their own once the desktop app renews them: no name list is involved.
+            usable = live and bool(caps.get("tools"))
+            # Filtering is a *view*, not the endpoint's default. `/v1/models` is the
+            # OpenAI-compat catalog and `plobi.quota.gateway` derives the quota apps
+            # from it; silently shrinking it would make those surfaces report "no
+            # such model" for legs that are merely expired. Every row carries its own
+            # verdict instead, so a consumer that wants the strict view asks for it.
+            if not usable and selectable_only:
+                continue
             out.append(
                 {
                     "id": m,
@@ -195,6 +226,10 @@ class Registry:
                     # Plobi / Plobi extensions (OpenAI clients ignore unknown keys)
                     "provider": prov_name,
                     "capabilities": caps,
+                    "live": live,
+                    "live_reason": reason,
+                    "selectable": usable,
+                    "unselectable_reason": ("" if usable else (reason if not live else "no_tools")),
                 }
             )
         return out

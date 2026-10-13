@@ -20,7 +20,7 @@ import json
 import logging
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import __version__
@@ -232,12 +232,20 @@ def _any_provider_supports(provider, flag: str) -> bool:
 
 
 @app.get("/v1/models")
-async def models(authorization: str = Header(None)):
+async def models(
+    authorization: str = Header(None),
+    selectable: bool = Query(False),
+):
     _auth(authorization)
     # Ensure the catalog is live (no-op once refreshed). The Antigravity adapter
     # replaces its seed model list with the real one fetched from upstream.
     await STATE["reg"].ensure_models_refreshed()
-    return {"object": "list", "data": STATE["reg"].list_models()}
+    # The OpenAI-compat catalog stays complete: a consumer that only wants models
+    # that can serve an agent turn (tool-capable AND live credential) asks
+    # `?selectable=1`. Every row also carries its own `selectable` +
+    # `unselectable_reason`, so a missing model can be explained instead of guessed
+    # at from the client side.
+    return {"object": "list", "data": STATE["reg"].list_models(selectable_only=selectable)}
 
 
 @app.get("/healthz")

@@ -286,6 +286,21 @@ class AntigravityProvider(Provider):
                 reauth=True,
             )
 
+    def credential_health(self) -> tuple[bool, str]:
+        """Local-only: what the desktop app's own record says about this token.
+
+        We cannot renew it ourselves (no OAuth client pair), so "expired" really
+        means "open agy once" — which is why it is a visibility problem, not a
+        retry problem.
+        """
+        st = ds.antigravity_desktop_token_status()
+        if not st.get("present"):
+            return False, "no_desktop_credential"
+        left = st.get("expires_in_seconds")
+        if left is not None and left <= 0:
+            return False, "credential_expired"
+        return True, "ok"
+
     # --- live model catalog (replaces hardcoded names) ------------------
     async def refresh_models(self, acc: Account) -> list[str] | None:
         """Fetch the live Antigravity model catalog and replace our served list.
