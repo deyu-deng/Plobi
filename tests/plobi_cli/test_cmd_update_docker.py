@@ -7,7 +7,7 @@ Please reinstall: curl ... install.sh"`` — that script installs a *new*
 host-side Plobi, not an update to the running container, so the message
 was actively misleading.
 
-Update: ``cmd_update`` (the apply path) is now a frozen no-op in local dev
+Update: ``cmd_update`` (the apply path) refuses installs it cannot update in place
 builds — it prints the self-update disable notice and returns 0 regardless
 of install method, so the Docker guidance is no longer reachable through it.
 The check path (``_cmd_update_check``) keeps its Docker-aware behaviour and
@@ -33,10 +33,10 @@ from plobi_cli.main import _SELF_UPDATE_DISABLED_MSG, _cmd_update_check, cmd_upd
 def test_cmd_update_is_disabled_even_in_docker(
     mock_run, _mock_method, _mock_managed, capsys
 ):
-    """``plobi update`` is a frozen no-op — even in Docker: notice + exit 0, no git calls."""
+    """Docker 不在就地更新那两条路里：明说按不动 + 非零退出 + 一次 git 都不叫。"""
     rc = cmd_update(SimpleNamespace(check=False))
 
-    assert rc == 0
+    assert rc == 1
     out = capsys.readouterr().out
     assert _SELF_UPDATE_DISABLED_MSG in out
     # The Docker guidance is no longer reachable through the disabled stub.
@@ -53,10 +53,10 @@ def test_cmd_update_is_disabled_even_in_docker(
 def test_cmd_update_check_flag_is_disabled_even_in_docker(
     mock_run, _mock_method, _mock_managed, capsys
 ):
-    """``plobi update --check`` is also a frozen no-op: notice + exit 0, no fetch."""
+    """``plobi update --check`` 在 Docker 上同样按不动：非零退出，不 fetch。"""
     rc = cmd_update(SimpleNamespace(check=True, branch=None))
 
-    assert rc == 0
+    assert rc == 1
     out = capsys.readouterr().out
     assert _SELF_UPDATE_DISABLED_MSG in out
     assert "doesn't apply inside the Docker container" not in out
@@ -71,10 +71,10 @@ def test_cmd_update_check_flag_is_disabled_even_in_docker(
 def test_cmd_update_yes_and_force_are_ignored_by_disabled_stub(
     mock_run, _mock_method, _mock_managed, capsys
 ):
-    """``--yes`` / ``--force`` can't re-enable self-update: notice + exit 0, no git."""
+    """``--yes`` / ``--force`` 买不回就地更新：非零退出，一次 git 都不叫。"""
     rc = cmd_update(SimpleNamespace(check=False, yes=True, force=True))
 
-    assert rc == 0
+    assert rc == 1
     assert _SELF_UPDATE_DISABLED_MSG in capsys.readouterr().out
     git_calls = [c for c in mock_run.call_args_list if c.args and c.args[0] and "git" in str(c.args[0][0])]
     assert git_calls == []
