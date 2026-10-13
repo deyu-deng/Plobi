@@ -14,22 +14,21 @@ import {
 import { Button } from '@/components/ui/button'
 import { RowButton } from '@/components/ui/row-button'
 import { SearchField } from '@/components/ui/search-field'
-import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { Check, ChevronDown, ChevronRight, Globe, KeyRound, Loader2, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
+import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
+import {
+  $connectedDesktopApps,
+  markConnected,
+  requestQuotaCatalog
+} from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
-import {
-  DESKTOP_QUOTA_MODELS,
-  markConnected,
-  refreshAllConnectedAppModels,
-  refreshConnectedAppModels
-} from '@/store/desktop-quotas'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
-import { isKeyVar, ProviderKeyRows, CREDENTIAL_CONTROL_CLASS } from './credential-key-ui'
+import { CREDENTIAL_CONTROL_CLASS, isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { LoadingState, SettingsContent } from './primitives'
@@ -75,18 +74,20 @@ const DESKTOP_QUOTA_APPS: DesktopQuotaApp[] = [
     verified: true   // token route wired: aigw auth antigravity -> gateway
   },
   {
-    id: 'cursor',
-    name: 'Cursor',
-    description: 'Cursor agent — routes through your Cursor subscription quota (reads your local Cursor session, no sign-in needed).',
-    verified: true   // local-session route wired: aigw cursor provider -> gateway on 8021
-  },
-  {
     id: 'workbuddy',
-    name: 'Workbuddy',
-    description: 'Workbuddy desktop agent — routes through your local Workbuddy (CLI or Desktop) quota, no sign-in needed.',
+    name: 'CodeBuddy',
+    description: 'Tencent CodeBuddy — routes through your local CodeBuddy (CLI or Desktop) subscription quota, no sign-in needed.',
     verified: true   // rides the shared product hub on :8000 (its config.yaml spawns the Workbuddy CLI)
   }
 ]
+
+// One piece of desktop software can be served by more than one hub leg — CodeBuddy has
+// the CLI transport and the subscription HTTP transport, and only the latter can bring
+// tool calls back into our loop. The card describes the *software*, so its status is
+// the best verdict across its legs: usable if any leg is pickable.
+const QUOTA_APP_PEERS: Record<string, string[]> = {
+  workbuddy: ['workbuddy', 'workbuddy_api']
+}
 
 export type ProviderView = (typeof PROVIDER_VIEWS)[number]
 
@@ -349,6 +350,18 @@ function NoProviderKeys() {
 function DesktopQuotasView() {
   const { t } = useI18n()
   const dq = t.settings.providers.desktopQuotas
+  // The hub's own verdict per app, pushed by the main process: what is pickable right
+  // now, and why the rest is not. Connected is not the same as usable — a sign-in can
+  // expire or a channel may not bring tool calls back into our loop, and the card says
+  // which, in the hub's words rather than a guess made here.
+  const quotaApps = useStore($connectedDesktopApps)
+
+  const quotaReason: Record<string, string> = {
+    credential_expired: t.desktop.quotaReason.credential_expired,
+    no_desktop_credential: t.desktop.quotaReason.no_desktop_credential,
+    no_tools: t.desktop.quotaReason.no_tools,
+    not_offered: t.desktop.quotaReason.not_offered
+  }
 
   // Per-app connection state: idle | connecting | connected | error
   type ConnState = 'idle' | 'connecting' | 'connected' | 'error'
@@ -357,10 +370,11 @@ function DesktopQuotasView() {
   const [errInfo, setErrInfo] = useState<Record<string, { code?: string; message?: string; installHint?: string }>>({})
 
   // Keep the model list fresh: re-fetch each connected app's live catalog from
-  // its aigw gateway whenever this view is opened (the gateway may have started
-  // with a newly-discovered upstream model list since the last connect).
+  // Ask the shell to re-read the hub whenever this view opens. The renderer cannot
+  // read the hub itself (its preflight fails — the hub sends no CORS headers), so the
+  // hub's own pickability verdict arrives on the pushed frame.
   useEffect(() => {
-    void refreshAllConnectedAppModels()
+    requestQuotaCatalog()
   }, [])
 
   // --- Connect handler (Antigravity via the compliant `agy` CLI route) ---
@@ -368,11 +382,15 @@ function DesktopQuotasView() {
   // CLI is installed and starts the local gateway. No token is returned, so
   // success is keyed on `res.ok` alone.
   const handleConnect = async (appId: string) => {
-    if (!window.plobiDesktop?.plobiGateway?.auth) return
+    if (!window.plobiDesktop?.plobiGateway?.auth) {return}
     setConn((prev) => ({ ...prev, [appId]: 'connecting' }))
-    setErrInfo((prev) => { const n = { ...prev }; delete n[appId]; return n })
+    setErrInfo((prev) => { const n = { ...prev }; delete n[appId];
+
+ return n })
+
     try {
       const res = await window.plobiDesktop.plobiGateway.auth(appId)
+
       if (res.ok) {
         // Persist the connected app so its models surface in the chat selector
         // (see store/desktop-quotas) and the gateway baseUrl for live routing.
@@ -382,14 +400,16 @@ function DesktopQuotasView() {
         // (Antigravity / Cursor) that still mint their own.
         markConnected({
           id: appId,
-          models: res.models ?? DESKTOP_QUOTA_MODELS[appId],
+          // A manual connect is not a health verdict either: seed whatever the
+          // connect call reported, and nothing otherwise — the hub's frame arrives a
+          // moment later and is the thing that decides what lands in the picker.
+          models: res.models ?? [],
           baseUrl: res.baseUrl,
           apiKey: res.apiKey ?? `sk-local-${appId}`
         })
         setConn((prev) => ({ ...prev, [appId]: 'connected' }))
-        // Replace the placeholder/fallback list with the gateway's live catalog
-        // (the gateway discovers the real models from upstream at startup).
-        void refreshConnectedAppModels(appId)
+        // Ask the shell for the hub's live catalog + verdict.
+        requestQuotaCatalog()
       } else {
         setConn((prev) => ({ ...prev, [appId]: 'error' }))
         setErrInfo((prev) => ({ ...prev, [appId]: { code: res.code, message: res.error, installHint: res.installHint } }))
@@ -439,15 +459,28 @@ function DesktopQuotasView() {
             const hasError = state === 'error'
             const canConnect = app.verified && !isConnected && !isConnecting
 
+            // Connected-but-unusable: the hub answered, and every leg of this software
+            // is currently dropped. Show the hub's reason instead of a green tick that
+            // would promise a turn which cannot happen.
+            const records = (QUOTA_APP_PEERS[app.id] ?? [app.id])
+              .map(id => quotaApps[id])
+              .filter(Boolean)
+
+            const anyPickable = records.some(r => r!.answered === true && r!.models.length > 0)
+            const answeredSomewhere = records.some(r => r!.answered === true)
+            const unusable = Boolean(isConnected && answeredSomewhere && !anyPickable)
+            const blockedToken = records.flatMap(r => Object.values(r!.blocked ?? {}))[0] ?? ''
+            const reasonText = quotaReason[blockedToken] ?? t.desktop.quotaReason.unknown(blockedToken)
+
             return (
             <div
-              key={app.id}
               className={cn(
                 '@container group/card rounded-md p-3 transition-colors',
                 'row-hover',
                 'ring-1 ring-(--ui-stroke-secondary)',
                 isConnected && 'ring-green-500/30 bg-green-500/[0.02]',
               )}
+              key={app.id}
             >
               <div className="grid grid-cols-1 items-start gap-x-3 gap-y-1.5 @2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:gap-y-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -461,7 +494,9 @@ function DesktopQuotasView() {
                       : app.verified ? 'bg-(--ui-bg-quaternary) text-muted-foreground'
                       : 'bg-(--ui-bg-quaternary) text-muted-foreground'
                   )}>
-                    {isConnected ? (
+                    {isConnected && unusable ? (
+                      `现在用不了 · ${reasonText}`
+                    ) : isConnected ? (
                       <><Check className="size-3" />已连接</>
                     ) : hasError ? (
                       (typeof dq.connectError === 'function' ? dq.connectError(app.name) : dq.connectError) || '连接失败'
@@ -477,6 +512,7 @@ function DesktopQuotasView() {
                   <Button
                     className={cn(CREDENTIAL_CONTROL_CLASS, 'gap-1.5')}
                     disabled={!canConnect}
+                    onClick={() => canConnect && handleConnect(app.id)}
                     size="sm"
                     title={
                       isConnecting ? `正在启动本地 ${app.name} 网关…`
@@ -485,7 +521,6 @@ function DesktopQuotasView() {
                         : dq.connect
                     }
                     variant={isConnected ? 'default' : 'secondary'}
-                    onClick={() => canConnect && handleConnect(app.id)}
                   >
                     {isConnecting && (
                       <Loader2 className="size-3.5 animate-spin" />
@@ -500,6 +535,7 @@ function DesktopQuotasView() {
                   </p>
                   {hasError && (() => {
                     const info = errInfo[app.id]
+
                     if (info?.code === 'AUTH_FAILED' || info?.code === 'AUTH_ERROR') {
                       return (
                         <div className="text-xs text-red-600 dark:text-red-400">
@@ -510,6 +546,7 @@ function DesktopQuotasView() {
                         </div>
                       )
                     }
+
                     return <p className="text-xs text-red-600 dark:text-red-400">连接失败，请重试，或检查终端日志。</p>
                   })()}
                   {isConnecting && (

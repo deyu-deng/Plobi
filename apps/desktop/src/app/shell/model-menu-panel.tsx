@@ -26,7 +26,7 @@ import {
 } from '@/lib/model-status-label'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
-import { desktopQuotaProviders, isDesktopQuotaProvider, refreshAllConnectedAppModels } from '@/store/desktop-quotas'
+import { desktopQuotaProviders, isDesktopQuotaProvider, requestQuotaCatalog } from '@/store/desktop-quotas'
 import { $modelPresets, applyModelPreset, modelPresetKey } from '@/store/model-presets'
 import {
   $visibleModels,
@@ -92,11 +92,12 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   })
 
   // This panel mounts when the dropdown opens, so the quota legs it lists are
-  // re-asked from the hub at exactly the moment the user is about to pick one.
-  // A dead credential leaves the list, a renewed one comes back, and neither needs
-  // a restart or a name written down in this file.
+  // re-asked from the hub at exactly the moment the user is about to pick one. The
+  // read is done by the main process and pushed back on the same channel the boot
+  // overlay uses — a dead credential leaves the list, a renewed one comes back, and
+  // neither needs a restart or a name written down in this file.
   useEffect(() => {
-    void refreshAllConnectedAppModels()
+    requestQuotaCatalog()
   }, [])
 
   // Desktop-quota providers (Antigravity/…) route to the local aigw hub, so the

@@ -227,12 +227,18 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   // Local quota hub catalog, pushed by the main process once the hub is live.
   // The renderer subscribes so apps the hub serves connect themselves — no manual
   // click, and no second catalog copied into the UI (it renders what the hub says).
+  // Each app carries the hub's own pickability verdict (`models` = what it offers,
+  // `blocked` = why each dropped model is dropped, `answered` = we actually got a
+  // reply); the renderer cannot read the hub itself, its preflight fails (no CORS).
   onQuotaApps: callback => {
     const listener = (_event, payload) => callback(payload)
     ipcRenderer.on('plobi:quota-apps', listener)
 
     return () => ipcRenderer.removeListener('plobi:quota-apps', listener)
   },
+  // Re-ask the hub and push a fresh frame to every window, now. The model picker
+  // calls this on open so what a leg can serve is decided at the moment of picking.
+  requestQuotaApps: () => ipcRenderer.invoke('plobi:quota-apps:refresh'),
   // Local quota hub traffic, proxied by the main process. The renderer cannot
   // reach the hub directly (its preflight fails: the hub sends no CORS headers),
   // and the hub key never has to leave main for this to work. Frames arrive on
