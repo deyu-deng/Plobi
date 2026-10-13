@@ -35,4 +35,24 @@ describe('settings routing table', () => {
     expect(navIds).toContain('network')
     expect(whitelisted).toContain('network')
   })
+
+  /**
+   * The command palette is the second door into the same panes, so its `tab`
+   * values are gated by the very same whitelist — an entry there that is missing
+   * here fails the same invisible way a nav row does.
+   */
+  it('makes every palette shortcut a routable settings tab', () => {
+    const palette = readFileSync(resolve(import.meta.dirname ?? '', '../command-palette/index.tsx'), 'utf-8')
+    const tabs = [...palette.matchAll(/labelKey: '([a-zA-Z]+)',\s*tab: '([^']+)'/g)].map((m) => m[2])
+
+    expect(tabs.length).toBeGreaterThan(4)
+    for (const tab of tabs) {
+      // `providers&pview=keys` style values are routed by their leading segment;
+      // the sub-view param has its own enum.
+      const head = tab.split('&')[0]
+      if (head.startsWith('config:')) continue
+      expect(whitelisted, `palette tab "${tab}" is not a routable settings view`).toContain(head)
+    }
+    expect(tabs).toContain('network')
+  })
 })

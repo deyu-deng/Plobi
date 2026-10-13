@@ -35,6 +35,7 @@ import {
   PawPrint,
   Plus,
   RefreshCw,
+  Send,
   Settings,
   Settings2,
   SlidersHorizontal,
@@ -223,6 +224,7 @@ type NonConfigSettingsLabel =
   | 'keysSettings'
   | 'keysTools'
   | 'mcp'
+  | 'network'
   | 'providerAccounts'
   | 'providerApiKeys'
 
@@ -244,7 +246,9 @@ const NON_CONFIG_SETTINGS: ReadonlyArray<{
     labelKey: 'providerApiKeys',
     tab: 'providers&pview=keys'
   },
-  { icon: Globe, keywords: ['connection', 'messaging'], labelKey: 'gateway', tab: 'gateway' },
+  { icon: Send, keywords: ['connection', 'messaging'], labelKey: 'gateway', tab: 'gateway' },
+  // Which exit each destination uses, and the engine Plobi supervises.
+  { icon: Globe, keywords: ['egress', 'proxy', 'routing', 'vpn'], labelKey: 'network', tab: 'network' },
   {
     icon: KeyRound,
     keywords: ['api', 'secrets', 'tokens', 'credentials', 'browser', 'search'],
