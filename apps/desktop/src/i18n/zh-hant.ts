@@ -1473,6 +1473,19 @@ export const zhHant = defineLocale({
       loadFailed: '無法載入日程。',
       retry: '重試'
     },
+    notes: {
+      title: '筆記',
+      viewSchedule: '日程',
+      viewNotes: '筆記',
+      loading: '讀腦中…',
+      brainUnreachable: '讀不到腦',
+      emptyTitle: '這條分身還沒有掛筆記',
+      emptyHowToTitle: '給筆記打標籤',
+      emptyHowToBody: (agent) => `在筆記的 frontmatter 裡寫 belongs: [${agent}]，它就會出現在這裡。`,
+      scanned: (n) => `腦裡已掃 ${n} 篇`,
+      truncated: (n) => `已到下限，只列前 ${n} 條`,
+      unknownBelongs: (names) => `這些標籤對不上已登記的名字：${names}`,
+    },
     supervisor: {
       title: '智能體工作台',
       loading: '正在載入智能體…',

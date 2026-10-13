@@ -1521,6 +1521,19 @@ export const ja = defineLocale({
       loadFailed: '予定を読み込めませんでした。',
       retry: '再試行'
     },
+    notes: {
+      title: 'ノート',
+      viewSchedule: 'スケジュール',
+      viewNotes: 'ノート',
+      loading: 'ブレインを読み込み中…',
+      brainUnreachable: 'ブレインに接続できません',
+      emptyTitle: 'このエージェントのノートはまだありません',
+      emptyHowToTitle: 'ノートにタグを付ける',
+      emptyHowToBody: (agent) => `ノートの frontmatter に belongs: [${agent}] を書くと、ここに表示されます。`,
+      scanned: (n) => `ブレイン内で ${n} 件スキャン済み`,
+      truncated: (n) => `先頭の ${n} 件のみ表示`,
+      unknownBelongs: (names) => `登録されていない名前へのタグ：${names}`,
+    },
     supervisor: {
       title: 'エージェント作業台',
       loading: 'エージェントを読み込み中…',

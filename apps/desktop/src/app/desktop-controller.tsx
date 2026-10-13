@@ -98,6 +98,7 @@ import { CommandPalette } from './command-palette'
 import { ChatSurface, type ChatSurfaceProps } from './console/chat/chat-surface'
 import { agentScope, type ChatScope, L1_SCOPE } from './console/chat/scope'
 import { AddEventForm } from './console/right/add-event'
+import { AgentNotesList } from './console/right/notes-list'
 import { Timeline } from './console/right/timeline'
 import {
   $agendaAnchors,
@@ -327,10 +328,16 @@ export function DesktopController() {
   const previewRailContent =
     Boolean(previewTarget) || (isL2 && Boolean(filePreviewTarget))
 
-  // The L1 rail owns the agenda poll; every other route leaves the store cold
-  // (`enabled: false` → no seed, no 8s interval).
-  useAgendaTimeline(level === 'l1')
+  // The L1 rail owns the agenda poll; an agent route now polls too, because the
+  // right rail's schedule segment is reachable there as well (WP-MIND-NOTES-VIEW).
+  useAgendaTimeline(level === 'l1' || isL2)
   const [agendaAdding, setAgendaAdding] = useState(false)
+  // Right-rail view switch (WP-MIND-NOTES-VIEW): on an agent route the rail can
+  // show that agent's brain notes. Off an agent route there is no "current agent",
+  // so the notes segment simply is not offered — no half-dead toggle.
+  const [railView, setRailView] = useState<'notes' | 'schedule'>('schedule')
+  const activeAgentId = level && level !== 'l1' ? level.l2 : ''
+  const notesViewOpen = railView === 'notes' && Boolean(activeAgentId)
 
   useEffect(() => {
     if (!level) {
@@ -1767,7 +1774,7 @@ export function DesktopController() {
   const agendaTimelinePane = (
     <Pane
       defaultOpen
-      disabled={level !== 'l1'}
+      disabled={!level}
       divider
       forceCollapsed={narrowViewport}
       hoverReveal
@@ -1780,7 +1787,7 @@ export function DesktopController() {
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
       <aside
-        aria-label={t.console.timeline.title}
+        aria-label={notesViewOpen ? t.console.notes.title : t.console.timeline.title}
         className={cn(
           'relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)',
           panesFlipped
@@ -1789,54 +1796,86 @@ export function DesktopController() {
         )}
       >
         <RightSidebarSectionHeader>
-          <div className="flex min-w-0 flex-1">
-            <SidebarPanelLabel>{t.console.timeline.title}</SidebarPanelLabel>
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {activeAgentId ? (
+              <>
+                <Button
+                  aria-pressed={!notesViewOpen}
+                  onClick={() => setRailView('schedule')}
+                  size="xs"
+                  variant={notesViewOpen ? 'ghost' : 'secondary'}
+                >
+                  {t.console.notes.viewSchedule}
+                </Button>
+                <Button
+                  aria-pressed={notesViewOpen}
+                  data-testid="rail-view-notes"
+                  onClick={() => setRailView('notes')}
+                  size="xs"
+                  variant={notesViewOpen ? 'secondary' : 'ghost'}
+                >
+                  {t.console.notes.viewNotes}
+                </Button>
+              </>
+            ) : (
+              <SidebarPanelLabel>{t.console.timeline.title}</SidebarPanelLabel>
+            )}
           </div>
-          <Button
-            aria-label={t.console.timeline.expand}
-            onClick={() => navigate(AGENDA_ROUTE)}
-            size="icon-xs"
-            title={t.console.timeline.expand}
-            variant="ghost"
-          >
-            <Codicon name="expand-all" size="0.8125rem" />
-          </Button>
-          <Button
-            aria-label={t.console.timeline.addEvent}
-            onClick={() => setAgendaAdding(open => !open)}
-            size="icon-xs"
-            title={t.console.timeline.addEvent}
-            variant="ghost"
-          >
-            <Codicon name="add" size="0.8125rem" />
-          </Button>
+          {!notesViewOpen && (
+            <>
+              <Button
+                aria-label={t.console.timeline.expand}
+                onClick={() => navigate(AGENDA_ROUTE)}
+                size="icon-xs"
+                title={t.console.timeline.expand}
+                variant="ghost"
+              >
+                <Codicon name="expand-all" size="0.8125rem" />
+              </Button>
+              <Button
+                aria-label={t.console.timeline.addEvent}
+                onClick={() => setAgendaAdding(open => !open)}
+                size="icon-xs"
+                title={t.console.timeline.addEvent}
+                variant="ghost"
+              >
+                <Codicon name="add" size="0.8125rem" />
+              </Button>
+            </>
+          )}
         </RightSidebarSectionHeader>
 
-        {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
+        {agendaAdding && !notesViewOpen ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {/* 裁定 40: the today axis (with its "now" line) MUST mount even
-             when the rail is still loading or the day payload is empty.
-             Otherwise a fresh relaunch lands the user on the loader /
-             error / empty-state and they never see today's axis. */}
-          {agendaLoading && agendaEvents.length === 0 ? (
-            <div aria-hidden="true" className="flex justify-center py-4">
-              <PageLoader label={t.console.timeline.title} />
-            </div>
-          ) : null}
-          {agendaError && agendaEvents.length === 0 ? (
-            <div className="flex justify-center pb-2">
-              <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
-                {t.console.timeline.retry}
-              </Button>
-            </div>
-          ) : null}
-          <Timeline anchors={agendaAnchors} avoidWindows={agendaAvoidWindows} events={agendaEvents} plans={agendaPlans} />
-          {agendaRhythmOff && !agendaLoading ? (
-            <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
-              {t.agenda.rhythmOff}
-            </p>
-          ) : null}
+          {notesViewOpen ? (
+            <AgentNotesList agentId={activeAgentId} />
+          ) : (
+            <>
+              {/* 裁定 40: the today axis (with its "now" line) MUST mount even
+                 when the rail is still loading or the day payload is empty.
+                 Otherwise a fresh relaunch lands the user on the loader /
+                 error / empty-state and they never see today's axis. */}
+              {agendaLoading && agendaEvents.length === 0 ? (
+                <div aria-hidden="true" className="flex justify-center py-4">
+                  <PageLoader label={t.console.timeline.title} />
+                </div>
+              ) : null}
+              {agendaError && agendaEvents.length === 0 ? (
+                <div className="flex justify-center pb-2">
+                  <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
+                    {t.console.timeline.retry}
+                  </Button>
+                </div>
+              ) : null}
+              <Timeline anchors={agendaAnchors} avoidWindows={agendaAvoidWindows} events={agendaEvents} plans={agendaPlans} />
+              {agendaRhythmOff && !agendaLoading ? (
+                <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
+                  {t.agenda.rhythmOff}
+                </p>
+              ) : null}
+            </>
+          )}
         </div>
       </aside>
     </Pane>
