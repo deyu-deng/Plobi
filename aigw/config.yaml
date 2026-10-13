@@ -81,20 +81,20 @@ providers:
     accounts:
       - { id: workbuddy-cli }
 
-  # 桌面订阅那条腿（agy / Google）。**默认关着**——不是没做完，是一条硬限制：
-  # 拿不到那对 OAuth client 参数，我们就**不能自己续期**，只能用 agy 自己续出来、
-  # 写回本机凭据存储的那枚 access token（这台实测约 60 分钟就过期，agy 一跑就回写）。
-  # 能力已经通了：Code `a798a37e`（`chat()` 的成功路径原本不可达）+ `85328dfe`
-  # （Windows 上那条腿只在 macOS 存在），2026-10-11 零环境变量实测
-  # `antigravity-keychain` → `finish_reason=tool_calls`。
-  # 打开方式：把 enabled 改成 true，然后重启网关（providers 在启动时建，见
-  # `aigw/aigw/registry.py` 的 enabled 判定）。关掉就完全不进选路，主循环照旧。
-  # `plobi doctor` 的 `subscription_desktop_store` 一行会说凭据还剩几分钟。
+  # 桌面订阅那条腿（agy / Google）。10-12 20:3x **打开**：用户拍的目标是
+  # 「整个系统不靠按 token 的 API 也能工作」，而实测只有这条腿带得动工具——
+  # `workbuddy` 那条腿是 `--tools ""` 的纯文本档（`capabilities.tools=false`），主循环一发就 400：
+  #   HTTP 400: model 'workbuddy/hy3' route does not support tools/tool_calls
+  #   (provider capabilities.tools=false). Pick a tools-capable model or drop the tools field.
+  # 硬限制照旧：拿不到那对 OAuth client 参数 ⇒ **不能自己续期**，只能用 agy 续出来、写回本机存储的那枚
+  # access token（这台实测约 60 分钟寿命；`ensure_fresh` 每次派发前重读存储接住续期，
+  # `plobi doctor` 的 `subscription_desktop_store` 一行会说还剩几分钟，过期就报「打开 agy 跑一次」）。
+  # 关掉它：把 enabled 改回 false 并重启网关（providers 在启动时建，见 `aigw/aigw/registry.py`）。
   # 不写 models：名单由上游 `fetchAvailableModels` 现读（这台实测 20 条）。
   # ⚠️ 别拿目录第一项当默认——顺序不稳，`antigravity/gemini-pro-agent` 这类条目对
   #    generateContent+tools 回 `Request contains an invalid argument`。
   antigravity:
-    enabled: false
+    enabled: true
     host: https://daily-cloudcode-pa.googleapis.com
     api_version: v1internal
     # 不写 refresh_token：这条腿的凭据来自桌面应用自己维护的本机存储
@@ -102,3 +102,52 @@ providers:
     # 存储里有活的就用、没有就报「打开 agy 登一次」，不需要任何人粘环境变量。
     accounts:
       - { id: desktop-store }
+
+  # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。
+  # 2026-10-11 那把桥接的是 agy（Google）；这条是用户 10-12 拍的第二条订阅口——
+  # 它比 agy 那条好用在一处：本地那张 auth 记录里 access 约 28 天、refresh 约 30 天，
+  # 且**我们能自己拿 refresh 去续**（agy 那条不行，只能等桌面 app 跑一次）。
+  # 实测（同一天）：`stream:true` ⇒ `finish_reason=tool_calls`、usage 196/52/248；
+  # `stream:false` ⇒ `400 {"code":11101,"msg":"Non-stream chat request is currently not supported"}`
+  # ——一个 400 而不是 401，同时也证明 bearer 是过了认证的。
+  # 因此 `providers/workbuddy.py::chat()` 现在永远走 SSE 再把增量折回一条 completion。
+  # 凭据不落盘、不进日志、不进 .env：`token_source` 只在运行时从桌面 app 自己的记录里读，
+  # 续期出来的新 token 也只留在内存（那张文件归桌面 app，我们不当第二个写的人）。
+  # 只列**实测过的那一个**模型 id：厂商目录口没验过，宁可名单短，也不放一条点了必失败的名字。
+  workbuddy_api:
+    enabled: true
+    base_url: https://www.workbuddy.cn
+    dialect: openai
+    chat_path: /v2/chat/completions
+    token_source: codebuddy_desktop_store
+    header_templates:
+      - { name: "X-Agent-Intent", value: "craft" }
+      - { name: "X-Auth-Refresh-Source", value: "plugin" }
+    # 目录 = CodeBuddy 那张 CLI 目录的同一批模型名，逐条在 10-13 19:3x–19:5x 用真流量探过
+    # （`stream:false` 走本腿的内部聚合）：**18 条全部可达，其中 16 条当场回了 tool_calls**；
+    # `glm-5.1` 与 `kimi-k2.8-preview` 回了 stop 且没调工具（模型行为，不是通道不行），
+    # 仍然列着——能不能带工具由 `capabilities.tools` 说，不由我们挑。
+    # ⚠️ 这是一份**抄本**，厂商加模型时不会自己长出来：重探的方法与判据见
+    # `Docs/PROGRESS.md` 10-13 那行；正解是让这条腿自己去取活目录（下一个格子），
+    # 但在那之前，少一条就是选择框里少一条能用的模型——用户 10-13 19:4x 就是为这个骂的。
+    models:
+      - workbuddy_api/hy3
+      - workbuddy_api/hy3-x
+      - workbuddy_api/hy4-preview
+      - workbuddy_api/glm-5.1
+      - workbuddy_api/glm-5.2
+      - workbuddy_api/glm-5.3
+      - workbuddy_api/glm-5.3-flash
+      - workbuddy_api/glm-5v-turbo
+      - workbuddy_api/kimi-k2.6
+      - workbuddy_api/kimi-k2.7
+      - workbuddy_api/kimi-k2.8-preview
+      - workbuddy_api/kimi-k3-1
+      - workbuddy_api/deepseek-v4-pro
+      - workbuddy_api/deepseek-v4.1-flash
+      - workbuddy_api/minimax-m2.7
+      - workbuddy_api/minimax-m3
+      - workbuddy_api/step-5-preview
+      - workbuddy_api/space-bunny
+    accounts:
+      - { id: desktop }
