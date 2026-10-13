@@ -2146,6 +2146,10 @@ export interface Translations {
 
   assistant: {
     thread: {
+      /** 用户消息上的发起方徽标（`messages.asked_by`）。 */
+      askedByMe: string
+      askedBySecretary: string
+      askedByUnrecorded: string
       loadingSession: string
       showEarlier: string
       loadingResponse: string

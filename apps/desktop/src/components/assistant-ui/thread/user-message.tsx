@@ -2,6 +2,7 @@ import { ActionBarPrimitive, BranchPickerPrimitive, MessagePrimitive, useAuiStat
 import { type FC, type ReactNode, useCallback, useRef, useState } from 'react'
 
 import { DirectiveContent } from '@/components/assistant-ui/directive-text'
+import { askedByBadge } from '@/lib/chat-messages'
 import { messageAttachmentRefs, messageContentText } from '@/components/assistant-ui/thread/content'
 import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
 import { UserMessageText } from '@/components/assistant-ui/thread/user-message-text'
@@ -157,6 +158,20 @@ export const UserMessage: FC<{
   // Watch windows spectate a subagent run driven elsewhere — prompts can't be
   // edited, restored, or stopped from here. The bubble stays a button that
   // toggles the 2-line clamp so long prompts are still fully readable.
+  // 发起方徽标（WP-L2-OUTSOURCE-ENTRY）：值从 `messages.asked_by` 经 metadata.custom
+  // 一路带上来 —— 点进一个分身，要分得开哪条是主人自己打的、哪条是秘书代他问的。
+  const askedBy = askedByBadge(
+    useAuiState(s => (s.message.metadata?.custom as { askedBy?: unknown } | undefined)?.askedBy),
+  )
+  const askedByLabel = askedBy === null
+    ? ''
+    : askedBy.kind === 'me'
+      ? copy.askedByMe
+      : askedBy.kind === 'secretary'
+        ? copy.askedBySecretary
+        : askedBy.kind === 'unrecorded'
+          ? copy.askedByUnrecorded
+          : askedBy.raw
   const readOnly = isWatchWindow()
   const [expanded, setExpanded] = useState(false)
   const clampActive = !(readOnly && expanded)
@@ -257,6 +272,15 @@ export const UserMessage: FC<{
       >
         <ActionBarPrimitive.Root className="relative w-full max-w-full" data-slot="aui_user-bubble-actions">
           <div className="human-message-with-todos-wrapper flex w-full flex-col gap-0">
+            {askedByLabel && (
+              <span
+                className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)"
+                data-slot="aui_user-asked-by"
+                title={askedBy?.raw || undefined}
+              >
+                {askedByLabel}
+              </span>
+            )}
             <div className="relative w-full">
               {readOnly ? (
                 // Spectator transcript: clicking only toggles the clamp so the

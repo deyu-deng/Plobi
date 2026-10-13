@@ -20,6 +20,36 @@ export type ChatMessage = {
   hidden?: boolean
   /** Composer attachment ref strings (`@file:...`, `@image:...`) sent with this user message. */
   attachmentRefs?: string[]
+  /** assistant-ui 的官方扩展缝：发起方一类的自定义读数走 metadata.custom。 */
+  metadata?: { custom?: Record<string, unknown> }
+}
+
+/**
+ * `messages.asked_by` → 徽标该说什么。**认不出的值不硬归成已知那三种**：
+ * 原样把 token 显示出来，比悄悄标成"秘书"或"我"诚实（同 R-073 那条口径）。
+ *
+ * undefined 表示这条不是从库里读出来的（比如刚敲下去、乐观渲染的那一条）—— 不给徽标。
+ */
+export function askedByBadge(
+  askedBy: unknown,
+): { kind: 'me' | 'secretary' | 'unrecorded' | 'other'; raw: string } | null {
+  if (askedBy === undefined) {
+    return null
+  }
+
+  const raw = String(askedBy ?? '').trim()
+
+  if (!raw || raw === 'null') {
+    return { kind: 'unrecorded', raw: '' }
+  }
+  if (raw === 'owner') {
+    return { kind: 'me', raw }
+  }
+  if (raw === 'l1' || raw.startsWith('l1:')) {
+    return { kind: 'secretary', raw }
+  }
+
+  return { kind: 'other', raw }
 }
 
 export type GatewayEventPayload = {
@@ -869,7 +899,11 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
       id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
       role: message.role,
       parts,
-      timestamp: message.timestamp
+      timestamp: message.timestamp,
+      // 只有 user 行带发起方；`null` 也要带（那是"这条没记"，不是"没有这一格"）。
+      ...(message.role === 'user' && message.asked_by !== undefined
+        ? { metadata: { custom: { askedBy: message.asked_by } } }
+        : {})
     })
 
     activeAssistantIndex = message.role === 'assistant' ? result.length - 1 : null

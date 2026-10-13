@@ -2534,6 +2534,9 @@ export const en: Translations = {
 
   assistant: {
     thread: {
+      askedByMe: 'From you',
+      askedBySecretary: 'Asked by the secretary',
+      askedByUnrecorded: 'Initiator not recorded (older message)',
       loadingSession: 'Loading session',
       showEarlier: 'Show earlier messages',
       loadingResponse: 'Plobi is loading a response',
