@@ -1,3 +1,4 @@
+import { SETTINGS_ROUTE } from '@/app/routes'
 import type { DesktopDeferredSubsystem } from '@/global'
 import { currentI18nLocale, translateNow } from '@/i18n'
 import { $notifications, dismissNotification, notify } from '@/store/notifications'
@@ -140,16 +141,29 @@ export function reportDeferredSubsystems(rows?: DesktopDeferredSubsystem[]): voi
 
   for (const row of plan.show) {
     notify({
-      detail: translateNow('boot.sidecars.redHint'),
+      // R-082 — one card, two tiers. The USER tier is a single sentence (which
+      // subsystem did not connect) plus one action button routed at the
+      // existing settings page. The DEVELOPER tier is the full observed text
+      // the main process carries (install Go / go build / export
+      // CHATLOG_DATA_KEY / serve on :5030); it rides in `detail`, which the
+      // notification renderer folds into a collapsed <details> by default
+      // (src/components/notifications.tsx). The fault still speaks: same
+      // persistent `warning` kind, same title, same row — layering is not
+      // muting.
+      action: {
+        label: translateNow('boot.sidecars.goToCollectionSettings'),
+        onClick: () => {
+          window.location.hash = SETTINGS_ROUTE
+        }
+      },
+      detail: row.detail,
       id: deferredNoticeId(row.id),
       // `warning` is the persistent, top-centre kind (durationMs 0) — a real
       // sidecar fault must stay readable until the user acknowledges it, but
       // unlike `error` it does not gate or fail the boot.
       kind: 'warning',
-      message: row.detail,
-      title: `${translateNow('boot.sidecars.redTitle')} · ${deferredRowLabel(row)}${
-        row.port > 0 ? ` (:${row.port})` : ''
-      }`
+      message: translateNow('boot.sidecars.redUserMessage', deferredRowLabel(row), row.port > 0 ? `:${row.port}` : ''),
+      title: `${translateNow('boot.sidecars.redTitle')} · ${deferredRowLabel(row)}${row.port > 0 ? ` (:${row.port})` : ''}`
     })
   }
 }

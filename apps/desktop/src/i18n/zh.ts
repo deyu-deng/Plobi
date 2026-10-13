@@ -69,8 +69,22 @@ export const zh: Translations = {
       deferredHint: '不是故障：这台机器上根本没有可以启动的东西。主对话不受影响；托盘菜单和这里都会列出每个后置服务、未启动的原因与恢复方式。',
       redTitle: '服务故障',
       redHint: '主对话不受影响，但这个服务确实被尝试启动过，却没有健康起来。这是真故障，不是押后；恢复方式见状态栏网关菜单。',
+      // R-082 用户态：一句话（哪条采集没连上）；开发者全文留在折叠的详情里。
+      // `port` 传进来时已是 ":5030" 形状，无端口则传空串。
+      redUserMessage: (name: string, port: string) =>
+        `主对话不受影响，但${name}${port ? `（${port}）` : ''}没有连上——这是真故障，不是押后，可以到设置里查看。`,
+      goToCollectionSettings: '去采集设置',
       enableLabel: '恢复方式',
       statusbarDeferred: (count: number) => `${count} 个后置服务未运行`
+    },
+    // R-083 — 模块图断裂时的重试卡。与 src/lib/boot-recovery.ts 内的字面量逐字
+    // 一致（兜底卡不能 import i18n 运行时——断裂的正是那张模块图）；
+    // boot-recovery.test.ts 守着两边不漂移。
+    recovery: {
+      description: 'Plobi 加载失败，窗口无法启动。点击重试会重新加载窗口——你的对话与设置不受影响。',
+      details: '错误详情',
+      retry: '点击重试',
+      title: '加载失败'
     },
     steps: {
       connectingGateway: '正在连接桌面网关',

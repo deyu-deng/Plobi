@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { DesktopDeferredSubsystem } from '@/global'
+import { translateNow } from '@/i18n'
 import { $notifications } from '@/store/notifications'
 
 import {
@@ -174,7 +175,7 @@ describe('reportDeferredSubsystems', () => {
     $notifications.set([])
   })
 
-  it('raises a persistent warning notice carrying the observed fault', () => {
+  it('raises a persistent warning notice for a red row, split into the two R-082 tiers', () => {
     reportDeferredSubsystems([redRow({ id: 'aigw', observed: 'no usable Python interpreter' })])
 
     const notices = $notifications.get()
@@ -184,7 +185,32 @@ describe('reportDeferredSubsystems', () => {
     expect(notices[0].id).toBe(deferredNoticeId('aigw'))
     expect(notices[0].title).toContain('Local Quota Hub')
     expect(notices[0].title).toContain('8000')
-    expect(notices[0].message).toContain('RED')
+
+    // USER TIER — one sentence naming the subsystem. No developer instruction
+    // may leak up into it: the whole point of R-082 is that `go build` /
+    // `serve on :5030` stop being the first thing the user reads.
+    expect(notices[0].message).toBe(translateNow('boot.sidecars.redUserMessage', 'Local Quota Hub', ':8000'))
+    expect(notices[0].message).not.toContain('RED')
+    expect(notices[0].message).not.toContain('go build')
+
+    // DEVELOPER TIER — the observed full text rides in `detail`, which the
+    // notification renderer (src/components/notifications.tsx) folds into a
+    // collapsed <details> by default.
+    expect(notices[0].detail).toContain('no usable Python interpreter')
+    expect(notices[0].detail).toContain('RED')
+
+    // One action button, routed at the existing settings page.
+    expect(notices[0].action?.label).toBe(translateNow('boot.sidecars.goToCollectionSettings'))
+  })
+
+  it('routes the fault-card action at the existing settings page', () => {
+    reportDeferredSubsystems([redRow({ id: 'chatlog' })])
+
+    const [notice] = $notifications.get()
+
+    notice.action?.onClick()
+
+    expect(window.location.hash).toBe('#/settings')
   })
 
   it('stays silent for a deferred row — no toast at all on a clean postponed boot', () => {
