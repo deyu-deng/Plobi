@@ -1,10 +1,16 @@
 import { type QueryClient } from '@tanstack/react-query'
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { getGlobalModelInfo } from '@/plobi'
 import { type ChatScope } from '@/app/console/chat/scope'
-import { useI18n } from '@/i18n'
-import { notifyError } from '@/store/notifications'
+import { translateNow, useI18n } from '@/i18n'
+import {
+  firstSelectableQuotaModel,
+  isDesktopQuotaProvider,
+  quotaSelectionVerdict,
+  refreshAllConnectedAppModels
+} from '@/store/desktop-quotas'
+import { notify, notifyError } from '@/store/notifications'
 import {
   $activeSessionId,
   $currentModel,
@@ -14,8 +20,14 @@ import {
   setComposerModelScope,
   storedScopedComposerSelection
 } from '@/store/session'
-import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import type { ModelOptionsResponse } from '@/types/plobi'
+
+/**
+ * How often the composer re-asks the quota hub what it can serve. One local GET
+ * per tick — it spends no vendor tokens, so the interval is a latency choice,
+ * not a cost one. An Antigravity sign-in on this machine lasts about an hour.
+ */
+const QUOTA_CATALOG_TICK_MS = 60_000
 
 interface ModelSelection {
   model: string
@@ -185,6 +197,70 @@ export function useModelControls({
     },
     [activeSessionId, copy.modelSwitchFailed, isAgentSession, queryClient, requestGateway, scope, updateModelOptionsCache]
   )
+
+  // The hub's verdict can change underneath a conversation that is just sitting
+  // open: on this machine an Antigravity sign-in lasts about an hour, and it is
+  // renewed by that desktop app, not by Plobi. So re-ask the hub on a slow tick
+  // while the window is visible, and if the model this composer is on is no longer
+  // offered, land on one that is and say why out loud. A turn that must fail is
+  // never the user's bug — the subscription clock ran out, and we know it.
+  useEffect(() => {
+    let cancelled = false
+
+    const tick = async () => {
+      if (document.visibilityState !== 'visible') {
+        return
+      }
+
+      await refreshAllConnectedAppModels()
+
+      if (cancelled) {
+        return
+      }
+
+      const provider = $currentProvider.get()
+      const model = $currentModel.get()
+
+      const verdict = quotaSelectionVerdict(provider, model)
+
+      if (verdict.state !== 'gone') {
+        return
+      }
+
+      const to = firstSelectableQuotaModel()
+
+      if (!to || !(await selectModel(to))) {
+        return
+      }
+
+      const key = `desktop.quotaReason.${verdict.reason}`
+      const translated = translateNow(key)
+      // The hub's reason is a machine token (`credential_expired`, `no_tools`, …).
+      // A token this build has no copy for still reaches the user as itself: the
+      // switch already happened, and hiding the cause is worse than awkward words.
+      const reason = translated === key ? translateNow('desktop.quotaReason.unknown', verdict.reason) : translated
+
+      notify({
+        kind: 'warning',
+        title: translateNow('desktop.quotaFallbackTitle'),
+        message: translateNow(
+          'desktop.quotaFallbackMessage',
+          `${provider}/${model}`,
+          `${to.provider}/${to.model}`,
+          reason
+        )
+      })
+    }
+
+    void tick()
+
+    const timer = setInterval(() => void tick(), QUOTA_CATALOG_TICK_MS)
+
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [selectModel])
 
   return { refreshCurrentModel, selectModel, updateModelOptionsCache }
 }
