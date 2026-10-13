@@ -1018,6 +1018,56 @@ def agent_notes(agent_id: str) -> Optional[dict]:
     )
 
 
+def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
+    """这一格**外包出去**的轮次：给了谁、在哪个目录、开了什么权限档、花了多少。
+
+    判据 2（WP-L2-OUTSOURCE-ENTRY）要的是"一处能查到"，所以不新增顶层面——挂在既有
+    ``/api/agents/{id}/`` 下面，与 ``subagents`` / ``overview`` / ``notes`` 同族。
+
+    归属靠 ``cwd`` 落在这个分身的 ``project_path`` 之下：流水是按**目录**记的，因为交出去
+    的本来就是"某个目录里的一段活"。**没有绑定目录就不猜**——回空表并说明原因，
+    而不是把所有外包都算到它头上（那比漏报更坏）。
+    """
+    from plobi.delegation.offload import RoundLedger, total_usd
+
+    entry = get_registry().get(agent_id)
+    if entry is None:
+        return None
+
+    home = (entry.project_path or "").strip()
+    rows = RoundLedger().rows()
+    if not home:
+        matched: list[dict] = []
+        reason = "这一条没有绑定目录；外包流水按目录归属，所以不猜哪段是它交出去的"
+    else:
+        normalized = home.rstrip("\\/")
+        matched = [r for r in rows
+                   if str(r.get("cwd") or "").startswith(normalized)]
+        reason = ""
+    newest_first = sorted(matched, key=lambda r: str(r.get("ts") or ""), reverse=True)
+    picked = newest_first[:max(0, int(limit))]
+    amount, cost_status = total_usd(picked)
+
+    return {
+        "agent": agent_id,
+        "bound_folder": home or None,
+        "rounds": picked,
+        "total_rounds": len(matched),
+        "total_usd": amount,
+        "cost_status": cost_status,
+        "unattributed_reason": reason,
+    }
+
+
+@router.get("/agents/{agent_id}/offloads", name="agent_offloads")
+async def agent_offloads_route(agent_id: str, limit: int = 20):
+    """GET /api/agents/:id/offloads — 这一格外包出去的轮次（控制台那一处流水）。"""
+    payload = await run_in_threadpool(agent_offloads, agent_id, limit=limit)
+    if payload is None:
+        return _error(404, f"agent {agent_id!r} is not registered")
+    return {"ok": True, "data": payload}
+
+
 @router.get("/agents/{agent_id}/notes")
 async def agent_notes_route(agent_id: str):
     """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""
