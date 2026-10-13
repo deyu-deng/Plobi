@@ -4,6 +4,8 @@
 
 **AI Secretary for the Multi-App Era**
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 Plobi is a desktop AI agent that orchestrates your free-tier AI tools — Cursor, Antigravity, WorkBuddy, Marvis, DevEco, and API providers — into one unified secretary. It tracks quotas, dispatches tasks, manages your agenda, and runs unattended automations, so you don't have to jump between apps.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
