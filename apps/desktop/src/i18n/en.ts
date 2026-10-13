@@ -69,8 +69,25 @@ export const en: Translations = {
       deferredHint: 'Not a fault: nothing on this machine could even be started. Chat is unaffected; the tray menu and this dot list every postponed service with its reason and how it comes back.',
       redTitle: 'Service fault',
       redHint: 'Chat is unaffected, but this service was started and never came up healthy. This is a real fault, not a postponement — how to bring it back is in the status bar gateway menu.',
+      // R-082 user tier: one sentence (which subsystem is not connected) shown
+      // as the fault card's message; the developer instructions stay in the
+      // collapsed detail. `port` arrives pre-formatted (":5030") or empty.
+      redUserMessage: (name: string, port: string) =>
+        `Chat is unaffected, but ${name}${port ? ` (${port})` : ''} is not connected — a real fault, not a postponement. You can look into it in Settings.`,
+      goToCollectionSettings: 'Go to collection settings',
       enableLabel: 'How it comes back',
       statusbarDeferred: (count: number) => `${count} sidecar${count === 1 ? '' : 's'} not running`
+    },
+    // R-083 — the retry card for a broken module graph. Mirrored byte-for-byte
+    // in src/lib/boot-recovery.ts (which cannot import the i18n runtime — that
+    // module graph is the thing that broke); boot-recovery.test.ts guards the
+    // parity.
+    recovery: {
+      description:
+        'Plobi failed to load and the window cannot start. Retry reloads the window — your chats and settings are untouched.',
+      details: 'Error details',
+      retry: 'Retry',
+      title: 'Load failed'
     },
     steps: {
       connectingGateway: 'Connecting live desktop gateway',

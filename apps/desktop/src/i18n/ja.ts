@@ -71,8 +71,22 @@ export const ja = defineLocale({
       redTitle: 'サービスの障害',
       redHint:
         'チャットは影響を受けませんが、このサービスは起動が試みられ、正常な状態には至りませんでした。後回しではなく実際の障害です。復帰方法はステータスバーのゲートウェイレンズにあります。',
+      // R-082 ユーザー向け：どのサブシステムがつながっていないかを一文で。開発者向けの全文は折りたたまれた詳細に残ります。
+      redUserMessage: (name: string, port: string) =>
+        `チャットは影響を受けませんが、${name}${port ? ` (${port})` : ''} は接続できませんでした。後回しではなく実際の障害です。設定で確認できます。`,
+      goToCollectionSettings: '収集設定を開く',
       enableLabel: '復帰方法',
       statusbarDeferred: (count: number) => `未起動のサービス ${count} 件`
+    },
+    // R-083 — モジュールグラフ断裂時のリトライカード。src/lib/boot-recovery.ts 内の
+    // 字面量と一致（i18n ランタイムを import できないため）。boot-recovery.test.ts が
+    // 一致を監視します。
+    recovery: {
+      description:
+        'Plobi の読み込みに失敗し、ウィンドウを開始できません。再試行するとウィンドウが再読み込みされます。チャットと設定には影響ありません。',
+      details: 'エラーの詳細',
+      retry: '再試行',
+      title: '読み込みに失敗しました'
     },
     steps: {
       connectingGateway: 'ライブデスクトップゲートウェイに接続中',

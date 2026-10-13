@@ -1,52 +1,29 @@
 import './styles.css'
 // Side-effect: applies the persisted window translucency on load.
+// Loaded unconditionally (not inside the dynamic import below) because the
+// pet-overlay window shares this stylesheet — it has no app mount of its own.
 import './store/translucency'
 
-import { QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { HashRouter } from 'react-router-dom'
+import { runBootstrap } from './lib/boot-recovery'
 
-import App from './app'
-import { ErrorBoundary } from './components/error-boundary'
-import { HapticsProvider } from './components/haptics-provider'
-import { I18nProvider } from './i18n'
-import { installClipboardShim } from './lib/clipboard'
-import { queryClient } from './lib/query-client'
-import { ThemeProvider } from './themes/context'
-
-installClipboardShim()
-
-// Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
-// scripts/ harnesses can drive a synthetic stream + record render cost.
-// Tree-shaken out of production builds. (Uses MODE rather than DEV because
-// our Vite setup currently bundles with PROD=true even in `vite dev`; see
-// scripts/dev-no-hmr.mjs for the surrounding workarounds.)
-if (import.meta.env.MODE !== 'production') {
-  import('./app/chat/perf-probe')
-}
-
+// R-083 — the application now mounts through a dynamic import so that ANY break
+// in the module graph (a half-applied HMR shard mid-session is the common one)
+// lands on the retry card in ./lib/boot-recovery.ts instead of a white window.
+// The card is dependency-free and renders into #root, which this entry point
+// otherwise leaves empty.
+//
 // The pet overlay rides this same bundle (`?win=overlay`) but mounts a tiny,
-// transparent, gateway-less surface instead of the full app. Branch before any
-// app-shell work so the overlay window stays cheap.
-if (new URLSearchParams(window.location.search).get('win') === 'overlay') {
-  void import('./app/pet-overlay/overlay-root').then(({ mountPetOverlay }) => mountPetOverlay())
-} else {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <ErrorBoundary label="root">
-        <QueryClientProvider client={queryClient}>
-          <I18nProvider>
-            <ThemeProvider>
-              <HapticsProvider>
-                <HashRouter>
-                  <App />
-                </HashRouter>
-              </HapticsProvider>
-            </ThemeProvider>
-          </I18nProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
-    </StrictMode>
-  )
-}
+// transparent, gateway-less surface instead of the full app. It keeps its own
+// dynamic import and its own catch — the overlay branch must never be routed
+// through the app mount, and the app branch never through the overlay.
+runBootstrap({
+  isOverlayWindow: new URLSearchParams(window.location.search).get('win') === 'overlay',
+  loadApp: () =>
+    import('./bootstrap-app').then(({ mountApp }) => {
+      mountApp()
+    }),
+  loadOverlay: () =>
+    import('./app/pet-overlay/overlay-root').then(({ mountPetOverlay }) => {
+      mountPetOverlay()
+    })
+})

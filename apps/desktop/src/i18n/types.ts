@@ -115,9 +115,29 @@ export interface Translations {
       /** Card heading for a `red` row — the one state that may alarm. */
       redTitle: string
       redHint: string
+      /**
+       * R-082 user tier: one sentence naming the disconnected subsystem, shown
+       * as the fault card's message. `port` arrives pre-formatted (":5030") or
+       * empty. The developer instructions stay in the collapsed detail.
+       */
+      redUserMessage: (name: string, port: string) => string
+      /** R-082 user tier: the one action button on the fault card. */
+      goToCollectionSettings: string
       /** Prefix for the enable steps carried by every non-ready row. */
       enableLabel: string
       statusbarDeferred: (count: number) => string
+    }
+    /**
+     * R-083 — copy for the module-graph retry card. Mirrored byte-for-byte in
+     * src/lib/boot-recovery.ts (which cannot import the i18n runtime — that
+     * module graph is the thing that broke); boot-recovery.test.ts guards the
+     * parity.
+     */
+    recovery: {
+      description: string
+      details: string
+      retry: string
+      title: string
     }
     steps: {
       connectingGateway: string

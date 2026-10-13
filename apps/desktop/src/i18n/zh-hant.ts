@@ -69,8 +69,22 @@ export const zhHant = defineLocale({
       deferredHint: '不是故障：這台電腦上根本沒有可以啟動的東西。主要聊天不受影響；系統托盤選單與這裡會列出每個延後啟動的服務、未啟動的原因與恢復方式。',
       redTitle: '服務故障',
       redHint: '主要聊天不受影響，但這個服務確實被嘗試啟動過，卻沒有健康地跑起來。這是真正的故障，不是延後；恢復方式請見狀態列閘道選單。',
+      // R-082 使用者層級：一句話（哪個採集沒連上）；開發者全文留在收合的詳情裡。
+      // `port` 傳入時已是 ":5030" 形狀，無連接埠則傳空字串。
+      redUserMessage: (name: string, port: string) =>
+        `主要聊天不受影響，但${name}${port ? `（${port}）` : ''}沒有連上——這是真正的故障，不是延後，可以到設定裡查看。`,
+      goToCollectionSettings: '前往採集設定',
       enableLabel: '恢復方式',
       statusbarDeferred: (count: number) => `${count} 個後台服務未執行`
+    },
+    // R-083 — 模組圖断裂時的重試卡。與 src/lib/boot-recovery.ts 內的字面值逐字
+    // 一致（救急卡不能 import i18n 執行期——断裂的正是那張模組圖）；
+    // boot-recovery.test.ts 守著兩邊不漂移。
+    recovery: {
+      description: 'Plobi 載入失敗，視窗無法啟動。重試會重新載入視窗——你的對話與設定不受影響。',
+      details: '錯誤詳情',
+      retry: '點擊重試',
+      title: '載入失敗'
     },
     steps: {
       connectingGateway: '正在連線桌面閘道',
