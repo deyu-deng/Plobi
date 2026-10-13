@@ -14,6 +14,22 @@ import {
   switchBranch
 } from './git-worktree-ops'
 
+/**
+ * Canonical path for the assertions that compare a fixture directory with a path git
+ * reported back.
+ *
+ * Measured on this Windows box 2026-10-13: `os.tmpdir()` hands out the 8.3 short form
+ * (`C:\Users\TURTLE~1\AppData\Local\Temp\…`), git answers with the long form and forward
+ * slashes, and plain `fs.realpathSync` returns a short segment **exactly as it was given** —
+ * only `fs.realpathSync.native` goes through the OS resolver and expands it (same input,
+ * `C:\Users\Turtlelet\…`). Comparing the two unexpanded spellings is red on every Windows
+ * run for a difference in *notation*, not in location, which is what made
+ * `listBranches`/`addWorktree` fail here while passing on POSIX.
+ */
+function realPath(p: string): string {
+  return typeof fs.realpathSync.native === 'function' ? fs.realpathSync.native(p) : fs.realpathSync(p)
+}
+
 test('sanitizeBranch: spaces → hyphens, forbidden chars dropped, edges trimmed', () => {
   assert.equal(sanitizeBranch('beach vibes'), 'beach-vibes')
   assert.equal(sanitizeBranch('feat/cool thing'), 'feat/cool-thing')
@@ -107,7 +123,7 @@ test('listBranches: lists locals and flags the checked-out branch', async () => 
     // The repo's own checkout is flagged; the unused branch is convertible.
     assert.equal(branches.find(b => b.name === current).checkedOut, true)
     assert.equal(branches.find(b => b.name === current).isDefault, true)
-    assert.equal(fs.realpathSync(branches.find(b => b.name === current).worktreePath), fs.realpathSync(dir))
+    assert.equal(realPath(branches.find(b => b.name === current)!.worktreePath!), realPath(dir))
     assert.equal(branches.find(b => b.name === 'feature').checkedOut, false)
     assert.equal(branches.find(b => b.name === 'feature').isDefault, false)
     assert.equal(branches.find(b => b.name === 'feature').worktreePath, null)
@@ -203,7 +219,7 @@ test('addWorktree: existing default branch switches the main checkout, not .work
     const result = await addWorktree(dir, { existingBranch: trunk }, 'git')
 
     assert.equal(result.branch, trunk)
-    assert.equal(fs.realpathSync(result.path), fs.realpathSync(dir))
+    assert.equal(realPath(result.path), realPath(dir))
     assert.equal(git('branch', '--show-current'), trunk)
     assert.equal(fs.existsSync(path.join(dir, '.worktrees', trunk)), false)
   } finally {

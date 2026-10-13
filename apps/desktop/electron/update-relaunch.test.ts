@@ -36,7 +36,16 @@ import {
   unpackedDirName
 } from './update-relaunch'
 
-const ROOT = '/home/u/.plobi/plobi-agent'
+// Every fixture here is a *pure string* path — nothing is created on disk — but
+// `resolveUnpackedRelease` runs `path.resolve` over the execPath it is handed, so a fixture
+// that merely *looks* absolute (`/home/u/…`) stops being absolute on Windows: it resolves to
+// `<cwd drive>:\home\u\…` while the expected value keeps its leading slash, and the prefix
+// check goes null for the wrong reason. 裁定 79 forbids literal POSIX paths in code and
+// tests for exactly this, so build the fixtures with `path.resolve` — absolute on whatever
+// platform runs the suite. `OUTSIDE` is a sibling of `ROOT`, i.e. genuinely off to the side
+// of the update root rather than accidentally so.
+const ROOT = path.resolve('home', 'u', '.plobi', 'plobi-agent')
+const OUTSIDE = path.join(path.dirname(ROOT), 'elsewhere')
 const UNPACKED = path.join(ROOT, 'apps', 'desktop', 'release', 'linux-unpacked')
 
 // ---------------------------------------------------------------------------
@@ -56,14 +65,15 @@ test('resolveUnpackedRelease returns the dir for a binary UNDER release/<plat>-u
 })
 
 test('resolveUnpackedRelease is null for AppImage / .deb / .rpm / dev / unresolved paths', () => {
-  // AppImage mount
-  assert.equal(resolveUnpackedRelease('/tmp/.mount_Hermes12345/AppRun', ROOT, 'linux'), null)
-  // .deb / .rpm system install
-  assert.equal(resolveUnpackedRelease('/usr/lib/plobi/plobi', ROOT, 'linux'), null)
-  assert.equal(resolveUnpackedRelease('/opt/Plobi/plobi', ROOT, 'linux'), null)
-  // dev electron
+  // AppImage mount point (the FUSE dir a packaged app actually runs from)
+  assert.equal(resolveUnpackedRelease(path.join(OUTSIDE, 'mount-plobi', 'AppRun'), ROOT, 'linux'), null)
+  // .deb / .rpm system install — outside the update root
+  assert.equal(resolveUnpackedRelease(path.join(OUTSIDE, 'lib', 'plobi'), ROOT, 'linux'), null)
+  assert.equal(resolveUnpackedRelease(path.join(OUTSIDE, 'opt', 'Plobi', 'Plobi'), ROOT, 'linux'), null)
+  // dev electron: INSIDE the checkout but not under `release/` — the case that has to be
+  // decided by the rule, not by a fixture that happens to sit on another drive.
   assert.equal(
-    resolveUnpackedRelease('/home/u/.plobi/plobi-agent/node_modules/electron/dist/electron', ROOT, 'linux'),
+    resolveUnpackedRelease(path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron'), ROOT, 'linux'),
     null
   )
   // empty / missing
