@@ -2598,6 +2598,9 @@ export const zh: Translations = {
   },
 
   preview: {
+    emptyGuidanceTitle: '这里还没有打开的东西',
+    emptyGuidanceBody: '在「笔记」里选一篇，或从文件树打开一个文件。',
+    emptyGuidanceHint: '在这里选中文字后按 ⌘/Ctrl+L，就会作为上下文加进当前对话',
     tab: '预览',
     closeTab: label => `关闭 ${label}`,
     closeOthers: '关闭其他',
@@ -2929,6 +2932,15 @@ export const zh: Translations = {
     cwdStagedTitle: '工作目录已暂存',
     cwdStagedMessage: '重启桌面后端后，工作目录更改才会应用到当前活跃会话。',
     modelSwitchFailed: '模型切换失败',
+    quotaFallbackTitle: '订阅模型暂时不可用',
+    quotaFallbackMessage: (from, to, reason) => `${from} 现在用不了——${reason}。本次对话已切到 ${to}。`,
+    quotaReason: {
+      credential_expired: '登录凭据已过期，打开那个应用一次就能续上',
+      no_desktop_credential: '这台机器上没有读到它的登录凭据',
+      no_tools: '这条通道不把工具调用交回 Plobi',
+      not_offered: '本地额度网关已经不再列出它',
+      unknown: reason => `不可用（${reason}）`
+    },
     sessionExported: '会话已导出',
     sessionExportFailed: '无法导出会话',
     imageSaved: '图片已保存',

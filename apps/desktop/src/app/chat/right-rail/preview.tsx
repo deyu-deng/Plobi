@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import type { SetTitlebarToolGroup } from '@/app/shell/titlebar-controls'
 import { Codicon } from '@/components/ui/codicon'
@@ -37,8 +37,9 @@ import {
 } from '@/store/preview'
 import { $dirtyPreviewUrls } from '@/store/preview-edit'
 
-import { AgentNotesList } from './notes-list'
+import { AgentNotesList, RAIL_CARD, RAIL_CARD_BODY, RAIL_CARD_TITLE } from './notes-list'
 import { PreviewPane } from './preview-pane'
+import { SelectionToChat } from './selection-to-chat'
 
 export const PREVIEW_RAIL_MIN_WIDTH = '18rem'
 export const PREVIEW_RAIL_MAX_WIDTH = '38rem'
@@ -60,6 +61,8 @@ export const PREVIEW_RAIL_PANE_WIDTH = `min(${INTRINSIC}, max(0rem, calc(100vw -
 interface ChatPreviewRailProps {
   /** Present on an agent route; that is what makes the notes view meaningful. */
   agentId?: string
+  /** Same handler the terminal's floating button uses — one behaviour, two affordances. */
+  onAddSelectionToChat?: (text: string, label: string) => void
   onRestartServer?: (url: string, context?: string) => Promise<string>
   setTitlebarToolGroup?: SetTitlebarToolGroup
 }
@@ -77,7 +80,12 @@ function tabLabelFor(target: PreviewTarget): string {
   return tail || value || translateNow('preview.tab')
 }
 
-export function ChatPreviewRail({ agentId, onRestartServer, setTitlebarToolGroup }: ChatPreviewRailProps) {
+export function ChatPreviewRail({
+  agentId,
+  onAddSelectionToChat,
+  onRestartServer,
+  setTitlebarToolGroup
+}: ChatPreviewRailProps) {
   const { t } = useI18n()
   const previewReloadRequest = useStore($previewReloadRequest)
   const activeTabId = useStore($rightRailActiveTabId)
@@ -86,6 +94,7 @@ export function ChatPreviewRail({ agentId, onRestartServer, setTitlebarToolGroup
   const filePreviewTabs = useStore($filePreviewTabs)
   const previewTarget = useStore($previewTarget)
   const dirtyPreviewUrls = useStore($dirtyPreviewUrls)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   const tabs = useMemo<readonly RailTab[]>(
     () => [
@@ -265,21 +274,41 @@ export function ChatPreviewRail({ agentId, onRestartServer, setTitlebarToolGroup
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden" ref={bodyRef}>
         {notesMode ? (
           <div className="h-full overflow-y-auto py-1">
             <AgentNotesList agentId={notesAgentId} />
           </div>
+        ) : activeTab ? (
+          <PreviewPane
+            embedded
+            onRestartServer={isPreview ? onRestartServer : undefined}
+            reloadRequest={previewReloadRequest}
+            setTitlebarToolGroup={setTitlebarToolGroup}
+            target={activeTab.target}
+          />
         ) : (
-          activeTab && (
-            <PreviewPane
-              embedded
-              onRestartServer={isPreview ? onRestartServer : undefined}
-              reloadRequest={previewReloadRequest}
-              setTitlebarToolGroup={setTitlebarToolGroup}
-              target={activeTab.target}
-            />
-          )
+          // The rail can be mounted with nothing open (the notes tab opened a
+          // preview and it was since closed). A blank pane here reads as a crash,
+          // which is exactly what the last white-screen report was.
+          <div className="flex h-full flex-col justify-center gap-1.5 p-3" data-testid="rail-empty-guidance">
+            <div className={RAIL_CARD}>
+              <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="output" size="0.8125rem" />
+              <div className="min-w-0">
+                <p className={RAIL_CARD_TITLE}>{t.preview.emptyGuidanceTitle}</p>
+                <p className={RAIL_CARD_BODY}>{t.preview.emptyGuidanceBody}</p>
+              </div>
+            </div>
+            {onAddSelectionToChat && (
+              <div className={RAIL_CARD}>
+                <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="comment" size="0.8125rem" />
+                <p className={RAIL_CARD_BODY}>{t.preview.emptyGuidanceHint}</p>
+              </div>
+            )}
+          </div>
+        )}
+        {onAddSelectionToChat && (
+          <SelectionToChat containerRef={bodyRef} onAddSelectionToChat={onAddSelectionToChat} />
         )}
       </div>
     </aside>

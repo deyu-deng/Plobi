@@ -20,12 +20,13 @@ const NOTE_ROW =
 // The empty state is a stack of cards, not a line of grey text: today the real
 // brain has 79 notes and none of them carry a `belongs:` tag, so "empty" is the
 // first screen every user sees, and it has to say what to do about it.
-const CARD =
+// Exported because the rail's own "nothing open" state uses the same shape.
+export const RAIL_CARD =
   'flex items-start gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-control-hover-background)/40 px-2.5 py-2'
 
-const CARD_TITLE = 'text-[0.75rem] font-medium text-foreground'
+export const RAIL_CARD_TITLE = 'text-[0.75rem] font-medium text-foreground'
 
-const CARD_BODY = 'pt-0.5 text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)'
+export const RAIL_CARD_BODY = 'pt-0.5 text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)'
 
 export interface AgentNotesListProps {
   agentId: string
@@ -88,7 +89,7 @@ export function AgentNotesList({ agentId }: AgentNotesListProps) {
 
   if (state.kind === 'loading') {
     return (
-      <p className={CARD_BODY} data-testid="agent-notes-loading">
+      <p className={RAIL_CARD_BODY} data-testid="agent-notes-loading">
         {t.console.notes.loading}
       </p>
     )
@@ -97,11 +98,11 @@ export function AgentNotesList({ agentId }: AgentNotesListProps) {
   if (state.kind === 'error') {
     return (
       <div className="flex flex-col gap-1.5 p-1" data-testid="agent-notes-error">
-        <div className={CARD}>
+        <div className={RAIL_CARD}>
           <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="warning" size="0.8125rem" />
           <div className="min-w-0">
-            <p className={CARD_TITLE}>{t.console.notes.brainUnreachable}</p>
-            <p className={CARD_BODY}>{state.message}</p>
+            <p className={RAIL_CARD_TITLE}>{t.console.notes.brainUnreachable}</p>
+            <p className={RAIL_CARD_BODY}>{state.message}</p>
           </div>
         </div>
       </div>
@@ -113,27 +114,27 @@ export function AgentNotesList({ agentId }: AgentNotesListProps) {
   if (view.notes.length === 0) {
     return (
       <div className="flex flex-col gap-1.5 p-1" data-testid="agent-notes-empty">
-        <div className={CARD}>
+        <div className={RAIL_CARD}>
           <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="tag" size="0.8125rem" />
           <div className="min-w-0">
-            <p className={CARD_TITLE}>{t.console.notes.emptyTitle}</p>
-            <p className={CARD_BODY}>{t.console.notes.emptyHowToBody(view.agent)}</p>
+            <p className={RAIL_CARD_TITLE}>{t.console.notes.emptyTitle}</p>
+            <p className={RAIL_CARD_BODY}>{t.console.notes.emptyHowToBody(view.agent)}</p>
           </div>
         </div>
-        <div className={CARD}>
+        <div className={RAIL_CARD}>
           <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="note" size="0.8125rem" />
           <div className="min-w-0">
-            <p className={CARD_TITLE}>{t.console.notes.scanned(view.totals.scanned)}</p>
-            <p className={CARD_BODY}>
+            <p className={RAIL_CARD_TITLE}>{t.console.notes.scanned(view.totals.scanned)}</p>
+            <p className={RAIL_CARD_BODY}>
               {view.totals.with_frontmatter} · {view.note_roots.join(', ')}
             </p>
           </div>
         </div>
         {view.unknown_belongs.length > 0 && (
-          <div className={CARD} data-testid="agent-notes-unknown">
+          <div className={RAIL_CARD} data-testid="agent-notes-unknown">
             <Codicon className="mt-0.5 shrink-0 text-(--ui-text-tertiary)" name="warning" size="0.8125rem" />
             <div className="min-w-0">
-              <p className={CARD_BODY}>
+              <p className={RAIL_CARD_BODY}>
                 {t.console.notes.unknownBelongs(view.unknown_belongs.join('、'))}
               </p>
             </div>
@@ -160,12 +161,12 @@ export function AgentNotesList({ agentId }: AgentNotesListProps) {
         </li>
       ))}
       {view.budget.truncated && (
-        <li className={cn(CARD_BODY, 'px-2 pt-1')} data-testid="agent-notes-truncated">
+        <li className={cn(RAIL_CARD_BODY, 'px-2 pt-1')} data-testid="agent-notes-truncated">
           {t.console.notes.truncated(view.notes.length)}
         </li>
       )}
       {view.unknown_belongs.length > 0 && (
-        <li className={cn(CARD_BODY, 'px-2 pt-1')} data-testid="agent-notes-unknown">
+        <li className={cn(RAIL_CARD_BODY, 'px-2 pt-1')} data-testid="agent-notes-unknown">
           {t.console.notes.unknownBelongs(view.unknown_belongs.join('、'))}
         </li>
       )}

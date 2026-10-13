@@ -522,6 +522,18 @@ export function clearSessionPreviewRegistry() {
   selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
 }
 
+/**
+ * Label for a text selection that came from outside a terminal (the file-preview
+ * pane shares ⌘/Ctrl+L with it), so the composer ref reads as a file quote rather
+ * than a bogus "zsh:N lines".
+ */
+export function previewSelectionLabel(): string {
+  const target = $filePreviewTarget.get() ?? $previewTarget.get()
+  const source = target?.path || target?.url || ''
+
+  return source.split(/[/\\]/).filter(Boolean).pop() || target?.label?.trim() || ''
+}
+
 export function requestPreviewReload() {
   $previewReloadRequest.set($previewReloadRequest.get() + 1)
 }

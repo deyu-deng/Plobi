@@ -2051,6 +2051,9 @@ export interface Translations {
   }
 
   preview: {
+    emptyGuidanceTitle: string
+    emptyGuidanceBody: string
+    emptyGuidanceHint: string
     tab: string
     closeTab: (label: string) => string
     closeOthers: string
@@ -2366,6 +2369,16 @@ export interface Translations {
     cwdStagedTitle: string
     cwdStagedMessage: string
     modelSwitchFailed: string
+    /** The model in use stopped being servable by the local quota hub. */
+    quotaFallbackTitle: string
+    quotaFallbackMessage: (from: string, to: string, reason: string) => string
+    quotaReason: {
+      credential_expired: string
+      no_desktop_credential: string
+      no_tools: string
+      not_offered: string
+      unknown: (reason: string) => string
+    }
     sessionExported: string
     sessionExportFailed: string
     imageSaved: string

@@ -2436,6 +2436,9 @@ export const en: Translations = {
   },
 
   preview: {
+    emptyGuidanceTitle: 'Nothing open here',
+    emptyGuidanceBody: 'Pick a note in the notes view, or open a file from the file tree.',
+    emptyGuidanceHint: 'Selecting text here and pressing ⌘/Ctrl+L adds it to the conversation',
     tab: 'Preview',
     closeTab: label => `Close ${label}`,
     closeOthers: 'Close others',
@@ -2786,6 +2789,15 @@ export const en: Translations = {
     cwdStagedTitle: 'Working directory staged',
     cwdStagedMessage: 'Restart the desktop backend to apply cwd changes to this active session.',
     modelSwitchFailed: 'Model switch failed',
+    quotaFallbackTitle: 'Subscription model unavailable',
+    quotaFallbackMessage: (from, to, reason) => `${from} is not usable right now — ${reason}. Switched this conversation to ${to}.`,
+    quotaReason: {
+      credential_expired: 'its sign-in has expired, and opening the app once renews it',
+      no_desktop_credential: 'no sign-in was found on this machine',
+      no_tools: 'that channel does not return tool calls to Plobi',
+      not_offered: 'the local quota hub no longer lists it',
+      unknown: reason => `unavailable (${reason})`
+    },
     sessionExported: 'Session exported',
     sessionExportFailed: 'Could not export session',
     imageSaved: 'Image saved',

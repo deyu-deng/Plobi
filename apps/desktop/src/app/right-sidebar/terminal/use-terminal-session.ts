@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 
 import { triggerHaptic } from '@/lib/haptics'
-import { $filePreviewTarget, $previewTarget } from '@/store/preview'
+import { previewSelectionLabel } from '@/store/preview'
 import { useTheme } from '@/themes/context'
 
 import { $terminalInjection } from '../store'
@@ -51,17 +51,6 @@ if (typeof window !== 'undefined') {
 }
 
 type TerminalStatus = 'closed' | 'open' | 'starting'
-
-// ⌘/Ctrl+L is a global shortcut, so a text selection in the file preview pane
-// lands in this handler with no xterm selection. Label those with the previewed
-// file's name instead of the shell, so the composer ref reads as a file quote
-// rather than a bogus "zsh:N lines".
-function previewSelectionLabel(): string {
-  const target = $filePreviewTarget.get() ?? $previewTarget.get()
-  const source = target?.path || target?.url || ''
-
-  return source.split(/[\\/]/).filter(Boolean).pop() || target?.label?.trim() || ''
-}
 
 const PLOBI_PATHS_MIME = 'application/x-plobi-paths'
 
