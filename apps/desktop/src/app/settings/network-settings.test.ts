@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { NetworkEgressBlock, NetworkEgressRecord } from '@/types/plobi'
 
-import { buildSection } from './network-settings'
+import { appliedNote, buildSection } from './network-settings'
 
 const record = (egress: NetworkEgressBlock | null): NetworkEgressRecord =>
   ({ declared: true, network: { egress: egress ?? undefined } }) as NetworkEgressRecord
@@ -52,5 +52,19 @@ describe('buildSection', () => {
 
     const withFlag = { declared: true, network: { force_ipv4: false, egress: {} } } as NetworkEgressRecord
     expect(buildSection([], [], withFlag).force_ipv4).toBe(false)
+  })
+})
+
+describe('appliedNote', () => {
+  it('says what supervision did, in the backend\'s own words', () => {
+    expect(appliedNote('引擎', { state: 'running-ours', detail: 'restarted with the current table', probe: '204 via x' })).toBe(
+      '引擎: running-ours — restarted with the current table (204 via x)'
+    )
+  })
+
+  it('stays silent when the answer carries no engine half', () => {
+    expect(appliedNote('引擎', undefined)).toBe('')
+    // A refusal is still an answer: the sentence must reach the pane, not vanish.
+    expect(appliedNote('引擎', { state: 'running-foreign', detail: 'reload refused' })).toBe('引擎: running-foreign — reload refused')
   })
 })

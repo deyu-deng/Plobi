@@ -190,3 +190,81 @@ def test_the_pool_import_is_read_only_and_keeps_secrets_out_of_the_snippet(tmp_p
     assert any("n03" in n for n in notes), notes
     # and the file it read is untouched — migrating is the user's own edit
     assert pool.read_text(encoding="utf-8") == original
+
+
+# ── the save hands the new table to supervision, and says what happened ──────
+
+
+class _Report:
+    """Real `EngineReport`s: `reload_engine` does `dataclasses.replace` on what it gets."""
+
+    @staticmethod
+    def ours():
+        from agent.egress.engine import EngineReport
+
+        return EngineReport("running-ours", "restarted with the current table", probe="204 via x")
+
+    @staticmethod
+    def foreign():
+        from agent.egress.engine import EngineReport
+
+        return EngineReport("running-foreign", "Plobi did not start this engine and will not stop it")
+
+
+def _patch_table(monkeypatch, table=None):
+    """Keep the test off the real config: this slice is about the hand-off, not the read."""
+    from agent.egress.rules import parse_table
+
+    resolved = table if table is not None else parse_table(_VALID["egress"])
+    monkeypatch.setattr("agent.egress.rules.load_table", lambda **kw: resolved)
+    return resolved
+
+
+def test_a_saved_table_is_handed_to_supervision(monkeypatch):
+    from plobi_cli import web_server
+
+    seen = []
+    _patch_table(monkeypatch)
+    monkeypatch.setattr(
+        "agent.egress.engine.reload_engine",
+        lambda table, **kw: seen.append(table) or _Report.ours(),
+    )
+
+    assert web_server._reload_egress_engine() == {
+        "state": "running-ours",
+        "detail": "restarted with the current table",
+        "probe": "204 via x",
+    }
+    assert len(seen) == 1 and seen[0].active, "supervision must be handed the table, not a re-read guess"
+
+
+def test_supervision_saying_no_is_reported_not_swallowed(monkeypatch):
+    from plobi_cli import web_server
+
+    _patch_table(monkeypatch)
+
+    def boom(table, **kw):
+        raise RuntimeError("port 7890 is taken")
+
+    monkeypatch.setattr("agent.egress.engine.reload_engine", boom)
+    out = web_server._reload_egress_engine()
+
+    assert out["state"] == "failed", out
+    assert "port 7890 is taken" in out["detail"], "the save landed; the sentence must say what did not"
+
+
+def test_a_foreign_engine_is_refused_rather_than_stolen(monkeypatch):
+    """The real `reload_engine` on a foreign listener — the answer must be a state, not an exception."""
+    from plobi_cli import web_server
+
+    table = _patch_table(monkeypatch)
+    monkeypatch.setattr(
+        "agent.egress.engine.status",
+        lambda t, **kw: _Report.foreign(),
+    )
+    monkeypatch.setattr("agent.egress.engine.ensure", lambda t, **kw: (_ for _ in ()).throw(AssertionError("must not restart")))
+
+    out = web_server._reload_egress_engine()
+
+    assert out["state"] == "running-foreign", out
+    assert table.engine_enabled is True

@@ -14330,6 +14330,24 @@ async def get_network_egress(profile: Optional[str] = None):
         return read_egress()
 
 
+def _reload_egress_engine() -> Dict[str, Any]:
+    """Hand the just-saved table to supervision and report what it did.
+
+    A saved table the running engine never sees is the ``配了不生效`` failure this
+    whole surface exists to prevent.  ``reload_engine`` is inert when the projection
+    is off and refuses an engine Plobi did not start, so this cannot steal a port.
+    The report goes back to the caller rather than only into a log line (裁定 94).
+    """
+    from agent.egress import engine as _egress_engine
+    from agent.egress.rules import load_table as _load_egress_table
+
+    try:
+        report = _egress_engine.reload_engine(_load_egress_table())
+    except Exception as exc:  # noqa: BLE001 - the save landed; say what did not
+        return {"state": "failed", "detail": f"{type(exc).__name__}: {exc}", "probe": ""}
+    return {"state": report.state, "detail": report.detail, "probe": report.probe}
+
+
 @app.put("/api/network/egress")
 async def put_network_egress(body: NetworkEgressUpdate, profile: Optional[str] = None):
     """Replace the whole ``network`` section, validated by the runtime's own parser.
@@ -14344,7 +14362,9 @@ async def put_network_egress(body: NetworkEgressUpdate, profile: Optional[str] =
         ok, issues = replace_egress(body.network)
     if not ok:
         raise HTTPException(status_code=400, detail="; ".join(issues))
-    return {"ok": True}
+    with _profile_scope(body.profile or profile):
+        engine_answer = _reload_egress_engine()
+    return {"ok": True, "engine": engine_answer}
 
 
 @app.get("/api/network/status")

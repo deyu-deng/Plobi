@@ -62,6 +62,25 @@ export function buildSection(
   }
 }
 
+export interface EngineAnswer {
+  state: string
+  detail: string
+  probe?: string
+}
+
+/**
+ * One line saying what supervision did with the table just saved — the answer to
+ * "配了不生效". Words come from the backend verbatim; this pane never re-derives
+ * whether the engine is up (裁定 94: one reading, several renderings).
+ */
+export function appliedNote(engineLabel: string, engine?: EngineAnswer): string {
+  if (!engine) {
+    return ''
+  }
+
+  return `${engineLabel}: ${engine.state} — ${engine.detail}${engine.probe ? ` (${engine.probe})` : ''}`
+}
+
 export function NetworkSettings() {
   const { t } = useI18n()
   const copy = t.settings.network
@@ -71,6 +90,7 @@ export function NetworkSettings() {
   const [rules, setRules] = useState<RuleRow[]>([])
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [applied, setApplied] = useState('')
   const [saving, setSaving] = useState(false)
 
   const load = async () => {
@@ -94,9 +114,11 @@ export function NetworkSettings() {
   const save = async () => {
     setSaving(true)
     setError('')
+    setApplied('')
     try {
-      await saveNetworkEgress(buildSection(exits, rules, record))
+      const result = await saveNetworkEgress(buildSection(exits, rules, record))
       setSaved(true)
+      setApplied(appliedNote(copy.engine, result.engine))
       // The backend re-reads the table on save; refresh both so the badges and
       // the live status describe what is now on disk, not what we typed.
       await load()
@@ -210,7 +232,7 @@ export function NetworkSettings() {
         <Button disabled={saving} onClick={() => void save()}>
           {saving ? '…' : copy.save}
         </Button>
-        {saved && !error ? <span className={CAPTION}>{copy.saved}</span> : null}
+        {saved && !error ? <span className={CAPTION}>{copy.saved}{applied ? ` · ${applied}` : ''}</span> : null}
         {error ? (
           <span className="text-sm text-(--ui-text-danger)">
             {copy.refused}: {error}
