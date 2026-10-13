@@ -229,7 +229,7 @@ export const ja = defineLocale({
       archivedChats: 'アーカイブ済みチャット',
       about: '情報',
       notifications: '通知',
-      network: 'ネットワーク'
+      network: 'VPN'
     },
     network: {
       addExit: '出口を追加',
@@ -242,7 +242,7 @@ export const ja = defineLocale({
       envDropped: '子プロセスに伝わらない',
       exits: '出口',
       intro:
-        '接続先をどの出口に置くかを決めます。Plobi が起動するものだけが対象で、ブラウザや通常のターミナルには影響しません。',
+        '接続先をどの出口に置くかを決めます。Plobi が起動するものだけが対象です。システムプロキシの設定も DNS も接管しません — ブラウザや通常のターミナルは今まで通りの経路です。',
       match: '一致条件（ドメイン、*.suffix、CIDR、geosite:… または *）',
       name: '名前',
       port: '待ち受けポート',
@@ -252,7 +252,7 @@ export const ja = defineLocale({
       save: '保存',
       saved: '保存しました',
       status: '現在',
-      title: 'ネットワーク出口',
+      title: 'プロキシ（VPN）',
       url: 'プロキシ URL'
     },
     notifications: {

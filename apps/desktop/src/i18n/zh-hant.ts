@@ -221,7 +221,7 @@ export const zhHant = defineLocale({
       archivedChats: '已封存聊天',
       about: '關於',
       notifications: '通知',
-      network: '網路'
+      network: 'VPN'
     },
     network: {
       addExit: '新增出口',
@@ -233,7 +233,7 @@ export const zhHant = defineLocale({
       engineOnly: '僅引擎辨識',
       envDropped: '不會傳給子行程',
       exits: '出口',
-      intro: '決定每個目標走哪條出口。這裡只管理 Plobi 自己啟動的流量，你的瀏覽器與終端機不受影響。',
+      intro: '決定每個目標走哪條出口。這是 Plobi 為自己流量起的代理：只接管 Plobi 發起的請求，不寫系統代理、不接管 DNS——你開的瀏覽器與終端機仍走原本的路。',
       match: '比對（網域、*.字尾、CIDR、geosite:… 或 *）',
       name: '名稱',
       port: '監聽通訊埠',
@@ -243,7 +243,7 @@ export const zhHant = defineLocale({
       save: '儲存',
       saved: '已儲存',
       status: '目前狀態',
-      title: '網路出口',
+      title: '代理（VPN）',
       url: '代理位置'
     },
     notifications: {

@@ -321,7 +321,7 @@ export const en: Translations = {
       archivedChats: 'Archived Chats',
       about: 'About',
       notifications: 'Notifications',
-      network: 'Network'
+      network: 'VPN'
     },
     network: {
       addExit: 'Add exit',
@@ -334,7 +334,7 @@ export const en: Translations = {
       envDropped: 'not carried to spawned tools',
       exits: 'Exits',
       intro:
-        'Which exit each destination uses. This routes only what Plobi starts — your browser and your own terminal are unaffected.',
+        'Which exit each destination uses. This is a proxy Plobi runs for itself: it routes only what Plobi starts. ' + 'It does not set the system proxy and does not take over DNS — your browser and your own terminal keep their own route.',
       match: 'Match (domain, *.suffix, CIDR, geosite:…, or *)',
       name: 'Name',
       port: 'Listen port',
@@ -344,7 +344,7 @@ export const en: Translations = {
       save: 'Save',
       saved: 'Saved',
       status: 'Right now',
-      title: 'Network egress',
+      title: 'Proxy (VPN)',
       url: 'Proxy URL'
     },
     notifications: {
