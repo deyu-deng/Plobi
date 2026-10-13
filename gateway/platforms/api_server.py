@@ -1694,6 +1694,7 @@ class APIServerAdapter(BasePlatformAdapter):
             "id", "session_id", "role", "content", "tool_call_id", "tool_calls",
             "tool_name", "timestamp", "token_count", "finish_reason", "reasoning",
             "reasoning_content",
+            "asked_by",   # 谁发起的这条问（owner / l1:<会话号>）；NULL＝上线前没记，界面要显式说
         )
         return {key: message.get(key) for key in safe_keys if key in message}
 
