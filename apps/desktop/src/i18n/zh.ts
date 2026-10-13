@@ -312,7 +312,7 @@ export const zh: Translations = {
       archivedChats: '已归档对话',
       about: '关于',
       notifications: '通知',
-      network: '网络'
+      network: 'VPN'
     },
     network: {
       addExit: '添加出口',
@@ -324,7 +324,7 @@ export const zh: Translations = {
       engineOnly: '仅引擎识别',
       envDropped: '不会传给子进程',
       exits: '出口',
-      intro: '决定每个目标走哪条出口。这里只管 Plobi 自己发起的流量，你的浏览器和终端不受影响。',
+      intro: '决定每个目标走哪条出口。这是 Plobi 为自己的流量起的代理：只接管 Plobi 发起的请求，不写系统代理、不接管 DNS——你自己开的浏览器与终端仍走原来的路。',
       match: '匹配（域名、*.后缀、CIDR、geosite:… 或 *）',
       name: '名称',
       port: '监听端口',
@@ -334,7 +334,7 @@ export const zh: Translations = {
       save: '保存',
       saved: '已保存',
       status: '当前状态',
-      title: '网络出口',
+      title: '代理（VPN）',
       url: '代理地址'
     },
     notifications: {
