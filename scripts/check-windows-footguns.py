@@ -40,6 +40,21 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# Where a build product can hide its own source. The desktop workspace resolves
+# extension-less imports against real files on disk first, so an emitted `.js`
+# beside a `.ts`/`.tsx` wins — and `.gitignore` ignores `apps/desktop/src/**/*.js`
+# wholesale, so `git status` stays clean while the renderer white-screens (10-13
+# 09:3x, 766 of them) and vitest reports a just-exported symbol as missing (10-13
+# 10:0x). Two different shapes of "my change didn't take", both容器 problems.
+DESKTOP_TS_DIRS = ("apps/desktop/src", "apps/desktop/electron")
+
+# Where a build product can hide its own source. The desktop workspace resolves
+# extension-less imports against real files on disk, so an emitted `.js` next to
+# a `.ts`/`.tsx` wins — and `.gitignore:166` (`apps/desktop/src/**/*.js`) hides it
+# from `git status`, so the only visible symptoms are a white desktop and a test
+# run claiming a just-exported symbol does not exist (2026-10-13, twice).
+DESKTOP_TS_DIRS = ("apps/desktop/src", "apps/desktop/electron")
+
 SUPPRESS_MARKER = re.compile(r"#\s*windows-footgun\s*:\s*ok\b", re.IGNORECASE)
 
 # Line-level guard hints. If a line contains any of these tokens, we assume
@@ -673,6 +688,97 @@ def check_drive_root_writes():
     return 1
 
 
+def find_js_shadows(repo_root: Path | None = None) -> list[tuple[str, str]]:
+    """Return ``(emitted_js, its_source)`` pairs for compiled ``.js`` sitting beside a
+    ``.ts``/``.tsx`` of the same stem inside the desktop workspace.
+
+    Why this is a footgun and not just litter (2026-10-13, twice in one day): Vite and
+    Vitest resolve an extension-less import to a **real file on disk first**, so a stale
+    ``src/app/foo.js`` hides ``src/app/foo.ts``. Symptoms are the worst possible kind —
+    the desktop renders a white page, or a test run says a function that was just
+    exported does not exist — while ``git status`` stays silent because
+    ``.gitignore:166`` ignores ``apps/desktop/src/**/*.js`` wholesale.
+    """
+    root = (repo_root or REPO_ROOT)
+    found: list[tuple[str, str]] = []
+
+    for rel_dir in DESKTOP_TS_DIRS:
+        base = root / rel_dir
+        if not base.is_dir():
+            continue
+        for js in sorted(base.rglob("*.js")):
+            if "node_modules" in js.parts:
+                continue
+            for ext in (".ts", ".tsx"):
+                source = js.with_suffix(ext)
+                if source.is_file():
+                    found.append(
+                        (js.relative_to(root).as_posix(), source.relative_to(root).as_posix())
+                    )
+                    break
+    return found
+
+
+def check_js_shadows(repo_root: Path | None = None) -> int:
+    """--assert-no-js-shadows: non-zero when emitted JS can shadow its own source."""
+    root = repo_root or REPO_ROOT
+    shadows = find_js_shadows(root)
+    tracked = _tracked_js_count(root)
+
+    # "0 findings" must prove the scan ran, and that nothing tracked is at risk if
+    # the operator follows the cleanup command — same discipline as the drive-root check.
+    seen = 0
+    for rel_dir in DESKTOP_TS_DIRS:
+        base = root / rel_dir
+        if base.is_dir():
+            seen += sum(1 for p in base.rglob("*.js") if "node_modules" not in p.parts)
+    print(
+        "js-shadow check: %d dir(s) scanned (%s), %d .js file(s) seen, "
+        "%s tracked by git, shadows: %d"
+        % (
+            len(DESKTOP_TS_DIRS),
+            ", ".join(DESKTOP_TS_DIRS),
+            seen,
+            "未知（不在 git 仓里）" if tracked < 0 else "%d" % tracked,
+            len(shadows),
+        )
+    )
+
+    if not shadows:
+        print("✓ no emitted .js shadowing a .ts/.tsx source")
+        return 0
+
+    for js, source in shadows:
+        print(f"  {js}  ← 遮蔽  {source}")
+
+    print(
+        "\n✗ %d .js shadow(s): Vite/Vitest take the stale build product instead of the "
+        "source, which is how a white desktop and 'exported symbol does not exist' appear "
+        "with a clean `git status`. Clean them with:\n"
+        "    cd apps/desktop && npx tsc -b . --clean\n"
+        "Nothing tracked is at risk while `git ls-files` reports 0 such files (this run: "
+        "%d) — if that number is not 0, stop and look before cleaning."
+        % (len(shadows), tracked),
+        file=sys.stderr,
+    )
+    return 1
+
+
+def _tracked_js_count(repo_root: Path) -> int:
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--", "apps/desktop/src/**/*.js", "apps/desktop/electron/**/*.js"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return -1
+    if out.returncode != 0:
+        return -1
+    return len([line for line in out.stdout.splitlines() if line.strip()])
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Flag Windows cross-platform footguns in Python code."
@@ -700,6 +806,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "State check, not a source scan: fail if any volume root holds a "
             "first-level directory that is drive-relative residue (rulings 79 "
             "/ 48.1) or, on the governed drive, not a declared policy category."
+        ),
+    )
+    p.add_argument(
+        "--assert-no-js-shadows",
+        action="store_true",
+        help=(
+            "State check, not a source scan: fail when a compiled .js sits beside the "
+            ".ts/.tsx it shadows under apps/desktop/src or apps/desktop/electron. Those "
+            "files are gitignored wholesale, so a white desktop or a 'just-exported symbol "
+            "does not exist' test failure shows up with a clean `git status`."
         ),
     )
     p.add_argument(
@@ -736,6 +852,9 @@ def main(argv: list[str]) -> int:
 
     if args.assert_no_drive_root_writes:
         return check_drive_root_writes()
+
+    if args.assert_no_js_shadows:
+        return check_js_shadows()
 
     if args.all:
         # Scan main Python packages + scripts

@@ -350,33 +350,80 @@ const RESPAWN_MAX_AUTO_RETRIES = 8
 const RESPAWN_PERMANENT_HOLD_MS = 600_000
 
 /**
- * Two shapes of spawn failure are not transient — retrying them proves nothing:
+ * Three shapes of spawn failure are not transient — retrying them proves nothing:
  *   1. the CLI's own "Profile 'X' does not exist. Create it with: …" (exit 1);
  *   2. argparse eating the profile name as a subcommand, "argument command:
  *      invalid choice: 'X'" (exit 2) — what happens when the value is not a
- *      valid profile id at all, e.g. a non-ASCII roster key dropped by the
- *      CLI's `-p` pre-scan (the hazard documented in
- *      `plobi/agents/registry.py`'s `profile_name` comment).
+ *      valid profile id at all: the CLI's pre-scan only accepts
+ *      `[a-z0-9一-鿿＀-ｴ_-]{1,64}` (`plobi_cli/profiles.py:validate_profile_name`),
+ *      and a roster key outside it — e.g. `大学物理（甲）Ⅱ`, whose `Ⅱ` is U+2171 —
+ *      never reaches `-p`, so argparse reads the name as a subcommand.
+ *      **Building a directory would not fix this shape** —
+ *      the name itself is unusable, which is why the roster-side answer had to be
+ *      "data rows carry no profile" and not "create the missing profile";
+ *   3. "Profile name 'X' is reserved — it collides with either the Plobi
+ *      installation itself or a common system binary" — the name passes the regex
+ *      but is permanently banned. `Plobi`'s own roster row (`role: l2_project`,
+ *      so *not* a data row) is exactly this shape: that row can never be opened,
+ *      however many times we try (产品线 13:2x 实测 `plobi -p plobi --help` ⇒ exit 0,
+ *      the failure only appears when the backend actually boots).
  *
  * The 2026-10-13 incident this exists for: five `role: l2_course` rows were put
  * in the roster on 2026-10-12 20:1x. Course rows are *data* (裁定 recorded in
  * `plobi/routing/models.py`: no route, not askable), so they have no profile
- * directory — yet the console hands their name out as a `profile`, the renderer
- * reconnect loop asks for a backend for them, and desktop.log filled itself with
- * 2,214 + 1,316 + 280 + 96 identical spawn/exit cycles for four profiles that
- * can never come up.
+ * directory — yet the console handed their name out as a `profile`, the renderer
+ * reconnect loop asked for a backend for them, and desktop.log filled itself with
+ * 2,214 / 2,767 / 280 / 96 identical spawn/exit cycles for profiles that can
+ * never come up. (The counts are readings of an append-only file: my own 08:5x
+ * pass saw 1,316 for 电工电子学, 产品线's 09:1x re-measure saw 2,767 — both true.)
  */
-function isMissingProfileFailure(message: string): boolean {
-  return /does not exist\. Create it with:/i.test(message) || /argument command: invalid choice:/i.test(message)
+type SpawnFault = 'missing-profile' | 'unusable-name' | 'reserved-name' | 'transient'
+
+function spawnFaultOf(message: string): SpawnFault {
+  if (/is reserved [—-] it collides with/i.test(message)) {
+    return 'reserved-name'
+  }
+  if (/argument command: invalid choice/i.test(message)) {
+    return 'unusable-name'
+  }
+  if (/does not exist\. Create it with:/i.test(message)) {
+    return 'missing-profile'
+  }
+  return 'transient'
 }
 
-/** The honest wording for a permanent row: what is wrong, and the two ways out. */
+/** Any of the three permanent shapes: another attempt cannot change the outcome. */
+function isMissingProfileFailure(message: string): boolean {
+  return spawnFaultOf(message) !== 'transient'
+}
+
+/** The honest wording for a permanent row: what is wrong, and the way out — per shape. */
 function missingProfileDetail(profile: string, message: string): string {
+  const fault = spawnFaultOf(message)
+  const tail = `The backend will not be re-spawned on a timer until that changes (CLI said: ${message})`
+
+  if (fault === 'reserved-name') {
+    return (
+      `This roster row can never be opened: "${profile}" is a reserved profile name — it collides ` +
+      'with the Plobi installation itself or a system binary, so no amount of retrying (or creating ' +
+      'a directory by hand) will work. Rename the profile this entry points at, or stop treating the ' +
+      `entry as a runnable agent. ${tail}`
+    )
+  }
+
+  if (fault === 'unusable-name') {
+    return (
+      `This roster row's name never even reaches the profile switch: "${profile}" is not a valid ` +
+      'profile id, so argparse read it as a subcommand. Building a profile directory would not help ' +
+      '— the name is unusable. That matches what the entry is: a 课程 row carries data, not a ' +
+      `runtime agent, so it should not be opened as one. ${tail}`
+    )
+  }
+
   return (
     `This roster row has no profile to run as, so nothing was ever listening — "${profile}" ` +
     'is either a data-only entry (a 课程 row is data, not an agent: no model route, not askable) ' +
-    `or the profile was never created. Either stop opening it, or run "plobi profile create ${profile}". ` +
-    `The backend will not be re-spawned on a timer until that changes (CLI said: ${message})`
+    `or the profile was never created. Either stop opening it, or run "plobi profile create ${profile}". ${tail}`
   )
 }
 
@@ -486,5 +533,6 @@ export {
   definitionFor,
   isMissingProfileFailure,
   missingProfileDetail,
-  profileBackendRowId
+  profileBackendRowId,
+  spawnFaultOf
 }
