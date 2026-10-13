@@ -138,6 +138,21 @@ def main() -> int:
         )
         return 1
 
+    # 编译产物 .js 躲在源码旁边时，vitest 读的是上一版 —— 症状是"刚导出的函数不存在"
+    # 或整页白屏，而 `git status` 干净（.gitignore 整类忽略它们）。10-13 一天两次，
+    # 所以这道闸门先看容器再看测试：影子在，就直接红，并把清理命令写给人。
+    shadow = _run(
+        [py, "scripts/check-windows-footguns.py", "--assert-no-js-shadows"],
+        ROOT,
+    )
+    if shadow != 0:
+        print(
+            "\nArchitecture gate FAILED (js shadow): clean the build products first — "
+            "`cd apps/desktop && npx tsc -b . --clean` — then re-run. "
+            "Do not 'fix' the code or the test that the stale .js is contradicting."
+        )
+        return shadow
+
     fe = _run(
         [_npm(), "run", "test:arch"],
         DESKTOP,

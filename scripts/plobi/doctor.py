@@ -901,15 +901,91 @@ def check_aigw(base_url: str | None = None) -> dict[str, Any]:
     }
 
 
-def check_dingtalk() -> dict[str, Any]:
+def _dingtalk_referenced(home: Path) -> str:
+    """Is anything on this machine actually counting on DingTalk? Returns the reason, or "".
+
+    为什么要有这一步（2026-10-13，用户口径）：钉钉是**上游底座保留的能力**，本机现在不走它
+    —— 一条"没配 URL"的 RED 说的却是"坏了"，而真相是"没接线"。红要留给真故障：
+    只有当某个 cron 作业的投递口或某个已启用的平台指向钉钉时，缺 URL 才是真断了。
+    """
+    jobs_path = home / "cron" / "jobs.json"
+    if jobs_path.is_file():
+        try:
+            blob = jobs_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            blob = ""
+        try:
+            parsed = json.loads(blob) if blob else None
+        except ValueError:
+            parsed = None
+        if parsed is None:
+            if "dingtalk" in blob.lower():
+                # 读不动也要诚实：宁可说"有人指着它"，也别把真断链报成"没接线"。
+                return f"{jobs_path.name} 里有 dingtalk 字样（这份作业表没能逐条解析）"
+        else:
+            jobs = parsed.get("jobs") if isinstance(parsed, dict) else parsed
+            for job in jobs if isinstance(jobs, list) else []:
+                if not isinstance(job, dict):
+                    continue
+                name = str(job.get("name") or job.get("id") or "?")
+                # ``deliver`` 是真字段（"origin" / "local" / "telegram" / …），
+                # ``origin`` 记的是作业创建自哪个平台——"deliver": "origin" 时钉钉就藏在它里面。
+                for key in ("deliver", "delivery", "deliver_to", "platform", "platforms", "to", "origin"):
+                    value = job.get(key)
+                    if value is None or "dingtalk" not in json.dumps(value, ensure_ascii=False).lower():
+                        continue
+                    return f"cron 作业 {name} 把钉钉当投递口（{key}）"
+
+    cfg_path = home / "config.yaml"
+    if cfg_path.is_file():
+        try:
+            import yaml
+
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
+        except Exception:
+            cfg = {}
+        if isinstance(cfg, dict):
+            for section in ("gateway", "messaging", "platforms", "deliver"):
+                blob = cfg.get(section)
+                if blob is None:
+                    continue
+                try:
+                    text = json.dumps(blob, ensure_ascii=False).lower()
+                except TypeError:
+                    text = str(blob).lower()
+                if "dingtalk" in text:
+                    return f"config.yaml 的 {section} 段指向钉钉"
+
+    return ""
+
+
+def check_dingtalk(home: Path | None = None) -> dict[str, Any]:
     url = (os.environ.get("DINGTALK_WEBHOOK_URL") or "").strip()
     secret = (os.environ.get("DINGTALK_WEBHOOK_SECRET") or "").strip()
     if not url:
+        referenced = _dingtalk_referenced(home or plobi_home())
+        if referenced:
+            return {
+                "id": "dingtalk",
+                "color": RED,
+                "detail": f"{referenced}，但 DINGTALK_WEBHOOK_URL 没配 —— 写进 PLOBI_HOME/.env 或 Code/.env（绝不提交）",
+            }
         return {
             "id": "dingtalk",
-            "color": RED,
-            "detail": "DINGTALK_WEBHOOK_URL missing — add to PLOBI_HOME/.env or Code/.env (never commit)",
+            "color": GREEN,
+            "detail": "未接线：没有任何作业或平台指向钉钉（底座保留能力，不是故障；要用再把 URL 写进 .env）",
         }
+    if not secret:
+        return {
+            "id": "dingtalk",
+            "color": YELLOW,
+            "detail": "webhook set, DINGTALK_WEBHOOK_SECRET empty (加签 robots will reject)",
+        }
+    return {
+        "id": "dingtalk",
+        "color": GREEN,
+        "detail": "DINGTALK_WEBHOOK_URL + SECRET present (not sent)",
+    }
     if not secret:
         return {
             "id": "dingtalk",

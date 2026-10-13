@@ -6689,17 +6689,18 @@ function reportPoolBackendFailure(profile, error) {
   const message = error instanceof Error ? error.message : String(error)
   const { attempt, autoRetry, delayMs, permanent } = backendRespawnGuard.arm(profile, message)
 
-  // A profile that cannot exist says so the same way every time. Put the cause
-  // and the two ways out on the row once, and stop treating it like a backend
-  // that might come up — the retry timer is what turned five roster rows into
-  // thousands of identical spawn cycles (see isMissingProfileFailure).
+  // A profile that can never come up says so the same way every time. Put the cause
+  // and the way out on the row once, and stop treating it like a backend that might
+  // come up — the retry timer is what turned roster rows into thousands of
+  // identical spawn cycles (see isMissingProfileFailure: three CLI shapes, one class).
   reportDeferredSubsystem(profileBackendRowId(profile), 'red', permanent ? missingProfileDetail(profile, message) : message)
 
   if (permanent) {
     rememberLog(
-      `Plobi backend for profile "${profile}" is not spawnable: the profile does not exist, ` +
-        'so no respawn timer was armed. The status row carries the cause; this repeats at most ' +
-        'once per hold window until the profile is created or the roster row stops being opened'
+      `Plobi backend for profile "${profile}" can never come up as named, ` +
+        'so no respawn timer was armed. The status row says which of the three CLI shapes ' +
+        'this was (missing profile / unusable name / reserved name) and what would change it; ' +
+        'a repeat request costs one line per hold window, not another process boot'
     )
 
     return

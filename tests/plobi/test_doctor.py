@@ -131,10 +131,49 @@ def test_apply_env_files_fills_missing(tmp_path: Path, monkeypatch):
     assert os.environ["DINGTALK_WEBHOOK_URL"].endswith("from-home")
 
 
-def test_check_dingtalk_red_without_url(monkeypatch):
+def test_check_dingtalk_not_wired_is_not_a_fault(tmp_path: Path, monkeypatch):
+    """没配 ≠ 坏了（用户 10-13：钉钉是上游底座保留的能力，本机现在不走它）。
+
+    红要留给真故障。什么算真故障？有东西指着它：某个 cron 作业把钉钉当投递口，
+    或 config.yaml 的某段启用它 —— 那时缺 URL 才是"配了却推不出去"。
+    """
     monkeypatch.delenv("DINGTALK_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("DINGTALK_WEBHOOK_SECRET", raising=False)
-    assert D.check_dingtalk()["color"] == D.RED
+
+    row = D.check_dingtalk(home=tmp_path)
+
+    assert row["color"] == D.GREEN, row
+    assert "未接线" in row["detail"], row
+
+
+def test_check_dingtalk_red_when_a_job_needs_the_missing_url(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("DINGTALK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("DINGTALK_WEBHOOK_SECRET", raising=False)
+    jobs = tmp_path / "cron" / "jobs.json"
+    jobs.parent.mkdir(parents=True, exist_ok=True)
+    jobs.write_text(
+        json.dumps({"jobs": [{"name": "morning-brief", "deliver": "dingtalk"}]}), encoding="utf-8"
+    )
+
+    row = D.check_dingtalk(home=tmp_path)
+
+    assert row["color"] == D.RED, row
+    assert "morning-brief" in row["detail"], row
+
+
+def test_check_dingtalk_red_when_origin_delivery_points_at_it(tmp_path: Path, monkeypatch):
+    """"deliver": "origin" + 作业本身建在钉钉里 —— 断链藏在 origin 那一格里，也得报红。"""
+    monkeypatch.delenv("DINGTALK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("DINGTALK_WEBHOOK_SECRET", raising=False)
+    jobs = tmp_path / "cron" / "jobs.json"
+    jobs.parent.mkdir(parents=True, exist_ok=True)
+    jobs.write_text(
+        json.dumps({"jobs": [{"name": "digest", "deliver": "origin",
+                             "origin": {"platform": "dingtalk", "chat_id": "1"}}]}),
+        encoding="utf-8",
+    )
+
+    assert D.check_dingtalk(home=tmp_path)["color"] == D.RED
 
 
 def test_check_dingtalk_green(monkeypatch):

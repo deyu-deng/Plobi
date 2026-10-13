@@ -27,7 +27,8 @@ import {
   definitionFor,
   isMissingProfileFailure,
   missingProfileDetail,
-  profileBackendRowId
+  profileBackendRowId,
+  spawnFaultOf
 } from './deferred-sidecars'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -441,8 +442,48 @@ test('the CLI accepts no name at all: argparse invalid choice is the same class'
   const argparseLine = "plobi: error: argument command: invalid choice: '大学物理（甲）ⅱ' (choose from chat, model)"
 
   assert.equal(isMissingProfileFailure(argparseLine), true, 'a non-profile-id name lands in the subcommand slot')
+  assert.equal(spawnFaultOf(argparseLine), 'unusable-name')
   assert.equal(isMissingProfileFailure(MISSING_PROFILE_LINE), true)
+  assert.equal(spawnFaultOf(MISSING_PROFILE_LINE), 'missing-profile')
   assert.equal(isMissingProfileFailure(TRANSIENT_BACKEND_EXIT), false, 'ordinary exits stay retryable')
+  assert.equal(spawnFaultOf(TRANSIENT_BACKEND_EXIT), 'transient')
+})
+
+test('a reserved profile name is the third permanent shape (the `Plobi` roster row)', () => {
+  // 产品线 13:2x 实测：`plobi -p plobi --help` 退 0，话术只在真起后端时出现 —— 所以它
+  // 既不是 `does not exist` 也不是 `invalid choice`，而 `Plobi` 这条是 `l2_project`，
+  // **不是数据条目**：建目录这条路根本不存在，名字本身被永久禁用。
+  const reservedLine =
+    "Error: Profile name 'plobi' is reserved — it collides with either the Plobi installation " +
+    'itself or a common system binary. Pick a different name.'
+
+  assert.equal(isMissingProfileFailure(reservedLine), true, 'retrying a banned name proves nothing')
+  assert.equal(spawnFaultOf(reservedLine), 'reserved-name')
+
+  let clock = 0
+  const guard = createBackendRespawnGuard({ now: () => clock })
+
+  assert.equal(guard.arm('plobi', reservedLine).autoRetry, false, 'no respawn timer for a banned name')
+
+  const detail = missingProfileDetail('plobi', reservedLine)
+
+  assert.match(detail, /reserved profile name/, 'it must name the real cause, not "the profile does not exist"')
+  assert.match(detail, /can never be opened/)
+  assert.ok(!/plobi profile create plobi/.test(detail), 'telling the user to create a reserved name is a lie')
+  assert.match(detail, /Rename the profile/, 'the only two ways out: rename, or stop treating it as an agent')
+})
+
+test('each permanent shape gets its own wording, and the CLI line stays attached', () => {
+  const missing = missingProfileDetail('电工电子学', MISSING_PROFILE_LINE)
+  const unusable = missingProfileDetail(
+    '大学物理（甲）ⅱ',
+    "plobi: error: argument command: invalid choice: '大学物理（甲）ⅱ'"
+  )
+
+  assert.match(missing, /plobi profile create 电工电子学/, 'this shape really is fixable by creating it')
+  assert.match(unusable, /not a valid profile id/, 'this shape is not')
+  assert.ok(!/plobi profile create 大学物理/.test(unusable), 'don hand the user a command that cannot work')
+  assert.match(unusable, /never even reaches the profile switch/)
 })
 
 test('the permanent row names both ways out instead of dumping CLI text', () => {
