@@ -216,3 +216,60 @@ def test_agent_ask_refuses_a_分身_whose_home_can_never_be_created(fresh_regist
         AA.resolve_target("Plobi", registry=fresh_registry)
     message = str(exc.value.message)
     assert "reserved" in message.lower() and "Plobi" in message
+
+
+# --------------------------------------------------------------------------- #
+# 撞保留名那条：写入时就落成显式 profile，别留一条永远红着的行（2026-10-13 脑搬家线现核）
+# --------------------------------------------------------------------------- #
+
+
+def test_upsert_lands_the_suggestion_instead_of_leaving_a_dead_row(fresh_registry):
+    """``Plobi`` 小写化是保留名，那个家**永远建不出来**（``-p plobi --help`` 退 0、
+    死在后面那句 reserved 校验）。以前只给一句"建议填 l2-plobi"没人填 ⇒ 行一直红。"""
+    from plobi.agents.registry import profile_name_blocker
+
+    entry = fresh_registry.upsert(_project("Plobi"))
+
+    assert entry.profile == "l2-plobi"
+    assert entry.profile_name == "l2-plobi"
+    assert profile_name_blocker(entry) == ""
+
+
+def test_upsert_does_not_rename_a_working_home(fresh_registry):
+    """那 11 条本来能用的名字一字不改——改它们要搬 ``state.db``，
+    会把每个分身已有的会话历史孤儿化，那不是"修一个名字"该有的代价。"""
+    entry = fresh_registry.upsert(_project("Aura"))
+
+    assert entry.profile == ""
+    assert entry.profile_name == "aura"
+
+
+def test_upsert_leaves_a_data_row_profileless(fresh_registry):
+    """数据条目（课程）不许被这条规则顺手安一个家——它没有运行时。"""
+    from plobi.agents.registry import AgentEntry, profile_name_blocker
+
+    course = fresh_registry.upsert(AgentEntry(name="电工电子学", role="l2_course", category="courses"))
+
+    assert course.profile == "" and course.profile_name == ""
+    assert profile_name_blocker(course) == "", "数据条目没有家是设计，不是缺陷"
+
+
+def test_upsert_does_not_steal_another_分身的_home(fresh_registry):
+    from plobi.agents.registry import profile_name_blocker
+
+    fresh_registry.upsert(_project("l2-plobi"))
+
+    entry = fresh_registry.upsert(_project("Plobi"))
+
+    assert entry.profile == "", "推荐名已被占 ⇒ 不许自动落，把话留给 blocker"
+    assert "l2-plobi" in profile_name_blocker(entry)
+
+
+def test_upsert_never_overwrites_an_explicit_profile(fresh_registry):
+    """用户自己填过 profile 就一个字都不动，哪怕它撞保留名（那是他的选择，blocker 会说）。"""
+    from plobi.agents.registry import AgentEntry
+
+    entry = fresh_registry.upsert(AgentEntry(name="Plobi", role="l2_project",
+                                             category="projects", profile="plobi"))
+
+    assert entry.profile == "plobi"
