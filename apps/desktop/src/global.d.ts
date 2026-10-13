@@ -187,10 +187,20 @@ declare global {
       onPowerResume?: (callback: () => void) => () => void
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
       // One quota app the local hub serves, pushed when the hub is live. `models`
-      // is the hub's catalog for `id` with the `<id>/` prefix already stripped.
+      // is the hub's catalog for `id` with the `<id>/` prefix already stripped and
+      // filtered to what picking would actually serve; `blocked` carries the hub's
+      // own reason for every model it dropped (`credential_expired`, `no_tools`, …);
+      // `answered` is true only for a frame the hub actually replied to, so "we could
+      // not ask" can never be rendered as "nothing is pickable".
       onQuotaApps?: (
-        callback: (apps: Array<{ apiKey: string; baseUrl: string; id: string; models: string[] }>) => void
+        callback: (
+          apps: Array<{ apiKey: string; answered: boolean; baseUrl: string; blocked: Record<string, string>; id: string; models: string[] }>
+        ) => void
       ) => () => void
+      // Ask the main process to re-read the hub and push a fresh frame — the picker
+      // calls this when it opens. The renderer's own fetch is preflighted and the hub
+      // sends no CORS headers, so this is the only way to get a current verdict.
+      requestQuotaApps?: () => Promise<boolean>
       // Quota hub traffic proxied by the main process (the renderer's own fetch
       // is preflighted and the hub sends no CORS headers). Exactly one `status`
       // arrives first; then `chunk` frames of raw SSE bytes, ending in `done` —

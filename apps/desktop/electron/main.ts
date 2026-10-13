@@ -8907,7 +8907,15 @@ function reportAigwKeyReconciliation() {
 // match invents a channel that isn't there) with the `<provider>/` prefix stripped.
 // `mock` and empty providers never reach the selector (R-017). Returns [] when the
 // hub is down, so callers keep the last good list rather than wipe it.
-async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: string[]; baseUrl: string; apiKey: string }>> {
+//
+// The hub annotates every row with whether picking that model would actually work
+// (`selectable` + `unselectable_reason`, Code `aaee050b`), and this is the only place
+// allowed to read the hub: the renderer's own fetch is preflighted and the hub sends no
+// CORS headers (see `src/global.d.ts`). So the verdict — *and the reason behind it* —
+// rides through on the app record instead of being re-derived in the UI. A provider
+// whose models are all unusable is still listed, with an empty `models` and its
+// `blocked` reasons: the picker must not offer it, but Settings has to explain it.
+async function discoverProductQuotaApps(): Promise<Array<{ answered: boolean; apiKey: string; baseUrl: string; blocked: Record<string, string>; id: string; models: string[] }>> {
   // Reconcile first, then send: this is one of the two places the shell hands
   // its key to the hub.
   reportAigwKeyReconciliation()
@@ -8933,8 +8941,10 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
       return []
     }
 
-    const data = (await res.json()) as { data?: Array<{ id?: string; provider?: string }> }
-    const byProvider = new Map<string, string[]>()
+    const data = (await res.json()) as {
+      data?: Array<{ id?: string; provider?: string; selectable?: boolean; unselectable_reason?: string }>
+    }
+    const byProvider = new Map<string, { blocked: Record<string, string>; models: string[] }>()
 
     for (const row of data.data ?? []) {
       const provider = (row?.provider ?? '').trim()
@@ -8944,10 +8954,18 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
         continue
       }
 
-      const models = byProvider.get(provider) ?? []
+      const name = id.startsWith(`${provider}/`) ? id.slice(provider.length + 1) : id
+      const entry = byProvider.get(provider) ?? { models: [], blocked: {} }
 
-      models.push(id.startsWith(`${provider}/`) ? id.slice(provider.length + 1) : id)
-      byProvider.set(provider, models)
+      // `selectable === false` is the only thing that removes a model from the list.
+      // A hub that sends no annotation at all is a hub we did not ask, not a hub that
+      // said "dead" — same rule the gateway itself follows, kept identical here.
+      if (row.selectable === false) {
+        entry.blocked[name] = row.unselectable_reason || 'unavailable'
+      } else {
+        entry.models.push(name)
+      }
+      byProvider.set(provider, entry)
     }
 
     const productKey = productQuotaApiKey()
@@ -8958,9 +8976,15 @@ async function discoverProductQuotaApps(): Promise<Array<{ id: string; models: s
     // same source the catalog read used.
     rememberQuotaHubKey(PRODUCT_QUOTA_BASE, productKey)
 
-    return [...byProvider.entries()].map(([id, models]) => ({
+    return [...byProvider.entries()].map(([id, entry]) => ({
       id,
-      models,
+      models: entry.models,
+      blocked: entry.blocked,
+      // Only a response we actually parsed sets this. Every failure branch below
+      // returns [] instead, so "we could not ask" can never be dressed up as
+      // "the hub answered: nothing is pickable" (this machine has burned fake-0
+      // readings twice).
+      answered: true,
       baseUrl: PRODUCT_QUOTA_BASE,
       apiKey: productKey
     }))
@@ -9113,6 +9137,47 @@ ipcMain.handle('plobi:quota-stream:abort', (_event, requestId: string) => {
   quotaStreams.get(String(requestId ?? ''))?.abort()
   return true
 })
+
+// Ask the hub for its catalog and push the answer to every window, right now. The
+// model picker calls this the moment it opens: what a leg can do changes underneath a
+// running app (an Antigravity sign-in here lasts about an hour), and the read is one
+// local GET that spends no vendor tokens.
+ipcMain.handle('plobi:quota-apps:refresh', async () => {
+  await broadcastProductQuotaApps()
+  return true
+})
+
+// A slow backstop for the same channel, so a leg that renews itself while the app sits
+// open comes back without the user having to reopen anything. Gated on the window being
+// actually on screen: parked in the tray, polling buys nothing (the picker re-asks on
+// open) and costs 1,440 hub reads a day.
+const QUOTA_APPS_POLL_MS = 60_000
+let quotaAppsPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startQuotaAppsPolling(): void {
+  if (quotaAppsPollTimer) {
+    return
+  }
+
+  quotaAppsPollTimer = setInterval(() => {
+    if (windowParkedInTray) {
+      return
+    }
+
+    void broadcastProductQuotaApps()
+  }, QUOTA_APPS_POLL_MS)
+}
+
+startQuotaAppsPolling()
+
+function stopQuotaAppsPolling(): void {
+  if (!quotaAppsPollTimer) {
+    return
+  }
+
+  clearInterval(quotaAppsPollTimer)
+  quotaAppsPollTimer = null
+}
 
 async function ensureProductAigw(): Promise<void> {
   if (
@@ -11279,6 +11344,9 @@ app.on('before-quit', () => {
   // only in the tray handler) means the close handler can never turn a quit
   // into a hide and strand an unquittable headless process.
   isQuittingByUser = true
+
+  // No timer may outlive the app it polls for.
+  stopQuotaAppsPolling()
 
   // Drop the notification-area icon explicitly so a Windows shell can't keep
   // painting a dead tray entry.

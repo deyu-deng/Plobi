@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
+import { atom } from 'nanostores'
 import { cleanup, render, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -25,7 +26,6 @@ const quotaProvider = vi.fn((_slug: string): boolean => false)
 // The hub's verdict for the model under use, and where to land if it is gone.
 const quotaVerdict = vi.fn((): { reason?: string; state: string } => ({ state: 'not_quota' }))
 const quotaFallback = vi.fn((): null | { model: string; provider: string } => null)
-const refreshCatalog = vi.fn(async () => {})
 
 vi.mock('@/plobi', () => ({
   getGlobalModelInfo: vi.fn(),
@@ -66,11 +66,18 @@ vi.mock('@/store/notifications', () => ({
 // questions of it — "is this a quota app?" and "does the hub still serve it?".
 // Mocked so the branches pinned below are the real early-return branches without
 // dragging the quota store (and a live hub fetch) into a unit test.
+// The store the hook now reacts to: it subscribes to the pushed frames instead of
+// fetching the hub itself, so tests drive it by setting this atom.
+const quotaAtom = atom<Record<string, unknown>>({})
+
 vi.mock('@/store/desktop-quotas', () => ({
+  // lazy getter: the factory runs during the import phase, before `quotaAtom` exists
+  get $connectedDesktopApps() {
+    return quotaAtom
+  },
   firstSelectableQuotaModel: () => quotaFallback(),
   isDesktopQuotaProvider: (slug: string) => quotaProvider(slug),
-  quotaSelectionVerdict: () => quotaVerdict(),
-  refreshAllConnectedAppModels: () => refreshCatalog()
+  quotaSelectionVerdict: () => quotaVerdict()
 }))
 
 type Controls = ReturnType<typeof useModelControls>
@@ -109,7 +116,6 @@ describe('useModelControls', () => {
     quotaProvider.mockReset().mockReturnValue(false)
     quotaVerdict.mockReset().mockReturnValue({ state: 'not_quota' })
     quotaFallback.mockReset().mockReturnValue(null)
-    refreshCatalog.mockReset().mockImplementation(async () => {})
     notify.mockReset().mockReturnValue('n-1')
     // Back to the flat (secretary) cell so no test inherits another scope's box.
     setComposerModelScope(null)
@@ -511,7 +517,6 @@ describe('useModelControls', () => {
       })
     )
 
-    await waitFor(() => expect(refreshCatalog).toHaveBeenCalled())
     await Promise.resolve()
 
     expect($currentModel.get()).toBe('')
@@ -558,8 +563,7 @@ describe('useModelControls', () => {
       })
     )
 
-    await waitFor(() => expect(refreshCatalog).toHaveBeenCalled())
-    // let any continuation chained onto the tick land before asserting
+    // the reaction runs on subscribe; flush the microtasks it chains onto
     await Promise.resolve()
 
     expect($currentModel.get()).toBe('gemini-3-pro')

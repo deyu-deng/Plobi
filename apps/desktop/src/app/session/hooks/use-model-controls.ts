@@ -5,10 +5,10 @@ import { getGlobalModelInfo } from '@/plobi'
 import { type ChatScope } from '@/app/console/chat/scope'
 import { translateNow, useI18n } from '@/i18n'
 import {
+  $connectedDesktopApps,
   firstSelectableQuotaModel,
   isDesktopQuotaProvider,
-  quotaSelectionVerdict,
-  refreshAllConnectedAppModels
+  quotaSelectionVerdict
 } from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
 import {
@@ -21,13 +21,6 @@ import {
   storedScopedComposerSelection
 } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/plobi'
-
-/**
- * How often the composer re-asks the quota hub what it can serve. One local GET
- * per tick — it spends no vendor tokens, so the interval is a latency choice,
- * not a cost one. An Antigravity sign-in on this machine lasts about an hour.
- */
-const QUOTA_CATALOG_TICK_MS = 60_000
 
 interface ModelSelection {
   model: string
@@ -200,24 +193,17 @@ export function useModelControls({
 
   // The hub's verdict can change underneath a conversation that is just sitting
   // open: on this machine an Antigravity sign-in lasts about an hour, and it is
-  // renewed by that desktop app, not by Plobi. So re-ask the hub on a slow tick
-  // while the window is visible, and if the model this composer is on is no longer
-  // offered, land on one that is and say why out loud. A turn that must fail is
-  // never the user's bug — the subscription clock ran out, and we know it.
+  // renewed by that desktop app, not by Plobi. The shell owns the reading — only the
+  // main process may reach the hub, because the renderer's own fetch is preflighted
+  // and the hub sends no CORS headers — and it pushes a frame on a slow tick and again
+  // whenever the picker asks. So this reacts to each frame instead of polling from
+  // here: if the model this composer sits on is no longer offered, land on one that is
+  // and say why out loud. A turn that must fail is never the user's bug — the
+  // subscription clock ran out, and we know it.
   useEffect(() => {
     let cancelled = false
 
-    const tick = async () => {
-      if (document.visibilityState !== 'visible') {
-        return
-      }
-
-      await refreshAllConnectedAppModels()
-
-      if (cancelled) {
-        return
-      }
-
+    const reactToFrame = async () => {
       const provider = $currentProvider.get()
       const model = $currentModel.get()
 
@@ -253,6 +239,10 @@ export function useModelControls({
         return
       }
 
+      if (cancelled) {
+        return
+      }
+
       const key = `desktop.quotaReason.${verdict.reason}`
       const translated = translateNow(key)
       // The hub's reason is a machine token (`credential_expired`, `no_tools`, …).
@@ -272,13 +262,13 @@ export function useModelControls({
       })
     }
 
-    void tick()
-
-    const timer = setInterval(() => void tick(), QUOTA_CATALOG_TICK_MS)
+    // nanostores invokes the listener on subscribe, so mounting this hook evaluates
+    // the frame we already have — no first-read gap, no timer of our own.
+    const unsubscribe = $connectedDesktopApps.subscribe(() => void reactToFrame())
 
     return () => {
       cancelled = true
-      clearInterval(timer)
+      unsubscribe()
     }
   }, [selectModel])
 

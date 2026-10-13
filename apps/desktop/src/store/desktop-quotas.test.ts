@@ -8,8 +8,21 @@ import {
   firstSelectableQuotaModel,
   markConnected,
   quotaSelectionVerdict,
-  refreshAllConnectedAppModels
+  type QuotaAppFrame
 } from './desktop-quotas'
+
+/** One app exactly as the shell pushes it: the hub's verdict, not a bare name list. */
+function frame(id: string, over: Partial<QuotaAppFrame> = {}): QuotaAppFrame {
+  return {
+    answered: true,
+    apiKey: 'sk-local-dev-key',
+    baseUrl: 'http://127.0.0.1:8000/v1',
+    blocked: {},
+    id,
+    models: [],
+    ...over
+  }
+}
 
 // desktopQuotaProviders() is the single combinator behind all three model-picker
 // surfaces (model-menu-panel, model-picker, chat-runtime), so these are the rules
@@ -79,7 +92,7 @@ describe('applyDiscoveredQuotaApps', () => {
 
   it('surfaces a hub-served app in the picker without any manual connect', () => {
     applyDiscoveredQuotaApps([
-      { id: 'workbuddy', models: ['hy3', 'glm-5.3'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+      frame('workbuddy', { models: ['hy3', 'glm-5.3'] })
     ])
 
     const [row] = desktopQuotaProviders()
@@ -94,8 +107,8 @@ describe('applyDiscoveredQuotaApps', () => {
 
   it('never lets a pushed demo channel reach the selector', () => {
     applyDiscoveredQuotaApps([
-      { id: 'mock', models: ['echo'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' },
-      { id: 'workbuddy', models: ['hy3'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+      frame('mock', { models: ['echo'] }),
+      frame('workbuddy', { models: ['hy3'] })
     ])
 
     expect(desktopQuotaProviders().map(provider => provider.slug)).toEqual(['workbuddy'])
@@ -103,7 +116,7 @@ describe('applyDiscoveredQuotaApps', () => {
 
   it('keeps an existing connection when a push comes back empty (a transient read is not a wipe)', () => {
     applyDiscoveredQuotaApps([
-      { id: 'workbuddy', models: ['hy3'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+      frame('workbuddy', { models: ['hy3'] })
     ])
 
     applyDiscoveredQuotaApps([])
@@ -112,99 +125,59 @@ describe('applyDiscoveredQuotaApps', () => {
   })
 })
 
-// The hub decides pickability; these are the rules the renderer follows from that
-// verdict. Nothing here names a model — a leg leaves the picker because the gateway
-// said so, and comes back when its sign-in is renewed.
-describe('live catalog verdicts', () => {
-  const hub = (rows: unknown[]) =>
-    vi.fn(async () => ({ ok: true, json: async () => ({ data: rows }) }))
-
+// The hub decides pickability, and the shell is the only one allowed to read it:
+// these are the rules the renderer follows from the pushed frame. Nothing here names
+// a model — a leg leaves the picker because the hub said so, and comes back when its
+// sign-in is renewed.
+describe('hub verdict frames', () => {
   beforeEach(() => {
     $connectedDesktopApps.set({})
-    markConnected({
-      id: 'workbuddy',
-      models: ['glm-5.2'],
-      baseUrl: 'http://127.0.0.1:8000/v1',
-      apiKey: 'sk-local-dev-key'
-    })
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
+  it('keeps the last good list when the shell reports no answer (an empty frame is not a verdict)', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    applyDiscoveredQuotaApps([frame('workbuddy', { answered: false, models: [] })])
+
+    expect(desktopQuotaProviders()[0]?.models).toEqual(['hy3'])
+    expect(quotaSelectionVerdict('workbuddy', 'hy3')).toEqual({ state: 'unanswered' })
   })
 
-  it('believes an answered "nothing here is pickable" instead of reviving the seed', async () => {
-    vi.stubGlobal(
-      'fetch',
-      hub([
-        {
-          id: 'workbuddy/glm-5.2',
-          provider: 'workbuddy',
-          selectable: false,
-          unselectable_reason: 'no_tools'
-        }
-      ])
-    )
-
-    await refreshAllConnectedAppModels()
+  it('believes an answered nothing-is-pickable instead of reviving the seed', () => {
+    // the seed knows 'glm-5.2' for workbuddy; a frame that offers nothing must win
+    applyDiscoveredQuotaApps([frame('workbuddy', { blocked: { 'glm-5.2': 'no_tools' } })])
 
     expect(desktopQuotaProviders()).toEqual([])
-    // the reason travels with it, so a vanished model can be explained on screen
-    expect($connectedDesktopApps.get().workbuddy?.blocked).toEqual({ 'glm-5.2': 'no_tools' })
     expect(quotaSelectionVerdict('workbuddy', 'glm-5.2')).toEqual({ state: 'gone', reason: 'no_tools' })
   })
 
-  it('keeps the last good list when the hub does not answer, and calls it unanswered', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new Error('connection refused')
-      })
-    )
-
-    await refreshAllConnectedAppModels()
-
-    expect(desktopQuotaProviders()[0]?.models).toEqual(['glm-5.2'])
-    // "we could not ask" must never read as "it is broken" — no fallback may fire
-    expect(quotaSelectionVerdict('workbuddy', 'glm-5.2')).toEqual({ state: 'unanswered' })
-  })
-
-  it('serves a renewed credential on the next tick with no code or list change', async () => {
-    vi.stubGlobal(
-      'fetch',
-      hub([{ id: 'workbuddy/glm-5.2', provider: 'workbuddy', selectable: false, unselectable_reason: 'credential_expired' }])
-    )
-    await refreshAllConnectedAppModels()
+  it('serves a renewed credential on the next frame with no code or list change', () => {
+    applyDiscoveredQuotaApps([
+      frame('antigravity', { models: [], blocked: { 'gemini-3.8': 'credential_expired' } })
+    ])
     expect(desktopQuotaProviders()).toEqual([])
 
-    vi.stubGlobal('fetch', hub([{ id: 'workbuddy/glm-5.2', provider: 'workbuddy', selectable: true }]))
-    await refreshAllConnectedAppModels()
+    applyDiscoveredQuotaApps([frame('antigravity', { models: ['gemini-3.8'] })])
 
-    expect(desktopQuotaProviders()[0]?.models).toEqual(['glm-5.2'])
-    expect(quotaSelectionVerdict('workbuddy', 'glm-5.2')).toEqual({ state: 'ok' })
-    expect(firstSelectableQuotaModel()).toEqual({ model: 'glm-5.2', provider: 'workbuddy' })
+    expect(desktopQuotaProviders()[0]?.models).toEqual(['gemini-3.8'])
+    expect(quotaSelectionVerdict('antigravity', 'gemini-3.8')).toEqual({ state: 'ok' })
+    expect(firstSelectableQuotaModel()).toEqual({ model: 'gemini-3.8', provider: 'antigravity' })
   })
 
-  it('refuses to fall back to a model the hub never confirmed', async () => {
-    $connectedDesktopApps.set({})
-    // seed-only app: DESKTOP_QUOTA_MODELS has entries for cursor, but no read landed
+  it('refuses to fall back to a model the hub never confirmed', () => {
+    // seed-only app: DESKTOP_QUOTA_MODELS has entries for cursor, but no frame answered
     markConnected({ id: 'cursor', baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' })
 
     expect(desktopQuotaProviders()[0]?.models).toEqual(DESKTOP_QUOTA_MODELS.cursor)
     expect(firstSelectableQuotaModel()).toBeNull()
   })
 
-  it('a push frame cannot resurrect legs the hub already dropped', async () => {
-    vi.stubGlobal(
-      'fetch',
-      hub([{ id: 'workbuddy/glm-5.2', provider: 'workbuddy', selectable: false, unselectable_reason: 'no_tools' }])
-    )
-    await refreshAllConnectedAppModels()
-
+  it('keeps the reason readable for the settings card after the leg leaves the picker', () => {
     applyDiscoveredQuotaApps([
-      { id: 'workbuddy', models: ['glm-5.2', 'kimi-k3-1'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+      frame('antigravity', { models: [], blocked: { 'gemini-3.8': 'credential_expired' } })
     ])
 
-    expect(desktopQuotaProviders()).toEqual([])
+    expect($connectedDesktopApps.get().antigravity?.blocked).toEqual({ 'gemini-3.8': 'credential_expired' })
+    // connected still, so Settings can show the software and say why it is idle
+    expect($connectedDesktopApps.get().antigravity?.connected).toBe(true)
   })
 })
