@@ -26,13 +26,19 @@ import logging
 
 from typing import MutableMapping
 
-from agent.egress.rules import Table
+from agent.egress.rules import Table, _expands_to_env_entries
 
 _log = logging.getLogger(__name__)
 
 PROXY_KEYS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY")
 BYPASS_KEYS = ("NO_PROXY",)
-ALL_KEYS = tuple(list(PROXY_KEYS) + list(BYPASS_KEYS) + [k.lower() for k in BYPASS_KEYS])
+# Both cases, both when clearing and when writing: on POSIX they are different
+# variables and curl/libcurl prefer the lowercase one, so clearing only the
+# uppercase names would leave an inherited `http_proxy` routing traffic the table
+# never approved.  (Windows lookups are case-insensitive, so this costs nothing there.)
+ALL_KEYS = tuple(
+    list(PROXY_KEYS) + list(BYPASS_KEYS) + [k.lower() for k in PROXY_KEYS + BYPASS_KEYS]
+)
 
 #: Mirrors are per-tool variables, not routes — see rules.py for why pypi is refused.
 MIRROR_ENV_KEYS = {
@@ -79,6 +85,7 @@ def apply_egress_env(
 
     for key in PROXY_KEYS:
         env[key] = proxy_url
+        env[key.lower()] = proxy_url
 
     bypass = _bypass_entries(table)
     if bypass:
@@ -94,7 +101,11 @@ def _bypass_entries(table: Table) -> list[str]:
             continue
         if rule.kind == "all":
             continue
-        entries.append(rule.value)
+        # A range reaches a child only if NO_PROXY can say it at all: loopback is
+        # expanded to the names people use to reach ourselves, and every other range
+        # is skipped here and named by `Table.env_dropped_rules` instead of being
+        # emitted in a form urllib/httpx silently ignore.
+        entries.extend(_expands_to_env_entries(rule))
     seen: set[str] = set()
     out: list[str] = []
     for entry in entries:

@@ -50,13 +50,46 @@ def test_the_projection_owns_the_network_keys():
 
 def test_direct_rules_become_the_bypass_list_and_nothing_else_does():
     env: dict[str, str] = {}
-    apply_egress_env(env, _table())
+    table = _table()
+    apply_egress_env(env, table)
     entries = env["NO_PROXY"].split(",")
     assert "api.github.com" in entries
-    assert "10.0.0.0/8" in entries  # written through; curl honors it, urllib does not
+    # Measured 10-13 against a local listener with a dead proxy: curl and requests
+    # honour `10.0.0.0/8`, urllib and httpx ignore it and send the request to the
+    # proxy.  Writing it through would look configured and be silently wrong.
+    assert "10.0.0.0/8" not in entries
+    assert [r.match for r in table.env_dropped_rules] == ["10.0.0.0/8"]
     # a proxied suffix must never appear as a bypass entry
     assert not [e for e in entries if "internal.test" in e]
     assert env["NO_PROXY"] == env["no_proxy"]
+
+
+def test_loopback_is_the_one_range_a_child_can_be_told_about():
+    table = _table(rules=[
+        {"match": "127.0.0.0/8", "via": "direct"},
+        {"match": "::1/128", "via": "direct"},
+        {"match": "*", "via": "proxy:local"},
+    ])
+    env: dict[str, str] = {}
+    apply_egress_env(env, table)
+    entries = env["NO_PROXY"].split(",")
+    assert {"127.0.0.1", "localhost", "::1"} <= set(entries)
+    assert not [e for e in entries if "/" in e], "no range survives in the child's vocabulary"
+    assert table.env_dropped_rules == (), "loopback is expressible, so it must not be named as lost"
+
+
+def test_an_inherited_lowercase_proxy_cannot_outvote_the_table():
+    """POSIX treats `http_proxy` and `HTTP_PROXY` as different variables; curl reads the lowercase one."""
+    env = {
+        "http_proxy": "http://parent.test:9",
+        "https_proxy": "http://parent.test:9",
+        "all_proxy": "socks5://parent.test:1080",
+        "PATH": "/bin",
+    }
+    apply_egress_env(env, _table())
+    assert env["http_proxy"] == env["https_proxy"] == _PROXY
+    assert env["all_proxy"] == _PROXY
+    assert env["PATH"] == "/bin"
 
 
 def test_an_all_direct_table_short_circuits_every_exit():

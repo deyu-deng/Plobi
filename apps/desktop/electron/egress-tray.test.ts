@@ -102,7 +102,7 @@ test('running-ours + 打一枪成 ⇒ 绿，并把端口与探针句子原样带
   assert.ok(labels(indicator).includes('成员 2 节点 / 1 组 · 只到引擎'))
   assert.ok(labels(indicator).includes('镜像 1 项（按工具配，不改 TLS）'))
   assert.ok(labels(indicator).includes('1 条只在引擎里生效 · 子进程拿不到'))
-  assert.ok(labels(indicator).includes('上限：1 条规则装不进子进程的环境变量，那些请求它会直连'))
+  assert.ok(labels(indicator).includes('上限：1 条规则装不进子进程的环境变量，那些请求会走兜底出口'))
 })
 
 test('打一枪 FAIL ⇒ 红，端口在听也不算正常', () => {

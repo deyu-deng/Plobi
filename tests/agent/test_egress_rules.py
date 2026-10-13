@@ -451,3 +451,52 @@ def test_a_real_pools_extra_fields_pass_through_instead_of_blocking_the_table(mo
     assert table.nodes["hk1"].fields["client-fingerprint"] == "chrome"
     assert table.nodes["hk1"].fields["some-future-field"] == 1
     assert "some-future-field" in caplog.text
+
+
+def _range_table():
+    return load_table(config={"network": {"egress": {
+        "proxies": {"front": {"url": "http://127.0.0.1:1"}},
+        "rules": [
+            {"match": "10.0.0.0/8", "via": "direct"},
+            {"match": "127.0.0.0/8", "via": "direct"},
+            {"match": "*", "via": "proxy:front"},
+        ]}}})
+
+
+def test_an_address_range_is_the_third_thing_a_child_cannot_be_told():
+    """NO_PROXY has no range vocabulary; loopback is expanded, so only the /8 is lost.
+
+    Measured 10-13 on this box: curl and requests honour a CIDR in NO_PROXY,
+    urllib and httpx ignore it — so writing it through is a silent wrong answer.
+    """
+    table = _range_table()
+    assert [r.match for r in table.env_dropped_rules] == ["10.0.0.0/8"]
+    assert table.rules[1] not in table.env_dropped_rules, "127.0.0.0/8 is expressible"
+    assert table.engine_only_rules == (), "a direct range is not engine-only; the engine does honor it"
+
+
+def test_the_ceiling_sentence_names_the_catch_all_rather_than_a_direction():
+    """'those children go direct' was wrong for a dropped range: it goes to the exit."""
+    from agent.egress.status import render
+
+    lines = render(_range_table(), with_probe=False)
+    ceiling = [line for line in lines if "ceiling" in line]
+    assert len(ceiling) == 1, ceiling
+    assert "go direct" not in ceiling[0]
+    assert "* -> proxy:front" in ceiling[0], ceiling[0]
+    assert any("no vocabulary for it in a spawned child's env" in line for line in lines), lines
+
+
+def test_a_dropped_range_is_named_by_its_own_sentence(monkeypatch, caplog):
+    """One sentence per reason — a range must not be reported as "a node or group"."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        load_table(config={"network": {"egress": {
+            "proxies": {"front": {"url": "http://127.0.0.1:1"}},
+            "rules": [{"match": "10.0.0.0/8", "via": "direct"}, {"match": "*", "via": "proxy:front"}],
+        }}}, force_reload=True)
+    said = [r.getMessage() for r in caplog.records if "network.egress" in r.getMessage()]
+    assert any("address ranges" in line and "10.0.0.0/8" in line for line in said), said
+    assert not any("node or group" in line for line in said), said
+    assert not any("catch-all" in line and "rule is direct" in line for line in said), said

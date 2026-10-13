@@ -81,12 +81,20 @@ def render(
             f"a spawned child cannot be told about these"
         )
     for rule in table.rules:
-        tag = "  (engine-only, not visible to spawned children)" if rule in table.engine_only_rules else ""
+        tags = []
+        if rule in table.engine_only_rules:
+            tags.append("engine-only, not visible to spawned children")
+        if rule in table.env_dropped_rules and rule not in table.engine_only_rules:
+            tags.append("no vocabulary for it in a spawned child's env")
+        tag = f"  ({'; '.join(tags)})" if tags else ""
         lines.append(f"  {rule.match} -> {rule.via}{tag}")
     if table.env_dropped_rules:
+        # Not "go direct": what the child does instead is follow the catch-all, which
+        # for a dropped `direct` range is the opposite of what the rule asked for.
         lines.append(
             f"  ceiling: {len(table.env_dropped_rules)} rule(s) cannot be expressed in a "
-            f"spawned child's env vocabulary — those children go direct for them"
+            f"spawned child's env vocabulary — for those the child follows the catch-all "
+            f"({table.rules[-1].match} -> {table.rules[-1].via}) instead"
         )
     if table.mirrors:
         lines.append("mirrors: " + ", ".join(f"{k}={v}" for k, v in sorted(table.mirrors.items())))

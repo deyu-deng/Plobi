@@ -50,6 +50,27 @@ _PYPI_MIRROR_REFUSAL = (
 _PROXY_SCHEMES = ("http", "https", "socks5", "socks5h")
 _GEOSITE_RE = re.compile(r"^geosite:[A-Za-z0-9_&.-]+$")
 
+#: The only address ranges a spawned child can be told about at all.
+#:
+#: ``NO_PROXY`` has no range vocabulary, and this is not theory: measured on this
+#: box 2026-10-13 against a local listener with a dead proxy, ``curl`` and
+#: ``requests`` honour ``127.0.0.0/8``, while ``urllib`` and ``httpx`` ignore the
+#: entry outright and hand the request to the proxy — i.e. a child reaching our own
+#: gateway on loopback would fail.  Loopback is therefore expanded into the names
+#: people actually use to reach ourselves; every other range stays unexpressible
+#: and is named by :attr:`Table.env_dropped_rules` rather than emitted half-broken.
+LOOPBACK_EXPANSION = {
+    "127.0.0.0/8": ("127.0.0.1", "localhost"),
+    "::1/128": ("::1", "localhost"),
+}
+
+
+def _expands_to_env_entries(rule: "Rule") -> tuple[str, ...]:
+    """What this ``direct`` rule can be written as in a child's environment."""
+    if rule.kind != "cidr":
+        return (rule.value,)
+    return LOOPBACK_EXPANSION.get(rule.value, ())
+
 _TABLE_CACHE: Optional["Table"] = None
 _UNREADABLE_REPORTED = False
 
@@ -160,21 +181,35 @@ class Table:
     def env_dropped_rules(self) -> tuple[Rule, ...]:
         """Rules the subprocess environment cannot carry.
 
-        Two distinct reasons, reported together because the child's answer is the
+        Three distinct reasons, reported together because the child's answer is the
         same (that route simply does not reach it):
 
         * the catch-all is ``direct``, so a ``proxy:`` rule above it has no exit
           to name;
         * the rule's exit is a **node or group** — engine-only, because
-          ``HTTPS_PROXY`` cannot carry ``ss://``/``vmess://`` semantics.
+          ``HTTPS_PROXY`` cannot carry ``ss://``/``vmess://`` semantics;
+        * the rule is an **address range** that is not loopback — ``NO_PROXY`` has
+          no range vocabulary, and ``urllib``/``httpx`` ignore a CIDR entry outright
+          (see :data:`LOOPBACK_EXPANSION`), so that traffic goes to the catch-all.
         """
-        if not self.active or self.rules[-1].via != DIRECT:
-            return tuple(r for r in self.rules if self._rule_is_engine_only(r) and r.kind != "geosite")
-        return tuple(
+        if not self.active:
+            return ()
+        if self.rules[-1].via != DIRECT:
+            base = tuple(
+                r for r in self.rules if self._rule_is_engine_only(r) and r.kind != "geosite"
+            )
+        else:
+            base = tuple(
+                r
+                for r in self.rules
+                if r.via.startswith("proxy:") and r.kind != "geosite" and r.kind != "all"
+            )
+        ranges = tuple(
             r
             for r in self.rules
-            if r.via.startswith("proxy:") and r.kind != "geosite" and r.kind != "all"
+            if r.via == DIRECT and not _expands_to_env_entries(r)
         )
+        return tuple(dict.fromkeys(base + ranges))
 
     def proxy_url(self, name: str) -> str:
         try:
@@ -646,25 +681,37 @@ def _report_unrepresentable(table: Table) -> Table:
             [r.match for r in table.engine_only_rules],
         )
     if table.env_dropped_rules:
-        # Two different reasons reach the same child-side outcome; saying only one
-        # of them would send the next reader to fix the wrong thing.
-        catch_all_direct = bool(table.active) and table.rules[-1].via == DIRECT
-        if catch_all_direct:
+        # Three different reasons reach the same child-side outcome; one sentence for
+        # all of them would name the wrong rules and send the next reader to fix the
+        # wrong thing.
+        ranges = [r for r in table.env_dropped_rules if r.via == DIRECT]
+        exits = [r for r in table.env_dropped_rules if r.via != DIRECT]
+        if exits:
+            if table.rules[-1].via == DIRECT:
+                log.warning(
+                    "network.egress: %d rule(s) %s route to a named exit, but the catch-all "
+                    "rule is direct — a spawned subprocess cannot be told 'one exit except "
+                    "these hosts' in that shape, so those rules apply in-process only and "
+                    "are dropped from the child's environment",
+                    len(exits),
+                    [r.match for r in exits],
+                )
+            else:
+                log.warning(
+                    "network.egress: %d rule(s) %s point at a node or group — ss:// and vmess:// "
+                    "have no URL form, so a spawned subprocess cannot be told about them and the "
+                    "engine is the only thing that will honor those rules",
+                    len(exits),
+                    [r.match for r in exits],
+                )
+        if ranges:
             log.warning(
-                "network.egress: %d rule(s) %s route to a named exit, but the catch-all "
-                "rule is direct — a spawned subprocess cannot be told 'one exit except "
-                "these hosts' in that shape, so those rules apply in-process only and "
-                "are dropped from the child's environment",
-                len(table.env_dropped_rules),
-                [r.match for r in table.env_dropped_rules],
-            )
-        else:
-            log.warning(
-                "network.egress: %d rule(s) %s point at a node or group — ss:// and vmess:// "
-                "have no URL form, so a spawned subprocess cannot be told about them and the "
-                "engine is the only thing that will honor those rules",
-                len(table.env_dropped_rules),
-                [r.match for r in table.env_dropped_rules],
+                "network.egress: %d rule(s) %s are address ranges — NO_PROXY has no range "
+                "vocabulary and urllib/httpx ignore a CIDR entry outright, so a spawned "
+                "subprocess sends that traffic to the catch-all exit instead; loopback "
+                "(127.0.0.0/8, ::1/128) is expanded and is not in this list",
+                len(ranges),
+                [r.match for r in ranges],
             )
     return table
 
