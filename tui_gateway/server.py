@@ -38,6 +38,11 @@ from tui_gateway.transport import (
 
 logger = logging.getLogger(__name__)
 
+# 桌面与 TUI 是**人驱动**的面：这个进程里落库的 user 行就是人自己打的（`messages.asked_by`）。
+# 别的进程不这么写——L1 问分身起的子进程由 agent_ask 显式盖 `l1:<会话号>`，
+# cron / 消息网关不盖 ⇒ 读成 NULL，界面显示"这条没记发起方"。owner 不是默认值。
+os.environ.setdefault("PLOBI_ASKED_BY", "owner")
+
 _plobi_home = get_plobi_home()
 load_plobi_dotenv(
     plobi_home=_plobi_home, project_env=Path(__file__).parent.parent / ".env"

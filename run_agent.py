@@ -257,6 +257,23 @@ _MAX_TOOL_WORKERS = 8
 # (agent/transports/chat_completions.py, agent/chat_completion_helpers.py) strip
 # every top-level ``_``-prefixed key before the request leaves the process, so
 # this never reaches a strict OpenAI-compatible gateway.
+#: 谁发起的这条问（`messages.asked_by`）。设它的人只有两个：
+#: 桌面/TUI 后端启动时写 `owner`（那个进程里进来的问就是人打的），
+#: 以及 L1 问自己分身时给子进程写 `l1:<会话号>`（`plugins/plobi-north-star/agent_ask.py`）。
+#: cron、消息网关等一律不写 ⇒ NULL，界面显式说"这条没记发起方"——**不拿 owner 当默认**，
+#: 那是把猜测显示成事实（用户 10-13 拍的那格）。
+ASKED_BY_ENV = "PLOBI_ASKED_BY"
+
+
+def resolve_asked_by(message: dict = None, env: dict = None) -> Optional[str]:
+    """这条 user 消息是谁发起的。优先级：消息自己带的 > 进程环境 > 没记（None）。"""
+    own = ((message or {}).get("asked_by") or "").strip()
+    if own:
+        return own
+    value = ((env if env is not None else os.environ).get(ASKED_BY_ENV) or "").strip()
+    return value or None
+
+
 _DB_PERSISTED_MARKER = "_db_persisted"
 
 
@@ -1893,6 +1910,7 @@ class AIAgent:
                     session_id=self.session_id,
                     role=role,
                     content=content,
+                    asked_by=resolve_asked_by(msg) if role == "user" else None,
                     tool_name=msg.get("tool_name"),
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
