@@ -107,6 +107,15 @@ import {
   shouldRemoveAppBundle,
   uninstallArgsForMode
 } from './desktop-uninstall'
+import {
+  type EgressIndicator,
+  type EgressTone,
+  egressTooltip,
+  egressTrayStrings,
+  overlayToneDot,
+  readEgressIndicator,
+  remoteEgressIndicator
+} from './egress-tray'
 import { installEmbedReferer } from './embed-referer'
 import { readDirForIpc } from './fs-read-dir'
 import { probeGatewayWebSocket } from './gateway-ws-probe'
@@ -7860,6 +7869,104 @@ async function restartFromTray() {
   }
 }
 
+// ─── Egress indicator (WP-EGRESS-ROUTING) ──────────────────────────────────
+//
+// The tray's one source for "is my egress actually carrying traffic right now"
+// is the backend's `/api/network/status` — the same reading `plobi network
+// status` prints (`agent/egress/status.py`). This process maps that answer and
+// never re-judges it: no local port probe, no second liveness rule (裁定 94/102).
+// In remote mode the answer describes a different machine, so the icon stays plain.
+
+const EGRESS_POLL_MS = 5 * 60_000
+let egressObservation: { remote: boolean; answer: unknown } = { remote: false, answer: null }
+let egressPollBusy = false
+let egressPollTimer: ReturnType<typeof setInterval> | null = null
+let egressBadgeTone: EgressTone | null = null
+
+function egressStrings() {
+  return egressTrayStrings(trayLanguage(app.getLocale()))
+}
+
+function egressIndicatorNow(): EgressIndicator {
+  const strings = egressStrings()
+
+  return egressObservation.remote
+    ? remoteEgressIndicator(strings)
+    : readEgressIndicator(egressObservation.answer, strings)
+}
+
+/** Read the answer without starting anything: an indicator never boots a backend. */
+async function readEgressAnswer(): Promise<{ remote: boolean; answer: unknown }> {
+  if (!connectionPromise) {
+    return { remote: false, answer: null }
+  }
+
+  const connection = await connectionPromise
+
+  if (connection?.mode === 'remote' || !connection?.baseUrl || !connection?.token) {
+    return { remote: connection?.mode === 'remote', answer: null }
+  }
+
+  return { remote: false, answer: await fetchJson(`${connection.baseUrl}/api/network/status`, connection.token) }
+}
+
+async function pollEgressIndicator() {
+  if (egressPollBusy) {
+    return
+  }
+
+  egressPollBusy = true
+
+  try {
+    egressObservation = await readEgressAnswer()
+  } catch (err) {
+    egressObservation = { remote: false, answer: null }
+    rememberLog(`[egress-tray] the backend did not answer: ${err?.message || err}`)
+  } finally {
+    egressPollBusy = false
+  }
+
+  applyEgressBadge()
+  refreshTrayMenu()
+}
+
+/** Repaint from the base icon plus one dot — never from the last painted frame. */
+function applyEgressBadge() {
+  if (!tray || tray.isDestroyed()) {
+    return
+  }
+
+  const indicator = egressIndicatorNow()
+
+  try {
+    tray.setToolTip(`${trayStrings(app.getLocale()).tooltip} · ${egressTooltip(egressStrings(), indicator)}`)
+  } catch (err) {
+    rememberLog(`[egress-tray] tooltip failed: ${err?.message || err}`)
+  }
+
+  const tone: EgressTone = indicator.badge ? indicator.tone : 'off'
+
+  if (tone === egressBadgeTone) {
+    return
+  }
+
+  egressBadgeTone = tone
+
+  try {
+    const image = trayIconImage()
+    const { width, height } = image.getSize()
+
+    if (width > 0 && height > 0) {
+      const painted = overlayToneDot(image.toBitmap(), width, height, tone)
+
+      tray.setImage(nativeImage.createFromBuffer(Buffer.from(painted), { width, height }))
+    }
+  } catch (err) {
+    egressBadgeTone = null
+    rememberLog(`[egress-tray] badge paint failed: ${err?.message || err}`)
+  }
+}
+
 // Build the tray menu from the persisted settings. Rebuilt (not just once) so
 // the checkbox can never disagree with what actually got written to disk.
 function refreshTrayMenu() {
@@ -7870,6 +7977,8 @@ function refreshTrayMenu() {
   const labels = trayStrings(app.getLocale())
   const language = trayLanguage(app.getLocale())
   const { openAtLogin } = readShellSettingsState()
+  const egressText = egressStrings()
+  const egress = egressIndicatorNow()
 
   try {
     tray.setContextMenu(
@@ -7892,6 +8001,15 @@ function refreshTrayMenu() {
             label: `${deferredRowName(row, language)} · ${row.state}${row.port > 0 ? ` (:${row.port})` : ''}`,
             toolTip: row.detail
           }))
+        },
+        // WP-EGRESS-ROUTING — rendering #3 of the one egress reading (the other two
+        // are `plobi network status` and the settings panel). Disabled rows: this
+        // group reports, it never starts or stops anything — that is `plobi network
+        // start|stop|reload`'s job, and a tray click must not become a second owner
+        // of the engine's lifecycle.
+        {
+          label: `${egressText.group} · ${egressText.tone[egress.tone]}`,
+          submenu: egress.rows.map(row => ({ enabled: false, label: row.label, toolTip: row.toolTip }))
         },
         { type: 'separator' },
         {
@@ -7942,6 +8060,16 @@ function createTray() {
     tray = new Tray(trayIconImage())
     tray.setToolTip(trayStrings(app.getLocale()).tooltip)
     refreshTrayMenu()
+    // First paint shows "no answer yet", then the poll replaces it. The interval is
+    // slow on purpose: every read makes the engine shoot one real request, and a
+    // tray dot is not worth a probe storm.
+    applyEgressBadge()
+    void pollEgressIndicator()
+
+    if (!egressPollTimer) {
+      egressPollTimer = setInterval(() => void pollEgressIndicator(), EGRESS_POLL_MS)
+    }
+
     rememberLog('[tray] ready')
     // Left click is the "show me the window" gesture on Windows/Linux; macOS
     // opens the menu on left click, which is the same menu.
