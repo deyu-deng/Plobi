@@ -225,7 +225,10 @@ export type ConsoleAgendaEvent = AgendaEvent
 export interface AgentNote {
   belongs: string[]
   chars: number
+  /** Vault-relative, for display. */
   path: string
+  /** Absolute on disk — what the preview pane needs to open the note. */
+  fsPath: string
   title: string
 }
 

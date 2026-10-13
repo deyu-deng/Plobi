@@ -9,6 +9,7 @@ silent "no notes".
 from __future__ import annotations
 
 import types
+from pathlib import Path
 
 import pytest
 
@@ -83,6 +84,19 @@ def test_belongs_matches_through_agent_subtree(vault):
     assert [note.title for note in matched] == ["Rust 所有权"]
     assert matched[0].path == "Vault/notes/数学 Math/Rust 所有权.md"
     assert matched[0].chars > 0
+
+
+def test_payload_carries_an_openable_absolute_path(vault):
+    """The desktop hands this to its file-preview normaliser, so it must resolve."""
+    payload = build_view(vault, _entry("SRTP"), [_entry("SRTP")])
+
+    note = payload["notes"][0]
+
+    assert Path(note["fsPath"]).is_absolute()
+    assert Path(note["fsPath"]).is_file()
+    # Display path stays vault-relative — the two are not interchangeable.
+    assert not note["path"].startswith("/")
+    assert not Path(note["path"]).is_absolute()
 
 
 def test_unregistered_belongs_is_surfaced_not_dropped(vault):

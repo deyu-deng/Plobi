@@ -17,9 +17,13 @@ import { cn } from '@/lib/utils'
 import {
   $panesFlipped,
   $rightRailActiveTabId,
+  $rightRailView,
   RIGHT_RAIL_PREVIEW_TAB_ID,
+  RIGHT_RAIL_VIEW_NOTES,
+  RIGHT_RAIL_VIEW_PREVIEW,
   type RightRailTabId,
-  selectRightRailTab
+  selectRightRailTab,
+  setRightRailView
 } from '@/store/layout'
 import {
   $filePreviewTabs,
@@ -33,12 +37,19 @@ import {
 } from '@/store/preview'
 import { $dirtyPreviewUrls } from '@/store/preview-edit'
 
+import { AgentNotesList } from './notes-list'
 import { PreviewPane } from './preview-pane'
 
 export const PREVIEW_RAIL_MIN_WIDTH = '18rem'
 export const PREVIEW_RAIL_MAX_WIDTH = '38rem'
 
 const INTRINSIC = `clamp(${PREVIEW_RAIL_MIN_WIDTH}, 36vw, 32rem)`
+
+const RAIL_VIEW_ICON = (active: boolean) =>
+  cn(
+    'grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground [-webkit-app-region:no-drag]',
+    active && 'bg-(--ui-control-active-background) text-foreground'
+  )
 
 // Track for <Pane id="preview">. Folds the intrinsic clamp with a min-floor
 // against --chat-min-width so the chat surface never gets squeezed below it.
@@ -47,6 +58,8 @@ const INTRINSIC = `clamp(${PREVIEW_RAIL_MIN_WIDTH}, 36vw, 32rem)`
 export const PREVIEW_RAIL_PANE_WIDTH = `min(${INTRINSIC}, max(0rem, calc(100vw - var(--pane-chat-sidebar-width) - var(--pane-file-browser-width, 0rem) - var(--chat-min-width))))`
 
 interface ChatPreviewRailProps {
+  /** Present on an agent route; that is what makes the notes view meaningful. */
+  agentId?: string
   onRestartServer?: (url: string, context?: string) => Promise<string>
   setTitlebarToolGroup?: SetTitlebarToolGroup
 }
@@ -64,10 +77,11 @@ function tabLabelFor(target: PreviewTarget): string {
   return tail || value || translateNow('preview.tab')
 }
 
-export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatPreviewRailProps) {
+export function ChatPreviewRail({ agentId, onRestartServer, setTitlebarToolGroup }: ChatPreviewRailProps) {
   const { t } = useI18n()
   const previewReloadRequest = useStore($previewReloadRequest)
   const activeTabId = useStore($rightRailActiveTabId)
+  const railView = useStore($rightRailView)
   const panesFlipped = useStore($panesFlipped)
   const filePreviewTabs = useStore($filePreviewTabs)
   const previewTarget = useStore($previewTarget)
@@ -91,11 +105,17 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
     }
   }, [activeTab, activeTabId])
 
-  if (!activeTab) {
+  // The notes view is only offered where there is a current agent to read notes
+  // for; off an agent route the rail stays the pure preview surface it always was.
+  const notesMode = Boolean(agentId) && railView === RIGHT_RAIL_VIEW_NOTES
+  // `notesMode` already implies a non-empty id; name it so TS agrees.
+  const notesAgentId = agentId ?? ''
+
+  if (!activeTab && !notesMode) {
     return null
   }
 
-  const isPreview = activeTab.id === RIGHT_RAIL_PREVIEW_TAB_ID
+  const isPreview = activeTab?.id === RIGHT_RAIL_PREVIEW_TAB_ID
 
   return (
     <aside
@@ -204,6 +224,37 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
             )
           })}
         </div>
+        {agentId && (
+          // Icon group, not a second tab strip: the notes view is a different face
+          // of this rail, not another file, and widening RightRailTabId for it would
+          // drag a non-file id through the tab-close helpers.
+          <div className="flex shrink-0 items-center gap-0.5 self-center">
+            <Tip label={t.preview.tab}>
+              <button
+                aria-label={t.preview.tab}
+                aria-pressed={!notesMode}
+                className={RAIL_VIEW_ICON(!notesMode)}
+                data-testid="rail-view-preview"
+                onClick={() => setRightRailView(RIGHT_RAIL_VIEW_PREVIEW)}
+                type="button"
+              >
+                <Codicon name="file" size="0.75rem" />
+              </button>
+            </Tip>
+            <Tip label={t.console.notes.title}>
+              <button
+                aria-label={t.console.notes.title}
+                aria-pressed={notesMode}
+                className={RAIL_VIEW_ICON(notesMode)}
+                data-testid="rail-view-notes"
+                onClick={() => setRightRailView(RIGHT_RAIL_VIEW_NOTES)}
+                type="button"
+              >
+                <Codicon name="note" size="0.75rem" />
+              </button>
+            </Tip>
+          </div>
+        )}
         <button
           aria-label={t.preview.closePane}
           className="mr-1.5 grid size-6 shrink-0 self-center place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/rail-tabs:opacity-100 [-webkit-app-region:no-drag]"
@@ -215,13 +266,21 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <PreviewPane
-          embedded
-          onRestartServer={isPreview ? onRestartServer : undefined}
-          reloadRequest={previewReloadRequest}
-          setTitlebarToolGroup={setTitlebarToolGroup}
-          target={activeTab.target}
-        />
+        {notesMode ? (
+          <div className="h-full overflow-y-auto py-1">
+            <AgentNotesList agentId={notesAgentId} />
+          </div>
+        ) : (
+          activeTab && (
+            <PreviewPane
+              embedded
+              onRestartServer={isPreview ? onRestartServer : undefined}
+              reloadRequest={previewReloadRequest}
+              setTitlebarToolGroup={setTitlebarToolGroup}
+              target={activeTab.target}
+            />
+          )
+        )}
       </div>
     </aside>
   )

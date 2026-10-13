@@ -37,7 +37,7 @@ function view(overrides: Partial<AgentNotesView> = {}): AgentNotesView {
     category: 'projects',
     note_roots: ['Vault/notes'],
     notes: [
-      { belongs: ['SRTP'], chars: 1_204, path: 'Vault/notes/数学 Math/Rust 所有权.md', title: 'Rust 所有权' }
+      { belongs: ['SRTP'], chars: 1_204, fsPath: 'M:/notes/Rust.md', path: 'Vault/notes/数学 Math/Rust 所有权.md', title: 'Rust 所有权' }
     ],
     totals: { matched: 1, scanned: 79, skipped: 11, with_frontmatter: 68 },
     unknown_belongs: [],

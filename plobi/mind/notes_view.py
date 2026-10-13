@@ -48,6 +48,10 @@ class NoteEntry:
     title: str
     chars: int
     belongs: tuple[str, ...] = ()
+    # Absolute on-disk path. `path` is vault-relative (what a human reads); the
+    # desktop needs the real location to hand to its file-preview normaliser, and
+    # it cannot reconstruct it without knowing MIND_ROOT.
+    fs_path: str = ""
 
 
 @dataclass
@@ -129,6 +133,7 @@ def scan_notes(root: Path) -> Scan:
                     title=title or path.stem,
                     chars=chars,
                     belongs=_belongs_of(front),
+                    fs_path=str(path),
                 )
             )
     return scan
@@ -206,6 +211,7 @@ def build_view(root: Optional[Path], entry: Any, registry_entries: Iterable[Any]
         "notes": [
             {
                 "path": note.path,
+                "fsPath": note.fs_path,
                 "title": note.title,
                 "chars": note.chars,
                 "belongs": list(note.belongs),
