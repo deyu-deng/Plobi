@@ -83,6 +83,17 @@ export function agentProfileIdSet(agents: readonly Agent[]): Set<string> {
   return out
 }
 
+/**
+ * 这一行能不能点进聊天页。
+ *
+ * 名册里 `profile` 为空的是**数据记录**（`l2_course`：课是数据不是分身，裁定 40），
+ * 它没有运行时可绑。以前点它会让客户端替它编一个 profile 名去起后端（`agent.id` 那条
+ * 回退），于是每一门课都是一场重启循环。既然点进去只能是一张空壳，行本身就不该可点。
+ */
+export function isNavigableAgent(agent: Pick<Agent, 'profile'>): boolean {
+  return Boolean((agent.profile ?? '').trim())
+}
+
 // The desktop controller injects SessionInfo over IPC, and that layer always
 // sends an empty `profile` string — so we can't trust the field's truthfulness.
 // L1 identity is therefore "default OR master OR blank OR any profile that is

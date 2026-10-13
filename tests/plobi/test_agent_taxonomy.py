@@ -613,3 +613,29 @@ def test_the_real_roster_carries_no_course_worker_rows():
 
     paced = {e.name for e, _ in paced_projects()}
     assert not (paced & {e.name for e in courses}), "课程一旦被当成 pace 项目，作业就会从「无主」被摘走又拿不到块"
+
+def test_data_role_exposes_no_profile_name():
+    """``l2_course`` 是数据不是分身：对外不许有一个**看起来能连**的 profile 名。
+
+    以前 ``profile_name`` 一律回退到条目名，于是名册里那五门课各自冒充一格 profile，
+    桌面为它们起 ``plobi -p <课名>``：ASCII 名退 1（Profile does not exist）、非 ASCII 名
+    被 CLI 的 ``-p`` 预扫丢掉退 2 —— 每一门都是一场重启循环（2026-10-13 现核
+    desktop.log 单「电工电子学」2767 行 failed）。真要给运行时，改角色，不是给它写 profile。
+    """
+    from plobi.agents.registry import AgentEntry
+
+    course = AgentEntry(name="大学物理（甲）Ⅱ", role="l2_course", category="courses")
+    assert course.profile_name == ""
+
+    project = AgentEntry(name="Aura", role="l2_project", category="projects")
+    assert project.profile_name == "aura", "真分身的归一化一字不许动"
+
+
+def test_data_role_is_not_askable_and_says_why():
+    """可问性那条判据本来就先按角色拒课——两半必须同时成立，别只修一半。"""
+    from plobi.agents.registry import AgentEntry, agent_askability
+
+    usable, why = agent_askability(AgentEntry(name="电工电子学", role="l2_course", category="courses"))
+
+    assert usable is False
+    assert "l2_course" in why

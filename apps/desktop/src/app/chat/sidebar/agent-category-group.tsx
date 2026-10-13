@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import type { SessionInfo } from '@/types/plobi'
 
 import type { AgentCategory } from './agent-groups'
+import { isNavigableAgent } from './agent-groups'
 import { SidebarCount } from './chrome'
 import { SidebarSessionRow } from './session-row'
 
@@ -102,6 +103,9 @@ export function AgentCategoryGroup({
               : (sessionsByProfile.get((agent.profile ?? '').trim()) ?? [])
 
             const sessionsOpen = !hideSessions && openAgentId === agent.id
+            // 数据条目（没有 profile 的行）不可点：它没有自己的会话，点进去只会是一张空壳，
+            // 而以前那一下点击正是让主进程去起一个不存在的 profile。
+            const navigable = isNavigableAgent(agent)
             // WP-UI-NO-INTERNALS: the rail shows the short label (「日程秘书」),
             // never a profile id like `l2-agenda`; the raw id lives in `title`.
             const shortName = secretaryShortName(agent.id, agent.name)
@@ -115,8 +119,10 @@ export function AgentCategoryGroup({
                   )}
                 >
                   <button
-                    className={cn(AGENT_ROW, 'min-w-0 flex-1', activeAgentId === agent.id && AGENT_ROW_ACTIVE)}
-                    onClick={() => onNavigateAgent(agent.id)}
+                    className={cn(AGENT_ROW, 'min-w-0 flex-1', activeAgentId === agent.id && AGENT_ROW_ACTIVE,
+                      !navigable && 'cursor-default opacity-70')}
+                    disabled={!navigable}
+                    onClick={() => navigable && onNavigateAgent(agent.id)}
                     title={agent.id}
                     type="button"
                   >
