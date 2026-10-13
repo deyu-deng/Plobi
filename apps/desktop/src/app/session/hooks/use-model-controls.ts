@@ -221,6 +221,26 @@ export function useModelControls({
       const provider = $currentProvider.get()
       const model = $currentModel.get()
 
+      // The owner's default-leg ruling (2026-10-12): with nothing chosen yet, the
+      // desktop draws on the aggregated subscription quota first — that is the
+      // cheaper leg, and the hub has already said it is usable. `DEFAULT_CONFIG`
+      // ships `model: ""`, so this fires on a fresh install and never over a pick
+      // the user or the profile actually made. A live session owns its own footer,
+      // so it is left alone exactly as `refreshCurrentModel` leaves it alone.
+      if (!model) {
+        if ($activeSessionId.get()) {
+          return
+        }
+
+        const seed = firstSelectableQuotaModel()
+
+        if (seed) {
+          await selectModel(seed)
+        }
+
+        return
+      }
+
       const verdict = quotaSelectionVerdict(provider, model)
 
       if (verdict.state !== 'gone') {

@@ -15,12 +15,15 @@ import {
 
 import { useModelControls } from './use-model-controls'
 
+/** The shape `store/notifications.notify` takes — only the fields these tests read. */
+type NoticeInput = { kind?: string; message?: string; title?: string }
+
 const setGlobalModel = vi.fn()
 const notifyError = vi.fn()
-const notify = vi.fn(() => 'n-1')
+const notify = vi.fn((_input: NoticeInput) => 'n-1')
 const quotaProvider = vi.fn((_slug: string): boolean => false)
 // The hub's verdict for the model under use, and where to land if it is gone.
-const quotaVerdict = vi.fn((): { state: string } => ({ state: 'not_quota' }))
+const quotaVerdict = vi.fn((): { reason?: string; state: string } => ({ state: 'not_quota' }))
 const quotaFallback = vi.fn((): null | { model: string; provider: string } => null)
 const refreshCatalog = vi.fn(async () => {})
 
@@ -55,7 +58,7 @@ vi.mock('@/i18n', () => ({
 }))
 
 vi.mock('@/store/notifications', () => ({
-  notify: (...args: unknown[]) => notify(...args),
+  notify: (input: { message?: string; title?: string }) => notify(input),
   notifyError: (...args: Parameters<typeof notifyError>) => notifyError(...args)
 }))
 
@@ -464,11 +467,55 @@ describe('useModelControls', () => {
     expect($currentProvider.get()).toBe('workbuddy_api')
     expect(notify).toHaveBeenCalledTimes(1)
     // the notice carries both names and the hub's own reason token
-    const notice = notify.mock.calls[0][0] as { message: string; title: string }
-    expect(notice.title).toBe('desktop.quotaFallbackTitle()')
-    expect(notice.message).toContain('desktop.quotaReason.credential_expired')
-    expect(notice.message).toContain('antigravity/gemini-3-pro')
-    expect(notice.message).toContain('workbuddy_api/hy3')
+    const [notice] = notify.mock.calls
+    expect(notice?.[0]?.title).toBe('desktop.quotaFallbackTitle()')
+    const message = notice?.[0]?.message ?? ''
+    expect(message).toContain('desktop.quotaReason.credential_expired')
+    expect(message).toContain('antigravity/gemini-3-pro')
+    expect(message).toContain('workbuddy_api/hy3')
+  })
+
+  // The default-leg ruling: a fresh install ships `model: ""`, and the first thing
+  // it should land on is the aggregated subscription leg the hub says is usable —
+  // not a per-token model, and not an empty composer.
+  it('seeds an untouched composer from the leg the hub still offers', async () => {
+    quotaProvider.mockImplementation((slug: string) => slug === 'workbuddy_api')
+    quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect($currentModel.get()).toBe('hy3'))
+    expect($currentProvider.get()).toBe('workbuddy_api')
+    // nothing died, so nothing has to be announced
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  // A live session owns its own footer (the same rule `refreshCurrentModel`
+  // follows): seeding from the hub here would rewrite a running conversation.
+  it('does not seed a composer while a session is live', async () => {
+    $activeSessionId.set('runtime-1')
+    quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
+    quotaProvider.mockReturnValue(true)
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: 'runtime-1',
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalled())
+    await Promise.resolve()
+
+    expect($currentModel.get()).toBe('')
+    expect(quotaFallback).not.toHaveBeenCalled()
   })
 
   // Reasons come from the providers as tokens, and a provider can report one this
@@ -491,8 +538,8 @@ describe('useModelControls', () => {
     )
 
     await waitFor(() => expect(notify).toHaveBeenCalledTimes(1))
-    const notice = notify.mock.calls[0][0] as { message: string }
-    expect(notice.message).toContain('desktop.quotaReason.unknown(probe_error:OSError)')
+    const [notice] = notify.mock.calls
+    expect(notice?.[0]?.message ?? '').toContain('desktop.quotaReason.unknown(probe_error:OSError)')
   })
 
   // A hub we could not reach is not a verdict. Auto-switching on "no answer" would
