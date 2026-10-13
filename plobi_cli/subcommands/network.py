@@ -30,4 +30,16 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
     for action in _ACTIONS:
         network_sub.add_parser(action, help=_HELP[action]).set_defaults(func=cmd_network)
     # `plobi network` alone should do the read-only thing, never the destructive one.
+    export_parser = network_sub.add_parser(
+        "export-pool",
+        help="Print the table shape of a mihomo pool file (read-only; writes nothing)",
+    )
+    export_parser.add_argument("pool_path", help="Path to the pool's config.yaml")
+    export_parser.add_argument(
+        "--show-values",
+        action="store_true",
+        help="Print the credential values to migrate into .env (off by default)",
+    )
+    export_parser.set_defaults(func=cmd_network)
+    # `plobi network` alone should do the read-only thing, never the destructive one.
     network_parser.set_defaults(func=cmd_network, network_action="status")

@@ -300,3 +300,64 @@ def test_an_empty_entry_in_the_include_list_is_named_not_dropped():
             }
         )
 
+
+
+def _membership_table(engine=None):
+    """A table whose membership lives in the table, with an explicit engine block."""
+    block = {
+        "nodes": {
+            "hk1": {"type": "ss", "server": "hk1.example.test", "port": 8388,
+                    "cipher": "aes-256-gcm", "password_env": "PW_HK1"},
+            "jp2": {"type": "vmess", "server": "5.6.7.8", "port": 443, "uuid_env": "U_JP"},
+        },
+        "groups": {"POOL": {"type": "url-test", "include": "*", "interval": 600}},
+        "rules": [{"match": "geosite:cn", "via": "direct"}, {"match": "*", "via": "proxy:POOL"}],
+        "engine": {"enabled": True, "mixed_port": _MIXED,
+                   "dns": {"default_nameserver": ["223.5.5.5"], "nameserver": ["223.5.5.5"],
+                           "enhanced_mode": "redir-host"}},
+    }
+    if engine is not None:
+        block["engine"] = engine
+    return load_table(config={"network": {"egress": block}})
+
+
+def test_membership_is_rendered_into_the_engine_config(monkeypatch):
+    monkeypatch.setenv("PW_HK1", "sekret")
+    monkeypatch.setenv("U_JP", "uuid-value")
+    doc = _render(_membership_table())
+
+    by_name = {p["name"]: p for p in doc["proxies"]}
+    assert by_name["hk1"]["type"] == "ss" and by_name["hk1"]["password"] == "sekret"
+    assert by_name["jp2"]["uuid"] == "uuid-value" and by_name["jp2"]["port"] == 443
+    group = doc["proxy-groups"][0]
+    assert group["name"] == "POOL" and sorted(group["proxies"]) == ["hk1", "jp2"]
+    assert group["interval"] == 600
+    assert doc["rules"] == ["GEOSITE,cn,DIRECT", "MATCH,POOL"]
+
+
+def test_the_resolvers_are_declared_not_invented(monkeypatch):
+    """Every node on this box is addressed by domain; without resolvers the engine
+    starts, passes -t, and answers 502.  Measured 2026-10-13 08:3x."""
+    monkeypatch.setenv("PW_HK1", "x")
+    monkeypatch.setenv("U_JP", "y")
+    table = _membership_table(engine={"enabled": True, "mixed_port": _MIXED,
+                                      "dns": {"default_nameserver": ["223.5.5.5"]}})
+    doc = _render(table)
+    assert doc["dns"]["default-nameserver"] == ["223.5.5.5"], "keys reach the engine in its own spelling"
+
+    from agent.egress.rules import load_table as lt
+
+    bare = lt(config={"network": {"egress": {
+        "nodes": {"hk1": {"type": "ss", "server": "hk1.example.test", "port": 8388,
+                          "cipher": "aes-256-gcm", "password_env": "PW_HK1"}},
+        "rules": [{"match": "*", "via": "proxy:hk1"}],
+        "engine": {"enabled": True, "mixed_port": _MIXED}}}})
+    with pytest.raises(EgressConfigError, match="cannot resolve its own upstreams"):
+        compile_config(bare)
+
+
+def test_a_missing_credential_refuses_by_naming_the_variable(monkeypatch):
+    monkeypatch.setenv("PW_HK1", "x")
+    monkeypatch.delenv("U_JP", raising=False)
+    with pytest.raises(EgressConfigError, match="U_JP"):
+        compile_config(_membership_table())

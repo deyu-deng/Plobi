@@ -38,6 +38,104 @@ def validate_egress(network_block: Any) -> tuple[bool, list[str]]:
     return True, []
 
 
+def export_pool_membership(path: str) -> tuple[dict[str, Any], dict[str, str], list[str]]:
+    """Read a mihomo pool file and turn it into table membership.  **Read-only.**
+
+    Returns ``(egress_snippet, env_values, notes)``: the snippet is what goes under
+    ``network.egress`` in ``config.yaml`` with every credential replaced by a
+    ``*_env`` reference, and ``env_values`` is what belongs in the root ``.env``.
+    Nothing here writes either file — migrating a live table is the user's edit,
+    because an automatic rewrite of the file he hand-maintains is exactly the kind
+    of thing this codebase has been burned by.
+
+    Nodes whose type we cannot compile are listed in ``notes`` and dropped rather
+    than guessed at; a silently missing node reads as "the pool is fine" until the
+    engine cannot dial.
+    """
+    import os
+    import re
+
+    import yaml
+
+    from agent.egress.rules import _GROUP_TYPES, _NODE_TYPES
+
+    try:
+        doc = yaml.safe_load(open(path, encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return {}, {}, [f"could not read '{path}': {type(exc).__name__}: {exc}"]
+
+    def var_name(name: str, field: str) -> str:
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
+        return f"PLOBI_EGRESS_{slug}_{field.upper()}"
+
+    nodes: dict[str, Any] = {}
+    env_values: dict[str, str] = {}
+    notes: list[str] = []
+    for entry in doc.get("proxies") or []:
+        if not isinstance(entry, dict):
+            notes.append("skipped a proxies[] entry that is not a mapping")
+            continue
+        name = str(entry.get("name", "")).strip()
+        kind = str(entry.get("type", "")).strip().lower()
+        if not name:
+            notes.append("skipped a proxies[] entry with no name")
+            continue
+        if kind not in _NODE_TYPES:
+            notes.append(
+                f"'{name}' has type '{kind or '(none)'}' which this table cannot hold "
+                f"(supported: {', '.join(sorted(_NODE_TYPES))})"
+            )
+            continue
+        node: dict[str, Any] = {
+            "type": kind,
+            "server": entry.get("server"),
+            "port": entry.get("port"),
+        }
+        if not node["server"] or not node["port"]:
+            notes.append(f"'{name}' is missing server/port")
+            continue
+        for key, value in entry.items():
+            key = str(key)
+            if key in ("name", "type", "server", "port"):
+                continue
+            if key in ("password", "uuid", "username"):
+                var = var_name(name, key)
+                node[f"{key}_env"] = var
+                env_values[var] = str(value)
+                continue
+            node[key] = value
+        for required in _NODE_TYPES[kind]:
+            if required not in ("password", "uuid", "username") and required not in node:
+                notes.append(f"'{name}' lacks '{required}', required for type '{kind}'")
+                node = {}
+                break
+        if node:
+            nodes[name] = node
+
+    groups: dict[str, Any] = {}
+    for entry in doc.get("proxy-groups") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name", "")).strip()
+        kind = str(entry.get("type", "")).strip()
+        members = entry.get("proxies") or entry.get("use") or []
+        if not name or kind not in _GROUP_TYPES:
+            notes.append(f"group '{name or '(unnamed)'}' has unsupported type '{kind}' — skipped")
+            continue
+        unknown = [m for m in members if m not in nodes]
+        if unknown:
+            notes.append(f"group '{name}' references unavailable members: {', '.join(map(str, unknown))}")
+        usable = [m for m in members if m in nodes]
+        if usable:
+            groups[name] = {"type": kind, "include": usable}
+            if entry.get("interval"):
+                groups[name]["interval"] = int(entry["interval"])
+
+    if not nodes:
+        return {}, {}, notes or [f"no usable proxies[] entries in '{path}'"]
+    return {"nodes": nodes, "groups": groups}, env_values, notes
+
+
 def read_egress() -> dict[str, Any]:
     """The block an editor can round-trip, plus what the runtime makes of it."""
     from plobi_cli.config import load_config

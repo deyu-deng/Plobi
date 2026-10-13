@@ -38,6 +38,10 @@ def snapshot(table: Table | None = None, *, home: str | None = None) -> dict:
             for rule in table.rules
         ],
         "mirrors": dict(sorted(table.mirrors.items())),
+        "membership": {
+            "nodes": [n.name for n in table.nodes.values()],
+            "groups": {g.name: list(g.members) for g in table.groups.values()},
+        },
         "engine": {
             "enabled": table.engine_enabled,
             "state": report.state,
@@ -71,6 +75,11 @@ def render(
         return lines
 
     lines.append(f"table: {len(table.rules)} rule(s), catch-all {table.rules[-1].via}")
+    if table.nodes or table.groups:
+        lines.append(
+            f"membership: {len(table.nodes)} node(s), {len(table.groups)} group(s) — engine-side; "
+            f"a spawned child cannot be told about these"
+        )
     for rule in table.rules:
         tag = "  (engine-only, not visible to spawned children)" if rule in table.engine_only_rules else ""
         lines.append(f"  {rule.match} -> {rule.via}{tag}")
