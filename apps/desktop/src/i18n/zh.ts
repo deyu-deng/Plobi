@@ -1752,6 +1752,19 @@ export const zh: Translations = {
       loadFailed: '无法加载日程。',
       retry: '重试'
     },
+    notes: {
+      title: '笔记',
+      viewSchedule: '日程',
+      viewNotes: '笔记',
+      loading: '读脑中…',
+      brainUnreachable: '脑读不到',
+      emptyTitle: '这条分身还没有挂笔记',
+      emptyHowToTitle: '给笔记打标签',
+      emptyHowToBody: (agent) => `在笔记的 frontmatter 里写 belongs: [${agent}]，它就会出现在这里。`,
+      scanned: (n) => `脑里已扫 ${n} 篇`,
+      truncated: (n) => `已到上限，只列前 ${n} 条`,
+      unknownBelongs: (names) => `这些标签对不上已登记的名字：${names}`,
+    },
     supervisor: {
       title: '智能体工作台',
       loading: '正在加载智能体…',

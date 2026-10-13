@@ -9,7 +9,26 @@ vi.mock('@/app/console/api', () => ({
   getAgentNotes: (...args: unknown[]) => getAgentNotes(...args)
 }))
 
-import { AgentNotesList } from './agent-notes-list'
+vi.mock('@/i18n', () => ({
+  useI18n: () => ({
+    t: {
+      console: {
+        notes: {
+          brainUnreachable: '脑读不到',
+          emptyHowToBody: (agent: string) => `在笔记的 frontmatter 里写 belongs: [${agent}]`,
+          emptyHowToTitle: '给笔记打标签',
+          emptyTitle: '这条分身还没有挂笔记',
+          loading: '读脑中…',
+          scanned: (n: number) => `脑里已扫 ${n} 篇`,
+          truncated: (n: number) => `只列前 ${n} 条`,
+          unknownBelongs: (names: string) => `对不上名字：${names}`
+        }
+      }
+    }
+  })
+}))
+
+import { AgentNotesList } from './notes-list'
 
 function view(overrides: Partial<AgentNotesView> = {}): AgentNotesView {
   return {

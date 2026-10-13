@@ -1576,6 +1576,19 @@ export const en: Translations = {
       loadFailed: 'Could not load the schedule.',
       retry: 'Retry'
     },
+    notes: {
+      title: 'Notes',
+      viewSchedule: 'Schedule',
+      viewNotes: 'Notes',
+      loading: 'Reading the brain…',
+      brainUnreachable: 'The brain is unreachable',
+      emptyTitle: 'No notes here yet',
+      emptyHowToTitle: 'Tag a note with this agent',
+      emptyHowToBody: (agent) => `Add belongs: [${agent}] to the note's frontmatter and it shows up here.`,
+      scanned: (n) => `${n} notes scanned in the brain`,
+      truncated: (n) => `Showing the first ${n}`,
+      unknownBelongs: (names) => `Tags naming nothing registered: ${names}`,
+    },
     supervisor: {
       title: 'Agent workbench',
       loading: 'Loading agent…',

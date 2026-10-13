@@ -1335,6 +1335,22 @@ export interface Translations {
       loadFailed: string
       retry: string
     }
+    /** WP-MIND-NOTES-VIEW: the brain's notes belonging to the current agent. */
+    notes: {
+      title: string
+      viewSchedule: string
+      viewNotes: string
+      loading: string
+      /** Brain unreachable or MIND_ROOT unset — shown instead of an empty list. */
+      brainUnreachable: string
+      emptyTitle: string
+      /** Big-card empty state (the shape the user asked for): how to make notes appear. */
+      emptyHowToTitle: string
+      emptyHowToBody: (agent: string) => string
+      scanned: (n: number) => string
+      truncated: (n: number) => string
+      unknownBelongs: (names: string) => string
+    },
     /** U4 S2 L2 workbench (route /agent/:id, spec §6). */
     supervisor: {
       title: string
