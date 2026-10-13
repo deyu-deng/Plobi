@@ -423,7 +423,7 @@ def _project_cwd(entry) -> str:
     return ""
 
 
-def build_child_command(entry, prompt: str) -> tuple[list[str], dict[str, str], Optional[str]]:
+def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[list[str], dict[str, str], Optional[str]]:
     """Return ``(argv, env, cwd)`` for one face-to-face question.
 
     Mirrors ``plobi_cli.kanban_db._default_spawn`` — the same binary resolver and
@@ -483,6 +483,9 @@ def build_child_command(entry, prompt: str) -> tuple[list[str], dict[str, str], 
         "-q",
         prompt,
     ]
+    # 这条问在分身自己的会话里要能和"主人亲手打的"分开（messages.asked_by）。
+    # 子进程是唯一会读到它的地方，所以随 env 传下去，不写进 prompt 文本里。
+    child_env["PLOBI_ASKED_BY"] = asked_by or "l1"
     return argv, child_env, cwd or None
 
 
@@ -697,7 +700,10 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
 
     limit = timeout_seconds()
     try:
-        argv, env, cwd = build_child_command(entry, compose_question(question, entry=entry))
+        argv, env, cwd = build_child_command(
+            entry, compose_question(question, entry=entry),
+            asked_by=f"l1:{kwargs.get('task_id') or kwargs.get('session_id') or ''}".rstrip(":") or "l1",
+        )
     except AskRefusal as refusal:
         return tool_error(refusal.message, ok=False, available=refusal.available)
     except Exception as exc:

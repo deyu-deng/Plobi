@@ -603,3 +603,20 @@ def test_stub_child_failure_propagates_as_a_tool_error(roster, stub_bin):
     )
     assert payload["ok"] is False
     assert payload["exit_code"] == 4
+
+def test_child_env_carries_who_asked(roster):
+    """分身自己的会话要分得开「主人亲手打的」与「L1 代问的」（messages.asked_by）。"""
+    entry = AA.resolve_target(LIVE_PROJECT, registry=roster.registry)
+
+    _argv, env, _cwd = AA.build_child_command(entry, "问", asked_by="l1:sess-l1-42")
+
+    assert env["PLOBI_ASKED_BY"] == "l1:sess-l1-42"
+
+
+def test_child_env_is_always_labelled(roster):
+    """拿不到会话号也要留一个「l1」，不许空着让界面读成主人自己打的。"""
+    entry = AA.resolve_target(LIVE_PROJECT, registry=roster.registry)
+
+    _argv, env, _cwd = AA.build_child_command(entry, "问")
+
+    assert env["PLOBI_ASKED_BY"] == "l1"
