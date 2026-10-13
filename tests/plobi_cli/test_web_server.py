@@ -1744,7 +1744,12 @@ class TestWebServerEndpoints:
         assert status_data["pid"] is None
         assert any("managed outside this dashboard" in line for line in status_data["lines"])
 
-    def test_update_plobi_spawns_on_non_docker_install(self, monkeypatch):
+    def test_update_plobi_spawns_for_a_pip_install(self, monkeypatch):
+        """pip 这类"交给子进程去跑包管理器"的形态仍然起进程。
+
+        git 不再走这条路：R-046 之后它由 `apply_git_update` 同步判前置并只快进，
+        起一个空转子进程再把退出码 0 记成成功，正是这刀要拆掉的东西。
+        """
         import plobi_cli.web_server as web_server
 
         class Proc:
@@ -1759,7 +1764,7 @@ class TestWebServerEndpoints:
             calls.append((subcommand, name))
             return Proc()
 
-        monkeypatch.setattr(web_server, "detect_install_method", lambda _root: "git")
+        monkeypatch.setattr(web_server, "detect_install_method", lambda _root: "pip")
         monkeypatch.setattr(web_server, "_spawn_plobi_action", fake_spawn)
         web_server._ACTION_PROCS.pop("plobi-update", None)
         web_server._ACTION_RESULTS.pop("plobi-update", None)

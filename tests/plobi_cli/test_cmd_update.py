@@ -918,28 +918,35 @@ termux = ["rich>=14"]
     assert hm._load_installable_optional_extras(group="termux-all") == ["termux", "mcp"]
 
 
-class TestCmdUpdateDisabled:
-    """``plobi update`` is a frozen no-op in local dev builds.
+class TestCmdUpdateRefusesWhatItCannotApply:
+    """``plobi update`` 不再"打印停用说明 + 返回 0"（R-046 的那半条谎）。
 
-    The subcommand stays registered (other code references the "update"
-    command name), but the body only prints the disable notice and returns 0
-    without touching git or subprocesses.
+    子命令仍然注册着（别处引用 "update" 这个名字）。按不动的安装方式现在非零退出，
+    且一次 git 都不叫；真会落地的那条路（干净的 git 检出 + 只快进）用临时 git 仓
+    覆盖在 ``tests/plobi_cli/test_self_update_git.py``，不在这里碰开发机的真工作树。
     """
 
     @patch("subprocess.run")
-    def test_cmd_update_prints_disable_notice_and_returns_0(self, mock_run, capsys):
-        """Self-update is disabled: notice printed, exit code 0, no git calls."""
+    def test_unsupported_install_method_refuses_with_nonzero_exit(self, mock_run, capsys, monkeypatch, tmp_path):
+        """Docker / nix 这类形态没有被接进就地更新：明说 + 非零，不假装成功。"""
+        monkeypatch.setattr("plobi_cli.config.detect_install_method", lambda _: "docker")
+        monkeypatch.setattr("plobi_cli.config.get_project_root", lambda: tmp_path)
+
         rc = cmd_update(SimpleNamespace())
-        assert rc == 0
+
+        assert rc == 1, "按不动却返回 0 = 把空转记成成功"
         out = capsys.readouterr().out
-        assert "自更新已禁用" in out
-        assert "代码同步由负责 Agent 手动进行" in out
+        assert "没法就地更新" in out
         assert mock_run.call_count == 0
 
     @patch("subprocess.run")
-    def test_cmd_update_check_flag_is_ignored(self, mock_run, capsys):
-        """--check/--branch flags are ignored by the disabled stub."""
+    def test_check_flag_does_not_turn_a_refusal_into_success(self, mock_run, capsys, monkeypatch, tmp_path):
+        """``--check`` 也不许把"按不动"报成"没问题"。"""
+        monkeypatch.setattr("plobi_cli.config.detect_install_method", lambda _: "docker")
+        monkeypatch.setattr("plobi_cli.config.get_project_root", lambda: tmp_path)
+
         rc = cmd_update(SimpleNamespace(check=True, branch="bb/gui"))
-        assert rc == 0
-        assert "自更新已禁用" in capsys.readouterr().out
+
+        assert rc == 1
+        assert "没法就地更新" in capsys.readouterr().out
         assert mock_run.call_count == 0

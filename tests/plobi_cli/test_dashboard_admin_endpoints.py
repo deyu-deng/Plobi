@@ -808,6 +808,9 @@ class TestUpdateCheckEndpoint:
         import plobi_cli.banner as banner
 
         monkeypatch.setattr(banner, "check_for_updates", lambda: 5)
+        # can_apply 现在是"这台的前置条件"而非"git 一律不许"，测试必须钉住它，
+        # 不然结论会随工作树脏不脏而变（那正是 R-046 之后该报给界面的那一格）。
+        monkeypatch.setattr(ws, "local_self_update_applies", lambda method, root=None: True)
 
         r = self.client.get("/api/plobi/update/check")
         assert r.status_code == 200
@@ -824,10 +827,31 @@ class TestUpdateCheckEndpoint:
         assert body["install_method"] == "git"
         assert body["behind"] == 5
         assert body["update_available"] is True
-        # git self-update is frozen (2026-09-06/07 incidents): the dashboard may
-        # show how far behind we are but must not claim it can apply it. R-046.
+        # R-046 之后：能落后多少看得见，能不能就地应用由前置条件决定（干净树 +
+        # 不落后 + 不分叉才 True），不再"git 一律按不动"。
+        assert body["can_apply"] is True
+        assert body.get("apply_blocker") in (None, "ok")
+        assert body["message"] is None, "能应用的时候不该还端着一句按不动的说明"
+
+    def test_git_install_reports_which_precondition_blocks_it(self, monkeypatch):
+        """按不动时要说清是哪一条前置，别再用一句笼统的冻结说明糊过去。"""
+        import plobi_cli.web_server as ws
+        import plobi_cli.banner as banner
+
+        monkeypatch.setattr(ws, "detect_install_method", lambda *a, **k: "git")
+        monkeypatch.setattr(banner, "check_for_updates", lambda: 3)
+        monkeypatch.setattr(ws, "local_self_update_applies", lambda method, root=None: False)
+        monkeypatch.setattr(ws, "git_update_state", lambda root, fetch=False: {
+            "applies": False, "reason": "working_tree_dirty", "behind": 3, "dirty_files": 13,
+            "detail": "13 个未提交改动 —— 脏的行一律不碰。",
+        })
+
+        body = self.client.get("/api/plobi/update/check").json()
+
         assert body["can_apply"] is False
-        assert "自更新" in body["message"]
+        assert body["apply_blocker"] == "working_tree_dirty"
+        assert "未提交" in body["message"]
+        assert "一律不碰" in body["message"]
 
     def test_up_to_date(self, monkeypatch):
         import plobi_cli.web_server as ws
@@ -1153,10 +1177,16 @@ class TestUpdateApplyEndpointIsHonest:
     def _setup(self, _isolate_plobi_home):
         self.client, _ = _client()
 
-    def test_git_install_refuses_without_spawning(self, monkeypatch):
+    def test_git_install_refuses_per_precondition_without_spawning(self, monkeypatch):
+        """git 走同步判断：按不动就不起进程、不进「已完成」台账，并单独报原因。"""
         import plobi_cli.web_server as ws
 
         monkeypatch.setattr(ws, "detect_install_method", lambda *a, **k: "git")
+        monkeypatch.setattr(ws, "apply_git_update", lambda root=None: {
+            "ok": False, "applies": False, "reason": "working_tree_dirty",
+            "detail": "13 个未提交改动 —— 脏的行一律不碰。",
+            "behind": 2, "dirty_files": 13, "head": "abc12345", "remote": "origin",
+        })
         spawned = []
         monkeypatch.setattr(
             ws, "_spawn_plobi_action",
@@ -1172,10 +1202,43 @@ class TestUpdateApplyEndpointIsHonest:
         assert r.status_code == 200
         body = r.json()
         assert body["ok"] is False
-        assert body["error"] == "self_update_frozen"
+        assert body["error"] == "working_tree_dirty"
         assert body["pid"] is None
+        assert body["dirty_files"] == 13
+        assert "未提交" in body["message"]
         assert spawned == [], "空转子进程一旦起来，退出码 0 就会被记成成功"
-        assert recorded == [], "按不动这件事不该进「已完成」台账"
+        assert len(recorded) == 1, "按不动也要留底（成立即可见），但记的是失败"
+        assert recorded[0][1].get("exit_code") == 1, "把按不动记成 exit_code=0 就是 R-046 的那条谎"
+        assert "未提交" in recorded[0][0][1]
+
+    def test_git_install_applies_for_real_and_records_both_ends(self, monkeypatch):
+        """真落地那条路：不起子进程、台账里写的是"从哪个哈希到哪个哈希"。"""
+        import plobi_cli.web_server as ws
+
+        monkeypatch.setattr(ws, "detect_install_method", lambda *a, **k: "git")
+        monkeypatch.setattr(ws, "apply_git_update", lambda root=None: {
+            "ok": True, "applies": True, "reason": "ok", "behind": 2, "ahead": 0,
+            "head": "abc12345", "after": "def67890", "remote": "origin", "branch": "main",
+            "remote_ref": "origin/main", "dirty_files": 0, "detail": "",
+        })
+        spawned = []
+
+        class _Never:
+            pid = -1
+
+        monkeypatch.setattr(ws, "_spawn_plobi_action",
+                            lambda argv, name: spawned.append(argv) or _Never())
+        recorded = []
+        monkeypatch.setattr(ws, "_record_completed_action",
+                            lambda *a, **k: recorded.append((a, k)))
+
+        body = self.client.post("/api/plobi/update").json()
+
+        assert body["ok"] is True and body["applied"] is True
+        assert (body["before"], body["after"], body["moved"]) == ("abc12345", "def67890", 2)
+        assert spawned == [], "同步落地之后不许再起空转子进程"
+        assert len(recorded) == 1 and recorded[0][1].get("exit_code") == 0
+        assert "abc12345" in recorded[0][0][1] and "def67890" in recorded[0][0][1]
 
     def test_pip_install_still_applies(self, monkeypatch):
         """别把真能用的那条路一起堵死。"""

@@ -53,7 +53,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from plobi_cli import __version__, __release_date__
-from plobi_cli.self_update import SELF_UPDATE_FROZEN_MSG, frozen_refusal, local_self_update_applies
+from plobi_cli.self_update import (SELF_UPDATE_FROZEN_MSG, apply_git_update,
+                          git_update_state, local_self_update_applies, refusal)
 
 from plobi_cli.config import (
     cfg_get,
@@ -3814,9 +3815,32 @@ async def update_plobi():
             "update_command": recommended_update_command_for_method(install_method),
         }
 
-    if not local_self_update_applies(install_method):
-        # `plobi update` 在这个安装方式上是空转并返回 0；起它就是把谎记成成功台账。
-        return frozen_refusal(install_method, recommended_update_command_for_method(install_method))
+    if install_method == "git":
+        # 真的动手：拉我们自己那条远端，只走 `merge --ff-only`。脏树 / 分叉 / 拉不到
+        # 各自单独可报，绝不起一个空转子进程再把谎记进成功台账（R-046 的原始形状）。
+        result = apply_git_update(PROJECT_ROOT)
+        command = recommended_update_command_for_method(install_method)
+        if not result["ok"]:
+            why = result.get("detail") or result.get("reason") or "按不动"
+            _record_completed_action("plobi-update", f"更新没落地：{why}", exit_code=1)
+            return refusal(install_method, command, result)
+        message = (f"更新已落地：{result['head']} → {result['after']}"
+                   f"（快进 {result['behind']} 个提交，远端 {result['remote']}）")
+        _record_completed_action("plobi-update", message, exit_code=0)
+        return {
+            "ok": True,
+            "pid": None,
+            "name": "plobi-update",
+            "applied": True,
+            "before": result["head"],
+            "after": result["after"],
+            "moved": result["behind"],
+            "message": message,
+        }
+
+    if not local_self_update_applies(install_method, PROJECT_ROOT):
+        # 这个安装方式上没有能落地的就地更新；起 `plobi update` 就是把空转记成成功。
+        return refusal(install_method, recommended_update_command_for_method(install_method))
 
     try:
         proc = _spawn_plobi_action(["update"], "plobi-update")
@@ -3926,7 +3950,7 @@ async def check_plobi_update(force: bool = False):
         "current_version": __version__,
         "behind": None,
         "update_available": False,
-        "can_apply": local_self_update_applies(install_method),
+        "can_apply": local_self_update_applies(install_method, PROJECT_ROOT),
         "update_command": update_command,
         "message": None,
     }
@@ -3966,8 +3990,11 @@ async def check_plobi_update(force: bool = False):
             payload["commits"] = await asyncio.to_thread(_recent_upstream_commits)
 
     if not payload["can_apply"] and install_method == "git":
-        # 看得见落后多少，但这台按不动：说清是谁在同步代码，别让人以为点了就更新。
-        payload["message"] = SELF_UPDATE_FROZEN_MSG
+        # 看得见落后多少，但这台按不动：把"为什么按不动"那一格说具体，
+        # 别让人以为点了就会更新（R-046 的原始形状是一句笼统的冻结说明）。
+        blocker = git_update_state(PROJECT_ROOT, fetch=False)
+        payload["apply_blocker"] = blocker["reason"]
+        payload["message"] = blocker["detail"] or SELF_UPDATE_FROZEN_MSG
 
     return payload
 

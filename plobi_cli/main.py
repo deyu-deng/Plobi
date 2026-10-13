@@ -9165,25 +9165,52 @@ def _discard_lockfile_churn(git_cmd, repo_root):
         pass
 
 
-# Self-update is intentionally frozen in this local development build. Two
-# past incidents (2026-09-06/07) destroyed the working tree through the git
-# self-update path, so ``plobi update`` and every other runtime git-mutating
-# path are disabled. Code sync is performed manually by the responsible Agent.
+# 就地更新的判据只有一处：`plobi_cli/self_update.py`。这里只是它的 CLI 外壳。
+# 2026-09-06/07 两次事故毁掉工作树的成因是 `_cmd_update_impl` 那条 stash/丢弃本地改动的路，
+# 所以那条继续不启用；git 检出改走"干净树 + 只快进 + 拉我们自己远端"的子集（R-046）。
+# 返回码不再一律 0：按不动就说按不动，别把空转记成成功。
 _SELF_UPDATE_DISABLED_MSG = (
-    "Plobi 本地开发版：git 自更新已禁用（历史事故防护）。代码同步由负责 Agent 手动进行。"
+    "这台没法就地更新：只有干净的 git 检出与自管虚拟环境的 pip 安装接了这条路。"
+    "代码同步由负责会话手动进行。"
 )
 
 
 def cmd_update(args):
-    """Update Plobi Agent to the latest version — DISABLED in local dev builds.
+    """就地更新 Plobi —— 与仪表盘「Update now」共用同一判据（R-046）。
 
-    ``update`` stays registered as a subcommand (other code references the
-    command name), but the body is a no-op that prints the disable notice and
-    returns 0. Git self-update is frozen as historical incident protection;
-    code sync is performed manually by the responsible Agent.
+    git 检出：拉我们自己那条远端 + `merge --ff-only`；工作树脏、有未推提交、拉不到、
+    快进不了，各自单独报并非零退出（绝不 stash 或丢弃别人的未提交行）。
+    pip：走包管理器那条既有实现。其余安装方式：明说按不动。
     """
+    from plobi_cli.config import detect_install_method, get_project_root
+    from plobi_cli.self_update import apply_git_update, git_update_state
+
+    method = detect_install_method(get_project_root())
+
+    if method == "git":
+        if getattr(args, "check", False):
+            state = git_update_state(get_project_root(), fetch=True)
+            if state["reason"] == "up_to_date":
+                print(f"已经是最新（{state['remote_ref']}，HEAD {state['head']}）。")
+            elif state["applies"]:
+                print(f"可更新：落后 {state['remote_ref']} {state['behind']} 个提交"
+                      f"（{state['head']} → {state['remote_ref']}）。")
+            else:
+                print(f"按不动：{state.get('detail') or state['reason']}")
+            return 0 if state["applies"] or state["reason"] == "up_to_date" else 1
+        result = apply_git_update(get_project_root())
+        if result["ok"]:
+            print(f"更新已落地：{result['head']} → {result['after']}"
+                  f"（快进 {result['behind']} 个提交，远端 {result['remote']}）。")
+            return 0
+        print(f"更新没落地：{result.get('detail') or result.get('reason')}")
+        return 1
+
+    if method == "pip":
+        return _cmd_update_pip(args)
+
     print(_SELF_UPDATE_DISABLED_MSG)
-    return 0
+    return 1
 
 
 def _cmd_update_pip(args):
