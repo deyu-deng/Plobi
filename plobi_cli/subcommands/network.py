@@ -41,5 +41,17 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
         help="Print the credential values to migrate into .env (off by default)",
     )
     export_parser.set_defaults(func=cmd_network)
+    # 整机那一格：接管/交还系统的代理。`on --dry-run` 先看要改什么，不写注册表。
+    proxy_parser = network_sub.add_parser(
+        "proxy",
+        help="Take over (or hand back) the machine's system proxy: Plobi as the exit",
+        description="Windows only for now.  `on` writes a PAC generated from network.egress into "
+        "PLOBI_HOME/egress and points the current user's system proxy at it, backing up whatever "
+        "was there first; `off` restores that backup byte for byte.  Apps that ignore a system "
+        "proxy (raw TCP, most games) are not covered by this — that needs TUN.",
+    )
+    proxy_parser.add_argument("proxy_action", choices=("on", "off", "status"), nargs="?", default="status")
+    proxy_parser.add_argument("--dry-run", action="store_true", help="Show what `on` would write; change nothing")
+    proxy_parser.set_defaults(func=cmd_network)
     # `plobi network` alone should do the read-only thing, never the destructive one.
     network_parser.set_defaults(func=cmd_network, network_action="status")

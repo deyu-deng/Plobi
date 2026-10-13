@@ -17608,6 +17608,17 @@ def start_server(
                 _engine_report.detail,
                 f" | {' / '.join(_engine_report.notes)}" if _engine_report.notes else "",
             )
+        # 整机那一格：表里说要接管系统代理，就每次开机重新接管（幂等，且 off 能原样还回去）。
+        # 顺序不能反——先有能带流量的引擎，再把自己的口交给系统。
+        from agent.egress import system_proxy as _system_proxy
+
+        _proxy_plan = _system_proxy.ensure(_load_egress_table())
+        if _proxy_plan is not None:
+            _log.warning(
+                "system proxy: %s — %s",
+                "已接管（回退：plobi network proxy off）" if _proxy_plan.ok else "没接管",
+                _proxy_plan.reason,
+            )
     except Exception as exc:
         _log.warning("egress engine supervision did not start: %s", exc)
 
