@@ -339,6 +339,19 @@ class AgentEntry:
         # lazy imports below), and even a lazy import breaks under the test
         # harness, where ``plobi_cli`` does not resolve to the real module.
         # tests/plobi_cli/test_profiles.py pins the two rules together.
+        # 数据角色（``l2_course``）不是分身：它**没有运行时可连**，所以对外也不该有一个
+        # 看起来能连的 profile 名。以前这里一律回退到条目名，于是名册里那五门课各自
+        # 冒充一格 profile ⇒ 桌面为它们起 `plobi -p <课名>`：ASCII 名退 1
+        # （`Profile 'X' does not exist`）、非 ASCII 名被 CLI 的 `-p` 预扫丢掉退 2
+        # （就是下面这段注释本来预警的形状），每一门都是一场重启循环
+        # （2026-10-13 现核 desktop.log：单「电工电子学」2767 行 failed）。
+        # 回空串而不是加一枚 `runtime: false` 标志：标志要每个消费方记得去看，
+        # 空串是这里本来就有的形状（``agent_askability`` 1019 行那条判据在判它）。
+        # 真要给它一个运行时，就把角色改成 ``l2_project``，而不是给它写个 profile。
+        from plobi.routing.models import L2_COURSE
+
+        if self.role == L2_COURSE:
+            return ""
         raw = (self.profile or self.name).strip()
         if not raw:
             return ""

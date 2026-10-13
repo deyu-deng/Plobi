@@ -6,6 +6,7 @@ import {
   agentProfileIdSet,
   groupAgentsByCategory,
   isL1SessionProfile,
+  isNavigableAgent,
   normalizeAgentCategory,
   orderedCategories
 } from './agent-groups'
@@ -109,5 +110,19 @@ describe('agentProfileIdSet / isL1SessionProfile', () => {
     expect(isL1SessionProfile('l2-agenda', agentProfiles)).toBe(false)
     // Unknown profile still L1 even with a set present.
     expect(isL1SessionProfile('ghost', agentProfiles)).toBe(true)
+  })
+})
+
+describe('isNavigableAgent', () => {
+  it('lets a real 分身 through — it has a profile to bind', () => {
+    expect(isNavigableAgent(agent({ id: 'nymo', name: 'Nymo', profile: 'nymo' }))).toBe(true)
+  })
+
+  it('refuses a data row: no profile means there is no runtime to spawn', () => {
+    // 名册里的课程条目（role=l2_course）就是这一类。以前点它，客户端会替它编一个
+    // profile 名去起后端（`agent.id` 那条回退），于是每一门都是一场重启循环。
+    expect(isNavigableAgent(agent({ id: '电工电子学', name: '电工电子学' }))).toBe(false)
+    expect(isNavigableAgent(agent({ id: 'x', name: 'x', profile: '   ' }))).toBe(false)
+    expect(isNavigableAgent(agent({ id: 'y', name: 'y', profile: '' }))).toBe(false)
   })
 })
