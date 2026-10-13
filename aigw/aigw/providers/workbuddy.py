@@ -86,6 +86,22 @@ class WorkbuddyApiProvider(Provider):
         self.served_models = tuple(config.get("models", ["workbuddy/default"]))
         self._model_map = config.get("model_map", {})
 
+    def credential_health(self) -> tuple[bool, str]:
+        """Live when the desktop record holds a token that works or can be renewed.
+
+        Unlike the Google leg we CAN renew this one ourselves (the refresh token
+        sits in the same record), so an expired access token is still a usable leg.
+        """
+        st = ds.codebuddy_token_status()
+        if not st.get("present"):
+            return False, "no_desktop_credential"
+        left = st.get("expires_in_seconds")
+        if left is not None and left <= 0:
+            if st.get("can_refresh"):
+                return True, "renewable"
+            return False, "credential_expired"
+        return True, "ok"
+
     STORE_TOKEN_SOURCE = "codebuddy_desktop_store"
 
     def _wants_store(self, a: dict) -> bool:
