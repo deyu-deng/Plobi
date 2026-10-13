@@ -30,6 +30,7 @@ const SIDEBAR_DISMISSED_AUTO_PROJECTS_STORAGE_KEY = 'plobi.desktop.dismissedAuto
 const SIDEBAR_DISMISSED_WORKTREES_STORAGE_KEY = 'plobi.desktop.dismissedWorktrees'
 const PANES_FLIPPED_STORAGE_KEY = 'plobi.desktop.panesFlipped'
 const RIGHT_RAIL_ACTIVE_TAB_STORAGE_KEY = 'plobi.desktop.rightRailActiveTab'
+const RIGHT_RAIL_VIEW_STORAGE_KEY = 'plobi.desktop.rightRailView'
 
 export const CHAT_SIDEBAR_PANE_ID = 'chat-sidebar'
 export const FILE_BROWSER_PANE_ID = 'file-browser'
@@ -59,6 +60,29 @@ export const $rightRailActiveTabId = persistentAtom<RightRailTabId>(
   RIGHT_RAIL_PREVIEW_TAB_ID,
   { decode: raw => raw as RightRailTabId, encode: tabId => tabId }
 )
+
+export const RIGHT_RAIL_VIEW_PREVIEW = 'preview'
+export const RIGHT_RAIL_VIEW_NOTES = 'notes'
+
+export type RightRailView = typeof RIGHT_RAIL_VIEW_PREVIEW | typeof RIGHT_RAIL_VIEW_NOTES
+
+// Which face the right rail shows on an agent route: the file preview it has
+// always had, or that agent's brain notes (WP-MIND-NOTES-VIEW). Persisted, so the
+// rail reopens where you left it. Decode is a whitelist rather than a cast: a
+// stale or hand-edited value falls back to the preview instead of showing a rail
+// that renders nothing.
+export const $rightRailView = persistentAtom<RightRailView>(
+  RIGHT_RAIL_VIEW_STORAGE_KEY,
+  RIGHT_RAIL_VIEW_PREVIEW,
+  {
+    decode: raw => (raw === RIGHT_RAIL_VIEW_NOTES ? RIGHT_RAIL_VIEW_NOTES : RIGHT_RAIL_VIEW_PREVIEW),
+    encode: view => view
+  }
+)
+
+export function setRightRailView(view: RightRailView): void {
+  $rightRailView.set(view)
+}
 
 export const $sidebarWidth: ReadableAtom<number> = computed($paneStates, states => {
   const override = states[CHAT_SIDEBAR_PANE_ID]?.widthOverride
