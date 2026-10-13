@@ -175,6 +175,32 @@ def test_http_query_string_reaches_the_filter(monkeypatch, state_with):
     assert rec.calls == [False, True]
 
 
+def test_a_malformed_body_answers_400_and_not_our_own_failure(monkeypatch):
+    """A truncated JSON body is the caller's mistake, so it must not look like ours.
+
+    Found while putting real traffic through the hub for this knife: the answer was
+    a bare `500 Internal Server Error`, which is what a client would read as
+    "the gateway is broken".
+    """
+    import httpx
+
+    monkeypatch.setitem(main.STATE, "api_key", "sk-test")
+
+    async def _go():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=main.app), base_url="http://gateway"
+        ) as c:
+            return await c.post(
+                "/v1/chat/completions",
+                headers={"authorization": "Bearer sk-test"},
+                content=b'{"model": "workbuddy_api/hy3", "messages": [',
+            )
+
+    r = asyncio.run(_go())
+    assert r.status_code == 400, (r.status_code, r.text[:80])
+    assert "not valid JSON" in r.json()["detail"]
+
+
 def test_workbuddy_api_counts_a_renewable_token_as_live(monkeypatch):
     prov = WorkbuddyApiProvider(
         {"base_url": "https://www.workbuddy.cn", "dialect": "openai"}, None
