@@ -927,7 +927,10 @@ def _archive_profile_dir(entry: AgentEntry, *, move: bool) -> Optional[Path]:
         return None
     try:
         src = get_profile_dir(entry.profile_name)
-    except (KeyError, Exception):
+    except Exception:
+        # Not KeyError specifically: an empty or illegal profile name raises
+        # ValueError (data rows like `l2_course` have no profile at all), and a
+        # dissolved row must still be marked archived with nothing to carry over.
         return None
     if not src.exists():
         return None
