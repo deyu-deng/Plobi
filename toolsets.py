@@ -257,6 +257,23 @@ TOOLSETS = {
         "includes": []
     },
 
+    "offload": {
+        "description": (
+            "Hand one concrete piece of work to an external AI CLI installed on "
+            "this machine (CodeBuddy, agy) instead of spending the owner's own "
+            "quota doing it in-process. OPT-IN ONLY — not in any platform's "
+            "default toolset; the owner enables it in config `toolsets` or "
+            "`plobi tools` (裁定 78: the entry point never defaults on). Every "
+            "run reports who got it, which directory, which permission mode, the "
+            "artifacts with sha256, and usage — cost stays null when this box "
+            "cannot measure it (R-073)."
+        ),
+        "tools": [
+            "external_offload_status", "external_offload_run",
+        ],
+        "includes": [],
+    },
+
     "kanban": {
         "description": (
             "Kanban multi-agent coordination — only active when the agent "
