@@ -21,6 +21,14 @@ Plobi is a desktop AI agent that orchestrates your free-tier AI tools — Cursor
 
 ---
 
+## Screenshot
+
+![Plobi main interface](docs/screenshots/plobi-screenshot-main.png)
+
+*The Plobi desktop console — talk to your L1 secretary, watch delegated agents, and review your agenda timeline in one place.*
+
+---
+
 ## Why Plobi?
 
 Every AI tool gives away free quota, but using them all means constant context-switching. Plobi sits above them all:

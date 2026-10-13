@@ -1,195 +1,212 @@
+<div align="center">
+
 # Plobi
 
-<p align="center">
-  <a href="https://github.com/deyu-deng/Plobi/docs/"><img src="https://img.shields.io/badge/Docs-Plobi-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="[Discord 社区占位]"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/deyu-deng/Plobi/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="[官网占位]"><img src="https://img.shields.io/badge/Built%20by-Plobi-blueviolet?style=for-the-badge" alt="Built by Plobi"></a>
-  <a href="README.md"><img src="https://img.shields.io/badge/Lang-English-lightgrey?style=for-the-badge" alt="English"></a>
-</p>
+**面向多应用时代的 AI 秘书（AI Secretary）**
 
-**由 Plobi 构建的自进化 AI 代理。** 它是唯一内置学习闭环的智能代理——从经验中创建技能，在使用中改进技能，主动持久化知识，搜索过往对话，并在跨会话中逐步构建对你的深度理解。可以在 $5 的 VPS 上运行，也可以在 GPU 集群上运行，或者使用几乎零成本的 Serverless 基础设施。它不绑定你的笔记本——你可以在 Telegram 上与它对话，而它在云端 VM 上工作。
+Plobi 是一款桌面 AI 智能体，将您免费额度内的 AI 工具 —— Cursor、Antigravity、WorkBuddy、Marvis、DevEco 以及 API 服务商 —— 统一编排为一位专属秘书。它跟踪额度、调度任务、管理日程，并运行无人值守的自动化流程，让您无需在多个应用之间来回切换。
 
-支持任意模型——[Nous Portal]([Plobi Portal 占位])、[OpenRouter](https://openrouter.ai)（200+ 模型）、[NVIDIA NIM](https://build.nvidia.com)（Nemotron）、[小米 MiMo](https://platform.xiaomimimo.com)、[z.ai/GLM](https://z.ai)、[Kimi/Moonshot](https://platform.moonshot.ai)、[MiniMax](https://www.minimax.io)、[Hugging Face](https://huggingface.co)、OpenAI，或自定义端点。使用 `plobi model` 即可切换——无需改代码，无锁定。
+[![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
+[![Electron](https://img.shields.io/badge/Electron-40-9feaf4)](https://www.electronjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](#license)
 
-<table>
-<tr><td><b>真正的终端界面</b></td><td>完整的 TUI，支持多行编辑、斜杠命令自动补全、对话历史、中断重定向和流式工具输出。</td></tr>
-<tr><td><b>随你所在</b></td><td>Telegram、Discord、Slack、WhatsApp、Signal 和 CLI——全部从单个网关进程运行。语音备忘录转写、跨平台对话连续性。</td></tr>
-<tr><td><b>闭环学习</b></td><td>代理管理记忆并定期自我提醒。复杂任务后自动创建技能。技能在使用中自我改进。FTS5 会话搜索配合 LLM 摘要实现跨会话回溯。<a href="https://github.com/plastic-labs/honcho">Honcho</a> 辩证式用户建模。兼容 <a href="https://agentskills.io">agentskills.io</a> 开放标准。</td></tr>
-<tr><td><b>定时自动化</b></td><td>内置 cron 调度器，支持向任何平台投递。日报、夜间备份、周审计——全部用自然语言描述，无人值守运行。</td></tr>
-<tr><td><b>委派与并行</b></td><td>生成隔离子代理处理并行工作流。编写 Python 脚本通过 RPC 调用工具，将多步管道压缩为零上下文开销的轮次。</td></tr>
-<tr><td><b>随处运行</b></td><td>六种终端后端——本地、Docker、SSH、Daytona、Singularity 和 Modal。Daytona 和 Modal 提供 Serverless 持久化——代理环境空闲时休眠、按需唤醒，空闲期间几乎零成本。$5 VPS 或 GPU 集群都能跑。</td></tr>
-<tr><td><b>研究就绪</b></td><td>批量轨迹生成、轨迹压缩——用于训练下一代工具调用模型。</td></tr>
-</table>
+[![Lint](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/lint.yml?label=Lint)](https://github.com/deyu-deng/Plobi/actions/workflows/lint.yml)
+[![Architecture gates](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/arch-gates.yml?label=Architecture%20gates)](https://github.com/deyu-deng/Plobi/actions/workflows/arch-gates.yml)
+[![Action pin audit](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/action-pin-audit.yml?label=Action%20pin%20audit)](https://github.com/deyu-deng/Plobi/actions/workflows/action-pin-audit.yml)
+[![Dependency health](https://img.shields.io/github/actions/workflow/status/deyu-deng/Plobi/dependency-health.yml?label=Dependency%20health)](https://github.com/deyu-deng/Plobi/actions/workflows/dependency-health.yml)
+[![Dependency Graph](https://github.com/deyu-deng/Plobi/actions/workflows/dependabot/update-graph/badge.svg)](https://github.com/deyu-deng/Plobi/actions/workflows/dependabot/update-graph)
+
+</div>
 
 ---
 
-## 快速安装
+## Screenshot
+
+![Plobi 主界面](docs/screenshots/plobi-screenshot-main.png)
+
+*Plobi 桌面控制台 —— 与您的 L1 秘书对话、查看委派中的 Agent，并在同一界面浏览日程时间线。*
+
+---
+
+## 为什么选择 Plobi？
+
+每个 AI 工具都会赠送免费额度，但全部用起来意味着不断切换上下文。Plobi 位于它们之上：
+
+- **统一额度感知** —— 了解哪些工具还有剩余额度，并据此分派工作
+- **三级委派** —— 秘书（L1）派发给项目 Agent（L2），项目 Agent 再调度执行体（L3），包括外部 AI 应用
+- **本地 AI 网关** —— 在统一的 OpenAI 兼容端点后聚合各桌面 AI 应用的额度
+- **日程与自动化** —— 基于聊天记录提取日程、确认流程、定时摘要与提醒
+- **桌面原生** —— Electron 应用，三栏控制台，而非终端或网页标签页
+
+## 功能特性
+
+### Agent 编排
+- **L1 秘书** —— 对话式入口，做规划决策，与您对话
+- **L2 项目 Agent** —— 领域专精，拥有自己的上下文与子 Agent 阵容
+- **L3 执行体** —— 内置工具 Agent、外部 AI 应用（Cursor、Antigravity、WorkBuddy、Marvis、DevEco）与硬件 HID 设备
+
+### 额度管理
+- **额度池** —— 跟踪各 API 服务商与桌面应用的健康状态与剩余额度
+- **健康探测** —— 周期性探测，按来源标注状态（健康 / 冷却 / 需重新认证 / 停用）
+- **故障转移路由** —— 当服务商异常或额度用尽时自动切换来源
+- **管家提醒** —— 定时晨报、待办摘要与额度预警通知
+
+### 本地 AI 网关（aigw）
+- 运行于 `localhost` 的 OpenAI 兼容 `/v1/chat/completions` 端点
+- 三种集成模式：spawn-CLI（合规）、GUI 自动化、逆向 API
+- 粘性会话、熔断、限流、加密凭据保险库
+- 已支持：Antigravity、WorkBuddy、Marvis、Cursor（部分）
+
+### 日程与记忆
+- **聊天记录采集** —— 以隐私优先黑名单从聊天平台提取日程变更
+- **待确认机制** —— 提议事件须经您批准后才写入日历
+- **心智记忆** —— FTS5 会话搜索、从经验创建技能、跨会话回忆
+
+### 桌面控制台
+- 三栏布局：Agent 名单 · 对话 · 日程时间线
+- 每个 L2 Agent 的工作台：子 Agent 状态、外派应用会话、文件、看板、产物
+- 主题系统：种子色派生、全局密度 / 圆角令牌
+
+## 技术栈
+
+| 层级 | 技术 |
+|-------|-----------|
+| 后端 | Python 3.11、LangGraph Agent 运行时 |
+| 桌面端 | Electron 40、React 19、TypeScript、Vite |
+| UI | Tailwind CSS、assistant-ui、自定义设计令牌系统 |
+| 网关 | Python、FastAPI、子进程 + Windows UI 自动化 |
+| 存储 | SQLite（日程、会话、额度）、JSON 配置 |
+| 调度 | 内置 cron + 持久化任务注册表 |
+
+## 快速开始
+
+### 前置要求
+- Python 3.11+
+- Node.js 20+ 与 npm
+- Git
+
+### 安装
 
 ```bash
-curl -fsSL https://github.com/deyu-deng/Plobi/install.sh | bash
+git clone https://github.com/deyu-deng/Plobi.git
+cd Plobi
+
+# Python 后端（推荐 uv）
+uv venv --python 3.13 && uv sync --extra dev --extra acp --extra messaging --extra web --extra anthropic
+source .venv/bin/activate                # macOS/Linux
+# .venv\Scripts\activate                # Windows
+# Windows 一键环境初始化：
+#   powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+
+# SOCKS 代理测试套件所需（使用上述 extras 的 uv sync 会移除这两项）
+uv pip install aiohttp-socks==0.11.0 python-socks
+
+# 桌面应用
+cd apps/desktop
+npm install
 ```
 
-支持 Linux、macOS、WSL2 和 Android (Termux)。安装程序会自动处理平台特定的配置。
-
-> **Android / Termux：** 已测试的手动安装路径请参考 [Termux 指南](https://github.com/deyu-deng/Plobi/docs/getting-started/termux)。在 Termux 上，Plobi 会安装精选的 `.[termux]` 扩展，因为完整的 `.[all]` 扩展会拉取 Android 不兼容的语音依赖。
->
-> **Windows：** 在 PowerShell 中运行：
-> ```powershell
-> iex (irm https://github.com/deyu-deng/Plobi/install.ps1)
-> ```
-> 安装完成后，可能需要重启终端，然后运行 `plobi` 开始对话。
-
-安装后：
+### 运行
 
 ```bash
-source ~/.bashrc    # 重新加载 shell（或: source ~/.zshrc）
-plobi              # 开始对话！
+# 终端 Agent（CLI）
+plobi
+
+# 桌面应用（热重载开发模式）
+cd apps/desktop
+npm run dev
 ```
 
----
+### 配置服务商
 
-## 快速入门
+通过桌面应用「设置 → Providers」添加 API 密钥，或使用环境变量：
 
 ```bash
-plobi              # 交互式 CLI — 开始对话
-plobi model        # 选择 LLM 提供商和模型
-plobi tools        # 配置启用的工具
-plobi config set   # 设置单个配置项
-plobi gateway      # 启动消息网关（Telegram、Discord 等）
-plobi setup        # 运行完整设置向导（一次性配置所有内容）
-plobi claw migrate # 从 OpenClaw 迁移（如果来自 OpenClaw）
-plobi update       # 更新到最新版本
-plobi doctor       # 诊断问题
+# OpenAI 兼容服务商
+export OPENAI_API_KEY=sk-...
+# Zhipu / Z.ai
+export GLM_API_KEY=...
+# 自定义 OpenAI 兼容端点
+export OPENAI_BASE_URL=https://api.example.com/v1
 ```
 
-📖 **[完整文档 →](https://github.com/deyu-deng/Plobi/docs/)**
+## 架构
 
----
-
-
-## CLI 与消息平台 快速对照
-
-Plobi 有两种入口：用 `plobi` 启动终端 UI，或运行网关从 Telegram、Discord、Slack、WhatsApp、Signal 或 Email 与之对话。进入对话后，许多斜杠命令在两种界面中通用。
-
-| 操作 | CLI | 消息平台 |
-|------|-----|----------|
-| 开始对话 | `plobi` | 运行 `plobi gateway setup` + `plobi gateway start`，然后给机器人发消息 |
-| 开始新对话 | `/new` 或 `/reset` | `/new` 或 `/reset` |
-| 更换模型 | `/model [provider:model]` | `/model [provider:model]` |
-| 设置人格 | `/personality [name]` | `/personality [name]` |
-| 重试或撤销上一轮 | `/retry`、`/undo` | `/retry`、`/undo` |
-| 压缩上下文 / 查看用量 | `/compress`、`/usage`、`/insights [--days N]` | `/compress`、`/usage`、`/insights [days]` |
-| 浏览技能 | `/skills` 或 `/<skill-name>` | `/skills` 或 `/<skill-name>` |
-| 中断当前工作 | `Ctrl+C` 或发送新消息 | `/stop` 或发送新消息 |
-| 平台特定状态 | `/platforms` | `/status`、`/sethome` |
-
-完整命令列表请参阅 [CLI 指南](https://github.com/deyu-deng/Plobi/docs/user-guide/cli) 和 [消息网关指南](https://github.com/deyu-deng/Plobi/docs/user-guide/messaging)。
-
----
-
-## 文档
-
-所有文档位于 **[Plobi 文档](https://github.com/deyu-deng/Plobi/docs/)**：
-
-| 章节 | 内容 |
-|------|------|
-| [快速开始](https://github.com/deyu-deng/Plobi/docs/getting-started/quickstart) | 安装 → 设置 → 2 分钟内开始首次对话 |
-| [CLI 使用](https://github.com/deyu-deng/Plobi/docs/user-guide/cli) | 命令、快捷键、人格、会话 |
-| [配置](https://github.com/deyu-deng/Plobi/docs/user-guide/configuration) | 配置文件、提供商、模型、所有选项 |
-| [消息网关](https://github.com/deyu-deng/Plobi/docs/user-guide/messaging) | Telegram、Discord、Slack、WhatsApp、Signal、Home Assistant |
-| [安全](https://github.com/deyu-deng/Plobi/docs/user-guide/security) | 命令审批、DM 配对、容器隔离 |
-| [工具与工具集](https://github.com/deyu-deng/Plobi/docs/user-guide/features/tools) | 40+ 工具、工具集系统、终端后端 |
-| [技能系统](https://github.com/deyu-deng/Plobi/docs/user-guide/features/skills) | 过程记忆、技能中心、创建技能 |
-| [记忆](https://github.com/deyu-deng/Plobi/docs/user-guide/features/memory) | 持久记忆、用户画像、最佳实践 |
-| [MCP 集成](https://github.com/deyu-deng/Plobi/docs/user-guide/features/mcp) | 连接任意 MCP 服务器扩展能力 |
-| [定时调度](https://github.com/deyu-deng/Plobi/docs/user-guide/features/cron) | 定时任务与平台投递 |
-| [上下文文件](https://github.com/deyu-deng/Plobi/docs/user-guide/features/context-files) | 影响每次对话的项目上下文 |
-| [架构](https://github.com/deyu-deng/Plobi/docs/developer-guide/architecture) | 项目结构、代理循环、关键类 |
-| [贡献](https://github.com/deyu-deng/Plobi/docs/developer-guide/contributing) | 开发设置、PR 流程、代码风格 |
-| [CLI 参考](https://github.com/deyu-deng/Plobi/docs/reference/cli-commands) | 所有命令和标志 |
-| [环境变量](https://github.com/deyu-deng/Plobi/docs/reference/environment-variables) | 完整环境变量参考 |
-
----
-
-## 从 OpenClaw 迁移
-
-如果你来自 OpenClaw，Plobi 可以自动导入你的设置、记忆、技能和 API 密钥。
-
-**首次安装时：** 安装向导（`plobi setup`）会自动检测 `~/.openclaw` 并在配置开始前提供迁移选项。
-
-**安装后任意时间：**
-
-```bash
-plobi claw migrate              # 交互式迁移（完整预设）
-plobi claw migrate --dry-run    # 预览将要迁移的内容
-plobi claw migrate --preset user-data   # 仅迁移用户数据，不含密钥
-plobi claw migrate --overwrite  # 覆盖已有冲突
+```
+┌─────────────────────────────────────────────────┐
+│  Desktop Console (Electron / React)             │
+│  ┌──────────┬──────────────┬────────────────┐  │
+│  │ Agents   │ Conversation │ Agenda / Files │  │
+│  │ Roster   │ (ChatSurface)│ Timeline       │  │
+│  └──────────┴──────────────┴────────────────┘  │
+└──────────────────────┬──────────────────────────┘
+                       │ HTTP / IPC
+┌──────────────────────▼──────────────────────────┐
+│  Python Backend                                 │
+│  ┌─────────┐  ┌──────────┐  ┌───────────────┐  │
+│  │ L1 Sec. │→ │ L2 Agent │→ │ L3 Executors  │  │
+│  └─────────┘  └──────────┘  └───────┬───────┘  │
+│                                     │           │
+│  ┌─────────────┐  ┌────────────┐   │           │
+│  │ Quota Pool  │  │  aigw      │←──┘           │
+│  │ (health)    │  │ (routing)  │               │
+│  └─────────────┘  └─────┬──────┘               │
+└──────────────────────────┼──────────────────────┘
+                           │
+            ┌──────────────┼──────────────┐
+            ▼              ▼              ▼
+       API Providers   Desktop Apps   Hardware HID
+       (zhipu, etc.)   (Cursor, ...)   (Pico 2W)
 ```
 
-导入内容：
-- **SOUL.md** — 人格文件
-- **记忆** — MEMORY.md 和 USER.md 条目
-- **技能** — 用户创建的技能 → `~/.plobi/skills/openclaw-imports/`
-- **命令白名单** — 审批模式
-- **消息设置** — 平台配置、允许用户、工作目录
-- **API 密钥** — 白名单中的密钥（Telegram、OpenRouter、OpenAI、Anthropic、ElevenLabs）
-- **TTS 资产** — 工作区音频文件
-- **工作区指令** — AGENTS.md（使用 `--workspace-target`）
+## 项目结构
 
-使用 `plobi claw migrate --help` 查看所有选项，或使用 `openclaw-migration` 技能进行交互式代理引导迁移（含干运行预览）。
-
----
+```
+├── agent/              # 核心 Agent 运行时（LangGraph）
+├── aigw/               # 本地 AI 网关（OpenAI 兼容）
+├── apps/desktop/       # Electron 桌面应用
+├── plobi/             # Plobi 专属模块
+│   ├── agenda/         # 日程服务与采集器
+│   ├── quota/          # 额度池与来源探测
+│   ├── delegation/     # L3 委派守卫
+│   ├── butler/         # 定时报告与提醒
+│   └── collectors/     # 聊天记录采集
+├── plugins/            # Agent 插件（记忆、平台等）
+├── skills/             # 可复用 Agent 技能
+├── tools/              # 工具实现
+├── gateway/            # 多平台消息网关
+├── plobi_cli/         # CLI 界面
+└── tests/              # 测试套件
+```
 
 ## 贡献
 
-欢迎贡献！请参阅 [贡献指南](https://github.com/deyu-deng/Plobi/docs/developer-guide/contributing) 了解开发设置、代码风格和 PR 流程。
+欢迎贡献代码。请：
 
-贡献者快速开始——使用标准安装器，然后在它创建的完整 git checkout 中开发：
-`$PLOBI_HOME/plobi-agent`（通常是 `~/.plobi/plobi-agent`）。这会匹配
-`plobi update`、托管 venv、lazy dependencies、gateway 和 docs tooling 使用的布局。
+1. Fork 本仓库并创建功能分支
+2. 为新功能编写测试
+3. 确保 `pytest` 与 `npm run test` 通过
+4. 提交带有清晰描述的 Pull Request
 
-```bash
-curl -fsSL https://github.com/deyu-deng/Plobi/install.sh | bash
-cd "${PLOBI_HOME:-$HOME/.plobi}/plobi-agent"
-uv pip install -e ".[all,dev]"
-scripts/run_tests.sh
-```
+### 开发说明
 
-手动克隆备用路径（用于一次性 clone / CI，或你明确不想使用 managed install layout 时）：
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv venv --python 3.11
-source venv/bin/activate
-uv pip install -e ".[all,dev]"
-python -m pytest tests/ -q
-```
-
----
-
-## 社区
-
-- 💬 [Discord]([Discord 社区占位])
-- 📚 [技能中心](https://agentskills.io)
-- 🐛 [问题反馈](https://github.com/deyu-deng/Plobi/issues)
-- 💡 [讨论区](https://github.com/deyu-deng/Plobi/discussions)
-- 🔌 [PlobiClaw](https://github.com/AaronWong1999/hermesclaw) — 社区微信桥接：在同一微信账号上运行 Plobi Agent 和 OpenClaw。
-
----
+- 后端测试：`pytest tests/`
+- 前端类型检查：`cd apps/desktop && npx tsc --noEmit`
+- 前端测试：`cd apps/desktop && npm run test`
 
 ## 许可证
 
+MIT License —— 详见 [LICENSE](LICENSE)。
+
+---
+
 ## 致谢
 
-Plobi 是 [Hermes Agent](https://github.com/NousResearch/hermes-agent)（[Nous Research](https://nousresearch.com)）
-的 fork，agent 内核、消息网关、TUI、插件/技能体系与 CLI 都由它派生。MIT 许可全文与两份版权声明见
-[`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)；其余第三方依赖由 `pyproject.toml`、`uv.lock`、
-`package.json` 与 `package-lock.json` 逐一列名。
+Plobi 是 **[Hermes Agent](https://github.com/NousResearch/hermes-agent)**（Nous Research 出品）的一个分支，其 Agent 核心、消息网关、TUI、插件/技能系统与 CLI 均源自该项目。MIT 许可证全文及两份版权声明见 [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)；其余第三方依赖见 `pyproject.toml`、`uv.lock`、`package.json` 与 `package-lock.json`。
 
-"Hermes" 与 "Nous Research" 是那个上游项目及其作者的名称，只出现在本节、`LICENSE`/`NOTICE`、
-我们保留指向上游的 URL，以及 `hermes-4` 这类别人的模型标识里——本仓库其余一切都已改名为 Plobi。
+<div align="center">
 
-MIT — 详见 [LICENSE](LICENSE)。
+基于 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 构建。
 
-由 [Plobi]([官网占位]) 构建。
+</div>
