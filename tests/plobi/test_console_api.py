@@ -434,6 +434,38 @@ def test_latest_session_missing_db_is_empty(tmp_path, monkeypatch):
     assert console_router._latest_session_for_profile("agenda") == ""
 
 
+def test_blank_or_illegal_profile_never_500s_the_roster(monkeypatch):
+    """数据条目（`l2_course`）的 profile 是空串——递进 profile 解析器抛的是 ValueError。
+
+    2026-10-13 实测：那一下把 `GET /api/agents` 整表打成 500（左栏拿不到分身列表），
+    而这里以前只接 `(ImportError, KeyError)`。空名与非法名都得读成"没有会话"。
+    """
+    import plobi_cli.profiles as profiles_mod
+
+    def boom(name):
+        raise ValueError("profile name cannot be empty")
+
+    monkeypatch.setattr(profiles_mod, "get_profile_dir", boom)
+
+    assert console_router._latest_session_for_profile("") == ""
+    assert console_router._latest_session_for_profile("大学物理（甲）Ⅱ") == ""
+
+
+def test_data_row_short_circuits_before_the_resolver(_isolated_state, monkeypatch):
+    """没有 profile 的行根本不该去问"它最近的会话"——它没有运行时。"""
+    register(_isolated_state, physics={"role": "l2_course", "category": "courses"})
+    seen: list[str] = []
+
+    def fake_latest(profile: str) -> str:
+        seen.append(profile)
+        return "sess"
+
+    monkeypatch.setattr(console_router, "_latest_session_for_profile", fake_latest)
+
+    assert console_router.sessions_for_agent("physics") == []
+    assert seen == [], "空 profile 不许再递给解析器（那一步就是 500 的现场）"
+
+
 def test_usage_follows_session_attribution(client, _isolated_state, monkeypatch, tmp_path):
     """todayCalls 走 归属 session → session_model_usage 聚合（真实 SQL）。"""
     register(_isolated_state, agenda=AGENDA)

@@ -213,8 +213,11 @@ def _latest_session_for_profile(profile: str) -> str:
         from plobi_cli.profiles import get_profile_dir
 
         db_path = get_profile_dir(profile) / "state.db"
-    except (ImportError, KeyError) as exc:
-        # ImportError: plobi_cli not installed; KeyError: unknown profile name
+    except (ImportError, KeyError, ValueError) as exc:
+        # ImportError: plobi_cli not installed; KeyError: unknown profile name;
+        # ValueError: 名字非法或为空 —— 名册里**数据条目**（`l2_course`，裁定 40）
+        # 的 profile 就是空串，`get_profile_dir('')` 抛的是 ValueError（2026-10-13
+        # 实测：整张 `GET /api/agents` 因此 500，左栏拿不到分身列表）。
         logger.debug("plobi console: cannot resolve profile dir for %s: %s", profile, exc)
         return ""
     if not db_path.exists():
@@ -247,6 +250,10 @@ def sessions_for_agent(agent_id: str) -> list[str]:
     except Exception:
         return []
     if entry is None:
+        return []
+    if not entry.profile_name:
+        # 数据条目没有运行时，也就没有"它最近的会话"可归属（`profile_name` 对
+        # `l2_course` 一律回空串）。早退一句，别把空名递给 profile 解析。
         return []
     latest = _latest_session_for_profile(entry.profile_name)
     return [latest] if latest else []
