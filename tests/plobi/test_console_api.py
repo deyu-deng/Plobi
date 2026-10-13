@@ -863,3 +863,109 @@ def test_post_routines_validation_error_is_envelope(client):
     )
     assert response.status_code == 400
     assert response.json()["ok"] is False
+
+
+# --------------------------------------------------------------------------- #
+# GET /api/agents/:id/offloads —— 外包流水那一处（WP-L2-OUTSOURCE-ENTRY 判据 2）
+# --------------------------------------------------------------------------- #
+
+
+def _round(cwd: str, ts: str, *, cost=None, status="usage_reported_without_price", agent="codebuddy"):
+    return {
+        "ts": ts, "agent": agent, "cwd": cwd, "permission_flag": "-y --permission-mode=bypassPermissions",
+        "brief": f"推进 {cwd}", "artifacts": [{"path": f"{cwd}/today.py", "sha256_12": "3da942743391"}],
+        "duration_seconds": 16.4, "usage": {"input_tokens": 56255} if cost is None else {"cost_usd": cost},
+        "cost_status": status, "failure": "",
+    }
+
+
+def _ledger_stub(monkeypatch, rows):
+    import plobi.delegation.offload as offload_mod
+
+    class _Stub:
+        def __init__(self, root=None):
+            pass
+
+        def rows(self):
+            return list(rows)
+
+    monkeypatch.setattr(offload_mod, "RoundLedger", _Stub)
+
+
+class TestAgentOffloadReadout:
+    def test_unknown_agent_is_404(self, client, _isolated_state):
+        assert client.get("/api/agents/没有这一格/offloads").status_code == 404
+
+    def test_rounds_are_attributed_by_bound_folder(self, _isolated_state, monkeypatch):
+        """流水按**目录**记（交出去的本来就是"某个目录里的一段活"），归属靠 project_path。"""
+        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+                                        "project_path": "D:/projects/Aura"})
+        _ledger_stub(monkeypatch, [
+            _round("D:/projects/Aura", "2026-10-13T01:00:00+00:00"),
+            _round("D:/projects/Aura/src", "2026-10-13T02:00:00+00:00"),
+            _round("D:/projects/Other", "2026-10-13T03:00:00+00:00"),
+        ])
+
+        out = console_router.agent_offloads("aura")
+
+        assert out["bound_folder"] == "D:/projects/Aura"
+        assert out["total_rounds"] == 2, out
+        assert {r["cwd"] for r in out["rounds"]} == {"D:/projects/Aura", "D:/projects/Aura/src"}
+        assert out["unattributed_reason"] == ""
+
+    def test_newest_first_and_limit(self, _isolated_state, monkeypatch):
+        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+                                        "project_path": "D:/projects/Aura"})
+        _ledger_stub(monkeypatch, [_round("D:/projects/Aura", f"2026-10-1{3 - i}T00:00:00+00:00")
+                                   for i in range(3)])
+
+        out = console_router.agent_offloads("aura", limit=2)
+
+        assert [r["ts"] for r in out["rounds"]] == ["2026-10-13T00:00:00+00:00",
+                                                    "2026-10-12T00:00:00+00:00"]
+        assert out["total_rounds"] == 3, "limit 只截显示，总数不许跟着变小"
+
+    def test_unbound_agent_says_why_instead_of_guessing(self, _isolated_state, monkeypatch):
+        """没绑定目录 ⇒ 不许把所有外包都算到它头上（那比漏报更坏）。"""
+        register(_isolated_state, aura={"role": "l2_project", "profile": "aura"})
+        _ledger_stub(monkeypatch, [_round("D:/projects/Aura", "2026-10-13T01:00:00+00:00")])
+
+        out = console_router.agent_offloads("aura")
+
+        assert out["rounds"] == [] and out["total_rounds"] == 0
+        assert "不猜" in out["unattributed_reason"]
+
+    def test_one_unmeasurable_round_makes_the_total_unmeasurable(self, _isolated_state, monkeypatch):
+        """R-073：任何一笔算不出 ⇒ 总额也不能装作算得出，且不许塌成 0。"""
+        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+                                        "project_path": "D:/projects/Aura"})
+        _ledger_stub(monkeypatch, [
+            _round("D:/projects/Aura", "2026-10-13T01:00:00+00:00", cost=0.42),
+            _round("D:/projects/Aura", "2026-10-13T02:00:00+00:00"),
+        ])
+
+        out = console_router.agent_offloads("aura")
+
+        assert out["total_usd"] is None
+        assert out["cost_status"] == "usage_reported_without_price"
+
+    def test_priced_rounds_sum_up(self, _isolated_state, monkeypatch):
+        register(_isolated_state, aura={"role": "l2_project", "profile": "aura",
+                                        "project_path": "D:/projects/Aura"})
+        _ledger_stub(monkeypatch, [
+            _round("D:/projects/Aura", "2026-10-13T01:00:00+00:00", cost=0.42),
+            _round("D:/projects/Aura", "2026-10-13T02:00:00+00:00", cost=0.08),
+        ])
+
+        out = console_router.agent_offloads("aura")
+
+        assert out["total_usd"] == pytest.approx(0.5)
+        assert out["cost_status"] == "priced"
+
+    def test_empty_batch_is_not_zero_spend(self):
+        """一格没外包过 ≠ 花了 0 元。"""
+        from plobi.delegation.offload import total_usd
+
+        assert total_usd([]) == (None, "priced")
+        assert total_usd([_round("D:/x", "t")]) == (None, "usage_reported_without_price")
+        assert total_usd([_round("D:/x", "t", cost=1.0)])[0] == 1.0

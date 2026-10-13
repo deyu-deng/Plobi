@@ -187,6 +187,24 @@ class OffloadChannel(Protocol):
         ...
 
 
+def total_usd(rows: Iterable[dict[str, Any]]) -> tuple[Optional[float], str]:
+    """一批发包记录加起来的真花费。任何一笔算不出 ⇒ 总额也**不能**装作算得出（R-073）。
+
+    单列成函数是为了"按某个分身筛过的那一批"也能用**同一条**算法：以前只有整本台账一个
+    总额，答不出"这一格交出去的活花了多少"，而控制台那一处要答的就是后者。
+    空批回 ``(None, "priced")`` —— 没有花费不等于花了 0。
+    """
+    rows = list(rows)
+    total = 0.0
+    for row in rows:
+        amount = (row.get("usage") or {}).get("cost_usd")
+        if amount is None:
+            return None, row.get("cost_status") or "unknown"
+        total += float(amount)
+
+    return (total if rows else None), "priced"
+
+
 class RoundLedger:
     """流水：每笔外包一行 JSONL，用于"这一轮花了多少"的读数（裁定 99 二）。
 
@@ -243,11 +261,5 @@ class RoundLedger:
         return out
 
     def round_total_usd(self) -> tuple[Optional[float], str]:
-        """这一段时间上加起来的真花费。任何一笔算不出 ⇒ 总额也**不能**装作算得出。"""
-        total = 0.0
-        for row in self.rows():
-            amount = (row.get("usage") or {}).get("cost_usd")
-            if amount is None:
-                return None, row.get("cost_status") or "unknown"
-            total += float(amount)
-        return (total if self.rows() else None), "priced"
+        """整本台账的时间上加起来（算法只有一处：:func:`total_usd`）。"""
+        return total_usd(self.rows())
