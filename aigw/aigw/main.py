@@ -185,6 +185,20 @@ def _auth(authorization: str | None):
         raise HTTPException(401, "invalid api key")
 
 
+async def _json_body(request: Request) -> dict:
+    """Parse a JSON request body, or answer 400.
+
+    `await request.json()` raises the decoder's own exception, which reaches the
+    caller as a bare `500 Internal Server Error` — a wrong-body problem dressed up
+    as our failure. This is a system boundary (any local process can POST here), so
+    the client's mistake gets the client's status code and a sentence.
+    """
+    try:
+        return await request.json()
+    except Exception as e:  # json.JSONDecodeError, UnicodeDecodeError, …
+        raise HTTPException(400, f"request body is not valid JSON ({type(e).__name__})") from e
+
+
 def _session_id(req: dict, headers) -> str | None:
     """Sticky-session key.
 
@@ -274,7 +288,7 @@ async def healthz():
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request, authorization: str = Header(None)):
     _auth(authorization)
-    body = await request.json()
+    body = await _json_body(request)
     if "model" not in body or "messages" not in body:
         raise HTTPException(400, "model and messages are required")
 
@@ -329,7 +343,7 @@ async def _sse(gen):
 @app.post("/v1/embeddings")
 async def embeddings(request: Request, authorization: str = Header(None)):
     _auth(authorization)
-    body = await request.json()
+    body = await _json_body(request)
     if "input" not in body:
         raise HTTPException(400, "input is required")
     model = body.get("model", "mock/embedding")
