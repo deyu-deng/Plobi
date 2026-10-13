@@ -1,11 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   $connectedDesktopApps,
   applyDiscoveredQuotaApps,
   DESKTOP_QUOTA_MODELS,
   desktopQuotaProviders,
-  markConnected
+  firstSelectableQuotaModel,
+  markConnected,
+  quotaSelectionVerdict,
+  refreshAllConnectedAppModels
 } from './desktop-quotas'
 
 // desktopQuotaProviders() is the single combinator behind all three model-picker
@@ -106,5 +109,102 @@ describe('applyDiscoveredQuotaApps', () => {
     applyDiscoveredQuotaApps([])
 
     expect(desktopQuotaProviders().map(provider => provider.slug)).toEqual(['workbuddy'])
+  })
+})
+
+// The hub decides pickability; these are the rules the renderer follows from that
+// verdict. Nothing here names a model — a leg leaves the picker because the gateway
+// said so, and comes back when its sign-in is renewed.
+describe('live catalog verdicts', () => {
+  const hub = (rows: unknown[]) =>
+    vi.fn(async () => ({ ok: true, json: async () => ({ data: rows }) }))
+
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+    markConnected({
+      id: 'workbuddy',
+      models: ['glm-5.2'],
+      baseUrl: 'http://127.0.0.1:8000/v1',
+      apiKey: 'sk-local-dev-key'
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('believes an answered "nothing here is pickable" instead of reviving the seed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      hub([
+        {
+          id: 'workbuddy/glm-5.2',
+          provider: 'workbuddy',
+          selectable: false,
+          unselectable_reason: 'no_tools'
+        }
+      ])
+    )
+
+    await refreshAllConnectedAppModels()
+
+    expect(desktopQuotaProviders()).toEqual([])
+    // the reason travels with it, so a vanished model can be explained on screen
+    expect($connectedDesktopApps.get().workbuddy?.blocked).toEqual({ 'glm-5.2': 'no_tools' })
+    expect(quotaSelectionVerdict('workbuddy', 'glm-5.2')).toEqual({ state: 'gone', reason: 'no_tools' })
+  })
+
+  it('keeps the last good list when the hub does not answer, and calls it unanswered', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('connection refused')
+      })
+    )
+
+    await refreshAllConnectedAppModels()
+
+    expect(desktopQuotaProviders()[0]?.models).toEqual(['glm-5.2'])
+    // "we could not ask" must never read as "it is broken" — no fallback may fire
+    expect(quotaSelectionVerdict('workbuddy', 'glm-5.2')).toEqual({ state: 'unanswered' })
+  })
+
+  it('serves a renewed credential on the next tick with no code or list change', async () => {
+    vi.stubGlobal(
+      'fetch',
+      hub([{ id: 'workbuddy/glm-5.2', provider: 'workbuddy', selectable: false, unselectable_reason: 'credential_expired' }])
+    )
+    await refreshAllConnectedAppModels()
+    expect(desktopQuotaProviders()).toEqual([])
+
+    vi.stubGlobal('fetch', hub([{ id: 'workbuddy/glm-5.2', provider: 'workbuddy', selectable: true }]))
+    await refreshAllConnectedAppModels()
+
+    expect(desktopQuotaProviders()[0]?.models).toEqual(['glm-5.2'])
+    expect(quotaSelectionVerdict('workbuddy', 'glm-5.2')).toEqual({ state: 'ok' })
+    expect(firstSelectableQuotaModel()).toEqual({ model: 'glm-5.2', provider: 'workbuddy' })
+  })
+
+  it('refuses to fall back to a model the hub never confirmed', async () => {
+    $connectedDesktopApps.set({})
+    // seed-only app: DESKTOP_QUOTA_MODELS has entries for cursor, but no read landed
+    markConnected({ id: 'cursor', baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' })
+
+    expect(desktopQuotaProviders()[0]?.models).toEqual(DESKTOP_QUOTA_MODELS.cursor)
+    expect(firstSelectableQuotaModel()).toBeNull()
+  })
+
+  it('a push frame cannot resurrect legs the hub already dropped', async () => {
+    vi.stubGlobal(
+      'fetch',
+      hub([{ id: 'workbuddy/glm-5.2', provider: 'workbuddy', selectable: false, unselectable_reason: 'no_tools' }])
+    )
+    await refreshAllConnectedAppModels()
+
+    applyDiscoveredQuotaApps([
+      { id: 'workbuddy', models: ['glm-5.2', 'kimi-k3-1'], baseUrl: 'http://127.0.0.1:8000/v1', apiKey: 'sk-local-dev-key' }
+    ])
+
+    expect(desktopQuotaProviders()).toEqual([])
   })
 })

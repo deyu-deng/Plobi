@@ -15,19 +15,37 @@ import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 //
 // The model list is no longer hardcoded. It is fetched live from the aigw
 // gateway's `/v1/models` endpoint (which itself discovers the real catalog from
-// upstream, e.g. Antigravity's `fetchAvailableModels`). The `DESKTOP_QUOTA_MODELS`
-// constant below is only a last-resort fallback when the gateway is unreachable.
+// upstream, e.g. Antigravity's `fetchAvailableModels`), and the gateway marks each
+// row with whether picking it would actually work. What the hub offers is what the
+// selector shows: a leg whose credential has expired or that cannot carry tool
+// calls leaves the list on its own and comes back when the desktop app renews it —
+// no name list is involved anywhere in this file. `DESKTOP_QUOTA_MODELS` is only a
+// seed for the window before the first read has ever landed.
 // ---------------------------------------------------------------------------
 
 export interface ConnectedDesktopApp {
   id: string
   name: string
   connected: boolean
+  /** Model ids the hub currently reports as *selectable* (tools-capable + live credential). */
   models: string[]
   /** aigw OpenAI-compatible base URL, e.g. http://127.0.0.1:8019/v1 */
   baseUrl?: string
   /** aigw api key (sk-...) */
   apiKey?: string
+  /**
+   * Why each dropped model is dropped (`unselectable_reason` from the hub, e.g.
+   * `credential_expired`, `no_tools`). Kept so a model that vanishes from the
+   * picker can be explained instead of leaving the user to guess.
+   */
+  blocked?: Record<string, string>
+  /**
+   * True when the last catalog read actually reached the hub. Pruning is only
+   * allowed on a frame we asked about: an unreachable hub must never be reported
+   * as "you have no models", and the checked-in seed below must never be revived
+   * to cover for a leg the hub said is dead.
+   */
+  answered?: boolean
 }
 
 const STORE_KEY = 'plobi.desktop.desktop-quotas'
@@ -95,19 +113,27 @@ export function markConnected(app: {
   models?: string[]
   baseUrl?: string
   apiKey?: string
+  blocked?: Record<string, string>
+  answered?: boolean
 }): void {
   const next = { ...$connectedDesktopApps.get() }
+  const previous = next[app.id]
 
   next[app.id] = {
+    // A re-registration (the hub pushed a frame, the user clicked connect) is not
+    // a new catalog read. Carrying the old verdict forward until one lands keeps a
+    // transient frame from blanking the picker.
     id: app.id,
-    name: app.name ?? DESKTOP_QUOTA_NAMES[app.id] ?? app.id,
+    name: app.name ?? previous?.name ?? DESKTOP_QUOTA_NAMES[app.id] ?? app.id,
     connected: true,
     // Prefer whatever the backend reported at connect time (the gateway's live
-    // catalog). If the backend passed nothing, store an empty list and let
+    // catalog). If the backend passed nothing, keep what we had and let
     // refreshConnectedAppModels() fill it from /v1/models right after connect.
-    models: app.models ?? [],
-    baseUrl: app.baseUrl,
-    apiKey: app.apiKey
+    models: app.models ?? previous?.models ?? [],
+    baseUrl: app.baseUrl ?? previous?.baseUrl,
+    apiKey: app.apiKey ?? previous?.apiKey,
+    blocked: app.blocked ?? previous?.blocked,
+    answered: app.answered ?? previous?.answered
   }
 
   $connectedDesktopApps.set(next)
@@ -144,11 +170,21 @@ export function applyDiscoveredQuotaApps(
       continue
     }
 
+    const previous = $connectedDesktopApps.get()[app.id]
+    const answered = previous?.answered === true
+
     markConnected({
       id: app.id,
-      models: app.models,
+      // A pushed frame is a list of *apps*, not a health verdict: the main process
+      // reads the plain OpenAI-compatible catalog, which still names legs whose
+      // sign-in expired or that cannot carry tools. Once the hub has answered for
+      // this app, its verdict stands until the next read replaces it — otherwise
+      // every re-broadcast would resurrect the dead legs for a minute.
+      models: answered ? previous?.models : app.models,
       baseUrl: app.baseUrl,
-      apiKey: app.apiKey
+      apiKey: app.apiKey,
+      blocked: answered ? previous?.blocked : undefined,
+      answered: previous?.answered
     })
   }
 }
@@ -188,10 +224,16 @@ export function desktopQuotaProviders(): ModelOptionProvider[] {
     // DESKTOP_QUOTA_MODELS below is only a last-resort seed for the window before
     // that read has ever succeeded — it is NOT canonical, and a model that only
     // exists there must never be offered as if it were.
+    //
+    // Once the hub has answered, its word stands even when it says "none": an app
+    // whose credential just expired has to leave the picker, and reviving the seed
+    // here would put the dead model back on screen under a different name.
     const models =
       app.models && app.models.length
         ? app.models
-        : (DESKTOP_QUOTA_MODELS[app.id] ?? [])
+        : app.answered === true
+          ? []
+          : (DESKTOP_QUOTA_MODELS[app.id] ?? [])
 
     if (!app.connected || models.length === 0) {
       continue
@@ -218,17 +260,23 @@ export function desktopQuotaProviders(): ModelOptionProvider[] {
 }
 
 /**
- * Fetch the live model catalog for a connected app directly from the aigw
- * gateway's OpenAI-compatible `/v1/models` endpoint — the authoritative source,
- * since the gateway discovers the real list from upstream (e.g. Antigravity's
- * fetchAvailableModels). Returns the model ids with the `<app>/` slug prefix
- * stripped, or null on any failure (so callers can keep the existing list).
+ * Ask the hub what it can actually serve for one app, and why the rest it cannot.
+ *
+ * The complete `/v1/models` view is read on purpose rather than `?selectable=1`:
+ * the plain view carries the same selectable verdict *plus* the reason for every
+ * model it drops (`credential_expired`, `no_tools`), and a model that vanished
+ * without an explanation is exactly the "why is this broken" the user should not
+ * have to debug.
+ *
+ * Returns null ONLY when the hub did not answer (down, timeout, rejected key). An
+ * answered-but-empty catalog returns `{ models: [] }` — that is a verdict, not a
+ * failure, and the difference decides whether pruning is allowed.
  */
-async function fetchDesktopQuotaModels(
+async function fetchDesktopQuotaCatalog(
   baseUrl: string,
   apiKey: string,
   appId: string
-): Promise<string[] | null> {
+): Promise<{ models: string[]; blocked: Record<string, string> } | null> {
   const url = `${baseUrl.replace(/\/+$/, '')}/models`
 
   try {
@@ -241,15 +289,28 @@ async function fetchDesktopQuotaModels(
     }
 
     const data = (await res.json()) as {
-      data?: Array<{ id?: string; provider?: string }>
+      data?: Array<{ id?: string; provider?: string; selectable?: boolean; unselectable_reason?: string }>
     }
 
-    const ids = (data.data ?? [])
-      .filter((m) => m?.provider === appId && typeof m.id === 'string')
-      .map((m) => m.id!.replace(new RegExp(`^${appId}/`), ''))
-      .filter(Boolean)
+    const strip = (id: string) => id.replace(new RegExp(`^${appId}/`), '')
+    const models: string[] = []
+    const blocked: Record<string, string> = {}
 
-    return ids.length ? ids : null
+    for (const row of data.data ?? []) {
+      if (row?.provider !== appId || typeof row.id !== 'string' || !row.id) {
+        continue
+      }
+
+      // Rows from a hub without the liveness annotation are treated as offered:
+      // "the gateway did not tell us" must not read as "this model is dead".
+      if (row.selectable === false) {
+        blocked[strip(row.id)] = row.unselectable_reason || 'unavailable'
+      } else {
+        models.push(strip(row.id))
+      }
+    }
+
+    return { models, blocked }
   } catch {
     return null
   }
@@ -257,9 +318,9 @@ async function fetchDesktopQuotaModels(
 
 /**
  * Re-fetch the live model list for one connected app from its aigw gateway and
- * persist it. Never wipes an existing list to empty: if the gateway returns
- * nothing (offline / not ready), we keep what we already have, then fall back
- * to the registry constant only as a last resort.
+ * persist it. A hub that never answered keeps the previous list (and marks the
+ * app unread, so no fallback is triggered on a verdict we did not receive); a hub
+ * that answered is believed, including when it says "none are pickable right now".
  */
 export async function refreshConnectedAppModels(appId: string): Promise<void> {
   const app = $connectedDesktopApps.get()[appId]
@@ -268,7 +329,7 @@ export async function refreshConnectedAppModels(appId: string): Promise<void> {
     return
   }
 
-  const live = await fetchDesktopQuotaModels(app.baseUrl, app.apiKey ?? '', appId)
+  const live = await fetchDesktopQuotaCatalog(app.baseUrl, app.apiKey ?? '', appId)
 
   const next = { ...$connectedDesktopApps.get() }
   const current = next[appId]
@@ -277,14 +338,17 @@ export async function refreshConnectedAppModels(appId: string): Promise<void> {
     return
   }
 
-  const models =
-    live && live.length
-      ? live
-      : current.models && current.models.length
-        ? current.models
-        : (DESKTOP_QUOTA_MODELS[appId] ?? [])
+  if (live === null) {
+    // No answer: keep the last good list, but say out loud that what is on screen
+    // is not a current verdict.
+    next[appId] = { ...current, answered: false }
+    $connectedDesktopApps.set(next)
+    persistString(STORE_KEY, JSON.stringify(next))
 
-  next[appId] = { ...current, models }
+    return
+  }
+
+  next[appId] = { ...current, models: live.models, blocked: live.blocked, answered: true }
   $connectedDesktopApps.set(next)
   persistString(STORE_KEY, JSON.stringify(next))
 }
@@ -298,4 +362,61 @@ export async function refreshAllConnectedAppModels(): Promise<void> {
       .filter((a) => a.connected)
       .map((a) => refreshConnectedAppModels(a.id))
   )
+}
+
+/**
+ * What the hub says, right now, about the model the composer is sitting on.
+ *
+ * Four states, and the difference between them is the whole point:
+ *   - `not_quota`  the selection belongs to the Plobi backend, nothing to police here
+ *   - `unanswered` the app is connected but no read has landed — we do not know, and
+ *                  "we did not ask" must never be acted on as "it is broken"
+ *   - `ok`         the hub offers it
+ *   - `gone`       the hub answered and does NOT offer it, with the reason it gave
+ */
+export type QuotaSelectionVerdict =
+  | { state: 'not_quota' }
+  | { state: 'unanswered' }
+  | { state: 'ok' }
+  | { reason: string; state: 'gone' }
+
+export function quotaSelectionVerdict(provider: string, model: string): QuotaSelectionVerdict {
+  const app = $connectedDesktopApps.get()[provider]
+
+  if (!app?.connected) {
+    return { state: 'not_quota' }
+  }
+
+  if (app.answered !== true) {
+    return { state: 'unanswered' }
+  }
+
+  if (app.models.includes(model)) {
+    return { state: 'ok' }
+  }
+
+  return { state: 'gone', reason: app.blocked?.[model] ?? 'not_offered' }
+}
+
+/**
+ * Where to land when the model in use just became unservable: the first model the
+ * hub still offers. Deliberately name-free — the gateway's health verdict decides,
+ * not a list copied into the UI. When more than one app is live the order is the
+ * hub's own, so the *preference* between them belongs to the user's default model
+ * setting, not to this function.
+ */
+export function firstSelectableQuotaModel(): { model: string; provider: string } | null {
+  const apps = Object.values($connectedDesktopApps.get())
+    .filter((app) => app.connected && app.answered === true && app.models.length > 0)
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+  for (const app of apps) {
+    const [model] = app.models
+
+    if (model) {
+      return { model, provider: app.id }
+    }
+  }
+
+  return null
 }

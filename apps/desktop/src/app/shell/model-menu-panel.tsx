@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
 import {
@@ -26,7 +26,7 @@ import {
 } from '@/lib/model-status-label'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
-import { desktopQuotaProviders, isDesktopQuotaProvider } from '@/store/desktop-quotas'
+import { desktopQuotaProviders, isDesktopQuotaProvider, refreshAllConnectedAppModels } from '@/store/desktop-quotas'
 import { $modelPresets, applyModelPreset, modelPresetKey } from '@/store/model-presets'
 import {
   $visibleModels,
@@ -90,6 +90,14 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
     // that the local REST fallback can't know about (#53817).
     queryFn: (): Promise<ModelOptionsResponse> => requestModelOptions({ gateway, sessionId: activeSessionId })
   })
+
+  // This panel mounts when the dropdown opens, so the quota legs it lists are
+  // re-asked from the hub at exactly the moment the user is about to pick one.
+  // A dead credential leaves the list, a renewed one comes back, and neither needs
+  // a restart or a name written down in this file.
+  useEffect(() => {
+    void refreshAllConnectedAppModels()
+  }, [])
 
   // Desktop-quota providers (Antigravity/…) route to the local aigw hub, so the
   // gateway's `model.options` (which reports the Plobi default, not the user's

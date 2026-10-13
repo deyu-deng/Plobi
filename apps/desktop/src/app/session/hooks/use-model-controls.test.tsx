@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import { cleanup, render, renderHook } from '@testing-library/react'
+import { cleanup, render, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getGlobalModelInfo } from '@/plobi'
@@ -17,12 +17,30 @@ import { useModelControls } from './use-model-controls'
 
 const setGlobalModel = vi.fn()
 const notifyError = vi.fn()
+const notify = vi.fn(() => 'n-1')
 const quotaProvider = vi.fn((_slug: string): boolean => false)
+// The hub's verdict for the model under use, and where to land if it is gone.
+const quotaVerdict = vi.fn((): { state: string } => ({ state: 'not_quota' }))
+const quotaFallback = vi.fn((): null | { model: string; provider: string } => null)
+const refreshCatalog = vi.fn(async () => {})
 
 vi.mock('@/plobi', () => ({
   getGlobalModelInfo: vi.fn(),
   setGlobalModel: (...args: Parameters<typeof setGlobalModel>) => setGlobalModel(...args)
 }))
+
+// The keys the fallback notice actually asks for. `translateNow` returns the key
+// itself when a path is missing, so the stub has to miss the same way production
+// would — otherwise "unknown reason" formatting looks tested while it is not.
+const KNOWN_I18N_KEYS = new Set([
+  'desktop.quotaFallbackMessage',
+  'desktop.quotaFallbackTitle',
+  'desktop.quotaReason.credential_expired',
+  'desktop.quotaReason.no_desktop_credential',
+  'desktop.quotaReason.no_tools',
+  'desktop.quotaReason.not_offered',
+  'desktop.quotaReason.unknown'
+])
 
 vi.mock('@/i18n', () => ({
   useI18n: () => ({
@@ -31,18 +49,25 @@ vi.mock('@/i18n', () => ({
         modelSwitchFailed: 'Model switch failed'
       }
     }
-  })
+  }),
+  translateNow: (key: string, ...args: unknown[]) =>
+    KNOWN_I18N_KEYS.has(key) ? `${key}(${args.join(',')})` : key
 }))
 
 vi.mock('@/store/notifications', () => ({
+  notify: (...args: unknown[]) => notify(...args),
   notifyError: (...args: Parameters<typeof notifyError>) => notifyError(...args)
 }))
 
-// The desktop-quota catalog belongs to `store/desktop-quotas`; this hook only
-// asks "is this a quota app?". Mock the predicate so the branch pinned below is
-// the real early-return branch without dragging the quota store in.
+// The desktop-quota catalog belongs to `store/desktop-quotas`; this hook asks two
+// questions of it — "is this a quota app?" and "does the hub still serve it?".
+// Mocked so the branches pinned below are the real early-return branches without
+// dragging the quota store (and a live hub fetch) into a unit test.
 vi.mock('@/store/desktop-quotas', () => ({
-  isDesktopQuotaProvider: (slug: string) => quotaProvider(slug)
+  firstSelectableQuotaModel: () => quotaFallback(),
+  isDesktopQuotaProvider: (slug: string) => quotaProvider(slug),
+  quotaSelectionVerdict: () => quotaVerdict(),
+  refreshAllConnectedAppModels: () => refreshCatalog()
 }))
 
 type Controls = ReturnType<typeof useModelControls>
@@ -79,6 +104,10 @@ describe('useModelControls', () => {
   beforeEach(() => {
     window.localStorage.clear()
     quotaProvider.mockReset().mockReturnValue(false)
+    quotaVerdict.mockReset().mockReturnValue({ state: 'not_quota' })
+    quotaFallback.mockReset().mockReturnValue(null)
+    refreshCatalog.mockReset().mockImplementation(async () => {})
+    notify.mockReset().mockReturnValue('n-1')
     // Back to the flat (secretary) cell so no test inherits another scope's box.
     setComposerModelScope(null)
     $activeSessionId.set(null)
@@ -410,5 +439,84 @@ describe('useModelControls', () => {
     // ...it just lands in Aura's cell instead of the shared one.
     expect(window.localStorage.getItem('plobi.desktop.composer.model.agent:aura')).toBe('gemini-3-pro')
     expect(window.localStorage.getItem('plobi.desktop.composer.model')).toBeNull()
+  })
+
+  // The subscription clock is the thing that breaks a quiet composer: an
+  // Antigravity sign-in on this machine lasts about an hour and is renewed by that
+  // desktop app, not by Plobi. When the hub stops offering the model in use, the
+  // turn must not go out to a dead leg — and the switch has to be announced.
+  it('moves the composer to a model the hub still offers and says why', async () => {
+    setCurrentProvider('antigravity')
+    setCurrentModel('gemini-3-pro')
+    quotaProvider.mockImplementation((slug: string) => slug === 'antigravity' || slug === 'workbuddy_api')
+    quotaVerdict.mockReturnValue({ state: 'gone', reason: 'credential_expired' })
+    quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect($currentModel.get()).toBe('hy3'))
+    expect($currentProvider.get()).toBe('workbuddy_api')
+    expect(notify).toHaveBeenCalledTimes(1)
+    // the notice carries both names and the hub's own reason token
+    const notice = notify.mock.calls[0][0] as { message: string; title: string }
+    expect(notice.title).toBe('desktop.quotaFallbackTitle()')
+    expect(notice.message).toContain('desktop.quotaReason.credential_expired')
+    expect(notice.message).toContain('antigravity/gemini-3-pro')
+    expect(notice.message).toContain('workbuddy_api/hy3')
+  })
+
+  // Reasons come from the providers as tokens, and a provider can report one this
+  // build has no copy for (e.g. `probe_error:OSError`). Showing the token beats
+  // showing nothing: the switch happened, and "unavailable (probe_error:OSError)"
+  // is the sentence the user can act on.
+  it('names an unmapped reason token instead of swallowing it', async () => {
+    setCurrentProvider('antigravity')
+    setCurrentModel('gemini-3-pro')
+    quotaProvider.mockReturnValue(true)
+    quotaVerdict.mockReturnValue({ state: 'gone', reason: 'probe_error:OSError' })
+    quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect(notify).toHaveBeenCalledTimes(1))
+    const notice = notify.mock.calls[0][0] as { message: string }
+    expect(notice.message).toContain('desktop.quotaReason.unknown(probe_error:OSError)')
+  })
+
+  // A hub we could not reach is not a verdict. Auto-switching on "no answer" would
+  // throw the user off a perfectly good model because a sidecar was restarting.
+  it('does not touch the selection while the hub has given no verdict', async () => {
+    setCurrentProvider('antigravity')
+    setCurrentModel('gemini-3-pro')
+    quotaProvider.mockReturnValue(true)
+    quotaVerdict.mockReturnValue({ state: 'unanswered' })
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalled())
+    // let any continuation chained onto the tick land before asserting
+    await Promise.resolve()
+
+    expect($currentModel.get()).toBe('gemini-3-pro')
+    expect(quotaFallback).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
   })
 })
