@@ -83,6 +83,7 @@ import {
   createBackendRespawnGuard,
   createDeferredSubsystemLedger,
   KEY_RECONCILE_ROW_ID,
+  missingProfileDetail,
   profileBackendRowId,
   TRAY_RESTART_ROW_ID
 } from './deferred-sidecars'
@@ -6677,9 +6678,23 @@ function forgetPoolBackendRow(profile) {
 // Record one failed attempt: the visible `red` row first, then the schedule.
 function reportPoolBackendFailure(profile, error) {
   const message = error instanceof Error ? error.message : String(error)
-  const { attempt, autoRetry, delayMs } = backendRespawnGuard.arm(profile, message)
+  const { attempt, autoRetry, delayMs, permanent } = backendRespawnGuard.arm(profile, message)
 
-  reportDeferredSubsystem(profileBackendRowId(profile), 'red', message)
+  // A profile that cannot exist says so the same way every time. Put the cause
+  // and the two ways out on the row once, and stop treating it like a backend
+  // that might come up — the retry timer is what turned five roster rows into
+  // thousands of identical spawn cycles (see isMissingProfileFailure).
+  reportDeferredSubsystem(profileBackendRowId(profile), 'red', permanent ? missingProfileDetail(profile, message) : message)
+
+  if (permanent) {
+    rememberLog(
+      `Plobi backend for profile "${profile}" is not spawnable: the profile does not exist, ` +
+        'so no respawn timer was armed. The status row carries the cause; this repeats at most ' +
+        'once per hold window until the profile is created or the roster row stops being opened'
+    )
+
+    return
+  }
 
   if (!autoRetry) {
     rememberLog(

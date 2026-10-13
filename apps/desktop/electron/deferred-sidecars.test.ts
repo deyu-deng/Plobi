@@ -22,8 +22,11 @@ import {
   DEFERRED_SUFFIX,
   PROFILE_BACKEND_ID_PREFIX,
   RED_SUFFIX,
+  RESPAWN_PERMANENT_HOLD_MS,
   deferredDetail,
   definitionFor,
+  isMissingProfileFailure,
+  missingProfileDetail,
   profileBackendRowId
 } from './deferred-sidecars'
 
@@ -281,6 +284,13 @@ test('a red row that starts answering turns ready on the same row, without a sec
 // status store) and the respawn guard below is the backoff the spawn path lacked.
 
 const MISSING_PROFILE_LINE = "Profile 'framelet' does not exist. Create it with: plobi profile create framelet"
+/**
+ * A failure that says nothing about whether the profile *can* exist — the shape
+ * the generic backoff tests are about. The missing-profile line is now a
+ * deterministic class of its own (see `isMissingProfileFailure`), so it must not
+ * double as the transient fixture.
+ */
+const TRANSIENT_BACKEND_EXIT = 'Plobi backend for profile "framelet" exited (1) before it became ready'
 
 test('a profile backend gets a lazily-created red row that quotes the CLI itself', () => {
   const ledger = createDeferredSubsystemLedger({ now: () => 5 })
@@ -337,10 +347,10 @@ test('the respawn gate blocks a retry immediately after a failure', () => {
   let clock = 1_000
   const guard = createBackendRespawnGuard({ now: () => clock })
 
-  guard.arm('framelet', MISSING_PROFILE_LINE)
+  guard.arm('framelet', TRANSIENT_BACKEND_EXIT)
 
   assert.ok(guard.blockReason('framelet'), 'a failing backend must not be respawned on the spot')
-  assert.match(guard.blockReason('framelet') ?? '', /Profile 'framelet' does not exist/, 'the reason carries the cause')
+  assert.match(guard.blockReason('framelet') ?? '', /exited \(1\)/, 'the reason carries the cause')
 
   // One millisecond short of the first delay is still blocked.
   clock += 2_000 - 1
@@ -357,7 +367,7 @@ test('the respawn interval grows with consecutive failures and is capped', () =>
   const guard = createBackendRespawnGuard({ now: () => clock })
 
   const gaps = [1, 2, 3, 4].map(attempt => {
-    const { delayMs } = guard.arm('framelet', MISSING_PROFILE_LINE)
+    const { delayMs } = guard.arm('framelet', TRANSIENT_BACKEND_EXIT)
 
     clock += delayMs
 
@@ -370,7 +380,7 @@ test('the respawn interval grows with consecutive failures and is capped', () =>
 
   // Keep arming: the growth is bounded so the worst-case block is predictable.
   for (let index = 0; index < 40; index += 1) {
-    assert.ok(guard.arm('framelet', MISSING_PROFILE_LINE).delayMs <= 120_000)
+    assert.ok(guard.arm('framelet', TRANSIENT_BACKEND_EXIT).delayMs <= 120_000)
   }
 })
 
@@ -379,7 +389,7 @@ test('auto-retry is bounded, but a later request still gets through', () => {
   const guard = createBackendRespawnGuard({ maxAutoRetries: 3, now: () => clock })
 
   const schedules = [1, 2, 3, 4].map(() => {
-    const schedule = guard.arm('framelet', MISSING_PROFILE_LINE)
+    const schedule = guard.arm('framelet', TRANSIENT_BACKEND_EXIT)
 
     clock += schedule.delayMs
 
@@ -391,6 +401,57 @@ test('auto-retry is bounded, but a later request still gets through', () => {
   // The gate expired with the last schedule, so the next user action re-attempts
   // — a capped retry, never a permanent latch that outlives the fix.
   assert.equal(guard.blockReason('framelet'), null)
+})
+
+// ── 确定性失败：profile 根本不存在（WP-DESKTOP-POOL-GHOST-PROFILE）─────────────
+
+test('a roster row with no profile gets no retry timer and a long hold', () => {
+  let clock = 0
+  const guard = createBackendRespawnGuard({ now: () => clock })
+  // The real line from the 2026-10-13 incident (a course row, no profile dir).
+  const ghostLine = "Profile '电工电子学' does not exist. Create it with: plobi profile create 电工电子学"
+
+  const schedule = guard.arm('电工电子学', ghostLine)
+
+  assert.equal(schedule.permanent, true, 'the CLI line must classify as deterministic')
+  assert.equal(schedule.autoRetry, false, 'a deterministic failure must never be on a timer — that was the loop')
+  assert.equal(schedule.delayMs, RESPAWN_PERMANENT_HOLD_MS, 'the hold is the long window, not the 2 s backoff step')
+
+  // 15 s renderer reconnects: blocked, and the cause is said ONCE per window.
+  clock += 15_000
+
+  const first = guard.blockReason('电工电子学') ?? ''
+
+  assert.match(first, /Profile '电工电子学' does not exist/, 'the first reason carries the cause')
+
+  clock += 15_000
+
+  const second = guard.blockReason('电工电子学') ?? ''
+
+  assert.ok(second, 'still blocked')
+  assert.ok(!/does not exist/.test(second), 'a repeat within the window must not re-print the cause 2,214 times')
+
+  // The window expires, so creating the profile heals the row by itself.
+  clock = RESPAWN_PERMANENT_HOLD_MS
+
+  assert.equal(guard.blockReason('电工电子学'), null, 'never a permanent latch')
+})
+
+test('the CLI accepts no name at all: argparse invalid choice is the same class', () => {
+  const argparseLine = "plobi: error: argument command: invalid choice: '大学物理（甲）ⅱ' (choose from chat, model)"
+
+  assert.equal(isMissingProfileFailure(argparseLine), true, 'a non-profile-id name lands in the subcommand slot')
+  assert.equal(isMissingProfileFailure(MISSING_PROFILE_LINE), true)
+  assert.equal(isMissingProfileFailure(TRANSIENT_BACKEND_EXIT), false, 'ordinary exits stay retryable')
+})
+
+test('the permanent row names both ways out instead of dumping CLI text', () => {
+  const detail = missingProfileDetail('电工电子学', MISSING_PROFILE_LINE)
+
+  assert.match(detail, /no profile to run as/)
+  assert.match(detail, /plobi profile create 电工电子学/, 'the one actionable command it has')
+  assert.match(detail, /data, not an agent/, 'it must say a 课程 row is data — the honest cause')
+  assert.match(detail, new RegExp(MISSING_PROFILE_LINE.slice(0, 20)), 'the CLI line stays attached as evidence')
 })
 
 test('clear() only reports a real change, so a healthy backend stays silent', () => {

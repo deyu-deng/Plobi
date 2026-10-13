@@ -52,6 +52,13 @@
 //     failure *recoverable*: the gate only blocks until the next attempt is due,
 //     so the profile coming back to life — or the user asking again — gets
 //     through on its own.
+//   * inside that guard, one class of failure is *deterministic*: a profile that
+//     does not exist (or a name the CLI will not accept as a profile id at all).
+//     Those get no retry timer and a long hold window, because a timer on a
+//     deterministic failure is just an infinite loop that happens to cost a
+//     process boot each time — which is how five data-only roster rows filled
+//     desktop.log with ~3,900 identical spawn cycles and stalled the backend's
+//     event loop for ~20 s at a stretch (2026-10-13, WP-DESKTOP-POOL-GHOST-PROFILE).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type DeferredSubsystemState = 'deferred' | 'probing' | 'ready' | 'red'
@@ -334,10 +341,52 @@ const RESPAWN_MAX_DELAY_MS = 120_000
  */
 const RESPAWN_MAX_AUTO_RETRIES = 8
 
+/**
+ * How long a *deterministic* spawn failure stays blocked. Long enough that a
+ * 15 s renderer reconnect costs an IPC and a thrown reason instead of a whole
+ * `plobi` subprocess boot; short enough that creating the missing profile (or
+ * deleting the roster row) heals the row by itself on the next request.
+ */
+const RESPAWN_PERMANENT_HOLD_MS = 600_000
+
+/**
+ * Two shapes of spawn failure are not transient — retrying them proves nothing:
+ *   1. the CLI's own "Profile 'X' does not exist. Create it with: …" (exit 1);
+ *   2. argparse eating the profile name as a subcommand, "argument command:
+ *      invalid choice: 'X'" (exit 2) — what happens when the value is not a
+ *      valid profile id at all, e.g. a non-ASCII roster key dropped by the
+ *      CLI's `-p` pre-scan (the hazard documented in
+ *      `plobi/agents/registry.py`'s `profile_name` comment).
+ *
+ * The 2026-10-13 incident this exists for: five `role: l2_course` rows were put
+ * in the roster on 2026-10-12 20:1x. Course rows are *data* (裁定 recorded in
+ * `plobi/routing/models.py`: no route, not askable), so they have no profile
+ * directory — yet the console hands their name out as a `profile`, the renderer
+ * reconnect loop asks for a backend for them, and desktop.log filled itself with
+ * 2,214 + 1,316 + 280 + 96 identical spawn/exit cycles for four profiles that
+ * can never come up.
+ */
+function isMissingProfileFailure(message: string): boolean {
+  return /does not exist\. Create it with:/i.test(message) || /argument command: invalid choice:/i.test(message)
+}
+
+/** The honest wording for a permanent row: what is wrong, and the two ways out. */
+function missingProfileDetail(profile: string, message: string): string {
+  return (
+    `This roster row has no profile to run as, so nothing was ever listening — "${profile}" ` +
+    'is either a data-only entry (a 课程 row is data, not an agent: no model route, not askable) ' +
+    `or the profile was never created. Either stop opening it, or run "plobi profile create ${profile}". ` +
+    `The backend will not be re-spawned on a timer until that changes (CLI said: ${message})`
+  )
+}
+
 interface RespawnGate {
   attempt: number
   message: string
   nextAttemptAt: number
+  /** Deterministic failure: no timer is armed, and the block reason is said once. */
+  permanent: boolean
+  reported: boolean
 }
 
 /**
@@ -361,21 +410,34 @@ function createBackendRespawnGuard({
   return {
     /**
      * Record one more failed attempt and return the schedule for the next one.
-     * `autoRetry` says whether the caller should arm a timer at all.
+     * `autoRetry` says whether the caller should arm a timer at all — a
+     * deterministic failure never gets a timer, because a timer would just
+     * re-run the same exit within the same second, forever.
      */
-    arm(profile: string, message: string): { attempt: number; autoRetry: boolean; delayMs: number } {
+    arm(profile: string, message: string): {
+      attempt: number
+      autoRetry: boolean
+      delayMs: number
+      permanent: boolean
+    } {
       const attempt = (gates.get(profile)?.attempt ?? 0) + 1
-      const delayMs = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1))
+      const backoff = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1))
+      const permanent = isMissingProfileFailure(message)
+      const delayMs = permanent ? Math.max(backoff, RESPAWN_PERMANENT_HOLD_MS) : backoff
 
-      gates.set(profile, { attempt, message, nextAttemptAt: now() + delayMs })
+      gates.set(profile, { attempt, message, nextAttemptAt: now() + delayMs, permanent, reported: false })
 
-      return { attempt, autoRetry: attempt <= maxAutoRetries, delayMs }
+      return { attempt, autoRetry: permanent ? false : attempt <= maxAutoRetries, delayMs, permanent }
     },
 
     /**
      * Why this profile may not be spawned right now, or `null` when a spawn is
      * allowed. The message carries the previous failure verbatim so a caller who
      * is blocked still learns the cause instead of getting a bare refusal.
+     *
+     * A permanent gate says the *cause* once per window: the ledger row already
+     * holds it, and the renderer reconnects on a fixed interval, so repeating it
+     * is exactly how one roster row wrote 2,214 identical lines into the log.
      */
     blockReason(profile: string): string | null {
       const gate = gates.get(profile)
@@ -385,6 +447,15 @@ function createBackendRespawnGuard({
       }
 
       const waitSeconds = Math.ceil((gate.nextAttemptAt - now()) / 1000)
+
+      if (gate.permanent && gate.reported) {
+        return (
+          `Plobi backend for profile "${profile}" is not spawnable (next try in ${waitSeconds}s; ` +
+          'the cause is already on the status row)'
+        )
+      }
+
+      gate.reported = true
 
       return (
         `Plobi backend for profile "${profile}" failed (attempt ${gate.attempt}; ` +
@@ -410,7 +481,10 @@ export {
   RESPAWN_BASE_DELAY_MS,
   RESPAWN_MAX_AUTO_RETRIES,
   RESPAWN_MAX_DELAY_MS,
+  RESPAWN_PERMANENT_HOLD_MS,
   deferredDetail,
   definitionFor,
+  isMissingProfileFailure,
+  missingProfileDetail,
   profileBackendRowId
 }
