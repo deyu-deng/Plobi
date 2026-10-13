@@ -350,3 +350,104 @@ def test_e2e_written_config_file_reaches_the_http_client(tmp_path, monkeypatch):
         assert asked == ["https://api.openai.com/v1"]
     finally:
         client.close()
+
+
+# --- membership in the table (ruling 10-12: 池子成员搬进表) ---------------------
+
+_SS = {"type": "ss", "server": "hk1.example.test", "port": 8388,
+       "cipher": "aes-256-gcm", "password_env": "PW_HK1"}
+_VMESS = {"type": "vmess", "server": "5.6.7.8", "port": 443, "uuid_env": "U_JP",
+          "tls": True, "alterId": 0}
+
+
+def _membership(**over):
+    block = {"nodes": {"hk1": dict(_SS), "jp2": dict(_VMESS)},
+             "groups": {"POOL": {"type": "url-test", "include": "*", "interval": 600}},
+             "rules": [{"match": "*", "via": "proxy:POOL"}]}
+    block.update(over)
+    return load_table(config={"network": {"egress": block}})
+
+
+def test_membership_is_expressed_without_putting_a_value_in_the_table(monkeypatch):
+    monkeypatch.setenv("PW_HK1", "sekret")
+    monkeypatch.setenv("U_JP", "uuid-value")
+    table = _membership()
+
+    assert sorted(table.engine_names) == ["POOL", "hk1", "jp2"]
+    # names only: whatever the parser holds, a value must not be in it
+    assert "sekret" not in repr(table) and "uuid-value" not in repr(table)
+    assert table.nodes["hk1"].secret_env == {"password": "PW_HK1"}
+
+
+def test_a_rule_pointing_at_membership_is_engine_only(monkeypatch):
+    """The child env cannot carry ss://, and in-process httpx cannot dial it either."""
+    monkeypatch.setenv("PW_HK1", "x")
+    monkeypatch.setenv("U_JP", "y")
+    table = _membership()
+
+    assert [r.match for r in table.engine_only_rules] == ["*"]
+    assert [r.match for r in table.env_dropped_rules] == ["*"]
+    assert egress.default_decision(table) is None, "no URL may be invented for a node or group"
+    assert decide(table, "anything.test") is None
+
+
+def test_a_front_door_can_still_be_the_childs_answer(monkeypatch):
+    """Declaring the engine's own listen port as a URL exit is how children join."""
+    monkeypatch.setenv("PW_HK1", "x")
+    monkeypatch.setenv("U_JP", "y")
+    table = load_table(config={"network": {"egress": {
+        "proxies": {"front": {"url": "http://127.0.0.1:7898"}},
+        "nodes": {"hk1": dict(_SS)},
+        "rules": [{"match": "hk1.example.test", "via": "proxy:POOL"},
+                  {"match": "*", "via": "proxy:front"}],
+        "groups": {"POOL": {"type": "select", "include": ["hk1"]}},
+    }}})
+    assert [r.match for r in table.engine_only_rules] == ["hk1.example.test"]
+    assert egress.default_decision(table).proxy_url == "http://127.0.0.1:7898"
+
+
+def test_membership_names_keep_their_case(monkeypatch):
+    monkeypatch.setenv("PW_HK1", "x")
+    monkeypatch.setenv("U_JP", "y")
+    table = _membership()
+    assert table.rules[-1].via == "proxy:POOL"
+    assert load_table(config={"network": {"egress": {
+        "proxies": {"front": {"url": "http://127.0.0.1:1"}},
+        "rules": [{"match": "*", "via": "PROXY:front"}]}}}).rules[-1].via == "proxy:front"
+
+
+def test_a_group_can_only_include_members_that_exist():
+    with pytest.raises(EgressConfigError, match="not under network.egress.nodes"):
+        load_table(config={"network": {"egress": {
+            "nodes": {"hk1": dict(_SS)},
+            "groups": {"POOL": {"type": "select", "include": ["ghost"]}},
+            "rules": [{"match": "*", "via": "proxy:POOL"}]}}})
+
+
+def test_a_name_cannot_be_both_a_node_and_a_group():
+    with pytest.raises(EgressConfigError, match="must resolve one way"):
+        load_table(config={"network": {"egress": {
+            "nodes": {"POOL": dict(_SS)},
+            "groups": {"POOL": {"type": "select", "include": ["POOL"]}},
+            "rules": [{"match": "*", "via": "proxy:POOL"}]}}})
+
+
+def test_an_unsupported_node_type_is_named_not_dropped():
+    with pytest.raises(EgressConfigError, match="unsupported"):
+        load_table(config={"network": {"egress": {
+            "nodes": {"weird": {"type": "snyk", "server": "1.2.3.4", "port": 1}},
+            "rules": [{"match": "*", "via": "proxy:weird"}]}}})
+
+
+def test_a_real_pools_extra_fields_pass_through_instead_of_blocking_the_table(monkeypatch, caplog):
+    """Refusing unknown fields would have locked this box's own 46 nodes out."""
+    monkeypatch.setenv("PW_HK1", "x")
+    entry = dict(_SS)
+    entry.update({"udp": True, "client-fingerprint": "chrome", "some-future-field": 1})
+    table = load_table(config={"network": {"egress": {
+        "nodes": {"hk1": entry},
+        "rules": [{"match": "*", "via": "proxy:hk1"}]}}})
+    assert table.nodes["hk1"].fields["udp"] is True
+    assert table.nodes["hk1"].fields["client-fingerprint"] == "chrome"
+    assert table.nodes["hk1"].fields["some-future-field"] == 1
+    assert "some-future-field" in caplog.text

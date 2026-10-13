@@ -67,25 +67,71 @@ class Rule:
 
 
 @dataclass(frozen=True)
+class Node:
+    """One engine-side member (a real proxy node, not a forward proxy).
+
+    The table owns routing *and*, since 2026-10-12, its own membership: a rule
+    may now point at a node or a group, and the compiler emits them into the
+    engine config.  The two consequences of that are enforced here rather than
+    documented:
+
+    * **No secret ever lands in this object.**  ``password``/``uuid``/``username``
+      may only be declared as ``*_env`` references, so the file users hand-edit
+      keeps names and ``.env`` keeps the values; the compiler resolves them at
+      emit time and nothing else does.
+    * **A child cannot express it.**  ``ss://``/``vmess://`` are not what
+      ``HTTPS_PROXY`` means, so rules pointing here are engine-only: the
+      in-process resolver skips them, and :attr:`Table.engine_only_rules` and
+      :attr:`Table.env_dropped_rules` both say so out loud.
+    """
+
+    name: str
+    type: str
+    server: str
+    port: int
+    fields: dict[str, Any] = field(default_factory=dict)
+    #: Secret fields given **inline** in config.yaml.  Accepted with a warning —
+    #: refusing them would make migrating a real pool an outage — but the settings
+    #: write path rejects them outright.
+    secrets: dict[str, Any] = field(default_factory=dict)
+    #: Secret fields given as ``<field>_env``: field name → environment variable
+    #: name.  Only names live here; the value is read at compile time.
+    secret_env: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Group:
+    name: str
+    type: str
+    members: tuple[str, ...]
+    #: ``True`` for ``include: '*'`` — every node in the table.
+    all_members: bool = False
+    interval: int = 0
+
+
+@dataclass(frozen=True)
 class Table:
     rules: tuple[Rule, ...] = ()
     proxies: dict[str, str] = field(default_factory=dict)
     mirrors: dict[str, str] = field(default_factory=dict)
+    nodes: dict[str, Node] = field(default_factory=dict)
+    groups: dict[str, Group] = field(default_factory=dict)
     engine_enabled: bool = False
     engine_binary: str = ""
     engine_mixed_port: int = 0
-    #: Extra engine config files to merge (mihomo's top-level ``include``).
-    #: A node pool is not a forward proxy — ss:// and vmess:// cannot live in
-    #: ``proxies``, and pasting 46 cleartext node entries into the routing table
-    #: would put secrets in the file users hand-edit.  So the table names the
-    #: exit and *references* the membership instead of owning it.
-    #:
-    #: ⚠️ The reference is **not** rendered into the compiled config: measured on
-    #: this box with mihomo v1.19.32 (2026-10-12 08:46), a top-level ``include``
-    #: key is ignored by the engine.  :mod:`agent.egress.mihomo_config` refuses
-    #: such a table, and :mod:`agent.egress.engine` starts the engine on the
-    #: directory holding that file instead — the pool is mihomo's own workdir.
+    #: The engine's own workdir (the directory holding its ``config.yaml``), used
+    #: when the pool stays outside the table.  A node pool cannot be *rendered*
+    #: into a generated config through a key like this — measured on this box with
+    #: mihomo v1.19.32 (2026-10-12 08:46) that a top-level ``include`` is ignored
+    #: (``mihomo -t`` answers ``proxy [x] not found``, rc=1) — so
+    #: :mod:`agent.egress.mihomo_config` refuses to pretend otherwise, and
+    #: :mod:`agent.egress.engine` starts the engine on this directory instead.
+    #: Membership of one's own now belongs in ``nodes``/``groups`` above.
     engine_include: tuple[str, ...] = ()
+    #: Resolvers for the engine to dial its own upstreams with, e.g.
+    #: ``{default_nameserver: ['223.5.5.5'], nameserver: ['223.5.5.5']}``.  Left empty
+    #: on purpose: the compiler refuses to invent public DNS for somebody's machine.
+    engine_dns: dict[str, Any] = field(default_factory=dict)
 
     #: Non-empty when the config could not be read at all, which is a *different*
     #: state from "no table declared": a caller that must not run unrouted (the
@@ -97,21 +143,33 @@ class Table:
         return bool(self.rules)
 
     @property
+    def engine_names(self) -> frozenset[str]:
+        """Exit names only the engine can act on — nodes and groups."""
+        return frozenset(self.nodes) | frozenset(self.groups)
+
+    def _rule_is_engine_only(self, rule: "Rule") -> bool:
+        return rule.kind == "geosite" or (
+            rule.via.startswith("proxy:") and rule.via[len("proxy:") :] in self.engine_names
+        )
+
+    @property
     def engine_only_rules(self) -> tuple[Rule, ...]:
-        return tuple(r for r in self.rules if r.kind == "geosite")
+        return tuple(r for r in self.rules if self._rule_is_engine_only(r))
 
     @property
     def env_dropped_rules(self) -> tuple[Rule, ...]:
         """Rules the subprocess environment cannot carry.
 
-        A child can only be told "one exit, plus a list of hosts that skip it".
-        When the catch-all is ``direct`` there is no exit to name, so every
-        ``via: proxy:...`` rule above it silently loses its meaning for that
-        child — the in-process resolver is unaffected, which is exactly why this
-        must be reported rather than left to the docstring.
+        Two distinct reasons, reported together because the child's answer is the
+        same (that route simply does not reach it):
+
+        * the catch-all is ``direct``, so a ``proxy:`` rule above it has no exit
+          to name;
+        * the rule's exit is a **node or group** — engine-only, because
+          ``HTTPS_PROXY`` cannot carry ``ss://``/``vmess://`` semantics.
         """
         if not self.active or self.rules[-1].via != DIRECT:
-            return ()
+            return tuple(r for r in self.rules if self._rule_is_engine_only(r) and r.kind != "geosite")
         return tuple(
             r
             for r in self.rules
@@ -122,11 +180,22 @@ class Table:
         try:
             return self.proxies[name]
         except KeyError:
+            if name in self.engine_names:
+                raise EgressConfigError(
+                    f"proxy:{name} is a node or group — only the engine can act on it, and a URL "
+                    f"cannot be derived from it.  To let spawned tools and our own HTTP clients use "
+                    f"it, declare the engine's front door (http://127.0.0.1:<mixed_port>) under "
+                    f"network.egress.proxies and point those rules at it."
+                ) from None
             raise EgressConfigError(
                 f"network.egress.rules references proxy:{name} but "
                 f"network.egress.proxies has no such entry (declared: "
                 f"{sorted(self.proxies) or 'none'})"
             ) from None
+
+    def resolves(self, name: str) -> bool:
+        """Does this exit name exist at all — as a URL exit or an engine-side one?"""
+        return name in self.proxies or name in self.engine_names
 
 
 @dataclass(frozen=True)
@@ -140,7 +209,8 @@ def _compile_rule(entry: Any, index: int) -> Rule:
     if not isinstance(entry, dict):
         raise EgressConfigError(f"{where} must be a mapping, got {type(entry).__name__}")
     match = str(entry.get("match", "")).strip().lower()
-    via = str(entry.get("via", "")).strip().lower()
+    via_raw = str(entry.get("via", "")).strip()
+    via = via_raw.lower()
     if not match:
         raise EgressConfigError(f"{where}.match is required")
     if not via:
@@ -149,13 +219,18 @@ def _compile_rule(entry: Any, index: int) -> Rule:
         kind = _matcher_kind(match, where)
         return Rule(match=match, via=via, kind=kind, value=_matcher_value(match, kind))
     if via.startswith("proxy:"):
-        name = via[len("proxy:") :].strip()
+        # Only the *keyword* is case-insensitive.  An exit name is a name — the
+        # engine's own groups are conventionally uppercase (``POOL``), and
+        # lowercasing it here would make a declared exit unreachable.
+        name = via_raw[len("proxy:") :].strip()
         if not name:
-            raise EgressConfigError(f"{where}.via '{via}' names no proxy")
+            raise EgressConfigError(f"{where}.via '{via_raw}' names no proxy")
         kind = _matcher_kind(match, where)
-        return Rule(match=match, via=via, kind=kind, value=_matcher_value(match, kind))
+        return Rule(
+            match=match, via=f"proxy:{name}", kind=kind, value=_matcher_value(match, kind)
+        )
     raise EgressConfigError(
-        f"{where}.via must be 'direct' or 'proxy:<name>', got '{via}'"
+        f"{where}.via must be 'direct' or 'proxy:<name>', got '{via_raw}'"
     )
 
 
@@ -218,6 +293,165 @@ def _proxy_url_from_entry(name: str, entry: Any) -> str:
     return normalized
 
 
+#: Engine-side member types we will compile.  Anything else is refused rather
+#: than passed through: a typo here means a node that silently never dials.
+_NODE_TYPES: dict[str, tuple[str, ...]] = {
+    "ss": ("cipher",),
+    "vmess": ("uuid",),
+    "trojan": ("password",),
+    "vless": ("uuid",),
+    "socks5": (),
+    "http": (),
+}
+#: Fields that carry a secret; each may be given inline or as ``<field>_env``.
+_SECRET_FIELDS = ("password", "uuid", "username")
+#: Non-secret per-node fields forwarded to the engine untouched.
+_NODE_PASSTHROUGH = frozenset(
+    {
+        "udp",
+        "tls",
+        "servername",
+        "sni",
+        "skip-cert-verify",
+        "alpn",
+        "client-fingerprint",
+        "packet-encoding",
+        "alterId",
+        "cipher",
+        "network",
+        "ws-opts",
+        "h2-opts",
+        "grpc-opts",
+        "reality-opts",
+        "flow",
+        "obfs",
+        "obfs-param",
+        "plugin",
+        "plugin-opts",
+    }
+)
+_GROUP_TYPES = ("url-test", "select", "fallback")
+
+_cleartext_secret_warned: set[str] = set()
+#: Engine fields we do not enumerate get one warning per field name, not one per node.
+_unknown_node_fields_warned: set[str] = set()
+
+
+def _parse_node(name: str, entry: Any) -> Node:
+    where = f"network.egress.nodes.{name}"
+    if not isinstance(entry, dict):
+        raise EgressConfigError(f"{where} must be a mapping with 'type', 'server' and 'port'")
+    kind = str(entry.get("type", "")).strip().lower()
+    if kind not in _NODE_TYPES:
+        raise EgressConfigError(
+            f"{where}.type '{kind or '(none)'}' is unsupported; expected one of "
+            f"{', '.join(sorted(_NODE_TYPES))}"
+        )
+    server = str(entry.get("server", "")).strip()
+    if not server:
+        raise EgressConfigError(f"{where}.server is required")
+    try:
+        port = int(entry.get("port", 0))
+    except (TypeError, ValueError):
+        raise EgressConfigError(f"{where}.port must be a number") from None
+    if not 0 < port < 65536:
+        raise EgressConfigError(f"{where}.port {port} is not a port")
+
+    fields: dict[str, Any] = {}
+    secrets: dict[str, Any] = {}
+    secret_env: dict[str, str] = {}
+    for required in _NODE_TYPES[kind]:
+        if required in _SECRET_FIELDS:
+            continue
+        if not entry.get(required):
+            raise EgressConfigError(f"{where}.{required} is required for type '{kind}'")
+        fields[required] = entry[required]
+
+    for field_name in _SECRET_FIELDS:
+        env_name = str(entry.get(f"{field_name}_env", "")).strip()
+        inline = entry.get(field_name)
+        if env_name and inline not in (None, ""):
+            raise EgressConfigError(f"{where} declares both '{field_name}' and '{field_name}_env'; pick one")
+        if env_name:
+            secret_env[field_name] = env_name
+        elif inline not in (None, ""):
+            if field_name in _NODE_TYPES[kind]:
+                # Accepted so a real pool can be migrated without an outage, said
+                # out loud once, and rejected on the GUI write path.
+                if where not in _cleartext_secret_warned:
+                    _cleartext_secret_warned.add(where)
+                    logging.getLogger(__name__).warning(
+                        "network.egress.nodes.%s keeps a cleartext '%s' in config.yaml — the file "
+                        "users hand-edit; declare %s_env and put the value in the root .env instead",
+                        name,
+                        field_name,
+                        field_name,
+                    )
+                secrets[field_name] = inline
+            else:
+                fields[field_name] = inline
+
+    allowed = {"type", "server", "port", "name"} | set(_NODE_PASSTHROUGH) | {
+        f for r in _NODE_TYPES[kind] for f in (r, f"{r}_env")
+    } | {f for s in _SECRET_FIELDS for f in (s, f"{s}_env")}
+    # Unknown fields are **passed through with one warning each**, not refused.
+    # Refusing them looked like typo protection until a real pool met it: this
+    # box's 46-node pool carries `alterId` (and other engine fields we never
+    # enumerated), so a refusal meant the user's own membership could not be put
+    # in the table at all — worse than the typo it was preventing.  The engine is
+    # the authority on its own fields, and it is already consulted twice: `mihomo -t`
+    # before we start, and a probe with a known answer after we do.
+    for key in entry:
+        key = str(key)
+        if key not in allowed and key not in _NODE_PASSTHROUGH and key not in fields:
+            if key not in _unknown_node_fields_warned:
+                _unknown_node_fields_warned.add(key)
+                logging.getLogger(__name__).warning(
+                    "network.egress.nodes.%s has field '%s' that this table does not know — passed "
+                    "through to the engine untouched (it will be mihomo -t and the live probe that "
+                    "judge it, not us)",
+                    name,
+                    key,
+                )
+            fields[key] = entry[key]
+
+    for key in _NODE_PASSTHROUGH:
+        if key in entry:
+            fields[key] = entry[key]
+    return Node(name=name, type=kind, server=server, port=port, fields=fields,
+                secrets=secrets, secret_env=secret_env)
+
+
+def _parse_group(name: str, entry: Any, node_names: frozenset[str]) -> Group:
+    where = f"network.egress.groups.{name}"
+    if not isinstance(entry, dict):
+        raise EgressConfigError(f"{where} must be a mapping with 'type' and 'include'")
+    kind = str(entry.get("type", "")).strip()
+    if kind not in _GROUP_TYPES:
+        raise EgressConfigError(
+            f"{where}.type '{kind or '(none)'}' is unsupported; expected one of {', '.join(_GROUP_TYPES)}"
+        )
+    include = entry.get("include")
+    interval = entry.get("interval", 0) or 0
+    if include == "*":
+        if not node_names:
+            raise EgressConfigError(f"{where}.include is '*' but network.egress.nodes is empty")
+        return Group(name=name, type=kind, members=tuple(sorted(node_names)), all_members=True,
+                     interval=int(interval))
+    if not isinstance(include, Iterable) or isinstance(include, (str, bytes)):
+        raise EgressConfigError(f"{where}.include must be a list of node names or '*'")
+    members = tuple(str(m).strip() for m in include)
+    if not members:
+        raise EgressConfigError(f"{where}.include is empty")
+    unknown = [m for m in members if m not in node_names]
+    if unknown:
+        raise EgressConfigError(
+            f"{where}.include names {', '.join(unknown)} which is not under network.egress.nodes "
+            f"(declared: {', '.join(sorted(node_names)) or 'none'})"
+        )
+    return Group(name=name, type=kind, members=members, interval=int(interval))
+
+
 def parse_table(raw: Any) -> Table:
     """Validate a ``network.egress`` mapping into a :class:`Table`."""
     if raw is None or raw == {}:
@@ -233,6 +467,25 @@ def parse_table(raw: Any) -> Table:
         for name, entry in proxies_raw.items()
     }
 
+    nodes_raw = raw.get("nodes") or {}
+    if not isinstance(nodes_raw, dict):
+        raise EgressConfigError("network.egress.nodes must be a mapping of name -> node")
+    nodes = {str(name): _parse_node(str(name), entry) for name, entry in nodes_raw.items()}
+
+    groups_raw = raw.get("groups") or {}
+    if not isinstance(groups_raw, dict):
+        raise EgressConfigError("network.egress.groups must be a mapping of name -> group")
+    groups = {
+        str(name): _parse_group(str(name), entry, frozenset(nodes))
+        for name, entry in groups_raw.items()
+    }
+    shadowed = sorted(set(nodes) & set(groups))
+    if shadowed:
+        raise EgressConfigError(
+            f"network.egress.nodes and .groups both declare: {', '.join(shadowed)} — an exit name "
+            "must resolve one way, not two"
+        )
+
     rules_raw = raw.get("rules") or []
     if not isinstance(rules_raw, Iterable) or isinstance(rules_raw, (str, bytes)):
         raise EgressConfigError("network.egress.rules must be a list")
@@ -247,8 +500,10 @@ def parse_table(raw: Any) -> Table:
         if rule.via != DIRECT and not rule.via.startswith("proxy:"):  # pragma: no cover
             raise EgressConfigError(f"rule '{rule.match}' has an unusable via '{rule.via}'")
         if rule.via.startswith("proxy:"):
-            table_probe = Table(proxies=proxies)
-            table_probe.proxy_url(rule.via[len("proxy:") :])
+            probe = Table(proxies=proxies, nodes=nodes, groups=groups)
+            name = rule.via[len("proxy:") :]
+            if not probe.resolves(name):
+                probe.proxy_url(name)  # raises with the "not declared" wording
 
     mirrors_raw = raw.get("mirrors") or {}
     if not isinstance(mirrors_raw, dict):
@@ -278,11 +533,32 @@ def parse_table(raw: Any) -> Table:
         rules=rules,
         proxies=proxies,
         mirrors=mirrors,
+        nodes=nodes,
+        groups=groups,
         engine_enabled=bool(engine_raw.get("enabled", False)),
         engine_binary=str(engine_raw.get("binary", "") or "").strip(),
         engine_mixed_port=mixed_port,
         engine_include=_parse_include(engine_raw),
+        engine_dns=_parse_dns(engine_raw),
     )
+
+
+def _parse_dns(engine_raw: dict) -> dict[str, Any]:
+    """`engine.dns` — passed through to the engine, keys normalised to its spelling."""
+    dns_raw = engine_raw.get("dns")
+    if dns_raw in (None, {}):
+        return {}
+    if not isinstance(dns_raw, dict):
+        raise EgressConfigError("network.egress.engine.dns must be a mapping")
+    out: dict[str, Any] = {}
+    for key, value in dns_raw.items():
+        key = str(key).strip()
+        if not key:
+            raise EgressConfigError("network.egress.engine.dns contains an empty key")
+        if isinstance(value, (list, tuple)):
+            value = [str(v).strip() for v in value if str(v).strip()]
+        out[key.replace('_', '-')] = value
+    return out
 
 
 def _parse_include(engine_raw: dict) -> tuple[str, ...]:
@@ -370,14 +646,26 @@ def _report_unrepresentable(table: Table) -> Table:
             [r.match for r in table.engine_only_rules],
         )
     if table.env_dropped_rules:
-        log.warning(
-            "network.egress: %d rule(s) %s route to a named exit, but the catch-all "
-            "rule is direct — a spawned subprocess cannot be told 'one exit except "
-            "these hosts' in that shape, so those rules apply in-process only and "
-            "are dropped from the child's environment",
-            len(table.env_dropped_rules),
-            [r.match for r in table.env_dropped_rules],
-        )
+        # Two different reasons reach the same child-side outcome; saying only one
+        # of them would send the next reader to fix the wrong thing.
+        catch_all_direct = bool(table.active) and table.rules[-1].via == DIRECT
+        if catch_all_direct:
+            log.warning(
+                "network.egress: %d rule(s) %s route to a named exit, but the catch-all "
+                "rule is direct — a spawned subprocess cannot be told 'one exit except "
+                "these hosts' in that shape, so those rules apply in-process only and "
+                "are dropped from the child's environment",
+                len(table.env_dropped_rules),
+                [r.match for r in table.env_dropped_rules],
+            )
+        else:
+            log.warning(
+                "network.egress: %d rule(s) %s point at a node or group — ss:// and vmess:// "
+                "have no URL form, so a spawned subprocess cannot be told about them and the "
+                "engine is the only thing that will honor those rules",
+                len(table.env_dropped_rules),
+                [r.match for r in table.env_dropped_rules],
+            )
     return table
 
 
@@ -392,6 +680,11 @@ def default_decision(table: Table) -> Optional[Decision]:
     if not table.active:
         return None
     rule = table.rules[-1]
+    if table._rule_is_engine_only(rule):
+        # The catch-all is an engine-side member: there is no URL any caller here
+        # can be handed, and inventing one would route traffic somewhere the
+        # table never pointed.
+        return None
     if rule.via == DIRECT:
         return Decision(proxy_url=None, rule=rule)
     return Decision(proxy_url=table.proxy_url(rule.via[len("proxy:") :]), rule=rule)
@@ -405,7 +698,10 @@ def decide(table: Table, host: str) -> Optional[Decision]:
     for rule in table.rules:
         if not _rule_matches(rule, host):
             continue
-        if rule.kind == "geosite":
+        if table._rule_is_engine_only(rule):
+            # geosite matchers need the engine's data files, and a node/group exit
+            # has no URL to hand out: both fall through to the next rule instead
+            # of guessing, and both are named by engine_only_rules.
             continue
         if rule.via == DIRECT:
             return Decision(proxy_url=None, rule=rule)

@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlparse
 
 import yaml
 
-from agent.egress.rules import EgressConfigError, Table
+from agent.egress.rules import EgressConfigError, Node, Table
 
 _SCHEME_TO_TYPE = {"http": "http", "https": "http", "socks5": "socks5", "socks5h": "socks5h"}
 _DEFAULT_PORT = {"http": 80, "socks5": 1080, "socks5h": 1080}
@@ -44,6 +44,23 @@ def compile_config(
             f"network.egress.engine.mixed_port (no default is invented here)"
         )
 
+    #: A referenced pool cannot be rendered: measured on this box with mihomo
+    #: v1.19.32 (2026-10-12 08:46) a top-level ``include`` key is **ignored** —
+    #: ``mihomo -t`` answers ``proxy [<name>] not found`` and exits 1 for a rule
+    #: whose node lives only in the referenced file — so emitting it would produce
+    #: either a refused config or an engine with no upstreams at all.  The pool is
+    #: the engine's own workdir (``agent.egress.engine`` starts ``-d`` on it); a
+    #: table that wants to *compile* its membership declares it under ``nodes``.
+    if table.engine_include:
+        raise EgressConfigError(
+            f"network.egress.engine.include_files names {len(table.engine_include)} file(s), and "
+            f"this compiler will not emit them: mihomo ignores a top-level 'include' key "
+            f"(-t: 'proxy [x] not found', rc=1, measured on this box 2026-10-12 08:46).  Either "
+            f"start the engine on that directory as its own workdir "
+            f"(agent.egress.engine does exactly that), or put the membership under "
+            f"network.egress.nodes/.groups so this table can compile it."
+        )
+
     declared: set[str] = set()
     proxies: list[dict[str, Any]] = []
     for name in sorted(table.proxies):
@@ -51,13 +68,33 @@ def compile_config(
         declared.add(name)
         proxies.append(entry)
 
+    #: Engine-side members join the same ``proxies`` list the engine reads; their
+    #: secrets are resolved from the environment **here and only here**, so the
+    #: table object never carries a value that could reach a log or a report.
+    for name in sorted(table.nodes):
+        entry = _node_entry(table.nodes[name])
+        declared.add(name)
+        proxies.append(entry)
+    groups: list[dict[str, Any]] = []
+    for name in sorted(table.groups):
+        group = table.groups[name]
+        members = sorted(table.nodes) if group.all_members else list(group.members)
+        entry: dict[str, Any] = {"name": name, "type": group.type, "proxies": members}
+        if group.interval:
+            entry["interval"] = group.interval
+        if group.type != "select":
+            entry["url"] = "http://www.gstatic.com/generate_204"
+            entry["lazy"] = True
+        declared.add(name)
+        groups.append(entry)
+
     rules: list[str] = []
     for rule in table.rules:
         target = "DIRECT" if rule.via == "direct" else rule.via[len("proxy:") :]
         if target != "DIRECT" and target not in declared:
             raise EgressConfigError(
-                f"rule '{rule.match}' targets '{target}', which is not declared under "
-                f"network.egress.proxies"
+                f"rule '{rule.match}' targets '{target}', which is neither declared under "
+                f"network.egress.proxies nor present among .nodes/.groups"
             )
         rules.append(_rule_line(rule.kind, rule.value, target))
 
@@ -69,21 +106,30 @@ def compile_config(
         "proxies": proxies,
         "rules": rules,
     }
+    if groups:
+        document["proxy-groups"] = groups
     if external_controller:
         document["external-controller"] = external_controller
     if secret:
         document["secret"] = secret
-    if table.engine_include:
+    #: Name resolution is not ours to invent.  Every node in a real pool on this
+    #: box is addressed by **domain** (46/46 measured 2026-10-13 08:3x), and a
+    #: compiled config with no `dns:` block cannot resolve them: the engine starts,
+    #: `mihomo -t` is happy, and every request comes back 502.  So a table with
+    #: domain-addressed nodes must state its resolvers — refusing is cheaper than
+    #: silently picking public DNS for somebody else's machine.
+    domain_nodes = [n for n in table.nodes.values() if not _is_ip_literal(n.server)]
+    if domain_nodes and not table.engine_dns:
         raise EgressConfigError(
-            f"network.egress.engine.include_files names {len(table.engine_include)} file(s), and "
-            f"this compiler will not emit them: mihomo v1.19.32 on this box (measured 2026-10-12 "
-            f"08:46) **ignores** a top-level 'include' key -- 'mihomo -t' answers "
-            f"'proxy [<name>] not found' and exits 1 for a rule whose node lives only in the "
-            f"referenced file -- so rendering it would hand the supervision slice a config the "
-            f"engine refuses, or an engine running with no upstreams at all.  A node pool is the "
-            f"engine's own workdir: see agent.egress.engine, which starts mihomo with -d set to the "
-            f"directory holding that file."
+            f"{len(domain_nodes)} of {len(table.nodes)} node(s) are addressed by domain "
+            f"(e.g. {domain_nodes[0].name} -> {domain_nodes[0].server}) but "
+            f"network.egress.engine.dns is empty — the engine would start, pass -t, and answer 502 "
+            f"because it cannot resolve its own upstreams.  Declare "
+            f"engine.dns: {{default_nameserver: [...], nameserver: [...]}} (the resolvers this "
+            f"box's own pool uses are named in its config.yaml), or address nodes by IP."
         )
+    if table.engine_dns:
+        document["dns"] = dict(table.engine_dns)
 
     _refuse_self_reference(proxies, port)
 
@@ -139,6 +185,41 @@ def _proxy_entry(name: str, url: str) -> dict[str, Any]:
         entry["username"] = unquote(parsed.username)
     if parsed.password:
         entry["password"] = unquote(parsed.password)
+    return entry
+
+
+def _is_ip_literal(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _node_entry(node: "Node") -> dict[str, Any]:
+    """One engine-side member, with its secret resolved from the environment now.
+
+    Resolution happens here and nowhere else: the table carries ``*_env`` **names**,
+    so a status print, a log line or the settings API cannot leak a value by
+    accident.  A named-but-unset variable is a refusal that names it — never a
+    silently empty credential, which the engine would accept and then never dial.
+    """
+    entry: dict[str, Any] = {
+        "name": node.name,
+        "type": node.type,
+        "server": node.server,
+        "port": node.port,
+    }
+    entry.update(node.fields)
+    entry.update(node.secrets)
+    for field, env_name in sorted(node.secret_env.items()):
+        value = os.environ.get(env_name, "").strip()
+        if not value:
+            raise EgressConfigError(
+                f"network.egress.nodes.{node.name}.{field}_env names '{env_name}' but that variable "
+                f"is not set — the credential belongs in the root .env"
+            )
+        entry[field] = value
     return entry
 
 

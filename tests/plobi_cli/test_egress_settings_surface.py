@@ -155,3 +155,38 @@ def test_the_endpoint_refuses_the_corrupting_save_with_the_parsers_words(tmp_pat
     fetched = client.get("/api/network/egress", headers=_auth()).json()
     assert fetched["network"]["egress"]["rules"][1]["via"] == "proxy:home"
     assert fetched["declared"] is True
+
+
+def test_the_pool_import_is_read_only_and_keeps_secrets_out_of_the_snippet(tmp_path):
+    from plobi_cli.egress_config import export_pool_membership
+
+    pool = tmp_path / "config.yaml"
+    original = yaml.safe_dump({
+        "proxies": [
+            {"name": "n01 hk", "type": "ss", "server": "a.test", "port": 8388,
+             "cipher": "aes-256-gcm", "password": "cleartext-hk", "udp": True},
+            {"name": "n02", "type": "vmess", "server": "b.test", "port": 443,
+             "uuid": "uuid-cleartext", "tls": True, "alterId": 0},
+            {"name": "n03", "type": "tuic", "server": "c.test", "port": 443, "token": "x"},
+        ],
+        "proxy-groups": [{"name": "POOL", "type": "url-test", "proxies": ["n01 hk", "n03"],
+                          "interval": 600}],
+        "rules": ["MATCH,POOL"],
+    }, sort_keys=False)
+    pool.write_text(original, encoding="utf-8")
+
+    snippet, env_values, notes = export_pool_membership(str(pool))
+
+    assert sorted(snippet["nodes"]) == ["n01 hk", "n02"], "the unsupported type is skipped, not guessed"
+    assert any("tuic" in n for n in notes), notes
+    # nothing cleartext survives into the table shape
+    dumped = yaml.safe_dump(snippet)
+    assert "cleartext-hk" not in dumped and "uuid-cleartext" not in dumped
+    assert snippet["nodes"]["n01 hk"]["password_env"] == "PLOBI_EGRESS_N01_HK_PASSWORD"
+    assert env_values["PLOBI_EGRESS_N01_HK_PASSWORD"] == "cleartext-hk"
+    assert env_values["PLOBI_EGRESS_N02_UUID"] == "uuid-cleartext"
+    # a group keeps only members that made it in, and says which did not
+    assert snippet["groups"]["POOL"]["include"] == ["n01 hk"]
+    assert any("n03" in n for n in notes), notes
+    # and the file it read is untouched — migrating is the user's own edit
+    assert pool.read_text(encoding="utf-8") == original
