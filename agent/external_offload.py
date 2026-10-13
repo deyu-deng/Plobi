@@ -182,12 +182,6 @@ def is_sandboxed() -> bool:
 
 
 def default_workdir() -> Path:
-    base = Path(tempfile.gettempdir()) / "plobi-offload" / time.strftime("%Y%m%d")
-    base.mkdir(parents=True, exist_ok=True)
-    return base
-
-
-def default_workdir() -> Path:
     """Where an offload lands when the caller names no cwd.
 
     NOT ``tempfile.gettempdir()``: on this box that is ``C:\\Users\\...\\Temp``,
