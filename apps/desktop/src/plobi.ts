@@ -444,8 +444,11 @@ export function getNetworkEgress(): Promise<NetworkEgressRecord> {
   })
 }
 
-export function saveNetworkEgress(network: NetworkSection | null): Promise<{ ok: boolean }> {
-  return window.plobiDesktop.api<{ ok: boolean }>({
+/** `engine` is what supervision did with the table just saved (off / restarted / refused). */
+export function saveNetworkEgress(
+  network: NetworkSection | null
+): Promise<{ ok: boolean; engine?: { state: string; detail: string; probe?: string } }> {
+  return window.plobiDesktop.api<{ ok: boolean; engine?: { state: string; detail: string; probe?: string } }>({
     ...profileScoped(),
     path: '/api/network/egress',
     method: 'PUT',
