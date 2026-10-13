@@ -672,8 +672,34 @@ class AgentRegistry:
             seeded = default_project_path(entry.category)
             if seeded:
                 entry = replace(entry, project_path=seeded)
+        # 派生名撞上保留名 / 子命令 ⇒ 那个家**永远建不出来**。项目分身叫 ``Plobi`` 就是
+        # 这一类：小写化是保留名 ``plobi``，``plobi -p plobi --help`` 退 0（argparse 认），
+        # 死在后面那句 reserved 校验（2026-10-13 脑搬家线现核）。以前只给一句
+        # "建议填 ``l2-plobi``"（:func:`profile_name_blocker`），没人去填，那条记录就一直红着。
+        # 现在写入时把推荐名落成**显式 profile**：显示名仍是 ``Plobi``，内部家叫 ``l2-plobi``。
+        # 那 11 条本来能用的名字一字不改——改它们要搬 ``state.db``，会把每个分身已有的会话
+        # 历史孤儿化，那不是"修一个名字"该有的代价。两案（改名 / 项目分身干脆没有家）里取这一条。
+        if not (entry.profile or "").strip() and (entry.profile_name or "").strip():
+            from dataclasses import replace as _replace
+
+            try:
+                hint = suggested_profile_name(entry) if profile_name_blocker(entry) else ""
+            except ImportError:
+                # 判据住在 plobi_cli，而这台/这档测试里它未必解析得到真模块
+                # （见 :attr:`AgentEntry.profile_name` 那段注释）。拿不到判据就**不挡登记**：
+                # 这条是机会性改进，不该变成写入路径上的新硬依赖。
+                hint = ""
+            if hint and not self._profile_taken_by_other(hint, entry.name):
+                entry = _replace(entry, profile=hint)
         self.agents[entry.name] = entry
         return entry
+
+    def _profile_taken_by_other(self, profile: str, name: str) -> bool:
+        """推荐名已经被别的条目占着 ⇒ 不许自动落，留给 ``profile_name_blocker`` 说。"""
+        target = (profile or "").strip().lower()
+
+        return any(other.name != name and other.profile_name.strip().lower() == target
+                   for other in self.agents.values())
 
     def remove(self, name: str) -> bool:
         return self.agents.pop(name, None) is not None
@@ -971,6 +997,13 @@ def profile_name_blocker(entry: AgentEntry) -> str:
     于是那个分身永远问不到（R-071 实测第二条）。
     """
     from plobi_cli.profiles import validate_profile_name
+
+    from plobi.routing.models import L2_COURSE
+
+    if entry.role == L2_COURSE:
+        # 数据条目**本来就没有家**——这不是缺陷，不该报"建不出自己的家"。
+        # （它的"问不到"由 :func:`agent_askability` 按角色那句说，不靠这里。）
+        return ""
 
     canon = entry.profile_name
     try:
@@ -2956,6 +2989,18 @@ def append_n3_dispatch(
 
     from plobi_cli.profiles import get_profile_dir
     from plobi_state import SessionDB
+
+    if not (entry.profile_name or "").strip():
+        # 数据条目（``l2_course``）与任何 ``profile: ""`` 的记录都不该被派活：以前这里把空名
+        # 直接递给 ``get_profile_dir``，抛出一句和「保留名」长得一样的 ``ValueError: profile name
+        # cannot be empty``，被上面的调用方吞成 ``n3_error`` —— 现场没人看得见，但那条门是开的：
+        # 一旦 askability 放宽或再添一类数据角色，它就是下一个 500（2026-10-13 13:2x 现核，
+        # 由脑搬家线扫同类空 profile 门时报出，治理线自己复跑后落这颗守卫）。
+        # 现在只可能从这里出去一句指名道姓的话，且不留半截 session。
+        raise ValueError(
+            f"agent {entry.name!r} has no profile to dispatch to "
+            f"(role={entry.role or 'unset'}): this roster entry is data, not a running agent"
+        )
 
     profile_dir = get_profile_dir(entry.profile_name)
     db = SessionDB(db_path=profile_dir / "state.db")
