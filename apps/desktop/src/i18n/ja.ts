@@ -2382,6 +2382,9 @@ export const ja = defineLocale({
   },
 
   preview: {
+    emptyGuidanceTitle: 'ここには何も開かれていません',
+    emptyGuidanceBody: 'ノート一覧から選ぶか、ファイルツリーでファイルを開いてください。',
+    emptyGuidanceHint: 'ここでテキストを選択して ⌘/Ctrl+L を押すと会話に追加されます',
     tab: 'プレビュー',
     closeTab: label => `${label} を閉じる`,
     closeOthers: '他を閉じる',
@@ -2748,6 +2751,15 @@ export const ja = defineLocale({
     cwdStagedMessage:
       'このアクティブなセッションへの cwd の変更を適用するにはデスクトップバックエンドを再起動してください。',
     modelSwitchFailed: 'モデルの切り替えに失敗しました',
+    quotaFallbackTitle: 'サブスクのモデルが一時的に利用できません',
+    quotaFallbackMessage: (from, to, reason) => `${from} は今使えません（${reason}）。この会話は ${to} に切り替えました。`,
+    quotaReason: {
+      credential_expired: 'サインインの有効期限が切れました。アプリを一度起動すると更新されます',
+      no_desktop_credential: 'このマシンでサインイン情報が見つかりませんでした',
+      no_tools: 'このチャネルはツール呼び出しを Plobi に返しません',
+      not_offered: 'ローカルの quota hub がこのモデルを返さなくなりました',
+      unknown: reason => `利用できません（${reason}）`
+    },
     sessionExported: 'セッションをエクスポートしました',
     sessionExportFailed: 'セッションをエクスポートできませんでした',
     imageSaved: '画像を保存しました',

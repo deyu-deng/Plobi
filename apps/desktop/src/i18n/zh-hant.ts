@@ -2314,6 +2314,9 @@ export const zhHant = defineLocale({
   },
 
   preview: {
+    emptyGuidanceTitle: '這裡還沒有打開的東西',
+    emptyGuidanceBody: '在「筆記」裡選一篇，或從檔案樹打開一個檔案。',
+    emptyGuidanceHint: '在這裡選取文字後按 ⌘/Ctrl+L，就會作為脈絡加進目前對話',
     tab: '預覽',
     closeTab: label => `關閉 ${label}`,
     closeOthers: '關閉其他',
@@ -2647,6 +2650,15 @@ export const zhHant = defineLocale({
     cwdStagedTitle: '工作目錄已暫存',
     cwdStagedMessage: '重新啟動桌面後端後，工作目錄變更才會套用至此作用中工作階段。',
     modelSwitchFailed: '模型切換失敗',
+    quotaFallbackTitle: '訂閱模型暫時不可用',
+    quotaFallbackMessage: (from, to, reason) => `${from} 現在用不了——${reason}。本次對話已切到 ${to}。`,
+    quotaReason: {
+      credential_expired: '登入憑據已過期，打開那個應用一次就能續上',
+      no_desktop_credential: '這台機器上沒有讀到它的登入憑據',
+      no_tools: '這條通道不把工具調用交回 Plobi',
+      not_offered: '本地額度網關已經不再列出它',
+      unknown: reason => `不可用（${reason}）`
+    },
     sessionExported: '工作階段已匯出',
     sessionExportFailed: '無法匯出工作階段',
     imageSaved: '圖片已儲存',

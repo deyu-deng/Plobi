@@ -1144,7 +1144,7 @@ export function DesktopController() {
           // picking the mainline — otherwise the center keeps the L2 chat.
           const agentProfiles = $consoleAgents
             .get()
-            .map(agent => normalizeProfileKey((agent.profile || agent.id).trim()))
+            .map(agent => normalizeProfileKey((agent.profile || '').trim()))
             .filter(Boolean)
           profileForSessions = resolveL1HomeProfile({
             activeProfile: $activeGatewayProfile.get(),
@@ -1230,8 +1230,15 @@ export function DesktopController() {
       }
 
       const agentId = level.l2
+      // 名册里这一行没有 profile ⇒ 它是**数据记录**（`l2_course`，裁定 40：课是数据不是分身），
+      // 不是"一个还没连上的分身"。以前这里回退成 agentId，等于替它造一个 profile 名，
+      // 主进程真会去起 `plobi -p <那个名字>`：ASCII 名退 1（Profile does not exist）、
+      // 非 ASCII 名被 CLI 的 -p 预扫丢掉退 2，五门课各自一场重启循环
+      // （2026-10-13 现核 desktop.log 单「电工电子学」2767 行 failed）。
+      // 注册表那一半已改成数据角色一律回空串（plobi/agents/registry.py::profile_name）；
+      // 这一半是**客户端不许自己抄一条回退**（裁定 94 同族）。
       let profile =
-        $consoleAgents.get().find(agent => agent.id === agentId)?.profile?.trim() || agentId
+        $consoleAgents.get().find(agent => agent.id === agentId)?.profile?.trim() ?? ''
       let sessionId = ''
       // R-013 (裁定 20): the bound folder served by the overview. Stays null
       // when the overview itself failed — then the cwd is left untouched
@@ -1280,13 +1287,21 @@ export function DesktopController() {
       // the agent's dispatch). Bind unconditionally; the registry is the source
       // of truth for which profiles exist.
       const previousProfile = $activeGatewayProfile.get()
+
+      if (!profile) {
+        // 数据条目：不绑后端、不替它编一个家。走与"绑不上"同一条既有路径——
+        // 留在原地、开一张新草稿，不排任何重试。
+        prepareFreshDraftInPlace()
+
+        return
+      }
       // Refresh L1 home from the profile we're leaving when it is still an L1
       // profile; keep the remembered home when hopping L2→L2 (agent→agent).
       l1GatewayProfileRef.current = resolveL1HomeProfile({
         activeProfile: previousProfile,
         agentProfiles: $consoleAgents
           .get()
-          .map(agent => normalizeProfileKey((agent.profile || agent.id).trim()))
+          .map(agent => normalizeProfileKey((agent.profile || '').trim()))
           .filter(Boolean),
         rememberedHome: l1GatewayProfileRef.current
       })
@@ -1710,6 +1725,7 @@ export function DesktopController() {
       {secretaryShellOpen && previewRailContent ? (
         <ChatPreviewRail
           agentId={activeAgentId}
+          onAddSelectionToChat={composer.addTerminalSelectionAttachment}
           onRestartServer={restartPreviewServer}
           setTitlebarToolGroup={setTitlebarToolGroup}
         />
