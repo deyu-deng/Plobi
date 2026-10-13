@@ -151,6 +151,21 @@ def read_egress() -> dict[str, Any]:
     }
 
 
+def set_system_proxy(desired: bool) -> tuple[bool, list[str]]:
+    """Flip ``network.egress.system_proxy.enabled`` and leave every other key alone.
+
+    This lives here rather than in the CLI because this module is the one place
+    allowed to name the ``egress`` key without interpreting it (the single-source
+    guard); the read-modify-write goes through :func:`read_egress`, which hands back
+    the verbatim block, so nodes / mirrors / ``engine.dns`` survive the write.
+    """
+    network = dict(read_egress().get("network") or {})
+    egress = dict(network.get("egress") or {})
+    egress["system_proxy"] = {"enabled": desired}
+    network["egress"] = egress
+    return replace_egress(network)
+
+
 def replace_egress(network_block: Any) -> tuple[bool, list[str]]:
     """Set the whole ``network`` section (empty/None removes it), then re-read it.
 

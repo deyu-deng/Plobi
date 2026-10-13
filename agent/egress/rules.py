@@ -154,6 +154,10 @@ class Table:
     #: on purpose: the compiler refuses to invent public DNS for somebody's machine.
     engine_dns: dict[str, Any] = field(default_factory=dict)
 
+    #: 用户 10-13 改口的范围：把**整机**的出口交给引擎（接管系统代理 + 表生成的 PAC）。
+    #: 默认 false —— 没写这张表的人不该被改了系统设置；且这一格可精确回退。
+    system_proxy_enabled: bool = False
+
     #: Non-empty when the config could not be read at all, which is a *different*
     #: state from "no table declared": a caller that must not run unrouted (the
     #: external-offload child) has to be able to tell them apart.
@@ -564,6 +568,10 @@ def parse_table(raw: Any) -> Table:
             f"network.egress.engine.mixed_port must be a port number, got {mixed_port!r}"
         ) from None
 
+    sysp_raw = raw.get("system_proxy") or {}
+    if not isinstance(sysp_raw, dict):
+        raise EgressConfigError("network.egress.system_proxy must be a mapping ({enabled: true|false})")
+
     return Table(
         rules=rules,
         proxies=proxies,
@@ -575,6 +583,7 @@ def parse_table(raw: Any) -> Table:
         engine_mixed_port=mixed_port,
         engine_include=_parse_include(engine_raw),
         engine_dns=_parse_dns(engine_raw),
+        system_proxy_enabled=bool(sysp_raw.get("enabled", False)),
     )
 
 

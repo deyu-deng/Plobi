@@ -30,6 +30,9 @@ def cmd_network(args: argparse.Namespace) -> int:
     if action == "export-pool":
         return _export_pool(args)
 
+    if action == "proxy":
+        return _proxy(args)
+
     table = load_table()
     if action == "start":
         report = engine.ensure(table)
@@ -44,6 +47,55 @@ def cmd_network(args: argparse.Namespace) -> int:
     for line in report.lines():
         print(line)
     return 0 if report.state in (engine.OFF, engine.OURS, engine.STOPPED) else 1
+
+
+def _proxy(args: argparse.Namespace) -> int:
+    """Drive the machine-wide half: the system proxy is Plobi's or it is not."""
+    from agent.egress import system_proxy
+
+    which = getattr(args, "proxy_action", "status")
+    if which == "status":
+        info = system_proxy.status()
+        for line in system_proxy.status_lines(info):
+            print(line)
+        return 0
+    if not system_proxy.supported():
+        print(f"这一格目前只实现 Windows（这台是 {sys.platform}）")
+        return 1
+
+    if which == "on":
+        dry = bool(getattr(args, "dry_run", False))
+        plan = system_proxy.enable(apply=not dry)
+        for line in plan.lines():
+            print(line)
+        if dry and plan.ok:
+            print(f"--- PAC 内容（{plan.pac_path}）---")
+            print(plan.pac_text.rstrip())
+            print("--- 没有写任何东西：去掉 --dry-run 才真接管 ---")
+        elif plan.ok:
+            _persist_switch(True)
+        return 0 if plan.ok else 1
+
+    ok, detail = system_proxy.disable()
+    print(detail)
+    if ok:
+        _persist_switch(False)
+    return 0 if ok else 1
+
+
+def _persist_switch(desired: bool) -> None:
+    """Write the switch into the table so a reboot keeps it (or loses it) deliberately.
+
+    Read-modify-write of the verbatim ``network`` block: ``read_egress()`` hands back
+    what is on disk, so unrelated keys (nodes, mirrors, engine.dns) survive this.
+    """
+    from plobi_cli.egress_config import set_system_proxy
+
+    ok, issues = set_system_proxy(desired)
+    if ok:
+        print(f"network.egress.system_proxy.enabled = {str(desired).lower()}（下次开机照这个走）")
+    else:
+        print(f"⚠️ 系统设置已经改了，但开关没落盘：{'；'.join(issues)}")
 
 
 def _export_pool(args: argparse.Namespace) -> int:
