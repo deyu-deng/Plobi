@@ -2481,6 +2481,9 @@ export const ja = defineLocale({
 
   assistant: {
     thread: {
+      askedByMe: 'あなたからの依頼',
+      askedBySecretary: '秘書が代理で依頼',
+      askedByUnrecorded: '依頼者は記録されていません（古いメッセージ）',
       loadingSession: 'セッションを読み込み中',
       showEarlier: '以前のメッセージを表示',
       loadingResponse: 'Plobi が応答を読み込み中',

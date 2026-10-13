@@ -364,6 +364,8 @@ export interface SessionInfo {
 }
 
 export interface SessionMessage {
+  /** 谁发起的这条问：`owner` / `l1:<会话号>` / null（早于记录，没记）。 */
+  asked_by?: null | string
   codex_reasoning_items?: unknown
   content: unknown
   context?: unknown

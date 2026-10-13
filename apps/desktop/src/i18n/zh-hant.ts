@@ -2410,6 +2410,9 @@ export const zhHant = defineLocale({
 
   assistant: {
     thread: {
+      askedByMe: '我發起的',
+      askedBySecretary: '秘書代我發起',
+      askedByUnrecorded: '發起方沒記（這條早於記錄）',
       loadingSession: '正在載入工作階段',
       showEarlier: '顯示較早的訊息',
       loadingResponse: 'Plobi 正在載入回覆',

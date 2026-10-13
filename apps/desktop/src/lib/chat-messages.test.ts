@@ -7,6 +7,7 @@ import type { ChatMessage, ChatMessagePart } from './chat-messages'
 import {
   appendAssistantTextPart,
   appendReasoningPart,
+  askedByBadge,
   chatMessageText,
   preserveLocalAssistantErrors,
   renderMediaTags,
@@ -934,5 +935,37 @@ describe('toChatMessages plobi_secretary_ask (WP-G6 transcript → tool-call par
     expect(parts).toHaveLength(1)
     expect(parts[0].toolName).toBe('terminal')
     expect(parts[0].result).toMatchObject({ context: 'Found 3 matches' })
+  })
+})
+
+
+describe('asked_by → 徽标（WP-L2-OUTSOURCE-ENTRY）', () => {
+  it('分得开主人、秘书代问、和"这条没记"', () => {
+    expect(askedByBadge('owner')).toEqual({ kind: 'me', raw: 'owner' })
+    expect(askedByBadge('l1:sess-9')).toEqual({ kind: 'secretary', raw: 'l1:sess-9' })
+    expect(askedByBadge(null)).toEqual({ kind: 'unrecorded', raw: '' })
+    expect(askedByBadge(undefined)).toBeNull()
+  })
+
+  it('认不出的 token 原样显示，不硬归成秘书', () => {
+    expect(askedByBadge('cron')).toEqual({ kind: 'other', raw: 'cron' })
+  })
+
+  it('只有 user 行带 metadata.custom，助手行不沾', () => {
+    const rows = toChatMessages([
+      { role: 'user', content: '帮我推进这个', asked_by: 'l1:sess-9' },
+      { role: 'assistant', content: '好' },
+    ] as SessionMessage[])
+
+    expect(rows[0].metadata?.custom?.askedBy).toBe('l1:sess-9')
+    expect(rows[1].metadata).toBeUndefined()
+  })
+
+  it('"没记"要一路带着走，不许在半路塌成"没有这一格"', () => {
+    const rows = toChatMessages([
+      { role: 'user', content: '上线前的老消息', asked_by: null },
+    ] as SessionMessage[])
+
+    expect(rows[0].metadata?.custom?.askedBy).toBeNull()
   })
 })

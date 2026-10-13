@@ -2694,6 +2694,9 @@ export const zh: Translations = {
 
   assistant: {
     thread: {
+      askedByMe: '我发起的',
+      askedBySecretary: '秘书代我发起',
+      askedByUnrecorded: '发起方没记（这条早于记录）',
       loadingSession: '正在加载会话',
       showEarlier: '显示更早的消息',
       loadingResponse: 'Plobi 正在加载回复',
