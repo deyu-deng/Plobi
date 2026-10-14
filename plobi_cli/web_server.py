@@ -10660,6 +10660,34 @@ async def get_cron_job(job_id: str, profile: Optional[str] = None):
     return await _run_cron_dashboard_io(_get_cron_job_sync, job_id, profile)
 
 
+def _list_cron_job_outputs_sync(job_id: str, profile: Optional[str] = None, limit: int = 1):
+    """What a job's runs actually said, newest first — the read half of ``cron/output``.
+
+    ``/runs`` above answers "which sessions did this job create"; a ``no_agent``
+    (script) job short-circuits before any session exists, so for that shape the
+    only record of the run is the ``.md`` the scheduler writes — and until now the
+    only thing the surface showed about it was a timestamp.  Same profile plumbing
+    as every other cron route (``_call_cron_for_profile`` owns the store override),
+    and ``cron.jobs.list_job_outputs`` is the single reader of that file.
+    """
+    selected = profile or _find_cron_job_profile(job_id)
+    canonical = job_id
+    if selected:
+        job = _call_cron_for_profile(selected, "get_job", job_id)
+        if job and job.get("id"):
+            canonical = str(job["id"])
+    try:
+        wanted = max(1, min(int(limit), 20))
+    except (TypeError, ValueError):
+        wanted = 1
+    return _call_cron_for_profile(selected, "list_job_outputs", canonical, limit=wanted)
+
+
+@app.get("/api/cron/jobs/{job_id}/output")
+async def get_cron_job_output(job_id: str, profile: Optional[str] = None, limit: int = 1):
+    return await _run_cron_dashboard_io(_list_cron_job_outputs_sync, job_id, profile, limit)
+
+
 def _list_cron_job_runs_sync(job_id: str, profile: Optional[str] = None, limit: int = 20):
     """Run sessions produced by a cron job, newest first.
 

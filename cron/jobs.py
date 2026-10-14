@@ -2158,6 +2158,92 @@ def _prune_job_output(job_output_dir: Path, keep: int) -> int:
     return deleted
 
 
+#: The read side's ceiling. A cron run can print megabytes; the surface asks for
+#: "the last one", so the truncation is deliberate — and it is reported in the
+#: response (`truncated`), never applied silently.
+OUTPUT_SNIPPET_MAX_CHARS = 4000
+
+#: The four verdicts, derived from the markers `cron/scheduler.py` already writes
+#: into the document (`**Status:** script failed` / `silent (...)`, and the absence
+#: of a `**Status:**` line for a normal run). Inventing a second status vocabulary
+#: here would give the same file two meanings — 裁定 94.
+OUTPUT_STATUSES = ("success", "silent", "warning", "failed")
+
+#: Matched AFTER redaction: the warning text can sit next to credential-shaped
+#: strings, and matching pre-redaction text would let a masked line read as clean.
+_OUTPUT_WARNING_NEEDLES = ("no notifier configured", "not delivered")
+
+
+def derive_output_status(text: str) -> str:
+    """Which of the four verdicts a saved output document carries."""
+    if "**Status:** script failed" in text:
+        return "failed"
+    if "**Status:** silent (" in text:
+        return "silent"
+    lowered = text.lower()
+    if any(needle in lowered for needle in _OUTPUT_WARNING_NEEDLES):
+        return "warning"
+    return "success"
+
+
+def list_job_outputs(job_id: str, limit: int = 1, max_chars: int = OUTPUT_SNIPPET_MAX_CHARS) -> list[dict]:
+    """Read back what a job's runs actually said — newest first.
+
+    ``cron/output/{job_id}/{timestamp}.md`` is the only source (the scheduler
+    writes it; nothing copies it into a database), so this is the read half of
+    that file. ``no_agent`` jobs have no run session, which is why they had no
+    surface at all: the timestamp was visible, the content was not.
+
+    Credentials are redacted before anything is returned — these files hold raw
+    script output, which on this machine has contained ``.env``-shaped lines.
+    """
+    from agent.redact import redact_sensitive_text
+
+    try:
+        # A crafted job id is rejected by _job_output_dir; on a read path that is
+        # "there is nothing here", not a 500.
+        directory = _job_output_dir(job_id)
+    except ValueError:
+        return []
+
+    try:
+        files = sorted(
+            (entry for entry in directory.glob("*.md") if entry.is_file()),
+            key=lambda entry: entry.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return []
+
+    try:
+        wanted = max(1, min(int(limit), 20))
+    except (TypeError, ValueError):
+        wanted = 1
+
+    out: list[dict] = []
+    for entry in files[:wanted]:
+        try:
+            stat = entry.stat()
+            raw = entry.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        body = redact_sensitive_text(raw, force=True)
+        truncated = len(body) > max_chars
+        out.append(
+            {
+                "job_id": job_id,
+                "name": entry.name,
+                "mtime": stat.st_mtime,
+                "chars_total": len(body),
+                "truncated": truncated,
+                "max_chars": max_chars,
+                "status": derive_output_status(body),
+                "body": body[:max_chars],
+            }
+        )
+    return out
+
+
 def save_job_output(job_id: str, output: str):
     """Save job output to file."""
     ensure_dirs()

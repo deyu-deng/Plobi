@@ -20,6 +20,7 @@ import {
   createCronJob,
   type CronJob,
   deleteCronJob,
+  getCronJobOutput,
   getCronJobRuns,
   getCronJobs,
   pauseCronJob,
@@ -55,6 +56,7 @@ import {
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { jobState, jobTitle, STATE_DOT } from './job-state'
+import { cronOutputView } from './output-status'
 
 const DEFAULT_DELIVER = 'local'
 
@@ -586,6 +588,8 @@ function CronJobDetail({
             <span className="min-w-0 break-words">{job.last_error}</span>
           </div>
         ) : null}
+
+        <CronJobOutputLine jobId={job.id} />
       </header>
 
       {prompt ? (
@@ -614,6 +618,70 @@ function formatRunTime(seconds?: null | number): string {
 // while the panel is open + on tab re-focus so a fired run shows up within a few
 // seconds instead of waiting for a reload.
 const RUNS_POLL_INTERVAL_MS = 8000
+
+/**
+ * 最近一次运行「说了什么」— 不是一句「跑过了」（WP-CRON-OUTPUT-VISIBLE）。
+ *
+ * 20:00 那条晚报真的跑了、真的没发出去，而那一句错只存在于 `cron/output/*.md` 里，
+ * 桌面上只看得见一个时间戳（裁定 94：只在日志里＝还没被看见）。判读不在这里做：
+ * 状态由 `cron/jobs.py` 从调度器自己写的标记派生，这一档只翻成颜色。
+ */
+function CronJobOutputLine({ jobId }: { jobId: string }) {
+  const { locale } = useI18n()
+  const [entry, setEntry] = useState<null | Parameters<typeof cronOutputView>[0]>(null)
+  const language = String(locale).toLowerCase().startsWith('zh') ? 'zh' : 'en'
+
+  useEffect(() => {
+    let cancelled = false
+
+    getCronJobOutput(jobId, 1)
+      .then(result => {
+        if (!cancelled) {
+          setEntry(result[0] ?? null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEntry(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [jobId])
+
+  const view = cronOutputView(entry, language)
+
+  const toneClass = {
+    bad: 'text-destructive',
+    good: 'text-muted-foreground',
+    muted: 'text-muted-foreground',
+    warn: 'text-amber-600'
+  }[view.tone]
+
+  if (!entry) {
+    return null
+  }
+
+  return (
+    <div className="space-y-1 rounded bg-muted/40 p-2 text-[0.7rem]">
+      <span className={toneClass} data-testid="cron-output-status" data-tone={view.tone}>
+        {view.label}
+        {view.file ? ` · ${view.file}` : ''}
+      </span>
+      {view.body ? (
+        <details className="min-w-0">
+          <summary className="cursor-pointer text-muted-foreground">
+            {view.truncated ? `${view.charsTotal} chars ·` : ''}
+            {view.body.split('\n').find(Boolean)?.slice(0, 72) ?? ''}
+          </summary>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[0.68rem]">{view.body}</pre>
+        </details>
+      ) : null}
+    </div>
+  )
+}
 
 function CronJobRuns({
   c,
