@@ -1219,6 +1219,28 @@ export interface Translations {
     pendingCount: (count: number) => string
     today: string
     tomorrow: string
+    /**
+     * WP-AGENDA-VIEW slice 1: the Monday-anchored week row. `days` is Monday-first and
+     * exactly seven entries — the same D2 the phone side implements (`service/WeekView.ets`).
+     * `conflictsUnknown` is what a day with no `/api/agenda/day` snapshot must say; showing
+     * `noConflicts` there would be a lie (conflicts come from the backend, never from us).
+     */
+    week: {
+      conflicts: (count: number) => string
+      conflictsUnknown: string
+      count: (count: number) => string
+      dayCount: (count: number) => string
+      days: readonly string[]
+      label: string
+      nextWeek: string
+      noConflicts: string
+      past: string
+      pending: (count: number) => string
+      prevWeek: string
+      range: (from: string, to: string) => string
+      thisWeek: string
+      today: string
+    }
     emptyTitle: string
     emptyDesc: string
     newEvent: string
