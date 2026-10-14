@@ -239,19 +239,6 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   // Re-ask the hub and push a fresh frame to every window, now. The model picker
   // calls this on open so what a leg can serve is decided at the moment of picking.
   requestQuotaApps: () => ipcRenderer.invoke('plobi:quota-apps:refresh'),
-  // Local quota hub traffic, proxied by the main process. The renderer cannot
-  // reach the hub directly (its preflight fails: the hub sends no CORS headers),
-  // and the hub key never has to leave main for this to work. Frames arrive on
-  // onQuotaStreamFrame, keyed by the requestId passed here.
-  quotaStream: (requestId, url, body) =>
-    ipcRenderer.invoke('plobi:quota-stream', { requestId, url, body }),
-  quotaStreamAbort: requestId => ipcRenderer.invoke('plobi:quota-stream:abort', requestId),
-  onQuotaStreamFrame: callback => {
-    const listener = (_event, payload) => callback(payload)
-    ipcRenderer.on('plobi:quota-stream-frame', listener)
-
-    return () => ipcRenderer.removeListener('plobi:quota-stream-frame', listener)
-  },
   // First-launch bootstrap progress -- emitted by the install.ps1 stage
   // runner in main.ts (apps/desktop/electron/bootstrap-runner.ts).
   // Renderer's install overlay subscribes to live events and queries the

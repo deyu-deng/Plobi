@@ -7,7 +7,6 @@ import { useI18n } from '@/i18n'
 import { stripAnsi } from '@/lib/ansi'
 import { branchGroupForUser, type ChatMessage, chatMessageText, textPart } from '@/lib/chat-messages'
 import { pathLabel, SLASH_COMMAND_RE } from '@/lib/chat-runtime'
-import { abortDesktopQuota, type DesktopQuotaStreamHandlers } from '@/lib/desktop-quota-chat'
 import { triggerHaptic } from '@/lib/haptics'
 import { setMutableRef } from '@/lib/mutable-ref'
 import { normalize } from '@/lib/text'
@@ -159,7 +158,6 @@ interface PromptActionsOptions {
   busyRef: MutableRefObject<boolean>
   branchCurrentSession: () => Promise<boolean>
   createBackendSessionForSend: (preview?: string | null) => Promise<string | null>
-  desktopQuotaStream: DesktopQuotaStreamHandlers
   getRouteToken: () => string
   handleSkinCommand: (arg: string) => string
   openMemoryGraph: () => void
@@ -189,7 +187,6 @@ export function usePromptActions({
   busyRef,
   branchCurrentSession,
   createBackendSessionForSend,
-  desktopQuotaStream,
   getRouteToken,
   handleSkinCommand,
   openMemoryGraph,
@@ -359,7 +356,6 @@ export function usePromptActions({
     busyRef,
     copy,
     createBackendSessionForSend,
-    desktopQuotaStream,
     getRouteToken,
     requestGateway,
     selectedStoredSessionIdRef,
@@ -543,12 +539,6 @@ export function usePromptActions({
     // an answer the backend will reject.
     clearAllPrompts(sessionId)
     clearClarifyRequest(undefined, sessionId)
-
-    // Abort an in-flight desktop-quota (aigw) stream for this session, if any.
-    // The backend's session.interrupt below is a no-op for those turns (they
-    // never called prompt.submit), so the local AbortController is the only
-    // way to stop the streaming fetch.
-    abortDesktopQuota(sessionId)
 
     try {
       await requestGateway('session.interrupt', { session_id: sessionId })

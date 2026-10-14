@@ -4,7 +4,6 @@ import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS } from '@/plobi'
 import type { Translations } from '@/i18n'
 import { type ChatMessage, textPart } from '@/lib/chat-messages'
 import { optimisticAttachmentRef } from '@/lib/chat-runtime'
-import { type DesktopQuotaStreamHandlers } from '@/lib/desktop-quota-chat'
 import { setMutableRef } from '@/lib/mutable-ref'
 import {
   $composerAttachments,
@@ -36,11 +35,6 @@ interface SubmitPromptDeps {
   busyRef: MutableRefObject<boolean>
   copy: Translations['desktop']
   createBackendSessionForSend: (preview?: string | null) => Promise<string | null>
-  /** Accepted, no longer read: the renderer-side direct-to-hub turn is gone (a
-   *  hub-backed model is a backend model now, so `prompt.submit` streams it). The
-   *  controller still builds these handlers; taking them out of the shell is the
-   *  follow-up that needs `desktop-controller.tsx` and the main-process stream. */
-  desktopQuotaStream: DesktopQuotaStreamHandlers
   getRouteToken: () => string
   requestGateway: GatewayRequest
   selectedStoredSessionIdRef: MutableRefObject<string | null>

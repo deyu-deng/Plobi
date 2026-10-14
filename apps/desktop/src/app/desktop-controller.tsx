@@ -1036,12 +1036,6 @@ export function DesktopController() {
     branchCurrentSession: branchInNewChat,
     busyRef,
     createBackendSessionForSend,
-    desktopQuotaStream: {
-      appendAssistantDelta,
-      appendReasoningDelta,
-      completeAssistantMessage,
-      failAssistantMessage
-    },
     getRouteToken,
     handleSkinCommand,
     openMemoryGraph: openStarmap,
