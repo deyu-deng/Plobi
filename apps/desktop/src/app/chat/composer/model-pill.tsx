@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
 import { ModelMenuCloseContext } from '@/app/shell/model-menu-panel'
+import { humanizeProviderName } from '@/app/shell/model-provider-label'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
@@ -10,6 +11,7 @@ import { useI18n } from '@/i18n'
 import { ChevronDown } from '@/lib/icons'
 import { formatModelStatusLabel } from '@/lib/model-status-label'
 import { cn } from '@/lib/utils'
+import { hubAppOfModel } from '@/store/desktop-quotas'
 import {
   $currentFastMode,
   $currentModel,
@@ -71,7 +73,12 @@ export function ModelPill({
       )
     : PILL
 
-  const title = currentProvider ? copy.modelTitle(currentProvider, currentModel || copy.modelNone) : copy.switchModel
+  // A hub-backed pick sits on the hub provider's own slug, which is internal
+  // vocabulary that must never reach the screen (裁定 45.4) — name the software the
+  // model belongs to instead. Every other provider shows as it always did.
+  const hubApp = hubAppOfModel(currentModel)
+  const providerLabel = hubApp ? humanizeProviderName({ name: hubApp.id, slug: hubApp.id }) : currentProvider
+  const title = currentProvider ? copy.modelTitle(providerLabel, currentModel || copy.modelNone) : copy.switchModel
 
   if (!model.modelMenuContent) {
     return (

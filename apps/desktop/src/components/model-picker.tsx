@@ -10,7 +10,7 @@ import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 import type { PlobiGateway } from '../plobi'
 import { cn } from '../lib/utils'
 import { startManualOnboarding } from '../store/onboarding'
-import { desktopQuotaProviders } from '@/store/desktop-quotas'
+import { quotaProviders } from '@/store/desktop-quotas'
 
 import { InlineNotice } from './notifications'
 import { Button } from './ui/button'
@@ -60,7 +60,7 @@ export function ModelPickerDialog({
     enabled: open
   })
 
-  const providers = [...(modelOptions.data?.providers ?? []), ...desktopQuotaProviders()]
+  const providers = quotaProviders(modelOptions.data?.providers ?? [])
 
   const { model: optionsModel, provider: optionsProvider } = currentPickerSelection(
     !!sessionId,

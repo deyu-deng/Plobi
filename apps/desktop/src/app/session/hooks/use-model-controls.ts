@@ -6,8 +6,9 @@ import { type ChatScope } from '@/app/console/chat/scope'
 import { translateNow, useI18n } from '@/i18n'
 import {
   $connectedDesktopApps,
+  findQuotaHubRow,
   firstSelectableQuotaModel,
-  isDesktopQuotaProvider,
+  isQuotaAppSlug,
   quotaSelectionVerdict
 } from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
@@ -123,6 +124,31 @@ export function useModelControls({
     }
   }, [scope])
 
+  // The hub answers in its own vocabulary (app slug + bare model id) while the
+  // Plobi backend answers in `<hub provider>` + `<app>/<model>`. Every pick that
+  // comes from the hub's verdict — the default leg, the fallback, and a selection
+  // a pre-backend-routing build persisted — arrives in the first form, so the join
+  // happens here, at the one funnel, instead of in each caller. The hub's provider
+  // slug is read off the backend's own catalog row rather than written down: it is
+  // a routing value, and 裁定 45.4 keeps that word out of the renderer.
+  const hubProviderSlug = useCallback(async (): Promise<string | null> => {
+    for (const [, data] of queryClient.getQueriesData<ModelOptionsResponse>({ queryKey: ['model-options'] })) {
+      const slug = findQuotaHubRow(data?.providers ?? [])
+
+      if (slug) {
+        return slug
+      }
+    }
+
+    try {
+      const next = await requestGateway<ModelOptionsResponse>('model.options', { explicit_only: true })
+
+      return findQuotaHubRow(next?.providers ?? [])
+    } catch {
+      return null
+    }
+  }, [queryClient, requestGateway])
+
   // Returns whether the switch succeeded so callers can await it before applying
   // follow-up changes. The composer model is plain UI state: with no live
   // session it's just stored (and shipped on the next session.create); with one
@@ -132,21 +158,28 @@ export function useModelControls({
   // every other conversation stays session-scoped (`--session`) and never
   // touches the profile default that Settings → Model owns.
   const selectModel = useCallback(
-    async (selection: ModelSelection): Promise<boolean> => {
+    async (pick: ModelSelection): Promise<boolean> => {
       // Same cell the rest of this scope reads (the controller's scope effect
       // already pinned it; this is the belt-and-braces so a click that beats the
       // effect can never write into another agent's box).
       setComposerModelScope(scope)
 
-      // Desktop-quota providers (Antigravity, …) are not known to the Plobi
-      // backend — their chat is routed to the aigw hub instead. Selecting one is
-      // pure local UI state: skip the backend config.set so it doesn't 400.
-      if (isDesktopQuotaProvider(selection.provider)) {
-        setCurrentModel(selection.model)
-        setCurrentProvider(selection.provider)
-        updateModelOptionsCache(selection.provider, selection.model, !activeSessionId)
+      let selection = pick
 
-        return true
+      if (isQuotaAppSlug(pick.provider)) {
+        const hub = await hubProviderSlug()
+
+        if (!hub) {
+          notify({
+            kind: 'error',
+            message: translateNow('desktop.quotaReason.not_offered'),
+            title: copy.modelSwitchFailed
+          })
+
+          return false
+        }
+
+        selection = { model: `${pick.provider}/${pick.model}`, provider: hub }
       }
 
       // Snapshot for rollback: the switch is applied optimistically, so a
@@ -188,7 +221,7 @@ export function useModelControls({
         return false
       }
     },
-    [activeSessionId, copy.modelSwitchFailed, isAgentSession, queryClient, requestGateway, scope, updateModelOptionsCache]
+    [activeSessionId, copy.modelSwitchFailed, hubProviderSlug, isAgentSession, queryClient, requestGateway, scope, updateModelOptionsCache]
   )
 
   // The hub's verdict can change underneath a conversation that is just sitting
@@ -206,6 +239,16 @@ export function useModelControls({
     const reactToFrame = async () => {
       const provider = $currentProvider.get()
       const model = $currentModel.get()
+
+      // A selection a pre-backend-routing build left sitting on the app slug is
+      // not a provider the Plobi backend knows (`workbuddy_api` + `hy3`). Land it
+      // on the same model in the vocabulary the backend speaks before anything
+      // else reads it — otherwise the next turn 400s on an unknown provider.
+      if (model && isQuotaAppSlug(provider) && !model.startsWith(`${provider}/`)) {
+        await selectModel({ model, provider })
+
+        return
+      }
 
       // The owner's default-leg ruling (2026-10-12): with nothing chosen yet, the
       // desktop draws on the aggregated subscription quota first — that is the
@@ -227,7 +270,7 @@ export function useModelControls({
         return
       }
 
-      const verdict = quotaSelectionVerdict(provider, model)
+      const verdict = quotaSelectionVerdict(model)
 
       if (verdict.state !== 'gone') {
         return
@@ -255,7 +298,9 @@ export function useModelControls({
         title: translateNow('desktop.quotaFallbackTitle'),
         message: translateNow(
           'desktop.quotaFallbackMessage',
-          `${provider}/${model}`,
+          // Both sides read as `<software>/<model>`: the selection carries the hub
+          // provider's slug, and 裁定 45.4 keeps that word off the screen.
+          model,
           `${to.provider}/${to.model}`,
           reason
         )

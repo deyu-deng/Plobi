@@ -76,7 +76,9 @@ vi.mock('@/store/desktop-quotas', () => ({
     return quotaAtom
   },
   firstSelectableQuotaModel: () => quotaFallback(),
-  isDesktopQuotaProvider: (slug: string) => quotaProvider(slug),
+  findQuotaHubRow: () => 'aigw',
+  isQuotaAppSlug: (slug: string) => quotaProvider(slug),
+  quotaProviders: (rows: unknown[]) => rows,
   quotaSelectionVerdict: () => quotaVerdict()
 }))
 
@@ -421,7 +423,7 @@ describe('useModelControls', () => {
     expect($currentModel.get()).toBe('gemini-3-pro')
   })
 
-  it('keeps the desktop-quota branch local-only under any scope', async () => {
+  it('routes a hub-backed pick through config.set with the joined model id', async () => {
     quotaProvider.mockImplementation((slug: string) => slug === 'antigravity')
     const requestGateway = vi.fn()
     let controls!: Controls
@@ -440,14 +442,43 @@ describe('useModelControls', () => {
       controls.selectModel({ model: 'gemini-3-pro', provider: 'antigravity' })
     ).resolves.toBe(true)
 
-    // Still a pure early return: no config.set, no profile write, no error toast.
-    expect(requestGateway).not.toHaveBeenCalled()
-    expect(setGlobalModel).not.toHaveBeenCalled()
+    // The pick arrives in the hub's vocabulary (app slug + bare id) and leaves in
+    // the backend's (the hub provider's slug + the joined id). That single step is
+    // what makes the turn persist: from here it is an ordinary `prompt.submit`.
+    expect(requestGateway).toHaveBeenCalledWith(
+      'config.set',
+      expect.objectContaining({
+        key: 'model',
+        session_id: 'session-1',
+        value: 'antigravity/gemini-3-pro --provider aigw'
+      })
+    )
+    expect($currentModel.get()).toBe('antigravity/gemini-3-pro')
+    expect($currentProvider.get()).toBe('aigw')
     expect(notifyError).not.toHaveBeenCalled()
-    expect($currentModel.get()).toBe('gemini-3-pro')
-    // ...it just lands in Aura's cell instead of the shared one.
-    expect(window.localStorage.getItem('plobi.desktop.composer.model.agent:aura')).toBe('gemini-3-pro')
+    // ...and it still lands in Aura's own cell, not the shared one.
+    expect(window.localStorage.getItem('plobi.desktop.composer.model.agent:aura')).toBe('antigravity/gemini-3-pro')
     expect(window.localStorage.getItem('plobi.desktop.composer.model')).toBeNull()
+  })
+
+  // A selection persisted by a pre-backend-routing build sits on the app slug,
+  // which the Plobi backend does not know. The frame reaction lands it on the same
+  // model in the vocabulary the backend speaks instead of letting the next turn 400.
+  it('migrates a stale app-slug selection to the backend form', async () => {
+    setCurrentProvider('antigravity')
+    setCurrentModel('gemini-3-pro')
+    quotaProvider.mockImplementation((slug: string) => slug === 'antigravity')
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect($currentModel.get()).toBe('antigravity/gemini-3-pro'))
+    expect($currentProvider.get()).toBe('aigw')
   })
 
   // The subscription clock is the thing that breaks a quiet composer: an
@@ -455,8 +486,8 @@ describe('useModelControls', () => {
   // desktop app, not by Plobi. When the hub stops offering the model in use, the
   // turn must not go out to a dead leg — and the switch has to be announced.
   it('moves the composer to a model the hub still offers and says why', async () => {
-    setCurrentProvider('antigravity')
-    setCurrentModel('gemini-3-pro')
+    setCurrentProvider('aigw')
+    setCurrentModel('antigravity/gemini-3-pro')
     quotaProvider.mockImplementation((slug: string) => slug === 'antigravity' || slug === 'workbuddy_api')
     quotaVerdict.mockReturnValue({ state: 'gone', reason: 'credential_expired' })
     quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
@@ -469,8 +500,8 @@ describe('useModelControls', () => {
       })
     )
 
-    await waitFor(() => expect($currentModel.get()).toBe('hy3'))
-    expect($currentProvider.get()).toBe('workbuddy_api')
+    await waitFor(() => expect($currentModel.get()).toBe('workbuddy_api/hy3'))
+    expect($currentProvider.get()).toBe('aigw')
     expect(notify).toHaveBeenCalledTimes(1)
     // the notice carries both names and the hub's own reason token
     const [notice] = notify.mock.calls
@@ -496,8 +527,8 @@ describe('useModelControls', () => {
       })
     )
 
-    await waitFor(() => expect($currentModel.get()).toBe('hy3'))
-    expect($currentProvider.get()).toBe('workbuddy_api')
+    await waitFor(() => expect($currentModel.get()).toBe('workbuddy_api/hy3'))
+    expect($currentProvider.get()).toBe('aigw')
     // nothing died, so nothing has to be announced
     expect(notify).not.toHaveBeenCalled()
   })
@@ -507,7 +538,7 @@ describe('useModelControls', () => {
   it('does not seed a composer while a session is live', async () => {
     $activeSessionId.set('runtime-1')
     quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
-    quotaProvider.mockReturnValue(true)
+    quotaProvider.mockImplementation((slug: string) => slug === 'workbuddy_api')
 
     renderHook(() =>
       useModelControls({
@@ -528,9 +559,11 @@ describe('useModelControls', () => {
   // showing nothing: the switch happened, and "unavailable (probe_error:OSError)"
   // is the sentence the user can act on.
   it('names an unmapped reason token instead of swallowing it', async () => {
-    setCurrentProvider('antigravity')
-    setCurrentModel('gemini-3-pro')
-    quotaProvider.mockReturnValue(true)
+    setCurrentProvider('aigw')
+    setCurrentModel('antigravity/gemini-3-pro')
+    // `aigw` is the hub provider, not one of the apps: the selection is already in
+    // the backend's vocabulary, so nothing here is a migration candidate.
+    quotaProvider.mockImplementation((slug: string) => slug !== 'aigw')
     quotaVerdict.mockReturnValue({ state: 'gone', reason: 'probe_error:OSError' })
     quotaFallback.mockReturnValue({ model: 'hy3', provider: 'workbuddy_api' })
 
@@ -550,9 +583,9 @@ describe('useModelControls', () => {
   // A hub we could not reach is not a verdict. Auto-switching on "no answer" would
   // throw the user off a perfectly good model because a sidecar was restarting.
   it('does not touch the selection while the hub has given no verdict', async () => {
-    setCurrentProvider('antigravity')
-    setCurrentModel('gemini-3-pro')
-    quotaProvider.mockReturnValue(true)
+    setCurrentProvider('aigw')
+    setCurrentModel('antigravity/gemini-3-pro')
+    quotaProvider.mockImplementation((slug: string) => slug !== 'aigw')
     quotaVerdict.mockReturnValue({ state: 'unanswered' })
 
     renderHook(() =>
@@ -566,7 +599,7 @@ describe('useModelControls', () => {
     // the reaction runs on subscribe; flush the microtasks it chains onto
     await Promise.resolve()
 
-    expect($currentModel.get()).toBe('gemini-3-pro')
+    expect($currentModel.get()).toBe('antigravity/gemini-3-pro')
     expect(quotaFallback).not.toHaveBeenCalled()
     expect(notify).not.toHaveBeenCalled()
   })
