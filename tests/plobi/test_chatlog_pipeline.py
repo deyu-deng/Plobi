@@ -677,3 +677,48 @@ def test_neighbours_are_capped_at_one_each_side(tmp_path):
     last = captured["a4"]
     assert last.next_snippet is None
     assert "丙" in last.prev_snippet
+
+
+# --------------------------------------------------------------------------- #
+# 三类脏样本（WP-EXTRACT-QUALITY 判据）：**跑到落库那一层**再看结果。
+# 已有的那几条钉在 confirm / unresolved 这一层（`test_ambiguous_time_is_left_unresolved`、
+# `test_chatter_is_filtered_before_any_confirm`），这一族钉的是"库里到底长了什么"——
+# 抽取链的质量问题最后都表现为**库里多了一条错时间的行**，只看返回值会漏掉它。
+# 全族零额度：走 `HeuristicConfirmer`，不碰模型那一条腿。
+# --------------------------------------------------------------------------- #
+
+
+def test_dirty_shape_date_without_clock_lands_no_invented_morning(pipeline):
+    """「周五开会」这种只有日期没钟点的：库里一行都不许多出来。"""
+    report = IngestReport()
+    pipeline.handle_message(message("周五开会", msg_id="eq-1"), report)
+
+    assert report.unresolved == 1
+    assert report.created == []
+    assert pipeline.service.list_pending() == []
+
+
+def test_dirty_shape_missing_end_time_stays_missing(pipeline):
+    """「明天下午三点面试」有开始没结束：时间要准、`end_at` 要**仍是空**，不编一小时。"""
+    report = IngestReport()
+    pipeline.handle_message(message("明天下午三点面试", msg_id="eq-2"), report)
+
+    pending = pipeline.service.list_pending()
+    assert len(pending) == 1
+    event = pending[0]
+    assert event.start_at == "2026-08-26T15:00:00"
+    assert event.end_at is None
+    assert event.source == "wechat"
+
+
+def test_dirty_shape_chatter_with_a_meeting_keyword_never_lands(pipeline):
+    """带"组会"两个字的闲聊（过去时 / 疑问句）：一条都不许入库。
+
+    这一条比"好的收到"难：规则关键词是真命中了，脏在**它不是一件待办**。
+    """
+    for idx, text in enumerate(("哈哈上次那个组会真是开到半夜", "那个组会是不是要改时间啊？")):
+        report = IngestReport()
+        pipeline.handle_message(message(text, msg_id=f"eq-3-{idx}"), report)
+
+        assert report.filtered_out == 1, text
+        assert pipeline.service.list_pending() == [], text
