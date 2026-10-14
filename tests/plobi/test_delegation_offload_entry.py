@@ -169,3 +169,64 @@ class TestFailureTaxonomy:
                                               failure=offload.FAIL_BLOCKED_BY_GATE)])
         assert timeout != gate
         assert "闸" in gate and "闸" not in timeout
+
+
+class TestSwitchIsReachable:
+    """「opt-in」这句话要有面可opt，否则它就是工具描述里的一句谎。
+
+    10-14 现核：`toolsets.py` 里那句 "the owner enables it in `plobi tools`" 写的时候
+    `offload` 并不在 `CONFIGURABLE_TOOLSETS` 里 —— 而那张清单才是 `plobi tools` 和桌面
+    设置页（`GET /api/tools/toolsets`）唯一的来源。不在册 = 没有一个面能把它打开。
+    """
+
+    def test_offload_toolset_is_offered_by_the_switch_surface(self):
+        from plobi_cli.tools_config import _get_effective_configurable_toolsets
+
+        rows = {ts_key for ts_key, _, _ in _get_effective_configurable_toolsets()}
+
+        assert "offload" in rows, "开关面里没有它 ⇒ 工具注册了但永远开不了"
+
+    def test_it_is_still_off_until_the_owner_flips_it(self):
+        """默认关（裁定 78）：没配过的这台机器上它不该出现在启用集合里。"""
+        from plobi_cli.tools_config import _get_platform_tools
+
+        assert "offload" not in _get_platform_tools({}, "cli", include_default_mcp_servers=False)
+
+    def test_flipping_the_switch_resolves_both_tools(self):
+        """开了之后两个工具都要真解析出来，否则开关是个空按钮。"""
+        from plobi_cli.tools_config import _get_platform_tools
+        from toolsets import resolve_toolset
+
+        enabled = _get_platform_tools(
+            {"platform_toolsets": {"cli": ["plobi-cli", "offload"]}},
+            "cli",
+            include_default_mcp_servers=False,
+        )
+
+        assert "offload" in enabled
+        assert {"external_offload_status", "external_offload_run"} <= set(resolve_toolset("offload"))
+
+    def test_the_desktop_resolver_actually_sees_the_switch(self, tmp_path, monkeypatch):
+        """开关拨了要真到得了桌面那一条会话 —— 走的是 `tui_gateway` 那个解析器，不是我的猜测。
+
+        现核链条：`_load_enabled_toolsets()` 先问 `coding_selection()`（**只有用户opt-in focus
+        档**才覆盖，默认回 None），否则落到 `_get_platform_tools(cfg, "cli", ...)`。
+        这一发用真 import + 临时 `PLOBI_HOME` 跑通整条，而不是只看我那张表。
+        """
+        home = tmp_path / "plobi"
+        home.mkdir()
+        (home / "config.yaml").write_text(
+            "toolsets:\n  - plobi-cli\n"
+            "platform_toolsets:\n  cli:\n    - plobi-cli\n    - offload\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("PLOBI_HOME", str(home))
+        monkeypatch.setenv("PLOBI_DESKTOP", "1")
+        monkeypatch.delenv("PLOBI_TUI_TOOLSETS", raising=False)
+        monkeypatch.chdir(tmp_path)
+
+        from tui_gateway.server import _load_enabled_toolsets
+
+        enabled = _load_enabled_toolsets() or []
+
+        assert "offload" in enabled, "拨了开关，桌面会话仍然看不见外包工具"
