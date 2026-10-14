@@ -148,10 +148,11 @@ def report_only(repo: Path, label: str, lines: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="fetch and report, push nothing")
+    parser.add_argument("--source", default="manual", help="what launched this run: manual | scheduled-task")
     args = parser.parse_args()
 
     stamp = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
-    lines = [f"{stamp}  push_daily {'(dry-run)' if args.dry_run else ''}"]
+    lines = [f"{stamp}  push_daily source={args.source}{' dry-run' if args.dry_run else ''}"]
     ok = True
     for label, repo in REPOS.items():
         if args.dry_run:
