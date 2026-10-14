@@ -7651,7 +7651,7 @@ const restartGuard = createRestartGuard()
 /** How long the tray restart waits for an answer before releasing its guard. */
 const RESTART_CONFIRM_TIMEOUT_MS = 10 * 60 * 1000
 
-function listPlobiTreeProcesses(): Array<{ pid: number; name: string; commandLine: string }> {
+function listPlobiTreeProcesses(): Array<{ pid: number; name: string; commandLine: string; ppid?: number }> {
   if (!IS_WINDOWS) {
     return []
   }
@@ -7659,28 +7659,73 @@ function listPlobiTreeProcesses(): Array<{ pid: number; name: string; commandLin
   // Keyed on the COMMAND LINE, never on an image name — the gateway runs as
   // `pythonw.exe -m plobi_cli.main gateway run` and a `python.exe` filter does not
   // see it at all (裁定 92; my own live probe hit exactly that blind spot today).
+  // ParentProcessId rides along so the restart wait can exclude our own ancestry:
+  // in dev, concurrently / vite are our PARENTS and only die because we exit —
+  // counting them as leftovers made every dev restart time out (R-087).
   const script =
     'Get-CimInstance Win32_Process | ForEach-Object { if ($_.CommandLine) { ' +
-    '"{0}`t{1}`t{2}" -f $_.ProcessId, $_.Name, $_.CommandLine } }'
+    '"{0}`t{1}`t{2}`t{3}" -f $_.ProcessId, $_.Name, $_.CommandLine, $_.ParentProcessId } }'
   const out = execFileSync(
     windowsPowerShellPath() || 'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-Command', script],
     hiddenWindowsChildOptions({ encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 24 * 1024 * 1024 })
   )
-  const rows: Array<{ pid: number; name: string; commandLine: string }> = []
+  const rows: Array<{ pid: number; name: string; commandLine: string; ppid?: number }> = []
 
   for (const line of String(out || '').split(/\r?\n/)) {
-    const [pidRaw, name, ...rest] = line.split('\t')
-    const pid = Number(pidRaw)
+    const fields = line.split('\t')
+    const pid = Number(fields[0])
 
     if (!Number.isInteger(pid) || pid <= 0) {
       continue
     }
 
-    rows.push({ pid, name: name || '', commandLine: rest.join('\t') })
+    // The last column is ParentProcessId; everything between the name and it is
+    // the command line (command lines can themselves contain tabs).
+    const ppid = fields.length >= 4 ? Number(fields[fields.length - 1]) : Number.NaN
+
+    rows.push({
+      pid,
+      name: fields[1] || '',
+      commandLine: fields.slice(2, fields.length >= 4 ? -1 : undefined).join('\t'),
+      ...(Number.isInteger(ppid) && ppid > 0 ? { ppid } : {})
+    })
   }
 
   return rows
+}
+
+/**
+ * Every pid from `fromPid` straight up the parent chain to the root. In dev the
+ * desktop is a child of `cmd /c npm run dev` → concurrently → Vite, and that
+ * chain dies only when WE exit — so the "is the old tree gone" wait must not
+ * count it (R-087). The walk is bounded by a seen-set: pids get reused and a
+ * stale ParentProcessId can point at an unrelated live process.
+ */
+function ownAncestorPids(entries: Array<{ pid: number; ppid?: number }>, fromPid: number): number[] {
+  const byPid = new Map<number, { pid: number; ppid?: number }>()
+
+  for (const entry of entries) {
+    byPid.set(entry.pid, entry)
+  }
+
+  const ancestors: number[] = []
+  const seen = new Set<number>([fromPid])
+  let cursor = fromPid
+
+  for (;;) {
+    const parent = byPid.get(cursor)?.ppid
+
+    if (!parent || seen.has(parent)) {
+      break
+    }
+
+    seen.add(parent)
+    ancestors.push(parent)
+    cursor = parent
+  }
+
+  return ancestors
 }
 
 function ownedBackendPids(): number[] {
@@ -7751,6 +7796,9 @@ async function restartFromTray() {
       probeErrors: ['这台没有跨进程可读的「有没有活在跑」面：cron 本轮、未回的子分身委派、TUI 会话都在各自进程的内存里']
     })
 
+    // 审计轨迹归日志，不归对话框：确认框只留用户态的两三句（R-086）。
+    rememberLog(`[tray-restart] confirm reasons: ${gate.reasons.join('；') || '（无条件询问）'}`)
+
     if (gate.ask) {
       // 先上一行台账再弹框：这台是隐藏自启（vbs 里 PLOBI_DESKTOP_START_HIDDEN=1），
       // 模态框可能压根不出现，用户看到的就是"点了没反应"。那一行必须先把"在等你回答"说出来。
@@ -7760,7 +7808,7 @@ async function restartFromTray() {
         buttons: [labels.confirmGo, labels.confirmCancel],
         cancelId: 1,
         defaultId: 1,
-        detail: [labels.confirmBody, ...gate.reasons.map((reason) => `· ${reason}`)].join('\n'),
+        detail: labels.confirmBody,
         message: labels.confirmTitle,
         title: labels.confirmTitle,
         type: 'warning' as const
@@ -7800,7 +7848,15 @@ async function restartFromTray() {
     let gone
 
     try {
+      // Snapshot our own ancestry BEFORE waiting: in dev, concurrently / vite
+      // are our parents and only die when we do — counting them as leftovers
+      // is the deadlock this wait existed in (R-087). A table we cannot read
+      // fails the same way as before (see the catch below).
+      const ancestorPids = ownAncestorPids(listPlobiTreeProcesses(), process.pid)
+
+      rememberLog(`[tray-restart] own ancestry excluded from the wait: ${ancestorPids.join(',') || '（空）'}`)
       gone = await waitForTreeGone(listPlobiTreeProcesses, {
+        ancestorPids,
         intervalMs: 500,
         selfPid: process.pid,
         timeoutMs: 15000
@@ -7849,9 +7905,15 @@ async function restartFromTray() {
     // own ancestry — we cannot kill it from inside without dying mid-teardown, and
     // the new Vite cannot bind port 5174 while the old one still holds it.
     const scriptPath = path.join(app.getPath('temp'), `plobi-desktop-restart-${Date.now()}.bat`)
+    // Fixed-name outcome log under $PLOBI_HOME/logs/: the handoff runs detached
+    // with stdio ignored, so its giveup/relaunch ending must be written to a file
+    // or "did the restart even happen" is unanswerable after the fact.
+    const handoffLogPath = path.join(PLOBI_HOME, 'logs', 'tray-restart-handoff.log')
 
+    fs.mkdirSync(path.dirname(handoffLogPath), { recursive: true })
     fs.writeFileSync(scriptPath, buildWindowsRestartHandoff({
       command: plan.command,
+      outcomeLogPath: handoffLogPath,
       waitPid: process.pid,
       workingDirectory: plan.cwd
     }), 'utf8')
@@ -7860,7 +7922,7 @@ async function restartFromTray() {
 
     child.unref()
     report('ready', `${labels.doneDev}（handoff=${path.basename(scriptPath)}）`)
-    rememberLog(`[tray-restart] handoff launched: ${scriptPath}`)
+    rememberLog(`[tray-restart] handoff launched: ${scriptPath} (outcome log: ${handoffLogPath})`)
     isQuittingForHandoff = true
     setTimeout(() => app.quit(), 300)
   } catch (err) {

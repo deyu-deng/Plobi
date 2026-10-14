@@ -72,8 +72,7 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
     confirmTitle: '重启 Plobi？',
     confirmBody:
       '这会关掉整个后端树（会话后端 / 额度网关 / cron / chatlog）再用新代码重起。' +
-      '这台机器上没有可靠的「现在有没有活在跑」信号可读（详见 electron/tray-restart.ts 顶部），' +
-      '所以无论有没有任务，重启前都要确认一次：正在跑的会话、未回的子分身委派、cron 本轮都可能被打断。',
+      '正在跑的会话、未回的子分身委派、cron 本轮都可能被打断。确定要重启吗？',
     cancelled: '未重启：确认框取消，什么都没动。',
     awaitingConfirm: '重启应用 · 正在等你在弹窗里确认',
     dialogStalled: '未重启：等确认框回答等到超时（10 分钟），闸门已释放 —— 再点一次即可。',
@@ -91,9 +90,8 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
     confirmTitle: 'Restart Plobi?',
     confirmBody:
       'This tears down the whole backend tree (session backend / quota gateway / cron / chatlog) ' +
-      'and brings it back on new code. There is no trustworthy "is anything running right now" signal ' +
-      'readable on this machine (see the top of electron/tray-restart.ts), so the app confirms before ' +
-      'every restart — an in-flight chat turn, an unanswered L2 delegation or a cron tick can all be interrupted.',
+      'and brings it back on new code. An in-flight chat turn, an unanswered L2 delegation or a ' +
+      'cron tick can all be interrupted. Restart now?',
     cancelled: 'Not restarted: confirmation cancelled, nothing was touched.',
     awaitingConfirm: 'Restart app · waiting for you in the dialog',
     dialogStalled: 'Not restarted: the confirmation dialog went unanswered for 10 minutes; the guard is released — just click again.',
@@ -148,18 +146,28 @@ export function isOwnPlobiProcess(entry: ProcessEntry, selfPid: number): boolean
 }
 
 /**
- * What is still alive from the old tree. `pendingPids` are the pids we launched
- * ourselves (the new tree) — they must not be counted as leftovers, or the
- * verification would never pass.
+ * What is still alive from the old tree. Two kinds of pid are NOT leftovers:
+ * `pendingPids` are the pids we launched ourselves (the new tree), and
+ * `ancestorPids` are our own ancestry — in dev the desktop is a child of
+ * `cmd /c npm run dev` → concurrently → Vite, and those only die *because* we
+ * exit, so waiting for them to disappear is waiting for ourselves (R-087:
+ * dev-mode restarts could never pass this check). Either set must not be
+ * counted, or the verification would never pass.
  */
 export function findLingeringProcesses(
   entries: ProcessEntry[],
-  { selfPid, pendingPids = [] as number[] } = {} as { selfPid?: number; pendingPids?: number[] }
+  {
+    selfPid,
+    pendingPids = [] as number[],
+    ancestorPids = [] as number[]
+  } = {} as { selfPid?: number; pendingPids?: number[]; ancestorPids?: number[] }
 ): ProcessEntry[] {
   const pending = new Set(pendingPids)
+  const ancestors = new Set(ancestorPids)
 
   return (entries || []).filter(
-    (entry) => isOwnPlobiProcess(entry, Number(selfPid ?? -1)) && !pending.has(entry.pid)
+    (entry) =>
+      isOwnPlobiProcess(entry, Number(selfPid ?? -1)) && !pending.has(entry.pid) && !ancestors.has(entry.pid)
   )
 }
 
@@ -289,7 +297,9 @@ export function planRelaunch({
  * The wait is a `tasklist /FI "PID eq N"` filter, i.e. it keys on the PID and on
  * the command line shape of that exact process — never on an image name
  * (裁定 92). The loop is bounded so a hung exit cannot leave the machine with no
- * app and no message.
+ * app and no message. With `outcomeLogPath`, the giveup/relaunch endings are
+ * appended to that fixed file instead of a stdio the detached child discards —
+ * otherwise "did the handoff even happen" is unanswerable after the fact.
  */
 export const RESTART_HANDOFF_MAX_WAIT_SECONDS = 60
 
@@ -297,11 +307,13 @@ export function buildWindowsRestartHandoff({
   waitPid,
   workingDirectory,
   command,
+  outcomeLogPath,
   maxWaitSeconds = RESTART_HANDOFF_MAX_WAIT_SECONDS
 }: {
   waitPid: number
   workingDirectory: string
   command: string
+  outcomeLogPath?: string
   maxWaitSeconds?: number
 }): string {
   const limit = Math.max(1, Math.floor(Number(maxWaitSeconds) || RESTART_HANDOFF_MAX_WAIT_SECONDS))
@@ -310,6 +322,10 @@ export function buildWindowsRestartHandoff({
   if (!Number.isInteger(pid) || pid <= 0) {
     throw new Error(`refusing to build a handoff that waits on pid ${waitPid}`)
   }
+
+  // The handoff is spawned detached with stdio ignored, so a bare `echo` lands
+  // in the void. Redirect every ending into the fixed outcome log instead.
+  const outcome = outcomeLogPath ? `>>"${outcomeLogPath}" ` : ''
 
   return [
     '@echo off',
@@ -325,12 +341,14 @@ export function buildWindowsRestartHandoff({
     'goto waitforold',
     ':relaunch',
     `cd /d "${workingDirectory}"`,
+    `${outcome}echo [tray-restart] old pid ${pid} gone; relaunching: ${command}`,
     command,
+    `${outcome}echo [tray-restart] relaunch command exited with code %ERRORLEVEL%`,
     'exit /b 0',
     ':giveup',
     'rem The old process never exited in time. Do NOT start a second tree on top of',
     'rem it (port and file-lock collisions) — say so in the log the app reads back.',
-    `echo [tray-restart] old pid ${pid} still alive after ${limit}s; not relaunching`,
+    `${outcome}echo [tray-restart] old pid ${pid} still alive after ${limit}s; not relaunching`,
     'exit /b 2'
   ].join('\r\n')
 }
@@ -367,8 +385,10 @@ export type GoneVerdict =
 
 /**
  * Poll "is the old tree gone" by command line, with a timeout. `list` and `sleep`
- * are injected so the loop is testable without a machine. On timeout the caller
- * MUST NOT relaunch (a new tree would collide on ports and file locks) and must
+ * are injected so the loop is testable without a machine. `ancestorPids` are our
+ * own parent chain (dev: concurrently / Vite) — excluded exactly like
+ * `pendingPids`, because they exit only when we do. On timeout the caller MUST
+ * NOT relaunch (a new tree would collide on ports and file locks) and must
  * report this as its own failure mode, distinct from "old tree gone, relaunch failed".
  */
 export async function waitForTreeGone(
@@ -376,10 +396,18 @@ export async function waitForTreeGone(
   {
     selfPid,
     pendingPids = [] as number[],
+    ancestorPids = [] as number[],
     timeoutMs = 15000,
     intervalMs = 500,
     sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-  }: { selfPid?: number; pendingPids?: number[]; timeoutMs?: number; intervalMs?: number; sleep?: (ms: number) => Promise<unknown> } = {}
+  }: {
+    selfPid?: number
+    pendingPids?: number[]
+    ancestorPids?: number[]
+    timeoutMs?: number
+    intervalMs?: number
+    sleep?: (ms: number) => Promise<unknown>
+  } = {}
 ): Promise<GoneVerdict> {
   const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0)
   let waited = 0
@@ -387,7 +415,7 @@ export async function waitForTreeGone(
 
   for (;;) {
     const entries = await list()
-    lingering = findLingeringProcesses(entries, { selfPid, pendingPids })
+    lingering = findLingeringProcesses(entries, { selfPid, pendingPids, ancestorPids })
     if (lingering.length === 0) {
       return { ok: true, waitedMs: waited }
     }
