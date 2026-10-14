@@ -268,3 +268,119 @@ def test_a_foreign_engine_is_refused_rather_than_stolen(monkeypatch):
 
     assert out["state"] == "running-foreign", out
     assert table.engine_enabled is True
+
+
+# ── the machine-wide switch: its own endpoint, and its refusal words ─────────
+
+
+def _plan(ok: bool = True, reason: str = "ready"):
+    from agent.egress.system_proxy import ProxyPlan
+
+    return ProxyPlan(ok, reason)
+
+
+def _seed(tmp_path, monkeypatch, block):
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump({"model": "test/model", "network": block}, sort_keys=False), encoding="utf-8"
+    )
+    egress.load_table(force_reload=True)
+
+
+def test_the_status_snapshot_carries_the_machine_half(tmp_path, monkeypatch):
+    """The pane must not ask a second question of the registry to learn the state."""
+    from agent.egress import system_proxy
+
+    monkeypatch.setattr(system_proxy, "read_current", lambda: {"ProxyEnable": 0})
+    _seed(tmp_path, monkeypatch, _VALID)
+
+    body = _client().get("/api/network/status", headers=_auth()).json()
+    assert set(body["system_proxy"]) >= {"supported", "declared", "ours", "pac_path", "backup_exists"}
+    assert body["system_proxy"]["declared"] is False, "nothing has flipped the switch yet"
+
+
+def test_the_switch_writes_the_key_and_applies_it_now(tmp_path, monkeypatch):
+    from plobi_cli import web_server
+
+    _seed(tmp_path, monkeypatch, _VALID)
+    seen = []
+
+    def fake_ensure(table=None):
+        seen.append(table)
+        return _plan(True, "已接管：走系统代理的程序现在按这张表选路")
+
+    monkeypatch.setattr("agent.egress.system_proxy.ensure", fake_ensure)
+
+    out = _client().post("/api/network/system-proxy", headers=_auth(), json={"enabled": True})
+
+    assert out.status_code == 200, out.json()
+    assert out.json()["proxy"]["state"] == "applied"
+    assert "已接管" in out.json()["proxy"]["detail"]
+    assert len(seen) == 1 and seen[0].system_proxy_enabled is True, "apply must see the table just written"
+    on_disk = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    assert on_disk["network"]["egress"]["system_proxy"] == {"enabled": True}
+
+
+def test_a_refused_takeover_comes_back_as_words_not_a_log_line(tmp_path, monkeypatch):
+    """The switch landed in the table; the machine was not touched — the pane has to say why."""
+    _seed(tmp_path, monkeypatch, _VALID)
+    monkeypatch.setattr(
+        "agent.egress.system_proxy.ensure",
+        lambda table=None: _plan(False, "出口 http://127.0.0.1:7895 此刻带不动流量——接管整机会让这台没有出口"),
+    )
+
+    out = _client().post("/api/network/system-proxy", headers=_auth(), json={"enabled": True})
+
+    assert out.status_code == 200, out.json()
+    assert out.json()["proxy"]["state"] == "refused"
+    assert "没有出口" in out.json()["proxy"]["detail"]
+
+
+def test_an_exploding_apply_is_reported_and_the_switch_stays_written(tmp_path, monkeypatch):
+    from plobi_cli import web_server
+
+    _seed(tmp_path, monkeypatch, _VALID)
+
+    def boom(table=None):
+        raise OSError("registry key is locked")
+
+    monkeypatch.setattr("agent.egress.system_proxy.ensure", boom)
+    out = web_server._apply_system_proxy()
+
+    assert out["state"] == "failed"
+    assert "registry key is locked" in out["detail"]
+
+
+def test_a_table_that_asked_for_no_takeover_leaves_the_registry_alone(tmp_path, monkeypatch):
+    from plobi_cli import web_server
+
+    block = {**_VALID, "egress": {**_VALID["egress"], "system_proxy": {"enabled": False}}}
+    _seed(tmp_path, monkeypatch, block)
+    monkeypatch.setattr("agent.egress.system_proxy.ensure", lambda table=None: None)
+
+    assert web_server._apply_system_proxy()["state"] == "idle"
+
+
+def test_the_switch_leaves_everything_else_in_the_block_alone(tmp_path, monkeypatch):
+    """Same wipe class as the panel's Save, on the Python half: the switch is one key."""
+    from plobi_cli.egress_config import set_system_proxy
+
+    block = {
+        "egress": {
+            **_VALID["egress"],
+            "nodes": {"n01 hk": {"type": "ss", "server": "a.test", "port": 8388, "cipher": "aes-256-gcm",
+                                  "password_env": "PLOBI_EGRESS_N01_HK_PASSWORD"}},
+            "groups": {"POOL": {"type": "select", "include": ["n01 hk"]}},
+            "engine": {**_VALID["egress"]["engine"], "dns": {"enable": True, "nameserver": ["223.5.5.5"]}},
+        }
+    }
+    _seed(tmp_path, monkeypatch, block)
+
+    ok, issues = set_system_proxy(True)
+    assert ok, issues
+
+    on_disk = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))["network"]["egress"]
+    assert on_disk["system_proxy"] == {"enabled": True}
+    assert on_disk["nodes"] == block["egress"]["nodes"], "the node pool is not this switch's to rewrite"
+    assert on_disk["groups"] == block["egress"]["groups"]
+    assert on_disk["engine"]["dns"]["nameserver"] == ["223.5.5.5"]

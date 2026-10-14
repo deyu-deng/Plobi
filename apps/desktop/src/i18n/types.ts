@@ -320,12 +320,18 @@ export interface Translations {
       match: string
       name: string
       port: string
+      proxyApplied: string
+      proxyDeclaredNotApplied: string
+      proxyNotOurs: string
+      proxyOurs: string
+      proxyUnsupported: string
       refused: string
       remove: string
       rules: string
       save: string
       saved: string
       status: string
+      systemProxy: string
       title: string
       url: string
     }

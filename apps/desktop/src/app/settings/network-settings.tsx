@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Globe } from '@/lib/icons'
-import { getNetworkEgress, getNetworkStatus, saveNetworkEgress } from '@/plobi'
-import type { NetworkEgressRecord, NetworkSection, NetworkStatus } from '@/types/plobi'
+import { getNetworkEgress, getNetworkStatus, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
+import type {
+  NetworkEgressBlock,
+  NetworkEgressRecord,
+  NetworkSection,
+  NetworkStatus,
+  NetworkStatusSystemProxy
+} from '@/types/plobi'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 
@@ -37,6 +44,10 @@ function toExitRows(record: NetworkEgressRecord | null): ExitRow[] {
  *  Empty pieces are dropped rather than written as `{}` / `[]`: an empty rules
  *  list means "no opinion" to the parser, and leaving a stray empty map on disk
  *  reads later like a rule that was forgotten about.
+ *
+ *  Everything the pane does not edit is carried through verbatim, because the save
+ *  is a whole-section replace: dropping `engine`, the node pool or `system_proxy`
+ *  here would silently undo them every time someone presses Save.
  */
 export function buildSection(
   exits: ExitRow[],
@@ -51,11 +62,14 @@ export function buildSection(
     .map((rule) => ({ match: rule.match.trim(), via: rule.via.trim() || 'direct' }))
   const egress = source?.network?.egress ?? {}
 
+  const carried = Object.fromEntries(
+    Object.entries(egress).filter(([key]) => key !== 'proxies' && key !== 'rules')
+  ) as NetworkEgressBlock
+
   return {
     ...(source?.network?.force_ipv4 === undefined ? {} : { force_ipv4: source.network.force_ipv4 }),
     egress: {
-      ...(egress.engine ? { engine: egress.engine } : {}),
-      ...(egress.mirrors && Object.keys(egress.mirrors).length ? { mirrors: egress.mirrors } : {}),
+      ...carried,
       ...(Object.keys(proxies).length ? { proxies } : {}),
       ...(keptRules.length ? { rules: keptRules } : {})
     }
@@ -66,6 +80,12 @@ export interface EngineAnswer {
   state: string
   detail: string
   probe?: string
+}
+
+/** The takeover answer, in the backend's words: state, reason, and the lines that
+ *  spell out what it wrote (PAC path, the value `off` will hand back). */
+export interface ProxyAnswer extends EngineAnswer {
+  lines?: string[]
 }
 
 /**
@@ -81,6 +101,38 @@ export function appliedNote(engineLabel: string, engine?: EngineAnswer): string 
   return `${engineLabel}: ${engine.state} — ${engine.detail}${engine.probe ? ` (${engine.probe})` : ''}`
 }
 
+/**
+ * What the machine-wide half is actually doing, in four distinct sentences.
+ *
+ * `declared` is the intent (what the table says) and `ours` is the registry — the
+ * two disagree whenever a takeover was refused or someone else rewrote the
+ * settings underneath us, so the pane must not collapse them into one word. No
+ * branch is optimistic: a missing reading says nothing rather than "off".
+ */
+export function proxyStateText(
+  copy: {
+    proxyDeclaredNotApplied: string
+    proxyNotOurs: string
+    proxyOurs: string
+    proxyUnsupported: string
+  },
+  proxy?: NetworkStatusSystemProxy
+): string {
+  if (!proxy) {
+    return ''
+  }
+
+  if (!proxy.supported) {
+    return copy.proxyUnsupported
+  }
+
+  if (proxy.ours) {
+    return copy.proxyOurs
+  }
+
+  return proxy.declared ? copy.proxyDeclaredNotApplied : copy.proxyNotOurs
+}
+
 export function NetworkSettings() {
   const { t } = useI18n()
   const copy = t.settings.network
@@ -92,6 +144,8 @@ export function NetworkSettings() {
   const [saved, setSaved] = useState(false)
   const [applied, setApplied] = useState('')
   const [saving, setSaving] = useState(false)
+  const [proxyBusy, setProxyBusy] = useState(false)
+  const [proxyAnswer, setProxyAnswer] = useState<ProxyAnswer | null>(null)
 
   const load = async () => {
     const fetched = await getNetworkEgress()
@@ -133,6 +187,25 @@ export function NetworkSettings() {
     }
   }
 
+  const setProxy = async (enabled: boolean) => {
+    setProxyBusy(true)
+    setError('')
+
+    try {
+      const result = await setNetworkSystemProxy(enabled)
+
+      setProxyAnswer(result.proxy ?? null)
+      // The switch is a key inside the table, and the editor holds a copy of that
+      // table — reload so the next Save cannot write back the pre-toggle block.
+      await load()
+      setStatus(await getNetworkStatus())
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setProxyBusy(false)
+    }
+  }
+
   const badgeFor = (match: string) => {
     const rule = status?.rules.find((entry) => entry.match === match)
     if (!rule) return ''
@@ -147,6 +220,27 @@ export function NetworkSettings() {
     <SettingsContent>
       <SectionHeading icon={Globe} meta={status?.engine.state ?? ''} title={copy.title} />
       <p className={CAPTION}>{copy.intro}</p>
+
+      <div className="grid gap-1">
+        <ListRow
+          action={
+            <Switch
+              aria-label={copy.systemProxy}
+              checked={status?.system_proxy?.declared ?? false}
+              disabled={!status?.system_proxy?.supported || proxyBusy}
+              onCheckedChange={(on) => void setProxy(on)}
+            />
+          }
+          description={proxyStateText(copy, status?.system_proxy)}
+          title={copy.systemProxy}
+        />
+        {proxyAnswer ? <p className={CAPTION}>{appliedNote(copy.proxyApplied, proxyAnswer)}</p> : null}
+        {(proxyAnswer?.lines ?? []).map((line, index) => (
+          <p className={CAPTION} key={index}>
+            {line}
+          </p>
+        ))}
+      </div>
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between">

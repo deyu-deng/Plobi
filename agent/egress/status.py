@@ -9,11 +9,15 @@ is worse than none, because the two readings will disagree in the field.
 This module starts nothing and probes nothing new; it calls
 :func:`agent.egress.engine.status` (which is itself read-only) so the answer a
 user sees is produced by the same functions supervision uses.
+
+The machine-wide half (:func:`agent.egress.system_proxy.status`) is read from the
+registry here too, so "is Plobi the machine's proxy right now" has exactly one
+answer for the CLI, the panel, and the boot path.
 """
 
 from __future__ import annotations
 
-from agent.egress import engine
+from agent.egress import engine, system_proxy
 from agent.egress.rules import Table, load_table
 
 
@@ -53,6 +57,7 @@ def snapshot(table: Table | None = None, *, home: str | None = None) -> dict:
             "notes": list(report.notes),
         },
         "downgrades": engine.recent_downgrades(),
+        "system_proxy": system_proxy.status(table),
     }
 
 
@@ -106,5 +111,7 @@ def render(
         lines.extend(report.lines())
         for item in engine.recent_downgrades():
             lines.append(f"downgrade: {item['exit']} — {item['reason']}")
+
+    lines.extend(system_proxy.status_lines(system_proxy.status(table, home=home)))
 
     return lines

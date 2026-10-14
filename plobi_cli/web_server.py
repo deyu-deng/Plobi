@@ -14404,6 +14404,48 @@ async def get_network_status(profile: Optional[str] = None):
         return snapshot()
 
 
+class NetworkSystemProxyUpdate(BaseModel):
+    enabled: bool
+    profile: Optional[str] = None
+
+
+def _apply_system_proxy() -> Dict[str, Any]:
+    """Make the machine's own proxy agree with the table just written, and report it.
+
+    The switch is not a note to self: if the registry never learns about it the
+    pane has produced the exact ``配了不生效`` this whole surface exists to prevent.
+    ``ensure`` refuses when the exit would leave the box with no way out, so a
+    refusal has to reach the caller as words, not a log line (裁定 94).
+    """
+    from agent.egress import system_proxy as _system_proxy
+    from agent.egress.rules import load_table as _load_egress_table
+
+    try:
+        plan = _system_proxy.ensure(_load_egress_table())
+    except Exception as exc:  # noqa: BLE001 - the switch landed; say what did not
+        return {"state": "failed", "detail": f"{type(exc).__name__}: {exc}", "lines": []}
+    if plan is None:
+        return {"state": "idle", "detail": "表里没说要接管，注册表不动", "lines": []}
+    return {
+        "state": "applied" if plan.ok else "refused",
+        "detail": plan.reason,
+        "lines": plan.lines(),
+    }
+
+
+@app.post("/api/network/system-proxy")
+async def post_network_system_proxy(body: NetworkSystemProxyUpdate):
+    """Flip ``network.egress.system_proxy.enabled`` and apply it now."""
+    from plobi_cli.egress_config import set_system_proxy
+
+    with _profile_scope(body.profile):
+        ok, issues = set_system_proxy(body.enabled)
+    if not ok:
+        raise HTTPException(status_code=400, detail="; ".join(issues))
+    with _profile_scope(body.profile):
+        return {"ok": True, "enabled": body.enabled, "proxy": _apply_system_proxy()}
+
+
 # ---------------------------------------------------------------------------
 # Token / cost analytics endpoint
 # ---------------------------------------------------------------------------
