@@ -59,13 +59,15 @@ def test_unpinned_pointer_keeps_the_legacy_layout(mind, monkeypatch):
 def test_pinned_pointer_moves_the_human_surface_out(mind, sibling_vault, monkeypatch):
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
     assert real_target(VAULT_LOGICAL, mind) == sibling_vault / "notes"
-    # the brain half is untouched by the vault pointer
-    assert real_target(MIND_LOGICAL, mind) == mind / MIND_LOGICAL
+    # the brain half is the flattened one: Loom/ is a logical name only
+    assert real_target(MIND_LOGICAL, mind) == mind / "wiki" / "concepts"
 
 
 def test_flattened_brain_drops_the_loom_level(mind, monkeypatch):
+    """The flag is the whole switch: False = 旧 Loom 壳，True = 平铺（现在是 True）."""
     monkeypatch.delenv("VAULT_ROOT", raising=False)
     (mind / "Loom" / "wiki" / "concepts").mkdir(parents=True)
+    monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", False)
     assert real_target(MIND_LOGICAL, mind) == mind / "Loom" / "wiki" / "concepts"
     monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", True)
     assert real_target(MIND_LOGICAL, mind) == mind / "wiki" / "concepts"
@@ -76,6 +78,7 @@ def test_an_empty_brain_is_not_mistaken_for_a_flattened_one(mind, monkeypatch):
     answers "flattened" for every test fake vault and every fresh clone, which
     would relocate AI-authored writes to the brain root without anyone deciding it."""
     monkeypatch.delenv("VAULT_ROOT", raising=False)
+    monkeypatch.setattr(paths, "BRAIN_IS_FLATTENED", False)
     assert not (mind / "Loom").exists()
     assert real_target(MIND_LOGICAL, mind) == mind / "Loom" / "wiki" / "concepts"
 
@@ -158,8 +161,8 @@ def test_first_file_in_an_absent_zone_is_still_inside_it(mind, monkeypatch):
     write — caught by the existing adapter family, not by this suite.
     """
     monkeypatch.delenv("VAULT_ROOT", raising=False)
-    assert not (mind / "Loom" / "raw").exists()
-    assert logical_target(mind / "Loom/raw/chat-logs/exports/chat.md", mind) == (
+    assert not (mind / "raw" / "chat-logs" / "exports").exists()
+    assert logical_target(mind / "raw/chat-logs/exports/chat.md", mind) == (
         "Loom/raw/chat-logs/exports/chat.md"
     )
 

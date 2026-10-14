@@ -371,6 +371,13 @@ def _hermetic_environment(tmp_path, monkeypatch):
     (fake_mind / "AGENTS.md").write_text("# Mind — fake vault for tests\n", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(fake_mind))
 
+    # 3d. Blank VAULT_ROOT too. Since the 2026-10-14 split the human surface is a
+    #     sibling repo pinned in HKCU\Environment, so a test inheriting it would
+    #     resolve ``Vault/…`` to the user's REAL vault and write fake project trees
+    #     into it. Unset, the resolver answers ``<MIND_ROOT>/Vault`` — which is the
+    #     fake vault the three lines above just built.
+    monkeypatch.delenv("VAULT_ROOT", raising=False)
+
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with
     #    C.UTF-8 locale; local dev often doesn't. Pin everything.
     monkeypatch.setenv("TZ", "UTC")

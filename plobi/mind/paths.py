@@ -53,7 +53,7 @@ VAULT_ROOT_ENV = "VAULT_ROOT"
 # the disk answers "flattened" for any empty directory — every test fake vault and
 # every fresh clone — and would silently relocate AI writes to the brain root.
 # The vault half does not need a flag because ``VAULT_ROOT`` is a positive pointer.
-BRAIN_IS_FLATTENED = False
+BRAIN_IS_FLATTENED = True
 
 
 class MindUnavailable(RuntimeError):

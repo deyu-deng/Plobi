@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 from plobi.agents.registry import AgentEntry, AgentRegistry
 import plobi.console.router as console_router
 from plobi.delegation.tracker import SubagentTracker, set_tracker
+from plobi.mind import paths
 from plobi.mind.paths import resolve_root
 from plobi.mind.project_declarations import (
     AGENTS_RELATIVE,
@@ -60,7 +61,7 @@ def brain_generator() -> tuple[Path, Path]:
             "生成器，这条声明纪律就没人验；报红而不是 skip，免得"
             "少跑被当成绿（裁定 91）。"
         )
-    verifier = root / VERIFIER_RELATIVE
+    verifier = paths.real_target(VERIFIER_RELATIVE, root)
     if not verifier.is_file():
         pytest.fail(
             f"脑仓已配置在 {root}，但那里找不到 {VERIFIER_RELATIVE} —— 脑仓的门禁脚本本身缺位，"
@@ -131,17 +132,17 @@ def build_brain(
     ``generator`` 是真脑自己那份门禁脚本（由 ``brain_generator`` 夹具在 session 作用域
     解析后传进来），这里只复制、不发明第二份生成器。
     """
-    script = root / VERIFIER_RELATIVE
+    script = paths.real_target(VERIFIER_RELATIVE, root)
     script.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(generator, script)
 
     # 门禁的其余检查项要有东西可查，否则退出码 2（脚本自身异常）掩盖我们要验的那一条。
-    skills = root / "Loom" / "skills"
+    skills = paths.real_target("Loom/skills", root)
     skills.mkdir(parents=True, exist_ok=True)
     (skills / "INDEX.md").write_text("total_skills: 0\n", encoding="utf-8")
-    (root / "Loom" / "wiki").mkdir(parents=True, exist_ok=True)
+    paths.real_target("Loom/wiki", root).mkdir(parents=True, exist_ok=True)
 
-    base = root / PROJECTS_RELATIVE
+    base = paths.real_target(PROJECTS_RELATIVE, root)
     base.mkdir(parents=True, exist_ok=True)
     for name in disk:
         make_plan(base / name, name)
@@ -149,7 +150,7 @@ def build_brain(
     (root / AGENTS_RELATIVE).write_text(
         agents_document(sorted(disk) if declared is None else declared), encoding="utf-8"
     )
-    (root / INDEX_RELATIVE).write_text(PLACEHOLDER_INDEX, encoding="utf-8")
+    (paths.real_target(INDEX_RELATIVE, root)).write_text(PLACEHOLDER_INDEX, encoding="utf-8")
     return root
 
 
@@ -210,7 +211,7 @@ def make_brain(tmp_path, monkeypatch, isolated_registry, brain_generator):
 
 
 def disk_names(root: Path) -> list[str]:
-    base = root / PROJECTS_RELATIVE
+    base = paths.real_target(PROJECTS_RELATIVE, root)
     if not base.is_dir():
         return []
     return sorted(child.name for child in base.iterdir() if child.is_dir())
@@ -222,7 +223,7 @@ def agents_bytes(root: Path) -> bytes | None:
 
 
 def index_bytes(root: Path) -> bytes | None:
-    path = root / INDEX_RELATIVE
+    path = paths.real_target(INDEX_RELATIVE, root)
     return path.read_bytes() if path.is_file() else None
 
 
@@ -237,7 +238,7 @@ def snapshot(root: Path) -> dict:
 def run_gate(root: Path, *args: str) -> subprocess.CompletedProcess:
     """直接跑那个根自己的 verifier——就是脑仓 pre-commit 跑的那一次。"""
     return subprocess.run(
-        [sys.executable, str(root / VERIFIER_RELATIVE), *args],
+        [sys.executable, str(paths.real_target(VERIFIER_RELATIVE, root)), *args],
         cwd=str(root),
         capture_output=True,
         text=True,
@@ -269,7 +270,7 @@ def break_verifier(root: Path, *, mode: str) -> None:
         )
     else:  # 脚本自身跑不起来（退出码 2 那条路）
         body = 'import sys\nraise ValueError("verifier 运行异常")\n'
-    (root / VERIFIER_RELATIVE).write_text(body, encoding="utf-8")
+    (paths.real_target(VERIFIER_RELATIVE, root)).write_text(body, encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
@@ -303,7 +304,7 @@ def test_a_new_project_lands_in_both_declarations_and_the_gate_passes(
     assert f"{len(names)} 个项目" in line
 
     # INDEX.md 由脑仓自己的生成器重跑过（人手的占位版已被覆盖），里面有它。
-    index = (root / INDEX_RELATIVE).read_text(encoding="utf-8")
+    index = (paths.real_target(INDEX_RELATIVE, root)).read_text(encoding="utf-8")
     assert index != PLACEHOLDER_INDEX
     assert "Orbit" in index
 
@@ -314,7 +315,7 @@ def test_a_new_project_lands_in_both_declarations_and_the_gate_passes(
     # 名册那一行也确实落了盘（不是只活在内存里）。
     assert AgentRegistry.load(isolated_registry.path).get("orbit") is not None
     # 三件套在、且改动只发生在应有的地方（临时根里没留下写锁一类的残骸）。
-    assert (root / PROJECTS_RELATIVE / "Orbit" / "plan.md").is_file()
+    assert (paths.real_target(PROJECTS_RELATIVE, root) / "Orbit" / "plan.md").is_file()
     assert not (root / ".plobi-mind.lock").exists()
 
 
@@ -462,7 +463,7 @@ def test_a_brain_without_its_generator_refuses_to_invent_one(
     """带着 AGENTS.md 却没有 verifier：不许自己另写一套 INDEX 生成器，直接判创建失败。"""
     root = tmp_path / "half-brain"
     build_brain(root, disk=["Aura"], generator=brain_generator[1])
-    (root / VERIFIER_RELATIVE).unlink()
+    (paths.real_target(VERIFIER_RELATIVE, root)).unlink()
     monkeypatch.setenv("MIND_ROOT", str(root))
     before = snapshot(root)
 
@@ -508,7 +509,7 @@ def test_a_root_without_the_brain_gates_still_creates_just_the_tree(
     response = create(client, {"id": "orbit", "name": "Orbit", "category": "projects"})
 
     assert response.status_code == 200, response.json()
-    assert (root / PROJECTS_RELATIVE / "Orbit" / "plan.md").is_file()
+    assert (paths.real_target(PROJECTS_RELATIVE, root) / "Orbit" / "plan.md").is_file()
     # 没有声明可同步 ≠ 自己造一份：那正是脑仓门禁与磁盘长期不一致的来源。
     assert not (root / AGENTS_RELATIVE).exists()
-    assert not (root / INDEX_RELATIVE).exists()
+    assert not (paths.real_target(INDEX_RELATIVE, root)).exists()
