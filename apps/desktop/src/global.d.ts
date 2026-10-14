@@ -201,14 +201,6 @@ declare global {
       // calls this when it opens. The renderer's own fetch is preflighted and the hub
       // sends no CORS headers, so this is the only way to get a current verdict.
       requestQuotaApps?: () => Promise<boolean>
-      // Quota hub traffic proxied by the main process (the renderer's own fetch
-      // is preflighted and the hub sends no CORS headers). Exactly one `status`
-      // arrives first; then `chunk` frames of raw SSE bytes, ending in `done` —
-      // or a non-OK reply arrives as one `body` frame, and a transport failure
-      // as one `error` frame.
-      onQuotaStreamFrame?: (callback: (frame: DesktopQuotaStreamFrame) => void) => () => void
-      quotaStream?: (requestId: string, url: string, body: unknown) => Promise<boolean>
-      quotaStreamAbort?: (requestId: string) => Promise<boolean>
       getBootstrapState: () => Promise<DesktopBootstrapState>
       resetBootstrap: () => Promise<{ ok: boolean }>
       repairBootstrap: () => Promise<{ ok: boolean }>

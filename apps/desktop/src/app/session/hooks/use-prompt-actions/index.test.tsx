@@ -9,7 +9,6 @@ import { $composerAttachments, $composerDraft, type ComposerAttachment, setCompo
 import { $connectedDesktopApps } from '@/store/desktop-quotas'
 import { $notifications } from '@/store/notifications'
 import { $busy, $connection, $currentModel, $currentProvider, $messages, $sessions, setSessions } from '@/store/session'
-import { streamDesktopQuotaChat } from '@/lib/desktop-quota-chat'
 import type { SessionInfo } from '@/types/plobi'
 
 import { uploadComposerAttachment, usePromptActions } from '.'
@@ -20,16 +19,6 @@ vi.mock('@/plobi', () => ({
   setApiRequestProfile: vi.fn(),
   transcribeAudio: vi.fn()
 }))
-
-// Stream the turn through aigw without hitting the network — we only assert the
-// routing decision (model id, base url, the fact that prompt.submit is skipped).
-vi.mock('@/lib/desktop-quota-chat', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/desktop-quota-chat')>()
-  return {
-    ...actual,
-    streamDesktopQuotaChat: vi.fn(async () => {})
-  }
-})
 
 // The active id the desktop holds is the *runtime* session id from
 // session.create — deliberately distinct from the stored DB id here, because
@@ -127,12 +116,6 @@ function Harness({
     selectedStoredSessionIdRef,
     startFreshSessionDraft: () => undefined,
     sttEnabled: false,
-    desktopQuotaStream: {
-      appendAssistantDelta: vi.fn(),
-      appendReasoningDelta: vi.fn(),
-      completeAssistantMessage: vi.fn(),
-      failAssistantMessage: vi.fn()
-    },
     updateSessionState: (_sessionId, updater) => {
       // Seed with interrupted:true so we can prove a fresh submit clears it.
       const next = updater(stateRef.current) as unknown as Record<string, unknown>
@@ -1633,7 +1616,6 @@ describe('usePromptActions hub-backed model routing (a pick is a backend model)'
     $connectedDesktopApps.set({})
     $currentProvider.set('')
     $currentModel.set('')
-    vi.mocked(streamDesktopQuotaChat).mockClear()
   })
 
   // The turn the user complained about: a hub-backed model used to stream
@@ -1656,8 +1638,6 @@ describe('usePromptActions hub-backed model routing (a pick is a backend model)'
     const ok = await handle!.submitText('hello from the desktop quota')
 
     expect(ok).toBe(true)
-
-    expect(vi.mocked(streamDesktopQuotaChat).mock.calls).toHaveLength(0)
 
     const submitCalls = vi.mocked(requestGateway).mock.calls.filter(c => c[0] === 'prompt.submit')
 
@@ -1682,8 +1662,6 @@ describe('usePromptActions hub-backed model routing (a pick is a backend model)'
     )
 
     await handle!.submitText('backend turn')
-
-    expect(vi.mocked(streamDesktopQuotaChat).mock.calls).toHaveLength(0)
     const submitCalls = vi.mocked(requestGateway).mock.calls.filter(c => c[0] === 'prompt.submit')
     expect(submitCalls.length).toBeGreaterThan(0)
   })
