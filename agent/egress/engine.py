@@ -473,6 +473,31 @@ def _spawn(snap: _Snapshot, log_path: Path) -> tuple[int, float]:
     return proc.pid, proc.create_time() if hasattr(proc, "create_time") else time.time()
 
 
+def _tun_gate(table: Table, snap: _Snapshot) -> Optional[EngineReport]:
+    """Refuse a TUN start this machine cannot host — or return None to go ahead."""
+    from agent.egress import tun
+
+    if snap.source == "pool":
+        # We do not rewrite somebody else's engine file, so we cannot deliver TUN from it.
+        return EngineReport(
+            FAILED,
+            "TUN 要写进引擎那份 config.yaml，而现在跑的是别人维护的目录（config_source=pool）——"
+            "本线不改写那份文件。要么把成员搬进 network.egress.nodes/.groups 让我们自己编译，"
+            "要么在那份文件里自己加 tun 段",
+            snap.port, str(snap.workdir or ""), snap.source,
+            notes=(*snap.notes, "tun: refused — the pool file is not ours to rewrite"),
+        )
+    verdict = tun.preflight(table)
+    if verdict["ok"]:
+        return None
+    return EngineReport(
+        FAILED,
+        "TUN 被守卫拒了：" + "；".join(verdict["reasons"]),
+        snap.port, str(snap.workdir or ""), snap.source,
+        notes=(*snap.notes, *tun.status_lines(verdict)),
+    )
+
+
 def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0) -> EngineReport:
     """Bring the engine up if it is ours to bring up.
 
@@ -503,6 +528,14 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
                               f"(shipping it is its own decision)")
     if snap.workdir is None or snap.config_path is None:
         return replace(current, state=FAILED, detail=",".join(snap.notes) or "no workdir resolved")
+
+    #: A TUN rewrites this machine's default route, so it gets a gate before anything
+    #: is written or started: no admin, another party's TUN on the box, or an unreadable
+    #: routing table all mean **refuse**, never "start without it and hope nobody notices".
+    if table.engine_tun.get("enabled"):
+        refused = _tun_gate(table, snap)
+        if refused is not None:
+            return refused
 
     snap.workdir.mkdir(parents=True, exist_ok=True)
     data, render_notes = _render(snap, table)
