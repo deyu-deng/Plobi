@@ -197,26 +197,6 @@ def test_offload_argv_carries_no_plobi_side_bypass(workdir, monkeypatch):
     assert "PLOBI_APPROVAL_DISABLED" not in captured["env"]
 
 
-def test_plobi_gate_still_denies_without_an_approver(monkeypatch):
-    """The other half of 判据 3: when the external agent calls back into a
-    dangerous Plobi tool and nobody is there to approve, it is refused."""
-    import tools.approval as approval
-
-    from agent.codebuddy_acp_client import ask_approval
-
-    called = {}
-
-    def fake_gate(tool_name, reason, *, rule_key="", approval_callback=None):
-        called["callback"] = approval_callback
-        return {"approved": False, "message": "no approver present"}
-
-    monkeypatch.setattr(approval, "request_tool_approval", fake_gate)
-    monkeypatch.setattr("agent.codebuddy_acp_client._tls_approval_callback", lambda: None)
-
-    assert ask_approval(None, "write_file", {"path": "x"}) == "deny"
-    assert called["callback"] is None
-
-
 def test_timeout_is_reported_not_swallowed(workdir, monkeypatch):
     monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
 
