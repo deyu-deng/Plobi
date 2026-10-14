@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 from typing import List
 
-from plobi.mind.paths import SAFE_PREFIXES
+from plobi.mind.paths import SAFE_PREFIXES, real_target
 
 MAX_SNIPPET_CHARS = 1200
 MAX_TOTAL_CHARS = 6000
@@ -98,7 +98,7 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
 
     hits: List[tuple[int, str, str]] = []  # (score, relative_path, snippet)
     for prefix in SAFE_PREFIXES:
-        base = root / prefix
+        base = real_target(prefix, root)
         if not base.is_dir():
             continue
         for md in sorted(base.rglob("*.md")):
@@ -110,7 +110,7 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
             score = sum(low.count(t) for t in terms)
             if score == 0:
                 continue
-            rel = md.relative_to(root).as_posix()
+            rel = f"{prefix}/{md.relative_to(base).as_posix()}"
             hits.append((score, rel, _snippet_for(text, terms)))
 
     hits.sort(key=lambda h: (-h[0], h[1]))

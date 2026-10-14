@@ -19,7 +19,15 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .lock import mind_write_lock
-from .paths import MindUnavailable, UnsafeMindPath, git_toplevel, require_root, resolve_root, safe_target
+from .paths import (
+    MindUnavailable,
+    UnsafeMindPath,
+    git_toplevel,
+    real_target,
+    require_root,
+    resolve_root,
+    safe_target,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +88,7 @@ class MindWriter:
         with mind_write_lock(self._lock_path(root), timeout=self.lock_timeout):
             for request in batch:
                 try:
-                    target = safe_target(root, request.relative_path)
+                    target = safe_target(root, request.relative_path, creating=True)
                 except UnsafeMindPath as exc:
                     logger.warning("mind: refused write to %s (%s)", request.relative_path, exc)
                     skipped.append(request.relative_path)
@@ -117,7 +125,7 @@ class MindWriter:
     # --- guards -------------------------------------------------------------
 
     def _verify(self, root: Path) -> tuple[bool, str]:
-        script = root / VERIFIER_RELATIVE
+        script = real_target(VERIFIER_RELATIVE, root)
         if not script.is_file():
             return True, "verifier not present"
 

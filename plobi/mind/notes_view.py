@@ -23,14 +23,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from .paths import real_target
+
 logger = logging.getLogger(__name__)
 
 BELONGS_KEY = "belongs"
 
-# Where notes live under MIND_ROOT. The one-shot structure migration edits this
-# line (and only this line): after the folders are flattened the root is "notes/".
-# Keeping both entries would be the "new and old layout coexisting" the ruling
-# forbids, so exactly one is listed and the missing one is reported, not guessed.
+# Where notes live, as a LOGICAL path: ``Vault/notes`` resolves through
+# :func:`plobi.mind.paths.real_target`, so the 2026-10-14 two-root move needs no
+# edit here — the human surface answers against ``VAULT_ROOT`` once that pointer is
+# pinned, and against ``<MIND_ROOT>/Vault`` until then. Exactly one entry is listed
+# because keeping both would be the "new and old layout coexisting" the ruling forbids.
 NOTE_ROOTS: tuple[str, ...] = ("Vault/notes",)
 
 MAX_ENTRIES = 200
@@ -114,7 +117,7 @@ def scan_notes(root: Path) -> Scan:
     """Walk the note roots once. Missing roots are skipped, not errors."""
     scan = Scan()
     for relative in NOTE_ROOTS:
-        base = root / relative
+        base = real_target(relative, root)
         if not base.is_dir():
             scan.skipped.append(f"{relative} (目录不存在)")
             continue
@@ -129,7 +132,7 @@ def scan_notes(root: Path) -> Scan:
             title = str(front.get("title") or path.stem).strip()
             scan.notes.append(
                 NoteEntry(
-                    path=path.relative_to(root).as_posix(),
+                    path=f"{relative}/{path.relative_to(base).as_posix()}",
                     title=title or path.stem,
                     chars=chars,
                     belongs=_belongs_of(front),
@@ -156,8 +159,8 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 def known_names(root: Path, entries: Iterable[Any]) -> tuple[str, ...]:
     """Registered owners: every live agent plus every project tree in the brain."""
     names = [entry.name for entry in entries if getattr(entry, "name", "")]
-    for relative in ("Vault/projects", "projects"):
-        base = root / relative
+    for relative in ("Vault/projects",):
+        base = real_target(relative, root)
         if base.is_dir():
             names.extend(path.name for path in sorted(base.iterdir()) if path.is_dir())
     return tuple(dict.fromkeys(n for n in names if n))

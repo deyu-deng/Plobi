@@ -1531,13 +1531,13 @@ def ensure_mind_project_agents(
     用户给它登记过分身，所以它进 ``mind_candidates`` 而不是 ``roster``。已有行的
     章一个都不改——那是用户的账面。
     """
-    from plobi.mind.paths import resolve_root
+    from plobi.mind.paths import real_target, resolve_root
 
     reg = registry if registry is not None else load_registry()
     root = resolve_root(mind_root)
     if root is None:
         return reg, []
-    projects_dir = root / "Vault" / "projects"
+    projects_dir = real_target("Vault/projects", root)
     if not projects_dir.is_dir():
         return reg, []
 
@@ -1683,11 +1683,11 @@ def run_project_status(
     user_text = (user_text or "").strip()
     reg, seeded = ensure_mind_project_agents(registry)
 
-    from plobi.mind.paths import resolve_root
+    from plobi.mind.paths import real_target, resolve_root
 
     mind_root = resolve_root(None)
     projects_base = (
-        mind_root / "Vault" / "projects" if mind_root is not None else None
+        real_target("Vault/projects", mind_root) if mind_root is not None else None
     )
 
     rows: list[dict] = []

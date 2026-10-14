@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .paths import resolve_root
+from .paths import real_target, resolve_root
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class MindReader:
         root = self.root
         if root is None:
             return ""
-        path = root / PERSONA_RELATIVE
+        path = real_target(PERSONA_RELATIVE, root)
         if not path.is_file():
             # Loud on purpose: this pointer used to name a file the real vault never
             # had, while the test fixture created that phantom path — so the slice was
@@ -81,7 +81,7 @@ class MindReader:
         if root is None:
             return None
 
-        directory = root / PROJECTS_RELATIVE / name
+        directory = real_target(f"{PROJECTS_RELATIVE}/{name}", root)
         if not directory.is_dir():
             return None
 
@@ -96,7 +96,7 @@ class MindReader:
         if root is None:
             return []
 
-        base = root / PROJECTS_RELATIVE
+        base = real_target(PROJECTS_RELATIVE, root)
         if not base.is_dir():
             return []
 
