@@ -1,0 +1,117 @@
+import { fileURLToPath } from 'node:url'
+
+import { describe, expect, it } from 'vitest'
+
+import {
+  artifactPathOf,
+  fileUrlFor,
+  groupRoundsByTarget,
+  jumpTargetFor,
+  type OffloadRound,
+  roundFacts,
+} from './agent-offloads'
+
+function round(over: Partial<OffloadRound> = {}): OffloadRound {
+  return {
+    agent: 'codebuddy',
+    artifacts: [{ path: 'D:/projects/Aura/today.py', sha256_12: '3da942743391' }],
+    brief: '把今天的读数写成页',
+    cost_status: 'usage_reported_without_price',
+    cwd: 'D:/projects/Aura',
+    duration_seconds: 16.4,
+    permission_flag: '-y --permission-mode=bypassPermissions',
+    ts: '2026-10-13T01:00:00+00:00',
+    ...over,
+  }
+}
+
+describe('groupRoundsByTarget', () => {
+  it('按外包对象分组，组内新的在前，组间按名字稳定', () => {
+    const groups = groupRoundsByTarget([
+      round({ ts: '2026-10-11T00:00:00+00:00' }),
+      round({ agent: 'agy', ts: '2026-10-12T00:00:00+00:00' }),
+      round({ ts: '2026-10-13T00:00:00+00:00' }),
+    ])
+
+    expect(groups.map(g => g.target)).toEqual(['agy', 'codebuddy'])
+    expect(groups[1]!.rounds.map(r => r.ts)).toEqual([
+      '2026-10-13T00:00:00+00:00',
+      '2026-10-11T00:00:00+00:00',
+    ])
+  })
+
+  it('没有对象名的行归到 unknown，不被丢掉', () => {
+    expect(groupRoundsByTarget([round({ agent: '  ' })]).map(g => g.target)).toEqual(['unknown'])
+  })
+
+  it('空表就是空表', () => {
+    expect(groupRoundsByTarget([])).toEqual([])
+  })
+})
+
+describe('fileUrlFor —— 裸路径主进程不认，必须给 file://', () => {
+  it('反斜杠与正斜杠都能落回同一个路径', () => {
+    for (const raw of ['D:\\projects\\Aura\\today.py', 'D:/projects/Aura/today.py']) {
+      expect(fileURLToPath(new URL(fileUrlFor(raw)))).toBe('D:\\projects\\Aura\\today.py')
+    }
+  })
+
+  it('空格、中文、# 都要编码，否则 URL 解析会把后半截当片段', () => {
+    const url = fileUrlFor('D:/数据 库/笔记 #1.md')
+
+    expect(url).not.toContain(' ')
+    expect(url).not.toContain('#')
+    expect(fileURLToPath(new URL(url))).toBe('D:\\数据 库\\笔记 #1.md')
+  })
+
+  it('开头的斜杠不许多出一层空段', () => {
+    expect(fileUrlFor('/tmp/a b.txt')).toBe('file:///tmp/a%20b.txt')
+  })
+})
+
+describe('jumpTargetFor —— 跳不进会话就不许给一个假的可点行', () => {
+  it('通道不回会话号 ⇒ 有产物也只能退成"打开落盘的东西"', () => {
+    const plan = jumpTargetFor(round())
+
+    expect(plan.kind).toBe('reveal')
+    expect(plan.reason).toBe('')
+    expect(plan.url).toBe('file:///D:/projects/Aura/today.py')
+  })
+
+  it('没有产物（或产物路径是空的）：不可点，并给机器可读的原因', () => {
+    for (const over of [{ artifacts: [] }, { artifacts: [{ path: '  ' }] }, { artifacts: undefined }]) {
+      const plan = jumpTargetFor(round(over))
+
+      expect(plan.kind).toBe('none')
+      expect(plan.reason).toBe('no-artifact')
+      expect(plan.url).toBe('')
+    }
+  })
+
+  it('artifactPathOf 取第一个有值的产物，不取空串', () => {
+    expect(artifactPathOf(round({ artifacts: [{ path: '' }, { path: 'D:/x/y.md' }] }))).toBe('D:/x/y.md')
+  })
+})
+
+describe('roundFacts —— 一行上的读数（判据 2：谁·目录·权限档·花费）', () => {
+  it('金额算不出是 null 并带上原因，绝不报 0（R-073）', () => {
+    const facts = roundFacts(round())
+
+    expect(facts.costUsd).toBeNull()
+    expect(facts.costStatus).toBe('usage_reported_without_price')
+  })
+
+  it('真报价为 0 就是 0，不被当成"没报"', () => {
+    expect(roundFacts(round({ usage: { cost_usd: 0 } })).costUsd).toBe(0)
+  })
+
+  it('耗时缺省或 0 ⇒ null（渲染层就不会写出 "0s"）', () => {
+    expect(roundFacts(round({ duration_seconds: 0 })).durationSeconds).toBeNull()
+    expect(roundFacts(round({ duration_seconds: undefined })).durationSeconds).toBeNull()
+    expect(roundFacts(round({ duration_seconds: 16.4 })).durationSeconds).toBe(16.4)
+  })
+
+  it('权限档原样带出来', () => {
+    expect(roundFacts(round()).permissionFlag).toBe('-y --permission-mode=bypassPermissions')
+  })
+})

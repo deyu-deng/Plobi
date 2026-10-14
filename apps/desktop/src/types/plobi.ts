@@ -381,6 +381,30 @@ export interface SessionMessage {
   tool_name?: string
 }
 
+/** 一轮外包的读数（`GET /api/agents/:id/offloads` 的行）。金额算不出时 cost 缺席。 */
+export type OffloadRound = {
+  agent?: string
+  artifacts?: { path?: string; sha256_12?: string }[]
+  brief?: string
+  cost_status?: string
+  cwd?: string
+  duration_seconds?: number
+  failure?: string
+  permission_flag?: string
+  ts?: string
+  usage?: null | Record<string, unknown>
+}
+
+export type AgentOffloadsData = {
+  agent: string
+  bound_folder: null | string
+  cost_status: string
+  rounds: OffloadRound[]
+  total_rounds: number
+  total_usd: null | number
+  unattributed_reason: string
+}
+
 export interface SessionMessagesResponse {
   messages: SessionMessage[]
   session_id: string

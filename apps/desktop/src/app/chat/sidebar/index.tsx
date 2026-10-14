@@ -125,6 +125,7 @@ import type { SidebarNavItem } from '../../types'
 
 import { AgentCategoryGroup } from './agent-category-group'
 import { agentProfileIdSet, groupAgentsByCategory, isL1SessionProfile, normalizeAgentCategory } from './agent-groups'
+import { AgentOffloadPanel } from './agent-offload-panel'
 import { hidesAgentSessions, shouldRenderProfileRail, showsSessionSurface, sidebarNavForLevel } from './nav-level'
 import { countLabel } from './chrome'
 import { SidebarCronJobsSection } from './cron-jobs-section'
@@ -295,6 +296,13 @@ export function ChatSidebar({
   // the shared `console/store/agents` cache — a render cache whose truth is the
   // backend `GET /api/agents` (WP-BE-1). Refreshed once per secretary route.
   const secretaryAgents = useStore($consoleAgents)
+  // 点进一个 L2 时左栏这一格默认换成"外包给了谁"；这一格只记住"我按了返回"，
+  // 换一个分身就回到默认（不是全局开关，也不改导航）。
+  const [offloadsBackToList, setOffloadsBackToList] = useState(false)
+
+  useEffect(() => {
+    setOffloadsBackToList(false)
+  }, [l2Id])
   const secretaryAgentsLoading = useStore($consoleAgentsLoading)
 
   useEffect(() => {
@@ -1343,6 +1351,10 @@ export function ChatSidebar({
         {level && (
           <SidebarGroup className="shrink-0 p-0 pb-1">
             <SidebarGroupContent>
+              {l2Id && !offloadsBackToList && (
+                <AgentOffloadPanel agentId={l2Id} onBack={() => setOffloadsBackToList(true)} />
+              )}
+              {(!l2Id || offloadsBackToList) && (<>
               {/* Match PINNED/PROJECTS: SidebarPanelLabel already has pl-2 + dot — no extra px-2. */}
               <div className="flex shrink-0 items-center pb-1 pt-0.5">
                 <SidebarPanelLabel>{c.agentsTitle}</SidebarPanelLabel>
@@ -1373,6 +1385,7 @@ export function ChatSidebar({
                   ))}
                 </SidebarMenu>
               )}
+              </>)}
             </SidebarGroupContent>
           </SidebarGroup>
         )}
