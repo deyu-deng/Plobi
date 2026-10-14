@@ -13,10 +13,11 @@
  *     trailing-space/`python.exe` blind spot on 2026-10-09);
  *  ③ dev vs packaged relaunch as a RELATION (which chain gets reused), never as a
  *     hardcoded command string copied into Electron;
- *  ④ our own ANCESTRY is not a leftover (WP-TRAY-RESTART-REPAIR / R-087): in dev
- *     the wait used to count `concurrently` — our own parent — so it could never
- *     pass, and the restart never once succeeded. Same-tree cousins (the vite
- *     branch) are still counted; that boundary is pinned on purpose.
+ *  ④ our own dev SESSION TREE is not a leftover (WP-TRAY-RESTART-REPAIR / R-087
+ *     + 补丁): in dev the wait used to count the whole `npm run dev` tree —
+ *     concurrently AND the vite cousin branch — so it could never pass, and the
+ *     restart never once succeeded. The exclusion is now the session root's
+ *     entire subtree; a plobi tree outside it (foreign) is still counted.
  */
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -167,20 +168,41 @@ test('waitForTreeGone reports its OWN failure mode: still there when the clock r
   assert.deepEqual(verdict.lingering.map((entry) => entry.pid), [GATEWAY.pid])
 })
 
-// ── ②b 我们自己的祖先不算残留（WP-TRAY-RESTART-REPAIR / R-087） ─────────────
+// ── ②b 我们自己的会话树不算残留（WP-TRAY-RESTART-REPAIR / R-087 + 补丁） ───
 //
 // The deadlock this repairs, measured on the live dev tree 2026-10-14
 // (`Get-CimInstance Win32_Process` ppid probe): the app is a descendant of
-// `cmd /c npm run dev` → `concurrently`, and the old wait counted those parents
-// as leftovers — processes that only die BECAUSE the app exits. The wait could
-// never pass, the handoff script was never written, and no dev restart ever
-// succeeded once. Per the task book the entries we must not wait for are our
-// own ancestry, in whatever shape they arrive (concurrently / vite): the walk
-// from selfPid up the ppid chain decides, never the shape.
+// `cmd /c npm run dev` → npm → `concurrently`, and the old wait counted that
+// whole tree as leftovers — processes that only die BECAUSE the app exits. The
+// wait could never pass, the handoff script was never written, and no dev
+// restart ever succeeded once.
+//
+// 补丁（架构师裁定）: the exclusion is the whole dev SESSION, not just the
+// parent chain — the vite branch hangs off `concurrently` as a COUSIN of the
+// app (app ← … ← concurrently → npm run dev:renderer → cmd → vite), so a
+// parent-chain-only exclusion still left it counted. Walk from selfPid up to
+// the session root (the topmost ancestor still in the table — live-measured:
+// `cmd /c npm run dev` 9340, whose own parent 6460 is long gone), then take
+// that root's ENTIRE subtree. A plobi process OUTSIDE the subtree is a foreign
+// tree and still counts — that is the wait's honest job.
 
-/** Mirror of main.ts ownAncestorPids: every pid from `fromPid` up to the root. */
-function walkAncestorPids(entries: Array<{ pid: number; ppid?: number }>, fromPid: number): number[] {
+/** Mirror of main.ts ownDevTreePids: the session root plus its whole subtree. */
+function ownTreeOf(entries: Array<{ pid: number; ppid?: number }>, fromPid: number): { root: number; tree: number[] } {
   const byPid = new Map(entries.map((entry) => [entry.pid, entry]))
+  const childrenByParent = new Map<number, number[]>()
+
+  for (const entry of entries) {
+    if (entry.ppid && entry.ppid > 0) {
+      const siblings = childrenByParent.get(entry.ppid)
+
+      if (siblings) {
+        siblings.push(entry.pid)
+      } else {
+        childrenByParent.set(entry.ppid, [entry.pid])
+      }
+    }
+  }
+
   const chain: number[] = []
   const seen = new Set<number>([fromPid])
   let cursor = fromPid
@@ -188,14 +210,50 @@ function walkAncestorPids(entries: Array<{ pid: number; ppid?: number }>, fromPi
   for (;;) {
     const parent = byPid.get(cursor)?.ppid
 
-    if (!parent || seen.has(parent)) {
-      return chain
+    // Only climb to a parent that is itself in the table — the session root is
+    // the topmost ancestor the table can still see; climbing past it would
+    // crown a phantom pid (same guard as main.ts ownDevTreePids).
+    if (!parent || !byPid.has(parent) || seen.has(parent)) {
+      break
     }
 
     seen.add(parent)
     chain.push(parent)
     cursor = parent
   }
+
+  // No ancestry visible at all: degrade to excluding nothing — everything on
+  // screen might be foreign, and the wait must fail closed (R-053 direction).
+  if (chain.length === 0) {
+    return { root: fromPid, tree: [] }
+  }
+
+  const root = chain[chain.length - 1]
+  const tree: number[] = []
+  const emitted = new Set<number>()
+  const queue = [root]
+
+  while (queue.length > 0) {
+    const pid = queue.shift() as number
+
+    if (emitted.has(pid)) {
+      continue
+    }
+
+    emitted.add(pid)
+
+    if (pid !== fromPid) {
+      tree.push(pid)
+    }
+
+    for (const child of childrenByParent.get(pid) || []) {
+      if (!emitted.has(child)) {
+        queue.push(child)
+      }
+    }
+  }
+
+  return { root, tree }
 }
 
 const SELF_DEV = {
@@ -223,20 +281,21 @@ const ANC_OUTER_CMD = { pid: 4103, name: 'cmd.exe', commandLine: 'C:\\Windows\\s
 const FOREIGN_GATEWAY = { pid: 4242, name: 'pythonw.exe', commandLine: 'D:\\Runtimes\\Python\\pythonw.exe -m plobi_cli.main gateway run', ppid: 999 }
 const NEW_TREE_SERVE = { pid: 4243, name: 'python.exe', commandLine: 'D:\\Code\\.venv\\Scripts\\python.exe -m plobi_cli.main serve --host 127.0.0.1 --port 60073', ppid: 999 }
 
-test('our own ancestry is not counted as leftover — the dev deadlock is gone', () => {
+test('our own dev session tree is not counted as leftover — the dev deadlock is gone', () => {
   const table = [SELF_DEV, ANC_CONCURRENTLY, ANC_VITE, ANC_OUTER_CMD, FOREIGN_GATEWAY]
-  const ancestors = walkAncestorPids(table, SELF_DEV.pid)
+  const { root, tree } = ownTreeOf(table, SELF_DEV.pid)
 
-  assert.deepEqual(ancestors, [4101, 4102, 4103], 'ppid 链必须从 selfPid 一路走到根')
+  assert.equal(root, ANC_OUTER_CMD.pid, '父链必须一路走到会话根（cmd 那级）')
+  assert.deepEqual([...tree].sort((a, b) => a - b), [4101, 4102, 4103], '排除集 = 会话根整棵子树 − selfPid')
 
-  const lingering = findLingeringProcesses(table, { selfPid: SELF_DEV.pid, ancestorPids: ancestors })
+  const lingering = findLingeringProcesses(table, { selfPid: SELF_DEV.pid, ownTreePids: tree })
 
-  assert.deepEqual(lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid], '只剩外来者；祖先一个都不计')
+  assert.deepEqual(lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid], '只剩外来者；会话树一个都不计')
 })
 
-test('the SAME table still deadlocks without ancestorPids (the R-087 regression net)', () => {
+test('the SAME table still deadlocks without ownTreePids (the R-087 regression net)', () => {
   // 修前形状：只排 selfPid，concurrently 那两条（我们的父母）全被计成残留，
-  // 等待永远超时。这个断言钉住「ancestorPids 确实是解毒药」，不是摆设。
+  // 等待永远超时。这个断言钉住「ownTreePids 确实是解毒药」，不是摆设。
   const table = [SELF_DEV, ANC_CONCURRENTLY, ANC_VITE, ANC_OUTER_CMD, FOREIGN_GATEWAY]
 
   const before = findLingeringProcesses(table, { selfPid: SELF_DEV.pid })
@@ -244,39 +303,38 @@ test('the SAME table still deadlocks without ancestorPids (the R-087 regression 
   assert.deepEqual(before.map((entry) => entry.pid), [ANC_CONCURRENTLY.pid, ANC_VITE.pid, FOREIGN_GATEWAY.pid])
 })
 
-test('ancestorPids and pendingPids coexist: ancestry and the new tree both excluded', () => {
+test('ownTreePids and pendingPids coexist: the session tree and the new tree both excluded', () => {
   const table = [SELF_DEV, ANC_CONCURRENTLY, ANC_VITE, NEW_TREE_SERVE, FOREIGN_GATEWAY]
-  const ancestors = walkAncestorPids(table, SELF_DEV.pid)
 
   const lingering = findLingeringProcesses(table, {
     selfPid: SELF_DEV.pid,
-    ancestorPids: ancestors,
+    ownTreePids: ownTreeOf(table, SELF_DEV.pid).tree,
     pendingPids: [NEW_TREE_SERVE.pid]
   })
 
   assert.deepEqual(lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid], 'pendingPids 既有行为不变，外来者也仍计')
 })
 
-test('waitForTreeGone passes once only our own ancestry remains', async () => {
+test('waitForTreeGone passes once only our own session tree remains', async () => {
   const table = [[SELF_DEV, ANC_CONCURRENTLY, ANC_VITE, FOREIGN_GATEWAY], [SELF_DEV, ANC_CONCURRENTLY, ANC_VITE], []]
   let index = 0
 
   const verdict = await waitForTreeGone(() => table[index++], {
-    ancestorPids: walkAncestorPids(table[0], SELF_DEV.pid),
+    ownTreePids: ownTreeOf(table[0], SELF_DEV.pid).tree,
     selfPid: SELF_DEV.pid,
     timeoutMs: 1000,
     intervalMs: 1,
     sleep: async () => {}
   })
 
-  assert.equal(verdict.ok, true, '只剩祖先时等待必须放行：它们的死不是这个函数该等的事')
+  assert.equal(verdict.ok, true, '只剩会话树时等待必须放行：它们的死不是这个函数该等的事')
 })
 
-test('waitForTreeGone still fails on a FOREIGN tree process with ancestors excluded', async () => {
+test('waitForTreeGone still fails on a FOREIGN tree process with the session tree excluded', async () => {
   const table = [SELF_DEV, ANC_CONCURRENTLY, FOREIGN_GATEWAY]
 
   const verdict = await waitForTreeGone(() => table, {
-    ancestorPids: walkAncestorPids(table, SELF_DEV.pid),
+    ownTreePids: ownTreeOf(table, SELF_DEV.pid).tree,
     selfPid: SELF_DEV.pid,
     timeoutMs: 5,
     intervalMs: 1,
@@ -285,15 +343,16 @@ test('waitForTreeGone still fails on a FOREIGN tree process with ancestors exclu
 
   assert.equal(verdict.ok, false)
   assert.equal(verdict.stage, 'not-gone')
-  assert.deepEqual(verdict.lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid], '外来者仍计：排除只针对我们自己的父链')
+  assert.deepEqual(verdict.lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid], '外来者仍计：排除只针对我们自己的会话树')
 })
 
-test('a same-tree COUSIN (the real vite branch) is still counted — the exclusion is the parent chain only', () => {
-  // Live ppid probe 2026-10-14: the vite branch hangs off concurrently as a
-  // COUSIN of the app, not on its parent chain:
+test('a same-tree COUSIN (the real vite branch) is NOT counted — the exclusion is the whole session tree', () => {
+  // 翻案（架构师裁定 WP-TRAY-RESTART-REPAIR 补丁）：上一版这条断言「表亲仍计」，
+  // 因为排除面只有父链；现在排除面 = 会话根的整棵子树。算术依据：vite 分支
+  // （9348 → 22936）是会话根 9340（`cmd /c npm run dev`，实测其父 6460 已不在
+  // 表内）的后代 —— 在子树内 ⇒ 不计残留。
+  // Live ppid probe 2026-10-14:
   //   app 22020 ← … ← concurrently 20380 → npm run dev:renderer → cmd 9348 → vite 22936
-  // The fix is deliberately narrow (ancestorPids only), so the cousin stays
-  // counted. Pinned so that widening the exclusion later is a conscious change.
   const REAL_TREE = [
     { pid: 22020, name: 'electron.exe', commandLine: 'D:\\Code\\node_modules\\electron\\dist\\electron.exe .', ppid: 24372 },
     { pid: 24372, name: 'node.exe', commandLine: 'node D:\\Code\\node_modules\\.bin\\..\\electron\\cli.js "."', ppid: 14872 },
@@ -305,6 +364,7 @@ test('a same-tree COUSIN (the real vite branch) is still counted — the exclusi
     { pid: 20380, name: 'node.exe', commandLine: 'node D:\\Code\\node_modules\\.bin\\..\\concurrently\\dist\\bin\\index.js -k "npm:dev:renderer" "npm:dev:electron"', ppid: 27956 },
     { pid: 27956, name: 'cmd.exe', commandLine: 'C:\\Windows\\system32\\cmd.exe /d /s /c concurrently -k "npm:dev:renderer" "npm:dev:electron"', ppid: 10020 },
     { pid: 10020, name: 'node.exe', commandLine: 'node D:\\Runtimes\\Languages\\Node\\node_modules\\npm\\bin\\npm-cli.js run dev', ppid: 9340 },
+    { pid: 9340, name: 'cmd.exe', commandLine: '"C:\\Windows\\System32\\cmd.exe" /c npm run dev', ppid: 6460 },
     { pid: 33124, name: 'cmd.exe', commandLine: 'cmd.exe /s /c "npm run dev:renderer"', ppid: 20380 },
     { pid: 12864, name: 'node.exe', commandLine: 'node D:\\Runtimes\\Languages\\Node\\node_modules\\npm\\bin\\npm-cli.js run dev:renderer', ppid: 33124 },
     { pid: 9348, name: 'cmd.exe', commandLine: 'C:\\Windows\\system32\\cmd.exe /d /s /c node scripts/assert-root-install.mjs && vite --host 127.0.0.1 --port 5174', ppid: 12864 },
@@ -312,12 +372,65 @@ test('a same-tree COUSIN (the real vite branch) is still counted — the exclusi
     FOREIGN_GATEWAY
   ]
 
-  const lingering = findLingeringProcesses(REAL_TREE, {
-    selfPid: 22020,
-    ancestorPids: walkAncestorPids(REAL_TREE, 22020)
+  const { root, tree } = ownTreeOf(REAL_TREE, 22020)
+
+  assert.equal(root, 9340, '会话根必须是 cmd /c npm run dev 那级（其父 6460 不在表内）')
+  assert.ok(tree.includes(9348) && tree.includes(22936), 'vite 表亲必须落在会话根的子树里')
+
+  const lingering = findLingeringProcesses(REAL_TREE, { selfPid: 22020, ownTreePids: tree })
+
+  assert.deepEqual(lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid], '整棵会话树（含 vite 表亲）都不计；只剩外来 gateway')
+})
+
+test('a FOREIGN plobi tree outside the session root is still counted (the wait\'s whole job)', () => {
+  // 裁定要求的正当用途：另一棵完整的 plobi 树（自己的会话根，父链完全在我们
+  // 之外）必须仍计残留 —— 否则新树会撞它的端口与文件锁。
+  const FOREIGN_ROOT = { pid: 6001, name: 'cmd.exe', commandLine: 'C:\\Windows\\system32\\cmd.exe /d /s /c npm run dev', ppid: 7777 }
+  const FOREIGN_CONCURRENTLY = { pid: 6002, name: 'node.exe', commandLine: 'node D:\\Other\\node_modules\\.bin\\..\\concurrently\\dist\\bin\\index.js -k "npm:dev:renderer" "npm:dev:electron"', ppid: 6001 }
+  const FOREIGN_SERVE = { pid: 6003, name: 'python.exe', commandLine: 'D:\\Other\\.venv\\Scripts\\python.exe -m plobi_cli.main serve --host 127.0.0.1 --port 60073', ppid: 6002 }
+  const FOREIGN_GATEWAY2 = { pid: 6004, name: 'pythonw.exe', commandLine: 'D:\\Other\\pythonw.exe -m plobi_cli.main gateway run', ppid: 6002 }
+  const table = [SELF_DEV, ANC_CONCURRENTLY, ANC_OUTER_CMD, FOREIGN_ROOT, FOREIGN_CONCURRENTLY, FOREIGN_SERVE, FOREIGN_GATEWAY2]
+
+  const lingering = findLingeringProcesses(table, {
+    selfPid: SELF_DEV.pid,
+    ownTreePids: ownTreeOf(table, SELF_DEV.pid).tree
   })
 
-  assert.deepEqual(lingering.map((entry) => entry.pid), [9348, 22936, FOREIGN_GATEWAY.pid])
+  assert.deepEqual(lingering.map((entry) => entry.pid), [6002, 6003, 6004], '外来树整棵都计：排除逻辑不许吞掉等待存在的理由')
+})
+
+test('BOUNDARY: no ancestry visible at all — the exclusion degrades to nothing (fail closed)', () => {
+  // 表里看不到我们任何父链（读取被截断 / 父进程已死被重新挂父）：此时不许把
+  // 眼前进程当自己人全部排除 —— 排除集退化为空，连同自己的后端一起计，
+  // 等待 fail-closed（R-053 方向：看不见时不当作安全）。
+  const OWN_BACKEND = { pid: 4245, name: 'python.exe', commandLine: 'D:\\Code\\.venv\\Scripts\\python.exe -m plobi_cli.main serve --host 127.0.0.1 --port 0', ppid: SELF_DEV.pid }
+  const ORPHANED_SELF = { ...SELF_DEV, ppid: 4101 }
+  const table = [ORPHANED_SELF, OWN_BACKEND, FOREIGN_GATEWAY]
+
+  const { root, tree } = ownTreeOf(table, SELF_DEV.pid)
+
+  assert.equal(root, SELF_DEV.pid, '看不到父链时根就是自己')
+  assert.deepEqual(tree, [], '排除集退化为空：一个进程都不许替用户豁免')
+
+  const lingering = findLingeringProcesses(table, { selfPid: SELF_DEV.pid, ownTreePids: tree })
+
+  assert.deepEqual(lingering.map((entry) => entry.pid), [OWN_BACKEND.pid, FOREIGN_GATEWAY.pid], '自己的后端与外来者都计：宁可多等，不许放行')
+})
+
+test('BOUNDARY: a ppid cycle cannot hang the walk (pids get reused, stale ParentProcessId)', () => {
+  // pid 复用 / 陈旧 ParentProcessId 可能把父链指回环内：seen-set 必须让行走停
+  // （selfPid 一开始就在 seen 里，自环同样当场停）。
+  const CYCLED_CMD = { pid: 4103, name: 'cmd.exe', commandLine: 'C:\\Windows\\system32\\cmd.exe /d /s /c npm run dev', ppid: 4101 }
+  const table = [SELF_DEV, ANC_CONCURRENTLY, ANC_VITE, CYCLED_CMD, FOREIGN_GATEWAY]
+
+  const { root, tree } = ownTreeOf(table, SELF_DEV.pid)
+
+  assert.equal(root, 4103)
+  assert.deepEqual([...tree].sort((a, b) => a - b), [4101, 4102, 4103])
+
+  const lingering = findLingeringProcesses(table, { selfPid: SELF_DEV.pid, ownTreePids: tree })
+
+  assert.deepEqual(lingering.map((entry) => entry.pid), [FOREIGN_GATEWAY.pid])
 })
 
 // ── ③ 两条重起路是关系，不是抄来的字符串 ─────────────────────────────────────
@@ -515,16 +628,19 @@ test('both label sets carry the two new readings (zh and en, no silent fallback)
 
 /**
  * WP-TRAY-RESTART-REPAIR 的主进程接线，钉在源码形状上（这台没法在测试里真跑 WMI）：
- * ① R-087 —— WMI 查询要拿 ParentProcessId，等待要收到祖先集，否则 dev 态死锁复发；
+ * ① R-087 + 补丁 —— WMI 查询要拿 ParentProcessId，等待要收到会话树排除集，
+ *    且打包态不许扩到启动器的子树；
  * ② R-086 —— 确认原因的审计轨迹归 rememberLog，dialog detail 只剩用户态文案；
- * ③ handoff 结局落固定名文件，不再留在 stdio: 'ignore' 的虚空里。
+ * ③ handoff 结局落固定名文件，不再留在 stdio: 'ignore' 的虚空里；
+ * ④ 会话树快照与等待同在一条 try 里：表读不到仍走既有的 fail-closed 出口。
  */
-test('main.ts wires the ancestry exclusion, the R-086 split and the handoff outcome log', () => {
+test('main.ts wires the session-tree exclusion, the R-086 split and the handoff outcome log', () => {
   const source = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8')
 
-  assert.ok(source.includes('$_.ParentProcessId'), 'listPlobiTreeProcesses 没拿 ppid，祖先链无从走起')
-  assert.ok(/waitForTreeGone\(listPlobiTreeProcesses, \{[\s\S]*?ancestorPids/.test(source), 'waitForTreeGone 没收到 ancestorPids')
-  assert.ok(source.includes('ownAncestorPids('), '缺了从 process.pid 沿父链走到底的查询')
+  assert.ok(source.includes('$_.ParentProcessId'), 'listPlobiTreeProcesses 没拿 ppid，会话树无从走起')
+  assert.ok(source.includes('ownDevTreePids('), '缺了从 process.pid 沿父链到会话根、再取整棵子树的查询')
+  assert.ok(/waitForTreeGone\(listPlobiTreeProcesses, \{[\s\S]*?ownTreePids/.test(source), 'waitForTreeGone 没收到 ownTreePids')
+  assert.ok(/IS_PACKAGED \? \[\] : ownDevTreePids/.test(source), '打包态不许扩到启动器的子树（会把整个桌面吞进排除集）')
 
   assert.ok(source.includes('[tray-restart] confirm reasons:'), '确认原因必须落 rememberLog 留痕')
   assert.ok(source.includes('detail: labels.confirmBody'), 'detail 不再拼 gate.reasons')
@@ -532,4 +648,15 @@ test('main.ts wires the ancestry exclusion, the R-086 split and the handoff outc
 
   assert.ok(/outcomeLogPath: handoffLogPath/.test(source), 'handoff 必须拿到结局日志路径')
   assert.ok(source.includes('tray-restart-handoff.log'), '结局日志要有固定名')
+})
+
+test('the session-tree snapshot fails CLOSED with the process table (same catch as the wait)', () => {
+  const source = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8')
+
+  const at = source.indexOf('ownDevTreePids(listPlobiTreeProcesses')
+
+  assert.ok(at > 0, '会话树快照调用没找到')
+  assert.ok(at > source.lastIndexOf('try {', at), '快照必须在 try 内：表读不到时不许静默放行')
+  assert.ok(source.indexOf('} catch (err) {', at) > at, '快照后面必须跟着同一个 catch')
+  assert.ok(source.includes('读不到进程表'), '表读不到的既有 fail-closed 出口被改了')
 })

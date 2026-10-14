@@ -7696,36 +7696,88 @@ function listPlobiTreeProcesses(): Array<{ pid: number; name: string; commandLin
 }
 
 /**
- * Every pid from `fromPid` straight up the parent chain to the root. In dev the
- * desktop is a child of `cmd /c npm run dev` → concurrently → Vite, and that
- * chain dies only when WE exit — so the "is the old tree gone" wait must not
- * count it (R-087). The walk is bounded by a seen-set: pids get reused and a
- * stale ParentProcessId can point at an unrelated live process.
+ * Every pid in the dev session tree this process belongs to, EXCEPT ourselves
+ * (裁定 WP-TRAY-RESTART-REPAIR 补丁 — the exclusion widened from the parent
+ * chain to the whole session). Walk from `process.pid` up to the session root:
+ * the topmost ancestor still present in the table. Measured live 2026-10-14
+ * that root is `cmd /c npm run dev` (its own parent, the vbs launcher, is long
+ * gone from the table). Then take that root's ENTIRE subtree — the vite branch
+ * hangs off `concurrently` as a COUSIN of the app, not an ancestor, and all of
+ * it only dies when we do. A plobi process outside the subtree is a foreign
+ * tree and still counts as a leftover; that is what keeps the wait honest.
+ *
+ * Boundaries: the upward walk carries a seen-set (pids get reused and a stale
+ * ParentProcessId can close a cycle), and if NO ancestry is visible at all the
+ * result degrades to nothing — everything on screen might be foreign, and the
+ * wait must fail closed rather than exclude the world (R-053 direction).
  */
-function ownAncestorPids(entries: Array<{ pid: number; ppid?: number }>, fromPid: number): number[] {
+function ownDevTreePids(entries: Array<{ pid: number; ppid?: number }>, selfPid: number): number[] {
   const byPid = new Map<number, { pid: number; ppid?: number }>()
+  const childrenByParent = new Map<number, number[]>()
 
   for (const entry of entries) {
     byPid.set(entry.pid, entry)
+
+    if (entry.ppid && entry.ppid > 0) {
+      const siblings = childrenByParent.get(entry.ppid)
+
+      if (siblings) {
+        siblings.push(entry.pid)
+      } else {
+        childrenByParent.set(entry.ppid, [entry.pid])
+      }
+    }
   }
 
-  const ancestors: number[] = []
-  const seen = new Set<number>([fromPid])
-  let cursor = fromPid
+  const chain: number[] = []
+  const seen = new Set<number>([selfPid])
+  let cursor = selfPid
 
   for (;;) {
     const parent = byPid.get(cursor)?.ppid
 
-    if (!parent || seen.has(parent)) {
+    // Only climb to a parent that is itself in the table: the session root is
+    // the topmost ancestor the table can still see (live-measured: `cmd /c
+    // npm run dev` 9340, whose own parent 6460 is long gone). Climbing one
+    // step past it would crown a phantom pid that owns no process.
+    if (!parent || !byPid.has(parent) || seen.has(parent)) {
       break
     }
 
     seen.add(parent)
-    ancestors.push(parent)
+    chain.push(parent)
     cursor = parent
   }
 
-  return ancestors
+  if (chain.length === 0) {
+    return []
+  }
+
+  const tree: number[] = []
+  const emitted = new Set<number>()
+  const queue = [chain[chain.length - 1]]
+
+  while (queue.length > 0) {
+    const pid = queue.shift() as number
+
+    if (emitted.has(pid)) {
+      continue
+    }
+
+    emitted.add(pid)
+
+    if (pid !== selfPid) {
+      tree.push(pid)
+    }
+
+    for (const child of childrenByParent.get(pid) || []) {
+      if (!emitted.has(child)) {
+        queue.push(child)
+      }
+    }
+  }
+
+  return tree
 }
 
 function ownedBackendPids(): number[] {
@@ -7848,15 +7900,20 @@ async function restartFromTray() {
     let gone
 
     try {
-      // Snapshot our own ancestry BEFORE waiting: in dev, concurrently / vite
-      // are our parents and only die when we do — counting them as leftovers
-      // is the deadlock this wait existed in (R-087). A table we cannot read
-      // fails the same way as before (see the catch below).
-      const ancestorPids = ownAncestorPids(listPlobiTreeProcesses(), process.pid)
+      // Snapshot OUR dev session tree before waiting (裁定 WP-TRAY-RESTART-REPAIR
+      // 补丁): everything from the `npm run dev` session root down — including
+      // the vite branch, a cousin of this process — exits only when we do, so
+      // none of it may count as leftover; a plobi tree outside it still does.
+      // Packaged: the app IS its own tree — its children are torn down (and
+      // force-killed) before this wait, and its launcher's subtree (explorer)
+      // would swallow the whole desktop, so no exclusion beyond selfPid.
+      const ownTreePids = IS_PACKAGED ? [] : ownDevTreePids(listPlobiTreeProcesses(), process.pid)
 
-      rememberLog(`[tray-restart] own ancestry excluded from the wait: ${ancestorPids.join(',') || '（空）'}`)
+      rememberLog(
+        `[tray-restart] own tree excluded from the wait: ${ownTreePids.join(',') || '（空——打包态或看不到会话根）'}`
+      )
       gone = await waitForTreeGone(listPlobiTreeProcesses, {
-        ancestorPids,
+        ownTreePids,
         intervalMs: 500,
         selfPid: process.pid,
         timeoutMs: 15000

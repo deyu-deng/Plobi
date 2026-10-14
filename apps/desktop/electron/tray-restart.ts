@@ -146,28 +146,29 @@ export function isOwnPlobiProcess(entry: ProcessEntry, selfPid: number): boolean
 }
 
 /**
- * What is still alive from the old tree. Two kinds of pid are NOT leftovers:
+ * What is still alive from the old tree. Three kinds of pid are NOT leftovers:
  * `pendingPids` are the pids we launched ourselves (the new tree), and
- * `ancestorPids` are our own ancestry — in dev the desktop is a child of
- * `cmd /c npm run dev` → concurrently → Vite, and those only die *because* we
- * exit, so waiting for them to disappear is waiting for ourselves (R-087:
- * dev-mode restarts could never pass this check). Either set must not be
- * counted, or the verification would never pass.
+ * `ownTreePids` are the dev session tree we belong to — everything from the
+ * `npm run dev` session root down (裁定 WP-TRAY-RESTART-REPAIR 补丁: the vite
+ * branch is a COUSIN of the app, not an ancestor, and the whole tree only dies
+ * because we exit). Either set must not be counted, or the verification would
+ * never pass. A plobi process outside our tree is a foreign tree and still
+ * counts — that is what keeps the wait honest (no port / file-lock collisions).
  */
 export function findLingeringProcesses(
   entries: ProcessEntry[],
   {
     selfPid,
     pendingPids = [] as number[],
-    ancestorPids = [] as number[]
-  } = {} as { selfPid?: number; pendingPids?: number[]; ancestorPids?: number[] }
+    ownTreePids = [] as number[]
+  } = {} as { selfPid?: number; pendingPids?: number[]; ownTreePids?: number[] }
 ): ProcessEntry[] {
   const pending = new Set(pendingPids)
-  const ancestors = new Set(ancestorPids)
+  const ownTree = new Set(ownTreePids)
 
   return (entries || []).filter(
     (entry) =>
-      isOwnPlobiProcess(entry, Number(selfPid ?? -1)) && !pending.has(entry.pid) && !ancestors.has(entry.pid)
+      isOwnPlobiProcess(entry, Number(selfPid ?? -1)) && !pending.has(entry.pid) && !ownTree.has(entry.pid)
   )
 }
 
@@ -385,25 +386,26 @@ export type GoneVerdict =
 
 /**
  * Poll "is the old tree gone" by command line, with a timeout. `list` and `sleep`
- * are injected so the loop is testable without a machine. `ancestorPids` are our
- * own parent chain (dev: concurrently / Vite) — excluded exactly like
- * `pendingPids`, because they exit only when we do. On timeout the caller MUST
- * NOT relaunch (a new tree would collide on ports and file locks) and must
- * report this as its own failure mode, distinct from "old tree gone, relaunch failed".
+ * are injected so the loop is testable without a machine. `ownTreePids` is the
+ * dev session tree we belong to — excluded exactly like `pendingPids`, because
+ * it exits only when we do (裁定 WP-TRAY-RESTART-REPAIR 补丁). A plobi process
+ * OUTSIDE that tree is foreign and still counts. On timeout the caller MUST NOT
+ * relaunch (a new tree would collide on ports and file locks) and must report
+ * this as its own failure mode, distinct from "old tree gone, relaunch failed".
  */
 export async function waitForTreeGone(
   list: () => Promise<ProcessEntry[]> | ProcessEntry[],
   {
     selfPid,
     pendingPids = [] as number[],
-    ancestorPids = [] as number[],
+    ownTreePids = [] as number[],
     timeoutMs = 15000,
     intervalMs = 500,
     sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   }: {
     selfPid?: number
     pendingPids?: number[]
-    ancestorPids?: number[]
+    ownTreePids?: number[]
     timeoutMs?: number
     intervalMs?: number
     sleep?: (ms: number) => Promise<unknown>
@@ -415,7 +417,7 @@ export async function waitForTreeGone(
 
   for (;;) {
     const entries = await list()
-    lingering = findLingeringProcesses(entries, { selfPid, pendingPids, ancestorPids })
+    lingering = findLingeringProcesses(entries, { selfPid, pendingPids, ownTreePids })
     if (lingering.length === 0) {
       return { ok: true, waitedMs: waited }
     }
