@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { type Translations, useI18n } from '@/i18n'
+import { selectDesktopPaths } from '@/lib/desktop-fs'
 import {
   confirmAgendaEvent,
   createAgendaEvent,
@@ -21,8 +23,6 @@ import {
   getAgenda,
   updateAgendaEvent
 } from '@/plobi'
-import { type Translations, useI18n } from '@/i18n'
-import { selectDesktopPaths } from '@/lib/desktop-fs'
 import {
   $agendaError,
   $agendaEvents,
@@ -67,7 +67,9 @@ import {
   type TimetableSampleEvent,
   type TimetableStatus
 } from './timetable/api'
-import { dayKeyFromDate, eventDayKey } from './week/week-model'
+import { DayPlanSection } from './week/day-plan-section'
+import { addDays, dayKeyFromDate, eventDayKey } from './week/week-model'
+import type { WeekConflictState } from './week/week-snapshots'
 import { AgendaWeekStrip } from './week/week-strip'
 
 // Board refresh cadence. The spec allows up to 10s staleness (ADR-0008), and
@@ -209,6 +211,17 @@ export function AgendaView({ onClose }: AgendaViewProps) {
   const [editor, setEditor] = useState<EditorState>({ mode: 'closed' })
   // WP-AGENDA-VIEW slice 1: which day the week row is filtered to (`null` = whole list).
   const [pickedWeekDay, setPickedWeekDay] = useState<null | string>(null)
+
+  // 裁定 140: the week row owns the seven day requests; the answers land here so the plan
+  // sections below read the same payloads instead of firing a second round.
+  const [weekSummaries, setWeekSummaries] = useState<WeekConflictState>({
+    conflictsByDay: {},
+    loadedCount: 0,
+    plansByDay: {}
+  })
+
+  const todayKey = dayKeyFromDate(startOfToday())
+  const tomorrowKey = addDays(todayKey, 1)
   const [busyId, setBusyId] = useState<null | string>(null)
   const [collectionOpen, setCollectionOpen] = useState(false)
   // WP-ICS-BOARD: `path` → preview draft; `preview: null` means "still reading"
@@ -261,6 +274,7 @@ export function AgendaView({ onClose }: AgendaViewProps) {
         filters: [{ name: a.timetable.filterName, extensions: ['ics', 'ical'] }],
         multiple: false
       })
+
       const path = paths[0]
 
       // Cancelled picker → nothing happens at all (no preview, no write).
@@ -451,8 +465,23 @@ export function AgendaView({ onClose }: AgendaViewProps) {
           <AgendaWeekStrip
             events={events}
             onPickDay={setPickedWeekDay}
+            onSummaries={setWeekSummaries}
             pickedDayKey={pickedWeekDay}
-            todayKey={dayKeyFromDate(startOfToday())}
+            todayKey={todayKey}
+          />
+          {/*
+            * 裁定 140: the evening plan's destination is this board. The 20:00 job still writes
+            * `delivered: false` + 「no notifier configured」 and that stays loud (R-048) — but the
+            * user's chosen shape is that opening the desktop the next morning shows the plan, so
+            * the same seven snapshots the week row asked for feed these two sections.
+            */}
+          <DayPlanSection
+            dayLabel={dayLabel(todayKey, a)}
+            plan={weekSummaries.plansByDay[todayKey]}
+          />
+          <DayPlanSection
+            dayLabel={dayLabel(tomorrowKey, a)}
+            plan={weekSummaries.plansByDay[tomorrowKey]}
           />
           <PanelBody>
             <PanelList>

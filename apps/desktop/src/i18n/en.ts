@@ -1442,6 +1442,12 @@ export const en: Translations = {
     pendingCount: count => `${count} awaiting your confirmation`,
     today: 'Today',
     tomorrow: 'Tomorrow',
+    plan: {
+      empty: 'No plan was generated for this day',
+      pending: 'awaiting your confirmation',
+      statusUnknown: 'no status',
+      title: label => `Plan for ${label}`
+    },
     week: {
       conflicts: count => (count === 1 ? '1 overlap' : `${count} overlaps`),
       conflictsUnknown: 'conflicts not loaded',

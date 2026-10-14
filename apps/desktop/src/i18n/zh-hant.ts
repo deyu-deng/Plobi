@@ -1336,6 +1336,12 @@ export const zhHant = defineLocale({
     pendingCount: count => `${count} 筆待你確認`,
     today: '今天',
     tomorrow: '明天',
+    plan: {
+      empty: '這一天沒有產生計畫',
+      pending: '待你批准',
+      statusUnknown: '無狀態',
+      title: label => `${label}的計畫`
+    },
     week: {
       conflicts: count => `衝突 ${count}`,
       conflictsUnknown: '衝突未取',
