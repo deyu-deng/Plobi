@@ -91,9 +91,10 @@ describe('jumpTargetFor —— 跳不进会话就不许给一个假的可点行'
     }
   })
 
-  it('台账带回会话号 ⇒ 这一支走 resume，把 (agent, cwd, sessionId) 交出去', () => {
+  it('台账带回会话号 ⇒ 这一支走 resume，只交 (agent, sessionId)', () => {
     const plan = jumpTargetFor(round({
       artifacts: [],
+      cwd: 'D:/projects/Aura',
       external_session: ' 01a1248d-3b15-738e-977b ',
       external_session_source: 'result.session_id',
     }))
@@ -101,11 +102,8 @@ describe('jumpTargetFor —— 跳不进会话就不许给一个假的可点行'
     expect(plan.kind).toBe('resume')
     expect(plan.reason).toBe('')
     expect(plan.url).toBe('')                       // 不混一个假 file://
-    expect(plan.resume).toEqual({
-      agent: 'codebuddy',
-      cwd: 'D:/projects/Aura',
-      sessionId: '01a1248d-3b15-738e-977b',
-    })
+    expect(plan.resume).toEqual({ agent: 'codebuddy', sessionId: '01a1248d-3b15-738e-977b' })
+    expect(plan.resume).not.toHaveProperty('cwd')   // 目录不是界面递的（后端从台账那一行取）
   })
 
   it('会话号优先于产物（用户要的是跳进那台软件，不是打开一个文件）', () => {

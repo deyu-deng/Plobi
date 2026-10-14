@@ -47,7 +47,7 @@ export type JumpReason = '' | 'no-artifact'
 export type JumpPlan = {
   kind: 'none' | 'reveal' | 'resume'
   reason: JumpReason
-  resume: null | { agent: string, cwd: string, sessionId: string }
+  resume: null | { agent: string, sessionId: string }
   url: string
 }
 
@@ -80,8 +80,8 @@ export function artifactPathOf(round: OffloadRound): string {
 /**
  * 一行点下去到哪儿，**只在这一处判**：
  *
- * 1. `resume` —— 台账带回会话号 ⇒ 交给 `POST /api/offload/resume`（白名单与 argv 都在后端，
- *    那边才是"这台怎么起那家 Agent"的唯一答案）。没有对象名就跳不了，不猜。
+ * 1. `resume` —— 台账带回会话号 ⇒ 交给 `POST /api/offload/resume`（白名单、argv、**以及工作区**都在后端，
+ *    那边才是"这台怎么起那家 Agent、那一段活在哪干"的唯一答案）。没有对象名就跳不了，不猜。
  * 2. `reveal` —— 只有产物 ⇒ 给主进程一个 `file://`，它打不开时自己退成"在文件夹里选中"。
  * 3. `none` —— 两样都没有，`reason` 是机器可读的，不许伪装成可点。
  */
@@ -90,12 +90,7 @@ export function jumpTargetFor(round: OffloadRound): JumpPlan {
   const agent = (round.agent ?? '').trim()
 
   if (handleJumpEligible(round) && agent) {
-    return {
-      kind: 'resume',
-      reason: '',
-      resume: { agent, cwd: (round.cwd ?? '').trim(), sessionId },
-      url: '',
-    }
+    return { kind: 'resume', reason: '', resume: { agent, sessionId }, url: '' }
   }
 
   const path = artifactPathOf(round)

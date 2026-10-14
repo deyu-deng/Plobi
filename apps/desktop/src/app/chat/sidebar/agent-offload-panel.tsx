@@ -130,9 +130,9 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
 
   const run = () => {
     if (plan.kind === 'resume' && plan.resume) {
-      const { agent, cwd, sessionId } = plan.resume
+      const { agent, sessionId } = plan.resume
 
-      void offloadResume(agent, sessionId, cwd)
+      void offloadResume(agent, sessionId)
         .then(() => setError(''))
         .catch((reason: unknown) => setError(jumpFailureText(reason, c.offloadsJumpFailed)))
     } else if (plan.kind === 'reveal') {

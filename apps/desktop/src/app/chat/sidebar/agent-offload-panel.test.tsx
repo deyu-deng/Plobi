@@ -13,7 +13,7 @@ const offloadResume = vi.fn()
 vi.mock('@/plobi', async importOriginal => ({
   ...(await importOriginal<typeof PlobiApi>()),
   getAgentOffloads: (agentId: string) => getAgentOffloads(agentId),
-  offloadResume: (agent: string, sessionId: string, cwd?: string) => offloadResume(agent, sessionId, cwd),
+  offloadResume: (agent: string, sessionId: string) => offloadResume(agent, sessionId),
 }))
 
 function round(over: Partial<OffloadRound> = {}): OffloadRound {
@@ -55,7 +55,7 @@ beforeEach(() => {
   openExternal.mockReset()
   openExternal.mockResolvedValue(undefined)
   offloadResume.mockReset()
-  offloadResume.mockResolvedValue({ data: { agent: 'codebuddy', argv: [], pid: 4242 }, ok: true })
+  offloadResume.mockResolvedValue({ data: { agent: 'codebuddy', argv: [], cwd: 'D:/projects/Aura', pid: 4242 }, ok: true })
   // The renderer only ever has this bridge in the desktop shell.
   Object.defineProperty(window, 'plobiDesktop', {
     configurable: true,
@@ -139,7 +139,7 @@ describe('AgentOffloadPanel', () => {
     fireEvent.click(row)
 
     await waitFor(() => expect(offloadResume).toHaveBeenCalledTimes(1))
-    expect(offloadResume).toHaveBeenCalledWith('codebuddy', '01a1248d-3b15-738e', 'D:/projects/Aura')
+    expect(offloadResume.mock.calls[0]).toEqual(['codebuddy', '01a1248d-3b15-738e'])
     expect(openExternal).not.toHaveBeenCalled()
   })
 
