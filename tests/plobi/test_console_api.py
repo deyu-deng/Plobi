@@ -973,8 +973,18 @@ class TestAgentOffloadReadout:
 
 # --------------------------------------------------------------------------- #
 # POST /api/offload/resume —— 点一行外包记录，回到那台外部软件里的那条会话
-# （WP-L2-OUTSOURCE-ENTRY 入口面③第三级；标识来自台账 `external_session` 那一列）
+# （WP-L2-OUTSOURCE-ENTRY 入口面③第三级；标识与工作区**都来自台账那一行**，界面递的不算）
 # --------------------------------------------------------------------------- #
+
+
+RESUME_ROW = {
+    "ts": "2026-10-14T02:00:00+00:00", "agent": "codebuddy", "cwd": "D:/projects/Aura",
+    "permission_flag": "-y --permission-mode=bypassPermissions", "brief": "把今天的读数写成页",
+    "artifacts": [], "duration_seconds": 16.4, "usage": None,
+    "cost_status": "usage_reported_without_price", "failure": "",
+    "external_session": "01a1248d-3b15-738e-977b-0b90cd206790",
+    "external_session_source": "result.session_id",
+}
 
 
 def _no_spawn(monkeypatch):
@@ -985,23 +995,48 @@ def _no_spawn(monkeypatch):
         raise AssertionError("不该起进程")
 
     monkeypatch.setattr(subprocess, "Popen", _boom)
-    return subprocess
+
+
+def _ledger_rows(monkeypatch, rows):
+    """台账走桩：这一组的判据是"只认台账里记过的那一轮"，不碰真 PLOBI_HOME。"""
+    import plobi.delegation.offload as offload_mod
+
+    class _Stub:
+        def __init__(self, root=None):
+            pass
+
+        def rows(self):
+            return [dict(r) for r in rows]
+
+    monkeypatch.setattr(offload_mod, "RoundLedger", _Stub)
+
+
+def _spawn_capture(monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    captured = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: (
+        captured.update(argv=list(argv), kw=kw), SimpleNamespace(pid=4242))[1])
+    return captured
 
 
 class TestOffloadResume:
     @pytest.mark.parametrize("agent", ["Cursor", "cursor", "", "   ", "codebuddy.exe; calc"])
     def test_only_the_two_allowlisted_agents_reach_a_spawn(self, monkeypatch, agent):
         _no_spawn(monkeypatch)
-        out = console_router.resume_external_session(agent, "01a1248d-3b15-738e")
+        _ledger_rows(monkeypatch, [RESUME_ROW])
+        out = console_router.resume_external_session(agent, RESUME_ROW["external_session"])
 
         assert out["ok"] is False and out["status"] == 400
 
     @pytest.mark.parametrize("bad", [
         "", "   ", "01a1248d 3b15", "id; rm -rf /", "--resume --open",
-        "..\..\windows\system32", "x" * 200, "$(whoami)", "`id`",
+        "..\\..\\windows\\system32", "x" * 200, "$(whoami)", "`id`",
     ])
     def test_an_id_that_is_not_executable_shape_is_refused(self, monkeypatch, bad):
-        _no_spawn(monkeypatch)                       # 起进程即失败
+        _no_spawn(monkeypatch)
+        _ledger_rows(monkeypatch, [RESUME_ROW])
         import agent.external_offload as channel
 
         monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
@@ -1010,51 +1045,103 @@ class TestOffloadResume:
         assert out["ok"] is False and out["status"] == 400
 
     @pytest.mark.parametrize("agent,expect", [
-        ("codebuddy", ["--resume", "{id}", "--open"]),    # 起完在浏览器开它自己的界面
+        ("codebuddy", ["--resume", "{id}", "--open"]),
         ("agy", ["--conversation", "{id}"]),
     ])
     def test_argv_is_the_whitelisted_shape_array_not_shell(self, monkeypatch, tmp_path, agent, expect):
-        import subprocess
-        from types import SimpleNamespace
-
-        captured = {}
-        monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: (
-            captured.update(argv=list(argv), kw=kw), SimpleNamespace(pid=4242))[1])
+        captured = _spawn_capture(monkeypatch)
         import agent.external_offload as channel
 
+        sid = "01a1248d-3b15"
+        row = dict(RESUME_ROW, agent=agent, external_session=sid, cwd=str(tmp_path))
+        _ledger_rows(monkeypatch, [row])
         binary = str(tmp_path / "launcher.cmd")
         monkeypatch.setattr(channel, "resolve_command", lambda _a="": binary)
+        monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
 
-        out = console_router.resume_external_session(agent, "01a1248d-3b15-738e", str(tmp_path))
+        out = console_router.resume_external_session(agent, sid)
 
         assert out["ok"] is True and out["data"]["pid"] == 4242
         assert captured["argv"][0] == binary
-        assert captured["argv"][1:] == [
-            "01a1248d-3b15-738e" if piece == "{id}" else piece for piece in expect
-        ]
-        assert captured["kw"].get("shell", False) is False         # 不经 shell
-        assert captured["kw"]["cwd"] == str(tmp_path)
+        assert captured["argv"][1:] == [sid if p == "{id}" else p for p in expect]
+        assert captured["kw"].get("shell", False) is False
+        assert captured["kw"]["cwd"] == str(tmp_path)          # 台账那一行记的目录
 
-    def test_unresolvable_command_is_reported_not_spawned(self, monkeypatch, tmp_path):
+    def test_the_caller_cannot_choose_the_directory(self, monkeypatch, tmp_path, client):
+        """残余收法（额度线 10-14 递的①）：工作区只认台账，界面递的 cwd 一律不看。"""
+        captured = _spawn_capture(monkeypatch)
+        import agent.external_offload as channel
+
+        _ledger_rows(monkeypatch, [dict(RESUME_ROW, cwd=str(tmp_path))])
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
+        monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+
+        resp = client.post("/api/offload/resume", json={
+            "agent": "codebuddy",
+            "session_id": RESUME_ROW["external_session"],
+            "cwd": str(tmp_path.parent / "随便一个别处"),
+        })
+
+        assert resp.status_code == 200
+        assert captured["kw"]["cwd"] == str(tmp_path)          # 仍然是台账里那个
+
+    def test_an_id_the_ledger_never_recorded_is_refused(self, monkeypatch):
+        """标识必须由台账背书：手打一个别处的会话号不算我们记过的那一轮。"""
         _no_spawn(monkeypatch)
+        _ledger_rows(monkeypatch, [RESUME_ROW])
+        import agent.external_offload as channel
+
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
+        out = console_router.resume_external_session("codebuddy", "ffffffff-1111-2222-333344445555")
+
+        assert out["ok"] is False and out["status"] == 409
+        assert "不是我们记过的那个" in out["error"]
+
+    def test_a_row_without_a_recorded_folder_is_refused(self, monkeypatch):
+        _no_spawn(monkeypatch)
+        _ledger_rows(monkeypatch, [dict(RESUME_ROW, cwd="")])
+        out = console_router.resume_external_session("codebuddy", RESUME_ROW["external_session"])
+
+        assert out["ok"] is False and out["status"] == 409
+        assert "没记工作区" in out["error"]
+
+    def test_a_recorded_folder_that_is_no_longer_allowed_is_refused(self, monkeypatch):
+        """台账里的目录也要再过一次通道那道判据（政策收紧时不越过它，而不是信旧值）。"""
+        _no_spawn(monkeypatch)
+        _ledger_rows(monkeypatch, [RESUME_ROW])
+        import agent.external_offload as channel
+
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
+        monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (False, "那是我们的仓"))
+        out = console_router.resume_external_session("codebuddy", RESUME_ROW["external_session"])
+
+        assert out["ok"] is False and out["status"] == 409
+        assert "那是我们的仓" in out["error"]
+
+    def test_unresolvable_command_is_reported_not_spawned(self, monkeypatch):
+        _no_spawn(monkeypatch)
+        _ledger_rows(monkeypatch, [RESUME_ROW])
         import agent.external_offload as channel
 
         monkeypatch.setattr(channel, "resolve_command", lambda _a="": "")
-        out = console_router.resume_external_session("codebuddy", "01a1248d-3b15-738e")
+        out = console_router.resume_external_session("codebuddy", RESUME_ROW["external_session"])
 
         assert out["ok"] is False and out["status"] == 409
 
-    def test_a_launcher_that_will_not_start_says_so(self, monkeypatch, tmp_path):
+    def test_a_launcher_that_will_not_start_says_so(self, monkeypatch):
         import subprocess
 
         import agent.external_offload as channel
+
+        _ledger_rows(monkeypatch, [RESUME_ROW])
 
         def _raise(*_a, **_kw):
             raise OSError("not a valid Win32 application")
 
         monkeypatch.setattr(subprocess, "Popen", _raise)
         monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
-        out = console_router.resume_external_session("codebuddy", "01a1248d-3b15-738e")
+        monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+        out = console_router.resume_external_session("codebuddy", RESUME_ROW["external_session"])
 
         assert out["ok"] is False and out["status"] == 500
         assert "not a valid Win32" in out["error"]

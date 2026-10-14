@@ -1084,16 +1084,21 @@ OFFLOAD_RESUME_ARGV: dict[str, tuple[str, ...]] = {
 _EXTERNAL_SESSION_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 
 
-def resume_external_session(agent: str, session_id: str, cwd: str = "") -> dict:
+def resume_external_session(agent: str, session_id: str) -> dict:
     """在外部软件自己的界面里打开这一轮外包的那条会话。**argv 是数组，不经 shell**。
 
     标识从台账来（``external_session`` 那一列，契约在 ``Docs/tasks/offload-session-handle-task.md``）；
-    命令从通道来（``resolve_command`` 是这台唯一解析外部入口的地方，这里**不另起一套**）。
-    四种失败各给一句不同的话（判据 4 同族）：不认识这家 / 标识不是可执行形状 / 这台没有入口 / 起不来。
+    命令从通道来（``resolve_command`` 是这台唯一解析外部入口的地方，这里**不另起一套**）；
+    **工作区也只从台账那一行来 —— 调用方递什么 ``cwd`` 一律不看**。原因不是洁癖：
+    ``cwd_is_allowed`` 只拒四个仓，其余目录全放行，接一个自由串就等于让界面指名
+    "在任意目录起一个外部 Agent"（额度线 10-14 递的残余，按他的①收）。
+    失败各给一句不同的话（判据 4 同族）：不认识这家 / 标识不是可执行形状 / 台账里没有这一轮 /
+    那一行没记工作区 / 这台没有入口 / 那个目录现在不能用 / 起不来。
     """
     import subprocess
 
     from agent import external_offload as channel
+    from plobi.delegation.offload import RoundLedger
 
     key = (agent or "").strip().lower()
     pattern = OFFLOAD_RESUME_ARGV.get(key)
@@ -1104,23 +1109,28 @@ def resume_external_session(agent: str, session_id: str, cwd: str = "") -> dict:
     if not re.match(_EXTERNAL_SESSION_ID_RE, sid):
         return {"ok": False, "status": 400, "error": "台账里的会话标识不是可执行形状"}
 
+    recorded = [row for row in RoundLedger().rows()
+                if str(row.get("agent") or "").strip().lower() == key
+                and str(row.get("external_session") or "").strip() == sid]
+    if not recorded:
+        return {"ok": False, "status": 409, "error": "台账里没有这一轮：这个标识不是我们记过的那个"}
+    workdir = str(recorded[-1].get("cwd") or "").strip()
+    if not workdir:
+        return {"ok": False, "status": 409, "error": "台账那一行没记工作区，不知道去哪儿起它"}
+
     binary = (channel.resolve_command(key) or "").strip()
     if not binary:
         return {"ok": False, "status": 409, "error": f"这台机器解析不到 {key} 的可执行入口"}
 
-    argv = [binary] + [sid if piece == "{session_id}" else piece for piece in pattern]
-    workdir = (cwd or "").strip()
-    if workdir:
-        allowed, why = channel.cwd_is_allowed(workdir)
-        if not allowed:
-            return {"ok": False, "status": 400, "error": f"那个目录不能当工作区：{why}"}
-    else:
-        workdir = str(channel.default_workdir())
+    allowed, why = channel.cwd_is_allowed(workdir)
+    if not allowed:
+        return {"ok": False, "status": 409, "error": f"那一行记的目录现在不能用：{why}"}
 
+    argv = [binary] + [sid if piece == "{session_id}" else piece for piece in pattern]
     detach = ({"creationflags": subprocess.CREATE_NEW_CONSOLE} if os.name == "nt"
               else {"start_new_session": True})
     try:
-        # argv 全部来自上面那张白名单表 + 一个被字符集校验过的标识，不经 shell。
+        # argv 全部来自上面那张白名单表 + 一个被字符集校验过的标识，目录来自台账，不经 shell。
         child = subprocess.Popen(  # noqa: S603
             argv, cwd=workdir, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **detach,
@@ -1128,13 +1138,15 @@ def resume_external_session(agent: str, session_id: str, cwd: str = "") -> dict:
     except OSError as exc:
         return {"ok": False, "status": 500, "error": f"起不来：{exc}"}
 
-    return {"ok": True, "data": {"agent": key, "pid": child.pid, "argv": list(argv)}}
+    return {"ok": True, "data": {"agent": key, "pid": child.pid, "argv": list(argv), "cwd": workdir}}
 
 
 @router.post("/offload/resume", name="offload_resume")
 async def offload_resume_route(request: Request):
     """POST /api/offload/resume — 点一行外包记录，回到那台外部软件里的那条会话。
 
+    **只接 ``agent`` 与 ``session_id``；``cwd`` 不是入参** —— 工作区从台账那一行取，
+    界面递什么都不看（`cwd_is_allowed` 只拒四个仓，其余目录放行，所以自由串等于放开任意目录）。
     放在控制台这一侧而不是主进程：这台"某家 Agent 的可执行入口在哪"只有一份答案
     （``agent.external_offload.resolve_command``），Electron 里再解析一遍就是第二个解析处（裁定 94 族），
     而且 ``.cmd`` 那种启动器在 Node 侧还有自己的坑。桌面走既有的 ``window.plobiDesktop.api`` 桥，
@@ -1151,7 +1163,6 @@ async def offload_resume_route(request: Request):
         resume_external_session,
         str(body.get("agent") or ""),
         str(body.get("session_id") or ""),
-        str(body.get("cwd") or ""),
     )
     if not result.get("ok"):
         return _error(int(result.get("status") or 400), str(result.get("error") or "unknown"))
