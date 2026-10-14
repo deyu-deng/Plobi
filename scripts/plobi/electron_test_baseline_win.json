@@ -1,0 +1,321 @@
+{
+ "command": "python scripts/plobi/electron_test_win.py run && ... check --from-log <日志>",
+ "files": {
+  "electron/aigw-key-reconcile.test.ts": {
+   "cases": 23,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/backend-command.test.ts": {
+   "cases": 16,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/backend-env.test.ts": {
+   "cases": 8,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/backend-probes.test.ts": {
+   "cases": 8,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/backend-ready.test.ts": {
+   "cases": 17,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/bootstrap-platform.test.ts": {
+   "cases": 9,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/bootstrap-runner.test.ts": {
+   "cases": 10,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/chatlog-keys.test.ts": {
+   "cases": 8,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/chatlog-status.test.ts": {
+   "cases": 11,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/connection-config.test.ts": {
+   "cases": 57,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/dashboard-token.test.ts": {
+   "cases": 13,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/deferred-sidecars.test.ts": {
+   "cases": 30,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/desktop-shell.test.ts": {
+   "cases": 24,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/desktop-uninstall.test.ts": {
+   "cases": 19,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/egress-tray.test.ts": {
+   "cases": 14,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/fs-read-dir.test.ts": {
+   "cases": 12,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": [
+    "readDirForIpc marks a symlink to a directory as a directory"
+   ]
+  },
+  "electron/gateway-ws-probe.test.ts": {
+   "cases": 8,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/git-review-ops.test.ts": {
+   "cases": 4,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/git-root.test.ts": {
+   "cases": 2,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/git-worktree-ops.test.ts": {
+   "cases": 12,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/hardening.test.ts": {
+   "cases": 12,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": [
+    "resolveReadableFileForIpc blocks symlinks whose realpath is sensitive"
+   ]
+  },
+  "electron/link-title-window.test.ts": {
+   "cases": 9,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/oauth-net-request.test.ts": {
+   "cases": 3,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/oauth-session-request.test.ts": {
+   "cases": 1,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/profile-delete-respawn.test.ts": {
+   "cases": 2,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/python-resolution.test.ts": {
+   "cases": 14,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/session-windows.test.ts": {
+   "cases": 14,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/titlebar-overlay-width.test.ts": {
+   "cases": 8,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/tray-restart.test.ts": {
+   "cases": 38,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/update-count.test.ts": {
+   "cases": 10,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/update-marker.test.ts": {
+   "cases": 10,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/update-rebuild.test.ts": {
+   "cases": 4,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/update-relaunch.test.ts": {
+   "cases": 16,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/update-remote.test.ts": {
+   "cases": 6,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/vscode-marketplace.test.ts": {
+   "cases": 5,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/window-state.test.ts": {
+   "cases": 15,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/windows-child-process.test.ts": {
+   "cases": 5,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/windows-plobi-resolution.test.ts": {
+   "cases": 3,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/windows-user-env.test.ts": {
+   "cases": 10,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/workspace-cwd.test.ts": {
+   "cases": 4,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/wsl-clipboard-image.test.ts": {
+   "cases": 10,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  },
+  "electron/zoom.test.ts": {
+   "cases": 10,
+   "exit_code": 0,
+   "fail_cases": [],
+   "ran": true,
+   "skip_cases": []
+  }
+ },
+ "mechanisms": {
+  "electron/fs-read-dir.test.ts :: readDirForIpc marks a symlink to a directory as a directory": "建 symlink 需要特权：这台非开发者模式/非管理员时 CreateSymbolicLink 返回 EPERM，用例自己 `t.skip('symlink creation is not permitted on this platform')`。复现：`node --import tsx --test electron/fs-read-dir.test.ts` 看那条 `# SKIP ...（EPERM）`。",
+  "electron/hardening.test.ts :: resolveReadableFileForIpc blocks symlinks whose realpath is sensitive": "同一机制（symlink 造不出来 ⇒ 前置条件不成立就跳，不是断言放宽）。复现命令同上，文件换 electron/hardening.test.ts。"
+ },
+ "note_at_sampling": "立案时（10-10 20:0x，治理线自跑）这族是 474 用例 / 469✓ / 3✗，三条红是 `git-worktree-ops.test.ts` 两处断 8.3 短名 `C:\\Users\\TURTLE~1\\…` 与 `update-relaunch.test.ts` 一处喂 POSIX 路径。10-14 现核：那三档**已不复现**——Code `1216ca01`（`[WP-DESKTOP-POOL-GHOST-PROFILE]`「修掉这颗新闸门查出来的三颗 Windows 红」）把它们修掉了，本基线因此是**空红单**，不是漏登。尺子的价值从今往后在'只认新增红'与'基线落后就停'两条上。",
+ "sampled_at": "2026-10-14T19:36:09",
+ "sampled_head": "0fd0d5d25158ffe08e6917c8794b741e20aecdfc",
+ "scope": "Code/apps/desktop/electron/*.test.ts（逐档串行 --test-reporter=tap）",
+ "stale_after_commits": 80,
+ "stale_after_days": 14,
+ "totals": {
+  "errored_files": 0,
+  "fail": 0,
+  "pass": 512,
+  "red_files": 0,
+  "skip": 2,
+  "tests": 514
+ }
+}
