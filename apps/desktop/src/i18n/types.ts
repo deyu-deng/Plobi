@@ -1220,6 +1220,17 @@ export interface Translations {
     today: string
     tomorrow: string
     /**
+     * 裁定 140: the next-day plan, shown on the desktop the morning after it was generated
+     * (通知器降为可选件 ⇒「推」的目的地改成「打开就看得见」). `empty` is what a day with an
+     * answered-but-empty plan says; a day that was never answered says nothing at all.
+     */
+    plan: {
+      empty: string
+      pending: string
+      statusUnknown: string
+      title: (label: string) => string
+    }
+    /**
      * WP-AGENDA-VIEW slice 1: the Monday-anchored week row. `days` is Monday-first and
      * exactly seven entries — the same D2 the phone side implements (`service/WeekView.ets`).
      * `conflictsUnknown` is what a day with no `/api/agenda/day` snapshot must say; showing

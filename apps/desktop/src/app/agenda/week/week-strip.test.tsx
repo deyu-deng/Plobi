@@ -215,6 +215,35 @@ describe('AgendaWeekStrip', () => {
     expect(grid.textContent).toContain('10-05')
   })
 
+  it('hands the answered plans back up so the page can show 明天 without a second round of calls', async () => {
+    const seen: Array<{ loadedCount: number; planKeys: string[] }> = []
+
+    const view = render(
+      <AgendaWeekStrip
+        events={[]}
+        fetchDay={async (dayKey: string) => ({
+          anchors: [],
+          conflicts: [],
+          date: dayKey,
+          events: [],
+          plan_items: dayKey === '2026-10-11' ? [{ end_at: null, id: 'p', lane: 'plan' as const, start_at: '2026-10-11T10:00:00', title: '推进块' }] : [],
+          plan_status: dayKey === '2026-10-11' ? 'pending' : null
+        })}
+        onPickDay={() => undefined}
+        onSummaries={state => seen.push({ loadedCount: state.loadedCount, planKeys: Object.keys(state.plansByDay) })}
+        pickedDayKey={null}
+        todayKey="2026-10-10"
+        translations={zh}
+      />
+    )
+
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(seen[0]?.loadedCount).toBe(7)
+    // Sunday of the visible week is the only day with a plan row.
+    expect(seen[0]?.planKeys).toEqual(['2026-10-11'])
+    expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-11"]')?.textContent).toContain('无冲突')
+  })
+
   it('ignores a late answer from a week the user has panned away from', async () => {
     type Resolve = (value: unknown) => void
 

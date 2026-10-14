@@ -1615,6 +1615,12 @@ export const zh: Translations = {
     pendingCount: count => `${count} 条待你确认`,
     today: '今天',
     tomorrow: '明天',
+    plan: {
+      empty: '这一天没有生成计划',
+      pending: '待你批准',
+      statusUnknown: '无状态',
+      title: label => `${label}的计划`
+    },
     week: {
       conflicts: count => `冲突 ${count}`,
       conflictsUnknown: '冲突未取',

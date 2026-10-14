@@ -1384,6 +1384,12 @@ export const ja = defineLocale({
     pendingCount: count => `${count} 件が確認待ちです`,
     today: '今日',
     tomorrow: '明日',
+    plan: {
+      empty: 'この日の計画は作られていません',
+      pending: '承認待ち',
+      statusUnknown: '状態なし',
+      title: label => `${label}の計画`
+    },
     week: {
       conflicts: count => `重複 ${count}`,
       conflictsUnknown: '重複未取得',

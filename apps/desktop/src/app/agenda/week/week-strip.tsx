@@ -44,6 +44,12 @@ export interface AgendaWeekStripProps {
   /** Injectable transport for the seven snapshots; production uses `createDayFetcher()`. */
   fetchDay?: DayFetcher
   onPickDay: (dayKey: null | string) => void
+  /**
+   * 裁定 140: the strip owns the visible-week request, so it hands the answered payloads back up
+   * — the page renders the next-day plan from the same seven responses instead of firing a
+   * second round of them.
+   */
+  onSummaries?: (state: WeekConflictState) => void
   pickedDayKey: null | string
   todayKey: string
   /** Test escape hatch; production reads `t` from the provider. */
@@ -59,6 +65,7 @@ export function AgendaWeekStrip({
   events,
   fetchDay,
   onPickDay,
+  onSummaries,
   pickedDayKey,
   todayKey,
   translations
@@ -75,10 +82,19 @@ export function AgendaWeekStrip({
   // C1 渐进：the columns paint from the rows we already hold, and the conflict layer fills in
   // per day. `requestSeq` is the staleness guard — panning twice quickly must not let the first
   // week's late answer overwrite the week now on screen.
-  const [snapshots, setSnapshots] = useState<WeekConflictState>({ conflictsByDay: {}, loadedCount: 0 })
+  const [snapshots, setSnapshots] = useState<WeekConflictState>({
+    conflictsByDay: {},
+    loadedCount: 0,
+    plansByDay: {}
+  })
+
   const [fallbackFetcher] = useState(createDayFetcher)
   const activeFetcher = fetchDay ?? fallbackFetcher
   const requestSeq = useRef(0)
+  // Kept in a ref so an inline callback from the page does not re-fire the week's seven requests.
+  const onSummariesRef = useRef(onSummaries)
+
+  onSummariesRef.current = onSummaries
 
   useEffect(() => {
     const keys = weekDayKeys(monday)
@@ -91,9 +107,12 @@ export function AgendaWeekStrip({
 
     requestSeq.current = seq
     void fetchWeekConflicts(keys, activeFetcher).then(next => {
-      if (requestSeq.current === seq) {
-        setSnapshots(next)
+      if (requestSeq.current !== seq) {
+        return
       }
+
+      setSnapshots(next)
+      onSummariesRef.current?.(next)
     })
   }, [activeFetcher, monday])
 
