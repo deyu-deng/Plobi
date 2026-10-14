@@ -23,8 +23,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "ink-text-input": ">=6.0.0",
-    "react": ">=19.3.0"
+    "ink-text-input": ">=6.0.0"
   },
   "dependencies": {
     "@alcalzone/ansi-tokenize": "^0.3.1",
@@ -37,7 +36,7 @@
     "get-east-asian-width": "^1.7.0",
     "indent-string": "^5.0.0",
     "lodash-es": "^4.17.0",
-    "react": ">=19.3.0",
+    "react": "^19.3.0",
     "react-reconciler": "0.34.0",
     "semver": "^7.6.0",
     "signal-exit": "^4.1.0",
