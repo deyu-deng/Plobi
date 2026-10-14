@@ -2764,6 +2764,20 @@ def delegate_task(
         # on top.  Degrades silently if the parent lacks the counter (older test
         # fixtures, etc.).
         if _children_cost_total > 0.0:
+            # Feed the delegation breaker with what this batch really cost. Only
+            # the OUTERMOST layer records: the rollup below is additive per layer,
+            # so an orchestrator's total already contains its own workers, and a
+            # second feed one level down would bill the grandchild twice and trip
+            # the breaker early. `_delegate_depth` is set on every child agent.
+            if not getattr(parent_agent, "_delegate_depth", 0):
+                try:
+                    from plobi.delegation import quota as _quota
+
+                    _quota.get_quota_circuit().record_spend(_children_cost_total)
+                except Exception:
+                    # A missing or broken ledger must not fail the delegation that
+                    # already happened; the guard degrades to "unknown quota = allow".
+                    logger.debug("delegation quota ledger feed failed", exc_info=True)
             try:
                 current = float(getattr(parent_agent, "session_estimated_cost_usd", 0.0) or 0.0)
                 parent_agent.session_estimated_cost_usd = current + _children_cost_total
