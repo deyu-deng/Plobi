@@ -345,9 +345,11 @@ def test_a_delegation_actually_shrinks_remaining_relationally():
 
     _delegate_one_child_costing(circuit, cost=1.25, depth=0)
 
-    after = circuit.check().remaining
-    assert after < before
-    assert after == pytest.approx(before - 1.25)
+    after = circuit.check()
+    assert after.remaining < before
+    assert after.remaining == pytest.approx(before - 1.25)
+    assert after.spent == pytest.approx(1.25)
+    assert after.last_spend == pytest.approx(1.25)
 
 
 def test_nested_tree_bills_the_grandchild_once():
@@ -358,31 +360,23 @@ def test_nested_tree_bills_the_grandchild_once():
     """
     flat = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(5.0)])
     _delegate_one_child_costing(flat, cost=0.4, depth=0)
+    assert flat.spent_usd == pytest.approx(0.4)
     assert flat.check().remaining == pytest.approx(4.6)
 
     nested = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(5.0)])
     # The same batch, but this parent is itself a child: its own ledger belongs to
     # the layer above, which folds it in already.
     _delegate_one_child_costing(nested, cost=0.4, depth=1)
+    assert nested.spent_usd == pytest.approx(0.0)
     assert nested.check().remaining == pytest.approx(5.0)
 
 
-def test_refusal_says_what_is_left_and_what_the_day_has_cost(monkeypatch):
+def test_refusal_says_what_is_left_and_what_the_last_one_cost():
     """R-073's ask: "和 Plobi 聊天太贵了" deserves two numbers, not a mood."""
     plugin = _load_plugin()
     guard_mod.set_guard(guard_mod.DelegationGuard(cap=6, queue_timeout=0.05))
     circuit = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(1.0)])
     quota_mod.set_quota_circuit(circuit)
-
-    # The message reads the budget from config, so pin that one number rather
-    # than trusting whatever config.yaml the runner's machine happens to say.
-    real_load = config.load
-    monkeypatch.setattr(
-        config,
-        "load",
-        lambda *a, **k: {**real_load(), "quota_enabled": True, "quota_fail_open": False,
-                         "quota_daily_budget_usd": 1.0},
-    )
     circuit.record_spend(1.5)
 
     directive = plugin.on_pre_tool_call(
@@ -397,6 +391,7 @@ def test_refusal_says_what_is_left_and_what_the_day_has_cost(monkeypatch):
     # A negative balance is an overshoot, not a number to show the user.
     assert "这一单超出 $0.50" in message
     assert "-$0.50" not in message
+    assert "上一单实花 $1.50" in message
     assert "1 个子分身，未执行" in message
 
 

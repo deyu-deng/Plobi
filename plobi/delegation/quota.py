@@ -22,6 +22,13 @@ class QuotaVerdict:
     reason: str
     remaining: Optional[float]
     source: str
+    #: What the breaker has been fed since it was created (None = never told).
+    spent: Optional[float] = None
+    #: The configured daily budget behind `remaining`, when a provider reports one.
+    budget: Optional[float] = None
+    #: The delegation that last moved the number, so a refusal can name a cost
+    #: instead of only a verdict ("this one is refused" is not "this one cost X").
+    last_spend: Optional[float] = None
 
 
 class QuotaProvider(Protocol):
@@ -67,6 +74,21 @@ class QuotaCircuit:
         self._lock = threading.Lock()
         self._tripped = False
         self._trip_reason = ""
+        # The breaker's own ledger of what it was fed. Providers keep their own
+        # counters (a provider may ignore `record`); this is the one the refusal
+        # message reads from, so a user gets a number instead of "额度耗尽".
+        self._spent = 0.0
+        self._last_spend: Optional[float] = None
+
+    @property
+    def spent_usd(self) -> float:
+        with self._lock:
+            return self._spent
+
+    @property
+    def last_spend_usd(self) -> Optional[float]:
+        with self._lock:
+            return self._last_spend
 
     def register(self, provider: QuotaProvider) -> None:
         with self._lock:
@@ -77,12 +99,29 @@ class QuotaCircuit:
             return list(self._providers)
 
     def record_spend(self, usd: float) -> None:
-        """Fold real spend into every provider that can take it."""
+        """Fold real spend into every provider that can take it.
+
+        This is the ledger feed the breaker was missing: delegation ran, children
+        billed, and `remaining_usd()` still answered the full budget because
+        nothing ever called in here. Call it once per delegation, at the layer
+        that already aggregates its children — see `tools/delegate_tool.py`.
+        """
+        try:
+            amount = float(usd or 0.0)
+        except (TypeError, ValueError):
+            return
+        if amount <= 0.0:
+            return
+
+        with self._lock:
+            self._spent += amount
+            self._last_spend = amount
+
         for provider in self.providers():
             record = getattr(provider, "record", None)
             if callable(record):
                 try:
-                    record(usd)
+                    record(amount)
                 except Exception:  # a bad provider must not break delegation
                     continue
 
@@ -90,7 +129,13 @@ class QuotaCircuit:
         with self._lock:
             if self._tripped:
                 return QuotaVerdict(
-                    False, self._trip_reason or "quota breaker tripped", 0.0, "breaker"
+                    False,
+                    self._trip_reason or "quota breaker tripped",
+                    0.0,
+                    "breaker",
+                    spent=self._spent,
+                    budget=self._budget_unlocked(),
+                    last_spend=self._last_spend,
                 )
 
             worst: Optional[float] = None
@@ -106,13 +151,55 @@ class QuotaCircuit:
                     worst = float(remaining)
                     source = getattr(provider, "name", "provider")
 
+            spent = self._spent
+            last = self._last_spend
+
             if worst is None:
-                return QuotaVerdict(True, "no quota data", None, "none")
+                return QuotaVerdict(True, "no quota data", None, "none", spent=spent or None, last_spend=last)
             if worst <= 0:
+                budget = self._budget_unlocked()
+                # Two numbers, not one mood: what is left and what the last
+                # delegation actually cost — the sentence R-073 asked for. A
+                # negative remaining is an overshoot, not a balance: show zero and
+                # name the overage, or the user reads "-$0.50 还剩" as a second bug.
+                over = max(0.0, -float(worst))
+                detail = (
+                    f"{source} 额度耗尽：今日预算 {self._money(budget)}，已花 {self._money(spent)}，"
+                    f"还剩 {self._money(0.0)}"
+                )
+                if over > 0.0:
+                    detail += f"（这一单超出 {self._money(over)}）"
+                if last is not None:
+                    detail += f"；上一单实花 {self._money(last)}"
                 self._tripped = True
-                self._trip_reason = f"{source} 额度耗尽"
-                return QuotaVerdict(False, self._trip_reason, worst, source)
-            return QuotaVerdict(True, "ok", worst, source)
+                self._trip_reason = detail
+                return QuotaVerdict(
+                    False, detail, worst, source, spent=spent, budget=budget, last_spend=last
+                )
+            return QuotaVerdict(
+                True,
+                "ok",
+                worst,
+                source,
+                spent=spent or None,
+                budget=self._budget_unlocked(),
+                last_spend=last,
+            )
+
+    def _budget_unlocked(self) -> Optional[float]:
+        """The configured daily budget across providers (caller holds the lock)."""
+        total = 0.0
+        seen = False
+        for provider in self._providers:
+            value = getattr(provider, "budget_usd", None)
+            if isinstance(value, (int, float)):
+                total += float(value)
+                seen = True
+        return total if seen else None
+
+    @staticmethod
+    def _money(value: Optional[float]) -> str:
+        return "未知" if value is None else f"${float(value):.2f}"
 
     def trip(self, reason: str = "manual trip") -> None:
         with self._lock:
