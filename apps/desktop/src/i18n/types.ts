@@ -1299,6 +1299,16 @@ export interface Translations {
     agentsLoadFailed: string
     agentsEmptyTitle: string
     agentsEmptyDesc: string
+    /** 点进一个 L2 时左栏那一格：它把活外包给了谁（WP-L2-OUTSOURCE-ENTRY ③）。 */
+    offloadsTitle: string
+    offloadsLoading: string
+    offloadsEmpty: string
+    offloadsBackToList: string
+    offloadsLoadFailed: string
+    offloadsNoArtifact: string
+    offloadsOpenFailed: string
+    offloadsReveal: string
+    offloadsCostUnknown: string
     newAgent: string
     newAgentLabel: string
     /** WP-CREATE-CAT: label for the category <select> in the new-agent dialog. */

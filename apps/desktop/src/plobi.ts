@@ -6,6 +6,7 @@ import type {
   AgendaEvent,
   AgendaEventCreate,
   AgendaEventPatch,
+  AgentOffloadsData,
   AnalyticsResponse,
   AudioSpeakResponse,
   AudioTranscriptionResponse,
@@ -304,6 +305,12 @@ export function getSessionMessages(id: string, profile?: string | null): Promise
   return window.plobiDesktop.api<SessionMessagesResponse>({
     ...(profile ? { profile } : {}),
     path: `/api/sessions/${encodeURIComponent(id)}/messages${suffix}`
+  })
+}
+
+export function getAgentOffloads(agentId: string): Promise<{ data: AgentOffloadsData, ok: boolean }> {
+  return window.plobiDesktop.api<{ data: AgentOffloadsData, ok: boolean }>({
+    path: `/api/agents/${encodeURIComponent(agentId)}/offloads`
   })
 }
 
