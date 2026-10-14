@@ -131,6 +131,13 @@ def compile_config(
     if table.engine_dns:
         document["dns"] = dict(table.engine_dns)
 
+    #: A TUN block is emitted only when the table asked for one and the parser kept
+    #: its shape (`agent.egress.rules._parse_tun` refuses nameless / stackless
+    #: blocks).  Whether this machine may *have* one is a different question — that
+    #: gate runs in `agent.egress.tun.preflight` before we ever spawn the engine.
+    if table.engine_tun.get("enabled"):
+        document["tun"] = dict(table.engine_tun)
+
     _refuse_self_reference(proxies, port)
 
     return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)

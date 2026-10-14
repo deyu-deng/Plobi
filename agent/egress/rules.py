@@ -158,6 +158,13 @@ class Table:
     #: 默认 false —— 没写这张表的人不该被改了系统设置；且这一格可精确回退。
     system_proxy_enabled: bool = False
 
+    #: `engine.tun` — the machine-wide half that PAC and system-proxy cannot reach:
+    #: hard-coded-direct native traffic (most games, some CLI tools).  Empty by
+    #: default; starting a TUN adapter takes the default route, so it is gated by
+    #: :mod:`agent.egress.tun` (admin + "someone else already owns the default
+    #: route ⇒ refuse") before the compiler ever emits a block.
+    engine_tun: dict[str, Any] = field(default_factory=dict)
+
     #: Non-empty when the config could not be read at all, which is a *different*
     #: state from "no table declared": a caller that must not run unrouted (the
     #: external-offload child) has to be able to tell them apart.
@@ -572,6 +579,8 @@ def parse_table(raw: Any) -> Table:
     if not isinstance(sysp_raw, dict):
         raise EgressConfigError("network.egress.system_proxy must be a mapping ({enabled: true|false})")
 
+    tun = _parse_tun(engine_raw)
+
     return Table(
         rules=rules,
         proxies=proxies,
@@ -584,7 +593,56 @@ def parse_table(raw: Any) -> Table:
         engine_include=_parse_include(engine_raw),
         engine_dns=_parse_dns(engine_raw),
         system_proxy_enabled=bool(sysp_raw.get("enabled", False)),
+        engine_tun=tun,
     )
+
+
+#: Stacks mihomo can actually run on Windows — the names are the engine's own spelling.
+#: `mixed` is Linux-only (netlink), so it is refused rather than passed through to fail at start.
+TUN_STACKS = ("system", "gvisor")
+
+
+def _parse_tun(engine_raw: dict) -> dict[str, Any]:
+    """`engine.tun` — validated shape, **no invented defaults**.
+
+    A TUN adapter rewrites this machine's default route.  A half-written block (no
+    name, no stack) would produce an engine that either refuses to start or starts
+    with a stack nobody chose, so every field we hand to the engine has to be here
+    already; the gate on *whether to do it at all* lives in :mod:`agent.egress.tun`.
+    """
+    tun_raw = engine_raw.get("tun")
+    if tun_raw in (None, {}):
+        return {}
+    if not isinstance(tun_raw, dict):
+        raise EgressConfigError(
+            "network.egress.engine.tun must be a mapping "
+            "({enabled: true, name: ..., stack: system|gvisor, ...})"
+        )
+    out: dict[str, Any] = {}
+    for key, value in tun_raw.items():
+        out[str(key).strip().replace("_", "-")] = value
+    if "enabled" not in out:
+        raise EgressConfigError("network.egress.engine.tun needs an explicit 'enabled: true|false'")
+    out["enabled"] = bool(out["enabled"])
+    if not out["enabled"]:
+        return out
+    stack = str(out.get("stack", "")).strip().lower()
+    if stack not in TUN_STACKS:
+        raise EgressConfigError(
+            f"network.egress.engine.tun.stack {stack or '(none)'} is not one of {', '.join(TUN_STACKS)} "
+            f"on Windows — nothing is defaulted here because a TUN takes the machine's default route"
+        )
+    out["stack"] = stack
+    name = str(out.get("name", "")).strip()
+    if not name:
+        raise EgressConfigError(
+            "network.egress.engine.tun.name is required when TUN is enabled — the guard has to be "
+            "able to tell *our* adapter from somebody else's"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,31}", name):
+        raise EgressConfigError(f"network.egress.engine.tun.name {name!r} is not a usable adapter name")
+    out["name"] = name
+    return out
 
 
 def _parse_dns(engine_raw: dict) -> dict[str, Any]:

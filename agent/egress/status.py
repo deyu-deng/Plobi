@@ -17,7 +17,7 @@ answer for the CLI, the panel, and the boot path.
 
 from __future__ import annotations
 
-from agent.egress import engine, system_proxy
+from agent.egress import engine, system_proxy, tun
 from agent.egress.rules import Table, load_table
 
 
@@ -58,6 +58,9 @@ def snapshot(table: Table | None = None, *, home: str | None = None) -> dict:
         },
         "downgrades": engine.recent_downgrades(),
         "system_proxy": system_proxy.status(table),
+        # The guard runs OS probes, so it is only consulted when the table actually
+        # asks for a TUN — the tray and panel poll this endpoint every few minutes.
+        "tun": tun.preflight(table) if table.engine_tun.get("enabled") else {"requested": False},
     }
 
 
@@ -113,5 +116,9 @@ def render(
             lines.append(f"downgrade: {item['exit']} — {item['reason']}")
 
     lines.extend(system_proxy.status_lines(system_proxy.status(table, home=home)))
+    if table.engine_tun.get("enabled"):
+        lines.extend(tun.status_lines(tun.preflight(table)))
+    else:
+        lines.extend(tun.status_lines({"requested": False}))
 
     return lines
