@@ -6,7 +6,6 @@ import { requestDesktopOnboarding } from '@/store/onboarding'
 import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/profile'
 import {
   $currentCwd,
-  $currentProvider,
   $sessions,
   setCurrentBranch,
   setCurrentCwd,
@@ -20,7 +19,6 @@ import {
   setSessions,
   setYoloActive
 } from '@/store/session'
-import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import { reportBackendContract, reportInstallMethodWarning } from '@/store/updates'
 import type { SessionCreateResponse, SessionInfo, SessionRuntimeInfo } from '@/types/plobi'
 
@@ -275,20 +273,12 @@ export function applyRuntimeInfo(info: SessionRuntimeInfo | undefined): SessionR
   reportInstallMethodWarning(info.install_warning)
 
   if (typeof info.model === 'string') {
-    // Desktop-quota providers (Antigravity/…) route to the local aigw hub, not
-    // the Plobi backend. Their session is only a transcript container and
-    // reports Plobi's default model, so don't let it clobber the sticky local
-    // model that drives routing. (The per-session cache still records it below.)
-    if (!isDesktopQuotaProvider($currentProvider.get())) {
-      setCurrentModel(info.model)
-    }
+    setCurrentModel(info.model)
     sessionState.model = info.model
   }
 
   if (typeof info.provider === 'string') {
-    if (!isDesktopQuotaProvider($currentProvider.get())) {
-      setCurrentProvider(info.provider)
-    }
+    setCurrentProvider(info.provider)
     sessionState.provider = info.provider
   }
 

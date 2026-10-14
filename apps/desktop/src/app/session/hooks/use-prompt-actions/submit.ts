@@ -4,12 +4,7 @@ import { PROMPT_SUBMIT_REQUEST_TIMEOUT_MS } from '@/plobi'
 import type { Translations } from '@/i18n'
 import { type ChatMessage, textPart } from '@/lib/chat-messages'
 import { optimisticAttachmentRef } from '@/lib/chat-runtime'
-import {
-  buildDesktopQuotaMessages,
-  type DesktopQuotaStreamHandlers,
-  setDesktopQuotaAbort,
-  streamDesktopQuotaChat
-} from '@/lib/desktop-quota-chat'
+import { type DesktopQuotaStreamHandlers } from '@/lib/desktop-quota-chat'
 import { setMutableRef } from '@/lib/mutable-ref'
 import {
   $composerAttachments,
@@ -17,10 +12,9 @@ import {
   type ComposerAttachment,
   terminalContextBlocksFromDraft
 } from '@/store/composer'
-import { $connectedDesktopApps, isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
-import { $currentModel, $currentProvider, $messages, setAwaitingResponse, setBusy, setMessages } from '@/store/session'
+import { $messages, setAwaitingResponse, setBusy, setMessages } from '@/store/session'
 
 import type { ClientSessionState } from '../../../types'
 
@@ -42,6 +36,10 @@ interface SubmitPromptDeps {
   busyRef: MutableRefObject<boolean>
   copy: Translations['desktop']
   createBackendSessionForSend: (preview?: string | null) => Promise<string | null>
+  /** Accepted, no longer read: the renderer-side direct-to-hub turn is gone (a
+   *  hub-backed model is a backend model now, so `prompt.submit` streams it). The
+   *  controller still builds these handlers; taking them out of the shell is the
+   *  follow-up that needs `desktop-controller.tsx` and the main-process stream. */
   desktopQuotaStream: DesktopQuotaStreamHandlers
   getRouteToken: () => string
   requestGateway: GatewayRequest
@@ -66,7 +64,6 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
     busyRef,
     copy,
     createBackendSessionForSend,
-    desktopQuotaStream,
     getRouteToken,
     requestGateway,
     selectedStoredSessionIdRef,
@@ -314,62 +311,6 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         seedOptimistic(sessionId)
       }
 
-      // --- Desktop-quota routing (Antigravity / Cursor / Workbuddy) ---
-      //
-      // When the selected provider is a connected desktop-quota app, the turn
-      // never reaches the Plobi backend's `prompt.submit` — the model lives
-      // behind the local aigw hub (an OpenAI-compatible gateway aggregating the
-      // closed-source apps' subscription quotas). We stream directly from aigw
-      // and feed the deltas into the same message-stream mutators a normal
-      // backend turn uses, so the assistant bubble renders identically.
-      //
-      // v1 boundary: text-only. File/image attachments are NOT forwarded to
-      // aigw (the composer still shows them, but only textual context reaches
-      // the model). The turn is also not persisted to the backend transcript.
-      const provider = $currentProvider.get()
-
-      if (isDesktopQuotaProvider(provider)) {
-        const app = $connectedDesktopApps.get()[provider]
-
-        // Rewrite the optimistic message with the (un-synced) refs so the
-        // transcript shows the user's attachments even though we skip the
-        // gateway file.attach round-trip.
-        rewriteOptimistic(sessionId)
-        const text = buildContextText(attachments)
-
-        const controller = new AbortController()
-        setDesktopQuotaAbort(sessionId, controller)
-
-        try {
-          await streamDesktopQuotaChat({
-            baseUrl: app?.baseUrl ?? '',
-            // No key here on purpose: the hub key stays in the main process,
-            // which also makes the request (the renderer cannot reach the hub
-            // directly — see desktop-quota-chat.ts:quotaStreamRequest).
-            // aigw's unified model namespace is `<provider>/<model>`; the UI
-            // store strips the prefix (the provider slug carries it), so we
-            // re-join here.
-            model: `${provider}/${$currentModel.get()}`,
-            messages: buildDesktopQuotaMessages($messages.get(), text),
-            sessionId,
-            signal: controller.signal,
-            handlers: desktopQuotaStream
-          })
-        } catch {
-          // streamDesktopQuotaChat already finalized the message via the
-          // handlers (failAssistantMessage on error / completeAssistantMessage
-          // on abort). Fall through to release the locks.
-        } finally {
-          if (usingComposerAttachments) {
-            clearComposerAttachments()
-          }
-
-          releaseSubmitLock()
-        }
-
-        return true
-      }
-
       // The gateway resolves the *live* session id on every RPC this pipeline
       // makes — the attachment staging calls (`image.attach`, `image.attach_bytes`
       // and `file.attach`, all of them through `_sess()`) exactly like
@@ -564,7 +505,6 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       busyRef,
       copy,
       createBackendSessionForSend,
-      desktopQuotaStream,
       getRouteToken,
       requestGateway,
       selectedStoredSessionIdRef,

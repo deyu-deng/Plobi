@@ -7,7 +7,7 @@ import { type ChatMessage, type ChatMessagePart, chatMessageText, textPart } fro
 import { stripInternalDirectives } from '@/lib/visible-user-text'
 import { normalize } from '@/lib/text'
 import type { ComposerAttachment } from '@/store/composer'
-import { desktopQuotaProviders } from '@/store/desktop-quotas'
+import { quotaProviders } from '@/store/desktop-quotas'
 import type { ModelOptionsResponse, SessionInfo } from '@/types/plobi'
 
 export const SLASH_COMMAND_RE = /^\/[^\s/]*(?:\s|$)/
@@ -280,9 +280,10 @@ export function quickModelOptions(
   const seen = new Set<string>()
   const options: QuickModelOption[] = []
 
-  // Merge connected desktop-quota apps (Antigravity, …) so their models appear
-  // in the composer quick-switcher alongside backend providers.
-  const providers = [...(data?.providers ?? []), ...desktopQuotaProviders()].sort((a, b) => {
+  // Split the hub's catalog row into the apps the user actually owns, so the
+  // composer quick-switcher offers them next to the backend providers — and only
+  // the channels the hub currently says are usable.
+  const providers = quotaProviders(data?.providers ?? []).sort((a, b) => {
     if (a.slug === currentProvider) {
       return -1
     }

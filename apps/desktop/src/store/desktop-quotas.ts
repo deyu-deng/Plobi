@@ -7,20 +7,20 @@ import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 // ---------------------------------------------------------------------------
 // Desktop Quotas — connected-app registry (renderer-side, persisted)
 //
-// When the user activates a closed-source desktop app (Antigravity, Cursor,
-// Workbuddy) in Settings → Providers → Desktop Quotas, its served models are
-// injected into the chat model selector here. Selecting one sets *local* model
-// state and routes the chat through the aigw hub (the hidden Local Hub) — the
-// Plobi backend never learns about these providers.
+// The user activates a closed-source desktop app (Antigravity, Workbuddy) on
+// their machine; the local aigw hub (the hidden Local Quota Hub) aggregates the
+// quota those subscriptions already pay for and serves it as an OpenAI-compatible
+// catalog. This store keeps the hub's *verdict per app per model*, and
+// `quotaProviders()` turns it into the rows the chat model selector shows.
 //
-// The model list is no longer hardcoded. It is fetched live from the aigw
-// gateway's `/v1/models` endpoint (which itself discovers the real catalog from
-// upstream, e.g. Antigravity's `fetchAvailableModels`), and the gateway marks each
-// row with whether picking it would actually work. What the hub offers is what the
-// selector shows: a leg whose credential has expired or that cannot carry tool
-// calls leaves the list on its own and comes back when the desktop app renews it —
-// no name list is involved anywhere in this file. `DESKTOP_QUOTA_MODELS` is only a
-// seed for the window before the first read has ever landed.
+// A pick here is a normal Plobi backend model: the row carries the hub provider's
+// own slug and the joined id (`<app>/<model>`), so switching, sending, persisting
+// and remembering the turn all run through the one pipeline every other model
+// uses. What this store decides is only *which* of the hub's channels may be
+// offered: a leg whose credential has expired or that cannot carry tool calls
+// leaves the list on its own and comes back when the desktop app renews it —
+// no name list is involved anywhere in this file. `DESKTOP_QUOTA_MODELS` is only
+// a seed for the window before the first read has ever landed.
 // ---------------------------------------------------------------------------
 
 export interface ConnectedDesktopApp {
@@ -201,75 +201,99 @@ export function applyDiscoveredQuotaApps(apps: QuotaAppFrame[]): void {
   }
 }
 
-/** True when `slug` is a connected desktop-quota app (its models route to aigw). */
-export function isDesktopQuotaProvider(slug: string): boolean {
+/** True when `slug` is one of the connected desktop apps the hub serves. */
+export function isQuotaAppSlug(slug: string): boolean {
   return Boolean($connectedDesktopApps.get()[slug]?.connected)
 }
 
-/** Base URL of the aigw hub for a connected app, if known. */
-export function desktopQuotaBaseUrl(slug: string): string | undefined {
-  return $connectedDesktopApps.get()[slug]?.baseUrl
+/**
+ * The Plobi backend provider that serves every hub-backed model. This is a
+ * routing value, never display copy — 裁定 45.4 keeps the word out of renderer
+ * string literals — so it is only ever *matched* here, and the value the UI
+ * selects is the catalog row's own slug.
+ */
+const QUOTA_HUB_ROW = /^aigw$/i
+
+export function findQuotaHubRow(providers: readonly Pick<ModelOptionProvider, 'slug'>[]): string | null {
+  return providers.find(provider => QUOTA_HUB_ROW.test(provider.slug))?.slug ?? null
+}
+
+/** The bare ids the hub still says are usable for one app, as backend model ids. */
+function pickableModelIds(app: ConnectedDesktopApp): string[] {
+  const models =
+    app.models && app.models.length
+      ? app.models
+      : app.answered === true
+        ? []
+        : (DESKTOP_QUOTA_MODELS[app.id] ?? [])
+
+  return models.map(model => `${app.id}/${model}`)
 }
 
 /**
- * Synthetic ModelOptionProvider rows for connected desktop apps, merged into the
- * chat model selector so their models surface alongside backend providers.
- * Display-only: pricing is marked free (draws on the user's own subscription
- * quota) and selecting sets local state rather than a backend model switch.
+ * The chat model selector's provider list, with the hub's own catalog row
+ * replaced by one row per connected app.
+ *
+ * Two things happen here and both are the user's ruling, not decoration:
+ *
+ * 1. **A pick is an ordinary backend model.** The rows keep the hub row's slug
+ *    and carry the joined id the catalog already speaks (`<app>/<model>`), so
+ *    selecting one goes through `config.set` / `session.create` / `prompt.submit`
+ *    like any other model — the transcript, the memory and the tool calls all
+ *    come back through the pipeline that persists them.
+ * 2. **Only what the hub says is usable survives.** The catalog's hub row lists
+ *    every channel it aggregates, including the CLI leg (no tool calls) and any
+ *    app whose credential has expired; the verdict from `/v1/models?selectable=1`
+ *    is what filters them out, and an id the backend does not offer is dropped
+ *    here too, so nothing in this list can fail for a reason we already knew.
+ *
+ * Without the backend's hub row there is nothing to route the picks through, so
+ * the input comes back untouched rather than a list of promises we cannot keep.
  */
-export function desktopQuotaProviders(): ModelOptionProvider[] {
-  const apps = $connectedDesktopApps.get()
-  const out: ModelOptionProvider[] = []
+export function quotaProviders(providers: readonly ModelOptionProvider[]): ModelOptionProvider[] {
+  const hubRow = providers.find(provider => QUOTA_HUB_ROW.test(provider.slug))
 
-  for (const app of Object.values(apps)) {
+  if (!hubRow) {
+    return [...providers]
+  }
+
+  const offered = new Set(hubRow.models ?? [])
+  const groups: ModelOptionProvider[] = []
+
+  for (const app of Object.values($connectedDesktopApps.get())) {
     // A demo channel is not a quota the user owns, so it never reaches the
-    // selector — from any of its three call sites. This is the single place that
-    // rule lives for desktop-quota rows (the backend provider rows are filtered
-    // by humanizeProviders(), and the gateway itself already excludes its mock
-    // channel when Plobi derives the source list).
-    if (isMockProvider({ slug: app.id })) {
+    // selector. This is the single place that rule lives for hub-backed rows (the
+    // backend's own rows are filtered by `humanizeProviders`).
+    if (!app.connected || isMockProvider({ slug: app.id })) {
       continue
     }
 
-    // The authoritative list is the gateway's live `/v1/models` (it discovers the
-    // real catalog upstream), persisted into `app.models` at connect/refresh.
-    // DESKTOP_QUOTA_MODELS below is only a last-resort seed for the window before
-    // that read has ever succeeded — it is NOT canonical, and a model that only
-    // exists there must never be offered as if it were.
-    //
-    // Once the hub has answered, its word stands even when it says "none": an app
-    // whose credential just expired has to leave the picker, and reviving the seed
-    // here would put the dead model back on screen under a different name.
-    const models =
-      app.models && app.models.length
-        ? app.models
-        : app.answered === true
-          ? []
-          : (DESKTOP_QUOTA_MODELS[app.id] ?? [])
+    const models = pickableModelIds(app).filter(model => offered.has(model))
 
-    if (!app.connected || models.length === 0) {
+    if (models.length === 0) {
       continue
     }
 
-    const pricing: Record<string, ModelPricing> = {}
+    const pricing: Record<string, ModelPricing> = { ...hubRow.pricing }
 
+    // The draw is the user's own subscription quota, not a metered API call.
     for (const model of models) {
       pricing[model] = { free: true } as ModelPricing
     }
 
-    out.push({
-      slug: app.id,
-      name: app.name,
+    groups.push({
+      ...hubRow,
+      free_tier: true,
       models,
-      total_models: models.length,
-      authenticated: true,
+      name: app.name,
       pricing,
-      free_tier: true
+      total_models: models.length
     })
   }
 
-  return out
+  return [...providers.filter(provider => provider !== hubRow), ...groups]
 }
+
 
 /**
  * Ask the shell to re-read the hub and push a fresh frame — that is the only way to
@@ -289,11 +313,15 @@ export function requestQuotaCatalog(): void {
  * What the hub says, right now, about the model the composer is sitting on.
  *
  * Four states, and the difference between them is the whole point:
- *   - `not_quota`  the selection belongs to the Plobi backend, nothing to police here
- *   - `unanswered` the app is connected but no read has landed — we do not know, and
- *                  "we did not ask" must never be acted on as "it is broken"
+ *   - `not_quota`  not a hub-backed model id, nothing to police here
+ *   - `unanswered` the app is connected but no read has landed — we do not know,
+ *                  and "we did not ask" must never be acted on as "it is broken"
  *   - `ok`         the hub offers it
  *   - `gone`       the hub answered and does NOT offer it, with the reason it gave
+ *
+ * A hub-backed selection carries the app as the first segment of the model id
+ * (`workbuddy_api/glm-5.3`), which is what makes the verdict readable without
+ * knowing the hub provider's slug.
  */
 export type QuotaSelectionVerdict =
   | { state: 'not_quota' }
@@ -301,22 +329,45 @@ export type QuotaSelectionVerdict =
   | { state: 'ok' }
   | { reason: string; state: 'gone' }
 
-export function quotaSelectionVerdict(provider: string, model: string): QuotaSelectionVerdict {
-  const app = $connectedDesktopApps.get()[provider]
+export function quotaSelectionVerdict(model: string): QuotaSelectionVerdict {
+  const app = hubAppOfModel(model)
 
-  if (!app?.connected) {
+  if (!app) {
     return { state: 'not_quota' }
   }
+
+  const modelId = model.slice(model.indexOf('/') + 1)
 
   if (app.answered !== true) {
     return { state: 'unanswered' }
   }
 
-  if (app.models.includes(model)) {
+  if (app.models.includes(modelId)) {
     return { state: 'ok' }
   }
 
-  return { state: 'gone', reason: app.blocked?.[model] ?? 'not_offered' }
+  return { state: 'gone', reason: app.blocked?.[modelId] ?? 'not_offered' }
+}
+
+/**
+ * The connected app a model id belongs to, found by its first segment
+ * (`workbuddy_api/glm-5.3` → that app), or null when the id is not one of ours.
+ *
+ * This is what lets the rest of the UI talk about a hub-backed pick without ever
+ * naming the hub: the verdict reads the app's health through it, and a surface that
+ * shows the provider shows the software's own name instead (`desktop-quotas` owns
+ * the join, so nobody has to re-derive it).
+ */
+export function hubAppOfModel(model: string): ConnectedDesktopApp | null {
+  const separator = model.indexOf('/')
+
+  if (separator <= 0) {
+    return null
+  }
+
+  const app = $connectedDesktopApps.get()[model.slice(0, separator)]
+
+  return app?.connected ? app : null
 }
 
 /**
@@ -325,6 +376,9 @@ export function quotaSelectionVerdict(provider: string, model: string): QuotaSel
  * not a list copied into the UI. When more than one app is live the order is the
  * hub's own, so the *preference* between them belongs to the user's default model
  * setting, not to this function.
+ *
+ * The answer is in app form (`provider` = the app, `model` without the prefix) and
+ * `selectModel` turns it into the backend form, which keeps the join in one place.
  */
 export function firstSelectableQuotaModel(): { model: string; provider: string } | null {
   const apps = Object.values($connectedDesktopApps.get())

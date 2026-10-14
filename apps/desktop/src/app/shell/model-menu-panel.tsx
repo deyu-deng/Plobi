@@ -26,7 +26,7 @@ import {
 } from '@/lib/model-status-label'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
-import { desktopQuotaProviders, isDesktopQuotaProvider, requestQuotaCatalog } from '@/store/desktop-quotas'
+import { quotaProviders, requestQuotaCatalog } from '@/store/desktop-quotas'
 import { $modelPresets, applyModelPreset, modelPresetKey } from '@/store/model-presets'
 import {
   $visibleModels,
@@ -100,19 +100,15 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
     requestQuotaCatalog()
   }, [])
 
-  // Desktop-quota providers (Antigravity/…) route to the local aigw hub, so the
-  // gateway's `model.options` (which reports the Plobi default, not the user's
-  // picked desktop-quota model) must not win the "current" highlight. When the
-  // active provider is one of these, the sticky local selection is authoritative.
-  const isDesktopQuota = isDesktopQuotaProvider(currentProvider)
-
-  const { model: optionsModel, provider: optionsProvider } = isDesktopQuota
-    ? { model: currentModel, provider: currentProvider }
-    : currentPickerSelection(
-        !!activeSessionId,
-        { model: currentModel, provider: currentProvider },
-        modelOptions.data
-      )
+  // The "current" row is whatever the composer is sitting on. A hub-backed model
+  // is an ordinary backend model now (the row carries the hub's own slug and the
+  // joined id), so the gateway's `model.options` reports the user's pick back to
+  // us like it does for any other provider — no local override.
+  const { model: optionsModel, provider: optionsProvider } = currentPickerSelection(
+    !!activeSessionId,
+    { model: currentModel, provider: currentProvider },
+    modelOptions.data
+  )
 
   const loading = modelOptions.isPending && !modelOptions.data
 
@@ -125,10 +121,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   // R-017: display-only humanization — mock fixtures are filtered, internal
   // group vocabulary (AIGW / CUSTOM ENDPOINT) becomes software/vendor names.
   // Slugs survive untouched so switching/presets keep their identity.
-  const providers = humanizeProviders([
-    ...(modelOptions.data?.providers ?? []),
-    ...desktopQuotaProviders()
-  ])
+  const providers = humanizeProviders(quotaProviders(modelOptions.data?.providers ?? []))
 
   // The catalog carries MoA presets as a virtual `moa` provider row. Render
   // them in their dedicated section below and keep the row out of the main
@@ -256,7 +249,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
       ) : (
         <div className="max-h-[max(150px,30dvh)] overflow-y-auto py-0.5">
           {groups.map(group => (
-            <DropdownMenuGroup className="py-0.5" key={group.provider.slug}>
+            <DropdownMenuGroup className="py-0.5" key={`${group.provider.slug}:${group.provider.name}`}>
               <DropdownMenuLabel className={dropdownMenuSectionLabel}>{group.provider.name}</DropdownMenuLabel>
               {group.families.map(family => {
                 // The active id may be the base or its -fast sibling; either

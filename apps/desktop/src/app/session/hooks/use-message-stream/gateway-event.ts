@@ -24,7 +24,6 @@ import { followActiveSessionCwd } from '@/store/projects'
 import { clearAllPrompts, setApprovalRequest, setSecretRequest, setSudoRequest } from '@/store/prompts'
 import {
   $currentCwd,
-  $currentProvider,
   setCurrentBranch,
   setCurrentCwd,
   setCurrentFastMode,
@@ -38,7 +37,6 @@ import {
   setTurnStartedAt,
   setYoloActive
 } from '@/store/session'
-import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import { clearSessionSubagents, pruneDelegateFallbackSubagents, upsertSubagent } from '@/store/subagents'
 import { clearActiveSessionTodos } from '@/store/todos'
 import { recordToolDiff } from '@/store/tool-diffs'
@@ -120,20 +118,12 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
         const runningChanged = typeof payload?.running === 'boolean'
 
         if (apply) {
-          // Desktop-quota providers (Antigravity/…) route their chat to the
-          // local aigw hub, not the Plobi backend — the composer's model and
-          // provider are sticky *local* state that drive routing. The Plobi
-          // session created alongside (a transcript container) reports its own
-          // default model/provider, so syncing it would clobber the user's
-          // pick and silently mis-route the next turn. Keep the local selection.
-          if (!isDesktopQuotaProvider($currentProvider.get())) {
-            if (modelChanged) {
-              setCurrentModel(payload!.model || '')
-            }
+          if (modelChanged) {
+            setCurrentModel(payload!.model || '')
+          }
 
-            if (providerChanged) {
-              setCurrentProvider(payload!.provider || '')
-            }
+          if (providerChanged) {
+            setCurrentProvider(payload!.provider || '')
           }
 
           if (typeof payload?.cwd === 'string') {

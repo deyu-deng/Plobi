@@ -7,7 +7,6 @@ import { useI18n } from '@/i18n'
 import { preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
 import { setSessionYolo } from '@/lib/yolo-session'
 import { clearQueuedPrompts } from '@/store/composer-queue'
-import { isDesktopQuotaProvider } from '@/store/desktop-quotas'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
@@ -175,22 +174,14 @@ export function useSessionActions({
         const uiEffort = $currentReasoningEffort.get().trim()
         const uiFast = $currentFastMode.get()
 
-        // Desktop-quota providers (Antigravity, …) are not known to the Plobi
-        // backend — their chat is routed to the aigw hub, not prompt.submit.
-        // Strip the model/provider/effort/fast params so session.create doesn't
-        // 400 on an unknown provider. The session is still created (it serves
-        // as the transcript container + sidebar row); the model override lives
-        // only in renderer state ($currentModel/$currentProvider).
-        const isDesktopQuota = isDesktopQuotaProvider(uiProvider)
-
         const created = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,
           source: 'desktop',
           ...(cwd && { cwd }),
           ...(newChatProfile ? { profile: newChatProfile } : {}),
-          ...(!isDesktopQuota && uiModel ? { model: uiModel, ...(uiProvider ? { provider: uiProvider } : {}) } : {}),
-          ...(!isDesktopQuota && uiEffort ? { reasoning_effort: uiEffort } : {}),
-          ...(!isDesktopQuota && uiFast ? { fast: true } : {})
+          ...(uiModel ? { model: uiModel, ...(uiProvider ? { provider: uiProvider } : {}) } : {}),
+          ...(uiEffort ? { reasoning_effort: uiEffort } : {}),
+          ...(uiFast ? { fast: true } : {})
         })
 
         const stored = created.stored_session_id ?? null

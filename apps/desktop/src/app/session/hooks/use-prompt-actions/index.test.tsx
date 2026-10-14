@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { translateNow } from '@/i18n'
 import { textPart } from '@/lib/chat-messages'
 import { $composerAttachments, $composerDraft, type ComposerAttachment, setComposerDraft } from '@/store/composer'
-import { $connectedDesktopApps, isDesktopQuotaProvider } from '@/store/desktop-quotas'
+import { $connectedDesktopApps } from '@/store/desktop-quotas'
 import { $notifications } from '@/store/notifications'
 import { $busy, $connection, $currentModel, $currentProvider, $messages, $sessions, setSessions } from '@/store/session'
 import { streamDesktopQuotaChat } from '@/lib/desktop-quota-chat'
@@ -1611,7 +1611,7 @@ describe('uploadComposerAttachment remote read failures', () => {
   })
 })
 
-describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
+describe('usePromptActions hub-backed model routing (a pick is a backend model)', () => {
   beforeEach(() => {
     $connectedDesktopApps.set({
       antigravity: {
@@ -1623,8 +1623,9 @@ describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
         apiKey: 'sk-local-antigravity'
       }
     })
-    $currentProvider.set('antigravity')
-    $currentModel.set('gemini-3-pro')
+    // What the picker selects: the hub provider's own slug and the joined id.
+    $currentProvider.set('aigw')
+    $currentModel.set('antigravity/gemini-3-pro')
     $messages.set([])
   })
 
@@ -1635,8 +1636,12 @@ describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
     vi.mocked(streamDesktopQuotaChat).mockClear()
   })
 
-  it('routes an Antigravity-selected send to aigw (not prompt.submit), with the joined model id', async () => {
-    const requestGateway = vi.fn(async () => ({}) as never)
+  // The turn the user complained about: a hub-backed model used to stream
+  // straight from aigw in the renderer, which kept the transcript in memory and
+  // lost it on restart. It is an ordinary backend model now, so `prompt.submit`
+  // owns it — persistence, memory and tool calls come with that.
+  it('sends a hub-backed turn through prompt.submit, not the hub stream', async () => {
+    const requestGateway = vi.fn(async (_method: string, _params?: Record<string, unknown>) => ({}) as never)
 
     let handle: HarnessHandle | null = null
     render(
@@ -1652,39 +1657,19 @@ describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
 
     expect(ok).toBe(true)
 
-    // The turn went to the local aigw hub, never to the Plobi backend.
-    expect(vi.mocked(streamDesktopQuotaChat).mock.calls).toHaveLength(1)
-    expect(requestGateway).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
+    expect(vi.mocked(streamDesktopQuotaChat).mock.calls).toHaveLength(0)
 
-    const req = vi.mocked(streamDesktopQuotaChat).mock.calls[0][0] as unknown as {
-      model: string
-      baseUrl: string
-      apiKey?: string
-      messages: Array<{ role: string; content: string }>
-    }
-    // aigw's unified namespace is `<provider>/<model>`; the UI store strips the
-    // prefix, so submit must re-join it.
-    expect(req.model).toBe('antigravity/gemini-3-pro')
-    expect(req.baseUrl).toBe('http://127.0.0.1:8019/v1')
-    // The hub key must NOT reach the streaming client: main makes the request
-    // and injects it, both because the hub sends no CORS headers and so the
-    // credential stays out of renderer state.
-    expect(req.apiKey).toBeUndefined()
+    const submitCalls = vi.mocked(requestGateway).mock.calls.filter(c => c[0] === 'prompt.submit')
 
-    const messages = req.messages
-    expect(messages.at(-1)).toEqual({ role: 'user', content: 'hello from the desktop quota' })
+    expect(submitCalls.length).toBeGreaterThan(0)
   })
 
-  it('does not route a normal backend provider through aigw', async () => {
+  it('still sends a normal backend provider through prompt.submit', async () => {
     $connectedDesktopApps.set({})
     $currentProvider.set('openai')
     $currentModel.set('gpt-4o')
 
-    expect(isDesktopQuotaProvider($currentProvider.get())).toBe(false)
-
-    const requestGateway = vi.fn(
-      async (method: string) => (method === 'prompt.submit' ? {} : {}) as never
-    )
+    const requestGateway = vi.fn(async (_method: string, _params?: Record<string, unknown>) => ({}) as never)
 
     let handle: HarnessHandle | null = null
     render(
@@ -1698,7 +1683,6 @@ describe('usePromptActions desktop-quota routing (Local Hub / aigw)', () => {
 
     await handle!.submitText('backend turn')
 
-    // Normal providers still go through the Plobi backend, never aigw.
     expect(vi.mocked(streamDesktopQuotaChat).mock.calls).toHaveLength(0)
     const submitCalls = vi.mocked(requestGateway).mock.calls.filter(c => c[0] === 'prompt.submit')
     expect(submitCalls.length).toBeGreaterThan(0)
