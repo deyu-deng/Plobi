@@ -2754,7 +2754,7 @@ wheels = [
 
 [[package]]
 name = "plobi-agent"
-version = "0.18.2"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
