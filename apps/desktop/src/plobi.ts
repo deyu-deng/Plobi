@@ -904,6 +904,26 @@ export async function getCronJobRuns(jobId: string, limit = 20): Promise<Session
   return runs ?? []
 }
 
+/**
+ * What a job's last runs actually said — the read half of `cron/output/*.md`.
+ *
+ * Separate from `getCronJobRuns` on purpose: that one lists run *sessions*, and a
+ * `no_agent` (script) job creates none, so for that shape this is the only content
+ * there is.  Newest first; bodies are truncated and redacted server-side.
+ */
+export async function getCronJobOutput(
+  jobId: string,
+  limit = 1
+): Promise<Array<{ status?: string; body?: string; name?: string; truncated?: boolean; chars_total?: number }>> {
+  const entries = await window.plobiDesktop.api<
+  Array<{ status?: string; body?: string; name?: string; truncated?: boolean; chars_total?: number }>
+  >({
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}/output?limit=${limit}`
+  })
+
+  return Array.isArray(entries) ? entries : []
+}
+
 export function createCronJob(body: CronJobCreatePayload): Promise<CronJob> {
   return window.plobiDesktop.api<CronJob>({
     path: '/api/cron/jobs',
