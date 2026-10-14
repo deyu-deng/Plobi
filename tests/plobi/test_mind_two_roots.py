@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from plobi.mind import paths
-from plobi.mind.notes_view import scan_notes
+from plobi.mind.notes_view import known_names, scan_notes
 from plobi.mind.paths import (
     Roots,
     UnsafeMindPath,
@@ -194,7 +194,15 @@ def test_agent_aliases_still_match_projects_through_the_split(mind, sibling_vaul
     entry = types.SimpleNamespace(
         name="srtp", mind_subtree="Vault/projects/SRTP", category="research", role="l2_course"
     )
-    from plobi.mind.notes_view import agent_aliases, known_names
+    from plobi.mind.notes_view import agent_aliases
 
     assert "SRTP" in agent_aliases(entry)
     assert "SRTP" in known_names(mind, [entry])
+
+
+def test_a_research_tree_is_a_known_owner_too(mind, sibling_vault, monkeypatch):
+    """Counting only ``Vault/projects`` would report ``research/SRTP`` as a note
+    tagged with an owner nobody registered — the sidebar's dangling-tag card."""
+    monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
+    (sibling_vault / "research" / "SRTP").mkdir(parents=True)
+    assert "SRTP" in known_names(mind, [])

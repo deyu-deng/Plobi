@@ -156,10 +156,23 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
     return tuple(dict.fromkeys(c for c in candidates if c))
 
 
+# Every L2 category folder a tree may live in, as logical paths. Listing only
+# ``Vault/projects`` would silently make ``research/SRTP`` — and after the move any
+# course, butler or event tree — an "owner nobody registered", which the sidebar
+# reports as a dangling ``belongs:`` tag instead of a note list.
+OWNER_TREE_ROOTS: tuple[str, ...] = (
+    "Vault/projects",
+    "Vault/research",
+    "Vault/courses",
+    "Vault/butler",
+    "Vault/events",
+)
+
+
 def known_names(root: Path, entries: Iterable[Any]) -> tuple[str, ...]:
     """Registered owners: every live agent plus every project tree in the brain."""
     names = [entry.name for entry in entries if getattr(entry, "name", "")]
-    for relative in ("Vault/projects",):
+    for relative in OWNER_TREE_ROOTS:
         base = real_target(relative, root)
         if base.is_dir():
             names.extend(path.name for path in sorted(base.iterdir()) if path.is_dir())
