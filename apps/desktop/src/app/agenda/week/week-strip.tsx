@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { type Translations, useI18n } from '@/i18n'
 import type { AgendaConflict, AgendaEvent } from '@/types/plobi'
@@ -11,6 +11,12 @@ import {
   weekTotal,
   type WeekView
 } from './week-model'
+import {
+  createDayFetcher,
+  type DayFetcher,
+  fetchWeekConflicts,
+  type WeekConflictState
+} from './week-snapshots'
 
 /**
  * WP-AGENDA-VIEW slice 1 — the week row on the desktop agenda board.
@@ -20,11 +26,13 @@ import {
  * no surface (it lives inside `AgendaView`) and fires no request.
  *
  * What this deliberately does **not** claim:
- * - It does not draw the vertical hour axis yet (slice 2 — the axis math already exists in
+ * - It does not draw the vertical hour axis yet (slice 3 — the axis math already exists in
  *   `src/app/console/right/timeline-layout.ts`, and the plan is to reuse it, not fork it).
  * - It does not compute conflicts. `conflictsByDay` comes from `/api/agenda/day` snapshots
  *   (`planning.py` `compute_event_overlaps`); a day without a snapshot says 「冲突未取」 rather
- *   than painting a confident zero. Loading those seven snapshots is also slice 2.
+ *   than painting a confident zero. Slice 2 loads those seven snapshots (D1/C1/C2, the shape the
+ *   user already signed for the phone side): fired together for the visible week, filled as they
+ *   land, one dead day degrades only its own column.
  * - "Looks right on screen" is not something a unit test can decide — that half waits for the
  *   user (架构师 10-14 ②).
  */
@@ -33,6 +41,8 @@ export interface AgendaWeekStripProps {
   /** Day snapshot conflicts by `YYYY-MM-DD`. Absent key = not loaded (the UI must say so). */
   conflictsByDay?: Record<string, AgendaConflict[]>
   events: AgendaEvent[]
+  /** Injectable transport for the seven snapshots; production uses `createDayFetcher()`. */
+  fetchDay?: DayFetcher
   onPickDay: (dayKey: null | string) => void
   pickedDayKey: null | string
   todayKey: string
@@ -47,6 +57,7 @@ function shortDate(dayKey: string): string {
 export function AgendaWeekStrip({
   conflictsByDay,
   events,
+  fetchDay,
   onPickDay,
   pickedDayKey,
   todayKey,
@@ -61,9 +72,40 @@ export function AgendaWeekStrip({
   const [panOffset, setPanOffset] = useState(0)
   const monday = panOffset === 0 ? anchor : shiftWeek(anchor, panOffset)
 
+  // C1 渐进：the columns paint from the rows we already hold, and the conflict layer fills in
+  // per day. `requestSeq` is the staleness guard — panning twice quickly must not let the first
+  // week's late answer overwrite the week now on screen.
+  const [snapshots, setSnapshots] = useState<WeekConflictState>({ conflictsByDay: {}, loadedCount: 0 })
+  const [fallbackFetcher] = useState(createDayFetcher)
+  const activeFetcher = fetchDay ?? fallbackFetcher
+  const requestSeq = useRef(0)
+
+  useEffect(() => {
+    const keys = weekDayKeys(monday)
+
+    if (keys.length === 0) {
+      return
+    }
+
+    const seq = requestSeq.current + 1
+
+    requestSeq.current = seq
+    void fetchWeekConflicts(keys, activeFetcher).then(next => {
+      if (requestSeq.current === seq) {
+        setSnapshots(next)
+      }
+    })
+  }, [activeFetcher, monday])
+
+  // An explicit prop wins over what this instance fetched (callers may already hold a snapshot).
+  const mergedConflicts = useMemo(
+    () => ({ ...snapshots.conflictsByDay, ...conflictsByDay }),
+    [conflictsByDay, snapshots.conflictsByDay]
+  )
+
   const view: WeekView = useMemo(
-    () => buildWeekView({ conflictsByDay, events, mondayKey: monday, todayKey }),
-    [conflictsByDay, events, monday, todayKey]
+    () => buildWeekView({ conflictsByDay: mergedConflicts, events, mondayKey: monday, todayKey }),
+    [events, mergedConflicts, monday, todayKey]
   )
 
   const keys = weekDayKeys(monday)
