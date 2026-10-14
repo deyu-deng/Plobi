@@ -32,7 +32,7 @@ READ_ONLY = {
     "Docs": WORKSPACE / "Plobi-Desktop" / "Docs",
     "Mind": Path(os.environ.get("MIND_ROOT", r"D:\Data\AppData\plobi\mind")),
 }
-LOG = WORKSPACE / "bundles" / "keep" / "push-run.log"
+LOG = WORKSPACE / "Plobi-Desktop" / "bundles" / "keep" / "push-run.log"
 
 
 def git(repo: Path, *args: str, timeout: int = 120) -> tuple[int, str]:
