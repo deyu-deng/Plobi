@@ -1309,7 +1309,8 @@ export interface Translations {
     offloadsOpenFailed: string
     offloadsReveal: string
     offloadsCostUnknown: string
-    offloadsNoTransport: string
+    offloadsJump: string
+    offloadsJumpFailed: string
     offloadsSessionId: string
     newAgent: string
     newAgentLabel: string

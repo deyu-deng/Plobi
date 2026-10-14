@@ -969,3 +969,98 @@ class TestAgentOffloadReadout:
         assert total_usd([]) == (None, "priced")
         assert total_usd([_round("D:/x", "t")]) == (None, "usage_reported_without_price")
         assert total_usd([_round("D:/x", "t", cost=1.0)])[0] == 1.0
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/offload/resume —— 点一行外包记录，回到那台外部软件里的那条会话
+# （WP-L2-OUTSOURCE-ENTRY 入口面③第三级；标识来自台账 `external_session` 那一列）
+# --------------------------------------------------------------------------- #
+
+
+def _no_spawn(monkeypatch):
+    """任何一次真起进程都算失败：这一组的判据是"守门在起之前"。"""
+    import subprocess
+
+    def _boom(*_a, **_kw):
+        raise AssertionError("不该起进程")
+
+    monkeypatch.setattr(subprocess, "Popen", _boom)
+    return subprocess
+
+
+class TestOffloadResume:
+    @pytest.mark.parametrize("agent", ["Cursor", "cursor", "", "   ", "codebuddy.exe; calc"])
+    def test_only_the_two_allowlisted_agents_reach_a_spawn(self, monkeypatch, agent):
+        _no_spawn(monkeypatch)
+        out = console_router.resume_external_session(agent, "01a1248d-3b15-738e")
+
+        assert out["ok"] is False and out["status"] == 400
+
+    @pytest.mark.parametrize("bad", [
+        "", "   ", "01a1248d 3b15", "id; rm -rf /", "--resume --open",
+        "..\..\windows\system32", "x" * 200, "$(whoami)", "`id`",
+    ])
+    def test_an_id_that_is_not_executable_shape_is_refused(self, monkeypatch, bad):
+        _no_spawn(monkeypatch)                       # 起进程即失败
+        import agent.external_offload as channel
+
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
+        out = console_router.resume_external_session("codebuddy", bad)
+
+        assert out["ok"] is False and out["status"] == 400
+
+    @pytest.mark.parametrize("agent,expect", [
+        ("codebuddy", ["--resume", "{id}", "--open"]),    # 起完在浏览器开它自己的界面
+        ("agy", ["--conversation", "{id}"]),
+    ])
+    def test_argv_is_the_whitelisted_shape_array_not_shell(self, monkeypatch, tmp_path, agent, expect):
+        import subprocess
+        from types import SimpleNamespace
+
+        captured = {}
+        monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: (
+            captured.update(argv=list(argv), kw=kw), SimpleNamespace(pid=4242))[1])
+        import agent.external_offload as channel
+
+        binary = str(tmp_path / "launcher.cmd")
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": binary)
+
+        out = console_router.resume_external_session(agent, "01a1248d-3b15-738e", str(tmp_path))
+
+        assert out["ok"] is True and out["data"]["pid"] == 4242
+        assert captured["argv"][0] == binary
+        assert captured["argv"][1:] == [
+            "01a1248d-3b15-738e" if piece == "{id}" else piece for piece in expect
+        ]
+        assert captured["kw"].get("shell", False) is False         # 不经 shell
+        assert captured["kw"]["cwd"] == str(tmp_path)
+
+    def test_unresolvable_command_is_reported_not_spawned(self, monkeypatch, tmp_path):
+        _no_spawn(monkeypatch)
+        import agent.external_offload as channel
+
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": "")
+        out = console_router.resume_external_session("codebuddy", "01a1248d-3b15-738e")
+
+        assert out["ok"] is False and out["status"] == 409
+
+    def test_a_launcher_that_will_not_start_says_so(self, monkeypatch, tmp_path):
+        import subprocess
+
+        import agent.external_offload as channel
+
+        def _raise(*_a, **_kw):
+            raise OSError("not a valid Win32 application")
+
+        monkeypatch.setattr(subprocess, "Popen", _raise)
+        monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/somewhere/codebuddy.cmd")
+        out = console_router.resume_external_session("codebuddy", "01a1248d-3b15-738e")
+
+        assert out["ok"] is False and out["status"] == 500
+        assert "not a valid Win32" in out["error"]
+
+    def test_route_rejects_an_unknown_agent_with_400(self, client, _isolated_state):
+        resp = client.post("/api/offload/resume", json={"agent": "Cursor", "session_id": "abc"})
+
+        assert resp.status_code == 400
+        assert resp.json()["ok"] is False

@@ -314,6 +314,25 @@ export function getAgentOffloads(agentId: string): Promise<{ data: AgentOffloads
   })
 }
 
+/**
+ * 点一行外包记录，回到那台外部软件里的同一条会话。
+ *
+ * 白名单、argv、以及"这台怎么起那家 Agent"全在后端（`plobi/console/router.py` 的
+ * `resume_external_session`）—— 渲染进程只交 `(agent, session_id, cwd)`，不交命令。
+ * 后端拒了会以非 2xx 回来（`fetchJson` 对 >=400 是 reject），调用方要把话说给人听。
+ */
+export function offloadResume(
+  agent: string,
+  sessionId: string,
+  cwd?: string
+): Promise<{ data: { agent: string, argv: string[], pid: number }, ok: boolean }> {
+  return window.plobiDesktop.api<{ data: { agent: string, argv: string[], pid: number }, ok: boolean }>({
+    body: { agent, session_id: sessionId, ...(cwd ? { cwd } : {}) },
+    method: 'POST',
+    path: '/api/offload/resume'
+  })
+}
+
 export function deleteSession(id: string, profile?: string | null): Promise<{ ok: boolean }> {
   return window.plobiDesktop.api<{ ok: boolean }>({
     ...(profile ? { profile } : {}),

@@ -8,10 +8,12 @@ import type { OffloadRound } from '@/types/plobi'
 import { AgentOffloadPanel } from './agent-offload-panel'
 
 const getAgentOffloads = vi.fn()
+const offloadResume = vi.fn()
 
 vi.mock('@/plobi', async importOriginal => ({
   ...(await importOriginal<typeof PlobiApi>()),
   getAgentOffloads: (agentId: string) => getAgentOffloads(agentId),
+  offloadResume: (agent: string, sessionId: string, cwd?: string) => offloadResume(agent, sessionId, cwd),
 }))
 
 function round(over: Partial<OffloadRound> = {}): OffloadRound {
@@ -52,6 +54,8 @@ function countIn(button: HTMLElement): string {
 beforeEach(() => {
   openExternal.mockReset()
   openExternal.mockResolvedValue(undefined)
+  offloadResume.mockReset()
+  offloadResume.mockResolvedValue({ data: { agent: 'codebuddy', argv: [], pid: 4242 }, ok: true })
   // The renderer only ever has this bridge in the desktop shell.
   Object.defineProperty(window, 'plobiDesktop', {
     configurable: true,
@@ -122,19 +126,33 @@ describe('AgentOffloadPanel', () => {
     expect(openExternal).not.toHaveBeenCalled()
   })
 
-  it('台账带回了会话号：把号显示出来，但没有通道就仍然不可点', async () => {
-    await renderPanel([round({ artifacts: [], external_session: '01a1248d-3b15-738e', external_session_source: 'result.session_id' })])
+  it('有会话号的一行：点它是交给后端那个白名单口，不碰 openExternal', async () => {
+    await renderPanel([round({ external_session: '01a1248d-3b15-738e', external_session_source: 'result.session_id' })])
     fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
 
     const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
 
+    // 读数先上桌：会话号与"在那台软件里打开这条会话"都在
     expect(row.textContent).toContain('01a1248d-3b15-738e')
-    expect(row.textContent).toContain('external session')
-    expect(row.textContent).toMatch(/no way to jump/i)
-    expect(row.hasAttribute('disabled')).toBe(true)
+    expect(row.hasAttribute('disabled')).toBe(false)
 
     fireEvent.click(row)
+
+    await waitFor(() => expect(offloadResume).toHaveBeenCalledTimes(1))
+    expect(offloadResume).toHaveBeenCalledWith('codebuddy', '01a1248d-3b15-738e', 'D:/projects/Aura')
     expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  it('后端拒了这一跳，就把后端那句话说出来，不甩 JSON 给用户', async () => {
+    offloadResume.mockRejectedValue(new Error('400: {"ok":false,"error":"这一家还没有实测过的回跳旗标"}'))
+    await renderPanel([round({ external_session: '01a1248d-3b15' })])
+    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /把今天的读数写成页/ }))
+
+    const row = await screen.findByText(/这一家还没有实测过的回跳旗标/)
+
+    expect(row.textContent).not.toContain('{"ok"')
   })
 
   it('后端给了归属原因时，空表说那句原因而不是"还没外包过"', async () => {
