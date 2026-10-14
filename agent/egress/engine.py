@@ -27,6 +27,7 @@ import logging
 import os
 import socket
 import subprocess
+import sys
 import time
 import urllib.request
 from dataclasses import dataclass, replace
@@ -505,13 +506,25 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
 
     snap.workdir.mkdir(parents=True, exist_ok=True)
     data, render_notes = _render(snap, table)
+    acl_notes: list[str] = []
     if snap.source != "pool":
         snap.config_path.write_bytes(data)
+        if sys.platform == "win32":
+            locked, why = restrict_file_acl(snap.config_path)
+            # Say it either way: the file holds resolved credentials, and "we meant to
+            # lock it" must not read as "it is locked".
+            acl_notes.append(f"compiled config ACL: {why}" if locked
+                             else f"compiled config ACL NOT tightened — {why}")
         verdict, why = verify_with_binary(snap.binary, str(snap.config_path))
         if verdict != "VERIFIED":
             return EngineReport(FAILED, f"the engine refused the config we compiled ({verdict})",
                                 snap.port, str(snap.workdir), snap.source, None, "",
-                                (*snap.notes, *render_notes, why[:300]))
+                                (*snap.notes, *render_notes, *acl_notes, why[:300]))
+    else:
+        acl_notes.append(
+            f"engine reads {snap.config_path} (pool source) — that file is not ours to rewrite "
+            f"or re-ACL, and it carries the same credentials"
+        )
 
     log_path = snap.workdir / "plobi-engine.log"
     pid, created = _spawn(snap, log_path)
@@ -523,7 +536,7 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
                    "config_sha": _sha(data), "source": snap.source,
                    "started_by": "plobi", "started_at": time.time()}, home=home)
     ok, detail = probe_engine(snap.port)
-    notes = [*snap.notes, *render_notes]
+    notes = [*snap.notes, *render_notes, *acl_notes]
     if not ok:
         # Measured on this box (09:10): an engine workdir without GeoSite.dat
         # starts, prints "Can't find GeoSite.dat, start download", and never
@@ -593,6 +606,35 @@ def stop_ours(table: Table, *, home: str | Path | None = None) -> EngineReport:
     _clear_record(home)
     return EngineReport(STOPPED, f"stopped the engine we started ({why})", snap.port,
                         str(snap.workdir or ""), snap.source, pid=rec.get("pid"))
+
+
+def restrict_file_acl(path: Path) -> tuple[bool, str]:
+    """Put an owner-only DACL on a file **we** wrote, and say what happened.
+
+    The compiled ``config.yaml`` carries the node credentials the engine has to be
+    able to read, so leaving it to inherit whatever the directory's ACL happens to
+    be is the exposure.  This never raises and never blocks a start: a failed
+    tightening is reported as a note, because "we meant to lock it" is not the same
+    as "it is locked" (裁定 94 — the surface has to carry the difference).
+    """
+    if sys.platform != "win32":
+        return False, f"这一格只实现 Windows（这台是 {sys.platform}）"
+    user = os.environ.get("USERNAME") or os.environ.get("USER")
+    if not user:
+        # Guessing a principal is how you hand the file to the wrong account.
+        return False, "拿不到当前账户名（USERNAME / USER 都没设）——不敢凭空改 ACL"
+    try:
+        r = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"icacls 没跑起来：{type(exc).__name__}: {exc}"
+    out = (r.stdout + r.stderr).decode("utf-8", "replace").strip()
+    if r.returncode != 0:
+        return False, f"icacls rc={r.returncode}：{out.splitlines()[-1] if out else ''}"
+    return True, f"{user}:F（继承已断，{out.splitlines()[-1] if out else ''}）"
 
 
 def _sha(data: bytes) -> str:
