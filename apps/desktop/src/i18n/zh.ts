@@ -1709,6 +1709,8 @@ export const zh: Translations = {
     offloadsOpenFailed: '桌面没接住这个路径，打不开。',
     offloadsReveal: '打开它落盘的东西',
     offloadsCostUnknown: '花费未知',
+    offloadsNoTransport: '有会话号，但桌面还没有跳进它自己那条会话的通道。',
+    offloadsSessionId: '外部会话',
     newAgent: '新建智能体',
     newAgentLabel: '新建智能体',
     newAgentCategoryLabel: '分类',

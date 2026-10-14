@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   artifactPathOf,
+  externalHandleOf,
   fileUrlFor,
   groupRoundsByTarget,
+  handleJumpEligible,
   jumpTargetFor,
   type OffloadRound,
   roundFacts,
@@ -78,7 +80,7 @@ describe('jumpTargetFor —— 跳不进会话就不许给一个假的可点行'
     expect(plan.url).toBe('file:///D:/projects/Aura/today.py')
   })
 
-  it('没有产物（或产物路径是空的）：不可点，并给机器可读的原因', () => {
+  it('没有产物（或产物路径是空的）：不可点，原因分两种', () => {
     for (const over of [{ artifacts: [] }, { artifacts: [{ path: '  ' }] }, { artifacts: undefined }]) {
       const plan = jumpTargetFor(round(over))
 
@@ -86,6 +88,27 @@ describe('jumpTargetFor —— 跳不进会话就不许给一个假的可点行'
       expect(plan.reason).toBe('no-artifact')
       expect(plan.url).toBe('')
     }
+
+    // 台账带回了会话号，缺的就只是"跳进去的那条通道"，别把两种混成一句话
+    const withHandle = jumpTargetFor(round({ artifacts: [], external_session: '01a1248d-3b15' }))
+
+    expect(withHandle.kind).toBe('none')
+    expect(withHandle.reason).toBe('no-jump-transport')
+    expect(withHandle.url).toBe('')
+  })
+
+  it('契约第 4 条：空串永远不许让那一支变可点', () => {
+    for (const raw of ['', '   ', undefined]) {
+      expect(handleJumpEligible(round({ external_session: raw }))).toBe(false)
+      expect(jumpTargetFor(round({ artifacts: [], external_session: raw })).reason).toBe('no-artifact')
+    }
+
+    expect(handleJumpEligible(round({ external_session: '01a1248d-3b15' }))).toBe(true)
+  })
+
+  it('会话号原样读出，来源格单独可见（厂商改信封时要知道读了哪个键）', () => {
+    expect(externalHandleOf(round({ external_session: ' 01a1248d-3b15 ' }))).toBe('01a1248d-3b15')
+    expect(round({ external_session_source: 'result.session_id' }).external_session_source).toBe('result.session_id')
   })
 
   it('artifactPathOf 取第一个有值的产物，不取空串', () => {

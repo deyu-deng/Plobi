@@ -1309,6 +1309,8 @@ export interface Translations {
     offloadsOpenFailed: string
     offloadsReveal: string
     offloadsCostUnknown: string
+    offloadsNoTransport: string
+    offloadsSessionId: string
     newAgent: string
     newAgentLabel: string
     /** WP-CREATE-CAT: label for the category <select> in the new-agent dialog. */

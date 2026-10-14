@@ -7,12 +7,13 @@ import { cn } from '@/lib/utils'
 import { getAgentOffloads } from '@/plobi'
 import type { OffloadRound } from '@/types/plobi'
 
-import { groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
+import { externalHandleOf, groupRoundsByTarget, type JumpReason, jumpTargetFor, roundFacts } from './agent-offloads'
 import { SidebarCount } from './chrome'
 
-const JUMP_REASON_KEYS = {
+const JUMP_REASON_KEYS: Partial<Record<JumpReason, 'offloadsNoArtifact' | 'offloadsNoTransport'>> = {
   'no-artifact': 'offloadsNoArtifact',
-} as const
+  'no-jump-transport': 'offloadsNoTransport',
+}
 
 /**
  * 点进一个 L2 时，左栏这一格换成**它把活外包给了谁**（WP-L2-OUTSOURCE-ENTRY 入口面③）。
@@ -127,7 +128,9 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
       : `$${facts.costUsd}`,
   ].filter(Boolean)
 
-  const reason = plan.reason ? c[JUMP_REASON_KEYS[plan.reason]] : ''
+  const reasonKey = plan.reason ? JUMP_REASON_KEYS[plan.reason] : undefined
+  const reason = reasonKey ? c[reasonKey] : ''
+  const handle = externalHandleOf(round)
   const title = [round.cwd, plan.kind === 'reveal' ? c.offloadsReveal : reason, round.failure].filter(Boolean).join(' · ')
 
   return (
@@ -149,6 +152,13 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
       type="button"
     >
       <span className="truncate text-[0.75rem]">{round.brief || round.cwd || '—'}</span>
+      {handle && (
+        <span className="truncate text-[0.65rem] text-(--ui-text-quaternary)" title={round.external_session_source || undefined}>
+          {c.offloadsSessionId}
+          {' '}
+          {handle}
+        </span>
+      )}
       {round.failure && (
         <span className="truncate text-[0.68rem] text-(--ui-red)">{round.failure}</span>
       )}

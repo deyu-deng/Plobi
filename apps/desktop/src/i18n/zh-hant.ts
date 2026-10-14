@@ -1430,6 +1430,8 @@ export const zhHant = defineLocale({
     offloadsOpenFailed: '桌面沒接住這個路徑，打不開。',
     offloadsReveal: '打開它落盤的東西',
     offloadsCostUnknown: '花費未知',
+    offloadsNoTransport: '有會話號，但桌面還沒有跳進它自己那條會話的通道。',
+    offloadsSessionId: '外部會話',
     newAgent: '新增智慧代理',
     newAgentLabel: '新增智慧代理',
     newAgentCategoryLabel: '分類',

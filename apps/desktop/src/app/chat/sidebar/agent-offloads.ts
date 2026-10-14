@@ -43,7 +43,7 @@ export function groupRoundsByTarget(rounds: readonly OffloadRound[]): OffloadGro
     .sort((a, b) => a.target.localeCompare(b.target))
 }
 
-export type JumpReason = '' | 'no-artifact'
+export type JumpReason = '' | 'no-artifact' | 'no-jump-transport'
 export type JumpPlan = { kind: 'none' | 'reveal', reason: JumpReason, url: string }
 
 /** 本地路径 → 主进程认得的 `file://`。裸路径会被 `new URL()` 判非法，点了就没反应。 */
@@ -54,19 +54,45 @@ export function fileUrlFor(localPath: string): string {
   return `file:///${encoded.replace(/^([A-Za-z])%3A/i, '$1:')}`
 }
 
+/** 这一轮有没有带回外部软件自己那条会话的标识。**空串是一个读数**（通道没带出来），不是失败。 */
+export function externalHandleOf(round: OffloadRound): string {
+  return (round.external_session ?? '').trim()
+}
+
+/**
+ * 「跳进它自己那条会话」那一支**有没有资格亮**。契约第 4 条：台账行有非空 `external_session`
+ * 才准可点，**空串永远不许渲染成可点**。这一支是那条支路的唯一入口，别在组件里另判一遍。
+ */
+export function handleJumpEligible(round: OffloadRound): boolean {
+  return externalHandleOf(round) !== ''
+}
+
 /** 这一轮留在盘上的第一个产物（台账里的 `artifacts[]` 就是它的证据）。 */
 export function artifactPathOf(round: OffloadRound): string {
   return (round.artifacts ?? []).map(item => (item?.path ?? '').trim()).find(Boolean) ?? ''
 }
 
+/**
+ * 一行点下去能到哪儿。
+ *
+ * 1. `reveal` —— 有产物就给 `file://`，主进程 `openExternalUrl()` 打不开时自己退成"在文件夹里选中"。
+ * 2. `none` —— 没产物就不可点，并给一个**机器可读**的原因：
+ *    `no-jump-transport` 是"会话号在手，但桌面还没有把那台软件拉到前台的通道"（需要主进程那一侧的
+ *    一发命令，`electron/main.ts` 不归本刀），`no-artifact` 是"这一轮既没产出也没有可回去的地方"。
+ *    两种都不许伪装成可点。
+ */
 export function jumpTargetFor(round: OffloadRound): JumpPlan {
   const path = artifactPathOf(round)
 
-  if (!path) {
-    return { kind: 'none', reason: 'no-artifact', url: '' }
+  if (path) {
+    return { kind: 'reveal', reason: '', url: fileUrlFor(path) }
   }
 
-  return { kind: 'reveal', reason: '', url: fileUrlFor(path) }
+  return {
+    kind: 'none',
+    reason: handleJumpEligible(round) ? 'no-jump-transport' : 'no-artifact',
+    url: '',
+  }
 }
 
 export type RoundFacts = {

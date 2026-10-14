@@ -230,3 +230,51 @@ class TestSwitchIsReachable:
         enabled = _load_enabled_toolsets() or []
 
         assert "offload" in enabled, "拨了开关，桌面会话仍然看不见外包工具"
+
+
+class TestExternalSessionColumn:
+    """台账那一列的形状（契约在 `Docs/tasks/offload-session-handle-task.md` 第 1/3/4 条）。
+
+    通道侧（`_parse_envelope` → 通道 result → `to_ledger_result`）归 `WP-OFFLOAD-SESSION-HANDLE`；
+    这里只钉**我这两道**：`LedgerResult` 收得到、`append` 写得出、旧行读得回。
+    """
+
+    def _row(self, tmp_path, **kw):
+        base = dict(agent="CodeBuddy", cwd=str(tmp_path), permission_flag="",
+                    usage={"cost_usd": None}, cost_status="usage_reported_without_price")
+        base.update(kw)
+        return RoundLedger(tmp_path).append(OffloadResult(**base), brief="那一段外包的活")
+
+    def test_no_handle_is_a_reading_not_a_failure(self, tmp_path):
+        row = self._row(tmp_path)
+
+        assert row["external_session"] == "" and row["external_session_source"] == ""
+        assert row["failure"] == ""                      # 空标识不能污染成败判定
+
+    def test_the_column_names_are_the_contract_names(self, tmp_path):
+        """前端与通道两侧都照这两个字面量写，改名必须同时改三处 ⇒ 当场钉住。"""
+        row = self._row(tmp_path, external_session="01a1248d-3b15-738e-977b-0b90cd206790",
+                        external_session_source="result.session_id")
+
+        assert row["external_session"] == "01a1248d-3b15-738e-977b-0b90cd206790"
+        assert row["external_session_source"] == "result.session_id"
+
+    def test_agent_already_says_whose_handle_it_is(self, tmp_path):
+        """契约第 3 条据此**拒绝**再登一个 `external_session_kind`：同一条事实不许登两处（裁定 94 族）。"""
+        row = self._row(tmp_path, agent="agy", external_session="c6f16d79", external_session_source="conversation_id")
+
+        assert row["agent"] == "agy"
+        assert "external_session_kind" not in row
+
+    def test_history_rows_without_the_column_still_read_back(self, tmp_path):
+        """这列是后加的：10-14 之前落盘的台账行没有它，读回来必须不崩也不填空。"""
+        target = tmp_path / "offload_rounds.jsonl"
+        legacy = {"ts": "2026-10-10T12:00:00+00:00", "agent": "CodeBuddy", "cwd": "D:/x",
+                  "permission_flag": "", "brief": "旧行", "artifacts": [], "duration_seconds": 1.0,
+                  "usage": None, "cost_status": "unknown", "failure": ""}
+        target.write_text(json.dumps(legacy, ensure_ascii=False) + "\n", encoding="utf-8")
+
+        rows = RoundLedger(tmp_path).rows()
+
+        assert rows == [legacy]
+        assert rows[0].get("external_session", "") == ""
