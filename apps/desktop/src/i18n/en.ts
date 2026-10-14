@@ -1543,6 +1543,8 @@ export const en: Translations = {
     offloadsOpenFailed: 'The desktop could not open it.',
     offloadsReveal: 'Open what it left on disk',
     offloadsCostUnknown: 'cost unknown',
+    offloadsNoTransport: 'There is a session id, but the desktop has no way to jump into it yet.',
+    offloadsSessionId: 'external session',
     newAgent: 'New agent',
     newAgentLabel: 'New agent',
     newAgentCategoryLabel: 'Category',

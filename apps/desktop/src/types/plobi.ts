@@ -389,6 +389,8 @@ export type OffloadRound = {
   cost_status?: string
   cwd?: string
   duration_seconds?: number
+  external_session?: string
+  external_session_source?: string
   failure?: string
   permission_flag?: string
   ts?: string

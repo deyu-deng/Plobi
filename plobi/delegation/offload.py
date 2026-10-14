@@ -134,6 +134,12 @@ class OffloadResult:
     cost_status: str = "unknown"
     duration_seconds: float = 0.0
     failure: str = ""
+    #: 外部软件自己那一条会话的标识（契约 = ``Docs/tasks/offload-session-handle-task.md`` 第 1 条）。
+    #: 空串是一个**读数**（通道没带出来，或厂商改了信封），不是失败，也不许拿 0/占位冒充。
+    external_session: str = ""
+    #: 这个 id 是从哪个键读到的（``result.session_id`` / ``sessionId`` / ``conversation_id`` / ``""``）。
+    #: 厂商换信封时这一格当场说出"我们读了什么"，而不是让前端猜。
+    external_session_source: str = ""
 
     @property
     def ok(self) -> bool:
@@ -238,6 +244,10 @@ class RoundLedger:
             "usage": result.usage,
             "cost_status": result.cost_status,
             "failure": result.failure,
+            # 「该用哪条命令回跳」的输入是 (agent, external_session_source)，两样都在这行里：
+            # `agent` 早就有了（契约第 3 条据此拒绝再登一个 kind 字段）。
+            "external_session": result.external_session,
+            "external_session_source": result.external_session_source,
         }
         target = self.path
         target.parent.mkdir(parents=True, exist_ok=True)

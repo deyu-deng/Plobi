@@ -122,6 +122,21 @@ describe('AgentOffloadPanel', () => {
     expect(openExternal).not.toHaveBeenCalled()
   })
 
+  it('台账带回了会话号：把号显示出来，但没有通道就仍然不可点', async () => {
+    await renderPanel([round({ artifacts: [], external_session: '01a1248d-3b15-738e', external_session_source: 'result.session_id' })])
+    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+
+    const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
+
+    expect(row.textContent).toContain('01a1248d-3b15-738e')
+    expect(row.textContent).toContain('external session')
+    expect(row.textContent).toMatch(/no way to jump/i)
+    expect(row.hasAttribute('disabled')).toBe(true)
+
+    fireEvent.click(row)
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
   it('后端给了归属原因时，空表说那句原因而不是"还没外包过"', async () => {
     await renderPanel([], '这一条没有绑定目录')
 

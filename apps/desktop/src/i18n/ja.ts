@@ -1478,6 +1478,8 @@ export const ja = defineLocale({
     offloadsOpenFailed: 'デスクトップから開けませんでした。',
     offloadsReveal: 'ディスクに残ったものを見る',
     offloadsCostUnknown: '費用不明',
+    offloadsNoTransport: 'セッションIDはありますが、デスクトップからその会話へ移る経路がありません。',
+    offloadsSessionId: '外部セッション',
     newAgent: 'エージェントを追加',
     newAgentLabel: 'エージェントを追加',
     newAgentCategoryLabel: 'カテゴリ',
