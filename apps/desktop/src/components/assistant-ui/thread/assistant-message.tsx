@@ -155,6 +155,9 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, getMessageText,
   const { t } = useI18n()
   const copy = t.assistant.thread
   const [menuOpen, setMenuOpen] = useState(false)
+  // Same reasoning as the user bubble: the Reload primitive does not consult
+  // capabilities, and `startRun()` throws when the adapter has no `onReload`.
+  const canReload = useAuiState(s => s.thread.capabilities.reload)
 
   return (
     <div className="relative flex w-full shrink-0 justify-end">
@@ -173,11 +176,13 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, getMessageText,
         data-slot="aui_msg-actions"
       >
         <CopyButton appearance="icon" buttonSize="icon" label={copy.copy} text={getMessageText} />
-        <ActionBarPrimitive.Reload asChild>
-          <TooltipIconButton onClick={() => triggerHaptic('submit')} tooltip={copy.refresh}>
-            <Codicon name="refresh" />
-          </TooltipIconButton>
-        </ActionBarPrimitive.Reload>
+        {canReload && (
+          <ActionBarPrimitive.Reload asChild>
+            <TooltipIconButton onClick={() => triggerHaptic('submit')} tooltip={copy.refresh}>
+              <Codicon name="refresh" />
+            </TooltipIconButton>
+          </ActionBarPrimitive.Reload>
+        )}
         <DropdownMenu onOpenChange={setMenuOpen} open={menuOpen}>
           <DropdownMenuTrigger asChild>
             <TooltipIconButton tooltip={copy.moreActions}>

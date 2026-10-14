@@ -8,7 +8,7 @@ import { ExportedMessageRepository } from '@assistant-ui/core/internal'
 // bubbles) is not reproducible in jsdom — see USER_BUBBLE_BASE_CLASS's no-drag
 // carve-out in thread.tsx.
 import { AssistantRuntimeProvider, type ThreadMessage, useExternalStoreRuntime } from '@assistant-ui/react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
@@ -114,6 +114,27 @@ function StockHarness({ onEdit }: { onEdit: () => Promise<void> }) {
   )
 }
 
+// Mirrors chat-surface.tsx's ChatRuntimeBoundary: messageRepository, no
+// onEdit/onReload (submission is owned by the injected `submit`).
+function ConsoleHarness() {
+  const repository = ExportedMessageRepository.fromArray([userMessage(), assistantMessage()])
+
+  const runtime = useIncrementalExternalStoreRuntime<ThreadMessage>({
+    messageRepository: repository,
+    isRunning: false,
+    onCancel: async () => {},
+    onNew: async () => {},
+    onEdit: undefined,
+    onReload: undefined
+  })
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <Thread />
+    </AssistantRuntimeProvider>
+  )
+}
+
 describe('click-to-edit user message', () => {
   it('opens the edit composer with the incremental runtime', async () => {
     const { container } = render(<IncrementalHarness onEdit={async () => {}} />)
@@ -137,5 +158,26 @@ describe('click-to-edit user message', () => {
     await waitFor(() => {
       expect(container.querySelector('[data-slot="aui_edit-composer-root"]')).toBeTruthy()
     })
+  })
+
+  // The console shell (`app/console/chat/chat-surface.tsx`) submits through an
+  // injected `submit`, so its adapter declares no onEdit/onReload. Before the
+  // capability gate, its bubble and refresh buttons still rendered and the
+  // vendor threw synchronously — an uncaught renderer error that wiped the
+  // transcript the user was looking at.
+  it('hides edit and reload when the runtime declares neither', async () => {
+    // Scoped to this render: this project does not auto-clean between tests, so
+    // `screen` would still see the two harnesses above (both editable).
+    const { container } = render(<ConsoleHarness />)
+    const inThisThread = within(container)
+
+    expect(inThisThread.queryByRole('button', { name: 'Edit message' })).toBeNull()
+    expect(inThisThread.queryByRole('button', { name: 'Refresh' })).toBeNull()
+
+    const bubble = await inThisThread.findByRole('button', { name: /edit me please/ })
+
+    fireEvent.click(bubble)
+
+    expect(container.querySelector('[data-slot="aui_edit-composer-root"]')).toBeNull()
   })
 })

@@ -108,6 +108,11 @@ export const UserMessage: FC<{
   const content = useAuiState(s => s.message.content)
   const messageText = messageContentText(content)
   const threadRunning = useAuiState(s => s.thread.isRunning)
+  // The runtime declares this, not the primitive: `ActionBarPrimitive.Edit`
+  // only disables on `composer.isEditing` and `beginEdit()` throws SYNCHRONOUSLY
+  // when the adapter has no `onEdit` — an uncaught error that tears the whole
+  // transcript down mid-view.
+  const canEdit = useAuiState(s => s.thread.capabilities.edit)
 
   const latestUserId = useAuiState(s => {
     for (let i = s.thread.messages.length - 1; i >= 0; i--) {
@@ -282,9 +287,11 @@ export const UserMessage: FC<{
               </span>
             )}
             <div className="relative w-full">
-              {readOnly ? (
-                // Spectator transcript: clicking only toggles the clamp so the
-                // full prompt is readable — never opens an edit composer.
+              {readOnly || !canEdit ? (
+                // Spectator transcript, and any runtime without an `onEdit` (the
+                // console shell submits through its own injected `submit`, so its
+                // adapter declares no edit): clicking only toggles the clamp so the
+                // full prompt is readable — it never opens an edit composer.
                 <button
                   aria-expanded={bodyClamped ? expanded : undefined}
                   className={cn(bubbleClassName, !bodyClamped && 'cursor-default')}
