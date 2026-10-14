@@ -120,7 +120,7 @@ class HeuristicConfirmer:
         # of info ones.
         if when.day is None:
             if is_task and when.clock is not None:
-                when = ParsedWhen(day=base.date(), clock=when.clock)
+                when = ParsedWhen(day=base.date(), clock=when.clock, end_clock=when.end_clock)
             else:
                 return None
 
@@ -131,12 +131,21 @@ class HeuristicConfirmer:
             return None
 
         start = datetime.combine(when.day, when.clock)
+        end_at: Optional[str] = None
+        if when.end_clock is not None:
+            # Only a stated range lands an end; and a range that reads as ending
+            # before it starts ("上午十点到十二点" → 10:00 / 00:00) is dropped
+            # rather than "fixed" by guessing midnight.
+            candidate = datetime.combine(when.day, when.end_clock)
+            if candidate > start:
+                end_at = candidate.replace(second=0, microsecond=0).isoformat()
 
         return Candidate(
             title=_title_from(message, hit),
             start_at=start.replace(second=0, microsecond=0).isoformat(),
             kind=hit.category,
             is_change=hit.is_change,
+            end_at=end_at,
             tier=tier,
             weight=2 if is_task else 1,
         )
