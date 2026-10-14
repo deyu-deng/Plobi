@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { TRANSLATIONS } from '@/i18n/catalog'
@@ -160,5 +160,111 @@ describe('AgendaWeekStrip', () => {
     )
 
     expect(screen.queryByTestId('agenda-week-strip')).toBeNull()
+  })
+
+  // --- slice 2: the seven day snapshots behind the conflict column -------------------------
+
+  it('fills the conflict layer as days answer, and never invents a zero for the rest (C1)', async () => {
+    const events = [row({ id: 'sat', start_at: '2026-10-10T10:00:00' })]
+
+    const view = render(
+      <AgendaWeekStrip
+        events={events}
+        fetchDay={async (dayKey: string) =>
+          dayKey === '2026-10-10'
+            ? { anchors: [], conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }], date: dayKey, events: [], plan_items: [] }
+            : { anchors: [], conflicts: [], date: dayKey, events: [], plan_items: [] }
+        }
+        onPickDay={() => undefined}
+        pickedDayKey={null}
+        todayKey="2026-10-10"
+        translations={zh}
+      />
+    )
+
+    const grid = view.getByTestId('agenda-week-strip')
+
+    await waitFor(() => {
+      expect(grid.querySelector('[data-day="2026-10-10"]')?.textContent).toContain('冲突 1')
+    })
+    // Answered-and-clean reads as 无冲突; nothing was asked-for-nicely.
+    expect(grid.querySelector('[data-day="2026-10-05"]')?.textContent).toContain('无冲突')
+  })
+
+  it('keeps every column honest when the whole week fails to answer (C2)', async () => {
+    const view = render(
+      <AgendaWeekStrip
+        events={[row({ id: 'mon', start_at: '2026-10-05T09:00:00' })]}
+        fetchDay={async () => {
+          throw new Error('backend down')
+        }}
+        onPickDay={() => undefined}
+        pickedDayKey={null}
+        todayKey="2026-10-10"
+        translations={zh}
+      />
+    )
+
+    const grid = view.getByTestId('agenda-week-strip')
+
+    await waitFor(() => {
+      expect(grid.textContent).toContain('冲突未取')
+    })
+    // Seven unknowns, zero claims of cleanliness, and the rows still render.
+    expect(grid.textContent).not.toContain('无冲突')
+    expect(grid.textContent).toContain('10-05')
+  })
+
+  it('ignores a late answer from a week the user has panned away from', async () => {
+    type Resolve = (value: unknown) => void
+
+    const pending: Array<{ dayKey: string; resolve: Resolve }> = []
+
+    const fetchDay = (dayKey: string) =>
+      new Promise(resolve => {
+        pending.push({ dayKey, resolve })
+      })
+
+    const view = render(
+      <AgendaWeekStrip
+        events={[]}
+        fetchDay={fetchDay as never}
+        onPickDay={() => undefined}
+        pickedDayKey={null}
+        todayKey="2026-10-10"
+        translations={zh}
+      />
+    )
+
+    // First week: seven requests in flight.
+    await waitFor(() => expect(pending).toHaveLength(7))
+    const staleWeek = [...pending]
+
+    pending.length = 0
+    fireEvent.click(view.getByText('下一周'))
+    await waitFor(() => expect(pending).toHaveLength(7))
+
+    // Answer the new week, then let the old week dribble in late.
+    for (const call of pending) {
+      call.resolve({ anchors: [], conflicts: [], date: call.dayKey, events: [], plan_items: [] })
+    }
+
+    await waitFor(() => {
+      expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-12"]')?.textContent).toContain('无冲突')
+    })
+
+    for (const call of staleWeek) {
+      call.resolve({
+        anchors: [],
+        conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }],
+        date: call.dayKey,
+        events: [],
+        plan_items: []
+      })
+    }
+
+    // The late week-A answer must not wipe week-B's loaded state.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-12"]')?.textContent).toContain('无冲突')
   })
 })
