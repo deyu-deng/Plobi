@@ -452,3 +452,100 @@ def test_the_visible_surface_prints_this_object_not_a_second_reading():
     rep = engine.EngineReport(OURS, "started by Plobi", _PORT, "/w", "pool", 4242, "204 via x", ("n1",))
     text = "\n".join(rep.lines())
     assert "running-ours" in text and "7896" in text and "n1" in text and "204 via x" in text
+
+
+# ── the compiled config carries resolved credentials: lock it, and say which one ──
+
+_BROAD_PRINCIPALS = (r"Everyone", r"Authenticated Users", r"BUILTIN\Users", r"S-1-1-0", r"S-1-5-11", r"S-1-5-32-545")
+
+
+def test_the_acl_helper_refuses_to_say_it_locked_a_file_on_a_platform_it_cannot_serve(monkeypatch, tmp_path):
+    monkeypatch.setattr(engine.sys, "platform", "linux")
+
+    ok, why = engine.restrict_file_acl(tmp_path / "x.yaml")
+
+    assert ok is False and "Windows" in why, (ok, why)
+
+
+def test_the_acl_helper_refuses_to_guess_the_account_when_the_env_has_none(monkeypatch, tmp_path):
+    """Refusing beats inventing a principal — that is how you hand credentials to a stranger."""
+    monkeypatch.setattr(engine.sys, "platform", "win32")
+    monkeypatch.delenv("USERNAME", raising=False)
+    monkeypatch.delenv("USER", raising=False)
+    f = tmp_path / "config.yaml"
+    f.write_text("x: 1\n", encoding="utf-8")
+
+    ok, why = engine.restrict_file_acl(f)
+
+    assert ok is False and "账户名" in why, (ok, why)
+
+
+@pytest.mark.skipif("sys.platform != 'win32'")
+def test_the_compiled_config_is_granted_to_the_running_account_only(tmp_path, monkeypatch):
+    """Real `icacls`, real file — a mocked ACL would prove nothing about credentials.
+
+    The engine has to be able to read this file, so the lock is one principal, full
+    control, with inheritance removed — not "no one can open it".  The runner's clean
+    env may carry no `USERNAME`, so the principal is asked of the machine itself.
+    """
+    import subprocess
+
+    account = subprocess.run(["whoami"], capture_output=True).stdout.decode("utf-8", "replace").strip()
+    local = account.split("\\")[-1]
+    monkeypatch.setenv("USERNAME", local)
+
+    f = tmp_path / "config.yaml"
+    f.write_text("proxies: []\n", encoding="utf-8")
+
+    ok, why = engine.restrict_file_acl(f)
+    said = subprocess.run(["icacls", str(f)], capture_output=True).stdout.decode("utf-8", "replace")
+
+    assert ok, why
+    # `whoami` answers `cycle\turtlelet`, `icacls` renders `CYCLE\Turtlelet` — the
+    # principal is the same account in different cases, so match it case-insensitively.
+    assert local.lower() in said.lower() and ":(F)" in said, said
+    for broad in _BROAD_PRINCIPALS:
+        assert broad not in said, f"{broad} still holds the credential file:\n{said}"
+    assert f.read_text(encoding="utf-8").startswith("proxies:")
+
+
+def test_the_acl_we_applied_on_the_compiled_config_is_part_of_the_reading(monkeypatch, tmp_path, fake_binary, inert):
+    """`config_source == compiled` means *we* wrote the file, so we report its lock."""
+    import sys
+
+    monkeypatch.setattr(engine.sys, "platform", "win32")
+    monkeypatch.setattr(engine, "verify_with_binary", lambda b, p: ("VERIFIED", ""))
+    seen = []
+
+    def lock(path):
+        seen.append(path)
+        return True, "Turtlelet:F（继承已断）"
+
+    monkeypatch.setattr(engine, "restrict_file_acl", lock)
+
+    rep = ensure(_table(include=[], binary=fake_binary), home=tmp_path / "home", wait_s=0)
+
+    assert rep.config_source == "compiled"
+    assert seen and seen[0].name == "config.yaml", seen
+    assert any("compiled config ACL: Turtlelet:F" in n for n in rep.notes), rep.notes
+
+
+def test_a_failed_tightening_is_not_reported_as_a_success(monkeypatch, tmp_path, fake_binary, inert):
+    """'We meant to lock it' must not read as 'it is locked'."""
+    monkeypatch.setattr(engine.sys, "platform", "win32")
+    monkeypatch.setattr(engine, "verify_with_binary", lambda b, p: ("VERIFIED", ""))
+    monkeypatch.setattr(engine, "restrict_file_acl", lambda path: (False, "icacls rc=5: Access is denied"))
+
+    rep = ensure(_table(include=[], binary=fake_binary), home=tmp_path / "home", wait_s=0)
+
+    assert any("NOT tightened" in n and "Access is denied" in n for n in rep.notes), rep.notes
+
+
+def test_the_pool_file_is_named_as_a_credential_file_that_is_not_ours_to_rewrite(monkeypatch, tmp_path, pool, fake_binary, inert):
+    """The live engine on this box reads a hand-maintained pool config, not our product."""
+    monkeypatch.setattr(engine.sys, "platform", "win32")
+
+    rep = ensure(_table(include=[str(pool)], binary=fake_binary), home=tmp_path / "home", wait_s=0)
+
+    assert rep.config_source == "pool"
+    assert any("not ours to rewrite" in n for n in rep.notes), rep.notes
