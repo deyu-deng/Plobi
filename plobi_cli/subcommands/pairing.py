@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from plobi_cli.subcommands.pairing_device import build_pairing_device_parser
+
 
 def build_pairing_parser(subparsers, *, cmd_pairing: Callable) -> None:
     """Attach the ``pairing`` subcommand to ``subparsers``."""
@@ -33,4 +35,10 @@ def build_pairing_parser(subparsers, *, cmd_pairing: Callable) -> None:
     pairing_revoke_parser.add_argument("user_id", help="User ID to revoke")
 
     pairing_sub.add_parser("clear-pending", help="Clear all pending codes")
+
+    # ``pairing device`` is a different surface (handset tokens, not DM codes) and it
+    # dispatches to its own handler — argparse lets a subparser override the parent's
+    # ``func`` default, so the messaging pairing handler above stays untouched.
+    build_pairing_device_parser(pairing_sub)
+
     pairing_parser.set_defaults(func=cmd_pairing)
