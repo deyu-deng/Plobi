@@ -490,6 +490,26 @@ export function getNetworkStatus(): Promise<NetworkStatus> {
   })
 }
 
+/** Hand this machine's system proxy to Plobi (or hand it back), and apply it now.
+ *
+ *  Not part of Save: the switch is a machine-level action with its own refusal
+ *  reasons (no table, exit not carrying traffic, unreadable current settings), and
+ *  those words have to reach the pane instead of only the log. */
+export function setNetworkSystemProxy(
+  enabled: boolean
+): Promise<{ ok: boolean; enabled: boolean; proxy?: { state: string; detail: string; lines?: string[] } }> {
+  return window.plobiDesktop.api<{
+    ok: boolean
+    enabled: boolean
+    proxy?: { state: string; detail: string; lines?: string[] }
+  }>({
+    ...profileScoped(),
+    path: '/api/network/system-proxy',
+    method: 'POST',
+    body: { enabled }
+  })
+}
+
 export function getMemoryProviderConfig(provider: string): Promise<MemoryProviderConfig> {
   return window.plobiDesktop.api<MemoryProviderConfig>({
     path: `/api/memory/providers/${encodeURIComponent(provider)}/config`

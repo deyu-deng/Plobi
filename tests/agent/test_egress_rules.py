@@ -480,11 +480,27 @@ def test_the_ceiling_sentence_names_the_catch_all_rather_than_a_direction():
     from agent.egress.status import render
 
     lines = render(_range_table(), with_probe=False)
-    ceiling = [line for line in lines if "ceiling" in line]
+    # Match the sentence by its own prefix, not by a substring: the machine-half line
+    # prints a PAC path, and pytest's temp dir is named after this test — so a bare
+    # `"ceiling" in line` used to catch both and report 2.
+    ceiling = [line for line in lines if line.lstrip().startswith("ceiling:")]
     assert len(ceiling) == 1, ceiling
     assert "go direct" not in ceiling[0]
     assert "* -> proxy:front" in ceiling[0], ceiling[0]
     assert any("no vocabulary for it in a spawned child's env" in line for line in lines), lines
+
+
+def test_the_status_reading_includes_whether_the_machine_is_ours(monkeypatch):
+    """One reading for the machine half too — the CLI, the panel and boot must not disagree."""
+    from agent.egress import system_proxy
+    from agent.egress.status import render
+
+    monkeypatch.setattr(system_proxy, "read_current", lambda: {"ProxyEnable": 0})
+
+    lines = render(_range_table(), with_probe=False)
+
+    assert any(line.startswith("system proxy:") for line in lines), lines
+    assert any("我们的 PAC" in line for line in lines), lines
 
 
 def test_a_dropped_range_is_named_by_its_own_sentence(monkeypatch, caplog):

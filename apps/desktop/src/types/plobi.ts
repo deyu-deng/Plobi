@@ -1221,6 +1221,8 @@ export interface NetworkEgressRule {
 
 export interface NetworkEgressEngine {
   binary?: string
+  /** Passed through by the editor: the compiler refuses a produced config without dns on this box. */
+  dns?: Record<string, unknown>
   enabled?: boolean
   include_files?: string[]
   mixed_port?: number
@@ -1228,9 +1230,12 @@ export interface NetworkEgressEngine {
 
 export interface NetworkEgressBlock {
   engine?: NetworkEgressEngine
+  groups?: Record<string, { include?: string[]; interval?: number; type?: string }>
   mirrors?: Record<string, string>
+  nodes?: Record<string, Record<string, unknown>>
   proxies?: Record<string, { url?: string; url_env?: string }>
   rules?: NetworkEgressRule[]
+  system_proxy?: { enabled?: boolean }
 }
 
 export interface NetworkSection {
@@ -1253,6 +1258,18 @@ export interface NetworkStatusRule {
   via: string
 }
 
+export interface NetworkStatusSystemProxy {
+  /** False on platforms this slice is not implemented for — the switch must not pretend. */
+  supported: boolean
+  /** What the table says (the writable intent). */
+  declared: boolean
+  /** Whether the machine's own proxy settings currently point at our PAC. */
+  ours: boolean
+  pac_path: string
+  backup_exists: boolean
+  engine_port?: number
+}
+
 export interface NetworkStatus {
   declared: boolean
   downgrades: { exit: string; reason: string }[]
@@ -1268,5 +1285,6 @@ export interface NetworkStatus {
   }
   mirrors: Record<string, string>
   rules: NetworkStatusRule[]
+  system_proxy?: NetworkStatusSystemProxy
   unreadable: string
 }
