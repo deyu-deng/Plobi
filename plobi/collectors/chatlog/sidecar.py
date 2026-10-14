@@ -17,7 +17,7 @@
    （`apps/desktop/electron/chatlog-keys.ts`）；这台现核是空 ``{}``（那次取密钥没成，见下面第 4 点）。
    引擎写的 ``chatlog-server.json`` 也在这一档，密钥只落这一份。
 3. ``~/.chatlog/chatlog.json`` = 上游的默认落点，也就是 C 盘那份。这台现核**不存在**，
-   而且**不该存在**——运行数据禁残留 C 盘（`D:\_POLICY`），桌面那条钉 `CHATLOG_DIR` 就是为这件事。
+   而且**不该存在**——运行数据禁残留 C 盘（`D:\\_POLICY`），桌面那条钉 `CHATLOG_DIR` 就是为这件事。
 4. 桌面侧那份"第二真源"（旧 `main.ts` 硬编产物候选 + 自己读 ``~/.chatlog`` 判密钥）已经合并掉：
    产物路径只读本模块 :func:`resolved_binary` 那一格（`WP-SIDECAR-STATE-SINGLE-SOURCE`，`e5ce5ba8`），
    密钥只走上面第 2 条那一份文件（`7ee37708`）。本模块判"密钥有没有"时**读的就是那一份文件**
