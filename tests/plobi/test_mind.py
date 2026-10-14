@@ -97,7 +97,7 @@ def test_write_lands_under_loom(vault):
     result = writer.write_one("Loom/raw/chat-logs/digested/2026-08-25/agenda.md", "# 摘要\n")
 
     assert result.ok is True
-    assert (vault / "Loom/raw/chat-logs/digested/2026-08-25/agenda.md").read_text(encoding="utf-8") == "# 摘要\n"
+    assert (vault / "raw/chat-logs/digested/2026-08-25/agenda.md").read_text(encoding="utf-8") == "# 摘要\n"
 
 
 def test_unsafe_write_is_skipped_not_fatal(vault):
@@ -133,7 +133,7 @@ def test_writer_reports_when_vault_missing(tmp_path, monkeypatch):
 
 
 def test_failing_verifier_blocks_the_commit_but_keeps_files(vault):
-    scripts = vault / "Loom" / "scripts"
+    scripts = vault / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "verifier.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
 
@@ -147,7 +147,7 @@ def test_failing_verifier_blocks_the_commit_but_keeps_files(vault):
 
 
 def test_passing_verifier_allows_the_write(vault):
-    scripts = vault / "Loom" / "scripts"
+    scripts = vault / "scripts"
     scripts.mkdir(parents=True)
     (scripts / "verifier.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
 
@@ -551,7 +551,7 @@ def test_daily_summary_is_published_under_loom(vault, tmp_path):
     result = publish_daily_summary(service=service, writer=MindWriter(vault, run_verifier=False))
 
     assert result.ok is True
-    written = vault / summary_relative_path()
+    written = paths.real_target(summary_relative_path(), vault)
     assert written.is_file()
     assert "组会" in written.read_text(encoding="utf-8")
 
@@ -563,7 +563,7 @@ def test_daily_summary_is_idempotent(vault, tmp_path):
     publish_daily_summary(service=service, writer=writer)
     publish_daily_summary(service=service, writer=writer)
 
-    body = (vault / summary_relative_path()).read_text(encoding="utf-8")
+    body = paths.real_target(summary_relative_path(), vault).read_text(encoding="utf-8")
     assert body.count("# 日程摘要") == 1
 
 
