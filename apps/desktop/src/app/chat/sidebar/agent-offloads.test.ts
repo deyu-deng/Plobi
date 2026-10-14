@@ -80,27 +80,56 @@ describe('jumpTargetFor —— 跳不进会话就不许给一个假的可点行'
     expect(plan.url).toBe('file:///D:/projects/Aura/today.py')
   })
 
-  it('没有产物（或产物路径是空的）：不可点，原因分两种', () => {
+  it('没有产物也没有会话号：不可点，并给机器可读的原因', () => {
     for (const over of [{ artifacts: [] }, { artifacts: [{ path: '  ' }] }, { artifacts: undefined }]) {
       const plan = jumpTargetFor(round(over))
 
       expect(plan.kind).toBe('none')
       expect(plan.reason).toBe('no-artifact')
       expect(plan.url).toBe('')
+      expect(plan.resume).toBeNull()
     }
+  })
 
-    // 台账带回了会话号，缺的就只是"跳进去的那条通道"，别把两种混成一句话
-    const withHandle = jumpTargetFor(round({ artifacts: [], external_session: '01a1248d-3b15' }))
+  it('台账带回会话号 ⇒ 这一支走 resume，把 (agent, cwd, sessionId) 交出去', () => {
+    const plan = jumpTargetFor(round({
+      artifacts: [],
+      external_session: ' 01a1248d-3b15-738e-977b ',
+      external_session_source: 'result.session_id',
+    }))
 
-    expect(withHandle.kind).toBe('none')
-    expect(withHandle.reason).toBe('no-jump-transport')
-    expect(withHandle.url).toBe('')
+    expect(plan.kind).toBe('resume')
+    expect(plan.reason).toBe('')
+    expect(plan.url).toBe('')                       // 不混一个假 file://
+    expect(plan.resume).toEqual({
+      agent: 'codebuddy',
+      cwd: 'D:/projects/Aura',
+      sessionId: '01a1248d-3b15-738e-977b',
+    })
+  })
+
+  it('会话号优先于产物（用户要的是跳进那台软件，不是打开一个文件）', () => {
+    const plan = jumpTargetFor(round({ external_session: 'c6f16d79-d814' }))
+
+    expect(plan.kind).toBe('resume')
+  })
+
+  it('有会话号但不知道是谁家的 ⇒ 不猜，退回产物/不可点', () => {
+    const noAgent = jumpTargetFor(round({ agent: '  ', external_session: 'c6f16d79' }))
+
+    expect(noAgent.kind).toBe('reveal')             // 还有产物
+    expect(noAgent.resume).toBeNull()
+
+    const noAgentNoArtifact = jumpTargetFor(round({ agent: '', artifacts: [], external_session: 'c6f16d79' }))
+
+    expect(noAgentNoArtifact.kind).toBe('none')
   })
 
   it('契约第 4 条：空串永远不许让那一支变可点', () => {
     for (const raw of ['', '   ', undefined]) {
       expect(handleJumpEligible(round({ external_session: raw }))).toBe(false)
-      expect(jumpTargetFor(round({ artifacts: [], external_session: raw })).reason).toBe('no-artifact')
+      expect(jumpTargetFor(round({ artifacts: [], external_session: raw })).kind).not.toBe('resume')
+      expect(jumpTargetFor(round({ external_session: raw })).kind).toBe('reveal')   // 只剩开文件
     }
 
     expect(handleJumpEligible(round({ external_session: '01a1248d-3b15' }))).toBe(true)

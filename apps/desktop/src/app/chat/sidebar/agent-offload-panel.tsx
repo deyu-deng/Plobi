@@ -4,16 +4,11 @@ import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { getAgentOffloads } from '@/plobi'
+import { getAgentOffloads, offloadResume } from '@/plobi'
 import type { OffloadRound } from '@/types/plobi'
 
-import { externalHandleOf, groupRoundsByTarget, type JumpReason, jumpTargetFor, roundFacts } from './agent-offloads'
+import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
 import { SidebarCount } from './chrome'
-
-const JUMP_REASON_KEYS: Partial<Record<JumpReason, 'offloadsNoArtifact' | 'offloadsNoTransport'>> = {
-  'no-artifact': 'offloadsNoArtifact',
-  'no-jump-transport': 'offloadsNoTransport',
-}
 
 /**
  * 点进一个 L2 时，左栏这一格换成**它把活外包给了谁**（WP-L2-OUTSOURCE-ENTRY 入口面③）。
@@ -117,8 +112,8 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
   const c = t.console
   const plan = jumpTargetFor(round)
   const facts = roundFacts(round)
-  const clickable = plan.kind === 'reveal'
-  const [failed, setFailed] = useState(false)
+  const clickable = plan.kind !== 'none'
+  const [error, setError] = useState('')
 
   const parts = [
     facts.permissionFlag,
@@ -128,10 +123,25 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
       : `$${facts.costUsd}`,
   ].filter(Boolean)
 
-  const reasonKey = plan.reason ? JUMP_REASON_KEYS[plan.reason] : undefined
-  const reason = reasonKey ? c[reasonKey] : ''
+  const reason = plan.reason ? c.offloadsNoArtifact : ''
   const handle = externalHandleOf(round)
-  const title = [round.cwd, plan.kind === 'reveal' ? c.offloadsReveal : reason, round.failure].filter(Boolean).join(' · ')
+  const action = plan.kind === 'resume' ? c.offloadsJump : plan.kind === 'reveal' ? c.offloadsReveal : reason
+  const title = [round.cwd, action, round.failure].filter(Boolean).join(' · ')
+
+  const run = () => {
+    if (plan.kind === 'resume' && plan.resume) {
+      const { agent, cwd, sessionId } = plan.resume
+
+      void offloadResume(agent, sessionId, cwd)
+        .then(() => setError(''))
+        .catch((reason: unknown) => setError(jumpFailureText(reason, c.offloadsJumpFailed)))
+    } else if (plan.kind === 'reveal') {
+      void window.plobiDesktop
+        ?.openExternal?.(plan.url)
+        .then(() => setError(''))
+        .catch(() => setError(c.offloadsOpenFailed))
+    }
+  }
 
   return (
     <button
@@ -140,18 +150,14 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
         clickable ? 'hover:bg-(--ui-bg-secondary)' : 'cursor-default opacity-70',
       )}
       disabled={!clickable}
-      onClick={() => {
-        if (clickable) {
-          void window.plobiDesktop
-            ?.openExternal?.(plan.url)
-            .then(() => setFailed(false))
-            .catch(() => setFailed(true))
-        }
-      }}
+      onClick={run}
       title={title}
       type="button"
     >
       <span className="truncate text-[0.75rem]">{round.brief || round.cwd || '—'}</span>
+      {round.failure && (
+        <span className="truncate text-[0.68rem] text-(--ui-red)">{round.failure}</span>
+      )}
       {handle && (
         <span className="truncate text-[0.65rem] text-(--ui-text-quaternary)" title={round.external_session_source || undefined}>
           {c.offloadsSessionId}
@@ -159,14 +165,35 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
           {handle}
         </span>
       )}
-      {round.failure && (
-        <span className="truncate text-[0.68rem] text-(--ui-red)">{round.failure}</span>
-      )}
       <span className="truncate text-[0.68rem] text-(--ui-text-tertiary)">
         {parts.join(' · ')}
-        {failed ? ` · ${c.offloadsOpenFailed}` : ''}
+        {error ? ` · ${error}` : ''}
         {!clickable && reason ? ` · ${reason}` : ''}
       </span>
     </button>
   )
+}
+
+/**
+ * 后端那四种失败各有一句话（判据 4），但 `fetchJson` 对非 2xx 是 reject，消息形如
+ * `400: {"ok":false,"error":"……"}`。这里把那句话从外壳里取出来，取不到就截断原样，
+ * 不把 JSON 甩在侧栏那一行上。
+ */
+function jumpFailureText(reason: unknown, fallback: string): string {
+  const raw = reason instanceof Error ? reason.message : String(reason ?? '')
+  const start = raw.indexOf('{')
+
+  if (start >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(start)) as { error?: unknown }
+
+      if (typeof parsed.error === 'string' && parsed.error) {
+        return parsed.error
+      }
+    } catch {
+      // 不是 JSON 就当原文处理
+    }
+  }
+
+  return raw ? `${fallback}${raw.slice(0, 120)}` : fallback
 }
