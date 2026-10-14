@@ -26,7 +26,8 @@ SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "backup_rep
 
 
 def _child_env(**extra: str) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k != "MIND_ROOT"}
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("GIT_") and k not in ("MIND_ROOT", "VAULT_ROOT")}
     env.update(extra)
     return env
 
@@ -76,6 +77,7 @@ def _workspace(tmp_path: Path, *, with_mind: bool = True, mind_exists: bool = Tr
         mind = tmp_path / "mind-vault"
         if mind_exists:
             _repo(mind, "brain")
+            _repo(tmp_path / "vault-surface", "surface")
         else:
             mind = tmp_path / "mind-vault-absent"
     return dst, mind
@@ -91,17 +93,17 @@ def _run(script: Path, dest: Path, env: dict[str, str]) -> subprocess.CompletedP
     )
 
 
-def test_all_four_repos_produce_verified_bundles(tmp_path: Path) -> None:
+def test_all_five_repos_produce_verified_bundles(tmp_path: Path) -> None:
     script, mind = _workspace(tmp_path)
     dest = tmp_path / "out"
-    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind)))
+    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), VAULT_ROOT=str(tmp_path / "vault-surface")))
 
     assert proc.returncode == 0, proc.stderr
     made = sorted(p.name for p in dest.glob("*.bundle"))
-    assert len(made) == 4, made
-    for repo_name in ("code", "docs", "harmony", "mind"):
+    assert len(made) == 5, made
+    for repo_name in ("code", "docs", "harmony", "mind", "vault"):
         assert any(f"-{repo_name}-" in n for n in made), made
-    for line in ("code", "docs", "harmony", "mind"):
+    for line in ("code", "docs", "harmony", "mind", "vault"):
         assert f"ok   {line}:" in proc.stdout, proc.stdout
         assert "(verified)" in proc.stdout
 
@@ -125,12 +127,14 @@ def test_mind_root_unset_fails_loudly_and_names_the_brain(tmp_path: Path) -> Non
     # 其余三个仓仍然备出来了 —— 坏一处不等于全部白跑，也不等于装作全好了。
     assert len(list(dest.glob("plobi-code-*.bundle"))) == 1
     assert not list(dest.glob("plobi-mind-*.bundle"))
+    # 第二根指针同样没设：人看的那一面无包可出，也不许假装它备好了。
+    assert not list(dest.glob("plobi-vault-*.bundle"))
 
 
 def test_mind_root_set_but_directory_missing_is_distinct_from_unset(tmp_path: Path) -> None:
     script, mind = _workspace(tmp_path, mind_exists=False)
     dest = tmp_path / "out"
-    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind)))
+    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), VAULT_ROOT=str(tmp_path / "vault-surface")))
 
     assert proc.returncode != 0
     assert "mind: directory missing" in proc.stdout, proc.stdout
@@ -141,7 +145,7 @@ def test_mind_root_set_but_directory_missing_is_distinct_from_unset(tmp_path: Pa
 def test_repo_without_git_is_reported_not_silently_skipped(tmp_path: Path) -> None:
     script, mind = _workspace(tmp_path, docs_is_repo=False)
     dest = tmp_path / "out"
-    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind)))
+    proc = _run(script, dest, _child_env(MIND_ROOT=str(mind), VAULT_ROOT=str(tmp_path / "vault-surface")))
 
     assert proc.returncode != 0
     assert "docs: no .git" in proc.stdout, proc.stdout
