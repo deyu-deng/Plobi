@@ -83,12 +83,32 @@ def on_pre_tool_call(
             logger.debug("plobi-delegation-guard: quota check failed", exc_info=True)
             verdict = None
         if verdict is not None and not verdict.allowed and not cfg.get("quota_fail_open"):
+            # R-073's ask was two numbers in plain words, not a mood. The refused
+            # delegation has not run yet, so the honest ones are what is left and
+            # what the day has already cost. A negative remaining is an overshoot,
+            # not a balance — show zero and name the overage, or the user reads
+            # "-$0.50 还剩" as a second bug.
+            def _usd(value):
+                return "未知" if value is None else f"${max(0.0, float(value)):.2f}"
+
+            left = verdict.remaining
+            budget = cfg.get("quota_daily_budget_usd")
+            spent = None
+            if isinstance(budget, (int, float)) and left is not None:
+                spent = float(budget) - float(left)
+
+            detail = f"今天还剩 {_usd(left)}"
+            if spent is not None:
+                detail += f"（预算 {_usd(budget)}，已花 {_usd(spent)}）"
+            if left is not None and left < 0:
+                detail += f"，这一单超出 {_usd(-left)}"
+
             return {
                 "action": "block",
                 "message": (
-                    f"[Plobi] 额度熔断已触发：{verdict.reason}。"
-                    f"本次委派未执行；待额度恢复后重试，"
-                    f"或调高 delegation.quota_daily_budget_usd。"
+                    f"[Plobi] 额度熔断已触发：{verdict.reason}。{detail}。"
+                    f"本次要 {requested_children(args)} 个子分身，未执行。"
+                    f"待额度恢复后重试，或调高 delegation.quota_daily_budget_usd。"
                 ),
             }
 

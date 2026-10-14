@@ -291,6 +291,115 @@ def test_record_spend_fans_out_to_providers():
     assert circuit.check().remaining == pytest.approx(1.25)
 
 
+def _mock_parent(depth=0):
+    """Just the shape `delegate_task` reads off a parent, at a given tree depth."""
+    from unittest.mock import MagicMock
+
+    parent = MagicMock()
+    parent.base_url = "https://openrouter.ai/api/v1"
+    parent.api_key = "***"
+    parent.provider = "openrouter"
+    parent.api_mode = "chat_completions"
+    parent.model = "anthropic/claude-sonnet-4"
+    parent.platform = "cli"
+    parent._session_db = None
+    parent._delegate_depth = depth
+    parent._active_children = []
+    parent._active_children_lock = __import__("threading").Lock()
+    parent._print_fn = None
+    parent.tool_progress_callback = None
+    parent.thinking_callback = None
+    return parent
+
+
+def _delegate_one_child_costing(circuit, *, cost, depth):
+    """Run a real delegate_task with one child that billed `cost`, at `depth`.
+
+    The breaker under test is the process-wide one the tool feeds, so this is the
+    production call path, not a re-implementation of it.
+    """
+    import json
+    from unittest.mock import patch
+
+    from tools.delegate_tool import delegate_task
+
+    quota_mod.set_quota_circuit(circuit)
+    with patch("tools.delegate_tool._run_single_child") as run:
+        run.return_value = {
+            "task_index": 0,
+            "status": "completed",
+            "summary": "done",
+            "api_calls": 2,
+            "duration_seconds": 1.0,
+            "_child_cost_usd": cost,
+        }
+        json.loads(delegate_task(goal="work", parent_agent=_mock_parent(depth=depth)))
+
+
+def test_a_delegation_actually_shrinks_remaining_relationally():
+    """The fed number is a *relation*, not a snapshot of today's price list."""
+    circuit = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(5.0)])
+
+    before = circuit.check().remaining
+    assert before == pytest.approx(5.0)
+
+    _delegate_one_child_costing(circuit, cost=1.25, depth=0)
+
+    after = circuit.check().remaining
+    assert after < before
+    assert after == pytest.approx(before - 1.25)
+
+
+def test_nested_tree_bills_the_grandchild_once():
+    """An orchestrator's total already contains its workers, so only depth 0 feeds.
+
+    Feeding at every layer would charge the same grandchild twice and trip the
+    breaker early — refusing work the user never spent money on.
+    """
+    flat = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(5.0)])
+    _delegate_one_child_costing(flat, cost=0.4, depth=0)
+    assert flat.check().remaining == pytest.approx(4.6)
+
+    nested = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(5.0)])
+    # The same batch, but this parent is itself a child: its own ledger belongs to
+    # the layer above, which folds it in already.
+    _delegate_one_child_costing(nested, cost=0.4, depth=1)
+    assert nested.check().remaining == pytest.approx(5.0)
+
+
+def test_refusal_says_what_is_left_and_what_the_day_has_cost(monkeypatch):
+    """R-073's ask: "和 Plobi 聊天太贵了" deserves two numbers, not a mood."""
+    plugin = _load_plugin()
+    guard_mod.set_guard(guard_mod.DelegationGuard(cap=6, queue_timeout=0.05))
+    circuit = quota_mod.QuotaCircuit([quota_mod.BudgetProvider(1.0)])
+    quota_mod.set_quota_circuit(circuit)
+
+    # The message reads the budget from config, so pin that one number rather
+    # than trusting whatever config.yaml the runner's machine happens to say.
+    real_load = config.load
+    monkeypatch.setattr(
+        config,
+        "load",
+        lambda *a, **k: {**real_load(), "quota_enabled": True, "quota_fail_open": False,
+                         "quota_daily_budget_usd": 1.0},
+    )
+    circuit.record_spend(1.5)
+
+    directive = plugin.on_pre_tool_call(
+        tool_name="delegate_task", args={"goal": "more"}, session_id="s1"
+    )
+
+    assert directive is not None and directive["action"] == "block"
+    message = directive["message"]
+    assert "还剩 $0.00" in message
+    assert "预算 $1.00" in message
+    assert "已花 $1.50" in message
+    # A negative balance is an overshoot, not a number to show the user.
+    assert "这一单超出 $0.50" in message
+    assert "-$0.50" not in message
+    assert "1 个子分身，未执行" in message
+
+
 def test_broken_provider_is_skipped_not_fatal():
     class Boom:
         name = "boom"
