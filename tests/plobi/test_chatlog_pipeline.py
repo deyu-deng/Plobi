@@ -722,3 +722,23 @@ def test_dirty_shape_chatter_with_a_meeting_keyword_never_lands(pipeline):
 
         assert report.filtered_out == 1, text
         assert pipeline.service.list_pending() == [], text
+
+
+def test_dirty_shape_stated_range_lands_both_ends(pipeline):
+    """修到的那一类：明写「三点到五点」时结束时间必须落库，没说的仍然空着。"""
+    report = IngestReport()
+    pipeline.handle_message(message("明天下午三点到五点开组会", msg_id="eq-4"), report)
+
+    event = pipeline.service.list_pending()[0]
+    assert event.start_at == "2026-08-26T15:00:00"
+    assert event.end_at == "2026-08-26T17:00:00"
+
+
+def test_dirty_shape_mixed_spellings_do_not_slip_two_hours(pipeline):
+    """同一条消息用两种写法（三点 / 17:00）时，开始时间不许被尾巴那个钟点顶掉。"""
+    report = IngestReport()
+    pipeline.handle_message(message("明天下午三点到17:00开组会", msg_id="eq-5"), report)
+
+    event = pipeline.service.list_pending()[0]
+    assert event.start_at == "2026-08-26T15:00:00"
+    assert event.end_at == "2026-08-26T17:00:00"

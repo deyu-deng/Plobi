@@ -113,3 +113,36 @@ def test_parse_sent_at_falls_back_only_when_unparseable():
     # No fallback -> honestly nothing, never a guess.
     assert parse_sent_at("", fallback=None) is None
     assert parse_sent_at("??", fallback=None) is None
+
+
+# --------------------------------------------------------------------------- #
+# 明写的区间 ⇒ 两端都要落；没说的结束时间 ⇒ 空着，不许编（WP-EXTRACT-QUALITY 修的那一类）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        ("明天下午三点到五点开组会", time(15, 0), time(17, 0)),
+        ("明天下午三点到17:00开组会", time(15, 0), time(17, 0)),
+        ("3:00到5:00值班", time(3, 0), time(5, 0)),
+        ("明天下午三点开组会", time(15, 0), None),
+        ("上午十点到十二点面谈", time(10, 0), None),
+    ],
+)
+def test_a_stated_range_is_read_both_ways_an_unstated_one_is_not_invented(text, start, end):
+    parsed = parse_when(text, now=NOW)
+
+    assert parsed.clock == start
+    assert parsed.end_clock == end
+
+
+def test_the_end_of_a_range_must_not_become_its_start():
+    """旧行为：数字钟点那一路先赢，"下午三点到17:00" 整条事件就晚两个小时落库。
+
+    钟点按**在句中出现的位置**排，不按写法排 —— 这是那条 bug 的回归钉。
+    """
+    parsed = parse_when("明天下午三点到17:00开组会", now=NOW)
+
+    assert parsed.clock == time(15, 0)
+    assert parsed.end_clock == time(17, 0)

@@ -43,6 +43,8 @@ _CN_HOUR = re.compile(r"([0-9]{1,2}|[零一二两三四五六七八九十]{1,3})
 class ParsedWhen:
     day: Optional[date] = None
     clock: Optional[time] = None
+    #: 消息里**明写了区间**才有值（"三点到五点"）。没写就是 None —— 不按时长猜。
+    end_clock: Optional[time] = None
 
     @property
     def has_any(self) -> bool:
@@ -112,25 +114,25 @@ def _parse_day(text: str, today: date) -> Optional[date]:
     return None
 
 
-def _parse_clock(text: str) -> Optional[time]:
-    hour: Optional[int] = None
-    minute = 0
+def _digit_clock(match: re.Match) -> tuple[int, int]:
+    return int(match.group(1)), int(match.group(2))
 
-    clock = _CLOCK.search(text)
-    if clock:
-        hour = int(clock.group(1))
-        minute = int(clock.group(2))
-    else:
-        cn = _CN_HOUR.search(text)
-        if cn:
-            hour = _cn_number(cn.group(1))
-            suffix = (cn.group(2) or "").strip()
-            if suffix == "半":
-                minute = 30
-            elif suffix:
-                parsed = _cn_number(suffix.replace("分", "").strip())
-                minute = parsed if parsed is not None else 0
 
+def _cn_clock(match: re.Match) -> Optional[tuple[int, int]]:
+    hour = _cn_number(match.group(1))
+    if hour is None:
+        return None
+    suffix = (match.group(2) or "").strip()
+    if suffix == "半":
+        return hour, 30
+    if suffix:
+        parsed = _cn_number(suffix.replace("分", "").strip())
+        return hour, parsed if parsed is not None else 0
+    return hour, 0
+
+
+def _finalize_clock(hour: Optional[int], minute: int, text: str) -> Optional[time]:
+    """Meridiem + bounds. The whole sentence decides 上午/下午, like a reader does."""
     if hour is None:
         if "中午" in text:
             return time(12, 0)
@@ -149,12 +151,76 @@ def _parse_clock(text: str) -> Optional[time]:
     return time(hour, minute)
 
 
+def _clock_candidates(text: str) -> list[tuple[int, int, time]]:
+    """Every stated clock, **ordered by where it appears** in the sentence.
+
+    Position order is the point: "下午三点到17:00" used to be read as 17:00
+    because the digit form won precedence over an earlier Chinese hour — the end
+    of a range silently became its start.
+    """
+    found: list[tuple[int, int, time]] = []
+
+    for match in _CLOCK.finditer(text):
+        hour, minute = _digit_clock(match)
+        clock = _finalize_clock(hour, minute, text)
+        if clock:
+            found.append((match.start(), match.end(), clock))
+    for match in _CN_HOUR.finditer(text):
+        parsed = _cn_clock(match)
+        if not parsed:
+            continue
+        clock = _finalize_clock(parsed[0], parsed[1], text)
+        if clock:
+            found.append((match.start(), match.end(), clock))
+
+    return sorted(found)
+
+
+def _parse_clock(text: str) -> Optional[time]:
+    """The first clock the sentence states — by position, not by spelling.
+
+    "中午" alone (no digits, no 点) still counts as 12:00: that reading predates
+    the range support and is what a human means by "中午集合".
+    """
+    candidates = _clock_candidates(text)
+    if candidates:
+        return candidates[0][2]
+    return time(12, 0) if "中午" in text else None
+
+
+_RANGE_CONNECTOR = re.compile(r"^\s*(?:到|至|~|—|–|-)\s*$")
+
+
+def _parse_clock_span(text: str) -> tuple[Optional[time], Optional[time]]:
+    """(开始, 结束). The end is only returned when the sentence **states** a range.
+
+    Nothing is inferred: "三点开会" has no end, and a range that wraps past
+    midnight ("上午十点到十二点" read as 10:00→00:00) is refused rather than
+    turned into a made-up slot — the caller keeps `end_at` empty either way.
+    """
+    candidates = _clock_candidates(text)
+    if not candidates:
+        # Same "中午集合" reading as _parse_clock: a stated noon without digits.
+        return (time(12, 0), None) if "中午" in text else (None, None)
+
+    start = candidates[0]
+    if len(candidates) < 2:
+        return start[2], None
+
+    nxt = candidates[1]
+    if _RANGE_CONNECTOR.match(text[start[1]:nxt[0]]) and nxt[2] > start[2]:
+        return start[2], nxt[2]
+
+    return start[2], None
+
+
 def parse_when(text: str, *, now: Optional[datetime] = None) -> ParsedWhen:
     """Extract whatever date/clock the text states. Never guesses both."""
     reference = now or datetime.now()
     source = text or ""
+    clock, end_clock = _parse_clock_span(source)
 
-    return ParsedWhen(day=_parse_day(source, reference.date()), clock=_parse_clock(source))
+    return ParsedWhen(day=_parse_day(source, reference.date()), clock=clock, end_clock=end_clock)
 
 
 # Common non-ISO shapes chatlog hands back. Tried in order after ISO.
