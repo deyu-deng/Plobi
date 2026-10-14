@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 67e28a0cadea4c0368daeffdef023791_ff028dfdc71011f1a08152540064ee0f
-    ReservedCode1: 3UTehy+2GSu/kKr3vQ/sOGi7KnSx2hNj9wL9ECl1B21JS2gtmzouH8Zud46I7raWcTvCrF+p/j5+s+8Ep8tu07/LpbtUuEyLTHZMxUvvCBZBvT+jzUT0YTyBGRJJO3yPst2SkVCo25VBNk+sq597rfmmn/c6Ej18Iu60x6y7S+aVNBdhxxm1H7QChQc=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 67e28a0cadea4c0368daeffdef023791_ff028dfdc71011f1a08152540064ee0f
-    ReservedCode2: 3UTehy+2GSu/kKr3vQ/sOGi7KnSx2hNj9wL9ECl1B21JS2gtmzouH8Zud46I7raWcTvCrF+p/j5+s+8Ep8tu07/LpbtUuEyLTHZMxUvvCBZBvT+jzUT0YTyBGRJJO3yPst2SkVCo25VBNk+sq597rfmmn/c6Ej18Iu60x6y7S+aVNBdhxxm1H7QChQc=
----
-
 <div align="center">
 
 # Plobi
@@ -223,4 +212,3 @@ Plobi 是 **[Hermes Agent](https://github.com/NousResearch/hermes-agent)**（Nou
 基于 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 构建。
 
 </div>
-*（内容由AI生成，仅供参考）*
