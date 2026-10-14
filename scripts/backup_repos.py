@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Bundle all four repositories of this workspace into ``bundles/keep/``.
+"""Bundle all five repositories of this workspace into ``bundles/keep/``.
 
-Why four: the brain (``MIND_ROOT``) was ruled data (ruling 72) — it cannot be
+Why five: the brain (``MIND_ROOT``) was ruled data (ruling 72) — it cannot be
 regenerated from code — yet every backup tool here only ever covered the parts
 that *can* be regenerated. A backup set that skips the irreplaceable repo is not
 a backup set. The brain's location is read from ``MIND_ROOT`` only; nothing in
 this file hardcodes a drive letter.
+
+Since 2026-10-14 the human-facing surface is a repo of its own (``VAULT_ROOT``)
+and it is the *more* irreplaceable half — diary, profile and notes, and it is not
+pushed anywhere. Same discipline as the brain: read the env pointer, no guessing
+a fallback location, and a missing pointer is a loud failure, not a skip.
 
 Exit is non-zero when any repo is missing or any bundle fails ``git bundle
 verify`` — a bundle that does not verify is not a backup.
@@ -27,10 +32,12 @@ DESKTOP = CODE.parent
 WORKSPACE = DESKTOP.parent
 
 MIN_ENV_VAR = "MIND_ROOT"
+VAULT_ENV_VAR = "VAULT_ROOT"
 
 
 def repos() -> dict[str, Path | None]:
     mind = os.environ.get(MIN_ENV_VAR, "").strip()
+    vault = os.environ.get(VAULT_ENV_VAR, "").strip()
     return {
         "code": CODE,
         "docs": DESKTOP / "Docs",
@@ -38,6 +45,8 @@ def repos() -> dict[str, Path | None]:
         # The brain has no fallback path on purpose: guessing where the repo happens
         # to sit is what let it hide inside the code checkout in the first place.
         "mind": Path(mind) if mind else None,
+        # 人看的面：日记/画像/笔记，且不推任何远端——这份之外只剩 bundles 里的副本。
+        "vault": Path(vault) if vault else None,
     }
 
 
@@ -127,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dest", type=Path, default=DESKTOP / "bundles" / "keep",
                     help="bundle landing directory (default: Plobi-Desktop/bundles/keep)")
     ap.add_argument("--only", action="append", choices=sorted(repos()),
-                    help="bundle just these repos (repeatable); default is all four")
+                    help="bundle just these repos (repeatable); default is all five")
     ap.add_argument("--keep", type=int, default=14,
                     help="how many newest bundles to keep per repo (0 disables pruning)")
     args = ap.parse_args(argv)
