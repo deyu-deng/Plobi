@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .lock import MindLockTimeout, mind_write_lock
-from .paths import git_toplevel, resolve_root
+from .paths import git_toplevel, real_target, resolve_root
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ def render_declaration(agents_text: str, names: list[str]) -> tuple[str, bool]:
 
 def project_dir_names(root: Path) -> list[str]:
     """``<root>/Vault/projects`` 下的目录名（排序）——声明与 INDEX 都对齐到它。"""
-    base = root / PROJECTS_RELATIVE
+    base = real_target(PROJECTS_RELATIVE, root)
     if not base.is_dir():
         raise DeclarationSyncError(
             f"{root} 里没有 {PROJECTS_RELATIVE}/，项目清单对不了盘"
@@ -180,7 +180,7 @@ def _run_verifier(root: Path, *args: str) -> subprocess.CompletedProcess:
     ``PYTHONIOENCODING`` + ``encoding="utf-8"`` 是成对的：verifier 打印中文，本机 codepage 不该
     决定我们读回什么字节（解码炸在异常处理之外就等于把「声明同步失败」变成一句裸 500）。
     """
-    script = root / VERIFIER_RELATIVE
+    script = real_target(VERIFIER_RELATIVE, root)
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
         return subprocess.run(
@@ -270,7 +270,7 @@ def _assert_gate(root: Path) -> None:
 def _restore_declarations(root: Path, snapshot: Mapping[str, bytes | None]) -> None:
     """逐字节还原快照里的文件；快照里是 ``None`` 的（原本不存在）就删掉。"""
     for relative, payload in snapshot.items():
-        path = root / relative
+        path = real_target(relative, root)
         try:
             if payload is None:
                 if path.is_file():
@@ -331,9 +331,9 @@ def sync_project_declarations(
             f"{dir_name!r} 不是一个 Mind 项目目录名，声明无从对齐"
         )
 
-    agents_path = root / AGENTS_RELATIVE
-    verifier_path = root / VERIFIER_RELATIVE
-    index_path = root / INDEX_RELATIVE
+    agents_path = real_target(AGENTS_RELATIVE, root)
+    verifier_path = real_target(VERIFIER_RELATIVE, root)
+    index_path = real_target(INDEX_RELATIVE, root)
 
     if not agents_path.is_file() and not verifier_path.is_file():
         # 这个 Mind 根不带脑仓自己的门禁（只有 Vault/projects 的假库 / 非 Mind 仓）：没有声明可

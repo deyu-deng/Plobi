@@ -35,7 +35,7 @@ from datetime import date as _date
 from pathlib import Path
 from typing import Sequence
 
-from .paths import resolve_root
+from .paths import real_target, resolve_root
 
 PROJECTS_RELATIVE = "Vault/projects"
 ENTRY_FILE_NAMES: tuple[str, ...] = ("plan.md", "progress.md", "research.md")
@@ -265,7 +265,7 @@ def ensure_project_tree(
             "Mind 没配置好（MIND_ROOT 指不到一个库），项目树建不出来"
         )
 
-    base = root / PROJECTS_RELATIVE
+    base = real_target(PROJECTS_RELATIVE, root)
     actual_name = _case_insensitive_child(base, dir_name) or dir_name
     target = base / actual_name
     # frontmatter 的 project/title 用用户给定的原名（Mind §5：目录名尊重用户给定名称）；
@@ -322,7 +322,7 @@ def project_tree_exists(*, mind_subtree: str, mind_root: Path | str | None = Non
     root = resolve_root(mind_root)
     if root is None:
         return False
-    return (root / mind_subtree / "plan.md").is_file()
+    return (real_target(mind_subtree, root) / "plan.md").is_file()
 
 
 __all__ = [

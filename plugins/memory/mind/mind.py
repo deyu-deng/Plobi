@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
-from plobi.mind.paths import SAFE_PREFIXES
+from plobi.mind.paths import SAFE_PREFIXES, logical_target, real_target
 from plobi.mind.writer import MindWriter
 
 logger = logging.getLogger(__name__)
@@ -119,12 +119,12 @@ def _is_safe(target: Path, root: Path) -> bool:
     """Return True if ``target`` lies inside SAFE_PREFIXES.
 
     Call this BEFORE every real write; reject + ``logger.warning`` otherwise.
+    The comparison goes through :func:`logical_target` because a split layout puts
+    the human-facing zones outside ``root`` — subtracting the Mind root from such a
+    path raises, which used to read as "outside the safe prefixes" and would have
+    silently refused every legitimate note write after the move.
     """
-    try:
-        rel = target.resolve().relative_to(root.resolve()).as_posix()
-    except ValueError:
-        return False
-    return any(rel == p or rel.startswith(p + "/") for p in SAFE_PREFIXES)
+    return logical_target(target, root) is not None
 
 
 def _kebab(text: str) -> str:
@@ -317,7 +317,7 @@ class MindProvider(MemoryProvider):
                 return
             kebab = _kebab(session_id) or "chat"
             rel = f"Loom/raw/chat-logs/exports/{kebab}.md"
-            if not _is_safe((root / rel).resolve(), root):
+            if not _is_safe(real_target(rel, root), root):
                 logger.warning("[mind] refused sync_turn write: %s", rel)
                 return
 
@@ -350,7 +350,7 @@ class MindProvider(MemoryProvider):
             today = datetime.now().strftime("%Y-%m-%d")
             kebab = _kebab(self._session_id) or "session"
             rel = f"Loom/raw/chat-logs/digested/{today}/{kebab}-digest.md"
-            if not _is_safe((root / rel).resolve(), root):
+            if not _is_safe(real_target(rel, root), root):
                 logger.warning("[mind] refused on_session_end write: %s", rel)
                 return
 
@@ -400,7 +400,7 @@ class MindProvider(MemoryProvider):
             else:
                 rel = f"Vault/projects/Plobi/{slug}.md"
 
-            if not _is_safe((root / rel).resolve(), root):
+            if not _is_safe(real_target(rel, root), root):
                 logger.warning("[mind] refused on_memory_write: %s", rel)
                 return
 
