@@ -618,6 +618,14 @@ export interface AgendaEvent {
   location?: null | string
   /** WP-DAY-FACE: free-form notes the user typed (manual events). */
   notes?: null | string
+  /**
+   * WP-AGENDA-VIEW: ids this row overlaps, **computed by the backend**
+   * (`plobi/agenda/planning.py` `compute_event_overlaps`, half-open `[start, end)`
+   * with a missing end treated as a point). Only `/api/agenda/day` rows carry it —
+   * the plain list route omits it. The renderer must *carry* this, never re-derive it
+   * (`Docs/specs/handset-app.md` §3.1「别自己再算一遍冲突」, 裁定 139④).
+   */
+  overlaps?: null | string[]
   prev_value?: AgendaPrevValue | null
   source: AgendaSource
   start_at: string
@@ -683,9 +691,29 @@ export interface AgendaDay {
    * no bands, also rendered as nothing.
    */
   avoid_windows?: AgendaAvoidWindow[]
+  /**
+   * WP-AGENDA-VIEW: the day's overlap pairs, **computed by the backend**
+   * (`planning.py` `compute_event_overlaps` → the same list `/api/handset/agenda/day`
+   * returns to the phone). Absent on older responses → the caller shows "conflict data
+   * not loaded", never derives it locally (handset-app §3.1, 裁定 139④).
+   */
+  conflicts?: AgendaConflict[]
   date: string
   events: AgendaEvent[]
   plan_items: AgendaPlanItem[]
+  /** `pending` / `approved` / … — the daily plan's status, null when no plan exists. */
+  plan_status?: null | string
+}
+
+/**
+ * WP-AGENDA-VIEW: one backend-reported overlap. `start_at` / `end_at` are the
+ * **intersection** of the two rows, not either row's own bounds.
+ */
+export interface AgendaConflict {
+  end_at: string
+  left_id: string
+  right_id: string
+  start_at: string
 }
 
 /** Confirmed slot the user has reserved (renderer skips rendering collisions). */

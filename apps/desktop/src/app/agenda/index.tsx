@@ -67,6 +67,8 @@ import {
   type TimetableSampleEvent,
   type TimetableStatus
 } from './timetable/api'
+import { dayKeyFromDate, eventDayKey } from './week/week-model'
+import { AgendaWeekStrip } from './week/week-strip'
 
 // Board refresh cadence. The spec allows up to 10s staleness (ADR-0008), and
 // polling keeps us off SSE/WebSocket plumbing for a single-user desktop.
@@ -205,6 +207,8 @@ export function AgendaView({ onClose }: AgendaViewProps) {
           : a.collect.activeShort
 
   const [editor, setEditor] = useState<EditorState>({ mode: 'closed' })
+  // WP-AGENDA-VIEW slice 1: which day the week row is filtered to (`null` = whole list).
+  const [pickedWeekDay, setPickedWeekDay] = useState<null | string>(null)
   const [busyId, setBusyId] = useState<null | string>(null)
   const [collectionOpen, setCollectionOpen] = useState(false)
   // WP-ICS-BOARD: `path` → preview draft; `preview: null` means "still reading"
@@ -317,7 +321,18 @@ export function AgendaView({ onClose }: AgendaViewProps) {
     const buckets = new Map<string, AgendaEvent[]>()
 
     for (const event of events) {
-      const key = dayKeyOf(event.start_at)
+      const key = eventDayKey(event.start_at)
+
+      if (!key) {
+        continue
+      }
+
+      // The week row's selected day narrows the list; `null` shows everything, exactly as
+      // before this slice existed. No event is dropped for any other reason.
+      if (pickedWeekDay && key !== pickedWeekDay) {
+        continue
+      }
+
       const bucket = buckets.get(key)
 
       if (bucket) {
@@ -328,7 +343,7 @@ export function AgendaView({ onClose }: AgendaViewProps) {
     }
 
     return [...buckets.entries()].sort(([left], [right]) => left.localeCompare(right))
-  }, [events])
+  }, [events, pickedWeekDay])
 
   async function handleConfirm(event: AgendaEvent) {
     setBusyId(event.id)
@@ -427,6 +442,17 @@ export function AgendaView({ onClose }: AgendaViewProps) {
           <PanelHeader
             subtitle={pendingCount > 0 ? a.pendingCount(pendingCount) : a.count(events.length)}
             title={a.title}
+          />
+          {/*
+            * WP-AGENDA-VIEW slice 1: the week row. It reads the events the board already
+            * holds (no new request, no new surface) and conflicts stay the backend's job —
+            * with no day snapshot loaded yet every column honestly says 「冲突未取」.
+            */}
+          <AgendaWeekStrip
+            events={events}
+            onPickDay={setPickedWeekDay}
+            pickedDayKey={pickedWeekDay}
+            todayKey={dayKeyFromDate(startOfToday())}
           />
           <PanelBody>
             <PanelList>
