@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.egress import tun
+from agent.egress import engine as egress_engine, tun
 from agent.egress.engine import FAILED, ensure
 from agent.egress.mihomo_config import compile_config
 from agent.egress.rules import EgressConfigError, load_table
@@ -266,3 +266,28 @@ def test_a_pool_workdir_cannot_be_handed_a_tun_by_us(monkeypatch, tmp_path, iner
     assert rep.state == FAILED, rep
     assert "pool" in rep.detail or "别人维护" in rep.detail, rep.detail
     assert "not ours to rewrite" in " ".join(rep.notes), rep.notes
+
+
+@pytest.mark.skipif("sys.platform != 'win32'")
+def test_is_admin_answers_from_a_real_windows_call_and_never_raises():
+    """口径 27：每颗探针要有一条不 mock 的测试——它决定"拒/放行"的哪一半都是真的。"""
+    ok, why = tun.is_admin()
+
+    assert isinstance(ok, bool)
+    assert (why == "") or ok is False, (ok, why)   # 有理由时必须是"拿不到"，不是"拿到了还说谎"
+
+
+def test_listening_is_a_real_socket_call_not_a_string_match(tmp_path):
+    """`netstat | grep :7895` 数出过临时端口的假命中——这颗必须是真 connect。"""
+    import socket
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    try:
+        assert egress_engine.listening(port, timeout=1.0) is True
+        assert egress_engine.listening(1, timeout=0.2) is False
+    finally:
+        s.close()
+    assert egress_engine.listening(port, timeout=0.6) is False, "关掉之后必须不再说有人在听"
