@@ -97,7 +97,7 @@ def test_template_names_the_mouth_that_asks_the_roster():
     for phrase in ("现在的实情", "用他的原话", "一次问一个"):
         assert phrase in L1_SOUL_BLOCK, phrase
     # 摘录不许冒充分身的回答。
-    assert "冒充分身" in L1_SOUL_BLOCK
+    assert "不能冒充它本人的回答" in L1_SOUL_BLOCK  # 裁定 143④：拟称已从提示词撤掉，钉的是这句意思
 
 
 def test_template_stops_routing_everything_to_the_agenda_secretary():
@@ -171,3 +171,50 @@ def test_boot_path_is_the_backend_startup_hook_not_a_chat_time_patch():
     assert "ensure_l1_secretary_routing_soul" in src
     # 只在 default profile 那一把椅子上写（裁定 42 §6(b)）。
     assert 'get_active_profile_name() != "default"' in src
+
+
+# ---------------------------------------------------------------------------
+# WP-L1-DISPATCH-FIRST（裁定 145）——「按摊判」那张清单必须写在行为面里
+# ---------------------------------------------------------------------------
+
+def _dispatch_section() -> str:
+    from plobi.agents.registry import L1_SOUL_BLOCK
+
+    start = L1_SOUL_BLOCK.index("## 按摊判")
+    return L1_SOUL_BLOCK[start:L1_SOUL_BLOCK.index(":::PLOBI_L1_ASK_END:::")]
+
+
+def test_the_dispatch_checklist_names_both_lists_and_the_two_trails():
+    """用户 10-15 原话：「**但是你总是不派工。总是自己做事。你手下都有什么人呢？**」
+    裁定 145 把强度定成「按摊判」并**把清单写死**——只改提示词不够，但清单不落进
+    L1 的 SOUL 合同，各线就会各自解释「那一摊」。这里钉的是形状，不是措辞。"""
+    s = _dispatch_section()
+
+    # ① 必须派：三类，一类都不能少（课程那一类的前置已解除，见 943a71cb）
+    assert "必须派" in s and "不许自办" in s
+    assert "进度与内部细节" in s
+    assert "作业、考试、进度" in s and "l2-course-" in s
+    assert "信源" in s and "原文" in s
+    # 问不到时不许回落到自己读硬盘（145①(c) 与 P6「不许描述不存在的机制」同一条）
+    assert "askable=false" in s and "不许自己去读采集落库的文件" in s
+
+    # ② 自己动：五件，且明写「不许推给别人」
+    assert "你自己动" in s and "不许推给" in s
+    for own in ("排日程", "跨面统筹", "门禁批准", "向用户澄清", "整合成一句人话"):
+        assert own in s, own
+
+    # ③ 两边留痕：派出去说派给谁 + 回传摘要；自办说明问过谁、它怎么没答
+    assert "派给了谁" in s and "摘要" in s
+    assert "我问过谁、它怎么没答" in s
+    assert "什么都没问就自己上，就是没派工" in s
+
+
+def test_the_dispatch_section_feeds_no_hierarchy_back_to_the_model():
+    """裁定 143④：「分身」这个拟称会把等级观念喂回模型，而 R-089（总自己干活不派工）
+    与「不平等」是同一件事的两面——**它不把那一摊当成一个可派的对象**。
+    旧段落里那几处「分身」是另一笔的事（143④ 明写分两笔），本条只管新写这一段。"""
+    s = _dispatch_section()
+
+    assert "分身" not in s
+    assert "同级" in s and "只有**类型**不同" in s
+    assert "L2 Agent" in s

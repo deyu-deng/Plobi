@@ -91,15 +91,15 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 AGENT_ASK_SCHEMA = {
     "name": "plobi_agent_ask",
     "description": (
-        "当面问一个项目分身一句话，拿回它本人现在的回答。用户问「某个项目现在怎么样」"
+        "当面问一个项目 / 课程的 L2 Agent 一句话，拿回它本人现在的回答。用户问「某个项目现在怎么样」"
         "「这件事你手上是什么情况」时用它——别只读硬盘上那份笔记，那只是上次有人写字那一天"
-        "的话，这个分身会自己回答。能问谁看名册：plobi_secretary_ask（intent=project_status）"
-        "回的 roster 就是手下名单，其中 askable 那几行现在问得到；一次问一个分身，"
+        "的话，这个 Agent 会自己回答。能问谁看名册：plobi_secretary_ask（intent=project_status）"
+        "回的 roster 就是手下名单，其中 askable 那几行现在问得到；一次问一个 Agent，"
         "要问几个项目就分别问几次。项目名照用户说的那样填就行（大小写、显示名都认），"
-        "问题尽量用他的原话，不要替他改写。这次问答会留在被问的那个分身自己的会话记录里，"
+        "问题尽量用他的原话，不要替他改写。这次问答会留在被问的那个 Agent 自己的会话记录里，"
         "回答同时带回它的会话号，方便事后回看。"
         "问不到（名字不对、已经归档、家还没在这台机器上落地、它答不上来、超时）会明确回错，"
-        "并列出现在能问的项目名——照实说那一句原因，不要拿笔记冒充分身的回答，"
+        "并列出现在能问的项目名——照实说那一句原因，不要拿笔记冒充 Agent 的回答，"
         "也不要换个名字硬试或转去问日程秘书。"
     ),
     "parameters": {
@@ -107,7 +107,7 @@ AGENT_ASK_SCHEMA = {
         "properties": {
             "agent": {
                 "type": "string",
-                "description": "要问的那个项目分身的名字。",
+                "description": "要问的那个项目 / 课程的 L2 Agent 的名字。",
             },
             "question": {
                 "type": "string",
@@ -328,7 +328,7 @@ def resolve_target(name: str, *, registry=None, entries=None):
 
     if not needle:
         raise AskRefusal(
-            f"要问哪个项目分身？现在能问的有：{_roster_hint(entries)}", available
+            f"要问哪一个 L2 Agent？现在能问的有：{_roster_hint(entries)}", available
         )
 
     hits = _collapse_same_home(
@@ -347,7 +347,7 @@ def resolve_target(name: str, *, registry=None, entries=None):
         # 改的注册键，不是显示名。
         who = "、".join(sorted(f"{_label(entry)}（{entry.name}）" for entry in hits))
         raise AskRefusal(
-            f"「{name}」对上了好几个分身（{who}），说个更具体的名字。", available
+            f"「{name}」对上了好几个同名 Agent（{who}），说个更具体的名字。", available
         )
 
     # Not askable — but is it a row that exists? 名字对上了却不在这张嘴的名单里，
@@ -369,7 +369,7 @@ def resolve_target(name: str, *, registry=None, entries=None):
             available,
         )
     raise AskRefusal(
-        f"没有「{name}」这个项目分身。现在能问的有：{_roster_hint(entries)}", available
+        f"没有「{name}」这个项目 / 课程的 L2 Agent。现在能问的有：{_roster_hint(entries)}", available
     )
 
 
@@ -686,7 +686,7 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
         entries = askable_entries()
     except Exception as exc:  # an unreadable roster ≠ a broken turn
         logger.warning("plobi_agent_ask: registry unreadable: %s", exc)
-        return tool_error("读不到项目分身名册，这次问不了。", ok=False)
+        return tool_error("读不到项目 / 课程的 L2 Agent 名册，这次问不了。", ok=False)
 
     try:
         entry = resolve_target(name, entries=entries)
@@ -720,7 +720,7 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
         )
 
     if result["missing_binary"]:
-        return tool_error("这台机器上找不到可执行的命令行，问不到任何分身。", ok=False)
+        return tool_error("这台机器上找不到可执行的命令行，问不到任何 Agent。", ok=False)
     if result["timed_out"]:
         # R-089 / R-072：那一趟已经花掉的钱不能凭空消失。`_run_child` 在 kill 之后
         # 已经拿 5 秒 grace 把剩余 stdout 收了回来（`:652-655`），以前到这里就被扔掉——
