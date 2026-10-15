@@ -478,6 +478,31 @@ def test_usage_follows_session_attribution(client, _isolated_state, monkeypatch,
     assert row["todayCalls"] == 4
 
 
+def test_the_surface_reads_the_leg_that_actually_ran(tmp_path, client, _isolated_state, monkeypatch):
+    """R-092 面上那半（Code `305ad585` 撤掉切换通知之后必须有东西可读）：
+    「当前是哪条腿」只认 ``session_model_usage``，取 ``last_seen`` **最大**那一行——
+    关系判据，不是"第一行"也不是配置里那条。``model_for()`` 给的是**打算走**哪条，
+    这一格给的是**刚才真走过**哪条，两个键必须同时在场、不许互相冒充。"""
+    register(_isolated_state, agenda=AGENDA)
+    db = tmp_path / "state.db"
+    _usage_db(db, [
+        ("sess-latest", "workbuddy/hy3", 3, 10, 5, 0, 0, 0, 0.0, 100.0, 200.0),
+        ("sess-latest", "zai/glm-5.3", 1, 2, 1, 0, 0, 0, 0.0, 300.0, 900.0),  # 最新走过
+        ("sess-other", "workbuddy/hy3-x", 2, 4, 2, 0, 0, 0, 0.0, 50.0, 60.0),
+    ])
+    monkeypatch.setattr(console_router, "_latest_session_for_profile", lambda p: "sess-latest")
+    monkeypatch.setattr(console_router, "default_db_path", lambda: db)
+
+    leg = console_router.leg_for_sessions(["sess-latest", "sess-other"])
+    assert leg is not None and leg["model"] == "zai/glm-5.3", leg
+    assert console_router.leg_for_sessions([]) is None
+    assert console_router.leg_for_sessions(["sess-none"]) is None
+
+    row = client.get("/api/agents").json()["data"][0]
+    assert row.get("actualModel") == "zai/glm-5.3", row
+    assert row.get("model") != row.get("actualModel") or row.get("model") == "zai/glm-5.3"
+
+
 # --------------------------------------------------------------------------- #
 # usage aggregation (real source: state.db session_model_usage)
 # --------------------------------------------------------------------------- #
