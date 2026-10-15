@@ -207,7 +207,9 @@ def main(argv: list[str] | None = None) -> int:
         return RC_OK if ahead >= 0 else RC_GIT
     started = time.time()
     lines: list[str] = []
-    rc = sync(root, do_fetch=not args.no_fetch, sink=lines.append)
+    # stdout 只有一个出口：sync() 里的 say() 不再自己印（quiet=True），
+    # 否则同一行会在终端出现两遍——日志没被污染，但读起来像双写。
+    rc = sync(root, do_fetch=not args.no_fetch, quiet=True, sink=lines.append)
     lines.append(f"exit={rc} elapsed={time.time() - started:.1f}s")
     for line in lines:
         print(line)
