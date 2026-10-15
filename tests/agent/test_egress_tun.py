@@ -195,6 +195,33 @@ def test_a_passing_guard_starts_and_the_tun_block_is_in_what_we_wrote(monkeypatc
     assert inert["spawn"], rep
     written = (tmp_path / "home" / "egress" / "runtime" / "config.yaml").read_text(encoding="utf-8")
     assert "tun:" in written and "name: plobi-tun" in written
+    #: ① 的正面：放行也要把两条机器读数留下，否则"没人占着默认路由"只是某个人的一次肉眼。
+    said = " ".join(rep.notes)
+    assert "默认路由: 1 条" in said and "Wi-Fi" in said, rep.notes
+    assert "场上别人的 tunnel/虚拟网卡: 无" in said, rep.notes
+
+
+def test_the_two_machine_readings_are_printed_even_when_it_refuses(monkeypatch, quiet_guard):
+    """Same reason, refusal side: the reader has to see *who* we are refusing to fight."""
+    monkeypatch.setattr(tun, "is_admin", lambda: (False, ""))
+    monkeypatch.setattr(
+        tun, "tun_class_adapters",
+        lambda: ([{"name": "Wintun-WG", "description": "Wintun Userspace Tunnel", "status": "Up"}], ""),
+    )
+
+    lines = tun.status_lines(tun.preflight(_tun_table()))
+
+    assert any("默认路由: 1 条" in l and "Wi-Fi" in l for l in lines), lines
+    assert any("Wintun-WG" in l for l in lines), lines
+    assert lines[0].startswith("tun: 守卫拒绝开启"), lines
+
+
+def test_an_unreadable_route_table_is_said_as_unreadable(monkeypatch, quiet_guard):
+    monkeypatch.setattr(tun, "default_route_holders", lambda: ([], "Get-NetRoute : Access denied"))
+
+    lines = tun.status_lines(tun.preflight(_tun_table()))
+
+    assert any("默认路由: 读不到" in l and "Access denied" in l for l in lines), lines
 
 
 def test_a_pool_workdir_cannot_be_handed_a_tun_by_us(monkeypatch, tmp_path, inert, quiet_guard):

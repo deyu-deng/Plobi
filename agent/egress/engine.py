@@ -473,8 +473,13 @@ def _spawn(snap: _Snapshot, log_path: Path) -> tuple[int, float]:
     return proc.pid, proc.create_time() if hasattr(proc, "create_time") else time.time()
 
 
-def _tun_gate(table: Table, snap: _Snapshot) -> Optional[EngineReport]:
-    """Refuse a TUN start this machine cannot host — or return None to go ahead."""
+def _tun_gate(table: Table, snap: _Snapshot) -> tuple[Optional[EngineReport], tuple[str, ...]]:
+    """Refuse a TUN start this machine cannot host — and hand back the machine readings.
+
+    The evidence (who owns `0.0.0.0/0`, which tunnel adapters are on the box) is
+    returned on **both** paths: passing without saying what it saw would leave
+    "nobody else is here" as one reader's eyeball instead of a re-runnable line.
+    """
     from agent.egress import tun
 
     if snap.source == "pool":
@@ -486,16 +491,17 @@ def _tun_gate(table: Table, snap: _Snapshot) -> Optional[EngineReport]:
             "要么在那份文件里自己加 tun 段",
             snap.port, str(snap.workdir or ""), snap.source,
             notes=(*snap.notes, "tun: refused — the pool file is not ours to rewrite"),
-        )
+        ), ()
     verdict = tun.preflight(table)
+    said = tuple(tun.status_lines(verdict))
     if verdict["ok"]:
-        return None
+        return None, said
     return EngineReport(
         FAILED,
         "TUN 被守卫拒了：" + "；".join(verdict["reasons"]),
         snap.port, str(snap.workdir or ""), snap.source,
-        notes=(*snap.notes, *tun.status_lines(verdict)),
-    )
+        notes=(*snap.notes, *said),
+    ), said
 
 
 def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0) -> EngineReport:
@@ -532,8 +538,9 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
     #: A TUN rewrites this machine's default route, so it gets a gate before anything
     #: is written or started: no admin, another party's TUN on the box, or an unreadable
     #: routing table all mean **refuse**, never "start without it and hope nobody notices".
+    tun_notes: tuple[str, ...] = ()
     if table.engine_tun.get("enabled"):
-        refused = _tun_gate(table, snap)
+        refused, tun_notes = _tun_gate(table, snap)
         if refused is not None:
             return refused
 
@@ -552,7 +559,7 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
         if verdict != "VERIFIED":
             return EngineReport(FAILED, f"the engine refused the config we compiled ({verdict})",
                                 snap.port, str(snap.workdir), snap.source, None, "",
-                                (*snap.notes, *render_notes, *acl_notes, why[:300]))
+                                (*snap.notes, *render_notes, *acl_notes, *tun_notes, why[:300]))
     else:
         acl_notes.append(
             f"engine reads {snap.config_path} (pool source) — that file is not ours to rewrite "
@@ -569,7 +576,7 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
                    "config_sha": _sha(data), "source": snap.source,
                    "started_by": "plobi", "started_at": time.time()}, home=home)
     ok, detail = probe_engine(snap.port)
-    notes = [*snap.notes, *render_notes, *acl_notes]
+    notes = [*snap.notes, *render_notes, *acl_notes, *tun_notes]
     if not ok:
         # Measured on this box (09:10): an engine workdir without GeoSite.dat
         # starts, prints "Can't find GeoSite.dat, start download", and never

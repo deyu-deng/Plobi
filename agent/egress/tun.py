@@ -169,10 +169,41 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
     return out
 
 
+def _holders_said(info: dict[str, Any]) -> str:
+    holders = info.get("holders") or []
+    if not holders and info.get("probe_errors"):
+        return "默认路由: 读不到（" + "；".join(info["probe_errors"]) + "）"
+    if not holders:
+        return "默认路由: 0 条（探针成功，这台没有默认路由）"
+    top = holders[0]
+    return (
+        f"默认路由: {len(holders)} 条，最优 metric 在 {top.get('name') or '?'}"
+        f"（{top.get('description') or '无描述'}，metric {top.get('metric')}）"
+    )
+
+
+def _adapters_said(info: dict[str, Any]) -> str:
+    foreign = info.get("foreign_tun") or []
+    if not foreign:
+        return "场上别人的 tunnel/虚拟网卡: 无（探针成功）"
+    names = ", ".join(str(e.get("name") or e.get("description")) for e in foreign[:4])
+    return f"场上别人的 tunnel/虚拟网卡: {names}"
+
+
 def status_lines(info: dict[str, Any]) -> list[str]:
-    """The same reading in prose, for `plobi network status` (裁定 94: one reading)."""
+    """The same reading in prose, for `plobi network status` (裁定 94: one reading).
+
+    Both machine readings are printed **even when the guard passes** — otherwise
+    "nobody else owns the default route" would only be somebody's one-time eyeball,
+    not something the next reader can re-run (架构师 23:2x ①).
+    """
     if not info.get("requested"):
         return ["tun: 没要求（表里 engine.tun.enabled 不是 true）"]
-    if info.get("ok"):
-        return [f"tun: 可以开 —— {info['name']}（stack {info['stack']}，管理员在场，场上没有别人的 TUN）"]
-    return [f"tun: 拒绝开启（{info['name'] or '未命名'}）"] + [f"  - {r}" for r in info.get("reasons", [])]
+    head = (
+        f"tun: 守卫放行 —— {info.get('name')}（stack {info.get('stack')}）"
+        if info.get("ok")
+        else f"tun: 守卫拒绝开启 —— {info.get('name') or '未命名'}"
+    )
+    lines = [head, f"  {_holders_said(info)}", f"  {_adapters_said(info)}"]
+    lines += [f"  - {r}" for r in info.get("reasons", [])]
+    return lines
