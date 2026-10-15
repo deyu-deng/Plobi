@@ -299,6 +299,61 @@ def sessions_for_agent(agent_id: str) -> list[str]:
     return [latest] if latest else []
 
 
+def leg_for_sessions(
+    session_ids: Iterable[str],
+    *,
+    db_path: Optional[Path] = None,
+) -> Optional[dict]:
+    """这组会话**刚才真走过**的那条腿 —— R-092 要的面上读数。
+
+    真源只有 ``session_model_usage``：按会话记 ``model`` / ``billing_provider`` /
+    ``last_seen``，写它的是计费那一步，不是"我打算用哪个"。``model_for(entry)`` 给的是
+    **配置里的路由**（注册表 + 角色默认），两者可以不一致——今天用户问「你现在用的什么模型」
+    时 L1 是靠一条切换通知答的，而那条通知刚从库里撤走（Code `305ad585`），所以面上必须有
+    这一格，否则它就没得读了。
+
+    取 ``last_seen`` 最大的那一行（**关系**，不是"第一行"）；读不到返回 ``None``，
+    调用方按"省略这个键"处理——空字符串会被前端当成一条真读数。
+    """
+    ids = [str(sid) for sid in session_ids if str(sid).strip()]
+    if not ids:
+        return None
+    target = Path(db_path) if db_path else default_db_path()
+    if not target.exists():
+        return None
+
+    placeholders = ",".join("?" * len(ids))
+    try:
+        conn = sqlite3.connect(str(target), timeout=2.0)
+    except sqlite3.Error:
+        return None
+    try:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({USAGE_TABLE})")}
+        if not {"model", "last_seen"} <= columns:
+            return None
+        provider = ", billing_provider" if "billing_provider" in columns else ""
+        row = conn.execute(
+            f"SELECT model{provider}, last_seen FROM {USAGE_TABLE} "
+            f"WHERE session_id IN ({placeholders}) "
+            f"ORDER BY last_seen DESC LIMIT 1",
+            ids,
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if not row:
+        return None
+    model = str(row[0] or "").strip()
+    if not model:
+        return None
+    return {
+        "model": model,
+        "billingProvider": (str(row[1] or "").strip() if provider else ""),
+        "lastSeen": row[-1],
+    }
+
+
 def totals_for_agent(agent_id: str, *, db_path=None) -> "UsageTotals":
     return totals_for_sessions(sessions_for_agent(agent_id), db_path=db_path)
 
@@ -353,11 +408,15 @@ def agent_row(entry: AgentEntry) -> dict:
     透出去，前端才辨得出「同一个项目登记了两条」，不用替用户猜。
     """
     totals = totals_for_agent(entry.name)
+    leg = leg_for_sessions(sessions_for_agent(entry.name))
     row: dict = {
         "id": entry.name,
         "name": agent_display_name(entry),
         "status": status_for(entry.name),
         "model": model_for(entry),
+        # R-092：配置里那条（model）与刚才真走过的那条（actualModel）是两件事，
+        # 面上要分得开。读不到就整个键省略，前端按"没有读数"处理，不当"没走过模型"。
+        "actualModel": (leg or {}).get("model"),
         "todayCalls": totals.calls,
         "profile": entry.profile_name,
         "category": entry.category,
