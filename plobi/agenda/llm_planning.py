@@ -1,0 +1,348 @@
+"""裁定 149：明天那份计划**由 L1 排**，代码退到「给材料 + 校边界 + 退回重排」。
+
+这条模块存在的原因是把责任归属写死，而不是再调一版阈值：`planning.py` 那套把剩余时间
+均分给每个项目的分配函数（现读形状 = 11 个项目各 42 分 51 秒、14:10→22:44，summary 自己
+列「未能安排：Resonote（缺 0.7 小时）…」）排出来的东西用户不认——用户 22:1x 的原话是
+「**一定要 LLM 参与。不要代码自动生成**」「**反正就是一天排满就行了**」。
+
+三条纪律写在这里，不留在注释里：
+
+1. **代码不许替 L1 改数据**。校验只报问题，不修数据：不裁时间、不挪条目、不删通勤。
+   不通过就带着问题清单**退回重排**（:func:`plan_with_llm` 的重问回路），
+   重排到上限仍不过 ⇒ 抛 :class:`PlanRejected` 让调用方当场点名，**绝不静默落一版"差不多"的**。
+2. **边界只有四条**（:func:`validate_proposal`）：睡眠与三餐锚点不许被挤掉 · 同一时段不许双订 ·
+   总量不许超过当天清醒窗口 · 占满相邻两项之间唯一间隔的通勤条目不许存在。
+   第四条是**关系判据**（通勤条目 ≥ 它两侧可用的空档 ⇒ 违规），不是"通勤超过 N 分钟"那种数字。
+3. **排完必须留一句"为什么这么排"**（裁定 145 的留痕要求）。缺这句的提案直接算不合格——
+   它和"派了工要写派给谁"是同一条纪律，不是文案要求。
+
+前置（`WP-PLAN-COMPLETION-ACK` / `R-099`：`plan_items` 没有状态列 ⇒ 同一条作业连排五天）
+由产品线在落。本模块因此**不写库**：它只负责把材料给出去、把边界守住、把不合格的退回去。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Callable, Iterable, Optional, Sequence
+
+from . import planning, store
+
+# 睡眠锚点的识别词（作息种子是用户自己写的模板，不是我们编的分类）。判据用词表而不是
+# 模板 id：模板 id 会变，"睡觉要睡"不会。
+_SLEEP_WORDS = ("觉", "睡")
+
+# 通勤类条目的识别：标题里带这些词。同一条作业换教室不算通勤，那是课表本身。
+_COMMUTE_WORDS = ("通勤", "走路", "步行", "赶车", "坐车", "地铁", "公交", "骑车")
+
+MAX_REPLANS = 2
+
+
+class PlanRejected(RuntimeError):
+    """重排到上限仍然不合格。带着最后一轮的问题清单抛出，调用方照原话点名。"""
+
+    def __init__(self, violations: Sequence[str], attempts: int) -> None:
+        super().__init__("；".join(violations) or "提案不合格")
+        self.violations = list(violations)
+        self.attempts = attempts
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """L1 交回来的那一版计划。`items` 是排好的条目，`reason` 是「为什么这么排」。"""
+
+    items: tuple[dict[str, Any], ...]
+    reason: str
+    attempts: int = 1
+    violations_seen: tuple[str, ...] = field(default_factory=tuple)
+
+
+# --------------------------------------------------------------------------- #
+# ① 材料口：L1 排之前必须读到的那几样，一次给齐
+# --------------------------------------------------------------------------- #
+
+def plan_materials(conn: Any, day: str) -> dict[str, Any]:
+    """把裁定 149① 列的那五样材料收成一个可 JSON 化的包。
+
+    只读，不写。缺哪样就照实标缺（`missing`），不许拿空数组冒充「明天没事」。
+    """
+    events = store.list_events(conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59") or []
+    kept, _yielded, moved = planning.place_anchors_for_day(conn, day, list(events))
+    anchors = planning.kept_anchors_as_dicts(kept)
+    yesterday = planning.l1_plan_view(_shift_day(day, -1), [], db_path=None)
+
+    missing: list[str] = []
+    # 完成态（R-099）落地之前，「昨天做完了哪些」这台读不出来——照实说，不拿 event 数量冒充。
+    if not _has_completion_state():
+        missing.append("昨天的完成情况（plan_items 还没有状态列，R-099 在落）")
+
+    return {
+        "for_date": day,
+        "waking_window": _waking_window(conn, day),
+        "classes": _by_kind(events, "class"),
+        "deadlines": _by_kind(events, "ddl", "task"),
+        "other_events": _others(events),
+        "routine_anchors": anchors,
+        "anchors_moved": moved,
+        "project_pace": [
+            {"name": entry.name, "weekly_hours": hours}
+            for entry, hours in planning.paced_projects()
+        ],
+        "yesterday": yesterday,
+        "missing": missing,
+    }
+
+
+def build_prompt(materials: dict[str, Any], *, extra: Optional[Sequence[str]] = None) -> str:
+    """给 L1 的那段口令。`extra` 是上一轮的问题清单——退回重排时把违规原样带回去。"""
+    import json
+
+    lines = [
+        "你来排明天（" + str(materials.get("for_date")) + "）的一天。规则四条，一条都不能破：",
+        "1) **一天排满**：清醒窗口内不留大块空白；但**睡眠与三餐锚点不许被挤掉**，"
+        "它们占的时段就是你的边界。",
+        "2) **同一时段不许双订**：两件事不许叠在一起。",
+        "3) **相邻两项之间只够一次步行通勤的那种间隔，不许再写一条通勤占掉它**"
+        "——那种空档本来就是留给走路的，写成条目等于把它吃掉。",
+        "4) 排完必须交一句**为什么这么排**（`reason`）。没有这句的提案算不合格。",
+        "材料如下（缺的照实缺，别编）：",
+        json.dumps(materials, ensure_ascii=False, default=str),
+    ]
+    if extra:
+        lines.append("上一版被打回，问题是：")
+        lines.extend("- " + str(v) for v in extra)
+        lines.append("请改掉这些问题重新排一版，不要只改措辞。")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# ② 边界校验：只报问题，不动数据
+# --------------------------------------------------------------------------- #
+
+def validate_proposal(
+    items: Iterable[dict[str, Any]],
+    *,
+    anchors: Sequence[dict[str, Any]],
+    waking: tuple[datetime, datetime],
+) -> list[str]:
+    """返回违规清单（空 = 合格）。**这个函数一个字都不改 `items`。**"""
+    rows = [dict(item) for item in items]
+    spans = [(row, _span_of(row)) for row in rows]
+    problems: list[str] = []
+
+    for row, span in spans:
+        if span is None:
+            problems.append(f"「{_title(row)}」缺起止时间")
+    timed = [(row, span) for row, span in spans if span is not None]
+
+    # 边界一：生活锚点不许被挤掉
+    for anchor in anchors:
+        a_span = _span_of(anchor)
+        if a_span is None:
+            continue
+        for row, (start, end) in timed:
+            if _is_anchor_row(row, anchor) or not _overlaps(start, end, *a_span):
+                continue
+            problems.append(
+                f"「{_title(row)}」挤掉了作息锚点「{_title(anchor)}」"
+                f"（{a_span[0].strftime('%H:%M')}–{a_span[1].strftime('%H:%M')}）"
+            )
+
+    # 边界二：不许双订
+    for i in range(len(timed)):
+        for j in range(i + 1, len(timed)):
+            (row_a, (s_a, e_a)), (row_b, (s_b, e_b)) = timed[i], timed[j]
+            if _overlaps(s_a, e_a, s_b, e_b):
+                problems.append(f"「{_title(row_a)}」与「{_title(row_b)}」同一时段双订")
+
+    # 边界三：总量不许超过当天清醒窗口
+    for row, (start, end) in timed:
+        if start < waking[0] or end > waking[1]:
+            problems.append(
+                f"「{_title(row)}」排在清醒窗口之外"
+                f"（{start.strftime('%H:%M')}–{end.strftime('%H:%M')}）"
+            )
+
+    # 边界四：占满相邻两项之间唯一间隔的通勤条目（关系判据，不写分钟数）
+    ordered = sorted(timed, key=lambda pair: pair[1][0])
+    for index, (row, (start, end)) in enumerate(ordered):
+        if not _is_commute(row):
+            continue
+        prev_end = ordered[index - 1][1][1] if index > 0 else None
+        next_start = ordered[index + 1][1][0] if index + 1 < len(ordered) else None
+        if prev_end is None or next_start is None:
+            continue
+        gap = (next_start - prev_end).total_seconds()
+        if (end - start).total_seconds() >= gap:
+            problems.append(
+                f"「{_title(row)}」把「{_title(ordered[index - 1][0])}」与"
+                f"「{_title(ordered[index + 1][0])}」之间那段空档占满了——"
+                "那段本来就是留给步行通勤的，不许再写成一条"
+            )
+
+    return problems
+
+
+# --------------------------------------------------------------------------- #
+# ③ 重排回路：不合格就退回重问，到上限就点名
+# --------------------------------------------------------------------------- #
+
+def plan_with_llm(
+    day: str,
+    llm_call: Callable[[str], Any],
+    *,
+    conn: Any = None,
+    max_replans: int = MAX_REPLANS,
+) -> Proposal:
+    """让 L1 排一版：给材料 → 收提案 → 校边界 → 不合格带问题清单重问。
+
+    `llm_call(prompt)` 返回 dict（`items` + `reason`）或 JSON 字符串。**不写库**：
+    完成态那一半（R-099）落地之前，写库这条路归 `planning.generate_evening_plan`。
+    """
+    owns_conn = conn is None
+    conn = conn or store.connect(None)
+    try:
+        materials = plan_materials(conn, day)
+        anchors = materials["routine_anchors"]
+        waking = tuple(_dt(value) for value in materials["waking_window"])
+        prompt = build_prompt(materials)
+        seen: list[str] = []
+        for attempt in range(1, max_replans + 2):
+            parsed = _parse_proposal(llm_call(prompt))
+            proposal = parsed["items"]
+            problems = validate_proposal(proposal, anchors=anchors, waking=waking)
+            if not parsed["reason"]:
+                # 裁定 149④：不写「为什么这么排」就是没留痕，与裁定 145 同一条纪律。
+                problems = problems + ["没交「为什么这么排」（reason）——裁定 149④ 的留痕"]
+            if not problems:
+                return Proposal(
+                    items=tuple(proposal), reason=parsed["reason"],
+                    attempts=attempt, violations_seen=tuple(seen),
+                )
+            seen.extend(problems)
+            prompt = build_prompt(materials, extra=problems)
+        raise PlanRejected(list(problems), max_replans + 1)
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# 小工具（时间解析只在这一处）
+# --------------------------------------------------------------------------- #
+
+def _parse_proposal(raw: Any) -> dict[str, Any]:
+    """把 L1 交回来的东西归成 ``{"items": [...], "reason": "..."}``。
+
+    字符串（模型常这么回）先 JSON 解析；解析不动就抛出去让调用方点名，
+    不猜一版空计划当答案。
+    """
+    if isinstance(raw, str):
+        import json
+
+        raw = json.loads(raw)
+    if isinstance(raw, dict):
+        items = raw.get("items") or raw.get("plan") or []
+        reason = str(raw.get("reason") or raw.get("why") or "").strip()
+    else:
+        items, reason = list(raw or []), ""
+    return {"items": [dict(item) for item in items if isinstance(item, dict)], "reason": reason}
+
+
+def _span_of(row: dict[str, Any]) -> Optional[tuple[datetime, datetime]]:
+    start, end = _dt(row.get("start_at")), _dt(row.get("end_at"))
+    if start is None or end is None or end <= start:
+        return None
+    return start, end
+
+
+def _dt(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    return a_start < b_end and b_start < a_end
+
+
+def _title(row: dict[str, Any]) -> str:
+    return str(row.get("title") or row.get("id") or "（无名条目）")
+
+
+def _is_anchor_row(row: dict[str, Any], anchor: dict[str, Any]) -> bool:
+    if row.get("template_id") and row.get("template_id") == anchor.get("template_id"):
+        return True
+    return str(row.get("id") or "") == str(anchor.get("id") or "")
+
+
+def _is_commute(row: dict[str, Any]) -> bool:
+    title = _title(row)
+    return any(word in title for word in _COMMUTE_WORDS)
+
+
+def _waking_window(conn: Any, day: str) -> tuple[str, str]:
+    """清醒窗口 = 「前一段睡眠结束」→「当天这段睡眠开始」。
+
+    睡眠锚点跨零点（今天 23:30 → 明早 07:30），所以**只查当天那一条会把窗口算反**
+    （起点晚于终点 ⇒ 边界三把每份提案都打回）。这里同时取前一天与当天两天的睡眠段。
+    真取数跑出来的第一条错就是这个，测试里手喂窗口把它盖住了。
+    """
+    spans: list[tuple[datetime, datetime]] = []
+    for probe in (_shift_day(day, -1), day):
+        try:
+            rows = planning.enabled_anchors_for_day(conn, probe)
+        except Exception:
+            rows = []
+        for template, start, end in rows:
+            if any(word in str(getattr(template, "title", "")) for word in _SLEEP_WORDS):
+                spans.append((start, end))
+
+    waking_start = next((end for _start, end in spans if end.date().isoformat() == day), None)
+    waking_end = next((start for start, _end in spans if start.date().isoformat() == day), None)
+    if waking_start is not None and waking_end is not None and waking_start < waking_end:
+        return waking_start.isoformat(), waking_end.isoformat()
+
+    # 拿不全就退回整天，并在材料里照实说这是兜底——不假装知道作息。
+    return f"{day}T00:00:00", f"{day}T23:59:00"
+
+
+def _shift_day(day: str, delta: int) -> str:
+    from datetime import timedelta
+
+    return (datetime.fromisoformat(day).date() + timedelta(days=delta)).isoformat()
+
+
+def _by_kind(events: Sequence[Any], *kinds: str) -> list[dict[str, Any]]:
+    return [_event_row(event) for event in events if str(getattr(event, "kind", "")) in kinds]
+
+
+def _others(events: Sequence[Any]) -> list[dict[str, Any]]:
+    return [_event_row(event) for event in events
+            if str(getattr(event, "kind", "")) not in ("class", "ddl", "task")]
+
+
+def _event_row(event: Any) -> dict[str, Any]:
+    return {
+        "id": event.id, "title": event.title, "kind": event.kind,
+        "start_at": str(event.start_at), "end_at": str(event.end_at),
+        "evidence": dict(event.evidence or {}),
+    }
+
+
+def _has_completion_state() -> bool:
+    """`plan_items` 有没有状态列（R-099）。现核：没有 ⇒ 材料里照实标缺。"""
+    try:
+        conn = store.connect(None)
+    except Exception:
+        return False
+    try:
+        columns = {row[1] for row in conn.execute("pragma table_info(plan_items)")}
+    finally:
+        conn.close()
+    return bool({"status", "done", "completed_at"} & columns)
