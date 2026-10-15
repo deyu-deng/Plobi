@@ -12,6 +12,16 @@ describe('settings helpers', () => {
     expect(options).toContain('hindsight')
   })
 
+  // WP-MIND-OFFICIAL-BRAIN: the brain is the default external provider on the
+  // backend, so a dropdown that cannot name it is a UI that hides the truth.
+  // The empty entry stays first (that is the "off" state), mind comes next.
+  it('offers Mind as the recommended memory provider', () => {
+    const options = enumOptionsFor('memory.provider', '', {})
+
+    expect(options[0]).toBe('')
+    expect(options[1]).toBe('mind')
+  })
+
   describe('defineFieldCopy', () => {
     it('flattens nested field copy paths', () => {
       const copy = defineFieldCopy({

@@ -79,6 +79,31 @@ def normalize_tool_schema(schema: Any) -> Optional[Dict[str, Any]]:
     return schema
 
 
+# The brain is the workspace's own memory surface: it holds the user's persona,
+# diary and notes, and the app already writes agenda summaries into it
+# (``plobi/agenda/mind_sync.py``). Every other provider in ``plugins/memory/``
+# talks to a service somebody else runs. So Mind is the default external
+# provider, and the others are alternatives rather than peers.
+OFFICIAL_MEMORY_PROVIDER = "mind"
+
+
+def resolve_memory_provider_name(configured: object) -> str:
+    """Decide which external memory provider a config asks for.
+
+    Three states have to stay distinct or the default silently overrides a
+    decision someone already made:
+
+    * key absent / ``None`` — nothing was decided → use the official provider.
+      Whether it can actually load is *its* question (``is_available()``), not
+      this function's, so there is one answer to "is a brain configured here".
+    * ``""`` — an explicit opt-out. Honoured.
+    * a name — honoured, including the other eight providers.
+    """
+    if configured is None:
+        return OFFICIAL_MEMORY_PROVIDER
+    name = str(configured).strip()
+    return name
+
 def memory_provider_tools_enabled(enabled_toolsets: Optional[List[str]]) -> bool:
     """Return whether external memory-provider tools should be exposed."""
     if enabled_toolsets is None:
