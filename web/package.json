@@ -12,9 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@plobi/shared": "file:../apps/shared",
     "@nous-research/ui": "0.18.2",
     "@observablehq/plot": "^0.6.17",
+    "@plobi/shared": "file:../apps/shared",
     "@react-three/fiber": "^9.8.1",
     "@tailwindcss/vite": "^4.3.3",
     "@xterm/addon-fit": "^0.11.0",
@@ -42,15 +42,15 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.4.0",
     "three": "^0.186.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.0",
-    "vite": "^8.3.2",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^8.3.4",
     "vitest": "^4.1.5"
   }
 }
