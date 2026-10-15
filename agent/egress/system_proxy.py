@@ -351,6 +351,68 @@ def status(table: Optional[Table] = None, *, home: str | Path | None = None) -> 
     }
 
 
+#: Always-direct, same list the PAC hard-codes above.
+_ALWAYS_DIRECT = ("localhost", "*.local", "*.lan", "127.0.0.1", "[::1]",
+                  "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16")
+
+
+def desktop_view(table: Optional[Table] = None, *, home: str | Path | None = None) -> dict[str, Any]:
+    """The table, in Chromium's dialect — what Electron's own sessions should do.
+
+    Why this exists next to the PAC rather than instead of it: ``session.setProxy`` does not
+    execute our PAC, and the desktop has traffic of its own (the window, the embed session, the
+    remote-OAuth session) that must not quietly follow the machine's settings instead of the
+    table.  Chromium's bypass list is *richer* than WinINET's (it takes CIDR and IPv6), so the
+    rules ``ProxyOverride`` could not say are said here, and nothing is narrowed on the way.
+
+    It re-decides nothing (裁定 94): ``declared`` is the table's own takeover switch, the port
+    is the engine's mixed port, and ``mode`` only says whether we can hand traffic to that port
+    at all.  The desktop still follows the system when the table has not taken over.
+    """
+    table = table if table is not None else load_table()
+    port = table.engine_mixed_port
+    out: dict[str, Any] = {"declared": bool(table.system_proxy_enabled), "mode": "system",
+                           "proxy": "", "bypass": [], "unexpressible": [], "note": ""}
+
+    if not out["declared"]:
+        out["note"] = "表没接管系统代理：桌面跟着系统设置走"
+        return out
+    if not port:
+        out["mode"] = "off"
+        out["note"] = "接管声明了但 engine.mixed_port 没写：桌面不许在没有出口可交的情况下直连"
+        return out
+
+    bypass = list(_ALWAYS_DIRECT)
+    for rule in table.rules:
+        if rule.via != "direct":
+            continue
+        if rule.kind in ("geosite", "all"):
+            # A `geosite:` classification or a catch-all cannot be said as a bypass — the engine
+            # is the one that can answer those, so they stay handed over. Named, never dropped.
+            out["unexpressible"].append(rule.match)
+            continue
+        if rule.kind == "exact":
+            bypass.append(rule.value)
+        elif rule.kind == "suffix":
+            bypass.append(f"*.{rule.value}")
+        elif rule.kind == "cidr":
+            try:
+                net = ipaddress.ip_network(rule.value, strict=False)
+            except ValueError:
+                out["unexpressible"].append(rule.match)
+                continue
+            bypass.append(str(net) if net.version == 4 else f"[{net}]")
+        else:
+            out["unexpressible"].append(rule.match)
+
+    out["mode"] = "engine"
+    out["proxy"] = f"http://127.0.0.1:{port}"
+    out["bypass"] = list(dict.fromkeys(bypass))
+    if out["unexpressible"]:
+        out["note"] = f"{len(out['unexpressible'])} 条 direct 规则 Chromium 也说不清，交给引擎按同一张表判"
+    return out
+
+
 def status_lines(info: dict[str, Any]) -> list[str]:
     """The same reading in prose, for the CLI (裁定 94: one reading, several renderings)."""
     if not info.get("supported"):

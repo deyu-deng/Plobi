@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -76,13 +77,95 @@ def egress_root(home: str | Path | None = None) -> Path:
     return egress_dir(home)
 
 
+#: Where a **packaged** app put the three files. Set by the desktop's main process from
+#: `process.resourcesPath/egress` and inherited by every child it spawns — the alternative
+#: (telling the user to run a script after install) is the thing 口径 32 says must not exist.
+BUNDLE_ENV = "PLOBI_EGRESS_ASSET_DIR"
+
+
+def bundle_dir() -> Path | None:
+    """The随包 directory, or None in a source checkout / when the build shipped without them."""
+    raw = (os.environ.get(BUNDLE_ENV) or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_dir() else None
+
+
 def artifact_path(artifact: Artifact, *, home: str | Path | None = None,
                   workdir: str | Path | None = None) -> Path:
-    """The geo files live next to the config the engine is started on; the binary under `bin/`."""
-    if artifact.subdir:
-        return egress_root(home) / artifact.subdir / artifact.basename
-    base = Path(workdir) if workdir is not None else egress_root(home)
-    return base / artifact.basename
+    """Where this artifact actually is: 随包 first, then `$PLOBI_HOME/egress`, then the engine's workdir.
+
+    随包 wins because it is the copy that shipped with *this build* and the one whose digest the
+    manifest knows; a stale hand-placed file in the home directory must not silently outrank it.
+    """
+    roots: list[Path] = []
+    bundle = bundle_dir()
+
+    if bundle is not None:
+        roots.append(bundle / artifact.subdir if artifact.subdir else bundle)
+    roots.append(egress_root(home))
+    if workdir is not None:
+        roots.append(Path(workdir))
+
+    for root in roots:
+        candidate = root / artifact.basename
+        if candidate.is_file():
+            return candidate
+
+    # Nothing is there: name the place a human could put it (the home side, not the bundle —
+    # a shipped app's resources dir is read-only by intent).
+    subdir = artifact.subdir
+    return (egress_root(home) / subdir / artifact.basename) if subdir else (egress_root(home) / artifact.basename)
+
+
+def in_workdir(artifact: Artifact, workdir: str | Path) -> Path:
+    """The path the **engine** looks at. `artifact_path` may answer with the 随包 copy; this one
+    never does — asking it "is the geo data present" would read the bundle and lie about the
+    directory mihomo was actually started in."""
+    return Path(workdir) / artifact.basename
+
+
+def seed_into(workdir: str | Path, *, home: str | Path | None = None) -> list[str]:
+    """Place the engine's own data files into its working directory — **copy, never download**.
+
+    The cold-start deadlock this closes was measured on this box: with no `GeoSite.dat` next to
+    the config, mihomo prints ``Can't find GeoSite.dat, start download`` and never binds, and
+    that download itself needs the egress the engine is supposed to provide (纸 §28).  An
+    installed app has the files; requiring someone to copy them by hand is the thing this
+    function exists to make unnecessary.
+    """
+    import shutil
+
+    target = Path(workdir)
+    placed: list[str] = []
+    if not target.is_dir():
+        return [f"引擎工作目录 {target} 不在场：没地方播，先让它建出来再说"]
+
+    for artifact in ARTIFACTS:
+        if not artifact.subdir:
+            dst = in_workdir(artifact, target)
+
+            if dst.is_file():
+                continue
+            src = artifact_path(artifact, home=home)
+
+            if not src.is_file() or src.resolve() == dst.resolve():
+                continue
+            try:
+                shutil.copy2(src, dst)
+                placed.append(
+                    f"随包播了 {artifact.basename}（{dst.stat().st_size} 字节，来自 {src}）"
+                )
+            except OSError as exc:
+                placed.append(f"{artifact.basename} 没能从 {src} 播到 {dst}：{type(exc).__name__} {exc}")
+
+    return placed
+
+
+def roots_note() -> str:
+    bundle = bundle_dir()
+    return f"随包落点 {bundle}" if bundle else "没有随包落点（源码态或这版构建没带）"
 
 
 def _digest(path: Path, limit: int = 64 * 1024 * 1024) -> str:
@@ -137,12 +220,18 @@ def geo_warnings(workdir: str | Path) -> list[str]:
     """
     out = []
     for artifact in (GEOSITE, GEOIP):
-        if not artifact_path(artifact, workdir=workdir).is_file():
-            out.append(
-                f"engine workdir {workdir} has no {artifact.basename} — mihomo will print "
-                f"'start download' and never bind (that download needs the egress this engine "
-                f"provides); place it there ({artifact.human}, sha256 {artifact.sha256[:12]}…)"
-            )
+        if in_workdir(artifact, workdir).is_file():
+            continue
+        source = artifact_path(artifact, workdir=workdir)
+        if source.is_file():
+            # 随包（或 $PLOBI_HOME）里有：起之前 seed_into 会复制过去，这不该读成一个洞。
+            out.append(f"{artifact.basename} 会在起之前从 {source} 播到 {workdir}（随包分发，不下载）")
+            continue
+        out.append(
+            f"engine workdir {workdir} has no {artifact.basename} — mihomo will print "
+            f"'start download' and never bind (that download needs the egress this engine "
+            f"provides); place it there ({artifact.human}, sha256 {artifact.sha256[:12]}…)"
+        )
     return out
 
 

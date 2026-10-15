@@ -247,6 +247,8 @@ export const ja = defineLocale({
     },
     network: {
       addExit: '出口を追加',
+      addGroup: 'グループを追加',
+      addNode: 'ノードを追加',
       addRule: 'ルールを追加',
       binary: 'エンジン実行ファイル',
       catchAll: '最後のルールは "*" である必要があります。起動する子プロセスに表現できるのはこれだけです。',
@@ -254,12 +256,19 @@ export const ja = defineLocale({
       engine: 'ルールエンジン',
       engineOnly: 'エンジンのみ',
       envDropped: '子プロセスに伝わらない',
+      credEnv: '認証情報の環境変数名（値はここに書かず、ここから読み戻さない）',
       exits: '出口',
+      groups: 'グループ（エンジン側のノードプール）',
+      importPath: 'プールファイルのパス（mihomo の config.yaml）',
+      importPool: 'プールファイルからノードとグループをインポート',
       intro:
         '接続先をどの出口に置くかを決めます。既定では Plobi が起動するものだけが対象です。下のスイッチが、このマシンのシステムプロキシまで引き取るかどうかを決めます — 引き取らない限りシステムプロキシの設定も DNS も変更しません。',
       match: '一致条件（ドメイン、*.suffix、CIDR、geosite:… または *）',
+      members: 'メンバー（カンマ区切り、または *）',
       name: '名前',
       port: '待ち受けポート',
+      nodes: 'ノード',
+      server: 'アドレス',
       proxyApplied: '引き取り結果',
       proxyDeclaredNotApplied: 'テーブルは引き取りを要求していますが、システムプロキシは私たちのものではありません — 出口が拒否されたか、他のプログラムが設定を書き換えた可能性があります。`plobi network proxy on` で現在の理由を確認してください。',
       proxyNotOurs: '引き取っていません：Plobi が起動するプロセスのみこのテーブルに従います。',
@@ -273,6 +282,7 @@ export const ja = defineLocale({
       status: '現在',
       systemProxy: 'このマシンのシステムプロキシを引き取る',
       title: 'プロキシ（VPN）',
+      type: 'タイプ',
       url: 'プロキシ URL'
     },
     notifications: {

@@ -14404,6 +14404,39 @@ async def get_network_status(profile: Optional[str] = None):
         return snapshot()
 
 
+class NetworkPoolImport(BaseModel):
+    path: str
+    profile: Optional[str] = None
+
+
+@app.post("/api/network/egress/import-pool")
+async def post_network_import_pool(body: NetworkPoolImport) -> Dict[str, Any]:
+    """Read someone's existing mihomo pool into table shape — read-only, and never a credential.
+
+    Why an endpoint and not just the CLI: 口径 32 says a machine that was installed should not have
+    to be configured from a command line, and `plobi network export-pool` is the only other way to
+    get pool membership into `network.egress.nodes`/`.groups`. Both call
+    :func:`plobi_cli.egress_config.export_pool_membership`, so there is one reader, not two.
+
+    The response carries **names only**: ``env_names`` is the set of ``*_env`` keys the pool needs.
+    Values stay in the pool file and in `.env` — echoing them through a local HTTP route would put
+    cleartext credentials in a place the ACL work (纸 §23) was specifically about keeping out.
+    """
+    from plobi_cli.egress_config import export_pool_membership
+
+    try:
+        snippet, env_values, notes = export_pool_membership(body.path or "")
+    except Exception as exc:  # noqa: BLE001 - a bad path is an answer, not a 500
+        return {"ok": False, "egress": {}, "env_names": [], "notes": [f"{type(exc).__name__}: {exc}"]}
+
+    return {
+        "ok": bool(snippet),
+        "egress": snippet or {},
+        "env_names": sorted(env_values or {}),
+        "notes": list(notes or []),
+    }
+
+
 class NetworkSystemProxyUpdate(BaseModel):
     enabled: bool
     profile: Optional[str] = None

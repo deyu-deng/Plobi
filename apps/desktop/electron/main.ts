@@ -118,7 +118,8 @@ import {
   readEgressIndicator,
   remoteEgressIndicator
 } from './egress-tray'
-import { installEmbedReferer } from './embed-referer'
+import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
+import { applyDesktopProxy, desktopProxyConfig, describeDesktopProxy } from './egress-proxy'
 import { readDirForIpc } from './fs-read-dir'
 import { probeGatewayWebSocket } from './gateway-ws-probe'
 import { scanGitRepos } from './git-repo-scan'
@@ -194,6 +195,13 @@ if (USER_DATA_OVERRIDE) {
 
 const DEV_SERVER = process.env.PLOBI_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged || Boolean(process.env.PLOBI_DESKTOP_IS_PACKAGED)
+
+// 装机后不碰命令行（口径 32）：随包的引擎三件套在 app 资源里，Python 侧无从自己发现
+// `process.resourcesPath`，只能由这里交给每一个子进程。源码态没有这个变量 ⇒
+// `agent/egress/engine_files.py` 退回 `$PLOBI_HOME/egress`，行为与今天一致。
+if (IS_PACKAGED && process.resourcesPath && !process.env.PLOBI_EGRESS_ASSET_DIR) {
+  process.env.PLOBI_EGRESS_ASSET_DIR = path.join(process.resourcesPath, 'egress')
+}
 const IS_MAC = process.platform === 'darwin'
 const IS_WINDOWS = process.platform === 'win32'
 const IS_WSL = isWslEnvironment()
@@ -8070,6 +8078,45 @@ async function readEgressAnswer(): Promise<{ remote: boolean; answer: unknown }>
   return { remote: false, answer: await fetchJson(`${connection.baseUrl}/api/network/status`, connection.token) }
 }
 
+/**
+ * The desktop's own three-plus-one lanes. `defaultSession` alone is not enough: the embed
+ * partition, the remote-OAuth partition and the link-title fetcher each reach the network
+ * themselves, so a table that says "hand everything to the engine" must be said to all of them
+ * (WP-EGRESS-ROUTING; 口径 32's "装机后不碰命令行" includes the app's own traffic).
+ */
+function desktopEgressSessions(): any[] {
+  const lanes: any[] = [session.defaultSession]
+
+  try {
+    lanes.push(session.fromPartition(EMBED_SESSION_PARTITION))
+    lanes.push(session.fromPartition(OAUTH_SESSION_PARTITION))
+    lanes.push(session.fromPartition('plobi:link-titles', { cache: false }))
+  } catch (err) {
+    rememberLog(`[egress-proxy] one lane is not reachable: ${String((err as Error)?.message || err)}`)
+  }
+
+  return lanes
+}
+
+let lastDesktopProxyKey = ''
+
+async function applyDesktopEgressProxy(answer: any) {
+  const view = answer?.desktop_proxy ?? null
+  const key = JSON.stringify(desktopProxyConfig(view))
+
+  if (key === lastDesktopProxyKey) {
+    return
+  }
+
+  const result = await applyDesktopProxy(desktopEgressSessions(), view)
+
+  lastDesktopProxyKey = key
+  rememberLog(
+    `[egress-proxy] ${describeDesktopProxy(result.config, view)} · ${result.applied} 档` +
+      (result.failed.length ? ` · 没应用成功：${result.failed.join('，')}` : '')
+  )
+}
+
 async function pollEgressIndicator() {
   if (egressPollBusy) {
     return
@@ -8085,6 +8132,12 @@ async function pollEgressIndicator() {
   } finally {
     egressPollBusy = false
   }
+
+  // Same read, second rendering: the tray dot and the sessions must not disagree about what
+  // the table says, so this consumes the snapshot the indicator already fetched.
+  await applyDesktopEgressProxy(egressObservation?.answer).catch((err: any) => {
+    rememberLog(`[egress-proxy] applying it failed: ${String(err?.message || err)}`)
+  })
 
   applyEgressBadge()
   refreshTrayMenu()

@@ -1,6 +1,6 @@
 import { session } from 'electron'
 
-const EMBED_SESSION_PARTITION = 'persist:plobi-embed'
+export const EMBED_SESSION_PARTITION = 'persist:plobi-embed'
 const EMBED_REFERER = 'https://www.youtube.com/'
 
 const YOUTUBE_REFERER_HOST_RE =
