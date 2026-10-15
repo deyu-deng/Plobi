@@ -240,3 +240,18 @@ def test_off_gives_back_the_static_values_it_wrote(machine, tmp_path):
     assert ok, detail
     assert machine == before, (machine, before)
     assert "ProxyOverride" not in machine, machine
+
+
+@pytest.mark.skipif("sys.platform != 'win32'")
+def test_read_current_reads_the_registry_and_never_invents_values():
+    """口径 27 的第二半：报"没接管"之前先证明那次注册表读**成功**了。"""
+    said = system_proxy.read_current()
+
+    assert isinstance(said, dict)
+    assert not ({"unreadable", "unsupported"} & set(said)), said
+    for key in said:
+        assert key in system_proxy.REG_VALUES, (key, said)
+    #: the claim this whole slice rests on: `ours` is computed from what the registry says,
+    #: never from "we enabled it a minute ago".
+    info = system_proxy.status(_table(system_proxy={"enabled": False}))
+    assert info["supported"] is True and isinstance(info["ours"], bool), info
