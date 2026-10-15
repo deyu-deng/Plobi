@@ -764,4 +764,40 @@ test('the handoff lands under $PLOBI_HOME, not on the C drive', () => {
   assert.match(body, /let ownTreePids: number\[\] = \[\]/, 'pid 清单必须声明在 try 外，否则 handoff 拿不到它')
   assert.match(body, /const reuseCommand = deriveElectronLegCommand\(plan\.command\)/, '复用腿只从那条既有 npm 启动行派生，不另写字面量')
   assert.match(body, /reuseCommand,[\s\S]{0,40}ownTreePids/, '两者必须真传进 handoff')
+  // 打包态同理：`--hidden` 是登录项带进来的，而 `relaunch()` 默认复用我们自己的 argv
+  // ⇒ 不过滤就会"重启成功但还是没窗"，从用户座位上看不出现在这条刀有没有效
+  assert.match(body, /app\.relaunch\(\{ args: process\.argv\.slice\(1\)\.filter/)
+  assert.match(body, /!== '--hidden'/, '打包态那条 --hidden 必须被滤掉')
+  assert.doesNotMatch(body, /app\.relaunch\(\)/, '裸 relaunch 会把 --hidden 一起带回去')
+})
+
+test('a tray restart clears the hidden-start flag on BOTH branches', () => {
+  const base = {
+    waitPid: 4244,
+    workingDirectory: 'D:/x/apps/desktop',
+    command: 'cmd /c npm run dev',
+    outcomeLogPath: 'D:/plobi/logs/tray-restart-handoff.log'
+  }
+  const cases: Array<[string, string]> = [
+    ['整树重起那一支', buildWindowsRestartHandoff(base)],
+    [
+      '复用旧 vite 那一支',
+      buildWindowsRestartHandoff({
+        ...base,
+        reuseCommand: deriveElectronLegCommand(base.command),
+        ownTreePids: [21812]
+      })
+    ]
+  ]
+
+  for (const [tag, script] of cases) {
+    const at = script.indexOf('set "PLOBI_DESKTOP_START_HIDDEN="')
+
+    assert.ok(at > 0, `${tag}：没清那颗隐藏启动旗`)
+    assert.ok(at < script.indexOf(':portloop'), `${tag}：必须在等端口之前就清，两支都要盖到`)
+    assert.ok(at < script.indexOf(':relaunch'), `${tag}：重起之前必须已经清掉`)
+    if (script.includes(':reuse')) {
+      assert.ok(at < script.indexOf(':reuse'), `${tag}：复用那一支也必须清`)
+    }
+  }
 })
