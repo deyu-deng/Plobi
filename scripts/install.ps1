@@ -3489,6 +3489,157 @@ function Invoke-PostInstallMode {
     Write-Info "Post-install complete"
 }
 
+# ── 数据目录：问一次、挡不合规、交回既有那处钉 HKCU（WP-INSTALL-DATADIR / 裁定 142）────
+#
+# One question, one validator, one writer.  `$PlobiHome` (the parameter block) stays the
+# only place the run-data landing spot is decided, and the HKCU pin in Set-PathVariable
+# keeps reading exactly that variable — so the directory chosen here is what an autostart
+# or a scheduled-task process will resolve to, with no second resolution path anywhere.
+
+function Test-InstallConsoleUsable {
+    # The same triple gate the autostash prompt uses: a human actually has to be able to
+    # answer, or Read-Host hangs an `irm | iex` run and the desktop's staged driver.
+    try {
+        return (
+            [Environment]::UserInteractive `
+            -and (-not [Console]::IsInputRedirected) `
+            -and (-not [Console]::IsOutputRedirected) `
+            -and ($Host.Name -eq "ConsoleHost")
+        )
+    } catch { return $false }
+}
+
+function Apply-DataDirChoice {
+    param($Resolved)
+
+    $script:PlobiHome = $Resolved.path
+    # InstallDir's own default already tracks $env:PLOBI_HOME.  Keep that relation when the
+    # home is chosen at install time, unless the caller passed -InstallDir explicitly —
+    # otherwise "my data goes to the data drive" would silently leave the checkout on the
+    # system drive, which is the half-chosen state this knife exists to prevent.
+    if (-not $script:InstallDirWasGiven -and $Resolved.path) {
+        $script:InstallDir = Join-Path $Resolved.path "plobi-agent"
+    }
+}
+
+function Resolve-DataDir {
+    <#
+       Pure decision: candidate path in, {ok, path, reason} out.  The three refusals carry
+       three different reasons on purpose — one opaque NO would mean the user cannot tell
+       whether to change the path, fix permissions, or leave this machine's policy alone.
+    #>
+    param(
+        [AllowEmptyString()][string]$Candidate,
+        [string]$PolicyFile = ""
+    )
+
+    $out = [pscustomobject]@{ ok = $false; path = ""; reason = "" }
+    $text = ("$Candidate").Trim().Trim([char]34).Trim([char]39)
+    if ($text -eq "") {
+        $out.reason = "空路径：没有落点，后面每一步都不知往哪儿写"
+        return $out
+    }
+
+    $expanded = $text
+    try { $expanded = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($text) } catch { }
+
+    $root = [IO.Path]::GetPathRoot($expanded)
+    if (-not $root -or -not (Test-Path -LiteralPath $root)) {
+        $out.reason = "落点所在的盘根本不存在：$expanded"
+        return $out
+    }
+
+    # Policy first, and only where a written disk policy exists.  Locating that file by
+    # scanning filesystem roots is deliberate: no drive letter is hard-coded here, so a
+    # machine without the policy simply does not get this refusal — and a policy refusal
+    # must not depend on whether the directory happens to be writable today.
+    $policyPath = $PolicyFile
+    if (-not $policyPath) {
+        $policyPath = ""
+        foreach ($r in (Get-PSDrive -PSProvider FileSystem | ForEach-Object { $_.Root })) {
+            $cand = Join-Path $r "_POLICY\directory-policy.md"
+            if (Test-Path -LiteralPath $cand) { $policyPath = $cand; break }
+        }
+    }
+    if ($policyPath -and (Test-Path -LiteralPath $policyPath) -and $env:SystemRoot) {
+        $systemDrive = ("$env:SystemRoot").Substring(0, 1)
+        if ($expanded.Substring(0, 1) -ieq $systemDrive) {
+            $out.reason = "系统盘：这台写着运行数据禁止残留系统盘（$policyPath），换到数据盘去"
+            return $out
+        }
+    }
+
+    # A sync client moves files under us in both directions; a half-synced database is not
+    # a failure either side could explain afterwards.
+    $syncRoots = @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial) | Where-Object { $_ }
+    $syncRoots += @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match "(?i)onedrive|dropbox|google[ _-]?drive|baidusync|坚果云|GoodSync" } |
+        ForEach-Object { $_.FullName })
+    foreach ($sr in $syncRoots) {
+        $trimmed = ($sr).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+        if ($trimmed -and $expanded.StartsWith($trimmed, [StringComparison]::OrdinalIgnoreCase)) {
+            $out.reason = "同步盘目录：它坐在 $trimmed 里面，网盘会双向搬动运行数据"
+            return $out
+        }
+    }
+
+    # Writable is proven by writing, not by reading ACLs.  Walk up to the first ancestor
+    # that exists — that is where we would create the rest — and actually create and remove
+    # a directory there.
+    $probe = $expanded
+    while ($probe -and -not (Test-Path -LiteralPath $probe)) { $probe = Split-Path -Parent $probe }
+    $trial = Join-Path $probe ("plobi-probe-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    try {
+        New-Item -ItemType Directory -Path $trial -ErrorAction Stop | Out-Null
+        Remove-Item -LiteralPath $trial -Recurse -Force -ErrorAction Stop
+    } catch {
+        $out.reason = "不可写：$probe 拒绝写入（权限、只读卷，或者它根本不是目录）"
+        return $out
+    }
+
+    $out.ok = $true
+    $out.path = $expanded
+    return $out
+}
+
+function Set-DataDirChoice {
+    # Called once, before anything creates a directory.  Non-interactive does NOT mean
+    # silent: the spot is still validated, still printed, still handed to the same pin.
+    $default = $PlobiHome
+
+    if ($NonInteractive -or -not (Test-InstallConsoleUsable)) {
+        $r = Resolve-DataDir -Candidate $default
+        if (-not $r.ok) {
+            Write-Err "数据目录不合规：$($r.reason)（非交互模式不当没看见，也不替你换一个目录）"
+            exit 1
+        }
+        Apply-DataDirChoice $r
+        Write-Info "数据目录（未询问：非交互或没有可用控制台）：$($r.path)"
+        return
+    }
+
+    while ($true) {
+        Write-Host ""
+        Write-Info "Plobi 的运行数据（配置、数据库、缓存）写在一个目录里。这台的盘规可能不许它留在系统盘。"
+        Write-Host "  建议：$default"
+        $answer = Read-Host "  数据目录（回车=建议值，输入路径=改到别处，q=退出）"
+        if ($answer -match "^\s*(q|quit|exit)\s*$") {
+            Write-Err "已取消：数据目录没定，后面每一步都没有落点"
+            exit 1
+        }
+        $candidate = if ([string]::IsNullOrWhiteSpace($answer)) { $default } else { $answer }
+        $r = Resolve-DataDir -Candidate $candidate
+        if ($r.ok) {
+            Apply-DataDirChoice $r
+            Write-Success "数据目录：$($r.path)"
+            Write-Info "同一个值由既有那处写进用户环境变量（PLOBI_HOME）——不钉住，自启与计划任务起的进程读不到它。"
+            return
+        }
+        Write-Warn "这个目录不能用：$($r.reason)"
+        Write-Host "  换一条路径，或回车回到建议值。"
+    }
+}
+
 function Main {
     Write-Banner
     Invoke-AllStages
@@ -3541,6 +3692,13 @@ try {
         $payload | ConvertTo-Json -Depth 5 -Compress | Write-Output
         exit 0
     }
+
+    # Where the run data goes: asked once, validated, written back into $PlobiHome — the
+    # same variable the HKCU pin reads.  Placed after the informational early exits
+    # (-ProtocolVersion / -Manifest) and before any stage or Main, because those are the
+    # first things that create directories under $PlobiHome.
+    $script:InstallDirWasGiven = $PSBoundParameters.ContainsKey("InstallDir")
+    Set-DataDirChoice
 
     # Use PSBoundParameters rather than $Stage truthiness so that an
     # explicit `-Stage ""` from a misbehaving driver doesn't fall through
