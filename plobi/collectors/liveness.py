@@ -14,6 +14,9 @@
 - 探针的天花板也写在这：一次**没有新增**的拉取不在 `events` 里留痕，所以这里只能说
   "最后一次进新条目是几点"，不能说"最后一次跑采集是几点"。想要后者，得采集器自己记一份
   （`zju` 那份 `zju_state.json` 就是它自己记的，不在本探针的通用面里按名字分支）。
+- 那一格 `collecting` 只报注册表点没点开关，**不报"有没有人排它"**：这台现在的情况是
+  `collecting_sources()` 全仓零调用方（10-15 现核，见 `Docs/reference/agent-register.md` 的 WP-COLLECT-WIN 一格），
+  那是"没有执行方"这条现核事实，不是一个能从这里读出来的数——把它写进探针就等于编一个读数。
 - 认不出的状态**不编句子**：表里没有的 source 一律 `never`，库不在就是 `no_store`。
 """
 
@@ -68,10 +71,24 @@ class SourceLiveness:
     age_days: Optional[float]
     #: 板有人动过、但没有新东西进来 —— 只在两个时刻都读得到时才说，不猜。
     touched_after_last_write: bool
+    #: 注册表那个 `collecting` 开关点没点。`None` = 这一条不在注册表里（如 `manual`），
+    #: 不是"没点"——把读不到说成假，就是下一颗假绿。
+    collecting: Optional[bool]
     note: str
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def collecting_flags() -> dict[str, bool]:
+    """注册表里每条信源的采集开关 —— 唯一真源是 `plobi.collectors.registry`，这里不抄名单。"""
+    try:
+        from plobi.collectors import registry
+
+        return {sid: bool(registry.spec(sid).collecting) for sid in registry.source_ids()}
+    except Exception as exc:                        # noqa: BLE001 - 读不到就是这一格没读数
+        logger.debug("liveness probe: registry unreadable: %s", exc)
+        return {}
 
 
 def _iso(value: Any) -> str:
@@ -96,16 +113,22 @@ def read_source_liveness(
     now: Optional[datetime] = None,
     stale_after_days: float = STALE_AFTER_DAYS,
     expected_sources: tuple[str, ...] = (),
+    switches: Optional[dict[str, bool]] = None,
 ) -> dict[str, Any]:
-    """每条信源的活性。`expected_sources` 里没出现过的信源补一行 `never`，不静默省略。"""
+    """每条信源的活性。`expected_sources` 里没出现过的信源补一行 `never`，不静默省略。
+
+    `switches` 不传就去问注册表（唯一真源）；传进来是给测试钉读数用的，跳过那次问。
+    """
     reference = now or datetime.now()
+    flags = collecting_flags() if switches is None else dict(switches)
     path = Path(db_path) if db_path else _default_db()
 
     if path is None or not path.is_file():
         return {
             "checked_at": reference.isoformat(timespec="seconds"),
             "stale_after_days": stale_after_days,
-            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False, note_for(STATE_NO_STORE)).as_dict()
+            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False,
+                                       flags.get(source), note_for(STATE_NO_STORE)).as_dict()
                         for source in (expected_sources or ("(unknown)",))],
             "verdict": "读不到日程库，这条探针什么都不能说",
         }
@@ -124,7 +147,8 @@ def read_source_liveness(
         return {
             "checked_at": reference.isoformat(timespec="seconds"),
             "stale_after_days": stale_after_days,
-            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False, note_for(STATE_NO_STORE)).as_dict()
+            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False,
+                                       flags.get(source), note_for(STATE_NO_STORE)).as_dict()
                         for source in (expected_sources or ("(unknown)",))],
             "verdict": f"读不动日程库：{exc}",
         }
@@ -144,15 +168,21 @@ def read_source_liveness(
             state = STATE_STALE if age is None or age > stale_after_days else STATE_LIVE
         touched = bool(created and updated and updated > created)
         out.append(SourceLiveness(source, state, count, _iso(created), _iso(updated), age,
-                                  touched, note_for(state)))
+                                  touched, flags.get(source), note_for(state)))
 
     live = [s for s in out if s.state == STATE_LIVE]
+    # 只把"读得到开关且确实是关"的算进这一格：`None`（这条不在注册表里，如 `manual`）不算"没点"。
+    off = sorted(s.source for s in out if s.state != STATE_LIVE and s.collecting is False)
     if not out:
         verdict = "库里一条信源都没有：这条链没有在采"
     elif not live:
         verdict = "每一条信源都超时没进新条目 —— 没有东西进来（本地改动不算）"
+        if off:
+            verdict += f"；其中 {len(off)} 条连采集开关都没点：{'、'.join(off)}（就算有执行方也轮不到它）"
     else:
         verdict = f"{len(live)} 条还在进新条目：" + "、".join(s.source for s in live)
+        if off:
+            verdict += f"；另有 {len(off)} 条开关没点：{'、'.join(off)}"
     return {
         "checked_at": reference.isoformat(timespec="seconds"),
         "stale_after_days": stale_after_days,

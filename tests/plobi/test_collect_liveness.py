@@ -48,7 +48,8 @@ def by_source(data):
 class TestStates:
     def test_recent_write_is_live_old_one_is_stale(self, tmp_path):
         data = read_source_liveness(
-            _store(tmp_path, [_row("timetable", 0.01), _row("zju", 4.4)]), now=NOW)
+            _store(tmp_path, [_row("timetable", 0.01), _row("zju", 4.4)]), now=NOW,
+            switches={"timetable": True, "zju": True})
         got = by_source(data)
 
         assert got["timetable"]["state"] == STATE_LIVE
@@ -58,14 +59,16 @@ class TestStates:
     def test_a_registered_source_that_never_landed_still_gets_a_row(self, tmp_path):
         """信源在注册表里就必须出现在读数里 —— 静默省略就是"看着像没有这个信源"。"""
         data = read_source_liveness(_store(tmp_path, [_row("timetable", 0)]),
-                                    now=NOW, expected_sources=("timetable", "wechat"))
+                                    now=NOW, expected_sources=("timetable", "wechat"),
+                                    switches={"timetable": True, "wechat": True})
         got = by_source(data)
 
         assert got["wechat"]["state"] == STATE_NEVER
         assert got["wechat"]["events"] == 0
 
     def test_everything_stale_says_the_chain_is_not_running(self, tmp_path):
-        data = read_source_liveness(_store(tmp_path, [_row("zju", 9), _row("manual", 5)]), now=NOW)
+        data = read_source_liveness(_store(tmp_path, [_row("zju", 9), _row("manual", 5)]), now=NOW,
+                                     switches={"zju": True, "manual": True})
 
         assert data["verdict"] == "每一条信源都超时没进新条目 —— 没有东西进来（本地改动不算）"
 
@@ -115,6 +118,42 @@ class TestStates:
 
         assert row["state"] == STATE_LIVE
         assert row["touched_after_last_write"] is False
+
+
+class TestCollectingSwitch:
+    """那一格只报"注册表点没点开关"，并把读不到与没点分两种颜色说。"""
+
+    def test_a_stale_source_whose_switch_is_off_is_named_in_the_verdict(self, tmp_path):
+        data = read_source_liveness(_store(tmp_path, [_row("zju", 9)]), now=NOW, switches={"zju": False})
+
+        assert by_source(data)["zju"]["collecting"] is False
+        assert "连采集开关都没点" in data["verdict"] and "zju" in data["verdict"]
+
+    def test_an_unregistered_source_is_not_reported_as_switched_off(self, tmp_path):
+        """`manual` 这种不在注册表里的条目 ⇒ 那一格是 `None`，不许被算进"没点开关"。
+
+        读不到（`None`）说成假，就是下一颗假绿的形状。
+        """
+        data = read_source_liveness(_store(tmp_path, [_row("manual", 9)]), now=NOW, switches={})
+        row = by_source(data)["manual"]
+
+        assert row["collecting"] is None
+        assert "开关" not in data["verdict"]
+
+    def test_the_switch_comes_from_the_registry_not_a_copy_in_here(self, tmp_path, monkeypatch):
+        import types
+
+        from plobi.collectors import registry
+
+        monkeypatch.setattr(registry, "source_ids", lambda: ("timetable", "zju"))
+        monkeypatch.setattr(registry, "spec",
+                            lambda sid: types.SimpleNamespace(collecting=(sid == "timetable")))
+
+        data = read_source_liveness(_store(tmp_path, [_row("timetable", 9), _row("zju", 9)]), now=NOW)
+        got = by_source(data)
+
+        assert got["timetable"]["collecting"] is True
+        assert got["zju"]["collecting"] is False
 
 
 class TestNotes:
