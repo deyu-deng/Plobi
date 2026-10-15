@@ -2447,21 +2447,14 @@ def _append_model_switch_marker(session: dict | None, *, model: str, provider: s
         session.setdefault("history", []).append(entry)
         session["history_version"] = int(session.get("history_version", 0)) + 1
 
-    try:
-        agent = session.get("agent")
-        db = getattr(agent, "_session_db", None) if agent is not None else None
-        if db is not None:
-            db.append_message(session_id=session_key, role="user", content=marker)
-            return
-
-        _ensure_session_db_row(session)
-        with _session_db(session) as scoped_db:
-            if scoped_db is not None:
-                scoped_db.append_message(
-                    session_id=session_key, role="user", content=marker
-                )
-    except Exception:
-        logger.debug("failed to persist model switch marker", exc_info=True)
+    # R-092 / 裁定 145 那一族的连带：**不落库**。
+    # 这条通知是给「正在跑的这一轮」看的，落库之后它就长在这页聊天里：它在 L1 的记忆中
+    # 冒充用户说的话（08:58 实测连着 7 条 role=user），每轮重新进上下文、每轮付 token，
+    # 而用户问「你现在哪条腿」时它读的是这条消息而不是状态面读数 —— 同一件事两个真源。
+    # 真源只有一个：``session_model_usage``（按会话记 model / billing_provider / last_seen，
+    # 状态面与账单都从它读）。面上的「当前哪条腿」不许回头去数聊天消息。
+    # 角色仍然写 user 而不是 system：#48338 那一条没变——严格的 OpenAI 兼容后端
+    # （vLLM / Qwen）会拒绝出现在列表中间的 system 消息。
 
 
 def _write_config_key(key_path: str, value):
