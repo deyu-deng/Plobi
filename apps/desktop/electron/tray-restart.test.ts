@@ -585,7 +585,7 @@ test('without an outcome log the endings stay on stdout (back-compat)', () => {
       .some(
         (line) =>
           line.trim() ===
-          `echo [%TIME%] [tray-restart] old pid 7 still alive after ${RESTART_HANDOFF_MAX_WAIT_SECONDS}s; not relaunching`
+          'echo [%TIME%] [tray-restart] old pid 7 still alive after %OLD% seconds; not relaunching' 
       ),
     '每条结局都要带时刻：10-15 那次只有 "exited with code -1073741510"，无从判断卡在哪一段、等了多久'
   )
@@ -680,7 +680,7 @@ test('the handoff waits for the renderer port to free rather than killing anythi
 
   assert.match(script, /Get-NetTCPConnection -LocalPort 5174 -State Listen/,
     '端口判活只认结构化查询——这台用 `netstat | grep :5174` 数出过临时端口的假命中')
-  assert.match(script, /renderer port 5174 is free; relaunching/)
+  assert.match(script, /renderer port 5174 is free after %PORT% seconds; relaunching/)
   assert.match(script, /renderer port 5174 still held after .*not relaunching/, '等不到就不起，并说清')
   // Three endings, all written into the outcome log: free / held / probe cannot answer.
   // The third must still relaunch — a broken probe must never be the reason no window comes back.
@@ -717,6 +717,27 @@ test('a leftover that is OUR OWN vite is reused, not waited out and not killed',
   assert.match(script, /reusing it, relaunching only the Electron leg/)
   assert.ok(!/taskkill|Stop-Process/i.test(script), '复用不是杀：这支里一处杀进程都不许有')
 })
+
+test('the wait budget is a clock deadline, not a round count slept through with timeout', () => {
+  const script = buildWindowsRestartHandoff({
+    waitPid: 4244,
+    workingDirectory: 'D:/x/apps/desktop',
+    command: 'cmd /c npm run dev',
+    outcomeLogPath: 'D:/plobi/logs/tray-restart-handoff.log',
+    maxWaitSeconds: 42
+  })
+
+  // 10-15 14:4x 现读：这台 PATH 上 `timeout` 先命中 D:\Software\Git\usr\bin\timeout.exe（GNU），
+  // 它不认 `/t`、立刻返回——所谓「等 60 秒」两段在 2 秒内烧完。日志里那句耗时把它露出来了。
+  assert.ok(!/timeout .t 1/.test(script), '两段等待都不许再用 timeout：GNU 的在它前面，而且 stdin 一被重定向就立即返回')
+  assert.equal((script.match(/ping -n 2 127\.0\.0\.1 >nul/g) || []).length, 2, '两段各一枚睡')
+  assert.equal((script.match(/call :spent SPENT %T0%/g) || []).length, 2, '两段共用同一个整体预算 T0 + LIMIT')
+  assert.equal((script.match(/if %SPENT% GEQ %LIMIT% goto/g) || []).length, 2)
+  assert.match(script, /set .a LIMIT=42/)
+  assert.ok(script.indexOf('call :secs T0') < script.indexOf(':waitforold'), '起点必须在第一段之前取')
+  assert.match(script, /set \/a LEFT-=1/, '读不到钟时轮数仍是上限——不许退化成无限轮询')
+})
+
 
 test('deriveElectronLegCommand only derives from a plain npm run dev line', () => {
   assert.equal(deriveElectronLegCommand('cmd /c npm run dev'), 'cmd /c npm run dev:electron')
@@ -800,4 +821,31 @@ test('a tray restart clears the hidden-start flag on BOTH branches', () => {
       assert.ok(at < script.indexOf(':reuse'), `${tag}：复用那一支也必须清`)
     }
   }
+})
+
+test('every stage of the handoff logs its OWN elapsed seconds — and never a made-up 0', () => {
+  const script = buildWindowsRestartHandoff({
+    waitPid: 4244,
+    workingDirectory: 'D:/x/apps/desktop',
+    command: 'cmd /c npm run dev',
+    outcomeLogPath: 'D:/plobi/logs/tray-restart-handoff.log',
+    reuseCommand: deriveElectronLegCommand('cmd /c npm run dev'),
+    ownTreePids: [21812]
+  })
+
+  // 裁定 144②：今天不评开发态快慢，不等于永远不评——打包态要评时得有一段开发态的基线可查。
+  assert.ok(script.indexOf('call :secs PREV') < script.indexOf('set /a LEFT='), '检查点没在等旧进程之前立起来')
+  assert.match(script, /old pid 4244 gone after %OLD% seconds/, '第一段（老进程没走）要带自己的耗时')
+  assert.match(script, /is free after %PORT% seconds/, '第二段（端口没让）要带自己的耗时')
+  assert.match(script, /exited with code %ERRORLEVEL% after %CMD% seconds/, '第三段（重起命令自己红了）要带自己的耗时')
+  assert.match(script, /still held after %PORT% seconds; not relaunching/, '拒重起那一支也要带耗时')
+  assert.equal((script.match(/call :secs PREV/g) || []).length, 3,
+    '开头一枚 + 整树与复用两支各一枚：后两支必须在开跑那条腿之前重立检查点，否则 %CMD% 会把等端口的时间也算进去')
+
+  // 读不出时间就写 unknown，绝不写 0——把「假 0」写进基线比没有基线更坏。
+  assert.match(script, /:secs[\s\S]*set "ELAP=unknown"/)
+  assert.match(script, /if not "%PREV%"=="" if not "%ENOW%"=="" set \/a ELAP=ENOW-PREV/)
+  assert.match(script, /%TT: =0%/, '小时带前导空格（" 2:05:01"）必须先补零，否则整条算术崩')
+  assert.match(script, /1%TT:~0,2%-100/, '08\/09 会被 cmd 当八进制——用 1NN-100 绕开')
+  assert.match(script, /if %ELAP% LSS 0 set \/a ELAP\+=86400/, '跨午夜要绕回来，不许报负数')
 })
