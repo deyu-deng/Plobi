@@ -2082,6 +2082,28 @@ function Set-MindRootEnv {
     if (-not (Test-Path -LiteralPath $mindRoot)) {
         Write-Info "The brain is not at $mindRoot yet -- restore it there from its own git repository."
     }
+
+    # The second root, same rules: derived from the home that won, pinned by the same
+    # mechanism and scope, never created here.  Since the 2026-10-14 split the
+    # human-facing surface is its own repo and -- by that same ruling -- it has NO
+    # remote, so saying "restore it from its own git repository" here would be a lie:
+    # the only thing it can come back from is a bundle in bundles/keep.
+    # Leaving VAULT_ROOT unset is also not neutral: plobi/mind/paths.py refuses a
+    # Vault/ write once the old in-brain surface is gone, so an installer that pinned
+    # only the brain would hand over a machine with half the memory surface missing.
+    $vaultRoot = Join-Path $PlobiHomePath "vault"
+    $existingVault = [Environment]::GetEnvironmentVariable("VAULT_ROOT", $Scope)
+    if (-not $existingVault -or $existingVault -ne $vaultRoot) {
+        [Environment]::SetEnvironmentVariable("VAULT_ROOT", $vaultRoot, $Scope)
+        Write-Success "Set VAULT_ROOT=$vaultRoot"
+    } else {
+        Write-Info "VAULT_ROOT already configured"
+    }
+    $env:VAULT_ROOT = $vaultRoot
+
+    if (-not (Test-Path -LiteralPath $vaultRoot)) {
+        Write-Info "The human surface is not at $vaultRoot yet -- it has no remote by design; restore it from bundles/keep (scripts/backup_repos.py writes those bundles)."
+    }
 }
 
 function Set-PathVariable {
