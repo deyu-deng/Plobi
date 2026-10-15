@@ -345,6 +345,34 @@ def test_timeout_becomes_a_tool_error(roster, monkeypatch):
     assert "Resonote" in payload["error"] and "秒" in payload["error"]
 
 
+def test_a_timed_out_turn_hands_back_the_partial_answer_it_already_paid_for(roster, monkeypatch):
+    """R-089 / R-072：固定 180 秒到点，`_run_child` 已经把剩余 stdout 收回来了（`:652-655`），
+    以前在 handler 里被整个扔掉 ⇒ 那一趟的钱白花、L1 还以为什么都没发生。
+    现在必须交回，并且**明说是半句**。"""
+    half = "M0 现在还没开始做，我手上排的是 M-"
+    monkeypatch.setattr(AA, "_run_child", _fake_run(timed_out=True, returncode=-9, stdout=half))
+    payload = _error_payload(
+        AA.handle_agent_ask({"agent": LIVE_PROJECT, "question": "M0 到底开始做了没有"})
+    )
+
+    assert payload["ok"] is False
+    assert payload["partial_answer"] == half
+    assert half in payload["error"]
+    assert "半句" in payload["error"] and "不是完整回答" in payload["error"]
+
+
+def test_a_silent_timeout_says_it_said_nothing_instead_of_inventing_a_partial(roster, monkeypatch):
+    """空是读数：子进程一个字没吐的时候不许编出「部分回答」来，也不许让 L1 以为拿到了半句。"""
+    monkeypatch.setattr(AA, "_run_child", _fake_run(timed_out=True, returncode=-9, stdout=""))
+    payload = _error_payload(
+        AA.handle_agent_ask({"agent": LIVE_PROJECT, "question": "在吗"})
+    )
+
+    assert payload["ok"] is False
+    assert payload["partial_answer"] == ""
+    assert "一个字都没吐出来" in payload["error"]
+
+
 def test_missing_binary_becomes_a_tool_error(roster, monkeypatch):
     monkeypatch.setattr(AA, "_run_child", _fake_run(missing_binary=True))
     payload = _error_payload(
