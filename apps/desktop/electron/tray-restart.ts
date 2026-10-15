@@ -284,7 +284,7 @@ export function planRelaunch({
     kind: 'dev',
     command: devCommand,
     cwd: devCwd,
-    note: '开发态：必须重起 npm run dev 那一整棵树（Vite + Electron + 后端），只重拉 Electron 是假重启'
+    note: '开发态：默认重起 npm run dev 那一整棵树（Vite + Electron + 后端），只重拉 Electron 是假重启。唯一例外（用户 10-15 拍甲）：端口被**我们自己那棵残留 vite**占着时复用它、只重起 Electron 那条腿；占用者不是我们的 ⇒ 不重起，只在日志里说清'
   }
 }
 
@@ -331,13 +331,27 @@ export function buildHiddenHandoffLauncher(batPath: string): string {
   ].join('\r\n')
 }
 
+/**
+ * The Electron-only leg, **derived from the same npm line the autostart writes** — this
+ * module still does not invent a second launcher artifact (the rule in `planRelaunch`).
+ * `cmd /c npm run dev` → `cmd /c npm run dev:electron`; anything whose dev line is not
+ * literally `npm run dev` yields '' and the caller must then refuse to reuse.
+ */
+export function deriveElectronLegCommand(devCommand: string): string {
+  const replaced = String(devCommand || '').replace(/\bnpm run dev(?![\w:-])/, 'npm run dev:electron')
+
+  return replaced === String(devCommand || '') ? '' : replaced
+}
+
 export function buildWindowsRestartHandoff({
   waitPid,
   workingDirectory,
   command,
   outcomeLogPath,
   maxWaitSeconds = RESTART_HANDOFF_MAX_WAIT_SECONDS,
-  rendererPort = DEV_RENDERER_PORT
+  rendererPort = DEV_RENDERER_PORT,
+  reuseCommand,
+  ownTreePids
 }: {
   waitPid: number
   workingDirectory: string
@@ -345,6 +359,8 @@ export function buildWindowsRestartHandoff({
   outcomeLogPath?: string
   maxWaitSeconds?: number
   rendererPort?: number
+  reuseCommand?: string
+  ownTreePids?: number[]
 }): string {
   const limit = Math.max(1, Math.floor(Number(maxWaitSeconds) || RESTART_HANDOFF_MAX_WAIT_SECONDS))
   const pid = Number(waitPid)
@@ -356,6 +372,71 @@ export function buildWindowsRestartHandoff({
   // The handoff is spawned detached with stdio ignored, so a bare `echo` lands
   // in the void. Redirect every ending into the fixed outcome log instead.
   const outcome = outcomeLogPath ? `>>"${outcomeLogPath}" ` : ''
+
+  // Reuse is only on the table when BOTH the Electron leg and a positive list of
+  // "pids that belong to the tree we are replacing" were handed to us. Without the
+  // list there is nothing to identify the leftover with, so the held branch stays
+  // the honest refusal it was.
+  const ownPids = (ownTreePids || []).filter((p) => Number.isInteger(p) && p > 0)
+  const reuse = reuseCommand && ownPids.length > 0 ? String(reuseCommand) : ''
+  const holderList = ownPids.join(',')
+
+  const portStage: string[] = [
+    ':waitport',
+    'rem The leftover dev Vite belongs to the tree we just replaced, and the new one cannot',
+    'rem bind the renderer port while it still holds it. Wait for the port to go FREE instead',
+    'rem of killing anything: the tree above us is the user to close, and a wrong kill takes',
+    'rem other sessions with it. Every ending below is logged, so "I clicked restart and',
+    'rem nothing came back" has an answer in the file instead of a guess.',
+    'set /a LEFT2=%LEFT%',
+    ':portloop',
+    `powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${rendererPort} -State Listen -ErrorAction SilentlyContinue) { exit 10 } else { exit 0 }" 2>nul`,
+    'rem errorlevel is a ">=" test, so the two gates below read as: under 10 = FREE, exactly',
+    'rem 10 = HELD, 11 or above (9009 = no PowerShell) = the probe itself could not answer —',
+    'rem and that third case falls through to "relaunch anyway". A probe that cannot speak',
+    'rem must never be the reason the app does not come back. (Measured 10-15 12:5x: getting',
+    'rem this backwards sent a HELD port down the blind branch, i.e. straight into relaunching',
+    'rem into the collision we came here to avoid — and the source-text test passed anyway.)',
+    'if not errorlevel 10 goto portfree',
+    reuse ? 'if not errorlevel 11 goto portown' : 'if not errorlevel 11 goto portwait',
+    `${outcome}echo [%TIME%] [tray-restart] cannot tell whether port ${rendererPort} is free; relaunching anyway`,
+    'goto relaunch',
+    ':portwait',
+    'set /a LEFT2-=1',
+    'if %LEFT2% LSS 1 goto portbusy',
+    'timeout /t 1 /nobreak >nul',
+    'goto portloop',
+    ':portfree',
+    `${outcome}echo [%TIME%] [tray-restart] renderer port ${rendererPort} is free; relaunching`,
+    'goto relaunch',
+    ':portbusy',
+    `${outcome}echo [%TIME%] [tray-restart] renderer port ${rendererPort} still held after ${limit}s; not relaunching - something else owns it, close it and restart again`,
+    'exit /b 3'
+  ]
+
+  if (reuse) {
+    // Measured 10-15: the old vite does NOT reliably die with us, so "wait for the port"
+    // alone turns the restart into a logged refusal. Owner picked 甲: reuse it. The
+    // leftover counts as ours ONLY if its pid is in the tree snapshot we took before
+    // quitting AND its command line still says vite — a stranger on 5174 is never reused.
+    portStage.splice(
+      portStage.indexOf(':portwait'),
+      0,
+      ':portown',
+      `powershell -NoProfile -Command "$o=@(${holderList}); $q=@(Get-NetTCPConnection -LocalPort ${rendererPort} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess); foreach($x in $q){ if($o -contains [int]$x){ $c=(Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$x) -ErrorAction SilentlyContinue).CommandLine; if($c -match 'vite'){ exit 20 } } }; exit 30" 2>nul`,
+      'rem 20 = 占着端口的正是我们刚换掉那棵树里的 vite（pid 来自退出前拍下的会话树快照，',
+      'rem 且命令行仍写着 vite）；30 或读不出 = 别人占着 ⇒ 不重起，只在日志里说清。',
+      'if not errorlevel 20 goto portwait',
+      'if not errorlevel 21 goto reuse',
+      'goto portwait',
+      ':reuse',
+      `cd /d "${workingDirectory}"`,
+      `${outcome}echo [%TIME%] [tray-restart] port ${rendererPort} is held by OUR OWN leftover vite - reusing it, relaunching only the Electron leg: ${reuse}`,
+      reuse,
+      `${outcome}echo [%TIME%] [tray-restart] reuse relaunch exited with code %ERRORLEVEL%`,
+      'exit /b 0'
+    )
+  }
 
   return [
     '@echo off',
@@ -369,33 +450,7 @@ export function buildWindowsRestartHandoff({
     'if %LEFT% LSS 1 goto giveup',
     'timeout /t 1 /nobreak >nul',
     'goto waitforold',
-    ':waitport',
-    'rem The leftover dev Vite belongs to the tree we just replaced, and the new one cannot',
-    'rem bind the renderer port while it still holds it. Wait for the port to go FREE instead',
-    'rem of killing anything: the tree above us is the user to close, and a wrong kill takes',
-    'rem other sessions with it. Every ending below is logged, so "I clicked restart and',
-    'rem nothing came back" has an answer in the file instead of a guess.',
-    'set /a LEFT2=%LEFT%',
-    ':portloop',
-    `powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${rendererPort} -State Listen -ErrorAction SilentlyContinue) { exit 10 } else { exit 0 }" 2>nul`,
-    'rem errorlevel is a ">=" test: 10 exactly = still held, under 10 = free, 11+ = the probe',
-    'rem itself could not answer (e.g. 9009, no PowerShell). A probe that cannot speak must',
-    'rem never be the reason the app does not come back.',
-    'if not errorlevel 10 goto portfree',
-    'if not errorlevel 11 goto portwait',
-    `${outcome}echo [%TIME%] [tray-restart] cannot tell whether port ${rendererPort} is free; relaunching anyway`,
-    'goto relaunch',
-    ':portwait',
-    'set /a LEFT2-=1',
-    'if %LEFT2% LSS 1 goto portbusy',
-    'timeout /t 1 /nobreak >nul',
-    'goto portloop',
-    ':portfree',
-    `${outcome}echo [%TIME%] [tray-restart] renderer port ${rendererPort} is free; relaunching`,
-    'goto relaunch',
-    ':portbusy',
-    `${outcome}echo [%TIME%] [tray-restart] renderer port ${rendererPort} still held after ${limit}s; not relaunching - something else owns it, close it and restart again`,
-    'exit /b 3',
+    ...portStage,
     ':relaunch',
     `cd /d "${workingDirectory}"`,
     `${outcome}echo [%TIME%] [tray-restart] old pid ${pid} gone; relaunching: ${command}`,

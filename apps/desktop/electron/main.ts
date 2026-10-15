@@ -39,6 +39,7 @@ import {
   buildHiddenHandoffLauncher,
   buildWindowsRestartHandoff,
   createRestartGuard,
+  deriveElectronLegCommand,
   planRelaunch,
   planRestartConfirmation,
   restartLabels,
@@ -7899,6 +7900,7 @@ async function restartFromTray() {
     teardownOwnedBackends()
 
     let gone
+    let ownTreePids: number[] = []
 
     try {
       // Snapshot OUR dev session tree before waiting (裁定 WP-TRAY-RESTART-REPAIR
@@ -7908,7 +7910,11 @@ async function restartFromTray() {
       // Packaged: the app IS its own tree — its children are torn down (and
       // force-killed) before this wait, and its launcher's subtree (explorer)
       // would swallow the whole desktop, so no exclusion beyond selfPid.
-      const ownTreePids = IS_PACKAGED ? [] : ownDevTreePids(listPlobiTreeProcesses(), process.pid)
+      //
+      // The SAME snapshot is what the handoff later uses to tell "the leftover
+      // holding port 5174 is our own vite (reuse it)" from "a stranger owns it
+      // (refuse)" — measured 10-15: the old vite does not reliably die with us.
+      ownTreePids = IS_PACKAGED ? [] : ownDevTreePids(listPlobiTreeProcesses(), process.pid)
 
       rememberLog(
         `[tray-restart] own tree excluded from the wait: ${ownTreePids.join(',') || '（空——打包态或看不到会话根）'}`
@@ -7972,6 +7978,13 @@ async function restartFromTray() {
     //    = STATUS_CONTROL_C_EXIT, with no Electron ever relaunched).
     // So: write both files under $PLOBI_HOME, and start the batch through a hidden
     // wscript launcher — window style 0, its own console, immune to our CTRL events.
+    //
+    // And when the port does NOT free: measured 10-15, the old dev tree's Vite can
+    // outlive us (`concurrently -k` should have taken it down, it didn't), so waiting
+    // alone would turn every restart into a logged refusal. The owner picked 甲 —
+    // reuse that leftover and relaunch only the Electron leg — never kill it, and only
+    // when the holder's pid is in the tree snapshot above AND its command line still
+    // says vite. Anything else on 5174 stays a refusal.
     const handoffDir = path.join(PLOBI_HOME, 'logs', 'handoff')
     const stamp = Date.now()
     const scriptPath = path.join(handoffDir, `plobi-desktop-restart-${stamp}.bat`)
@@ -7981,12 +7994,18 @@ async function restartFromTray() {
     // or "did the restart even happen" is unanswerable after the fact.
     const handoffLogPath = path.join(PLOBI_HOME, 'logs', 'tray-restart-handoff.log')
 
+    const reuseCommand = deriveElectronLegCommand(plan.command)
+
     fs.mkdirSync(handoffDir, { recursive: true })
     fs.writeFileSync(scriptPath, buildWindowsRestartHandoff({
       command: plan.command,
       outcomeLogPath: handoffLogPath,
       waitPid: process.pid,
-      workingDirectory: plan.cwd
+      workingDirectory: plan.cwd,
+      // 端口没让位时复用谁（用户 10-15 拍甲）：只有拿得到「Electron 那一条腿」的命令、
+      // 且退出前拍到过自己那棵树的 pid 清单，才允许判定占用者是我们自己的 vite。
+      reuseCommand,
+      ownTreePids
     }), 'utf8')
     fs.writeFileSync(launcherPath, buildHiddenHandoffLauncher(scriptPath), 'utf8')
 

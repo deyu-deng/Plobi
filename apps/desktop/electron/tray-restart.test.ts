@@ -32,6 +32,7 @@ import {
   buildHiddenHandoffLauncher,
   buildWindowsRestartHandoff,
   createRestartGuard,
+  deriveElectronLegCommand,
   findLingeringProcesses,
   isOwnPlobiProcess,
   planRelaunch,
@@ -684,12 +685,44 @@ test('the handoff waits for the renderer port to free rather than killing anythi
   // Three endings, all written into the outcome log: free / held / probe cannot answer.
   // The third must still relaunch — a broken probe must never be the reason no window comes back.
   assert.match(script, /cannot tell whether port 5174 is free; relaunching anyway/)
-  assert.match(script, /if not errorlevel 10 goto portfree/, 'errorlevel 是 ">=" 语义，10 才算「被占」')
-  assert.match(script, /if not errorlevel 11 goto portwait/, '11+（含 9009 没有 powershell）走「探不到就照起」')
+  assert.match(script, /if not errorlevel 10 goto portfree/, 'errorlevel 是 ">=" 语义：小于 10 才是「端口空」')
+  assert.match(script, /if not errorlevel 11 goto portwait/, '恰好 10 = 被占 ⇒ 去等；11+（含 9009 没有 powershell）才落到「探不到就照起」')
+  assert.ok(
+    script.indexOf('if not errorlevel 11 goto portwait') < script.indexOf('cannot tell whether port'),
+    '顺序反了就是把 HELD 当「探不到」——直接重起撞端口，10-15 12:5x 真机探针抓到的正是这个'
+  )
   assert.ok(!/if errorlevel 10 \(/.test(script),
     '多行 if 块里的 %VAR% 在解析期就展开，倒计时会少算一轮——只准用 goto 串')
   assert.ok(!/taskkill|Stop-Process/i.test(script), '本线不杀进程：那棵树只能他本人托盘退出（误杀会连带别的会话）')
   assert.match(script, /:waitforold[\s\S]*goto waitport[\s\S]*:waitport[\s\S]*:portloop/, '老进程先没了，再等端口')
+  assert.ok(!/:reuse/.test(script), '没给身份清单就不许有复用这一支')
+})
+
+test('a leftover that is OUR OWN vite is reused, not waited out and not killed', () => {
+  const script = buildWindowsRestartHandoff({
+    waitPid: 4244,
+    workingDirectory: 'D:/x/apps/desktop',
+    command: 'cmd /c npm run dev',
+    outcomeLogPath: 'D:/plobi/logs/tray-restart-handoff.log',
+    reuseCommand: deriveElectronLegCommand('cmd /c npm run dev'),
+    ownTreePids: [17508, 20220, 13452]
+  })
+
+  assert.match(script, /\$o=@\(17508,20220,13452\)/, '复用判身份只认退出前拍下的那棵会话树')
+  assert.match(script, /-match 'vite'/, 'pid 命中还不够，命令行还得仍写着 vite')
+  assert.match(script, /if not errorlevel 11 goto portown/, '被占（恰好 10）⇒ 先判身份，不是直接等')
+  assert.match(script, /if not errorlevel 20 goto portwait[\s\S]*if not errorlevel 21 goto reuse/,
+    '只有"恰好 20"才复用；读不出（含 9009）继续等，等不到就照旧拒')
+  assert.match(script, /:reuse[\s\S]*cmd \/c npm run dev:electron/, '复用那一支只重起 Electron 那条腿')
+  assert.match(script, /reusing it, relaunching only the Electron leg/)
+  assert.ok(!/taskkill|Stop-Process/i.test(script), '复用不是杀：这支里一处杀进程都不许有')
+})
+
+test('deriveElectronLegCommand only derives from a plain npm run dev line', () => {
+  assert.equal(deriveElectronLegCommand('cmd /c npm run dev'), 'cmd /c npm run dev:electron')
+  assert.equal(deriveElectronLegCommand('cmd /c npm run dev:fake-boot'), '', '已经带腿名的不许再拼一层')
+  assert.equal(deriveElectronLegCommand('npm run developer'), '', '不许把 dev 当子串换掉')
+  assert.equal(deriveElectronLegCommand(''), '')
 })
 
 test('the batch is started hidden and in its own console (the window the user saw)', () => {
@@ -727,4 +760,8 @@ test('the handoff lands under $PLOBI_HOME, not on the C drive', () => {
   assert.match(body, /path\.join\(PLOBI_HOME, 'logs', 'handoff'\)/)
   assert.match(body, /fs\.mkdirSync\(handoffDir/, '写之前必须先把目录建出来')
   assert.match(body, /buildHiddenHandoffLauncher\(scriptPath\)/, 'bat 必须有隐藏启动器，不许再裸起 cmd')
+  // 复用那一支的两条输入都来自这同一个函数：派生出来的 Electron 腿 + 退出前拍下的会话树
+  assert.match(body, /let ownTreePids: number\[\] = \[\]/, 'pid 清单必须声明在 try 外，否则 handoff 拿不到它')
+  assert.match(body, /const reuseCommand = deriveElectronLegCommand\(plan\.command\)/, '复用腿只从那条既有 npm 启动行派生，不另写字面量')
+  assert.match(body, /reuseCommand,[\s\S]{0,40}ownTreePids/, '两者必须真传进 handoff')
 })
