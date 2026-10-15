@@ -138,7 +138,33 @@ HINDSIGHT = MemoryProvider(
 
 # Registry of providers that expose a desktop config surface. Providers without
 # an entry here (e.g. ``builtin``) simply render no config panel.
+# Mind is the workspace's own brain (a repo pinned by MIND_ROOT / VAULT_ROOT),
+# so it has no API key to collect. The two path fields exist to *surface* the
+# pointers with their current values — they read env first, which is the only
+# sanctioned source for a machine-local path (no drive letters in code).
+MIND = MemoryProvider(
+    name="mind",
+    label="Mind（本机脑仓 · 官方）",
+    fields=(
+        ProviderField(
+            key="mind_root",
+            label="MIND_ROOT（AI 的大脑）",
+            kind=KIND_TEXT,
+            env_fallbacks=("MIND_ROOT",),
+            description="脑仓根目录。留空则用环境变量 MIND_ROOT；它决定画像与召回在不在。",
+        ),
+        ProviderField(
+            key="vault_root",
+            label="VAULT_ROOT（人看的面）",
+            kind=KIND_TEXT,
+            env_fallbacks=("VAULT_ROOT",),
+            description="人看的面（日记/笔记/项目卡）。留空则用环境变量 VAULT_ROOT。",
+        ),
+    ),
+)
+
 MEMORY_PROVIDERS: dict[str, MemoryProvider] = {
+    MIND.name: MIND,   # 官方面排第一，不是并列
     HINDSIGHT.name: HINDSIGHT,
 }
 

@@ -1355,7 +1355,14 @@ def init_agent(
     agent._memory_manager = None
     if not skip_memory:
         try:
-            _mem_provider_name = mem_config.get("provider", "") if mem_config else ""
+            from agent.memory_manager import resolve_memory_provider_name as _resolve_provider
+
+            # Absent key -> the official brain; explicit empty string -> off.
+            # Loading it is still gated on the provider's own is_available() below,
+            # so "is a brain configured here?" has exactly one answer in the codebase.
+            _mem_provider_name = _resolve_provider(
+                mem_config.get("provider") if mem_config else None,
+            )
 
             if _mem_provider_name and _mem_provider_name.strip():
                 from agent.memory_manager import MemoryManager as _MemoryManager
