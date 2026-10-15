@@ -573,6 +573,11 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
             return refused
 
     snap.workdir.mkdir(parents=True, exist_ok=True)
+    #: The engine reads its geo data out of the directory it was started in. Copying it there
+    #: from 随包 is what makes "装机后不碰命令行" true: without it mihomo prints "start download"
+    #: and never binds, and that download needs the egress it is supposed to provide (纸 §28).
+    #: Copy only — this never reaches the network.
+    seed_notes = tuple(engine_files.seed_into(snap.workdir, home=home))
     data, render_notes = _render(snap, table)
     acl_notes: list[str] = []
     if snap.source != "pool":
@@ -587,7 +592,7 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
         if verdict != "VERIFIED":
             return EngineReport(FAILED, f"the engine refused the config we compiled ({verdict})",
                                 snap.port, str(snap.workdir), snap.source, None, "",
-                                (*snap.notes, *render_notes, *acl_notes, *tun_notes, why[:300]))
+                                (*snap.notes, *seed_notes, *render_notes, *acl_notes, *tun_notes, why[:300]))
     else:
         acl_notes.append(
             f"engine reads {snap.config_path} (pool source) — that file is not ours to rewrite "
@@ -604,7 +609,7 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
                    "config_sha": _sha(data), "source": snap.source,
                    "started_by": "plobi", "started_at": time.time()}, home=home)
     ok, detail = probe_engine(snap.port)
-    notes = [*snap.notes, *render_notes, *acl_notes, *tun_notes]
+    notes = [*snap.notes, *seed_notes, *render_notes, *acl_notes, *tun_notes]
     if not ok:
         # Measured on this box (09:10): an engine workdir without GeoSite.dat
         # starts, prints "Can't find GeoSite.dat, start download", and never

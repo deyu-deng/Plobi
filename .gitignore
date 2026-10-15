@@ -204,3 +204,6 @@ DataDefault.doubaoagent_mode*
 .morn-*.log
 .pp-*.log
 .env.example
+
+# 随包分发的路由引擎三件套：构建时从 PLOBI_EGRESS_SRC 投放，不进仓（裁定 134）
+apps/desktop/build/egress/

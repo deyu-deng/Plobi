@@ -1266,6 +1266,14 @@ export interface NetworkEgressBlock {
   system_proxy?: { enabled?: boolean }
 }
 
+/** What `POST /api/network/egress/import-pool` answers: table shape, env-var **names**, notes. */
+export interface NetworkPoolImport {
+  egress?: { groups?: NetworkEgressBlock['groups']; nodes?: NetworkEgressBlock['nodes'] }
+  env_names?: string[]
+  notes?: string[]
+  ok?: boolean
+}
+
 export interface NetworkSection {
   egress?: NetworkEgressBlock
   force_ipv4?: boolean

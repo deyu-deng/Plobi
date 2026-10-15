@@ -342,6 +342,8 @@ export const en: Translations = {
     },
     network: {
       addExit: 'Add exit',
+      addGroup: 'Add group',
+      addNode: 'Add node',
       addRule: 'Add rule',
       binary: 'Engine binary',
       catchAll: 'The last rule must be "*" — a spawned tool cannot express anything else.',
@@ -349,12 +351,18 @@ export const en: Translations = {
       engine: 'Rule engine',
       engineOnly: 'engine only',
       envDropped: 'not carried to spawned tools',
+      credEnv: 'Credential env-var name (the value never lives here, and is never read back)',
       exits: 'Exits',
+      groups: 'Groups (the engine-side node pool)',
+      importPath: 'Pool file path (a mihomo config.yaml)',
+      importPool: 'Import nodes and groups from a pool file',
       intro:
         'Which exit each destination uses. By default only what Plobi starts is routed — the switch below decides whether this machine\'s system proxy is handed over too. Without it Plobi does not set the system proxy and does not take over DNS; your browser and your own terminal keep their own route.',
       match: 'Match (domain, *.suffix, CIDR, geosite:…, or *)',
+      members: 'Members (comma-separated, or *)',
       name: 'Name',
       port: 'Listen port',
+      nodes: 'Nodes',
       proxyApplied: 'Takeover',
       proxyDeclaredNotApplied: 'The table asks for the takeover, but the system proxy is not ours — the exit may have refused it, or something else rewrote the settings. Run `plobi network proxy on` for the reason it gives right now.',
       proxyNotOurs: 'Not taken over: only processes Plobi starts follow this table.',
@@ -368,6 +376,8 @@ export const en: Translations = {
       status: 'Right now',
       systemProxy: 'Take over this machine\'s system proxy',
       title: 'Proxy (VPN)',
+      type: 'Type',
+      server: 'Address',
       url: 'Proxy URL'
     },
     notifications: {

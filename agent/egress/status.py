@@ -58,6 +58,9 @@ def snapshot(table: Table | None = None, *, home: str | None = None) -> dict:
         },
         "downgrades": engine.recent_downgrades(),
         "system_proxy": system_proxy.status(table),
+        # Electron's own traffic is a *rendering* of the same table, not a second decision:
+        # `session.setProxy` cannot read our PAC, so the backend says it in Chromium's dialect.
+        "desktop_proxy": system_proxy.desktop_view(table),
         # The guard runs OS probes, so it is only consulted when the table actually
         # asks for a TUN — the tray and panel poll this endpoint every few minutes.
         "tun": tun.preflight(table) if table.engine_tun.get("enabled") else {"requested": False},

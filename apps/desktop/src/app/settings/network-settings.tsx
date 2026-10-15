@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Globe } from '@/lib/icons'
-import { getNetworkEgress, getNetworkStatus, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
+import { getNetworkEgress, getNetworkStatus, importNetworkPool, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
 import type {
   NetworkEgressBlock,
   NetworkEgressRecord,
@@ -28,6 +28,43 @@ interface ExitRow {
   url: string
 }
 
+/**
+ * One engine-side member. A credential is **never a value in this row** — the field holds the
+ * name of the environment variable that holds it (`password_env` / `uuid_env`), so no cleartext
+ * ever round-trips through a settings pane, an HTTP body or a screenshot (纸 §23: 凭据只以 `*_env`
+ * 名字进表，值在编译器发射时读环境).
+ */
+interface NodeRow {
+  cred: string
+  credKey: string
+  name: string
+  port: string
+  raw: Record<string, unknown>
+  server: string
+  type: string
+}
+
+interface GroupRow {
+  include: string
+  name: string
+  raw: Record<string, unknown>
+  type: string
+}
+
+const CRED_FIELD: Record<string, string> = {
+  http: 'password_env',
+  https: 'password_env',
+  hysteria2: 'password_env',
+  shadowsocks: 'password_env',
+  socks5: 'password_env',
+  socks5h: 'password_env',
+  ss: 'password_env',
+  trojan: 'password_env',
+  tuic: 'password_env',
+  vless: 'uuid_env',
+  vmess: 'uuid_env'
+}
+
 function toRuleRows(record: NetworkEgressRecord | null): RuleRow[] {
   return (record?.network?.egress?.rules ?? []).map((rule) => ({ match: rule.match, via: rule.via }))
 }
@@ -36,6 +73,33 @@ function toExitRows(record: NetworkEgressRecord | null): ExitRow[] {
   return Object.entries(record?.network?.egress?.proxies ?? {}).map(([name, entry]) => ({
     name,
     url: entry?.url ?? ''
+  }))
+}
+
+export function toNodeRows(record: NetworkEgressRecord | null): NodeRow[] {
+  return Object.entries(record?.network?.egress?.nodes ?? {}).map(([name, entry]) => {
+    const raw = { ...((entry ?? {}) as Record<string, unknown>) }
+    const type = String(raw.type ?? 'ss')
+    const credKey = CRED_FIELD[type.toLowerCase()] ?? ''
+
+    return {
+      cred: credKey ? String(raw[credKey] ?? '') : '',
+      credKey,
+      name,
+      port: raw.port === undefined ? '' : String(raw.port),
+      raw,
+      server: String(raw.server ?? ''),
+      type
+    }
+  })
+}
+
+export function toGroupRows(record: NetworkEgressRecord | null): GroupRow[] {
+  return Object.entries(record?.network?.egress?.groups ?? {}).map(([name, entry]) => ({
+    include: Array.isArray(entry?.include) ? entry.include.join(', ') : String(entry?.include ?? ''),
+    name,
+    raw: { ...(entry ?? {}) },
+    type: entry?.type ?? 'url-test'
   }))
 }
 
@@ -52,6 +116,8 @@ function toExitRows(record: NetworkEgressRecord | null): ExitRow[] {
 export function buildSection(
   exits: ExitRow[],
   rules: RuleRow[],
+  nodes: NodeRow[],
+  groups: GroupRow[],
   source: NetworkEgressRecord | null
 ): NetworkSection {
   const proxies = Object.fromEntries(
@@ -62,8 +128,52 @@ export function buildSection(
     .map((rule) => ({ match: rule.match.trim(), via: rule.via.trim() || 'direct' }))
   const egress = source?.network?.egress ?? {}
 
+  const nodesBlock = Object.fromEntries(
+    nodes
+      .filter((node) => node.name.trim())
+      .map((node) => {
+        const entry: Record<string, unknown> = { ...node.raw, type: node.type }
+
+        if (node.server.trim()) {
+          entry.server = node.server.trim()
+        }
+        if (node.port.trim()) {
+          entry.port = Number(node.port.trim())
+        }
+        if (node.credKey) {
+          // The pane renders exactly one credential control, and it holds a NAME. Whatever
+          // cleartext sibling happens to sit in the carried entry goes out with this save —
+          // `password_env` and `password` must not coexist with the value winning by accident.
+          for (const secret of ['password', 'uuid', 'username', 'tls-alpn', 'client_id']) {
+            delete entry[secret]
+          }
+          if (node.cred.trim()) {
+            entry[node.credKey] = node.cred.trim()
+          }
+        }
+
+        return [node.name.trim(), entry]
+      })
+  )
+  const groupsBlock = Object.fromEntries(
+    groups
+      .filter((group) => group.name.trim())
+      .map((group) => {
+        const listed = group.include.split(',').map((name) => name.trim()).filter(Boolean)
+        const entry: Record<string, unknown> = {
+          ...group.raw,
+          include: group.include.trim() === '*' ? '*' : listed,
+          type: group.type
+        }
+
+        return [group.name.trim(), entry]
+      })
+  )
+
   const carried = Object.fromEntries(
-    Object.entries(egress).filter(([key]) => key !== 'proxies' && key !== 'rules')
+    Object.entries(egress).filter(
+      ([key]) => key !== 'proxies' && key !== 'rules' && key !== 'nodes' && key !== 'groups'
+    )
   ) as NetworkEgressBlock
 
   return {
@@ -71,6 +181,8 @@ export function buildSection(
     egress: {
       ...carried,
       ...(Object.keys(proxies).length ? { proxies } : {}),
+      ...(Object.keys(nodesBlock).length ? { nodes: nodesBlock } : {}),
+      ...(Object.keys(groupsBlock).length ? { groups: groupsBlock } : {}),
       ...(keptRules.length ? { rules: keptRules } : {})
     }
   }
@@ -140,6 +252,11 @@ export function NetworkSettings() {
   const [status, setStatus] = useState<NetworkStatus | null>(null)
   const [exits, setExits] = useState<ExitRow[]>([])
   const [rules, setRules] = useState<RuleRow[]>([])
+  const [nodes, setNodes] = useState<NodeRow[]>([])
+  const [groups, setGroups] = useState<GroupRow[]>([])
+  const [poolPath, setPoolPath] = useState('')
+  const [poolNotes, setPoolNotes] = useState<string[]>([])
+  const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [applied, setApplied] = useState('')
@@ -152,6 +269,8 @@ export function NetworkSettings() {
     setRecord(fetched)
     setExits(toExitRows(fetched))
     setRules(toRuleRows(fetched))
+    setNodes(toNodeRows(fetched))
+    setGroups(toGroupRows(fetched))
   }
 
   useEffect(() => {
@@ -170,7 +289,7 @@ export function NetworkSettings() {
     setError('')
     setApplied('')
     try {
-      const result = await saveNetworkEgress(buildSection(exits, rules, record))
+      const result = await saveNetworkEgress(buildSection(exits, rules, nodes, groups, record))
       setSaved(true)
       setApplied(appliedNote(copy.engine, result.engine))
       // The backend re-reads the table on save; refresh both so the badges and
@@ -215,6 +334,31 @@ export function NetworkSettings() {
   }
 
   const exitNames = exits.map((exit) => exit.name.trim()).filter(Boolean)
+  const engineNames = [...nodes.map((node) => node.name.trim()), ...groups.map((group) => group.name.trim())].filter(
+    Boolean
+  )
+
+  const importPool = async () => {
+    setImporting(true)
+    setError('')
+    setPoolNotes([])
+    try {
+      const answer = await importNetworkPool(poolPath.trim())
+
+      // The import lands in the rows, not on disk: the user still has to press Save, and a
+      // refusal from the parser is still the parser talking (a pool that names a group member
+      // that is not under `nodes` must not become a half-written table).
+      setNodes(toNodeRows({ network: { egress: answer.egress } } as unknown as NetworkEgressRecord))
+      setGroups(toGroupRows({ network: { egress: answer.egress } } as unknown as NetworkEgressRecord))
+      const envNames = answer.env_names ?? []
+
+      setPoolNotes([...(answer.notes ?? []), ...(envNames.length ? [`需要这些环境变量：${envNames.join(', ')}`] : [])])
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImporting(false)
+    }
+  }
 
   return (
     <SettingsContent>
@@ -302,10 +446,17 @@ export function NetworkSettings() {
                 >
                   <option value="direct">{copy.direct}</option>
                   {exitNames.map((name) => (
-                    <option key={name} value={`proxy:${name}`}>
+                    <option key={`p-${name}`} value={`proxy:${name}`}>
                       {name}
                     </option>
                   ))}
+                  {engineNames
+                    .filter((name) => !exitNames.includes(name))
+                    .map((name) => (
+                      <option key={`n-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
                 </select>
                 <Button onClick={() => setRules(rules.filter((_, i) => i !== index))} size="icon" variant="ghost">
                   ×
@@ -320,6 +471,108 @@ export function NetworkSettings() {
             </div>
           )
         })}
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">{copy.nodes}</h3>
+          <Button
+            disabled={importing || !poolPath.trim()}
+            onClick={() => void importPool()}
+            size="sm"
+            variant="outline"
+          >
+            {importing ? '…' : copy.importPool}
+          </Button>
+        </div>
+        <Input onChange={(event) => setPoolPath(event.target.value)} placeholder={copy.importPath} value={poolPath} />
+        {poolNotes.map((note, index) => (
+          <p className={CAPTION} key={index}>
+            {note}
+          </p>
+        ))}
+        {nodes.map((node, index) => (
+          <div className="grid gap-1" key={index}>
+            <div className="flex items-center gap-2">
+              <Input
+                className="w-36"
+                onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, name: event.target.value } : row)))}
+                placeholder={copy.name}
+                value={node.name}
+              />
+              <Input
+                className="w-28"
+                onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, type: event.target.value } : row)))}
+                placeholder={copy.type}
+                value={node.type}
+              />
+              <Input
+                onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, server: event.target.value } : row)))}
+                placeholder={copy.server}
+                value={node.server}
+              />
+              <Input
+                className="w-24"
+                onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, port: event.target.value } : row)))}
+                placeholder={copy.port}
+                value={node.port}
+              />
+              <Button onClick={() => setNodes(nodes.filter((_, i) => i !== index))} size="icon" variant="ghost">
+                ×
+              </Button>
+            </div>
+            {node.credKey ? (
+              <Input
+                onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, cred: event.target.value } : row)))}
+                placeholder={node.credKey}
+                value={node.cred}
+              />
+            ) : null}
+            {node.credKey ? <p className={CAPTION}>{copy.credEnv}</p> : null}
+          </div>
+        ))}
+        <Button onClick={() => setNodes([...nodes, { cred: '', credKey: 'password_env', name: '', port: '', raw: {}, server: '', type: 'ss' }])} size="sm" variant="outline">
+          {copy.addNode}
+        </Button>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">{copy.groups}</h3>
+          <Button
+            onClick={() => setGroups([...groups, { include: '', name: '', raw: {}, type: 'url-test' }])}
+            size="sm"
+            variant="outline"
+          >
+            {copy.addGroup}
+          </Button>
+        </div>
+        {groups.map((group, index) => (
+          <div className="grid gap-1" key={index}>
+            <div className="flex items-center gap-2">
+              <Input
+                className="w-36"
+                onChange={(event) => setGroups(groups.map((row, i) => (i === index ? { ...row, name: event.target.value } : row)))}
+                placeholder={copy.name}
+                value={group.name}
+              />
+              <Input
+                className="w-28"
+                onChange={(event) => setGroups(groups.map((row, i) => (i === index ? { ...row, type: event.target.value } : row)))}
+                placeholder={copy.type}
+                value={group.type}
+              />
+              <Button onClick={() => setGroups(groups.filter((_, i) => i !== index))} size="icon" variant="ghost">
+                ×
+              </Button>
+            </div>
+            <Input
+              onChange={(event) => setGroups(groups.map((row, i) => (i === index ? { ...row, include: event.target.value } : row)))}
+              placeholder={copy.members}
+              value={group.include}
+            />
+          </div>
+        ))}
       </div>
 
       <div className="flex items-center gap-3">

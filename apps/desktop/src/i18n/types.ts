@@ -308,18 +308,27 @@ export interface Translations {
     }
     network: {
       addExit: string
+      addGroup: string
+      addNode: string
       addRule: string
       binary: string
       catchAll: string
+      credEnv: string
       direct: string
       engine: string
       engineOnly: string
       envDropped: string
       exits: string
+      groups: string
+      importPath: string
+      importPool: string
       intro: string
       match: string
+      members: string
       name: string
+      nodes: string
       port: string
+      server: string
       proxyApplied: string
       proxyDeclaredNotApplied: string
       proxyNotOurs: string
@@ -333,6 +342,7 @@ export interface Translations {
       status: string
       systemProxy: string
       title: string
+      type: string
       url: string
     }
     notifications: {

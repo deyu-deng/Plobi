@@ -30,6 +30,7 @@ import type {
   MemoryProviderOAuthStatus,
   MemoryStatusResponse,
   NetworkEgressRecord,
+  NetworkPoolImport,
   NetworkSection,
   NetworkStatus,
   MessagingPlatformsResponse,
@@ -479,6 +480,19 @@ export function saveNetworkEgress(
     path: '/api/network/egress',
     method: 'PUT',
     body: { network }
+  })
+}
+
+/**
+ * Read someone's existing mihomo pool into table shape. Read-only, and the answer carries
+ * `*_env` **names** only — the values stay in the pool file and `.env`, never in this response.
+ */
+export function importNetworkPool(path: string): Promise<NetworkPoolImport> {
+  return window.plobiDesktop.api<NetworkPoolImport>({
+    ...profileScoped(),
+    body: { path },
+    method: 'POST',
+    path: '/api/network/egress/import-pool'
   })
 }
 

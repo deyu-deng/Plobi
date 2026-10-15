@@ -60,7 +60,9 @@
  */
 import { existsSync, rmSync } from 'node:fs'
 import { Arch } from 'electron-builder'
+import path from 'node:path'
 import { stageNodePty } from './stage-native-deps.mjs'
+import stageEgressAssets from './stage-egress-assets.mjs'
 
 export function cleanStaleAppOutDir(appOutDir) {
   if (!appOutDir || typeof appOutDir !== 'string') {
@@ -78,6 +80,21 @@ export function cleanStaleAppOutDir(appOutDir) {
 
 export default async function beforePack(context) {
   const appOutDir = context && context.appOutDir
+
+  // 随包分发（用户 10-12 拍「随包全带」，裁定 134 规定不进仓）：从 PLOBI_EGRESS_SRC 投放三件套。
+  // 缺源不炸构建——但会在包里留 MISSING.txt，运行期的 `plobi network status` 照实说"这版没带"，
+  // 而不是让人从一台挂住的引擎现场倒推。
+  try {
+    const projectDir = (context && (context.appDir || context.projectDir)) ||
+      (context && context.packager && context.packager.projectDir) || process.cwd()
+    const plan = await stageEgressAssets({ destDir: path.join(projectDir, 'build', 'egress') })
+
+    if (!plan.missing.length) {
+      console.log(`[before-pack] 随包带上路由引擎：${plan.copy.map((item) => item.name).join('、')}`)
+    }
+  } catch (err) {
+    console.warn(`[before-pack] egress asset staging did not run (${err.message}); the app will report the engine as not shipped`)
+  }
   try {
     if (cleanStaleAppOutDir(appOutDir)) {
       console.log(`[before-pack] removed stale unpacked dir before staging: ${appOutDir}`)
