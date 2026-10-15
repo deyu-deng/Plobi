@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 # 人手写、不是采来的——它是日程库里的"非信源信源"，归存储层自己的词表，不进注册表。
 # ⚠️ **这一档允许按名字分支**（`agenda/service.py` 里那两处 `if source == "manual"`）：
@@ -52,6 +52,10 @@ class SourceSpec:
     source_id: str
     capabilities: Mapping[str, Optional[bool]]
     collecting: bool = True
+    #: 执行方**构造这一条采集器**的唯一入口（`plobi/collectors/sweep.py` 只认这一格，不按名字分支）。
+    #: `None` 是一个读数而不是省略：注册表说这条在采、却没有任何一方构造得出它 ——
+    #: 2026-10-15 教务那一刀就断在这里（`collecting_sources()` 全仓零调用方）。
+    builder: Optional[Callable[[], Any]] = None
 
     def __post_init__(self) -> None:
         if not self.source_id or not self.source_id.strip():
@@ -119,6 +123,19 @@ def collecting_sources() -> tuple[str, ...]:
     return tuple(sorted(sid for sid, item in _SPECS.items() if item.collecting))
 
 
+def _build_zju() -> Any:
+    """教务那条的执行方入口。**延迟 import**：`collectors/zju` 那头要读这张表派生的词表。
+
+    `transport` 是**必填位**（判据 7：默认回退到真网络调用就是那颗雷的形状），所以这里显式给
+    生产那一只 `UrllibTransport` —— 这一格写漏一次，每天那一轮就稳定报 `build_failed`
+    （10-15 13:07 真跑就是这么抓出来的，不是测试抓的）。
+    """
+    from plobi.collectors.zju import ZjuCollector
+    from plobi.collectors.zju.auth import UrllibTransport
+
+    return ZjuCollector(transport=UrllibTransport())
+
+
 def _declare(items: Iterable[SourceSpec]) -> None:
     for item in items:
         register(item, replace=True)
@@ -179,9 +196,11 @@ _declare(
                 # 留 `None` 是有意的：**消费方一问就报错**，不许拿猜测当读数。
                 "authoritative_replace": None,
             },
-            # 采集器与入库都真跑过（交账在任务书里），但产品里**没有任何触发方在调它**，
-            # 所以"有没有东西在采它"这句当下仍是 False。触发那一格 = `WP-SCHEDULE-REAL-PLAN`。
-            collecting=False,
+            # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
+            # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
+            # 新条目进待确认」⇒ 这一格从此是一条被点过的读数，不是我替他填的默认值（判据 1）。
+            collecting=True,
+            builder=_build_zju,
         ),
     )
 )

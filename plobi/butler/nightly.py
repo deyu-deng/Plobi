@@ -31,11 +31,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 NIGHTLY_PLAN_JOB_NAME = "plobi-evening-plan"
 
+#: 每天那一轮信源采集（10-15 用户拍：「每天自动采，新条目进待确认」）。
+#: 08:15 这个点是**读数点而不是承诺**：这台 07:30 有晨报、08:00 有额度提醒、20:00 建明日计划，
+#: 采集排在计划之前才谈得上"秘书读的是当天的东西"；站方那侧只有 `min_minutes_between_pulls`
+#: （默认 45 分钟带抖动）这一层礼貌约束，一天一轮远在它之上。
+COLLECTION_JOB_NAME = "plobi-source-collect"
+
 #: ``(job_name, 源脚本, 目标脚本名, schedule)`` —— schedule 用 5 段 cron。
 BUTLER_JOBS: list[tuple[str, str, str, str]] = [
     ("plobi-morning-report", "cron_morning.py", "plobi_morning.py", "30 7 * * *"),
     ("plobi-message-digest", "cron_digest.py", "plobi_digest.py", "0 12 * * *"),
     ("plobi-quota-alert", "cron_quota.py", "plobi_quota.py", "0 8 * * *"),
+    (COLLECTION_JOB_NAME, "cron_collect_sweep.py", "plobi_collect_sweep.py", "15 8 * * *"),
     (NIGHTLY_PLAN_JOB_NAME, "cron_evening_plan.py", "plobi_evening_plan.py", "0 20 * * *"),
     ("plobi-daily-checkin", "cron_daily_checkin.py", "plobi_daily_checkin.py", "30 21 * * *"),
 ]
@@ -134,41 +141,29 @@ def register_butler_jobs(jobs_module: Any | None = None) -> list[str]:
     ]
 
 
-def ensure_nightly_plan_job(
-    jobs_module: Any | None = None,
-    *,
-    now: Callable[[], str] | None = None,
-) -> str:
-    """装机后第一次启动把「每晚 20:00 建明日计划」那条作业种下去。
+def _ensure_seeded_job(job_name: str, jobs_module: Any, now: Callable[[], str] | None) -> str:
+    """按名字种一条管家作业：**脚本副本每次都刷，作业行只种一次**。
 
-    返回一个说得出发生了什么的原因串（``seeded`` / ``exists`` / ``already-seeded``），
-    供调用方进日志；任何异常照实往外抛，由启动那一格接住并 warn（不许静默），
-    但**不许**在失败时落下 marker——marker 落下就等于这台再也不试了。
-
-    **脚本副本每次都刷，作业行只种一次**：ticker 跑的是 ``PLOBI_HOME/scripts/`` 里那份
-    复制件，不是仓里那份。若跟着 marker 一起只复制一次，那么改了 ``cron_evening_plan.py``
-    之后到的仍是旧副本——"代码合了 ≠ 会在跑"那一族（裁定 94 同族）。行的事归用户决定，
-    文件的事归代码。
+    ticker 跑的是 ``PLOBI_HOME/scripts/`` 里那份复制件，不是仓里那份；若跟着 marker 一起只复制一次，
+    那么改了源脚本之后到的仍是旧副本——"代码合了 ≠ 会在跑"那一族（裁定 94 同族）。
+    行的事归用户决定，文件的事归代码。marker 只在真成功之后落，半途失败下次重试。
     """
-    if jobs_module is None:
-        from cron import jobs as jobs_module  # type: ignore[no-redef]
-
-    spec = next(row for row in BUTLER_JOBS if row[0] == NIGHTLY_PLAN_JOB_NAME)
+    spec = next(row for row in BUTLER_JOBS if row[0] == job_name)
     _name, src_name, dst_name, schedule = spec
     copy_butler_scripts(only=[src_name])
 
     marker = _read_marker()
-    if marker.get(NIGHTLY_PLAN_JOB_NAME):
+    if marker.get(job_name):
         return "already-seeded"
 
     existing = next(
-        (j for j in jobs_module.list_jobs(include_disabled=True) if j.get("name") == NIGHTLY_PLAN_JOB_NAME),
+        (j for j in jobs_module.list_jobs(include_disabled=True) if j.get("name") == job_name),
         None,
     )
     if existing is not None:
         # 已经有人在（手动 register_cron.py、或用户自己建的）——不抢他的决定，
         # 但 marker 要落下，免得下次启动又来问一遍。
-        _mark(marker, NIGHTLY_PLAN_JOB_NAME, now)
+        _mark(marker, job_name, now)
         return "exists"
 
     jobs_module.create_job(
@@ -179,8 +174,46 @@ def ensure_nightly_plan_job(
         no_agent=True,
         deliver="local",
     )
-    _mark(marker, NIGHTLY_PLAN_JOB_NAME, now)
+    _mark(marker, job_name, now)
     return "seeded"
+
+
+def ensure_nightly_plan_job(
+    jobs_module: Any | None = None,
+    *,
+    now: Callable[[], str] | None = None,
+) -> str:
+    """装机后第一次启动把「每晚 20:00 建明日计划」那条作业种下去。
+
+    返回一个说得出发生了什么的原因串（``seeded`` / ``exists`` / ``already-seeded``），
+    供调用方进日志；任何异常照实往外抛，由启动那一格接住并 warn（不许静默），
+    但**不许**在失败时落下 marker——marker 落下就等于这台再也不试了。
+    """
+    if jobs_module is None:
+        from cron import jobs as jobs_module  # type: ignore[no-redef]
+
+    return _ensure_seeded_job(NIGHTLY_PLAN_JOB_NAME, jobs_module, now)
+
+
+def ensure_collection_job(
+    jobs_module: Any | None = None,
+    *,
+    now: Callable[[], str] | None = None,
+) -> str:
+    """种「每天 08:15 一轮信源采集」那一条。语义与 :func:`ensure_nightly_plan_job` 逐字相同。
+
+    为什么要有这一条：10-15 现核到 ``collecting_sources()`` 全仓零调用方 ⇒ 采集器合了两年、
+    库里最后一次进新条目停在 10-10。执行方补在 ``plobi/collectors/sweep.py``，
+    这一格补的是"谁每天去敲它一次"。
+
+    ⚠️ **启动那一步还接不上**：唯一的种作业调用点在 ``plobi_cli/web_server.py`` 的桌面启动里，
+    那一档 Network 在派（`WP-COLLECT-WIN` 的硬边界写着不许为起采集去动它）。
+    在他们接上之前，这台可以手动跑 ``register_cron.py --all`` 或直接调本函数。
+    """
+    if jobs_module is None:
+        from cron import jobs as jobs_module  # type: ignore[no-redef]
+
+    return _ensure_seeded_job(COLLECTION_JOB_NAME, jobs_module, now)
 
 
 def _mark(marker: dict[str, Any], key: str, now: Callable[[], str] | None) -> None:

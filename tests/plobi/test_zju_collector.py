@@ -454,11 +454,16 @@ class TestRegistryDeclaresMeasuredBitsOnly:
         with pytest.raises(registry.CapabilityUnmeasured):
             registry.require("zju", "authoritative_replace")
 
-    def test_zju_is_registered_but_not_yet_triggered(self) -> None:
+    def test_zju_is_registered_and_now_has_an_executor(self) -> None:
+        """这一格 10-15 翻过一次：从前记 False 的理由是"没有触发方"，现在执行方补上了。
+
+        旧读数不许留在钉子里 —— 但它讲的那件事仍然是规矩：**光有开关不算在采**，
+        所以两条分开钉：开关（用户 2026-10-15 13:0x 拍的"每天自动采，新条目进待确认"）
+        与构造入口（`SourceSpec.builder`，缺它 `sweep` 会报 `no_builder` 而不是静默）。
+        """
         assert "zju" in registry.source_ids()
-        assert "zju" not in registry.collecting_sources(), (
-            "采集器与入库都跑过了，但产品里没有任何触发方在调它 ⇒ 这句只能记 False"
-        )
+        assert "zju" in registry.collecting_sources(), "开关这一格现在是被点过的读数，不是默认值"
+        assert callable(registry.spec("zju").builder), "点了开关却构造不出采集器 = 仍然不会在采"
 
 
 class TestNoSilentFallbackInTestConstructions:

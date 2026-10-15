@@ -1,0 +1,224 @@
+"""执行方那一层（`plobi/collectors/sweep.py`）的钉子：一条都不许静默省略。
+
+跑法：`bash scripts/run_tests.sh tests/plobi/test_collect_sweep.py -q`（唯一入口，不传 `--basetemp`）。
+全是关系断言：给定注册表那两格（开关 / 构造入口）与采集器的行为 ⇒ 读数必须怎么说。
+零真网络、零真库。
+"""
+
+from __future__ import annotations
+
+import io
+
+import pytest
+
+from plobi.collectors import registry, sweep
+from plobi.collectors.registry import SourceSpec
+
+CAPS = {
+    "history_backfill": False, "incremental_since": False, "supports_media": False,
+    "requires_manual_setup": False, "authoritative_replace": False,
+}
+
+
+@pytest.fixture()
+def fake_sources():
+    """临时登记几条假信源，用完撤掉——注册表是进程级单例，不许留脏。"""
+    registered: list[str] = []
+
+    def _add(*specs: SourceSpec) -> None:
+        for spec in specs:
+            registry.register(spec, replace=True)
+            registered.append(spec.source_id)
+
+    yield _add
+    for source_id in registered:
+        registry.unregister(source_id)
+
+
+class FakeCollector:
+    def __init__(self, *, result=None, error=None):
+        self._result, self._error = result, error
+
+    def collect(self, service=None):
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
+def test_a_switched_on_source_with_no_builder_says_so(fake_sources):
+    """注册表说在采、却没人构造得出它 —— 这就是 10-15 教务那一刀断的那一格，不许静默。"""
+    fake_sources(SourceSpec("ghost", CAPS, collecting=True, builder=None))
+
+    report = sweep.run_sweep(sources=("ghost",))
+
+    row = report["sources"][0]
+    assert row["ok"] is False and row["state"] == "no_builder"
+    assert "构造得出" in row["detail"]
+    assert report["ran"] == 0
+
+
+class TestOneFailureDoesNotTakeTheOthers:
+    def test_builder_crash_is_named_and_the_next_source_still_runs(self, fake_sources):
+        boom = SourceSpec("boom", CAPS, collecting=True, builder=_raise)
+        good = SourceSpec("good", CAPS, collecting=True,
+                          builder=lambda: FakeCollector(result={"created": 2, "unchanged": 5}))
+        fake_sources(boom, good)
+
+        report = sweep.run_sweep(sources=("boom", "good"))
+        rows = {r["source"]: r for r in report["sources"]}
+
+        assert rows["boom"]["state"] == "build_failed" and RuntimeError.__name__ in rows["boom"]["detail"]
+        assert rows["good"]["ok"] is True
+        assert report["ran"] == 1 and report["total"] == 2
+
+    def test_a_state_bearing_failure_keeps_its_own_words(self, fake_sources):
+        """采集器自己带了 `state` / `detail` ⇒ 用它的，不在这儿编一句"没数据"。"""
+        err = _NamedFailure("auth_failed", "站方说不认识这个口令")
+        fake_sources(SourceSpec("z", CAPS, collecting=True,
+                                builder=lambda: FakeCollector(error=err)))
+
+        row = sweep.run_sweep(sources=("z",))["sources"][0]
+
+        assert row["state"] == "auth_failed" and "站方说不认识这个口令" in row["detail"]
+
+
+class TestLandingSemantics:
+    def test_pull_only_source_without_a_mode_refuses_to_land(self, fake_sources):
+        """只有 `pull()` 的采集器，档位没人给 ⇒ 不落库、不替他猜（判据 7 那颗雷反过来）。"""
+        fake_sources(SourceSpec("p", CAPS, collecting=True, builder=lambda: _PullOnly([])))
+
+        row = sweep.run_sweep(sources=("p",))["sources"][0]
+
+        assert row["ok"] is False and row["state"] == "no_apply_mode"
+
+    def test_pull_only_source_lands_through_the_single_ingest_entry(self, fake_sources, monkeypatch):
+        """落库必须走 `ingest_occurrences` 那一条口（没有第二条路可以 fork pending 语义）。"""
+        calls: list = []
+        import plobi.collectors.ingest as ingest
+
+        monkeypatch.setattr(ingest, "ingest_occurrences",
+                            lambda service, rows, apply=None: calls.append((len(rows), apply)) or {"created": 1})
+        fake_sources(SourceSpec("q", CAPS, collecting=True, builder=lambda: _PullOnly([1, 2])))
+
+        row = sweep.run_sweep(sources=("q",), apply_mode="pending")["sources"][0]
+
+        assert row["ok"] is True and calls == [(2, "pending")]
+
+
+class TestVerdict:
+    def test_nothing_switched_on_says_so_instead_of_faking_a_run(self, fake_sources):
+        report = sweep.run_sweep(sources=())
+
+        assert report["ran"] == 0 and "没有任何一条信源被点亮" in report["verdict"]
+
+    def test_a_single_real_run_is_counted_and_named(self, fake_sources):
+        fake_sources(SourceSpec("ok1", CAPS, collecting=True,
+                                builder=lambda: FakeCollector(result={"created": 0, "unchanged": 48})))
+
+        report = sweep.run_sweep(sources=("ok1",))
+
+        assert "1 / 1 条真跑了一轮" in report["verdict"] and "ok1" in report["verdict"]
+
+
+class TestRealRegistry:
+    def test_zju_is_switched_on_with_a_builder_now(self):
+        """用户 2026-10-15 13:0x 拍的「每天自动采，新条目进待确认」⇒ 开关是真读数不是默认值。"""
+        spec = registry.spec("zju")
+
+        assert spec.collecting is True and callable(spec.builder)
+
+    def test_the_builder_produces_a_usable_collector_without_touching_the_network(self):
+        """构造本身不许打网络，但**也不许漏必填位**。
+
+        10-15 13:07 真跑抓到的就是这一格：`ZjuCollector()` 少了 `transport` ⇒ 每天那一轮会稳定
+        报 `build_failed`，而 `transport` 是判据 7 钉死的必填位（默认回退真网络调用＝那颗雷）。
+        """
+        collector = registry.spec("zju").builder()
+
+        assert getattr(collector, "transport", None) is not None
+        assert getattr(collector, "config", None) is not None
+
+    def test_the_sweep_does_not_branch_on_source_names(self):
+        """判据 3：这一层只读注册表那两格。出现按信源名字的分支就是把它 fork 了。"""
+        text = io.open(sweep.__file__, encoding="utf-8").read()
+
+        for needle in ('if source ==', 'if sid ==', '== "zju"', '== "wechat"', '== "timetable"'):
+            assert needle not in text, needle
+
+
+class TestDailyJobIsRegisteredOnceNotResurrected:
+    """「每天自动采」要落到一条真作业上，而**只种一次**：用户关掉或删掉就是他的决定。"""
+
+    def _fake_jobs(self, existing=None):
+        class _Jobs:
+            def __init__(self):
+                self.created = []
+                self.rows = list(existing or [])
+
+            def list_jobs(self, include_disabled=False):
+                return self.rows
+
+            def create_job(self, **kwargs):
+                self.created.append(kwargs)
+                return {"id": f"job-{len(self.created)}"}
+
+            def update_job(self, job_id, updates):
+                self.rows = [{**r, **updates} for r in self.rows]
+
+        return _Jobs()
+
+    def test_seed_creates_the_collection_job_and_marks_only_after_success(self, tmp_path, monkeypatch):
+        from datetime import datetime
+
+        import plobi.butler.nightly as nightly
+
+        monkeypatch.setattr(nightly, "_seed_marker_path", lambda: tmp_path / "butler_seed.json")
+        monkeypatch.setattr(nightly, "copy_butler_scripts", lambda only=None: tmp_path)
+        jobs = self._fake_jobs()
+
+        # `_mark` 要的是一个**返回 datetime 的工厂**（它自己 `.isoformat()`），不是串。
+        first = nightly.ensure_collection_job(jobs, now=lambda: datetime(2026, 10, 15, 13, 0))
+        second = nightly.ensure_collection_job(jobs, now=lambda: datetime(2026, 10, 15, 13, 0, 1))
+
+        assert first == "seeded" and second == "already-seeded"
+        assert len(jobs.created) == 1 and jobs.created[0]["name"] == nightly.COLLECTION_JOB_NAME
+        assert jobs.created[0]["no_agent"] is True and jobs.created[0]["script"] == "plobi_collect_sweep.py"
+
+    def test_a_row_the_user_already_made_is_left_alone_but_still_marked(self, tmp_path, monkeypatch):
+        """有人手动建过同名作业 ⇒ 不抢他的决定，只把 marker 落下，别再问第二遍。"""
+        import plobi.butler.nightly as nightly
+
+        monkeypatch.setattr(nightly, "_seed_marker_path", lambda: tmp_path / "butler_seed.json")
+        monkeypatch.setattr(nightly, "copy_butler_scripts", lambda only=None: tmp_path)
+        jobs = self._fake_jobs(existing=[{"name": nightly.COLLECTION_JOB_NAME, "enabled": False}])
+
+        assert nightly.ensure_collection_job(jobs) == "exists"
+        assert jobs.created == [] and jobs.rows[0]["enabled"] is False    # 关着的就是他要关着
+
+    def test_the_script_file_actually_ships_with_the_table(self):
+        """表里登记的源脚本必须真存在——"代码合了 ≠ 会在跑"那一族，先从文件查起。"""
+        import os
+
+        import plobi.butler.nightly as nightly
+
+        row = next(r for r in nightly.BUTLER_JOBS if r[0] == nightly.COLLECTION_JOB_NAME)
+        assert os.path.isfile(os.path.join(nightly.REPO_ROOT, "scripts", "plobi", row[1]))
+
+
+def _raise():
+    raise RuntimeError("构造不起来")
+
+
+class _NamedFailure(Exception):
+    def __init__(self, state: str, detail: str) -> None:
+        super().__init__(detail)
+        self.state = state
+        self.detail = detail
+
+
+class _PullOnly:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def pull(self, *, since=None):
+        return list(self._rows)

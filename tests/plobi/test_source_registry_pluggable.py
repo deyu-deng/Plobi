@@ -114,20 +114,28 @@ class TestCapabilitiesAreDeclaredNotGuessed:
             registry.require("zju", "authoritative_replace")
 
     def test_registered_but_not_collecting_is_visible_as_such(self) -> None:
-        """钉钉/学在浙大在词表里、但没东西在采它们——登记归口 ≠ 假数据占位。"""
-        assert {"dingtalk", "zju"} <= set(store.allowed_sources())
-        assert {"dingtalk", "zju"} & set(registry.collecting_sources()) == set()
+        """钉钉在词表里、但没东西在采它——登记归口 ≠ 假数据占位。
+
+        例子里的信源从「钉钉/学在浙大」换成只剩钉钉：教务 10-15 起既有开关也有执行方，
+        再拿它当"登记了但没在采"的例子就是假读数（同一条事实不许登两处，这里以钉子里这句为准）。
+        """
+        assert "dingtalk" in store.allowed_sources()
+        assert "dingtalk" not in registry.collecting_sources()
         assert registry.spec("dingtalk").collecting is False
+        # 未实测的能力位仍然是 `None`（不许因为"开始采了"就顺手填成 False）：
+        assert registry.spec("zju").capabilities["authoritative_replace"] is None
 
     def test_wechat_and_timetable_declare_their_real_shape(self) -> None:
         assert registry.require("wechat", "history_backfill") is True
         assert registry.require("wechat", "supports_media") is False
         assert registry.require("timetable", "incremental_since") is False
-        # ingest 契约：本轮缺的不删 ⇒ 没有任何信源可以声称"没出现就当取消"。
-        assert all(
-            registry.require(sid, "authoritative_replace") is False
-            for sid in registry.collecting_sources()
-        )
+        # ingest 契约：本轮缺的不删 ⇒ 没有任何信源可以**声称**"没出现就当取消"。
+        # 读 `capability()` 而不是 `require()`：教务那一格是 `None`（没实测，故意留白），
+        # 而 `None` 不是"声称可以"——把它算成违规就是把"未测"读成"反对"。
+        assert all(registry.capability(sid, "authoritative_replace") is not True
+                   for sid in registry.source_ids())
+        # 而这条留白**现在有了消费方**（sweep 每天叫它），所以它必须还是 None，
+        # 谁实测出答案谁来改这一格，不许顺手填一个"看起来安全"的值。
 
 
 class TestCommonLayerCarriesNoSourceNameBranch:
