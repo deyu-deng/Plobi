@@ -39,6 +39,8 @@ class FakeChannelResult:
     text: str = "done"
     ok: bool = True
     error: str = ""
+    external_session: str = ""
+    external_session_source: str = ""
 
 
 @pytest.fixture
@@ -164,6 +166,45 @@ class TestASuccessfulOffloadReportsEverything:
         assert body["ok"] is False
         assert "artifact" in body["raw_error"]
         assert body["error"], "失败必须有一句话，不能空着"
+
+    def test_the_session_handle_rides_through_to_the_ledger_row(self, monkeypatch, tmp_path):
+        """WP-OFFLOAD-SESSION-HANDLE 判据 4：通道读出来的那一个 id 要一路到台账行，
+        中间不许有第二个解析处。"""
+        good = FakeChannelResult(external_session="01a1248d-3b15-738e-977b-0b90cd206790",
+                                 external_session_source="result.session_id")
+        body, _c, rows = self._run(monkeypatch, tmp_path, result=good)
+
+        assert body["external_session"] == good.external_session
+        assert body["external_session_source"] == "result.session_id"
+        row, _brief = rows[0]
+        assert row.external_session == good.external_session
+        assert row.external_session_source == good.external_session_source
+
+    def test_a_run_without_a_handle_says_nothing_about_sessions(self, monkeypatch, tmp_path):
+        """没值就不提：既不写"未知会话"，也不把空串塞回给模型当可跳的标识。"""
+        body, _c, rows = self._run(monkeypatch, tmp_path)
+
+        assert "external_session" not in body and "external_session_source" not in body
+        assert rows[0][0].external_session == ""
+
+    def test_an_old_shaped_channel_result_does_not_break_the_mapping(self):
+        """契约：字段带默认值，旧形状（没有这两格）照样映射成空，不是抛异常。"""
+
+        class LegacyResult:
+            agent = "agy"
+            cwd = "D:/Projects/Demo"
+            permission_flags = ()
+            artifacts = ()
+            usage = {}
+            cost = None
+            cost_status = "no_usage_reported"
+            duration_s = 1.0
+            ok = True
+            error = ""
+
+        row = ot.to_ledger_result(LegacyResult())
+
+        assert row.external_session == "" and row.external_session_source == ""
 
 
 def _usable_roster():

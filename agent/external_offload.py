@@ -90,6 +90,12 @@ class OffloadResult:
     #: Which proxy (if any) the child was given, and where it came from.
     proxy: str = ""
     proxy_source: str = "none"
+    #: The厂商 session id, read out of the envelope — "" when the envelope carried none.
+    #: `WP-OFFLOAD-SESSION-HANDLE`: without this the入口面③ third level has nothing to
+    #: jump back into, because the id was in the回包 all along and our parser dropped it.
+    external_session: str = ""
+    #: Which key that id came from (`result.session_id` / `sessionId` / `conversation_id` / "").
+    external_session_source: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -305,8 +311,51 @@ def _keep_evidence(root: Path, completed: "subprocess.CompletedProcess[str]") ->
         (root / ".offload-stderr.txt").write_text(completed.stderr or "", encoding="utf-8")
 
 
-def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any]]:
-    """Return (answer text, usage dict) from ``--output-format json``.
+def _session_handle(records: list[dict[str, Any]]) -> tuple[str, str]:
+    """The external session id plus **which key it was read from**.
+
+    Contract from ``Docs/tasks/offload-session-handle-task.md``: CodeBuddy answers a
+    record array where the process records carry ``sessionId`` and only the final
+    ``type == "result"`` record carries ``session_id``; agy answers one object with
+    ``conversation_id``. The ``result`` record wins because it is the厂商 closing the
+    turn, and when the two disagree we say so in the source cell
+    (``result.session_id!=sessionId``) instead of quietly picking one — a frontend that
+    has to build a resume command needs to know the ids did not agree.
+
+    Reading nothing is a reading: ``("", "")``. Never a placeholder.
+    """
+    def _str(record: dict[str, Any], key: str) -> str:
+        value = record.get(key)
+        return value.strip() if isinstance(value, str) and value.strip() else ""
+
+    result_id = ""
+    for record in reversed(records):
+        if record.get("type") == "result" and (found := _str(record, "session_id")):
+            result_id = found
+            break
+
+    process_id = ""
+    for record in records:
+        if (found := _str(record, "sessionId")):
+            process_id = found
+            break
+
+    if result_id:
+        if process_id and process_id != result_id:
+            return result_id, "result.session_id!=sessionId"
+        return result_id, "result.session_id"
+    if process_id:
+        return process_id, "sessionId"
+
+    for record in records:
+        if (found := _str(record, "conversation_id")):
+            return found, "conversation_id"
+
+    return "", ""
+
+
+def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any], str, str]:
+    """Return (answer text, usage dict, external session id, source key).
 
     The two agents do not share an envelope: agy answers one object, CodeBuddy
     answers a **list** of turn records. Both shapes are handled, and an
@@ -317,7 +366,7 @@ def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any]]:
     try:
         payload = json.loads(text_out)
     except json.JSONDecodeError:
-        return text_out, {}
+        return text_out, {}, "", ""
 
     records = payload if isinstance(payload, list) else [payload]
     records = [r for r in records if isinstance(r, dict)]
@@ -335,7 +384,7 @@ def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any]]:
         if isinstance(error, dict) and isinstance(error.get("message"), str):
             parts.append(f"[agent error] {error['message']}")
 
-    return ("\n".join(parts) or text_out), usage
+    return ("\n".join(parts) or text_out), usage, *_session_handle(records)
 
 
 def _cost(usage: dict[str, Any]) -> tuple[Optional[float], str]:
@@ -472,7 +521,7 @@ def run_task(
         return fail(f"cannot start {binary}: {exc}")
     duration = time.time() - started
 
-    text, usage = _parse_envelope(completed.stdout or "")
+    text, usage, external_session, external_session_source = _parse_envelope(completed.stdout or "")
     cost, cost_status = _cost(usage)
     artifacts = _collect_artifacts(workdir, before)
     _keep_evidence(workdir, completed)
@@ -509,6 +558,7 @@ def run_task(
         usage=usage, cost=cost, cost_status=cost_status, artifacts=artifacts,
         text=text, ok=ok, error=error, produced=produced,
         proxy=proxy, proxy_source=proxy_source,
+        external_session=external_session, external_session_source=external_session_source,
     )
 
 
