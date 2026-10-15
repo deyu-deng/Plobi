@@ -29,6 +29,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 
 import {
   RESTART_HANDOFF_MAX_WAIT_SECONDS,
+  buildHiddenHandoffLauncher,
   buildWindowsRestartHandoff,
   createRestartGuard,
   findLingeringProcesses,
@@ -580,7 +581,12 @@ test('without an outcome log the endings stay on stdout (back-compat)', () => {
   assert.ok(
     script
       .split('\n')
-      .some((line) => line.trim() === `echo [tray-restart] old pid 7 still alive after ${RESTART_HANDOFF_MAX_WAIT_SECONDS}s; not relaunching`)
+      .some(
+        (line) =>
+          line.trim() ===
+          `echo [%TIME%] [tray-restart] old pid 7 still alive after ${RESTART_HANDOFF_MAX_WAIT_SECONDS}s; not relaunching`
+      ),
+    '每条结局都要带时刻：10-15 那次只有 "exited with code -1073741510"，无从判断卡在哪一段、等了多久'
   )
   assert.ok(!/>>"/.test(script), '没给日志路径就不许出现重定向')
 })
@@ -659,4 +665,66 @@ test('the session-tree snapshot fails CLOSED with the process table (same catch 
   assert.ok(at > source.lastIndexOf('try {', at), '快照必须在 try 内：表读不到时不许静默放行')
   assert.ok(source.indexOf('} catch (err) {', at) > at, '快照后面必须跟着同一个 catch')
   assert.ok(source.includes('读不到进程表'), '表读不到的既有 fail-closed 出口被改了')
+})
+
+// ── ⑤ handoff 的两次真机死因（10-15 09:1x 用户实点：窗口没回来、只有一枚命令行窗口）──
+
+test('the handoff waits for the renderer port to free rather than killing anything', () => {
+  const script = buildWindowsRestartHandoff({
+    waitPid: 4244,
+    workingDirectory: 'D:/x/apps/desktop',
+    command: 'cmd /c npm run dev',
+    outcomeLogPath: 'D:/plobi/logs/tray-restart-handoff.log'
+  })
+
+  assert.match(script, /Get-NetTCPConnection -LocalPort 5174 -State Listen/,
+    '端口判活只认结构化查询——这台用 `netstat | grep :5174` 数出过临时端口的假命中')
+  assert.match(script, /renderer port 5174 is free; relaunching/)
+  assert.match(script, /renderer port 5174 still held after .*not relaunching/, '等不到就不起，并说清')
+  // Three endings, all written into the outcome log: free / held / probe cannot answer.
+  // The third must still relaunch — a broken probe must never be the reason no window comes back.
+  assert.match(script, /cannot tell whether port 5174 is free; relaunching anyway/)
+  assert.match(script, /if not errorlevel 10 goto portfree/, 'errorlevel 是 ">=" 语义，10 才算「被占」')
+  assert.match(script, /if not errorlevel 11 goto portwait/, '11+（含 9009 没有 powershell）走「探不到就照起」')
+  assert.ok(!/if errorlevel 10 \(/.test(script),
+    '多行 if 块里的 %VAR% 在解析期就展开，倒计时会少算一轮——只准用 goto 串')
+  assert.ok(!/taskkill|Stop-Process/i.test(script), '本线不杀进程：那棵树只能他本人托盘退出（误杀会连带别的会话）')
+  assert.match(script, /:waitforold[\s\S]*goto waitport[\s\S]*:waitport[\s\S]*:portloop/, '老进程先没了，再等端口')
+})
+
+test('the batch is started hidden and in its own console (the window the user saw)', () => {
+  const vbs = buildHiddenHandoffLauncher('D:/plobi/logs/handoff/plobi-desktop-restart-1.bat')
+
+  assert.match(vbs, /shell\.Run """D:\/plobi\/logs\/handoff\/plobi-desktop-restart-1\.bat""", 0, False/,
+    'window style 0 = 隐藏；Run 起的是新进程自带 console，不再继承我们将死的那个（VBScript 里三连引号=一枚字面引号）')
+  assert.ok(!/cmd \/c/.test(vbs), '启动器自己不再开一枚可见 cmd')
+})
+
+test('the launcher escapes a batch path that contains quotes', () => {
+  const vbs = buildHiddenHandoffLauncher('D:/a"b/x.bat')
+
+  assert.ok(vbs.includes('a""b'), vbs)
+})
+
+test('the handoff lands under $PLOBI_HOME, not on the C drive', () => {
+  const source = fs.readFileSync(path.join(HERE, 'main.ts'), 'utf8').replace(/\r\n/g, '\n')
+  const at = source.indexOf('async function restartFromTray(')
+
+  assert.ok(at > 0, 'restartFromTray 找不到')
+
+  // Bounded by the function itself: `app.getPath('temp')` is legal in the update and
+  // uninstall paths, so a whole-file scan would report a false hit for this WP.
+  const end = source.indexOf('\n}\n', at)
+
+  assert.ok(end > at, 'restartFromTray 的函数结尾找不到')
+
+  const body = source.slice(at, end)
+
+  // The old shape, stated as a negative: the restart script must not be joined onto
+  // %LOCALAPPDATA%\Temp — the C drive, which this machine's policy forbids for runtime droppings.
+  assert.doesNotMatch(body, /path\.join\(app\.getPath\('temp'\), `plobi-desktop-restart/,
+    "handoff 又落回 app.getPath('temp') = C 盘了")
+  assert.match(body, /path\.join\(PLOBI_HOME, 'logs', 'handoff'\)/)
+  assert.match(body, /fs\.mkdirSync\(handoffDir/, '写之前必须先把目录建出来')
+  assert.match(body, /buildHiddenHandoffLauncher\(scriptPath\)/, 'bat 必须有隐藏启动器，不许再裸起 cmd')
 })
