@@ -38,6 +38,7 @@ from urllib.parse import urlparse
 import yaml
 
 from agent.egress.mihomo_config import CONFIG_BASENAME, compile_config, verify_with_binary
+from agent.egress import engine_files
 from agent.egress.rules import Table, load_table
 
 #: The known answer.  ``generate_204`` returns 204 with an empty body only if the
@@ -368,7 +369,14 @@ def snapshot(table: Table, *, home: str | Path | None = None) -> _Snapshot:
                          ("network.egress.engine.enabled is false",))
     binary = table.engine_binary
     if not binary:
-        notes.append("network.egress.engine.binary is empty — nothing to start")
+        # 随包落位的那一份（`$PLOBI_HOME/egress/bin/mihomo.exe`）先用它——仓里没有这 59MB，
+        # 也不该有（裁定 134：Code 是公开产品仓），所以「装上」与「指路」是同一条链的两半。
+        binary = engine_files.default_binary(home=home)
+        if binary:
+            notes.append(f"network.egress.engine.binary is empty — using the shipped engine at {binary}")
+        else:
+            notes.append("network.egress.engine.binary is empty — nothing to start "
+                         f"(place mihomo at {engine_files.artifact_path(engine_files.BINARY, home=home)})")
     elif not os.path.isfile(binary if os.path.isabs(binary) else _which(binary) or binary):
         notes.append(f"engine binary '{binary}' is not on disk — installing it is its own slice")
 
@@ -397,6 +405,26 @@ def snapshot(table: Table, *, home: str | Path | None = None) -> _Snapshot:
         workdir = egress_dir(home) / RUNTIME_BASENAME
         source = "compiled"
         pool = workdir / CONFIG_BASENAME
+
+    #: The cold-start deadlock, named before it happens: no geo data in the workdir
+    #: makes mihomo print "start download" and never bind — and that download needs the
+    #: very egress this engine is supposed to provide (measured on this box 10-12).
+    if workdir is not None:
+        notes.extend(engine_files.geo_warnings(workdir))
+        # One line for the shipped-files picture, stat only: the panel renders
+        # `engine.notes`, so this is the same sentence at three surfaces (裁定 94).
+        # Counted on what the user actually asks: is there an engine to run, and does it
+                # have its two data files where it looks. A binary named by the table
+                # somewhere else still counts as 在位 — otherwise this line lies on
+                # machines that keep it in a portable toolchain directory.
+        resolved = bool(binary) and os.path.isfile(binary if os.path.isabs(binary) else _which(binary) or binary)
+        geo_here = [a.key for a in (engine_files.GEOSITE, engine_files.GEOIP)
+                    if engine_files.artifact_path(a, workdir=workdir).is_file()]
+        notes.append(
+            f"engine files: {int(resolved) + len(geo_here)}/3 在位（binary "
+            f"{'在' if resolved else '缺'}、geo {len(geo_here)}/2；随包落点 "
+            f"{engine_files.egress_root(home)}，不放进仓——裁定 134）"
+        )
 
     rec = _read_record(home)
     if rec and rec.get("unreadable"):
