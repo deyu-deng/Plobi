@@ -61,6 +61,10 @@ class Event:
     # WP-DAY-SURFACE: 手动日程可带地点与备注（课表导入时从 evidence 摊平）。
     location: Optional[str] = None
     notes: Optional[str] = None
+    # WP-PLAN-COMPLETION-ACK：人承认「这条做完了」的那一刻。真源在**事件**上，不在
+    # `plan_items` 上——排程每晚把那一天的行 DELETE 后重新插入（`replace_plan_items`），
+    # 状态放在计划行里会被它本该拦住的那次重排抹掉。见 `mark_event_completed`。
+    completed_at: Optional[str] = None
     evidence: Optional[dict] = None
     prev_value: Optional[dict] = None
     confirm_seq: Optional[int] = None
@@ -331,6 +335,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         """
     )
     migrated = _ensure_routine_window_columns(conn)
+    _ensure_event_completed_column(conn)
     events_migrated = _ensure_event_location_notes_columns(conn)
     _seed_routine_templates(conn)
     if migrated:
@@ -400,6 +405,7 @@ def _row_to_event(row: sqlite3.Row) -> Event:
         source=row["source"],
         location=(row["location"] if "location" in columns else "") or None or None,
         notes=(row["notes"] if "notes" in columns else "") or None,
+        completed_at=((row["completed_at"] if "completed_at" in columns else "") or None),
         evidence=_loads(row["evidence"]),
         prev_value=_loads(row["prev_value"]),
         confirm_seq=row["confirm_seq"],
@@ -418,6 +424,18 @@ def _validate_enum(value: str, allowed: Iterable[str], field_name: str) -> str:
 
 
 # --- WP-DAY-SURFACE: events 表加 location/notes 列，旧库幂等补列 -----------
+
+
+def _ensure_event_completed_column(conn: sqlite3.Connection) -> bool:
+    """旧库 ALTER：events 加 `completed_at`（nullable TEXT，空 = 没承认过）。
+
+    additive、不动任何已有行 ⇒ 现有那 91 条 `plan_items` 与全部 events 照旧读得出来。
+    """
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
+    if "completed_at" in cols:
+        return False
+    conn.execute("ALTER TABLE events ADD COLUMN completed_at TEXT")
+    return True
 
 
 def _ensure_event_location_notes_columns(conn: sqlite3.Connection) -> bool:
@@ -575,6 +593,7 @@ def list_events(
     status: Optional[str] = None,
     source: Optional[str] = None,
     include_cancelled: bool = False,
+    include_completed: bool = True,
 ) -> list[Event]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -593,6 +612,10 @@ def list_events(
         params.append(status)
     elif not include_cancelled:
         clauses.append("status != 'cancelled'")
+    if not include_completed:
+        # 默认 True：别的读侧一个字不变（日 surface / 看板读的是历史，不该因为做完就消失）。
+        # 只有排程那一侧显式传 False——它的病根是「写完的作业第二天又被排进来」，不是「看不见」。
+        clauses.append("(completed_at IS NULL OR completed_at = '')")
     # WP-COLLECTOR-ICS: optional source narrowing so the shared ingest path
     # can index existing rows per source without dragging the whole table.
     if source:
@@ -614,6 +637,7 @@ _UPDATABLE = {
     "kind",
     "status",
     "source",
+    "completed_at",
     "location",
     "notes",
     "evidence",
@@ -659,6 +683,24 @@ def update_event(conn: sqlite3.Connection, event_id: str, **fields: Any) -> Opti
     conn.execute(f"UPDATE events SET {', '.join(assignments)} WHERE id = ?", params)
     conn.commit()
     return get_event(conn, event_id)
+
+
+def mark_event_completed(
+    conn: sqlite3.Connection,
+    event_id: str,
+    *,
+    completed: bool = True,
+    at: Optional[str] = None,
+) -> Optional[Event]:
+    """承认这条做完了（或撤销承认）。**唯一真源是事件本身**，不复制进任何 profile。
+
+    `completed=False` 把那一格清回 None——撤销不是删除，历史一行不动。
+    找不到那条就返回 None，**不许静默成功**（判据四那一族）。
+    """
+    if get_event(conn, event_id) is None:
+        return None
+
+    return update_event(conn, event_id, completed_at=(at or now_iso()) if completed else None)
 
 
 def delete_event(conn: sqlite3.Connection, event_id: str) -> bool:

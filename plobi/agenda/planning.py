@@ -432,7 +432,8 @@ def _ddl_candidates(conn: Any, window_from: datetime, window_to: datetime) -> li
     events = [
         event
         for event in store.list_events(
-            conn, start_from=window_from.isoformat(), start_to=window_to.isoformat()
+            conn, start_from=window_from.isoformat(), start_to=window_to.isoformat(),
+            include_completed=False,      # WP-PLAN-COMPLETION-ACK：承认完成的不再进作业池
         )
         if event.kind == "ddl"
     ]
@@ -800,7 +801,11 @@ def generate_evening_plan(
         if existing is not None and existing.status == "confirmed":
             return existing
 
-        events = store.list_events(conn, start_from=window_from, start_to=window_to)
+        # WP-PLAN-COMPLETION-ACK：人承认做完的那条**不再被排**（现核铁证是同一条
+        # `ddl:evt_ac46920dc0c1` 连排五天 10-12…10-16）。只在这一侧关掉已完成的；
+        # 读侧（日 surface / 看板）照旧看得见历史，默认值没动。
+        events = store.list_events(conn, start_from=window_from, start_to=window_to,
+                                   include_completed=False)
         anchors = enabled_anchors_for_day(conn, day)
         kept_anchors, yielded, moved = _place_anchors(conn, day, anchors, events)
         blocks, unscheduled, deferred_ddl = _project_block_items(
