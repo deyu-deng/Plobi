@@ -36,6 +36,7 @@ import { buildDesktopBackendEnv, desktopCliSearchPath, normalizePlobiHomeRoot } 
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
 import {
+  buildHiddenHandoffLauncher,
   buildWindowsRestartHandoff,
   createRestartGuard,
   planRelaunch,
@@ -7961,25 +7962,42 @@ async function restartFromTray() {
     // Dev: hand off to a detached script, because the tree we must replace is our
     // own ancestry — we cannot kill it from inside without dying mid-teardown, and
     // the new Vite cannot bind port 5174 while the old one still holds it.
-    const scriptPath = path.join(app.getPath('temp'), `plobi-desktop-restart-${Date.now()}.bat`)
+    //
+    // Two landings were wrong before (user 10-15 09:1x: clicked restart, no window
+    // came back, only "一个莫名其妙的命令行窗口"):
+    //  · the batch lived in `app.getPath('temp')` = %LOCALAPPDATA%\Temp — the C drive,
+    //    which this machine's own policy forbids for runtime droppings;
+    //  · it was spawned straight from `cmd.exe`, so it attached to OUR console: visible,
+    //    and killed by our own teardown (outcome log: `exited with code -1073741510`
+    //    = STATUS_CONTROL_C_EXIT, with no Electron ever relaunched).
+    // So: write both files under $PLOBI_HOME, and start the batch through a hidden
+    // wscript launcher — window style 0, its own console, immune to our CTRL events.
+    const handoffDir = path.join(PLOBI_HOME, 'logs', 'handoff')
+    const stamp = Date.now()
+    const scriptPath = path.join(handoffDir, `plobi-desktop-restart-${stamp}.bat`)
+    const launcherPath = path.join(handoffDir, `plobi-desktop-restart-${stamp}.vbs`)
     // Fixed-name outcome log under $PLOBI_HOME/logs/: the handoff runs detached
     // with stdio ignored, so its giveup/relaunch ending must be written to a file
     // or "did the restart even happen" is unanswerable after the fact.
     const handoffLogPath = path.join(PLOBI_HOME, 'logs', 'tray-restart-handoff.log')
 
-    fs.mkdirSync(path.dirname(handoffLogPath), { recursive: true })
+    fs.mkdirSync(handoffDir, { recursive: true })
     fs.writeFileSync(scriptPath, buildWindowsRestartHandoff({
       command: plan.command,
       outcomeLogPath: handoffLogPath,
       waitPid: process.pid,
       workingDirectory: plan.cwd
     }), 'utf8')
+    fs.writeFileSync(launcherPath, buildHiddenHandoffLauncher(scriptPath), 'utf8')
 
-    const child = spawn('cmd.exe', ['/c', scriptPath], { detached: true, stdio: 'ignore' })
+    const child = spawn('wscript.exe', ['//NoLogo', launcherPath], hiddenWindowsChildOptions({
+      detached: true,
+      stdio: 'ignore'
+    }))
 
     child.unref()
     report('ready', `${labels.doneDev}（handoff=${path.basename(scriptPath)}）`)
-    rememberLog(`[tray-restart] handoff launched: ${scriptPath} (outcome log: ${handoffLogPath})`)
+    rememberLog(`[tray-restart] handoff launched hidden: ${scriptPath} via ${path.basename(launcherPath)} (outcome log: ${handoffLogPath})`)
     isQuittingForHandoff = true
     setTimeout(() => app.quit(), 300)
   } catch (err) {

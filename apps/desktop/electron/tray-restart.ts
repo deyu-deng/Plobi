@@ -304,18 +304,47 @@ export function planRelaunch({
  */
 export const RESTART_HANDOFF_MAX_WAIT_SECONDS = 60
 
+/** The dev renderer's port: the new Vite cannot bind it while a leftover one holds it. */
+export const DEV_RENDERER_PORT = 5174
+
+/**
+ * The launcher that actually starts the handoff. A `.bat` spawned straight from a
+ * console app attaches to *our* console: the user sees a window, and when our tree
+ * is torn down the console CTRL events reach `npm run dev` — measured on this box
+ * 10-15 09:13 as `relaunch command exited with code -1073741510` (0xC000013A
+ * STATUS_CONTROL_C_EXIT) with no Electron ever coming back.
+ *
+ * `wscript` is a GUI-subsystem host (nothing flashes) and `Shell.Run` with
+ * window-style 0 starts the batch **hidden and in its own console**, so the
+ * relaunch survives our teardown. Same mechanism the dev autostart .vbs relies on.
+ */
+export function buildHiddenHandoffLauncher(batPath: string): string {
+  const quoted = batPath.replace(/"/g, '""')
+
+  return [
+    "' Plobi desktop restart handoff launcher — hidden, own console, survives the old tree.",
+    "' Written by apps/desktop/electron/main.ts (WP-TRAY-RESTART-REPAIR).",
+    'Set shell = CreateObject("WScript.Shell")',
+    `shell.Run """${quoted}""", 0, False`,
+    'WScript.Quit 0',
+    ''
+  ].join('\r\n')
+}
+
 export function buildWindowsRestartHandoff({
   waitPid,
   workingDirectory,
   command,
   outcomeLogPath,
-  maxWaitSeconds = RESTART_HANDOFF_MAX_WAIT_SECONDS
+  maxWaitSeconds = RESTART_HANDOFF_MAX_WAIT_SECONDS,
+  rendererPort = DEV_RENDERER_PORT
 }: {
   waitPid: number
   workingDirectory: string
   command: string
   outcomeLogPath?: string
   maxWaitSeconds?: number
+  rendererPort?: number
 }): string {
   const limit = Math.max(1, Math.floor(Number(maxWaitSeconds) || RESTART_HANDOFF_MAX_WAIT_SECONDS))
   const pid = Number(waitPid)
@@ -335,21 +364,48 @@ export function buildWindowsRestartHandoff({
     `set /a LEFT=${limit}`,
     ':waitforold',
     `tasklist /NH /FI "PID eq ${pid}" 2>nul | findstr /r /c:" ${pid} " >nul`,
-    'if errorlevel 1 goto relaunch',
+    'if errorlevel 1 goto waitport',
     'set /a LEFT-=1',
     'if %LEFT% LSS 1 goto giveup',
     'timeout /t 1 /nobreak >nul',
     'goto waitforold',
+    ':waitport',
+    'rem The leftover dev Vite belongs to the tree we just replaced, and the new one cannot',
+    'rem bind the renderer port while it still holds it. Wait for the port to go FREE instead',
+    'rem of killing anything: the tree above us is the user to close, and a wrong kill takes',
+    'rem other sessions with it. Every ending below is logged, so "I clicked restart and',
+    'rem nothing came back" has an answer in the file instead of a guess.',
+    'set /a LEFT2=%LEFT%',
+    ':portloop',
+    `powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${rendererPort} -State Listen -ErrorAction SilentlyContinue) { exit 10 } else { exit 0 }" 2>nul`,
+    'rem errorlevel is a ">=" test: 10 exactly = still held, under 10 = free, 11+ = the probe',
+    'rem itself could not answer (e.g. 9009, no PowerShell). A probe that cannot speak must',
+    'rem never be the reason the app does not come back.',
+    'if not errorlevel 10 goto portfree',
+    'if not errorlevel 11 goto portwait',
+    `${outcome}echo [%TIME%] [tray-restart] cannot tell whether port ${rendererPort} is free; relaunching anyway`,
+    'goto relaunch',
+    ':portwait',
+    'set /a LEFT2-=1',
+    'if %LEFT2% LSS 1 goto portbusy',
+    'timeout /t 1 /nobreak >nul',
+    'goto portloop',
+    ':portfree',
+    `${outcome}echo [%TIME%] [tray-restart] renderer port ${rendererPort} is free; relaunching`,
+    'goto relaunch',
+    ':portbusy',
+    `${outcome}echo [%TIME%] [tray-restart] renderer port ${rendererPort} still held after ${limit}s; not relaunching - something else owns it, close it and restart again`,
+    'exit /b 3',
     ':relaunch',
     `cd /d "${workingDirectory}"`,
-    `${outcome}echo [tray-restart] old pid ${pid} gone; relaunching: ${command}`,
+    `${outcome}echo [%TIME%] [tray-restart] old pid ${pid} gone; relaunching: ${command}`,
     command,
-    `${outcome}echo [tray-restart] relaunch command exited with code %ERRORLEVEL%`,
+    `${outcome}echo [%TIME%] [tray-restart] relaunch command exited with code %ERRORLEVEL%`,
     'exit /b 0',
     ':giveup',
     'rem The old process never exited in time. Do NOT start a second tree on top of',
     'rem it (port and file-lock collisions) — say so in the log the app reads back.',
-    `${outcome}echo [tray-restart] old pid ${pid} still alive after ${limit}s; not relaunching`,
+    `${outcome}echo [%TIME%] [tray-restart] old pid ${pid} still alive after ${limit}s; not relaunching`,
     'exit /b 2'
   ].join('\r\n')
 }

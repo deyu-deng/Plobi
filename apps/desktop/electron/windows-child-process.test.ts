@@ -39,6 +39,15 @@ test('desktop background child processes opt into hidden Windows consoles', () =
   requireHiddenChildOptions(source, /spawn\(\s*backend\.command,\s*backend\.args/)
   requireHiddenChildOptions(source, /plobiProcess = spawn\(\s*backend\.command,\s*backend\.args/)
   requireHiddenChildOptions(source, /spawn\(\s*py,\s*\['-m', 'plobi_cli\.main', 'uninstall', '--gui-summary'\]/)
+  // The restart handoff is the one child that must OUTLIVE us: launched through a
+  // hidden wscript launcher, not `cmd.exe /c x.bat` (that attaches to our console —
+  // visible window, and our own teardown's CTRL event killed the relaunch, 0xC000013A).
+  requireHiddenChildOptions(source, /spawn\(\s*'wscript\.exe',\s*\['\/\/NoLogo',\s*launcherPath/)
+  assert.doesNotMatch(
+    source,
+    /spawn\('cmd\.exe', \['\/c', scriptPath\]/,
+    'handoff 不许再用 cmd.exe 直接起：继承我们的 console 就等于又给用户一枚可见窗口'
+  )
 
   assert.match(source, /function unwrapWindowsVenvPlobiCommand\(command, backendArgs\)/)
   assert.match(source, /function getVenvSitePackagesEntries\(venvRoot\)/)
