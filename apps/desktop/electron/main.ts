@@ -7959,7 +7959,10 @@ async function restartFromTray() {
     if (plan.kind === 'packaged') {
       report('ready', labels.donePackaged)
       isQuittingForHandoff = true
-      app.relaunch()
+      // `--hidden` arrives via the login item (setLoginItemSettings above) and
+      // `relaunch()` re-uses our own argv by default — so without this filter a
+      // restart the user clicked in the tray would come back hidden again.
+      app.relaunch({ args: process.argv.slice(1).filter((arg) => arg !== '--hidden') })
       app.exit(0)
 
       return
