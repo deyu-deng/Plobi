@@ -191,3 +191,52 @@ def test_a_declared_but_inactive_takeover_is_pointed_out(machine, tmp_path):
     table = _table(system_proxy={"enabled": True})
     lines = system_proxy.status_lines(system_proxy.status(table, home=tmp_path))
     assert any("plobi network proxy on" in line for line in lines), lines
+
+
+# ── 丙（用户 10-15 拍）：PAC 之外还要写静态代理，因为不是所有客户端会执行 PAC ──
+
+def test_the_takeover_writes_a_static_proxy_as_well_because_pac_is_not_universal(machine, tmp_path):
+    """`.NET` / 一批 CLI 只读静态代理，不跑 PAC——对它们「接管」曾经等于「直连」。"""
+    p = system_proxy.enable(_table(), home=tmp_path, apply=False)
+
+    reg = p.registry
+    assert reg["ProxyEnable"] == 1
+    assert reg["ProxyServer"] == "127.0.0.1:7895", reg
+    assert reg["AutoConfigURL"].endswith("plobi-egress.pac"), reg
+    override = reg["ProxyOverride"].split(";")
+    for want in ("localhost", "127.*", "10.*", "*.internal.test", "store.steampowered.com"):
+        assert want in override, override
+
+
+def test_a_bypass_the_static_grammar_cannot_hold_is_named_not_dropped(machine, tmp_path):
+    """`ProxyOverride` 没有 CIDR 也没有 IPv6；收窄必须**说出来**，不能悄悄发生。"""
+    p = system_proxy.enable(_table(), home=tmp_path, apply=False)
+
+    assert "fd00::/8" in p.override_unexpressible, p.override_unexpressible
+    said = " ".join(p.lines())
+    assert "ProxyOverride 表达不了" in said and "fd00::/8" in said, p.lines()
+
+
+def test_byte_boundary_networks_become_prefix_wildcards_and_the_rest_are_named(tmp_path, machine):
+    table = _table(rules=[
+        {"match": "192.168.0.0/16", "via": "direct"},
+        {"match": "172.16.0.0/12", "via": "direct"},
+        {"match": "*", "via": "proxy:gw"},
+    ])
+
+    entries, unexpressible = system_proxy.override_entries(table)
+
+    assert "192.168.*" in entries, entries
+    assert "172.16.0.0/12" in unexpressible, unexpressible
+
+
+def test_off_gives_back_the_static_values_it_wrote(machine, tmp_path):
+    before = dict(machine)
+    system_proxy.enable(_table(), home=tmp_path)
+    assert machine["ProxyServer"] == "127.0.0.1:7895" and machine["ProxyEnable"] == 1
+
+    ok, detail = system_proxy.disable(home=tmp_path)
+
+    assert ok, detail
+    assert machine == before, (machine, before)
+    assert "ProxyOverride" not in machine, machine

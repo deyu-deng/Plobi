@@ -61,6 +61,9 @@ class ProxyPlan:
     pac_text: str = ""
     registry: Optional[dict[str, Any]] = None
     was: Optional[dict[str, Any]] = None
+    #: Bypass rules `ProxyOverride` cannot express (non-byte-boundary CIDR, IPv6, geosite:).
+    #: Named, never dropped — a silent narrowing here is the 裁定 94 failure again.
+    override_unexpressible: tuple[str, ...] = ()
 
     def lines(self) -> list[str]:
         out = [f"system proxy: {'ready' if self.ok else 'refused'} — {self.reason}"]
@@ -70,6 +73,12 @@ class ProxyPlan:
             if self.was is not None:
                 previous = self.was.get("ProxyEnable") and self.was.get("ProxyServer") or "（无）"
                 out.append(f"接管前系统代理是: {previous}（off 会原样写回）")
+            if self.override_unexpressible:
+                out.append(
+                    f"⚠️ ProxyOverride 表达不了 {len(self.override_unexpressible)} 条 bypass"
+                    f"（{', '.join(self.override_unexpressible[:6])}）—— 会执行 PAC 的程序按表走，"
+                    f"只读静态代理的那些会把这些也交给引擎，由引擎按同一张表判"
+                )
         return out
 
 
@@ -172,6 +181,47 @@ def _backup_path(home: str | Path | None = None) -> Path:
     return _home(home) / BACKUP_BASENAME
 
 
+#: WinINET's `ProxyOverride` grammar: host wildcards and dotted prefixes only.
+#: No CIDR, no `geosite:` — what does not fit is **named**, never silently dropped.
+_OVERRIDE_ALWAYS = ("localhost", "*.local", "*.lan")
+_OVERRIDE_PRIVATE = ("127.*", "10.*", "192.168.*", "169.254.*")
+
+
+def override_entries(table: Table) -> tuple[list[str], list[str]]:
+    """(`entries`, `unexpressible`) — the bypass list a PAC-less client can still obey.
+
+    用户 10-15 拍的丙：PAC 之外**也要**写静态 `ProxyServer`/`ProxyOverride`，因为只读静态代理的
+    客户端（.NET 一批、不少 CLI 库）根本不执行 PAC，对它们"接管"等于"直连"。这里能表达多少就写多少，
+    表达不了的（非字节边界的 CIDR、IPv6、`geosite:`）照实进第二项，由 plan 的 lines 点名。
+    """
+    entries: list[str] = list(_OVERRIDE_ALWAYS) + list(_OVERRIDE_PRIVATE)
+    unexpressible: list[str] = []
+    for rule in table.rules:
+        if rule.via != "direct" or rule.kind in ("geosite", "all"):
+            continue
+        if rule.kind in ("exact", "suffix"):
+            # `match` keeps the author's spelling (`*.internal.test`); `value` is the
+            # normalised host the grammar wants.
+            entries.append(rule.value if rule.kind == "exact" else f"*.{rule.value}")
+            continue
+        if rule.kind == "cidr":
+            try:
+                net = ipaddress.ip_network(rule.match, strict=False)
+            except ValueError:
+                unexpressible.append(rule.match)
+                continue
+            if net.version != 4 or net.prefixlen % 8:
+                # IPv6 has no wildcard grammar here, and a /12 mask cannot be a prefix star.
+                unexpressible.append(rule.match)
+                continue
+            octets = str(net.network_address).split(".")
+            keep = net.prefixlen // 8
+            entries.append(".".join(octets[:keep]) + ".*" if keep else "0.*")
+            continue
+        unexpressible.append(rule.match)
+    return list(dict.fromkeys(entries)), unexpressible
+
+
 def plan(table: Optional[Table] = None, *, home: str | Path | None = None) -> ProxyPlan:
     """Everything enabling would do — computed, nothing written."""
     if not supported():
@@ -213,14 +263,19 @@ def plan(table: Optional[Table] = None, *, home: str | Path | None = None) -> Pr
         except (OSError, ValueError) as exc:
             return ProxyPlan(False, f"上一次的备份读不出来（{type(exc).__name__}）——先跑 plobi network proxy off 或删 {already}")
 
+    entries, unexpressible = override_entries(table)
     return ProxyPlan(
         True,
-        f"表 {len(table.rules)} 条，其余全部交给引擎按表选路",
+        f"表 {len(table.rules)} 条，其余全部交给引擎按表选路（PAC + 静态代理两处都写：只读静态代理的程序也走我们）",
         port,
         str(pac),
         pac_text(table, port),
-        {"ProxyEnable": 1, "ProxyServer": "", "AutoConfigURL": pac.as_uri(), "ProxyOverride": ""},
+        {"ProxyEnable": 1,
+         "ProxyServer": f"127.0.0.1:{port}",
+         "AutoConfigURL": pac.as_uri(),
+         "ProxyOverride": ";".join(entries)},
         was,
+        tuple(unexpressible),
     )
 
 
