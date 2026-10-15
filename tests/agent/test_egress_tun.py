@@ -224,6 +224,34 @@ def test_an_unreadable_route_table_is_said_as_unreadable(monkeypatch, quiet_guar
     assert any("默认路由: 读不到" in l and "Access denied" in l for l in lines), lines
 
 
+def test_a_failed_adapter_probe_never_prints_as_nobody_is_out_there(monkeypatch, quiet_guard):
+    """10-15 09:0x 我用真机抓到的形状：那行曾经印成「无（探针成功）」，而探针是失败的。"""
+    monkeypatch.setattr(tun, "tun_class_adapters", lambda: ([], "ExpressionsMustBeFirstInPipeline"))
+
+    lines = tun.status_lines(tun.preflight(_tun_table()))
+
+    assert any("读不到" in l and "ExpressionsMustBeFirstInPipeline" in l for l in lines), lines
+    assert not any("无（探针成功）" in l for l in lines), lines
+    assert tun.preflight(_tun_table())["ok"] is False
+
+
+@pytest.mark.skipif("sys.platform != 'win32'")
+def test_the_two_real_probes_actually_parse_on_this_box():
+    """The mocked tests cannot catch a malformed PowerShell script — this one runs the real thing.
+
+    Read-only: `Get-NetRoute` / `Get-NetAdapter -IncludeHidden`.  A probe that errors is
+    not a green light, so asserting the error string is empty is the whole point.
+    """
+    holders, err_h = tun.default_route_holders()
+    adapters, err_a = tun.tun_class_adapters()
+
+    assert err_h == "", err_h
+    assert err_a == "", err_a
+    assert isinstance(holders, list) and isinstance(adapters, list)
+    if holders:
+        assert {"ifIndex", "name", "description"} <= set(holders[0]), holders[0]
+
+
 def test_a_pool_workdir_cannot_be_handed_a_tun_by_us(monkeypatch, tmp_path, inert, quiet_guard):
     """The engine running from somebody else's directory: we do not rewrite that file."""
     pool = tmp_path / "pool" / "config.yaml"

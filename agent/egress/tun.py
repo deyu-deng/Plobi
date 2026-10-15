@@ -46,7 +46,7 @@ _PS_TUN_ADAPTERS = (
     "Get-NetAdapter -IncludeHidden | Where-Object{"
     "$d=(\"{0} {1}\" -f $_.InterfaceDescription,$_.ComponentID).ToLower();"
     "$d -match 'wintun|tap|utun|vpn|tunnel'}|"
-    "[pscustomobject]@{name=$_.Name;description=$_.InterfaceDescription;status=[string]$_.Status}|"
+    "ForEach-Object{[pscustomobject]@{name=$_.Name;description=$_.InterfaceDescription;status=[string]$_.Status}}|"
     "ConvertTo-Json -Compress"
 )
 
@@ -118,6 +118,8 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
         "supported": supported(),
         "admin": False,
         "holders": [],
+        "holders_error": "",
+        "adapters_error": "",
         "foreign_tun": [],
         "ok": False,
         "reasons": [],
@@ -139,11 +141,13 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
         )
 
     holders, err = default_route_holders()
+    out["holders_error"] = err
     if err:
         out["probe_errors"].append(f"default route: {err}")
     out["holders"] = holders
 
     adapters, err = tun_class_adapters()
+    out["adapters_error"] = err
     if err:
         out["probe_errors"].append(f"tun adapters: {err}")
     mine = {e.get("name") for e in adapters if e.get("name") == out["name"]}
@@ -171,8 +175,8 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
 
 def _holders_said(info: dict[str, Any]) -> str:
     holders = info.get("holders") or []
-    if not holders and info.get("probe_errors"):
-        return "默认路由: 读不到（" + "；".join(info["probe_errors"]) + "）"
+    if info.get("holders_error"):
+        return "默认路由: 读不到（" + str(info["holders_error"]) + "）"
     if not holders:
         return "默认路由: 0 条（探针成功，这台没有默认路由）"
     top = holders[0]
@@ -183,6 +187,11 @@ def _holders_said(info: dict[str, Any]) -> str:
 
 
 def _adapters_said(info: dict[str, Any]) -> str:
+    if info.get("adapters_error"):
+        # A failed probe must never print as "none out there" — that is the exact
+        # shape that turns an unreadable machine into a green light. Caught by
+        # running this against the real box (10-15 09:0x), see 纸 §25.
+        return "场上别人的 tunnel/虚拟网卡: 读不到（" + str(info["adapters_error"]) + "）"
     foreign = info.get("foreign_tun") or []
     if not foreign:
         return "场上别人的 tunnel/虚拟网卡: 无（探针成功）"
