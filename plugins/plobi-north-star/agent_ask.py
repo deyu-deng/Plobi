@@ -722,12 +722,21 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
     if result["missing_binary"]:
         return tool_error("这台机器上找不到可执行的命令行，问不到任何分身。", ok=False)
     if result["timed_out"]:
+        # R-089 / R-072：那一趟已经花掉的钱不能凭空消失。`_run_child` 在 kill 之后
+        # 已经拿 5 秒 grace 把剩余 stdout 收了回来（`:652-655`），以前到这里就被扔掉——
+        # 现在照原样交回，并**明说是半句**，绝不冒充完整回答（没收到就照实说没收到）。
+        partial = _tail(result["stdout"])
+        detail = (
+            f"它已经说出来的部分照原样交回，**这是没说完的半句、不是完整回答**：{partial}"
+            if partial else "它一个字都没吐出来（子进程的输出还没落到管道就被收了）。"
+        )
         return tool_error(
-            f"「{_label(entry)}」在 {int(limit)} 秒内没有答完，这次先记下问不到。"
+            f"「{_label(entry)}」在 {int(limit)} 秒内没有答完。{detail}"
             "可以再问一次，或把问题问得更具体。",
             ok=False,
             agent=entry.name,
             timeout_seconds=limit,
+            partial_answer=partial,
         )
     if (result["returncode"] or 0) != 0:
         detail = _tail(result["stderr"]) or _tail(result["stdout"])
