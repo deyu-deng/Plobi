@@ -5,6 +5,12 @@ The model switch marker must NOT use role="system" because strict providers
 role="user" is safe — the system prompt is prepended to the API message list,
 so a user-role marker can appear at any later position, and the gateway's
 sanitize/merge pass already coalesces consecutive user messages.
+
+R-092 (2026-10-15) adds the other half of the contract: the marker is
+**in-memory only**. It used to be persisted as a user row, which made it
+masquerade as something the user said inside L1's memory, re-billed on every
+turn, and became a second source of truth for "which leg is this chat on" —
+that fact belongs to ``session_model_usage`` and nowhere else.
 """
 
 from __future__ import annotations
@@ -97,9 +103,25 @@ class TestAppendModelSwitchMarkerRole:
         marker = session["history"][-1]
         assert marker["role"] == "user"
         assert session["history_version"] == 8
-        # The persisted row must mirror the in-memory role.
-        db.append_message.assert_called_once_with(
-            session_id="sess-1",
-            role="user",
-            content=marker["content"],
-        )
+        # R-092: 这条通知**不落库**——落库就等于把它长在这页聊天里，
+        # 它在 L1 的记忆中冒充用户说的话，且每轮重新付一次 token。
+        db.append_message.assert_not_called()
+
+    def test_a_switch_writes_nothing_to_the_session_store_at_all(self) -> None:
+        """判据（R-092）：切换通知只活在内存里这一轮，**库里一条都不许有**；
+        「这一页现在走哪条腿」的唯一真源是 `session_model_usage`，不是聊天消息。
+        断言写成关系（整个 store 零调用），不是快照某一句文案。"""
+        db = MagicMock()
+        session: dict = {
+            "session_key": "sess-9",
+            "history": [{"role": "user", "content": "hi"}],
+            "agent": SimpleNamespace(_session_db=db),
+        }
+
+        _append_model_switch_marker(session, model="workbuddy/hy3-x", provider="aigw")
+        _append_model_switch_marker(session, model="workbuddy/hy3", provider="aigw")
+
+        assert db.method_calls == [], f"切换通知仍然碰了会话库：{db.method_calls}"
+        # 但正在跑的这一轮必须仍然知道腿换了，否则它答「我用的是哪条腿」会拿旧值。
+        assert len(session["history"]) == 3
+        assert "workbuddy/hy3" in session["history"][-1]["content"]
