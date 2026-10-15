@@ -3570,12 +3570,24 @@ function Resolve-DataDir {
     }
 
     # A sync client moves files under us in both directions; a half-synced database is not
-    # a failure either side could explain afterwards.
-    $syncRoots = @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial) | Where-Object { $_ }
-    $syncRoots += @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match "(?i)onedrive|dropbox|google[ _-]?drive|baidusync|坚果云|GoodSync" } |
-        ForEach-Object { $_.FullName })
-    foreach ($sr in $syncRoots) {
+    # a failure either side could explain afterwards.  Three sources, all by pattern: the
+    # registered OneDrive roots, the user profile's sync-looking children, and each drive's
+    # FIRST-LEVEL folders that look like a sync/content volume — that last one is how a
+    # hand-made netdisk folder at a drive root gets caught on the box that has one, without
+    # ever naming a drive letter here.
+    $syncPattern = "(?i)onedrive|dropbox|google[ _-]?drive|baidusync|坚果云|GoodSync|^cloud$|^网盘$|同步盘"
+    # Every one of these must stay an ARRAY: a pipeline with a single result unrolls into a
+    # string, and `$string += $more` CONCATENATES instead of appending — which silently
+    # stopped all matching.  Caught by the hermetic suite, missed by a hand-run repro whose
+    # ambient environment happened to have two matches.
+    $syncRoots = @(@($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial) | Where-Object { $_ })
+    $syncRoots = @($syncRoots) + @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $syncPattern } |
+        ForEach-Object { [string]$_.FullName })
+    $syncRoots = @($syncRoots) + @(Get-PSDrive -PSProvider FileSystem | ForEach-Object { $_.Root } | ForEach-Object {
+        Get-ChildItem -LiteralPath $_ -Directory -ErrorAction SilentlyContinue
+    } | Where-Object { $_.Name -match $syncPattern } | ForEach-Object { [string]$_.FullName })
+    foreach ($sr in @($syncRoots)) {
         $trimmed = ($sr).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
         if ($trimmed -and $expanded.StartsWith($trimmed, [StringComparison]::OrdinalIgnoreCase)) {
             $out.reason = "同步盘目录：它坐在 $trimmed 里面，网盘会双向搬动运行数据"

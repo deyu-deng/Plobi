@@ -324,6 +324,33 @@ def test_chosen_home_wins_and_install_dir_follows_it_unless_given(home: Path):
     )
 
 
+def test_a_drive_root_sync_folder_is_caught_by_pattern_not_by_a_letter(home: Path):
+    """判据② 那句「本机另含 `D:\\Cloud`」——靠**盘根第一层的名字**抓，不靠把 D 写进代码。
+
+    顺序是政策 → 同步 → 可写，所以这一枪在探测可写性之前就返回，不会往网盘目录里写任何东西。
+    """
+    candidates = []
+    for letter in string.ascii_uppercase:
+        if letter == _SYSTEM_LETTER:
+            continue  # 系统盘那条判据排在同步之前，先排除它才量得到同步这一条
+        base = Path(f"{letter}:\\")
+        try:
+            if not base.is_dir():
+                continue
+            for child in base.iterdir():
+                if child.is_dir() and re.search(r"(?i)^cloud$|^网盘$|同步盘|onedrive|dropbox", child.name):
+                    candidates.append(child)
+        except OSError:
+            continue
+    if not candidates:
+        pytest.skip("这台盘根下没有名字像同步盘的目录，这条判据在此不构成——不拿跳过当通过")
+
+    r = _resolve(str(candidates[0] / "plobi"))
+
+    assert r["ok"] is False, f"盘根上的同步型目录必须被挡：{r}"
+    assert "同步盘" in r["reason"] and str(candidates[0]).lower() in r["reason"].lower(), r["reason"]
+
+
 def test_the_prompt_asks_once_and_a_typed_answer_is_what_lands(home: Path):
     """判据①：交互安装**必问**，默认值只是建议不是落点。
 
