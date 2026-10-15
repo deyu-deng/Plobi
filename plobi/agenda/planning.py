@@ -440,13 +440,36 @@ def _ddl_candidates(conn: Any, window_from: datetime, window_to: datetime) -> li
     return events
 
 
-def _matches_project(event: Event, entry_name: str) -> bool:
+def _roster_names() -> tuple[str, ...]:
+    """名册里全部条目名（小写、去首尾空白），给归属判据当"有没有人跟这条全称全等"的参照。
+
+    读不到名册时回空元组——那时退回老口径（宁可多挂一块作业，也不把手下从名单里悄悄抹掉），
+    与 :func:`paced_projects` 对名册异常的处理一致。
+    """
+    from plobi.agents.registry import load_registry
+
+    try:
+        return tuple(str(getattr(entry, "name", "") or "").lower().strip()
+                     for entry in load_registry().entries())
+    except Exception:  # noqa: BLE001 - 名册读不到就不拿它去拦人
+        return ()
+
+
+def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str] = ()) -> bool:
     """这条 DDL 属不属于该项目 —— 两条确定性关联口径，都不许按信源名字分支。
 
     1. 标题含项目名（C5 原口径：events 表没有 project 外键，标题是唯一手写锚点）。
     2. ``evidence`` 里的**归属字段**等于项目名：采集来的 DDL（课表作业那类）标题是站方给的
        课件名，项目名压根不在里面 ⇒ 只认口径 1 就永远挂不上。这里读的是通用字段名
        ``course``/``project``（哪个信源给的都一样），**看的不是这条数据由哪个信源采来**（判据 4）。
+
+    ``other_names`` 是名册其余条目名。简称仍然可以命中全称（名册里的项目名常是简称），
+    **但名册里已经有人跟这条归属字段全等时，简称不许再来抢**：2026-10-15 在这台真库上实测，
+    「电工电子学」靠子串把「电工电子学实验」的 2 条作业也认领走（``evt_1842479535ce`` /
+    ``evt_3fd8c0dedcf3``），于是那两门课的「下一个 DDL」是同一块数据 —— 145①(b)
+    「某门课的作业必须派给那门课」在这形状下必然挂错课。查询侧
+    （:mod:`plobi.agenda.course_records` 的 ``_match_class_titles``）用的是同一条**单向**规则
+    （全等存在就不许再拿前缀去够别的课），两侧共用一份判据，不各说一套。
     """
     needle = entry_name.lower().strip()
     if not needle:
@@ -454,14 +477,20 @@ def _matches_project(event: Event, entry_name: str) -> bool:
     if needle in (event.title or "").lower():
         return True
     extra = event.evidence if isinstance(event.evidence, dict) else {}
+    taken = {str(n).lower().strip() for n in other_names} - {needle, ""}
     for key in ("course", "project"):
         value = str(extra.get(key) or "").lower().strip()
-        if value and (value == needle or needle in value):
+        if not value:
+            continue
+        if value == needle:
+            return True
+        if needle in value and value not in taken:
             return True
     return False
 
 
-def _next_ddl(conn: Any, entry_name: str, window_from: datetime) -> Optional[datetime]:
+def _next_ddl(conn: Any, entry_name: str, window_from: datetime,
+              *, other_names: Iterable[str] = ()) -> Optional[datetime]:
     """该项目的下一个 DDL 事件，确定性启发式。
 
     匹配不到 = 无 DDL（排序垫底，按名称稳定）。
@@ -470,12 +499,13 @@ def _next_ddl(conn: Any, entry_name: str, window_from: datetime) -> Optional[dat
     moments = [
         _as_dt(event.start_at)
         for event in _ddl_candidates(conn, window_from, ddl_limit)
-        if _matches_project(event, entry_name)
+        if _matches_project(event, entry_name, other_names=other_names)
     ]
     return min(moments) if moments else None
 
 
-def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetime) -> list[Event]:
+def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetime,
+                        *, other_names: Iterable[str] = ()) -> list[Event]:
     """没挂上任何 pace 项目的截止事件，按到期时刻由近到远。
 
     为什么要有这一格：学在浙大那批作业的标题是课件名（「示波器的使用+声速测定预习报告」），
@@ -495,7 +525,7 @@ def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetim
     return [
         event
         for event in _ddl_candidates(conn, window_start, ddl_limit)
-        if not any(_matches_project(event, name) for name in paced_names)
+        if not any(_matches_project(event, name, other_names=other_names) for name in paced_names)
     ]
 
 
@@ -573,16 +603,18 @@ def _project_block_items(
     free = _free_windows(occupied + avoid_intervals, window_start, window_end)
 
     paced = paced_projects()
+    roster_names = _roster_names()
     ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
 
     def _sort_key(pair):
-        ddl = _next_ddl(conn, pair[0].name, window_from=window_start)
+        ddl = _next_ddl(conn, pair[0].name, window_from=window_start, other_names=roster_names)
         if ddl is not None and ddl > ddl_limit:
             ddl = None  # lookahead 之外的 DDL 视同无 DDL
         return (ddl is None, ddl or window_start, pair[0].name)
 
     ranked = sorted(paced, key=_sort_key)
-    pending_ddl = _unowned_ddl_events(conn, [entry.name for entry, _ in ranked], window_start)
+    pending_ddl = _unowned_ddl_events(conn, [entry.name for entry, _ in ranked], window_start,
+                                      other_names=roster_names)
     ddl_left = DDL_DAILY_BUDGET_MINUTES * 60.0
     budgets = {entry.name: weekly_hours / 7.0 * 3600.0 for entry, weekly_hours in ranked}
     floor = MIN_BLOCK_MINUTES * 60.0

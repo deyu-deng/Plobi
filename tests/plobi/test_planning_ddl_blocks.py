@@ -17,6 +17,7 @@ import pytest
 from plobi.agenda import store
 from plobi.agenda.planning import (
     DDL_BLOCK_EVIDENCE_KIND,
+    _as_dt,
     PROJECT_BLOCK_EVIDENCE_KIND,
     _matches_project,
     _next_ddl,
@@ -375,3 +376,41 @@ def test_a_paceless_course_entry_changes_nothing_in_the_schedule(bare_registry, 
     assert "电工电子学实验" not in paced_names, (
         "不带 pace 的课程不该出现在推进池里——它一出现，作业就会从「无主」被摘走"
     )
+
+
+def test_a_short_course_name_must_not_steal_the_long_one_s_homework(bare_registry, conn):
+    """按课归属不许串台（WP-COLLECT-SCHEDULE-VISIBLE 判据 1；2026-10-15 在这台真库抓到）。
+
+    真库形状：`电工电子学`（2 条作业）与 `电工电子学实验`（2 条作业）是两门课，
+    而旧口径拿名册条目名对 `evidence.course` 做子串匹配 ⇒ 短名把长名的作业一起认领走，
+    两门课的「下一个 DDL」变成同一块数据（串台 2 条：`evt_1842479535ce`、`evt_3fd8c0dedcf3`）。
+    145①(b) 那句「某门课的作业必须派给那门课」在这个形状下必然挂错课，所以钉成回归。
+    """
+    own = _ddl(conn, "第5次课后作业-(2.3)", "2026-10-18T23:55:00", course="电工电子学")
+    lab = _ddl(conn, "实验报告提交-实验三-叠加原理", "2026-10-20T23:59:00", course="电工电子学实验")
+    _CourseRoster.add_course(bare_registry, "电工电子学")
+    _CourseRoster.add_course(bare_registry, "电工电子学实验")
+    names = [entry.name for entry in bare_registry.entries()]
+
+    assert _matches_project(lab, "电工电子学实验", other_names=names) is True
+    assert _matches_project(lab, "电工电子学", other_names=names) is False, (
+        "名册里已经有人跟这条 `evidence.course` 全等，短名不许再靠子串把它抢走"
+    )
+
+    window = datetime.fromisoformat(f"{DAY}T00:00:00")
+    nxt = _next_ddl(conn, "电工电子学", window_from=window, other_names=names)
+    assert nxt is not None and nxt == _as_dt(own.start_at), (
+        "短名的下一个 DDL 必须是它自己那条作业，不能是别门课的"
+    )
+    claimed = [name for name in ("电工电子学", "电工电子学实验")
+               if _matches_project(lab, name, other_names=names)]
+    assert claimed == ["电工电子学实验"], f"一条作业被两门课同时认领：{claimed}"
+
+
+def test_an_abbreviated_project_name_still_reaches_a_longer_course_field(bare_registry, conn):
+    """名册里没人全等那条归属字段时，简称仍然算命中——保住 C5 那条既有契约（不许顺手收紧）。"""
+    event = _ddl(conn, "随便一个课件名", "2026-10-19T23:00:00", course="线性代数")
+    names = [entry.name for entry in bare_registry.entries()]
+
+    assert "线性代数" not in names, "名册里没有全等者，这条测的才是简称那一档"
+    assert _matches_project(event, "线性", other_names=names) is True
