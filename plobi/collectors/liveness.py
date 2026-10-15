@@ -2,13 +2,18 @@
 
 存在的理由是一条我们反复量到的坑：**代码合了 ≠ 会在采**。配置齐、端点在、产物在，
 都可能一行新数据都没进过。所以这里不去读"配了什么"，只读 `events` 表里每个 `source`
-最后一次写入的时刻，并把"距今多少天"翻成一句状态话。
+最后一次进新条目的时刻，并把"距今多少天"翻成一句状态话。
 
 三条口径：
-- **只报读数，不猜原因**。这里没有"为什么停了"的答案——只有"最后一次动是几点"。
+- **只报读数，不猜原因**。这里没有"为什么停了"的答案——只有"最后一次进新行是几点"。
   猜"学期中没变更"和猜"登录态过期"一样是编故事。
-- 判"活不活"用 `updated_at`（重拉会刷新它，即使没有新行），新数据用 `created_at`；
-  两格都给出，不合并成一个数——合并过一次的下次就是把"没进新东西"说成"活着"。
+- 判"活不活"只认 `created_at`，**不认 `updated_at`**。这台 2026-10-15 亲眼量到一次反例：
+  `timetable` 的 `MAX(updated_at)` 是当天 08:43:30，看着像活着，实际那是**一条日程被确认**时
+  写的本地改动（该信源 240 行的 `created_at` 全停在 10-09，只有那一行今天动过）。
+  确认一条日程、改一次标题都会刷 `updated_at` ⇒ 拿它判活性会把"有人在动板"说成"有人在采"。
+- 探针的天花板也写在这：一次**没有新增**的拉取不在 `events` 里留痕，所以这里只能说
+  "最后一次进新条目是几点"，不能说"最后一次跑采集是几点"。想要后者，得采集器自己记一份
+  （`zju` 那份 `zju_state.json` 就是它自己记的，不在本探针的通用面里按名字分支）。
 - 认不出的状态**不编句子**：表里没有的 source 一律 `never`，库不在就是 `no_store`。
 """
 
@@ -28,15 +33,19 @@ STATE_STALE = "stale"
 STATE_NEVER = "never"
 STATE_NO_STORE = "no_store"
 
-#: 超过这个天数没进过东西就算"这条没在跑"。不是产品参数，是一条读数阈值：
+#: 超过这个天数没进过新条目就算"这条没在采"。不是产品参数，是一条读数阈值：
 #: 课表类信源按学期日更，三天足够跨过任何一次正常静默。
 STALE_AFTER_DAYS = 3.0
 
 _NOTES = {
-    STATE_LIVE: "最近还在写（这一句只说写没写，不说写得对不对）。",
+    STATE_LIVE: (
+        "阈值内进过新条目。这一句只说有没有新东西进来，不说写得对不对，"
+        "也不说它下一次还会不会进。"
+    ),
     STATE_STALE: (
-        "超时没进新东西：这一条没有在跑。它**不是**「配好了等着」——"
-        "想知道为什么停，看同一条信源的 state 与那一句失败话，别在这里猜。"
+        "阈值内没有新条目进来。它**不等于**「采集器坏了一次」——一次没新增的拉取不在这里留痕；"
+        "也**不等于**「板没人动」：本地改动刷的是 `updated_at`，那一列不参与判活。"
+        "想知道为什么，去读同一条信源自己的状态与那句失败话。"
     ),
     STATE_NEVER: "库里就没有这一条信源的任何一行：从来没有成功采过。",
     STATE_NO_STORE: "读不到日程库（`agenda.db` 不在或读不开）：这个探针对整条采集链什么都不能说。",
@@ -57,6 +66,8 @@ class SourceLiveness:
     last_created_at: str
     last_updated_at: str
     age_days: Optional[float]
+    #: 板有人动过、但没有新东西进来 —— 只在两个时刻都读得到时才说，不猜。
+    touched_after_last_write: bool
     note: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -94,7 +105,7 @@ def read_source_liveness(
         return {
             "checked_at": reference.isoformat(timespec="seconds"),
             "stale_after_days": stale_after_days,
-            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, note_for(STATE_NO_STORE)).as_dict()
+            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False, note_for(STATE_NO_STORE)).as_dict()
                         for source in (expected_sources or ("(unknown)",))],
             "verdict": "读不到日程库，这条探针什么都不能说",
         }
@@ -113,7 +124,7 @@ def read_source_liveness(
         return {
             "checked_at": reference.isoformat(timespec="seconds"),
             "stale_after_days": stale_after_days,
-            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, note_for(STATE_NO_STORE)).as_dict()
+            "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False, note_for(STATE_NO_STORE)).as_dict()
                         for source in (expected_sources or ("(unknown)",))],
             "verdict": f"读不动日程库：{exc}",
         }
@@ -129,17 +140,19 @@ def read_source_liveness(
             state = STATE_NEVER
             age = None
         else:
-            age = _age_days(updated or created, reference)
+            age = _age_days(created, reference)          # 判活只认 created_at，见模块头的 10-15 反例
             state = STATE_STALE if age is None or age > stale_after_days else STATE_LIVE
-        out.append(SourceLiveness(source, state, count, _iso(created), _iso(updated), age, note_for(state)))
+        touched = bool(created and updated and updated > created)
+        out.append(SourceLiveness(source, state, count, _iso(created), _iso(updated), age,
+                                  touched, note_for(state)))
 
     live = [s for s in out if s.state == STATE_LIVE]
     if not out:
         verdict = "库里一条信源都没有：这条链没有在采"
     elif not live:
-        verdict = "每一条信源都超时没进新东西 —— 采集没有在跑"
+        verdict = "每一条信源都超时没进新条目 —— 没有东西进来（本地改动不算）"
     else:
-        verdict = f"{len(live)} 条还在写：" + "、".join(s.source for s in live)
+        verdict = f"{len(live)} 条还在进新条目：" + "、".join(s.source for s in live)
     return {
         "checked_at": reference.isoformat(timespec="seconds"),
         "stale_after_days": stale_after_days,

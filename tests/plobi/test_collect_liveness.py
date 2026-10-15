@@ -53,7 +53,7 @@ class TestStates:
 
         assert got["timetable"]["state"] == STATE_LIVE
         assert got["zju"]["state"] == STATE_STALE
-        assert "1 条还在写" in data["verdict"]
+        assert "1 条还在进新条目" in data["verdict"]
 
     def test_a_registered_source_that_never_landed_still_gets_a_row(self, tmp_path):
         """信源在注册表里就必须出现在读数里 —— 静默省略就是"看着像没有这个信源"。"""
@@ -67,7 +67,7 @@ class TestStates:
     def test_everything_stale_says_the_chain_is_not_running(self, tmp_path):
         data = read_source_liveness(_store(tmp_path, [_row("zju", 9), _row("manual", 5)]), now=NOW)
 
-        assert data["verdict"] == "每一条信源都超时没进新东西 —— 采集没有在跑"
+        assert data["verdict"] == "每一条信源都超时没进新条目 —— 没有东西进来（本地改动不算）"
 
     def test_missing_store_refuses_to_speak(self, tmp_path):
         data = read_source_liveness(tmp_path / "不在这里.db", now=NOW, expected_sources=("zju",))
@@ -85,18 +85,36 @@ class TestStates:
         assert by_source(data)["zju"]["state"] == STATE_NO_STORE
         assert "读不动" in data["verdict"]
 
-    def test_updated_at_decides_liveness_even_without_new_rows(self, tmp_path):
-        """重拉会刷新 updated_at：只按 created_at 判会把"活着但没变更"误报成停了。"""
+    def test_a_local_edit_does_not_make_a_stale_source_look_live(self, tmp_path):
+        """这台 2026-10-15 量到的反例，钉成回归：`updated_at` 新 ≠ 还在采。
+
+        现场形状：`timetable` 240 行的 `created_at` 全停在 10-09，只有**一行**当天 08:43 被确认，
+        于是 `MAX(updated_at)` 是"0.01 天前"。按 updated 判就把"有人在动板"报成"有人在采"。
+        """
         db = tmp_path / "agenda.db"
         conn = sqlite3.connect(str(db))
         conn.execute("CREATE TABLE events (source TEXT, created_at TEXT, updated_at TEXT)")
-        conn.execute("INSERT INTO events VALUES (?, ?, ?)",
-                     ("timetable", (NOW - timedelta(days=30)).isoformat(timespec="seconds"),
-                      (NOW - timedelta(minutes=5)).isoformat(timespec="seconds")))
+        conn.executemany("INSERT INTO events VALUES (?, ?, ?)", [
+            ("timetable", (NOW - timedelta(days=30)).isoformat(timespec="seconds"),
+             (NOW - timedelta(days=30)).isoformat(timespec="seconds")),
+            ("timetable", (NOW - timedelta(days=29)).isoformat(timespec="seconds"),
+             (NOW - timedelta(minutes=5)).isoformat(timespec="seconds")),
+        ])
         conn.commit()
         conn.close()
 
-        assert by_source(read_source_liveness(db, now=NOW))["timetable"]["state"] == STATE_LIVE
+        row = by_source(read_source_liveness(db, now=NOW))["timetable"]
+
+        assert row["state"] == STATE_STALE                 # 判活只认最后一次进新条目
+        assert row["touched_after_last_write"] is True     # 但面上要说得出"板被人动过"
+        assert row["events"] == 2
+
+    def test_a_fresh_row_is_not_reported_as_edited_after_write(self, tmp_path):
+        """没有本地改动时不编那一格：created 与 updated 同刻 ⇒ 只说进了新条目。"""
+        row = by_source(read_source_liveness(_store(tmp_path, [_row("timetable", 0)]), now=NOW))["timetable"]
+
+        assert row["state"] == STATE_LIVE
+        assert row["touched_after_last_write"] is False
 
 
 class TestNotes:
