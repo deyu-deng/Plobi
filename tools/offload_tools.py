@@ -132,6 +132,9 @@ def to_ledger_result(channel_result: Any) -> LedgerResult:
         cost_status=getattr(channel_result, "cost_status", "unknown") or "unknown",
         duration_seconds=float(getattr(channel_result, "duration_s", 0.0) or 0.0),
         failure="" if channel_result.ok else classify_failure(getattr(channel_result, "error", "")),
+        # 外部会话标识：通道读出来是什么就是什么，读不到是 ""（空是读数，不是失败）。
+        external_session=str(getattr(channel_result, "external_session", "") or ""),
+        external_session_source=str(getattr(channel_result, "external_session_source", "") or ""),
     )
 
 
@@ -189,6 +192,10 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
         "report": summarize_round([ledger_row]),
         "asked": task[:280],
     }
+    if ledger_row.external_session:
+        # 有值才提这一格，没值不提、也不写"未知会话"糊弄（判据：空串不是可跳的标识）。
+        payload["external_session"] = ledger_row.external_session
+        payload["external_session_source"] = ledger_row.external_session_source
     if not result.ok:
         payload["error"] = failure_note(ledger_row.failure) if ledger_row.failure else detail
         payload["raw_error"] = detail

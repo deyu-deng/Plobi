@@ -216,18 +216,122 @@ def test_list_shaped_envelope_does_not_crash_a_finished_run():
     the run had already completed and already spent — losing the evidence for
     nothing."""
     stdout = json.dumps([{"type": "system"}, {"result": "done", "usage": {"total_tokens": 7}}])
-    text, usage = offload._parse_envelope(stdout)
+    text, usage, session, source = offload._parse_envelope(stdout)
     assert text == "done" and usage == {"total_tokens": 7}
+    assert session == "" and source == ""
 
 
 def test_object_shaped_envelope_still_parses():
-    text, usage = offload._parse_envelope(json.dumps({"result": "hi", "usage": {"total_tokens": 3}}))
+    text, usage, session, source = offload._parse_envelope(json.dumps({"result": "hi", "usage": {"total_tokens": 3}}))
     assert text == "hi" and usage == {"total_tokens": 3}
+    assert session == "" and source == ""
 
 
 def test_unparseable_output_degrades_to_raw_text_not_an_exception():
-    text, usage = offload._parse_envelope("not json at all")
+    text, usage, session, source = offload._parse_envelope("not json at all")
     assert text == "not json at all" and usage == {}
+    assert session == "" and source == ""
+
+
+# ── WP-OFFLOAD-SESSION-HANDLE：标识本来就在回包里，别再把它扔了 ──────────────
+
+_CB_ID = "01a1248d-3b15-738e-977b-0b90cd206790"
+_AGY_ID = "c6f16d79-d814-4c9d-8e74-6bbbe0877acb"
+
+
+def _codebuddy_records(result_session_id=_CB_ID, process_session_id=_CB_ID):
+    """The array shape measured on this box (see ``D:/Temp/offload-cb-20261010``):
+    process records spell it ``sessionId``, only the closing ``result`` record
+    spells it ``session_id``."""
+    records = [
+        {"type": "message", "sessionId": process_session_id, "text": "working"},
+        {"type": "file-history-snapshot"},
+        {"type": "function_call", "sessionId": process_session_id},
+    ]
+    if result_session_id:
+        records.append({"type": "result", "session_id": result_session_id,
+                        "result": "done", "usage": {"total_cost_usd": 0.0}})
+    return records
+
+
+def test_codebuddy_reads_the_closing_result_record_and_says_so():
+    text, usage, session, source = offload._parse_envelope(json.dumps(_codebuddy_records()))
+    assert session == _CB_ID
+    assert source == "result.session_id"
+    assert text.endswith("done")
+
+
+def test_codebuddy_without_a_result_record_falls_back_to_the_process_key():
+    text, usage, session, source = offload._parse_envelope(json.dumps(
+        _codebuddy_records(result_session_id="")))
+    assert session == _CB_ID
+    assert source == "sessionId"
+
+
+def test_the_two_codebuddy_spellings_are_reconciled_in_favour_of_result():
+    """判据：两种拼法不一致时取 `result` 那条，**并把不一致说得出**——回跳要拿这个
+    id 起 `--resume`，悄悄选一个就等于让前端猜厂商的信封长什么样。"""
+    other = "01a19999-0000-7000-8000-000000000000"
+    text, usage, session, source = offload._parse_envelope(json.dumps(
+        _codebuddy_records(result_session_id=_CB_ID, process_session_id=other)))
+    assert session == _CB_ID
+    assert source == "result.session_id!=sessionId"
+
+
+def test_agy_answers_one_object_with_its_own_key():
+    text, usage, session, source = offload._parse_envelope(json.dumps(
+        {"status": "ok", "response": "done", "conversation_id": _AGY_ID,
+         "duration_seconds": 3.2, "usage": {"input_tokens": 10}}))
+    assert session == _AGY_ID
+    assert source == "conversation_id"
+    assert text == "done"
+
+
+def test_an_envelope_with_no_session_key_yields_empty_and_the_turn_still_lands():
+    """形状变了不崩：读不到就是空，**空是读数不是失败**，面上也不许出现"未知会话"那种假话。"""
+    stdout = json.dumps([{"type": "message", "text": "hi"}, {"type": "result", "result": "done"}])
+    text, usage, session, source = offload._parse_envelope(stdout)
+    assert text.endswith("done")
+    assert session == "" and source == ""
+
+
+def test_run_task_carries_the_handle_out_on_the_result(workdir, monkeypatch):
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(offload, "egress_is_reachable", lambda proxy: (True, ""))
+    stdout = json.dumps(_codebuddy_records())
+
+    def fake_run(argv, **kwargs):
+        (Path(kwargs["cwd"]) / "made.txt").write_text("x", encoding="utf-8")
+        return _Completed(stdout=stdout)
+
+    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+    result = offload.run_task("do it", cwd=workdir)
+    assert result.ok is True
+    assert result.external_session == _CB_ID
+    assert result.external_session_source == "result.session_id"
+    # as_dict 是消费侧真正读的那份形状
+    assert result.as_dict()["external_session"] == _CB_ID
+
+
+@pytest.mark.parametrize("evidence_dir, expected", [
+    ("offload-cb-20261010", _CB_ID),
+    ("offload-20261010", "01a12965-b059-75e9-97dd-72db6abfa98f"),
+    ("plobi-offload-demo", "01a1257c-2376-7466-9222-7215052f5aed"),
+    ("offload-product-a", _AGY_ID),
+    ("offload-product-b", "afc613c9-18f3-44ca-9055-be85ef618977"),
+    ("offload-20261011", "39e2a440-34ec-41cf-be7a-ae442fa18b6f"),
+])
+def test_every_envelope_kept_on_this_box_still_yields_its_id(evidence_dir, expected):
+    """Real vendor output, zero spend — the判据 the task paper asked for ("只吃盘上现成的
+    六份 envelope 当夹具"). These are this machine's audit files, so the test skips when
+    they are not there; the inline fixtures above are the portable half."""
+    path = Path(Path(offload.__file__).drive + "/Temp/" + evidence_dir
+                + "/.offload-envelope.json")
+    if not path.is_file():
+        pytest.skip(f"no kept envelope for {evidence_dir} on this machine")
+    text, usage, session, source = offload._parse_envelope(path.read_text(encoding="utf-8"))
+    assert session == expected
+    assert source in ("result.session_id", "sessionId", "conversation_id")
 
 
 def test_envelope_is_kept_for_audit_without_counting_as_a_product(workdir, monkeypatch):

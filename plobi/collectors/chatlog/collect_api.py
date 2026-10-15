@@ -244,10 +244,3 @@ async def sweep(lookback_days: int = DEFAULT_LOOKBACK_DAYS):
 from plobi.collectors.timetable.api import router as _timetable_router  # noqa: E402
 
 router.include_router(_timetable_router)
-
-
-# 信源活性探针（"代码合了 ≠ 会在采"那一坑的面）——同一条挂载理由：不开新前缀，
-# 它读的是全信源，不只 chatlog，所以走 `/api/collect/sources`。
-from plobi.collectors.liveness_api import router as _liveness_router  # noqa: E402
-
-router.include_router(_liveness_router)
