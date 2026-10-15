@@ -120,26 +120,66 @@ def _error(status: int, message: str) -> JSONResponse:
 # --------------------------------------------------------------------------- #
 
 _registry: Optional[AgentRegistry] = None
+# 名册文件那一对廉价签名 `(mtime_ns, size)`。存在的理由是一条现核到的坑：这个单例以前
+# 只在为 None 时读盘，而刷新只发生在「通过 API 写名册」那两条路上 ⇒ 手改 / CLI 改
+# `projects.yaml` 之后，跑着的后端永远读的是启动那一刻的名册，用户看到的正是
+# 「左栏看得见、点不进去」（裁定 146 / WP-REGISTRY-RELOAD-FRESH）。
+_registry_sig: Optional[tuple[int, int]] = None
+
+
+def _registry_path(registry: Optional[AgentRegistry]) -> Path:
+    """签名要对哪一份文件取——注入进来的名册用它自己的路径，不许偷偷换成家目录那份。"""
+    path = getattr(registry, "path", None) if registry is not None else None
+    if path:
+        return Path(path)
+    from plobi.agents.registry import default_path
+
+    return default_path()
+
+
+def _registry_signature(registry: Optional[AgentRegistry]) -> Optional[tuple[int, int]]:
+    """`(mtime, size)`；文件读不到就回 None —— 那是「没有签名」，不是「变过了」。"""
+    try:
+        stat = _registry_path(registry).stat()
+    except (OSError, ValueError):
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
 
 
 def get_registry() -> AgentRegistry:
-    """Registry singleton — re-read from disk on every call if unset."""
-    global _registry
+    """Registry singleton — re-read from disk when the registry **file** changed.
+
+    每次请求只 `stat()` 一个文件，不重读整份 yaml：成本摊在签名上，不摊在轮询上
+    （那是这条刀明确的反面判据）。签名取不到（文件不在/不可读）时保留原对象，
+    不许把它当成"变了"而每轮重读。
+    """
+    global _registry, _registry_sig
     if _registry is None:
         _registry = load_registry()
+        _registry_sig = _registry_signature(_registry)
+        return _registry
+
+    signature = _registry_signature(_registry)
+    if signature is not None and signature != _registry_sig:
+        # 签名取不到（`None`）时不重读——那是"没尺"，不是"变了"；
+        # 而以前没尺、现在有了（第一次 save 把文件建出来）也算变了。
+        _registry = load_registry(_registry_path(_registry))
+        _registry_sig = signature
     return _registry
 
 
 def set_registry(registry: Optional[AgentRegistry]) -> None:
     """Injection seam for tests."""
-    global _registry
+    global _registry, _registry_sig
     _registry = registry
+    _registry_sig = _registry_signature(registry) if registry is not None else None
 
 
 def reload_registry() -> AgentRegistry:
     """Force a re-read (the file can change under a long-running server)."""
-    global _registry
-    _registry = load_registry()
+    global _registry, _registry_sig
+    _registry = load_registry(_registry_path(_registry))
+    _registry_sig = _registry_signature(_registry)
     return _registry
 
 
