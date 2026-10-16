@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -46,21 +46,24 @@ NORTH_STAR_PLUGIN = "plobi-north-star"
 GREEN, YELLOW, RED = "green", "yellow", "red"
 
 # ---------------------------------------------------------------------------
-# R-047 — a fourth status: DEFERRED ("后置，不是坏了").
+# DEFERRED — a fourth status: "后置，不是坏了".
 #
-# The product owner explicitly postponed the WeChat collection stack:
-# 「先不要做采集的功能了 … 等应用打磨得比较完整了，我才会提供数据的。」
-# Reporting those rows red was a *false* red — it destroyed the meaning of
-# "red == something broke" and drowned the two rows that genuinely need fixing
-# (``dingtalk`` missing its webhook secret, ``north_star`` not wired into a
-# toolset).
+# It exists because of R-048's finding: a false red destroys the meaning of
+# "red == something broke" and drowns the rows that genuinely need fixing. The
+# product owner postponed the WeChat collection stack once; **that ruling was
+# revoked on 2026-09-30 by 裁定 48**, and the sentence this file used to print
+# still cited the revoked number. 裁定 162 keeps the mechanism and fixes the
+# reason: deferral may only cover a capability this wave never intended to run,
+# and which one that is is read from ONE place — the collectors registry — not
+# from a hand-written list that goes stale the day someone flips a switch.
 #
 # This is NOT the LAN row's trick (see ``collect_app_pairing_info`` above):
 # LAN is dropped from the table entirely because it is opt-in read-out. A
 # deferred capability stays in the table, still gets probed, and still goes
 # GREEN the moment it is really live — deferral is a product decision about
-# priority, not a permanent disable. Only a *failed* probe is downgraded from
-# red to deferred.
+# priority, not a permanent disable. Only a *failed* probe is downgraded, and
+# only when the registry says that source is off: a source that IS switched on
+# and is not running reports **red** (``deferred_or_red`` below).
 #
 # ``DEFERRED`` is 8 chars, so it fills the existing ``{'color':<8}`` column
 # exactly and the table keeps its alignment.
@@ -68,33 +71,79 @@ GREEN, YELLOW, RED = "green", "yellow", "red"
 DEFERRED = "deferred"
 
 # One line per deferred capability: what it would take to switch it on *on this
-# machine*. These must never name a PowerShell launcher — the Windows box was
-# decommissioned on 2026-09-27 and macOS is now the only true source, so advice
-# like "run scripts/chatlog_server.ps1" is unactionable and misleading. Every
-# hint below was verified against this checkout.
+# machine*, as measured on the checkout it runs from. Two rules bite here:
+#   * never name a launcher that does not exist on the resident machine, and
+#   * never state a cause the row did not observe — 裁定 162 第 2 条.
+# Each hint says which part is a reading and which part is the remaining step.
 DEFERRED_ENABLE_HINTS: dict[str, str] = {
     "chatlog": (
-        "install Go (absent on this machine), `cd tools/chatlog && "
-        "go build -o bin/chatlog ./cmd/chatlog`, log into WeChat, export "
-        "CHATLOG_DATA_KEY, serve on :5030"
+        "把 sidecar 起来监听 :5030（这台上的二进制在 `tools/chatlog/bin/chatlog.exe`；"
+        "Go 与 `CHATLOG_DATA_KEY` 齐不齐不是这条探针的读数，所以这里不替它担保）"
     ),
     "aigw": (
-        "Plobi starts this service itself when it is needed — there is nothing "
-        "to run by hand."
+        "Plobi 需要时自己起这一条 —— 没有要人手跑的东西"
     ),
     "collect": (
-        "do the first-run blacklist review so $PLOBI_HOME/plobi/chatlog.json "
-        "exists with mode=blacklist (needs chatlog live first)"
+        "做首轮黑名单复核，让 `$PLOBI_HOME/plobi/chatlog.json` 存在且 `mode=blacklist`"
     ),
     "whitelist_eff": (
-        "`uv run python scripts/plobi/whitelist_report.py` once the collector "
-        "has real traffic to sweep"
+        "跑一次 `python scripts/plobi/whitelist_report.py`，让 `whitelist_proposal.json` 生成出来"
     ),
 }
 
-# The four R-047 ids. Kept as a set so ``worst_exit`` and any future consumer
-# share one definition of "which capabilities are deferred".
+# The four capabilities that may ever be reported deferred. Kept as a set so
+# ``worst_exit`` and any future consumer share one definition of the table.
 DEFERRED_CAPABILITY_IDS = frozenset(DEFERRED_ENABLE_HINTS)
+
+#: 每一档背后那条信源在采集注册表里的名字；``None`` = 它不是信源，是应用自己起的服务
+#: （所以「这一波打不打算接」不由注册表说，也就永不因它而变红）。
+DEFERRED_SOURCE_ID: dict[str, Optional[str]] = {
+    "chatlog": "wechat",
+    "collect": "wechat",
+    "whitelist_eff": "wechat",
+    "aigw": None,
+}
+
+DEFERRED_SUFFIX = "deferred — 不是坏了：这一档不归「该跑而没跑」那一型，真跑起来自己就变绿。怎么回到绿："
+
+
+def source_switched_on(check_id: str) -> bool:
+    """注册表点亮了这条信源吗 —— 「这一波打算接」的唯一真源在这里，不在这份文案里。
+
+    读不到就按「没打算接」处理：探针说不出为什么时，把一行猜成红是撒谎，
+    把它照实报成 deferred 才是读数（裁定 162 第 3 条同一条口径）。
+    """
+    source = DEFERRED_SOURCE_ID.get(check_id)
+
+    if not source:
+        return False
+
+    try:
+        from plobi.collectors import registry
+
+        return bool(registry.spec(source).collecting)
+    except Exception:  # noqa: BLE001 — 注册表读不到时不许把整张表带崩
+        return False
+
+
+def deferred_or_red(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
+    """该跑而没跑 = 红；这一波根本没打算接 = deferred（裁定 162 第 1 条）。
+
+    ``worst_exit`` 只把红算成失败，所以一条点亮的信源借 deferred 报灰，就等于
+    让它躲过自检 —— 那正是 R-048 反过来要防的那一型。
+    """
+    if source_switched_on(check_id):
+        return {
+            "id": check_id,
+            "color": RED,
+            "detail": (
+                f"{observed} — 注册表里 `{DEFERRED_SOURCE_ID[check_id]}` 这一档是点亮的"
+                "（这一波打算接它），它却没跑起来：这是坏了，不是后置"
+            ),
+            **extra,
+        }
+
+    return deferred_row(check_id, observed, **extra)
 
 
 def deferred_row(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
@@ -106,16 +155,12 @@ def deferred_row(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
     """
     hint = DEFERRED_ENABLE_HINTS[check_id]
     # "Enable:" promised *steps* in front of a hint that is frequently a
-    # statement — the aigw row reads "…Plobi starts this service itself when it
-    # is needed — there is nothing to run by hand", so an imperative label
-    # contradicted the sentence after it. The prefix is an explanation of the
-    # path back to green, which is true for both shapes (real steps for chatlog,
-    # a statement for the app-owned services). Wording is byte-pinned to
+    # statement — the aigw row reads "Plobi 需要时自己起这一条", so an imperative
+    # label contradicted the sentence after it. The prefix is an explanation of
+    # the path back to green, which is true for both shapes (real steps for
+    # chatlog, a statement for the app-owned service). Wording is byte-pinned to
     # apps/desktop/electron/deferred-sidecars.ts — change both together.
-    detail = (
-        f"{observed} — deferred by R-047 (postponed, not a fault; turns green "
-        f"on its own once live). How it comes back: {hint}"
-    )
+    detail = f"{observed} — {DEFERRED_SUFFIX}{hint}"
     row: dict[str, Any] = {"id": check_id, "color": DEFERRED, "detail": detail}
     row.update(extra)
     return row
@@ -791,10 +836,12 @@ def check_chatlog(base_url: str = DEFAULT_CHATLOG_URL) -> dict[str, Any]:
                 "detail": f"{base}{path} ok",
             }
     if last_code is None:
-        # R-047: nothing is listening because the collection stack is postponed,
-        # not because anything broke. A *reachable* service answering non-200
-        # still reports red below — that one is a real fault.
-        return deferred_row("chatlog", f"{base} unreachable (no listener)")
+        # Nothing is listening. Whether that is a fault or a deferral is not a
+        # wording question — the collectors registry owns it: `wechat` switched
+        # on means this wave intends to collect, so a silent port is RED.
+        # A *reachable* service answering non-200 still reports red below —
+        # that one is a real fault either way.
+        return deferred_or_red("chatlog", f"{base} unreachable (no listener)")
     return {
         "id": "chatlog",
         "color": RED,
@@ -1151,11 +1198,12 @@ def check_chatlog_config(home: Path | None = None) -> dict[str, Any]:
     root = home or plobi_home()
     path = root / "plobi" / "chatlog.json"
     if not path.is_file():
-        # R-047: absent means "never set up", which is what deferral looks like.
+        # Absent means "首轮复核从没做过" —— 那是 deferred 的样子，但同样归注册表判：
+        # `wechat` 点亮时，采到了微信却没有这份配置就是坏，不是后置。
         # A file that exists but is unreadable / not an object / in the wrong
         # mode means someone did turn the collector on and it is misconfigured,
         # so those branches below stay red.
-        return deferred_row("collect", f"{path} missing (first-run blacklist review never done)")
+        return deferred_or_red("collect", f"{path} missing (first-run blacklist review never done)")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -1228,10 +1276,10 @@ def check_chatlog_whitelist_efficiency(home: Path | None = None) -> dict[str, An
     """
     proposal_path_value = _whitelist_proposal_path(home)
     if not proposal_path_value.is_file():
-        # R-047: there is no sweep because there is no collector running, and the
-        # collector is postponed. Once chatlog serves and a sweep has run, the
-        # ratio branches below take over and report green/yellow normally.
-        return deferred_row(
+        # 这份产物一次都没生成过。以前它总是跟着「采集整栈后置」一起报灰，而那
+        # 个理由 2026-09-30 就撤了：`wechat` 在注册表里点着的今天，没有 proposal
+        # 就是复核环节没跑，属红；只有这一波没打算接时才是 deferred。
+        return deferred_or_red(
             "whitelist_eff",
             f"no {proposal_path_value} (no sweep has ever run)",
         )
@@ -1412,8 +1460,10 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
 
 
 def worst_exit(rows: list[dict[str, Any]]) -> int:
-    # Only red fails the run. ``deferred`` is a product decision (R-047), not a
-    # fault, so a table of green + deferred must still exit 0.
+    # Only red fails the run. ``deferred`` is a priority decision the registry
+    # owns (裁定 162), not a fault, so a table of green + deferred exits 0 —
+    # while a source the registry switched on and did not come up arrives here
+    # as red, which is precisely what stops it hiding in this exit code.
     if any(row.get("color") == RED for row in rows):
         return 1
     return 0

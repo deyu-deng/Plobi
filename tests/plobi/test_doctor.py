@@ -39,13 +39,46 @@ def test_check_chatlog_green(monkeypatch):
     assert row["color"] == D.GREEN
 
 
-def test_check_chatlog_deferred_when_no_listener(monkeypatch):
-    """R-047: nothing listening is the postponed state, not a fault."""
+def _registry_collecting(monkeypatch, value: bool) -> None:
+    """把「这一波打不打算接」换成给定读数。
+
+    真源是采集注册表那一格 `collecting`，不是 doctor 里的文案 —— 所以测试换的是
+    注册表，不是 doctor 的判断函数（换判断函数等于把要验的东西本身给 mock 掉了）。
+    """
+    from types import SimpleNamespace
+
+    import plobi.collectors.registry as registry
+
+    monkeypatch.setattr(
+        registry, "spec", lambda sid: SimpleNamespace(collecting=value, source_id=sid)
+    )
+
+
+def test_chatlog_down_while_registry_switched_on_is_red_not_gray(monkeypatch):
+    """裁定 162 第 1 条：点亮了在采却没跑起来 = 红，且必须挡住 `worst_exit`。"""
     monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5: (None, None))
+    _registry_collecting(monkeypatch, True)
+
     row = D.check_chatlog()
+
+    assert row["color"] == D.RED
+    assert "no listener" in row["detail"]
+    assert "点亮" in row["detail"]
+    assert D.worst_exit([row]) == 1
+
+
+def test_chatlog_down_while_registry_off_is_deferred_with_todays_reason(monkeypatch):
+    """另一半形状：这一波根本没打算接 → 才是 deferred，且理由不许引用已撤销的编号。"""
+    monkeypatch.setattr(D, "http_get_json", lambda url, timeout=2.5: (None, None))
+    _registry_collecting(monkeypatch, False)
+
+    row = D.check_chatlog()
+
     assert row["color"] == D.DEFERRED
     assert "unreachable" in row["detail"]
-    assert "R-047" in row["detail"]
+    assert "怎么回到绿：" in row["detail"]
+    assert "R-047" not in row["detail"]
+    assert D.worst_exit([row]) == 0
 
 
 def test_check_chatlog_stays_red_when_answered_wrongly(monkeypatch):
@@ -190,11 +223,25 @@ def test_check_chatlog_config_blacklist(tmp_path: Path):
     assert row["color"] == D.GREEN
 
 
-def test_check_chatlog_config_deferred_when_never_set_up(tmp_path: Path):
-    """Absent config == postponed (R-047); the collector was never turned on."""
+def test_check_chatlog_config_deferred_when_never_set_up(tmp_path: Path, monkeypatch):
+    """Absent config + 这一档没点亮 == deferred；点亮了就是红，两半分开钉。"""
+    _registry_collecting(monkeypatch, False)
+
     row = D.check_chatlog_config(tmp_path)
+
     assert row["color"] == D.DEFERRED
     assert "missing" in row["detail"]
+    assert "R-047" not in row["detail"]
+
+
+def test_check_chatlog_config_red_when_the_collector_is_switched_on(tmp_path: Path, monkeypatch):
+    """注册表点亮了 `wechat` 却没有那份复核产物 = 该跑而没跑，不许报灰。"""
+    _registry_collecting(monkeypatch, True)
+
+    row = D.check_chatlog_config(tmp_path)
+
+    assert row["color"] == D.RED
+    assert D.worst_exit([row]) == 1
 
 
 def test_check_chatlog_config_stays_red_when_misconfigured(tmp_path: Path):
@@ -209,9 +256,23 @@ def test_check_chatlog_config_stays_red_when_misconfigured(tmp_path: Path):
 
 def test_check_whitelist_eff_deferred_when_never_swept(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("PLOBI_CHATLOG_CONFIG", raising=False)
+    _registry_collecting(monkeypatch, False)
+
     row = D.check_chatlog_whitelist_efficiency(tmp_path)
+
     assert row["color"] == D.DEFERRED
     assert "no sweep has ever run" in row["detail"]
+
+
+def test_check_whitelist_eff_red_once_the_collector_is_switched_on(tmp_path: Path, monkeypatch):
+    """`wechat` 点亮了却一次复核都没跑过 —— 这是漏口，不是后置（今天这台就是这一型）。"""
+    monkeypatch.delenv("PLOBI_CHATLOG_CONFIG", raising=False)
+    _registry_collecting(monkeypatch, True)
+
+    row = D.check_chatlog_whitelist_efficiency(tmp_path)
+
+    assert row["color"] == D.RED
+    assert D.worst_exit([row]) == 1
 
 
 def test_deferred_ids_all_have_an_enable_hint_and_no_windows_launcher():
