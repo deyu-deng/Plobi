@@ -43,9 +43,12 @@ class CourseRecord:
 
 def _default_db() -> Optional[Path]:
     try:
-        from plobi_constants import get_plobi_home
+        # 裁定 42 / WP-PROFILE-SHARED-LAYER：日程库解析只走 store 那一条真源
+        # （与 `collectors/liveness.py` 同一处修复——自己拼 `home/plobi/agenda.db` 就是
+        #  在替那五份分裂的库再赌一次哪一份是真的）。
+        from plobi.agenda.store import agenda_db_path
 
-        return get_plobi_home() / "plobi" / "agenda.db"
+        return agenda_db_path()
     except Exception:                                 # noqa: BLE001 - 常量读不到就是查不了
         return None
 
