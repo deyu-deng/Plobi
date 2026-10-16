@@ -1084,6 +1084,7 @@ export function ChatSidebar({
   // category folds into butler) and index agent-owned sessions by profile so
   // each agent row can reveal its own thread list inline.
   const agentCategoryGroups = useMemo(() => groupAgentsByCategory(secretaryAgents), [secretaryAgents])
+
   // 建册对话框能选哪些品类：声明的顺序 + 名册里已经有的那些。只列前者的话，后端新加一类
   // 就得有人记得来这里补一行——课程那类当初就是这么「选不中」的。
   const createAgentCategoryOptions = useMemo(

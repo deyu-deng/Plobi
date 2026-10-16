@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import type { Agent } from '../console/types'
+
 import { AGENT_CATEGORY_PREFERENCE, groupAgentsByCategory, normalizeAgentCategory } from './sidebar/agent-groups'
 import { creatableCategoryOptions } from './sidebar/create-agent'
 
