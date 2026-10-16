@@ -40,8 +40,10 @@ server:
 logging:
   level: INFO
 
-# CLI 要出网到 www.workbuddy.cn；这台有 TLS 拦截代理，所以照 Cursor 那份一样认系统代理。
-trust_env: true
+# CLI 要出网到 www.workbuddy.cn；曾照 Cursor 那份认系统代理（HTTP(S)_PROXY=127.0.0.1:7890）。
+# 2026-10-14: 该本地代理未运行，trust_env=true 导致 httpx 把所有上游请求打到死代理 -> ConnectError -> 500。
+# 改为 trust_env: false，httpx 忽略 env 代理走直连，阻断死代理注入。
+trust_env: false
 
 vault:
   enabled: false          # spawn-CLI 路线不落任何 token，没有需要加密落盘的东西
@@ -59,27 +61,10 @@ routing:
   rules: []
 
 providers:
-  workbuddy:
-    enabled: true
-    prefer: cli
-    # 不写 models：名单由 CLI 自己声明（见文件头）。
-    cli:
-      interpreter: D:\Runtimes\Languages\Node\node.exe
-      # 独立版 CodeBuddy CLI，不是 WorkBuddy 内嵌那一份。两者广告 different 模型集
-      # ——内嵌版说 glm-5.0 / kimi-k2.5，独立版 2.161.4 说 glm-5.3 / kimi-k3-1 /
-      # deepseek-v4-pro——而目录由 `--help` 现读，指错一份就等于拿错名单。
-      binary: D:\Portables\cli\CodeBuddy\node_modules\@tencent-ai\codebuddy-code\bin\codebuddy
-      prompt_flag: -p                 # 布尔 --print，提示词按位置参数跟着走
-      model_flag: --model
-      extra_args:
-        - --output-format
-        - text
-        - --tools
-        - ""
-      timeout: 180
-      cwd: D:\Temp
-    accounts:
-      - { id: workbuddy-cli }
+  # 2026-10-14 退役：workbuddy(CLI, --tools "" 纯文本) 腿不再启用。用户拍板
+  # 「UI 与配置里只存在 tools-capable 的 workbuddy/*」——该腿 capabilities.tools=false，
+  # 主循环一发就 400，无存在价值。原 CLI 段（prefer/cli/extra_args/accounts）保留在
+  # git 历史；回滚只需把下面 workbuddy 段换回 CLI 形态并把 registry 映射换回 Hybrid。
 
   # 桌面订阅那条腿（agy / Google）。10-12 20:3x **打开**：用户拍的目标是
   # 「整个系统不靠按 token 的 API 也能工作」，而实测只有这条腿带得动工具——
@@ -114,7 +99,7 @@ providers:
   # 凭据不落盘、不进日志、不进 .env：`token_source` 只在运行时从桌面 app 自己的记录里读，
   # 续期出来的新 token 也只留在内存（那张文件归桌面 app，我们不当第二个写的人）。
   # 只列**实测过的那一个**模型 id：厂商目录口没验过，宁可名单短，也不放一条点了必失败的名字。
-  workbuddy_api:
+  workbuddy:
     enabled: true
     base_url: https://www.workbuddy.cn
     dialect: openai
@@ -131,23 +116,23 @@ providers:
     # `Docs/PROGRESS.md` 10-13 那行；正解是让这条腿自己去取活目录（下一个格子），
     # 但在那之前，少一条就是选择框里少一条能用的模型——用户 10-13 19:4x 就是为这个骂的。
     models:
-      - workbuddy_api/hy3
-      - workbuddy_api/hy3-x
-      - workbuddy_api/hy4-preview
-      - workbuddy_api/glm-5.1
-      - workbuddy_api/glm-5.2
-      - workbuddy_api/glm-5.3
-      - workbuddy_api/glm-5.3-flash
-      - workbuddy_api/glm-5v-turbo
-      - workbuddy_api/kimi-k2.6
-      - workbuddy_api/kimi-k2.7
-      - workbuddy_api/kimi-k2.8-preview
-      - workbuddy_api/kimi-k3-1
-      - workbuddy_api/deepseek-v4-pro
-      - workbuddy_api/deepseek-v4.1-flash
-      - workbuddy_api/minimax-m2.7
-      - workbuddy_api/minimax-m3
-      - workbuddy_api/step-5-preview
-      - workbuddy_api/space-bunny
+      - workbuddy/hy3
+      - workbuddy/hy3-x
+      - workbuddy/hy4-preview
+      - workbuddy/glm-5.1
+      - workbuddy/glm-5.2
+      - workbuddy/glm-5.3
+      - workbuddy/glm-5.3-flash
+      - workbuddy/glm-5v-turbo
+      - workbuddy/kimi-k2.6
+      - workbuddy/kimi-k2.7
+      - workbuddy/kimi-k2.8-preview
+      - workbuddy/kimi-k3-1
+      - workbuddy/deepseek-v4-pro
+      - workbuddy/deepseek-v4.1-flash
+      - workbuddy/minimax-m2.7
+      - workbuddy/minimax-m3
+      - workbuddy/step-5-preview
+      - workbuddy/space-bunny
     accounts:
       - { id: desktop }
