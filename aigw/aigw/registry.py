@@ -32,7 +32,6 @@ from .providers.mock import MockProvider
 from .providers.workbuddy import WorkbuddyApiProvider
 from .providers.workbuddy_cli import WorkbuddyCliProvider
 from .providers.workbuddy_gui import WorkbuddyGuiProvider
-from .providers.workbuddy_hybrid import WorkbuddyHybridProvider
 
 # All upstream adapters are registered here. Add a new desktop app by writing a
 # Provider subclass and listing it below; config keys (e.g. "cursor") map 1:1 to
@@ -69,7 +68,9 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     "workbuddy_api": WorkbuddyApiProvider,
     "workbuddy_cli": WorkbuddyCliProvider,
     "workbuddy_gui": WorkbuddyGuiProvider,
-    "workbuddy": WorkbuddyHybridProvider,
+    # 2026-10-14: CLI 腿（--tools "" 纯文本）已退役，workbuddy 键现在绑定
+    # CodeBuddy HTTP 通道（原 workbuddy_api 改名）。Hybrid 类保留在代码库供回滚。
+    "workbuddy": WorkbuddyApiProvider,
     "mock": MockProvider,
 }
 
