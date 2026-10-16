@@ -32,7 +32,10 @@ delegation:
 # (ADR-0007). Mind writes go through the non-LLM serial writer service.
 memory:
   memory_enabled: true
-  # provider: mind   # enable once plugins/memory/mind has real disk I/O
+  # provider 省略即官方记忆面（Mind）：三态由 agent/memory_manager.py::resolve_memory_provider_name
+  # 决定 —— 缺这个键 = 没人决定过 = 用官方；写成空串才是显式关掉。
+  # 旧注释「enable once plugins/memory/mind has real disk I/O」已过期：真磁盘 I/O 早在
+  # plobi/mind/writer.py（串行锁 + 白名单前缀 + 提交前脑侧 verifier），10-15 起装机也钉了 VAULT_ROOT。
 
 # Narrow toolsets for L1 sessions — WP-BE-9 mid-narrow (裁定 12).
 # Drop terminal / session_search / code runners; keep clarify. Reversible:
