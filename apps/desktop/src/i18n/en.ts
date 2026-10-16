@@ -1524,7 +1524,8 @@ export const en: Translations = {
       wechat: 'WeChat',
       dingtalk: 'DingTalk',
       manual: 'Added by you',
-      timetable: 'Timetable'
+      timetable: 'Timetable',
+      zju: 'Academic affairs (ZJU)'
     },
     collect: {
       title: 'Session collection',
@@ -1548,7 +1549,19 @@ export const en: Translations = {
       sectionDirect: 'Direct chats',
       sectionGroups: 'Groups',
       sectionOfficial: 'Official accounts',
-      excludeAllPendingOfficial: 'Exclude all pending official accounts'
+      excludeAllPendingOfficial: 'Exclude all pending official accounts',
+      liveness: {
+        ageDays: count => `Last landed ${count} day(s) ago`,
+        failed: 'Could not read source status',
+        live: 'Still landing new rows',
+        never: 'Never landed a row',
+        noName: 'This source has no display name',
+        noStore: 'The agenda store is unreadable, so this probe can say nothing',
+        stale: 'Stalled: nothing new inside the window',
+        switchOff: 'Collection switch not on',
+        title: 'Is each source collecting',
+        unknown: 'State not recorded — not guessing'
+      }
     },
     timetable: {
       entry: 'Import timetable',

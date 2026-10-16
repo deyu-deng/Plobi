@@ -1418,7 +1418,8 @@ export const zhHant = defineLocale({
       wechat: '微信',
       dingtalk: '釘釘',
       manual: '手動新增',
-      timetable: '課表'
+      timetable: '課表',
+      zju: '教務（學在浙大）'
     },
     collect: {
       title: '會話採集',
@@ -1442,7 +1443,19 @@ export const zhHant = defineLocale({
       sectionDirect: '私聊',
       sectionGroups: '群聊',
       sectionOfficial: '公眾號',
-      excludeAllPendingOfficial: '排除全部待定公眾號'
+      excludeAllPendingOfficial: '排除全部待定公眾號',
+      liveness: {
+        ageDays: count => `上次進庫 ${count} 天前`,
+        failed: '信源讀數取不到',
+        live: '還在進新條目',
+        never: '從沒進過庫',
+        noName: '這條信源沒記到顯示名',
+        noStore: '讀不到日程庫，這條探針什麼都不能說',
+        stale: '停了：閾值內沒有新條目進來',
+        switchOff: '採集開關沒點',
+        title: '信源在不在採',
+        unknown: '狀態沒記到，不猜'
+      }
     },
     timetable: {
       entry: '匯入課表',
