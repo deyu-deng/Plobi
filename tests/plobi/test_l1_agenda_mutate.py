@@ -368,7 +368,10 @@ def test_schema_enum_and_fields():
     props = schema["parameters"]["properties"]
     assert "mutate_agenda" in props["intent"]["enum"]
     # WP-SECRETARY-MOUTH: cancel_matching 进了 action 枚举，schema enum 仍是 7 intent。
-    assert props["action"]["enum"] == ["create", "update", "delete", "cancel_matching"]
+    # R-105 / WP-PLAN-CHAT-ADJUST: move_block 是第五个 action，intent 仍 7 个不动。
+    assert props["action"]["enum"] == [
+        "create", "update", "delete", "cancel_matching", "move_block",
+    ]
     assert props["kind"]["enum"] == ["meeting", "task", "ddl", "class"]
     for field in ("action", "title", "start_at", "end_at", "kind", "event_id", "source"):
         assert field in props
