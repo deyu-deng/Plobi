@@ -323,6 +323,16 @@ async def chat_completions(request: Request, authorization: str = Header(None)):
             gen = await sched.dispatch(provider, body, sid, stream=True)
             return StreamingResponse(_sse(gen), media_type="text/event-stream")
         result = await sched.dispatch(provider, body, sid, stream=False)
+        # 裁定 152 那一族的判据（用户那句「日程排的根本无法使用」压在这条上）：
+        # **上游回 200 而一个字都没有，不是"答完了"，是"没货"**。以前这里直接 JSONResponse 出去，
+        # 调用方拿到 200 + 空 content，只能猜——猜错就成了"这条腿活着但什么都排不出来"。
+        # 有 tool_calls 的空 content 是合法形状（那一轮本来就不该有正文），所以不是一刀切看 content。
+        if _is_no_goods(result):
+            raise HTTPException(
+                502,
+                "upstream returned an empty completion (没货：200 而 content 为空、也没有 tool_calls) "
+                f"— finish_reason={_finish_reason(result)!r}",
+            )
         return JSONResponse(result)
     except NoAccountAvailable as e:
         raise HTTPException(503, f"no upstream account available: {e}")
@@ -338,6 +348,30 @@ async def _sse(gen):
         err = {"error": {"message": str(e), "type": "upstream_error", "code": e.status}}
         yield f"data: {json.dumps(err)}\n\n"
     yield "data: [DONE]\n\n"
+
+
+def _first_choice(result: object) -> dict:
+    if not isinstance(result, dict):
+        return {}
+    choices = result.get("choices") or []
+    return choices[0] if choices and isinstance(choices[0], dict) else {}
+
+
+def _is_no_goods(result: object) -> bool:
+    """这一发是不是"没货"：既没有正文，也没有 tool_calls。"""
+    choice = _first_choice(result)
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    content = message.get("content")
+    text = content if isinstance(content, str) else ""
+    if text.strip():
+        return False
+    if message.get("tool_calls") or choice.get("tool_calls"):
+        return False
+    return True
+
+
+def _finish_reason(result: object) -> str:
+    return str(_first_choice(result).get("finish_reason") or "")
 
 
 @app.post("/v1/embeddings")

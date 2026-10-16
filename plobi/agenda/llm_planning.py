@@ -40,6 +40,9 @@ _COMMUTE_WORDS = ("通勤", "走路", "步行", "赶车", "坐车", "地铁", "�
 
 MAX_REPLANS = 2
 
+#: 排程那一发的读超时（秒）。见 :func:`default_llm_call` 里那条现核读数。
+PLANNING_TIMEOUT_SECONDS = 300.0
+
 
 class PlanRejected(RuntimeError):
     """重排到上限仍然不合格。带着最后一轮的问题清单抛出，调用方照原话点名。"""
@@ -424,7 +427,11 @@ def default_llm_call(route: Any = None) -> Callable[[str], Any]:
     """
     from plobi.quota.route import QuotaAwareCompleter
 
-    completer = QuotaAwareCompleter()
+    # 现核（10-16 11:0x）：这份材料 + 这条口令在 workbuddy/hy3 上跑完 **113.6 秒**、回 1902 字，
+    # 而 `route.py` 给 aigw 那条的默认超时是 **120 秒**——排程这一发是贴着天花板跑的，
+    # 稍微慢一点就被判成"这条腿死了"（今天那三发就是这么挂的）。所以这一发单独给预算，
+    # 不去动那个全局默认值（那是所有 L2 便宜路共用的，放宽它等于放宽所有事）。
+    completer = QuotaAwareCompleter(timeout=PLANNING_TIMEOUT_SECONDS)
 
     def call(prompt: str) -> str:
         text = completer(prompt, route)

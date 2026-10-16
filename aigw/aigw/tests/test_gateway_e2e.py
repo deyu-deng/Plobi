@@ -314,3 +314,39 @@ async def _dead_token_reauth_then_503():
         assert dead.state == AccountState.REAUTH, (
             "dead token should flip the account to REAUTH (no blind retry)"
         )
+
+
+# --------------------------------------------------------------------------
+# 裁定 152 那一族：200 而 content 为空 = 没货，不许算成功
+# --------------------------------------------------------------------------
+async def _empty_completion_is_no_goods():
+    cfg = _base_cfg()
+    cfg["providers"]["mock"]["reply"] = ""          # 上游"成功"地回了个空
+    async with _ctx(cfg) as (c, _):
+        r = await c.post(
+            "/v1/chat/completions",
+            headers={"authorization": f"Bearer {KEY}"},
+            json={"model": "mock/static", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert r.status_code == 502, (r.status_code, r.text[:200])
+    assert "没货" in r.text or "empty completion" in r.text, r.text[:200]
+
+
+def test_empty_completion_is_no_goods():
+    asyncio.run(_empty_completion_is_no_goods())
+
+
+async def _a_real_reply_is_still_success():
+    """反向那一半：判据不许把有货的也打死（否则这条腿从"假成功"翻成"全红"，更没法用）。"""
+    async with _ctx(_base_cfg()) as (c, _):
+        r = await c.post(
+            "/v1/chat/completions",
+            headers={"authorization": f"Bearer {KEY}"},
+            json={"model": "mock/static", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert r.status_code == 200, r.text[:200]
+    assert r.json()["choices"][0]["message"]["content"] == "mock reply"
+
+
+def test_a_real_reply_is_still_success():
+    asyncio.run(_a_real_reply_is_still_success())
