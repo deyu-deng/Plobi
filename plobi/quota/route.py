@@ -145,14 +145,34 @@ def _default_send(prompt: str, source: QuotaSource, *, timeout: Optional[float] 
     return text
 
 
+def _record_unresolved(error_class: str) -> None:
+    """A row for the two ways this completer gives up *without* calling anything.
+
+    Without it, "no usable source" and "attempts exhausted" leave no trace in the
+    ledger, so a round that failed leaves only the successful attempts behind and
+    the cause has to be reconstructed from token counts.
+    """
+    usage_ledger.record(
+        source="quota-route",
+        kind="route",
+        attempted=False,
+        ok=False,
+        error_class=error_class,
+        cost_status=usage_ledger.COST_STATUS_NOT_ATTEMPTED,
+    )
+
+
 class QuotaAwareCompleter:
     """A ``ModelConfirmer``-compatible completer that fails over across sources.
 
     Implements the ``Completer`` protocol ``(prompt, route) -> Optional[str]``.
     Each attempt resolves the current source from the pool, sends through
-    ``send``, and on a raised error marks that source failed and retries the
-    next candidate. ``route`` is preserved for the caller's ADR-0011 bookkeeping;
-    the actual endpoint + model come from the selected source.
+    ``send``, and on a raised error **or an empty reply** marks that source failed
+    and retries the next candidate — an empty answer is never handed to the caller
+    as if it were one. ``None`` means "nothing answered", and it is always
+    accompanied by a ledger row naming why. ``route`` is preserved for the
+    caller's ADR-0011 bookkeeping; the actual endpoint + model come from the
+    selected source.
     """
 
     def __init__(
@@ -180,6 +200,7 @@ class QuotaAwareCompleter:
             source = pool.resolve()
             if source is None:
                 logger.warning("plobi quota: no usable source; leaving unresolved")
+                _record_unresolved("no_usable_source")
                 return None
             try:
                 reply = send(prompt, source)
@@ -197,14 +218,24 @@ class QuotaAwareCompleter:
                 )
                 pool.mark_failed(source.name)
                 continue
+            got = bool(reply and reply.strip())
             usage_ledger.record(
                 source=getattr(source, "name", "?"),
                 kind=getattr(source, "kind", ""),
-                ok=bool(reply and reply.strip()),
-                error_class="" if reply and reply.strip() else "empty_reply",
+                ok=got,
+                error_class="" if got else "empty_reply",
                 cost_status=usage_ledger.COST_STATUS_NO_USAGE,
             )
+            if not got:
+                # An empty answer is not an answer. ``_default_send`` already raises
+                # for this shape, so returning it here would make the two senders
+                # disagree about the same reply — and the caller above would then
+                # treat "nothing came back" as a completed round.
+                logger.warning("plobi quota: source %r returned an empty completion; failing over", source.name)
+                pool.mark_failed(source.name)
+                continue
             return reply
 
         logger.warning("plobi quota: exhausted %d source attempts", self._max_attempts)
+        _record_unresolved("attempts_exhausted")
         return None
