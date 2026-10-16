@@ -10,14 +10,20 @@
 1. **代码不许替 L1 改数据**。校验只报问题，不修数据：不裁时间、不挪条目、不删通勤。
    不通过就带着问题清单**退回重排**（:func:`plan_with_llm` 的重问回路），
    重排到上限仍不过 ⇒ 抛 :class:`PlanRejected` 让调用方当场点名，**绝不静默落一版"差不多"的**。
-2. **边界只有四条**（:func:`validate_proposal`）：睡眠与三餐锚点不许被挤掉 · 同一时段不许双订 ·
-   总量不许超过当天清醒窗口 · 占满相邻两项之间唯一间隔的通勤条目不许存在。
+2. **边界只有五条**（:func:`validate_proposal`）：睡眠与三餐锚点不许被挤掉 · 同一时段不许双订 ·
+   总量不许超过当天清醒窗口 · 占满相邻两项之间唯一间隔的通勤条目不许存在 ·
+   不许排在人**批准过**的避开时段（`avoid_windows`）里。
    第四条是**关系判据**（通勤条目 ≥ 它两侧可用的空档 ⇒ 违规），不是"通勤超过 N 分钟"那种数字。
+   第五条是退役均分之后补的：那条偏好原来由均分自己躲开，代码不再排块之后**只剩闸能执行它**——
+   光写进材料里让模型"自己注意"，等于用户那句「那段时间别排事」没人负责。
 3. **排完必须留一句"为什么这么排"**（裁定 145 的留痕要求）。缺这句的提案直接算不合格——
    它和"派了工要写派给谁"是同一条纪律，不是文案要求。
 
 前置（`WP-PLAN-COMPLETION-ACK` / `R-099`：`plan_items` 没有状态列 ⇒ 同一条作业连排五天）
-由产品线在落。本模块因此**不写库**：它只负责把材料给出去、把边界守住、把不合格的退回去。
+由产品线在落。本模块①②③④ 那几步**不写库**：它只负责把材料给出去、把边界守住、把不合格的退回去。
+裁定 163（10-16 22:5x「不要用脚本排程。让日程秘书自己排一次明天的计划。要落到真实的 entry 里面」）
+之后多了第⑤ 步 :func:`plan_and_store_day`：**过闸才写**，没过闸整笔不写——写库这件事仍然
+绑在同一道 :func:`validate_proposal` 上，不是另起一台没有闸的写入器。
 """
 
 from __future__ import annotations
@@ -99,6 +105,11 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
     if not _has_completion_state():
         missing.append("昨天的完成情况（plan_items 还没有状态列，R-099 在落）")
 
+    # 裁定 148 那一维「额度」：读得出的只有发数与 token，钱读不出来就照实标估（R-106②）。
+    budget = quota_budget()
+    if not budget.get("available"):
+        missing.append("额度这一维（账本读不出来，不是「没花」）")
+
     return {
         "for_date": day,
         "waking_window": _waking_window(conn, day),
@@ -108,12 +119,62 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
         "other_events": _others(events),
         "routine_anchors": anchors,
         "anchors_moved": moved,
+        # 用户**批准过**的「避开时段」（checkin 卡的 avoid_windows）。退役前是均分自己躲开它们；
+        # 换成秘书排之后，这一格必须跟着进材料，否则"我说过那段时间别排事"这句话就没人执行了。
+        # 未批准的窗不进来（`list_active_avoid_windows` 只读 confirmed 那张卡）。
+        "avoid_windows": planning.avoid_windows_for_day(conn, day),
         "project_pace": [
             {"name": entry.name, "weekly_hours": hours}
             for entry, hours in planning.paced_projects()
         ],
+        "quota_budget": budget,
         "yesterday": yesterday,
         "missing": missing,
+    }
+
+
+#: 裁定 148「每一类要有预算」里**额度**那一维取多少行账本回来算。
+QUOTA_LEDGER_ROWS = 200
+
+
+def quota_budget(rows: Optional[list[dict[str, Any]]] = None) -> dict[str, Any]:
+    """额度这一维的材料——**真数只有发数与 token，钱这一格这台读不出来就明写读不出来**。
+
+    为什么不是零：`plobi/quota/usage_ledger.py` 的账本里 `priced_rows` 现在是 0
+    （gateway 不解析 usage 的钱，文件处理器默认也没挂），报个 0 就是"这发没花钱"的假账
+    （R-073 同一条纪律）。所以 `money` 留 `None`、`basis` 标 `estimated`，
+    让 L1 按"今天还能打几发"权衡，而不是按一个不存在的余额。
+
+    读账本失败不许把排程搞崩，但也不许冒充"额度宽松"：异常收进 `available=False` 的 note。
+    """
+    try:
+        from plobi.quota import usage_ledger
+
+        if rows is None:
+            rows = usage_ledger.read_recent(QUOTA_LEDGER_ROWS)
+        summary = usage_ledger.summarize(rows)
+    except Exception as exc:  # 账本没落盘 / 目录不在 = 这一维没材料，不是零
+        return {
+            "available": False,
+            "basis": "unknown",
+            "money": None,
+            "note": f"额度账本读不出来（{type(exc).__name__}: {str(exc)[:100]}）——"
+                    "这一维今天没有材料，不是「没花」",
+        }
+
+    priced = int(summary.get("priced_rows") or 0)
+    return {
+        "available": True,
+        "basis": "estimated" if not priced else "partially_priced",
+        "window_rows": summary.get("rows", 0),
+        "per_source": summary.get("per_source") or {},
+        "money": summary.get("cost"),
+        "money_status": summary.get("cost_status"),
+        "note": (
+            "这一维只有发数与 token 是真数；钱读不出来（账本里 priced="
+            f"{priced}/{summary.get('rows', 0)}），所以只是**估**——"
+            "按「今天还能打几发」权衡，不许把没数的东西当余额报给用户。"
+        ),
     }
 
 
@@ -129,6 +190,14 @@ def build_prompt(materials: dict[str, Any], *, extra: Optional[Sequence[str]] = 
         "3) **相邻两项之间只够一次步行通勤的那种间隔，不许再写一条通勤占掉它**"
         "——那种空档本来就是留给走路的，写成条目等于把它吃掉。",
         "4) 排完必须交一句**为什么这么排**（`reason`）。没有这句的提案算不合格。",
+        "",
+        "**三条口径**（裁定 148 里缺的那两类 + 人已批准的避开时段）：",
+        "- `avoid_windows` 是人**批准过**的「那段时间别排事」。撞上它的提案会被当场打回，"
+        "别指望写一句理由糊过去；材料里没有这一格就是没有（不存在的窗不许你替用户记着）。",
+        "- 生活块就在 `routine_anchors` 里（吃饭／睡觉这类作息）——它们是你排程的**边界**，不是可以省掉的"
+        "装饰；材料里没有的生活类别（运动／休息／杂务…）**不许替用户编**，他想要会在对话里自己加，加了就进下一轮材料。",
+        "- `quota_budget` 那一格是**估的**：这台只有发数与 token 是真数，钱读不出来时 `money` 就是 `null`——"
+        "`null` 是「读不出来」，不是「没花」。按「今天还能打几发」权衡，别把它当余额报给用户。",
         "",
         "**只交一个 JSON 对象，别的字都别加**（不要前言、不要解释、不要 markdown 围栏之外的话）：",
         '{"items": [{"title": "…", "start_at": "YYYY-MM-DDTHH:MM:SS", '
@@ -153,6 +222,7 @@ def validate_proposal(
     *,
     anchors: Sequence[dict[str, Any]],
     waking: tuple[datetime, datetime],
+    avoid: Sequence[dict[str, Any]] = (),
 ) -> list[str]:
     """返回违规清单（空 = 合格）。**这个函数一个字都不改 `items`。**"""
     rows = [dict(item) for item in items]
@@ -190,6 +260,20 @@ def validate_proposal(
             problems.append(
                 f"「{_title(row)}」排在清醒窗口之外"
                 f"（{start.strftime('%H:%M')}–{end.strftime('%H:%M')}）"
+            )
+
+    # 边界五：人批准过的「避开时段」。均分那套自己躲开它；换成秘书排之后，
+    # 这条只能落在闸上——只写进材料里让模型"自己注意"，等于这句话没人执行。
+    for window in avoid:
+        w_span = _span_of(window)
+        if w_span is None:
+            continue
+        for row, (start, end) in timed:
+            if not _overlaps(start, end, *w_span):
+                continue
+            problems.append(
+                f"「{_title(row)}」排在你说过要避开的时段"
+                f"（{w_span[0].strftime('%H:%M')}–{w_span[1].strftime('%H:%M')}）里"
             )
 
     # 边界四：占满相邻两项之间唯一间隔的通勤条目（关系判据，不写分钟数）
@@ -239,7 +323,8 @@ def plan_with_llm(
         for attempt in range(1, max_replans + 2):
             parsed = _parse_proposal(llm_call(prompt), day)
             proposal = parsed["items"]
-            problems = validate_proposal(proposal, anchors=anchors, waking=waking)
+            problems = validate_proposal(proposal, anchors=anchors, waking=waking,
+                                 avoid=materials.get("avoid_windows") or [])
             if not parsed["reason"]:
                 # 裁定 149④：不写「为什么这么排」就是没留痕，与裁定 145 同一条纪律。
                 problems = problems + ["没交「为什么这么排」（reason）——裁定 149④ 的留痕"]
@@ -409,9 +494,21 @@ def _waking_window(conn: Any, day: str) -> tuple[str, str]:
         except Exception:
             rows = []
         for template, start, end in rows:
-            if any(word in str(getattr(template, "title", "")) for word in _SLEEP_WORDS):
+            if _is_sleep(template):
                 spans.append((start, end))
+    return _waking_from_spans(spans, day)
 
+
+def _is_sleep(template: Any) -> bool:
+    return any(word in str(getattr(template, "title", "")) for word in _SLEEP_WORDS)
+
+
+def _waking_from_spans(spans: Sequence[tuple[datetime, datetime]], day: str) -> tuple[str, str]:
+    """从**给定的睡眠段**算清醒窗——同一条算式，库里的和"挪之后假想的"都走这里。
+
+    对话要挪睡眠块时校验器得知道新窗口，而那时库还没改；如果那里再写一遍算法，
+    两套迟早各说各话（裁定 94）。
+    """
     waking_start = next((end for _start, end in spans if end.date().isoformat() == day), None)
     waking_end = next((start for start, _end in spans if start.date().isoformat() == day), None)
     if waking_start is not None and waking_end is not None and waking_start < waking_end:
@@ -498,8 +595,44 @@ _MATERIAL_KEYS = (
 
 
 def nothing_to_schedule(materials: dict[str, Any]) -> bool:
-    """材料包是不是真的一点都没有。`quota_budget` / `yesterday` / `missing` 是上下文，不算材料。"""
+    """材料包是不是真的一点都没有。缺哪样算哪样——不许拿 `missing` 冒充「有材料」。"""
     return not any(materials.get(key) for key in _MATERIAL_KEYS)
+
+
+def _block_rows_from_proposal(
+    items: Iterable[dict[str, Any]],
+    reason: str,
+    sources: list[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    """把提案条目收成 `plan_items` 那一格的形状（**evidence 的口径只在这一处定义**）。
+
+    晚间计划口（:func:`blocks_from_l1`）与秘书嘴上那一发（:func:`plan_and_store_day`）共用这一个
+    构造口：`planner` 是「谁排的」、`source` 指回材料里那一条（哪门课的哪份作业 / 哪个项目）。
+    两处各写一份，面上「是谁排的」就会有两套说法（裁定 94）。
+    对不上材料也留一句「对不上」，不许空着——空着那一格看起来像排过了，实际没人知道为什么。
+    """
+    blocks: list[dict[str, Any]] = []
+    for item in items:
+        span = _span_of(item)
+        if span is None:
+            continue
+        source = _match_source(_title(item), sources) or "l1:unnamed（材料里对不上任何一条）"
+        # 面上与治理线把「作业块」和「项目块」分开计数读的就是这一格：来源是作业（`ddl:`）的那块
+        # 必须算作业块。一律盖成 project_block 会让 `ddl_block_count` 永远是 0——排得再对也是假读数。
+        kind = (planning.DDL_BLOCK_EVIDENCE_KIND if source.startswith("ddl:")
+                else PROJECT_BLOCK_EVIDENCE_KIND)
+        blocks.append({
+            "event_id": f"l1:block-{len(blocks) + 1}",
+            "title": _title(item),
+            "start_at": span[0].isoformat(),
+            "end_at": span[1].isoformat(),
+            "kind": "task",
+            "conflict_with": [],
+            "evidence": {"kind": kind, "planner": "l1",
+                         "reason": reason,
+                         "source": source},
+        })
+    return blocks
 
 
 def blocks_from_l1(
@@ -526,26 +659,252 @@ def blocks_from_l1(
     except Exception as exc:  # 通道 / 解析 / 网络：照实说，不降级成均分
         return [], f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}），今天没有项目块"
 
-    # 「每格带证据」：块要指得回材料里哪一条（哪门课的哪份作业 / 哪个项目）。
-    # 对不上也留一句"对不上"，不许空着——空着那一格在面上看起来像排过了，实际没人知道为什么。
-    sources = _material_index(materials)
-    blocks: list[dict[str, Any]] = []
-    for item in proposal.items:
-        span = _span_of(item)
-        if span is None:
-            continue
-        blocks.append({
-            "event_id": f"l1:block-{len(blocks) + 1}",
-            "title": _title(item),
-            "start_at": span[0].isoformat(),
-            "end_at": span[1].isoformat(),
-            "kind": "task",
-            "conflict_with": [],
-            "evidence": {"kind": PROJECT_BLOCK_EVIDENCE_KIND, "planner": "l1",
-                         "reason": proposal.reason,
-                         "source": _match_source(_title(item), sources)
-                                   or "l1:unnamed（材料里对不上任何一条）"},
-        })
+    blocks = _block_rows_from_proposal(proposal.items, proposal.reason,
+                                       _material_index(materials))
     if not blocks:
         return [], "L1 交回来的提案里没有任何能落的时间块"
     return blocks, proposal.reason
+
+
+# --------------------------------------------------------------------------- #
+# ⑤ 秘书的嘴落库：排一次 → 过同一道闸 → 才写 daily_plans + plan_items（裁定 163）
+# --------------------------------------------------------------------------- #
+
+#: 这份计划是**秘书自己排的**，不是晚间脚本排的。`daily_plans.evidence.kind` 上那一句署名；
+#: 治理线读的还是 `block_count` / `ddl_block_count` 那两位，没有另立口径。
+MOUTH_PLAN_EVIDENCE_KIND = "agent_planned_day"
+#: `daily_plans.evidence.source` 上「谁排的」那一格（条目级的 `planner` / `source` 见
+#: :func:`_block_rows_from_proposal`，两位口径与 `blocks_from_l1` 完全一致）。
+MOUTH_PLANNER = "l1"
+MOUTH_PLAN_SOURCE = "l1:secretary_mouth"
+
+
+def _refusal(reason: str, violations: Sequence[str] = (), **extra: Any) -> dict[str, Any]:
+    """一句人话 + `written=0`。
+
+    返回形状与 :func:`plobi.agenda.plan_edits.move_plan_item` 的失败分支**同族**（R-105）：
+    `{ok: False, reason, violations}`。撤销与重试不在这里造第二套——重试就是再叫一次
+    :func:`plan_and_store_day`（`upsert_daily_plan` 按 `for_date` 覆盖同一行），
+    撤销就是走既有的 `move_block` / 确认流，这里只保证**没过闸时一个字节都不写**。
+    """
+    payload: dict[str, Any] = {"ok": False, "reason": reason, "written": 0,
+                               "violations": list(violations)}
+    payload.update(extra)
+    return payload
+
+
+def _event_item_row(event: Any, overlaps: dict[str, list[str]]) -> dict[str, Any]:
+    """当天真事件那一行（与 `planning.generate_evening_plan` 的 event 桶同一形状）。
+
+    `evidence` 里原样带上事件自己的证据（`uid` / `course` / `msg_id`…），这样这一行随时能
+    指回它是哪条日程——嘴排的那几个块靠 :func:`_match_source` 挂到这些名字上。
+    """
+    evidence: dict[str, Any] = {"kind": "event", "event_id": event.id}
+    if isinstance(event.evidence, dict):
+        evidence.update({key: value for key, value in event.evidence.items()
+                         if value is not None})
+    return {
+        "event_id": event.id,
+        "title": event.title,
+        "start_at": str(event.start_at),
+        "end_at": str(event.end_at) if event.end_at else None,
+        "kind": str(event.kind),
+        "conflict_with": list(overlaps.get(str(event.id), [])),
+        "evidence": evidence,
+    }
+
+
+def _anchor_item_row(anchor: dict[str, Any]) -> dict[str, Any]:
+    """作息锚点那一行（吃饭／睡觉）。真源是 `routine_templates`，这里只是把材料里那条落成行。"""
+    evidence: dict[str, Any] = {
+        "kind": planning.ROUTINE_EVIDENCE_KIND,
+        "template_id": anchor.get("template_id"),
+    }
+    if anchor.get("flex"):
+        evidence["flex"] = True
+    return {
+        "event_id": str(anchor.get("id") or f"routine:{anchor.get('template_id')}"),
+        "title": str(anchor.get("title") or ""),
+        "start_at": str(anchor.get("start_at")),
+        "end_at": str(anchor.get("end_at")),
+        "kind": "task",
+        "conflict_with": [],
+        "evidence": evidence,
+    }
+
+
+def _mouth_summary(
+    day: str,
+    event_count: int,
+    conflict_count: int,
+    anchor_count: int,
+    blocks: Sequence[dict[str, Any]],
+    reason: str,
+) -> str:
+    """面上那一段：谁排的、排了几块、为什么这么排（裁定 145／149④ 的留痕）。"""
+    head = (
+        f"明天有{event_count}项日程，其中{conflict_count}处时间重叠。"
+        if conflict_count else f"明天有{event_count}项日程，时间无重叠。"
+    ) if event_count else f"{day} 没有日程。"
+    if anchor_count:
+        head += f"含{anchor_count}项作息锚点。"
+    return f"{head}秘书自己排了{len(blocks)}块。{reason}".rstrip("。") + f"。（{MOUTH_PLAN_SOURCE}）"
+
+
+def plan_and_store_day(
+    day: str,
+    *,
+    conn: Any = None,
+    llm_call: Optional[Callable[[str], Any]] = None,
+    proposal_fn: Optional[Callable[[Any, str], tuple[Iterable[dict[str, Any]], str]]] = None,
+    max_replans: int = MAX_REPLANS,
+) -> dict[str, Any]:
+    """秘书自己把 `day` 排一次，**过了 :func:`validate_proposal` 那道同一的闸才写库**。
+
+    裁定 163（用户 10-16 22:5x）：「不要用脚本排程。让日程秘书自己排一次明天的计划。
+    要落到真实的 entry 里面。」所以这条路的四步是写死的顺序：
+
+    1. **材料**：:func:`plan_materials` 那五样真材料（一课都不许多报）。没材料就**连模型都不打**
+       （裁定 161），人也确认过（`status=confirmed`）的那天直接不重排——要改一块走 `move_block`。
+    2. **提案**：默认走 :func:`plan_with_llm`（同一发模型、同一条退回重排回路）；
+       `proposal_fn(conn, day) -> (items, reason)` 是**测试的注入点**，给假提案用——
+       生产不传，测试绝不用真模型。
+    3. **闸**：装配出来的块再过一次 `validate_proposal`（锚点 / 双订 / 清醒窗 / 通勤空档），
+       **不过就整笔不写**，返回点名拒绝 + 一句人话。绝不降级回均分（裁定 149／161③）。
+    4. **写**：`daily_plans`（按 `for_date` 覆盖）+ `plan_items`（当天真事件 + 作息锚点 +
+       秘书排的块），每块 `evidence` 带 `planner`（谁排的）与 `source`（指回材料哪一条）。
+
+    这条路**不叫** `planning.generate_evening_plan`、也不碰 `scripts/`——脚本排程整条已退役（裁定 163）。
+    """
+    owns_conn = conn is None
+    conn = conn or store.connect(None)
+    try:
+        materials = plan_materials(conn, day)
+        anchors = materials["routine_anchors"]
+        waking = tuple(_dt(value) for value in materials["waking_window"])
+
+        if nothing_to_schedule(materials):
+            return _refusal(NOTHING_TO_SCHEDULE_NOTE, for_date=day,
+                            status="nothing_to_schedule", written=0)
+
+        # 人确认过的那天不归嘴管（与 `generate_evening_plan` 同一口径）。放在**打模型之前**：
+        # 已经有人签过字的一天，连问模型那一发都不该花。
+        existing = store.get_daily_plan(conn, day)
+        if existing is not None and existing.status == "confirmed":
+            return _refusal(
+                f"{day} 那份计划你已经确认过（确认{existing.confirm_seq}），我不重排。"
+                "要改哪一块请在对话里点名（走 move_block）。",
+                for_date=day, status="confirmed_plan", plan_id=existing.id)
+
+        # ② 出提案（测试注入假提案；生产只走 L1 那一发）
+        if proposal_fn is not None:
+            raw_items, reason = proposal_fn(conn, day)
+            items = list(raw_items or [])
+        else:
+            try:
+                proposed = plan_with_llm(day, llm_call or default_llm_call(),
+                                         conn=conn, max_replans=max_replans)
+            except PlanRejected as rejected:
+                return _refusal(
+                    "L1 那一轮没排成（" + "；".join(rejected.violations[:3])
+                    + f"）。{day} 那份计划一个字没写，也不换回均分。",
+                    rejected.violations, for_date=day, status="rejected",
+                    attempts=rejected.attempts)
+            except Exception as exc:  # 通道 / 解析 / 网络：照实说，不编一版
+                return _refusal(
+                    f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}）。"
+                    f"{day} 那份计划一个字没写。",
+                    for_date=day, status="channel_error")
+            items, reason = list(proposed.items), proposed.reason
+
+        reason = (reason or "").strip()
+        if not reason:
+            return _refusal(
+                f"没交「为什么这么排」（reason）——裁定 149④ 的留痕。{day} 那份计划一个字没写。",
+                ["没交 reason"], for_date=day, status="no_reason")
+
+        blocks = _block_rows_from_proposal(items, reason, _material_index(materials))
+        if not blocks:
+            return _refusal(
+                f"这一版没有任何能落的时间块。{day} 那份计划一个字没写。",
+                for_date=day, status="no_blocks")
+
+        # ③ 过闸：唯一一处写入前置。拆掉这一步，下面那个「同时段双订」的提案就会直接落库。
+        problems = validate_proposal(blocks, anchors=anchors, waking=waking,
+                             avoid=materials.get("avoid_windows") or [])
+        if problems:
+            return _refusal(
+                "这一版没过边界闸：" + "；".join(problems[:3]) + "。"
+                f"{day} 那份计划一个字没写，也不换回均分（裁定 149／161③）。",
+                problems, for_date=day, status="rejected")
+
+        # ④ 写：daily_plans 表头 + 当天整面 plan_items
+        events = list(store.list_events(
+            conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
+            include_completed=False) or [])
+        overlaps, conflict_rows = planning.compute_event_overlaps(events)
+        conflict_count = len(conflict_rows)
+        rows: list[dict[str, Any]] = [_event_item_row(event, overlaps) for event in events]
+        rows += [_anchor_item_row(anchor) for anchor in anchors]
+        rows += [dict(block) for block in blocks]
+        rows.sort(key=lambda row: str(row["start_at"]))
+        for index, row in enumerate(rows):
+            row["sort_order"] = index
+
+        ddl_count = sum(
+            1 for block in blocks
+            if (block.get("evidence") or {}).get("kind") == planning.DDL_BLOCK_EVIDENCE_KIND
+        )
+        summary = _mouth_summary(day, len(events), conflict_count, len(anchors), blocks, reason)
+        # 写之前先把这一批行验一遍：表头与条目是**两笔**写，中间挂掉就会留下「表头是新的、
+        # 条目被清空」的半份计划——那正是「落到真实 entry」的反面，比不写更难看。
+        broken = [
+            row for row in rows
+            if not str(row.get("title") or "").strip()
+            or not str(row.get("event_id") or "").strip()
+            or not str(row.get("start_at") or "").strip()
+            or not (row.get("evidence") or {})
+        ]
+        if broken:
+            return _refusal(
+                f"装配出来的计划有 {len(broken)} 行缺标题／缺指回的那一条／缺开始时间，"
+                f"整批不写。{day} 那份计划一个字没写。",
+                for_date=day, status="malformed_rows")
+        plan = store.upsert_daily_plan(
+            conn,
+            for_date=day,
+            status="pending",
+            summary=summary,
+            conflict_count=conflict_count,
+            event_count=len(events),
+            confirm_seq=store.next_confirm_seq(conn),
+            confirm_seq_at=store.now_iso(),
+            evidence={
+                "kind": MOUTH_PLAN_EVIDENCE_KIND,
+                "planner": MOUTH_PLANNER,
+                "source": MOUTH_PLAN_SOURCE,
+                "planner_note": reason,
+                "anchor_count": len(anchors),
+                "block_count": len(blocks),
+                # 治理线读的就是这两位（作业块数与项目块数），分开记，别让人再从中文里解析一遍。
+                "ddl_block_count": ddl_count,
+                "project_block_count": len(blocks) - ddl_count,
+            },
+        )
+        written = store.replace_plan_items(conn, plan.id, rows)
+        return {
+            "ok": True,
+            "status": plan.status,
+            "for_date": day,
+            "plan_id": plan.id,
+            "summary": summary,
+            "reason": reason,
+            "block_count": len(blocks),
+            "item_count": len(written),
+            "conflict_count": conflict_count,
+            "written": len(written),
+            "blocks": [dict(block["evidence"]) for block in blocks],
+        }
+    finally:
+        if owns_conn:
+            conn.close()

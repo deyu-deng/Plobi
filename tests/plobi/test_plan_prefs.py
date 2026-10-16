@@ -11,13 +11,29 @@ from pathlib import Path
 
 import pytest
 
-from plobi.agenda import checkin, store
+from plobi.agenda import checkin, llm_planning, store
 from plobi.agenda.service import AgendaService
 from plobi.agenda.planning import generate_evening_plan
 from plobi.agents.registry import AgentEntry, AgentRegistry
 
 
 DAY = "2026-09-16"
+
+
+def _mouth_round(conn, start_hm: str, end_hm: str) -> dict:
+    """让秘书自己排一次（裁定 163 的生产路径），提案只给一块。
+
+    零额度：`proposal_fn` 是注入点，不碰模型；判据看的是**材料那一格**与**闸**，
+    不是排得好不好。
+    """
+    def propose(_conn, day):
+        return (
+            [{"title": "推进 simulation", "start_at": f"{day}T{start_hm}:00",
+              "end_at": f"{day}T{end_hm}:00"}],
+            "把整块留给项目，避开人的作息。",
+        )
+
+    return llm_planning.plan_and_store_day(DAY, conn=conn, proposal_fn=propose)
 
 
 @pytest.fixture()
@@ -184,28 +200,29 @@ def test_list_active_avoid_windows_only_reads_confirmed(svc):
 
 
 def test_unconfirmed_window_does_not_block(svc, paced_registry, tmp_path):
+    """没批的窗**既不进材料也不挡**：那条偏好此刻还只是一张待批的卡。
+
+    裁定 163 之后代码不再自己排块，所以"挡不挡"落两处：秘书看得见的材料（`plan_materials`）
+    与写入前那道闸（`validate_proposal` 的边界五）。两处都钉，缺一个都会退化成
+    「用户说了句话但没人执行」。
+    """
     db_path = svc.db_path
     conn = store.connect(db_path)
     try:
         checkin.propose_config_change(
             conn, avoid_windows=[{"start_time": "11:00", "end_time": "13:00"}]
         )
+        assert llm_planning.plan_materials(conn, DAY)["avoid_windows"] == [], "未批的窗不许进材料"
+
+        result = _mouth_round(conn, "11:30", "12:30")
+        assert result["ok"] is True, result
+        assert result["written"] > 0, result
     finally:
         conn.close()
 
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    # 不应被挡——项目块至少出现在 11:00–13:00 之外（默认放最早空档）。
-    assert blocks, "项目块应当照常产出"
-    for block in blocks:
-        start = datetime.fromisoformat(block.start_at).time()
-        end = datetime.fromisoformat(block.end_at).time()
-        block_range = (start, end)
-        assert not (block_range[0] < datetime.strptime("13:00", "%H:%M").time() and
-                    block_range[1] > datetime.strptime("11:00", "%H:%M").time())
-
 
 def test_confirmed_window_blocks_project_blocks(svc, paced_registry, tmp_path):
+    """批过的窗 ⇒ 进材料，且撞上它的提案**点名拒绝 + 零写入**（不是"提示一下就算了"）。"""
     db_path = svc.db_path
     conn = store.connect(db_path)
     try:
@@ -213,21 +230,23 @@ def test_confirmed_window_blocks_project_blocks(svc, paced_registry, tmp_path):
             conn, avoid_windows=[{"start_time": "11:00", "end_time": "13:00"}]
         )
         svc.confirm_card(card.id)
+
+        windows = llm_planning.plan_materials(conn, DAY)["avoid_windows"]
+        assert {(w["start_at"], w["end_at"]) for w in windows} == {
+            (f"{DAY}T11:00:00", f"{DAY}T13:00:00")
+        }, windows
+
+        refused = _mouth_round(conn, "11:30", "12:30")
+        assert refused["ok"] is False, refused
+        assert refused["written"] == 0, "过不了闸还写＝静默落一版差不多的"
+        assert "避开" in refused["reason"], refused["reason"]
+
+        # 避开窗外的那一版照常落库：这条挡的是"排进去"，不是"今天什么都别排"。
+        ok = _mouth_round(conn, "14:00", "15:00")
+        assert ok["ok"] is True, ok
+        assert ok["written"] > 0, ok
     finally:
         conn.close()
-
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    assert blocks, "项目块照样产出"
-    for block in blocks:
-        start = datetime.fromisoformat(block.start_at).time()
-        end = datetime.fromisoformat(block.end_at).time()
-        # 整块与 11:00–13:00 不相交（这里用 strict 不交：start >= 13:00 or end <= 11:00）
-        start_min = start.hour * 60 + start.minute
-        end_min = end.hour * 60 + end.minute
-        assert not (start_min < 13 * 60 and end_min > 11 * 60), (
-            f"项目块 {block.start_at}–{block.end_at} 不应跨入 11:00–13:00 avoid 窗"
-        )
 
 
 def test_confirmed_window_does_not_drop_existing_timetable_event(svc, paced_registry, tmp_path):

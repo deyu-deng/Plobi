@@ -78,15 +78,16 @@ def test_a_bad_proposal_is_sent_back_untouched_with_its_own_problems(fake_planne
         if len(prompts) == 1:
             return json.dumps({"items": bad})  # 挤掉午饭，且没交 reason
         return (
-            "好的，按规则排完这一天。
-
-```json
-"
+            "好的，按规则排完这一天。\n\n```json\n"
             + json.dumps({"schedule": [{"time": it["start_at"][11:16], "end": it["end_at"][11:16],
-                                        "title": it["title"]} for it in good],
+                                        "title": it["title"],
+                                        # 别名形状也得把锚点身份带上——校验只认 id/template_id，
+                                        # 光靠标题认锚点就是让代码去猜模型想说什么。
+                                        **({"id": it["id"], "template_id": it["template_id"]}
+                                           if "template_id" in it else {})}
+                                       for it in good],
                           "reason": "上午脑子最清楚，把最难的放前面"}, ensure_ascii=False)
-            + "
-```"
+            + "\n```"
         )
 
     proposal = lp.plan_with_llm(DAY, fake_llm, conn=object())

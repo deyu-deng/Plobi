@@ -341,41 +341,6 @@ def paced_projects() -> list[tuple[Any, float]]:
     return out
 
 
-def _avoid_intervals_for_day(
-    conn: Any,
-    day: str,
-    window_start: datetime,
-    window_end: datetime,
-) -> list[tuple[datetime, datetime]]:
-    """WP-PLAN-PREFS：人确认过的 avoid 窗裁到当天日窗内。
-
-    跨午夜窗（如 22:00–02:00）按「当天日窗起点 → end」「次日日窗起点 → 第二天
-    end」两段展开；这里只关心**当天**，所以把跨午夜窗剪到当天的部分；次日由
-    次日的生成自然处理。窗本身是 ``HH:MM`` 字符串，规划器日窗也是
-    ``00:00–23:59:59``，拼装成 datetime 即可。
-    """
-    from plobi.agenda import store as _store
-
-    out: list[tuple[datetime, datetime]] = []
-    try:
-        windows = _store.list_active_avoid_windows(conn)
-    except Exception:  # 锁表 / 损坏等不挡规划
-        return out
-    for win in windows:
-        try:
-            start = _hhmm_on(day, str(win.get("start_time") or ""))
-            end = _hhmm_on(day, str(win.get("end_time") or ""))
-        except ValueError:
-            continue
-        if end <= start:
-            continue
-        clipped_start = max(start, window_start)
-        clipped_end = min(end, window_end)
-        if clipped_end > clipped_start:
-            out.append((clipped_start, clipped_end))
-    return out
-
-
 def _occupied_intervals(
     conn: Any,
     day: str,
@@ -408,26 +373,6 @@ def _occupied_intervals(
     return occupied
 
 
-def _free_windows(
-    occupied: list[tuple[datetime, datetime]],
-    window_start: datetime,
-    window_end: datetime,
-) -> list[list[datetime]]:
-    """Chronological free gaps ≥ MIN_BLOCK_MINUTES, as mutable [start, end]."""
-    clipped = sorted((s, e) for s, e in occupied if e > s)
-    free: list[list[datetime]] = []
-    cursor = window_start
-    for start, end in clipped:
-        if start > cursor:
-            free.append([cursor, min(start, window_end)])
-        cursor = max(cursor, end)
-        if cursor >= window_end:
-            break
-    if cursor < window_end:
-        free.append([cursor, window_end])
-    return [gap for gap in free if gap[1] - gap[0] >= timedelta(minutes=MIN_BLOCK_MINUTES)]
-
-
 def _ddl_candidates(conn: Any, window_from: datetime, window_to: datetime) -> list[Event]:
     """窗口内的截止事件，按到期时刻排序。机器采的与手写的走同一条口径。"""
     events = [
@@ -440,21 +385,6 @@ def _ddl_candidates(conn: Any, window_from: datetime, window_to: datetime) -> li
     ]
     events.sort(key=lambda event: (_as_dt(event.start_at), event.title))
     return events
-
-
-def _roster_names() -> tuple[str, ...]:
-    """名册里全部条目名（小写、去首尾空白），给归属判据当"有没有人跟这条全称全等"的参照。
-
-    读不到名册时回空元组——那时退回老口径（宁可多挂一块作业，也不把手下从名单里悄悄抹掉），
-    与 :func:`paced_projects` 对名册异常的处理一致。
-    """
-    from plobi.agents.registry import load_registry
-
-    try:
-        return tuple(course_key(str(getattr(entry, "name", "") or ""))
-                     for entry in load_registry().entries())
-    except Exception:  # noqa: BLE001 - 名册读不到就不拿它去拦人
-        return ()
 
 
 def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str] = (),
@@ -611,184 +541,10 @@ def _next_ddl(conn: Any, entry_name: str, window_from: datetime,
     return min(moments) if moments else None
 
 
-def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetime,
-                        *, other_names: Iterable[str] = (),
-                        ids_by_name: Optional[dict[str, tuple[str, ...]]] = None) -> list[Event]:
-    """没挂上任何 pace 项目的截止事件，按到期时刻由近到远。
-
-    为什么要有这一格：学在浙大那批作业的标题是课件名（「示波器的使用+声速测定预习报告」），
-    项目名册里当时 11 个全是代码项目 ⇒ C5 那句"标题含项目名"永远关联不上，
-    结果就是"数据进来了、排程挂不上"。用户要的是**按未提交作业排写作业时间**，
-    不是"按项目名排"，所以无主 DDL 自己就是一等公民。
-
-    裁定 121 二把 ``courses`` 立成品类之后，课程条目**默认不带 pace**（那是用户 10-11 拍的），
-    所以它们**不在上面那个名字集里**，作业照旧从这里拿块——归属靠 ``_ddl_block_item``
-    写进标题与 evidence 的 ``course`` 字段，不靠排程路由。
-    ⚠️ **别"顺手"只把课程名塞进 ``paced_names``**：那一句会让匹配的 DDL 从"无主"里被摘掉，
-    而预算 ``budgets`` 是跟 ``paced_projects()`` 同一条口径来的 —— 只改名字集不给预算，
-    结果是那批作业**一块都排不出来**（10-11 在真库上探过：窗口内 5 条 → 无主 5 → 0）。
-    真要让课程走项目那一侧，得连"课程要不要每周几小时"一起重新拍，那是另一件产品决定。
-    """
-    ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
-    return [
-        event
-        for event in _ddl_candidates(conn, window_start, ddl_limit)
-        if not any(
-            _matches_project(event, name, other_names=other_names,
-                             course_ids=(ids_by_name or {}).get(course_key(name), ()))
-            for name in paced_names
-        )
-    ]
-
-
-def _take_gap_block(
-    free: list[list[datetime]], *, cap_seconds: float
-) -> Optional[tuple[datetime, datetime]]:
-    """从第一个装得下的空窗里切一段（不超过 ``cap_seconds`` 与 ``MAX_BLOCK_MINUTES``）并消耗它。
-
-    返回 ``None`` 表示"没有装得下的空窗了"，不是"再往后挪挪"——零头碎片（< MIN）一律不留，
-    也不许为了塞进去而把块排到人家的夜里空档。
-    """
-    floor = MIN_BLOCK_MINUTES * 60.0
-    if cap_seconds < floor:
-        return None
-    for gap in free:
-        available = (gap[1] - gap[0]).total_seconds()
-        if available < floor:
-            continue
-        take = min(available, MAX_BLOCK_MINUTES * 60.0, cap_seconds)
-        if take < floor:
-            continue
-        start = gap[0]
-        end = start + timedelta(seconds=take)
-        gap[0] = end
-        return start, end
-    return None
-
-
-def _ddl_block_item(event: Event, start: datetime, end: datetime) -> dict:
-    extra = event.evidence if isinstance(event.evidence, dict) else {}
-    course = str(extra.get("course") or "").strip()
-    return {
-        "event_id": f"ddl:{event.id}",
-        "title": f"写作业 · {event.title}" + (f"（{course}）" if course else ""),
-        "start_at": start.isoformat(),
-        "end_at": end.isoformat(),
-        "kind": "task",  # 词表不扩（meeting/ddl/class/task 冻结）
-        "conflict_with": [],
-        "evidence": {
-            "kind": DDL_BLOCK_EVIDENCE_KIND,
-            "ddl_event_id": event.id,
-            "due_at": event.start_at,
-            "source": event.source,
-            **({"course": course} if course else {}),
-        },
-    }
-
-
-def _project_block_items(
-    conn: Any,
-    day: str,
-    events: list[Event],
-    kept_anchors: list[tuple[RoutineTemplate, datetime, datetime]],
-    window_start: datetime,
-    window_end: datetime,
-) -> tuple[list[dict], list[dict], list[dict]]:
-    """作业块与项目块**同池轮转**分配，返回 ``(blocks, unscheduled, deferred)``。
-
-    裁定 121 一（用户原话「作业和项目尽量平等。每天安排一点作业时间。上限是 4 个小时」）：
-
-    - **轮转**：一轮里每个主体最多拿一块（每条作业一块；每个 pace 项目按 ``weekly_hours/7``
-      的日预算继续拿）。"平等"不等于平均分——是**任何一方都不许因为对方在场而被清零**。
-      旧顺序（作业先把空窗吃光）的现场就是 10-13 那份「11 个项目全部未能安排」。
-    - **上限是 ``DDL_DAILY_BUDGET_MINUTES``**：作业块**当日时长合计**（不是条数）到 4 小时为止，
-      装不下的进 ``deferred`` 并写进 summary，不许偷偷塞进夜里空档。
-    - **"临近截止才多排"不需要新阈值**：作业按到期时刻排序 + 每轮一块 + 4h 上限，
-      近的先在轮次里拿到块、远的只剩余额才有份——排序就是那个"临近"。
-
-    WP-PLAN-PREFS（裁定 34.1）：人确认过的 avoid 窗对该窗视为占用——只挡**分出来的块**，
-    **不挡**已确认事件 / 作息锚点 / 弹性餐。所以 avoid 窗不进 ``_occupied_intervals``
-    （那是事件 + 锚点占用的入口），只在分块前临时合并进 ``free`` 候选集。
-    """
-    occupied = _occupied_intervals(conn, day, events, kept_anchors, window_start, window_end)
-    avoid_intervals = _avoid_intervals_for_day(conn, day, window_start, window_end)
-    free = _free_windows(occupied + avoid_intervals, window_start, window_end)
-
-    paced = paced_projects()
-    roster_names = _roster_names()
-    ids_by_name = course_id_map(conn)   # 一次查完：课名 ⇒ 该课全部 course_id（归属走 ID 级）
-    ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
-
-    def _sort_key(pair):
-        ddl = _next_ddl(conn, pair[0].name, window_from=window_start, other_names=roster_names,
-                      course_ids=ids_by_name.get(course_key(pair[0].name), ()))
-        if ddl is not None and ddl > ddl_limit:
-            ddl = None  # lookahead 之外的 DDL 视同无 DDL
-        return (ddl is None, ddl or window_start, pair[0].name)
-
-    ranked = sorted(paced, key=_sort_key)
-    pending_ddl = _unowned_ddl_events(conn, [entry.name for entry, _ in ranked], window_start,
-                                      other_names=roster_names)
-    ddl_left = DDL_DAILY_BUDGET_MINUTES * 60.0
-    budgets = {entry.name: weekly_hours / 7.0 * 3600.0 for entry, weekly_hours in ranked}
-    floor = MIN_BLOCK_MINUTES * 60.0
-
-    blocks: list[dict] = []
-    while True:
-        progressed = False
-
-        for event in list(pending_ddl):
-            if ddl_left < floor:
-                break
-            slot = _take_gap_block(free, cap_seconds=ddl_left)
-            if slot is None:
-                break
-            start, end = slot
-            blocks.append(_ddl_block_item(event, start, end))
-            ddl_left -= (end - start).total_seconds()
-            pending_ddl.remove(event)
-            progressed = True
-
-        for entry, _weekly in ranked:
-            left = budgets.get(entry.name, 0.0)
-            if left < floor:
-                continue
-            slot = _take_gap_block(free, cap_seconds=left)
-            if slot is None:
-                continue
-            start, end = slot
-            spent = (end - start).total_seconds()
-            budgets[entry.name] = left - spent
-            blocks.append(
-                {
-                    "event_id": f"project:{entry.name}",
-                    "title": f"推进 · {entry.name}",
-                    "start_at": start.isoformat(),
-                    "end_at": end.isoformat(),
-                    "kind": "task",
-                    "conflict_with": [],
-                    "evidence": {
-                        "kind": PROJECT_BLOCK_EVIDENCE_KIND,
-                        "project_id": entry.name,
-                        "pace": f"weekly_hours:{entry.weekly_hours:g}",
-                    },
-                }
-            )
-            progressed = True
-
-        if not progressed:
-            break
-
-    unscheduled = [
-        {"project": entry.name, "missing_hours": round(budgets[entry.name] / 3600.0, 1)}
-        for entry, _weekly in ranked
-        if budgets.get(entry.name, 0.0) >= floor
-    ]
-    deferred = [
-        {"ddl": event.title, "due_at": event.start_at, "event_id": event.id}
-        for event in pending_ddl
-    ]
-    return blocks, unscheduled, deferred
+NO_PLANNER_NOTE = (
+    "（没有排程入口：这一版一个项目块/作业块都没排，面上那些就是当天已有的日程与作息。"
+    "不是排满了，也不是排砸了——要让 L1 排，就得把 planner 接上。）"
+)
 
 
 def _l1_blocks(
@@ -803,28 +559,25 @@ def _l1_blocks(
 ) -> tuple[list[dict], list, list, str]:
     """项目块 / 作业块交给 L1（裁定 149）。返回 ``(blocks, unscheduled, deferred, note)``。
 
-    `planner(conn, day) -> (blocks, note)` 是**显式**注入点：生产由晚间计划口传
+    `planner(conn, day) -> (blocks, note)` 是**显式**注入点：生产由秘书那一发
     :func:`plobi.agenda.llm_planning.blocks_from_l1`（材料口 + 提示 + 边界校验 + 退回重排）；
     不传就是没排，**绝不默认去打一发模型**（9d7e4e58 那颗雷：默认回退到真外部调用，
     一跑就花钱、同一条测试还跟着路由通不通漂）。测试要块就自己给一个假的。
 
-    均分那段 ``_project_block_items`` 已随裁定 149 删除。为什么这里没有兜底：静默换回一版
-    "看起来排满了"的均分，就是把「没法执行」修成「更难看的没法执行」，而用户明说过
-    「一定要 LLM 参与。不要代码自动生成」。排不出来 ⇒ 面上照实说排不出来。
+    **这里没有第二条路**：那套把剩余空窗按日预算分给每个项目 / 每条作业的均分分配函数，
+    连同它只服务自己的私有 helper 与"没人接线时兜一版均分"那条兜底，已随裁定 149／163③
+    整体删除。为什么不留兜底：静默换回一版"看起来排满了"的均分，就是把「没法执行」修成
+    「更难看的没法执行」，而用户明说过「一定要 LLM 参与。不要代码自动生成」「不要用脚本排程」。
+    排不出来 ⇒ 一个块不写，并在面上照实说没排（见 :data:`NO_PLANNER_NOTE`）。
+
+    第 2、3 位（``unscheduled`` / ``deferred``）**恒为空**：那是均分自己算出来的"欠了几小时 /
+    排不下的作业"，换成 L1 之后只有 planner 本人知道自己放弃了什么，而它的返回形状就是
+    ``(blocks, note)`` 两位（与 :func:`plobi.agenda.llm_planning.blocks_from_l1` 一致）。
+    留这两位是为了 ``_plan_summary`` 那两句不必改口径；不许拿它们造第二套分配数学。
     """
     if planner is None:
-        # 生产（`scripts/plobi/cron_evening_plan.py`）**显式传 planner**，所以"今晚这轮由 L1 排"
-        # 已经成立；均分那段只剩"没人接线"时的兜底，而兜底必须**自报是兜底**（见下面那句 note）——
-        # 静默换回一版看起来排满的东西，就是把「没法执行」修成「更难看的没法执行」。
-        # 它还没被删的唯一理由：`tests/plobi/test_planning_ddl_blocks.py` 那 13 条测的就是它，
-        # 里面装着裁定 121 的两条用户口径（作业块当日 240 分钟上限、无主作业是一等公民）。
-        # 删它的前提：把那两条口径搬进材料口与校验器，并把那 13 条迁成注入假 planner。
-        blocks, unscheduled, deferred = _project_block_items(
-            conn, day, events, kept_anchors, window_from, window_to
-        )
-        # 兜底要自己报名：这一格会拼进 daily_plans.summary，面上看得见"这不是 L1 排的"。
-        note = "（没接排程入口：这一版是旧的均分兜底，不是 L1 排的）"
-        return list(blocks), list(unscheduled), list(deferred), note
+        # 没接线就照实没排。这一格会拼进 daily_plans.summary，面上看得见"这不是 L1 排的"。
+        return [], [], [], NO_PLANNER_NOTE
     try:
         blocks, note = planner(conn, day)
     except Exception as exc:  # 通道炸了也不写假块
@@ -1258,7 +1011,7 @@ def _dedupe_routine_plan_items(
     return [item for item in plan_items if not _is_meal_anchor(item)]
 
 
-def _avoid_windows_for_day(conn: Any, day: str) -> list[dict]:
+def avoid_windows_for_day(conn: Any, day: str) -> list[dict]:
     """当天 confirmed 的 avoid 窗（WP-MEAL-DEDUPE 顺手）。pending 不出现。"""
     try:
         from .store import list_active_avoid_windows
@@ -1310,7 +1063,7 @@ def day_surface(
         "overlaps": overlaps,
         "conflicts": conflicts,
         "plan_status": plan.status if plan is not None else None,
-        "avoid_windows": _avoid_windows_for_day(conn, day),
+        "avoid_windows": avoid_windows_for_day(conn, day),
     }
 
 
