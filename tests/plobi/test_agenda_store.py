@@ -151,6 +151,26 @@ def test_db_path_honours_env_override(tmp_path, monkeypatch):
     assert store.agenda_db_path() == target
 
 
+def test_db_path_resolves_to_shared_root_in_profile_mode(tmp_path, monkeypatch):
+    """裁定 42 / WP-PROFILE-SHARED-LAYER（R-096）：profile 活跃时日程库也是 root 那一份。
+
+    「课程分身问『我明天有什么』读到自己的空库」的守位测试；路径同一性断言
+    （判据④/③），分身侧那份空库必须被无视。
+    """
+    root = tmp_path / "plobiroot"
+    profile = root / "profiles" / "l2-course-x"
+    (profile / "plobi").mkdir(parents=True)
+    (root / "plobi").mkdir(parents=True)
+    (profile / "plobi" / "agenda.db").write_bytes(b"")
+
+    monkeypatch.setenv("PLOBI_HOME", str(profile))
+    monkeypatch.delenv("PLOBI_AGENDA_DB", raising=False)
+
+    resolved = store.agenda_db_path()
+    assert resolved == root / "plobi" / "agenda.db"
+    assert resolved != profile / "plobi" / "agenda.db"
+
+
 def test_db_path_has_no_hardcoded_drive(monkeypatch):
     monkeypatch.delenv("PLOBI_AGENDA_DB", raising=False)
     source = (store.__file__ or "")
