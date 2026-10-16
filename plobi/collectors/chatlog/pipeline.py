@@ -120,6 +120,36 @@ class ChatlogPipeline:
         state, why = sidecar.diagnose(healthy=False, repo_root=None)
         return {"ok": False, "detail": f"chatlog 采不到：{why}", "state": state, "binary": binary}
 
+    def collect(self, service: Optional[AgendaService] = None) -> dict:
+        """The executor's collector protocol (`plobi.collectors.sweep`).
+
+        This is the piece that was missing: ``wechat`` was declared as a source
+        under collection, but nothing could hand it to the daily sweep, so every
+        round reported ``no_builder`` — "不会有东西进来" — and the real reason one
+        layer down (sidecar down? no key? no product config?) never got asked.
+
+        Probes before spending: an unhealthy chatlog raises :class:`ChatlogDead`
+        carrying the diagnosed state instead of returning a clean-looking zero.
+        """
+        if service is not None:
+            self.service = service
+
+        health = self.health()
+        if not health["ok"]:
+            raise ChatlogDead(
+                health["detail"], state=health["state"], detail=health["detail"]
+            )
+
+        report = self.run_once()
+        return {
+            "state": "ready",
+            "rows_seen": report.scanned,
+            "created": len(report.created),
+            "updated": len(report.updated),
+            "unchanged": report.skipped_duplicate,
+            "pending": report.pending_ids,
+        }
+
     def _default_confirmer(self) -> Confirmer:
         """Heuristic first, L2 model for the remainder.
 
@@ -428,7 +458,17 @@ class ChatlogDead(RuntimeError):
 
     §8.2 Z4 — L1 must say collection is unreachable. Never return an empty
     successful agenda as if the sweep ran.
+
+    ``state`` / ``detail`` exist because the executor reads them verbatim
+    (``sweep._collect_one``): four completely different causes — no binary, no
+    product config, no data key, nothing listening — used to collapse into one
+    "chatlog unreachable" sentence. The state carries which one it actually was.
     """
+
+    def __init__(self, message: str, *, state: str = "raised", detail: str = "") -> None:
+        super().__init__(message)
+        self.state = state or "raised"
+        self.detail = detail or str(message)
 
 
 def chatlog_is_healthy(client) -> bool:
