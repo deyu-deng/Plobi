@@ -32,8 +32,11 @@
 .PARAMETER NoAutoDecrypt
     Switch OFF auto-decrypt (default is ON).
 
-.PARAMETER Debug
-    Pass --debug to chatlog server.
+.PARAMETER ChatlogDebug
+    Pass --debug to chatlog server. (改名了：原先这颗叫 -Debug，而脚本带
+    [CmdletBinding()]——`-Debug` 是 PowerShell 的公共参数，同名声明会让这个脚本
+    **一启动就报 MetadataError、根本跑不起来**。这台 10-16 10:5x 现核到的 sidecar
+    "起不来"的第一层原因就在这颗参数上，不是密钥、不是 Go。)
 
 .EXAMPLE
     .\chatlog_server.ps1
@@ -52,14 +55,19 @@ param(
     [string]$DataKey = "",
     [string]$ImgKey = "",
     [switch]$NoAutoDecrypt,
-    [switch]$Debug
+    [switch]$ChatlogDebug
 )
 
 $ErrorActionPreference = "Stop"
 
 # ---- Resolve binary path (configurable, with sensible default) ----
 if ([string]::IsNullOrWhiteSpace($BinaryPath)) {
-    $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    # ⚠️ 这颗原来是 `Split-Path -Parent (Split-Path -Parent $PSScriptRoot)`——**多剥了一层**：
+    # `$PSScriptRoot` 已经是 `<repo>\scripts` 这个**目录**（不是脚本文件），再往上一层就到
+    # `Plobi-Desktop`，candidate 变成 `Plobi-Desktop\tools\chatlog\bin\chatlog.exe` ⇒ 永远"找不到产物"。
+    # 这台 10-16 10:5x 现核：exe 在 `Code\tools\chatlog\bin\chatlog.exe`（29,475,840 B，10-10 22:10），
+    # 而那句报错让 sidecar 起不来这件事被记成了"没产物"——**这是第二层死口，不是没装 Go、也不是没密钥**。
+    $repoRoot = Split-Path -Parent $PSScriptRoot
     $candidate = Join-Path $repoRoot "tools\chatlog\bin\chatlog.exe"
     if (Test-Path $candidate) {
         $BinaryPath = $candidate
@@ -102,7 +110,7 @@ if (-not [string]::IsNullOrWhiteSpace($ImgKey)) {
 if (-not $NoAutoDecrypt) {
     $argsList += "--auto-decrypt"
 }
-if ($Debug) {
+if ($ChatlogDebug) {
     $argsList += "--debug"
 }
 
