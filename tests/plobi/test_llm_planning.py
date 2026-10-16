@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import datetime
 
 import pytest
@@ -69,11 +70,24 @@ def test_a_bad_proposal_is_sent_back_untouched_with_its_own_problems(fake_planne
     ]
     prompts: list[str] = []
 
-    def fake_llm(prompt: str) -> dict:
+    def fake_llm(prompt: str) -> str:
+        """第二版故意用**真回包的形状**（2026-10-16 那一发实测）：一句人话 + ```json 围栏 +
+        `schedule` / `time` / `end` 这套别名键。解析器只认契约形状的话，排得再好也会被扔掉——
+        那就是我们上一版的真状态（块数 0，理由写成"没有任何能落的时间块"）。"""
         prompts.append(prompt)
         if len(prompts) == 1:
-            return {"items": bad}  # 挤掉午饭，且没交 reason
-        return {"items": good, "reason": "上午脑子最清楚，把最难的放前面"}
+            return json.dumps({"items": bad})  # 挤掉午饭，且没交 reason
+        return (
+            "好的，按规则排完这一天。
+
+```json
+"
+            + json.dumps({"schedule": [{"time": it["start_at"][11:16], "end": it["end_at"][11:16],
+                                        "title": it["title"]} for it in good],
+                          "reason": "上午脑子最清楚，把最难的放前面"}, ensure_ascii=False)
+            + "
+```"
+        )
 
     proposal = lp.plan_with_llm(DAY, fake_llm, conn=object())
 
