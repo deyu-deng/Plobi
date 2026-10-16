@@ -136,6 +136,23 @@ def _build_zju() -> Any:
     return ZjuCollector(transport=UrllibTransport())
 
 
+def _build_wechat() -> Any:
+    """微信那条的执行方入口。
+
+    缺这一格的时候，每天那一轮把 `wechat` 报成 ``no_builder``——"注册表说这条在采，
+    但没有任何一方构造得出它的采集器"——于是**真原因永远问不到**：sidecar 是没产物、
+    没配置、没密钥还是没在听，全都藏在一句"不会有东西进来"后面。构造出来之后，
+    这些由 ``ChatlogPipeline.collect()`` 逐条报状态。
+
+    管线自己会先探活再花钱（不健康就抛带状态的 ``ChatlogDead``），所以这里不需要
+    再套一层闸；构造全部走产品自己的落点（`$PLOBI_HOME` 下的配置与 sidecar handoff），
+    没有第二个真源。
+    """
+    from plobi.collectors.chatlog.pipeline import ChatlogPipeline
+
+    return ChatlogPipeline()
+
+
 def _declare(items: Iterable[SourceSpec]) -> None:
     for item in items:
         register(item, replace=True)
@@ -152,6 +169,9 @@ _declare(
                 "requires_manual_setup": True,  # 构建 + 数据密钥 + 微信登录
                 "authoritative_replace": False,  # ingest 契约：本轮缺的不删
             },
+            # 执行方入口补上了（10-16）：此前这条每轮都被报成 `no_builder`，
+            # 真原因问不到下一层。构造不做静默网络调用以外的假设——管线自己先探活。
+            builder=_build_wechat,
         ),
         SourceSpec(
             "timetable",

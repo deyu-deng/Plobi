@@ -138,6 +138,82 @@ class TestRealRegistry:
         assert getattr(collector, "transport", None) is not None
         assert getattr(collector, "config", None) is not None
 
+    def test_wechat_is_switched_on_with_a_builder_now(self):
+        """10-16 补的那格：`wechat` 以前只有开关没有构造入口 ⇒ 每轮报 `no_builder`，
+        而真原因（没产物 / 没配置 / 没密钥 / 没在听）全被这一句挡在下面问不到。"""
+        spec = registry.spec("wechat")
+
+        assert spec.collecting is True and callable(spec.builder)
+
+    def test_the_wechat_builder_hands_the_executor_a_usable_collector(self):
+        """构造本身零网络（探活发生在 `collect()` 里，那之前不花一次调用）。"""
+        collector = registry.spec("wechat").builder()
+
+        assert collector.source_id == "wechat"
+        assert callable(getattr(collector, "collect", None)), "sweep 只认 collect/pull 两种形状"
+
+    def test_collect_names_the_diagnosed_state_instead_of_one_generic_sentence(self, monkeypatch):
+        """判据「说人话」：不健康时抛出去的东西必须带状态名，不能是 `raised`。"""
+        from plobi.collectors.chatlog import pipeline as chatlog_pipeline
+        from plobi.collectors.chatlog.sidecar import STATE_KEY_MISSING
+
+        pipe = registry.spec("wechat").builder()
+        monkeypatch.setattr(
+            chatlog_pipeline, "chatlog_is_healthy", lambda client: False
+        )
+        monkeypatch.setattr(
+            pipe.__class__, "health",
+            lambda self: {"ok": False, "detail": "少一把数据密钥", "state": STATE_KEY_MISSING,
+                          "binary": ""},
+        )
+
+        with pytest.raises(chatlog_pipeline.ChatlogDead) as caught:
+            pipe.collect()
+
+        assert caught.value.state == STATE_KEY_MISSING
+        assert "密钥" in caught.value.detail
+
+    def test_sweep_row_for_wechat_carries_the_reason_not_no_builder(self, monkeypatch):
+        """整条链的钉子：那一轮给面上的读数，必须是真原因，不再是"没人构造它"。"""
+        from plobi.collectors.chatlog import pipeline as chatlog_pipeline
+        from plobi.collectors.chatlog.sidecar import STATE_NOT_LISTENING
+
+        monkeypatch.setattr(
+            chatlog_pipeline.ChatlogPipeline, "health",
+            lambda self: {"ok": False, "detail": "5030 上没有 chatlog 服务",
+                          "state": STATE_NOT_LISTENING, "binary": ""},
+        )
+
+        row = next(r for r in sweep.run_sweep(sources=("wechat",))["sources"]
+                   if r["source"] == "wechat")
+
+        assert row["ok"] is False
+        assert row["state"] == STATE_NOT_LISTENING
+        assert "no_builder" not in row["detail"] and "构造得出" not in row["detail"]
+
+    def test_collect_reports_counts_the_executor_can_add_up(self, monkeypatch):
+        """一轮真采回来的四个数要能进 verdict 那句"N/M 条真跑了一轮"。"""
+        from plobi.collectors.chatlog.pipeline import IngestReport
+
+        pipe = registry.spec("wechat").builder()
+        monkeypatch.setattr(
+            pipe.__class__, "health",
+            lambda self: {"ok": True, "detail": "chatlog /health ok", "state": "ready",
+                          "binary": ""},
+        )
+        monkeypatch.setattr(
+            pipe, "run_once",
+            lambda day=None, lookback_days=1: IngestReport(
+                scanned=9, skipped_duplicate=7, created=["a", "b"], updated=["c"]
+            ),
+        )
+
+        result = pipe.collect()
+
+        assert result["state"] == "ready"
+        assert (result["rows_seen"], result["unchanged"]) == (9, 7)
+        assert (result["created"], result["updated"]) == (2, 1)
+
     def test_the_sweep_does_not_branch_on_source_names(self):
         """判据 3：这一层只读注册表那两格。出现按信源名字的分支就是把它 fork 了。"""
         text = io.open(sweep.__file__, encoding="utf-8").read()
