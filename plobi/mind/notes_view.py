@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from .paths import real_target
+from .project_tree import TREE_ROOT_RELATIVES
 
 logger = logging.getLogger(__name__)
 
@@ -159,14 +160,9 @@ def agent_aliases(entry: Any) -> tuple[str, ...]:
 # Every L2 category folder a tree may live in, as logical paths. Listing only
 # ``Vault/projects`` would silently make ``research/SRTP`` — and after the move any
 # course, butler or event tree — an "owner nobody registered", which the sidebar
-# reports as a dangling ``belongs:`` tag instead of a note list.
-OWNER_TREE_ROOTS: tuple[str, ...] = (
-    "Vault/projects",
-    "Vault/research",
-    "Vault/courses",
-    "Vault/butler",
-    "Vault/events",
-)
+# reports as a dangling ``belongs:`` tag instead of a note list. Same list the
+# writer uses (:data:`plobi.mind.project_tree.TREE_ROOT_RELATIVES`), not a copy of it.
+OWNER_TREE_ROOTS = TREE_ROOT_RELATIVES
 
 
 def known_names(root: Path, entries: Iterable[Any]) -> tuple[str, ...]:
