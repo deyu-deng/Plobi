@@ -1775,11 +1775,34 @@ export const zh: Translations = {
     offloadsSessionId: '外部会话',
     newAgent: '新建智能体',
     newAgentLabel: '新建智能体',
+    // WP-AGENT-CREATE-UPGRADE（用户 10-16「新建 Agent 的弹窗这么简陋呀」）：
+    // 弹窗顶部一句话说清 Agent 是什么——原来只有标题，用户看完不知道在建什么。
+    newAgentDesc: '智能体是你团队里的一员：有自己专管的事，能长期记住你的偏好。建好就能在左边点名找它。',
     newAgentCategoryLabel: '分类',
+    // 每类一行帮助：选这类是干什么的（原来只有一个裸下拉）。
+    newAgentCategoryHelp: {
+      projects: '项目：有自己的工作文件夹，推进一个具体的事。',
+      courses: '课程：认一门课，管它的作业、课表与资料文件夹。',
+      butler: '管家：家务型，不绑文件夹。',
+      events: '事件：从日程事项长出来（暂不支持直接建）。',
+      research: '研究：有自己的资料文件夹，查与写。'
+    },
     newAgentFolderLabel: '工作文件夹',
     newAgentFolderPlaceholder: '还没有选文件夹',
     newAgentFolderPick: '选择文件夹',
+    // WP-AGENT-CREATE-UPGRADE：多文件夹（用户 10-16「一个 Agent 肯定也要可以添加多个文件夹」）。
+    newAgentFoldersLabel: '工作文件夹（可多个）',
+    newAgentFolderAdd: '添加',
+    newAgentFolderRemove: '移除',
+    newAgentFolderPrimary: '主',
+    newAgentFolderPrimaryHint: '第一个是主文件夹：智能体的命令行默认落在这里。',
     createEventAgentHint: '事件类代理请通过日程创建（后续支持）。',
+    // WP-AGENT-CREATE-UPGRADE：图标与颜色回归（用户 10-16「之前底座还可以选择图标和颜色。我觉得很可爱」）。
+    newAgentAppearanceLabel: '图标与颜色',
+    newAgentAppearanceHint: '可不选——默认按名字自动配色。',
+    newAgentIconLabel: '图标',
+    newAgentColorLabel: '颜色',
+    newAgentAppearanceClear: '恢复默认',
     agentCategories: {
       projects: '项目',
       butler: '管家',

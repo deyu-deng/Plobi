@@ -12,6 +12,7 @@ import { Codicon } from '@/components/ui/codicon'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle
@@ -378,8 +379,14 @@ export function ChatSidebar({
   const [createAgentBusy, setCreateAgentBusy] = useState(false)
   const [createAgentError, setCreateAgentError] = useState<null | string>(null)
   const [createAgentCategory, setCreateAgentCategory] = useState<AgentCategory>(DEFAULT_AGENT_CATEGORY)
-  // WP-STUDIO (裁定 36.1): the workspace folder for a projects/research agent.
-  const [createAgentPath, setCreateAgentPath] = useState('')
+  // WP-STUDIO (裁定 36.1): the workspace folder(s) for a projects/research/courses
+  // agent. WP-AGENT-CREATE-UPGRADE（用户 10-16）：单值改清单——「一个 Agent 肯定
+  // 也要可以添加多个文件夹」。主文件夹 = 第一个。
+  const [createAgentPaths, setCreateAgentPaths] = useState<string[]>([])
+  // WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色」）：
+  // 建册可选，空 = 默认渲染。
+  const [createAgentIcon, setCreateAgentIcon] = useState('')
+  const [createAgentColor, setCreateAgentColor] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = searchQuery.trim()
 
@@ -838,20 +845,23 @@ export function ChatSidebar({
     setCreateAgentError(null)
     setCreateAgentBusy(false)
     setCreateAgentCategory(DEFAULT_AGENT_CATEGORY)
-    setCreateAgentPath('')
+    setCreateAgentPaths([])
+    setCreateAgentIcon('')
+    setCreateAgentColor('')
     setCreateAgentOpen(true)
   }, [])
 
   // Reuses the existing remote-aware folder picker (and its dialog) — no second
-  // folder UI. Cancelling the picker leaves the field exactly as it was, which
+  // folder UI. Cancelling the picker leaves the list exactly as it was, which
   // also means cancelling never submits anything.
+  // WP-AGENT-CREATE-UPGRADE：追加进清单（去重），不再覆盖单值。
   const pickCreateAgentFolder = useCallback(async () => {
     const dir = await pickProjectFolder()
 
-    if (dir) {
-      setCreateAgentPath(dir)
+    if (dir && !createAgentPaths.includes(dir)) {
+      setCreateAgentPaths([...createAgentPaths, dir])
     }
-  }, [])
+  }, [createAgentPaths])
 
   const submitCreateAgent = useCallback(async () => {
     const trimmed = createAgentName.trim()
@@ -867,15 +877,18 @@ export function ChatSidebar({
     }
 
     const needsPath = categoryNeedsProjectPath(createAgentCategory)
-    const projectPath = needsPath ? createAgentPath.trim() : ''
+    const paths = needsPath ? createAgentPaths.map(path => path.trim()).filter(Boolean) : []
 
     // A workspace agent without a folder is not submittable — never POST a
     // half-built agent (the backend would mkdir an empty workspace).
-    if (needsPath && !projectPath) {
+    if (needsPath && paths.length === 0) {
       return
     }
 
-    const body = buildCreateAgentBody(trimmed, createAgentCategory, projectPath)
+    const body = buildCreateAgentBody(trimmed, createAgentCategory, paths, {
+      color: createAgentColor,
+      icon: createAgentIcon
+    })
 
     setCreateAgentBusy(true)
     setCreateAgentError(null)
@@ -885,7 +898,9 @@ export function ChatSidebar({
       await refreshConsoleAgents()
       setCreateAgentOpen(false)
       setCreateAgentName('')
-      setCreateAgentPath('')
+      setCreateAgentPaths([])
+      setCreateAgentIcon('')
+      setCreateAgentColor('')
       navigate(agentRoute(body.id))
     } catch (cause) {
       // 后端拒绝创建（重名 / 撞了 Mind 里别人的树）时这句话必须出现在弹窗里，
@@ -894,7 +909,15 @@ export function ChatSidebar({
     } finally {
       setCreateAgentBusy(false)
     }
-  }, [createAgentBusy, createAgentCategory, createAgentName, createAgentPath, navigate])
+  }, [
+    createAgentBusy,
+    createAgentCategory,
+    createAgentColor,
+    createAgentIcon,
+    createAgentName,
+    createAgentPaths,
+    navigate
+  ])
 
   const onEnterProject = useCallback(
     (id: string) => {
@@ -1690,9 +1713,10 @@ export function ChatSidebar({
       </SidebarContent>
       <ProjectDialog />
       <Dialog onOpenChange={value => !value && !createAgentBusy && setCreateAgentOpen(false)} open={createAgentOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md" onInteractOutside={event => event.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{c.newAgentLabel}</DialogTitle>
+            <DialogDescription>{c.newAgentDesc}</DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4"
@@ -1731,30 +1755,138 @@ export function ChatSidebar({
                   ))}
                 </SelectContent>
               </Select>
+              {/* WP-AGENT-CREATE-UPGRADE：每类一行帮助——选这类是干什么的。
+                  可选链：i18n 键被别线的整文件覆写卷走时降级为空串，绝不打挂整棵树。 */}
+              <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                {c.newAgentCategoryHelp?.[createAgentCategory] ?? ''}
+              </p>
             </div>
-            {/* WP-STUDIO (裁定 36.1): a projects/research agent needs the folder
-                it works in. Butler agents work nowhere in particular, so the
-                picker never appears for them. */}
+            {/* WP-STUDIO (裁定 36.1): a projects/research/courses agent needs the
+                folder(s) it works in. Butler agents work nowhere in particular,
+                so the picker never appears for them.
+                WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加
+                多个文件夹」）：单值 → 清单，可加多个；第一个是主文件夹。 */}
             {categoryNeedsProjectPath(createAgentCategory) && (
               <div className="grid gap-1.5">
-                <label className="text-xs font-medium" htmlFor="new-agent-folder">
-                  {c.newAgentFolderLabel}
+                <label className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
+                  {c.newAgentFoldersLabel}
                 </label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    className="min-w-0 flex-1"
-                    id="new-agent-folder"
-                    onChange={event => setCreateAgentPath(event.target.value)}
-                    placeholder={c.newAgentFolderPlaceholder}
-                    readOnly
-                    value={createAgentPath}
-                  />
-                  <Button onClick={() => void pickCreateAgentFolder()} type="button" variant="outline">
-                    {c.newAgentFolderPick}
-                  </Button>
-                </div>
+                {createAgentPaths.length === 0 ? (
+                  <p className="text-[0.75rem] text-(--ui-text-tertiary)">
+                    {c.newAgentFolderPlaceholder}
+                  </p>
+                ) : (
+                  <ul className="grid gap-1">
+                    {createAgentPaths.map((path, index) => (
+                      <li
+                        className={cn(
+                          'flex items-center gap-2 rounded-md bg-(--ui-control-hover-background) px-2 py-1 text-[0.75rem]'
+                        )}
+                        key={path}
+                      >
+                        <Codicon
+                          className="shrink-0 text-(--ui-text-tertiary)"
+                          name="folder"
+                          size="0.75rem"
+                        />
+                        <span className="min-w-0 flex-1 truncate" title={path}>
+                          {path}
+                        </span>
+                        {index === 0 && (
+                          <span className="shrink-0 text-[0.625rem] uppercase text-(--ui-text-quaternary)">
+                            {c.newAgentFolderPrimary}
+                          </span>
+                        )}
+                        <Button
+                          aria-label={c.newAgentFolderRemove}
+                          className="size-5 shrink-0 text-(--ui-text-quaternary) hover:text-foreground"
+                          onClick={() =>
+                            setCreateAgentPaths(createAgentPaths.filter(item => item !== path))
+                          }
+                          size="icon-xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Codicon name="close" size="0.75rem" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Button
+                  className="self-start"
+                  onClick={() => void pickCreateAgentFolder()}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="add" size="0.75rem" />
+                  {c.newAgentFolderAdd}
+                </Button>
+                <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                  {c.newAgentFolderPrimaryHint}
+                </p>
               </div>
             )}
+            {/* WP-AGENT-CREATE-UPGRADE：图标与颜色（用户 10-16 要回的「可爱」）。 */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
+                {c.newAgentAppearanceLabel}
+              </span>
+              <div className="flex flex-wrap items-center gap-1">
+                {AGENT_ICON_CHOICES.map(name => (
+                  <button
+                    aria-label={name}
+                    aria-pressed={createAgentIcon === name}
+                    className={cn(
+                      'flex size-7 items-center justify-center rounded-md',
+                      createAgentIcon === name
+                        ? 'bg-(--ui-control-hover-background) text-foreground'
+                        : 'text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
+                    )}
+                    key={name}
+                    onClick={() => setCreateAgentIcon(createAgentIcon === name ? '' : name)}
+                    type="button"
+                  >
+                    <Codicon name={name} size="0.875rem" />
+                  </button>
+                ))}
+                <Button
+                  aria-label={c.newAgentAppearanceClear}
+                  className="size-7 text-(--ui-text-quaternary) hover:text-foreground"
+                  onClick={() => {
+                    setCreateAgentIcon('')
+                    setCreateAgentColor('')
+                  }}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="close" size="0.75rem" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {AGENT_COLOR_CHOICES.map(color => (
+                  <button
+                    aria-label={color}
+                    aria-pressed={createAgentColor === color}
+                    className={cn(
+                      'size-5 rounded-full ring-offset-2 transition-shadow',
+                      createAgentColor === color
+                        ? 'ring-2 ring-(--ui-text-tertiary) ring-offset-(--ui-background)'
+                        : 'hover:ring-2 hover:ring-(--ui-text-quaternary) hover:ring-offset-(--ui-background)'
+                    )}
+                    key={color}
+                    onClick={() => setCreateAgentColor(createAgentColor === color ? '' : color)}
+                    style={{ backgroundColor: color }}
+                    type="button"
+                  />
+                ))}
+              </div>
+              <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                {c.newAgentAppearanceHint}
+              </p>
+            </div>
             {isCreateAgentCategoryBlocked(createAgentCategory) && (
               <p className="text-xs text-destructive">{c.createEventAgentHint}</p>
             )}
@@ -1766,7 +1898,7 @@ export function ChatSidebar({
               <Button
                 disabled={
                   createAgentBusy ||
-                  isCreateAgentSubmitDisabled(createAgentName, createAgentCategory, createAgentPath)
+                  isCreateAgentSubmitDisabled(createAgentName, createAgentCategory, createAgentPaths)
                 }
                 type="submit"
               >
@@ -1779,6 +1911,29 @@ export function ChatSidebar({
     </Sidebar>
   )
 }
+
+// WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色。我觉得很可爱」）：
+// 创建对话框的图标/颜色预设。图标名走 Codicon（与左栏其余图标同一套字库）；
+// 颜色沿用 profile-color 的 hsl 口味（饱和 68 / 亮 58 一带），和侧栏既有色板同族。
+const AGENT_ICON_CHOICES = [
+  'robot',
+  'organization',
+  'account',
+  'comment',
+  'files',
+  'symbol-misc',
+  'edit'
+] as const
+
+const AGENT_COLOR_CHOICES = [
+  'hsl(210 68% 58%)',
+  'hsl(150 62% 45%)',
+  'hsl(45 85% 55%)',
+  'hsl(20 80% 58%)',
+  'hsl(350 70% 60%)',
+  'hsl(280 60% 62%)',
+  'hsl(190 65% 48%)'
+] as const
 
 interface MessagingSection {
   sourceId: string

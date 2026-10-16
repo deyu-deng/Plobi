@@ -1329,6 +1329,7 @@ export interface Translations {
       sectionGroups: string
       sectionOfficial: string
       excludeAllPendingOfficial: string
+      /** WP-COLLECT-WIN 的界面那半边：`GET /api/collect/sources` 的第一批消费方。 */
       liveness: {
         ageDays: (count: number) => string
         failed: string
@@ -1385,14 +1386,39 @@ export interface Translations {
     offloadsSessionId: string
     newAgent: string
     newAgentLabel: string
+    /**
+     * WP-AGENT-CREATE-UPGRADE（用户 10-16「新建 Agent 的弹窗这么简陋呀」）：
+     * 弹窗顶部一句话说清 Agent 是什么——原来只有标题。
+     */
+    newAgentDesc: string
     /** WP-CREATE-CAT: label for the category <select> in the new-agent dialog. */
     newAgentCategoryLabel: string
+    /** WP-AGENT-CREATE-UPGRADE: per-category one-line help under the <select>. */
+    newAgentCategoryHelp: Record<string, string>
     /** WP-STUDIO (裁定 36.1): workspace folder picker in the new-agent dialog. */
     newAgentFolderLabel: string
     newAgentFolderPick: string
     newAgentFolderPlaceholder: string
+    /**
+     * WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加多个
+     * 文件夹」）：多文件夹清单的标签/按钮/主文件夹徽章与说明。
+     */
+    newAgentFoldersLabel: string
+    newAgentFolderAdd: string
+    newAgentFolderRemove: string
+    newAgentFolderPrimary: string
+    newAgentFolderPrimaryHint: string
     /** WP-CREATE-CAT: hint shown when the `events` category is selected (blocked for now). */
     createEventAgentHint: string
+    /**
+     * WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色。
+     * 我觉得很可爱」）：图标与颜色选择器的标签/图标标签/颜色标签/提示。
+     */
+    newAgentAppearanceLabel: string
+    newAgentAppearanceHint: string
+    newAgentIconLabel: string
+    newAgentColorLabel: string
+    newAgentAppearanceClear: string
     chiefSecretary: string
     backToSecretary: string
     /** R-015: the single persistent L1 main-thread session, pinned above the lists. */

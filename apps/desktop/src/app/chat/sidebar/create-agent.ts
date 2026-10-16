@@ -39,6 +39,10 @@ export function agentIdFromName(name: string): string {
  * so we drop an empty value instead of sending `projectPath: ''` (the backend
  * would `mkdir` an empty path).
  *
+ * WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加多个文件夹」）：
+ * `projectPaths` 是完整清单（主文件夹在前）；`projectPath` 仍发第一个（旧字段
+ * 不动，后端与既有测试都认）。单元清单时不发 projectPaths——旧形状原样。
+ *
  * 2026-09-16: we now also send the typed `name` **as typed** (the backend reads
  * `body["name"]` into `display`). `id` stays the lowercased slug — it doubles as
  * the Plobi profile name — but the human's casing no longer disappears at the
@@ -48,7 +52,8 @@ export function agentIdFromName(name: string): string {
 export function buildCreateAgentBody(
   name: string,
   category: AgentCategory,
-  projectPath?: null | string
+  projectPaths?: null | readonly (null | string)[] | string,
+  appearance?: { color?: null | string; icon?: null | string }
 ): AgentCreateRequest {
   const display = name.trim()
   const body: AgentCreateRequest = {
@@ -57,10 +62,36 @@ export function buildCreateAgentBody(
     role: 'l2_project',
     category
   }
-  const path = projectPath?.trim()
+  // 兼容单字符串入参（旧调用形状）；清单与单值都走同一条归一：trim、去空、去重保序。
+  const raw: readonly (null | string)[] =
+    typeof projectPaths === 'string' ? [projectPaths] : (projectPaths ?? [])
+  const paths: string[] = []
 
-  if (path) {
-    body.projectPath = path
+  for (const item of raw) {
+    const text = item?.trim()
+
+    if (text && !paths.includes(text)) {
+      paths.push(text)
+    }
+  }
+
+  if (paths.length > 0) {
+    body.projectPath = paths[0] // 主文件夹 = 第一个（旧字段语义不变）
+  }
+
+  if (paths.length > 1) {
+    body.projectPaths = paths
+  }
+
+  const icon = appearance?.icon?.trim()
+  const color = appearance?.color?.trim()
+
+  if (icon) {
+    body.icon = icon
+  }
+
+  if (color) {
+    body.color = color
   }
 
   return body
@@ -70,9 +101,12 @@ export function buildCreateAgentBody(
  * Categories whose agent needs a workspace folder before it can be created
  * (裁定 36.1). The dialog renders the folder picker for these and disables
  * submit until one is chosen; `butler` never shows the picker.
+ *
+ * WP-AGENT-CREATE-UPGRADE（用户 10-16）：`courses` 进这里——课程 Agent 要绑
+ * `D:\Cloud\Courses` 下的课程文件夹（「这么多课程都没有配文件夹」）。
  */
 export function categoryNeedsProjectPath(category: AgentCategory): boolean {
-  return category === 'projects' || category === 'research'
+  return category === 'courses' || category === 'projects' || category === 'research'
 }
 /**
  * The `events` category cannot be created from this dialog yet — it needs a
@@ -87,11 +121,13 @@ export function isCreateAgentCategoryBlocked(category: AgentCategory): boolean {
 /**
  * Whether submit should stay disabled for the current dialog state: blocked
  * category, missing name, or a workspace category with no folder picked yet.
+ *
+ * WP-AGENT-CREATE-UPGRADE：`projectPaths` 是清单（主文件夹在前）；空清单 = 没绑。
  */
 export function isCreateAgentSubmitDisabled(
   name: string,
   category: AgentCategory,
-  projectPath?: null | string
+  projectPaths?: readonly (null | string)[] | null
 ): boolean {
   if (isCreateAgentCategoryBlocked(category)) {
     return true
@@ -101,7 +137,9 @@ export function isCreateAgentSubmitDisabled(
     return true
   }
 
-  return categoryNeedsProjectPath(category) && !projectPath?.trim()
+  const bound = (projectPaths ?? []).some(path => path?.trim())
+
+  return categoryNeedsProjectPath(category) && !bound
 }
 
 /**

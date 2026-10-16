@@ -49,6 +49,12 @@ export interface AgentCreateRequest {
    * never sends it for `butler`.
    */
   projectPath?: string
+  /**
+   * WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加多个文件夹」）：
+   * 完整绑定清单，主文件夹在前。单文件夹发 `projectPath` 即可；发了清单时
+   * 后端取第一个为主文件夹（驱动 terminal.cwd 与右栏挂载）。
+   */
+  projectPaths?: string[]
   /** Default `l2_project`. Never `l1_secretary`. */
   role?: 'l2_agenda' | 'l2_planner' | 'l2_project'
   /**
@@ -62,6 +68,12 @@ export interface AgentCreateRequest {
   description?: string
   mindSubtree?: string
   cloneFrom?: string
+  /**
+   * WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色」）：
+   * 建册可选，与项目条目同形；空 = 默认渲染（profile 确定性色 / 无图标）。
+   */
+  icon?: string
+  color?: string
 }
 
 /** L1-safe plan snapshot on `plobi_secretary_ask` (no plan_items). */
@@ -104,6 +116,12 @@ export interface Agent {
   profile?: string
   status: AgentStatus
   todayCalls: number
+  /**
+   * WP-AGENT-CREATE-UPGRADE（用户 10-16）：建册可选图标/颜色随行透出，左栏按它
+   * 渲染；空 = 默认（profile 确定性色 / 无图标）。
+   */
+  icon?: string
+  color?: string
 }
 
 /** §5 GET /api/agents/:id/overview — S2 status card (U4). */
@@ -119,6 +137,11 @@ export interface AgentOverview {
    * the file tree must stay empty then, never inherit the previous cwd.
    */
   projectPath?: string
+  /**
+   * WP-AGENT-CREATE-UPGRADE：完整绑定清单（主文件夹在前）；单文件夹旧条目 =
+   * 一元组。编辑弹窗回显用。
+   */
+  projectPaths?: string[]
 }
 
 export type AgentTaskResult = 'error' | 'failed' | 'ok' | 'pending'

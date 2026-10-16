@@ -69,6 +69,8 @@ describe('categoryNeedsProjectPath (WP-STUDIO, 裁定 36.1)', () => {
   it('asks for a folder for projects and research only', () => {
     expect(categoryNeedsProjectPath('projects')).toBe(true)
     expect(categoryNeedsProjectPath('research')).toBe(true)
+    // WP-AGENT-CREATE-UPGRADE（用户 10-16）：课程 Agent 也要绑 Cloud/Courses 文件夹。
+    expect(categoryNeedsProjectPath('courses')).toBe(true)
     expect(categoryNeedsProjectPath('butler')).toBe(false)
     expect(categoryNeedsProjectPath('events')).toBe(false)
   })
@@ -76,7 +78,7 @@ describe('categoryNeedsProjectPath (WP-STUDIO, 裁定 36.1)', () => {
 
 describe('buildCreateAgentBody projectPath (WP-STUDIO, 裁定 36.1)', () => {
   it('forwards the picked folder for a projects agent', () => {
-    const body = buildCreateAgentBody('Code', 'projects', 'D:/Projects/Plobi/Code')
+    const body = buildCreateAgentBody('Code', 'projects', ['D:/Projects/Plobi/Code'])
 
     expect(body).toEqual({
       id: 'code',
@@ -94,22 +96,60 @@ describe('buildCreateAgentBody projectPath (WP-STUDIO, 裁定 36.1)', () => {
   })
 
   it('drops an empty / whitespace path instead of sending it', () => {
-    expect('projectPath' in buildCreateAgentBody('Code', 'projects', '')).toBe(false)
-    expect('projectPath' in buildCreateAgentBody('Code', 'projects', '   ')).toBe(false)
+    expect('projectPath' in buildCreateAgentBody('Code', 'projects', [''])).toBe(false)
+    expect('projectPath' in buildCreateAgentBody('Code', 'projects', ['   '])).toBe(false)
+    expect('projectPath' in buildCreateAgentBody('Code', 'projects', [])).toBe(false)
     expect('projectPath' in buildCreateAgentBody('Code', 'projects', null)).toBe(false)
   })
 
   it('trims the path it does send', () => {
-    expect(buildCreateAgentBody('Code', 'projects', '  D:/x  ').projectPath).toBe('D:/x')
+    expect(buildCreateAgentBody('Code', 'projects', ['  D:/x  ']).projectPath).toBe('D:/x')
+  })
+})
+
+describe('buildCreateAgentBody projectPaths (WP-AGENT-CREATE-UPGRADE, 用户 10-16)', () => {
+  it('sends the full list for a multi-folder agent, primary first', () => {
+    const body = buildCreateAgentBody('Code', 'projects', ['D:/one', '  ', 'D:/two', 'D:/one'])
+
+    expect(body.projectPaths).toEqual(['D:/one', 'D:/two'])
+    expect(body.projectPath).toBe('D:/one') // 主文件夹 = 第一个
+  })
+
+  it('keeps the old single-folder shape (no projectPaths key) for one folder', () => {
+    const body = buildCreateAgentBody('Code', 'projects', ['D:/only'])
+
+    expect('projectPaths' in body).toBe(false)
+    expect(body.projectPath).toBe('D:/only')
+  })
+
+  it('forwards icon and color when picked, drops them when blank', () => {
+    const styled = buildCreateAgentBody('Code', 'projects', ['D:/x'], {
+      color: 'hsl(210 68% 58%)',
+      icon: 'robot'
+    })
+
+    expect(styled.icon).toBe('robot')
+    expect(styled.color).toBe('hsl(210 68% 58%)')
+    expect('icon' in buildCreateAgentBody('Code', 'projects', ['D:/x'], { icon: '  ' })).toBe(false)
+    expect('icon' in buildCreateAgentBody('Code', 'projects', ['D:/x'])).toBe(false)
+  })
+
+  it('lets a courses agent bind its course folder', () => {
+    const body = buildCreateAgentBody('大学物理实验', 'courses', [
+      'D:/Cloud/Courses/2026-2027秋冬-大学物理实验'
+    ])
+
+    expect(body.category).toBe('courses')
+    expect(body.projectPath).toBe('D:/Cloud/Courses/2026-2027秋冬-大学物理实验')
   })
 })
 
 describe('isCreateAgentSubmitDisabled (WP-STUDIO, 裁定 36.1)', () => {
   it('keeps submit disabled until a workspace agent has a folder', () => {
-    expect(isCreateAgentSubmitDisabled('Code', 'projects', '')).toBe(true)
-    expect(isCreateAgentSubmitDisabled('Code', 'projects', 'D:/x')).toBe(false)
-    expect(isCreateAgentSubmitDisabled('Study', 'research', '')).toBe(true)
-    expect(isCreateAgentSubmitDisabled('Study', 'research', 'D:/y')).toBe(false)
+    expect(isCreateAgentSubmitDisabled('Code', 'projects', [])).toBe(true)
+    expect(isCreateAgentSubmitDisabled('Code', 'projects', ['D:/x'])).toBe(false)
+    expect(isCreateAgentSubmitDisabled('Study', 'research', [])).toBe(true)
+    expect(isCreateAgentSubmitDisabled('Study', 'research', ['D:/y'])).toBe(false)
   })
 
   it('does not require a folder for butler', () => {
@@ -117,7 +157,7 @@ describe('isCreateAgentSubmitDisabled (WP-STUDIO, 裁定 36.1)', () => {
   })
 
   it('always keeps submit disabled for events and for an empty name', () => {
-    expect(isCreateAgentSubmitDisabled('Whatever', 'events', 'D:/x')).toBe(true)
+    expect(isCreateAgentSubmitDisabled('Whatever', 'events', ['D:/x'])).toBe(true)
     expect(isCreateAgentSubmitDisabled('   ', 'butler')).toBe(true)
   })
 })
