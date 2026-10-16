@@ -48,6 +48,85 @@ BUTLER_JOBS: list[tuple[str, str, str, str]] = [
 ]
 
 
+#: 排程那条作业的形态（R-104 / 裁定 154）。用户原话：「现在很多日程都是代码生成的。而且定时任务
+#: 不是每一次都新建一个会话……第二天的规划的定时任务需要给日程秘书，就是直接定时发提示词给日程秘书」
+#: ——他指的是**作业形态**这一层：脚本内部从 10:2x 起已经在走模型（`cron_evening_plan.py` 传
+#: `blocks_from_l1`），但作业本身仍是 `no_agent=True` 的脚本自跑 ⇒ 不经任何 Agent、没有 L2 归属、
+#: 不进任何会话。
+NIGHTLY_PLAN_PROMPT = (
+    "把今晚生成的明日计划念给用户：先一句今天排到什么程度，再逐条说钟点与事，"
+    "最后说一句为什么这么排。不要复述工具细节，不要自己重排时间——计划由脚本写好并校过边界，"
+    "你的活是把这份计划说成人话，并把里面任何一条明显不合理的安排当场指出来。"
+)
+
+
+def job_shape(job_name: str) -> dict[str, object]:
+    """这条管家作业该长什么样（R-104）。**只改排程那一条**：`plobi-source-collect`
+    与其余四条一律保持脚本自跑（判据④：采集不需要推理，套一层 Agent 只多一个失败面）。"""
+    if job_name == NIGHTLY_PLAN_JOB_NAME:
+        return {"prompt": NIGHTLY_PLAN_PROMPT, "no_agent": False, "attach_to_session": True}
+    return {"prompt": None, "no_agent": True}
+
+
+def retire_profile_copies(job_name: str) -> list[str]:
+    """判据①：同一条作业在这台**不止两处**（现核 10 个 profile 各有一份孤儿副本，
+    `l2-agenda` 那份 ticker 心跳停在 10-13 21:50）。收成"只有一处在跑"。
+
+    **禁用不删**：`profiles/` 不在任何 git 仓里，删了不可恢复。根因是 `cron/jobs.py:66`
+    按 `get_plobi_home()`（profile 作用域）解析存储路径——那一半归 `WP-PROFILE-SHARED-LAYER`
+    同族，不在本笔里顺手改。
+    """
+    from plobi_constants import get_default_plobi_root
+
+    retired: list[str] = []
+    profiles = get_default_plobi_root() / "profiles"
+    if not profiles.is_dir():
+        return retired
+    for store in sorted(profiles.glob("*/cron/jobs.json")):
+        try:
+            data = json.loads(store.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        rows = data.get("jobs") if isinstance(data, dict) else data
+        if not isinstance(rows, list):
+            continue
+        touched = False
+        for row in rows:
+            if isinstance(row, dict) and row.get("name") == job_name and row.get("enabled") is not False:
+                row["enabled"] = False
+                row["disabled_reason"] = (
+                    "R-104：共享家目录那份才是唯一在跑的；这一份是 profile 作用域下的孤儿副本"
+                    "（ticker 已停）。禁用不删，路径归属归 WP-PROFILE-SHARED-LAYER。"
+                )
+                touched = True
+                retired.append(str(store.parent.parent.name))
+        if touched:
+            tmp = store.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, store)
+    return retired
+
+
+def align_job_shape(job_name: str, jobs_module: object) -> str:
+    """把已存在的作业行刷成声明的形态——**行的存在与否归 marker 与用户，形态归代码**。
+
+    与脚本副本同一手法：marker 10-15 就落过了，光靠"只种一次"这台永远拿不到 R-104 的新形状。
+    被用户停掉的行**不动**（那是他的决定）。
+    """
+    shape = job_shape(job_name)
+    row = next((j for j in jobs_module.list_jobs(include_disabled=True)
+                if j.get("name") == job_name), None)
+    if row is None:
+        return "no-row"
+    if row.get("enabled") is False:
+        return "left-disabled"
+    changed = {k: val for k, val in shape.items() if row.get(k) != val}
+    if not changed:
+        return "already-aligned"
+    jobs_module.update_job(row.get("id") or job_name, changed)
+    return "aligned:" + ",".join(sorted(changed))
+
+
 def _seed_marker_path() -> Path:
     from plobi_constants import get_plobi_home
 
@@ -151,9 +230,13 @@ def _ensure_seeded_job(job_name: str, jobs_module: Any, now: Callable[[], str] |
     spec = next(row for row in BUTLER_JOBS if row[0] == job_name)
     _name, src_name, dst_name, schedule = spec
     copy_butler_scripts(only=[src_name])
+    retire_profile_copies(job_name)
 
     marker = _read_marker()
     if marker.get(job_name):
+        # 返回词不变（别的测试钉的就是这几个字），但形态每次都对齐——不这么做，
+        # 这台会永远停在 `no_agent=True` 那一版。
+        align_job_shape(job_name, jobs_module)
         return "already-seeded"
 
     existing = next(
@@ -166,12 +249,14 @@ def _ensure_seeded_job(job_name: str, jobs_module: Any, now: Callable[[], str] |
         _mark(marker, job_name, now)
         return "exists"
 
+    shape = job_shape(job_name)
     jobs_module.create_job(
-        prompt=None,
+        prompt=shape["prompt"],
         schedule=schedule,
         name=_name,
         script=dst_name,
-        no_agent=True,
+        no_agent=bool(shape["no_agent"]),
+        attach_to_session=shape.get("attach_to_session"),
         deliver="local",
     )
     _mark(marker, job_name, now)

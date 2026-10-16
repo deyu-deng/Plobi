@@ -107,8 +107,11 @@ def test_first_boot_creates_exactly_the_nightly_plan_job(home):
     job = fake.created[0]
     assert job["name"] == NIGHTLY
     assert job["schedule"] == "0 20 * * *"
-    assert job["no_agent"] is True
-    assert job["prompt"] is None
+    # R-104 / 裁定 154：排程这一条不再是脚本自跑（用户：「第二天的规划的定时任务需要给
+    # 日程秘书，就是直接定时发提示词给日程秘书」）。其余四条照旧，见下面那条测试。
+    assert job["no_agent"] is False
+    assert job["prompt"] and "明日计划" in job["prompt"]
+    assert job["attach_to_session"] is True
     assert job["deliver"] == "local"
 
 
@@ -376,3 +379,49 @@ def test_running_the_same_day_twice_gives_the_same_plan(home):
     assert first, "一行都没排出来，这条幂等就是空的"
     assert _plan_item_rows(db) == first
 
+# ---------------------------------------------------------------- R-104（裁定 154）
+
+
+def test_only_the_planning_job_becomes_an_agent_turn(home):
+    """判据④：只有排程那一条走 Agent。采集不需要推理，套一层 Agent 只多一个失败面。"""
+    assert nightly.job_shape("plobi-source-collect") == {"prompt": None, "no_agent": True}
+    assert nightly.job_shape("plobi-morning-report")["no_agent"] is True
+    assert nightly.job_shape(NIGHTLY)["no_agent"] is False
+    assert nightly.job_shape(NIGHTLY)["attach_to_session"] is True
+
+
+def test_shape_is_realigned_on_every_boot_but_a_disabled_row_is_left_alone(home, tmp_path, monkeypatch):
+    """marker 10-15 就落过了 ⇒ 光靠"只种一次"这台永远拿不到新形状：形态归代码，每次启动对齐。
+    但**被用户停掉的行不动**（那是他的决定）。孤儿副本禁用不删（判据①）。"""
+    seed = home / "plobi" / "butler_seed.json"
+    seed.parent.mkdir(parents=True, exist_ok=True)
+    seed.write_text(json.dumps({NIGHTLY: "2026-10-15T20:00:01"}), encoding="utf-8")
+    orphan = tmp_path / "profiles" / "l2-agenda" / "cron"
+    orphan.mkdir(parents=True)
+    (orphan / "jobs.json").write_text(
+        json.dumps({"jobs": [{"id": "orphan", "name": NIGHTLY, "enabled": True}]}),
+        encoding="utf-8")
+    monkeypatch.setattr("plobi_constants.get_default_plobi_root", lambda: tmp_path)
+
+    rows = [{"id": "job_old", "name": NIGHTLY, "script": "plobi_evening_plan.py",
+             "schedule": "0 20 * * *", "enabled": True,
+             "no_agent": True, "prompt": "", "attach_to_session": None}]
+
+    class ShapeFake:
+        def list_jobs(self, *, include_disabled: bool = False):
+            return list(rows)
+
+        def update_job(self, job_id, updates):
+            rows[0] = {**rows[0], **updates}
+            return rows[0]
+
+    fake = ShapeFake()
+    assert nightly.ensure_nightly_plan_job(fake) == "already-seeded"
+    assert rows[0]["no_agent"] is False and rows[0]["attach_to_session"] is True
+    assert rows[0]["prompt"] and "明日计划" in rows[0]["prompt"]
+    kept = json.loads((orphan / "jobs.json").read_text(encoding="utf-8"))["jobs"][0]
+    assert kept["enabled"] is False and "R-104" in kept["disabled_reason"]
+
+    rows[0] = {**rows[0], "enabled": False, "no_agent": True}
+    assert nightly.align_job_shape(NIGHTLY, fake) == "left-disabled"
+    assert rows[0]["no_agent"] is True
