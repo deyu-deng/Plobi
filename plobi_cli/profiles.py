@@ -74,6 +74,11 @@ _CLONE_ALL_STRIP: list[str] = [
     "gateway.pid",
     "gateway_state.json",
     "processes.json",
+    # 裁定 42 / WP-PROFILE-SHARED-LAYER（R-096）：注册表与日程库是共享件——
+    # clone-all 也不许给新分身带一份，否则又是「每个项目一套全家桶」的生产者。
+    # 这两个路径是刚生成的新副本（不是用户的存量数据），unlink 安全。
+    "plobi/projects.yaml",
+    "plobi/agenda.db",
 ]
 
 # Infrastructure artifacts excluded from --clone-all when the source is the

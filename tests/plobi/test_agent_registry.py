@@ -41,6 +41,27 @@ def test_default_path_is_plobi_home_anchored(home):
     assert default_path() == Path(home) / ".plobi" / "plobi" / "projects.yaml"
 
 
+def test_default_path_resolves_to_shared_root_in_profile_mode(tmp_path, monkeypatch):
+    """裁定 42 / WP-PROFILE-SHARED-LAYER（R-096）：profile 活跃时名册也解析到 root 那一份。
+
+    关系断言（路径同一性），不写体积/文件数快照——判据③ 的原话。分身侧故意放一份
+    自己的副本：它必须被无视，而不是被优先（那就是 R-095 改名改不干净的根因）。
+    """
+    root = tmp_path / "plobiroot"
+    profile = root / "profiles" / "aura"
+    (profile / "plobi").mkdir(parents=True)
+    (root / "plobi").mkdir(parents=True)
+    (profile / "plobi" / "projects.yaml").write_text("agents: []\n", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("PLOBI_HOME", str(profile))
+    monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
+
+    resolved = default_path()
+    assert resolved == root / "plobi" / "projects.yaml"
+    assert resolved != profile / "plobi" / "projects.yaml"
+
+
 def test_load_missing_returns_empty(home):
     reg = AgentRegistry.load()
     assert reg.agents == {}

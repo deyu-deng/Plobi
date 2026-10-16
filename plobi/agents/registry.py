@@ -263,14 +263,19 @@ def _normalize_category(raw: str | None) -> str:
 
 
 def default_path() -> Path:
-    """注册表文件路径：$PLOBI_HOME/plobi/projects.yaml。"""
+    """注册表文件路径：**共享**的那一份 `plobi/projects.yaml`。
+
+    裁定 42 / WP-PROFILE-SHARED-LAYER（R-096）：profile 活跃时（PLOBI_HOME 指到
+    ``<root>/profiles/<name>``）也解析到 root 那一份——名册是共享件，一个脑子一份
+    名册；此前每个分身各写各的副本（现核 14 份），正是 R-095 改名改不干净的根因。
+    """
     override = os.environ.get("PLOBI_PROJECTS_CONFIG", "").strip()
     if override:
         return Path(override)
     try:
-        from plobi_constants import get_plobi_home
+        from plobi_constants import get_shared_plobi_root
 
-        root = get_plobi_home() / "plobi"
+        root = get_shared_plobi_root() / "plobi"
     except Exception:
         root = Path.home() / ".plobi" / "plobi"
     return root / "projects.yaml"

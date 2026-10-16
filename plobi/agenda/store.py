@@ -213,15 +213,18 @@ def agenda_db_path() -> Path:
     """Resolve the agenda DB path.
 
     Honours ``PLOBI_AGENDA_DB`` first (tests, unusual deployments), then the
-    agent home. Never hardcodes a drive letter.
+    **shared** agent root — never the per-profile copy. 裁定 42 /
+    WP-PROFILE-SHARED-LAYER（R-096）：日程库是共享件，profile 活跃时也解析到
+    root 那一份；此前课程分身各读到自己的空库（现核 5 份分裂），问「我明天有
+    什么」得到的是空。Never hardcodes a drive letter.
     """
     override = os.environ.get("PLOBI_AGENDA_DB", "").strip()
     if override:
         return Path(override)
     try:
-        from plobi_constants import get_plobi_home
+        from plobi_constants import get_shared_plobi_root
 
-        root = get_plobi_home() / "plobi"
+        root = get_shared_plobi_root() / "plobi"
     except Exception:
         root = Path.home() / ".plobi" / "plobi"
     return root / "agenda.db"

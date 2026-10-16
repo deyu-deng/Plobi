@@ -150,6 +150,26 @@ def get_default_plobi_root() -> Path:
     return env_path
 
 
+def get_shared_plobi_root() -> Path:
+    """Return the root that owns the SHARED artifacts — one copy for every profile.
+
+    裁定 42（砍 Profile 当分身单位：L2 降为一条项目记录，重东西只留一份）与
+    WP-PROFILE-SHARED-LAYER（R-096）：注册表 / 日程库这类共享件在 profile 活跃时
+    （spawner 把 ``PLOBI_HOME`` 指到 ``<root>/profiles/<name>``）也必须解析到
+    ``<root>`` 那一份，否则每个分身各带一份、互相漂移（R-095「改名改不干净」与
+    「课程分身读到自己那个空 agenda.db」的根因）。
+
+    与 :func:`get_default_plobi_root` 的分工：那个直读 ``os.environ``，服务
+    ``profile list`` 这类 CLI；这个走 :func:`get_plobi_home` 的同一套覆盖链
+    （contextvar override → PLOBI_HOME → 平台默认），进程内按任务切家的调用方
+    行为不变。活跃家自己不是 profile 时，它自己就是 root。
+    """
+    home = get_plobi_home()
+    if home.parent.name == "profiles":
+        return home.parent.parent
+    return home
+
+
 def _get_packaged_data_dir(name: str) -> Path | None:
     """Return an installed data-files directory if one exists.
 

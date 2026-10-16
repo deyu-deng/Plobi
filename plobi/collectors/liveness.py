@@ -193,8 +193,9 @@ def read_source_liveness(
 
 def _default_db() -> Optional[Path]:
     try:
-        from plobi_constants import get_plobi_home
+        # 裁定 42 / WP-PROFILE-SHARED-LAYER：日程库解析走 store 的共享 root 那一份
+        from plobi.agenda.store import agenda_db_path
 
-        return get_plobi_home() / "plobi" / "agenda.db"
+        return agenda_db_path()
     except Exception:                                 # noqa: BLE001 - 常量读不到就是探针不可用
         return None
