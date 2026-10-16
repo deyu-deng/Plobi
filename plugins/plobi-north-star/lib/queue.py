@@ -32,7 +32,7 @@ class TaskStatus(str, Enum):
 class TaskRecord:
     id: str
     goal: str
-    risk: str = RiskLevel.L1_LOCAL_MUTATE.value
+    risk: str = RiskLevel.L1B_DESTRUCTIVE_LOCAL.value
     status: str = TaskStatus.QUEUED.value
     domain: str = "generic"
     stage: str = Stage.INTAKE.value
@@ -110,7 +110,7 @@ class TaskQueue:
         self,
         goal: str,
         *,
-        risk: str = "L1",
+        risk: str = RiskLevel.L1B_DESTRUCTIVE_LOCAL.value,
         domain: str = "generic",
         summary: str = "",
         meta: Optional[dict] = None,
@@ -124,12 +124,12 @@ class TaskQueue:
             summary=summary,
             meta=meta or {},
         )
-        if requires_human(risk_level) and risk_level != RiskLevel.L1_LOCAL_MUTATE:
-            # High-risk starts blocked until explicitly released for run,
-            # unless it's only observe — L2+ need approval before run.
-            if risk_level.value.startswith("L2") or risk_level.value.startswith("L3") or risk_level.value.startswith("L4"):
-                rec.status = TaskStatus.BLOCKED_AWAITING_HUMAN.value
-                rec.awaiting_human = True
+        if requires_human(risk_level):
+            # 契约那张表里「人审 = 是」的格子（L1b / L2 / L3 / L4）一进来就挂着等批，
+            # 白天也不自己跑——原来那串 `startswith("L2"/"L3"/"L4")` 是同一件事的手抄版，
+            # 少一格就多一个洞，所以改成照 `requires_human` 判。
+            rec.status = TaskStatus.BLOCKED_AWAITING_HUMAN.value
+            rec.awaiting_human = True
         with self._lock:
             data = self._read()
             data.setdefault("tasks", []).append(asdict(rec))
@@ -141,21 +141,36 @@ class TaskQueue:
             data = self._read()
             for i, raw in enumerate(data.get("tasks", [])):
                 if raw.get("id") == task_id:
+                    was_blocked = raw.get("status") == TaskStatus.BLOCKED_AWAITING_HUMAN.value
                     raw.update({k: v for k, v in fields.items() if v is not None})
+                    if was_blocked and raw.get("status") == TaskStatus.QUEUED.value:
+                        # 这是 facade 的 approve 那一手（blocked → queued）。留下明确凭据，
+                        # 夜里那道闸才认它——不然夜跑会把人批过的活再挂回去，批准被抹掉
+                        # （这一刀第一版就是这么坏的，被测试抓到）。
+                        meta = dict(raw.get("meta") or {})
+                        meta["human_released"] = True
+                        raw["meta"] = meta
                     raw["updated_at"] = _utc_now()
                     data["tasks"][i] = raw
                     self._write(data)
                     return TaskRecord(**raw)
         return None
 
-    def claim_runnable(self, *, night: bool = False, allow_l1_night: bool = True) -> Optional[TaskRecord]:
+    def claim_runnable(self, *, night: bool = False, allow_l1a_night: bool = True) -> Optional[TaskRecord]:
+        """领一条能跑的活。
+
+        夜里那道闸只管「这台机器半夜自己动手要不要人看着」：``L0`` 与 ``L1a`` 可以，
+        ``L1b`` 及更高一律挂起——除非这条已经被人在面上批过（``meta.human_released``），
+        批准就是那把钥匙，批了不必等到早晨。
+        """
         with self._lock:
             data = self._read()
             for i, raw in enumerate(data.get("tasks", [])):
                 if raw.get("status") != TaskStatus.QUEUED.value:
                     continue
                 risk = RiskLevel.parse(raw.get("risk"))
-                if night and not can_run_at_night(risk, allow_l1=allow_l1_night):
+                released = bool((raw.get("meta") or {}).get("human_released"))
+                if night and not released and not can_run_at_night(risk, allow_l1a_night=allow_l1a_night):
                     raw["status"] = TaskStatus.BLOCKED_AWAITING_HUMAN.value
                     raw["awaiting_human"] = True
                     raw["updated_at"] = _utc_now()
