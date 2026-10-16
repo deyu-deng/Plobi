@@ -3286,20 +3286,23 @@ def _briefing_prompt(
         assert plan is not None
         lines = [
             f"用户原话：{user_text}",
-            f"日期：{plan.get('for_date') or agenda_summary.get('tomorrow') or ''}",
+            # 日期只认这份计划自己的 for_date；读不到就说读不到，不拿今天冒充明天（R-103）。
+        f"日期：{plan.get('for_date') or '（昨夜计划没有日期，下面这段不带日期，别当成今天）'}",
             f"昨夜计划：{plan.get('summary') or ''}",
             f"冲突数：{int(plan.get('conflict_count') or 0)}",
             "请写一段简洁中文早报，不要解释调度过程，不要逐条抽取。",
         ]
         return "\n".join(lines)
-    events = agenda_summary.get("tomorrow_events") or agenda_summary.get("events") or []
+    # **不许回落到 `events`**：那一份是 today + tomorrow 拼起来的，
+    # 明天空的时候用它 = 把今天的事标成「明日日程」念给用户（R-103）。
+    events = list(agenda_summary.get("tomorrow_events") or [])
     lines = [
         f"用户原话：{user_text}",
-        f"日期：{agenda_summary.get('tomorrow') or agenda_summary.get('today') or ''}",
+        f"日期：{agenda_summary.get('tomorrow') or '（读不到明天的日期，别拿今天顶）'}",
         "明日日程：",
     ]
     if not events:
-        lines.append("（无条目）")
+        lines.append("（明天没有条目——照实说没有，不许拿今天的条目顶）")
     for event in events:
         lines.append(
             f"- {event.get('start_at', '')} {event.get('title', '')} [{event.get('status', '')}]"
@@ -3315,8 +3318,8 @@ def _template_briefing(agenda_summary: dict, plan: dict | None = None) -> str:
         conflicts = int(plan.get("conflict_count") or 0)
         extra = f"（冲突 {conflicts}）" if conflicts else ""
         return f"{summary}{extra}".strip()
-    day = agenda_summary.get("tomorrow") or agenda_summary.get("today") or ""
-    events = agenda_summary.get("tomorrow_events") or agenda_summary.get("events") or []
+    day = agenda_summary.get("tomorrow") or "（明天）"   # 不回落 today（R-103）
+    events = list(agenda_summary.get("tomorrow_events") or [])   # 同上：不回落 events（R-103）
     if not events:
         return f"{day} 日程：暂无条目。"
     parts = [

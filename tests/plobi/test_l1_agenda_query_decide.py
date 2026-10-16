@@ -663,3 +663,30 @@ def test_soul_block_tells_l1_to_read_anchors_and_use_checkin():
     # 写明 range=week / range=pending 不带 anchors。
     assert "week" in L1_SOUL_BLOCK
     assert "pending" in L1_SOUL_BLOCK
+
+# ---------------------------------------------------------------- R-103 日界
+
+
+def test_a_morning_briefing_never_answers_tomorrow_with_today():
+    """用户 10-16 那句「白天问明天答成今天」的现核形状：`agenda_summary["events"]` 是
+    today + tomorrow **拼起来那一份**，而早报两只函数都写着
+    `tomorrow_events or events` ⇒ 明天没条目时，今天那批被标成「明日日程」念出去。
+    判据写成关系：**今天那条的标题不许出现在明日报里**，日期也不许回落成今天。"""
+    from plobi.agents import registry as reg
+
+    summary = {
+        "today": "2026-10-16",
+        "tomorrow": "2026-10-17",
+        "today_events": [{"title": "今天的组会", "start_at": "2026-10-16T10:00:00", "status": "confirmed"}],
+        "tomorrow_events": [],
+        "events": [{"title": "今天的组会", "start_at": "2026-10-16T10:00:00", "status": "confirmed"}],
+    }
+
+    text = reg._template_briefing(summary)
+    assert "今天的组会" not in text, text
+    assert "2026-10-17" in text and "暂无条目" in text, text
+
+    prompt = reg._briefing_prompt(summary, "明天有什么安排")
+    assert "今天的组会" not in prompt, prompt
+    assert "2026-10-17" in prompt, prompt
+    assert "没有条目" in prompt, prompt
