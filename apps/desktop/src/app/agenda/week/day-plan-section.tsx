@@ -1,4 +1,12 @@
+import { useStore } from '@nanostores/react'
+import { useState } from 'react'
+
+import { Codicon } from '@/components/ui/codicon'
 import { type Translations, useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
+import { setAgendaEventCompleted } from '@/plobi'
+import { $completedEventIds, upsertAgendaEvent } from '@/store/agenda'
+import { notify, notifyError } from '@/store/notifications'
 
 import type { DayPlan } from './week-snapshots'
 
@@ -34,6 +42,17 @@ function clock(iso: null | string): string {
   return iso.slice(11, 16)
 }
 
+/**
+ * 计划行指向的那条**事件**。`event_id` 是后端 `plobi/agenda/planning.py` `_plan_item_dict`
+ * 这一格带出来的（WP-PLAN-COMPLETION-ACK 判据③）——没有它，界面上那句"做完了"无处可认，
+ * 作业就会每晚被重排一次。取不到就说"这一行不能认"，**不猜**。
+ */
+function eventIdOf(item: object): null | string {
+  const raw = (item as { event_id?: null | string }).event_id
+
+  return typeof raw === 'string' && raw.length > 0 ? raw : null
+}
+
 function line(item: { end_at: null | string; start_at: string; title: string }): string {
   const start = clock(item.start_at)
   const end = clock(item.end_at)
@@ -44,9 +63,26 @@ function line(item: { end_at: null | string; start_at: string; title: string }):
 export function DayPlanSection({ dayLabel, plan, translations }: DayPlanSectionProps) {
   const { t } = useI18n()
   const p = (translations ?? t).agenda.plan
+  const a = (translations ?? t).agenda
+  const completed = useStore($completedEventIds)
+  const [busyId, setBusyId] = useState<null | string>(null)
 
   if (!plan) {
     return null
+  }
+
+  async function ack(eventId: string, done: boolean) {
+    setBusyId(eventId)
+
+    try {
+      // 服务端是唯一说了算的一方：认完把那一行原样写回缓存，界面不乐观猜。
+      upsertAgendaEvent(await setAgendaEventCompleted(eventId, !done))
+      notify({ message: !done ? a.acked : a.unacked })
+    } catch (cause) {
+      notifyError(cause, a.actionFailed)
+    } finally {
+      setBusyId(null)
+    }
   }
 
   return (
@@ -61,11 +97,29 @@ export function DayPlanSection({ dayLabel, plan, translations }: DayPlanSectionP
         <div className="px-2 pb-1 text-xs text-muted-foreground">{p.empty}</div>
       ) : (
         <ul className="flex flex-col gap-0.5 px-2 pb-1">
-          {plan.items.map(item => (
-            <li className="text-xs" key={`${item.id}-${item.start_at}`}>
-              {line(item)}
-            </li>
-          ))}
+          {plan.items.map(item => {
+            const eventId = eventIdOf(item)
+            const done = eventId !== null && completed.has(eventId)
+
+            return (
+              <li className="flex items-start gap-1 text-xs" key={`${item.id}-${item.start_at}`}>
+                <span className={cn('min-w-0 flex-1', done && 'text-muted-foreground line-through')}>{line(item)}</span>
+                {done ? <span className="shrink-0 text-[0.62rem] text-muted-foreground">{a.donePill}</span> : null}
+                {eventId === null ? null : (
+                  <button
+                    aria-label={done ? a.uncomplete : a.complete}
+                    className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground disabled:cursor-wait"
+                    disabled={busyId === eventId}
+                    onClick={() => void ack(eventId, done)}
+                    title={done ? a.uncomplete : a.complete}
+                    type="button"
+                  >
+                    <Codicon name={done ? 'history' : 'pass'} size="0.875rem" />
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
