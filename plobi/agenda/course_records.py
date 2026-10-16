@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from .planning import course_key
+
 NO_STORE = "这一门查不了：日程库（`agenda.db`）读不到或读不动——这不是「没有作业」，是没尺"
 
 
@@ -86,12 +88,14 @@ def _match_class_titles(registry_name: str, titles: list[str]) -> tuple[list[str
     2. 没全等 ⇒ 才允许"名册名以标题开头且更长"那种短名（`大学物理实验2026周四345` ⇔ `大学物理实验`）。
     """
     name = registry_name.strip()
-    exact = [t for t in titles if t.strip() == name]
+    key = course_key(name)
+    exact = [t for t in titles if course_key(t) == key]
 
     if exact:
         return exact, f"全等命中 {len(exact)} 条"
 
-    loose = [t for t in titles if t.strip() and name.startswith(t.strip()) and len(name) > len(t.strip())]
+    loose = [t for t in titles
+             if t.strip() and course_key(name).startswith(course_key(t)) and len(key) > len(course_key(t))]
 
     return loose, (f"没有全等标题，按短名前缀命中 {len(loose)} 条" if loose else "全等与前缀都没命中")
 
@@ -113,12 +117,24 @@ def records_for_course(course: str, *, db_path: Optional[Path] = None,
     try:
         conn.row_factory = sqlite3.Row
         if kind == "ddl":
-            rows = [CourseRecord(str(r["title"]), str(r["start_at"] or ""), str(r["end_at"] or ""),
-                                 str(r["status"] or ""), _due_of(r["evidence"]))
-                    for r in conn.execute(
-                        "SELECT title, start_at, end_at, status, evidence FROM events"
-                        " WHERE kind = 'ddl' AND json_extract(evidence, '$.course') = ?"
-                        " ORDER BY start_at LIMIT ?", (name, limit))]
+            # 归属比较走 `course_key`（同一门课在库里可能是另一种罗马数字拼法：
+            # 名册 `display_name` 写 `大学物理（甲）Ⅱ`（U+2161），`project_path` 末段与站方标题写
+            # `...II`（ASCII）。SQL 里 `= ?` 是字符级全等，看不见这一对 ⇒ 门课查自己作业时拿到 0 条。
+            # 现核这台 ddl 只有 50 条，取回来在 Python 里按 key 对，**仍只做全等，不做子串**。
+            key = course_key(name)
+            fetched_ddl = [
+                CourseRecord(str(r["title"]), str(r["start_at"] or ""), str(r["end_at"] or ""),
+                             str(r["status"] or ""), _due_of(r["evidence"]))
+                for r in conn.execute(
+                    "SELECT title, start_at, end_at, status, evidence FROM events"
+                    " WHERE kind = 'ddl'"
+                    "   AND json_extract(evidence, '$.course') IS NOT NULL"
+                    " ORDER BY start_at")
+                if course_key(str(json.loads(r["evidence"]).get("course") or "")) == key
+            ]
+            # 截断只在过滤之后（与 class 那支同一口径）：先 LIMIT 会少算后面的条目。
+            rows = fetched_ddl[:limit]
+            rule = "按归一化全等命中（罗马数字两种拼法算同一门）"
         elif kind == "class":
             fetched = [(str(r["title"]), str(r["start_at"] or ""), str(r["end_at"] or ""), str(r["status"] or ""))
                        for r in conn.execute(
