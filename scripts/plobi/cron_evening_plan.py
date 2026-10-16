@@ -68,11 +68,14 @@ def _classify(exc: BaseException) -> tuple[str, str]:
 def main() -> int:
     from datetime import datetime
 
+    from plobi.agenda.llm_planning import blocks_from_l1
     from plobi.agenda.planning import format_evening_plan_text, generate_evening_plan
     from plobi.butler.report import build_day_digest, format_day_digest
 
     try:
-        plan = generate_evening_plan()
+        # 裁定 149：**今晚这一轮由 L1 排**（材料口 + 提示 + 边界校验 + 退回重排）。
+        # 这一行就是"均分退役"的落点——均分那段只剩"没人接线"时的兜底，且兜底会自报是兜底。
+        plan = generate_evening_plan(planner=blocks_from_l1)
     except Exception as exc:  # noqa: BLE001 - 库锁 / 未知异常都要说得出是哪一类，不许只留 traceback
         cause, detail = _classify(exc)
         return _fail(cause, detail)
