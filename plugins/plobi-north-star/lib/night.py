@@ -16,7 +16,9 @@ class NightPolicy:
     tz: str = "Asia/Shanghai"
     start_hour: int = 0
     end_hour: int = 7
-    allow_l1: bool = True
+    #: 只管 ``L1a_organize``（整理/归档/缓存轮转）。``L1b`` 及更高没有开关可放——
+    #: 旧字段叫 ``allow_l1``，那时一整格 L1 全在这一闸后面，一开就把删文件与 ``git push`` 放过夜。
+    allow_l1a_night: bool = True
 
     def is_night(self, now: Optional[datetime] = None) -> bool:
         try:
@@ -49,7 +51,7 @@ def morning_report(queue: Optional[TaskQueue] = None, *, policy: Optional[NightP
     night_blocked = [
         t
         for t in awaiting
-        if not can_run_at_night(RiskLevel.parse(t.risk), allow_l1=policy.allow_l1)
+        if not can_run_at_night(RiskLevel.parse(t.risk), allow_l1a_night=policy.allow_l1a_night)
     ]
     lines: List[str] = [
         "# Plobi 早报",
@@ -86,7 +88,7 @@ def tick_night_queue(queue: Optional[TaskQueue] = None, *, policy: Optional[Nigh
     queue = queue or TaskQueue()
     policy = policy or NightPolicy()
     night = policy.is_night()
-    claimed = queue.claim_runnable(night=night, allow_l1_night=policy.allow_l1)
+    claimed = queue.claim_runnable(night=night, allow_l1a_night=policy.allow_l1a_night)
     return {
         "is_night": night,
         "claimed": None
