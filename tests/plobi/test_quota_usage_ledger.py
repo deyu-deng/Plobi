@@ -138,3 +138,41 @@ def test_a_stub_source_cannot_break_the_spend(ledger):
     pool = _Pool([object()])
     assert QuotaAwareCompleter(pool=pool, send=lambda prompt, source: "2")("go", route=None) == "2"
     assert _rows(ledger)[0]["source"] == "?"
+
+
+def test_an_empty_reply_fails_over_instead_of_being_returned(ledger):
+    """空货不是答案。返回 ``""`` 给调用方等于让它把「什么都没回来」当成「跑完了一轮」——
+    今晚那份 0 块的计划就是这么判死的。"""
+    pool = _Pool([_source("zhipu-air"), _source("workbuddy", kind="aigw"),
+                  _source("workbuddy", kind="aigw")])
+    replies = iter(["", "  ", "42"])
+
+    reply = QuotaAwareCompleter(pool=pool, send=lambda prompt, source: next(replies))("go", route=None)
+
+    assert reply == "42"
+    assert pool.failed == ["zhipu-air", "workbuddy"]
+    rows = _rows(ledger)
+    assert [r["source"] for r in rows] == ["zhipu-air", "workbuddy", "workbuddy"]
+    assert [r["ok"] for r in rows] == [False, False, True]
+    assert [r["error_class"] for r in rows] == ["empty_reply", "empty_reply", ""]
+
+
+def test_giving_up_always_leaves_a_named_row(ledger):
+    """两条「一条都没发出去」的出口必须在账上看得见，否则成因只能拿 token 数反推。"""
+    assert QuotaAwareCompleter(pool=_Pool([]), send=lambda prompt, source: "x")("go", route=None) is None
+    rows = _rows(ledger)
+    assert len(rows) == 1
+    assert rows[0]["source"] == "quota-route"
+    assert rows[0]["attempted"] is False
+    assert rows[0]["error_class"] == "no_usable_source"
+    assert rows[0]["cost_status"] == usage_ledger.COST_STATUS_NOT_ATTEMPTED
+
+
+def test_all_legs_empty_leaves_the_attempt_and_the_give_up(ledger):
+    pool = _Pool([_source()])
+    assert QuotaAwareCompleter(pool=pool, send=lambda prompt, source: "   ")("go", route=None) is None
+
+    rows = _rows(ledger)
+    assert rows[0]["source"] == "zhipu-air" and rows[0]["ok"] is False
+    assert rows[-1]["source"] == "quota-route"
+    assert rows[-1]["error_class"] in ("no_usable_source", "attempts_exhausted")
