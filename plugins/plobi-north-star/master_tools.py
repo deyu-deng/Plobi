@@ -343,6 +343,10 @@ SECRETARY_ASK_SCHEMA = {
         "有计划、还没给它登记分身的候选，不许当手下念）；"
         "「吃饭睡觉还没安排 / 排一下明天 / 按真实项目再排一遍」→ intent=plan_day"
         "（调规划器，禁止用 mutate_agenda 一条条把午饭/晚饭/睡眠写进 events）。"
+        "「**你自己**把明天排一次 / 重新排一遍明天」→ intent=plan_day + action=plan_tomorrow"
+        "（裁定 163：排程开在你这张嘴上，脚本不再代发模型）。回 ok=true 就说「排了 N 块，为什么这么排是……」，"
+        "回 ok=false ⇒ 照实念那句拒绝并说清「明天那份计划一个字没改」，"
+        "不许报成排好了，也不许自己顺手补一版均分。"
         "用户说「别中午排会 / 午饭往后挪 / 别把会排在午饭」→ 调 plobi_checkin_respond"
         "（不是 mutate_agenda）。query_agenda 用 range=today/tomorrow/date 时，"
         "响应会带 anchors（作息锚点：早饭/午饭/晚饭/睡眠，title+start_at+end_at+flex）"
@@ -386,7 +390,9 @@ SECRETARY_ASK_SCHEMA = {
                     "plobi_agent_ask 当面问的那几行，问不到的行留在 roster 里并带 "
                     "not_askable_because；mind_candidates 只是 Mind 里有计划、还没给它"
                     "登记分身的候选，两格分开（如「给每个项目配 L2」也走这条）；"
-                    "plan_day = 排明天（或某天）的计划（调规划器，不要 mutate_agenda 补作息）。"
+                    "plan_day = 排明天（或某天）的计划（调规划器，不要 mutate_agenda 补作息）；"
+                    "配 action=plan_tomorrow 就是**你自己**排这一次并落到真实 plan_items 里"
+                    "（裁定 163），过不了边界闸就整笔不写、照实念那句拒绝。"
                 ),
             },
             "user_text": {
@@ -399,7 +405,8 @@ SECRETARY_ASK_SCHEMA = {
             },
             "action": {
                 "type": "string",
-                "enum": ["create", "update", "delete", "cancel_matching", "move_block"],
+                "enum": ["create", "update", "delete", "cancel_matching", "move_block",
+                         "add_life_block", "plan_tomorrow"],
                 "description": (
                     "mutate_agenda 必填：create=新增，update=修改，delete=取消单条，"
                     "cancel_matching=批量取消「这期完了/这门课后面都不用去了」"
@@ -408,7 +415,19 @@ SECRETARY_ASK_SCHEMA = {
                     "（R-105：只动被点名的那块，其余一律不重排；"
                     "用 title 或 event_id 或那块现在的起始 HH:MM 指它，"
                     "start_at=挪去的新起点，end_at 不给就保留原时长）。"
-                    "create/update/delete 动的是 events，move_block 动的是 plan_items —— "
+                    "点到吃饭／睡觉这类生活块时它改的是**作息模板**（真源），"
+                    "并把回话里的「以后每天」念给用户，不许说成只挪了明天一次；"
+                    "add_life_block=用户自己加一条生活块（R-106／裁定 148「生活项要能自己加」）："
+                    "title＋start_at＋end_at 三个都齐才动手，缺哪个问哪个，"
+                    "不许替他发明一条作息类别。"
+                    "plan_tomorrow=**你自己**把那一天排一次并落到真实计划里（裁定 163 10-16："
+                    "「不要用脚本排程，让日程秘书自己排一次明天的计划，要落到真实的 entry 里面」）："
+                    "不要 title、不要钟点，"
+                    "`date` 可空（缺省=明天本地）；材料、边界闸、退回重排都在 "
+                    "`plobi.agenda.llm_planning.plan_and_store_day` 那一处，过不了闸就照实念那句拒绝——"
+                    "**一个字节都没写**，不许说成排好了，也不许换回旧的均分。"
+                    "create/update/delete 动的是 events，move_block/add_life_block 动的是计划块与作息模板，"
+                    "plan_tomorrow 动的是整份当天计划 —— "
                     "用户说「那块」「往后挪」这种指的是计划，别拿它去改课程表条目。"
                 ),
             },
@@ -439,6 +458,7 @@ SECRETARY_ASK_SCHEMA = {
                 "description": (
                     "mutate_agenda 可空：结束时间，不确定就 null，禁止默认 1 小时。"
                     "move_block：不给就**保留那块原来的时长**（挪钟点≠改长度）。"
+                    "add_life_block 必填：这条生活块每天到几点结束，缺了问用户，不替他编。"
                 ),
             },
             "kind": {
@@ -475,6 +495,8 @@ SECRETARY_ASK_SCHEMA = {
                     "query_agenda：range=date 必填，YYYY-MM-DD（不要自己换算成星期）。"
                     "decide_pending：可空，限定在某一天找那条待确认。"
                     "plan_day：可空，YYYY-MM-DD；缺省=明天（本地）。"
+                    "plan_tomorrow（action）：同样可空，缺省=明天（本地）——"
+                    "用户说「把下周三重排一遍」就给它那一天，别说成明天。"
                 ),
             },
             "decision": {
@@ -613,11 +635,63 @@ def handle_master_approve(args: dict, **kwargs) -> str:
         conn.close()
 
 
+def _plan_tomorrow_payload(args: dict) -> str:
+    """裁定 163：排程这一发**开在秘书嘴上**——材料、边界闸、落库都在规划器那一处。
+
+    这里只做三件事：把 `date` 收成 YYYY-MM-DD（缺省=明天本地）、把家目录那份共享日程库
+    接上（`store.connect(None)`，与 `plobi_checkin_respond` 同一个入口）、把规划器回的结构
+    原样变成 JSON 字符串。**没有第二道写入**：没过闸时 `plan_and_store_day` 自己就一个字节
+    都不写并回一句人话，这里的职责是别把它说成成功（`ok` 照原样带走）。
+    """
+    from datetime import date as _date, timedelta
+
+    from plobi.agenda import llm_planning, store
+
+    day = str(args.get("date") or "").strip()[:10] or (
+        _date.today() + timedelta(days=1)
+    ).isoformat()
+    try:
+        conn = store.connect(None)
+    except Exception as exc:  # 库都打不开 ⇒ 照实说，不假装排过了
+        return json.dumps(
+            {"ok": False, "intent": "plan_day", "action": "plan_tomorrow",
+             "for_date": day, "written": 0,
+             "reason": f"日程库打不开（{type(exc).__name__}: {str(exc)[:120]}），"
+                       f"{day} 那份计划一个字没写。"},
+            ensure_ascii=False,
+        )
+    try:
+        result = llm_planning.plan_and_store_day(day, conn=conn)
+    except Exception as exc:  # 任何异常都不许打断 L1 会话，也不许写成半份计划
+        logger.warning("plobi_secretary_ask plan_tomorrow failed for %s: %s", day, exc)
+        return json.dumps(
+            {"ok": False, "intent": "plan_day", "action": "plan_tomorrow",
+             "for_date": day, "written": 0,
+             "reason": f"这一轮没排成（{type(exc).__name__}: {str(exc)[:160]}），"
+                       f"{day} 那份计划一个字没写。"},
+            ensure_ascii=False,
+        )
+    finally:
+        conn.close()
+    payload = {"intent": "plan_day", "action": "plan_tomorrow", **result}
+    if not payload.get("ok"):
+        payload.setdefault("error", payload.get("reason") or "排程这一轮没过闸")
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
 def handle_secretary_ask(args: dict, **kwargs) -> str:
     """§8.2: route 「明天安排」/「写早报」/「加改删日程」/「查日程」/「确认待确认」.
 
     Not kanban. Read + decide intents answer from the shared agenda store.
+
+    裁定 163 的一个例外：`action=plan_tomorrow`（配 `plan_day` 或 `mutate_agenda` 都认）
+    **不进日程 L2、不走脚本**——排程这一发改由秘书这张嘴直接发起，过闸才落库。
     """
+    intent = str(args.get("intent") or "")
+    action = str(args.get("action") or "")
+    if action == "plan_tomorrow" and intent in ("plan_day", "mutate_agenda"):
+        return _plan_tomorrow_payload(args)
+
     from plobi.agents.registry import run_secretary_ask
 
     result = run_secretary_ask(

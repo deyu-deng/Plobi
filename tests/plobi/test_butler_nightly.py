@@ -258,11 +258,23 @@ def _last_json(text: str) -> dict[str, Any]:
     return json.loads(text.strip().splitlines()[-1])
 
 
+def _stored_plan_items(db: Path, day: str) -> list[dict[str, Any]]:
+    """纯读库：不碰 ``generate_evening_plan``（那个 helper 会重排，用它当"没被抹"的证据就是自欺）。"""
+    conn = store.connect(db)
+    try:
+        plan = store.get_daily_plan(conn, day)
+        return [] if plan is None else [item.to_dict() for item in store.list_plan_items(conn, plan.id)]
+    finally:
+        conn.close()
+
+
 def test_locked_db_is_named_as_a_cause_and_exits_non_zero(home, monkeypatch):
     def _locked(*args, **kwargs):
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr("plobi.agenda.planning.generate_evening_plan", _locked)
+    # 裁定 163 之后脚本只读库，所以"跑失败要说得出为什么"这一支要钉在**读**那一手
+    # （以前它钉在 generate_evening_plan 上，那函数已经从这条路径撤下了）。
+    monkeypatch.setattr("plobi.agenda.store.connect", _locked)
     rc, out, err, sink = _run_planner(monkeypatch)
 
     assert rc == 1
@@ -278,7 +290,7 @@ def test_an_unknown_crash_still_names_its_type(home, monkeypatch):
     def _boom(*args, **kwargs):
         raise ValueError("routine_templates 缺 duration_min 这一列")
 
-    monkeypatch.setattr("plobi.agenda.planning.generate_evening_plan", _boom)
+    monkeypatch.setattr("plobi.agenda.store.connect", _boom)
     rc, out, _err, _sink = _run_planner(monkeypatch)
 
     assert rc == 1
@@ -287,24 +299,69 @@ def test_an_unknown_crash_still_names_its_type(home, monkeypatch):
     assert payload["detail"].startswith("ValueError:")
 
 
-def test_nothing_to_schedule_is_not_reported_as_a_failure(home, monkeypatch):
-    """空窗走既有的 ``status=empty`` 那句「不是没跑」，退出码 0 —— 别把空当成崩。
+def _seed_plan_the_secretary_wrote(db: Path, *, status: str = "pending", items: int = 2) -> str:
+    """秘书那一轮已经落过的真 entry。脚本只该读它——**不许**再排一遍。
 
-    裁定 161 新增的判据：**这一发根本不许走到模型**。探针在 spy 位置等着，短路一旦被拆掉，
-    这里立刻拿到一条 ``['called']`` 而红——而不是先花掉真钱再从 ``status`` 那格发现不对
-    （那条路本来就是这么坏的：模型凭空排出块，``empty`` 变成 ``pending``）。
+    为什么这条要单独立：``generate_evening_plan`` 会先 DELETE 当天 ``plan_items`` 再重插，
+    脚本一插手就把秘书排好的块抹掉。裁定 163 撤脚本排程的正解就是这个动作。
+    """
+    conn = store.connect(db)
+    try:
+        plan = store.upsert_daily_plan(
+            conn, for_date=_tomorrow(), status=status, summary="明天由秘书排过一轮",
+            conflict_count=0, event_count=items,
+        )
+        store.replace_plan_items(conn, plan.id, [
+            {"id": f"itm_{n}", "title": f"写作业 {n}", "event_id": f"ddl:evt_{n}",
+             "start_at": f"{_tomorrow()}T09:{n}0:00", "end_at": f"{_tomorrow()}T09:{n}0:30",
+             "kind": "task",
+             "evidence": {"kind": "ddl", "planner": "l2_agenda", "source": f"evt_{n}"}}
+            for n in range(items)
+        ])
+        return plan.id
+    finally:
+        conn.close()
+
+
+def test_nothing_to_schedule_is_not_reported_as_a_failure(home, monkeypatch):
+    """既有口径：**空不是崩**。有一行 ``status=empty`` 的计划时，仍走那句「不是没跑」。
+
+    这行计划由 ``generate_evening_plan()`` 在不给 planner 的情况下落（脚本侧零模型，
+    见裁定 163），所以这一趟全程一次模型都不该打——探针就在那儿等着。
     """
     calls = _model_spy(monkeypatch)
+    from plobi.agenda.planning import generate_evening_plan
+
+    generate_evening_plan()                       # 没材料 ⇒ 落一行 status=empty，不打模型
 
     rc, out, _err, sink = _run_planner(monkeypatch)
 
-    assert calls == [], "空材料还去打模型＝花真钱问『今天没什么可排』"
-
+    assert calls == [], "脚本侧还打模型＝裁定 163 没落地"
     assert rc == 0
     payload = _last_json(out)
     assert payload["plan"]["status"] == "empty"
     assert "不是没跑" in payload["plan"]["summary"]
     assert sink.bodies and "明天没有日程" in sink.bodies[0]
+
+
+def test_a_missing_plan_row_is_reported_plainly_and_the_script_does_not_fill_it(home, monkeypatch):
+    """秘书那一轮没落库 ⇒ 照实说"还没有"，**不许脚本代排**（那会顺手抹掉别人的块）。
+
+    退出码仍是 0：这是"今天没排"，不是崩；崩的那两支（``db_locked`` / ``exception``）在判据 1 里。
+    """
+    calls = _model_spy(monkeypatch)
+
+    rc, out, _err, _sink = _run_planner(monkeypatch)
+
+    assert rc == 0 and calls == []
+    payload = _last_json(out)
+    assert payload["outcome"] == "no_plan" and payload["for_date"] == _tomorrow()
+    assert "没落库" in payload["summary"]
+    conn = store.connect(home / "agenda.db")
+    try:
+        assert store.get_daily_plan(conn, _tomorrow()) is None, "脚本代排＝偷偷替秘书落了一版"
+    finally:
+        conn.close()
 
 
 # ------------------------------------- 模型门 + 幂等（判据 4 已按裁定 161 换对象 / 判据 3）
@@ -351,48 +408,40 @@ def _polish_spy(monkeypatch) -> list[str]:
     return hits
 
 
-def test_a_non_empty_night_takes_only_the_scheduling_shot(home, monkeypatch):
-    """裁定 161 判据 4 换了对象：夜里**就是会打模型**，但只允许排程那一发。
+def test_the_script_never_touches_a_model_and_never_wipes_the_secretarys_blocks(home, monkeypatch):
+    """裁定 163 的主判据：**夜里那一发只属于秘书，脚本一发都不发**。
 
-    旧那条钉的是「探针证明零 LLM」，而 `cron_evening_plan.py` 早就显式传
-    ``planner=blocks_from_l1``（裁定 149①／154）——描述与代码互相打脸，红一直在挡别人的门。
-    现在按新契约钉：次数上限 = 1 发 + ``MAX_REPLANS`` 次重问，且**没有一次来自润色**。
+    两半都要钉：① 探针计数 **= 0**（今晚那 2886 tokens / 0.54 credit 就是这一发花掉的，
+    换回一份 ``block_count=0`` 的空计划）；② 秘书已经落库的那些块**一行都不许少**——
+    以前脚本走 ``generate_evening_plan`` 会先 DELETE 当天 ``plan_items`` 再重插，
+    "顺手补一版"就是抹。润色那道门没开，所以 polish 也必须 0 次。
     """
-    from plobi.agenda.llm_planning import MAX_REPLANS
-
     _seed_tomorrow_event(home / "agenda.db")
+    _seed_plan_the_secretary_wrote(home / "agenda.db", items=2)
     calls = _model_spy(monkeypatch)
     polish_calls = _polish_spy(monkeypatch)
+    before = _stored_plan_items(home / "agenda.db", _tomorrow())
 
     rc, out, _err, _sink = _run_planner(monkeypatch)
 
     assert rc == 0
-    assert 1 <= len(calls) <= MAX_REPLANS + 1, calls
-    assert polish_calls == [], "润色门没开却走了 polish＝多一道没人付过钱的模型调用"
-    assert _last_json(out)["plan"]["event_count"] == 1
-
-
-def test_a_dead_channel_says_so_instead_of_slipping_back_to_even_spread(home, monkeypatch):
-    """裁定 149 不动：通道挂了照实说没排成，不许悄悄换回均分。
-
-    探针返回 ``None`` 就是"这一发没拿到回答"那条真路径（今晚 20:08 那轮真跑就是这个形状）。
-    断言两件事：这一支**不是**空窗那一支（有材料），以及 summary 里点名"没排成"与"没有项目块"。
-    """
-    _seed_tomorrow_event(home / "agenda.db")
-    calls = _model_spy(monkeypatch)
-
-    rc, out, _err, _sink = _run_planner(monkeypatch)
-    payload = _last_json(out)
-
-    assert rc == 0 and calls
-    assert payload["plan"]["status"] != "empty"
-    assert "没排成" in payload["plan"]["summary"], payload["plan"]["summary"]
-    assert "没有项目块" in payload["plan"]["summary"], "凭空多出块＝掉回了均分"
+    assert calls == [], "脚本还在发模型＝裁定 163 没落地"
+    assert polish_calls == []
+    after = _stored_plan_items(home / "agenda.db", _tomorrow())
+    assert len(before) == 2, before                      # 前置：秘书那两行确实在库里
+    assert len(after) == 2, after
+    assert {r["title"] for r in after} == {r["title"] for r in before}, "秘书排的块被脚本重排抹掉了"
 
 
 def test_the_polish_env_gate_is_the_only_way_to_reach_a_model(home, monkeypatch):
-    """对照组：门一开就必须打到探针上，否则上一条那个「0 次」没有信息量。"""
+    """对照组：润色门一开就必须打到探针上，否则上面那些「0 次」没有信息量。
+
+    裁定 163 之后，脚本里**唯一**还能走到模型的门就是 ``PLOBI_BUTLER_POLISH``；
+    探针接的还是额度腿那一个 ``__call__``——所以它一亮就说明"脚本确实还留着一条能花钱的路"，
+    而它默认关着。得先有一行计划（脚本不再自己生成，见 ``no_plan`` 那一支）。
+    """
     _seed_tomorrow_event(home / "agenda.db")
+    _seed_plan_the_secretary_wrote(home / "agenda.db")
     calls = _model_spy(monkeypatch)
     monkeypatch.setenv("PLOBI_BUTLER_POLISH", "1")
 

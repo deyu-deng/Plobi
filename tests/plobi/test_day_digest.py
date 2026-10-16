@@ -411,6 +411,12 @@ def test_cron_evening_appends_tomorrows_digest(tmp_path, monkeypatch):
     notifier = RecordingNotifier()
     monkeypatch.setattr(notify_module, "get_notifier", lambda: notifier)
 
+    # 裁定 163 之后脚本只读、不代排：这一档验的是清单**追加**，所以计划要先有人落库。
+    # 「没有计划时脚本照实说一句、不生成」钉在 `test_butler_nightly.py`。
+    from plobi.agenda.planning import generate_evening_plan
+
+    generate_evening_plan(tomorrow)
+
     module = _load_script("dtdigest_cron_evening", "cron_evening_plan.py")
     assert module.main() == 0
 

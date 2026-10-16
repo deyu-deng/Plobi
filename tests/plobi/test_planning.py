@@ -403,88 +403,61 @@ def _blocks(db_path, plan_id):
     ]
 
 
-def _durations(blocks):
-    return [
-        (
-            datetime.fromisoformat(b.end_at) - datetime.fromisoformat(b.start_at)
-        ).total_seconds()
-        / 60.0
-        for b in blocks
-    ]
+# --------------------------------------------------------------------------- #
+# 均分本体退役之后（裁定 149／163③，`WP-NIGHTLY-PLAN-BY-AGENT`）
+#
+# 这里原来有 5 条钉"分配数学"的验收：空窗挑哪段、单块 ≤2h、总量 ≤ 日均、
+# DDL 临近的项目先挑空窗、"未能安排：X（缺 Y 小时）"。那段函数已整体删除，
+# 把它们"迁成假 planner"等于在测试里重写一遍被否掉的数学 —— 假绿，所以删。
+# 仍然活着的保证换了两层来钉：材料（`plan_materials`）+ 写入前那道闸
+# （`validate_proposal`），下面这条就是其中一层；"没接线就是没有块"那一族钉在
+# 同档 `test_planning_ddl_blocks.py`。
+#
+# ⚠️ 两条**暂时没有承接方**的规则，别当成还在生效（派工单：`Docs/tasks/plan-budget-carrier-task.md`）：
+#   · 作业/项目块的当日预算（`DDL_DAILY_BUDGET_MINUTES=240`、单块 ≤2h、pace 日均）——
+#     原来由均分硬算，现在既不在闸里也不在口令里；
+#   · 「排不下的作业 / 欠了几小时」那句上报（`plan.evidence["unscheduled"]` 与 summary 那句
+#     "未能安排：…"）——planner 只交 `(blocks, note)`，代码无从知道它放弃了什么，那两句已是死分支。
+# --------------------------------------------------------------------------- #
 
 
-def test_pace_block_fills_free_window(paced_registry, db_path):
-    """验收 2：weekly_hours=6 → 空窗出现推进块，每块 ≤2h，总量 ≤ 日均。"""
-    paced_registry.set_pace("simulation", 6)
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    assert len(blocks) == 1
-    block = blocks[0]
-    assert block.evidence["kind"] == "project_block"
-    assert block.evidence["project_id"] == "simulation"
-    assert block.evidence["pace"] == "weekly_hours:6"
-    assert block.kind == "task"  # 词表不扩
-    durations = _durations(blocks)
-    assert all(d <= 120 for d in durations)
-    assert sum(durations) <= 6 / 7 * 60 + 1e-6  # 不超日均
-    assert plan.status == "pending"
+def _mouth_round(conn, start_hm: str, end_hm: str) -> dict:
+    """让秘书自己排一次（裁定 163 的生产路径），提案只给一块。零额度：注入点不碰模型。"""
+    from plobi.agenda import llm_planning
+
+    def propose(_conn, day):
+        return (
+            [{"title": "推进 simulation", "start_at": f"{day}T{start_hm}:00",
+              "end_at": f"{day}T{end_hm}:00"}],
+            "把整块留给项目，避开人的作息。",
+        )
+
+    return llm_planning.plan_and_store_day(DAY, conn=conn, proposal_fn=propose)
 
 
-def test_block_cap_two_hours(paced_registry, db_path):
-    """weekly_hours=14 → 日均恰好 2h → 单块 120min 封顶。"""
-    paced_registry.set_pace("simulation", 14)
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    assert len(blocks) == 1
-    assert _durations(blocks) == [120.0]
+def test_sleep_spillover_still_blocks_the_morning(conn, db_path):
+    """前一天跨午夜睡眠溢出的清晨段仍然不算地方——**保证换了主人，没换层**。
 
-
-def test_unscheduled_reported_in_header(paced_registry, db_path, conn):
-    """空窗不够 → 计划头"未能安排：<项目>（缺 X 小时）"。"""
-    paced_registry.set_pace("simulation", 14)  # 预算 2h
+    原来靠均分自己躲开它；代码不再排块之后，能执行它的只剩「清醒窗」那道闸（边界三，
+    窗口由前一段睡眠的**结束时刻**算）。所以这里钉的是：秘书把块排到 07:00 ⇒ 点名拒绝 +
+    零写入。拆掉 `_waking_from_spans` 里"取前一天睡眠段"那一格，这条立刻红。
+    """
+    _enable(db_path, "seed-sleep")  # 23:30–07:30
     store.create_event(
-        conn, title="上午", start_at=f"{DAY}T00:00:00", end_at=f"{DAY}T11:50:00", kind="task"
+        conn, title="电工电子学", start_at=f"{DAY}T08:00:00",
+        end_at=f"{DAY}T09:40:00", kind="class", source="timetable",
     )
-    store.create_event(
-        conn, title="下午", start_at=f"{DAY}T12:30:00", end_at=f"{DAY}T23:59:59", kind="task"
-    )
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    assert len(blocks) == 1
-    assert _durations(blocks) == [40.0]  # 11:50-12:30 的 40 分钟空窗
-    assert plan.evidence["unscheduled"] == [
-        {"project": "simulation", "missing_hours": 1.3}
-    ]
-    assert "未能安排：simulation（缺1.3小时）" in plan.summary
 
+    refused = _mouth_round(conn, "07:00", "07:30")
 
-def test_ddl_nearest_project_picks_first(paced_registry, db_path, conn):
-    """DDL 临近优先：有临近 DDL 的项目先挑空窗。"""
-    paced_registry.set_pace("zeta", 7)
-    paced_registry.set_pace("alpha", 7)
-    store.create_event(
-        conn, title="zeta 评审 DDL", start_at=f"{DAY}T18:00:00", kind="ddl"
-    )
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    assert len(blocks) == 2
-    assert blocks[0].evidence["project_id"] == "zeta"  # 先挑
-    assert blocks[1].evidence["project_id"] == "alpha"
-    assert blocks[0].start_at < blocks[1].start_at  # 不重叠
+    assert refused["ok"] is False, refused
+    assert refused["written"] == 0, "过不了闸还写＝静默落一版差不多的"
+    assert "清醒窗口之外" in refused["reason"], refused["reason"]
 
+    ok = _mouth_round(conn, "10:00", "11:00")
+    assert ok["ok"] is True, ok
+    assert ok["written"] > 0, ok
 
-def test_sleep_spillover_blocks_morning(paced_registry, db_path):
-    """前一天跨午夜锚点溢出的清晨段不算空窗。"""
-    paced_registry.set_pace("simulation", 14)
-    _enable(db_path, "seed-sleep")  # 23:30-07:30
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    blocks = _blocks(db_path, plan.id)
-    assert blocks, "应当有推进块"
-    first_start = datetime.fromisoformat(min(b.start_at for b in blocks))
-    assert first_start.hour >= 7 and first_start.minute >= 30  # 07:30 之后
-    # 且不与睡眠锚点（23:30 起）重叠
-    for b in blocks:
-        assert b.end_at <= f"{DAY}T23:30:00" or b.start_at >= f"{DAY}T23:30:00"
 
 
 def test_no_pace_means_no_blocks(paced_registry, db_path):
