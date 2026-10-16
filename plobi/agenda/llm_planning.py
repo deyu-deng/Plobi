@@ -28,6 +28,9 @@ from typing import Any, Callable, Iterable, Optional, Sequence
 
 from . import planning, store
 
+# 与 planning 共用同一套 evidence 口径（那边是写入侧的常量，这里只引用不另立）
+PROJECT_BLOCK_EVIDENCE_KIND = planning.PROJECT_BLOCK_EVIDENCE_KIND
+
 # 睡眠锚点的识别词（作息种子是用户自己写的模板，不是我们编的分类）。判据用词表而不是
 # 模板 id：模板 id 会变，"睡觉要睡"不会。
 _SLEEP_WORDS = ("觉", "睡")
@@ -346,3 +349,75 @@ def _has_completion_state() -> bool:
     finally:
         conn.close()
     return bool({"status", "done", "completed_at"} & columns)
+
+
+# --------------------------------------------------------------------------- #
+# ④ 接进生成路径：项目块 / 作业块由 L1 排，代码不再均分（裁定 149）
+# --------------------------------------------------------------------------- #
+
+def default_llm_call(route: Any = None) -> Callable[[str], Any]:
+    """生产用的那一发调用：走额度感知那条便宜路（`plobi.quota.route`）。
+
+    为什么用它而不是新造一个客户端：那条腿已经有账（`usage_ledger` 记打没打 / 哪个源 /
+    几次 / 多少钱），新造一条就又多一本账（裁定 94）。返回的字符串按 JSON 解析；
+    解析不出来就抛，让上层点名——不猜一版空计划当答案。
+    """
+    from plobi.quota.route import QuotaAwareCompleter
+
+    completer = QuotaAwareCompleter()
+
+    def call(prompt: str) -> dict:
+        import json
+
+        text = completer(prompt, route)
+        if not text:
+            raise RuntimeError("排程那一发没拿到回答（额度路空返回）")
+        stripped = str(text).strip()
+        if stripped.startswith("```"):
+            stripped = stripped.strip("`")
+            if stripped.lower().startswith("json"):
+                stripped = stripped[4:]
+        return json.loads(stripped.strip())
+
+    return call
+
+
+def blocks_from_l1(
+    conn: Any,
+    day: str,
+    *,
+    llm_call: Optional[Callable[[str], Any]] = None,
+    max_replans: int = MAX_REPLANS,
+) -> tuple[list[dict[str, Any]], str]:
+    """让 L1 排项目块 / 作业块，返回 ``(blocks, note)``。
+
+    `note` 是给面上那句人话用的：排成就留 L1 写的「为什么这么排」，没排成就照实说没排成
+    与原因。**这里没有任何兜底分配**——均分那段（`_project_block_items`）按裁定 149 退役，
+    L1 排不出来就是没有块，不悄悄换回一版均分。
+    """
+    call = llm_call or default_llm_call()
+    try:
+        proposal = plan_with_llm(day, call, conn=conn, max_replans=max_replans)
+    except PlanRejected as rejected:
+        return [], "L1 那一轮没排成（" + "；".join(rejected.violations[:3]) + "），今天没有项目块"
+    except Exception as exc:  # 通道 / 解析 / 网络：照实说，不降级成均分
+        return [], f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}），今天没有项目块"
+
+    blocks: list[dict[str, Any]] = []
+    for item in proposal.items:
+        span = _span_of(item)
+        if span is None:
+            continue
+        blocks.append({
+            "event_id": f"l1:block-{len(blocks) + 1}",
+            "title": _title(item),
+            "start_at": span[0].isoformat(),
+            "end_at": span[1].isoformat(),
+            "kind": "task",
+            "conflict_with": [],
+            "evidence": {"kind": PROJECT_BLOCK_EVIDENCE_KIND, "planner": "l1",
+                         "reason": proposal.reason},
+        })
+    if not blocks:
+        return [], "L1 交回来的提案里没有任何能落的时间块"
+    return blocks, proposal.reason
