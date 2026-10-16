@@ -209,3 +209,56 @@ def test_a_research_tree_is_a_known_owner_too(mind, sibling_vault, monkeypatch):
     monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
     (sibling_vault / "research" / "SRTP").mkdir(parents=True)
     assert "SRTP" in known_names(mind, [])
+
+
+def test_a_tree_lands_in_its_category_folder_and_a_stale_pointer_adopts_it(
+    mind, sibling_vault, monkeypatch
+):
+    """``category=research`` must not mint a second ``projects/SRTP`` beside the
+    real tree. Live shape on 2026-10-16 08:35: the roster still said
+    ``Vault/projects/SRTP`` after the move, so registering the 分身 wrote three
+    boilerplate files into a brand-new folder on the human surface."""
+    from plobi.mind.project_tree import ensure_project_tree
+
+    monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
+
+    write = ensure_project_tree(raw_name="SRTP", category="research", mind_root=mind)
+    assert write.relative == "Vault/research/SRTP"
+    assert (sibling_vault / "research" / "SRTP" / "plan.md").is_file()
+    assert not (sibling_vault / "projects" / "SRTP").exists()
+
+    adopted = ensure_project_tree(raw_name="SRTP", category="projects", mind_root=mind)
+    assert (adopted.reused, adopted.relative) == (True, "Vault/research/SRTP")
+    assert not (sibling_vault / "projects" / "SRTP").exists()
+
+
+def test_the_seeder_reads_trees_from_every_category_folder(
+    tmp_path, mind, sibling_vault, monkeypatch
+):
+    """The read side has to see the same five folders the writer uses, or a tree
+    that moved to ``research/`` stops being a candidate and the two halves drift."""
+    from plobi.agents import registry as registry_mod
+
+    monkeypatch.setenv("VAULT_ROOT", str(sibling_vault))
+    monkeypatch.delenv("PLOBI_PROJECTS_CONFIG", raising=False)
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / ".plobi"))
+    tree = sibling_vault / "research" / "Wealth-Lab"
+    tree.mkdir(parents=True)
+    (tree / "plan.md").write_text(
+        "---\nproject: Wealth-Lab\ntitle: Wealth-Lab\ngroup: research\n"
+        "status: active\n---\n\n# Wealth-Lab\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        registry_mod.AgentRegistry,
+        "spawn",
+        lambda self, name, **kw: {"name": name, "profile_dir": str(tmp_path)},
+    )
+
+    reg, seeded = registry_mod.ensure_mind_project_agents(
+        registry_mod.AgentRegistry.load(tmp_path / "projects.yaml"), mind_root=mind
+    )
+    assert seeded, "the tree under research/ was not discovered at all"
+    entry = next(e for e in reg.entries() if e.mind_subtree.endswith("Wealth-Lab"))
+    assert entry.mind_subtree == "Vault/research/Wealth-Lab"
+    assert entry.category == "research"

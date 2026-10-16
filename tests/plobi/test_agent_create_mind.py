@@ -151,10 +151,17 @@ def test_research_category_projects_under_the_research_group(client, mind_home, 
         "/api/agents", json={"id": "wealth-lab", "name": "Wealth-Lab", "category": "research"}
     )
     assert response.status_code == 200, response.json()
-    plan = (vault(tmp_path / "mind") / "Wealth-Lab" / "plan.md").read_text(encoding="utf-8")
+    root = tmp_path / "mind"
+    # 分类决定这棵树住在哪个文件夹：research 的落 ``Vault/research/``，不再挤进 ``projects/``。
+    plan = (root / "Vault" / "research" / "Wealth-Lab" / "plan.md").read_text(
+        encoding="utf-8"
+    )
     # 活项目里 research 那一类的配对是 type=research + group=research（Wealth-Lab/SRTP）。
     assert "type: research" in plan
     assert "group: research" in plan
+    assert not (root / "Vault" / "projects" / "Wealth-Lab").exists()
+    saved = AgentRegistry.load(mind_home.path).get("wealth-lab")
+    assert saved is not None and saved.mind_subtree == "Vault/research/Wealth-Lab"
 
 
 def test_butler_create_does_not_touch_mind(client, mind_home, tmp_path):

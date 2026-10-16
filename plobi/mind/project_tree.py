@@ -24,7 +24,7 @@ BLOCKER（声明 ≠ 磁盘），用户在脑仓的下一次提交就被他自�
 
 写入不走 :func:`plobi.mind.paths.safe_target`：那份前缀表管的是**AI 随笔**能落哪（memory
 adapter 只准往 Loom 消化区写字），这里落的是用户点「新建项目分身」时要求建的立项卡。
-约束换成两条更硬的：目标必须解析进 ``<mind_root>/Vault/projects/`` 之内（防穿越），
+约束换成两条更硬的：目标必须解析进 ``<VAULT_ROOT>`` 那五个分类文件夹之一之内（防穿越），
 已有文件一个字都不覆盖（重名走禁止，不走覆盖）。
 """
 
@@ -38,6 +38,17 @@ from typing import Sequence
 from .paths import real_target, resolve_root
 
 PROJECTS_RELATIVE = "Vault/projects"
+# The L2 categories are the human surface's folders (``Docs/specs/memory-adapter.md``
+# §12.3), so a project tree lives under ``Vault/<category>``. Names come from
+# ``registry.AGENT_CATEGORIES``; an unknown category falls back to ``projects``
+# rather than inventing a sixth folder.
+TREE_ROOT_RELATIVES: tuple[str, ...] = (
+    "Vault/projects",
+    "Vault/research",
+    "Vault/courses",
+    "Vault/butler",
+    "Vault/events",
+)
 ENTRY_FILE_NAMES: tuple[str, ...] = ("plan.md", "progress.md", "research.md")
 
 # registry category -> (plan.md ``type``, plan.md ``group``)。活项目里 engineering/product
@@ -46,6 +57,12 @@ _CATEGORY_TO_PLAN_META: dict[str, tuple[str, str]] = {
     "projects": ("engineering", "product"),
     "research": ("research", "research"),
 }
+
+
+def tree_root_for(category: str) -> str:
+    """Which ``Vault/<folder>`` a project tree of this L2 category lives in."""
+    candidate = f"Vault/{(category or '').strip().lower()}"
+    return candidate if candidate in TREE_ROOT_RELATIVES else PROJECTS_RELATIVE
 
 
 class ProjectTreeConflict(RuntimeError):
@@ -233,6 +250,24 @@ def _containment_ok(base: Path, target: Path) -> bool:
     return True
 
 
+def _existing_tree(root: Path, dir_name: str) -> tuple[str, Path] | None:
+    """A project tree already on disk under any category folder, or ``None``.
+
+    The roster may still carry a ``mind_subtree`` from before the two-root move.
+    Without this lookup the create path would mint a second ``<Name>/`` next to
+    the real one — which is how ``Vault/projects/SRTP`` reappeared beside
+    ``Vault/research/SRTP`` on 2026-10-16.
+    """
+    for relative in TREE_ROOT_RELATIVES:
+        base = real_target(relative, root)
+        actual = _case_insensitive_child(base, dir_name) or (
+            dir_name if (base / dir_name / "plan.md").is_file() else ""
+        )
+        if actual and (base / actual / "plan.md").is_file():
+            return f"{relative}/{actual}", base / actual
+    return None
+
+
 def ensure_project_tree(
     *,
     raw_name: str,
@@ -241,11 +276,15 @@ def ensure_project_tree(
     mind_root: Path | str | None = None,
     today: str = "",
 ) -> ProjectTreeWrite:
-    """在 ``<mind_root>/Vault/projects/<目录名>`` 建出三件套，返回这次写了什么。
+    """在 ``<VAULT_ROOT>/<分类>/<目录名>`` 建出三件套，返回这次写了什么。
 
-    三条规则：够不着 Mind 就抛（调用方按创建失败处理，不留孤儿行）；已有 ``plan.md``
-    的树只**认领、不覆盖**（``reused=True``，一个字都不写）；目录已存在但没有 ``plan.md``
-    （Mind 自己的 verifier 会把它报成「幽灵目录」）时只补缺的那几份，已有的文件不动。
+    分类文件夹就是 L2 那五栏（:data:`TREE_ROOT_RELATIVES`），所以 ``category=research``
+    的项目落在 ``Vault/research/``，不再一律挤进 ``Vault/projects/``。
+
+    规则：盘上任何分类文件夹里已经有这棵树（带 ``plan.md``）就**只认领**，哪怕注册表那一格
+    还指着搬家前的旧路径；够不着 Mind 就抛（调用方按创建失败处理，不留孤儿行）；认领时一个字
+    都不写（``reused=True``）；目录已存在但没有 ``plan.md``（Mind 自己的 verifier 会把它报成
+    「幽灵目录」）时只补缺的那几份，已有的文件不动。
 
     目录名走 :func:`plobi.agents.registry._project_safe_id`——播种机
     ``ensure_mind_project_agents`` 就是拿它把 Mind 目录名归成注册键的，两边共用同一个
@@ -265,7 +304,13 @@ def ensure_project_tree(
             "Mind 没配置好（MIND_ROOT 指不到一个库），项目树建不出来"
         )
 
-    base = real_target(PROJECTS_RELATIVE, root)
+    adopted = _existing_tree(root, dir_name)
+    if adopted is not None:
+        relative, path = adopted
+        return ProjectTreeWrite(relative=relative, dir_path=path, reused=True)
+
+    tree_relative = tree_root_for(category)
+    base = real_target(tree_relative, root)
     actual_name = _case_insensitive_child(base, dir_name) or dir_name
     target = base / actual_name
     # frontmatter 的 project/title 用用户给定的原名（Mind §5：目录名尊重用户给定名称）；
@@ -273,17 +318,10 @@ def ensure_project_tree(
     title = raw
 
     if not _containment_ok(base, target):
-        raise ProjectTreeConflict(f"{dir_name!r} 会落到 {PROJECTS_RELATIVE} 之外，禁止创建")
+        raise ProjectTreeConflict(f"{dir_name!r} 会落到 {tree_relative} 之外，禁止创建")
     if target.exists() and not target.is_dir():
         raise ProjectTreeConflict(
-            f"{PROJECTS_RELATIVE}/{actual_name} 位置上是个文件，建不出项目目录"
-        )
-
-    if target.is_dir() and (target / "plan.md").is_file():
-        return ProjectTreeWrite(
-            relative=f"{PROJECTS_RELATIVE}/{actual_name}",
-            dir_path=target,
-            reused=True,
+            f"{tree_relative}/{actual_name} 位置上是个文件，建不出项目目录"
         )
 
     created_dir = not target.exists()
@@ -300,7 +338,7 @@ def ensure_project_tree(
     except OSError as exc:
         # 半途失败也要把自己刚建的东西收干净，别给 Mind 留一堆残骸。
         ProjectTreeWrite(
-            relative=f"{PROJECTS_RELATIVE}/{actual_name}",
+            relative=f"{tree_relative}/{actual_name}",
             dir_path=target,
             created_dir=created_dir,
             created_files=tuple(written),
@@ -308,7 +346,7 @@ def ensure_project_tree(
         raise ProjectTreeUnwritable(f"Mind 项目树写不下去：{exc}") from exc
 
     return ProjectTreeWrite(
-        relative=f"{PROJECTS_RELATIVE}/{actual_name}",
+        relative=f"{tree_relative}/{actual_name}",
         dir_path=target,
         created_dir=created_dir,
         created_files=tuple(written),
@@ -328,6 +366,7 @@ def project_tree_exists(*, mind_subtree: str, mind_root: Path | str | None = Non
 __all__ = [
     "ENTRY_FILE_NAMES",
     "PROJECTS_RELATIVE",
+    "TREE_ROOT_RELATIVES",
     "ProjectTreeConflict",
     "ProjectTreeUnwritable",
     "ProjectTreeWrite",
@@ -335,4 +374,5 @@ __all__ = [
     "ensure_project_tree",
     "plan_document",
     "project_tree_exists",
+    "tree_root_for",
 ]

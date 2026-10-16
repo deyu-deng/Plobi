@@ -1512,6 +1512,28 @@ def _is_placeholder_project_description(description: str) -> bool:
     return (description or "").strip().startswith(L2_PLACEHOLDER_DESCRIPTION_PREFIX)
 
 
+def _mind_project_trees(root: Path) -> list[tuple[str, Path]]:
+    """每棵项目树连同它所在的分类文件夹（``(逻辑相对路径, 目录)``）。
+
+    树住在哪个文件夹由 L2 分类决定，见 :mod:`plobi.mind.project_tree`——所以扫描面是那
+    五个分类文件夹，不是只有 ``projects/``。只扫一个会读不到搬了家的树（``research/SRTP``
+    先前就在这轮扫描里隐形），而立项那条腿又照旧名册指针在 ``projects/`` 里凭空建了同名
+    空树（2026-10-16 08:35），两边从此对不上。
+    """
+    from plobi.mind.paths import real_target
+    from plobi.mind.project_tree import TREE_ROOT_RELATIVES
+
+    trees: list[tuple[str, Path]] = []
+    for relative in TREE_ROOT_RELATIVES:
+        base = real_target(relative, root)
+        try:
+            children = sorted(base.iterdir(), key=lambda p: p.name)
+        except OSError:
+            continue
+        trees.extend((relative, child) for child in children if child.is_dir())
+    return trees
+
+
 def ensure_mind_project_agents(
     registry: "AgentRegistry | None" = None,
     *,
@@ -1519,10 +1541,10 @@ def ensure_mind_project_agents(
 ) -> "tuple[AgentRegistry, list[str]]":
     """Seed every active Mind project into the L2 registry.
 
-    Walks ``<mind_root>/Vault/projects/*``. Skips the system-self project
-    (``Mind``), any directory without a ``plan.md``, and any plan whose
-    frontmatter ``status`` matches the skip markers. The remaining projects
-    become ``l2_project`` entries with ``category=projects`` (or ``research``
+    Walks the category folders (``_mind_project_trees``) one level deep. Skips
+    the system-self project (``Mind``), any directory without a ``plan.md``, and
+    any plan whose frontmatter ``status`` matches the skip markers. The remaining
+    projects become ``l2_project`` entries with ``category=projects`` (or ``research``
     only when ``plan.md``'s ``group`` says so). Returns ``(registry, seeded)``
     where ``seeded`` lists the *new* agent names registered on this call.
 
@@ -1536,20 +1558,15 @@ def ensure_mind_project_agents(
     用户给它登记过分身，所以它进 ``mind_candidates`` 而不是 ``roster``。已有行的
     章一个都不改——那是用户的账面。
     """
-    from plobi.mind.paths import real_target, resolve_root
+    from plobi.mind.paths import resolve_root
 
     reg = registry if registry is not None else load_registry()
     root = resolve_root(mind_root)
     if root is None:
         return reg, []
-    projects_dir = real_target("Vault/projects", root)
-    if not projects_dir.is_dir():
-        return reg, []
 
     seeded: list[str] = []
-    for entry in sorted(projects_dir.iterdir(), key=lambda p: p.name):
-        if not entry.is_dir():
-            continue
+    for relative, entry in _mind_project_trees(root):
         if entry.name == "Mind":
             continue
         plan_path = entry / "plan.md"
@@ -1580,7 +1597,7 @@ def ensure_mind_project_agents(
             if not patched.mind_subtree:
                 patched = _replace(
                     patched,
-                    mind_subtree=f"Vault/projects/{entry.name}",
+                    mind_subtree=f"{relative}/{entry.name}",
                 )
             if not patched.project_path and patched.category not in UNBOUND_CATEGORIES:
                 patched = _replace(patched, project_path=project_path)
@@ -1612,7 +1629,7 @@ def ensure_mind_project_agents(
             profile="",
             provider="",
             model="",
-            mind_subtree=f"Vault/projects/{entry.name}",
+            mind_subtree=f"{relative}/{entry.name}",
             skills=(),
             description=description,
             pace=None,
@@ -1689,11 +1706,31 @@ def run_project_status(
     reg, seeded = ensure_mind_project_agents(registry)
 
     from plobi.mind.paths import real_target, resolve_root
+    from plobi.mind.project_tree import PROJECTS_RELATIVE, tree_root_for
 
     mind_root = resolve_root(None)
-    projects_base = (
-        real_target("Vault/projects", mind_root) if mind_root is not None else None
-    )
+
+    def _tree_dir(subtree: str, name: str, category: str) -> "Path | None":
+        """这一格的项目树在盘上哪儿——名册指针优先，其次分类文件夹里同名的那棵。
+
+        写死只读 ``Vault/projects/`` 的话，搬过家的树（``research/SRTP``）在这份名单里
+        就永远是没有脑计划，秘书照着念就成了「有嘴却读不到自己那门课的作业」那个形状。
+        """
+        if mind_root is None:
+            return None
+        candidates = [
+            subtree,
+            f"{tree_root_for(category)}/{name}",
+            f"{PROJECTS_RELATIVE}/{name}",
+        ]
+        directories = [real_target(c, mind_root) for c in candidates if c]
+        for directory in directories:
+            if (directory / "plan.md").is_file():
+                return directory
+        for directory in directories:
+            if directory.is_dir():
+                return directory
+        return None
 
     rows: list[dict] = []
     for entry in reg.entries():
@@ -1709,12 +1746,12 @@ def run_project_status(
         plan_text = ""
         progress_text = ""
         has_mind = False
-        if projects_base is not None:
-            sub = entry.mind_subtree or ""
+        directory = _tree_dir(
+            (entry.mind_subtree or "").strip("/"), entry.name, entry.category
+        )
+        if directory is not None:
             try:
-                name = sub.split("/")[-1] if sub else entry.name
-                directory = projects_base / name
-                has_mind = directory.is_dir()
+                has_mind = True
                 plan_path = directory / "plan.md"
                 progress_path = directory / "progress.md"
                 if plan_path.is_file():
