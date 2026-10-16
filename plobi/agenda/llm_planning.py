@@ -40,6 +40,10 @@ _COMMUTE_WORDS = ("通勤", "走路", "步行", "赶车", "坐车", "地铁", "�
 
 MAX_REPLANS = 2
 
+#: 作业窗口（天）。与那段退役中的均分用的 `planning.DDL_LOOKAHEAD_DAYS` 同一条口径，
+#: 不另立一个数（裁定 94：同一事实一份真源）。
+DDL_LOOKAHEAD_DAYS = 14
+
 #: 排程那一发的读超时（秒）。见 :func:`default_llm_call` 里那条现核读数。
 PLANNING_TIMEOUT_SECONDS = 300.0
 
@@ -72,10 +76,23 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
 
     只读，不写。缺哪样就照实标缺（`missing`），不许拿空数组冒充「明天没事」。
     """
-    events = store.list_events(conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59") or []
+    # include_completed=False：人承认做完的那条**不进材料**（R-099 / Code `3f5d0208` 的读侧）。
+    # 均分那段是在生成侧关掉的；换成 L1 之后，关掉的地方就是这里——否则同一条作业还会被排第二次
+    # （现核铁证就是 `ddl:evt_ac46920dc0c1` 连排五天）。
+    events = store.list_events(conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
+                               include_completed=False) or []
     kept, _yielded, moved = planning.place_anchors_for_day(conn, day, list(events))
     anchors = planning.kept_anchors_as_dicts(kept)
     yesterday = planning.l1_plan_view(_shift_day(day, -1), [], db_path=None)
+    # 判据「作业信源接进来」：作业**不是当天的日程**，它是"某天之前要交"。只看当天那一格，
+    # 现核 2026-10-17 就是 `ddl 0 条` ⇒ L1 永远看不见有作业要写，排出来的"满"是假的满。
+    todays = {str(getattr(e, "id", "")) for e in events}
+    upcoming = [_event_row(e) for e in (store.list_events(
+        conn, start_from=f"{day}T00:00:00",
+        start_to=f"{_shift_day(day, DDL_LOOKAHEAD_DAYS)}T23:59:59",
+        include_completed=False) or [])
+        if str(getattr(e, "kind", "")) in ("ddl", "task")
+        and str(getattr(e, "id", "")) not in todays]
 
     missing: list[str] = []
     # 完成态（R-099）落地之前，「昨天做完了哪些」这台读不出来——照实说，不拿 event 数量冒充。
@@ -87,6 +104,7 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
         "waking_window": _waking_window(conn, day),
         "classes": _by_kind(events, "class"),
         "deadlines": _by_kind(events, "ddl", "task"),
+        "upcoming_deadlines": upcoming,
         "other_events": _others(events),
         "routine_anchors": anchors,
         "anchors_moved": moved,
@@ -298,6 +316,31 @@ def _expand(value: Any, day: str) -> str:
     return text
 
 
+def _material_index(materials: dict[str, Any]) -> list[tuple[str, str]]:
+    """(名字, 证据串) 表：课名 / 作业标题 / 项目名，每条都指得回材料里那一行。"""
+    out: list[tuple[str, str]] = []
+    for key, label in (("classes", "class"), ("deadlines", "ddl"), ("upcoming_deadlines", "ddl")):
+        for row in materials.get(key) or []:
+            title = str(row.get("title") or "").strip()
+            if title:
+                out.append((title, f"{label}:{row.get('id')}"))
+    for row in materials.get("project_pace") or []:
+        name = str(row.get("name") or "").strip()
+        if name:
+            out.append((name, f"project:{name}"))
+    return out
+
+
+def _match_source(title: str, sources: list[tuple[str, str]]) -> str:
+    """块标题 ↔ 材料那一条。**先全等，有全等就不使用前缀**（裁定 153 那条串课教训的口径）。"""
+    text = (title or "").strip()
+    exact = [ev for name, ev in sources if name == text]
+    if exact:
+        return exact[0]
+    hits = [ev for name, ev in sources if name and name in text]
+    return hits[0] if len(hits) == 1 else ""
+
+
 def _parse_proposal(raw: Any, day: str = "") -> dict[str, Any]:
     """把 L1 交回来的东西归成 ``{"items": [...], "reason": "..."}``。
 
@@ -458,12 +501,16 @@ def blocks_from_l1(
     """
     call = llm_call or default_llm_call()
     try:
+        materials = plan_materials(conn, day)
         proposal = plan_with_llm(day, call, conn=conn, max_replans=max_replans)
     except PlanRejected as rejected:
         return [], "L1 那一轮没排成（" + "；".join(rejected.violations[:3]) + "），今天没有项目块"
     except Exception as exc:  # 通道 / 解析 / 网络：照实说，不降级成均分
         return [], f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}），今天没有项目块"
 
+    # 「每格带证据」：块要指得回材料里哪一条（哪门课的哪份作业 / 哪个项目）。
+    # 对不上也留一句"对不上"，不许空着——空着那一格在面上看起来像排过了，实际没人知道为什么。
+    sources = _material_index(materials)
     blocks: list[dict[str, Any]] = []
     for item in proposal.items:
         span = _span_of(item)
@@ -477,7 +524,9 @@ def blocks_from_l1(
             "kind": "task",
             "conflict_with": [],
             "evidence": {"kind": PROJECT_BLOCK_EVIDENCE_KIND, "planner": "l1",
-                         "reason": proposal.reason},
+                         "reason": proposal.reason,
+                         "source": _match_source(_title(item), sources)
+                                   or "l1:unnamed（材料里对不上任何一条）"},
         })
     if not blocks:
         return [], "L1 交回来的提案里没有任何能落的时间块"
