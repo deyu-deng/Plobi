@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// R-051 — the honest status ledger for the two subsystems R-047 pushed to the
+// R-051 — the honest status ledger for the two subsystems that a since-revoked postponement pushed to the
 // last tier: the aigw quota gateway (:8000) and the chatlog WeChat collector
 // (:5030).
 //
 // Product context: 「先不要做采集的功能了……等应用打磨得比较完整了，我才会提供数据的」
-// (R-047). Their failure at boot is therefore NOT a fault — but reporting them
+// (that ruling was revoked on 2026-09-30 by 裁定 48; the fourth state survives by 裁定 162). Their failure at boot is therefore NOT a fault — but reporting them
 // as *success* is a false state, and this project has already been burned once
 // by documentation that looked like everything ran. The Python side solved the
 // same problem in `scripts/plobi/doctor.py` (commit 4b437be) with a fourth
@@ -86,7 +86,7 @@ export interface DeferredSubsystemDefinition {
 }
 
 export interface DeferredSubsystemRow extends DeferredSubsystemDefinition {
-  /** Ready: what was observed. Deferred: observed cause + R-047 wording. Red: observed cause + fault wording. */
+  /** Ready: what was observed. Deferred: observed cause + the deferral wording. Red: observed cause + fault wording. */
   detail: string
   observed: string
   state: DeferredSubsystemState
@@ -95,14 +95,17 @@ export interface DeferredSubsystemRow extends DeferredSubsystemDefinition {
 
 const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
   aigw: {
-    enableHint: 'Plobi starts this service itself when it is needed — there is nothing to run by hand.',
+    // Byte-equal to the `aigw` entry in doctor.py's DEFERRED_ENABLE_HINTS — a
+    // test pins it, because this is a claim about app behaviour and it must say
+    // the same thing wherever the user reads it.
+    enableHint: 'Plobi 需要时自己起这一条 —— 没有要人手跑的东西',
     id: 'aigw',
     name: { en: 'Local Quota Hub', zh: '本地额度网关' },
     port: 8000
   },
   chatlog: {
     enableHint:
-      'install Go, cd tools/chatlog && go build -o bin/chatlog ./cmd/chatlog, log into WeChat, export CHATLOG_DATA_KEY, then serve on :5030',
+      '把 sidecar 起来监听 :5030（这台上的二进制在 `tools/chatlog/bin/chatlog.exe`；Go 与 `CHATLOG_DATA_KEY` 齐不齐不是这条探针的读数，所以这里不替它担保）',
     id: 'chatlog',
     name: { en: 'chatlog WeChat collector', zh: '微信采集 chatlog' },
     port: 5030
@@ -113,7 +116,7 @@ const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
  * Row ids for per-profile Plobi backends, spawned by `spawnPoolBackend()` in
  * main.ts. They share this ledger (and therefore `red`) with the sidecars, but
  * they are NOT part of `DEFERRED_SUBSYSTEMS`: which profiles get attempted is
- * only known at runtime, and they belong to no R-047 deferral tier.
+ * only known at runtime, and they belong to no deferral tier.
  */
 const PROFILE_BACKEND_ID_PREFIX = 'backend:'
 
@@ -121,17 +124,21 @@ const PROFILE_BACKEND_ID_PREFIX = 'backend:'
 const PROFILE_BACKEND_ENABLE_HINT =
   'Plobi brings this profile backend up itself and backs off between attempts — there is nothing to run by hand.'
 
-/** R-047's wording, kept identical to doctor.py's `deferred_row` detail. */
-const DEFERRED_SUFFIX = 'deferred by R-047 (postponed, not a fault; turns green on its own once live)'
+/**
+ * The deferred wording, kept byte-identical to `DEFERRED_SUFFIX` in
+ * `scripts/plobi/doctor.py` — one 口径, two renderings (tray + boot payload).
+ * It used to cite a ruling number that was revoked on 2026-09-30 — a revoked
+ * number cannot be the reason a row reports gray (裁定 162).
+ */
+const DEFERRED_SUFFIX = 'deferred — 不是坏了：这一档不归「该跑而没跑」那一型，真跑起来自己就变绿。怎么回到绿：'
 
 /**
- * The fault wording for `red`. It deliberately carries NONE of the R-047
- * "postponed, not a fault" sentence — that suffix is precisely what made a real
- * failure read as an intentional deferral, and the byte-drift guard in
- * `deferred-sidecars.test.ts` pins only the `deferred` branch to doctor.py.
- * Wording must stay honest; the byte guard stays where it is.
+ * The fault wording for `red`. It deliberately carries NONE of the deferral
+ * sentence — that wording is precisely what made a real failure read as an
+ * intentional postponement, and `deferred-sidecars.test.ts` pins only the
+ * `deferred` branch to doctor.py byte-for-byte.
  */
-const RED_SUFFIX = 'RED — real fault, not a deferral (it was attempted here and never came up healthy)'
+const RED_SUFFIX = '这一条这台试过，没起来：是坏了，不是后置'
 
 function definitionFor(id: string): DeferredSubsystemDefinition | null {
   return (
@@ -172,7 +179,7 @@ function profileBackendRowId(profile: string): string {
  * The gateway-key reconciliation row (`WP-AIGW-KEY-LITERALS`, 裁定 94 ③: a red has
  * to land on a surface the user actually has, not only in `logs/*.log`). Like a
  * profile backend row it is NOT part of `DEFERRED_SUBSYSTEMS` — that table is the
- * R-047 deferral tier, is mirrored by `doctor.py`'s `DEFERRED_ENABLE_HINTS`, and
+ * deferral tier, is mirrored by `doctor.py`'s `DEFERRED_ENABLE_HINTS`, and
  * this row is neither a sidecar nor a postponement. It has no port either, so it
  * is created by its first observation rather than seeded as `probing`: the check
  * only exists at the moment the shell is about to send a key, and a row that said
@@ -201,7 +208,7 @@ function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null 
  * The restart row (`WP-TRAY-RESTART`). The tray button must report its outcome on a
  * surface the user already has — the boot ledger plus the tray menu are those two
  * renderings — instead of only in `logs/desktop.log` (裁定 94 第二款: 只在日志里可见
- * 不算可见). Like the key row it is neither a sidecar with a port nor an R-047
+ * 不算可见). Like the key row it is neither a sidecar with a port nor a
  * deferral, so it is created by its first observation.
  */
 export const TRAY_RESTART_ROW_ID = 'tray-restart'
@@ -240,17 +247,23 @@ function deferredDetail(row: Omit<DeferredSubsystemRow, 'detail'>): string {
     return row.observed
   }
 
-  const suffix = row.state === 'red' ? RED_SUFFIX : DEFERRED_SUFFIX
+  // The deferred branch renders byte-identically to doctor.py's `deferred_row()`
+  // — the suffix already ends in "怎么回到绿：", so the hint is appended, not
+  // re-labelled. The red branch keeps its own sentence, which doctor does not
+  // share (doctor's red reason names the registry switch; this side cannot read
+  // that table and must not pretend to).
+  const tail =
+    row.state === 'red' ? `${RED_SUFFIX}。怎么回到绿：${row.enableHint}` : `${DEFERRED_SUFFIX}${row.enableHint}`
 
   if (!row.observed) {
-    return `${suffix}. How it comes back: ${row.enableHint}`
+    return tail
   }
 
-  return `${row.observed} — ${suffix}. How it comes back: ${row.enableHint}`
+  return `${row.observed} — ${tail}`
 }
 
 /**
- * Create the ledger. `ids` defaults to the two R-047 subsystems; a row always
+ * Create the ledger. `ids` defaults to the two deferred subsystems; a row always
  * exists for every id so the UI can say "still probing" instead of going
  * silent — silence is what this module exists to remove.
  */

@@ -77,8 +77,8 @@ test('a failed probe downgrades the row but never hides what was observed', () =
   const row = deferredDetail(observation('aigw', 'deferred', 'http://127.0.0.1:8000 unreachable (no listener)'))
 
   assert.match(row, /http:\/\/127\.0\.0\.1:8000 unreachable \(no listener\)/)
-  assert.match(row, /deferred by R-047/)
-  assert.match(row, /How it comes back: /)
+  assert.match(row, /不是坏了/)
+  assert.match(row, /怎么回到绿：/)
 })
 
 test('a ready row reports the observation plainly, with no deferred wording', () => {
@@ -99,7 +99,7 @@ test('a deferred row never reads as success', () => {
 })
 
 test('an unknown subsystem cannot acquire a row', () => {
-  // The ledger covers the R-047 tier only. Anything else is a normal check with
+  // The ledger covers the deferral tier only. Anything else is a normal check with
   // normal red/green semantics and must not get a free "not a fault" pass.
   const ledger = createDeferredSubsystemLedger()
 
@@ -172,16 +172,21 @@ function readDoctorSource(): string {
 
 test('desktop deferred wording matches scripts/plobi/doctor.py exactly', () => {
   const doctorSource = readDoctorSource()
-  const block = /def deferred_row[\s\S]*?detail = \(([\s\S]*?)\)\n/.exec(doctorSource)
+  const suffix = /\nDEFERRED_SUFFIX = "([^"]*)"\n/.exec(doctorSource)
 
-  assert.ok(block, 'doctor.py must still build the deferred detail inside deferred_row()')
+  assert.ok(suffix, 'doctor.py must keep the deferred suffix in one DEFERRED_SUFFIX constant')
+  assert.equal(DEFERRED_SUFFIX, suffix[1], '两侧的下架口吻漂开了 —— 一条口径两种渲染，不许各写一份')
 
-  const doctorDetail = [...block[1].matchAll(/f?"((?:[^"\\]|\\.)*)"/g)].map(match => match[1]).join('')
+  assert.match(
+    doctorSource,
+    /detail = f"\{observed\} — \{DEFERRED_SUFFIX\}\{hint\}"/,
+    'doctor.py must still render the deferred detail as: observed — suffix + hint'
+  )
 
   // Substitute the same values on both sides and compare the rendered strings.
   const observed = 'http://127.0.0.1:8000 unreachable (no listener)'
   const hint = definitionFor('aigw')?.enableHint ?? ''
-  const fromPython = doctorDetail.replace('{observed}', observed).replace('{hint}', hint)
+  const fromPython = `${observed} — ${suffix[1]}${hint}`
   const fromDesktop = deferredDetail(observation('aigw', 'deferred', observed))
 
   assert.equal(fromDesktop, fromPython)
@@ -220,17 +225,17 @@ test('red is a state the ledger can actually hold, and it is worded as a fault',
   assert.ok(row, 'record() must accept red — refusing it is what hid the fault')
   assert.equal(row.state, 'red')
   assert.match(row.detail, /spawned \/bin\/chatlog but :5030 never answered/)
-  assert.match(row.detail, /RED/)
+  assert.match(row.detail, /是坏了，不是后置/)
   // The "how it comes back" line stays in the detail for every non-ready row.
-  assert.match(row.detail, /How it comes back: /)
-  assert.ok(!row.detail.includes(DEFERRED_SUFFIX), 'a real fault must never read as "postponed, not a fault"')
+  assert.match(row.detail, /怎么回到绿：/)
+  assert.ok(!row.detail.includes(DEFERRED_SUFFIX), 'a real fault must never read as a deferral')
 })
 
 test('a red row with no recorded observation still says it is a fault', () => {
   const red = deferredDetail({ ...observation('aigw', 'ready', ''), observed: '', state: 'red' })
 
-  assert.match(red, /RED/)
-  assert.match(red, /How it comes back: /)
+  assert.match(red, /是坏了，不是后置/)
+  assert.match(red, /怎么回到绿：/)
   assert.ok(!red.includes(DEFERRED_SUFFIX))
 })
 
@@ -511,7 +516,7 @@ test('clear() only reports a real change, so a healthy backend stays silent', ()
 test('the quota hub enable hint is a statement, not a command the user is handed', () => {
   const hint = definitionFor('aigw')?.enableHint ?? ''
 
-  assert.match(hint, /Plobi starts this service itself/)
+  assert.match(hint, /Plobi 需要时自己起这一条/)
   assert.ok(!/cd |uv run|python -m|\$ /.test(hint), 'a runnable-looking line is what made this read as TODO')
   assert.ok(!/aigw/.test(hint), '裁定 45: the internal word must not reach user-visible copy')
 })
