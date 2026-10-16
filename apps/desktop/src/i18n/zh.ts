@@ -1675,6 +1675,11 @@ export const zh: Translations = {
     dismiss: '忽略',
     confirmed: '已确认',
     dismissed: '已忽略该改动',
+    complete: '做完了',
+    uncomplete: '撤销完成',
+    acked: '已记下这条做完了，今晚不会再排它',
+    unacked: '撤销了「做完」，它会回到还会被排的池子里',
+    donePill: '已完成',
     deleted: '已删除',
     actionFailed: '日程操作失败',
     statuses: {

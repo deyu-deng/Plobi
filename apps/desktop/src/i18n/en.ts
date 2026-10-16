@@ -1502,6 +1502,11 @@ export const en: Translations = {
     dismiss: 'Dismiss',
     confirmed: 'Entry confirmed',
     dismissed: 'Change dismissed',
+    complete: 'Mark done',
+    uncomplete: 'Undo done',
+    acked: 'Marked done — the evening plan will not schedule it again',
+    unacked: 'Undone — it goes back into the pool that still gets scheduled',
+    donePill: 'Done',
     deleted: 'Entry deleted',
     actionFailed: 'Agenda action failed',
     statuses: {

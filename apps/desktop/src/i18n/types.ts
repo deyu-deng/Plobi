@@ -1295,6 +1295,11 @@ export interface Translations {
     dismiss: string
     confirmed: string
     dismissed: string
+    complete: string
+    uncomplete: string
+    acked: string
+    unacked: string
+    donePill: string
     deleted: string
     actionFailed: string
     statuses: Record<string, string>

@@ -482,6 +482,27 @@ class AgendaService:
             )
         return updated
 
+    def set_completed(self, event_id: str, completed: bool = True) -> Event:
+        """承认这条做完了（或撤销承认）——WP-PLAN-COMPLETION-ACK 的面上那一下。
+
+        完成态只存在事件上，不复制进 ``plan_items``：每晚重排会对当天那一份
+        ``replace_plan_items`` 先删再插，把"做完了"写在会被它本该拦住的那次重排
+        抹掉的表里，等于第二天又排一遍。撤销清回 None，不删行、不动历史。
+        """
+        with self._conn() as conn:
+            current = store.get_event(conn, event_id)
+            if current is None:
+                raise EventNotFound(event_id)
+            updated = store.mark_event_completed(conn, event_id, completed=completed)
+            store.log_action(
+                conn,
+                event_id=event_id,
+                action="complete" if completed else "uncomplete",
+                event_source=current.source,
+            )
+        assert updated is not None
+        return updated
+
     # --- daily plan decisions (same machine as events; events stay put) -----
 
     def confirm_plan(self, plan_id: str) -> DailyPlan:
