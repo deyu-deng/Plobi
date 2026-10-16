@@ -108,6 +108,11 @@ def build_prompt(materials: dict[str, Any], *, extra: Optional[Sequence[str]] = 
         "3) **相邻两项之间只够一次步行通勤的那种间隔，不许再写一条通勤占掉它**"
         "——那种空档本来就是留给走路的，写成条目等于把它吃掉。",
         "4) 排完必须交一句**为什么这么排**（`reason`）。没有这句的提案算不合格。",
+        "",
+        "**只交一个 JSON 对象，别的字都别加**（不要前言、不要解释、不要 markdown 围栏之外的话）：",
+        '{"items": [{"title": "…", "start_at": "YYYY-MM-DDTHH:MM:SS", '
+        '"end_at": "YYYY-MM-DDTHH:MM:SS"}], "reason": "为什么这么排"}',
+        "键名就叫 `items` / `start_at` / `end_at` / `reason`；时间必须是完整 ISO（带日期）。",
         "材料如下（缺的照实缺，别编）：",
         json.dumps(materials, ensure_ascii=False, default=str),
     ]
@@ -211,7 +216,7 @@ def plan_with_llm(
         prompt = build_prompt(materials)
         seen: list[str] = []
         for attempt in range(1, max_replans + 2):
-            parsed = _parse_proposal(llm_call(prompt))
+            parsed = _parse_proposal(llm_call(prompt), day)
             proposal = parsed["items"]
             problems = validate_proposal(proposal, anchors=anchors, waking=waking)
             if not parsed["reason"]:
@@ -234,22 +239,77 @@ def plan_with_llm(
 # 小工具（时间解析只在这一处）
 # --------------------------------------------------------------------------- #
 
-def _parse_proposal(raw: Any) -> dict[str, Any]:
+def _extract_json(text: str) -> Any:
+    """从"一句人话 + ```json 围栏"那种回包里把 JSON 对象抠出来。
+
+    现核真回包（2026-10-16 那一发）就是这个形状：先一句「好的，按规则排完…」再一段围栏，
+    直接 `json.loads(整串)` 必然 `Expecting value: line 1 column 1`。
+    取第一个 `{` 到与之配对的最后一个 `}`，剥掉围栏标记。
+    """
+    body = text
+    if "```" in body:
+        parts = body.split("```")
+        for part in parts[1:]:
+            candidate = part[4:] if part.lstrip().lower().startswith("json") else part
+            if "{" in candidate:
+                body = candidate
+                break
+    start = body.find("{")
+    end = body.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("回包里找不到 JSON 对象")
+    import json
+
+    return json.loads(body[start:end + 1])
+
+
+def _normalize_items(rows: Any, day: str) -> list[dict[str, Any]]:
+    """把模型爱用的别名形状收成契约形状（`title` / `start_at` / `end_at`）。
+
+    现核那一发交的是 `schedule` + `time` + `end`（裸 `HH:MM`）。**这不是迁就**：
+    键名同义是模型行为的常态，而"排得很好却被扔掉"是我们这边的损失；
+    真源与边界仍然按契约校验，认不出来的字段一律不当成读数。
+    """
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        item = dict(row)
+        title = item.get("title") or item.get("name") or item.get("activity")
+        start = item.get("start_at") or item.get("start") or item.get("time") or item.get("from")
+        end = item.get("end_at") or item.get("end") or item.get("to")
+        if not title or not start:
+            continue
+        item["title"] = str(title)
+        item["start_at"] = _expand(start, day)
+        item["end_at"] = _expand(end, day) if end else item["start_at"]
+        out.append(item)
+    return out
+
+
+def _expand(value: Any, day: str) -> str:
+    """裸 `HH:MM:SS` / `HH:MM` 补成当天完整 ISO；已经是 ISO 的原样走。"""
+    text = str(value).strip()
+    if len(text) <= 8 and ":" in text:
+        return f"{day}T{text if len(text) == 8 else text + ':00'}"
+    return text
+
+
+def _parse_proposal(raw: Any, day: str = "") -> dict[str, Any]:
     """把 L1 交回来的东西归成 ``{"items": [...], "reason": "..."}``。
 
     字符串（模型常这么回）先 JSON 解析；解析不动就抛出去让调用方点名，
     不猜一版空计划当答案。
     """
     if isinstance(raw, str):
-        import json
-
-        raw = json.loads(raw)
+        raw = _extract_json(raw)
     if isinstance(raw, dict):
-        items = raw.get("items") or raw.get("plan") or []
-        reason = str(raw.get("reason") or raw.get("why") or "").strip()
+        items = raw.get("items") or raw.get("plan") or raw.get("schedule") or []
+        reason = str(raw.get("reason") or raw.get("why") or raw.get("note") or "").strip()
     else:
         items, reason = list(raw or []), ""
-    return {"items": [dict(item) for item in items if isinstance(item, dict)], "reason": reason}
+    day = day or str(items[0].get("start_at", ""))[:10] if items else ""
+    return {"items": _normalize_items(items, day), "reason": reason}
 
 
 def _span_of(row: dict[str, Any]) -> Optional[tuple[datetime, datetime]]:
@@ -366,18 +426,12 @@ def default_llm_call(route: Any = None) -> Callable[[str], Any]:
 
     completer = QuotaAwareCompleter()
 
-    def call(prompt: str) -> dict:
-        import json
-
+    def call(prompt: str) -> str:
         text = completer(prompt, route)
         if not text:
             raise RuntimeError("排程那一发没拿到回答（额度路空返回）")
-        stripped = str(text).strip()
-        if stripped.startswith("```"):
-            stripped = stripped.strip("`")
-            if stripped.lower().startswith("json"):
-                stripped = stripped[4:]
-        return json.loads(stripped.strip())
+        # 原样把字符串交出去：抠 JSON 这件事只在 `_extract_json` 一处做（裁定 94）。
+        return str(text)
 
     return call
 
