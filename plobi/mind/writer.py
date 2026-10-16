@@ -26,6 +26,7 @@ from .paths import (
     real_target,
     require_root,
     resolve_root,
+    resolve_roots,
     safe_target,
 )
 
@@ -161,6 +162,81 @@ class MindWriter:
         return git_toplevel(root)
 
     def _commit(self, root: Path, paths: list[str]) -> tuple[bool, str]:
+        """Commit each written file into the repository that actually owns it.
+
+        Since the two-root split a logical ``Vault/…`` file lives under ``VAULT_ROOT``
+        — a different repository than the brain — so ``git add Vault/…`` run inside
+        ``MIND_ROOT`` matched nothing and every AI write stayed untracked
+        (``WP-MIND-LIVE``, found live on 2026-10-16). Group by the file's own
+        top-level and hand git a path relative to *that* repo.
+        """
+        roots = resolve_roots(root)
+        groups: dict[Path, list[str]] = {}
+        orphans: list[str] = []
+        for logical in paths:
+            physical = real_target(logical, roots)
+            repo = self._owned_repo(physical.parent, roots)
+            if repo is None:
+                orphans.append(logical)
+                continue
+            try:
+                inner = physical.resolve().relative_to(repo.resolve())
+            except OSError as exc:
+                logger.warning("mind: cannot relativise %s: %s", physical, exc)
+                orphans.append(logical)
+                continue
+            groups.setdefault(repo, []).append(inner.as_posix())
+
+        details: list[str] = []
+        ok = True
+        for repo, inner_paths in groups.items():
+            repo_ok, repo_detail = self._commit_into(repo, inner_paths)
+            ok = ok and repo_ok
+            details.append(f"{repo.name}: {repo_detail}")
+        if orphans:
+            details.append(
+                "commit skipped: "
+                + ", ".join(orphans)
+                + " 不在脑自己的仓里（MIND_ROOT/VAULT_ROOT 之外）"
+            )
+        if len(details) == 1 and not orphans:
+            # One repo owned the whole batch: say exactly what that repo said.
+            return ok, details[0].split(": ", 1)[1]
+        return ok, " · ".join(details) if details else "nothing to commit"
+
+    def _owned_repo(self, directory: Path, roots) -> Optional[Path]:
+        """The brain repository owning ``directory``, or ``None`` to refuse.
+
+        Two refusals, both load-bearing: no repository at all, and a repository that
+        merely *encloses* the brain (the shape that grew ``chore(plobi)`` commits into
+        the product checkout — 裁定 72).
+        """
+        toplevel = self._git_toplevel(directory)
+        if toplevel is None:
+            logger.warning("mind: commit skipped: %s is not a git repository", directory)
+            return None
+        try:
+            resolved_toplevel = Path(toplevel).resolve()
+        except OSError as exc:
+            logger.warning("mind: commit skipped: cannot resolve %s: %s", toplevel, exc)
+            return None
+        for candidate in (roots.mind, roots.vault):
+            if candidate is None:
+                continue
+            try:
+                same = resolved_toplevel == candidate.resolve()
+            except OSError:
+                same = False
+            if same:
+                return candidate
+        logger.warning(
+            "mind: commit skipped: %s is not a brain top-level (enclosing repo: %s)",
+            directory,
+            toplevel,
+        )
+        return None
+
+    def _commit_into(self, root: Path, paths: list[str]) -> tuple[bool, str]:
         # Guard: only commit when ``root`` is itself the git top-level. If it is
         # merely nested inside an enclosing repo (e.g. a pytest basetemp under
         # the product checkout), committing would leak test output into that

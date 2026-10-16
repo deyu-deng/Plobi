@@ -342,11 +342,19 @@ def _get_active_memory_provider() -> Optional[str]:
     Returns the provider name (e.g. ``"honcho"``) or None if no
     external provider is configured.  Lightweight — only reads config,
     no plugin loading.
+
+    The absent-key case is decided by :func:`agent.memory_manager.resolve_memory_provider_name`
+    — the official brain is the default, so ``plobi mind`` exists for the installs
+    that never wrote a ``provider`` key.  Re-deciding it here is how a surface ends
+    up not knowing the official provider at all; an explicit empty string still means
+    off.
     """
     try:
         from plobi_cli.config import load_config
         config = load_config()
-        return cfg_get(config, "memory", "provider") or None
+        from agent.memory_manager import resolve_memory_provider_name
+
+        return resolve_memory_provider_name(cfg_get(config, "memory", "provider")) or None
     except Exception:
         return None
 

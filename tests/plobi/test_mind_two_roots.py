@@ -32,6 +32,12 @@ from plobi.mind.paths import (
 VAULT_LOGICAL = "Vault/notes"
 MIND_LOGICAL = "Loom/wiki/concepts"
 
+# ``tests/conftest.py`` swaps MindWriter._commit for a stub on every test; the commit
+# leg is exactly what the split-layout assertions below need to see unstubbed.
+from plobi.mind.writer import MindWriter as _PristineMindWriter  # noqa: E402
+
+_REAL_MIND_COMMIT = _PristineMindWriter._commit
+
 
 @pytest.fixture()
 def mind(tmp_path):
@@ -262,3 +268,66 @@ def test_the_seeder_reads_trees_from_every_category_folder(
     entry = next(e for e in reg.entries() if e.mind_subtree.endswith("Wealth-Lab"))
     assert entry.mind_subtree == "Vault/research/Wealth-Lab"
     assert entry.category == "research"
+
+
+def _git(repo: Path, *args: str) -> str:
+    import subprocess
+
+    completed = subprocess.run(
+        ["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    return completed.stdout
+
+
+def _init_repo(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    _git(root, "init")
+    _git(root, "config", "user.email", "tests@plobi.local")
+    _git(root, "config", "user.name", "Plobi Tests")
+    (root / "README.md").write_text("# seed\n", encoding="utf-8")
+    _git(root, "add", "README.md")
+    _git(root, "commit", "-m", "seed")
+    return root
+
+
+def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
+    tmp_path, monkeypatch
+):
+    """The commit leg must follow the file, not the logical name.
+
+    Before this the writer ran ``git add Vault/notes/x.md`` with ``cwd=MIND_ROOT``.
+    After the split that path exists only in ``VAULT_ROOT``, so git matched nothing,
+    the leg reported ``commit skipped`` — and every AI write sat untracked forever,
+    which in turn froze ``sync_mind.py`` on its "dirty ⇒ skip both legs" rule.
+    """
+    from plobi.mind.writer import MindWriter, WriteRequest
+
+    monkeypatch.setattr(MindWriter, "_commit", _REAL_MIND_COMMIT)
+    mind = _init_repo(tmp_path / "mind")
+    vault = _init_repo(tmp_path / "vault")
+    monkeypatch.setenv("MIND_ROOT", str(mind))
+    monkeypatch.setenv("VAULT_ROOT", str(vault))
+
+    result = MindWriter(mind, commit=True, run_verifier=False).write(
+        [
+            WriteRequest("Vault/notes/ch01.md", "# note\n"),
+            WriteRequest("Loom/wiki/concepts/srtp.md", "# concept\n"),
+        ]
+    )
+
+    assert result.ok, result.detail
+    assert "commit skipped" not in result.detail, result.detail
+
+    vault_files = _git(vault, "show", "--name-only", "--pretty=format:")
+    mind_files = _git(mind, "show", "--name-only", "--pretty=format:")
+    assert "notes/ch01.md" in vault_files, (
+        f"detail={result.detail} | vault={vault_files} | "
+        f"vault_log={_git(vault, 'log', '--oneline')} | "
+        f"vault_status={_git(vault, 'status', '--porcelain')} | "
+        f"on_disk={(vault / 'notes' / 'ch01.md').is_file()}"
+    )
+    assert "Vault/notes/ch01.md" not in vault_files, vault_files
+    assert "wiki/concepts/srtp.md" in mind_files, mind_files
+    assert _git(vault, "status", "--porcelain").strip() == ""
+    assert _git(mind, "status", "--porcelain").strip() == ""

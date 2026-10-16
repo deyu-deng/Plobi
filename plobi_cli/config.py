@@ -2201,11 +2201,14 @@ DEFAULT_CONFIG = {
         "write_approval": False,
         "memory_char_limit": 2200,   # ~800 tokens at 2.75 chars/token
         "user_char_limit": 1375,     # ~500 tokens at 2.75 chars/token
-        # External memory provider plugin (empty = built-in only).
-        # Set to a provider name to activate: "openviking", "mem0",
-        # "hindsight", "holographic", "retaindb", "byterover".
+        # External memory provider — three states, and the shipped default is the
+        # official brain: absent/``"mind"`` -> the body's own Mind; ``""`` -> built-in
+        # only (an explicit opt-out, still honoured); any other name -> that provider.
         # Only ONE external provider is allowed at a time.
-        "provider": "",
+        # This value must NOT be "": ``resolve_memory_provider_name`` reads the merged
+        # config, so an empty default would make every install look like an opt-out
+        # (that is how "Mind is the official memory surface" stayed hollow in production).
+        "provider": "mind",
     },
 
     # Subagent delegation — override the provider:model used by delegate_task
