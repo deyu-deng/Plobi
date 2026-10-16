@@ -12,8 +12,20 @@ import type { Agent } from '@/app/console/types'
  */
 export type AgentCategory = string
 
-/** Preferred order for the long-standing columns. Not a whitelist. */
-export const AGENT_CATEGORY_PREFERENCE: readonly AgentCategory[] = ['projects', 'butler', 'events', 'research']
+/**
+ * Preferred order for the long-standing columns. Not a whitelist.
+ *
+ * WP-AGENT-CREATE-UPGRADE（用户 10-16）：`courses` 进这里——后端
+ * `AGENT_CATEGORIES` 一直有它（裁定 121 二），但创建对话框的选项表用的是这份
+ * 偏好顺序，缺了就「选不中」（用户原话「Courses Agent 甚至不可以选中」）。
+ */
+export const AGENT_CATEGORY_PREFERENCE: readonly AgentCategory[] = [
+  'projects',
+  'courses',
+  'butler',
+  'events',
+  'research'
+]
 
 /**
  * Empty / missing folds into `butler` — legacy rows predate R-012 and are

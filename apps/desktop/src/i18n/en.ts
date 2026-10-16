@@ -1609,11 +1609,35 @@ export const en: Translations = {
     offloadsSessionId: 'external session',
     newAgent: 'New agent',
     newAgentLabel: 'New agent',
+    // WP-AGENT-CREATE-UPGRADE (user 10-16): one line at the top of the dialog
+    // saying what an agent actually is — it used to be a bare title.
+    newAgentDesc:
+      'An agent is a member of your team: it owns one kind of work and remembers your preferences over time. Create it and you can call on it by name in the left rail.',
     newAgentCategoryLabel: 'Category',
+    newAgentCategoryHelp: {
+      projects: 'Project: has its own work folder and drives one concrete thing forward.',
+      courses: 'Course: owns one course — its homework, timetable and materials folder.',
+      butler: 'Butler: housekeeping, no folder bound.',
+      events: 'Event: grows out of a schedule item (not directly creatable yet).',
+      research: 'Research: has its own materials folder, looks things up and writes.'
+    },
     newAgentFolderLabel: 'Workspace folder',
     newAgentFolderPlaceholder: 'No folder selected yet',
     newAgentFolderPick: 'Choose folder',
+    // WP-AGENT-CREATE-UPGRADE (user 10-16): multiple folders per agent.
+    newAgentFoldersLabel: 'Work folders (multiple allowed)',
+    newAgentFolderAdd: 'Add',
+    newAgentFolderRemove: 'Remove',
+    newAgentFolderPrimary: 'Main',
+    newAgentFolderPrimaryHint:
+      'The first one is the main folder: the agent’s terminal starts there.',
     createEventAgentHint: 'Event agents must be created from the schedule (coming later).',
+    // WP-AGENT-CREATE-UPGRADE (user 10-16): icon & color, back from the old base.
+    newAgentAppearanceLabel: 'Icon & color',
+    newAgentAppearanceHint: 'Optional — by default the color follows the name.',
+    newAgentIconLabel: 'Icon',
+    newAgentColorLabel: 'Color',
+    newAgentAppearanceClear: 'Back to default',
     chiefSecretary: 'Chief secretary',
     backToSecretary: 'Back to chief secretary',
     mainlineSession: 'Main thread',
