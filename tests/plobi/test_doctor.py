@@ -728,3 +728,37 @@ def test_subscription_row_never_reds_when_the_probe_itself_fails(monkeypatch, tm
     row = D.check_subscription_desktop_store()
     assert row["color"] == D.YELLOW and row["color"] != D.RED, row
     assert "探不动" in row["detail"], row["detail"]
+def test_check_mind_sync_reports_the_last_run_and_its_colour(tmp_path):
+    """面上那一行：最近一次同步的成功/失败与时刻，且颜色分寸不能反过来。
+
+    缺留痕 = 黄（任务刚排上、或这台此刻出不去，都不是故障）；最后一次 exit≠0 = 红
+    （那正是"不可替代的那份悄悄没离开这台机器"的情形）。
+    """
+    doctor = _load()
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    log = logs / "mind-sync.log"
+
+    missing = doctor.check_mind_sync(tmp_path.parent / "no-such-home")
+    assert missing["color"] == doctor.YELLOW and "没有同步留痕" in missing["detail"]
+
+    log.write_text(
+        "[2026-10-16 07:27:45] done: ahead=0 behind=0 branch=main dirty=no\n"
+        "[2026-10-16 07:27:45] exit=0 elapsed=4.1s\n", encoding="utf-8")
+    ok = doctor.check_mind_sync(tmp_path)
+    assert ok["color"] == doctor.GREEN and "2026-10-16 07:27:45" in ok["detail"]
+    assert "exit=0" in ok["detail"] and "ahead=0 behind=0" in ok["detail"]
+
+    log.write_text(
+        "[2026-10-15 14:07:18] FAIL 30: fetch 没成（main）：Recv failure: Connection was reset\n"
+        "[2026-10-15 14:07:18] exit=30 elapsed=21.4s\n", encoding="utf-8")
+    bad = doctor.check_mind_sync(tmp_path)
+    assert bad["color"] == doctor.RED and "网络/git 失败" in bad["detail"]
+
+    # 23 = 两条腿都没动（工作树脏），对用户也是一次"没同步"，不能涂绿
+    log.write_text("[2026-10-16 07:27:45] exit=23 elapsed=1.0s\n", encoding="utf-8")
+    assert doctor.check_mind_sync(tmp_path)["color"] == doctor.RED
+
+    # 挂进汇总才算"面上有一行"。源码级断言：跑 run_checks() 会真去摸网络，测试不该为此花一次端口
+    src = (REPO / "scripts" / "plobi" / "doctor.py").read_text(encoding="utf-8", errors="replace")
+    assert "check_mind_sync()," in src, "没挂进 run_checks ⇒ 面上其实没有这一行"

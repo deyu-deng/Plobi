@@ -1340,6 +1340,57 @@ def send_dingtalk_test() -> dict[str, Any]:
     }
 
 
+def check_mind_sync(home: Path | None = None) -> dict[str, Any]:
+    """One line on the surface: did the brain get pushed/pulled, when, and how did it end.
+
+    Why this row exists: 定时推拉 whose result nobody can see is not a backup, it is a
+    hope. Colour discipline matters — a missing trail is YELLOW (the task may be freshly
+    registered, or this machine has no route to GitHub right now, which is not a fault),
+    while a last run that did not exit 0 is RED, because that is the case where the
+    irreplaceable copy is quietly not leaving the box.
+    """
+    root = home or plobi_home()
+    log = root / "logs" / "mind-sync.log"
+    if not log.is_file():
+        return {
+            "id": "mind_sync",
+            "color": YELLOW,
+            "detail": f"没有同步留痕（期望 {log}）；任务侧读法见 runbooks/environment.md",
+        }
+    try:
+        lines = [ln for ln in log.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    except OSError as exc:
+        return {"id": "mind_sync", "color": RED, "detail": f"读不了 {log}: {exc}"}
+
+    stamp, exit_code, summary = "", None, ""
+    for line in reversed(lines):
+        head, sep, body = line.partition("] ")
+        if not sep:
+            continue
+        body = body.strip()
+        if exit_code is None and body.startswith("exit="):
+            stamp = head.lstrip("[").strip()
+            try:
+                exit_code = int(body.split()[0].split("=", 1)[1])
+            except ValueError:
+                exit_code = None
+        if not summary and (body.startswith(("done:", "FAIL", "REFUSE", "SKIP"))):
+            summary = body
+        if exit_code is not None and summary:
+            break
+    if exit_code is None:
+        return {"id": "mind_sync", "color": YELLOW,
+                "detail": f"{log.name} 里还没有带退出码的收尾（最后一行：{lines[-1][:60]}）"}
+    label = {20: "分叉等人判", 21: "MIND_ROOT 不是脑仓自己", 22: "分支无 upstream",
+             23: "工作树脏，两条腿都没动", 30: "网络/git 失败"}.get(exit_code, f"退出码 {exit_code}")
+    detail = f"上次 {stamp or '?'} exit={exit_code}"
+    if exit_code:
+        detail += f"（{label}）"
+    if summary:
+        detail += f" · {summary[:96]}"
+    return {"id": "mind_sync", "color": GREEN if exit_code == 0 else RED, "detail": detail}
+
+
 def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
     apply_env_files()
     rows = [
@@ -1353,6 +1404,7 @@ def run_checks(*, send_test: bool = False) -> list[dict[str, Any]]:
         check_l1_secretary_form(),
         check_chatlog_config(),
         check_chatlog_whitelist_efficiency(),
+        check_mind_sync(),
     ]
     if send_test:
         rows.append(send_dingtalk_test())
