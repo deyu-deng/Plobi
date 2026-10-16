@@ -1568,6 +1568,11 @@ export const en: Translations = {
       courses: 'Courses'
     },
     agentsTitle: 'Agents',
+    enteringAgent: name => `Entering ${name || 'this agent'}…`,
+    agentEnterNoOverview: 'This agent did not answer the backend: its overview request failed (not “busy”, not “no sessions”).',
+    agentEnterSpawnFailed: 'Its backend did not come up: ',
+    agentEnterBindFailed: 'It came up, but the conversation channel never bound: ',
+    agentEnterNeutral: 'Switching workspace…',
     agentsLoading: 'Loading agents',
     agentsLoadFailed: 'Could not load agents',
     agentsEmptyTitle: 'No agents yet',
