@@ -722,7 +722,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
     # R-012: category required + validated.
     raw_category = body.get("category")
     if raw_category is None or not str(raw_category).strip():
-        return _error(400, "category is required (projects/butler/events/research)")
+        return _error(400, f"category is required ({'/'.join(AGENT_CATEGORIES)})")
     category = str(raw_category).strip().lower()
     if category not in AGENT_CATEGORIES:
         return _error(

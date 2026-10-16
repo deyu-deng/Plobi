@@ -16,7 +16,14 @@ import { cn } from '@/lib/utils'
 import { $attentionSessionIds } from '@/store/session'
 import { canOpenSessionWindow, openSessionInNewWindow } from '@/store/windows'
 
-import { SidebarRowBody, SidebarRowGrab, SidebarRowLabel, SidebarRowLead, SidebarRowShell } from './chrome'
+import {
+  SIDEBAR_ROW_DOT_SIZE,
+  SidebarRowBody,
+  SidebarRowGrab,
+  SidebarRowLabel,
+  SidebarRowLead,
+  SidebarRowShell
+} from './chrome'
 import { SessionActionsMenu, SessionContextMenu } from './session-actions-menu'
 
 interface SidebarSessionRowProps extends React.ComponentProps<'div'> {
@@ -259,7 +266,7 @@ function SidebarRowDot({
     return (
       <span
         aria-label={r.needsInput}
-        className={cn('quest-glow relative size-1.5 rounded-full bg-amber-500', className)}
+        className={cn('quest-glow relative rounded-full bg-amber-500', SIDEBAR_ROW_DOT_SIZE, className)}
         role="status"
         title={r.waitingForAnswer}
       />
@@ -271,9 +278,10 @@ function SidebarRowDot({
       aria-label={isWorking ? r.sessionRunning : undefined}
       className={cn(
         'rounded-full',
+        SIDEBAR_ROW_DOT_SIZE,
         isWorking
-          ? "relative size-1.5 bg-(--ui-accent) shadow-[0_0_0.625rem_color-mix(in_srgb,var(--ui-accent)_55%,transparent)] before:absolute before:inset-0 before:animate-ping before:rounded-full before:bg-(--ui-accent) before:opacity-70 before:content-['']"
-          : 'size-1 bg-(--ui-text-quaternary) opacity-80',
+          ? "relative bg-(--ui-accent) shadow-[0_0_0.625rem_color-mix(in_srgb,var(--ui-accent)_55%,transparent)] before:absolute before:inset-0 before:animate-ping before:rounded-full before:bg-(--ui-accent) before:opacity-70 before:content-['']"
+          : 'bg-(--ui-text-quaternary) opacity-80',
         className
       )}
       role={isWorking ? 'status' : undefined}
