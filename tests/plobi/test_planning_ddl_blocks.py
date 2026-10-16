@@ -275,11 +275,29 @@ class TestCoursesCategoryIsRosterData:
             "我明判的那一格：课程条目不在脑仓 Vault/projects/ 立项（那是另一个仓、要单独动作）"
         )
 
-    def test_courses_has_no_default_folder_binding_on_either_platform(self) -> None:
-        from plobi.agents.registry import build_default_project_paths
+    def test_courses_binding_is_per_entry_not_a_shared_default(self) -> None:
+        """裁定 153 改判之后这一格该说什么：课程**不再是「无绑定类别」**，但绑定是**条目级**的。
 
-        assert build_default_project_paths(is_windows=True)["courses"] == ""
-        assert build_default_project_paths(is_windows=False, home="/tmp/whatever")["courses"] == ""
+        ⚠️ 这一笔只把断言对齐到**现行落码**，没有裁定两平台该一致这件事——
+        `plobi/agents/registry.py` 里 `fe97e046` 自己写的注释是「courses 不进分类默认表
+        （`_WINDOWS_DEFAULT_PROJECT_PATHS` 的 courses 格保持空）——没有品类级默认这一说」，
+        而 POSIX 那一支因为 `_POSIX_CATEGORY_DIRNAME.get(category, category)` 的默认值
+        **落到了 `<home>/Projects/courses`**（不是决定，是 fall-through）。
+        两平台现在一个给默认一个不给 ⇒ **要哪一边请点一下**：要么两张表都消掉这个默认
+        （改 registry.py，不在本格认领列里），要么把 Windows 那格也补上。
+        本格的判据只是"套件全绿 + 别拿旧政策当现行"，所以钉的是**能观察到的形状**，
+        并留下这条注释——红翻绿不等于分歧消掉了。
+        """
+        from plobi.agents.registry import UNBOUND_CATEGORIES, build_default_project_paths
+
+        assert "courses" not in UNBOUND_CATEGORIES, "153 改判：课程可以有本地绑定路径了"
+        assert build_default_project_paths(is_windows=True)["courses"] == "", \
+            "Windows 那张表里 courses 仍是空格（条目自己的 project_path 永远优先）"
+        posix = build_default_project_paths(is_windows=False, home="/home/someone")
+        assert "courses" in posix, "这一格必须在读数里出现，不许静默省略"
+        # 上一条注释里那处分歧**故意不钉值**：钉成 `== ""` 就是把 Windows 那格的政策
+        # 强加给 POSIX，钉成 `== <home>/Projects/courses` 就是给一个 fall-through 盖章。
+        # 等两平台一致了再钉值——现在钉哪一种都是在替裁定做决定。
 
     def test_a_course_entry_makes_next_ddl_non_none(self, bare_registry, db_path, conn) -> None:
         """用户那句「把课程放进去」之后的效果：项目名只在 evidence 里也挂得上。"""
