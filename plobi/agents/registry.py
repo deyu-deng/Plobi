@@ -1984,11 +1984,16 @@ PROJECT_SKIP_STATUS_MARKERS: tuple[str, ...] = (
 # WP-L1-AGENDA-MUTATE: conversational write intents. Reading (refresh /
 # briefing) may hit chatlog; writing MUST NOT touch chatlog and must work
 # even when collection is dead.
-MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching")
+MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching", "move_block")
 # WP-SECRETARY-MOUTH: cancel_matching is the only bulk-delete the L1 is
 # allowed to issue ("这期完了 / 这门课后面都不用去了"). Each source is gated
 # individually — only sources the secretary has a write path for can be
 # cancelled here, and never in 200 delete round-trips.
+#
+# R-105 / WP-PLAN-CHAT-ADJUST: ``move_block`` is the fifth **action**, not an
+# eighth **intent** — 裁定 51 冻结的是七个 intent，嘴还是那张嘴。它改的是
+# ``plan_items``（L1 排出来的那块），不是 ``events``；走
+# :mod:`plobi.agenda.plan_edits`，与排程过同一道边界闸。
 CANCEL_MATCHING_SOURCES: tuple[str, ...] = ("timetable",)
 MUTATE_KINDS = ("meeting", "task", "ddl", "class")
 
@@ -2328,6 +2333,86 @@ def _run_cancel_matching(
     return payload
 
 
+# ── R-105 / WP-PLAN-CHAT-ADJUST: 对话里改**计划里那一块** ──────────────────
+
+#: 「谁改的」这一格写什么。真下令的是用户，落笔的是这张嘴——两个都留（判据②）。
+PLAN_BLOCK_EDITOR = "l1:secretary"
+
+
+def _run_move_block(
+    user_text: str,
+    *,
+    db_path,
+    title: str | None,
+    event_id: str | None,
+    start_at: str,
+    end_at: str | None,
+) -> dict:
+    """把 L1 排出来的那一块挪到新钟点，**其余块一个字节不动**（R-105 判据①②）。
+
+    指哪一块：``event_id`` 或 ``title``，也允许给那块**现在的起始 HH:MM**
+    （query_agenda 回过 plan_items，L1 手上有这些）；对不上或对上两块 ⇒ 一句人话问回去，
+    不替用户猜。新结束时间不给 ⇒ 保留这块原来的时长，不编。
+
+    过闸与排程共用 :func:`plobi.agenda.llm_planning.validate_proposal`：挤掉作息、
+    同一时段双订、越出清醒窗 ⇒ **零写入** + 一句人话（判据③，假成功比失败难查）。
+    """
+    from plobi.agenda import plan_edits, store
+
+    ref = (event_id or title or "").strip()
+    day = str(start_at)[:10]
+    conn = None
+    try:
+        conn = store.connect(db_path)
+        result = plan_edits.move_plan_item(
+            conn,
+            day,
+            ref=ref,
+            to_start=start_at,
+            to_end=end_at,
+            by=PLAN_BLOCK_EDITOR,
+            reason=user_text,
+        )
+    except Exception as exc:  # 读不到库 / 校验器炸了都不许回一句"改好了"
+        logger.warning("plobi: move_block failed for %s: %s", day, exc)
+        return _mutate_error(
+            f"这块我没挪成（{type(exc).__name__}: {str(exc)[:120]}）。原计划一个字没改。",
+            action="move_block",
+            user_text=user_text,
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if not result.get("ok"):
+        return _mutate_error(
+            str(result.get("reason") or "这块挪不动"),
+            action="move_block",
+            for_date=day,
+            violations=result.get("violations"),
+            user_text=user_text,
+        )
+
+    changed = result["changed"]
+    others = max(int(result.get("item_count", 1)) - 1, 0)
+    payload: dict = {
+        "ok": True,
+        "intent": "mutate_agenda",
+        "action": "move_block",
+        "for_date": day,
+        "changed": changed,
+        "user_text": user_text,
+        "read_back": result.get("read_back"),
+        # 面上就说这一句（判据②：改了哪一块、谁改的、其余没动）。
+        "say": (
+            f"『{changed['title']}』从 {changed['from']} 挪到 {changed['to']}；"
+            f"是你这句话让我改的（{PLAN_BLOCK_EDITOR} 落笔）：{user_text or '未记原话'}。"
+            f"那天其余 {others} 块一个字没动。"
+        ),
+    }
+    return payload
+
+
 def run_mutate_agenda(
     user_text: str,
     *,
@@ -2342,6 +2427,14 @@ def run_mutate_agenda(
     registry: AgentRegistry | None = None,
 ) -> dict:
     """WP-L1-AGENDA-MUTATE: add / change / cancel via the same secretary mouth.
+
+    R-105 / WP-PLAN-CHAT-ADJUST adds ``action=move_block`` — the fifth action,
+    still the same frozen seven intents (裁定 51). It edits ``plan_items`` (the
+    block L1 placed), not ``events``, and goes through
+    :mod:`plobi.agenda.plan_edits`, which validates against the very same
+    boundary gate the nightly planner uses. Refusal is a plain sentence plus
+    **zero writes**; a silent re-flow of the rest of the plan is what the
+    ruling forbids, so only the named row is ever rewritten.
 
     Goes straight to ``AgendaService`` — never calls ``refresh_agenda`` and
     never touches chatlog, so a dead collector cannot block a write.
@@ -2362,7 +2455,7 @@ def run_mutate_agenda(
     action = (action or "").strip().lower()
     if action not in MUTATE_ACTIONS:
         return _mutate_error(
-            "mutate_agenda 需要 action=create/update/delete/cancel_matching",
+            "mutate_agenda 需要 action=create/update/delete/cancel_matching/move_block",
             action=action or None,
             user_text=user_text,
         )
@@ -2390,9 +2483,18 @@ def run_mutate_agenda(
                 action=action,
                 user_text=user_text,
             )
-    if action in ("update", "delete") and not event_id and not title:
+    if action in ("update", "delete", "move_block") and not event_id and not title:
         return _mutate_error(
-            f"{action} 需要 event_id 或 title 来定位那条日程",
+            f"{action} 需要 event_id 或 title 来定位那条日程"
+            if action != "move_block"
+            else "move_block 需要 title 或 event_id 来指哪一块（说一下钟点也行，但要唯一对上）",
+            action=action,
+            user_text=user_text,
+        )
+    if action == "move_block" and not start_at:
+        # 同 create 那条纪律：缺钟点问用户，不编。
+        return _mutate_error(
+            "move_block 需要 start_at（挪到什么时候，本地 ISO 钟点；缺了要问用户，不要编）",
             action=action,
             user_text=user_text,
         )
@@ -2418,6 +2520,19 @@ def run_mutate_agenda(
                 source=source,
                 title=title,
                 start_at=start_at,
+            )
+
+        # R-105 / WP-PLAN-CHAT-ADJUST：这一条改的是**计划里那一块**（plan_items），
+        # 不是 events——所以它不归 AgendaService 管。与 cancel_matching 一样直接
+        # return：不领日程 L2 的名片，免得「挪一块」顺手 spawn 一个分身。
+        if action == "move_block":
+            return _run_move_block(
+                user_text,
+                db_path=_secretary_db_path(pipeline),
+                title=title,
+                event_id=event_id,
+                start_at=start_at,
+                end_at=end_at,
             )
 
         if action == "create":

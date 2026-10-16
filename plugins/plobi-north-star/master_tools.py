@@ -324,6 +324,12 @@ SECRETARY_ASK_SCHEMA = {
         "缺钟点先问用户，不要编 9:00，不要默认 1 小时；"
         "「这期完了 / 这门课后面都不用去了」 → action=cancel_matching，"
         "禁止用循环 delete 冒充，工具一次性批量清）；"
+        "「晚上有课，把七点那块挪到九点」「下午那块往后挪两小时」这种指的是**排出来的那份计划** "
+        "→ intent=mutate_agenda + action=move_block：先用 query_agenda 看清那天的 plan_items，"
+        "把要挪那块的 title 原样抄来，start_at 给新起点；工具只动被点名的那一块，"
+        "其余块不重排，也不要你顺手补一句「要不要把别的也挪挪」；"
+        "它回 ok=false ⇒ **照实念那句原因**，不许报成改好了；回 ok=true 时把"
+        "「改了哪一块、从几点到几点、是用户这句话改的」说回去；"
         "问今天/明天/本周/某天/待确认有什么 → intent=query_agenda"
         "（只读日程库，不打采集，采集不通也能答）；"
         "用户口头确认或忽略某条待确认 → intent=decide_pending（等价看板点确认/忽略；"
@@ -367,7 +373,8 @@ SECRETARY_ASK_SCHEMA = {
                 "description": (
                     "refresh_agenda = 明天的日常安排（一轮采集刷新 + 看板摘要）；"
                     "write_briefing = 根据明天的日程写早报（同样先刷新）；"
-                    "mutate_agenda = 用户口头的加/改/取消/批量取消日程（直接落库，不碰采集）；"
+                    "mutate_agenda = 用户口头的加/改/取消/批量取消日程，"
+                    "以及把计划里某一块挪个钟点（直接落库，不碰采集）；"
                     "query_agenda = 查今天/明天/本周/某天/待确认（只读库，不采集；"
                     "range=today/tomorrow/date 时响应带 anchors 作息锚点 + plan_items "
                     "当日 daily_plan，week/pending 不带）；"
@@ -392,11 +399,17 @@ SECRETARY_ASK_SCHEMA = {
             },
             "action": {
                 "type": "string",
-                "enum": ["create", "update", "delete", "cancel_matching"],
+                "enum": ["create", "update", "delete", "cancel_matching", "move_block"],
                 "description": (
                     "mutate_agenda 必填：create=新增，update=修改，delete=取消单条，"
                     "cancel_matching=批量取消「这期完了/这门课后面都不用去了」"
-                    "（一次性删，禁止循环 delete；带 source=timetable + start_at=起算日）。"
+                    "（一次性删，禁止循环 delete；带 source=timetable + start_at=起算日）；"
+                    "move_block=把**今天/明天那份计划里的一个块**挪个钟点"
+                    "（R-105：只动被点名的那块，其余一律不重排；"
+                    "用 title 或 event_id 或那块现在的起始 HH:MM 指它，"
+                    "start_at=挪去的新起点，end_at 不给就保留原时长）。"
+                    "create/update/delete 动的是 events，move_block 动的是 plan_items —— "
+                    "用户说「那块」「往后挪」这种指的是计划，别拿它去改课程表条目。"
                 ),
             },
             "title": {
@@ -404,7 +417,9 @@ SECRETARY_ASK_SCHEMA = {
                 "description": (
                     "mutate_agenda：create 必填；update/delete 用标题关键词"
                     "定位那条日程（要改标题时也填新标题）；"
-                    "cancel_matching：可空，标题子串过滤。"
+                    "cancel_matching：可空，标题子串过滤；"
+                    "move_block：那块的名字（query_agenda 回的 plan_items[].title 原样抄），"
+                    "或它现在的起始 HH:MM——对上两块会问回去，不许挑一个动手。"
                     "decide_pending：可空，title 与 event_id 都空时用 user_text 当针。"
                 ),
             },
@@ -415,11 +430,16 @@ SECRETARY_ASK_SCHEMA = {
                     "update 改钟点时给；不确定就先问用户，禁止编 9:00。"
                     "cancel_matching：YYYY-MM-DD，「从哪天起」算起，缺省=今天本地，"
                     "过去的不动。"
+                    "move_block 必填：那块**挪去的新起点**（本地 ISO，日期就是它属于哪天的"
+                    "计划）；用户只说「挪到九点」没说哪天 ⇒ 问，不要自己挑一天动手。"
                 ),
             },
             "end_at": {
                 "type": "string",
-                "description": "mutate_agenda 可空：结束时间，不确定就 null，禁止默认 1 小时。",
+                "description": (
+                    "mutate_agenda 可空：结束时间，不确定就 null，禁止默认 1 小时。"
+                    "move_block：不给就**保留那块原来的时长**（挪钟点≠改长度）。"
+                ),
             },
             "kind": {
                 "type": "string",
