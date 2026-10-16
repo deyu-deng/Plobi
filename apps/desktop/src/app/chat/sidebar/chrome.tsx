@@ -1,6 +1,8 @@
 import type * as React from 'react'
 
+import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
 import { Codicon } from '@/components/ui/codicon'
+import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { RowButton } from '@/components/ui/row-button'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +17,68 @@ export const countLabel = (loaded: number, total: number): string =>
 /** The muted count chip next to a section/workspace label. */
 export function SidebarCount({ children }: { children: React.ReactNode }) {
   return <span className="text-[0.6875rem] font-medium text-(--ui-text-quaternary)">{children}</span>
+}
+
+/**
+ * Every status dot in a sidebar row — session, project, agent — is this size.
+ * It used to be `size-1` on one row family and `size-2` on another, so rows
+ * whose label baselines matched still read as two different lists.
+ */
+export const SIDEBAR_ROW_DOT_SIZE = 'size-1.5' as const
+
+/**
+ * The collapsible header above a sidebar section. One component for every
+ * section (recents, cron, messaging, projects, agent categories) so a fold
+ * toggle can't differ by row family — it lived privately inside
+ * `sessions-section.tsx` while the agent column grew its own copy.
+ */
+export interface SidebarSectionHeaderProps {
+  action?: React.ReactNode
+  collapsible?: boolean
+  icon?: React.ReactNode
+  label: string
+  meta?: React.ReactNode
+  onToggle: () => void
+  open: boolean
+}
+
+export function SidebarSectionHeader({
+  label,
+  open,
+  onToggle,
+  action,
+  meta,
+  icon,
+  collapsible = true
+}: SidebarSectionHeaderProps) {
+  const labelBody = (
+    <>
+      {icon}
+      <SidebarPanelLabel>{label}</SidebarPanelLabel>
+      {meta && <SidebarCount>{meta}</SidebarCount>}
+    </>
+  )
+
+  return (
+    <div className="group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5">
+      {collapsible ? (
+        <button
+          className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"
+          onClick={onToggle}
+          type="button"
+        >
+          {labelBody}
+          <DisclosureCaret
+            className="text-(--ui-text-tertiary) opacity-0 transition group-hover/section-label:opacity-100"
+            open={open}
+          />
+        </button>
+      ) : (
+        <div className="flex w-fit items-center gap-1 leading-none">{labelBody}</div>
+      )}
+      {action}
+    </div>
+  )
 }
 
 // ── Row geometry (session row is canonical — everything composes these) ─────

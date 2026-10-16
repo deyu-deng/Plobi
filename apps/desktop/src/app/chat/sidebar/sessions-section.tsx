@@ -2,8 +2,6 @@ import type { useSensors } from '@dnd-kit/core'
 import type * as React from 'react'
 import { useMemo } from 'react'
 
-import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
-import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { SidebarGroup, SidebarGroupContent } from '@/components/ui/sidebar'
 import type { PlobiGitWorktree } from '@/global'
 import type { SessionInfo } from '@/plobi'
@@ -11,7 +9,7 @@ import { flattenSessionsWithBranches } from '@/lib/session-branch-tree'
 import { cn } from '@/lib/utils'
 import { sessionPinId } from '@/store/session'
 
-import { SidebarCount } from './chrome'
+import { SidebarSectionHeader } from './chrome'
 import {
   EnteredProjectContent,
   ProjectOverviewRow,
@@ -26,58 +24,6 @@ import { SidebarSessionRow } from './session-row'
 import { VirtualSessionList } from './virtual-session-list'
 
 export const VIRTUALIZE_THRESHOLD = 25
-
-interface SidebarSectionHeaderProps {
-  label: string
-  open: boolean
-  onToggle: () => void
-  action?: React.ReactNode
-  meta?: React.ReactNode
-  icon?: React.ReactNode
-  // When false the section can't be collapsed: the label renders static (no
-  // toggle, no caret) and the section is always open. Used for the single-
-  // project view, where collapsing one project makes no sense.
-  collapsible?: boolean
-}
-
-function SidebarSectionHeader({
-  label,
-  open,
-  onToggle,
-  action,
-  meta,
-  icon,
-  collapsible = true
-}: SidebarSectionHeaderProps) {
-  const labelBody = (
-    <>
-      {icon}
-      <SidebarPanelLabel>{label}</SidebarPanelLabel>
-      {meta && <SidebarCount>{meta}</SidebarCount>}
-    </>
-  )
-
-  return (
-    <div className="group/section flex shrink-0 items-center justify-between gap-1 pb-1 pt-1.5">
-      {collapsible ? (
-        <button
-          className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"
-          onClick={onToggle}
-          type="button"
-        >
-          {labelBody}
-          <DisclosureCaret
-            className="text-(--ui-text-tertiary) opacity-0 transition group-hover/section-label:opacity-100"
-            open={open}
-          />
-        </button>
-      ) : (
-        <div className="flex w-fit items-center gap-1 leading-none">{labelBody}</div>
-      )}
-      {action}
-    </div>
-  )
-}
 
 interface SidebarSessionsSectionProps {
   label: string

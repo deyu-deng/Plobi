@@ -1,18 +1,25 @@
 import type { AgentCreateRequest, ApiEnvelope } from '../../console/types'
 import { slug } from '@/lib/sanitize'
 
-import { AGENT_CATEGORY_PREFERENCE } from './agent-groups'
+import { AGENT_CATEGORY_PREFERENCE, orderedCategories } from './agent-groups'
 
 /**
- * R-012 sidebar taxonomy groups. This is the order the new-agent dialog renders
- * the category <select> options in — deliberately the **same** client constant
- * the sidebar renders with, so there is no second copy to keep in sync.
+ * The categories the new-agent dialog offers. The authority for which
+ * categories exist is the backend registry
+ * (`plobi/agents/registry.py::AGENT_CATEGORIES`); this client keeps only a
+ * **display order**, never the list itself.
  *
- * The authority for which categories exist is the backend registry
- * (`plobi/agents/registry.py::AGENT_CATEGORIES`). A category missing from this
- * list is still rendered as its own column (see `agent-groups.ts`); it just
- * isn't offered in the create dialog until someone adds the label + one entry.
+ * Options = that order, plus every category already present in the roster.
+ * Without the second half a backend category was unselectable until someone
+ * remembered to append it here — that is exactly how `courses` came up
+ * "甚至不可以选中" (WP-AGENT-CREATE-UPGRADE), and it would silently happen again
+ * for the next category.
  */
+export function creatableCategoryOptions(presentCategories: Iterable<string>): string[] {
+  return orderedCategories([...AGENT_CATEGORY_PREFERENCE, ...presentCategories])
+}
+
+/** Declared categories — the literal union the dialog's state is typed against. */
 export const AGENT_CATEGORY_VALUES = AGENT_CATEGORY_PREFERENCE
 
 export type AgentCategory = (typeof AGENT_CATEGORY_VALUES)[number]

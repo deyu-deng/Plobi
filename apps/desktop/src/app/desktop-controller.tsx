@@ -142,7 +142,6 @@ import { TerminalPaneChrome } from './right-sidebar/terminal/chrome'
 import { PersistentTerminal } from './right-sidebar/terminal/persistent'
 import { closeActiveTerminal } from './right-sidebar/terminal/terminals'
 import {
-  AGENDA_ROUTE,
   CRON_ROUTE,
   HOME_ROUTE,
   isShellPageView,
@@ -1837,15 +1836,9 @@ export function DesktopController() {
           <div className="flex min-w-0 flex-1">
             <SidebarPanelLabel>{t.console.timeline.title}</SidebarPanelLabel>
           </div>
-          <Button
-            aria-label={t.console.timeline.expand}
-            onClick={() => navigate(AGENDA_ROUTE)}
-            size="icon-xs"
-            title={t.console.timeline.expand}
-            variant="ghost"
-          >
-            <Codicon name="expand-all" size="0.8125rem" />
-          </Button>
+          {/* 这条轴没有「打开完整看板」那颗按钮：完整日程页的入口全应用只有状态栏那一个
+              chip（它还带 pending 计数）。这里再放一个，同一个页面就有两张门，用户说不清
+              哪条才是正路——日程入口收成一处（WP-RAIL-AGENT-EQUAL）。 */}
           <Button
             aria-label={t.console.timeline.addEvent}
             onClick={() => setAgendaAdding(open => !open)}

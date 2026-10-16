@@ -36,12 +36,12 @@ import { useI18n } from '@/i18n'
 import { comboTokens } from '@/lib/keybinds/combo'
 import { profileColor } from '@/lib/profile-color'
 import {
-  AGENT_CATEGORY_VALUES,
   DEFAULT_AGENT_CATEGORY,
   type AgentCategory,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
   createAgentErrorMessage,
+  creatableCategoryOptions,
   isCreateAgentCategoryBlocked,
   isCreateAgentSubmitDisabled
 } from './create-agent'
@@ -1084,6 +1084,12 @@ export function ChatSidebar({
   // category folds into butler) and index agent-owned sessions by profile so
   // each agent row can reveal its own thread list inline.
   const agentCategoryGroups = useMemo(() => groupAgentsByCategory(secretaryAgents), [secretaryAgents])
+  // 建册对话框能选哪些品类：声明的顺序 + 名册里已经有的那些。只列前者的话，后端新加一类
+  // 就得有人记得来这里补一行——课程那类当初就是这么「选不中」的。
+  const createAgentCategoryOptions = useMemo(
+    () => creatableCategoryOptions(agentCategoryGroups.map(group => group.category)),
+    [agentCategoryGroups]
+  )
   const agentProfileSet = useMemo(() => agentProfileIdSet(secretaryAgents), [secretaryAgents])
 
   const sessionsByAgentProfile = useMemo(() => {
@@ -1748,7 +1754,7 @@ export function ChatSidebar({
                   <SelectValue placeholder={c.newAgentCategoryLabel} />
                 </SelectTrigger>
                 <SelectContent>
-                  {AGENT_CATEGORY_VALUES.map(cat => (
+                  {createAgentCategoryOptions.map(cat => (
                     <SelectItem key={cat} value={cat}>
                       {c.agentCategories[cat] ?? cat}
                     </SelectItem>

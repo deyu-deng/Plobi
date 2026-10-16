@@ -26,6 +26,7 @@ const SIDEBAR_WORKSPACE_ORDER_STORAGE_KEY = 'plobi.desktop.workspaceOrder'
 const SIDEBAR_WORKSPACE_PARENT_ORDER_STORAGE_KEY = 'plobi.desktop.workspaceParentOrder'
 const SIDEBAR_PROJECT_ORDER_STORAGE_KEY = 'plobi.desktop.projectOrder'
 const SIDEBAR_WORKSPACE_COLLAPSED_STORAGE_KEY = 'plobi.desktop.workspaceCollapsed'
+const SIDEBAR_AGENT_CATEGORY_COLLAPSED_STORAGE_KEY = 'plobi.desktop.agentCategoriesCollapsed'
 const SIDEBAR_DISMISSED_AUTO_PROJECTS_STORAGE_KEY = 'plobi.desktop.dismissedAutoProjects'
 const SIDEBAR_DISMISSED_WORKTREES_STORAGE_KEY = 'plobi.desktop.dismissedWorktrees'
 const PANES_FLIPPED_STORAGE_KEY = 'plobi.desktop.panesFlipped'
@@ -125,6 +126,15 @@ export const $sidebarWorkspaceCollapsedIds = persistentAtom(
   [] as string[],
   Codecs.stringArray
 )
+// Agent-category columns (项目 / 课程 / 管家 / 事件 / 研究) collapse the same way
+// workspaces do: open by default, and only the ones the user actually folded away
+// are remembered. An agent row's fold state living in component `useState` made this
+// column the odd one out — every other sidebar section keeps it in the store.
+export const $sidebarAgentCategoryCollapsedIds = persistentAtom(
+  SIDEBAR_AGENT_CATEGORY_COLLAPSED_STORAGE_KEY,
+  [] as string[],
+  Codecs.stringArray
+)
 // Auto-derived (git-repo) projects the user has dismissed ("deleted") from the
 // overview. Keyed by repo-root path; persisted so they stay hidden. Explicit
 // projects are deleted for real instead — this only declutters the auto tier.
@@ -172,6 +182,14 @@ export function toggleWorkspaceNodeCollapsed(id: string): void {
   const current = $sidebarWorkspaceCollapsedIds.get()
 
   $sidebarWorkspaceCollapsedIds.set(current.includes(id) ? current.filter(nodeId => nodeId !== id) : [...current, id])
+}
+
+export function toggleSidebarAgentCategoryCollapsed(category: string): void {
+  const current = $sidebarAgentCategoryCollapsedIds.get()
+
+  $sidebarAgentCategoryCollapsedIds.set(
+    current.includes(category) ? current.filter(id => id !== category) : [...current, category]
+  )
 }
 
 // Dismiss ("delete") an auto-derived project from the overview.

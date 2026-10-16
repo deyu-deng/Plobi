@@ -1,15 +1,23 @@
+import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
 import type { Agent, AgentStatus } from '@/app/console/types'
 import { secretaryShortName } from '@/app/desktop-controller-utils'
 import { Codicon } from '@/components/ui/codicon'
-import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { cn } from '@/lib/utils'
 import type { SessionInfo } from '@/types/plobi'
+import { $sidebarAgentCategoryCollapsedIds, toggleSidebarAgentCategoryCollapsed } from '@/store/layout'
 
 import type { AgentCategory } from './agent-groups'
 import { isNavigableAgent } from './agent-groups'
-import { SidebarCount } from './chrome'
+import {
+  SIDEBAR_ROW_DOT_SIZE,
+  SidebarRowBody,
+  SidebarRowLabel,
+  SidebarRowLead,
+  SidebarRowShell,
+  SidebarSectionHeader
+} from './chrome'
 import { SidebarSessionRow } from './session-row'
 
 const CATEGORY_STATUS_DOT: Record<AgentStatus, string> = {
@@ -19,22 +27,11 @@ const CATEGORY_STATUS_DOT: Record<AgentStatus, string> = {
   working: 'bg-emerald-500'
 }
 
-// `items-center` is load-bearing: the row is a fixed 28px flex box, and without
-// it `align-items: stretch` pins fixed-size children to the top — the 8px status
-// dot then sits ~6px above the label's optical centre.
-const AGENT_ROW =
-  'flex h-7 w-full items-center justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out [-webkit-app-region:no-drag] hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none'
-
-const AGENT_ROW_ACTIVE =
-  'border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!'
-
 export interface AgentCategoryGroupProps {
   activeAgentId: null | string
   activeSessionId: null | string
   agents: Agent[]
   category: AgentCategory
-  /** Collapse state lives here; open by default so groups don't hide agents. */
-  defaultOpen?: boolean
   /**
    * 裁定 38/39 (WP-AGENT-MOUTH): in the secretary shell an Agent row is one
    * mouth — never a session drawer, never a session count. The only call site
@@ -57,13 +54,17 @@ export interface AgentCategoryGroupProps {
 /**
  * R-012: one collapsible sidebar category (项目/管家/事件/研究). Agents sort by
  * name upstream; each agent row expands inline to reveal its own sessions.
+ *
+ * The row and the fold header are the **same** chrome every other sidebar row
+ * uses (`chrome.tsx`) — this column used to carry its own copy of the row
+ * classes and its own header, so an agent row looked and folded differently
+ * from a session or project row sitting right above it.
  */
 export function AgentCategoryGroup({
   activeAgentId,
   activeSessionId,
   agents,
   category,
-  defaultOpen = true,
   hideSessions = false,
   label,
   onArchiveSession,
@@ -74,26 +75,19 @@ export function AgentCategoryGroup({
   sessionsByProfile,
   workingSessionIdSet
 }: AgentCategoryGroupProps) {
-  const [open, setOpen] = useState(defaultOpen)
   // Which agent's session drawer is expanded (one at a time keeps rows calm).
   const [openAgentId, setOpenAgentId] = useState<null | string>(null)
-  const categoryKey = `agent-category-${category}`
+  const collapsedIds = useStore($sidebarAgentCategoryCollapsedIds)
+  const open = !collapsedIds.includes(category)
 
   return (
-    <div className="pb-0.5" data-testid={categoryKey}>
-      <button
-        aria-expanded={open}
-        className="group/cat flex min-h-6 w-full items-center gap-1.5 rounded-md px-2 pt-1 text-left text-[0.6875rem] font-medium text-(--ui-text-tertiary) hover:text-(--ui-text-secondary)"
-        onClick={() => setOpen(!open)}
-        type="button"
-      >
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <SidebarCount>{agents.length}</SidebarCount>
-        <DisclosureCaret
-          className="shrink-0 text-(--ui-text-tertiary) opacity-0 transition group-hover/cat:opacity-100"
-          open={open}
-        />
-      </button>
+    <div className="pb-0.5" data-testid={`agent-category-${category}`}>
+      <SidebarSectionHeader
+        label={label}
+        meta={agents.length}
+        onToggle={() => toggleSidebarAgentCategoryCollapsed(category)}
+        open={open}
+      />
 
       {open && (
         <div className="flex flex-col gap-px pt-0.5">
@@ -109,45 +103,48 @@ export function AgentCategoryGroup({
             // WP-UI-NO-INTERNALS: the rail shows the short label (「日程秘书」),
             // never a profile id like `l2-agenda`; the raw id lives in `title`.
             const shortName = secretaryShortName(agent.id, agent.name)
+            const isActive = activeAgentId === agent.id
 
             return (
               <div key={agent.id}>
-                <div
+                <SidebarRowShell
+                  actions={
+                    agentSessions.length > 0 ? (
+                      <button
+                        aria-expanded={sessionsOpen}
+                        aria-label={sessionsOpen ? undefined : `${shortName}: ${agentSessions.length}`}
+                        className={cn(
+                          'flex size-5 shrink-0 items-center justify-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
+                          isActive && 'text-foreground'
+                        )}
+                        onClick={() => setOpenAgentId(sessionsOpen ? null : agent.id)}
+                        type="button"
+                      >
+                        <Codicon name={sessionsOpen ? 'chevron-down' : 'chevron-right'} size="0.75rem" />
+                      </button>
+                    ) : undefined
+                  }
                   className={cn(
-                    'group/agent flex min-w-0 items-center gap-0.5',
-                    activeAgentId === agent.id && 'rounded-md'
+                    'group row-hover',
+                    isActive && 'bg-(--ui-row-active-background)',
+                    !navigable && 'cursor-default opacity-70'
                   )}
                 >
-                  <button
-                    className={cn(AGENT_ROW, 'min-w-0 flex-1', activeAgentId === agent.id && AGENT_ROW_ACTIVE,
-                      !navigable && 'cursor-default opacity-70')}
+                  <SidebarRowBody
+                    className="z-0"
                     disabled={!navigable}
                     onClick={() => navigable && onNavigateAgent(agent.id)}
                     title={agent.id}
-                    type="button"
                   >
-                    <span
-                      aria-hidden="true"
-                      className={cn('size-2 shrink-0 rounded-full', CATEGORY_STATUS_DOT[agent.status])}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{shortName}</span>
-                  </button>
-
-                  {agentSessions.length > 0 && (
-                    <button
-                      aria-expanded={sessionsOpen}
-                      aria-label={sessionsOpen ? undefined : `${shortName}: ${agentSessions.length}`}
-                      className={cn(
-                        'flex size-7 shrink-0 items-center justify-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
-                        activeAgentId === agent.id && 'text-foreground'
-                      )}
-                      onClick={() => setOpenAgentId(sessionsOpen ? null : agent.id)}
-                      type="button"
-                    >
-                      <Codicon name={sessionsOpen ? 'chevron-down' : 'chevron-right'} size="0.75rem" />
-                    </button>
-                  )}
-                </div>
+                    <SidebarRowLead>
+                      <span
+                        aria-hidden="true"
+                        className={cn(SIDEBAR_ROW_DOT_SIZE, 'rounded-full', CATEGORY_STATUS_DOT[agent.status])}
+                      />
+                    </SidebarRowLead>
+                    <SidebarRowLabel>{shortName}</SidebarRowLabel>
+                  </SidebarRowBody>
+                </SidebarRowShell>
 
                 {sessionsOpen && (
                   <div className="ml-5 flex flex-col gap-px border-l border-(--sidebar-edge-border) py-0.5 pl-1.5">
