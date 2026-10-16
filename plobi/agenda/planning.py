@@ -1287,6 +1287,10 @@ def day_surface(
 
 def _plan_item_dict(item: PlanItem) -> dict:
     return {
+        # WP-PLAN-COMPLETION-ACK 判据③：界面上那颗「做完了」要打在**事件**上（完成态的真源在
+        # `events.completed_at`，不在会被每晚重排抹掉的 `plan_items`），所以这一行必须把
+        # `event_id` 带出去——否则界面只能拿到一句标题，无处可认。
+        "event_id": item.event_id,
         "id": item.id,
         "title": item.title,
         "start_at": item.start_at,
