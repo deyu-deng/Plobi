@@ -1444,6 +1444,11 @@ export const ja = defineLocale({
     dismiss: '却下',
     confirmed: '予定を確認しました',
     dismissed: '変更を却下しました',
+    complete: '完了にする',
+    uncomplete: '完了を取り消す',
+    acked: '完了として記録しました。今夜の計画には再度入りません',
+    unacked: '完了を取り消しました。再スケジューリング対象に戻ります',
+    donePill: '完了',
     deleted: '予定を削除しました',
     actionFailed: '予定の操作に失敗しました',
     statuses: {

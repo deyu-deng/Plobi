@@ -917,6 +917,16 @@ export function dismissAgendaEvent(eventId: string): Promise<AgendaEvent | { del
   })
 }
 
+// WP-PLAN-COMPLETION-ACK 判据③：承认这条做完了（`completed: false` = 撤销承认，
+// 不是删除）。返回整行，界面上那一格以服务端的答案为准，不做乐观猜测。
+export function setAgendaEventCompleted(eventId: string, completed = true): Promise<AgendaEvent> {
+  return window.plobiDesktop.api<AgendaEvent>({
+    path: `/api/agenda/${encodeURIComponent(eventId)}/complete`,
+    method: 'POST',
+    body: { completed }
+  })
+}
+
 export function getCronJobs(): Promise<CronJob[]> {
   return window.plobiDesktop.api<CronJob[]>({
     path: '/api/cron/jobs',

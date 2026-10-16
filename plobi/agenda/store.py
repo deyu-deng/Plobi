@@ -41,7 +41,7 @@ def allowed_sources() -> tuple[str, ...]:
 PLAN_STATUSES = ("empty", "pending", "confirmed", "dismissed")
 
 # Human decision ledger (A5 change-rate metric, ADR-0009 byproduct).
-ACTIONS = ("confirm", "dismiss", "manual_edit", "manual_delete")
+ACTIONS = ("confirm", "dismiss", "manual_edit", "manual_delete", "complete", "uncomplete")
 
 CONFIRM_SEQ_TTL_HOURS = 24
 

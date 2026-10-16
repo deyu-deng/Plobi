@@ -52,6 +52,12 @@ class EventPatch(BaseModel):
     notes: Optional[str] = None
 
 
+class EventComplete(BaseModel):
+    """``false`` 是撤销承认，不是删除——历史一行不动。"""
+
+    completed: bool = True
+
+
 def _service() -> AgendaService:
     return get_service()
 
@@ -193,4 +199,19 @@ async def dismiss_event(event_id: str):
     event = await _call(_service().dismiss, event_id)
     if event is None:
         return {"ok": True, "id": event_id, "deleted": True}
+    return _serialize(event)
+
+
+@router.post("/{event_id}/complete")
+async def complete_event(event_id: str, body: Optional[EventComplete] = None):
+    """WP-PLAN-COMPLETION-ACK 判据③：面上那一下承认动作。
+
+    挂在既有 ``/api/agenda`` 前缀下（§3.3 不新造前缀），返回整行——前端拿
+    ``completed_at`` 直接改那一格，不自己乐观猜。
+    """
+    event = await _call(
+        _service().set_completed,
+        event_id,
+        completed=(body.completed if body is not None else True),
+    )
     return _serialize(event)

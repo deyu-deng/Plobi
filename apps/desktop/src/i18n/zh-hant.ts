@@ -1396,6 +1396,11 @@ export const zhHant = defineLocale({
     dismiss: '忽略',
     confirmed: '已確認',
     dismissed: '已忽略此變更',
+    complete: '做完了',
+    uncomplete: '撤銷完成',
+    acked: '已記下這條做完了，今晚不會再排它',
+    unacked: '撤銷了「做完」，它會回到還會被排的池子裡',
+    donePill: '已完成',
     deleted: '已刪除',
     actionFailed: '行程操作失敗',
     statuses: {
