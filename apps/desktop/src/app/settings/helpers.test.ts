@@ -14,10 +14,14 @@ describe('settings helpers', () => {
 
   // WP-MIND-OFFICIAL-BRAIN: the brain is the default external provider on the
   // backend, so a dropdown that cannot name it is a UI that hides the truth.
-  // The empty entry stays first (that is the "off" state), mind comes next.
+  // The empty entry is the explicit "off" state; mind is the shipped default and
+  // must be selectable right after it. `enumOptionsFor` returns undefined for a key
+  // with no enum, so assert the list exists before indexing it — otherwise this file
+  // type-checks red (TS18048) while vitest stays green: two different rulers.
   it('offers Mind as the recommended memory provider', () => {
-    const options = enumOptionsFor('memory.provider', '', {})
+    const options = enumOptionsFor('memory.provider', '', {}) ?? []
 
+    expect(options.length).toBeGreaterThan(1)
     expect(options[0]).toBe('')
     expect(options[1]).toBe('mind')
   })
