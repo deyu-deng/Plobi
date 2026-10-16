@@ -67,6 +67,8 @@ def test_turned_off_is_said_not_guessed():
         ({"enabled": True, "name": "plobi-tun"}, "stack"),
         ({"enabled": True, "name": "plobi-tun", "stack": "mixed"}, "not one of"),
         ({"enabled": True, "name": "../etc", "stack": "system"}, "not a usable adapter name"),
+        ({"enabled": True, "name": "plobi-tun", "stack": "system", "allow_foreign": "no"},
+         "real true|false"),
         (["not", "a", "mapping"], "must be a mapping"),
     ],
 )
@@ -86,9 +88,25 @@ def test_underscore_spelling_reaches_the_engine_as_the_engine_wants_it():
 
 # ── the compiler emits only what the table stated ────────────────────────────
 
-def test_the_compiled_config_carries_the_tun_block_verbatim():
-    said = compile_config(_tun_table())
-    assert "tun:" in said and "name: plobi-tun" in said and "stack: system" in said
+def test_the_compiled_tun_block_is_written_in_the_engines_own_spelling():
+    """Our table says `enabled` / `name`; mihomo reads `enable` / `device`.
+
+    Measured on this box with the shipped v1.19.32 (10-16 08:5x, 纸 §31): a block spelled
+    our way produced **no TUN line at all** — engine up, TUN silently off — while
+    `enable: true` logged `Start TUN listening error: configure tun interface`.  Passing the
+    dict through verbatim is the 假绿 this test now refuses.
+    """
+    table = _table(engine={**_BASE["engine"],
+                           "tun": {**_OUR_TUN, "allow-foreign": True, "strict_route": True}})
+    said = compile_config(table)
+
+    assert "tun:" in said, said
+    assert "enable: true" in said, said
+    assert "device: plobi-tun" in said, said
+    assert "stack: system" in said, said
+    assert "strict-route: true" in said, said
+    for ours in ("enabled:", "name: plobi-tun", "allow-foreign"):
+        assert ours not in said, f"{ours} is our guard's spelling and must not reach the engine"
 
 
 def test_a_table_without_tun_gets_no_tun_block():
@@ -139,6 +157,48 @@ def test_an_unreadable_routing_table_is_not_read_as_safe(monkeypatch, quiet_guar
     monkeypatch.setattr(tun, "default_route_holders", lambda: ([], "Get-NetRoute : Access denied"))
     verdict = tun.preflight(_tun_table())
     assert verdict["ok"] is False and verdict["probe_errors"], verdict
+
+
+# ── 表里的显式覆写（口径 27：默认保守，逃生门写在表里，不做 UI 开关）────────────
+
+def test_a_quiet_tunnel_still_blocks_us_and_says_why_it_may_not_stay_quiet(monkeypatch, quiet_guard):
+    """The refusal has to name the future grab, or "it isn't routing today" reads as a free pass."""
+    monkeypatch.setattr(
+        tun, "tun_class_adapters",
+        lambda: ([{"name": "Tailscale", "description": "Wintun Userspace Tunnel", "status": "Up"}], ""),
+    )
+    verdict = tun.preflight(_tun_table())
+
+    assert verdict["ok"] is False, verdict
+    said = " ".join(verdict["reasons"])
+    assert "Tailscale" in said and "现在不持默认路由" in said and "之后可能抢走" in said, verdict["reasons"]
+    assert "allow-foreign" in said, "拒的时候要点名那把逃生门在哪，否则用户只能去猜怎么放行"
+
+
+def test_the_tables_own_override_opens_the_guard_and_still_refuses_a_blind_probe(monkeypatch, quiet_guard):
+    """`allow-foreign: true` buys the tunnel clash, not the unreadable machine.
+
+    The override is a named decision in the table, so it must show up in the same prose the
+    status surface prints (裁定 94) — and it must not punch through "we cannot read who is
+    out there", because that one is not a conflict we are accepting, it is a blindfold.
+    """
+    monkeypatch.setattr(
+        tun, "tun_class_adapters",
+        lambda: ([{"name": "tun0", "description": "Wintun Userspace Tunnel", "status": "Up"}], ""),
+    )
+    table = _table(engine={**_BASE["engine"], "tun": {**_OUR_TUN, "allow-foreign": True}})
+    verdict = tun.preflight(table)
+
+    assert verdict["ok"] is True, verdict["reasons"]
+    assert verdict["allow_foreign"] is True and verdict["overridden"] is True, verdict
+    said = "\n".join(tun.status_lines(verdict))
+    assert "allow-foreign" in said and "tun0" in said, said
+
+    monkeypatch.setattr(tun, "tun_class_adapters", lambda: ([], "Get-NetAdapter : boom"))
+    blind = tun.preflight(table)
+
+    assert blind["ok"] is False, "读不到场上有谁，覆写也不许放行"
+    assert blind["overridden"] is False, blind
 
 
 def test_a_table_that_asked_for_nothing_is_answered_without_probing(monkeypatch):
@@ -194,7 +254,8 @@ def test_a_passing_guard_starts_and_the_tun_block_is_in_what_we_wrote(monkeypatc
 
     assert inert["spawn"], rep
     written = (tmp_path / "home" / "egress" / "runtime" / "config.yaml").read_text(encoding="utf-8")
-    assert "tun:" in written and "name: plobi-tun" in written
+    #: what is in the file the engine actually reads — its own spelling, not ours
+    assert "tun:" in written and "enable: true" in written and "device: plobi-tun" in written, written
     #: ① 的正面：放行也要把两条机器读数留下，否则"没人占着默认路由"只是某个人的一次肉眼。
     said = " ".join(rep.notes)
     assert "默认路由: 1 条" in said and "Wi-Fi" in said, rep.notes

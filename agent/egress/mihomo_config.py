@@ -136,11 +136,33 @@ def compile_config(
     #: blocks).  Whether this machine may *have* one is a different question — that
     #: gate runs in `agent.egress.tun.preflight` before we ever spawn the engine.
     if table.engine_tun.get("enabled"):
-        document["tun"] = dict(table.engine_tun)
+        document["tun"] = _tun_for_engine(table.engine_tun)
 
     _refuse_self_reference(proxies, port)
 
     return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+
+
+#: Keys our table owns that the engine must never see: `enabled` is our spelling of
+#: the engine's `enable`, and `allow-foreign` is the guard's switch (纸 §25).
+_TUN_GUARD_ONLY = ("enabled", "allow-foreign")
+
+
+def _tun_for_engine(tun: dict[str, Any]) -> dict[str, Any]:
+    """Re-spell our `engine.tun` into the block mihomo reads.
+
+    Proved with the shipped binary on this box (v1.19.32, 10-16 08:5x): a block written
+    the way our table spells it (`enabled: true`, `name: ...`) produced **no TUN log line
+    at all** — the engine started with TUN off and no error, while `enable: true` logged
+    `Start TUN listening error: configure tun interface: Access is denied` (honoured, then
+    refused for lack of admin).  Passing our dict through would have been a silent 假绿:
+    guard says yes, config says yes, the machine keeps its old route.
+    """
+    block = {key: value for key, value in tun.items() if key not in _TUN_GUARD_ONLY}
+    block["enable"] = True
+    if "name" in block:
+        block["device"] = block.pop("name")
+    return block
 
 
 #: Hosts that mean "this machine, and specifically the socket we are about to
