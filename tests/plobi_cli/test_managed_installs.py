@@ -39,8 +39,14 @@ def test_recommended_update_command_defaults_to_plobi_update(monkeypatch):
         assert recommended_update_command() == "plobi update"
 
 
-def test_cmd_update_is_disabled_even_when_managed(monkeypatch, capsys):
-    """``plobi update`` is a frozen no-op — the managed-mode check never runs."""
+def test_cmd_update_refuses_in_managed_mode_and_says_why(monkeypatch, capsys):
+    """Managed installs must not print a lie: no git runs, and the exit is non-zero.
+
+    The old version of this test asserted ``rc == 0`` — that was the "frozen no-op" era, when
+    `plobi update` printed a disabled notice and reported success anyway. R-046 removed that
+    (Code `931df326`: 按不动就非零退出), so a green run here now proves both halves: the
+    refusal is honest **and** it never touches the checkout.
+    """
     from plobi_cli.main import _SELF_UPDATE_DISABLED_MSG
 
     monkeypatch.setenv("PLOBI_MANAGED", "homebrew")
@@ -48,7 +54,7 @@ def test_cmd_update_is_disabled_even_when_managed(monkeypatch, capsys):
     with patch("plobi_cli.main.subprocess.run") as mock_run:
         rc = cmd_update(SimpleNamespace())
 
-    assert rc == 0
+    assert rc != 0, "返回 0 就是「Update now」又在报假成功"
     assert _SELF_UPDATE_DISABLED_MSG in capsys.readouterr().out
     mock_run.assert_not_called()
 
