@@ -23,6 +23,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 
 import type { TalkerState, TalkerStatus } from './api'
+import { SourceLiveness } from './source-liveness'
 import {
   $talkerError,
   $talkerLoading,
@@ -215,6 +216,7 @@ export function TalkerCollection({ onClose }: { onClose: () => void }) {
   if (!state.reviewComplete) {
     return (
       <div className="space-y-3">
+        <SourceLiveness labels={c.liveness} names={t.agenda.sources} />
         <PanelEmpty
           description={c.notStartedDesc}
           icon="shield"
@@ -242,21 +244,25 @@ export function TalkerCollection({ onClose }: { onClose: () => void }) {
 
   if (pending.length === 0) {
     return (
-      <PanelEmpty
-        action={
-          <Button onClick={onClose} size="xs" variant="ghost">
-            {t.common.close}
-          </Button>
-        }
-        description={c.pendingEmptyDesc}
-        icon="checklist"
-        title={c.pendingEmptyTitle}
-      />
+      <div className="space-y-3">
+        <SourceLiveness labels={c.liveness} names={t.agenda.sources} />
+        <PanelEmpty
+          action={
+            <Button onClick={onClose} size="xs" variant="ghost">
+              {t.common.close}
+            </Button>
+          }
+          description={c.pendingEmptyDesc}
+          icon="checklist"
+          title={c.pendingEmptyTitle}
+        />
+      </div>
     )
   }
 
   return (
     <div className="space-y-3">
+      <SourceLiveness labels={c.liveness} names={t.agenda.sources} />
       <PanelSectionLabel className="px-1">{c.pendingTitle}</PanelSectionLabel>
       <TalkerSections
         busy={busyId !== null}

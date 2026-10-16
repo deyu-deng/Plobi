@@ -12,6 +12,8 @@
  * nothing is collected.
  */
 
+import type { SourceLivenessPayload } from './liveness'
+
 export type TalkerMode = 'collect' | 'exclude'
 export type TalkerStatus = 'known' | 'excluded' | 'pending'
 
@@ -62,4 +64,15 @@ export async function completeReview(): Promise<void> {
     path: '/api/collect/review-complete',
     method: 'POST'
   })
+}
+
+
+/**
+ * 信源活性读数（`WP-COLLECT-WIN` 的界面那半边）。
+ *
+ * 放在这里而不是新模块：本档是这个面板**唯一**的取数入口，测试整体 mock 它，
+ * 组件因此能在没有 `window.plobiDesktop` 的环境里安静地什么都不画。
+ */
+export async function getSourceLiveness(): Promise<SourceLivenessPayload | null> {
+  return window.plobiDesktop.api<SourceLivenessPayload>({ path: '/api/collect/sources' })
 }

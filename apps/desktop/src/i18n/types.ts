@@ -1329,6 +1329,18 @@ export interface Translations {
       sectionGroups: string
       sectionOfficial: string
       excludeAllPendingOfficial: string
+      liveness: {
+        ageDays: (count: number) => string
+        failed: string
+        live: string
+        never: string
+        noName: string
+        noStore: string
+        stale: string
+        switchOff: string
+        title: string
+        unknown: string
+      }
     }
     /** WP-ICS-BOARD (裁定 29.3): `.ics` timetable import, preview → confirm. */
     timetable: {

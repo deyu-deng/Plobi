@@ -1697,7 +1697,8 @@ export const zh: Translations = {
       wechat: '微信',
       dingtalk: '钉钉',
       manual: '手动添加',
-      timetable: '课表'
+      timetable: '课表',
+      zju: '教务（学在浙大）'
     },
     collect: {
       title: '会话采集',
@@ -1721,7 +1722,19 @@ export const zh: Translations = {
       sectionDirect: '私聊',
       sectionGroups: '群聊',
       sectionOfficial: '公众号',
-      excludeAllPendingOfficial: '排除全部待定公众号'
+      excludeAllPendingOfficial: '排除全部待定公众号',
+      liveness: {
+        ageDays: count => `上次进库 ${count} 天前`,
+        failed: '信源读数取不到',
+        live: '还在进新条目',
+        never: '从没进过库',
+        noName: '这条信源没记到显示名',
+        noStore: '读不到日程库，这条探针什么都不能说',
+        stale: '停了：阈值内没有新条目进来',
+        switchOff: '采集开关没点',
+        title: '信源在不在采',
+        unknown: '状态没记到，不猜'
+      }
     },
     timetable: {
       entry: '导入课表',

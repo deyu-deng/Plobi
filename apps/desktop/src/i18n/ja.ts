@@ -1466,7 +1466,8 @@ export const ja = defineLocale({
       wechat: 'WeChat',
       dingtalk: 'DingTalk',
       manual: '手動追加',
-      timetable: '時間割'
+      timetable: '時間割',
+      zju: '教務（ZJU）'
     },
     collect: {
       title: 'セッション収集',
@@ -1490,7 +1491,19 @@ export const ja = defineLocale({
       sectionDirect: 'ダイレクト',
       sectionGroups: 'グループ',
       sectionOfficial: '公式アカウント',
-      excludeAllPendingOfficial: '未定の公式アカウントをすべて除外'
+      excludeAllPendingOfficial: '未定の公式アカウントをすべて除外',
+      liveness: {
+        ageDays: count => `最終取り込み ${count} 日前`,
+        failed: '信源の読みに失敗しました',
+        live: '新しい項目が入っています',
+        never: '一度も入っていません',
+        noName: 'この信源に表示名が登録されていません',
+        noStore: '日程庫を読めないため、このプローブは何も言えません',
+        stale: '止まっています：期間内に新しい項目なし',
+        switchOff: '採集スイッチが入っていません',
+        title: '信源が集めているか',
+        unknown: '状態が記録されていません。推測しません'
+      }
     },
     timetable: {
       entry: '時間割を読み込む',
