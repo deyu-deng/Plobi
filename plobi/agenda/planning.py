@@ -7,6 +7,7 @@ Confirmed plans are not overwritten. See Docs/DESIGN-M2-PLANNING.md §1–2.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -456,7 +457,8 @@ def _roster_names() -> tuple[str, ...]:
         return ()
 
 
-def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str] = ()) -> bool:
+def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str] = (),
+                     course_ids: Iterable[str] = ()) -> bool:
     """这条 DDL 属不属于该项目 —— 两条确定性关联口径，都不许按信源名字分支。
 
     1. 标题含项目名（C5 原口径：events 表没有 project 外键，标题是唯一手写锚点）。
@@ -478,20 +480,95 @@ def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str
     if needle in (event.title or "").lower():
         return True
     extra = event.evidence if isinstance(event.evidence, dict) else {}
-    taken = {str(n).lower().strip() for n in other_names} - {needle, ""}
-    for key in ("course", "project"):
-        value = str(extra.get(key) or "").lower().strip()
-        if not value:
-            continue
-        if value == needle:
-            return True
-        if needle in value and value not in taken:
-            return True
-    return False
+    # `other_names` 留着给调用方（名册参照），归属这一侧不再需要它：子串匹配已经被
+    # `matches_course` 的「全等 + ID 级」替掉，简称抢不走别人的课。
+    return matches_course(event, needle, course_ids=course_ids,
+                          evidence=extra, other_names=other_names)
+
+
+_COURSE_SUFFIX = re.compile(r"(?:19|20)\d{2}.*$")
+
+
+def course_alias(name: str) -> str:
+    """名册全名 ⇒ 课表用的短名：从年份起整段截掉（年份 / 周几 / 节次 / 班号都在这段后缀里）。
+
+    `大学物理实验2026周四345` ⇒ `大学物理实验`。**别名只做全等比较，不许当子串用**——
+    子串就是本刀要杀的串台根因。名字里没有年份时原样返回。
+    """
+    text = (name or "").strip()
+
+    return _COURSE_SUFFIX.sub("", text).strip() or text
+
+
+def course_id_map(conn: Any) -> dict[str, tuple[str, ...]]:
+    """名册课名 ⇒ 该课全部的 `evidence.course_id`。**桥只有全等，之后一律按 ID 走**。
+
+    不在名册里另存一份 id：那是第二真源（站方改课名或合班时两边打架）。
+    一次窗口查询建好整张表，供这一轮排程复用，不在每个事件上再问一次。
+    """
+    out: dict[str, set[str]] = {}
+    for row in conn.execute(
+        "SELECT json_extract(evidence, '$.course') AS course, json_extract(evidence, '$.course_id') AS cid"
+        " FROM events WHERE kind = 'ddl' AND course IS NOT NULL AND course <> ''"
+    ):
+        name = str(row["course"] or "").strip().lower()
+        cid = str(row["cid"] or "").strip()
+        if name and cid:
+            out.setdefault(name, set()).add(cid)
+
+    return {name: tuple(sorted(ids)) for name, ids in out.items()}
+
+
+def matches_course(event: Event, course_name: str, *, course_ids: Iterable[str] = (),
+                   evidence: Optional[dict] = None,
+                   other_names: Iterable[str] = ()) -> bool:
+    """**两侧归属规则收在这一个函数里**（`WP-COURSE-MATCH-ONE-SOURCE`），两条都不许退回子串。
+
+    - 作业（ddl）：先按 `evidence.course_id` 等值（ID 级）；名册与站方之间那座桥只能是
+      `evidence.course` 与条目名**全等」。治理线在真库上实测：「电工电子学」靠子串把
+      「电工电子学实验」的 2 条作业也认领走（`evt_1842479535ce` / `evt_3fd8c0dedcf3`）——
+      就是这个函数要挡住的现场。
+    - 课表（class）：按**标题**全等，或别名全等（见 `course_alias`）。
+      ⚠️ **不能用 `evidence.calendar_name` 当归属**：现核那 240 条的 `calendar_name` 全是
+      `浙大课程表-2026-2027秋冬`——那是**那只日历的名字**，一门课都不指。按它全等会把 240 条
+      一起挂给每一门课，比子串严重一个量级。判据那句「课表按 `calendar_name` 全等」按这条读数更正。
+
+    `other_names` 只做一件事：站方这条归属已经有名册里的人**全等**认领时，简称与别名都不许抢。
+    """
+    needle = (course_name or "").strip().lower()
+    if not needle:
+        return False
+
+    extra = event.evidence if evidence is None else evidence
+    extra = extra if isinstance(extra, dict) else {}
+
+    cid = str(extra.get("course_id") or "").strip()
+    if cid and cid in {str(x).strip() for x in course_ids}:
+        return True
+
+    owned = str(extra.get("course") or "").strip().lower()
+    if owned and owned == needle:
+        return True
+    if owned and owned in {str(n).strip().lower() for n in other_names if str(n).strip()}:
+        # 名册里已经有人跟这条归属**全等**——简称、别名、子串都不许再来抢。
+        # 这一格就是真库上那 2 条作业被「电工电子学」认领走的现场（`16a06f71` 的参照，
+        # 本刀把它挪进共用函数里，并排在子串之前——顺序就是判据）。
+        return False
+
+    title = (event.title or "").strip().lower()
+    if title == needle:
+        return True
+    if owned and needle in owned:
+        # 兜底：没人全等认领这条归属时，简称仍然够得到全称（C5 那档口径，
+        # 现有两条测试钉着：名册项目「线性」对站方课名「线性代数」）。
+        # 它**不再是课程串台的路径**——上面那一格先把有人认领的挡掉了。
+        return True
+
+    return bool(title) and title == course_alias(needle).lower()
 
 
 def _next_ddl(conn: Any, entry_name: str, window_from: datetime,
-              *, other_names: Iterable[str] = ()) -> Optional[datetime]:
+              *, other_names: Iterable[str] = (), course_ids: Iterable[str] = ()) -> Optional[datetime]:
     """该项目的下一个 DDL 事件，确定性启发式。
 
     匹配不到 = 无 DDL（排序垫底，按名称稳定）。
@@ -500,13 +577,14 @@ def _next_ddl(conn: Any, entry_name: str, window_from: datetime,
     moments = [
         _as_dt(event.start_at)
         for event in _ddl_candidates(conn, window_from, ddl_limit)
-        if _matches_project(event, entry_name, other_names=other_names)
+        if _matches_project(event, entry_name, other_names=other_names, course_ids=course_ids)
     ]
     return min(moments) if moments else None
 
 
 def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetime,
-                        *, other_names: Iterable[str] = ()) -> list[Event]:
+                        *, other_names: Iterable[str] = (),
+                        ids_by_name: Optional[dict[str, tuple[str, ...]]] = None) -> list[Event]:
     """没挂上任何 pace 项目的截止事件，按到期时刻由近到远。
 
     为什么要有这一格：学在浙大那批作业的标题是课件名（「示波器的使用+声速测定预习报告」），
@@ -526,7 +604,11 @@ def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetim
     return [
         event
         for event in _ddl_candidates(conn, window_start, ddl_limit)
-        if not any(_matches_project(event, name, other_names=other_names) for name in paced_names)
+        if not any(
+            _matches_project(event, name, other_names=other_names,
+                             course_ids=(ids_by_name or {}).get(name.lower().strip(), ()))
+            for name in paced_names
+        )
     ]
 
 
@@ -605,10 +687,12 @@ def _project_block_items(
 
     paced = paced_projects()
     roster_names = _roster_names()
+    ids_by_name = course_id_map(conn)   # 一次查完：课名 ⇒ 该课全部 course_id（归属走 ID 级）
     ddl_limit = window_start + timedelta(days=DDL_LOOKAHEAD_DAYS)
 
     def _sort_key(pair):
-        ddl = _next_ddl(conn, pair[0].name, window_from=window_start, other_names=roster_names)
+        ddl = _next_ddl(conn, pair[0].name, window_from=window_start, other_names=roster_names,
+                      course_ids=ids_by_name.get(pair[0].name.lower().strip(), ()))
         if ddl is not None and ddl > ddl_limit:
             ddl = None  # lookahead 之外的 DDL 视同无 DDL
         return (ddl is None, ddl or window_start, pair[0].name)
