@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
+import { beginEntering, endEntering, enterFailure } from '@/app/chat/agent-enter'
+import { $agentEnter, settleAgentEnter } from '@/app/chat/agent-enter-store'
 import { PanelList, PanelListRow, PanelSectionLabel } from '@/app/overlays/panel'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
@@ -1224,6 +1226,11 @@ export function DesktopController() {
       }
 
       const agentId = level.l2
+
+      // 点下去这一帧就要有态：名字从名册缓存里拿（一次网络都不等）。
+      const rosterRow = $consoleAgents.get().find(a => a.id === agentId)
+
+      $agentEnter.set(beginEntering(rosterRow?.name || rosterRow?.id || ''))
       // 名册里这一行没有 profile ⇒ 它是**数据记录**（`l2_course`，裁定 40：课是数据不是分身），
       // 不是"一个还没连上的分身"。以前这里回退成 agentId，等于替它造一个 profile 名，
       // 主进程真会去起 `plobi -p <那个名字>`：ASCII 名退 1（Profile does not exist）、
@@ -1234,6 +1241,7 @@ export function DesktopController() {
       let profile =
         $consoleAgents.get().find(agent => agent.id === agentId)?.profile?.trim() ?? ''
       let sessionId = ''
+      let overviewFailed = false
       // R-013 (裁定 20): the bound folder served by the overview. Stays null
       // when the overview itself failed — then the cwd is left untouched
       // rather than pretending we know the binding.
@@ -1251,6 +1259,7 @@ export function DesktopController() {
         agentProjectPath = (overview.projectPath ?? '').trim()
       } catch {
         // Offline / mock miss — still try the registry-default profile name.
+        overviewFailed = true
       }
 
       // Mount the agent's bound folder for the right-rail file tree. Empty
@@ -1282,9 +1291,15 @@ export function DesktopController() {
       // of truth for which profiles exist.
       const previousProfile = $activeGatewayProfile.get()
 
+      // 数据条目：不绑后端、不替它编一个家。走与"绑不上"同一条既有路径——
+      // 留在原地、开一张新草稿，不排任何重试。区别只在过渡那句说什么：
+      // 概览取不到要说"后端没答上"，取到了而这本来就没后端要说中性那句。
       if (!profile) {
-        // 数据条目：不绑后端、不替它编一个家。走与"绑不上"同一条既有路径——
-        // 留在原地、开一张新草稿，不排任何重试。
+        if (overviewFailed) {
+          $agentEnter.set(enterFailure('no-overview'))
+        } else {
+          $agentEnter.set(endEntering())
+        }
         prepareFreshDraftInPlace()
 
         return
@@ -1303,6 +1318,7 @@ export function DesktopController() {
       try {
         await ensureGatewayProfile(profile)
       } catch {
+        $agentEnter.set(enterFailure('spawn'))
         await ensureGatewayProfile(previousProfile).catch(() => undefined)
         prepareFreshDraftInPlace()
 
@@ -1316,6 +1332,7 @@ export function DesktopController() {
       // Revert to the prior profile and show an empty draft so `/agent/:id`
       // stays reachable.
       if ($gatewayState.get() !== 'open') {
+        $agentEnter.set(enterFailure('bind'))
         await ensureGatewayProfile(previousProfile).catch(() => undefined)
         prepareFreshDraftInPlace()
 
@@ -1357,7 +1374,13 @@ export function DesktopController() {
 
       prepareFreshDraftInPlace()
       mountAgentCwd()
-    })().catch(() => undefined)
+    })().catch(() => undefined).finally(() => {
+      // 六条出口走不到终态的那几条（含概览后提前 return 的分支）由这里兜住：
+      // **只有还挂在进行中才清**，失败那句留在场上给人读完。
+      if (!cancelled) {
+        settleAgentEnter()
+      }
+    })
 
     return () => {
       cancelled = true

@@ -1344,6 +1344,11 @@ export interface Translations {
     /** R-012 sidebar agent taxonomy (PROJECTS / BUTLER / EVENTS / RESEARCH). */
     agentCategories: Record<string, string>
     agentsTitle: string
+    enteringAgent: (name: string) => string
+    agentEnterNoOverview: string
+    agentEnterSpawnFailed: string
+    agentEnterBindFailed: string
+    agentEnterNeutral: string
     agentsLoading: string
     agentsLoadFailed: string
     agentsEmptyTitle: string

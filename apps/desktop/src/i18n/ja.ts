@@ -1503,6 +1503,11 @@ export const ja = defineLocale({
   },
   console: {
     agentsTitle: 'エージェント',
+    enteringAgent: name => `${name || 'この Agent'} を開いています…`,
+    agentEnterNoOverview: 'この Agent の概要をバックエンドが返せませんでした（「多忙」でも「セッションなし」でもありません）。',
+    agentEnterSpawnFailed: 'バックエンドを起動できませんでした：',
+    agentEnterBindFailed: '起動しましたが、会話チャネルを結べませんでした：',
+    agentEnterNeutral: 'ワークスペースを切り替えています…',
     agentsLoading: 'エージェントを読み込み中',
     agentsLoadFailed: 'エージェントを読み込めませんでした',
     agentsEmptyTitle: 'エージェントはまだありません',
