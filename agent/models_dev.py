@@ -185,9 +185,15 @@ _MODELS_DEV_TO_PROVIDER: Optional[Dict[str, str]] = None
 
 
 def _get_cache_path() -> Path:
-    """Return path to disk cache file."""
-    from plobi_constants import get_plobi_home
-    return get_plobi_home() / "models_dev_cache.json"
+    """Return path to disk cache file.
+
+    裁定 42 / WP-PROFILE-SHARED-LAYER：这份是**共享件**——profile 活跃时
+    （``PLOBI_HOME`` 指到 ``<root>/profiles/<name>``）也必须解析到 root 那一份。
+    现核这台有 16 份分身副本、合计 ~84 MB，最旧一份停在 10-06 而 root 那份
+    10-16 08:36 才刷新 ⇒ 每个分身各自过期，不是"各自更快"。
+    """
+    from plobi_constants import get_shared_plobi_root
+    return get_shared_plobi_root() / "models_dev_cache.json"
 
 
 def _load_disk_cache() -> Dict[str, Any]:
