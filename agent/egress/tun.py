@@ -121,6 +121,8 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
         "holders_error": "",
         "adapters_error": "",
         "foreign_tun": [],
+        "allow_foreign": False,
+        "overridden": False,
         "ok": False,
         "reasons": [],
         "probe_errors": [],
@@ -153,16 +155,32 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
     mine = {e.get("name") for e in adapters if e.get("name") == out["name"]}
     foreign = [e for e in adapters if _is_tun_class(e) and e.get("name") not in mine]
     out["foreign_tun"] = foreign
+    out["allow_foreign"] = bool(tun.get("allow-foreign"))
 
     #: Refuse to fight for the default route.  This is the whole point of the guard:
     #: two TUNs on one box is not "whoever set the lower metric wins", it is a machine
     #: that stops having working networking until somebody reboots.
+    #: 口径 27 keeps the default conservative; 纸 §25 buys the escape with a field in the
+    #: **table** (no UI switch), and the refusal has to say why a tunnel that is quiet
+    #: *today* is still a reason to refuse — Tailscale's exit-node flips it on mid-session.
     if foreign:
         names = ", ".join(str(e.get("name") or e.get("description")) for e in foreign[:4])
-        out["reasons"].append(
-            f"场上已经有别人的 TUN 类网卡（{names}）—— 我们不抢默认路由，也不改别人的 metric；"
-            f"要用 Plobi 的 TUN，先把那个 VPN 关掉"
-        )
+        holding = {h.get("name") for h in holders if h.get("name")}
+        quiet = [e for e in foreign if e.get("name") not in holding]
+        if out["allow_foreign"]:
+            out["overridden"] = True
+        else:
+            reason = (
+                f"场上已经有别人的 TUN 类网卡（{names}）—— 我们不抢默认路由，也不改别人的 metric；"
+                f"要么先把那个 VPN 关掉，要么在表里写明 network.egress.engine.tun.allow-foreign: true"
+            )
+            if quiet:
+                qn = ", ".join(str(e.get("name") or e.get("description")) for e in quiet[:4])
+                reason += (
+                    f"（其中 {qn} 现在不持默认路由，但之后可能抢走 —— 现在放行就等于在那一刻整机断网，"
+                    f"所以这条现在也挡）"
+                )
+            out["reasons"].append(reason)
 
     if out["probe_errors"]:
         out["reasons"].append(
@@ -214,5 +232,11 @@ def status_lines(info: dict[str, Any]) -> list[str]:
         else f"tun: 守卫拒绝开启 —— {info.get('name') or '未命名'}"
     )
     lines = [head, f"  {_holders_said(info)}", f"  {_adapters_said(info)}"]
+    if info.get("overridden"):
+        names = ", ".join(str(e.get("name") or e.get("description")) for e in (info.get("foreign_tun") or [])[:4])
+        lines.append(
+            f"  ! 表里 network.egress.engine.tun.allow-foreign: true ⇒ 带着别人的 tunnel 网卡继续（{names}）"
+            "—— 默认路由真要打起来是我们抢的，这一条由表负责，不回头改别人的 metric"
+        )
     lines += [f"  - {r}" for r in info.get("reasons", [])]
     return lines

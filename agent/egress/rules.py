@@ -642,6 +642,16 @@ def _parse_tun(engine_raw: dict) -> dict[str, Any]:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,31}", name):
         raise EgressConfigError(f"network.egress.engine.tun.name {name!r} is not a usable adapter name")
     out["name"] = name
+    #: `allow-foreign` is **our guard's** switch, not the engine's (see
+    #: :func:`agent.egress.tun.preflight`), so it has to be a real boolean — a "no" or a 0
+    #: that coerces truthy would hand this machine's default route to two TUNs.
+    if "allow-foreign" in out and not isinstance(out["allow-foreign"], bool):
+        raise EgressConfigError(
+            "network.egress.engine.tun.allow-foreign must be a real true|false — this switch "
+            "decides whether we start our TUN next to somebody else's, so 'no', 0 or 'false' "
+            "as a string are not a decision"
+        )
+    out["allow-foreign"] = bool(out.get("allow-foreign"))
     return out
 
 
