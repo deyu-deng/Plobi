@@ -451,7 +451,7 @@ def _roster_names() -> tuple[str, ...]:
     from plobi.agents.registry import load_registry
 
     try:
-        return tuple(str(getattr(entry, "name", "") or "").lower().strip()
+        return tuple(course_key(str(getattr(entry, "name", "") or ""))
                      for entry in load_registry().entries())
     except Exception:  # noqa: BLE001 - 名册读不到就不拿它去拦人
         return ()
@@ -474,10 +474,10 @@ def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str
     （:mod:`plobi.agenda.course_records` 的 ``_match_class_titles``）用的是同一条**单向**规则
     （全等存在就不许再拿前缀去够别的课），两侧共用一份判据，不各说一套。
     """
-    needle = entry_name.lower().strip()
+    needle = course_key(entry_name)
     if not needle:
         return False
-    if needle in (event.title or "").lower():
+    if needle in course_key(event.title):
         return True
     extra = event.evidence if isinstance(event.evidence, dict) else {}
     # `other_names` 留着给调用方（名册参照），归属这一侧不再需要它：子串匹配已经被
@@ -487,15 +487,44 @@ def _matches_project(event: Event, entry_name: str, *, other_names: Iterable[str
 
 
 _COURSE_SUFFIX = re.compile(r"(?:19|20)\d{2}.*$")
+#: 课程文件夹那一层的名字把学期写在**前面**：`2026-2027秋冬-大学物理（甲）II`。
+#: 现核这台 8 门课的 `project_path` 末段全是这一形 ⇒ 只截后缀不截前缀，
+#: 「教材在哪个文件夹」与「作业归哪门课」两头永远对不上（架构师 10-16 点名的串课第二形）。
+_SEMESTER_PREFIX = re.compile(r"^\d{4}\s*-\s*\d{4}\s*[春夏秋冬]*\s*[-—_]")
+
+#: 罗马数字**单字符**（U+2160–U+216B）⇒ ASCII 拼法。名册里同一门课同时存在两种写法：
+#: `project_path` 末段是 `大学物理（甲）II`（两个字母 I），`display_name` 是 `大学物理（甲）Ⅱ`（U+2161）。
+#: 不折这一层，真源里它们是**两个 key**——站方给的作业标题按一种写法来、名册按另一种写法存，
+#: 于是"认不上"退成无主、或"抢认"退成串到隔壁课。架构师 10-16 现核点名要求收在这里。
+_ROMAN_TO_ASCII = {
+    "Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "Ⅴ": "V", "Ⅵ": "VI", "Ⅶ": "VII",
+    "Ⅷ": "VIII", "Ⅸ": "IX", "Ⅹ": "X", "Ⅺ": "XI", "Ⅻ": "XII",
+    "ⅰ": "I", "ⅱ": "II", "ⅲ": "III", "ⅳ": "IV", "ⅴ": "V", "ⅵ": "VI", "ⅶ": "VII",
+    "ⅷ": "VIII", "ⅸ": "IX", "ⅹ": "X", "ⅺ": "XI", "ⅻ": "XII",
+}
+
+
+def course_key(text: str) -> str:
+    """课名比较用的**唯一**归一化：罗马数字字符折成 ASCII、去首尾空白、小写。
+
+    只折**字符等值**这一层——不做子串、不做模糊、不截后缀（那是 `course_alias` 的活，
+    它只在别名全等那一步出现）。归一化只用来比较，不改写存进库里的原文。
+    """
+    return "".join(_ROMAN_TO_ASCII.get(ch, ch) for ch in (text or "")).strip().lower()
 
 
 def course_alias(name: str) -> str:
-    """名册全名 ⇒ 课表用的短名：从年份起整段截掉（年份 / 周几 / 节次 / 班号都在这段后缀里）。
+    """名册全名 / 课程文件夹末名 ⇒ 课表与站方用的短名：**两头都截，仍只做全等比较**。
 
-    `大学物理实验2026周四345` ⇒ `大学物理实验`。**别名只做全等比较，不许当子串用**——
-    子串就是本刀要杀的串台根因。名字里没有年份时原样返回。
+    - 后缀那段：从年份起整段截掉（年份 / 周几 / 节次 / 班号都在这段里），
+      `大学物理实验2026周四345` ⇒ `大学物理实验`。
+    - 前缀那段：学期整段截掉，`2026-2027秋冬-大学物理（甲）II` ⇒ `大学物理（甲）II`
+      ——这台 8 门课的 `project_path` 末段全是这一形（教材就在那些文件夹里）。
+    **别名只做全等比较，不许当子串用**——子串就是本刀要杀的串台根因。
+    两头都没有时原样返回。
     """
     text = (name or "").strip()
+    text = _SEMESTER_PREFIX.sub("", text).strip()
 
     return _COURSE_SUFFIX.sub("", text).strip() or text
 
@@ -511,7 +540,7 @@ def course_id_map(conn: Any) -> dict[str, tuple[str, ...]]:
         "SELECT json_extract(evidence, '$.course') AS course, json_extract(evidence, '$.course_id') AS cid"
         " FROM events WHERE kind = 'ddl' AND course IS NOT NULL AND course <> ''"
     ):
-        name = str(row["course"] or "").strip().lower()
+        name = course_key(str(row["course"] or ""))
         cid = str(row["cid"] or "").strip()
         if name and cid:
             out.setdefault(name, set()).add(cid)
@@ -535,7 +564,7 @@ def matches_course(event: Event, course_name: str, *, course_ids: Iterable[str] 
 
     `other_names` 只做一件事：站方这条归属已经有名册里的人**全等**认领时，简称与别名都不许抢。
     """
-    needle = (course_name or "").strip().lower()
+    needle = course_key(course_name)
     if not needle:
         return False
 
@@ -546,16 +575,16 @@ def matches_course(event: Event, course_name: str, *, course_ids: Iterable[str] 
     if cid and cid in {str(x).strip() for x in course_ids}:
         return True
 
-    owned = str(extra.get("course") or "").strip().lower()
+    owned = course_key(str(extra.get("course") or ""))
     if owned and owned == needle:
         return True
-    if owned and owned in {str(n).strip().lower() for n in other_names if str(n).strip()}:
+    if owned and owned in {course_key(str(n)) for n in other_names if str(n).strip()}:
         # 名册里已经有人跟这条归属**全等**——简称、别名、子串都不许再来抢。
         # 这一格就是真库上那 2 条作业被「电工电子学」认领走的现场（`16a06f71` 的参照，
         # 本刀把它挪进共用函数里，并排在子串之前——顺序就是判据）。
         return False
 
-    title = (event.title or "").strip().lower()
+    title = course_key(event.title)
     if title == needle:
         return True
     if owned and needle in owned:
@@ -564,7 +593,7 @@ def matches_course(event: Event, course_name: str, *, course_ids: Iterable[str] 
         # 它**不再是课程串台的路径**——上面那一格先把有人认领的挡掉了。
         return True
 
-    return bool(title) and title == course_alias(needle).lower()
+    return bool(title) and title == course_key(course_alias(needle))
 
 
 def _next_ddl(conn: Any, entry_name: str, window_from: datetime,
@@ -606,7 +635,7 @@ def _unowned_ddl_events(conn: Any, paced_names: list[str], window_start: datetim
         for event in _ddl_candidates(conn, window_start, ddl_limit)
         if not any(
             _matches_project(event, name, other_names=other_names,
-                             course_ids=(ids_by_name or {}).get(name.lower().strip(), ()))
+                             course_ids=(ids_by_name or {}).get(course_key(name), ()))
             for name in paced_names
         )
     ]
@@ -692,7 +721,7 @@ def _project_block_items(
 
     def _sort_key(pair):
         ddl = _next_ddl(conn, pair[0].name, window_from=window_start, other_names=roster_names,
-                      course_ids=ids_by_name.get(pair[0].name.lower().strip(), ()))
+                      course_ids=ids_by_name.get(course_key(pair[0].name), ()))
         if ddl is not None and ddl > ddl_limit:
             ddl = None  # lookahead 之外的 DDL 视同无 DDL
         return (ddl is None, ddl or window_start, pair[0].name)
