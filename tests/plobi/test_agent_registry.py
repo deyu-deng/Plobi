@@ -12,8 +12,15 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 
-from plobi.agents.registry import AgentEntry, AgentRegistry, RegistryError, default_path
+from plobi.agents.registry import (
+    UNBOUND_CATEGORIES,
+    AgentEntry,
+    AgentRegistry,
+    RegistryError,
+    default_path,
+)
 
 
 @pytest.fixture()
@@ -80,6 +87,47 @@ def test_round_trip_preserves_entries(home):
     assert reloaded.get("agenda").skills == ("a", "b")
     assert reloaded.get("agenda").description == "日程闭环"
     assert reloaded.get("srtp").profile_name == "l2-srtp"
+
+
+# ---------------------------------------------------------------------------
+# WP-AGENT-CREATE-UPGRADE：多文件夹（用户 10-16「一个 Agent 肯定也要可以添加多个文件夹」）
+# ---------------------------------------------------------------------------
+
+
+def test_project_paths_roundtrip_keeps_primary_first(home):
+    """清单存取 + 主文件夹语义：第一个是主文件夹（旧消费方读 project_path 不变）。"""
+    reg = AgentRegistry.load()
+    reg.upsert(
+        _entry(name="multi", category="projects", project_paths=("D:/one", "D:/two", "D:/one"))
+    )
+    reloaded = AgentRegistry.load(reg.save())
+    entry = reloaded.get("multi")
+    assert entry.bound_paths() == ("D:/one", "D:/two")  # 去重保序
+    assert entry.project_path == "D:/one"  # 主文件夹 = 第一个
+
+
+def test_legacy_single_project_path_reads_as_one_tuple(home):
+    """旧条目只有 project_path：读进来 = 一元清单，存盘不硬写新字段（旧形状原样）。"""
+    reg = AgentRegistry.load()
+    reg.upsert(_entry(name="legacy", category="projects", project_path="D:/only"))
+    path = reg.save()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert "project_paths" not in raw["agents"]["legacy"]  # 一元不写清单
+    reloaded = AgentRegistry.load(path)
+    assert reloaded.get("legacy").bound_paths() == ("D:/only",)
+
+
+def test_courses_category_can_bind_folders(home):
+    """用户 10-16：courses 移出 UNBOUND_CATEGORIES——课程 Agent 可绑文件夹。"""
+    assert "courses" not in UNBOUND_CATEGORIES
+    reg = AgentRegistry.load()
+    entry = reg.upsert(
+        _entry(name="c1", category="courses", project_path="D:/Cloud/Courses/x")
+    )
+    assert entry.bound_paths() == ("D:/Cloud/Courses/x",)
+    reloaded = AgentRegistry.load(reg.save())
+    assert reloaded.get("c1").category == "courses"
+    assert reloaded.get("c1").bound_paths() == ("D:/Cloud/Courses/x",)
 
 
 def test_missing_profile_field_falls_back_to_name(home):

@@ -53,10 +53,16 @@ class RegistryError(ValueError):
 AGENT_CATEGORIES: tuple[str, ...] = ("projects", "butler", "events", "research", "courses")
 DEFAULT_CATEGORY = "butler"
 
-# 无默认目录绑定的两类：``butler`` 是家务、``courses`` 是课业数据——都不该被塞进
-# 某个内容资产目录（这台 ``D:\Cloud`` 是百度网盘，工具读不到它，绑过去等于绑进黑洞）。
+# 无默认目录绑定的两类：``butler`` 是家务——不该被塞进某个内容资产目录（这台
+# ``D:\Cloud`` 是百度网盘，工具读不到它，绑过去等于绑进黑洞）。
 # 建册时想用别的落点：条目自己的 ``project_path`` 永远优先于这张表（见上面那段注释）。
-UNBOUND_CATEGORIES: tuple[str, ...] = ("butler", "courses")
+# **WP-AGENT-CREATE-UPGRADE 改判（用户 10-16）**：``courses`` 移出本表——课程 Agent
+# 要能绑文件夹（本学期课程文件夹就在 ``D:\Cloud\Courses`` 下；用户原话「文件夹就在
+# Cloud/Courses 下面都有这个学期对应的」）。裁定 121 二当年的「courses 无绑定」是
+# 当时没有可绑的东西；现在有了，且用户明确要。但 courses **不进分类默认表**
+# （``_WINDOWS_DEFAULT_PROJECT_PATHS`` 的 courses 格保持空）——每门课绑自己的
+# 文件夹，没有品类级默认这一说。
+UNBOUND_CATEGORIES: tuple[str, ...] = ("butler",)
 
 # R-013 扩写（2026-10-06）：哪几类分身是「Mind 里的一个项目」——只有这两类建册时
 # 要在 ``Vault/projects/`` 立项（events 挂 agenda 事项、butler 是家务，都不是项目）。
@@ -281,6 +287,25 @@ def default_path() -> Path:
     return root / "projects.yaml"
 
 
+def _normalize_project_paths(raw: object, primary: str) -> tuple[str, ...]:
+    """多文件夹归一：list/str → 去空去重保序的 tuple；空则回落到主文件夹。
+
+    旧条目只有 ``project_path`` ⇒ 读进来是一元列表。只有清单没有主值时，
+    调用方（``from_dict``）把首个元素提为主值，旧消费方看到的主文件夹不变。
+    """
+    items: list[str] = []
+    if isinstance(raw, str):
+        raw = [raw]
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            text = str(item or "").strip()
+            if text and text not in items:
+                items.append(text)
+    if not items and primary.strip():
+        items.append(primary.strip())
+    return tuple(items)
+
+
 @dataclass(frozen=True)
 class AgentEntry:
     """注册表里一个常驻 L2 agent 的描述。"""
@@ -306,6 +331,16 @@ class AgentEntry:
     # When the caller does not supply one, the registry seeds it from the
     # category default on create (see ``AgentRegistry.upsert``).
     project_path: str = ""
+    # WP-AGENT-CREATE-UPGRADE（用户 10-16 原话「一个 Agent 肯定也要可以添加多个文件夹」）：
+    # 多文件夹扩展。``project_path`` 保持**主文件夹**语义（第一个，继续驱动
+    # ``apply_l2_project_cwd`` 与一切旧消费方）；``project_paths`` 是完整清单。
+    # 加载时互相归一：只有主值的旧条目读进来 = 一元列表；只有清单时主值取首个。
+    project_paths: tuple[str, ...] = ()
+    # WP-AGENT-CREATE-UPGRADE（用户 10-16：「之前底座还可以选择图标和颜色。我觉得很可爱」）：
+    # 与项目条目同形（projects 的 icon/color 在 store/projects.py）——建册时可选，
+    # 左栏/卡片按它渲染。空 = 用既有默认（profile 确定性色 / 无图标）。
+    icon: str = ""
+    color: str = ""
     # 裁定 19 dissolve: archived rows stay on disk but hide from the default
     # list. ``archived_at`` is the ISO date the profile dir was moved aside.
     archived: bool = False
@@ -381,6 +416,14 @@ class AgentEntry:
             return None
         return hours
 
+    def bound_paths(self) -> tuple[str, ...]:
+        """全部绑定文件夹（主文件夹在前）。单值旧条目 = 一元组；无绑定 = 空。"""
+        if self.project_paths:
+            return tuple(self.project_paths)
+        if self.project_path:
+            return (self.project_path,)
+        return ()
+
     def to_dict(self) -> dict:
         data: dict = {"role": self.role}
         if self.profile:
@@ -405,6 +448,14 @@ class AgentEntry:
         data["category"] = self.category
         if self.project_path:
             data["project_path"] = self.project_path
+        # WP-AGENT-CREATE-UPGRADE: 多文件夹清单（一元时不写，旧形状原样保留）。
+        if self.project_paths:
+            data["project_paths"] = list(self.project_paths)
+        # 图标/颜色（用户 10-16 要回的「可爱」）：建册可选，空 = 默认渲染。
+        if self.icon:
+            data["icon"] = self.icon
+        if self.color:
+            data["color"] = self.color
         if self.archived:
             data["archived"] = True
             if self.archived_at:
@@ -445,6 +496,10 @@ class AgentEntry:
         secrets = raw.get("secret_overrides")
         if secrets is not None and not isinstance(secrets, dict):
             raise RegistryError(f"agent {name!r}: secret_overrides must be a mapping")
+        primary = str(raw.get("project_path") or "").strip()
+        paths = _normalize_project_paths(raw.get("project_paths"), primary)
+        if not primary and paths:
+            primary = paths[0]
         return cls(
             name=name,
             role=str(raw.get("role") or "l2_project"),
@@ -457,7 +512,10 @@ class AgentEntry:
             display_name=str(raw.get("display_name") or ""),
             pace=pace,
             category=_normalize_category(raw.get("category")),
-            project_path=str(raw.get("project_path") or ""),
+            project_path=primary,
+            project_paths=paths,
+            icon=str(raw.get("icon") or ""),
+            color=str(raw.get("color") or ""),
             archived=bool(raw.get("archived") or False),
             archived_at=str(raw.get("archived_at") or ""),
             source_event_id=str(raw.get("source_event_id") or ""),
@@ -666,17 +724,20 @@ class AgentRegistry:
                 raise RegistryError(
                     _case_twin_message(entry.name, twin, entry.profile_name)
                 )
-        # R-013: when the caller did not supply project_path, seed it from
+        # R-013: when the caller did not supply any folder binding, seed it from
         # the category default. butler stays empty (no bound folder). The
         # actual directory is created at the API layer (console router),
         # not here — registry stays pure data + no filesystem mutation
         # beyond its own yaml.
-        if not entry.project_path and entry.category not in UNBOUND_CATEGORIES:
+        # WP-AGENT-CREATE-UPGRADE：判据用 bound_paths()（清单或主值任一在都算
+        # 已绑定）——只查 project_path 会把「带了清单没带主值」的条目误判成未绑定，
+        # 被品类默认覆盖掉。
+        if not entry.bound_paths() and entry.category not in UNBOUND_CATEGORIES:
             from dataclasses import replace
 
             seeded = default_project_path(entry.category)
             if seeded:
-                entry = replace(entry, project_path=seeded)
+                entry = replace(entry, project_path=seeded, project_paths=(seeded,))
         # 派生名撞上保留名 / 子命令 ⇒ 那个家**永远建不出来**。项目分身叫 ``Plobi`` 就是
         # 这一类：小写化是保留名 ``plobi``，``plobi -p plobi --help`` 退 0（argparse 认），
         # 死在后面那句 reserved 校验（2026-10-13 脑搬家线现核）。以前只给一句
