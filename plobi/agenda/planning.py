@@ -784,18 +784,18 @@ def _l1_blocks(
     「一定要 LLM 参与。不要代码自动生成」。排不出来 ⇒ 面上照实说排不出来。
     """
     if planner is None:
-        # 默认**不跑模型**（9d7e4e58 那颗雷的延伸：构造里"默认可回退到真外部调用"= 一跑就
-        # 花钱、结果还跟着路由通不通漂）。没接线时走那条**旧的均分**，
-        # 而生产（`scripts/plobi/cron_evening_plan.py`）显式传 L1 ——
-        # 所以"明天那份计划由 L1 排"这条已经成立，均分那段**不再产生任何一份真计划**。
-        # 它还留着的唯一理由：`tests/plobi/test_planning_ddl_blocks.py` 那 11 条测的就是它，
+        # 生产（`scripts/plobi/cron_evening_plan.py`）**显式传 planner**，所以"今晚这轮由 L1 排"
+        # 已经成立；均分那段只剩"没人接线"时的兜底，而兜底必须**自报是兜底**（见下面那句 note）——
+        # 静默换回一版看起来排满的东西，就是把「没法执行」修成「更难看的没法执行」。
+        # 它还没被删的唯一理由：`tests/plobi/test_planning_ddl_blocks.py` 那 13 条测的就是它，
         # 里面装着裁定 121 的两条用户口径（作业块当日 240 分钟上限、无主作业是一等公民）。
-        # 删它的前提是把那两条搬进校验器/材料口并把那 11 条迁成注入假 planner ——
-        # 已写进登记格当下一格，不在本笔里悄悄删。
+        # 删它的前提：把那两条口径搬进材料口与校验器，并把那 13 条迁成注入假 planner。
         blocks, unscheduled, deferred = _project_block_items(
             conn, day, events, kept_anchors, window_from, window_to
         )
-        return list(blocks), list(unscheduled), list(deferred), ""
+        # 兜底要自己报名：这一格会拼进 daily_plans.summary，面上看得见"这不是 L1 排的"。
+        note = "（没接排程入口：这一版是旧的均分兜底，不是 L1 排的）"
+        return list(blocks), list(unscheduled), list(deferred), note
     try:
         blocks, note = planner(conn, day)
     except Exception as exc:  # 通道炸了也不写假块
