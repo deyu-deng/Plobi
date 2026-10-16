@@ -2,7 +2,7 @@
 
 底座一直在（ADR-0012 把 20:00 规划定成日程域 ``no_agent`` cron，脚本与注册器都在），
 缺的是**没有人种下那条作业**：这台实测 ``jobs.json`` 不存在，而 ticker 每 60 秒一跳、
-两枚 heartbeat 都是新的。所以本档钉的是「种下去 + 跑失败要说话 + 零模型」，不是重排算法。
+两枚 heartbeat 都是新的。所以本档钉的是「种下去 + 跑失败要说话 + 夜里那一发的模型门（裁定 161）」，不是重排算法。
 
 三条口径：
 - 种一次之后不再管 —— 用户删掉/关掉就是他的决定（同「作息模板」那条纪律）。
@@ -288,8 +288,17 @@ def test_an_unknown_crash_still_names_its_type(home, monkeypatch):
 
 
 def test_nothing_to_schedule_is_not_reported_as_a_failure(home, monkeypatch):
-    """空窗走既有的 ``status=empty`` 那句「不是没跑」，退出码 0 —— 别把空当成崩。"""
+    """空窗走既有的 ``status=empty`` 那句「不是没跑」，退出码 0 —— 别把空当成崩。
+
+    裁定 161 新增的判据：**这一发根本不许走到模型**。探针在 spy 位置等着，短路一旦被拆掉，
+    这里立刻拿到一条 ``['called']`` 而红——而不是先花掉真钱再从 ``status`` 那格发现不对
+    （那条路本来就是这么坏的：模型凭空排出块，``empty`` 变成 ``pending``）。
+    """
+    calls = _model_spy(monkeypatch)
+
     rc, out, _err, sink = _run_planner(monkeypatch)
+
+    assert calls == [], "空材料还去打模型＝花真钱问『今天没什么可排』"
 
     assert rc == 0
     payload = _last_json(out)
@@ -298,7 +307,7 @@ def test_nothing_to_schedule_is_not_reported_as_a_failure(home, monkeypatch):
     assert sink.bodies and "明天没有日程" in sink.bodies[0]
 
 
-# ---------------------------------------------------- 零模型 + 幂等（判据 4 / 3）
+# ------------------------------------- 模型门 + 幂等（判据 4 已按裁定 161 换对象 / 判据 3）
 
 
 def _seed_tomorrow_event(db: Path) -> None:
@@ -326,16 +335,59 @@ def _model_spy(monkeypatch) -> list[str]:
     return calls
 
 
-def test_the_scheduled_planner_never_touches_a_model(home, monkeypatch):
-    """判据 4：探针证明零 LLM，不是「应该没有」。"""
+def _polish_spy(monkeypatch) -> list[str]:
+    """润色那道门有没有被走到。它是另一个口子，与排程那一发分开数才对得上账。
+
+    （``plobi.butler.polish`` 在包命名空间里被同名函数遮住了，所以要拿模块对象本身改。）
+    """
+    hits: list[str] = []
+
+    def _spy(*args, **kwargs):
+        hits.append("polished")
+        return ""
+
+    module = importlib.import_module("plobi.butler.polish")
+    monkeypatch.setattr(module, "polish", _spy)
+    return hits
+
+
+def test_a_non_empty_night_takes_only_the_scheduling_shot(home, monkeypatch):
+    """裁定 161 判据 4 换了对象：夜里**就是会打模型**，但只允许排程那一发。
+
+    旧那条钉的是「探针证明零 LLM」，而 `cron_evening_plan.py` 早就显式传
+    ``planner=blocks_from_l1``（裁定 149①／154）——描述与代码互相打脸，红一直在挡别人的门。
+    现在按新契约钉：次数上限 = 1 发 + ``MAX_REPLANS`` 次重问，且**没有一次来自润色**。
+    """
+    from plobi.agenda.llm_planning import MAX_REPLANS
+
     _seed_tomorrow_event(home / "agenda.db")
     calls = _model_spy(monkeypatch)
+    polish_calls = _polish_spy(monkeypatch)
 
     rc, out, _err, _sink = _run_planner(monkeypatch)
 
     assert rc == 0
-    assert calls == []
+    assert 1 <= len(calls) <= MAX_REPLANS + 1, calls
+    assert polish_calls == [], "润色门没开却走了 polish＝多一道没人付过钱的模型调用"
     assert _last_json(out)["plan"]["event_count"] == 1
+
+
+def test_a_dead_channel_says_so_instead_of_slipping_back_to_even_spread(home, monkeypatch):
+    """裁定 149 不动：通道挂了照实说没排成，不许悄悄换回均分。
+
+    探针返回 ``None`` 就是"这一发没拿到回答"那条真路径（今晚 20:08 那轮真跑就是这个形状）。
+    断言两件事：这一支**不是**空窗那一支（有材料），以及 summary 里点名"没排成"与"没有项目块"。
+    """
+    _seed_tomorrow_event(home / "agenda.db")
+    calls = _model_spy(monkeypatch)
+
+    rc, out, _err, _sink = _run_planner(monkeypatch)
+    payload = _last_json(out)
+
+    assert rc == 0 and calls
+    assert payload["plan"]["status"] != "empty"
+    assert "没排成" in payload["plan"]["summary"], payload["plan"]["summary"]
+    assert "没有项目块" in payload["plan"]["summary"], "凭空多出块＝掉回了均分"
 
 
 def test_the_polish_env_gate_is_the_only_way_to_reach_a_model(home, monkeypatch):

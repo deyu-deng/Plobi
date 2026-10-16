@@ -15,8 +15,12 @@ stdout **和** stderr，再以非零退出；``cron/scheduler.py`` 的 ``no_agen
 （WP-DT-DIGEST）。清单与计划共用同一个 ``agenda.db``：计划 ``pending``（等你批）
 时只列已确认事件并在标题行写明「计划待批」，绝不把没批的东西当成已安排推给手机。
 
-默认零 LLM。设 ``PLOBI_BUTLER_POLISH=1`` 时只把 ``summary`` 一段交给 L2
-便宜模型润色，**永不**打 L1。空计划推送必须含「明天没有日程，计划为空」。
+夜里这一发**要打模型**（裁定 149①／154）：明天那份计划由 L1 读材料后排，脚本显式传
+``planner=blocks_from_l1``——旧那句「夜里不碰模型」已经过期，按裁定 161 改成真话。
+两条边界：① **材料为空不进模型**（``llm_planning.nothing_to_schedule`` 在 ``plan_with_llm``
+之前短路，走下面那条 ``status=empty`` 的既有话，探针计数必须为 0）；② 非空时只允许排程那一发
+（含 ``MAX_REPLANS`` 重问上限）。润色是独立的一道门：只有设 ``PLOBI_BUTLER_POLISH=1`` 才把
+``summary`` 一段交给 L2 便宜模型，**永不**打 L1 润色。空计划推送必须含「明天没有日程，计划为空」。
 """
 
 from __future__ import annotations

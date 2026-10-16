@@ -486,6 +486,22 @@ def default_llm_call(route: Any = None) -> Callable[[str], Any]:
     return call
 
 
+#: 裁定 161（10-16）：**没有任何可排材料时不许打模型**——花钱问模型「今天没什么可排」既贵又
+#: 会凭空排出块来（实测那条 `status=empty` 就是这么变成 `pending` 的）。空这一格由
+#: `planning.py` 既有的 `status=empty` 分支负责对人说话（「明天没有日程，计划为空，不是没跑」）。
+NOTHING_TO_SCHEDULE_NOTE = "明天没有任何可排材料（课、作业、待办、作息锚点、项目节奏全空），没有问模型"
+
+_MATERIAL_KEYS = (
+    "classes", "deadlines", "upcoming_deadlines", "other_events",
+    "routine_anchors", "anchors_moved", "project_pace",
+)
+
+
+def nothing_to_schedule(materials: dict[str, Any]) -> bool:
+    """材料包是不是真的一点都没有。`quota_budget` / `yesterday` / `missing` 是上下文，不算材料。"""
+    return not any(materials.get(key) for key in _MATERIAL_KEYS)
+
+
 def blocks_from_l1(
     conn: Any,
     day: str,
@@ -502,6 +518,8 @@ def blocks_from_l1(
     call = llm_call or default_llm_call()
     try:
         materials = plan_materials(conn, day)
+        if nothing_to_schedule(materials):
+            return [], NOTHING_TO_SCHEDULE_NOTE
         proposal = plan_with_llm(day, call, conn=conn, max_replans=max_replans)
     except PlanRejected as rejected:
         return [], "L1 那一轮没排成（" + "；".join(rejected.violations[:3]) + "），今天没有项目块"
