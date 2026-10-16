@@ -392,6 +392,23 @@ def agent_display_name(entry: AgentEntry) -> str:
     return entry.name
 
 
+def _project_paths_from_body(raw: object) -> tuple[str, ...]:
+    """``POST /api/agents`` 的 ``projectPaths`` 归一：去空去重保序。
+
+    单值 ``projectPath`` 走原来的字段（调用方合成一元清单）；这里只处理清单形态。
+    """
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    items: list[str] = []
+    for item in raw:
+        text = str(item or "").strip()
+        if text and text not in items:
+            items.append(text)
+    return tuple(items)
+
+
 def agent_row(entry: AgentEntry) -> dict:
     """``Agent`` in console/types.ts — id/name/status/model/todayCalls + profile.
 
@@ -421,6 +438,10 @@ def agent_row(entry: AgentEntry) -> dict:
         "profile": entry.profile_name,
         "category": entry.category,
         "mindSubtree": entry.mind_subtree,
+        # WP-AGENT-CREATE-UPGRADE（用户 10-16）：图标/颜色随行透出，左栏按它渲染；
+        # 空串 = 用既有默认（profile 确定性色 / 无图标）。
+        "icon": entry.icon,
+        "color": entry.color,
     }
     # Omit None values so the frontend receives absent keys (not JSON null),
     # matching the `model?: string` optional contract in types.ts.
@@ -474,6 +495,9 @@ def agent_overview(agent_id: str, *, db_path=None) -> Optional[dict]:
         "todayCostUsd": round(totals.cost_usd, 6),
         "todayTokens": totals.tokens,
         "projectPath": entry.project_path,
+        # WP-AGENT-CREATE-UPGRADE（用户 10-16）：完整绑定清单（主文件夹在前）；
+        # 单文件夹旧条目 = 一元组。编辑弹窗回显用。
+        "projectPaths": list(entry.bound_paths()),
     }
 
 
@@ -724,6 +748,16 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
 
     # R-013: optional override of the category default folder binding.
     project_path_override = str(body.get("projectPath") or "").strip()
+    # WP-AGENT-CREATE-UPGRADE（用户 10-16 原话「一个 Agent 肯定也要可以添加多个文件夹」）：
+    # 完整清单；单值 ``projectPath`` 仍认（= 一元清单）。主文件夹 = 第一个，
+    # 继续驱动 terminal.cwd 与右栏文件浏览器挂载。
+    project_paths_override = _project_paths_from_body(body.get("projectPaths"))
+    if project_paths_override:
+        project_path_override = project_paths_override[0]
+    # WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色」）：
+    # 建册可选的图标/颜色，与项目条目同形，空 = 默认渲染。
+    icon_override = str(body.get("icon") or "").strip()
+    color_override = str(body.get("color") or "").strip()
 
     # 裁定 42 §42.2 第 6 项的三个覆盖里，密钥这一样以前没有字段——它靠
     # ``create_profile(clone_config=True)`` 整份拷根 ``.env`` 实现（实测 13 个分身
@@ -791,6 +825,9 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
         mind_subtree=mind_subtree,
         category=category,
         project_path=project_path_override,
+        project_paths=project_paths_override,
+        icon=icon_override,
+        color=color_override,
         source_event_id=source_event_id,
         secret_overrides=secret_overrides,
         registered=registered,

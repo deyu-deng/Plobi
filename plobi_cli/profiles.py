@@ -79,6 +79,10 @@ _CLONE_ALL_STRIP: list[str] = [
     # 这两个路径是刚生成的新副本（不是用户的存量数据），unlink 安全。
     "plobi/projects.yaml",
     "plobi/agenda.db",
+    # 同一条裁定的第二手：models.dev 那份目录缓存也是共享件（一台现核 16 份分身
+    # 副本 ≈84 MB，最旧的停在十天前）。读侧已改走 get_shared_plobi_root()，
+    # 这里断掉**生产者**——clone-all 不再给新分身带一份。
+    "models_dev_cache.json",
 ]
 
 # Infrastructure artifacts excluded from --clone-all when the source is the

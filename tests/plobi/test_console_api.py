@@ -377,7 +377,16 @@ def test_overview_shape(client, _isolated_state):
     register(_isolated_state, agenda=AGENDA)
     body = client.get("/api/agents/agenda/overview").json()
     assert body["ok"] is True
-    assert set(body["data"]) == {"agent", "sessionId", "todayCostUsd", "todayTokens", "projectPath"}
+    # WP-AGENT-CREATE-UPGRADE：projectPaths 是 10-16 加的附加字段（完整绑定清单，
+    # 主文件夹在前）；projectPath 保留为主文件夹，旧消费方不变。
+    assert set(body["data"]) == {
+        "agent",
+        "sessionId",
+        "todayCostUsd",
+        "todayTokens",
+        "projectPath",
+        "projectPaths",
+    }
     assert body["data"]["agent"]["id"] == "agenda"
     assert isinstance(body["data"]["sessionId"], str)
     assert body["data"]["todayCostUsd"] == 0
