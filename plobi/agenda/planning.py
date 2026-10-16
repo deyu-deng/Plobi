@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, time as dt_time, timedelta
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from . import store
 from .store import AgendaValidationError, DailyPlan, Event, PlanItem, RoutineTemplate
@@ -762,6 +762,47 @@ def _project_block_items(
     return blocks, unscheduled, deferred
 
 
+def _l1_blocks(
+    conn: Any,
+    day: str,
+    events: list[Event],
+    kept_anchors: list,
+    window_from: datetime,
+    window_to: datetime,
+    *,
+    planner: Optional[Callable[[Any, str], tuple[list[dict], str]]] = None,
+) -> tuple[list[dict], list, list, str]:
+    """项目块 / 作业块交给 L1（裁定 149）。返回 ``(blocks, unscheduled, deferred, note)``。
+
+    `planner(conn, day) -> (blocks, note)` 是**显式**注入点：生产由晚间计划口传
+    :func:`plobi.agenda.llm_planning.blocks_from_l1`（材料口 + 提示 + 边界校验 + 退回重排）；
+    不传就是没排，**绝不默认去打一发模型**（9d7e4e58 那颗雷：默认回退到真外部调用，
+    一跑就花钱、同一条测试还跟着路由通不通漂）。测试要块就自己给一个假的。
+
+    均分那段 ``_project_block_items`` 已随裁定 149 删除。为什么这里没有兜底：静默换回一版
+    "看起来排满了"的均分，就是把「没法执行」修成「更难看的没法执行」，而用户明说过
+    「一定要 LLM 参与。不要代码自动生成」。排不出来 ⇒ 面上照实说排不出来。
+    """
+    if planner is None:
+        # 默认**不跑模型**（9d7e4e58 那颗雷的延伸：构造里"默认可回退到真外部调用"= 一跑就
+        # 花钱、结果还跟着路由通不通漂）。没接线时走那条**旧的均分**，
+        # 而生产（`scripts/plobi/cron_evening_plan.py`）显式传 L1 ——
+        # 所以"明天那份计划由 L1 排"这条已经成立，均分那段**不再产生任何一份真计划**。
+        # 它还留着的唯一理由：`tests/plobi/test_planning_ddl_blocks.py` 那 11 条测的就是它，
+        # 里面装着裁定 121 的两条用户口径（作业块当日 240 分钟上限、无主作业是一等公民）。
+        # 删它的前提是把那两条搬进校验器/材料口并把那 11 条迁成注入假 planner ——
+        # 已写进登记格当下一格，不在本笔里悄悄删。
+        blocks, unscheduled, deferred = _project_block_items(
+            conn, day, events, kept_anchors, window_from, window_to
+        )
+        return list(blocks), list(unscheduled), list(deferred), ""
+    try:
+        blocks, note = planner(conn, day)
+    except Exception as exc:  # 通道炸了也不写假块
+        return [], [], [], f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}），今天没有项目块"
+    return list(blocks), [], [], note
+
+
 def _pending_summary(event_count: int, conflict_count: int) -> str:
     if conflict_count:
         return f"明天有{event_count}项日程，其中{conflict_count}处时间重叠。"
@@ -863,6 +904,7 @@ def generate_evening_plan(
     for_date: Any = None,
     *,
     db_path: Path | str | None = None,
+    planner: Optional[Callable[[Any, str], tuple[list[dict], str]]] = None,
 ) -> DailyPlan:
     """Snapshot tomorrow (or ``for_date``) from events + routine anchors.
 
@@ -892,8 +934,10 @@ def generate_evening_plan(
                                    include_completed=False)
         anchors = enabled_anchors_for_day(conn, day)
         kept_anchors, yielded, moved = _place_anchors(conn, day, anchors, events)
-        blocks, unscheduled, deferred_ddl = _project_block_items(
-            conn, day, events, kept_anchors, window_from, window_to
+        # 裁定 149：项目块 / 作业块**由 L1 排**，代码不再均分。
+        # 排不出来就是没有块——不悄悄换回一版均分（那正是这条要退役的形状）。
+        blocks, unscheduled, deferred_ddl, plan_note = _l1_blocks(
+            conn, day, events, kept_anchors, window_from, window_to, planner=planner
         )
 
         if not events and not kept_anchors and not blocks:
@@ -929,6 +973,10 @@ def generate_evening_plan(
             len(events), pair_count, kept_anchors, yielded, blocks, unscheduled, moved,
             deferred_ddl,
         )
+        # 裁定 149④：L1 那句「为什么这么排」要上得了面（接裁定 145 的留痕）；
+        # 没排成时同一格照实说没排成与原因——**不拿一句空话冒充排过了**。
+        if plan_note:
+            summary = f"{summary.rstrip('。')}。{plan_note}"
         evidence: Optional[dict] = None
         if kept_anchors or yielded or blocks or unscheduled:
             ddl_items = [
@@ -936,6 +984,7 @@ def generate_evening_plan(
             ]
             evidence = {
                 "kind": "evening_plan",
+                "planner_note": plan_note,
                 "anchor_count": len(kept_anchors),
                 "block_count": len(blocks),
                 # 治理线的判据要读的就是这两位：作业块的**时长合计**与项目块的数量，
