@@ -240,7 +240,7 @@ def validate_proposal(
         if a_span is None:
             continue
         for row, (start, end) in timed:
-            if _is_anchor_row(row, anchor) or not _overlaps(start, end, *a_span):
+            if is_anchor_echo(row, anchor) or not _overlaps(start, end, *a_span):
                 continue
             problems.append(
                 f"「{_title(row)}」挤掉了作息锚点「{_title(anchor)}」"
@@ -475,6 +475,23 @@ def _is_anchor_row(row: dict[str, Any], anchor: dict[str, Any]) -> bool:
     return str(row.get("id") or "") == str(anchor.get("id") or "")
 
 
+def is_anchor_echo(row: dict[str, Any], anchor: dict[str, Any]) -> bool:
+    """这一条**就是那个锚点本身**，不是挤掉它的第三件事。
+
+    模型爱把作息原样复述回来（10-17 15:5x 在这台真库上现读：那一发交回的「早餐／午餐／晚餐」
+    三段与锚点同名同段），而它交的形状里没有 `id` / `template_id` 可认。只按身份认，等于把
+    用户自己说过的那三段当成新事情打回——重问三轮还是同一颗钉子（那三发就是这么全军的）。
+    所以这里加一条**只在标题与两个钟点全等时**成立的认法：标题差一个字、时段比锚点宽或窄，
+    仍然算挤掉。放宽的那一格只吞掉复述，不吞掉真违规。
+    """
+    if _is_anchor_row(row, anchor):
+        return True
+    r_span, a_span = _span_of(row), _span_of(anchor)
+    if r_span is None or a_span is None:
+        return False
+    return _title(row) == _title(anchor) and r_span == a_span
+
+
 def _is_commute(row: dict[str, Any]) -> bool:
     title = _title(row)
     return any(word in title for word in _COMMUTE_WORDS)
@@ -603,6 +620,7 @@ def _block_rows_from_proposal(
     items: Iterable[dict[str, Any]],
     reason: str,
     sources: list[tuple[str, str]],
+    anchors: Sequence[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     """把提案条目收成 `plan_items` 那一格的形状（**evidence 的口径只在这一处定义**）。
 
@@ -610,11 +628,18 @@ def _block_rows_from_proposal(
     构造口：`planner` 是「谁排的」、`source` 指回材料里那一条（哪门课的哪份作业 / 哪个项目）。
     两处各写一份，面上「是谁排的」就会有两套说法（裁定 94）。
     对不上材料也留一句「对不上」，不许空着——空着那一格看起来像排过了，实际没人知道为什么。
+
+    `anchors` 那一格用来把**模型复述回来的作息**摘掉：那些行不是它排的新事情，而写库那一步
+    本来就从材料里的锚点真源落一遍（`_anchor_item_row`）。不摘就会得到两条「午餐」——
+    多一条不是"更详细"，是让面上与手机清单出现没人排过的第二遍饭。摘这个动作只认
+    :func:`is_anchor_echo` 那一条全等判据，别的行一律原样留下。
     """
     blocks: list[dict[str, Any]] = []
     for item in items:
         span = _span_of(item)
         if span is None:
+            continue
+        if any(is_anchor_echo(item, anchor) for anchor in anchors):
             continue
         source = _match_source(_title(item), sources) or "l1:unnamed（材料里对不上任何一条）"
         # 面上与治理线把「作业块」和「项目块」分开计数读的就是这一格：来源是作业（`ddl:`）的那块
@@ -660,7 +685,8 @@ def blocks_from_l1(
         return [], f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}），今天没有项目块"
 
     blocks = _block_rows_from_proposal(proposal.items, proposal.reason,
-                                       _material_index(materials))
+                                       _material_index(materials),
+                                       anchors=materials["routine_anchors"])
     if not blocks:
         return [], "L1 交回来的提案里没有任何能落的时间块"
     return blocks, proposal.reason
@@ -823,7 +849,8 @@ def plan_and_store_day(
                 f"没交「为什么这么排」（reason）——裁定 149④ 的留痕。{day} 那份计划一个字没写。",
                 ["没交 reason"], for_date=day, status="no_reason")
 
-        blocks = _block_rows_from_proposal(items, reason, _material_index(materials))
+        blocks = _block_rows_from_proposal(items, reason, _material_index(materials),
+                                       anchors=anchors)
         if not blocks:
             return _refusal(
                 f"这一版没有任何能落的时间块。{day} 那份计划一个字没写。",
