@@ -207,3 +207,6 @@ DataDefault.doubaoagent_mode*
 
 # 随包分发的路由引擎三件套：构建时从 PLOBI_EGRESS_SRC 投放，不进仓（裁定 134）
 apps/desktop/build/egress/
+# 运行时产物：看板库落在进程 cwd 时会滚到仓里（0 字节那份已搬到 D:\Temp\plobi-strays-20261017）
+# 规则不带行尾注释——git 只认行首 #
+apps/desktop/kanban.db
