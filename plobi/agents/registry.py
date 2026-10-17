@@ -954,11 +954,19 @@ class AgentRegistry:
         return profile_dir
 
     def _write_profile_models(self, profile_dir: Path, entry: AgentEntry) -> Path:
-        """把注册表整体路由写进 profile 的 plobi/models.json。"""
-        from plobi.routing import ModelRouter
+        """把注册表整体路由写进**共享层那一份** `plobi/models.json`（裁定 166 决定一）。
 
-        target = profile_dir / "plobi" / "models.json"
-        router = self.router()  # 默认 + 全部注册覆盖
+        原来这一句是 ``profile_dir / "plobi" / "models.json"``：每次 spawn 都往那个分身家
+        落一份整表复印件——现核 **23 份、去重后内容只有 1 份**，而顶层那一份反倒不存在，
+        于是「改一次模型要动 23 个文件」，用户那句「我在设置里配一次大家都能用」就是冲着它说的。
+        名字与签名都不变：调用方（``spawn`` 与 ADR-0011 那两道断言）拿到的还是「这次生效用的
+        那张表」，只是那张表现在只有一份。
+        """
+        from plobi.routing import ModelRouter
+        from plobi.routing.models import shared_config_path
+
+        target = shared_config_path()
+        router = self.router()  # 默认 + 全部注册覆盖（名册行覆盖仍然叠在最上层）
         router.save(target)
         return target
 

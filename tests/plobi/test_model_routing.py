@@ -94,3 +94,77 @@ def test_corrupt_config_falls_back_to_defaults(tmp_path):
     path.write_text("{ not json", encoding="utf-8")
 
     assert ModelRouter.load(path).resolve(L1_SECRETARY).model == "kimi-k3"
+
+
+# ---------------------------------------------------------------------------
+# 裁定 166 决定一：路由表只存共享层那一份，读侧「共享 → 自家复印件 → 出厂默认」
+# ---------------------------------------------------------------------------
+
+
+def _two_homes(tmp_path, *, shared_roles, profile_roles):
+    """造一个「顶层家 + 一个分身家」的两层落点，两边各放一张不同的表。"""
+    root = tmp_path / "plobi-home"
+    profile = root / "profiles" / "kit"
+    (root / "plobi").mkdir(parents=True)
+    (profile / "plobi").mkdir(parents=True)
+    (root / "plobi" / "models.json").write_text(
+        json.dumps({"roles": shared_roles}), encoding="utf-8")
+    (profile / "plobi" / "models.json").write_text(
+        json.dumps({"roles": profile_roles}), encoding="utf-8")
+    return root, profile
+
+
+def test_the_shared_table_wins_over_the_profile_copy(tmp_path, monkeypatch):
+    """配一次大家能用＝读侧必须先看共享那一份。
+
+    顺序反过来（自家那份赢）就是现核那个病灶：23 份复印件各读各的，顶层改一次谁都不变。
+    """
+    from plobi.routing.models import config_path
+
+    root, profile = _two_homes(
+        tmp_path,
+        shared_roles={L2_AGENDA: {"provider": "shared", "model": "shared-m"}},
+        profile_roles={L2_AGENDA: {"provider": "stale", "model": "stale-m"}},
+    )
+    monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
+    monkeypatch.setenv("PLOBI_HOME", str(profile))
+
+    assert config_path() == root / "plobi" / "models.json"
+    assert ModelRouter.load().resolve(L2_AGENDA).qualified == "shared/shared-m"
+
+
+def test_save_writes_one_file_not_a_new_copy(tmp_path, monkeypatch):
+    """写侧不跟随读侧的回落：默认只写共享那一份，否则「存一次」＝「复印一次」。"""
+    from plobi.routing.models import shared_config_path
+
+    root, profile = _two_homes(
+        tmp_path,
+        shared_roles={L1_SECRETARY: {"provider": "moonshot", "model": "kimi-k3"}},
+        profile_roles={},
+    )
+    monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
+    monkeypatch.setenv("PLOBI_HOME", str(profile))
+
+    target = ModelRouter.load().save()
+
+    assert target == shared_config_path() == root / "plobi" / "models.json"
+    assert json.loads((root / "plobi" / "models.json").read_text(encoding="utf-8"))["roles"]
+    assert json.loads((profile / "plobi" / "models.json").read_text(encoding="utf-8")) == {"roles": {}}, \
+        "save() 写到分身家去了＝复印机没关"
+
+
+def test_a_fresh_home_falls_back_to_the_shared_copy(tmp_path, monkeypatch):
+    """共享那份不存在时回落到自家（旧数据兼容），两条路都不许把路由表读成空。"""
+    from plobi.routing.models import config_path
+
+    root = tmp_path / "plobi-home"
+    profile = root / "profiles" / "kit"
+    (profile / "plobi").mkdir(parents=True)
+    (profile / "plobi" / "models.json").write_text(
+        json.dumps({"roles": {L2_AGENDA: {"provider": "legacy", "model": "legacy-m"}}}),
+        encoding="utf-8")
+    monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
+    monkeypatch.setenv("PLOBI_HOME", str(profile))
+
+    assert config_path() == profile / "plobi" / "models.json"
+    assert ModelRouter.load().resolve(L2_AGENDA).qualified == "legacy/legacy-m"

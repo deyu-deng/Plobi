@@ -60,10 +60,37 @@ class RoutingError(ValueError):
     pass
 
 
+def shared_config_path() -> Path:
+    """路由表的**唯一写入落点**：共享层那一份，不管当前活跃家是谁。
+
+    裁定 42 把分身降成「名册一行 + 最多三个覆盖」，裁定 166 把这句变成可验收工作：
+    角色→模型那张表本来就该只有一份，而现核它被复印了 **23 份、去重后内容只有 1 份**
+    （顶层那一份反倒不存在）。写侧一律指到这里，复印件就不再新增。
+    """
+    try:
+        from plobi_constants import get_shared_plobi_root
+
+        return get_shared_plobi_root() / "plobi" / "models.json"
+    except Exception:
+        return Path.home() / ".plobi" / "plobi" / "models.json"
+
+
 def config_path() -> Path:
+    """读侧落点：**共享那一份优先**，没有才回落到自己家（兼容还没搬走的复印件）。
+
+    顺序就是裁 166 决定一的形状——名册行上的覆盖由
+    :meth:`plobi.agents.registry.AgentRegistry.router` 叠在这张表之上，所以生效顺序是
+    「名册行覆盖 → 共享层那一份 → 自家复印件（旧数据兼容）→ :data:`DEFAULT_ROUTES`」。
+    共享那份存在时**自家那份不再赢**，这一条就是「配一次模型大家都能用」的机制，
+    不是给分身加继承——裁 42 的本意正是这个，``Code/AGENTS.md`` 那句
+    「profiles are independent islands」已被推翻（裁 166 明写：以它为由回退即抗命）。
+    """
     override = os.environ.get("PLOBI_MODELS_CONFIG", "").strip()
     if override:
         return Path(override)
+    shared = shared_config_path()
+    if shared.exists():
+        return shared
     try:
         from plobi_constants import get_plobi_home
 
@@ -139,7 +166,8 @@ class ModelRouter:
         return cls(routes=routes)
 
     def save(self, path: Path | str | None = None) -> Path:
-        target = Path(path) if path else config_path()
+        # 写侧不跟随读侧的回落：默认只写共享层那一份，否则「存一次」会变成「复印一次」。
+        target = Path(path) if path else shared_config_path()
         target.parent.mkdir(parents=True, exist_ok=True)
         data = json.dumps(
             {

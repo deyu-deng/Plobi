@@ -195,6 +195,13 @@ def spawn_env(home, monkeypatch):
 
 
 def test_spawn_creates_profile_and_models(spawn_env):
+    """路由表只存共享层那一份；**分身家里不许再落复印件**（裁定 166 决定一，判据①）。
+
+    这一条以前断言的是 ``<profile>/plobi/models.json`` 存在——那一行就是现核
+    「分身 models.json 23 份、去重后内容只有 1 份」的来源：``spawn`` 每次都往那个家整表复印一遍，
+    而顶层反倒没有那一份（``$PLOBI_HOME/plobi/models.json`` 不存在），于是「配一次模型大家能用」
+    在机制上不可能成立。改成断言共享那一份存在且生效 + 分身家没有复印件。
+    """
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
     reg.upsert(_entry(name="agenda", role="l2_agenda", provider="deepseek", model="deepseek-chat"))
@@ -205,14 +212,19 @@ def test_spawn_creates_profile_and_models(spawn_env):
     assert result["routing_ok"] is True
     profile_dir = Path(result["profile_dir"])
     assert profile_dir.is_dir()
-    models = json.loads((profile_dir / "plobi" / "models.json").read_text(encoding="utf-8"))
+
+    from plobi.routing import ModelRouter
+    from plobi.routing.models import shared_config_path
+
+    shared = shared_config_path()
+    models = json.loads(shared.read_text(encoding="utf-8"))
     assert models["roles"]["l2_agenda"]["provider"] == "deepseek"
     assert models["roles"]["l2_agenda"]["model"] == "deepseek-chat"
-    # ADR-0011：写进 profile 的路由表断言绿（L1≠L2）
-    from plobi.routing import ModelRouter
-
-    assert ModelRouter.load(profile_dir / "plobi" / "models.json").violations() == []
-    # config.yaml 同步了模型
+    # ADR-0011：那张唯一的表断言绿（L1≠L2）
+    assert ModelRouter.load(shared).violations() == []
+    # 判据①：这个家不许带路由表复印件
+    assert not (profile_dir / "plobi" / "models.json").exists(), "spawn 又把整张表复印进了分身家"
+    # config.yaml 同步了模型（名册行上的覆盖仍写这一格）
     cfg = (profile_dir / "config.yaml").read_text(encoding="utf-8")
     assert "deepseek-chat" in cfg
 
@@ -678,10 +690,13 @@ def test_spawn_without_model_override_inherits_the_configured_default(spawn_env,
     assert "aigw" not in text, text
     assert "workbuddy" not in text, text
     assert result["routing_ok"] is True
-    # ADR-0011 那张路由账本（profile 的 plobi/models.json）照旧落 DEFAULT_ROUTES——
-    # 收口的是屏幕上那份 model 配置，不是路由账本。
-    models = json.loads((profile_dir / "plobi" / "models.json").read_text(encoding="utf-8"))
+    # ADR-0011 那张路由账本照旧落 DEFAULT_ROUTES——收口的是屏幕上那份 model 配置，不是路由账本。
+    # 落点按裁定 166 决定一改成**共享层那一份**（以前这里读的是分身家的复印件，23 份内容全同）。
+    from plobi.routing.models import shared_config_path
+
+    models = json.loads(shared_config_path().read_text(encoding="utf-8"))
     assert "l2_project" in models["roles"]
+    assert not (profile_dir / "plobi" / "models.json").exists(), "spawn 又往分身家复印了一张表"
 
     # 控制组：同一条 spawn 路径在记录**确实**写了覆盖时照旧落笔。没有这一段，
     # 上面那句「没写」可能只是 spawn 根本不写 config 的假绿。
