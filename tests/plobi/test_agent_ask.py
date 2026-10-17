@@ -421,6 +421,8 @@ def test_a_history_backed_timeout_says_the_target_is_just_slow(roster, monkeypat
     )
     assert payload["timeout_seconds"] > AA.timeout_seconds({})
     assert "实际耗时" in payload["error"]
+    # 数的来路决定该建议什么：抬上去过还超时，再劝「原样问一次」就是骗它再花一趟钱。
+    assert "拆小一点" in payload["error"] and "可以再问一次" not in payload["error"]
     assert "半句、不是完整回答" in payload["error"]  # 甲档那半件不许回归
 
 
