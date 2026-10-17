@@ -170,7 +170,7 @@ if ($missing.Count -gt 0) {
 }
 
 # ---- 档位写进引擎配置，而不是留它去猜 ----
-# vendor `internal/chatlog/conf/conf.go:71-73` 把 <data_dir>/chatlog.json 的兜底读法钉在
+# vendor `internal/chatlog/conf/conf.go:74-75` 把 <data_dir>/chatlog.json 的兜底读法钉在
 # `DataDir != "" && DataKey == ""` 这一档上：谁在 argv 给了 key，platform/version 这两档
 # 就再也没人填 ⇒ `datasource.go:50` 报「unsupported platform:  v0」，HTTP 503。
 # 这台 10-17 17:4x 的真读数就是这句（:5030 在听、/health 200，但 /api/v1/session 稳定 503）。

@@ -3,7 +3,7 @@
 这台 10-17 17:5x 的现核是这些断言的起因，不是假想：
 `scripts/chatlog_server.ps1` 把 `--data-key` 拼进 argv，于是任何进程一句
 `Get-CimInstance Win32_Process` 就能把 32 字节读走；同一支脚本还把整条命令打在 stdout。
-而 vendor 那侧 `internal/chatlog/conf/conf.go:71-73` 的兜底条件是
+而 vendor 那侧 `internal/chatlog/conf/conf.go:74-75` 的兜底条件是
 `DataDir != "" && DataKey == ""` —— argv 给了 key 就**永不**读那份带 `platform/version`
 的配置，于是 `/api/v1/session` 稳定 503「unsupported platform:  v0」。
 """
