@@ -118,6 +118,41 @@ class Watchdog:
             creationflags=flags,
         )
 
+    # --- on-demand heal (no sweep, no alert) --------------------------------
+
+    def attempt_heal_once(self) -> dict:
+        """确认没在听 → 拉一把 → 记限速位。**不跑采集、不告警**。
+
+        ``tick()`` 的那把闸要等连续三次失败（默认 10 分钟一次 = 30 分钟）才自愈，
+        那是"巡检轨道"的口径。按需采集等不了 30 分钟：``collect()`` 一进来就探到
+        没人听，当场就该拉一次。两者共用**同一个** ``heal_attempted_at`` 限速位，
+        所以一个断连周期里最多起一次，恢复健康即重置。
+        """
+        self.state = _load_state(self.state_path)
+        try:
+            healthy = bool(self.client.healthy())
+        except Exception as exc:
+            logger.warning("watchdog: on-demand health check raised: %s", exc)
+            healthy = False
+
+        if healthy:
+            self.state["consecutive_failures"] = 0
+            self.state["heal_attempted_at"] = None
+            self._save()
+            return {"healthy": True, "healed": False, "already_attempted": False}
+
+        if self.state.get("heal_attempted_at"):
+            return {"healthy": False, "healed": False, "already_attempted": True}
+
+        healed = False
+        try:
+            healed = self.heal_command() is not None
+        except Exception as exc:
+            logger.warning("watchdog: on-demand heal attempt failed: %s", exc)
+        self.state["heal_attempted_at"] = self._now()
+        self._save()
+        return {"healthy": False, "healed": healed, "already_attempted": False}
+
     # --- alerting -----------------------------------------------------------
 
     def _alert(self, detail: str) -> bool:

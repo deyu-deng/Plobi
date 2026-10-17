@@ -136,9 +136,10 @@ class ChatlogPipeline:
 
         health = self.health()
         if not health["ok"]:
-            raise ChatlogDead(
-                health["detail"], state=health["state"], detail=health["detail"]
-            )
+            health, note = self._heal_and_reprobe(health)
+        if not health["ok"]:
+            detail = health["detail"] + (note or "")
+            raise ChatlogDead(detail, state=health["state"], detail=detail)
 
         report = self.run_once()
         return {
@@ -149,6 +150,26 @@ class ChatlogPipeline:
             "unchanged": report.skipped_duplicate,
             "pending": report.pending_ids,
         }
+
+    def _heal_and_reprobe(self, health: dict) -> tuple[dict, str]:
+        """探到没人听就当场拉一把，再问一次；限速位与状态都归 ``Watchdog``。
+
+        这条是"常驻"的实际落点：日采那一轮就是驱动器，**不另写调度器**。巡检轨道
+        ``tick()`` 要等三次失败（默认 30 分钟）才自愈，按需采集等不了那 30 分钟，
+        所以这里走 ``attempt_heal_once()``——两者共用同一个限速位，
+        一个断连周期最多起一次，不会变成 spawn 循环。
+        """
+        try:
+            from .watchdog import Watchdog
+
+            outcome = Watchdog(pipeline=self).attempt_heal_once()
+        except Exception as exc:                              # noqa: BLE001 - 拉不起来就说拉不起来
+            logger.warning("chatlog collect: 自愈没跑成：%s: %s", type(exc).__name__, exc)
+            return health, "（试过一次拉起，没成功）"
+
+        if outcome.get("healthy") or outcome.get("healed"):
+            return self.health(), ""
+        return health, "（这个断连周期里已经试过一回了）"
 
     def _default_confirmer(self) -> Confirmer:
         """Heuristic first, L2 model for the remainder.
