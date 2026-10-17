@@ -25,8 +25,9 @@ proves in production, not a new mechanism:
 * **The record is the child's own session.** It runs inside its own profile, so
   that profile's ``state.db`` already holds the exchange; the answer and the
   session id are read back out of it. No second transcript store.
-* **Guards**: a bounded timeout (``config.yaml`` value, hard ceiling in code —
-  never a ``PLOBI_*`` env var), ``--yolo`` is never in the argv, and every
+* **Guards**: a bounded timeout (the caller's ``config.yaml`` knob is the floor;
+  裁定 167 乙档 lets the asked 分身's own measured history raise it — hard ceiling
+  in code, never a ``PLOBI_*`` env var), ``--yolo`` is never in the argv, and every
   failure (unknown target, missing profile, non-zero exit, timeout, missing
   binary) comes back as a structured tool error so the secretary's turn
   survives. The child is always reaped — a busy or wedged one is killed
@@ -47,10 +48,11 @@ import logging
 import os
 import re
 import signal
+import statistics
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional, Sequence
 
 from tools.registry import tool_error
 
@@ -74,6 +76,17 @@ ASK_TOOLSET = "plobi_north_star"
 DEFAULT_TIMEOUT_SECONDS = 180.0
 MIN_TIMEOUT_SECONDS = 5.0
 MAX_TIMEOUT_SECONDS = 900.0
+
+#: 乙档（裁定 167）：预算跟着**被问分身自己**的耗时走，不再用一个全局数掩所有分身。
+#: 区间刻意落在 ``MIN``/``MAX`` 之内——上限那道守卫（坏配置不许把秘书挂死）不动它。
+HISTORY_BUDGET_FLOOR_SECONDS = 60.0
+HISTORY_BUDGET_CEILING_SECONDS = 600.0
+HISTORY_BUDGET_MULTIPLIER = 1.5
+
+#: 最近几趟。再多也救不了：一个分身的问法一变，旧账就成了噪声。
+HISTORY_RUNS_CONSIDERED = 8
+#: 超过这个数就不算「当面问一句」的耗时了（现核：不这么夹，样本里最大的一条是 88 万秒）。
+HISTORY_RUN_MAX_SECONDS = 1800.0
 
 #: How long a terminated child gets to exit before it is killed outright.
 _KILL_GRACE_SECONDS = 5.0
@@ -205,6 +218,80 @@ def timeout_seconds(cfg: Optional[dict] = None) -> float:
         )
         return MAX_TIMEOUT_SECONDS
     return value
+
+
+# ---------------------------------------------------------------------------
+# Budget — 全局那个数是下限，分身自己的耗时才是这一问真正该等多久（裁定 167 乙档）
+# ---------------------------------------------------------------------------
+
+
+class Budget(NamedTuple):
+    """一次有界的等待：给多少秒，以及这个数建立在该分身自己的几趟历史上。"""
+
+    seconds: float
+    runs: int  # 0 = 这一档没有可读的历史，用的就是调用方那个旋钮
+
+
+def _p75(values: Sequence[float]) -> float:
+    """第 75 百分位，取 inclusive 法：结果不越过实测到的最慢那一趟。"""
+    if len(values) == 1:
+        return float(values[0])
+    return statistics.quantiles(values, n=4, method="inclusive")[2]
+
+
+def _one_shot_durations(entry, *, runs: int = HISTORY_RUNS_CONSIDERED) -> list[float]:
+    """该分身自己「一问到底」的历史耗时（秒），最近 ``runs`` 趟；读不到就是空。
+
+    只数 ``source='cli'`` 且**只有一条 user** 的会话——那正是本工具 spawn 的子进程形状
+    （``plobi -p <profile> … -q`` 一趟答完）。多轮会话里「首条 user → 末条 assistant」横跨
+    真人几次回车，拿来当耗时是假的，所以还要 ``turns == 1`` 并把超长的那几条丢掉。
+
+    耗时取**最后一条 assistant − 第一条 user**，不是第一条 assistant：被问的分身中途要跑
+    工具，只量第一个 LLM 步会系统性低估（现核同一趟：首答 23 秒、到底 185 秒），低到让
+    这把刀反过来把等待砍短——那正是它要治的病。
+    """
+    db_path = _child_state_db(entry)
+    if db_path is None:
+        return []
+    rows = _query_rows(
+        db_path,
+        "SELECT min(CASE WHEN m.role = 'user' THEN m.timestamp END),"
+        "       max(CASE WHEN m.role = 'assistant' THEN m.timestamp END),"
+        "       sum(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) "
+        "  FROM sessions s JOIN messages m ON m.session_id = s.id "
+        " WHERE s.source = 'cli' "
+        " GROUP BY s.id ORDER BY max(m.timestamp) DESC LIMIT ?",
+        (runs,),
+    )
+    durations: list[float] = []
+    for asked, answered, turns in rows:
+        if int(turns or 0) != 1 or asked is None or answered is None:
+            continue
+        duration = float(answered) - float(asked)
+        if 0.0 < duration <= HISTORY_RUN_MAX_SECONDS:
+            durations.append(duration)
+    return durations
+
+
+def budget_for(entry, *, configured: Optional[float] = None) -> Budget:
+    """这一问给多少秒：慢分身不再被快分身的那个全局数掩掉（R-072 复现的成因）。
+
+    口径 26（裁定 143）守死在这里——配置读数**只有**调用方自己那一个旋钮
+    ``plugins.entries.plobi-north-star.agent_ask.timeout_seconds``（:func:`timeout_seconds`），
+    不读被问分身的那份 config。历史耗时走的是本工具取答案本来就要开的那只只读探针
+    （:func:`_child_state_db` + :func:`_query_rows`），不新增第二条进别人家的路。
+    """
+    base = timeout_seconds() if configured is None else configured
+    durations = _one_shot_durations(entry)
+    if not durations:
+        return Budget(base, 0)
+    headroom = min(
+        HISTORY_BUDGET_CEILING_SECONDS,
+        max(HISTORY_BUDGET_FLOOR_SECONDS, _p75(durations) * HISTORY_BUDGET_MULTIPLIER),
+    )
+    # 只许抬高，不许砍短：这一档治的是「答完之前就被杀」。若反过来把某个分身的等待
+    # 从 180 秒降到 60 秒，这把刀自己就造出了更多的「派了没回音」。
+    return Budget(min(MAX_TIMEOUT_SECONDS, max(base, headroom)), len(durations))
 
 
 # ---------------------------------------------------------------------------
@@ -698,7 +785,8 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
             f"要问「{_label(entry)}」什么？question 不能为空。", ok=False, agent=entry.name
         )
 
-    limit = timeout_seconds()
+    budget = budget_for(entry)
+    limit = budget.seconds
     try:
         argv, env, cwd = build_child_command(
             entry, compose_question(question, entry=entry),
@@ -730,8 +818,16 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
             f"它已经说出来的部分照原样交回，**这是没说完的半句、不是完整回答**：{partial}"
             if partial else "它一个字都没吐出来（子进程的输出还没落到管道就被收了）。"
         )
+        # 这个数是从哪儿来的要说给 L1：按它自己的耗时抬上去过，就说明「它本来就慢」，
+        # 原样再问一次是白花一趟钱——这句只有乙档能给，默认值那趟没有历史可说。
+        origin = (
+            f"（这 {int(limit)} 秒是按它自己最近 {budget.runs} 趟的实际耗时给的，"
+            "不是默认值——它本来就慢，原样再问一次多半还是一样。）"
+            if budget.runs
+            else ""
+        )
         return tool_error(
-            f"「{_label(entry)}」在 {int(limit)} 秒内没有答完。{detail}"
+            f"「{_label(entry)}」在 {int(limit)} 秒内没有答完。{origin}{detail}"
             "可以再问一次，或把问题问得更具体。",
             ok=False,
             agent=entry.name,

@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sqlite3
 import stat
 import sys
 import time
@@ -305,6 +306,122 @@ def test_timeout_is_not_an_env_var_knob(monkeypatch):
     """Behavioural settings live in config.yaml — a ``PLOBI_*`` var is not a door."""
     monkeypatch.setenv("PLOBI_AGENT_ASK_TIMEOUT_SECONDS", "42")
     assert AA.timeout_seconds({}) == AA.DEFAULT_TIMEOUT_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# 裁定 167 乙档 — the slow 分身 must not be masked by the fast one's number
+# ---------------------------------------------------------------------------
+
+_BASE_TS = 1_760_000_000.0
+
+
+def _profile_db(roster, name: str) -> Path:
+    return roster.plobi_home / "profiles" / name / "state.db"
+
+
+def _seed_runs(roster, name: str, runs) -> None:
+    """Write a real ``state.db`` — the budget reads the same read-only probe that
+    reads the answer back, so the test must exercise that SQL, not a mock of it.
+
+    ``runs`` is a list of ``(source, user_turns, duration_seconds)``.
+    """
+    db = _profile_db(roster, name)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL)")
+    conn.execute("CREATE TABLE messages (session_id TEXT, role TEXT, timestamp REAL)")
+    for index, (source, turns, duration) in enumerate(runs):
+        sid = f"run_{index}"
+        started = _BASE_TS + index * 1000
+        conn.execute(
+            "INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)",
+            (sid, source, started),
+        )
+        # 一问一答之间夹一条工具往返：真实子分身要先跑工具才给最终答复。
+        conn.execute("INSERT INTO messages VALUES (?, 'user', ?)", (sid, started))
+        for turn in range(1, turns):
+            conn.execute("INSERT INTO messages VALUES (?, 'tool', ?)", (sid, started + turn))
+            conn.execute("INSERT INTO messages VALUES (?, 'user', ?)", (sid, started + turn + 1))
+        conn.execute("INSERT INTO messages VALUES (?, 'assistant', ?)", (sid, started + 3.0))
+        conn.execute("INSERT INTO messages VALUES (?, 'tool', ?)", (sid, started + duration - 2))
+        conn.execute(
+            "INSERT INTO messages VALUES (?, 'assistant', ?)", (sid, started + duration)
+        )
+    conn.commit()
+    conn.close()
+
+
+def _entry(roster, name):
+    return roster.registry.get(name)
+
+
+def test_a_slower_target_gets_strictly_more_wait_than_a_faster_one(roster):
+    """判据写成关系：慢分身的预算必须严格大于快分身的（R-072 复现的成因就是这个）。"""
+    _seed_runs(roster, LIVE_PROJECT, [("cli", 1, 300.0)])
+    _seed_runs(roster, _OTHER_PROJECT, [("cli", 1, 10.0)])
+
+    slow = AA.budget_for(_entry(roster, LIVE_PROJECT), configured=AA.timeout_seconds({}))
+    fast = AA.budget_for(_entry(roster, _OTHER_PROJECT), configured=AA.timeout_seconds({}))
+
+    assert slow.seconds > fast.seconds
+    assert slow.seconds > AA.timeout_seconds({})  # 不再被那个全局数掩掉
+    assert fast.runs == 1 and slow.runs == 1
+
+
+def test_a_target_without_history_keeps_the_callers_own_knob(roster):
+    """没历史就照实退默认：不假装比 config 更聪明，也不新建第二处配置读数。"""
+    budget = AA.budget_for(_entry(roster, LIVE_PROJECT), configured=137.0)
+    assert budget == AA.Budget(137.0, 0)
+
+
+def test_history_never_shortens_the_wait_below_the_configured_knob(roster):
+    """只许抬高。若某分身历史很快就把预算降到 60 秒，这把刀自己就造出更多「派了没回音」。"""
+    _seed_runs(roster, LIVE_PROJECT, [("cli", 1, 4.0), ("cli", 1, 6.0)])
+    configured = AA.timeout_seconds({})
+    budget = AA.budget_for(_entry(roster, LIVE_PROJECT), configured=configured)
+    assert budget.seconds >= configured
+
+
+def test_only_one_shot_cli_runs_are_counted_as_history(roster):
+    """多轮会话和 cron 那种长跨度都不是「当面问一句」的耗时，混进来就是把假样本当分档依据。"""
+    _seed_runs(
+        roster,
+        LIVE_PROJECT,
+        [
+            ("cli", 1, 120.0),      # 唯一该数的：一问到底的一趟
+            ("cli", 3, 900.0),      # 真人来回敲了三次的会话
+            ("cron", 1, 1500.0),    # 定时任务那一型，不是被问
+            ("cli", 1, 5000.0),     # 超长的会话行（挂了几天没关），当耗时是假的
+        ],
+    )
+    budget = AA.budget_for(_entry(roster, LIVE_PROJECT), configured=AA.timeout_seconds({}))
+    assert budget.runs == 1
+    assert _one_shot(roster, LIVE_PROJECT) == [120.0]
+
+
+def _one_shot(roster, name):
+    return AA._one_shot_durations(_entry(roster, name))
+
+
+def test_history_headroom_stays_inside_the_band_and_under_the_ceiling(roster):
+    """抬多少有界：夹在 [60, 600]，且永远不超过代码里那道「坏配置不许挂死秘书」的上限。"""
+    _seed_runs(roster, LIVE_PROJECT, [("cli", 1, 900.0)] * 3)
+    budget = AA.budget_for(_entry(roster, LIVE_PROJECT), configured=AA.timeout_seconds({}))
+    assert budget.seconds == AA.HISTORY_BUDGET_CEILING_SECONDS
+    assert budget.seconds <= AA.MAX_TIMEOUT_SECONDS
+    assert AA.HISTORY_BUDGET_FLOOR_SECONDS <= budget.seconds
+
+
+def test_a_history_backed_timeout_says_the_target_is_just_slow(roster, monkeypatch):
+    """这句只有乙档能给：数已经按它自己的耗时抬上去了，原样再问一次还是白花一趟钱。"""
+    _seed_runs(roster, LIVE_PROJECT, [("cli", 1, 300.0)])
+    monkeypatch.setattr(AA, "_run_child", _fake_run(timed_out=True, returncode=-9, stdout="半句"))
+    payload = _error_payload(
+        AA.handle_agent_ask({"agent": LIVE_PROJECT, "question": "在吗"})
+    )
+    assert payload["timeout_seconds"] > AA.timeout_seconds({})
+    assert "实际耗时" in payload["error"]
+    assert "半句、不是完整回答" in payload["error"]  # 甲档那半件不许回归
 
 
 # ---------------------------------------------------------------------------
