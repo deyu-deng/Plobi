@@ -826,9 +826,15 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
             if budget.runs
             else ""
         )
+        # 数的来路决定该建议什么：抬上去过还超时，「再问一次」就是骗它再花一趟钱。
+        advice = (
+            "要么把问题拆小一点，要么把 `agent_ask.timeout_seconds` 那一个旋钮调高——"
+            "它就是这一问现在的下限。"
+            if budget.runs
+            else "可以再问一次，或把问题问得更具体。"
+        )
         return tool_error(
-            f"「{_label(entry)}」在 {int(limit)} 秒内没有答完。{origin}{detail}"
-            "可以再问一次，或把问题问得更具体。",
+            f"「{_label(entry)}」在 {int(limit)} 秒内没有答完。{origin}{detail}{advice}",
             ok=False,
             agent=entry.name,
             timeout_seconds=limit,
