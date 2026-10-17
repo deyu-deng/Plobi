@@ -746,8 +746,25 @@ from plobi_constants import get_plobi_home  # noqa: F811,E402
 from utils import atomic_replace, fast_safe_load
 
 def get_config_path() -> Path:
-    """Get the main config file path."""
-    return get_plobi_home() / "config.yaml"
+    """Config file for the active home; **falls back to the shared root's** when this home has none.
+
+    裁定 42 把分身降成「名册一行 + 最多三个覆盖」，裁定 166 决定一把「配置只存共享层那一份」变成
+    可验收判据。裸建出来的分身家（`create_profile(no_skills=True)`，不再 `clone_config`）本来就
+    没有 `config.yaml`——以前它读到的只是 `DEFAULT_CONFIG`（现核：`model` 那格是空字符串），
+    于是「用户在设置里配的那一次」永远到不了它。现在它回落到顶层那一份；名册行上的覆盖仍由
+    :meth:`plobi.agents.registry.AgentRegistry.router` 与 `_write_profile_config` 叠在上面，
+    所以顺序是「名册行覆盖 → 顶层那一份 → 自家那份（旧复印件兼容）→ 出厂默认」。
+    """
+    path = get_plobi_home() / "config.yaml"
+    if path.exists():
+        return path
+    try:
+        from plobi_constants import get_shared_plobi_root
+
+        shared = get_shared_plobi_root() / "config.yaml"
+    except Exception:
+        return path
+    return shared if shared.exists() else path
 
 def get_env_path() -> Path:
     """Get the .env file path (for API keys)."""
