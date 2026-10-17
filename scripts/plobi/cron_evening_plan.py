@@ -7,10 +7,14 @@
 
 排程那一发的**主人是日程秘书那个 L2 本人**（裁定 165 改判 163①，②③ 不动）：落库口在
 ``plobi/agenda/llm_planning.py:plan_and_store_day``（材料→提案→边界闸→写），嘴上那个入口是
-``plan_tomorrow``。**照实说现状**：那条作业 ``plobi-evening-plan`` 的 prompt 现读仍写着
-「不要自己重排时间」，``l2-agenda`` 的工具集只有 ``terminal``——把 prompt 改成「你来排」并给它
-装上手，登记在 ``WP-AGENDA-PLANS-ITSELF``（排在「详情列 → 修超时」之后）。那一把刀落地之前，
-夜里这一轮**还是不会自己排**，本脚本也**不代排**：明天没有计划就照实说没有。
+``plan_tomorrow``。**现状照实说（10-17 随 ``WP-AGENDA-PLANS-ITSELF`` 第一半改到这一步）**：那条作业
+``plobi-evening-plan`` 的 prompt 已经从「不要自己重排时间」改成「先调 ``plobi_secretary_ask``
+（intent=``plan_day``、action=``plan_tomorrow``）把明天排一次并落库，再念」——所以夜里这一轮**自己排**，
+本脚本仍然只读、只投递。还没做的第二半是**身份**：这条作业记录里没有 ``profile`` 键
+（``cron/scheduler.py:546`` 那句「cron 是 per-profile」⇒ 这一轮跑在起着后端的那个 profile 名下，
+不是 ``l2-agenda`` 本人），而 ``l2-agenda`` 的 ``platform_toolsets`` 现读只有 ``terminal``；
+那条腿（嘴→规划器）目前仍是**直调**，165 允许它作为过渡形，撤它的条件写在裁定里。
+排不出来时本脚本**不代排**：明天没有计划就照实说没有。
 
 表与注册在 ``plobi/butler/nightly.py``（产品真源）：装机后第一次启动由桌面后端种一次
 ``plobi-evening-plan``，手动全量注册走 ``scripts/plobi/register_cron.py --all``。

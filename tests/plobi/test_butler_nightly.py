@@ -110,7 +110,7 @@ def test_first_boot_creates_exactly_the_nightly_plan_job(home):
     # R-104 / 裁定 154：排程这一条不再是脚本自跑（用户：「第二天的规划的定时任务需要给
     # 日程秘书，就是直接定时发提示词给日程秘书」）。其余四条照旧，见下面那条测试。
     assert job["no_agent"] is False
-    assert job["prompt"] and "明日计划" in job["prompt"]
+    assert job["prompt"] and "plan_tomorrow" in job["prompt"], "种下去的还是『只许念』那一版"
     assert job["attach_to_session"] is True
     assert job["deliver"] == "local"
 
@@ -484,11 +484,21 @@ def test_running_the_same_day_twice_gives_the_same_plan(home):
 
 
 def test_only_the_planning_job_becomes_an_agent_turn(home):
-    """判据④：只有排程那一条走 Agent。采集不需要推理，套一层 Agent 只多一个失败面。"""
+    """判据④：只有排程那一条走 Agent。采集不需要推理，套一层 Agent 只多一个失败面。
+
+    同一格还钉住 165 第一半那句话：**这一轮叫它自己排**。旧那句「不要自己重排时间——计划由脚本
+    写好」在 163 撑掉脚本那一发之后就成了谎话（脚本不再排，而又没人排 ⇒ 20:00 一过那份计划连行都没有）。
+    把这两句钉在形状上，而不是钉在我对 prompt 的记忆上：改回旧文案这条立刻红。
+    """
     assert nightly.job_shape("plobi-source-collect") == {"prompt": None, "no_agent": True}
     assert nightly.job_shape("plobi-morning-report")["no_agent"] is True
     assert nightly.job_shape(NIGHTLY)["no_agent"] is False
     assert nightly.job_shape(NIGHTLY)["attach_to_session"] is True
+
+    prompt = str(nightly.job_shape(NIGHTLY)["prompt"])
+    assert "plobi_secretary_ask" in prompt and "plan_tomorrow" in prompt, "这一轮没被叫去自己排"
+    assert "不要自己重排时间" not in prompt, "旧那句『只许念』回来了＝20:00 之后没人排"
+    assert "拒绝" in prompt, "没过闸时必须念那句拒绝，不许编一句『排好了』交差"
 
 
 def test_shape_is_realigned_on_every_boot_but_a_disabled_row_is_left_alone(home, tmp_path, monkeypatch):
@@ -519,7 +529,7 @@ def test_shape_is_realigned_on_every_boot_but_a_disabled_row_is_left_alone(home,
     fake = ShapeFake()
     assert nightly.ensure_nightly_plan_job(fake) == "already-seeded"
     assert rows[0]["no_agent"] is False and rows[0]["attach_to_session"] is True
-    assert rows[0]["prompt"] and "明日计划" in rows[0]["prompt"]
+    assert rows[0]["prompt"] and "plan_tomorrow" in rows[0]["prompt"], "启动对齐刷进去的还是那句『只许念』"
     kept = json.loads((orphan / "jobs.json").read_text(encoding="utf-8"))["jobs"][0]
     assert kept["enabled"] is False and "R-104" in kept["disabled_reason"]
 
