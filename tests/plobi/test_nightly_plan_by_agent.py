@@ -240,6 +240,60 @@ def test_d_squeezing_the_lunch_anchor_is_refused_with_zero_writes(conn, bare_reg
     assert "挤掉了作息锚点" in result["reason"], result["reason"]
 
 
+def _restates_the_anchors(_conn, day=TOMORROW):
+    """10-17 15:5x 在这台**真读到的那一版**：模型把作息原样复述回来，外加一份作业块。
+
+    那一发交回的「早餐／午餐／晚餐」三段与锚点同名同段，而别名形状里没有 `id` / `template_id`
+    可认——三道全被同一颗钉子打回（重问两轮也一样），那份计划一个字没落。
+    """
+    return (
+        [
+            {"title": f"{COURSE} 第三次作业", "start_at": f"{day}T09:00:00",
+             "end_at": f"{day}T11:00:00"},
+            {"title": "午餐", "start_at": f"{day}T12:00:00", "end_at": f"{day}T12:40:00"},
+        ],
+        "上午脑子最好，先把要交的作业清掉；午饭那格照你说的留着。",
+    )
+
+
+def _widens_the_lunch_span(_conn, day=TOMORROW):
+    """负例控制：标题一样但**时段比锚点宽**，那就不是复述而是挤掉——这条不许被放宽吞掉。"""
+    return (
+        [{"title": "午餐", "start_at": f"{day}T11:50:00", "end_at": f"{day}T12:50:00"}],
+        "午饭那点地方我要多用二十分钟。",
+    )
+
+
+def test_d2_an_anchor_the_model_restates_is_neither_a_squeeze_nor_a_second_lunch(
+    conn, bare_registry
+) -> None:
+    """复述作息的两个后果都要钉：闸不许把它当新事情打回，写库不许落两条「午餐」。
+
+    放宽只有一条判据（标题与两个钟点**全等**，:func:`llm_planning.is_anchor_echo`）；
+    上面那个负例先跑，就是为了证明"宽一点"仍然算挤掉——把全等改成"标题相同就算"，
+    `test_d2` 的负例那一半当场红。
+    """
+    _seed_a_real_day(conn)
+
+    refused = llm_planning.plan_and_store_day(TOMORROW, conn=conn, proposal_fn=_widens_the_lunch_span)
+    assert refused["ok"] is False and refused["written"] == 0, refused
+    assert "挤掉了作息锚点" in refused["reason"], refused["reason"]
+
+    result = llm_planning.plan_and_store_day(TOMORROW, conn=conn, proposal_fn=_restates_the_anchors)
+    assert result["ok"] is True, result
+
+    plan, tomorrow = _tomorrow_items(conn)
+    lunches = [item for item in tomorrow if item.title == "午餐"]
+    assert len(lunches) == 1, [item.title for item in tomorrow]
+    assert (lunches[0].evidence or {}).get("kind") == "routine", lunches[0].evidence
+    assert not (lunches[0].evidence or {}).get("planner"), "这条要出自作息真源，不是模型那一发"
+
+    blocks = [item for item in tomorrow if (item.evidence or {}).get("planner") == "l1"]
+    assert len(blocks) == 1, [dict(item.evidence) for item in tomorrow]
+    assert COURSE in blocks[0].title, blocks[0].title
+    assert plan.evidence["block_count"] == 1, plan.evidence
+
+
 def test_e_a_proposal_without_reason_is_refused_with_zero_writes(conn, bare_registry):
     """裁定 149④ 的留痕：没交「为什么这么排」= 不合格，同样一个字不写。"""
     _seed_a_real_day(conn)
