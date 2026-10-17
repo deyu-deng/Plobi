@@ -54,11 +54,18 @@ BUTLER_JOBS: list[tuple[str, str, str, str]] = [
 #: 既没有 `daily_plans` 行也没有 `plan_items` 行）。165 把排程那一发的身份改判给日程秘书本人，
 #: 本笔只做它的**第一半**：夜里这一轮**自己调那张嘴**（`plobi_secretary_ask` / `plan_tomorrow`，
 #: 就是 Code `e0cffc9e` 加的入口）把明天排一次并落库，然后才念。
-#: ⚠️ 照实说两件事实根，留给下一把（`WP-AGENDA-PLANS-ITSELF` 的身份那一半）：① 这条作业记录里
-#: **没有 `profile` 键**，`cron/scheduler.py:546` 那句「cron 是 per-profile 的」⇒ 这一轮跑在**起着后端
-#: 的那个 profile** 名下，不是 `l2-agenda` 本人；② 现在这条腿仍然由嘴**直调**规划器
+#: ⚠️ 三件事实根，留给下一把（`WP-AGENDA-PLANS-ITSELF` 的第二半）：① 这条作业记录里**没有 `profile` 键**，
+#: `cron/scheduler.py:546` 那句「cron 是 per-profile」⇒ 这一轮跑在**起着后端的那个家**里（这台现读是根家，
+#: `cron/ticker_last_success` 16:0x 有心跳）；② 按**裁定 42**，「日程秘书是谁」= 同一个家里的一个角色
+#: （名册里 `role=l2_agenda` 那一条 + `attach_to_session` 落进它那个会话），**不是**另一份 Plobi 实例——
+#: 所以第二半的活是「带角色的子回合拿到该拿的嘴、自己落库、能向其他角色发问并留痕」，
+#: **本节与那一把都不许新增任何按分身复制的目录或配置**（现读 `du -sm profiles` = 24 份 / 102 MB，名册 24 行里用到
+#: 那三项覆盖的是 0 行；违一条返工）；③ 现在这条腿仍然由嘴**直调**规划器
 #: （`master_tools.py` 在 `registry.run_secretary_ask` 之前拦下 `plan_tomorrow`），过渡形照 165 允许，
 #: 撤它的条件写在裁定里，不在本笔。
+#: ⚠️ 还有 operational 一条，别当成代码已经生效：作业行上的 prompt **只在后端启动那一次
+#: `align_job_shape` 才刷进 `cron/jobs.json`**（现读 16:0x 那行仍是旧文案）⇒ 20:00 那一轮会照常跑、
+#: 投的是库里已有的那份，而"先调嘴自己排"要从**下一次启动**之后才真正生效。
 NIGHTLY_PLAN_PROMPT = (
     "今晚这一轮**由你自己把明天排出来**：第一步调一次 `plobi_secretary_ask`，参数 "
     "intent=`plan_day`、action=`plan_tomorrow`、date 留空（缺省就是明天）——材料、边界闸、落库都在那一处，"

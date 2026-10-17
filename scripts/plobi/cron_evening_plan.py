@@ -10,9 +10,13 @@
 ``plan_tomorrow``。**现状照实说（10-17 随 ``WP-AGENDA-PLANS-ITSELF`` 第一半改到这一步）**：那条作业
 ``plobi-evening-plan`` 的 prompt 已经从「不要自己重排时间」改成「先调 ``plobi_secretary_ask``
 （intent=``plan_day``、action=``plan_tomorrow``）把明天排一次并落库，再念」——所以夜里这一轮**自己排**，
-本脚本仍然只读、只投递。还没做的第二半是**身份**：这条作业记录里没有 ``profile`` 键
-（``cron/scheduler.py:546`` 那句「cron 是 per-profile」⇒ 这一轮跑在起着后端的那个 profile 名下，
-不是 ``l2-agenda`` 本人），而 ``l2-agenda`` 的 ``platform_toolsets`` 现读只有 ``terminal``；
+本脚本仍然只读、只投递。还没做的第二半是**身份**，按裁定 42 回答：「日程秘书是谁」= **同一个家里的一个角色**
+（名册里 ``role=l2_agenda`` 那一条记录 + ``attach_to_session`` 落进它那个会话），**不是**另开一份 Plobi 实例——
+所以那一半的活是「带角色的子回合拿到该拿的那张嘴、自己落库、能向其他角色发问并留痕」，
+**不许新增任何按分身复制的目录或配置**（裁 42 的现场：``du -sm profiles`` = 24 份 / 102 MB，名册 24 行里用到那三项覆盖的是 0 行）。
+本笔另一处照实纠正：**这一轮现在就在跑**（现读根家 ``cron/ticker_last_success`` 有心跳，根家
+``scripts/plobi_evening_plan.py`` 那份副本已是本文件），但作业行上的 prompt **不会自己重新对齐**——
+``align_job_shape`` 只在后端启动那一次跑，所以"先调嘴排一次"要从**下一次启动**之后才真正生效；
 那条腿（嘴→规划器）目前仍是**直调**，165 允许它作为过渡形，撤它的条件写在裁定里。
 排不出来时本脚本**不代排**：明天没有计划就照实说没有。
 
