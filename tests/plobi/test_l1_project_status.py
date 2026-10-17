@@ -277,6 +277,12 @@ def test_run_project_status_routes_via_secretary_ask(mind_root, fresh_registry):
 
 
 def test_plan_day_on_empty_library_is_ok(tmp_path, fresh_registry, monkeypatch):
+    """空库那一趟现在必须**说「没有」并且零写入**（`WP-PLAN-DAY-CLOBBER`，10-17）。
+
+    以前这条断言的是 `ok is True` 与一份 summary——那来自 `generate_evening_plan`，
+    而它先 DELETE 当天 `plan_items` 再重插：本体退役后重插是 0 块，于是"读一次明天"
+    会把秘书真排好的块抹掉。现在这一条只读，读不到就是没有。
+    """
     from plobi.agents.registry import run_plan_day
 
     # Use the shared registry + a per-test agenda DB so the store is empty.
@@ -289,12 +295,18 @@ def test_plan_day_on_empty_library_is_ok(tmp_path, fresh_registry, monkeypatch):
     conn.close()
 
     payload = run_plan_day("排一下明天", date=None)
-    assert payload["ok"] is True
+    assert payload["ok"] is False, payload
     assert payload["intent"] == "plan_day"
-    assert payload["conflict_count"] == 0
-    # Empty library ⇒ empty plan (status from the planning module, items=[]).
     assert payload["items"] == []
-    assert payload["summary"] != "" or payload["summary"] is not None
+    assert payload["written"] == 0, payload
+    assert "plan_tomorrow" in payload["error"], "要排的那条路得指给用户，不能只说没有"
+    # 零写入的硬证：跑完之后库里仍然什么都没有（没有 plan、也没有 plan_items）。
+    check = _store.connect(db_path)
+    try:
+        assert check.execute("SELECT COUNT(*) FROM daily_plans").fetchone()[0] == 0
+        assert check.execute("SELECT COUNT(*) FROM plan_items").fetchone()[0] == 0
+    finally:
+        check.close()
     # ``for_date`` defaults to tomorrow (local).
     from datetime import date as _date, timedelta
 
@@ -302,15 +314,16 @@ def test_plan_day_on_empty_library_is_ok(tmp_path, fresh_registry, monkeypatch):
 
 
 def test_plan_day_routes_via_secretary_ask(mind_root, fresh_registry):
+    """缺 `action` 这句在路由上就被拒——不许走到那条 DELETE-重插（`WP-PLAN-DAY-CLOBBER`）。"""
     from plobi.agents.registry import run_secretary_ask
 
     payload = run_secretary_ask(
         "plan_day", "排明天", registry=fresh_registry, date=None
     )
-    assert payload["ok"] is True
+    assert payload["ok"] is False, payload
     assert payload["intent"] == "plan_day"
-    assert "items" in payload
-    assert isinstance(payload["conflict_count"], int)
+    assert payload["written"] == 0, payload
+    assert "plan_tomorrow" in payload["error"], payload["error"]
 
 
 def test_run_secretary_ask_rejects_unknown_intent():

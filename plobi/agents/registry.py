@@ -1887,13 +1887,15 @@ def run_plan_day(
     date: str | None = None,
     pipeline=None,
     registry: AgentRegistry | None = None,
+    action: str | None = None,
 ) -> dict:
-    """Build tomorrow's (or ``date``'s) nightly plan and return it read-only.
+    """Read tomorrow's (or ``date``'s) plan **from the store** — this function never writes.
 
-    Thin wrapper over the existing ``generate_evening_plan`` — no mutation,
-    no LLM, no agenda L2 spawn. On failure (e.g. corrupted DB), ``ok`` is
-    ``False`` and the original error string is returned untouched so the L1
-    can quote it. Empty days return ``status=empty`` with zero items.
+    它以前是 ``generate_evening_plan`` 的薄壳，那句 docstring 写着「no mutation」而**它是错的**：
+    ``generate_evening_plan`` 先 DELETE 当天 ``plan_items`` 再重插。均分本体（裁定 149）退役之后
+    那条路重插不出任何块，于是每一次「读」都把秘书排好的块抹掉——10-17 17:2x 实测在案
+    （``WP-PLAN-DAY-CLOBBER``）。现在这里只读 ``daily_plans`` / ``plan_items``：没有那份计划就
+    照实说没有，绝不"顺手生成一份"。要生成由秘书那一发去写（``action=plan_tomorrow``）。
     """
     from datetime import date as _date, timedelta
 
@@ -1904,18 +1906,22 @@ def run_plan_day(
 
     db_path = _secretary_db_path(pipeline)
     try:
-        from plobi.agenda import planning
         from plobi.agenda import store as _store
     except Exception as exc:
         return {
             "ok": False,
             "intent": "plan_day",
-            "error": f"无法加载规划器: {exc}",
+            "error": f"无法加载日程存储: {exc}",
             "for_date": for_date,
             "user_text": user_text,
         }
     try:
-        plan = planning.generate_evening_plan(for_date, db_path=db_path)
+        # 只读：读不到就是没有，不生成（生成会 DELETE 当天那批 plan_items）。
+        _conn = _store.connect(db_path)
+        try:
+            plan = _store.get_daily_plan(_conn, for_date)
+        finally:
+            _conn.close()
     except Exception as exc:
         logger.warning("plobi: plan_day failed for %s: %s", for_date, exc)
         return {
@@ -1924,6 +1930,21 @@ def run_plan_day(
             "error": f"plan_day 失败: {exc}",
             "for_date": for_date,
             "user_text": user_text,
+        }
+
+    if plan is None:
+        # 读不到就是没有——这一句必须说得出「没有」，不许为了给出东西而现生成一份
+        # （生成 = 先 DELETE 当天那批 plan_items，那正是本刀要堵的口子）。
+        return {
+            "ok": False,
+            "intent": "plan_day",
+            "for_date": for_date,
+            "written": 0,
+            "error": (
+                f"{for_date} 那份计划还没有（我这一条只读，不替你生成）。"
+                "要排就让我自己排一次：plobi_secretary_ask，intent=plan_day、action=plan_tomorrow。"
+            ),
+            "items": [],
         }
 
     items: list[dict] = []
@@ -1958,7 +1979,8 @@ def run_plan_day(
 
 # WP-PROJECT-PORTFOLIO: 7 values. ``project_status`` reads Mind's project tree
 # and reports each ``l2_project`` (no chatlog, no agenda L2 spawn). ``plan_day``
-# calls ``generate_evening_plan`` (read-only path through the store). Both are
+# 自 10-17 起是**纯读**（``store.get_daily_plan``；它以前调 ``generate_evening_plan``，
+# 那个函数先 DELETE 当天 plan_items 再重插 —— `WP-PLAN-DAY-CLOBBER` 就是这一口）。Both are
 # routed before ``ensure_agenda_agent`` so a dead collector cannot block them.
 SECRETARY_ASK_INTENTS = (
     "refresh_agenda",
@@ -3094,8 +3116,27 @@ def _secretary_ask(
         return run_project_status(user_text, pipeline=pipeline, registry=registry)
 
     if intent == "plan_day":
+        # P0（`WP-PLAN-DAY-CLOBBER`，10-17 17:2x）：这句以前不带 action 时会落进
+        # :func:`run_plan_day` →（当时的）``generate_evening_plan``，而那个函数**先 DELETE 当天
+        # `plan_items` 再重插**；排程本体已按裁定 149 退役 ⇒ 它排不出任何块，于是拿一份 0 块的计划
+        # 把秘书 15:53 真排出来的那 8 块抹掉。用户说一句「安排一下明天的任务」反而丢计划。
+        # 现在照实拒绝，一个字都不写；要排由秘书自己那一发去做（它有 `no_blocks` 前置闸，
+        # 过不了闸也是零写入）。想看的走 query_agenda——那一条本来就不写库。
+        if action != "plan_tomorrow":
+            return {
+                "ok": False,
+                "intent": "plan_day",
+                "written": 0,
+                "error": (
+                    "这句「排一下明天」我不替你重排一遍——那条老路径会先把今天已排好的块删掉再重插，"
+                    "而排程本体已经退役（裁定 149），重插出来是 0 块：越说越丢。"
+                    "要排就让我自己排一次：同一趟里调 plobi_secretary_ask，"
+                    "intent=plan_day、action=plan_tomorrow（材料、边界闸、落库都在那一处，过不了闸它一个字都不写）。"
+                    "只想看明天怎么安排，用 intent=query_agenda，那条不写库。"
+                ),
+            }
         return run_plan_day(
-            user_text, date=date, pipeline=pipeline, registry=registry
+            user_text, date=date, pipeline=pipeline, registry=registry, action=action
         )
 
     reg = registry or load_registry()
