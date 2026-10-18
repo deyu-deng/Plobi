@@ -110,6 +110,6 @@ def cmd_migrate_xai(args: Any) -> int:
 
 def _resolve_config_path() -> Path:
     """Best-effort: locate the active config.yaml on disk."""
-    from plobi_cli.config import get_plobi_home
+    from plobi_cli.config import get_config_path
 
-    return get_plobi_home() / "config.yaml"
+    return get_config_path()

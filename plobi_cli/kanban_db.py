@@ -8472,12 +8472,19 @@ def list_profiles_on_disk() -> list[str]:
     """Return the set of assignee/profile names discovered on disk.
 
     Includes:
-    - named profiles under ``<default-root>/profiles/<name>/config.yaml``
+    - named profiles under ``<default-root>/profiles/<name>/``
     - the implicit ``default`` profile when the default Plobi root exists
 
     Reads profile paths directly so this module has no import dependency on
     ``plobi_cli.profiles`` (which pulls in a large chunk of the CLI startup
     path).
+
+    判据从「那个家里有 ``config.yaml``」改成「那个家目录在」——与
+    :func:`plobi_cli.profiles.profile_exists` 同一句话。以前那份 ``config.yaml``
+    是每个分身家各一份的复印件，裁 166 / ADR-0013 把它收成顶层那一份之后分身家
+    不再自带它；拿它当"这个 Agent 存在吗"的凭据会把名册上所有分身从看板收件人里
+    悄悄抹掉（10-18 现核这台 24 个家，全中）。下划线/点号开头的目录不算家
+    （``_quarantine-<日期>/`` 那类隔离区住在家里而不是家的同级，这里再挡一道）。
     """
     try:
         from plobi_constants import get_default_plobi_root
@@ -8495,8 +8502,9 @@ def list_profiles_on_disk() -> list[str]:
             for entry in sorted(profiles_dir.iterdir()):
                 if not entry.is_dir():
                     continue
-                if (entry / "config.yaml").is_file():
-                    names.add(entry.name)
+                if entry.name.startswith(("_", ".")):
+                    continue
+                names.add(entry.name)
         except OSError:
             pass
 

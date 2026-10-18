@@ -2,11 +2,19 @@
 
 Why this is a separate file: the symptom is a *chain*, not one function. The
 seed table hardcoded a Windows drive layout, the registry rows carried on
-``D:\\Cloud\\Projects\\<name>`` after the machine was scrapped, and
-``apply_l2_project_cwd`` then refused to fabricate a cwd — so every project
-分身 silently started outside its own directory. These tests pin the four
-invariants that close that chain, and none of them asserts a literal path
-string (AGENTS.md: behavior contracts over snapshots).
+``D:\\Cloud\\Projects\\<name>`` after the machine was scrapped, and the cwd
+lookup then refused to fabricate a directory — so every project 分身 silently
+started outside its own directory. These tests pin the four invariants that
+close that chain, and none of them asserts a literal path string (AGENTS.md:
+behavior contracts over snapshots).
+
+The mechanism behind invariants 2 and 3 changed with 裁 42 / 166 (ADR-0013):
+the binding used to be pushed into each 分身's own ``config.yaml`` by the now
+deleted ``apply_l2_project_cwd``; it is now resolved **at read time** from the
+roster row by :func:`plobi.agents.registry.project_cwd_for_profile`. The
+contracts are the same — a healed binding feeds a cwd, an unresolvable one
+never becomes a fabricated directory and leaves no file behind — so only the
+object of the question moved.
 
 Isolation: every test runs against a temp home + temp ``PLOBI_HOME``. Nothing
 here may read or write the real ``~/.plobi``.
@@ -69,6 +77,14 @@ def home(tmp_path, monkeypatch):
 
 def _registry_file(tmp_path) -> Path:
     return tmp_path / "plobi_home" / "plobi" / "projects.yaml"
+
+
+def _landing_home(tmp_path, profile: str) -> Path:
+    """The 分身's own home under that temp root — created empty, as ``spawn``
+    leaves it (bare home, no ``config.yaml`` copy to overwrite the shared one)."""
+    home_dir = tmp_path / "plobi_home" / "profiles" / profile
+    home_dir.mkdir(parents=True, exist_ok=True)
+    return home_dir
 
 
 def _write_registry(path: Path, agents: dict) -> None:
@@ -175,6 +191,7 @@ def test_stale_binding_is_rebased_onto_the_real_directory(home, tmp_path):
             "Resonote": {
                 "role": "l2_project",
                 "category": "projects",
+                "profile": "resonote",
                 "project_path": WINDOWS_LEFTOVER.format(name="Resonote"),
             }
         },
@@ -191,12 +208,14 @@ def test_stale_binding_is_rebased_onto_the_real_directory(home, tmp_path):
     assert on_disk["agents"]["Resonote"]["project_path"] == str(real_project)
 
     # ... and the corrected binding now actually feeds a cwd, which is the
-    # whole point of the slice.
-    profile_dir = tmp_path / "profile"
-    profile_dir.mkdir()
-    assert registry_mod.apply_l2_project_cwd(profile_dir, entry.project_path) is True
-    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
-    assert cfg["terminal"]["cwd"] == str(real_project)
+    # whole point of the slice. Read-time overlay off the roster row: the
+    # 分身 home gets no ``config.yaml`` of its own (裁 166 / ADR-0013).
+    profile = entry.profile_name
+    assert profile == "resonote"
+    profile_dir = _landing_home(tmp_path, profile)
+
+    assert registry_mod.project_cwd_for_profile(profile) == str(real_project)
+    assert not (profile_dir / "config.yaml").exists()
 
 
 def test_healed_registry_reloads_unchanged(home, tmp_path):
@@ -261,9 +280,9 @@ def test_research_row_resolves_against_the_projects_root(home, tmp_path):
 
 def test_unresolvable_stale_binding_is_never_fabricated(home, tmp_path):
     """Requirement B's fail-closed branch: nothing on this machine matches the
-    name → keep the original value, create nothing, and let the cwd write stay
-    a no-op. A 分身 with no cwd is honest; one pointed at a made-up directory
-    is not."""
+    name → keep the original value, create nothing, and let the cwd stay
+    unresolvable. A 分身 with no cwd is honest; one pointed at a made-up
+    directory is not."""
     projects_root = home / POSIX_PROJECTS_ROOT_NAME
     projects_root.mkdir(parents=True)
 
@@ -275,6 +294,7 @@ def test_unresolvable_stale_binding_is_never_fabricated(home, tmp_path):
             "Animation": {
                 "role": "l2_project",
                 "category": "projects",
+                "profile": "animation",
                 "project_path": stale,
             }
         },
@@ -294,10 +314,13 @@ def test_unresolvable_stale_binding_is_never_fabricated(home, tmp_path):
     # no write-back happened
     assert path.read_text(encoding="utf-8") == before
 
-    # and the downstream cwd write still refuses to invent a workdir
-    profile_dir = tmp_path / "profile"
-    profile_dir.mkdir()
-    assert registry_mod.apply_l2_project_cwd(profile_dir, entry.project_path) is False
+    # and the downstream cwd lookup still refuses to invent a workdir — while
+    # the 分身 home stays empty of the file that used to carry the guess.
+    profile = entry.profile_name
+    assert profile == "animation"
+    profile_dir = _landing_home(tmp_path, profile)
+
+    assert registry_mod.project_cwd_for_profile(profile) is None
     assert not (profile_dir / "config.yaml").exists()
 
 

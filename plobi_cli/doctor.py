@@ -12,7 +12,7 @@ from pathlib import Path
 
 from plobi_cli.config import get_project_root, get_plobi_home, get_env_path
 from plobi_cli.env_loader import load_plobi_dotenv
-from plobi_constants import display_plobi_home
+from plobi_constants import config_path_for_home, display_plobi_home
 from plobi_constants import agent_browser_runnable
 
 PROJECT_ROOT = get_project_root()
@@ -731,7 +731,9 @@ def run_doctor(args):
                 issues.append("Run 'plobi setup' to create .env")
     
     # Check ~/.plobi/config.yaml (primary) or project cli-config.yaml (fallback)
-    config_path = PLOBI_HOME / 'config.yaml'
+    # 那唯一一份配置的落点（裁 166 / ADR-0013）。手拼活跃家在这里读不出顶层那一份，
+    # 于是 ``plobi -p <分身> doctor`` 会一边说「config.yaml 不存在」一边把用户配好的模型报成空。
+    config_path = config_path_for_home(PLOBI_HOME)
     if config_path.exists():
         check_ok(f"{_DHH}/config.yaml exists")
 
@@ -934,7 +936,7 @@ def run_doctor(args):
                 check_warn("config.yaml not found", "(using defaults)")
 
     # Check config version and stale keys
-    config_path = PLOBI_HOME / 'config.yaml'
+    config_path = config_path_for_home(PLOBI_HOME)
     if config_path.exists():
         try:
             from plobi_cli.config import check_config_version, migrate_config
@@ -2246,7 +2248,7 @@ def run_doctor(args):
     _active_memory_provider = ""
     try:
         import yaml as _yaml
-        _mem_cfg_path = PLOBI_HOME / "config.yaml"
+        _mem_cfg_path = config_path_for_home(PLOBI_HOME)
         if _mem_cfg_path.exists():
             with open(_mem_cfg_path, encoding="utf-8") as _f:
                 _raw_cfg = _yaml.safe_load(_f) or {}
@@ -2359,7 +2361,10 @@ def run_doctor(args):
                     parts.append("gateway running")
                 if p.model:
                     parts.append(p.model[:30])
-                if not (p.path / "config.yaml").exists():
+                if not config_path_for_home(p.path).exists():
+                    # 以前这里问的是「那个家里有没有 config.yaml」。裁 166 / ADR-0013 之后
+                    # 分身家**不该**有那一份，问它就会给 24 个家各报一条假警——而真正该问的是
+                    # 「这个 Agent 读得到配置吗」，答案在顶层那一份。
                     parts.append("⚠ missing config")
                 if not (p.path / ".env").exists():
                     parts.append("no .env")

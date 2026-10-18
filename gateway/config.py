@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Callable
 from enum import Enum
 
-from plobi_cli.config import get_plobi_home
+from plobi_cli.config import get_config_path, get_plobi_home
 from agent.secret_scope import current_secret_scope, get_secret as _get_secret
 from utils import is_truthy_value
 
@@ -984,6 +984,11 @@ def load_gateway_config() -> GatewayConfig:
     4. Built-in defaults
     """
     _home = get_plobi_home()
+    # 那唯一一份配置的落点。以前这里手拼 ``_home / "config.yaml"``：分身后端起来时
+    # ``_home`` 是 ``profiles/<name>``，读的是那家的复印件（而复印件里根本没有
+    # ``platforms`` / ``session_reset`` / ``quick_commands`` 这些格），于是消息网关
+    # 在分身家下一直读不到用户配的那一份。裁 166 / ADR-0013 收成一份后改问解析器。
+    _config_path = get_config_path()
     gw_data: dict = {}
 
     # Legacy fallback: gateway.json provides the base layer.
@@ -1003,7 +1008,7 @@ def load_gateway_config() -> GatewayConfig:
     # Primary source: config.yaml
     try:
         import yaml
-        config_yaml_path = _home / "config.yaml"
+        config_yaml_path = _config_path
         if config_yaml_path.exists():
             with open(config_yaml_path, encoding="utf-8") as f:
                 yaml_cfg = yaml.safe_load(f) or {}
@@ -1361,7 +1366,7 @@ def load_gateway_config() -> GatewayConfig:
         logger.warning(
             "Failed to process config.yaml — falling back to .env / gateway.json values. "
             "Check %s for syntax errors. Error: %s",
-            _home / "config.yaml",
+            _config_path,
             e,
         )
 

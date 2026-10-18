@@ -941,9 +941,9 @@ def _resolve_default_model_snapshot() -> Optional[str]:
     """
     try:
         import yaml
-        from plobi_cli.config import _expand_env_vars
+        from plobi_cli.config import _expand_env_vars, get_config_path
 
-        cfg_path = get_plobi_home() / "config.yaml"
+        cfg_path = get_config_path()
         if not cfg_path.exists():
             return None
         with cfg_path.open(encoding="utf-8") as f:

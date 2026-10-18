@@ -1070,27 +1070,35 @@ def _configured_cwd_from_cfg(cfg: dict | None) -> str | None:
 
 
 def _profile_configured_cwd(profile_home: Path | None) -> str | None:
-    """Resolve a non-launch profile's ``terminal.cwd`` from its own config.yaml.
+    """Resolve a non-launch profile's ``terminal.cwd``（真源＝名册那一行的主文件夹）。
 
     The desktop's app-global remote mode serves every profile from one backend,
     so the process-global ``TERMINAL_CWD`` belongs to the *launch* profile. A new
     session bound to another profile must take its workspace from THAT profile's
     config, not the stale env var (issue #40334). Returns an absolute, existing
     directory, or None for placeholders / missing / invalid paths.
+
+    这一句以前是打开 ``<profile_home>/config.yaml`` 读 ``terminal.cwd``。裁 166 /
+    ADR-0013 之后分身家不再有那份文件（读侧也已经忽略它），而那一格的真源本来就是
+    名册那一行的 ``project_path``——所以改问 :func:`plobi.agents.registry.project_cwd_for_profile`。
+    「目录不存在就不给」那条判据跟着一起搬过去了（不许把一个假路径当工作目录）。
     """
     if profile_home is None:
         return None
     try:
-        import yaml
+        from plobi.agents.registry import project_cwd_for_profile
 
-        p = Path(profile_home) / "config.yaml"
-        if not p.exists():
-            return None
-        with open(p, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return _configured_cwd_from_cfg(data)
+        cwd = project_cwd_for_profile(Path(profile_home).name)
+        return cwd if cwd and Path(cwd).is_dir() else None
     except Exception:
         return None
+
+
+def _launch_config_path() -> Path:
+    """启动这个家该读的那一份 ``config.yaml``（裁 166 / ADR-0013：分身家不再自带复印件）。"""
+    from plobi_constants import config_path_for_home
+
+    return config_path_for_home(_plobi_home)
 
 
 def _launch_configured_cwd() -> str | None:
@@ -1910,7 +1918,7 @@ def _load_cfg() -> dict:
         # profiles don't clobber each other.
         override = get_plobi_home_override()
         home = override if isinstance(override, str) and override else _plobi_home
-        p = Path(home) / "config.yaml"
+        p = config_path_for_home(home)
         mtime = p.stat().st_mtime if p.exists() else None
         with _cfg_lock:
             if _cfg_cache is not None and _cfg_mtime == mtime and _cfg_path == p:
@@ -1954,8 +1962,13 @@ def _save_cfg(cfg: dict):
     global _cfg_cache, _cfg_mtime, _cfg_path
 
     from plobi_cli.config import atomic_config_write
+    from plobi_constants import config_path_for_home
 
-    path = _plobi_home / "config.yaml"
+    # 写回**读侧刚才读的那一份**（``_cfg_path``）。以前这里是 ``_plobi_home /
+    # "config.yaml"`` 与读侧不对称：读侧跟 contextvar 覆盖走（分身会话读自己那个家），
+    # 写侧永远写启动那个家。裁 166 / ADR-0013 之后分身家不再有那份文件，不对称的后果从
+    # "写到没人读的地方"升级成"把不相干的那一份覆盖掉"——所以一对儿走同一个解析。
+    path = _cfg_path if _cfg_path is not None else config_path_for_home(_plobi_home)
     atomic_config_write(path, cfg)
     with _cfg_lock:
         _cfg_cache = copy.deepcopy(cfg)
@@ -11366,7 +11379,7 @@ def _(rid, params: dict) -> dict:
         display = _load_cfg().get("display")
         return _ok(rid, {"value": _display_mouse_tracking(display)})
     if key == "mtime":
-        cfg_path = _plobi_home / "config.yaml"
+        cfg_path = _launch_config_path()
         try:
             return _ok(
                 rid, {"mtime": cfg_path.stat().st_mtime if cfg_path.exists() else 0}
@@ -13882,7 +13895,7 @@ def _(rid, params: dict) -> dict:
                 "title": "Environment",
                 "rows": [
                     ["Working Dir", os.getcwd()],
-                    ["Config File", str(_plobi_home / "config.yaml")],
+                    ["Config File", str(_launch_config_path())],
                 ],
             },
         ]

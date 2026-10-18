@@ -162,12 +162,36 @@ def get_shared_plobi_root() -> Path:
     与 :func:`get_default_plobi_root` 的分工：那个直读 ``os.environ``，服务
     ``profile list`` 这类 CLI；这个走 :func:`get_plobi_home` 的同一套覆盖链
     （contextvar override → PLOBI_HOME → 平台默认），进程内按任务切家的调用方
-    行为不变。活跃家自己不是 profile 时，它自己就是 root。
+    行为不变。活跃家自己不是 profile 时，它自己就是 root；手里已经有一个**具体目录**
+    要问同一件事时用 :func:`shared_root_for`。
     """
-    home = get_plobi_home()
-    if home.parent.name == "profiles":
-        return home.parent.parent
-    return home
+    return shared_root_for(get_plobi_home())
+
+
+def shared_root_for(home: Path | str) -> Path:
+    """``home`` 那个家所属的**共享根**：``<root>/profiles/<name>`` → ``<root>``，其余 = 自己。"""
+    h = Path(home)
+    if h.parent.name == "profiles":
+        return h.parent.parent
+    return h
+
+
+def config_path_for_home(home: Path | str) -> Path:
+    """``home`` 那个家**该读的那一份** ``config.yaml``。
+
+    裁 166 / ADR-0013 的读链：分身家不再读自家那份复印件，只读共享根那一份；共享根
+    那一份还没落地（新装机）时才回落到这个家自己那里，让 ``load_config`` 拿到
+    ``DEFAULT_CONFIG``。活跃家走 :func:`get_config_path`（就是这一格配上活跃家），
+    手里已经有一个具体目录的调用方（``gateway`` 那一带的测试夹具、桌面按 profile
+    解析路径的几处）走这一格——同一条规则只写一处，不给人留第二个答案。
+    """
+    h = Path(home)
+    path = h / "config.yaml"
+    root = shared_root_for(h)
+    if root == h:
+        return path
+    shared = root / "config.yaml"
+    return shared if shared.exists() else path
 
 
 def _get_packaged_data_dir(name: str) -> Path | None:
@@ -1038,12 +1062,21 @@ def is_container() -> bool:
 
 
 def get_config_path() -> Path:
-    """Return the path to ``config.yaml`` under PLOBI_HOME.
+    """生效配置那一份文件：**分身家不再读自家**那份复印件。
 
-    Replaces the ``get_plobi_home() / "config.yaml"`` pattern repeated
-    in 7+ files (skill_utils.py, plobi_logging.py, plobi_time.py, etc.).
+    ``Replaces the ``get_plobi_home() / "config.yaml"`` pattern repeated
+    in 7+ files (skill_utils.py, plobi_logging.py, plobi_time.py, etc.).``
+    这句原话现在有了第二层意思：**这一格就是那 7+ 个文件的唯一答案**，所以裁 166 /
+    ADR-0013 的读链改在这里落，不在 :func:`plobi_cli.config.get_config_path` 里另写一份。
+    链条＝**名册行覆盖 → 顶层那一份 → 出厂默认**，本函数只管中间那层（名册行那一半在
+    ``plobi_cli.config.agent_config_overlay`` 里读时叠）。
+
+    以前这里是裸的 ``get_plobi_home() / "config.yaml"``。10-18 现核出的后果很具体：
+    ``agent/skill_utils.py`` 走的正是这一格，所以分身一旦不再自带 ``config.yaml``，
+    它连 ``skills.external_dirs`` 都读不到 = **技能整个看不见**（裁 42.3 第 2 条刚接上的那根线）。
+    规则本身写在 :func:`config_path_for_home`，这里只是配上活跃家。
     """
-    return get_plobi_home() / "config.yaml"
+    return config_path_for_home(get_plobi_home())
 
 
 def get_skills_dir() -> Path:

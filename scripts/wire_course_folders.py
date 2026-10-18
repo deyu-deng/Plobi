@@ -148,17 +148,14 @@ def main(argv: list[str] | None = None) -> int:
 
     from dataclasses import replace
 
-    from plobi.agents.registry import apply_l2_project_cwd
-    from plobi_cli.profiles import get_profile_dir
-
     for name, folder in matched:
         entry = registry.agents[name]
         registry.agents[name] = replace(
             entry, project_path=str(folder), project_paths=(str(folder),)
         )
-        # 让绑定真生效：分身的 terminal.cwd 落到这个文件夹（幂等；目录不存在则不写）。
-        # profile_name 的解析与 registry.spawn 同源（entry.profile_name）。
-        apply_l2_project_cwd(get_profile_dir(entry.profile_name), str(folder))
+        # 接上名字册那一行就是生效的全部动作：分身的工作目录由它读时算
+        # （``plobi.agents.registry.profile_config_overlay``），不再往分身家写 ``terminal.cwd``
+        # （裁 166 / ADR-0013：那份文件从此只有一份）。
         print(f"  已接    {name} → {folder.name}")
 
     registry.save()

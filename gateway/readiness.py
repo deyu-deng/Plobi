@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from plobi_constants import get_plobi_home
+from plobi_constants import config_path_for_home, get_plobi_home
 
 
 _DISK_DEGRADED_PERCENT = 90.0
@@ -41,7 +41,9 @@ def _probe_state_db(home: Path) -> dict[str, Any]:
 
 
 def _probe_config(home: Path) -> dict[str, Any]:
-    path = home / "config.yaml"
+    # 那个家**该读的那一份**（分身家读的是顶层那一份）——手拼 ``home / "config.yaml"``
+    # 会把每个分身都报成 "using defaults"，而它其实读得好好的。
+    path = config_path_for_home(home)
     if not path.exists():
         return _check("ok", "using defaults")
     try:

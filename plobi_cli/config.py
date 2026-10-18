@@ -239,11 +239,14 @@ _LAST_EXPANDED_CONFIG_BY_PATH: Dict[str, Any] = {}
 # produces a fresh inode, so stat() sees a new mtime_ns and the next
 # load repopulates automatically — no explicit invalidation hook.
 # Cached tuple is (user_mtime_ns, user_size, managed_mtime_ns, managed_size,
-# merged_value, env_ref_snapshot) — the managed-file signature is folded in so
-# editing the managed-scope config.yaml invalidates the cache (see
-# managed_scope), and the env snapshot invalidates it when a referenced ${VAR}
-# changes value (late .env load, in-process rotation — #58514).
-_LOAD_CONFIG_CACHE: Dict[str, Tuple[int, int, int, int, Dict[str, Any], Dict[str, Optional[str]]]] = {}
+# roster_mtime_ns, roster_size, merged_value, env_ref_snapshot) — the managed-file
+# signature is folded in so editing the managed-scope config.yaml invalidates the
+# cache (see managed_scope), the roster signature invalidates it when an Agent's
+# 名册行 changed (model / project path — 裁 166), and the env snapshot invalidates
+# it when a referenced ${VAR} changes value (late .env load, in-process rotation —
+# #58514). Consumers read the tail positionally (``cached[-2]`` / ``cached[-1]``)
+# so adding a signature here never moves the value.
+_LOAD_CONFIG_CACHE: Dict[str, Tuple[Any, ...]] = {}
 # (path, mtime_ns, size) -> cached raw yaml dict. Same pattern as
 # _LOAD_CONFIG_CACHE but for read_raw_config() — used when callers want
 # the user's on-disk values without defaults merged in.
@@ -746,25 +749,88 @@ from plobi_constants import get_plobi_home  # noqa: F811,E402
 from utils import atomic_replace, fast_safe_load
 
 def get_config_path() -> Path:
-    """Config file for the active home; **falls back to the shared root's** when this home has none.
+    """生效配置那一份文件：**分身家不再读自家**，只读共享根那一份。
 
-    裁定 42 把分身降成「名册一行 + 最多三个覆盖」，裁定 166 决定一把「配置只存共享层那一份」变成
-    可验收判据。裸建出来的分身家（`create_profile(no_skills=True)`，不再 `clone_config`）本来就
-    没有 `config.yaml`——以前它读到的只是 `DEFAULT_CONFIG`（现核：`model` 那格是空字符串），
-    于是「用户在设置里配的那一次」永远到不了它。现在它回落到顶层那一份；名册行上的覆盖仍由
-    :meth:`plobi.agents.registry.AgentRegistry.router` 与 `_write_profile_config` 叠在上面，
-    所以顺序是「名册行覆盖 → 顶层那一份 → 自家那份（旧复印件兼容）→ 出厂默认」。
+    实现只在 :func:`plobi_constants.get_config_path` 那一格，这里转调它——这条链以前有
+    两个答案：``agent/skill_utils.py``、``plobi_logging.py``、``plobi_time.py`` 走的是
+    ``plobi_constants`` 那份裸实现，其余走这一格。10-18 现核：分身一旦不再自带
+    ``config.yaml``，走裸实现那三个消费方就读不到 ``skills.external_dirs``，**技能整个
+    看不见**（裁 42.3 第 2 条刚接上的那根线）。两个答案必须收成一个。
+
+    ADR-0013 拆除表 ``config.yaml`` 那一行的目标形状是「分身家 **0** 份可读；顺序＝
+    **名册行覆盖 → 顶层 → 出厂默认**」。这一格只管链条中间那层「顶层那一份」——名册行那一半
+    由 :func:`agent_config_overlay` 在 :func:`_load_config_impl` 里叠上去，出厂默认由
+    :data:`DEFAULT_CONFIG` 兜。
+
+    以前这里是「自家有就读自家」，而现核这台 **24 个分身家各有一份 ``config.yaml``**
+    （裁定 42 之后新建的家是裸建的，本来没有——那 24 份全是历史 ``clone_config`` 留下的
+    复印件）。复印件赢 = 用户在设置里配的那一次永远到不了分身，也正是「一个模型要配
+    24 遍」的机制。现在分身家那份**即使存在也不再返回**：复印件翻不回第二真源，
+    隔离它、或某个上游开关又在家下重建一份，都不影响这里的答案（这条由
+    ``tests/plobi/test_config_single_source.py`` 钉住）。
     """
-    path = get_plobi_home() / "config.yaml"
-    if path.exists():
-        return path
-    try:
-        from plobi_constants import get_shared_plobi_root
+    from plobi_constants import get_config_path as _resolved_config_path
 
-        shared = get_shared_plobi_root() / "config.yaml"
+    return _resolved_config_path()
+
+
+def agent_config_overlay() -> Dict[str, Any]:
+    """活跃家这个 Agent 的**名册行覆盖**（读时算，不落盘）。
+
+    裁 42.2 只允许分身带三项覆盖，其中两项以前是往分身家 ``config.yaml`` 写一节实现
+    的：模型（``_write_profile_config`` 写 ``model:``）与工作目录
+    （``apply_l2_project_cwd`` 写 ``terminal.cwd:``）。裁 166 / ADR-0013 把配置收成一份
+    之后，这两样的真源是名册那一行（``plobi/projects.yaml`` 的 ``provider``/``model``
+    与 ``project_path``），这里在 :func:`load_config` 里**叠上去**，判据与
+    :func:`plobi.agents.registry.apply_secret_overrides` 同一句：就地叠，不落盘成第二份。
+
+    返回空 dict 的几种情况（都等于「纯顶层值」，不许在这里编造）：活跃家就是共享根、
+    名册里查不到这一行、那一行没声明模型覆盖、``project_path`` 空或那个目录不存在
+    （宁可不给 cwd，也不把一个假路径塞进会话的工作目录——同 ``apply_l2_project_cwd``
+    当年的判据）。
+    """
+    try:
+        from plobi_constants import get_plobi_home, get_shared_plobi_root
+
+        home = get_plobi_home()
+        if home == get_shared_plobi_root():
+            return {}
+        from plobi.agents.registry import profile_config_overlay
+
+        return profile_config_overlay(home.name)
     except Exception:
-        return path
-    return shared if shared.exists() else path
+        # 名册读不出来 / 底座依赖缺失 ⇒ 不加覆盖，照顶层走。这一层是"补齐复印件里
+        # 本来那点每分身不同的值"，它失败只可能让 Agent 回到顶层默认，不可能炸配置读。
+        return {}
+
+
+def _agent_config_overlay_sig() -> Tuple[int, int]:
+    """名册文件的 ``(mtime_ns, size)``；活跃家就是共享根、或名册读不到 = ``(0, 0)``。
+
+    只 stat 一个文件（微秒级），所以这一句放在缓存判定**之前**；真正解析名册的
+    :func:`agent_config_overlay` 只在缓存未命中时跑。覆盖是读时叠的，缓存签名必须带上
+    名册那一行的变化——否则「给某个分身单独选一个模型」要等进程重启才生效，而这套缓存
+    本来就是按文件 mtime 算的。
+    """
+    try:
+        from plobi_constants import get_plobi_home, get_shared_plobi_root
+
+        if get_plobi_home() == get_shared_plobi_root():
+            return (0, 0)
+        from plobi.agents.registry import default_path as roster_path
+
+        return _stat_sig(roster_path())
+    except Exception:
+        return (0, 0)
+
+
+def _stat_sig(path: Path) -> Tuple[int, int]:
+    try:
+        st = path.stat()
+    except OSError:
+        return (0, 0)
+    return (st.st_mtime_ns, st.st_size)
+
 
 def get_env_path() -> Path:
     """Get the .env file path (for API keys)."""
@@ -6806,11 +6872,53 @@ def atomic_config_write(config_path: Path, data: Any, **kwargs: Any) -> None:
 
     ``kwargs`` are forwarded verbatim to ``atomic_yaml_write``
     (``sort_keys``, ``default_flow_style``, ``extra_content``, ...).
+
+    裁 166 / ADR-0013 追加的一条：**分身家那扇门不再收配置**。上游有十几处写配置的路径
+    自己手拼 ``<活跃家>/config.yaml``（``plobi gateway`` 的 ``/model``、``/memory approval``、
+    ``/skills approval``、``/fast``、``/verbose``、``/reasoning``、人格分配，onboarding 那几枚
+    ``seen`` 标记，TUI 的设置保存，telegram / yuanbao 的会话映射……），在分身后端里跑时
+    那个「活跃家」就是 ``profiles/<name>``——每勾一次开关就多造一份复印件，而且复印件
+    会被读侧忽略，勾了等于没勾。这里一次改道：给的路径是**某个分身家**的 ``config.yaml``
+    时，写到 :func:`get_config_path` 那一份（=顶层）去。判据只看「那是不是分身家」，
+    所以把 ``PLOBI_HOME`` 指到普通目录的测试夹具照原样落盘。
     """
     from utils import atomic_yaml_write
 
+    config_path, redirected = _config_write_path(config_path)
+    if redirected:
+        # 见 :func:`_config_write_path`：这一笔的调用方读的是分身家那份（已经不存在的）
+        # 复印件，把它没看见的那一份保住，开关才不至于顺手盖掉整份配置。
+        existing = read_raw_config()
+        if isinstance(existing, dict):
+            data = _deep_merge(existing, data if isinstance(data, dict) else {})
     require_readable_config_before_write(config_path)
     atomic_yaml_write(config_path, data, **kwargs)
+
+
+def _config_write_path(config_path: Path) -> Tuple[Path, bool]:
+    """把「写进分身家那份 ``config.yaml``」改道成「写进那唯一一份」。
+
+    返回 ``(落点, 是否改道过)``。改道过的那一笔必须由调用方**保住原文件**——见
+    :func:`atomic_config_write`：这些站点的手势是「先读我家那份，改一格，整份写回」，
+    而分身家那份已经不存在了，读回来是空的。直接盖下去就是把用户配的整份配置换成
+    一格开关（10-18 现核这一族有十几处：slash 命令的 ``/model`` / ``/memory approval``
+    / ``/skills approval`` / ``/fast`` / ``/verbose`` / ``/reasoning``、onboarding 的
+    ``seen`` 标记、TUI 的设置保存……）。所以改道时把那一份深合并进来，只让这一格赢；
+    已经跟着解析器读过的站点合并回去等于原样，行为不变。
+    """
+    try:
+        from plobi_constants import config_path_for_home, shared_root_for
+
+        path = Path(config_path)
+        home = path.parent
+        if shared_root_for(home) == home:
+            # 这不是一个分身家（顶层家、或把 ``PLOBI_HOME`` 指到普通目录的测试夹具）：
+            # 调用方要的就是它自己那个文件，落点不改。
+            return path, False
+        target = config_path_for_home(home)
+        return target, target != path
+    except Exception:
+        return Path(config_path), False
 
 
 def load_config() -> Dict[str, Any]:
@@ -6995,30 +7103,36 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         except OSError:
             managed_sig = (0, 0)
 
-        # Combined cache signature: user file + managed file. None only when the
-        # user config is absent AND no managed file exists (nothing to cache on).
+        # Combined cache signature: user file + managed file + the Agent roster
+        # this process's config gets overlaid with. None only when nothing on
+        # disk backs the effective config (no user file, no managed file, no
+        # roster) — there is nothing to cache on. Only the roster's stat goes in
+        # here; parsing it costs a YAML read, so that happens on the miss path.
+        overlay_sig = _agent_config_overlay_sig()
         if user_sig is not None:
-            cache_sig: Optional[Tuple[int, int, int, int]] = (
+            cache_sig: Optional[Tuple[int, ...]] = (
                 user_sig[0],
                 user_sig[1],
                 managed_sig[0],
                 managed_sig[1],
+                overlay_sig[0],
+                overlay_sig[1],
             )
-        elif managed_sig != (0, 0):
-            cache_sig = (0, 0, managed_sig[0], managed_sig[1])
+        elif managed_sig != (0, 0) or overlay_sig != (0, 0):
+            cache_sig = (0, 0, managed_sig[0], managed_sig[1], overlay_sig[0], overlay_sig[1])
         else:
             cache_sig = None
 
         cached = _LOAD_CONFIG_CACHE.get(path_key)
-        if cached is not None and cache_sig is not None and cached[:4] == cache_sig:
+        if cached is not None and cache_sig is not None and cached[:-2] == cache_sig:
             # File signatures match, but the cached expansion is only valid if
             # every ${VAR} it was expanded against still has the same value.
             # Without this, a load_config() that ran before load_plobi_dotenv()
             # pins unexpanded literals (e.g. auxiliary.<task>.api_key) for the
             # life of the process (#58514).
-            env_snapshot = cached[5] if len(cached) > 5 else {}
+            env_snapshot = cached[-1]
             if all(os.environ.get(k) == v for k, v in env_snapshot.items()):
-                return copy.deepcopy(cached[4]) if want_deepcopy else cached[4]
+                return copy.deepcopy(cached[-2]) if want_deepcopy else cached[-2]
 
         config = copy.deepcopy(DEFAULT_CONFIG)
 
@@ -7069,12 +7183,15 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
                         # re-parse the broken file; fixing the file changes the
                         # signature and triggers a normal reload.
                         _empty_env: Dict[str, Optional[str]] = {}
-                        _LOAD_CONFIG_CACHE[path_key] = (
-                            cache_sig[0], cache_sig[1],
-                            cache_sig[2], cache_sig[3],
-                            lkg_copy, _empty_env,
-                        )
+                        _LOAD_CONFIG_CACHE[path_key] = (*cache_sig, lkg_copy, _empty_env)
                     return copy.deepcopy(lkg_copy) if want_deepcopy else lkg_copy
+
+        # 名册行覆盖叠在顶层那一份之上（ADR-0013 的链条：名册行 → 顶层 → 出厂默认）。
+        # managed scope 仍排在它后面赢在叶子上——那是策略层，一个 Agent 的名册行不许
+        # 盖过机器级策略（docs/design/managed-scope.md §4.1）。
+        overlay = agent_config_overlay()
+        if overlay:
+            config = _deep_merge(config, overlay)
 
         normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         expanded = _expand_env_vars(normalized)
@@ -7093,8 +7210,10 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             # (deepcopy=True) callers can mutate freely without affecting the
             # cached value, and ``load_config_readonly()`` (deepcopy=False)
             # callers all see the same stable cached object. The cached tuple is
-            # (user_mtime, user_size, managed_mtime, managed_size, value,
-            # env_ref_snapshot). The snapshot records the environment values
+            # (*cache_sig, value, env_ref_snapshot) — cache_sig is the
+            # (user_mtime, user_size, managed_mtime, managed_size,
+            # roster_mtime, roster_size) signature above. The snapshot records
+            # the environment values
             # this expansion was made against so later loads can detect env
             # drift (late .env load, in-process rotation) — see cache hit above.
             cached_copy = copy.deepcopy(expanded)

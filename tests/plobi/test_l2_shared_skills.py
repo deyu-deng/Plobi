@@ -160,17 +160,24 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
     assert "TEST_KEY=1" not in (profile_dir / ".env").read_text(encoding="utf-8")
 
 
-def test_shared_root_is_written_into_the_profile_config(l2_home, in_profile):
+def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
+    """技能那根线只绑一次：写进**顶层那一份** ``config.yaml``，分身家不再各存一份。
+
+    裁 42.3 第 2 条原来落成的形状是「每个分身家自己的 ``config.yaml`` 里写一条
+    ``skills.external_dirs``」——现核这台 24 份、那一条 24 份**逐字相同**，所以它从来
+    不是"这个分身特有的东西"，只是复印件。裁 166 把配置收成一份之后就写那一份。
+
+    这条同时是「停读没有把技能读瞎」的判别读数：分身家已经没有那份文件了，
+    ``get_external_skills_dirs`` 走解析器照样解析出同一个共享根。（顶层家自己读那一条
+    会被跳过——它等于自己的本地主根，这正好说明同一个值在两边都不出错。）
+    """
     reg, _ = _registry_with_l2(l2_home)
     profile_dir = Path(reg.spawn("demo")["profile_dir"])
 
-    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
-    dirs = cfg["skills"]["external_dirs"]
-    assert [Path(d) for d in dirs] == [shared_skills_root()]
+    top = yaml.safe_load((l2_home / "config.yaml").read_text(encoding="utf-8"))
+    assert [Path(d) for d in top["skills"]["external_dirs"]] == [shared_skills_root()]
+    assert not (profile_dir / "config.yaml").exists()
 
-    # Every listed root must be one the scanner actually accepts when the 分身
-    # is the active profile. (Read from the default home it would be dropped as
-    # "same as my own local root" -- get_external_skills_dirs skips that.)
     from agent.skill_utils import get_external_skills_dirs
 
     resolved = in_profile(profile_dir, get_external_skills_dirs)
@@ -183,15 +190,17 @@ def test_shared_root_is_written_into_the_profile_config(l2_home, in_profile):
 
 
 def test_repeated_spawn_does_not_append_a_second_shared_root(l2_home, in_profile):
+    """幂等落在顶层那一份上：重复 spawn 不追加第二条，用户自己列的外部根留着。"""
     reg, _ = _registry_with_l2(l2_home)
     profile_dir = Path(reg.spawn("demo")["profile_dir"])
-    before = (profile_dir / "config.yaml").read_text(encoding="utf-8")
+    top_cfg = l2_home / "config.yaml"
+    before = top_cfg.read_text(encoding="utf-8")
 
     assert reg.spawn("demo")["profile_dir"] == str(profile_dir)
-    assert apply_shared_skills_root(profile_dir) is False
-    assert apply_shared_skills_root(profile_dir) is False
+    assert apply_shared_skills_root() is False
+    assert apply_shared_skills_root() is False
 
-    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(top_cfg.read_text(encoding="utf-8"))
     assert len(cfg["skills"]["external_dirs"]) == 1
     assert list((profile_dir / "skills").rglob("SKILL.md")) == []
     # Skills stay exactly as discoverable as before — no doubling either.
@@ -200,22 +209,28 @@ def test_repeated_spawn_does_not_append_a_second_shared_root(l2_home, in_profile
 
     # A pre-existing external dir owned by the user survives; we only add ours.
     cfg["skills"]["external_dirs"] = ["~/elsewhere"]
-    (profile_dir / "config.yaml").write_text(
-        yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8"
-    )
-    assert apply_shared_skills_root(profile_dir) is True
-    after = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
+    top_cfg.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    assert apply_shared_skills_root() is True
+    after = yaml.safe_load(top_cfg.read_text(encoding="utf-8"))
     assert after["skills"]["external_dirs"] == ["~/elsewhere", str(shared_skills_root())]
 
 
-def test_apply_shared_skills_root_creates_minimal_config(tmp_path):
-    """A 分身 without config.yaml still gets the binding (never fabricates one
-    for a missing profile dir)."""
-    profile_dir = tmp_path / "l2-fresh"
-    assert apply_shared_skills_root(profile_dir) is True
-    cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
+def test_apply_shared_skills_root_creates_the_shared_config_when_absent(tmp_path, monkeypatch):
+    """顶层那份 ``config.yaml`` 还没落地（新装机）时，这一句把它建出来。
+
+    以前这一条断的是「分身没有 config.yaml 也要给它建一份最小的」——那份文件如今
+    不该存在，所以建的对象换成那唯一一份。
+    """
+    root = tmp_path / "fresh-root"
+    (root / "plobi").mkdir(parents=True)
+    monkeypatch.setenv("PLOBI_HOME", str(root))
+    target = root / "config.yaml"
+    assert not target.exists()
+
+    assert apply_shared_skills_root() is True
+
+    cfg = yaml.safe_load(target.read_text(encoding="utf-8"))
     assert cfg["skills"]["external_dirs"] == [str(shared_skills_root())]
-    assert apply_shared_skills_root(None) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -322,10 +337,10 @@ def test_spawn_lands_no_env_or_config_copy(l2_home):
     assert _md5(profile_env) != _md5(l2_home / ".env")
     assert _assignment_lines(profile_env) == []
 
-    profile_cfg = profile_dir / "config.yaml"
-    assert _md5(profile_cfg) != _md5(l2_home / "config.yaml")
-    # 顶层那份 model 节没有跟进来（这一格要么是空的，要么是注册表声明的覆盖）。
-    assert "test-model" not in profile_cfg.read_text(encoding="utf-8")
+    # ``config.yaml`` 那一腿整个不再落进分身家（裁 166 / ADR-0013：配置只有一份，
+    # 分身家 0 份可读；连"只有注册表声明的覆盖"那一格也改成读时叠，见
+    # ``plobi.agents.registry.profile_config_overlay``）。
+    assert not (profile_dir / "config.yaml").exists()
 
 
 def test_secret_override_never_lands_on_disk(l2_home):
