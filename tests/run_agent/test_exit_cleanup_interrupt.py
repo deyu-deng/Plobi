@@ -29,6 +29,21 @@ def _mock_runtime_provider(monkeypatch):
     monkeypatch.setattr(rp, "resolve_runtime_provider", _fake_resolve)
 
 
+@pytest.fixture(autouse=True)
+def _cron_recipient_roster(tmp_path, monkeypatch):
+    """裁 177：cron 那一轮没有收件人就不起。本档测的是收尾，不是那道闸门——
+    所以给一个真名册（产品自己的 writer 落的），让闸门解析得出这一轮的主人。"""
+    from plobi.agents.registry import AgentEntry, AgentRegistry
+
+    path = tmp_path / "roster.yaml"
+    entry = AgentEntry(
+        name="cleanup-test-agent", role="l2_test", profile="cleanup-test-agent"
+    )
+    AgentRegistry(path=path, agents={entry.name: entry}).save()
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(path))
+    yield
+
+
 class TestCronJobCleanup:
     """cron/scheduler.py — end_session + close in the finally block."""
 
@@ -40,6 +55,7 @@ class TestCronJobCleanup:
         from cron import scheduler
 
         job = {
+            "recipient": "cleanup-test-agent",
             "id": "test-job-1",
             "name": "test cleanup",
             "prompt": "hello",
@@ -68,6 +84,7 @@ class TestCronJobCleanup:
         from cron import scheduler
 
         job = {
+            "recipient": "cleanup-test-agent",
             "id": "test-job-2",
             "name": "test close interrupt",
             "prompt": "hello",

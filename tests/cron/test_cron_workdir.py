@@ -210,7 +210,7 @@ class TestTickWorkdirPartition:
         # Two workdir jobs (both sequential) + one parallel job.
         workdir_a = {"id": "a", "name": "A", "workdir": str(tmp_path)}
         workdir_b = {"id": "b", "name": "B", "workdir": str(tmp_path)}
-        parallel_job = {"id": "c", "name": "C", "workdir": None}
+        parallel_job = { "recipient": "cron-test-agent","id": "c", "name": "C", "workdir": None}
 
         monkeypatch.setattr(sched, "get_due_jobs", lambda: [workdir_a, workdir_b, parallel_job])
         monkeypatch.setattr(sched, "advance_next_run", lambda *_a, **_kw: None)
@@ -333,6 +333,7 @@ class TestRunJobTerminalCwd:
         self._install_stubs(monkeypatch, observed)
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "abc",
             "name": "wd-job",
             "workdir": str(tmp_path),
@@ -372,6 +373,7 @@ class TestRunJobTerminalCwd:
         self._install_stubs(monkeypatch, observed)
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "xyz",
             "name": "no-wd-job",
             "workdir": None,

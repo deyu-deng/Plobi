@@ -1052,6 +1052,7 @@ def create_job(
     workdir: Optional[str] = None,
     no_agent: bool = False,
     attach_to_session: Optional[bool] = None,
+    recipient: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -1096,6 +1097,11 @@ def create_job(
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic
                 watchdogs and periodic alerts that don't need LLM reasoning.
+        recipient: 名册里那一行的 Agent 名字——**到点这一轮归谁跑**（裁定 177）。
+                记录本身只存这个名字，解析在 ``cron/scheduler.py`` 那一侧做：
+                没写、或写了一个名册里不存在的名字，那一轮**不起**，绝不退回到
+                「正好起着后端的那个家」——那是这条裁定要消灭的匿名执行。
+                ``no_agent=True`` 的作业不经过 Agent，因而不需要收件人。
 
     Returns:
         The created job dict
@@ -1128,6 +1134,7 @@ def create_job(
     normalized_workdir = _normalize_workdir(workdir)
     normalized_no_agent = bool(no_agent)
     normalized_attach = attach_to_session if isinstance(attach_to_session, bool) else None
+    normalized_recipient = _normalize_job_optional_text(recipient)
 
     # no_agent jobs are meaningless without a script — the script IS the job.
     # Surface this as a clear ValueError at create time so bad configs never
@@ -1217,6 +1224,7 @@ def create_job(
         "origin": origin,  # Tracks where job was created for "origin" delivery
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
+        "recipient": normalized_recipient,
     }
     # Only persist attach_to_session when explicitly set, so existing jobs and
     # the common case stay byte-identical (absent key => fall back to the

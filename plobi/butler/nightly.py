@@ -20,6 +20,7 @@ cron ticker 就在它的进程里 60 秒一跳；``install.ps1`` 的 stage 在�
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -28,6 +29,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+logger = logging.getLogger(__name__)
 
 NIGHTLY_PLAN_JOB_NAME = "plobi-evening-plan"
 
@@ -54,9 +57,12 @@ BUTLER_JOBS: list[tuple[str, str, str, str]] = [
 #: 既没有 `daily_plans` 行也没有 `plan_items` 行）。165 把排程那一发的身份改判给日程秘书本人，
 #: 本笔只做它的**第一半**：夜里这一轮**自己调那张嘴**（`plobi_secretary_ask` / `plan_tomorrow`，
 #: 就是 Code `e0cffc9e` 加的入口）把明天排一次并落库，然后才念。
-#: ⚠️ 三件事实根，留给下一把（`WP-AGENDA-PLANS-ITSELF` 的第二半）：① 这条作业记录里**没有 `profile` 键**，
-#: `cron/scheduler.py:546` 那句「cron 是 per-profile」⇒ 这一轮跑在**起着后端的那个家**里（这台现读是根家，
-#: `cron/ticker_last_success` 16:0x 有心跳）；② 按**裁定 42**，「日程秘书是谁」= 同一个家里的一个角色
+#: ⚠️ 三件事实根，留给下一把（`WP-AGENDA-PLANS-ITSELF` 的第二半）：① 裁定 177 把**收件人**
+#: 补进了这条作业记录（`recipient` = 名册里日程秘书那一行的名字，现读 ``agenda``）：
+#: 到点那一轮由 ``cron/scheduler.py`` 先解析这个名字，**解析不出就拒起**，一个模型都不打，
+#: 不再默认「正好起着后端的那个家」。还剩的一格是这一轮**在哪个家**里跑——那仍由
+#: ``cron/scheduler.py::_get_plobi_home`` 决定（归 `WP-PROFILE-SHARED-LAYER` 同族），
+#: 收件人是名册那一行、不是另一个家（裁定 42）；② 按**裁定 42**，「日程秘书是谁」= 同一个家里的一个角色
 #: （名册里 `role=l2_agenda` 那一条 + `attach_to_session` 落进它那个会话），**不是**另一份 Plobi 实例——
 #: 所以第二半的活是「带角色的子回合拿到该拿的嘴、自己落库、能向其他角色发问并留痕」，
 #: **本节与那一把都不许新增任何按分身复制的目录或配置**（现读 `du -sm profiles` = 24 份 / 102 MB，名册 24 行里用到
@@ -77,11 +83,36 @@ NIGHTLY_PLAN_PROMPT = (
 )
 
 
+def agenda_recipient_name() -> str | None:
+    """名册里日程秘书那一行的**名字**——排程那条作业的收件人（裁定 177 第一格）。
+
+    现读名册而不是在代码里硬写 slug：裁 42 把「日程秘书是谁」回答成名册里那一行，
+    那一行才是真源；改名之后作业行跟着下一次 ``align_job_shape`` 走。
+    读不出来或那一行还不存在时返回 ``None``——宁可不写这一格（到点那一轮拒起，
+    看得见，而且拒的理由说得出人名），也不写一个查无此人的名字让闸门替它兜。
+    """
+    try:
+        from plobi.agents.registry import find_agenda_agent, load_registry
+
+        entry = find_agenda_agent(load_registry())
+    except Exception as exc:  # 名册读不动 ≠ 可以匿名跑：交回 None，由闸门说人话
+        logger.warning("plobi butler: cron recipient unresolved: %s", exc)
+        return None
+    return entry.name if entry is not None else None
+
+
 def job_shape(job_name: str) -> dict[str, object]:
     """这条管家作业该长什么样（R-104）。**只改排程那一条**：`plobi-source-collect`
     与其余四条一律保持脚本自跑（判据④：采集不需要推理，套一层 Agent 只多一个失败面）。"""
     if job_name == NIGHTLY_PLAN_JOB_NAME:
-        return {"prompt": NIGHTLY_PLAN_PROMPT, "no_agent": False, "attach_to_session": True}
+        return {
+            "prompt": NIGHTLY_PLAN_PROMPT,
+            "no_agent": False,
+            "attach_to_session": True,
+            # 裁定 177：这一轮必须有主人。缺收件人时到点**不起**，
+            # 不再跑在「正好起着后端的那个家」里（判据在 ``cron/scheduler.py``）。
+            "recipient": agenda_recipient_name(),
+        }
     return {"prompt": None, "no_agent": True}
 
 
@@ -274,6 +305,7 @@ def _ensure_seeded_job(job_name: str, jobs_module: Any, now: Callable[[], str] |
         script=dst_name,
         no_agent=bool(shape["no_agent"]),
         attach_to_session=shape.get("attach_to_session"),
+        recipient=shape.get("recipient"),
         deliver="local",
     )
     _mark(marker, job_name, now)

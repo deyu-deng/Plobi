@@ -32,6 +32,7 @@ from cron.scheduler import run_job
 
 def _base_job(**overrides):
     job = {
+        "recipient": "cron-test-agent",
         "id": "pin-test",
         "name": "pin test",
         "prompt": "hello",
