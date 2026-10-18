@@ -174,6 +174,7 @@ import type { StatusbarItem } from './shell/statusbar-controls'
 import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
 import { UpdatesOverlay } from './updates-overlay'
+import { LegacySessionRedirect, SecretaryCenterPane } from './desktop-views'
 
 const AgendaView = lazy(async () => ({ default: (await import('./agenda')).AgendaView }))
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
@@ -2020,38 +2021,3 @@ export function DesktopController() {
   )
 }
 
-function SecretaryCenterPane({
-  cancel,
-  chatScope,
-  composer,
-  modelMenuContent,
-  submit
-}: {
-  cancel?: ChatSurfaceProps['cancel']
-  chatScope: ChatScope | null
-  composer?: ChatSurfaceProps['composer']
-  modelMenuContent?: ChatSurfaceProps['modelMenuContent']
-  submit?: ChatSurfaceProps['submit']
-}) {
-  if (!chatScope) {
-    return <Navigate replace to={HOME_ROUTE} />
-  }
-
-  return (
-    <div className="flex h-full min-h-0 flex-col pt-[var(--titlebar-height)]">
-      <ChatSurface
-        cancel={cancel}
-        composer={composer}
-        modelMenuContent={modelMenuContent}
-        scope={chatScope}
-        submit={submit}
-      />
-    </div>
-  )
-}
-
-// WP-E: `/sessions/:sessionId` (legacy deep link) — the session route itself is
-// gone, so land on the L1 shell instead of a dead session hop.
-function LegacySessionRedirect() {
-  return <Navigate replace to={HOME_ROUTE} />
-}
