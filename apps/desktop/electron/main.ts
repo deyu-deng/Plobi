@@ -5637,12 +5637,13 @@ async function mintGatewayWsTicket(baseUrl) {
 // carries a freshly-minted ticket. For local/token connections this just
 // reuses the static token (no minting needed).
 async function freshGatewayWsUrl(profile) {
-  // Mint for the requested profile's backend, NOT always the primary. The
-  // renderer re-mints right before every gateway.connect(); when swapping to a
-  // pooled profile we must return THAT backend's ws URL, otherwise the connect
-  // silently lands back on the primary (default) backend and writes sessions to
-  // the wrong profile's DB. A null/empty profile resolves to the primary, so
-  // legacy callers and single-profile users are unchanged.
+  // WP-AGENT-SINGLE-GATEWAY §3.5：WS 的**身份不在连接上，在 RPC 上**——
+  // `session.create` 的 params 带 profile，落到 session.profile_home，最终写成
+  // 行级 `sessions.agent_id`。所以本地恒连主后端那一个网关；换 Agent 不换连接。
+  // 仍按 profile 解析的唯一情形是它配了自己的**远程**后端（connection.json
+  // `profiles[name]`）——那时必须回那个后端的 ws URL，否则连接会静默落回主后端。
+  // A null/empty profile resolves to the primary, so legacy callers and
+  // single-profile users are unchanged.
   const connection = await ensureBackend(profile)
 
   if (connection.authMode === 'oauth') {
@@ -6775,6 +6776,17 @@ async function ensureBackend(profile) {
     return startPlobi()
   }
 
+  // WP-AGENT-SINGLE-GATEWAY §3.1 + §3.5：本地**只有主后端一个进程**。
+  // 「跟哪个 Agent 说话」是请求属性（REST 走 `X-Plobi-Agent` 头，WS 走 RPC 的
+  // session.create params → session.profile_home → 行级 `sessions.agent_id`），
+  // 不再靠「起一个带 `--profile` 的进程」来承载——那条路正是每个分身一个后端
+  // 进程树的根源。唯一还要按 profile 解析连接的情况是**它配了自己的远程后端**
+  // （connection.json `profiles[name]`），那是真需求，走下面的池路径（那里
+  // entry.process 恒为 null，不起本地子进程）。
+  if (!profileHasRemoteOverride(key)) {
+    return startPlobi()
+  }
+
   const existing = backendPool.get(key)
 
   if (existing) {
@@ -6911,131 +6923,15 @@ async function spawnPoolBackend(profile, entry) {
     }
   }
 
-  const token = crypto.randomBytes(32).toString('base64url')
-  // --profile wins over the inherited PLOBI_HOME env (see _apply_profile_override
-  // step 3 in plobi_cli/main.py), so the child re-homes to this profile.
-  // --host/--port resolved by serveBackendArgs: defaults to 127.0.0.1:<ephemeral>
-  // (loopback + OS-assigned port) so the desktop auto-discovery contract is
-  // preserved; flips to 0.0.0.0:8787 when PLOBI_LAN=1 is set (process env or
-  // $PLOBI_HOME/.env) so the Plobi App on the same Wi-Fi can pair.
-  const backendArgs = serveBackendArgs(profile)
-  const backend = await ensureRuntime(resolvePlobiBackend(backendArgs))
-  // Route old runtimes (no `serve`) through the legacy `dashboard --no-open`.
-  backend.args = getBackendArgsForRuntime(backend)
-  const plobiCwd = resolvePlobiCwd()
-  const webDist = resolveWebDist()
-  const readyFile = backend.readyFile ? makeDashboardReadyFile() : null
-
-  rememberLog(`Starting Plobi backend for profile "${profile}" via ${backend.label}`)
-
-  const child = spawn(
-    backend.command,
-    backend.args,
-    hiddenWindowsChildOptions({
-      cwd: plobiCwd,
-      env: {
-        ...process.env,
-        PLOBI_HOME,
-        ...backend.env,
-        // Pin the gateway's tool/terminal cwd to the same directory we chose for
-        // the child process. Inherited TERMINAL_CWD (or a stale config bridge)
-        // can still point at the install dir even when spawn cwd is home.
-        TERMINAL_CWD: plobiCwd,
-        PLOBI_DASHBOARD_SESSION_TOKEN: token,
-        // Marks this dashboard backend as desktop-spawned so it runs the cron
-        // scheduler tick loop (the gateway isn't running under the app).
-        PLOBI_DESKTOP: '1',
-        PLOBI_WEB_DIST: webDist,
-        ...(readyFile ? { PLOBI_DESKTOP_READY_FILE: readyFile } : {})
-      },
-      shell: backend.shell,
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
+  // 单后端（裁定 168）：本地不再为 profile 起第二个进程。走到这里只有一种
+  // 可能——调用方认为该 profile 有自己独立的落点，但它既不是主后端、也没有
+  // 配远程后端。此时诚实的做法是报错，而不是悄悄起一个带 `--profile` 的
+  // 子进程把架构退回多后端。
+  throw new Error(
+    `No separate backend for profile "${profile}": a local profile shares the single ` +
+      'primary backend (identity is per-request; configure a remote backend in ' +
+      'connection.json if this profile must run elsewhere).'
   )
-
-  entry.process = child
-  entry.token = token
-
-  child.stdout.on('data', rememberLog)
-  child.stderr.on('data', rememberLog)
-
-  // The CLI's own reason — e.g. `Profile 'framelet' does not exist. Create it
-  // with: plobi profile create framelet` — is the only honest thing to put in the
-  // panel. It was already being written to desktop.log while the UI showed
-  // nothing but "checking"; keep the last line so the failure state can quote it.
-  let lastStderrLine = ''
-  const captureStderrLine = chunk => {
-    const lines = String(chunk)
-      .split('\n')
-      .map(line => line.trim())
-      .filter(Boolean)
-
-    if (lines.length > 0) {
-      lastStderrLine = lines[lines.length - 1]
-    }
-  }
-
-  child.stderr.on('data', captureStderrLine)
-
-  let ready = false
-  let rejectStart = null
-
-  const startFailed = new Promise((_resolve, reject) => {
-    rejectStart = reject
-  })
-
-  child.once('error', error => {
-    rememberLog(`Plobi backend for profile "${profile}" failed to start: ${error.message}`)
-    backendPool.delete(profile)
-    rejectStart?.(error)
-  })
-  child.once('exit', (code, signal) => {
-    rememberLog(`Plobi backend for profile "${profile}" exited (${signal || code})`)
-    backendPool.delete(profile)
-
-    if (!ready) {
-      rejectStart?.(
-        new Error(
-          `Plobi backend for profile "${profile}" exited before it became ready (${signal || code})${
-            lastStderrLine ? `: ${lastStderrLine}` : ''
-          }.`
-        )
-      )
-    }
-  })
-
-  // Discover the ephemeral port the child bound to
-  const port = await Promise.race([waitForDashboardPortAnnouncement(child, { readyFile }), startFailed])
-
-  if (readyFile) {
-    fs.unlink(readyFile, () => {})
-  }
-
-  entry.port = port
-
-  const baseUrl = `http://127.0.0.1:${port}`
-  await Promise.race([waitForPlobi(baseUrl, token), startFailed])
-  ready = true
-
-  const authToken = await adoptServedDashboardToken(baseUrl, token, {
-    childAlive: () => child.exitCode === null && !child.killed,
-    label: `Plobi backend for profile "${profile}"`,
-    rememberLog
-  })
-
-  entry.token = authToken
-
-  return {
-    baseUrl,
-    mode: 'local',
-    source: 'local',
-    authMode: 'token',
-    token: authToken,
-    profile,
-    wsUrl: `ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(authToken)}`,
-    logs: plobiLog.slice(-80),
-    ...getWindowState()
-  }
 }
 
 function stopPoolBackend(profile) {
@@ -7189,8 +7085,14 @@ async function startPlobi() {
     // (loopback + OS-assigned port) so the desktop auto-discovery contract is
     // preserved; flips to 0.0.0.0:8787 when PLOBI_LAN=1 is set (process env or
     // $PLOBI_HOME/.env) so the Plobi App on the same Wi-Fi can pair.
-    const activeProfile = readActiveDesktopProfile()
-    const backendArgs = serveBackendArgs(activeProfile)
+    // WP-AGENT-SINGLE-GATEWAY §3.2：主后端**不再带身份旗**——后端进程不带
+    // `--profile`。「当前在跟哪个 Agent 说话」是请求属性（REST 走
+    // `X-Plobi-Agent` 头、WS 走 RPC 的 session.create params），不是进程属性；
+    // 身份旗只会把整个进程的 PLOBI_HOME 钉死到某一家。
+    // `active-profile.json` 保留读写——它现在是 renderer 侧的 UI 状态（记住上次
+    // 选中的 Agent，用户 22:1x 拍「跨重启记住」），但不再参与后端启动。
+    // 零数据迁移：`--profile default` 本来就 ≡ 顶层家（resolve_profile_env）。
+    const backendArgs = serveBackendArgs()
 
     await advanceBootProgress('backend.runtime', 'Resolving Plobi runtime', 28)
     const backend = await ensureRuntime(resolvePlobiBackend(backendArgs))
@@ -10256,12 +10158,12 @@ ipcMain.handle('plobi:profile:get', async () => ({ profile: readActiveDesktopPro
 ipcMain.handle('plobi:profile:set', async (_event, name) => {
   const next = writeActiveDesktopProfile(name)
 
-  // Switching profiles is a backend re-home: relaunch the dashboard under the
-  // new PLOBI_HOME. Pool backends keep their own homes, so only the primary
-  // is torn down.
-  await teardownPrimaryBackendAndWait()
-  mainWindow?.reload()
-
+  // WP-AGENT-SINGLE-GATEWAY §3.6：**切换 Agent 不再换家、不再重启后端**。
+  // 旧行为是 soft-rehome——杀掉主后端再以新 PLOBI_HOME 起一个，因为后端进程
+  // 的身份就是它的家。单后端后身份是请求级的（REST 走 `X-Plobi-Agent` 头、
+  // WS 走 RPC 的 session.create params），换 Agent 只是换一个请求参数，
+  // 进程不用动、窗口不用 reload——顺带把「切一下分身就整窗闪一下」也去掉了。
+  // `active-profile.json` 现在纯粹是 renderer 侧的 UI 状态（跨重启记住选中）。
   return { profile: next }
 })
 

@@ -16,36 +16,44 @@ import {
 
 test('serveBackendArgs builds a headless serve invocation', () => {
   assert.deepEqual(
-    serveBackendArgs(undefined, { env: {} }),
+    serveBackendArgs({ env: {} }),
     ['serve', '--host', '127.0.0.1', '--port', '0'],
   )
 })
 
-test('serveBackendArgs pins a profile when provided', () => {
+// WP-AGENT-SINGLE-GATEWAY §3.2：身份旗从启动参数里彻底移除——后端进程不带
+// `--profile`（身份是请求级的）。钉死「传了 profile 也不会出现在 argv 里」，
+// 免得以后有人顺手把参数位加回来而静默退回多后端。
+test('serveBackendArgs never emits a --profile flag', () => {
   assert.deepEqual(
-    serveBackendArgs('worker', { env: {} }),
-    ['--profile', 'worker', 'serve', '--host', '127.0.0.1', '--port', '0'],
+    serveBackendArgs({ env: {} }),
+    ['serve', '--host', '127.0.0.1', '--port', '0'],
+  )
+  assert.equal(
+    (serveBackendArgs as unknown as { length: number }).length,
+    1,
+    'serveBackendArgs should take no profile parameter',
   )
 })
 
 test('serveBackendArgs binds LAN (0.0.0.0:8787) when PLOBI_LAN=1 is set', () => {
   assert.deepEqual(
-    serveBackendArgs(undefined, { env: { PLOBI_LAN: '1' } }),
+    serveBackendArgs({ env: { PLOBI_LAN: '1' } }),
     ['serve', '--host', '0.0.0.0', '--port', '8787'],
   )
 })
 
-test('serveBackendArgs LAN-mode also pins the profile when provided', () => {
+test('serveBackendArgs LAN-mode also carries no profile flag', () => {
   assert.deepEqual(
-    serveBackendArgs('worker', { env: { PLOBI_LAN: '1' } }),
-    ['--profile', 'worker', 'serve', '--host', '0.0.0.0', '--port', '8787'],
+    serveBackendArgs({ env: { PLOBI_LAN: '1' } }),
+    ['serve', '--host', '0.0.0.0', '--port', '8787'],
   )
 })
 
 test('serveBackendArgs falls back to loopback when PLOBI_LAN is anything other than "1"', () => {
   for (const value of ['', '0', 'true', 'yes', 'on', 'NO', '  ']) {
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: { PLOBI_LAN: value } }),
+      serveBackendArgs({ env: { PLOBI_LAN: value } }),
       ['serve', '--host', '127.0.0.1', '--port', '0'],
       `value=${JSON.stringify(value)}`,
     )
@@ -58,7 +66,7 @@ test('serveBackendArgs honours PLOBI_LAN=1 from $PLOBI_HOME/.env when env is uns
     const envPath = path.join(dir, '.env')
     fs.writeFileSync(envPath, 'PLOBI_LAN=1\n', 'utf8')
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: {}, plobiHomeEnvPath: envPath }),
+      serveBackendArgs({ env: {}, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '0.0.0.0', '--port', '8787'],
     )
   } finally {
@@ -81,7 +89,7 @@ test('serveBackendArgs reads PLOBI_LAN=1 even when commented-style noise surroun
       'utf8',
     )
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: {}, plobiHomeEnvPath: envPath }),
+      serveBackendArgs({ env: {}, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '0.0.0.0', '--port', '8787'],
     )
   } finally {
@@ -95,7 +103,7 @@ test('serveBackendArgs ignores malformed .env lines and stays loopback', () => {
     const envPath = path.join(dir, '.env')
     fs.writeFileSync(envPath, 'this is not a kv line\n', 'utf8')
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: {}, plobiHomeEnvPath: envPath }),
+      serveBackendArgs({ env: {}, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '127.0.0.1', '--port', '0'],
     )
   } finally {
@@ -110,7 +118,7 @@ test('serveBackendArgs inherits process.env.PLOBI_LAN when explicitly overridden
     const envPath = path.join(dir, '.env')
     fs.writeFileSync(envPath, 'PLOBI_LAN=1\n', 'utf8')
     assert.deepEqual(
-      serveBackendArgs(undefined, { env: { PLOBI_LAN: '0' }, plobiHomeEnvPath: envPath }),
+      serveBackendArgs({ env: { PLOBI_LAN: '0' }, plobiHomeEnvPath: envPath }),
       ['serve', '--host', '127.0.0.1', '--port', '0'],
     )
   } finally {
