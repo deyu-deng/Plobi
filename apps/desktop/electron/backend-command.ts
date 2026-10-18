@@ -132,24 +132,27 @@ export function resolveLanMode(env: NodeJS.ProcessEnv, plobiHomeEnvPath?: string
  * --port 8787`` so the Plobi App on the same Wi-Fi can reach the
  * desktop. Any other value leaves the bind on loopback.
  *
- * @param {string} [profile] optional Plobi profile to pin via ``--profile``.
+ * WP-AGENT-SINGLE-GATEWAY §3.2：**不再接受 profile 参数**。桌面只起一个后端
+ * 进程，且不带身份旗——「当前跟哪个 Agent 说话」是请求属性（REST 走
+ * `X-Plobi-Agent` 头、WS 走 RPC 的 session.create params），不是进程属性。
+ * 带 `--profile` 会把整个进程的 `PLOBI_HOME` 钉到某一家，那正是多后端架构的
+ * 根源；这里从构造 argv 的源头掐掉，免得以后有人顺手又传回来。
+ *
  * @param {object} [options] optional overrides for testing.
  * @param {NodeJS.ProcessEnv} [options.env] process env to read (default ``process.env``).
  * @param {string} [options.plobiHomeEnvPath] path to ``$PLOBI_HOME/.env`` to fall back on.
  */
 export function serveBackendArgs(
-  profile?: string,
   options?: { env?: NodeJS.ProcessEnv; plobiHomeEnvPath?: string },
 ) {
-  const head = profile ? ['--profile', profile] : []
   const env = options?.env ?? process.env
   const plobiHomeEnvPath =
     options?.plobiHomeEnvPath ?? (env.PLOBI_HOME ? `${env.PLOBI_HOME}/.env` : undefined)
 
   if (resolveLanMode(env, plobiHomeEnvPath)) {
-    return [...head, 'serve', '--host', LAN_BIND_HOST, '--port', LAN_BIND_PORT]
+    return ['serve', '--host', LAN_BIND_HOST, '--port', LAN_BIND_PORT]
   }
-  return [...head, 'serve', '--host', LOOPBACK_HOST, '--port', LOOPBACK_PORT]
+  return ['serve', '--host', LOOPBACK_HOST, '--port', LOOPBACK_PORT]
 }
 
 /**
