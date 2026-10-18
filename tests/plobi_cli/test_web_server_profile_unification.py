@@ -580,7 +580,14 @@ class TestProfileScopedTelegramOnboarding:
 
 
 class TestProfileScopedChatPty:
-    def test_chat_argv_scopes_plobi_home(self, isolated_profiles, monkeypatch):
+    def test_chat_argv_no_longer_pins_plobi_home(self, isolated_profiles, monkeypatch):
+        """裁定 180：一个后端一个库——PTY 子进程的家不再钉到那个分身的家。
+
+        「这个聊天属于哪个 Agent」是**请求属性**（RPC 的 profile →
+        session.profile_home → 行级 ``sessions.agent_id``），不是进程属性；
+        配置面按 contextvar 逐 turn rebind。钉家会把会话写回各家库，读侧
+        （单库 WHERE agent_id）就再也看不见它。
+        """
         import plobi_cli.web_server as web_server
 
         monkeypatch.setattr(
@@ -590,9 +597,33 @@ class TestProfileScopedChatPty:
         )
         argv, cwd, env = web_server._resolve_chat_argv(profile="worker_beta")
         assert env is not None
-        assert env["PLOBI_HOME"] == str(isolated_profiles["worker_beta"])
-        # Scoped chat must NOT attach to the dashboard's in-memory gateway.
-        assert "PLOBI_TUI_GATEWAY_URL" not in env
+        assert env.get("PLOBI_HOME") != str(isolated_profiles["worker_beta"])
+
+    def test_chat_argv_profile_attaches_in_process_gateway(
+        self, isolated_profiles, monkeypatch
+    ):
+        """单后端后一个网关：profile 聊天也 attach dashboard 的 in-process 网关。
+
+        旧行为「scoped chat 自起 tui_gateway 子进程」存在的唯一理由是各跑各家的
+        库；单库后那个理由不成立，留下它只会多一个进程。
+        """
+        import plobi_cli.web_server as web_server
+
+        monkeypatch.setattr(
+            "plobi_cli.main._make_tui_argv",
+            lambda root, tui_dev=False: (["cat"], None),
+            raising=False,
+        )
+        argv, cwd, env = web_server._resolve_chat_argv(profile="worker_beta")
+        assert env is not None
+
+        unscoped_argv, _cwd, unscoped_env = web_server._resolve_chat_argv()
+        # 有没有 URL 取决于本机网关是否在跑；判据是「scoped 与 unscoped 同等待遇」。
+        assert ("PLOBI_TUI_GATEWAY_URL" in env) == (
+            "PLOBI_TUI_GATEWAY_URL" in unscoped_env
+        )
+        if "PLOBI_TUI_GATEWAY_URL" in unscoped_env:
+            assert env["PLOBI_TUI_GATEWAY_URL"] == unscoped_env["PLOBI_TUI_GATEWAY_URL"]
 
     def test_chat_argv_unscoped_keeps_legacy_env(self, isolated_profiles, monkeypatch):
         import plobi_cli.web_server as web_server

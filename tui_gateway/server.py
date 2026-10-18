@@ -305,8 +305,13 @@ class _SlashWorker:
         env = plobi_subprocess_env(inherit_credentials=True)
         if profile_home:
             # Global-remote / multi-profile sessions: the worker must resolve
-            # config/skills/state against the session's profile home, not the
+            # config/skills/memory against the session's profile home, not the
             # gateway's launch PLOBI_HOME (#40677).
+            # 这一处**故意保留**（裁定 180 之后仍是对的）：它是**配置面**——
+            # 分身的 config/skills/memory 按 179 分持、仍各在各家；且子进程吃不到
+            # 父进程的 contextvar rebind，只能靠 env 带。退役的只是**落库面**
+            # （一家一库 → 单库 + 行级 agent_id）；slash_worker 不碰 SessionDB，
+            # 不会把会话写回各家库。
             env["PLOBI_HOME"] = str(profile_home)
 
         # start_new_session=True detaches the slash worker into its own
@@ -1670,6 +1675,30 @@ def _register_session_cwd(session: dict | None) -> None:
         pass
 
 
+def _agent_id_for_profile_home(profile_home) -> str:
+    """profile 家目录 → 名册 name（``sessions.agent_id`` 的归属键）；空/查不到 → ''。
+
+    与 console 的 ``_agent_id_for_profile`` 同语义：桌面侧传的是 profile
+    （家名），归属列存的是名册 name——这一跳就是两者之间的桥。家目录路径只取
+    最后一段家名；名册读不了或查不到回空串（= L1），不猜。
+    """
+    home = str(profile_home or "").strip()
+    if not home:
+        return ""
+    name = Path(home).name
+    if not name:
+        return ""
+    try:
+        from plobi.agents.registry import load_registry
+
+        for entry in load_registry().entries():
+            if (entry.profile_name or "").strip() == name:
+                return entry.name
+    except Exception:
+        return ""
+    return ""
+
+
 def _ensure_session_db_row(session: dict) -> None:
     """Idempotently persist the session's DB row on first real activity.
 
@@ -1684,26 +1713,17 @@ def _ensure_session_db_row(session: dict) -> None:
     picked a folder for gets grouped under whatever directory the desktop
     happened to launch in (e.g. "desktop"). Leaving it null groups them under
     "No workspace", which is the desired default.
+
+    WP-AGENT-SESSION-ATTRIBUTION（裁定 180）：桌面一个后端一个库——不再按
+    session 的 ``profile_home`` 选库文件，恒写当前进程家（单后端后即顶层唯一
+    库）；归属走**行级** ``agent_id``（家名反查名册 name，空 = L1）。配置面
+    早已是请求级（``_start_agent_build`` / 每 turn 的 contextvar rebind），
+    这一格把落库面也改成请求级——文件级隔离（一家一库）自此退役。
     """
     key = session.get("session_key")
     if not key:
         return
-    # Persist into the session's own profile db (global remote mode), not the
-    # launch profile's — otherwise the row lands in the wrong state.db, the
-    # unified list mis-tags it, and resume 404s ("session not found").
-    profile_home = session.get("profile_home")
-    if profile_home:
-        from plobi_state import SessionDB
-
-        try:
-            db = SessionDB(db_path=Path(profile_home) / "state.db")
-        except Exception:
-            logger.debug("failed to open profile db for session row", exc_info=True)
-            return
-        close_db = True
-    else:
-        db = _get_db()
-        close_db = False
+    db = _get_db()
     if db is None:
         return
     # The session's own model/effort/fast pick — the composer override shipped on
@@ -1767,15 +1787,10 @@ def _ensure_session_db_row(session: dict) -> None:
             model_config=model_config or None,
             parent_session_id=parent_session_id,
             cwd=_session_cwd(session) if session.get("explicit_cwd") else None,
+            agent_id=_agent_id_for_profile_home(session.get("profile_home")),
         )
     except Exception:
         logger.debug("failed to persist desktop session row", exc_info=True)
-    finally:
-        if close_db:
-            try:
-                db.close()
-            except Exception:
-                pass
 
 
 def _persist_branch_seed(session: dict) -> None:
@@ -1809,30 +1824,13 @@ def _persist_branch_seed(session: dict) -> None:
 
 @contextlib.contextmanager
 def _session_db(session: dict):
-    """Yield the SessionDB that owns this session's row (profile-aware).
+    """Yield the SessionDB that owns this session's row（裁定 180：单库）。
 
-    Mirrors :func:`_ensure_session_db_row`: a remote/profile session persists
-    into its own profile's ``state.db`` (a fresh handle we close on exit);
-    everything else borrows the shared ``_get_db()`` handle (left open). Yields
-    None when the db is unavailable.
+    单后端后一个进程一个库——恒借共享 ``_get_db()`` 句柄（当前进程家 = 顶层
+    唯一库），不再按 ``profile_home`` 另开库文件。Yields None when the db is
+    unavailable。
     """
-    db, close_db = None, False
-    profile_home = session.get("profile_home")
-    if profile_home:
-        from plobi_state import SessionDB
-
-        try:
-            db, close_db = SessionDB(db_path=Path(profile_home) / "state.db"), True
-        except Exception:
-            logger.debug("failed to open profile db for session", exc_info=True)
-    else:
-        db = _get_db()
-    try:
-        yield db
-    finally:
-        if close_db and db is not None:
-            with contextlib.suppress(Exception):
-                db.close()
+    yield _get_db()
 
 
 def _persist_session_git_meta(session: dict, cwd: str) -> None:

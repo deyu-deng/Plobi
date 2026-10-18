@@ -15237,15 +15237,15 @@ def _resolve_chat_argv(
     small cross-process breadcrumb for reconnecting after an unexpected browser
     WebSocket close.
 
-    `profile` (when set) scopes the ENTIRE chat to that profile by pointing
-    ``PLOBI_HOME`` at the profile dir in the child env. Every spawned
-    process (the TUI and the ``tui_gateway.entry`` it launches) resolves
-    ``get_plobi_home()`` from that env var at its own import, so the child
-    binds the profile's config, skills, memory, and state.db from the start
-    — the same propagation ``plobi -p <name>`` performs. The in-process
-    ``PLOBI_TUI_GATEWAY_URL`` attach is SKIPPED for scoped chats: the
-    dashboard's in-memory gateway runs under the dashboard's own profile,
-    so a profile-scoped chat must spawn its own gateway subprocess.
+    `profile` (when set) is the chat's **request-level identity** (裁定 180):
+    it rides on the RPC (``session.create`` params → ``session.profile_home``)
+    and ends up as ``sessions.agent_id`` on the row, while config/skills/memory
+    resolve per-turn via the contextvar rebind (tui_gateway). The child env is
+    deliberately **NOT** pinned to the profile dir any more — one backend, one
+    database (SINGLE-GATEWAY §3.5): every spawned process resolves the
+    top-level home from import, and every chat attaches the dashboard's
+    in-process gateway. Unknown/invalid names still fail fast here — the
+    existence check is the whole point of resolving it.
     """
     from plobi_cli.main import PROJECT_ROOT, _make_tui_argv
 
@@ -15283,13 +15283,18 @@ def _resolve_chat_argv(
     env.setdefault("COLORTERM", "truecolor")
     env["PLOBI_TUI_DASHBOARD"] = "1"
 
-    if profile_dir is not None:
-        env["PLOBI_HOME"] = str(profile_dir)
+    # WP-AGENT-SINGLE-GATEWAY §3.5 + 裁定 180：不再把子进程的 PLOBI_HOME 钉到
+    # 那个分身的家——一个后端一个库，PTY 子进程（TUI + 它可能 spawn 的
+    # tui_gateway）从 import 起就落在顶层唯一库；「这个聊天属于哪个 Agent」
+    # 是请求属性（RPC 的 profile → session.profile_home → 归属列 agent_id），
+    # 配置面按 contextvar 逐 turn rebind（早就如此），落库面由
+    # tui_gateway._ensure_session_db_row 按 agent_id 写。文件级隔离（一家一库）
+    # 自此退役。身份仍然经 query 的 profile 传下去（PTY handler 读它）。
+    # resume 的库查找改用顶层库聚合（session 行都在一个库了）。
+    _ = profile_dir  # 仍由 handler 校验存在性（未知 profile 早失败），此处不再钉家
 
     if resume:
-        _resume_db = _open_session_db_for_profile(
-            requested if profile_dir is not None else None
-        )
+        _resume_db = _open_session_db_for_profile(None)
         try:
             latest_resume, _latest_path = _session_latest_descendant(resume, _resume_db)
         finally:
@@ -15304,13 +15309,12 @@ def _resolve_chat_argv(
     if active_session_file:
         env["PLOBI_TUI_ACTIVE_SESSION_FILE"] = active_session_file
 
-    # Profile-scoped chats must NOT attach to the dashboard's in-memory
-    # gateway — it runs under the dashboard's own profile. Without the
-    # attach URL, gatewayClient spawns its own `tui_gateway.entry`, which
-    # inherits the profile PLOBI_HOME set above.
-    if profile_dir is None:
-        if gateway_ws_url := _build_gateway_ws_url():
-            env["PLOBI_TUI_GATEWAY_URL"] = gateway_ws_url
+    # 所有聊天都 attach dashboard 的 in-process gateway——一个后端一个网关
+    # （SINGLE-GATEWAY 的 runtime 面）。profile-scoped 聊天不再自起独立
+    # tui_gateway 子进程：那个存在的唯一理由就是「各跑在各家的库上」，
+    # 单库后不成立；身份按 session 走（contextvar rebind 线程/协程隔离）。
+    if gateway_ws_url := _build_gateway_ws_url():
+        env["PLOBI_TUI_GATEWAY_URL"] = gateway_ws_url
 
     return list(argv), str(cwd) if cwd else None, env
 
