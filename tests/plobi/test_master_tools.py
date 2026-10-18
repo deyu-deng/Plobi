@@ -1227,10 +1227,12 @@ def test_n3_writes_user_text_and_briefing(stub_spawn, tmp_path):
     sid = out["sessionId"]
     assert sid
 
-    from plobi_cli.profiles import get_profile_dir
+    from plobi_constants import get_plobi_home
     from plobi_state import SessionDB
 
-    db = SessionDB(db_path=get_profile_dir(out["agent"]["profile"]) / "state.db")
+    # 裁定 180：N3 写顶层单库（PLOBI_HOME 被 fixture 指到 tmp），不再写该
+    # 分身自己家的 state.db；归属在 agent_id 行上。库路径现算，与写端同源。
+    db = SessionDB(db_path=get_plobi_home() / "state.db")
     msgs = db.get_messages(sid)
     assert [m["role"] for m in msgs] == ["user", "assistant"]
     assert msgs[0]["content"] == user_text
@@ -1253,17 +1255,18 @@ def test_n3_not_written_when_chatlog_dead(stub_spawn, tmp_path):
 
 
 def test_n3_session_is_the_profile_latest(stub_spawn, tmp_path):
-    """WP-BE-3 overview.sessionId = latest session in that profile's state.db."""
+    """WP-AGENT-SESSION-ATTRIBUTION：overview.sessionId = 该 agent 在顶层单库
+    里 agent_id 归属的最近会话（裁定 180；旧口径是 profile 家库）。"""
     pipe, _service, _client = _agenda_pipeline(tmp_path, fail=False)
     out = run_secretary_ask("refresh_agenda", "明天安排", pipeline=pipe)
     assert out["ok"] is True
 
-    from plobi_cli.profiles import get_profile_dir
-    from plobi.console.router import _latest_session_for_profile
+    from plobi_constants import get_plobi_home
+    from plobi.console.router import _latest_session_for_agent
 
-    latest = _latest_session_for_profile(out["agent"]["profile"])
+    latest = _latest_session_for_agent(out["agent"]["id"])
     assert latest == out["sessionId"]
-    assert (get_profile_dir(out["agent"]["profile"]) / "state.db").is_file()
+    assert (Path(get_plobi_home()) / "state.db").is_file()
 
 
 # ---------------------------------------------------------------------------

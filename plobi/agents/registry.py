@@ -3432,12 +3432,25 @@ def n3_briefing_text(intent: str, entry: AgentEntry) -> str:
     )
 
 
-def _latest_session_id(db) -> str:
+def _latest_session_id(db, *, agent_id: str | None = None) -> str:
+    """最近活跃的 session id（进行中的会话 ended_at 为空，天然排前）。
+
+    WP-AGENT-SESSION-ATTRIBUTION（裁定 180）前它读的是「这个 profile 家自己
+    的库」；单库后改为按 ``agent_id`` 过滤顶层库。``agent_id=None`` = 不过滤
+    （L1/无归属视角）。
+    """
     try:
-        row = db._conn.execute(
-            "SELECT id FROM sessions "
-            "ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1"
-        ).fetchone()
+        if agent_id is None:
+            row = db._conn.execute(
+                "SELECT id FROM sessions "
+                "ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1"
+            ).fetchone()
+        else:
+            row = db._conn.execute(
+                "SELECT id FROM sessions WHERE agent_id = ? "
+                "ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1",
+                (str(agent_id),),
+            ).fetchone()
     except Exception:
         return ""
     if row is None:
@@ -3460,7 +3473,7 @@ def append_n3_dispatch(
     """
     import uuid
 
-    from plobi_cli.profiles import get_profile_dir
+    from plobi_constants import get_plobi_home
     from plobi_state import SessionDB
 
     if not (entry.profile_name or "").strip():
@@ -3475,12 +3488,20 @@ def append_n3_dispatch(
             f"(role={entry.role or 'unset'}): this roster entry is data, not a running agent"
         )
 
-    profile_dir = get_profile_dir(entry.profile_name)
-    db = SessionDB(db_path=profile_dir / "state.db")
-    sid = (session_id or "").strip() or _latest_session_id(db)
+    # WP-AGENT-SESSION-ATTRIBUTION（裁定 180）：桌面一个后端一个库——不再写
+    # 这个分身自己家的 state.db，写顶层库并按 agent_id 归属（空串 = L1，
+    # 非空 = 名册 name）。上面那道「数据条目不许派活」的守卫与库址无关，
+    # 原样保留（它守的是产品语义，不是落点）。
+    #
+    # 库路径**每次现算**（``get_plobi_home()``）而不是 ``SessionDB()`` 的
+    # import 时默认值：后者把 PLOBI_HOME 钉在模块加载那一刻，conftest 的
+    # per-test 重定向对它无效，测试会共享同一个 scratch 库、互相复用 sid
+    # 累积消息（2026-10-18 实测：两条 N3 用例读到 10 条）。
+    db = SessionDB(db_path=get_plobi_home() / "state.db")
+    sid = (session_id or "").strip() or _latest_session_id(db, agent_id=entry.name)
     if not sid:
         sid = f"plobi-n3-{uuid.uuid4().hex[:12]}"
-    db.create_session(sid, source="cli")
+    db.create_session(sid, source="cli", agent_id=entry.name)
     db.append_message(sid, role="user", content=user_text)
     db.append_message(sid, role="assistant", content=n3_briefing_text(intent, entry))
     return sid
