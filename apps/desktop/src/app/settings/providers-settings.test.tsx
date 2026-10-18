@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { $connectedDesktopApps, applyDiscoveredQuotaApps } from '@/store/desktop-quotas'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
 const listOAuthProviders = vi.fn()
@@ -167,5 +168,74 @@ describe('ProvidersSettings', () => {
     // A non-matching query shows the empty-state copy.
     fireEvent.change(search, { target: { value: 'nonesuch-xyz' } })
     expect(await screen.findByText('No providers match your search.')).toBeTruthy()
+  })
+})
+
+// The Desktop Quotas cards describe desktop software by its subscription, and the
+// only thing that may say whether one is connected is the hub that serves it. The
+// bug these pin down: the badge read a *click* instead, so a hub serving 18 models
+// behind the user's back still showed "Not connected" until the button was pressed.
+describe('Desktop Quotas cards report the hub verdict', () => {
+  /** The frame the main process pushes when the hub vouches for one model. */
+  function frame(id: string, over: { blocked?: Record<string, string>; models?: string[] } = {}) {
+    applyDiscoveredQuotaApps([
+      {
+        answered: true,
+        apiKey: 'sk-local-dev-key',
+        baseUrl: 'http://127.0.0.1:8000/v1',
+        blocked: over.blocked ?? {},
+        id,
+        models: over.models ?? []
+      }
+    ])
+  }
+
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  async function renderDesktopQuotas() {
+    const { ProvidersSettings } = await import('./providers-settings')
+
+    return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
+  }
+
+  it('calls CodeBuddy connected without a single click once the hub serves it', async () => {
+    frame('workbuddy', { models: ['hy3'] })
+
+    await renderDesktopQuotas()
+
+    // The badge and the button both read "connected" — and the Connect button is
+    // disabled, because there is nothing left to press.
+    expect((await screen.findAllByText('已连接')).length).toBe(2)
+    expect(screen.getByRole('button', { name: '已连接' })).toBeTruthy()
+    expect(screen.getByText(/its models are now available in the chat/)).toBeTruthy()
+  })
+
+  it('still says not connected while the hub has said nothing about it', async () => {
+    await renderDesktopQuotas()
+
+    expect((await screen.findAllByText('Not connected')).length).toBe(2)
+    expect(screen.queryByText(/its models are now available in the chat/)).toBeNull()
+  })
+
+  it('explains an unusable software in the hub\'s words instead of a green tick', async () => {
+    frame('workbuddy', { blocked: { 'hy3': 'credential_expired' }, models: [] })
+
+    await renderDesktopQuotas()
+
+    expect(await screen.findByText(/现在用不了/)).toBeTruthy()
+    expect(screen.getByText(/its sign-in has expired/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '已连接' })).toBeNull()
+  })
+
+  it('never reports a connected software the hub answered nothing about', async () => {
+    applyDiscoveredQuotaApps([
+      { answered: false, apiKey: 'sk-local-dev-key', baseUrl: 'http://127.0.0.1:8000/v1', blocked: {}, id: 'workbuddy', models: [] }
+    ])
+
+    await renderDesktopQuotas()
+
+    expect((await screen.findAllByText('Not connected')).length).toBe(2)
   })
 })

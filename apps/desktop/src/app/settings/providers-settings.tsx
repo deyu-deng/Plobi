@@ -22,6 +22,7 @@ import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
 import {
   $connectedDesktopApps,
   markConnected,
+  quotaAppVerdict,
   requestQuotaCatalog
 } from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
@@ -421,7 +422,33 @@ function DesktopQuotasView() {
 
   // Whether any app has been attempted
   const hasAttempted = Object.values(conn).some(s => s !== 'idle')
-  const anyConnected = Object.values(conn).some(s => s === 'connected')
+
+  // One card's state: the hub's verdict decides it, and the click keeps only the
+  // two states a button press can actually be in right now. The verdict arrives
+  // whether or not the user ever pressed anything — the hub is what the models
+  // come from, so it is what the card has to report (裁定 46).
+  const cards = DESKTOP_QUOTA_APPS.map(app => {
+    const verdict = quotaAppVerdict(quotaApps, QUOTA_APP_PEERS[app.id] ?? [app.id])
+    const click = conn[app.id] || 'idle'
+    const unusable = verdict.state === 'unusable'
+    const isConnected = verdict.state === 'ok' || (verdict.state === 'unanswered' && click === 'connected')
+
+    return {
+      app,
+      isConnected,
+      isConnecting: click === 'connecting',
+      // A click that failed while the hub still vouches for this software is not
+      // news: the verdict the models come from is the hub's, and it says it works.
+      hasError: click === 'error' && !isConnected && !unusable,
+      reasonText: verdict.state === 'unusable'
+        ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
+        : '',
+      unusable
+    }
+  })
+
+  const anyUsable = cards.some(card => card.isConnected)
+  const anyKnown = cards.some(card => card.isConnected || card.unusable)
 
   return (
     <SettingsContent>
@@ -433,8 +460,8 @@ function DesktopQuotasView() {
           </p>
         </div>
 
-        {/* Status banner — only show "not verified" if nothing has been attempted */}
-        {!hasAttempted && !anyConnected && (
+        {/* Status banner — only show "not verified" while nothing has been said */}
+        {!anyKnown && !hasAttempted && (
         <div className="flex items-start gap-2 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-quaternary) p-3">
           <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
             {dq.notVerified}
@@ -442,7 +469,7 @@ function DesktopQuotasView() {
         </div>
         )}
 
-        {anyConnected && (
+        {anyUsable && (
         <div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/5 p-3">
           <Check className="mt-0.5 size-4 shrink-0 text-green-600" />
           <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-green-700 dark:text-green-400">
@@ -452,25 +479,8 @@ function DesktopQuotasView() {
         )}
 
         <div className="grid gap-2">
-          {DESKTOP_QUOTA_APPS.map(app => {
-            const state = conn[app.id] || 'idle'
-            const isConnected = state === 'connected'
-            const isConnecting = state === 'connecting'
-            const hasError = state === 'error'
+          {cards.map(({ app, isConnected, isConnecting, hasError, reasonText, unusable }) => {
             const canConnect = app.verified && !isConnected && !isConnecting
-
-            // Connected-but-unusable: the hub answered, and every leg of this software
-            // is currently dropped. Show the hub's reason instead of a green tick that
-            // would promise a turn which cannot happen.
-            const records = (QUOTA_APP_PEERS[app.id] ?? [app.id])
-              .map(id => quotaApps[id])
-              .filter(Boolean)
-
-            const anyPickable = records.some(r => r!.answered === true && r!.models.length > 0)
-            const answeredSomewhere = records.some(r => r!.answered === true)
-            const unusable = Boolean(isConnected && answeredSomewhere && !anyPickable)
-            const blockedToken = records.flatMap(r => Object.values(r!.blocked ?? {}))[0] ?? ''
-            const reasonText = quotaReason[blockedToken] ?? t.desktop.quotaReason.unknown(blockedToken)
 
             return (
             <div
@@ -494,7 +504,7 @@ function DesktopQuotasView() {
                       : app.verified ? 'bg-(--ui-bg-quaternary) text-muted-foreground'
                       : 'bg-(--ui-bg-quaternary) text-muted-foreground'
                   )}>
-                    {isConnected && unusable ? (
+                    {unusable ? (
                       `现在用不了 · ${reasonText}`
                     ) : isConnected ? (
                       <><Check className="size-3" />已连接</>

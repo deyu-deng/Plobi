@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import type { ModelOptionProvider } from '@/types/plobi'
+
 import {
   $connectedDesktopApps,
   applyDiscoveredQuotaApps,
@@ -8,12 +10,11 @@ import {
   firstSelectableQuotaModel,
   hubAppOfModel,
   markConnected,
+  type QuotaAppFrame,
+  quotaAppVerdict,
   quotaProviders,
-  quotaSelectionVerdict,
-  type QuotaAppFrame
+  quotaSelectionVerdict
 } from './desktop-quotas'
-
-import type { ModelOptionProvider } from '@/types/plobi'
 
 /** One app exactly as the shell pushes it: the hub's verdict, not a bare name list. */
 function frame(id: string, over: Partial<QuotaAppFrame> = {}): QuotaAppFrame {
@@ -219,5 +220,67 @@ describe('findQuotaHubRow', () => {
     expect(hubAppOfModel('workbuddy_api/hy3')?.id).toBe('workbuddy_api')
     expect(hubAppOfModel('gpt-4o')).toBeNull()
     expect(hubAppOfModel('somebody-elses/hy3')).toBeNull()
+  })
+})
+
+// The Desktop Quotas card is per *software*, and the card's whole job is to stop
+// reporting the click that asked for the catalog instead of the catalog itself.
+// These are the four states it can show, and the invariant underneath them: only a
+// verdict the hub actually gave may be acted on — "we did not ask" is never
+// dressed up as either "it works" or "it is broken".
+describe('quotaAppVerdict', () => {
+  // CodeBuddy rides two hub legs; the card describes the software, not the leg.
+  const CODEBUDDY_LEGS = ['workbuddy', 'workbuddy_api']
+  const verdict = () => quotaAppVerdict($connectedDesktopApps.get(), CODEBUDDY_LEGS)
+
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('calls the software usable when the hub vouches for any one of its legs', () => {
+    applyDiscoveredQuotaApps([
+      frame('workbuddy_api', { models: [] }),
+      frame('workbuddy', { models: ['hy3', 'glm-5.3'] })
+    ])
+
+    expect(verdict()).toEqual({ models: ['hy3', 'glm-5.3'], state: 'ok' })
+  })
+
+  it('carries the hub\'s own reason out when it vouches for none of them', () => {
+    applyDiscoveredQuotaApps([
+      frame('workbuddy', { models: [], blocked: { 'hy3': 'credential_expired' } }),
+      frame('workbuddy_api', { models: [] })
+    ])
+
+    expect(verdict()).toEqual({ reason: 'credential_expired', state: 'unusable' })
+  })
+
+  it('reads a frame that never came back as "we do not know", not as broken', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { answered: false, models: [] })])
+
+    expect(verdict()).toEqual({ state: 'unanswered' })
+  })
+
+  it('reads software the hub has never mentioned as absent, not as a verdict', () => {
+    applyDiscoveredQuotaApps([frame('antigravity', { models: ['gemini-3.8'] })])
+
+    expect(verdict()).toEqual({ state: 'absent' })
+  })
+
+  it('reports unusable again once the models stop being served', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: [] })])
+    expect(verdict()).toEqual({ reason: 'not_offered', state: 'unusable' })
+
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    expect(verdict().state).toBe('ok')
+  })
+
+  it('answers one app from its own record when no peer is known', () => {
+    applyDiscoveredQuotaApps([frame('antigravity', { models: ['gemini-3.8'] })])
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['antigravity'])).toEqual({
+      models: ['gemini-3.8'],
+      state: 'ok'
+    })
   })
 })
