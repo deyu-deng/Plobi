@@ -5,7 +5,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { type Translations, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { setAgendaEventCompleted } from '@/plobi'
-import { $completedEventIds, upsertAgendaEvent } from '@/store/agenda'
+import { $agendaEventIds, $completedEventIds, upsertAgendaEvent } from '@/store/agenda'
 import { notify, notifyError } from '@/store/notifications'
 
 import type { DayPlan } from './week-snapshots'
@@ -46,6 +46,10 @@ function clock(iso: null | string): string {
  * 计划行指向的那条**事件**。`event_id` 是后端 `plobi/agenda/planning.py` `_plan_item_dict`
  * 这一格带出来的（WP-PLAN-COMPLETION-ACK 判据③）——没有它，界面上那句"做完了"无处可认，
  * 作业就会每晚被重排一次。取不到就说"这一行不能认"，**不猜**。
+ *
+ * 非空**不等于真有一条事件**（WP-PLAN-ACK-NO-FAKE-CHECK）：排程自造的 `l1:block-3`、
+ * `routine:seed-lunch` 也是非空字符串，点下去后端直接 404。所以这一格只管"有没有写"，
+ * "真不真"由 `$agendaEventIds` 判——两件事别揉进一个函数。
  */
 function eventIdOf(item: object): null | string {
   const raw = (item as { event_id?: null | string }).event_id
@@ -65,6 +69,7 @@ export function DayPlanSection({ dayLabel, plan, translations }: DayPlanSectionP
   const p = (translations ?? t).agenda.plan
   const a = (translations ?? t).agenda
   const completed = useStore($completedEventIds)
+  const knownEventIds = useStore($agendaEventIds)
   const [busyId, setBusyId] = useState<null | string>(null)
 
   if (!plan) {
@@ -100,12 +105,22 @@ export function DayPlanSection({ dayLabel, plan, translations }: DayPlanSectionP
           {plan.items.map(item => {
             const eventId = eventIdOf(item)
             const done = eventId !== null && completed.has(eventId)
+            // 服务端答过（哪怕答的是空一天）才谈得上"查无此行"；还没答过就报"记不了"
+            // 等于把一次加载中的空窗说成一条事实——两头都不说。
+            const answered = knownEventIds.size > 0
+            const ackable = eventId !== null && knownEventIds.has(eventId)
+            const unrecordable = eventId !== null && answered && !ackable
 
             return (
               <li className="flex items-start gap-1 text-xs" key={`${item.id}-${item.start_at}`}>
                 <span className={cn('min-w-0 flex-1', done && 'text-muted-foreground line-through')}>{line(item)}</span>
                 {done ? <span className="shrink-0 text-[0.62rem] text-muted-foreground">{a.donePill}</span> : null}
-                {eventId === null ? null : (
+                {unrecordable ? (
+                  <span className="shrink-0 text-[0.62rem] text-muted-foreground" data-testid={`unrecordable-${item.id}`}>
+                    {p.unackable}
+                  </span>
+                ) : null}
+                {ackable && eventId ? (
                   <button
                     aria-label={done ? a.uncomplete : a.complete}
                     className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground disabled:cursor-wait"
@@ -116,7 +131,7 @@ export function DayPlanSection({ dayLabel, plan, translations }: DayPlanSectionP
                   >
                     <Codicon name={done ? 'history' : 'pass'} size="0.875rem" />
                   </button>
-                )}
+                ) : null}
               </li>
             )
           })}
