@@ -470,18 +470,67 @@ def _write_profile_yaml(profile_home, *, cwd_value: str) -> None:
     )
 
 
-def test_fs_default_cwd_uses_profile_yaml_when_provided(tmp_path, monkeypatch):
-    """Profile-home cwd wins over the launch-profile env / load_config path."""
+def _bind_profile_cwd(tmp_path, monkeypatch, *, profile: str, cwd) -> None:
+    """Give that profile its workspace the way the single-source design does it:
+    the **roster row** (``projects.yaml`` ``project_path``), read at load time by
+    ``plobi.agents.registry.project_cwd_for_profile``.
+
+    裁 42 / 裁 166 / ADR-0013：分身家那一份 ``config.yaml`` 不再是任何一格的落点，
+    ``terminal.cwd`` 的真源本来就是名册那一行（R-013 的文件夹绑定）。所以这一族的夹具
+    把家与名册都用环境变量钉死，绝不碰真机那份。
+    """
+    import yaml
+
+    from plobi.agents.registry import REGISTRY_VERSION
+
+    root = tmp_path / "plobi"
+    (root / "plobi").mkdir(parents=True, exist_ok=True)
+    registry_path = root / "plobi" / "projects.yaml"
+    registry_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": REGISTRY_VERSION,
+                "agents": {
+                    profile: {
+                        "name": profile,
+                        "role": "l2_project",
+                        "profile": profile,
+                        "category": "projects",
+                        "project_path": str(cwd),
+                    }
+                },
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PLOBI_HOME", str(root))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(registry_path))
+
+
+def test_fs_default_cwd_uses_profile_binding_when_provided(tmp_path, monkeypatch):
+    """The pinned profile's bound workspace wins over the launch env / load_config.
+
+    Mechanism moved with 裁 166 (the per-分身 ``config.yaml`` copy is no longer a
+    source); the contract did not — see ``tests/plobi/test_studio_cwd.py``. The
+    stale copy below stays on purpose: it must NOT be what answers.
+    """
     from plobi_cli import web_server
 
     # Launch-profile side: set a misleading terminal.cwd via env that should
     # NOT be returned when the caller pins a profile_home.
     monkeypatch.setenv("TERMINAL_CWD", "/this/should/not/win")
 
-    # Per-profile yaml points at tmp.
+    # The 分身 home still carries a historical copy — pointing somewhere else.
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
     profile_home = tmp_path / "plobi" / "profiles" / "l2-agenda"
     profile_home.mkdir(parents=True)
-    _write_profile_yaml(profile_home, cwd_value=str(tmp_path))
+    _write_profile_yaml(profile_home, cwd_value=str(decoy))
+
+    # The roster row is what declares this home's workspace: tmp.
+    _bind_profile_cwd(tmp_path, monkeypatch, profile="l2-agenda", cwd=tmp_path)
 
     assert web_server._fs_default_cwd(profile_home=profile_home) == str(tmp_path)
 

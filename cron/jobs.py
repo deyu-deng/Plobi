@@ -941,9 +941,13 @@ def _resolve_default_model_snapshot() -> Optional[str]:
     """
     try:
         import yaml
-        from plobi_cli.config import _expand_env_vars, get_config_path
+        from plobi_constants import config_path_for_home
+        from plobi_cli.config import _expand_env_vars
 
-        cfg_path = get_config_path()
+        # 问的是**这一格已经拿到的那个家**（模块级 ``get_plobi_home``，被
+        # ``set_plobi_home_override`` / 测试夹具改写时跟着走），再按同一条规则把分身家
+        # 折到顶层那一份——裁 166 / ADR-0013 之后分身家不再自带复印件。
+        cfg_path = config_path_for_home(get_plobi_home())
         if not cfg_path.exists():
             return None
         with cfg_path.open(encoding="utf-8") as f:

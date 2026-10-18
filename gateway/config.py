@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Callable
 from enum import Enum
 
-from plobi_cli.config import get_config_path, get_plobi_home
+from plobi_cli.config import get_plobi_home
+from plobi_constants import config_path_for_home
 from agent.secret_scope import current_secret_scope, get_secret as _get_secret
 from utils import is_truthy_value
 
@@ -987,8 +988,11 @@ def load_gateway_config() -> GatewayConfig:
     # 那唯一一份配置的落点。以前这里手拼 ``_home / "config.yaml"``：分身后端起来时
     # ``_home`` 是 ``profiles/<name>``，读的是那家的复印件（而复印件里根本没有
     # ``platforms`` / ``session_reset`` / ``quick_commands`` 这些格），于是消息网关
-    # 在分身家下一直读不到用户配的那一份。裁 166 / ADR-0013 收成一份后改问解析器。
-    _config_path = get_config_path()
+    # 在分身家下一直读不到用户配的那一份。裁 166 / ADR-0013 收成一份后改问解析器——
+    # 问的是**这一格已经拿到的那个家**（``_home``），不是重新按环境变量解析一遍：
+    # 上层把家指到哪儿（contextvar 覆盖、桌面按 profile 解析、测试夹具改
+    # ``gateway.config.get_plobi_home``），这一格就跟着读哪一份。
+    _config_path = config_path_for_home(_home)
     gw_data: dict = {}
 
     # Legacy fallback: gateway.json provides the base layer.
