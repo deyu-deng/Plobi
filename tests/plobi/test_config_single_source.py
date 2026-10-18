@@ -238,6 +238,62 @@ def test_editing_the_roster_takes_effect_without_restarting(root):
 # ---------------------------------------------------------------------------
 
 
+def test_a_model_override_on_one_row_leaves_the_other_23_rows_verbatim(root):
+    """裁定 172 判据的原文形状：24 行名册（``l2_project`` 占 23 行），给 ``Aura`` 那一行写
+    ``model:`` ⇒ **其余 23 行解析结果逐字不变**。只测「Aura 变了」不算，所以这里逐行数。
+
+    这条同时过两条消费方，因为把覆盖折进 ``routes[entry.role]`` 那个做法伤的就是两条：
+
+    ① 路由本身 —— :meth:`AgentRegistry.route_for` 按**那一行**解析，
+       :meth:`AgentRegistry.router` 现在只剩「这一类默认用什么」；
+    ② 配置生效值 —— ``load_config`` 读时叠的那条链（同一个 route_for 的产物）。
+
+    以前这里是 ``router()`` 直接把每一行覆盖盖到 ``routes[role]`` 上、后写的赢 ⇒ 一次
+    「给 Aura 单选」= 23 个 Agent 一起换，ADR-0013 完成定义第 1 条结构上不成立。
+    """
+    from plobi.agents.registry import AgentRegistry
+
+    rows = {"secretary": {"name": "secretary", "role": "l1_secretary", "profile": "default",
+                          "category": "butler"}}
+    names = (["aura"] + [f"proj{n}" for n in range(23)])
+    for name in names:
+        (root / "profiles" / name).mkdir(parents=True, exist_ok=True)
+        rows[name] = _row(name)
+    _write_roster(root, rows)
+
+    def snapshot() -> dict:
+        reg = AgentRegistry.load()
+        out = {}
+        for name in names:
+            entry = reg.get(name)
+            out[name] = {
+                "route": f"{reg.route_for(entry).provider}/{reg.route_for(entry).model}",
+                "model": _effective_model(root / "profiles" / name),
+            }
+        return out
+
+    before = snapshot()
+    assert len({v["route"] for v in before.values()}) == 1, before  # 起点：23 行同一个类值
+
+    rows = yaml.safe_load(Path(os.environ["PLOBI_PROJECTS_CONFIG"]).read_text(encoding="utf-8"))
+    rows["agents"]["aura"]["provider"] = "moonshot"
+    rows["agents"]["aura"]["model"] = "kimi-chosen"
+    _write_roster(root, rows["agents"])
+
+    after = snapshot()
+    assert after["aura"]["route"] == "moonshot/kimi-chosen", after["aura"]
+    assert after["aura"]["model"]["default"] == "kimi-chosen"
+    changed = [n for n in names if after[n] != before[n]]
+    assert changed == ["aura"], f"其余 23 行必须逐字不变，实际变了：{changed}"
+    # 类表本身没被任何一行动过：`router()` 只回答「这一类默认用什么」
+    from plobi.agents.registry import AgentRegistry as _AR
+
+    class_route = _AR.load().router().resolve("l2_project")
+    assert f"{class_route.provider}/{class_route.model}" == list(
+        {v["route"] for k, v in before.items() if k != "aura"}
+    )[0]
+
+
 def test_the_low_level_resolver_gives_the_same_answer(root):
     """``plobi_constants.get_config_path()`` 与 ``plobi_cli.config.get_config_path()`` 同源。
 

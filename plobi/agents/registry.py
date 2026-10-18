@@ -824,33 +824,76 @@ class AgentRegistry:
     # ------------------------------------------------------------------ #
 
     def router(self) -> "ModelRouter":
-        """合并默认路由 + 注册表覆盖，返回 ModelRouter。
+        """那张**角色 → 模型**的共享表本身；**不把名册行的覆盖折进来**（裁定 172）。
 
-        惰性 import 避免 plobi_cli 依赖方向问题。profile 级 models.json
-        由 ``spawn`` 写，这里只负责在默认路由之上叠加覆盖。
+        这里以前会把每一行的 ``provider``/``model`` 直接盖到 ``routes[entry.role]`` 上，
+        而现核未归档 24 行里 ``l2_project`` 占 23 行 ⇒ 给 Aura 单选一个模型就是改写
+        ``l2_project`` 这一整类（后写的还赢），ADR-0013 完成定义第 1 条
+        「给某个 Agent 单独选，只有它变」因此结构上不成立。这一格现在只管「这一类默认用什么」，
+        **某一个 Agent 的生效值问 :meth:`route_for`**——惰性 import 的方向问题不变。
         """
         from plobi.routing import ModelRouter
 
-        router = ModelRouter.load()
-        for entry in self.entries():
-            if not entry.has_model_override:
-                continue
-            route = router.resolve(entry.role)
-            from plobi.routing import ModelRoute
+        return ModelRouter.load()
 
-            router.routes[entry.role] = ModelRoute(
-                role=entry.role,
-                provider=entry.provider or route.provider,
-                model=entry.model or route.model,
-            )
-        return router
+    def route_for(self, entry: AgentEntry) -> "ModelRoute":
+        """这一个 Agent 的生效路由＝**那一行自己的** provider/model 盖在它那一类的路由之上。
+
+        裁 172 的口径：覆盖的单位是名册那一行，不是 role。省略那两格 = 没有覆盖 =
+        整类的值原样生效；只给一半时另一半仍从类表继承（``entry.provider or 类.provider``），
+        但这一步**只改这一行**，绝不写回 ``routes[role]``。
+        """
+        route = self.router().resolve(entry.role)
+        if not entry.has_model_override:
+            return route
+        from plobi.routing import ModelRoute
+
+        return ModelRoute(
+            role=route.role,
+            provider=entry.provider or route.provider,
+            model=entry.model or route.model,
+        )
+
+    def route_problems_for(self, entry: AgentEntry) -> list[str]:
+        """ADR-0011 那条 L1≠L2 的断言也要吃**这一行**的生效值。
+
+        折进类表的那个做法顺带让这个 guard 看见了错的东西；拆开之后 guard 不能跟着变瞎，
+        所以这里补一格：拿 :meth:`route_for` 的值与 L1 比，同一条 qualified 就是不绿。
+        """
+        try:
+            l1 = self.router().resolve(L1_SECRETARY_ROLE)
+        except Exception:
+            return []
+        try:
+            route = self.route_for(entry)
+        except Exception:
+            return []
+        if entry.role == L1_SECRETARY_ROLE or not route.configured or not l1.configured:
+            return []
+        if route.qualified == l1.qualified:
+            # 话术跟着 :meth:`plobi.routing.ModelRouter.violations` 走，不留第二种说法：
+            # 那条说的就是 ``"<role> shares L1's model (...)"``。
+            return [
+                f"{entry.role} shares L1's model ({route.qualified}) "
+                f"— {entry.name} 这一行自己选的，不是整类（裁 172）；"
+                "the expensive model would end up doing per-message work"
+            ]
+        return []
 
     def routing_problems(self) -> list[str]:
-        """ADR-0011 断言问题列表（空 = 绿）。"""
+        """ADR-0011 断言问题列表（空 = 绿）：**类表那一份 + 每一行自己那一份**。
+
+        裁 172 把每行覆盖从 ``routes[role]`` 上摘下来之后，只看类表会让这条 guard 变瞎
+        （名册里给某个项目分身躯一台旗舰，类表上看不见）。所以两类账都数：类表自己的，
+        和逐行 :meth:`route_for` 的。
+        """
         try:
-            return self.router().violations()
+            problems = self.router().violations()
         except Exception as exc:  # 兜底：缺 L1 等异常当问题上报
             return [f"routing check failed: {exc}"]
+        for entry in self.entries():
+            problems = problems + self.route_problems_for(entry)
+        return problems
 
     # ------------------------------------------------------------------ #
     # spawn
@@ -892,8 +935,8 @@ class AgentRegistry:
         # 1) profile 级 models.json（ADRD-0011 断言基于它）
         profile_models = self._write_profile_models(profile_dir, entry)
 
-        # 2) routing 断言绿
-        problems = self._profile_routing_problems(profile_models)
+        # 2) routing 断言绿（类表那一份 + **这一行**的生效值，裁 172 拆开两处消费方）
+        problems = self._profile_routing_problems(profile_models) + self.route_problems_for(entry)
         if problems:
             raise RegistryError(
                 f"agent {name!r} routing violates ADR-0011: " + "; ".join(problems)
@@ -1322,26 +1365,24 @@ def profile_config_overlay(profile_name: str) -> dict:
     ② 名字底座解析不出来（:func:`provider_is_resolvable`）时**整节都不给**——给一个
        解析不出来的 provider = 这个分身一启动就一条 ``Unknown provider`` 红条。
 
-    ⚠️ 裁定 172 那句「覆盖必须按 **Agent 身份**解析，不许折进共享 role 路由」在这里是硬约束：
-    现核名册 24 行里 ``l2_project`` 占 23 行，而 :meth:`AgentRegistry.router` 是把每一行的覆盖
-    按 **role** 盖到那张表上的（``routes[entry.role] = ...``，后写的赢）。所以这一格**不能**用
-    ``self.router()`` 去解析——那会让 Aura 那行覆盖连带改到 Kit 那一行缺的那一半。这里读的是
-    不含任何名册覆盖的那张共享表（``ModelRouter.load()``）作为「没声明那一半」的继承值。
+    ⚠️ 裁定 172 那句「覆盖必须按 **Agent 身份**解析，不许折进共享 role 路由」在这里是硬约束，
+    所以这一格拿 :meth:`AgentRegistry.route_for`——那一行自己的 ``provider``/``model`` 盖在
+    它那一类的路由之上，**绝不写回** ``routes[role]``（现核未归档 24 行里 ``l2_project`` 占 23 行，
+    折进类表就等于给 Aura 单选一次、22 个一起变）。
     """
     found = _registry_and_entry_for_profile(profile_name)
     if found is None:
         return {}
-    _registry, entry = found
+    registry, entry = found
     overlay: dict = {}
     if entry.has_model_override:
         try:
-            from plobi.routing import ModelRouter
-
-            base_route = ModelRouter.load().resolve(entry.role)
+            route = registry.route_for(entry)
+            provider = (route.provider or "").strip()
+            model = route.model or ""
         except Exception:
-            base_route = None
-        provider = (entry.provider or "").strip() or (base_route.provider if base_route else "")
-        model = (entry.model or "").strip() or (base_route.model if base_route else "")
+            provider = ""
+            model = ""
         if provider:
             if not provider_is_resolvable(provider):
                 # 那句点名的 warning 是从 ``_write_profile_config`` 原样搬来的：闸还是那道闸，

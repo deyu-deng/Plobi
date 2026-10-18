@@ -18,7 +18,7 @@ field           source
 ==============  ============================================================
 ``id``/``name`` ``plobi.agents.registry`` entry name (+ description)
 ``status``      derived from that agent's L3 children (``delegation.tracker``)
-``model``       ``registry.router()`` — default routes + per-agent overrides
+``model``       ``registry.route_for(entry)`` — 类表默认 + **这一行**的覆盖（裁 172）
 ``todayCalls``  ``totals_for_sessions`` over attributed sessions
 ``sessionId``   attributed sessions (see ``sessions_for_agent``)
 ==============  ============================================================
@@ -200,9 +200,14 @@ def is_l2(entry: AgentEntry) -> bool:
 
 
 def _resolve(entry: AgentEntry) -> Optional[ModelRoute]:
-    """Route for an entry's role, or None when the role has no route."""
+    """Route for **这一行名册**, or None when the role has no route.
+
+    裁 172：要的是这一行的生效值（那一行的 ``provider``/``model`` 盖在它那一类之上），
+    不是把覆盖折进 ``routes[role]``——名册里 ``l2_project`` 占多数行，折进去就成了
+    「给一个 Agent 选模型、整类一起变」。
+    """
     try:
-        return get_registry().router().resolve(entry.role)
+        return get_registry().route_for(entry)
     except Exception:  # RoutingError for operator-invented roles
         return None
 
