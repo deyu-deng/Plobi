@@ -65,8 +65,10 @@ export const en: Translations = {
     ready: 'Plobi Desktop is ready',
     desktopBootFailedWithMessage: message => `Desktop boot failed: ${message}`,
     sidecars: {
-      deferredTitle: 'Postponed services (not faults)',
-      deferredHint: 'Not a fault: nothing on this machine could even be started. Chat is unaffected; the tray menu and this dot list every postponed service with its reason and how it comes back.',
+      deferredTitle: 'Services not running on this machine',
+      stateDeferred: 'not part of this round',
+      stateRed: 'tried, did not come up',
+      deferredHint: 'Only services that are not running right now are listed here - a healthy one shows nothing. Each row is either not part of this round (Plobi starts it when it is needed and the row disappears) or it was tried and did not come up: the missing step and how it comes back are in the row. Chat is unaffected.',
       redTitle: 'Service fault',
       redHint: 'Chat is unaffected, but this service was started and never came up healthy. This is a real fault, not a postponement — how to bring it back is in the status bar gateway menu.',
       // R-082 user tier: one sentence (which subsystem is not connected) shown
@@ -1456,7 +1458,8 @@ export const en: Translations = {
       empty: 'No plan was generated for this day',
       pending: 'awaiting your confirmation',
       statusUnknown: 'no status',
-      title: label => `Plan for ${label}`
+      title: label => `Plan for ${label}`,
+      unackable: 'I can’t record this one'
     },
     week: {
       conflicts: count => (count === 1 ? '1 overlap' : `${count} overlaps`),

@@ -65,8 +65,10 @@ export const zh: Translations = {
     ready: 'Plobi 桌面版已就绪',
     desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
     sidecars: {
-      deferredTitle: '后置服务（押后，非故障）',
-      deferredHint: '不是故障：这台机器上根本没有可以启动的东西。主对话不受影响；托盘菜单和这里都会列出每个后置服务、未启动的原因与恢复方式。',
+      deferredTitle: '这台没在跑的服务',
+      stateDeferred: '这一波还没接',
+      stateRed: '试过，没起来',
+      deferredHint: '只列这台当前没在跑的服务，健康的一条都不出现。下面每一行要么是这一波还没接（要用时 Plobi 自己起，跑起来这行就消失），要么是它试过没起来——缺哪一步、怎么回来都写在行里。主对话不受影响。',
       redTitle: '服务故障',
       redHint: '主对话不受影响，但这个服务确实被尝试启动过，却没有健康起来。这是真故障，不是押后；恢复方式见状态栏网关菜单。',
       // R-082 用户态：一句话（哪条采集没连上）；开发者全文留在折叠的详情里。
@@ -1629,7 +1631,8 @@ export const zh: Translations = {
       empty: '这一天没有生成计划',
       pending: '待你批准',
       statusUnknown: '无状态',
-      title: label => `${label}的计划`
+      title: label => `${label}的计划`,
+      unackable: '这条我记不了'
     },
     week: {
       conflicts: count => `冲突 ${count}`,

@@ -7,13 +7,15 @@ import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
 import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
 import { Codicon } from '@/components/ui/codicon'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
-import { useI18n } from '@/i18n'
+import type { DesktopDeferredSubsystem } from '@/global'
+import { type Translations, useI18n } from '@/i18n'
 import { deferredRowLabel, readDeferredLedgerView } from '@/lib/desktop-deferred-sidecars'
 import { Activity, AlertCircle, Clock, Command, Hash, Loader2, Terminal, Zap, ZapFilled } from '@/lib/icons'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { setGlobalYolo, setSessionYolo } from '@/lib/yolo-session'
+import { $agendaPendingCount } from '@/store/agenda'
 import { $desktopBoot } from '@/store/boot'
 import {
   $activeSessionId,
@@ -37,8 +39,6 @@ import {
 } from '@/store/updates'
 import type { StatusResponse } from '@/types/plobi'
 
-import { $agendaPendingCount } from '@/store/agenda'
-
 import { AGENDA_ROUTE, CRON_ROUTE } from '../../routes'
 import type { StatusbarItem, StatusbarSelectModifiers } from '../statusbar-controls'
 
@@ -58,6 +58,42 @@ interface StatusbarItemsOptions {
   shellOpen?: boolean
   statusSnapshot: StatusResponse | null
   toggleCommandCenter: () => void
+}
+
+/**
+ * WP-DEFERRED-PLAINTEXT-RENDER — 状态栏那一格里的一行。
+ *
+ * 原来第四段位置直接印 `{row.state}`，屏幕上就是 `deferred` / `red` 两个英文字面——
+ * 那是状态码，不是话。裁定 162 换掉的是**理由**（那句 R-047 的假话），这一处漏的是**标签**。
+ * 现在两种状态各说一句人话：「这一波还没接」／「试过，没起来」。
+ *
+ * 抽成单独一档是为了能拿一条**注入的假红**去验这句话——裁 176 说绿时不显示才是正确形状，
+ * 所以不许为了验收去把真 sidecar 弄坏。
+ */
+export function DeferredLedgerRow({
+  copy,
+  row
+}: {
+  copy: Translations['boot']['sidecars']
+  row: DesktopDeferredSubsystem
+}) {
+  return (
+    <li className="flex flex-col gap-0.5 text-xs" data-testid={`deferred-row-${row.id}`}>
+      <span className="flex items-center justify-between gap-2">
+        <span className="truncate">{`${deferredRowLabel(row)}${row.port > 0 ? ` (:${row.port})` : ''}`}</span>
+        <span
+          className={cn(
+            'shrink-0 text-[0.66rem]',
+            row.state === 'red' ? 'text-destructive' : 'text-muted-foreground'
+          )}
+        >
+          {row.state === 'red' ? copy.stateRed : copy.stateDeferred}
+        </span>
+      </span>
+      <span className="leading-snug text-muted-foreground">{row.observed}</span>
+      <span className="leading-snug text-muted-foreground/80">{`${copy.enableLabel}: ${row.enableHint}`}</span>
+    </li>
+  )
 }
 
 export function useStatusbarItems({
@@ -161,23 +197,7 @@ export function useStatusbarItems({
             <p className="mt-1 text-[0.66rem] leading-snug text-muted-foreground">{t.boot.sidecars.deferredHint}</p>
             <ul className="mt-1.5 space-y-1.5">
               {sidecarView.noted.map(row => (
-                <li className="flex flex-col gap-0.5 text-xs" key={row.id}>
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="truncate">{`${deferredRowLabel(row)}${row.port > 0 ? ` (:${row.port})` : ''}`}</span>
-                    <span
-                      className={cn(
-                        'shrink-0 text-[0.66rem]',
-                        row.state === 'red' ? 'text-destructive' : 'text-muted-foreground'
-                      )}
-                    >
-                      {row.state}
-                    </span>
-                  </span>
-                  <span className="leading-snug text-muted-foreground">{row.observed}</span>
-                  <span className="leading-snug text-muted-foreground/80">
-                    {`${t.boot.sidecars.enableLabel}: ${row.enableHint}`}
-                  </span>
-                </li>
+                <DeferredLedgerRow copy={t.boot.sidecars} key={row.id} row={row} />
               ))}
             </ul>
           </div>

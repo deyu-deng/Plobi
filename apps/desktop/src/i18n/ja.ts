@@ -65,9 +65,10 @@ export const ja = defineLocale({
     ready: 'Plobi Desktop の準備ができました',
     desktopBootFailedWithMessage: message => `デスクトップの起動に失敗しました: ${message}`,
     sidecars: {
-      deferredTitle: '後回しのサービス（障害ではありません）',
-      deferredHint:
-        '障害ではありません。このマシンにはそもそも起動できるものが見つかりませんでした。チャットは影響を受けず、トレイメニューとこのインジケーターに、後回しのサービスとその理由と復帰方法がすべて表示されます。',
+      deferredTitle: 'このマシンで動いていないサービス',
+      stateDeferred: '今回の対象外',
+      stateRed: '試したが起動せず',
+      deferredHint: '現在動いていないサービスだけを列挙します。正常な項目は何も表示しません。各行は「今回の対象外」（必要時に Plobi が起動し、起動すると消える）か「試したが起動しなかった」のどちらかで、欠けている手順と復帰方法は行に書かれます。メインの対話には影響しません。',
       redTitle: 'サービスの障害',
       redHint:
         'チャットは影響を受けませんが、このサービスは起動が試みられ、正常な状態には至りませんでした。後回しではなく実際の障害です。復帰方法はステータスバーのゲートウェイレンズにあります。',
@@ -1398,7 +1399,8 @@ export const ja = defineLocale({
       empty: 'この日の計画は作られていません',
       pending: '承認待ち',
       statusUnknown: '状態なし',
-      title: label => `${label}の計画`
+      title: label => `${label}の計画`,
+      unackable: 'これは記録できません'
     },
     week: {
       conflicts: count => `重複 ${count}`,
