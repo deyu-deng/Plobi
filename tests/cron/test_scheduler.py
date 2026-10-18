@@ -59,7 +59,7 @@ class TestPerJobToolsetMcpMerge:
         assert result.count("finnhub") == 2  # input dups preserved, none added
 
     def test_resolver_uses_merge_for_per_job_lists(self):
-        job = {"enabled_toolsets": ["web", "terminal"]}
+        job = { "recipient": "cron-test-agent","enabled_toolsets": ["web", "terminal"]}
         result = _resolve_cron_enabled_toolsets(job, self.CFG)
         assert set(result) == {"web", "terminal"} | self._enabled_names()
 
@@ -67,7 +67,7 @@ class TestPerJobToolsetMcpMerge:
         # No per-job list -> must delegate to _get_platform_tools (the platform
         # fallback), NOT the per-job merge. Stub the platform resolver and assert
         # it is the path taken and its result is returned.
-        job = {"enabled_toolsets": None}
+        job = { "recipient": "cron-test-agent","enabled_toolsets": None}
         sentinel = ["web", "finnhub"]
         with patch("plobi_cli.tools_config._get_platform_tools",
                    return_value=set(sentinel)) as m_platform:
@@ -81,6 +81,7 @@ class TestPerJobToolsetMcpMerge:
 class TestResolveOrigin:
     def test_full_origin(self):
         job = {
+            "recipient": "cron-test-agent",
             "origin": {
                 "platform": "telegram",
                 "chat_id": "123456",
@@ -101,15 +102,15 @@ class TestResolveOrigin:
         assert _resolve_origin({"origin": None}) is None
 
     def test_missing_platform(self):
-        job = {"origin": {"chat_id": "123"}}
+        job = { "recipient": "cron-test-agent","origin": {"chat_id": "123"}}
         assert _resolve_origin(job) is None
 
     def test_missing_chat_id(self):
-        job = {"origin": {"platform": "telegram"}}
+        job = { "recipient": "cron-test-agent","origin": {"platform": "telegram"}}
         assert _resolve_origin(job) is None
 
     def test_empty_origin(self):
-        job = {"origin": {}}
+        job = { "recipient": "cron-test-agent","origin": {}}
         assert _resolve_origin(job) is None
 
     @pytest.mark.parametrize(
@@ -132,13 +133,14 @@ class TestResolveOrigin:
         forever; ``mark_job_run`` recorded the error but the next tick
         re-loaded the poisoned origin and crashed identically.
         """
-        job = {"origin": non_dict_origin}
+        job = { "recipient": "cron-test-agent","origin": non_dict_origin}
         assert _resolve_origin(job) is None
 
 
 class TestResolveDeliveryTarget:
     def test_origin_delivery_preserves_thread_id(self):
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "origin",
             "origin": {
                 "platform": "telegram",
@@ -257,7 +259,7 @@ class TestResolveDeliveryTarget:
         """Explicit ``telegram:chat:thread`` targets bypass TELEGRAM_CRON_THREAD_ID."""
         monkeypatch.setenv("TELEGRAM_CRON_THREAD_ID", "999")
 
-        job = {"deliver": "telegram:-1003724596514:17"}
+        job = { "recipient": "cron-test-agent","deliver": "telegram:-1003724596514:17"}
         assert _resolve_delivery_target(job) == {
             "platform": "telegram",
             "chat_id": "-1003724596514",
@@ -267,6 +269,7 @@ class TestResolveDeliveryTarget:
     def test_explicit_telegram_topic_target_with_thread_id(self):
         """deliver: 'telegram:chat_id:thread_id' parses correctly."""
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "telegram:-1003724596514:17",
         }
         assert _resolve_delivery_target(job) == {
@@ -278,6 +281,7 @@ class TestResolveDeliveryTarget:
     def test_explicit_telegram_topic_thread_survives_bare_directory_match(self):
         """Exact channel-directory matches must not erase an explicit topic id."""
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "telegram:-1003724596514:17",
         }
         with patch(
@@ -294,6 +298,7 @@ class TestResolveDeliveryTarget:
     def test_explicit_telegram_chat_id_without_thread_id(self):
         """deliver: 'telegram:chat_id' sets thread_id to None."""
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "telegram:-1003724596514",
         }
         assert _resolve_delivery_target(job) == {
@@ -304,7 +309,7 @@ class TestResolveDeliveryTarget:
 
     def test_human_friendly_label_resolved_via_channel_directory(self):
         """deliver: 'whatsapp:Alice (dm)' resolves to the real JID."""
-        job = {"deliver": "whatsapp:Alice (dm)"}
+        job = { "recipient": "cron-test-agent","deliver": "whatsapp:Alice (dm)"}
         with patch(
             "gateway.channel_directory.resolve_channel_name",
             return_value="12345678901234@lid",
@@ -319,7 +324,7 @@ class TestResolveDeliveryTarget:
 
     def test_human_friendly_label_without_suffix_resolved(self):
         """deliver: 'telegram:My Group' resolves without display suffix."""
-        job = {"deliver": "telegram:My Group"}
+        job = { "recipient": "cron-test-agent","deliver": "telegram:My Group"}
         with patch(
             "gateway.channel_directory.resolve_channel_name",
             return_value="-1009999",
@@ -333,7 +338,7 @@ class TestResolveDeliveryTarget:
 
     def test_human_friendly_topic_label_preserves_thread_id(self):
         """Resolved Telegram topic labels should split chat_id and thread_id."""
-        job = {"deliver": "telegram:Coaching Chat / topic 17585 (group)"}
+        job = { "recipient": "cron-test-agent","deliver": "telegram:Coaching Chat / topic 17585 (group)"}
         with patch(
             "gateway.channel_directory.resolve_channel_name",
             return_value="-1009999:17585",
@@ -347,7 +352,7 @@ class TestResolveDeliveryTarget:
 
     def test_raw_id_not_mangled_when_directory_returns_none(self):
         """deliver: 'whatsapp:12345@lid' passes through when directory has no match."""
-        job = {"deliver": "whatsapp:12345@lid"}
+        job = { "recipient": "cron-test-agent","deliver": "whatsapp:12345@lid"}
         with patch(
             "gateway.channel_directory.resolve_channel_name",
             return_value=None,
@@ -361,6 +366,7 @@ class TestResolveDeliveryTarget:
 
     def test_bare_platform_uses_matching_origin_chat(self):
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "telegram",
             "origin": {
                 "platform": "telegram",
@@ -378,6 +384,7 @@ class TestResolveDeliveryTarget:
     def test_bare_platform_falls_back_to_home_channel(self, monkeypatch):
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-2002")
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "telegram",
             "origin": {
                 "platform": "discord",
@@ -394,6 +401,7 @@ class TestResolveDeliveryTarget:
     def test_explicit_discord_topic_target_with_thread_id(self):
         """deliver: 'discord:chat_id:thread_id' parses correctly."""
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "discord:-1001234567890:17585",
         }
         assert _resolve_delivery_target(job) == {
@@ -405,6 +413,7 @@ class TestResolveDeliveryTarget:
     def test_explicit_discord_chat_id_without_thread_id(self):
         """deliver: 'discord:chat_id' sets thread_id to None."""
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "discord:9876543210",
         }
         assert _resolve_delivery_target(job) == {
@@ -416,6 +425,7 @@ class TestResolveDeliveryTarget:
     def test_explicit_discord_channel_without_thread(self):
         """deliver: 'discord:1001234567890' resolves via explicit platform:chat_id path."""
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "discord:1001234567890",
         }
         result = _resolve_delivery_target(job)
@@ -435,6 +445,7 @@ class TestResolveDeliveryTarget:
         """
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-4004")
         job = {
+            "recipient": "cron-test-agent",
             "deliver": ["telegram"],
             "origin": None,
         }
@@ -451,7 +462,7 @@ class TestResolveDeliveryTarget:
 
         monkeypatch.setenv("TELEGRAM_HOME_CHANNEL", "-111")
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
-        job = {"deliver": ["telegram", "discord"], "origin": None}
+        job = { "recipient": "cron-test-agent","deliver": ["telegram", "discord"], "origin": None}
 
         targets = _resolve_delivery_targets(job)
         platforms = sorted(t["platform"] for t in targets)
@@ -496,7 +507,7 @@ class TestRoutingIntents:
 
         # Explicit telegram target precedes 'all'. Expansion adds discord;
         # the dedup pass collapses any (platform, chat_id, thread_id) repeats.
-        job = {"deliver": "telegram:-999,all", "origin": None}
+        job = { "recipient": "cron-test-agent","deliver": "telegram:-999,all", "origin": None}
         targets = _resolve_delivery_targets(job)
 
         platforms = sorted(t["platform"].lower() for t in targets)
@@ -527,6 +538,7 @@ class TestRoutingIntents:
         monkeypatch.setenv("DISCORD_HOME_CHANNEL", "-222")
 
         job = {
+            "recipient": "cron-test-agent",
             "deliver": "origin,all",
             "origin": {"platform": "discord", "chat_id": "888"},
         }
@@ -579,6 +591,7 @@ class TestDeliverResultWrapping:
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 "deliver": "origin",
@@ -606,6 +619,7 @@ class TestDeliverResultWrapping:
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "abc-123",
                 "deliver": "origin",
                 "origin": {"platform": "telegram", "chat_id": "123"},
@@ -628,6 +642,7 @@ class TestDeliverResultWrapping:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}):
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 "deliver": "origin",
@@ -655,6 +670,7 @@ class TestDeliverResultWrapping:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock, \
              patch("cron.scheduler.load_config", return_value={"cron": {"wrap_response": False}}):
             job = {
+                "recipient": "cron-test-agent",
                 "id": "voice-job",
                 "deliver": "origin",
                 "origin": {"platform": "telegram", "chat_id": "123"},
@@ -703,6 +719,7 @@ class TestDeliverResultWrapping:
             return future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "tts-job",
             "deliver": "origin",
             "origin": {"platform": "discord", "chat_id": "9876"},
@@ -760,6 +777,7 @@ class TestDeliverResultWrapping:
             return future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "img-job",
             "deliver": "origin",
             "origin": {"platform": "discord", "chat_id": "1234"},
@@ -809,6 +827,7 @@ class TestDeliverResultWrapping:
             return future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "voice-only",
             "deliver": "origin",
             "origin": {"platform": "telegram", "chat_id": "999"},
@@ -859,6 +878,7 @@ class TestDeliverResultWrapping:
             return future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "img-job",
             "deliver": "origin",
             "origin": {"platform": "telegram", "chat_id": "555"},
@@ -891,6 +911,7 @@ class TestDeliverResultWrapping:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
              patch("gateway.mirror.mirror_to_session") as mirror_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "deliver": "origin",
                 "origin": {"platform": "telegram", "chat_id": "123"},
@@ -909,6 +930,7 @@ class TestDeliverResultWrapping:
         mock_cfg.platforms = {Platform.TELEGRAM: pconfig}
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "test-job",
             "name": "topic-job",
             "deliver": "origin",
@@ -940,6 +962,7 @@ class TestDeliverResultErrorReturns:
 
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg):
             job = {
+                "recipient": "cron-test-agent",
                 "id": "disabled",
                 "deliver": "origin",
                 "origin": {"platform": "telegram", "chat_id": "123"},
@@ -951,7 +974,7 @@ class TestDeliverResultErrorReturns:
     def test_returns_error_for_unresolved_target(self, monkeypatch):
         """Non-local delivery with no resolvable target should return an error."""
         monkeypatch.delenv("TELEGRAM_HOME_CHANNEL", raising=False)
-        job = {"id": "no-target", "deliver": "telegram"}
+        job = { "recipient": "cron-test-agent","id": "no-target", "deliver": "telegram"}
         result = _deliver_result(job, "Output.")
         assert result is not None
         assert "no delivery target" in result
@@ -960,6 +983,7 @@ class TestDeliverResultErrorReturns:
 class TestRunJobSessionPersistence:
     def test_run_job_passes_session_db_and_cron_platform(self, tmp_path):
         job = {
+            "recipient": "cron-test-agent",
             "id": "test-job",
             "name": "test",
             "prompt": "hello",
@@ -1010,7 +1034,7 @@ class TestRunJobSessionPersistence:
         from run_agent import AIAgent
         explainer = AIAgent._format_turn_completion_explanation("empty_response_exhausted")
         assert explainer  # sanity: the explainer text exists
-        job = {"id": "test-job", "name": "test", "prompt": "hello"}
+        job = { "recipient": "cron-test-agent","id": "test-job", "name": "test", "prompt": "hello"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -1054,7 +1078,7 @@ class TestRunJobSessionPersistence:
         """Defensive: a real report must NOT be suppressed even if the result
         carries an abnormal turn_exit_reason — only the exact explainer text is."""
         from run_agent import AIAgent
-        job = {"id": "test-job", "name": "test", "prompt": "hello"}
+        job = { "recipient": "cron-test-agent","id": "test-job", "name": "test", "prompt": "hello"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -1092,6 +1116,7 @@ class TestRunJobSessionPersistence:
         # hint, which used to surface as the sidebar/history row label. run_job
         # must title the session from the job (name → short prompt → id).
         job = {
+            "recipient": "cron-test-agent",
             "id": "test-job",
             "name": "Morning digest",
             "prompt": "summarize my inbox",
@@ -1130,6 +1155,7 @@ class TestRunJobSessionPersistence:
         # agent was previously leaked — over days of ticks this accumulated
         # httpx transports and hit EMFILE / "too many open files".
         job = {
+            "recipient": "cron-test-agent",
             "id": "failing-job",
             "name": "failing",
             "prompt": "hello",
@@ -1168,6 +1194,7 @@ class TestRunJobSessionPersistence:
         # holds onto transports whose underlying sockets can no longer be
         # closed (their loop is gone), leaking one fd batch per cron run.
         job = {
+            "recipient": "cron-test-agent",
             "id": "aux-clean-job",
             "name": "aux-clean",
             "prompt": "hello",
@@ -1242,6 +1269,7 @@ class TestRunJobSessionPersistence:
 
     def test_run_job_passes_enabled_toolsets_to_agent(self, tmp_path):
         job = {
+            "recipient": "cron-test-agent",
             "id": "toolset-job",
             "name": "test",
             "prompt": "hello",
@@ -1271,6 +1299,7 @@ class TestRunJobSessionPersistence:
             encoding="utf-8",
         )
         job = {
+            "recipient": "cron-test-agent",
             "id": "policy-job",
             "name": "test",
             "prompt": "hello",
@@ -1294,6 +1323,7 @@ class TestRunJobSessionPersistence:
         for any unexpected config shape).
         """
         job = {
+            "recipient": "cron-test-agent",
             "id": "no-toolset-job",
             "name": "test",
             "prompt": "hello",
@@ -1314,6 +1344,7 @@ class TestRunJobSessionPersistence:
         """Per-job enabled_toolsets (via cronjob tool) always take precedence
         over the platform-level ``plobi tools`` config."""
         job = {
+            "recipient": "cron-test-agent",
             "id": "override-job",
             "name": "test",
             "prompt": "hello",
@@ -1335,6 +1366,7 @@ class TestRunJobSessionPersistence:
         output log, not in the returned final_response that's used for delivery.
         """
         job = {
+            "recipient": "cron-test-agent",
             "id": "silent-job",
             "name": "silent test",
             "prompt": "do work via tools only",
@@ -1412,6 +1444,7 @@ class TestRunJobSessionPersistence:
         agent reply.
         """
         job = {
+            "recipient": "cron-test-agent",
             "id": "failing-api-job",
             "name": "failing api",
             "prompt": "do something",
@@ -1452,6 +1485,7 @@ class TestRunJobSessionPersistence:
         ``failed`` absent) must not trip the failure-flag check.
         """
         job = {
+            "recipient": "cron-test-agent",
             "id": "ok-job",
             "name": "ok",
             "prompt": "hello",
@@ -1495,6 +1529,7 @@ class TestRunJobSessionPersistence:
         text as a RuntimeError.
         """
         job = {
+            "recipient": "cron-test-agent",
             "id": "summary-job",
             "name": "summary",
             "prompt": "finish the report",
@@ -1541,6 +1576,7 @@ class TestRunJobSessionPersistence:
         from cron.scheduler import tick
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "empty-job",
             "name": "empty-test",
             "prompt": "do something",
@@ -1571,6 +1607,7 @@ class TestRunJobSessionPersistence:
 
     def test_run_job_sets_auto_delivery_env_from_dotenv_home_channel(self, tmp_path, monkeypatch):
         job = {
+            "recipient": "cron-test-agent",
             "id": "test-job",
             "name": "test",
             "prompt": "hello",
@@ -1630,6 +1667,7 @@ class TestRunJobSessionPersistence:
     ):
         """Timed and unlimited one-shot monitors both refresh their owned claim."""
         job = {
+            "recipient": "cron-test-agent",
             "id": "heartbeat-job",
             "name": "heartbeat",
             "prompt": "hello",
@@ -1692,7 +1730,7 @@ class TestRunJobSessionPersistence:
         ``reset_secret_source_cache()`` (forcing the re-pull) and route through
         ``load_plobi_dotenv`` (which then re-applies external secret sources).
         """
-        job = {"id": "bsm-job", "name": "bsm", "prompt": "hello"}
+        job = { "recipient": "cron-test-agent","id": "bsm-job", "name": "bsm", "prompt": "hello"}
         fake_db = MagicMock()
         call_order = []
 
@@ -1731,12 +1769,14 @@ class TestRunJobSessionPersistence:
     def test_run_job_clears_stale_auto_delivery_thread_id_between_jobs(self, tmp_path, monkeypatch):
         jobs = [
             {
+                "recipient": "cron-test-agent",
                 "id": "threaded-job",
                 "name": "threaded",
                 "prompt": "hello",
                 "deliver": "telegram:-1001:42",
             },
             {
+                "recipient": "cron-test-agent",
                 "id": "threadless-job",
                 "name": "threadless",
                 "prompt": "hello again",
@@ -1812,6 +1852,7 @@ class TestRunJobConfigLogging:
         bad_yaml.write_text("invalid: yaml: [[[bad")
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "test-job",
             "name": "test",
             "prompt": "hello",
@@ -1852,6 +1893,7 @@ class TestRunJobConfigLogging:
         bad_prefill.write_text("{not valid json!!!")
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "test-job",
             "name": "test",
             "prompt": "hello",
@@ -1893,7 +1935,7 @@ class TestRunJobConfigEnvVarExpansion:
         (tmp_path / "config.yaml").write_text("model: ${_PLOBI_TEST_CRON_MODEL}\n")
         monkeypatch.setenv("_PLOBI_TEST_CRON_MODEL", "gpt-4o-mini-cron-test")
 
-        job = {"id": "env-job", "name": "env test", "prompt": "hi"}
+        job = { "recipient": "cron-test-agent","id": "env-job", "name": "env test", "prompt": "hi"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -1927,7 +1969,7 @@ class TestRunJobConfigEnvVarExpansion:
             encoding="utf-8",
         )
 
-        job = {"id": "prefill-job", "name": "prefill test", "prompt": "hi"}
+        job = { "recipient": "cron-test-agent","id": "prefill-job", "name": "prefill test", "prompt": "hi"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -1958,7 +2000,7 @@ class TestRunJobConfigEnvVarExpansion:
         )
         monkeypatch.setenv("_PLOBI_TEST_CRON_FALLBACK", "gpt-4o-fallback-test")
 
-        job = {"id": "fb-job", "name": "fallback test", "prompt": "hi"}
+        job = { "recipient": "cron-test-agent","id": "fb-job", "name": "fallback test", "prompt": "hi"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -1994,7 +2036,7 @@ class TestRunJobConfigEnvVarExpansion:
             "  model: claude-sonnet-4-6\n"
         )
 
-        job = {"id": "fb-merge", "name": "fallback merge", "prompt": "hi"}
+        job = { "recipient": "cron-test-agent","id": "fb-merge", "name": "fallback merge", "prompt": "hi"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2018,7 +2060,7 @@ class TestRunJobConfigEnvVarExpansion:
         (tmp_path / "config.yaml").write_text("model: ${_PLOBI_TEST_CRON_UNSET_VAR}\n")
         monkeypatch.delenv("_PLOBI_TEST_CRON_UNSET_VAR", raising=False)
 
-        job = {"id": "unset-job", "name": "unset var test", "prompt": "hi"}
+        job = { "recipient": "cron-test-agent","id": "unset-job", "name": "unset var test", "prompt": "hi"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2063,7 +2105,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("")
         monkeypatch.setenv("PLOBI_MODEL", "env-model")
 
-        job = {"id": "null-model-job", "name": "null model", "prompt": "hi", "model": None}
+        job = { "recipient": "cron-test-agent","id": "null-model-job", "name": "null model", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2088,7 +2130,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("model:\n  default: config-default-model\n")
         monkeypatch.delenv("PLOBI_MODEL", raising=False)
 
-        job = {"id": "cfg-default-job", "name": "cfg default", "prompt": "hi", "model": None}
+        job = { "recipient": "cron-test-agent","id": "cfg-default-job", "name": "cfg default", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2121,7 +2163,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("model:\n  default: null\n")
         monkeypatch.setenv("PLOBI_MODEL", "env-model")
 
-        job = {"id": "null-default-job", "name": "null default", "prompt": "hi", "model": None}
+        job = { "recipient": "cron-test-agent","id": "null-default-job", "name": "null default", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2145,7 +2187,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("")
         monkeypatch.delenv("PLOBI_MODEL", raising=False)
 
-        job = {"id": "no-model-job", "name": "no model anywhere", "prompt": "hi", "model": None}
+        job = { "recipient": "cron-test-agent","id": "no-model-job", "name": "no model anywhere", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2175,7 +2217,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("")
         monkeypatch.delenv("PLOBI_MODEL", raising=False)
 
-        job = {"id": "updated-model-job", "name": "updated", "prompt": "hi", "model": "first-model"}
+        job = { "recipient": "cron-test-agent","id": "updated-model-job", "name": "updated", "prompt": "hi", "model": "first-model"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2202,7 +2244,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("model: string-form-model\n")
         monkeypatch.delenv("PLOBI_MODEL", raising=False)
 
-        job = {"id": "string-cfg-job", "name": "string cfg", "prompt": "hi", "model": None}
+        job = { "recipient": "cron-test-agent","id": "string-cfg-job", "name": "string cfg", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2233,7 +2275,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("model:\n  model: alias-key-model\n")
         monkeypatch.delenv("PLOBI_MODEL", raising=False)
 
-        job = {"id": "alias-job", "name": "alias", "prompt": "hi", "model": None}
+        job = { "recipient": "cron-test-agent","id": "alias-job", "name": "alias", "prompt": "hi", "model": None}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2258,7 +2300,7 @@ class TestRunJobModelResolution:
         (tmp_path / "config.yaml").write_text("{{{invalid yaml!!!")
         monkeypatch.delenv("PLOBI_MODEL", raising=False)
 
-        job = {"id": "corrupt-job", "name": "corrupt", "prompt": "hi", "model": "explicit-model"}
+        job = { "recipient": "cron-test-agent","id": "corrupt-job", "name": "corrupt", "prompt": "hi", "model": "explicit-model"}
         fake_db = MagicMock()
 
         with patch("cron.scheduler._plobi_home", tmp_path), \
@@ -2283,6 +2325,7 @@ class TestRunJobModelResolution:
 class TestRunJobSkillBacked:
     def test_run_job_preserves_skill_env_passthrough_into_worker_thread(self, tmp_path):
         job = {
+            "recipient": "cron-test-agent",
             "id": "skill-env-job",
             "name": "skill env test",
             "prompt": "Use the skill.",
@@ -2336,6 +2379,7 @@ class TestRunJobSkillBacked:
     def test_run_job_preserves_credential_file_passthrough_into_worker_thread(self, tmp_path):
         """copy_context() also propagates credential_files ContextVar."""
         job = {
+            "recipient": "cron-test-agent",
             "id": "cred-env-job",
             "name": "cred file test",
             "prompt": "Use the skill.",
@@ -2396,6 +2440,7 @@ class TestRunJobSkillBacked:
 
     def test_run_job_loads_skill_and_disables_recursive_cron_tools(self, tmp_path):
         job = {
+            "recipient": "cron-test-agent",
             "id": "skill-job",
             "name": "skill test",
             "prompt": "Check the feeds and summarize anything new.",
@@ -2440,6 +2485,7 @@ class TestRunJobSkillBacked:
 
     def test_run_job_loads_multiple_skills_in_order(self, tmp_path):
         job = {
+            "recipient": "cron-test-agent",
             "id": "multi-skill-job",
             "name": "multi skill test",
             "prompt": "Combine the results.",
@@ -2491,6 +2537,7 @@ class TestSilentDelivery:
 
     def _make_job(self):
         return {
+            "recipient": "cron-test-agent",
             "id": "monitor-job",
             "name": "monitor",
             "deliver": "origin",
@@ -2635,6 +2682,7 @@ class TestOneShotDispatchClaim:
 
     def _oneshot(self):
         return {
+            "recipient": "cron-test-agent",
             "id": "monitor-job",
             "name": "monitor",
             "deliver": "origin",
@@ -2673,31 +2721,31 @@ class TestBuildJobPromptSilentHint:
     """Verify _build_job_prompt always injects [SILENT] guidance."""
 
     def test_hint_always_present(self):
-        job = {"prompt": "Check for updates"}
+        job = { "recipient": "cron-test-agent","prompt": "Check for updates"}
         result = _build_job_prompt(job)
         assert "[SILENT]" in result
         assert "Check for updates" in result
 
     def test_hint_present_even_without_prompt(self):
-        job = {"prompt": ""}
+        job = { "recipient": "cron-test-agent","prompt": ""}
         result = _build_job_prompt(job)
         assert "[SILENT]" in result
 
     def test_hint_present_when_legacy_prompt_is_null(self):
-        job = {"id": "abc123deadbe", "name": None, "prompt": None}
+        job = { "recipient": "cron-test-agent","id": "abc123deadbe", "name": None, "prompt": None}
         result = _build_job_prompt(job)
         assert "[SILENT]" in result
 
     def test_delivery_guidance_present(self):
         """Cron hint tells agents their final response is auto-delivered."""
-        job = {"prompt": "Generate a report"}
+        job = { "recipient": "cron-test-agent","prompt": "Generate a report"}
         result = _build_job_prompt(job)
         assert "do NOT use send_message" in result
         assert "automatically delivered" in result
 
     def test_delivery_guidance_precedes_user_prompt(self):
         """System guidance appears before the user's prompt text."""
-        job = {"prompt": "My custom prompt"}
+        job = { "recipient": "cron-test-agent","prompt": "My custom prompt"}
         result = _build_job_prompt(job)
         system_pos = result.index("do NOT use send_message")
         prompt_pos = result.index("My custom prompt")
@@ -2795,6 +2843,7 @@ class TestRunJobWakeGate:
     def _make_job(self, name="wake-gate-test", script="check.py"):
         """Minimal valid cron job dict for run_job."""
         return {
+            "recipient": "cron-test-agent",
             "id": f"job_{name}",
             "name": name,
             "prompt": "Do a thing",
@@ -3245,6 +3294,7 @@ class TestDeliverResultTimeoutCancelsFuture:
             return captured_future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "timeout-job",
             "deliver": "origin",
             "origin": {"platform": "telegram", "chat_id": "123"},
@@ -3306,6 +3356,7 @@ class TestDeliverResultTimeoutCancelsFuture:
             return captured_future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "timeout-undispatched-job",
             "deliver": "origin",
             "origin": {"platform": "telegram", "chat_id": "123"},
@@ -3357,6 +3408,7 @@ class TestDeliverResultTimeoutCancelsFuture:
             return captured_future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "send-error-job",
             "deliver": "origin",
             "origin": {"platform": "telegram", "chat_id": "123"},
@@ -3411,6 +3463,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "forum-topic-job",
             "deliver": "telegram:226252250:7072",  # private chat + numeric forum topic
         }
@@ -3473,6 +3526,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "probe-fail-job",
             "deliver": "telegram:226252250:7072",
         }
@@ -3535,6 +3589,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "none-probe-job",
             "deliver": "telegram:226252250:7072",
         }
@@ -3596,6 +3651,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "error-dict-job",
             "deliver": "telegram:226252250:7072",
         }
@@ -3655,6 +3711,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "channel-dm-topic-job",
             "deliver": "telegram:226252250:7072",
         }
@@ -3725,6 +3782,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "forum-topic-media-job",
             "deliver": "telegram:226252250:7072",  # private chat + numeric forum topic
         }
@@ -3791,6 +3849,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         loop.is_running.return_value = True
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "channel-dm-topic-media-job",
             "deliver": "telegram:226252250:7072",
         }
@@ -3854,6 +3913,7 @@ class TestDeliverResultTimeoutCancelsFuture:
         # Forum supergroup (negative chat_id) + numeric topic → mode 1
         # (message_thread_id); NOT a private DM topic.
         job = {
+            "recipient": "cron-test-agent",
             "id": "forum-fallback-job",
             "deliver": "telegram:-1001234567890:17",
         }
@@ -3920,6 +3980,7 @@ class TestDeliverResultLiveAdapterUnconfirmed:
             return completed_future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "unconfirmed-job",
             "deliver": "origin",
             "origin": {"platform": "telegram", "chat_id": "123"},
@@ -3983,19 +4044,19 @@ class TestDeliverOriginUnresolvableIsLocal:
         return _deliver_result(job, "CLI bulletin")
 
     def test_origin_with_no_home_channels_returns_none(self, monkeypatch):
-        job = {"id": "cli-job", "deliver": "origin", "origin": "cli-session-provenance"}
+        job = { "recipient": "cron-test-agent","id": "cli-job", "deliver": "origin", "origin": "cli-session-provenance"}
         assert self._deliver(job, monkeypatch) is None
 
     def test_omitted_deliver_autodetect_returns_none(self, monkeypatch):
         # deliver key present but None (auto-detect) previously errored with
         # "no delivery target resolved for deliver=None".
-        job = {"id": "cli-job", "deliver": None, "origin": "cli-session-provenance"}
+        job = { "recipient": "cron-test-agent","id": "cli-job", "deliver": None, "origin": "cli-session-provenance"}
         assert self._deliver(job, monkeypatch) is None
 
     def test_explicit_platform_with_no_channel_still_errors(self, monkeypatch):
         # A concrete platform target that cannot resolve is still a real error
         # (this must NOT be silently swallowed by the origin→local fallback).
-        job = {"id": "tg-job", "deliver": "telegram"}
+        job = { "recipient": "cron-test-agent","id": "tg-job", "deliver": "telegram"}
         result = self._deliver(job, monkeypatch)
         assert result is not None
         assert "no delivery target resolved" in result
@@ -4054,7 +4115,7 @@ class TestSendMediaTimeoutCancelsFuture:
         ]
 
         loop = MagicMock()
-        job = {"id": "media-timeout"}
+        job = { "recipient": "cron-test-agent","id": "media-timeout"}
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=fake_run_coro):
             # Should not raise — the except Exception clause swallows the timeout
@@ -4284,6 +4345,7 @@ class TestCronDeliveryMirror:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
              patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 "deliver": "origin",
@@ -4312,6 +4374,7 @@ class TestCronDeliveryMirror:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
              patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 "deliver": "origin",
@@ -4367,6 +4430,7 @@ class TestCronDeliveryMirror:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
              patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 # Explicit delivery to a DIFFERENT chat than the origin.
@@ -4393,6 +4457,7 @@ class TestCronDeliveryMirror:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
              patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 # Fan out to the origin chat (123) AND another chat (999).
@@ -4436,6 +4501,7 @@ class TestCronDeliveryMirror:
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})), \
              patch("gateway.mirror.mirror_to_session", return_value=True) as mirror_mock:
             job = {
+                "recipient": "cron-test-agent",
                 "id": "test-job",
                 "name": "daily-report",
                 "deliver": "origin",
@@ -4593,6 +4659,7 @@ class TestCronContinuableSurfaceInChannel:
             return future
 
         job = {
+            "recipient": "cron-test-agent",
             "id": "brief-job",
             "name": "Daily Brief",
             "deliver": "origin",
@@ -4816,6 +4883,7 @@ class TestMultiTargetDeliveryContinuesOnFailure:
     def test_first_target_failure_does_not_crash_loop(self):
         """First email target fails in the fallback; the second is still attempted."""
         job = {
+            "recipient": "cron-test-agent",
             "id": "multi-email-job",
             "deliver": "email:a@example.com,email:b@example.com",
         }
@@ -4847,6 +4915,7 @@ class TestMultiTargetDeliveryContinuesOnFailure:
     def test_all_targets_fail_returns_combined_errors(self):
         """When every target fails, the result reports all of them."""
         job = {
+            "recipient": "cron-test-agent",
             "id": "all-fail-job",
             "deliver": "email:a@example.com,email:b@example.com",
         }

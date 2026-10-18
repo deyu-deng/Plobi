@@ -483,6 +483,74 @@ def test_running_the_same_day_twice_gives_the_same_plan(home):
 # ---------------------------------------------------------------- R-104（裁定 154）
 
 
+def _roster_with_agenda(path: Path, **fields) -> str:
+    """按产品自己的 writer 落一份名册，再用它自己的解析器指过去（裁 42：那一行才是真源）。"""
+    from plobi.agents.registry import AgentEntry, AgentRegistry
+
+    entry = AgentEntry(name="agenda", role="l2_agenda", profile="agenda", **fields)
+    AgentRegistry(path=path, agents={entry.name: entry}).save()
+    return str(path)
+
+
+def test_the_planning_job_names_its_recipient(home, tmp_path, monkeypatch):
+    """裁定 177 第一格：排程那条作业必须说得出这一轮归谁跑。
+
+    名字从**名册现读**而不是代码里硬写的 slug——改名之后作业行跟着下一次对齐走。
+    """
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", _roster_with_agenda(tmp_path / "projects.yaml"))
+
+    assert nightly.job_shape(NIGHTLY)["recipient"] == "agenda"
+
+
+def test_the_script_jobs_stay_recipient_free(home):
+    """闸门不许扩大：其余四条不经过 Agent，形状里根本不该出现收件人这一格。"""
+    for name in ("plobi-source-collect", "plobi-morning-report", "plobi-quota-alert"):
+        assert "recipient" not in nightly.job_shape(name)
+
+
+def test_no_roster_row_means_no_recipient_not_a_guess(home, tmp_path, monkeypatch):
+    """名册里还没有那一行 ⇒ 交回 None，作业行就**不写**收件人。
+
+    宁可不写（到点拒起、理由看得见），也不写一个查无此人的名字让闸门替它兜住。
+    """
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(tmp_path / "empty.yaml"))
+
+    assert nightly.job_shape(NIGHTLY)["recipient"] is None
+
+
+def test_seeding_writes_the_recipient_into_the_record(home, tmp_path, monkeypatch):
+    """种下去那一条就得带着收件人——不能等下一次启动才对齐上。"""
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", _roster_with_agenda(tmp_path / "projects.yaml"))
+    fake = FakeCronJobs()
+
+    assert nightly.ensure_nightly_plan_job(fake) == "seeded"
+    assert fake.created[0]["recipient"] == "agenda"
+
+
+def test_align_adds_a_recipient_to_an_existing_row(home, tmp_path, monkeypatch):
+    """已有那一行（marker 早落过了）由启动对齐刷上收件人——形态归代码。"""
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", _roster_with_agenda(tmp_path / "projects.yaml"))
+    seed = home / "plobi" / "butler_seed.json"
+    seed.parent.mkdir(parents=True, exist_ok=True)
+    seed.write_text(json.dumps({NIGHTLY: "2026-10-15T20:00:01"}), encoding="utf-8")
+    rows = [{
+        "id": "job_old", "name": NIGHTLY, "enabled": True,
+        "prompt": nightly.NIGHTLY_PLAN_PROMPT, "no_agent": False,
+        "attach_to_session": True, "recipient": None,
+    }]
+
+    class ShapeFake:
+        def list_jobs(self, *, include_disabled: bool = False):
+            return list(rows)
+
+        def update_job(self, job_id, updates):
+            rows[0] = {**rows[0], **updates}
+            return rows[0]
+
+    assert nightly.align_job_shape(NIGHTLY, ShapeFake()) == "aligned:recipient"
+    assert rows[0]["recipient"] == "agenda"
+
+
 def test_only_the_planning_job_becomes_an_agent_turn(home):
     """判据④：只有排程那一条走 Agent。采集不需要推理，套一层 Agent 只多一个失败面。
 

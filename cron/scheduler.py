@@ -627,6 +627,92 @@ def _resolve_cron_skip_memory(job: dict) -> bool:
     return True
 
 
+def _resolve_cron_recipient(job: dict):
+    """到点这一轮归谁跑：作业记录上的名字必须解析成名册里那一行（裁定 177）。
+
+    返回 ``(entry, error)``。**``error`` 非空时这一轮不起**——脚本不跑、提示词不拼、
+    一个模型都不打。以前没有这一格：记录里既没有 profile 也没有收件人，于是那一轮
+    跑在「正好起着后端的那个家」里，谁都不知道是谁在跑，排出来的东西也就没有主人。
+    裁定 42 把「日程秘书是谁」回答成名册里的一条记录（同一个家里的一个角色），
+    所以这里解析的是**名字**，不是家目录，也不许新增任何按分身复制的东西。
+
+    名册解析放在执行这一侧而不是 ``cron/jobs.py``：记录层只存那个名字，
+    ``plobi.agents.registry`` 是产品层的账本，底座不该认识它（W1：L1 不吞脏上下文）。
+    """
+    name = str(job.get("recipient") or "").strip()
+    if not name:
+        return None, (
+            "这一轮没有收件人（作业记录上没写 recipient）——不起。"
+            "匿名回合会跑在「正好起着后端的那个家」里，排出来的东西没有主人（裁定 177）。"
+        )
+    try:
+        from plobi.agents.registry import load_registry
+
+        registry = load_registry()
+    except Exception as exc:  # 名册读不出来 = 没人能认领这一轮，同样不起
+        return None, f"收件人 {name!r} 没法核对：名册读不出来（{exc}）——不起。"
+    entry = registry.get(name)
+    if entry is None:
+        lowered = name.casefold()
+        entry = next(
+            (row for row in registry.agents.values() if row.name.casefold() == lowered),
+            None,
+        )
+    if entry is None:
+        return None, (
+            f"收件人 {name!r} 不在名册里——不起。先把那一行登记上，"
+            "或把作业的 recipient 改成一个真的 Agent 名字。"
+        )
+    if entry.archived:
+        return None, f"收件人 {name!r} 那一行已归档——不起。"
+    return entry, None
+
+
+def _recipient_model_override(entry) -> tuple[str, str]:
+    """收件人那一行**自己声明**的 ``provider`` / ``model``；没有覆盖就返回空串。
+
+    两道闸与 :func:`plobi.agents.registry.profile_config_overlay` 逐字相同，一条不放宽：
+    ① 只有名册那一行真的写了覆盖才算——省略 = 没有覆盖。不许把
+       :data:`plobi.routing.models.DEFAULT_ROUTES` 那套硬编码当成这个 Agent 自己的选择
+       盖下去（裁 42 §42.2 ⑥ 与裁 172 判过的同一件事：那套路由和用户在本机选的默认
+       提供商毫无关系）。
+    ② 底座运行时认不出来的 provider 名字当没写过。认不出还照投，到点那一轮就是一句
+       「Unknown provider」红条；不照投，这一轮按本机默认解析，功能不塌。
+    """
+    try:
+        if not getattr(entry, "has_model_override", False):
+            return "", ""
+        provider = str(entry.provider or "").strip()
+        if provider:
+            from plobi.agents.registry import provider_is_resolvable
+
+            if not provider_is_resolvable(provider):
+                logger.warning(
+                    "Job recipient '%s': model override provider %r is not resolvable "
+                    "at runtime — running this round on the home default instead.",
+                    entry.name, provider,
+                )
+                return "", ""
+        return provider, str(entry.model or "").strip()
+    except Exception as exc:
+        logger.debug("Job recipient model override skipped: %s", exc)
+        return "", ""
+
+
+def _recipient_identity_note(job: dict, entry) -> str:
+    """这一轮是谁本人在跑——投进系统提示词的那一句署名（裁 42 / 裁 69）。
+
+    只说名册上那个**名字**：内部字段值（``role`` / ``l2_agenda`` 这类词）不进提示词，
+    模型会原样念给用户听（裁 45 实测发作过）。也不替那个 Agent 编人设——共享家里
+    那份 ``SOUL.md`` 才是它说话的样子，这里只补「这一轮指名的是你」这一格事实。
+    """
+    who = str(getattr(entry, "display_name", "") or "").strip() or str(entry.name)
+    return (
+        f"这一轮定时作业指名由**你本人**（{who}）执行：不是别人替你跑，也不是一个通用助手。"
+        f"对外提到这一轮时说自己是 {who}。"
+    )
+
+
 def _target_matches_origin(origin: dict, platform_name: str, chat_id: str,
                            thread_id: Optional[str]) -> bool:
     """True when a delivery target is the job's own origin conversation.
@@ -2622,6 +2708,27 @@ def run_job(
         return True, doc, output, None
 
     # ---------------------------------------------------------------
+    # 收件人闸门（裁定 177）——这一轮归谁跑，先问作业记录本身。
+    # 位置是刻意的：在 no_agent 短路之后、导入 AIAgent / 开 SessionDB / 跑 wake-gate
+    # 脚本 / 拼提示词之前。缺收件人 = 这一轮**根本不起**，一个模型都不打，
+    # 也不许悄悄退回到「正好起着后端的那个家」——匿名执行正是这条裁定要消灭的东西。
+    # 失败照实记进 last_error（``run_one_job`` 摘要成一句人话投出去）。
+    # ---------------------------------------------------------------
+    recipient, _recipient_error = _resolve_cron_recipient(job)
+    if _recipient_error is not None:
+        logger.error(
+            "Job '%s' (%s): NOT fired — %s", job_id, job_name, _recipient_error
+        )
+        refused_doc = (
+            f"# Cron Job: {job_name}\n\n"
+            f"**Job ID:** {job_id}\n"
+            f"**Run Time:** {_plobi_now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            "**Status:** NOT RUN — no recipient on the job record\n\n"
+            f"{_recipient_error}\n"
+        )
+        return False, refused_doc, "", _recipient_error
+
+    # ---------------------------------------------------------------
     # Default (LLM) path — import and construct the agent machinery now
     # that we know we actually need it. Doing these imports here instead of
     # at module top keeps no_agent ticks from paying for AIAgent / SessionDB
@@ -2689,6 +2796,11 @@ def run_job(
         logger.info("Job '%s': script produced no output, skipping AI call.", job_name)
         return True, "", SILENT_MARKER, None
     origin = _resolve_origin(job)
+    # ⚠ 这个形状不许动：桌面那条「这一条作业跑过哪些次」的履历走
+    # ``plobi_state.SessionDB.list_cron_job_runs``，它按 ``cron_<job id>_`` 做索引前缀区间扫
+    # （``plobi_cli/web_server.py`` 的 ``/api/cron/jobs/{id}/runs``）。把收件人塞进会话号
+    # 会让每个作业的履历在面上直接清空。收件人写在下面那份输出文档与日志里（裁 177 的留痕），
+    # 「会话按 Agent 归属」那一格留给「一个脑子」去定渠道。
     _cron_session_id = f"cron_{job_id}_{_plobi_now().strftime('%Y%m%d_%H%M%S')}"
 
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
@@ -2816,12 +2928,14 @@ def run_job(
                 else str(delivery_target["thread_id"])
             )
 
-        # Model resolution precedence: per-job override > PLOBI_MODEL env >
+        # Model resolution precedence: per-job override > **收件人那一行自己声明的覆盖**
+        # (裁 172：覆盖的单位是名册那一行，不是 role) > PLOBI_MODEL env >
         # config.yaml ``model:`` (string or ``{default: ...}``). The per-job
         # value is intentionally re-read from storage every tick so a
         # ``cronjob action=update model=...`` after a failed run takes effect
         # on the next tick — there is no in-memory cache.
-        model = job.get("model") or os.getenv("PLOBI_MODEL") or ""
+        _rcp_provider, _rcp_model = _recipient_model_override(recipient)
+        model = job.get("model") or _rcp_model or os.getenv("PLOBI_MODEL") or ""
 
         # Load config.yaml for model, reasoning, prefill, toolsets, provider routing
         _cfg = {}
@@ -2852,7 +2966,9 @@ def run_job(
                 # Coerce null/missing to {} so a falsy default never
                 # clobbers an already-resolved env value with ``None``.
                 _model_cfg = _cfg.get("model") or {}
-                if not job.get("model"):
+                # 顶层那一份是**本机默认**，它排在收件人那一行的覆盖之后：
+                # 行上写了模型却被这里盖回去，等于「按角色跑」只剩一句提示词。
+                if not job.get("model") and not _rcp_model:
                     if isinstance(_model_cfg, str):
                         model = _model_cfg
                     elif isinstance(_model_cfg, dict):
@@ -2944,7 +3060,9 @@ def run_job(
             # circuits that precedence and can resurrect old providers (for
             # example DeepSeek) for cron jobs that do not pin provider/model.
             runtime_kwargs = {
-                "requested": job.get("provider"),
+                # 收件人那一行自己写了 provider 时按那一行走（裁 172）；没写就留给
+                # 本机默认解析，绝不替它猜一个提供商。
+                "requested": job.get("provider") or _rcp_provider or None,
             }
             if job.get("base_url"):
                 runtime_kwargs["explicit_base_url"] = job.get("base_url")
@@ -2993,14 +3111,16 @@ def run_job(
         # before — the guard never engages for it. Pinned axes are unaffected.
         _drift: list[str] = []
         _provider_snapshot = (job.get("provider_snapshot") or "").strip().lower()
-        if _provider_snapshot and not (job.get("provider") or "").strip():
+        # 「未钉」的定义加上收件人这一格：名册那一行自己写了 provider/model，
+        # 就是这一轮被用户钉死的选择——漂移闸门不许把它当成"跟着全局默认漂了"。
+        if _provider_snapshot and not (job.get("provider") or "").strip() and not _rcp_provider:
             _current_provider = str(runtime.get("provider") or "").strip().lower()
             if _current_provider and _current_provider != _provider_snapshot:
                 _drift.append(
                     f"provider '{_provider_snapshot}' -> '{_current_provider}'"
                 )
         _model_snapshot = (job.get("model_snapshot") or "").strip().lower()
-        if _model_snapshot and not (job.get("model") or "").strip():
+        if _model_snapshot and not (job.get("model") or "").strip() and not _rcp_model:
             _current_model = str(model or "").strip().lower()
             if _current_model and _current_model != _model_snapshot:
                 _drift.append(
@@ -3092,6 +3212,9 @@ def run_job(
             # Without a workdir, keep cwd context discovery disabled.
             skip_context_files=not bool(_job_workdir),
             load_soul_identity=True,
+            # 收件人那一行的署名（裁 177②）。SOUL.md 那份人设照旧在前，这里只补
+            # 「这一轮指名的是你本人」这一格事实——不替那个 Agent 编性格。
+            ephemeral_system_prompt=_recipient_identity_note(job, recipient),
             skip_memory=_resolve_cron_skip_memory(job),
             platform="cron",
             session_id=_cron_session_id,
@@ -3299,6 +3422,7 @@ def run_job(
         output = f"""# Cron Job: {job_name}
 
 **Job ID:** {job_id}
+**Recipient:** {recipient.name}（名册里那一行 — 裁 177：这一轮有主人）
 **Run Time:** {_plobi_now().strftime('%Y-%m-%d %H:%M:%S')}
 **Schedule:** {job.get('schedule_display', 'N/A')}
 
