@@ -48,6 +48,22 @@ def test_tooth_ignores_other_statuses():
     assert verify_register_cells.rows_without_command(text, "已闭") == ["WP-FAKE-DONE"]
 
 
+def test_a_cell_may_carry_several_commands():
+    # 一格写几条是常态（本线自己那格就三条）：`复跑：`a` 与 `b`（读数）与 `c``
+    text = HEADER + cell("WP-FAKE-MANY", "待签",
+                         "复跑：`grep -c A f.txt` 与 **`ls Code/scripts`**（列一下）与 `git -C Code status --short`") + "\n"
+    assert verify_register_cells.commands_of(verify_register_cells.rows_from(text)[0]) == [
+        "grep -c A f.txt", "ls Code/scripts", "git -C Code status --short"]
+
+
+def test_the_capture_stops_at_the_cell_separator():
+    # 同格后半那句备注里的反引号是个文件名，不是命令——抓去跑就是替别人执行任意指令
+    text = HEADER + cell("WP-FAKE-STOP", "待签",
+                         "复跑：`grep -c A f.txt` ｜另见 `Docs/README.md` 那一节的口径") + "\n"
+    assert verify_register_cells.commands_of(verify_register_cells.rows_from(text)[0]) == [
+        "grep -c A f.txt"]
+
+
 # ② 白名单：只读的放、写盘/触网/起桌面/内联代码的全拒
 @pytest.mark.parametrize("cmd", [
     "grep -c 'WP-' Docs/README.md",
@@ -56,6 +72,10 @@ def test_tooth_ignores_other_statuses():
     "python Docs/scripts/check_docs_layout.py",
     # 这台的实际写法：venv 里的 python.exe，别因为它不是 `python` 就判成命令头不在白名单
     "cd Code && .venv/Scripts/python.exe scripts/plobi/check_test_baseline.py --from-log D:/Temp/gate-selfcheck-1018/full.log",
+    # 列远端是只读的（本线自己的判据就要跑它）；改远端另说
+    "git -C D:/Data/AppData/plobi/vault remote -v",
+    # 「应该是 0 条」那种探针：包进 test 才是「判据成立⇒rc=0」，裸 grep 出 0 会报假红
+    "test $(grep -c VAULT_ROOT Docs/DECISIONS.md) = 0",
     # 前端那一族真写法：tsx 跑单个 .test.ts，路径里有 `electron/` 目录名，不许因此判成「要起桌面」
     "cd Code/apps/desktop && node_modules/.bin/tsx --test apps/desktop/electron/chatlog-keys.test.ts",
     "ls Code/scripts/plobi",
@@ -79,8 +99,14 @@ def test_readonly_commands_pass_the_whitelist(cmd):
     ("cd Code/apps/desktop && npx vitest run", "装包"),
     ("cd Code/apps/desktop && vitest run --environment jsdom", "没指到单个测试文件"),
     ("cd Code && pytest tests/plobi/test_mind_proposal_gate.py", "禁直调 pytest"),
+    ("git -C D:/Data/AppData/plobi/vault remote set-url origin https://x/y.git", "改远端"),
+    ("git -C D:/Data/AppData/plobi/mind remote -v", None),
 ])
 def test_writing_or_heavy_commands_are_refused_with_a_reason(cmd, frag):
+    why = verify_register_cells.classify(cmd)
+    if frag is None:                                  # 反向一格：列远端是只读的，别把它当写盘拒掉
+        assert why is None, f"只读的这条被拒了：{why}"
+        return
     why = verify_register_cells.classify(cmd)
     assert why is not None, f"这条本该拒却放行了：{cmd}"
     assert frag in why, f"拒因读不懂在拒什么：{why}（命令 {cmd}）"
