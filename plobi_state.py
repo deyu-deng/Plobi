@@ -122,7 +122,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_plobi_home() / "state.db"
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # Cap on user-controlled FTS5 query input before regex/sanitizer processing.
 # Search queries do not need to be arbitrarily large, and bounding them keeps
@@ -742,6 +742,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     compression_failure_error TEXT,
     rewind_count INTEGER NOT NULL DEFAULT 0,
     archived INTEGER NOT NULL DEFAULT 0,
+    -- WP-AGENT-SESSION-ATTRIBUTION（裁定 180）：session 的 Agent 归属。桌面
+    -- 一个后端一个库（SINGLE-GATEWAY）后隔离从文件级改为行级——空串 = L1
+    -- （总秘书不是名册行），非空 = 名册 name（Aura/agenda）。NOT NULL +
+    -- DEFAULT '' 让存量行与「先建 bare row」的网关时序都不需要补写。
+    agent_id TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id)
 );
 
@@ -835,6 +840,12 @@ CREATE INDEX IF NOT EXISTS idx_sessions_gateway_peer
     ON sessions(source, user_id, chat_id, chat_type, thread_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_handoff_state
     ON sessions(handoff_state, started_at);
+-- WP-AGENT-SESSION-ATTRIBUTION（裁定 180）：读路径的热查询「该 agent 最近
+-- 的 session」= WHERE agent_id=? ORDER BY COALESCE(ended_at, started_at)
+-- DESC（进行中的会话 ended_at 为空，天然排前）。表达式与 ORDER BY 逐字对齐
+-- 才能走索引；agent_id 是后加列（_reconcile_columns），索引必须 deferred。
+CREATE INDEX IF NOT EXISTS idx_sessions_agent_recent
+    ON sessions(agent_id, COALESCE(ended_at, started_at) DESC);
 """
 
 FTS_SQL = """
@@ -1622,6 +1633,16 @@ class SessionDB:
                     )
                 except sqlite3.OperationalError:
                     pass
+            if current_version < 21:
+                # v21: session 归属（WP-AGENT-SESSION-ATTRIBUTION / 裁定 180）。
+                # 只加 ``sessions.agent_id`` 一列——加列由 _reconcile_columns()
+                # 在 SCHEMA_SQL 上声明式完成（本块上方），热查询索引在
+                # DEFERRED_INDEX_SQL（列存在后才能建）。**本版无数据迁移**：
+                # NOT NULL DEFAULT '' 让存量行与「网关先建 bare row、agent 后补」
+                # 的时序都不需要补写；跨 profile 家的存量数据并入顶层库由一次性
+                # 脚本 scripts/plobi/migrate_session_attribution.py 负责（带
+                # 备份与 dry-run），不进运行时迁移链。
+                pass
             if current_version < SCHEMA_VERSION and fts_migrations_complete:
                 cursor.execute(
                     "UPDATE schema_version SET version = ?",
@@ -1678,6 +1699,7 @@ class SessionDB:
         thread_id: str = None,
         parent_session_id: str = None,
         cwd: str = None,
+        agent_id: str = "",
     ) -> None:
         """Insert a session row, enriching NULL metadata on conflict.
 
@@ -1696,14 +1718,23 @@ class SessionDB:
         a persisted, now-inactive row belongs to the caller's chat/thread before
         switching to it (IDOR scoping — without them the ``sessions`` table has
         no chat/thread to compare).
+
+        ``agent_id`` is the session's Agent 归属（裁定 180 /
+        WP-AGENT-SESSION-ATTRIBUTION）：空串 = L1（总秘书不是名册行），非空 =
+        名册 name。桌面一个后端一个库（SINGLE-GATEWAY）后隔离是行级的。冲突
+        语义与其余字段**故意不同**：列是 ``NOT NULL DEFAULT ''``，裸 COALESCE
+        会让先到的空归属永不让位（gateway bare row → agent 补身份的那一步
+        ﬃ失败），所以用 ``NULLIF(sessions.agent_id, '')`` 把空串当"未归属"——
+        **bare 先到、后补赢；已有归属、不被随后的空调用覆盖**。
         """
         def _do(conn):
             conn.execute(
                 """INSERT INTO sessions (
                    id, source, user_id, session_key, chat_id, chat_type, thread_id,
-                   model, model_config, system_prompt, parent_session_id, cwd, started_at
+                   model, model_config, system_prompt, parent_session_id, cwd, started_at,
+                   agent_id
                 )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        model = COALESCE(sessions.model, excluded.model),
                        model_config = COALESCE(sessions.model_config, excluded.model_config),
@@ -1713,7 +1744,8 @@ class SessionDB:
                        chat_type = COALESCE(sessions.chat_type, excluded.chat_type),
                        thread_id = COALESCE(sessions.thread_id, excluded.thread_id),
                        parent_session_id = COALESCE(sessions.parent_session_id, excluded.parent_session_id),
-                       cwd = COALESCE(sessions.cwd, excluded.cwd)""",
+                       cwd = COALESCE(sessions.cwd, excluded.cwd),
+                       agent_id = COALESCE(NULLIF(sessions.agent_id, ''), excluded.agent_id)""",
                 (
                     session_id,
                     source,
@@ -1728,6 +1760,7 @@ class SessionDB:
                     parent_session_id,
                     cwd,
                     time.time(),
+                    str(agent_id or ""),
                 ),
             )
         self._execute_write(_do)
