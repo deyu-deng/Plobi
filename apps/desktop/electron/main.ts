@@ -85,6 +85,7 @@ import {
 import { adoptServedDashboardToken } from './dashboard-token'
 import {
   createBackendRespawnGuard,
+  createSidecarRespawnPlan,
   createDeferredSubsystemLedger,
   KEY_RECONCILE_ROW_ID,
   missingProfileDetail,
@@ -8760,6 +8761,10 @@ ipcMain.handle('plobi:bootstrap:get', async () => getBootstrapState())
 // Distinct from per-app Desktop Quota gateways (8019/8020/8021). Soft-fail only
 // — a red sidecar must never block the Plobi backend or the window.
 let chatlogChild: ReturnType<typeof spawn> | null = null
+// 裁 176：该自己起来的东西必须自己起来。子进程**非本意**退出后排一次有界重拉；
+// 我们自己关掉的（重启它、退出应用）不排——否则每次正常关闭都会多拉一发。
+const chatlogRespawn = createSidecarRespawnPlan()
+let chatlogTeardownByUs = false
 
 /**
  * R-051 — record one real observation and re-render BOTH surfaces of the ledger.
@@ -8912,6 +8917,8 @@ function killStrayChatlogProcesses(): void {
     return
   }
 
+  chatlogTeardownByUs = true
+
   for (const pid of targets) {
     try {
       execFileSync('taskkill', ['/F', '/PID', pid], { windowsHide: true, timeout: 5000 })
@@ -9031,6 +9038,7 @@ async function ensureChatlogServer(): Promise<void> {
 
   try {
     if (chatlogChild && !chatlogChild.killed) {
+      chatlogTeardownByUs = true
       stopBackendChild(chatlogChild)
       chatlogChild = null
     }
@@ -9053,6 +9061,26 @@ async function ensureChatlogServer(): Promise<void> {
     chatlogChild.on('exit', (code: number | null) => {
       rememberLog(`[chatlog] exited code=${code}`)
       chatlogChild = null
+
+      if (chatlogTeardownByUs) {
+        // 我们自己关的：不算失败，计数清零，等下面那一路重新拉起来。
+        chatlogTeardownByUs = false
+        chatlogRespawn.reset()
+        return
+      }
+
+      const plan = chatlogRespawn.fail()
+
+      if (plan.autoRetry) {
+        rememberLog(`[chatlog] unexpected exit; re-ensuring in ${plan.delayMs}ms (attempt ${plan.attempt})`)
+        // `ensureLocalSidecars` 本身就是 fire-and-forget（两个 ensure 各自把失败报进台账），
+        // 所以这里不再套一层 catch——它返回 void，`.catch` 在类型上就不存在。
+        setTimeout(() => void ensureLocalSidecars(), plan.delayMs)
+      } else {
+        // 到顶了：说一句人话，别再排定时器（这文件上面那两次风暴就是这么来的）。
+        reportDeferredSubsystem('chatlog', 'red',
+          `chatlog 连续 ${plan.attempt} 次起来后又退出，已停止自动重拉；微信这一格采不到，重启桌面可再试一次`)
+      }
       // No ledger write here on purpose: a child that dies before the port ever
       // answers is already reported by the poll below, and reporting from the exit
       // handler as well would let a teardown we initiated ourselves flip a row.
@@ -9064,6 +9092,7 @@ async function ensureChatlogServer(): Promise<void> {
       const polled = await chatlogCollectorAnswer()
 
       if (polled.state === 'ready') {
+        chatlogRespawn.reset()
         reportDeferredSubsystem('chatlog', 'ready', `${chatlogLedgerRow(polled).body} (pid=${chatlogChild?.pid ?? '?'})`)
         rememberLog('[sidecar] chatlog answering on :5030 after spawn')
         return
@@ -11615,6 +11644,7 @@ app.on('before-quit', () => {
   stopAllPoolBackends()
 
   if (chatlogChild) {
+    chatlogTeardownByUs = true
     stopBackendChild(chatlogChild)
     chatlogChild = null
   }

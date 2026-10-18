@@ -530,8 +530,46 @@ function createBackendRespawnGuard({
   }
 }
 
+/**
+ * 后置服务（chatlog 这类我们 spawn 的子进程）的**有界重拉**计划。
+ *
+ * 为什么要有这一支：`ensureChatlogServer()` 以前只在后端 ready 那一下被调用一次，
+ * 于是子进程半路死了（微信退登录、被外部杀掉、自己崩）就再也没人拉——那正是"该自己起来的东西
+ * 不起"的产品缺陷（裁 176：无感知、自动拉起、出错才说话）。
+ * 为什么形状长成这样而不是一个固定轮询：这文件上面记着两次事故（3,900 与 1,173 次相同 spawn 循环、
+ * 2,214 行相同台账），所以重试必须**由退出事件驱动 + 指数退避 + 次数封顶**，
+ * 且"我们自己关掉的"绝不能排重试（否则每次正常重启都会多拉一发）。
+ */
+function createSidecarRespawnPlan({
+  baseDelayMs = RESPAWN_BASE_DELAY_MS,
+  maxAutoRetries = RESPAWN_MAX_AUTO_RETRIES,
+  maxDelayMs = RESPAWN_MAX_DELAY_MS
+}: {
+  baseDelayMs?: number
+  maxAutoRetries?: number
+  maxDelayMs?: number
+} = {}) {
+  let attempt = 0
+
+  return {
+    /** 起来了／是我们自己关的 ⇒ 计数归零，下一次意外退出从最短间隔重新开始。 */
+    reset(): void {
+      attempt = 0
+    },
+    attempts(): number {
+      return attempt
+    },
+    /** 还要再试就返回这次的间隔；到顶了就返回 autoRetry=false，调用方只报一句人话，不再排定时器。 */
+    fail(): { attempt: number; autoRetry: boolean; delayMs: number } {
+      attempt += 1
+      return { attempt, autoRetry: attempt <= maxAutoRetries, delayMs: Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1)) }
+    }
+  }
+}
+
 export {
   createBackendRespawnGuard,
+  createSidecarRespawnPlan,
   createDeferredSubsystemLedger,
   DEFERRED_SUBSYSTEMS,
   DEFERRED_SUFFIX,
