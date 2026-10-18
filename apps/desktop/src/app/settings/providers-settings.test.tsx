@@ -200,33 +200,48 @@ describe('Desktop Quotas cards report the hub verdict', () => {
     return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
   }
 
-  it('calls CodeBuddy connected without a single click once the hub serves it', async () => {
+  it('reports CodeBuddy connected without a single click once the hub serves it', async () => {
     frame('workbuddy', { models: ['hy3'] })
 
     await renderDesktopQuotas()
 
-    // The badge and the button both read "connected" — and the Connect button is
-    // disabled, because there is nothing left to press.
-    expect((await screen.findAllByText('已连接')).length).toBe(2)
-    expect(screen.getByRole('button', { name: '已连接' })).toBeTruthy()
-    expect(screen.getByText(/its models are now available in the chat/)).toBeTruthy()
+    // The button carries the state and nothing else does: no status chip beside
+    // the name, no banner over the list. It reads connected and is disabled,
+    // because there is nothing left to press.
+    const connected = await screen.findByRole('button', { name: 'Connected' })
+
+    expect((connected as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getAllByRole('button', { name: 'Connect' })).toHaveLength(1)
+    expect(screen.getByText('CodeBuddy')).toBeTruthy()
+    expect(screen.getByText(/Tencent CodeBuddy/)).toBeTruthy()
   })
 
-  it('still says not connected while the hub has said nothing about it', async () => {
+  it('leaves both rows offering to connect while the hub has said nothing', async () => {
     await renderDesktopQuotas()
 
-    expect((await screen.findAllByText('Not connected')).length).toBe(2)
-    expect(screen.queryByText(/its models are now available in the chat/)).toBeNull()
+    const offers = await screen.findAllByRole('button', { name: 'Connect' })
+
+    expect(offers).toHaveLength(2)
+
+    for (const offer of offers) {
+      expect((offer as HTMLButtonElement).disabled).toBe(false)
+    }
   })
 
-  it('explains an unusable software in the hub\'s words instead of a green tick', async () => {
+  it('keeps the hub\'s reason on the button that would fix it, not on the row', async () => {
     frame('workbuddy', { blocked: { 'hy3': 'credential_expired' }, models: [] })
 
     await renderDesktopQuotas()
 
-    expect(await screen.findByText(/现在用不了/)).toBeTruthy()
-    expect(screen.getByText(/its sign-in has expired/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '已连接' })).toBeNull()
+    const offers = await screen.findAllByRole('button', { name: 'Connect' })
+
+    expect(offers).toHaveLength(2)
+    // The software is unusable, so the button stays pressable and carries the
+    // reason as its tooltip — and the reason is nowhere else on the page.
+    const unusable = offers.find(offer => /its sign-in has expired/.test(offer.getAttribute('title') ?? ''))
+
+    expect(unusable).toBeTruthy()
+    expect(screen.queryByText(/sign-in has expired/)).toBeNull()
   })
 
   it('never reports a connected software the hub answered nothing about', async () => {
@@ -236,6 +251,6 @@ describe('Desktop Quotas cards report the hub verdict', () => {
 
     await renderDesktopQuotas()
 
-    expect((await screen.findAllByText('Not connected')).length).toBe(2)
+    expect(await screen.findAllByRole('button', { name: 'Connect' })).toHaveLength(2)
   })
 })
