@@ -3925,7 +3925,10 @@ function fetchJson(url, token, options: any = {}) {
         headers: {
           'Content-Type': 'application/json',
           'X-Plobi-Session-Token': token,
-          ...(body ? { 'Content-Length': String(body.length) } : {})
+          ...(body ? { 'Content-Length': String(body.length) } : {}),
+          // WP-AGENT-SINGLE-GATEWAY §3.3：调用方透传的请求级身份头（桌面
+          // plobi:api 桥带 X-Plobi-Agent，后端 request_profile() 读）。
+          ...(options.headers || {})
         }
       },
       res => {
@@ -5530,6 +5533,14 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
     } as any)
 
     setJsonRequestHeaders(request)
+
+    // WP-AGENT-SINGLE-GATEWAY §3.3：与 fetchJson 同一条身份通道——OAuth 模式下
+    // 桌面 plobi:api 桥同样把 X-Plobi-Agent 带下去（后端按请求解析身份）。
+    if (options.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        request.setHeader(key, String(value))
+      }
+    }
 
     let timedOut = false
 
@@ -10434,15 +10445,17 @@ ipcMain.handle('plobi:api', async (_event, request) => {
     return rerouted
   }
 
-  const tornDownProfile = await prepareProfileDeleteRequest(request)
+  // WP-AGENT-SINGLE-GATEWAY §3.3：桌面只起一个后端——「当前在跟哪个 Agent
+  // 说话」不再是进程属性（plobi --profile <name>），而是随请求带下去的参数。
+  // ensureBackend(null) 恒回主后端：删除分身家后的 tornDownProfile 特判随之
+  // 失去意义（不再需要为删除让路去选进程），但 prepareProfileDeleteRequest
+  // 的其余副作用保留。身份经 X-Plobi-Agent 请求头带下去（后端
+  // request_profile() 读它；query ?profile= 那条 global-remote 路由仍由
+  // pathWithGlobalRemoteProfile 追加，两条同语义、header 优先）。
+  await prepareProfileDeleteRequest(request)
 
   const profile = request?.profile
-  // After tearing down a backend for profile deletion, route to the primary
-  // backend instead of spawning a fresh pool backend.  A freshly spawned
-  // backend calls ensure_plobi_home() which recreates the profile directory,
-  // defeating the deletion and leaving a zombie process.
-  const routeProfile = tornDownProfile ? null : profile
-  const connection = await ensureBackend(routeProfile)
+  const connection = await ensureBackend(null)
   const timeoutMs = resolveTimeoutMs(request?.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
   const requestPath = pathWithGlobalRemoteProfile(request.path, profile, {
@@ -10452,23 +10465,22 @@ ipcMain.handle('plobi:api', async (_event, request) => {
 
   const url = `${connection.baseUrl}${requestPath}`
 
+  const fetchOptions = {
+    method: request?.method,
+    body: request?.body,
+    timeoutMs,
+    ...(profile ? { headers: { 'X-Plobi-Agent': String(profile) } } : {})
+  }
+
   // OAuth gateways authenticate REST via the HttpOnly session cookie held in
   // the OAuth partition — route through Electron's net stack bound to that
   // session so the cookie attaches automatically. Token/local modes keep using
   // the static session-token header.
   if (connection.authMode === 'oauth') {
-    return fetchJsonViaOauthSession(url, {
-      method: request?.method,
-      body: request?.body,
-      timeoutMs
-    })
+    return fetchJsonViaOauthSession(url, fetchOptions)
   }
 
-  return fetchJson(url, connection.token, {
-    method: request?.method,
-    body: request?.body,
-    timeoutMs
-  })
+  return fetchJson(url, connection.token, fetchOptions)
 })
 
 ipcMain.handle('plobi:notify', (_event, payload) => {
