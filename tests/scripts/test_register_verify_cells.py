@@ -8,6 +8,7 @@ import io
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -195,7 +196,70 @@ def test_executor_refuses_to_call_itself_a_pass_when_nothing_ran(tmp_path, capsy
     assert "SKIP" in capsys.readouterr().out
 
 
-# ④ 门与执行脚本读的是同一份口径：现算的数必须一致，不许各数各的
+# ④ 第三向：工作树里每一档未提交的改动，反过来问登记册有没有一格认领它
+def _stall_row(status="待签", sess="deadbeef", claim="Code/plobi_cli/config.py"):
+    return (f"| **WP-FAKE-CLAIM** 反例格 | 某线 `{sess}` | 纸 — | `{claim}` | "
+            f"{status} | 00:00 | `[WP-FAKE-CLAIM]` — 反例 |")
+
+
+def _sandbox(tmp_path, files=("plobi_cli/config.py", "orphan.py")):
+    """真起一棵一次性 git 仓（不碰真仓），改脏其中几档——`unattributed_work` 读的就是 git status。"""
+    base = tmp_path / "desk"
+    code = base / "Code"
+    (code / "plobi_cli").mkdir(parents=True)
+    for f in files:
+        (code / f).parent.mkdir(parents=True, exist_ok=True)
+        (code / f).write_text("A = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "."], cwd=code, check=True)
+    subprocess.run(["git", "config", "user.email", "x@y"], cwd=code, check=True)
+    subprocess.run(["git", "config", "user.name", "x"], cwd=code, check=True)
+    subprocess.run(["git", "add", "--", *files], cwd=code, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=code, check=True)
+    for f in files:
+        (code / f).write_text("A = 2\n", encoding="utf-8")     # 全部改脏
+    return base
+
+
+def test_unclaimed_dirty_file_is_named_orphan(tmp_path):
+    base = _sandbox(tmp_path)
+    reg = HEADER + _stall_row(claim="Code/plobi_cli/config.py") + "\n"
+    orph, stall, why = verify_register_cells.unattributed_work(
+        reg, str(base).replace(os.sep, "/"), live={})
+    assert why == "", why
+    assert any("orphan.py" in o for o in orph), f"没人认领的那档没被点名：{orph}"
+    assert not any("config.py" in o for o in orph), f"有人认领的档被误报成无主：{orph}"
+
+
+def test_dirty_file_claimed_only_by_a_dead_session_is_stalled(tmp_path):
+    base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
+    reg = HEADER + _stall_row(sess="deadbeef") + "\n"
+    _orph, stall, why = verify_register_cells.unattributed_work(reg, str(base), live={})
+    assert stall and "config.py" in stall[0] and "deadbeef" in stall[0], stall
+
+
+def test_same_cell_is_quiet_when_the_session_is_still_alive(tmp_path):
+    # 同一条脏档，会话还在库里 ⇒ 不该报——它判的是「没人认领」，不是「工作树脏」
+    base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
+    reg = HEADER + _stall_row(sess="f00dcafe") + "\n"
+    _orph, stall, _why = verify_register_cells.unattributed_work(
+        reg, str(base), live={"f00dcafe-1111": time.time()})
+    assert stall == [], stall
+
+
+def test_claim_matching_is_on_path_boundaries():
+    assert verify_register_cells._covers("Code/plobi/agenda", "Code/plobi/agenda/planning.py")
+    assert verify_register_cells._covers("Code/plobi/quota/**", "Code/plobi/quota/route.py")
+    assert not verify_register_cells._covers("Code/plobi/agendaX", "Code/plobi/agenda/planning.py")
+    assert not verify_register_cells._covers("Code/scripts", "Code/scripts_extra/boot.py")
+
+
+def test_no_session_db_says_so_instead_of_passing():
+    # SKIP ≠ 通过：库读不到时必须出声，不能让这条门静默变成「都活着」
+    live, why = verify_register_cells.live_sessions(paths=())
+    assert live is None and why, (live, why)
+
+
+# ⑤ 门与执行脚本读的是同一份口径：现算的数必须一致，不许各数各的
 def test_gate_and_executor_count_the_same_real_cells():
     missing = verify_register_cells.rows_without_command(
         io.open(REGISTER, encoding="utf-8", errors="replace").read())
