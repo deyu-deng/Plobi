@@ -270,6 +270,25 @@ def _profile_state_db(profile: str) -> Optional[Path]:
         return None
 
 
+def _agent_state_db(agent_id: str) -> Optional[Path]:
+    """该 agent（名册行）的 state.db——请求级身份在 REST 用量面的落库点。
+
+    与 ``sessions_for_agent`` **同源**（同一 ``entry.profile_name``）：session id
+    从哪来，用量/腿读数就从哪个库查。单后端前 ``default_db_path()`` 恰好等于
+    该 agent 的库（进程身份 = profile，池后端按身份起）；单后端后一个进程服务
+    所有 Agent，必须显式按名册行解析，否则每个 agent 都读到主后端那份账
+    （WP-AGENT-SINGLE-GATEWAY §3.4）。空/解析失败回 ``None``，调用方回落
+    ``default_db_path()``。
+    """
+    try:
+        entry = get_registry().get(agent_id)
+    except Exception:
+        return None
+    if entry is None:
+        return None
+    return _profile_state_db(entry.profile_name)
+
+
 def _latest_session_for_profile(profile: str) -> str:
     """该 profile 的 state.db 里最近活跃的 session id（ARCH-RULINGS 裁定 1）。
 
@@ -378,6 +397,14 @@ def leg_for_sessions(
 
 
 def totals_for_agent(agent_id: str, *, db_path=None) -> "UsageTotals":
+    """按 agent 名册行同源取数：session id 与用量落在同一个 state.db 上。
+
+    ``db_path`` 显式传入时优先（测试/特殊投影）；否则按名册行解析
+    （``_agent_state_db``），解析失败回落 ``default_db_path()``——与单后端前
+    「进程身份 = 该 agent」的旧行为对空 profile 条目保持一致。
+    """
+    if db_path is None:
+        db_path = _agent_state_db(agent_id)
     return totals_for_sessions(sessions_for_agent(agent_id), db_path=db_path)
 
 
@@ -447,8 +474,11 @@ def agent_row(entry: AgentEntry) -> dict:
     ``Nymo``/``nymo`` 之所以看着像两个项目，是因为真数据里只有一条挂了 Mind——把这一格
     透出去，前端才辨得出「同一个项目登记了两条」，不用替用户猜。
     """
-    totals = totals_for_agent(entry.name)
-    leg = leg_for_sessions(sessions_for_agent(entry.name))
+    # 用量与腿读数同源：都从该 agent 名册行的 state.db 取（§3.4；单后端后
+    # default_db_path 只是"没解析到身份"时的回落，不再是每个 agent 的库）。
+    db_path = _agent_state_db(entry.name)
+    totals = totals_for_agent(entry.name, db_path=db_path)
+    leg = leg_for_sessions(sessions_for_agent(entry.name), db_path=db_path)
     row: dict = {
         "id": entry.name,
         "name": agent_display_name(entry),
