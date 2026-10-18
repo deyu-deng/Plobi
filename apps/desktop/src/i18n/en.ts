@@ -813,6 +813,12 @@ export const en: Translations = {
         connect: 'Connect',
         connected: 'Connected',
         notConnected: 'Not connected',
+        // Disconnect is the user's own switch, not a failure: it stops Plobi from
+        // routing through this software and says nothing about the app itself.
+        disconnect: 'Disconnect',
+        disconnectConfirm: provider =>
+          `Stop using ${provider} in Plobi? Its models will no longer be offered here. This does not sign you out of ${provider} itself.`,
+        disconnectedToast: provider => `${provider} is no longer used in Plobi.`,
         connectError: provider => `Could not connect to ${provider}`,
         notVerified: 'Connection capture not yet verified for this app',
         useHub: 'Use this Hub',
@@ -2916,6 +2922,9 @@ export const en: Translations = {
       no_desktop_credential: 'no sign-in was found on this machine',
       no_tools: 'that channel does not return tool calls to Plobi',
       not_offered: 'the local quota hub no longer lists it',
+      // Not a hub reason: the user pressed Disconnect themselves, so this says so
+      // rather than blaming the app or the machine.
+      disconnected: 'you turned it off',
       unknown: reason => `unavailable (${reason})`
     },
     sessionExported: 'Session exported',

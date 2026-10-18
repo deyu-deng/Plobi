@@ -26,6 +26,9 @@ const quotaProvider = vi.fn((_slug: string): boolean => false)
 // The hub's verdict for the model under use, and where to land if it is gone.
 const quotaVerdict = vi.fn((): { reason?: string; state: string } => ({ state: 'not_quota' }))
 const quotaFallback = vi.fn((): null | { model: string; provider: string } => null)
+// Set only when the user pressed Disconnect on the software behind this model —
+// that is not the hub's word, so it is not `quotaVerdict`'s to report.
+const quotaBlock = vi.fn((): null | string => null)
 
 vi.mock('@/plobi', () => ({
   getGlobalModelInfo: vi.fn(),
@@ -39,6 +42,8 @@ const KNOWN_I18N_KEYS = new Set([
   'desktop.quotaFallbackMessage',
   'desktop.quotaFallbackTitle',
   'desktop.quotaReason.credential_expired',
+  // Not a hub reason, but a real string the notice can legitimately ask for.
+  'desktop.quotaReason.disconnected',
   'desktop.quotaReason.no_desktop_credential',
   'desktop.quotaReason.no_tools',
   'desktop.quotaReason.not_offered',
@@ -79,6 +84,9 @@ vi.mock('@/store/desktop-quotas', () => ({
   findQuotaHubRow: () => 'aigw',
   isQuotaAppSlug: (slug: string) => quotaProvider(slug),
   quotaProviders: (rows: unknown[]) => rows,
+  // The user pressing Disconnect is not a hub verdict, so it is asked separately
+  // and returns null in every case except the one branch pinned below.
+  quotaSelectionBlock: () => quotaBlock(),
   quotaSelectionVerdict: () => quotaVerdict()
 }))
 
@@ -118,6 +126,7 @@ describe('useModelControls', () => {
     quotaProvider.mockReset().mockReturnValue(false)
     quotaVerdict.mockReset().mockReturnValue({ state: 'not_quota' })
     quotaFallback.mockReset().mockReturnValue(null)
+    quotaBlock.mockReset().mockReturnValue(null)
     notify.mockReset().mockReturnValue('n-1')
     // Back to the flat (secretary) cell so no test inherits another scope's box.
     setComposerModelScope(null)
@@ -510,6 +519,34 @@ describe('useModelControls', () => {
     expect(message).toContain('desktop.quotaReason.credential_expired')
     expect(message).toContain('antigravity/gemini-3-pro')
     expect(message).toContain('workbuddy_api/hy3')
+  })
+
+  // Disconnect is the one case where the hub's verdict is not the reason: it is
+  // still serving the model happily, and the reason the model became unusable is
+  // that the user said stop. Asking the hub here would report the model as fine
+  // and leave the composer sitting on it.
+  it('moves the composer off a software the user disconnected, in their words', async () => {
+    setCurrentProvider('aigw')
+    setCurrentModel('workbuddy_api/hy3')
+    quotaProvider.mockImplementation((slug: string) => slug === 'antigravity' || slug === 'workbuddy_api')
+    // The hub still says ok — that is the whole point.
+    quotaVerdict.mockReturnValue({ state: 'ok' })
+    quotaBlock.mockReturnValue('disconnected')
+    quotaFallback.mockReturnValue({ model: 'gemini-3-pro', provider: 'antigravity' })
+
+    renderHook(() =>
+      useModelControls({
+        activeSessionId: null,
+        queryClient: new QueryClient(),
+        requestGateway: vi.fn()
+      })
+    )
+
+    await waitFor(() => expect($currentModel.get()).toBe('antigravity/gemini-3-pro'))
+    expect(notify).toHaveBeenCalledTimes(1)
+    const [notice] = notify.mock.calls
+
+    expect(notice?.[0]?.message ?? '').toContain('desktop.quotaReason.disconnected')
   })
 
   // The default-leg ruling: a fresh install ships `model: ""`, and the first thing
