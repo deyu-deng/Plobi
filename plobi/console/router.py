@@ -244,26 +244,44 @@ def status_for(agent_id: str) -> str:
     return STATUS_IDLE
 
 
+def _profile_state_db(profile: str) -> Optional[Path]:
+    """该 profile 家目录下的 ``state.db``；空名/解析失败 → ``None``。
+
+    WP-AGENT-SINGLE-GATEWAY §3.4：桌面单后端后「当前 Agent」是**请求属性**，
+    每个按身份取数的投影面都经这里把身份落到库文件上。空串（L1/未指定）
+    与解析失败一律回 ``None``，由调用方决定回落 ``default_db_path()`` 还是
+    诚实空值——不猜、不起库、不拿写锁（``mode=ro`` 由调用方开）。
+
+    ``ValueError`` 是名册**数据条目**（``l2_course``，裁定 40）的 profile 空串
+    被递给解析器的形状（2026-10-13 实测：整张 ``GET /api/agents`` 因此 500），
+    这里一并吞掉回 ``None``。
+    """
+    name = str(profile or "").strip()
+    if not name:
+        return None
+    try:
+        from plobi_cli.profiles import get_profile_dir
+
+        return get_profile_dir(name) / "state.db"
+    except (ImportError, KeyError, ValueError) as exc:
+        # ImportError: plobi_cli not installed; KeyError: unknown profile name;
+        # ValueError: 名字非法或为空。
+        logger.debug("plobi console: cannot resolve profile dir for %s: %s", name, exc)
+        return None
+
+
 def _latest_session_for_profile(profile: str) -> str:
     """该 profile 的 state.db 里最近活跃的 session id（ARCH-RULINGS 裁定 1）。
 
     Plobi 的会话隶属 **profile**（每个 profile home 一份 ``state.db``，
-    ``sessions`` 表没有 profile 列——隔离是天然的）。这里按
+    ``sessions` 表没有 profile 列——隔离是天然的）。这里按
     ``plobi_cli.profiles.get_profile_dir`` 解析 profile home 后只读查询
     （``mode=ro``，与底座跨 profile 聚合同一语义：不建库、不拿写锁、
     db 不存在诚实返回空串）。"最近活跃" = ``COALESCE(ended_at, started_at)``
     最大——进行中的会话 ``ended_at`` 为空，天然排前。
     """
-    try:
-        from plobi_cli.profiles import get_profile_dir
-
-        db_path = get_profile_dir(profile) / "state.db"
-    except (ImportError, KeyError, ValueError) as exc:
-        # ImportError: plobi_cli not installed; KeyError: unknown profile name;
-        # ValueError: 名字非法或为空 —— 名册里**数据条目**（`l2_course`，裁定 40）
-        # 的 profile 就是空串，`get_profile_dir('')` 抛的是 ValueError（2026-10-13
-        # 实测：整张 `GET /api/agents` 因此 500，左栏拿不到分身列表）。
-        logger.debug("plobi console: cannot resolve profile dir for %s: %s", profile, exc)
+    db_path = _profile_state_db(profile)
+    if db_path is None:
         return ""
     if not db_path.exists():
         return ""
@@ -638,7 +656,33 @@ def today_usd(*, db_path: Optional[Path] = None) -> Optional[float]:
     return round(float(row[0] or 0.0), 6) if row else 0.0
 
 
-def quota_summary_data() -> dict:
+def request_profile(request) -> str:
+    """请求级身份（WP-AGENT-SINGLE-GATEWAY §3.4）：「当前在跟哪个 Agent 说话」。
+
+    读取顺序：``X-Plobi-Agent`` header → ``?profile=`` query → 空串。
+
+    - header 是**本地单后端**的新路：桌面 ``plobi:api`` 桥把 renderer 的
+      ``request.profile`` 变成请求头带下去（main.ts，本刀 §3.3），不再按
+      身份选进程。
+    - query 是 **global-remote** 的既有路：``pathWithGlobalRemoteProfile``
+      （connection-config.ts:230）在单后端 remote 模式下把身份拼成查询参数。
+      两条路同语义，header 优先（本地优先于 remote 兜底）。
+
+    空串 = 进程默认身份（主后端/L1 总秘书）——与桌面侧「agent 空 = L1」同口径。
+    """
+    if request is None:
+        return ""
+    for raw in (
+        request.headers.get("x-plobi-agent"),
+        request.query_params.get("profile"),
+    ):
+        value = str(raw or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def quota_summary_data(profile: str = "") -> dict:
     """``GET /api/quota/summary`` 的 data 段（WP-BE-4 契约）。
 
     数据源 = 进程级 ``QuotaPool`` 的 probe 结果（``SourceStatus.as_dict()``
@@ -648,20 +692,27 @@ def quota_summary_data() -> dict:
     ``gateway`` 是最近一次目录读取的结果（同样不触发请求）：``None`` = 还没问过
     网关，``state=ok`` + 空 ``source_names`` = 问过且它一个额度源都没供。这两格
     必须能分开，否则「没接」和「坏了」在界面上长成同一个样子（R-048 那条口径）。
+
+    ``todayUsd`` 按**请求身份**取数（WP-AGENT-SINGLE-GATEWAY §3.4）：单后端后
+    一个进程服务所有 Agent，「今天花了多少」必须落在该身份自己的 state.db 上，
+    否则每个 Agent 都看到同一份（主后端身份的）账。额度源健康度与网关目录是
+    进程级共享面（一个池、一个目录），不按身份拆。
     """
     pool = get_quota_pool()
     statuses = pool.probe_all()
+    # db_path=None（空身份或解析失败）时 today_usd 自行回落 default_db_path()——
+    # 与单后端前的旧行为一致：没带身份的调用看到的是进程默认那份账。
     return {
         "sources": [status.as_dict() for status in statuses],
         "gateway": pool.catalog_status(),
-        "todayUsd": today_usd(),
+        "todayUsd": today_usd(db_path=_profile_state_db(profile)),
     }
 
 
 @router.get("/quota/summary", name="quota_summary")
-async def quota_summary():
-    """WP-BE-4 — 额度池快照：各源健康度 + 今日花费。"""
-    data = await run_in_threadpool(quota_summary_data)
+async def quota_summary(request: Request):
+    """WP-BE-4 — 额度池快照：各源健康度 + 今日花费（todayUsd 按请求身份，§3.4）。"""
+    data = await run_in_threadpool(quota_summary_data, request_profile(request))
     return {"ok": True, "data": data}
 
 
