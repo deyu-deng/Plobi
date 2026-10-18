@@ -994,6 +994,12 @@ export const zh: Translations = {
         connect: '连接',
         connected: '已连接',
         notConnected: '未连接',
+        // 断开是用户自己按下的开关，不是故障：它只让 Plobi 不再走这条额度，
+        // 对那个软件自己的登录状态一字不提。
+        disconnect: '断开连接',
+        disconnectConfirm: provider =>
+          `不再在 Plobi 里使用 ${provider}？它的模型不会再出现在这里。这不会退出 ${provider} 自己的登录。`,
+        disconnectedToast: provider => `Plobi 已不再使用 ${provider}。`,
         connectError: provider => `无法连接 ${provider}`,
         notVerified: '该软件的连接捕获尚未验证',
         useHub: '使用此枢纽',
@@ -3055,6 +3061,8 @@ export const zh: Translations = {
       no_desktop_credential: '这台机器上没有读到它的登录凭据',
       no_tools: '这条通道不把工具调用交回 Plobi',
       not_offered: '本地额度网关已经不再列出它',
+      // 不是网关那边的理由：是你自己按了断开连接，所以这里不赖那个软件或这台机器。
+      disconnected: '你把它关掉了',
       unknown: reason => `不可用（${reason}）`
     },
     sessionExported: '会话已导出',

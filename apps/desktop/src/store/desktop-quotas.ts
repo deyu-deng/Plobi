@@ -46,6 +46,16 @@ export interface ConnectedDesktopApp {
    * to cover for a leg the hub said is dead.
    */
   answered?: boolean
+  /**
+   * The user turned this software off in Settings, so Plobi must not route
+   * through it. This is the one verdict in this file that is NOT the hub's: the
+   * hub keeps serving a signed-in desktop app whether we route through it or not,
+   * and its frames arrive every 60 seconds, so a plain "remove the record" would
+   * be undone within the minute. The record itself stays (the UI still has to
+   * name the software behind a model id it may still be holding), and this flag
+   * is what the discovery path refuses to overwrite.
+   */
+  optedOut?: boolean
 }
 
 const STORE_KEY = 'plobi.desktop.desktop-quotas'
@@ -107,6 +117,10 @@ function readStore(): Record<string, ConnectedDesktopApp> {
 
 export const $connectedDesktopApps = atom<Record<string, ConnectedDesktopApp>>(readStore())
 
+/**
+ * Register an app as routable. This is the user saying yes, so it clears a
+ * previous `optedOut` — that is what makes Disconnect reversible.
+ */
 export function markConnected(app: {
   id: string
   name?: string
@@ -126,6 +140,10 @@ export function markConnected(app: {
     id: app.id,
     name: app.name ?? previous?.name ?? DESKTOP_QUOTA_NAMES[app.id] ?? app.id,
     connected: true,
+    // An explicit connect is the user changing their mind about a Disconnect, so
+    // the opt-out goes with it. A frame that arrives on its own does NOT come
+    // through here — see `applyDiscoveredQuotaApps`.
+    optedOut: false,
     // Prefer whatever the shell reported in this frame (the hub's live catalog). If
     // the frame carried nothing, keep what we had until the next frame arrives — the
     // catalog is pushed by the main process, never fetched from here.
@@ -140,10 +158,32 @@ export function markConnected(app: {
   persistString(STORE_KEY, JSON.stringify(next))
 }
 
+/**
+ * The user turned this software off: Plobi stops routing through it, and it
+ * stays that way across every frame the hub pushes afterwards.
+ *
+ * Deleting the record is not enough and never was. The hub serves a signed-in
+ * desktop app whether we route through it or not, `applyDiscoveredQuotaApps`
+ * re-adds everything it reports, and the shell re-reads on a 60-second tick — so
+ * a removed record comes straight back. What survives is a flag on the record:
+ * the row stays (Settings still has to name the software, and a model id may
+ * still be sitting in a composer), and every read path consults the flag.
+ *
+ * `markConnected` is the other half of the pair and clears it: connecting again
+ * is the user saying the opposite.
+ */
 export function markDisconnected(id: string): void {
   const next = { ...$connectedDesktopApps.get() }
+  const previous = next[id]
 
-  delete next[id]
+  if (!previous) {
+    // Nothing to flag it on. Persist a minimal record so the intent itself is
+    // what survives — otherwise the next frame would re-add the app as if the
+    // user had never touched it.
+    next[id] = { connected: false, id, models: [], name: DESKTOP_QUOTA_NAMES[id] ?? id, optedOut: true }
+  } else {
+    next[id] = { ...previous, connected: false, optedOut: true }
+  }
 
   $connectedDesktopApps.set(next)
   persistString(STORE_KEY, JSON.stringify(next))
@@ -186,6 +226,15 @@ export function applyDiscoveredQuotaApps(apps: QuotaAppFrame[]): void {
 
     const known = $connectedDesktopApps.get()[app.id]
 
+    // The one thing a frame may not undo. The hub serves this app because the
+    // user signed into it over there — not because they asked Plobi to route
+    // through it — so a Disconnect stands until they connect again. Skipping the
+    // write (rather than letting `markConnected` clear it) is what makes that
+    // stick across the 60-second re-read.
+    if (known?.optedOut) {
+      continue
+    }
+
     markConnected({
       id: app.id,
       apiKey: app.apiKey,
@@ -201,9 +250,11 @@ export function applyDiscoveredQuotaApps(apps: QuotaAppFrame[]): void {
   }
 }
 
-/** True when `slug` is one of the connected desktop apps the hub serves. */
+/** True when `slug` is one of the connected desktop apps Plobi may route through. */
 export function isQuotaAppSlug(slug: string): boolean {
-  return Boolean($connectedDesktopApps.get()[slug]?.connected)
+  const app = $connectedDesktopApps.get()[slug]
+
+  return Boolean(app?.connected && !app.optedOut)
 }
 
 /**
@@ -263,8 +314,10 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
   for (const app of Object.values($connectedDesktopApps.get())) {
     // A demo channel is not a quota the user owns, so it never reaches the
     // selector. This is the single place that rule lives for hub-backed rows (the
-    // backend's own rows are filtered by `humanizeProviders`).
-    if (!app.connected || isMockProvider({ slug: app.id })) {
+    // backend's own rows are filtered by `humanizeProviders`). `optedOut` is the
+    // same rule with the user as the authority: they said stop, so its models are
+    // not offered even though the hub is still serving them happily.
+    if (!app.connected || app.optedOut || isMockProvider({ slug: app.id })) {
       continue
     }
 
@@ -339,6 +392,7 @@ export type QuotaSelectionVerdict =
  * usable, and the reason it gives is carried out verbatim.
  *
  *   - `absent`      the hub has never reported this software — we did not ask
+ *   - `off`         the user disconnected it: not a fault, and not the hub's word
  *   - `unanswered`  it was reported, but no read has landed — we do not know,
  *                  and "we did not ask" must never be acted on as "it is broken"
  *   - `ok`          the hub vouches for at least one of its models
@@ -351,6 +405,7 @@ export type QuotaSelectionVerdict =
  */
 export type QuotaAppVerdict =
   | { state: 'absent' }
+  | { state: 'off' }
   | { state: 'unanswered' }
   | { models: string[]; state: 'ok' }
   | { reason: string; state: 'unusable' }
@@ -365,6 +420,13 @@ export function quotaAppVerdict(
 
   if (records.length === 0) {
     return { state: 'absent' }
+  }
+
+  // Checked before anything the hub said, and on every leg: the user turned this
+  // software off, so its own reason (`credential_expired`, `no_tools`) is no
+  // longer the answer to "why is this not connected?" — the answer is they said so.
+  if (records.every(record => record.optedOut)) {
+    return { state: 'off' }
   }
 
   const answered = records.filter(record => record.answered === true)
@@ -404,6 +466,13 @@ export function quotaSelectionVerdict(model: string): QuotaSelectionVerdict {
   return { state: 'gone', reason: app.blocked?.[modelId] ?? 'not_offered' }
 }
 
+/** The app id a model id names (its first segment), or null when it names none. */
+function hubAppIdOfModel(model: string): string | null {
+  const separator = model.indexOf('/')
+
+  return separator > 0 ? model.slice(0, separator) : null
+}
+
 /**
  * The connected app a model id belongs to, found by its first segment
  * (`workbuddy_api/glm-5.3` → that app), or null when the id is not one of ours.
@@ -412,17 +481,41 @@ export function quotaSelectionVerdict(model: string): QuotaSelectionVerdict {
  * naming the hub: the verdict reads the app's health through it, and a surface that
  * shows the provider shows the software's own name instead (`desktop-quotas` owns
  * the join, so nobody has to re-derive it).
+ *
+ * A software the user disconnected is deliberately *not* routable, so it is not
+ * returned here — but the record stays, which is what `quotaSelectionVerdict`
+ * needs to tell "you turned this off" apart from "this was never ours".
  */
 export function hubAppOfModel(model: string): ConnectedDesktopApp | null {
-  const separator = model.indexOf('/')
+  const appId = hubAppIdOfModel(model)
 
-  if (separator <= 0) {
+  if (!appId) {
     return null
   }
 
-  const app = $connectedDesktopApps.get()[model.slice(0, separator)]
+  const app = $connectedDesktopApps.get()[appId]
 
-  return app?.connected ? app : null
+  return app?.connected && !app.optedOut ? app : null
+}
+
+/**
+ * Why a model id can no longer be used, or null while it is fine.
+ *
+ * Unlike `hubAppOfModel`, this reads the record itself rather than the routable
+ * view of it: a Disconnect has to be able to answer "why", and the answer is not
+ * one of the hub's reasons. `use-model-controls` reads this to move a composer
+ * off a model the user just disconnected, and says why out loud.
+ */
+export function quotaSelectionBlock(model: string): string | null {
+  const appId = hubAppIdOfModel(model)
+
+  if (!appId) {
+    return null
+  }
+
+  const app = $connectedDesktopApps.get()[appId]
+
+  return app?.optedOut ? 'disconnected' : null
 }
 
 /**
@@ -437,7 +530,10 @@ export function hubAppOfModel(model: string): ConnectedDesktopApp | null {
  */
 export function firstSelectableQuotaModel(): { model: string; provider: string } | null {
   const apps = Object.values($connectedDesktopApps.get())
-    .filter((app) => app.connected && app.answered === true && app.models.length > 0)
+    // `optedOut` is here for the same reason it is in `quotaProviders`: a software
+    // the user disconnected must not become the landing spot for a composer that
+    // just lost its model.
+    .filter((app) => app.connected && !app.optedOut && app.answered === true && app.models.length > 0)
     .sort((a, b) => a.id.localeCompare(b.id))
 
   for (const app of apps) {

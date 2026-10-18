@@ -22,6 +22,7 @@ import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
 import {
   $connectedDesktopApps,
   markConnected,
+  markDisconnected,
   quotaAppVerdict,
   requestQuotaCatalog
 } from '@/store/desktop-quotas'
@@ -420,6 +421,41 @@ function DesktopQuotasView() {
     }
   }
 
+  // --- Disconnect handler ---
+  // Connect once and the hub keeps this app wired up on every launch from then
+  // on (`WP-AIGW-BOOTSYNC`), which is the whole point of the quota leg: you log
+  // in once over there. Disconnect is therefore not "log out" — Plobi owns no
+  // credential for a CodeBuddy/WorkBuddy subscription — it is the user saying
+  // *stop routing through this*. So it flips one flag on the store record, and
+  // every read path (picker, landing spot, composer fallback) consults it.
+  const handleDisconnect = (app: DesktopQuotaApp) => {
+    if (!window.confirm(dq.disconnectConfirm(app.name))) {
+      return
+    }
+
+    for (const leg of QUOTA_APP_PEERS[app.id] ?? [app.id]) {
+      markDisconnected(leg)
+    }
+
+    // The connect/error state belonged to the action the user just took the back
+    // out of, so it goes with it rather than lingering as a stale badge.
+    setConn((prev) => {
+      const next = { ...prev }
+
+      delete next[app.id]
+
+      return next
+    })
+    setErrInfo((prev) => {
+      const next = { ...prev }
+
+      delete next[app.id]
+
+      return next
+    })
+    notify({ kind: 'success', message: dq.disconnectedToast(app.name), title: app.name })
+  }
+
   // One card per piece of software, and the hub's verdict decides it — the click
   // only ever owns the two states a button press can be in right now.
   //
@@ -432,6 +468,8 @@ function DesktopQuotasView() {
   const cards = DESKTOP_QUOTA_APPS.map(app => {
     const verdict = quotaAppVerdict(quotaApps, QUOTA_APP_PEERS[app.id] ?? [app.id])
     const click = conn[app.id] || 'idle'
+    // `off` is the user's own verdict and outranks the hub's, so it never reads as
+    // "connected" no matter how many models the hub is still serving.
     const isConnected = verdict.state === 'ok' || (verdict.state === 'unanswered' && click === 'connected')
 
     return {
@@ -444,7 +482,9 @@ function DesktopQuotasView() {
         : '',
       // A click that failed while the hub still vouches for this software is not
       // news: the verdict the models come from is the hub's, and it says it works.
-      error: click === 'error' && !isConnected ? errInfo[app.id] : undefined
+      error: click === 'error' && !isConnected ? errInfo[app.id] : undefined,
+      // Only the user turns this off, so only the user turns it back on.
+      turnOff: isConnected ? () => handleDisconnect(app) : null
     }
   })
 
@@ -458,25 +498,37 @@ function DesktopQuotasView() {
       </div>
 
       <div className="grid gap-2">
-        {cards.map(({ app, error, isConnected, isConnecting, reason }) => {
+        {cards.map(({ app, error, isConnected, isConnecting, reason, turnOff }) => {
           const canConnect = app.verified && !isConnected && !isConnecting
           const connectError = typeof dq.connectError === 'function' ? dq.connectError(app.name) : dq.connectError
 
           return (
             <ListRow
               action={
-                <Button
-                  disabled={!canConnect}
-                  onClick={() => canConnect && handleConnect(app.id)}
-                  size="sm"
-                  title={reason || undefined}
-                  type="button"
-                  variant={isConnected ? 'secondary' : 'default'}
-                >
-                  {isConnecting && <Loader2 className="size-3.5 animate-spin" />}
-                  {isConnected && <Check className="size-3.5" />}
-                  {isConnected ? dq.connected : dq.connect}
-                </Button>
+                <div className="flex items-center gap-1">
+                  {turnOff && (
+                    <Button
+                      onClick={turnOff}
+                      size="sm"
+                      type="button"
+                      variant="text"
+                    >
+                      {dq.disconnect}
+                    </Button>
+                  )}
+                  <Button
+                    disabled={!canConnect}
+                    onClick={() => canConnect && handleConnect(app.id)}
+                    size="sm"
+                    title={reason || undefined}
+                    type="button"
+                    variant={isConnected ? 'secondary' : 'default'}
+                  >
+                    {isConnecting && <Loader2 className="size-3.5 animate-spin" />}
+                    {isConnected && <Check className="size-3.5" />}
+                    {isConnected ? dq.connected : dq.connect}
+                  </Button>
+                </div>
               }
               below={error ? (
                 <div className="mt-2 text-xs text-destructive">

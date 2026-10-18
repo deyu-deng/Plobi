@@ -9,10 +9,13 @@ import {
   findQuotaHubRow,
   firstSelectableQuotaModel,
   hubAppOfModel,
+  isQuotaAppSlug,
   markConnected,
+  markDisconnected,
   type QuotaAppFrame,
   quotaAppVerdict,
   quotaProviders,
+  quotaSelectionBlock,
   quotaSelectionVerdict
 } from './desktop-quotas'
 
@@ -282,5 +285,88 @@ describe('quotaAppVerdict', () => {
       models: ['gemini-3.8'],
       state: 'ok'
     })
+  })
+})
+
+// Disconnect is the one verdict in this store that is not the hub's. The hub
+// serves a signed-in desktop app whether we route through it or not, and its
+// frames come back every 60 seconds, so "the user said stop" has to be something
+// the discovery path is not allowed to overwrite. These are the rules that make
+// it stick — and, just as importantly, come back when the user changes their mind.
+describe('disconnect (the user\'s own verdict)', () => {
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('stays off when the hub keeps reporting the app on every re-read', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    markDisconnected('workbuddy')
+
+    // This is what the 60-second tick looks like. Without the opt-out being
+    // honoured here, the button the user just pressed would undo itself.
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy'])).toEqual({ state: 'off' })
+    expect(rows(['workbuddy/hy3'])).toEqual([])
+    expect(hubAppOfModel('workbuddy/hy3')).toBeNull()
+    expect(isQuotaAppSlug('workbuddy')).toBe(false)
+  })
+
+  it('takes its models out of the picker and out of the landing spot', () => {
+    applyDiscoveredQuotaApps([frame('antigravity', { models: ['gemini-3.8'] }), frame('workbuddy', { models: ['hy3'] })])
+    expect(firstSelectableQuotaModel()).toEqual({ model: 'gemini-3.8', provider: 'antigravity' })
+
+    markDisconnected('antigravity')
+
+    // The composer that loses its model must land somewhere the user still wants.
+    expect(firstSelectableQuotaModel()).toEqual({ model: 'hy3', provider: 'workbuddy' })
+  })
+
+  it('says why in the user\'s words, not one of the hub\'s reasons', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { blocked: { 'hy3': 'credential_expired' }, models: [] })])
+    markDisconnected('workbuddy')
+
+    // The hub's `credential_expired` is still on the record and still true of the
+    // app itself — but it is not why the model is unavailable, and saying so
+    // would blame the app for a switch the user threw.
+    expect(quotaSelectionBlock('workbuddy/hy3')).toBe('disconnected')
+    expect(quotaSelectionBlock('antigravity/gemini-3.8')).toBeNull()
+    expect(quotaSelectionBlock('gpt-4o')).toBeNull()
+  })
+
+  it('comes back when the user connects again', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    markDisconnected('workbuddy')
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+
+    // The explicit click, not a frame: `markConnected` is the other half of the pair.
+    markConnected({ id: 'workbuddy', models: ['hy3'] })
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy'])).toEqual({ models: ['hy3'], state: 'ok' })
+    expect(rows(['workbuddy/hy3'])[0]?.models).toEqual(['workbuddy/hy3'])
+  })
+
+  it('remembers a disconnect for an app the hub has not reported yet', () => {
+    // Nothing on record: the intent itself has to be what survives, or the next
+    // frame would re-add the app as if the user had never touched it.
+    markDisconnected('cursor')
+
+    expect($connectedDesktopApps.get().cursor?.optedOut).toBe(true)
+
+    applyDiscoveredQuotaApps([frame('cursor', { models: ['gpt-4o'] })])
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['cursor'])).toEqual({ state: 'off' })
+    expect(rows(['cursor/gpt-4o'])).toEqual([])
+  })
+
+  it('keeps the record so the UI can still name the software behind a held model', () => {
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+    markDisconnected('workbuddy')
+
+    // The record is what a surface naming a stale model id reads, so removing it
+    // would leave the composer unable to say whose model it is holding.
+    expect($connectedDesktopApps.get().workbuddy?.name).toBe('Workbuddy')
+    expect($connectedDesktopApps.get().workbuddy?.models).toEqual(['hy3'])
   })
 })

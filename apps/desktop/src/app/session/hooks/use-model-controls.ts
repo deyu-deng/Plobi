@@ -9,6 +9,7 @@ import {
   findQuotaHubRow,
   firstSelectableQuotaModel,
   isQuotaAppSlug,
+  quotaSelectionBlock,
   quotaSelectionVerdict
 } from '@/store/desktop-quotas'
 import { notify, notifyError } from '@/store/notifications'
@@ -270,7 +271,11 @@ export function useModelControls({
         return
       }
 
-      const verdict = quotaSelectionVerdict(model)
+      // `quotaSelectionBlock` is asked first because a Disconnect is not a hub
+      // verdict: `quotaSelectionVerdict` reads the hub, and the hub is still
+      // happily serving an app the user told us to stop routing through.
+      const blocked = quotaSelectionBlock(model)
+      const verdict = blocked ? { reason: blocked, state: 'gone' as const } : quotaSelectionVerdict(model)
 
       if (verdict.state !== 'gone') {
         return

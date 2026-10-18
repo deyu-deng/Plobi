@@ -711,6 +711,9 @@ export interface Translations {
         connect: string
         connected: string
         notConnected: string
+        disconnect: string
+        disconnectConfirm: (provider: string) => string
+        disconnectedToast: (provider: string) => string
         connectError: (provider: string) => string
         notVerified: string
         useHub: string
@@ -2515,6 +2518,7 @@ export interface Translations {
       no_desktop_credential: string
       no_tools: string
       not_offered: string
+      disconnected: string
       unknown: (reason: string) => string
     }
     sessionExported: string

@@ -865,6 +865,12 @@ export const ja = defineLocale({
         connect: '接続',
         connected: '接続済み',
         notConnected: '未接続',
+        // 切断はユーザー自身が押したスイッチであり、故障ではありません。Plobi が
+        // そのアプリを経由しないようにするだけで、アプリ側のサインインには触れません。
+        disconnect: '切断',
+        disconnectConfirm: provider =>
+          `Plobi で ${provider} を使わなくしますか？このアプリ名はここで表示されなくなります。${provider} 自体のサインアウトは行われません。`,
+        disconnectedToast: provider => `Plobi は ${provider} を使わなくなりました。`,
         connectError: provider => `${provider} に接続できませんでした`,
         notVerified: 'このアプリの接続取得はまだ検証されていません',
         useHub: 'このハブを使用',
@@ -2868,6 +2874,9 @@ export const ja = defineLocale({
       no_desktop_credential: 'このマシンでサインイン情報が見つかりませんでした',
       no_tools: 'このチャネルはツール呼び出しを Plobi に返しません',
       not_offered: 'ローカルの quota hub がこのモデルを返さなくなりました',
+      // ハブ側の理由ではありません。ユーザーが自分で切断した状態なので、そのアプリ
+      // でもこのマシンでもなく、「あなたが切りました」とそのまま伝えます。
+      disconnected: 'あなたが切りました',
       unknown: reason => `利用できません（${reason}）`
     },
     sessionExported: 'セッションをエクスポートしました',

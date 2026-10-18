@@ -839,6 +839,12 @@ export const zhHant = defineLocale({
         connect: '連線',
         connected: '已連線',
         notConnected: '未連線',
+        // 斷開是使用者自己按下的開關，不是故障：它只讓 Plobi 不再走這條額度，
+        // 對那個軟體自己的登入狀態一字不提。
+        disconnect: '中斷連線',
+        disconnectConfirm: provider =>
+          `不再在 Plobi 裡使用 ${provider}？它的模型不會再出現在這裡。這不會登出 ${provider} 自己的登入。`,
+        disconnectedToast: provider => `Plobi 已不再使用 ${provider}。`,
         connectError: provider => `無法連線 ${provider}`,
         notVerified: '該軟體的連線擷取尚未驗證',
         useHub: '使用此樞紐',
@@ -2768,6 +2774,8 @@ export const zhHant = defineLocale({
       no_desktop_credential: '這台機器上沒有讀到它的登入憑據',
       no_tools: '這條通道不把工具調用交回 Plobi',
       not_offered: '本地額度網關已經不再列出它',
+      // 不是網關那邊的理由：是你自己按了中斷連線，所以這裡不賴那個軟體或這台機器。
+      disconnected: '你把它關掉了',
       unknown: reason => `不可用（${reason}）`
     },
     sessionExported: '工作階段已匯出',

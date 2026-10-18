@@ -2,7 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { $connectedDesktopApps, applyDiscoveredQuotaApps } from '@/store/desktop-quotas'
+import {
+  $connectedDesktopApps,
+  applyDiscoveredQuotaApps,
+  hubAppOfModel,
+  quotaAppVerdict,
+  quotaSelectionBlock
+} from '@/store/desktop-quotas'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
 const listOAuthProviders = vi.fn()
@@ -252,5 +258,115 @@ describe('Desktop Quotas cards report the hub verdict', () => {
     await renderDesktopQuotas()
 
     expect(await screen.findAllByRole('button', { name: 'Connect' })).toHaveLength(2)
+  })
+})
+
+// Connect once and the hub keeps the app wired up on every launch from then on —
+// that is the whole point of a subscription leg. Disconnect is the user taking
+// that back: Plobi stops routing through the software, and it has to *stay*
+// stopped, because the hub re-reads every 60 seconds and will happily report the
+// app as serving the whole time.
+describe('Desktop Quotas disconnect', () => {
+  function frame(id: string, models: string[]) {
+    applyDiscoveredQuotaApps([
+      { answered: true, apiKey: 'sk-local-dev-key', baseUrl: 'http://127.0.0.1:8000/v1', blocked: {}, id, models }
+    ])
+  }
+
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    // The Electron bridge a jsdom window does not have. `auth` is the shell's
+    // "re-read the hub" call, so a manual Connect round-trips through it.
+    window.plobiDesktop = {
+      plobiGateway: {
+        auth: vi.fn().mockResolvedValue({
+          apiKey: 'sk-local-dev-key',
+          baseUrl: 'http://127.0.0.1:8000/v1',
+          models: ['hy3'],
+          ok: true
+        })
+      },
+      requestQuotaApps: vi.fn()
+    } as never
+  })
+
+  async function renderDesktopQuotas() {
+    const { ProvidersSettings } = await import('./providers-settings')
+
+    return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
+  }
+
+  /** The cards render in catalog order: Antigravity, then CodeBuddy. */
+  const codeBuddyConnect = () => screen.getAllByRole('button', { name: 'Connect' })[1]
+
+  it('offers Disconnect only once something is connected', async () => {
+    await renderDesktopQuotas()
+
+    expect((await screen.findAllByRole('button', { name: 'Connect' })).length).toBe(2)
+    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull()
+
+    frame('workbuddy', ['hy3'])
+    fireEvent.click(codeBuddyConnect())
+
+    expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeTruthy()
+  })
+
+  it('stops routing through the software once the user disconnects it', async () => {
+    frame('workbuddy', ['hy3'])
+
+    await renderDesktopQuotas()
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+
+    // The hub's next frame still reports the models. The flag is what decides,
+    // and that is the whole reason it is a flag and not a deleted record.
+    frame('workbuddy', ['hy3'])
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({ state: 'off' })
+    expect(hubAppOfModel('workbuddy/hy3')).toBeNull()
+    expect(quotaSelectionBlock('workbuddy/hy3')).toBe('disconnected')
+  })
+
+  it('asks first, and says which of the two switches this is', async () => {
+    frame('workbuddy', ['hy3'])
+
+    await renderDesktopQuotas()
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+
+    const asked = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? ''
+
+    expect(asked).toContain('CodeBuddy')
+    // Signing out of the app is a different button, somewhere else. This copy has
+    // to draw the line itself, or the user reads "Disconnect" as "log me out".
+    expect(asked).toContain('does not sign you out')
+  })
+
+  it('keeps the connection when the user declines the confirmation', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false)
+    frame('workbuddy', ['hy3'])
+
+    await renderDesktopQuotas()
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({
+      models: ['hy3'],
+      state: 'ok'
+    })
+  })
+
+  it('brings the software back when the user connects again', async () => {
+    frame('workbuddy', ['hy3'])
+
+    await renderDesktopQuotas()
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+    fireEvent.click(await codeBuddyConnect())
+
+    await waitFor(() =>
+      expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({
+        models: ['hy3'],
+        state: 'ok'
+      })
+    )
+    expect(quotaSelectionBlock('workbuddy/hy3')).toBeNull()
   })
 })
