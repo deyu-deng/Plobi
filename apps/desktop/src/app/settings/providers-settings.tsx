@@ -29,10 +29,10 @@ import { notify, notifyError } from '@/store/notifications'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
-import { CREDENTIAL_CONTROL_CLASS, isKeyVar, ProviderKeyRows } from './credential-key-ui'
+import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
-import { LoadingState, SettingsContent } from './primitives'
+import { ListRow, LoadingState, SettingsContent } from './primitives'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
@@ -420,158 +420,78 @@ function DesktopQuotasView() {
     }
   }
 
-  // Whether any app has been attempted
-  const hasAttempted = Object.values(conn).some(s => s !== 'idle')
-
-  // One card's state: the hub's verdict decides it, and the click keeps only the
-  // two states a button press can actually be in right now. The verdict arrives
-  // whether or not the user ever pressed anything — the hub is what the models
-  // come from, so it is what the card has to report (裁定 46).
+  // One card per piece of software, and the hub's verdict decides it — the click
+  // only ever owns the two states a button press can be in right now.
+  //
+  // The verdict arrives whether or not the user ever pressed anything (裁定 46:
+  // the hub is the source, and the hub is what the models come from), so the row
+  // is the software, its blurb, and the one control that can act on it. What the
+  // hub says when it vouches for none of a software's models belongs on that
+  // control as its tooltip — it is the reason the button is still there, not a
+  // status line the row should be shouting.
   const cards = DESKTOP_QUOTA_APPS.map(app => {
     const verdict = quotaAppVerdict(quotaApps, QUOTA_APP_PEERS[app.id] ?? [app.id])
     const click = conn[app.id] || 'idle'
-    const unusable = verdict.state === 'unusable'
     const isConnected = verdict.state === 'ok' || (verdict.state === 'unanswered' && click === 'connected')
 
     return {
       app,
       isConnected,
       isConnecting: click === 'connecting',
-      // A click that failed while the hub still vouches for this software is not
-      // news: the verdict the models come from is the hub's, and it says it works.
-      hasError: click === 'error' && !isConnected && !unusable,
-      reasonText: verdict.state === 'unusable'
+      // The hub's reason belongs on the control that would fix it.
+      reason: verdict.state === 'unusable'
         ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
         : '',
-      unusable
+      // A click that failed while the hub still vouches for this software is not
+      // news: the verdict the models come from is the hub's, and it says it works.
+      error: click === 'error' && !isConnected ? errInfo[app.id] : undefined
     }
   })
 
-  const anyUsable = cards.some(card => card.isConnected)
-  const anyKnown = cards.some(card => card.isConnected || card.unusable)
-
   return (
     <SettingsContent>
-      <div className="grid gap-4">
-        <div className="grid gap-1">
-          <SettingsCategoryHeading icon={Globe} title={dq.title} />
-          <p className="-mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-            {dq.intro}
-          </p>
-        </div>
+      <div className="grid gap-1">
+        <SettingsCategoryHeading icon={Globe} title={dq.title} />
+        <p className="-mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+          {dq.intro}
+        </p>
+      </div>
 
-        {/* Status banner — only show "not verified" while nothing has been said */}
-        {!anyKnown && !hasAttempted && (
-        <div className="flex items-start gap-2 rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-quaternary) p-3">
-          <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-            {dq.notVerified}
-          </p>
-        </div>
-        )}
+      <div className="grid gap-2">
+        {cards.map(({ app, error, isConnected, isConnecting, reason }) => {
+          const canConnect = app.verified && !isConnected && !isConnecting
+          const connectError = typeof dq.connectError === 'function' ? dq.connectError(app.name) : dq.connectError
 
-        {anyUsable && (
-        <div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/5 p-3">
-          <Check className="mt-0.5 size-4 shrink-0 text-green-600" />
-          <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-green-700 dark:text-green-400">
-            App connected — its models are now available in the chat.
-          </p>
-        </div>
-        )}
-
-        <div className="grid gap-2">
-          {cards.map(({ app, isConnected, isConnecting, hasError, reasonText, unusable }) => {
-            const canConnect = app.verified && !isConnected && !isConnecting
-
-            return (
-            <div
-              className={cn(
-                '@container group/card rounded-md p-3 transition-colors',
-                'row-hover',
-                'ring-1 ring-(--ui-stroke-secondary)',
-                isConnected && 'ring-green-500/30 bg-green-500/[0.02]',
-              )}
-              key={app.id}
-            >
-              <div className="grid grid-cols-1 items-start gap-x-3 gap-y-1.5 @2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:gap-y-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 truncate text-[length:var(--conversation-text-font-size)] font-medium text-foreground">
-                    {app.name}
-                  </span>
-                  <span className={cn(
-                    'inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-xs font-medium',
-                    isConnected ? 'bg-green-500/15 text-green-700 dark:text-green-400'
-                      : hasError ? 'bg-red-500/15 text-red-700 dark:text-red-400'
-                      : app.verified ? 'bg-(--ui-bg-quaternary) text-muted-foreground'
-                      : 'bg-(--ui-bg-quaternary) text-muted-foreground'
-                  )}>
-                    {unusable ? (
-                      `现在用不了 · ${reasonText}`
-                    ) : isConnected ? (
-                      <><Check className="size-3" />已连接</>
-                    ) : hasError ? (
-                      (typeof dq.connectError === 'function' ? dq.connectError(app.name) : dq.connectError) || '连接失败'
-                    ) : app.verified ? (
-                      dq.notConnected || '未连接'
-                    ) : (
-                      dq.notVerified
-                    )}
-                  </span>
-                </div>
-
-                <div className="flex min-w-0 items-center gap-2">
-                  <Button
-                    className={cn(CREDENTIAL_CONTROL_CLASS, 'gap-1.5')}
-                    disabled={!canConnect}
-                    onClick={() => canConnect && handleConnect(app.id)}
-                    size="sm"
-                    title={
-                      isConnecting ? `正在启动本地 ${app.name} 网关…`
-                        : isConnected ? dq.connected
-                        : !app.verified ? dq.notVerified
-                        : dq.connect
-                    }
-                    variant={isConnected ? 'default' : 'secondary'}
-                  >
-                    {isConnecting && (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    )}
-                    {isConnected ? '已连接' : isConnecting ? '登录中…' : dq.connect}
-                  </Button>
-                </div>
-
-                <div className="grid gap-3 @2xl:col-span-2">
-                  <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-                    {app.description}
-                  </p>
-                  {hasError && (() => {
-                    const info = errInfo[app.id]
-
-                    if (info?.code === 'AUTH_FAILED' || info?.code === 'AUTH_ERROR') {
-                      return (
-                        <div className="text-xs text-red-600 dark:text-red-400">
-                          <p>Google 登录未完成或被拒绝，请重试。</p>
-                          {info.message && (
-                            <pre className="mt-1 overflow-x-auto rounded bg-(--ui-bg-quaternary) px-2 py-1 text-[0.7rem] leading-5 text-(--ui-text-secondary)">{info.message}</pre>
-                          )}
-                        </div>
-                      )
-                    }
-
-                    return <p className="text-xs text-red-600 dark:text-red-400">连接失败，请重试，或检查终端日志。</p>
-                  })()}
-                  {isConnecting && (
-                    <p className="flex items-center gap-1.5 text-xs text-(--ui-text-secondary)">
-                      <Loader2 className="size-3 animate-spin" />
-                      {app.id === 'antigravity'
-                        ? '正在通过 Google 登录连接 Antigravity。首次连接会打开浏览器让你登录 Google 账号。'
-                        : `正在连接本地 ${app.name} 网关，使用你已登录的 ${app.name} 配额。`}
-                    </p>
+          return (
+            <ListRow
+              action={
+                <Button
+                  disabled={!canConnect}
+                  onClick={() => canConnect && handleConnect(app.id)}
+                  size="sm"
+                  title={reason || undefined}
+                  type="button"
+                  variant={isConnected ? 'secondary' : 'default'}
+                >
+                  {isConnecting && <Loader2 className="size-3.5 animate-spin" />}
+                  {isConnected && <Check className="size-3.5" />}
+                  {isConnected ? dq.connected : dq.connect}
+                </Button>
+              }
+              below={error ? (
+                <div className="mt-2 text-xs text-destructive">
+                  <p>{connectError}</p>
+                  {error.message && (
+                    <pre className="mt-1 overflow-x-auto rounded bg-(--ui-bg-quaternary) px-2 py-1 text-[0.7rem] leading-5 text-(--ui-text-secondary)">{error.message}</pre>
                   )}
                 </div>
-              </div>
-            </div>
-          )})}
-        </div>
+              ) : undefined}
+              description={app.description}
+              key={app.id}
+              title={app.name}
+            />
+          )
+        })}
       </div>
     </SettingsContent>
   )
