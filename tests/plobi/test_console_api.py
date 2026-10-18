@@ -645,6 +645,99 @@ def test_quota_summary_today_usd_sums_usage_db(client, monkeypatch, tmp_path):
     assert body["data"]["todayUsd"] == 0.75
 
 
+# --------------------------------------------------------------------------- #
+# 请求级身份（WP-AGENT-SINGLE-GATEWAY §3.4）
+# --------------------------------------------------------------------------- #
+
+
+def test_quota_summary_today_usd_follows_request_identity(client, monkeypatch, tmp_path):
+    """单后端后每个 Agent 必须看到自己那份账，不是主后端身份那份。
+
+    桌面一个进程服务所有 Agent（裁定 168 运行时那一半）：``X-Plobi-Agent``
+    header 带身份，``todayUsd`` 落在该身份自己的 state.db 上。回归面 = 不带
+    身份时仍旧走进程默认库（旧行为不变）。
+    """
+    monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
+    default_db = tmp_path / "default-state.db"
+    course_db = tmp_path / "course-state.db"
+    _usage_db(default_db, [_row("s-l1", 5, 500, 1.0)])
+    _usage_db(course_db, [_row("s-course", 2, 200, 0.25)])
+
+    resolved = {"course-l2": course_db}
+    monkeypatch.setattr(console_router, "default_db_path", lambda: default_db)
+    monkeypatch.setattr(
+        console_router,
+        "_profile_state_db",
+        lambda profile: resolved.get(str(profile or "").strip()),
+    )
+
+    body = client.get(
+        "/api/quota/summary", headers={"X-Plobi-Agent": "course-l2"}
+    ).json()
+    assert body["data"]["todayUsd"] == 0.25
+
+    # 不带身份 = 进程默认库（单后端前的旧行为，不许悄悄变）
+    plain = client.get("/api/quota/summary").json()
+    assert plain["data"]["todayUsd"] == 1.0
+
+
+def test_quota_summary_query_profile_is_remote_fallback(client, monkeypatch, tmp_path):
+    """``?profile=`` 是 global-remote 的既有路（connection-config.ts:230）。
+
+    两条身份入口同语义；本地单后端走 header，remote 兜底走 query。
+    """
+    monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
+    default_db = tmp_path / "default-state.db"
+    remote_db = tmp_path / "remote-state.db"
+    _usage_db(default_db, [_row("s-l1", 5, 500, 1.0)])
+    _usage_db(remote_db, [_row("s-remote", 1, 100, 0.4)])
+
+    monkeypatch.setattr(console_router, "default_db_path", lambda: default_db)
+    monkeypatch.setattr(
+        console_router, "_profile_state_db", lambda profile: remote_db
+    )
+
+    body = client.get("/api/quota/summary?profile=remote-host").json()
+    assert body["data"]["todayUsd"] == 0.4
+
+
+def test_request_profile_precedence_header_over_query():
+    """header（本地新路）优先于 query（remote 兜底）；都空 → 空串 = 进程默认身份。"""
+
+    class _FakeRequest:
+        def __init__(self, headers, query):
+            self.headers = headers
+            self.query_params = query
+
+    got = console_router.request_profile(
+        _FakeRequest({"x-plobi-agent": "course-l2"}, {"profile": "remote-host"})
+    )
+    assert got == "course-l2"
+
+    got = console_router.request_profile(_FakeRequest({}, {"profile": "remote-host"}))
+    assert got == "remote-host"
+
+    assert console_router.request_profile(_FakeRequest({}, {})) == ""
+    assert console_router.request_profile(None) == ""
+
+
+def test_profile_state_db_empty_or_unknown_returns_none(monkeypatch):
+    """空身份与解析失败都回 None（调用方回落 default_db_path）——不许 500。
+
+    名册数据条目（l2_course）的 profile 是空串，2026-10-13 曾让整张
+    GET /api/agents 500；这个早退是那条教训的沉淀。
+
+    未知 profile 名不抛错（``get_profile_dir`` 是纯路径拼接、不验证存在性），
+    返回的路径其库不存在——诚实回落由消费面的 ``exists()`` 早退完成。
+    """
+    assert console_router._profile_state_db("") is None
+    assert console_router._profile_state_db(None) is None
+
+    unknown = console_router._profile_state_db("no-such-profile-xyz")
+    assert unknown is not None and not unknown.exists()
+    assert console_router.today_usd(db_path=unknown) is None
+
+
 def test_quota_summary_mounted_on_real_server():
     from plobi_cli import web_server
 
