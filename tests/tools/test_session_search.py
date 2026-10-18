@@ -501,20 +501,22 @@ class TestCrossProfileRead:
         monkeypatch.setattr(profiles_mod, "profile_exists", lambda n: exists)
         monkeypatch.setattr(profiles_mod, "get_profile_dir", lambda n: home)
 
-    def test_profile_param_reads_other_db(self, db, tmp_path, monkeypatch):
-        other_home = tmp_path / "other_home"
-        other_home.mkdir()
-        other = SessionDB(other_home / "state.db")
-        other.create_session("s_other", source="cli")
-        other._conn.execute(
+    def test_profile_param_does_not_swap_db(self, db, tmp_path, monkeypatch):
+        """裁定 180：profile 不再换库——会话都在顶层那一个库，归属在 agent_id 行上。
+
+        老语义是「按家开 profiles/<name>/state.db」。单库后那份家库只剩迁移前的
+        快照、不再有人往里写，照老路读会**漏掉此后所有新会话**（静默漏读）。
+        新契约：profile 只做存在性校验（名字打错给明确错误），库一律是共享的那个。
+        """
+        db.create_session("s_other", source="cli", agent_id="Other")
+        db._conn.execute(
             "UPDATE sessions SET title = ? WHERE id = ?", ("Other Profile Chat", "s_other")
         )
-        other.append_message("s_other", role="user", content="hello from the other profile")
-        other._conn.commit()
+        db.append_message("s_other", role="user", content="hello from the other profile")
+        db._conn.commit()
 
-        self._patch_profiles(monkeypatch, other_home)
+        self._patch_profiles(monkeypatch, tmp_path / "other_home")
 
-        # s_other lives only in the other profile; the current `db` lacks it.
         result = json.loads(session_search(session_id="s_other", profile="other", db=db))
         assert result["success"] is True
         assert result["mode"] == "read"
@@ -551,14 +553,12 @@ class TestCrossProfileRead:
     def test_combined_value_autosplits(self, db, tmp_path, monkeypatch):
         # Agent passed the raw "@session:<profile>/<id>" value as session_id with
         # no separate profile — the tool should recover both.
-        other_home = tmp_path / "other_home"
-        other_home.mkdir()
-        other = SessionDB(other_home / "state.db")
-        other.create_session("s_other", source="cli")
-        other.append_message("s_other", role="user", content="hi")
-        other._conn.commit()
+        # 裁定 180：会话落在共享库（单库），不再另开一份家库出来。
+        db.create_session("s_other", source="cli", agent_id="asdf")
+        db.append_message("s_other", role="user", content="hi")
+        db._conn.commit()
 
-        self._patch_profiles(monkeypatch, other_home)
+        self._patch_profiles(monkeypatch, tmp_path / "other_home")
 
         # Every permutation the model might send must resolve to (asdf, s_other).
         for kwargs in (

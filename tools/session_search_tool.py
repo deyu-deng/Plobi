@@ -142,26 +142,32 @@ def _shape_message(m: Dict[str, Any], anchor_id: Optional[int] = None) -> Dict[s
 
 
 def _resolve_profile_db(profile: str):
-    """Open another profile's ``state.db`` read-only, or None for the current one.
+    """校验 ``profile`` 这个名字；**不再换库**，恒回 None（= 用调用方自己的库）。
 
-    The desktop's ``@session:<profile>/<id>`` links always carry the source
-    profile, so a linked session from profile B can be read while the agent
-    runs in profile A. ``read_only=True`` (mode=ro) takes no write lock — safe
-    to point at a live profile's DB, including our own. Returns None when no
-    profile is given (use the caller's default db).
+    桌面 ``@session:<profile>/<id>`` 链接总带着来源 profile，所以 profile B 的会话
+    可以在 agent 跑在 profile A 时被读到——那是**换库**存在的理由。
+
+    WP-AGENT-SESSION-ATTRIBUTION（裁定 180）：那个理由没了。会话自 v21 起全部
+    落在顶层那一个库，归属在 ``sessions.agent_id`` **行**上——再打开
+    ``profiles/<name>/state.db`` 只能看到迁移前那份旧快照，此后新建的会话一个都
+    搜不到（静默漏读，比报错糟得多）。所以这里现在只做一件事：名字打错时给出
+    明确的 ``ValueError``（调用方转成 tool_error），库一律留给调用方。
+
+    回 None 而不是另开一个默认库，还有一层原因：``SessionDB()`` 的默认路径是
+    import 时钉死的 ``DEFAULT_DB_PATH``，不吃调用方（测试/会话）重定向的库——
+    另开一个只会读错地方。
     """
     if profile is None or not str(profile).strip():
         return None
 
     from plobi_cli import profiles as profiles_mod
-    from plobi_state import SessionDB
 
     canon = profiles_mod.normalize_profile_name(profile)
     profiles_mod.validate_profile_name(canon)
     if not profiles_mod.profile_exists(canon):
         raise ValueError(f"profile '{canon}' does not exist")
 
-    return SessionDB(db_path=profiles_mod.get_profile_dir(canon) / "state.db", read_only=True)
+    return None
 
 
 def _locate_session_db(session_id: str):
@@ -181,6 +187,10 @@ def _locate_session_db(session_id: str):
     except Exception:
         return None, None
 
+    # 裁定 180 之后这个顺序变成**正确性依赖**、不只是性能：``default`` 的家就是
+    # 顶层家（resolve_profile_env('default') ≡ 顶层），排第一意味着新会话（现在
+    # 只写顶层库）一次命中。后面的逐家扫描降级为兜底——专接那些还按老路写进各
+    # 家库的会话（已知缺口：agent_ask.py:528 起的子进程），等那条路也收了就可删。
     targets = [("default", profiles_mod.get_profile_dir("default"))]
     try:
         targets += [(info.name, info.path) for info in profiles_mod.list_profiles()]
