@@ -57,7 +57,9 @@ import {
 } from './chatlog-status'
 import {
   chatlogConfigDir,
+  describeKeyFailure,
   handoffServerConfig,
+  KEY_SCAN_TIMEOUT_MS,
   keyFingerprint,
   SIDECAR_ADDR,
   serverConfigReady,
@@ -8941,19 +8943,29 @@ function prepareChatlogSidecar(exe: string, legacyDataKey?: string): HandoffOutc
       execFileSync(exe, ['key'], {
         cwd: path.dirname(exe),
         env: { ...process.env, CHATLOG_DIR: configDir },
-        stdio: ['ignore', 'ignore', 'ignore'],
-        timeout: 90000,
+        // stdout 仍然必须是 'ignore'：`cmd_key.go:34` 把密钥原样打在那条流上。
+        // 只多接一路 stderr —— 以前 stdio 全丢 ⇒ 上游那句真话（`no valid key found`）我们从来没拿到过。
+        stdio: ['ignore', 'ignore', 'pipe'],
+        // 上游一次失败的全地址空间扫描实测跑满 167 秒（裁定 124 一）；90 秒那档必先杀进程，
+        // 于是面上永远只剩 Node 的 ETIMEDOUT —— 判据要的是上游那句错，不是我们的放弃时刻。
+        timeout: KEY_SCAN_TIMEOUT_MS,
         windowsHide: true
       })
     } catch (error) {
-      // 认不出的失败只说"这一格是什么"，不猜原因：最常见的两因是 PC 微信没登录、
-      // 或它扫不到微信进程，两者都不是"这台没装 Go / 没产物"。
-      const message = String((error as Error)?.message || error).slice(0, 160)
+      const failure = error as { stderr?: unknown; status?: number | null; signal?: string | null; code?: string }
 
       return {
         ok: false,
         reason: 'no-key',
-        detail: `chatlog key 没跑成（PC 微信在登录态吗）：${message}`,
+        // 这句只写"上游自己说了什么 + 我们这边发生了什么"。旧那句「PC 微信在登录态吗」
+        // 把 10-11 已实测排除的三条原因（权限／版本／登录态）当成唯一解释（裁定 124）。
+        detail: describeKeyFailure({
+          stderr: failure.stderr,
+          status: failure.status,
+          signal: failure.signal,
+          code: failure.code,
+          timedOut: failure.code === 'ETIMEDOUT'
+        }),
         fingerprint: '',
         dataDir: '',
         wroteServerConfig: false
