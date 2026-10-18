@@ -481,7 +481,9 @@ def test_usage_follows_session_attribution(client, _isolated_state, monkeypatch,
     db = tmp_path / "state.db"
     _usage_db(db, [_row("sess-latest", 4, 100, 0.5)])
     monkeypatch.setattr(console_router, "_latest_session_for_profile", lambda p: "sess-latest")
-    monkeypatch.setattr(console_router, "default_db_path", lambda: db)
+    # WP-AGENT-SINGLE-GATEWAY §3.4：用量面改按名册行解析库（单后端后 default
+    # 只是"没解析到身份"的回落）。monkeypatch 的面跟着架构走。
+    monkeypatch.setattr(console_router, "_agent_state_db", lambda agent_id: db)
 
     row = client.get("/api/agents").json()["data"][0]
     assert row["todayCalls"] == 4
@@ -500,9 +502,9 @@ def test_the_surface_reads_the_leg_that_actually_ran(tmp_path, client, _isolated
         ("sess-other", "workbuddy/hy3-x", 2, 4, 2, 0, 0, 0, 0.0, 50.0, 60.0),
     ])
     monkeypatch.setattr(console_router, "_latest_session_for_profile", lambda p: "sess-latest")
-    monkeypatch.setattr(console_router, "default_db_path", lambda: db)
+    monkeypatch.setattr(console_router, "_agent_state_db", lambda agent_id: db)
 
-    leg = console_router.leg_for_sessions(["sess-latest", "sess-other"])
+    leg = console_router.leg_for_sessions(["sess-latest", "sess-other"], db_path=db)
     assert leg is not None and leg["model"] == "zai/glm-5.3", leg
     assert console_router.leg_for_sessions([]) is None
     assert console_router.leg_for_sessions(["sess-none"]) is None
@@ -510,6 +512,43 @@ def test_the_surface_reads_the_leg_that_actually_ran(tmp_path, client, _isolated
     row = client.get("/api/agents").json()["data"][0]
     assert row.get("actualModel") == "zai/glm-5.3", row
     assert row.get("model") != row.get("actualModel") or row.get("model") == "zai/glm-5.3"
+
+
+def test_agent_rows_read_their_own_state_db_under_single_backend(
+    client, _isolated_state, monkeypatch, tmp_path
+):
+    """单后端（一个进程服务所有 Agent）后每行必须读自己名册行的库，不串账。
+
+    旧行为靠「进程身份 = 该 profile」的池后端蒙对；本刀（§3.4）把 db_path 与
+    session id 同源到名册行。两个 agent、两个库：任何一边读到对面的账，
+    这条用例就红——这正是单后端后最可能发生的静默回归。
+    """
+    register(
+        _isolated_state,
+        agenda=AGENDA,
+        physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
+    )
+    agenda_db = tmp_path / "agenda-state.db"
+    physics_db = tmp_path / "physics-state.db"
+    _usage_db(agenda_db, [_row("sess-agenda", 4, 100, 0.5)])
+    _usage_db(physics_db, [_row("sess-physics", 2, 50, 0.2)])
+
+    sessions_by_profile = {"l2-agenda": "sess-agenda", "l2-physics": "sess-physics"}
+    dbs_by_agent = {"agenda": agenda_db, "physics": physics_db}
+    monkeypatch.setattr(
+        console_router,
+        "_latest_session_for_profile",
+        lambda profile: sessions_by_profile.get(profile, ""),
+    )
+    # 真实解析走 get_profile_dir；这里按 agent id 映射到两个库，等效模拟
+    # 「每个 profile 一个家、家里一份 state.db」的单后端现场。
+    monkeypatch.setattr(
+        console_router, "_agent_state_db", lambda agent_id: dbs_by_agent.get(agent_id)
+    )
+
+    rows = {row["id"]: row for row in client.get("/api/agents").json()["data"]}
+    assert rows["agenda"]["todayCalls"] == 4
+    assert rows["physics"]["todayCalls"] == 2
 
 
 # --------------------------------------------------------------------------- #
