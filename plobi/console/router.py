@@ -244,100 +244,67 @@ def status_for(agent_id: str) -> str:
     return STATUS_IDLE
 
 
-def _profile_state_db(profile: str) -> Optional[Path]:
-    """该 profile 家目录下的 ``state.db``；空名/解析失败 → ``None``。
+def _agent_id_for_profile(profile: str) -> str:
+    """profile 名 → 名册 name（console 的 agent_id 语义）；查不到回空串。
 
-    WP-AGENT-SINGLE-GATEWAY §3.4：桌面单后端后「当前 Agent」是**请求属性**，
-    每个按身份取数的投影面都经这里把身份落到库文件上。空串（L1/未指定）
-    与解析失败一律回 ``None``，由调用方决定回落 ``default_db_path()`` 还是
-    诚实空值——不猜、不起库、不拿写锁（``mode=ro`` 由调用方开）。
-
-    ``ValueError`` 是名册**数据条目**（``l2_course``，裁定 40）的 profile 空串
-    被递给解析器的形状（2026-10-13 实测：整张 ``GET /api/agents`` 因此 500），
-    这里一并吞掉回 ``None``。
+    桌面 ``X-Plobi-Agent`` 头今天传的是 renderer 的 ``request.profile``
+    （SINGLE-GATEWAY §3.3），而单库后的归属列存的是名册 name（裁定 180）——
+    这一跳就是两者之间的桥。空串（L1/未指定/孤儿家）原样返回。
     """
     name = str(profile or "").strip()
     if not name:
-        return None
+        return ""
     try:
-        from plobi_cli.profiles import get_profile_dir
-
-        return get_profile_dir(name) / "state.db"
-    except (ImportError, KeyError, ValueError) as exc:
-        # ImportError: plobi_cli not installed; KeyError: unknown profile name;
-        # ValueError: 名字非法或为空。
-        logger.debug("plobi console: cannot resolve profile dir for %s: %s", name, exc)
-        return None
-
-
-def _agent_state_db(agent_id: str) -> Optional[Path]:
-    """该 agent（名册行）的 state.db——请求级身份在 REST 用量面的落库点。
-
-    与 ``sessions_for_agent`` **同源**（同一 ``entry.profile_name``）：session id
-    从哪来，用量/腿读数就从哪个库查。单后端前 ``default_db_path()`` 恰好等于
-    该 agent 的库（进程身份 = profile，池后端按身份起）；单后端后一个进程服务
-    所有 Agent，必须显式按名册行解析，否则每个 agent 都读到主后端那份账
-    （WP-AGENT-SINGLE-GATEWAY §3.4）。空/解析失败回 ``None``，调用方回落
-    ``default_db_path()``。
-    """
-    try:
-        entry = get_registry().get(agent_id)
+        registry = get_registry()
+        for entry in registry.entries():
+            if (entry.profile_name or "").strip() == name:
+                return entry.name
     except Exception:
-        return None
-    if entry is None:
-        return None
-    return _profile_state_db(entry.profile_name)
-
-
-def _latest_session_for_profile(profile: str) -> str:
-    """该 profile 的 state.db 里最近活跃的 session id（ARCH-RULINGS 裁定 1）。
-
-    Plobi 的会话隶属 **profile**（每个 profile home 一份 ``state.db``，
-    ``sessions` 表没有 profile 列——隔离是天然的）。这里按
-    ``plobi_cli.profiles.get_profile_dir`` 解析 profile home 后只读查询
-    （``mode=ro``，与底座跨 profile 聚合同一语义：不建库、不拿写锁、
-    db 不存在诚实返回空串）。"最近活跃" = ``COALESCE(ended_at, started_at)``
-    最大——进行中的会话 ``ended_at`` 为空，天然排前。
-    """
-    db_path = _profile_state_db(profile)
-    if db_path is None:
         return ""
-    if not db_path.exists():
+    return ""
+
+
+def _latest_session_for_agent(agent_id: str, *, db_path: Optional[Path] = None) -> str:
+    """该 agent 在单库里最近活跃的 session id（裁定 180：行级归属）。
+
+    迁移前会话隔离是文件级的——每个 profile 家一份 ``state.db``，这里按
+    ``get_profile_dir`` 跨库只读聚合。迁移后（WP-AGENT-SESSION-ATTRIBUTION
+    的 ``migrate_session_attribution.py``）一个进程一个库，归属是
+    ``sessions.agent_id`` 行级列：空串 = L1，非空 = 名册 name。"最近活跃" =
+    ``COALESCE(ended_at, started_at)`` 最大——进行中的会话 ``ended_at`` 为空，
+    天然排前（与 ``idx_sessions_agent_recent`` 的表达式逐字对齐，走索引）。
+    """
+    target = Path(db_path) if db_path else default_db_path()
+    if not target.exists():
         return ""
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
+        conn = sqlite3.connect(f"file:{target}?mode=ro", uri=True, timeout=1.0)
         try:
             row = conn.execute(
-                "SELECT id FROM sessions "
-                "ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1"
+                "SELECT id FROM sessions WHERE agent_id = ? "
+                "ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1",
+                (str(agent_id or ""),),
             ).fetchone()
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        logger.warning("plobi console: session query failed for %s: %s", profile, exc)
+        logger.warning("plobi console: session query failed for %s: %s", agent_id, exc)
         return ""
     return str(row[0]) if row else ""
 
 
 def sessions_for_agent(agent_id: str) -> list[str]:
-    """Session ids attributed to a resident agent（裁定 1：profile 下最近活跃）。
+    """Session ids attributed to a resident agent（裁定 180：单库按 agent_id）。
 
-    agent → profile 是 1:1（``AgentEntry.profile_name``），profile → session
-    是 1:N，所以归属 = 「该 profile 最近的一个会话」，只读展示用途
+    agent → session 是 1:N，归属 = 「该 agent 最近的一个会话」，只读展示用途
     （overview.sessionId / todayCalls / todayTokens 的数据源）。聊天主通路
     不在这里——前端走底座 session store + gateway RPC（裁定 2）。
+
+    数据条目（``l2_course``）没有运行时的老早退随之取消：迁移把历史 session
+    并进了顶层库并打了标，库里有的就能显示；不再需要拿 ``profile_name``
+    空串去拦一次（那个守卫防的是跨库解析 500，单库后没有那条路了）。
     """
-    try:
-        entry = get_registry().get(agent_id)
-    except Exception:
-        return []
-    if entry is None:
-        return []
-    if not entry.profile_name:
-        # 数据条目没有运行时，也就没有"它最近的会话"可归属（`profile_name` 对
-        # `l2_course` 一律回空串）。早退一句，别把空名递给 profile 解析。
-        return []
-    latest = _latest_session_for_profile(entry.profile_name)
+    latest = _latest_session_for_agent(agent_id)
     return [latest] if latest else []
 
 
@@ -397,14 +364,14 @@ def leg_for_sessions(
 
 
 def totals_for_agent(agent_id: str, *, db_path=None) -> "UsageTotals":
-    """按 agent 名册行同源取数：session id 与用量落在同一个 state.db 上。
+    """该 agent 今日的用量合计（calls / cost / tokens）。
 
-    ``db_path`` 显式传入时优先（测试/特殊投影）；否则按名册行解析
-    （``_agent_state_db``），解析失败回落 ``default_db_path()``——与单后端前
-    「进程身份 = 该 agent」的旧行为对空 profile 条目保持一致。
+    单库后（裁定 180）session id 与 usage 行同库：session id 按
+    ``sessions.agent_id`` 取，用量按这些 id 在同一库聚合——
+    ``totals_for_sessions`` 对空 id 清单短路归零（一个从没聊过的 agent
+    今天就是 0，不碰 SQLite）。``db_path`` 显式传入时优先（测试/特殊投影），
+    否则 ``default_db_path()``（顶层唯一库）。
     """
-    if db_path is None:
-        db_path = _agent_state_db(agent_id)
     return totals_for_sessions(sessions_for_agent(agent_id), db_path=db_path)
 
 
@@ -474,11 +441,10 @@ def agent_row(entry: AgentEntry) -> dict:
     ``Nymo``/``nymo`` 之所以看着像两个项目，是因为真数据里只有一条挂了 Mind——把这一格
     透出去，前端才辨得出「同一个项目登记了两条」，不用替用户猜。
     """
-    # 用量与腿读数同源：都从该 agent 名册行的 state.db 取（§3.4；单后端后
-    # default_db_path 只是"没解析到身份"时的回落，不再是每个 agent 的库）。
-    db_path = _agent_state_db(entry.name)
-    totals = totals_for_agent(entry.name, db_path=db_path)
-    leg = leg_for_sessions(sessions_for_agent(entry.name), db_path=db_path)
+    # 单库后（裁定 180）session id、用量、腿读数同库同源：session id 按
+    # sessions.agent_id 取，用量/腿按这些 id 在同一库（default_db_path）聚合。
+    totals = totals_for_agent(entry.name)
+    leg = leg_for_sessions(sessions_for_agent(entry.name))
     row: dict = {
         "id": entry.name,
         "name": agent_display_name(entry),
@@ -587,10 +553,17 @@ class UsageTotals:
 
 
 def default_db_path() -> Path:
-    """``$PLOBI_HOME/state.db`` — the canonical Plobi state database."""
-    from plobi_state import DEFAULT_DB_PATH
+    """``$PLOBI_HOME/state.db`` — the canonical Plobi state database.
 
-    return Path(DEFAULT_DB_PATH)
+    **每次现算**（``get_plobi_home()``）而不是模块常量 ``DEFAULT_DB_PATH``：
+    后者把家钉在 plobi_state 被 import 的那一刻，测试的 per-test PLOBI_HOME
+    重定向对它无效（2026-10-18 实测：两条 N3 用例因此一个读到累积的 10 条、
+    一个读到空——写端现算、读端快照，两边对不上）。生产环境 PLOBI_HOME 稳定，
+    两种写法等价；测试里现算才隔离。monkeypatch 本函数仍可覆盖（既有用例）。
+    """
+    from plobi_constants import get_plobi_home
+
+    return get_plobi_home() / "state.db"
 
 
 def day_bounds(now: Optional[float] = None) -> tuple[float, float]:
@@ -660,24 +633,43 @@ def totals_for_sessions(
 # --------------------------------------------------------------------------- #
 
 
-def today_usd(*, db_path: Optional[Path] = None) -> Optional[float]:
-    """今天（本地日历日）全部 session 的花费合计 — ``todayUsd`` 数据源。
+def today_usd(
+    *,
+    db_path: Optional[Path] = None,
+    agent_id: Optional[str] = None,
+) -> Optional[float]:
+    """今天（本地日历日）的花费合计 — ``todayUsd`` 数据源。
 
-    不按 session 归属过滤：额度面是全进程的。无 ``state.db`` 或查询失败 →
-    ``None``（契约的 ``number | null`` 里 null = 未知，诚实区分"没花钱"）。
+    ``agent_id=None``：全部 session（L1/无归属视角）。``agent_id=""``：
+    只算 L1 的（``sessions.agent_id`` 空串）。非空：只算该 Agent 自己会话的
+    ——单库后（裁定 180）一个进程服务所有 Agent，额度面按身份拆；usage 经
+    ``session_id`` 与 ``sessions.agent_id`` 关联（usage 表本身没有 agent 列，
+    迁移按 PK 并入同库）。
+
+    无 ``state.db`` 或查询失败 → ``None``（契约的 ``number | null`` 里
+    null = 未知，诚实区分"没花钱"——没会话的 agent 是 0.0，不是 null）。
     """
     target = Path(db_path) if db_path else default_db_path()
     if not target.exists():
         return None
     start, end = day_bounds()
-    sql = (
-        "SELECT COALESCE(SUM(COALESCE(estimated_cost_usd, 0.0)), 0.0) "
-        f"FROM {USAGE_TABLE} WHERE last_seen >= ? AND last_seen < ?"
-    )
+    if agent_id is None:
+        sql = (
+            "SELECT COALESCE(SUM(COALESCE(estimated_cost_usd, 0.0)), 0.0) "
+            f"FROM {USAGE_TABLE} WHERE last_seen >= ? AND last_seen < ?"
+        )
+        params: tuple = (start, end)
+    else:
+        sql = (
+            "SELECT COALESCE(SUM(COALESCE(u.estimated_cost_usd, 0.0)), 0.0) "
+            f"FROM {USAGE_TABLE} u JOIN sessions s ON u.session_id = s.id "
+            "WHERE s.agent_id = ? AND u.last_seen >= ? AND u.last_seen < ?"
+        )
+        params = (str(agent_id), start, end)
     try:
         conn = sqlite3.connect(str(target), timeout=2.0)
         try:
-            row = conn.execute(sql, (start, end)).fetchone()
+            row = conn.execute(sql, params).fetchone()
         finally:
             conn.close()
     except sqlite3.Error as exc:
@@ -723,19 +715,19 @@ def quota_summary_data(profile: str = "") -> dict:
     网关，``state=ok`` + 空 ``source_names`` = 问过且它一个额度源都没供。这两格
     必须能分开，否则「没接」和「坏了」在界面上长成同一个样子（R-048 那条口径）。
 
-    ``todayUsd`` 按**请求身份**取数（WP-AGENT-SINGLE-GATEWAY §3.4）：单后端后
-    一个进程服务所有 Agent，「今天花了多少」必须落在该身份自己的 state.db 上，
-    否则每个 Agent 都看到同一份（主后端身份的）账。额度源健康度与网关目录是
-    进程级共享面（一个池、一个目录），不按身份拆。
+    ``todayUsd`` 按**请求身份**取数（WP-AGENT-SINGLE-GATEWAY §3.4 → 裁定 180）：
+    单库后一个进程服务所有 Agent，「今天花了多少」必须是该 Agent 自己会话的
+    账——profile 名反查名册 name 后按 ``sessions.agent_id`` 聚合这些会话的
+    usage（``totals_for_agent``）。额度源健康度与网关目录是进程级共享面
+    （一个池、一个目录），不按身份拆。
     """
     pool = get_quota_pool()
     statuses = pool.probe_all()
-    # db_path=None（空身份或解析失败）时 today_usd 自行回落 default_db_path()——
-    # 与单后端前的旧行为一致：没带身份的调用看到的是进程默认那份账。
+    agent_id = _agent_id_for_profile(profile)
     return {
         "sources": [status.as_dict() for status in statuses],
         "gateway": pool.catalog_status(),
-        "todayUsd": today_usd(db_path=_profile_state_db(profile)),
+        "todayUsd": today_usd(agent_id=agent_id),
     }
 
 

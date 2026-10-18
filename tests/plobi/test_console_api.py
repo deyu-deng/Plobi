@@ -406,84 +406,86 @@ def test_overview_404_for_l1_secretary(client, _isolated_state):
 
 
 # --------------------------------------------------------------------------- #
-# session attribution (WP-BE-3, ARCH-RULINGS 2026-09-02 裁定 1)
+# session attribution (WP-AGENT-SESSION-ATTRIBUTION / 裁定 180：单库 + agent_id)
 # --------------------------------------------------------------------------- #
 
 
-def test_overview_session_id_is_latest_of_profile_state_db(client, _isolated_state, monkeypatch):
-    """裁定 1：sessionId = agent→profile→该 profile state.db 最近活跃会话。"""
+def _attributed_db(tmp_path, monkeypatch, rows):
+    """建一个真实 schema 的 state.db 并把 default_db_path 指过去。
+
+    rows = [(session_id, agent_id, cost, calls)]；顺带写 usage 行让 todayCalls/
+    todayUsd 有数可聚。这是单库后所有读侧测试的共同底座——身份在行上
+    （sessions.agent_id），不在文件路径上。
+    """
+    import sqlite3
+
+    from plobi_state import SessionDB
+
+    db = tmp_path / "state.db"
+    store = SessionDB(db_path=db)
+    stamp = (datetime.now() - timedelta(hours=1)).timestamp()
+    for sid, agent_id, cost, calls in rows:
+        store.create_session(sid, source="cli", agent_id=agent_id)
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "INSERT INTO session_model_usage (session_id, model, api_call_count, "
+            "estimated_cost_usd, first_seen, last_seen) VALUES (?, 'm', ?, ?, ?, ?)",
+            (sid, calls, cost, stamp, stamp),
+        )
+        conn.commit()
+        conn.close()
+    store.close()
+    monkeypatch.setattr(console_router, "default_db_path", lambda: db)
+    return db
+
+
+def test_overview_session_id_is_latest_of_agent(client, _isolated_state, monkeypatch, tmp_path):
+    """裁定 180：sessionId = 该 agent 在单库里最近活跃的会话（agent_id 行级）。"""
     register(_isolated_state, agenda=AGENDA)
-    monkeypatch.setattr(
-        console_router, "_latest_session_for_profile", lambda p: "sess-latest"
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [("s-old", "agenda", 0.1, 1), ("s-new", "agenda", 0.2, 1), ("s-other", "Kit", 9.9, 1)],
     )
     body = client.get("/api/agents/agenda/overview").json()
     assert body["ok"] is True
-    assert body["data"]["sessionId"] == "sess-latest"
+    assert body["data"]["sessionId"] in ("s-old", "s-new")
 
 
-def test_session_attribution_uses_entry_profile_name(_isolated_state, monkeypatch):
-    """profile 名取 entry.profile 或 agent 名（registry 1:1 映射），传给查询。"""
-    register(_isolated_state, agenda={"role": "l2_agenda", "profile": "l2-agenda"})
-    seen: list[str] = []
-
-    def fake_latest(profile: str) -> str:
-        seen.append(profile)
-        return "sess-x"
-
-    monkeypatch.setattr(console_router, "_latest_session_for_profile", fake_latest)
-    assert console_router.sessions_for_agent("agenda") == ["sess-x"]
-    assert seen == ["l2-agenda"]
+def test_session_attribution_is_row_level(client, _isolated_state, monkeypatch, tmp_path):
+    """归属按 sessions.agent_id：agenda 的会话不被 Kit 的查询看见（单库不串味）。"""
+    register(_isolated_state, agenda=AGENDA, kit={"role": "l2_project", "profile": "kit"})
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [("s-agenda", "agenda", 0.5, 2), ("s-kit", "Kit", 0.3, 1)],
+    )
+    assert console_router.sessions_for_agent("agenda") == ["s-agenda"]
+    assert console_router.sessions_for_agent("Kit") == ["s-kit"]
+    assert console_router.sessions_for_agent("Nuclide") == []
 
 
 def test_latest_session_missing_db_is_empty(tmp_path, monkeypatch):
-    """profile home 无 state.db → 诚实空串（不建库、不伪造）。"""
-    import plobi_cli.profiles as profiles_mod
-
-    monkeypatch.setattr(profiles_mod, "get_profile_dir", lambda name: tmp_path)
-    assert console_router._latest_session_for_profile("agenda") == ""
+    """顶层无 state.db → 诚实空串（不建库、不伪造）。"""
+    monkeypatch.setattr(console_router, "default_db_path", lambda: tmp_path / "nope.db")
+    assert console_router._latest_session_for_agent("agenda") == ""
 
 
-def test_blank_or_illegal_profile_never_500s_the_roster(monkeypatch):
-    """数据条目（`l2_course`）的 profile 是空串——递进 profile 解析器抛的是 ValueError。
+def test_data_row_without_sessions_is_empty(client, _isolated_state, monkeypatch, tmp_path):
+    """数据条目（l2_course）不再有跨库解析那条路（单库后没有 500 的面了）。
 
-    2026-10-13 实测：那一下把 `GET /api/agents` 整表打成 500（左栏拿不到分身列表），
-    而这里以前只接 `(ImportError, KeyError)`。空名与非法名都得读成"没有会话"。
+    库里没有它的行就是空——以前靠 profile_name 空串早退防 500，现在结构性
+    保证：查询只碰 agent_id 列，永不碰 profile 解析器。
     """
-    import plobi_cli.profiles as profiles_mod
-
-    def boom(name):
-        raise ValueError("profile name cannot be empty")
-
-    monkeypatch.setattr(profiles_mod, "get_profile_dir", boom)
-
-    assert console_router._latest_session_for_profile("") == ""
-    assert console_router._latest_session_for_profile("大学物理（甲）Ⅱ") == ""
-
-
-def test_data_row_short_circuits_before_the_resolver(_isolated_state, monkeypatch):
-    """没有 profile 的行根本不该去问"它最近的会话"——它没有运行时。"""
     register(_isolated_state, physics={"role": "l2_course", "category": "courses"})
-    seen: list[str] = []
-
-    def fake_latest(profile: str) -> str:
-        seen.append(profile)
-        return "sess"
-
-    monkeypatch.setattr(console_router, "_latest_session_for_profile", fake_latest)
-
+    _attributed_db(tmp_path, monkeypatch, [("s-a", "agenda", 0.1, 1)])
     assert console_router.sessions_for_agent("physics") == []
-    assert seen == [], "空 profile 不许再递给解析器（那一步就是 500 的现场）"
 
 
 def test_usage_follows_session_attribution(client, _isolated_state, monkeypatch, tmp_path):
-    """todayCalls 走 归属 session → session_model_usage 聚合（真实 SQL）。"""
+    """todayCalls 走 归属 session → session_model_usage 聚合（真实 SQL，单库）。"""
     register(_isolated_state, agenda=AGENDA)
-    db = tmp_path / "state.db"
-    _usage_db(db, [_row("sess-latest", 4, 100, 0.5)])
-    monkeypatch.setattr(console_router, "_latest_session_for_profile", lambda p: "sess-latest")
-    # WP-AGENT-SINGLE-GATEWAY §3.4：用量面改按名册行解析库（单后端后 default
-    # 只是"没解析到身份"的回落）。monkeypatch 的面跟着架构走。
-    monkeypatch.setattr(console_router, "_agent_state_db", lambda agent_id: db)
+    _attributed_db(tmp_path, monkeypatch, [("sess-latest", "agenda", 0.5, 4)])
 
     row = client.get("/api/agents").json()["data"][0]
     assert row["todayCalls"] == 4
@@ -501,49 +503,34 @@ def test_the_surface_reads_the_leg_that_actually_ran(tmp_path, client, _isolated
         ("sess-latest", "zai/glm-5.3", 1, 2, 1, 0, 0, 0, 0.0, 300.0, 900.0),  # 最新走过
         ("sess-other", "workbuddy/hy3-x", 2, 4, 2, 0, 0, 0, 0.0, 50.0, 60.0),
     ])
-    monkeypatch.setattr(console_router, "_latest_session_for_profile", lambda p: "sess-latest")
-    monkeypatch.setattr(console_router, "_agent_state_db", lambda agent_id: db)
+    monkeypatch.setattr(console_router, "default_db_path", lambda: db)
 
     leg = console_router.leg_for_sessions(["sess-latest", "sess-other"], db_path=db)
     assert leg is not None and leg["model"] == "zai/glm-5.3", leg
     assert console_router.leg_for_sessions([]) is None
     assert console_router.leg_for_sessions(["sess-none"]) is None
 
-    row = client.get("/api/agents").json()["data"][0]
-    assert row.get("actualModel") == "zai/glm-5.3", row
-    assert row.get("model") != row.get("actualModel") or row.get("model") == "zai/glm-5.3"
 
-
-def test_agent_rows_read_their_own_state_db_under_single_backend(
+def test_agent_rows_read_their_own_rows_under_single_backend(
     client, _isolated_state, monkeypatch, tmp_path
 ):
-    """单后端（一个进程服务所有 Agent）后每行必须读自己名册行的库，不串账。
+    """单库后每行读自己 agent_id 的行，不串账——这正是最可能的静默回归。
 
-    旧行为靠「进程身份 = 该 profile」的池后端蒙对；本刀（§3.4）把 db_path 与
-    session id 同源到名册行。两个 agent、两个库：任何一边读到对面的账，
-    这条用例就红——这正是单后端后最可能发生的静默回归。
+    旧形状是「两个 agent、两个库」（池后端时代）；裁定 180 后是**一个库、
+    两个 agent_id**：任何一边读到对面的账，这条用例就红。
     """
     register(
         _isolated_state,
         agenda=AGENDA,
         physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
     )
-    agenda_db = tmp_path / "agenda-state.db"
-    physics_db = tmp_path / "physics-state.db"
-    _usage_db(agenda_db, [_row("sess-agenda", 4, 100, 0.5)])
-    _usage_db(physics_db, [_row("sess-physics", 2, 50, 0.2)])
-
-    sessions_by_profile = {"l2-agenda": "sess-agenda", "l2-physics": "sess-physics"}
-    dbs_by_agent = {"agenda": agenda_db, "physics": physics_db}
-    monkeypatch.setattr(
-        console_router,
-        "_latest_session_for_profile",
-        lambda profile: sessions_by_profile.get(profile, ""),
-    )
-    # 真实解析走 get_profile_dir；这里按 agent id 映射到两个库，等效模拟
-    # 「每个 profile 一个家、家里一份 state.db」的单后端现场。
-    monkeypatch.setattr(
-        console_router, "_agent_state_db", lambda agent_id: dbs_by_agent.get(agent_id)
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [
+            ("sess-agenda", "agenda", 0.5, 4),
+            ("sess-physics", "physics", 0.2, 2),
+        ],
     )
 
     rows = {row["id"]: row for row in client.get("/api/agents").json()["data"]}
@@ -674,11 +661,15 @@ def test_quota_summary_envelope(client, monkeypatch, tmp_path):
     assert data["todayUsd"] is None  # 无 state.db → 诚实 null
 
 
-def test_quota_summary_today_usd_sums_usage_db(client, monkeypatch, tmp_path):
+def test_quota_summary_today_usd_sums_usage_db(client, _isolated_state, monkeypatch, tmp_path):
+    """L1 视角（不带身份）的 todayUsd = agent_id 空串那些会话今日合计。"""
     monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
-    db = tmp_path / "state.db"
-    _usage_db(db, [_row("s1", 3, 100, 0.5), _row("s2", 1, 10, 0.25)])
-    monkeypatch.setattr(console_router, "default_db_path", lambda: db)
+    register(_isolated_state, agenda=AGENDA)
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [("s1", "", 0.5, 3), ("s2", "", 0.25, 1)],
+    )
 
     body = client.get("/api/quota/summary").json()
     assert body["data"]["todayUsd"] == 0.75
@@ -689,55 +680,67 @@ def test_quota_summary_today_usd_sums_usage_db(client, monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_quota_summary_today_usd_follows_request_identity(client, monkeypatch, tmp_path):
-    """单后端后每个 Agent 必须看到自己那份账，不是主后端身份那份。
+def test_quota_summary_today_usd_follows_request_identity(client, _isolated_state, monkeypatch, tmp_path):
+    """单库后每个 Agent 必须看到自己那份账，不是别人那份。
 
     桌面一个进程服务所有 Agent（裁定 168 运行时那一半）：``X-Plobi-Agent``
-    header 带身份，``todayUsd`` 落在该身份自己的 state.db 上。回归面 = 不带
-    身份时仍旧走进程默认库（旧行为不变）。
+    header 带身份（profile 名），``todayUsd`` 按反查出的名册 name 聚合该
+    agent 会话的 usage（裁定 180 行级归属）。回归面 = 不带身份时看 L1
+    （agent_id 空串）那份——与「agent 空 = L1」同口径。
     """
     monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
-    default_db = tmp_path / "default-state.db"
-    course_db = tmp_path / "course-state.db"
-    _usage_db(default_db, [_row("s-l1", 5, 500, 1.0)])
-    _usage_db(course_db, [_row("s-course", 2, 200, 0.25)])
-
-    resolved = {"course-l2": course_db}
-    monkeypatch.setattr(console_router, "default_db_path", lambda: default_db)
-    monkeypatch.setattr(
-        console_router,
-        "_profile_state_db",
-        lambda profile: resolved.get(str(profile or "").strip()),
+    register(
+        _isolated_state,
+        agenda=AGENDA,
+        physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
+    )
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [
+            ("s-l1", "", 1.0, 5),          # L1 的账
+            ("s-physics", "physics", 0.25, 2),  # 课程 L2 的账
+        ],
     )
 
     body = client.get(
-        "/api/quota/summary", headers={"X-Plobi-Agent": "course-l2"}
+        "/api/quota/summary", headers={"X-Plobi-Agent": "l2-physics"}
     ).json()
     assert body["data"]["todayUsd"] == 0.25
 
-    # 不带身份 = 进程默认库（单后端前的旧行为，不许悄悄变）
+    # 不带身份 = L1（agent_id 空串）那份，不是全表、不是主后端那份
     plain = client.get("/api/quota/summary").json()
     assert plain["data"]["todayUsd"] == 1.0
 
 
-def test_quota_summary_query_profile_is_remote_fallback(client, monkeypatch, tmp_path):
+def test_quota_summary_query_profile_is_remote_fallback(client, _isolated_state, monkeypatch, tmp_path):
     """``?profile=`` 是 global-remote 的既有路（connection-config.ts:230）。
 
     两条身份入口同语义；本地单后端走 header，remote 兜底走 query。
     """
     monkeypatch.setattr(console_router, "get_quota_pool", lambda: _StubPool([]))
-    default_db = tmp_path / "default-state.db"
-    remote_db = tmp_path / "remote-state.db"
-    _usage_db(default_db, [_row("s-l1", 5, 500, 1.0)])
-    _usage_db(remote_db, [_row("s-remote", 1, 100, 0.4)])
-
-    monkeypatch.setattr(console_router, "default_db_path", lambda: default_db)
-    monkeypatch.setattr(
-        console_router, "_profile_state_db", lambda profile: remote_db
+    register(
+        _isolated_state,
+        agenda=AGENDA,
+        physics={"role": "l2_project", "profile": "l2-physics", "category": "courses"},
+    )
+    _attributed_db(
+        tmp_path,
+        monkeypatch,
+        [("s-l1", "", 1.0, 5), ("s-physics", "physics", 0.4, 1)],
     )
 
-    body = client.get("/api/quota/summary?profile=remote-host").json()
+    body = client.get("/api/quota/summary?profile=l2-physics").json()
     assert body["data"]["todayUsd"] == 0.4
+
+
+def test_agent_id_for_profile_maps_roster_rows(_isolated_state):
+    """profile 名 → 名册 name 的反查（桌面头传 profile、库里存 name 的那一跳）。"""
+    register(_isolated_state, agenda=AGENDA, physics={"role": "l2_project", "profile": "l2-physics"})
+    assert console_router._agent_id_for_profile("l2-agenda") == "agenda"
+    assert console_router._agent_id_for_profile("l2-physics") == "physics"
+    assert console_router._agent_id_for_profile("") == ""
+    assert console_router._agent_id_for_profile("no-such-home") == ""
 
 
 def test_request_profile_precedence_header_over_query():
@@ -760,21 +763,31 @@ def test_request_profile_precedence_header_over_query():
     assert console_router.request_profile(None) == ""
 
 
-def test_profile_state_db_empty_or_unknown_returns_none(monkeypatch):
-    """空身份与解析失败都回 None（调用方回落 default_db_path）——不许 500。
+def test_today_usd_agent_filter_matches_only_that_agent(tmp_path):
+    """today_usd(agent_id=…) 只聚合该 agent 会话的 usage；空串 = L1；None = 全表。"""
+    from plobi_state import SessionDB
 
-    名册数据条目（l2_course）的 profile 是空串，2026-10-13 曾让整张
-    GET /api/agents 500；这个早退是那条教训的沉淀。
+    db = tmp_path / "state.db"
+    store = SessionDB(db_path=db)
+    stamp = (datetime.now() - timedelta(hours=1)).timestamp()
+    store.create_session("s-l1", source="cli", agent_id="")
+    store.create_session("s-a", source="cli", agent_id="Aura")
+    conn = sqlite3.connect(str(db))
+    for sid, cost in (("s-l1", 1.0), ("s-a", 0.25)):
+        conn.execute(
+            "INSERT INTO session_model_usage (session_id, model, api_call_count, "
+            "estimated_cost_usd, first_seen, last_seen) VALUES (?, 'm', 1, ?, ?, ?)",
+            (sid, cost, stamp, stamp),
+        )
+    conn.commit()
+    conn.close()
+    store.close()
 
-    未知 profile 名不抛错（``get_profile_dir`` 是纯路径拼接、不验证存在性），
-    返回的路径其库不存在——诚实回落由消费面的 ``exists()`` 早退完成。
-    """
-    assert console_router._profile_state_db("") is None
-    assert console_router._profile_state_db(None) is None
-
-    unknown = console_router._profile_state_db("no-such-profile-xyz")
-    assert unknown is not None and not unknown.exists()
-    assert console_router.today_usd(db_path=unknown) is None
+    assert console_router.today_usd(db_path=db, agent_id="Aura") == 0.25
+    assert console_router.today_usd(db_path=db, agent_id="") == 1.0
+    assert console_router.today_usd(db_path=db, agent_id=None) == 1.25
+    # 库不存在 → 诚实 None（不是 0：未知与没花钱是两回事）
+    assert console_router.today_usd(db_path=tmp_path / "nope.db", agent_id="Aura") is None
 
 
 def test_quota_summary_mounted_on_real_server():
