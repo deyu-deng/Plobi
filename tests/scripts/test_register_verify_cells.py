@@ -64,6 +64,48 @@ def test_the_capture_stops_at_the_cell_separator():
         "grep -c A f.txt"]
 
 
+# ②b 「只能人现场看」不是欠账（裁 174），但要写成机器认得的样
+def test_manual_marker_counts_as_written_and_yields_no_command():
+    text = HEADER + cell("WP-FAKE-MANUAL", "待签",
+                         "复跑：人工——重开一次桌面，看左栏那两行还在不在") + "\n"
+    row = verify_register_cells.rows_from(text)[0]
+    assert verify_register_cells.commands_of(row) == [], "人工那句被当成命令了"
+    notes = verify_register_cells.manual_notes(row)
+    assert len(notes) == 1 and "左栏" in notes[0], notes
+    assert verify_register_cells.rows_without_command(text) == []
+
+
+def test_manual_text_is_never_executed(tmp_path, capsys):
+    hay = tmp_path / "hay.txt"
+    hay.write_text("WP-FOUND\n", encoding="utf-8")
+    text = HEADER + cell("WP-FAKE-ONLYMANUAL", "待签",
+                         f"复跑：人工——白屏那一闪要看一眼，别跑 `grep -c WP-FOUND {hay.as_posix()}`") + "\n"
+    reg = tmp_path / "reg.md"
+    reg.write_text(text, encoding="utf-8")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sys, "argv", [sys.argv[0], "--register", reg.as_posix()])
+        rc = verify_register_cells.main()
+    out = capsys.readouterr().out
+    assert "要人现场看" in out, out
+    assert "rc=0" not in out, f"人工那条被拿去跑了：{out}"
+    assert rc == 0, f"只有「要人看」不该把脚本判成没跑成（rc={rc}）——那正是把体验轮的账堆回线上"
+
+
+def test_a_cell_may_have_both_a_command_and_a_manual_note(tmp_path, capsys):
+    hay = tmp_path / "hay.txt"
+    hay.write_text("WP-FOUND\n", encoding="utf-8")
+    text = HEADER + cell("WP-FAKE-BOTH", "待签",
+                         f"复跑：`grep -c WP-FOUND {hay.as_posix()}` 与 复跑：人工——顺手看一眼有没有白屏") + "\n"
+    reg = tmp_path / "reg.md"
+    reg.write_text(text, encoding="utf-8")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sys, "argv", [sys.argv[0], "--register", reg.as_posix()])
+        rc = verify_register_cells.main()
+    out = capsys.readouterr().out
+    assert "✓ WP-FAKE-BOTH" in out and "要人现场看" in out, out
+    assert rc == 0
+
+
 # ② 白名单：只读的放、写盘/触网/起桌面/内联代码的全拒
 @pytest.mark.parametrize("cmd", [
     "grep -c 'WP-' Docs/README.md",
@@ -162,7 +204,7 @@ def test_gate_and_executor_count_the_same_real_cells():
     p = subprocess.run([sys.executable, os.path.join(DOCS_SCRIPTS, "check_docs_layout.py")],
                        capture_output=True, text=True, errors="replace",
                        cwd=DESK, env=env, timeout=300)
-    line = [l for l in (p.stderr or "").splitlines() if "待签」行没有" in l]
+    line = [l for l in (p.stderr or "").splitlines() if "待签」行既没写" in l]
     assert p.returncode == 0, f"门自己红了：{p.stdout[-400:]} {p.stderr[-400:]}"
     assert len(line) == 1, f"门没出声或出了两遍声：{line}"
     assert f"{len(missing)} 个" in line[0], f"门的数 {line[0][:20]} ≠ 现算 {len(missing)} 格"
