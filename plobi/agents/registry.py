@@ -2087,7 +2087,8 @@ PROJECT_SKIP_STATUS_MARKERS: tuple[str, ...] = (
 # WP-L1-AGENDA-MUTATE: conversational write intents. Reading (refresh /
 # briefing) may hit chatlog; writing MUST NOT touch chatlog and must work
 # even when collection is dead.
-MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching", "move_block")
+MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching", "move_block",
+                  "add_life_block")
 # WP-SECRETARY-MOUTH: cancel_matching is the only bulk-delete the L1 is
 # allowed to issue ("这期完了 / 这门课后面都不用去了"). Each source is gated
 # individually — only sources the secretary has a write path for can be
@@ -2498,19 +2499,88 @@ def _run_move_block(
 
     changed = result["changed"]
     others = max(int(result.get("item_count", 1)) - 1, 0)
+    if result.get("life_block"):
+        # R-106：作息是 standing 规则，面上必须说清「以后每天」，不许让人以为只挪了明天一次。
+        say = (
+            f"『{changed['title']}』以后每天都是 {changed['to']}（原来 {changed['from']}）；"
+            f"改的是作息模板这一条真源，{PLAN_BLOCK_EDITOR} 按你这句话落的笔：{user_text or '未记原话'}。"
+            + ("那天计划里的那一行已经跟着走了。" if result.get("synced_plan_row")
+               else "那天还没生成计划，明晚 20:00 排的时候自然按新钟点落。")
+        )
+    else:
+        say = (
+            f"『{changed['title']}』从 {changed['from']} 挪到 {changed['to']}；"
+            f"是你这句话让我改的（{PLAN_BLOCK_EDITOR} 落笔）：{user_text or '未记原话'}。"
+            f"那天其余 {others} 块一个字没动。"
+        )
     payload: dict = {
         "ok": True,
         "intent": "mutate_agenda",
         "action": "move_block",
         "for_date": day,
         "changed": changed,
+        "life_block": bool(result.get("life_block")),
         "user_text": user_text,
         "read_back": result.get("read_back"),
         # 面上就说这一句（判据②：改了哪一块、谁改的、其余没动）。
+        "say": say,
+    }
+    return payload
+
+
+def _run_add_life_block(
+    user_text: str,
+    *,
+    db_path,
+    title: str,
+    start_at: str,
+    end_at: str,
+) -> dict:
+    """用户说「以后傍晚要锻炼半小时」⇒ 建一条作息（R-106 判据①的另一半）。
+
+    只记他说的：名字与两个钟点缺一律问回去，不替他编一条生活类别出来（裁定 148 明写了
+    「要装进来的是哪些生活类别」由用户定）。撞了已有作息／事件 ⇒ 一句人话 + 零写入。
+    """
+    from plobi.agenda import plan_edits, store
+
+    day = str(start_at)[:10]
+    conn = None
+    try:
+        conn = store.connect(db_path)
+        result = plan_edits.add_life_block(
+            conn, day, title=title, start_at=start_at, end_at=end_at,
+            by=PLAN_BLOCK_EDITOR, reason=user_text,
+        )
+    except Exception as exc:
+        logger.warning("plobi: add_life_block failed for %s: %s", title, exc)
+        return _mutate_error(
+            f"这条生活块我没加上（{type(exc).__name__}: {str(exc)[:120]}）。什么都没写。",
+            action="add_life_block", user_text=user_text,
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if not result.get("ok"):
+        return _mutate_error(
+            str(result.get("reason") or "这条生活块加不进去"),
+            action="add_life_block", for_date=day, user_text=user_text,
+        )
+
+    changed = result["changed"]
+    payload: dict = {
+        "ok": True,
+        "intent": "mutate_agenda",
+        "action": "add_life_block",
+        "for_date": day,
+        "template_id": result.get("template_id"),
+        "changed": changed,
+        "life_block": True,
+        "user_text": user_text,
         "say": (
-            f"『{changed['title']}』从 {changed['from']} 挪到 {changed['to']}；"
-            f"是你这句话让我改的（{PLAN_BLOCK_EDITOR} 落笔）：{user_text or '未记原话'}。"
-            f"那天其余 {others} 块一个字没动。"
+            f"记下了：以后每天 {changed['to']} 是『{changed['title']}』（{PLAN_BLOCK_EDITOR} 落的笔：{user_text}）。"
+            + ("今天计划里已经排上这一行。" if result.get("synced_plan_row")
+               else "明天那份计划排的时候它会自己进材料——它是边界，L1 不许把它挤掉。")
         ),
     }
     return payload
@@ -2601,6 +2671,17 @@ def run_mutate_agenda(
             action=action,
             user_text=user_text,
         )
+    if action == "add_life_block" and not (title or "").strip():
+        return _mutate_error(
+            "add_life_block 需要 title（这条生活块叫什么，例如「傍晚锻炼」）",
+            action=action, user_text=user_text,
+        )
+    if action == "add_life_block" and (not start_at or not end_at):
+        # 148 明说过比例与类别由用户定：这里只记他说的，不替他编一条作息出来。
+        return _mutate_error(
+            "add_life_block 需要 start_at 与 end_at（每天从几点到几点；缺了问用户，我不替他编时长）",
+            action=action, user_text=user_text,
+        )
 
     try:
         from plobi.agenda.service import (
@@ -2634,6 +2715,17 @@ def run_mutate_agenda(
                 db_path=_secretary_db_path(pipeline),
                 title=title,
                 event_id=event_id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+
+        # R-106 / WP-PLAN-LIFE-BUDGET：用户自己加一条生活块（裁定 148「生活项要能自己加」）。
+        # 写的是 `routine_templates`（真源），不是往明天的计划里塞一行。
+        if action == "add_life_block":
+            return _run_add_life_block(
+                user_text,
+                db_path=_secretary_db_path(pipeline),
+                title=title,
                 start_at=start_at,
                 end_at=end_at,
             )
