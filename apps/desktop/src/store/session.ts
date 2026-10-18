@@ -1,43 +1,14 @@
 import { atom, computed } from 'nanostores'
 
 import { lastVisibleMessageIsUser } from '@/app/chat/thread-loading'
-import { type ChatScope, chatScopeKey } from '@/app/console/chat/scope'
 import type { ContextSuggestion } from '@/app/types'
 import type { PlobiConnection } from '@/global'
 import type { ChatMessage } from '@/lib/chat-messages'
-import { persistBoolean, persistString, storedBoolean, storedString } from '@/lib/storage'
+import { persistString, storedString } from '@/lib/storage'
+import { updateAtom, type Updater } from '@/lib/store-utils'
 import type { SessionInfo, UsageStats } from '@/types/plobi'
 
-type Updater<T> = T | ((current: T) => T)
-
 const WORKSPACE_CWD_KEY = 'plobi.desktop.workspace-cwd'
-
-// The composer's model/effort/fast is sticky UI state, NOT the profile default
-// (that lives in Settings → Model). Persisting it in localStorage makes a pick
-// follow across Cmd+N and app restarts instead of snapping back to the default.
-// It's deliberately not per-profile (a profile switch force-reseeds to that
-// profile's default); the model + provider cells are additionally scoped per
-// agent — see the block below, which keys them off the conversation scope.
-const COMPOSER_MODEL_KEY = 'plobi.desktop.composer.model'
-const COMPOSER_PROVIDER_KEY = 'plobi.desktop.composer.provider'
-const COMPOSER_EFFORT_KEY = 'plobi.desktop.composer.reasoning-effort'
-const COMPOSER_FAST_KEY = 'plobi.desktop.composer.fast'
-
-// 裁定 44:「一个 Agent 一张嘴 / 习惯是人的属性，不是对话窗口的属性」.
-// Which cell the composer's model + provider read and write is a function of the
-// conversation scope, so a model picked while talking to one agent does not
-// follow you to the next. Inside an L2 project conversation the cell is the
-// agent's own — `${base}.<chatScopeKey(scope)>`, i.e. the same identifier the
-// conversation store uses (see `app/console/chat/scope.ts`; no second key naming
-// system). The L1 secretary and any chat outside a project keep the FLAT keys
-// above: existing data is neither moved nor renamed.
-//
-// `reasoning-effort` / `fast` deliberately still share the one global cell —
-// one key rule changes at a time.
-let composerModelKey = COMPOSER_MODEL_KEY
-let composerProviderKey = COMPOSER_PROVIDER_KEY
-let composerScopeIsAgent = false
-let composerScopeCell = ''
 
 // The last chat the user had open, so a relaunch lands back on it instead of an
 // empty new-chat. Stored (not runtime) id — the route is keyed by stored id.
@@ -126,15 +97,6 @@ export function applyConfiguredDefaultProjectDir(dir: null | string | undefined)
   if (configuredDefaultProjectDir && !$activeSessionId.get()) {
     setCurrentCwd(configuredDefaultProjectDir)
   }
-}
-
-interface AppAtom<T> {
-  get: () => T
-  set: (value: T) => void
-}
-
-function updateAtom<T>(store: AppAtom<T>, next: Updater<T>) {
-  store.set(typeof next === 'function' ? (next as (current: T) => T)(store.get()) : next)
 }
 
 /** Durable id for pinning. Auto-compression rotates a conversation's session
@@ -260,7 +222,6 @@ export const $messagingTruncated = atom<boolean>(false)
 // one. Empty for single-profile users (fall back to $sessionsTotal).
 export const $sessionProfileTotals = atom<Record<string, number>>({})
 export const $sessionsLoading = atom(true)
-export const $workingSessionIds = atom<string[]>([])
 export const $activeSessionId = atom<string | null>(null)
 export const $selectedStoredSessionId = atom<string | null>(null)
 export const $messages = atom<ChatMessage[]>([])
@@ -293,11 +254,6 @@ export const $resumeFailedSessionId = atom<string | null>(null)
 // clears it and resets the retry counter. Null whenever the active route has a
 // healthy, in-flight, or still-auto-retrying resume.
 export const $resumeExhaustedSessionId = atom<string | null>(null)
-export const $currentModel = atom(storedString(COMPOSER_MODEL_KEY) ?? '')
-export const $currentProvider = atom(storedString(COMPOSER_PROVIDER_KEY) ?? '')
-export const $currentReasoningEffort = atom(storedString(COMPOSER_EFFORT_KEY) ?? '')
-export const $currentServiceTier = atom('')
-export const $currentFastMode = atom(storedBoolean(COMPOSER_FAST_KEY, false))
 // Effective approval-bypass state mirrored from the gateway (session.info).
 // Persistence lives in the backend config (approvals.mode), so this is a plain
 // reflection of the truth the gateway reports rather than its own store.
@@ -332,7 +288,6 @@ export const setMessagingTruncated = (next: Updater<boolean>) => updateAtom($mes
 export const setSessionProfileTotals = (next: Updater<Record<string, number>>) =>
   updateAtom($sessionProfileTotals, next)
 export const setSessionsLoading = (next: Updater<boolean>) => updateAtom($sessionsLoading, next)
-export const setWorkingSessionIds = (next: Updater<string[]>) => updateAtom($workingSessionIds, next)
 export const setActiveSessionId = (next: Updater<string | null>) => updateAtom($activeSessionId, next)
 export const setSelectedStoredSessionId = (next: Updater<string | null>) => updateAtom($selectedStoredSessionId, next)
 export const setMessages = (next: Updater<ChatMessage[]>) => updateAtom($messages, next)
@@ -341,70 +296,6 @@ export const setResumeFailedSessionId = (next: Updater<string | null>) => update
 export const setResumeExhaustedSessionId = (next: Updater<string | null>) => updateAtom($resumeExhaustedSessionId, next)
 export const setBusy = (next: Updater<boolean>) => updateAtom($busy, next)
 export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($awaitingResponse, next)
-
-/** Point the composer's model + provider persistence at one conversation scope's
- *  cell and re-hydrate the two atoms from it. Call it before anything reads or
- *  writes the selection — every setter below funnels through the resolved keys.
- *  `null` / L1 → the flat legacy keys (unchanged data). An empty cell clears the
- *  atoms so the next reseed seeds that person's own default instead of leaving
- *  the previous agent's model on screen. */
-export function setComposerModelScope(scope: ChatScope | null | undefined): void {
-  const cell = scope && scope.kind === 'agent' ? `.${chatScopeKey(scope)}` : ''
-
-  if (cell === composerScopeCell) {
-    return
-  }
-
-  composerScopeCell = cell
-  composerScopeIsAgent = cell !== ''
-  composerModelKey = `${COMPOSER_MODEL_KEY}${cell}`
-  composerProviderKey = `${COMPOSER_PROVIDER_KEY}${cell}`
-
-  setCurrentModel(storedString(composerModelKey) ?? '')
-  setCurrentProvider(storedString(composerProviderKey) ?? '')
-}
-
-/**
- * This agent's OWN persisted pick, or null when it never chose one (then the
- * profile default seeds it). Always null for the flat scope on purpose: the
- * secretary must keep force-reseeding from the profile default exactly as
- * before, so its cell never outranks `force`.
- */
-export function storedScopedComposerSelection(): { model: string; provider: string } | null {
-  if (!composerScopeIsAgent) {
-    return null
-  }
-
-  const model = storedString(composerModelKey)
-
-  if (!model) {
-    return null
-  }
-
-  return { model, provider: storedString(composerProviderKey) ?? '' }
-}
-
-export const setCurrentModel = (next: Updater<string>) => {
-  updateAtom($currentModel, next)
-  persistString(composerModelKey, $currentModel.get() || null)
-}
-
-export const setCurrentProvider = (next: Updater<string>) => {
-  updateAtom($currentProvider, next)
-  persistString(composerProviderKey, $currentProvider.get() || null)
-}
-
-export const setCurrentReasoningEffort = (next: Updater<string>) => {
-  updateAtom($currentReasoningEffort, next)
-  persistString(COMPOSER_EFFORT_KEY, $currentReasoningEffort.get() || null)
-}
-
-export const setCurrentServiceTier = (next: Updater<string>) => updateAtom($currentServiceTier, next)
-
-export const setCurrentFastMode = (next: Updater<boolean>) => {
-  updateAtom($currentFastMode, next)
-  persistBoolean(COMPOSER_FAST_KEY, $currentFastMode.get())
-}
 
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
 
@@ -439,162 +330,6 @@ export const setContextSuggestions = (next: Updater<ContextSuggestion[]>) => upd
 export const setModelPickerOpen = (next: Updater<boolean>) => updateAtom($modelPickerOpen, next)
 export const setSessionPickerOpen = (next: Updater<boolean>) => updateAtom($sessionPickerOpen, next)
 
-// Watchdog tracking — when does a "working" session count as stuck?
-// Long-running tool calls (LLM inference, long shell commands, web fetches)
-// can take a few minutes legitimately. We allow 8 minutes of complete
-// silence on the stream before clearing the working flag; in practice this
-// catches gateway hangs and dropped streams without false-positive-clearing
-// real long turns.
-const SESSION_WATCHDOG_TIMEOUT_MS = 8 * 60 * 1000
-const sessionWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-// Notified (with the stored session id) whenever the watchdog force-clears a
-// stuck session. The session-state cache subscribes to also drop that session's
-// busy/awaiting flags — clearing `$workingSessionIds` alone only removes the
-// sidebar dot, leaving the composer stuck on "Thinking"/Stop for a hung or
-// looping turn that never streamed its terminal event.
-type SessionWatchdogListener = (storedSessionId: string) => void
-const sessionWatchdogListeners = new Set<SessionWatchdogListener>()
-
-export function onSessionWatchdogClear(listener: SessionWatchdogListener): () => void {
-  sessionWatchdogListeners.add(listener)
-
-  return () => void sessionWatchdogListeners.delete(listener)
-}
-
-function armSessionWatchdog(sessionId: string) {
-  const existing = sessionWatchdogTimers.get(sessionId)
-
-  if (existing) {
-    clearTimeout(existing)
-  }
-
-  const timer = setTimeout(() => {
-    sessionWatchdogTimers.delete(sessionId)
-
-    // Re-check the latest state at fire-time. If the user already navigated
-    // away or the session genuinely finished, the timer is a no-op.
-    if ($workingSessionIds.get().includes(sessionId)) {
-      setWorkingSessionIds(current => current.filter(id => id !== sessionId))
-    }
-
-    for (const listener of sessionWatchdogListeners) {
-      listener(sessionId)
-    }
-  }, SESSION_WATCHDOG_TIMEOUT_MS)
-
-  sessionWatchdogTimers.set(sessionId, timer)
-}
-
-function clearSessionWatchdog(sessionId: string) {
-  const existing = sessionWatchdogTimers.get(sessionId)
-
-  if (existing) {
-    clearTimeout(existing)
-    sessionWatchdogTimers.delete(sessionId)
-  }
-}
-
-// A session's "working" flag clears the instant its turn ends, but the
-// cross-profile aggregator (listSessions with min_messages=1) only sees the
-// just-persisted first turn a beat later. The active chat is shielded from that
-// race by sessionsToKeep(), but a brand-new session that finished *while you
-// were viewing a different chat* is, at the next refresh, neither working,
-// pinned, nor active — so mergeSessionPage() evicts it. Nothing re-fetches
-// afterward, so it stays gone until the app restarts. (Repro: start a new chat,
-// then click another session before the first reply lands.)
-//
-// To bridge that window we keep a session in the merge keep-set for a short
-// grace period after its turn settles, giving the aggregator time to catch up.
-// Entries auto-expire, so this never accumulates and can't resurrect a deleted
-// session (mergeSessionPage only revives rows still present in the in-memory
-// list, which optimistic delete/archive already drops).
-const SESSION_SETTLE_GRACE_MS = 30 * 1000
-const settledSessionExpiry = new Map<string, number>()
-
-function markSessionSettled(sessionId: string) {
-  settledSessionExpiry.set(sessionId, Date.now() + SESSION_SETTLE_GRACE_MS)
-}
-
-function clearSessionSettled(sessionId: string) {
-  settledSessionExpiry.delete(sessionId)
-}
-
-/** Stored ids of sessions whose turn ended within the grace window. Prunes
- *  expired entries as it reads, so it stays bounded without a timer. */
-export function getRecentlySettledSessionIds(now: number = Date.now()): string[] {
-  const live: string[] = []
-
-  for (const [id, expiry] of settledSessionExpiry) {
-    if (expiry > now) {
-      live.push(id)
-    } else {
-      settledSessionExpiry.delete(id)
-    }
-  }
-
-  return live
-}
-
-/** Call when a streaming event for a session lands. Refreshes the watchdog
- *  so the session keeps its "working" status as long as data keeps coming. */
-export function noteSessionActivity(sessionId: string | null | undefined) {
-  if (!sessionId || !$workingSessionIds.get().includes(sessionId)) {
-    return
-  }
-
-  armSessionWatchdog(sessionId)
-}
-
-// Toggle an id's membership in a string-set atom, no-op when unchanged (keeps
-// the same array reference so subscribers don't churn).
-const toggleMembership = (set: (next: Updater<string[]>) => void, id: string, on: boolean) =>
-  set(current => {
-    const present = current.includes(id)
-
-    if (on) {
-      return present ? current : [...current, id]
-    }
-
-    return present ? current.filter(x => x !== id) : current
-  })
-
-// Stored session ids with a blocking prompt (clarify) waiting on the user.
-// Separate from $workingSessionIds: a session can be "working" (turn running)
-// AND need input. The sidebar row reads this for a persistent indicator that,
-// unlike a toast, survives window blur / alt-tab.
-export const $attentionSessionIds = atom<string[]>([])
-export const setAttentionSessionIds = (next: Updater<string[]>) => updateAtom($attentionSessionIds, next)
-
-export function setSessionAttention(sessionId: string | null | undefined, needsInput: boolean) {
-  if (sessionId) {
-    toggleMembership(setAttentionSessionIds, sessionId, needsInput)
-  }
-}
-
-export function setSessionWorking(sessionId: string | null | undefined, working: boolean) {
-  if (!sessionId) {
-    return
-  }
-
-  const wasWorking = $workingSessionIds.get().includes(sessionId)
-
-  toggleMembership(setWorkingSessionIds, sessionId, working)
-
-  // Bookend the watchdog: arm on enter, disarm on leave. A later
-  // noteSessionActivity() from a streaming event refreshes the timer.
-  if (working) {
-    clearSessionSettled(sessionId)
-    armSessionWatchdog(sessionId)
-  } else {
-    clearSessionWatchdog(sessionId)
-
-    // Only grant grace on a real working→idle transition (updateSessionState
-    // re-asserts `false` on every state tick, which must not keep extending the
-    // window). This keeps the just-finished session visible long enough for the
-    // aggregator to return its now-persisted row.
-    if (wasWorking) {
-      markSessionSettled(sessionId)
-    }
-  }
-}
+export * from './session-ids'
+export * from './composer-persistence'
+export * from './session-watchdog'
