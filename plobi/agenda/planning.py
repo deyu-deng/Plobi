@@ -712,6 +712,9 @@ def generate_evening_plan(
         # WP-PLAN-COMPLETION-ACK：人承认做完的那条**不再被排**（现核铁证是同一条
         # `ddl:evt_ac46920dc0c1` 连排五天 10-12…10-16）。只在这一侧关掉已完成的；
         # 读侧（日 surface / 看板）照旧看得见历史，默认值没动。
+        # 排程造的那一行（每格计划行一条）不进这份占用表——`list_events` 默认就把它挡了
+        # （见那里的 ``include_plan_artifacts``）。不挡的话，昨晚给"午餐"补出来的真事件
+        # 今晚会把午餐锚点按占用挤掉。
         events = store.list_events(conn, start_from=window_from, start_to=window_to,
                                    include_completed=False)
         anchors = enabled_anchors_for_day(conn, day)

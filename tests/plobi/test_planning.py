@@ -313,7 +313,11 @@ def test_anchor_only_plan_is_pending_not_empty(db_path):
     assert item.start_at == f"{DAY}T23:30:00"
     assert item.end_at == "2026-09-08T07:30:00"  # 跨午夜
     assert item.kind == "task"  # events 词表不扩
-    assert item.event_id == "routine:seed-sleep"
+    # 裁 175：存的不再是排程自造的 ``routine:seed-sleep``，而是真在 events 里的那一行；
+    # 材料链接还在上面那格 evidence.template_id 里（那条一个字没动）。
+    anchor_event = store.get_event(store.connect(db_path), item.event_id)
+    assert anchor_event is not None, "计划行又指回了一个不存在的身份"
+    assert anchor_event.title == item.title
     assert "作息模板安排了1项锚点" in plan.summary
     body = format_evening_plan_text(plan)
     assert EMPTY_PLAN_PUSH not in body  # 计划不再"空"
