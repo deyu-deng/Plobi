@@ -17,11 +17,13 @@ import { fileURLToPath } from 'node:url'
 
 import {
   createBackendRespawnGuard,
+  createSidecarRespawnPlan,
   createDeferredSubsystemLedger,
   DEFERRED_SUBSYSTEMS,
   DEFERRED_SUFFIX,
   PROFILE_BACKEND_ID_PREFIX,
   RED_SUFFIX,
+  RESPAWN_MAX_DELAY_MS,
   RESPAWN_PERMANENT_HOLD_MS,
   deferredDetail,
   definitionFor,
@@ -536,4 +538,31 @@ test('the desktop quota-hub hint is byte-equal to the one in doctor.py', () => {
     .trim()
 
   assert.equal(definitionFor('aigw')?.enableHint, doctorHint)
+})
+
+test('后置服务意外退出走有界重拉：间隔翻倍、到顶就停、成功或本意关闭就清零', () => {
+  const plan = createSidecarRespawnPlan({ baseDelayMs: 1000, maxAutoRetries: 3, maxDelayMs: 90_000 })
+  const first = plan.fail()
+  const second = plan.fail()
+  const third = plan.fail()
+
+  assert.deepEqual([first.autoRetry, second.autoRetry, third.autoRetry], [true, true, true])
+  assert.deepEqual([first.delayMs, second.delayMs, third.delayMs], [1000, 2000, 4000], '指数退避：不立刻重跑同一个死法')
+  assert.equal(plan.fail().autoRetry, false, '到顶之后不许再排定时器——这文件上面记着 3,900 与 1,173 两次风暴')
+  assert.equal(plan.attempts(), 4)
+
+  plan.reset()
+  assert.equal(plan.attempts(), 0)
+  assert.equal(plan.fail().delayMs, 1000, '重头来过：一次成功或一次本意关闭就把计数清零')
+})
+
+test('重拉的默认上限取自既有那把尺，不另造一套数', () => {
+  const plan = createSidecarRespawnPlan()
+  let last = plan.fail()
+
+  for (let i = 0; i < 12; i += 1) {
+    last = plan.fail()
+  }
+  assert.equal(last.autoRetry, false)
+  assert.ok(last.delayMs <= RESPAWN_MAX_DELAY_MS, String(last.delayMs))
 })
