@@ -10,6 +10,7 @@ queries, diffs and evidence lookups — see docs/adr/0007-agenda-state-sqlite.md
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -17,7 +18,7 @@ import re
 import sqlite3
 import threading
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace as _dc_replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -518,6 +519,7 @@ def create_event(
     status: str = "confirmed",
     source: str = "manual",
     evidence: Optional[dict] = None,
+    event_id: Optional[str] = None,
     location: Optional[str] = None,
     notes: Optional[str] = None,
     prev_value: Optional[dict] = None,
@@ -537,8 +539,10 @@ def create_event(
         raise AgendaValidationError("end_at must not precede start_at")
 
     stamp = now_iso()
+    # 默认随机 id。只有"身份是从内容推出来的"那种调用方才传 ``event_id``
+    # （:func:`ensure_plan_item_events`／裁 175：同一晚重排必须落在同一行上，人勾过的那一次才保得住）。
     event = Event(
-        id=f"evt_{uuid.uuid4().hex[:12]}",
+        id=(event_id or "").strip() or f"evt_{uuid.uuid4().hex[:12]}",
         title=title,
         start_at=start or stamp,
         end_at=end,
@@ -556,7 +560,7 @@ def create_event(
     )
     conn.execute(
         """
-        INSERT INTO events (id, title, start_at, end_at, kind, status, source,
+        INSERT OR IGNORE INTO events (id, title, start_at, end_at, kind, status, source,
                             location, notes, evidence, prev_value,
                             confirm_seq, confirm_seq_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -597,7 +601,16 @@ def list_events(
     source: Optional[str] = None,
     include_cancelled: bool = False,
     include_completed: bool = True,
+    include_plan_artifacts: bool = False,
 ) -> list[Event]:
+    """按窗口读事件。
+
+    ``include_plan_artifacts`` 默认 **关**：裁 175 之后 ``events`` 里会多出一类"排程结果"的行
+    （每一格计划行一条，为了让那颗勾点得动）。它们本来就不是素材、也不该在白天看板里
+    以"今天的一条事件"再出现一次——出现就会双份，还会把当天的作息锚点按占用挤掉
+    （10-18 现核：``tests/plobi/test_day_surface.py`` 两条顶出来的就是这个形状）。
+    要连它们一起读（例如按 id 校对、或对账脚本）就显式传 True。
+    """
     clauses: list[str] = []
     params: list[Any] = []
 
@@ -619,6 +632,11 @@ def list_events(
         # 默认 True：别的读侧一个字不变（日 surface / 看板读的是历史，不该因为做完就消失）。
         # 只有排程那一侧显式传 False——它的病根是「写完的作业第二天又被排进来」，不是「看不见」。
         clauses.append("(completed_at IS NULL OR completed_at = '')")
+    if not include_plan_artifacts:
+        # COALESCE 是必需的：evidence 为 NULL 的行 json_extract 出来是 NULL，
+        # 直接 NOT(... = 'plan') 会连它们一起判假、把全库挡空。
+        clauses.append("COALESCE(json_extract(evidence, '$.created_by'), '') <> ?")
+        params.append(PLAN_ARTIFACT_MARK)
     # WP-COLLECTOR-ICS: optional source narrowing so the shared ingest path
     # can index existing rows per source without dragging the whole table.
     if source:
@@ -1023,6 +1041,208 @@ def list_plan_items(conn: sqlite3.Connection, plan_id: str) -> list[PlanItem]:
     ).fetchall()
     return [_row_to_item(r) for r in rows]
 
+# ---------------------------------------------------------------------------
+# 裁 175：计划行只许引用**真存在的 events 行**
+# ---------------------------------------------------------------------------
+
+# 排程自己造的那块身份（``l1:block-3``／``routine:seed-lunch``／``project:aura``）不是事件身份：
+# 界面上那颗勾点下去要写的 ``events.completed_at`` 根本没有那一行可写 ⇒ 前端只能画一个点不动的勾
+# （已闭的 ``WP-PLAN-ACK-NO-FAKE-CHECK`` 就是把它改成"查无此行就说记不了"）。
+# 真源还是同一句：**先落成 events 那一行，再进计划**。这一格是那条规矩的落笔处——所有写
+# ``plan_items`` 的路径（秘书 planner、老的分配器、对话改计划）都从这里过。
+PLAN_EVENT_SOURCE = "manual"
+# 造出来的那一行身上留的两个记号：``created_by="plan"``（是谁落的）与
+# ``planned_from``（从哪个计划行来的）。排程那一侧要靠第一个记号把"结果"从"素材"里分出去
+# （见 :func:`is_plan_artifact`）。
+PLAN_ARTIFACT_KEY = "created_by"
+PLAN_ARTIFACT_MARK = "plan"
+
+
+def is_plan_artifact(event: "Event") -> bool:
+    """这一行是**排程的结果**，不是排程的素材。
+
+    裁 175 让每一格计划行都必须指到一条真 ``events`` 行，于是过去那些自造身份
+    （``l1:block-3``／``routine:seed-lunch``）现在都成了真行。真行会被读回素材侧，
+    那就得先说清它算不算素材——**不算**：不然"昨晚给某块补了身份"会变成"今晚它被当成
+    一条新作业再排一次"（作业池那条 ``_ddl_candidates`` 与锚点落位的占用表都读 ``events``，
+    两处都按这一句挡，10-18 现核过第二处不挡就会把当天的午餐锚点挤掉：
+    ``tests/plobi/test_day_surface.py`` 那两条）。
+    """
+    return (event.evidence or {}).get(PLAN_ARTIFACT_KEY) == PLAN_ARTIFACT_MARK
+
+
+def _plan_event_seed(plan: DailyPlan, item: "PlanItem") -> str:
+    """这一天这一块内容的**稳定身份种子**。
+
+    按 (那天, kind, 标题) 取种子，不按 ``l1:block-N`` 那个位置号：排程明晚把同一件事挪个钟点，
+    它还是"那天那条作业"，勾过就还该是勾过的；反过来标题变了就是另一件事，不许继承旧勾。
+    """
+    return f"plan-event:{plan.for_date}:{item.kind}:{item.title.strip().casefold()}"
+
+
+_EVENT_ID_SHAPE_RE = re.compile(r"^evt_[0-9a-f]{12}$")
+
+
+def _plan_event_identity(plan: DailyPlan, item: "PlanItem") -> str:
+    """这一行该用哪个 ``events.id``。
+
+    两种情况，顺序固定：
+    ① 那个自造 id 里**本来就带着采集器的身份**（``ddl:evt_ac46920dc0c1`` 这种——
+       排程只是给它加了个前缀）⇒ 就用那把 id 落行。事件被上游 resync 删掉时，
+       计划行还认得它原来是谁，下次采集回来按 uid 也对得上（判据原文要的就是
+       "``ddl:evt_ac46920dc0c1`` 在 events 里要有行"，不是"有一行别的什么"）。
+    ② 其余（``l1:block-N``／``routine:seed-x``／``project:x``）⇒ 由「那天 + kind + 标题」
+       推出一个确定性 id：同一晚重排落同一行，不同天各一行。
+    """
+    raw = (item.event_id or "").strip()
+    suffix = raw.split(":", 1)[-1] if ":" in raw else raw
+    if _EVENT_ID_SHAPE_RE.match(suffix):
+        return suffix
+    return "evt_" + hashlib.sha1(_plan_event_seed(plan, item).encode("utf-8")).hexdigest()[:12]
+
+
+def _plan_event_id(seed: str) -> str:
+    """② 那一支的算法，单独留一格好测。"""
+    return "evt_" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
+
+
+def _find_material_event(conn: sqlite3.Connection, event_id: str) -> Optional[Event]:
+    """``ddl:evt_x`` 这类"材料身份加个前缀"的行，去找**那条真事件**。
+
+    认两种对法：id 本身（``ddl:evt_x`` 去掉前缀就是它），以及采集器存在 ``evidence.uid``
+    里的那把。找到就复用它的 id——同一门课的 ddl 不该因为排程写了个前缀就变成两条事。
+
+    **故意不认 ``evidence.template_id``**：作息模板那一格（``seed-sleep``）是**与日子无关**的
+    类，拿它去匹配就会让 10-19 的"睡觉"锚点与 10-20 的那一条撞成同一行事件（10-18 写第一版时
+    就有这个形状，被 ``test_planning.py::test_anchor_only_plan_is_pending_not_empty`` 顶出来）。
+    模板那一类走 :func:`_plan_event_seed`：身份里带 ``plan.for_date``，一天一行。
+    """
+    raw = (event_id or "").strip()
+    if not raw:
+        return None
+    suffix = raw.split(":", 1)[-1] if ":" in raw else raw
+    row = conn.execute(
+        """
+        SELECT * FROM events
+         WHERE id IN (?, ?)
+            OR json_extract(evidence, '$.uid') = ?
+         ORDER BY created_at ASC
+         LIMIT 1
+        """,
+        (raw, suffix, suffix),
+    ).fetchone()
+    return _row_to_event(row) if row is not None else None
+
+
+def ensure_plan_item_events(
+    conn: sqlite3.Connection, plan: DailyPlan, items: Iterable["PlanItem"]
+) -> list["PlanItem"]:
+    """把每一行的 ``event_id`` 换成一个**真在 ``events`` 里**的 id（裁 175）。
+
+    三条分支，顺序固定：
+    ① 已经指到真行 ⇒ 原样过（今天 94 行里那 20 行 ``evt_…`` 就是这一支）；
+    ② 材料身份能对上真事件（``ddl:evt_x``／模板 uid）⇒ 换成那条真事件的 id；
+    ③ 都不是 ⇒ **就地落一行 events**（kind/title/钟点来自这一行，``source=manual``，
+       evidence 里写清是谁造的），再引用它。
+    第③支是幂等的：id 由 ``_plan_event_id`` 从 (那天, kind, 标题) 推出来，同一晚重排
+    拿到的是同一行，只跟新钟点走——``completed_at`` 一律不动，那是人承认过的账（裁 148）。
+    """
+    out: list[PlanItem] = []
+    for item in items:
+        eid = (item.event_id or "").strip()
+        if eid and get_event(conn, eid) is not None:
+            out.append(item)
+            continue
+        material = _find_material_event(conn, eid)
+        if material is not None:
+            out.append(_dc_replace(item, event_id=material.id))
+            continue
+        wanted = _plan_event_identity(plan, item)
+        existing = get_event(conn, wanted)
+        if existing is not None:
+            update_event(
+                conn,
+                wanted,
+                title=item.title,
+                start_at=item.start_at,
+                end_at=item.end_at,
+                kind=item.kind,
+                evidence={**(existing.evidence or {}), **_plan_event_evidence(item, plan)},
+            )
+            out.append(_dc_replace(item, event_id=wanted))
+            continue
+        create_event(
+            conn,
+            event_id=wanted,
+            title=item.title,
+            start_at=item.start_at,
+            end_at=item.end_at,
+            kind=item.kind,
+            status="confirmed" if plan.status == "confirmed" else "pending",
+            source=PLAN_EVENT_SOURCE,
+            evidence=_plan_event_evidence(item, plan),
+        )
+        # INSERT OR IGNORE：撞上同一把确定性 id（同一晚重排、或别的进程刚落过）就取回既有那一行，
+        # 不新增、也不让一次重排把整批写库炸掉。
+        landed = get_event(conn, wanted) or existing
+        out.append(_dc_replace(item, event_id=landed.id))
+    return out
+
+
+# 计划行的 evidence 里那些"材料形状"的键（``kind: routine`` / ``template_id`` / ``source``）
+# **不抄进事件**。只带采集器身份 ``uid`` 那一把——它是"这条作业是谁"的凭证，明天采集回来还要按它对齐。
+# 其余一律留在计划行上。抄过去的后果现核过：作息模板那一格会让这一行看起来像"今天真吃过午餐了"，
+# 当天 surface 就把午餐锚点从 anchors 里撤了（``tests/plobi/test_day_surface.py`` 两条顶出来的）。
+_PLAN_EVENT_MATERIAL_KEYS = ("uid",)
+
+
+def _plan_event_evidence(item: "PlanItem", plan: DailyPlan) -> dict:
+    """造出来的那一行要说得出自己是谁造的、从哪个计划行来的（不许留匿名行）。"""
+    source_evidence = item.evidence or {}
+    evidence = {
+        PLAN_ARTIFACT_KEY: PLAN_ARTIFACT_MARK,
+        "planned_from": item.event_id,
+        "plan_id": plan.id,
+        "plan_date": plan.for_date,
+    }
+    for key in _PLAN_EVENT_MATERIAL_KEYS:
+        if source_evidence.get(key):
+            evidence[key] = source_evidence[key]
+    return evidence
+
+
+def _plan_item_from_raw(raw: "PlanItem | dict", *, plan_id: str, index: int) -> PlanItem:
+    """把一格计划行归一成 :class:`PlanItem`（校验口径一个字不动）。"""
+    if isinstance(raw, PlanItem):
+        item = raw
+    else:
+        evidence = raw.get("evidence") or {}
+        if not isinstance(evidence, dict) or not evidence:
+            raise AgendaValidationError("plan_items evidence is required")
+        event_id = str(raw.get("event_id") or "").strip()
+        if not event_id:
+            raise AgendaValidationError("plan_items event_id is required")
+        item = PlanItem(
+            id=str(raw.get("id") or f"pit_{uuid.uuid4().hex[:12]}"),
+            plan_id=plan_id,
+            event_id=event_id,
+            title=str(raw.get("title") or "").strip(),
+            start_at=normalize_dt(raw.get("start_at"), field_name="start_at") or "",
+            kind=str(raw.get("kind") or "task"),
+            end_at=normalize_dt(raw.get("end_at"), field_name="end_at", required=False),
+            sort_order=int(raw.get("sort_order") if raw.get("sort_order") is not None else index),
+            conflict_with=tuple(str(x) for x in (raw.get("conflict_with") or ())),
+            evidence=evidence,
+        )
+    if not item.title.strip():
+        raise AgendaValidationError("plan_items title is required")
+    if not item.evidence:
+        raise AgendaValidationError("plan_items evidence is required")
+    if not item.event_id.strip():
+        raise AgendaValidationError("plan_items event_id is required")
+    _validate_enum(item.kind, KINDS, "kind")
+    return item
+
 
 def replace_plan_items(
     conn: sqlite3.Connection,
@@ -1030,39 +1250,20 @@ def replace_plan_items(
     items: Iterable[PlanItem | dict],
 ) -> list[PlanItem]:
     """Replace all items for a plan. Empty evidence is refused."""
-    if get_daily_plan_by_id(conn, plan_id) is None:
+    plan = get_daily_plan_by_id(conn, plan_id)
+    if plan is None:
         raise AgendaValidationError(f"unknown plan_id {plan_id!r}")
+    # 三步顺序是写死的：归一 → 落真事件身份（裁 175）→ 删旧插新。
+    # 归一要在落身份**之前**（门要看 kind/标题/那天 算身份），落身份要在 DELETE **之前**
+    # （中间留缝就等于有一瞬间库里的计划行指不到任何事，界面那一片勾在那一瞬间点不动）。
+    normalized = [
+        _plan_item_from_raw(raw, plan_id=plan_id, index=index)
+        for index, raw in enumerate(items)
+    ]
+    normalized = ensure_plan_item_events(conn, plan, normalized)
     conn.execute("DELETE FROM plan_items WHERE plan_id = ?", (plan_id,))
     written: list[PlanItem] = []
-    for index, raw in enumerate(items):
-        if isinstance(raw, PlanItem):
-            item = raw
-        else:
-            evidence = raw.get("evidence") or {}
-            if not isinstance(evidence, dict) or not evidence:
-                raise AgendaValidationError("plan_items evidence is required")
-            event_id = str(raw.get("event_id") or "").strip()
-            if not event_id:
-                raise AgendaValidationError("plan_items event_id is required")
-            item = PlanItem(
-                id=str(raw.get("id") or f"pit_{uuid.uuid4().hex[:12]}"),
-                plan_id=plan_id,
-                event_id=event_id,
-                title=str(raw.get("title") or "").strip(),
-                start_at=normalize_dt(raw.get("start_at"), field_name="start_at") or "",
-                kind=str(raw.get("kind") or "task"),
-                end_at=normalize_dt(raw.get("end_at"), field_name="end_at", required=False),
-                sort_order=int(raw.get("sort_order") if raw.get("sort_order") is not None else index),
-                conflict_with=tuple(str(x) for x in (raw.get("conflict_with") or ())),
-                evidence=evidence,
-            )
-        if not item.title.strip():
-            raise AgendaValidationError("plan_items title is required")
-        if not item.evidence:
-            raise AgendaValidationError("plan_items evidence is required")
-        if not item.event_id.strip():
-            raise AgendaValidationError("plan_items event_id is required")
-        _validate_enum(item.kind, KINDS, "kind")
+    for item in normalized:
         conn.execute(
             """
             INSERT INTO plan_items (
