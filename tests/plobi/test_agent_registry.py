@@ -270,8 +270,13 @@ def test_spawn_creates_profile_and_models(spawn_env):
 
     shared = shared_config_path()
     models = json.loads(shared.read_text(encoding="utf-8"))
-    assert models["roles"]["l2_agenda"]["provider"] == "deepseek"
-    assert models["roles"]["l2_agenda"]["model"] == "deepseek-chat"
+    # 裁 172：那张表是「这一类默认用什么」，**不接收任何一行的覆盖**（名册 24 行里
+    # l2_project 占 23 行，折进去就是给一个 Agent 单选 = 整类一起变）。这一行自己的生效值
+    # 问 ``route_for``——它仍是 deepseek/deepseek-chat，但只属于 agenda 那一行。
+    assert models["roles"]["l2_agenda"]["provider"] == "aigw"
+    assert models["roles"]["l2_agenda"]["model"] == "workbuddy/deepseek-chat"
+    agenda_route = reg.route_for(reg.get("agenda"))
+    assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")
     # ADR-0011：那张唯一的表断言绿（L1≠L2）
     assert ModelRouter.load(shared).violations() == []
     # 判据①：这个家不许带路由表复印件

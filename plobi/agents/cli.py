@@ -83,7 +83,7 @@ def _list(registry: AgentRegistry) -> None:
 
     for entry in registry.entries():
         try:
-            route = registry.router().resolve(entry.role)
+            route = registry.route_for(entry)  # 裁 172：这一列问的是这一行，不是这一类
         except Exception:
             route = None
         model = route.qualified if route else "—"
