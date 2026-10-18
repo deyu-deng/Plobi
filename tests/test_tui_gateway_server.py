@@ -160,11 +160,50 @@ def _write_profile_cfg(home: Path, cwd: str | None) -> Path:
     return home
 
 
-def test_profile_configured_cwd_reads_target_profile(tmp_path):
-    """A profile's own terminal.cwd is read from its config.yaml."""
+def _bind_roster_cwd(tmp_path, monkeypatch, *, profile: str, cwd: Path) -> None:
+    """把那个家的工作目录钉在**名册那一行**上（裁 42 / 裁 166 / ADR-0013）。
+
+    ``_profile_configured_cwd`` 不再打开分身家自己的 ``config.yaml`` —— 那一格的真源
+    是 ``projects.yaml`` 里这一行的 ``project_path``，读时由
+    ``plobi.agents.registry.project_cwd_for_profile`` 解析。契约没变，问的对象变了
+    （同 ``tests/plobi/test_studio_cwd.py``）。家与名册都用环境变量钉死。
+    """
+    import yaml
+
+    from plobi.agents.registry import REGISTRY_VERSION
+
+    root = tmp_path / "plobi-home"
+    (root / "plobi").mkdir(parents=True, exist_ok=True)
+    registry_path = root / "plobi" / "projects.yaml"
+    registry_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": REGISTRY_VERSION,
+                "agents": {
+                    profile: {
+                        "name": profile,
+                        "role": "l2_project",
+                        "profile": profile,
+                        "category": "projects",
+                        "project_path": str(cwd),
+                    }
+                },
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PLOBI_HOME", str(root))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(registry_path))
+
+
+def test_profile_configured_cwd_reads_target_profile(tmp_path, monkeypatch):
+    """The target profile's bound workspace is what answers for that home."""
     project = tmp_path / "proj"
     project.mkdir()
     home = _write_profile_cfg(tmp_path / "home", str(project))
+    _bind_roster_cwd(tmp_path, monkeypatch, profile="home", cwd=project)
     assert server._profile_configured_cwd(home) == str(project)
 
 
@@ -181,12 +220,14 @@ def test_profile_configured_cwd_skips_placeholders_and_missing(tmp_path):
 
 def test_completion_cwd_prefers_profile_over_stale_env(monkeypatch, tmp_path):
     """Issue #40334: a new session bound to another profile must use THAT
-    profile's terminal.cwd, not the launch profile's stale TERMINAL_CWD."""
+    profile's workspace, not the launch profile's stale TERMINAL_CWD."""
     profile_b = tmp_path / "ef-design"
     profile_b.mkdir()
-    home = _write_profile_cfg(tmp_path / "home-b", str(profile_b))
     stale = tmp_path / "mahjong"
     stale.mkdir()
+    # 家下那份历史复印件写着 mahjong —— 它不再是任何一格的落点，所以不许赢。
+    home = _write_profile_cfg(tmp_path / "home-b", str(stale))
+    _bind_roster_cwd(tmp_path, monkeypatch, profile="home-b", cwd=profile_b)
 
     monkeypatch.setenv("TERMINAL_CWD", str(stale))
     monkeypatch.setattr(server, "_load_cfg", lambda: {})

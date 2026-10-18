@@ -2827,13 +2827,15 @@ def run_job(
         _cfg = {}
         try:
             import yaml
-            from plobi_cli.config import get_config_path
+            from plobi_constants import config_path_for_home
 
             # 那一格以前是 ``_get_plobi_home() / "config.yaml"``：cron 的 ticker 跑在
             # 哪个家就读哪个家的复印件。裁 166 / ADR-0013 把配置收成顶层那一份之后
             # 分身家不再自带它，到点那一轮必须问同一个解析器，否则「配一次默认模型」
             # 在 cron 这条腿上永远不生效（而快照那一份由 ``cron/jobs.py`` 同源解析）。
-            _cfg_path = str(get_config_path())
+            # 解析器问的是 ``_get_plobi_home()`` 这个**本模块已经解析好的家**（它带着
+            # ``_plobi_home`` 覆盖钩子），不是再按环境变量走一遍活跃家。
+            _cfg_path = str(config_path_for_home(_get_plobi_home()))
             if os.path.exists(_cfg_path):
                 with open(_cfg_path, encoding="utf-8") as _f:
                     _cfg = yaml.safe_load(_f) or {}

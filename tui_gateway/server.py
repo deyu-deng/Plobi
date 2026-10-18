@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from plobi_constants import (
+    config_path_for_home,
     get_plobi_home,
     get_plobi_home_override,
     reset_plobi_home_override,
@@ -1096,8 +1097,6 @@ def _profile_configured_cwd(profile_home: Path | None) -> str | None:
 
 def _launch_config_path() -> Path:
     """启动这个家该读的那一份 ``config.yaml``（裁 166 / ADR-0013：分身家不再自带复印件）。"""
-    from plobi_constants import config_path_for_home
-
     return config_path_for_home(_plobi_home)
 
 
@@ -1907,6 +1906,23 @@ _INDICATOR_STYLES: tuple[str, ...] = ("ascii", "emoji", "kaomoji", "unicode")
 _INDICATOR_DEFAULT = "kaomoji"
 
 
+def _current_config_path() -> Path:
+    """这一次调用该读／该写的那一份 ``config.yaml``——**每次现算，不拿缓存里的路径**。
+
+    规则与读侧原本那句一模一样：有 context-local 的家覆盖（远程会话 resume 到别的 profile）
+    就按那个家，否则按启动这个家；再经 :func:`plobi_constants.config_path_for_home` 把
+    「那是个分身家」这一层折到顶层那一份（裁 166 / ADR-0013）。
+
+    为什么写侧不能复用 ``_cfg_path``：那个全局是**上一次读**留下的，同一个进程里换家
+    （桌面一进来先在 launch 家读一遍、随后开一个绑定到别的管理员的会话）它就变成别人的路径，
+    照它写就是把设置落进不相干那一份里。``fd9dd736`` 我把读写配成"同一份"时正是踩了这个坑
+    （现读 ``tests/test_tui_gateway_server.py`` 的 ``config_set*`` 一族 8 条红：单跑绿、批跑红）。
+    """
+    override = get_plobi_home_override()
+    home = override if isinstance(override, str) and override else _plobi_home
+    return config_path_for_home(home)
+
+
 def _load_cfg() -> dict:
     global _cfg_cache, _cfg_mtime, _cfg_path
     try:
@@ -1916,9 +1932,7 @@ def _load_cfg() -> dict:
         # remote profile loads ITS config (model, skills, prompt); otherwise the
         # launch profile's _plobi_home. Cache is keyed on the resolved path, so
         # profiles don't clobber each other.
-        override = get_plobi_home_override()
-        home = override if isinstance(override, str) and override else _plobi_home
-        p = config_path_for_home(home)
+        p = _current_config_path()
         mtime = p.stat().st_mtime if p.exists() else None
         with _cfg_lock:
             if _cfg_cache is not None and _cfg_mtime == mtime and _cfg_path == p:
@@ -1962,13 +1976,13 @@ def _save_cfg(cfg: dict):
     global _cfg_cache, _cfg_mtime, _cfg_path
 
     from plobi_cli.config import atomic_config_write
-    from plobi_constants import config_path_for_home
 
-    # 写回**读侧刚才读的那一份**（``_cfg_path``）。以前这里是 ``_plobi_home /
-    # "config.yaml"`` 与读侧不对称：读侧跟 contextvar 覆盖走（分身会话读自己那个家），
-    # 写侧永远写启动那个家。裁 166 / ADR-0013 之后分身家不再有那份文件，不对称的后果从
-    # "写到没人读的地方"升级成"把不相干的那一份覆盖掉"——所以一对儿走同一个解析。
-    path = _cfg_path if _cfg_path is not None else config_path_for_home(_plobi_home)
+    # 与读侧同一个式子、**每次现算**（见 :func:`_current_config_path`）。以前这里是
+    # ``_plobi_home / "config.yaml"``：读侧跟 contextvar 覆盖走、写侧永远写启动那个家，
+    # 不对称；裁 166 之后分身家不再有那份文件，不对称的后果从"写到没人读的地方"升级成
+    # "把不相干的那一份盖掉"。上一版我为了配对直接写了缓存里的 ``_cfg_path``，那是另一个
+    # 错法——那个全局属于上一次读，换家之后它是别人的路径。
+    path = _current_config_path()
     atomic_config_write(path, cfg)
     with _cfg_lock:
         _cfg_cache = copy.deepcopy(cfg)

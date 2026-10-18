@@ -170,17 +170,30 @@ def test_default_spawn_model_override_survives_real_cli_parse(monkeypatch, tmp_p
     assert args.query == "work kanban task t_spawn_tools"
 
 
-def test_resolve_worker_cli_toolsets_uses_profile_home_not_parent_config(monkeypatch, tmp_path):
+def test_resolve_worker_cli_toolsets_uses_the_one_shared_config_not_the_dead_copy(
+    monkeypatch, tmp_path
+):
+    """裁 166 / ADR-0013 换了机制，没换契约：pin 必须等于那个家**实际读到的**那一份。
+
+    以前这一条钉的是「分身家自己的 ``config.yaml`` 赢过顶层那一份」——那时每个分身确有
+    一份可读的复印件，而派工方（长期活着的网关）读的是自己那份，所以不跟着分身家走就会
+    把 worker 塌成只剩 kanban 生命周期那一面。现在配置只剩顶层那一份，分身家那份历史
+    复印件**不再是任何一格的落点**，所以同一句话换了方向：顶层那一份里的 CLI 面必须赢，
+    家下那份写着 ``[kanban]`` 的复印件必须**不**赢。四条判据一条没减。
+    """
     root = tmp_path / ".plobi"
     profile = root / "profiles" / "elias"
     profile.mkdir(parents=True)
-    root.joinpath("config.yaml").write_text("platform_toolsets:\n  cli:\n    - kanban\n", encoding="utf-8")
+    root.joinpath("config.yaml").write_text(
+        "platform_toolsets:\n  cli:\n    - terminal\n    - web\n    - kanban\n",
+        encoding="utf-8",
+    )
+    # 死掉的那一份：写着塌成 kanban 的清单，绝不允许被读到。
     profile.joinpath("config.yaml").write_text(
         """
 platform_toolsets:
   cli:
-    - terminal
-    - web
+    - kanban
 toolsets:
   - plobi-cli
 """.lstrip(),
