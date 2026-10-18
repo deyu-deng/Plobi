@@ -54,8 +54,14 @@ _PROFILE_DIRS = [
 ]
 
 # Files copied during --clone (if they exist in the source)
+#
+# ``config.yaml`` 那一腿已摘掉（裁 42 / 裁 166 / ADR-0013 ``config.yaml`` 那一行）：配置只有一份，
+# 新建或克隆一个分身都不许再造一份复印件——ADR-0013 完成定义第 2 条要的就是「那份家里
+# **没有** ``config.yaml``」。读侧也不再读它（:func:`plobi_constants.config_path_for_home`），
+# 所以留着那一腿只会生产一份没人读的文件，再让 ``plobi doctor`` 之类的地方以为那个家
+# 有它自己的配置。``.env`` / ``SOUL.md`` 两腿还在：它们的收口各自排在同一张表的下两行
+# （密钥顶层一份＝本轮 A 组第 2 件；SOUL 收口＝B 组），不在这一把刀里顺手改。
 _CLONE_CONFIG_FILES = [
-    "config.yaml",
     ".env",
     "SOUL.md",
 ]
@@ -721,8 +727,15 @@ def _read_distribution_meta(profile_dir: Path) -> tuple:
 
 
 def _read_config_model(profile_dir: Path) -> tuple:
-    """Read model/provider from a profile's config.yaml. Returns (model, provider)."""
-    config_path = profile_dir / "config.yaml"
+    """Read model/provider from the config.yaml **that profile actually reads**.
+
+    分身家不再自带那份 ``config.yaml``（裁 166 / ADR-0013），所以这里问的是解析规则，
+    不是 ``profile_dir`` 那个目录——否则 ``profile list`` 那一列的模型会全空，
+    而分身自己跑起来用的是顶层那一份，两处答案对不上。
+    """
+    from plobi_constants import config_path_for_home
+
+    config_path = config_path_for_home(profile_dir)
     if not config_path.exists():
         return None, None
     try:

@@ -1449,12 +1449,21 @@ _DOCKER_MEDIA_OUTPUT_CONTAINER_PATHS = {"/output", "/outputs"}
 
 # Bridge config.yaml values into the environment so os.getenv() picks them up.
 # config.yaml is authoritative for terminal settings — overrides .env.
-_config_path = _plobi_home / 'config.yaml'
+from plobi_constants import config_path_for_home
+
+# 那唯一一份配置的落点。``_plobi_home`` 是 import 时定格的常量，所以这里显式拿它去问
+# 解析规则（分身家 → 顶层那一份），不再手拼 ``_plobi_home / 'config.yaml'`` 读自家复印件。
+_config_path = config_path_for_home(_plobi_home)
 if _config_path.exists():
     try:
         import yaml as _yaml
         with open(_config_path, encoding="utf-8") as _f:
             _cfg = _yaml.safe_load(_f) or {}
+        # 名册行那两节（模型 / 工作目录）不在文件里，读时叠上来再桥进环境——
+        # 不然分身家起的后端会桥不到 ``terminal.cwd``，会话落回进程自己的 cwd。
+        from plobi_cli.config import agent_config_overlay as _agent_config_overlay
+        from plobi_cli.config import _deep_merge as _deep_cfg_merge
+        _cfg = _deep_cfg_merge(_cfg, _agent_config_overlay())
         # Expand ${ENV_VAR} references before bridging to env vars.
         from plobi_cli.config import _expand_env_vars
         _cfg = _expand_env_vars(_cfg)
@@ -1947,7 +1956,7 @@ def _try_resolve_fallback_provider() -> dict | None:
     from plobi_cli.runtime_provider import resolve_runtime_provider
     try:
         import yaml as _y
-        cfg_path = _plobi_home / "config.yaml"
+        cfg_path = _gateway_config_path()
         if not cfg_path.exists():
             return None
         with open(cfg_path, encoding="utf-8") as _f:
@@ -2312,6 +2321,17 @@ def _gateway_config_home() -> Path:
     return _plobi_home
 
 
+def _gateway_config_path() -> Path:
+    """这个进程该读的那一份 ``config.yaml``。
+
+    ``_gateway_config_home()`` 带上 contextvar 覆盖与被测试夹具改过的 ``_plobi_home``，
+    :func:`plobi_constants.config_path_for_home` 再把「那是个分身家」这一层折到顶层那一份
+    （裁 166 / ADR-0013：分身家不再自带也不再读那份复印件）。两个条件都在一条规则里，
+    不在每个调用点重复一遍。
+    """
+    return config_path_for_home(_gateway_config_home())
+
+
 def _load_gateway_config() -> dict:
     """Load and parse ~/.plobi/config.yaml, returning {} on any error.
 
@@ -2323,16 +2343,14 @@ def _load_gateway_config() -> dict:
     gateway honors administrator-pinned values — neither read_raw_config nor a
     direct yaml.safe_load carries the managed merge on its own. Fail-open.
     """
-    config_home = _gateway_config_home()
-    config_path = config_home / 'config.yaml'
+    config_path = _gateway_config_path()
     raw: dict = {}
     used_canonical = False
     try:
         from plobi_cli.config import get_config_path, read_raw_config
-        # Fast path: if _plobi_home agrees with the canonical config
-        # location, reuse the shared cache. Otherwise fall through to a
-        # direct read (keeps test fixtures with a monkeypatched
-        # _plobi_home working).
+        # Fast path: if this home resolves to the canonical config location,
+        # reuse the shared cache. Otherwise fall through to a direct read
+        # (keeps test fixtures with a monkeypatched _plobi_home working).
         if config_path == get_config_path():
             raw = read_raw_config()
             used_canonical = True
@@ -4983,7 +5001,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """Load OpenRouter provider routing preferences from config.yaml."""
         try:
             import yaml as _y
-            cfg_path = _plobi_home / "config.yaml"
+            cfg_path = _gateway_config_path()
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -5002,7 +5020,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """
         try:
             import yaml as _y
-            cfg_path = _plobi_home / "config.yaml"
+            cfg_path = _gateway_config_path()
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -5029,7 +5047,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """
         try:
             import yaml as _y
-            cfg_path = _plobi_home / "config.yaml"
+            cfg_path = _gateway_config_path()
             if not cfg_path.exists():
                 self._fallback_model = None
                 return self._fallback_model
@@ -5631,7 +5649,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     f"{message}\n\n"
                     f"{busy_input_hint_gateway(_hint_mode)}"
                 )
-                mark_seen(_plobi_home / "config.yaml", BUSY_INPUT_FLAG)
+                mark_seen(_gateway_config_path(), BUSY_INPUT_FLAG)
         except Exception as _onb_err:
             logger.debug("Failed to apply busy-input onboarding hint: %s", _onb_err)
 
@@ -11504,7 +11522,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     and not is_seen(_onb_cfg, PROFILE_BUILD_FLAG)
                 ):
                     context_prompt += profile_build_directive()
-                    mark_seen(_plobi_home / "config.yaml", PROFILE_BUILD_FLAG)
+                    mark_seen(_gateway_config_path(), PROFILE_BUILD_FLAG)
                 else:
                     context_prompt += _intro_note
             except Exception as _pb_err:
@@ -17282,7 +17300,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         if gate_on and not is_seen(_cfg, TOOL_PROGRESS_FLAG):
                             long_tool_hint_fired[0] = True
                             progress_queue.put(tool_progress_hint_gateway())
-                            mark_seen(_plobi_home / "config.yaml", TOOL_PROGRESS_FLAG)
+                            mark_seen(_gateway_config_path(), TOOL_PROGRESS_FLAG)
                 except Exception as _hint_err:
                     logger.debug("tool-progress onboarding hint failed: %s", _hint_err)
                 return

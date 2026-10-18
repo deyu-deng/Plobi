@@ -13073,24 +13073,26 @@ def _profile_setup_command(name: str) -> str:
 
 
 def _write_profile_model(profile_dir: Path, provider: str, model: str) -> None:
-    """Write the main model assignment into a specific profile's config.yaml.
+    """给这一个 Agent 选主模型＝写**名册那一行的覆盖**（裁 166 决定二／ADR-0013 DoD#1）。
 
-    Scopes ``load_config``/``save_config`` to ``profile_dir`` via the
-    context-local PLOBI_HOME override so the write lands in the target
-    profile's config rather than the dashboard process's active profile.
-    Clears any stale ``base_url`` / ``context_length`` the same way
-    ``POST /api/model/set`` does, since the new model may differ.
+    以前这一句是 ``set_plobi_home_override(profile_dir)`` + ``load_config``/``save_config``，
+    落点是「那个分身家自己的 ``config.yaml``」——那时每家各有一份，写它只影响这一个分身。
+    读链收成一份之后（裁 166 / ADR-0013）那套写法会把这一个 Agent 的选择写进**那唯一一份**
+    配置、并把 merge 出来的默认值刷进用户的顶层文件，于是「给某个 Agent 单独选」变成
+    「所有 Agent 一起换」。现在只动名册那一行，生效值由
+    :func:`plobi.agents.registry.profile_config_overlay` 在读时叠。
+
+    ``_normalize_main_model_assignment`` 那道闸原样保留（vendor 前缀 → Plobi provider 的
+    归一，以及清掉过期的 ``base_url`` / ``context_length`` 的语义由写侧负责）：这里仍然
+    是它那个入口，只是落点换了。
     """
-    from plobi_constants import set_plobi_home_override, reset_plobi_home_override
+    from plobi.agents.registry import RegistryError, set_profile_model_override
 
-    token = set_plobi_home_override(str(profile_dir))
+    provider, model = _normalize_main_model_assignment(provider, model)
     try:
-        provider, model = _normalize_main_model_assignment(provider, model)
-        cfg = load_config()
-        cfg["model"] = _apply_main_model_assignment(cfg.get("model", {}), provider, model)
-        save_config(cfg)
-    finally:
-        reset_plobi_home_override(token)
+        set_profile_model_override(Path(profile_dir).name, provider, model)
+    except RegistryError as e:
+        raise ValueError(str(e)) from e
 
 
 def _write_profile_mcp_servers(profile_dir: Path, servers: List["MCPServerCreate"]) -> int:
@@ -13100,6 +13102,12 @@ def _write_profile_mcp_servers(profile_dir: Path, servers: List["MCPServerCreate
     context-local PLOBI_HOME override (same mechanism as
     ``_write_profile_model``) so the entries land in the target profile's
     config rather than the dashboard process's active profile.
+
+    照实说落点（裁 166 / ADR-0013 之后）：那份 ``config.yaml`` 现在**只有一份**，
+    ``mcp_servers`` 不在分身允许带的三项覆盖里，所以这一句写的就是那一份——
+    「这台机器上的 MCP 服务器」是一张全局表，桌面那个 MCP 面板读的也是它
+    （``apps/desktop/src/app/skills/mcp-tab.tsx``）。以前那段说明里「落到目标分身的
+    配置」已经没有对应现实，别照着它以为能按分身隔离。
 
     Mirrors the per-server shape the ``POST /api/mcp/servers`` endpoint builds,
     but batched so the whole profile-create write is a single config save.
@@ -13503,6 +13511,10 @@ async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
         raise HTTPException(status_code=400, detail="provider and model are required")
     try:
         _write_profile_model(profile_dir, provider, model)
+    except ValueError as e:
+        # 那个家没有名册行（配置只有一份，没地方放"只属于它"的覆盖）＝调用方的前提不成立，
+        # 不是服务端故障：照实 400，别报成 500 让人以为是模型写入炸了。
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         _log.exception("PUT /api/profiles/%s/model failed", name)
         raise HTTPException(status_code=500, detail=str(e))

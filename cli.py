@@ -167,7 +167,7 @@ _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧
 
 # Load .env from ~/.plobi/.env first, then project root as dev fallback.
 # User-managed env files should override stale shell exports on restart.
-from plobi_constants import get_plobi_home, display_plobi_home
+from plobi_constants import config_path_for_home, get_plobi_home, display_plobi_home
 from plobi_cli.browser_connect import (
     DEFAULT_BROWSER_CDP_URL,
     is_browser_debug_ready,
@@ -375,7 +375,8 @@ def load_cli_config() -> Dict[str, Any]:
     behavioral/config settings.
     """
     # Check user config first ({PLOBI_HOME}/config.yaml)
-    user_config_path = _plobi_home / 'config.yaml'
+    # 那唯一一份配置的落点（裁 166 / ADR-0013：分身家不再自带、也不再读那份复印件）。
+    user_config_path = config_path_for_home(_plobi_home)
     project_config_path = Path(__file__).parent / 'cli-config.yaml'
 
     # --ignore-user-config: force-skip the user config.yaml (still honor project
@@ -3643,7 +3644,8 @@ def save_config_value(key_path: str, value: any) -> bool:
         True if successful, False otherwise
     """
     # Use the same precedence as load_cli_config: user config first, then project config
-    user_config_path = _plobi_home / 'config.yaml'
+    # 那唯一一份配置的落点（裁 166 / ADR-0013：分身家不再自带、也不再读那份复印件）。
+    user_config_path = config_path_for_home(_plobi_home)
     project_config_path = Path(__file__).parent / 'cli-config.yaml'
     config_path = user_config_path if user_config_path.exists() else project_config_path
     
@@ -6748,7 +6750,8 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
         terminal_cwd = os.getenv("TERMINAL_CWD", os.getcwd())
         terminal_timeout = os.getenv("TERMINAL_TIMEOUT", "60")
         
-        user_config_path = _plobi_home / 'config.yaml'
+        # 那唯一一份配置的落点（裁 166 / ADR-0013：分身家不再自带、也不再读那份复印件）。
+        user_config_path = config_path_for_home(_plobi_home)
         project_config_path = Path(__file__).parent / 'cli-config.yaml'
         if user_config_path.exists():
             config_path = user_config_path
@@ -11048,7 +11051,7 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
                         if not is_seen(CLI_CONFIG, TOOL_PROGRESS_FLAG):
                             self._long_tool_hint_fired = True
                             _cprint(f"  {_DIM}{tool_progress_hint_cli()}{_RST}")
-                            mark_seen(_plobi_home / "config.yaml", TOOL_PROGRESS_FLAG)
+                            mark_seen(config_path_for_home(_plobi_home), TOOL_PROGRESS_FLAG)
                             CLI_CONFIG.setdefault("onboarding", {}).setdefault("seen", {})[TOOL_PROGRESS_FLAG] = True
                 except Exception:
                     pass
@@ -13559,7 +13562,7 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
                         )
                         if not is_seen(CLI_CONFIG, BUSY_INPUT_FLAG):
                             _cprint(f"  {_DIM}{busy_input_hint_cli(self.busy_input_mode)}{_RST}")
-                            mark_seen(_plobi_home / "config.yaml", BUSY_INPUT_FLAG)
+                            mark_seen(config_path_for_home(_plobi_home), BUSY_INPUT_FLAG)
                             CLI_CONFIG.setdefault("onboarding", {}).setdefault("seen", {})[BUSY_INPUT_FLAG] = True
                     except Exception:
                         pass

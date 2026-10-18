@@ -1,15 +1,29 @@
-"""WP-STUDIO-CWD / 裁定 36.1：项目 L2 spawn 时把 ``terminal.cwd`` 写到该 profile。
+"""项目分身的工作目录：真源是名册那一行，读时叠，不落文件（裁 36.1 的契约，机制已换）。
 
-为什么这是单独文件：test_agent_registry.py 的现有 ``AgentRegistry.spawn``
-测试栈已经够厚，加 cwd 一组容易让 setup 互相干扰；这一组走最小夹具
-（stub ``plobi_cli.profiles``），只验 cwd 的「写 / 保留 / 跳过 / 幂等 /
-不抢已有 model 字段」五条契约。
+**这把刀换了机制**（裁 42 / 裁 166 / ADR-0013 ``config.yaml`` 那一行）。原来这一族钉的是
+``apply_l2_project_cwd`` 往分身家 ``config.yaml`` 写一节 ``terminal.cwd``——那等于每建一个
+项目分身就多一份复印件，而那份复印件恰恰是「一个模型要配 24 遍」的载体。现在那一格的
+真源是名册那一行的 ``project_path``，由
+:func:`plobi.agents.registry.profile_config_overlay` 在 :func:`plobi_cli.config.load_config`
+里**读时叠**（顺序＝名册行覆盖 → 顶层 → 出厂默认），落盘那扇门（``apply_l2_project_cwd``
+与 ``_write_profile_config``）已经关掉。
+
+契约本身一个字没改，所以测试也照原来的五条写，只是问的对象换了：
+① 带 ``project_path`` 的项目分身，工作目录＝那一行那个文件夹；
+② 目录不存在**绝不编造**（原来那句「NEVER fabricate a cwd」搬进
+   :func:`plobi.agents.registry._resolvable_project_cwd`）；
+③ 空 path / agenda / butler 那些行不给 cwd（它们本来就没有文件夹绑定）；
+④ 改名册那一行当场生效，不用重启进程（覆盖是读时算的，缓存签名必须带名册的 mtime——
+   这一条是钉「别把覆盖烘进缓存」那颗钉子）；
+⑤ 分身家**不再因为 spawn 多出 ``config.yaml``**（ADR-0013 完成定义第 2 条的形状）。
+
+外加原来那条 L2-DIET 与 cwd 互不越界的纪律：减肥动的是工具集，不许把工作目录挪走。
 """
 
 from __future__ import annotations
 
+import os
 import sys
-import time
 import types
 from pathlib import Path
 
@@ -26,368 +40,230 @@ def _stub_plobi_profiles(monkeypatch, home: Path):
     monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
 
 
-def _read_cwd(profile_dir) -> str | None:
-    cfg_path = Path(profile_dir) / "config.yaml"
-    if not cfg_path.is_file():
-        return None
-    try:
-        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    if not isinstance(cfg, dict):
-        return None
-    terminal = cfg.get("terminal")
-    if not isinstance(terminal, dict):
-        return None
-    return terminal.get("cwd")
-
-
-# ---------------------------------------------------------------------------
-# apply_l2_project_cwd：纯函数（不依赖 spawn）
-# ---------------------------------------------------------------------------
-
-
-def test_apply_l2_project_cwd_writes_minimal_yaml_when_missing(tmp_path):
-    """Profile 还没有 config.yaml → 落地最小 yaml（terminal.cwd only）。"""
-    from plobi.agents.registry import apply_l2_project_cwd
-
-    profile_dir = tmp_path / "l2-plobi"
-    profile_dir.mkdir()
-    project_dir = tmp_path / "workspace"
-    project_dir.mkdir()
-
-    assert apply_l2_project_cwd(profile_dir, str(project_dir)) is True
-    cwd = _read_cwd(profile_dir)
-    assert cwd == str(project_dir.absolute())
-
-
-def test_apply_l2_project_cwd_preserves_other_keys(tmp_path):
-    """已有 config.yaml → 只加 / 更新 terminal.cwd，其它字段一字不改。"""
-    from plobi.agents.registry import apply_l2_project_cwd
-
-    profile_dir = tmp_path / "l2-nuclide"
-    profile_dir.mkdir()
-    project_dir = tmp_path / "workspace"
-    project_dir.mkdir()
-    cfg_path = profile_dir / "config.yaml"
-    cfg_path.write_text(
-        "model:\n"
-        "  provider: deepseek\n"
-        "  default: deepseek-chat\n"
-        "platform_toolsets:\n"
-        "  cli:\n"
-        "    - web\n"
-        "    - skills\n"
-        "terminal:\n"
-        "  whitelist:\n"
-        "    - ls\n"
-        "    - cat\n"
-        "  shell: bash\n",
-        encoding="utf-8",
-    )
-
-    assert apply_l2_project_cwd(profile_dir, str(project_dir)) is True
-
-    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert cfg["model"] == {"provider": "deepseek", "default": "deepseek-chat"}
-    assert cfg["platform_toolsets"] == {"cli": ["web", "skills"]}
-    assert cfg["terminal"]["whitelist"] == ["ls", "cat"]
-    assert cfg["terminal"]["shell"] == "bash"
-    assert cfg["terminal"]["cwd"] == str(project_dir.absolute())
-
-
-def test_apply_l2_project_cwd_is_idempotent(tmp_path):
-    """同一个绝对路径再写一次 → 返回 False，不重写文件。"""
-    from plobi.agents.registry import apply_l2_project_cwd
-
-    profile_dir = tmp_path / "l2-prism"
-    profile_dir.mkdir()
-    project_dir = tmp_path / "workspace"
-    project_dir.mkdir()
-
-    assert apply_l2_project_cwd(profile_dir, str(project_dir)) is True
-    mtime_first = (profile_dir / "config.yaml").stat().st_mtime_ns
-
-    time.sleep(0.02)  # 留出 mtime 变化窗口
-    assert apply_l2_project_cwd(profile_dir, str(project_dir)) is False
-    assert (profile_dir / "config.yaml").stat().st_mtime_ns == mtime_first
-
-
-def test_apply_l2_project_cwd_skips_empty_path(tmp_path):
-    """空 / None 的 project_path → no-op，不创建 config.yaml。"""
-    from plobi.agents.registry import apply_l2_project_cwd
-
-    profile_dir = tmp_path / "l2-empty"
-    profile_dir.mkdir()
-
-    assert apply_l2_project_cwd(profile_dir, "") is False
-    assert apply_l2_project_cwd(profile_dir, None) is False
-    assert not (profile_dir / "config.yaml").exists()
-
-
-def test_apply_l2_project_cwd_skips_nonexistent_path(tmp_path):
-    """project_path 不存在 → no-op，绝不写假 cwd。"""
-    from plobi.agents.registry import apply_l2_project_cwd
-
-    profile_dir = tmp_path / "l2-bogus"
-    profile_dir.mkdir()
-
-    assert apply_l2_project_cwd(profile_dir, str(tmp_path / "does_not_exist")) is False
-    assert not (profile_dir / "config.yaml").exists()
-
-
-def test_apply_l2_project_cwd_returns_false_for_missing_profile_dir():
-    """profile_dir 是 None 或不存在 → False。"""
-    from plobi.agents.registry import apply_l2_project_cwd
-
-    assert apply_l2_project_cwd(None, "D:/foo") is False
-    assert apply_l2_project_cwd("/nonexistent/path/abc", "D:/foo") is False
-
-
-def test_l2_diet_does_not_touch_terminal_cwd(tmp_path):
-    """WP-L2-DIET 仍剥 terminal 工具集——cwd 是配置字段，不是工具集。"""
-    from plobi.agents.registry import apply_l2_project_diet
-
-    profile_dir = tmp_path / "l2-stithy"
-    profile_dir.mkdir()
-    cfg_path = profile_dir / "config.yaml"
-    cfg_path.write_text(
-        "toolsets:\n"
-        "  - terminal\n"
-        "  - web\n"
-        "  - skills\n"
-        "platform_toolsets:\n"
-        "  cli:\n"
-        "    - terminal\n"
-        "    - web\n"
-        "  gateway:\n"
-        "    - plobi-cli\n"
-        "terminal:\n"
-        "  cwd: D:/keep/me/here\n",
-        encoding="utf-8",
-    )
-
-    assert apply_l2_project_diet(profile_dir) is True
-
-    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    assert "terminal" not in cfg["toolsets"]
-    assert "terminal" not in cfg["platform_toolsets"]["cli"]
-    assert "plobi-cli" not in cfg["platform_toolsets"]["gateway"]
-    # cwd 必须原样保留——它不是工具集。
-    assert cfg["terminal"]["cwd"] == "D:/keep/me/here"
-
-
-# ---------------------------------------------------------------------------
-# AgentRegistry.spawn 端到端：cwd 在 spawn 时落地
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
+    """一个顶层家 + 一份名册，两个落点都用环境变量钉死（不碰真机那份）。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     plobi = tmp_path / ".plobi"
-    plobi.mkdir()
+    (plobi / "plobi").mkdir(parents=True)
     monkeypatch.setenv("PLOBI_HOME", str(plobi))
-    monkeypatch.setenv(
-        "PLOBI_PROJECTS_CONFIG", str(plobi / "plobi" / "projects.yaml")
-    )
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(plobi / "plobi" / "projects.yaml"))
     monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
+    # 顶层那一份：用户「配一次」的那个值住在这里。
+    (plobi / "config.yaml").write_text(
+        "model:\n  provider: aigw\n  default: workbuddy/top-one\n", encoding="utf-8"
+    )
+    from plobi_cli import config as cfg
+
+    cfg._LOAD_CONFIG_CACHE.clear()
     _stub_plobi_profiles(monkeypatch, tmp_path)
-    return tmp_path
+    yield tmp_path
+    cfg._LOAD_CONFIG_CACHE.clear()
 
 
-def test_spawn_writes_terminal_cwd_into_config_yaml(home):
-    """AgentRegistry.spawn → config.yaml 含 terminal.cwd = entry.project_path。
+def _roster(rows: dict) -> None:
+    from plobi.agents.registry import REGISTRY_VERSION
 
-    裁定 36.1 主验收：spawn 一个带 project_path 的项目 L2，profile 的
-    config.yaml 必须含 cwd。
+    payload = {"version": REGISTRY_VERSION, "agents": rows}
+    Path(os.environ["PLOBI_PROJECTS_CONFIG"]).write_text(
+        yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+
+def _effective(home_dir: Path) -> dict:
+    """那个家**实际读到的**那份配置——走被测代码自己的解析函数，不手拼路径。"""
+    from plobi_cli import config as cfg
+
+    os.environ["PLOBI_HOME"] = str(home_dir)
+    cfg._LOAD_CONFIG_CACHE.clear()
+    return cfg.load_config()
+
+
+def _project_row(name: str, profile: str, path) -> dict:
+    return {
+        "name": name,
+        "role": "l2_project",
+        "profile": profile,
+        "category": "projects",
+        "project_path": str(path) if path is not None else "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# ① / ② / ③ 工作目录从名册那一行读出来
+# ---------------------------------------------------------------------------
+
+
+def test_a_project_agent_reads_its_workspace_from_the_roster_row(home):
+    """契约①：名册行有 ``project_path`` ⇒ 那个家的 ``terminal.cwd`` 就是它。"""
+    workspace = home / "workspace"
+    workspace.mkdir()
+    profile_dir = home / ".plobi" / "profiles" / "l2-plobi"
+    profile_dir.mkdir(parents=True)
+    _roster({"Plobi": _project_row("Plobi", "l2-plobi", workspace)})
+
+    cfg = _effective(profile_dir)
+
+    assert cfg["terminal"]["cwd"] == str(workspace.absolute())
+
+
+def test_the_roster_wins_over_the_top_level_file(home):
+    """链条是「名册行覆盖 → 顶层」：顶层那份没有 cwd，名册那行有 ⇒ 名册行赢。
+
+    反过来说明这一格不是"读到默认值就算了"：``DEFAULT_CONFIG`` 的 cwd 是 ``.``，
+    读到这里成了真实目录，才叫覆盖。
+    """
+    workspace = home / "wins"
+    workspace.mkdir()
+    profile_dir = home / ".plobi" / "profiles" / "l2-wins"
+    profile_dir.mkdir(parents=True)
+    _roster({"Wins": _project_row("Wins", "l2-wins", workspace)})
+
+    assert _effective(profile_dir)["terminal"]["cwd"] != "."
+
+
+def test_a_dead_project_path_never_becomes_a_cwd(home):
+    """契约②：那一行的目录不存在 ⇒ 不给 cwd，也不把一个假路径塞进会话。
+
+    原话是 ``apply_l2_project_cwd`` 的「NEVER fabricate a cwd」——那句话跟着机制一起
+    搬进了 :func:`plobi.agents.registry._resolvable_project_cwd`，这条是它的替身。
+    """
+    ghost = home / "no-such-folder"
+    profile_dir = home / ".plobi" / "profiles" / "l2-ghost"
+    profile_dir.mkdir(parents=True)
+    _roster({"Ghost": _project_row("Ghost", "l2-ghost", ghost)})
+
+    cfg = _effective(profile_dir)
+
+    assert not ghost.exists()
+    assert cfg["terminal"]["cwd"] != str(ghost)
+
+
+@pytest.mark.parametrize("role", ["l2_agenda", "l2_butler"])
+def test_butler_and_agenda_rows_get_no_cwd(home, role):
+    """契约③：秘书 / 日程那一行没有文件夹绑定 ⇒ 不许把它们按进某个项目的目录。"""
+    profile_dir = home / ".plobi" / "profiles" / "l2-agenda"
+    profile_dir.mkdir(parents=True)
+    _roster({
+        "agenda": {
+            "name": "agenda", "role": role, "profile": "l2-agenda",
+            "category": "butler", "project_path": "",
+        }
+    })
+
+    assert _effective(profile_dir)["terminal"]["cwd"] == "."
+
+
+# ---------------------------------------------------------------------------
+# ④ 改名册那一行当场生效（钉住缓存签名里那颗名册 mtime）
+# ---------------------------------------------------------------------------
+
+
+def test_moving_the_folder_in_the_roster_moves_the_agent_without_a_restart(home):
+    """契约④：进程内改名册那一行 ⇒ 下一次 ``load_config`` 就是新目录。
+
+    覆盖是读时叠的，而 ``load_config`` 那套缓存按文件签名判命中。名册那份签名一旦漏掉，
+    「给这个项目换个文件夹」就要等后端重启才生效——这条就是不让那颗钉子再漏一次。
+    """
+    first = home / "first"
+    second = home / "second"
+    first.mkdir()
+    second.mkdir()
+    profile_dir = home / ".plobi" / "profiles" / "l2-move"
+    profile_dir.mkdir(parents=True)
+    _roster({"Move": _project_row("Move", "l2-move", first)})
+
+    assert _effective(profile_dir)["terminal"]["cwd"] == str(first.absolute())
+
+    # 不重启进程、不清缓存：只改名册那一行。
+    from plobi_cli import config as cfg
+
+    rows = yaml.safe_load(
+        Path(os.environ["PLOBI_PROJECTS_CONFIG"]).read_text(encoding="utf-8")
+    )["agents"]
+    rows["Move"]["project_path"] = str(second)
+    _roster(rows)
+
+    assert cfg.load_config()["terminal"]["cwd"] == str(second.absolute())
+
+
+# ---------------------------------------------------------------------------
+# ⑤ spawn 不再在家下落那份文件（外加"复印件翻不回第二真源"那条）
+# ---------------------------------------------------------------------------
+
+
+def test_spawning_a_project_agent_leaves_no_config_yaml_in_its_home(home):
+    """契约⑤＝ADR-0013 完成定义第 2 条：新建那个家里没有 ``config.yaml``。
+
+    ``spawn`` 这一条腿以前会写两节（``model:`` 与 ``terminal.cwd:``），现在一节都不写。
+    工作目录照样生效（契约①那条已证），所以这里要钉的是**没有文件**这件事本身。
     """
     from plobi.agents.registry import AgentEntry, AgentRegistry
 
-    project_dir = home / "workspace"
-    project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-plobi"
-    profile_dir.mkdir(parents=True)
-    (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
-
+    workspace = home / "spawned"
+    workspace.mkdir()
+    profile_dir = home / ".plobi" / "profiles" / "l2-spawned"
+    profile_dir.mkdir(parents=True)  # 家已落地但没有 config.yaml——旧代码会在这里造一份
     reg = AgentRegistry.load()
     reg.upsert(
         AgentEntry(
-            name="Plobi",
-            role="l2_project",
-            profile="l2-plobi",
-            model="deepseek-chat",
-            project_path=str(project_dir),
-            category="projects",
+            name="Spawned", role="l2_project", profile="l2-spawned",
+            project_path=str(workspace), category="projects",
         )
     )
 
-    result = reg.spawn("Plobi")
+    result = reg.spawn("Spawned")
 
-    cwd = _read_cwd(Path(result["profile_dir"]))
-    assert cwd == str(project_dir.absolute()), (
-        f"spawn 后 cwd 应等于 project_path；实得 cwd={cwd!r}"
-    )
+    assert not (Path(result["profile_dir"]) / "config.yaml").exists()
 
 
-def test_spawn_creates_minimal_yaml_when_profile_is_fresh(home):
-    """新 profile 还没 config.yaml → spawn 后落地最小 yaml（只有 terminal.cwd）。"""
-    from plobi.agents.registry import AgentEntry, AgentRegistry
+def test_a_stale_copy_left_in_the_home_is_not_read(home):
+    """复印件翻不回第二真源：家里就算躺着一份 ``config.yaml``，生效值也不来自它。
 
-    project_dir = home / "fresh_workspace"
-    project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-fresh"
+    这台机器存量那 24 份就是这么赢的（自家优先读），所以"隔离掉"之外还要一条
+    「就算没隔离干净也不读」。这一条同时护住 ``_config_write_path`` 那道改道——
+    某个上游开关万一又在家下重建一份，它也进不了生效值。
+    """
+    workspace = home / "real-folder"
+    workspace.mkdir()
+    profile_dir = home / ".plobi" / "profiles" / "l2-stale"
     profile_dir.mkdir(parents=True)
-    # 没有 config.yaml —— spawn 的 create_profile 也不创建它。
-
-    reg = AgentRegistry.load()
-    reg.upsert(
-        AgentEntry(
-            name="Fresh",
-            role="l2_project",
-            profile="l2-fresh",
-            model="deepseek-chat",
-            project_path=str(project_dir),
-            category="projects",
-        )
+    (profile_dir / "config.yaml").write_text(
+        "model:\n  provider: copyist\n  default: stale/copy\n"
+        "terminal:\n  cwd: " + str(home / "wrong-folder") + "\n",
+        encoding="utf-8",
     )
+    _roster({"Stale": _project_row("Stale", "l2-stale", workspace)})
 
-    result = reg.spawn("Fresh")
-    cwd = _read_cwd(Path(result["profile_dir"]))
-    assert cwd == str(project_dir.absolute())
+    cfg = _effective(profile_dir)
+
+    assert cfg["terminal"]["cwd"] == str(workspace.absolute())
+    assert cfg["model"]["default"] == "workbuddy/top-one"
+    # 那份复印件本身一个字不动（隔离是"移走"，不是"改写"）。
+    assert "stale/copy" in (profile_dir / "config.yaml").read_text(encoding="utf-8")
 
 
-def test_spawn_skips_terminal_cwd_for_agenda_role(home):
-    """l2_agenda / l2_butler 不写 terminal.cwd——它们的 cwd 不归这个秘书管。"""
-    from plobi.agents.registry import AgentEntry, AgentRegistry
+# ---------------------------------------------------------------------------
+# 工具集减肥不许顺手挪走工作目录（原来那条 L2-DIET 边界）
+# ---------------------------------------------------------------------------
 
-    project_dir = home / "agenda_workspace"
-    project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-agenda-secretary"
+
+def test_the_l2_diet_cannot_move_an_agents_workspace(home):
+    """裁 36.1 与裁 33.3 各管一件事：减肥剥工具集，``project_path`` 才是工作目录。
+
+    以前这两件事都落在同一个文件里，所以那条「diet 不许动 terminal.cwd」是靠比对
+    文件内容证的。现在 diet 写的还是分身家那份（它已经不存在 ⇒ 静默 no-op），
+    而生效的 cwd 来自名册那一行——所以这一条改成证「diet 跑完之后，工作目录照旧」。
+    """
+    from plobi.agents.registry import apply_l2_project_diet
+
+    workspace = home / "dieted"
+    workspace.mkdir()
+    profile_dir = home / ".plobi" / "profiles" / "l2-diet"
     profile_dir.mkdir(parents=True)
-    (profile_dir / "config.yaml").write_text("toolsets: [terminal]\n", encoding="utf-8")
+    _roster({"Diet": _project_row("Diet", "l2-diet", workspace)})
+    before = _effective(profile_dir)["terminal"]["cwd"]
 
-    reg = AgentRegistry.load()
-    reg.upsert(
-        AgentEntry(
-            name="agenda",
-            role="l2_agenda",
-            profile="l2-agenda-secretary",
-            model="deepseek-chat",
-            project_path=str(project_dir),  # 即便给了也不写。
-            category="agenda",
-        )
-    )
+    apply_l2_project_diet(profile_dir)
 
-    reg.spawn("agenda")
-
-    # 但ler / agenda 不能拿到这条 cwd——terminal.cwd 必须不在。
-    assert _read_cwd(profile_dir) is None
-
-
-def test_apply_l2_project_cwd_skips_butler_role():
-    """``L2_PROJECT_CWD_BUTLER_ROLES`` 把 agenda / butler 排除——这是空 path 之外的另一道保险。"""
-    from plobi.agents.registry import L2_PROJECT_CWD_BUTLER_ROLES
-
-    assert "l2_agenda" in L2_PROJECT_CWD_BUTLER_ROLES
-    assert "l2_butler" in L2_PROJECT_CWD_BUTLER_ROLES
-    # l2_project 不在该集合里——是 cwd 写入的目标。
-    assert "l2_project" not in L2_PROJECT_CWD_BUTLER_ROLES
-
-
-def test_ensure_mind_project_agents_does_not_write_cwd_for_butler(tmp_path, monkeypatch):
-    """ensure_mind_project_agents 的现有-row 分支调 _cwd_existing_l2_project——
-
-    butler / events 不应被写 cwd（category 检查保证）。"""
-    import types
-
-    from plobi.agents import registry as registry_mod
-    from plobi.agents.registry import AgentEntry
-
-    home = tmp_path / "plobi_home"
-    home.mkdir()
-    monkeypatch.setattr("pathlib.Path.home", lambda: home)
-    monkeypatch.setenv("PLOBI_HOME", str(home))
-    monkeypatch.setenv(
-        "PLOBI_PROJECTS_CONFIG", str(home / "plobi" / "projects.yaml")
-    )
-    monkeypatch.delenv("PLOBI_MODELS_CONFIG", raising=False)
-
-    fake = types.ModuleType("plobi_cli.profiles")
-    fake.get_profile_dir = lambda name: home / ".plobi" / "profiles" / name
-    fake.profile_exists = lambda name: False  # profile 不存在 → 静默跳过
-    monkeypatch.setitem(sys.modules, "plobi_cli.profiles", fake)
-
-    butler = AgentEntry(
-        name="Butler",
-        role="l2_butler",
-        profile="l2-butler",
-        model="",
-        project_path="",
-        category="butler",
-    )
-
-    # 直接调 _cwd_existing_l2_project：butler role 早 return，连
-    # profile_exists 都不查。stub 把 profile_exists 标记为 False，看是
-    # 不是连这一步都没到（早 return 是关键证据）。
-    registry_mod._cwd_existing_l2_project(butler)
-    # 没有异常 / 没有写入 = pass。stub 没动 = 没触发 fake.profile_exists
-    # 路径——已经旁证 butler 早 return。
-
-
-def test_spawn_does_not_fabricate_cwd_for_nonexistent_project_path(home):
-    """project_path 不存在 → spawn 不写假 cwd。"""
-    from plobi.agents.registry import AgentEntry, AgentRegistry
-
-    profile_dir = home / ".plobi" / "profiles" / "l2-bogus"
-    profile_dir.mkdir(parents=True)
-    (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
-
-    reg = AgentRegistry.load()
-    reg.upsert(
-        AgentEntry(
-            name="Bogus",
-            role="l2_project",
-            profile="l2-bogus",
-            model="deepseek-chat",
-            project_path=str(home / "nope_does_not_exist"),
-            category="projects",
-        )
-    )
-
-    reg.spawn("Bogus")
-
-    assert _read_cwd(profile_dir) is None
-
-
-def test_spawn_idempotent_cwd_value_unchanged_on_repeat_spawn(home):
-    """同一个项目 L2 二次 spawn → terminal.cwd 值不变（文件本身可能被
-    ``_write_profile_config`` 改写，因为模型段会重写，但 cwd 字段不能漂）。"""
-    from plobi.agents.registry import AgentEntry, AgentRegistry
-
-    project_dir = home / "idempotent_workspace"
-    project_dir.mkdir()
-    profile_dir = home / ".plobi" / "profiles" / "l2-idem"
-    profile_dir.mkdir(parents=True)
-    (profile_dir / "config.yaml").write_text("toolsets: [web]\n", encoding="utf-8")
-
-    reg = AgentRegistry.load()
-    reg.upsert(
-        AgentEntry(
-            name="Idem",
-            role="l2_project",
-            profile="l2-idem",
-            model="deepseek-chat",
-            project_path=str(project_dir),
-            category="projects",
-        )
-    )
-
-    reg.spawn("Idem")
-    cwd_first = _read_cwd(profile_dir)
-    time.sleep(0.02)
-    reg.spawn("Idem")
-    cwd_second = _read_cwd(profile_dir)
-    # cwd 值必须对齐——不准漂。
-    assert cwd_first == cwd_second
-    assert cwd_second == str(project_dir.absolute())
+    assert _effective(profile_dir)["terminal"]["cwd"] == before == str(workspace.absolute())

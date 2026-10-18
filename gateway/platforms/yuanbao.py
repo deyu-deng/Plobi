@@ -1663,8 +1663,11 @@ class AutoSetHomeMiddleware(InboundMiddleware):
                     from plobi_cli.config import atomic_config_write
                     import yaml
 
-                    _home = get_plobi_home()
-                    config_path = _home / "config.yaml"
+                    from plobi_constants import config_path_for_home
+
+                    # 读写同一份：裁 166 / ADR-0013 之后那份配置只有一个落点。手拼活跃家的后果
+                    # 是「读到空的 → 写回去把用户那一份盖掉」。
+                    config_path = config_path_for_home(get_plobi_home())
                     user_config: dict = {}
                     if config_path.exists():
                         with open(config_path, encoding="utf-8") as f:

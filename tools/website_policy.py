@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from plobi_constants import get_plobi_home
+from plobi_constants import config_path_for_home, get_plobi_home
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,11 @@ _cached_policy_time: float = 0.0
 
 
 def _get_default_config_path() -> Path:
-    return get_plobi_home() / "config.yaml"
+    """这个家该读的那一份配置（裁 166 / ADR-0013：分身家不再自带复印件）。
+
+    这一格读的是网站封禁名单——读错文件 = 分身家的会话拿不到用户配的那份名单。
+    """
+    return config_path_for_home(get_plobi_home())
 
 
 class WebsitePolicyError(Exception):

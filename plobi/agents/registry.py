@@ -81,8 +81,8 @@ MIND_PROJECT_CATEGORIES: frozenset[str] = frozenset({"projects", "research"})
 # layout (``D:\...``) for a machine that has since been retired — the repo was
 # re-baselined onto this macOS workspace in 2026-09. On macOS/Linux that string
 # is just a relative path with a colon in it, so it can never exist;
-# ``apply_l2_project_cwd`` then refused to fabricate a cwd and every project
-# 分身 silently lost its working directory. Windows keeps the historic bindings
+# 读工作目录那一格（现在叫 :func:`_resolvable_project_cwd`，同一句判据）拒绝编造 cwd，
+# 于是每个项目分身悄悄没有工作目录。 Windows keeps the historic bindings
 # verbatim; POSIX anchors under the user's home.
 #
 # Override route (no new PLOBI_* env var — AGENTS.md reserves env/.env for
@@ -155,8 +155,8 @@ def default_project_path(category: str) -> str:
 # --------------------------------------------------------------------------- #
 # Self-heal: re-anchor rows whose bound folder is not on this machine
 #
-# Why this exists: ``apply_l2_project_cwd`` degrades a non-existent
-# ``project_path`` to a silent no-op ("NEVER fabricate a cwd"). That is the
+# Why this exists: 读侧那一格（:func:`_resolvable_project_cwd`）把不存在的
+# ``project_path`` 降级成"不给 cwd"（"NEVER fabricate a cwd"）。That is the
 # right guard, but it makes stale bindings invisible — the 分身 starts up fine,
 # it just never works in its own project directory. Rows went stale wholesale
 # when the Windows box was retired and the workspace was re-baselined onto mac:
@@ -333,7 +333,8 @@ class AgentEntry:
     project_path: str = ""
     # WP-AGENT-CREATE-UPGRADE（用户 10-16 原话「一个 Agent 肯定也要可以添加多个文件夹」）：
     # 多文件夹扩展。``project_path`` 保持**主文件夹**语义（第一个，继续驱动
-    # ``apply_l2_project_cwd`` 与一切旧消费方）；``project_paths`` 是完整清单。
+    # :func:`profile_config_overlay`（读时算 ``terminal.cwd``）与一切旧消费方）；
+    # ``project_paths`` 是完整清单。
     # 加载时互相归一：只有主值的旧条目读进来 = 一元列表；只有清单时主值取首个。
     project_paths: tuple[str, ...] = ()
     # WP-AGENT-CREATE-UPGRADE（用户 10-16：「之前底座还可以选择图标和颜色。我觉得很可爱」）：
@@ -635,9 +636,9 @@ class AgentRegistry:
                 )
             else:
                 # Fail-closed: keep the original value, create nothing. The row
-                # stays unbound in practice because apply_l2_project_cwd skips
-                # a path that does not exist, so the 分身 gets no cwd instead of
-                # a fabricated one.
+                # stays unbound in practice because :func:`_resolvable_project_cwd`
+                # skips a path that does not exist, so the 分身 gets no cwd instead
+                # of a fabricated one.
                 logger.warning(
                     "plobi registry: %s project_path %r is not a directory and "
                     "no default root matches it; leaving the binding as-is "
@@ -855,20 +856,21 @@ class AgentRegistry:
     # spawn
     # ------------------------------------------------------------------ #
 
-    def spawn(self, name: str, *, write_config: bool = True) -> dict:
+    def spawn(self, name: str) -> dict:
         """把一个注册条目落地为常驻 profile + 模型路由。
 
         1. 若 profile 不存在则 ``create_profile``：**裸建**（不拷 config.yaml /
            .env / SOUL.md，也不拷技能）——裁定 42 §42.2 把「一整套 Plobi 文件」
-           从分身这一层收走，技能走顶层共享根，身份走 :func:`ensure_l2_identity_soul`
-           写的那段围栏，密钥走 :func:`apply_secret_overrides` 注入子进程环境。
-           见 :meth:`_ensure_profile` / :func:`apply_shared_skills_root`。
-        2. 把该 agent 的路由写进 profile 的 ``plobi/models.json``。
+           从分身这一层收走，身份走 :func:`ensure_l2_identity_soul` 写的那段围栏，
+           密钥走 :func:`apply_secret_overrides` 注入子进程环境。
+           见 :meth:`_ensure_profile`。
+        2. 把该 agent 的路由写进**共享层那一份** ``plobi/models.json``（裁 166 决定一）。
         3. ADR-0011 断言（L1≠L2 模型）必须绿，否则抛 RegistryError。
         4. 返回 dict：profile 路径、启动命令、routing 断言。
 
-        ``write_config`` 为真时同步把路由写进 profile 的 config.yaml 的
-        ``model.provider`` / ``model.default``（会话真正用到的模型）。
+        分身家**不写任何配置节**：模型与工作目录由名册那一行在读时叠
+        （:func:`profile_config_overlay`），技能根由 :func:`apply_shared_skills_root`
+        写进顶层那一份—— ``spawn`` 这一条腿从此不落 ``config.yaml``。
         """
         entry = self.get(name)
         if entry is None:
@@ -897,20 +899,12 @@ class AgentRegistry:
                 f"agent {name!r} routing violates ADR-0011: " + "; ".join(problems)
             )
 
-        # 3) config.yaml 同步模型（会话实际用模型）
-        if write_config:
-            self._write_profile_config(profile_dir, entry)
-            # WP-STUDIO-CWD / 裁定 36.1: project_path → terminal.cwd，独立于
-            # 模型路由——cwd 是工作目录字段，跟模型是不是 configured 无关。
-            # butler / 空 path 由 apply_l2_project_cwd 自己跳过。
-            if entry.role not in L2_PROJECT_CWD_BUTLER_ROLES:
-                try:
-                    apply_l2_project_cwd(profile_dir, entry.project_path)
-                except Exception as exc:
-                    logger.warning(
-                        "plobi: cwd write skipped for %s: %s", entry.name, exc
-                    )
-
+        # 3) 模型与工作目录**不再往分身家落任何一节**（裁 166 / ADR-0013 ``config.yaml`` 那一行）。
+        #    以前这一步是两次写盘：``_write_profile_config`` 写 ``model:``、
+        #    ``apply_l2_project_cwd`` 写 ``terminal.cwd:``。两样东西的真源本来就是名册那一行
+        #    （``provider``/``model`` 与 ``project_path``），现在由
+        #    :func:`profile_config_overlay` 在 :func:`plobi_cli.config.load_config` 里读时叠，
+        #    顺序＝「名册行覆盖 → 顶层 → 出厂默认」。落盘那两扇门在这里关掉。
         return {
             "name": name,
             "role": entry.role,
@@ -936,17 +930,16 @@ class AgentRegistry:
         # 裁定 42 §42.2：一个项目分身 = projects.yaml 一条记录 + 最多三个覆盖，
         # **不再是一整套 Plobi 家的复印件**（实测 13 个分身的 .env MD5 全同、
         # config.yaml 逐字一致，从来没有一样东西是这个项目独有的）。所以这里
-        # 裸建：不拷 config.yaml / .env / SOUL.md。§42.3 指定的两个现成钩子仍然
-        # 是落地方式——``create_profile(no_skills=True)``（不拷技能 + 写
-        # ``.no-bundled-skills`` 标记，``plobi update`` 不再重新播种）与
-        # ``skills.external_dirs``（下面 ``apply_shared_skills_root`` 写）。
+        # 裸建：不拷 config.yaml / .env / SOUL.md。技能那根线不靠拷贝、靠顶层那一份
+        # 里的 ``skills.external_dirs``（:func:`apply_shared_skills_root`，只写一次）；
+        # 模型与工作目录也不落文件，读时从名册那一行叠（:func:`profile_config_overlay`）。
         try:
             profile_dir = create_profile(name=name, no_skills=True)
         except FileExistsError:
             # Someone else landed it first — don't rewrite their config.
             return get_profile_dir(name)
         try:
-            apply_shared_skills_root(profile_dir)
+            apply_shared_skills_root()
         except Exception as exc:  # 兜底：共享根写不进去也不该让 spawn 失败
             logger.warning(
                 "plobi: shared skills root not wired for %s: %s", name, exc
@@ -959,8 +952,8 @@ class AgentRegistry:
         原来这一句是 ``profile_dir / "plobi" / "models.json"``：每次 spawn 都往那个分身家
         落一份整表复印件——现核 **23 份、去重后内容只有 1 份**，而顶层那一份反倒不存在，
         于是「改一次模型要动 23 个文件」，用户那句「我在设置里配一次大家都能用」就是冲着它说的。
-        名字与签名都不变：调用方（``spawn`` 与 ADR-0011 那两道断言）拿到的还是「这次生效用的
-        那张表」，只是那张表现在只有一份。
+        名字仍叫 ``_write_profile_models``、签名不变：调用方（``spawn`` 与 ADR-0011 那两道断言）
+        拿到的还是「这次生效用的那张表」，只是那张表现在只有一份。
         """
         from plobi.routing import ModelRouter
         from plobi.routing.models import shared_config_path
@@ -975,73 +968,6 @@ class AgentRegistry:
 
         router = ModelRouter.load(models_path)
         return router.violations()
-
-    def _write_profile_config(self, profile_dir: Path, entry: AgentEntry) -> None:
-        """把该 agent 的模型写进 profile config.yaml 的 model 节。
-
-        仅当 entry 显式给了 provider/model（或默认路由解析出模型）才写；
-        不动其他配置。config.yaml 可能不存在（新 profile 也可能没有），
-        不存在则跳过 —— 会话仍可用 models.json 路由。
-
-        落笔前有两道闸，任一不过就**什么都不写**（分身那份 config.yaml 就没有 model 节）：
-
-        ① 只有注册表那条记录真的写了模型覆盖才落笔（裁定 42 §42.2 ⑥：「模型」是分身的
-           三个允许覆盖项之一，省略 = 没有覆盖）。以前省略时会落到 :data:`DEFAULT_ROUTES`
-           的硬编码 ``aigw`` / ``workbuddy/*`` —— 那套路由和用户在本机选的默认提供商
-           毫无关系，而 ``e9b6034`` 把 aigw 注册成真 provider 之后下面那道可解析闸门已经
-           拦不住它，于是每个新分身都被盖上一份「``provider: aigw`` 而 ``base_url`` 还是
-           复印件那套」的自相矛盾 model 节（2026-09-29 实测新落的 Framelet / Plobi
-           两条）。不写 = 这一格留空，底座按它自己的默认解析走，也不会配上第二个 base_url。
-        ② 可解析闸门（:func:`provider_is_resolvable`）：底座运行时认不出来的 provider
-           名字不写进 model 节。写进一个解析不出来的名字 = 分身一启动就是一条
-           「Unknown provider」红条；不写 = 顶多按底座默认选模型，功能不塌。
-           任何情况下都不因为这道闸让 ``spawn`` 失败。
-        """
-        if not entry.has_model_override:
-            return
-        try:
-            route = self.router().resolve(entry.role)
-        except Exception:
-            route = None
-        if route is None or not route.configured:
-            return
-
-        provider = (route.provider or "").strip()
-        if provider and not provider_is_resolvable(provider):
-            logger.warning(
-                "plobi: model section NOT written to %s/config.yaml — the runtime "
-                "provider resolver does not know provider %r (model %r), and writing "
-                "it would make the profile fail with \"Unknown provider '%s'\" on "
-                "every start. Skipping keeps this 分身 on the model config it already "
-                "inherits. Run 'plobi model' for the list of resolvable providers or "
-                "'plobi doctor' to diagnose. Registration itself continues.",
-                profile_dir,
-                provider,
-                route.model,
-                provider,
-            )
-            return
-
-        cfg_path = profile_dir / "config.yaml"
-        if not cfg_path.exists():
-            return
-        import yaml
-
-        try:
-            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            return
-        if not isinstance(cfg, dict):
-            return
-        model_section = cfg.get("model")
-        if not isinstance(model_section, dict):
-            model_section = {}
-        model_section["provider"] = route.provider or model_section.get("provider", "")
-        model_section["default"] = route.model or model_section.get("default", "")
-        cfg["model"] = model_section
-        cfg_path.write_text(
-            yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -1317,6 +1243,161 @@ def provider_is_resolvable(provider: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# 名册行的读时配置覆盖（裁 42.2 允许的那三项里，落在这层的有两项）
+# ---------------------------------------------------------------------------
+
+
+def entry_for_profile(profile_name: str) -> Optional[AgentEntry]:
+    """按**已落地的家目录名**反查名册那一行；查不到给 None。
+
+    反查而不是正查是必须的：配置读侧只知道活跃家是哪个目录（``profiles/<name>``），
+    而 ``AgentEntry.profile_name`` 是归一小写过的（见那个属性自己的说明），所以这里
+    也按 casefold 比。归档行不算——它的家已经不在 ``profiles/`` 下了。
+    """
+    found = _registry_and_entry_for_profile(profile_name)
+    return found[1] if found is not None else None
+
+
+def _registry_and_entry_for_profile(profile_name: str):
+    """同 :func:`entry_for_profile`，但把那份注册表一起带回来（省一次读盘）。"""
+    want = (profile_name or "").strip().casefold()
+    if not want:
+        return None
+    try:
+        registry = AgentRegistry.load()
+    except Exception:
+        return None
+    entry = _entry_for_profile_in(registry.entries(), want)
+    return (registry, entry) if entry is not None else None
+
+
+def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[AgentEntry]:
+    for entry in entries:
+        if entry.archived:
+            continue
+        landed = (entry.profile_name or "").casefold()
+        if landed and landed == want:
+            return entry
+    return None
+
+
+def project_cwd_for_profile(profile_name: str) -> Optional[str]:
+    """这个家的 ``terminal.cwd``＝名册那一行的主文件夹；**目录不存在就不给**。
+
+    以前这一样是 ``apply_l2_project_cwd`` 往分身家 ``config.yaml`` 写一节实现的，
+    于是每建一个项目分身就多一份复印件。真源本来就是名册那一行的 ``project_path``
+    （R-013 的文件夹绑定），读时算即可，不需要那份文件。
+    宁可不给 cwd，也不把一个假路径塞进会话的工作目录——那是 ``apply_l2_project_cwd``
+    当年就写死的判据（「NEVER fabricate a cwd」）。
+    """
+    entry = entry_for_profile(profile_name)
+    if entry is None:
+        return None
+    return _resolvable_project_cwd(entry)
+
+
+def _resolvable_project_cwd(entry: AgentEntry) -> Optional[str]:
+    raw = str(entry.project_path or "").strip()
+    if not raw:
+        return None
+    try:
+        resolved = Path(raw).expanduser().absolute()
+    except (OSError, RuntimeError):
+        return None
+    return str(resolved) if resolved.is_dir() else None
+
+
+def profile_config_overlay(profile_name: str) -> dict:
+    """这个家的**名册行读时配置覆盖**，形状＝``config.yaml`` 里那两节。
+
+    被 :func:`plobi_cli.config.agent_config_overlay` 调用（那条链是
+    「名册行覆盖 → 顶层 → 出厂默认」，ADR-0013 ``config.yaml`` 那一行的目标形状）。
+    两项覆盖以前各有一份落盘实现（``_write_profile_config`` 写 ``model:``、
+    ``apply_l2_project_cwd`` 写 ``terminal.cwd:``），两扇落盘的门在本刀一起关掉，
+    判据与 :func:`apply_secret_overrides` 同一句：**就地叠，不落盘成第二份**。
+
+    模型那一项的两道闸原样从 ``_write_profile_config`` 搬过来，一条不放宽：
+    ① 只有那一行**真的声明了** ``provider``/``model`` 才给（省略 = 没有覆盖；不许把
+       :data:`DEFAULT_ROUTES` 那套硬编码当成这个分身自己的选择盖下去）；
+    ② 名字底座解析不出来（:func:`provider_is_resolvable`）时**整节都不给**——给一个
+       解析不出来的 provider = 这个分身一启动就一条 ``Unknown provider`` 红条。
+
+    ⚠️ 裁定 172 那句「覆盖必须按 **Agent 身份**解析，不许折进共享 role 路由」在这里是硬约束：
+    现核名册 24 行里 ``l2_project`` 占 23 行，而 :meth:`AgentRegistry.router` 是把每一行的覆盖
+    按 **role** 盖到那张表上的（``routes[entry.role] = ...``，后写的赢）。所以这一格**不能**用
+    ``self.router()`` 去解析——那会让 Aura 那行覆盖连带改到 Kit 那一行缺的那一半。这里读的是
+    不含任何名册覆盖的那张共享表（``ModelRouter.load()``）作为「没声明那一半」的继承值。
+    """
+    found = _registry_and_entry_for_profile(profile_name)
+    if found is None:
+        return {}
+    _registry, entry = found
+    overlay: dict = {}
+    if entry.has_model_override:
+        try:
+            from plobi.routing import ModelRouter
+
+            base_route = ModelRouter.load().resolve(entry.role)
+        except Exception:
+            base_route = None
+        provider = (entry.provider or "").strip() or (base_route.provider if base_route else "")
+        model = (entry.model or "").strip() or (base_route.model if base_route else "")
+        if provider:
+            if not provider_is_resolvable(provider):
+                # 那句点名的 warning 是从 ``_write_profile_config`` 原样搬来的：闸还是那道闸，
+                # 但"为什么这个分身没吃到你给它选的模型"必须说得出名字，不能静默留空。
+                logger.warning(
+                    "plobi: model override NOT applied for %r — the runtime provider "
+                    "resolver does not know provider %r (model %r), and applying it would "
+                    "make this 分身 fail with \"Unknown provider '%s'\" on every start. "
+                    "Skipping keeps it on the model the shared config declares. Run "
+                    "'plobi model' for the list of resolvable providers or 'plobi doctor' "
+                    "to diagnose.",
+                    entry.name,
+                    provider,
+                    model,
+                    provider,
+                )
+            else:
+                section = {
+                    k: v for k, v in (("provider", provider), ("default", model)) if v
+                }
+                if section:
+                    overlay["model"] = section
+    cwd = _resolvable_project_cwd(entry)
+    if cwd:
+        overlay["terminal"] = {"cwd": cwd}
+    return overlay
+
+
+def set_profile_model_override(profile_name: str, provider: str, model: str) -> str:
+    """把这一个 Agent 的模型写成**名册那一行的覆盖**（不写任何分身家的配置文件）。
+
+    桌面「给这个 Agent 单独选一个模型」那条腿以前是 ``set_plobi_home_override(那个家)``
+    + ``save_config``（``plobi_cli/web_server.py:_write_profile_model``）——在那之前每个分身
+    各有一份 ``config.yaml``，写它只改这一个分身。读链收成「名册行覆盖 → 顶层 → 出厂默认」
+    之后，那套做法会把**这一个** Agent 的选择写进**那唯一一份**配置（全员一起变，还把
+    merge 出来的默认值刷进用户的顶层文件），所以写入改道到名册这一行；生效值由
+    :func:`profile_config_overlay` 读时叠，顺序正好是裁 166 决定二那句「覆盖只写名册行」。
+
+    查不到名册行时抛 :class:`RegistryError`：那个家没有地方可以放"只属于它的覆盖"，
+    而把它塞进顶层那一份 = 串味，比报错更糟。
+    """
+    found = _registry_and_entry_for_profile(profile_name)
+    if found is None:
+        raise RegistryError(
+            f"profile {profile_name!r} 没有对应的名册行，无法只给它一个模型"
+            "（配置只有一份，写顶层 = 所有 Agent 一起变）。请在 Agent 名册里操作这一条。"
+        )
+    registry, entry = found
+    from dataclasses import replace
+
+    registry.upsert(replace(entry, provider=provider or "", model=model or ""))
+    registry.save()
+    return entry.name
+
+
+# ---------------------------------------------------------------------------
 # S2: find or spawn exactly one agenda L2
 # ---------------------------------------------------------------------------
 
@@ -1332,8 +1413,8 @@ def agenda_template_entry() -> AgentEntry:
 
     这里原来硬写着 ``provider="aigw", model="workbuddy/deepseek-chat"``。那是
     :data:`plobi.routing.models.DEFAULT_ROUTES` 的 L2 兜底抄进了**记录本身**：
-    一旦覆盖写在记录上，`_write_profile_config` 就会把 ``model.provider: aigw`` 盖进
-    日程分身的 config.yaml（2026-09-29 实测他的 l2-agenda 那条一度就是这样，被手工
+    一旦覆盖写在记录上，那一格就会被写进日程分身的 ``config.yaml``：
+    ``model.provider: aigw``（2026-09-29 实测他的 l2-agenda 那条一度就是这样，被手工
     纠回 minimax-cn），而 provider 值会成为选择器的分组标题——裁定 45.4 要保留的
     是**日志与配置里机器读的 id**，不是替用户决定他没用过哪个提供商。日程 L2 的
     路由账本（profile 的 plobi/models.json）照旧从 DEFAULT_ROUTES 取，不带上屏。
@@ -1687,9 +1768,6 @@ def ensure_mind_project_agents(
             # shell。profile 不存在时静默跳过（注册表先行、profile 稍后
             # 落地的过渡期）。
             _diet_existing_l2_project(patched)
-            # WP-STUDIO-CWD / 裁定 36.1: 已有未归档的项目 L2 也要把
-            # ``terminal.cwd`` 对齐 ``project_path``（registry 是真源）。
-            _cwd_existing_l2_project(patched)
             continue
 
         entry_obj = AgentEntry(
@@ -1731,13 +1809,8 @@ def ensure_mind_project_agents(
         if spawn_result and category in ("projects", "research"):
             try:
                 apply_l2_project_diet(spawn_result.get("profile_dir"))
-                # WP-STUDIO-CWD / 裁定 36.1: 把 project_path 写到
-                # ``terminal.cwd``——独立于 diet（cwd 不是工具集）。
-                apply_l2_project_cwd(
-                    spawn_result.get("profile_dir"), project_path
-                )
             except Exception as exc:
-                logger.warning("plobi: l2 diet/cwd skipped for %s: %s", safe_id, exc)
+                logger.warning("plobi: l2 diet skipped for %s: %s", safe_id, exc)
     if seeded:
         try:
             reg.save()
@@ -3960,76 +4033,6 @@ def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
     return True
 
 
-# WP-STUDIO-CWD / 裁定 36.1：把项目 L2 profile 的 ``terminal.cwd`` 写进
-# config.yaml，让新会话落到该项目的目录，而不是总秘书的家。L2-DIET 剥掉
-# 的「terminal 工具集」是另一回事——cwd 是配置字段，删工具集 ≠ 删 cwd。
-# 但ler / 空 path / 路径不存在：不写、不抢别人的 cwd（避免用假路径污染）。
-L2_PROJECT_CWD_BUTLER_ROLES = frozenset({"l2_agenda", "l2_butler"})
-
-
-def apply_l2_project_cwd(profile_dir: Path | str | None, project_path: str | None) -> bool:
-    """WP-STUDIO-CWD: write ``terminal.cwd`` into a project L2 profile's
-    ``config.yaml``. Idempotent; preserves every other key.
-
-    - ``project_path`` empty / None → no-op (butler / no path).
-    - profile dir doesn't exist → no-op (still nothing on disk).
-    - resolved ``project_path`` doesn't exist as a directory → no-op
-      (NEVER fabricate a cwd — that would just push the agent into a
-      broken workdir on next session).
-    - profile dir has no ``config.yaml`` yet → write a minimal one with
-      just ``terminal: {cwd: ...}`` so the gateway can still resolve the
-      cwd when the profile lands. Model routing stays untouched (handled
-      elsewhere in :meth:`AgentRegistry._write_profile_config`).
-    - existing ``config.yaml`` → keep all other keys (including any other
-      ``terminal:`` sub-keys), only update ``terminal.cwd`` if it differs.
-    """
-    if not project_path:
-        return False
-    if profile_dir is None:
-        return False
-
-    import yaml
-
-    cfg_path = Path(profile_dir) / "config.yaml"
-    abs_path = str(Path(project_path).expanduser().absolute())
-    if not Path(abs_path).is_dir():
-        return False
-
-    if not cfg_path.is_file():
-        # Minimal config: just terminal.cwd. Don't compete with the model
-        # routing layer on keys we don't own.
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(
-            yaml.safe_dump(
-                {"terminal": {"cwd": abs_path}},
-                sort_keys=False,
-                allow_unicode=True,
-            ),
-            encoding="utf-8",
-        )
-        return True
-
-    try:
-        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return False
-    if not isinstance(cfg, dict):
-        return False
-
-    terminal = cfg.get("terminal")
-    if not isinstance(terminal, dict):
-        terminal = {}
-    # Idempotent: the absolute path is already there → nothing to do.
-    if terminal.get("cwd") == abs_path:
-        return False
-    terminal["cwd"] = abs_path
-    cfg["terminal"] = terminal
-    cfg_path.write_text(
-        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
-    )
-    return True
-
-
 def shared_skills_root() -> Path:
     """The one skill root every L2 分身 reads (裁定 42 §42.2 共享层).
 
@@ -4042,31 +4045,31 @@ def shared_skills_root() -> Path:
     return get_profile_dir("default") / "skills"
 
 
-def apply_shared_skills_root(profile_dir: Path | str | None) -> bool:
-    """Point an L2 分身's ``config.yaml`` at :func:`shared_skills_root`.
+def apply_shared_skills_root() -> bool:
+    """Point the one ``config.yaml`` at :func:`shared_skills_root`（顶层那一份，只写一次）。
 
-    裁定 42 §42.3 第 2 条：分身不再自带技能，可见性来自
-    ``skills.external_dirs``（``agent/skill_utils.get_external_skills_dirs``
-    读取；``tools/skills_tool.py`` 与 ``agent/prompt_builder.py`` 都按
-    「本地主根优先、同名外部技能跳过」合并，所以列表不会翻倍）。
+    裁定 42 §42.3 第 2 条：分身不再自带技能，可见性来自 ``skills.external_dirs``
+    （``agent/skill_utils.get_external_skills_dirs`` 读取；``tools/skills_tool.py`` 与
+    ``agent/prompt_builder.py`` 都按「本地主根优先、同名外部技能跳过」合并，所以列表不会翻倍）。
+
+    以前这一句写进**每个分身家**的 ``config.yaml``：现核 24 份、那一条 24 份逐字相同
+    ——它从来不是"这个分身特有的东西"，只是复印件。裁 166 把配置收成一份之后就写那一份：
+    对顶层家来说那个路径正是它自己的本地主根（``get_external_skills_dirs`` 会跳过同名项，
+    等于 no-op），对分身来说它是真正的外部根——同一个值，两边都对，而且只存了一处。
 
     Idempotent and preserves every other key:
-    - profile dir is ``None`` → no-op.
     - shared root missing (fresh install, nothing seeded) → still written; the
-      scanner skips non-existent dirs, and the binding self-heals once the
-      root exists.
+      scanner skips non-existent dirs, and the binding self-heals once the root exists.
     - the root is already listed (compared after ``expanduser`` + ``absolute``)
       → no-op, so repeated ``spawn`` never appends a second entry.
     - any external dir the user listed themselves is preserved; we only append
       ours, never reorder or drop.
     """
-    if profile_dir is None:
-        return False
-
     import yaml
+    from plobi_constants import get_shared_plobi_root
 
     root = str(shared_skills_root().expanduser().absolute())
-    cfg_path = Path(profile_dir) / "config.yaml"
+    cfg_path = get_shared_plobi_root() / "config.yaml"
 
     if not cfg_path.is_file():
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4112,6 +4115,7 @@ def apply_shared_skills_root(profile_dir: Path | str | None) -> bool:
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )
     return True
+    return True
 
 
 def _diet_existing_l2_project(entry: "AgentEntry") -> None:
@@ -4139,29 +4143,6 @@ def _diet_existing_l2_project(entry: "AgentEntry") -> None:
         logger.debug("plobi: l2 diet (existing) skipped for %s: %s", entry.name, exc)
 
 
-def _cwd_existing_l2_project(entry: "AgentEntry") -> None:
-    """WP-STUDIO-CWD / 裁定 36.1: 对注册表里已存在的未归档 ``l2_project``
-    行也同步 terminal.cwd。用户手改过 yaml 时仍以 registry 的 project_path
-    为准——这是秘书产品的真源（裁定 36.1 第 2 段）。profile 不存在 = 静默。"""
-    if entry.role in L2_PROJECT_CWD_BUTLER_ROLES:
-        return
-    if entry.archived:
-        return
-    if entry.category not in ("projects", "research"):
-        return
-    if not entry.project_path:
-        return
-    profile_name = entry.profile_name
-    if not profile_name:
-        return
-    try:
-        from plobi_cli.profiles import get_profile_dir, profile_exists
-
-        if not profile_exists(profile_name):
-            return
-        apply_l2_project_cwd(get_profile_dir(profile_name), entry.project_path)
-    except Exception as exc:
-        logger.debug("plobi: l2 cwd (existing) skipped for %s: %s", entry.name, exc)
 
 
 def ensure_l2_agenda_toolsets(profile_dir: Path | str) -> bool:
@@ -4388,7 +4369,8 @@ def ensure_l2_identity_soul(
     target = Path(home) if home is not None else get_plobi_home()
     if not target.is_dir():
         # 分身还没落地（spawn 未跑 / profile 目录被移走）。不要为了一份 SOUL.md
-        # 凭空建 profile 目录 —— 那是第二真源，见 ``apply_l2_project_cwd`` 的同款判据。
+        # 凭空建 profile 目录 —— 那是第二真源，见 :func:`_resolvable_project_cwd`
+        # 的同款判据（宁可不给，也不编造落点）。
         return False
     soul_path = target / "SOUL.md"
     existing = ""
