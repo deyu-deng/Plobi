@@ -60,6 +60,58 @@ export function keyFingerprint(value: string): string {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 8)
 }
 
+/**
+ * `chatlog key` 那一发的超时。上游一次**失败**的全地址空间扫描实测跑满 **167 秒**
+ * （`Docs/rulings/architecture-rulings.md` 裁定 124 一），而旧值 90 秒会先把进程杀掉，
+ * 于是我们永远只拿得到 Node 自己的 `ETIMEDOUT`，把上游那句真话（`no valid key found`）整条抹掉。
+ * 这里给的是"跑完一趟全扫再加余量"，不是"更快放弃"。
+ */
+export const KEY_SCAN_TIMEOUT_MS = 240_000
+
+/** 十六进制串一律遮掉：上游 stderr 里出现过 ≥16 位的十六进制段（`--debug` 那一档），而密钥就 32 字节。 */
+const HEX_RUN = /[0-9a-fA-F]{12,}/g
+/** 只取错误行；其余是进度噪音，进台账没意义还占地方。 */
+const ERROR_LINE = /(error|err\b|fail|no valid key|not found|panic|fatal|denied|timeout)/i
+
+/**
+ * 把 `chatlog key` 那次失败压成一句**说真话**的话：上游自己那行错 + 退出码，不替它猜原因。
+ *
+ * 三条口径都是被现场教出来的：① 密钥在 **stdout**（`cmd_key.go:34` 那句 `Println(ret)`），
+ * 所以调用侧必须 `stdio[1] = 'ignore'`，本函数**只看 stderr**；② stderr 里也可能有十六进制段，
+ * 进台账前先遮；③ 旧文案那句「PC 微信在登录态吗」把三条已被实测排除的原因当唯一解释（裁定 124）。
+ * 超时那一档只说"被我们杀了"，不假装拿到了上游的错；`exec.Command` 在 `internal/wechat/key` 与
+ * `cmd_key.go` 里现读 0 处 ⇒ 这一发没有第二层进程要杀，杀掉直接子进程就是杀掉全部。
+ */
+export function describeKeyFailure(input: {
+  stderr?: unknown
+  status?: number | null
+  signal?: string | null
+  code?: string | null
+  timedOut?: boolean
+}): string {
+  const raw = Buffer.isBuffer(input.stderr)
+    ? input.stderr.toString('utf8')
+    : typeof input.stderr === 'string'
+      ? input.stderr
+      : ''
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.replace(HEX_RUN, (hex) => `<hex×${hex.length}>`).trim())
+    .filter((line) => line.length > 0 && ERROR_LINE.test(line))
+    .slice(-3)
+  // 连进程都没起来（ENOENT = 产物不在、EACCES = 不可执行）：这跟"跑完了但没拿到 key"是不同的两件事，
+  // 不许混成一句。`error.message` 里带命令行，所以只取 `code` 那一个词。
+  const how = input.timedOut
+    ? `超时（${KEY_SCAN_TIMEOUT_MS / 1000} 秒，进程已被杀；上游 key 那条路不生子进程）`
+    : input.status == null && input.code
+      ? `没能起来（系统错码 ${input.code}，多半是产物路径不可执行）`
+      : `退出码 ${input.status ?? '未知'}${input.signal ? ` / 信号 ${input.signal}` : ''}`
+
+  return lines.length > 0
+    ? `chatlog key ${how}：${lines.join(' | ').slice(0, 240)}`
+    : `chatlog key ${how}：上游 stderr 里没有错误行（stdio 全丢 stdout，密钥不经此处）`
+}
+
 function readJsonFile(target: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(target, 'utf8'))
