@@ -329,6 +329,61 @@ export type QuotaSelectionVerdict =
   | { state: 'ok' }
   | { reason: string; state: 'gone' }
 
+/**
+ * What the hub says about one piece of desktop software, right now — the same
+ * four states as `quotaSelectionVerdict`, one step up from a single model.
+ *
+ * A card is per *software*, and one software can ride more than one hub leg
+ * (CodeBuddy has `workbuddy` and `workbuddy_api`), so this takes the ids to
+ * answer for all of them: any leg the hub still vouches for makes the software
+ * usable, and the reason it gives is carried out verbatim.
+ *
+ *   - `absent`      the hub has never reported this software — we did not ask
+ *   - `unanswered`  it was reported, but no read has landed — we do not know,
+ *                  and "we did not ask" must never be acted on as "it is broken"
+ *   - `ok`          the hub vouches for at least one of its models
+ *   - `unusable`    the hub answered and vouches for none, with its own reason
+ *
+ * The store is the only place allowed to join legs, because a prefix match
+ * invents channels that aren't there (a mock channel already serves
+ * `workbuddy/...` ids). The record map is passed in rather than read from the
+ * atom so a caller that subscribed to it stays the one deciding when to re-read.
+ */
+export type QuotaAppVerdict =
+  | { state: 'absent' }
+  | { state: 'unanswered' }
+  | { models: string[]; state: 'ok' }
+  | { reason: string; state: 'unusable' }
+
+export function quotaAppVerdict(
+  apps: Readonly<Record<string, ConnectedDesktopApp>>,
+  appIds: readonly string[]
+): QuotaAppVerdict {
+  const records = appIds
+    .map(id => apps[id])
+    .filter((record): record is ConnectedDesktopApp => Boolean(record))
+
+  if (records.length === 0) {
+    return { state: 'absent' }
+  }
+
+  const answered = records.filter(record => record.answered === true)
+
+  if (answered.length === 0) {
+    return { state: 'unanswered' }
+  }
+
+  const usable = answered.find(record => record.models.length > 0)
+
+  if (usable) {
+    return { models: usable.models, state: 'ok' }
+  }
+
+  const [reason] = answered.flatMap(record => Object.values(record.blocked ?? {}))
+
+  return { reason: reason ?? 'not_offered', state: 'unusable' }
+}
+
 export function quotaSelectionVerdict(model: string): QuotaSelectionVerdict {
   const app = hubAppOfModel(model)
 
