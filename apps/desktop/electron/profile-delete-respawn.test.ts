@@ -35,28 +35,32 @@ test('prepareProfileDeleteRequest returns the torn-down profile name', () => {
   assert.match(fnBody, /return null/, 'early-exit guard should return null, not undefined')
 })
 
-test('plobi:api handler routes profile-delete requests to the primary backend', () => {
+test('plobi:api handler never spawns a pool backend (single gateway)', () => {
   const source = readElectronFile('main.ts')
 
-  // The handler must capture prepareProfileDeleteRequest's return value.
+  // WP-AGENT-SINGLE-GATEWAY §3.3：桌面一个后端服务所有 Agent。handler 恒路由
+  // 主后端（ensureBackend(null)）——profile-delete 的特判（issue #52279：
+  // 删除后不许起新池后端）被**结构性**取代：再也不存在"为该 profile 起新
+  // 进程"这条路，比条件特判更强。
   assert.match(
     source,
-    /const tornDownProfile = await prepareProfileDeleteRequest\(request\)/,
-    'handler should capture the return value of prepareProfileDeleteRequest'
+    /const connection = await ensureBackend\(null\)/,
+    'handler should always route to the primary backend'
   )
 
-  // The handler must use the return value to skip ensureBackend for the
-  // torn-down profile, routing to the primary (null) instead.
+  // 身份从"选进程"改成"带下去当参数"：X-Plobi-Agent 请求头，后端
+  // request_profile() 读（plobi/console/router.py）。
   assert.match(
     source,
-    /const routeProfile = tornDownProfile \? null : profile/,
-    'handler should route to primary backend when a profile was just torn down'
-  )
+    /headers: \{ 'X-Plobi-Agent': String\(profile\) \}/,
+    'handler should carry the request-level identity as a header'
+  );
 
-  // ensureBackend must be called with the conditional route profile.
+  // prepareProfileDeleteRequest 的其余副作用保留（删除前的准备仍在跑），
+  // 只是返回值不再参与路由。
   assert.match(
     source,
-    /const connection = await ensureBackend\(routeProfile\)/,
-    'handler should pass routeProfile (not raw profile) to ensureBackend'
+    /await prepareProfileDeleteRequest\(request\)/,
+    'profile-delete preparation side effects must be preserved'
   )
 })
