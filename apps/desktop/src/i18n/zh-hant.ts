@@ -65,8 +65,10 @@ export const zhHant = defineLocale({
     ready: 'Plobi Desktop 已就緒',
     desktopBootFailedWithMessage: message => `桌面啟動失敗：${message}`,
     sidecars: {
-      deferredTitle: '延後啟動的服務（非故障）',
-      deferredHint: '不是故障：這台電腦上根本沒有可以啟動的東西。主要聊天不受影響；系統托盤選單與這裡會列出每個延後啟動的服務、未啟動的原因與恢復方式。',
+      deferredTitle: '這台沒在跑的服務',
+      stateDeferred: '這一波還沒接',
+      stateRed: '試過，沒起來',
+      deferredHint: '只列這台目前沒在跑的服務，健康的一條都不出現。下面每一行要么是這一波還沒接（要用時 Plobi 自己起，跑起來這行就消失），要么是它試過沒起來——缺哪一步、怎麼回來都寫在行裡。主要對話不受影響。',
       redTitle: '服務故障',
       redHint: '主要聊天不受影響，但這個服務確實被嘗試啟動過，卻沒有健康地跑起來。這是真正的故障，不是延後；恢復方式請見狀態列閘道選單。',
       // R-082 使用者層級：一句話（哪個採集沒連上）；開發者全文留在收合的詳情裡。
@@ -1350,7 +1352,8 @@ export const zhHant = defineLocale({
       empty: '這一天沒有產生計畫',
       pending: '待你批准',
       statusUnknown: '無狀態',
-      title: label => `${label}的計畫`
+      title: label => `${label}的計畫`,
+      unackable: '這條我記不了'
     },
     week: {
       conflicts: count => `衝突 ${count}`,

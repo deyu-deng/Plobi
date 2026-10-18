@@ -112,6 +112,9 @@ export interface Translations {
     sidecars: {
       deferredHint: string
       deferredTitle: string
+      /** WP-DEFERRED-PLAINTEXT-RENDER：屏上那一格不许印 `deferred`/`red` 这种状态码字面，得说人话——这一波还没接，还是试过没起来。 */
+      stateDeferred: string
+      stateRed: string
       /** Card heading for a `red` row — the one state that may alarm. */
       redTitle: string
       redHint: string
@@ -1239,6 +1242,7 @@ export interface Translations {
       pending: string
       statusUnknown: string
       title: (label: string) => string
+      unackable: string
     }
     /**
      * WP-AGENDA-VIEW slice 1: the Monday-anchored week row. `days` is Monday-first and
