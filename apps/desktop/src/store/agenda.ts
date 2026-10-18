@@ -59,6 +59,19 @@ export const $completedEventIds = computed($agendaEvents, events => new Set(
     .map(event => event.id)
 ))
 
+/**
+ * WP-PLAN-ACK-NO-FAKE-CHECK：服务端**答过有这些事件**的那一份 id 集合。
+ *
+ * 计划行带的 `event_id` 不一定真有一条事件——排程自造的 `l1:block-3` / `routine:seed-lunch`
+ * 就不是事件 id，后端对它们直接 `EventNotFound` → 404。画一颗点下去只会报错的勾，
+ * 比不画更坏。所以面上先问一句「这颗 id 在服务端那份 events 里吗」。
+ *
+ * 窗口对得上才成立：`GET /api/agenda` 不带参数时默认是**今天 00:00 → 明天 23:59:59**
+ * （`plobi/agenda/service.py::list_agenda`），而这一块只画今天/明天两天的计划。
+ * 空集合是「服务端还没答」，不是「一条都不存在」——用的人必须把这两种分开。
+ */
+export const $agendaEventIds = computed($agendaEvents, events => new Set(events.map(event => event.id)))
+
 export function removeAgendaEvent(eventId: string): void {
   $agendaEvents.set($agendaEvents.get().filter(event => event.id !== eventId))
 

@@ -15,11 +15,16 @@ const upsertAgendaEvent = vi.hoisted(() => vi.fn())
 
 vi.mock('@/plobi', () => ({ setAgendaEventCompleted: (...args: unknown[]) => setAgendaEventCompleted(...args) }))
 vi.mock('@/store/agenda', () => ({
-  $completedEventIds: {},
+  $completedEventIds: { store: 'completed' },
+  $agendaEventIds: { store: 'known' },
   upsertAgendaEvent: (...args: unknown[]) => upsertAgendaEvent(...args)
 }))
-// 完成态从 `$completedEventIds` 回查；测试里让"还没有任何一条被认过"。
-vi.mock('@nanostores/react', () => ({ useStore: () => new Set<string>() }))
+// 两格都从 store 里读：完成态这一趟还没有任何一条被认过；而 `evt_1` **在服务端答过的那份
+// events 里**（WP-PLAN-ACK-NO-FAKE-CHECK 加的那道判定），所以这颗勾该画。
+vi.mock('@nanostores/react', () => ({
+  useStore: (store: { store?: string }) =>
+    store?.store === 'known' ? new Set(['evt_1']) : new Set<string>()
+}))
 
 import { TRANSLATIONS } from '@/i18n/catalog'
 
