@@ -113,6 +113,10 @@ def sources_from_catalog(
     else:
         rows = []
     grouped: dict[str, list[tuple[str, dict]]] = {}
+    # 可用性不由我们再判一遍：目录里每条模型已经带了 `live/selectable` 与各自的 reason
+    # （写入方是 `aigw/registry.py:230-232`，判据在 provider 那一侧，如 `workbuddy.py:102`）。
+    # 这里只按 provider 汇总，R-108 那一格要用它回答"这条腿现在能不能用"。
+    availability: dict[str, dict[str, Any]] = {}
     seen = 0
     for row in rows:
         if isinstance(row, str):
@@ -128,6 +132,21 @@ def sources_from_catalog(
         seen += 1
         if not provider or provider == MOCK_PROVIDER:
             continue
+        if isinstance(row, dict):
+            slot = availability.setdefault(
+                provider,
+                {"live": False, "selectable": False, "live_reason": "", "unselectable_reason": "", "models": 0},
+            )
+            slot["models"] += 1
+            if row.get("live") is True:
+                slot["live"] = True
+            if row.get("selectable") is True:
+                slot["selectable"] = True
+                slot["live_reason"] = str(row.get("live_reason") or "")
+                slot["unselectable_reason"] = ""
+            elif not slot["selectable"]:
+                slot["live_reason"] = str(row.get("live_reason") or slot["live_reason"] or "")
+                slot["unselectable_reason"] = str(row.get("unselectable_reason") or "")
         # No fabricated defaults: an adapter that reports no capabilities gets an
         # empty claim dict, which reads as "unknown" downstream rather than "no
         # streaming".
@@ -144,6 +163,7 @@ def sources_from_catalog(
             "api_key": api_key,
             "capabilities": dict(caps),
             "derived": True,
+            "availability": dict(availability.get(provider) or {}),
         }
     return sources, seen
 
