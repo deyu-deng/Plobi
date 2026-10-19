@@ -58,7 +58,7 @@ function syncRepositoryIncrementally(
   return repository.getMessages()
 }
 
-class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRuntimeCore {
+export class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRuntimeCore {
   override __internal_setAdapter(store: ExternalStoreAdapter): void {
     if (!store.messageRepository) {
       super.__internal_setAdapter(store)
@@ -68,6 +68,7 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
 
     const self = this as unknown as {
       _assistantOptimisticId: null | string
+      _optimisticParentId: null | string | undefined
       _capabilities: object
       _messages: readonly ThreadMessage[]
       _notifyEventSubscribers: (event: string, payload: object) => void
@@ -136,18 +137,41 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
     }
 
     if (hasUpcomingMessage(isRunning, messages)) {
-      // `appendOptimisticMessage` never existed on MessageRepository in
-      // @assistant-ui/core 0.3.x — the repo API is addOrUpdateMessage, which
-      // takes the caller-supplied id instead of minting one. (The old call
-      // compiled only because vite dev doesn't enforce named exports.)
-      const optimisticId = generateId()
+      // Mirror ExternalStoreThreadRuntimeCore's own optimistic insert (core
+      // 0.3.22, external-store-thread-runtime-core.js:274-287): a stable id
+      // per parentId plus a message normalized to the full ThreadMessage
+      // shape — status 'running' and the complete metadata block that
+      // fromThreadMessageLike would produce. The hand-rolled
+      // addOrUpdateMessage shipped in v2026.10.19 skipped that
+      // normalization and left the most recent assistant message WITHOUT
+      // metadata; BaseThreadRuntimeCore.state reads
+      // `metadata.unstable_state` on the most recent assistant message on
+      // every render, so any thread running at startup threw straight into
+      // the root error boundary. (appendOptimisticMessage does NOT exist in
+      // core 0.3.22 — only in the unrelated 0.1.17 copy — and
+      // fromThreadMessageLike is runtime-exported but missing from
+      // internal.d.ts, so the normalization is inlined here.)
+      const parentId = messages.at(-1)?.id ?? null
 
-      this.repository.addOrUpdateMessage(messages.at(-1)?.id ?? null, {
-        id: optimisticId,
+      if (!self._assistantOptimisticId || self._optimisticParentId !== parentId) {
+        self._assistantOptimisticId = generateId()
+        self._optimisticParentId = parentId
+      }
+
+      this.repository.addOrUpdateMessage(parentId, {
+        id: self._assistantOptimisticId,
         role: 'assistant',
-        content: []
-      } as unknown as ThreadMessage)
-      self._assistantOptimisticId = optimisticId
+        content: [],
+        createdAt: new Date(),
+        status: { type: 'running' },
+        metadata: {
+          unstable_state: null,
+          unstable_annotations: [],
+          unstable_data: [],
+          steps: [],
+          custom: {}
+        }
+      })
     }
 
     this.repository.resetHead(self._assistantOptimisticId ?? messages.at(-1)?.id ?? null)
