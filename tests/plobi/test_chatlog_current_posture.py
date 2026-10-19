@@ -226,6 +226,17 @@ class TestFourDeadEndsAreFourSentences:
     def test_healthy_probe_says_ready_and_is_not_a_dead_end(self, tmp_path: Path) -> None:
         assert sidecar.diagnose(env={}, healthy=True) == (sidecar.STATE_READY, sidecar.note_for(sidecar.STATE_READY))
 
+    def test_ready_names_the_capability_that_is_actually_missing(self) -> None:
+        """裁 188 不装钩子，不等于读侧可以把"缺实时那一族"洗成一句干净的「采集器活着」。
+
+        状态字仍然是 `ready`（桌面那行的契约不许改，裁 176：绿的时候什么都不显示）；
+        变的是那句话——它必须说得出读的是哪条路、缺的是哪一族。
+        """
+        note = sidecar.note_for(sidecar.STATE_READY)
+        assert "已解密" in note and "实时接收" in note
+        assert note != "采集器活着。", "只留一句「采集器活着」就是把缺席当成了全能"
+        assert sidecar.diagnose(env={}, healthy=True)[0] == sidecar.STATE_READY
+
     def test_unrecognised_state_is_not_guessed(self) -> None:
         assert sidecar.note_for("weird").startswith("没记到的采集器状态")
 
