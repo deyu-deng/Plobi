@@ -1,17 +1,22 @@
-"""信源注册表 —— 加一个平台 = 在这里登记一行 + 实现 :class:`Collector`，**不改公共层**（判据 3）。
+"""信源注册表 —— 加一个平台 = **加一个自带 ``SPEC`` 的包**，本文件一行不改（判据 3）。
 
 病根形状（裁定 98 二/判据 3）：`plobi/agenda/store.py` 原来拿一个硬编 tuple 当信源词表，
 加「学在浙大」就得动公共层——那就不叫可插拔。现在词表由这张表派生，存储层只在校验时来读。
 
-能力位是**声明式**的（裁定 98 三判据 4）：调度层读 `capability()`，不许写
-`if source == "wechat"`。取值口径有一条与网关**相反**，是故意的：
+2026-10-19 往前一步（`Docs/specs/source-layer.md` §3.1）：连**这张表自己**那份手写
+`_declare(...)` 元组也拆了——那四条搬进各自的包，由 :func:`ensure_discovered` 发现。
+本文件**不再出现任何信源 id**（包括注释里），这条由
+``tests/plobi/test_source_registry_pluggable.py::test_registry_module_names_no_source_at_all`` 钉住。
+
+能力位是**声明式**的（裁定 98 三判据 4）：调度层读 `capability()`，不许按信源名字
+分支。取值口径有一条与网关**相反**，是故意的：
 
 - 网关那两个 `getattr(adapter, SUPPORTS_*, True)` 兜底是 True（读不到就当支持）；
 - 采集侧**读不到就报错，未实测就报错**（``None`` 会被 :func:`require` 拒掉）。
   理由与判据 7 那个病根同源：兜底猜一个值＝静默按某种口径跑，用户以为在采、其实没采。
 
-``collecting=False`` 表示"这个名字已经在词表里、但没有任何东西在采它"（钉钉只有网关侧收发通道、
-学在浙大还没接）——登记归口与假数据占位是两件事：**登记可以，编造读数不行**（判据 5 未验就这么记）。
+``collecting=False`` 表示"这个名字已经在词表里、但没有任何东西在采它"（钉钉只有网关侧收发通道）——
+登记归口与假数据占位是两件事：**登记可以，编造读数不行**（判据 5 未验就这么记）。
 
 **分类**（`category`，2026-10-19 用户拍定，见 `Docs/specs/source-layer.md` §2）：轴是
 **「首次配置要用户做什么」**，不是重要性、不是数据形状、不是来源方。它是**连接器的形状**，
@@ -24,7 +29,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Mapping, Optional
+from importlib import metadata
+import importlib
+from pathlib import Path
+from typing import Any, Callable, Mapping, Optional
 
 # 人手写、不是采来的——它是日程库里的"非信源信源"，归存储层自己的词表，不进注册表。
 # ⚠️ **这一档允许按名字分支**（`agenda/service.py` 里那两处 `if source == "manual"`）：
@@ -122,12 +130,16 @@ def register(spec: SourceSpec, *, replace: bool = False) -> SourceSpec:
 
 def unregister(source_id: str) -> None:
     """测试与"这一档撤了"的出口——不存在就报错，不静默。"""
+    ensure_discovered()
+
     if source_id not in _SPECS:
         raise UnknownSource(source_id)
     del _SPECS[source_id]
 
 
 def spec(source_id: str) -> SourceSpec:
+    ensure_discovered()
+
     try:
         return _SPECS[source_id]
     except KeyError:
@@ -135,6 +147,8 @@ def spec(source_id: str) -> SourceSpec:
 
 
 def source_ids() -> tuple[str, ...]:
+    ensure_discovered()
+
     return tuple(sorted(_SPECS))
 
 
@@ -153,10 +167,14 @@ def sources_by_category() -> dict[str, tuple[str, ...]]:
     面的分类筛选读它；空分类也出现（只是没有成员）——设置里那一栏要能显示
     "这一类还没有接任何信源"，那也是一句话，不该由界面自己编。
     """
-    return {
-        category: tuple(sorted(sid for sid, item in _SPECS.items() if item.category == category))
-        for category in SOURCE_CATEGORIES
-    }
+    grouped: dict[str, tuple[str, ...]] = {}
+
+    for category in SOURCE_CATEGORIES:
+        members = [sid for sid in source_ids() if _SPECS[sid].category == category]
+
+        grouped[category] = tuple(sorted(members))
+
+    return grouped
 
 
 def allowed_sources() -> tuple[str, ...]:
@@ -181,117 +199,120 @@ def require(source_id: str, key: str) -> bool:
 
 
 def collecting_sources() -> tuple[str, ...]:
+    ensure_discovered()
+
     return tuple(sorted(sid for sid, item in _SPECS.items() if item.collecting))
 
 
-def _build_zju() -> Any:
-    """教务那条的执行方入口。**延迟 import**：`collectors/zju` 那头要读这张表派生的词表。
+# ---------------------------------------------------------------------------
+# 发现（spec-layer §3.1「乙」）
+#
+# 加一条信源＝加一个目录（内置）或装一个包（外部），**Plobi 核心一行不改**。形状照仓内
+# 两处先例抄，不发明新的：``tools/registry.py``（认模块、不认文件名；模块顶层调
+# ``register()`` 即被认领）与 ``plobi_cli/plugins.py``（用户自己装的走同一套发现）。
+#
+# **三条施工约束（照抄进来的是形状，不是这三句的理由）**：
+#
+# 1. :func:`ensure_discovered` 幂等，且**每个读口都先调它**。这不是洁癖：``_SPECS``
+#    是空的 ⇒ :func:`source_ids` 回空元组 ⇒ sweep「成功」地跑完、零条进账、
+#    ``/api/collect/sources` 回一个空名单。**那是最危险的静默失败**，形状和
+#    ``no_builder`` 当年被藏起来的那次一模一样。
+# 2. 发现失败**出声**（:class:`CollectorDiscoveryError`），不许吞成"这条不存在"。
+# 3. ``builder`` 仍是唯一构造入口，``sweep.py`` 继续不按名字分支——解耦动的是**注册**，
+#    不是调度。
+# ---------------------------------------------------------------------------
 
-    `transport` 是**必填位**（判据 7：默认回退到真网络调用就是那颗雷的形状），所以这里显式给
-    生产那一只 `UrllibTransport` —— 这一格写漏一次，每天那一轮就稳定报 `build_failed`
-    （10-15 13:07 真跑就是这么抓出来的，不是测试抓的）。
+#: 外部包声明自己的那组 entry-point（``[project.entry-points."plobi.collectors"]``）。
+#: 一条信源 = 包里那个 ``SPEC`` 对象。
+EXTERNAL_ENTRY_POINT_GROUP = "plobi.collectors"
+
+#: 内置采集器的约定：一个包一个信源，包顶层导出 ``SPEC``。**认符号、不认文件名**
+#: ——所以重命名模块不会悄悄把一条信源从注册表里弄掉（那正是 tools 那次事故的形状）。
+BUILTIN_SPEC_ATTRIBUTE = "SPEC"
+
+
+class CollectorDiscoveryError(RuntimeError):
+    """某个采集器包没能被载入。**出声，不吞**。
+
+    吞掉的形状：某条信源因为一个 import 错误消失了，而 :func:`source_ids` 少报一个 id
+    ——用户看到的是"今天没东西进来"，永远问不到"某个包没载入"。所以这里把包名与原始
+    异常一起带上来，让这条失败**在读数里排第一**而不是消失在集合里。
     """
-    from plobi.collectors.zju import ZjuCollector
-    from plobi.collectors.zju.auth import UrllibTransport
 
-    return ZjuCollector(transport=UrllibTransport())
+    def __init__(self, failures: list[tuple[str, str]]) -> None:
+        detail = "; ".join(f"{module}: {reason}" for module, reason in failures)
+        super().__init__(f"{len(failures)} 个采集器包没能载入：{detail}")
+        self.failures = dict(failures)
 
 
-def _build_wechat() -> Any:
-    """微信那条的执行方入口。
+_discovered = False
 
-    缺这一格的时候，每天那一轮把 `wechat` 报成 ``no_builder``——"注册表说这条在采，
-    但没有任何一方构造得出它的采集器"——于是**真原因永远问不到**：sidecar 是没产物、
-    没配置、没密钥还是没在听，全都藏在一句"不会有东西进来"后面。构造出来之后，
-    这些由 ``ChatlogPipeline.collect()`` 逐条报状态。
 
-    管线自己会先探活再花钱（不健康就抛带状态的 ``ChatlogDead``），所以这里不需要
-    再套一层闸；构造全部走产品自己的落点（`$PLOBI_HOME` 下的配置与 sidecar handoff），
-    没有第二个真源。
+def _discover_builtin() -> list[tuple[str, str]]:
+    """导入每个内置采集器包，让它顶层的 ``SPEC`` 把自己登记进来。"""
+    failures: list[tuple[str, str]] = []
+    package = __name__.rsplit(".", 1)[0]
+    package_dir = Path(__file__).resolve().parent
+
+    for path in sorted(package_dir.glob("*/__init__.py")):
+        module_name = f"{package}.{path.parent.name}"
+
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:  # noqa: BLE001 - 见 CollectorDiscoveryError 的说明
+            failures.append((module_name, f"{type(exc).__name__}: {exc}"))
+
+            continue
+
+        if not hasattr(module, BUILTIN_SPEC_ATTRIBUTE):
+            # 不是采集器包（公共层的一个子包）。**不报错**：发现认的是"有没有 SPEC"，
+            # 不是"目录长得像不像"。
+            continue
+
+    return failures
+
+
+def _discover_external() -> list[tuple[str, str]]:
+    """载入第三方装的信源包（entry-point 组）。
+
+    `importlib.metadata` 在没装任何东西时给空集合，那不是错误——这是**零外部信源**
+    这一配置的正常读数，不是"发现失败了"。
     """
-    from plobi.collectors.chatlog.pipeline import ChatlogPipeline
+    failures: list[tuple[str, str]] = []
 
-    return ChatlogPipeline()
+    try:
+        entry_points = metadata.entry_points(group=EXTERNAL_ENTRY_POINT_GROUP)
+    except Exception as exc:  # noqa: BLE001 - 见 CollectorDiscoveryError 的说明
+        return [("importlib.metadata", f"{type(exc).__name__}: {exc}")]
+
+    for entry_point in entry_points:
+        try:
+            entry_point.load()
+        except Exception as exc:  # noqa: BLE001 - 见 CollectorDiscoveryError 的说明
+            failures.append((entry_point.name, f"{type(exc).__name__}: {exc}"))
+
+    return failures
 
 
-def _declare(items: Iterable[SourceSpec]) -> None:
-    for item in items:
-        register(item, replace=True)
+def ensure_discovered() -> None:
+    """把内置与外部的采集器都载入注册表。**幂等**，且每个读口都会先调它。
+
+    失败的包不静默：载入失败抛 :class:`CollectorDiscoveryError`（一次全抛，不是第一条），
+    因为"三条包没载入"与"一条包没载入"是两种不同的排障，而抛第一条会让剩下几条永远
+    看不见。**已经登记好的不受影响**——发现失败抛的是异常，不是清空 `_SPECS`。
+    """
+    global _discovered
+
+    if _discovered:
+        return
+
+    # 先置位再干活：万一某个包在导入时又回头读这张表（教务那条就会，因为它那层要读这张
+    # 表派生的词表），递归进来不会把同一个包导两次——`register()` 对重复登记本来就会抛。
+    _discovered = True
+
+    failures = _discover_builtin() + _discover_external()
+
+    if failures:
+        raise CollectorDiscoveryError(failures)
 
 
-_declare(
-    (
-        SourceSpec(
-            "wechat",
-            capabilities={
-                "history_backfill": True,       # client.fetch(talker, day) 按天回溯
-                "incremental_since": True,      # day 游标 + SeenStore
-                "supports_media": False,        # 采集层代码零媒体处理
-                "requires_manual_setup": True,  # 构建 + 数据密钥 + 微信登录
-                "authoritative_replace": False,  # ingest 契约：本轮缺的不删
-            },
-            # 对话流：登录一次，之后是会话流（spec-layer §2.2「消息」）。
-            category="message",
-            # 执行方入口补上了（10-16）：此前这条每轮都被报成 `no_builder`，
-            # 真原因问不到下一层。构造不做静默网络调用以外的假设——管线自己先探活。
-            builder=_build_wechat,
-        ),
-        SourceSpec(
-            "timetable",
-            capabilities={
-                "history_backfill": True,       # 文件里有什么就是什么
-                "incremental_since": False,     # collector 收了 since 但忽略
-                "supports_media": False,
-                "requires_manual_setup": True,  # 用户指定目录里放一个 .ics
-                "authoritative_replace": False,
-            },
-            # 「用户往某目录放一个 .ics」⇒ 连接器形状是磁盘路径，归「本地」不归「网站」
-            # （这一档同时还有一个 `timetable.ics_url`，那是同一份数据的另一种接法，
-            #   登记成一条还是两条属 spec-layer §10 未决，不在下面混着记）。
-            category="local",
-        ),
-        SourceSpec(
-            # 钉钉：本机有客户端，但那是网关侧的**收发通道**，采集层对它零实现。
-            "dingtalk",
-            capabilities={
-                "history_backfill": False,      # Stream 长连接只收连上之后的消息
-                "incremental_since": True,
-                "supports_media": None,         # 本仓只做文本收发，没测过媒体
-                "requires_manual_setup": True,  # 开放平台建应用 + 两个 key
-                "authoritative_replace": False,
-            },
-            # 对话流（Stream 长连接），与微信同族 ⇒ 「消息」。
-            category="message",
-            collecting=False,
-        ),
-        SourceSpec(
-            # 学在浙大：Web 系统，无客户端可装，走接口直取。采集器在 `collectors/zju/`。
-            "zju",
-            capabilities={
-                # 实测：一发 `GET /api/todos` 就回 48 条（含排到 2027-01-05 的），
-                # 且 `limit=5` 与 `limit=200` 都回 48 ⇒ 不按 limit 截断，历史一次拿全。
-                "history_backfill": True,
-                # **没实测到增量端点**："不按 limit 截断"不等于"认 since"。
-                # 这一格记 False 讲的是**我们这侧的契约**：`pull(since=…)` 收了不用，
-                # 每轮全量 + 按 `uid` 幂等。站方有没有增量端点仍是未测，别把这句读成"学校没有"。
-                "incremental_since": False,
-                # 实测：11 个字段全是文本/布尔/数组，无图片、无附件、无语音。
-                "supports_media": False,
-                # 账密已给（根 .env）；`getKaptchaStatus` 是**站方服务端开关**，不是这信源的性质，
-                # 撞上 true 必须报「要人工验证码」并停手，不许自动识别。
-                "requires_manual_setup": True,
-                # 仍未实测也未拍：11 个字段里没有「已提交/未提交」状态位，「提交后会不会整条消失」
-                # 没测；叠加 `ingest.py:18` 的「本轮缺的不删」⇒「完成即关闭」是产品决定。
-                # 留 `None` 是有意的：**消费方一问就报错**，不许拿猜测当读数。
-                "authoritative_replace": None,
-            },
-            # 无客户端可装 ⇒ 连接器形状是「一个地址 + 账密」，归「网站」不归「消息」。
-            category="website",
-            # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
-            # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
-            # 新条目进待确认」⇒ 这一格从此是一条被点过的读数，不是我替他填的默认值（判据 1）。
-            collecting=True,
-            builder=_build_zju,
-        ),
-    )
-)
