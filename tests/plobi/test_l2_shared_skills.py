@@ -157,7 +157,10 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
     soul = (profile_dir / "SOUL.md").read_text(encoding="utf-8")
     assert "PLOBI_L2_IDENTITY" in soul
     assert "shared persona" not in soul  # 顶层那份没有跟着搬进来
-    assert "TEST_KEY=1" not in (profile_dir / ".env").read_text(encoding="utf-8")
+    # WP-PROFILE-STOP-SEEDING 之后连那份「只有注释表头」的占位 ``.env`` 也不种了：
+    # 密钥顶层一份 + 名册行覆盖，家里没有这个文件才是正确形状（读侧靠
+    # ``PLOBI_INJECTED_SECRETS`` / ``get_env_value_prefer_dotenv`` 回落）。
+    assert not (profile_dir / ".env").exists()
 
 
 def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
@@ -310,12 +313,6 @@ def test_shared_skills_are_read_only_to_the_profile_curator(l2_home, in_profile)
 # --------------------------------------------------------------------------- #
 
 
-def _md5(path: Path) -> str:
-    import hashlib
-
-    return hashlib.md5(path.read_bytes()).hexdigest()
-
-
 def _assignment_lines(path: Path) -> list[str]:
     return [
         line.strip()
@@ -325,22 +322,25 @@ def _assignment_lines(path: Path) -> list[str]:
 
 
 def test_spawn_lands_no_env_or_config_copy(l2_home):
-    """新建的项目分身上不许有根 ``.env`` / 根 ``config.yaml`` 的副本。
+    """项目分身上不许有根 ``.env`` / 根 ``config.yaml`` 的副本。
 
-    断的是内容，不是「文件在不在」：``create_profile`` 本来就会种一份只有注释
-    表头的 ``.env``，那一句「有 .env」既测不出复印件也测不出覆盖丢了。
+    WP-PROFILE-STOP-SEEDING（任务书第 1 步）把这条判据变强了：家里**根本没有**
+    ``.env`` 这个文件。以前 ``create_profile`` 会种一份只有注释表头的占位件，
+    「有 .env 但里面没有凭据」那种形状既测不出复印件、也测不出覆盖丢了；
+    现在断的是文件不存在，顶层那一份仍然原样在那儿（存量只隔离不删）。
     """
     reg, _ = _registry_with_l2(l2_home)
     profile_dir = Path(reg.spawn("demo")["profile_dir"])
 
-    profile_env = profile_dir / ".env"
-    assert _md5(profile_env) != _md5(l2_home / ".env")
-    assert _assignment_lines(profile_env) == []
+    assert not (profile_dir / ".env").exists()
 
     # ``config.yaml`` 那一腿整个不再落进分身家（裁 166 / ADR-0013：配置只有一份，
     # 分身家 0 份可读；连"只有注册表声明的覆盖"那一格也改成读时叠，见
     # ``plobi.agents.registry.profile_config_overlay``）。
     assert not (profile_dir / "config.yaml").exists()
+
+    # 顶层那份是密钥的唯一真源，它带着 TEST_KEY=1 这一行——分身没有第二份。
+    assert _assignment_lines(l2_home / ".env") == ["TEST_KEY=1"]
 
 
 def test_secret_override_never_lands_on_disk(l2_home):

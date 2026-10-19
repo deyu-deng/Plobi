@@ -1,17 +1,18 @@
 """
 Profile management for multiple isolated Plobi instances.
 
-Each profile is a fully independent PLOBI_HOME directory with its own
-config.yaml, .env, memory, sessions, skills, gateway, cron, and logs.
-Profiles live under ``~/.plobi/profiles/<name>/`` by default.
+A profile home is **not** a copy of Plobi.  裁定 42 / 166 / 178 (ADR-0013):
+config, secrets, persona, skills, memory and cron are one shared layer at the
+Plobi root; what a profile home still owns is its own ``sessions/`` and
+``logs/``.  Profiles live under ``~/.plobi/profiles/<name>/`` by default.
 
 The "default" profile is ``~/.plobi`` itself — backward compatible,
 zero migration needed.
 
 Usage::
 
-    plobi profile create coder          # fresh profile + bundled skills
-    plobi profile create coder --clone  # also copy config, .env, SOUL.md, skills
+    plobi profile create coder          # fresh home: sessions/ + logs/ only
+    plobi profile create coder --clone  # also copy the source's installed skills
     plobi profile create coder --clone-all  # full copy of source profile
     coder chat                           # use via wrapper alias
     plobi -p coder chat                 # or via flag
@@ -36,35 +37,31 @@ from agent.skill_utils import is_excluded_skill_path
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9\u4e00-\u9fff\uff00-\uffef][a-z0-9\u4e00-\u9fff\uff00-\uffef_-]{0,63}$")
 
-# Directories bootstrapped inside every new profile
+# Directories bootstrapped inside every new profile — only the two that are
+# genuinely per-home runtime state.  Everything else on the old list
+# (``memories``, ``skills``, ``skins``, ``plans``, ``workspace``, ``cron``,
+# ``home``) was a per-分身 copy producer and is gone: 裁定 42 / 166 / 178
+# (ADR-0013 拆除表) makes those one shared layer at the Plobi root, and 乙案
+# (裁 178) says the profile home itself is next, so seeding them only keeps
+# manufacturing directories nobody reads.  ``home`` was the Docker/容器
+# subprocess HOME; plobi_constants._profile_home_path() treats a missing one
+# as "no override", so a fresh home falls back to the real user HOME instead
+# of a per-分身 cache.
 _PROFILE_DIRS = [
-    "memories",
     "sessions",
-    "skills",
-    "skins",
     "logs",
-    "plans",
-    "workspace",
-    "cron",
-    # Back-compat/Docker HOME for tool subprocesses. Host subprocesses keep
-    # the user's real HOME by default so normal CLI credentials remain visible;
-    # containers still use this directory for persistent HOME state.
-    # See plobi_constants.get_subprocess_home().
-    "home",
 ]
 
-# Files copied during --clone (if they exist in the source)
+# Files copied during --clone (if they exist in the source).
 #
-# ``config.yaml`` 那一腿已摘掉（裁 42 / 裁 166 / ADR-0013 ``config.yaml`` 那一行）：配置只有一份，
-# 新建或克隆一个分身都不许再造一份复印件——ADR-0013 完成定义第 2 条要的就是「那份家里
-# **没有** ``config.yaml``」。读侧也不再读它（:func:`plobi_constants.config_path_for_home`），
-# 所以留着那一腿只会生产一份没人读的文件，再让 ``plobi doctor`` 之类的地方以为那个家
-# 有它自己的配置。``.env`` / ``SOUL.md`` 两腿还在：它们的收口各自排在同一张表的下两行
-# （密钥顶层一份＝本轮 A 组第 2 件；SOUL 收口＝B 组），不在这一把刀里顺手改。
-_CLONE_CONFIG_FILES = [
-    ".env",
-    "SOUL.md",
-]
+# Empty, and it stays empty.  ``config.yaml`` 那一腿早就摘了（裁 42 / 裁 166 —
+# 配置只有一份，读侧 :func:`plobi_constants.config_path_for_home` 也不再读分身家
+# 那份复印件）；``.env`` 与 ``SOUL.md`` 两腿由本刀（WP-PROFILE-STOP-SEEDING，
+# 任务书 ``Docs/tasks/wp-profile-cancel-all-task.md`` 第 1 步）摘掉：
+#   .env      — 密钥只在顶层一份，分身要用的由名册行声明覆盖（``apply_secret_overrides``）。
+#   SOUL.md   — 人设共享一份 + 名册行人设片段作覆盖（裁 42.2 允许的三项覆盖之一）。
+# Creating or cloning a 分身 must not produce a second copy of either file.
+_CLONE_CONFIG_FILES: list[str] = []
 
 # Subdirectory files copied during --clone (path relative to profile root).
 # Memory ledgers are NOT copied: MEMORY.md/USER.md are one shared brain rooted
@@ -1065,8 +1062,9 @@ def create_profile(
     clone_all:
         If True, do a full copytree of the source (all state).
     clone_config:
-        If True, copy config files (config.yaml, .env, SOUL.md), installed
-        skills, and selected profile identity files from the source profile.
+        If True, copy the source profile's installed skills (and whatever
+        ``_CLONE_CONFIG_FILES`` / ``_CLONE_SUBDIR_FILES`` name — currently
+        nothing, because config, secrets and persona are one shared layer).
         Skills are skipped when ``no_skills`` is also set.
     no_alias:
         If True, skip wrapper script creation.
@@ -1076,8 +1074,8 @@ def create_profile(
         ``plobi update`` skips re-seeding this profile's bundled skills. Point
         ``skills.external_dirs`` at a shared skill root in the profile's
         config.yaml to make its skills visible without copying them.
-        Composable with ``clone_config``/``clone_from`` — those then copy the
-        config files (config.yaml, .env, SOUL.md) but not the skills.
+        Composable with ``clone_config``/``clone_from`` — that then copies the
+        skills of the source but nothing else.
         Mutually exclusive with ``clone_all`` (a full copytree snapshots
         everything, skills included).
 
@@ -1173,34 +1171,15 @@ def create_profile(
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
 
-    # Seed an empty .env so the profile has its own credentials file from
-    # day one. Without it, profile-scoped env writes (dashboard Channels /
-    # Keys pages, `plobi -p <name> auth add`) had no file until first
-    # write, and the profile silently inherited API keys from the shell
-    # environment — users reasonably read that as "the new profile reads
-    # the root .env". Skipped when --clone/--clone-all already copied one.
-    env_path = profile_dir / ".env"
-    if not env_path.exists():
-        try:
-            env_path.write_text(
-                "# Per-profile secrets for this Plobi profile.\n"
-                "# API keys and tokens set here override the shell environment.\n"
-                "# Behavioral settings belong in config.yaml, not here.\n",
-                encoding="utf-8",
-            )
-            os.chmod(str(env_path), 0o600)
-        except OSError:
-            pass  # best-effort — save_env_value creates the file on demand
-
-    # Seed a default SOUL.md so the user has a file to customize immediately.
-    # Skipped when the profile already has one (from --clone / --clone-all).
-    soul_path = profile_dir / "SOUL.md"
-    if not soul_path.exists():
-        try:
-            from plobi_cli.default_soul import DEFAULT_SOUL_MD
-            soul_path.write_text(DEFAULT_SOUL_MD, encoding="utf-8")
-        except Exception:
-            pass  # best-effort — don't fail profile creation over this
+    # No per-分身 credentials file and no per-分身 persona file are seeded —
+    # 裁 42 / 166 / 178 (WP-PROFILE-STOP-SEEDING, 任务书第 1 步).  Secrets live
+    # in one top-level ``.env``; a 分身 that needs its own gets it declared on
+    # its roster row (``apply_secret_overrides``).  The persona is one shared
+    # ``SOUL.md`` plus the roster row's identity fragment.  Both used to be
+    # written here, which is how the root install accumulated 13 ``.env`` and 24
+    # ``SOUL.md`` copies that no read path treats as anything but a stale clone.
+    # Profile-scoped env writes still work — ``save_env_value`` creates the
+    # file on demand.
 
     # Write the opt-out marker so seed_profile_skills() and `plobi update`'s
     # all-profile sync loop both skip this profile for bundled-skill seeding.
@@ -1293,55 +1272,21 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> Optional[dict
 
 
 def backfill_profile_envs(quiet: bool = False) -> List[str]:
-    """Give every named profile that predates per-profile ``.env`` files one.
+    """Deprecated no-op — kept because ``plobi update`` calls it.
 
-    Profiles created before the dashboard/CLI started seeding a ``.env``
-    (PR #44792) have none, so once the Channels/Keys endpoints became
-    profile-scoped those profiles stopped inheriting the root install's
-    credentials and showed everything as unconfigured. To avoid breaking
-    anyone on update, copy the DEFAULT install's ``.env`` into each named
-    profile that lacks one — that preserves the effective credentials those
-    profiles were already running with (they previously read the root
-    ``.env`` via the process environment). Users can then diverge per
-    profile from there.
+    It used to copy the default install's ``.env`` into every named profile
+    that lacked one (the fix for #44792, when a profile home was still "a
+    whole Plobi").  That made it a second producer of the per-分身 ``.env``
+    leg that WP-PROFILE-STOP-SEEDING just removed from ``create_profile``:
+    seeding at create time and re-seeding on every update is the same copy
+    wearing two hats.  裁 42 / 166 / 178 — secrets are one top-level file, and
+    what a 分身 needs differently is declared on its roster row
+    (``apply_secret_overrides``), not copied into its home.
 
-    Falls back to the placeholder header when the default install has no
-    ``.env`` itself. Never overwrites an existing profile ``.env``.
-
-    Returns the list of profile names that received a backfilled ``.env``.
+    Always returns an empty list; the existing homes are left exactly as they
+    are (存量只隔离不删 — 本刀不动任何存量).
     """
-    backfilled: List[str] = []
-    profiles_root = _get_profiles_root()
-    if not profiles_root.is_dir():
-        return backfilled
-
-    default_env = _get_default_plobi_home() / ".env"
-
-    for entry in sorted(profiles_root.iterdir()):
-        if not entry.is_dir() or not _PROFILE_ID_RE.match(entry.name):
-            continue
-        if entry.name == "default":
-            continue
-        env_path = entry / ".env"
-        if env_path.exists():
-            continue
-        try:
-            if default_env.is_file():
-                shutil.copy2(default_env, env_path)
-            else:
-                env_path.write_text(
-                    "# Per-profile secrets for this Plobi profile.\n"
-                    "# API keys and tokens set here override the shell environment.\n"
-                    "# Behavioral settings belong in config.yaml, not here.\n",
-                    encoding="utf-8",
-                )
-            os.chmod(str(env_path), 0o600)
-            backfilled.append(entry.name)
-        except OSError as e:
-            if not quiet:
-                print(f"⚠ Could not seed .env for profile '{entry.name}': {e}")
-
-    return backfilled
+    return []
 
 
 def _profile_bound_backend_pids(canon: str, profile_dir: Path) -> list[int]:
