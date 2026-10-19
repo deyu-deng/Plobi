@@ -80,6 +80,30 @@ def test_the_descriptions_do_not_point_at_any_downstream_destination():
             assert word not in blob, f"描述里出现了 {word!r}"
 
 
+def test_the_two_new_columns_come_back_on_the_entry_and_filter_the_read(pool):
+    """裁 187 那两列要穿过读手：既看得见（带在条目上），也筛得动（是筛选条件）。"""
+    store.land([
+        PoolItem(source="wechat", external_id="g1", kind="message",
+                 title="群里的通知", body="周四下午换教室",
+                 visibility="group", conversation="工程训练·课群组",
+                 occurred_at="2026-10-19T11:00:00"),
+    ])
+
+    hit = _read(conversation="工程训练·课群组")
+    assert hit["ok"] is True and hit["count"] == 1
+    assert hit["items"][0]["external_id"] == "g1"
+    assert hit["items"][0]["visibility"] == "group"
+    # 同一枚工具、没给这一筛选条件时，那两条旧条目照样读得到（旧的留空不等于被筛掉）
+    everything = _read()
+    assert {i["external_id"] for i in everything["items"]} == {"m1", "d1", "g1"}
+    assert all("conversation" in i and "visibility" in i for i in everything["items"])
+
+
+def test_visibility_and_conversation_are_advertised_as_filters():
+    props = pool_tool._POOL_READ_SCHEMA["parameters"]["properties"]
+    assert {"visibility", "conversation"} <= set(props)
+
+
 # ------------------------------------------------------------------ 判据②
 
 
