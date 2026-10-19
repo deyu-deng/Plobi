@@ -10102,6 +10102,38 @@ def _agent_id_for_profile(profile: Optional[str]) -> str:
         return ""
 
 
+def _agent_tool_row(scope: Optional[str]):
+    """scope（家名）→ ``(registry, entry)``；不是 Agent 作用域 → ``(None, None)``。
+
+    「全局真源 + per-agent 开关」（2026-10-19）：技能 / 工具集 / MCP 只有一张
+    全局表；当面板作用域指向某个 Agent 时，开关读写**名册那一行**的黑名单
+    （偏好），全局表一个字不动。L1 / flat 作用域走原路径。
+    """
+    name = _agent_id_for_profile(scope)
+    if not name:
+        return None, None
+    try:
+        from plobi.agents.registry import AgentRegistry
+
+        registry = AgentRegistry.load()
+        return registry, registry.get(name)
+    except Exception:
+        return None, None
+
+
+def _agent_toggle_blacklist(entry, field: str, name: str, enabled: bool):
+    """在名册行的黑名单里翻转一项，upsert + save；返回 (registry, updated entry)。"""
+    from dataclasses import replace
+
+    current = {s.casefold(): s for s in getattr(entry, field)}
+    if enabled:
+        current.pop(name.casefold(), None)
+    else:
+        current[name.casefold()] = name
+    updated = replace(entry, **{field: tuple(current.values())})
+    return updated
+
+
 def _open_session_db_for_profile(profile: Optional[str]):
     """Open the single session ledger (裁定 180 / 缺口 B).
 
@@ -13706,6 +13738,7 @@ async def get_skills(profile: Optional[str] = None):
         activity_count,
         load_usage,
     )
+    agent_registry, agent_entry = _agent_tool_row(profile)
     with _profile_scope(profile):
         config = load_config()
         disabled = get_disabled_skills(config)
@@ -13717,8 +13750,13 @@ async def get_skills(profile: Optional[str] = None):
         # the user may edit/delete from the UI.
         bundled_names = _read_bundled_manifest_names()
         hub_names = _read_hub_installed_names()
+    # per-agent 视图（2026-10-19）：生效禁用 = 全局表 ∪ 这个 Agent 名册行的
+    # 黑名单。全局表仍是唯一真源，行只做减法。
+    agent_off = (
+        {s.casefold() for s in agent_entry.disabled_skills} if agent_entry else set()
+    )
     for s in skills:
-        s["enabled"] = s["name"] not in disabled
+        s["enabled"] = s["name"] not in disabled and s["name"].casefold() not in agent_off
         s["usage"] = activity_count(usage.get(s["name"], {}))
         s["provenance"] = (
             "hub" if s["name"] in hub_names
@@ -13731,7 +13769,22 @@ async def get_skills(profile: Optional[str] = None):
 @app.put("/api/skills/toggle")
 async def toggle_skill(body: SkillToggle, profile: Optional[str] = None):
     from plobi_cli.skills_config import get_disabled_skills, save_disabled_skills
-    with _profile_scope(body.profile or profile):
+    scope = body.profile or profile
+    agent_registry, agent_entry = _agent_tool_row(scope)
+    if agent_registry is not None and agent_entry is not None:
+        # Agent 作用域：写**这个 Agent 名册行**的黑名单，全局表一个字不动。
+        from plobi.agents.registry import RegistryError
+
+        try:
+            updated = _agent_toggle_blacklist(
+                agent_entry, "disabled_skills", body.name, body.enabled
+            )
+            agent_registry.upsert(updated)
+            agent_registry.save()
+        except RegistryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "name": body.name, "enabled": body.enabled}
+    with _profile_scope(scope):
         config = load_config()
         disabled = get_disabled_skills(config)
         if body.enabled:
@@ -13831,6 +13884,7 @@ async def get_toolsets(profile: Optional[str] = None):
     )
     from toolsets import resolve_toolset
 
+    agent_registry, agent_entry = _agent_tool_row(profile)
     with _profile_scope(profile):
         config = load_config()
         enabled_toolsets = _get_platform_tools(
@@ -13838,13 +13892,17 @@ async def get_toolsets(profile: Optional[str] = None):
             "cli",
             include_default_mcp_servers=False,
         )
+    # per-agent 视图（2026-10-19）：全局白名单 − 这个 Agent 名册行的黑名单。
+    agent_off = (
+        {s.casefold() for s in agent_entry.disabled_toolsets} if agent_entry else set()
+    )
     result = []
     for name, label, desc in _get_effective_configurable_toolsets():
         try:
             tools = sorted(set(resolve_toolset(name)))
         except Exception:
             tools = []
-        is_enabled = name in enabled_toolsets
+        is_enabled = name in enabled_toolsets and name.casefold() not in agent_off
         result.append({
             "name": name,
             "label": gui_toolset_label(label),
@@ -13881,7 +13939,23 @@ async def toggle_toolset(name: str, body: ToolsetToggle, profile: Optional[str] 
     if name not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown toolset: {name}")
 
-    with _profile_scope(body.profile or profile):
+    scope = body.profile or profile
+    agent_registry, agent_entry = _agent_tool_row(scope)
+    if agent_registry is not None and agent_entry is not None:
+        # Agent 作用域：全局白名单不动，翻转**这个 Agent 名册行**的工具集黑名单。
+        from plobi.agents.registry import RegistryError
+
+        try:
+            updated = _agent_toggle_blacklist(
+                agent_entry, "disabled_toolsets", name, body.enabled
+            )
+            agent_registry.upsert(updated)
+            agent_registry.save()
+        except RegistryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "name": name, "enabled": body.enabled}
+
+    with _profile_scope(scope):
         config = load_config()
         enabled = set(
             _get_platform_tools(config, "cli", include_default_mcp_servers=False)
@@ -14590,6 +14664,10 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
     try:
         cutoff = time.time() - (days * 86400)
         cost_cols = _cost_partition_sql()
+        # 缺口 B：单库总账上行级圈定「这个 Agent 的」用量读数（'' = 全库）。
+        agent_scope = _agent_id_for_profile(profile) or None
+        agent_sql = " AND agent_id = ?" if agent_scope else ""
+        agent_params = (agent_scope,) if agent_scope else ()
         cur = db._conn.execute(f"""
             SELECT date(started_at, 'unixepoch') as day,
                    SUM(input_tokens) as input_tokens,
@@ -14601,9 +14679,9 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
                    COUNT(*) as sessions,
                    SUM(COALESCE(api_call_count, 0)) as api_calls,
                    {cost_cols}
-            FROM sessions WHERE started_at > ?
+            FROM sessions WHERE started_at > ?{agent_sql}
             GROUP BY day ORDER BY day
-        """, (cutoff,))
+        """, (cutoff, *agent_params))
         daily = [dict(r) for r in cur.fetchall()]
         for row in daily:
             row["estimated_cost"], row["cost_status"] = _project_row_cost(row, "estimated_cost")
@@ -14616,9 +14694,9 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
                    COUNT(*) as sessions,
                    SUM(COALESCE(api_call_count, 0)) as api_calls,
                    {cost_cols}
-            FROM sessions WHERE started_at > ? AND model IS NOT NULL
+            FROM sessions WHERE started_at > ? AND model IS NOT NULL{agent_sql}
             GROUP BY model ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
-        """, (cutoff,))
+        """, (cutoff, *agent_params))
         by_model = [dict(r) for r in cur2.fetchall()]
         for row in by_model:
             row["estimated_cost"], row["cost_status"] = _project_row_cost(row, "estimated_cost")
@@ -14633,8 +14711,8 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
                    COUNT(*) as total_sessions,
                    SUM(COALESCE(api_call_count, 0)) as total_api_calls,
                    {cost_cols}
-            FROM sessions WHERE started_at > ?
-        """, (cutoff,))
+            FROM sessions WHERE started_at > ?{agent_sql}
+        """, (cutoff, *agent_params))
         totals = dict(cur3.fetchone())
         totals["total_estimated_cost"], totals["cost_status"] = _project_row_cost(totals, "total_estimated_cost")
         insights_report = InsightsEngine(db).generate(days=days)
@@ -14673,6 +14751,10 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
     try:
         cutoff = time.time() - (days * 86400)
         cost_cols = _cost_partition_sql()
+        # 缺口 B：同 usage，按 agent_id 圈定读数。
+        agent_scope = _agent_id_for_profile(profile) or None
+        agent_sql = " AND agent_id = ?" if agent_scope else ""
+        agent_params = (agent_scope,) if agent_scope else ()
 
         cur = db._conn.execute(f"""
             SELECT model,
@@ -14689,10 +14771,10 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                    MAX(started_at) as last_used_at,
                    AVG(input_tokens + output_tokens) as avg_tokens_per_session,
                    {cost_cols}
-            FROM sessions WHERE started_at > ? AND model IS NOT NULL AND model != ''
+            FROM sessions WHERE started_at > ? AND model IS NOT NULL AND model != ''{agent_sql}
             GROUP BY model, billing_provider
             ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
-        """, (cutoff,))
+        """, (cutoff, *agent_params))
         raw_rows = [dict(r) for r in cur.fetchall()]
 
         # Session rows can be created before the first billable provider call
@@ -14815,8 +14897,8 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
                    COUNT(*) as total_sessions,
                    SUM(COALESCE(api_call_count, 0)) as total_api_calls,
                    {cost_cols}
-            FROM sessions WHERE started_at > ? AND model IS NOT NULL AND model != ''
-        """, (cutoff,))
+            FROM sessions WHERE started_at > ? AND model IS NOT NULL AND model != ''{agent_sql}
+        """, (cutoff, *agent_params))
         totals = dict(totals_cur.fetchone())
         totals["total_estimated_cost"], totals["cost_status"] = _project_row_cost(totals, "total_estimated_cost")
 

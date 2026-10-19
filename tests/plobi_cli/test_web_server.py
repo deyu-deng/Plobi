@@ -238,6 +238,28 @@ class TestSessionTokenInjection:
 # ---------------------------------------------------------------------------
 
 
+def _register_roster_agent(profile: str, name: str | None = None) -> str:
+    """名册里登记一个 Agent（profile 家名 → 名册 name 的桥，缺口 B 测试用）。"""
+    import yaml
+
+    from plobi.agents.registry import REGISTRY_VERSION
+    from plobi_constants import get_plobi_home
+
+    key = name or profile
+    (get_plobi_home() / "profiles" / profile).mkdir(parents=True, exist_ok=True)
+    roster = get_plobi_home() / "plobi" / "projects.yaml"
+    roster.parent.mkdir(parents=True, exist_ok=True)
+    rows = {}
+    if roster.exists():
+        rows = (yaml.safe_load(roster.read_text(encoding="utf-8")) or {}).get("agents") or {}
+    rows[key] = {"name": key, "role": "l2_project", "profile": profile, "category": "projects"}
+    roster.write_text(
+        yaml.safe_dump({"version": REGISTRY_VERSION, "agents": rows}, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return key
+
+
 class TestWebServerEndpoints:
     """Test the FastAPI REST endpoints using Starlette TestClient."""
 
@@ -1254,26 +1276,23 @@ class TestWebServerEndpoints:
 
     def test_sessions_endpoint_reads_requested_profile(self):
         """The machine dashboard's global profile switcher must retarget
-        the Sessions page, not just config/skills/model pages."""
+        the Sessions page, not just config/skills/model pages.
+
+        缺口 B（裁定 180）：单库总账之后「retarget」= 行级 ``agent_id`` 圈定
+        （家名 → 名册 name），不再是一家一库。
+        """
         from plobi_state import SessionDB
-        from plobi_cli import profiles as profiles_mod
 
-        worker_home = profiles_mod.get_profile_dir("worker")
-        worker_home.mkdir(parents=True)
+        worker = _register_roster_agent("worker")
 
-        default_db = SessionDB()
+        db = SessionDB()
         try:
-            default_db.create_session(session_id="default-only", source="cli")
-            default_db.append_message("default-only", role="user", content="default")
+            db.create_session(session_id="default-only", source="cli")
+            db.append_message("default-only", role="user", content="default")
+            db.create_session(session_id="worker-only", source="cli", agent_id=worker)
+            db.append_message("worker-only", role="user", content="worker")
         finally:
-            default_db.close()
-
-        worker_db = SessionDB(db_path=worker_home / "state.db")
-        try:
-            worker_db.create_session(session_id="worker-only", source="cli")
-            worker_db.append_message("worker-only", role="user", content="worker")
-        finally:
-            worker_db.close()
+            db.close()
 
         resp = self.client.get("/api/sessions?profile=worker&limit=20&min_messages=0")
         assert resp.status_code == 200
@@ -1293,33 +1312,31 @@ class TestWebServerEndpoints:
         assert [m["content"] for m in messages["messages"]] == ["worker"]
 
     def test_latest_descendant_reads_requested_profile(self):
-        """Chat resume must resolve compression tips in the chat profile DB."""
+        """Chat resume must resolve compression tips for the chat profile.
+
+        缺口 B（裁定 180）：session id 全局唯一后不存在「两个库里各一条
+        shared-root」——lineage 只有一份，总账上一查即达；``profile`` 参数
+        只决定归属标注（旧的一家一库隔离语义由行级 ``agent_id`` 承担）。
+        """
         from plobi_state import SessionDB
-        from plobi_cli import profiles as profiles_mod
 
-        worker_home = profiles_mod.get_profile_dir("worker")
-        worker_home.mkdir(parents=True)
+        worker = _register_roster_agent("worker")
 
-        default_db = SessionDB()
+        db = SessionDB()
         try:
-            default_db.create_session(session_id="shared-root", source="cli")
-        finally:
-            default_db.close()
-
-        worker_db = SessionDB(db_path=worker_home / "state.db")
-        try:
-            worker_db.create_session(session_id="shared-root", source="cli")
-            worker_db.create_session(
+            db.create_session(session_id="shared-root", source="cli", agent_id=worker)
+            db.create_session(
                 session_id="worker-tip",
                 source="cli",
                 parent_session_id="shared-root",
+                agent_id=worker,
             )
         finally:
-            worker_db.close()
+            db.close()
 
         default_resp = self.client.get("/api/sessions/shared-root/latest-descendant")
         assert default_resp.status_code == 200
-        assert default_resp.json()["session_id"] == "shared-root"
+        assert default_resp.json()["session_id"] == "worker-tip"
 
         worker_resp = self.client.get(
             "/api/sessions/shared-root/latest-descendant?profile=worker"
@@ -1351,30 +1368,24 @@ class TestWebServerEndpoints:
         assert resp.json()["session_id"] == "cyc-b"
 
     def test_analytics_endpoints_read_requested_profile(self):
+        """缺口 B：analytics 的 profile 作用域 = 总账上行级 agent_id 圈定。"""
         from plobi_state import SessionDB
-        from plobi_cli import profiles as profiles_mod
 
-        worker_home = profiles_mod.get_profile_dir("worker")
-        worker_home.mkdir(parents=True)
+        worker = _register_roster_agent("worker")
 
-        default_db = SessionDB()
+        db = SessionDB()
         try:
-            default_db.create_session(session_id="default-usage", source="cli", model="default/model")
-            default_db.update_token_counts("default-usage", input_tokens=10, output_tokens=5)
-        finally:
-            default_db.close()
-
-        worker_db = SessionDB(db_path=worker_home / "state.db")
-        try:
-            worker_db.create_session(session_id="worker-usage", source="cli", model="worker/model")
-            worker_db.update_token_counts(
+            db.create_session(session_id="default-usage", source="cli", model="default/model")
+            db.update_token_counts("default-usage", input_tokens=10, output_tokens=5)
+            db.create_session(session_id="worker-usage", source="cli", model="worker/model", agent_id=worker)
+            db.update_token_counts(
                 "worker-usage",
                 input_tokens=123,
                 output_tokens=45,
                 billing_provider="worker-provider",
             )
         finally:
-            worker_db.close()
+            db.close()
 
         usage = self.client.get("/api/analytics/usage?days=7&profile=worker").json()
         assert usage["totals"]["total_sessions"] == 1
@@ -1387,9 +1398,10 @@ class TestWebServerEndpoints:
         assert models["models"][0]["model"] == "worker/model"
         assert models["models"][0]["provider"] == "worker-provider"
 
+        # 默认视图（不带 profile）= 全量总账（裁定 180 并库的意义就是跨分身聚合）。
         default_usage = self.client.get("/api/analytics/usage?days=7").json()
-        assert default_usage["totals"]["total_input"] == 10
-        assert default_usage["totals"]["total_output"] == 5
+        assert default_usage["totals"]["total_input"] == 133
+        assert default_usage["totals"]["total_output"] == 50
 
     def test_get_sessions_rejects_unknown_archived_value(self):
         resp = self.client.get("/api/sessions?archived=bogus")
