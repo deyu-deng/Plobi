@@ -14,7 +14,8 @@ import re
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "chatlog_server.ps1"
-VENDOR_CONF = Path(__file__).resolve().parents[2] / "tools" / "chatlog" / "internal" / "chatlog" / "conf" / "conf.go"
+VENDOR_CONF = (Path(__file__).resolve().parents[2] / "plobi" / "collectors" / "chatlog"
+               / "vendor" / "chatlog" / "internal" / "chatlog" / "conf" / "conf.go")
 
 
 def _source() -> str:

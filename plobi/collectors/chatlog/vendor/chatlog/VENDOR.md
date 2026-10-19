@@ -61,7 +61,8 @@ go build -o bin\chatlog.exe ./cmd/chatlog
    go build -o bin\chatlog.exe ./cmd/chatlog
    # 用 scripts\chatlog_server.ps1 拉起服务，验证 /api/v1/session 等接口
    ```
-6. **提交 Plobi 仓库**（git add tools/chatlog + scripts/chatlog_server.ps1 + VENDOR.md），并运行现有回归/审计检查。
+6. **提交 Plobi 仓库**（git add 本目录 + `scripts/chatlog_server.ps1` + 本文件），并运行现有回归/审计检查。
+   （10-19 裁 187 归位：这一整套原来住在仓根的 Agent 工具命名空间下，微信这一条腿被劈成两半；现在只跟它自己那一族走。）
 
 ## 运行方式
 

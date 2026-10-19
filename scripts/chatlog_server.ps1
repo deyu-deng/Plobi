@@ -17,7 +17,8 @@
 
 .PARAMETER BinaryPath
     Path to the chatlog executable. Defaults to
-    <repo>\tools\chatlog\bin\chatlog.exe; falls back to 'chatlog' on PATH.
+    <repo>\plobi\collectors\chatlog\vendor\chatlog\bin\chatlog.exe;
+    falls back to 'chatlog' on PATH.
 
 .PARAMETER Addr
     Listen address, default 127.0.0.1:5030.
@@ -67,11 +68,11 @@ $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($BinaryPath)) {
     # ⚠️ 这颗原来是 `Split-Path -Parent (Split-Path -Parent $PSScriptRoot)`——**多剥了一层**：
     # `$PSScriptRoot` 已经是 `<repo>\scripts` 这个**目录**（不是脚本文件），再往上一层就到
-    # `Plobi-Desktop`，candidate 变成 `Plobi-Desktop\tools\chatlog\bin\chatlog.exe` ⇒ 永远"找不到产物"。
-    # 这台 10-16 10:5x 现核：exe 在 `Code\tools\chatlog\bin\chatlog.exe`（29,475,840 B，10-10 22:10），
+    # `Plobi-Desktop`，candidate 少一层 ⇒ 永远"找不到产物"。这台 10-16 10:5x 现核过一次。
+    # 10-19 裁 187：整套 vendored 工程搬进微信那一族，构建落点跟着搬——**只这一处拼法**，
     # 而那句报错让 sidecar 起不来这件事被记成了"没产物"——**这是第二层死口，不是没装 Go、也不是没密钥**。
     $repoRoot = Split-Path -Parent $PSScriptRoot
-    $candidate = Join-Path $repoRoot "tools\chatlog\bin\chatlog.exe"
+    $candidate = Join-Path $repoRoot "plobi\collectors\chatlog\vendor\chatlog\bin\chatlog.exe"
     if (Test-Path $candidate) {
         $BinaryPath = $candidate
     } else {
@@ -79,7 +80,7 @@ if ([string]::IsNullOrWhiteSpace($BinaryPath)) {
         if ($cmd) {
             $BinaryPath = $cmd.Source
         } else {
-            Write-Error "chatlog binary not found. Build it first: cd $repoRoot\tools\chatlog; go build -o bin\chatlog.exe ./cmd/chatlog ; or pass -BinaryPath <path>"
+            Write-Error "chatlog binary not found. Build it first: cd $repoRoot\plobi\collectors\chatlog\vendor\chatlog; go build -o bin\chatlog.exe . ; or pass -BinaryPath <path>"
             exit 1
         }
     }

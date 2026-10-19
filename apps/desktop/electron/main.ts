@@ -8725,8 +8725,9 @@ async function probeLocalHttp(url: string, timeoutMs = 2000): Promise<boolean> {
  * `/api/collect/talkers` surface (no new REST, §3.3).
  *
  * This replaced two local judgements that each kept their own copy of the truth:
- * `resolveChatlogBinary()` hard-coded candidate paths (`tools/chatlog/bin`, `D:\Tools\wechat\…`)
- * beside Python's own `binary_candidates()`, and `chatlogHealthy()` probed :5030 a second time
+ * `resolveChatlogBinary()` kept its own hard-coded candidates (a repo build directory plus an
+ * absolute drive-letter path) beside Python's own `binary_candidates()`, and `chatlogHealthy()`
+ * probed :5030 a second time
  * beside the backend's `chatlog_is_healthy`. Both are gone — 桌面不再判第二遍.
  *
  * A backend that does not answer is reported as such (`NO_ANSWER` → a deferred row saying the

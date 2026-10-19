@@ -105,7 +105,7 @@ const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
   },
   chatlog: {
     enableHint:
-      '把 sidecar 起来监听 :5030（这台上的二进制在 `tools/chatlog/bin/chatlog.exe`；Go 与 `CHATLOG_DATA_KEY` 齐不齐不是这条探针的读数，所以这里不替它担保）',
+      '把 sidecar 起来监听 :5030（这台上的二进制在 `plobi/collectors/chatlog/vendor/chatlog/bin/chatlog.exe`；Go 与 `CHATLOG_DATA_KEY` 齐不齐不是这条探针的读数，所以这里不替它担保）',
     id: 'chatlog',
     name: { en: 'chatlog WeChat collector', zh: '微信采集 chatlog' },
     port: 5030
