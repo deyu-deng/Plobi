@@ -103,3 +103,46 @@ export async function saveSourceSetup(sourceId: string, params: Record<string, s
     body: { params }
   })
 }
+
+/** 外面装的那些第三方信源包。现读，不是记一份账。 */
+export interface ExternalPackage {
+  distribution: string
+  entry_point: string
+  /** 装上了但载不进来时的一格理由；`source` 那时是 null。 */
+  load_error: null | string
+  source: null | string
+}
+
+export async function getExternalPackages(): Promise<ExternalPackage[]> {
+  const body = await window.plobiDesktop.api<{ packages: ExternalPackage[] }>({
+    path: '/api/collect/sources/external'
+  })
+
+  return body.packages ?? []
+}
+
+/**
+ * 装 / 卸一个第三方包。**这一轮是异步的**：回的是动作名，不是结果。
+ * 拿那个名字去轮日志（`getActionStatus`），成败由**退出码**说话。
+ *
+ * 名字闸门不在这一层——它在 CLI 那一层。这里只 spawn。
+ */
+export async function installExternalPackage(packageName: string): Promise<string> {
+  const body = await window.plobiDesktop.api<{ name: string }>({
+    path: '/api/collect/sources/external/install',
+    method: 'POST',
+    body: { package: packageName, upgrade: true }
+  })
+
+  return body.name
+}
+
+export async function removeExternalPackage(packageName: string): Promise<string> {
+  const body = await window.plobiDesktop.api<{ name: string }>({
+    path: '/api/collect/sources/external/remove',
+    method: 'POST',
+    body: { package: packageName }
+  })
+
+  return body.name
+}

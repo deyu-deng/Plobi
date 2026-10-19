@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any, Optional
 
@@ -170,6 +171,73 @@ async def try_source(source_id: str):
     if row is None:
         raise HTTPException(status_code=502, detail=f"跑了一轮但 {source_id} 不在结果里")
     return {"ok": True, "data": row}
+
+
+class ExternalInstallRequest(BaseModel):
+    #: 用户敲的那一串。**这一层不解释它**——名字闸门在 CLI 那一层
+    #: （`plobi collectors install`），这一层只 spawn，不碰 pip，也不解析包名。
+    #: 理由在 `plobi/collectors/external.py` 模块头第 1 条：用户输入离执行最近的
+    #: 一跳不该只隔一次函数调用。所以这里**故意不在 400 里做校验**——如果这里就拦了，
+    #: 就等于把闸门又挪回了最近的那一跳，而底下那道就没人知道它存在。
+    package: str
+    upgrade: bool = True
+
+
+@router.get("/sources/external", name="collect_sources_external")
+async def list_external_sources():
+    """外面装了哪些第三方信源包。
+
+    从 `importlib.metadata` **现读**，不是记一份账——用户在终端里 `pip install` 的
+    那个也要在这儿出现，否则界面上会少报，而少报的那份用户永远查不出来。
+    """
+    from plobi.collectors import external
+
+    return {"ok": True, "data": {"packages": external.installed_external_packages()}}
+
+
+@router.post("/sources/external/install", name="collect_source_external_install")
+async def install_external_source(body: ExternalInstallRequest):
+    """spawn `plobi collectors install <包名>`，把动作名与 pid 回给面。
+
+    **不 await 那一轮**：装一个带依赖的包要几十秒，而 HTTP 请求挂在上面既超时又
+    没有任何进度可看。面拿 `name` 去轮 `/api/actions/{name}/status` 尾巴——
+    与 `plobi skills install` 那条路同一个形状。
+
+    那一轮自己的成败由**退出码**说话，不合并成"成功"。
+    """
+    return _spawn_collectors_action(
+        "install", body.package,
+        extra=["--no-upgrade"] if not body.upgrade else [],
+    )
+
+
+@router.post("/sources/external/remove", name="collect_source_external_remove")
+async def remove_external_source(body: ExternalInstallRequest):
+    """spawn `plobi collectors remove <包名>`。同上，异步 + 尾巴。"""
+    return _spawn_collectors_action("remove", body.package)
+
+
+def _spawn_collectors_action(verb: str, package: str, *, extra: Optional[list[str]] = None) -> dict[str, Any]:
+    """把一条 collectors 动作拉起来，并给它一个**独一份**的日志名。
+
+    独一份的理由照 `_hub_action_name` 原话：`_spawn_plobi_action` 按名字追一个
+    进程/日志，共用 "collectors-install" 会让并发两行互相覆盖状态——用户看到的是
+    另一个包那一轮的进度，而那比不显示更难查。
+    """
+    from plobi_cli.web_server import _ACTION_LOG_FILES, _spawn_plobi_action
+
+    digest = hashlib.sha1(f"{verb}:{package}".encode()).hexdigest()[:8]
+    name = f"collectors-{verb}-{digest}"
+    _ACTION_LOG_FILES.setdefault(name, f"action-{name}.log")
+
+    try:
+        proc = _spawn_plobi_action(
+            ["collectors", verb, package, "--yes", *(extra or [])], name,
+        )
+    except Exception as exc:  # noqa: BLE001 - 起不来就要说，不许静默什么都不发生
+        raise HTTPException(status_code=500, detail=f"起不来这一轮：{exc}") from exc
+
+    return {"ok": True, "data": {"name": name, "package": package, "pid": proc.pid}}
 
 
 @router.post("/sources/{source_id}/setup", name="collect_source_setup")

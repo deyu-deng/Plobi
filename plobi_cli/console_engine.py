@@ -191,6 +191,9 @@ EXPECTED_HOSTED_PATHS: tuple[tuple[str, ...], ...] = (
     ("tools", "enable"),
     ("tools", "disable"),
     ("tools", "post-setup"),
+    ("collectors", "install"),
+    ("collectors", "remove"),
+    ("collectors", "list"),
     ("skills", "browse"),
     ("skills", "search"),
     ("skills", "inspect"),
@@ -775,6 +778,13 @@ class PlobiConsoleEngine:
                 "cmd_tools",
                 [("list",), ("enable",), ("disable",), ("post-setup",)],
                 {("enable",), ("disable",), ("post-setup",)},
+            ),
+            "collectors": (
+                "plobi_cli.subcommands.collectors",
+                "build_collectors_parser",
+                "cmd_collectors",
+                [("install",), ("remove",), ("list",)],
+                {("install",), ("remove",), ("list",)},
             ),
             "plugins": (
                 "plobi_cli.subcommands.plugins",
