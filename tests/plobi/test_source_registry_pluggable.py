@@ -31,7 +31,7 @@ def conn(tmp_path):
 
 @pytest.fixture
 def fake_platform():
-    """假 collector：只登记 + 声明能力位，不写任何数据、不碰任何公共层。"""
+    """假 collector：只登记 + 声明能力位 + 声明分类，不写任何数据、不碰任何公共层。"""
     registry.register(
         registry.SourceSpec(
             FAKE,
@@ -42,6 +42,7 @@ def fake_platform():
                 "requires_manual_setup": False,
                 "authoritative_replace": False,
             },
+            category="website",
         )
     )
     yield FAKE
@@ -89,11 +90,11 @@ class TestAddingAPlatformDoesNotTouchTheCommonLayer:
 class TestCapabilitiesAreDeclaredNotGuessed:
     def test_partial_declaration_is_refused(self) -> None:
         with pytest.raises(ValueError, match="少了能力位声明"):
-            registry.SourceSpec("halfdone", {"history_backfill": True})
+            registry.SourceSpec("halfdone", {"history_backfill": True}, category="website")
 
     def test_unknown_capability_name_is_refused(self) -> None:
         with pytest.raises(ValueError, match="不认识的能力位"):
-            registry.SourceSpec("typo", {"histroy_backfill": True, **{k: False for k in registry.CAPABILITY_KEYS if k != "histroy_backfill"}})
+            registry.SourceSpec("typo", {"histroy_backfill": True, **{k: False for k in registry.CAPABILITY_KEYS if k != "histroy_backfill"}}, category="website")
 
         with pytest.raises(registry.UnknownCapability):
             registry.capability("wechat", "histroy_backfill")
@@ -125,6 +126,53 @@ class TestCapabilitiesAreDeclaredNotGuessed:
         # 未实测的能力位仍然是 `None`（不许因为"开始采了"就顺手填成 False）：
         assert registry.spec("zju").capabilities["authoritative_replace"] is None
 
+
+class TestCategoriesAreDeclaredNotGuessed:
+    """分类与能力位同一套路（`specs/source-layer.md` §2）：必填、闭集、不许猜。
+
+    这几条钉的是**形状**而不是"某条恰好归某类"——后者是数据，变了就该改，不该当判据。
+    """
+
+    def test_every_registered_source_declares_a_category(self) -> None:
+        for source_id in registry.source_ids():
+            assert registry.source_category(source_id) in registry.CATEGORY_SLUGS
+
+    def test_a_source_without_a_category_cannot_even_be_built(self) -> None:
+        """缺位在**构造那一刻**就炸，不等注册——默认值会让漏写的那格悄悄过去。"""
+        with pytest.raises(TypeError):
+            registry.SourceSpec("nocategory", {key: False for key in registry.CAPABILITY_KEYS})
+
+    def test_a_category_outside_the_closed_set_is_refused(self) -> None:
+        """闭集不接受"先放着"，也不接受拼错——加第七个值要先改规格 §2。"""
+        with pytest.raises(registry.UnknownCategory, match="不在闭集里"):
+            registry.SourceSpec("wip", {key: False for key in registry.CAPABILITY_KEYS}, category="important")
+
+        with pytest.raises(registry.UnknownCategory):
+            registry.SourceSpec("typo", {key: False for key in registry.CAPABILITY_KEYS}, category="websit")
+
+    def test_the_closed_set_carries_no_ranking(self) -> None:
+        """平权约束在这一格是硬的：闭集里没有任何一个值表示"更重要"。
+
+        钉住**形状**——将来有人加一个 `priority`／`tier` 值，这条当场红。那不是这条测试
+        在管具体信源归哪一类，是不许分类这一维变回等级表（裁定 151 + 规格 §2.1）。
+        """
+        for banned in ("tier", "weight", "rank", "priority", "primary", "important", "major", "minor"):
+            assert banned not in registry.SOURCE_CATEGORIES
+
+    def test_grouping_keeps_empty_categories(self) -> None:
+        """空分类也要出现——"这一类还没接任何信源"也是一句话，不该由界面自己编。
+
+        六个分类逐个在，且分组里的每个 id 都真属于它那一类。
+        """
+        grouped = registry.sources_by_category()
+
+        assert set(grouped) == set(registry.SOURCE_CATEGORIES)
+        for category, members in grouped.items():
+            for member in members:
+                assert registry.source_category(member) == category
+
+
+class TestRegisteredSourcesDeclareTheirRealShape:
     def test_wechat_and_timetable_declare_their_real_shape(self) -> None:
         assert registry.require("wechat", "history_backfill") is True
         assert registry.require("wechat", "supports_media") is False
@@ -136,6 +184,17 @@ class TestCapabilitiesAreDeclaredNotGuessed:
                    for sid in registry.source_ids())
         # 而这条留白**现在有了消费方**（sweep 每天叫它），所以它必须还是 None，
         # 谁实测出答案谁来改这一格，不许顺手填一个"看起来安全"的值。
+
+    def test_wechat_and_zju_sit_in_different_categories(self) -> None:
+        """这两条的分属是**连接器形状**那一维，不是数据形状也不是重要性：
+
+        微信骑本机已登录的客户端（对话流），教务只有一个 Web 系统（地址 + 账密）。
+        钉钉与微信同族；课表归「本地」是因为注册表注记写的是"用户往某目录放 .ics"。
+        """
+        assert registry.source_category("wechat") == "message"
+        assert registry.source_category("dingtalk") == "message"
+        assert registry.source_category("zju") == "website"
+        assert registry.source_category("timetable") == "local"
 
 
 class TestCommonLayerCarriesNoSourceNameBranch:
