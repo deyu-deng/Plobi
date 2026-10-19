@@ -155,6 +155,49 @@ def retire_profile_copies(job_name: str) -> list[str]:
     return retired
 
 
+def current_effective_axes() -> dict[str, str]:
+    """本机现在**真的解析得出**的 provider/model —— 裁 179 那条排程作业的钉法。
+
+    两格一起返回或什么都不返回，绝不半钉：
+
+    - provider 问的是 cron 同一道门（``resolve_runtime_provider``），**不是抄 ``config.yaml``
+      里那个名字**。现读这台 ``model.provider`` 写的是 ``wb-gateway``，而底座把它归一成
+      ``custom``（``provider_is_resolvable('wb-gateway')`` = False）——钉一个解析不出来的名字
+      等于钉一条红条，那正是裁 172 第二道闸拦过的形状。
+    - model 问顶层那一份的 ``model.default``（``cron/scheduler.py`` 在作业未钉时走的就是它）。
+      读不出来 / 解析不出来 ⇒ 返回空 dict ⇒ **什么都不钉**。宁缺不编：那条腿继续按未钉跑，
+      漂移由 :func:`cron.jobs.mark_job_run` 落的结构化留痕在面上说人话（判据②，Desktop 那一半）。
+
+    这也不是 ``DEFAULT_ROUTES``：那套硬编码和用户在本机选的默认提供商毫无关系（裁 42 §42.2 ⑥
+    判过），拿它当"当前默认"就是把静默跟随换了个名字。
+    """
+    try:
+        from plobi_cli.runtime_provider import resolve_runtime_provider
+
+        provider = str((resolve_runtime_provider(requested=None) or {}).get("provider") or "").strip()
+    except Exception as exc:
+        logger.warning("plobi butler: cannot resolve the runtime provider to pin: %s", exc)
+        return {}
+    if not provider:
+        return {}
+    try:
+        from plobi_cli.config import load_config
+
+        model_cfg = (load_config() or {}).get("model") or {}
+    except Exception as exc:
+        logger.warning("plobi butler: cannot read the model default to pin: %s", exc)
+        return {}
+    if isinstance(model_cfg, str):
+        model = model_cfg.strip()
+    elif isinstance(model_cfg, dict):
+        model = str(model_cfg.get("default") or model_cfg.get("model") or "").strip()
+    else:
+        model = ""
+    if not model:
+        return {}
+    return {"provider": provider, "model": model}
+
+
 def align_job_shape(job_name: str, jobs_module: object) -> str:
     """把已存在的作业行刷成声明的形态——**行的存在与否归 marker 与用户，形态归代码**。
 
@@ -168,6 +211,11 @@ def align_job_shape(job_name: str, jobs_module: object) -> str:
         return "no-row"
     if row.get("enabled") is False:
         return "left-disabled"
+    if job_name == NIGHTLY_PLAN_JOB_NAME and not (row.get("provider") and row.get("model")):
+        # 裁 179：显式钉住当前默认，**只钉一次**。钉过就不动——每次启动跟着默认重钉，
+        # 等于把 ``unpinned`` 换成"看着像钉了"的静默跟随，那正是这条裁定划的硬边界
+        # （不许拿用户的钱替我们遮丑，也不许偷偷换模型）。
+        shape = {**shape, **current_effective_axes()}
     changed = {k: val for k, val in shape.items() if row.get(k) != val}
     if not changed:
         return "already-aligned"
@@ -298,6 +346,9 @@ def _ensure_seeded_job(job_name: str, jobs_module: Any, now: Callable[[], str] |
         return "exists"
 
     shape = job_shape(job_name)
+    if job_name == NIGHTLY_PLAN_JOB_NAME:
+        # 新种的那一条一出生就钉住（裁 179）：不钉 = 第一次到点就可能被漂移闸静默跳过。
+        shape = {**shape, **current_effective_axes()}
     jobs_module.create_job(
         prompt=shape["prompt"],
         schedule=schedule,
@@ -306,6 +357,8 @@ def _ensure_seeded_job(job_name: str, jobs_module: Any, now: Callable[[], str] |
         no_agent=bool(shape["no_agent"]),
         attach_to_session=shape.get("attach_to_session"),
         recipient=shape.get("recipient"),
+        provider=shape.get("provider"),
+        model=shape.get("model"),
         deliver="local",
     )
     _mark(marker, job_name, now)

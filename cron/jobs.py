@@ -1477,6 +1477,30 @@ def remove_job(job_id: str) -> bool:
     return False
 
 
+_DRIFT_NEEDLE = "Skipped to prevent unintended spend"
+_DRIFT_AXIS_RE = re.compile(r"(provider|model) '([^']*)' -> '([^']*)'")
+
+
+def drift_of_error(error: Optional[str]) -> Optional[Dict[str, Any]]:
+    """把 #44585 那道漂移闸拒起的句子拆成面上能直接用的结构（裁定 179 第二判据）。
+
+    守卫的形状一个字不动——不擅自换模型花用户的钱是对的；要修的只有它**只写
+    ``last_error`` 不吭声**这一件事。句子是我们自己生成的一行话术，但让日程那一屏去
+    解析英文整句是最脆的绑法，所以这里拆成 ``axes``（哪一根轴、从什么漂到什么），
+    面上拿结构说话人话，四语由前端各自翻。``message`` 只留原文做审计，不作展示依据。
+
+    不是漂移的失败返回 ``None``——那一格跟着清空，别把上一次的红留在屏上。
+    """
+    text = error or ""
+    if _DRIFT_NEEDLE not in text:
+        return None
+    axes = [{"axis": m.group(1), "from": m.group(2), "to": m.group(3)}
+            for m in _DRIFT_AXIS_RE.finditer(text)]
+    if not axes:
+        return None
+    return {"axes": axes, "message": text[:2000]}
+
+
 def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                  delivery_error: Optional[str] = None):
     """
@@ -1496,6 +1520,9 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                 job["last_run_at"] = now
                 job["last_status"] = "ok" if success else "error"
                 job["last_error"] = error if not success else None
+                # 裁 179：漂移这种"守卫替我们省了钱但没人知道"的失败要留结构化的一格，
+                # 让日程那一屏说得出「今晚没排：默认模型变了」。成功那一轮顺带清空。
+                job["last_drift"] = drift_of_error(error) if not success else None
                 # Track delivery failures separately — cleared on successful delivery
                 job["last_delivery_error"] = delivery_error
                 # Clear any external-fire claim so a re-armed recurring job can
