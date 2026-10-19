@@ -341,7 +341,8 @@ export const en: Translations = {
       sources: 'Sources',
       about: 'About',
       notifications: 'Notifications',
-      network: 'VPN'
+      network: 'VPN',
+      capabilities: 'Capabilities'
     },
     sources: {
       categories: {
@@ -2603,7 +2604,18 @@ disable: 'Stop',
     terminalNew: 'New terminal',
     terminalCloseOthers: 'Close others',
     terminalCloseAll: 'Close all',
-    addToChat: 'Add to chat'
+    addToChat: 'Add to chat',
+    // Agent Capabilities rail（全局真源 + per-agent 开关，2026-10-19 用户裁定）。
+    capabilitiesTitle: 'Capabilities',
+    capabilitiesAria: 'Agent capabilities',
+    capabilitiesSkills: 'Skills',
+    capabilitiesToolsets: 'Tools',
+    capabilitiesMcp: 'MCP servers',
+    capabilitiesHint: 'Everything is installed for every agent from one global source. Toggle off what this agent does not need.',
+    capabilitiesGlobalOff: 'Off for everyone (global setting)',
+    capabilitiesEmpty: 'Nothing installed yet',
+    capabilitiesLoadError: 'Could not load capabilities',
+    capabilitiesToggleFailed: 'Toggle failed'
   },
 
   preview: {

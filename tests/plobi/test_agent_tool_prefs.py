@@ -162,6 +162,31 @@ def test_mcp_config_load_filters_agent_disabled_servers(root, monkeypatch):
     assert "shared-server" in _load_mcp_config()
 
 
+def test_agent_scoped_skill_listing_reads_global_source(root):
+    """Agent 作用域的面板名单必须来自全局真源（顶层家）。
+
+    家目录下的 skills/ 是空壳——早先 GET /api/skills?profile=<agent> 把
+    home override 套上去，名单直接成了空集，「装一个全员拥有」在面板上
+    破产（2026-10-19 桌面接线时发现）。名单读全局，行黑名单只做减法。
+    """
+    import asyncio
+
+    from plobi_cli.web_server import get_skills
+
+    skill_dir = root / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: demo-skill\ndescription: demo\n---\n\nhello\n",
+        encoding="utf-8",
+    )
+    _clear()
+
+    rows = asyncio.run(get_skills(profile="l2-aura"))
+    by_name = {row["name"]: row for row in rows}
+    assert "demo-skill" in by_name
+    assert by_name["demo-skill"]["enabled"] is True
+
+
 # ---------------------------------------------------------------------------
 # 3. 模型持久化改道：Agent 会话写名册行，全局会话写共享 config
 # ---------------------------------------------------------------------------

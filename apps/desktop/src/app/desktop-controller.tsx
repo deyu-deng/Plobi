@@ -22,10 +22,9 @@ import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
-import { listAllProfileSessions, setSessionArchived, triggerCronJob } from '../plobi'
+import { listAllProfileSessions, setSessionArchived } from '../plobi'
 import { isMessagingSource, MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
 import { storedSessionIdForNotification } from '../lib/session-ids'
-import { setCronFocusJobId } from '../store/cron'
 import {
   $fileBrowserOpen,
   $panesFlipped,
@@ -123,6 +122,7 @@ import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { PetGenerateOverlay } from './pet-generate/pet-generate-overlay'
 import { RightSidebarPane, RightSidebarSectionHeader } from './right-sidebar'
+import { AgentCapabilitiesPane } from './right-sidebar/capabilities'
 import { FileActionDialogs } from './right-sidebar/file-actions'
 import { RemoteFolderPicker } from './right-sidebar/files/remote-picker'
 import { ReviewPane } from './right-sidebar/review'
@@ -131,7 +131,6 @@ import { TerminalPaneChrome } from './right-sidebar/terminal/chrome'
 import { PersistentTerminal } from './right-sidebar/terminal/persistent'
 import { closeActiveTerminal } from './right-sidebar/terminal/terminals'
 import {
-  CRON_ROUTE,
   HOME_ROUTE,
   isShellPageView,
   NEW_CHAT_ROUTE,
@@ -223,6 +222,7 @@ export function DesktopController() {
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
+  const agentCapabilitiesOpen = useStore($paneOpen('agent-capabilities'))
   const panesFlipped = useStore($panesFlipped)
   const profileScope = useStore($profileScope)
   // WP-D: the L1 agenda rail reads the same single agenda store the full-screen
@@ -1284,17 +1284,8 @@ export function DesktopController() {
       currentView={currentView}
       level={level}
       onArchiveSession={sessionId => void archiveSession(sessionId)}
-      onBranchSession={sessionId => void branchStoredSession(sessionId)}
       onDeleteSession={sessionId => void removeSession(sessionId)}
-      onLoadMoreMessaging={loadMoreMessagingForPlatform}
-      onLoadMoreProfileSessions={loadMoreSessionsForProfile}
-      onLoadMoreSessions={loadMoreSessions}
-      onManageCronJob={jobId => {
-        setCronFocusJobId(jobId)
-        navigate(CRON_ROUTE)
-      }}
       onNavigate={selectSidebarItem}
-      onNewSessionInWorkspace={startSessionInWorkspace}
       onResumeSession={sessionId => {
         // Secretary shells keep the URL (`/` / `/agent/:id`) and resume in place.
         // Navigating to `/:sessionId` nulls shellLevel and bounces home (WP-E).
@@ -1305,11 +1296,6 @@ export function DesktopController() {
         }
 
         navigate(sessionRoute(sessionId))
-      }}
-      onTriggerCronJob={jobId => {
-        void triggerCronJob(jobId)
-          .then(() => refreshCronJobs())
-          .catch(() => undefined)
       }}
     />
   )
@@ -1438,6 +1424,7 @@ export function DesktopController() {
     (secretaryShellOpen && previewRailContent && previewPaneOpen) ||
     (isL2 && !narrowViewport && fileBrowserOpen) ||
     (isL2 && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen) ||
+    (isL2 && !narrowViewport && agentCapabilitiesOpen) ||
     (level === 'l1' && !narrowViewport && agendaPaneOpen)
 
   // Once the terminal would share its rail with another sidebar, drop it to a
@@ -1519,6 +1506,51 @@ export function DesktopController() {
       <ReviewPane key={currentCwd || 'no-cwd'} />
     </Pane>
   )
+
+  // Agent Capabilities rail（全局真源 + per-agent 开关，2026-10-19 用户裁定）：
+  // 仅 L2 —— 面板展示「这个 Agent 关掉了哪些」，开关读写名册行黑名单，
+  // 全局表一字不动。与 review/file-browser 同一套 Pane 机制。
+  const agentCapabilitiesPane = (
+    <Pane
+      defaultOpen={false}
+      disabled={!isL2}
+      forceCollapsed={narrowViewport}
+      hoverReveal
+      id="agent-capabilities"
+      key="agent-capabilities"
+      maxWidth={FILE_BROWSER_MAX_WIDTH}
+      minWidth={FILE_BROWSER_MIN_WIDTH}
+      resizable
+      side={railSide}
+      width={FILE_BROWSER_DEFAULT_WIDTH}
+    >
+      {isL2 && activeAgentId ? <AgentCapabilitiesPane agentId={activeAgentId} /> : null}
+    </Pane>
+  )
+
+  // Capabilities rail 的 titlebar 开关：只在 L2 注册（L1/主线没有 per-agent
+  // 能力面板），与 preview/review 的工具组同一套 registry。
+  useEffect(() => {
+    if (!isL2) {
+      return
+    }
+
+    setTitlebarToolGroup(
+      'agent-capabilities',
+      [
+        {
+          active: agentCapabilitiesOpen,
+          icon: <Codicon name="symbol-misc" />,
+          id: 'agent-capabilities',
+          label: t.rightSidebar.capabilitiesTitle,
+          onSelect: () => togglePane('agent-capabilities')
+        }
+      ],
+      'right'
+    )
+
+    return () => setTitlebarToolGroup('agent-capabilities', [], 'right')
+  }, [agentCapabilitiesOpen, isL2, setTitlebarToolGroup, t])
 
   // WP-D: the L1 secretary rail, rebuilt on the base Pane system. Same agenda
   // store and same four states the old console `RightRail` rendered — only the
@@ -1731,6 +1763,7 @@ export function DesktopController() {
       {panesFlipped ? fileBrowserPane : terminalPane}
       {previewPane}
       {reviewPane}
+      {agentCapabilitiesPane}
       {agendaTimelinePane}
       {panesFlipped ? terminalPane : fileBrowserPane}
     </AppShell>

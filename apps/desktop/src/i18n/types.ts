@@ -309,6 +309,7 @@ export interface Translations {
       notifications: string
       network: string
       sources: string
+      capabilities: string
     }
     sources: {
       categories: {
@@ -2245,6 +2246,16 @@ export interface Translations {
     terminalCloseOthers: string
     terminalCloseAll: string
     addToChat: string
+    capabilitiesTitle: string
+    capabilitiesAria: string
+    capabilitiesSkills: string
+    capabilitiesToolsets: string
+    capabilitiesMcp: string
+    capabilitiesHint: string
+    capabilitiesGlobalOff: string
+    capabilitiesEmpty: string
+    capabilitiesLoadError: string
+    capabilitiesToggleFailed: string
   }
 
   preview: {

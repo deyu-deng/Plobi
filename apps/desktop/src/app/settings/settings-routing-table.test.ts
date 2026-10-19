@@ -22,6 +22,9 @@ const navIds = [...source.matchAll(/\bid: '([a-z-]+)',$/gm)]
   .map((m) => m[1])
   // `config:*` ids are derived from SECTIONS, not listed as literals here.
   .filter((id) => !['config', 'kview', 'pview'].includes(id))
+  // `capabilities` is a link-out to the global source page (/skills), not a
+  // settings pane — 2026-10-19 裁定：设置里只放总入口，不复制面板。
+  .filter((id) => id !== 'capabilities')
 
 describe('settings routing table', () => {
   it('lists every nav pane in the route whitelist', () => {
