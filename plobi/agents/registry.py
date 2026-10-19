@@ -3473,7 +3473,7 @@ def append_n3_dispatch(
     """
     import uuid
 
-    from plobi_constants import get_plobi_home
+    from plobi_constants import get_plobi_state_home
     from plobi_state import SessionDB
 
     if not (entry.profile_name or "").strip():
@@ -3493,11 +3493,11 @@ def append_n3_dispatch(
     # 非空 = 名册 name）。上面那道「数据条目不许派活」的守卫与库址无关，
     # 原样保留（它守的是产品语义，不是落点）。
     #
-    # 库路径**每次现算**（``get_plobi_home()``）而不是 ``SessionDB()`` 的
+    # 库路径**每次现算**（``get_plobi_state_home()``，缺口 A）而不是 ``SessionDB()`` 的
     # import 时默认值：后者把 PLOBI_HOME 钉在模块加载那一刻，conftest 的
     # per-test 重定向对它无效，测试会共享同一个 scratch 库、互相复用 sid
     # 累积消息（2026-10-18 实测：两条 N3 用例读到 10 条）。
-    db = SessionDB(db_path=get_plobi_home() / "state.db")
+    db = SessionDB(db_path=get_plobi_state_home() / "state.db")
     sid = (session_id or "").strip() or _latest_session_id(db, agent_id=entry.name)
     if not sid:
         sid = f"plobi-n3-{uuid.uuid4().hex[:12]}"

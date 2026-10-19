@@ -316,26 +316,36 @@ _BASE_TS = 1_760_000_000.0
 
 
 def _profile_db(roster, name: str) -> Path:
-    return roster.plobi_home / "profiles" / name / "state.db"
+    # 缺口 A：会话真源是单库总账（roster.plobi_home/state.db），不再是分身家。
+    # name 只用于给行落 agent_id 归属。
+    return roster.plobi_home / "state.db"
 
 
 def _seed_runs(roster, name: str, runs) -> None:
     """Write a real ``state.db`` — the budget reads the same read-only probe that
     reads the answer back, so the test must exercise that SQL, not a mock of it.
 
+    All agents seed into the SAME ledger now; separation is the ``agent_id``
+    column (裁定 180), which is exactly the mechanism this file's queries rely on.
+
     ``runs`` is a list of ``(source, user_turns, duration_seconds)``.
     """
     db = _profile_db(roster, name)
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db))
-    conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, started_at REAL)")
-    conn.execute("CREATE TABLE messages (session_id TEXT, role TEXT, timestamp REAL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sessions ("
+        "id TEXT PRIMARY KEY, source TEXT, started_at REAL, agent_id TEXT DEFAULT '')"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS messages (session_id TEXT, role TEXT, timestamp REAL)"
+    )
     for index, (source, turns, duration) in enumerate(runs):
-        sid = f"run_{index}"
+        sid = f"run_{name}_{index}"
         started = _BASE_TS + index * 1000
         conn.execute(
-            "INSERT INTO sessions (id, source, started_at) VALUES (?, ?, ?)",
-            (sid, source, started),
+            "INSERT INTO sessions (id, source, started_at, agent_id) VALUES (?, ?, ?, ?)",
+            (sid, source, started, name),
         )
         # 一问一答之间夹一条工具往返：真实子分身要先跑工具才给最终答复。
         conn.execute("INSERT INTO messages VALUES (?, 'user', ?)", (sid, started))
@@ -656,19 +666,21 @@ record = {{
     "cwd": os.getcwd(),
     "env": {{
         key: os.environ.get(key)
-        for key in ("PLOBI_HOME", "PLOBI_PROFILE", "TERMINAL_CWD", "PLOBI_TUI")
+        for key in ("PLOBI_HOME", "PLOBI_PROFILE", "TERMINAL_CWD", "PLOBI_TUI",
+                    "PLOBI_STATE_HOME", "PLOBI_AGENT_ID")
     }},
 }}
 Path({str(record)!r}).write_text(json.dumps(record), encoding="utf-8")
 """
     if persist:
         stub += f"""
-home = os.environ.get("PLOBI_HOME")
-if home:
+ledger = os.environ.get("PLOBI_STATE_HOME") or os.environ.get("PLOBI_HOME")
+if ledger:
     sys.path.insert(0, {str(REPO)!r})
     from plobi_state import SessionDB
-    db = SessionDB(db_path=Path(home) / "state.db")
-    db.create_session({_STUB_SESSION!r}, source="cli")
+    db = SessionDB(db_path=Path(ledger) / "state.db")
+    db.create_session({_STUB_SESSION!r}, source="cli",
+                      agent_id=os.environ.get("PLOBI_AGENT_ID", ""))
     db.append_message({_STUB_SESSION!r}, role="user", content=sys.argv[-1])
     db.append_message({_STUB_SESSION!r}, role="assistant", content={_STUB_ANSWER!r})
 print("this stdout line is a decoy and must not become the answer")
@@ -716,6 +728,9 @@ def test_stub_child_receives_the_expected_argv_and_env(roster, stub_bin):
 
     assert received["env"]["PLOBI_HOME"] == str(roster.profile_dir)
     assert received["env"]["PLOBI_PROFILE"] == LIVE_PROJECT
+    # 缺口 A：身份的家拆两面——配置面指分身家，总账面指本进程的单库。
+    assert received["env"]["PLOBI_STATE_HOME"] == str(roster.plobi_home)
+    assert received["env"]["PLOBI_AGENT_ID"] == LIVE_PROJECT
     assert received["env"]["TERMINAL_CWD"] == str(roster.project)
     assert os.path.realpath(received["cwd"]) == os.path.realpath(roster.project)
     assert received["env"]["PLOBI_TUI"] is None
@@ -727,20 +742,26 @@ def test_stub_child_receives_the_expected_argv_and_env(roster, stub_bin):
     assert payload["agent"] == LIVE_PROJECT
     assert payload["answer"] == _STUB_ANSWER
     assert payload["session_id"] == _STUB_SESSION
-    assert (roster.profile_dir / "state.db").is_file()
-    # The question itself is in that record: the 分身 kept a copy of being asked.
+    # 记录在总账（单库），分身家里不再长出第二份流水账。
+    assert (roster.plobi_home / "state.db").is_file()
+    assert not (roster.profile_dir / "state.db").exists()
+    # The question itself is in that record, attributed to the 分身.
     import sqlite3
 
-    conn = sqlite3.connect(str(roster.profile_dir / "state.db"))
+    conn = sqlite3.connect(str(roster.plobi_home / "state.db"))
     try:
         rows = conn.execute(
             "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id",
             (_STUB_SESSION,),
         ).fetchall()
+        owner = conn.execute(
+            "SELECT agent_id FROM sessions WHERE id = ?", (_STUB_SESSION,)
+        ).fetchone()
     finally:
         conn.close()
     assert [role for role, _ in rows] == ["user", "assistant"]
     assert "这周项目到底怎么样？" in rows[0][1]
+    assert owner == (LIVE_PROJECT,)
 
 
 def test_stub_child_failure_propagates_as_a_tool_error(roster, stub_bin):

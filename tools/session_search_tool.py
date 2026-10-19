@@ -189,8 +189,9 @@ def _locate_session_db(session_id: str):
 
     # 裁定 180 之后这个顺序变成**正确性依赖**、不只是性能：``default`` 的家就是
     # 顶层家（resolve_profile_env('default') ≡ 顶层），排第一意味着新会话（现在
-    # 只写顶层库）一次命中。后面的逐家扫描降级为兜底——专接那些还按老路写进各
-    # 家库的会话（已知缺口：agent_ask.py:528 起的子进程），等那条路也收了就可删。
+    # 只写顶层库）一次命中。后面的逐家扫描降级为兜底——专接历史快照与仍按老路
+    # 写的进程（agent_ask 的子进程已于缺口 A 收口：spawn 时改传 PLOBI_STATE_HOME
+    # 落总账，不再往家库写）；这份扫描留着接 cron / 手工 ``plobi -p`` 的旧路。
     targets = [("default", profiles_mod.get_profile_dir("default"))]
     try:
         targets += [(info.name, info.path) for info in profiles_mod.list_profiles()]

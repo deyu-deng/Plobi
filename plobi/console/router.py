@@ -553,17 +553,21 @@ class UsageTotals:
 
 
 def default_db_path() -> Path:
-    """``$PLOBI_HOME/state.db`` — the canonical Plobi state database.
+    """会话总账的家（``get_plobi_state_home()/state.db``）。
 
-    **每次现算**（``get_plobi_home()``）而不是模块常量 ``DEFAULT_DB_PATH``：
+    **每次现算**而不是模块常量 ``DEFAULT_DB_PATH``：
     后者把家钉在 plobi_state 被 import 的那一刻，测试的 per-test PLOBI_HOME
     重定向对它无效（2026-10-18 实测：两条 N3 用例因此一个读到累积的 10 条、
     一个读到空——写端现算、读端快照，两边对不上）。生产环境 PLOBI_HOME 稳定，
     两种写法等价；测试里现算才隔离。monkeypatch 本函数仍可覆盖（既有用例）。
-    """
-    from plobi_constants import get_plobi_home
 
-    return get_plobi_home() / "state.db"
+    缺口 A：读 ``get_plobi_state_home`` 而不是 ``get_plobi_home``——被派活的
+    子进程（PLOBI_HOME=分身家）要跟 L1/桌面落同一个单库总账；没设
+    ``PLOBI_STATE_HOME`` 时两者相等，行为不变。
+    """
+    from plobi_constants import get_plobi_state_home
+
+    return get_plobi_state_home() / "state.db"
 
 
 def day_bounds(now: Optional[float] = None) -> tuple[float, float]:

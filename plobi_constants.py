@@ -110,6 +110,22 @@ def get_plobi_home() -> Path:
     return _get_platform_default_plobi_home()
 
 
+def get_plobi_state_home() -> Path:
+    """Return the session-ledger home — where ``state.db`` lives.
+
+    WP-AGENT-SESSION-ATTRIBUTION 缺口 A：把「身份的家的两面」拆开——
+    配置/技能/记忆继续跟 ``PLOBI_HOME``（裁定 179，按家分持是设计不是债），
+    会话总账单独跟 ``PLOBI_STATE_HOME``。CLI 子进程因此可以「配置用分身家、
+    流水账写顶层库」：agent_ask 的子进程拿着分身的 PLOBI_HOME 进来，
+    会话却落在与 L1/桌面同一个单库里、按行级 ``agent_id`` 归属。
+
+    未设时回落 ``get_plobi_home()``——所有不感知这个变量的调用方（以及
+    没被派活的普通进程）行为逐位不变。
+    """
+    val = os.environ.get("PLOBI_STATE_HOME", "").strip()
+    return Path(val) if val else get_plobi_home()
+
+
 def get_default_plobi_root() -> Path:
     """Return the root Plobi directory for profile-level operations.
 

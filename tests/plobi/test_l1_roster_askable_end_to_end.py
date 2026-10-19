@@ -141,12 +141,12 @@ def _registry(home) -> AgentRegistry:
     return AgentRegistry.load(home / ".plobi" / "plobi" / "projects.yaml")
 
 
-def _seed_child_answer(profile_dir: Path, question: str, answer: str) -> None:
-    """分身自己家里那条会话记录——问答的真源就是它。"""
+def _seed_child_answer(home: Path, question: str, answer: str) -> None:
+    """单库总账里那条带归属的会话记录——问答的真源就是它（缺口 A）。"""
     from plobi_state import SessionDB
 
-    db = SessionDB(db_path=profile_dir / "state.db")
-    db.create_session(_SESSION, source="cli")
+    db = SessionDB(db_path=home / ".plobi" / "state.db")
+    db.create_session(_SESSION, source="cli", agent_id="stithy")
     db.append_message(_SESSION, role="user", content=question)
     db.append_message(_SESSION, role="assistant", content=answer)
 
@@ -225,8 +225,9 @@ def test_roster_row_is_askable_and_answers_end_to_end(client, home, monkeypatch)
 
     profile_dir = home / ".plobi" / "profiles" / "stithy"
     question = "导出那块推到哪了？"
-    # 分身在自己的家里答了一次（真写的 sqlite），问答的记录只在他那儿。
-    _seed_child_answer(profile_dir, question, _ANSWER)
+    # 分身答了一次（真写的 sqlite）：记录在单库总账、按 agent_id 归属（缺口 A），
+    # 分身家里不再长出第二份流水账。
+    _seed_child_answer(home, question, _ANSWER)
     monkeypatch.setattr(AA, "_run_child", _child_ran)
     _SEEN_ARGV.clear()
 
@@ -237,11 +238,13 @@ def test_roster_row_is_askable_and_answers_end_to_end(client, home, monkeypatch)
     assert body["answer"] == _ANSWER
     assert body["session_id"] == _SESSION
 
-    # 起子进程那一路也是钉在这个分身自己家的（不是秘书的家）。
+    # 起子进程那一路：配置面钉分身家（裁定 179），总账面钉单库（缺口 A）。
     entry = registry.get("stithy")
     argv, child_env, cwd = AA.build_child_command(entry, question)
     assert child_env["PLOBI_HOME"] == str(profile_dir)
     assert child_env["PLOBI_PROFILE"] == "stithy"
+    assert child_env["PLOBI_STATE_HOME"] == str(home / ".plobi")
+    assert child_env["PLOBI_AGENT_ID"] == "stithy"
     # 前缀是「这台机器怎么找到 plobi 可执行」的问题（POSIX 是 plobi 一条，
     # Windows 是 python.exe -m plobi_cli 几条），所以从同一个解析器取长度，
     # 只钉我们真正要约定的那五个参数。
@@ -260,8 +263,9 @@ def test_roster_row_is_askable_and_answers_end_to_end(client, home, monkeypatch)
     sent = _SEEN_ARGV[0]
     asked = sent[sent.index("-q") + 1]
     assert "总秘书" in asked and question in asked
-    # 问答的记录只落在他自己家里（秘书那边看不到第二份）。
-    conn = sqlite3.connect(str(profile_dir / "state.db"))
+    # 问答的记录在单库总账里（缺口 A）：秘书读的就是同一份库、同一行归属，
+    # 分身家里没有第二份。
+    conn = sqlite3.connect(str(home / ".plobi" / "state.db"))
     try:
         rows = conn.execute(
             "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id",
