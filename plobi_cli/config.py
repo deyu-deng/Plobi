@@ -2282,8 +2282,16 @@ DEFAULT_CONFIG = {
         #                     /memory reject <id>.
         # To disable memory entirely, use memory_enabled: false instead.
         "write_approval": False,
-        "memory_char_limit": 2200,   # ~800 tokens at 2.75 chars/token
-        "user_char_limit": 1375,     # ~500 tokens at 2.75 chars/token
+        # 三份记忆各自的上限（裁定 181，任务书第 2 步）。以前只有一格
+        # ``memory_char_limit``——那时 MEMORY.md 只有一份、没有作用域这一维。
+        # ~2.75 chars/token。
+        "global_char_limit": 2200,    # memory/GLOBAL.md — 跨 Agent 都成立的事实
+        "agent_char_limit": 2200,     # memory/agents/<slug>/MEMORY.md — 本 Agent 自己那份
+        "user_char_limit": 1375,      # memory/USER.md — 画像仍一份
+        # STATUS.md 是给 L1 看的「几行近况」：每家的上限，与 L1 拼摘要的总上限。
+        # L1 只读摘要，绝不读各 Agent 的 MEMORY.md 全文（2200×24 那条路判死）。
+        "status_char_limit": 200,
+        "l1_status_char_limit": 1500,
         # External memory provider — three states, and the shipped default is the
         # official brain: absent/``"mind"`` -> the body's own Mind; ``""`` -> built-in
         # only (an explicit opt-out, still honoured); any other name -> that provider.

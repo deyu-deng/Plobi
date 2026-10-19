@@ -15,10 +15,18 @@ from plobi_cli.prompt_size import (
 
 
 def _seed_memory(plobi_home, memory_text="", user_text=""):
-    mem_dir = plobi_home / "memories"
+    """Seed the shared memory root the way 裁定 181 lays it out.
+
+    ``memory/USER.md`` is one shared copy; an agent's own notes live per identity
+    under ``memory/agents/<slug>/MEMORY.md`` — the hermetic test environment sets
+    no ``PLOBI_AGENT_ID``, so the identity resolves to the L1 slug.
+    """
+    mem_dir = plobi_home / "memory"
     mem_dir.mkdir(parents=True, exist_ok=True)
     if memory_text:
-        (mem_dir / "MEMORY.md").write_text(memory_text, encoding="utf-8")
+        own = mem_dir / "agents" / "l1"
+        own.mkdir(parents=True, exist_ok=True)
+        (own / "MEMORY.md").write_text(memory_text, encoding="utf-8")
     if user_text:
         (mem_dir / "USER.md").write_text(user_text, encoding="utf-8")
 

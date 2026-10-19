@@ -2,35 +2,52 @@
 """
 Memory Tool Module - Persistent Curated Memory
 
-Provides bounded, file-backed memory that persists across sessions. Two stores:
-  - MEMORY.md: agent's personal notes and observations (environment facts, project
-    conventions, tool quirks, things learned)
-  - USER.md: what the agent knows about the user (preferences, communication style,
-    expectations, workflow habits)
+Bounded, file-backed memory that persists across sessions, laid out per
+裁定 181 as **three scopes plus one digest** under the shared root (never
+inside a 分身 home — the key is the Agent's identity, not its directory):
 
-Both are injected into the system prompt as a frozen snapshot at session start.
-Mid-session writes update files on disk immediately (durable) but do NOT change
-the system prompt -- this preserves the prefix cache for the entire session.
-The snapshot refreshes on the next session start.
+  memory/GLOBAL.md               cross-agent facts; writing this scope goes through
+                                 the approval layer (target="global" stages it)
+  memory/agents/<slug>/MEMORY.md this agent's own notes — where writes land by default
+  memory/agents/<slug>/STATUS.md a few lines of "where I am with things", updated by
+                                 the agent itself; only L1 reads these
+  memory/USER.md                 the user profile — still exactly one copy
+
+Injection = GLOBAL + this agent's own + USER.  L1 additionally gets the
+per-agent STATUS digest, and **never** another agent's full MEMORY.md — 2200
+chars x 24 agents would be paid on every turn and would break the prefix cache.
+Each entry carries a ``source`` pointer (a relative ``vault/…`` or ``mind/…``
+path plus a date) so memory stays an index rather than a warehouse; the
+direction is memory -> vault (that's the page a human can read), never the
+other way around (裁定 182 forbids de-duplicating the human-facing side).
+
+Both blocks are injected into the system prompt as a frozen snapshot at session
+start.  Mid-session writes update files on disk immediately (durable) but do NOT
+change the system prompt -- this preserves the prefix cache for the entire
+session.  The snapshot refreshes on the next session start.
 
 Entry delimiter: § (section sign). Entries can be multiline.
 Character limits (not tokens) because char counts are model-independent.
 
 Design:
-- Single `memory` tool with action parameter: add, replace, remove
+- Single `memory` tool, one atomic verb (write into a scope); actions are
+  add / replace / remove.  Reaching ``global`` is a property of that location
+  (plan + hash + a human nod), not an action the model has to guess (裁定 185).
 - replace/remove use short unique substring matching (not full text or IDs)
 - Behavioral guidance lives in the tool schema description
 - Frozen snapshot pattern: system prompt is stable, tool responses show live state
 """
 
+import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from plobi_constants import get_default_plobi_root
+from plobi_constants import get_shared_plobi_root
 from typing import Dict, Any, List, Optional
 
 from utils import atomic_replace
@@ -48,17 +65,99 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Where memory files live — resolved dynamically so profile overrides
+# Where the memory files live — resolved dynamically so profile overrides
 # (PLOBI_HOME env var changes) are always respected.  The old module-level
 # constant was cached at import time and could go stale if a profile switch
 # happened after the first import.
-def get_memory_dir() -> Path:
-    """Return the shared memories directory at the Plobi root.
+#
+# 裁定 181: one shared root, split by **Agent identity** (a roster row), never by
+# profile home.  裁定 44 already proved that per-profile ledger copies were unread
+# residue — every profile resolved to the same file anyway.
+L1_SLUG = "l1"
+_SLUG_UNSAFE_RE = re.compile(r"[^a-z0-9\u4e00-\u9fff_-]+")
 
-    Long-term memory attaches to the person, not to a profile or a session
-    window (裁定 44), so every profile resolves to the same MEMORY.md/USER.md.
+# Scope -> (filename, is it per-agent).  The per-agent half is what 裁定 179/181
+# asked for: one identity, one ledger — keyed by the roster row, never by a home.
+MEMORY_SCOPES: Dict[str, tuple[str, bool]] = {
+    "global": ("GLOBAL.md", False),
+    "memory": ("MEMORY.md", True),
+    "status": ("STATUS.md", True),
+    "user": ("USER.md", False),
+}
+
+
+def resolve_agent_slug(slug: Optional[str] = None) -> str:
+    """Return the slug of the agent whose memory this is.
+
+    Identity is the roster row (裁定 178 乙案), surfaced to the process as
+    ``PLOBI_AGENT_ID`` by the spawner (see ``agent_ask`` in the north-star
+    plugin); an empty identity is L1 — the same convention 裁定 180 uses for
+    ``sessions.agent_id``.
     """
-    return get_default_plobi_root() / "memories"
+    raw = (os.environ.get("PLOBI_AGENT_ID", "") if slug is None else slug) or ""
+    name = _SLUG_UNSAFE_RE.sub("-", raw.strip().lower()).strip("-")
+    return name or L1_SLUG
+
+
+def is_l1_slug(slug: str) -> bool:
+    return slug == L1_SLUG
+
+
+def get_memory_dir() -> Path:
+    """Return the shared memory root — ``<共享根>/memory``.
+
+    Every profile resolves to the same root, because long-term memory attaches
+    to the person and to an Agent identity, not to a home directory
+    (裁定 44 / 181).  Which file inside it you want is a scope question —
+    see :func:`memory_path` and :data:`MEMORY_SCOPES`.
+    """
+    return get_shared_plobi_root() / "memory"
+
+
+def agent_memory_dir(slug: Optional[str] = None) -> Path:
+    """``<共享根>/memory/agents/<slug>`` — one identity's own directory."""
+    return get_memory_dir() / "agents" / resolve_agent_slug(slug)
+
+
+def memory_path(scope: str, *, slug: Optional[str] = None) -> Path:
+    """Resolve one scope's ledger file (``MEMORY_SCOPES`` is the only map)."""
+    entry = MEMORY_SCOPES.get(scope)
+    if entry is None:
+        raise ValueError(f"Unknown memory scope {scope!r}. Use global, memory, status or user.")
+    filename, per_agent = entry
+    base = agent_memory_dir(slug) if per_agent else get_memory_dir()
+    return base / filename
+
+
+def entry_with_source(content: str, source: Optional[str]) -> str:
+    """Append the provenance pointer that makes a bounded index possible.
+
+    ``memory`` is a table of contents, not a warehouse — the char budget only
+    works because each entry says where the human-readable version of it lives
+    (``vault/…`` / ``mind/…`` + date).  The pointer travels *inside* the entry
+    text so the §-delimited format, the drift guard and every existing caller
+    keep working unchanged.  Direction matters: memory points at the vault page
+    a person can read; the vault is never rewritten to point back at memory to
+    save space (裁定 182).
+    """
+    text = (source or "").strip()
+    if not text:
+        return content
+    if text.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", text) or ".." in text.split("/"):
+        return content  # not a relative pointer — leave the entry as written
+    date = time.strftime("%Y-%m-%d")
+    if date not in text:
+        text = f"{text} · {date}"
+    return f"{content}\n〔出处 {text}〕"
+
+
+def _file_sha(path: Path) -> str:
+    """Hash of a memory file's current bytes — what an approval is bound to."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except (OSError, IOError):
+        return hashlib.sha256(b"").hexdigest()
+
 
 ENTRY_DELIMITER = "\n§\n"
 
@@ -118,10 +217,18 @@ class MemoryStore:
     """
     Bounded curated memory with file persistence. One instance per AIAgent.
 
+    Three scopes plus one digest, keyed by Agent identity (裁定 181):
+      global  -> ``memory/GLOBAL.md``        (approval-written only; never a direct tool target)
+      memory  -> ``memory/agents/<slug>/MEMORY.md``   (this agent's own notes)
+      status  -> ``memory/agents/<slug>/STATUS.md``   (a few lines of recent state)
+      user    -> ``memory/USER.md``          (the person's profile — one copy)
+
     Maintains two parallel states:
       - _system_prompt_snapshot: frozen at load time, used for system prompt injection.
-        Never mutated mid-session. Keeps prefix cache stable.
-      - memory_entries / user_entries: live state, mutated by tool calls, persisted to disk.
+        Never mutated mid-session. Keeps prefix cache stable.  The ``memory`` block is
+        GLOBAL + this agent's own (+ every other agent's STATUS digest when this agent
+        IS L1) — injection never stacks another agent's MEMORY.md.
+      - <scope>_entries: live state, mutated by tool calls, persisted to disk.
         Tool responses always reflect this live state.
     """
 
@@ -131,10 +238,20 @@ class MemoryStore:
     # turn to budget exhaustion and suppress the user's reply (issue #42405).
     _MAX_CONSOLIDATION_FAILURES_PER_TURN = 3
 
-    def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375):
+    def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375,
+                 *, global_char_limit: int = 2200, status_char_limit: int = 200,
+                 l1_status_char_limit: int = 1500, slug: Optional[str] = None):
+        self.slug = resolve_agent_slug(slug)
+        self.global_entries: List[str] = []
         self.memory_entries: List[str] = []
+        self.status_entries: List[str] = []
         self.user_entries: List[str] = []
+        # 三份上限各自可配（memory.global_char_limit / agent_char_limit /
+        # user_char_limit）；STATUS 另给两格：每家一份的上限，与 L1 拼摘要的上限。
+        self.global_char_limit = global_char_limit
         self.memory_char_limit = memory_char_limit
+        self.status_char_limit = status_char_limit
+        self.l1_status_char_limit = l1_status_char_limit
         self.user_char_limit = user_char_limit
         # Frozen snapshot for system prompt -- set once at load_from_disk()
         self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": ""}
@@ -170,7 +287,7 @@ class MemoryStore:
         }
 
     def load_from_disk(self):
-        """Load entries from MEMORY.md and USER.md, capture system prompt snapshot.
+        """Load the three scopes (plus this agent's STATUS) and capture the snapshot.
 
         The frozen snapshot is what enters the system prompt. We scan each
         entry for injection/promptware patterns at snapshot-build time —
@@ -179,34 +296,97 @@ class MemoryStore:
         chain, compromised tool, sister-session write) cannot inject into
         the system prompt.
 
-        The live ``memory_entries`` / ``user_entries`` lists keep the
-        original text so the user can still SEE poisoned entries via
-        see poisoned entries by inspecting the source files directly, and remove them — silently dropping them would hide the attack from the user.
+        The live ``*_entries`` lists keep the original text so the user can
+        still SEE poisoned entries by inspecting the source files directly, and
+        remove them — silently dropping them would hide the attack from the user.
+
+        Injection shape (裁定 181): ``GLOBAL.md`` + this agent's own
+        ``MEMORY.md`` + ``USER.md``; L1 additionally gets the STATUS digest of
+        every other agent, and **never** another agent's full ``MEMORY.md``.
+        The three parts are joined into the single ``memory`` block so every
+        existing consumer (system prompt, context breakdown, prompt size) keeps
+        reading one block and the prefix-cache invariant is untouched.
 
         Scanning is deterministic from disk bytes, so the snapshot remains
         stable for the entire session (prefix-cache invariant holds).
         """
-        mem_dir = get_memory_dir()
-        mem_dir.mkdir(parents=True, exist_ok=True)
+        get_memory_dir().mkdir(parents=True, exist_ok=True)
 
-        self.memory_entries = self._read_file(mem_dir / "MEMORY.md")
-        self.user_entries = self._read_file(mem_dir / "USER.md")
+        self.global_entries = self._read_file(memory_path("global"))
+        self.memory_entries = self._read_file(memory_path("memory", slug=self.slug))
+        self.status_entries = self._read_file(memory_path("status", slug=self.slug))
+        self.user_entries = self._read_file(memory_path("user"))
 
         # Deduplicate entries (preserves order, keeps first occurrence)
+        self.global_entries = list(dict.fromkeys(self.global_entries))
         self.memory_entries = list(dict.fromkeys(self.memory_entries))
+        self.status_entries = list(dict.fromkeys(self.status_entries))
         self.user_entries = list(dict.fromkeys(self.user_entries))
 
         # Sanitize entries for the system-prompt snapshot only.  Live state
         # (memory_entries / user_entries) keeps the raw text so the user
         # can see + remove poisoned entries via the memory tool.
+        sanitized_global = self._sanitize_entries_for_snapshot(self.global_entries, "GLOBAL.md")
         sanitized_memory = self._sanitize_entries_for_snapshot(self.memory_entries, "MEMORY.md")
         sanitized_user = self._sanitize_entries_for_snapshot(self.user_entries, "USER.md")
 
-        # Capture frozen snapshot for system prompt injection
+        global_block = self._render_block("global", sanitized_global)
+        own_block = self._render_block("memory", sanitized_memory)
+        digest_block = self._build_l1_status_digest() if is_l1_slug(self.slug) else ""
+
+        # Capture frozen snapshot for system prompt injection.  ``memory`` is what
+        # gets injected; the per-scope keys exist for diagnostics (prompt size,
+        # context breakdown, the 判据③ reading that the injected total equals the
+        # three parts) and are never injected as separate blocks.
         self._system_prompt_snapshot = {
-            "memory": self._render_block("memory", sanitized_memory),
+            "memory": "\n\n".join(b for b in (global_block, own_block, digest_block) if b),
             "user": self._render_block("user", sanitized_user),
+            "global": global_block,
+            "agent": own_block,
+            "status_digest": digest_block,
         }
+
+    def _build_l1_status_digest(self) -> str:
+        """Render the STATUS digest L1 sees: a few lines per *other* agent.
+
+        Only ``STATUS.md`` is read here — never another agent's ``MEMORY.md``.
+        Slug order is sorted so the block is byte-stable for the session, and the
+        aggregate is capped by ``memory.l1_status_char_limit`` (2200 x N agents
+        would be paid on every turn and would shatter the cached prefix).
+        """
+        agents_root = get_memory_dir() / "agents"
+        if not agents_root.is_dir():
+            return ""
+        sections: List[str] = []
+        used = 0
+        for slug_dir in sorted(agents_root.iterdir(), key=lambda p: p.name):
+            slug = slug_dir.name
+            if slug == self.slug:
+                continue  # L1 does not read its own status file back
+            path = slug_dir / "STATUS.md"
+            if not path.is_file():
+                continue
+            entries = list(dict.fromkeys(self._read_file(path)))
+            safe = self._sanitize_entries_for_snapshot(entries, f"agents/{slug}/STATUS.md")
+            body = "\n".join(f"- {line}" for entry in safe for line in entry.splitlines() if line)
+            if not body:
+                continue
+            room = self.l1_status_char_limit - used
+            if room <= 0:
+                sections.append("…（其余 Agent 的近况这次没列，超出 L1 摘要上限）")
+                break
+            if len(body) > room:
+                body = body[:room] + "…"
+            sections.append(f"{slug}: {body}")
+            used += len(body)
+        if not sections:
+            return ""
+        header = (
+            f"AGENT STATUS DIGEST ({len(sections)} 项，L1 只看摘要，不读各 Agent 全文) "
+            f"[{used:,}/{self.l1_status_char_limit:,} chars]"
+        )
+        separator = "═" * 46
+        return f"{separator}\n{header}\n{separator}\n" + "\n".join(sections)
 
     @staticmethod
     def _sanitize_entries_for_snapshot(entries: List[str], filename: str) -> List[str]:
@@ -281,12 +461,15 @@ class MemoryStore:
                     pass
             fd.close()
 
-    @staticmethod
-    def _path_for(target: str) -> Path:
-        mem_dir = get_memory_dir()
-        if target == "user":
-            return mem_dir / "USER.md"
-        return mem_dir / "MEMORY.md"
+    def _path_for(self, target: str) -> Path:
+        """Resolve a scope's ledger file — 三份形状住的地方（裁定 181）.
+
+        ``memory`` and ``status`` are this agent's own files, so the path moves
+        with the identity; ``global`` and ``user`` are shared and therefore
+        identical for every agent.
+        """
+        return memory_path(target if target in MEMORY_SCOPES else "memory",
+                           slug=self.slug)
 
     def _reload_target(self, target: str, *, skip_drift: bool = False) -> Optional[str]:
         """Re-read entries from disk into in-memory state.
@@ -312,17 +495,26 @@ class MemoryStore:
 
     def save_to_disk(self, target: str):
         """Persist entries to the appropriate file. Called after every mutation."""
-        get_memory_dir().mkdir(parents=True, exist_ok=True)
-        self._write_file(self._path_for(target), self._entries_for(target))
+        path = self._path_for(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_file(path, self._entries_for(target))
 
     def _entries_for(self, target: str) -> List[str]:
         if target == "user":
             return self.user_entries
+        if target == "global":
+            return self.global_entries
+        if target == "status":
+            return self.status_entries
         return self.memory_entries
 
     def _set_entries(self, target: str, entries: List[str]):
         if target == "user":
             self.user_entries = entries
+        elif target == "global":
+            self.global_entries = entries
+        elif target == "status":
+            self.status_entries = entries
         else:
             self.memory_entries = entries
 
@@ -333,8 +525,20 @@ class MemoryStore:
         return len(ENTRY_DELIMITER.join(entries))
 
     def _char_limit(self, target: str) -> int:
+        """The per-scope budget — three configurable numbers, nothing hard-coded.
+
+        ``memory.agent_char_limit`` / ``memory.global_char_limit`` /
+        ``memory.user_char_limit`` (plus ``memory.status_char_limit`` for the
+        per-agent STATUS file and ``memory.l1_status_char_limit`` for the digest
+        L1 reads).  Defaults come from ``DEFAULT_CONFIG`` in
+        :mod:`plobi_cli.config`; this class only carries the numbers.
+        """
         if target == "user":
             return self.user_char_limit
+        if target == "global":
+            return self.global_char_limit
+        if target == "status":
+            return self.status_char_limit
         return self.memory_char_limit
 
     def add(self, target: str, content: str) -> Dict[str, Any]:
@@ -676,9 +880,15 @@ class MemoryStore:
         pct = min(100, int((current / limit) * 100)) if limit > 0 else 0
 
         if target == "user":
-            header = f"USER PROFILE (who the user is) [{pct}% — {current:,}/{limit:,} chars]"
+            title = "USER PROFILE (who the user is)"
+        elif target == "global":
+            title = ("GLOBAL MEMORY (facts that hold for every agent — written only "
+                     "through the approval layer)")
+        elif target == "status":
+            title = f"MY STATUS ({self.slug})"
         else:
-            header = f"MEMORY (your personal notes) [{pct}% — {current:,}/{limit:,} chars]"
+            title = f"AGENT MEMORY ({self.slug} — your own notes)"
+        header = f"{title} [{pct}% — {current:,}/{limit:,} chars]"
 
         separator = "═" * 46
         return f"{separator}\n{header}\n{separator}\n{content}"
@@ -792,36 +1002,76 @@ class MemoryStore:
             raise RuntimeError(f"Failed to write memory file {path}: {e}")
 
 
-def load_on_disk_store() -> "MemoryStore":
+#: The one place the four memory budgets are read from config.  ``agent_char_limit``
+#: is this agent's own ledger (it used to be called ``memory_char_limit``, before
+#: memory had a scope dimension); ``global_char_limit`` is the shared layer;
+#: ``user_char_limit`` is the person's profile.  Nothing here is hard-coded at a
+#: call site — 任务书第 2 步「三份各自可配、不许硬编」.
+_MEMORY_LIMIT_KEYS = {
+    "memory_char_limit": "agent_char_limit",
+    "global_char_limit": "global_char_limit",
+    "user_char_limit": "user_char_limit",
+    "status_char_limit": "status_char_limit",
+    "l1_status_char_limit": "l1_status_char_limit",
+}
+_MEMORY_LIMIT_DEFAULTS = {
+    "memory_char_limit": 2200,
+    "global_char_limit": 2200,
+    "user_char_limit": 1375,
+    "status_char_limit": 200,
+    "l1_status_char_limit": 1500,
+}
+
+
+def memory_limits_from_config(mem_config: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
+    """Resolve the per-scope char limits from a ``memory:`` config section.
+
+    Pass the already-loaded section (the live agent has it from ``agent_init``);
+    with nothing passed it loads the config itself.  Bad values fall back to the
+    shipped defaults so a hand-edited config can never take memory down.
+    """
+    if mem_config is None:
+        try:
+            from plobi_cli.config import load_config
+
+            mem_config = (load_config() or {}).get("memory", {}) or {}
+        except Exception:
+            mem_config = {}
+    limits: Dict[str, int] = {}
+    for arg_name, config_key in _MEMORY_LIMIT_KEYS.items():
+        default = _MEMORY_LIMIT_DEFAULTS[arg_name]
+        try:
+            limits[arg_name] = int((mem_config or {}).get(config_key, default))
+        except (TypeError, ValueError):
+            limits[arg_name] = default
+    return limits
+
+
+def load_on_disk_store(slug: Optional[str] = None) -> "MemoryStore":
     """Build a fresh on-disk :class:`MemoryStore`, honoring configured char limits.
 
     Use this from any context that has no live agent (the messaging gateway, the
     Desktop GUI, the bare CLI ``/memory`` handler) but still needs to read or
     apply approved memory writes. Mirrors how the live agent constructs its store
-    in ``agent/agent_init.py`` — including the user's ``memory.memory_char_limit``
-    / ``memory.user_char_limit`` overrides — so an approval applied without a live
-    agent enforces the SAME caps as one applied with one.
+    in ``agent/agent_init.py`` — both go through :func:`memory_limits_from_config`,
+    so an approval applied without a live agent enforces the SAME caps as one
+    applied with one.
 
     Falls back to the built-in defaults if config can't be loaded, so this can
     never raise on a missing/unreadable config.
     """
-    memory_char_limit = 2200
-    user_char_limit = 1375
-    try:
-        from plobi_cli.config import load_config
-
-        mem_cfg = (load_config() or {}).get("memory", {}) or {}
-        memory_char_limit = int(mem_cfg.get("memory_char_limit", memory_char_limit))
-        user_char_limit = int(mem_cfg.get("user_char_limit", user_char_limit))
-    except Exception:
-        pass  # config optional — fall back to defaults rather than break /memory
-
-    store = MemoryStore(
-        memory_char_limit=memory_char_limit,
-        user_char_limit=user_char_limit,
-    )
+    store = MemoryStore(slug=slug, **memory_limits_from_config())
     store.load_from_disk()
     return store
+
+
+def _scope_label(target: str) -> str:
+    """Human-readable name of a memory scope, used in approval summaries."""
+    return {
+        "user": "user profile",
+        "global": "GLOBAL memory (shared by every agent)",
+        "status": "agent STATUS digest",
+    }.get(target, "memory")
 
 
 def _apply_write_gate(action: str, target: str, content: Optional[str],
@@ -843,7 +1093,7 @@ def _apply_write_gate(action: str, target: str, content: Optional[str],
         return None
 
     # Build a small inline summary/detail for the foreground approval prompt.
-    label = "user profile" if target == "user" else "memory"
+    label = _scope_label(target)
     if action == "add":
         summary = f"add to {label}"
         detail = content or ""
@@ -960,21 +1210,91 @@ def _missing_old_text_error(store: "MemoryStore", target: str, action: str) -> s
     )
 
 
+def _stage_global_write(action: str, content: Optional[str], old_text: Optional[str],
+                        operations: Optional[List[Dict[str, Any]]],
+                        store: "MemoryStore") -> str:
+    """A write aimed at ``GLOBAL.md`` always lands in the approval layer first.
+
+    裁定 181: 默认写自己那份，只有「跨 Agent 都成立的事实」才进全局，而且**走已有的
+    待确认层**（``tools/write_approval`` 的 pending store + ``/memory approve``），
+    不新造机制。裁定 185 的尺子在这儿的落法：模型递的还是同一件原子事「把这条写进
+    这个作用域」，没多一个要它猜对的分支参数——**要人点头是这个位置的规则**，与
+    ``memory.write_approval`` 那道全局闸无关，也不管那道闸开不开。
+
+    The response is the dry-run product: what will be written, the sha256 of
+    ``GLOBAL.md`` as it stands (what the approval is bound to —
+    :func:`apply_memory_pending` refuses if those bytes moved), and the pending id.
+    """
+    if action == "batch":
+        gist = "; ".join(
+            f"{(op or {}).get('action', '?')}: "
+            f"{(op or {}).get('content') or (op or {}).get('old_text') or ''}"
+            for op in (operations or [])
+        )
+    else:
+        gist = (content or "") if action != "remove" else (old_text or "")
+        if action in {"add", "replace"}:
+            scan_error = _scan_memory_content(content or "")
+            if scan_error:
+                return tool_error(scan_error, success=False)
+    if not gist.strip():
+        return tool_error("Nothing to stage — content is required for this write.", success=False)
+
+    try:
+        from tools import write_approval as wa
+    except Exception:
+        return tool_error("Approval layer unavailable — the write was not staged.", success=False)
+
+    payload: Dict[str, Any] = {"action": action, "target": "global"}
+    if action == "batch":
+        payload["operations"] = operations or []
+    else:
+        payload["content"] = content or ""
+        payload["old_text"] = old_text or ""
+    payload["base_sha256"] = _file_sha(store._path_for("global"))
+
+    record = wa.stage_write(
+        wa.MEMORY, payload,
+        summary=f"write to GLOBAL.md ({action}): {gist[:120]}",
+        origin=wa.current_origin(),
+    )
+    return json.dumps(
+        {
+            "success": True,
+            "staged": True,
+            "done": True,
+            "pending_id": record["id"],
+            "base_sha256": payload["base_sha256"],
+            "plan_sha256": hashlib.sha256(gist.encode("utf-8")).hexdigest(),
+            "message": (
+                "GLOBAL.md is the layer every agent reads: this write is staged for "
+                "approval and changed nothing on disk. Review with /memory pending, "
+                f"then /memory approve {record['id']}."
+            ),
+            "note": "Staged is terminal for this call — do not repeat the write.",
+        },
+        ensure_ascii=False,
+    )
+
+
 def memory_tool(
     action: str = None,
     target: str = "memory",
     content: str = None,
     old_text: str = None,
+    source: str = None,
     operations: Optional[List[Dict[str, Any]]] = None,
     store: Optional[MemoryStore] = None,
 ) -> str:
     """
     Single entry point for the memory tool. Dispatches to MemoryStore methods.
 
-    Two shapes:
-      - Single op: action + (content / old_text).
+    Three shapes:
+      - Single op: action + (content / old_text), optional source pointer.
       - Batch:     operations=[{action, content?, old_text?}, ...] applied
                    atomically against the final char budget in ONE call.
+      - Global:    target="global" — the same verb, but that location's rule is
+                   plan + hash + a human nod, so it stages instead of writing.
 
     Returns JSON string with results.
     """
@@ -987,13 +1307,35 @@ def memory_tool(
     if target is None:
         target = "memory"
 
-    if target not in {"memory", "user"}:
-        return tool_error(f"Invalid target '{target}'. Use 'memory' or 'user'.", success=False)
+    # ``target`` is a data location, not a business branch (裁定 185): the four
+    # scopes are the four files 裁定 181 laid out, and one verb covers them all.
+    if target not in MEMORY_SCOPES:
+        return tool_error(
+            f"Invalid target {target!r}. Use 'memory', 'user', 'status' or 'global'.",
+            success=False,
+        )
+
+    # The provenance pointer travels inside the entry text, so every downstream
+    # path (gate, staging, store) keeps seeing one opaque content string.
+    if source:
+        if action in {"add", "replace"} and content:
+            content = entry_with_source(content.strip(), source)
+        if operations:
+            operations = [
+                {**op, "content": entry_with_source((op.get("content") or "").strip(), source)}
+                if op and op.get("action") in {"add", "replace"} and op.get("content")
+                else op
+                for op in operations
+            ]
 
     # --- Batch path -------------------------------------------------------
     if operations:
         if not isinstance(operations, list):
             return tool_error("operations must be a list of {action, content?, old_text?} objects.", success=False)
+        if not operations:
+            return tool_error("operations list is empty.", success=False)
+        if target == "global":
+            return _stage_global_write("batch", content, old_text, operations, store)
         gate_result = _apply_batch_write_gate(target, operations)
         if gate_result is not None:
             return gate_result
@@ -1001,8 +1343,8 @@ def memory_tool(
         return json.dumps(result, ensure_ascii=False)
 
     # --- Single-op path ---------------------------------------------------
-    # Validate required params BEFORE the gate so an invalid write is rejected
-    # immediately instead of being staged and only failing at approve time.
+    # Validate required params BEFORE any gate or staging so an invalid write is
+    # rejected immediately instead of being staged and only failing at approve time.
     if action == "add" and not content:
         return tool_error("Content is required for 'add' action.", success=False)
     if action == "replace" and (not old_text or not content):
@@ -1016,6 +1358,10 @@ def memory_tool(
         return tool_error(f"{missing} is required for 'replace' action.", success=False)
     if action == "remove" and not old_text:
         return _missing_old_text_error(store, target, "remove")
+
+    # Writing the shared layer is approval-only wherever it comes from (裁定 181).
+    if target == "global":
+        return _stage_global_write(action, content, old_text, None, store)
 
     # Approval gate: when on, stages the write (background/gateway) or prompts
     # inline (interactive CLI); when off (default) passes straight through.
@@ -1048,11 +1394,26 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
     write gate. Called by the /memory approve handler.
 
     Returns the store's result dict.
+
+    A promotion carries the sha256 of the GLOBAL.md bytes it was approved
+    against; if that file moved since, the approval no longer describes what is
+    about to happen, so the write is refused instead of silently overwriting
+    (same binding rule the brain's approval layer uses).
     """
     action = payload.get("action")
     target = payload.get("target", "memory")
     content = payload.get("content") or ""
     old_text = payload.get("old_text") or ""
+    base_sha = payload.get("base_sha256")
+    if base_sha and target in MEMORY_SCOPES and _file_sha(store._path_for(target)) != base_sha:
+        return {
+            "success": False,
+            "error": (
+                f"{store._path_for(target).name} changed since this write was staged "
+                "(the approval was granted against a different version). Discard this "
+                "pending record and stage it again."
+            ),
+        }
     if action == "batch":
         return store.apply_batch(target, payload.get("operations") or [])
     if action == "add":
@@ -1083,8 +1444,15 @@ MEMORY_SCHEMA = {
         "memory stops the user repeating themselves.\n\n"
         "IF FULL: an add is rejected with the current entries shown. Reissue as ONE batch that "
         "removes or shortens enough stale entries and adds the new one together.\n\n"
-        "TARGETS: 'user' = who the user is (name, role, preferences, style). 'memory' = your "
-        "notes (environment, conventions, tool quirks, lessons).\n\n"
+        "TARGETS: 'memory' = this agent's own notes (environment, conventions, tool quirks, "
+        "lessons) — the default, and where writes land unless a fact holds for every agent. "
+        "'user' = who the user is (name, role, preferences, style), one copy shared by every "
+        "agent. 'status' = a few lines on where you are right now; only the L1 secretary reads "
+        "those, as a digest. 'global' = the one layer every agent reads; writing it stages the "
+        "change for approval and leaves the file untouched until a person nods.\n\n"
+        "SOURCE: on every add/replace, pass 'source' = the relative path of the page a person "
+        "can read (under vault/ or mind/) plus its date. Memory is a bounded index, not a "
+        "warehouse; the pointer is what keeps 2200 chars enough.\n\n"
         "SKIP: trivial/obvious info, easily re-discovered facts, raw data dumps, task progress, "
         "completed-work logs, temporary TODO state (use session_search for those). Reusable "
         "procedures belong in a skill, not memory."
@@ -1099,12 +1467,16 @@ MEMORY_SCHEMA = {
             },
             "target": {
                 "type": "string",
-                "enum": ["memory", "user"],
-                "description": "Which memory store: 'memory' for personal notes, 'user' for user profile."
+                "enum": ["memory", "user", "status", "global"],
+                "description": "Which memory scope to write: 'memory' this agent's own notes, 'user' the shared user profile, 'status' a few lines of current state that only L1 reads, 'global' the layer every agent reads (that location's rule is approval, so the write is staged rather than applied)."
             },
             "content": {
                 "type": "string",
                 "description": "The entry content. Required for 'add' and 'replace' (single-op shape)."
+            },
+            "source": {
+                "type": "string",
+                "description": "Provenance pointer for add/replace: a relative path under vault/ or mind/ that a human can read, with its date (e.g. 'vault/projects/Plobi/plan.md 2026-10-19'). Memory stays small because it points at the page instead of storing it."
             },
             "old_text": {
                 "type": "string",
@@ -1145,6 +1517,7 @@ registry.register(
         target=args.get("target", "memory"),
         content=args.get("content"),
         old_text=args.get("old_text"),
+        source=args.get("source"),
         operations=args.get("operations"),
         store=kw.get("store")),
     check_fn=check_memory_requirements,
