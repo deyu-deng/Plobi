@@ -3881,6 +3881,17 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
         self.disabled_toolsets = CLI_CONFIG["agent"].get("disabled_toolsets") or []
+        # per-agent 减法（2026-10-19 全局真源裁定）：全局表（上面那行）是唯一
+        # 真源，分身名册行只记「这个 Agent 关掉了哪些」，并集减掉。browser 一族
+        # （Browser Hub）就是 toolset，归同一条。L1 / flat 会话名册查无此行 = 原样。
+        try:
+            from plobi.agents.registry import agent_disabled_sets
+
+            self.disabled_toolsets = sorted(
+                {*(t for t in self.disabled_toolsets), *agent_disabled_sets().get("toolsets", set())}
+            )
+        except Exception:
+            pass
 
         if toolsets and "all" not in toolsets and "*" not in toolsets:
             # Validate each toolset — MCP server names are resolved via

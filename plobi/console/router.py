@@ -461,6 +461,11 @@ def agent_row(entry: AgentEntry) -> dict:
         # 空串 = 用既有默认（profile 确定性色 / 无图标）。
         "icon": entry.icon,
         "color": entry.color,
+        # 全局真源 + per-agent 开关（2026-10-19）：三份黑名单随行透出，
+        # 设置面板据此画每个 Agent 的开关矩阵（资产名单从各自全局面拉）。
+        "disabledSkills": list(entry.disabled_skills),
+        "disabledToolsets": list(entry.disabled_toolsets),
+        "disabledMcpServers": list(entry.disabled_mcp_servers),
     }
     # Omit None values so the frontend receives absent keys (not JSON null),
     # matching the `model?: string` optional contract in types.ts.
@@ -1191,6 +1196,77 @@ async def create_agent_route(request: Request):
 async def dissolve_agent_route(agent_id: str):
     """裁定 19: archive an L2 (profile dir → _archived/, row marked archived)."""
     return await run_in_threadpool(dissolve_agent, agent_id)
+
+
+_TOOL_PREF_FIELDS = (
+    ("disabledSkills", "disabled_skills"),
+    ("disabledToolsets", "disabled_toolsets"),
+    ("disabledMcpServers", "disabled_mcp_servers"),
+)
+
+
+def _agent_tool_prefs_payload(entry: AgentEntry) -> dict:
+    return {
+        "id": entry.name,
+        **{
+            key: list(getattr(entry, field))
+            for key, field in _TOOL_PREF_FIELDS
+        },
+    }
+
+
+@router.put("/agents/{agent_id}/tool-prefs", name="agent_tool_prefs")
+async def agent_tool_prefs_route(agent_id: str, request: Request):
+    """全局真源 + per-agent 开关（2026-10-19 用户裁定）。
+
+    技能 / 工具集 / MCP 服务器只有一张全局表（顶层 config 的 skills 目录、
+    ``agent.disabled_toolsets``、``mcp_servers``）——装一个全员默认拥有。
+    本端点只写「这个 Agent 关掉了哪些」三份黑名单（名册行偏好，不是拷贝）；
+    消费点减法在 skill_utils / cli 构建 / mcp_tool 装载。全量名单随
+    ``GET`` 各自的全局面走（skills hub / model.options / MCP 面板），
+    这里不重复列资产。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "body must be JSON")
+    if not isinstance(body, dict):
+        return _error(400, "body must be an object")
+    return await run_in_threadpool(_set_agent_tool_prefs, agent_id, body)
+
+
+def _set_agent_tool_prefs(agent_id: str, body: dict):
+    try:
+        registry = AgentRegistry.load()
+    except Exception as exc:
+        return _error(500, f"registry unreadable: {exc}")
+    entry = registry.get(agent_id) or registry.get(agent_id.lower())
+    if entry is None or entry.archived:
+        return _error(404, f"agent '{agent_id}' not found")
+
+    updates: dict[str, tuple[str, ...]] = {}
+    for key, field in _TOOL_PREF_FIELDS:
+        if key not in body:
+            continue
+        value = body[key]
+        if value is None:
+            value = []
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) for item in value
+        ):
+            return _error(400, f"{key} must be a list of names (or null to clear)")
+        names = tuple(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
+        updates[field] = names
+
+    if not updates:
+        return _agent_tool_prefs_payload(entry)
+
+    from dataclasses import replace
+
+    updated = replace(entry, **updates)
+    registry.upsert(updated)
+    registry.save()
+    return _agent_tool_prefs_payload(updated)
 
 
 @router.get("/agents/{agent_id}/subagents")

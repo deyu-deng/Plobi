@@ -79,8 +79,12 @@ def test_agents_empty_registry_is_ok_envelope(client):
 def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     register(_isolated_state, agenda=AGENDA)
     row = client.get("/api/agents").json()["data"][0]
+    # 2026-10-19 起行上带三份 per-agent 工具黑名单（全局真源 + per-agent 开关）；
+    # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（契约债一并收）。
     assert set(row) == {
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+        "icon", "color",
+        "disabledSkills", "disabledToolsets", "disabledMcpServers",
     }
     assert row["id"] == "agenda"
     assert row["name"] == "日程秘书"
@@ -165,8 +169,12 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     assert body["ok"] is True
     assert body["data"]["id"] == "plobi-code"
     assert body["data"]["category"] == "projects"
+    # 2026-10-19 起行上带三份 per-agent 工具黑名单（全局真源 + per-agent 开关）；
+    # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（测试这条契约债一并收）。
     assert set(body["data"]) == {
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
+        "icon", "color",
+        "disabledSkills", "disabledToolsets", "disabledMcpServers",
     }
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
     assert "plobi-code" in ids
