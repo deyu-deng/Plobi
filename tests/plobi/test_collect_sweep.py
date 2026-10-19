@@ -47,7 +47,7 @@ class FakeCollector:
 
 def test_a_switched_on_source_with_no_builder_says_so(fake_sources):
     """注册表说在采、却没人构造得出它 —— 这就是 10-15 教务那一刀断的那一格，不许静默。"""
-    fake_sources(SourceSpec("ghost", CAPS, collecting=True, builder=None))
+    fake_sources(SourceSpec("ghost", CAPS, collecting=True, builder=None, category="custom"))
 
     report = sweep.run_sweep(sources=("ghost",))
 
@@ -59,8 +59,8 @@ def test_a_switched_on_source_with_no_builder_says_so(fake_sources):
 
 class TestOneFailureDoesNotTakeTheOthers:
     def test_builder_crash_is_named_and_the_next_source_still_runs(self, fake_sources):
-        boom = SourceSpec("boom", CAPS, collecting=True, builder=_raise)
-        good = SourceSpec("good", CAPS, collecting=True,
+        boom = SourceSpec("boom", CAPS, collecting=True, builder=_raise, category="custom")
+        good = SourceSpec("good", CAPS, collecting=True, category="custom",
                           builder=lambda: FakeCollector(result={"created": 2, "unchanged": 5}))
         fake_sources(boom, good)
 
@@ -74,7 +74,7 @@ class TestOneFailureDoesNotTakeTheOthers:
     def test_a_state_bearing_failure_keeps_its_own_words(self, fake_sources):
         """采集器自己带了 `state` / `detail` ⇒ 用它的，不在这儿编一句"没数据"。"""
         err = _NamedFailure("auth_failed", "站方说不认识这个口令")
-        fake_sources(SourceSpec("z", CAPS, collecting=True,
+        fake_sources(SourceSpec("z", CAPS, collecting=True, category="custom",
                                 builder=lambda: FakeCollector(error=err)))
 
         row = sweep.run_sweep(sources=("z",))["sources"][0]
@@ -85,7 +85,7 @@ class TestOneFailureDoesNotTakeTheOthers:
 class TestLandingSemantics:
     def test_pull_only_source_without_a_mode_refuses_to_land(self, fake_sources):
         """只有 `pull()` 的采集器，档位没人给 ⇒ 不落库、不替他猜（判据 7 那颗雷反过来）。"""
-        fake_sources(SourceSpec("p", CAPS, collecting=True, builder=lambda: _PullOnly([])))
+        fake_sources(SourceSpec("p", CAPS, collecting=True, builder=lambda: _PullOnly([]), category="custom"))
 
         row = sweep.run_sweep(sources=("p",))["sources"][0]
 
@@ -98,7 +98,7 @@ class TestLandingSemantics:
 
         monkeypatch.setattr(ingest, "ingest_occurrences",
                             lambda service, rows, apply=None: calls.append((len(rows), apply)) or {"created": 1})
-        fake_sources(SourceSpec("q", CAPS, collecting=True, builder=lambda: _PullOnly([1, 2])))
+        fake_sources(SourceSpec("q", CAPS, collecting=True, builder=lambda: _PullOnly([1, 2]), category="custom"))
 
         row = sweep.run_sweep(sources=("q",), apply_mode="pending")["sources"][0]
 
@@ -112,7 +112,7 @@ class TestVerdict:
         assert report["ran"] == 0 and "没有任何一条信源被点亮" in report["verdict"]
 
     def test_a_single_real_run_is_counted_and_named(self, fake_sources):
-        fake_sources(SourceSpec("ok1", CAPS, collecting=True,
+        fake_sources(SourceSpec("ok1", CAPS, collecting=True, category="custom",
                                 builder=lambda: FakeCollector(result={"created": 0, "unchanged": 48})))
 
         report = sweep.run_sweep(sources=("ok1",))
