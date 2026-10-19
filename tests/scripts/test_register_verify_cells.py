@@ -198,7 +198,8 @@ def test_executor_refuses_to_call_itself_a_pass_when_nothing_ran(tmp_path, capsy
 
 # ④ 第三向：工作树里每一档未提交的改动，反过来问登记册有没有一格认领它
 def _stall_row(status="待签", sess="deadbeef", claim="Code/plobi_cli/config.py"):
-    return (f"| **WP-FAKE-CLAIM** 反例格 | 某线 `{sess}` | 纸 — | `{claim}` | "
+    who = f"某线 `{sess}`" if sess else "产品线本会话——没写会话号"
+    return (f"| **WP-FAKE-CLAIM** 反例格 | {who} | 纸 — | `{claim}` | "
             f"{status} | 00:00 | `[WP-FAKE-CLAIM]` — 反例 |")
 
 
@@ -223,27 +224,58 @@ def _sandbox(tmp_path, files=("plobi_cli/config.py", "orphan.py")):
 def test_unclaimed_dirty_file_is_named_orphan(tmp_path):
     base = _sandbox(tmp_path)
     reg = HEADER + _stall_row(claim="Code/plobi_cli/config.py") + "\n"
-    orph, stall, why = verify_register_cells.unattributed_work(
+    buck, why = verify_register_cells.unattributed_work(
         reg, str(base).replace(os.sep, "/"), live={})
     assert why == "", why
+    orph = buck["无主"]
     assert any("orphan.py" in o for o in orph), f"没人认领的那档没被点名：{orph}"
     assert not any("config.py" in o for o in orph), f"有人认领的档被误报成无主：{orph}"
+
+
+def test_shared_registry_surfaces_are_not_orphans(tmp_path):
+    # 「串行件／独占目录」两张名单是登记过的共改区：登记册自己被人改着，不该报无主
+    base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
+    reg = HEADER + _stall_row(claim="Code/whatever.md") + "\n"
+    buck, _ = verify_register_cells.unattributed_work(
+        reg, str(base), live={}, shared=("Code/plobi_cli/config.py",))
+    assert buck["无主"] == [], buck
 
 
 def test_dirty_file_claimed_only_by_a_dead_session_is_stalled(tmp_path):
     base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
     reg = HEADER + _stall_row(sess="deadbeef") + "\n"
-    _orph, stall, why = verify_register_cells.unattributed_work(reg, str(base), live={})
+    buck, _ = verify_register_cells.unattributed_work(reg, str(base), live={})
+    stall = buck["停笔名下"]
     assert stall and "config.py" in stall[0] and "deadbeef" in stall[0], stall
+    assert buck["没登记会话号"] == [], "有会话号的那格不该被算进「没登记会话号」"
+
+
+def test_cell_without_session_id_is_not_accused_of_stopping(tmp_path):
+    # 查不到是谁 ≠ 那个人走了。产品线那把新刀（WP-POOL 没写会话号）就是这么被我误判过的
+    base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
+    reg = HEADER + _stall_row(sess=None) + "\n"
+    buck, _ = verify_register_cells.unattributed_work(reg, str(base), live={})
+    assert buck["停笔名下"] == [], buck
+    assert buck["没登记会话号"] and "没写会话号" in buck["没登记会话号"][0], buck
 
 
 def test_same_cell_is_quiet_when_the_session_is_still_alive(tmp_path):
     # 同一条脏档，会话还在库里 ⇒ 不该报——它判的是「没人认领」，不是「工作树脏」
     base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
     reg = HEADER + _stall_row(sess="f00dcafe") + "\n"
-    _orph, stall, _why = verify_register_cells.unattributed_work(
+    buck, _ = verify_register_cells.unattributed_work(
         reg, str(base), live={"f00dcafe-1111": time.time()})
-    assert stall == [], stall
+    assert all(not v for v in buck.values()), buck
+
+
+def test_untracked_dot_dirs_are_residue_not_orphan(tmp_path):
+    base = _sandbox(tmp_path, files=("plobi_cli/config.py",))
+    (base / "Code" / ".serena").mkdir()
+    (base / "Code" / ".serena" / "cache").write_text("x", encoding="utf-8")
+    reg = HEADER + _stall_row(claim="Code/plobi_cli/config.py") + "\n"
+    buck, _ = verify_register_cells.unattributed_work(reg, str(base), live={})
+    assert buck["工具残渣"] and ".serena" in buck["工具残渣"][0], buck
+    assert not any(".serena" in o for o in buck["无主"]), f"工具残渣被报成无主：{buck}"
 
 
 def test_claim_matching_is_on_path_boundaries():
@@ -251,6 +283,25 @@ def test_claim_matching_is_on_path_boundaries():
     assert verify_register_cells._covers("Code/plobi/quota/**", "Code/plobi/quota/route.py")
     assert not verify_register_cells._covers("Code/plobi/agendaX", "Code/plobi/agenda/planning.py")
     assert not verify_register_cells._covers("Code/scripts", "Code/scripts_extra/boot.py")
+
+
+def test_lost_live_cell_fingerprint_names_the_row_a_rewrite_dropped():
+    # 整档重写的指纹：HEAD 里还写着在派/待签，盘上却没有这一格
+    head = HEADER + cell("WP-FAKE-DROPPED", "在派", "别人重写这一档时被抹掉的行") + "\n"
+    work = HEADER + cell("WP-FAKE-OTHER", "在派", "还在的行") + "\n"
+    assert verify_register_cells.lost_live_cells(head, work) == ["WP-FAKE-DROPPED"]
+
+
+def test_a_closed_cell_may_legitimately_disappear():
+    # 删格是合法动作（验收当场删纸），但**已闭**的行消失了不算指纹——只有还写着活的才算
+    head = HEADER + cell("WP-FAKE-CLOSED", "已闭", "验收过签，行该删") + "\n"
+    assert verify_register_cells.lost_live_cells(head, HEADER) == []
+
+
+def test_row_still_present_in_any_status_is_not_lost():
+    head = HEADER + cell("WP-FAKE-MOVED", "待签", "还在，只是翻了状态") + "\n"
+    work = HEADER + cell("WP-FAKE-MOVED", "已闭", "翻完已闭") + "\n"
+    assert verify_register_cells.lost_live_cells(head, work) == []
 
 
 def test_no_session_db_says_so_instead_of_passing():
