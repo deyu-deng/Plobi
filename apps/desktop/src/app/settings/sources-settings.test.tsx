@@ -148,7 +148,7 @@ describe('what the row says', () => {
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByText('WeChat')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0))
     expect(screen.getByText('collecting')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy()
     // 后端那句 note **一个字都不上屏**。
