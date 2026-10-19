@@ -49,7 +49,11 @@ _NOTES = {
     STATE_BUILD_MISSING: "没有 chatlog 可执行产物：已装 Go 的话还差 `go build` 那一步（或把路径写进 PLOBI_CHATLOG_BIN）。",
     STATE_KEY_MISSING: "微信数据密钥没设：产物在也解不开库，采不到东西。",
     STATE_NOT_LISTENING: "5030 上没有 chatlog 服务：前三步都齐了，但它没在跑。",
-    STATE_READY: "采集器活着。",
+    # 这一句不许缩成「采集器活着」五个字：读到 `ready` 的人会以为什么都采得到。
+    # 「不装钩子」是裁 188 拍的，但"不装"与"读侧不说"是两件事——缺的那一族要说得出名字。
+    # 核它的命令：`python scripts/plobi/verify_chatlog_window_cell.py` 里 `vendor_hook_markers` 那三项（本版全 0 命中）。
+    STATE_READY: "采集器活着，读的是已解密到本地的库；实时接收（微信不打开也在听）与任意好友资料"
+               "那一族不在这版二进制里——这部分采不到，但也别当成坏了。",
 }
 
 BIN_ENV = "PLOBI_CHATLOG_BIN"
