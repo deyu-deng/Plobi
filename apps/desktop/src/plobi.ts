@@ -769,6 +769,56 @@ export function toggleToolset(
   })
 }
 
+// --- Agent 作用域变体（全局真源 + per-agent 开关，2026-10-19 用户裁定）------
+// 显式带 profile 家名，不 ride $activeGatewayProfile 的 ambient scope——
+// Agent 界面里的面板必须读写「这个 Agent」的名册行，与当前网关在哪个
+// profile 无关。后端按 profile→名册行分叉：行在场 = 读写行黑名单。
+
+export function getSkillsForProfile(profile: string): Promise<SkillInfo[]> {
+  return window.plobiDesktop.api<SkillInfo[]>({
+    path: `/api/skills?profile=${encodeURIComponent(profile)}`
+  })
+}
+
+export function toggleSkillForProfile(
+  profile: string,
+  name: string,
+  enabled: boolean
+): Promise<{ ok: boolean; name: string; enabled: boolean }> {
+  return window.plobiDesktop.api<{ ok: boolean; name: string; enabled: boolean }>({
+    path: '/api/skills/toggle',
+    method: 'PUT',
+    body: { name, enabled, profile }
+  })
+}
+
+export function getToolsetsForProfile(profile: string): Promise<ToolsetInfo[]> {
+  return window.plobiDesktop.api<ToolsetInfo[]>({
+    path: `/api/tools/toolsets?profile=${encodeURIComponent(profile)}`
+  })
+}
+
+/** 全局 mcp_servers 名单（唯一真源）。显式**不带** profile override——ambient
+ *  scope 会跟着 $activeGatewayProfile 走，进 L2 时可能指到 Agent 家（空壳），
+ *  全局名单必须恒读顶层 config。`enabled: false` 是全局运行时闸（同 CLI）。 */
+export function getGlobalMcpServers(): Promise<Record<string, Record<string, unknown>>> {
+  return window.plobiDesktop
+    .api<{ mcp_servers?: Record<string, Record<string, unknown>> }>({ path: '/api/config' })
+    .then(record => (record.mcp_servers && typeof record.mcp_servers === 'object' ? record.mcp_servers : {}))
+}
+
+export function toggleToolsetForProfile(
+  profile: string,
+  name: string,
+  enabled: boolean
+): Promise<{ ok: boolean; name: string; enabled: boolean }> {
+  return window.plobiDesktop.api<{ ok: boolean; name: string; enabled: boolean }>({
+    path: `/api/tools/toolsets/${encodeURIComponent(name)}`,
+    method: 'PUT',
+    body: { enabled, profile }
+  })
+}
+
 export function getToolsetConfig(name: string): Promise<ToolsetConfig> {
   return window.plobiDesktop.api<ToolsetConfig>({
     ...profileScoped(),

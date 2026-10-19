@@ -13739,17 +13739,28 @@ async def get_skills(profile: Optional[str] = None):
         load_usage,
     )
     agent_registry, agent_entry = _agent_tool_row(profile)
-    with _profile_scope(profile):
+    if agent_entry is not None:
+        # Agent 作用域：资产名单仍读**全局真源**（顶层家）——家目录下的
+        # skills/ 是空壳，把 _profile_scope 套上去名单就成了空集，
+        # 「装一个全员拥有」在面板上直接破产。行黑名单只在下面做减法。
         config = load_config()
         disabled = get_disabled_skills(config)
         skills = _find_all_skills(skip_disabled=True)
         usage = load_usage()
-        # Set-based provenance (same classification as skill_usage.provenance,
-        # without a per-skill manifest read): hub > bundled > agent, where
-        # "agent" covers agent-authored AND local hand-made skills — the ones
-        # the user may edit/delete from the UI.
         bundled_names = _read_bundled_manifest_names()
         hub_names = _read_hub_installed_names()
+    else:
+        with _profile_scope(profile):
+            config = load_config()
+            disabled = get_disabled_skills(config)
+            skills = _find_all_skills(skip_disabled=True)
+            usage = load_usage()
+            # Set-based provenance (same classification as skill_usage.provenance,
+            # without a per-skill manifest read): hub > bundled > agent, where
+            # "agent" covers agent-authored AND local hand-made skills — the ones
+            # the user may edit/delete from the UI.
+            bundled_names = _read_bundled_manifest_names()
+            hub_names = _read_hub_installed_names()
     # per-agent 视图（2026-10-19）：生效禁用 = 全局表 ∪ 这个 Agent 名册行的
     # 黑名单。全局表仍是唯一真源，行只做减法。
     agent_off = (
@@ -13885,13 +13896,23 @@ async def get_toolsets(profile: Optional[str] = None):
     from toolsets import resolve_toolset
 
     agent_registry, agent_entry = _agent_tool_row(profile)
-    with _profile_scope(profile):
+    if agent_entry is not None:
+        # Agent 作用域：全局白名单仍读**全局真源**（顶层家 config）——
+        # 家目录没有 config.yaml，套 _profile_scope 会把白名单读成空集。
         config = load_config()
         enabled_toolsets = _get_platform_tools(
             config,
             "cli",
             include_default_mcp_servers=False,
         )
+    else:
+        with _profile_scope(profile):
+            config = load_config()
+            enabled_toolsets = _get_platform_tools(
+                config,
+                "cli",
+                include_default_mcp_servers=False,
+            )
     # per-agent 视图（2026-10-19）：全局白名单 − 这个 Agent 名册行的黑名单。
     agent_off = (
         {s.casefold() for s in agent_entry.disabled_toolsets} if agent_entry else set()

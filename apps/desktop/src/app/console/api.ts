@@ -124,6 +124,31 @@ export async function createAgent(req: AgentCreateRequest): Promise<Agent> {
   return unwrapEnvelope<Agent>(payload)
 }
 
+/** 全局真源 + per-agent 开关（2026-10-19 用户裁定）：只写「这个 Agent 关掉了
+ *  哪些」的三份黑名单（名册行偏好）。传空对象 = 只读当前偏好。资产名单不归
+ *  这里管——全量列表各自从 /api/skills、/api/tools/toolsets、mcp config 拉。 */
+export async function putAgentToolPrefs(
+  agentId: string,
+  prefs: {
+    disabledMcpServers?: string[]
+    disabledSkills?: string[]
+    disabledToolsets?: string[]
+  }
+): Promise<{
+  disabledMcpServers: string[]
+  disabledSkills: string[]
+  disabledToolsets: string[]
+  id: string
+}> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    body: prefs,
+    method: 'PUT',
+    path: `/api/agents/${encodeURIComponent(agentId)}/tool-prefs`
+  })
+
+  return unwrapEnvelope(payload)
+}
+
 /**
  * [SPEC-QUESTION] spec §5 names this `GET /api/agenda/events?day=today|tomorrow`
  * while the live backend (see `getAgenda` in `@/plobi`) answers

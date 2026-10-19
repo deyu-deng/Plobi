@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  hidesAgentSessions,
-  shouldRenderProfileRail,
-  showsSessionSurface,
-  sidebarNavForLevel
-} from './nav-level'
+import { hidesAgentSessions, sidebarNavForLevel } from './nav-level'
 
 const NAV = [
   { id: 'new-session', label: 'new' },
@@ -14,23 +9,23 @@ const NAV = [
   { id: 'artifacts', label: 'artifacts' }
 ]
 
-describe('sidebarNavForLevel (WP-AGENT-MOUTH, 裁定 38/39)', () => {
-  it('L1: Skills / Messaging / Artifacts, no New Session', () => {
+describe('sidebarNavForLevel (裁定 38/39 终态：纯 Agents 左栏)', () => {
+  it('L1: Skills / Messaging / Artifacts', () => {
     const items = sidebarNavForLevel(NAV, { l1: true, l2Id: null })
 
     expect(items.map(item => item.id)).toEqual(['skills', 'messaging', 'artifacts'])
   })
 
-  it('L2: Messaging / Artifacts, no Skills and no New Session', () => {
+  it('L2: Messaging / Artifacts, no Skills', () => {
     const items = sidebarNavForLevel(NAV, { l1: false, l2Id: 'agenda' })
 
     expect(items.map(item => item.id)).toEqual(['messaging', 'artifacts'])
   })
 
-  it('mainline: unchanged, New Session stays (the session shell is not being torn down)', () => {
+  it('mainline/overlay pages: same rail — the legacy new-session entry is gone everywhere', () => {
     const items = sidebarNavForLevel(NAV, { l1: false, l2Id: null })
 
-    expect(items.map(item => item.id)).toEqual(['new-session', 'skills', 'messaging', 'artifacts'])
+    expect(items.map(item => item.id)).toEqual(['skills', 'messaging', 'artifacts'])
   })
 
   it('does not mutate the input array', () => {
@@ -39,18 +34,6 @@ describe('sidebarNavForLevel (WP-AGENT-MOUTH, 裁定 38/39)', () => {
     sidebarNavForLevel(NAV, { l1: true, l2Id: null })
 
     expect(NAV.map(item => item.id)).toEqual(before)
-  })
-})
-
-describe('showsSessionSurface (WP-AGENT-MOUTH, 裁定 38/39)', () => {
-  it('no session search / pins / recents / blank state in the secretary shell', () => {
-    expect(showsSessionSurface('l1')).toBe(false)
-    expect(showsSessionSurface({ l2: 'agenda' })).toBe(false)
-  })
-
-  it('keeps them on the mainline', () => {
-    expect(showsSessionSurface(null)).toBe(true)
-    expect(showsSessionSurface(undefined)).toBe(true)
   })
 })
 
@@ -63,20 +46,5 @@ describe('hidesAgentSessions (WP-AGENT-MOUTH, 裁定 38/39)', () => {
   it('false on the mainline (it is not an agent rail)', () => {
     expect(hidesAgentSessions(null)).toBe(false)
     expect(hidesAgentSessions(undefined)).toBe(false)
-  })
-})
-
-describe('shouldRenderProfileRail (WP-STUDIO, 裁定 36.0)', () => {
-  it('hides the profile rail on L1 (secretary shell has no profile switcher)', () => {
-    expect(shouldRenderProfileRail('l1')).toBe(false)
-  })
-
-  it('hides it on L2 as well', () => {
-    expect(shouldRenderProfileRail({ l2: 'agenda' })).toBe(false)
-  })
-
-  it('keeps it on the mainline', () => {
-    expect(shouldRenderProfileRail(null)).toBe(true)
-    expect(shouldRenderProfileRail(undefined)).toBe(true)
   })
 })

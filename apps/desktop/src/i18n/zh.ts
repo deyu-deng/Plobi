@@ -329,7 +329,8 @@ export const zh: Translations = {
       sources: '信源',
       about: '关于',
       notifications: '通知',
-      network: 'VPN'
+      network: 'VPN',
+      capabilities: '能力总入口'
     },
     sources: {
       categories: {
@@ -2761,7 +2762,18 @@ disable: '停掉',
     terminalNew: '新建终端',
     terminalCloseOthers: '关闭其他',
     terminalCloseAll: '关闭全部',
-    addToChat: '添加到对话'
+    addToChat: '添加到对话',
+    // Agent Capabilities 栏（全局真源 + per-agent 开关，2026-10-19 用户裁定）。
+    capabilitiesTitle: '能力',
+    capabilitiesAria: 'Agent 能力开关',
+    capabilitiesSkills: '技能',
+    capabilitiesToolsets: '工具集',
+    capabilitiesMcp: 'MCP 服务器',
+    capabilitiesHint: '所有能力来自一份全局真源，装一个全员拥有；这里只关掉这个 Agent 用不上的。',
+    capabilitiesGlobalOff: '全局已关闭（所有人）',
+    capabilitiesEmpty: '还没有安装任何能力',
+    capabilitiesLoadError: '能力清单加载失败',
+    capabilitiesToggleFailed: '开关切换失败'
   },
 
   preview: {

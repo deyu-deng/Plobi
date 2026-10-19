@@ -3,10 +3,10 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import { codiconIcon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
-import { getPlobiConfigDefaults, getPlobiConfigRecord, savePlobiConfig } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Download, Globe, Info, KeyRound, Layers3, RefreshCw, Send, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
+import { Archive, Bell, Download, Globe, Info, KeyRound, Layers3, Package, RefreshCw, Send, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
+import { getPlobiConfigDefaults, getPlobiConfigRecord, savePlobiConfig } from '@/plobi'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -135,6 +135,16 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       id: 'notifications',
       label: t.settings.nav.notifications,
       onSelect: () => setActiveView('notifications')
+    },
+    {
+      // Capabilities 总入口（全局真源 + per-agent 开关，2026-10-19 用户裁定）。
+      // 真源页面就是 /skills（技能 / 工具集 / MCP / Hub 四张全局表）；设置里
+      // 这一项是入口不是拷贝——不复制面板，跳过去。
+      active: false,
+      icon: Package,
+      id: 'capabilities',
+      label: t.settings.nav.capabilities,
+      onSelect: () => navigate(SKILLS_ROUTE)
     },
     {
       active: activeView === 'providers',
