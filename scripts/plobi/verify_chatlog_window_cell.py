@@ -35,6 +35,22 @@ OLD_HOME = "tools/chatlog"
 HOOK_MARKERS = ("hook_active", "GetRecentContacts", "/rpc/")
 
 
+#: 裁 187① 那两列在采集侧的取值口径——**名字与取值以 Butler 的列契约为准**
+#: （`plobi/pool/store.py`：`visibility` ∈ `private`／`group`；`conversation` = 那一扇窗口）。
+#: Plan 线 10-20 07:5x 明确 `conversation` 取 `SessionTable.username` 那个 wxid，
+#: 而 Butler 自己的测试那行写的是显示名（"工程训练·课群组"）——**这两处不一致，谁定稿谁改**；
+#: 本命令按 wxid 报，因为采集侧手里那份就是 wxid（`message.talker`），显示名另有 `context.talker_name`。
+GROUP_SUFFIX = "@chatroom"
+
+def expected_columns(row) -> dict:
+    """这一条**本来该带上**的两列——证明采集侧在那个落点手上就有数据，不是还得去问谁。"""
+    talker = str((row.context or {}).get("talker") or "")
+    return {
+        "visibility": "group" if talker.endswith(GROUP_SUFFIX) else "private",
+        "conversation": talker,
+    }
+
+
 def _vendor_markers() -> dict[str, int]:
     root = REPO / "plobi" / "collectors" / "chatlog" / "vendor" / "chatlog"
     out = dict.fromkeys(HOOK_MARKERS, 0)
@@ -102,8 +118,11 @@ def main(argv=None) -> int:
         tally["would_land"] += len(rows)
         for row in rows:
             tally["by_kind"][row.kind] = tally["by_kind"].get(row.kind, 0) + 1
+            expected = expected_columns(row)
             tally["rows"].append([row.source, row.external_id, row.kind,
-                                  len(row.body or ""), bool(row.title)])
+                                  len(row.body or ""), bool(row.title),
+                                  row.visibility, row.conversation,
+                                  list(expected.values())])
         return {"created": len(rows), "updated": 0, "unchanged": 0, "ids": []}
 
     healthy: dict = {"ok": False, "state": "not_read", "detail": "没跑到探活那一步", "binary": None}
@@ -163,6 +182,11 @@ def main(argv=None) -> int:
                      "filtered_out": filtered, "unresolved": unresolved,
                      "skipped_duplicate": dup, "landed_this_run": created},
         "pooled_would_land": tally["would_land"],
+        # 一条都没命中时是 None（不知道），不是 True——空集上的 all() 恒真，
+        # 那会把"这一刀没采到东西"洗成"两列都填好了"。
+        "columns_filled": None if not tally["rows"]
+                        else all(row[5] and row[6] for row in tally["rows"]),
+        "columns_expected_from": [row[7] for row in tally["rows"]][:2],
         "pooled_by_source": {"wechat": tally["would_land"]} if tally["would_land"] else {},
         "pooled_by_kind": tally["by_kind"],
         "sample_row": tally["rows"][:3],
@@ -176,7 +200,8 @@ def main(argv=None) -> int:
           and verdict["old_home_tracked_files"] == 0
           and not verdict["hook_surface_present"]
           and verdict["real_pool_untouched"] and verdict["model_calls"] == 0
-          and verdict["pooled_would_land"] > 0)
+          and verdict["pooled_would_land"] > 0
+          and verdict["columns_filled"] is True)
     return 0 if ok else 1
 
 
