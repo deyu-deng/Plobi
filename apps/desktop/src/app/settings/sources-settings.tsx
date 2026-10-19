@@ -25,6 +25,7 @@ import { ListRow, Pill, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
+import { SourceAvatar } from './sources/source-icon'
 import { groupByCategory, needsSetup, pillFor, pillTone, verbFor, visibleGroups } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
@@ -157,6 +158,7 @@ function SourceRowView({
   const [setupOpen, setSetupOpen] = useState(false)
   const verb = verbFor(row)
   const setupPending = needsSetup(row)
+  const displayName = t.agenda.sources[row.source as keyof typeof t.agenda.sources] ?? labels.unknownSource
 
   return (
     <ListRow
@@ -198,7 +200,14 @@ function SourceRowView({
           ) : null}
         </div>
       }
-      title={t.agenda.sources[row.source as keyof typeof t.agenda.sources] ?? labels.unknownSource}
+      title={
+        // 名字 + 图标一起（用户 10-19 第三轮）。图标在前、名字在后，与会话列表那一族
+        // 同形；查不到图标的那一条退回首字母，见 `sources/source-icon.tsx`。
+        <span className="flex min-w-0 items-center gap-2">
+          <SourceAvatar displayName={displayName} sourceId={row.source} />
+          <span className="truncate">{displayName}</span>
+        </span>
+      }
       {...(setupOpen && row.setup_fields.length > 0
         ? { below: <SetupFields busy={busy} labels={labels} onSaved={onReload} row={row} /> }
         : {})}
