@@ -57,6 +57,8 @@ DATA_KEY_ENV = "CHATLOG_DATA_KEY"
 IMG_KEY_ENV = "CHATLOG_IMG_KEY"
 #: 引擎那一档的两个文件名——桌面 `chatlog-keys.ts` 里是同一对常量，别各写一份。
 ENGINE_CONFIG_FILES = ("chatlog-server.json", "chatlog.json")
+#: vendored Go 工程与它的构建落点都在这条腿自己家上（裁 187 归位）。
+VENDOR_DIR = Path("vendor") / "chatlog"
 
 
 def engine_config_dir(env: Mapping[str, str]) -> Path:
@@ -97,14 +99,18 @@ def note_for(state: str) -> str:
 
 
 def binary_candidates(env: Mapping[str, str] | None = None, repo_root: Path | None = None) -> list[str]:
-    """产物候选：**环境变量优先**，其次仓内默认构建落点（不猜盘符）。"""
+    """产物候选：**环境变量优先**，其次这一腿自己家上的 vendor 构建落点（不猜盘符）。
+
+    裁 187 之前这套 vendored 工程住在仓根的 Agent 工具命名空间下，微信这一条腿因此被劈成
+    两半。归位之后**产物落点只有这一处拼法**：桌面与启动器都读同一个解析，不许再各写一份。
+    """
     env = os.environ if env is None else env
     explicit = (env.get(BIN_ENV) or "").strip()
     if explicit:
         return [explicit]
-    root = Path(repo_root) if repo_root else Path(__file__).resolve().parents[3]
-    return [str(root / "tools" / "chatlog" / "bin" / "chatlog.exe"),
-            str(root / "tools" / "chatlog" / "bin" / "chatlog")]
+    root = Path(repo_root) if repo_root else Path(__file__).resolve().parent
+    bin_dir = root / VENDOR_DIR / "bin"
+    return [str(bin_dir / "chatlog.exe"), str(bin_dir / "chatlog")]
 
 
 def resolved_binary(
