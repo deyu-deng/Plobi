@@ -4391,6 +4391,9 @@ def get_sessions(
                 # rows, skip the system_prompt blob inside SQLite too (pairs
                 # with the API-level _strip_session_list_rows below).
                 compact_rows=not full,
+                # 缺口 B：单库总账上行级圈定「这个 Agent 的」会话（家名 → 名册
+                # name）；'' = 不过滤（flat / L1 全量视图，历史行为）。
+                agent_id=_agent_id_for_profile(profile) or None,
             )
             total = db.session_count(
                 source=source or None,
@@ -4400,6 +4403,7 @@ def get_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 exclude_children=True,
+                agent_id=_agent_id_for_profile(profile) or None,
             )
             now = time.time()
             for s in sessions:
@@ -4663,7 +4667,11 @@ async def search_sessions(q: str = "", limit: int = 20, profile: Optional[str] =
             # logs, or another Plobi surface. FTS can't find those unless the
             # id happens to appear in message text. search_sessions_by_id is
             # SQL-bounded, so this stays cheap even with thousands of sessions.
-            for row in db.search_sessions_by_id(q, limit=safe_limit, include_archived=True):
+            for row in db.search_sessions_by_id(
+                q, limit=safe_limit, include_archived=True,
+                # 缺口 B：只在这个 Agent 的会话里搜（'' = 全库）。
+                agent_id=_agent_id_for_profile(profile) or None,
+            ):
                 sid = row.get("id")
                 preview = (row.get("preview") or "").strip()
                 snippet = preview or f"Session ID: {sid}"
@@ -4692,7 +4700,11 @@ async def search_sessions(q: str = "", limit: int = 20, profile: Optional[str] =
             # Over-fetch so lineage dedup can still surface `limit` distinct
             # conversations even when several hits collapse onto one root.
             fetch_limit = max(safe_limit * 5, 50)
-            matches = db.search_messages(query=prefix_query, limit=fetch_limit)
+            matches = db.search_messages(
+                query=prefix_query,
+                limit=fetch_limit,
+                agent_id=_agent_id_for_profile(profile) or None,
+            )
 
             for m in matches:
                 if len(seen) >= safe_limit:
@@ -10003,7 +10015,7 @@ async def count_empty_sessions_endpoint(profile: Optional[str] = None):
     """
     db = _open_session_db_for_profile(profile)
     try:
-        return {"count": db.count_empty_sessions()}
+        return {"count": db.count_empty_sessions(agent_id=_agent_id_for_profile(profile) or None)}
     finally:
         db.close()
 
@@ -10030,7 +10042,8 @@ async def delete_empty_sessions_endpoint(profile: Optional[str] = None):
     """
     db = _open_session_db_for_profile(profile)
     try:
-        deleted = db.delete_empty_sessions()
+        # 缺口 B：单库之后必须圈定「这个 Agent 的」空会话——不圈就是删别人的。
+        deleted = db.delete_empty_sessions(agent_id=_agent_id_for_profile(profile) or None)
         return {"ok": True, "deleted": deleted}
     finally:
         db.close()
@@ -10045,13 +10058,17 @@ async def get_session_stats(profile: Optional[str] = None):
     """
     db = _open_session_db_for_profile(profile)
     try:
-        total = db.session_count(include_archived=True)
-        active_store = db.session_count(include_archived=False)
-        archived = db.session_count(archived_only=True)
-        messages = db.message_count()
+        # 缺口 B：单库总账上圈定「这个 Agent 的」统计（'' = 全库，历史行为）。
+        agent_scope = _agent_id_for_profile(profile) or None
+        total = db.session_count(include_archived=True, agent_id=agent_scope)
+        active_store = db.session_count(include_archived=False, agent_id=agent_scope)
+        archived = db.session_count(archived_only=True, agent_id=agent_scope)
+        messages = db.message_count(agent_id=agent_scope)
         by_source: Dict[str, int] = {}
         try:
-            for s in db.list_sessions_rich(limit=10000, include_archived=True, compact_rows=True):
+            for s in db.list_sessions_rich(
+                limit=10000, include_archived=True, compact_rows=True, agent_id=agent_scope
+            ):
                 src = str(s.get("source") or "cli")
                 by_source[src] = by_source.get(src, 0) + 1
         except Exception:
@@ -10067,19 +10084,34 @@ async def get_session_stats(profile: Optional[str] = None):
         db.close()
 
 
-def _open_session_db_for_profile(profile: Optional[str]):
-    """Open a SessionDB for read paths, optionally for another profile.
+def _agent_id_for_profile(profile: Optional[str]) -> str:
+    """profile 家名 → 名册 name（``sessions.agent_id`` 的归属键）；查不到 → ''。
 
-    ``profile`` None/empty → this process's own ``state.db`` (the common,
-    single-profile case). A named profile opens that profile's on-disk
-    ``state.db`` directly so the primary backend can serve cross-profile reads
-    (transcripts, detail) without spawning that profile's backend.
+    与 tui_gateway 的 ``_agent_id_for_profile_home`` 同语义：桌面传的是家名，
+    总账里存的是名册 name——这一跳就是两者之间的桥。缺口 B 之后聚合读面
+    靠它把「这个 Agent 的会话」从单库里圈出来。
+    """
+    if not profile:
+        return ""
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        entry = entry_for_profile(str(profile).strip())
+        return entry.name if entry else ""
+    except Exception:
+        return ""
+
+
+def _open_session_db_for_profile(profile: Optional[str]):
+    """Open the single session ledger (裁定 180 / 缺口 B).
+
+    一家一库退役后**只有一份总账**（``PLOBI_STATE_HOME`` 语义）；``profile``
+    不再选库——调用方要「这个 Agent 的」视图时用 :func:`_agent_id_for_profile`
+    把家名换成名册 name，交给各查询方法的 ``agent_id`` 参数做行级过滤。
+    按 id 读详情 / 删除 / 恢复更是直接全库查（session id 全局唯一），严格更对。
     """
     from plobi_state import SessionDB
-    if not profile:
-        return SessionDB()
-    _name, home = _cron_profile_home(profile)
-    return SessionDB(db_path=Path(home) / "state.db")
+    return SessionDB()
 
 
 @app.get("/api/sessions/{session_id}")
