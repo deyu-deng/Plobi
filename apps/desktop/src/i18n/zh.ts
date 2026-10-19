@@ -326,9 +326,37 @@ export const zh: Translations = {
       keysSettings: '设置',
       mcp: 'MCP',
       archivedChats: '已归档对话',
+      sources: '信源',
       about: '关于',
       notifications: '通知',
       network: 'VPN'
+    },
+sources: {
+      categories: {
+        local: '本地',
+        message: '消息',
+        social: '社交媒体',
+        system: '系统',
+        website: '网站',
+        custom: '接一个自己的'
+      },
+      disable: '停掉',
+      emptyCategory: '这一类还没接任何信源。',
+      enable: '打开',
+      lastWrite: count => `上一次进新条目是 ${count} 天前。`,
+      lead: '所有信源写进同一个日程库。下面那几格是读数——它们说发生了什么，不说为什么。',
+      loadFailed: '信源读数取不到。',
+      noBuilder: '登记为在采，但没有任何一方构造得出它的采集器。这一条是我们这边的缺陷，不是你能改的设置。',
+      stateUnknown: '状态没记到，不猜。',
+      switchFailed: '开关没能改。',
+      switchOff: '采集开关没点。',
+      switchUnreadable: '采集开关读不到。',
+      title: '信源',
+      tryFailed: '那一轮没有回来。',
+      tryOnce: '试一次',
+      tryRunsForReal: '会真的跑一次采集——要动网络和磁盘。',
+      tryRunning: '正在跑…',
+      unknownSource: '没记到名字的信源'
     },
     network: {
       addExit: '添加出口',

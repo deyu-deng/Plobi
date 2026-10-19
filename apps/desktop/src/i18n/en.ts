@@ -338,9 +338,37 @@ export const en: Translations = {
       keysSettings: 'Settings',
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
+      sources: 'Sources',
       about: 'About',
       notifications: 'Notifications',
       network: 'VPN'
+    },
+sources: {
+      categories: {
+        local: 'Local',
+        message: 'Messaging',
+        social: 'Social media',
+        system: 'System',
+        website: 'Websites',
+        custom: 'Bring your own'
+      },
+      disable: 'Turn off',
+      emptyCategory: 'Nothing connected in this category yet.',
+      enable: 'Turn on',
+      lastWrite: count => `Last new entry ${count} days ago.`,
+      lead: 'Every source writes into the same agenda store. The state and the timestamp below are readings — they say what happened, never why.',
+      loadFailed: 'Could not read the sources.',
+      noBuilder: 'Registered as collecting, but nothing can construct its collector. This is a defect on our side, not a setting you can change.',
+      stateUnknown: 'State not recorded — not guessing.',
+      switchFailed: 'Could not change the switch.',
+      switchOff: 'The collect switch is off.',
+      switchUnreadable: 'Could not read the collect switch.',
+      title: 'Sources',
+      tryFailed: 'That run did not come back.',
+      tryOnce: 'Try once',
+      tryRunsForReal: 'Runs a real collection — it reaches the network and the disk.',
+      tryRunning: 'Running…',
+      unknownSource: 'Source with no recorded name'
     },
     network: {
       addExit: 'Add exit',

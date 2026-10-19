@@ -6,7 +6,7 @@ import { Tip } from '@/components/ui/tooltip'
 import { getPlobiConfigDefaults, getPlobiConfigRecord, savePlobiConfig } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Download, Globe, Info, KeyRound, RefreshCw, Send, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
+import { Archive, Bell, Download, Globe, Info, KeyRound, Layers3, RefreshCw, Send, Settings2, Upload, Wrench, Zap } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -25,6 +25,7 @@ import { NetworkSettings } from './network-settings'
 import { NotificationsSettings } from './notifications-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
 import { SessionsSettings } from './sessions-settings'
+import { SourcesSettings } from './sources-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
@@ -35,6 +36,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'keys',
   'notifications',
   'sessions',
+  'sources',
   'about'
 ]
 
@@ -166,6 +168,13 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       onSelect: () => setActiveView('providers')
     },
     {
+      active: activeView === 'sources',
+      icon: Layers3,
+      id: 'sources',
+      label: t.settings.nav.sources,
+      onSelect: () => setActiveView('sources')
+    },
+    {
       active: activeView === 'gateway',
       icon: Send,
       id: 'gateway',
@@ -277,6 +286,8 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
             <KeysSettings view={keysView} />
           ) : activeView === 'notifications' ? (
             <NotificationsSettings />
+          ) : activeView === 'sources' ? (
+            <SourcesSettings />
           ) : (
             <SessionsSettings />
           )}

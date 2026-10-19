@@ -242,9 +242,37 @@ export const ja = defineLocale({
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
+      sources: 'ソース',
       about: '情報',
       notifications: '通知',
       network: 'VPN'
+    },
+sources: {
+      categories: {
+        local: 'ローカル',
+        message: 'メッセージ',
+        social: 'ソーシャルメディア',
+        system: 'システム',
+        website: 'ウェブ',
+        custom: '自分で一つを接続'
+      },
+      disable: '止める',
+      emptyCategory: 'このカテゴリにはまだ何もつながっていません。',
+      enable: 'オンにする',
+      lastWrite: count => `最後に新しい項目が入ったのは ${count} 日前です。`,
+      lead: 'すべてのソースは同じ agenda ストアに書き込みます。下にある状態と時刻は読み取り値です——何があったかを述べますが、理由ではありません。',
+      loadFailed: 'ソースを読み取れませんでした。',
+      noBuilder: '収集対象として登録されていますが、そのコレクタを構築できる者がいません。これは当你側の不具合であり、あなたが変えられる設定ではありません。',
+      stateUnknown: '状態が記録されていません。推測はしません。',
+      switchFailed: 'スイッチを変更できませんでした。',
+      switchOff: '収集スイッチがオフです。',
+      switchUnreadable: '収集スイッチを読み取れません。',
+      title: 'ソース',
+      tryFailed: 'その実行は返りませんでした。',
+      tryOnce: '一度試す',
+      tryRunsForReal: '実際に収集を実行します——ネットワークとディスクに触れます。',
+      tryRunning: '実行中…',
+      unknownSource: '名前の記録がないソース'
     },
     network: {
       addExit: '出口を追加',
