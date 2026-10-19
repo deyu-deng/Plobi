@@ -42,7 +42,6 @@ import {
   Starmap,
   Sun,
   Terminal,
-  Users,
   Wrench,
   Zap
 } from '@/lib/icons'
@@ -71,7 +70,6 @@ import {
   COMMAND_CENTER_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
-  PROFILES_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
   SKILLS_ROUTE,
@@ -460,7 +458,6 @@ export function CommandPalette() {
             label: t.shell.statusbar.cron,
             run: go(CRON_ROUTE)
           },
-          { action: 'nav.profiles', icon: Users, id: 'nav-profiles', label: t.profiles.title, run: go(PROFILES_ROUTE) },
           { action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) },
           {
             icon: Starmap,

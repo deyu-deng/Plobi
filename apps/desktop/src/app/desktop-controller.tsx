@@ -176,7 +176,6 @@ const CommandCenterView = lazy(async () => ({ default: (await import('./command-
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const StarmapView = lazy(async () => ({ default: (await import('./starmap')).StarmapView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
-const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 
@@ -266,7 +265,6 @@ export function DesktopController() {
     openAgents,
     openCommandCenterSection,
     openStarmap,
-    profilesOpen,
     settingsOpen,
     starmapOpen,
     toggleCommandCenter
@@ -1388,12 +1386,6 @@ export function DesktopController() {
         </Suspense>
       )}
 
-      {profilesOpen && (
-        <Suspense fallback={null}>
-          <ProfilesView onClose={closeOverlayToPreviousRoute} />
-        </Suspense>
-      )}
-
       {starmapOpen && (
         <Suspense fallback={null}>
           <StarmapView onClose={closeOverlayToPreviousRoute} />
@@ -1734,7 +1726,6 @@ export function DesktopController() {
               `*` match, null `chatScope` → Navigate home (open full board bounce). */}
           <Route element={null} path="agenda" />
           <Route element={null} path="cron" />
-          <Route element={null} path="profiles" />
           <Route element={null} path="settings" />
           <Route element={null} path="command-center" />
           <Route element={null} path="agents" />

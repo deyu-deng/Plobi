@@ -7,7 +7,7 @@
 
 import { IS_MAC } from './combo'
 
-export type KeybindCategory = 'composer' | 'profiles' | 'session' | 'navigation' | 'view'
+export type KeybindCategory = 'composer' | 'session' | 'navigation' | 'view'
 
 // The self-referential opener — bound + dispatched like any action, but shown in
 // the panel subtitle (not as its own row).
@@ -15,7 +15,7 @@ export const KEYBIND_PANEL_ACTION = 'keybinds.openPanel'
 
 // `composer` is read-only; the rest are rebindable. `view` is the catch-all for
 // layout, appearance, and the panel-opener.
-export const KEYBIND_CATEGORIES: readonly KeybindCategory[] = ['composer', 'profiles', 'session', 'navigation', 'view']
+export const KEYBIND_CATEGORIES: readonly KeybindCategory[] = ['composer', 'session', 'navigation', 'view']
 
 export interface KeybindActionMeta {
   id: string
@@ -24,22 +24,7 @@ export interface KeybindActionMeta {
   defaults: readonly string[]
 }
 
-// Positional switch slots for *named* profiles: ⌘1…⌘9 for profiles 1-9, then
-// ⌘⌥1…⌘⌥9 for 10-18. The default profile gets the two-key mnemonic ⌘D (see
-// `profile.default`) — ⌘` is macOS-reserved (window cycling) and ⌘0 is reset-zoom.
-export const PROFILE_SLOT_COUNT = 18
-
-function comboForSlot(slot: number): string {
-  return slot <= 9 ? `mod+${slot}` : `mod+alt+${slot - 9}`
-}
-
-const PROFILE_SWITCH_ACTIONS: KeybindActionMeta[] = Array.from({ length: PROFILE_SLOT_COUNT }, (_, i) => ({
-  id: `profile.switch.${i + 1}`,
-  category: 'profiles' as const,
-  defaults: [comboForSlot(i + 1)]
-}))
-
-// Positional jumps — ^1…^9, mirroring profiles' ⌘1…⌘9.
+// Positional session jumps — ^1…^9.
 export const SESSION_SLOT_COUNT = 9
 
 const SESSION_SLOT_ACTIONS: KeybindActionMeta[] = Array.from({ length: SESSION_SLOT_COUNT }, (_, i) => ({
@@ -59,14 +44,6 @@ export const KEYBIND_ACTIONS: readonly KeybindActionMeta[] = [
   // stealing the long-standing sidebar binding.
   { id: 'composer.voice', category: 'composer', defaults: IS_MAC ? ['ctrl+b'] : [] },
 
-  // ── Profiles ─────────────────────────────────────────────────────────────
-  { id: 'profile.default', category: 'profiles', defaults: ['mod+d'] },
-  ...PROFILE_SWITCH_ACTIONS,
-  { id: 'profile.next', category: 'profiles', defaults: ['mod+shift+]'] },
-  { id: 'profile.prev', category: 'profiles', defaults: ['mod+shift+['] },
-  { id: 'profile.toggleAll', category: 'profiles', defaults: ['mod+shift+0'] },
-  { id: 'profile.create', category: 'profiles', defaults: [] },
-
   // ── Session ──────────────────────────────────────────────────────────────
   { id: 'session.new', category: 'session', defaults: ['mod+n', 'shift+n'] },
   { id: 'session.newWindow', category: 'session', defaults: ['mod+shift+n'] },
@@ -84,7 +61,6 @@ export const KEYBIND_ACTIONS: readonly KeybindActionMeta[] = [
   { id: 'nav.commandPalette', category: 'navigation', defaults: ['mod+k', 'mod+p'] },
   { id: 'nav.commandCenter', category: 'navigation', defaults: ['mod+.'] },
   { id: 'nav.settings', category: 'navigation', defaults: ['mod+,'] },
-  { id: 'nav.profiles', category: 'navigation', defaults: [] },
   { id: 'nav.skills', category: 'navigation', defaults: [] },
   { id: 'nav.messaging', category: 'navigation', defaults: [] },
   { id: 'nav.artifacts', category: 'navigation', defaults: [] },
@@ -104,8 +80,8 @@ export const KEYBIND_ACTIONS: readonly KeybindActionMeta[] = [
   { id: 'view.showTerminal', category: 'view', defaults: ['ctrl+`'] },
   { id: 'view.newTerminal', category: 'view', defaults: ['ctrl+shift+`'] },
   // Same Ctrl(+Shift) terminal family: arrows walk the (vertical) tab rail, W
-  // kills the active one. ⌘W is taken (close preview tab) and ⌘⇧[ ] are profiles,
-  // so these stay on `ctrl` — distinct on macOS, folding to Ctrl elsewhere.
+  // kills the active one. ⌘W is taken (close preview tab), so these stay on
+  // `ctrl` — distinct on macOS, folding to Ctrl elsewhere.
   { id: 'view.nextTerminal', category: 'view', defaults: ['ctrl+shift+down'] },
   { id: 'view.prevTerminal', category: 'view', defaults: ['ctrl+shift+up'] },
   { id: 'view.closeTerminal', category: 'view', defaults: ['ctrl+shift+w'] },
