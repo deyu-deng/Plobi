@@ -98,6 +98,14 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # --generate-notes 要在本地跑 git 找上一个 tag；本 job 原先没有 checkout，
+      # gh 在 "failed to run git: not a git repository" 当场死（run 39254593039
+      # 三平台全绿后栽在这）。拉全量历史（含 tags）给它。
+      - name: Checkout (release notes need git)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
       # 原先用 softprops/action-gh-release（第三方个人仓库）完成这一步，而它恰好跑在
       # 带 contents: write 的任务上。改用 runner 自带的 gh（官方镜像清单里的
       # "GitHub CLI 2.101.0"），把「陌生人的代码 + 写权限」这个组合从发布路径上拿掉。
@@ -108,17 +116,20 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          assets=(artifacts/*)
+          # 只挂文件：release/* 里的 linux-unpacked / mac-arm64 / win-unpacked
+          # 是目录，GitHub release asset 不接受目录
+          assets=()
+          for f in artifacts/*; do
+            [ -f "$f" ] && assets+=("$f")
+          done
 
           if [ "${#assets[@]}" -eq 0 ]; then
-            echo "::error::artifacts/ 为空，build 任务没有产出任何文件，拒绝创建空 release"
+            echo "::error::artifacts/ 里没有文件，拒绝创建空 release"
             exit 1
           fi
 
           printf '挂到 release 的文件 (%d 个):\n' "${#assets[@]}"
           printf '  %s\n' "${assets[@]}"
 
-          # 不加 --verify-tag：本 job 没有 checkout、没有本地 git，而它只在
-          # refs/tags/v* 上被触发，标签必然已存在。
+          # 不加 --verify-tag：checkout 拉的就是这个 tag 本身，它必然已存在。
           gh release create "$TAG" --generate-notes --title "$TAG" "${assets[@]}"
