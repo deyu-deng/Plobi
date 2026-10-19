@@ -14,8 +14,10 @@
   而那次事故的表现正是「问『我明天有什么』得到的是空」。
 - **唯一键 `(source, external_id)`**：撞了更新，不长第二份。照 `ingest._row_keys` 的做法，
   因为「重跑一轮不能长出第二份」是同一道判据。
-- **`context` 是一格 JSON，不给池加列**：信源各自的形状（talker、群名、发送人…）放进去。
-  给池加列等于让每条新信源都改一次这个 schema —— 那正是 `source-layer.md` §3.1 拆掉的东西。
+- **`context` 是一格 JSON，信源各自的形状放进去**（talker、群名、发送人…）。**但
+  `visibility` 与 `conversation` 是列**（裁定 187 第 1 条）：那两格不是某个信源的私有
+  形状，是所有信源共用的"这一条来自哪一扇窗口、对谁可见"，而读侧要按它筛。
+  判据留在这儿：**只有全信源共用的形状才配当列**，其余一律进 `context`。
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS pool_items (
     title       TEXT NOT NULL DEFAULT '',
     body        TEXT NOT NULL DEFAULT '',
     context     TEXT NOT NULL DEFAULT '{}',
+    visibility  TEXT NOT NULL DEFAULT '',
+    conversation TEXT NOT NULL DEFAULT '',
     occurred_at TEXT NOT NULL DEFAULT '',
     captured_at TEXT NOT NULL DEFAULT '',
     acted       INTEGER NOT NULL DEFAULT 0,
@@ -48,6 +52,16 @@ CREATE TABLE IF NOT EXISTS pool_items (
 CREATE INDEX IF NOT EXISTS idx_pool_occurred ON pool_items(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pool_source_kind ON pool_items(source, kind);
 """
+
+#: 这两列是裁定 187 第 1 条点名要「真存」的那两格：
+#: `visibility`（私聊／群聊／将来还有"一对一之外"）与 `conversation`（哪一扇窗口）。
+#: 存 `context` 里不算——那一格是自由 JSON，读侧要筛就得每条先解析一遍，
+#: 而窗口／可见性是所有信源共用的形状，不是某个信源的私有条目。
+#:
+#: **一次一形**（用户 10-20 拍）：**已经躺在池里的那 12 条留空，以后写侧带上才填**。
+#: 不做回填——回填要从采集器的内存里去重窗口倒推，而这一刀不许碰采集器与 `source_talker`
+#: （那第三列被他驳了）。空串就是"这一条当时没记窗口"，不是"这条不属于任何窗口"。
+ADDED_COLUMNS = ("visibility", "conversation")
 
 
 #: 放在函数定义之前：这些是 :func:`query` 的**默认值**，定义在文件尾部的话
@@ -70,6 +84,21 @@ def path() -> Path:
     return root / "pool.db"
 
 
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """把后加的列补到已经存在的库上——`CREATE TABLE IF NOT EXISTS` 对旧库什么都不做。
+
+    这台盘上的 `pool.db` 是先建起来的（12 条真数据），只改 SCHEMA 的话那些库永远拿不到
+    新列，写侧一写就 `no column named visibility`。加完不回填：**旧的留空、带上才填**。
+    """
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(pool_items)")}
+    for column in ADDED_COLUMNS:
+        if column in have:
+            continue
+        conn.execute(
+            f"ALTER TABLE pool_items ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+        )
+
+
 def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
     """开一份连（WAL + row factory），schema 只初始化一次。"""
     resolved = Path(db_path) if db_path else path()
@@ -85,6 +114,7 @@ def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
         with _INIT_LOCK:
             if key not in _INITIALIZED:
                 conn.executescript(SCHEMA)
+                _add_missing_columns(conn)
                 conn.commit()
                 _INITIALIZED.add(key)
 
@@ -101,6 +131,8 @@ class PoolItem:
     title: str = ""
     body: str = ""
     context: dict[str, Any] = field(default_factory=dict)
+    visibility: str = ""
+    conversation: str = ""
     occurred_at: str = ""
     captured_at: str = ""
     acted: bool = False
@@ -111,11 +143,13 @@ class PoolItem:
             "body": self.body,
             "captured_at": self.captured_at,
             "context": self.context,
+            "conversation": self.conversation,
             "external_id": self.external_id,
             "kind": self.kind,
             "occurred_at": self.occurred_at,
             "source": self.source,
             "title": self.title,
+            "visibility": self.visibility,
         }
 
 
@@ -148,21 +182,24 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
     try:
         for item in items:
             existing = conn.execute(
-                "SELECT body, title, context, captured_at FROM pool_items"
+                "SELECT body, title, context, visibility, conversation, captured_at FROM pool_items"
                 " WHERE source = ? AND external_id = ?",
                 (item.source, item.external_id),
             ).fetchone()
 
             context_json = json.dumps(item.context, ensure_ascii=False, sort_keys=True, default=str)
+            visibility = _text(item.visibility)
+            conversation = _text(item.conversation)
 
             if existing is None:
                 conn.execute(
                     "INSERT INTO pool_items (source, external_id, kind, title, body, context,"
-                    " occurred_at, captured_at, acted, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                    " visibility, conversation, occurred_at, captured_at, acted, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
                     (
                         item.source, item.external_id, item.kind, item.title, item.body,
-                        context_json, _text(item.occurred_at), _text(item.captured_at) or _now(), _now(),
+                        context_json, visibility, conversation,
+                        _text(item.occurred_at), _text(item.captured_at) or _now(), _now(),
                     ),
                 )
                 created += 1
@@ -174,15 +211,18 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
                 existing["body"] == item.body
                 and existing["title"] == item.title
                 and existing["context"] == context_json
+                and existing["visibility"] == visibility
+                and existing["conversation"] == conversation
             ):
                 continue
 
             conn.execute(
                 "UPDATE pool_items SET kind = ?, title = ?, body = ?, context = ?,"
-                " occurred_at = ?, captured_at = ?, updated_at = ?"
+                " visibility = ?, conversation = ?, occurred_at = ?, captured_at = ?, updated_at = ?"
                 " WHERE source = ? AND external_id = ?",
                 (
                     item.kind, item.title, item.body, context_json,
+                    visibility, conversation,
                     _text(item.occurred_at) or existing["captured_at"], _now(), _now(),
                     item.source, item.external_id,
                 ),
@@ -200,6 +240,8 @@ def query(
     *,
     source: Optional[str] = None,
     kind: Optional[str] = None,
+    visibility: Optional[str] = None,
+    conversation: Optional[str] = None,
     since: Optional[str] = None,
     contains: Optional[str] = None,
     acted: Optional[bool] = None,
@@ -207,6 +249,10 @@ def query(
     db_path: Optional[Path] = None,
 ) -> list[dict[str, Any]]:
     """Agent 读池的那一格。**返回正文**（用户 10-19 拍「放开」）。
+
+    `visibility` / `conversation` 按**精确值**筛（裁定 187 那两列）；要模糊找文字用
+    `contains`。空串筛不出"当时没记窗口"的那批——省略参数就是都要，这是刻意的：
+    「没记」不是一种可见性，也不是一扇窗口。
 
     `limit` 有上限不是因为隐私，是 prompt：一次回几万条正文会把上下文撑爆，
     而那与隐私无关但同样要防。默认给一个保守值。
@@ -221,6 +267,12 @@ def query(
     if kind:
         clauses.append("kind = ?")
         params.append(kind)
+    if visibility:
+        clauses.append("visibility = ?")
+        params.append(visibility)
+    if conversation:
+        clauses.append("conversation = ?")
+        params.append(conversation)
     if since:
         clauses.append("(occurred_at = '' OR occurred_at >= ?)")
         params.append(since)
@@ -237,7 +289,8 @@ def query(
     conn = connect(db_path)
     try:
         rows = conn.execute(
-            f"SELECT source, external_id, kind, title, body, context, occurred_at,"
+            f"SELECT source, external_id, kind, title, body, context, visibility,"
+            f" conversation, occurred_at,"
             f" captured_at, acted FROM pool_items{where}"
             " ORDER BY COALESCE(NULLIF(occurred_at, ''), captured_at) DESC, external_id DESC LIMIT ?",
             params,
@@ -251,11 +304,13 @@ def query(
             "acted": bool(row["acted"]),
             "body": row["body"],
             "captured_at": row["captured_at"],
+            "conversation": row["conversation"],
             "external_id": row["external_id"],
             "kind": row["kind"],
             "occurred_at": row["occurred_at"],
             "source": row["source"],
             "title": row["title"],
+            "visibility": row["visibility"],
         }
         try:
             item["context"] = json.loads(row["context"])
@@ -300,9 +355,3 @@ def stats(*, db_path: Optional[Path] = None) -> dict[str, Any]:
         conn.close()
 
     return {"acted": acted, "by_kind": by_kind, "by_source": by_source, "total": total}
-
-
-#: 放在 import 之后、函数定义之前：这些是 :func:`query` 的**默认值**，
-#: 定义在文件尾部的话 `def query(limit=DEFAULT_LIMIT)` 在 import 时就 NameError。
-DEFAULT_LIMIT = 50
-MAX_LIMIT = 500
