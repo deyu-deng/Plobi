@@ -43,19 +43,11 @@ import {
 } from '../store/layout'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
-import { setPetActivity } from '../store/pet'
-import { setPetScale } from '../store/pet-gallery'
-import {
-  setPetOverlayOpenAppHandler,
-  setPetOverlayScaleHandler,
-  setPetOverlaySubmitHandler
-} from '../store/pet-overlay'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
 import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
 import {
   $activeSessionId,
-  $attentionSessionIds,
   $currentCwd,
   $freshDraftReady,
   $gatewayState,
@@ -119,6 +111,7 @@ import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useProfileScopeSync } from './gateway/hooks/use-profile-scope-sync'
 import { useBackgroundPolling } from './hooks/use-background-polling'
 import { useKeybinds } from './hooks/use-keybinds'
+import { usePetBridge } from './hooks/use-pet-bridge'
 import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from './layout-constants'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
@@ -1069,44 +1062,11 @@ export function DesktopController() {
     }
   }, [level, gatewayState, prepareFreshDraftInPlace])
 
-  useEffect(() => {
-    if (isSecondaryWindow()) {
-      return
-    }
-
-    setPetOverlaySubmitHandler(text => void submitTextRef.current(text))
-    // Alt+wheel resize from the popped-out pet — persist it through this
-    // window's gateway (the overlay has none) so it survives restart.
-    setPetOverlayScaleHandler(scale => setPetScale(requestGatewayRef.current, scale))
-    // Mail icon: $sessions is ordered most-recent-first; the pet is global (not
-    // per session) so "most recent" is the right target. main.ts already raised
-    // the window before forwarding this.
-    setPetOverlayOpenAppHandler(() => {
-      const recent = $sessions.get()[0]
-
-      if (recent?.id) {
-        void resumeSessionRef.current(recent.id)
-      }
-    })
-
-    return () => {
-      setPetOverlaySubmitHandler(null)
-      setPetOverlayOpenAppHandler(null)
-      setPetOverlayScaleHandler(null)
-    }
-  }, [])
-
-  // Mirror "a session is blocked on the user" (clarify/approval) into the pet's
-  // awaitingInput flag so it shows the `waiting` pose. Lives on $petActivity so
-  // it rides the same atom the pop-out overlay mirrors — no session list needed
-  // there. Every window keeps its own in-window pet in sync.
-  useEffect(() => {
-    const sync = () => setPetActivity({ awaitingInput: $attentionSessionIds.get().length > 0 })
-
-    sync()
-
-    return $attentionSessionIds.listen(sync)
-  }, [])
+  usePetBridge({
+    requestGatewayRef,
+    resumeSessionRef,
+    submitTextRef
+  })
 
   useGatewayBoot({
     handleGatewayEvent: handleDesktopGatewayEvent,
