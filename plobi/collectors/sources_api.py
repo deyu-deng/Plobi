@@ -70,7 +70,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         # 真信源"，那是要每一处渲染都记得写的隐式契约。给全 + 全 None 才是"没有值"，
         # 也正好是这一档该说的话：它登记在库里，但不归任何分类。
         return {**row, "category": None, "enabled": None, "enabled_origin": None,
-                "has_builder": None, "requires_manual_setup": None, "setup": None}
+                "has_builder": None, "requires_manual_setup": None, "setup": None,
+                "setup_fields": []}
 
     spec = registry.spec(source_id)
     enabled = None if switches is None else switches.get(source_id)
@@ -84,6 +85,13 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         "has_builder": spec.builder is not None,
         "requires_manual_setup": spec.capabilities.get("requires_manual_setup"),
         "setup": None if enabled is None else sources_config.setup_params(source_id),
+        # 声明照原样给，**label 不翻译**：界面先查语言目录的
+        # `settings.sources.fields.<key>`，查不到才回这一格。这样第三方包零改动就能
+        # 出现在界面上（只是没翻译），而我们自己那四条四语言齐全。
+        "setup_fields": [
+            {"key": f.key, "label": f.label, "kind": f.kind, "required": f.required, "help": f.help}
+            for f in spec.setup_fields
+        ],
     }
 
 
@@ -170,12 +178,16 @@ async def set_source_setup(source_id: str, body: SetupRequest):
 
     落盘成功就算配好了，**不替任何一方去"验证能不能连上"**：能不能连上是执行方自己
     的读数（`try` 那一轮会报它自己的状态），这一格只管存住用户填的东西。
+
+    校验在 :mod:`plobi.collectors.sources_config` 那一层按**声明**做（不在声明里的
+    键拒收、必填的缺了拒收）——表单是照那份声明画的，所以这一格收的东西与画出来
+    的东西必然一致，不会长出一个"界面上没有、文件里有"的键。
     """
     _require_registered(source_id)
     try:
         saved = sources_config.set_setup_params(source_id, body.params)
     except sources_config.SourceConfigError as exc:
-        # 400 = 你填的东西这一层不收（多半是密钥）；503 = 这一层读不到/写不进。
-        status = 400 if "密钥" in str(exc) else 503
+        # 400 = 你填的东西这一层不收（多半是密钥，或不在声明里）；503 = 这一层读不到/写不进。
+        status = 400 if ("密钥" in str(exc) or "没声明" in str(exc) or "还缺" in str(exc)) else 503
         raise HTTPException(status_code=status, detail=str(exc)) from exc
     return {"ok": True, "data": {"source": source_id, "setup": saved}}

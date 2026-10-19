@@ -16,6 +16,7 @@ function row(over: Partial<SourceRow> = {}): SourceRow {
     note: '',
     requires_manual_setup: null,
     setup: null,
+    setup_fields: [],
     source: 'x',
     state: 'unknown',
     touched_after_last_write: false,

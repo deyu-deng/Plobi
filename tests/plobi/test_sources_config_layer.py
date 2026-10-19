@@ -105,32 +105,57 @@ class TestTheFallbackChain:
 
     def test_setup_params_leave_the_switch_alone(self):
         """首次配置那一格有它自己的动词，不许顺手把开关也翻了。"""
-        sources_config.set_setup_params("wechat", {"account": "me"})
+        sources_config.set_setup_params("timetable", {"ics_path": "D:/x.ics"})
 
-        assert sources_config.effective_enabled("wechat") == (registry.spec("wechat").collecting, "spec")
+        assert sources_config.effective_enabled("timetable") == (registry.spec("timetable").collecting, "spec")
 
 
 class TestSecretsNeverLandHere:
-    """.env 仍是密钥唯一面——所以这里是**按键名**拦，不是靠正则扫值。"""
+    """.env 仍是密钥唯一面。这一层有**两道**拦，两道拦的是不同的东西。"""
 
-    @pytest.mark.parametrize("key", ["password", "api_token", "API-KEY", "cookie", "credential", "secret"])
-    def test_a_secret_like_key_is_refused(self, key):
-        with pytest.raises(sources_config.SourceConfigError, match="密钥"):
-            sources_config.set_setup_params("zju", {key: "whatever"})
+    def test_the_declaration_layer_refuses_to_declare_one_in_the_first_place(self):
+        """第一道，**写声明的时候**：一条信源压根没法声明出一个像密钥的字段。
+
+        这是更强的一道，因为它挡在源头——不是"填进去被拦"，是"没有那个格子"。
+        """
+        with pytest.raises(registry.UnknownSetupField, match="密钥"):
+            registry.SetupField(key="api_token", label="Token")
+
+        with pytest.raises(registry.UnknownSetupField):
+            registry.SetupField(key="PASSWORD", label="Password")
+
+    def test_no_registered_source_declares_a_secret_like_field(self):
+        for source_id in registry.source_ids():
+            for setup in registry.spec(source_id).setup_fields:
+                assert not registry.is_secret_like(setup.key), f"{source_id}.{setup.key}"
+
+    def test_the_runtime_guard_still_refuses_a_hand_filled_secret(self, client):
+        """第二道，**运行时**：手改过的 yaml 或将来改了声明，那一道还在。
+
+        这不是重复——第一道挡"声明"，第二道挡"文件"。两者之间那道缝写在这里，
+        不假装没有。
+        """
+        response = client.post("/sources/zju/setup", json={"params": {"api_token": "sk-x"}})
+
+        assert response.status_code == 400
+        assert "密钥" in response.json()["detail"]
 
     def test_a_scan_does_not_actually_pass(self):
-        """拦的是名字不是内容——所以一个**长得不像**的键仍然放得过去。
+        """**反着钉**：这一层拦的是名字不是内容。
 
-        这条是**反着钉**的：它说清这一层的防护边界在哪。不是"扫得严"，是"键名
-        那一道 + 不落 `.env` 那条纪律"，两道之间那条缝不假装没有。
+        所以一个**名字不像**的键仍然放得过去——那道缝存在，这里说清它在哪。
+        另一道纪律是「值里那个东西根本不该走这条路」（密钥归 .env），两道之间
+        不是靠正则能补上的。
         """
-        sources_config.set_setup_params("zju", {"nickname": "a-real-secret-in-a-plain-field"})
+        sources_config.set_setup_params("zju", {"account": "a-real-secret-in-a-plain-field",
+                                           "base_url": "https://example.invalid"})
 
-        assert sources_config.setup_params("zju") == {"nickname": "a-real-secret-in-a-plain-field"}
+        assert sources_config.setup_params("zju")["account"] == "a-real-secret-in-a-plain-field"
 
-    def test_nested_structures_are_refused(self):
-        with pytest.raises(sources_config.SourceConfigError, match="标量"):
-            sources_config.set_setup_params("zju", {"a": {"b": 1}})
+    def test_nested_structures_are_refused(self, client):
+        response = client.post("/sources/zju/setup", json={"params": {"base_url": {"a": 1}}})
+
+        assert response.status_code in (400, 422)
 
     def test_a_non_bool_enabled_is_refused(self):
         with pytest.raises(sources_config.SourceConfigError, match="true/false"):
@@ -144,6 +169,30 @@ class TestSecretsNeverLandHere:
 
         with pytest.raises(sources_config.SourceConfigError, match="密钥"):
             sources_config.load()
+
+
+class TestSetupIsValidatedAgainstTheDeclaration:
+    """表单是照 ``setup_fields`` 画出来的，所以**存进去的东西与画出来的必然一致**。
+
+    不这么做就会长出一个"界面上没有、文件里有"的键——而那一行从此问不到是谁配的。
+    """
+
+    def test_the_declaration_comes_from_the_package_not_from_a_table(self):
+        assert sources_config.declared_setup_keys("timetable") == ("ics_path",)
+        # 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以它就该是空的。
+        assert sources_config.declared_setup_keys("wechat") == ()
+        assert sources_config.declared_setup_keys("dingtalk") == ()
+
+    def test_a_key_the_source_never_declared_is_refused(self):
+        with pytest.raises(sources_config.SourceConfigError, match="没声明"):
+            sources_config.set_setup_params("wechat", {"account": "me"})
+
+    def test_a_missing_required_field_is_refused(self):
+        with pytest.raises(sources_config.SourceConfigError, match="还缺"):
+            sources_config.set_setup_params("timetable", {})
+
+    def test_a_declared_field_lands(self):
+        assert sources_config.set_setup_params("timetable", {"ics_path": "D:/x.ics"}) == {"ics_path": "D:/x.ics"}
 
 
 class TestTheWriteIsAtomic:

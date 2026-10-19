@@ -11,7 +11,7 @@
 它不再由 ``registry.py`` 那一行手写元组登记**，加一条信源＝加一个这样的包。
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
 
 from .collector import PullReport, ZjuCollector, to_local_naive, to_occurrences
 from .config import ZjuConfig
@@ -58,6 +58,24 @@ SPEC = SourceSpec(
     },
     # 无客户端可装 ⇒ 连接器形状是「一个地址 + 账密」，归「网站」不归「消息」。
     category="website",
+    # 首次配置两格，都是**非密钥**：地址与账号名。密码与那两个 key 在根 `.env`
+    # 里（能力位注记原话「账密已给（根 .env）」），**声明层压根不收密钥**——
+    # 所以这里只能声明这两格，这不是省略。
+    setup_fields=(
+        SetupField(
+            key="base_url",
+            label="School system address",
+            kind="url",
+            required=True,
+            help="The portal you sign in to.",
+        ),
+        SetupField(
+            key="account",
+            label="Account name",
+            required=True,
+            help="Not the password — that stays in .env.",
+        ),
+    ),
     # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
     # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
     # 新条目进待确认」⇒ 这一格从此是一条被点过的读数，不是我替他填的默认值（判据 1）。

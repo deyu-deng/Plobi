@@ -249,6 +249,16 @@ sources: {
         website: '網站',
         custom: '接一個自己的'
       },
+    fields: {
+      base_url: '教務系統網址',
+      account: '帳號名稱',
+      ics_path: '.ics 檔案的路徑'
+    },
+    fieldHelp: '這些是這條信源跑起來要用的值。存過一次就一直生效——這件事只做一次。',
+    saveFailed: '沒能存下。',
+    saveSetup: '存下這些',
+    saved: '存好了',
+    setupFailed: '首次設定沒能存下。',
       disable: '停掉',
       emptyCategory: '這一類還沒接任何信源。',
       enable: '打開',

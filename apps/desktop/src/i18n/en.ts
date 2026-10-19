@@ -352,6 +352,16 @@ sources: {
         website: 'Websites',
         custom: 'Bring your own'
       },
+    fields: {
+      base_url: 'School system address',
+      account: 'Account name',
+      ics_path: 'Path to the .ics file'
+    },
+    fieldHelp: 'These are the values this source needs before it can run. They are saved, and they stay saved — you do this once.',
+    saveFailed: 'Could not save those.',
+    saveSetup: 'Save these',
+    saved: 'Saved',
+    setupFailed: 'Could not save the first-time setup.',
       disable: 'Turn off',
       emptyCategory: 'Nothing connected in this category yet.',
       enable: 'Turn on',

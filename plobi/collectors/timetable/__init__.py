@@ -7,7 +7,7 @@ Public surface: :func:`parse_ics` / :func:`parse_ics_with_stats`,
 这样的包，`plobi/collectors/registry.py` 里不再出现任何信源 id。
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
 
 from .collector import TimetableCollector, import_ics
 from .parser import IcsParseError, parse_ics, parse_ics_with_stats
@@ -34,6 +34,18 @@ SPEC = SourceSpec(
     # （这一档同时还有一个 `timetable.ics_url`，那是同一份数据的另一种接法，
     #   登记成一条还是两条属 spec-layer §10 未决，不在下面混着记）。
     category="local",
+    # 首次配置只有一格，就是注册表注记写的那句"用户指定目录里放一个 .ics"。
+    # 这一格由本包**自己**声明——加一条新信源不用改 `apps/desktop/**`
+    # （spec §8 有一条验收就是这个）。
+    setup_fields=(
+        SetupField(
+            key="ics_path",
+            label="Path to the .ics file",
+            kind="path",
+            required=True,
+            help="Absolute path on this machine.",
+        ),
+    ),
     builder=_build,
 )
 

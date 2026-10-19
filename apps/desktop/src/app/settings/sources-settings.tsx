@@ -20,6 +20,7 @@ import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { SetupFields } from './sources/setup-fields'
 import { groupByCategory, verbFor } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
@@ -113,7 +114,15 @@ export function SourcesSettings() {
           ) : (
             <div className="divide-y divide-(--ui-border-subtle)">
               {group.rows.map(row => (
-                <SourceRowView busy={busy === row.source} key={row.source} labels={labels} onToggle={onToggle} onTry={onTry} row={row} />
+                <SourceRowView
+                  busy={busy === row.source}
+                  key={row.source}
+                  labels={labels}
+                  onReload={reload}
+                  onToggle={onToggle}
+                  onTry={onTry}
+                  row={row}
+                />
               ))}
             </div>
           )}
@@ -126,12 +135,14 @@ export function SourcesSettings() {
 function SourceRowView({
   busy,
   labels,
+  onReload,
   onTry,
   onToggle,
   row
 }: {
   busy: boolean
   labels: Labels
+  onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
   onToggle: (row: SourceRow, enabled: boolean) => Promise<void>
   row: SourceRow
@@ -164,6 +175,9 @@ function SourceRowView({
           </Button>
         ) : null
       }
+      below={row.setup_fields.length > 0
+        ? <SetupFields busy={busy} labels={labels} onSaved={onReload} row={row} />
+        : undefined}
       description={<StatusSentence labels={labels} row={row} />}
       title={t.agenda.sources[row.source as keyof typeof t.agenda.sources] ?? labels.unknownSource}
     />

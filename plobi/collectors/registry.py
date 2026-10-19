@@ -76,6 +76,70 @@ class UnknownCategory(ValueError):
     """分类值不认识——闭集不接受"先放着"，也不接受拼错。"""
 
 
+class UnknownSetupField(ValueError):
+    """首次配置那一格声明得不合法——**这一层的牙齿就是这一条**。"""
+
+
+#: 键名里带这些片段的一律视为「这是密钥」。**按名字拦，不按值拦**——值可能是一段
+#: base64，正则扫不出来；「有人把 token 填进表单」这一种只有按名字拦得住。
+#: 真源在这里而不是 ``sources_config``：**声明层**（:class:`SetupField`）在 import 时
+#: 就要用它拦一道，两边共用一份才不会各自长出一套。
+SECRET_LIKE_KEYS: frozenset[str] = frozenset({
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "credential", "cookie", "session_key", "private_key", "access_key",
+})
+
+
+def is_secret_like(key: str) -> bool:
+    # 分隔符归一：`API-KEY`、`api key`、`ApiKey` 与 `api_key` 是同一个意思，
+    # 不归一的话拦的是拼写而不是**类别**——那就等于给了绕过它的正门。
+    normalized = key.strip().lower().replace("-", "_").replace(" ", "_")
+
+    return any(marker in normalized for marker in SECRET_LIKE_KEYS)
+
+
+#: 首次配置字段的控件形状闭集。**没有 `password`**：密钥不属于这一层，
+#: 硬编一个"带掩码的输入框"等于在产品面上开一个把 token 存进 `sources.yaml` 的正门。
+SETUP_FIELD_KINDS: tuple[str, ...] = ("text", "path", "url")
+
+
+@dataclass(frozen=True)
+class SetupField:
+    """首次配置时用户要填的**一格非密钥**参数，由这条信源自己声明。
+
+    形状照 `capabilities` 那一套：**声明式、缺位注册即报错**。理由也一样——
+    面上不该硬编「课表要路径、教务要地址」这张表，那张表一变就得改 `apps/desktop/**`，
+    而 spec §8 有一条验收就是「加一条新信源不需要改 `apps/desktop/**`」。
+
+    **`label` 是英文缺省值，不是文案**（裁定 45.4：slug 不上屏）。界面先查语言目录里的
+    `settings.sources.fields.<key>`，查不到才回这一格——所以一个第三方包**零改动**就能
+    出现在界面上，只是没翻译；我们自己那四条四语言齐全。
+    """
+
+    key: str
+    label: str
+    #: 控件形状，见 :data:`SETUP_FIELD_KINDS`。
+    kind: str = "text"
+    required: bool = False
+    help: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.key or not self.key.strip():
+            raise UnknownSetupField("key 不能是空串")
+        if self.kind not in SETUP_FIELD_KINDS:
+            raise UnknownSetupField(
+                f"{self.key} 的 kind={self.kind!r} 不在闭集里：{', '.join(SETUP_FIELD_KINDS)}"
+            )
+        # 唯一的牙齿：这一层**声明不出一个密钥来**。密钥归 `.env`
+        # （`Docs/README.md` §0 那条纪律）。挡在**写声明的时候**，所以它压根
+        # 不可能被声明出来——比运行时再拦一道强，因为运行时那一道只挡得住手填。
+        if is_secret_like(self.key):
+            raise UnknownSetupField(
+                f"{self.key} 看着像密钥，声明层不收：这一层只放路径 / 地址 / 账号名。"
+                "密钥写进 .env。这一格是给人看的表单，不是给机器的密钥库。"
+            )
+
+
 @dataclass(frozen=True)
 class SourceSpec:
     source_id: str
@@ -96,6 +160,10 @@ class SourceSpec:
     #: `None` 是一个读数而不是省略：注册表说这条在采、却没有任何一方构造得出它 ——
     #: 2026-10-15 教务那一刀就断在这里（`collecting_sources()` 全仓零调用方）。
     builder: Optional[Callable[[], Any]] = None
+    #: 首次配置要用户填的那几格，**由这一条自己声明**（见 :class:`SetupField`）。
+    #: 默认空元组**不是**"可以随便省略"——空是一个合法读数，意思是"首次配置不需要用户
+    #: 填任何非密钥的东西"（微信要的是扫码与密钥，两样都不在这一层，所以它就该是空的）。
+    setup_fields: tuple[SetupField, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.source_id or not self.source_id.strip():
@@ -114,6 +182,11 @@ class SourceSpec:
         extra = [key for key in self.capabilities if key not in CAPABILITY_KEYS]
         if extra:
             raise ValueError(f"{self.source_id} 声明了不认识的能力位：{', '.join(extra)}")
+        seen: set[str] = set()
+        for setup in self.setup_fields:
+            if setup.key in seen:
+                raise UnknownSetupField(f"{self.source_id} 声明了两个同名的首次配置字段：{setup.key}")
+            seen.add(setup.key)
 
 
 _SPECS: dict[str, SourceSpec] = {}

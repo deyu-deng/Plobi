@@ -8,6 +8,7 @@ import type { SourceRow, SourcesPayload } from './sources/api'
 const getSources = vi.fn()
 const setSourceEnabled = vi.fn()
 const trySource = vi.fn()
+const saveSourceSetup = vi.fn()
 const notify = vi.fn()
 const notifyError = vi.fn()
 
@@ -17,6 +18,7 @@ vi.mock('./sources/api', async () => {
   return {
     ...actual,
     getSources: () => getSources(),
+    saveSourceSetup: (id: string, params: Record<string, string>) => saveSourceSetup(id, params),
     setSourceEnabled: (id: string, enabled: boolean) => setSourceEnabled(id, enabled),
     trySource: (id: string) => trySource(id)
   }
@@ -35,6 +37,12 @@ vi.mock('@/i18n', () => ({
         sources: {
           categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', custom: 'Bring your own' },
           disable: 'Turn off',
+          fieldHelp: 'help',
+          fields: { ics_path: 'Path to the .ics file' },
+          saveFailed: 'Could not save those.',
+          saveSetup: 'Save these',
+          saved: 'Saved',
+          setupFailed: 'Could not save the first-time setup.',
           emptyCategory: 'Nothing connected in this category yet.',
           enable: 'Turn on',
           lastWrite: (count: number) => `Last new entry ${count} days ago.`,
@@ -70,6 +78,7 @@ function row(over: Partial<SourceRow> = {}): SourceRow {
     note: '',
     requires_manual_setup: null,
     setup: null,
+    setup_fields: [],
     source: 'x',
     state: 'unknown',
     touched_after_last_write: false,
@@ -88,11 +97,12 @@ function payload(sources: SourceRow[]): SourcesPayload {
     byCategory.set(one.category, [...(byCategory.get(one.category) ?? []), one.source])
   }
 
+  // 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**——空分类也要出现。
   return {
-    categories: [
-      { id: 'message', sources: byCategory.get('message') ?? [] },
-      { id: 'social', sources: byCategory.get('social') ?? [] }
-    ],
+    categories: ['message', 'social', 'website', 'local', 'system', 'custom'].map(id => ({
+      id,
+      sources: byCategory.get(id) ?? []
+    })),
     checked_at: '2026-10-19T08:15:00',
     sources,
     stale_after_days: 3,
@@ -124,7 +134,8 @@ describe('the sources panel', () => {
     render(<SourcesSettings />)
 
     await waitFor(() => expect(screen.getByTestId('source-group-social')).toBeTruthy())
-    expect(screen.getByText('Nothing connected in this category yet.')).toBeTruthy()
+    // 空分类**每一类都出现**（不止 social 一类），所以这里是「至少有一个」而不是「恰好一个」。
+    expect(screen.getAllByText('Nothing connected in this category yet.').length).toBeGreaterThan(0)
   })
 
   it('shows the collector’s own note verbatim', async () => {
@@ -227,5 +238,109 @@ describe('the sources panel', () => {
 
     await waitFor(() => expect(screen.getByText('Source with no recorded name')).toBeTruthy())
     expect(screen.queryByText('brand-new-thing')).toBeNull()
+  })
+})
+
+describe('the first-time setup form', () => {
+  const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
+
+  it('draws only the fields the source itself declared', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
+    expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy()
+  })
+
+  it('falls back to the declared label for a field nobody translated', async () => {
+    // 语言目录没有这一格时用后端给的英文缺省值 —— 第三方包零改动就能用，只是没翻译。
+    getSources.mockResolvedValue(payload([
+      row({
+        category: 'custom',
+        enabled: true,
+        has_builder: true,
+        setup_fields: [{ ...ICS, key: 'third_party_thing', label: 'Their own field' }],
+        source: 'timetable',
+        state: 'never'
+      })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByLabelText('Their own field')).toBeTruthy())
+  })
+
+  it('draws no form at all for a source that declares no fields', async () => {
+    // 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以它就该没有表单。
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Try once/ })).toBeTruthy())
+    expect(screen.queryByTestId('setup-wechat')).toBeNull()
+  })
+
+  it('will not save while a required field is empty', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save these' })).toBeTruthy())
+
+    expect((screen.getByRole('button', { name: 'Save these' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(saveSourceSetup).not.toHaveBeenCalled()
+  })
+
+  it('sends only the filled fields, never an empty string', async () => {
+    // 空的**不送**：送一个空串等于把"没填"伪装成"填了空的"。
+    getSources.mockResolvedValue(payload([
+      row({
+        category: 'local',
+        enabled: true,
+        has_builder: true,
+        setup_fields: [ICS, { help: '', key: 'note', kind: 'text', label: 'Note', required: false }],
+        source: 'timetable',
+        state: 'never'
+      })
+    ]))
+    saveSourceSetup.mockResolvedValue(undefined)
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Path to the .ics file'), { target: { value: 'D:/x.ics' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save these' }))
+
+    await waitFor(() => expect(saveSourceSetup).toHaveBeenCalledWith('timetable', { ics_path: 'D:/x.ics' }))
+  })
+
+  it('re-reads after saving so the row shows the stored value', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
+    ]))
+    saveSourceSetup.mockResolvedValue(undefined)
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Path to the .ics file'), { target: { value: 'D:/x.ics' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save these' }))
+
+    await waitFor(() => expect(getSources).toHaveBeenCalledTimes(2))
+  })
+
+  it('offers no masked input, because the declaration layer cannot declare a secret', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
+    ]))
+
+    const { container } = render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
+    expect(container.querySelector('input[type="password"]')).toBeNull()
   })
 })
