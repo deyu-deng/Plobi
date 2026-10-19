@@ -5,6 +5,7 @@
   "version": "0.2.0",
   "description": "Native desktop shell for Plobi Agent.",
   "author": "Nous Research",
+  "homepage": "https://github.com/deyu-deng/Plobi",
   "type": "module",
   "main": "dist/electron-main.mjs",
   "engines": {

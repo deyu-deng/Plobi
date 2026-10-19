@@ -52,14 +52,29 @@ jobs:
         working-directory: apps/desktop
         shell: bash
         env:
-          # Windows Authenticode 签名（可选，留空跳过）
-          CSC_LINK: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK || (matrix.platform == 'mac' && secrets.MAC_CSC_LINK || '') }}
-          CSC_KEY_PASSWORD: ${{ matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || (matrix.platform == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || '') }}
+          # 签名证书经中转 env 传入，非空才 export 成 CSC_LINK / CSC_KEY_PASSWORD。
+          # 不能直接 `CSC_LINK: ${{ secrets.X || '' }}`：secret 缺位时 env 仍是空串，
+          # 而 app-builder-lib 的 mac 路径只判 cscLink == null（windowsSignToolManager
+          # 才显式判 === ""），空串会被当成证书路径 → importCertificate('') →
+          # resolveCscLinkPath('', projectDir) = projectDir → 存在但是目录 →
+          # "<projectDir> not a file"，mac 打包当场炸（run 39251532275 实测）。
+          # win 因显式判空串不受害，但两边同一套写法，不留雷。
+          PLOBI_WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          PLOBI_WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          PLOBI_MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          PLOBI_MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           # macOS 公证（可选，缺任一则 notarize.mjs 自动跳过）
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            if [ -n "${PLOBI_WIN_CSC_LINK:-}" ]; then export CSC_LINK="$PLOBI_WIN_CSC_LINK"; fi
+            if [ -n "${PLOBI_WIN_CSC_KEY_PASSWORD:-}" ]; then export CSC_KEY_PASSWORD="$PLOBI_WIN_CSC_KEY_PASSWORD"; fi
+          elif [ "${{ matrix.platform }}" = "mac" ]; then
+            if [ -n "${PLOBI_MAC_CSC_LINK:-}" ]; then export CSC_LINK="$PLOBI_MAC_CSC_LINK"; fi
+            if [ -n "${PLOBI_MAC_CSC_KEY_PASSWORD:-}" ]; then export CSC_KEY_PASSWORD="$PLOBI_MAC_CSC_KEY_PASSWORD"; fi
+          fi
           npm run dist:${{ matrix.platform }}
 
       - name: Upload build artifacts
