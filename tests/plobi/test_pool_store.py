@@ -186,6 +186,79 @@ class TestStats:
         assert stats["acted"] == 1
 
 
+class TestTheTwoColumns:
+    """裁定 187 第 1 条：`visibility`（私聊／群聊）与 `conversation`（哪一扇窗口）要**真存**。
+
+    塞在 `context` 那格自由 JSON 里不算——`conversation_id` 以前只活在采集器的内存里
+    去重窗口，落库就没了，读侧想按窗口筛就得每条先解析一遍。
+    """
+
+    def test_a_row_carries_its_window_and_visibility(self, pool):
+        store.land([item(visibility="group", conversation="工程训练·课群组")])
+
+        row = store.query()[0]
+        assert row["visibility"] == "group"
+        assert row["conversation"] == "工程训练·课群组"
+
+    def test_both_are_filterable_not_only_printable(self, pool):
+        store.land([
+            item(external_id="a", visibility="group", conversation="群A"),
+            item(external_id="b", visibility="private", conversation="群B"),
+        ])
+
+        assert [r["external_id"] for r in store.query(conversation="群A")] == ["a"]
+        assert [r["external_id"] for r in store.query(visibility="private")] == ["b"]
+
+    def test_a_window_filled_in_later_updates_in_place(self, pool):
+        # 采集那一轮没记窗口、后来补上 ⇒ 内容算变了，要落，且不长第二份。
+        store.land([item(conversation="")])
+        result = store.land([item(conversation="群A")])
+
+        assert result == {"created": 0, "updated": 1, "unchanged": 0}
+        assert store.query()[0]["conversation"] == "群A"
+        assert len(store.query()) == 1
+
+    def test_an_old_database_gets_the_columns_and_keeps_its_rows(self, pool):
+        """这台盘上此刻就有 12 条躺在旧形状里——`CREATE TABLE IF NOT EXISTS` 对旧库什么都不做。
+
+        不 ALTER 的话写侧一写就是 `no column named visibility`。
+        **一次一形**（用户 10-20 拍）：旧行留空、不回填（回填要从采集器的内存倒推，
+        而这一刀不许碰采集器与 `source_talker`）。
+        """
+        old = sqlite3.connect(str(pool))
+        old.execute(
+            "CREATE TABLE pool_items ("
+            " source TEXT NOT NULL, external_id TEXT NOT NULL,"
+            " kind TEXT NOT NULL DEFAULT 'note', title TEXT NOT NULL DEFAULT '',"
+            " body TEXT NOT NULL DEFAULT '', context TEXT NOT NULL DEFAULT '{}',"
+            " occurred_at TEXT NOT NULL DEFAULT '', captured_at TEXT NOT NULL DEFAULT '',"
+            " acted INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '',"
+            " PRIMARY KEY (source, external_id))"
+        )
+        old.execute(
+            "INSERT INTO pool_items (source, external_id, body)"
+            " VALUES ('wechat', 'old1', '那条旧的')"
+        )
+        old.commit()
+        old.close()
+
+        rows = store.query()
+
+        assert [r["external_id"] for r in rows] == ["old1"], "迁移不许吃掉旧行"
+        assert rows[0]["visibility"] == "" and rows[0]["conversation"] == ""
+        # 补得上：留空是「当时没记」，不是「这条永远改不动」
+        assert store.land([item(source="wechat", external_id="old1",
+                               conversation="群A")])["updated"] == 1
+
+    def test_the_columns_are_columns_not_json_keys(self, pool):
+        store.land([item(visibility="group", conversation="群A")])
+
+        with sqlite3.connect(str(pool)) as conn:
+            names = {row[1] for row in conn.execute("PRAGMA table_info(pool_items)")}
+
+        assert {"visibility", "conversation"} <= names
+
+
 class TestItDoesNotBreak:
     def test_an_unreadable_pool_says_so_instead_of_handing_nothing(self, pool, monkeypatch):
         # 吞掉的形状：写不进去 ⇒ 采集器报「跑了 0 条」，而用户看到的是「今天没东西进来」。
