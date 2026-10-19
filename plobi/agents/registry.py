@@ -366,6 +366,18 @@ class AgentEntry:
     # 分身悄悄藏掉——藏掉才是这次要修的那个 bug。
     registered: bool = True
 
+    # 全局真源 + per-agent 开关（2026-10-19 用户裁定，收掉 179「按家分持」的
+    # 最后一层含义）：技能 / 工具集 / MCP 服务器只有**一张全局表**（顶层
+    # config.yaml 的 skills 目录、``agent.disabled_toolsets``、``mcp_servers``），
+    # 每个 Agent 默认全量拥有。这里三份**黑名单**只记「这个 Agent 关掉了哪些」，
+    # 是偏好不是拷贝——装一个新 skill / MCP 全员立刻可见，关的只是这一个 Agent
+    # 的可见性。消费点做并集减法：skill_utils.get_disabled_skill_names（技能）、
+    # cli 的 agent 构建（工具集，browser 一族就是 toolset）、
+    # tools/mcp_tool.py 服务器装载（MCP）。
+    disabled_skills: tuple[str, ...] = ()
+    disabled_toolsets: tuple[str, ...] = ()
+    disabled_mcp_servers: tuple[str, ...] = ()
+
     @property
     def profile_name(self) -> str:
         # Profiles are stored lowercase on disk and the CLI's ``-p`` pre-scan
@@ -437,6 +449,12 @@ class AgentEntry:
             data["mind_subtree"] = self.mind_subtree
         if self.skills:
             data["skills"] = list(self.skills)
+        if self.disabled_skills:
+            data["disabled_skills"] = list(self.disabled_skills)
+        if self.disabled_toolsets:
+            data["disabled_toolsets"] = list(self.disabled_toolsets)
+        if self.disabled_mcp_servers:
+            data["disabled_mcp_servers"] = list(self.disabled_mcp_servers)
         if self.description:
             data["description"] = self.description
         if self.display_name:
@@ -509,6 +527,15 @@ class AgentEntry:
             model=str(raw.get("model") or ""),
             mind_subtree=str(raw.get("mind_subtree") or ""),
             skills=tuple(str(s) for s in skills),
+            disabled_skills=tuple(
+                str(s) for s in (raw.get("disabled_skills") or ()) if str(s).strip()
+            ),
+            disabled_toolsets=tuple(
+                str(s) for s in (raw.get("disabled_toolsets") or ()) if str(s).strip()
+            ),
+            disabled_mcp_servers=tuple(
+                str(s) for s in (raw.get("disabled_mcp_servers") or ()) if str(s).strip()
+            ),
             description=str(raw.get("description") or ""),
             display_name=str(raw.get("display_name") or ""),
             pace=pace,
@@ -1409,6 +1436,46 @@ def profile_config_overlay(profile_name: str) -> dict:
     if cwd:
         overlay["terminal"] = {"cwd": cwd}
     return overlay
+
+
+def _active_agent_profile_name() -> str:
+    """当前进程正在替哪个 Agent 干活（profile 名）；不是分身会话 → ''。
+
+    消费点（技能 / 工具 / MCP 的 per-agent 减法）运行在 slash_worker 里，
+    那里唯一的身份通道就是 ``PLOBI_HOME`` 钉在分身家（裁定 180 之后仍成立的
+    配置面约定）。家不在 ``profiles/`` 底下 = 顶层家 = L1 / flat，没有 per-agent
+    偏好可言。
+    """
+    try:
+        from plobi_constants import get_plobi_home
+
+        home = get_plobi_home()
+    except Exception:
+        return ""
+    if home.parent.name != "profiles":
+        return ""
+    return home.name
+
+
+def agent_disabled_sets(profile_name: str = "") -> dict:
+    """这一个 Agent 的三份工具黑名单；不是分身 / 查无此行 → 全空。
+
+    只读名册一行，**不碰** ``load_config``（本函数会被 config 消费链上的代码
+    调用，而名册行覆盖是在 ``_load_config_impl`` 内部叠的——再进去就是递归）。
+    名单存的是 skill / toolset / MCP 服务器名，消费方自行做大小写归一。
+    """
+    want = (profile_name or _active_agent_profile_name()).strip().casefold()
+    if not want:
+        return {"skills": set(), "toolsets": set(), "mcp_servers": set()}
+    found = _registry_and_entry_for_profile(want)
+    if found is None:
+        return {"skills": set(), "toolsets": set(), "mcp_servers": set()}
+    entry = found[1]
+    return {
+        "skills": {s.casefold() for s in entry.disabled_skills},
+        "toolsets": {s.casefold() for s in entry.disabled_toolsets},
+        "mcp_servers": {s.casefold() for s in entry.disabled_mcp_servers},
+    }
 
 
 def set_profile_model_override(profile_name: str, provider: str, model: str) -> str:

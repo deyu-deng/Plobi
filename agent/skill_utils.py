@@ -367,6 +367,11 @@ def get_disabled_skill_names(platform: str | None = None) -> Set[str]:
 
     Reads the config file directly (no CLI config imports) to stay
     lightweight.
+
+    Per-agent dimension (2026-10-19): inside a 分身 session (PLOBI_HOME pinned
+    at a profile home) the roster row's ``disabled_skills`` union in — the
+    global table stays the single source, the agent row only subtracts. Must
+    not call ``load_config`` here: this runs on the config overlay chain.
     """
     parsed = _load_raw_config()
     if not parsed:
@@ -383,6 +388,12 @@ def get_disabled_skill_names(platform: str | None = None) -> Set[str]:
         or get_session_env("PLOBI_SESSION_PLATFORM")
     )
     global_disabled = _normalize_string_set(skills_cfg.get("disabled"))
+    try:
+        from plobi.agents.registry import agent_disabled_sets
+
+        global_disabled |= agent_disabled_sets().get("skills", set())
+    except Exception:
+        pass
     if resolved_platform:
         platform_disabled = (skills_cfg.get("platform_disabled") or {}).get(
             resolved_platform

@@ -3763,6 +3763,23 @@ def _load_mcp_config() -> Dict[str, dict]:
         servers = config.get("mcp_servers")
         if not servers or not isinstance(servers, dict):
             return {}
+        # per-agent 减法（2026-10-19 全局真源裁定）：``mcp_servers`` 是这台机器的
+        # 一张全局表，装一个全员可见；名册行只记「这个 Agent 关掉了哪些」，
+        # 这里按当前会话身份滤掉。L1 / flat（顶层家）名册查无此行 = 原样全量。
+        try:
+            from plobi.agents.registry import agent_disabled_sets
+
+            _agent_off = agent_disabled_sets().get("mcp_servers", set())
+            if _agent_off:
+                servers = {
+                    name: cfg
+                    for name, cfg in servers.items()
+                    if str(name).strip().casefold() not in _agent_off
+                }
+                if not servers:
+                    return {}
+        except Exception as exc:
+            logger.debug("per-agent MCP filter skipped: %s", exc)
         # Ensure .env vars are available for interpolation
         try:
             from plobi_cli.env_loader import load_plobi_dotenv

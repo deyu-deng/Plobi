@@ -2812,7 +2812,31 @@ def _restart_slash_worker(sid: str, session: dict):
     _attach_worker(sid, session, new_worker)
 
 
-def _persist_model_switch(result) -> None:
+def _persist_model_switch(result, session=None) -> None:
+    # Agent 会话：选择记在**名册那一行**（这个 Agent 记住自己上次选的模型），
+    # 绝不写共享 config 的 ``model.default``——那一份是全局默认（L1 / flat 的），
+    # 一个分身的选择把它刷掉等于「所有 Agent 一起换」（裁 166 后只有这一份配置，
+    # _write_profile_model 的教训原样适用于这条腿）。读侧由
+    # profile_config_overlay 读时叠，生效链与桌面「给这个 Agent 选主模型」同一条。
+    # 名册写失败只降级为会话级（model_override 仍钉着本会话），不回落写全局。
+    if isinstance(session, dict):
+        profile_name = Path(str(session.get("profile_home") or "")).name
+        if profile_name:
+            try:
+                from plobi.agents.registry import RegistryError, set_profile_model_override
+
+                set_profile_model_override(
+                    profile_name, result.target_provider, result.new_model
+                )
+                return
+            except RegistryError as exc:
+                logger.warning(
+                    "per-agent model persist failed for profile %r — keeping the "
+                    "switch session-scoped instead of touching the shared default: %s",
+                    profile_name,
+                    exc,
+                )
+                return
     # Use targeted, atomic key writes (comment/ordering-preserving) instead of
     # rewriting the whole `model:` block. A full-block rewrite via save_config()
     # destroys sibling keys the user set under `model:` — `model_slots`,
@@ -3014,7 +3038,7 @@ def _apply_model_switch(
             "api_mode": result.api_mode,
         }
     if persist_global:
-        _persist_model_switch(result)
+        _persist_model_switch(result, session)
     return {
         "value": result.new_model,
         "warning": result.warning_message or "",
