@@ -71,12 +71,39 @@ export interface TryResult {
   state: string
 }
 
+/**
+ * 拆信封。**这一层是整个模块最容易搞错的地方，所以单独一个函数并配一条用例。**
+ *
+ * 后端这几条路由回的是 `{ ok: true, data: … }`，而 `fetchJson`（electron/main.ts）
+ * **只 JSON.parse、不解包**——所以 `window.plobiDesktop.api()` 拿到的是**整个信封**。
+ * （`/api/collect/*` 别处回的是裸对象，那几条才是这一族里的异类；改它们是破坏性的，
+ * 所以这里适配，不动它们。）
+ *
+ * **解不出来就抛，并说清期望的形状** —— 不许静默给一个空对象：空对象会让下游拿到
+ * `undefined.sources`，然后崩在离原因十万八千里的一行上。第一版就是这么崩的：
+ * 「Cannot read properties of undefined (reading 'map')」指向 `.map`，而真正的原因
+ * 在这里少解了一层信封 ——**崩的地方永远不是出问题的地方**。
+ */
+export function unwrapData<T>(envelope: unknown, what: string): T {
+  if (envelope && typeof envelope === 'object' && 'data' in (envelope as { data?: unknown })) {
+    return (envelope as { data: T }).data
+  }
+
+  throw new Error(
+    `The backend answered ${what} with a shape this panel does not recognise — expected ` +
+    '{ ok: true, data: … } but the top level has no "data". If you just changed the backend, ' +
+    'restart it: the backend is a separate process and does not pick up code changes.'
+  )
+}
+
 export async function getSources(): Promise<SourcesPayload> {
-  return window.plobiDesktop.api<SourcesPayload>({ path: '/api/collect/sources' })
+  return unwrapData<SourcesPayload>(
+    await window.plobiDesktop.api({ path: '/api/collect/sources' }), '/api/collect/sources'
+  )
 }
 
 export async function setSourceEnabled(sourceId: string, enabled: boolean): Promise<void> {
-  await window.plobiDesktop.api<{ enabled: boolean }>({
+  await window.plobiDesktop.api({
     path: `/api/collect/sources/${encodeURIComponent(sourceId)}/enabled`,
     method: 'POST',
     body: { enabled }
@@ -90,14 +117,13 @@ export async function setSourceEnabled(sourceId: string, enabled: boolean): Prom
  * （按钮文案里那句「会真的跑一次」），不许让用户以为只是刷新一下。
  */
 export async function trySource(sourceId: string): Promise<TryResult> {
-  return window.plobiDesktop.api<TryResult>({
-    path: `/api/collect/sources/${encodeURIComponent(sourceId)}/try`,
-    method: 'POST'
-  })
+  const path = `/api/collect/sources/${encodeURIComponent(sourceId)}/try`
+
+  return unwrapData<TryResult>(await window.plobiDesktop.api({ path, method: 'POST' }), path)
 }
 
 export async function saveSourceSetup(sourceId: string, params: Record<string, string>): Promise<void> {
-  await window.plobiDesktop.api<{ setup: Record<string, string> }>({
+  await window.plobiDesktop.api({
     path: `/api/collect/sources/${encodeURIComponent(sourceId)}/setup`,
     method: 'POST',
     body: { params }
@@ -114,9 +140,9 @@ export interface ExternalPackage {
 }
 
 export async function getExternalPackages(): Promise<ExternalPackage[]> {
-  const body = await window.plobiDesktop.api<{ packages: ExternalPackage[] }>({
-    path: '/api/collect/sources/external'
-  })
+  const body = unwrapData<{ packages: ExternalPackage[] }>(
+    await window.plobiDesktop.api({ path: '/api/collect/sources/external' }), '/api/collect/sources/external'
+  )
 
   return body.packages ?? []
 }
@@ -128,21 +154,27 @@ export async function getExternalPackages(): Promise<ExternalPackage[]> {
  * 名字闸门不在这一层——它在 CLI 那一层。这里只 spawn。
  */
 export async function installExternalPackage(packageName: string): Promise<string> {
-  const body = await window.plobiDesktop.api<{ name: string }>({
-    path: '/api/collect/sources/external/install',
-    method: 'POST',
-    body: { package: packageName, upgrade: true }
-  })
+  const body = unwrapData<{ name: string }>(
+    await window.plobiDesktop.api({
+      path: '/api/collect/sources/external/install',
+      method: 'POST',
+      body: { package: packageName, upgrade: true }
+    }),
+    '/api/collect/sources/external/install'
+  )
 
   return body.name
 }
 
 export async function removeExternalPackage(packageName: string): Promise<string> {
-  const body = await window.plobiDesktop.api<{ name: string }>({
-    path: '/api/collect/sources/external/remove',
-    method: 'POST',
-    body: { package: packageName }
-  })
+  const body = unwrapData<{ name: string }>(
+    await window.plobiDesktop.api({
+      path: '/api/collect/sources/external/remove',
+      method: 'POST',
+      body: { package: packageName }
+    }),
+    '/api/collect/sources/external/remove'
+  )
 
   return body.name
 }
