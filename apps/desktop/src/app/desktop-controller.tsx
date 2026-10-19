@@ -51,7 +51,7 @@ import {
   setPetOverlaySubmitHandler
 } from '../store/pet-overlay'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
-import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshActiveProfile, refreshProfiles } from '../store/profile'
+import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
 import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
 import {
   $activeSessionId,
@@ -116,6 +116,7 @@ import {
 } from './desktop-controller-utils'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
+import { useProfileScopeSync } from './gateway/hooks/use-profile-scope-sync'
 import { useKeybinds } from './hooks/use-keybinds'
 import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from './layout-constants'
 import { ModelPickerOverlay } from './model-picker-overlay'
@@ -685,32 +686,15 @@ export function DesktopController() {
   // without this the statusbar keeps showing the previous profile's model
   // (the "forgets the LLM setting" report). gatewayState stays 'open' across a
   // swap (background sockets persist), so the open→open effect won't re-run.
-  const activeGatewayProfile = useStore($activeGatewayProfile)
-  const lastGatewayProfileRef = useRef(activeGatewayProfile)
-
-  useEffect(() => {
-    if (activeGatewayProfile === lastGatewayProfileRef.current) {
-      return
-    }
-
-    lastGatewayProfileRef.current = activeGatewayProfile
-    // Force: the new profile has its own default, so reseed even if the composer
-    // already shows the previous profile's model.
-    void refreshCurrentModel(true)
-    void refreshActiveProfile()
-  }, [activeGatewayProfile, refreshCurrentModel])
-
-  // 裁定 44:「一个 Agent 一张嘴」— the composer's model/provider stickiness is an
-  // attribute of the person you're talking to, not of this window. `chatScope` is
-  // memoized on the route, so this runs on mount and on every L1 ↔ L2 / L2 ↔ L2
-  // switch. `refreshCurrentModel` first re-points the persistence cell at that
-  // scope (and re-hydrates the pill from it, so leaving a project restores the
-  // secretary's own last pick), then: `force` for an agent = that agent's cell
-  // outranks the profile default; `false` for the flat scope = fill only when
-  // empty, so boot and profile-swap behaviour is unchanged.
-  useEffect(() => {
-    void refreshCurrentModel(chatScope?.kind === 'agent')
-  }, [chatScope, refreshCurrentModel])
+  useProfileScopeSync({
+    activeSessionId,
+    chatScope,
+    freshDraftReady,
+    gatewayState,
+    refreshCurrentModel,
+    refreshPlobiConfig,
+    refreshSessions
+  })
 
   const composer = useComposerActions({
     activeSessionId,
@@ -1152,14 +1136,6 @@ export function DesktopController() {
     refreshSessions
   })
 
-  useEffect(() => {
-    if (gatewayState === 'open') {
-      void refreshCurrentModel()
-      void refreshActiveProfile()
-      void refreshSessions().catch(() => undefined)
-    }
-  }, [gatewayState, refreshCurrentModel, refreshSessions])
-
   // Keep the cron jobs section live without a user action: the scheduler ticks
   // in the background (advancing next-run/state and creating runs), so poll the
   // job list on an interval (and on tab re-focus) while connected.
@@ -1234,13 +1210,6 @@ export function DesktopController() {
       document.removeEventListener('visibilitychange', tick)
     }
   }, [activeIsMessaging, gatewayState, refreshActiveMessagingTranscript])
-
-  useEffect(() => {
-    if (gatewayState === 'open' && !activeSessionId && freshDraftReady) {
-      void refreshCurrentModel()
-      void refreshPlobiConfig()
-    }
-  }, [activeSessionId, freshDraftReady, gatewayState, refreshCurrentModel, refreshPlobiConfig])
 
   useRouteResume({
     activeSessionId,
