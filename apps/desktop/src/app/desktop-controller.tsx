@@ -38,7 +38,6 @@ import {
   FILE_BROWSER_MIN_WIDTH,
   pinSession,
   PREVIEW_PANE_ID,
-  restoreWorktree,
   RIGHT_RAIL_VIEW_NOTES,
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
@@ -56,7 +55,7 @@ import {
 } from '../store/pet-overlay'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import { $activeGatewayProfile, $freshSessionRequest, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshActiveProfile, refreshProfiles } from '../store/profile'
-import { $startWorkSessionRequest, followActiveSessionCwd, resolveNewSessionCwd } from '../store/projects'
+import { resolveNewSessionCwd } from '../store/projects'
 import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
 import {
   $activeSessionId,
@@ -156,6 +155,7 @@ import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
 import { usePlobiConfig } from './session/hooks/use-plobi-config'
+import { useWorkspaceSessionStart } from './session/hooks/use-workspace-session-start'
 import { useMessageErrorDismiss } from './session/hooks/use-message-error-dismiss'
 import { useMessageStream } from './session/hooks/use-message-stream'
 import { useModelControls } from './session/hooks/use-model-controls'
@@ -904,67 +904,7 @@ export function DesktopController() {
 
   const { dismissError } = useMessageErrorDismiss({ activeSessionIdRef, updateSessionState })
 
-  const startSessionInWorkspace = useCallback(
-    (path: null | string) => {
-      startFreshSessionDraft()
-
-      // A worktree lane carries its own path; the trunk "+" can be path-less (the
-      // main checkout is implicit), so fall back to the active project's root
-      // instead of no-op'ing on null — that was "+ on main does nothing".
-      const target = path?.trim() || resolveNewSessionCwd()
-
-      if (!target) {
-        return
-      }
-
-      // The next message creates the backend session in $currentCwd, so seed
-      // it (and the branch) from the workspace the user clicked the + on.
-      setCurrentCwd(target)
-      void requestGateway<{ branch?: string; cwd?: string }>('config.get', { key: 'project', cwd: target })
-        .then(info => {
-          const resolved = info.cwd || target
-
-          setCurrentCwd(resolved)
-          setCurrentBranch(info.branch || '')
-
-          // An EXPLICIT target (a worktree/lane path — e.g. just-created via
-          // "convert a branch" / "new worktree") drills the sidebar into that
-          // project so the new lane is visible at once. Without this, a brand-new
-          // worktree session is invisible from the all-projects overview (the
-          // live overlay skips `.worktrees` rows, and the session.info cwd-follow
-          // only fires on a same-session move, not a fresh session). The
-          // path-less trunk "+" keeps the current scope untouched.
-          if (path?.trim()) {
-            restoreWorktree(resolved)
-            void followActiveSessionCwd(resolved)
-          }
-        })
-        .catch(() => undefined)
-    },
-    [requestGateway, startFreshSessionDraft]
-  )
-
-  // Composer "branch off into a new worktree": the composer already created the
-  // worktree and cleared its draft; open a fresh session anchored to that tree,
-  // then prefill the task that kicked it off. startSessionInWorkspace owns the
-  // reset+cwd seed (it runs startFreshSessionDraft, which would otherwise stomp
-  // the cwd back to the default), so the prefill is dispatched right after — its
-  // deferred event lands once the fresh composer has remounted and rebound.
-  const startWorkSessionRequest = useStore($startWorkSessionRequest)
-  const lastStartWorkTokenRef = useRef(startWorkSessionRequest?.token ?? 0)
-
-  useEffect(() => {
-    if (!startWorkSessionRequest || startWorkSessionRequest.token === lastStartWorkTokenRef.current) {
-      return
-    }
-
-    lastStartWorkTokenRef.current = startWorkSessionRequest.token
-    startSessionInWorkspace(startWorkSessionRequest.path)
-
-    if (startWorkSessionRequest.draft) {
-      requestComposerInsert(startWorkSessionRequest.draft, { target: 'main' })
-    }
-  }, [startSessionInWorkspace, startWorkSessionRequest])
+  const { startSessionInWorkspace } = useWorkspaceSessionStart({ requestGateway, startFreshSessionDraft })
 
   const handleSkinCommand = useSkinCommand()
 
