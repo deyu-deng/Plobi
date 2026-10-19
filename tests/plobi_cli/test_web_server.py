@@ -4219,9 +4219,13 @@ class TestNewEndpoints:
         monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
 
         self.client.post("/api/profiles", json={"name": "soul-prof"})
+        # WP-PROFILE-STOP-SEEDING: 创建侧不再种一份默认 SOUL.md（人设共享一份
+        # ＋名册行人设片段，裁 42.2 / 156），所以新家的这一格先必须是「没有自己的
+        # 那份」。这条判据原来断 exists is True，断的其实是那粒播种。
         get1 = self.client.get("/api/profiles/soul-prof/soul")
         assert get1.status_code == 200
-        assert get1.json()["exists"] is True
+        assert get1.json()["exists"] is False
+        assert get1.json()["content"] == ""
 
         put = self.client.put(
             "/api/profiles/soul-prof/soul",
@@ -4231,6 +4235,8 @@ class TestNewEndpoints:
 
         got = self.client.get("/api/profiles/soul-prof/soul").json()
         assert got["content"] == "# Edited soul"
+        # 写过之后这一格才归这个家所有
+        assert got["exists"] is True
 
         self.client.delete("/api/profiles/soul-prof")
 
