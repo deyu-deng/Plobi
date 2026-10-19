@@ -304,6 +304,21 @@ def test_row_still_present_in_any_status_is_not_lost():
     assert verify_register_cells.lost_live_cells(head, work) == []
 
 
+def test_flatten_braces_is_one_implementation_and_stays_inside_the_path():
+    # 门与执行脚本共用这支：花括号必须先摊平再切逗号，否则剩下半个 token = 谁都不拦
+    f = verify_register_cells.flatten_braces
+    assert f("Code/apps/desktop/src/i18n/{en,zh,types}.ts").split("、") == [
+        "Code/apps/desktop/src/i18n/en.ts", "Code/apps/desktop/src/i18n/zh.ts",
+        "Code/apps/desktop/src/i18n/types.ts"]
+    # `}` 后面的中文说明不能被吞进文件名（旧版 `(\S*)` 就吞了），也不能拼出双斜杠或半个反引号
+    got = f("族列 `Code/x/{a,b}`（新建）与 `Code/y/z.py`")
+    assert "Code/x/a" in got and "Code/x/b" in got, got
+    assert "（新建）" in got and "Code/y/z.py" in got, got      # 说明文字与后面的路径各归各位
+    assert "//" not in got, got
+    assert got.count("`") == 4, got                             # 两对反引号，没多出半个
+    assert f("Code/plobi/pool/**") == "Code/plobi/pool/**"
+
+
 def test_no_session_db_says_so_instead_of_passing():
     # SKIP ≠ 通过：库读不到时必须出声，不能让这条门静默变成「都活着」
     live, why = verify_register_cells.live_sessions(paths=())
