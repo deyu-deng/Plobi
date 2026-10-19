@@ -43,8 +43,12 @@ def test_memory_schema_is_well_formed():
     # single-op shape and is omitted when the batch ``operations`` array is used.
     assert params["required"] == ["target"]
     # Nested ``enum`` on property values is fine — only top-level is forbidden.
+    # 裁定 185：action 只有三个原子动词，没有"业务分支"那种参数。
     assert params["properties"]["action"]["enum"] == ["add", "replace", "remove"]
-    assert params["properties"]["target"]["enum"] == ["memory", "user"]
+    # 裁定 181：四个作用域是四个数据位置（global 的规则是"要人批"，不是新动作）。
+    assert set(params["properties"]["target"]["enum"]) == {
+        "memory", "user", "status", "global"}
+    assert "source" in params["properties"], "出处指针没了，2200 字撑不住三份"
     # Batch shape is exposed and its items reuse the same actions.
     assert params["properties"]["operations"]["type"] == "array"
     assert params["properties"]["operations"]["items"]["properties"]["action"]["enum"] == ["add", "replace", "remove"]

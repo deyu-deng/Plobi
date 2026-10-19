@@ -138,21 +138,23 @@ def test_cli_memory_approve_without_live_agent_uses_fresh_store(plobi_home, caps
 
 
 def test_load_on_disk_store_honors_configured_char_limits(plobi_home, monkeypatch):
-    """load_on_disk_store() must read memory.memory_char_limit /
-    user_char_limit from config so approvals applied without a live agent
-    enforce the SAME caps as the live agent (agent_init.py). Falls back to
-    defaults when config can't be loaded.
+    """load_on_disk_store() must read the three per-scope caps from config
+    (``memory.global_char_limit`` / ``agent_char_limit`` / ``user_char_limit``,
+    裁定 181) so approvals applied without a live agent enforce the SAME caps as
+    the live agent (agent_init.py). Falls back to defaults when config can't load.
     """
     from tools.memory_tool import load_on_disk_store
 
     # Config override path: helper picks up the configured limits.
     monkeypatch.setattr(
         "plobi_cli.config.load_config",
-        lambda: {"memory": {"memory_char_limit": 999, "user_char_limit": 444}},
+        lambda: {"memory": {"agent_char_limit": 999, "user_char_limit": 444,
+                             "global_char_limit": 777}},
     )
     store = load_on_disk_store()
     assert store.memory_char_limit == 999
     assert store.user_char_limit == 444
+    assert store.global_char_limit == 777
 
     # Failure path: config raises → defaults, never blows up.
     def _boom():
