@@ -3276,6 +3276,7 @@ class SessionDB:
         id_query: str = None,
         search_query: str = None,
         compact_rows: bool = False,
+        agent_id: str = None,
     ) -> List[Dict[str, Any]]:
         """List sessions with preview (first user message) and last active timestamp.
 
@@ -3355,6 +3356,12 @@ class SessionDB:
             where_clauses.append("s.archived = 1")
         elif not include_archived:
             where_clauses.append("s.archived = 0")
+        # 行级归属（裁定 180 / 缺口 B）：单库总账上按 agent_id 圈定「这个 Agent
+        # 的会话」。旧的一家一库读法在这里等价于本过滤；None = 不过滤
+        # （L1 / flat 的全量视图，历史行为）。
+        if agent_id:
+            where_clauses.append("s.agent_id = ?")
+            params.append(agent_id)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -4795,6 +4802,7 @@ class SessionDB:
         offset: int = 0,
         sort: str = None,
         include_inactive: bool = False,
+        agent_id: str = None,
     ) -> List[Dict[str, Any]]:
         """
         Full-text search across session messages using FTS5.
@@ -4876,6 +4884,10 @@ class SessionDB:
             role_placeholders = ",".join("?" for _ in role_filter)
             where_clauses.append(f"m.role IN ({role_placeholders})")
             params.extend(role_filter)
+        # 行级归属（缺口 B）：FTS 也只在这个 Agent 的会话里搜；None = 全库。
+        if agent_id:
+            where_clauses.append("s.agent_id = ?")
+            params.append(agent_id)
 
         where_sql = " AND ".join(where_clauses)
         params.extend([limit, offset])
@@ -5111,6 +5123,7 @@ class SessionDB:
         query: str,
         limit: int = 20,
         include_archived: bool = True,
+        agent_id: str = None,
     ) -> List[Dict[str, Any]]:
         """Search surfaced sessions by exact/prefix/substring session id.
 
@@ -5136,6 +5149,7 @@ class SessionDB:
             include_archived=include_archived,
             order_by_last_active=True,
             id_query=needle,
+            agent_id=agent_id,
         )
 
         def score(row: Dict[str, Any]) -> int:
@@ -5202,6 +5216,7 @@ class SessionDB:
         archived_only: bool = False,
         exclude_children: bool = False,
         exclude_sources: List[str] = None,
+        agent_id: str = None,
     ) -> int:
         """Count sessions, optionally filtered by source.
 
@@ -5244,6 +5259,10 @@ class SessionDB:
             where_clauses.append("s.archived = 1")
         elif not include_archived:
             where_clauses.append("s.archived = 0")
+        # 行级归属（缺口 B）：单库总账上圈定「这个 Agent 的」计数；None = 不过滤。
+        if agent_id:
+            where_clauses.append("s.agent_id = ?")
+            params.append(agent_id)
 
         where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -5251,12 +5270,18 @@ class SessionDB:
             cursor = self._conn.execute(f"SELECT COUNT(*) FROM sessions s{where_sql}", params)
             return cursor.fetchone()[0]
 
-    def message_count(self, session_id: str = None) -> int:
-        """Count messages, optionally for a specific session."""
+    def message_count(self, session_id: str = None, agent_id: str = None) -> int:
+        """Count messages, optionally for a specific session or per-agent（缺口 B）。"""
         with self._lock:
             if session_id:
                 cursor = self._conn.execute(
                     "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+                )
+            elif agent_id:
+                cursor = self._conn.execute(
+                    "SELECT COUNT(*) FROM messages "
+                    "WHERE session_id IN (SELECT id FROM sessions WHERE agent_id = ?)",
+                    (agent_id,),
                 )
             else:
                 cursor = self._conn.execute("SELECT COUNT(*) FROM messages")
@@ -5587,8 +5612,10 @@ class SessionDB:
             self._remove_session_files(sessions_dir, sid)
         return count
 
-    def count_empty_sessions(self) -> int:
+    def count_empty_sessions(self, agent_id: str = None) -> int:
         """Return the count of empty, non-active, non-archived sessions.
+
+        ``agent_id``（缺口 B）圈定「这个 Agent 的」空会话计数；None = 全库。
 
         "Empty" = ``message_count = 0`` AND the session has ended
         (``ended_at IS NOT NULL``) AND is not archived. The ``ended_at``
@@ -5604,19 +5631,33 @@ class SessionDB:
         count.
         """
         with self._lock:
-            cursor = self._conn.execute(
-                "SELECT COUNT(*) FROM sessions "
-                "WHERE message_count = 0 "
-                "AND ended_at IS NOT NULL "
-                "AND archived = 0"
-            )
+            if agent_id:
+                cursor = self._conn.execute(
+                    "SELECT COUNT(*) FROM sessions "
+                    "WHERE message_count = 0 "
+                    "AND ended_at IS NOT NULL "
+                    "AND archived = 0 "
+                    "AND agent_id = ?",
+                    (agent_id,),
+                )
+            else:
+                cursor = self._conn.execute(
+                    "SELECT COUNT(*) FROM sessions "
+                    "WHERE message_count = 0 "
+                    "AND ended_at IS NOT NULL "
+                    "AND archived = 0"
+                )
             return cursor.fetchone()[0]
 
     def delete_empty_sessions(
         self,
         sessions_dir: Optional[Path] = None,
+        agent_id: str = None,
     ) -> int:
         """Delete every empty, ended, non-archived session.
+
+        ``agent_id``（缺口 B）圈定「这个 Agent 的」空会话——单库之后不圈就是
+        把别人的空会话一起删；None = 全库（历史行为）。
 
         Mirrors :meth:`prune_sessions`' transactional shape:
 
@@ -5644,12 +5685,22 @@ class SessionDB:
         removed_ids: list[str] = []
 
         def _do(conn):
-            cursor = conn.execute(
-                "SELECT id FROM sessions "
-                "WHERE message_count = 0 "
-                "AND ended_at IS NOT NULL "
-                "AND archived = 0"
-            )
+            if agent_id:
+                cursor = conn.execute(
+                    "SELECT id FROM sessions "
+                    "WHERE message_count = 0 "
+                    "AND ended_at IS NOT NULL "
+                    "AND archived = 0 "
+                    "AND agent_id = ?",
+                    (agent_id,),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT id FROM sessions "
+                    "WHERE message_count = 0 "
+                    "AND ended_at IS NOT NULL "
+                    "AND archived = 0"
+                )
             session_ids = {row["id"] for row in cursor.fetchall()}
 
             if not session_ids:
