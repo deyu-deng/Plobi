@@ -3,8 +3,8 @@ import {
   BranchPickerPrimitive,
   ErrorPrimitive,
   MessagePrimitive,
-  useAuiState,
-  useMessageRuntime
+  useAui,
+  useAuiState
 } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
 import { type FC, useCallback, useMemo, useState } from 'react'
@@ -53,7 +53,9 @@ export const AssistantMessage: FC<{
   onDismissError?: (messageId: string) => void
 }> = ({ onBranchInNewChat, onDismissError }) => {
   const messageId = useAuiState(s => s.message.id)
-  const messageRuntime = useMessageRuntime()
+  // `useMessageRuntime` never existed in @assistant-ui/react 0.15.x — the
+  // message client off the AUI root is the runtime (same getState shape).
+  const messageRuntime = useAui().message()
   const { t } = useI18n()
 
   // PERF: this component must NOT subscribe to the streaming text. Every
@@ -189,7 +191,7 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, getMessageText,
               <Codicon name="ellipsis" />
             </TooltipIconButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" onCloseAutoFocus={e => e.preventDefault()} sideOffset={6}>
+          <DropdownMenuContent align="start" onCloseAutoFocus={(e: Event) => e.preventDefault()} sideOffset={6}>
             <MessageTimestamp />
             <DropdownMenuItem onSelect={() => onBranchInNewChat?.(messageId)}>
               <GitBranchIcon />
@@ -233,7 +235,7 @@ const ReadAloudItem: FC<{ getText: () => string; messageId: string }> = ({ getTe
   return (
     <DropdownMenuItem
       disabled={isPreparing || (!isSpeaking && anyPlaybackActive)}
-      onSelect={e => {
+      onSelect={(e: Event) => {
         e.preventDefault()
         void (isSpeaking ? stopVoicePlayback() : read())
       }}

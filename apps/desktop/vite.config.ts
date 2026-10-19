@@ -62,7 +62,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       '@plobi/shared': path.resolve(__dirname, '../shared/src'),
       react: path.resolve(__dirname, '../../node_modules/react'),
-      'react-dom': path.resolve(__dirname, '../../node_modules/react-dom'),
+      // @audiowave/react pins peer react-dom 19.2.7, so npm hoists a second
+      // react-dom copy (19.2.7) to the workspace root while the desktop tree
+      // gets 19.3.0. Aliasing to the ROOT copy mixed react 19.3.0 with
+      // react-dom 19.2.7 in one process — hooks dispatcher read as null
+      // ("Cannot read properties of null (reading 'useCallback')"). Point at
+      // the desktop tree's 19.3.0 so the pair matches.
+      'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       'react/jsx-dev-runtime': path.resolve(__dirname, '../../node_modules/react/jsx-dev-runtime.js'),
       'react/jsx-runtime': path.resolve(__dirname, '../../node_modules/react/jsx-runtime.js')
     },

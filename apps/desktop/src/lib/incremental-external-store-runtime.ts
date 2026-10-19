@@ -8,6 +8,7 @@ import {
 import {
   type AssistantRuntime,
   type ExternalStoreAdapter,
+  generateId,
   type ThreadMessage,
   useRuntimeAdapters
 } from '@assistant-ui/react'
@@ -135,10 +136,18 @@ class IncrementalExternalStoreThreadRuntimeCore extends ExternalStoreThreadRunti
     }
 
     if (hasUpcomingMessage(isRunning, messages)) {
-      self._assistantOptimisticId = this.repository.appendOptimisticMessage(messages.at(-1)?.id ?? null, {
+      // `appendOptimisticMessage` never existed on MessageRepository in
+      // @assistant-ui/core 0.3.x — the repo API is addOrUpdateMessage, which
+      // takes the caller-supplied id instead of minting one. (The old call
+      // compiled only because vite dev doesn't enforce named exports.)
+      const optimisticId = generateId()
+
+      this.repository.addOrUpdateMessage(messages.at(-1)?.id ?? null, {
+        id: optimisticId,
         role: 'assistant',
         content: []
-      })
+      } as unknown as ThreadMessage)
+      self._assistantOptimisticId = optimisticId
     }
 
     this.repository.resetHead(self._assistantOptimisticId ?? messages.at(-1)?.id ?? null)
