@@ -232,6 +232,70 @@ test('resolveInstallScript refuses the network bootstrap for a local/dirty build
   }
 })
 
+test('resolveInstallScript reuses an installed agent checkout for a local/dirty stamp', async () => {
+  // Regression: a locally-built app (source:"local" / dirty:true) used to fail
+  // unconditionally, even on a machine that already has a managed agent checkout
+  // whose install.ps1 can drive bootstrap without the pinned commit being
+  // reachable. That combination is exactly "rebuild the app, reinstall" — the
+  // upgrade path — and it was bricking itself.
+  const home = mkTmpHome()
+
+  try {
+    let downloaded = false
+    const logs = []
+
+    for (const installStamp of [
+      { commit: 'a'.repeat(40), source: 'local' },
+      { commit: 'a'.repeat(40), dirty: true }
+    ]) {
+      // A fresh machine has no checkout: still the actionable error.
+      await assert.rejects(
+        resolveInstallScript({
+          installStamp,
+          sourceRepoRoot: null,
+          plobiHome: home,
+          emit: () => {},
+          _download: async () => {
+            downloaded = true
+            throw new Error('downloader must not run for a local build')
+          }
+        }),
+        /unpublished local checkout|~\/\.local\/bin\/plobi|Use local gateway/i
+      )
+
+      // Seed the managed checkout, then the same stamp resolves to its installer.
+      const scriptsDir = path.join(home, 'plobi-agent', 'scripts')
+      fs.mkdirSync(scriptsDir, { recursive: true })
+      fs.writeFileSync(path.join(scriptsDir, SCRIPT_NAME), '#!/bin/sh\necho reused\n')
+
+      const result = await resolveInstallScript({
+        installStamp,
+        sourceRepoRoot: null,
+        plobiHome: home,
+        emit: ev => logs.push(ev),
+        _download: async () => {
+          downloaded = true
+          throw new Error('downloader must not run for a local build')
+        }
+      })
+
+      assert.equal(result.source, 'installed-agent')
+      assert.equal(result.path, path.join(scriptsDir, SCRIPT_NAME))
+      assert.equal(result.commit, installStamp.commit)
+      assert.ok(
+        logs.some(ev => /reusing installed agent/.test(ev.line || '')),
+        'emits a reuse log line'
+      )
+
+      // Remove the checkout again so the next stamp starts from "no checkout".
+      fs.rmSync(path.join(home, 'plobi-agent'), { recursive: true, force: true })
+    }
+
+    assert.equal(downloaded, false, 'the network downloader is never invoked for a local build')
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})
 test('resolveInstallScript still downloads for a genuine distributed (clean ci) stamp', async () => {
   // No-regression guard: only local/dirty stamps short-circuit. A clean CI build
   // keeps the existing download path.
