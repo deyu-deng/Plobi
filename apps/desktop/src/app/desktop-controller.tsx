@@ -23,7 +23,7 @@ import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { listAllProfileSessions, setSessionArchived } from '../plobi'
-import { isMessagingSource, MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
+import { MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import {
   $fileBrowserOpen,
@@ -117,6 +117,7 @@ import {
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useProfileScopeSync } from './gateway/hooks/use-profile-scope-sync'
+import { useBackgroundPolling } from './hooks/use-background-polling'
 import { useKeybinds } from './hooks/use-keybinds'
 import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from './layout-constants'
 import { ModelPickerOverlay } from './model-picker-overlay'
@@ -179,23 +180,6 @@ const StarmapView = lazy(async () => ({ default: (await import('./starmap')).Sta
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
-
-// Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
-// Cron sessions are written by a background scheduler tick (the desktop
-// backend), so no user action signals the UI. Poll the bounded cron list on
-// this cadence while the app is open + visible so new runs surface promptly
-// instead of waiting for the next user-triggered refreshSessions().
-const CRON_POLL_INTERVAL_MS = 30_000
-// Messaging-platform turns are written by the background gateway (WeChat,
-// Telegram, Discord, …), not the desktop websocket that drives local chats.
-// Poll the bounded messaging slice while visible so inbound platform traffic
-// appears without requiring a manual refresh or route change.
-const MESSAGING_POLL_INTERVAL_MS = 10_000
-const ACTIVE_MESSAGING_SESSION_POLL_INTERVAL_MS = 5_000
-
-function sessionMatchesStoredId(session: { id: string; _lineage_root_id?: null | string }, id: string): boolean {
-  return session.id === id || session._lineage_root_id === id
-}
 
 export function DesktopController() {
   const queryClient = useQueryClient()
@@ -1136,80 +1120,12 @@ export function DesktopController() {
     refreshSessions
   })
 
-  // Keep the cron jobs section live without a user action: the scheduler ticks
-  // in the background (advancing next-run/state and creating runs), so poll the
-  // job list on an interval (and on tab re-focus) while connected.
-  useEffect(() => {
-    if (gatewayState !== 'open') {
-      return
-    }
-
-    const tick = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshCronJobs()
-      }
-    }
-
-    const intervalId = window.setInterval(tick, CRON_POLL_INTERVAL_MS)
-    document.addEventListener('visibilitychange', tick)
-
-    return () => {
-      window.clearInterval(intervalId)
-      document.removeEventListener('visibilitychange', tick)
-    }
-  }, [gatewayState, refreshCronJobs])
-
-  // Keep messaging-platform session lists live: inbound Telegram/WeChat/Discord
-  // turns are written by the gateway, not the desktop websocket, so they won't
-  // appear without polling.
-  useEffect(() => {
-    if (gatewayState !== 'open') {
-      return
-    }
-
-    const tick = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshMessagingSessions()
-      }
-    }
-
-    const intervalId = window.setInterval(tick, MESSAGING_POLL_INTERVAL_MS)
-    document.addEventListener('visibilitychange', tick)
-
-    return () => {
-      window.clearInterval(intervalId)
-      document.removeEventListener('visibilitychange', tick)
-    }
-  }, [gatewayState, refreshMessagingSessions])
-
-  // Only the open messaging transcript needs a poll — local chats are already
-  // live over the websocket, so arming a timer for them would just no-op every
-  // tick. Gate on the active session actually being a messaging source.
-  const activeIsMessaging =
-    !!selectedStoredSessionId &&
-    isMessagingSource(messagingSessions.find(s => sessionMatchesStoredId(s, selectedStoredSessionId))?.source)
-
-  // Keep the currently-viewed messaging transcript live.
-  useEffect(() => {
-    if (gatewayState !== 'open' || !activeIsMessaging) {
-      return
-    }
-
-    const tick = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshActiveMessagingTranscript()
-      }
-    }
-
-    const intervalId = window.setInterval(tick, ACTIVE_MESSAGING_SESSION_POLL_INTERVAL_MS)
-    document.addEventListener('visibilitychange', tick)
-    tick()
-
-    return () => {
-      window.clearInterval(intervalId)
-      document.removeEventListener('visibilitychange', tick)
-    }
-  }, [activeIsMessaging, gatewayState, refreshActiveMessagingTranscript])
+  useBackgroundPolling({
+    gatewayState,
+    refreshActiveMessagingTranscript,
+    refreshCronJobs,
+    refreshMessagingSessions
+  })
 
   useRouteResume({
     activeSessionId,
