@@ -4,6 +4,18 @@ import * as React from 'react'
 import { SearchIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
+// cmdk 1.1.x types `Input` as accepting only ref/value/onValueChange, but the
+// runtime forwards every extra prop to the inner <input> (`...u` in its
+// forwardRef). Every call site in this app passes className/placeholder/
+// disabled/autoFocus — all valid at runtime, all rejected by the published
+// types. Adapt the type once, here, instead of casting at ~10 call sites.
+const CommandInputPrimitive = CommandPrimitive.Input as React.ForwardRefExoticComponent<
+  Omit<React.ComponentProps<'input'>, 'value' | 'onChange' | 'type'> & {
+    value?: string
+    onValueChange?: (search: string) => void
+  }
+>
+
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
@@ -17,16 +29,18 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
   )
 }
 
-interface CommandInputProps extends React.ComponentProps<typeof CommandPrimitive.Input> {
+interface CommandInputProps extends Omit<React.ComponentProps<'input'>, 'value' | 'onChange' | 'type'> {
   /** Inline trailing slot, rendered on the right of the search row. */
   right?: React.ReactNode
+  value?: string
+  onValueChange?: (search: string) => void
 }
 
 function CommandInput({ className, right, ...props }: CommandInputProps) {
   return (
     <div className="flex h-11 items-center gap-2 border-b border-border px-3" data-slot="command-input-wrapper">
       <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
-      <CommandPrimitive.Input
+      <CommandInputPrimitive
         className={cn(
           'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
           className

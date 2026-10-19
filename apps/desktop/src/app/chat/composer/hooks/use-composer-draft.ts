@@ -1,4 +1,4 @@
-import { useAui, useAuiState, useComposerRuntime } from '@assistant-ui/react'
+import { useAui, useAuiState } from '@assistant-ui/react'
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 
 import { SLASH_COMMAND_RE } from '@/lib/chat-runtime'
@@ -50,7 +50,12 @@ export function useComposerDraft({
   sessionId
 }: UseComposerDraftArgs) {
   const aui = useAui()
-  const composerRuntime = useComposerRuntime()
+  // `useComposerRuntime` never existed in @assistant-ui/react 0.15.x — the
+  // composer client off the AUI root IS the runtime (same getState shape). It
+  // only compiled before because vite dev doesn't enforce named exports; the
+  // first production build (rolldown) caught it.
+  const composerRuntime = aui.composer()
+  const subscribeComposer = useCallback((listener: () => void) => aui.subscribe(listener), [aui])
   const { attachments: $composerAttachments } = useChatContext()
 
   // Coarse edges only — these flip rarely (empty↔non-empty, the `?` help sigil,
@@ -255,13 +260,13 @@ export function useComposerDraft({
       }, DRAFT_PERSIST_DEBOUNCE_MS)
     }
 
-    const unsubscribe = composerRuntime.subscribe(sync)
+    const unsubscribe = subscribeComposer(sync)
 
     return () => {
       unsubscribe()
       window.clearTimeout(draftPersistTimerRef.current)
     }
-  }, [composerRuntime, queueEditRef])
+  }, [composerRuntime, queueEditRef, subscribeComposer])
 
   const insertText = (text: string) => {
     const base = draftRef.current
