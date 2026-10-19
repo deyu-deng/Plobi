@@ -12,6 +12,7 @@ export type SettingsView =
   | 'notifications'
   | 'providers'
   | 'sessions'
+  | 'sources'
   | `config:${string}`
 export type EnvPatch = Partial<Pick<EnvVarInfo, 'is_set' | 'redacted_value'>>
 

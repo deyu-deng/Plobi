@@ -235,9 +235,37 @@ export const zhHant = defineLocale({
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: '已封存聊天',
+      sources: '信源',
       about: '關於',
       notifications: '通知',
       network: 'VPN'
+    },
+sources: {
+      categories: {
+        local: '本機',
+        message: '訊息',
+        social: '社群媒體',
+        system: '系統',
+        website: '網站',
+        custom: '接一個自己的'
+      },
+      disable: '停掉',
+      emptyCategory: '這一類還沒接任何信源。',
+      enable: '打開',
+      lastWrite: count => `上一次進新項目是 ${count} 天前。`,
+      lead: '所有信源寫進同一個行程庫。下面那幾格是讀數——它們說發生了什麼，不說為什麼。',
+      loadFailed: '信源讀數取不到。',
+      noBuilder: '登記為在採，但沒有任何一方構造得出它的採集器。這一條是我們這邊的缺陷，不是你能改的設定。',
+      stateUnknown: '狀態沒記到，不猜。',
+      switchFailed: '開關沒能改。',
+      switchOff: '採集開關沒點。',
+      switchUnreadable: '採集開關讀不到。',
+      title: '信源',
+      tryFailed: '那一輪沒有回來。',
+      tryOnce: '試一次',
+      tryRunsForReal: '會真的跑一次採集——要動網路和磁碟。',
+      tryRunning: '正在跑…',
+      unknownSource: '沒記到名字的信源'
     },
     network: {
       addExit: '新增出口',

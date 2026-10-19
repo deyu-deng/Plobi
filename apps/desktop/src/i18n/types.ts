@@ -308,6 +308,34 @@ export interface Translations {
       about: string
       notifications: string
       network: string
+      sources: string
+    }
+    sources: {
+      categories: {
+        local: string
+        message: string
+        social: string
+        system: string
+        website: string
+        custom: string
+      }
+      disable: string
+      emptyCategory: string
+      enable: string
+      lastWrite: (count: number) => string
+      lead: string
+      loadFailed: string
+      noBuilder: string
+      stateUnknown: string
+      switchFailed: string
+      switchOff: string
+      switchUnreadable: string
+      title: string
+      tryFailed: string
+      tryOnce: string
+      tryRunsForReal: string
+      tryRunning: string
+      unknownSource: string
     }
     network: {
       addExit: string

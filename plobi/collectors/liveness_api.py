@@ -1,31 +1,15 @@
-"""`GET /api/collect/sources` —— 每条信源最后一次真的落库在什么时候。
+"""`/api/collect/sources` 的**旧门牌**（2026-10-19 起指向新家）。
 
-只把 :mod:`plobi.collectors.liveness` 那个探针挂到**既有的** `/api/collect` 前缀下
-（不新增顶层面，§3.3）。探针本身是纯读，路由这层只负责"别用枚举没抛异常当活着"。
+那一格路由 10-15 起住在这里。19 号设置里要做动词（`Docs/specs/source-layer.md`
+§6.1），路由从一条读扩成一读三写，于是搬去了 :mod:`plobi.collectors.sources_api`。
+本模块留着是因为**有外部引用按这个路径 import**——不是留一份旧副本（纪律 3.4），
+是留一个指路牌。
+
+新家比这里多三样：分类 / 生效开关 / 执行方入口，外加三个动词端点。
+`/sources` 的**读的那一半逐字没变**（同一个 `read_source_liveness`，同一份
+`expected_sources` 取注册表），所以既有消费方读到的形状不受影响。
 """
 
-from __future__ import annotations
+from plobi.collectors.sources_api import router
 
-import logging
-
-from fastapi import APIRouter
-from fastapi.concurrency import run_in_threadpool
-
-from plobi.collectors import registry
-from plobi.collectors.liveness import read_source_liveness
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter()
-
-
-@router.get("/sources", name="collect_sources")
-async def collect_sources_route():
-    """每条信源的活性读数 + 一句总结。
-
-    `expected_sources` 取注册表那份名单（唯一真源），所以**新加的信源不会静默消失**：
-    没采过也照样出一行 `never`，而不是"看着像没有这个信源"。
-    """
-    data = await run_in_threadpool(read_source_liveness, None,
-                                   expected_sources=registry.source_ids())
-    return {"ok": True, "data": data}
+__all__ = ["router"]

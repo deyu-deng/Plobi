@@ -246,8 +246,10 @@ from plobi.collectors.timetable.api import router as _timetable_router  # noqa: 
 router.include_router(_timetable_router)
 
 
-# 信源活性探针（"代码合了 ≠ 会在采"那一坑的面）——同一条挂载理由：不开新前缀，
+# 信源那一面（设置里「信源」区）的唯一入口——同一条挂载理由：不开新前缀，
 # 它读的是全信源，不只 chatlog，所以走 `/api/collect/sources`。
-from plobi.collectors.liveness_api import router as _liveness_router  # noqa: E402
+# 19 号从 `liveness_api` 搬到这里：那条路由从一读扩成了一读三写（动词，见
+# `Docs/specs/source-layer.md` §6.1），`liveness_api` 留作指路牌。
+from plobi.collectors.sources_api import router as _sources_router  # noqa: E402
 
-router.include_router(_liveness_router)
+router.include_router(_sources_router)
