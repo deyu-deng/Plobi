@@ -22,9 +22,12 @@ proves in production, not a new mechanism:
   ``--cli --accept-hooks chat -q``).
 * **The question is attributed** in the text the child receives, so it knows
   who is asking and why.
-* **The record is the child's own session.** It runs inside its own profile, so
-  that profile's ``state.db`` already holds the exchange; the answer and the
-  session id are read back out of it. No second transcript store.
+* **The record is the child's own session.** The child's config/skills/memories
+  come from its profile home (``PLOBI_HOME``, 裁定 179), but its session ledger
+  is the shared top-level one: the spawner passes ``PLOBI_STATE_HOME``（缺口 A）
+  and ``PLOBI_AGENT_ID``（裁定 180）so the exchange lands in the single
+  ``state.db`` attributed to this 分身 by row; the answer and the session id
+  are read back out of that same ledger. No second transcript store.
 * **Guards**: a bounded timeout (the caller's ``config.yaml`` knob is the floor;
   裁定 167 乙档 lets the asked 分身's own measured history raise it — hard ceiling
   in code, never a ``PLOBI_*`` env var), ``--yolo`` is never in the argv, and every
@@ -54,6 +57,7 @@ import time
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, Sequence
 
+from plobi_constants import get_plobi_state_home
 from tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
@@ -250,18 +254,21 @@ def _one_shot_durations(entry, *, runs: int = HISTORY_RUNS_CONSIDERED) -> list[f
     工具，只量第一个 LLM 步会系统性低估（现核同一趟：首答 23 秒、到底 185 秒），低到让
     这把刀反过来把等待砍短——那正是它要治的病。
     """
-    db_path = _child_state_db(entry)
+    db_path = _child_state_db()
     if db_path is None:
         return []
     rows = _query_rows(
         db_path,
+        # 总账是单库（缺口 A），历史耗时只认**这个分身**的行——agent_id 由
+        # 子进程建会话时落（PLOBI_AGENT_ID）。老家的家库快照不在此处兜底：
+        # 那份只剩迁移前旧数据，拿它算耗时反而是过期的假证据。
         "SELECT min(CASE WHEN m.role = 'user' THEN m.timestamp END),"
         "       max(CASE WHEN m.role = 'assistant' THEN m.timestamp END),"
         "       sum(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) "
         "  FROM sessions s JOIN messages m ON m.session_id = s.id "
-        " WHERE s.source = 'cli' "
+        " WHERE s.source = 'cli' AND s.agent_id = ? "
         " GROUP BY s.id ORDER BY max(m.timestamp) DESC LIMIT ?",
-        (runs,),
+        (entry.name, runs),
     )
     durations: list[float] = []
     for asked, answered, turns in rows:
@@ -536,6 +543,15 @@ def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[li
             _available_names(askable_entries()),
         ) from exc
     child_env["PLOBI_PROFILE"] = profile
+    # 缺口 A（WP-AGENT-SESSION-ATTRIBUTION）：身份的家拆两面。配置/技能/记忆
+    # 跟着上面的 PLOBI_HOME 走（裁定 179，按家分持）；会话总账单独指到本进程
+    # 自己的总账（``PLOBI_STATE_HOME``）——子分身的问答与 L1/桌面落同一个单库，
+    # 按行级归属，家库里不再长出第二份流水账。嵌套场景（秘书自己也是被派出来
+    # 的子进程）要把**自己的总账**原样传下去，而不是把自己 PLOBI_HOME 当总账。
+    child_env["PLOBI_STATE_HOME"] = str(get_plobi_state_home())
+    # 裁定 180 的归属键：子进程建会话时（cli.py create_session）读它落到
+    # sessions.agent_id——总账里这一行才能认出是「Resonote 答的」而不是 L1。
+    child_env["PLOBI_AGENT_ID"] = entry.name
     # 裁定 42 §42.2 第 6 项的「密钥」这一样：只有这条记录声明的覆盖进得到子进程，
     # 共享的那几把我从继承来的环境里拿——分身的家里不留第二份 .env。
     from plobi.agents.registry import apply_secret_overrides
@@ -581,13 +597,14 @@ def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[li
 # ---------------------------------------------------------------------------
 
 
-def _child_state_db(entry) -> Optional[Path]:
-    try:
-        from plobi_cli.profiles import get_profile_dir
+def _child_state_db() -> Path:
+    """子分身会话的真源：单库总账（缺口 A 之后不再是分身家的 state.db）。
 
-        return get_profile_dir(entry.profile_name) / "state.db"
-    except Exception:
-        return None
+    与 spawn 时传给子进程的 ``PLOBI_STATE_HOME`` 同一来源（
+    :func:`plobi_constants.get_plobi_state_home`）——同一个进程里 env 不会
+    中途变，读回去的就是子进程刚写的那份。
+    """
+    return get_plobi_state_home() / "state.db"
 
 
 def _query_rows(db_path: Path, sql: str, params: tuple) -> list[tuple]:
@@ -615,17 +632,17 @@ def _new_session_id(entry, *, not_before: float) -> str:
     """The session the child just ran: the newest one started at/after the spawn.
 
     Best effort by design — an unreadable ``state.db`` costs the pointer, never
-    the answer. The ``not_before`` floor is why the secretary's own (older)
-    session row can't be mistaken for the child's.
+    the answer. 两道防串门的闸：``not_before`` 地板挡住秘书自己（更老的）会话；
+    ``agent_id = entry.name`` 挡住总账里**并发的别人**——单库之后（缺口 A），
+    桌面 / L1 / 其他分身的会话都在同一份库里，光靠时间地板会把别人刚开的
+    会话错认成这一问的记录。
     """
-    db_path = _child_state_db(entry)
-    if db_path is None:
-        return ""
+    db_path = _child_state_db()
     rows = _query_rows(
         db_path,
-        "SELECT id FROM sessions WHERE started_at >= ? "
+        "SELECT id FROM sessions WHERE agent_id = ? AND started_at >= ? "
         "ORDER BY started_at DESC LIMIT 1",
-        (not_before - 2.0,),
+        (entry.name, not_before - 2.0),
     )
     return str(rows[0][0] or "") if rows else ""
 
@@ -634,7 +651,7 @@ def _session_answer(entry, session_id: str) -> str:
     """The child's final answer text, from its own session record."""
     if not session_id:
         return ""
-    db_path = _child_state_db(entry)
+    db_path = _child_state_db()
     if db_path is None:
         return ""
     rows = _query_rows(

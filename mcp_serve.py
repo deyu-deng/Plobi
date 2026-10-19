@@ -451,10 +451,11 @@ class EventBridge:
         could drop brand-new conversations (#8925).
         """
         try:
-            from plobi_constants import get_plobi_home
-            db_file = get_plobi_home() / "state.db"
+            from plobi_constants import get_plobi_state_home
+            # 缺口 A：mtime 探的是会话总账（PLOBI_STATE_HOME），不是身份的家。
+            db_file = get_plobi_state_home() / "state.db"
         except ImportError:
-            db_file = Path(os.environ.get("PLOBI_HOME", Path.home() / ".plobi")) / "state.db"
+            db_file = Path(os.environ.get("PLOBI_STATE_HOME") or os.environ.get("PLOBI_HOME", Path.home() / ".plobi")) / "state.db"
 
         try:
             db_mtime = db_file.stat().st_mtime if db_file.exists() else 0.0

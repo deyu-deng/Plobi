@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 from agent.memory_manager import sanitize_context
-from plobi_constants import get_plobi_home
+from plobi_constants import get_plobi_home, get_plobi_state_home
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -120,7 +120,12 @@ def _delete_delegate_children(conn, parent_ids: List[str]) -> List[str]:
 
 T = TypeVar("T")
 
-DEFAULT_DB_PATH = get_plobi_home() / "state.db"
+# 缺口 A：总账的家单独一个旋钮（``PLOBI_STATE_HOME``，见 get_plobi_state_home）。
+# import 时仍算一份给老调用方（console_engine / main / web_server 的健康检查路径，
+# 子进程的 env 在 exec 前就位，import 时读到的就是对的）；SessionDB 的**默认路径
+# 不吃它**——每次现算（见 __init__），理由同 plobi/agents/registry.py 的 N3 写法：
+# 模块常量把 env 钉在加载那一刻，conftest 的 per-test 重定向对它无效。
+DEFAULT_DB_PATH = get_plobi_state_home() / "state.db"
 
 SCHEMA_VERSION = 21
 
@@ -938,7 +943,10 @@ class SessionDB:
     _OPTIMIZE_EVERY_N_WRITES = 1000
 
     def __init__(self, db_path: Path = None, read_only: bool = False):
-        self.db_path = db_path or DEFAULT_DB_PATH
+        # 默认路径**每次现算**而不是吃模块常量 DEFAULT_DB_PATH：后者把
+        # PLOBI_STATE_HOME / PLOBI_HOME 钉在模块加载那一刻，conftest 的
+        # per-test 重定向对它无效（registry.py N3 处 2026-10-18 实测过同款坑）。
+        self.db_path = db_path or (get_plobi_state_home() / "state.db")
         self.read_only = read_only
 
         self._lock = threading.Lock()

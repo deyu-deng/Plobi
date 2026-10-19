@@ -922,6 +922,8 @@ class CLICommandsMixin:
                 session_id=new_session_id,
                 source=os.environ.get("PLOBI_SESSION_SOURCE", "cli"),
                 model=self.model,
+                # 同 cli.py 主建会话处：单库总账里分支行不能丢归属（缺口 A）。
+                agent_id=os.environ.get("PLOBI_AGENT_ID", "") or "",
                 model_config={
                     "max_iterations": self.max_turns,
                     "reasoning_config": self.reasoning_config,

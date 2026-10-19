@@ -7095,6 +7095,11 @@ class PlobiCLI(CLIAgentSetupMixin, CLICommandsMixin):
                         session_id=self.session_id,
                         source=os.environ.get("PLOBI_SESSION_SOURCE", "cli"),
                         model=self.model,
+                        # 裁定 180 / 缺口 A：总账是单库，被派活的分身（agent_ask
+                        # 传 PLOBI_AGENT_ID）建的会话必须带归属——不然总账里
+                        # 全是空串（=L1），「最近一条会话」会把分身答的算成
+                        # 秘书说的。普通进程没有这个 env，落空串，行为不变。
+                        agent_id=os.environ.get("PLOBI_AGENT_ID", "") or "",
                         model_config={
                             "max_iterations": self.max_turns,
                             "reasoning_config": self.reasoning_config,
