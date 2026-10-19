@@ -1,34 +1,46 @@
 /**
- * 设置 → 信源：分类下的一条条信源，每条一行（`ListRow`），配 §6.1 那张表里的动词。
+ * 设置 → 信源：按分类分组的信源，每条一行（`ListRow`）+ 一个状态胶囊 + 一个动词。
  *
- * 三条纪律都落在这个文件里，改之前先读：
+ * 用户 10-19 第二轮拍定：**界面上只留胶囊，其余全删。** 这一版的规矩：
  *
- * 1. **读数不重算。** 状态与时刻逐字来自 `GET /api/collect/sources`；这一层不拿
- *    `age_days` 自己算一遍"几天前"（那是两份可能不一致的读数），不按 `state` 编新句子。
- * 2. **动词不在这儿定。** `./verbs` 那张表说了算，且表里没有的那一格**就画不出按钮**
- *    ——P6 那条「不许描述不存在的机制」在这里不是原则，是缺省行为。
- * 3. **主题随应用走。** 全程用 `--ui-text-*` / `text-foreground` 那一套 CSS 变量，
- *    没有一个字面色值（裁定：面不许硬编调色板）。
+ * 1. **只说测到的最短那一句。** 状态是一个 `Pill`（「正在采集」/「停了」/「没开」…）。
+ *    后端那句工程说明、什么时候进的账、「不猜」那段自白——**一律不上屏**：它们进日志
+ *    与通知，不进界面。上一版把 `note` 整段渲染出来（连 `**加粗**` 的星号都在界面上），
+ *    那是把内部文档贴到了用户脸上。
+ * 2. **胶囊与按钮同源。** 两者都从 `sources/verbs.ts` 那一张表来（`pillFor` / `verbFor`），
+ *    分开算就会出现「胶囊说开着、按钮说试一次」那种自相矛盾的一行。
+ * 3. **空分类整块不画。** 见 `visibleGroups`。
+ * 4. **主题随应用走。** 全程用仓里那套件（`ListRow` / `Pill` / `SectionHeading` /
+ *    `EmptyState`），零字面色值。
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
-import { Layers3, Play } from '@/lib/icons'
+import { Cpu, FolderOpen, Globe, Layers3, MessageCircle, Package, Play, Users } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
-import { ListRow, SectionHeading, SettingsContent } from './primitives'
+import { ListRow, Pill, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
-import { groupByCategory, verbFor } from './sources/verbs'
+import { groupByCategory, needsSetup, pillFor, pillTone, verbFor, visibleGroups } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
+/** 分类 → 图标。**不用字母或序号代替图标** —— 旁边就是设置里其他分类的写法。 */
+const CATEGORY_ICON: Record<string, typeof Globe> = {
+  custom: Package,
+  local: FolderOpen,
+  message: MessageCircle,
+  social: Users,
+  system: Cpu,
+  website: Globe
+}
+
 export function SourcesSettings() {
-  const { t } = useI18n()
-  const labels = t.settings.sources
+  const labels = useI18n().t.settings.sources
 
   const [payload, setPayload] = useState<null | SourcesPayload>(null)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -67,8 +79,9 @@ export function SourcesSettings() {
     try {
       const result = await trySource(row.source)
       await reload()
-      // 逐字显示执行方自己那句话。这一层不转述、不总结（P6）。
-      notify({ kind: result.ok ? 'success' : 'error', message: result.detail, title: labels.tryOnce })
+      // 逐字显示执行方自己那句话。这一层不转述、不总结（P6）——跑完的细节看这里，
+      // 而设置页那一行只负责说"它现在什么状态"。
+      notify({ kind: result.ok ? 'success' : 'error', message: result.detail })
     } catch (err) {
       notifyError(err, labels.tryFailed)
     } finally {
@@ -80,9 +93,7 @@ export function SourcesSettings() {
     return (
       <SettingsContent>
         <SectionHeading icon={Layers3} title={labels.title} />
-        <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)" data-testid="sources-failed">
-          {labels.loadFailed}
-        </p>
+        <p className="text-sm text-muted-foreground" data-testid="sources-failed">{labels.loadFailed}</p>
       </SettingsContent>
     )
   }
@@ -95,45 +106,32 @@ export function SourcesSettings() {
     )
   }
 
-  const groups = groupByCategory(payload.sources, payload.categories)
+  const groups = visibleGroups(groupByCategory(payload.sources, payload.categories))
 
   return (
     <SettingsContent>
-      <SectionHeading icon={Layers3} title={labels.title} />
-      <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">{labels.lead}</p>
+      <SectionHeading icon={Layers3} meta={String(payload.sources.length)} title={labels.title} />
 
       {groups.map(group => (
-        <section className="mt-5" data-testid={`source-group-${group.category}`} key={group.category}>
-          <h3 className="text-[length:var(--conversation-caption-font-size)] font-medium text-(--ui-text-secondary)">
-            {labels.categories[group.category as keyof Labels['categories']] ?? group.category}
-          </h3>
+        <section className="mt-4" data-testid={`source-group-${group.category}`} key={group.category}>
+          <SectionHeading
+            icon={CATEGORY_ICON[group.category] ?? Layers3}
+            title={labels.categories[group.category as keyof Labels['categories']] ?? group.category}
+          />
 
-          {group.rows.length === 0 ? (
-            <div>
-              <p className="mt-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-                {labels.emptyCategory}
-              </p>
-              {/* 「接一个自己的」不是第六个分类，它**就是**这个空分类的逃生口：空着的时候
-                  给一个真的能接的动作，而不是让这一栏永远是那句「还没接任何信源」。 */}
-              {group.category === 'custom'
-                ? <ExternalSources labels={labels} onChanged={reload} />
-                : null}
-            </div>
-          ) : (
-            <div className="divide-y divide-(--ui-border-subtle)">
-              {group.rows.map(row => (
-                <SourceRowView
-                  busy={busy === row.source}
-                  key={row.source}
-                  labels={labels}
-                  onReload={reload}
-                  onToggle={onToggle}
-                  onTry={onTry}
-                  row={row}
-                />
-              ))}
-            </div>
-          )}
+          {group.category === 'custom' ? <ExternalSources labels={labels} onChanged={reload} /> : null}
+
+          {group.rows.map(row => (
+            <SourceRowView
+              busy={busy === row.source}
+              key={row.source}
+              labels={labels}
+              onReload={reload}
+              onToggle={onToggle}
+              onTry={onTry}
+              row={row}
+            />
+          ))}
         </section>
       ))}
     </SettingsContent>
@@ -156,72 +154,54 @@ function SourceRowView({
   row: SourceRow
 }) {
   const { t } = useI18n()
+  const [setupOpen, setSetupOpen] = useState(false)
   const verb = verbFor(row)
+  const setupPending = needsSetup(row)
 
   return (
     <ListRow
       action={
-        verb === 'try' ? (
-          <Button
-            disabled={busy}
-            onClick={() => { void onTry(row) }}
-            size="sm"
-            title={labels.tryRunsForReal}
-            variant="secondary"
-          >
-            <Play className="mr-1.5 size-3.5" />
-            {busy ? labels.tryRunning : labels.tryOnce}
-          </Button>
-        ) : verb === 'enable' || verb === 'disable' ? (
-          <Button
-            disabled={busy || row.enabled === null}
-            onClick={() => { void onToggle(row, verb === 'enable') }}
-            size="sm"
-            variant="secondary"
-          >
-            {verb === 'enable' ? labels.enable : labels.disable}
-          </Button>
-        ) : null
+        <div className="flex items-center justify-end gap-1.5">
+          {row.setup_fields.length > 0 ? (
+            <Button
+              aria-expanded={setupOpen}
+              onClick={() => { setSetupOpen(open => !open) }}
+              size="sm"
+              variant="textStrong"
+            >
+              {setupPending ? labels.setupNeeded : labels.setup}
+            </Button>
+          ) : null}
+
+          <Pill tone={pillTone(row)}>{labels[pillFor(row)]}</Pill>
+
+          {verb === 'try' ? (
+            <Button
+              disabled={busy}
+              onClick={() => { void onTry(row) }}
+              size="sm"
+              title={labels.tryRunsForReal}
+              variant="secondary"
+            >
+              <Play className="mr-1.5 size-3.5" />
+              {busy ? labels.tryRunning : labels.tryOnce}
+            </Button>
+          ) : verb === 'enable' || verb === 'disable' ? (
+            <Button
+              disabled={busy || row.enabled === null}
+              onClick={() => { void onToggle(row, verb === 'enable') }}
+              size="sm"
+              variant="secondary"
+            >
+              {verb === 'enable' ? labels.enable : labels.disable}
+            </Button>
+          ) : null}
+        </div>
       }
-      below={row.setup_fields.length > 0
-        ? <SetupFields busy={busy} labels={labels} onSaved={onReload} row={row} />
-        : undefined}
-      description={<StatusSentence labels={labels} row={row} />}
       title={t.agenda.sources[row.source as keyof typeof t.agenda.sources] ?? labels.unknownSource}
+      {...(setupOpen && row.setup_fields.length > 0
+        ? { below: <SetupFields busy={busy} labels={labels} onSaved={onReload} row={row} /> }
+        : {})}
     />
-  )
-}
-
-/**
- * 那一行字。**每一句都来自语言目录或后端**：
- *
- * - 有 `note` 就用它（那是活性探针自己写的那句读数注记）；
- * - 开关读得到但关着，就在上面那句之外补一句「采集开关没点」；
- * - `has_builder === false` 额外把产品缺陷说出来——它是 bug 报告那一类，面只报不修。
- *
- * 这里**不按 `state` 编任何新句子**：状态词对应的解释全在语言目录里，挑不到就是没配，
- * 那该报没配，不该在组件里现编一句兜底。
- */
-function StatusSentence({ labels, row }: { labels: Labels; row: SourceRow }) {
-  const pieces: string[] = [row.note || labels.stateUnknown]
-
-  if (row.enabled === false) {
-    pieces.push(labels.switchOff)
-  } else if (row.enabled === null) {
-    pieces.push(labels.switchUnreadable)
-  }
-
-  if (row.has_builder === false && row.enabled === true) {
-    pieces.push(labels.noBuilder)
-  }
-
-  if (row.state === 'live' && row.age_days !== null) {
-    pieces.push(labels.lastWrite(Math.max(0, Math.round(row.age_days))))
-  }
-
-  return (
-    <span className="flex flex-col gap-0.5" data-state={row.state}>
-      {pieces.map(piece => <span key={piece}>{piece}</span>)}
-    </span>
   )
 }

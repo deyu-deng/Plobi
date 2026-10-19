@@ -29,9 +29,9 @@ import { getExternalPackages, installExternalPackage, removeExternalPackage } fr
 
 type Labels = {
   emptyExternal: string
-  externalLead: string
   install: string
   installFailed: string
+  installed: string
   installPlaceholder: string
   installsForeignCode: string
   installedNone: string
@@ -39,8 +39,6 @@ type Labels = {
   packageName: string
   remove: string
   removeFailed: string
-  uninstalled: string
-  uninstalledDone: string
 }
 
 const POLL_MS = 1200
@@ -118,7 +116,7 @@ export function ExternalSources({ labels, onChanged }: { labels: Labels; onChang
       // 只有干净退出才说成功。失败时后端/CLI 写的那句话已经在日志里了 ——
       // 这里不再转述一遍，重复一遍只会让人以为是两件不同的事。
       if (exitCode === 0) {
-        notify({ kind: 'success', message: action === 'install' ? labels.uninstalledDone : labels.uninstalled })
+        notify({ kind: 'success', message: labels.installed })
       } else {
         notify({ kind: 'error', message: action === 'install' ? labels.installFailed : labels.removeFailed })
       }
@@ -131,7 +129,7 @@ export function ExternalSources({ labels, onChanged }: { labels: Labels; onChang
 
   return (
     <div className="mt-2 space-y-3" data-testid="external-sources">
-      <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">{labels.externalLead}</p>
+
 
       <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">{labels.installsForeignCode}</p>
 

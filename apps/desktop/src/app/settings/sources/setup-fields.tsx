@@ -23,11 +23,9 @@ import type { SetupField, SourceRow } from './api'
 import { saveSourceSetup } from './api'
 
 type Labels = {
-  fieldHelp: string
   fields: Record<string, string>
   saveFailed: string
   saveSetup: string
-  saved: string
 }
 
 export function SetupFields({
@@ -102,7 +100,7 @@ export function SetupFields({
       ))}
 
       <Button disabled={busy || saving || missing.length > 0} onClick={() => { void save() }} size="sm" variant="secondary">
-        {saving ? labels.saved : labels.saveSetup}
+        {labels.saveSetup}
       </Button>
     </div>
   )

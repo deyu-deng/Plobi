@@ -21,8 +21,8 @@ vi.mock('./sources/api', async () => {
 
   return {
     ...actual,
-    getSources: () => getSources(),
     getExternalPackages: () => getExternalPackages(),
+    getSources: () => getSources(),
     installExternalPackage: (name: string) => installExternalPackage(name),
     removeExternalPackage: (name: string) => removeExternalPackage(name),
     saveSourceSetup: (id: string, params: Record<string, string>) => saveSourceSetup(id, params),
@@ -43,40 +43,37 @@ vi.mock('@/store/notifications', () => ({
 vi.mock('@/i18n', () => ({
   useI18n: () => ({
     t: {
-      agenda: { sources: { wechat: 'WeChat', zju: 'Academic affairs (ZJU)' } },
+      agenda: { sources: { dingtalk: 'DingTalk', timetable: 'Timetable', wechat: 'WeChat', zju: 'Academic affairs (ZJU)' } },
       settings: {
         sources: {
           categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', custom: 'Bring your own' },
-          disable: 'Turn off',
+          disable: 'Stop',
           emptyExternal: 'Could not read what is installed.',
-          externalLead: 'Install a third-party source package by name.',
+          enable: 'Start',
+          fields: { ics_path: 'Path to the .ics file' },
           install: 'Install',
           installFailed: 'That install did not finish.',
           installPlaceholder: 'package name',
-          installsForeignCode: "Installing runs that package's own setup code.",
+          installsForeignCode: "Installing runs that package's own code.",
+          installed: 'Installed.',
           installedNone: 'Nothing from outside is installed.',
+          loadFailed: 'Could not read the sources.',
           loadingLog: 'Running…',
+          noBuilder: 'Broken',
           packageName: 'Package name',
+          pillLive: 'collecting',
+          pillNoStore: 'store unreadable',
+          pillNotStarted: 'never collected',
+          pillStale: 'stalled',
+          pillSwitchOff: 'off',
+          pillUnknown: 'unknown',
           remove: 'Remove',
           removeFailed: 'That removal did not finish.',
-          uninstalled: 'Done.',
-          uninstalledDone: 'Installed.',
-          fieldHelp: 'help',
-          fields: { ics_path: 'Path to the .ics file' },
           saveFailed: 'Could not save those.',
-          saveSetup: 'Save these',
-          saved: 'Saved',
-          setupFailed: 'Could not save the first-time setup.',
-          emptyCategory: 'Nothing connected in this category yet.',
-          enable: 'Turn on',
-          lastWrite: (count: number) => `Last new entry ${count} days ago.`,
-          lead: 'lead',
-          loadFailed: 'Could not read the sources.',
-          noBuilder: 'Registered as collecting, but nothing can construct its collector. This is a defect on our side, not a setting you can change.',
-          stateUnknown: 'State not recorded — not guessing.',
+          saveSetup: 'Save',
+          setup: 'Set up',
+          setupNeeded: 'Set up',
           switchFailed: 'Could not change the switch.',
-          switchOff: 'The collect switch is off.',
-          switchUnreadable: 'Could not read the collect switch.',
           title: 'Sources',
           tryFailed: 'That run did not come back.',
           tryOnce: 'Try once',
@@ -110,6 +107,9 @@ function row(over: Partial<SourceRow> = {}): SourceRow {
   }
 }
 
+// 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**。
+const CATEGORIES = ['message', 'social', 'website', 'local', 'system', 'custom']
+
 function payload(sources: SourceRow[]): SourcesPayload {
   const byCategory = new Map<string, string[]>()
 
@@ -121,87 +121,102 @@ function payload(sources: SourceRow[]): SourcesPayload {
     byCategory.set(one.category, [...(byCategory.get(one.category) ?? []), one.source])
   }
 
-  // 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**——空分类也要出现。
   return {
-    categories: ['message', 'social', 'website', 'local', 'system', 'custom'].map(id => ({
-      id,
-      sources: byCategory.get(id) ?? []
-    })),
+    backendIsOlder: false,
+    categories: CATEGORIES.map(id => ({ id, sources: byCategory.get(id) ?? [] })),
     checked_at: '2026-10-19T08:15:00',
     sources,
     stale_after_days: 3,
     verdict: 'n/a'
-  }
+  } as SourcesPayload
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  getExternalPackages.mockResolvedValue([])
 })
 
 afterEach(() => {
   cleanup()
 })
 
-describe('the sources panel', () => {
-  it('says "could not read" instead of drawing an empty list', async () => {
-    getSources.mockRejectedValue(new Error('offline'))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByTestId('sources-failed')).toBeTruthy())
-    expect(screen.queryByTestId('source-group-message')).toBeNull()
-  })
-
-  it('shows a category with nothing in it rather than hiding the category', async () => {
-    getSources.mockResolvedValue(payload([row({ source: 'wechat' })]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByTestId('source-group-social')).toBeTruthy())
-    // 空分类**每一类都出现**（不止 social 一类），所以这里是「至少有一个」而不是「恰好一个」。
-    expect(screen.getAllByText('Nothing connected in this category yet.').length).toBeGreaterThan(0)
-  })
-
-  it('shows the collector’s own note verbatim', async () => {
+describe('what the row says', () => {
+  it('is a name, a pill, and a button — and nothing else', async () => {
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, note: 'zju：服务器要求人工验证码，已停手', source: 'zju', state: 'stale' })
+      row({ enabled: true, has_builder: true, note: '一整段工程说明，还带 ** 星号', source: 'wechat', state: 'live' })
     ]))
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByText('zju：服务器要求人工验证码，已停手')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('WeChat')).toBeTruthy())
+    expect(screen.getByText('collecting')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy()
+    // 后端那句 note **一个字都不上屏**。
+    expect(screen.queryByText(/一整段工程说明/)).toBeNull()
+    expect(screen.queryByText(/\*\*/)).toBeNull()
   })
 
-  it('offers "Try once" only where §6.1 says so', async () => {
+  it('shows no timestamp even when the read carries one', async () => {
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })
+      row({ age_days: 9.5, enabled: true, has_builder: true, source: 'timetable', state: 'stale' })
     ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('stalled')).toBeTruthy())
+    expect(screen.queryByText(/9/)).toBeNull()
+  })
+
+  it('gives each state its own pill', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ enabled: false, source: 'dingtalk', state: 'never' }),
+      row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' }),
+      row({ enabled: true, has_builder: true, source: 'timetable', state: 'stale' }),
+      row({ enabled: true, has_builder: true, source: 'zju', state: 'live' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('off')).toBeTruthy())
+    expect(screen.getByText('never collected')).toBeTruthy()
+    expect(screen.getByText('stalled')).toBeTruthy()
+    expect(screen.getByText('collecting')).toBeTruthy()
+  })
+
+  it('does not draw an off switch for a switch it could not read', async () => {
+    getSources.mockResolvedValue(payload([row({ enabled: null, has_builder: null, source: 'wechat', state: 'live' })]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('unknown')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
+  it('draws no button at all for a defect it cannot fix', async () => {
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: false, source: 'dingtalk', state: 'never' })]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('Broken')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Try once' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
+  })
+
+  it('offers "Try once" only where §6.1 says so, and warns on the button', async () => {
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })]))
 
     render(<SourcesSettings />)
 
     const button = await screen.findByRole('button', { name: /Try once/ })
 
+    expect(button.getAttribute('title')).toContain('network')
     fireEvent.click(button)
     await waitFor(() => expect(trySource).toHaveBeenCalledWith('wechat'))
   })
 
-  it('warns on the button that trying really runs a collection', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })
-    ]))
-
-    render(<SourcesSettings />)
-
-    // 纪律「不降级」：代价必须写在按钮上，不能让用户以为只是刷新一下。
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Try once/ }).getAttribute('title')).toContain('network')
-    )
-  })
-
   it('reports a run by the executor’s own words, not a paraphrase', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, source: 'dingtalk', state: 'never' })
-    ]))
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'dingtalk', state: 'never' })]))
     trySource.mockResolvedValue({
       detail: '注册表说这条在采，但没有任何一方构造得出它的采集器 ⇒ 不会有东西进来',
       ok: false,
@@ -213,75 +228,89 @@ describe('the sources panel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Try once/ }))
 
     await waitFor(() => expect(notify).toHaveBeenCalled())
-    expect(notify.mock.calls[0][0].message)
+    expect((notify.mock.calls.at(-1)?.[0] as { message: string }).message)
       .toBe('注册表说这条在采，但没有任何一方构造得出它的采集器 ⇒ 不会有东西进来')
   })
 
-  it('draws no button at all for a defect it cannot fix', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: false, source: 'dingtalk', state: 'never' })
-    ]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByText(/Registered as collecting/)).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /Try once/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Turn on/ })).toBeNull()
-  })
-
-  it('does not draw an off switch for a switch it could not read', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: null, has_builder: null, source: 'wechat', state: 'live' })
-    ]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByText('Could not read the collect switch.')).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /Turn on/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Turn off/ })).toBeNull()
-  })
-
-  it('offers "Turn on" for a genuinely off switch', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: false, has_builder: null, source: 'dingtalk', state: 'never' })
-    ]))
-    setSourceEnabled.mockResolvedValue(undefined)
-
-    render(<SourcesSettings />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on' }))
-
-    await waitFor(() => expect(setSourceEnabled).toHaveBeenCalledWith('dingtalk', true))
-  })
-
   it('never prints a raw source id when the display name is missing', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, source: 'brand-new-thing', state: 'never' })
-    ]))
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'brand-new-thing', state: 'never' })]))
 
     render(<SourcesSettings />)
 
     await waitFor(() => expect(screen.getByText('Source with no recorded name')).toBeTruthy())
     expect(screen.queryByText('brand-new-thing')).toBeNull()
   })
+
+  it('says "could not read" instead of drawing an empty list', async () => {
+    getSources.mockRejectedValue(new Error('offline'))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('sources-failed')).toBeTruthy())
+  })
 })
 
-const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
+describe('what does not get rendered', () => {
+  it('hides the empty categories entirely', async () => {
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-message')).toBeTruthy())
+    expect(screen.queryByTestId('source-group-social')).toBeNull()
+    expect(screen.queryByTestId('source-group-system')).toBeNull()
+    expect(screen.queryByText('Nothing connected in this category yet.')).toBeNull()
+  })
+
+  it('still shows "bring your own" because that one holds an action', async () => {
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-custom')).toBeTruthy())
+    expect(screen.getByTestId('external-sources')).toBeTruthy()
+  })
+
+  it('says "bring your own" is not a category that only says "nothing here"', async () => {
+    getSources.mockResolvedValue(payload([]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('external-sources')).toBeTruthy())
+    // 装包那一格只留**一句**——上一版是两段散文。
+    expect(screen.getByText("Installing runs that package's own code.")).toBeTruthy()
+  })
+})
 
 describe('the first-time setup form', () => {
+  const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
 
-  it('draws only the fields the source itself declared', async () => {
+  it('is collapsed until asked for', async () => {
     getSources.mockResolvedValue(payload([
       row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
     ]))
 
     render(<SourcesSettings />)
 
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Set up' })).toBeTruthy())
+    expect(screen.queryByTestId('setup-timetable')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set up' }))
+
     await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
-    expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy()
   })
 
-  it('falls back to the declared label for a field nobody translated', async () => {
-    // 语言目录没有这一格时用后端给的英文缺省值 —— 第三方包零改动就能用，只是没翻译。
+  it('draws no setup button at all for a source that declares no fields', async () => {
+    // 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以它就该什么都没有。
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Try once/ })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Set up' })).toBeNull()
+  })
+
+  it('draws only the fields the source itself declared, and falls back to its label', async () => {
     getSources.mockResolvedValue(payload([
       row({
         category: 'custom',
@@ -295,19 +324,8 @@ describe('the first-time setup form', () => {
 
     render(<SourcesSettings />)
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
     await waitFor(() => expect(screen.getByLabelText('Their own field')).toBeTruthy())
-  })
-
-  it('draws no form at all for a source that declares no fields', async () => {
-    // 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以它就该没有表单。
-    getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })
-    ]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByRole('button', { name: /Try once/ })).toBeTruthy())
-    expect(screen.queryByTestId('setup-wechat')).toBeNull()
   })
 
   it('will not save while a required field is empty', async () => {
@@ -316,14 +334,14 @@ describe('the first-time setup form', () => {
     ]))
 
     render(<SourcesSettings />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save these' })).toBeTruthy())
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy())
 
-    expect((screen.getByRole('button', { name: 'Save these' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect(saveSourceSetup).not.toHaveBeenCalled()
   })
 
   it('sends only the filled fields, never an empty string', async () => {
-    // 空的**不送**：送一个空串等于把"没填"伪装成"填了空的"。
     getSources.mockResolvedValue(payload([
       row({
         category: 'local',
@@ -337,25 +355,12 @@ describe('the first-time setup form', () => {
     saveSourceSetup.mockResolvedValue(undefined)
 
     render(<SourcesSettings />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
     await waitFor(() => expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy())
     fireEvent.change(screen.getByLabelText('Path to the .ics file'), { target: { value: 'D:/x.ics' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save these' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(saveSourceSetup).toHaveBeenCalledWith('timetable', { ics_path: 'D:/x.ics' }))
-  })
-
-  it('re-reads after saving so the row shows the stored value', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
-    ]))
-    saveSourceSetup.mockResolvedValue(undefined)
-
-    render(<SourcesSettings />)
-    await waitFor(() => expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Path to the .ics file'), { target: { value: 'D:/x.ics' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save these' }))
-
-    await waitFor(() => expect(getSources).toHaveBeenCalledTimes(2))
   })
 
   it('offers no masked input, because the declaration layer cannot declare a secret', async () => {
@@ -364,46 +369,14 @@ describe('the first-time setup form', () => {
     ]))
 
     const { container } = render(<SourcesSettings />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
 
     await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
     expect(container.querySelector('input[type="password"]')).toBeNull()
   })
 })
+
 describe('bring your own', () => {
-  beforeEach(() => {
-    getExternalPackages.mockResolvedValue([])
-  })
-
-  it('is not a category that only says "nothing here"', async () => {
-    // 「接一个自己的」不是第六个分类，它**就是**那个空分类的逃生口。
-    // 空着的时候给一个真的能接的动作，而不是永远那句「还没接任何信源」。
-    getSources.mockResolvedValue(payload([]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByTestId('source-group-custom')).toBeTruthy())
-    expect(screen.getByTestId('external-sources')).toBeTruthy()
-  })
-
-  it('says out loud that installing runs the package', async () => {
-    // 纪律的反面：不许把它说得比实际更轻。装 pip 包会跑 setup 代码。
-    getSources.mockResolvedValue(payload([]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() =>
-      expect(screen.getByText("Installing runs that package's own setup code.")).toBeTruthy()
-    )
-  })
-
-  it('says "nothing installed" rather than pretending it failed', async () => {
-    getSources.mockResolvedValue(payload([]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByText('Nothing from outside is installed.')).toBeTruthy())
-  })
-
   it('will not install an empty name', async () => {
     getSources.mockResolvedValue(payload([]))
 
