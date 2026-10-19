@@ -52,6 +52,10 @@ _PLOBI_CORE_TOOLS = [
     "text_to_speech",
     # Planning & memory
     "todo", "memory",
+    # 信息池的通用读手。刻意放在默认束里而不是某个角色的工具集：读自己家的信息
+    # 是每个角色都需要的（WP-POOL-READ-ANY / 用户 10-19「给所有 Agent 配备一个
+    # 通用地读取信息的工具」），按 role 过滤就是把它重新变成特权入口。
+    "pool_read", "pool_mark",
     # NOTE: the desktop Project tools (project_list/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the
@@ -209,6 +213,12 @@ TOOLSETS = {
     "memory": {
         "description": "Persistent memory across sessions (personal notes + user profile)",
         "tools": ["memory"],
+        "includes": []
+    },
+
+    "pool": {
+        "description": "Structured information collected by the source collectors (read + mark)",
+        "tools": ["pool_read", "pool_mark"],
         "includes": []
     },
 
