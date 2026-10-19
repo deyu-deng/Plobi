@@ -163,6 +163,7 @@ import { usePromptActions } from './session/hooks/use-prompt-actions'
 import { useRouteResume } from './session/hooks/use-route-resume'
 import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionListActions } from './session/hooks/use-session-list-actions'
+import { useSessionPinToggle } from './session/hooks/use-session-pin-toggle'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
@@ -567,23 +568,7 @@ export function DesktopController() {
     return onSessionsChanged(() => void refreshSessions().catch(() => undefined))
   }, [refreshSessions])
 
-  const toggleSelectedPin = useCallback(() => {
-    const sessionId = $selectedStoredSessionId.get()
-
-    if (!sessionId) {
-      return
-    }
-
-    // Pin on the durable lineage-root id so the pin survives auto-compression.
-    const session = $sessions.get().find(s => s.id === sessionId || s._lineage_root_id === sessionId)
-    const pinId = session ? sessionPinId(session) : sessionId
-
-    if ($pinnedSessionIds.get().includes(pinId)) {
-      unpinSession(pinId)
-    } else {
-      pinSession(pinId)
-    }
-  }, [])
+  const { toggleSelectedPin } = useSessionPinToggle()
 
   const { inferenceStatus, statusSnapshot } = useStatusSnapshot(gatewayState, requestGateway)
 
