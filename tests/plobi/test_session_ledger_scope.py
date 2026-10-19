@@ -6,6 +6,8 @@ Agent 的」会话——等价迁移旧的一家一库读法；``agent_id=None``
 """
 
 import pytest
+import yaml
+from pathlib import Path
 
 from plobi_state import SessionDB
 
@@ -95,7 +97,6 @@ def test_agent_id_for_profile_maps_via_registry(tmp_path, monkeypatch):
     (base / "plobi").mkdir(parents=True)
     monkeypatch.setenv("PLOBI_HOME", str(base))
     monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(base / "plobi" / "projects.yaml"))
-    import yaml
     from plobi.agents.registry import REGISTRY_VERSION
 
     (base / "plobi" / "projects.yaml").write_text(
@@ -131,3 +132,101 @@ def test_open_session_db_for_profile_always_opens_the_single_ledger(tmp_path, mo
         assert db.db_path != profile / "state.db"
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# 4. 面板作用域：Agent 视图读写名册行，全局表不动（全局真源 + per-agent 开关）
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def panel_scope(tmp_path, monkeypatch):
+    """顶层家 + 名册一行 aura（profile l2-aura）。"""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    base = tmp_path / ".plobi"
+    (base / "plobi").mkdir(parents=True)
+    (base / "profiles" / "l2-aura").mkdir(parents=True)
+    (base / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "skills": {"disabled": ["global-off"]},
+                "platform_toolsets": {"cli": ["browser", "web"]},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PLOBI_HOME", str(base))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(base / "plobi" / "projects.yaml"))
+    from plobi.agents.registry import REGISTRY_VERSION
+
+    (base / "plobi" / "projects.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": REGISTRY_VERSION,
+                "agents": {"aura": {"name": "aura", "role": "l2_project", "profile": "l2-aura", "category": "projects"}},
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    import plobi_cli.config as cfg
+
+    cfg._LOAD_CONFIG_CACHE.clear()
+    cfg._RAW_CONFIG_CACHE.clear()
+    yield base
+    cfg._LOAD_CONFIG_CACHE.clear()
+    cfg._RAW_CONFIG_CACHE.clear()
+
+
+def _roster_entry():
+    from plobi.agents.registry import AgentRegistry
+
+    return AgentRegistry.load().get("aura")
+
+
+def test_skill_toggle_under_agent_scope_writes_roster_row(panel_scope):
+    import asyncio
+    import plobi_cli.web_server as ws
+
+    body = ws.SkillToggle(name="my-skill", enabled=False)
+    result = asyncio.run(ws.toggle_skill(body, profile="l2-aura"))
+    assert result == {"ok": True, "name": "my-skill", "enabled": False}
+
+    # 名册行记了偏好……
+    assert "my-skill" in _roster_entry().disabled_skills
+    # ……全局表一个字没动（直接读文件——load_config 会归一化 skills 节）。
+    on_disk = yaml.safe_load((panel_scope / "config.yaml").read_text(encoding="utf-8"))
+    assert "my-skill" not in (on_disk.get("skills") or {}).get("disabled", [])
+    assert "global-off" in (on_disk.get("skills") or {}).get("disabled", [])
+
+    # 开回来：从行里移除，全局表依旧。
+    asyncio.run(ws.toggle_skill(ws.SkillToggle(name="my-skill", enabled=True), profile="l2-aura"))
+    assert "my-skill" not in _roster_entry().disabled_skills
+
+
+def test_toolset_toggle_under_agent_scope_subtracts_from_whitelist(panel_scope):
+    import asyncio
+    import plobi_cli.web_server as ws
+
+    # 白名单里有哪些是真实可配置 toolset 就用哪些（第一个关掉，第二个留开）。
+    all_rows = asyncio.run(ws.get_toolsets(profile=None))
+    on_rows = [r for r in all_rows if r["enabled"]]
+    assert len(on_rows) >= 2, "fixture whitelist should enable >=2 configurable toolsets"
+    target, untouched = on_rows[0]["name"], on_rows[1]["name"]
+
+    result = asyncio.run(ws.toggle_toolset(target, ws.ToolsetToggle(enabled=False), profile="l2-aura"))
+    assert result == {"ok": True, "name": target, "enabled": False}
+    assert target in _roster_entry().disabled_toolsets
+
+    # 全局白名单没动（直接读文件）。
+    on_disk = yaml.safe_load((panel_scope / "config.yaml").read_text(encoding="utf-8"))
+    assert target in (on_disk.get("platform_toolsets") or {}).get("cli", [])
+
+    # GET 视图：目标对这个 Agent 是关的，别的照旧；flat 视图仍是开的。
+    rows = {r["name"]: r for r in asyncio.run(ws.get_toolsets(profile="l2-aura"))}
+    assert rows[target]["enabled"] is False
+    assert rows[untouched]["enabled"] is True
+    flat = {r["name"]: r for r in asyncio.run(ws.get_toolsets(profile=None))}
+    assert flat[target]["enabled"] is True
