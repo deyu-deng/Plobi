@@ -358,11 +358,25 @@ def _discover_external() -> list[tuple[str, str]]:
     except Exception as exc:  # noqa: BLE001 - 见 CollectorDiscoveryError 的说明
         return [("importlib.metadata", f"{type(exc).__name__}: {exc}")]
 
+    before = set(_SPECS)
+
     for entry_point in entry_points:
         try:
-            entry_point.load()
+            spec = entry_point.load()
         except Exception as exc:  # noqa: BLE001 - 见 CollectorDiscoveryError 的说明
             failures.append((entry_point.name, f"{type(exc).__name__}: {exc}"))
+
+            continue
+
+        source_id = getattr(spec, "source_id", None)
+        if source_id:
+            _EXTERNAL_SOURCE_IDS.add(str(source_id))
+        else:
+            # 载进来了但没有 `SPEC.source_id` —— 那它不是一条信源。**出声**：一个自称
+            # 是采集器包却没有形状的东西，静默放过等于让用户装了个什么也没发生的东西。
+            failures.append((entry_point.name, "这个包装上了，但它没有 SPEC.source_id：不是一条信源"))
+
+    del before
 
     return failures
 
@@ -387,5 +401,42 @@ def ensure_discovered() -> None:
 
     if failures:
         raise CollectorDiscoveryError(failures)
+
+
+#: 外面装的那些包报上来的信源 id。**记下来是因为卸的时候要用**——不记的话，卸完那个包
+#: 之后这一行会永远留在注册表里，界面上是一条再也装不回来的僵尸行，而用户会以为
+#: "卸了也没用"。
+_EXTERNAL_SOURCE_IDS: set[str] = set()
+
+
+def external_source_ids() -> frozenset[str]:
+    """哪些条是**外面**装进来的。
+
+    读数不是推导——判据是"这条自己报的来源是不是 entry-point"，而那是装的那一刻
+    才知道的事，事后从名字或路径猜都会猜错。
+    """
+    ensure_discovered()
+
+    return frozenset(_EXTERNAL_SOURCE_IDS)
+
+
+def refresh_discovery() -> None:
+    """重跑一次发现（装完 / 卸完立刻调）。
+
+    与 :func:`ensure_discovered` 的区别：**先清外部那几条**，再从头发现。所以
+    `plobi.collectors.external.refresh()` 报出来的 `removed` 是真的从表里走了。
+
+    内置那几条**不清**——它们不在任何可卸载的包里，清了就没了，而 `import` 也不会
+    再跑一遍已缓存的模块。这不是取巧：内置与外部的生命周期本来就不同（裁定：内置
+    随代码走，外部随安装走）。
+    """
+    global _discovered
+
+    for source_id in [sid for sid in _SPECS if sid in _EXTERNAL_SOURCE_IDS]:
+        del _SPECS[source_id]
+
+    _EXTERNAL_SOURCE_IDS.clear()
+    _discovered = False
+    ensure_discovered()
 
 

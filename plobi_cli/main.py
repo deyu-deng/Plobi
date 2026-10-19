@@ -319,6 +319,7 @@ from plobi_cli.subcommands.insights import build_insights_parser
 from plobi_cli.subcommands.skills import build_skills_parser
 from plobi_cli.subcommands.pairing import build_pairing_parser
 from plobi_cli.subcommands.plugins import build_plugins_parser
+from plobi_cli.subcommands.collectors import build_collectors_parser
 from plobi_cli.subcommands.mcp import build_mcp_parser
 from plobi_cli.subcommands.claw import build_claw_parser
 from plobi_cli.subcommands.plobi import build_plobi_parser
@@ -12656,6 +12657,18 @@ def cmd_plugins(args):
     plugins_command(args)
 
 
+def cmd_collectors(args):
+    """装 / 卸 / 列第三方信源包。执行方在 :mod:`plobi_cli.subcommands.collectors`。
+
+    ⚠️ 这是**产品面上唯一一个会执行任意第三方代码**的入口，所以名字闸门
+    （:func:`plobi.collectors.external.validate_package_name`）住在
+    ``plobi/collectors/external.py``，而不在这里、更不在 HTTP 那一层。
+    """
+    from plobi_cli.subcommands.collectors import cmd_collectors as run
+
+    sys.exit(run(args))
+
+
 def cmd_mcp(args):
     from plobi_cli.mcp_config import mcp_command
 
@@ -13189,6 +13202,11 @@ def main():
     # tools command  (parser built in plobi_cli/subcommands/tools.py)
     # =========================================================================
     build_tools_parser(subparsers, cmd_tools=cmd_tools)
+
+    # =========================================================================
+    # collectors command  ('bring your own' source packages; parser in subcommands/collectors.py)
+    # =========================================================================
+    build_collectors_parser(subparsers, cmd_collectors=cmd_collectors)
 
     # =========================================================================
     # computer-use command — manage Computer Use (cua-driver) on macOS

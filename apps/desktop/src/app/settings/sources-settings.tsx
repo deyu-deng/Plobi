@@ -20,6 +20,7 @@ import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
 import { groupByCategory, verbFor } from './sources/verbs'
 
@@ -108,9 +109,16 @@ export function SourcesSettings() {
           </h3>
 
           {group.rows.length === 0 ? (
-            <p className="mt-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-              {labels.emptyCategory}
-            </p>
+            <div>
+              <p className="mt-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+                {labels.emptyCategory}
+              </p>
+              {/* 「接一个自己的」不是第六个分类，它**就是**这个空分类的逃生口：空着的时候
+                  给一个真的能接的动作，而不是让这一栏永远是那句「还没接任何信源」。 */}
+              {group.category === 'custom'
+                ? <ExternalSources labels={labels} onChanged={reload} />
+                : null}
+            </div>
           ) : (
             <div className="divide-y divide-(--ui-border-subtle)">
               {group.rows.map(row => (

@@ -9,6 +9,10 @@ const getSources = vi.fn()
 const setSourceEnabled = vi.fn()
 const trySource = vi.fn()
 const saveSourceSetup = vi.fn()
+const getExternalPackages = vi.fn()
+const installExternalPackage = vi.fn()
+const removeExternalPackage = vi.fn()
+const getActionStatus = vi.fn()
 const notify = vi.fn()
 const notifyError = vi.fn()
 
@@ -18,11 +22,18 @@ vi.mock('./sources/api', async () => {
   return {
     ...actual,
     getSources: () => getSources(),
+    getExternalPackages: () => getExternalPackages(),
+    installExternalPackage: (name: string) => installExternalPackage(name),
+    removeExternalPackage: (name: string) => removeExternalPackage(name),
     saveSourceSetup: (id: string, params: Record<string, string>) => saveSourceSetup(id, params),
     setSourceEnabled: (id: string, enabled: boolean) => setSourceEnabled(id, enabled),
     trySource: (id: string) => trySource(id)
   }
 })
+
+vi.mock('@/plobi', () => ({
+  getActionStatus: (name: string, lines?: number) => getActionStatus(name, lines)
+}))
 
 vi.mock('@/store/notifications', () => ({
   notify: (input: unknown) => notify(input),
@@ -37,6 +48,19 @@ vi.mock('@/i18n', () => ({
         sources: {
           categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', custom: 'Bring your own' },
           disable: 'Turn off',
+          emptyExternal: 'Could not read what is installed.',
+          externalLead: 'Install a third-party source package by name.',
+          install: 'Install',
+          installFailed: 'That install did not finish.',
+          installPlaceholder: 'package name',
+          installsForeignCode: "Installing runs that package's own setup code.",
+          installedNone: 'Nothing from outside is installed.',
+          loadingLog: 'Running…',
+          packageName: 'Package name',
+          remove: 'Remove',
+          removeFailed: 'That removal did not finish.',
+          uninstalled: 'Done.',
+          uninstalledDone: 'Installed.',
           fieldHelp: 'help',
           fields: { ics_path: 'Path to the .ics file' },
           saveFailed: 'Could not save those.',
@@ -241,8 +265,9 @@ describe('the sources panel', () => {
   })
 })
 
+const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
+
 describe('the first-time setup form', () => {
-  const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
 
   it('draws only the fields the source itself declared', async () => {
     getSources.mockResolvedValue(payload([
@@ -342,5 +367,143 @@ describe('the first-time setup form', () => {
 
     await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
     expect(container.querySelector('input[type="password"]')).toBeNull()
+  })
+})
+describe('bring your own', () => {
+  beforeEach(() => {
+    getExternalPackages.mockResolvedValue([])
+  })
+
+  it('is not a category that only says "nothing here"', async () => {
+    // 「接一个自己的」不是第六个分类，它**就是**那个空分类的逃生口。
+    // 空着的时候给一个真的能接的动作，而不是永远那句「还没接任何信源」。
+    getSources.mockResolvedValue(payload([]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-custom')).toBeTruthy())
+    expect(screen.getByTestId('external-sources')).toBeTruthy()
+  })
+
+  it('says out loud that installing runs the package', async () => {
+    // 纪律的反面：不许把它说得比实际更轻。装 pip 包会跑 setup 代码。
+    getSources.mockResolvedValue(payload([]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() =>
+      expect(screen.getByText("Installing runs that package's own setup code.")).toBeTruthy()
+    )
+  })
+
+  it('says "nothing installed" rather than pretending it failed', async () => {
+    getSources.mockResolvedValue(payload([]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('Nothing from outside is installed.')).toBeTruthy())
+  })
+
+  it('will not install an empty name', async () => {
+    getSources.mockResolvedValue(payload([]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('external-sources')).toBeTruthy())
+    expect((screen.getByRole('button', { name: 'Install' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('sends the name as typed and does not validate it here', async () => {
+    // 后端才是权威（它还拒版本约束 / extras / URL）。前端提前拦一半只会让人
+    // 以为「我能填的都行」，而真的那句拒绝理由会在日志里。
+    getSources.mockResolvedValue(payload([]))
+    installExternalPackage.mockResolvedValue('collectors-install-abc')
+    getActionStatus.mockResolvedValue({ exit_code: 0, lines: ['装上了'], name: 'x', running: false })
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('external-sources')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Package name'), { target: { value: 'evil==1.0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+
+    await waitFor(() => expect(installExternalPackage).toHaveBeenCalledWith('evil==1.0'))
+  })
+
+  it('shows the log lines the run produced', async () => {
+    getSources.mockResolvedValue(payload([]))
+    installExternalPackage.mockResolvedValue('collectors-install-abc')
+    getActionStatus.mockResolvedValue({
+      exit_code: 1,
+      lines: ['ERROR: Could not find a version that satisfies the requirement x'],
+      name: 'x',
+      running: false
+    })
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('external-sources')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Package name'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+
+    // 原样显示，不转述 —— pip 自己说的那句话就是排障用的那句话。
+    await waitFor(() =>
+      expect(screen.getByTestId('external-log').textContent)
+        .toContain('Could not find a version that satisfies the requirement x')
+    )
+  })
+
+  it('reports a failed run as a failure even though the package list came back fine', async () => {
+    getSources.mockResolvedValue(payload([]))
+    installExternalPackage.mockResolvedValue('collectors-install-abc')
+    getActionStatus.mockResolvedValue({ exit_code: 1, lines: ['boom'], name: 'x', running: false })
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('external-sources')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Package name'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+
+    await waitFor(() => expect(notify).toHaveBeenCalled())
+    expect((notify.mock.calls.at(-1)?.[0] as { kind?: string }).kind).toBe('error')
+  })
+
+  it('re-reads the source list afterwards so a newly installed source shows up', async () => {
+    getSources.mockResolvedValue(payload([]))
+    installExternalPackage.mockResolvedValue('collectors-install-abc')
+    getActionStatus.mockResolvedValue({ exit_code: 0, lines: ['ok'], name: 'x', running: false })
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('external-sources')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Package name'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }))
+
+    // 装完不重读的话，用户看到的是"装成功了但那一条没出现"，而那最容易被读成装失败。
+    await waitFor(() => expect(getSources).toHaveBeenCalledTimes(2))
+  })
+
+  it('lists an installed package and offers to remove it', async () => {
+    getSources.mockResolvedValue(payload([]))
+    getExternalPackages.mockResolvedValue([
+      { distribution: 'plobi-collector-x', entry_point: 'plobi_collector_x', load_error: null, source: 'x' }
+    ])
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('x')).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy()
+  })
+
+  it('says a package failed to load rather than hiding it', async () => {
+    // 装上了但载不进来是一个**读数**，不是"这个包不存在"。
+    getSources.mockResolvedValue(payload([]))
+    getExternalPackages.mockResolvedValue([
+      {
+        distribution: 'broken-collector',
+        entry_point: 'broken',
+        load_error: '这个包装上了但载不进来。',
+        source: null
+      }
+    ])
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('这个包装上了但载不进来。')).toBeTruthy())
   })
 })

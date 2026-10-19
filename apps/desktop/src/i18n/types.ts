@@ -327,16 +327,34 @@ export interface Translations {
       fields: Record<string, string>
       fieldHelp: string
       emptyCategory: string
+      emptyExternal: string
       enable: string
+      externalLead: string
+      install: string
+      installFailed: string
+      installPlaceholder: string
+      /**
+       * 装第三方包那一格必须说的那一句话。不是免责声明——是事实：pip 包在装的
+       * 时候就会跑 setup 代码。纪律「不许描述不存在的机制」在这里的反面就是
+       * 「不许把它说得比实际更轻」。
+       */
+      installsForeignCode: string
+      installedNone: string
       lastWrite: (count: number) => string
       lead: string
+      loadingLog: string
       loadFailed: string
       noBuilder: string
+      packageName: string
+      remove: string
+      removeFailed: string
       saveFailed: string
       saveSetup: string
       saved: string
       setupFailed: string
       stateUnknown: string
+      uninstalled: string
+      uninstalledDone: string
       switchFailed: string
       switchOff: string
       switchUnreadable: string
