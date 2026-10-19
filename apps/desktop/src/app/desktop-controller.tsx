@@ -52,8 +52,7 @@ import {
   setPetOverlaySubmitHandler
 } from '../store/pet-overlay'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
-import { $activeGatewayProfile, $freshSessionRequest, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshActiveProfile, refreshProfiles } from '../store/profile'
-import { resolveNewSessionCwd } from '../store/projects'
+import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshActiveProfile, refreshProfiles } from '../store/profile'
 import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
 import {
   $activeSessionId,
@@ -69,17 +68,13 @@ import {
   $sessions,
   getRememberedSessionId,
   sessionPinId,
-  setActiveSessionId,
   setAwaitingResponse,
   setBusy,
-  setCurrentBranch,
   setCurrentCwd,
   setCurrentModel,
   setCurrentProvider,
-  setFreshDraftReady,
   setMessages,
-  setRememberedSessionId,
-  setSelectedStoredSessionId
+  setRememberedSessionId
 } from '../store/session'
 import { onSessionsChanged } from '../store/session-sync'
 import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store/updates'
@@ -114,11 +109,9 @@ import {
   bindL1GatewayIfMasterExists,
   collectL1BypassSessionIds,
   findKnownOverviewSession,
-  forgetL1MainSession,
   pickL1MainSession,
   readL1MainSessionId,
   resolveL1HomeProfile,
-  restartsMouthInPlace,
   secretaryShellLabel,
   writeL1MainSessionId
 } from './desktop-controller-utils'
@@ -149,6 +142,7 @@ import {
 } from './routes'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
+import { useConversationReset } from './session/hooks/use-conversation-reset'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
 import { usePlobiConfig } from './session/hooks/use-plobi-config'
@@ -668,52 +662,13 @@ export function DesktopController() {
     updateSessionState
   })
 
-  // The "nothing to resume yet" state of a secretary shell: an empty draft under
-  // the current route. Shared by the level-keyed bind below and 「重新开始」 so a
-  // reset lands exactly where a fresh shell lands. The refs — not just the atoms
-  // — are what the submit pipeline pins its session context to; leaving them on
-  // the previous context made the next message resume a stale id and abort with
-  // "context drifted".
-  const prepareFreshDraftInPlace = useCallback(() => {
-    // `busyRef` gates the composer's send and no atom write clears it: left armed
-    // here, the empty draft would stay unsendable until the retired run reported.
-    busyRef.current = false
-    setBusy(false)
-    setAwaitingResponse(false)
-    setActiveSessionId(null)
-    setSelectedStoredSessionId(null)
-    activeSessionIdRef.current = null
-    selectedStoredSessionIdRef.current = null
-    setMessages([])
-    setFreshDraftReady(true)
-    setCurrentCwd(resolveNewSessionCwd())
-    setCurrentBranch('')
-  }, [activeSessionIdRef, busyRef, selectedStoredSessionIdRef])
-
-  // 「重新开始」 for every path that asks for it (⌘N, the palette, `/new` and its
-  // `/reset` alias, a profile switch): see `restartsMouthInPlace` for why the
-  // secretary shell resets where it stands instead of routing `/new`.
-  const startFreshConversation = useCallback(() => {
-    if (!restartsMouthInPlace(level)) {
-      startFreshSessionDraft()
-
-      return
-    }
-
-    if (level === 'l1') {
-      forgetL1MainSession(normalizeProfileKey($activeGatewayProfile.get() || 'default'))
-      prepareFreshDraftInPlace()
-
-      return
-    }
-
-    // An L2 mouth keeps its agent's bound folder; the draft's project
-    // re-resolve would point the file tree at the last project visited.
-    const agentCwd = $currentCwd.get()
-
-    prepareFreshDraftInPlace()
-    setCurrentCwd(agentCwd)
-  }, [level, prepareFreshDraftInPlace, startFreshSessionDraft])
+  const { startFreshConversation, prepareFreshDraftInPlace } = useConversationReset({
+    busyRef,
+    activeSessionIdRef,
+    selectedStoredSessionIdRef,
+    level,
+    startFreshSessionDraft
+  })
 
   // Single global listener for every rebindable hotkey (incl. profile switching)
   // plus the on-screen keybind editor's capture mode.
@@ -725,20 +680,6 @@ export function DesktopController() {
     toggleCommandCenter,
     toggleSelectedPin
   })
-
-  // A profile switch/create drops to a fresh new-session draft so the previously
-  // open session doesn't bleed across contexts. Skip the initial value.
-  const freshSessionRequest = useStore($freshSessionRequest)
-  const lastFreshRef = useRef(freshSessionRequest)
-
-  useEffect(() => {
-    if (freshSessionRequest === lastFreshRef.current) {
-      return
-    }
-
-    lastFreshRef.current = freshSessionRequest
-    startFreshConversation()
-  }, [freshSessionRequest, startFreshConversation])
 
   // Swapping the live gateway to another profile must re-pull that profile's
   // global model + active-profile pill. Both are nanostores, so the blanket
