@@ -159,6 +159,44 @@ class TestCategoriesAreDeclaredNotGuessed:
         for banned in ("tier", "weight", "rank", "priority", "primary", "important", "major", "minor"):
             assert banned not in registry.SOURCE_CATEGORIES
 
+    def test_registry_module_names_no_source_at_all(self) -> None:
+        """**解耦的判据就是这一条**：注册表那个文件里不许出现任何信源 id。
+
+        包括**注释里**——注释里提一嘴就等于这个文件仍然知道那个信源，而"这个文件
+        知道哪些信源"正是解耦要拆掉的东西（加一条信源要改它 = 没解耦）。所以这里
+        `git grep` 式的扫描连注释一起扫。
+
+        为什么不是"扫 `SourceSpec(` 调用点"：那会漏掉一个只写在注释里的名字，而人读
+        一个文件时**注释算它知道的东西**。
+        """
+        registry_source = (REPO / "plobi" / "collectors" / "registry.py").read_text(encoding="utf-8")
+        source_ids = registry.source_ids()
+
+        # 先确认这四类真在注册表里（否则下面的循环空转，一条都测不到）
+        assert {"dingtalk", "timetable", "wechat", "zju"} <= set(source_ids)
+
+        for source_id in source_ids:
+            assert source_id not in registry_source, f"registry.py 里仍然写着 {source_id}"
+
+    def test_every_collector_package_declares_its_own_spec(self) -> None:
+        """每个内置采集器包**自己**报自己的形状——这是"加一条＝加一个包"的牙齿。
+
+        反过来也钉：注册表那个目录里的每个包都要么有 ``SPEC``、要么明确是公共层子包。
+        这里只钉前一半（后一半是 `:mod:` 那些不属于采集器的子包，见发现器的注释）。
+        """
+        import plobi.collectors as package
+
+        declared = set()
+
+        for name in ("chatlog", "dingtalk", "timetable", "zju"):
+            module = __import__(f"plobi.collectors.{name}", fromlist=["SPEC"])
+
+            assert hasattr(module, "SPEC"), f"{name} 没有报出自己的 SPEC"
+            declared.add(module.SPEC.source_id)
+
+        assert declared == set(registry.source_ids())
+        assert package.__doc__  # 包自己的说明还在（发现器不认识它时按"公共层子包"放过）
+
     def test_grouping_keeps_empty_categories(self) -> None:
         """空分类也要出现——"这一类还没接任何信源"也是一句话，不该由界面自己编。
 
@@ -170,6 +208,84 @@ class TestCategoriesAreDeclaredNotGuessed:
         for category, members in grouped.items():
             for member in members:
                 assert registry.source_category(member) == category
+
+
+class TestDiscoveryCannotFailSilently:
+    """三条施工约束里最要命的那条（`specs/source-layer.md` §3.1）：
+
+    发现没跑 ⇒ `source_ids()` 回空元组 ⇒ sweep「成功」地跑完、零条进账、
+    `/api/collect/sources` 回一个空名单。**那是最危险的静默失败**，形状和
+    `no_builder` 当年被藏起来的那一次一模一样。这几条钉的是它不会那样。
+    """
+
+    def test_a_cold_process_first_read_is_never_empty(self) -> None:
+        """**冷进程第一次读**就必须拿到名单，不靠"谁记得先调一次"。
+
+        为什么必须开子进程：这条性质只在"从没被发现过"的状态下成立，而本档的其余用例
+        跑在同一个已经被别的用例发现过的进程里。`importlib.reload(registry)` **测不到
+        它**——reload 只重置注册表自己的模块级状态，那四个采集器包仍在 `sys.modules`
+        里（Python 不重跑已缓存模块的顶层代码），所以它们不会重新 `register()`，
+        reload 之后读到的必然是空名单，与生产无关。
+
+        判据是**这一条命令在真冷进程上回什么**，而不是在同进程里清一次标志。
+        """
+        import subprocess
+        import sys
+
+        script = (
+            "import sys; sys.path.insert(0, '.');"
+            "from plobi.collectors import registry;"
+            "print(len(registry.source_ids()))"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            cwd=REPO,
+            text=True,
+            timeout=120,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        # 0 = 空名单 = 那条静默失败；4 = 现在注册表里的四条。
+        assert int(completed.stdout.strip()) == 4, completed.stdout
+
+    def test_a_broken_package_is_reported_not_swallowed(self) -> None:
+        """某个包没载入必须**出声**，不许吞成"这条不存在"。
+
+        吞掉的形状：一条信源因为一个 import 错误消失了，用户看到的是"今天没东西
+        进来"，永远问不到"某个包没载入"。所以失败要带包名与原始异常抛出来。
+        """
+        assert issubclass(registry.CollectorDiscoveryError, RuntimeError)
+
+        failure = registry.CollectorDiscoveryError([("plobi.collectors.broken", "ImportError: no such thing")])
+
+        assert "plobi.collectors.broken" in str(failure)
+        assert "ImportError" in str(failure)
+        # 一次全抛，不是抛第一条：三条包没载入与一条包没载入是两种不同的排障。
+        two = registry.CollectorDiscoveryError([("a", "x"), ("b", "y")])
+
+        assert set(two.failures) == {"a", "b"}
+
+    def test_discovery_is_idempotent(self) -> None:
+        """反复调不会重复登记、不会抛"已登记"。
+
+        `register()` 对重复登记本来就会抛，所以这条钉的是**发现**自己只干活一次
+        （哪怕某个包在导入时回头读这张表，递归进来也不能把同一个包导两次）。
+        """
+        before = registry.source_ids()
+
+        for _ in range(3):
+            registry.ensure_discovered()
+
+        assert registry.source_ids() == before
+
+    def test_the_external_group_is_the_documented_one(self) -> None:
+        """第三方装信源走的那一组名不许漂——漂了等于第三方那条路静默失效。
+
+        这钉的是**组名这一个字符串**（它同时出现在本仓 `pyproject.toml` 的
+        `[project.entry-points]` 与第三方包自己的声明里，两边必须逐字相同）。
+        """
+        assert registry.EXTERNAL_ENTRY_POINT_GROUP == "plobi.collectors"
 
 
 class TestRegisteredSourcesDeclareTheirRealShape:
