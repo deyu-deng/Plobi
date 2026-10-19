@@ -256,6 +256,16 @@ sources: {
         website: 'ウェブ',
         custom: '自分で一つを接続'
       },
+    fields: {
+      base_url: '教务システムのアドレス',
+      account: 'アカウント名',
+      ics_path: '.ics ファイルのパス'
+    },
+    fieldHelp: 'これはこのソースが動作するために必要な値です。一度保存すればそのまま使えます——設定は一度だけで済みます。',
+    saveFailed: '保存できませんでした。',
+    saveSetup: 'これを保存',
+    saved: '保存しました',
+    setupFailed: '初回設定を保存できませんでした。',
       disable: '止める',
       emptyCategory: 'このカテゴリにはまだ何もつながっていません。',
       enable: 'オンにする',

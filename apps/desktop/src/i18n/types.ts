@@ -320,12 +320,22 @@ export interface Translations {
         custom: string
       }
       disable: string
+      /**
+       * 首次配置字段的显示名，**按 key 查**。查不到时界面回退到后端声明里那个英文
+       * 缺省值——所以第三方信源包零改动就能出现在界面上，只是没翻译。
+       */
+      fields: Record<string, string>
+      fieldHelp: string
       emptyCategory: string
       enable: string
       lastWrite: (count: number) => string
       lead: string
       loadFailed: string
       noBuilder: string
+      saveFailed: string
+      saveSetup: string
+      saved: string
+      setupFailed: string
       stateUnknown: string
       switchFailed: string
       switchOff: string

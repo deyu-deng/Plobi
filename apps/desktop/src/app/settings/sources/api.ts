@@ -28,9 +28,23 @@ export interface SourceRow {
   requires_manual_setup: null | boolean
   /** 首次配置产出的**非密钥**参数（路径 / 地址 / 账号名）。 */
   setup: null | Record<string, unknown>
+  /**
+   * 这条信源**自己声明**要填哪几格（`SourceSpec.setup_fields`）。
+   * `label` 是**英文缺省值**：界面先查语言目录的 `settings.sources.fields.<key>`，
+   * 查不到才回它——所以第三方包零改动就能出现在界面上（只是没翻译）。
+   */
+  setup_fields: SetupField[]
   source: string
   state: string
   touched_after_last_write: boolean
+}
+
+export interface SetupField {
+  help: string
+  key: string
+  kind: 'path' | 'text' | 'url'
+  label: string
+  required: boolean
 }
 
 export interface SourceCategoryGroup {

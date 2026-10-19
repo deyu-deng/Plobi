@@ -30,16 +30,17 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
+from plobi.collectors.registry import SECRET_LIKE_KEYS, is_secret_like
+
 logger = logging.getLogger(__name__)
 
 SOURCES_FILENAME = "sources.yaml"
 
 #: 键名里带这些片段的一律拒收。**按名字拦，不按值拦**——值可能是一段 base64，
 #: 正则扫不出来；"有人把 token 填进表单"这一种只有按名字拦得住。
-SECRET_LIKE_KEYS: frozenset[str] = frozenset({
-    "password", "passwd", "secret", "token", "api_key", "apikey",
-    "credential", "cookie", "session_key", "private_key", "access_key",
-})
+#: **真源在 `registry`**（声明层 import 时用同一份先拦一道）；这里只是转发——
+#: 两边各留一份就会各自长出一套判定，而"哪一份说了算"是最容易查不出来的那种病。
+SECRET_LIKE_KEYS = SECRET_LIKE_KEYS
 
 
 class SourceConfigError(RuntimeError):
@@ -58,10 +59,7 @@ def sources_path() -> Path:
 
 
 def _is_secret_like(key: str) -> bool:
-    # 分隔符归一：`API-KEY`、`api key`、`ApiKey` 与 `api_key` 是同一个意思，
-    # 不归一的话拦的是拼写而不是**类别**——那就等于给了绕过它的正门。
-    normalized = key.strip().lower().replace("-", "_").replace(" ", "_")
-    return any(marker in normalized for marker in SECRET_LIKE_KEYS)
+    return is_secret_like(key)
 
 
 def _validate_entry(source_id: str, entry: Any) -> dict[str, Any]:
@@ -190,15 +188,58 @@ def setup_params(source_id: str) -> dict[str, Any]:
     return {k: v for k, v in row.items() if k != "enabled"}
 
 
+def declared_setup_keys(source_id: str) -> tuple[str, ...]:
+    """这条信源**自己声明**要填哪几格（`SourceSpec.setup_fields`）。没声明就是空。
+
+    读声明而不是维护一张表：那张表一变就得改 `apps/desktop/**`，而 spec §8 有一条
+    验收就是「加一条新信源不需要改 `apps/desktop/**`」。
+    """
+    from plobi.collectors import registry
+
+    return tuple(field.key for field in registry.spec(source_id).setup_fields)
+
+
 def set_setup_params(source_id: str, params: dict[str, Any]) -> dict[str, Any]:
     """写首次配置参数。**不动 `enabled`** ——那格有它自己的动词。
+
+    **按声明校验**：不在 ``setup_fields`` 里的键拒收，声明里 ``required`` 的缺了拒收。
+    不是洁癖——表单是照那份声明画出来的，一个不被声明承认的键写进去，下一次读取
+    就成了没人认领的一行，而"这一格是谁配的"从此问不到。
 
     落盘成功**就算配好了**，不替任何一方去"验证能不能连上"：能不能连上是执行方
     自己的读数（`sweep` 那一轮会报它自己的状态），这一层只管存住用户填的东西。
     """
+    declared = declared_setup_keys(source_id)
+    # **密钥那一道先跑**，不是为了排版：用户把 token 填进表单时，"这个文件不收密钥"
+    # 才是他需要听见的那句，"这个键没声明" 只会让他以为是自己拼错了字段名。
+    # 而且这一道是更强的信号——它该赢。
+    secret = [key for key in params if _is_secret_like(key)]
+    if secret:
+        raise SourceConfigError(
+            f"{source_id}.{secret[0]} 看着像密钥：这个文件不落密钥（`.env` 才是唯一面）。"
+            "请把它写进 .env，配置层只留路径 / 地址 / 账号名。"
+        )
+    unknown = [key for key in params if key not in declared]
+    if unknown:
+        raise SourceConfigError(
+            f"{source_id} 没声明这几格：{'、'.join(unknown)}。"
+            f"它声明的是：{'、'.join(declared) or '（空——首次配置不需要填任何非密钥的东西）'}"
+        )
+    missing = [key for key in declared if registry_required(source_id, key) and key not in params]
+    if missing:
+        raise SourceConfigError(f"{source_id} 首次配置还缺：{'、'.join(missing)}")
+
     entries = load()
     row = dict(entries.get(source_id) or {})
     row.update(params)
     entries[source_id] = {k: v for k, v in row.items() if k == "enabled" or v is not None}
     save(entries)
+
     return setup_params(source_id)
+
+
+def registry_required(source_id: str, key: str) -> bool:
+    """这一格声明为必填吗。单独一个出口是为了让上面那个「缺了」检查读起来像一句话。"""
+    from plobi.collectors import registry
+
+    return any(f.key == key and f.required for f in registry.spec(source_id).setup_fields)

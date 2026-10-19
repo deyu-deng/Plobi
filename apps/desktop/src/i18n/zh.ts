@@ -340,6 +340,16 @@ sources: {
         website: '网站',
         custom: '接一个自己的'
       },
+    fields: {
+      base_url: '教务系统地址',
+      account: '账号名',
+      ics_path: '.ics 文件的路径'
+    },
+    fieldHelp: '这些是这条信源跑起来要用的值。存过一次就一直生效——这件事只做一次。',
+    saveFailed: '没能存下。',
+    saveSetup: '存下这些',
+    saved: '存好了',
+    setupFailed: '首次配置没能存下。',
       disable: '停掉',
       emptyCategory: '这一类还没接任何信源。',
       enable: '打开',
