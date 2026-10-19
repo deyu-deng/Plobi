@@ -320,9 +320,10 @@ def test_gate_and_executor_count_the_same_real_cells():
                        capture_output=True, text=True, errors="replace",
                        cwd=DESK, env=env, timeout=300)
     line = [l for l in (p.stderr or "").splitlines() if "待签」行既没写" in l]
-    assert p.returncode == 0, f"门自己红了：{p.stdout[-400:]} {p.stderr[-400:]}"
     assert len(line) == 1, f"门没出声或出了两遍声：{line}"
-    assert f"{len(missing)} 个" in line[0], f"门的数 {line[0][:20]} ≠ 现算 {len(missing)} 格"
+    # 不断言 rc==0：那会把本反例件和「全场别人有没有把提交做完整」绑在一起——
+    # 别人一张纸没配格（§3.4 那条牙）就会让这条测试红，红得与它自己的判据无关。
+    assert f"{len(missing)} 个" in line[0], f"门的数 {line[0][:24]} ≠ 现算 {len(missing)} 格"
 
 
 if __name__ == "__main__":
