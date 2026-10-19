@@ -156,6 +156,7 @@ import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
 import { usePlobiConfig } from './session/hooks/use-plobi-config'
+import { useMessageErrorDismiss } from './session/hooks/use-message-error-dismiss'
 import { useMessageStream } from './session/hooks/use-message-stream'
 import { useModelControls } from './session/hooks/use-model-controls'
 import { usePreviewRouting } from './session/hooks/use-preview-routing'
@@ -901,48 +902,7 @@ export function DesktopController() {
     [branchCurrentSession, refreshSessions]
   )
 
-  // Clear a failed turn's red error banner from the transcript. Errors are
-  // renderer-local state (never persisted), so dismissing is purely a view +
-  // session-cache edit. A message that errored before emitting any visible
-  // text is a bare error placeholder → drop it entirely; one that streamed
-  // partial output then failed keeps its content and just sheds the error.
-  // Both the per-runtime cache AND the live $messages view must be updated:
-  // `preserveLocalAssistantErrors` re-grafts any still-errored message it
-  // finds in the view onto the next session.info flush, so clearing only the
-  // cache would let the heartbeat resurrect the banner.
-  const dismissError = useCallback(
-    (messageId: string) => {
-      const runtimeSessionId = activeSessionIdRef.current
-
-      if (!runtimeSessionId) {
-        return
-      }
-
-      const clearErrorIn = (messages: ChatMessage[]): ChatMessage[] =>
-        messages.flatMap(message => {
-          if (message.id !== messageId || !message.error) {
-            return [message]
-          }
-
-          if (!chatMessageText(message).trim() && !message.parts.some(part => part.type !== 'text')) {
-            return []
-          }
-
-          return [{ ...message, error: undefined, pending: false }]
-        })
-
-      // View first: the flush below reads $messages as the "current" baseline
-      // for error preservation, so the banner must be gone from it before the
-      // cache update triggers a re-sync.
-      setMessages(clearErrorIn($messages.get()))
-
-      updateSessionState(runtimeSessionId, state => ({
-        ...state,
-        messages: clearErrorIn(state.messages)
-      }))
-    },
-    [activeSessionIdRef, updateSessionState]
-  )
+  const { dismissError } = useMessageErrorDismiss({ activeSessionIdRef, updateSessionState })
 
   const startSessionInWorkspace = useCallback(
     (path: null | string) => {
