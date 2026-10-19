@@ -14,7 +14,6 @@ export const SKILLS_ROUTE = '/skills'
 export const MESSAGING_ROUTE = '/messaging'
 export const ARTIFACTS_ROUTE = '/artifacts'
 export const CRON_ROUTE = '/cron'
-export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
 export const CONSOLE_ROUTE = '/console'
 export const STARMAP_ROUTE = '/starmap'
@@ -29,7 +28,6 @@ export type AppView =
   | 'console'
   | 'cron'
   | 'messaging'
-  | 'profiles'
   | 'settings'
   | 'skills'
   | 'starmap'
@@ -44,7 +42,6 @@ export type AppRouteId =
   | 'cron'
   | 'messaging'
   | 'new'
-  | 'profiles'
   | 'settings'
   | 'skills'
   | 'starmap'
@@ -64,7 +61,6 @@ export const APP_ROUTES = [
   { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
   { id: 'agenda', path: AGENDA_ROUTE, view: 'agenda' },
-  { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
   { id: 'console', path: CONSOLE_ROUTE, view: 'console' },
   { id: 'starmap', path: STARMAP_ROUTE, view: 'starmap' }
@@ -86,7 +82,6 @@ export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set([
   'agents',
   'command-center',
   'cron',
-  'profiles',
   'settings',
   'starmap'
 ])

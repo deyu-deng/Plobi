@@ -1210,82 +1210,8 @@ export interface Translations {
   }
 
   profiles: {
-    close: string
-    nameHint: string
-    title: string
-    count: (count: number) => string
-    search: string
-    loading: string
-    newProfile: string
-    allProfiles: string
-    showAllProfiles: string
-    switchToProfile: (name: string) => string
-    manageProfiles: string
-    actionsFor: (name: string) => string
-    color: string
-    colorFor: (name: string) => string
-    setColor: (color: string) => string
-    autoColor: string
-    noProfiles: string
-    selectPrompt: string
-    refresh: string
-    refreshing: string
-    default: string
-    skills: (count: number) => string
-    env: string
-    defaultBadge: string
-    rename: string
-    renameMenu: string
-    editSoul: string
-    copySetup: string
-    copying: string
-    modelLabel: string
-    skillsLabel: string
-    notSet: string
-    soulDesc: string
-    soulOptional: string
-    soulPlaceholder: (mode: string) => string
-    soulPlaceholderCloned: string
-    soulPlaceholderEmpty: string
-    unsavedChanges: string
-    loadingSoul: string
-    emptySoul: string
-    saving: string
-    saveSoul: string
-    deleteTitle: string
-    deleteDescPrefix: string
-    deleteDescMid: string
-    deleteDescSuffix: string
-    deleting: string
-    createDesc: string
     nameLabel: string
-    cloneFrom: string
-    cloneFromNone: string
-    cloneFromDesc: string
-    cloneFromDefault: string
-    cloneFromDefaultDesc: string
-    invalidName: (hint: string) => string
-    nameRequired: string
-    creating: string
-    createAction: string
-    renameTitle: string
-    renameDescPrefix: string
-    renameDescSuffix: string
-    newNameLabel: string
-    renaming: string
-    created: string
-    renamed: string
-    deleted: string
-    setupCopied: string
-    soulSaved: string
-    failedLoad: string
-    failedDelete: string
-    failedCopy: string
-    failedLoadSoul: string
-    failedSaveSoul: string
-    failedCreate: string
-    failedRename: string
-  }
+  },
 
   agenda: {
     close: string

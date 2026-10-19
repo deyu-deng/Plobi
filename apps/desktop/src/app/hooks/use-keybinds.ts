@@ -5,7 +5,7 @@ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/stor
 import { closeActiveTerminal, createTerminal, cycleTerminal } from '@/app/right-sidebar/terminal/terminals'
 import { PANE_TOGGLE_REVEAL_EVENT } from '@/components/pane-shell'
 import { matchesQuery } from '@/hooks/use-media-query'
-import { PROFILE_SLOT_COUNT, SESSION_SLOT_COUNT } from '@/lib/keybinds/actions'
+import { SESSION_SLOT_COUNT } from '@/lib/keybinds/actions'
 import { comboAllowedInInput, comboFromEvent, isEditableTarget } from '@/lib/keybinds/combo'
 import { $repoStatus } from '@/store/coding-status'
 import { toggleCommandPalette } from '@/store/command-palette'
@@ -20,12 +20,7 @@ import {
   toggleSidebarOpen
 } from '@/store/layout'
 import {
-  $newChatProfile,
-  cycleProfile,
-  requestProfileCreate,
-  switchProfileToSlot,
-  switchToDefaultProfile,
-  toggleShowAllProfiles
+  $newChatProfile
 } from '@/store/profile'
 import { requestNewWorktree } from '@/store/projects'
 import { toggleReview } from '@/store/review'
@@ -51,7 +46,6 @@ import {
   ARTIFACTS_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
-  PROFILES_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
   SKILLS_ROUTE
@@ -78,12 +72,6 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
   // Keep the latest closures without re-subscribing the listener.
   const handlersRef = useRef<HandlerMap>({})
   const commitSwitcherRef = useRef<() => void>(() => {})
-
-  const profileSwitchHandlers: HandlerMap = {}
-
-  for (let slot = 1; slot <= PROFILE_SLOT_COUNT; slot += 1) {
-    profileSwitchHandlers[`profile.switch.${slot}`] = () => switchProfileToSlot(slot)
-  }
 
   const goToSession = (sessionId: null | string) => {
     if (sessionId) {
@@ -123,7 +111,6 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.commandPalette': toggleCommandPalette,
     'nav.commandCenter': deps.toggleCommandCenter,
     'nav.settings': () => navigate(SETTINGS_ROUTE),
-    'nav.profiles': () => navigate(PROFILES_ROUTE),
     'nav.skills': () => navigate(SKILLS_ROUTE),
     'nav.messaging': () => navigate(MESSAGING_ROUTE),
     'nav.artifacts': () => navigate(ARTIFACTS_ROUTE),
@@ -178,14 +165,7 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'view.closeTerminal': () => $terminalTakeover.get() && closeActiveTerminal(),
     'view.flipPanes': togglePanesFlipped,
 
-    'appearance.toggleMode': () => setMode(resolvedMode === 'dark' ? 'light' : 'dark'),
-
-    'profile.default': switchToDefaultProfile,
-    ...profileSwitchHandlers,
-    'profile.next': () => cycleProfile(1),
-    'profile.prev': () => cycleProfile(-1),
-    'profile.toggleAll': toggleShowAllProfiles,
-    'profile.create': requestProfileCreate
+    'appearance.toggleMode': () => setMode(resolvedMode === 'dark' ? 'light' : 'dark')
   }
 
   useEffect(() => {
