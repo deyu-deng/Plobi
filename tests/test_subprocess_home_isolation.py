@@ -504,14 +504,22 @@ class TestSanitizeSubprocessEnvHomeInjection:
 # ---------------------------------------------------------------------------
 
 class TestProfileBootstrap:
-    """Verify new profiles get a home/ subdirectory."""
+    """A new profile home no longer gets a ``home/`` subdirectory.
 
-    def test_profile_dirs_includes_home(self):
+    裁定 42 / 166 / 178（任务书第 1 步「停止播种」）：`_PROFILE_DIRS` 只剩
+    ``sessions`` 与 ``logs``。``_profile_home_path()`` 只认存在的目录，所以
+    「没有 home/」等于「不提供 HOME 覆盖」——子进程沿用继承来的 HOME，而不是被
+    指向一个不存在的目录。容器安装里那条「profile 家自带一份持久 HOME」的旧行为
+    随之消失（第 4 步取消家目录时收口）。
+    """
+
+    def test_profile_dirs_drops_home(self):
         from plobi_cli.profiles import _PROFILE_DIRS
-        assert "home" in _PROFILE_DIRS
+        assert "home" not in _PROFILE_DIRS
+        assert {"sessions", "logs"} == set(_PROFILE_DIRS)
 
-    def test_create_profile_bootstraps_home_dir(self, tmp_path, monkeypatch):
-        """create_profile() should create home/ inside the profile dir."""
+    def test_create_profile_does_not_bootstrap_home_dir(self, tmp_path, monkeypatch):
+        """create_profile() must not create home/ inside the profile dir."""
         home = tmp_path / ".plobi"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -519,7 +527,20 @@ class TestProfileBootstrap:
 
         from plobi_cli.profiles import create_profile
         profile_dir = create_profile("testbot", no_alias=True)
-        assert (profile_dir / "home").is_dir()
+        assert not (profile_dir / "home").exists()
+        assert (profile_dir / "sessions").is_dir()
+        assert (profile_dir / "logs").is_dir()
+
+    def test_missing_profile_home_means_no_home_override(self, tmp_path, monkeypatch):
+        """No seeded home/ ⇒ ``get_subprocess_home()`` offers no override at all
+        (the child keeps the HOME it was spawned with), rather than pointing at
+        a directory that does not exist."""
+        profile = tmp_path / ".plobi" / "profiles" / "testbot"
+        profile.mkdir(parents=True)
+        monkeypatch.setenv("PLOBI_HOME", str(profile))
+
+        from plobi_constants import get_subprocess_home
+        assert get_subprocess_home({"HOME": str(tmp_path / "real-home")}) is None
 
 
 # ---------------------------------------------------------------------------

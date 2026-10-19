@@ -167,35 +167,43 @@ class TestCreateProfile:
     """Tests for create_profile()."""
 
     def test_creates_directory_with_subdirs(self, profile_env):
+        """裁 42 / 166 / 178（任务书第 1 步「停止播种」）：新建一个家只有运行
+        必需的两件——``sessions`` 与 ``logs``。其余每一样过去都是「按分身复制」
+        的生产者，一家都不许再出现（判据＝存量那 24 家份数不变、新那一家没有）。"""
         profile_dir = create_profile("coder", no_alias=True)
         assert profile_dir.is_dir()
-        for subdir in ["memories", "sessions", "skills", "skins", "logs",
-                        "plans", "workspace", "cron"]:
-            assert (profile_dir / subdir).is_dir(), f"Missing subdir: {subdir}"
+        assert {p.name for p in profile_dir.iterdir()} == {"sessions", "logs"}
+        for subdir in ["memories", "skills", "skins", "plans", "workspace",
+                       "cron", "home"]:
+            assert not (profile_dir / subdir).exists(), f"still seeded: {subdir}"
 
-    def test_seeds_placeholder_env_file(self, profile_env):
-        """Fresh profiles get their own .env (owner-only) so channel/env
-        writes are profile-scoped from day one instead of falling through
-        to the shell environment / root install."""
-        import stat
+    def test_roster_style_create_adds_only_the_opt_out_marker(self, profile_env):
+        """The roster path (``AgentRegistry.spawn``) creates with ``no_skills``.
+        That adds the opt-out marker — the brake that keeps ``plobi update`` from
+        re-seeding a skill tree — and nothing else."""
+        profile_dir = create_profile("coder", no_alias=True, no_skills=True)
+        assert {p.name for p in profile_dir.iterdir()} == {
+            "sessions", "logs", NO_BUNDLED_SKILLS_MARKER,
+        }
+
+    def test_no_per_profile_env_or_persona_seeded(self, profile_env):
+        """``.env`` 与 ``SOUL.md`` 两条播种腿一起摘掉：密钥只在顶层一份，分身要
+        覆盖的写在名册行（``apply_secret_overrides``）；人设共享一份 + 名册行片段。
+        读侧本来就有回落（``get_env_value_prefer_dotenv`` / 注入的
+        ``PLOBI_INJECTED_SECRETS``），所以这里缺文件不是缺功能。"""
         profile_dir = create_profile("coder", no_alias=True)
-        env_path = profile_dir / ".env"
-        assert env_path.exists()
-        content = env_path.read_text(encoding="utf-8")
-        # Placeholder only — no credentials leak in from anywhere.
-        assert all(
-            line.startswith("#") or not line.strip()
-            for line in content.splitlines()
-        )
-        mode = stat.S_IMODE(env_path.stat().st_mode)
-        assert mode == 0o600
+        assert not (profile_dir / ".env").exists()
+        assert not (profile_dir / "SOUL.md").exists()
 
-    def test_seeded_env_does_not_clobber_cloned_env(self, profile_env):
-        tmp_path = profile_env
-        default_home = tmp_path / ".plobi"
-        (default_home / ".env").write_text("KEY=val")
+    def test_clone_config_copies_neither_secrets_nor_persona(self, profile_env):
+        """``--clone`` must not manufacture a second ``.env`` / ``SOUL.md``."""
+        default_home = profile_env / ".plobi"
+        (default_home / ".env").write_text("KEY=val", encoding="utf-8")
+        (default_home / "SOUL.md").write_text("Be helpful.", encoding="utf-8")
+
         profile_dir = create_profile("coder", clone_config=True, no_alias=True)
-        assert (profile_dir / ".env").read_text() == "KEY=val"
+        assert not (profile_dir / ".env").exists()
+        assert not (profile_dir / "SOUL.md").exists()
 
     def test_duplicate_raises_file_exists(self, profile_env):
         create_profile("coder", no_alias=True)
@@ -211,6 +219,7 @@ class TestCreateProfile:
             create_profile("INVALID!", no_alias=True)
 
     def test_clone_config_copies_files(self, profile_env):
+        """``--clone`` 只带技能，不再带配置／密钥／人设（三条腿全部关闭）。"""
         tmp_path = profile_env
         default_home = tmp_path / ".plobi"
         # Create source config files in default profile
@@ -220,25 +229,8 @@ class TestCreateProfile:
 
         profile_dir = create_profile("coder", clone_config=True, no_alias=True)
 
-        cloned_config = yaml.safe_load((profile_dir / "config.yaml").read_text())
-        assert cloned_config["_config_version"] == DEFAULT_CONFIG["_config_version"]
-        assert cloned_config["model"] == "test"
-        assert (profile_dir / ".env").read_text().strip() == "KEY=val"
-        assert (profile_dir / "SOUL.md").read_text() == "Be helpful."
-
-    def test_clone_config_migrates_legacy_config_version(self, profile_env):
-        tmp_path = profile_env
-        default_home = tmp_path / ".plobi"
-        (default_home / "config.yaml").write_text(
-            "model:\n  provider: openrouter\n",
-            encoding="utf-8",
-        )
-
-        profile_dir = create_profile("coder", clone_config=True, no_alias=True)
-        cloned_config = yaml.safe_load((profile_dir / "config.yaml").read_text())
-
-        assert cloned_config["_config_version"] == DEFAULT_CONFIG["_config_version"]
-        assert cloned_config["model"]["provider"] == "openrouter"
+        for copied in ("config.yaml", ".env", "SOUL.md"):
+            assert not (profile_dir / copied).exists(), f"cloned a copy: {copied}"
 
     def test_clone_config_copies_source_skills(self, profile_env):
         tmp_path = profile_env
@@ -383,15 +375,12 @@ class TestCreateProfile:
         assert (profile_dir / "workspace" / "backups" / "user-data.txt").read_text() == "mine"
 
     def test_clone_config_missing_files_skipped(self, profile_env):
-        """Clone config gracefully skips files that don't exist in source."""
+        """Cloning an empty source is fine — and no placeholder ``.env`` /
+        default ``SOUL.md`` appears in the new home either."""
         profile_dir = create_profile("coder", clone_config=True, no_alias=True)
-        # No error; optional files just not copied
         assert not (profile_dir / "config.yaml").exists()
-        # .env is always seeded (placeholder) so the profile has its own
-        # credentials file even when the clone source lacked one.
-        assert (profile_dir / ".env").exists()
-        # SOUL.md is always seeded with the default even when clone source lacks it
-        assert (profile_dir / "SOUL.md").exists()
+        assert not (profile_dir / ".env").exists()
+        assert not (profile_dir / "SOUL.md").exists()
 
 
 # ===================================================================
@@ -412,14 +401,13 @@ class TestNoSkillsOptOut:
         # has_bundled_skills_opt_out() agrees
         assert has_bundled_skills_opt_out(profile_dir) is True
 
-        # skills/ dir exists (profile bootstrapping still creates the dir) but
-        # contains nothing yet because create_profile itself doesn't seed.
-        assert (profile_dir / "skills").is_dir()
-        assert list((profile_dir / "skills").iterdir()) == []
+        # No skills/ dir at all — the profile owns no skill tree and reads the
+        # shared root via ``skills.external_dirs`` (裁定 42 §42.3).
+        assert not (profile_dir / "skills").exists()
 
     def test_no_skills_composes_with_clone_config(self, profile_env):
-        """``--no-skills`` + ``--clone``: the config layer is still cloned, the
-        skill tree is not. A 分身 that reads a shared root via
+        """``--no-skills`` + ``--clone``: neither the skill tree nor the shared
+        layer is copied into the new home. A 分身 that reads a shared root via
         ``skills.external_dirs`` must not end up with a private copy (裁定 42).
         """
         default_home = profile_env / ".plobi"
@@ -434,12 +422,10 @@ class TestNoSkillsOptOut:
             "orchestrator", no_alias=True, no_skills=True, clone_config=True
         )
 
-        # config layer survives the clone (the clone is then schema-migrated,
-        # so assert the cloned value made it through, not byte equality) ...
-        assert "model: gpt-4" in (profile_dir / "config.yaml").read_text(encoding="utf-8")
-        assert (profile_dir / "SOUL.md").read_text(encoding="utf-8") == "cloned persona\n"
-        # ... the skills do not.
-        assert list((profile_dir / "skills").rglob("SKILL.md")) == []
+        # Nothing shared-layer is copied any more; neither is the skill tree.
+        for copied in ("config.yaml", "SOUL.md", ".env"):
+            assert not (profile_dir / copied).exists(), f"cloned a copy: {copied}"
+        assert not (profile_dir / "skills").exists()
         assert (profile_dir / NO_BUNDLED_SKILLS_MARKER).is_file()
 
     def test_no_skills_clone_copies_skills_without_the_flag(self, profile_env):
@@ -477,8 +463,8 @@ class TestNoSkillsOptOut:
         assert result is not None
         assert result.get("skipped_opt_out") is True
         assert result.get("copied") == []
-        # skills/ stays empty — no subprocess ran
-        assert list((profile_dir / "skills").iterdir()) == []
+        # No skills/ dir appeared — no subprocess ran, nothing was seeded.
+        assert not (profile_dir / "skills").exists()
 
     def test_default_profile_gets_skills_seeded(self, profile_env, monkeypatch):
         """Sanity: without --no-skills, seed_profile_skills() runs the real
@@ -539,50 +525,33 @@ class TestNoSkillsOptOut:
 # ===================================================================
 
 class TestBackfillProfileEnvs:
-    """Tests for backfill_profile_envs() — the `plobi update` pass that
-    gives pre-#44792 profiles (created before .env seeding) their own
-    .env, copied from the default install so credentials don't break."""
+    """``backfill_profile_envs()`` is a no-op — 裁 42 / 166 / 178.
 
-    def test_copies_default_env_into_envless_profiles(self, profile_env):
-        import stat
+    It used to be the *second* producer of the per-分身 ``.env`` leg: even after
+    ``create_profile`` stopped seeding one, this ``plobi update`` pass copied the
+    default install's ``.env`` into every home that lacked one.  Secrets are one
+    top-level file now; 存量 homes are left exactly as they are (先隔离不删)."""
+
+    def test_creates_no_env_copy_anywhere(self, profile_env):
         tmp_path = profile_env
-        (tmp_path / ".plobi" / ".env").write_text("OPENROUTER_API_KEY=root-key\n")
+        (tmp_path / ".plobi" / ".env").write_text(
+            "OPENROUTER_API_KEY=root-key\n", encoding="utf-8"
+        )
         p1 = create_profile("old1", no_alias=True)
         p2 = create_profile("old2", no_alias=True)
-        # Simulate pre-#44792 profiles: no .env
-        (p1 / ".env").unlink()
-        (p2 / ".env").unlink()
 
-        backfilled = backfill_profile_envs(quiet=True)
-
-        assert sorted(backfilled) == ["old1", "old2"]
+        assert backfill_profile_envs(quiet=True) == []
         for p in (p1, p2):
-            assert (p / ".env").read_text() == "OPENROUTER_API_KEY=root-key\n"
-            assert stat.S_IMODE((p / ".env").stat().st_mode) == 0o600
+            assert not (p / ".env").exists()
 
-    def test_never_overwrites_existing_profile_env(self, profile_env):
+    def test_never_touches_an_existing_profile_env(self, profile_env):
         tmp_path = profile_env
-        (tmp_path / ".plobi" / ".env").write_text("KEY=root\n")
+        (tmp_path / ".plobi" / ".env").write_text("KEY=root\n", encoding="utf-8")
         p = create_profile("hasenv", no_alias=True)
-        (p / ".env").write_text("KEY=mine\n")
+        (p / ".env").write_text("KEY=mine\n", encoding="utf-8")
 
-        backfilled = backfill_profile_envs(quiet=True)
-
-        assert backfilled == []
+        assert backfill_profile_envs(quiet=True) == []
         assert (p / ".env").read_text() == "KEY=mine\n"
-
-    def test_placeholder_when_default_has_no_env(self, profile_env):
-        p = create_profile("noroot", no_alias=True)
-        (p / ".env").unlink()
-
-        backfilled = backfill_profile_envs(quiet=True)
-
-        assert backfilled == ["noroot"]
-        content = (p / ".env").read_text(encoding="utf-8")
-        assert all(
-            line.startswith("#") or not line.strip()
-            for line in content.splitlines()
-        )
 
     def test_no_profiles_root_is_noop(self, profile_env):
         assert backfill_profile_envs(quiet=True) == []
@@ -1559,14 +1528,17 @@ class TestProfileIsolation:
         assert alpha_dir / "state.db" != beta_dir / "state.db"
 
     def test_separate_skills_paths(self, profile_env):
+        """裁 42 §42.3 — skills are no longer copied per 分身: neither home owns
+        a ``skills/`` tree, both read the one shared root via
+        ``skills.external_dirs``."""
         create_profile("alpha", no_alias=True)
         create_profile("beta", no_alias=True)
         alpha_dir = get_profile_dir("alpha")
         beta_dir = get_profile_dir("beta")
-        assert alpha_dir / "skills" != beta_dir / "skills"
-        # Verify both exist and are independent dirs
-        assert (alpha_dir / "skills").is_dir()
-        assert (beta_dir / "skills").is_dir()
+        assert alpha_dir != beta_dir
+        # Verify neither home manufactures a private skill copy any more.
+        assert not (alpha_dir / "skills").exists()
+        assert not (beta_dir / "skills").exists()
 
 
 # ===================================================================
@@ -1858,20 +1830,22 @@ class TestEdgeCases:
             validate_profile_name("_abc")
 
     def test_clone_from_named_profile(self, profile_env):
-        """Clone config from a named (non-default) profile."""
+        """Clone from a named (non-default) profile: the source's leftover
+        ``config.yaml`` / ``.env`` copies are 存量 residue and must NOT be
+        carried into the new home (裁 42 / 166 / 178)."""
         tmp_path = profile_env
         # Create source profile with config
         source_dir = create_profile("source", no_alias=True)
-        (source_dir / "config.yaml").write_text("model: cloned")
-        (source_dir / ".env").write_text("SECRET=yes")
+        (source_dir / "config.yaml").write_text("model: cloned", encoding="utf-8")
+        (source_dir / ".env").write_text("SECRET=yes", encoding="utf-8")
 
         target_dir = create_profile(
             "target", clone_from="source", clone_config=True, no_alias=True,
         )
-        cloned_config = yaml.safe_load((target_dir / "config.yaml").read_text())
-        assert cloned_config["_config_version"] == DEFAULT_CONFIG["_config_version"]
-        assert cloned_config["model"] == "cloned"
-        assert (target_dir / ".env").read_text().strip() == "SECRET=yes"
+        assert not (target_dir / "config.yaml").exists()
+        assert not (target_dir / ".env").exists()
+        # The source's own 存量 files are left where they are.
+        assert (source_dir / ".env").read_text().strip() == "SECRET=yes"
 
     def test_delete_clears_active_profile(self, profile_env):
         """Deleting the active profile resets active to default."""
