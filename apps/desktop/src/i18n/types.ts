@@ -320,44 +320,48 @@ export interface Translations {
         custom: string
       }
       disable: string
+      emptyExternal: string
+      enable: string
       /**
        * 首次配置字段的显示名，**按 key 查**。查不到时界面回退到后端声明里那个英文
        * 缺省值——所以第三方信源包零改动就能出现在界面上，只是没翻译。
        */
       fields: Record<string, string>
-      fieldHelp: string
-      emptyCategory: string
-      emptyExternal: string
-      enable: string
-      externalLead: string
       install: string
       installFailed: string
       installPlaceholder: string
       /**
-       * 装第三方包那一格必须说的那一句话。不是免责声明——是事实：pip 包在装的
-       * 时候就会跑 setup 代码。纪律「不许描述不存在的机制」在这里的反面就是
-       * 「不许把它说得比实际更轻」。
+       * 装第三方包那一格必须说的那一句。不是免责声明——是事实：pip 包在装的
+       * 时候就会跑自己的代码。纪律「不许描述不存在的机制」在这里的反面就是
+       * 「不许把它说得比实际更轻」。**一句话**（用户 10-19 第二轮：界面上只留
+       * 最短的那一句）。
        */
       installsForeignCode: string
+      installed: string
       installedNone: string
-      lastWrite: (count: number) => string
-      lead: string
       loadingLog: string
       loadFailed: string
+      /**
+       * 「注册表说在采，却构造不出采集器」那一格 —— 产品缺陷。界面上只给这两个词，
+       * 不给那一整段解释（那段进交账，不进界面）。
+       */
       noBuilder: string
       packageName: string
+      /** 状态胶囊。与 `sources/verbs.ts` 的 `VERB_RULES` 一一对应。 */
+      pillLive: string
+      pillNoStore: string
+      pillNotStarted: string
+      pillStale: string
+      pillSwitchOff: string
+      pillUnknown: string
       remove: string
       removeFailed: string
       saveFailed: string
       saveSetup: string
-      saved: string
-      setupFailed: string
-      stateUnknown: string
-      uninstalled: string
-      uninstalledDone: string
+      /** 首次配置那一格的按钮。`setupNeeded` = 还没配（所以文案更显眼）。 */
+      setup: string
+      setupNeeded: string
       switchFailed: string
-      switchOff: string
-      switchUnreadable: string
       title: string
       tryFailed: string
       tryOnce: string
