@@ -24,9 +24,11 @@ _POOL_READ_SCHEMA: Dict[str, Any] = {
     "description": (
         "读信息池：采集器已经收进来的结构化条目，按筛选条件捞，返回含正文的条目列表。\n\n"
         "所有参数都是**筛选条件**（可组合，全部可省）：`source` 哪个信源、`kind` 条目类型、"
+        "`visibility` 那一面的可见性（私聊／群聊这类）、`conversation` 哪一扇窗口、"
         "`since` 起点时间（ISO，如 `2026-10-19` 或带时分秒）、`contains` 标题或正文里含这段文字、"
         "`acted` 是否已标记过、`limit` 最多几条（默认 50，上限 500）。\n"
-        "一个参数都不给 = 最近的一批。返回按时间倒序，每条带 `body` 正文。"
+        "一个参数都不给 = 最近的一批。返回按时间倒序，每条带 `body` 正文，"
+        "并带 `visibility` 与 `conversation`（空串 = 采它那一轮还没记这一格，不是「不属于任何窗口」）。"
     ),
     "parameters": {
         "type": "object",
@@ -38,6 +40,14 @@ _POOL_READ_SCHEMA: Dict[str, Any] = {
             "kind": {
                 "type": "string",
                 "description": "条目类型，如 message / event / ddl / note。",
+            },
+            "visibility": {
+                "type": "string",
+                "description": "按可见性筛，如 private（私聊）/ group（群聊）。精确匹配；信源没记这一格的条目筛不到。",
+            },
+            "conversation": {
+                "type": "string",
+                "description": "哪一扇窗口（群名／会话 id，信源给什么存什么）。精确匹配；要先从读回来的条目里拿那个值。",
             },
             "since": {
                 "type": "string",
@@ -89,6 +99,8 @@ def _pool_module():
 def pool_read(
     source: Optional[str] = None,
     kind: Optional[str] = None,
+    visibility: Optional[str] = None,
+    conversation: Optional[str] = None,
     since: Optional[str] = None,
     contains: Optional[str] = None,
     acted: Optional[bool] = None,
@@ -104,7 +116,8 @@ def pool_read(
     filters = {
         k: v
         for k, v in (
-            ("source", source), ("kind", kind), ("since", since),
+            ("source", source), ("kind", kind), ("visibility", visibility),
+            ("conversation", conversation), ("since", since),
             ("contains", contains), ("acted", acted),
         )
         if v not in (None, "")
