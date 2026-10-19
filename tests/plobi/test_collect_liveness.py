@@ -23,7 +23,11 @@ from plobi.collectors.liveness import (
     read_source_liveness,
 )
 
-NOW = datetime(2026, 10, 15, 9, 0)
+NOW = datetime.now()
+#: ↑ 原来这里硬编 `datetime(2026, 10, 15, 9, 0)`。判活走的是**相对**关系（几天前算 stale），
+#: 而 `TestEndpoint` 那一档调的是 HTTP 路由——路由内部读的是**真钟**，注入不进去。
+#: 于是这条测试从 10-18 09:00 起就必然红（今天现红：`assert 'stale' == 'live'`）。
+#: 参照系改成"跑测试的那一刻"之后，断言的还是同一个关系，只是不再过保质期。
 
 
 def _store(tmp_path, rows):
