@@ -43,6 +43,7 @@ def test_kind_comes_from_the_registry_without_forcing_a_probe():
     report = readout.readout(
         pool=_FakePool(["zhipu-air"], sources={"zhipu-air": _Cheap()}),
         fetch=lambda base, key: _outcome({}),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,
@@ -50,6 +51,10 @@ def test_kind_comes_from_the_registry_without_forcing_a_probe():
     leg = report["legs"][0]
     assert leg["kind"] == "cheap_api"
     assert leg["usable"] is None and leg["usable_reason"] == "not_probed"
+
+
+def _health(accounts=None, state=gateway.CatalogState.OK, detail="health ok"):
+    return readout.HealthOutcome(state, accounts or {}, detail, NOW)
 
 
 def _outcome(sources, state=gateway.CatalogState.OK, detail="ok"):
@@ -79,6 +84,7 @@ def test_leg_says_it_is_usable_from_the_catalogs_own_flags():
     legs = readout.readout(
         pool=_FakePool(["workbuddy"]),
         fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": 12.5, "records": 3, "files": 1, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,
@@ -96,6 +102,7 @@ def test_remaining_is_empty_on_every_leg_and_says_why_not_read():
                        [SourceStatus("zhipu-air", "cheap_api", HealthStatus.DEGRADED, None,
                                      "configured but balance probe not wired", NOW)]),
         fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0,
                            "detail": "落点读不到"},
@@ -125,6 +132,7 @@ def test_spent_from_our_own_ledger_counts_only_priced_successful_rows_today():
         pool=_FakePool(["zhipu-air"],
                        [SourceStatus("zhipu-air", "cheap_api", HealthStatus.HEALTHY, 3.0, "ok", NOW)]),
         fetch=lambda base, key: _outcome({}),
+        health=lambda base, key: _health(),
         ledger_rows=rows,
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,
@@ -139,6 +147,7 @@ def test_unselectable_leg_is_reported_with_the_vendors_reason_not_a_guess():
         fetch=lambda base, key: _outcome(
             {"workbuddy": _aigw_source(selectable=False, live=False, live_reason="credential_expired",
                                        unselectable="credential_expired")}),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,
@@ -153,6 +162,7 @@ def test_unreachable_gateway_is_a_third_answer_not_stop_work():
         pool=_FakePool([]),
         fetch=lambda base, key: _outcome({}, gateway.CatalogState.UNREACHABLE,
                                          "http://127.0.0.1:8000/v1/models unreachable"),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,
@@ -168,6 +178,7 @@ def test_verdict_offers_a_leg_when_at_least_one_is_up():
                        [SourceStatus("zhipu-air", "cheap_api", HealthStatus.UNAVAILABLE, None,
                                      "no credential configured", NOW)]),
         fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": 4.0, "records": 1, "files": 1, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,
@@ -186,15 +197,17 @@ def test_exit_code_is_the_shape_a_scheduled_job_can_act_on():
     assert readout.exit_code({}) == 1
 
 
-def test_readout_touches_no_network_when_the_three_seams_are_injected(monkeypatch):
+def test_readout_touches_no_network_when_the_four_seams_are_injected(monkeypatch):
     def _no_network(*args, **kwargs):  # 真发一次就算测红
         raise AssertionError("readout 不该自己去找网络")
 
     monkeypatch.setattr(gateway, "fetch_sources", _no_network)
     monkeypatch.setattr(readout, "credits_today", _no_network)
+    monkeypatch.setattr(readout, "fetch_health", _no_network)
     report = readout.readout(
         pool=_FakePool(["workbuddy"]),
         fetch=lambda base, key: _outcome({"workbuddy": _aigw_source()}),
+        health=lambda base, key: _health(),
         ledger_rows=[],
         credits=lambda p: {"credits": None, "records": 0, "files": 0, "skipped_no_timestamp": 0, "detail": ""},
         now=NOW,

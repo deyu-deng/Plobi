@@ -95,6 +95,14 @@ class QuotaSource:
         """Spendable dollar balance, or ``None`` when unknown (never "empty")."""
         return None
 
+    def balance_probe_wired(self) -> bool:
+        """这一档到底有没有余额写入方（``False`` = 读口只能说"没人写"，不能说"余额是 0"）。
+
+        读侧要这一位是为了不硬编：`build_sources` 传不传 `balance_fn` 是事实，
+        让源自己答，比在别处抄一句"这里没接线"更不容易过期。
+        """
+        return False
+
     # --- introspection ---------------------------------------------------
     @property
     def endpoint(self) -> dict:
@@ -154,6 +162,9 @@ class CheapApiSource(QuotaSource):
         if self._cached_at > 0:
             return self._cached_balance
         return None
+
+    def balance_probe_wired(self) -> bool:
+        return self._balance_fn is not None
 
     def _default_probe(self) -> SourceStatus:
         if not self.configured:
