@@ -1321,6 +1321,11 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
                 else:
                     updates["workdir"] = _normalize_workdir(_wd)
 
+            if "recipient" in updates:
+                # 收件人存的只是名字：空白串与 None 都算「没写」，跟 create_job 同一形状，
+                # 免得 ``recipient="  "`` 这种记录把「缺收件人」读成「写了个空名字」。
+                updates["recipient"] = _normalize_job_optional_text(updates["recipient"])
+
             previous_inference_axes = _normalized_inference_axes(job)
             updated = _apply_skill_fields({**job, **updates})
             schedule_changed = "schedule" in updates

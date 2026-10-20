@@ -345,6 +345,73 @@ def _local_delivery_notice(job: Dict[str, Any], user_deliver: Optional[str]) -> 
     )
 
 
+def _recipient_roster():
+    """名册那一侧的账本；读不出来返回 ``None``（空名册返回空行）。
+
+    创建这一侧不因为名册一时读不出来就拒作业——到点那一轮的闸门（裁定 177）才是
+    真正的把关处。这里只做两件小事：错名字当场拦（别让作业生下来就没主人），
+    和没名字时出一句声。
+    """
+    try:
+        from plobi.agents.registry import load_registry
+
+        return load_registry()
+    except Exception as exc:
+        logger.debug("cron recipient roster unreadable: %s", exc)
+        return None
+
+
+def _recipient_name_check(name: str) -> tuple[Optional[str], Optional[str]]:
+    """核对名册里那一行。返回 ``(规范后的名字, None)`` 或 ``(None, 错因)``。"""
+    registry = _recipient_roster()
+    if registry is None:
+        return name, None  # 名册读不出来：不在这里下判决
+    live = registry.live_entries()
+    if not live:
+        return name, None  # 这台还没有名册（底座/测试形态），交闸门那一侧处理
+    entry = registry.get(name)
+    if entry is None:
+        lowered = name.casefold()
+        entry = next(
+            (row for row in registry.agents.values() if str(row.name).casefold() == lowered),
+            None,
+        )
+    if entry is None:
+        return None, (
+            f"收件人 {name!r} 不在名册里——这一轮到点不会起。"
+            f"能用的名字：{', '.join(sorted(str(e.name) for e in live))}。"
+        )
+    if getattr(entry, "archived", False):
+        return None, f"收件人 {name!r} 那一行已归档——这一轮到点不会起。换一个活着的名字。"
+    return str(entry.name), None
+
+
+def _speaker_recipient_name() -> Optional[str]:
+    """正在说话的那一行 Agent 的名字——嘴新建作业时先归自己（裁定 177 的反面是匿名执行）。
+
+    ``PLOBI_AGENT_ID`` 由派活那一侧写进子进程环境（``agent_ask``），空身份 = L1，
+    而 L1 在名册里没有那一行，所以拿不到名字时不硬编一个。
+    """
+    from gateway.session_context import get_session_env
+
+    raw = (get_session_env("PLOBI_AGENT_ID") or "").strip()
+    if not raw:
+        return None
+    canonical, _error = _recipient_name_check(raw)
+    return canonical
+
+
+def _no_recipient_notice() -> str:
+    """这一轮到点不会起——创建/更新结果里那句人话（裁 177 不许默默退回「谁起后端谁跑」）。"""
+    return (
+        "注意：这一条作业没有收件人（记录里 recipient 是空的），到点会被跳过，一次模型都不会打"
+        "（裁定 177：没有主人的匿名回合排出来的东西没人认）。"
+        "要么在创建时写 recipient='名册里那个 Agent 的名字'，要么用 "
+        "cronjob(action='update', job_id=..., recipient='那个名字') 补上。"
+        "不需要模型想的纯脚本作业（no_agent=True）不用写收件人。"
+    )
+
+
 def _repeat_display(job: Dict[str, Any]) -> str:
     times = (job.get("repeat") or {}).get("times")
     completed = (job.get("repeat") or {}).get("completed", 0)
@@ -586,6 +653,7 @@ def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
         "last_status": job.get("last_status"),
         "last_delivery_error": job.get("last_delivery_error"),
         "enabled": job.get("enabled", True),
+        "recipient": job.get("recipient"),
         "state": job.get("state", "scheduled" if job.get("enabled", True) else "paused"),
         "paused_at": job.get("paused_at"),
         "paused_reason": job.get("paused_reason"),
@@ -677,6 +745,7 @@ def cronjob(
     workdir: Optional[str] = None,
     no_agent: Optional[bool] = None,
     attach_to_session: Optional[bool] = None,
+    recipient: Optional[str] = None,
     task_id: str = None,
 ) -> str:
     """Unified cron job management tool."""
@@ -733,6 +802,23 @@ def cronjob(
                             success=False,
                         )
 
+            # 收件人：到点这一轮归谁跑（裁定 177）。名字先对名册核一遍——写错的那条
+            # 生下来就是死的，而"到点什么都没发生"正是这条裁定要消灭的东西。
+            # 没指名时先归正在说话的那一行 Agent；也解析不出（L1 在名册里没有行）
+            # 就照建，但在结果里出声，让嘴自己把这一格补上。
+            recipient_value = _normalize_optional_job_value(recipient)
+            _recipient_notice = None
+            if not _no_agent:
+                if recipient_value:
+                    canonical, recipient_error = _recipient_name_check(recipient_value)
+                    if recipient_error:
+                        return tool_error(recipient_error, success=False)
+                    recipient_value = canonical
+                else:
+                    recipient_value = _speaker_recipient_name()
+                    if not recipient_value:
+                        _recipient_notice = _no_recipient_notice()
+
             job = create_job(
                 prompt=prompt or "",
                 schedule=schedule,
@@ -750,9 +836,12 @@ def cronjob(
                 workdir=_normalize_optional_job_value(workdir),
                 no_agent=_no_agent,
                 attach_to_session=attach_to_session,
+                recipient=recipient_value,
             )
             _notify_provider_jobs_changed_safe()
             _create_message = f"Cron job '{job['name']}' created."
+            if _recipient_notice:
+                _create_message = f"{_create_message} {_recipient_notice}"
             _local_notice = _local_delivery_notice(job, _normalize_deliver_param(deliver))
             if _local_notice:
                 _create_message = f"{_create_message} {_local_notice}"
@@ -941,6 +1030,27 @@ def cronjob(
                             success=False,
                         )
                 updates["no_agent"] = target_no_agent
+            if recipient is not None:
+                # 换收件人 = 换"这一轮到点归谁跑"。清空只对脚本作业开放：Agent 作业
+                # 没有收件人到点直接不起（裁定 177），那不是改一下，那是把它停掉。
+                new_recipient = _normalize_optional_job_value(recipient)
+                if new_recipient:
+                    canonical, recipient_error = _recipient_name_check(new_recipient)
+                    if recipient_error:
+                        return tool_error(recipient_error, success=False)
+                    updates["recipient"] = canonical
+                else:
+                    effective_no_agent = (
+                        updates["no_agent"] if "no_agent" in updates else job.get("no_agent")
+                    )
+                    if not effective_no_agent:
+                        return tool_error(
+                            "不能把 Agent 作业的收件人清空——清空就是让它到点不起（裁定 177）。"
+                            "要停这条作业用 pause 或 remove；要改成不动脑的脚本作业，"
+                            "在同一次更新里设 no_agent=True 并带上 script。",
+                            success=False,
+                        )
+                    updates["recipient"] = None
             if repeat is not None:
                 # Normalize: treat 0 or negative as None (infinite)
                 normalized_repeat = None if repeat <= 0 else repeat
@@ -1085,6 +1195,17 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
                 "type": "boolean",
                 "description": "When True, this job becomes CONTINUABLE: the user can reply to its delivery and the agent has the brief in context instead of asking 'what is that?'. On thread-capable platforms (Telegram topics, Discord/Slack threads) a dedicated thread is opened for the job and its replies; on DM-only platforms (WhatsApp/Signal) the brief is mirrored into the origin DM session. Use this for conversational recurring jobs the user will reply to — daily briefings, reminders that kick off follow-up work. Leave unset for fire-and-forget alerts/watchdogs. Overrides the global cron.mirror_delivery config for this one job. Only the origin chat is touched (never fan-out targets); no effect when deliver='local'."
             },
+            "recipient": {
+                "type": "string",
+                "description": (
+                    "到点这一轮由谁跑：Agent 名册里那一行的名字（不是家目录，也不是另起一个后端）。"
+                    "裁定 177 —— Agent 作业没有收件人就不起，绝不退回「正好起着后端的那个家」，"
+                    "因为排出来的东西必须有主人。创建时不写会先归正在说话的那一行 Agent；"
+                    "那一行解析不到（例如 L1 自己建的作业）就照建，但在结果里提醒补收件人。"
+                    "名字写错当场拒绝，并把能用的名字列出来。"
+                    "no_agent=True 的纯脚本作业不需要收件人。"
+                ),
+            },
         },
         "required": ["action"]
     }
@@ -1140,6 +1261,7 @@ registry.register(
         enabled_toolsets=args.get("enabled_toolsets"),
         workdir=args.get("workdir"),
         no_agent=args.get("no_agent"),
+        recipient=args.get("recipient"),
         task_id=kw.get("task_id"),
     ))(),
     check_fn=check_cronjob_requirements,
