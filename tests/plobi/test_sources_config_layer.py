@@ -178,10 +178,14 @@ class TestSetupIsValidatedAgainstTheDeclaration:
     """
 
     def test_the_declaration_comes_from_the_package_not_from_a_table(self):
-        assert sources_config.declared_setup_keys("timetable") == ("ics_path",)
-        # 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以它就该是空的。
-        assert sources_config.declared_setup_keys("wechat") == ()
-        assert sources_config.declared_setup_keys("dingtalk") == ()
+        # `cadence` 那一格由注册表统一给（`registry.CADENCE_FIELD`），每个包引一次 ——
+        # 所以"声明来自包而不是表"这条仍然成立，而且更成立：连 label 都不在四个包里各写一遍。
+        assert sources_config.declared_setup_keys("timetable") == ("ics_path", "cadence")
+        # 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以那一族**仍然**是空的，
+        # 只剩每源都有的频率那一格（裁定 191 二）。它不是"又填了一格配置"，是"这一条终于可以被
+        # 用户安排成每天几点采"。第三方包同理：不引 `CADENCE_FIELD` 就只有它自己那几格。
+        assert sources_config.declared_setup_keys("wechat") == ("cadence",)
+        assert sources_config.declared_setup_keys("dingtalk") == ("cadence",)
 
     def test_a_key_the_source_never_declared_is_refused(self):
         with pytest.raises(sources_config.SourceConfigError, match="没声明"):

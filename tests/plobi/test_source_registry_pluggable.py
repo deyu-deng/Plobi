@@ -9,13 +9,14 @@
 
 from __future__ import annotations
 
+import inspect
 import re
 from pathlib import Path
 
 import pytest
 
 from plobi.agenda import store
-from plobi.collectors import registry
+from plobi.collectors import ingest, registry
 
 REPO = Path(__file__).resolve().parents[2]
 FAKE = "fakecampus"
@@ -106,13 +107,14 @@ class TestCapabilitiesAreDeclaredNotGuessed:
     def test_unmeasured_bit_is_not_silently_false(self) -> None:
         """sources-shape §3 与网关反着来的那一条：兜底猜一个值＝静默按某种口径跑。
 
-        原先这一格举的是 ``zju.history_backfill``——判据 5 之后它**已经实测过了**（一发就回
-        48 条），拿它当"未测"的例子会把这条测试变成一张过期的照片。现在举的这位仍是未测：
-        「提交后这条会不会从清单里消失」没测、且"要不要完成即关闭"是产品决定。
+        原先这一格举的是 ``zju.history_backfill``，再往后举的是 ``zju.authoritative_replace``
+        ——两样都在 10-20 被实测掉了（后者依据是 `plobi-source-collect` 五轮正文，注记写在
+        `zju/__init__.py` 里）。举过期例子会把这条测试变成一张旧照片，所以现在举**真的还没测**的那位：
+        钉钉只做文本收发，媒体那一格从没碰过。
         """
-        assert registry.capability("zju", "authoritative_replace") is None
+        assert registry.capability("dingtalk", "supports_media") is None
         with pytest.raises(registry.CapabilityUnmeasured):
-            registry.require("zju", "authoritative_replace")
+            registry.require("dingtalk", "supports_media")
 
     def test_registered_but_not_collecting_is_visible_as_such(self) -> None:
         """钉钉在词表里、但没东西在采它——登记归口 ≠ 假数据占位。
@@ -124,7 +126,7 @@ class TestCapabilitiesAreDeclaredNotGuessed:
         assert "dingtalk" not in registry.collecting_sources()
         assert registry.spec("dingtalk").collecting is False
         # 未实测的能力位仍然是 `None`（不许因为"开始采了"就顺手填成 False）：
-        assert registry.spec("zju").capabilities["authoritative_replace"] is None
+        assert registry.spec("dingtalk").capabilities["supports_media"] is None
 
 
 class TestCategoriesAreDeclaredNotGuessed:
@@ -293,13 +295,18 @@ class TestRegisteredSourcesDeclareTheirRealShape:
         assert registry.require("wechat", "history_backfill") is True
         assert registry.require("wechat", "supports_media") is False
         assert registry.require("timetable", "incremental_since") is False
-        # ingest 契约：本轮缺的不删 ⇒ 没有任何信源可以**声称**"没出现就当取消"。
-        # 读 `capability()` 而不是 `require()`：教务那一格是 `None`（没实测，故意留白），
-        # 而 `None` 不是"声称可以"——把它算成违规就是把"未测"读成"反对"。
-        assert all(registry.capability(sid, "authoritative_replace") is not True
-                   for sid in registry.source_ids())
-        # 而这条留白**现在有了消费方**（sweep 每天叫它），所以它必须还是 None，
-        # 谁实测出答案谁来改这一格，不许顺手填一个"看起来安全"的值。
+        # 这一格以前钉的是"谁都不许声称没出现就当取消"（那时公共层确实执行不了它）。
+        # 裁定 191 把它换成了三条**可核**的话：其余三条各有明确读数；教务那一条现在是 `True`，
+        # 依据是它自己那五轮 cron 正文（注记在 `zju/__init__.py`）；而执行方**按能力位分支、
+        # 不按信源名分支** —— 这一句是判据 5 的形状：一旦 `ingest` 里出现 "zju"，
+        # 那就是又铸了一把专用的刀，而专用对账器正是用户 02:0x 那句话拦下来的东西。
+        assert registry.capability("wechat", "authoritative_replace") is False
+        assert registry.capability("dingtalk", "authoritative_replace") is False
+        assert registry.capability("timetable", "authoritative_replace") is False
+        assert registry.capability("zju", "authoritative_replace") is True
+        executor = inspect.getsource(ingest.authoritative_round)
+        named = [sid for sid in registry.source_ids() if f'"{sid}"' in executor]
+        assert named == [], f"公共层按名字分支了：{named}"
 
     def test_wechat_and_zju_sit_in_different_categories(self) -> None:
         """这两条的分属是**连接器形状**那一维，不是数据形状也不是重要性：

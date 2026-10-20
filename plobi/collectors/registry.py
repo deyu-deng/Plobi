@@ -140,6 +140,37 @@ class SetupField:
             )
 
 
+class UnknownCadence(ValueError):
+    """这一句频率写得不合法。**拦在声明那一刻**，不等每天那一轮静默不打。"""
+
+
+def validate_cadence(text: str) -> str:
+    """把那一句频率交给**唯一的**那只手判一次（``cron/jobs.py::parse_schedule``）。
+
+    这里不再写一份 cron 解析：同一件算术在仓里长两套，早晚不一致（裁定 94）。写法与那一条
+    全局作业**完全同一句法**（``0 3 * * *`` / ``every 6h``），所以设置面上那一格不需要第二种语法，
+    排障时也不需要第二种读法。
+    """
+    from cron import jobs as cron_jobs
+
+    try:
+        cron_jobs.parse_schedule(text)
+    except (ValueError, RuntimeError) as exc:
+        raise UnknownCadence(f"{text!r} 不是一句能用的频率：{exc}") from None
+
+    return text.strip()
+
+
+#: 每一条信源都该让用户改得动的那一格。**真源在这里**，四个包各引一次 ——
+#: 不在四个包里各写一句 label（那四处早晚有一句不一样）。
+CADENCE_FIELD = SetupField(
+    key="cadence",
+    label="Collection cadence",
+    kind="text",
+    help="e.g. 0 3 * * * (daily at 03:00) or every 6h. Empty keeps it per round.",
+)
+
+
 @dataclass(frozen=True)
 class SourceSpec:
     source_id: str
@@ -155,6 +186,20 @@ class SourceSpec:
     #: 少了一格"。默认值 ``None`` 会让漏写的那个悄悄过去，等于把 ``capabilities``
     #: 当年那道"缺一位 = 注册时报错"的口子重新开一次。
     category: str = field(kw_only=True)
+    #: 这条信源**多久该被打一次**（裁定 191 二那一格）。写法就是 `cron/jobs.py` 那一句：
+    #: `"0 3 * * *"`（每天 03:00）／`"every 2h"`／`""`。
+    #:
+    #: 空串是一个**读数**而不是省略：「这条没在代码里声明频率」⇒ 生效值跟着全局
+    #: `plobi-source-collect` 那一轮，每轮都打——也就是本刀之前的现行行为。所以加这一格
+    #: **不改动任何一条现存信源的运行时**，改的是"现在终于有地方可以设它了"。
+    #:
+    #: 为什么是**声明**而不是调度器：`cron` 那一头还是一条作业，跑到每一家之前先问
+    #: :mod:`plobi.collectors.cadence` 一句「到点了没」。这里不新起一个闹钟。
+    #:
+    #: 为什么不是 `min_minutes_between_pulls` 那一格：那是**节流**（两次真打之间的上限，
+    #: 防把站方打爆），住在各家采集器自己那侧，本刀一个字不动它。两把闸叠着生效，
+    #: 谁也不替代谁——"我设成每天三点"回答不了"那家能扛多久一次"。
+    cadence: str = field(default="", kw_only=True)
     collecting: bool = True
     #: 执行方**构造这一条采集器**的唯一入口（`plobi/collectors/sweep.py` 只认这一格，不按名字分支）。
     #: `None` 是一个读数而不是省略：注册表说这条在采、却没有任何一方构造得出它 ——
@@ -176,6 +221,10 @@ class SourceSpec:
                 f"{', '.join(SOURCE_CATEGORIES)}。要加新分类先改 spec-layer §2，"
                 "并说清它为什么仍是「首次配置要用户做什么」而不是数据形状"
             )
+        if self.cadence.strip():
+            # 牙齿长在**声明那一刻**：`"0 3 * *"` 少一字段、`"every"` 少一个时长，都要在这里
+            # 炸，而不是等每天那一轮静默不打（用户看到的还是"今天没东西进来"）。
+            validate_cadence(self.cadence)
         missing = [key for key in CAPABILITY_KEYS if key not in self.capabilities]
         if missing:
             raise ValueError(f"{self.source_id} 少了能力位声明：{', '.join(missing)}")

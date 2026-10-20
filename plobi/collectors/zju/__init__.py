@@ -11,7 +11,7 @@
 它不再由 ``registry.py`` 那一行手写元组登记**，加一条信源＝加一个这样的包。
 """
 
-from plobi.collectors.registry import SetupField, SourceSpec, register
+from plobi.collectors.registry import CADENCE_FIELD, SetupField, SourceSpec, register
 
 from .collector import PullReport, ZjuCollector, to_local_naive, to_occurrences
 from .config import ZjuConfig
@@ -51,10 +51,20 @@ SPEC = SourceSpec(
         # 账密已给（根 .env）；`getKaptchaStatus` 是**站方服务端开关**，不是这信源的性质，
         # 撞上 true 必须报「要人工验证码」并停手，不许自动识别。
         "requires_manual_setup": True,
-        # 仍未实测也未拍：11 个字段里没有「已提交/未提交」状态位，「提交后会不会整条消失」
-        # 没测；叠加 `ingest.py:18` 的「本轮缺的不删」⇒「完成即关闭」是产品决定。
-        # 留 `None` 是有意的：**消费方一问就报错**，不许拿猜测当读数。
-        "authoritative_replace": None,
+        # **实测掉了**（裁定 190／191：完成态的真源就是这一家，不是用户在桌面上勾那一下）。
+        # 依据是 `plobi-source-collect` 自己那五轮的正文（这台在
+        # `D:/Data/AppData/plobi/cron/output/552aaf2ee773/`，10-20 现读）：
+        # 10-16 **46** → 10-17 **44** → 10-18 **44** → 10-19 **43** → 10-20 **45** 条，
+        # 而库里这一家有 52 行 ⇒ **今天这一轮的清单里至少少了 7 行**；条数不在动的那几轮是原样
+        # 复读（`unchanged`），在动的那几轮有增有减 ⇒ 不是分页截断（`limit=5` 与 `limit=200`
+        # 回同样条数，`history_backfill` 那位记的就是这次实测）。
+        # 11 个字段里**没有**「已提交／未提交」状态位 ⇒ 平台侧唯一给得出的完成信号就是
+        # 「从清单里消失」。那就按它：本轮未出现 ⇒ 标失效，由公共层执行
+        # （:func:`plobi.collectors.ingest.authoritative_close`），**只改状态不删行**（裁定 42.2 第 5 项）。
+        # 两句仍要照实留着：①「消失」＝已提交 还是 ＝已截止，平台没区分——两者都不该再被排，
+        # 所以这个区别不影响排程那侧的结论，但别把它读成"学校告诉我们他交了"；
+        # ②**这一轮一条都不回 ⇒ 不关闭**（清单空更像采集坏了，不是作业清零），这一条是防"一次抖动判死一批"。
+        "authoritative_replace": True,
     },
     # 无客户端可装 ⇒ 连接器形状是「一个地址 + 账密」，归「网站」不归「消息」。
     category="website",
@@ -75,6 +85,9 @@ SPEC = SourceSpec(
             required=True,
             help="Not the password — that stays in .env.",
         ),
+        # 每源一行频率（裁定 191 二）：用户 02:0x 那句「学在浙大我设置每天某个时刻采集」
+        # 以前在代码里没有落点，现在有了——生效值走 `sources.yaml`，判定在 `cadence.reading()`。
+        CADENCE_FIELD,
     ),
     # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
     # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
