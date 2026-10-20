@@ -69,6 +69,29 @@ def code_head() -> str:
         return ""
 
 
+def worktree_dirty(limit: int = 40) -> list:
+    """工作树里未提交的档（M/A/D/??）。
+
+    为什么基线必须连这个一起记：`code_head` 只说"哪个提交"，说不了"跑的时候树是干净的还是
+    带着别人在飞的改动"。这台多线共写一棵树（10-20 现读起跑即 19 档未提交），
+    拿脏树的红名单 `--write` 就等于**把别人未提交的代码算进 HEAD 的账**——
+    正是裁定 174 让人「绿要看在带着什么跑的」那条，以及 `WP-WIN-TEST-REBASELINE` 判据③
+    「做不到就点名，不许 `--write` 洗」针对的形状。记下来不拦人，但让下一个用它的人看得见。
+    """
+    try:
+        r = subprocess.run(["git", "-C", REPO_ROOT, "status", "--porcelain"],
+                           capture_output=True, text=True, errors="replace", timeout=30)
+    except Exception:
+        return ["<git status 没跑成>"]
+    out = []
+    for line in r.stdout.splitlines()[:limit]:
+        mark, path = line[:2].strip(), line[3:].split(" -> ")[-1].strip().strip('"')
+        out.append(f"{path}（{mark or '?'}）")
+    if len(r.stdout.splitlines()) > limit:
+        out.append(f"…共 {len(r.stdout.splitlines())} 档")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--from-log", required=True, help="scripts/run_tests.sh 的完整输出")
@@ -92,11 +115,18 @@ def main() -> int:
         return 0
 
     if args.write:
+        dirty = worktree_dirty()
         payload = {"date": datetime.date.today().isoformat(), "code_head": code_head() or None,
+                   "worktree_dirty_at_write": dirty,
                    "machine": "Windows (Cycle)", "entry": "scripts/run_tests.sh -q", **run}
         json.dump(payload, open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"基线已登记：{run['files_with_failures']} 个文件 / {run['tests_failed']} 条红 "
               f"（Code HEAD {payload['code_head']}）-> {os.path.relpath(BASELINE, REPO_ROOT)}")
+        if dirty:
+            print(f"⚠️ 这份基线**取自工作树**，起跑时还有 {len(dirty)} 档未提交：" + "、".join(dirty[:8])
+                  + ("…" if len(dirty) > 8 else "")
+                  + "\n   ⇒ 那几档的**新增红会被算进这份基线里**，别把它当 HEAD 的账用；"
+                    "要一份只记 HEAD 的基线，得在干净树（或那几档都签了之后）重跑一次。")
         return 0
 
     if not os.path.isfile(BASELINE):
@@ -110,6 +140,12 @@ def main() -> int:
     print(f"基线 {base['files_with_failures']} 文件 / {base['tests_failed']} 条"
           f"（{base.get('date')} · Code HEAD {base.get('code_head')}）；"
           f"本次 {run['files_with_failures']} 文件 / {run['tests_failed']} 条")
+    if base.get("worktree_dirty_at_write"):
+        # 基线自己承认是脏树取的：那"0 新增红"只证明"和当时那棵树一样"，不证明"HEAD 没问题"
+        print(f"  ⚠️ 这份基线**取自工作树**（登记时 {len(base['worktree_dirty_at_write'])} 档未提交："
+              + "、".join(base["worktree_dirty_at_write"][:6]) + ("…" if len(base["worktree_dirty_at_write"]) > 6 else "")
+              + "）⇒ 拿它判出的「0 新增红」**不等于 HEAD 干净**，只等于「和那棵树一样」。"
+                "判 HEAD 要在干净树重跑一次（这是 `WP-WIN-TEST-REBASELINE` 判据③ 的意思）。")
     if gone:
         print(f"  变好了 {len(gone)} 个文件（基线该重登一次，别攒着）：")
         for f in gone[:20]:
