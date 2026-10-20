@@ -2468,7 +2468,6 @@ disable: '止める',
     modelExplicit: (model: string) => `このエージェント専用：${model}`,
     modelStateUnknown: 'この行が上書きしているか、バックエンドが返していません',
     modelSaved: 'このエージェントのモデルを保存しました',
-    modelClearUnavailable: 'まだデフォルトに戻せません（解除の口が未実装）'
   },
 
   preview: {

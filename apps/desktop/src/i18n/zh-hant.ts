@@ -2402,7 +2402,6 @@ disable: '停掉',
     modelExplicit: (model: string) => `這一個單獨指定：${model}`,
     modelStateUnknown: '這份後端沒說這一行有沒有單獨指定',
     modelSaved: '已為這一個單獨指定模型',
-    modelClearUnavailable: '暫時還不能改回跟隨預設（撤銷的口子還沒開）'
   },
 
   preview: {

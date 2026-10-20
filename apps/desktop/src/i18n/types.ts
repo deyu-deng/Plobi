@@ -2192,7 +2192,6 @@ export interface Translations {
     modelStateUnknown: string
     modelSaved: string
     /** 撤回的口子还没开：这句是"不画假可点"的代价，必须让用户看得见原因。 */
-    modelClearUnavailable: string
   }
 
   preview: {

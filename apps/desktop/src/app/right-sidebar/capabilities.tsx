@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import { putAgentToolPrefs } from '@/app/console/api'
 import { $consoleAgents, refreshConsoleAgents } from '@/app/console/store/agents'
+import { AgentModelSection } from '@/app/right-sidebar/agent-model-section'
 import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -218,6 +219,9 @@ export function AgentCapabilitiesPane({ agentId }: { agentId: string }) {
       </p>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+        <SectionHeader label={r.capabilitiesModel} />
+        {/* 这一个 Agent 的模型：写名册那一行的覆盖，空＝跟随默认（WP-AGENT-MODEL-PICKER-MOUNT）。 */}
+        <AgentModelSection agent={agent} />
         <SectionHeader label={r.capabilitiesSkills} />
         {skillsQuery.isError ? <LoadError onRetry={() => void skillsQuery.refetch()} /> : null}
         {skillsQuery.data?.length ? (
