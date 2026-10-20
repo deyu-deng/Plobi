@@ -1577,6 +1577,10 @@ export interface Translations {
     promptPlaceholder: string
     frequencyLabel: string
     deliverLabel: string
+    recipientLabel: string
+    recipientNone: string
+    recipientHint: string
+    recipientNotInRoster: string
     customScheduleLabel: string
     customPlaceholder: string
     customHint: string

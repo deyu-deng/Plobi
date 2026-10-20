@@ -10473,6 +10473,9 @@ class CronJobCreate(BaseModel):
     schedule: str
     name: str = ""
     deliver: str = "local"
+    # WP-CRON-RECIPIENT：谁来跑这件事（名册那一行的 Agent 名）。空＝按创建处的身份跑（旧行为）。
+    # 这不是"送到哪个通道"——那一格是 `deliver`，两件事别混。
+    recipient: Optional[str] = None
     skills: Optional[List[str]] = None
     model: Optional[str] = None
     provider: Optional[str] = None
@@ -10566,8 +10569,9 @@ def _normalize_dashboard_cron_updates(
     """
     normalized = dict(updates or {})
 
-    for key in ("model", "provider", "workdir"):
+    for key in ("model", "provider", "workdir", "recipient"):
         if key in normalized:
+            # recipient 与那三格一样：空串＝「没写」，不是「写成 default」。
             normalized[key] = _cron_optional_text(normalized[key])
     if "script" in normalized:
         normalized["script"] = _normalize_dashboard_cron_script(
@@ -10823,6 +10827,9 @@ def _create_cron_job_sync(body: CronJobCreate, profile: str = "default"):
             schedule=body.schedule,
             name=body.name,
             deliver=_cron_optional_text(body.deliver) or "local",
+            # WP-CRON-RECIPIENT：以前这一格没带上 recipient，所以弹窗里选了也没处落——
+            # `cron/jobs.py` 那个参数一直在，缺的就是这一行。空串归成「没写」（不是"清空成 default"）。
+            recipient=_cron_optional_text(body.recipient),
             skills=skills,
             model=_cron_optional_text(body.model),
             provider=_cron_optional_text(body.provider),

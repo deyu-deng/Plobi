@@ -731,6 +731,8 @@ export interface CronJob {
   name?: null | string
   next_run_at?: null | string
   prompt?: null | string
+  /** 谁来跑这件事（名册那一行的 Agent 名）。缺省＝按创建处的身份跑。不是「送到哪个通道」——那是 `deliver`。 */
+  recipient?: null | string
   schedule?: CronJobSchedule
   schedule_display?: null | string
   script?: null | string
@@ -741,6 +743,7 @@ export interface CronJobCreatePayload {
   deliver?: string
   name?: string
   prompt: string
+  recipient?: string
   schedule: string
 }
 
@@ -755,6 +758,8 @@ export interface CronJobUpdates {
   enabled?: boolean
   name?: string
   prompt?: string
+  /** `null` ＝改回「不指定」（按创建处的身份跑）。省略＝不动这一格。 */
+  recipient?: null | string
   schedule?: string
 }
 
