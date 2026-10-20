@@ -337,8 +337,14 @@ def test_l1_template_threshold_is_the_source_and_the_constant_is_the_ceiling(l1_
     )
 
 
-def test_l1_template_memory_disabled():
-    """``memory.memory_enabled`` 必须为 False（WP-L1-EVERY-TURN §4）。"""
+def test_l1_template_opens_l0_and_keeps_the_curator_off():
+    """``memory_enabled`` 必须显式 True（裁定 156），``nudge_interval`` 必须仍 0（§P0-1）。
+
+    这一条原先判的是 False（WP-L1-EVERY-TURN §4 把内置 memory 跟着 curator 一起关了）。
+    裁 156 与 memory-adapter §13.5.1 把它拆开了：**关回合后那个自动 fork** 的理由仍然
+    成立，**整层关着**让 L0 那条流根本没启动 ⇒ 两个总开关开、nudge 照旧 0。
+    断"显式 True"而不是"不为 False"：缺省/字符串都算没开。
+    """
     template_path = _template_path()
     config = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     # 模板里没 ``memory`` 段就当 fail——任务书 §4 强制要求开段。
@@ -347,14 +353,21 @@ def test_l1_template_memory_disabled():
     )
     memory = config["memory"]
     assert isinstance(memory, dict)
-    # 主断言：memory_enabled 必须显式 False（不是缺省 / 字符串）。
-    assert memory.get("memory_enabled") is False, (
-        f"L1 template memory_enabled must be False, got {memory.get('memory_enabled')!r}"
-    )
-    # 附加：nudge_interval 仍为 0（既有 §P0-1 红线，不能因为 §4 改动被无意改回）。
+    for key in ("memory_enabled", "user_profile_enabled"):
+        assert memory.get(key) is True, (
+            f"L1 template {key} must be explicitly True, got {memory.get(key)!r}"
+        )
+    # 附加：nudge_interval 仍为 0（既有 §P0-1 红线，不能因为开 L0 被无意放开）。
     assert memory.get("nudge_interval") == 0, (
         f"L1 template memory.nudge_interval must remain 0, got {memory.get('nudge_interval')!r}"
     )
+    # 两处答案不许不一致：出厂默认也是开的（真源是模板，但出厂说关就是第二套口径）
+    from plobi_cli.config import DEFAULT_CONFIG
+
+    for key in ("memory_enabled", "user_profile_enabled"):
+        assert DEFAULT_CONFIG["memory"].get(key) is True, (
+            f"DEFAULT_CONFIG.memory.{key} = {DEFAULT_CONFIG['memory'].get(key)!r} ≠ 模板"
+        )
 
 
 # ─── WP-L1-SECRETARY-FORM: 模板被**应用**，不只是被人读 ────────────────────────
@@ -391,21 +404,27 @@ def _template_leaves(node: dict, prefix: tuple[str, ...] = ()):
 
 
 def test_l1_template_is_applied_into_the_default_profile_config(l1_home):
-    """``ensure_l1_secretary_form`` 必须把模板的**每一个**叶子落到 config.yaml。
+    """模板的**每一个**叶子必须在运行时真的生效（不是"文件里有这一行"）。
 
     逐叶遍历而不是写死 0.35：写死就把「模板被应用」退化成又一条模板快照检查。
+    生效值 = ``DEFAULT_CONFIG`` 深合并落盘那份 —— ``save_config`` 只回写与出厂默认
+    不同的键，所以等于默认值的叶子**不会**出现在文件里（裁 156 之后 ``memory_enabled``
+    就是这种：模板说 true、出厂也说 true，文件不重复它）。判"文件里有这行"会把这种
+    正确形状判成失败，所以这里判的是解析结果。
     """
     from plobi.agents.registry import ensure_l1_secretary_form
+    from plobi_cli.config import DEFAULT_CONFIG, _deep_merge
 
     assert ensure_l1_secretary_form() is True
 
     written = _loaded_yaml(l1_home / "config.yaml")
+    effective = _deep_merge(dict(DEFAULT_CONFIG), written)
     for path, expected in _template_leaves(_loaded_yaml(_template_path())):
-        node = written
+        node = effective
         for key in path:
             assert isinstance(node, dict) and key in node, f"template leaf never applied: {path}"
             node = node[key]
-        assert node == expected, f"{path}: config says {node!r}, template says {expected!r}"
+        assert node == expected, f"{path}: 解析出来是 {node!r}，模板要 {expected!r}"
 
 
 def test_l1_secretary_form_narrows_toolsets_and_enables_the_plugin(l1_home):

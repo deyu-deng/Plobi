@@ -240,7 +240,8 @@ class MemoryStore:
 
     def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375,
                  *, global_char_limit: int = 2200, status_char_limit: int = 200,
-                 l1_status_char_limit: int = 1500, slug: Optional[str] = None):
+                 l1_status_char_limit: int = 1500, squeeze_pressure: float = 0.9,
+                 slug: Optional[str] = None):
         self.slug = resolve_agent_slug(slug)
         self.global_entries: List[str] = []
         self.memory_entries: List[str] = []
@@ -252,6 +253,11 @@ class MemoryStore:
         self.memory_char_limit = memory_char_limit
         self.status_char_limit = status_char_limit
         self.l1_status_char_limit = l1_status_char_limit
+        # 下沉压线（见 :meth:`_at_capacity`）—— 也是配置流进来的，不是魔数。
+        try:
+            self.squeeze_pressure = min(1.0, max(0.0, float(squeeze_pressure)))
+        except (TypeError, ValueError):
+            self.squeeze_pressure = 0.9
         self.user_char_limit = user_char_limit
         # Frozen snapshot for system prompt -- set once at load_from_disk()
         self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": ""}
@@ -541,6 +547,120 @@ class MemoryStore:
             return self.status_char_limit
         return self.memory_char_limit
 
+    def _at_capacity(self, target: str) -> bool:
+        """The written-down 下沉条件 (裁定 156「定死」的那一句)：这一格已经挤到压线上。
+
+        过了压线 ⇒ 为了让位而离开 L0 的内容是**被挤出去的**，升 L1 等人批；
+        没到压线的 remove 是「这条错了，删掉」，那是正常编辑，不许灌进待确认层
+        （否则「人点头」那道闸会被日常改写淹没，判据②的反面就在这儿）。
+
+        压线是配置（``memory.squeeze_pressure``），不是代码里的魔数。
+        """
+        limit = self._char_limit(target)
+        if limit <= 0:
+            return False
+        return self._char_count(target) >= limit * self.squeeze_pressure
+
+    def sink_displaced(self, target: str, entries: List[str], *, reason: str) -> int:
+        """Hand what left L0 to the approval layer instead of losing it (裁定 156).
+
+        L0 is 工作记忆 — bounded by design, and 装不下就合并或降级 (§10.2). The
+        downgrade has to land somewhere, and that somewhere is the existing
+        待确认层 (``tools/write_approval`` pending store, reviewed by
+        ``/memory pending`` / approve) — not a second queue invented here. The
+        staged payload is a write into ``global``, carrying the sha256 of
+        GLOBAL.md as it stands so approval stays bound to real bytes.
+
+        Scopes that are already shared (``global``) or disposable (``status``)
+        do not sink: the first has nowhere above it, the second is a digest.
+        Returns how many entries were staged (the reading 判据② asks for).
+        """
+        if target in ("global", "status"):
+            return 0
+        fresh = [entry for entry in entries if entry.strip()]
+        if not fresh:
+            return 0
+        try:
+            from tools import write_approval as wa
+        except Exception:
+            logger.warning("memory: L1 sink unavailable, %d displaced entry(ies) lost", len(fresh))
+            return 0
+        base_sha = _file_sha(self._path_for("global"))
+        staged = 0
+        for entry in fresh:
+            record = wa.stage_write(
+                wa.MEMORY,
+                {"action": "add", "target": "global", "content": entry,
+                 "base_sha256": base_sha, "squeezed_from": f"{target}:{reason}"},
+                summary=f"squeezed out of {target}: {entry[:120]}",
+                origin=wa.current_origin(),
+            )
+            staged += 1 if record.get("id") else 0
+        if staged:
+            logger.info(
+                "memory: staged %d displaced entry(ies) from %s for approval (L0 -> L1)",
+                staged, target,
+            )
+        return staged
+
+    def rewrite(self, target: str, entries: List[str]) -> Dict[str, Any]:
+        """Make one scope hold **exactly** these entries (memory_write's whole-location write).
+
+        Whole-location semantics are what let the tool surface stay atomic: there is no
+        add/replace/remove selector for the model to guess right (裁定 185), just
+        "read it, edit it, write it back". Consolidation and adding therefore happen in
+        the same call, and the final char budget is the only gate.
+
+        Guards, in order: an empty rewrite of the user profile is refused (裁 156 的
+        硬边界「不改历史画像」——清空画像必须是显式删除，不是写一个空表); every incoming
+        entry is threat-scanned before anything is written; the batch is all-or-nothing
+        against the final size, and an over-budget refusal shows the live inventory so
+        the next call can trim and add together.
+        """
+        clean = [str(entry).strip() for entry in (entries or []) if str(entry).strip()]
+        clean = list(dict.fromkeys(clean))          # order-preserving dedupe
+
+        if target == "user" and not clean and self.user_entries:
+            return {
+                "success": False,
+                "error": (
+                    "Refusing to empty the user profile in one write. Removing a fact "
+                    "about the person is an explicit remove, not a side effect of "
+                    "rewriting the list."
+                ),
+            }
+        for entry in clean:
+            scan_error = _scan_memory_content(entry)
+            if scan_error:
+                return {"success": False, "error": f"Write rejected before touching disk: {scan_error}"}
+
+        limit = self._char_limit(target)
+        final_total = len(ENTRY_DELIMITER.join(clean)) if clean else 0
+        if final_total > limit:
+            current = self._char_count(target)
+            return self._consolidation_failure({
+                "success": False,
+                "error": (
+                    f"{target} would hold {final_total:,}/{limit:,} chars — over the cap, "
+                    f"so nothing was written (current {current:,} chars). Merge or drop "
+                    "entries in the list you send and write again; the cap is checked only "
+                    "on the final content."
+                ),
+                "current_entries": self._entries_for(target),
+                "usage": f"{current:,}/{limit:,}",
+            })
+
+        with self._file_lock(self._path_for(target)):
+            self._reload_target(target)
+            displaced = [e for e in self._entries_for(target) if e not in clean]
+            self._set_entries(target, clean)
+            self.save_to_disk(target)
+
+        result = self._success_response(target, f"{target} now holds {len(clean)} entries.")
+        result["scope"] = target
+        result["dropped"] = displaced
+        return result
+
     def add(self, target: str, content: str) -> Dict[str, Any]:
         """Append a new entry. Returns error if it would exceed the char limit."""
         content = content.strip()
@@ -613,6 +733,7 @@ class MemoryStore:
                 return _drift_error(self._path_for(target), bak)
 
             entries = self._entries_for(target)
+            squeeze = self._at_capacity(target)
             matches = [(i, e) for i, e in enumerate(entries) if old_text in e]
 
             if not matches:
@@ -656,9 +777,15 @@ class MemoryStore:
                     "usage": f"{current:,}/{limit:,}",
                 })
 
+            displaced = entries[idx]
             entries[idx] = new_content
             self._set_entries(target, entries)
             self.save_to_disk(target)
+            if squeeze and len(new_content) < len(displaced):
+                # Consolidation under pressure threw information away; that is the
+                # squeeze 裁定 156 says must not be a silent loss. A rewording that
+                # keeps or grows the text lost nothing, so it does not sink.
+                self.sink_displaced(target, [displaced], reason="replace")
 
         return self._success_response(target, "Entry replaced.")
 
@@ -674,6 +801,10 @@ class MemoryStore:
                 return _drift_error(self._path_for(target), bak)
 
             entries = self._entries_for(target)
+            # Snapshot capacity BEFORE this mutation: an entry that leaves a full
+            # scope was squeezed out (裁定 156), one that leaves a roomy scope was
+            # deliberately deleted. Only the first sinks to L1.
+            squeeze = self._at_capacity(target)
             matches = [(i, e) for i, e in enumerate(entries) if old_text in e]
 
             if not matches:
@@ -696,9 +827,11 @@ class MemoryStore:
                 # All identical -- safe to remove just the first
 
             idx = matches[0][0]
-            entries.pop(idx)
+            displaced = entries.pop(idx)
             self._set_entries(target, entries)
             self.save_to_disk(target)
+            if squeeze:
+                self.sink_displaced(target, [displaced], reason="remove")
 
         return self._success_response(target, "Entry removed.")
 
@@ -735,6 +868,8 @@ class MemoryStore:
 
             # Work on a copy; only commit if the whole batch validates.
             working: List[str] = list(self._entries_for(target))
+            before_entries: List[str] = list(working)
+            squeeze = self._at_capacity(target)
             limit = self._char_limit(target)
 
             for i, op in enumerate(operations):
@@ -803,11 +938,22 @@ class MemoryStore:
                     "usage": f"{current:,}/{limit:,}",
                 })
 
+            # Displacement ledger: what left the scope between the pre-image and
+            # the final state. Under capacity pressure that is the squeeze
+            # (裁定 156 — 被挤出去的条目升 L1), and it must not be a silent loss.
+            displaced = [entry for entry in before_entries if entry not in working]
+            squeezed_here = squeeze and bool(displaced)
+
             # Commit.
             self._set_entries(target, working)
             self.save_to_disk(target)
+            if squeezed_here:
+                self.sink_displaced(target, displaced, reason="batch")
 
-        return self._success_response(target, f"Applied {len(operations)} operation(s).")
+        result = self._success_response(target, f"Applied {len(operations)} operation(s).")
+        if squeezed_here:
+            result["squeezed_to_l1"] = len(displaced)
+        return result
 
     def _batch_error(self, target: str, message: str) -> Dict[str, Any]:
         """Build a batch-abort error that reports live (uncommitted) state."""
@@ -1013,6 +1159,7 @@ _MEMORY_LIMIT_KEYS = {
     "user_char_limit": "user_char_limit",
     "status_char_limit": "status_char_limit",
     "l1_status_char_limit": "l1_status_char_limit",
+    "squeeze_pressure": "squeeze_pressure",
 }
 _MEMORY_LIMIT_DEFAULTS = {
     "memory_char_limit": 2200,
@@ -1020,6 +1167,7 @@ _MEMORY_LIMIT_DEFAULTS = {
     "user_char_limit": 1375,
     "status_char_limit": 200,
     "l1_status_char_limit": 1500,
+    "squeeze_pressure": 0.9,
 }
 
 
@@ -1041,7 +1189,8 @@ def memory_limits_from_config(mem_config: Optional[Dict[str, Any]] = None) -> Di
     for arg_name, config_key in _MEMORY_LIMIT_KEYS.items():
         default = _MEMORY_LIMIT_DEFAULTS[arg_name]
         try:
-            limits[arg_name] = int((mem_config or {}).get(config_key, default))
+            raw = (mem_config or {}).get(config_key, default)
+            limits[arg_name] = float(raw) if arg_name == "squeeze_pressure" else int(raw)
         except (TypeError, ValueError):
             limits[arg_name] = default
     return limits

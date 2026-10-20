@@ -38,12 +38,15 @@ compression:
 # 间隔 ≤ 0 时直接跳过 ``_spawn_background_review``，不会再 fork
 # 「Review the conversation above and update the skill library / saving to memory」。
 #
-# WP-L1-EVERY-TURN (33.1 / 33.4): ``memory_enabled`` 也关——把内置 memory
-# 总开关一并关掉（即便外部路径不小心再触发，配置层先挡住）。
+# ⚠️ 关的是**回合后那个自动 fork**，不是 L0 记忆层本身。裁定 156（2026-10-16）
+# 拍的是「L0 记忆层开，用出厂默认上限 2,200 / 1,375」，§13.5.1（用户 10-15 原话
+# 「要和短期记忆联动」）把这一格从 WP-L1-EVERY-TURN 33.1/33.4 的"一并关掉"里摘出来：
+# 那两个键当时跟着 curator 一起写了 false，于是这台整层关着、L0 那条流根本没启动。
+# ⇒ 两个总开关开；nudge 仍 0（自动 fork 照旧不开，那条理由没被推翻）。
 memory:
-  memory_enabled: false      # L1 关闭内置 memory 总开关（WP-L1-EVERY-TURN）
-  user_profile_enabled: false # 同步关 user profile 注入
-  nudge_interval: 0           # 关 L1 回合后 memory nudge
+  memory_enabled: true        # L0 内置 memory 总开关开（裁 156；上限走出厂 2200/1375）
+  user_profile_enabled: true  # 画像注入同步开（画像仍一份）
+  nudge_interval: 0           # 仍关：回合后自动 review fork（WP-L1-EVERY-TURN 那条理由有效）
 
 skills:
   creation_nudge_interval: 0  # 关 L1 回合后 skill nudge

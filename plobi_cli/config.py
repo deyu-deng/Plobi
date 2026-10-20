@@ -2292,6 +2292,10 @@ DEFAULT_CONFIG = {
         # L1 只读摘要，绝不读各 Agent 的 MEMORY.md 全文（2200×24 那条路判死）。
         "status_char_limit": 200,
         "l1_status_char_limit": 1500,
+        # 下沉压线（裁定 156「定死下沉条件」那一句）：某一格填到上限的这个比例时，
+        # 为了让位而离开 L0 的内容算「被挤出去」，进待确认层等人批；没到压线的
+        # remove 是正常编辑，不许灌进那道闸。
+        "squeeze_pressure": 0.9,
         # External memory provider — three states, and the shipped default is the
         # official brain: absent/``"mind"`` -> the body's own Mind; ``""`` -> built-in
         # only (an explicit opt-out, still honoured); any other name -> that provider.

@@ -381,14 +381,16 @@ def test_three_limits_come_from_three_config_keys():
         "user_char_limit": 333,
         "status_char_limit": 44,
         "l1_status_char_limit": 555,
+        "squeeze_pressure": 0.5,
     })
     assert limits["global_char_limit"] == 111, "全局那一份"
     assert limits["memory_char_limit"] == 222, "本 Agent 那一份（配置键是 agent_char_limit）"
     assert limits["user_char_limit"] == 333, "画像那一份"
     assert limits["status_char_limit"] == 44
     assert limits["l1_status_char_limit"] == 555
+    assert limits["squeeze_pressure"] == 0.5
     assert set(limits) == {"global_char_limit", "memory_char_limit", "user_char_limit",
-                           "status_char_limit", "l1_status_char_limit"}
+                           "status_char_limit", "l1_status_char_limit", "squeeze_pressure"}
 
 
 def test_limits_fall_back_to_defaults_on_junk_config():
