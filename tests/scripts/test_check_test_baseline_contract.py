@@ -197,7 +197,8 @@ def test_write_pins_the_head_the_log_actually_measured(mod, tmp_path, monkeypatc
     out = capsys.readouterr().out
     payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
     assert payload["code_head"] == start, payload          # 测量对象=起跑那刻
-    assert payload["code_head_at_write"] == _head(root)     # 落盘那刻另记，两个数都看得见
+    assert payload["run_start_head"] == start, payload     # 字段名沿用 10-08 那份账上已有的两个词
+    assert payload["head_at_write"] == _head(root)          # 落盘那刻另记，两个数都看得见
     assert "没被这批日志测过" in out, out                   # 中间那笔不许算成被这份基线覆盖
 
 
@@ -209,5 +210,5 @@ def test_without_pinning_the_two_heads_are_the_same_number_once(mod, tmp_path, m
     monkeypatch.setattr(sys, "argv", ["x", "--from-log", _write(tmp_path, RED_LOG), "--write"])
     assert mod.main() == 0
     payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
-    assert payload["code_head"] == payload["code_head_at_write"] == _head(root), payload
+    assert payload["code_head"] == payload["run_start_head"] == payload["head_at_write"] == _head(root), payload
     assert "没被这批日志测过" not in capsys.readouterr().out
