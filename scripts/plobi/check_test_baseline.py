@@ -92,10 +92,25 @@ def worktree_dirty(limit: int = 40) -> list:
     return out
 
 
+def commits_between(old: str, new: str) -> str:
+    """`old..new` 落了几笔；数不出来就返回空串，不拿猜的数字糊人。"""
+    if not old or not new or old == new:
+        return ""
+    try:
+        r = subprocess.run(["git", "-C", REPO_ROOT, "rev-list", "--count", "%s..%s" % (old, new)],
+                           capture_output=True, text=True, errors="replace", timeout=20)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--from-log", required=True, help="scripts/run_tests.sh 的完整输出")
     ap.add_argument("--write", action="store_true", help="把这次结果登记为新基线")
+    ap.add_argument("--started-at", default="",
+                    help="这批日志起跑那一刻的 Code HEAD。全量要跑几十分钟，中间别人会落提交，"
+                         "登记那一刻的 HEAD **不是**这批红的测量对象（10-08 22:2x 实际踩过的坑）")
     args = ap.parse_args()
 
     run = parse_log(args.from_log)
@@ -116,12 +131,21 @@ def main() -> int:
 
     if args.write:
         dirty = worktree_dirty()
-        payload = {"date": datetime.date.today().isoformat(), "code_head": code_head() or None,
+        at_write = code_head()
+        head = args.started_at or at_write
+        payload = {"date": datetime.date.today().isoformat(), "code_head": head or None,
+                   "code_head_at_write": at_write or None,
                    "worktree_dirty_at_write": dirty,
                    "machine": "Windows (Cycle)", "entry": "scripts/run_tests.sh -q", **run}
         json.dump(payload, open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"基线已登记：{run['files_with_failures']} 个文件 / {run['tests_failed']} 条红 "
               f"（Code HEAD {payload['code_head']}）-> {os.path.relpath(BASELINE, REPO_ROOT)}")
+        if args.started_at and at_write and at_write != args.started_at:
+            n = commits_between(args.started_at, at_write)
+            print(f"  测量对象=起跑那一刻的 {args.started_at}"
+                  + ("，登记时 HEAD 已经是 %s（中间落了 %s 笔）⇒ 那几笔的红**没被这批日志测过**，"
+                     "别把这份基线当成对它们负责。" % (at_write, n or "?") if n else
+                     "，登记时 HEAD 已经是 %s。" % at_write))
         if dirty:
             print(f"⚠️ 这份基线**取自工作树**，起跑时还有 {len(dirty)} 档未提交：" + "、".join(dirty[:8])
                   + ("…" if len(dirty) > 8 else "")

@@ -172,3 +172,42 @@ def test_a_baseline_admitting_dirty_tree_cannot_be_read_as_head_clean(
     assert rc == 0, out                     # 没有新增红，退出码本来就该是 0
     assert "没有新增红" in out, out
     assert "取自工作树" in out and "不等于 HEAD 干净" in out, out
+
+
+# ── 起跑那一刻的 HEAD 才是这批红的测量对象（10-08 22:2x 实测踩过，坑记在登记册）────────
+def _head(root):
+    import subprocess
+    return subprocess.run(["git", "-C", str(root), "rev-parse", "--short=8", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+
+
+def test_write_pins_the_head_the_log_actually_measured(mod, tmp_path, monkeypatch, capsys):
+    import json
+    import subprocess
+    root = _repo(tmp_path)
+    start = _head(root)
+    (root / "tools" / "b.py").write_text("B = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "second"], cwd=root, check=True, capture_output=True)
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    monkeypatch.setattr(mod, "BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(sys, "argv", ["x", "--from-log", _write(tmp_path, RED_LOG),
+                                      "--write", "--started-at", start])
+    assert mod.main() == 0
+    out = capsys.readouterr().out
+    payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
+    assert payload["code_head"] == start, payload          # 测量对象=起跑那刻
+    assert payload["code_head_at_write"] == _head(root)     # 落盘那刻另记，两个数都看得见
+    assert "没被这批日志测过" in out, out                   # 中间那笔不许算成被这份基线覆盖
+
+
+def test_without_pinning_the_two_heads_are_the_same_number_once(mod, tmp_path, monkeypatch, capsys):
+    import json
+    root = _repo(tmp_path)
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    monkeypatch.setattr(mod, "BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(sys, "argv", ["x", "--from-log", _write(tmp_path, RED_LOG), "--write"])
+    assert mod.main() == 0
+    payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
+    assert payload["code_head"] == payload["code_head_at_write"] == _head(root), payload
+    assert "没被这批日志测过" not in capsys.readouterr().out
