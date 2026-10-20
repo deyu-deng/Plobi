@@ -99,3 +99,76 @@ def test_zero_red_log_cannot_rebaseline(mod, tmp_path, monkeypatch, capsys):
     assert mod.main() == 1
     assert "拒绝" in capsys.readouterr().out
     assert not (tmp_path / "baseline.json").exists()
+
+
+# ── 基线必须连"跑的时候树脏不脏"一起记（10-20，`WP-WIN-TEST-REBASELINE`）──────────
+# `code_head` 只说哪个提交，说不了跑的那刻有没有别人的未提交代码。这台多线共写一棵树，
+# 拿脏树 --write 就等于把别人在飞的东西算进 HEAD 的账——正是裁 174「绿要看在带着什么跑的」那一族。
+def _repo(tmp_path: Path) -> Path:
+    import subprocess
+    root = tmp_path / "codetree"
+    (root / "tools").mkdir(parents=True)
+    (root / "tools" / "a.py").write_text("A = 1\n", encoding="utf-8")
+    for cmd in (["git", "init", "-q", "."], ["git", "config", "user.email", "x@y"],
+                ["git", "config", "user.name", "x"], ["git", "add", "-A"],
+                ["git", "commit", "-qm", "seed"]):
+        subprocess.run(cmd, cwd=root, check=True, capture_output=True)
+    return root
+
+
+def test_worktree_dirty_names_the_in_flight_files(mod, tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    (root / "tools" / "a.py").write_text("A = 2\n", encoding="utf-8")
+    (root / "tools" / "new.py").write_text("N = 1\n", encoding="utf-8")
+    import subprocess
+    subprocess.run(["git", "-C", str(root), "add", "tools/new.py"], check=True, capture_output=True)
+    got = mod.worktree_dirty()
+    names = " ".join(got)
+    assert any("tools/a.py" in g for g in got), got      # 改过没提交的
+    assert any("new.py" in g for g in got), got          # 暂存过但没提交的
+    assert "（M）" in names and "（A）" in names, names    # 带状态码，接手的人才知道是什么形状
+
+
+def test_clean_tree_yields_empty_list_not_a_crash(mod, tmp_path, monkeypatch):
+    import subprocess
+    root = _repo(tmp_path)
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    assert subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                          capture_output=True, text=True).stdout.strip() == ""
+    assert mod.worktree_dirty() == []
+
+
+def test_write_records_the_dirty_tree_and_says_so(mod, tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path)
+    (root / "tools" / "a.py").write_text("A = 2\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    monkeypatch.setattr(mod, "BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(sys, "argv", ["x", "--from-log", _write(tmp_path, RED_LOG), "--write"])
+    assert mod.main() == 0
+    out = capsys.readouterr().out
+    assert "取自工作树" in out, out
+    import json
+    payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
+    assert any("tools/a.py" in g for g in payload["worktree_dirty_at_write"]), payload
+
+
+def test_a_baseline_admitting_dirty_tree_cannot_be_read_as_head_clean(
+        mod, tmp_path, monkeypatch, capsys):
+    import json
+    log = _write(tmp_path, RED_LOG)
+    got = mod.parse_log(log)   # 键由被测代码自己解析——手写 "tests\tools" 会被 \t 吃掉，假新增红
+    base = tmp_path / "baseline.json"
+    json.dump({"date": "2026-10-20", "code_head": mod.code_head() or "unknown",
+               "files_with_failures": got["files_with_failures"],
+               "tests_failed": got["tests_failed"], "machine": "x", "entry": "y",
+               "files": got["files"],
+               "worktree_dirty_at_write": ["tools/a.py（M）"]},
+              open(base, "w", encoding="utf-8"), ensure_ascii=False)
+    monkeypatch.setattr(mod, "BASELINE", str(base))
+    monkeypatch.setattr(sys, "argv", ["x", "--from-log", log])
+    rc = mod.main()
+    out = capsys.readouterr().out
+    assert rc == 0, out                     # 没有新增红，退出码本来就该是 0
+    assert "没有新增红" in out, out
+    assert "取自工作树" in out and "不等于 HEAD 干净" in out, out
