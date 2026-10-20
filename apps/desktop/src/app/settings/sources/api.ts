@@ -96,9 +96,57 @@ export function unwrapData<T>(envelope: unknown, what: string): T {
   )
 }
 
+/**
+ * 信封解出来之后**还必须过一次形状校验**。
+ *
+ * `unwrapData` 已经挡了「外层少一层信封」这一种（第一版就这么崩过），但它只能
+ * 证明顶层有 `data`，证明不了 `data` 里有没有这一屏要用的两个字段。装机现场真崩
+ * 过一次：老后端（只有 `liveness_api.py` 那一版）回的 `data` 是活性读数，没有
+ * `sources` / `categories`，于是 `groupByCategory()` 里 `categories.map` 抛
+ * `Cannot read properties of undefined (reading 'map')`，**整个应用被根 error
+ * boundary 吞掉**——崩的地方（`.map`）离出问题的地方（后端契约比面旧）隔了十万八
+ * 千里。所以：字段不对就在这儿抛，把话说到骨子上，让设置页走它本来就有的
+ * 「读不到」那一格，而不是让用户对着一个崩溃的白屏猜。
+ *
+ * 真实原因八成是**后端比面前端旧**（装机目录里的 checkout 没更新到带着
+ * `sources_api.py` 的那一笔）——所以那句话里带着「重启后端／更新」的提示。
+ */
+export function parseSourcesPayload(data: unknown, what: string): SourcesPayload {
+  const payload = (data ?? {}) as Partial<SourcesPayload> & Record<string, unknown>
+
+  if (!Array.isArray(payload.sources)) {
+    throw new Error(
+      `The backend answered ${what} with a payload this panel cannot render — expected ` +
+      '`sources` to be an array. The running backend looks OLDER than this app: restart the ' +
+      'backend (or update the install), then reopen this page.'
+    )
+  }
+
+  if (!Array.isArray(payload.categories)) {
+    throw new Error(
+      `The backend answered ${what} with a payload this panel cannot render — expected ` +
+      '`categories` to be an array. The running backend looks OLDER than this app: restart the ' +
+      'backend (or update the install), then reopen this page.'
+    )
+  }
+
+  const badRow = payload.sources.find(row => !row || typeof row.source !== 'string')
+
+  if (badRow) {
+    throw new Error(
+      `The backend answered ${what} with a payload this panel cannot render — a row without a ` +
+      'string `source` came back. The running backend looks OLDER than this app: restart the ' +
+      'backend (or update the install), then reopen this page.'
+    )
+  }
+
+  return payload as SourcesPayload
+}
+
 export async function getSources(): Promise<SourcesPayload> {
-  return unwrapData<SourcesPayload>(
-    await window.plobiDesktop.api({ path: '/api/collect/sources' }), '/api/collect/sources'
+  return parseSourcesPayload(
+    unwrapData<unknown>(await window.plobiDesktop.api({ path: '/api/collect/sources' }), '/api/collect/sources'),
+    '/api/collect/sources'
   )
 }
 
