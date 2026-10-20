@@ -341,5 +341,32 @@ def test_gate_and_executor_count_the_same_real_cells():
     assert f"{len(missing)} 个" in line[0], f"门的数 {line[0][:24]} ≠ 现算 {len(missing)} 格"
 
 
+# ⑤ 一行被 ASCII 竖线撑成八列之后，门已有的那支列数牙会红；这里补的是**另一半危害**：
+#    格子里那条 `复跑：` 命令的竖线被当列分隔符吃掉，执行器跑的不是纸上那条（10-20 我自己撞上，rc=2 的假红）
+def test_an_ascii_pipe_inside_a_cell_silently_changes_the_rerun_command():
+    broken = ("| **WP-FAKE-PIPE** 反例格 | Govern 线 `d0750608` | 纸 — | `Docs/README.md` | 待签 | 00:00 | "
+              "`[WP-FAKE-PIPE]` — 复跑：`cd Code && x --from-log a.log | grep -c 新增红` |")
+    got = verify_register_cells.commands_of(verify_register_cells.rows_from(HEADER + broken)[0])
+    assert len(got) == 1, got
+    assert "|" not in got[0], f"竖线居然活下来了，那这条反例就没证明什么：{got}"
+    assert "from-log a.log" in got[0] and "grep" in got[0], got
+
+
+def test_a_full_width_bar_does_not_break_the_row():
+    ok = cell("WP-FAKE-OK", "待签", "复跑：`cd Code && grep -c 新增红 日志.txt` ＝1 段｜第二段")
+    rows = verify_register_cells.rows_from(HEADER + ok + "\n")
+    assert len(rows[0]) == 7, rows
+    assert verify_register_cells.commands_of(rows[0]) == ["cd Code && grep -c 新增红 日志.txt"]
+
+
+def test_the_real_register_row_for_this_cell_has_no_ascii_pipe():
+    # 我自己的格子必须自己先过这条：备注里写命令时只能用全角段隔，不然门读到的是另一条命令
+    for c in verify_register_cells.rows_from(io.open(REGISTER, encoding="utf-8").read()):
+        if verify_register_cells.cell_name(c) != "WP-ATTRIBUTION-TEETH":
+            continue
+        for cmd in verify_register_cells.commands_of(c):
+            assert "|" not in cmd, f"本格那条复跑命令里的半角竖线会被吃掉：{cmd}"
+
+
 if __name__ == "__main__":
     sys.exit(subprocess.run([sys.executable, "-m", "pytest", __file__, "-q"]).returncode)
