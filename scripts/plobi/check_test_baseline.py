@@ -69,6 +69,18 @@ def code_head() -> str:
         return ""
 
 
+def _porcelain(text: str, limit: int = 40) -> list:
+    """把 `git status --porcelain` 的原文变成 `路径（状态码）` 那一形状。"""
+    lines = [l for l in text.splitlines() if l.strip()]
+    out = []
+    for line in lines[:limit]:
+        mark, path = line[:2].strip(), line[3:].split(" -> ")[-1].strip().strip('"')
+        out.append(f"{path}（{mark or '?'}）")
+    if len(lines) > limit:
+        out.append(f"…共 {len(lines)} 档")
+    return out
+
+
 def worktree_dirty(limit: int = 40) -> list:
     """工作树里未提交的档（M/A/D/??）。
 
@@ -83,13 +95,9 @@ def worktree_dirty(limit: int = 40) -> list:
                            capture_output=True, text=True, errors="replace", timeout=30)
     except Exception:
         return ["<git status 没跑成>"]
-    out = []
-    for line in r.stdout.splitlines()[:limit]:
-        mark, path = line[:2].strip(), line[3:].split(" -> ")[-1].strip().strip('"')
-        out.append(f"{path}（{mark or '?'}）")
-    if len(r.stdout.splitlines()) > limit:
-        out.append(f"…共 {len(r.stdout.splitlines())} 档")
-    return out
+    if r.returncode:
+        return ["<git status 返回非零，读数不可用>"]
+    return _porcelain(r.stdout, limit)
 
 
 def commits_between(old: str, new: str) -> str:
@@ -111,6 +119,9 @@ def main() -> int:
     ap.add_argument("--started-at", default="",
                     help="这批日志起跑那一刻的 Code HEAD。全量要跑几十分钟，中间别人会落提交，"
                          "登记那一刻的 HEAD **不是**这批红的测量对象（10-08 22:2x 实际踩过的坑）")
+    ap.add_argument("--started-dirty", default="",
+                    help="起跑那一刻 `git status --porcelain` 的留底文件。同一类坑：跑到一半别人把在飞的档签掉了，"
+                         "落盘时再取 status 就会**漏记**这批红真正带着的那几档")
     args = ap.parse_args()
 
     run = parse_log(args.from_log)
@@ -131,6 +142,15 @@ def main() -> int:
 
     if args.write:
         dirty = worktree_dirty()
+        dirty_src = "落盘那一刻现取"
+        if args.started_dirty:
+            try:
+                raw = open(args.started_dirty, encoding="utf-8", errors="replace").read()
+                dirty, dirty_src = _porcelain(raw), "起跑那一刻的留底 %s" % args.started_dirty
+            except Exception as e:
+                print("RED — `--started-dirty` 那份留底读不出来（%s）：宁可停下来，"
+                      "也不拿落盘那一刻的 status 冒充起跑时的。" % e)
+                return 1
         at_write = code_head()
         head = args.started_at or at_write
         payload = {"date": datetime.date.today().isoformat(), "code_head": head or None,
@@ -147,7 +167,7 @@ def main() -> int:
                      "别把这份基线当成对它们负责。" % (at_write, n or "?") if n else
                      "，登记时 HEAD 已经是 %s。" % at_write))
         if dirty:
-            print(f"⚠️ 这份基线**取自工作树**，起跑时还有 {len(dirty)} 档未提交：" + "、".join(dirty[:8])
+            print(f"⚠️ 这份基线**取自工作树**（脏档清单：{dirty_src}），未提交 {len(dirty)} 档：" + "、".join(dirty[:8])
                   + ("…" if len(dirty) > 8 else "")
                   + "\n   ⇒ 那几档的**新增红会被算进这份基线里**，别把它当 HEAD 的账用；"
                     "要一份只记 HEAD 的基线，得在干净树（或那几档都签了之后）重跑一次。")
