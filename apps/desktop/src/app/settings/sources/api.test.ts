@@ -16,6 +16,7 @@ import {
   getExternalPackages,
   getSources,
   installExternalPackage,
+  parseSourcesPayload,
   removeExternalPackage,
   saveSourceSetup,
   setSourceEnabled,
@@ -64,6 +65,51 @@ describe('the envelope', () => {
 
   it('passes a real envelope through untouched', () => {
     expect(unwrapData({ ok: true, data: { a: 1 } }, '/x')).toEqual({ a: 1 })
+  })
+})
+
+/**
+ * 第二道闸：信封解对了，载荷的字段不对。
+ *
+ * 装机现场 2026-10-20 就是这样崩的：老后端（装机目录里那份 checkout 还没更新到
+ * 带 `sources_api.py` 的一笔）回的 `data` 只有活性读数，没有 `sources` /
+ * `categories`；`unwrapData` 拦不住这种（顶层确实有 `data`），于是
+ * `groupByCategory()` 里 `categories.map` 抛
+ * `Cannot read properties of undefined (reading 'map')`，**根 error boundary
+ * 把整个应用收走**。第一道闸管的是信封，这一道管的是信封里的形状。
+ */
+describe('the payload shape', () => {
+  it('accepts a real payload', () => {
+    const payload = parseSourcesPayload({ categories: [], sources: [] }, '/api/collect/sources')
+
+    expect(payload).toEqual({ categories: [], sources: [] })
+  })
+
+  it('throws — not a hollow object — when `sources` is missing', () => {
+    expect(() => parseSourcesPayload({ categories: [] }, '/api/collect/sources')).toThrow(/`sources`/)
+  })
+
+  it('throws when `categories` is missing, which is the crash the install hit', () => {
+    // 就是这一行让 `categories.map` 炸的：老后端的 data 里没有任何分类表。
+    expect(() =>
+      parseSourcesPayload({ sources: [{ source: 'wechat' }] }, '/api/collect/sources')
+    ).toThrow(/`categories`/)
+  })
+
+  it('throws when a row has no string `source`', () => {
+    expect(() =>
+      parseSourcesPayload({ categories: [], sources: [{ note: 'no id' }] }, '/api/collect/sources')
+    ).toThrow(/`source`/)
+  })
+
+  it('blames the older backend, because that is what an install skew looks like', () => {
+    expect(() => parseSourcesPayload({}, '/api/collect/sources')).toThrow(/OLDER than this app/)
+  })
+
+  it('reaches getSources(): the whole thing rejects instead of rendering a wreck', async () => {
+    api.mockResolvedValue(envelope({ events: 12, verdict: 'n/a' }))
+
+    await expect(getSources()).rejects.toThrow(/OLDER than this app/)
   })
 })
 

@@ -248,6 +248,25 @@ describe('what the row says', () => {
 
     await waitFor(() => expect(screen.getByTestId('sources-failed')).toBeTruthy())
   })
+
+  it('degrades to that same row when the payload has no categories — it does NOT take the app down', async () => {
+    // 装机现场真崩过一次：老后端回的 data 没有 `categories`，
+    // `groupByCategory()` 里 `categories.map` 抛错，根 error boundary 把整个应用收走。
+    // 这一格钉的是：契约不匹配 ⇒ 这一屏显示"读不到"，其余界面照活。
+    getSources.mockResolvedValue({ ...payload([]), categories: undefined } as unknown as SourcesPayload)
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('sources-failed')).toBeTruthy())
+  })
+
+  it('degrades to that same row when the payload has no sources either', async () => {
+    getSources.mockResolvedValue({ checked_at: 'x', verdict: 'n/a' } as unknown as SourcesPayload)
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('sources-failed')).toBeTruthy())
+  })
 })
 
 describe('what does not get rendered', () => {

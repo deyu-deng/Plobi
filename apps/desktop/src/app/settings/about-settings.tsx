@@ -124,6 +124,15 @@ export function AboutSettings() {
             )}
             <div className="min-w-0">
               <p className="font-medium">{statusLine}</p>
+              {/* The main process hands us the real reason (the git child's own
+                  stderr) and the canned line above throws it away — which is why
+                  this panel could only ever say "couldn't reach the update
+                  server". Never hide the reason behind the summary again. */}
+              {status?.error && status.message ? (
+                <p className="mt-1 font-mono text-[0.68rem] break-all text-muted-foreground">
+                  {status.message}
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-muted-foreground">
                 {a.lastChecked(relativeTime(status?.fetchedAt, a))}
                 {justChecked && !checking ? a.justNowSuffix : ''}

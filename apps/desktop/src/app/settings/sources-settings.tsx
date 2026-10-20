@@ -51,8 +51,10 @@ export function SourcesSettings() {
     try {
       setPayload(await getSources())
       setLoadFailed(false)
-    } catch {
+    } catch (err) {
       // 读不到就老实说读不到。画一个空面板等于说"一条信源都没有"——那是两句不同的话。
+      // 不把 err 写上面的规矩同本节注释：原因进控制台与通知，不上屏。
+      console.error('[settings/sources] getSources failed', err)
       setLoadFailed(true)
     }
   }, [])
@@ -99,10 +101,18 @@ export function SourcesSettings() {
     )
   }
 
-  if (!payload) {
+  // 双保险：api 层已经校验过形状（见 ./sources/api.ts 的 parseSourcesPayload），
+  // 但这一层再加一道——一个字段缺失曾经把整个应用崩进根 error boundary，而那正是
+  // 「绝不许因为一格数据把用户面前的东西全弄没」的形状。
+  if (
+    !payload ||
+    !Array.isArray(payload.sources) ||
+    !Array.isArray(payload.categories)
+  ) {
     return (
       <SettingsContent>
         <SectionHeading icon={Layers3} title={labels.title} />
+        <p className="text-sm text-muted-foreground" data-testid="sources-failed">{labels.loadFailed}</p>
       </SettingsContent>
     )
   }
