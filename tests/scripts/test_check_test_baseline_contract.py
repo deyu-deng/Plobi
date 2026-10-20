@@ -212,3 +212,36 @@ def test_without_pinning_the_two_heads_are_the_same_number_once(mod, tmp_path, m
     payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
     assert payload["code_head"] == payload["run_start_head"] == payload["head_at_write"] == _head(root), payload
     assert "没被这批日志测过" not in capsys.readouterr().out
+
+
+def test_started_dirty_uses_the_snapshot_not_the_later_status(mod, tmp_path, monkeypatch, capsys):
+    import json
+    import subprocess
+    root = _repo(tmp_path)
+    (root / "tools" / "a.py").write_text("A = 2\n", encoding="utf-8")   # 起跑时脏着
+    snap = tmp_path / "dirty-start.txt"
+    snap.write_text(subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                                   capture_output=True, text=True).stdout, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "别人签掉了"], cwd=root, check=True, capture_output=True)
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    assert mod.worktree_dirty() == []                    # 落盘那一刻已经看不见那档了
+    monkeypatch.setattr(mod, "BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(sys, "argv", ["x", "--from-log", _write(tmp_path, RED_LOG), "--write",
+                                      "--started-dirty", str(snap)])
+    assert mod.main() == 0
+    payload = json.load(open(tmp_path / "baseline.json", encoding="utf-8"))
+    assert any("tools/a.py" in d for d in payload["worktree_dirty_at_write"]), payload
+    assert "起跑那一刻的留底" in capsys.readouterr().out, capsys.readouterr().out
+
+
+def test_an_unreadable_snapshot_refuses_instead_of_impersonating(mod, tmp_path, monkeypatch, capsys):
+    import subprocess
+    root = _repo(tmp_path)
+    monkeypatch.setattr(mod, "REPO_ROOT", str(root))
+    monkeypatch.setattr(mod, "BASELINE", str(tmp_path / "baseline.json"))
+    monkeypatch.setattr(sys, "argv", ["x", "--from-log", _write(tmp_path, RED_LOG), "--write",
+                                      "--started-dirty", str(tmp_path / "没有这个文件.txt")])
+    assert mod.main() == 1
+    assert "宁可停下来" in capsys.readouterr().out
+    assert not (tmp_path / "baseline.json").exists()      # 拒了就不许已经落盘
