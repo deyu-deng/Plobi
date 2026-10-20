@@ -28,9 +28,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Iterable, Optional, Sequence
+
+logger = logging.getLogger("plobi.agenda.llm_planning")
 
 from . import planning, store
 
@@ -117,6 +120,10 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
         "deadlines": _by_kind(events, "ddl", "task"),
         "upcoming_deadlines": upcoming,
         "other_events": _others(events),
+        # 当天**已经会落成条目**的那些行（课／作业／别的），边界六与落库前摘复述用的都是这一格。
+        # 之前只有 classes／deadlines／other_events 三个分桶，闸拿不到"这一面已有的全部条目"，
+        # 于是「把课又排一遍」那种提案没人拦（2026-10-20 图上那三张空壳）。
+        "today_items": [_event_row(e) for e in events],
         "routine_anchors": anchors,
         "anchors_moved": moved,
         # 用户**批准过**的「避开时段」（checkin 卡的 avoid_windows）。退役前是均分自己躲开它们；
@@ -223,6 +230,7 @@ def validate_proposal(
     anchors: Sequence[dict[str, Any]],
     waking: tuple[datetime, datetime],
     avoid: Sequence[dict[str, Any]] = (),
+    scheduled: Sequence[dict[str, Any]] = (),
 ) -> list[str]:
     """返回违规清单（空 = 合格）。**这个函数一个字都不改 `items`。**"""
     rows = [dict(item) for item in items]
@@ -253,6 +261,19 @@ def validate_proposal(
             (row_a, (s_a, e_a)), (row_b, (s_b, e_b)) = timed[i], timed[j]
             if _overlaps(s_a, e_a, s_b, e_b):
                 problems.append(f"「{_title(row_a)}」与「{_title(row_b)}」同一时段双订")
+
+    # 边界六：不许把当天**已经有**的那一件事再排一遍（同时段、标题归一后全等）。
+    # 边界二只看提案内部的两两，看不见课表当天已经落的那条 `class` 行——图上「一个时段三张卡、
+    # 两张是空壳」就是从这里漏出去的（现核 2026-10-20：三节课各被复述成一条 `task`）。
+    # 这一条点名给模型看，是让它**别再交**这一发；落库前 :func:`_block_rows_from_proposal`
+    # 还会再摘一次，那是数据那一面的兜底，两者用的是同一个判据（:func:`restates`）。
+    for row, _span in timed:
+        for existing in scheduled:
+            if restates(row, existing):
+                problems.append(
+                    f"「{_title(row)}」把当天已有的一条又排了一遍"
+                    f"（{_span[0].strftime('%H:%M')}–{_span[1].strftime('%H:%M')} 同段同题，那条已经在日程里了）"
+                )
 
     # 边界三：总量不许超过当天清醒窗口
     for row, (start, end) in timed:
@@ -324,7 +345,8 @@ def plan_with_llm(
             parsed = _parse_proposal(llm_call(prompt), day)
             proposal = parsed["items"]
             problems = validate_proposal(proposal, anchors=anchors, waking=waking,
-                                 avoid=materials.get("avoid_windows") or [])
+                                 avoid=materials.get("avoid_windows") or [],
+                                 scheduled=materials.get("today_items") or [])
             if not parsed["reason"]:
                 # 裁定 149④：不写「为什么这么排」就是没留痕，与裁定 145 同一条纪律。
                 problems = problems + ["没交「为什么这么排」（reason）——裁定 149④ 的留痕"]
@@ -492,6 +514,39 @@ def is_anchor_echo(row: dict[str, Any], anchor: dict[str, Any]) -> bool:
     return _title(row) == _title(anchor) and r_span == a_span
 
 
+def _title_key(text: Any) -> str:
+    """标题归一：去掉所有空白再比大小写。判据是**归一后全等**，不是相似——差一个字算两件事。"""
+    return "".join(str(text or "").split()).casefold()
+
+
+def restates(row: dict[str, Any], other: dict[str, Any]) -> bool:
+    """这两行是不是**同一件事被排了两遍**：起止时段全等，且标题归一后全等。
+
+    图上那三张并排的卡就是这么来的——秘书交回 `08:00–09:35 理论力学（甲）` 这种块，
+    而课本身已经从天课表落了一条同题同段的 `class` 行（现核 2026-10-20：
+    `evt_eccec2fa3243` class 与 `evt_2d1d0af1c4d6` task，工程训练、电工电子学实验同样一对）。
+    只认全等：比那条窄或宽一段都不算复述（那是真占用了别人的时间，交给边界二去拦）。
+    没有结束时间的那条（作业／截止类）比不出时段，**不猜**。
+    """
+    a, b = _span_of(row), _span_of(other)
+    if a is None or b is None:
+        return False
+    return a == b and _title_key(_title(row)) == _title_key(_title(other))
+
+
+def duplicate_slot_titles(rows: Sequence[dict[str, Any]]) -> list[tuple[str, str]]:
+    """一面计划里所有「同时段同题」的行对——**判据就是它的数量，0 才算修好**。
+
+    行形状按 `plan_items`／提案那一族读：`title` + `start_at` + `end_at`。
+    """
+    pairs: list[tuple[str, str]] = []
+    for i in range(len(rows)):
+        for j in range(i + 1, len(rows)):
+            if restates(rows[i], rows[j]):
+                pairs.append((_title(rows[i]), _title(rows[j])))
+    return pairs
+
+
 def _is_commute(row: dict[str, Any]) -> bool:
     title = _title(row)
     return any(word in title for word in _COMMUTE_WORDS)
@@ -621,6 +676,7 @@ def _block_rows_from_proposal(
     reason: str,
     sources: list[tuple[str, str]],
     anchors: Sequence[dict[str, Any]] = (),
+    scheduled: Sequence[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     """把提案条目收成 `plan_items` 那一格的形状（**evidence 的口径只在这一处定义**）。
 
@@ -633,13 +689,22 @@ def _block_rows_from_proposal(
     本来就从材料里的锚点真源落一遍（`_anchor_item_row`）。不摘就会得到两条「午餐」——
     多一条不是"更详细"，是让面上与手机清单出现没人排过的第二遍饭。摘这个动作只认
     :func:`is_anchor_echo` 那一条全等判据，别的行一律原样留下。
+
+    `scheduled` 同一族判据的**另一半**：当天已经会落成条目的那些行（课表里的课、当天的作业／截止）。
+    2026-10-20 图上「一个时段三张卡、两张是空壳」就是这一格空着——模型把三节课各复述成一块 `task`，
+    作息那侧摘得掉、课这侧没人摘。摘的条件是 :func:`restates`（时段全等＋标题归一后全等），
+    **并且出声**（`logger.warning`）：静默摘行会把「模型交错了」伪装成「今天就这么排」。
     """
     blocks: list[dict[str, Any]] = []
+    dropped: list[str] = []
     for item in items:
         span = _span_of(item)
         if span is None:
             continue
         if any(is_anchor_echo(item, anchor) for anchor in anchors):
+            continue
+        if any(restates(item, existing) for existing in scheduled):
+            dropped.append(_title(item))
             continue
         source = _match_source(_title(item), sources) or "l1:unnamed（材料里对不上任何一条）"
         # 面上与治理线把「作业块」和「项目块」分开计数读的就是这一格：来源是作业（`ddl:`）的那块
@@ -657,6 +722,11 @@ def _block_rows_from_proposal(
                          "reason": reason,
                          "source": source},
         })
+    if dropped:
+        logger.warning(
+            "plobi planning: 摘掉 %d 条复述当天已有日程的块（同时段同题）：%s",
+            len(dropped), "、".join(dropped),
+        )
     return blocks
 
 
@@ -686,7 +756,8 @@ def blocks_from_l1(
 
     blocks = _block_rows_from_proposal(proposal.items, proposal.reason,
                                        _material_index(materials),
-                                       anchors=materials["routine_anchors"])
+                                       anchors=materials["routine_anchors"],
+                                       scheduled=materials.get("today_items") or [])
     if not blocks:
         return [], "L1 交回来的提案里没有任何能落的时间块"
     return blocks, proposal.reason
@@ -850,7 +921,8 @@ def plan_and_store_day(
                 ["没交 reason"], for_date=day, status="no_reason")
 
         blocks = _block_rows_from_proposal(items, reason, _material_index(materials),
-                                       anchors=anchors)
+                                       anchors=anchors,
+                                       scheduled=materials.get("today_items") or [])
         if not blocks:
             return _refusal(
                 f"这一版没有任何能落的时间块。{day} 那份计划一个字没写。",
@@ -858,7 +930,8 @@ def plan_and_store_day(
 
         # ③ 过闸：唯一一处写入前置。拆掉这一步，下面那个「同时段双订」的提案就会直接落库。
         problems = validate_proposal(blocks, anchors=anchors, waking=waking,
-                             avoid=materials.get("avoid_windows") or [])
+                             avoid=materials.get("avoid_windows") or [],
+                             scheduled=materials.get("today_items") or [])
         if problems:
             return _refusal(
                 "这一版没过边界闸：" + "；".join(problems[:3]) + "。"
