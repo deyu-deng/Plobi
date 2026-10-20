@@ -2799,9 +2799,24 @@ def run_job(
     # ⚠ 这个形状不许动：桌面那条「这一条作业跑过哪些次」的履历走
     # ``plobi_state.SessionDB.list_cron_job_runs``，它按 ``cron_<job id>_`` 做索引前缀区间扫
     # （``plobi_cli/web_server.py`` 的 ``/api/cron/jobs/{id}/runs``）。把收件人塞进会话号
-    # 会让每个作业的履历在面上直接清空。收件人写在下面那份输出文档与日志里（裁 177 的留痕），
-    # 「会话按 Agent 归属」那一格留给「一个脑子」去定渠道。
+    # 会让每个作业的履历在面上直接清空。
     _cron_session_id = f"cron_{job_id}_{_plobi_now().strftime('%Y%m%d_%H%M%S')}"
+
+    # 裁定 192（甲案）：**归属落在会话行的 `agent_id` 上，不另开列、也不只活在 jobs.json 里**。
+    # 收件人解析到这一步已经成功（不起的那条分支在上面就 return 了），而 cron 这一轮本来就是
+    # 「没人看着」的那一轮——名字不落库，「是哪个角色跑的」就只存在于作业记录里，作业一改历史就断。
+    # 写在「起会话」这一处：AIAgent 之后自己那次 `create_session` 不带 agent_id，而
+    # `_insert_session_row` 的 ON CONFLICT 对 `agent_id` 是「非空即粘住」
+    # （`COALESCE(NULLIF(sessions.agent_id,''), excluded.agent_id)`），所以这一格不会被它洗掉。
+    # 历史那 102 条**不回写**：空串只留给旧行（裁 192 第 3 条，与「只改状态不删行」同一条纪律）。
+    try:
+        if _session_db is not None:
+            _session_db.create_session(_cron_session_id, source="cron", agent_id=recipient.name)
+    except Exception as attribution_exc:  # noqa: BLE001 - 记账写不进不许让这一轮不打
+        logger.warning(
+            "Job '%s' (%s): 会话归属没写进 sessions.agent_id（这一轮照跑）：%s",
+            job_name, job_id, attribution_exc,
+        )
 
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
     logger.info("Prompt: %s", prompt[:100])
