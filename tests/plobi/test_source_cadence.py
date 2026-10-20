@@ -273,12 +273,20 @@ class TestThatIsWhatTheDailyRoundDoes:
     """
 
     def _stub(self, monkeypatch, *, rows, calls):
+        """替身只换**执行方**那一层；`cadence` 与分流都是真的在跑。
+
+        必须同时钉住 `cron/jobs.py::_plobi_now`：那一轮问"到点了没"用的是**配置时钟**，
+        而 `run_tests.sh` 把 TZ 钉成 UTC ⇒ 不钉的话"每天 03:00"会被算成 `03:00+00:00`，
+        这台真实时刻一过它就真的到点了（红过一次的正是这个，不是守卫错）。
+        守卫那条「没有一条信源被点亮 ⇒ 出声」保持原样，测试自己把源点亮。
+        """
         def stub(*, service=None, sources=None):
             calls.append(tuple(sources or ()))
             return {"sources": rows, "ran": len([r for r in rows if r["ok"]]),
                     "total": len(rows), "verdict": "1 / 1 条真跑了一轮：always"}
 
         monkeypatch.setattr("plobi.collectors.sweep.run_sweep", stub)
+        monkeypatch.setattr("cron.jobs._plobi_now", lambda: JUST_AFTER)
 
     def test_the_morning_round_hits_only_the_due_one(
         self, shared_root, fake_sources, monkeypatch, capsys
