@@ -105,6 +105,29 @@ def _parse_is_self(raw: dict) -> Optional[bool]:
     return None
 
 
+#: 裁 187① 那两列在采集侧的取值口径。**不新拍判据**：群聊的 username 一律带 `@chatroom`
+#: （这台现读 `56085102642@chatroom` 这类），其余都是 1:1 那一类。`conversation` 就是
+#: 那一扇窗口的 username（`/api/v1/session` 的 `SessionTable.username`，即 `TalkerSession.id`）。
+GROUP_USERNAME_SUFFIX = "@chatroom"
+
+
+def pool_columns(talker: Any) -> dict[str, str]:
+    """这一条**本来该带上**的两列：`conversation` = 窗口 username，`visibility` = 私聊／群聊。
+
+    拿不到 username 就返回两个空串——空串在池里的意思是「采它那一轮没记窗口」，
+    **不是**「不属于任何窗口」，所以宁空勿猜（`plobi/pool/store.py` 顶上钉的就是这句）。
+    `gh_xxx`／`brandsessionholder` 这两类既不是群、严格说也不是一对一私聊：
+    按「别拍一个新的」先归 `private`，要不要开第三个值由池那一侧定，不在这儿偷偷加。
+    """
+    name = str(talker or "").strip()
+    if not name:
+        return {"visibility": "", "conversation": ""}
+    return {
+        "visibility": "group" if name.endswith(GROUP_USERNAME_SUFFIX) else "private",
+        "conversation": name,
+    }
+
+
 def normalize_message(raw: Any, *, fallback_talker: str = "") -> Optional[ChatMessage]:
     """Map one chatlog record onto :class:`ChatMessage`, or ``None`` if unusable."""
     if not isinstance(raw, dict):
