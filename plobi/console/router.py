@@ -459,6 +459,11 @@ def agent_row(entry: AgentEntry) -> dict:
         "name": agent_display_name(entry),
         "status": status_for(entry.name),
         "model": model_for(entry),
+        # 裁定 166 决定二（WP-AGENT-MODEL-PICKER-MOUNT 第一档）：`model` 是**路由解析后的生效值**，
+        # 它分不清「这一行跟随默认」与「这一行显式选了同一个模型」——那是两件事，面上必须分得开，
+        # 否则「跟随默认」这颗选项就是在替用户猜。这一格直译名册那档已有的那个布尔，
+        # 且**恒在**（None 会被下面那道剥掉，前端读到缺键＝没读数，不是没覆盖）。
+        "modelOverride": bool(entry.has_model_override),
         # R-092：配置里那条（model）与刚才真走过的那条（actualModel）是两件事，
         # 面上要分得开。读不到就整个键省略，前端按"没有读数"处理，不当"没走过模型"。
         "actualModel": (leg or {}).get("model"),
