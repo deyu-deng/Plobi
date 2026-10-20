@@ -1,7 +1,8 @@
 """cron no_agent 脚本：额度预警（degraded/unavailable 源告警）→ 钉钉（切片 B5）。
 
-表与脚本复制在 ``plobi/butler/nightly.py``（这里由它放进 ``PLOBI_HOME/scripts/``）并注册
-为每日 08:00 任务。所有源健康时不推送。消费 B3 ``QuotaPool.alert_statuses()``。
+作业在**通用 Cron** 里建（桌面「定时任务」页或 `plobi cron create`），脚本要放进
+``PLOBI_HOME/scripts/``；代码不再替你注册（WP-BUTLER-SEED-REMOVAL，10-21）。所有源健康时不推送。
+消费 B3 ``QuotaPool.alert_statuses()``。
 """
 
 from __future__ import annotations

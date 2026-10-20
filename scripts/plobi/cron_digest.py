@@ -1,7 +1,8 @@
 """cron no_agent 脚本：消息待办 digest（逐条待确认消息改动）→ 钉钉（切片 B5）。
 
-表与脚本复制在 ``plobi/butler/nightly.py``（这里由它放进 ``PLOBI_HOME/scripts/``）并注册
-为每日 12:00 任务。无待办时不推送。stdout 为 JSON 结果。
+作业在**通用 Cron** 里建（桌面「定时任务」页或 `plobi cron create`），脚本要放进
+``PLOBI_HOME/scripts/``；代码不再替你注册（WP-BUTLER-SEED-REMOVAL，10-21）。无待办时不推送。
+stdout 为 JSON 结果。
 
 默认零 LLM（确定性模板）。设 ``PLOBI_BUTLER_POLISH=1`` 时走 L2 便宜模型改写。
 """

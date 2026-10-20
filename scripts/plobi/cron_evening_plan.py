@@ -20,8 +20,9 @@
 那条腿（嘴→规划器）目前仍是**直调**，165 允许它作为过渡形，撤它的条件写在裁定里。
 排不出来时本脚本**不代排**：明天没有计划就照实说没有。
 
-表与注册在 ``plobi/butler/nightly.py``（产品真源）：装机后第一次启动由桌面后端种一次
-``plobi-evening-plan``，手动全量注册走 ``scripts/plobi/register_cron.py --all``。
+作业在**通用 Cron** 里建（桌面「定时任务」页或 `plobi cron create`），脚本要放进
+``PLOBI_HOME/scripts/``；代码不再替你注册，也不再替你回刷作业行上的 prompt
+（WP-BUTLER-SEED-REMOVAL，10-21 剔掉那层私有播种：`plobi/butler/nightly.py` 已不存在）。
 stdout 为 JSON 结果，进 cron 输出留痕。
 
 **跑失败要说得出为什么**（WP-SCHEDULE-REAL-PLAN 判据 1）：读库那一段按类分格——

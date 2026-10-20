@@ -1,7 +1,8 @@
 """cron no_agent 脚本：每日早报（当天清单 + 改动率/待批项/额度）→ 钉钉。
 
-表与脚本复制在 ``plobi/butler/nightly.py``（这里由它放进 ``PLOBI_HOME/scripts/``）并注册
-为每日 07:30 任务。stdout 为 JSON 结果，进 cron 输出留痕。
+作业在**通用 Cron** 里建（桌面「定时任务」页或 `plobi cron create`），脚本要放进
+``PLOBI_HOME/scripts/``；代码不再替你注册（WP-BUTLER-SEED-REMOVAL，10-21 剔掉那层私有播种）。
+stdout 为 JSON 结果，进 cron 输出留痕。
 
 正文 = **当天可抄进手机日历的清单**（``format_day_digest``，清单在前）+ 空行 +
 统计段。组装走 :func:`plobi.butler.report.morning_body`，与看门狗的开机补发
