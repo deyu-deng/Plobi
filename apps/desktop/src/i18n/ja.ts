@@ -2461,7 +2461,14 @@ disable: '止める',
     terminalNew: '新しいターミナル',
     terminalCloseOthers: '他を閉じる',
     terminalCloseAll: 'すべて閉じる',
-    addToChat: 'チャットに追加'
+    addToChat: 'チャットに追加',
+    capabilitiesModel: 'モデル',
+    modelFollowDefault: 'デフォルトに従う',
+    modelFollowing: (model: string) => `${model} に従っています`,
+    modelExplicit: (model: string) => `このエージェント専用：${model}`,
+    modelStateUnknown: 'この行が上書きしているか、バックエンドが返していません',
+    modelSaved: 'このエージェントのモデルを保存しました',
+    modelClearUnavailable: 'まだデフォルトに戻せません（解除の口が未実装）'
   },
 
   preview: {

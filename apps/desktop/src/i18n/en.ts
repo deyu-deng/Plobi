@@ -2516,7 +2516,14 @@ disable: 'Stop',
     capabilitiesGlobalOff: 'Off for everyone (global setting)',
     capabilitiesEmpty: 'Nothing installed yet',
     capabilitiesLoadError: 'Could not load capabilities',
-    capabilitiesToggleFailed: 'Toggle failed'
+    capabilitiesToggleFailed: 'Toggle failed',
+    capabilitiesModel: 'Model',
+    modelFollowDefault: 'Follow the default',
+    modelFollowing: (model: string) => `following ${model}`,
+    modelExplicit: (model: string) => `set for this agent: ${model}`,
+    modelStateUnknown: 'This backend did not report whether the row sets its own model',
+    modelSaved: 'Model saved for this agent',
+    modelClearUnavailable: 'Switching back to the default is not available yet'
   },
 
   preview: {

@@ -2182,6 +2182,17 @@ export interface Translations {
     capabilitiesEmpty: string
     capabilitiesLoadError: string
     capabilitiesToggleFailed: string
+    /** WP-AGENT-MODEL-PICKER-MOUNT：这一个 Agent 的主模型（名册那一行的覆盖）。 */
+    capabilitiesModel: string
+    modelFollowDefault: string
+    /** 跟随默认时补一句现在跟的是谁——「空」不等于「没读数」。 */
+    modelFollowing: (model: string) => string
+    modelExplicit: (model: string) => string
+    /** 后端没回那颗标记（旧壳／装机副本就是这种）⇒ 界面不许断言"没覆盖"。 */
+    modelStateUnknown: string
+    modelSaved: string
+    /** 撤回的口子还没开：这句是"不画假可点"的代价，必须让用户看得见原因。 */
+    modelClearUnavailable: string
   }
 
   preview: {

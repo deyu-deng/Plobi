@@ -2674,7 +2674,14 @@ disable: '停掉',
     capabilitiesGlobalOff: '全局已关闭（所有人）',
     capabilitiesEmpty: '还没有安装任何能力',
     capabilitiesLoadError: '能力清单加载失败',
-    capabilitiesToggleFailed: '开关切换失败'
+    capabilitiesToggleFailed: '开关切换失败',
+    capabilitiesModel: '模型',
+    modelFollowDefault: '跟随默认',
+    modelFollowing: (model: string) => `当前跟随 ${model}`,
+    modelExplicit: (model: string) => `这一个单独指定：${model}`,
+    modelStateUnknown: '这份后端没说这一行有没有单独指定',
+    modelSaved: '已为这一个单独指定模型',
+    modelClearUnavailable: '暂时还不能改回跟随默认（撤回的口子还没开）'
   },
 
   preview: {

@@ -150,6 +150,32 @@ export async function putAgentToolPrefs(
 }
 
 /**
+ * WP-AGENT-MODEL-PICKER-MOUNT 第二档：给**这一个** Agent 写名册那一行的模型覆盖。
+ *
+ * 走的是后端现成那张嘴（裁定 166 决定二那句「不新建 API」）：路由落
+ * `plobi_cli/web_server.py` 的 `PUT /api/profiles/{name}/model`，它再调
+ * `plobi.agents.registry.set_profile_model_override` 写**名册那一行**——不往任何分身家写文件。
+ * 键是 `profile_name`，也就是行上那个 `Agent.profile`（不是 `Agent.id`：两者在旧数据里会不同）。
+ *
+ * ⚠ **这一嘴只能写、不能撤**：那两个字段必填，空值被路由直接 400。所以「跟随默认」在
+ * `WP-MODEL-OVERRIDE-CLEAR` 落地之前不许画成能点的那一颗（不许交一颗必然报错的按钮），
+ * 界面要显式说一句"暂时还不能改回跟随默认"。
+ */
+export async function putAgentModel(
+  profileName: string,
+  provider: string,
+  model: string
+): Promise<{ model: string; ok: boolean; provider: string }> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    body: { model, provider },
+    method: 'PUT',
+    path: `/api/profiles/${encodeURIComponent(profileName)}/model`
+  })
+
+  return unwrapEnvelope(payload)
+}
+
+/**
  * [SPEC-QUESTION] spec §5 names this `GET /api/agenda/events?day=today|tomorrow`
  * while the live backend (see `getAgenda` in `@/plobi`) answers
  * `GET /api/agenda?from=&to=`. Built as specified at the call site (day-based)
