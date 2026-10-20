@@ -134,7 +134,7 @@ export function AgentCategoryGroup({
                     className="z-0"
                     disabled={!navigable}
                     onClick={() => navigable && onNavigateAgent(agent.id)}
-                    title={agent.id}
+                    title={navigable ? agent.id : (agent.notNavigableReason || agent.id)}
                   >
                     <SidebarRowLead>
                       <span

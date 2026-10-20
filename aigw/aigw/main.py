@@ -127,9 +127,27 @@ async def _startup():
     # trust_env defaults to True so the gateway honours HTTP(S)_PROXY in the
     # environment (e.g. a local V2rayU / Clash proxy). Set trust_env: false in
     # config only if you specifically need direct egress.
-    http = httpx.AsyncClient(
-        timeout=httpx.Timeout(120.0, connect=10.0), http2=True, trust_env=cfg.get("trust_env", True)
-    )
+    #
+    # http2 is best-effort: httpx raises ImportError at *client construction*
+    # when the h2/hpack/hyperframe stack is missing. aigw declares
+    # `httpx[http2]`, but the desktop's installed backend venv is built from
+    # plobi-agent's own lock closure, which never contained that extra — the
+    # gateway used to die at startup with a bare ImportError that the desktop
+    # could only report as a 20s "gateway did not become healthy in time"
+    # timeout. Losing the whole quota hub to a missing optional extra is not an
+    # acceptable failure mode: fall back to HTTP/1.1 and say so once.
+    # (plobi-agent carries an `aigw = ["h2==..."]` extra so the installed venv
+    # does have the stack; this is the belt to that suspenders.)
+    try:
+        http = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=10.0), http2=True, trust_env=cfg.get("trust_env", True)
+        )
+    except ImportError:
+        logger.warning(
+            "httpx http2 extra missing (h2 not installed) — falling back to HTTP/1.1; "
+            "install with `uv pip install 'httpx[http2]'`"
+        )
+        http = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), trust_env=cfg.get("trust_env", True))
     reg = await Registry(cfg, http).build()
     # Eagerly refresh each provider's model catalog from upstream (Antigravity
     # fetches its real model list via fetchAvailableModels). Best-effort and

@@ -400,7 +400,19 @@ class AgentEntry:
         # （2026-10-13 现核 desktop.log：单「电工电子学」2767 行 failed）。
         # 回空串而不是加一枚 `runtime: false` 标志：标志要每个消费方记得去看，
         # 空串是这里本来就有的形状（``agent_askability`` 1019 行那条判据在判它）。
-        # 真要给它一个运行时，就把角色改成 ``l2_project``，而不是给它写个 profile。
+        #
+        # ⚠️ **这段注释的前半句已被后续裁定推翻，别照它给课程行判死刑**（2026-10-20
+        # 实录：有人读了这几行就以为「课程是数据、不可点」，把 courses 品类的行批量
+        # 打回 l2_course，结果与三条裁定相反）：
+        #   * 裁定 143②：课程要有可路由的 L2 身份，课程 Agent 与项目分身**同列同点**；
+        #   * 裁定 145①(b)：课程作业/考试的派发以那个身份为前提；
+        #   * 裁定 146②(b)：要么给身份让它可点，要么那一栏不显示，**不许列在那儿点不动**；
+        #   * 用户原话（10-15）：「课程Agent还是不能点击」「左边的五种Agent要完全平等」。
+        # 名册里的课程行走的就是这条路：``role: l2_project`` + ``category: courses``
+        # + 显式 ASCII ``profile: l2-course-*``，家裸建（12 KB）。所以
+        # ``l2_course`` 只描述「**还没有**身份的课程条目」这一种形状，不是课程行的
+        # 正统。课程行的点击资格按 :func:`agent_navigability` 判（那条只否决点了必然
+        # 失败的形状：没身份 / 保留名 / 家没落地）。
         from plobi.routing.models import L2_COURSE
 
         if self.role == L2_COURSE:
@@ -1148,6 +1160,44 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
 def is_askable_agent(entry: AgentEntry) -> bool:
     """:func:`agent_askability` 的布尔口径（只要「能不能」，不要原因）。"""
     return agent_askability(entry)[0]
+
+
+def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
+    """桌面左栏这一行能不能点进聊天页；点不了就给一句原因。
+
+    和 :func:`agent_askability` 是**两件事**，别混：askability 判的是 L1 的
+    ``plobi_agent_ask`` 这把嘴问不问得到（日程秘书走
+    ``plobi_secretary_ask``，所以 agenda 行 askable=False 却完全点得动）；
+    navigability 判的是「点了之后桌面能不能真的拉起一个后端来对话」——
+    也就是 spawn 不会失败。这正是裁定 146②(b) 那句「不许列在那儿点不动」的
+    可执行形状。三条否决，全是结构性事实：
+
+    1. ``profile_name`` 空——**还没拿到身份**的课程条目（``l2_course``）与没绑
+       profile 的数据行：没有运行时可连，点进去只会得到一张空壳。有身份的课程行
+       （``l2_project`` + 显式 ``profile: l2-course-*``，裁定 143②）走下面两条，
+       是可点的——别把它们一并打回不可点；
+    2. ``profile_name_blocker`` 非空——保留名（名册里那条 ``Plobi`` 行的
+       ``l2-plobi``，小写化撞上安装本身）这类永远建不出家的形状，点了就是一次
+       必然失败的 spawn；
+    3. 家还没在盘上落地（``profiles/<name>`` 不存在）——点了会掉进 respawn
+       guard 的永久门（无限重起那一格），不如现在就说明白。
+
+    探不到盘（测试环境）时**不判成点不动**——宁可留一行可以试的，也不能把
+    能用的分身从名单里悄悄抹掉；真点了起不来的，spawn 那道门还会再拒一次。
+    """
+    if entry.archived:
+        return False, "这一条已经归档。"
+    if not entry.profile_name or entry.profile_name == "default":
+        return False, "这一条没有自己的运行时（课程是数据记录，不是可对话的分身）——点进去也只会是一张空壳。"
+    blocker = profile_name_blocker(entry)
+    if blocker:
+        return False, blocker
+    if _profile_landed(entry) is False:
+        return False, (
+            f"「{entry.display_name or entry.name}」还没在这台机器上落地"
+            f"（profiles/{entry.profile_name} 不存在）——登记 / 新建一次就能点。"
+        )
+    return True, ""
 
 
 def _normalized_project_name(entry: AgentEntry) -> str:

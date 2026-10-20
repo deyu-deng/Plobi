@@ -92,12 +92,30 @@ export interface DailyPlanL1View {
 /** §5 GET /api/agents — one row per L2 worker. */
 export interface Agent {
   /**
+   * R-072：L1 的 `plobi_agent_ask` 问不问得到这一行（嘴的判据，不是点击的
+   * 判据——日程秘书走 secretary_ask，所以 agenda 行 askable=false 却点得动）。
+   * 左栏可不可点看 `navigable`，不看这个。
+   */
+  askable?: boolean
+  /**
    * Sidebar taxonomy group (R-012): `projects` / `butler` / `events` /
-   * `research`. Served by the backend agent registry; legacy rows without the
-   * field fold into `butler` on the client.
+   * `research` / `courses`. Served by the backend agent registry; legacy rows
+   * without the field fold into `butler` on the client.
    */
   category?: string
   id: string
+  /**
+   * 桌面左栏这一行能不能点进聊天页（后端 `agent_navigability`：点了之后
+   * spawn 不会失败的形状）。absent = 旧后端没透出，前端按 profile 判据回落；
+   * false = 不可点，`notNavigableReason` 说明为什么（课程是数据 / 保留名 /
+   * 家还没落地）。
+   */
+  navigable?: boolean
+  /**
+   * `navigable === false` 时这一行为什么点不动（后端原句）。左栏把它放进
+   * title——用户有权知道是「课是数据」还是「家还没落地」。
+   */
+  notNavigableReason?: string
   /**
    * R-013 扩写（2026-10-06）：这条分身在 Mind 里挂的项目子树（后端
    * `mind_subtree`，如 `Vault/projects/Nymo`）。没挂就是空串——左栏那对
@@ -122,6 +140,14 @@ export interface Agent {
    */
   icon?: string
   color?: string
+  /**
+   * 全局真源 + per-agent 开关（2026-10-19 用户裁定）：三份黑名单随行透出——
+   * 是「这个 Agent 关掉了哪些」的偏好，不是资产拷贝；资产名单始终来自
+   * 各自的全局面（skills / toolsets / mcp_servers）。
+   */
+  disabledMcpServers?: string[]
+  disabledSkills?: string[]
+  disabledToolsets?: string[]
 }
 
 /** §5 GET /api/agents/:id/overview — S2 status card (U4). */

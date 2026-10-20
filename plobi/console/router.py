@@ -74,6 +74,8 @@ from plobi.agents.registry import (
     default_project_path,
     find_agenda_agent,
     is_agenda_entry,
+    agent_askability,
+    agent_navigability,
     load_registry,
     profile_name_blocker,
     registration_blocker,
@@ -445,6 +447,13 @@ def agent_row(entry: AgentEntry) -> dict:
     # sessions.agent_id 取，用量/腿按这些 id 在同一库（default_db_path）聚合。
     totals = totals_for_agent(entry.name)
     leg = leg_for_sessions(sessions_for_agent(entry.name))
+    # R-072：这一行现在问不问得到，判据只有 agent_askability 一份——名单和
+    # plobi_agent_ask 的嘴不许各判一次（日程秘书走 secretary_ask，所以 agenda
+    # 行 askable=False 却完全点得动；askable 是嘴的判据，不是点击的判据）。
+    askable, not_askable_reason = agent_askability(entry)
+    # 桌面左栏能不能点：点了之后 spawn 不会失败的形状（navigability），
+    # 不可点时 notNavigableReason 说明为什么（课程是数据 / 保留名 / 未落地）。
+    navigable, not_navigable_reason = agent_navigability(entry)
     row: dict = {
         "id": entry.name,
         "name": agent_display_name(entry),
@@ -457,6 +466,10 @@ def agent_row(entry: AgentEntry) -> dict:
         "profile": entry.profile_name,
         "category": entry.category,
         "mindSubtree": entry.mind_subtree,
+        "askable": askable,
+        "notAskableReason": not_askable_reason or None,
+        "navigable": navigable,
+        "notNavigableReason": not_navigable_reason or None,
         # WP-AGENT-CREATE-UPGRADE（用户 10-16）：图标/颜色随行透出，左栏按它渲染；
         # 空串 = 用既有默认（profile 确定性色 / 无图标）。
         "icon": entry.icon,
