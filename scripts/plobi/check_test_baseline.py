@@ -134,7 +134,7 @@ def main() -> int:
         at_write = code_head()
         head = args.started_at or at_write
         payload = {"date": datetime.date.today().isoformat(), "code_head": head or None,
-                   "code_head_at_write": at_write or None,
+                   "run_start_head": head or None, "head_at_write": at_write or None,
                    "worktree_dirty_at_write": dirty,
                    "machine": "Windows (Cycle)", "entry": "scripts/run_tests.sh -q", **run}
         json.dump(payload, open(BASELINE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
