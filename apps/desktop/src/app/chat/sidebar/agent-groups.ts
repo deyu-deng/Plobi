@@ -98,11 +98,19 @@ export function agentProfileIdSet(agents: readonly Agent[]): Set<string> {
 /**
  * 这一行能不能点进聊天页。
  *
- * 名册里 `profile` 为空的是**数据记录**（`l2_course`：课是数据不是分身，裁定 40），
- * 它没有运行时可绑。以前点它会让客户端替它编一个 profile 名去起后端（`agent.id` 那条
- * 回退），于是每一门课都是一场重启循环。既然点进去只能是一张空壳，行本身就不该可点。
+ * 判据优先用后端 R-072 的 `navigable`（`agent_navigability`：点了之后 spawn
+ * 不会失败的形状——课程行 heal 成 l2_course 后没有 profile 名、保留名建不出
+ * 家、家还没落地，三者任一都不可点）。旧后端没透出时回落 profile 非空——名册里
+ * `profile` 为空的是**数据记录**（`l2_course`：课是数据不是分身，裁定 40），
+ * 它没有运行时可绑。以前点它会让客户端替它编一个 profile 名去起后端
+ * （`agent.id` 那条回退），于是每一门课都是一场重启循环。既然点进去只能是
+ * 一张空壳，行本身就不该可点。
  */
-export function isNavigableAgent(agent: Pick<Agent, 'profile'>): boolean {
+export function isNavigableAgent(agent: Pick<Agent, 'profile'> & Partial<Pick<Agent, 'navigable'>>): boolean {
+  if (typeof agent.navigable === 'boolean') {
+    return agent.navigable
+  }
+
   return Boolean((agent.profile ?? '').trim())
 }
 

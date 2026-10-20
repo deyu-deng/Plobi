@@ -47,6 +47,14 @@ def _isolated_state(tmp_path, monkeypatch):
     # 否则每个 project 用例都会往真的脑仓里写目录。
     (tmp_path / "mind").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "mind"))
+    # 「家落地了没有」（registry._profile_landed → plobi_cli.profiles.profile_exists）
+    # 在这个隔离环境里必须可控：真家是共享的，读它等于把本用例的读数交给那台机器。
+    # 只承认 l2-agenda 有家——它就是被 spawn 过的那一行（AGENDA 的形状）。
+    import plobi_cli.profiles as _profiles
+
+    monkeypatch.setattr(
+        _profiles, "profile_exists", lambda name: str(name).strip().lower() == "l2-agenda", raising=False
+    )
     set_registry = AgentRegistry(path=tmp_path / "projects.yaml")
     console_router.set_registry(set_registry)
     set_tracker(SubagentTracker())
@@ -80,11 +88,14 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     register(_isolated_state, agenda=AGENDA)
     row = client.get("/api/agents").json()["data"][0]
     # 2026-10-19 起行上带三份 per-agent 工具黑名单（全局真源 + per-agent 开关）；
-    # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（契约债一并收）。
+    # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（契约债一并收）；
+    # askable 是 R-072 嘴的判据，navigable 是桌面点击的判据（两回事，见
+    # registry.agent_navigability 的 docstring）。
     assert set(row) == {
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
+        "askable", "notAskableReason", "navigable",
     }
     assert row["id"] == "agenda"
     assert row["name"] == "日程秘书"
@@ -92,6 +103,12 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
     assert row["model"] == "aigw/workbuddy/deepseek-chat"  # ADR-0011 default route
     assert row["todayCalls"] == 0
     assert row["profile"] == "l2-agenda"
+    # 日程秘书走 secretary_ask，所以 askable=false——但左栏完全点得动。
+    # 这正是 askable 与 navigable 必须分成两个字段的原因。
+    assert row["askable"] is False
+    assert row["navigable"] is True
+    # None 的键在 agent_row 末尾被省略（与 model?/actualModel? 同一口径）
+    assert "notNavigableReason" not in row
     # R-013 扩写：行上必带 mind_subtree（没挂是空串），左栏才辨得出同一项目登记了两条。
     assert row["mindSubtree"] == ""
 
@@ -164,18 +181,25 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
     response = client.post(
         "/api/agents", json={"id": "plobi-code", "category": "projects"}
     )
+    print("PROBE-BODY:", response.status_code, response.text[:400])
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
     assert body["data"]["id"] == "plobi-code"
     assert body["data"]["category"] == "projects"
     # 2026-10-19 起行上带三份 per-agent 工具黑名单（全局真源 + per-agent 开关）；
-    # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（测试这条契约债一并收）。
+    # icon/color 是 WP-AGENT-CREATE-UPGRADE 随行透出的（测试这条契约债一并收）；
+    # askable/navigable 是 R-072 的两把判据（嘴 / 点击）。
     assert set(body["data"]) == {
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
+        "askable", "notAskableReason", "navigable", "notNavigableReason",
     }
+    # 这一条刚登记、spawn 被 stub 掉了 → 家还没落地 → 左栏据此先不点它，
+    # 并把原因原样透出去（而不是让用户点进去撞 spawn 失败）。
+    assert body["data"]["navigable"] is False
+    assert "还没在这台机器上落地" in body["data"]["notNavigableReason"]
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
     assert "plobi-code" in ids
     assert _isolated_state.get("plobi-code").role == "l2_project"

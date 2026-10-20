@@ -48,7 +48,9 @@ describe('groupAgentsByCategory', () => {
 
     expect(groups.map(group => group.category)).toEqual(['projects', 'butler', 'events', 'research'])
     expect(groups[1]?.agents.map(row => row.id)).toEqual(['b1'])
-    expect(orderedCategories(['research', 'courses', 'projects'])).toEqual(['projects', 'research', 'courses'])
+    // WP-AGENT-CREATE-UPGRADE 后 courses 进偏好表第二位（projects, courses, butler,
+    // events, research）——「Courses Agent 甚至不可以选中」那条的修复面。
+    expect(orderedCategories(['research', 'courses', 'projects'])).toEqual(['projects', 'courses', 'research'])
   })
 
   it('appends a category the client has never heard of, as its own column', () => {
@@ -58,10 +60,11 @@ describe('groupAgentsByCategory', () => {
       agent({ id: 'c2', name: '大学物理（甲）Ⅱ', category: 'courses' })
     ])
 
-    expect(groups.map(group => group.category)).toEqual(['butler', 'courses'])
-    expect(groups[1]?.agents.map(row => row.id)).toEqual(['c2', 'c1'])
+    // courses 是偏好表里的已知品类，排在 butler 前（见 AGENT_CATEGORY_PREFERENCE）。
+    expect(groups.map(group => group.category)).toEqual(['courses', 'butler'])
+    expect(groups[1]?.agents.map(row => row.id)).toEqual(['b1'])
+    expect(groups[0]?.agents.map(row => row.id)).toEqual(['c2', 'c1'])
     // 关键反证：课程没有混进 butler，也没有因为"不认识"被藏起来。
-    expect(groups[0]?.agents.map(row => row.id)).toEqual(['b1'])
   })
 
   it('omits empty groups and sorts agents by name within a group', () => {
@@ -124,5 +127,28 @@ describe('isNavigableAgent', () => {
     expect(isNavigableAgent(agent({ id: '电工电子学', name: '电工电子学' }))).toBe(false)
     expect(isNavigableAgent(agent({ id: 'x', name: 'x', profile: '   ' }))).toBe(false)
     expect(isNavigableAgent(agent({ id: 'y', name: 'y', profile: '' }))).toBe(false)
+  })
+
+  it('R-072: backend navigable=false wins even when a profile name exists', () => {
+    // 课程行（heal 后 role=l2_course）与保留名行（Plobi/l2-plobi）都有 profile 名，
+    // 但后端 navigability 说点了必然 spawn 失败 —— 行必须不可点。
+    expect(isNavigableAgent(agent({ id: 'c', name: '电工电子学', profile: 'l2-course-ee', navigable: false }))).toBe(false)
+    expect(isNavigableAgent(agent({ id: 'p', name: 'Plobi', profile: 'l2-plobi', navigable: false }))).toBe(false)
+  })
+
+  it('R-072: backend navigable=true opens the row regardless of profile spelling', () => {
+    expect(isNavigableAgent(agent({ id: 'a', name: 'Aura', profile: 'aura', navigable: true }))).toBe(true)
+  })
+
+  it('R-072: navigable is independent of askable — the agenda row is both', () => {
+    // agenda 走 secretary_ask（askable=false）但左栏完全点得动（navigable=true）。
+    // 把 askable 当点击判据的那一版把日程秘书也变成了不可点——这就是两个字段
+    // 必须分开的理由。
+    expect(isNavigableAgent(agent({ id: 'agenda', name: '日程秘书', profile: 'l2-agenda', askable: false, navigable: true }))).toBe(true)
+  })
+
+  it('absent navigable falls back to the profile judgement (older backends)', () => {
+    expect(isNavigableAgent(agent({ id: 'n', name: 'Nymo', profile: 'nymo' }))).toBe(true)
+    expect(isNavigableAgent(agent({ id: 'z', name: 'z' }))).toBe(false)
   })
 })

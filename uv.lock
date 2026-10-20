@@ -2754,7 +2754,7 @@ wheels = [
 
 [[package]]
 name = "plobi-agent"
-version = "0.1.0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -2794,6 +2794,9 @@ dependencies = [
 acp = [
     { name = "agent-client-protocol" },
 ]
+aigw = [
+    { name = "h2" },
+]
 all = [
     { name = "agent-client-protocol" },
     { name = "aiohttp" },
@@ -2801,6 +2804,7 @@ all = [
     { name = "google-api-python-client" },
     { name = "google-auth-httplib2" },
     { name = "google-auth-oauthlib" },
+    { name = "h2" },
     { name = "mcp" },
     { name = "python-multipart" },
     { name = "simple-term-menu" },
@@ -3010,6 +3014,7 @@ requires-dist = [
     { name = "google-auth-httplib2", marker = "extra == 'google'", specifier = "==0.3.1" },
     { name = "google-auth-oauthlib", marker = "extra == 'google'", specifier = "==1.3.1" },
     { name = "grimp", marker = "extra == 'dev'", specifier = "==3.17" },
+    { name = "h2", marker = "extra == 'aigw'", specifier = "==4.4.1" },
     { name = "hindsight-client", marker = "extra == 'hindsight'", specifier = "==0.6.1" },
     { name = "honcho-ai", marker = "extra == 'honcho'", specifier = "==2.0.1" },
     { name = "httpx", extras = ["socks"], specifier = "==0.28.1" },
@@ -3034,6 +3039,7 @@ requires-dist = [
     { name = "pillow", specifier = "==12.2.0" },
     { name = "plobi-agent", extras = ["acp"], marker = "extra == 'all'" },
     { name = "plobi-agent", extras = ["acp"], marker = "extra == 'termux'" },
+    { name = "plobi-agent", extras = ["aigw"], marker = "extra == 'all'" },
     { name = "plobi-agent", extras = ["cli"], marker = "extra == 'all'" },
     { name = "plobi-agent", extras = ["cli"], marker = "extra == 'termux'" },
     { name = "plobi-agent", extras = ["cron"], marker = "extra == 'all'" },
@@ -3095,7 +3101,7 @@ requires-dist = [
     { name = "websockets", specifier = "==15.0.1" },
     { name = "youtube-transcript-api", marker = "extra == 'youtube'", specifier = "==1.2.4" },
 ]
-provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "fal", "edge-tts", "modal", "daytona", "hindsight", "dev", "messaging", "cron", "slack", "matrix", "wecom", "cli", "tts-premium", "voice", "pty", "honcho", "supermemory", "mem0", "vision", "mcp", "nemo-relay", "homeassistant", "sms", "teams", "computer-use", "acp", "mistral", "bedrock", "vertex", "azure-identity", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
+provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "fal", "edge-tts", "modal", "daytona", "hindsight", "dev", "messaging", "cron", "aigw", "slack", "matrix", "wecom", "cli", "tts-premium", "voice", "pty", "honcho", "supermemory", "mem0", "vision", "mcp", "nemo-relay", "homeassistant", "sms", "teams", "computer-use", "acp", "mistral", "bedrock", "vertex", "azure-identity", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
 
 [[package]]
 name = "pluggy"

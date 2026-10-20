@@ -9436,10 +9436,20 @@ function clearAigwChild(appId: string): void {
   aigwChildren.delete(appId)
 }
 
+// The aigw child's stdout/stderr. console.log alone is NOT enough: a packaged
+// main process's console goes nowhere, so every gateway startup failure — the
+// 2026-10-19 `h2` ImportError that surfaced only as a bare 20-second "gateway
+// did not become healthy in time" — was invisible in every log file. Mirror it
+// into desktop.log, the file the status ledger's red rows point the user at.
 const logAigw = (s: string) => {
   try {
     for (const line of s.split('\n')) {
-      if (line.trim()) console.log(`[aigw] ${line.trimEnd()}`)
+      if (!line.trim()) {
+        continue
+      }
+
+      console.log(`[aigw] ${line.trimEnd()}`)
+      rememberLog(`[aigw] ${line.trimEnd()}`)
     }
   } catch {
     /* ignore */

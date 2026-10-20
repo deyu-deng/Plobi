@@ -147,13 +147,23 @@ def test_live_table_on_this_runner_has_no_drive_letter(home):
 def test_windows_defaults_keep_their_bindings():
     """Requirement A's other half: don't break the Windows layout. Asserted as
     a relation (drive-anchored, events/research siblings) rather than three
-    hardcoded strings, so it stays a contract and not a snapshot."""
+    hardcoded strings, so it stays a contract and not a snapshot.
+
+    Two categories are deliberately empty, for two different reasons, and the
+    test now says which is which: ``butler`` is unbound by definition
+    (``UNBOUND_CATEGORIES``), while ``courses`` was moved out of the table by
+    WP-AGENT-CREATE-UPGRADE — every course binds its own folder, so a
+    category-level default would be a lie. Before that change this assertion
+    looped over every category but butler, so it went red on the very machine
+    that asked for the courses category.
+    """
     resolved = build_default_project_paths(is_windows=True)
 
     assert set(resolved) == set(AGENT_CATEGORIES)
     assert resolved["butler"] == ""
+    assert resolved["courses"] == ""
     for category in AGENT_CATEGORIES:
-        if category in UNBOUND_CATEGORIES:
+        if category in UNBOUND_CATEGORIES or category == "courses":
             continue
         assert DRIVE_LEADER.match(resolved[category]), (category, resolved[category])
     # Compared as Windows paths so the relation is checked on any runner.
