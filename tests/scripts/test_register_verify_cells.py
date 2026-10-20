@@ -359,6 +359,15 @@ def test_a_full_width_bar_does_not_break_the_row():
     assert verify_register_cells.commands_of(rows[0]) == ["cd Code && grep -c 新增红 日志.txt"]
 
 
+def test_a_backticked_marker_in_prose_does_not_create_a_phantom_command():
+    # 说明文字里把「复跑：」这三个字本身打进反引号时，那根闭合反引号会被当成命令的起始反引号，
+    # 于是整段散文变成一条假命令被提出来（10-20 我自己撞的）。真的那条要照常拿到。
+    prose = cell("WP-FAKE-PROSE", "待签", "我给别格写 `复跑：` 时在那条命令里用了半角竖线（shell 管道）。"
+                                        "复跑：`grep -c 新增红 日志.txt`")
+    got = verify_register_cells.commands_of(verify_register_cells.rows_from(HEADER + prose + "\n")[0])
+    assert got == ["grep -c 新增红 日志.txt"], f"提出了幽灵命令：{got}"
+
+
 def test_the_real_register_row_for_this_cell_has_no_ascii_pipe():
     # 我自己的格子必须自己先过这条：备注里写命令时只能用全角段隔，不然门读到的是另一条命令
     for c in verify_register_cells.rows_from(io.open(REGISTER, encoding="utf-8").read()):
