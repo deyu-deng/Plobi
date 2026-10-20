@@ -52,6 +52,11 @@ _PLOBI_CORE_TOOLS = [
     "text_to_speech",
     # Planning & memory
     "todo", "memory",
+    # 记忆的两枚产品面原子（裁 185：工具只给原子动作，业务流程交给模型判断）。
+    # 与 ``pool_read``／``pool_mark`` 同一 rung、同一理由：读自己家的记忆是每个角色
+    # 都需要的，按 role 过滤就等于再造一个特权入口。上游那把带 action 枚举的
+    # ``memory`` 留在束里当"手"，但产品承诺面是这两枚。
+    "memory_read", "memory_write",
     # 信息池的通用读手。刻意放在默认束里而不是某个角色的工具集：读自己家的信息
     # 是每个角色都需要的（WP-POOL-READ-ANY / 用户 10-19「给所有 Agent 配备一个
     # 通用地读取信息的工具」），按 role 过滤就是把它重新变成特权入口。
@@ -211,8 +216,8 @@ TOOLSETS = {
     },
     
     "memory": {
-        "description": "Persistent memory across sessions (personal notes + user profile)",
-        "tools": ["memory"],
+        "description": "Persistent memory across sessions (read / write a scope: global, this agent, user profile, status digest)",
+        "tools": ["memory_read", "memory_write", "memory"],
         "includes": []
     },
 

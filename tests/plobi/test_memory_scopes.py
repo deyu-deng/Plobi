@@ -19,6 +19,9 @@ from types import SimpleNamespace
 import pytest
 
 from tools import memory_tool as mt
+from toolsets import TOOLSETS as _TOOLSETS
+
+TOOLSETS_EXPOSED = set(_TOOLSETS['memory']['tools'])
 
 
 @pytest.fixture()
@@ -432,3 +435,126 @@ def test_slug_resolution_prefers_the_roster_identity(mem_root, monkeypatch):
     # 名字里带路径分隔符也逃不出 agents/ 那一层
     monkeypatch.setenv("PLOBI_AGENT_ID", "../escape")
     assert mt.resolve_agent_slug() == "escape"
+
+
+# --------------------------------------------------------------------------- #
+# 两枚产品面原子（裁 185）：memory_read(scope) ／ memory_write(scope, parts, source)
+# --------------------------------------------------------------------------- #
+
+def test_tool_surface_has_no_branch_selector():
+    """裁 185 的尺，量我们自己新铸的工具：``action``／``intent``／``mode`` 一个都不许有。
+
+    10-17 那颗 P0 的成因就是把业务流程写成带枚举参数的工具（``intent=plan_day`` 不带
+    ``action`` 时走另一条分支）。这两枚是这条尺的第一批受试者，所以把尺本身钉成测试。
+    """
+    from tools.registry import registry
+
+    for name in ("memory_read", "memory_write"):
+        schema = registry.get_schema(name) if hasattr(registry, "get_schema") else None
+        assert schema is not None, f"{name} 没注册进工具表"
+        props = schema["parameters"]["properties"]
+        assert not ({"action", "intent", "mode"} & set(props)), f"{name} 带了选分支的参数"
+        assert set(props) <= {"scope", "parts", "source"}, name
+    assert "memory_read" in TOOLSETS_EXPOSED and "memory_write" in TOOLSETS_EXPOSED
+
+
+def test_read_then_write_is_the_whole_round_trip(mem_root):
+    """读回来的就是写回去的：整份写、按最终内容判上限、不静默丢条目。"""
+    store = _store_for("aura")
+    assert json.loads(mt.memory_write(scope="self",
+                                       parts=["课表按 calendar_name 全等", "作业按 evidence.course_id"],
+                                       source="vault/projects/Plobi/plan.md",
+                                       store=store))["success"] is True
+
+    read = json.loads(mt.memory_read(scope="self", store=_store_for("aura")))
+    assert len(read["entries"]) == 2
+    assert read["entries"][0].startswith("课表按 calendar_name 全等")
+    assert "出处 vault/projects/Plobi/plan.md" in read["entries"][0]
+    assert read["path"] == str(store._path_for("memory"))
+
+    # 整份替换：只留一条，另一条就离开 L0（这次有位置 ⇒ 不算被挤出去）
+    written = json.loads(mt.memory_write(scope="self", parts=[read["entries"][0]], store=store))
+    assert written["success"] is True and written["entry_count"] == 1
+    assert written["dropped"] and "作业按 evidence.course_id" in written["dropped"][0]
+
+
+def test_write_is_refused_over_cap_without_dropping_anything(mem_root):
+    """超上限的整份写：拒掉，并把现状摊回去 —— 不静默截断、不静默丢。"""
+    store = _store_for("aura", memory_char_limit=120)
+    store.add("memory", "第一条本机的旧事实")
+    big = ["新的一条事实 " + "×" * 80, "另一条新的 " + "×" * 80, "第三条 " + "×" * 80]
+
+    result = json.loads(mt.memory_write(scope="self", parts=big, store=store))
+    assert result["success"] is False
+    assert "over the cap" in result["error"] or "nothing was written" in result["error"]
+    assert result["current_entries"] == list(store.memory_entries)
+    assert store._entries_for("memory") == ["第一条本机的旧事实"]
+
+
+def test_emptying_the_user_profile_needs_an_explicit_delete(mem_root):
+    """硬边界「不改历史画像」的形状：画像不许被一次整份写清空。"""
+    store = _store_for("aura")
+    store.add("user", "用户要大白话")
+    result = json.loads(mt.memory_write(scope="user", parts=[], store=store))
+    assert result["success"] is False
+    assert "user profile" in result["error"]
+    assert store.user_entries == ["用户要大白话"]
+
+
+def test_global_write_is_the_same_verb_and_lands_in_the_pending_layer(mem_root):
+    """写 ``global`` 不加任何分支参数：同一个动作、那个位置自己的规则是「要人批」。"""
+    from tools import write_approval as wa
+
+    store = _store_for("aura")
+    result = json.loads(mt.memory_write(
+        scope="global", parts=["这台机的后端测试唯一入口是 scripts/run_tests.sh"],
+        source="vault/projects/Plobi/plan.md", store=store))
+    assert result["staged"] is True
+    assert not (mem_root / "memory" / "GLOBAL.md").exists()
+    payload = wa.get_pending(wa.MEMORY, result["pending_id"])["payload"]
+    assert payload["action"] == "batch" and payload["target"] == "global"
+    assert any("run_tests.sh" in op.get("content", "") for op in payload["operations"])
+    assert len(payload["base_sha256"]) == 64
+
+    assert mt.apply_memory_pending(payload, store)["success"] is True
+    assert "run_tests.sh" in (mem_root / "memory" / "GLOBAL.md").read_text(encoding="utf-8")
+
+
+def test_writing_global_with_nothing_to_change_says_so(mem_root):
+    store = _store_for("aura")
+    store.add("global", "已经在全局里的一条")
+    again = json.loads(mt.memory_write(scope="global", parts=["已经在全局里的一条"], store=store))
+    assert again["success"] is True and again.get("unchanged") is True
+
+
+def test_status_scope_writes_the_digest_file_l1_reads(mem_root):
+    store = _store_for("aura")
+    out = json.loads(mt.memory_write(scope="status", parts=["在做配对令牌"], store=store))
+    assert out["success"] is True
+    path = mem_root / "memory" / "agents" / "aura" / "STATUS.md"
+    assert "在做配对令牌" in path.read_text(encoding="utf-8")
+    l1 = _store_for(mt.L1_SLUG)
+    assert "在做配对令牌" in (l1.format_for_system_prompt("memory") or "")
+
+
+def test_unknown_scope_is_refused_not_guessed(mem_root):
+    store = _store_for("aura")
+    for fn in (mt.memory_read, mt.memory_write):
+        result = json.loads(fn(scope="project", store=store,
+                               **({"parts": ["x"]} if fn is mt.memory_write else {})))
+        assert result["success"] is False
+        assert "self" in result["error"] and "global" in result["error"]
+
+
+def test_atoms_share_the_store_with_the_legacy_hand(mem_root):
+    """两枚原子与上游那把 ``memory`` 手共用同一个 store／同一批文件——不许长出第二份账。"""
+    store = _store_for("aura")
+    json.loads(mt.memory_write(scope="self", parts=["原子写的一条"], store=store))
+    assert any("原子写的一条" in e for e in store.memory_entries)
+
+    legacy = json.loads(mt.memory_tool(action="add", target="memory",
+                                       content="上游手写的一条", store=store))
+    assert legacy["success"] is True
+    read = json.loads(mt.memory_read(scope="self", store=_store_for("aura")))
+    assert len(read["entries"]) == 2
+    assert (mem_root / "memory" / "agents" / "aura" / "MEMORY.md").is_file()

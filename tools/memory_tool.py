@@ -1572,6 +1572,184 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
     if action == "remove":
         return store.remove(target, old_text)
     return {"success": False, "error": f"Unknown staged action '{action}'."}
+# ===========================================================================
+# The two product-side atoms (裁定 185, generalizing 裁 183)
+#
+#   memory_read(scope)                      -> what that location holds right now
+#   memory_write(scope, parts, source)      -> that location now holds exactly these
+#
+# `scope` is a data location (self / global / user / status), which 裁定 185 allows;
+# there is no action/intent/mode selector, because every extra enum value is one more
+# place the model must guess right to end up on the right branch — the 10-17 P0
+# (``intent=plan_day`` taking another code path when ``action`` was omitted) is the
+# evidence. Consolidation is the model composing read + write, not a business flow we
+# encode in parameters. The legacy `memory` tool below stays registered (it is an
+# upstream hand, and the approval replay path), but it is NOT the product surface.
+# ===========================================================================
+
+#: product-facing scope name -> the scope the store speaks
+ATOMIC_SCOPES = {
+    "self": "memory",
+    "global": "global",
+    "user": "user",
+    "status": "status",
+}
+
+
+def _resolve_atomic_scope(scope: Optional[str]) -> str:
+    """Normalize a requested location. Unknown words are refused, never guessed."""
+    key = (scope or "self").strip().lower()
+    if key == "memory":          # the store's own word for the agent's own scope
+        key = "self"
+    if key not in ATOMIC_SCOPES:
+        raise ValueError(
+            f"Unknown memory scope {scope!r}. Use 'self', 'global', 'user' or 'status'."
+        )
+    return ATOMIC_SCOPES[key]
+
+
+def memory_read(scope: str = "self", store: Optional[MemoryStore] = None) -> str:
+    """Read one memory location: its entries, usage against its own cap, and its path.
+
+    What comes back is exactly what a later ``memory_write`` must send to keep it —
+    the ``source`` pointer lives inside the entry text (裁定 181: memory is a bounded
+    index, and the pointer is what makes 2200 chars enough).
+    """
+    try:
+        target = _resolve_atomic_scope(scope)
+    except ValueError as exc:
+        return tool_error(str(exc), success=False)
+    live = store or load_on_disk_store()
+    return json.dumps(
+        {
+            "success": True,
+            "scope": target,
+            "agent": live.slug,
+            "path": str(live._path_for(target)),
+            "entries": list(live._entries_for(target)),
+            "usage": f"{live._char_count(target):,}/{live._char_limit(target):,} chars",
+        },
+        ensure_ascii=False,
+    )
+
+
+def memory_write(scope: str = "self", parts: Optional[List[str]] = None,
+                 source: str = None, store: Optional[MemoryStore] = None) -> str:
+    """Make one memory location hold exactly ``parts``.
+
+    Whole-location write on purpose: one verb, no selector to get wrong. Send back
+    what you read, edited — including every entry you mean to keep. The char cap is
+    checked against the FINAL content only, so trimming and adding are one call.
+    ``source`` (a relative ``vault/…`` / ``mind/…`` path plus its date) is appended to
+    each entry that has no pointer yet; the direction is memory -> the page a human
+    reads, never the page -> memory to save space (裁定 182).
+
+    ``global`` is the same verb, but that location's own rule is plan + hash + a human
+    nod, so it stages into the pending layer and writes nothing until approved.
+    """
+    try:
+        target = _resolve_atomic_scope(scope)
+    except ValueError as exc:
+        return tool_error(str(exc), success=False)
+
+    entries = [entry_with_source(str(part).strip(), source)
+               for part in (parts or []) if str(part).strip()]
+    entries = list(dict.fromkeys(entries))
+    live = store or load_on_disk_store()
+
+    if target == "global":
+        current = list(live._entries_for("global"))
+        operations: List[Dict[str, Any]] = [
+            {"action": "remove", "old_text": gone} for gone in current if gone not in entries
+        ] + [
+            {"action": "add", "content": new} for new in entries if new not in current
+        ]
+        if not operations:
+            return json.dumps(
+                {"success": True, "unchanged": True, "scope": "global",
+                 "message": "GLOBAL.md already holds exactly this."},
+                ensure_ascii=False,
+            )
+        return _stage_global_write("batch", None, None, operations, live)
+
+    return json.dumps(live.rewrite(target, entries), ensure_ascii=False)
+
+
+MEMORY_READ_SCHEMA = {
+    "name": "memory_read",
+    "description": (
+        "Read one memory location: its exact entries, its own char usage, and the file it "
+        "lives in. Four locations: 'self' = this agent's own notes; 'global' = the layer "
+        "every agent reads; 'user' = who the person is (one copy); 'status' = your few "
+        "lines of current state, which only the L1 secretary reads. Call this before "
+        "memory_write — the write replaces the location's whole content, so anything you "
+        "want to keep has to be sent back."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "scope": {
+                "type": "string",
+                "enum": ["self", "global", "user", "status"],
+                "description": "Which memory location to read. Default 'self'.",
+            },
+        },
+    },
+}
+
+MEMORY_WRITE_SCHEMA = {
+    "name": "memory_write",
+    "description": (
+        "Write a memory location: after this call it holds exactly `parts`, in order. This "
+        "is a whole-location write, not an append — read it first, then send the edited "
+        "list, so one call can merge stale entries, drop what's wrong, and add the new fact "
+        "together. Each location has its own char cap and the limit is checked on the FINAL "
+        "content; an over-budget write is refused with the current entries shown, and "
+        "nothing is dropped silently.\n\n"
+        "'source' is how memory stays small: the relative path of the page a person can "
+        "read (under vault/ or mind/) plus its date, e.g. "
+        "'vault/projects/Plobi/plan.md 2026-10-19'. It is appended to each entry that has "
+        "no pointer yet. Never paste the page's content or base64 into memory, and never "
+        "rewrite the vault to point back at memory — memory points at the human-facing "
+        "page, that direction is the design.\n\n"
+        "Write 'self' by default. A fact that holds for every agent goes to 'global': same "
+        "verb, but that location stages the change for approval and changes nothing on disk "
+        "until someone nods, so 'staged' in the response is success, not a failure."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "scope": {
+                "type": "string",
+                "enum": ["self", "global", "user", "status"],
+                "description": "Which memory location to write. Default 'self'.",
+            },
+            "parts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "The complete set of entries this location should hold, in order. "
+                    "Required by shape, so send [] deliberately: an empty list clears the "
+                    "location, except 'user', where it is refused — deleting a fact about "
+                    "the person is an explicit act, not a side effect of a rewrite."
+                ),
+            },
+            "source": {
+                "type": "string",
+                "description": (
+                    "Provenance pointer for these entries: a relative path under vault/ or "
+                    "mind/ that a human can read, with its date. Appended to each entry "
+                    "that has none."
+                ),
+            },
+        },
+        "required": ["parts"],
+    },
+}
+
+
+
+
 # OpenAI Function-Calling Schema
 # =============================================================================
 
@@ -1672,6 +1850,33 @@ registry.register(
     check_fn=check_memory_requirements,
     emoji="🧠",
 )
+
+# 两枚产品面原子（裁 185）——注册在同一个 registry import 之后，与上游那把 `memory` 手并列
+registry.register(
+    name="memory_read",
+    toolset="memory",
+    schema=MEMORY_READ_SCHEMA,
+    handler=lambda args, **kw: memory_read(
+        scope=args.get("scope", "self"), store=kw.get("store")),
+    check_fn=check_memory_requirements,
+    description="读一个记忆位置（self / global / user / status）",
+    emoji="🧠",
+)
+
+registry.register(
+    name="memory_write",
+    toolset="memory",
+    schema=MEMORY_WRITE_SCHEMA,
+    handler=lambda args, **kw: memory_write(
+        scope=args.get("scope", "self"),
+        parts=args.get("parts") or [],
+        source=args.get("source"),
+        store=kw.get("store")),
+    check_fn=check_memory_requirements,
+    description="写一个记忆位置：整份替换＋出处指针；global 那一格走已有的待确认层",
+    emoji="🧠",
+)
+
 
 
 
