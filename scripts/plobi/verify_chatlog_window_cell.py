@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -41,6 +42,28 @@ HOOK_MARKERS = ("hook_active", "GetRecentContacts", "/rpc/")
 #: 而 Butler 自己的测试那行写的是显示名（"工程训练·课群组"）——**这两处不一致，谁定稿谁改**；
 #: 本命令按 wxid 报，因为采集侧手里那份就是 wxid（`message.talker`），显示名另有 `context.talker_name`。
 GROUP_SUFFIX = "@chatroom"
+
+def time_shape_ok(row, now: float) -> bool:
+    """裁 189 那一列的两件事：**形状**与**语义**，都在这一个位上判。
+
+    形状：过池那一侧同一个归一点（`store.normalize_time`，不在这里再拼一种格式），
+    结果必须是 naive 本地 `YYYY-MM-DD HH:MM:SS`——`'T'`(0x54) 比 `' '`(0x20) 大，
+    混着写时同一天前缀下谁排前面取决于谁先写入。
+    语义：这一列得等于**这条消息自己的时间**（`context.sent_at` 那一位），不是
+    `context.event_at`——后者是规则抽出来的「事情什么时候发生」，那 12 条里现读过
+    `2026-10-24T14:00:00` 这种还没开的会被算进「今天收到的」，`since` 就不是它字面的意思了。
+    """
+    from plobi.pool.store import normalize_time
+
+    canon, _raw = normalize_time(row.occurred_at)
+    if len(canon) != 19 or "T" in canon:
+        return False
+    if canon > time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now)):
+        return False
+    context = row.context or {}
+    sent = normalize_time(context.get("sent_at"))[0]
+    return bool(sent) and canon == sent
+
 
 def expected_columns(row) -> dict:
     """这一条**本来该带上**的两列——证明采集侧在那个落点手上就有数据，不是还得去问谁。"""
@@ -122,13 +145,16 @@ def main(argv=None) -> int:
             tally["rows"].append([row.source, row.external_id, row.kind,
                                   len(row.body or ""), bool(row.title),
                                   row.visibility, row.conversation,
-                                  list(expected.values())])
+                                  list(expected.values()),
+                                  time_shape_ok(row, now),
+                                  bool((row.context or {}).get("event_at"))])
         return {"created": len(rows), "updated": 0, "unchanged": 0, "ids": []}
 
     healthy: dict = {"ok": False, "state": "not_read", "detail": "没跑到探活那一步", "binary": None}
     report: dict = {}
     scoped: list[str] = []
     note = ""
+    now = time.time()
     original_land = pipeline_module.pool_land
     pipeline_module.pool_land = _counting_land
     try:
@@ -184,6 +210,10 @@ def main(argv=None) -> int:
         "pooled_would_land": tally["would_land"],
         # 一条都没命中时是 None（不知道），不是 True——空集上的 all() 恒真，
         # 那会把"这一刀没采到东西"洗成"两列都填好了"。
+        "time_shape_ok": None if not tally["rows"]
+                       else all(row[8] for row in tally["rows"]),
+        "event_at_in_context": None if not tally["rows"]
+                               else all(row[9] for row in tally["rows"]),
         "columns_filled": None if not tally["rows"]
                         else all(row[5] and row[6] for row in tally["rows"]),
         "columns_expected_from": [row[7] for row in tally["rows"]][:2],
@@ -201,7 +231,8 @@ def main(argv=None) -> int:
           and not verdict["hook_surface_present"]
           and verdict["real_pool_untouched"] and verdict["model_calls"] == 0
           and verdict["pooled_would_land"] > 0
-          and verdict["columns_filled"] is True)
+          and verdict["columns_filled"] is True
+          and verdict["time_shape_ok"] is True)
     return 0 if ok else 1
 
 
