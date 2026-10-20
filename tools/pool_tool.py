@@ -51,7 +51,8 @@ _POOL_READ_SCHEMA: Dict[str, Any] = {
             },
             "since": {
                 "type": "string",
-                "description": "只要这个时间之后的条目（ISO 日期或日期时间）。",
+                "description": "只要这个时间之后**收到**的条目（裁 189）。形状随意：`YYYY-MM-DD HH:MM:SS`、"
+                               "ISO（带不带 T／时区偏移都行）、epoch 秒或毫秒都认；读不出会报错而不是当成没筛。",
             },
             "contains": {
                 "type": "string",

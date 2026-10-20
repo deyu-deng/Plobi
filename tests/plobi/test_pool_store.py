@@ -10,11 +10,12 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from plobi.pool import PoolItem, store
+from plobi.pool import PoolItem, normalize_time, store
 
 
 @pytest.fixture
@@ -257,6 +258,110 @@ class TestTheTwoColumns:
             names = {row[1] for row in conn.execute("PRAGMA table_info(pool_items)")}
 
         assert {"visibility", "conversation"} <= names
+
+
+class TestTimeShapes:
+    """裁定 189 那一格的形状判据：**列里只准一种形状**，归一在写入口这一点做。
+
+    混形的后果不是不好看：`'T'`(0x54) 比 `' '`(0x20) 大，同一天前缀下谁排前面取决于谁先写入，
+    `ORDER BY occurred_at DESC` 与 `since` 就不再是它们看起来的意思。
+    """
+
+    def test_four_shapes_collapse_to_the_one_the_column_promised(self, pool):
+        epoch_s = int(datetime(2026, 10, 20, 9, 32).timestamp())
+        store.land([
+            item(external_id="iso_t", occurred_at="2026-10-20T09:30:00"),
+            item(external_id="space", occurred_at="2026-10-20 09:31:00"),
+            item(external_id="epoch_s", occurred_at=str(epoch_s)),
+            item(external_id="epoch_ms", occurred_at=str(epoch_s * 1000)),
+        ])
+
+        got = {r["external_id"]: r["occurred_at"] for r in store.query()}
+
+        assert got["iso_t"] == "2026-10-20 09:30:00"
+        assert got["space"] == "2026-10-20 09:31:00"
+        assert got["epoch_s"] == "2026-10-20 09:32:00"
+        assert got["epoch_ms"] == "2026-10-20 09:32:00", "13 位是毫秒，别当 10 位秒读成 5 万年后"
+
+    def test_since_is_the_read_side_of_the_same_normalization(self, pool):
+        """`since` 给 `T` 形也必须筛得动——以前它和空格形比会整批落空（`'T' > ' '`）。"""
+        store.land([
+            item(external_id="today_a", occurred_at="2026-10-20T09:30:00"),
+            item(external_id="today_b", occurred_at="2026-10-20 09:31:00"),
+            item(external_id="epoch", occurred_at=str(int(__import__("datetime").datetime(2026, 10, 20, 9, 32).timestamp()))),
+            item(external_id="yesterday", occurred_at="2026-10-19 23:59:00"),
+        ])
+
+        rows = store.query(since="2026-10-20T00:00:00")
+
+        assert [r["external_id"] for r in rows] == ["epoch", "today_b", "today_a"]
+
+    def test_the_raw_shape_survives_in_context_not_in_the_column(self, pool):
+        store.land([item(external_id="t", occurred_at="2026-10-20T09:30:00"),
+                    item(external_id="clean", occurred_at="2026-10-20 09:31:00")])
+
+        rows = {r["external_id"]: r for r in store.query()}
+        assert rows["t"]["context"]["sent_at_raw"] == "2026-10-20T09:30:00"
+        # 已经是那一形的**不另存一份**——否则每轮重跑都在往 context 里堆没用的副本
+        assert "sent_at_raw" not in rows["clean"]["context"]
+
+    def test_an_unreadable_time_lands_empty_and_says_so_instead_of_guessing(self, pool):
+        # 不抛到采集器：一条消息的时间读不出不该让整批信源失败。
+        canonical, raw = normalize_time("上周五大概下午")
+
+        assert canonical == "" and raw == "上周五大概下午"
+        store.land([item(external_id="junk", occurred_at="上周五大概下午")])
+        assert store.query()[0]["occurred_at"] == ""
+
+    def test_aware_time_becomes_local_naive(self):
+        got, raw = normalize_time("2026-10-07T11:45:20+08:00")
+        expected = datetime.fromisoformat("2026-10-07T11:45:20+08:00").astimezone().replace(tzinfo=None)
+
+        assert got == expected.strftime(store.CANONICAL_FORMAT)
+        assert raw == "2026-10-07T11:45:20+08:00", "带偏移的那种必须留原样，本机时区不同读数就不同"
+
+    def test_compact_and_numeric_forms(self):
+        assert normalize_time("20261007")[0] == "2026-10-07 00:00:00"
+        assert normalize_time("20261007114520")[0] == "2026-10-07 11:45:20"
+        assert normalize_time("")[0] == ""
+        assert normalize_time(None)[0] == ""
+
+    def test_a_since_we_cannot_read_is_refused_not_ignored(self, pool):
+        store.land([item()])
+
+        with pytest.raises(store.PoolError, match="读不出来"):
+            store.query(since="前天吧")
+
+    def test_recollect_only_fixing_the_time_still_lands(self, pool):
+        """裁 189 那句「旧行不迁移，重采同一窗口时 `occurred_at` 自己变对」靠这条钉住。
+
+        旧实现里 `land()` 只比 body／title／context／那两列 ⇒ 正文一个字没变、只把时间改对的那次
+        重采会被判成「没变」而 `continue` 掉，那一行就永远留着装错的"事情发生的时间"。
+        """
+        store.land([item(external_id="m1", occurred_at="2026-10-24T14:00:00")])
+
+        result = store.land([item(external_id="m1", occurred_at="2026-10-19 11:45:20")])
+
+        assert result["updated"] == 1 and result["created"] == 0
+        assert store.stats()["total"] == 1, "重采不许长出第二份"
+        assert store.query()[0]["occurred_at"] == "2026-10-19 11:45:20"
+
+    def test_a_reclassified_kind_still_lands(self, pool):
+        store.land([item(external_id="m1", kind="note")])
+
+        assert store.land([item(external_id="m1", kind="meeting")])["updated"] == 1
+        assert store.query()[0]["kind"] == "meeting"
+        assert store.stats()["total"] == 1
+
+    def test_rows_without_a_time_fall_back_to_when_we_read_them(self, pool):
+        store.land([
+            item(external_id="older", captured_at="2026-10-01 08:00:00"),
+            item(external_id="newer", captured_at="2026-10-05 08:00:00"),
+        ])
+
+        assert [r["external_id"] for r in store.query()] == ["newer", "older"]
+        # 没有时间的行不算在窗口外：宁可多给一条说不清时间的，也不藏一条真收到的
+        assert {r["external_id"] for r in store.query(since="2026-10-20 00:00:00")} == {"older", "newer"}
 
 
 class TestItDoesNotBreak:

@@ -7,6 +7,7 @@
 """
 
 from .store import (
+    CANONICAL_FORMAT,
     DEFAULT_LIMIT,
     MAX_LIMIT,
     PoolError,
@@ -14,12 +15,14 @@ from .store import (
     connect,
     land,
     mark_acted,
+    normalize_time,
     path,
     query,
     stats,
 )
 
 __all__ = [
+    "CANONICAL_FORMAT",
     "DEFAULT_LIMIT",
     "MAX_LIMIT",
     "PoolError",
@@ -27,6 +30,7 @@ __all__ = [
     "connect",
     "land",
     "mark_acted",
+    "normalize_time",
     "path",
     "query",
     "stats",
