@@ -2681,7 +2681,6 @@ disable: '停掉',
     modelExplicit: (model: string) => `这一个单独指定：${model}`,
     modelStateUnknown: '这份后端没说这一行有没有单独指定',
     modelSaved: '已为这一个单独指定模型',
-    modelClearUnavailable: '暂时还不能改回跟随默认（撤回的口子还没开）'
   },
 
   preview: {

@@ -2523,7 +2523,6 @@ disable: 'Stop',
     modelExplicit: (model: string) => `set for this agent: ${model}`,
     modelStateUnknown: 'This backend did not report whether the row sets its own model',
     modelSaved: 'Model saved for this agent',
-    modelClearUnavailable: 'Switching back to the default is not available yet'
   },
 
   preview: {

@@ -150,24 +150,24 @@ export async function putAgentToolPrefs(
 }
 
 /**
- * WP-AGENT-MODEL-PICKER-MOUNT 第二档：给**这一个** Agent 写名册那一行的模型覆盖。
+ * WP-AGENT-MODEL-PICKER-MOUNT：给**这一个** Agent 设／撤名册那一行的模型覆盖。
  *
  * 走的是后端现成那张嘴（裁定 166 决定二那句「不新建 API」）：路由落
  * `plobi_cli/web_server.py` 的 `PUT /api/profiles/{name}/model`，它再调
  * `plobi.agents.registry.set_profile_model_override` 写**名册那一行**——不往任何分身家写文件。
  * 键是 `profile_name`，也就是行上那个 `Agent.profile`（不是 `Agent.id`：两者在旧数据里会不同）。
  *
- * ⚠ **这一嘴只能写、不能撤**：那两个字段必填，空值被路由直接 400。所以「跟随默认」在
- * `WP-MODEL-OVERRIDE-CLEAR` 落地之前不许画成能点的那一颗（不许交一颗必然报错的按钮），
- * 界面要显式说一句"暂时还不能改回跟随默认"。
+ * `qualified === null` ＝ **撤回这一行的覆盖**（两键都显式给空串）。那是 `WP-MODEL-OVERRIDE-CLEAR`
+ * 落的语义：撤回必须能表达，否则「跟随默认」就是一颗必然 400 的按钮。
+ * 这里不拆 `provider/model`——拆法是 `agent-model-overrides.ts` 的 `splitQualified`，由调用点负责，
+ * 这一层只管把两个键**都带上**（缺键会被后端当成"你没说你要干什么"而 400，那是故意的）。
  */
 export async function putAgentModel(
   profileName: string,
-  provider: string,
-  model: string
-): Promise<{ model: string; ok: boolean; provider: string }> {
+  assignment: { model: string; provider: string } | null
+): Promise<{ cleared: boolean; model: string; ok: boolean; provider: string }> {
   const payload = await window.plobiDesktop.api<unknown>({
-    body: { model, provider },
+    body: assignment ?? { model: '', provider: '' },
     method: 'PUT',
     path: `/api/profiles/${encodeURIComponent(profileName)}/model`
   })
