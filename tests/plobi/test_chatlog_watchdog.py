@@ -62,6 +62,39 @@ def _cleanup():
     agenda_dispatch._DEFAULT = None
 
 
+def test_the_daily_sweep_uses_the_configured_window(tmp_path, monkeypatch) -> None:
+    """日采那一轮必须真往回扫，且窗口只由配置决定——调用处不许自己拍大数。"""
+
+    from plobi.collectors.chatlog.config import CollectorConfig
+    from plobi.collectors.chatlog.watchdog import Watchdog
+
+    seen: dict = {}
+
+    class _Reporting:
+        config = CollectorConfig()
+
+        def run_once(self, day=None, lookback_days=1):
+            seen["lookback_days"] = lookback_days
+
+            class _R:
+                pending_ids: list = []
+
+                @staticmethod
+                def as_dict():
+                    return {"scanned": 0}
+            return _R()
+
+        client = None  # Watchdog 构造时会取 pipeline.client 兜底，这里不需要探活
+
+        def health(self):
+            return {"ok": True, "state": "ready", "detail": "ok", "binary": None}
+
+    wd = Watchdog(pipeline=_Reporting(), state_path=tmp_path / "state.json")
+    wd._sweep_and_check()
+    assert seen["lookback_days"] == CollectorConfig().time_window_days
+    assert CollectorConfig().time_window_days >= 7, "默认窗口太短就等于还是只看当天"
+
+
 def test_healthy_tick_sweeps_and_keeps_counter_at_zero(tmp_path):
     notifier = RecordingNotifier()
     watchdog, client, heal_calls = _make(tmp_path, fail=False, notifier=notifier)
@@ -70,7 +103,8 @@ def test_healthy_tick_sweeps_and_keeps_counter_at_zero(tmp_path):
 
     assert result["chatlog_healthy"] is True
     assert result["consecutive_failures"] == 0
-    assert client.fetch_calls == 1  # sweep 跑了
+    # 一跑了就算：跑几趟由配置里那个时间窗决定（原来这里钉 ==1，等于把"只看当天"当契约）
+    assert client.fetch_calls >= 1
     assert heal_calls == []
     assert watchdog.state_path.read_text().count("consecutive_failures") == 1
 
@@ -147,3 +181,23 @@ def test_sweep_results_are_notified_through_dispatcher(tmp_path):
     result = watchdog.tick()
     assert result["sweep"]["created"]
     assert notifier.sent, "巡检发现的待确认项必须推送"
+
+
+# --- WP-POOL（`specs/source-pool.md`）--------------------------------------------
+# 落点从 `agenda.db` 换成信息池：采集器**不再**往日程写。给这几档一个临时的池，
+# 不钉的话它们会写**真的**共享那一份 —— 那正是要防的"测试碰了真数据"。
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool, **filters):
+    """池子里那些行。不是 `service.list_pending()` -- 那是日程，采集器不再写它。"""
+    return pool.query(**filters)

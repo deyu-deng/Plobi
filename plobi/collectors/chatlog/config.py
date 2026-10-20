@@ -23,6 +23,10 @@ DEFAULT_BASE_URL = "http://127.0.0.1:5030"
 # 10 minutes keeps the worst case inside the 15-minute notification SLA
 # (docs/adr/0005-incremental-rule-plus-model.md, revision note).
 DEFAULT_POLL_MINUTES = 10
+#: 日采每轮往回带多少天。**原来没人传，就等于只看当天**——于是这台断一次侧车，
+#: 中间那几天的消息就永远没人回头捞（Plan 线 10-20 09:5x 要的就是这一格补上）。
+#: 它是"往回看多久"，不是"事件发生在多久之内"，两者不许混（裁 189）。
+DEFAULT_TIME_WINDOW_DAYS = 30
 
 # 采集口径的两个模式。**现行口径是黑名单**：ADR-0010 修订 2026-08-30 把「只采白名单」
 # 改成「黑名单 + 新会话默认采」，2026-09-30 裁定 50 又把新会话那半改成 fail-open
@@ -63,6 +67,8 @@ class CollectorConfig:
     # blacklist); tier does not reopen a closed door. Valid grades: info, task.
     tiers: dict[str, str] = field(default_factory=dict)
     poll_minutes: int = DEFAULT_POLL_MINUTES
+    # 每轮采集往回扫的时间窗（天）。默认 30：够盖住一次周末 + 一次侧车宕机。
+    time_window_days: int = DEFAULT_TIME_WINDOW_DAYS
     # 主开关默认**开**：用户 10-09 拍「chatlog 启用」、10-10 又拍「全量执行」。
     # 开着不等于在采——采不到的四种原因由 sidecar 各说一句，不静默、不报"正常"。
     enabled: bool = True
@@ -158,6 +164,8 @@ class CollectorConfig:
             blacklist=[str(b) for b in blacklist] if isinstance(blacklist, list) else [],
             tiers=tiers,
             poll_minutes=int(data.get("poll_minutes") or DEFAULT_POLL_MINUTES),
+            time_window_days=max(1, int(data.get("time_window_days")
+                                  or DEFAULT_TIME_WINDOW_DAYS)),
             enabled=bool(data.get("enabled", True)),
             archived_whitelist=[str(a) for a in archived if a],
             archived_at=archived_at,
@@ -173,6 +181,7 @@ class CollectorConfig:
             "talkers": self.talkers,
             "blacklist": self.blacklist,
             "poll_minutes": self.poll_minutes,
+            "time_window_days": self.time_window_days,
             "enabled": self.enabled,
         }
         if self.tiers:

@@ -223,7 +223,9 @@ class Watchdog:
         # 1) collection sweep (may legitimately no-op when collector disabled)
         if self.pipeline is not None:
             try:
-                report = self.pipeline.run_once()
+                # 窗口从配置来，不在调用处拍大数（Plan 线 09:5x 那条口径）。
+                report = self.pipeline.run_once(
+                    lookback_days=self.pipeline.config.time_window_days)
                 result["sweep"] = report.as_dict()
                 self._notify_pending(report.pending_ids)
             except Exception:
