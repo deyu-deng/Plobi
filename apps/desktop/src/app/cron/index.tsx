@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { $consoleAgents, refreshConsoleAgents } from '@/app/console/store/agents'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -57,6 +58,7 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { jobState, jobTitle, STATE_DOT } from './job-state'
 import { cronOutputView } from './output-status'
+import { RECIPIENT_NONE, recipientInitialValue, recipientOptions, recipientToPayload } from './recipient-options'
 
 const DEFAULT_DELIVER = 'local'
 
@@ -387,11 +389,14 @@ export function CronView({ onClose, onOpenSession, setStatusbarItemGroup: _setSt
   }
 
   async function handleEditorSave(values: EditorValues) {
+    const recipient = recipientToPayload(values.recipient)
+
     if (editor.mode === 'create') {
       const created = await createCronJob({
         prompt: values.prompt,
         schedule: values.schedule,
         name: values.name || undefined,
+        recipient,
         deliver: values.deliver || DEFAULT_DELIVER
       })
 
@@ -402,6 +407,8 @@ export function CronView({ onClose, onOpenSession, setStatusbarItemGroup: _setSt
         prompt: values.prompt,
         schedule: values.schedule,
         name: values.name,
+        // 编辑时"从有到无"是一个动作，不是"没改"——所以这里送 null 而不是省略。
+        recipient: recipient ?? null,
         deliver: values.deliver
       })
 
@@ -786,6 +793,8 @@ function CronEditorDialog({
   const [schedule, setSchedule] = useState('')
   const [schedulePreset, setSchedulePreset] = useState('daily')
   const [deliver, setDeliver] = useState(DEFAULT_DELIVER)
+  const [recipient, setRecipient] = useState(RECIPIENT_NONE)
+  const rosterAgents = useStore($consoleAgents)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<null | string>(null)
 
@@ -799,12 +808,31 @@ function CronEditorDialog({
     setSchedule(initial ? jobScheduleExpr(initial) : (SCHEDULE_OPTIONS[0].expr ?? ''))
     setSchedulePreset(initial ? scheduleOptionForExpr(jobScheduleExpr(initial)).value : 'daily')
     setDeliver(initial ? jobDeliver(initial) : DEFAULT_DELIVER)
+    setRecipient(initial ? recipientInitialValue(initial.recipient) : RECIPIENT_NONE)
     setError(null)
     setSaving(false)
+
+    // 名册那一页平时没人看（左栏那份 store 由聊天面喂），单独打开定时任务页时
+    // 它可能是空的——空下拉比"看起来没有 Agent 能跑"更难查，所以这里自己拉一次。
+    if ($consoleAgents.get().length === 0) {
+      void refreshConsoleAgents()
+    }
   }, [initial, open])
 
   const selectedScheduleOption =
     SCHEDULE_OPTIONS.find(candidate => candidate.value === schedulePreset) ?? SCHEDULE_OPTIONS[0]
+
+  // 名册里查不到那个人（改名／归档／后端还没升级）时把原值列出来并标一句——
+  // 静默把它改成「不指定」等于替用户改了一份正在跑的归属。
+  const recipientChoices = useMemo(() => {
+    const options = recipientOptions(rosterAgents)
+
+    if (recipient && !options.some(option => option.id === recipient)) {
+      return [{ id: recipient, name: `${recipient} · ${c.recipientNotInRoster}` }, ...options]
+    }
+
+    return options
+  }, [c.recipientNotInRoster, recipient, rosterAgents])
 
   function handleSchedulePresetChange(nextPreset: string) {
     setSchedulePreset(nextPreset)
@@ -840,6 +868,7 @@ function CronEditorDialog({
         deliver,
         name: name.trim(),
         prompt: trimmedPrompt,
+        recipient,
         schedule: trimmedSchedule
       })
     } catch (err) {
@@ -909,6 +938,23 @@ function CronEditorDialog({
               </Select>
             </Field>
           </div>
+
+          <Field htmlFor="cron-recipient" label={c.recipientLabel}>
+            <Select onValueChange={setRecipient} value={recipient}>
+              <SelectTrigger className="h-9 rounded-md" id="cron-recipient">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={RECIPIENT_NONE}>{c.recipientNone}</SelectItem>
+                {recipientChoices.map(option => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldHint>{c.recipientHint}</FieldHint>
+          </Field>
 
           {schedulePreset === 'custom' ? (
             <Field htmlFor="cron-schedule" label={c.customScheduleLabel}>
@@ -985,6 +1031,8 @@ interface EditorValues {
   deliver: string
   name: string
   prompt: string
+  /** 空串＝不指定（那一格干脆不给后端）。 */
+  recipient: string
   schedule: string
 }
 
