@@ -61,6 +61,12 @@ _PLOBI_CORE_TOOLS = [
     # 是每个角色都需要的（WP-POOL-READ-ANY / 用户 10-19「给所有 Agent 配备一个
     # 通用地读取信息的工具」），按 role 过滤就是把它重新变成特权入口。
     "pool_read", "pool_mark",
+    # 日程的读手与写手（WP-AGENDA-ATOMS / 裁定 185）。同一 rung、同一理由：
+    # 「看得见自己家的日程、也改得动」不是秘书的特权，是每个角色都需要的手——课程 Agent
+    # 要读课表才能问作业，项目 Agent 要知道今天哪几块是它的。而**写**这一枚刻意给到所有角色：
+    # 旧形状是一张带 `intent`＋`action` 枚举的嘴，按角色过滤那张表就是这套违例的遮羞布；
+    # 换成原子之后不需要过滤，需要的是逐条留痕（`store.log_action` 在服务层那一侧）。
+    "agenda_read", "agenda_write",
     # NOTE: the desktop Project tools (project_list/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the
@@ -224,6 +230,12 @@ TOOLSETS = {
     "pool": {
         "description": "Structured information collected by the source collectors (read + mark)",
         "tools": ["pool_read", "pool_mark"],
+        "includes": []
+    },
+
+    "agenda": {
+        "description": "The agenda face: read the day's real event rows, write them back (create / edit / cancel / acknowledge done)",
+        "tools": ["agenda_read", "agenda_write"],
         "includes": []
     },
 

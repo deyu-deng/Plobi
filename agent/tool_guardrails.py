@@ -47,6 +47,9 @@ MUTATING_TOOL_NAMES = frozenset(
         "todo",
         "memory",
         "pool_mark",
+        # 日程那枚写手与 `pool_mark` 同一类：一条一件、逐条留痕，循环守卫要认得出它在改东西
+        # （`agenda_read` 反过来不进这张名单——它什么也不改）。
+        "agenda_write",
         "skill_manage",
         "browser_click",
         "browser_type",
