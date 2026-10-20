@@ -13030,8 +13030,11 @@ class ProfileDescriptionUpdate(BaseModel):
 
 
 class ProfileModelUpdate(BaseModel):
-    provider: str
-    model: str
+    # WP-MODEL-OVERRIDE-CLEAR：两格都要**显式给**（缺键 ≠ 空值）——
+    # 「键没给」是被拒绝的请求，「两键都给了但都留空」才是撤回这一行的覆盖。
+    # 合成一种就会静默清除用户那一行，那是最坏的错法。
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 
 class ProfileDescribeAuto(BaseModel):
@@ -13563,26 +13566,58 @@ async def update_profile_description_endpoint(name: str, body: ProfileDescriptio
 
 @app.put("/api/profiles/{name}/model")
 async def update_profile_model_endpoint(name: str, body: ProfileModelUpdate):
-    """Set the main model (``model.default`` + ``model.provider``) for a
-    specific profile's config.yaml, without touching the dashboard's own
-    active profile. Mirrors ``POST /api/model/set`` (main scope) but scoped
-    to the named profile via the PLOBI_HOME override.
+    """给**这一个** Agent 设／撤名册那一行的主模型（裁定 166 决定二／WP-MODEL-OVERRIDE-CLEAR）。
+
+    落点不是这个 profile 家的 ``config.yaml``——那份早已收走（读链只剩顶层那一份 + 名册行覆盖），
+    这里写的是名册那一行的 ``provider:``/``model:``。
+
+    三种请求，三种明确结果，**不许有一种被静默当成"清除成功"**：
+    * 两键都给了值 → 设这一行的覆盖；
+    * 两键都给了、都留空 → **撤回**这一行的覆盖，生效值回到顶层那一份；
+    * 只给一键／键都没给／只给一半 → 4xx 说清为什么，绝不猜用户想要另一半。
     """
     profile_dir = _resolve_profile_dir(name)
     provider = (body.provider or "").strip()
     model = (body.model or "").strip()
-    if not provider or not model:
-        raise HTTPException(status_code=400, detail="provider and model are required")
+
+    if body.provider is None or body.model is None:
+        raise HTTPException(
+            status_code=400,
+            detail="provider 与 model 两个键都要给：键都没给或只给一个，我分不清你是要设还是要撤，"
+            "而猜成「撤」会静默改掉这一行。",
+        )
+
+    if bool(provider) != bool(model):
+        raise HTTPException(
+            status_code=400,
+            detail="provider 与 model 要一起给值，或一起留空（都留空＝撤回这一行的覆盖）；"
+            "半个覆盖读不回一个可用的路由。",
+        )
+
+    clearing = not provider and not model
+
     try:
-        _write_profile_model(profile_dir, provider, model)
+        if clearing:
+            # 撤回到"没有覆盖"＝把那一行的两格写成空串（`has_model_override` 随即为假），
+            # 生效值由读链叠回去：名册行 → 顶层 → 出厂默认。
+            from plobi.agents.registry import RegistryError, set_profile_model_override
+
+            try:
+                set_profile_model_override(Path(profile_dir).name, "", "")
+            except RegistryError as e:
+                raise ValueError(str(e)) from e
+        else:
+            _write_profile_model(profile_dir, provider, model)
     except ValueError as e:
         # 那个家没有名册行（配置只有一份，没地方放"只属于它"的覆盖）＝调用方的前提不成立，
         # 不是服务端故障：照实 400，别报成 500 让人以为是模型写入炸了。
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         _log.exception("PUT /api/profiles/%s/model failed", name)
         raise HTTPException(status_code=500, detail=str(e))
-    return {"ok": True, "provider": provider, "model": model}
+    return {"ok": True, "cleared": clearing, "provider": provider, "model": model}
 
 
 @app.post("/api/profiles/{name}/describe-auto")
