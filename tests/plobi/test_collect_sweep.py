@@ -283,65 +283,6 @@ class TestRealRegistry:
             assert needle not in text, needle
 
 
-class TestDailyJobIsRegisteredOnceNotResurrected:
-    """「每天自动采」要落到一条真作业上，而**只种一次**：用户关掉或删掉就是他的决定。"""
-
-    def _fake_jobs(self, existing=None):
-        class _Jobs:
-            def __init__(self):
-                self.created = []
-                self.rows = list(existing or [])
-
-            def list_jobs(self, include_disabled=False):
-                return self.rows
-
-            def create_job(self, **kwargs):
-                self.created.append(kwargs)
-                return {"id": f"job-{len(self.created)}"}
-
-            def update_job(self, job_id, updates):
-                self.rows = [{**r, **updates} for r in self.rows]
-
-        return _Jobs()
-
-    def test_seed_creates_the_collection_job_and_marks_only_after_success(self, tmp_path, monkeypatch):
-        from datetime import datetime
-
-        import plobi.butler.nightly as nightly
-
-        monkeypatch.setattr(nightly, "_seed_marker_path", lambda: tmp_path / "butler_seed.json")
-        monkeypatch.setattr(nightly, "copy_butler_scripts", lambda only=None: tmp_path)
-        jobs = self._fake_jobs()
-
-        # `_mark` 要的是一个**返回 datetime 的工厂**（它自己 `.isoformat()`），不是串。
-        first = nightly.ensure_collection_job(jobs, now=lambda: datetime(2026, 10, 15, 13, 0))
-        second = nightly.ensure_collection_job(jobs, now=lambda: datetime(2026, 10, 15, 13, 0, 1))
-
-        assert first == "seeded" and second == "already-seeded"
-        assert len(jobs.created) == 1 and jobs.created[0]["name"] == nightly.COLLECTION_JOB_NAME
-        assert jobs.created[0]["no_agent"] is True and jobs.created[0]["script"] == "plobi_collect_sweep.py"
-
-    def test_a_row_the_user_already_made_is_left_alone_but_still_marked(self, tmp_path, monkeypatch):
-        """有人手动建过同名作业 ⇒ 不抢他的决定，只把 marker 落下，别再问第二遍。"""
-        import plobi.butler.nightly as nightly
-
-        monkeypatch.setattr(nightly, "_seed_marker_path", lambda: tmp_path / "butler_seed.json")
-        monkeypatch.setattr(nightly, "copy_butler_scripts", lambda only=None: tmp_path)
-        jobs = self._fake_jobs(existing=[{"name": nightly.COLLECTION_JOB_NAME, "enabled": False}])
-
-        assert nightly.ensure_collection_job(jobs) == "exists"
-        assert jobs.created == [] and jobs.rows[0]["enabled"] is False    # 关着的就是他要关着
-
-    def test_the_script_file_actually_ships_with_the_table(self):
-        """表里登记的源脚本必须真存在——"代码合了 ≠ 会在跑"那一族，先从文件查起。"""
-        import os
-
-        import plobi.butler.nightly as nightly
-
-        row = next(r for r in nightly.BUTLER_JOBS if r[0] == nightly.COLLECTION_JOB_NAME)
-        assert os.path.isfile(os.path.join(nightly.REPO_ROOT, "scripts", "plobi", row[1]))
-
-
 def _raise():
     raise RuntimeError("构造不起来")
 

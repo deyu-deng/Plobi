@@ -124,10 +124,6 @@ def main() -> int:
 
         register_report_job()
 
-        from scripts.plobi.register_butler import register_butler_jobs
-
-        register_butler_jobs()
-
     print("[register] done")
     return 0
 
