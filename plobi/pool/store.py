@@ -23,12 +23,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
+
+logger = logging.getLogger(__name__)
 
 _INITIALIZED: set[str] = set()
 _INIT_LOCK = threading.Lock()
@@ -161,12 +164,99 @@ def _now() -> str:
 
 
 def _text(value: Any) -> str:
-    """时间那一格容得下好几种形状 —— 信源自带的时区戳、naive ISO、epoch 都见过。"""
+    """信源给的文本格：`None` 与缺字段都归成空串，别把 `None` 写进 `NOT NULL` 列。"""
     if value is None:
         return ""
     if isinstance(value, datetime):
         return value.replace(microsecond=0).isoformat(sep=" ")
     return str(value)
+
+
+#: 列里只准出现的这一种形状（裁定 189 那条排序与 `since` 都靠它）。
+CANONICAL_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+#: 纯数字里除 epoch 之外还见过的两种紧凑日期。
+_COMPACT_FORMATS = (
+    ("%Y%m%d%H%M%S", 14),
+    ("%Y%m%d", 8),
+)
+
+
+def normalize_time(value: Any) -> tuple[str, Optional[str]]:
+    """**唯一的归一点**：任何时间形状 → naive 本地 `YYYY-MM-DD HH:MM:SS`。
+
+    返回 ``(规范串, 原始串或 None)``。原始串只在进来的形状本来就不是这一形时带回来，
+    由 :func:`land` 落到 ``context.sent_at_raw``——信源给的那一份不许丢，但**列里只准有一种形状**：
+    `'T'`(0x54) 比 `' '`(0x20) 大，混着写时同一天前缀下谁排前面取决于谁先写入，
+    `ORDER BY occurred_at DESC` 与 `since` 就都不再是它们看起来的那个意思。
+
+    归一放在这一层而不是每个采集器里，是那条老判据（§3.2.1「只有全信源共用的形状才配当列」）
+    的另一半：以后教务、课表、邮箱都往同一列写，**只归一一次**才不会各写一形。
+
+    认不出来时**存空串并出声**，不拿原始串碰运气——空串在排序里自然沉底，
+    而一条读不出的时间留在列里会污染整池的比较。抛 ``PoolError`` 不做：
+    那会让一轮采集因为一条消息的时间读不出就整批失败，而这一格坏掉不该带走信源。
+    """
+    if value is None:
+        return "", None
+    if isinstance(value, datetime):
+        return _render(value), None
+
+    text = str(value).strip()
+    if not text:
+        return "", None
+
+    digits = text[1:] if text.startswith("-") else text
+    if digits.isdigit():
+        parsed = _from_digits(digits)
+    else:
+        parsed = _from_text(text)
+
+    if parsed is None:
+        logger.warning("plobi pool: 时间那一格读不出来（%r）——存空串，原样进日志", text)
+        return "", text
+
+    canonical = _render(parsed)
+    return canonical, (text if text != canonical else None)
+
+
+def _render(moment: datetime) -> str:
+    """aware → 本机时区的 naive；naive 照原样（不替用户猜他那个不带偏移的时间是哪个时区）。"""
+    if moment.tzinfo is not None:
+        moment = moment.astimezone().replace(tzinfo=None)
+    return moment.replace(microsecond=0).strftime(CANONICAL_FORMAT)
+
+
+def _from_digits(digits: str) -> Optional[datetime]:
+    """纯数字那几形：秒级 epoch 10 位、毫秒级 13 位，紧凑日期 8／14 位。"""
+    try:
+        if len(digits) == 10:
+            return datetime.fromtimestamp(int(digits))
+        if len(digits) == 13:
+            return datetime.fromtimestamp(int(digits) / 1000)
+    except (OverflowError, OSError, ValueError):
+        return None
+    for fmt, width in _COMPACT_FORMATS:
+        if len(digits) == width:
+            try:
+                return datetime.strptime(digits, fmt)
+            except ValueError:
+                return None
+    return None
+
+
+def _from_text(text: str) -> Optional[datetime]:
+    """ISO 那一族（带不带 `T`、带不带偏移、只给日期都算），再退一步试几种斜杠写法。"""
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00").replace("z", "+00:00"))
+    except ValueError:
+        pass
+    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[str, Any]:
@@ -182,12 +272,20 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
     try:
         for item in items:
             existing = conn.execute(
-                "SELECT body, title, context, visibility, conversation, captured_at FROM pool_items"
+                "SELECT kind, body, title, context, visibility, conversation, occurred_at,"
+                " captured_at FROM pool_items"
                 " WHERE source = ? AND external_id = ?",
                 (item.source, item.external_id),
             ).fetchone()
 
-            context_json = json.dumps(item.context, ensure_ascii=False, sort_keys=True, default=str)
+            occurred, occurred_raw = normalize_time(item.occurred_at)
+            captured, _captured_raw = normalize_time(item.captured_at)
+            # 信源原样那一份不许丢，但只在这一格真的不是那一形时才留（否则我们自己写
+            # `_now()` 的每一条都会带一份没用的副本）。采集器自己写了就不覆盖它。
+            context = dict(item.context or {})
+            if occurred_raw is not None and "sent_at_raw" not in context:
+                context["sent_at_raw"] = occurred_raw
+            context_json = json.dumps(context, ensure_ascii=False, sort_keys=True, default=str)
             visibility = _text(item.visibility)
             conversation = _text(item.conversation)
 
@@ -199,7 +297,7 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
                     (
                         item.source, item.external_id, item.kind, item.title, item.body,
                         context_json, visibility, conversation,
-                        _text(item.occurred_at), _text(item.captured_at) or _now(), _now(),
+                        occurred, captured or _now(), _now(),
                     ),
                 )
                 created += 1
@@ -207,12 +305,17 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
 
             # 内容一模一样 ⇒ 不动 `updated_at`。否则**每轮重跑都把整池的 updated_at 刷一遍**，
             # 而 Agent 若按那一列排序就会看到一个永远在变的池子。
+            # 参与比较的必须是 UPDATE 会写的那些**内容**格（`captured_at`／`updated_at` 是时钟，不算）。
+            # 裁 189 那句「旧行不迁移、重采同一窗口时 `occurred_at` 自己变对」就靠这一格参加比较：
+            # 只改时间而正文一个字没动的那次重采，以前会被判成「没变」而 `continue` 掉。
             if (
                 existing["body"] == item.body
                 and existing["title"] == item.title
                 and existing["context"] == context_json
                 and existing["visibility"] == visibility
                 and existing["conversation"] == conversation
+                and existing["kind"] == item.kind
+                and existing["occurred_at"] == occurred
             ):
                 continue
 
@@ -223,7 +326,7 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
                 (
                     item.kind, item.title, item.body, context_json,
                     visibility, conversation,
-                    _text(item.occurred_at) or existing["captured_at"], _now(), _now(),
+                    occurred or existing["captured_at"], _now(), _now(),
                     item.source, item.external_id,
                 ),
             )
@@ -254,6 +357,11 @@ def query(
     `contains`。空串筛不出"当时没记窗口"的那批——省略参数就是都要，这是刻意的：
     「没记」不是一种可见性，也不是一扇窗口。
 
+    `since` 什么形状都能给（走同一枚 :func:`normalize_time`），语义是**「从什么时候收到」**
+    （裁定 189）。没有时间的行——含时间读不出来被存成空串的那些——**永远算在窗口内**：
+    宁可多给一条说不清时间的，也不许把一条真收到的消息藏起来。读不出的 `since` 报
+    ``PoolError``，不退化成「不过滤」（那会把「筛错了」伪装成「池里就这些」）。
+
     `limit` 有上限不是因为隐私，是 prompt：一次回几万条正文会把上下文撑爆，
     而那与隐私无关但同样要防。默认给一个保守值。
     """
@@ -274,8 +382,17 @@ def query(
         clauses.append("conversation = ?")
         params.append(conversation)
     if since:
+        # `since` 走同一个归一点：写侧只准一种形状，读侧就不能拿 `'...T00:00:00'` 去和
+        # `'... 00:00:00'` 比——`'T'` 比空格大，那样同一天内的行会被整日判成"还没到"。
+        # 读不出来时**出声**，不退化成「不过滤」（那会把"筛错了"伪装成"池里就这些"）。
+        since_value, _since_raw = normalize_time(since)
+        if not since_value:
+            raise PoolError(
+                f"`since` 这个时间读不出来：{since!r}——要 `YYYY-MM-DD HH:MM:SS`、"
+                "ISO（带不带 T／偏移都行）或 epoch 秒／毫秒。"
+            )
         clauses.append("(occurred_at = '' OR occurred_at >= ?)")
-        params.append(since)
+        params.append(since_value)
     if contains:
         clauses.append("(title LIKE ? OR body LIKE ?)")
         params.extend([f"%{contains}%", f"%{contains}%"])
