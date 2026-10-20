@@ -23,7 +23,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from plobi.collectors import registry, sources_config
+from plobi.collectors import cadence, registry, sources_config
 from plobi.collectors.liveness import read_source_liveness
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         # 也正好是这一档该说的话：它登记在库里，但不归任何分类。
         return {**row, "category": None, "enabled": None, "enabled_origin": None,
                 "has_builder": None, "requires_manual_setup": None, "setup": None,
-                "setup_fields": []}
+                "setup_fields": [], "cadence": None, "cadence_origin": None,
+                "next_run_at": None, "due": None, "cadence_state": None, "cadence_note": None}
 
     spec = registry.spec(source_id)
     enabled = None if switches is None else switches.get(source_id)
@@ -83,6 +84,11 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         "category": spec.category,
         "enabled": enabled,
         "enabled_origin": origin,
+        # 每源一行频率（裁定 191 二）：**生效值 + 归属 + 下一次该打在几点**三格一起给。
+        # 只给一句 `cadence` 不够——"我明明设成每天三点怎么还在每轮打"这句话只能由
+        # `cadence_origin` 回答，与 `enabled_origin` 是同一个套路（裁定 94：一条事实一处真源，
+        # 但一处真源要把"它从哪来"一起说清）。
+        **cadence.cadence_env(source_id),
         "has_builder": spec.builder is not None,
         "requires_manual_setup": spec.capabilities.get("requires_manual_setup"),
         "setup": None if enabled is None else sources_config.setup_params(source_id),
@@ -170,6 +176,10 @@ async def try_source(source_id: str):
     )
     if row is None:
         raise HTTPException(status_code=502, detail=f"跑了一轮但 {source_id} 不在结果里")
+
+    # 手点一次**也算碰过它了**：不记账的话，"每天三点"配上下午手点一次，晚上那轮会再去打
+    # 一遍学校——频率问的是"多久碰一次"，不是"钟走到几点了"。节流那一格本来就是这么算的。
+    cadence.mark_run(source_id, state=str(row.get("state") or ""))
     return {"ok": True, "data": row}
 
 

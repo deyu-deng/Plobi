@@ -45,7 +45,10 @@ class Collector(Protocol):
     """Structural contract every source collector satisfies.
 
     Implementations do NOT write the agenda — :meth:`pull` only reads the
-    source; landing is ``ingest_occurrences(service, pull(), apply=...)``.
+    source. Landing is :func:`pool_items_of` + ``plobi.pool.land()``
+    (ruling 186 / ``Docs/specs/source-pool.md``: 采集器只写信息池，池→日程由
+    Agent 读了自己整合). ``ingest_occurrences`` stays as the seam it always was,
+    but no automatic path may call it any more.
     """
 
     source_id: str
@@ -57,3 +60,32 @@ class Collector(Protocol):
     def pull(self, *, since: Any = None) -> list[Occurrence]:
         """Full or incremental pull. Pure read: never writes the agenda."""
         ...
+
+
+def pool_items_of(occurrences: list[Occurrence], *, source: Optional[str] = None) -> list[Any]:
+    """One :class:`Occurrence` → one ``PoolItem``. **The only place that mapping exists.**
+
+    Why a shared helper instead of a block in each collector: the mapping carries two
+    decisions that must not drift per source — ``occurred_at`` is the item's **own**
+    time (ruling 189：微信那条把会议时间写进 occurred_at 就是错在这), and the raw
+    ``evidence`` rides along as ``context`` so the provenance survives. A third collector
+    writing its own copy is a third answer to "什么算这条的时间".
+
+    ``visibility`` / ``conversation`` stay unset on purpose: they are **窗口**概念（一条
+    消息属于哪扇会话、给谁看），从学校接口或 .ics 拉来的条目没有这个概念，填一个猜的值
+    比填空更糟（裁 187 那条"别拿猜的去填"）。
+    """
+    from plobi.pool import PoolItem
+
+    return [
+        PoolItem(
+            source=source or occurrence.source,
+            external_id=occurrence.external_id,
+            kind=occurrence.kind or "note",
+            title=occurrence.title or "",
+            body=str((occurrence.evidence or {}).get("text") or ""),
+            context=dict(occurrence.evidence or {}),
+            occurred_at=occurrence.start_at,
+        )
+        for occurrence in occurrences
+    ]

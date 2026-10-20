@@ -1,7 +1,9 @@
-"""ZjuCollector —— 学在浙大的未提交作业 → :class:`Occurrence`（判据 5）。
+"""ZjuCollector —— 学在浙大的作业清单 → :class:`Occurrence`（判据 5）。
 
-只读源、只交数据：**入库一律走 :func:`plobi.collectors.ingest.ingest_occurrences`**，
-本包不碰存储层（判据 3：加一个平台 = 登记一行 + 实现 Collector，公共层一行不动）。
+只读源、只交数据：**落点全在公共层** —— 进池走 :func:`plobi.collectors.base.pool_items_of`
++ ``plobi.pool.land()``（裁定 186：采集器只写信息池，「要不要变成日程」的判断权在 Agent 那侧），
+完成态走 :func:`plobi.collectors.ingest.authoritative_round`。本包不碰存储层（判据 3：
+加一个平台 = 登记一行 + 实现 Collector，公共层一行不动）。
 
 三件形状上的决定，都是被裁定钉的，不是我的偏好：
 
@@ -9,14 +11,17 @@
   三种结果，根因是构造里悄悄够到了真外部），所以这里连默认值都不给（裁定 104 二）。
 - **采不到东西必须说得出为什么**：每一格失败都抛 :class:`ZjuUnavailable`（带 ``state`` + 那一句），
   **绝不 ``return []`` 冒充"这轮确实没有作业"**（判据 2 那颗"0 行看着正常"的雷）。
-- **本轮 pull 里没出现的作业永不删**：``ingest`` 的附加式契约（``ingest.py:18``）。作业被提交之后
-  会不会从清单里整条消失**仍未实测**，所以"完成即关闭"这件产品决定我没在这里替谁做——
-  注册表里 ``authoritative_replace`` 仍记 ``None``（未实测就报错，不许猜）。
+- **本轮没出现的作业标失效，不删行**（裁定 190／191，10-20 实测掉的那件）：清单本身完成态的真源，
+  ``authoritative_replace`` 已按五轮读数填成 ``True``，**执行住在公共层** :func:`authoritative_round`
+  里（只把 ``completed_at`` 写上，行一条不删；下一轮它又出现 ⇒ 撤回来）。这一包**没有**一行
+  zju 专用的对账代码——那是裁定 191 判据 5 专门拦的形状。
 
 单飞（同账号同一时刻只许一把在打）交给触发方：cron 的 ``.tick.lock`` 已经是它（``cron/scheduler.py``），
 采集器这一层再加一把就是第二真源。这一层管的是**上限**：两次真打之间最短 ``min_minutes_between_pulls``
 （带抖动），没到点就连学校都不碰 —— 因为对 zju 的轮询上限**未实测**（治理线只打了 2 成功 + 3 失败，
 原话是不许当"可以每 5 分钟一轮"的依据）。
+⚠️ 这一格与**用户那侧的采集频率**（:mod:`plobi.collectors.cadence`，裁定 191 二）不是一回事，
+两把闸叠着生效：频率说"我想几点采"，这一格说"最多多快碰它一次"。谁都不许被拿掉来"简化"另一个。
 """
 
 from __future__ import annotations
@@ -29,8 +34,8 @@ from typing import Any, Callable, Mapping, Optional
 from plobi.agenda import get_service
 from plobi.agenda.service import AgendaService
 
-from ..base import Occurrence
-from ..ingest import ApplyMode, ingest_occurrences
+from ..base import Occurrence, pool_items_of
+from ..ingest import authoritative_round
 from . import auth
 from .auth import Transport
 from .config import ZjuConfig, read_last_pull_at, read_state, write_state
@@ -270,29 +275,33 @@ class ZjuCollector:
         self._record_attempt(report)
         return report
 
-    def collect(
-        self,
-        *,
-        service: Optional[AgendaService] = None,
-        apply: Optional[ApplyMode] = None,
-    ) -> dict:
-        """pull + land。``apply`` 由配置读，不在信源里写死（判据 98 三②）。
+    def collect(self, *, service: Optional[AgendaService] = None) -> dict:
+        """pull + land：**落点是信息池**（裁定 186），完成态由公共层按声明执行（裁定 190／191）。
 
-        调用方显式传 ``apply`` 时以它为准（一次性导入那种）；配置里写了不认识的档位，
-        ``ZjuConfig.load`` 已经按现行口径跑并把原值留在 ``apply_as_written``。
+        ``service`` 现在只被**完成态那一半**用到——:func:`authoritative_round` 要把"本轮没出现的
+        这一类"标失效，那一格写在事件上。原来的 ``apply``（pending / confirmed）**跟着日程落点
+        一起删了**：池子不分那两档，留着那个参数就是留着「顺手落日程」那条路（``sweep.py`` 里
+        同一格 10-19 已删，这边补上另一半，别留一个"看着还在"的档位）。
         """
+        from plobi.pool import land as pool_land
+
         report = self.pull_report()
         if not report.ok:
             raise ZjuUnavailable(report.state, report.detail)
 
-        result = ingest_occurrences(
-            service or get_service(), report.occurrences, apply=apply or self.config.apply
-        )
+        landed = pool_land(pool_items_of(report.occurrences, source=SOURCE_ID))
+        closed = authoritative_round(service or get_service(), report.occurrences)
         return {
-            **result,
+            **landed,
             "state": report.state,
             "source": SOURCE_ID,
             "rows_seen": report.rows_seen,
             "dropped": report.dropped,
-            "apply": apply or self.config.apply,
+            #: 逐条 id 一起给：判据 2「已提交的别再被排」与判据 3「不删行」都要能指着名字核，
+            #: 而不是只看一个数字。这一格也是"消失到底等不等于已提交"那件仍未测的事的唯一现场。
+            "closed_ids": closed["closed"],
+            "reopened_ids": closed["reopened"],
+            "closed": closed["closed_count"],
+            "reopened": closed["reopened_count"],
+            "authoritative_skipped": closed["skipped"],
         }

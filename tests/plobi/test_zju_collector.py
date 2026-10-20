@@ -38,6 +38,7 @@ from plobi.collectors.zju.status import (
     ZjuUnavailable,
     note_for,
 )
+from plobi.pool import query as pool_query, stats as pool_stats
 
 # 假模数与假口令：与学校、与用户都没有一个字的关系（金标准由 node 跑站方 security.js 得出）。
 GOLDEN_MODULUS = (
@@ -141,6 +142,16 @@ def ok_routes(kaptcha="false"):
         auth.CAS_ORIGIN + "/cas/login": (200, auth.COURSES_ORIGIN + "/login", APP_HOME_HTML),
         auth.TODOS_URL: (200, auth.TODOS_URL + "?ticket=ST-1234-abcdef", TODOS_JSON),
     }
+
+
+@pytest.fixture
+def pool_db(tmp_path, monkeypatch):
+    """把池子钉进 tmp_path —— **否则这一档会写真的 `pool.db`**（读侧函数其实会写库那一族的坑）。"""
+    from plobi.pool import store as pool_store
+
+    db = tmp_path / "pool.db"
+    monkeypatch.setattr(pool_store, "path", lambda: db)
+    return db
 
 
 @pytest.fixture
@@ -354,7 +365,8 @@ class TestCollectorContract:
         assert all(strict.pull_allowed_now(0.0, 31 * 60) for _ in range(50))
         assert not any(strict.pull_allowed_now(0.0, 29 * 60) for _ in range(50))
 
-    def test_second_pull_of_the_same_session_lands_idempotently(self, zju_paths) -> None:
+    def test_second_pull_of_the_same_session_lands_idempotently(self, zju_paths, pool_db) -> None:
+        """同一批拉第二遍不许多出条目：池子按 `(source, external_id)` 幂等（裁 186 之后的落点）。"""
         service = AgendaService(zju_paths.parent / "agenda.db")
         transport = FakeTransport(routes=ok_routes())
         collector = make_collector(
@@ -364,26 +376,25 @@ class TestCollectorContract:
         assert first["created"] == 2 and first["state"] == STATE_READY
         clock_skipped = collector.collect(service=service)
         assert clock_skipped["created"] == 0, "同一批发第二遍不许多出条目"
-        assert clock_skipped["unchanged"] + clock_skipped["updated"] == 2
-        pending = service.list_pending()
-        assert {event.source for event in pending} == {"zju"}
+        assert clock_skipped["updated"] == 0, "内容一个字没变 ⇒ 不刷 updated_at（池子按内容比）"
+        rows = pool_query(source="zju", db_path=pool_db)
+        assert len(rows) == 2, "幂等不等于没落：这一家现在落的是池"
+        assert {row["kind"] for row in rows} == {"ddl"}
 
-    def test_apply_mode_is_read_from_config_not_hardcoded(self, zju_paths) -> None:
+    def test_landing_is_the_pool_not_the_agenda(self, zju_paths, pool_db) -> None:
+        """裁定 186 的钉子：采集器**手里没有落日程的那把工具**。
+
+        以前这一档钉的是"配置说坐实就别再造待确认卡"——那一格（``apply``）跟着日程落点
+        一起删了，因为池子不分那两档。留着那条断言就等于留着"采集器还能选怎么改日程"的形状。
+        """
         service = AgendaService(zju_paths.parent / "agenda.db")
         collector = make_collector(
             transport=FakeTransport(routes=ok_routes()),
-            config=ZjuConfig(apply="confirmed", min_minutes_between_pulls=0, jitter_minutes=0),
+            config=ZjuConfig(min_minutes_between_pulls=0, jitter_minutes=0),
         )
-        result = collector.collect(service=service)
-        assert result["apply"] == "confirmed"
-        assert service.list_pending() == [], "配置说坐实就别再造待确认卡"
-
-    def test_unknown_apply_keeps_running_current_posture_and_says_so(self, tmp_path) -> None:
-        path = tmp_path / "zju.json"
-        path.write_text(json.dumps({"apply": "confrmed"}), encoding="utf-8")  # 少打一个字母
-        config = ZjuConfig.load(path)
-        assert config.apply == "pending", "拼错不许静默跳到另一档"
-        assert config.apply_as_written == "confrmed", "面上要说得出「你写的 confrmed 不认识」"
+        collector.collect(service=service)
+        assert service.list_pending() == [], "采集器不许往日程里插东西——一行都不行"
+        assert pool_stats()["by_source"].get("zju"), "落点在池：`stats()` 里要看得见这一家"
 
     def test_health_without_probe_touches_no_network(self, zju_paths) -> None:
         transport = FakeTransport(routes=ok_routes())
@@ -450,9 +461,14 @@ class TestRegistryDeclaresMeasuredBitsOnly:
         assert caps["requires_manual_setup"] is True
         assert caps["incremental_since"] is False, "我们这侧不认 since —— 每轮全量 + 按 uid 幂等"
 
-    def test_unmeasured_cancel_policy_still_refuses_to_be_guessed(self) -> None:
-        with pytest.raises(registry.CapabilityUnmeasured):
-            registry.require("zju", "authoritative_replace")
+    def test_cancel_policy_is_measured_not_guessed(self) -> None:
+        """10-20 实测掉了那一格（裁定 190／191）。依据写在 `zju/__init__.py` 的注记里。
+
+        旧钉子钉的是"没实测 ⇒ 一问就报错"，仍然要求它现在**有依据**：`require()` 不再抛，
+        而且值必须是 True——本轮不在清单 ⇒ 标失效。填成 False 也算"有值"，所以这一条
+        专门钉方向：**别让下一个人把已实测的读数又改回一个听起来安全的默认**。
+        """
+        assert registry.require("zju", "authoritative_replace") is True
 
     def test_zju_is_registered_and_now_has_an_executor(self) -> None:
         """这一格 10-15 翻过一次：从前记 False 的理由是"没有触发方"，现在执行方补上了。

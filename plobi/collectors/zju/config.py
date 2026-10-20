@@ -2,10 +2,12 @@
 
 口径来自两处既有规矩，这里只落它们要求的几件：
 
-- **``apply`` 由配置读，不许在信源里写死**（裁定 98 三判据②）。默认 ``"pending"``：
-  作业是机器采来的，走 ADR-0009 的待确认 + ``prev_value``，不静默覆盖人改过的条目。
-- **拼错的那一格不许静默改回默认档**（判据 7 那颗雷的形状）：按现行口径跑，
-  同时把原值留在 ``apply_as_written``，面上说得出「你写的 X 不认识」。
+- **``apply``（pending / confirmed）那一格 10-20 删了**。它管的是"采来的条目落到日程时算待确认
+  还是算坐实"，而采集器的落点已经收成**信息池**（裁定 186），池子不分那两档 —— 留着它就等于
+  留着一条"看着还有人用"的配置。盘上已有的 ``zju.json`` 里那一行不会炸：``load`` 只读它认识的键。
+- 面上那句"这条多久采一次"**不在这里**：那是 :mod:`plobi.collectors.cadence` 与
+  ``sources.yaml`` 的事（裁定 191 二）。这一份装的是**礼貌面上限**，两件事一个是"我想几点打"、
+  一个是"最多多快打一次"，不许合并成一格。
 - **礼貌面上限是默认值，不是实测结论**：这台对 zju 的轮询上限**未实测**（治理线只打了
   2 成功 + 3 失败，原话「不许当『可以每 5 分钟一轮』的依据」）。所以默认压到 45 分钟，
   并且**刻意不做成"每轮都登录"**——``min_minutes_between_pulls`` 之外的一轮直接不去碰学校。
@@ -21,12 +23,6 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-
-APPLY_PENDING = "pending"
-APPLY_CONFIRMED = "confirmed"
-VALID_APPLIES = (APPLY_PENDING, APPLY_CONFIRMED)
-#: 现行口径：机器采来的作业先进待确认，不直接坐实。
-CURRENT_APPLY = APPLY_PENDING
 
 DEFAULT_MIN_MINUTES_BETWEEN_PULLS = 45
 DEFAULT_JITTER_MINUTES = 7
@@ -53,10 +49,8 @@ def state_path() -> Path:
 @dataclass
 class ZjuConfig:
     enabled: bool = True
-    apply: str = CURRENT_APPLY
     min_minutes_between_pulls: int = DEFAULT_MIN_MINUTES_BETWEEN_PULLS
     jitter_minutes: int = DEFAULT_JITTER_MINUTES
-    apply_as_written: str = ""
 
     def pull_allowed_now(self, last_pull_at: float | None, now: float) -> bool:
         """距离上一轮够不够久（``None`` = 从没打过，当然允许）。
@@ -84,18 +78,6 @@ class ZjuConfig:
             except (OSError, json.JSONDecodeError):
                 data = {}
 
-        apply_raw = str(data.get("apply") or "").strip().lower() or CURRENT_APPLY
-        apply_as_written = "" if apply_raw in VALID_APPLIES else apply_raw
-        if apply_raw not in VALID_APPLIES:
-            apply = CURRENT_APPLY
-        else:
-            apply = apply_raw
-        if not apply_as_written:
-            # 上一次纠正过的值也要留得住：save/load 往返还是一次，面上那句话就没了。
-            persisted = str(data.get("apply_as_written") or "").strip().lower()
-            if persisted and persisted not in VALID_APPLIES:
-                apply_as_written = persisted
-
         def _minutes(key: str, default: int) -> int:
             try:
                 value = int(data.get(key))
@@ -105,8 +87,6 @@ class ZjuConfig:
 
         return cls(
             enabled=bool(data.get("enabled", True)),
-            apply=apply,
-            apply_as_written=apply_as_written,
             min_minutes_between_pulls=_minutes(
                 "min_minutes_between_pulls", DEFAULT_MIN_MINUTES_BETWEEN_PULLS
             ),
@@ -118,8 +98,6 @@ class ZjuConfig:
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "enabled": self.enabled,
-            "apply": self.apply,
-            "apply_as_written": self.apply_as_written,
             "min_minutes_between_pulls": self.min_minutes_between_pulls,
             "jitter_minutes": self.jitter_minutes,
         }

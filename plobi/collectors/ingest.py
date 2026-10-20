@@ -26,7 +26,7 @@ so the snippet-only evidence contract stays intact.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from plobi.agenda import store
 from plobi.agenda.service import AgendaService
@@ -177,3 +177,95 @@ def ingest_occurrences(
         "unchanged": counts["unchanged"],
         "ids": ids,
     }
+
+
+def authoritative_round(service: AgendaService, items: list[Occurrence]) -> dict:
+    """Enforce the declared ``authoritative_replace`` capability on one collector round.
+
+    Ruling 191 asked for exactly this: the capability slot has existed in
+    ``registry.CAPABILITY_KEYS`` since day one, but *nothing consumed it* — so "a row
+    that is no longer in the source's own list" was never acted on, and the only way to
+    close a submitted homework was the user ticking a box. This function is the consumer.
+    It is deliberately **source-agnostic**: it reads the declared bit, and there is no
+    per-source branch, no per-source module and no separate reconciler here.
+
+    Semantics, both directions:
+
+    * a row of a class this round did **not** return → 承认已完成（``completed_at``），
+      **status 不改、行不删**（ruling 42.2 第 5 项：归档只标失效）。The field is
+      ``completed_at`` rather than ``status='cancelled'`` on purpose:
+      ``store.STATUSES`` is a closed set with no ``submitted`` in it, and the planner
+      already filters on exactly this column
+      (``planning.py:382`` / ``llm_planning.py:88``, ``include_completed=False``) —
+      "早就交了的作业第二天又被排进来" 的病根就是这一格没人写。
+    * a row previously marked completed that **is** back in this round → cleared again.
+      Absence-based inference without a way back is how one network hiccup kills a
+      deadline; the reverse edge is part of the contract, not an extra.
+
+    Guards, because "not in the list" is an inference and not a field the platform sent:
+
+    * the capability must read ``True``. ``False``（chatlog / 钉钉 / 课表）与
+      ``None``（登记了但没实测）都**不动一行**，各自回一句不同的话——把"没实测"读成
+      "不权威"就是下一颗假绿。
+    * only the ``(source, kind)`` classes **represented in this round** are reconciled.
+      A round that pulls homework says nothing about a class it never asked for.
+    * an **empty round closes nothing**. Zero rows is far more likely a broken scraper,
+      an expired session or a changed selector than "the student has no work left";
+      the difference is one extra round of latency, the mistake is a whole term of
+      deadlines marked done.
+    * plan artifacts are out of reach: ``list_events`` excludes rows with
+      ``evidence.created_by == 'plan'`` by default, so the scheduler's own rows can never
+      be touched from here.
+    """
+    report: dict[str, Any] = {"closed": [], "reopened": [], "skipped": {}}
+    if not items:
+        report["skipped"]["(round)"] = "empty_round：这一轮什么都没拉回来 ⇒ 一行都不关"
+        return report
+
+    classes = sorted({(item.source, item.kind or "") for item in items})
+    # **延迟 import**：注册表的发现正在导入采集器包，而这一层被它们调——顶层 import 会成环。
+    from plobi.collectors import registry
+
+    round_keys: dict[str, set[str]] = {}
+    for item in items:
+        evidence = item.evidence or {}
+        round_keys.setdefault(item.source, set()).add(str(evidence.get("uid") or item.external_id))
+
+    conn = store.connect(service.db_path)
+    try:
+        events_by_source: dict[str, list[store.Event]] = {}
+        for source, kind in classes:
+            capability = registry.capability(source, "authoritative_replace")
+            if capability is not True:
+                report["skipped"][source] = (
+                    "not_authoritative：这一条自己声明本轮缺的不算数"
+                    if capability is False else
+                    "unmeasured：这一位登记了但没实测 ⇒ 不许拿猜测去关一行"
+                )
+                continue
+            if source not in events_by_source:
+                events_by_source[source] = [
+                    event for event in store.list_events(conn, source=source, include_cancelled=True)
+                    if not store.is_plan_artifact(event)
+                ]
+
+            present = round_keys.get(source, set())
+            for event in events_by_source[source]:
+                if (event.kind or "") != kind:
+                    continue
+                keys = _row_keys(event)
+                is_done = bool(str(event.completed_at or ""))
+                if keys & present:
+                    if is_done:
+                        service.set_completed(event.id, completed=False)
+                        report["reopened"].append(event.id)
+                    continue
+                if not is_done and event.status != "cancelled":
+                    service.set_completed(event.id, completed=True)
+                    report["closed"].append(event.id)
+    finally:
+        conn.close()
+
+    report["closed_count"] = len(report["closed"])
+    report["reopened_count"] = len(report["reopened"])
+    return report

@@ -7,7 +7,7 @@ Public surface: :func:`parse_ics` / :func:`parse_ics_with_stats`,
 这样的包，`plobi/collectors/registry.py` 里不再出现任何信源 id。
 """
 
-from plobi.collectors.registry import SetupField, SourceSpec, register
+from plobi.collectors.registry import CADENCE_FIELD, SetupField, SourceSpec, register
 
 from .collector import TimetableCollector, import_ics
 from .parser import IcsParseError, parse_ics, parse_ics_with_stats
@@ -45,6 +45,8 @@ SPEC = SourceSpec(
             required=True,
             help="Absolute path on this machine.",
         ),
+        # 每源一行频率（裁定 191 二）。真源在注册表，这里只是引它 —— 不在四个包里各写一句 label。
+        CADENCE_FIELD,
     ),
     builder=_build,
 )
