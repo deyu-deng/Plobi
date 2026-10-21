@@ -164,6 +164,49 @@ _WAL_INCOMPAT_MARKERS = (
 _last_init_error: Optional[str] = None
 _last_init_error_lock = threading.Lock()
 
+# ── 「这个 Agent 的会话」判据里的来源黑名单 ─────────────────────────────
+#
+# 一份判据、三处消费（缺口 B 之后不许各判一次）：
+#   ① `say` 投递落哪个会话（plugins/plobi-north-star/channel.py）
+#   ② console overview 的 `sessionId`（plobi/console/router.py）
+#   ③ 桌面侧栏在 Agent 作用域列哪些会话（/api/profiles/sessions）
+# 三者只要有一个用不同的圈定，消息就会落进一个「永远点不回来」的会话里
+# ——2026-10-21 实测：桌面侧栏读的是分家库（profile 退役时漏改的端点），
+# say 落在总账 ⇒ 每条 say 都看不见。
+#
+# 这些来源**不是**「打开这个 Agent 看到的那一屏」：cron 是调度器的转录、
+# subagent/tool 是跑腿记录、其余是各 IM 平台/platform 侧的对话。与桌面
+# `src/lib/session-source.ts` 的 SIDEBAR_EXCLUDED_SOURCES（cron/subagent/tool
+# + MESSAGING_SESSION_SOURCE_IDS）同语义；三层各一份是因为三层各自演进，
+# 改任一处先对读另两处。白名单式的新来源（用户自定义 PLOBI_SESSION_SOURCE、
+# say 自己的 agent_message）默认放行——只有明确登记为「非交谈」的才挡。
+NON_CONVERSATIONAL_SOURCES = frozenset(
+    {
+        "cron",
+        "subagent",
+        "tool",
+        "telegram",
+        "discord",
+        "slack",
+        "mattermost",
+        "matrix",
+        "signal",
+        "whatsapp",
+        "bluebubbles",
+        "homeassistant",
+        "email",
+        "sms",
+        "webhook",
+        "api_server",
+        "weixin",
+        "wecom",
+        "qqbot",
+        "yuanbao",
+        "dingtalk",
+        "feishu",
+    }
+)
+
 # Paths for which we've already logged a WAL-fallback WARNING.  Without
 # this, kanban_db.connect() (called on every kanban operation — see
 # plobi_cli/kanban_db.py for ~30 call sites) would re-log the same
@@ -5304,6 +5347,45 @@ class SessionDB:
                 (session_id, platform_message_id),
             )
             return cursor.fetchone() is not None
+
+    def latest_conversational_session_for_agent(self, agent_id: str) -> Optional[str]:
+        """这个 Agent「打开就该看到」的那个会话 id；没有可用的 ⇒ None。
+
+        裁定 183⑤③⑥：``say`` 的消息落进**接收方自己的会话**。落哪一个？
+        判据必须与「桌面点开这个 Agent 时会打开哪个会话」逐字一致——两边
+        各判一次，消息就会落进一个永远不会被打开的会话（2026-10-21 实测，
+        见 ``NON_CONVERSATIONAL_SOURCES`` 上头那段）。所以这是一个方法，
+        不是两个：``say`` 的投递、console overview 的 ``sessionId`` 都调它。
+
+        四条圈定，全是「桌面侧栏看得见」的形状：
+          1. ``agent_id`` 行级归属（单库总账，裁定 180）；
+          2. 未归档——归档的会话侧栏不列，overview 也不该指过去；
+          3. 非子会话（subagent 跑腿 / 压缩续段不占「这个 Agent 的会话」格，
+             与 ``list_sessions_rich`` 的 ``include_children=False`` 同口径）；
+          4. 来源是交谈类（``NON_CONVERSATIONAL_SOURCES`` 之外）。
+        排序 = 最近活跃（``COALESCE(ended_at, started_at)`` DESC，与
+        ``idx_sessions_agent_recent`` 逐字对齐走索引）：进行中的会话
+        ``ended_at`` 为空天然排前——用户正在跟这个 Agent 说话的那一屏，
+        就是它；``say`` 这时落进去，用户当场就看得见。
+        """
+        aid = (agent_id or "").strip()
+        if not aid:
+            return None
+        excluded = sorted(NON_CONVERSATIONAL_SOURCES)
+        marks = ",".join("?" for _ in excluded)
+        # 子会话口径与 ``list_sessions_rich(include_children=False)`` 逐字一致：
+        # 根 + 分支可见，subagent 跑腿与压缩续段隐藏（那两个 SQL 片段复用同一份）。
+        sql = (
+            "SELECT s.id FROM sessions s "
+            "WHERE s.agent_id = ? AND s.archived = 0 "
+            f"AND {_LISTABLE_CHILD_SQL} "
+            f"AND {_delegate_from_json('s.model_config')} IS NULL "
+            f"AND s.source NOT IN ({marks}) "
+            "ORDER BY COALESCE(s.ended_at, s.started_at) DESC LIMIT 1"
+        )
+        with self._lock:
+            row = self._conn.execute(sql, (aid, *excluded)).fetchone()
+        return str(row[0]) if row else None
 
     # =========================================================================
     # Export and cleanup

@@ -4411,14 +4411,21 @@ def get_profiles_sessions(
     exclude_sources: str = None,
     full: bool = False,
 ):
-    """Unified, read-only session list aggregated across ALL profiles.
+    """Unified, read-only session list off the SINGLE session ledger.
 
-    Intentionally process-light: this opens each profile's ``state.db`` directly
-    from disk — it does NOT spawn a dashboard backend per profile. Each returned
-    session is tagged with its owning ``profile`` so the desktop renders one
-    browsable list and only spins up a profile's backend when the user actually
-    interacts (sends a message). A user with a single (default) profile gets the
-    same rows as ``/api/sessions``, just tagged ``profile="default"``.
+    裁定 180 / 缺口 B 之后 ``profile`` **不再选库**：一家一库已退役，世上只有
+    一份总账（:func:`_open_session_db_for_profile` 恒开它）。家名在这条路上
+    的作用退化成**行级圈定**——:func:`_agent_id_for_profile` 把家名换成名册
+    name，交给查询方法的 ``agent_id``；``all`` 读全库，每行按归属 Agent 打
+    家名（L1 行 = ``default``）。与 ``/api/sessions`` 是同一条路。
+
+    2026-10-21 修：这个端点曾是六端点切总账时**漏掉的那一个**，而桌面侧栏
+    （``use-session-list-actions`` 的 refreshSessions）走的正是它——于是在
+    Agent 作用域里永远只读到一份空/旧的**分家库**（``profiles/<家名>/state.db``），
+    总账里 ``say`` 落进去的会话因此永远点不回来（桌面「进入 Agent」那道门
+    ``findKnownOverviewSession`` 只认侧栏可见的会话）。这里不再打开任何分家
+    state.db；旧调用方传的家名依旧认（校验 + 圈定），只是语义从「选库」变成
+    「圈行」。
 
     Rows omit ``system_prompt``/``model_config`` unless ``full=1`` — same
     list projection as ``/api/sessions``.
@@ -4428,22 +4435,12 @@ def get_profiles_sessions(
     if order not in ("created", "recent"):
         raise HTTPException(status_code=400, detail="order must be one of: created, recent")
 
-    from plobi_state import SessionDB
-    from plobi_cli import profiles as profiles_mod
-
-    targets: List[Tuple[str, Path]] = []
-    if profile and profile != "all":
-        name, home = _cron_profile_home(profile)
-        targets.append((name, home))
-    else:
-        try:
-            infos = profiles_mod.list_profiles()
-            targets = [(info.name, info.path) for info in infos]
-        except Exception:
-            _log.exception("GET /api/profiles/sessions: list_profiles failed")
-            targets = []
-        if not targets:
-            targets.append(("default", profiles_mod.get_profile_dir("default")))
+    # 家名依旧校验（坏名字 400/404，与 /api/sessions 同一口径），但它的家
+    # 不再被打开——选库已退役，见 docstring。
+    profile_name: Optional[str] = None
+    scoped = (profile or "").strip()
+    if scoped and scoped != "all":
+        profile_name, _ = _cron_profile_home(scoped)
 
     min_message_count = max(0, min_messages)
     archived_only = archived == "only"
@@ -4453,68 +4450,87 @@ def get_profiles_sessions(
     # newest cron sessions can't starve the recents page.
     source_filter = source or None
     exclude_list = [s for s in (exclude_sources or "").split(",") if s.strip()]
-    # Over-fetch per profile so the merged+sorted window is correct for the
-    # requested page. Capped so a huge profile can't blow up the response.
-    per_profile = min(max(limit + offset, limit), 500)
+    # Over-fetch so the merged+sorted window is correct for the requested
+    # page. Capped so a huge ledger can't blow up the response.
+    per_page = min(max(limit + offset, limit), 500)
 
-    merged: List[Dict[str, Any]] = []
-    total = 0
-    profile_totals: Dict[str, int] = {}
-    errors: List[Dict[str, str]] = []
-    now = time.time()
-    for name, home in targets:
-        db_path = Path(home) / "state.db"
-        if not db_path.exists():
-            continue
-        try:
-            # Read-only: this loop runs on every sidebar refresh, so it must
-            # never DDL/write-lock another profile's live DB (see SessionDB
-            # read_only docstring).
-            db = SessionDB(db_path=db_path, read_only=True)
-        except Exception as exc:
-            errors.append({"profile": name, "error": str(exc)})
-            continue
-        try:
-            rows = db.list_sessions_rich(
-                source=source_filter,
-                exclude_sources=exclude_list or None,
-                limit=per_profile,
-                offset=0,
-                min_message_count=min_message_count,
-                include_archived=include_archived,
-                archived_only=archived_only,
-                order_by_last_active=order == "recent",
-                # Same SQL-level blob skip as /api/sessions (see above).
-                compact_rows=not full,
+    # 行级圈定：家名 → 名册 name；'all' / L1 / 查不到 → None = 全库。
+    agent_id = _agent_id_for_profile(scoped) or None
+
+    db = _open_session_db_for_profile(scoped or None)
+    try:
+        rows = db.list_sessions_rich(
+            source=source_filter,
+            exclude_sources=exclude_list or None,
+            limit=per_page,
+            offset=0,
+            min_message_count=min_message_count,
+            include_archived=include_archived,
+            archived_only=archived_only,
+            order_by_last_active=order == "recent",
+            # Same SQL-level blob skip as /api/sessions (see above).
+            compact_rows=not full,
+            agent_id=agent_id,
+        )
+        total = db.session_count(
+            source=source_filter,
+            exclude_sources=exclude_list or None,
+            min_message_count=min_message_count,
+            include_archived=include_archived,
+            archived_only=archived_only,
+            exclude_children=True,
+            agent_id=agent_id,
+        )
+        # 家名 → 名册 name 的反表：总账每行只记 agent_id，桌面那几处
+        # （isL1SessionProfile / pickL1MainSession / 分组徽章）认的是家名。
+        home_of_agent = _agent_home_names()
+
+        def _tag(s: dict) -> None:
+            owner = str(s.get("agent_id") or "").strip()
+            if profile_name:
+                # 具体作用域：整页都是那一个 Agent 的行（圈定过的）。
+                s["profile"] = profile_name
+            else:
+                # 'all'：按归属 Agent 打家名；L1 行（agent_id 空串）= default。
+                s["profile"] = home_of_agent.get(owner, "default")
+            s["is_default_profile"] = not owner
+            s["is_active"] = (
+                s.get("ended_at") is None
+                and (now - (s.get("last_active") or s.get("started_at") or 0)) < 300
             )
-            profile_total = db.session_count(
-                source=source_filter,
-                exclude_sources=exclude_list or None,
-                min_message_count=min_message_count,
-                include_archived=include_archived,
-                archived_only=archived_only,
-                exclude_children=True,
-            )
-            total += profile_total
-            profile_totals[name] = profile_total
-            for s in rows:
-                s["profile"] = name
-                s["is_default_profile"] = name == "default"
-                s["is_active"] = (
-                    s.get("ended_at") is None
-                    and (now - s.get("last_active", s.get("started_at", 0))) < 300
+            s["archived"] = bool(s.get("archived"))
+            _honest_session_cost(s)
+
+        now = time.time()
+        for s in rows:
+            _tag(s)
+
+        # profile_totals：具体作用域 = 那一家的数；'all' = 按家名分组数。
+        # 名册里有家的 Agent 逐个索引计数（有界）；L1 与任何孤儿归属并进
+        # 'default' 那一格（agent_id 空串 = L1，见 schema 注释）。
+        if profile_name:
+            profile_totals = {profile_name: total}
+        else:
+            profile_totals = {"default": 0}
+            for name in home_of_agent:
+                count = db.session_count(
+                    source=source_filter,
+                    exclude_sources=exclude_list or None,
+                    min_message_count=min_message_count,
+                    include_archived=include_archived,
+                    archived_only=archived_only,
+                    exclude_children=True,
+                    agent_id=name,
                 )
-                s["archived"] = bool(s.get("archived"))
-                _honest_session_cost(s)
-                merged.append(s)
-        except Exception as exc:
-            errors.append({"profile": name, "error": str(exc)})
-        finally:
-            db.close()
+                if count:
+                    profile_totals[home_of_agent[name]] = count
+            profile_totals["default"] = max(total - sum(profile_totals.values()), 0)
+    finally:
+        db.close()
 
     sort_key = "last_active" if order == "recent" else "started_at"
-    merged.sort(key=lambda s: s.get(sort_key) or s.get("started_at") or 0, reverse=True)
-    window = merged[offset:offset + limit]
+    rows.sort(key=lambda s: s.get(sort_key) or s.get("started_at") or 0, reverse=True)
+    window = rows[offset:offset + limit]
     if not full:
         _strip_session_list_rows(window)
     return {
@@ -4523,8 +4539,28 @@ def get_profiles_sessions(
         "profile_totals": profile_totals,
         "limit": limit,
         "offset": offset,
-        "errors": errors,
+        "errors": [],
     }
+
+
+def _agent_home_names() -> dict:
+    """名册 name → 已落地的家目录名（``AgentEntry.profile_name``，归一过小写）。
+
+    总账的 ``sessions.agent_id`` 存的是名册 name，而桌面与 cron 那几处认的是
+    家目录名——这一张表就是两者之间的反表（与 ``_agent_id_for_profile`` 正相反）。
+    注册表读不到时返回空表：调用方按「全是 L1」处理，不猜。
+    """
+    try:
+        from plobi.agents.registry import AgentRegistry
+
+        registry = AgentRegistry.load()
+        return {
+            entry.name: entry.profile_name
+            for entry in registry.entries()
+            if (entry.profile_name or "").strip()
+        }
+    except Exception:
+        return {}
 
 
 @app.get("/api/sessions/search")
