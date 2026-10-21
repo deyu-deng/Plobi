@@ -2,9 +2,10 @@ import { type AppendMessage, AssistantRuntimeProvider, type ThreadMessage } from
 import { useStore } from '@nanostores/react'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
-import { Suspense, useCallback, useMemo, useRef } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 
+import { prefersReducedMotion, threadSwapAnimation } from '@/app/chat/thread-swap'
 import { Thread } from '@/components/assistant-ui/thread'
 import { Backdrop } from '@/components/Backdrop'
 import { COMPOSER_HEART_CONFIG, HeartField } from '@/components/chat/vibe-hearts'
@@ -12,12 +13,12 @@ import { PromptOverlays } from '@/components/prompt-overlays'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { ErrorState } from '@/components/ui/error-state'
-import { getGlobalModelOptions, type PlobiGateway } from '@/plobi'
 import { useI18n } from '@/i18n'
 import type { ChatMessage } from '@/lib/chat-messages'
 import { createToolMergeCache, quickModelOptions, sessionTitle, toBranchableMessageRepository } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { cn } from '@/lib/utils'
+import { getGlobalModelOptions, type PlobiGateway } from '@/plobi'
 import type { ComposerAttachment } from '@/store/composer'
 import { $pinnedSessionIds } from '@/store/layout'
 import { $petActive } from '@/store/pet'
@@ -325,6 +326,29 @@ export function ChatView({
   const showChatBar = !loadingSession && !resumeExhausted && !isWatchWindow()
   const threadKey = selectedSessionId || activeSessionId || (isRoutedSessionView ? location.pathname : 'new')
 
+  // 切换 Agent / 会话时给新内容一次淡入上移（2026-10-21）。用 Web Animations
+  // API 直接动那个容器：不动 React 树、不重挂转录。首帧不播（那是初次渲染，
+  // 不是「切换」）。系统要求减弱动效时什么也不做。
+  const threadSurfaceRef = useRef<HTMLDivElement>(null)
+  const firstThreadKeyRef = useRef(threadKey)
+
+  useEffect(() => {
+    if (firstThreadKeyRef.current === threadKey) {
+      return
+    }
+
+    firstThreadKeyRef.current = threadKey
+
+    const surface = threadSurfaceRef.current
+    const animation = threadSwapAnimation(prefersReducedMotion())
+
+    if (!surface || !animation || typeof surface.animate !== 'function') {
+      return
+    }
+
+    surface.animate(animation.keyframes, animation.options)
+  }, [threadKey])
+
   const modelOptionsQuery = useQuery<ModelOptionsResponse>({
     queryKey: ['model-options', activeSessionId || 'global'],
     queryFn: () => {
@@ -431,6 +455,7 @@ export function ChatView({
         <div
           className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
           data-slot="composer-bounds"
+          ref={threadSurfaceRef}
           {...dropHandlers}
         >
           <Thread

@@ -267,32 +267,34 @@ def _agent_id_for_profile(profile: str) -> str:
 
 
 def _latest_session_for_agent(agent_id: str, *, db_path: Optional[Path] = None) -> str:
-    """该 agent 在单库里最近活跃的 session id（裁定 180：行级归属）。
+    """该 agent 「打开就该看到」的那个会话 id（裁定 180：行级归属）。
 
     迁移前会话隔离是文件级的——每个 profile 家一份 ``state.db``，这里按
     ``get_profile_dir`` 跨库只读聚合。迁移后（WP-AGENT-SESSION-ATTRIBUTION
     的 ``migrate_session_attribution.py``）一个进程一个库，归属是
-    ``sessions.agent_id`` 行级列：空串 = L1，非空 = 名册 name。"最近活跃" =
-    ``COALESCE(ended_at, started_at)`` 最大——进行中的会话 ``ended_at`` 为空，
-    天然排前（与 ``idx_sessions_agent_recent`` 的表达式逐字对齐，走索引）。
+    ``sessions.agent_id`` 行级列：空串 = L1，非空 = 名册 name。
+
+    判据**只有一份**，在 :meth:`plobi_state.SessionDB.latest_conversational_session_for_agent`
+    ——与 ``say`` 的投递落点、桌面侧栏的可见行逐字同口径（未归档 / 非子会话 /
+    交谈类来源 / 最近活跃）。2026-10-21 之前这里自己写了一份 raw SQL（只按
+    ``COALESCE(ended_at, started_at)`` 排，不看归档与来源），于是 overview 会
+    把一个归档空壳或 cron 转录指给桌面当「这个 Agent 的会话」，而侧栏根本不
+    列它 ⇒ 桌面永远开 fresh draft，``say`` 落进去的消息一条都点不回来。
     """
     target = Path(db_path) if db_path else default_db_path()
     if not target.exists():
         return ""
     try:
-        conn = sqlite3.connect(f"file:{target}?mode=ro", uri=True, timeout=1.0)
+        from plobi_state import SessionDB
+
+        db = SessionDB(db_path=target, read_only=True)
         try:
-            row = conn.execute(
-                "SELECT id FROM sessions WHERE agent_id = ? "
-                "ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1",
-                (str(agent_id or ""),),
-            ).fetchone()
+            return db.latest_conversational_session_for_agent(agent_id) or ""
         finally:
-            conn.close()
-    except sqlite3.Error as exc:
+            db.close()
+    except Exception as exc:
         logger.warning("plobi console: session query failed for %s: %s", agent_id, exc)
         return ""
-    return str(row[0]) if row else ""
 
 
 def sessions_for_agent(agent_id: str) -> list[str]:

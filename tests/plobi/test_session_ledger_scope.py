@@ -230,3 +230,165 @@ def test_toolset_toggle_under_agent_scope_subtracts_from_whitelist(panel_scope):
     assert rows[untouched]["enabled"] is True
     flat = {r["name"]: r for r in asyncio.run(ws.get_toolsets(profile=None))}
     assert flat[target]["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# 5. 「这个 Agent 的会话」唯一判据（2026-10-21，say 全落进点不回来的会话）
+#
+# 病根是三处各判一次：say 的投递按 started_at 取最新（不看来源）、console
+# overview 按最近活跃取（不看归档/来源/子会话）、桌面侧栏读的是**分家库**
+# （profile 退役时漏改的端点）——于是消息落进的会话 ≠ 桌面打开的会话，
+# 用户点开那个 Agent 只看到一张 fresh draft。修法是把判据收成
+# SessionDB.latest_conversational_session_for_agent 一个方法，三处都调它。
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mixed_ledger(tmp_path, monkeypatch):
+    """总账 + 名册一行 aura（家 l2-aura）+ 那个家的目录（端点校验用）。
+
+    aura 的会话故意混成「最近活跃的一屏」不是「最新建的一屏」：
+      s-chat      cli       交谈类   旧                 ← 唯一该被选中的
+      s-cron      cron      调度器   较新
+      s-archived  cli       交谈类   最新，但已归档
+      s-child     subagent  跑腿     最新，且是子会话
+    """
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    base = tmp_path / "home"
+    (base / "plobi").mkdir(parents=True)
+    (base / "profiles" / "l2-aura").mkdir(parents=True)
+    # 分家库留一份**带毒**的旧库：端点若还按家选库就会读到它（修前的病根）。
+    (base / "profiles" / "l2-aura" / "state.db").write_bytes(b"stale per-profile db")
+    monkeypatch.setenv("PLOBI_HOME", str(base))
+    monkeypatch.setenv("PLOBI_STATE_HOME", str(base))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(base / "plobi" / "projects.yaml"))
+
+    from plobi.agents.registry import REGISTRY_VERSION
+
+    (base / "plobi" / "projects.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": REGISTRY_VERSION,
+                "agents": {
+                    "aura": {
+                        "name": "aura",
+                        "role": "l2_project",
+                        "profile": "l2-aura",
+                        "category": "projects",
+                    }
+                },
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    db = SessionDB(db_path=base / "state.db")
+    db.create_session("s-chat", source="cli", agent_id="aura")
+    db.create_session("s-cron", source="cron", agent_id="aura")
+    db.create_session("s-archived", source="cli", agent_id="aura")
+    db.create_session("s-child", source="subagent", agent_id="aura", parent_session_id="s-chat")
+    db.append_message("s-chat", role="user", content="上一屏的对话")
+    with db._lock:
+        db._conn.execute("UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = 's-chat'", (1000, 1100))
+        db._conn.execute("UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = 's-cron'", (2000, 2100))
+        db._conn.execute("UPDATE sessions SET started_at = ?, archived = 1 WHERE id = 's-archived'", (3000,))
+        db._conn.execute("UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = 's-child'", (4000, 4100))
+        db._conn.commit()
+    yield base
+    db.close()
+
+
+def test_latest_conversational_session_skips_cron_archived_and_children(mixed_ledger):
+    """最近活跃里排前的是 cron / 归档 / 跑腿——三个都不能当「这个 Agent 的会话」。"""
+    db = SessionDB(db_path=mixed_ledger / "state.db", read_only=True)
+    try:
+        assert db.latest_conversational_session_for_agent("aura") == "s-chat"
+        # 别的 Agent 问不到 aura 的；空 agent_id（L1）没有「这一屏」。
+        assert db.latest_conversational_session_for_agent("kit") is None
+        assert db.latest_conversational_session_for_agent("") is None
+    finally:
+        db.close()
+
+
+def test_console_overview_uses_the_same_rule(mixed_ledger):
+    """overview.sessionId 与 say 落点同源——这一条不变式被破坏过整整一天。"""
+    from plobi.console import router as console_router
+
+    assert (
+        console_router._latest_session_for_agent("aura", db_path=mixed_ledger / "state.db")
+        == "s-chat"
+    )
+
+
+def test_say_delivers_into_the_session_the_desktop_opens(mixed_ledger):
+    """端到端：say 落进的会话，正是 overview 会指给桌面、侧栏会列出的那个。"""
+    import importlib.util
+    import sys
+    import types
+
+    plugin_dir = Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star"
+    pkg_name = "plobi_test_say_landing_ns_pkg"
+    if pkg_name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            pkg_name, plugin_dir / "__init__.py", submodule_search_locations=[str(plugin_dir)]
+        )
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = pkg_name
+        module.__path__ = [str(plugin_dir)]
+        sys.modules[pkg_name] = module
+        spec.loader.exec_module(module)
+    channel = importlib.import_module(f"{pkg_name}.channel")
+
+    session_id, _message_id = channel._deliver(
+        types.SimpleNamespace(name="aura"), "明天的会挪到周四", sender="L1"
+    )
+    assert session_id == "s-chat", "say 必须落进桌面会打开的那一屏，不是 cron/归档/跑腿"
+
+    db = SessionDB(db_path=mixed_ledger / "state.db", read_only=True)
+    try:
+        row = db._conn.execute(
+            "SELECT role, content FROM messages WHERE session_id = 's-chat' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert row[0] == "user" and "明天的会挪到周四" in row[1]
+    finally:
+        db.close()
+
+
+def test_profiles_sessions_endpoint_reads_the_ledger_not_the_home(mixed_ledger):
+    """桌面侧栏那个端点：家名只圈行，不选库（修前它读分家库 ⇒ 永远空）。"""
+    import plobi_cli.web_server as ws
+
+    result = ws.get_profiles_sessions(profile="l2-aura", min_messages=1, limit=50)
+    ids = {s["id"] for s in result["sessions"]}
+    assert ids == {"s-chat"}
+    row = result["sessions"][0]
+    assert row["profile"] == "l2-aura"  # 家名照打（桌面那几处认它）
+    assert result["profile_totals"] == {"l2-aura": 1}
+    # cron 转录不在侧栏可见集里（ exclude_sources 那一等的另一半：来源圈定）。
+    cron_view = ws.get_profiles_sessions(profile="l2-aura", source="cron", limit=50)
+    assert {s["id"] for s in cron_view["sessions"]} == {"s-cron"}
+
+
+def test_profiles_sessions_all_mode_tags_each_row_by_its_agent(mixed_ledger):
+    """'all' 读全库，每行按归属 Agent 打家名；L1 行 = default。"""
+    import plobi_cli.web_server as ws
+
+    db = SessionDB(db_path=mixed_ledger / "state.db")
+    try:
+        db.create_session("s-l1", source="cli")
+        db.append_message("s-l1", role="user", content="L1 自己说的话")
+        db.create_session("s-said", source="agent_message", agent_id="aura")
+        db.append_message("s-said", role="user", content="另一条 say 落进来的")
+    finally:
+        db.close()
+
+    result = ws.get_profiles_sessions(profile="all", min_messages=1, limit=50)
+    by_id = {s["id"]: s for s in result["sessions"]}
+    assert by_id["s-chat"]["profile"] == "l2-aura"
+    assert by_id["s-said"]["profile"] == "l2-aura"  # say 开的会话也归这个 Agent
+    assert by_id["s-l1"]["profile"] == "default"
+    assert by_id["s-l1"]["is_default_profile"] is True
+    assert result["profile_totals"]["l2-aura"] == 2
+    assert result["profile_totals"]["default"] == 1

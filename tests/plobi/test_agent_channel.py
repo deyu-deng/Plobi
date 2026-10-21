@@ -39,12 +39,24 @@ def CH():
 
 
 class _FakeSessionDB:
-    """只收本模块用到的四个方法；把每次调用记下来供断言。"""
+    """只收本模块用到的方法；把每次调用记下来供断言。
+
+    ``latest_conversational_session_for_agent`` 是 2026-10-21 收口后的唯一
+    落点判据（真实现见 ``plobi_state.SessionDB``）：这里按「existing 第一条
+    = 最新可见会话」模拟——测试要造「有会话」就往 existing 放一行。
+    """
 
     def __init__(self, existing: list[dict] | None = None):
         self.existing = existing or []
         self.created: list[tuple] = []
         self.appended: list[tuple] = []
+
+    def latest_conversational_session_for_agent(self, agent_id):
+        self.last_agent_id = agent_id
+        if not self.existing:
+            return None
+        first = self.existing[0]
+        return str(first.get("session_id") or first.get("id"))
 
     def list_sessions_rich(self, agent_id=None, limit=1):
         self.last_agent_id = agent_id

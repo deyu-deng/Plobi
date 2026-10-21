@@ -203,19 +203,23 @@ def _session_db():
 
 
 def _deliver(entry, body: str, *, sender: str) -> tuple[str, str]:
-    """把 ``body`` 追加到接收方最新那个会话；没有就开一个。
+    """把 ``body`` 追加到接收方「打开就该看到」的那个会话；没有就开一个。
 
     返回 ``(session_id, message_id)``。异常往外抛——调用方负责变成一句人话，
     不许把「投递失败」伪装成「发好了」。
+
+    落点判据**只有一份**：:meth:`plobi_state.SessionDB.latest_conversational_session_for_agent`
+    ——console overview 指给桌面的 ``sessionId`` 与桌面侧栏的可见行都按它算。
+    2026-10-21 之前这里自己调 ``list_sessions_rich(agent_id=..., limit=1)``
+    （按 started_at 取最新、排除归档与子会话，但**不看来源**），于是：
+      * 接收方最新的可见会话是一条 cron 转录时，消息落进调度器的会话里——
+        桌面侧栏根本不列 cron ⇒ 点不回来；
+      * 两边圈定不一致时，消息落的会话 ≠ 桌面打开的会话。
+    现在同源：say 落哪儿，桌面点开这个 Agent 就打开哪儿。
     """
     db = _session_db()
-    try:
-        rows = db.list_sessions_rich(agent_id=entry.name, limit=1)
-    except TypeError:
-        rows = db.list_sessions_rich()[:1]
-    if rows:
-        session_id = str(rows[0].get("session_id") or rows[0].get("id"))
-    else:
+    session_id = db.latest_conversational_session_for_agent(entry.name)
+    if not session_id:
         session_id = "chan_" + uuid.uuid4().hex[:16]
         db.create_session(session_id, source="agent_message", agent_id=entry.name)
 
