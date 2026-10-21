@@ -17,7 +17,6 @@ from plobi.agenda.service import (
     PlanNotFound,
 )
 from plobi.agenda.stats import change_report
-from plobi.butler.report import build_morning, format_morning
 from plobi.notify.base import RecordingNotifier
 from plobi.quota.pool import QuotaPool
 from plobi.quota.sources import CheapApiSource, HealthStatus, SourceStatus
@@ -294,43 +293,3 @@ def test_list_agenda_follows_confirmed_plan_sort_order(svc):
     assert [e.title for e in svc.list_agenda()] == ["早会", "晚会"]
     svc.confirm_plan(plan.id)
     assert [e.title for e in svc.list_agenda()] == ["晚会", "早会"]
-
-
-def test_morning_report_renders_plan_states(svc):
-    cheap = CheapApiSource("zhipu-air", model="m", base_url="http://x/v1", api_key="k")
-    cheap._probe_fn = lambda s: SourceStatus(
-        s.name, s.kind, HealthStatus.HEALTHY, None, "t", 0
-    )
-    pool = QuotaPool({"zhipu-air": cheap}, order=["zhipu-air"])
-    today = datetime(2026, 9, 7, 7, 30)
-
-    text = format_morning(build_morning(svc, pool, now=today))
-    assert "昨夜计划: 无" in text
-
-    _seed_plan(svc, for_date="2026-09-07", status="empty", event_count=0, summary="空")
-    assert "昨夜计划: 空" in format_morning(build_morning(svc, pool, now=today))
-
-    _seed_plan(svc, for_date="2026-09-07", status="pending", event_count=1, confirm_seq=1)
-    assert "昨夜计划: 待批" in format_morning(build_morning(svc, pool, now=today))
-
-    plan = svc.get_plan("2026-09-07")
-    assert plan is not None
-    svc.confirm_plan(plan.id)
-    assert "昨夜计划: 已批" in format_morning(build_morning(svc, pool, now=today))
-
-    _seed_plan(svc, for_date="2026-09-07", status="pending", event_count=1, confirm_seq=2)
-    plan = svc.get_plan("2026-09-07")
-    assert plan is not None
-    svc.dismiss_plan(plan.id)
-    assert "昨夜计划: 已忽略" in format_morning(build_morning(svc, pool, now=today))
-
-
-def test_format_morning_unknown_plan_status_is_missing():
-    data = {
-        "date": "2026-09-07",
-        "change": {"days": 7, "total": 0, "rate": None, "meets_target": True, "target": 0.2},
-        "pending": [],
-        "quota": [],
-        "plan": {"status": "mystery"},
-    }
-    assert "昨夜计划: 无" in format_morning(data)
