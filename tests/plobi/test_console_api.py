@@ -96,6 +96,9 @@ def test_agents_shape_matches_typescript_contract(client, _isolated_state):
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
         "askable", "notAskableReason", "navigable",
+        # WP-AGENT-MODEL-PICKER-MOUNT 第一档：这一格恒在（bool），没覆盖就是 False
+        # —— 前端要靠「缺键」分别「没读数」与「没覆盖」，所以不许被 None 剥掉。
+        "modelOverride",
     }
     assert row["id"] == "agenda"
     assert row["name"] == "日程秘书"
@@ -195,6 +198,7 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
         "askable", "notAskableReason", "navigable", "notNavigableReason",
+        "modelOverride",
     }
     # 这一条刚登记、spawn 被 stub 掉了 → 家还没落地 → 左栏据此先不点它，
     # 并把原因原样透出去（而不是让用户点进去撞 spawn 失败）。

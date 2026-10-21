@@ -2173,7 +2173,8 @@ def run_plan_day(
             "written": 0,
             "error": (
                 f"{for_date} 那份计划还没有（我这一条只读，不替你生成）。"
-                "要排就让我自己排一次：plobi_secretary_ask，intent=plan_day、action=plan_tomorrow。"
+                "要排就直接说一声「排一下明天」——那一发由我自己写，"
+                "不重排、不删你已经排好的块；只想看就问「明天怎么安排」（只读，不动库）。"
             ),
             "items": [],
         }
@@ -3453,9 +3454,8 @@ def _secretary_ask(
                 "error": (
                     "这句「排一下明天」我不替你重排一遍——那条老路径会先把今天已排好的块删掉再重插，"
                     "而排程本体已经退役（裁定 149），重插出来是 0 块：越说越丢。"
-                    "要排就让我自己排一次：同一趟里调 plobi_secretary_ask，"
-                    "intent=plan_day、action=plan_tomorrow（材料、边界闸、落库都在那一处，过不了闸它一个字都不写）。"
-                    "只想看明天怎么安排，用 intent=query_agenda，那条不写库。"
+                    "要排就直接说一声「排一下明天」：那一发由我自己写（材料、边界闸、落库都在那一处，"
+                    "过不了闸它一个字都不写）。只想看明天怎么安排，直接问（只读，不写库）。"
                 ),
             }
         return run_plan_day(
