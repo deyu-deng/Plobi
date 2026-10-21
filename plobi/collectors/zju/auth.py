@@ -266,32 +266,56 @@ def _classify_unauthenticated(post_text: str) -> str:
     return STATE_LOGIN_CHANGED
 
 
-def authenticate(transport: Transport, username: str, password: str) -> tuple[str, str, list[dict]]:
-    """走完登录链，返回 ``(state, detail, rows)``；``state == ready`` 时 rows 已拿到。
+ZDBK_ORIGIN = "https://zdbk.zju.edu.cn"
+#: 本科教务的 SSO 入口页 —— **必须打这一条**，由它 302 到 CAS 并带上 service。
+#: 10-21 实测两坑：直接 `GET cas/login?service=…` 这台回 **401**；登录链上挂
+#: `X-Requested-With`/`Accept: application/json` 也回 401（只有数据端点要挂那两个头）。
+ZDBK_SSO_ENTRY = f"{ZDBK_ORIGIN}/jwglxt/xtgl/login_ssologin.html"
+ZDBK_MENU_URL = f"{ZDBK_ORIGIN}/jwglxt/xtgl/index_initMenu.html"
+#: 研究生院：同一次 CAS 换 `service=https://yjsy.zju.edu.cn/`，ticket 交给它自己的
+#: `validateLogin` 换业务 token（`X-Access-Token` 头）。10-21 实测：登得进、拿得到 token。
+GRS_ORIGIN = "https://yjsy.zju.edu.cn"
+GRS_SERVICE = f"{GRS_ORIGIN}/"
+GRS_VALIDATE_URL = f"{GRS_ORIGIN}/dataapi/sys/cas/client/validateLogin"
 
-    失败不抛、不返空清单冒充成功 —— ``state`` 就是那一句"为什么没东西"（``status.py``）。
+
+def cas_login_to(
+    transport: Transport,
+    username: str,
+    password: str,
+    *,
+    entry_url: str,
+    probe_url: str,
+    rows_of: Callable[[HttpResponse], Optional[list[dict]]],
+    probe_expectation: str = "认识的形状",
+) -> tuple[str, str, list[dict]]:
+    """走完 CAS 那一趟，登进**任意一个 service**——成败只认业务端点那一格。
+
+    为什么住在 `zju/auth.py` 而不是每个信源包各写一遍（裁定 94）：这条链上有四个失败状态、
+    RSA 加密的补零规则、`getKaptchaStatus` 那把"要人工就停"的闸，还有 `fm1` 表单的三处正则——
+    写两份就会早晚不一致，而"哪一份说了算"是最查不出来的那种病。
+    学在浙大、本科教务、研究生院三家共用这一只，**`read_credentials()` 仍是唯一的凭据读路**
+    （裁 110 二），这一只函数一次都不碰环境变量。
     """
     try:
-        entry = transport.get(LOGIN_ENTRY_URL)
+        entry = transport.get(entry_url)
         action = _LOGIN_FORM_MARKER.search(entry.text)
         execution = _EXECUTION_MARKER.search(entry.text)
         if not action or not execution:
-            # 两条路都得走一趟业务端点才能分开：会话还活着（站方把 /login 直接送回应用）
-            # 与"站方改了页面"这两种回话长得不一样，但都**没有** fm1 表单。
-            # 探测脚本当年就停在 `NO_FORM (already authed? or page changed)` 这一句上——
-            # 那是不肯猜、留成两个可能的形状；这里用同一把尺把它分开，而不是合并成一格。
-            probe = transport.get(TODOS_URL)
-            rows = _todo_rows(probe)
+            probe = transport.get(probe_url)
+            rows = rows_of(probe)
             if rows is not None:
                 return STATE_READY, _safe_url(probe.url), rows
             return (
                 STATE_LOGIN_CHANGED,
-                f"GET {_safe_url(entry.url)} 的 {entry.status} 回话里既没有登录表单，业务端点也不是作业清单",
+                f"GET {_safe_url(entry.url)} 的 {entry.status} 回话里既没有登录表单，业务端点也不是{probe_expectation}",
                 [],
             )
 
         action_url = htmllib.unescape(action.group(1))
         if action_url.startswith("/"):
+            # 表单的 action 是**相对路径**（`/cas/login?service=…`，10-21 实测），
+            # 不拼回 origin 就变成 `unknown url type`。
             action_url = CAS_ORIGIN + action_url
 
         kaptcha = transport.get(KAPTCHA_URL)
@@ -321,10 +345,9 @@ def authenticate(transport: Transport, username: str, password: str) -> tuple[st
             },
             referer=entry.url,
         )
-        # POST 那张页面本身不算数（成功时它可能是应用首页 HTML，失败时它是带错误话的登录页）：
-        # **成不成只认业务端点**，所以这里直接打 /api/todos，再按需要分格。
-        probe = transport.get(TODOS_URL)
-        rows = _todo_rows(probe)
+        # POST 那张页面本身不算数：成不成只认业务端点。
+        probe = transport.get(probe_url)
+        rows = rows_of(probe)
         if rows is not None:
             return STATE_READY, _safe_url(probe.url), rows
         return _classify_unauthenticated(posted.text), _safe_url(posted.url), []
@@ -333,6 +356,15 @@ def authenticate(transport: Transport, username: str, password: str) -> tuple[st
         return STATE_NETWORK_UNREACHABLE, exc.detail, []
 
 
+def authenticate(transport: Transport, username: str, password: str) -> tuple[str, str, list[dict]]:
+    """学在浙大那一条：CAS 换 `courses.zju.edu.cn` 会话，回来用 `/api/todos` 验。
+
+    函数体 10-21 收进 :func:`cas_login_to`——那句"失败不抛、不返空清单冒充成功，
+    ``state`` 就是那一句为什么"仍然成立，只是现在三家信源共用同一只链。
+    """
+    return cas_login_to(transport, username, password,
+                        entry_url=LOGIN_ENTRY_URL, probe_url=TODOS_URL,
+                        rows_of=_todo_rows, probe_expectation="作业清单")
 def fetch_todos(transport: Transport) -> tuple[str, str, list[dict]]:
     """只打业务端点（已登录会话用）。拿不到清单就给出"为什么"那一格。"""
     try:
