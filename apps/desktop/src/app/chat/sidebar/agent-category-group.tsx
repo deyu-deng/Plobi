@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { $sidebarAgentCategoryCollapsedIds, toggleSidebarAgentCategoryCollapsed } from '@/store/layout'
 import type { SessionInfo } from '@/types/plobi'
 
+import { AgentActionsMenu } from './agent-actions-menu'
 import type { AgentCategory } from './agent-groups'
 import { isNavigableAgent } from './agent-groups'
 import {
@@ -109,20 +110,25 @@ export function AgentCategoryGroup({
               <div key={agent.id}>
                 <SidebarRowShell
                   actions={
-                    agentSessions.length > 0 ? (
-                      <button
-                        aria-expanded={sessionsOpen}
-                        aria-label={sessionsOpen ? undefined : `${shortName}: ${agentSessions.length}`}
-                        className={cn(
-                          'flex size-5 shrink-0 items-center justify-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
-                          isActive && 'text-foreground'
-                        )}
-                        onClick={() => setOpenAgentId(sessionsOpen ? null : agent.id)}
-                        type="button"
-                      >
-                        <Codicon name={sessionsOpen ? 'chevron-down' : 'chevron-right'} size="0.75rem" />
-                      </button>
-                    ) : undefined
+                    <>
+                      {agentSessions.length > 0 && (
+                        <button
+                          aria-expanded={sessionsOpen}
+                          aria-label={sessionsOpen ? undefined : `${shortName}: ${agentSessions.length}`}
+                          className={cn(
+                            'flex size-5 shrink-0 items-center justify-center rounded-md text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground',
+                            isActive && 'text-foreground'
+                          )}
+                          onClick={() => setOpenAgentId(sessionsOpen ? null : agent.id)}
+                          type="button"
+                        >
+                          <Codicon name={sessionsOpen ? 'chevron-down' : 'chevron-right'} size="0.75rem" />
+                        </button>
+                      )}
+                      {/* 「三个点」：这一格只放这个 Agent 自己的事（打开 / 能力 /
+                          归档）。profile 那个概念已退役，菜单里不再有它。 */}
+                      <AgentActionsMenu agent={agent} onNavigate={onNavigateAgent} />
+                    </>
                   }
                   className={cn(
                     'group row-hover',

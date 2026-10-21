@@ -124,10 +124,24 @@ export async function createAgent(req: AgentCreateRequest): Promise<Agent> {
   return unwrapEnvelope<Agent>(payload)
 }
 
+/**
+ * 归档一个 Agent（裁定 19）：它的家收进 `_archived/`，名册那一行标 archived。
+ *
+ * 左栏「三个点」菜单里的那一项。归档不是删除——数据还在，只是它不再出现在
+ * 左栏、也不再被派活。这一步要用户点头，所以调用方（菜单）先弹确认。
+ */
+export async function dissolveAgent(agentId: string): Promise<Agent> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    method: 'POST',
+    path: `/api/agents/${encodeURIComponent(agentId)}/dissolve`
+  })
+
+  return unwrapEnvelope<Agent>(payload)
+}
+
 /** 全局真源 + per-agent 开关（2026-10-19 用户裁定）：只写「这个 Agent 关掉了
  *  哪些」的三份黑名单（名册行偏好）。传空对象 = 只读当前偏好。资产名单不归
- *  这里管——全量列表各自从 /api/skills、/api/tools/toolsets、mcp config 拉。 */
-export async function putAgentToolPrefs(
+ *  这里管——全量列表各自从 /api/skills、/api/tools/toolsets、mcp config 拉。 */export async function putAgentToolPrefs(
   agentId: string,
   prefs: {
     disabledMcpServers?: string[]

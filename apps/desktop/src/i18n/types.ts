@@ -1361,6 +1361,20 @@ export interface Translations {
     agentEnterSpawnFailed: string
     agentEnterBindFailed: string
     agentEnterNeutral: string
+    /** 左栏每个 Agent 行旁边的「三个点」（2026-10-21）。 */
+    agentMenuMore: string
+    agentMenuMoreFor: (name: string) => string
+    agentMenuOpen: string
+    agentMenuCopyId: string
+    agentMenuCopied: string
+    agentMenuCopyFailed: string
+    agentMenuArchive: string
+    agentMenuArchiveConfirmTitle: string
+    agentMenuArchiveConfirmBody: string
+    agentMenuArchiveCancel: string
+    agentMenuArchiveConfirmAction: string
+    agentMenuArchived: string
+    agentMenuArchiveFailed: string
     agentsLoading: string
     agentsLoadFailed: string
     agentsEmptyTitle: string
