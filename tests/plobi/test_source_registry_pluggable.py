@@ -190,7 +190,11 @@ class TestCategoriesAreDeclaredNotGuessed:
 
         declared = set()
 
-        for name in ("chatlog", "dingtalk", "timetable", "zju"):
+        # 名单**从盘上现数**，不写死：写死的那一份会在第二条信源加进来的当天变成
+        # 一张过期照片（10-21 加 `zdbk` 时它就是这么红的）。方向反过来才是牙齿：
+        # 任何一个内置包没报出自己的 SPEC，当场红。
+        for init in sorted(Path(package.__file__).resolve().parent.glob("*/__init__.py")):
+            name = init.parent.name
             module = __import__(f"plobi.collectors.{name}", fromlist=["SPEC"])
 
             assert hasattr(module, "SPEC"), f"{name} 没有报出自己的 SPEC"
@@ -248,8 +252,11 @@ class TestDiscoveryCannotFailSilently:
         )
 
         assert completed.returncode == 0, completed.stderr
-        # 0 = 空名单 = 那条静默失败；4 = 现在注册表里的四条。
-        assert int(completed.stdout.strip()) == 4, completed.stdout
+        cold = int(completed.stdout.strip())
+        # 判据是"冷进程**不比别人少**"，不是"恰好四条"：0 = 那条静默失败；
+        # 写死条数的话，加一条信源就得先来改这条测试，而它本来谁都不该拦。
+        assert cold > 0, f"冷进程读到空名单：{completed.stdout!r}"
+        assert cold == len(registry.source_ids()), (cold, registry.source_ids())
 
     def test_a_broken_package_is_reported_not_swallowed(self) -> None:
         """某个包没载入必须**出声**，不许吞成"这条不存在"。
