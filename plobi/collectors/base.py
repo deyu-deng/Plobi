@@ -1,10 +1,11 @@
 """Pluggable collector surface (WP-COLLECTOR-ICS).
 
-Every source — WeChat chatlog today, timetable .ics and DingTalk tomorrow —
-implements :class:`Collector` and yields :class:`Occurrence` rows. Landing in
-the agenda always goes through
-:func:`plobi.collectors.ingest.ingest_occurrences` so no source can fork the
-storage semantics (pending vs confirmed, dedupe, ADR-0009 change diffs).
+Every source — WeChat chatlog today, 学在浙大 and 教务 tomorrow — implements
+:class:`Collector` and yields :class:`Occurrence` rows. **Landing is the pool**:
+:func:`pool_items_of` + ``plobi.pool.land()`` (rulings 186 / 193 —「全部都要直接进池，
+不能直接落别的库」). ``ingest_occurrences`` stays as the agenda-side seam it always
+was, but no automatic path may call it: an agent reads the pool and decides what
+becomes a schedule row.
 
 An ``Occurrence`` is one *concrete* event: a weekly course repeated 16 times
 is 16 occurrences, each with its own stable ``external_id``.
