@@ -316,8 +316,10 @@ class MemoryStore:
         Scanning is deterministic from disk bytes, so the snapshot remains
         stable for the entire session (prefix-cache invariant holds).
         """
-        get_memory_dir().mkdir(parents=True, exist_ok=True)
-
+        # No mkdir here on purpose: this is a read path, and creating the ledger
+        # dir from a read made an install look like it "has memory" while every
+        # ledger was still absent (2026-10-20 现读 `$PLOBI_HOME/memory/` 存在、0 个文件).
+        # Writers create what they write — see :meth:`save_to_disk`.
         self.global_entries = self._read_file(memory_path("global"))
         self.memory_entries = self._read_file(memory_path("memory", slug=self.slug))
         self.status_entries = self._read_file(memory_path("status", slug=self.slug))

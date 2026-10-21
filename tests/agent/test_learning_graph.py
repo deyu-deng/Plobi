@@ -68,11 +68,18 @@ def test_skill_node_timestamp_uses_iso_usage_activity(tmp_path, monkeypatch):
 
 def test_memory_is_cards_split_on_separator(tmp_path):
     home = tmp_path / ".plobi"
-    (home / "memories").mkdir(parents=True)
-    (home / "memories" / "MEMORY.md").write_text(
+    own = home / "memory" / "agents" / "l1"
+    own.mkdir(parents=True)
+    (own / "MEMORY.md").write_text(
         "Project uses pytest with xdist\n§\nUser prefers concise responses",
         encoding="utf-8",
     )
+    (home / "memory" / "USER.md").write_text("Owns a piano", encoding="utf-8")
+    # The retired location must stay dead: 裁定 42/178 removed <home>/memories/,
+    # so a file planted there must never reach the graph.
+    retired = home / "memories"
+    retired.mkdir()
+    (retired / "MEMORY.md").write_text("RETIRED LOCATION MUST NOT RENDER", encoding="utf-8")
     token = set_plobi_home_override(home)
     try:
         graph = learning_graph.build_learning_graph()
@@ -82,6 +89,8 @@ def test_memory_is_cards_split_on_separator(tmp_path):
     titles = [c["title"] for c in graph["memory"]]
     assert "Project uses pytest with xdist" in titles
     assert "User prefers concise responses" in titles
+    assert "Owns a piano" in titles
+    assert "RETIRED LOCATION MUST NOT RENDER" not in titles
     # Memory cards remain typed cards and also appear as memory-kind nodes.
     assert all(c["source"] in {"memory", "profile"} for c in graph["memory"])
     assert all("timestamp" in c for c in graph["memory"])

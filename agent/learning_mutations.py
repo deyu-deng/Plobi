@@ -20,23 +20,27 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-_MEMORY_FILES = {"memory": "MEMORY.md", "profile": "USER.md"}
+# Card source name -> memory scope. The names are the persisted node-id
+# segment (``memory:<source>:<index>``), so they stay stable even though the
+# files moved: 裁定 42/178 retired ``<home>/memories/``, the ledgers now live at
+# ``tools.memory_tool.memory_path`` (GLOBAL.md + one per agent + USER.md).
+_MEMORY_SCOPES = {"global": "global", "memory": "memory", "profile": "user"}
 
 
 def parse_node_kind(node_id: str) -> str:
     return "memory" if node_id.startswith("memory:") else "skill"
 
 
-def _memories_dir() -> Path:
-    from plobi_constants import get_plobi_home
+def _memory_file(source: str) -> Path:
+    from tools.memory_tool import memory_path, resolve_agent_slug
 
-    return get_plobi_home() / "memories"
+    return memory_path(_MEMORY_SCOPES[source], slug=resolve_agent_slug())
 
 
 def _parse_memory_id(node_id: str) -> tuple[str, int]:
     """``memory:<source>:<index>`` → (source, global_index)."""
     parts = node_id.split(":", 2)
-    if len(parts) != 3 or parts[0] != "memory" or parts[1] not in _MEMORY_FILES:
+    if len(parts) != 3 or parts[0] != "memory" or parts[1] not in _MEMORY_SCOPES:
         raise ValueError(f"bad memory node id: {node_id!r}")
     try:
         return parts[1], int(parts[2])
@@ -47,8 +51,8 @@ def _parse_memory_id(node_id: str) -> tuple[str, int]:
 def _memory_local_index(source: str, global_index: int) -> int:
     """Global card index → position within the source's own file.
 
-    ``_memory_cards`` emits all ``MEMORY.md`` cards before ``USER.md`` cards, so
-    a profile card's local index is its global index minus the memory count.
+    Counted from the cards the graph actually rendered, so it stays right no
+    matter how many ledgers ``_memory_cards`` surfaces or in what order.
     """
     from agent.learning_graph import _memory_cards
 
@@ -57,9 +61,7 @@ def _memory_local_index(source: str, global_index: int) -> int:
         raise IndexError(f"memory index {global_index} out of range")
     if cards[global_index].get("source") != source:
         raise ValueError("memory node id is stale — refresh the graph")
-    if source == "memory":
-        return global_index
-    return global_index - sum(1 for c in cards if c.get("source") == "memory")
+    return sum(1 for c in cards[:global_index] if c.get("source") == source)
 
 
 def _locate_memory(source: str, gidx: int) -> tuple[Path, list[str], int]:
@@ -70,7 +72,7 @@ def _locate_memory(source: str, gidx: int) -> tuple[Path, list[str], int]:
     """
     from tools.memory_tool import MemoryStore
 
-    path = _memories_dir() / _MEMORY_FILES[source]
+    path = _memory_file(source)
     if not path.exists():
         raise ValueError(f"{path.name} not found")
     chunks = MemoryStore._read_file(path)
