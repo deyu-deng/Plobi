@@ -24,6 +24,7 @@ from plobi.collectors.timetable import (
     parse_ics_with_stats,
 )
 from plobi.collectors.timetable import api as timetable_api
+from plobi.pool import query as pool_query, stats as pool_stats
 
 # Truncated clone of the real export: same property shapes, 3 usable VEVENTs
 # (one of them a weekly RRULE), one DTSTART-less event, VALARMs everywhere.
@@ -90,6 +91,20 @@ UID:broken-no-dtstart\r
 END:VEVENT\r
 END:VCALENDAR\r
 """
+
+
+@pytest.fixture(autouse=True)
+def pool_db(tmp_path, monkeypatch):
+    """把信息池钉进 tmp_path —— **不钉就是拿真的共享 `pool.db` 跑测试**。
+
+    落点从日程改成池之后这一档必须存在：`plobi.pool.connect()` 不只是读，它会
+    `CREATE TABLE` / `ALTER` 真的那份库（这台的读侧函数其实会写库那一族的坑）。
+    """
+    from plobi.pool import store as pool_store
+
+    db = tmp_path / "pool.db"
+    monkeypatch.setattr(pool_store, "path", lambda: db)
+    return db
 
 
 @pytest.fixture()
@@ -221,31 +236,39 @@ def test_collector_health_and_pull(ics_file, tmp_path):
 # --- import via the shared ingest path ---------------------------------------
 
 
-def test_import_lands_confirmed_timetable_rows(ics_file, service):
-    result = import_ics(ics_file, service=service)
+def test_import_lands_the_pool_and_writes_no_agenda_rows(ics_file, service, pool_db):
+    """裁定 193 的靶子那一格：课表**一条都不许进 `events`**，全进池。"""
+    result = import_ics(ics_file)
 
-    assert result["created"] == 5
-    events = _wide_events(service)
-    assert len(events) == 5
-    assert all(e.status == "confirmed" for e in events)
-    assert all(e.source == "timetable" for e in events)
-    assert all(e.kind == "class" for e in events)
-
-
-def test_reimport_same_file_is_a_noop(ics_file, service):
-    import_ics(ics_file, service=service)
-    result = import_ics(ics_file, service=service)
-
-    assert result["created"] == 0
-    assert result["updated"] == 0
-    assert result["unchanged"] == 5
-    assert len(_wide_events(service)) == 5, "no duplicate rows"
+    assert result["created"] == 5 and result["landing"] == "pool"
+    assert result["source"] == "timetable"
+    assert _wide_events(service) == [], "采集器不再直落日程——一行都不行"
+    rows = pool_query(source="timetable", db_path=pool_db)
+    assert len(rows) == 5
+    assert {row["kind"] for row in rows} == {"class"}
 
 
-def test_changed_dtstart_becomes_pending_change_with_prev_value(
-    ics_file, service, tmp_path
+def test_reimport_same_file_is_a_noop(ics_file, service, pool_db):
+    """幂等判据那一半：连着 land 两轮，池的 `total` 不涨。"""
+    first = import_ics(ics_file)
+    second = import_ics(ics_file)
+
+    assert first["created"] == 5
+    assert second["created"] == 0 and second["updated"] == 0
+    assert pool_stats()["total"] == 5, "重复采集不许长出第二份"
+    assert _wide_events(service) == []
+
+
+def test_changed_dtstart_updates_the_pool_row_and_no_pending_card(
+    ics_file, service, tmp_path, pool_db
 ):
-    import_ics(ics_file, service=service)
+    """**这一笔删掉的功能**要留一条钉子，别让下一个人当 bug 补回来。
+
+    旧形状：改一节课的时间 ⇒ 日程那侧长一张待确认卡并快照 `prev_value` 好回滚（ADR-0009）。
+    新形状（裁定 186／193）：池里那一行被 UPDATE（`external_id` 才是身份，uid 没变 ⇒ 同一行），
+    待确认卡与 `prev_value` 在这一条信源上**没有了**——要不要跟着改日程是读池的 Agent 的判断。
+    """
+    import_ics(ics_file)
 
     edited = tmp_path / "edited.ics"
     edited.write_text(
@@ -254,48 +277,58 @@ def test_changed_dtstart_becomes_pending_change_with_prev_value(
         encoding="utf-8",
         newline="",
     )
-    result = import_ics(edited, service=service)
+    result = import_ics(edited)
 
-    assert result["updated"] == 1
-    assert result["created"] == 0
-
-    pending = [e for e in _wide_events(service) if e.status == "pending"]
-    assert len(pending) == 1
-    assert pending[0].title == "电工电子学"
-    assert pending[0].start_at == "2026-09-21T14:00:00"
-    # ADR-0009: the pre-change value is snapshotted for rollback.
-    assert pending[0].prev_value["start_at"] == "2026-09-21T10:00:00"
-    # The other four rows stay confirmed and untouched.
-    assert len([e for e in _wide_events(service) if e.status == "confirmed"]) == 4
+    assert result["updated"] == 1 and result["created"] == 0
+    row = next(r for r in pool_query(source="timetable", db_path=pool_db)
+               if r["external_id"] == "3a7cc0f1e9d84c22b1a5f0c8d4e2b6a9")
+    assert row["occurred_at"] == "2026-09-21 14:00:00", "时间在写入口归一成一个形状（裁 189）"
+    assert pool_stats()["total"] == 5, "改了时间是同一行，不是多一行"
+    assert _wide_events(service) == []
+    assert service.list_pending() == [], "课表不再产生待确认卡（这一格是删掉的功能）"
 
 
-def test_missing_rows_are_never_deleted(ics_file, service, tmp_path):
-    import_ics(ics_file, service=service)
+def test_missing_rows_are_never_deleted(ics_file, tmp_path, pool_db):
+    """文件里少几条 ⇒ 池里那些**留着**（能力位 `authoritative_replace` 声明的就是 False）。
+
+    为什么是 False、不跟着学在浙大填 True：`pull()` 的缺席分不清是**停课**、**改了排次**
+    还是**导出少导了一节**，没实测就不许拿缺席当取消（裁定 191 那句口径）。
+    """
+    import_ics(ics_file)
 
     partial = tmp_path / "partial.ics"
-    # Only the first VEVENT survives: the other sessions "disappear" from the
-    # source, but the agenda keeps them (sources are additive).
     head = ICS_FIXTURE.split("BEGIN:VEVENT")
     partial.write_text(
         head[0] + "BEGIN:VEVENT" + head[1] + "END:VCALENDAR\r\n",
         encoding="utf-8",
         newline="",
     )
-    import_ics(partial, service=service)
-
-    events = _wide_events(service)
-    assert len(events) == 5
-    assert len([e for e in events if e.title == "电工电子学"]) == 2
-
-
-def test_uid_dedupes_across_confirmed_and_pending(ics_file, service):
-    # First import lands pending; second import with apply="confirmed" must
-    # still match the same rows and change nothing (not duplicate).
-    import_ics(ics_file, service=service, apply="pending")
-    result = import_ics(ics_file, service=service, apply="confirmed")
+    result = import_ics(partial)
 
     assert result["created"] == 0
-    assert result["unchanged"] == 5
+    assert len(pool_query(source="timetable", db_path=pool_db)) == 5, "少几条不删任何东西"
+
+
+def test_external_id_is_the_identity_not_the_title(ics_file, tmp_path, pool_db):
+    """同标题不同 uid ⇒ 各成一行；**改标题不把老行顶掉**。
+
+    钉的是 `(source, external_id)` 那把唯一键：身份是学校给的那一条 id，不是标题拼的。
+    拿标题当身份，一节课改个名字就在池里"消失"一次。
+    """
+    import_ics(ics_file)
+    before = pool_query(source="timetable", db_path=pool_db)
+    assert len([r for r in before if r["title"] == "电工电子学"]) == 2, "同标题不同 uid ⇒ 各成一行"
+
+    renamed = tmp_path / "renamed.ics"
+    renamed.write_text(ICS_FIXTURE.replace("SUMMARY;LANGUAGE=zh-cn:电工电子学",
+                                           "SUMMARY;LANGUAGE=zh-cn:电工电子学改名了"),
+                       encoding="utf-8", newline="")
+    result = import_ics(renamed)
+
+    rows = pool_query(source="timetable", db_path=pool_db)
+    assert len(rows) == 5, "改名不长新行"
+    assert result["created"] == 0 and result["updated"] == 2
+    assert len([r for r in rows if "改名了" in (r["title"] or "")]) == 2
 
 
 # --- board API ---------------------------------------------------------------
@@ -339,28 +372,33 @@ def test_preview_writes_no_db_rows(api_client, ics_file, tmp_path):
 
 
 def test_import_returns_counts_and_writes_status(api_client, ics_file):
+    """面上那两键的**分工**：`event_count`＝历史直落行，`pool_count`＝这一家现在的进账。
+
+    导入之后日程库里 0 行、池里 5 条 ⇒ 既不能拿"库里有货"冒充"这一轮采到了"，
+    也不能反过来把新落点读成 404。`unchanged` 那一格池那层恒 0（内容一样就 continue，
+    它不计数）——所以判的是 `total` 不涨，不是 `unchanged == 5`。
+    """
     response = api_client.post(
         "/api/collect/timetable/import", json={"path": str(ics_file)}
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["created"] == 5 and body["updated"] == 0 and body["unchanged"] == 0
+    assert body["created"] == 5 and body["landing"] == "pool"
     assert body["calendar_name"] == "测试课表-2026秋冬"
+    assert "不生效" in body["apply_note"]
 
     status_response = api_client.get("/api/collect/timetable")
     assert status_response.status_code == 200
     status = status_response.json()
-    assert status["calendar_name"] == "测试课表-2026秋冬"
-    assert status["event_count"] == 5
+    assert status["event_count"] == 0, "一行都没进日程库"
+    assert status["pool_count"] == 5, "新落点读得到"
     assert status["path"] == str(ics_file)
-    assert status["imported_at"]
 
-    # Second import through the API → unchanged, and status persisted.
     again = api_client.post(
         "/api/collect/timetable/import", json={"path": str(ics_file)}
     ).json()
-    assert again["unchanged"] == 5 and again["created"] == 0
+    assert again["created"] == 0 and again["updated"] == 0
 
 
 def test_status_is_404_before_first_import(api_client):
@@ -394,13 +432,18 @@ def test_import_rejects_missing_file_with_400(api_client, tmp_path):
     assert response.status_code == 400
 
 
-def test_import_defaults_to_confirmed_not_manual(api_client, ics_file):
+def test_apply_is_accepted_but_changes_nothing(api_client, ics_file):
+    """老桌面还会送 `apply`。这一条**替换**旧那句 defaults to confirmed not manual——
+
+    那句在池落点下是假话；而且旧断言在空库上是 `all([])` 那种**真空绿**（零条也算全真），
+    正好是这一族反复量到的那类假绿，所以换成"送 pending 也不许往日程里造东西"。
+    """
     body = api_client.post(
-        "/api/collect/timetable/import", json={"path": str(ics_file)}
+        "/api/collect/timetable/import",
+        json={"path": str(ics_file), "apply": "pending"},
     ).json()
 
-    assert body["created"] == 5
+    assert body["created"] == 5 and body["apply"] == "pending"
     service = timetable_api._get_service()
-    events = _wide_events(service)
-    assert all(e.source == "timetable" for e in events), "never fakes source=manual"
-    assert all(e.status == "confirmed" for e in events)
+    assert _wide_events(service) == [], "送 pending 也不许往日程里造东西"
+    assert service.list_pending() == []

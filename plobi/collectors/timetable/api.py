@@ -13,9 +13,19 @@ prefix. Contract matches ``apps/desktop/src/app/agenda/timetable/api.ts``
       → {path, calendar_name, event_count, imported_at} —— 计数与时刻**由库里派生**，
         ``path`` / ``calendar_name`` 才来自状态文件；404 = 库里一条都没有（读不到库是 503）。
 
-教务这一条**没有自动拉取实现**：本目录里没有任何 HTTP 客户端，240 条 ``kind=class`` 来自
+教务这一条**仍然没有自动拉取实现**：本目录里没有任何 HTTP 客户端，240 条 ``kind=class`` 来自
 2026-10-09 那一次 .ics 导入。``pull()`` 读的是用户自己放进来的本地文件，不是学校接口。
 所以任何面上与文档都不许把这条说成"已经能自动拉取"（P6：不许描述不存在的机制）。
+
+**落点 10-21 改了**（裁定 193「全部都要直接进池」）：``/timetable/import`` 现在写**信息池**，
+不再直落 ``events``。所以这一层的两个计数是**两个不同的问题**，别合成一个：
+
+- ``event_count``＝库里那 240 条**历史直落行**（旧形状留下的，Agent 与日程面还在读它们）；
+- ``pool_count``＝这一家**现在**在池里的条数（新的一条都进这里）。
+
+``apply`` 那一格在请求里还收着（桌面还没改），但它**已经不起作用**——池子不分待确认／坐实。
+响应里逐字回一句 ``apply_note``，就是为了让"点下去没反应"这种情况在面与排障时都能被问出来；
+把那颗控件从界面上撤掉是 `apps/desktop/**` 那一刀的活（本刀不碰，见登记格边界）。
 
 ``path`` must be a local absolute path; ``..`` segments are refused so a
 crafted body cannot climb out of its drive. The default never hardcodes the
@@ -35,9 +45,9 @@ from pydantic import BaseModel
 from plobi.agenda import get_service
 from plobi.agenda.service import AgendaService
 from plobi.collectors import liveness
-from plobi.collectors.ingest import ingest_occurrences
 from plobi.collectors.liveness import read_source_liveness
 
+from .collector import import_ics
 from .parser import IcsParseError, parse_ics_with_stats
 
 logger = logging.getLogger(__name__)
@@ -55,7 +65,13 @@ class TimetablePathRequest(BaseModel):
 
 
 class TimetableImportRequest(TimetablePathRequest):
+    #: 老桌面还会送这一格。收下它、**不用它**：落点是池，池子不分待确认／坐实（裁定 193）。
+    #: 留这一格而不是删掉，是为了让"界面上那个人按的东西后端到底认不认"能在响应里问出来
+    #: （见 :data:`APPLY_NOTE`）；界面上撤掉那颗控件是 `apps/desktop/**` 那一刀的活。
     apply: Literal["pending", "confirmed"] = "confirmed"
+
+
+APPLY_NOTE = "落点是信息池：`apply`（待确认／坐实）这一档对课表已经不生效。"
 
 
 def _get_service() -> AgendaService:
@@ -179,24 +195,22 @@ async def preview_timetable(request: TimetablePathRequest) -> dict:
 
 @router.post("/timetable/import")
 async def import_timetable(request: TimetableImportRequest) -> dict:
-    """Parse + land through the shared ingest path, then record import state."""
+    """解析 + 落**池**，然后只记一句"这份课表是哪来的"。
+
+    计数**不写进状态文件**：那份文件是一次性旁证（清过机器就没了），而计数读的是池与库那两份
+    真表——同一件数登两处就是给下一次"文件说不一样"留口子（这里只留 path 与日历名两格）。
+    """
     path = _resolve_path(request.path)
     occurrences, stats = _parse_or_400(path)
     payload: dict[str, Any] = _preview_payload(occurrences, stats)
-    result = ingest_occurrences(
-        _get_service(), occurrences, apply=request.apply
-    )
+    result = import_ics(path)
     payload["created"] = result["created"]
     payload["updated"] = result["updated"]
     payload["unchanged"] = result["unchanged"]
-    _write_status(
-        {
-            "path": str(path),
-            "calendar_name": stats["calendar_name"],
-            "event_count": len(occurrences),
-            "imported_at": _now_iso(),
-        }
-    )
+    payload["landing"] = result["landing"]
+    payload["apply"] = request.apply
+    payload["apply_note"] = APPLY_NOTE
+    _write_status({"path": str(path), "calendar_name": stats["calendar_name"]})
     return payload
 
 
@@ -211,26 +225,45 @@ async def timetable_status() -> dict:
     换来"读不到＝没导入"这个新的假阴性。
     """
     live = _timetable_liveness()
+    pool_count = _pool_count()
     if live["state"] == liveness.STATE_NO_STORE:
         # 两种"读不到"不是一回事：库文件本来还没建 ＝ 一条都没落过账（404）；
         # 库在、却读不出来（被独占 / 不是个 sqlite / 表没了）＝ 故障，
-        # 不许冒充"没导入"（503）。
+        # 不许冒充"没导入"（503）。池那一侧独立算一遍，两边都读不到才说 503。
         path = _resolved_db_path()
-        if path is None or not path.is_file():
+        if pool_count is not None and pool_count > 0:
+            pass                                            # 池里有货，下面照样报得出读数
+        elif path is None or not path.is_file():
             raise HTTPException(status_code=404, detail="no timetable imported yet")
-        raise HTTPException(
-            status_code=503, detail="日程库在，但读不出来：说不出课表进没进过账（这不等于「没导入」）"
-        )
+        else:
+            raise HTTPException(
+                status_code=503, detail="日程库在，但读不出来：说不出课表进没进过账（这不等于「没导入」）"
+            )
     count = int(live["events"] or 0)
-    if count == 0:
+    if count == 0 and not pool_count:
         raise HTTPException(status_code=404, detail="no timetable imported yet")
     status = _read_status() or {}
     return {
         "path": str(status.get("path") or ""),
         "calendar_name": str(status.get("calendar_name") or ""),
+        #: 历史直落行（旧形状留下的），桌面那一格仍读它 —— 键名不动是刻意的，
+        #: 撤掉它等于偷偷把面板画空（那 240 条还在库里，凭什么是 0）。
         "event_count": count,
         "imported_at": str(live["last_created_at"] or ""),
+        #: 这一家**现在**的落点：信息池里的条数（`None` = 池读不到，不是一个 0）。
+        "pool_count": pool_count,
     }
+
+
+def _pool_count() -> Optional[int]:
+    """池里 `source=timetable` 的条数；读不到给 ``None`` 而不是 0（0 与坏了是两句话）。"""
+    try:
+        from plobi.pool import stats as pool_stats
+
+        return int(pool_stats().get("by_source", {}).get(SOURCE_ID, 0))
+    except Exception as exc:                                # noqa: BLE001 - 读不到就是没读数
+        logger.debug("timetable: 池读不到（%s）", exc)
+        return None
 
 
 def _now_iso() -> str:

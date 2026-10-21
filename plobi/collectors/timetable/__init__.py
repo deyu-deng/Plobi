@@ -1,33 +1,66 @@
 """Timetable (.ics) collector — the second Collector implementation.
 
 Public surface: :func:`parse_ics` / :func:`parse_ics_with_stats`,
-:class:`TimetableCollector`, :func:`import_ics`, the board API router
-(:mod:`.api`, mounted under ``/api/collect``), and :data:`SPEC` — 这一条信源
-**自己**向注册表报自己的形状（`specs/source-layer.md` §3.1）。加一条信源＝加一个
-这样的包，`plobi/collectors/registry.py` 里不再出现任何信源 id。
+:class:`TimetableCollector`, :func:`import_ics`, :func:`land_occurrences`,
+:class:`TimetableUnavailable`, the board API router (:mod:`.api`, mounted under
+``/api/collect``), and :data:`SPEC` — 这一条信源**自己**向注册表报自己的形状
+（`specs/source-layer.md` §3.1）。加一条信源＝加一个这样的包，
+`plobi/collectors/registry.py` 里不再出现任何信源 id。
+
+落点是**信息池**（裁定 193），不再直落日程库；读的是本地 .ics，接口实测之前不假装会拉。
 """
 
 from plobi.collectors.registry import CADENCE_FIELD, SetupField, SourceSpec, register
 
-from .collector import TimetableCollector, import_ics
+from .collector import (
+    STATE_FILE_MISSING,
+    STATE_NO_PATH,
+    STATE_PARSE_FAILED,
+    STATE_UNREADABLE,
+    TimetableCollector,
+    TimetableUnavailable,
+    import_ics,
+    land_occurrences,
+    note_for,
+)
 from .parser import IcsParseError, parse_ics, parse_ics_with_stats
 
 
 def _build() -> object:
-    """执行方入口。**延迟 import**：``collector`` 那头要读注册表派生的词表，
-    而注册表的发现正是在导入本包——顶层就 import 它会成一个环。"""
-    from .collector import TimetableCollector as _TimetableCollector
+    """执行方入口：把**用户那一层填的那一格路径**交给采集器。
 
-    return _TimetableCollector()
+    这一格 10-21 之前是坏的：``_TimetableCollector()`` 少一个必填参数 ⇒ 每天那一轮把这一条
+    报成 `build_failed: TypeError: missing 1 required positional argument: 'path'`
+    （现读 10-20 那几轮 cron 正文都写着这一句）。**修法是去读用户填的那格**，
+    而不是给路径加一个默认值——默认值就是"猜一个路径然后 0 行进账"那颗雷。
+
+    那一格没填 ⇒ **抛有名状态**（``no_path_configured``），不返回一个空采集器：
+    ``sweep`` 会把这句话原样收进那一轮的读数，于是"课表为什么没进来"是一行读数，
+    不是设置里摆着好看的一格。延迟 import 照旧（顶层 import 会成环）。
+    """
+    from plobi.collectors import sources_config
+
+    from .collector import STATE_NO_PATH, TimetableCollector as _TimetableCollector
+    from .collector import TimetableUnavailable
+
+    path = str(sources_config.setup_params("timetable").get("ics_path") or "").strip()
+    if not path:
+        raise TimetableUnavailable(STATE_NO_PATH)
+    return _TimetableCollector(path)
 
 
 SPEC = SourceSpec(
     "timetable",
     capabilities={
-        "history_backfill": True,       # 文件里有什么就是什么
-        "incremental_since": False,     # collector 收了 since 但忽略
-        "supports_media": False,
-        "requires_manual_setup": True,  # 用户指定目录里放一个 .ics
+        # 实测（10-09 那份 240 条的导入）：文件里有什么就是什么，RRULE 一次展开整个学期。
+        "history_backfill": True,
+        "incremental_since": False,     # 收了 `since` 但忽略：一份文件要么整份读，没有游标
+        "supports_media": False,        # VALARM/说明行都不进条目，媒体零处理
+        "requires_manual_setup": True,  # 用户指定目录里放一个 .ics（或把路径填进那一格）
+        # **没实测**：这一轮文件里少一条，分不清是停课、改了排次，还是导出少导了一节 ⇒
+        # 不许拿缺席当取消（裁定 191 的口径：没测到就 False 并留一句为什么，别猜）。
+        # 接口探查之后这一格才有依据重填——那时要连 `test_collect_timetable_status.py`
+        # 那颗"出现 HTTP 客户端即红"的扫描钉一起改口径。
         "authoritative_replace": False,
     },
     # 「用户往某目录放一个 .ics」⇒ 连接器形状是磁盘路径，归「本地」不归「网站」
@@ -55,9 +88,16 @@ register(SPEC, replace=True)
 
 __all__ = [
     "SPEC",
+    "STATE_FILE_MISSING",
+    "STATE_NO_PATH",
+    "STATE_PARSE_FAILED",
+    "STATE_UNREADABLE",
     "IcsParseError",
     "TimetableCollector",
+    "TimetableUnavailable",
     "import_ics",
+    "land_occurrences",
+    "note_for",
     "parse_ics",
     "parse_ics_with_stats",
 ]
