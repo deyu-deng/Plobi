@@ -11,11 +11,6 @@
 无模型调用（ADR-0011 成本纪律）；失败计数与告警限频状态落
 ``PLOBI_HOME/plobi/watchdog_state.json``。恢复健康即重置计数。
 
-WP-DT-DIGEST：10 分钟 tick 是开机后最早、最稳定的心跳，所以「今天 07:30 那条
-早报没发过」的补发挂在它末尾（``maybe_send_morning_catchup``）。标记文件
-``PLOBI_HOME/plobi/digest_state.json`` 与 07:30 的 cron 共用——谁先发谁写，
-另一边看到标记就不再发。发送失败不写标记（下个 tick 再试）。
-
 微信 ToS 红线：本模块不改变采集节奏，tick 由 10 分钟 cron 驱动（≥30s）。
 """
 
@@ -25,7 +20,7 @@ import json
 import logging
 import subprocess
 import sys
-from datetime import datetime, time as dt_time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -37,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FAILURE_THRESHOLD = 3
 DEFAULT_ALERT_INTERVAL_SECONDS = 3600
-# 07:30 是全天的分界：早报的正点由 cron 发，错过由看门狗补。
-MORNING_CATCHUP_AT = dt_time(7, 30)
 
 
 def _repo_root() -> Path:
@@ -85,8 +78,6 @@ class Watchdog:
         heal_command: Optional[Callable[[], object]] = None,
         failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
         alert_interval_seconds: int = DEFAULT_ALERT_INTERVAL_SECONDS,
-        morning_catchup: bool = True,
-        digest_state_path: Path | str | None = None,
     ):
         self.pipeline = pipeline if pipeline is not None else ChatlogPipeline()
         self.client = client or (pipeline.client if pipeline else self.pipeline.client)
@@ -96,9 +87,6 @@ class Watchdog:
         self.heal_command = heal_command or self._default_heal_command
         self.failure_threshold = max(1, int(failure_threshold))
         self.alert_interval_seconds = int(alert_interval_seconds)
-        self.morning_catchup = bool(morning_catchup)
-        # None = derive from PLOBI_HOME (same file the 07:30 cron writes).
-        self.digest_state_path = Path(digest_state_path) if digest_state_path else None
 
     # --- self-heal ----------------------------------------------------------
 
@@ -196,19 +184,9 @@ class Watchdog:
 
     # --- main tick ----------------------------------------------------------
 
-    def tick(self, now: Optional[datetime] = None) -> dict:
-        """One tick = sweep + health + (maybe) heal/alert + morning catch-up.
-
-        ``now`` only feeds the morning catch-up (so tests can pin the clock);
-        the health bookkeeping keeps using the wall clock.
-        """
-        result = self._sweep_and_check()
-        if self.morning_catchup:
-            try:
-                result["morning_catchup"] = self.maybe_send_morning_catchup(now)
-            except Exception:
-                logger.exception("watchdog: morning catch-up failed")
-        return result
+    def tick(self) -> dict:
+        """One tick = sweep + health + (maybe) heal/alert."""
+        return self._sweep_and_check()
 
     def _sweep_and_check(self) -> dict:
         self.state = _load_state(self.state_path)
@@ -278,58 +256,6 @@ class Watchdog:
 
         self._save()
         return result
-
-    # --- morning digest catch-up (WP-DT-DIGEST) ------------------------------
-
-    def maybe_send_morning_catchup(self, now: Optional[datetime] = None) -> dict:
-        """电脑开晚了就补发当天那条早报——同一天最多一次。
-
-        Conditions (all must hold): local time ≥ 07:30, ``digest_state.json``
-        does not already say today was delivered, and a notifier is configured.
-        The body comes from the very same ``morning_body`` the 07:30 cron uses,
-        so the two paths can never drift apart. A failed send leaves the marker
-        untouched → the next tick (10 min later) retries; the failure only goes
-        to the log, so a dead webhook cannot spam the phone.
-        """
-        from plobi.butler.report import (
-            mark_morning_sent,
-            morning_body,
-            morning_sent_for,
-        )
-
-        when = now or datetime.now()
-        day = when.date().isoformat()
-        outcome: dict = {"due": False, "sent": False, "reason": ""}
-
-        if when.time() < MORNING_CATCHUP_AT:
-            outcome["reason"] = "before 07:30"
-            return outcome
-
-        if morning_sent_for(self.digest_state_path) == day:
-            outcome["reason"] = f"already sent for {day}"
-            return outcome
-
-        outcome["due"] = True
-
-        notifier = self._notifier
-        if notifier is None:
-            from plobi.notify import get_notifier
-
-            notifier = get_notifier()
-        if not notifier.configured:
-            outcome["reason"] = "no notifier configured"
-            logger.warning("watchdog: morning digest due but no notifier configured")
-            return outcome
-
-        service = getattr(self.pipeline, "service", None) if self.pipeline else None
-        sent = notifier.send(morning_body(when, service=service))
-        outcome["sent"] = bool(sent.ok)
-        if sent.ok:
-            mark_morning_sent(day, self.digest_state_path)
-        else:
-            outcome["reason"] = str(sent.detail or "send failed")
-            logger.warning("watchdog: morning digest send failed: %s", sent.detail)
-        return outcome
 
     def _notify_pending(self, pending_ids: list[str]) -> None:
         """Push what this sweep left awaiting the human (same contract as the webhook)."""
