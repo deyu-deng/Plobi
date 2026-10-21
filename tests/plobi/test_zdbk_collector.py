@@ -242,6 +242,24 @@ class TestLandingIsThePool:
         assert pool_stats()["total"] == first["created"]
 
 
+class TestTheDailyRoundCanDriveIt:
+    """`sweep._collect_one` 怎么调这一条，就照那样钉一遍。
+
+    签名对不上不是偶发：`sweep` 传 `service=`，而池不需要它——收下不用比不接这个参数贵，
+    前者是一行读数，后者是每天一轮的红（`raised`）。
+    """
+
+    def test_sweep_drives_collect_with_the_service_kwarg(self, pool_db, tmp_path) -> None:
+        from plobi.collectors import sweep
+
+        service = AgendaService(tmp_path / "agenda.db")
+
+        row = sweep._collect_one("zdbk", make_collector(healthy_transport()), service=service)
+
+        assert row["ok"] is True, row["detail"]
+        assert row["state"] == "ready" and row["created"] > 0
+
+
 class TestRegisteredShape:
     def test_registered_as_a_website_with_all_bits_declared(self) -> None:
         spec = registry.spec("zdbk")
