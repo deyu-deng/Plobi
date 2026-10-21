@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
 import { useStore } from '@nanostores/react'
+import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
-import { $currentCwd, setActiveSessionId, setAwaitingResponse, setBusy, setCurrentBranch, setCurrentCwd, setFreshDraftReady, setMessages, setSelectedStoredSessionId } from '@/store/session'
-import { normalizeProfileKey, $activeGatewayProfile, $freshSessionRequest } from '@/store/profile'
+import { $activeGatewayProfile, $freshSessionRequest, normalizeProfileKey } from '@/store/profile'
 import { resolveNewSessionCwd } from '@/store/projects'
+import { $agentCwd, $currentCwd, setActiveSessionId, setAwaitingResponse, setBusy, setCurrentBranch, setCurrentCwd, setFreshDraftReady, setMessages, setSelectedStoredSessionId } from '@/store/session'
+
 import { forgetL1MainSession, restartsMouthInPlace } from '../../desktop-controller-utils'
 import type { ShellLevel } from '../../routes'
 
@@ -46,7 +47,15 @@ export function useConversationReset({
     selectedStoredSessionIdRef.current = null
     setMessages([])
     setFreshDraftReady(true)
-    setCurrentCwd(resolveNewSessionCwd())
+
+    // L2 作用域：这一屏的工作目录是那个 Agent 的绑定目录（`$agentCwd` 是权威），
+    // 不许被「新会话该从哪个目录起」再算一次——那一次会把右栏的文件树换成 L1
+    // 的默认目录（2026-10-21「不管进什么 Agent 目录都是 Aura」就是它 + 配置覆盖
+    // 一起造成的）。L1 才走 `resolveNewSessionCwd()`。
+    if (!$agentCwd.get()) {
+      setCurrentCwd(resolveNewSessionCwd())
+    }
+
     setCurrentBranch('')
   }, [activeSessionIdRef, busyRef, selectedStoredSessionIdRef])
 

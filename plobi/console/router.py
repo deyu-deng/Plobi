@@ -430,7 +430,28 @@ def _project_paths_from_body(raw: object) -> tuple[str, ...]:
     return tuple(items)
 
 
-def agent_row(entry: AgentEntry) -> dict:
+def _working_agent_names() -> set[str]:
+    """哪几个 Agent 现在手上真有活（一次查完，供 Agent 行渲染光条）。
+
+    失败一律当「没人干活」：这一格只是好看的指示器，不该因为它把左栏打红。
+    """
+    try:
+        from plobi_state import SessionDB
+
+        # `SessionDB` **不是**上下文管理器（没有 `__enter__`）——用 `with` 会抛
+        # TypeError，被这个 except 吞掉之后所有 Agent 都显示"没在干活"（今天
+        # 现核：`'SessionDB' object does not support the context manager protocol`）。
+        db = SessionDB(db_path=default_db_path(), read_only=True)
+        try:
+            return db.agents_with_live_session()
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("plobi console: working-agent probe failed: %s", exc)
+        return set()
+
+
+def agent_row(entry: AgentEntry, *, working: bool = False) -> dict:
     """``Agent`` in console/types.ts — id/name/status/model/todayCalls + profile.
 
     ``profile`` is the Plobi profile the desktop must switch onto before
@@ -486,6 +507,16 @@ def agent_row(entry: AgentEntry) -> dict:
         "disabledSkills": list(entry.disabled_skills),
         "disabledToolsets": list(entry.disabled_toolsets),
         "disabledMcpServers": list(entry.disabled_mcp_servers),
+        # 2026-10-21（用户「三个点里可以修改添加工作目录」）：工作目录随行透出。
+        # 以前它只在 overview 上（那一格是 S2 右栏的挂载点），于是"三个点"菜单
+        # 想显示/编辑它得再打一次 overview。清单主值在前，与 project_path 同源
+        # （`bound_paths()` 已经把「只有主值」的老条目归一成一元清单）。
+        "projectPath": entry.project_path,
+        "projectPaths": list(entry.bound_paths()),
+        # 2026-10-21：这个 Agent 现在是不是在干活（跨家：L1 视图下也看得见 L2）。
+        # 左栏据此在 Agent 行上转那条 `arc-border` 光条——用户原话「之前底座如果
+        # 某一个会话在工作，他的抽屉还会有一个光条围绕旋转。很好看」。
+        "working": working,
     }
     # Omit None values so the frontend receives absent keys (not JSON null),
     # matching the `model?: string` optional contract in types.ts.
@@ -510,7 +541,8 @@ def list_agents(
             if not include_archived
             else get_registry().entries()
         )
-    rows = [agent_row(entry) for entry in source if is_l2(entry)]
+    working = _working_agent_names()
+    rows = [agent_row(entry, working=entry.name in working) for entry in source if is_l2(entry)]
     rows.sort(key=lambda row: row["id"])
     return rows
 
@@ -534,7 +566,7 @@ def agent_overview(agent_id: str, *, db_path=None) -> Optional[dict]:
     totals = totals_for_agent(agent_id, db_path=db_path)
     session_ids = sessions_for_agent(agent_id)
     return {
-        "agent": agent_row(entry),
+        "agent": agent_row(entry, working=agent_id in _working_agent_names()),
         "sessionId": session_ids[0] if session_ids else "",
         "todayCostUsd": round(totals.cost_usd, 6),
         "todayTokens": totals.tokens,
@@ -1210,6 +1242,102 @@ async def create_agent_route(request: Request):
     if not isinstance(body, dict):
         return _error(400, "id is required")
     return await run_in_threadpool(create_agent, body)
+
+
+# --------------------------------------------------------------------------- #
+# PATCH /api/agents/:id — 改一条已有的 Agent（用户 10-21：「可以编辑更多信息，
+# 比如修改添加工作目录。重命名等等」）
+# --------------------------------------------------------------------------- #
+
+#: 这一格**只**改这些键。故意不复用 ``POST /api/agents``：那个端点是 upsert，
+#: 会按 body **全量重建**整条 ``AgentEntry``——没带上的 role / model / provider /
+#: source_event_id 都会被清成默认。改个显示名顺手把模型覆盖抹掉，是那种"看起来
+#: 能用、过两天才发现"的坏。所以编辑走一个窄口，只碰下面这几格。
+_AGENT_PATCH_KEYS = ("displayName", "description", "icon", "color", "projectPaths")
+
+
+def update_agent(agent_id: str, body: dict):
+    """Patch the editable fields of one Agent row; ``None`` = not registered."""
+    from dataclasses import replace
+
+    registry = get_registry()
+    entry = registry.get(agent_id)
+    if entry is None:
+        return None
+
+    unknown = [key for key in body if key not in _AGENT_PATCH_KEYS]
+    if unknown:
+        return _error(400, f"这一格不改 {unknown}；能改的是 {list(_AGENT_PATCH_KEYS)}")
+
+    changes: dict = {}
+    if "displayName" in body:
+        display = str(body.get("displayName") or "").strip()
+        if not display:
+            return _error(400, "显示名不能为空——那是左栏那一行的字。")
+        changes["display_name"] = display
+    if "description" in body:
+        changes["description"] = str(body.get("description") or "").strip()
+    if "icon" in body:
+        changes["icon"] = str(body.get("icon") or "").strip()
+    if "color" in body:
+        changes["color"] = str(body.get("color") or "").strip()
+    if "projectPaths" in body:
+        raw_paths = _project_paths_from_body(body.get("projectPaths"))
+        if not raw_paths:
+            # 空清单走不通：``registry.upsert`` 见"没有绑定"会按品类把默认目录
+            # 种回来（那是创建时的便利），于是"解绑"会变成"悄悄换回默认"。
+            # 与其让人以为删掉了，不如说清楚：要换就填新的那个。
+            return _error(400, "至少要留一个工作目录；要换就填新的那个。")
+        changes["project_paths"] = raw_paths
+        # 主文件夹语义不变（清单首个驱动 terminal.cwd 与右栏挂载）。
+        changes["project_path"] = raw_paths[0]
+
+    if not changes:
+        return {"ok": True, "data": agent_row(entry)}
+
+    try:
+        stored = registry.upsert(replace(entry, **changes))
+        registry.save()
+    except (RegistryError, OSError) as exc:
+        return _error(400, str(exc))
+
+    # 新绑的目录要真的存在（与创建同一条口径：Windows 形状的绑定不在这台机器
+    # 上建目录，记录照留）。
+    for path in changes.get("project_paths", ()):  # type: ignore[union-attr]
+        if _project_path_is_windows_shaped(path):
+            logger.warning(
+                "plobi console: not creating project path %s for %s — a Windows "
+                "binding cannot be a directory on this platform",
+                path,
+                agent_id,
+            )
+            continue
+        try:
+            Path(path).expanduser().mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "plobi console: bound folder %s for %s could not be created: %s",
+                path,
+                agent_id,
+                exc,
+            )
+
+    return {"ok": True, "data": agent_row(stored)}
+
+
+@router.patch("/agents/{agent_id}", name="update_agent")
+async def update_agent_route(agent_id: str, request: Request):
+    """PATCH /api/agents/:id — 显示名 / 一句话说明 / 图标 / 颜色 / 工作目录清单."""
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "请求体不是合法的 JSON")
+    if not isinstance(body, dict):
+        return _error(400, "请求体必须是一个对象")
+    result = await run_in_threadpool(update_agent, agent_id, body)
+    if result is None:
+        return _error(404, f"agent {agent_id!r} is not registered")
+    return result
 
 
 @router.post("/agents/{agent_id}/dissolve", name="dissolve_agent")

@@ -1375,6 +1375,23 @@ export interface Translations {
     agentMenuArchiveConfirmAction: string
     agentMenuArchived: string
     agentMenuArchiveFailed: string
+    agentMenuEdit: string
+    agentEditTitle: string
+    agentEditBody: string
+    agentEditNameLabel: string
+    agentEditAppearanceLabel: string
+    agentEditAppearanceClear: string
+    agentEditPreviewLabel: string
+    agentEditPathsLabel: string
+    agentEditPathsEmpty: string
+    agentEditPathPrimary: string
+    agentEditPathRemove: string
+    agentEditPathAdd: string
+    agentEditSave: string
+    agentEditSaving: string
+    agentEditCancel: string
+    agentEditSaved: string
+    agentEditFailed: string
     chatEmptyHint: string
     agentsLoading: string
     agentsLoadFailed: string

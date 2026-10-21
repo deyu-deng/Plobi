@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -93,9 +94,16 @@ def _roster_of(*names: str, archived: tuple[str, ...] = ()):
 
 @pytest.fixture()
 def db(CH, monkeypatch):
-    """把 channel 的 SessionDB 换成假的，并返回它（测试通过返回值拿调用记录）。"""
+    """把 channel 的 SessionDB 换成假的，并返回它（测试通过返回值拿调用记录）。
+
+    同时把 `wake_agent` 打桩成 no-op：2026-10-21 起 `say` 投递后会**叫醒接收方**
+    （后台起一轮）。真叫醒要拼子进程命令、读 profile 家、还可能真起一个进程——
+    投递行为本身不该被那件事绑架（名册里 `Nymo` 在这台机器上是真有家的）。
+    叫醒单独测（文件末尾那一节）。
+    """
     fake = _FakeSessionDB()
     monkeypatch.setattr(CH, "_session_db", lambda: fake)
+    monkeypatch.setattr(CH, "wake_agent", lambda *a, **k: (False, "测试里不叫醒"))
     return fake
 
 
@@ -306,3 +314,106 @@ def test_channel_available_follows_the_roster(CH):
         assert CH.check_channel_available() is True
     finally:
         CH.live_names = original
+
+
+# ─── 唤醒：投递之后让它真的开始干活（用户 10-21）──────────────────────────
+#
+# 「Plobi 如果发了一条信息给一个 L2 Agent。如果我不打开那个 Agent 的话。
+# 它不会自己干活……要我打开之后才会选择模型，才能继续干活」——say 以前只把
+# 消息写进会话就返回，那个 Agent 的进程根本不存在。这一节钉住「投递之后叫醒
+# 它」的三条护栏 + 那一条命令形状（必须 --resume 到刚投递的那个会话）。
+
+
+class _FakeProc:
+    pid = 4321
+
+
+def _wake_env(CH, tmp_path, monkeypatch, *, popen=None):
+    """把唤醒要碰的三样外部东西都指到 tmp / 打桩，返回记录 Popen 的列表。"""
+    monkeypatch.setattr(CH, "_wake_dir", lambda: tmp_path / "wake")
+    (tmp_path / "wake").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(CH, "_wake_log_path", lambda: tmp_path / "wake.log")
+
+    starts: list[dict] = []
+
+    def _fake_popen(argv, **kwargs):
+        if popen is not None:
+            return popen(argv, **kwargs)
+        starts.append({"argv": argv, **kwargs})
+        return _FakeProc()
+
+    monkeypatch.setattr(CH.subprocess, "Popen", _fake_popen)
+    return starts
+
+
+def test_wake_launches_a_background_round_resuming_the_delivered_session(CH, tmp_path, monkeypatch):
+    """命令必须 `--resume <刚投递的会话>`：另开一屏会把那条消息甩在身后。"""
+    monkeypatch.delenv("PLOBI_WAKE", raising=False)
+    monkeypatch.setattr(
+        CH.AA,
+        "build_child_command",
+        lambda entry, prompt, asked_by="l1": (
+            ["plobi", "-p", "nymo", "--cli", "--accept-hooks", "chat", "-q", prompt],
+            {},
+            "/work",
+        ),
+    )
+    starts = _wake_env(CH, tmp_path, monkeypatch)
+
+    ok, note = CH.wake_agent(type("E", (), {"name": "Nymo"})(), "sess-42", sender="Plobi")
+
+    assert ok is True and "4321" in note
+    assert len(starts) == 1
+    argv = starts[0]["argv"]
+    # --resume 在 -p 前面，带着刚投递的那个会话 id
+    assert argv.index("--resume") < argv.index("-p")
+    assert argv[argv.index("--resume") + 1] == "sess-42"
+    # 唤醒链标记：它这一轮再 say 时不许继续往下叫醒（防乒乓）
+    assert starts[0]["env"]["PLOBI_WAKE"] == "1"
+    assert starts[0]["env"]["PLOBI_ASKED_BY"] == "say:Plobi"
+
+
+def test_wake_does_not_stack_a_second_round_on_the_same_agent(CH, tmp_path, monkeypatch):
+    """同一个 Agent 已经有一轮在跑就跳过：两次 = 两份钱 + 两条打架的回答。"""
+    monkeypatch.delenv("PLOBI_WAKE", raising=False)
+    starts = _wake_env(CH, tmp_path, monkeypatch)
+    marker = tmp_path / "wake" / f"{CH._safe_slug('Nymo')}.json"
+    marker.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")  # 自己一定活着
+
+    ok, note = CH.wake_agent(type("E", (), {"name": "Nymo"})(), "sess-1", sender="Plobi")
+
+    assert ok is False
+    assert "已经在干" in note
+    assert starts == []
+
+
+def test_wake_never_continues_a_wake_chain(CH, tmp_path, monkeypatch):
+    """自己就是被叫醒起来的 ⇒ 它再 say 时不许叫醒下一跳（无限乒乓的入口）。"""
+    monkeypatch.setenv("PLOBI_WAKE", "1")
+    starts = _wake_env(CH, tmp_path, monkeypatch)
+
+    ok, note = CH.wake_agent(type("E", (), {"name": "Nymo"})(), "sess-1", sender="Aura")
+
+    assert ok is False
+    assert "不再往下叫醒" in note
+    assert starts == []
+
+
+def test_wake_failure_is_reported_not_raised(CH, tmp_path, monkeypatch):
+    """起不来也不许把 L1 的回合炸掉：话已经送到了，照实说"没叫醒"。"""
+    monkeypatch.delenv("PLOBI_WAKE", raising=False)
+    monkeypatch.setattr(
+        CH.AA,
+        "build_child_command",
+        lambda entry, prompt, asked_by="l1": (["plobi"], {}, None),
+    )
+
+    def _boom(argv, **kwargs):
+        raise OSError("no such binary")
+
+    _wake_env(CH, tmp_path, monkeypatch, popen=_boom)
+
+    ok, note = CH.wake_agent(type("E", (), {"name": "Nymo"})(), "sess-1", sender="Plobi")
+
+    assert ok is False
+    assert "叫不醒" in note

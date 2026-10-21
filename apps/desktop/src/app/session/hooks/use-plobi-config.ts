@@ -1,9 +1,10 @@
 import { type MutableRefObject, useCallback, useState } from 'react'
 
-import { getPlobiConfig, getPlobiConfigDefaults } from '@/plobi'
 import { BUILTIN_PERSONALITIES, normalizePersonalityValue, personalityNamesFromConfig } from '@/lib/chat-runtime'
 import { normalize } from '@/lib/text'
+import { getPlobiConfig, getPlobiConfigDefaults } from '@/plobi'
 import {
+  $agentCwd,
   $currentCwd,
   setAvailablePersonalities,
   setCurrentCwd,
@@ -74,7 +75,16 @@ export function usePlobiConfig({ activeSessionIdRef, refreshProjectBranch }: Plo
         // Configured terminal.cwd beats a stale remembered workspace cwd
         // (#38855) — but never yank the workspace out from under an active
         // session; those keep their own cwd until the user detaches.
-        setCurrentCwd(prev => (activeSessionIdRef.current ? prev : cwd))
+        //
+        // `$agentCwd` 非空 = 当前这一屏属于某个 L2：它的绑定目录是唯一权威。
+        // 以前这里只看「有没有活跃会话」，于是切 Agent 时（概览刚把 cwd 设成
+        // 那个 Agent 的目录、而空草稿还没有 session id）config 立刻把 cwd 打回
+        // `terminal.cwd`（这台机器上是 `D:\projects\Aura`）——**每个 Agent 的
+        // 右栏都显示 Aura 的目录**就是这一行造成的（2026-10-21 用户复报）。
+        if (!$agentCwd.get()) {
+          setCurrentCwd(prev => (activeSessionIdRef.current ? prev : cwd))
+        }
+
         void refreshProjectBranch($currentCwd.get() || cwd)
       }
 

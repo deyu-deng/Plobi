@@ -139,9 +139,38 @@ export async function dissolveAgent(agentId: string): Promise<Agent> {
   return unwrapEnvelope<Agent>(payload)
 }
 
+/**
+ * 改一条**已有的** Agent（用户 10-21：「可以编辑更多信息，比如修改添加工作目录。
+ * 重命名等等」）。
+ *
+ * 走 `PATCH /api/agents/:id` 这个窄口，**不用** `POST /api/agents`：那个端点是
+ * upsert，按 body 全量重建整条记录——没带上的 role/model/provider 会被清成默认。
+ * 这里只送用户真改过的那几格。
+ */
+export async function updateAgent(
+  agentId: string,
+  patch: {
+    color?: string
+    description?: string
+    displayName?: string
+    icon?: string
+    /** 完整清单，主文件夹在前（后端取首个驱动 terminal.cwd 与右栏挂载）。 */
+    projectPaths?: string[]
+  }
+): Promise<Agent> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    body: patch,
+    method: 'PATCH',
+    path: `/api/agents/${encodeURIComponent(agentId)}`
+  })
+
+  return unwrapEnvelope<Agent>(payload)
+}
+
 /** 全局真源 + per-agent 开关（2026-10-19 用户裁定）：只写「这个 Agent 关掉了
  *  哪些」的三份黑名单（名册行偏好）。传空对象 = 只读当前偏好。资产名单不归
- *  这里管——全量列表各自从 /api/skills、/api/tools/toolsets、mcp config 拉。 */export async function putAgentToolPrefs(
+ *  这里管——全量列表各自从 /api/skills、/api/tools/toolsets、mcp config 拉。 */
+export async function putAgentToolPrefs(
   agentId: string,
   prefs: {
     disabledMcpServers?: string[]

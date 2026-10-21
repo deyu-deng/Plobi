@@ -1,5 +1,6 @@
-import type { AgentCreateRequest, ApiEnvelope } from '../../console/types'
 import { slug } from '@/lib/sanitize'
+
+import type { AgentCreateRequest, ApiEnvelope } from '../../console/types'
 
 import { AGENT_CATEGORY_PREFERENCE, orderedCategories } from './agent-groups'
 
@@ -63,15 +64,18 @@ export function buildCreateAgentBody(
   appearance?: { color?: null | string; icon?: null | string }
 ): AgentCreateRequest {
   const display = name.trim()
+
   const body: AgentCreateRequest = {
     id: agentIdFromName(display),
     name: display,
     role: 'l2_project',
     category
   }
+
   // 兼容单字符串入参（旧调用形状）；清单与单值都走同一条归一：trim、去空、去重保序。
   const raw: readonly (null | string)[] =
     typeof projectPaths === 'string' ? [projectPaths] : (projectPaths ?? [])
+
   const paths: string[] = []
 
   for (const item of raw) {
@@ -115,6 +119,7 @@ export function buildCreateAgentBody(
 export function categoryNeedsProjectPath(category: AgentCategory): boolean {
   return category === 'courses' || category === 'projects' || category === 'research'
 }
+
 /**
  * The `events` category cannot be created from this dialog yet — it needs a
  * `source_event_id` from the schedule. The dialog disables submit and shows a
@@ -179,3 +184,30 @@ export function createAgentErrorMessage(cause: unknown): string {
 
   return raw || 'console API request failed'
 }
+
+// WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色。我觉得很可爱」）：
+// 图标/颜色预设。图标名走 Codicon（与左栏其余图标同一套字库）；颜色沿用
+// profile-color 的 hsl 口味（饱和 68 / 亮 58 一带），和侧栏既有色板同族。
+//
+// 2026-10-21：从 `sidebar/index.tsx` 搬到这儿——「三个点 → 编辑」那个对话框也要
+// 用同一组预设，两处各写一份迟早会漂。左栏渲染就是按这两个值来的
+// （`icon` 画 Codicon、`color` 染它 / 染状态点）。
+export const AGENT_ICON_CHOICES = [
+  'robot',
+  'organization',
+  'account',
+  'comment',
+  'files',
+  'symbol-misc',
+  'edit'
+] as const
+
+export const AGENT_COLOR_CHOICES = [
+  'hsl(210 68% 58%)',
+  'hsl(150 62% 45%)',
+  'hsl(45 85% 55%)',
+  'hsl(20 80% 58%)',
+  'hsl(350 70% 60%)',
+  'hsl(280 60% 62%)',
+  'hsl(190 65% 48%)'
+] as const

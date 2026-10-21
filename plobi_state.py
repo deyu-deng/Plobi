@@ -5348,6 +5348,33 @@ class SessionDB:
             )
             return cursor.fetchone() is not None
 
+    def agents_with_live_session(self, within_seconds: float = 300.0) -> set[str]:
+        """现在**手上真有活**的那些 Agent 名字（跨家，一次查完）。
+
+        用户 10-21：「之前底座如果某一个会话在工作，他的抽屉还会有一个光条围绕
+        旋转。很好看。」要做到这件事，左栏得知道**别的家**里哪个 Agent 正在跑——
+        而 `$workingSessionIds`（桌面那个 atom）只装当前绑定的那一个 gateway 的
+        会话，L1 视图下根本看不见 L2。
+
+        判据：这个 agent 名下有一条**没结束**的会话，且它最近一条消息落在
+        ``within_seconds`` 之内。看消息时间而不是 ``started_at``——一段长对话
+        的 `started_at` 可能是两小时前，那不代表它现在还在干。
+        """
+        cutoff = time.time() - max(1.0, float(within_seconds))
+        sql = (
+            "SELECT s.agent_id FROM sessions s "
+            "JOIN messages m ON m.session_id = s.id "
+            "WHERE s.agent_id != '' AND s.archived = 0 AND s.ended_at IS NULL "
+            "AND m.timestamp >= ? "
+            "GROUP BY s.agent_id"
+        )
+        try:
+            with self._lock:
+                rows = self._conn.execute(sql, (cutoff,)).fetchall()
+        except sqlite3.Error:
+            return set()
+        return {str(row[0]) for row in rows if row and row[0]}
+
     def latest_conversational_session_for_agent(self, agent_id: str) -> Optional[str]:
         """这个 Agent「打开就该看到」的那个会话 id；没有可用的 ⇒ None。
 

@@ -17,6 +17,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useI18n } from '@/i18n'
 import { notify, notifyError } from '@/store/notifications'
 
+import { AgentEditDialog } from './agent-edit-dialog'
+
 /**
  * 左栏每个 Agent 行旁边的「三个点」——`WP-AGENT-MENU`（10-21 接手那一格）。
  *
@@ -40,6 +42,7 @@ export interface AgentActionsMenuProps {
 export function AgentActionsMenu({ agent, onNavigate }: AgentActionsMenuProps) {
   const { t } = useI18n()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const label = agent.name || agent.id
 
@@ -97,6 +100,16 @@ export function AgentActionsMenu({ agent, onNavigate }: AgentActionsMenuProps) {
           >
             {t.console.agentMenuOpen}
           </DropdownMenuItem>
+          {/* 用户 10-21：「可以编辑更多信息，比如修改添加工作目录。重命名等等」。
+              能改的是显示名 / 图标颜色 / 工作目录，`id` 与家不动（改了会把
+              会话历史孤儿化）。 */}
+          <DropdownMenuItem
+            onSelect={() => {
+              setEditOpen(true)
+            }}
+          >
+            {t.console.agentMenuEdit}
+          </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
               setConfirmOpen(true)
@@ -107,6 +120,8 @@ export function AgentActionsMenu({ agent, onNavigate }: AgentActionsMenuProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <AgentEditDialog agent={agent} onOpenChange={setEditOpen} open={editOpen} />
 
       <Dialog onOpenChange={setConfirmOpen} open={confirmOpen}>
         <DialogContent>
