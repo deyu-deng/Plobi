@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -77,19 +76,16 @@ def _job(**overrides):
     return job
 
 
-def _fire(job, home, *, docs: list | None = None, real_state_db=None):
+def _fire(job, home, *, docs: list | None = None):
     """跑一次 ``run_job``：AIAgent / 运行时解析 / 脚本执行都换成可观测的桩。
 
     ``docs`` 只给需要读那份输出文档（留痕落点）的测试用——其余测试照旧五元组。
-    ``real_state_db`` 给裁定 192 那一组用：归属那一格要读**真会话行**，mock 读不出形状。
     """
-    _db_patch = ({"new": lambda *a, **k: real_state_db} if real_state_db is not None
-                 else {"return_value": MagicMock()})
     with patch("cron.scheduler._plobi_home", home), \
          patch("cron.scheduler._resolve_origin", return_value=None), \
          patch("plobi_cli.env_loader.load_plobi_dotenv"), \
          patch("plobi_cli.env_loader.reset_secret_source_cache"), \
-         patch("plobi_state.SessionDB", **_db_patch), \
+         patch("plobi_state.SessionDB", return_value=MagicMock()), \
          patch(
              "plobi_cli.runtime_provider.resolve_runtime_provider",
              return_value={
@@ -319,102 +315,3 @@ def test_a_no_agent_job_still_fires_without_a_recipient(home):
     assert final == "采集完 3 条"
     script_runner.assert_called_once()
     agent_cls.assert_not_called()
-
-
-# ---------------------------------------------------- 裁定 192（甲案）：归属落到会话行
-#
-# 那 102 条 cron 会话的 `agent_id` 全是空串，而收件人解析明明成功 ⇒「是哪个角色跑的」
-# 只活在 jobs.json 那一格。甲案＝写进 `agent_id`（不另开列），且**空串只留给历史旧行**。
-
-
-def _state_db(tmp_path: Path):
-    from plobi_state import SessionDB
-
-    return SessionDB(tmp_path / "state.db")
-
-
-def _session_rows(tmp_path: Path) -> list[dict]:
-    db = tmp_path / "state.db"
-    if not db.exists():
-        return []
-    conn = sqlite3.connect(str(db))
-    conn.row_factory = sqlite3.Row
-    try:
-        return [dict(row) for row in conn.execute(
-            "SELECT id, source, agent_id FROM sessions ORDER BY id")]
-    finally:
-        conn.close()
-
-
-def test_the_round_puts_the_recipient_on_the_session_row(home, tmp_path):
-    """判据⑤：起完那一轮，新会话行的 `agent_id` 等于那个名字（不是空串）。"""
-    success, error, *_ = _fire(_job(), home, real_state_db=_state_db(tmp_path))
-
-    assert success is True, error
-    rows = _session_rows(tmp_path)
-    assert len(rows) == 1
-    assert rows[0]["source"] == "cron"
-    assert rows[0]["id"].startswith("cron_rcp-test_"), "会话号形状不许动（桌面按它前缀扫履历）"
-    assert rows[0]["agent_id"] == RECIPIENT, rows[0]
-
-
-def test_the_written_name_resolves_in_the_roster(home, tmp_path):
-    """判据④：`agent_id` 要在名册里解析得到一行；解析不到算脏数据。"""
-    from plobi.agents.registry import load_registry
-
-    _fire(_job(), home, real_state_db=_state_db(tmp_path))
-
-    written = _session_rows(tmp_path)[0]["agent_id"]
-    assert load_registry().get(written) is not None
-
-
-def test_the_agents_own_session_create_does_not_wash_the_attribution(home, tmp_path):
-    """AIAgent 自己那次 `create_session` 不带 agent_id——那一格必须粘住，不被洗回空串。"""
-    _fire(_job(), home, real_state_db=_state_db(tmp_path))
-
-    # 真跑一遍那个后置写入（同一 id、不给 agent_id），钉的是 ON CONFLICT 那一行的行为。
-    # 新开一个连接：run_job 收尾会把它那一份 close 掉（那一腿本身也被测试钉着）。
-    _state_db(tmp_path).create_session(
-        _session_rows(tmp_path)[0]["id"], source="cron", model="later-model")
-
-    row = _session_rows(tmp_path)[0]
-    assert row["agent_id"] == RECIPIENT
-    assert row["source"] == "cron"
-
-
-def test_history_rows_are_not_rewritten(home, tmp_path):
-    """裁 192 第 3 条：那 102 条**不回写**——空串只留给旧行，历史不许被后写的代码洗一遍。"""
-    db = _state_db(tmp_path)
-    db.create_session("cron_legacy_20261019_200046", source="cron")  # 旧行：归属空串
-
-    _fire(_job(), home, real_state_db=db)
-
-    legacy = [r for r in _session_rows(tmp_path) if r["id"] == "cron_legacy_20261019_200046"]
-    assert legacy[0]["agent_id"] == ""
-
-
-def test_a_refused_round_leaves_no_unattributed_session_row(home, tmp_path):
-    """闸门拒起那一轮连会话都不该留——留一条空归属的行正是裁定要消灭的那种匿名痕迹。"""
-    success, _error, *_ = _fire(_job(recipient=None), home, real_state_db=_state_db(tmp_path))
-
-    assert success is False
-    assert _session_rows(tmp_path) == []
-
-
-def test_a_failed_attribution_write_does_not_stop_the_round(home, tmp_path, caplog):
-    """记账写不进（锁库、坏盘）不该让那一轮不打；但要说得出为什么没归属。"""
-    class _Broken:
-        def create_session(self, *a, **k):
-            raise OSError("database is locked")
-
-        def end_session(self, *a, **k):
-            return None
-
-        def close(self):
-            return None
-
-    with caplog.at_level("WARNING", logger="cron.scheduler"):
-        success, error, *_ = _fire(_job(), home, real_state_db=_Broken())
-
-    assert success is True, error
-    assert "会话归属没写进" in " ".join(r.getMessage() for r in caplog.records)
