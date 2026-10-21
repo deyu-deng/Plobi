@@ -1,8 +1,8 @@
-"""WP-BE-13 — §8.2 narrow hard route (ARCH-RULINGS 2026-09-08 裁定 21.1).
+"""WP-BE-13 — §8.2 narrow hard route (ARCH-RULINGS 2026-09-08 裁定 21.1, 裁定 183 换嘴).
 
-Two frozen L1 utterances must reach ``plobi_secretary_ask``; everything else
-(including any other sentence that merely contains 明天) must reach the model
-untouched.
+Two frozen L1 utterances must be handed to the agenda secretary via ``ask``;
+everything else (including any other sentence that merely contains 明天) must
+reach the model untouched.
 
 Run::
 
@@ -55,13 +55,13 @@ def _load_plugin():
 
 @pytest.fixture()
 def hard_route():
-    """The pure-policy module, with the master-mode gate forced on."""
+    """The pure-policy module, with the roster gate forced on."""
     _load_plugin()
     module = importlib.import_module(f"{_PLUGIN_NAME}.hard_route")
-    original = module._master_mode_enabled
-    module._master_mode_enabled = lambda: True
+    original = module._channel_available
+    module._channel_available = lambda: True
     yield module
-    module._master_mode_enabled = original
+    module._channel_available = original
 
 
 # --------------------------------------------------------------------------
@@ -134,12 +134,13 @@ def test_normalize_strips_only_one_trailing_question_mark(hard_route):
 # --------------------------------------------------------------------------
 
 
-def test_rewrite_pins_the_tool_and_keeps_the_original_words(hard_route):
+def test_rewrite_pins_the_mouth_and_keeps_the_original_words(hard_route):
     text = hard_route.build_rewrite("明天的日常安排是什么？", "refresh_agenda")
 
-    assert "plobi_secretary_ask" in text
-    assert 'intent="refresh_agenda"' in text
-    assert 'user_text="明天的日常安排是什么？"' in text
+    # 裁定 183 之后只钉动作不钉刀名：这一句必须经 ask 原样交给日程秘书
+    assert "调用工具 ask" in text
+    assert "明天的日常安排是什么？" in text
+    assert "parts" in text
     # Anti-fabrication clause is part of the forced instruction.
     assert "禁止编造" in text
     assert "chatlog" in text
@@ -174,8 +175,8 @@ def test_hook_is_a_noop_for_a_third_sentence(hard_route):
     assert hard_route.on_pre_prompt_submit(text="帮我看看这个 bug", session_id="s1") is None
 
 
-def test_hook_is_a_noop_when_the_secretary_tool_is_not_served(hard_route):
-    hard_route._master_mode_enabled = lambda: False
+def test_hook_is_a_noop_when_the_mouths_are_not_served(hard_route):
+    hard_route._channel_available = lambda: False
 
     assert hard_route.on_pre_prompt_submit(text="明天的日常安排是什么", session_id="s1") is None
 
