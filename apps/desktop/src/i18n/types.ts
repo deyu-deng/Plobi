@@ -1375,6 +1375,7 @@ export interface Translations {
     agentMenuArchiveConfirmAction: string
     agentMenuArchived: string
     agentMenuArchiveFailed: string
+    chatEmptyHint: string
     agentsLoading: string
     agentsLoadFailed: string
     agentsEmptyTitle: string

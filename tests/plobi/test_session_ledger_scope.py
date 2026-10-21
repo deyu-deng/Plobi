@@ -392,3 +392,33 @@ def test_profiles_sessions_all_mode_tags_each_row_by_its_agent(mixed_ledger):
     assert by_id["s-l1"]["is_default_profile"] is True
     assert result["profile_totals"]["l2-aura"] == 2
     assert result["profile_totals"]["default"] == 1
+
+
+def test_l1_scope_does_not_dress_agent_sessions_as_l1(mixed_ledger):
+    """L1 作用域也要按归属打标签——否则 L1 的旁路清理会把 Agent 的对话归档掉。
+
+    2026-10-21 现场：`get_profiles_sessions(profile="default")` 曾是「整页都打
+    `profile_name`」，于是 Agent 的会话在 L1 眼里也是 `default`；桌面的
+    `collectL1BypassSessionIds` 只认这个标签，就把它们当「L1 旁路会话」扫进了
+    归档（真库里 `chan_…` 14 条消息、archived=1 就是它写的）。
+    """
+    import plobi_cli.web_server as ws
+
+    db = SessionDB(db_path=mixed_ledger / "state.db")
+    try:
+        db.create_session("s-l1-main", source="desktop")
+        db.append_message("s-l1-main", role="user", content="L1 自己的话")
+        db.create_session("s-l1-bypass", source="cli")
+        db.append_message("s-l1-bypass", role="user", content="L1 的旁路会话")
+    finally:
+        db.close()
+
+    result = ws.get_profiles_sessions(profile="default", min_messages=1, limit=50)
+    by_id = {s["id"]: s for s in result["sessions"]}
+
+    # L1 自己的两行 = default（旁路清理该看见它们）
+    assert by_id["s-l1-main"]["profile"] == "default"
+    assert by_id["s-l1-bypass"]["profile"] == "default"
+    # Agent 的行必须带它自己的家名（旁路清理据此放过它）
+    assert by_id["s-chat"]["profile"] == "l2-aura"
+    assert by_id["s-chat"]["is_default_profile"] is False

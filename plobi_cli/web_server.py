@@ -4486,13 +4486,15 @@ def get_profiles_sessions(
         home_of_agent = _agent_home_names()
 
         def _tag(s: dict) -> None:
+            # **永远按归属打**（2026-10-21 现核）：这一格曾经在「具体作用域」下
+            # 把整页都打上 `profile_name` —— L1 作用域因此把 Agent 的会话也标成
+            # `default`，而桌面的 L1 旁路清理（`collectL1BypassSessionIds`）只按
+            # 这个标签认「是不是我这一家的旁路会话」⇒ **Agent 的对话被当成 L1
+            # 旁路顺手归档了**（库里有实例：`chan_…` 14 条消息、archived=1）。
+            # 按归属打就对了：L1 行（agent_id 空串）= default，Agent 行 = 它的家名。
             owner = str(s.get("agent_id") or "").strip()
-            if profile_name:
-                # 具体作用域：整页都是那一个 Agent 的行（圈定过的）。
-                s["profile"] = profile_name
-            else:
-                # 'all'：按归属 Agent 打家名；L1 行（agent_id 空串）= default。
-                s["profile"] = home_of_agent.get(owner, "default")
+            tag = home_of_agent.get(owner, "") if owner else ""
+            s["profile"] = tag or (profile_name or "default")
             s["is_default_profile"] = not owner
             s["is_active"] = (
                 s.get("ended_at") is None

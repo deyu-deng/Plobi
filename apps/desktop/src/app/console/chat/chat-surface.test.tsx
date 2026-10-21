@@ -8,9 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/assistant-ui/thread', () => ({ Thread: () => <div data-testid="thread" /> }))
 
+import { setGatewayState } from '@/store/session'
+
 import { ChatSurface } from './chat-surface'
 import { agentScope, L1_SCOPE } from './scope'
-import { setGatewayState } from '@/store/session'
 
 // The full ChatBar's ComposerStatusStack calls useNavigate(), so the surface
 // must render inside a Router.
@@ -80,6 +81,7 @@ describe('ChatSurface (spec §3.6: one conversation component)', () => {
         <ChatSurface modelMenuContent={<span>m1</span>} scope={L1_SCOPE} />
       </MemoryRouter>
     )
+
     const thread = screen.getByTestId('thread')
 
     rerender(
@@ -141,5 +143,74 @@ describe('spec §3.6 single-implementation guard', () => {
 
     expect(owners).toHaveLength(1)
     expect(owners[0]?.endsWith('chat-surface.tsx')).toBe(true)
+  })
+})
+
+/**
+ * 2026-10-21 用户反馈：「切换 Agent 中间没有动画过渡态」「刷新后再进日程秘书
+ * 什么东西都没有了」。这一面（ChatSurface）才是 Agent 视图那一面——
+ * 加载态、空态都补在这里。
+ */
+describe('ChatSurface — 切换时的加载态与空态（WP-AGENT-RAIL-LIVE 续）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setGatewayState('open')
+  })
+
+  afterEach(() => {
+    cleanup()
+    setGatewayState('idle')
+  })
+
+  it('进入中挂出过渡节点（带 Agent 名与转圈）', async () => {
+    const { $agentEnter } = await import('@/app/chat/agent-enter-store')
+    const { beginEntering } = await import('@/app/chat/agent-enter')
+
+    $agentEnter.set(beginEntering('日程秘书'))
+
+    try {
+      renderSurface(<ChatSurface scope={agentScope('agenda')} />)
+
+      const overlay = screen.getByTestId('chat-swap-overlay')
+      // 可见性由 opacity 控制（aria-hidden 只在失败态才翻成 false）——
+      // 钉的是「进入中它就在场上，并且念的是这个 Agent 的名字」。
+      expect(overlay.className).toContain('opacity-100')
+      expect(overlay.textContent).toContain('日程秘书')
+    } finally {
+      $agentEnter.set({ detail: '', label: null, reasonKey: null, status: 'idle' })
+    }
+  })
+
+  it('空草稿要说话，不许一片纯白', async () => {
+    const { setConsoleAgents } = await import('@/app/console/store/agents')
+
+    setConsoleAgents([
+      { category: 'butler', id: 'agenda', name: '日程秘书', profile: 'l2-agenda', status: 'idle' } as never
+    ])
+
+    renderSurface(<ChatSurface scope={agentScope('agenda')} />)
+
+    const empty = screen.getByTestId('chat-surface-empty')
+    // 名字在这里（locale 无关）；提示那句跟着当前语言走（测试环境是 en），
+    // 所以只钉「除了名字之外还有一段提示」，不把它钉成某一种译文。
+    expect(empty.textContent).toContain('日程秘书')
+    expect(empty.querySelectorAll('p').length).toBe(2)
+  })
+
+  it('有消息时不显示空态', async () => {
+    const { setMessages } = await import('@/store/session')
+
+    setMessages([
+      // ChatMessage 的形状是 id/role/**parts**（不是 content）——喂错形状会在
+      // toBranchableMessageRepository 里炸，测到的就不是空态那件事了。
+      { id: 'm1', parts: [{ text: '你好', type: 'text' }], role: 'user' } as never
+    ])
+
+    try {
+      renderSurface(<ChatSurface scope={agentScope('agenda')} />)
+      expect(screen.queryByTestId('chat-surface-empty')).toBeNull()
+    } finally {
+      setMessages([])
+    }
   })
 })
