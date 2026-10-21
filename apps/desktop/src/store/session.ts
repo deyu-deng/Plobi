@@ -304,6 +304,51 @@ export const setCurrentCwd = (next: Updater<string>) => {
   persistString(workspaceCwdKey(), $currentCwd.get().trim() || null)
 }
 
+/**
+ * The folder the **currently open Agent** is bound to, or `''` when we are in
+ * L1 / a bare chat.
+ *
+ * 为什么要有这一个 atom（2026-10-21 用户报「不管进什么 Agent，右边的目录都是
+ * Aura 的」）：`$currentCwd` 一直是**一份**全局状态，三种东西轮流往里写——
+ * (a) `config.yaml` 的 `terminal.cwd`（L1 的默认工作目录）、(b) 上次记住的目录
+ * （`setCurrentCwd` 每次都写 localStorage）、(c) 概览里那个 Agent 的绑定目录。
+ * 结果是：进 L2 时 cwd 刚被设成 Agent 的目录，`refreshPlobiConfig`（切 profile
+ * 会触发）见「当前没有活跃会话」就把它打回 `terminal.cwd` —— 而那个值在这台机器
+ * 上正是 `D:\projects\Aura`，于是**每个 Agent 的右栏都长着 Aura 的目录**。
+ *
+ * 现在的作用域模型：进了 L2，`$agentCwd` 非空 ⇒ 它是这一屏的唯一权威，
+ * L1 那两路（config / remembered）都不许再覆盖它，而且 `setAgentCwd` **不写**
+ * localStorage（记住的是 L1 的工作目录，不该被某个 Agent 的目录顶掉）。
+ * 回到 L1 时 `releaseAgentCwd()` 抹掉它，cwd 回到 L1 该有的值。
+ */
+export const $agentCwd = atom('')
+
+/** Bind the workspace to an Agent. Empty string = this Agent has no folder. */
+export const setAgentCwd = (next: Updater<string>) => {
+  updateAtom($agentCwd, () => {
+    const value = typeof next === 'function' ? next($agentCwd.get()) : next
+
+    return (value ?? '').trim()
+  })
+  updateAtom($currentCwd, () => $agentCwd.get())
+}
+
+/**
+ * Leave the Agent scope: drop the binding and restore the L1 workspace.
+ *
+ * 只还原到「L1 该有的那个目录」——remembered 优先、其次配置的默认项目目录；
+ * 都没有就留空（裸聊，不继承上一个 Agent 的目录）。
+ */
+export const releaseAgentCwd = () => {
+  if (!$agentCwd.get()) {
+    return
+  }
+
+  setAgentCwd('')
+  const restored = getRememberedWorkspaceCwd() || getConfiguredDefaultProjectDir()
+  updateAtom($currentCwd, () => restored)
+}
+
 export const workspaceCwdForNewSession = (): string => {
   if ($connection.get()?.mode === 'remote') {
     return getRememberedWorkspaceCwd()
@@ -330,6 +375,6 @@ export const setContextSuggestions = (next: Updater<ContextSuggestion[]>) => upd
 export const setModelPickerOpen = (next: Updater<boolean>) => updateAtom($modelPickerOpen, next)
 export const setSessionPickerOpen = (next: Updater<boolean>) => updateAtom($sessionPickerOpen, next)
 
-export * from './session-ids'
 export * from './composer-persistence'
+export * from './session-ids'
 export * from './session-watchdog'

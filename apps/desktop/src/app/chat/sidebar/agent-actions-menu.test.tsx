@@ -11,6 +11,8 @@ import { AgentActionsMenu } from './agent-actions-menu'
 // 点头，且失败要出声。
 
 const dissolveAgent = vi.fn(async () => ({ id: 'aura' }) as never)
+const updateAgent = vi.fn(async () => ({ id: 'aura' }) as never)
+const pickProjectFolder = vi.fn(async (): Promise<null | string> => null)
 const refreshConsoleAgents = vi.fn(async () => {})
 const notify = vi.fn()
 const notifyError = vi.fn()
@@ -18,7 +20,12 @@ const navigate = vi.fn()
 const writeClipboardText = vi.fn(async (_text: string) => {})
 
 vi.mock('@/app/console/api', () => ({
-  dissolveAgent: (...args: unknown[]) => dissolveAgent(...(args as []))
+  dissolveAgent: (...args: unknown[]) => dissolveAgent(...(args as [])),
+  updateAgent: (...args: unknown[]) => updateAgent(...(args as []))
+}))
+
+vi.mock('@/store/projects', () => ({
+  pickProjectFolder: () => pickProjectFolder()
 }))
 
 vi.mock('@/app/console/store/agents', () => ({
@@ -55,7 +62,24 @@ vi.mock('@/i18n', () => ({
         agentMenuArchiveCancel: '取消',
         agentMenuArchiveConfirmAction: '归档',
         agentMenuArchived: 'Agent 已归档。',
-        agentMenuArchiveFailed: '这个 Agent 没能归档：'
+        agentMenuArchiveFailed: '这个 Agent 没能归档：',
+        agentMenuEdit: '编辑这个 Agent…',
+        agentEditTitle: '编辑 Agent',
+        agentEditBody: '改的是 {name} 的名字、样子和文件夹。',
+        agentEditNameLabel: '左栏里叫它什么',
+        agentEditAppearanceLabel: '图标与颜色',
+        agentEditAppearanceClear: '清掉图标和颜色',
+        agentEditPreviewLabel: '左栏效果',
+        agentEditPathsLabel: '工作目录',
+        agentEditPathsEmpty: '还没绑文件夹。',
+        agentEditPathPrimary: '主目录',
+        agentEditPathRemove: '移除这个目录',
+        agentEditPathAdd: '添加文件夹',
+        agentEditSave: '保存',
+        agentEditSaving: '正在保存…',
+        agentEditCancel: '取消',
+        agentEditSaved: 'Agent 已更新。',
+        agentEditFailed: '这个 Agent 没能更新：'
       }
     }
   })
@@ -72,6 +96,8 @@ const agent: Agent = {
 afterEach(() => {
   cleanup()
   dissolveAgent.mockClear()
+  updateAgent.mockClear()
+  pickProjectFolder.mockClear()
   refreshConsoleAgents.mockClear()
   notify.mockClear()
   notifyError.mockClear()
@@ -97,6 +123,8 @@ describe('AgentActionsMenu', () => {
 
     expect(await screen.findByRole('menuitem', { name: '打开对话' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '复制 ID' })).toBeTruthy()
+    // 2026-10-21：用户要「可以编辑更多信息，比如修改添加工作目录。重命名等等」
+    expect(screen.getByRole('menuitem', { name: '编辑这个 Agent…' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '归档这个 Agent' })).toBeTruthy()
     // profile 那个概念已退役：菜单里不许再冒出它。
     expect(screen.queryByText(/profile/i)).toBeNull()
@@ -121,6 +149,43 @@ describe('AgentActionsMenu', () => {
     })
     fireEvent.click(await screen.findByRole('menuitem', { name: '复制 ID' }))
     expect(writeClipboardText).toHaveBeenCalledWith('aura')
+  })
+
+  it('edits the rail name and the working folders through the narrow PATCH', async () => {
+    pickProjectFolder.mockResolvedValueOnce('/work/shared')
+    render(
+      <AgentActionsMenu
+        agent={{ ...agent, icon: 'robot', projectPaths: ['/work/aura'] } as Agent}
+        onNavigate={() => {}}
+      />
+    )
+
+    fireEvent.pointerDown(screen.getByLabelText('Aura 的更多操作'), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse'
+    })
+    fireEvent.click(await screen.findByRole('menuitem', { name: '编辑这个 Agent…' }))
+
+    // 回填现状（显示名 + 已有目录）
+    const nameInput = (await screen.findByDisplayValue('Aura')) as HTMLInputElement
+    expect(nameInput).toBeTruthy()
+    expect(screen.getByText('/work/aura')).toBeTruthy()
+
+    fireEvent.change(nameInput, { target: { value: '欧拉' } })
+    fireEvent.click(screen.getByLabelText('添加文件夹'))
+    await waitFor(() => expect(pickProjectFolder).toHaveBeenCalled())
+    fireEvent.click(screen.getByText('保存'))
+
+    await waitFor(() =>
+      expect(updateAgent).toHaveBeenCalledWith('aura', {
+        color: '',
+        displayName: '欧拉',
+        icon: 'robot',
+        projectPaths: ['/work/aura', '/work/shared']
+      })
+    )
+    expect(notify).toHaveBeenCalled()
   })
 
   it('asks before archiving, then archives and refreshes the roster', async () => {

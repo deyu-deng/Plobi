@@ -5,7 +5,6 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 
 import { beginEntering, endEntering, enterFailure } from '@/app/chat/agent-enter'
 import { $agentEnter, settleAgentEnter } from '@/app/chat/agent-enter-store'
-import { PanelList, PanelListRow, PanelSectionLabel } from '@/app/overlays/panel'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -22,24 +21,22 @@ import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
-import { listAllProfileSessions, setSessionArchived } from '../plobi'
-import { MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
 import { storedSessionIdForNotification } from '../lib/session-ids'
+import { MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
+import { listAllProfileSessions, setSessionArchived } from '../plobi'
+import type { ComposerAttachment } from '../store/composer'
 import {
   $fileBrowserOpen,
   $panesFlipped,
-  $pinnedSessionIds,
   $rightRailView,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MAX_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
-  pinSession,
   PREVIEW_PANE_ID,
   RIGHT_RAIL_VIEW_NOTES,
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MAX_WIDTH,
-  unpinSession
+  SIDEBAR_MAX_WIDTH
 } from '../store/layout'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
@@ -51,17 +48,16 @@ import {
   $currentCwd,
   $freshDraftReady,
   $gatewayState,
-  $messages,
   $messagingSessions,
   $resumeExhaustedSessionId,
   $resumeFailedSessionId,
   $selectedStoredSessionId,
   $sessions,
   getRememberedSessionId,
-  sessionPinId,
+  releaseAgentCwd,
+  setAgentCwd,
   setAwaitingResponse,
   setBusy,
-  setCurrentCwd,
   setCurrentModel,
   setCurrentProvider,
   setMessages,
@@ -81,8 +77,8 @@ import {
 } from './chat/right-rail'
 import { ChatSidebar } from './chat/sidebar'
 import { CommandPalette } from './command-palette'
-import { ChatSurface, type ChatSurfaceProps } from './console/chat/chat-surface'
-import { agentScope, type ChatScope, L1_SCOPE } from './console/chat/scope'
+import { getAgentOverview } from './console/api'
+import { agentScope, L1_SCOPE } from './console/chat/scope'
 import { AddEventForm } from './console/right/add-event'
 import { Timeline } from './console/right/timeline'
 import {
@@ -93,7 +89,6 @@ import {
   refreshAgendaTimeline,
   useAgendaTimeline
 } from './console/right/use-agenda-timeline'
-import { getAgentOverview } from './console/api'
 import { $consoleAgents, refreshConsoleAgents } from './console/store/agents'
 import {
   archiveL1BypassSessions,
@@ -106,6 +101,7 @@ import {
   secretaryShellLabel,
   writeL1MainSessionId
 } from './desktop-controller-utils'
+import { LegacySessionRedirect, SecretaryCenterPane } from './desktop-views'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useProfileScopeSync } from './gateway/hooks/use-profile-scope-sync'
@@ -117,7 +113,6 @@ import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { PetGenerateOverlay } from './pet-generate/pet-generate-overlay'
 import { RightSidebarPane, RightSidebarSectionHeader } from './right-sidebar'
-import { AgentCapabilitiesPane } from './right-sidebar/capabilities'
 import { FileActionDialogs } from './right-sidebar/file-actions'
 import { RemoteFolderPicker } from './right-sidebar/files/remote-picker'
 import { ReviewPane } from './right-sidebar/review'
@@ -136,15 +131,13 @@ import {
 } from './routes'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
-import { useConversationReset } from './session/hooks/use-conversation-reset'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
+import { useConversationReset } from './session/hooks/use-conversation-reset'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
-import { usePlobiConfig } from './session/hooks/use-plobi-config'
-import { useTranscriptRehydration } from './session/hooks/use-transcript-rehydration'
-import { useWorkspaceSessionStart } from './session/hooks/use-workspace-session-start'
 import { useMessageErrorDismiss } from './session/hooks/use-message-error-dismiss'
 import { useMessageStream } from './session/hooks/use-message-stream'
 import { useModelControls } from './session/hooks/use-model-controls'
+import { usePlobiConfig } from './session/hooks/use-plobi-config'
 import { usePreviewRouting } from './session/hooks/use-preview-routing'
 import { usePromptActions } from './session/hooks/use-prompt-actions'
 import { useRouteResume } from './session/hooks/use-route-resume'
@@ -152,6 +145,8 @@ import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionListActions } from './session/hooks/use-session-list-actions'
 import { useSessionPinToggle } from './session/hooks/use-session-pin-toggle'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
+import { useTranscriptRehydration } from './session/hooks/use-transcript-rehydration'
+import { useWorkspaceSessionStart } from './session/hooks/use-workspace-session-start'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
 import { useStatusSnapshot } from './shell/hooks/use-status-snapshot'
@@ -162,7 +157,6 @@ import type { StatusbarItem } from './shell/statusbar-controls'
 import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
 import { UpdatesOverlay } from './updates-overlay'
-import { LegacySessionRedirect, SecretaryCenterPane } from './desktop-views'
 
 const AgendaView = lazy(async () => ({ default: (await import('./agenda')).AgendaView }))
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
@@ -199,7 +193,6 @@ export function DesktopController() {
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
-  const agentCapabilitiesOpen = useStore($paneOpen('agent-capabilities'))
   const panesFlipped = useStore($panesFlipped)
   const profileScope = useStore($profileScope)
   // WP-D: the L1 agenda rail reads the same single agenda store the full-screen
@@ -276,6 +269,7 @@ export function DesktopController() {
   // markdown tab stole the full main column (flash / stuck preview bug).
   const secretaryShellOpen = level !== null
   const activeAgentId = level && level !== 'l1' ? level.l2 : ''
+
   const previewRailContent =
     Boolean(previewTarget) ||
     (isL2 && Boolean(filePreviewTarget)) ||
@@ -745,11 +739,13 @@ export function DesktopController() {
   // Stable callbacks backed by refs — safe to pass into useMemo/useEffect
   // without causing re-computation on every render.
   const stableCancel = useCallback(() => void cancelRunRef.current(), [])
+
   const stableSubmit = useCallback(
-    (text: string, options?: { attachments?: import('@/store/composer').ComposerAttachment[]; fromQueue?: boolean }) =>
+    (text: string, options?: { attachments?: ComposerAttachment[]; fromQueue?: boolean }) =>
       submitTextRef.current(text, options),
     []
   )
+
   requestGatewayRef.current = requestGateway
   const refreshSessionsRef = useRef(refreshSessions)
   refreshSessionsRef.current = refreshSessions
@@ -769,6 +765,9 @@ export function DesktopController() {
 
     void (async () => {
       if (level === 'l1') {
+        // 回 L1 就离开 Agent 作用域：右栏回到 L1 自己的工作目录（remembered /
+        // 配置的默认目录），而不是停在刚才那个 Agent 的文件夹里。
+        releaseAgentCwd()
         await refreshConsoleAgents()
 
         if (cancelled) {
@@ -817,6 +816,7 @@ export function DesktopController() {
             .get()
             .map(agent => normalizeProfileKey((agent.profile || '').trim()))
             .filter(Boolean)
+
           profileForSessions = resolveL1HomeProfile({
             activeProfile: $activeGatewayProfile.get(),
             agentProfiles,
@@ -870,9 +870,11 @@ export function DesktopController() {
             .get()
             .map(agent => (agent.profile ?? '').trim())
             .filter(Boolean)
+
           const listed = await listAllProfileSessions(500, 0, 'exclude', 'recent', profileForSessions, {
             excludeSources: ['cron', 'subagent', 'tool', ...MESSAGING_SESSION_SOURCE_IDS]
           })
+
           const bypassIds = collectL1BypassSessionIds(listed.sessions, {
             agentProfiles,
             keepId: existing?.id ?? null,
@@ -906,6 +908,7 @@ export function DesktopController() {
       const rosterRow = $consoleAgents.get().find(a => a.id === agentId)
 
       $agentEnter.set(beginEntering(rosterRow?.name || rosterRow?.id || ''))
+
       // 名册里这一行没有 profile ⇒ 它是**数据记录**（`l2_course`，裁定 40：课是数据不是分身），
       // 不是"一个还没连上的分身"。以前这里回退成 agentId，等于替它造一个 profile 名，
       // 主进程真会去起 `plobi -p <那个名字>`：ASCII 名退 1（Profile does not exist）、
@@ -915,6 +918,7 @@ export function DesktopController() {
       // 这一半是**客户端不许自己抄一条回退**（裁定 94 同族）。
       let profile =
         $consoleAgents.get().find(agent => agent.id === agentId)?.profile?.trim() ?? ''
+
       let sessionId = ''
       let overviewFailed = false
       // R-013 (裁定 20): the bound folder served by the overview. Stays null
@@ -937,16 +941,16 @@ export function DesktopController() {
         overviewFailed = true
       }
 
-      // Mount the agent's bound folder for the right-rail file tree. Empty
-      // (butler-type: no project) clears instead of inheriting L1 / the
-      // previous agent's cwd; a nonexistent path just renders an empty tree
-      // and never blocks the center chat.
+      // Mount the agent's bound folder for the right-rail file tree.
+      //
+      // 2026-10-21 用户报「不管进什么 Agent，右边的目录都是 Aura 的」——两条
+      // 一起修：① 这里改成 `setAgentCwd`（作用域绑定，不写 L1 的 remembered，
+      // 且让 `refreshPlobiConfig` 不许再用 `terminal.cwd` 盖它）；② 概览失败
+      // 时**显式清空**，不再"保留不动"——上一版注释写的是"left untouched"，
+      // 结果就是继承上一个 Agent（通常是 Aura）的目录，看起来像"目录不跟着走"。
+      // 空目录（butler 类、没绑定文件夹）也走同一条：清空，显示空态提示。
       const mountAgentCwd = () => {
-        if (agentProjectPath === null) {
-          return
-        }
-
-        setCurrentCwd(agentProjectPath)
+        setAgentCwd(overviewFailed ? '' : (agentProjectPath ?? ''))
       }
 
       if (cancelled) {
@@ -975,10 +979,15 @@ export function DesktopController() {
         } else {
           $agentEnter.set(endEntering())
         }
+
+        // 数据条目也要把右栏钉到**它自己**的目录（或清空），不留在上一个
+        // Agent 的文件夹里——否则「点了这个、右栏还是上一个」看着就像坏了。
+        setAgentCwd(agentProjectPath ?? '')
         prepareFreshDraftInPlace()
 
         return
       }
+
       // Refresh L1 home from the profile we're leaving when it is still an L1
       // profile; keep the remembered home when hopping L2→L2 (agent→agent).
       l1GatewayProfileRef.current = resolveL1HomeProfile({
@@ -995,6 +1004,8 @@ export function DesktopController() {
       } catch {
         $agentEnter.set(enterFailure('spawn'))
         await ensureGatewayProfile(previousProfile).catch(() => undefined)
+        // 没绑上就回到 L1 那一屏，cwd 也跟着回 L1——别让它停在半路的 Agent 目录。
+        releaseAgentCwd()
         prepareFreshDraftInPlace()
 
         return
@@ -1009,6 +1020,7 @@ export function DesktopController() {
       if ($gatewayState.get() !== 'open') {
         $agentEnter.set(enterFailure('bind'))
         await ensureGatewayProfile(previousProfile).catch(() => undefined)
+        releaseAgentCwd()
         prepareFreshDraftInPlace()
 
         return
@@ -1261,7 +1273,6 @@ export function DesktopController() {
     (secretaryShellOpen && previewRailContent && previewPaneOpen) ||
     (isL2 && !narrowViewport && fileBrowserOpen) ||
     (isL2 && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen) ||
-    (isL2 && !narrowViewport && agentCapabilitiesOpen) ||
     (level === 'l1' && !narrowViewport && agendaPaneOpen)
 
   // Once the terminal would share its rail with another sidebar, drop it to a
@@ -1345,49 +1356,11 @@ export function DesktopController() {
   )
 
   // Agent Capabilities rail（全局真源 + per-agent 开关，2026-10-19 用户裁定）：
-  // 仅 L2 —— 面板展示「这个 Agent 关掉了哪些」，开关读写名册行黑名单，
-  // 全局表一字不动。与 review/file-browser 同一套 Pane 机制。
-  const agentCapabilitiesPane = (
-    <Pane
-      defaultOpen={false}
-      disabled={!isL2}
-      forceCollapsed={narrowViewport}
-      hoverReveal
-      id="agent-capabilities"
-      key="agent-capabilities"
-      maxWidth={FILE_BROWSER_MAX_WIDTH}
-      minWidth={FILE_BROWSER_MIN_WIDTH}
-      resizable
-      side={railSide}
-      width={FILE_BROWSER_DEFAULT_WIDTH}
-    >
-      {isL2 && activeAgentId ? <AgentCapabilitiesPane agentId={activeAgentId} /> : null}
-    </Pane>
-  )
+  // 右栏这块 per-agent Capabilities 面板 2026-10-20 已按用户裁定拆掉：
+  // 全局清单只住「设置 → Capabilities」，per-agent 的开关住左栏那一页
+  // （同一个 Agent 自己的四张表），右栏不再有一份副本——它在宽屏下压着文件树，
+  // 而且它列的本来就是全局清单，不是「这个 Agent 关掉了哪些」。
 
-  // Capabilities rail 的 titlebar 开关：只在 L2 注册（L1/主线没有 per-agent
-  // 能力面板），与 preview/review 的工具组同一套 registry。
-  useEffect(() => {
-    if (!isL2) {
-      return
-    }
-
-    setTitlebarToolGroup(
-      'agent-capabilities',
-      [
-        {
-          active: agentCapabilitiesOpen,
-          icon: <Codicon name="symbol-misc" />,
-          id: 'agent-capabilities',
-          label: t.rightSidebar.capabilitiesTitle,
-          onSelect: () => togglePane('agent-capabilities')
-        }
-      ],
-      'right'
-    )
-
-    return () => setTitlebarToolGroup('agent-capabilities', [], 'right')
-  }, [agentCapabilitiesOpen, isL2, setTitlebarToolGroup, t])
 
   // WP-D: the L1 secretary rail, rebuilt on the base Pane system. Same agenda
   // store and same four states the old console `RightRail` rendered — only the
@@ -1599,7 +1572,6 @@ export function DesktopController() {
       {panesFlipped ? fileBrowserPane : terminalPane}
       {previewPane}
       {reviewPane}
-      {agentCapabilitiesPane}
       {agendaTimelinePane}
       {panesFlipped ? terminalPane : fileBrowserPane}
     </AppShell>

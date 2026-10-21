@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 import time
 import uuid
 from datetime import datetime
@@ -63,8 +64,10 @@ SAY_SCHEMA = {
         "`to` 填名册里那个 Agent 的名字（大小写、显示名都认）；"
         "`parts` 是要说的内容，可以好几段，每段要么是文字，要么是**文件指针**"
         "（`{\"path\": \"vault/…\"}`）——**不要把文件内容贴进来**，那样会炸前缀缓存，对方会自己去读。\n"
-        "消息落进**对方自己的会话**，他打开那个 Agent 就能看到；会留下一条带收发双方的痕。\n"
-        "对方要改什么、要不要改，由它自己用它的工具决定，你只负责把话说清楚。\n"
+        "消息落进**对方自己的会话**，并且**会把它叫醒**——它自己就会开始按你说的做，"
+        "不用你打开它、也不用你等。所以别为了催它再 say 一遍。\n"
+        "对方要改什么、要不要改，由它自己用它的工具决定，你只负责把话说清楚；"
+        "需要它**现在**回答你才继续，就改用 `ask`。\n"
         "这一枚就是说话本身：不要开工具菜单、不要列 MCP/skills 让用户手动选、不要让用户改配置。"
     ),
     "parameters": {
@@ -233,6 +236,168 @@ def _deliver(entry, body: str, *, sender: str) -> tuple[str, str]:
     return session_id, str(message_id)
 
 
+# ── 唤醒：投递之后让它真的开始干活（用户 10-21）─────────────────────────
+
+#: 唤醒进程的输出落这儿（`$PLOBI_HOME/logs/`）。打包版主进程不落盘，这条链
+#: 出问题时必须有一份自己的证据——上一轮 aigw 就是因为"原因只走 console.log"
+#: 才查了半天的。
+WAKE_LOG = "channel-wake.log"
+
+#: 每个 Agent 一个标记文件，防同一个 Agent 同时被唤醒两次（两次 = 两份钱、
+#: 两条打架的回答）。
+_WAKE_DIRNAME = "channel-wake"
+
+
+def _wake_dir() -> Path:
+    try:
+        from plobi_constants import get_plobi_home
+
+        root = get_plobi_home() / "plobi" / _WAKE_DIRNAME
+    except Exception:  # noqa: BLE001
+        root = Path.home() / ".plobi" / "plobi" / _WAKE_DIRNAME
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _wake_log_path() -> Path:
+    try:
+        from plobi_constants import get_plobi_home
+
+        root = get_plobi_home() / "logs"
+    except Exception:  # noqa: BLE001
+        root = Path.home() / ".plobi" / "logs"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / WAKE_LOG
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _already_waking(marker: Path) -> bool:
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        return _pid_alive(int(data.get("pid") or 0))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def wake_prompt(sender: str) -> str:
+    """唤醒时补的那一句。**不重述消息内容**——它就在这一屏最上面那条里。"""
+    return (
+        f"【{sender} 刚捎来一句话，就在这一屏最上面那条（以「[来自 {sender} · 时间]」开头）。】\n"
+        "去读它，按它说的做；做完用一两句话讲清你做了什么、卡在哪儿。\n"
+        "如果这件事需要反过来问他，就用 `ask` 问一次，别用 `say`——`say` 不会把他叫醒。"
+    )
+
+
+def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
+    """投递之后，让那个 Agent **自己开始干**。返回 ``(起没起得来, 一句说明)``。
+
+    病根（用户 10-21 原话：「Plobi 如果发了一条信息给一个 L2 Agent。如果我不打开
+    那个 Agent 的话。它不会自己干活……要我打开之后才会选择模型，才能继续干活」）：
+    `say` 只把消息**写进**对方的会话就返回了——那个 Agent 的进程根本不存在
+    （L2 的运行时是桌面绑定时才起来的），于是消息躺在那儿，等用户亲手点开才被看到。
+
+    修法：投递之后起一个**后台子进程**跑那一轮，用的是 `ask` 已经在生产上跑通的
+    同一条 spawn 路子（`agent_ask.build_child_command`：同一个 profile 家、同一份
+    总账、同一套密钥覆盖），只多两样：
+      * ``--resume <刚投递的那个会话>`` —— 让它续**这一屏**，而不是另开一屏把
+        刚才那条消息甩在身后；
+      * 不等待（``Popen`` + 分隔的输出日志）—— `say` 的承诺是"投递即返回"。
+
+    三条护栏：
+      1. **同一个人不并发唤醒两次**：标记文件里记 pid，活着就跳过（两次＝两份钱、
+         两条互相打架的回答）。
+      2. **不唤醒唤醒链**：本进程若是被唤醒起来的（``PLOBI_WAKE=1``），它再 `say`
+         时不再唤醒下一跳——否则两个 Agent 互相 `say` 就是一场无限乒乓。
+      3. **失败不算 say 失败**：话已经送到了，这是"送到但与没叫醒"的差别，照实
+         回给调用方（``woke: false`` + 原因），不把一句好话报成错误。
+    """
+    if os.environ.get("PLOBI_WAKE") == "1":
+        return False, "这一轮本身就是被唤醒的，不再往下叫醒（防止互相叫醒的死循环）。"
+
+    marker = _wake_dir() / f"{_safe_slug(entry.name)}.json"
+    if _already_waking(marker):
+        return False, "它已经在干上一件活了，这条等它做完再看。"
+
+    try:
+        argv, env, cwd = AA.build_child_command(
+            entry, wake_prompt(sender), asked_by=f"say:{sender}"
+        )
+    except Exception as exc:  # noqa: BLE001 - 叫不醒也不许炸掉 L1 的回合
+        logger.warning("say: 唤醒命令拼不出来（%s）", exc)
+        return False, f"叫不醒它：{exc}"
+
+    if session_id:
+        # `--resume` 是全局参数（`plobi -r/--resume <id>`），插在 `-p` 前面。
+        try:
+            at = argv.index("-p")
+        except ValueError:
+            at = 1
+        argv = [*argv[:at], "--resume", session_id, *argv[at:]]
+
+    env["PLOBI_WAKE"] = "1"
+    env["PLOBI_ASKED_BY"] = f"say:{sender}"
+
+    log_path = _wake_log_path()
+    try:
+        with log_path.open("ab") as handle:
+            handle.write(
+                f"\n=== wake {entry.name} @ {datetime.now().replace(microsecond=0).isoformat()} "
+                f"(from {sender}, session {session_id}) ===\n".encode("utf-8")
+            )
+            handle.flush()
+            proc = subprocess.Popen(  # noqa: S603 — argv 是本模块自己拼的
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=handle,
+                stderr=handle,
+                env=env,
+                cwd=cwd,
+                start_new_session=True,
+            )
+    except FileNotFoundError:
+        return False, "这台机器上找不到可执行的命令行，叫不醒它。"
+    except OSError as exc:
+        logger.warning("say: 唤醒失败（%s）", exc)
+        return False, f"叫不醒它：{exc}"
+
+    try:
+        marker.write_text(
+            json.dumps(
+                {
+                    "pid": proc.pid,
+                    "agent": entry.name,
+                    "session": session_id,
+                    "from": sender,
+                    "started": datetime.now().replace(microsecond=0).isoformat(),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.warning("say: 唤醒标记没写进去（不影响这一趟）", exc_info=True)
+
+    return True, f"已叫醒它（后台 pid {proc.pid}），它会在这一屏里接着干。"
+
+
+def _safe_slug(name: str) -> str:
+    """标记文件名：ASCII 安全名，中文 Agent 名不许变成非法文件名。"""
+    import hashlib
+
+    cleaned = "".join(ch for ch in name if ch.isalnum() or ch in "-_")[:40]
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    return f"{cleaned or 'agent'}-{digest}"
+
+
 # ── 痕（裁 183⑥）────────────────────────────────────────────────────────
 
 
@@ -280,21 +445,28 @@ def handle_say(args: dict, **kwargs) -> str:
         session_id, message_id = _deliver(entry, text, sender=current_agent_name())
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"say 失败：{exc}")
+    sender = current_agent_name()
+    # 2026-10-21 用户令：「我不打开那个 Agent 的话，它不会自己干活。」——投递
+    # 之后把它叫醒（后台跑那一轮，不占这一趟）。叫不醒不算 say 失败：话已经
+    # 送到了，那是「送到但我没叫醒它」的差别，照实回给调用方。
+    woke, wake_note = wake_agent(entry, session_id, sender=sender)
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
         "trace_id": trace_id,
-        "from": current_agent_name(),
+        "from": sender,
         "to": entry.name,
         "ts": datetime.now().replace(microsecond=0).isoformat(),
         "parts": text,
         "session_id": session_id,
         "message_id": message_id,
+        "woke": woke,
+        "wake": wake_note,
     })
     return _result(
         True, mode="say", trace_id=trace_id, to=entry.name,
         session_id=session_id, message_id=message_id,
-        deliverer=current_agent_name(),
+        deliverer=sender, woke=woke, wakeNote=wake_note,
     )
 
 

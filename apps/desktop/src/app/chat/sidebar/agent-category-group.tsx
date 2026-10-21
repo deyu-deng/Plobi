@@ -106,6 +106,17 @@ export function AgentCategoryGroup({
             const shortName = secretaryShortName(agent.id, agent.name)
             const isActive = activeAgentId === agent.id
 
+            // 这个 Agent 自己有没有一屏在跑。两条来源，缺一不可：
+            //   * `agent.working` —— 后端按**总账**算的（跨家），所以待在 L1 时
+            //     也看得见某个 L2 正在干活；
+            //   * `workingSessionIdSet` —— 当前绑定那个 gateway 的实时集（同一个家
+            //     里刚点发送还没落库的那一瞬只有它知道）。
+            // 用户 10-21：「之前底座如果某一个会话在工作，他的抽屉还会有一个光条
+            // 围绕旋转。很好看。」——`arc-border` 之前只挂在会话行上，Agent 行从
+            // 来没有过。
+            const agentWorking =
+              agent.working === true || agentSessions.some(session => workingSessionIdSet.has(session.id))
+
             return (
               <div key={agent.id}>
                 <SidebarRowShell
@@ -131,11 +142,12 @@ export function AgentCategoryGroup({
                     </>
                   }
                   className={cn(
-                    'group row-hover',
+                    'group row-hover relative',
                     isActive && 'bg-(--ui-row-active-background)',
                     !navigable && 'cursor-default opacity-70'
                   )}
                 >
+                  {agentWorking && <span aria-hidden="true" className="arc-border" />}
                   <SidebarRowBody
                     className="z-0"
                     disabled={!navigable}
@@ -143,10 +155,25 @@ export function AgentCategoryGroup({
                     title={navigable ? agent.id : (agent.notNavigableReason || agent.id)}
                   >
                     <SidebarRowLead>
-                      <span
-                        aria-hidden="true"
-                        className={cn(SIDEBAR_ROW_DOT_SIZE, 'rounded-full', CATEGORY_STATUS_DOT[agent.status])}
-                      />
+                      {/* WP-AGENT-CREATE-UPGRADE 的那两个选择（图标/颜色）一直
+                          只进了名册、没进左栏：用户 10-21「创建新 Agent 的界面
+                          不是选了颜色和图标。都没有体现」。有图标就画图标（颜色
+                          染它），没图标才回到状态点（有颜色就染那个点）。 */}
+                      {agent.icon ? (
+                        <span
+                          aria-hidden="true"
+                          className="flex size-4 shrink-0 items-center justify-center"
+                          style={agent.color ? { color: agent.color } : undefined}
+                        >
+                          <Codicon name={agent.icon} size="0.875rem" />
+                        </span>
+                      ) : (
+                        <span
+                          aria-hidden="true"
+                          className={cn(SIDEBAR_ROW_DOT_SIZE, 'rounded-full', CATEGORY_STATUS_DOT[agent.status])}
+                          style={agent.color ? { backgroundColor: agent.color } : undefined}
+                        />
+                      )}
                     </SidebarRowLead>
                     <SidebarRowLabel>{shortName}</SidebarRowLabel>
                   </SidebarRowBody>

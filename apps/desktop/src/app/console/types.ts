@@ -127,6 +127,23 @@ export interface Agent {
   model?: string
   name: string
   /**
+   * 主工作目录（2026-10-21 起随行透出）。与 overview 的 `projectPath` 同源
+   * （名册 `project_path`），只是不再需要为「三个点 → 编辑」再打一次 overview。
+   * 空串 = 没绑文件夹（butler 类）。
+   */
+  projectPath?: string
+  /**
+   * 完整绑定清单，主文件夹在前（WP-AGENT-CREATE-UPGRADE 的多文件夹）。
+   * 编辑对话框用它回填；写回走 `PATCH /api/agents/:id` 的 `projectPaths`。
+   */
+  projectPaths?: string[]
+  /**
+   * 这个 Agent 现在手上真有活（后端按总账算：名下有一条没结束、且 5 分钟内
+   * 有消息的会话）。**跨家**的——所以 L1 视图里也能看见某个 L2 正在跑。
+   * 左栏据此在 Agent 行上转那条 `arc-border` 光条。
+   */
+  working?: boolean
+  /**
    * Plobi profile this agent chats under (`registry.profile_name`). The
    * desktop switches the live gateway onto this profile when entering L2 so
    * L1/L2 transcripts stay isolated (ARCH-RULINGS 裁定 1/3).

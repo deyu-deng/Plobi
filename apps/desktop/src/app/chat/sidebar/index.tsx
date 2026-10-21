@@ -29,6 +29,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { SessionInfo } from '@/plobi'
 import { $panesFlipped, $sidebarOpen, $sidebarOverlayMounted, pinSession } from '@/store/layout'
+import { $activeGatewayProfile } from '@/store/profile'
 import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
@@ -50,6 +51,8 @@ import { AgentCategoryGroup } from './agent-category-group'
 import { agentProfileIdSet, groupAgentsByCategory, isL1SessionProfile, normalizeAgentCategory } from './agent-groups'
 import { AgentOffloadPanel } from './agent-offload-panel'
 import {
+  AGENT_COLOR_CHOICES,
+  AGENT_ICON_CHOICES,
   type AgentCategory,
   buildCreateAgentBody,
   categoryNeedsProjectPath,
@@ -143,7 +146,23 @@ export function ChatSidebar({
     void refreshConsoleAgents()
   }, [])
 
-  const navItems = useMemo(() => sidebarNavForLevel(SIDEBAR_NAV, { l1, l2Id }), [l1, l2Id])
+  // 左栏那颗 Capabilities 指向**当前 Agent 自己的**那一页（2026-10-20 用户裁定 C）。
+  // L2 → 它名册行的 profile；L1 也是 Agent，用当前生效的 profile。解析不到 profile
+  // 就退回不带参数的 /skills（那是全局真源，只在「设置 → Capabilities」里用）。
+  const liveProfile = useStore($activeGatewayProfile)
+
+  const navItems = useMemo(() => {
+    const base = sidebarNavForLevel(SIDEBAR_NAV, { l1, l2Id })
+
+    const activeProfile =
+      (l2Id ? secretaryAgents.find(agent => agent.id === l2Id)?.profile : null) || liveProfile || null
+
+    return base.map(item =>
+      item.id === 'skills' && activeProfile
+        ? { ...item, route: `${SKILLS_ROUTE}?profile=${encodeURIComponent(activeProfile)}` }
+        : item
+    )
+  }, [l1, l2Id, liveProfile, secretaryAgents])
 
   const sidebarOpen = useStore($sidebarOpen)
   // Collapsed-but-overlay-mounted → render the full sidebar, not just the nav rail.
@@ -631,25 +650,3 @@ export function ChatSidebar({
   )
 }
 
-// WP-AGENT-CREATE-UPGRADE（用户 10-16「之前底座还可以选择图标和颜色。我觉得很可爱」）：
-// 创建对话框的图标/颜色预设。图标名走 Codicon（与左栏其余图标同一套字库）；
-// 颜色沿用 profile-color 的 hsl 口味（饱和 68 / 亮 58 一带），和侧栏既有色板同族。
-const AGENT_ICON_CHOICES = [
-  'robot',
-  'organization',
-  'account',
-  'comment',
-  'files',
-  'symbol-misc',
-  'edit'
-] as const
-
-const AGENT_COLOR_CHOICES = [
-  'hsl(210 68% 58%)',
-  'hsl(150 62% 45%)',
-  'hsl(45 85% 55%)',
-  'hsl(20 80% 58%)',
-  'hsl(350 70% 60%)',
-  'hsl(280 60% 62%)',
-  'hsl(190 65% 48%)'
-] as const

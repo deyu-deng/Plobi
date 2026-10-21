@@ -613,6 +613,32 @@
   }
 }
 
+/* Plobi 的 mark 自己转（等待态）：会话加载 / 切换 Agent 时用它，替掉以前的
+   盲文点阵（用户 10-21「会话加载态为什么不用这个，这个很好看呀」）。
+   见 components/plobi-mark-spinner.tsx。 */
+@keyframes plobi-mark-turn {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(0.93);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.plobi-mark-spin {
+  transform-origin: 50% 50%;
+  animation: plobi-mark-turn 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plobi-mark-spin {
+    animation: none;
+  }
+}
+
 @keyframes arc-border {
   0% {
     background-position: 15% 15%;
