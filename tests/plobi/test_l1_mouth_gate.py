@@ -1,14 +1,22 @@
-"""WP-L1-MOUTH-SWITCH — L1 那五张派工嘴由产品开关决定（裁定 78 / 49 / P7）。
+"""裁定 183 之后嘴的门：两枚原子 + 深工具各归各的门（WP-L1-MOUTH-SWITCH 的续命）。
 
-判据写成关系，不写名单快照（今晚 `d2170c91` 刚上过同一课）：
+这个文件原本钉的是旧世界（WP-L1-MOUTH-SWITCH，裁定 78/49/P7）：五张派工嘴由产品
+开关决定、秘书两嘴不受影响、裁定 33.4「handler/schema 一律不删」。裁定 183 把
+带 intent/action 枚举的那 7 枚全删了（用户 10-19 原话：「问话和派工或者别的不都是
+一件事情吗？就是一个 Agent 给另一个 Agent 发了一段提示词吗？」），嘴收成两枚原子
+``say``／``ask``。所以本文件跟着换世界，但**三条契约原样保留**：
 
-* 开关没勾 ⇒ 名单里**每一项**都零 schema 足迹；
-* 勾上 ⇒ 名单里**每一项**都可见；
-* 开关不绕过服务判据 ⇒ toolset 没启用、或这是 dispatcher 派出去的 worker，勾了也不出现；
-* 秘书那两张嘴（``plobi_secretary_ask`` / ``plobi_checkin_respond``）不受本开关影响。
+* 门不许是恒 False——「为了先关一下而 return False」不是策略的合法载体（裁定 78）；
+* 门只回答「用户要不要」，「这个 profile 能不能」仍归服务判据（toolset 没启用、
+  dispatcher 派出去的 worker）——开关不许绕过它；
+* 出厂默认必须是关的那一格仍然钉着（深工具 ``plobi`` 现在吃这个开关）。
 
-同时守住裁定 33.4 的另一半红线：handler / schema / ``SECRETARY_ASK_*`` / intent 表
-一律不删——换的是门的表达方式，不是实现。
+新世界的门分成两种，互不冒充：
+
+* ``say``／``ask`` **不挂任何开关**——它们的门是名册判据
+  ``channel.check_channel_available``：一台机器上一个可发的人都没有时，两个 schema
+  根本不下发（Footprint Ladder rung 3，零足迹）；
+* 深工具 ``plobi`` 仍吃产品开关 ``agent.l1_master_tools_enabled``（默认 False）。
 """
 
 from __future__ import annotations
@@ -26,17 +34,12 @@ REPO = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = REPO / "plugins" / "plobi-north-star"
 MASTER_TOOLS_PATH = PLUGIN_DIR / "master_tools.py"
 PLUGIN_INIT_PATH = PLUGIN_DIR / "__init__.py"
+CHANNEL_PATH = PLUGIN_DIR / "channel.py"
 
-# 名单来自这里，但断言一律按「每一项都…」写，不写「恰好等于这几个」。
-# 加一张嘴进这个元组，下面的关系断言自动覆盖它——这才是契约的形状。
-SWITCHED_MOUTHS = (
-    "plobi_master_status",
-    "plobi_master_preview",
-    "plobi_master_dispatch",
-    "plobi_master_approve",
-    "plobi",
-)
-SECRETARY_MOUTHS = ("plobi_secretary_ask", "plobi_checkin_respond")
+#: 裁定 183 之后，Agent 之间的嘴只剩这两枚原子。
+CHANNEL_MOUTHS = ("say", "ask")
+#: 仍吃产品开关的那一格（深工具，不是嘴）。
+SWITCHED_TOOLS = ("plobi",)
 SWITCH_PATH = ("agent", "l1_master_tools_enabled")
 
 
@@ -71,6 +74,16 @@ def PI():
         return _load_by_path("plugin_init", "plobi_test_l1_plugin_init", PLUGIN_INIT_PATH)
     except Exception as exc:  # pragma: no cover - 容错
         pytest.skip(f"plugin __init__ load failed (non-fatal): {exc}")
+
+
+@pytest.fixture(scope="module")
+def CH(PI):
+    """channel 与 register() 用的必须是**同一个实例**——monkeypatch 掉包才能作用到
+    已收集的 check_fn 上。PI 那个伪包（``__init__.py`` 按 spec_from_file_location
+    加载时 importlib 会自动给出 submodule_search_locations）里已经装好了它。"""
+    import importlib
+
+    return importlib.import_module("plobi_test_l1_plugin_init.channel")
 
 
 class _FakePluginContext:
@@ -123,11 +136,11 @@ def _use_config(monkeypatch, *, toolset_enabled: bool, switch):
     return cfg
 
 
-# ─── 默认：没勾就是没有 ────────────────────────────────────────────────────
+# ─── 默认：没勾就是没有（深工具仍吃这个开关）────────────────────────────
 
 
 def test_default_config_leaves_the_switch_off():
-    """出厂默认必须是关——保留裁定 33.4 的原意（L1 的第一动作是 secretary_ask）。"""
+    """出厂默认必须是关——裁定 33.4 的原意在深工具这一格继续有效。"""
     from plobi_cli.config import DEFAULT_CONFIG
 
     section = DEFAULT_CONFIG.get(SWITCH_PATH[0])
@@ -138,27 +151,27 @@ def test_default_config_leaves_the_switch_off():
 
 
 def test_unwritten_switch_behaves_like_off(MT, PI, monkeypatch):
-    """「用户没写过这个键」与「写了 False」必须同一条路：都不出现。
+    """「用户没写过这个键」与「写了 False」必须同一条路：深工具都不出现。
 
     这条防的是把缺省当真的实现成 ``cfg.get(...) or True`` 之类的反向逻辑。
     """
     for switch in (None, False):
         _use_config(monkeypatch, toolset_enabled=True, switch=switch)
         calls = _build_registered_tools(PI)
-        for name in SWITCHED_MOUTHS:
+        for name in SWITCHED_TOOLS:
             c = _find_tool(calls, name)
-            assert c is not None, f"{name!r} must stay registered (33.4: handler 不删)"
+            assert c is not None, f"{name!r} must stay registered"
             assert c["check_fn"]() is False, (
                 f"{name!r} must be invisible when the switch is unwritten/off "
                 f"(switch={switch!r})"
             )
 
 
-def test_switch_off_hides_every_switched_mouth(MT, PI, monkeypatch):
-    """零 schema 足迹：开关关时，名单里每一项的 check_fn 都是 False。"""
+def test_switch_off_hides_the_deep_tool(MT, PI, monkeypatch):
+    """零 schema 足迹：开关关时，深工具的 check_fn 是 False。"""
     _use_config(monkeypatch, toolset_enabled=True, switch=False)
     calls = _build_registered_tools(PI)
-    for name in SWITCHED_MOUTHS:
+    for name in SWITCHED_TOOLS:
         c = _find_tool(calls, name)
         check = c["check_fn"]
         assert check.__qualname__ == MT.check_plobi_l1_master_tools.__qualname__, (
@@ -167,14 +180,11 @@ def test_switch_off_hides_every_switched_mouth(MT, PI, monkeypatch):
         assert check() is False, f"{name!r} must be hidden while the switch is off"
 
 
-# ─── 勾上：必须生效（裁定 49 / P7 的那一句「勾了就生效」）────────────────
-
-
-def test_switch_on_exposes_every_switched_mouth(MT, PI, monkeypatch):
-    """勾上 ⇒ 名单里每一项都可见。恒 False 的门做不到这件事，所以它不合法。"""
+def test_switch_on_exposes_the_deep_tool(MT, PI, monkeypatch):
+    """勾上 ⇒ 深工具可见。恒 False 的门做不到这件事，所以它不合法。"""
     _use_config(monkeypatch, toolset_enabled=True, switch=True)
     calls = _build_registered_tools(PI)
-    for name in SWITCHED_MOUTHS:
+    for name in SWITCHED_TOOLS:
         c = _find_tool(calls, name)
         assert c["check_fn"]() is True, (
             f"{name!r} must become visible the moment the user ticks the switch"
@@ -185,11 +195,11 @@ def test_switch_never_bypasses_the_service_gate(MT, PI, monkeypatch):
     """开关只回答"用户要不要"，"这个 profile 能不能"仍归 check_plobi_master_mode。
 
     两个坏结果各挡一半：toolset 没启用却出现工具（越权），以及 dispatcher 派出去的
-    worker 拿到派工嘴（自派工循环）。
+    worker 拿到它（自派工循环）。
     """
     cfg = _use_config(monkeypatch, toolset_enabled=False, switch=True)
     calls = _build_registered_tools(PI)
-    for name in SWITCHED_MOUTHS:
+    for name in SWITCHED_TOOLS:
         assert _find_tool(calls, name)["check_fn"]() is False, (
             f"{name!r} must not appear when the profile has no plobi_north_star toolset "
             f"(cfg={cfg!r}, toolset_judged={MT._toolset_enabled_in_config(cfg)!r}, "
@@ -198,25 +208,51 @@ def test_switch_never_bypasses_the_service_gate(MT, PI, monkeypatch):
 
     _use_config(monkeypatch, toolset_enabled=True, switch=True)
     monkeypatch.setenv("PLOBI_KANBAN_TASK", "t-under-test")
-    for name in SWITCHED_MOUTHS:
+    for name in SWITCHED_TOOLS:
         assert MT.check_plobi_l1_master_tools() is False, (
             f"{name!r} must stay hidden for dispatcher-spawned workers"
         )
 
 
-def test_secretary_mouths_ignore_the_switch(MT, PI, monkeypatch):
-    """秘书两张嘴不受本刀影响：仍是 check_plobi_master_mode，开关两种位置都可见。"""
+# ─── 两枚原子的门：名册判据，不挂开关 ─────────────────────────────────────
+
+
+def test_channel_mouths_ride_the_roster_gate_not_the_switch(PI, monkeypatch):
+    """say/ask 的门是 ``check_channel_available``——与产品开关无关。
+
+    旧世界秘书两嘴「不受开关影响」那条契约，在这两枚上变成「压根不挂开关」：
+    开关三种位置都看得见（只要名册里有人），也都不因为它们变成可见。
+    """
     for switch in (False, True, None):
         _use_config(monkeypatch, toolset_enabled=True, switch=switch)
         calls = _build_registered_tools(PI)
-        for name in SECRETARY_MOUTHS:
+        for name in CHANNEL_MOUTHS:
             c = _find_tool(calls, name)
             assert c is not None, f"{name!r} not registered"
             check = c["check_fn"]
-            assert check.__qualname__ == MT.check_plobi_master_mode.__qualname__, (
-                f"{name!r} must keep check_plobi_master_mode, got {check.__qualname__!r}"
+            assert check.__qualname__ == "check_channel_available", (
+                f"{name!r} must ride the roster gate, got {check.__qualname__!r}"
             )
-            assert check() is True, f"{name!r} must stay visible (switch={switch!r})"
+
+
+def test_channel_gate_is_false_when_nobody_is_reachable(PI, CH, monkeypatch):
+    """名册里一条可发的人都没有 ⇒ 两枚的 check_fn 都是 False（零足迹）。"""
+    monkeypatch.setattr(CH, "live_names", lambda: [])
+    calls = _build_registered_tools(PI)
+    for name in CHANNEL_MOUTHS:
+        assert _find_tool(calls, name)["check_fn"]() is False, (
+            f"{name!r} must leave zero schema footprint when no agent is reachable"
+        )
+
+
+def test_channel_gate_is_true_when_somebody_is_reachable(PI, CH, monkeypatch):
+    """名册里有人 ⇒ 看得见。恒 False 的门过不了这条。"""
+    monkeypatch.setattr(CH, "live_names", lambda: ["Nymo"])
+    calls = _build_registered_tools(PI)
+    for name in CHANNEL_MOUTHS:
+        assert _find_tool(calls, name)["check_fn"]() is True, (
+            f"{name!r} must be visible when the roster has somebody to talk to"
+        )
 
 
 # ─── 防回归：不许再把策略写成恒假门 / 不许删实现 ──────────────────────────
@@ -238,26 +274,27 @@ def test_no_hardcoded_mouth_gate_survives(MT):
     )
 
 
-def test_handlers_and_schemas_stay_intact(PI):
-    """裁定 33.4 保留实现这半：handler / schema / intent 表一个都不许删。"""
-    src = inspect.getsource(PI)
-    for ident in (
-        "SECRETARY_ASK_SCHEMA",
-        "CHECKIN_RESPOND_SCHEMA",
-        "handle_secretary_ask",
-        "handle_checkin_respond",
-        *SWITCHED_MOUTHS,
-        *SECRETARY_MOUTHS,
-    ):
-        assert ident in src, f"plugin __init__ must keep {ident!r} intact"
+def test_new_world_identifiers_stay_intact(PI, CH):
+    """裁定 183 这一半的「不删」：两枚原子的 schema/handler 与深工具的开关判据都在。
+
+    旧版这条钉的是被删掉的 7 枚（SECRETARY_ASK_SCHEMA 等）——它们按裁定 183 没了，
+    钉它们就是钉倒退。现在钉新世界的四样：两个 schema、两个 handler、名册判据本体，
+    以及深工具还在吃的那枚开关判据。
+    """
+    init_src = inspect.getsource(PI)
+    for ident in ("_CHANNEL_TOOLS", "check_channel_available", "check_plobi_l1_master_tools"):
+        assert ident in init_src, f"plugin __init__ must keep {ident!r} intact"
+    channel_src = inspect.getsource(CH)
+    for ident in ("SAY_SCHEMA", "ASK_SCHEMA", "handle_say", "handle_ask", "check_channel_available"):
+        assert ident in channel_src, f"channel.py must keep {ident!r} intact"
 
 
-def test_registration_rides_the_switch_not_a_list_of_closed_names(PI):
-    """名单只回答"开关管哪几张嘴"，不许再靠「名单 + 恒 False」表达策略。"""
+def test_registration_rides_gates_not_a_list_of_closed_names(PI):
+    """门按判据挂，不许再靠「名单 + 恒 False」表达策略。"""
     src = inspect.getsource(PI)
     assert "check_plobi_l1_master_tools" in src, (
-        "the five mouths must be registered behind the product-switch predicate"
+        "the deep tool must be registered behind the product-switch predicate"
     )
     assert "_L1_MOUTH_CLOSED" not in src, (
-        "a set of 'closed mouths' re-implements the policy the switch owns"
+        "a set of 'closed mouths' re-implements the policy the gates own"
     )

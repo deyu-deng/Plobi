@@ -837,14 +837,6 @@ def test_l2_identity_fence_avoids_html_comment_injection():
     assert len(block.splitlines()) <= 15
 
 
-def test_secretary_ask_schema_steers_soft_routing():
-    desc = MT.SECRETARY_ASK_SCHEMA["description"]
-    assert MT.SECRETARY_ASK_SCHEMA["name"] == "plobi_secretary_ask"
-    assert "session_search" in desc
-    assert "terminal" in desc
-    assert "agent id" in desc.lower()
-
-
 def test_gate_hides_from_worker(master_mode, monkeypatch):
     """dispatcher-spawned worker 即使启用 toolset 也不可见。"""
     monkeypatch.setenv("PLOBI_KANBAN_TASK", "t_abc")
@@ -1186,37 +1178,6 @@ def test_secretary_ask_rejects_bad_intent(stub_spawn):
     out = run_secretary_ask("kanban_dispatch", "把任务派出去")
     assert out["ok"] is False
     assert "intent" in out["error"]
-
-
-def test_handle_secretary_ask_unhealthy_json(stub_spawn, tmp_path, monkeypatch):
-    """Tool JSON: unhealthy chatlog is an error envelope, not a fake board."""
-    pipe, _service, _client = _agenda_pipeline(tmp_path, fail=True)
-    real = run_secretary_ask
-
-    def _with_pipe(intent, user_text, **kwargs):
-        kwargs["pipeline"] = pipe
-        return real(intent, user_text, **kwargs)
-
-    monkeypatch.setattr("plobi.agents.registry.run_secretary_ask", _with_pipe)
-    out = _call(
-        MT.handle_secretary_ask,
-        intent="refresh_agenda",
-        user_text="明天的日常安排是什么",
-    )
-    assert out["ok"] is False
-    assert "采集不通" in out.get("error", "")
-    assert "agenda" not in out
-
-
-def test_handle_secretary_ask_rejects_bad_intent_json():
-    out = _call(MT.handle_secretary_ask, intent="kanban", user_text="明天安排")
-    assert out["ok"] is False
-    assert "intent" in out.get("error", "")
-
-
-# ---------------------------------------------------------------------------
-# WP-BE-6: N3 — user original + L1 briefing in the L2 session store
-# ---------------------------------------------------------------------------
 
 
 def test_n3_writes_user_text_and_briefing(stub_spawn, tmp_path):
@@ -1639,15 +1600,39 @@ def test_master_schema_descriptions_cite_no_diet_ruling_as_an_absence():
             assert "33.3" not in text, name
 
 
-def test_master_schema_description_still_routes_instead_of_opening_a_menu():
-    """改掉「你没有 terminal」那句不许顺手改掉它的本职：路由进本工具，
-    不开工具菜单 / 不列 MCP+skills 让用户挑 / 不把内部机制端到用户面前。"""
-    description = _load_master_tools().SECRETARY_ASK_SCHEMA["description"]
-    for job in ("不要开工具菜单", "不要列 MCP/skills 让用户手动选", "不要让用户改配置"):
-        assert job in description, job
-    # 裁定 45：屏幕上不出现内部代号。
-    for internal in ("aigw", "toolset", "profile", "WP-L2-DIET"):
-        assert internal not in description, internal
+def test_channel_schema_still_routes_instead_of_opening_a_menu():
+    """裁 183 的两枚原子：说明不许开工具菜单、不列 MCP+skills、不端内部机制。"""
+    import importlib
+    import sys
+
+    # channel.py 内部有相对导入（``from . import agent_ask``），裸
+    # spec_from_file_location 会以 "attempted relative import with no known
+    # parent package" 失败；按包方式加载（``__init__.py`` 的 spec 会带上
+    # submodule_search_locations，子模块才落得进这个包里）。
+    pkg_name = "plobi_test_master_tools_ns_pkg"
+    if pkg_name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            pkg_name,
+            Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star" / "__init__.py",
+            submodule_search_locations=[str(Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star")],
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = pkg_name
+        module.__path__ = [str(Path(__file__).resolve().parents[2] / "plugins" / "plobi-north-star")]
+        sys.modules[pkg_name] = module
+        spec.loader.exec_module(module)
+    channel = importlib.import_module(f"{pkg_name}.channel")
+
+    for schema in (channel.SAY_SCHEMA, channel.ASK_SCHEMA):
+        description = schema["description"]
+        assert "不要开工具菜单" in description and "不要列 MCP" in description
+        assert "不要让用户改配置" in description
+        for internal in ("aigw", "toolset", "profile", "PLOBI_"):
+            assert internal not in description, internal
+        # 原子工具的三件事必须写清楚：不等/等、文件指针不给 base64、副作用归对方
+        body = schema["parameters"]["properties"]
+        assert "to" in body and "parts" in body, schema["name"]
 
 
 def test_user_granted_memory_is_not_stripped_by_the_l1_mid_pass():

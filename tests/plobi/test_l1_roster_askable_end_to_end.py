@@ -42,21 +42,24 @@ _SESSION = "roster-e2e-session-1"
 
 def _load_ask_module():
     """按插件的真实加载方式拿到 ``agent_ask``（目录名带连字符，不能点号导入）。"""
+    import importlib
     import importlib.util
 
     name = "plobi_test_roster_ask_ns_pkg"
-    if name in sys.modules:
-        return sys.modules[name].AA
-    spec = importlib.util.spec_from_file_location(
-        name, PLUGIN_DIR / "__init__.py", submodule_search_locations=[str(PLUGIN_DIR)]
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    module.__package__ = name
-    module.__path__ = [str(PLUGIN_DIR)]
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module.AA
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            name, PLUGIN_DIR / "__init__.py", submodule_search_locations=[str(PLUGIN_DIR)]
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = name
+        module.__path__ = [str(PLUGIN_DIR)]
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    # 裁定 183 之后 L1 那 7 枚带 intent 的嘴收成 say/ask 两枚原子，但 ask 的
+    # 内壳仍是这枚 agent_ask（``channel.py`` 复用它跑子进程、复用它的名册解析）
+    # ——「名单与嘴同源」这条契约现在由 channel 消费它，测试仍钉在这枚真源上。
+    return importlib.import_module(f"{name}.agent_ask")
 
 
 AA = _load_ask_module()
