@@ -1101,10 +1101,10 @@ def profile_name_blocker(entry: AgentEntry) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 「这一条现在问得到吗」——名册与 ``plobi_agent_ask`` 共用的唯一判据（R-072）
+# 「这一条现在问得到吗」——名册与 Agent 之间那枚嘴共用的唯一判据（R-072）
 # ---------------------------------------------------------------------------
 
-#: 只有项目分身接受当面提问。日程 L2 有它自己那张嘴（``plobi_secretary_ask``），
+#: 只有项目分身接受当面提问。日程 L2 有它自己的沟通路（``say`` / ``ask``，裁定 183），
 #: default profile 是提问的那一个。判据看的是**角色**不是名字——``agenda`` 不是
 #: 因为叫 ``agenda`` 被排除，任何非项目角色都同样走不到这条路上（裁定 69：
 #: 日程秘书与其他 L2 地位平等，两边都不给它开后门、也不给它挂特殊牌子）。
@@ -1130,19 +1130,19 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
 
     只看结构性事实，不看任何一句文本：归档 / 角色 / profile 名建不建得出来
     （:func:`profile_name_blocker`）/ 家在不在盘上。名单与工具**必须读同一份判据**
-    ——以前 ``run_project_status`` 报「有这个人」而 ``plobi_agent_ask`` 报「问不到」，
+    ——以前 ``run_project_status`` 报「有这个人」而那枚嘴报「问不到」，
     两边各判一次，秘书就只能靠试（R-072）。
 
     探不到盘（``plobi_cli`` 解析不了的那套测试环境）时**不判成问不到**：宁可留一行
     可以试的，也不能把手下从名单里悄悄抹掉——抹掉才是这一刀要修的 bug。家真的在
-    这一步之后被人收走时，``plobi_agent_ask`` 建命令那一步还会再拒一次。
+    这一步之后被人收走时，那枚嘴建命令那一步还会再拒一次。
     """
     if entry.archived:
         return False, "这一条已经归档，问不到它。"
     if entry.role != ASKABLE_ROLE:
         return False, (
-            f"这一条的角色是 ``{entry.role}``，不是项目分身，不归 plobi_agent_ask 问"
-            "（日程走 plobi_secretary_ask）。"
+            f"这一条的角色是 ``{entry.role}``，不是项目分身，不归那枚嘴问"
+            "（日程秘书有它自己的沟通路：say / ask）。"
         )
     if not entry.profile_name or entry.profile_name == "default":
         return False, "这一条没有自己的家（profile 名空或撞了 default），问不到。"
@@ -1165,9 +1165,9 @@ def is_askable_agent(entry: AgentEntry) -> bool:
 def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
     """桌面左栏这一行能不能点进聊天页；点不了就给一句原因。
 
-    和 :func:`agent_askability` 是**两件事**，别混：askability 判的是 L1 的
-    ``plobi_agent_ask`` 这把嘴问不问得到（日程秘书走
-    ``plobi_secretary_ask``，所以 agenda 行 askable=False 却完全点得动）；
+    和 :func:`agent_askability` 是**两件事**，别混：askability 判的是 Agent 之间
+    那枚嘴（裁定 183 之后是 ``ask``，内壳 ``agent_ask``）问不问得到——日程秘书
+    走它自己的沟通路，所以 agenda 行 askable=False 却完全点得动；
     navigability 判的是「点了之后桌面能不能真的拉起一个后端来对话」——
     也就是 spawn 不会失败。这正是裁定 146②(b) 那句「不许列在那儿点不动」的
     可执行形状。三条否决，全是结构性事实：

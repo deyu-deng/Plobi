@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from . import agent_ask as AA
+from . import channel as CH
 from . import hard_route as HR
 from . import master_tools as MT
 from . import tools as T
@@ -19,69 +19,24 @@ logger = logging.getLogger(__name__)
 
 TOOLSET = "plobi_north_star"
 
-# L1 Master narrow surface (B1): dispatch / status / preview / approve are
-# thin wrappers over Plobi kanban, registered under the same toolset so the
-# secretary gets them WITHOUT the raw ``kanban_*`` lifecycle tools.
-#
-# WP-L1-MOUTH-SWITCH (裁定 78): the 4 Master tools + the deep ``plobi`` tool ride
-# the product switch ``agent.l1_master_tools_enabled`` (default off) — see
-# ``master_tools.check_plobi_l1_master_tools``. ``plobi_secretary_ask`` +
-# ``plobi_checkin_respond`` keep ``check_plobi_master_mode``; those two are L1's
-# first-action mouth regardless of how the switch sits.
-_MASTER_TOOLS = (
-    # ── 4 个 Master 工具（handler / schema 保留，门由用户勾） ─────────
+# ── Agent 之间的两枚原子工具（裁定 183）────────────────────────────────
+# 旧的那 7 枚带 intent/action 枚举的嘴（plobi_secretary_ask、plobi_checkin_respond、
+# plobi_master_status/preview/dispatch/approve、plobi_agent_ask）按裁定 183 全删：
+# 「问话和派工或者别的不都是一件事情吗？就是一个 Agent 给另一个 Agent 发了一段提示词吗？」
+# 替它们的只有 say 与 ask，副作用归接话方自己的工具，消息直接进对方的聊天。
+_CHANNEL_TOOLS = (
     (
-        "plobi_master_status",
-        MT.MASTER_STATUS_SCHEMA,
-        MT.handle_master_status,
-        MT.MASTER_STATUS_SCHEMA["description"],
-        "🗂",
+        "say",
+        CH.SAY_SCHEMA,
+        CH.handle_say,
+        CH.SAY_SCHEMA["description"],
+        "🗣",
     ),
     (
-        "plobi_master_preview",
-        MT.MASTER_PREVIEW_SCHEMA,
-        MT.handle_master_preview,
-        MT.MASTER_PREVIEW_SCHEMA["description"],
-        "🔎",
-    ),
-    (
-        "plobi_master_dispatch",
-        MT.MASTER_DISPATCH_SCHEMA,
-        MT.handle_master_dispatch,
-        MT.MASTER_DISPATCH_SCHEMA["description"],
-        "🚀",
-    ),
-    (
-        "plobi_master_approve",
-        MT.MASTER_APPROVE_SCHEMA,
-        MT.handle_master_approve,
-        MT.MASTER_APPROVE_SCHEMA["description"],
-        "✅",
-    ),
-    # ── 秘书这两张嘴不受派工开关影响（§8.2 硬路由路径） ──────────────
-    (
-        "plobi_secretary_ask",
-        MT.SECRETARY_ASK_SCHEMA,
-        MT.handle_secretary_ask,
-        MT.SECRETARY_ASK_SCHEMA["description"],
-        "📅",
-    ),
-    (
-        "plobi_checkin_respond",
-        MT.CHECKIN_RESPOND_SCHEMA,
-        MT.handle_checkin_respond,
-        MT.CHECKIN_RESPOND_SCHEMA["description"],
-        "🗓",
-    ),
-    # ── 裁定 50.4（甲）：总秘书当面问某个项目分身 ─────────────────────
-    # Not a board handoff and not a note read-off-disk: the 分身 itself runs as
-    # a subprocess and its own session is the record. Gated by its own
-    # ``check_fn`` below, so the schema is absent when there is nobody to ask.
-    (
-        "plobi_agent_ask",
-        AA.AGENT_ASK_SCHEMA,
-        AA.handle_agent_ask,
-        AA.AGENT_ASK_SCHEMA["description"],
+        "ask",
+        CH.ASK_SCHEMA,
+        CH.handle_ask,
+        CH.ASK_SCHEMA["description"],
         "🙋",
     ),
 )
@@ -168,38 +123,15 @@ def register(ctx) -> None:
         description=_PLOBI_SCHEMA["description"],
         emoji="🧭",
     )
-    # WP-L1-MOUTH-SWITCH: 4 个 Master 工具 + 2 个 secretary 工具分组挂
-    # check_fn。Master 组 (status / preview / dispatch / approve) 走产品开关；
-    # secretary 组 (secretary_ask / checkin_respond) 保持
-    # ``check_plobi_master_mode``——秘书这两张嘴不受开关影响。
-    # ``plobi_agent_ask``（裁定 50.4 甲）自带门槛：在那道嘴门之外还要求
-    # 名册里真有一个没归档的项目分身，否则零 schema 足迹。
-    #
-    # 这份名单只回答"开关管的是哪几张嘴"，不表达开还是关——开关的真源是
-    # ``agent.l1_master_tools_enabled``，不是这里。
-    _L1_SWITCHED_MOUTHS = {
-        "plobi_master_status",
-        "plobi_master_preview",
-        "plobi_master_dispatch",
-        "plobi_master_approve",
-    }
-    _OWN_CHECK_FN = {
-        "plobi_agent_ask": AA.check_agent_ask_available,
-    }
-    for name, schema, handler, description, emoji in _MASTER_TOOLS:
-        if name in _OWN_CHECK_FN:
-            check_fn = _OWN_CHECK_FN[name]
-        elif name in _L1_SWITCHED_MOUTHS:
-            check_fn = MT.check_plobi_l1_master_tools
-        else:
-            # plobi_secretary_ask / plobi_checkin_respond
-            check_fn = MT.check_plobi_master_mode
+    # say / ask 不挂任何开关：名册里一条可发的人都没有时，check_channel_available
+    # 让它们的 schema 根本不下发（Footprint Ladder rung 3，零足迹）。
+    for name, schema, handler, description, emoji in _CHANNEL_TOOLS:
         ctx.register_tool(
             name=name,
             toolset=TOOLSET,
             schema=schema,
             handler=handler,
-            check_fn=check_fn,
+            check_fn=CH.check_channel_available,
             description=description,
             emoji=emoji,
         )
