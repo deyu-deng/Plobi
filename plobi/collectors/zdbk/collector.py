@@ -313,7 +313,12 @@ class ZdbkCollector:
             raise ZdbkUnavailable(STATE_EMPTY_TERM, f"这一轮一条都没拿到（学年 {year} 学期 {season}）")
         return collected, {"state": STATE_READY, "term": f"{year}/{season}", "counts": counts}
 
-    def collect(self) -> dict:
+    def collect(self, *, service: Any = None) -> dict:
+        """`sweep` 那一轮调的就是这一格——**它会把 `service=` 传进来**，签名少了它就每次 `raised`。
+
+        池不需要 service（日程那侧的判断权在 Agent，不在这里），所以这一格收下不用；
+        收下不用比"不接这个参数"贵：前者是一行读数，后者是一天一轮的红。
+        """
         items, report = self.pull_report()
         result = pool_land(pool_items_of(items, source=SOURCE_ID))
         return {**result, "state": report["state"], "source": SOURCE_ID, "counts": report["counts"],
