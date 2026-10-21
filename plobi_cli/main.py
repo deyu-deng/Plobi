@@ -12528,31 +12528,31 @@ def cmd_memory(args):
         print("\n  ✓ Memory provider: built-in only")
         print("  Saved to config.yaml\n")
     elif sub == "reset":
-        from plobi_constants import get_plobi_home, display_plobi_home
+        from tools.memory_tool import memory_path, resolve_agent_slug
+        from plobi_constants import display_plobi_home
 
-        mem_dir = get_plobi_home() / "memories"
         target = getattr(args, "target", "all")
-        files_to_reset = []
+        wanted = []
         if target in {"all", "memory"}:
-            files_to_reset.append(("MEMORY.md", "agent notes"))
+            wanted.append(("memory", "agent notes"))
         if target in {"all", "user"}:
-            files_to_reset.append(("USER.md", "user profile"))
-
-        # Check what exists
-        existing = [
-            (f, desc) for f, desc in files_to_reset if (mem_dir / f).exists()
-        ]
+            wanted.append(("user", "user profile"))
+        # Resolve through the memory tool's own map: this command used to erase
+        # ``<home>/memories/*.md``, which 裁定 42/178 retired — so it was clearing
+        # files nothing read while the real ledgers survived it.
+        slug = resolve_agent_slug()
+        located = [(desc, memory_path(scope, slug=slug)) for scope, desc in wanted]
+        existing = [(desc, path) for desc, path in located if path.exists()]
         if not existing:
             print(
-                f"\n  Nothing to reset — no memory files found in {display_plobi_home()}/memories/\n"
+                f"\n  Nothing to reset — no memory ledgers found under {display_plobi_home()}/memory/\n"
             )
             return
 
         print("\n  This will permanently erase the following memory files:")
-        for f, desc in existing:
-            path = mem_dir / f
-            size = path.stat().st_size
-            print(f"    ◆ {f} ({desc}) — {size:,} bytes")
+        for desc, path in existing:
+            print(f"    ◆ {path.name} ({desc}) — {path.stat().st_size:,} bytes")
+            print(f"      {path}")
 
         if not getattr(args, "yes", False):
             try:
@@ -12564,14 +12564,17 @@ def cmd_memory(args):
                 print("  Cancelled.\n")
                 return
 
-        for f, desc in existing:
-            (mem_dir / f).unlink()
-            print(f"  ✓ Deleted {f} ({desc})")
+        for desc, path in existing:
+            path.unlink()
+            print(f"  ✓ Deleted {path.name} ({desc})")
 
         print(
-            "\n  Memory reset complete. New sessions will start with a blank slate."
+            "\n  Memory reset complete. New sessions will start without these ledgers."
         )
-        print(f"  Files were in: {display_plobi_home()}/memories/\n")
+        print(
+            "  GLOBAL.md (the facts shared across every agent) is left alone here —\n"
+            "  it is written through the approval layer, so clearing it stays a human call.\n"
+        )
     else:
         from plobi_cli.memory_setup import memory_command
 

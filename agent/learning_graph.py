@@ -193,13 +193,23 @@ def density_stats(nodes: dict[str, SkillNode], edges: list[tuple[str, str]]) -> 
 def _memory_cards() -> list[dict[str, Any]]:
     """Freeform memory as readable cards.
 
-    ``MEMORY.md`` / ``USER.md`` are prose split on bare ``§`` separators; each
-    chunk becomes one card. Every chunk is surfaced — the graph shows everything.
+    The three live ledgers — ``GLOBAL.md``, this agent's own ``MEMORY.md``,
+    ``USER.md`` — are prose split on bare ``§`` separators; each chunk becomes
+    one card. Every chunk is surfaced — the graph shows everything. Paths come
+    from :func:`tools.memory_tool.memory_path`, the same resolver the memory
+    tool writes through, so the graph can never render a file nobody reads.
     """
-    base = get_plobi_home() / "memories"
+    from tools.memory_tool import memory_path, resolve_agent_slug
+
+    slug = resolve_agent_slug()
     cards: list[dict[str, Any]] = []
-    for fname, source in (("MEMORY.md", "memory"), ("USER.md", "profile")):
-        path = base / fname
+    # GLOBAL.md is deliberately NOT surfaced here yet: the desktop starmap packs
+    # ``memorySource`` through ``MEM_SOURCES = ['none','memory','profile']``
+    # (apps/desktop/src/app/starmap/share-code.ts:22), so a fourth source name
+    # would encode as -1. Adding it needs that enum widened first — one line in
+    # another line's file, so it waits for a dispatch instead of riding along.
+    for source, scope in (("memory", "memory"), ("profile", "user")):
+        path = memory_path(scope, slug=slug)
         try:
             text = path.read_text(encoding="utf-8").strip()
             file_ts = _to_int_ts(path.stat().st_mtime)

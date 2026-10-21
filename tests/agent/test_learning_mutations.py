@@ -25,9 +25,13 @@ Body.
 @pytest.fixture
 def home():
     base = get_plobi_home()
+    own = base / "memory" / "agents" / "l1"
+    own.mkdir(parents=True, exist_ok=True)
+    (own / "MEMORY.md").write_text("alpha note\nline two\n§\nbeta note", encoding="utf-8")
+    (base / "memory" / "USER.md").write_text("user profile note", encoding="utf-8")
+    # Retired location, planted to prove no mutation writes into it any more.
     (base / "memories").mkdir(parents=True, exist_ok=True)
-    (base / "memories" / "MEMORY.md").write_text("alpha note\nline two\n§\nbeta note", encoding="utf-8")
-    (base / "memories" / "USER.md").write_text("user profile note", encoding="utf-8")
+    (base / "memories" / "MEMORY.md").write_text("retired copy", encoding="utf-8")
     skill = base / "skills" / "my-skill"
     skill.mkdir(parents=True, exist_ok=True)
     (skill / "SKILL.md").write_text(_SKILL, encoding="utf-8")
@@ -53,14 +57,16 @@ def test_memory_label_is_first_line(home):
 
 def test_delete_memory_rewrites_file(home):
     assert lm.delete_node("memory:memory:0")["ok"]
-    remaining = (home / "memories" / "MEMORY.md").read_text(encoding="utf-8")
+    remaining = (home / "memory" / "agents" / "l1" / "MEMORY.md").read_text(encoding="utf-8")
     assert "alpha note" not in remaining
     assert "beta note" in remaining
+    # The retired location must not be the thing that got rewritten.
+    assert (home / "memories" / "MEMORY.md").read_text(encoding="utf-8") == "retired copy"
 
 
 def test_edit_memory_replaces_chunk(home):
     assert lm.edit_node("memory:profile:2", "rewritten profile")["ok"]
-    assert (home / "memories" / "USER.md").read_text(encoding="utf-8").strip() == "rewritten profile"
+    assert (home / "memory" / "USER.md").read_text(encoding="utf-8").strip() == "rewritten profile"
 
 
 def test_edit_memory_empty_is_rejected(home):
@@ -121,7 +127,7 @@ def test_memory_writes_match_memory_tool_format(home):
     from tools.memory_tool import ENTRY_DELIMITER, MemoryStore
 
     assert lm.edit_node("memory:memory:0", "alpha rewritten")["ok"]
-    path = home / "memories" / "MEMORY.md"
+    path = home / "memory" / "agents" / "l1" / "MEMORY.md"
     entries = MemoryStore._read_file(path)
 
     assert entries == ["alpha rewritten", "beta note"]

@@ -1167,7 +1167,7 @@ def run_doctor(args):
         check_warn(f"{_DHH} not found", "(will be created on first use)")
     
     # Check expected subdirectories
-    expected_subdirs = ["cron", "sessions", "logs", "skills", "memories"]
+    expected_subdirs = ["cron", "sessions", "logs", "skills"]
     for subdir_name in expected_subdirs:
         subdir_path = plobi_home / subdir_name
         if subdir_path.exists():
@@ -1203,27 +1203,31 @@ def run_doctor(args):
             fixed_count += 1
     
     # Check memory directory
-    memories_dir = plobi_home / "memories"
-    if memories_dir.exists():
-        check_ok(f"{_DHH}/memories/ directory exists")
-        memory_file = memories_dir / "MEMORY.md"
-        user_file = memories_dir / "USER.md"
-        if memory_file.exists():
-            size = len(memory_file.read_text(encoding="utf-8").strip())
-            check_ok(f"MEMORY.md exists ({size} chars)")
-        else:
-            check_info("MEMORY.md not created yet (will be created when the agent first writes a memory)")
-        if user_file.exists():
-            size = len(user_file.read_text(encoding="utf-8").strip())
-            check_ok(f"USER.md exists ({size} chars)")
-        else:
-            check_info("USER.md not created yet (will be created when the agent first writes a memory)")
+    # Memory ledgers live under <shared>/memory/ now (GLOBAL.md + one per agent +
+    # USER.md). The old <home>/memories/ was retired by 裁定 42/178: nothing reads
+    # it, so doctor must neither report it as healthy nor re-create it under --fix.
+    from tools.memory_tool import memory_path, resolve_agent_slug
+
+    _slug = resolve_agent_slug()
+    _ledgers = [
+        ("GLOBAL.md", memory_path("global")),
+        (f"agents/{_slug}/MEMORY.md", memory_path("memory", slug=_slug)),
+        ("USER.md", memory_path("user")),
+    ]
+    _present = [(label, p) for label, p in _ledgers if p.exists()]
+    if _present:
+        check_ok(f"{_DHH}/memory/ ledger present ({len(_present)} of 3 files)")
+        for label, path in _present:
+            size = len(path.read_text(encoding="utf-8").strip())
+            check_ok(f"{label} exists ({size} chars)")
     else:
-        check_warn(f"{_DHH}/memories/ not found", "(will be created on first use)")
-        if should_fix:
-            memories_dir.mkdir(parents=True, exist_ok=True)
-            check_ok(f"Created {_DHH}/memories/")
-            fixed_count += 1
+        check_info(f"{_DHH}/memory/ has no entries yet (created on the first write)")
+    _retired = plobi_home / "memories"
+    if _retired.exists():
+        check_warn(
+            f"{_DHH}/memories/ is retired — nothing reads it",
+            "(migrate its entries into the /memory ledger, then remove it)",
+        )
     
     # Check SQLite session store
     state_db_path = plobi_home / "state.db"
