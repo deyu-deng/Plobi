@@ -36,6 +36,7 @@ from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
 from ..base import Occurrence, pool_items_of
+from .state import read_last_pull_at, read_state, write_state
 from ..zju import auth
 from ..zju.auth import HttpResponse, Transport
 from .status import (
@@ -46,6 +47,7 @@ from .status import (
     STATE_NETWORK_UNREACHABLE,
     STATE_NO_CREDENTIAL,
     STATE_READY,
+    STATE_THROTTLED,
     ZdbkUnavailable,
     note_for,
 )
@@ -66,7 +68,11 @@ ENVELOPE_NOISE = frozenset({
 })
 _TITLE_KEYS = ("kcmc", "kchmc", "jcName", "kcb")
 _TIME_KEYS = ("kssj", "ksrq", "xkrq", "cjrq", "createDate")
-_ID_KEYS = ("xkkh", "row_id", "kch", "cjxhid", "jxbid")
+_ID_KEYS = ("row_id", "kch", "cjxhid", "jxbid", "xkkh")
+#: 课表那一格的身份**必须是格子的坐标**，不是选课号：一门 `xkkh` 一周上三次，
+#: 65 行 `kbList` 就会塌成 3 行（10-22 真数据量出来的：池里 class 只剩 3 条，
+#: 而且每轮最后写进去的那一格不同 ⇒ `updated` 在 108/147 之间跳）。
+CLASS_ID_KEYS = ("xkkh", "xxq", "xqj", "djj")
 
 
 @dataclass(frozen=True)
@@ -77,7 +83,18 @@ class ZdbkConfig:
     year: str = ""
     season: str = ""
     min_minutes_between_pulls: int = 45
+    jitter_minutes: int = 7
     include_practice: bool = True
+
+    def pull_allowed_now(self, last_pull_at: Optional[float], now: float) -> bool:
+        """两次真打之间的上限（带抖动）。与 zju 那只同一形状，语义也照抄：它是**上限**，
+        不是"每隔这么久一定要打一次"。"""
+        if last_pull_at is None:
+            return True
+        import random
+
+        window = self.min_minutes_between_pulls + random.uniform(0, max(self.jitter_minutes, 0))
+        return (now - last_pull_at) >= window * 60
 
     @classmethod
     def load(cls) -> "ZdbkConfig":
@@ -95,6 +112,7 @@ class ZdbkConfig:
             year=str(data.get("xnm") or ""),
             season=str(data.get("xqm") or ""),
             min_minutes_between_pulls=int(data.get("min_minutes_between_pulls") or 45),
+            jitter_minutes=int(data.get("jitter_minutes") if data.get("jitter_minutes") is not None else 7),
             include_practice=bool(data.get("include_practice", True)),
         )
 
@@ -139,11 +157,16 @@ def _clean(text: str) -> str:
 
 
 def _identity(row: Mapping[str, Any], kind: str) -> tuple[str, str]:
-    """学校给的那一条 id；**不用标题拼**（标题改了行就"消失"一次）。
+    """学校给的那一条身份；**不用标题拼**（标题改了行就"消失"一次）。
 
-    一个键都没有时退到整行哈希，并把用了哪条路留在 `context["identity_key"]` 里——
-    退路也要能被读出来，不然下一次换键没人知道。
+    课表走组合键：一门课一周占好几个格子，单拿选课号当身份会让同一门课的几次课
+    **互相覆盖**（真数据量到过）。其它几类每行自带 `row_id`，单键就够。
+    一个键都没有时退到整行哈希，并把走了哪条路留在 `context["identity_key"]` 里。
     """
+    if kind == "class":
+        parts = [str(row.get(key) or "").strip() for key in CLASS_ID_KEYS]
+        if parts[0] and any(parts[2:]):
+            return ":".join(p for p in parts if p), "+".join(CLASS_ID_KEYS)
     for key in _ID_KEYS:
         value = str(row.get(key) or "").strip()
         if value:
@@ -189,7 +212,8 @@ def to_occurrences(kind: str, rows: list[dict]) -> list[Occurrence]:
         if time_key:
             context["time_key"] = time_key
         if kind == "class":
-            # 周模板：星期×节次。**不给 occurred_at**，理由见模块头第二条。
+            # 周模板：星期×节次。**不给 occurred_at**，理由见模块头第二条；
+            # 学期起止那一格由同一条信源一起采（`term` 那一种 kind），不是别家的活。
             context.update({"week_template": True, "weekday": row.get("xqj"),
                             "start_slot": row.get("djj"), "slot_count": row.get("skcd")})
         items.append(Occurrence(
@@ -251,6 +275,9 @@ class ZdbkCollector:
 
     # -- 契约 ---------------------------------------------------------------
 
+    def _record(self, *, state: str, rows: int) -> None:
+        write_state({"last_pull_at_epoch": self._now(), "last_state": state, "rows": rows})
+
     def health(self) -> dict:
         state, detail = (STATE_DISABLED, note_for(STATE_DISABLED)) if not self.config.enabled \
             else (STATE_NO_CREDENTIAL, note_for(STATE_NO_CREDENTIAL)) \
@@ -260,17 +287,26 @@ class ZdbkCollector:
                 "note": note_for(state) if state != STATE_READY else ""}
 
     def pull(self, *, since: Any = None) -> list[Occurrence]:
-        items, _report = self.pull_report()
+        items, report = self.pull_report()
+        self._record(state=report["state"], rows=len(items))
         return items
 
     def pull_report(self) -> tuple[list[Occurrence], dict]:
         state, detail, creds = self._credentials_or_state()
         if creds is None:
             raise ZdbkUnavailable(state, detail)
+        last = read_last_pull_at()
+        if not self.config.pull_allowed_now(last, self._now()):
+            # 节流这一格与"用户设的采集频率"不是一回事（裁 191 二）：频率说"我想几点采"，
+            # 这一格说"最多多快碰学校一次"。上一轮真采到东西就是 260 行进池 ⇒ 一天里
+            # 手点两次就会打两次教务，所以这里必须真的拦下来。
+            raise ZdbkUnavailable(STATE_THROTTLED,
+                                  f"距上一轮不足 {self.config.min_minutes_between_pulls} 分钟（带抖动）")
         state, detail = self._ensure_session(creds)
         if state != STATE_READY:
             raise ZdbkUnavailable(state, detail)
 
+        self._record(state=STATE_READY, rows=0)
         year, season = self.config.term()
         collected: list[Occurrence] = []
         counts: dict[str, int] = {}
