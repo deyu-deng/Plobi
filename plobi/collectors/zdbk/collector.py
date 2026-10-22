@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import html as html_lib
 import json
+import random
 import re
 import time
 from dataclasses import dataclass
@@ -68,11 +69,20 @@ ENVELOPE_NOISE = frozenset({
 })
 _TITLE_KEYS = ("kcmc", "kchmc", "jcName", "kcb")
 _TIME_KEYS = ("kssj", "ksrq", "xkrq", "cjrq", "createDate")
-_ID_KEYS = ("row_id", "kch", "cjxhid", "jxbid", "xkkh")
+_ID_KEYS = ("kch", "cjxhid", "jxbid", "xkkh", "row_id")
 #: 课表那一格的身份**必须是格子的坐标**，不是选课号：一门 `xkkh` 一周上三次，
 #: 65 行 `kbList` 就会塌成 3 行（10-22 真数据量出来的：池里 class 只剩 3 条，
 #: 而且每轮最后写进去的那一格不同 ⇒ `updated` 在 108/147 之间跳）。
 CLASS_ID_KEYS = ("xkkh", "xxq", "xqj", "djj")
+#: **每个端点各自**的身份键组（一组里所有键都非空才算这组成立）。
+#:
+#: 为什么不许一条通用链服务全部端点：`pool_items` 的唯一键是 `(source, external_id)`，
+#: **`kind` 不在键里**，而这一家每个端点给的"那一条 id"是形状完全不同的东西。
+#: 用通用链的现读后果就是那 46 行被盖掉的账（学校给 考试 40 / 成绩 25，池里只剩 15 / 4）。
+#: 每条后面的读数是第五轮探查（10-22）量出来的"去重几条／共几条"，不是推的。
+IDENTITY_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "class": (CLASS_ID_KEYS,),
+}
 
 
 @dataclass(frozen=True)
@@ -85,14 +95,17 @@ class ZdbkConfig:
     min_minutes_between_pulls: int = 45
     jitter_minutes: int = 7
     include_practice: bool = True
+    #: 两次外呼之间歇多久（秒，随机取区间）。这一家没有开放接口，一次 `pull()` 要打六七个请求，
+    #: 全挤在同一秒里就是"把站方当数据库刷"。参照件里唯一值得照抄的就是这一格——Python 那个
+    #: CLI（`celekli.py:641 --time-coeff`，默认 `1.5/5`）把礼貌延时做成了参数；
+    #: Celechron 本体没做（它的节流在外层：单飞 + 15 分钟一次的系统作业）。
+    request_gap_seconds: tuple[float, float] = (1.5, 4.5)
 
     def pull_allowed_now(self, last_pull_at: Optional[float], now: float) -> bool:
         """两次真打之间的上限（带抖动）。与 zju 那只同一形状，语义也照抄：它是**上限**，
         不是"每隔这么久一定要打一次"。"""
         if last_pull_at is None:
             return True
-        import random
-
         window = self.min_minutes_between_pulls + random.uniform(0, max(self.jitter_minutes, 0))
         return (now - last_pull_at) >= window * 60
 
@@ -114,6 +127,8 @@ class ZdbkConfig:
             min_minutes_between_pulls=int(data.get("min_minutes_between_pulls") or 45),
             jitter_minutes=int(data.get("jitter_minutes") if data.get("jitter_minutes") is not None else 7),
             include_practice=bool(data.get("include_practice", True)),
+            request_gap_seconds=(float(data.get("request_gap_lo") if data.get("request_gap_lo") is not None else 1.5),
+                                 float(data.get("request_gap_hi") if data.get("request_gap_hi") is not None else 4.5)),
         )
 
     def term(self, now: Optional[datetime] = None) -> tuple[str, str]:
@@ -159,22 +174,34 @@ def _clean(text: str) -> str:
 def _identity(row: Mapping[str, Any], kind: str) -> tuple[str, str]:
     """学校给的那一条身份；**不用标题拼**（标题改了行就"消失"一次）。
 
-    课表走组合键：一门课一周占好几个格子，单拿选课号当身份会让同一门课的几次课
-    **互相覆盖**（真数据量到过）。其它几类每行自带 `row_id`，单键就够。
-    一个键都没有时退到整行哈希，并把走了哪条路留在 `context["identity_key"]` 里。
+    三条路，按"这家的这一格到底给不给稳定 id"排：
+
+    1. :data:`IDENTITY_KEYS` 里**这个端点**那一族键组（每个端点各量各的，理由写在那张表上）；
+    2. 单键链（`kch`／`cjxhid`／`jxbid`／`xkkh`）——`row_id` 排在**最后**：它是正方分页信封
+       给每行编号的那一格，现读主修 217 条的 id 就是纯数字的页内序号，**排序一变身份就漂**，
+       所以只在这一格没有别的可用键时才用它，并且把走了哪条路留在读数里；
+    3. 一个键都没有 ⇒ 整行内容哈希（实践分那一页就是这条：学校从来没给过 id）。
+
+    `external_id` 一律带 `kind` 那一层命名空间：池的唯一键是 `(source, external_id)`，
+    两个端点各自合法的 id（页内序号 7 对 7）撞在一起时，**少掉的那一行不会报错，只是不见了**。
     """
+    for keys in IDENTITY_KEYS.get(kind, ()):
+        parts = [str(row.get(key) or "").strip() for key in keys]
+        if all(parts):
+            return f"{kind}:" + ":".join(parts), "+".join(keys)
     if kind == "class":
+        # 课表退路：格子坐标里 `xkkh` 必须在，但学期/星期/节次可能缺任一格
         parts = [str(row.get(key) or "").strip() for key in CLASS_ID_KEYS]
         if parts[0] and any(parts[2:]):
-            return ":".join(p for p in parts if p), "+".join(CLASS_ID_KEYS)
+            return "class:" + ":".join(p for p in parts if p), "+".join(CLASS_ID_KEYS)
     for key in _ID_KEYS:
         value = str(row.get(key) or "").strip()
         if value:
-            return value, key
+            return f"{kind}:{value}", key
     digest = hashlib.sha1(json.dumps({k: v for k, v in row.items()
                                       if k not in ENVELOPE_NOISE}, sort_keys=True,
                                      ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
-    return f"{kind}-{digest[:16]}", "row-sha1"
+    return f"{kind}-sha1-{digest[:16]}", "row-sha1"
 
 
 def _time(row: Mapping[str, Any]) -> tuple[str, str]:
@@ -233,12 +260,27 @@ class ZdbkCollector:
                  config: Optional[ZdbkConfig] = None,
                  credentials: Optional[tuple[str, str]] = None,
                  credential_reader: Callable[[], Optional[tuple[str, str]]] = auth.read_credentials,
-                 now: Callable[[], float] = time.time):
+                 now: Callable[[], float] = time.time,
+                 sleep: Callable[[float], None] = time.sleep,
+                 spread: Callable[[float, float], float] = random.uniform):
         self.transport = transport
         self.config = config if config is not None else ZdbkConfig.load()
         self._credentials = credentials
         self._credential_reader = credential_reader
         self._now = now
+        self._sleep = sleep
+        self._spread = spread
+
+    def _polite(self) -> None:
+        """请求与请求之间歇一下（区间随机，不是定值——定值就是个更容易被认出来的指纹）。
+
+        测试把 `sleep`/`spread` 注掉，所以这一格**不花真实时间**也能被钉住（判据是"歇了几次、
+        每次多久在区间内"，不是"真等了那么久"）。
+        """
+        low, high = self.config.request_gap_seconds
+        if high <= 0:
+            return
+        self._sleep(max(0.0, float(self._spread(low, high))))
 
     # -- 会话 ---------------------------------------------------------------
 
@@ -311,6 +353,7 @@ class ZdbkCollector:
         collected: list[Occurrence] = []
         counts: dict[str, int] = {}
 
+        self._polite()
         kb = self.transport.post_form(KB_URL, {"xnm": year, "xqm": season, "captcha_value": ""})
         if "captcha_error" in kb.text[:4000]:
             raise ZdbkUnavailable(STATE_CAPTCHA_REQUIRED,
@@ -326,6 +369,7 @@ class ZdbkCollector:
             collected += to_occurrences("class", [r for r in kb_rows if isinstance(r, dict)])
 
         for kind, url, _label in ENDPOINTS:
+            self._polite()
             response = self.transport.post_form(url, {})
             rows = rows_of_items(response)
             if rows is None:
@@ -335,8 +379,10 @@ class ZdbkCollector:
             collected += to_occurrences(kind, rows)
 
         if self.config.include_practice:
+            self._polite()
             student_id = self._student_id()
             if student_id:
+                self._polite()
                 practice = self.transport.get(f"{BASE}/jwglxt/dessktgl/dessktcx_cxDessktcxIndex.html"
                                               f"?gnmkdm=N108001&su={student_id}")
                 rows = _practice_rows(practice.text)

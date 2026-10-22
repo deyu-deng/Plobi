@@ -110,7 +110,14 @@ def healthy_transport(**extra) -> FakeTransport:
     return FakeTransport(routes)
 
 
-def make_collector(transport, **kwargs) -> ZdbkCollector:
+def make_collector(transport, *, pauses: Optional[list] = None, **kwargs) -> ZdbkCollector:
+    """``sleep`` 一律注成记录器：礼貌延时那一格**不许让测试真等**，但歇了几次要数得出。
+
+    ``spread`` 固定取区间下沿 ⇒ "歇没歇、歇多久"是一个确定的读数，不是每次跑出一个不同的数。
+    """
+    log = pauses if pauses is not None else []
+    kwargs.setdefault("sleep", log.append)
+    kwargs.setdefault("spread", lambda low, high: low)
     return ZdbkCollector(transport=transport, credentials=("3160100000", "fake-passwd-42"),
                          config=ZdbkConfig(year="2026", season="12", include_practice=True,
                                            min_minutes_between_pulls=0, jitter_minutes=0),
@@ -162,7 +169,7 @@ class TestOneSiteManyKinds:
     def test_title_is_the_first_segment_of_the_br_string(self) -> None:
         # 身份是**格子坐标**（选课号 + 小学期 + 星期 + 第几节），不是光秃秃的选课号
         item = next(i for i in make_collector(healthy_transport()).pull()
-                    if i.external_id.startswith("2026A100001-1-2"))
+                    if i.external_id.startswith("class:2026A100001-1-2"))
 
         assert item.title == "高等数学（上）"
         assert "王老师" in item.evidence["kcb"]        # 教师与地点不丢，只是不当列
@@ -172,8 +179,22 @@ class TestIdentityIsTheSitesOwnId:
     def test_identity_key_is_recorded_and_not_the_title(self) -> None:
         items = [i for i in make_collector(healthy_transport()).pull() if i.kind == "exam"]
 
-        assert items[0].external_id == "ex-1"
+        assert items[0].external_id == "exam:ex-1"
         assert items[0].evidence["identity_key"] == "row_id"
+
+    def test_two_kinds_sharing_one_school_id_are_not_the_same_row(self) -> None:
+        """`pool_items` 的唯一键是 `(source, external_id)`——**`kind` 不在键里**。
+
+        现读（10-22 量的）：主修 217 行的身份是正方给每行编号的那一格，值是纯数字的页内序号。
+        所以"考试第 7 行"和"主修第 7 行"在学校给的 id 空间里是**同一个字符串**：不加一层命名空间，
+        后落的那条会把前一条原地盖掉——池里少一行，而且一声不响。
+        """
+        exam = to_occurrences("exam", [{"row_id": "7", "kcmc": "高等数学",
+                                       "kssj": "2026-01-06 09:00:00"}])[0]
+        major = to_occurrences("major", [{"row_id": "7", "kcmc": "线性代数"}])[0]
+
+        assert exam.external_id != major.external_id
+        assert (exam.source, exam.external_id) != (major.source, major.external_id)
 
     def test_renamed_course_keeps_the_same_identity(self) -> None:
         rows = [{"xkkh": "keep-me", "kcb": "旧名字<br>王老师<br>X-214", "xqj": "1", "djj": "1", "skcd": "2"}]
@@ -181,7 +202,7 @@ class TestIdentityIsTheSitesOwnId:
         after = to_occurrences("class", [dict(rows[0], kcb="新名字<br>王老师<br>X-214")])[0]
 
         assert before.external_id == after.external_id
-        assert before.external_id.startswith("keep-me")
+        assert before.external_id.startswith("class:keep-me")
 
 
 class TestIdentityIsEverySlotNotEveryCourse:
@@ -213,7 +234,7 @@ class TestThrottleIsReal:
         clock = {"now": 1_800_000_000.0}
         collector = ZdbkCollector(transport=transport, credentials=("3160100000", "p"),
                                   config=ZdbkConfig(min_minutes_between_pulls=45, jitter_minutes=0),
-                                  now=lambda: clock["now"])
+                                  now=lambda: clock["now"], sleep=lambda seconds: None)
         collector.pull()
         before = len(transport.calls)
 
@@ -231,13 +252,13 @@ class TestThrottleIsReal:
         first = ZdbkCollector(transport=healthy_transport(),
                               credentials=("3160100000", "p"),
                               config=ZdbkConfig(min_minutes_between_pulls=0, jitter_minutes=0),
-                              now=lambda: clock["now"])
+                              now=lambda: clock["now"], sleep=lambda seconds: None)
         made = first.collect()["created"]
         clock["now"] += 3600
         second = ZdbkCollector(transport=healthy_transport(),
                                credentials=("3160100000", "p"),
                                config=ZdbkConfig(min_minutes_between_pulls=0, jitter_minutes=0),
-                               now=lambda: clock["now"])
+                               now=lambda: clock["now"], sleep=lambda seconds: None)
         again = second.collect()
 
         assert made > 0 and again["created"] == 0
@@ -353,3 +374,33 @@ class TestRegisteredShape:
                      if not line.lstrip().startswith("#") and re.search(r"\bingest_occurrences\s*\(", line)]
 
         assert offenders == [], f"教务这一条又去直落日程了：{offenders}"
+
+
+class TestPolitenessBetweenRequests:
+    """参照件里唯一值得照抄的那一格：Python 那个 CLI 把礼貌延时做成了参数
+    （`celekli.py:641 --time-coeff`，默认 1.5/5 秒）。
+
+    为什么这一格要有牙齿：`pull()` 一次要打**六七个**请求（课表＋考试＋成绩＋主修＋学号那一页
+    ＋实践分那一页），全挤在同一秒里就是拿站方的私有接口当自己的数据库刷。注释里写"我们很礼貌"
+    不算实现，数得出来的歇才算。
+    """
+
+    def test_every_request_after_the_session_gets_one_pause(self) -> None:
+        pauses: list[float] = []
+        transport = healthy_transport()
+
+        make_collector(transport, pauses=pauses).pull()
+
+        urls = [url for _method, url in transport.calls]
+        boundary = next(i for i, url in enumerate(urls) if "index_initMenu" in url)   # 登录探针那一次
+        after = urls[boundary + 1:]
+        assert len(pauses) == len(after), f"歇了 {len(pauses)} 次但打了 {len(after)} 个请求：{after}"
+        assert all(1.5 <= pause <= 4.5 for pause in pauses), pauses
+
+    def test_the_gap_can_be_turned_off_without_turning_the_source_off(self) -> None:
+        pauses: list[float] = []
+        collector = make_collector(healthy_transport(), pauses=pauses)
+        collector.config = ZdbkConfig(year="2026", season="12", request_gap_seconds=(0.0, 0.0))
+
+        assert len(collector.pull()) > 0
+        assert pauses == [], "区间下沿是 0 就不该睡——这一格关的是礼貌，不是采集"
