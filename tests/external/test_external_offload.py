@@ -662,15 +662,7 @@ def _capture_run(seen, workdir):
     return fake_run
 
 
-@pytest.fixture
-def replies(tmp_path, monkeypatch):
-    """把回执目录钉在 tmp——不许有测试往真家写文件。"""
-    root = tmp_path / "replies"
-    monkeypatch.setenv(offload.REPLY_DIR_ENV, str(root))
-    return root
-
-
-def test_the_reply_handle_is_a_file_named_by_this_runs_job(workdir, replies, monkeypatch):
+def test_the_reply_handle_is_a_file_named_by_this_runs_job(workdir, monkeypatch):
     seen = {}
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
     monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
@@ -680,16 +672,15 @@ def test_the_reply_handle_is_a_file_named_by_this_runs_job(workdir, replies, mon
     task = seen["argv"][seen["argv"].index("-p") + 1]
     target = seen["env"][offload.REPLY_FILE_ENV]
     assert "【回执】" in task
-    assert target.endswith(".json") and replies.name in target
+    assert offload.REPLY_PREFIX in target and workdir.name in target, "回执在它自己脚边，不在我们家目录里"
     # 任务书里那条路径与环境变量里那个必须是同一个值，否则它写到别处＝永远收不到
     assert target.replace("\\", "/") in task.replace("\\", "/")
 
 
-def test_reply_written_by_the_external_agent_is_collected_once(workdir, replies, monkeypatch):
+def test_reply_written_by_the_external_agent_is_collected_once(workdir, monkeypatch):
     """它写回来的东西要收进结果，并且**读一次就收走**（下一轮不许重复计数）。"""
     def fake_run(argv, **kwargs):
         path = Path(kwargs["env"][offload.REPLY_FILE_ENV])
-        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('{"text": "暗号是：紫罗兰三号。", "status": "ok"}', encoding="utf-8")
         return _Completed(stdout=json.dumps({"result": "done", "usage": {}}))
 
@@ -700,10 +691,10 @@ def test_reply_written_by_the_external_agent_is_collected_once(workdir, replies,
 
     assert result.reply == "暗号是：紫罗兰三号。"
     assert result.reply_status == "filed" and result.job and result.reply_to == "Sindri"
-    assert list(replies.glob("*.json")) == [], "收走＝回执文件不再留在盘上"
+    assert list(workdir.glob(offload.REPLY_PREFIX + "*")) == [], "收走＝回执文件不再留在盘上"
 
 
-def test_a_run_that_filed_nothing_says_not_filed_not_a_failure(workdir, replies, monkeypatch):
+def test_a_run_that_filed_nothing_says_not_filed_not_a_failure(workdir, monkeypatch):
     """它没回话是一种**读数**，不许和"我们读坏了"混成一句，也不许因此把成功的活判失败。"""
     monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
     monkeypatch.setattr(offload.subprocess, "run", _capture_run({}, workdir))
@@ -714,7 +705,7 @@ def test_a_run_that_filed_nothing_says_not_filed_not_a_failure(workdir, replies,
     assert result.reply_to == "", "没人指名该向谁交代就留空，不硬编一个"
 
 
-def test_a_read_only_qoder_run_is_not_judged_by_missing_artifacts(workdir, replies, monkeypatch):
+def test_a_read_only_qoder_run_is_not_judged_by_missing_artifacts(workdir, monkeypatch):
     """「exit 0 但没落盘」那条实测判据不许套到没测过的第三家身上。
 
     10-22 真跑踩过：Qoder 读了文件、答对了内容，只因为没写文件就被判成"没干活"。
