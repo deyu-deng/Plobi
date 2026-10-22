@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from . import channel as CH
+from . import cli_say
 from . import hard_route as HR
 from . import master_tools as MT
 from . import tools as T
@@ -135,6 +136,21 @@ def register(ctx) -> None:
             description=description,
             emoji=emoji,
         )
+    # ``plobi say`` = 同一枚嘴的第二个把手，给**不在工具循环里**的说话者（外包出去的
+    # L2、终端上的人）。它不新造投递：直接调上面那只 ``CH.handle_say``，所以落点、
+    # 留痕、唤醒与内部 Agent 用的 ``say`` 逐字相同（裁 94）。身份只认
+    # ``PLOBI_AGENT_ID``——这一档故意没有 ``--as``。
+    ctx.register_cli_command(
+        name="say",
+        help="Say something to another Agent (same delivery path as the `say` tool)",
+        setup_fn=cli_say.setup,
+        handler_fn=cli_say.run,
+        description=(
+            "Hand a message to an Agent in the roster. Same mouth as the `say` "
+            "tool — one delivery path, one trace. The speaker is whoever "
+            "PLOBI_AGENT_ID says; there is no --as flag on purpose."
+        ),
+    )
     try:
         from plobi.agents.registry import ensure_north_star_toolset
 

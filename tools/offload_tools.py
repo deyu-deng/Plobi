@@ -173,8 +173,17 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
         # 但"真的推进了项目"要求落在项目自己的目录 ⇒ 这里明说，不静默替用户选。
         cwd = str(channel.default_workdir())
 
+    # 谁派的活，就让它回给谁。读路用现成的那只（与 `cronjob_tools._speaker_recipient_name`
+    # 同一个来源）。名字对不对**不在这里判**：`say` 投递时按名册拒，并把可发的人列回来，
+    # 这里再查一遍就是第二份真源（裁 94）。空身份 = L1，名册里没有那一行 ⇒ 不附回话那一格，
+    # 也不硬编一个收件人。
+    from gateway.session_context import get_session_env
+
+    reply_to = (get_session_env("PLOBI_AGENT_ID") or "").strip()
+
     result = channel.run_task(task, cwd=cwd, agent=agent_name,
-                              permission_mode=args.get("permission_mode") or None)
+                              permission_mode=args.get("permission_mode") or None,
+                              reply_to=reply_to)
     ledger_row = to_ledger_result(result)
     RoundLedger().append(ledger_row, brief=task)
 
@@ -192,6 +201,9 @@ def _handle_run(args: Dict[str, Any], **_kw: Any) -> str:
         "report": summarize_round([ledger_row]),
         "asked": task[:280],
     }
+    if reply_to:
+        # 带没带回话把手要看得见——没带的时候 L2 只能等返回值，那不是"它不想说"。
+        payload["reply_to"] = reply_to
     if ledger_row.external_session:
         # 有值才提这一格，没值不提、也不写"未知会话"糊弄（判据：空串不是可跳的标识）。
         payload["external_session"] = ledger_row.external_session

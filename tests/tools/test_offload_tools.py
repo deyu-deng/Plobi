@@ -115,9 +115,10 @@ class TestASuccessfulOffloadReportsEverything:
         captured: Dict[str, Any] = {}
         import agent.external_offload as channel
 
-        def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0):
+        def fake_run_task(task, *, cwd=None, agent=None, permission_mode=None, timeout=900.0,
+                          reply_to=""):
             captured.update({"task": task, "cwd": str(cwd), "agent": agent,
-                             "permission_mode": permission_mode})
+                             "permission_mode": permission_mode, "reply_to": reply_to})
             return result or FakeChannelResult()
 
         rows: list = []
@@ -143,6 +144,24 @@ class TestASuccessfulOffloadReportsEverything:
         assert body["artifacts"][0]["path"].endswith("today.py")
         assert len(body["artifacts"][0]["sha256_12"]) in (12, len("unreadable"))
         assert "交给 codebuddy" in body["report"] and "bypassPermissions" in body["report"]
+
+    def test_the_dispatching_agent_becomes_the_reply_target(self, monkeypatch, tmp_path):
+        """谁派的活，外包就回给谁（用户 2026-10-22：L2 要真能开口）。
+
+        身份只从运行时的 ``PLOBI_AGENT_ID`` 读——**工具参数里没有这一格**，那正是
+        裁 185 要的：让模型填收件人身份等于让它替别人说话。
+        """
+        monkeypatch.setenv("PLOBI_AGENT_ID", "Sindri")
+        _body, captured, _rows = self._run(monkeypatch, tmp_path)
+
+        assert captured["reply_to"] == "Sindri"
+
+    def test_no_identity_attaches_no_reply_target_and_says_nothing(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+        body, captured, _rows = self._run(monkeypatch, tmp_path)
+
+        assert captured["reply_to"] == ""
+        assert "reply_to" not in body, "没带把手时不提这一格，也不写「未知收件人」糊弄"
 
     def test_unmeasurable_money_stays_null_and_says_so(self, monkeypatch, tmp_path):
         body, _c, _r = self._run(monkeypatch, tmp_path)
