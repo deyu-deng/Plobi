@@ -16,8 +16,9 @@
  */
 
 import { atom } from 'nanostores'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
+import { getAgenda } from '@/plobi'
 import {
   $agendaEvents,
   setAgendaError,
@@ -25,7 +26,7 @@ import {
   setAgendaLoading
 } from '@/store/agenda'
 import { $busy } from '@/store/session'
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaDay, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaAnchor, AgendaAvoidWindow, AgendaDay, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 import { fetchAllAgendaEvents } from '../api'
 
@@ -159,6 +160,186 @@ export async function refreshAgendaTimeline(): Promise<void> {
 /** L1 right rail should refetch as soon as a turn settles, not wait for the 8s poll. */
 export function shouldRefreshAgendaOnBusyChange(previousBusy: boolean, nextBusy: boolean): boolean {
   return previousBusy && !nextBusy
+}
+
+// ---------------------------------------------------------------------------
+// WP-AGENDA-RAIL-APPLE: 一屏只画**选中的那一天**
+//
+// 上面那套 poll 的口径一个字不动（今天+明天、写进共享的 `@/store/agenda`，
+// 全屏看板 `app/agenda` 也读它）。这一节只加两件事：
+//   - 选中别的日子时，按那一天单独取一次（`/api/agenda?from&to` + `/api/agenda/day`），
+//     结果缓存在模块级 Map 里，同一周来回点不再重复打后端；
+//   - 抬头那一周的号码下面要点小圆点，所以整周也要有一份"哪天有几件事"的计数。
+// 今天永远走共享 store 的现成数据（seed），不另取一份 —— 两处真源会各说各话。
+// ---------------------------------------------------------------------------
+
+export interface RailDay {
+  anchors: AgendaAnchor[]
+  avoidWindows: AgendaAvoidWindow[]
+  events: AgendaEvent[]
+  plans: AgendaPlanItem[]
+}
+
+export const EMPTY_RAIL_DAY: RailDay = { anchors: [], avoidWindows: [], events: [], plans: [] }
+
+/** 后端认的是带 `T` 的完整本地 ISO（与 `tools/agenda_tools.py` 的 `_bound()` 同一口径）。 */
+function dayWindow(dateKey: string): [string, string] {
+  return [`${dateKey}T00:00:00`, `${dateKey}T23:59:59`]
+}
+
+export function shiftDateKey(dateKey: string, deltaDays: number): string {
+  const date = new Date(`${dateKey}T00:00:00`)
+
+  date.setDate(date.getDate() + deltaDays)
+
+  return localDateKey(date)
+}
+
+/** 抬头那一周从周日开始（Apple 日历中文区默认也是日头）。 */
+export function weekStartOf(dateKey: string): string {
+  return shiftDateKey(dateKey, -new Date(`${dateKey}T00:00:00`).getDay())
+}
+
+export function weekKeysOf(dateKey: string): string[] {
+  const start = weekStartOf(dateKey)
+
+  return Array.from({ length: 7 }, (_, offset) => shiftDateKey(start, offset))
+}
+
+const dayCache = new Map<string, RailDay>()
+const dayInFlight = new Map<string, Promise<RailDay>>()
+
+/**
+ * 取数走的是桌面那条 IPC 桥。桥不在（渲染层单独挂载、单测、后端还没起来的空窗）
+ * 就**什么都不取**：调用方拿到空集，轴照旧画刻度，绝不拿别处的数据冒充那一天。
+ */
+function agendaBridgeReady(): boolean {
+  return Boolean((window as unknown as { plobiDesktop?: { api?: unknown } }).plobiDesktop?.api)
+}
+
+function loadDay(dateKey: string): Promise<RailDay> {
+  const cached = dayCache.get(dateKey)
+
+  if (cached) {
+    return Promise.resolve(cached)
+  }
+
+  if (!agendaBridgeReady()) {
+    return Promise.resolve(EMPTY_RAIL_DAY)
+  }
+
+  const pending = dayInFlight.get(dateKey)
+
+  if (pending) {
+    return pending
+  }
+
+  const [from, to] = dayWindow(dateKey)
+  const request = Promise.all([getAgenda(from, to), fetchDayPayload(dateKey)])
+    .then(([events, day]) => {
+      const loaded: RailDay = {
+        anchors: day?.anchors ?? [],
+        avoidWindows: day?.avoid_windows ?? [],
+        events,
+        plans: day?.plan_items ?? []
+      }
+
+      dayCache.set(dateKey, loaded)
+
+      return loaded
+    })
+    .catch(() => EMPTY_RAIL_DAY)
+    .finally(() => {
+      dayInFlight.delete(dateKey)
+    })
+
+  dayInFlight.set(dateKey, request)
+
+  return request
+}
+
+/**
+ * 选中那一天的四样数据。`coveredKeys` 是 seed（共享 store 那份今天+明天的窗）
+ * 真的覆盖到的日子——落在里面的直接用 seed，不另取一份，两处真源会各说各话；
+ * 别的日子现取。取不到就是空轴，不拿今天的数据冒充别的日子。
+ */
+export function useAgendaRailDay(dateKey: string, seed: RailDay, coveredKeys: string[]): RailDay {
+  const covered = coveredKeys.includes(dateKey)
+  const [loaded, setLoaded] = useState<RailDay>(() => dayCache.get(dateKey) ?? EMPTY_RAIL_DAY)
+
+  useEffect(() => {
+    if (covered) {
+      return
+    }
+
+    const cached = dayCache.get(dateKey)
+
+    if (cached) {
+      setLoaded(cached)
+
+      return
+    }
+
+    let cancelled = false
+
+    void loadDay(dateKey).then(day => {
+      if (!cancelled) {
+        setLoaded(day)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [dateKey, covered])
+
+  return covered ? seed : loaded
+}
+
+/** 抬头那一周每天有几件事（小圆点的个数）。 */
+export function useAgendaRailWeekCounts(dateKey: string, seedEvents: AgendaEvent[]): Record<string, number> {
+  const week = weekKeysOf(dateKey)
+  const signature = week.join('|')
+  const [rows, setRows] = useState<AgendaEvent[]>([])
+
+  useEffect(() => {
+    if (!agendaBridgeReady()) {
+      setRows([])
+
+      return
+    }
+
+    let cancelled = false
+    const [from, to] = [`${week[0]}T00:00:00`, `${week[6]}T23:59:59`]
+
+    void getAgenda(from, to)
+      .then(events => {
+        if (!cancelled) {
+          setRows(events)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRows([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+    // signature 就是这一周七天；换周才重取。
+  }, [signature])
+
+  const counts: Record<string, number> = {}
+
+  // 共享 store 那份（今天+明天的窗）先算进来：周取数回来之前圆点不闪空。
+  for (const event of [...rows, ...seedEvents]) {
+    const key = (event.start_at ?? '').slice(0, 10)
+
+    counts[key] = (counts[key] ?? 0) + 1
+  }
+
+  return counts
 }
 
 /**

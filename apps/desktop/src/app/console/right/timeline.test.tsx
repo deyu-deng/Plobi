@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgendaEvent } from '@/types/plobi'
@@ -54,29 +54,51 @@ describe('Timeline (day axis)', () => {
     cleanup()
   })
 
-  it('shows the empty hint only when there is no day to paint at all', () => {
-    // Today + tomorrow always render (裁定 37.2 / 39), so the empty hint
-    // is reserved for truly empty inputs (no events AND no avoid windows).
+  it('moves the arrows a whole week, to the same weekday', () => {
+    render(<Timeline events={[event('a', dateAt(0, 9))]} />)
+
+    const nextWeek = dateAt(7, 9).slice(0, 10)
+    const today = dateAt(0, 9).slice(0, 10)
+
+    fireEvent.click(screen.getByTestId('timeline-week-right'))
+
+    // 轴换到「下一周的同一天」，抬头那一周也跟着换成那一周。
+    expect(screen.getByTestId(`timeline-day-${nextWeek}`)).toBeTruthy()
+    expect(screen.getByTestId(`timeline-day-cell-${nextWeek}`)).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId('timeline-week-left'))
+
+    expect(screen.getByTestId(`timeline-day-${today}`)).toBeTruthy()
+  })
+
+  it('keeps the whole-day axis and says the day is empty when it has nothing', () => {
     vi.useFakeTimers()
 
     try {
       vi.setSystemTime(new Date(2026, 8, 16, 9, 0, 0))
       render(<Timeline events={[]} />)
-      // Empty store ⇒ today's minimum axis still paints.
-      expect(screen.queryByTestId('timeline-empty')).toBeNull()
-      expect(screen.getByTestId(`timeline-day-${new Date().getFullYear()}-09-16`)).toBeTruthy()
+
+      // 一屏只画选中的那一天：没安排也照旧给 00:00–24:00 的刻度 + 一句空提示。
+      expect(screen.getByTestId('timeline-day-2026-09-16')).toBeTruthy()
+      expect(screen.getByTestId('timeline-empty')).toBeTruthy()
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('groups today and tomorrow under their section labels', () => {
+  it('paints only the selected day, and the week strip switches which one', () => {
     render(<Timeline events={[event('a', dateAt(0, 9)), event('b', dateAt(1, 14))]} />)
 
-    expect(screen.getByText('Today')).toBeTruthy()
-    expect(screen.getByText('Tomorrow')).toBeTruthy()
+    const tomorrow = dateAt(1, 14).slice(0, 10)
+
+    // 明天那条不再堆在同一屏里。
     expect(screen.getByText('event-a')).toBeTruthy()
+    expect(screen.queryByText('event-b')).toBeNull()
+
+    fireEvent.click(screen.getByTestId(`timeline-day-cell-${tomorrow}`))
+
     expect(screen.getByText('event-b')).toBeTruthy()
+    expect(screen.queryByText('event-a')).toBeNull()
   })
 
   it('draws the whole-day 00:00–23:00 hour axis on each day', () => {
@@ -278,13 +300,14 @@ describe('Timeline (day axis)', () => {
       )
       unmount()
 
-      // Tomorrow's axis carries no "now" line — the line lives only inside
-      // today's day container (裁定 36.2 / 39).
+      // 换到明天那一格之后，now 线不再出现——它只属于今天那一轴（裁定 36.2 / 39）。
       render(<Timeline events={[event('b', dateAt(1, 9), { end_at: dateAt(1, 11) })]} />)
-      const tomorrowDate = new Date()
-      tomorrowDate.setDate(tomorrowDate.getDate() + 1)
-      const tomorrowId = `timeline-day-${tomorrowDate.toISOString().slice(0, 10)}`
-      expect(screen.getByTestId(tomorrowId).querySelector('[data-testid="timeline-now"]')).toBeNull()
+      const tomorrow = dateAt(1, 9).slice(0, 10)
+
+      fireEvent.click(screen.getByTestId(`timeline-day-cell-${tomorrow}`))
+
+      expect(screen.getByTestId(`timeline-day-${tomorrow}`)).toBeTruthy()
+      expect(screen.queryByTestId('timeline-now')).toBeNull()
     } finally {
       vi.useRealTimers()
     }
@@ -307,11 +330,14 @@ describe('Timeline (day axis)', () => {
         />
       )
 
-      const dayIds = screen.getAllByTestId(/^timeline-day-/).map(node => node.getAttribute('data-testid'))
-      expect(dayIds[0]).toBe(`timeline-day-${today}`)
-      expect(dayIds[1]).toBe(`timeline-day-${tomorrowDate.toISOString().slice(0, 10)}`)
-      // The today axis is the minimum, so its section label still mounts.
-      expect(screen.getAllByText('Today').length).toBeGreaterThan(0)
+      // 只有一根轴，就是今天那根；明天不在这屏里堆着。
+      const axes = screen.getAllByTestId(/^timeline-day-\d{4}/).map(node => node.getAttribute('data-testid'))
+
+      expect(axes).toEqual([`timeline-day-${today}`])
+      // 抬头那一周就是换天的入口，两根箭头都在。
+      expect(screen.getByTestId('timeline-week-left')).toBeTruthy()
+      expect(screen.getByTestId('timeline-week-right')).toBeTruthy()
+      expect(screen.getByTestId(`timeline-day-cell-${tomorrowDate.toISOString().slice(0, 10)}`)).toBeTruthy()
       // No events → no blocks; the avoid-band slot exists but stays empty.
       expect(screen.queryByTestId(/^timeline-avoid-/)).toBeNull()
     } finally {
