@@ -55,6 +55,29 @@ class TestEnsurePlobiHome:
             # every time a migration cleaned it up.
             assert not (tmp_path / "memories").exists()
 
+    def test_home_subdir_lists_have_one_source_and_no_retired_dir(self):
+        """两个分支共用一张名单，退休的 ``memories`` 谁都别想再加回来。"""
+        from plobi_cli.config import _HOME_EXTRA_SUBDIRS, _HOME_REQUIRED_SUBDIRS
+
+        both = _HOME_REQUIRED_SUBDIRS + _HOME_EXTRA_SUBDIRS
+        assert "memories" not in both
+        assert {"cron", "sessions", "logs"} <= set(_HOME_REQUIRED_SUBDIRS)
+
+    def test_managed_home_bootstraps_without_the_retired_memories_dir(self, tmp_path):
+        """托管分支过去缺 ``memories/`` 就抛错——那会让干净装机开不了机。
+
+        这是「停止播种」那一刀改出的真回归：普通分支不再建这一格，托管分支却还
+        要求它存在。修成两个分支共用同一张必需名单后，本条钉住不复发。
+        """
+        from plobi_cli.config import _ensure_plobi_home_managed
+
+        for sub in ("cron", "sessions", "logs"):
+            (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+        assert not (tmp_path / "memories").exists()
+
+        _ensure_plobi_home_managed(tmp_path)  # 不抛
+        assert not (tmp_path / "memories").exists(), "托管分支也不该把退休目录建回来"
+
     def test_creates_default_soul_md_if_missing(self, tmp_path):
         with patch.dict(os.environ, {"PLOBI_HOME": str(tmp_path)}):
             ensure_plobi_home()
