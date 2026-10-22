@@ -241,11 +241,17 @@ def test_roster_row_is_askable_and_answers_end_to_end(client, home, monkeypatch)
     assert body["answer"] == _ANSWER
     assert body["session_id"] == _SESSION
 
-    # 起子进程那一路：配置面钉分身家（裁定 179），总账面钉单库（缺口 A）。
+    # 起子进程那一路（2026-10-22 改写，裁定 42 + 180 的形状）：
+    #   * 身份是 `PLOBI_AGENT_ID`（名册 name）——profile 不再是分身单位；
+    #   * 配置 / 技能 / 记忆走**共享层 root**，不再钉分身家
+    #     （旧版这里断言 `profiles/stithy` + `PLOBI_PROFILE`，那一套正是
+    #     裁定 42 判废的「一个 profile 就是一整套 Plobi」）；
+    #   * 会话总账钉单库（缺口 A / 裁定 180）。
+    # 现核依据：不带 `-p` 起进程实测可用（子进程自报「手上有 72 个技能」）。
     entry = registry.get("stithy")
     argv, child_env, cwd = AA.build_child_command(entry, question)
-    assert child_env["PLOBI_HOME"] == str(profile_dir)
-    assert child_env["PLOBI_PROFILE"] == "stithy"
+    assert child_env["PLOBI_HOME"] == str(home / ".plobi")
+    assert "PLOBI_PROFILE" not in child_env
     assert child_env["PLOBI_STATE_HOME"] == str(home / ".plobi")
     assert child_env["PLOBI_AGENT_ID"] == "stithy"
     # 前缀是「这台机器怎么找到 plobi 可执行」的问题（POSIX 是 plobi 一条，
@@ -255,8 +261,10 @@ def test_roster_row_is_askable_and_answers_end_to_end(client, home, monkeypatch)
 
     prefix = resolve_plobi_argv()
     assert argv[: len(prefix)] == list(prefix)
-    assert argv[len(prefix) : len(prefix) + 5] == ["-p", "stithy", "--cli", "--accept-hooks", "chat"]
-    assert argv[len(prefix) + 5 : len(prefix) + 6] == ["-q"]
+    # **没有 `-p`**：不再给每个分身起一整套 Plobi（裁定 42）。
+    assert "-p" not in argv
+    assert argv[len(prefix) : len(prefix) + 3] == ["--cli", "--accept-hooks", "chat"]
+    assert argv[len(prefix) + 3 : len(prefix) + 4] == ["-q"]
     assert not any("yolo" in part.casefold() for part in argv)
 
     # 问题带着「谁在问」进到他那一轮——证据是**发出去的那条 `-q`**：
