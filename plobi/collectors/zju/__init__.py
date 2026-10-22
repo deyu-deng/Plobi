@@ -74,17 +74,20 @@ SPEC = SourceSpec(
     # 里（能力位注记原话「账密已给（根 .env）」），**声明层压根不收密钥**——
     # 所以这里只能声明这两格，这不是省略。
     setup_fields=(
+        # **两格都改成"选填"**（10-22 现读撞出来的假阴性）：这一条早就在正常进账
+        # （池里 49 条），可 `required=True` 让新加的那一屏把它判成「未连接：缺首次配置」——
+        # 因为它的真凭据在根 `.env`（`auth.read_credentials()` 那一只读路）、地址有代码默认值，
+        # 这两格从来只是**覆盖位**。声明层的 `required` 现在是屏上那颗开关的判据，
+        # 再把它标成必填就是拿一个可选覆盖位去挡一条已经活着的信源。
         SetupField(
             key="base_url",
             label="School system address",
             kind="url",
-            required=True,
-            help="The portal you sign in to.",
+            help="Only if your school's portal differs from the built-in one.",
         ),
         SetupField(
             key="account",
             label="Account name",
-            required=True,
             help="Not the password — that stays in .env.",
         ),
     ),
