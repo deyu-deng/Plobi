@@ -82,7 +82,6 @@ import { agentScope, L1_SCOPE } from './console/chat/scope'
 import { AddEventForm } from './console/right/add-event'
 import { Timeline } from './console/right/timeline'
 import {
-  $agendaAnchors,
   $agendaAvoidWindows,
   $agendaPlans,
   $agendaRhythmOff,
@@ -198,7 +197,6 @@ export function DesktopController() {
   // WP-D: the L1 agenda rail reads the same single agenda store the full-screen
   // board renders; the controller subscribes so the base Pane can host it.
   const agendaEvents = useStore($agendaEvents)
-  const agendaAnchors = useStore($agendaAnchors)
   const agendaPlans = useStore($agendaPlans)
   const agendaAvoidWindows = useStore($agendaAvoidWindows)
   const agendaRhythmOff = useStore($agendaRhythmOff)
@@ -1376,7 +1374,6 @@ export function DesktopController() {
       hoverReveal
       id="agenda-timeline"
       key="agenda-timeline"
-      maxWidth={FILE_BROWSER_MAX_WIDTH}
       minWidth={FILE_BROWSER_MIN_WIDTH}
       resizable
       side={railSide}
@@ -1428,7 +1425,7 @@ export function DesktopController() {
               </Button>
             </div>
           ) : null}
-          <Timeline anchors={agendaAnchors} avoidWindows={agendaAvoidWindows} events={agendaEvents} plans={agendaPlans} />
+          <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} plans={agendaPlans} />
           {agendaRhythmOff && !agendaLoading ? (
             <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
               {t.agenda.rhythmOff}

@@ -13,11 +13,9 @@ export interface TimelineAvoidBand {
  * returns, and the vitest suite pins the arithmetic (hour span, block height,
  * open-ended events, side-by-side columns) without mounting anything.
  *
- * Three block lanes share the same axis:
+ * Two block lanes share the same axis:
  *   - `event` — the real agenda rows (the user's meetings / events);
- *   - `anchor` — the day's routine blocks (sleep / meals) shown as a soft
- *     background band; never actionable;
- *   - `plan` — planned project work, drawn in the same anchor lane.
+ *   - `plan` — planned project work, drawn as a background band.
  *
  * Rules that come straight from the rulings:
  * - The axis is the **whole local day**: 00:00 → 24:00, every hour ticked. An
@@ -37,7 +35,7 @@ export interface TimelineAvoidBand {
  *   MUST apply it, otherwise every block stacks at the top (裁定 32.1).
  */
 
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 /** The axis always starts at local midnight. */
 export const TIMELINE_START_HOUR = 0
@@ -51,7 +49,7 @@ export const LABEL_GUTTER_FRACTION = 0.18
 /** Outer axis padding (px) so the leftmost column has breathing room. */
 export const LANE_INSET_PX = 6
 
-export type TimelineLane = 'anchor' | 'event' | 'plan'
+export type TimelineLane = 'event' | 'plan'
 
 export function dayKeyOf(iso: string): string {
   return (iso ?? '').slice(0, 10)
@@ -90,9 +88,9 @@ export interface TimelineBlock {
   /** `end_at` is missing (never guessed) — a deadline: height 0, no overlap
    *  test, and the UI draws it as one line across the day with the title on it. */
   openEnded: boolean
-  /** The source row: an agenda event, an anchor, or a plan item. */
-  source: AgendaAnchor | AgendaEvent | AgendaPlanItem
-  /** Stable id from `source.id` when present (anchors have none). */
+  /** The source row: an agenda event or a plan item. */
+  source: AgendaEvent | AgendaPlanItem
+  /** Stable id from `source.id` when present. */
   id: null | string
   /** Title text to render in the block. */
   title: string
@@ -127,10 +125,10 @@ export interface TimelineDay {
 }
 
 /**
- * A minimum day axis: the default 08:00–23:00 ticks and a flat height. Used when
- * today carries no events, anchors, plans, or avoid windows — the rail still
- * paints an empty "today" axis above tomorrow (裁定 37.2 / 39), so the user
- * can see the now line and the day's structure.
+ * A minimum day axis: the default 00:00–24:00 ticks and a flat height. Used when
+ * today carries no events, plans, or avoid windows — the rail still paints an
+ * empty "today" axis (裁定 37.2 / 39), so the user can see the now line and the
+ * day's structure.
  */
 export function emptyDay(dayKey: string): TimelineDay {
   const spanStartMinutes = TIMELINE_START_HOUR * 60
@@ -160,10 +158,10 @@ function pxOf(minutes: number, spanStartMinutes: number): number {
 /**
  * Block height for a `start → end` pair on this axis.
  *
- * A same-day row whose end precedes its start (e.g. a sleep anchor written as
- * `23:30 → 07:30` on one date) crosses midnight: it is painted down to the
- * axis bottom rather than producing a negative height (裁定 32.1). Open-ended
- * rows keep the honest minimum — never a fabricated hour.
+ * A same-day row whose end precedes its start (e.g. 23:30 → 07:30 written as
+ * one date) crosses midnight: it is painted down to the axis bottom rather
+ * than producing a negative height (裁定 32.1). Open-ended rows keep the
+ * honest minimum — never a fabricated hour.
  */
 function blockHeightPx(startMinutes: number, endMinutes: number, spanEndMinutes: number): number {
   // 跨午夜的行（如 23:30 → 07:30 写成同一天）画到轴尾，不给出负高度（裁定 32.1）。
@@ -199,7 +197,7 @@ interface OverlapCandidate {
 /**
  * Lay out one day. Returns null when nothing paints on `dayKey`.
  *
- * All three lanes are laid out on ONE grid (裁定 36.2, "苹果那种"): a block that
+ * Both lanes are laid out on ONE grid (裁定 36.2, "苹果那种"): a block that
  * collides with any other block — whatever its lane — moves to its own column.
  * Blocks that collide with nothing stay full width. The lane still decides the
  * skin (`data-lane` + the stroke classes), not the column band.
@@ -207,7 +205,6 @@ interface OverlapCandidate {
 export function layoutDay(
   events: AgendaEvent[],
   dayKey: string,
-  anchors: AgendaAnchor[] = [],
   plans: AgendaPlanItem[] = [],
   avoidWindows: AgendaAvoidWindow[] = []
 ): TimelineDay | null {
@@ -216,13 +213,12 @@ export function layoutDay(
     .slice()
     .sort((left, right) => minutesOf(left.start_at) - minutesOf(right.start_at))
 
-  const anchorRows = anchors.filter(row => dayKeyOf(row.start_at) === dayKey)
   const planRows = plans
     .filter(row => dayKeyOf(row.start_at) === dayKey)
     .slice()
     .sort((left, right) => minutesOf(left.start_at) - minutesOf(right.start_at))
 
-  if (eventRows.length === 0 && anchorRows.length === 0 && planRows.length === 0 && avoidWindows.length === 0) {
+  if (eventRows.length === 0 && planRows.length === 0 && avoidWindows.length === 0) {
     return null
   }
 
@@ -262,31 +258,6 @@ export function layoutDay(
     }
   })
 
-  const anchorCandidates: OverlapCandidate[] = anchorRows.map(anchor => {
-    const startMinutes = minutesOf(anchor.start_at)
-
-    return {
-      block: {
-        column: 0,
-        endClock: clockOf(anchor.end_at),
-        heightPx: 0,
-        id: null,
-        lane: 'anchor' as TimelineLane,
-        location: null,
-        openEnded: false,
-        overlaps: false,
-        source: anchor,
-        startMinutes,
-        status: null,
-        title: anchor.label,
-        topPx: Math.round(pxOf(startMinutes, spanStartMinutes)),
-        widthFraction: 0
-      },
-      endMinutes: effectiveEnd(startMinutes, minutesOf(anchor.end_at), spanEndMinutes),
-      startMinutes
-    }
-  })
-
   const planCandidates: OverlapCandidate[] = planRows.map(plan => {
     const startMinutes = minutesOf(plan.start_at)
     const endMinutes = plan.end_at ? minutesOf(plan.end_at) : null
@@ -313,10 +284,10 @@ export function layoutDay(
     }
   })
 
-  // ONE grid for every lane (裁定 36.2): a lecture and a breakfast that
+  // ONE grid for both lanes (裁定 36.2): a lecture and a planned block that
   // intersect get different columns instead of stacking as two translucent
   // layers. Blocks that collide with nothing keep the full width.
-  const grid = [...eventCandidates, ...anchorCandidates, ...planCandidates].sort(
+  const grid = [...eventCandidates, ...planCandidates].sort(
     (left, right) => left.startMinutes - right.startMinutes
   )
 
@@ -336,7 +307,7 @@ export function layoutDay(
   }
 
   // Confirmed avoid windows (裁定 39 / WP-AXIS-TODAY). Same cross-midnight
-  // rule as anchors. Drawn behind everything, untitled, full-width.
+  // rule as events. Drawn behind everything, untitled, full-width.
   const avoidBands: TimelineAvoidBand[] = avoidWindows
     .filter(window => dayKeyOf(window.start_at) === dayKey)
     .map(window => {
@@ -353,12 +324,11 @@ export function layoutDay(
   const result: TimelineDay = {
     avoidBands,
     axisContentFraction: 1 - LABEL_GUTTER_FRACTION,
-    // Lane order (events → routine) is presentation-only: the renderer's
+    // Lane order (events → plans) is presentation-only: the renderer's
     // z-index decides layering, and it keeps block test ids stable across the
     // one-grid merge.
     blocks: [
       ...eventCandidates.map(candidate => candidate.block),
-      ...anchorCandidates.map(candidate => candidate.block),
       ...planCandidates.map(candidate => candidate.block)
     ],
     hours,

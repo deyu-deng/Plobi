@@ -4,12 +4,12 @@
  * Rendered as a **vertical day axis**: hour ticks from 08:00 to 23:00 (widened
  * when the day holds anything outside that window). Each block sits between
  * its `start_at` and `end_at`; side-by-side overlaps (裁定 31.1 / 36.2, "苹果
- * 那种") get their own column — across ALL lanes, not per lane — so a class and
- * a breakfast that collide sit next to each other instead of stacking as two
+ * 那种") get their own column — across ALL lanes, not per lane — so two
+ * colliding events sit next to each other instead of stacking as two
  * translucent layers. The lane only decides the skin (裁定 34.3): solid for
- * events, dashed for routine anchors, dotted + accent rail for planned work.
- * Open-ended blocks stay honest — minimum height and `未写结束`, never a
- * fabricated hour. Today's axis also draws a "now" line at the local clock.
+ * events, dotted + accent rail for planned work. Open-ended blocks stay
+ * honest — a full-width line at that instant, never a fabricated hour.
+ * Today's axis also draws a "now" line at the local clock.
  *
  * Layout math lives in `./timeline-layout` (pure, unit-tested); this file only
  * renders.
@@ -20,7 +20,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { PanelSectionLabel } from '@/app/overlays/panel'
 import { currentI18nLocale, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 import {
   type RailDay,
@@ -71,20 +71,15 @@ function dateHeadingOf(dayKey: string): string {
 }
 
 /**
- * Lane skin for one block. Three lanes share the axis, so the stroke style
+ * Lane skin for one block. Two lanes share the axis, so the stroke style
  * carries the identity — at a glance you must be able to tell "this is a class
- * / a hand-written event" from "this is my routine" from "this is planned work"
- * (裁定 34.3). Only existing UI vars, no new design language:
+ * / a hand-written event" from "this is planned work" (裁定 34.3). Only
+ * existing UI vars, no new design language:
  *   - event  → solid border, tinted by status (unchanged);
- *   - anchor → dashed hairline + faint sky wash = the day's background band;
  *   - plan   → dotted hairline + a thick `--ui-accent` left rail (the same
  *     accent rail `pending-event-card` uses for "this is a proposal").
  */
 function blockBorderClass(block: TimelineBlock): string {
-  if (block.lane === 'anchor') {
-    return 'border-dashed border-sky-500/40 bg-sky-500/5'
-  }
-
   if (block.lane === 'plan') {
     return 'border-dotted border-(--ui-stroke-tertiary) border-l-2 border-l-(--ui-accent) bg-(--ui-accent)/5'
   }
@@ -229,15 +224,15 @@ function DayAxis({
             <div
               className={cn(
                 'absolute overflow-hidden rounded-md border px-1.5 py-0.5',
-                // Routine anchors/plans are the day's soft background band; the
-                // real events must never be covered by one (裁定 32.1 独立 lane).
+                // Plans are the day's soft background band; the real events
+                // must never be covered by one (裁定 32.1 独立 lane).
                 block.lane === 'event' ? 'z-10' : 'z-0',
                 blockBorderClass(block)
               )}
               data-lane={block.lane}
               data-overlap={block.overlaps ? 'true' : undefined}
-              data-testid={`timeline-block-${block.id ?? `anchor-${index}`}`}
-              key={block.id ?? `anchor-${index}-${block.startMinutes}`}
+              data-testid={`timeline-block-${block.id ?? `block-${index}`}`}
+              key={block.id ?? `block-${index}-${block.startMinutes}`}
               style={{
                 // `top: auto` (the default for an absolutely positioned box)
                 // pins every block to the container top — the "everything
@@ -271,12 +266,10 @@ function DayAxis({
 }
 
 export function Timeline({
-  anchors,
   avoidWindows,
   events,
   plans
 }: {
-  anchors?: AgendaAnchor[]
   /** Confirmed avoid windows keyed by day (rendered as faint bands). */
   avoidWindows?: AgendaAvoidWindow[]
   events: AgendaEvent[]
@@ -330,12 +323,12 @@ export function Timeline({
     scroller.scrollTop = Math.max(0, offsetWithinScroller - 16)
   }, [todayKey])
 
-  // Defensive dedupe: any upstream layer that appends the same event/anchor
+  // Defensive dedupe: any upstream layer that appends the same event/plan
   // twice (e.g. day endpoint returning today's block on top of the all-events
   // window) would otherwise make `layoutDay` greedy-split the duplicate into
   // its own column, so the same class would render at half-width on the right
   // of its real column (WP-AXIS-INSIGHT). We dedupe by id when present, and
-  // by `(start_at, title)` for id-less rows (anchors / plans / avoid windows).
+  // by `(start_at, title)` for id-less rows (plans / avoid windows).
   // The first occurrence wins; ordering is preserved.
   function dedupe<T extends { id?: null | string; start_at: string; title?: string }>(rows: T[]): T[] {
     const seenIds = new Set<string>()
@@ -366,12 +359,11 @@ export function Timeline({
 
   const seed: RailDay = useMemo(
     () => ({
-      anchors: dedupe(anchors ?? []),
       avoidWindows: dedupe(avoidWindows ?? []),
       events: dedupe(events),
       plans: dedupe(plans ?? [])
     }),
-    [events, anchors, plans, avoidWindows]
+    [events, plans, avoidWindows]
   )
 
   const rail = useAgendaRailDay(selected, seed, [todayKey, tomorrowKey])
@@ -379,7 +371,7 @@ export function Timeline({
   const week = weekKeysOf(selected)
 
   const day = useMemo(
-    () => layoutDay(rail.events, selected, rail.anchors, rail.plans, rail.avoidWindows) ?? emptyDay(selected),
+    () => layoutDay(rail.events, selected, rail.plans, rail.avoidWindows) ?? emptyDay(selected),
     [rail, selected]
   )
 
@@ -480,10 +472,10 @@ function WeekStrip({
   const todayIndex = new Date(`${todayKey}T00:00:00`).getDay()
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 overflow-hidden">
       <ChevronButton direction="left" label={shiftDateKey(selected, -7)} onClick={() => onShiftWeek(-7)} />
 
-      <div className="flex flex-1 items-start justify-between">
+      <div className="grid min-w-0 flex-1 grid-cols-7 items-start">
         {week.map((key, index) => {
           const active = key === selected
           const isToday = key === todayKey
@@ -491,7 +483,7 @@ function WeekStrip({
 
           return (
             <button
-              className="flex w-8 flex-col items-center gap-1 rounded-md py-0.5 hover:bg-(--ui-accent)/8"
+              className="flex w-full min-w-0 flex-col items-center gap-1 rounded-md py-0.5 hover:bg-(--ui-accent)/8"
               data-testid={`timeline-day-cell-${key}`}
               key={key}
               onClick={() => onSelect(key)}
@@ -508,7 +500,7 @@ function WeekStrip({
               </span>
               <span
                 className={cn(
-                  'flex size-6 items-center justify-center rounded-full text-[0.78rem] tabular-nums',
+                  'flex size-6 max-w-full items-center justify-center rounded-full text-[0.78rem] tabular-nums',
                   active
                     ? 'bg-(--ui-accent) font-semibold text-(--ui-text-on-accent)'
                     : count === 0

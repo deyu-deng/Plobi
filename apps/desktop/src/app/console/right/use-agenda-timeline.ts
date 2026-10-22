@@ -8,11 +8,11 @@
  * console is the only mounted consumer. The board's own poll is independent
  * and writes the same atoms, so whichever view mounts first owns the poll.
  *
- * WP-DAY-FACE (裁定 31.4): also seeds routine blocks (anchors / plan_items)
- * from `GET /api/agenda/day?date=…` so the same axis paints meals and
- * planned work alongside events. The endpoint is optional — when it 404s or
- * times out, the rail quietly falls back to events-only and `agendaStore
- * .rhythmOff` flips true so the UI can show "作息暂未同步".
+ * WP-DAY-FACE (裁定 31.4): also seeds plan_items from
+ * `GET /api/agenda/day?date=…` so the same axis paints planned work alongside
+ * events. The endpoint is optional — when it 404s or times out, the rail
+ * quietly falls back to events-only and `agendaStore.rhythmOff` flips true so
+ * the UI can show "作息暂未同步".
  */
 
 import { atom } from 'nanostores'
@@ -26,7 +26,7 @@ import {
   setAgendaLoading
 } from '@/store/agenda'
 import { $busy } from '@/store/session'
-import type { AgendaAnchor, AgendaAvoidWindow, AgendaDay, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaAvoidWindow, AgendaDay, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 import { fetchAllAgendaEvents } from '../api'
 
@@ -40,7 +40,6 @@ const DAY_TIMEOUT_MS = 3_000
 let inFlight: Promise<void> | null = null
 let queued = false
 
-export const $agendaAnchors = atom<AgendaAnchor[]>([])
 export const $agendaPlans = atom<AgendaPlanItem[]>([])
 /**
  * Confirmed avoid-windows (R-39 / WP-AXIS-TODAY). Backend 2 may surface these
@@ -94,7 +93,6 @@ export function localDateKey(date: Date): string {
 }
 
 async function fetchRoutine(date: Date): Promise<{
-  anchors: AgendaAnchor[]
   avoid: AgendaAvoidWindow[]
   day: null | AgendaDay
   plans: AgendaPlanItem[]
@@ -104,11 +102,10 @@ async function fetchRoutine(date: Date): Promise<{
   const day = await fetchDayPayload(dateKey)
 
   if (!day) {
-    return { anchors: [], avoid: [], day: null, plans: [], rhythmOff: true }
+    return { avoid: [], day: null, plans: [], rhythmOff: true }
   }
 
   return {
-    anchors: day.anchors ?? [],
     avoid: day.avoid_windows ?? [],
     day,
     plans: day.plan_items ?? [],
@@ -131,7 +128,6 @@ async function refresh(): Promise<void> {
 
       setAgendaEvents(rows)
       setAgendaError(null)
-      $agendaAnchors.set(routine.anchors)
       $agendaPlans.set(routine.plans)
       $agendaAvoidWindows.set(routine.avoid)
       $agendaRhythmOff.set(routine.rhythmOff)
@@ -174,13 +170,12 @@ export function shouldRefreshAgendaOnBusyChange(previousBusy: boolean, nextBusy:
 // ---------------------------------------------------------------------------
 
 export interface RailDay {
-  anchors: AgendaAnchor[]
   avoidWindows: AgendaAvoidWindow[]
   events: AgendaEvent[]
   plans: AgendaPlanItem[]
 }
 
-export const EMPTY_RAIL_DAY: RailDay = { anchors: [], avoidWindows: [], events: [], plans: [] }
+export const EMPTY_RAIL_DAY: RailDay = { avoidWindows: [], events: [], plans: [] }
 
 /** 后端认的是带 `T` 的完整本地 ISO（与 `tools/agenda_tools.py` 的 `_bound()` 同一口径）。 */
 function dayWindow(dateKey: string): [string, string] {
@@ -238,7 +233,6 @@ function loadDay(dateKey: string): Promise<RailDay> {
   const request = Promise.all([getAgenda(from, to), fetchDayPayload(dateKey)])
     .then(([events, day]) => {
       const loaded: RailDay = {
-        anchors: day?.anchors ?? [],
         avoidWindows: day?.avoid_windows ?? [],
         events,
         plans: day?.plan_items ?? []
