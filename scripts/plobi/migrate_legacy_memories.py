@@ -69,23 +69,38 @@ def _chunks(path: Path) -> list[str]:
 
 
 # 无损拆分：只在「；」「。」之后下刀，分隔符留在前一段尾巴上，所以
-# "".join(split_lossless(x)) == x 逐字成立——不丢一个字，也不改一个字。
+# "".join(parts) == chunk 逐字成立——不丢一个字，也不改一个字。
 _BOUNDARY_RE = re.compile(r"(?<=[；。])")
+# 太短的尾巴并进前一段（真数据里「没任务书的刀不开工；」才 10 字，是一条完整条款，
+# 但它独自成一条卡片就没有主语了）。旧版本在这里直接整段退回不拆——那是拿一个
+# 魔法阈值替人决定「这段不用拆」，2026-10-22 对存量实跑时被自己写的条款触发。
 MIN_FRAGMENT = 12
+
+
+def _merge_stubs(parts: list[str]) -> list[str]:
+    merged: list[str] = []
+    for part in parts:
+        if merged and len(part.strip("；。 \n")) < MIN_FRAGMENT:
+            merged[-1] += part
+        elif merged and len(merged[-1].strip("；。 \n")) < MIN_FRAGMENT:
+            merged[-1] += part
+        else:
+            merged.append(part)
+    return merged
 
 
 def split_lossless(chunk: str) -> list[str]:
     """把一整段拆成条目名单（可证明无损：拼回去必须等于原文，否则不拆）。
 
-    短段不拆（拆出一句「铁律：」这种没头没尾的碎片反而更差）；拆完任何一段太短、
-    或拼回去不等于原文，就退回整段——**宁可不拆，也不许改写成另一句话**。
+    切点只有「；」「。」两处；切完太短的尾巴**并回前一段**（不丢弃、不新增字），
+    所以 ``"".join(split_lossless(x)) == x`` 恒成立。真的拼不回去就整段退回——
+    **宁可不拆，也不许改写成另一句话。**
     """
     parts = [p for p in _BOUNDARY_RE.split(chunk) if p.strip()]
     if len(parts) < 2:
         return [chunk]
+    parts = _merge_stubs(parts)
     if "".join(parts) != chunk:
-        return [chunk]
-    if any(len(p.strip("；。 \n")) < MIN_FRAGMENT for p in parts):
         return [chunk]
     return parts
 
