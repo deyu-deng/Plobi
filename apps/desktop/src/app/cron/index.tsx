@@ -561,6 +561,8 @@ function CronJobDetail({
   const isPaused = state === 'paused'
   const deliver = jobDeliver(job)
   const prompt = jobPrompt(job)
+  // 后端没写这一格时是 undefined/null；只认「to 是个字符串」那一种形状，别把半截记录渲染成 `undefined · `。
+  const delivery = job.last_delivery && typeof job.last_delivery.to === 'string' ? job.last_delivery : null
 
   return (
     <PanelDetail>
@@ -585,7 +587,11 @@ function CronJobDetail({
             { label: c.frequencyLabel, value: jobScheduleDisplay(job) },
             { label: c.last.replace(/:$/, ''), value: formatTime(job.last_run_at) },
             { label: c.next.replace(/:$/, ''), value: formatTime(job.next_run_at) },
-            { label: c.deliverLabel, value: c.deliveryLabels[deliver] ?? deliver }
+            { label: c.deliverLabel, value: c.deliveryLabels[deliver] ?? deliver },
+            { label: c.recipientRowLabel, value: asText(job.recipient) || c.recipientRowUnset },
+            ...(delivery
+              ? [{ label: c.deliveredRowLabel, value: `${delivery.to} · ${formatTime(delivery.at)}` }]
+              : [])
           ]}
         />
 
