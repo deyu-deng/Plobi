@@ -385,7 +385,7 @@ class ZdbkCollector:
                 self._polite()
                 practice = self.transport.get(f"{BASE}/jwglxt/dessktgl/dessktcx_cxDessktcxIndex.html"
                                               f"?gnmkdm=N108001&su={student_id}")
-                rows = _practice_rows(practice.text)
+                rows = _table_rows(practice.text)
                 counts["practice"] = len(rows)
                 collected += to_occurrences("practice", rows)
             else:
@@ -407,27 +407,36 @@ class ZdbkCollector:
                 "term": report["term"]}
 
 
-def _practice_rows(page: str) -> list[dict]:
-    """实践分那一页是 HTML 表格：按 `<tr>` 拆，只留含中文的行（表头与空行不算条目）。
+def _table_rows(page: str) -> list[dict]:
+    """把 jwglxt 那种 HTML 表格啃成行——**列名认表头，不猜列序**。
 
-    这条就是"学校改页面我们就红"的那一条（用户 10-21 拍：接）。所以它**不猜列名**——
-    整行文本进 `cells`，标题取第一段；哪天页面换了，坏的是条数与标题，不是把别的东西当实践分。
+    为什么不能用"第 0 列是名称、第 3 列是分值"这种写死的列序：学校换一列顺序，写死列序就是把
+    A 列的值挂到 B 列的名字下——那是**看起来正常**的错，比报错更难查。认表头那一行，坏了就
+    是条数与列名对不上，一眼看得出（"学校改页面我们就红"这一条是用户 10-21 拍的：接）。
 
-    **这里不许造 `row_id`**：这一家在这一格从来没给过 id（10-21 实测那页只有 2 行 `<tr>`），
-    以前我按行号拼了一枚 `practice-<序号>-<前 16 字>`，那是**位置当身份**——学校把表换个序
-    整族就换身份，池里就会长出第二份。留空 ⇒ :func:`_identity` 自己退到"整行内容哈希"，
-    并在 `context.identity_key` 里写清走的是哪条路（这是**读数**，不是猜）。
+    两条不许含糊的形状：
+    - **表头行不算条目**（它同样含中文，只按"含中文"筛就会混进来）；
+    - **这一格学校从来没给过 id** ⇒ 这里不造 id。以前我按行号拼过一枚 `practice-<序号>-...`，
+      那是**位置当身份**：表换个序整族就换身份，池里长出第二份。留空 ⇒ :func:`_identity`
+      自己退到"整行内容哈希"，并把走了哪条路写进 `context.identity_key`（那是读数，不是猜）。
     """
+    header: list[str] = []
     rows: list[dict] = []
     for raw in re.findall(r"<tr[^>]*>(.*?)</tr>", page, flags=re.S | re.I):
         cells = re.findall(r"<t([dh])[^>]*>(.*?)</t[dh]>", raw, flags=re.S | re.I)
-        # 全 `<th>` 的那一行是表头，不是条目——它同样含中文，只按"含中文"筛就会混进来。
-        if cells and all(tag == "h" for tag, _ in cells):
+        if not cells:
+            continue
+        if all(tag == "h" for tag, _ in cells):        # 全 `<th>` ⇒ 表头
+            header = [_clean(body) for _tag, body in cells]
             continue
         text = [_clean(body) for _tag, body in cells]
-        text = [cell for cell in text if cell]
-        if len(text) >= 2 and any(re.search(r"[一-鿿]", cell) for cell in text):
-            rows.append({"kcmc": text[0], "cells": text})
+        if len([cell for cell in text if cell]) < 2 or not any(re.search(r"[一-鿿]", c) for c in text):
+            continue
+        row: dict = {"cells": [cell for cell in text if cell], "kcmc": next((c for c in text if c), "")}
+        for name, value in zip(header, text):
+            if name and value:
+                row[f"列·{name}"] = value
+        rows.append(row)
     return rows
 
 
