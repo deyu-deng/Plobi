@@ -176,6 +176,12 @@ class ExternalAgentSpec:
     #: 因为它压根不能写）；Qoder 还没测过，而 10-22 现读它**读了文件并答对了内容**、
     #: 只是没写文件——对它套这条判据会把一次成功的只读活判成失败。未测 ⇒ 不启用。
     artifact_required: bool = True
+    #: argv 的排法。`{task}` 是提示词，其余按序展开，空的自动丢掉。
+    #: CodeBuddy / agy 是**实测跑通**的形状，一个字不改；Qoder 的提示词是变长位置参数
+    #: （`[query...]`），写在它后面的选项会被吞进提示词本身——10-22 实测：
+    #: `--output-format json` 没生效（回包是散文）、`--permission-mode` 也没生效
+    #: （它想写文件时被权限层当场拒掉）。所以这一家必须把选项排在提示词**之前**。
+    argv_template: tuple[str, ...] = ("-p", "{task}", "--output-format", "json", "{flags}", "{extra}")
 
 
 EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
@@ -194,6 +200,7 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         default_permission_mode=DEFAULT_QODER_PERMISSION_MODE,
         permission_mode_env=QODER_PERMISSION_MODE_ENV, permission_shape="sep",
         scrub_env=QODER_SDK_ENV, artifact_required=False,
+        argv_template=("{flags}", "--output-format", "json", "{extra}", "-p", "{task}"),
     ),
 }
 
@@ -209,6 +216,20 @@ def scrub_child_env(agent: str, env: dict[str, str]) -> dict[str, str]:
     for key in (spec.scrub_env if spec else ()):
         env.pop(key, None)
     return env
+
+
+def build_argv(agent: str, binary: str, task: str, flags: tuple[str, ...],
+               extra: tuple[str, ...]) -> tuple[str, ...]:
+    """按这一家登记的排法拼 argv（`{task}` / `{flags}` / `{extra}` 是模板位）。
+
+    排法不是风格问题：Qoder 的提示词是变长位置参数，选项排在它后面就等于没传。
+    """
+    spec = agent_spec(agent) or EXTERNAL_AGENTS[AGENT_CODEBUDDY]
+    slots = {"{task}": (task,), "{flags}": tuple(flags), "{extra}": tuple(extra)}
+    argv: list[str] = [binary]
+    for token in spec.argv_template:
+        argv.extend(slots.get(token, (token,)))
+    return tuple(argv)
 
 
 def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
@@ -370,7 +391,8 @@ def reply_instructions(job: str, reply_file: Path) -> str:
         "——",
         f"【回执】这一趟你的身份是 job `{job}`"
         f"（派活方把同一个值也放进了环境变量 `{REPLY_FILE_ENV}`）。",
-        "干完之后，把结果写成一个 JSON 文件，路径必须是：",
+        "干完之后，把结果写成一个 JSON 文件。**只能用下面这一条绝对路径**——"
+        "不要自起文件名、不要写进当前目录、不要改扩展名（同一个值也在环境变量里）：",
         f"  {target}",
         '文件内容形状：{"text": "你要报告的那一段话", "status": "ok 或 blocked"}',
         "只写结论和对方该看的文件路径；整篇内容不要贴进去，对方会自己去读。",
@@ -675,7 +697,7 @@ def run_task(
     if reply_file is not None:
         task = task + reply_instructions(job, reply_file)
 
-    argv = (binary, "-p", task, "--output-format", "json", *flags, *extra_args(agent))
+    argv = build_argv(agent, binary, task, flags, extra_args(agent))
     env = dict(os.environ)
     # 从 Qoder Desktop 里派活时，子进程会继承那三个 SDK 变量，CLI 一看就拒普通调用
     # （`sdk_invalid_args`）。洗掉它的条件是**结构性事实**，写在表里，不是 if 分支。
