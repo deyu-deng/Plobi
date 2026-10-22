@@ -11,6 +11,7 @@ import sys
 import sysconfig
 from contextvars import ContextVar, Token
 from pathlib import Path
+from typing import Optional
 
 
 _profile_fallback_warned: bool = False
@@ -52,6 +53,35 @@ def _get_platform_default_plobi_home() -> Path:
     return Path.home() / ".plobi"
 
 
+def _pinned_home_from_registry() -> Optional[str]:
+    """Windows: the ``PLOBI_HOME`` that ``install.ps1`` pins into the user env.
+
+    ``setx`` 只对**之后登录**的进程生效。在它之前就起来的长驻进程（桌面、
+    CodeBuddy、计划任务、旧 shell）env 里根本没有这一项，于是每一次解析都退回
+    ``%LOCALAPPDATA%\\plobi``（C 盘）——profile 家自然"不存在"。
+
+    桌面侧早就读了注册表兜底（``electron/main.ts::resolvePlobiHome()`` 的第 3
+    条），**Python 侧一直没有**：同一个家在两种进程里解析到两个地方。
+    2026-10-22 现核的后果：`say` 叫醒任何 Agent 都得到一句
+    「还没在这台机器上落地，问不到它」（`resolve_profile_env` 在 C 盘找不到
+    ``profiles/<name>``），而消息其实已经落库——留言躺在会话里没人看。
+
+    非 Windows / 读不到 ⇒ ``None``（行为与改动前逐位相同）。
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            value, _ = winreg.QueryValueEx(key, "PLOBI_HOME")
+    except (OSError, FileNotFoundError):
+        return None
+    text = str(value or "").strip()
+
+    return text or None
+
+
 def get_plobi_home() -> Path:
     """Return the Plobi home directory (default: platform-native path).
 
@@ -76,12 +106,18 @@ def get_plobi_home() -> Path:
     if val:
         return Path(val)
 
+    # `setx` 之前起的长驻进程 env 里没有它 ⇒ 读注册表那份钉的（见
+    # :func:`_pinned_home_from_registry`）。桌面 spawn 子进程时也是这么兜的。
+    pinned = _pinned_home_from_registry()
+    if pinned:
+        return Path(pinned)
+
     # Guard: if a non-default profile is sticky-active, warn once that
     # the fallback to the default profile is almost certainly wrong.
     global _profile_fallback_warned
     if not _profile_fallback_warned:
         try:
-            fallback_home = _get_platform_default_plobi_home()
+            fallback_home = Path(_pinned_home_from_registry() or _get_platform_default_plobi_home())
             active_path = fallback_home / "active_profile"
             active = active_path.read_text().strip() if active_path.exists() else ""
         except (UnicodeDecodeError, OSError):
@@ -107,7 +143,7 @@ def get_plobi_home() -> Path:
             except Exception:
                 pass
 
-    return _get_platform_default_plobi_home()
+    return Path(_pinned_home_from_registry() or _get_platform_default_plobi_home())
 
 
 def get_plobi_state_home() -> Path:
@@ -144,7 +180,13 @@ def get_default_plobi_root() -> Path:
     Import-safe — no dependencies beyond stdlib.
     """
     native_home = _get_platform_default_plobi_home()
-    env_home = os.environ.get("PLOBI_HOME", "")
+    env_home = os.environ.get("PLOBI_HOME", "").strip()
+    if not env_home:
+        # env 没继承到（`setx` 之前起的长驻进程）⇒ 读注册表那份钉的。
+        # 少了这一步，`profiles/<name>` 会被解析到 C 盘的 native home 下，
+        # 「家还没落地」这种**假否定**会把 say/ask 全拦下（2026-10-22 现核：
+        # 消息落库了、woke=false、wakeNote 说 agenda 没落地——而家明明在）。
+        env_home = _pinned_home_from_registry() or ""
     if not env_home:
         return native_home
     env_path = Path(env_home)
