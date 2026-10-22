@@ -3,6 +3,7 @@ import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageLoader } from '@/components/page-loader'
+import { Codicon } from '@/components/ui/codicon'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -57,8 +58,6 @@ import {
   PanelSectionLabel
 } from '../overlays/panel'
 
-import { $talkerLoading, $talkerState, refreshTalkerCollection } from './talker/store'
-import { TalkerCollection } from './talker/talker-collection'
 import {
   getTimetable,
   importTimetable,
@@ -67,9 +66,7 @@ import {
   type TimetableSampleEvent,
   type TimetableStatus
 } from './timetable/api'
-import { DayPlanSection } from './week/day-plan-section'
-import { addDays, dayKeyFromDate, eventDayKey } from './week/week-model'
-import type { WeekConflictState } from './week/week-snapshots'
+import { dayKeyFromDate, eventDayKey } from './week/week-model'
 import { AgendaWeekStrip } from './week/week-strip'
 
 // Board refresh cadence. The spec allows up to 10s staleness (ADR-0008), and
@@ -88,6 +85,21 @@ const STATUS_DOT: Record<string, string> = {
   cancelled: 'bg-muted-foreground/40',
   confirmed: 'bg-emerald-500',
   pending: 'bg-amber-500'
+}
+
+/** 用户 10-22：少一点文字、多用矢量图标——kind 用手势认得出的 glyph 打头。 */
+const KIND_ICON: Record<string, string> = {
+  class: 'book',
+  ddl: 'flag',
+  meeting: 'people',
+  task: 'check'
+}
+
+const KIND_COLOR: Record<string, string> = {
+  class: 'text-sky-500',
+  ddl: 'text-amber-500',
+  meeting: 'text-violet-500',
+  task: 'text-emerald-500'
 }
 
 interface EditorState {
@@ -195,35 +207,13 @@ export function AgendaView({ onClose }: AgendaViewProps) {
   const error = useStore($agendaError)
   const selected = useStore($agendaSelected)
   const pendingCount = useStore($agendaPendingCount)
-  const talkerState = useStore($talkerState)
-  const talkerLoading = useStore($talkerLoading)
-  const pendingTalkers = talkerState ? talkerState.talkers.filter(talker => talker.status === 'pending') : []
-
-  const collectionMeta =
-    talkerLoading && !talkerState
-      ? a.collect.loadingShort
-      : !talkerState || !talkerState.reviewComplete
-        ? a.collect.notStartedShort
-        : pendingTalkers.length > 0
-          ? String(pendingTalkers.length)
-          : a.collect.activeShort
 
   const [editor, setEditor] = useState<EditorState>({ mode: 'closed' })
   // WP-AGENDA-VIEW slice 1: which day the week row is filtered to (`null` = whole list).
   const [pickedWeekDay, setPickedWeekDay] = useState<null | string>(null)
 
-  // 裁定 140: the week row owns the seven day requests; the answers land here so the plan
-  // sections below read the same payloads instead of firing a second round.
-  const [weekSummaries, setWeekSummaries] = useState<WeekConflictState>({
-    conflictsByDay: {},
-    loadedCount: 0,
-    plansByDay: {}
-  })
-
   const todayKey = dayKeyFromDate(startOfToday())
-  const tomorrowKey = addDays(todayKey, 1)
   const [busyId, setBusyId] = useState<null | string>(null)
-  const [collectionOpen, setCollectionOpen] = useState(false)
   // WP-ICS-BOARD: `path` → preview draft; `preview: null` means "still reading"
   // (the dialog shows PageLoader). Nothing is written until the user confirms.
   const [timetable, setTimetable] = useState<null | { path: string; preview: null | TimetablePreview }>(null)
@@ -255,14 +245,10 @@ export function AgendaView({ onClose }: AgendaViewProps) {
     return () => window.clearInterval(intervalId)
   }, [refresh])
 
-  // A7 (WP-A7-EMPTY): prefetch the collection state so the entry's meta
-  // ("not started" / active count) is real on first paint — the empty board
-  // still offers the first-review entry instead of hiding it.
-  useEffect(() => {
-    void refreshTalkerCollection()
-  }, [])
+  // A7 (WP-A7-EMPTY): the collection entry used to prefetch here; 用户 10-22 拍「信源只进信息池、
+  // Agent 自由调用、不直接落日程库」，日程面板不再提供采集入口（也没有要预取的采集状态）。
 
-  // WP-ICS-BOARD: the 「导入课表」 row's meta only appears once something was
+  // WP-ICS-BOARD: the 「导入日程文件」 row's meta only appears once something was
   // imported — never a placeholder.
   useEffect(() => {
     void getTimetable().then(setTimetableStatus)
@@ -465,36 +451,15 @@ export function AgendaView({ onClose }: AgendaViewProps) {
           <AgendaWeekStrip
             events={events}
             onPickDay={setPickedWeekDay}
-            onSummaries={setWeekSummaries}
             pickedDayKey={pickedWeekDay}
             todayKey={todayKey}
           />
           {/*
-            * 裁定 140: the evening plan's destination is this board. The 20:00 job still writes
-            * `delivered: false` + 「no notifier configured」 and that stays loud (R-048) — but the
-            * user's chosen shape is that opening the desktop the next morning shows the plan, so
-            * the same seven snapshots the week row asked for feed these two sections.
+            * 日程＝计划（用户 10-22）：这里不再挂「明天的计划」那一层。计划整层退役，
+            * 夜间排程改为直接写 events，看板只认事件行。
             */}
-          <DayPlanSection
-            dayLabel={dayLabel(todayKey, a)}
-            plan={weekSummaries.plansByDay[todayKey]}
-          />
-          <DayPlanSection
-            dayLabel={dayLabel(tomorrowKey, a)}
-            plan={weekSummaries.plansByDay[tomorrowKey]}
-          />
           <PanelBody>
             <PanelList>
-              <PanelSectionLabel className="px-2 pb-1 pt-2">{a.collect.entry}</PanelSectionLabel>
-              <PanelListRow
-                active={collectionOpen}
-                icon="comment"
-                key="talker-collection"
-                meta={collectionMeta}
-                onSelect={() => setCollectionOpen(true)}
-                rowKey="talker-collection"
-                title={a.collect.entry}
-              />
               <PanelListRow
                 active={timetable !== null}
                 icon="calendar"
@@ -528,7 +493,16 @@ export function AgendaView({ onClose }: AgendaViewProps) {
                       meta={timeRangeLabel(event, a)}
                       onSelect={() => setAgendaSelectedId(event.id)}
                       rowKey={event.id}
-                      title={event.title}
+                      title={
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <Codicon
+                            className={`shrink-0 ${KIND_COLOR[event.kind] ?? 'text-muted-foreground/60'}`}
+                            name={KIND_ICON[event.kind] ?? 'circle-filled'}
+                            size="0.8rem"
+                          />
+                          <span className="truncate">{event.title}</span>
+                        </span>
+                      }
                     />
                   ))}
                 </div>
@@ -569,17 +543,6 @@ export function AgendaView({ onClose }: AgendaViewProps) {
         onClose={() => setEditor({ mode: 'closed' })}
         onSave={handleEditorSave}
       />
-
-      {collectionOpen ? (
-        <Dialog onOpenChange={value => !value && setCollectionOpen(false)} open>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{a.collect.title}</DialogTitle>
-            </DialogHeader>
-            <TalkerCollection onClose={() => setCollectionOpen(false)} />
-          </DialogContent>
-        </Dialog>
-      ) : null}
 
       {timetable ? (
         <Dialog

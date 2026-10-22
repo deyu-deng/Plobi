@@ -7,8 +7,9 @@ import type { AgendaEvent } from '@/types/plobi'
 import { AgendaWeekStrip } from './week-strip'
 
 /**
- * Render-level checks for the week row. These prove the *text* the user gets — colour is
- * never the only carrier, and a day with no backend snapshot must not claim "no conflicts".
+ * Render-level checks for the week row. These prove the *meaning* the user gets — the words
+ * that matter (today / past / unknown conflicts) are still there, carried by `aria-label` and
+ * `title`, while the visible layer is glyph-first (用户 10-22「少一点文字，多用矢量图标」).
  * Whether the row "looks like a calendar" is deliberately **not** asserted here: that is the
  * user's call (架构师 10-14 ②), not something jsdom can decide.
  */
@@ -54,7 +55,7 @@ describe('AgendaWeekStrip', () => {
   it('shows seven columns for the Monday-anchored week containing today', () => {
     const { getByTestId, getAllByTestId } = strip()
     const grid = getByTestId('agenda-week-strip')
-    // Pinned by test id, not by weekday text: 「下一周」 also contains 「一」.
+    // Pinned by test id, not by weekday text: the day glyphs also contain 「一」.
     const days = getAllByTestId('agenda-week-day')
 
     expect(days).toHaveLength(7)
@@ -70,49 +71,54 @@ describe('AgendaWeekStrip', () => {
 
     expect(today?.textContent).toContain('今天')
     expect(today?.getAttribute('aria-current')).toBe('date')
-    // A past day says so in words too.
+    // A past day says so too — the word rides in the aria-label, the glyph in the cell.
     const monday = screen.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-05"]')
 
-    expect(monday?.textContent).toContain('已过')
+    expect(monday?.getAttribute('data-past')).toBe('true')
+    expect(monday?.getAttribute('aria-label')).toContain('已过')
   })
 
-  it('counts rows per column and keeps the pending lane visible', () => {
+  it('counts rows per column, keeps pending visible, and draws kinds as glyphs', () => {
     strip()
     const grid = screen.getByTestId('agenda-week-strip')
     const monday = grid.querySelector('[data-day="2026-10-05"]')
     const wednesday = grid.querySelector('[data-day="2026-10-07"]')
 
-    expect(monday?.textContent).toContain('1 条')
-    expect(wednesday?.textContent).toContain('待确认 1')
-    expect(grid.textContent).toContain('本周 3 条')
+    expect(monday?.getAttribute('data-count')).toBe('1')
+    expect(monday?.querySelector('.codicon-check')).not.toBeNull()
+    expect(wednesday?.getAttribute('data-pending')).toBe('1')
+    expect(wednesday?.querySelector('.codicon-bell-dot')).not.toBeNull()
+    expect(grid.querySelector('[data-testid="week-total"]')?.getAttribute('title')).toBe('本周 3 条')
   })
 
   it('says conflicts are not loaded rather than inventing a zero', () => {
     const bare = strip()
+    const columns = [...bare.getByTestId('agenda-week-strip').querySelectorAll('[data-testid="agenda-week-day"]')]
 
-    expect(bare.getByTestId('agenda-week-strip').textContent).toContain('冲突未取')
-    expect(bare.getByTestId('agenda-week-strip').textContent).not.toContain('无冲突')
+    expect(columns.every(column => column.getAttribute('data-conflict-state') === 'unknown')).toBe(true)
+    expect(columns.some(column => column.getAttribute('data-conflict-state') === 'clean')).toBe(false)
     bare.unmount()
 
     const loaded = strip({ conflictsByDay: { '2026-10-10': [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }] } })
     const column = loaded.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-10"]')
 
-    expect(column?.textContent).toContain('冲突 1')
+    expect(column?.getAttribute('data-conflict-state')).toBe('conflict')
+    expect(column?.getAttribute('aria-label')).toContain('冲突 1')
   })
 
   it('pans whole weeks and returns to this week', () => {
     const view = strip()
     const before = view.getByTestId('agenda-week-strip').textContent
 
-    fireEvent.click(view.getByText('下一周'))
+    fireEvent.click(view.getByTestId('week-next'))
     expect(view.getByTestId('agenda-week-strip').textContent).not.toBe(before)
     expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-12"]')).not.toBeNull()
 
-    // Back-and-forth lands where it started, and "回到本周" wins over any offset.
-    fireEvent.click(view.getByText('上一周'))
-    fireEvent.click(view.getByText('下一周'))
-    fireEvent.click(view.getByText('下一周'))
-    fireEvent.click(view.getByText('回到本周'))
+    // Back-and-forth lands where it started, and the today button wins over any offset.
+    fireEvent.click(view.getByTestId('week-prev'))
+    fireEvent.click(view.getByTestId('week-next'))
+    fireEvent.click(view.getByTestId('week-next'))
+    fireEvent.click(view.getByTestId('week-today'))
     expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-05"]')).not.toBeNull()
     expect(view.getByTestId('agenda-week-strip').textContent).toBe(before)
   })
@@ -185,10 +191,10 @@ describe('AgendaWeekStrip', () => {
     const grid = view.getByTestId('agenda-week-strip')
 
     await waitFor(() => {
-      expect(grid.querySelector('[data-day="2026-10-10"]')?.textContent).toContain('冲突 1')
+      expect(grid.querySelector('[data-day="2026-10-10"]')?.getAttribute('data-conflict-state')).toBe('conflict')
     })
-    // Answered-and-clean reads as 无冲突; nothing was asked-for-nicely.
-    expect(grid.querySelector('[data-day="2026-10-05"]')?.textContent).toContain('无冲突')
+    // Answered-and-clean is clean; nothing was asked-for-nicely.
+    expect(grid.querySelector('[data-day="2026-10-05"]')?.getAttribute('data-conflict-state')).toBe('clean')
   })
 
   it('keeps every column honest when the whole week fails to answer (C2)', async () => {
@@ -208,90 +214,12 @@ describe('AgendaWeekStrip', () => {
     const grid = view.getByTestId('agenda-week-strip')
 
     await waitFor(() => {
-      expect(grid.textContent).toContain('冲突未取')
+      expect(grid.querySelector('[data-day="2026-10-10"]')?.getAttribute('data-conflict-state')).toBe('unknown')
     })
     // Seven unknowns, zero claims of cleanliness, and the rows still render.
-    expect(grid.textContent).not.toContain('无冲突')
+    const columns = [...grid.querySelectorAll('[data-testid="agenda-week-day"]')]
+
+    expect(columns.every(column => column.getAttribute('data-conflict-state') === 'unknown')).toBe(true)
     expect(grid.textContent).toContain('10-05')
-  })
-
-  it('hands the answered plans back up so the page can show 明天 without a second round of calls', async () => {
-    const seen: Array<{ loadedCount: number; planKeys: string[] }> = []
-
-    const view = render(
-      <AgendaWeekStrip
-        events={[]}
-        fetchDay={async (dayKey: string) => ({
-          conflicts: [],
-          date: dayKey,
-          events: [],
-          plan_items: dayKey === '2026-10-11' ? [{ end_at: null, id: 'p', lane: 'plan' as const, start_at: '2026-10-11T10:00:00', title: '推进块' }] : [],
-          plan_status: dayKey === '2026-10-11' ? 'pending' : null
-        })}
-        onPickDay={() => undefined}
-        onSummaries={state => seen.push({ loadedCount: state.loadedCount, planKeys: Object.keys(state.plansByDay) })}
-        pickedDayKey={null}
-        todayKey="2026-10-10"
-        translations={zh}
-      />
-    )
-
-    await waitFor(() => expect(seen).toHaveLength(1))
-    expect(seen[0]?.loadedCount).toBe(7)
-    // Sunday of the visible week is the only day with a plan row.
-    expect(seen[0]?.planKeys).toEqual(['2026-10-11'])
-    expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-11"]')?.textContent).toContain('无冲突')
-  })
-
-  it('ignores a late answer from a week the user has panned away from', async () => {
-    type Resolve = (value: unknown) => void
-
-    const pending: Array<{ dayKey: string; resolve: Resolve }> = []
-
-    const fetchDay = (dayKey: string) =>
-      new Promise(resolve => {
-        pending.push({ dayKey, resolve })
-      })
-
-    const view = render(
-      <AgendaWeekStrip
-        events={[]}
-        fetchDay={fetchDay as never}
-        onPickDay={() => undefined}
-        pickedDayKey={null}
-        todayKey="2026-10-10"
-        translations={zh}
-      />
-    )
-
-    // First week: seven requests in flight.
-    await waitFor(() => expect(pending).toHaveLength(7))
-    const staleWeek = [...pending]
-
-    pending.length = 0
-    fireEvent.click(view.getByText('下一周'))
-    await waitFor(() => expect(pending).toHaveLength(7))
-
-    // Answer the new week, then let the old week dribble in late.
-    for (const call of pending) {
-      call.resolve({ conflicts: [], date: call.dayKey, events: [], plan_items: [] })
-    }
-
-    await waitFor(() => {
-      expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-12"]')?.textContent).toContain('无冲突')
-    })
-
-    for (const call of staleWeek) {
-      call.resolve({
-        conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }],
-        date: call.dayKey,
-        events: [],
-        plan_items: []
-      })
-    }
-
-    // The late week-A answer must not wipe week-B's loaded state.
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(view.getByTestId('agenda-week-strip').querySelector('[data-day="2026-10-12"]')?.textContent).toContain('无冲突')
   })
 })

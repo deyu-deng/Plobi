@@ -48,16 +48,6 @@ vi.mock('@/plobi', () => ({
   updateAgendaEvent: (...args: unknown[]) => updateAgendaEvent(...args)
 }))
 
-const getTalkerCollection = vi.hoisted(() => vi.fn())
-const setTalkerMode = vi.hoisted(() => vi.fn())
-const completeReview = vi.hoisted(() => vi.fn())
-
-vi.mock('./talker/api', () => ({
-  completeReview: (...args: unknown[]) => completeReview(...args),
-  getTalkerCollection: (...args: unknown[]) => getTalkerCollection(...args),
-  setTalkerMode: (...args: unknown[]) => setTalkerMode(...args)
-}))
-
 import { AgendaView } from './index'
 
 describe('AgendaView empty board (WP-A7-EMPTY)', () => {
@@ -68,7 +58,7 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
     $agendaError.set(null)
     $agendaSelectedId.set(null)
     getAgenda.mockResolvedValue([])
-    getTalkerCollection.mockResolvedValue({ reviewComplete: false, talkers: [] })
+    getTimetable.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -240,30 +230,13 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
     expect(screen.getByText('带电脑')).toBeTruthy()
   })
 
-  it('keeps the Session collection entry visible when no events exist', async () => {
+  it('keeps the empty board usable without a collection entry', async () => {
     render(<AgendaView onClose={() => {}} />)
 
-    // The collect entry row must survive the empty board (it was previously
-    // swallowed by a dedicated PanelEmpty branch — the chicken-and-egg bug).
-    // The label + the row title both render, so assert at least one of each.
-    expect(screen.getAllByText('Session collection').length).toBeGreaterThanOrEqual(2)
-
-    // The meta reflects the prefetched collection state, not a guess.
-    await waitFor(() => {
-      expect(screen.getByText('not started')).toBeTruthy()
-    })
-
-    // The rest of the empty board is still there: 暂无日程 + New entry.
+    // 会话采集已从日程面板撤掉（用户 10-22：信源只进信息池，Agent 自由调用）。
+    // 空板上仍要看得见「暂无日程」和新建入口。
     expect(screen.getByText('Nothing scheduled')).toBeTruthy()
     expect(screen.getByText('New entry')).toBeTruthy()
-  })
-
-  it('prefetches the talker collection state on mount', async () => {
-    render(<AgendaView onClose={() => {}} />)
-
-    await waitFor(() => {
-      expect(getTalkerCollection).toHaveBeenCalled()
-    })
   })
 })
 
@@ -287,7 +260,6 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
     $agendaError.set(null)
     $agendaSelectedId.set(null)
     getAgenda.mockResolvedValue([])
-    getTalkerCollection.mockResolvedValue({ reviewComplete: false, talkers: [] })
     getTimetable.mockResolvedValue(null)
     selectDesktopPaths.mockResolvedValue(['C:/Users/x/ke.ics'])
     previewTimetable.mockResolvedValue(PREVIEW)
@@ -301,7 +273,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
   async function openPreview() {
     render(<AgendaView onClose={() => {}} />)
 
-    const row = await screen.findByRole('button', { name: 'Import timetable' })
+    const row = await screen.findByRole('button', { name: 'Import schedule file' })
 
     row.click()
 
@@ -321,7 +293,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
 
     // Copy is the backend's own fields, not a client-side count.
     expect(screen.getByText('课程表-2026-2027秋冬')).toBeTruthy()
-    expect(screen.getByText('225 sessions / 3 courses')).toBeTruthy()
+    expect(screen.getByText('225 entries / 3 kinds')).toBeTruthy()
     expect(screen.getByText('2026-09-14 → 2027-01-08')).toBeTruthy()
     expect(screen.getByText('08:00–09:40 高数课 · 东2-101')).toBeTruthy()
     // A missing end time prints only the start — no invented clock.
@@ -339,7 +311,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
     selectDesktopPaths.mockResolvedValue([])
 
     render(<AgendaView onClose={() => {}} />)
-    ;(await screen.findByRole('button', { name: 'Import timetable' })).click()
+    ;(await screen.findByRole('button', { name: 'Import schedule file' })).click()
 
     await waitFor(() => {
       expect(selectDesktopPaths).toHaveBeenCalled()
@@ -358,7 +330,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
     })
 
     await waitFor(() => {
-      expect(notify).toHaveBeenCalledWith({ message: 'Imported 225 sessions' })
+      expect(notify).toHaveBeenCalledWith({ message: 'Imported 225 entries' })
     })
 
     // Once on mount, once right after the import — not after the 8s poll.
@@ -380,14 +352,14 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
 
     render(<AgendaView onClose={() => {}} />)
 
-    expect(await screen.findByText('课程表-2026-2027秋冬 · 225 sessions')).toBeTruthy()
+    expect(await screen.findByText('课程表-2026-2027秋冬 · 225 entries')).toBeTruthy()
   })
 
   it('surfaces a failed preview as a notification without opening the dialog', async () => {
     previewTimetable.mockRejectedValue(new Error('bad ics'))
 
     render(<AgendaView onClose={() => {}} />)
-    ;(await screen.findByRole('button', { name: 'Import timetable' })).click()
+    ;(await screen.findByRole('button', { name: 'Import schedule file' })).click()
 
     await waitFor(() => {
       expect(notifyError).toHaveBeenCalled()
