@@ -80,6 +80,23 @@ def test_apply_is_idempotent(mig, legacy_home):
     assert mt.memory_path("global").read_text(encoding="utf-8") == before
 
 
+def test_rerun_without_split_after_a_split_run_does_not_duplicate(mig, legacy_home):
+    """拆过之后再整段搬一次，不能把同一段事实存成两种形状。
+
+    装机副本（读旧位置的那份）没跟上时，删掉的旧文件可能要搬回去重跑——
+    整段字符串比对认不出已存在的片段，那一趟会多插一条。
+    """
+    run_on = ("铁律一：单 WP 单 commit，前缀 [WP-XXX]；铁律二：不 push，用户说推才推；"
+              "铁律三：测试入口 scripts/run_tests.sh，禁直调 pytest。")
+    old = mig._legacy_dir()
+    (old / "MEMORY.md").write_text(run_on, encoding="utf-8")
+
+    assert mig.migrate(apply=True, split=True)["added"].get("global") == 3
+    res = mig.migrate(apply=True, split=False)      # 整段那一趟必须认出已经拆过了
+    assert res["added"] == {}, res["added"]
+    assert len(mt.load_on_disk_store()._entries_for("global")) == 3
+
+
 def test_verify_refuses_delete_when_a_chunk_is_missing(mig, legacy_home):
     mig.migrate(apply=True)
     store = mt.load_on_disk_store()
