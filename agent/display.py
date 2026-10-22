@@ -417,6 +417,58 @@ def _delegate_task_goal_parts(tasks: Any, *, per_goal_len: int) -> tuple[int, li
     return len(goals), goals
 
 
+_MEMORY_TOOLS = frozenset({"memory", "memory_read", "memory_write"})
+
+
+def _clip(text: str, width: int) -> str:
+    line = _oneline(str(text))
+    return line if len(line) <= width else line[: max(0, width - 1)] + "…"
+
+
+def _memory_location(args: dict) -> str:
+    """Which memory location a call touches — on either surface.
+
+    The legacy hand calls it ``target`` (``memory``/``user``/``status``/``global``),
+    the two atoms call it ``scope`` (``self``/``global``/``user``/``status``). One map
+    here so the activity column cannot describe the same write two different ways.
+    """
+    raw = str(args.get("scope") or args.get("target") or "")
+    return "own" if raw in {"self", "memory"} else (raw or "?")
+
+
+def _memory_receipt(tool_name: str, args: dict, data: Any) -> str | None:
+    """One line saying what actually happened, read off the tool's own result.
+
+    The preview at call-start only knows what the model asked for. The receipt is where
+    the two outcomes 裁定 181 separates become visible without waiting for the model to
+    narrate them: a note that landed in this agent's own ledger, versus a global fact
+    that now sits in the pending layer waiting for a human ``/memory approve`` — and
+    versus a write the cap refused, which must not read like a success.
+    """
+    if tool_name not in _MEMORY_TOOLS or not isinstance(data, dict):
+        return None
+    loc = _memory_location(args)
+    err = _clip(data.get("error", ""), 60)
+    if tool_name == "memory_read":
+        if data.get("success") is False:
+            return f"read refused: {err}" if err else "read refused"
+        count = data.get("entry_count")
+        if count is None:
+            count = len(data.get("entries") or [])
+        return f"read {loc} · {count} entries · {_clip(data.get('usage', ''), 24)}".rstrip()
+    if data.get("staged"):
+        return f"{loc} → pending {_clip(data.get('pending_id', ''), 12)} (waiting on your /memory approve)"
+    if data.get("unchanged"):
+        return f"{loc} already holds this — nothing written"
+    if data.get("success") is True:
+        dropped = data.get("dropped") or []
+        tail = f" · {len(dropped)} squeezed to pending" if dropped else ""
+        return f"wrote {loc} · {data.get('entry_count', '?')} entries · {_clip(data.get('usage', ''), 24)}{tail}"
+    if data.get("success") is False:
+        return f"{loc} refused: {err}" if err else f"{loc} refused"
+    return None
+
+
 def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -> str | None:
     """Build a short preview of a tool call's primary argument for display.
 
@@ -501,6 +553,14 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
     if tool_name == "session_search":
         query = _oneline(args.get("query", ""))
         return f"recall: \"{query[:25]}{'...' if len(query) > 25 else ''}\""
+
+    if tool_name in {"memory_read", "memory_write"}:
+        loc = _memory_location(args)
+        if tool_name == "memory_read":
+            return f"reading {loc} memory"
+        parts = args.get("parts") or []
+        first = _clip(parts[0], 25) if parts else ""
+        return f"writing {loc}: \"{first}\"" if first else f"writing {loc} memory"
 
     if tool_name == "memory":
         action = args.get("action", "")
@@ -591,6 +651,8 @@ _TOOL_VERBS: dict[str, str] = {
     "cronjob": "Scheduling",
     "clarify": "Asking",
     "memory": "Updating memory",
+    "memory_read": "Reading memory",
+    "memory_write": "Updating memory",
     "todo": "Updating tasks",
 }
 
@@ -1244,9 +1306,12 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
         return False, ""
 
     # Memory: distinguish "store full" from real errors.
-    if tool_name == "memory":
+    if tool_name in _MEMORY_TOOLS:
         if isinstance(data, dict):
-            if data.get("success") is False and "exceed the limit" in data.get("error", ""):
+            error_text = str(data.get("error", ""))
+            if data.get("success") is False and (
+                "exceed the limit" in error_text or "over the cap" in error_text
+            ):
                 return True, " [full]"
 
     # Structured error in JSON result (any tool that surfaces {"error": ...}).
@@ -1387,6 +1452,13 @@ def _get_cute_tool_message(
             return _wrap(f"┊ 📋 plan      {len(todos_arg)} task(s)  {dur}")
     if tool_name == "session_search":
         return _wrap(f"┊ 🔍 recall    \"{_trunc(args.get('query', ''), 35)}\"  {dur}")
+    if tool_name in {"memory_read", "memory_write"}:
+        # The receipt comes off the tool's own result, so "waiting on your approve"
+        # and "wrote it" are distinguishable at a glance — the two things 裁 181
+        # separates and the model's prose is not obliged to mention.
+        receipt = _memory_receipt(tool_name, args, safe_json_loads(result))
+        if receipt:
+            return _wrap(f"┊ 🧠 {tool_name:<12} {receipt}  {dur}")
     if tool_name == "memory":
         action = args.get("action", "?")
         target = args.get("target", "")
