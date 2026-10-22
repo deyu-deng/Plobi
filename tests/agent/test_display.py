@@ -177,6 +177,69 @@ class TestBuildToolPreview:
         result = build_tool_preview("memory", {"action": "remove", "target": "memory", "old_text": None})
         assert result == '-memory: "<missing old_text>"'
 
+    def test_memory_atoms_preview(self):
+        assert build_tool_preview("memory_read", {"scope": "self"}) == "reading own memory"
+        assert "global" in build_tool_preview(
+            "memory_write", {"scope": "global", "parts": ["repo rules live in Docs"]}
+        )
+
+    def test_memory_write_receipt_separates_pending_from_written(self):
+        """裁 181 的两条路必须在活动列里看得出差别，不能等模型自己念。"""
+        import json
+
+        from agent.display import get_cute_tool_message
+
+        staged = get_cute_tool_message(
+            "memory_write", {"scope": "global"}, 0.4,
+            result=json.dumps({"staged": True, "pending_id": "a1b2c3d4e5", "done": False}),
+        )
+        assert "pending a1b2c3d4e5" in staged and "approve" in staged
+
+        wrote = get_cute_tool_message(
+            "memory_write", {"scope": "self"}, 0.4,
+            result=json.dumps({"success": True, "done": True, "target": "memory",
+                               "entry_count": 3, "usage": "12% — 260/2200 chars"}),
+        )
+        assert "wrote own" in wrote and "260/2200" in wrote and "pending" not in wrote
+
+    def test_memory_write_squeezed_entries_show_in_receipt(self):
+        import json
+
+        from agent.display import get_cute_tool_message
+
+        line = get_cute_tool_message(
+            "memory_write", {"scope": "self"}, 0.5,
+            result=json.dumps({"success": True, "target": "memory", "entry_count": 2,
+                               "usage": "80% — 1760/2200 chars",
+                               "dropped": ["gone one", "gone two"]}),
+        )
+        assert "2 squeezed to pending" in line
+
+    def test_memory_over_cap_receipt_is_not_a_success(self):
+        import json
+
+        from agent.display import get_cute_tool_message
+
+        line = get_cute_tool_message(
+            "memory_write", {"scope": "self"}, 0.3,
+            result=json.dumps({"success": False,
+                               "error": "memory would hold 2400/2200 chars — over the cap, "
+                                        "so nothing was written"}),
+        )
+        assert "refused" in line and "[full]" in line and "wrote" not in line
+
+    def test_memory_read_receipt_reports_usage_not_just_a_checkmark(self):
+        import json
+
+        from agent.display import get_cute_tool_message
+
+        line = get_cute_tool_message(
+            "memory_read", {"scope": "user"}, 0.2,
+            result=json.dumps({"success": True, "scope": "user", "entries": ["a", "b"],
+                               "usage": "4% — 55/1,375 chars"}),
+        )
+        assert "read user" in line and "2 entries" in line
+
     def test_session_search_preview(self):
         result = build_tool_preview("session_search", {"query": "find something"})
         assert result is not None
