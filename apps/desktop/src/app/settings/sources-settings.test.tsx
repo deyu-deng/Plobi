@@ -47,10 +47,8 @@ vi.mock('@/i18n', () => ({
       settings: {
         sources: {
           categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', custom: 'Bring your own' },
-          disable: 'Stop',
           emptyExternal: 'Could not read what is installed.',
-          enable: 'Start',
-          fields: { ics_path: 'Path to the .ics file' },
+          fields: { cadence: 'Collection cadence', ics_path: 'Path to the .ics file' },
           install: 'Install',
           installFailed: 'That install did not finish.',
           installPlaceholder: 'package name',
@@ -59,26 +57,29 @@ vi.mock('@/i18n', () => ({
           installedNone: 'Nothing from outside is installed.',
           loadFailed: 'Could not read the sources.',
           loadingLog: 'Running…',
-          noBuilder: 'Broken',
           packageName: 'Package name',
-          pillLive: 'collecting',
-          pillNoStore: 'store unreadable',
-          pillNotStarted: 'never collected',
-          pillStale: 'stalled',
-          pillSwitchOff: 'off',
-          pillUnknown: 'unknown',
           remove: 'Remove',
           removeFailed: 'That removal did not finish.',
           saveFailed: 'Could not save those.',
           saveSetup: 'Save',
-          setup: 'Set up',
-          setupNeeded: 'Set up',
           switchFailed: 'Could not change the switch.',
           title: 'Sources',
           tryFailed: 'That run did not come back.',
-          tryOnce: 'Try once',
           tryRunsForReal: 'Runs a real collection — it reaches the network and the disk.',
           tryRunning: 'Running…',
+          statusConnected: 'Connected',
+          statusDisconnected: 'Not connected',
+          statusError: 'Connection problem',
+          drawerLastRun: 'Last run',
+          drawerNextRun: 'Next run',
+          drawerNeverRun: 'Never ran',
+          drawerNextEveryRound: 'Every round',
+          drawerPoolCount: 'In the pool',
+          drawerPoolUnreadable: 'Pool unreadable',
+          drawerAgendaCount: 'In the agenda',
+          syncNow: 'Sync now',
+          cadenceCustom: 'Custom',
+          cadencePresets: { per_round: 'Follow every round', hourly: 'Hourly', four_hours: 'Every 4 hours', six_hours: 'Every 6 hours', daily: 'Daily at 03:00', weekly: 'Weekly on Monday at 03:00' },
           unknownSource: 'Source with no recorded name'
         }
       }
@@ -140,83 +141,115 @@ afterEach(() => {
   cleanup()
 })
 
+/** 行上唯一的控件：Radix 那颗开关是 `role="switch"`，标题那颗是 `role="button"`。 */
+function switches(container: HTMLElement) {
+  return container.querySelectorAll('[role="switch"]')
+}
+
 describe('what the row says', () => {
-  it('is a name, a pill, and a button — and nothing else', async () => {
+  it('is a name, one switch — and no text buttons at all', async () => {
+    // 用户 10-22：「一个信源就一个开关按钮……不要有这么多按钮」。旧版这里最多三颗
+    // 文字按钮（首次配置 / 试一次 / 停掉），这一条把它们**逐颗**钉回不存在。
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, note: '一整段工程说明，还带 ** 星号', source: 'wechat', state: 'live' })
+      row({ enabled: true, has_builder: true, note: '一整段工程说明，还带 ** 星号', source: 'wechat', state: 'live', status: 'connected' })
     ]))
 
-    render(<SourcesSettings />)
+    const { container } = render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0))
-    expect(screen.getByText('collecting')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy()
-    // 后端那句 note **一个字都不上屏**。
+    await waitFor(() => expect(switches(container).length).toBe(1))
+    // 名字出现两次不奇怪：可见的那一处 + 开关的无障碍名（读屏要听得出"这是微信的开关"）。
+    expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0)
+    expect(screen.getByText('Connected')).toBeTruthy()
+    for (const label of ['Stop', 'Start', 'Set up', 'Try once']) {
+      expect(screen.queryByRole('button', { name: label })).toBeNull()
+    }
+    // 后端那句 note 一个字都不上屏（这条是 10-19 立的，没因为改版松过）。
     expect(screen.queryByText(/一整段工程说明/)).toBeNull()
-    expect(screen.queryByText(/\*\*/)).toBeNull()
+    expect(container.textContent).not.toMatch(/\*\*/)
   })
 
-  it('shows no timestamp even when the read carries one', async () => {
+  it('draws the three states, and only the error one carries a reason', async () => {
     getSources.mockResolvedValue(payload([
-      row({ age_days: 9.5, enabled: true, has_builder: true, source: 'timetable', state: 'stale' })
+      row({ enabled: false, source: 'dingtalk', status: 'disconnected' }),
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' }),
+      row({ enabled: true, has_builder: true, source: 'zju', status: 'error', status_detail: '要人工验证码：这一轮按口径停手' })
     ]))
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByText('stalled')).toBeTruthy())
-    expect(screen.queryByText(/9/)).toBeNull()
-  })
-
-  it('gives each state its own pill', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ enabled: false, source: 'dingtalk', state: 'never' }),
-      row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' }),
-      row({ enabled: true, has_builder: true, source: 'timetable', state: 'stale' }),
-      row({ enabled: true, has_builder: true, source: 'zju', state: 'live' })
-    ]))
-
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByText('off')).toBeTruthy())
-    expect(screen.getByText('never collected')).toBeTruthy()
-    expect(screen.getByText('stalled')).toBeTruthy()
-    expect(screen.getByText('collecting')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Not connected')).toBeTruthy())
+    expect(screen.getByText('Connected')).toBeTruthy()
+    expect(screen.getByText('Connection problem')).toBeTruthy()
+    // 出错那一行多一句**逐字来自执行方**的话；正常态什么都不多写。
+    expect(screen.getByText('要人工验证码：这一轮按口径停手')).toBeTruthy()
+    expect(screen.queryByText('Never ran')).toBeNull()
+    expect(screen.queryByText('Last run')).toBeNull()
   })
 
   it('does not draw an off switch for a switch it could not read', async () => {
-    getSources.mockResolvedValue(payload([row({ enabled: null, has_builder: null, source: 'wechat', state: 'live' })]))
+    getSources.mockResolvedValue(payload([row({ enabled: null, has_builder: null, source: 'wechat', status: 'disconnected' })]))
 
-    render(<SourcesSettings />)
+    const { container } = render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByText('unknown')).toBeTruthy())
-    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    await waitFor(() => expect(switches(container).length).toBe(1))
+
+    expect((switches(container)[0] as HTMLButtonElement).disabled).toBe(true)
+    expect(switches(container)[0].getAttribute('data-state')).toBe('unchecked')
   })
 
-  it('draws no button at all for a defect it cannot fix', async () => {
-    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: false, source: 'dingtalk', state: 'never' })]))
+  it('opens the drawer on the row, with the readings that used to be invisible', async () => {
+    // 旧屏问不到"这条到底采到东西没有"：行上那个数读的是日程库，池里 371 条显示成 0。
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected' })
+    ]))
 
     render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByText('Source with no recorded name')).toBeTruthy())
 
-    await waitFor(() => expect(screen.getByText('Broken')).toBeTruthy())
-    expect(screen.queryByRole('button', { name: 'Try once' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
+    expect(screen.queryByTestId('source-drawer-zdbk')).toBeNull()
+    fireEvent.click(screen.getByText('Source with no recorded name'))
+
+    await waitFor(() => expect(screen.getByTestId('source-drawer-zdbk')).toBeTruthy())
+    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('2026-10-22T08:15:14+08:00')
+    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('371')
+    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('class 65')
   })
 
-  it('offers "Try once" only where §6.1 says so, and warns on the button', async () => {
-    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })]))
+  it('sends the click to the switch only when the source is configured', async () => {
+    setSourceEnabled.mockResolvedValue(undefined)
+    getSources.mockResolvedValue(payload([
+      row({ enabled: false, has_builder: true, source: 'wechat', status: 'disconnected' })
+    ]))
 
-    render(<SourcesSettings />)
+    const { container } = render(<SourcesSettings />)
+    await waitFor(() => expect(switches(container).length).toBe(1))
+    fireEvent.click(switches(container)[0])
 
-    const button = await screen.findByRole('button', { name: /Try once/ })
-
-    expect(button.getAttribute('title')).toContain('network')
-    fireEvent.click(button)
-    await waitFor(() => expect(trySource).toHaveBeenCalledWith('wechat'))
+    await waitFor(() => expect(setSourceEnabled).toHaveBeenCalledWith('wechat', true))
   })
 
-  it('reports a run by the executor’s own words, not a paraphrase', async () => {
-    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'dingtalk', state: 'never' })]))
+  it('guides an unconfigured source into the form instead of flipping a dead switch', async () => {
+    // 「第一次点击就引导配置跳转到相应的界面」。一颗"拨上去什么也不会发生"的开关
+    // 是这一屏最容易骗人的形状：用户会以为已经在采了。
+    const ICS = { help: '', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
+
+    getSources.mockResolvedValue(payload([
+      row({ category: 'local', enabled: false, has_builder: true, setup: {}, setup_fields: [ICS], source: 'timetable', status: 'disconnected' })
+    ]))
+
+    const { container } = render(<SourcesSettings />)
+    await waitFor(() => expect(switches(container).length).toBe(1))
+    fireEvent.click(switches(container)[0])
+
+    expect(setSourceEnabled).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
+    expect(document.activeElement).toBe(screen.getByLabelText('Path to the .ics file'))
+  })
+
+  it('syncs from inside the drawer, by the executor’s own words', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'dingtalk', status: 'disconnected' })
+    ]))
     trySource.mockResolvedValue({
       detail: '注册表说这条在采，但没有任何一方构造得出它的采集器 ⇒ 不会有东西进来',
       ok: false,
@@ -225,15 +258,28 @@ describe('what the row says', () => {
     })
 
     render(<SourcesSettings />)
-    fireEvent.click(await screen.findByRole('button', { name: /Try once/ }))
+    fireEvent.click(await screen.findByText('DingTalk'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync now' }))
 
+    await waitFor(() => expect(trySource).toHaveBeenCalledWith('dingtalk'))
     await waitFor(() => expect(notify).toHaveBeenCalled())
     expect((notify.mock.calls.at(-1)?.[0] as { message: string }).message)
       .toBe('注册表说这条在采，但没有任何一方构造得出它的采集器 ⇒ 不会有东西进来')
   })
 
+  it('shows the site icon the backend fetched, not a letter', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'website', enabled: true, has_builder: true, icon: 'data:image/png;base64,AAA', source: 'zdbk', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-avatar-img-zdbk').querySelector('img')?.getAttribute('src'))
+      .toBe('data:image/png;base64,AAA'))
+  })
+
   it('never prints a raw source id when the display name is missing', async () => {
-    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'brand-new-thing', state: 'never' })]))
+    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'brand-new-thing', status: 'connected' })]))
 
     render(<SourcesSettings />)
 
@@ -250,9 +296,7 @@ describe('what the row says', () => {
   })
 
   it('degrades to that same row when the payload has no categories — it does NOT take the app down', async () => {
-    // 装机现场真崩过一次：老后端回的 data 没有 `categories`，
-    // `groupByCategory()` 里 `categories.map` 抛错，根 error boundary 把整个应用收走。
-    // 这一格钉的是：契约不匹配 ⇒ 这一屏显示"读不到"，其余界面照活。
+    // 装机现场真崩过一次：老后端回的 data 没有 `categories`，根 error boundary 把整个应用收走。
     getSources.mockResolvedValue({ ...payload([]), categories: undefined } as unknown as SourcesPayload)
 
     render(<SourcesSettings />)
@@ -301,97 +345,115 @@ describe('what does not get rendered', () => {
   })
 })
 
-describe('the first-time setup form', () => {
+describe('the drawer’s form', () => {
   const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
 
-  it('is collapsed until asked for', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
-    ]))
-
+  async function openDrawer(rowInput: SourceRow, displayName: string) {
+    getSources.mockResolvedValue(payload([rowInput]))
     render(<SourcesSettings />)
+    fireEvent.click(await screen.findByText(displayName))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Set up' })).toBeTruthy())
-    expect(screen.queryByTestId('setup-timetable')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId(`source-drawer-${rowInput.source}`)).toBeTruthy())
+  }
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set up' }))
+  it('holds the form only after the row is opened', async () => {
+    await openDrawer(row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
 
-    await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
+    expect(screen.getByTestId('setup-timetable')).toBeTruthy()
   })
 
-  it('draws no setup button at all for a source that declares no fields', async () => {
-    // 微信首次配置要的是扫码与密钥，两样都不在这一层 —— 所以它就该什么都没有。
-    getSources.mockResolvedValue(payload([row({ enabled: true, has_builder: true, source: 'wechat', state: 'never' })]))
+  it('draws no form for a source that declares no fields', async () => {
+    // 微信首次配置要的是扫码与密钥，两样都不在这一层 ⇒ 抽屉里就是没有那片表单，
+    // 而不是给一片填不出东西的空表单。
+    await openDrawer(row({ enabled: true, has_builder: true, source: 'dingtalk', status: 'disconnected' }), 'DingTalk')
 
-    render(<SourcesSettings />)
-
-    await waitFor(() => expect(screen.getByRole('button', { name: /Try once/ })).toBeTruthy())
-    expect(screen.queryByRole('button', { name: 'Set up' })).toBeNull()
+    expect(screen.queryByTestId('setup-dingtalk')).toBeNull()
   })
 
   it('draws only the fields the source itself declared, and falls back to its label', async () => {
-    getSources.mockResolvedValue(payload([
-      row({
-        category: 'custom',
-        enabled: true,
-        has_builder: true,
-        setup_fields: [{ ...ICS, key: 'third_party_thing', label: 'Their own field' }],
-        source: 'timetable',
-        state: 'never'
-      })
-    ]))
+    await openDrawer(row({
+      category: 'local',
+      enabled: true,
+      has_builder: true,
+      setup_fields: [{ ...ICS, key: 'third_party_thing', label: 'Their own field' }],
+      source: 'timetable',
+      status: 'disconnected'
+    }), 'Timetable')
 
-    render(<SourcesSettings />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    await waitFor(() => expect(screen.getByLabelText('Their own field')).toBeTruthy())
+    expect(screen.getByLabelText('Their own field')).toBeTruthy()
+    expect(screen.queryByLabelText('Path to the .ics file')).toBeNull()
   })
 
   it('will not save while a required field is empty', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
-    ]))
-
-    render(<SourcesSettings />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy())
+    await openDrawer(row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
 
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect(saveSourceSetup).not.toHaveBeenCalled()
   })
 
   it('sends only the filled fields, never an empty string', async () => {
-    getSources.mockResolvedValue(payload([
-      row({
-        category: 'local',
-        enabled: true,
-        has_builder: true,
-        setup_fields: [ICS, { help: '', key: 'note', kind: 'text', label: 'Note', required: false }],
-        source: 'timetable',
-        state: 'never'
-      })
-    ]))
     saveSourceSetup.mockResolvedValue(undefined)
+    await openDrawer(row({
+      category: 'local',
+      enabled: true,
+      has_builder: true,
+      setup_fields: [ICS, { help: '', key: 'note', kind: 'text', label: 'Note', required: false }],
+      source: 'timetable',
+      status: 'disconnected'
+    }), 'Timetable')
 
-    render(<SourcesSettings />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    await waitFor(() => expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy())
     fireEvent.change(screen.getByLabelText('Path to the .ics file'), { target: { value: 'D:/x.ics' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(saveSourceSetup).toHaveBeenCalledWith('timetable', { ics_path: 'D:/x.ics' }))
   })
 
-  it('offers no masked input, because the declaration layer cannot declare a secret', async () => {
-    getSources.mockResolvedValue(payload([
-      row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', state: 'never' })
-    ]))
+  it('masks a declared secret and never prefills it', async () => {
+    // 用户 10-22：「密码什么的就不要明文显示。用星号」。
+    // 旧版这条是反的（"不许有掩码框，因为声明层声明不出密钥"）——声明层现在能声明了，
+    // 于是这一格钉的是两件事：**type=password**，且**这里永远没有它的旧值**
+    // （后端只回"设过没有"，所以掩码框里不许出现一串星号假装是原值）。
+    await openDrawer(row({
+      category: 'local',
+      enabled: true,
+      has_builder: true,
+      secrets: { password: true },
+      setup: {},
+      setup_fields: [{ help: '', key: 'password', kind: 'secret', label: 'Password', required: true }],
+      source: 'timetable',
+      status: 'connected'
+    }), 'Timetable')
 
-    const { container } = render(<SourcesSettings />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    const box = screen.getByLabelText('Password') as HTMLInputElement
 
-    await waitFor(() => expect(screen.getByTestId('setup-timetable')).toBeTruthy())
-    expect(container.querySelector('input[type="password"]')).toBeNull()
+    expect(box.type).toBe('password')
+    expect(box.value).toBe('')
+  })
+
+  it('offers the cadence as presets, and stores the cron behind the words', async () => {
+    // 「频率也莫名奇妙的用一个英文，太丑了」⇒ 默认那一格是中文的一句话，
+    // 但**存进配置的仍是那一句 cron**（运行时一个字没改，改的只是画法）。
+    saveSourceSetup.mockResolvedValue(undefined)
+    await openDrawer(row({
+      category: 'local',
+      enabled: true,
+      has_builder: true,
+      setup: { cadence: 'every 1h' },
+      setup_fields: [
+        { help: '', key: 'ics_path', kind: 'path', label: 'Path to the .ics file', required: true },
+        { help: '', key: 'cadence', kind: 'cadence', label: 'Collection cadence', required: false }
+      ],
+      source: 'timetable',
+      status: 'connected'
+    }), 'Timetable')
+
+    expect(screen.queryByRole('textbox', { name: 'Collection cadence' })).toBeNull()
+    // Radix 的 Select 是 pointerdown 开的，`fireEvent.click` 打不开它（jsdom 里点半天没反应就是这一条）
+    // Radix 的 Select 在 jsdom 里开不起来（要真指针事件），所以这里钉的是**屏上看得见的那两句**：
+    // 存进去的是 `every 1h`，画出来的是一句人话；而那个裸 cron 文本框**不在屏上**——
+    // 谁把它改回一个输入框，这一条当场红。
+    expect(screen.getByRole('combobox', { name: 'Collection cadence' }).textContent).toContain('Hourly')
+    expect(screen.queryByRole('textbox', { name: 'Collection cadence' })).toBeNull()
   })
 })
 
