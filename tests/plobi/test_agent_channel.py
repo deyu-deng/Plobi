@@ -325,11 +325,24 @@ def test_channel_available_follows_the_roster(CH):
 
 
 class _FakeProc:
+    """假进程：默认「还活着」（poll() 返回 None）。
+
+    2026-10-22 加的：``wake_agent`` 现在会在起进程后等两秒半、看它还在不在——
+    「起得来」不等于「它在干活」（子进程秒退是最常见的失败形状）。所以这个假
+    进程得能回答 poll()。
+    """
+
     pid = 4321
+    returncode = None
+
+    def poll(self):
+        return None
 
 
 def _wake_env(CH, tmp_path, monkeypatch, *, popen=None):
     """把唤醒要碰的三样外部东西都指到 tmp / 打桩，返回记录 Popen 的列表。"""
+    # 起进程后那两秒半的"它还在吗"检查：测试里不真睡。
+    monkeypatch.setattr(CH.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(CH, "_wake_dir", lambda: tmp_path / "wake")
     (tmp_path / "wake").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(CH, "_wake_log_path", lambda: tmp_path / "wake.log")
@@ -397,6 +410,36 @@ def test_wake_never_continues_a_wake_chain(CH, tmp_path, monkeypatch):
     assert ok is False
     assert "不再往下叫醒" in note
     assert starts == []
+
+
+def test_wake_does_not_claim_success_when_the_child_exits_immediately(CH, tmp_path, monkeypatch):
+    """「起得来」不等于「它在干活」——秒退必须照实说没干活。
+
+    2026-10-22 现核：子进程起来就退（子分身的 CLI 还在读分家库、``--resume``
+    找不到那条会话），而当时 ``woke`` 报的是 true、wakeNote 说「已叫醒它」——
+    **谎报**。现在起进程后等两秒半、看它还在不在；退了就把日志末尾带回去。
+    """
+    monkeypatch.delenv("PLOBI_WAKE", raising=False)
+    monkeypatch.setattr(
+        CH.AA,
+        "build_child_command",
+        lambda entry, prompt, asked_by="l1": (["plobi"], {}, None),
+    )
+
+    class _DeadProc:
+        pid = 999
+        returncode = 1
+
+        def poll(self):
+            return 1
+
+    starts = _wake_env(CH, tmp_path, monkeypatch, popen=lambda argv, **kwargs: _DeadProc())
+
+    ok, note = CH.wake_agent(type("E", (), {"name": "Nymo"})(), "sess-1", sender="Plobi")
+
+    assert ok is False
+    assert "起来了就退" in note
+    assert starts == []  # popen 走的是自定义分支，不进 starts
 
 
 def test_wake_failure_is_reported_not_raised(CH, tmp_path, monkeypatch):

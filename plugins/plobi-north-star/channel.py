@@ -348,12 +348,11 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
 
     log_path = _wake_log_path()
     try:
-        with log_path.open("ab") as handle:
+        with log_path.open("ab", buffering=0) as handle:
             handle.write(
                 f"\n=== wake {entry.name} @ {datetime.now().replace(microsecond=0).isoformat()} "
                 f"(from {sender}, session {session_id}) ===\n".encode("utf-8")
             )
-            handle.flush()
             proc = subprocess.Popen(  # noqa: S603 — argv 是本模块自己拼的
                 argv,
                 stdin=subprocess.DEVNULL,
@@ -386,7 +385,28 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
     except OSError:
         logger.warning("say: 唤醒标记没写进去（不影响这一趟）", exc_info=True)
 
-    return True, f"已叫醒它（后台 pid {proc.pid}），它会在这一屏里接着干。"
+    # **不许谎报**：进程起得来 ≠ 它真在干活。常见的是「起来就退」——
+    # profile 家没落地、`--resume` 找不到那条会话（子分身的 CLI 若还没切到单库，
+    # 它读的是分家库）、模型路由失败……所以给它两秒半，再看它还在不在。
+    time.sleep(2.5)
+    if proc.poll() is not None:
+        tail = _log_tail(log_path)
+        return False, (
+            f"它起来了就退出了（exit {proc.returncode}）——没干活。"
+            + (f"日志末尾：{tail}" if tail else "")
+        )
+
+    return True, f"已叫醒它（后台 pid {proc.pid}，还在跑），它会在这一屏里接着干。"
+
+
+def _log_tail(path: Path, limit: int = 400) -> str:
+    """唤醒日志的末尾几行——那是子进程唯一留下的证据（为什么秒退就写在这儿）。"""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    tail = text.strip().splitlines()[-4:]
+    return " / ".join(line.strip() for line in tail if line.strip())[-limit:]
 
 
 def _safe_slug(name: str) -> str:
