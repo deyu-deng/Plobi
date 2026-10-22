@@ -12,18 +12,20 @@ How it works — deliberately the same shape the kanban dispatcher already
 proves in production, not a new mechanism:
 
 * **Target** resolves through :class:`plobi.agents.registry.AgentRegistry`
-  (name → registry row → its profile + ``project_path``). The model never
-  hands out an arbitrary profile name, archived rows are refused, and a
-  refusal lists the names that *are* askable.
+  (name → registry row → its ``project_path``). The model never hands out an
+  arbitrary name, archived rows are refused, and a refusal lists the names
+  that *are* askable.
 * **The 分身 runs as a subprocess** built from the shared
-  :func:`plobi_cli.plobi_bin.resolve_plobi_argv` recipe plus the dispatcher's
-  environment pinning (``PLOBI_HOME`` / ``PLOBI_PROFILE`` from the profile,
+  :func:`plobi_cli.plobi_bin.resolve_plobi_argv` recipe plus the identity /
+  ledger pinning (``PLOBI_AGENT_ID`` = the registry name, ``PLOBI_HOME`` =
+  the **shared layer root**, ``PLOBI_STATE_HOME`` = the single ledger,
   ``TERMINAL_CWD`` pinned to the real project path, ``PLOBI_TUI`` dropped,
-  ``--cli --accept-hooks chat -q``).
+  ``--cli --accept-hooks chat -q``). **No ``-p <profile>``** —— 裁定 42
+  「砍掉 Profile 当分身单位」，一个 profile 不再等于一整套 Plobi。
 * **The question is attributed** in the text the child receives, so it knows
   who is asking and why.
 * **The record is the child's own session.** The child's config/skills/memories
-  come from its profile home (``PLOBI_HOME``, 裁定 179), but its session ledger
+  come from the **shared layer** (one copy, 裁定 42), while its session ledger
   is the shared top-level one: the spawner passes ``PLOBI_STATE_HOME``（缺口 A）
   and ``PLOBI_AGENT_ID``（裁定 180）so the exchange lands in the single
   ``state.db`` attributed to this 分身 by row; the answer and the session id
@@ -520,37 +522,39 @@ def _project_cwd(entry) -> str:
 def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[list[str], dict[str, str], Optional[str]]:
     """Return ``(argv, env, cwd)`` for one face-to-face question.
 
-    Mirrors ``plobi_cli.kanban_db._default_spawn`` — the same binary resolver and
-    the same environment pinning — minus the board variables (this is a
-    conversation, not a task handoff) and with **no force-approval flag of any
-    kind**: a child that wants to do something dangerous stops and asks, and the
-    bounded timeout is what keeps that from eating the secretary's turn.
+    **形状按裁定 42 + 180**（2026-10-22 改写；旧版是 `-p <profile>` 那一套，
+    用户当场点破「profile 概念怎么又回归了」——那一套正是裁定 42 判废的
+    「一个 profile 就是一整套 Plobi」。旧版与它犯的错一并留在这里当反例）：
+
+    * 身份 = ``PLOBI_AGENT_ID``（名册 name）。裁定 42 标题即「砍掉 Profile 当
+      分身单位：L2 降为一条项目记录」，§42.2 终态只保留 6 项，其中没有 profile；
+    * 配置 / 技能 / 记忆走**共享层一份**，不再每个分身各复制一套。现核：共享层
+      466 个文件、72 个技能，**不带 `-p` 起进程实测可用**（子进程自己调
+      `skills_list` 报「72 个技能」）；
+    * 会话落**单库**（``PLOBI_STATE_HOME``）——裁定 180 的行级归属。
+
+    所以这里**不再** ``-p <profile>``、**不再**把 ``PLOBI_HOME`` 指到
+    ``profiles/<name>``。父进程自己可能就是被 `-p` 起来的（它的 ``PLOBI_HOME``
+    指向某个家），子进程必须**显式回到共享层 root**，否则又会变成一整套 Plobi。
+
+    仍然从 ``kanban_db._default_spawn`` 借的只有两样：同一个二进制解析器，和
+    **不挂任何强制批准旗**——想干危险事的子进程会停下来问，有界超时才是兜。
     """
     from plobi_cli.plobi_bin import resolve_plobi_argv
-    from plobi_cli.profiles import resolve_profile_env
+    from plobi_constants import get_default_plobi_root, get_plobi_state_home
 
-    profile = entry.profile_name
     child_env = dict(os.environ)
-    try:
-        child_env["PLOBI_HOME"] = resolve_profile_env(profile)
-    except FileNotFoundError as exc:
-        # 名单在筛选时就用同一份判据把这种行标成 ``askable=false`` 了（
-        # :func:`plobi.agents.registry.agent_askability`），走到这一步还不存在
-        # 只剩一种情况：家是在这次问答之间被人收走的。这里照旧拒，别让半路消失
-        # 的分身变成一次崩掉的回合。
-        raise AskRefusal(
-            f"「{_label(entry)}」还没在这台机器上落地，问不到它——登记 / 新建一次就问到。",
-            _available_names(askable_entries()),
-        ) from exc
-    child_env["PLOBI_PROFILE"] = profile
-    # 缺口 A（WP-AGENT-SESSION-ATTRIBUTION）：身份的家拆两面。配置/技能/记忆
-    # 跟着上面的 PLOBI_HOME 走（裁定 179，按家分持）；会话总账单独指到本进程
-    # 自己的总账（``PLOBI_STATE_HOME``）——子分身的问答与 L1/桌面落同一个单库，
-    # 按行级归属，家库里不再长出第二份流水账。嵌套场景（秘书自己也是被派出来
-    # 的子进程）要把**自己的总账**原样传下去，而不是把自己 PLOBI_HOME 当总账。
+    # 共享层 root（裁定 42「重东西只留一份」+ R-096）：父进程可能身在某个 profile
+    # 家里，子进程必须回到这一份，否则每个分身又各带一套 Plobi。
+    child_env["PLOBI_HOME"] = str(get_default_plobi_root())
+    # 缺口 A（WP-AGENT-SESSION-ATTRIBUTION）：会话总账单独指到本进程的总账
+    # （``PLOBI_STATE_HOME``）——子分身的问答与 L1/桌面落同一个单库，按行级归属。
+    # 嵌套场景（秘书自己也是被派出来的子进程）要把**自己的总账**原样传下去，
+    # 而不是把自己 PLOBI_HOME 当总账。
     child_env["PLOBI_STATE_HOME"] = str(get_plobi_state_home())
     # 裁定 180 的归属键：子进程建会话时（cli.py create_session）读它落到
     # sessions.agent_id——总账里这一行才能认出是「Resonote 答的」而不是 L1。
+    # 这也是**身份**：profile 不再是分身单位之后，名册 name 就是它。
     child_env["PLOBI_AGENT_ID"] = entry.name
     # 裁定 42 §42.2 第 6 项的「密钥」这一样：只有这条记录声明的覆盖进得到子进程，
     # 共享的那几把我从继承来的环境里拿——分身的家里不留第二份 .env。
@@ -568,19 +572,17 @@ def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[li
         # one.
         child_env["TERMINAL_CWD"] = cwd
     # A child must never boot the interactive TUI: an inherited PLOBI_TUI=1 (or
-    # a ``display.interface: tui``) would send a quiet run into Ink, which bails
-    # out on a non-TTY stdout. ``--cli`` is the precedence pin; dropping the env
+    # ``display.interface: tui``) would send a quiet run into Ink, which bails
+    # out on non-TTY stdout. ``--cli`` is the precedence pin; dropping the env
     # var covers older builds found earlier on PATH.
     child_env.pop("PLOBI_TUI", None)
 
     argv = [
         *resolve_plobi_argv(),
-        "-p",
-        profile,
         "--cli",
-        # The child runs under a profile-scoped PLOBI_HOME, so it sees that
-        # profile's shell-hook allowlist rather than the secretary's; pass it
-        # explicitly the same way the dispatcher does for workers.
+        # The child runs on the SHARED layer (no profile home), so it sees the
+        # shared shell-hook allowlist; pass it explicitly the same way the
+        # dispatcher does for workers.
         "--accept-hooks",
         "chat",
         "-q",
