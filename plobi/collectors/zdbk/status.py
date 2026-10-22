@@ -13,10 +13,11 @@ STATE_AUTH_FAILED = "auth_failed"
 STATE_CAPTCHA_REQUIRED = "captcha_required"
 STATE_NETWORK_UNREACHABLE = "network_unreachable"
 STATE_EMPTY_TERM = "empty_term"
+STATE_THROTTLED = "throttled"
 
 SOURCE_STATES: tuple[str, ...] = (
     STATE_READY, STATE_DISABLED, STATE_NO_CREDENTIAL, STATE_AUTH_FAILED,
-    STATE_CAPTCHA_REQUIRED, STATE_NETWORK_UNREACHABLE, STATE_EMPTY_TERM,
+    STATE_CAPTCHA_REQUIRED, STATE_NETWORK_UNREACHABLE, STATE_EMPTY_TERM, STATE_THROTTLED,
 )
 FAILURE_STATES: tuple[str, ...] = tuple(s for s in SOURCE_STATES if s != STATE_READY)
 
@@ -27,6 +28,7 @@ _NOTES = {
     STATE_AUTH_FAILED: "教务端点没回认识的信封：会话掉了，或者学校改了页面。两种都要人去看，不许合成「没数据」。",
     STATE_CAPTCHA_REQUIRED: "这一轮要人工验证码 ⇒ 按用户 10-21 拍的口径**报一句并停手**，不自动识别、不重试。",
     STATE_NETWORK_UNREACHABLE: "打不到学校（这台可达性会随代理/TUN 翻面）：这不是凭据问题，两句话不同。",
+    STATE_THROTTLED: "距上一轮真打不够久（节流）：这一轮连学校都不碰，不是「学校没数据」。",
     STATE_EMPTY_TERM: "会话成了但这一轮一条都没拿到：多半是学年/学期码（`xnm/xqm`)不对，不是「这学期没课」。",
 }
 

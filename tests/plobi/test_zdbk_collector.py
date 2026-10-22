@@ -112,8 +112,16 @@ def healthy_transport(**extra) -> FakeTransport:
 
 def make_collector(transport, **kwargs) -> ZdbkCollector:
     return ZdbkCollector(transport=transport, credentials=("3160100000", "fake-passwd-42"),
-                         config=ZdbkConfig(year="2026", season="12", include_practice=True),
+                         config=ZdbkConfig(year="2026", season="12", include_practice=True,
+                                           min_minutes_between_pulls=0, jitter_minutes=0),
                          **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path, monkeypatch):
+    """配置与节流状态都钉进 tmp_path —— 不然测试会读/写**真的** `zdbk_state.json`，
+    而那份文件里现在就有今天 08:15 那一轮的时间戳（读到位就直接被判成节流）。"""
+    monkeypatch.setenv("PLOBI_ZDBK_CONFIG", str(tmp_path / "zdbk.json"))
 
 
 @pytest.fixture()
@@ -152,7 +160,9 @@ class TestOneSiteManyKinds:
         assert item.evidence["kind_label"] == "class"
 
     def test_title_is_the_first_segment_of_the_br_string(self) -> None:
-        item = next(i for i in make_collector(healthy_transport()).pull() if i.external_id == "2026A100001-1-2")
+        # 身份是**格子坐标**（选课号 + 小学期 + 星期 + 第几节），不是光秃秃的选课号
+        item = next(i for i in make_collector(healthy_transport()).pull()
+                    if i.external_id.startswith("2026A100001-1-2"))
 
         assert item.title == "高等数学（上）"
         assert "王老师" in item.evidence["kcb"]        # 教师与地点不丢，只是不当列
@@ -170,7 +180,69 @@ class TestIdentityIsTheSitesOwnId:
         before = to_occurrences("class", rows)[0]
         after = to_occurrences("class", [dict(rows[0], kcb="新名字<br>王老师<br>X-214")])[0]
 
-        assert before.external_id == after.external_id == "keep-me"
+        assert before.external_id == after.external_id
+        assert before.external_id.startswith("keep-me")
+
+
+class TestIdentityIsEverySlotNotEveryCourse:
+    """10-22 真数据量出来的 bug：65 行 `kbList` 只进池 3 条。
+
+    一门课一周上几次就有几个格子，而 `xkkh` 对同一门课是**同一个值**——拿它当身份，
+    这一门课的几次课就在池里互相覆盖（还让每轮的 `updated` 数在 108/147 之间跳）。
+    身份必须是格子坐标（选课号 + 小学期 + 星期 + 第几节）。
+    """
+
+    def test_the_same_course_in_several_slots_is_several_rows(self) -> None:
+        kb = [{"xkkh": "K1", "kcb": "高数<br>王老师<br>X-1", "xqj": day, "djj": slot,
+               "skcd": "2", "xxq": "1"} for day in ("1", "3", "5") for slot in ("1", "3")]
+
+        items = to_occurrences("class", kb)
+
+        assert len(items) == len(kb)
+        assert len({item.external_id for item in items}) == 6
+        assert items[0].evidence["identity_key"] == "xkkh+xxq+xqj+djj"
+
+
+class TestThrottleIsReal:
+    """`min_minutes_between_pulls` 这一格以前只是写着——那等于没有。"""
+
+    def test_a_second_round_inside_the_window_does_not_touch_the_site(self) -> None:
+        from plobi.collectors.zdbk import state as zdbk_state
+
+        transport = healthy_transport()
+        clock = {"now": 1_800_000_000.0}
+        collector = ZdbkCollector(transport=transport, credentials=("3160100000", "p"),
+                                  config=ZdbkConfig(min_minutes_between_pulls=45, jitter_minutes=0),
+                                  now=lambda: clock["now"])
+        collector.pull()
+        before = len(transport.calls)
+
+        with pytest.raises(ZdbkUnavailable) as raised:
+            collector.pull()
+
+        assert raised.value.state == "throttled"
+        assert len(transport.calls) == before, "节流没到点就连学校都不该碰"
+        assert zdbk_state.read_last_pull_at() is not None
+
+    def test_the_same_course_data_across_the_window_is_idempotent(self, pool_db) -> None:
+        from plobi.pool import stats as pool_stats
+
+        clock = {"now": 1_800_000_000.0}
+        first = ZdbkCollector(transport=healthy_transport(),
+                              credentials=("3160100000", "p"),
+                              config=ZdbkConfig(min_minutes_between_pulls=0, jitter_minutes=0),
+                              now=lambda: clock["now"])
+        made = first.collect()["created"]
+        clock["now"] += 3600
+        second = ZdbkCollector(transport=healthy_transport(),
+                               credentials=("3160100000", "p"),
+                               config=ZdbkConfig(min_minutes_between_pulls=0, jitter_minutes=0),
+                               now=lambda: clock["now"])
+        again = second.collect()
+
+        assert made > 0 and again["created"] == 0
+        assert again["updated"] == 0, "同一批数据第二轮不该改任何一行（改了就是身份或内容有抖动）"
+        assert pool_stats()["total"] == made
 
 
 class TestNothingIsSilent:
