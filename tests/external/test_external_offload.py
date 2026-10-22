@@ -788,3 +788,20 @@ def test_unknown_family_is_not_silently_treated_as_codebuddy():
     assert offload.agent_spec("not-a-real-agent") is None
     assert offload.resolve_command("not-a-real-agent") == ""
     assert offload.permission_flags("not-a-real-agent") == ()
+
+
+def test_qoder_options_go_before_the_prompt_and_codebuddy_stays_as_measured():
+    """Qoder 的提示词是变长位置参数 `[query...]`：排在它后面的选项会被吞进提示词。
+
+    10-22 实测踩过：`--output-format json` 与 `--permission-mode` 都排在提示词之后，
+    结果回包是散文、写入被权限层当场拒。所以这一家必须把选项排在**前面**；
+    CodeBuddy 那一族的形状是实测跑通的，一个字不许跟着变。
+    """
+    q = offload.build_argv("qoder", "/usr/bin/qodercli", "干活", ("--permission-mode", "default"), ())
+    assert q.index("--output-format") < q.index("-p"), "选项必须在提示词之前"
+    assert q.index("--permission-mode") < q.index("-p")
+    assert q[-1] == "干活" and q[-2] == "-p"
+
+    c = offload.build_argv("codebuddy", "/usr/bin/codebuddy", "干活", ("-y", "--permission-mode=bypassPermissions"), ())
+    assert c == ("/usr/bin/codebuddy", "-p", "干活", "--output-format", "json",
+                 "-y", "--permission-mode=bypassPermissions")
