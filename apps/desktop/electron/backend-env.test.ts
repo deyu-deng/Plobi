@@ -6,6 +6,7 @@ import {
   appendUniquePathEntries,
   buildDesktopBackendEnv,
   buildDesktopBackendPath,
+  dedupeEnvKeys,
   desktopCliSearchPath,
   normalizePlobiHomeRoot,
   pathEnvKey,
@@ -148,3 +149,56 @@ test('desktopCliSearchPath leaves the Windows search path unchanged', () => {
   assert.equal(search.includes('.cargo'), false)
 })
 
+// ─── 大小写重复键：沙箱代理塞的 HTTPS_PROXY + https_proxy ──────────────────
+//
+// 2026-10-22 现核的一整串故障的根因（桌面连不上后端、L2 进不去）：
+// WorkBuddy 沙箱起子进程时同时塞了大写与小写两套 proxy 变量（值相同）。
+// Node 的 env 大小写敏感、两个键都活着；可一旦交给 PowerShell / .NET，
+// 环境字典大小写不敏感，于是 "An item with the same key has already been added"
+// ⇒ Start-Process 抛 ArgumentException ⇒ 子进程 exit=1073807364
+// ⇒ bootstrap 的 config-templates 阶段 "produced no JSON result frame"
+// ⇒ 后端起不来 ⇒ 桌面 "Timed out connecting to Plobi backend after 15000ms"。
+//
+// 同一台机器上 `Get-ChildItem Env:` 都会炸，所以这不是我们写错，是继承来的
+// 环境本身不合法——必须在自己这一侧把它修合法。
+
+test('dedupeEnvKeys keeps one spelling per key (last write wins)', () => {
+  const result = dedupeEnvKeys({
+    HTTPS_PROXY: 'http://127.0.0.1:56359',
+    https_proxy: 'http://127.0.0.1:56359',
+    HTTP_PROXY: 'http://127.0.0.1:1',
+    http_proxy: 'http://127.0.0.1:2',
+    PATH: '/usr/bin'
+  })
+
+  const keys = Object.keys(result)
+  assert.equal(keys.filter(key => key.toLowerCase() === 'https_proxy').length, 1)
+  assert.equal(keys.filter(key => key.toLowerCase() === 'http_proxy').length, 1)
+  // 后写覆盖先写（与 Windows 环境块同语义）
+  assert.equal(result.https_proxy, 'http://127.0.0.1:56359')
+  assert.equal(result.http_proxy, 'http://127.0.0.1:2')
+  assert.equal(result.PATH, '/usr/bin')
+})
+
+test('dedupeEnvKeys leaves a clean env untouched', () => {
+  const clean = { PATH: '/usr/bin', HOME: '/home/test', PLOBI_HOME: '/home/test/.plobi' }
+  assert.deepEqual(dedupeEnvKeys(clean), clean)
+})
+
+test('buildDesktopBackendEnv still adds PYTHONPATH and PATH when the inherited env is dirty', () => {
+  const result = buildDesktopBackendEnv({
+    plobiHome: '/home/test/.plobi',
+    venvRoot: '/home/test/.plobi/plobi-agent/venv',
+    pythonPathEntries: ['/home/test/.plobi/plobi-agent'],
+    currentEnv: {
+      HTTPS_PROXY: 'http://127.0.0.1:56359',
+      https_proxy: 'http://127.0.0.1:56359',
+      PATH: '/usr/bin'
+    },
+    platform: 'linux',
+    pathModule: path.posix
+  })
+
+  assert.ok(result.PYTHONPATH.includes('/home/test/.plobi/plobi-agent'), 'PYTHONPATH still computed')
+  assert.ok(result.PATH.includes('/home/test/.plobi/plobi-agent/venv/bin'), 'PATH still extended')
+})
