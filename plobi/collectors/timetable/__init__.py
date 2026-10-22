@@ -80,6 +80,13 @@ SPEC = SourceSpec(
         ),
     ),
     builder=_build,
+    # **这一条不再进每天那一轮**（裁定 194 第 2 条：用户把一份 .ics 交给日程，那是用户的手，
+    # 不是采集器）。10-22 现读的坏形状：`ics_path` 没填 ⇒ builder 抛 `no_path_configured` ⇒
+    # `collect_runs.json` 里每轮一条 `timetable: build_failed`，设置页上是一条永远红的信源行，
+    # 而那一格本来就不该是信源。撤的是**采集**这一档，端点与文件读取照旧能用（日程那一侧的
+    # 「从外部导入」还靠它），包整体搬出 `plobi/collectors/` 与界面上那格的去处由
+    # `WP-AGENDA-ICS-IMPORT` 做（任务书 `tasks/agenda-ics-import-task.md`）——本刀不负责重写它。
+    collecting=False,
 )
 
 register(SPEC, replace=True)
