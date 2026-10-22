@@ -15,7 +15,7 @@
  * renders.
  */
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { PanelSectionLabel } from '@/app/overlays/panel'
 import { currentI18nLocale, useI18n } from '@/i18n'
@@ -23,8 +23,14 @@ import { cn } from '@/lib/utils'
 import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
 import {
-  dayKeysOf,
-  dayKeyOf,
+  type RailDay,
+  shiftDateKey,
+  useAgendaRailDay,
+  useAgendaRailWeekCounts,
+  weekKeysOf
+} from './use-agenda-timeline'
+
+import {
   emptyDay,
   HOUR_HEIGHT,
   LABEL_GUTTER_FRACTION,
@@ -354,80 +360,179 @@ export function Timeline({
     return out
   }
 
-  const days = useMemo(() => {
-    const safeEvents = dedupe(events)
-    const safeAnchors = dedupe(anchors ?? [])
-    const safePlans = dedupe(plans ?? [])
-    const safeAvoid = dedupe(avoidWindows ?? [])
+  // 一屏只画一天（WP-AGENDA-RAIL-APPLE）：抬头那一周就是换天的入口，
+  // 左右箭头换的是**同一星期几的上一周／下一周**。
+  const [selected, setSelected] = useState(todayKey)
 
-    const usedKeys = new Set<string>([
-      ...dayKeysOf(safeEvents),
-      ...safeAnchors.map(anchor => dayKeyOf(anchor.start_at)),
-      ...safePlans.map(plan => dayKeyOf(plan.start_at)),
-      ...safeAvoid.map(window => dayKeyOf(window.start_at))
-    ])
+  const seed: RailDay = useMemo(
+    () => ({
+      anchors: dedupe(anchors ?? []),
+      avoidWindows: dedupe(avoidWindows ?? []),
+      events: dedupe(events),
+      plans: dedupe(plans ?? [])
+    }),
+    [events, anchors, plans, avoidWindows]
+  )
 
-    // Today/tomorrow MUST always render (裁定 37.2 / 39) — even when today has
-    // no events, anchors, plans, or avoid windows, an empty axis still shows
-    // the 08:00–23:00 ticks + the now line so the user has a today axis in
-    // front of them. Sort the rest chronologically, but pin today first.
-    const extraKeys = [...usedKeys].filter(key => key !== todayKey && key !== tomorrowKey).sort()
-    const orderedKeys = [todayKey, tomorrowKey, ...extraKeys]
+  const rail = useAgendaRailDay(selected, seed, [todayKey, tomorrowKey])
+  const weekCounts = useAgendaRailWeekCounts(selected, rail.events)
+  const week = weekKeysOf(selected)
 
-    return orderedKeys
-      .map((dayKey, dayIndex): TimelineDay | null => {
-        const layout = layoutDay(safeEvents, dayKey, safeAnchors, safePlans, safeAvoid)
-
-        if (layout) {
-          return layout
-        }
-
-        if (dayIndex <= 1) {
-          // Today + tomorrow keep a minimum axis so the now line has a home.
-          return emptyDay(dayKey)
-        }
-
-        return null
-      })
-      .filter((day): day is TimelineDay => day !== null)
-  }, [events, anchors, plans, avoidWindows, todayKey, tomorrowKey])
-
-  if (days.length === 0) {
-    return (
-      <p
-        className="px-2 py-6 text-center text-[0.72rem] text-(--ui-text-tertiary)"
-        data-testid="timeline-empty"
-      >
-        {t.console.timeline.emptyDesc}
-      </p>
-    )
-  }
+  const day = useMemo(
+    () => layoutDay(rail.events, selected, rail.anchors, rail.plans, rail.avoidWindows) ?? emptyDay(selected),
+    [rail, selected]
+  )
 
   return (
-    <div className="flex flex-col gap-4 px-1">
-      {days.map(day => {
-        const avoidBands = day.avoidBands ?? []
+    <div className="flex flex-col gap-3 px-1">
+      <WeekStrip
+        onShiftWeek={delta => setSelected(current => shiftDateKey(current, delta))}
+        onSelect={setSelected}
+        selected={selected}
+        todayKey={todayKey}
+        week={week}
+        weekCounts={weekCounts}
+      />
 
-        return (
-          <DayAxis
-            avoidBands={avoidBands}
-            containerRef={day.key === todayKey ? node => {
-              todayAxisRef.current = node
-            } : undefined}
-            day={day}
-            key={day.key}
-            label={
-              day.key === todayKey
-                ? t.console.timeline.today
-                : day.key === tomorrowKey
-                  ? t.console.timeline.tomorrow
-                  : day.key
-            }
-            nowMinutes={day.key === todayKey ? nowMinutes : undefined}
-            pendingLabel={t.console.timeline.pending}
-          />
-        )
-      })}
+      {day.blocks.length === 0 ? (
+        <p className="px-2 py-1 text-[0.72rem] text-(--ui-text-tertiary)" data-testid="timeline-empty">
+          {t.console.timeline.emptyDesc}
+        </p>
+      ) : null}
+
+      <DayAxis
+        avoidBands={day.avoidBands ?? []}
+        containerRef={node => {
+          todayAxisRef.current = node
+        }}
+        day={day}
+        label={
+          selected === todayKey
+            ? t.console.timeline.today
+            : selected === tomorrowKey
+              ? t.console.timeline.tomorrow
+              : selected
+        }
+        nowMinutes={selected === todayKey ? nowMinutes : undefined}
+        pendingLabel={t.console.timeline.pending}
+      />
+    </div>
+  )
+}
+
+const WEEKDAY_NARROW = ['日', '一', '二', '三', '四', '五', '六']
+
+function weekdayNarrow(index: number): string {
+  try {
+    // 2024-01-07 是周日，按 index 推到对应那天；跟着界面语言走，不写死四语。
+    return new Intl.DateTimeFormat(currentI18nLocale(), { weekday: 'narrow' }).format(
+      new Date(2024, 0, 7 + index)
+    )
+  } catch {
+    return WEEKDAY_NARROW[index]
+  }
+}
+
+function ChevronButton({
+  direction,
+  label,
+  onClick
+}: {
+  direction: 'left' | 'right'
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      aria-label={label}
+      className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-(--ui-text-secondary) hover:bg-(--ui-accent)/10"
+      data-testid={`timeline-week-${direction}`}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} viewBox="0 0 16 16">
+        {direction === 'left' ? <path d="M10 3 5 8l5 5" /> : <path d="M6 3l5 5-5 5" />}
+      </svg>
+    </button>
+  )
+}
+
+/**
+ * 抬头那一周：号码就是日期，下面那几点就是"那天有没有事"。
+ * 选中的那天填 accent 圆底，今天没被选中时留一圈描边——不写「今天」两个字也认得出。
+ */
+function WeekStrip({
+  onShiftWeek,
+  onSelect,
+  selected,
+  todayKey,
+  week,
+  weekCounts
+}: {
+  onShiftWeek: (deltaDays: number) => void
+  onSelect: (dateKey: string) => void
+  selected: string
+  todayKey: string
+  week: string[]
+  weekCounts: Record<string, number>
+}) {
+  const todayIndex = new Date(`${todayKey}T00:00:00`).getDay()
+
+  return (
+    <div className="flex items-center gap-1">
+      <ChevronButton direction="left" label={shiftDateKey(selected, -7)} onClick={() => onShiftWeek(-7)} />
+
+      <div className="flex flex-1 items-start justify-between">
+        {week.map((key, index) => {
+          const active = key === selected
+          const isToday = key === todayKey
+          const count = weekCounts[key] ?? 0
+
+          return (
+            <button
+              className="flex w-8 flex-col items-center gap-1 rounded-md py-0.5 hover:bg-(--ui-accent)/8"
+              data-testid={`timeline-day-cell-${key}`}
+              key={key}
+              onClick={() => onSelect(key)}
+              title={key}
+              type="button"
+            >
+              <span
+                className={cn(
+                  'text-[0.6rem] leading-none',
+                  index === todayIndex ? 'text-foreground/90' : 'text-(--ui-text-tertiary)'
+                )}
+              >
+                {weekdayNarrow(index)}
+              </span>
+              <span
+                className={cn(
+                  'flex size-6 items-center justify-center rounded-full text-[0.78rem] tabular-nums',
+                  active
+                    ? 'bg-(--ui-accent) font-semibold text-(--ui-text-on-accent)'
+                    : count === 0
+                      ? 'text-(--ui-text-quaternary)'
+                      : 'text-foreground/90',
+                  isToday && !active && 'ring-1 ring-(--ui-accent)'
+                )}
+              >
+                {Number(key.slice(8, 10))}
+              </span>
+              <span className="flex h-1 items-center gap-0.5">
+                {Array.from({ length: Math.min(count, 3) }, (_, dot) => (
+                  <span
+                    className={cn('size-[3px] rounded-full', active ? 'bg-(--ui-text-on-accent)/80' : 'bg-(--ui-accent)')}
+                    key={dot}
+                  />
+                ))}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <ChevronButton direction="right" label={shiftDateKey(selected, 7)} onClick={() => onShiftWeek(7)} />
     </div>
   )
 }
