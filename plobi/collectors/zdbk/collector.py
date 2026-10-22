@@ -10,7 +10,7 @@
 | `major` 主修／学业跟踪 | `POST …/zycjtj/xszgkc_cxXsZgkcIndex.html?doType=query&…` | 同上，本轮 **238 条**；其中 **217 条没有 `xkkh`**（计划内课程，不是选课记录） |
 | `practice` 实践分 | `GET …/dessktgl/dessktcx_cxDessktcxIndex.html?gnmkdm=N108001&su=<学号>` | **不是 JSON**：200、16 KB HTML、`<tr>` 2 行 ⇒ 只能按表行啃；学校改页面这一条就红（用户 10-21 拍：接） |
 | `term` 学期 | **归并自 `major` 的 `xn`/`xq`/`xqmc`** | 学校**没有校历端点**可采（10-22 15:3x 探查：教务首页 18 KB 是 JS 挂菜单的壳，按 `<a href="/jwglxt/….html">` 抠到**菜单 0 条、动作 URL 1 个**，页面上没有"校历/学期起止"字样；两家 Dart 里 grep 校历也 0 命中——Celechron 的学期起止来自它自己的服务器）。所以这一格只能是学校在自己行里说出来的那句话 |
-| `class_time` 节次时间 | 课表回包里的 `sjkList` | 实测 2 行，`sjkcmc` 是 27 个中文字符那一段。**课表行没有钟点**，钟点只在这一格里；不采它，"周三第 1-2 节几点上"在池里就答不出来 |
+| `practice_course` 实践环节 | 课表回包里的 `sjkList` | 实测 2 行；落进池里读作 `blueS军训[李睿]秋blueF`、`blueS汽车技术综合实践[郑旭/熊树生]短blueF`（`blueS`/`blueF` 是站方给着色用的裸标记）⇒ 这一格是**实践环节课程**。⚠️ 我上一版按 `sjk` 这个键名把它猜成了"上下课钟点"，10-22 16:3x 真采一轮纠正过来。**"第几节是几点"这一格在这一家仍然没找到**——那是个空缺的读数，不是采到的东西 |
 
 三条不是"顺便"的口径，是被裁定钉的：
 
@@ -102,8 +102,9 @@ IDENTITY_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
     "major": (("kcdm", "xn", "xq"), ("xkkh",)),
     # 学期是从主修那 238 行里归并出来的（一学年一学期一条），键就是学校给的那一对码
     "term": (("xn", "xq"),),
-    # 节次时间（`sjkList` 实测 2 行，`sjkcmc` 27 个中文字符）：学校没给 id，名称就是这一格的键
-    "class_time": (("sjkcmc",),),
+    # 实践环节课程（`sjkList`，10-22 真采量的：`sjkcmc` 是 `blueS军训[李睿]秋blueF` 那种串）：
+    # 学校没给 id，名称就是这一格的键
+    "practice_course": (("sjkcmc",),),
 }
 
 
@@ -190,7 +191,15 @@ def rows_of_items(response: HttpResponse) -> Optional[list[dict]]:
 
 
 def _clean(text: str) -> str:
-    return re.sub(r"\s+", " ", html_lib.unescape(re.sub(r"<br\s*/?>", "｜", text))).strip()
+    """把学校给的那段文本清成能读的一行：`<br>` 换成 `｜`，实体解开，再把空白压平。
+
+    `blueS`/`blueF` 那两枚**裸标记要一起剥掉**（10-22 真数据读到的：站方给着色用的前后缀，
+    如 `blueS军训[李睿]秋blueF`）。它不在任何 HTML 标签里，`<…>` 那套正则抓不到，
+    不专门剥就会原样长进标题里。
+    """
+    stripped = re.sub(r"(?<![A-Za-z0-9_])(blueS|blueF|redS|redF|greenS|greenF)(?![A-Za-z0-9_])",
+                      "", text)
+    return re.sub(r"\s+", " ", html_lib.unescape(re.sub(r"<br\s*/?>", "｜", stripped))).strip()
 
 
 def _identity(row: Mapping[str, Any], kind: str) -> tuple[str, str]:
@@ -198,14 +207,16 @@ def _identity(row: Mapping[str, Any], kind: str) -> tuple[str, str]:
 
     三条路，按"这家的这一格到底给不给稳定 id"排：
 
-    1. :data:`IDENTITY_KEYS` 里**这个端点**那一族键组（每个端点各量各的，理由写在那张表上）；
-    2. 单键链（`kch`／`cjxhid`／`jxbid`／`xkkh`）——`row_id` 排在**最后**：它是正方分页信封
-       给每行编号的那一格，现读主修 217 条的 id 就是纯数字的页内序号，**排序一变身份就漂**，
-       所以只在这一格没有别的可用键时才用它，并且把走了哪条路留在读数里；
-    3. 一个键都没有 ⇒ 整行内容哈希（实践分那一页就是这条：学校从来没给过 id）。
+    1. :data:`IDENTITY_KEYS` 里**这个端点**那一族键组（每个端点各量各的，理由与分数写在那张表上）；
+    2. 单键链（`kch`／`cjxhid`／`jxbid`／`xkkh`）。**`row_id` 不在这条链上**：它是正方给每行编的
+       页内序号（10-22 实测主修 238 行里 217 行只有它是唯一的，值是纯数字），拿位置当身份 ⇒
+       排序一变整族换身份、两个端点的序号还会互相盖；
+    3. 一个键都没有 ⇒ 整行内容哈希，并把这条路写在 `context.identity_key` 里（读数，不是猜）。
+       实践分与"主修里那 217 行没有 `xkkh` 的"走的就是这一条——**这是学校没给身份**的形状，
+       不是我嫌麻烦。
 
     `external_id` 一律带 `kind` 那一层命名空间：池的唯一键是 `(source, external_id)`，
-    两个端点各自合法的 id（页内序号 7 对 7）撞在一起时，**少掉的那一行不会报错，只是不见了**。
+    两个端点各自合法的 id 撞在一起时，**少掉的那一行不会报错，只是不见了**。
     """
     for keys in IDENTITY_KEYS.get(kind, ()):
         parts = [str(row.get(key) or "").strip() for key in keys]
@@ -283,12 +294,13 @@ def terms_from(major_rows: list[dict]) -> list[dict]:
     return sorted(by_term.values(), key=lambda item: (item["xn"], item["xq"]), reverse=True)
 
 
-def class_times_from(payload: Mapping[str, Any]) -> list[dict]:
-    """节次时间那一格（课表回包里的 `sjkList`，实测 2 行、`sjkcmc` 是 27 个中文字符那一段）。
+def practice_courses_from(payload: Mapping[str, Any]) -> list[dict]:
+    """实践环节课程那一格（课表回包里的 `sjkList`）。
 
-    为什么这一格值得单列成一种 `kind`：课表行给的是**星期×第几节**（`xqj`/`djj`），
-    没有钟点；钟点在这一家只在 `sjkList` 里。没有它，"这周三第 1-2 节是几点"在池里答不出来，
-    而把它拼进课表行就是替学校编数据。
+    ⚠️ **这一格是被真数据纠正过一次的地方**：`sjk` 那个键名我先按"时间课表"猜成了上下课钟点，
+    10-22 16:3x 真采一轮落进池里，标题读作 `军训[李睿]秋`、`汽车技术综合实践[郑旭/熊树生]短`
+    ——那是**实践环节课程**。⇒ 名字叫 `practice_course`。而"第几节是几点"这一格在这一家
+    **仍然没找到**：它现在是个空缺的读数，不是采到的东西（P6：不许描述不存在的机制）。
     """
     rows = payload.get("sjkList")
     return [row for row in (rows or []) if isinstance(row, dict)]
@@ -314,8 +326,8 @@ def to_occurrences(kind: str, rows: list[dict]) -> list[Occurrence]:
             context["time_key"] = time_key
         if kind == "class":
             # 周模板：星期×节次。**不给 occurred_at**，理由见模块头第二条；
-            # "哪一学年哪一学期"由同一条信源一起进池（`term` 那一种 kind），而钟点在 `class_time`
-            # 那一格里——**把这三样拼成一个日期是读池那侧的算术**，不是我在写入口替学校编数据。
+            # "哪一学年哪一学期"由同一条信源一起进池（`term` 那一种 kind）——**把学期×星期×节次
+            # 拼成一个日期是读池那侧的算术**，不是我在写入口替学校编数据。钟点那一格还没找到。
             context.update({"week_template": True, "weekday": row.get("xqj"),
                             "start_slot": row.get("djj"), "slot_count": row.get("skcd")})
         items.append(Occurrence(
@@ -443,10 +455,10 @@ class ZdbkCollector:
         rows_by_kind["class"] = [r for r in (kb_rows or []) if isinstance(r, dict)]
         if rows_by_kind["class"]:
             collected += to_occurrences("class", rows_by_kind["class"])
-        # 节次时间：钟点只在这一格里（课表行是星期×第几节，没钟点）
-        rows_by_kind["class_time"] = class_times_from(kb_payload)
-        if rows_by_kind["class_time"]:
-            collected += to_occurrences("class_time", rows_by_kind["class_time"])
+        # 实践环节课程（`sjkList`）：同一个回包里学校另外说出来的那几行，函数文档串里有那次纠正
+        rows_by_kind["practice_course"] = practice_courses_from(kb_payload)
+        if rows_by_kind["practice_course"]:
+            collected += to_occurrences("practice_course", rows_by_kind["practice_course"])
 
         for kind, url, _label in ENDPOINTS:
             self._polite()

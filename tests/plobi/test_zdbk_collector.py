@@ -50,10 +50,10 @@ KB_JSON = json.dumps({"kbList": [
     {"xkkh": "2026A100002-3-1", "kcb": "电工电子学<br>李老师<br>教三201",
      "xqj": "3", "djj": "1", "skcd": "2", "xxq": "秋", "jszgh": "1234567"},
 ],
-    # 10-22 第五轮探查量的：节次时间**只在 `sjkList` 里**（实测 2 行，`sjkcmc` 27 个中文字符），
-    # 课表行里一个钟点都没有
-    "sjkList": [{"sjkcmc": "第1-2节（08:00-09:40）", "rsdzjs": "1", "jgpxzd": "1"},
-                {"sjkcmc": "第3-4节（10:00-11:40）", "rsdzjs": "1", "jgpxzd": "2"}],
+    # 10-22 16:3x **真采落进池里读出来的形状**（不是我按 `sjk` 键名猜的"节次时间"）：
+    # 这一格是实践环节课程，`sjkcmc` 带着站方的着色裸标记 `blueS…blueF`
+    "sjkList": [{"sjkcmc": "blueS军训[李睿]秋blueF", "rsdzjs": "1", "jgpxzd": "1"},
+                {"sjkcmc": "blueS汽车技术综合实践[郑旭/熊树生]短blueF", "rsdzjs": "1", "jgpxzd": "2"}],
     "kbcdList": [{"kbcd": "5"}], "xnm": "2026", "xqm": "12", "xh": "3160100000",
     "xm": "假学生", "xy": "计算机学院", "zy": "计算机科学与技术"}, ensure_ascii=False)
 EXAM_JSON = json.dumps({"items": [
@@ -445,20 +445,29 @@ class TestTheSchoolsOwnTerms:
         assert by_year["term:2025:1"].evidence["credits"] == 6.0    # 学分是加出来的，不是猜的
         assert all(i.start_at == "" for i in terms), "学校没给起止日期 ⇒ 不许推一个出来当数据"
 
-    def test_bell_times_land_because_class_rows_have_no_clock(self) -> None:
-        """课表行只有星期×第几节；钟点在 `sjkList`（实测 2 行）。不采它，池里答不出"几点上"。"""
-        items = make_collector(healthy_transport()).pull()
-        times = [i for i in items if i.kind == "class_time"]
+    def test_practice_courses_land_and_the_schools_markup_is_not_left_in_titles(self) -> None:
+        """`sjkList` 落进池里读作 `blueS军训[李睿]秋blueF` —— 那是实践环节课程，不是钟点。
 
-        assert len(times) == 2
-        assert any("08:00" in i.title for i in times)
-        assert all(i.start_at == "" for i in times), "作息是模板，不是某一天"
+        这一条测试是**真数据纠正我猜错的那一格**（`sjk` 我先前按"时间课表"读成了上下课钟点）：
+        名字改对是一半，另一半是 `blueS`/`blueF` 那种**不在标签里的裸着色标记**不许长进标题——
+        它抓不到 `<…>` 那套正则，不专门剥就一直留在人读的那一格里。
+        """
+        items = make_collector(healthy_transport()).pull()
+        practice = [i for i in items if i.kind == "practice_course"]
+
+        assert len(practice) == 2
+        titles = {i.title for i in practice}
+        assert titles == {"军训[李睿]秋", "汽车技术综合实践[郑旭/熊树生]短"}, titles
+        assert not any("blue" in i.title for i in practice)
+        assert all(i.evidence["sjkcmc"].startswith("blueS") for i in practice), \
+            "标题剥了标记，`context` 里学校原样那格要还在（剥的是读法，不是证据）"
+        assert all(i.start_at == "" for i in practice), "实践环节是条目，不是某一天"
 
     def test_one_pull_still_lands_several_kinds(self) -> None:
         """裁定 194 那颗判据：一条信源在池里**不止一种 `kind`**（不许为每种数据再开一条源）。"""
         kinds = {i.kind for i in make_collector(healthy_transport()).pull()}
 
-        assert {"class", "exam", "grade", "major", "term", "class_time"} <= kinds
+        assert {"class", "exam", "grade", "major", "term", "practice_course"} <= kinds
 
 
 class TestCollapseIsNotSilent:
