@@ -8,7 +8,7 @@
 这样的包，`registry.py` 里不出现任何信源 id。
 """
 
-from plobi.collectors.registry import CADENCE_FIELD, SourceSpec, register
+from plobi.collectors.registry import SourceSpec, register
 
 
 def _build() -> object:
@@ -45,7 +45,6 @@ SPEC = SourceSpec(
     },
     # 连接器形状是「一个网址 + 账密」，没有客户端要装 ⇒ 「网站」不是「消息」。
     category="website",
-    setup_fields=(CADENCE_FIELD,),
     collecting=True,
     builder=_build,
 )

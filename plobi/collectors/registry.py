@@ -161,8 +161,11 @@ def validate_cadence(text: str) -> str:
     return text.strip()
 
 
-#: 每一条信源都该让用户改得动的那一格。**真源在这里**，四个包各引一次 ——
-#: 不在四个包里各写一句 label（那四处早晚有一句不一样）。
+#: 每一条信源都该让用户改得动的那一格。**真源在这里，而且不由各个包自己引**：
+#: :meth:`SourceSpec.__post_init__` 给**每一条**信源自动补上它（含第三方包，零改动）。
+#: 为什么不许包自己声明——那样"以后加一条信源"就多一步"记得写频率代码"，而忘记的那一条
+#: 在设置面上就少一格、在调度上就永远每轮都打，两种都是没人报的静默缺口（裁定 194 的
+#: 通用性同一把尺：可插拔的那一层不该要求新来的人复刻旧来的人的样板）。
 CADENCE_FIELD = SetupField(
     key="cadence",
     label="Collection cadence",
@@ -236,6 +239,11 @@ class SourceSpec:
             if setup.key in seen:
                 raise UnknownSetupField(f"{self.source_id} 声明了两个同名的首次配置字段：{setup.key}")
             seen.add(setup.key)
+        if CADENCE_FIELD.key not in seen:
+            # 自动补上去那一条：位置在末尾，**已声明过同名格的包不会被改动**（重复即报错那条
+            # 检查在上面先跑）。frozen dataclass 只能这样改回去——改的是这一条自己的元组，
+            # 不动那个模块级常量，所以四条信源不会共享到同一份可变状态上。
+            object.__setattr__(self, "setup_fields", (*self.setup_fields, CADENCE_FIELD))
 
 
 _SPECS: dict[str, SourceSpec] = {}

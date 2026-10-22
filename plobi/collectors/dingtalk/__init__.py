@@ -9,7 +9,7 @@
 包走，而 ``SPEC`` 里那个 id 才是信源在词表里的名字。
 """
 
-from plobi.collectors.registry import CADENCE_FIELD, SourceSpec, register
+from plobi.collectors.registry import SourceSpec, register
 
 SPEC = SourceSpec(
     "dingtalk",
@@ -22,9 +22,6 @@ SPEC = SourceSpec(
     },
     # 对话流（Stream 长连接），与微信同族 ⇒ 「消息」。
     category="message",
-    # 频率这一格照给：它现在还没人采（`collecting=False`），但面上不该因为"暂时没人跑"
-    # 就少一格别条都有的设置——那会让"这条和那条为什么长得不一样"变成一个新的谜。
-    setup_fields=(CADENCE_FIELD,),
     # 名字已经在词表里、但没有任何东西在采它——登记归口与假数据占位是两件事。
     collecting=False,
 )

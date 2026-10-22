@@ -10,7 +10,7 @@ Public surface: :func:`parse_ics` / :func:`parse_ics_with_stats`,
 落点是**信息池**（裁定 193），不再直落日程库；读的是本地 .ics，接口实测之前不假装会拉。
 """
 
-from plobi.collectors.registry import CADENCE_FIELD, SetupField, SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
 
 from .collector import (
     STATE_FILE_MISSING,
@@ -78,8 +78,6 @@ SPEC = SourceSpec(
             required=True,
             help="Absolute path on this machine.",
         ),
-        # 每源一行频率（裁定 191 二）。真源在注册表，这里只是引它 —— 不在四个包里各写一句 label。
-        CADENCE_FIELD,
     ),
     builder=_build,
 )

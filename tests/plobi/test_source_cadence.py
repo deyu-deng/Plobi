@@ -257,12 +257,26 @@ class TestThrottleAndCadenceAreTwoDifferentThings:
         assert config.min_minutes_between_pulls > 0
         assert "cadence" in SourceSpec.__dataclass_fields__, "两把闸各自有一格，谁也不在原位上代替谁"
 
-    def test_the_registry_carries_the_cadence_slot(self) -> None:
-        assert "cadence" in SourceSpec.__dataclass_fields__
-        assert registry.CADENCE_FIELD.key == "cadence"
+    def test_a_source_that_writes_no_cadence_code_still_gets_the_slot(self) -> None:
+        """通用性那一格（用户 10-21 问的就是这个）：**以后加信源不许再写一遍频率代码**。
+
+        判据不是"四条现存信源都声明了"（那正是要求新来的人复刻样板的形状），而是
+        **一条什么都没写的包也有那一格**；顺带钉两条反向的：自己声明过的不会被加两遍、
+        真源只有一处（label 与 help 在注册表那一个常量上）。
+        """
+        caps = {k: False for k in registry.CAPABILITY_KEYS}
+        third_party = SourceSpec("someone_elses_package", caps, category="custom")
+
+        keys = [field.key for field in third_party.setup_fields]
+        assert keys == ["cadence"], f"新包什么都没写就该白得一格，读到 {keys}"
+        assert third_party.setup_fields[0] is registry.CADENCE_FIELD, "label/help 只有一份真源"
+
+        declared = SourceSpec("declared_once", caps, category="custom",
+                              setup_fields=(registry.CADENCE_FIELD,))
+        assert [f.key for f in declared.setup_fields] == ["cadence"], "不许加两遍"
+
         for source_id in registry.source_ids():
-            keys = [field.key for field in registry.spec(source_id).setup_fields]
-            assert "cadence" in keys, f"{source_id} 没把频率那一格声明出来 ⇒ 设置面上改不了它"
+            assert "cadence" in [f.key for f in registry.spec(source_id).setup_fields]
 
 
 class TestThatIsWhatTheDailyRoundDoes:
