@@ -309,10 +309,13 @@ def is_sandboxed() -> bool:
     return os.environ.get(SANDBOX_ENV, "").strip().lower() in {"1", "true", "yes"}
 
 
-#: 回执这一族的三个落点。目录与台账同处（`$PLOBI_HOME/plobi/delegation/replies/`），
-#: 这样"谁派了哪一趟、那一趟回了没有"两份账在同一个根下，不会各长一套。
-REPLIES_DIRNAME = "replies"
-REPLY_DIR_ENV = "PLOBI_OFFLOAD_REPLY_DIR"
+#: 回执落点。**在它那趟的工作目录里**，不在我们家目录里——10-22 实测：它肯在自己的
+#: 项目目录里读写，却拒绝往 `$PLOBI_HOME` 下写（权限层当场拒），于是回执永远是
+#: `not_filed`。放它脚边还有一层好处：`_collect_artifacts` 本来就跳过 `.offload-` 前缀，
+#: 回执不会被误当成"它交付的产物"。
+REPLY_PREFIX = ".offload-reply-"
+
+#: 同一个值也交给子进程：它不必从任务书文本里认路径，读环境变量更稳。
 REPLY_FILE_ENV = "PLOBI_OFFLOAD_REPLY_FILE"
 
 #: job token 只允许这一族字符：它同时是**文件名**，所以必须先于任何拼路径被校一遍。
@@ -324,27 +327,14 @@ def new_job_token() -> str:
     return secrets.token_urlsafe(16)
 
 
-def replies_dir() -> Path:
-    """回执目录（不存在就建）。覆盖位是给测试与第二块盘用的，不是给用户配置的。"""
-    override = os.environ.get(REPLY_DIR_ENV, "").strip()
-    if override:
-        base = Path(override)
-    else:
-        from plobi.delegation.offload import RoundLedger
-
-        base = RoundLedger().path.parent / REPLIES_DIRNAME
-    base.mkdir(parents=True, exist_ok=True)
-    return base
-
-
-def reply_path_for(job: str) -> Optional[Path]:
-    """这一趟的回执文件路径。token 不合法 ⇒ ``None``（**不猜、不洗白**）。"""
+def reply_file_for(workdir: Path, job: str) -> Optional[Path]:
+    """这一趟的回执文件路径。token 不合法 ⇒ ``None``（**不猜、不洗白**，它同时是文件名）。"""
     if not _JOB_SAFE.match(job or ""):
         return None
-    return replies_dir() / f"{job}.json"
+    return Path(workdir) / f"{REPLY_PREFIX}{job}.json"
 
 
-def collect_reply(job: str) -> tuple[str, str]:
+def collect_reply(path: Optional[Path]) -> tuple[str, str]:
     """把那家软件写回来的回执读掉并**收走**（读一次就没了，免得下一轮重复计数）。
 
     返回 ``(文本, 状态)``。状态是读数不是异常：
@@ -355,10 +345,7 @@ def collect_reply(job: str) -> tuple[str, str]:
     - ``not_filed`` —— 它没写（这一趟它没回话）；
     - ``unreadable`` —— 读不动（权限/坏盘），与"没回"是两句不同的话。
     """
-    path = reply_path_for(job)
-    if path is None:
-        return "", "not_filed"
-    if not path.exists():
+    if path is None or not path.exists():
         return "", "not_filed"
     try:
         raw = path.read_text(encoding="utf-8", errors="replace").strip()
@@ -693,7 +680,7 @@ def run_task(
     # 都指向同一趟。它写不写、写了是不是这一趟的，都是**可核的读数**。
     reply_to = (reply_to or "").strip()
     job = new_job_token()
-    reply_file = reply_path_for(job)
+    reply_file = reply_file_for(workdir, job)
     if reply_file is not None:
         task = task + reply_instructions(job, reply_file)
 
@@ -777,7 +764,7 @@ def run_task(
         ok = False
 
     # 回执：它自己写回来的那个文件（读一次就收走）。没写是读数 `not_filed`，不是失败。
-    reply, reply_status = collect_reply(job)
+    reply, reply_status = collect_reply(reply_file)
 
     if _looks_unreachable(error):
         # Measured: agy is a Go binary that dials straight out. With no proxy in
