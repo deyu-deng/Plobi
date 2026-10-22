@@ -19,7 +19,7 @@ import pytest
 
 from plobi.agenda.service import AgendaService
 from plobi.collectors import registry
-from plobi.collectors.zdbk.collector import ZdbkCollector, ZdbkConfig, to_occurrences
+from plobi.collectors.zdbk.collector import (ZdbkCollector, ZdbkConfig, collapse_of, to_occurrences)
 from plobi.collectors.zdbk.status import (
     STATE_AUTH_FAILED,
     STATE_CAPTCHA_REQUIRED,
@@ -49,19 +49,31 @@ KB_JSON = json.dumps({"kbList": [
      "pageable": {}, "queryModel": {}, "userModel": {}, "totalResult": "65"},
     {"xkkh": "2026A100002-3-1", "kcb": "电工电子学<br>李老师<br>教三201",
      "xqj": "3", "djj": "1", "skcd": "2", "xxq": "秋", "jszgh": "1234567"},
-]}, ensure_ascii=False)
+],
+    # 10-22 第五轮探查量的：节次时间**只在 `sjkList` 里**（实测 2 行，`sjkcmc` 27 个中文字符），
+    # 课表行里一个钟点都没有
+    "sjkList": [{"sjkcmc": "第1-2节（08:00-09:40）", "rsdzjs": "1", "jgpxzd": "1"},
+                {"sjkcmc": "第3-4节（10:00-11:40）", "rsdzjs": "1", "jgpxzd": "2"}],
+    "kbcdList": [{"kbcd": "5"}], "xnm": "2026", "xqm": "12", "xh": "3160100000",
+    "xm": "假学生", "xy": "计算机学院", "zy": "计算机科学与技术"}, ensure_ascii=False)
 EXAM_JSON = json.dumps({"items": [
-    {"row_id": "ex-1", "kcmc": "高等数学（上）", "kssj": "2026-01-06 09:00:00",
-     "jgpxzd": "1", "userModel": {}},
+    {"row_id": "ex-1", "xkkh": "2026A100001-1-2", "kcmc": "高等数学（上）",
+     "kssj": "2026-01-06 09:00:00", "jgpxzd": "1", "userModel": {}},
 ], "totalCount": 1, "totalPage": 1}, ensure_ascii=False)
 GRADE_JSON = json.dumps({"items": [
-    {"row_id": "gr-1", "kcmc": "大学物理", "cj": "88", "kssj": "2026-01-08 14:00:00",
-     "xf": "3"},
+    {"row_id": "gr-1", "xkkh": "2026A100009-2-1", "kcmc": "大学物理", "cj": "88", "jd": "3.9",
+     "kssj": "2026-01-08 14:00:00", "xf": "3"},
 ], "totalCount": 1, "totalPage": 1}, ensure_ascii=False)
 MAJOR_JSON = json.dumps({"items": [
-    {"row_id": "mj-1", "kcmc": "电子工程训练", "xf": "2", "xn": "2025", "xq": "1"},
-    {"row_id": "mj-2", "kcmc": "大学物理（甲）Ⅱ", "xf": "5", "xn": "2025", "xq": "2"},
-], "totalCount": 2, "totalPage": 1}, ensure_ascii=False)
+    # 10-22 量的形状：主修 238 行里 **217 行没有 `xkkh`**（计划内课程不是选课记录），
+    # 但它们都带 `xn`/`xq`/`xqmc` ⇒ 学期那一格是从这里归并出来的
+    {"row_id": "1", "kcdm": "CS1002G", "kcmc": "电子工程训练", "xf": "2",
+     "xn": "2025", "xq": "1", "xqmc": "秋冬学期"},
+    {"row_id": "2", "kcdm": "PHIL0702G", "kcmc": "大学物理（甲）Ⅱ", "xf": "5",
+     "xn": "2025", "xq": "2", "xqmc": "春夏学期"},
+    {"row_id": "3", "xkkh": "2025A100003-1-1", "kcdm": "MATH0101G", "kcmc": "高等数学（上）",
+     "xf": "4", "xn": "2025", "xq": "1", "xqmc": "秋冬学期"},
+], "totalCount": 3, "totalPage": 1}, ensure_ascii=False)
 PRACTICE_HTML = (
     "<html><table>"
     "<tr><th>项目名称</th><th>分值</th></tr>"
@@ -179,15 +191,18 @@ class TestIdentityIsTheSitesOwnId:
     def test_identity_key_is_recorded_and_not_the_title(self) -> None:
         items = [i for i in make_collector(healthy_transport()).pull() if i.kind == "exam"]
 
-        assert items[0].external_id == "exam:ex-1"
-        assert items[0].evidence["identity_key"] == "row_id"
+        # 10-22 探查量的：考试那一格 `xkkh`＋`kssj` 是 40/40（学校给 40 行、去重还是 40）；
+        # 光 `xkkh` 那一天也给 40/40，但 08:15 那一轮它只落过 15 条 ⇒ 用更严的那一组
+        assert items[0].external_id == "exam:2026A100001-1-2:2026-01-06 09:00:00"
+        assert items[0].evidence["identity_key"] == "xkkh+kssj"
 
     def test_two_kinds_sharing_one_school_id_are_not_the_same_row(self) -> None:
         """`pool_items` 的唯一键是 `(source, external_id)`——**`kind` 不在键里**。
 
-        现读（10-22 量的）：主修 217 行的身份是正方给每行编号的那一格，值是纯数字的页内序号。
-        所以"考试第 7 行"和"主修第 7 行"在学校给的 id 空间里是**同一个字符串**：不加一层命名空间，
-        后落的那条会把前一条原地盖掉——池里少一行，而且一声不响。
+        现读（10-22 量的）：主修 238 行里 217 行连 `xkkh` 都没有，唯一能唯一化它们的只有
+        正方那个**页内序号** `row_id`（值是纯数字）。所以"考试第 7 行"和"主修第 7 行"在学校给的
+        id 空间里是同一个字符串：不加一层命名空间，后落的那条会把前一条原地盖掉——
+        池里少一行，而且一声不响。
         """
         exam = to_occurrences("exam", [{"row_id": "7", "kcmc": "高等数学",
                                        "kssj": "2026-01-06 09:00:00"}])[0]
@@ -195,6 +210,7 @@ class TestIdentityIsTheSitesOwnId:
 
         assert exam.external_id != major.external_id
         assert (exam.source, exam.external_id) != (major.source, major.external_id)
+        assert exam.evidence["identity_key"] == "row-sha1", "序号不许当身份：退内容哈希要说得出"
 
     def test_renamed_course_keeps_the_same_identity(self) -> None:
         rows = [{"xkkh": "keep-me", "kcb": "旧名字<br>王老师<br>X-214", "xqj": "1", "djj": "1", "skcd": "2"}]
@@ -210,7 +226,8 @@ class TestIdentityIsEverySlotNotEveryCourse:
 
     一门课一周上几次就有几个格子，而 `xkkh` 对同一门课是**同一个值**——拿它当身份，
     这一门课的几次课就在池里互相覆盖（还让每轮的 `updated` 数在 108/147 之间跳）。
-    身份必须是格子坐标（选课号 + 小学期 + 星期 + 第几节）。
+    身份必须是格子坐标。10-22 第五轮探查又量了一格：`xkkh+xxq+xqj+djj` 是 **64/65**，
+    少的那一条是同一格换过一次上法（`skcd` 连上节数不同）⇒ 坐标要带上 `skcd` 才 65/65。
     """
 
     def test_the_same_course_in_several_slots_is_several_rows(self) -> None:
@@ -221,7 +238,7 @@ class TestIdentityIsEverySlotNotEveryCourse:
 
         assert len(items) == len(kb)
         assert len({item.external_id for item in items}) == 6
-        assert items[0].evidence["identity_key"] == "xkkh+xxq+xqj+djj"
+        assert items[0].evidence["identity_key"] == "xkkh+xxq+xqj+djj+skcd"
 
 
 class TestThrottleIsReal:
@@ -404,3 +421,64 @@ class TestPolitenessBetweenRequests:
 
         assert len(collector.pull()) > 0
         assert pauses == [], "区间下沿是 0 就不该睡——这一格关的是礼貌，不是采集"
+
+
+class TestTheSchoolsOwnTerms:
+    """用户 10-22 的话：「**那就说明你的采集代码遗漏了信息。zdbk 的采集器应该包含学期的采集**」。
+
+    第五轮探查（10-22 15:3x，真账号一轮）量的结论：这一家**没有校历端点可采**——教务首页那 18 KB
+    是 JS 挂菜单的壳（按 `<a href="/jwglxt/….html">` 抠到菜单 0 条、动作 URL 1 个，页面上没有
+    "校历/学期起止"字样），两家 Dart 里 grep 校历也 0 命中（Celechron 的学期起止来自它自己的服务器）。
+    但学校**在自己的行里说了学期**：主修 238 行每行都带 `xn`/`xq`/`xqmc`。所以这一格只能是归并，
+    而**日期仍然留空**（裁 189：空是一个读数，不是缺口）。
+    """
+
+    def test_terms_land_as_their_own_kind_from_what_the_school_states(self) -> None:
+        items = make_collector(healthy_transport()).pull()
+        terms = [i for i in items if i.kind == "term"]
+
+        assert len(terms) == 2, "主修三行分布在两个学期（2025/1 两行、2025/2 一行）⇒ 归并成两条"
+        assert {i.external_id for i in terms} == {"term:2025:1", "term:2025:2"}
+        by_year = {i.external_id: i for i in terms}
+        assert by_year["term:2025:1"].title.startswith("2025 秋冬学期")
+        assert by_year["term:2025:1"].evidence["records"] == 2      # 这一学期学校给了两行
+        assert by_year["term:2025:1"].evidence["credits"] == 6.0    # 学分是加出来的，不是猜的
+        assert all(i.start_at == "" for i in terms), "学校没给起止日期 ⇒ 不许推一个出来当数据"
+
+    def test_bell_times_land_because_class_rows_have_no_clock(self) -> None:
+        """课表行只有星期×第几节；钟点在 `sjkList`（实测 2 行）。不采它，池里答不出"几点上"。"""
+        items = make_collector(healthy_transport()).pull()
+        times = [i for i in items if i.kind == "class_time"]
+
+        assert len(times) == 2
+        assert any("08:00" in i.title for i in times)
+        assert all(i.start_at == "" for i in times), "作息是模板，不是某一天"
+
+    def test_one_pull_still_lands_several_kinds(self) -> None:
+        """裁定 194 那颗判据：一条信源在池里**不止一种 `kind`**（不许为每种数据再开一条源）。"""
+        kinds = {i.kind for i in make_collector(healthy_transport()).pull()}
+
+        assert {"class", "exam", "grade", "major", "term", "class_time"} <= kinds
+
+
+class TestCollapseIsNotSilent:
+    """10-22 那 46 行是**静默**少的：池里 15 条、学校给 40 行，池、日志、设置面一个字没说。"""
+
+    def test_a_shared_identity_is_reported_in_the_round(self) -> None:
+        rows = [{"xkkh": "K", "kssj": "2026-01-06 09:00:00", "kcmc": "同一门课的两个考场"}]
+        rows.append(dict(rows[0], zwxh="12"))          # 身份那几格一模一样 ⇒ 会并成一条
+
+        given, distinct = collapse_of("exam", rows)
+        report = make_collector(healthy_transport(**{
+            "kscx_cxXsgrksIndex": (200, json.dumps(
+                {"items": rows, "totalCount": len(rows), "totalPage": 1}, ensure_ascii=False))})).pull_report()[1]
+
+        assert (given, distinct) == (2, 1)
+        assert report["collapsed"] == {"exam": "2 行 → 1 条身份"}
+        assert report["counts"]["exam"] == 2, "counts 是学校给的行数，不是我算出的条数"
+
+    def test_a_healthy_round_reports_no_collapse(self) -> None:
+        report = make_collector(healthy_transport()).pull_report()[1]
+
+        assert report["collapsed"] == {}, f"这一轮的读数该是干净的：{report}"
+        assert report["counts"]["major"] == 3 and report["counts"]["term"] == 2

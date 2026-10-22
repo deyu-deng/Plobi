@@ -2,13 +2,15 @@
 
 这一条采的是这一家给得出的所有东西，不是"课表采集器"：
 
-| `kind` | 端点（10-21 实测通） | 实测形状 |
+| `kind` | 端点（10-21 实测通）／来源 | 实测形状 |
 |---|---|---|
 | `class` 课表 | `POST /jwglxt/kbcx/xskbcx_cxXsKb.html`，body `xnm/xqm/captcha_value` | `kbList` 65 行；**课程名/教师/地点全在 `kcb` 那一段 `<br>` 拼起来的串里**（65/65 行含中文且含 `<br>`，最长 88 字符）；时间坐标是 `xqj`(星期)/`djj`(第几节)/`skcd`(连上节数) |
 | `exam` 考试 | `POST …/xskscx/kscx_cxXsgrksIndex.html?doType=query&queryModel.showCount=5000` | 信封 `items/totalCount/totalPage`；本轮 **40 条**，`totalCount == items.length` ⇒ 一次拿全 |
 | `grade` 成绩 | `POST …/cxdy/xscjcx_cxXscjIndex.html?doType=query&…` | 同上，本轮 **25 条** |
-| `major` 主修 | `POST …/zycjtj/xszgkc_cxXsZgkcIndex.html?doType=query&…` | 同上，本轮 **238 条** |
+| `major` 主修／学业跟踪 | `POST …/zycjtj/xszgkc_cxXsZgkcIndex.html?doType=query&…` | 同上，本轮 **238 条**；其中 **217 条没有 `xkkh`**（计划内课程，不是选课记录） |
 | `practice` 实践分 | `GET …/dessktgl/dessktcx_cxDessktcxIndex.html?gnmkdm=N108001&su=<学号>` | **不是 JSON**：200、16 KB HTML、`<tr>` 2 行 ⇒ 只能按表行啃；学校改页面这一条就红（用户 10-21 拍：接） |
+| `term` 学期 | **归并自 `major` 的 `xn`/`xq`/`xqmc`** | 学校**没有校历端点**可采（10-22 15:3x 探查：教务首页 18 KB 是 JS 挂菜单的壳，按 `<a href="/jwglxt/….html">` 抠到**菜单 0 条、动作 URL 1 个**，页面上没有"校历/学期起止"字样；两家 Dart 里 grep 校历也 0 命中——Celechron 的学期起止来自它自己的服务器）。所以这一格只能是学校在自己行里说出来的那句话 |
+| `class_time` 节次时间 | 课表回包里的 `sjkList` | 实测 2 行，`sjkcmc` 是 27 个中文字符那一段。**课表行没有钟点**，钟点只在这一格里；不采它，"周三第 1-2 节几点上"在池里就答不出来 |
 
 三条不是"顺便"的口径，是被裁定钉的：
 
@@ -16,9 +18,9 @@
   判据是"只有全信源共用的形状才配当列"。日程那侧那四个 `KINDS`（meeting/ddl/class/task）
   比池窄，映射是读池的 Agent 的判断，不由采集器替它做（裁 186）。
 - **`occurred_at` 不许猜**（裁 189）：课表这一家给的是**周模板**（星期×节次），不是日历上的点；
-  学期起始日要从校历换出来，而**校历那一格还没实测**（Celechron 是拿自己服务器的
-  `calendar_config_parser.dart:7` 补的）。所以课表条目的 `occurred_at` 留空，星期与节次原样进
-  `context` —— 空是一个读数（"学校没给日期"），填一个推算出来的才是错。
+  学期起始日要从校历换出来，而校历那一格 10-22 那一轮在学校身上**没找到**（见上表 `term` 那行）。
+  所以课表与学期条目的 `occurred_at` 都留空，星期、节次、学年学期码原样进 `context` ——
+  **空是一个读数**（"学校没给日期"），填一个推算出来的才是错。
 - **凭据只走 `auth.read_credentials()` 那一只读路**（裁 110 二）：本包不 `open('.env')`、
   不读 `os.environ`；CAS 那条链收在 :func:`plobi.collectors.zju.auth.cas_login_to`，
   三家共用一只，不各写一遍（裁 94）。
@@ -67,21 +69,41 @@ ENVELOPE_NOISE = frozenset({
     "pageable", "queryModel", "userModel", "totalResult", "listnav", "localeKey",
     "rangeable", "completeAnswer", "jgpxzd", "sfqd",
 })
-_TITLE_KEYS = ("kcmc", "kchmc", "jcName", "kcb")
+_TITLE_KEYS = ("kcmc", "sjkcmc", "kchmc", "jcName", "kcb")
 _TIME_KEYS = ("kssj", "ksrq", "xkrq", "cjrq", "createDate")
-_ID_KEYS = ("kch", "cjxhid", "jxbid", "xkkh", "row_id")
+#: 单键退路。**`row_id` 不在里面**：它是正方给每行编的**页内序号**（10-22 实测：主修 238 行里
+#: 217 行连 `xkkh` 都没有，唯一能唯一化它们的只有这个序号，值是纯数字）。拿它当身份就是拿
+#: **位置**当身份——排序一变整族换身份，而两个端点的序号撞在一起时池里会静默少一行。
+_ID_KEYS = ("kch", "cjxhid", "jxbid", "xkkh")
 #: 课表那一格的身份**必须是格子的坐标**，不是选课号：一门 `xkkh` 一周上三次，
 #: 65 行 `kbList` 就会塌成 3 行（10-22 真数据量出来的：池里 class 只剩 3 条，
 #: 而且每轮最后写进去的那一格不同 ⇒ `updated` 在 108/147 之间跳）。
 CLASS_ID_KEYS = ("xkkh", "xxq", "xqj", "djj")
-#: **每个端点各自**的身份键组（一组里所有键都非空才算这组成立）。
+#: **每个端点各自**的身份键组：按顺序试，第一组"每个键都非空"就用它。
 #:
 #: 为什么不许一条通用链服务全部端点：`pool_items` 的唯一键是 `(source, external_id)`，
-#: **`kind` 不在键里**，而这一家每个端点给的"那一条 id"是形状完全不同的东西。
-#: 用通用链的现读后果就是那 46 行被盖掉的账（学校给 考试 40 / 成绩 25，池里只剩 15 / 4）。
-#: 每条后面的读数是第五轮探查（10-22）量出来的"去重几条／共几条"，不是推的。
+#: **`kind` 不在键里**，而这一家每个端点给的"那一条 id"是形状完全不同的东西。通用链的
+#: 现读后果就是那 46 行被盖掉的账（学校给 考试 40 / 成绩 25，池里只剩 15 / 4）。
+#:
+#: 每条后面的分数是**第五轮探查（10-22 15:3x，真账号一轮，只读）量的"去重几条／学校给几条"**，
+#: 不是推的。走到哪条路都写在 `context.identity_key` 里；哪条都不成立 ⇒ 退整行内容哈希，
+#: 并由 :func:`collapse_of` 在这一轮的读数里说清"这一族有没有行被盖掉"——不静默。
 IDENTITY_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "class": (CLASS_ID_KEYS,),
+    # 65/65。注意 `xkkh+xqj+djj` 只有 **64/65**：同一格换过一次上法（`skcd` 连上节数不同）
+    # 就会被合成一条 —— 这是 10-22 那笔"改对但没改全"的账，现在补上。
+    "class": (("xkkh", "xxq", "xqj", "djj", "skcd"), CLASS_ID_KEYS),
+    # 40/40；光 `xkkh` 今天也 40/40，但 08:15 那一轮它只给过 15 条 ⇒ 带上考试时间更严
+    "exam": (("xkkh", "kssj"), ("xkkh",)),
+    # 25/25。这一格学校**既没给学期也没给别的 id**：同一门课多条成绩（重修、按次给分）
+    # 只能靠分数与绩点这一组区分开——这是"没有稳定身份"的读数，不是好设计，照实记。
+    "grade": (("xkkh", "cj", "jd"), ("xkkh",)),
+    # 学业跟踪：238 行里 **217 行没有 `xkkh`**（那是计划内的课程，不是选课记录）
+    # ⇒ 按"课程代码＋学年＋学期"认；不成立就退内容哈希，**不用页内序号**。
+    "major": (("kcdm", "xn", "xq"), ("xkkh",)),
+    # 学期是从主修那 238 行里归并出来的（一学年一学期一条），键就是学校给的那一对码
+    "term": (("xn", "xq"),),
+    # 节次时间（`sjkList` 实测 2 行，`sjkcmc` 27 个中文字符）：学校没给 id，名称就是这一格的键
+    "class_time": (("sjkcmc",),),
 }
 
 
@@ -220,6 +242,58 @@ def _time(row: Mapping[str, Any]) -> tuple[str, str]:
     return "", ""
 
 
+def collapse_of(kind: str, rows: list[dict]) -> tuple[int, int]:
+    """(学校给的行数, 算出来的身份条数)。**不相等就是这一族有行被盖掉**。
+
+    这一对数是本刀给自己加的牙齿，起因是 10-22 那两次真数据账：课表 65→3、考试 40→15、成绩 25→4，
+    三种都是**同一件事**（身份撞了），而当时池里、日志里、设置面上**一个字都没有**——少了 46 行
+    这件事只有把池的数字与学校的数字并排放在一起才看得见。现在每一轮都并排放着（`report["collapsed"]`），
+    不安静。
+    """
+    return len(rows), len({_identity(row, kind)[0] for row in rows})
+
+
+def terms_from(major_rows: list[dict]) -> list[dict]:
+    """学期这一格：把主修那 238 行里**学校自己说出来的学期**归并成条目（一学年一学期一条）。
+
+    用户 10-22 的话是「zdbk 的采集器应该包含学期的采集」。这一家**没有**校历端点可采——
+    第五轮探查（10-22 15:3x）量到：教务首页那 18 KB 是 JS 挂菜单的壳，按 `<a href="/jwglxt/….html">`
+    那种抠法命中 **0 条菜单、1 个动作 URL**，"校历／学期起止"字样在页面上没有；而 Celechron 那两家
+    Dart 里 grep 校历也是 **0 命中**（它的学期起止来自它自己的服务器 `calendar.celechron.top`）。
+    ⇒ 所以这一格只能是"学校在哪几行里说了什么"：主修每一行都带 `xn`／`xq`／`xqmc`。
+
+    **起止日期仍然留空**（裁 189：空是一个读数）——那两样不在这些行里，不在课表回包里，
+    也不在我这一轮找得到的任何一页上。要日期就得先找到校历那一格在哪（§4 仍要用户拍的第三条）。
+    """
+    by_term: dict[tuple[str, str], dict] = {}
+    for row in major_rows:
+        year = str(row.get("xn") or "").strip()
+        season = str(row.get("xq") or "").strip()
+        if not (year and season):
+            continue
+        name = str(row.get("xqmc") or "").strip()
+        slot = by_term.setdefault((year, season), {
+            "kcmc": f"{year} {name}".strip(), "xn": year, "xq": season, "xqmc": name,
+            "records": 0, "credits": 0.0})
+        slot["records"] += 1
+        try:
+            slot["credits"] = round(slot["credits"] + float(row.get("xf") or 0), 2)
+        except (TypeError, ValueError):
+            pass
+    return sorted(by_term.values(), key=lambda item: (item["xn"], item["xq"]), reverse=True)
+
+
+def class_times_from(payload: Mapping[str, Any]) -> list[dict]:
+    """节次时间那一格（课表回包里的 `sjkList`，实测 2 行、`sjkcmc` 是 27 个中文字符那一段）。
+
+    为什么这一格值得单列成一种 `kind`：课表行给的是**星期×第几节**（`xqj`/`djj`），
+    没有钟点；钟点在这一家只在 `sjkList` 里。没有它，"这周三第 1-2 节是几点"在池里答不出来，
+    而把它拼进课表行就是替学校编数据。
+    """
+    rows = payload.get("sjkList")
+    return [row for row in (rows or []) if isinstance(row, dict)]
+
+
 def to_occurrences(kind: str, rows: list[dict]) -> list[Occurrence]:
     items: list[Occurrence] = []
     for row in rows:
@@ -240,7 +314,8 @@ def to_occurrences(kind: str, rows: list[dict]) -> list[Occurrence]:
             context["time_key"] = time_key
         if kind == "class":
             # 周模板：星期×节次。**不给 occurred_at**，理由见模块头第二条；
-            # 学期起止那一格由同一条信源一起采（`term` 那一种 kind），不是别家的活。
+            # "哪一学年哪一学期"由同一条信源一起进池（`term` 那一种 kind），而钟点在 `class_time`
+            # 那一格里——**把这三样拼成一个日期是读池那侧的算术**，不是我在写入口替学校编数据。
             context.update({"week_template": True, "weekday": row.get("xqj"),
                             "start_slot": row.get("djj"), "slot_count": row.get("skcd")})
         items.append(Occurrence(
@@ -352,6 +427,7 @@ class ZdbkCollector:
         year, season = self.config.term()
         collected: list[Occurrence] = []
         counts: dict[str, int] = {}
+        rows_by_kind: dict[str, list[dict]] = {}
 
         self._polite()
         kb = self.transport.post_form(KB_URL, {"xnm": year, "xqm": season, "captcha_value": ""})
@@ -364,9 +440,13 @@ class ZdbkCollector:
             raise ZdbkUnavailable(STATE_AUTH_FAILED,
                                   f"课表端点没回 JSON（HTTP {kb.status}）：会话掉了或页面改了") from None
         kb_rows = kb_payload.get("kbList") if isinstance(kb_payload, dict) else None
-        counts["class"] = len(kb_rows or [])
-        if kb_rows:
-            collected += to_occurrences("class", [r for r in kb_rows if isinstance(r, dict)])
+        rows_by_kind["class"] = [r for r in (kb_rows or []) if isinstance(r, dict)]
+        if rows_by_kind["class"]:
+            collected += to_occurrences("class", rows_by_kind["class"])
+        # 节次时间：钟点只在这一格里（课表行是星期×第几节，没钟点）
+        rows_by_kind["class_time"] = class_times_from(kb_payload)
+        if rows_by_kind["class_time"]:
+            collected += to_occurrences("class_time", rows_by_kind["class_time"])
 
         for kind, url, _label in ENDPOINTS:
             self._polite()
@@ -375,8 +455,14 @@ class ZdbkCollector:
             if rows is None:
                 raise ZdbkUnavailable(STATE_AUTH_FAILED,
                                       f"{_label}端点不回 items 信封（HTTP {response.status}）")
-            counts[kind] = len(rows)
+            rows_by_kind[kind] = rows
             collected += to_occurrences(kind, rows)
+
+        # 学期：学校没有校历端点，但主修每一行都说了自己在哪一学年哪一学期（`xn`/`xq`/`xqmc`）
+        # ⇒ 归并成条目。理由与"日期为什么仍留空"写在 :func:`terms_from` 的文档串里。
+        rows_by_kind["term"] = terms_from(rows_by_kind.get("major") or [])
+        if rows_by_kind["term"]:
+            collected += to_occurrences("term", rows_by_kind["term"])
 
         if self.config.include_practice:
             self._polite()
@@ -385,15 +471,25 @@ class ZdbkCollector:
                 self._polite()
                 practice = self.transport.get(f"{BASE}/jwglxt/dessktgl/dessktcx_cxDessktcxIndex.html"
                                               f"?gnmkdm=N108001&su={student_id}")
-                rows = _table_rows(practice.text)
-                counts["practice"] = len(rows)
-                collected += to_occurrences("practice", rows)
+                rows_by_kind["practice"] = _table_rows(practice.text)
+                collected += to_occurrences("practice", rows_by_kind["practice"])
             else:
-                counts["practice"] = 0        # 学号拿不到：这一类这一轮没有，不静默说成"没实践分"
+                rows_by_kind["practice"] = []   # 学号拿不到：这一类这一轮没有，不静默说成"没实践分"
+
+        # 每一族都并排放两个数：**学校给几行**与**我算出几个身份**。不相等就是这一族有行被盖掉。
+        # 这一格是本刀给自己加的牙齿（10-22 那 46 行就是这么静默少的，见 :func:`collapse_of`）。
+        counts = {}
+        collapsed = {}
+        for kind, rows in rows_by_kind.items():
+            given, distinct = collapse_of(kind, rows)
+            counts[kind] = given
+            if given != distinct:
+                collapsed[kind] = f"{given} 行 → {distinct} 条身份"
 
         if not collected:
             raise ZdbkUnavailable(STATE_EMPTY_TERM, f"这一轮一条都没拿到（学年 {year} 学期 {season}）")
-        return collected, {"state": STATE_READY, "term": f"{year}/{season}", "counts": counts}
+        return collected, {"state": STATE_READY, "term": f"{year}/{season}", "counts": counts,
+                          "collapsed": collapsed}
 
     def collect(self, *, service: Any = None) -> dict:
         """`sweep` 那一轮调的就是这一格——**它会把 `service=` 传进来**，签名少了它就每次 `raised`。
@@ -404,7 +500,7 @@ class ZdbkCollector:
         items, report = self.pull_report()
         result = pool_land(pool_items_of(items, source=SOURCE_ID))
         return {**result, "state": report["state"], "source": SOURCE_ID, "counts": report["counts"],
-                "term": report["term"]}
+                "collapsed": report["collapsed"], "term": report["term"]}
 
 
 def _table_rows(page: str) -> list[dict]:
