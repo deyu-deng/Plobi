@@ -11,7 +11,7 @@ this package may send more than the matched snippet off-device
 (docs/adr/0010-collection-whitelist-privacy-boundary.md).
 """
 
-from plobi.collectors.registry import CADENCE_FIELD, SourceSpec, register
+from plobi.collectors.registry import SourceSpec, register
 
 from .client import ChatlogUnavailable, ChatMessage
 from .config import CollectorConfig
@@ -50,11 +50,6 @@ SPEC = SourceSpec(
     },
     # 对话流：登录一次，之后是会话流（spec-layer §2.2「消息」）。
     category="message",
-    # 这一格里原来**一个字段都没有**，那是真话：微信首次配置要的是扫码与数据密钥，
-    # 两样都不在「非密钥参数」这一层。现在多出来的一格也不是密钥——是**这条信源多久该被打一次**
-    # （裁定 191 二），它本来就属于用户那一层，所以由这一条自己声明出来（`CADENCE_FIELD` 的
-    # 真源在注册表，四个包引同一份）。
-    setup_fields=(CADENCE_FIELD,),
     builder=_build,
 )
 

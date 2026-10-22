@@ -11,7 +11,7 @@
 它不再由 ``registry.py`` 那一行手写元组登记**，加一条信源＝加一个这样的包。
 """
 
-from plobi.collectors.registry import CADENCE_FIELD, SetupField, SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
 
 from .collector import PullReport, ZjuCollector, to_local_naive, to_occurrences
 from .config import ZjuConfig
@@ -85,9 +85,6 @@ SPEC = SourceSpec(
             required=True,
             help="Not the password — that stays in .env.",
         ),
-        # 每源一行频率（裁定 191 二）：用户 02:0x 那句「学在浙大我设置每天某个时刻采集」
-        # 以前在代码里没有落点，现在有了——生效值走 `sources.yaml`，判定在 `cadence.reading()`。
-        CADENCE_FIELD,
     ),
     # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
     # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
