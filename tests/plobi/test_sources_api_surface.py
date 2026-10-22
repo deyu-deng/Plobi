@@ -26,8 +26,18 @@ PNG = base64.b64decode(
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
+    """家、图标目录、台账都钉进 tmp，并给每条源**预先放一个 miss 标记**。
+
+    不放这一枚，`icon_now` 会为每条源起一个后台线程去**真打外网**（zdbk.zju.edu.cn 那种），
+    测试就跑成了网络测试；放了，这一档测的就只是"盘上有就给、没有就回空串并排那一趟"。
+    """
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
-    monkeypatch.setenv("PLOBI_SOURCE_ICON_DIR", str(tmp_path / "icons"))
+    icons_dir = tmp_path / "icons"
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PLOBI_SOURCE_ICON_DIR", str(icons_dir))
+    registry.ensure_discovered()
+    for source_id in registry.source_ids():
+        (icons_dir / f"{source_id}.miss").write_text("", encoding="utf-8")
 
 
 @pytest.fixture()
@@ -167,6 +177,7 @@ class TestIconsComeFromTheDeclaration:
 
             return Reply(PNG) if url.endswith(".ico") else Reply(b"<html><head></head></html>")
 
+        (icons.icon_dir() / "zdbk.miss").unlink(missing_ok=True)   # fixture 标过 miss，这一条要的是真去抓
         first = icons.icon_data_url("zdbk", "https://zdbk.zju.edu.cn", opener=opener)
         after_first = len(hits)
         second = icons.icon_data_url("zdbk", "https://zdbk.zju.edu.cn", opener=opener)
@@ -212,6 +223,26 @@ class TestIconsComeFromTheDeclaration:
             raise OSError("连不上")
 
         assert icons.icon_data_url("broken", "https://down.test", opener=opener) == ""
+
+
+    def test_the_screen_never_waits_for_an_icon(self, client, monkeypatch) -> None:
+        """第一次没有图标就回空串并**后台去抓**：为一张图把那一屏卡 8 秒是另一类故障。"""
+        started = []
+        monkeypatch.setattr(icons, "icon_data_url",
+                            lambda source_id, site, **kw: started.append((source_id, site)) and "")
+        # 这一条用的是一个**没被预先标 miss** 的名字（上面那个 fixture 只给注册表里那几条标）
+        (icons.icon_dir() / "fresh.miss").unlink(missing_ok=True)
+
+        assert icons.icon_now("fresh", "https://fresh.test") == "", "不许同步等网络"
+        for _ in range(40):
+            if started:
+                break
+            __import__("time").sleep(0.05)
+
+        assert started == [("fresh", "https://fresh.test")], "排的那一趟抓的是它自己声明的那个站"
+        row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["zdbk"]
+
+        assert row["icon"] == "" and row["site"] == "https://zdbk.zju.edu.cn"
 
 
 class TestPoolCountsReachTheScreen:

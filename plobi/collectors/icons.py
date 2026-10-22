@@ -74,6 +74,26 @@ def cached(source_id: str) -> Optional[str]:
     return None
 
 
+def icon_now(source_id: str, site: str) -> str:
+    """**给那一屏用的那一格**：盘上有就给，没有就立刻回空串并**在后台去抓**。
+
+    为什么不许同步抓：设置页一次要问四条源，一条 2 秒超时的话最坏是 8 秒白屏——
+    "看一眼图标"不该把那一屏卡住。第一次打开就是没有图标（退品牌表/首字母），
+    下一次就有了；抓取失败也不重排，miss 记在盘上。
+    """
+    hit = cached(source_id)
+    if hit is not None:
+        return hit
+    if not site:
+        return ""
+
+    import threading
+
+    threading.Thread(target=icon_data_url, args=(source_id, site), daemon=True).start()
+
+    return ""
+
+
 def icon_data_url(source_id: str, site: str, opener=urllib.request.urlopen) -> str:
     """这一条的图标，抓不到就是空串。**这一格永不抛**：图标是装饰，它不该把那一屏弄红。"""
     if not site or not site.strip():

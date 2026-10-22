@@ -189,8 +189,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         # 在这里永远是 0——"这条源采到东西没有"问不到。两个数各说各的话，不合成一个。
         "pool_count": pool_count,
         "pool_kinds": pool_kinds,
-        # 图标：从这条**自己声明的那个网站**抓一次（没有声明就空串，界面退品牌表再退首字母）。
-        "icon": icons.icon_data_url(source_id, spec.site) if spec.site else "",
+        # 图标：盘上有就给，没有就**后台去抓一次**并立刻回空串——这一屏不许为一张图等 8 秒。
+        "icon": icons.icon_now(source_id, spec.site),
         "site": spec.site,
         # 声明照原样给，**label 不翻译**：界面先查语言目录的
         # `settings.sources.fields.<key>`，查不到才回这一格。这样第三方包零改动就能
