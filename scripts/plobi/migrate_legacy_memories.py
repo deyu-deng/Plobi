@@ -127,7 +127,13 @@ def migrate(*, apply: bool = False, legacy: Path | None = None,
     for scope, chunk, source in items:
         rendered = entry_with_source(chunk, source)
         current = list(store._entries_for(scope))
-        already = any(chunk in e for e in current)
+        # 去重按「这条原文是否已经在新家」判，而不是「整段字符串是否等于某一条」：
+        # 拆过的条目是原文的片段，整段比对认不出它们，重跑一次就会把同一段事实
+        # 以两种形状各存一遍（装机副本还没跟上时要把旧文件搬回去重跑，这条一定会踩）。
+        already = any(chunk in e for e in current) or (
+            len(frags := split_lossless(chunk)) > 1
+            and all(any(f in e for e in current) for f in frags)
+        )
         if not already:
             current.append(rendered)
             if apply:
