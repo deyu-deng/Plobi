@@ -288,16 +288,26 @@ def _already_waking(marker: Path) -> bool:
         return False
 
 
-def wake_prompt(sender: str) -> str:
-    """唤醒时补的那一句。**不重述消息内容**——它就在这一屏最上面那条里。"""
+def wake_prompt(sender: str, body: str = "") -> str:
+    """唤醒时给子进程的那一段。**必须自带留言正文**。
+
+    2026-10-22 实测：`--resume <会话>` 只把会话 id 恢复了，**历史并没有进上下文**
+    （子进程自报「Messages: 2 (1 user)」——那 1 条 user 就是它自己的 prompt）。
+    所以第一版那句「去读这一屏最上面那条」等于让它去读一个它看不见的东西，
+    它只能回一句「收到」。留言正文必须原样带过去。
+    """
+    text = (body or "").strip()
+    head = f"【{sender} 给你捎来一段话】"
+    if text:
+        head = f"{head}\n{text}"
     return (
-        f"【{sender} 刚捎来一句话，就在这一屏最上面那条（以「[来自 {sender} · 时间]」开头）。】\n"
-        "去读它，按它说的做；做完用一两句话讲清你做了什么、卡在哪儿。\n"
-        "如果这件事需要反过来问他，就用 `ask` 问一次，别用 `say`——`say` 不会把他叫醒。"
+        f"{head}\n\n"
+        "照这段话的意思去做；做完用一两句话讲清你做了什么、卡在哪儿。\n"
+        "如果这件事需要反过来问他，就用 `ask` 问一次（`ask` 会等他答完，`say` 不会把他叫醒）。"
     )
 
 
-def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
+def wake_agent(entry, session_id: str, *, sender: str, body: str = "") -> tuple[bool, str]:
     """投递之后，让那个 Agent **自己开始干**。返回 ``(起没起得来, 一句说明)``。
 
     病根（用户 10-21 原话：「Plobi 如果发了一条信息给一个 L2 Agent。如果我不打开
@@ -329,7 +339,7 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
 
     try:
         argv, env, cwd = AA.build_child_command(
-            entry, wake_prompt(sender), asked_by=f"say:{sender}"
+            entry, wake_prompt(sender, body), asked_by=f"say:{sender}"
         )
     except Exception as exc:  # noqa: BLE001 - 叫不醒也不许炸掉 L1 的回合
         logger.warning("say: 唤醒命令拼不出来（%s）", exc)
@@ -347,26 +357,39 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
     env["PLOBI_ASKED_BY"] = f"say:{sender}"
 
     log_path = _wake_log_path()
+    # 子进程的 stdout/stderr 落到**独立文件**（不与共用 log 混写）：2026-10-22 实测
+    # 共用 log 的句柄在 Windows 上传不到子进程（输出全丢、日志里只剩分隔行），
+    # 独立文件用裸 fd 传（os.open → subprocess），事后能把它整份读回来当证据。
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_path = log_path.with_name(f"wake-{stamp}-{_safe_slug(entry.name)}.log")
+    try:
+        out_fd = os.open(str(out_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    except OSError as exc:
+        logger.warning("say: 唤醒输出文件开不了（%s）", exc)
+        return False, f"叫不醒它：{exc}"
     try:
         with log_path.open("ab", buffering=0) as handle:
             handle.write(
                 f"\n=== wake {entry.name} @ {datetime.now().replace(microsecond=0).isoformat()} "
                 f"(from {sender}, session {session_id}) ===\n".encode("utf-8")
             )
-            proc = subprocess.Popen(  # noqa: S603 — argv 是本模块自己拼的
-                argv,
-                stdin=subprocess.DEVNULL,
-                stdout=handle,
-                stderr=handle,
-                env=env,
-                cwd=cwd,
-                start_new_session=True,
-            )
+        proc = subprocess.Popen(  # noqa: S603 — argv 是本模块自己拼的
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=out_fd,
+            stderr=out_fd,
+            env=env,
+            cwd=cwd,
+            start_new_session=True,
+        )
     except FileNotFoundError:
+        # fd 交给 finally 关（这里再关一次会变成「Bad file descriptor」）。
         return False, "这台机器上找不到可执行的命令行，叫不醒它。"
     except OSError as exc:
         logger.warning("say: 唤醒失败（%s）", exc)
         return False, f"叫不醒它：{exc}"
+    finally:
+        os.close(out_fd)
 
     try:
         marker.write_text(
@@ -390,7 +413,7 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
     # 它读的是分家库）、模型路由失败……所以给它两秒半，再看它还在不在。
     time.sleep(2.5)
     if proc.poll() is not None:
-        tail = _log_tail(log_path)
+        tail = _log_tail(out_path)
         return False, (
             f"它起来了就退出了（exit {proc.returncode}）——没干活。"
             + (f"日志末尾：{tail}" if tail else "")
@@ -469,7 +492,7 @@ def handle_say(args: dict, **kwargs) -> str:
     # 2026-10-21 用户令：「我不打开那个 Agent 的话，它不会自己干活。」——投递
     # 之后把它叫醒（后台跑那一轮，不占这一趟）。叫不醒不算 say 失败：话已经
     # 送到了，那是「送到但我没叫醒它」的差别，照实回给调用方。
-    woke, wake_note = wake_agent(entry, session_id, sender=sender)
+    woke, wake_note = wake_agent(entry, session_id, sender=sender, body=text)
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
