@@ -102,6 +102,21 @@ def test_split_is_lossless_and_refuses_when_a_piece_is_stubby(mig):
     assert mig.split_lossless("甲；乙") == ["甲；乙"], "片段太短就别拆"
 
 
+def test_short_tail_merges_instead_of_blocking_the_whole_split(mig):
+    """真数据教训：旧版遇到一条 10 字的完整条款就整段不拆，等于替用户决定「不用拆」。
+
+    现在的规矩是短尾巴**并回前一段**（不丢字、不加字，拼回去仍然逐字相等），
+    拆得开就拆。
+    """
+    real = ("Plobi 项目纪律与真源：仓库在 D:\\Projects\\Plobi；排期真源 = Docs/ROADMAP.md。"
+            "铁律：单 WP 单 commit；没任务书的刀不开工；测试入口 run_tests.sh 禁直调 pytest。")
+    parts = mig.split_lossless(real)
+    assert len(parts) > 1, "尾巴短不是整段不拆的理由"
+    assert "".join(parts) == real
+    assert all(len(p.strip("；。 ")) >= mig.MIN_FRAGMENT for p in parts), parts
+    assert any("没任务书的刀不开工" in p for p in parts)
+
+
 def test_cli_split_then_delete_still_reconciles(mig, tmp_path, monkeypatch):
     root = tmp_path / "plobihome2"
     root.mkdir()
