@@ -19,7 +19,9 @@ import pytest
 
 from plobi.agenda.service import AgendaService
 from plobi.collectors import registry
-from plobi.collectors.zdbk.collector import (ZdbkCollector, ZdbkConfig, collapse_of, to_occurrences)
+from plobi.collectors.zdbk.collector import (
+    ZdbkCollector, ZdbkConfig, calendar_rows, collapse_of, to_occurrences,
+)
 from plobi.collectors.zdbk.status import (
     STATE_AUTH_FAILED,
     STATE_CAPTCHA_REQUIRED,
@@ -81,6 +83,16 @@ PRACTICE_HTML = (
     "<tr><td>创业讲座</td><td>1</td></tr>"
     "</table></html>"
 )
+#: 校历那一页表头那两格，10-22 23:5x **逐字**从这台真页里量出来的形状
+#: （`GET /jwglxt/xtgl/index_cxXiaoLi.html`，200、17 KB；下面那张 周次×星期 的格子表本刀不啃）。
+CALENDAR_HTML = (
+    "<html><body><table class=\"table table-bordered\"><tr>"
+    "<td>&nbsp;</td>"
+    "<td>2026-2027学年秋学期(2026-09-14至2026-11-08)</td>"
+    "<td>2026-2027学年冬学期(2026-11-09至2027-02-21)</td>"
+    "</tr><tr><td>09月</td><td>10月</td><td>11月</td></tr>"
+    "<tr><td>一</td><td>14</td><td>21</td></tr></table></body></html>"
+)
 
 
 class FakeTransport:
@@ -117,6 +129,7 @@ def healthy_transport(**extra) -> FakeTransport:
         "xscjcx_cxXscjIndex": (200, GRADE_JSON),
         "xszgkc_cxXsZgkcIndex": (200, MAJOR_JSON),
         "dessktcx_cxDessktcxIndex": (200, PRACTICE_HTML),
+        "index_cxXiaoLi": (200, CALENDAR_HTML),
     }
     routes.update(extra)
     return FakeTransport(routes)
@@ -397,8 +410,8 @@ class TestPolitenessBetweenRequests:
     """参照件里唯一值得照抄的那一格：Python 那个 CLI 把礼貌延时做成了参数
     （`celekli.py:641 --time-coeff`，默认 1.5/5 秒）。
 
-    为什么这一格要有牙齿：`pull()` 一次要打**六七个**请求（课表＋考试＋成绩＋主修＋学号那一页
-    ＋实践分那一页），全挤在同一秒里就是拿站方的私有接口当自己的数据库刷。注释里写"我们很礼貌"
+    为什么这一格要有牙齿：`pull()` 一次要打**七八个**请求（课表＋考试＋成绩＋主修＋校历那一页
+    ＋学号那一页＋实践分那一页），全挤在同一秒里就是拿站方的私有接口当自己的数据库刷。注释里写"我们很礼貌"
     不算实现，数得出来的歇才算。
     """
 
@@ -426,11 +439,13 @@ class TestPolitenessBetweenRequests:
 class TestTheSchoolsOwnTerms:
     """用户 10-22 的话：「**那就说明你的采集代码遗漏了信息。zdbk 的采集器应该包含学期的采集**」。
 
-    第五轮探查（10-22 15:3x，真账号一轮）量的结论：这一家**没有校历端点可采**——教务首页那 18 KB
-    是 JS 挂菜单的壳（按 `<a href="/jwglxt/….html">` 抠到菜单 0 条、动作 URL 1 个，页面上没有
-    "校历/学期起止"字样），两家 Dart 里 grep 校历也 0 命中（Celechron 的学期起止来自它自己的服务器）。
-    但学校**在自己的行里说了学期**：主修 238 行每行都带 `xn`/`xq`/`xqmc`。所以这一格只能是归并，
-    而**日期仍然留空**（裁 189：空是一个读数，不是缺口）。
+    ⚠️ 这一族的来历里有一次改判，测试把它留在脸上而不是抹掉：10-22 15:3x 第五轮我写下的是
+    "这一家没有校历端点可采"（当时只翻了教务首页那 18 KB 的壳：按 `<a href="/jwglxt/….html">`
+    抠到菜单 0 条、动作 URL 1 个，页面上没有"校历/学期起止"字样，两家 Dart 里 grep 校历也 0 命中）。
+    当晚第六、十轮从**那页自己的脚本**里读到了 `/jwglxt/xtgl/index_cxXiaoLi.html`，真打一次 200、
+    表头两格写着起止日子 ⇒ 那句"没有"错了，错的原因是**只抠 HTML 没抠 JS 挂的端点**。
+    于是学期有两族：`term`（主修行里说的"哪一学期有课"，仍无日子，那是读数）与
+    `school_calendar`（校历那页写的起止日子）。两族不并，理由写在 :func:`calendar_rows` 的文档串里。
     """
 
     def test_terms_land_as_their_own_kind_from_what_the_school_states(self) -> None:
@@ -463,11 +478,42 @@ class TestTheSchoolsOwnTerms:
             "标题剥了标记，`context` 里学校原样那格要还在（剥的是读法，不是证据）"
         assert all(i.start_at == "" for i in practice), "实践环节是条目，不是某一天"
 
+    def test_the_calendar_page_lands_the_dates_the_school_wrote(self) -> None:
+        """校历那一页的两个学期进池，**日子逐字是学校写在那一格里的**。
+
+        这一条是这一族的全部价值：`class` 那 65 行是周模板（星期×节次），池里一直没有"哪一学期
+        从哪天开始"，于是"周三第 3-4 节"排不进日历。现在有了起止两个 ISO 串，换算留在读池那侧
+        （我不在写入口把两族拼成一个新事实，裁 186/189）。
+        """
+        items = make_collector(healthy_transport()).pull()
+        calendar = {i.external_id: i for i in items if i.kind == "school_calendar"}
+
+        assert set(calendar) == {"school_calendar:2026-2027:秋", "school_calendar:2026-2027:冬"}, calendar
+        autumn = calendar["school_calendar:2026-2027:秋"]
+        assert autumn.start_at == "2026-09-14T00:00:00" and autumn.end_at == "2026-11-08T00:00:00"
+        assert autumn.title == "2026-2027学年秋学期(2026-09-14至2026-11-08)", "标题就是学校那句话"
+        assert all(i.evidence["kind_label"] == "school_calendar" for i in calendar.values())
+
+    def test_an_unreadable_calendar_page_is_a_reading_not_a_failed_round(self) -> None:
+        """学校改了那一页 ⇒ 这一族落 0 行、整轮照收，**不许把课表那一族一起拖红**。
+
+        另一面也要拦住：0 行不等于"这一家没有校历"这句结论——`counts` 里那一格写得出 0，
+        而 `calendar_rows` 认不认得格子是可单独复跑的那一只函数。
+        """
+        assert calendar_rows("<html><body>学校把这页改版了</body></html>") == []
+        assert calendar_rows(CALENDAR_HTML.replace("(2026", "（2026").replace(")", "）")) != [], \
+            "全角括号那一支也得认——站方模板换了引号不算'学校没有校历'"
+
+        report = make_collector(healthy_transport(index_cxXiaoLi=(404, "{}"))).pull_report()[1]
+
+        assert report["counts"]["school_calendar"] == 0
+        assert report["counts"]["class"] == 2, "校历那一页读不到不许影响课表那一族"
+
     def test_one_pull_still_lands_several_kinds(self) -> None:
         """裁定 194 那颗判据：一条信源在池里**不止一种 `kind`**（不许为每种数据再开一条源）。"""
         kinds = {i.kind for i in make_collector(healthy_transport()).pull()}
 
-        assert {"class", "exam", "grade", "major", "term", "practice_course"} <= kinds
+        assert {"class", "exam", "grade", "major", "term", "practice_course", "school_calendar"} <= kinds
 
 
 class TestCollapseIsNotSilent:

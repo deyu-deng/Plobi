@@ -9,7 +9,8 @@
 | `grade` 成绩 | `POST …/cxdy/xscjcx_cxXscjIndex.html?doType=query&…` | 同上，本轮 **25 条** |
 | `major` 主修／学业跟踪 | `POST …/zycjtj/xszgkc_cxXsZgkcIndex.html?doType=query&…` | 同上，本轮 **238 条**；其中 **217 条没有 `xkkh`**（计划内课程，不是选课记录） |
 | `practice` 实践分 | `GET …/dessktgl/dessktcx_cxDessktcxIndex.html?gnmkdm=N108001&su=<学号>` | **不是 JSON**：200、16 KB HTML、`<tr>` 2 行 ⇒ 只能按表行啃；学校改页面这一条就红（用户 10-21 拍：接） |
-| `term` 学期 | **归并自 `major` 的 `xn`/`xq`/`xqmc`** | 学校**没有校历端点**可采（10-22 15:3x 探查：教务首页 18 KB 是 JS 挂菜单的壳，按 `<a href="/jwglxt/….html">` 抠到**菜单 0 条、动作 URL 1 个**，页面上没有"校历/学期起止"字样；两家 Dart 里 grep 校历也 0 命中——Celechron 的学期起止来自它自己的服务器）。所以这一格只能是学校在自己行里说出来的那句话 |
+| `term` 学期 | **归并自 `major` 的 `xn`/`xq`/`xqmc`** | 这一格说的是"哪一学年哪一学期有课"——学校在主修每一行里说了自己在哪个学期，但没有 id，所以这里是把那些行**归并**成学期条目（记录数与学分在里面）。⚠️ 10-22 15:3x 那一版把这格写成"学校没有校历端点可采"，那句当天下午被推翻了：校历在，见下面 `school_calendar` 那一行；`term` 这一族仍然没有日子，因为**主修那些行里确实没有日子**，那仍是一个读数 |
+| `school_calendar` 校历 | `GET /jwglxt/xtgl/index_cxXiaoLi.html` | 10-22 23:5x 实测：200、17 KB HTML，表头那两格写着「2026-2027学年秋学期(2026-09-14至2026-11-08)」与「冬学期(2026-11-09至2027-02-21)」⇒ **学期起止日子是学校自己写在那一页上的**，一学期进一行，`start_at`/`end_at` 就是那两个串。那一页下面还有一张 周次×星期×日 的格子表（15 周 × 7 天），**这一版没啃**：它靠合并单元格对齐，正则啃它等于赌学校不改表格；有了学期起始日，"第 N 周周几是几号"在读侧是一步换算 |
 | `practice_course` 实践环节 | 课表回包里的 `sjkList` | 实测 2 行；落进池里读作 `blueS军训[李睿]秋blueF`、`blueS汽车技术综合实践[郑旭/熊树生]短blueF`（`blueS`/`blueF` 是站方给着色用的裸标记）⇒ 这一格是**实践环节课程**。⚠️ 我上一版按 `sjk` 这个键名把它猜成了"上下课钟点"，10-22 16:3x 真采一轮纠正过来。**"第几节是几点"这一格在这一家仍然没找到**——那是个空缺的读数，不是采到的东西 |
 
 三条不是"顺便"的口径，是被裁定钉的：
@@ -17,10 +18,11 @@
 - **落点只有池**（裁 193）：`pool_land`，`kind` 区分类型，**不为任何一种数据开专用列**——
   判据是"只有全信源共用的形状才配当列"。日程那侧那四个 `KINDS`（meeting/ddl/class/task）
   比池窄，映射是读池的 Agent 的判断，不由采集器替它做（裁 186）。
-- **`occurred_at` 不许猜**（裁 189）：课表这一家给的是**周模板**（星期×节次），不是日历上的点；
-  学期起始日要从校历换出来，而校历那一格 10-22 那一轮在学校身上**没找到**（见上表 `term` 那行）。
-  所以课表与学期条目的 `occurred_at` 都留空，星期、节次、学年学期码原样进 `context` ——
-  **空是一个读数**（"学校没给日期"），填一个推算出来的才是错。
+- **`occurred_at` 不许猜**（裁 189）：课表这一家给的是**周模板**（星期×节次），不是日历上的点，
+  所以课表行的 `occurred_at` 留空，星期、节次、学年学期码原样进 `context` ——
+  **空是一个读数**（"学校在这一行里没给日子"），填一个推算出来的才是错。
+  日子本身有来源了：同一家的校历那一页（上表 `school_calendar`）写着学期起止，那两个串照原样进池。
+  **"第 N 周周几是几号"仍然不许我在写入口算**——那是把两族数据拼成一个新事实，判权在读池那侧（裁 186）。
 - **凭据只走 `auth.read_credentials()` 那一只读路**（裁 110 二）：本包不 `open('.env')`、
   不读 `os.environ`；CAS 那条链收在 :func:`plobi.collectors.zju.auth.cas_login_to`，
   三家共用一只，不各写一遍（裁 94）。
@@ -58,6 +60,11 @@ from .status import (
 SOURCE_ID = "zdbk"
 BASE = auth.ZDBK_ORIGIN
 KB_URL = f"{BASE}/jwglxt/kbcx/xskbcx_cxXsKb.html"
+#: 校历那一页（10-22 23:5x 实测：200、17 KB HTML、表头那两格写着
+#: 「2026-2027学年秋学期(2026-09-14至2026-11-08)」与「冬学期(2026-11-09至2027-02-21)」）。
+#: 这一格纠正了本包 10-22 15:3x 写下的「学校没有校历端点可采」——那句当时是对**首页**那一条路说的，
+#: 端点本身在 `xtgl/index_v510335.js` 里，不在首页 HTML 上（抠法见 `D:/Temp/probe-jiaowu-round10.py`）。
+CALENDAR_URL = f"{BASE}/jwglxt/xtgl/index_cxXiaoLi.html"
 QUERY_SUFFIX = "?doType=query&queryModel.showCount=5000"
 ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("exam", f"{BASE}/jwglxt/xskscx/kscx_cxXsgrksIndex.html{QUERY_SUFFIX}", "考试"),
@@ -71,6 +78,11 @@ ENVELOPE_NOISE = frozenset({
 })
 _TITLE_KEYS = ("kcmc", "sjkcmc", "kchmc", "jcName", "kcb")
 _TIME_KEYS = ("kssj", "ksrq", "xkrq", "cjrq", "createDate")
+#: 结束那一格：校历那两列写的是「2026-09-14至2026-11-08」，`jssj`（结束日期）是学校给的键名，
+#: 与 `kssj`（开始）成对。课表/考试那几族没有这一格 ⇒ 取不到就还是 `None`，不是空串。
+_END_KEYS = ("jssj", "jzrq")
+_TIME_PATTERNS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S",
+                  "%Y%m%dT%H%M%S", "%Y-%m-%d", "%Y年%m月%d日")
 #: 单键退路。**`row_id` 不在里面**：它是正方给每行编的**页内序号**（10-22 实测：主修 238 行里
 #: 217 行连 `xkkh` 都没有，唯一能唯一化它们的只有这个序号，值是纯数字）。拿它当身份就是拿
 #: **位置**当身份——排序一变整族换身份，而两个端点的序号撞在一起时池里会静默少一行。
@@ -102,6 +114,9 @@ IDENTITY_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
     "major": (("kcdm", "xn", "xq"), ("xkkh",)),
     # 学期是从主修那 238 行里归并出来的（一学年一学期一条），键就是学校给的那一对码
     "term": (("xn", "xq"),),
+    # 校历那一页（10-22 实测）：学校没给 id，但它在那一格写明了「哪一学年的哪一学期」——
+    # 那一对就是这一族的身份，与 `term` 那几行是两套表述、各说各话，**不硬并**（理由见 :func:`calendar_rows`）
+    "school_calendar": (("xn", "xq"),),
     # 实践环节课程（`sjkList`，10-22 真采量的：`sjkcmc` 是 `blueS军训[李睿]秋blueF` 那种串）：
     # 学校没给 id，名称就是这一格的键
     "practice_course": (("sjkcmc",),),
@@ -237,20 +252,32 @@ def _identity(row: Mapping[str, Any], kind: str) -> tuple[str, str]:
     return f"{kind}-sha1-{digest[:16]}", "row-sha1"
 
 
-def _time(row: Mapping[str, Any]) -> tuple[str, str]:
-    """(归一前的原值, 找到的键)。拿不到日期就**留空**，不猜（裁 189）。"""
-    for key in _TIME_KEYS:
+def _as_iso(raw: str) -> str:
+    """认得的日子归一成 ISO；认不得就回空串（**不猜**，裁 189）。"""
+    for pattern in _TIME_PATTERNS:
+        try:
+            return datetime.strptime(raw, pattern).isoformat(timespec="seconds")
+        except ValueError:
+            continue
+    return ""
+
+
+def _first_time(row: Mapping[str, Any], keys: tuple[str, ...]) -> tuple[str, str]:
+    """(归一后的值, 找到的键)。拿不到日子就**留空**，并且说得出是在哪一格上没拿到（裁 189）。"""
+    for key in keys:
         raw = str(row.get(key) or "").strip()
         if not raw:
             continue
-        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S",
-                       "%Y%m%dT%H%M%S", "%Y-%m-%d", "%Y年%m月%d日"):
-            try:
-                return datetime.strptime(raw, pattern).isoformat(timespec="seconds"), key
-            except ValueError:
-                continue
-        return "", key                       # 有这一格但形状不认识：也说得出是哪一格
+        return _as_iso(raw), key                    # 有这一格但形状不认识：也说得出是哪一格
     return "", ""
+
+
+def _time(row: Mapping[str, Any]) -> tuple[str, str]:
+    return _first_time(row, _TIME_KEYS)
+
+
+def _end_time(row: Mapping[str, Any]) -> tuple[str, str]:
+    return _first_time(row, _END_KEYS)
 
 
 def collapse_of(kind: str, rows: list[dict]) -> tuple[int, int]:
@@ -267,14 +294,13 @@ def collapse_of(kind: str, rows: list[dict]) -> tuple[int, int]:
 def terms_from(major_rows: list[dict]) -> list[dict]:
     """学期这一格：把主修那 238 行里**学校自己说出来的学期**归并成条目（一学年一学期一条）。
 
-    用户 10-22 的话是「zdbk 的采集器应该包含学期的采集」。这一家**没有**校历端点可采——
-    第五轮探查（10-22 15:3x）量到：教务首页那 18 KB 是 JS 挂菜单的壳，按 `<a href="/jwglxt/….html">`
-    那种抠法命中 **0 条菜单、1 个动作 URL**，"校历／学期起止"字样在页面上没有；而 Celechron 那两家
-    Dart 里 grep 校历也是 **0 命中**（它的学期起止来自它自己的服务器 `calendar.celechron.top`）。
-    ⇒ 所以这一格只能是"学校在哪几行里说了什么"：主修每一行都带 `xn`／`xq`／`xqmc`。
+    用户 10-22 的话是「zdbk 的采集器应该包含学期的采集」。⚠️ 这一格的来历里有一次改判：
+    10-22 15:3x 那一版我写的是"这一家没有校历端点可采"（当时只翻了教务首页那 18 KB 的壳与两家 Dart，
+    菜单 0 条、动作 URL 1 个），当晚被自己的第六轮探查推翻——校历在 `xtgl/index_v510335.js` 里挂着，
+    就是同上的 `school_calendar` 那一行。**这一族照旧收**：它说的是"哪一学年哪一学期有课、几门、几分"，
+    那是主修行里唯一说得出学期的东西，而校历那一页说的是日子。两族各说各的（为什么不并：见 :func:`calendar_rows`）。
 
-    **起止日期仍然留空**（裁 189：空是一个读数）——那两样不在这些行里，不在课表回包里，
-    也不在我这一轮找得到的任何一页上。要日期就得先找到校历那一格在哪（§4 仍要用户拍的第三条）。
+    **起止日期在这一族仍然留空**（裁 189：空是一个读数）——那两个串不在主修这些行里。
     """
     by_term: dict[tuple[str, str], dict] = {}
     for row in major_rows:
@@ -292,6 +318,35 @@ def terms_from(major_rows: list[dict]) -> list[dict]:
         except (TypeError, ValueError):
             pass
     return sorted(by_term.values(), key=lambda item: (item["xn"], item["xq"]), reverse=True)
+
+
+#: 校历那一页表头里的学期格：「2026-2027学年秋学期(2026-09-14至2026-11-08)」。
+#: 全角括号与半角都见过（站方模板里这两格同一形状），所以两类都吃。
+_CALENDAR_TERM = re.compile(
+    r"(?P<xnm>\d{4}-\d{4})学年(?P<xqmc>[\u4e00-\u9fff]{1,3})学期\s*[（(]"
+    r"(?P<start>\d{4}-\d{2}-\d{2})至(?P<end>\d{4}-\d{2}-\d{2})[）)]")
+
+
+def calendar_rows(page: str) -> list[dict]:
+    """校历那一页 → 一学期一行，**起止日子是学校自己写在那一页表头上的那两个串**。
+
+    为什么这一族值得单独立一种 `kind` 而不是塞进 `term`：`term` 那几行是从主修 238 行里归并出来的
+    「哪一学年哪一学期有课」，用的是 `xn`/`xq` 那一对**码**（`2025`/`1`）；校历这一页说的是
+    「2026-2027 学年秋学期从 9 月 14 日到 11 月 8 日」，用的是**学年区间加学期名**。两套表述不是同一个 id，
+    硬并到一起就是拿我的拼接当身份（裁 194 那条判据反对的正是这个）。两边都进池，
+    "它们是同一个学期"由读池那侧去认——它有两种表示可比，比只有一种好。
+
+    认不出来（0 行）是**一个读数**，不抛：这一族没采到，别的族照进，`counts` 里那一格写 0。
+    """
+    found: dict[tuple[str, str], dict] = {}
+    for match in _CALENDAR_TERM.finditer(page):
+        year = match.group("xnm")
+        season = match.group("xqmc")
+        found.setdefault((year, season), {
+            "kcmc": match.group(0), "xn": year, "xq": season,
+            "kssj": match.group("start"), "jssj": match.group("end"),
+        })
+    return list(found.values())
 
 
 def practice_courses_from(payload: Mapping[str, Any]) -> list[dict]:
@@ -319,6 +374,7 @@ def to_occurrences(kind: str, rows: list[dict]) -> list[Occurrence]:
         if not title:
             title = f"{kind} {external_id}"          # 没名字也要有标题；不拿它当身份
         occurred_at, time_key = _time(row)
+        ended_at, _end_key = _end_time(row)
         context = {k: v for k, v in row.items() if k not in ENVELOPE_NOISE}
         context.update({"source_system": SOURCE_ID, "kind_label": kind,
                         "identity_key": identity_key})
@@ -326,13 +382,14 @@ def to_occurrences(kind: str, rows: list[dict]) -> list[Occurrence]:
             context["time_key"] = time_key
         if kind == "class":
             # 周模板：星期×节次。**不给 occurred_at**，理由见模块头第二条；
-            # "哪一学年哪一学期"由同一条信源一起进池（`term` 那一种 kind）——**把学期×星期×节次
-            # 拼成一个日期是读池那侧的算术**，不是我在写入口替学校编数据。钟点那一格还没找到。
+            # "哪一学年哪一学期"由同一条信源一起进池（`term` 与 `school_calendar` 那两种 kind，
+            # 后者带着学校自己写的起止日子，10-22 实测）——**把学期×星期×节次拼成一个日期是读池
+            # 那侧的算术**，不是我在写入口替学校编数据。钟点那一格还没找到。
             context.update({"week_template": True, "weekday": row.get("xqj"),
                             "start_slot": row.get("djj"), "slot_count": row.get("skcd")})
         items.append(Occurrence(
             source=SOURCE_ID, external_id=external_id, title=title,
-            start_at=occurred_at, end_at=None, kind=kind, location=None,
+            start_at=occurred_at, end_at=ended_at or None, kind=kind, location=None,
             evidence=context,
         ))
     return items
@@ -475,6 +532,15 @@ class ZdbkCollector:
         rows_by_kind["term"] = terms_from(rows_by_kind.get("major") or [])
         if rows_by_kind["term"]:
             collected += to_occurrences("term", rows_by_kind["term"])
+
+        # 校历：学期起止日子在这一家自己的那一页上（10-22 实测 200 / 17 KB / 表头两格写着日子）。
+        # 认不出格子就落 0 行——**这是一个读数**（"这一页没认出学期起止"），不为它把整轮判红，
+        # 也不许把日子推算出来冒充学校给的（裁 189）。
+        self._polite()
+        calendar = self.transport.get(CALENDAR_URL)
+        rows_by_kind["school_calendar"] = calendar_rows(calendar.text) if calendar.status < 400 else []
+        if rows_by_kind["school_calendar"]:
+            collected += to_occurrences("school_calendar", rows_by_kind["school_calendar"])
 
         if self.config.include_practice:
             self._polite()
