@@ -50,7 +50,10 @@ class TestEnsurePlobiHome:
             assert (tmp_path / "cron").is_dir()
             assert (tmp_path / "sessions").is_dir()
             assert (tmp_path / "logs").is_dir()
-            assert (tmp_path / "memories").is_dir()
+            # ``memories/`` was retired by 裁定 42/178 — the ledgers live at
+            # ``<shared root>/memory/`` now, and seeding the old dir resurrected it
+            # every time a migration cleaned it up.
+            assert not (tmp_path / "memories").exists()
 
     def test_creates_default_soul_md_if_missing(self, tmp_path):
         with patch.dict(os.environ, {"PLOBI_HOME": str(tmp_path)}):
@@ -97,7 +100,7 @@ class TestEnsurePlobiHome:
             ensure_plobi_home()
             assert (profile_home / "cron").is_dir()
             assert (profile_home / "sessions").is_dir()
-            assert (profile_home / "memories").is_dir()
+            assert not (profile_home / "memories").exists(), "退休目录不再被播种"
 
     def test_missing_named_profile_is_not_recreated(self, tmp_path):
         profile_home = tmp_path / ".plobi" / "profiles" / "coder"

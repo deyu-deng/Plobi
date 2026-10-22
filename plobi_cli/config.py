@@ -1022,7 +1022,13 @@ def ensure_plobi_home():
         home.mkdir(parents=True, exist_ok=True)
         _secure_dir(home)
         for subdir in (
-            "cron", "sessions", "logs", "logs/curator", "memories",
+            # "memories" dropped: 裁定 42/178 moved the ledgers to
+            # ``<shared root>/memory/`` (GLOBAL.md + one per agent + USER.md), so
+            # nothing reads ``<home>/memories`` any more — and seeding it on every
+            # ``load_config()`` resurrected the retired dir right after it was
+            # cleaned up, which made "删掉了" look false. Writers create what they
+            # write; this list is only what the home genuinely still owns.
+            "cron", "sessions", "logs", "logs/curator",
             "pairing", "hooks", "image_cache", "audio_cache", "skills",
         ):
             d = home / subdir
