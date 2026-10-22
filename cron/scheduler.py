@@ -1502,7 +1502,74 @@ def _is_channel_dm_topic(
     return is_channel
 
 
-def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Optional[str]:
+def _deliver_to_recipient_window(job: dict, content: str) -> tuple[Optional[dict], Optional[str]]:
+    """把到点结果发进**收件人那一行「打开就该看到」的会话**。
+
+    用户 10-16 原话：「然后要真的在聊天窗口上面发一个这个信息哟。还要留下痕迹。」
+    落点判据**不另立一份**：与 ``say`` 同一个
+    :meth:`plobi_state.SessionDB.latest_conversational_session_for_agent`——
+    桌面点开这个 Agent 会打开哪一屏，结果就落哪一屏。名字也走现成那枚
+    :func:`_resolve_cron_recipient`，因为 ``sessions.agent_id`` 存的是名册那一行的
+    **规范名**，记录上写的可能是大小写变体；自己再匹配一遍就会出现
+    「say 落这一屏、cron 落那一屏」。那一屏还没有时按 ``say`` 已有的例外开一条
+    ``source="agent_message"`` 的，不新造第二种形状。
+
+    角色是 ``user`` 不是 ``assistant``：这是**替日程外的那一轮**把话带进那一屏，
+    不是那个会话里 Agent 自己说过的话。``gateway/mirror.py`` 把同一条理由写死了
+    ——assistant 角色的外来镜像在回放时会和真回答混成 ``assistant → assistant``，
+    打断严格交替的提供方；user 那一侧有连续合并兜底。
+
+    返回 ``(投递记录, 错误)``。两者都为 ``None`` ＝「这一轮本来就不该出声」
+    （作业没写收件人，脚本作业那一种），不是失败。
+    """
+    if not str(job.get("recipient") or "").strip():
+        return None, None
+
+    entry, refusal = _resolve_cron_recipient(job)
+    if entry is None:
+        return None, f"结果发不进窗口：{refusal}"
+    recipient = entry.name
+
+    job_id = str(job.get("id") or "")
+    label = str(job.get("name") or job_id or "cron")
+    stamp = _plobi_now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        import uuid
+
+        from plobi_state import SessionDB
+
+        db = SessionDB()
+        session_id = db.latest_conversational_session_for_agent(recipient)
+        created = not session_id
+        if created:
+            session_id = "chan_" + uuid.uuid4().hex[:16]
+            db.create_session(session_id, source="agent_message", agent_id=recipient)
+        message_id = db.append_message(
+            session_id,
+            role="user",
+            content=f"[Cron 结果 · {label} · {stamp}]\n{content}",
+            asked_by=f"cron:{job_id}" if job_id else "cron",
+        )
+    except Exception as exc:  # noqa: BLE001 - 发不进窗口要说得出，不许静默当成发过了
+        logger.warning("Job '%s': 结果发不进「%s」的窗口：%s", job_id, recipient, exc)
+        return None, f"agent-window delivery failed: {exc}"
+
+    return (
+        {
+            "via": "agent_window",
+            "to": recipient,
+            "at": _plobi_now().isoformat(),
+            "session_id": session_id,
+            "message_id": str(message_id),
+            "session_created": created,
+        },
+        None,
+    )
+
+
+def _deliver_result(
+    job: dict, content: str, adapters=None, loop=None, delivery_out: Optional[dict] = None
+) -> Optional[str]:
     """
     Deliver job output to the configured target(s) (origin chat, specific platform, etc.).
 
@@ -1511,13 +1578,23 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
     the standalone HTTP path cannot encrypt.  Falls back to standalone send if
     the adapter path fails or is unavailable.
 
+    ``delivery_out`` is an optional scratch dict the agent-window delivery fills
+    with ``{"record": ...}`` so the caller can persist it as the job's
+    ``last_delivery`` trace. Routing stays in this one function on purpose.
+
     Returns None on success, or an error string on failure.
     """
     targets = _resolve_delivery_targets(job)
     if not targets:
         deliver_value = _normalize_deliver_value(job.get("deliver", "local"))
         if deliver_value == "local":
-            return None  # local-only jobs don't deliver — not a failure
+            # 「此桌面」这一档的语义（用户 10-22 拍「连存量一起改」）：作业写了
+            # 收件人 ⇒ 结果发进那一行自己的窗口；没写（脚本作业）⇒ 按设计不出声，
+            # 与改语义之前逐字一致。存量 15 条作业因此一个字都不用改。
+            record, window_error = _deliver_to_recipient_window(job, content)
+            if record is not None and delivery_out is not None:
+                delivery_out["record"] = record
+            return window_error
         # deliver=origin with no resolvable origin and no configured home
         # channels: treat as local rather than reporting an error.  CLI-created
         # jobs never capture a {platform, chat_id} origin, so failing here would
@@ -3616,6 +3693,9 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
         # deferred agent is still torn down. Otherwise the outer `except` would
         # swallow the error and leak the agent's subprocesses/clients (#10200).
         delivery_error = None
+        # 这一轮结果真正落到了哪一屏（``_deliver_result`` 里填）。只给
+        # ``mark_job_run`` 写 ``last_delivery`` 那一格用——痕迹只存一处。
+        _delivery_out: dict = {}
         try:
             output_file = save_job_output(job["id"], output)
             if verbose:
@@ -3655,7 +3735,9 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
 
             if should_deliver:
                 try:
-                    delivery_error = _deliver_result(job, deliver_content, adapters=adapters, loop=loop)
+                    delivery_error = _deliver_result(
+                        job, deliver_content, adapters=adapters, loop=loop, delivery_out=_delivery_out
+                    )
                 except Exception as de:
                     delivery_error = str(de)
                     logger.error("Delivery failed for job %s: %s", job["id"], de)
@@ -3674,7 +3756,13 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
             error = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
 
         if not _consume_interrupted_flag(job["id"]):
-            mark_job_run(job["id"], success, error, delivery_error=delivery_error)
+            mark_job_run(
+                job["id"],
+                success,
+                error,
+                delivery_error=delivery_error,
+                delivery=_delivery_out.get("record"),
+            )
         return True
 
     except Exception as e:

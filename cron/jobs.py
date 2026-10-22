@@ -1219,6 +1219,7 @@ def create_job(
         "last_status": None,
         "last_error": None,
         "last_delivery_error": None,
+        "last_delivery": None,
         # Delivery configuration
         "deliver": deliver,
         "origin": origin,  # Tracks where job was created for "origin" delivery
@@ -1507,7 +1508,8 @@ def drift_of_error(error: Optional[str]) -> Optional[Dict[str, Any]]:
 
 
 def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
-                 delivery_error: Optional[str] = None):
+                 delivery_error: Optional[str] = None,
+                 delivery: Optional[Dict[str, Any]] = None):
     """
     Mark a job as having been run.
     
@@ -1516,6 +1518,11 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
 
     ``delivery_error`` is tracked separately from the agent error — a job
     can succeed (agent produced output) but fail delivery (platform down).
+
+    ``delivery`` is the record of where the output actually went (see
+    ``cron.scheduler._deliver_to_recipient_window``). It is the **only** place
+    the delivery trace is kept — the message itself lives in the recipient's
+    own session, so the job row stores just the pointer, never a second copy.
     """
     with _jobs_lock():
         jobs = load_jobs()
@@ -1530,6 +1537,9 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                 job["last_drift"] = drift_of_error(error) if not success else None
                 # Track delivery failures separately — cleared on successful delivery
                 job["last_delivery_error"] = delivery_error
+                # 这一轮结果真正落到了哪一屏；没投递（脚本作业、或发去平台那一档）
+                # 就是 None。桌面详情面那一行读的就是这一格，别处不再存第二份。
+                job["last_delivery"] = delivery
                 # Clear any external-fire claim so a re-armed recurring job can
                 # be claimed again on its next fire (Phase 4C CAS).
                 job["fire_claim"] = None

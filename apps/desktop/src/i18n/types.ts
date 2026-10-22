@@ -1613,6 +1613,9 @@ export interface Translations {
     recipientNone: string
     recipientHint: string
     recipientNotInRoster: string
+    recipientRowLabel: string
+    recipientRowUnset: string
+    deliveredRowLabel: string
     customScheduleLabel: string
     customPlaceholder: string
     customHint: string

@@ -315,3 +315,133 @@ def test_a_no_agent_job_still_fires_without_a_recipient(home):
     assert final == "采集完 3 条"
     script_runner.assert_called_once()
     agent_cls.assert_not_called()
+
+
+# ---------------------------------------- 结果发进收件人那一行自己的窗口（裁 183⑤⑥）
+#
+# 用户 10-16 原话：「然后要真的在聊天窗口上面发一个这个信息哟。还要留下痕迹。」
+# 加上 10-22 拍的那条语义：`deliver=local`（面上那一格「此桌面」）+ 作业写了收件人
+# ⇒ 结果落进那一行「打开就该看到」的那一屏；没写收件人（脚本作业）照旧不出声。
+# 全部钉在临时家上——不碰这台的总账，也不碰真名册那 19 行。
+
+
+@pytest.fixture()
+def window_home(tmp_path, monkeypatch):
+    """一个空家：总账、名册、作业记录都落在 tmp_path 里。"""
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    monkeypatch.setenv("PLOBI_STATE_HOME", str(tmp_path))
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", _agenda_row(tmp_path))
+    return tmp_path
+
+
+def _db():
+    from plobi_state import SessionDB
+
+    return SessionDB()
+
+
+def _window_job(**fields):
+    job = {"deliver": "local", "id": "j1", "name": "早报", "recipient": RECIPIENT}
+    job.update(fields)
+    return job
+
+
+def _deliver(job):
+    """走真那道 `_deliver_result`：投递判据只许有一处，测试不许绕开它自己拼。"""
+    from cron.scheduler import _deliver_result
+
+    out: dict = {}
+    error = _deliver_result(job, "今天三节课", delivery_out=out)
+    return error, out.get("record")
+
+
+def test_a_local_run_with_a_recipient_lands_in_that_agent_window(window_home):
+    db = _db()
+    db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
+
+    error, record = _deliver(_window_job())
+
+    assert error is None, error
+    assert record["session_id"] == "sess-window", "落点必须就是桌面会打开的那一屏"
+    assert record["to"] == RECIPIENT
+    assert record["session_created"] is False
+    rows = db.get_messages("sess-window")
+    assert len(rows) == 1
+    assert rows[0]["role"] == "user"
+    assert "今天三节课" in rows[0]["content"]
+
+
+def test_the_trace_names_who_carried_the_message(window_home):
+    """痕迹里要说得出是**哪一道作业**送来的——`[Cron 结果 · 早报]` 那一行 + asked_by。"""
+    db = _db()
+    db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
+
+    _deliver(_window_job(id="job-77", name="额度提醒"))
+
+    row = db.get_messages("sess-window")[-1]
+    assert "[Cron 结果 · 额度提醒" in row["content"]
+    assert row["asked_by"] == "cron:job-77"
+
+
+def test_a_local_run_without_a_recipient_stays_silent(window_home):
+    """脚本作业（采集那几条）没收件人：照旧不出声，也不算失败。"""
+    error, record = _deliver(_window_job(recipient=None))
+
+    assert error is None
+    assert record is None
+    assert _db().list_sessions_rich(limit=10) == []
+
+
+def test_two_runs_share_one_window_and_the_second_opens_nothing(window_home):
+    """用户 10-20 那句「无新会话」：到点两次共用那一屏，不许每次另开一屏。"""
+    first_error, first = _deliver(_window_job())
+    second_error, second = _deliver(_window_job())
+
+    assert first_error is None and second_error is None
+    assert first["session_created"] is True
+    assert second["session_created"] is False
+    assert first["session_id"] == second["session_id"]
+    assert len(_db().get_messages(first["session_id"])) == 2
+
+
+def test_a_case_variant_on_the_record_still_finds_the_same_window(window_home):
+    """记录上写 `Agenda` 也要落进名册那一行的窗口：`sessions.agent_id` 存规范名。"""
+    db = _db()
+    db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
+
+    error, record = _deliver(_window_job(recipient="Agenda"))
+
+    assert error is None, error
+    assert record["to"] == RECIPIENT
+    assert record["session_id"] == "sess-window"
+
+
+def test_a_recipient_that_is_gone_reports_failure_instead_of_a_fake_success(window_home):
+    """发不进窗口不许说成发好了——那一格错误会进 `last_delivery_error`。"""
+    error, record = _deliver(_window_job(recipient="ghost"))
+
+    assert error is not None
+    assert "不在名册" in error
+    assert record is None
+
+
+def test_the_trace_is_one_cell_on_the_job_and_a_silent_run_clears_it(window_home):
+    """痕迹只存一处：作业行上那一格 `last_delivery`，会话行里不塞第二份元数据。"""
+    from cron.jobs import create_job, get_job, mark_job_run, use_cron_store
+
+    with use_cron_store(window_home):
+        job = create_job(prompt="x", schedule="every 5m", name="早报", recipient=RECIPIENT)
+        assert get_job(job["id"])["last_delivery"] is None
+
+        trace = {
+            "at": "2026-10-22T12:00:00",
+            "message_id": "m1",
+            "session_id": "s1",
+            "to": RECIPIENT,
+            "via": "agent_window",
+        }
+        mark_job_run(job["id"], True, delivery=trace)
+        assert get_job(job["id"])["last_delivery"] == trace
+
+        mark_job_run(job["id"], True)
+        assert get_job(job["id"])["last_delivery"] is None, "这一轮没投就要清空，别留旧痕迹"

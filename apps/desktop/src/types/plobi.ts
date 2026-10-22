@@ -722,11 +722,28 @@ export interface AgendaAvoidWindow {
   start_at: string
 }
 
+/**
+ * WP-CRON-RECIPIENT: where a run's output actually landed. Written by
+ * `cron/scheduler._deliver_to_recipient_window` and persisted by
+ * `mark_job_run` as the job's `last_delivery` — the only place the delivery
+ * trace is kept (the message itself lives in the recipient's own session).
+ */
+export interface CronDeliveryRecord {
+  at: string
+  message_id: string
+  session_created?: boolean
+  session_id: string
+  to: string
+  via: string
+}
+
 export interface CronJob {
   deliver?: null | string
   enabled: boolean
   id: string
   last_error?: null | string
+  /** 这一轮结果真正发到了哪一屏；没投（脚本作业、或发去平台那一档）为 null。 */
+  last_delivery?: null | CronDeliveryRecord
   last_run_at?: null | string
   name?: null | string
   next_run_at?: null | string
