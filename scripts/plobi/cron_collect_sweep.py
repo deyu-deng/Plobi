@@ -63,7 +63,8 @@ def main() -> int:
     for row in rows:                                  # 打过的一律记账：频率问的是"多久碰它一次"
         if row["state"] in NOT_DUE_STATES:
             continue
-        cadence.mark_run(str(row["source"]), state=str(row.get("state") or ""))
+        cadence.mark_run(str(row["source"]), state=str(row.get("state") or ""),
+                         detail=str(row.get("detail") or ""))
 
     attempted = [row for row in rows if row["state"] not in NOT_DUE_STATES]
     ran = [row for row in attempted if row["ok"]]

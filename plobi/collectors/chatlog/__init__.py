@@ -50,6 +50,8 @@ SPEC = SourceSpec(
     },
     # 对话流：登录一次，之后是会话流（spec-layer §2.2「消息」）。
     category="message",
+    site="https://weixin.qq.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
+
     builder=_build,
 )
 

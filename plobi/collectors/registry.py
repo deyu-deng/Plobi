@@ -98,9 +98,16 @@ def is_secret_like(key: str) -> bool:
     return any(marker in normalized for marker in SECRET_LIKE_KEYS)
 
 
-#: 首次配置字段的控件形状闭集。**没有 `password`**：密钥不属于这一层，
-#: 硬编一个"带掩码的输入框"等于在产品面上开一个把 token 存进 `sources.yaml` 的正门。
-SETUP_FIELD_KINDS: tuple[str, ...] = ("text", "path", "url")
+#: 首次配置字段的控件形状闭集。
+#:
+#: **`secret` 是 10-22 新开的一格**（用户：「密码什么的就不要明文显示。用星号」）。
+#: 它不是"带掩码的输入框"那么轻的一档，三条硬规矩一起才算数，缺一条就退回成
+#: "把 token 存进 `sources.yaml`"那扇原本被堵死的正门：
+#: ① 值**只走 `.env`**（`sources_config.set_secret` → `plobi_cli.config.save_env_value_secure`），
+#: ② **永不出现在 payload 里**（只回"已设置/没设置"），③ 界面上是写入口，不是读数口（不留"上次填的值"）。
+#: `cadence` 那一格同理不是换个控件：它存进 `sources.yaml` 的**仍是那一句 cron**，
+#: 改的只是"别让普通人面对裸 cron 文本框"（运行时一个字没动）。
+SETUP_FIELD_KINDS: tuple[str, ...] = ("text", "path", "url", "secret", "cadence")
 
 
 @dataclass(frozen=True)
@@ -130,13 +137,19 @@ class SetupField:
             raise UnknownSetupField(
                 f"{self.key} 的 kind={self.kind!r} 不在闭集里：{', '.join(SETUP_FIELD_KINDS)}"
             )
-        # 唯一的牙齿：这一层**声明不出一个密钥来**。密钥归 `.env`
-        # （`Docs/README.md` §0 那条纪律）。挡在**写声明的时候**，所以它压根
-        # 不可能被声明出来——比运行时再拦一道强，因为运行时那一道只挡得住手填。
-        if is_secret_like(self.key):
+        # 牙齿还是那一颗，只是从"这一层声明不出密钥"改成"**声明密钥就必须标出来**"：
+        # 标了 `secret` 的键走 `.env`、不回显、不写进 `sources.yaml`（见 :data:`SETUP_FIELD_KINDS`
+        # 那三条）；没标却长得像密钥的（`password_hint`、`my_token` 这种）照旧在**写声明那一刻**炸——
+        # 那才是这颗牙 originally 拦的东西：一个自称"非密钥"、运行时却被当凭据用的字段。
+        if is_secret_like(self.key) and self.kind != "secret":
             raise UnknownSetupField(
-                f"{self.key} 看着像密钥，声明层不收：这一层只放路径 / 地址 / 账号名。"
-                "密钥写进 .env。这一格是给人看的表单，不是给机器的密钥库。"
+                f"{self.key} 看着像密钥，就必须声明成 kind='secret'（值只进 .env、永不出现在读数里）。"
+                "把它当普通文本填进 `sources.yaml` 是另一条违规：那一档是给人看的配置，不是密钥库。"
+            )
+        if self.kind == "secret" and not is_secret_like(self.key):
+            raise UnknownSetupField(
+                f"{self.key} 声明成了密钥那一档，但这个名字不像密钥——掩码框配一个非密钥字段，"
+                "下一个读的人就分不清哪一格是真的不能回显。"
             )
 
 
@@ -169,7 +182,7 @@ def validate_cadence(text: str) -> str:
 CADENCE_FIELD = SetupField(
     key="cadence",
     label="Collection cadence",
-    kind="text",
+    kind="cadence",
     help="e.g. 0 3 * * * (daily at 03:00) or every 6h. Empty keeps it per round.",
 )
 
@@ -203,6 +216,12 @@ class SourceSpec:
     #: 防把站方打爆），住在各家采集器自己那侧，本刀一个字不动它。两把闸叠着生效，
     #: 谁也不替代谁——"我设成每天三点"回答不了"那家能扛多久一次"。
     cadence: str = field(default="", kw_only=True)
+    #: 这一条**在哪个网站**（scheme + host 就够，不要路径）。10-22 为「添加网站之后自动同步
+    #: 这个网站的图标」新开的一格：图标不是功能，所以它**不进**能力位、也不让前端硬编一张表
+    #: （那张表一旦漏了一条，屏上就是一条"没记到名字的信源"配一个首字母）；声明了就有 favicon，
+    #: 没声明（本地文件、消息客户端这类）就退前端那张品牌表，再退首字母。
+    #: 空串是一个**读数**：这一条没有"一个网站"可去。
+    site: str = field(default="", kw_only=True)
     collecting: bool = True
     #: 执行方**构造这一条采集器**的唯一入口（`plobi/collectors/sweep.py` 只认这一格，不按名字分支）。
     #: `None` 是一个读数而不是省略：注册表说这条在采、却没有任何一方构造得出它 ——
