@@ -1,7 +1,7 @@
 """WP-PLAN-PREFS（裁定 34.1）：「别中午排会」走配置提案卡，确认后规划器把窗当占用。
 
-只挡**项目推进块**——已确认事件 / 作息锚点 / 弹性餐不受影响（用户讲「别
-中午排会」时的真实意图是「不要硬塞工作」，不是「把那段时间清空」）。
+只挡**项目推进块**——已确认事件 / 当天已有日程不受影响（用户讲「别中午排会」时的真实
+意图是「不要硬塞工作」，不是「把那段时间清空」）。
 """
 
 from __future__ import annotations
@@ -275,39 +275,6 @@ def test_confirmed_window_does_not_drop_existing_timetable_event(svc, paced_regi
     assert "电工电子学" in titles
 
 
-def test_anchor_can_still_fall_inside_avoid_window(svc, tmp_path, paced_registry):
-    """弹性锚点（午餐）仍可落在 avoid 窗里——避免窗只挡项目推进块。"""
-    from plobi.agenda import store as _store
-
-    db_path = svc.db_path
-    conn = store.connect(db_path)
-    try:
-        # 用户手动 enable（默认种子 seed-lunch 现在可能已 enabled；保险起见显式 enable）
-        _store.upsert_routine_template(
-            conn,
-            template_id="seed-lunch",
-            title="午餐",
-            start_time="12:00",
-            end_time="12:40",
-            window_start="11:30",
-            window_end="13:30",
-            duration_min=40,
-            enabled=True,
-        )
-        card = checkin.propose_config_change(
-            conn, avoid_windows=[{"start_time": "11:00", "end_time": "13:00"}]
-        )
-        svc.confirm_card(card.id)
-    finally:
-        conn.close()
-
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    items = _items(db_path, plan.id)
-    routine_items = [it for it in items if it.evidence.get("kind") == "routine"]
-    titles = {it.title for it in routine_items}
-    assert "午餐" in titles
-
-
 def test_avoid_window_clipped_to_day_bounds(svc, paced_registry, tmp_path):
     """avoid 窗仅当与日窗相交的部分生效——跨午夜窗只会挡到当天那段。"""
     db_path = svc.db_path
@@ -456,21 +423,21 @@ def test_handle_checkin_respond_rejects_inverted_window():
 
 
 # ---------------------------------------------------------------------------
-# 旧 routine/pace 提案路径未受影响
+# pace 提案路径未受影响
 # ---------------------------------------------------------------------------
 
 
-def test_routine_proposal_still_works_alone(svc):
-    """avoid_windows 不动 routine/pace 的既有行为。"""
+def test_pace_proposal_still_works_alone(svc, paced_registry):
+    """只提 pace 时提案卡只带 pace 那一组问题。"""
     conn = store.connect(svc.db_path)
     try:
         card = checkin.propose_config_change(
-            conn, routine_updates=[{"template_id": "seed-sleep", "start_time": "23:00"}]
+            conn, pace_updates=[{"project_id": "simulation", "weekly_hours": 9}]
         )
     finally:
         conn.close()
     questions = card.questions
-    assert any(q["key"].startswith("proposal:routine:") for q in questions)
+    assert any(q["key"].startswith("proposal:pace:") for q in questions)
     assert not any(q["key"].startswith("proposal:avoid:") for q in questions)
 
 

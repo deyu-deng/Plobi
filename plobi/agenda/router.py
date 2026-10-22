@@ -5,10 +5,8 @@ codes. Mounted at ``/api/agenda`` by ``plobi_cli.web_server`` so the desktop
 board does not depend on an opt-in plugin being enabled (ADR-0008).
 
 WP-DAY-SURFACE 新增 ``GET /api/agenda/day?date=YYYY-MM-DD`` —— 白天看板用的
-「今天」快照：events（含 location/notes/overlaps），**现场**计算出的 anchors
-（含弹性窗落位结果），可用的 plan_items（当日 daily_plan 存在才有），以及
-conflicts。**不**写库、**不**要求先跑过 20:00；与晚间 generate_evening_plan
-共用同一份落位算法。
+「今天」快照：events（含 location/notes/overlaps），可用的 plan_items（当日
+daily_plan 存在才有），以及 conflicts。**不**写库、**不**要求先跑过 20:00。
 """
 
 from __future__ import annotations
@@ -126,7 +124,6 @@ def _render_day(conn, target: str) -> dict:
     return {
         "date": snap["date"],
         "events": rows,
-        "anchors": snap["kept_anchors"],
         "plan_items": snap["plan_items"],
         "conflicts": snap["conflicts"],
         "plan_status": snap["plan_status"],
@@ -138,9 +135,7 @@ def _render_day(conn, target: str) -> dict:
 async def get_day(date: Optional[str] = Query(default=None)):
     """WP-DAY-SURFACE: 白天看板用的「今天」快照。
 
-    ``date`` 缺省 = 今天（本地日期）。锚点**现场**计算（不要求 20:00 跑过
-    plan），即使没有任何 daily_plan 也会返回 anchors；plan_items 仅在当日
-    daily_plan 已生成时才非空。
+    ``date`` 缺省 = 今天（本地日期）。plan_items 仅在当日 daily_plan 已生成时才非空。
     """
     target = (date or _date.today().isoformat()).strip()[:10]
     try:

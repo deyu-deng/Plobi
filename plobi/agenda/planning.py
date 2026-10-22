@@ -8,20 +8,16 @@ Confirmed plans are not overwritten. See Docs/DESIGN-M2-PLANNING.md §1–2.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time as dt_time, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from . import store
-from .store import AgendaValidationError, DailyPlan, Event, PlanItem, RoutineTemplate
+from .store import AgendaValidationError, DailyPlan, Event, PlanItem
 
 EMPTY_PLAN_SUMMARY = "明天没有日程。今夜计划为空，不是没跑。"
 EMPTY_PLAN_PUSH = "明天没有日程，计划为空"
 _MESSAGE_EVIDENCE_KEYS = ("msg_id", "talker", "sent_at", "snippet")
-
-# C4: anchor instances carry this marker in plan_items.evidence — never in the
-# events vocabulary (meeting/ddl/class/task stays frozen).
-ROUTINE_EVIDENCE_KIND = "routine"
 
 # C5 project pace blocks: deterministic rules only, zero LLM.
 PROJECT_BLOCK_EVIDENCE_KIND = "project_block"
@@ -107,215 +103,6 @@ def _conflict_map(events: list[Event]) -> dict[str, list[str]]:
     return mapping
 
 
-# --- routine anchors (C4) -----------------------------------------------------
-
-
-def _hhmm_on(day: str, hhmm: str) -> datetime:
-    hour, minute = (int(part) for part in hhmm.split(":"))
-    return datetime.combine(date.fromisoformat(day), dt_time(hour, minute))
-
-
-def anchor_span(template: RoutineTemplate, day: str) -> tuple[datetime, datetime]:
-    """Template instantiated on ``day``. ``end < start`` ⇒ ends next day."""
-    start = _hhmm_on(day, template.start_time)
-    end = _hhmm_on(day, template.end_time)
-    if end <= start:
-        end += timedelta(days=1)
-    return start, end
-
-
-def enabled_anchors_for_day(conn: Any, day: str) -> list[tuple[RoutineTemplate, datetime, datetime]]:
-    """Enabled templates whose weekday matches ``day``, instantiated in order.
-
-    没有模板就没有锚点——这里只读 ``routine_templates``，绝不凭空生成。
-    """
-    weekday = date.fromisoformat(day).weekday()
-    anchors: list[tuple[RoutineTemplate, datetime, datetime]] = []
-    for template in store.list_routine_templates(conn, enabled_only=True):
-        if template.weekdays and weekday not in template.weekdays:
-            continue
-        start, end = anchor_span(template, day)
-        anchors.append((template, start, end))
-    anchors.sort(key=lambda entry: (entry[1], entry[0].id))
-    return anchors
-
-
-def _is_flexible(template: RoutineTemplate) -> bool:
-    """窗三件套齐 = 弹性锚点；否则钉死（重叠即让位，不滑）。"""
-    return bool(template.window_start and template.window_end and template.duration_min)
-
-
-def _anchor_conflicts_with(start: datetime, end: datetime, events: list[Event]) -> list[str]:
-    return sorted(
-        event.id
-        for event in events
-        if intervals_overlap(start, end, event.start_at, event.end_at)
-    )
-
-
-def _first_blocker_title(
-    start: datetime, end: datetime, events: list[Event], placed: list[tuple]
-) -> str:
-    """首选段撞上的第一个占用者（无 end_at 的 DDL 不占窗，与 C5 一致）。"""
-    for event in sorted(events, key=lambda e: e.start_at):
-        if not event.end_at:
-            continue
-        if intervals_overlap(start, end, event.start_at, event.end_at):
-            return event.title
-    for _template, other_start, other_end in placed:
-        if intervals_overlap(start, end, other_start, other_end):
-            return "已排定的安排"
-    return "日程"
-
-
-def _place_flexible_anchor(
-    conn: Any,
-    day: str,
-    template: RoutineTemplate,
-    events: list[Event],
-    placed: list[tuple[RoutineTemplate, datetime, datetime]],
-) -> Optional[tuple[RoutineTemplate, datetime, datetime]]:
-    """弹性落位：① 首选 → ② 窗内第一段够长的空档 → ③ None（让位）。
-
-    占用集 = 当天 timed events（无 ``end_at`` 的 DDL 不占窗）+ 已落下的锚点
-    （含先落的钉死锚点与前一餐）+ 昨夜锚点跨午夜溢出。窗与时长是人授权的
-    事实：只找空档、绝不编钟点，也不把时长补成 1 小时。
-    """
-    try:
-        duration = timedelta(minutes=int(template.duration_min or 0))
-        win_start = _hhmm_on(day, template.window_start)
-        win_end = _hhmm_on(day, template.window_end)
-    except (TypeError, ValueError):
-        return None  # 坏窗按钉死处理（store 层已拒绝，这里只防御）
-    if duration <= timedelta(0) or win_end <= win_start:
-        return None
-
-    window_from, window_to = _day_window(day)
-    occupied = _occupied_intervals(conn, day, events, placed, window_from, window_to)
-
-    pref_start = _hhmm_on(day, template.start_time)
-    pref_end = _hhmm_on(day, template.end_time)
-    if not any(
-        intervals_overlap(pref_start, pref_end, o_start, o_end)
-        for o_start, o_end in occupied
-    ):
-        return (template, pref_start, pref_end)
-
-    for gap_start, gap_end in _gaps_in_window(occupied, win_start, win_end):
-        if gap_end - gap_start >= duration:
-            return (template, gap_start, gap_start + duration)
-    return None
-
-
-def _gaps_in_window(
-    occupied: list[tuple[datetime, datetime]],
-    window_start: datetime,
-    window_end: datetime,
-) -> list[tuple[datetime, datetime]]:
-    """窗内空档（占用集先裁进窗），按时间先后。"""
-    clipped = sorted(
-        (max(start, window_start), min(end, window_end))
-        for start, end in occupied
-    )
-    gaps: list[tuple[datetime, datetime]] = []
-    cursor = window_start
-    for start, end in clipped:
-        if end <= start:
-            continue
-        if start > cursor:
-            gaps.append((cursor, min(start, window_end)))
-        cursor = max(cursor, end)
-        if cursor >= window_end:
-            break
-    if cursor < window_end:
-        gaps.append((cursor, window_end))
-    return [(start, end) for start, end in gaps if end > start]
-
-
-def _moved_sentence(template: RoutineTemplate, start: datetime, blocker: str) -> str:
-    """「午餐因电工电子学让到 12:25」——只说落下的钟点，不编原因。"""
-    return f"{template.title}因{blocker}让到 {start.strftime('%H:%M')}"
-
-
-def _place_anchors(
-    conn: Any,
-    day: str,
-    anchors: list[tuple[RoutineTemplate, datetime, datetime]],
-    events: list[Event],
-) -> tuple[list[tuple[RoutineTemplate, datetime, datetime]], list[dict], list[str]]:
-    """钉死锚点先行（重叠让位），弹性锚点按序落位（WP-MEALS-FLEX）。
-
-    Returns ``(kept, yielded, moved)``：``kept`` 供 C5 与 plan_items 使用；
-    ``yielded`` 沿用原 dict 形状（conflicts_with 仍是事件 id）；``moved`` 是
-    弹性挪位的一句话事实。后一餐把前一餐已落下的段当占用。
-    """
-    ordered = [a for a in anchors if not _is_flexible(a[0])] + [
-        a for a in anchors if _is_flexible(a[0])
-    ]
-    kept: list[tuple[RoutineTemplate, datetime, datetime]] = []
-    yielded: list[dict] = []
-    moved: list[str] = []
-    for template, start, end in ordered:
-        if not _is_flexible(template):
-            hits = _anchor_conflicts_with(start, end, events)
-            if hits:
-                yielded.append(
-                    {
-                        "template_id": template.id,
-                        "title": template.title,
-                        "start_at": start.isoformat(),
-                        "end_at": end.isoformat(),
-                        "conflicts_with": hits,
-                    }
-                )
-            else:
-                kept.append((template, start, end))
-            continue
-
-        slot = _place_flexible_anchor(conn, day, template, events, kept)
-        if slot is None:
-            yielded.append(
-                {
-                    "template_id": template.id,
-                    "title": template.title,
-                    "start_at": start.isoformat(),
-                    "end_at": end.isoformat(),
-                    "conflicts_with": _anchor_conflicts_with(start, end, events),
-                }
-            )
-            continue
-        kept.append(slot)
-        if (slot[1], slot[2]) != (start, end):
-            moved.append(
-                _moved_sentence(
-                    template,
-                    slot[1],
-                    _first_blocker_title(start, end, events, kept[:-1]),
-                )
-            )
-    return kept, yielded, moved
-
-
-def _anchor_item(
-    template: RoutineTemplate, start: datetime, end: datetime, *, flex: bool = False
-) -> dict:
-    evidence: dict[str, Any] = {
-        "kind": ROUTINE_EVIDENCE_KIND,
-        "template_id": template.id,
-    }
-    if flex:
-        evidence["flex"] = True  # 弹性挪过位：落下的钟点是人授权窗内的事实
-    return {
-        "event_id": f"routine:{template.id}",
-        "title": template.title,
-        "start_at": start.isoformat(),
-        "end_at": end.isoformat(),
-        "kind": "task",  # plan_items.kind stays in the event vocabulary
-        "conflict_with": [],
-        "evidence": evidence,
-    }
-
-
 # --- project pace blocks (C5) --------------------------------------------------
 
 
@@ -339,38 +126,6 @@ def paced_projects() -> list[tuple[Any, float]]:
         out.append((entry, entry.weekly_hours))
     out.sort(key=lambda pair: pair[0].name)
     return out
-
-
-def _occupied_intervals(
-    conn: Any,
-    day: str,
-    events: list[Event],
-    kept_anchors: list[tuple[RoutineTemplate, datetime, datetime]],
-    window_start: datetime,
-    window_end: datetime,
-) -> list[tuple[datetime, datetime]]:
-    """Everything blocking the day: timed events + anchors (incl. spillover).
-
-    无 ``end_at`` 的事件（DDL 点）不占窗；前一天跨午夜锚点溢出的清晨段算占用。
-    """
-    occupied: list[tuple[datetime, datetime]] = []
-    for event in events:
-        if not event.end_at:
-            continue
-        start = max(_as_dt(event.start_at), window_start)
-        end = min(_as_dt(event.end_at), window_end)
-        if end > start:
-            occupied.append((start, end))
-    for _, start, end in kept_anchors:
-        start = max(start, window_start)
-        end = min(end, window_end)
-        if end > start:
-            occupied.append((start, end))
-    prev_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
-    for _, start, end in enabled_anchors_for_day(conn, prev_day):
-        if end > window_start:  # 跨午夜溢出段
-            occupied.append((window_start, min(end, window_end)))
-    return occupied
 
 
 def _ddl_candidates(conn: Any, window_from: datetime, window_to: datetime) -> list[Event]:
@@ -551,7 +306,6 @@ def _l1_blocks(
     conn: Any,
     day: str,
     events: list[Event],
-    kept_anchors: list,
     window_from: datetime,
     window_to: datetime,
     *,
@@ -594,17 +348,13 @@ def _pending_summary(event_count: int, conflict_count: int) -> str:
 def _plan_summary(
     event_count: int,
     pair_count: int,
-    kept_anchors: list,
-    yielded: list[dict],
     blocks: Optional[list[dict]] = None,
     unscheduled: Optional[list[dict]] = None,
-    moved: Optional[list[str]] = None,
     deferred_ddl: Optional[list[dict]] = None,
 ) -> str:
     """One paragraph for L1 / DingTalk (L1 cost discipline unchanged)."""
     blocks = blocks or []
     unscheduled = unscheduled or []
-    moved = moved or []
     deferred_ddl = deferred_ddl or []
     # 是"到上限了"还是"没空窗了"：前者是政策，后者是当天太满，两句话不一样。
     ddl_minutes_used = sum(
@@ -632,20 +382,9 @@ def _plan_summary(
         if part
     )
     if not event_count:
-        # No events — anchors / blocks alone are still a real plan.
-        parts: list[str] = []
-        if kept_anchors:
-            parts.append(f"按作息模板安排了{len(kept_anchors)}项锚点")
-        if block_phrase:
-            parts.append(f"排了{block_phrase}")
-        if parts:
-            text = "明天没有日程，" + "，".join(parts) + "。"
-        else:
-            text = EMPTY_PLAN_SUMMARY
+        text = f"明天没有日程，排了{block_phrase}。" if block_phrase else EMPTY_PLAN_SUMMARY
     else:
         text = _pending_summary(event_count, pair_count)
-        if kept_anchors:
-            text += f"含{len(kept_anchors)}项作息锚点。"
         if block_phrase:
             text += f"另排{block_phrase}。"
     if deferred_ddl:
@@ -656,12 +395,6 @@ def _plan_summary(
             + ("（已到当日 4 小时作业上限）" if capped else "（没有装得下的空窗了）")
             + "。"
         )
-    if yielded:
-        titles = "、".join(str(entry.get("title") or "") for entry in yielded)
-        text += f"{len(yielded)}项锚点（{titles}）因与日程冲突让位。"
-    if moved:
-        # 弹性锚点在窗内挪位是办成了的事，单独一句事实（用落下的钟点）。
-        text += "；".join(moved) + "。"
     if unscheduled:
         misses = "；".join(
             f"{entry['project']}（缺{entry['missing_hours']:g}小时）"
@@ -688,18 +421,10 @@ def generate_evening_plan(
     db_path: Path | str | None = None,
     planner: Optional[Callable[[Any, str], tuple[list[dict], str]]] = None,
 ) -> DailyPlan:
-    """Snapshot tomorrow (or ``for_date``) from events + routine anchors.
+    """Snapshot tomorrow (or ``for_date``) from events.
 
-    Three-bucket model (DESIGN-M2-ROUTINE-ANCHORS-proposal §2): event items
-    first, then user-authored routine anchors (C4). A pinned anchor (no
-    window) overlapping any event yields — it is not written and is counted
-    in ``conflict_count``. A flexible anchor (WP-MEALS-FLEX: window +
-    duration, human-authored) first tries its preferred slot, else slides to
-    the first gap in its window that fits ``duration_min``; only when the
-    whole window is too busy does it yield and get counted.
-    ``event_count == 0`` with no surviving anchors → ``status=empty``; anchors
-    alone make a real (``pending``) plan — templates are user-authorised fact,
-    not invention. A ``confirmed`` row is returned unchanged.
+    Event items first, then the L1-authored blocks. ``event_count == 0`` with
+    no blocks → ``status=empty``. A ``confirmed`` row is returned unchanged.
     """
     day = _as_for_date(for_date)
     window_from, window_to = _day_window(day)
@@ -713,19 +438,16 @@ def generate_evening_plan(
         # `ddl:evt_ac46920dc0c1` 连排五天 10-12…10-16）。只在这一侧关掉已完成的；
         # 读侧（日 surface / 看板）照旧看得见历史，默认值没动。
         # 排程造的那一行（每格计划行一条）不进这份占用表——`list_events` 默认就把它挡了
-        # （见那里的 ``include_plan_artifacts``）。不挡的话，昨晚给"午餐"补出来的真事件
-        # 今晚会把午餐锚点按占用挤掉。
+        # （见那里的 ``include_plan_artifacts``）。
         events = store.list_events(conn, start_from=window_from, start_to=window_to,
                                    include_completed=False)
-        anchors = enabled_anchors_for_day(conn, day)
-        kept_anchors, yielded, moved = _place_anchors(conn, day, anchors, events)
         # 裁定 149：项目块 / 作业块**由 L1 排**，代码不再均分。
         # 排不出来就是没有块——不悄悄换回一版均分（那正是这条要退役的形状）。
         blocks, unscheduled, deferred_ddl, plan_note = _l1_blocks(
-            conn, day, events, kept_anchors, window_from, window_to, planner=planner
+            conn, day, events, window_from, window_to, planner=planner
         )
 
-        if not events and not kept_anchors and not blocks:
+        if not events and not blocks:
             plan = store.upsert_daily_plan(
                 conn,
                 for_date=day,
@@ -749,28 +471,22 @@ def generate_evening_plan(
 
         conflicts = _conflict_map(events)
         pair_count = sum(len(ids) for ids in conflicts.values()) // 2
-        # C4: a yielded anchor is a real conflict the user should see in the
-        # header — the anchor gave way, so it cannot speak for itself.
-        conflict_count = pair_count + len(yielded)
+        conflict_count = pair_count
         seq = store.next_confirm_seq(conn)
         seq_at = store.now_iso()
-        summary = _plan_summary(
-            len(events), pair_count, kept_anchors, yielded, blocks, unscheduled, moved,
-            deferred_ddl,
-        )
+        summary = _plan_summary(len(events), pair_count, blocks, unscheduled, deferred_ddl)
         # 裁定 149④：L1 那句「为什么这么排」要上得了面（接裁定 145 的留痕）；
         # 没排成时同一格照实说没排成与原因——**不拿一句空话冒充排过了**。
         if plan_note:
             summary = f"{summary.rstrip('。')}。{plan_note}"
         evidence: Optional[dict] = None
-        if kept_anchors or yielded or blocks or unscheduled:
+        if blocks or unscheduled:
             ddl_items = [
                 item for item in blocks if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
             ]
             evidence = {
                 "kind": "evening_plan",
                 "planner_note": plan_note,
-                "anchor_count": len(kept_anchors),
                 "block_count": len(blocks),
                 # 治理线的判据要读的就是这两位：作业块的**时长合计**与项目块的数量，
                 # 分开记，别让人从 summary 的中文里再解析一遍。
@@ -790,10 +506,6 @@ def generate_evening_plan(
             }
             if deferred_ddl:
                 evidence["ddl_deferred"] = len(deferred_ddl)
-            if yielded:
-                evidence["yielded_anchors"] = yielded
-            if moved:
-                evidence["moved_anchors"] = moved
             if unscheduled:
                 evidence["unscheduled"] = unscheduled
         plan = store.upsert_daily_plan(
@@ -824,12 +536,6 @@ def generate_evening_plan(
                     "evidence": evidence,
                 }
             )
-        for template, start, end in kept_anchors:
-            flex = _is_flexible(template) and (start, end) != (
-                _hhmm_on(day, template.start_time),
-                _hhmm_on(day, template.end_time),
-            )
-            items.append(_anchor_item(template, start, end, flex=flex))
         items.extend(blocks)
         items.sort(key=lambda item: str(item["start_at"]))
         for index, item in enumerate(items):
@@ -878,54 +584,6 @@ def l1_plan_view(
         conn.close()
 
 
-# --- WP-DAY-SURFACE: 白天「今天」也要看到饭/觉（与晚间计划同一管线） ---
-
-
-def place_anchors_for_day(
-    conn: Any,
-    day: str,
-    events: list[Event],
-) -> tuple[list[tuple[RoutineTemplate, datetime, datetime]], list[dict], list[str]]:
-    """``_place_anchors`` 的公开封装。晚间 / 日间同一份算法。
-
-    Returns ``(kept, yielded, moved)``，与 :func:`_place_anchors` 一致；
-    ``kept`` 已按 ``start_at`` 升序（来自 ``enabled_anchors_for_day``）。
-    """
-    anchors = enabled_anchors_for_day(conn, day)
-    return _place_anchors(conn, day, anchors, events)
-
-
-def kept_anchors_as_dicts(
-    kept: list[tuple[RoutineTemplate, datetime, datetime]],
-) -> list[dict]:
-    """把 ``kept`` 落成 day 接口的契约字典（不带 conflict_with）。
-
-    ``flex`` 表示这一锚点是**窗内挪过的**（首选段空 → 不打 flex）。
-    """
-    rows: list[dict] = []
-    for template, start, end in kept:
-        flex = _is_flexible(template) and (start, end) != (
-            _hhmm_on_day(start.date().isoformat(), template.start_time),
-            _hhmm_on_day(start.date().isoformat(), template.end_time),
-        )
-        rows.append(
-            {
-                "id": f"routine:{template.id}",
-                "title": template.title,
-                "start_at": start.isoformat(),
-                "end_at": end.isoformat(),
-                "template_id": template.id,
-                "flex": flex,
-            }
-        )
-    return rows
-
-
-def _hhmm_on_day(day: str, hhmm: str) -> datetime:
-    """``day`` 上的 HH:MM 实例——公开 anchor_span 子集。"""
-    return _hhmm_on(day, hhmm)
-
-
 # --- WP-DAY-SURFACE: 重叠判定 + plan_items 直读 ------------------------------
 
 
@@ -970,50 +628,6 @@ def plan_items_for_day(
     return plan, store.list_plan_items(conn, plan.id)
 
 
-def _dedupe_routine_plan_items(
-    anchors: list[dict],
-    plan_items: list[PlanItem],
-) -> list[PlanItem]:
-    """同一餐不出现两次（WP-MEAL-DEDUPE）。
-
-    策略（选更少代码的）：anchors 保留现场落位（实时，反映今天 events 后的
-    挪位结果），plan_items 里凡是 ``evidence.kind == "routine"`` 且与某
-    anchor **同 template_id** 或 **时间重叠** → 丢掉。project_block 项
-    一律保留。无 daily_plan 时上层 plan_items 已是 ``[]``，本函数无活干。
-    """
-    if not plan_items:
-        return plan_items
-    anchor_template_ids = {a.get("template_id") for a in anchors if a.get("template_id")}
-
-    def _intervals_overlap(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
-        # 半开 [start, end) 区间相交——与 intervals_overlap 一致。
-        from datetime import datetime
-
-        a_s, a_e = datetime.fromisoformat(a_start), datetime.fromisoformat(a_end)
-        b_s, b_e = datetime.fromisoformat(b_start), datetime.fromisoformat(b_end)
-        return a_s < b_e and b_s < a_e
-
-    def _is_meal_anchor(plan_item: PlanItem) -> bool:
-        evidence = plan_item.evidence or {}
-        if evidence.get("kind") != "routine":
-            return False
-        template_id = evidence.get("template_id")
-        # 1) 同 template_id → 重复
-        if template_id in anchor_template_ids:
-            return True
-        # 2) 同名 + 时间重叠 → 也算重复（用户编辑了作息 + 旧 plan 残留）
-        for anchor in anchors:
-            if anchor.get("title") != plan_item.title:
-                continue
-            if _intervals_overlap(
-                anchor["start_at"], anchor["end_at"], plan_item.start_at, plan_item.end_at
-            ):
-                return True
-        return False
-
-    return [item for item in plan_items if not _is_meal_anchor(item)]
-
-
 def avoid_windows_for_day(conn: Any, day: str) -> list[dict]:
     """当天 confirmed 的 avoid 窗（WP-MEAL-DEDUPE 顺手）。pending 不出现。"""
     try:
@@ -1045,24 +659,16 @@ def day_surface(
     day: str,
     events: list[Event],
 ) -> dict:
-    """白天看板用的「今天」快照：events（含 location/overlaps）+ anchors + 可选 plan_items + conflicts。
+    """白天看板用的「今天」快照：events（含 location/overlaps）+ 可选 plan_items + conflicts。
 
-    与晚间 20:00 的 generate_evening_plan 不同：**不**写库、不要求已有计划；
-    anchors 每次按当天 events 现场计算，DDL 点事件不占窗。
-
-    WP-MEAL-DEDUPE：plan_items 已去掉与 anchor 同 template_id / 同名时间
-    重叠的 routine 项——同一餐只在 anchors 出现一次（现场落位为真源）。新
-    增 ``avoid_windows`` 字段带当天 confirmed avoid 窗（缺省 ``[]``）。
+    与晚间 20:00 的 generate_evening_plan 不同：**不**写库、不要求已有计划。
+    ``avoid_windows`` 带当天 confirmed avoid 窗（缺省 ``[]``）。
     """
-    kept, _yielded, _moved = place_anchors_for_day(conn, day, events)
     plan, items = plan_items_for_day(conn, day)
     overlaps, conflicts = compute_event_overlaps(events)
-    anchors_rows = kept_anchors_as_dicts(kept)
-    items_dedup = _dedupe_routine_plan_items(anchors_rows, items)
     return {
         "date": day,
-        "kept_anchors": anchors_rows,
-        "plan_items": [_plan_item_dict(item) for item in items_dedup],
+        "plan_items": [_plan_item_dict(item) for item in items],
         "overlaps": overlaps,
         "conflicts": conflicts,
         "plan_status": plan.status if plan is not None else None,

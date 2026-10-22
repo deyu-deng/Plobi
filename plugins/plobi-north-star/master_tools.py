@@ -425,39 +425,17 @@ CHECKIN_RESPOND_SCHEMA = {
     "name": "plobi_checkin_respond",
     "description": (
         "配置提案落地入口（R3：确认 N 才生效，本工具绝不直接改配置）。"
-        "用户明确说要改作息模板时间、改项目每周节奏、或「某段时间不要排会/"
-        "项目块」（avoid 窗）时调用——把指令变成一张配置提案卡。routine_updates"
-        " 改作息模板 start/end_time；pace_updates 改 l2_project 的每周节奏；"
+        "用户明确说要改项目每周节奏、或「某段时间不要排会/"
+        "项目块」（avoid 窗）时调用——把指令变成一张配置提案卡。"
+        "pace_updates 改 l2_project 的每周节奏；"
         "avoid_windows 列窗 11:00–13:00 / 18:00–20:00 同日窗，确认后规划器把"
-        "该窗当占用（**仅项目推进块**——已确认课表 / 作息锚点 / 弹性餐不受影响）。"
+        "该窗当占用（**仅项目推进块**——已确认课表 / 已有日程不受影响）。"
         "用户只是闲聊、或没说清改什么 → 不要调用本工具，先用追问澄清。"
         "自由文本原话用 free_text 存档。"
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "routine_updates": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "template_id": {
-                            "type": "string",
-                            "description": "作息模板 id（如 seed-sleep）",
-                        },
-                        "start_time": {
-                            "type": "string",
-                            "description": "HH:MM；省略表示不变",
-                        },
-                        "end_time": {
-                            "type": "string",
-                            "description": "HH:MM；省略表示不变",
-                        },
-                    },
-                    "required": ["template_id"],
-                },
-                "description": "作息模板修改列表；无则不传",
-            },
             "pace_updates": {
                 "type": "array",
                 "items": {
@@ -495,7 +473,7 @@ CHECKIN_RESPOND_SCHEMA = {
                 "description": (
                     "avoid 窗修改列表；每条【start_time, end_time】都是同日窗。"
                     "确认后规划器把该窗当占用、**仅阻止项目推进块落入**——已确认"
-                    "事件 / 作息锚点 / 弹性餐不受影响（用户的课程行不会因此被删）。"
+                    "事件不受影响（用户的课程行不会因此被删）。"
                     "无则不传。"
                 ),
             },
@@ -522,19 +500,16 @@ def handle_checkin_respond(args: dict, **kwargs) -> str:
 
     from plobi.agenda import checkin, store
 
-    routine_updates = args.get("routine_updates")
     pace_updates = args.get("pace_updates")
     avoid_windows = args.get("avoid_windows")
     free_text = str(args.get("free_text") or "").strip()
-    if routine_updates is not None and not isinstance(routine_updates, list):
-        return tool_error("routine_updates must be a list", ok=False)
     if pace_updates is not None and not isinstance(pace_updates, list):
         return tool_error("pace_updates must be a list", ok=False)
     if avoid_windows is not None and not isinstance(avoid_windows, list):
         return tool_error("avoid_windows must be a list", ok=False)
-    if not routine_updates and not pace_updates and not avoid_windows and not free_text:
+    if not pace_updates and not avoid_windows and not free_text:
         return tool_error(
-            "nothing to do: pass routine_updates / pace_updates / avoid_windows / free_text",
+            "nothing to do: pass pace_updates / avoid_windows / free_text",
             ok=False,
         )
 
@@ -548,13 +523,12 @@ def handle_checkin_respond(args: dict, **kwargs) -> str:
             response["archived"] = False
             response["archive_error"] = str(exc)
 
-    if routine_updates or pace_updates or avoid_windows:
+    if pace_updates or avoid_windows:
         try:
             conn = store.connect(None)
             try:
                 card = checkin.propose_config_change(
                     conn,
-                    routine_updates=routine_updates,
                     pace_updates=pace_updates,
                     avoid_windows=avoid_windows,
                 )

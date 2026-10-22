@@ -47,8 +47,8 @@ function clock(iso: null | string): string {
  * 这一格带出来的（WP-PLAN-COMPLETION-ACK 判据③）——没有它，界面上那句"做完了"无处可认，
  * 作业就会每晚被重排一次。取不到就说"这一行不能认"，**不猜**。
  *
- * 非空**不等于真有一条事件**（WP-PLAN-ACK-NO-FAKE-CHECK）：排程自造的 `l1:block-3`、
- * `routine:seed-lunch` 也是非空字符串，点下去后端直接 404。所以这一格只管"有没有写"，
+ * 非空**不等于真有一条事件**（WP-PLAN-ACK-NO-FAKE-CHECK）：排程自造的 `l1:block-3`
+ * 也是非空字符串，点下去后端直接 404。所以这一格只管"有没有写"，
  * "真不真"由 `$agendaEventIds` 判——两件事别揉进一个函数。
  */
 function eventIdOf(item: object): null | string {

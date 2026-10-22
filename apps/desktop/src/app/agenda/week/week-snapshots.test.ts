@@ -27,7 +27,6 @@ function conflict(left: string, right: string): AgendaConflict {
 
 function day(overrides: Partial<AgendaDay> = {}): AgendaDay {
   return {
-    anchors: [],
     date: '2026-10-10',
     events: [],
     plan_items: [],

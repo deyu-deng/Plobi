@@ -716,39 +716,7 @@ describe('buildToolView plobi_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 2
     expect(view.title).toBe('查看中')
   })
 
-  it('appends anchors (meals / sleep) after the events and does NOT inflate the count (WP-SHELL-CALM, 裁定 34.2)', () => {
-    setRuntimeI18nLocale('zh')
-    const view = buildToolView(
-      part({
-        args: { intent: 'query_agenda', user_text: '今天有什么' },
-        result: {
-          ok: true,
-          intent: 'query_agenda',
-          range: 'today',
-          from: '2026-09-15',
-          to: '2026-09-15',
-          events: [
-            { id: 'e1', title: '高数课', start_at: '2026-09-15T08:00:00', end_at: '2026-09-15T09:40:00', kind: 'class', status: 'confirmed', source: 'timetable' },
-            { id: 'e2', title: '线代', start_at: '2026-09-15T10:00:00', end_at: null, kind: 'class', status: 'confirmed', source: 'timetable' }
-          ],
-          pending: [],
-          anchors: [
-            { id: 'lunch', title: '午饭', start_at: '2026-09-15T11:30:00', end_at: '2026-09-15T12:30:00' },
-            { id: 'nap', title: '午休', start_at: '2026-09-15T12:30:00', end_at: '2026-09-15T13:30:00' }
-          ]
-        },
-        toolName: 'plobi_secretary_ask'
-      }),
-      ''
-    )
-
-    // 标题 N = events.length — 不算饭。
-    expect(view.title).toBe('今天的安排 · 2 条')
-    // 副标题：前 3 条事件 → · → 前 2 条作息（午饭/午休），作息里的 end 也只写区间，不写「未写结束」。
-    expect(view.subtitle).toBe('08:00–09:40 高数课 / 10:00 线代 · 11:30–12:30 午饭 / 12:30–13:30 午休')
-  })
-
-  it('keeps the old card when anchors is absent (no regression on existing tests)', () => {
+  it('shows 没有安排 when the day has no events', () => {
     setRuntimeI18nLocale('zh')
     const view = buildToolView(
       part({
@@ -759,7 +727,6 @@ describe('buildToolView plobi_secretary_ask query_agenda (WP-SEC-VOCAB, 裁定 2
       ''
     )
 
-    // No anchors — old wording stays; no anchor tail.
     expect(view.title).toBe('今天的安排 · 0 条')
     expect(view.subtitle).toBe('没有安排')
   })
@@ -1342,7 +1309,7 @@ describe('buildToolView plobi_checkin_respond proposal card (WP-STUDIO, 裁定 3
 
   it('ok=false does not invent a confirm number', () => {
     setRuntimeI18nLocale('zh')
-    const view = checkin({ ok: false, error: 'nothing to do: pass routine_updates / free_text' })
+    const view = checkin({ ok: false, error: 'nothing to do: pass pace_updates / avoid_windows / free_text' })
 
     expect(view.status).toBe('error')
     expect(view.title).not.toContain('确认')

@@ -944,18 +944,7 @@ function queryHeadline(
   return { title: translateNow('assistant.tool.query.today', count) }
 }
 
-/** 前 3 条 `HH:MM 标题`（+K），尾部带 `· 待确认 M`；两列都空 → 没有安排。
- *  后端给 `anchors` 时追加作息前 2 条；`anchors` 缺席 → 旧卡（WP-SHELL-CALM，裁定 34.2）。 */
-const ANCHOR_PREVIEW_ROWS = 2
-
-function agendaAnchorLine(row: Record<string, unknown>): string {
-  const start = agendaClock(firstStringField(row, ['start_at']) || '')
-  const end = agendaClock(firstStringField(row, ['end_at']) || '')
-  const when = !start ? '' : end ? `${start}–${end}` : start
-
-  return [when, agendaRowTitle(row)].filter(Boolean).join(' ')
-}
-
+/** 前 3 条 `HH:MM 标题`（+K），尾部带 `· 待确认 M`；两列都空 → 没有安排。 */
 function querySubtitleLine(result: Record<string, unknown>, args: Record<string, unknown>): string {
   if (result.ok === false) {
     return ''
@@ -976,15 +965,7 @@ function querySubtitleLine(result: Record<string, unknown>, args: Record<string,
       ? translateNow('assistant.tool.query.pendingTail', pending.length)
       : ''
 
-  // 裁定 34.2: anchors = the day's routine anchors (meals, sleep...). The
-  // card surfaces them after the events so a user asking 「今天有什么」 can
-  // also see when lunch is. Anchors are NOT part of N — they don't inflate
-  // the event count in the headline (裁定 28.4 keeps N = events.length).
-  const anchors = agendaRows(result.anchors).slice(0, ANCHOR_PREVIEW_ROWS)
-  const anchorLine =
-    anchors.length > 0 ? anchors.map(agendaAnchorLine).filter(Boolean).join(' / ') : ''
-
-  return [body, anchorLine, pendingTail].filter(Boolean).join(' · ')
+  return [body, pendingTail].filter(Boolean).join(' · ')
 }
 
 /**

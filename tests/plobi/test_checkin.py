@@ -339,41 +339,6 @@ def test_free_text_archived_to_mind_daily_digest():
 # ── C6b：配置提案确认才落地 ──────────────────────────────────────────────────
 
 
-def test_proposal_applies_only_after_confirm(env):
-    db = env
-    conn = store.connect(db)
-    try:
-        card = checkin.propose_config_change(
-            conn,
-            routine_updates=[
-                {"template_id": "seed-sleep", "start_time": "23:00", "end_time": "07:00"}
-            ],
-            now=NOW,
-        )
-    finally:
-        conn.close()
-
-    # 未确认前不生效（R3：改配置须人批）
-    conn = store.connect(db)
-    try:
-        assert store.get_routine_template(conn, "seed-sleep").start_time == "23:30"
-    finally:
-        conn.close()
-
-    from plobi.agenda.service import AgendaService
-
-    service = AgendaService(db_path=db)
-    service.resolve_by_seq(card.confirm_seq, accept=True)
-
-    conn = store.connect(db)
-    try:
-        updated = store.get_routine_template(conn, "seed-sleep")
-        assert updated.start_time == "23:00"
-        assert updated.end_time == "07:00"
-    finally:
-        conn.close()
-
-
 def test_proposal_dismiss_leaves_config_untouched(env):
     db = env
     conn = store.connect(db)
@@ -392,13 +357,13 @@ def test_proposal_dismiss_leaves_config_untouched(env):
     assert registry.get("simulation").weekly_hours == 6.0  # 未动
 
 
-def test_proposal_rejects_unknown_template(env):
+def test_proposal_rejects_unknown_project(env):
     conn = store.connect(env)
     try:
         with pytest.raises(store.AgendaValidationError):
             checkin.propose_config_change(
                 conn,
-                routine_updates=[{"template_id": "nope", "start_time": "08:00", "end_time": "09:00"}],
+                pace_updates=[{"project_id": "nope", "weekly_hours": 8}],
                 now=NOW,
             )
     finally:
@@ -428,32 +393,26 @@ MT = _load_master_tools()
 def test_checkin_respond_creates_proposal_card_only(env):
     db = env
     out = json.loads(MT.handle_checkin_respond({
-        "routine_updates": [{"template_id": "seed-sleep", "start_time": "23:00"}]
+        "pace_updates": [{"project_id": "simulation", "weekly_hours": 9}]
     }))
     assert out["ok"] is True, out
     assert out["confirm_seq"]
     assert "确认" in out["note"]
 
     # R3：提案未确认前配置不动
-    conn = store.connect(db)
-    try:
-        assert store.get_routine_template(conn, "seed-sleep").start_time == "23:30"
-    finally:
-        conn.close()
+    registry = AgentRegistry.load(env.parent / "projects.yaml")
+    assert registry.get("simulation").weekly_hours == 6.0
 
     from plobi.agenda.service import AgendaService
 
     AgendaService(db_path=db).resolve_by_seq(out["confirm_seq"], accept=True)
-    conn = store.connect(db)
-    try:
-        assert store.get_routine_template(conn, "seed-sleep").start_time == "23:00"
-    finally:
-        conn.close()
+    registry = AgentRegistry.load(env.parent / "projects.yaml")
+    assert registry.get("simulation").weekly_hours == 9.0
 
 
 def test_checkin_respond_rejects_bad_input(env):
     assert json.loads(MT.handle_checkin_respond({}))["ok"] is False
-    assert json.loads(MT.handle_checkin_respond({"routine_updates": "oops"}))["ok"] is False
+    assert json.loads(MT.handle_checkin_respond({"pace_updates": "oops"}))["ok"] is False
     out = json.loads(MT.handle_checkin_respond(
         {"pace_updates": [{"project_id": "nope", "weekly_hours": 5}]}
     ))

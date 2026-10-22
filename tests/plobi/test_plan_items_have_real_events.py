@@ -86,7 +86,7 @@ def _invented_rows():
     """今天真在库里的那个形状：三种排程自造身份 + 一条指已被删掉的 ddl。"""
     return [
         _row("第5次课后作业", f"{DAY}T09:00:00", "l1:block-1"),
-        _row("午餐", f"{DAY}T12:00:00", "routine:seed-lunch"),
+        _row("午餐", f"{DAY}T12:00:00", "l1:block-2"),
         _row("电工电子学 项目推进", f"{DAY}T14:00:00", "project:ee"),
         _row("第6次课后作业", f"{DAY}T23:55:00", "ddl:evt_ac46920dc0c1", kind="ddl"),
     ]
@@ -102,7 +102,7 @@ def test_a_the_door_leaves_no_plan_row_pointing_at_nothing(conn):
     """
     rows = _invented_rows()
     assert {r["event_id"] for r in rows} == {
-        "l1:block-1", "routine:seed-lunch", "project:ee", "ddl:evt_ac46920dc0c1",
+        "l1:block-1", "l1:block-2", "project:ee", "ddl:evt_ac46920dc0c1",
     }
     assert _orphans(conn) == 0, "起点库里本来就没有计划行，下面的归零才有意义"
     before = _events(conn)
@@ -248,16 +248,16 @@ def test_f_a_rewrite_of_an_already_landed_plan_duplicates_nothing(conn):
     assert _orphans(conn) == 0
 
 
-def test_h_two_days_of_the_same_routine_anchor_get_two_rows(conn):
+def test_h_two_days_of_the_same_title_get_two_rows(conn):
     """同一晚重排=同一行（test_d），**不同天必须两行**。
 
-    这条是写第一版时被顶出来的形状：作息锚点的材料身份是 ``seed-sleep`` 这种与日子无关的类，
-    拿它去复用事件就会让 10-19 的"睡觉"和 10-20 的那一条撞成同一行——勾一次，两天一起消失。
+    这条是写第一版时被顶出来的形状：自造身份若不带日子（同一句 ``l1:block-1`` 两天复用），
+    10-19 的"睡觉"和 10-20 的那一条就会撞成同一行——勾一次，两天一起消失。
     身份种子里那一天是必填项（:func:`plobi.agenda.store._plan_event_seed`），这一条钉它真的在。
     """
     other_day = "2026-10-20"
-    row_a = _row("睡眠", f"{DAY}T23:30:00", "routine:seed-sleep")
-    row_b = _row("睡眠", f"{other_day}T23:30:00", "routine:seed-sleep")
+    row_a = _row("睡眠", f"{DAY}T23:30:00", "l1:block-1")
+    row_b = _row("睡眠", f"{other_day}T23:30:00", "l1:block-1")
 
     _plan_a, written_a = _write(conn, [row_a])
     _plan_b, written_b = _write(conn, [row_b], day=other_day)

@@ -2246,8 +2246,7 @@ PROJECT_SKIP_STATUS_MARKERS: tuple[str, ...] = (
 # WP-L1-AGENDA-MUTATE: conversational write intents. Reading (refresh /
 # briefing) may hit chatlog; writing MUST NOT touch chatlog and must work
 # even when collection is dead.
-MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching", "move_block",
-                  "add_life_block")
+MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching", "move_block")
 # WP-SECRETARY-MOUTH: cancel_matching is the only bulk-delete the L1 is
 # allowed to issue ("这期完了 / 这门课后面都不用去了"). Each source is gated
 # individually — only sources the secretary has a write path for can be
@@ -2687,64 +2686,6 @@ def _run_move_block(
     return payload
 
 
-def _run_add_life_block(
-    user_text: str,
-    *,
-    db_path,
-    title: str,
-    start_at: str,
-    end_at: str,
-) -> dict:
-    """用户说「以后傍晚要锻炼半小时」⇒ 建一条作息（R-106 判据①的另一半）。
-
-    只记他说的：名字与两个钟点缺一律问回去，不替他编一条生活类别出来（裁定 148 明写了
-    「要装进来的是哪些生活类别」由用户定）。撞了已有作息／事件 ⇒ 一句人话 + 零写入。
-    """
-    from plobi.agenda import plan_edits, store
-
-    day = str(start_at)[:10]
-    conn = None
-    try:
-        conn = store.connect(db_path)
-        result = plan_edits.add_life_block(
-            conn, day, title=title, start_at=start_at, end_at=end_at,
-            by=PLAN_BLOCK_EDITOR, reason=user_text,
-        )
-    except Exception as exc:
-        logger.warning("plobi: add_life_block failed for %s: %s", title, exc)
-        return _mutate_error(
-            f"这条生活块我没加上（{type(exc).__name__}: {str(exc)[:120]}）。什么都没写。",
-            action="add_life_block", user_text=user_text,
-        )
-    finally:
-        if conn is not None:
-            conn.close()
-
-    if not result.get("ok"):
-        return _mutate_error(
-            str(result.get("reason") or "这条生活块加不进去"),
-            action="add_life_block", for_date=day, user_text=user_text,
-        )
-
-    changed = result["changed"]
-    payload: dict = {
-        "ok": True,
-        "intent": "mutate_agenda",
-        "action": "add_life_block",
-        "for_date": day,
-        "template_id": result.get("template_id"),
-        "changed": changed,
-        "life_block": True,
-        "user_text": user_text,
-        "say": (
-            f"记下了：以后每天 {changed['to']} 是『{changed['title']}』（{PLAN_BLOCK_EDITOR} 落的笔：{user_text}）。"
-            + ("今天计划里已经排上这一行。" if result.get("synced_plan_row")
-               else "明天那份计划排的时候它会自己进材料——它是边界，L1 不许把它挤掉。")
-        ),
-    }
-    return payload
-
-
 def run_mutate_agenda(
     user_text: str,
     *,
@@ -2830,17 +2771,6 @@ def run_mutate_agenda(
             action=action,
             user_text=user_text,
         )
-    if action == "add_life_block" and not (title or "").strip():
-        return _mutate_error(
-            "add_life_block 需要 title（这条生活块叫什么，例如「傍晚锻炼」）",
-            action=action, user_text=user_text,
-        )
-    if action == "add_life_block" and (not start_at or not end_at):
-        # 148 明说过比例与类别由用户定：这里只记他说的，不替他编一条作息出来。
-        return _mutate_error(
-            "add_life_block 需要 start_at 与 end_at（每天从几点到几点；缺了问用户，我不替他编时长）",
-            action=action, user_text=user_text,
-        )
 
     try:
         from plobi.agenda.service import (
@@ -2874,17 +2804,6 @@ def run_mutate_agenda(
                 db_path=_secretary_db_path(pipeline),
                 title=title,
                 event_id=event_id,
-                start_at=start_at,
-                end_at=end_at,
-            )
-
-        # R-106 / WP-PLAN-LIFE-BUDGET：用户自己加一条生活块（裁定 148「生活项要能自己加」）。
-        # 写的是 `routine_templates`（真源），不是往明天的计划里塞一行。
-        if action == "add_life_block":
-            return _run_add_life_block(
-                user_text,
-                db_path=_secretary_db_path(pipeline),
-                title=title,
                 start_at=start_at,
                 end_at=end_at,
             )
@@ -3055,13 +2974,9 @@ def run_query_agenda(
     missing parameters → ``ok=false`` and zero side effects.
 
     WP-QUERY-DAY: for ``range in (today, tomorrow, date)`` the response also
-    carries ``anchors`` (as-kept routine anchors for that single day, same
-    pure function the right rail uses) and ``plan_items`` (that day's daily
-    plan, ``[]`` if no plan exists yet). The lunch / sleep line the right
-    rail draws and the words the L1 now says come from the same source so
-    they cannot drift apart. ``week`` is a 7-day window and
-    ``pending`` is unbounded — neither is a single-day axis, so neither gets
-    anchors or plan_items.
+    carries ``plan_items`` (that day's daily plan, ``[]`` if no plan exists
+    yet). ``week`` is a 7-day window and ``pending`` is unbounded — neither
+    is a single-day axis, so neither gets plan_items.
     """
     from datetime import date as _date, datetime as _datetime, timedelta
 
@@ -3125,16 +3040,14 @@ def run_query_agenda(
 
     # WP-QUERY-DAY: single-day axis = today / tomorrow / date。复用 right rail
     # 同一份 ``day_surface``，不让 L1 的嘴和前端的时间轴各说各话。week 不是
-    # 「一天」，pending 没有「那一天」——不塞 anchors / plan_items。空库 =
-    # 空列表（不要 None，前端可以 .length 一下）。
-    anchors: list | None = None
+    # 「一天」，pending 没有「那一天」——不塞 plan_items。空库 = 空列表
+    # （不要 None，前端可以 .length 一下）。
     plan_items: list | None = None
     if start is not None and end is not None and start == end and window in (
         "today",
         "tomorrow",
         "date",
     ):
-        anchors = []
         plan_items = []
         try:
             conn = _store.connect(service.db_path)
@@ -3142,12 +3055,10 @@ def run_query_agenda(
                 surface = _planning.day_surface(conn, start.isoformat(), events)
             finally:
                 conn.close()
-            anchors = surface.get("kept_anchors", [])
             plan_items = surface.get("plan_items", [])
         except Exception:
             # 计划服务挂了不能让 query 整体跪——日间快照是增强字段，零值
-            # 落地；events / pending 仍然完整。L1 仍能答「今天有什么」，
-            # 只是没念出作息（也可能是后端2的服务未跑）。
+            # 落地；events / pending 仍然完整。L1 仍能答「今天有什么」。
             logger.warning("plobi: query_agenda day_surface failed for %s", start)
 
     payload = {
@@ -3160,8 +3071,6 @@ def run_query_agenda(
         "events": [_event_payload(event) for event in events],
         "pending": [_event_payload(event) for event in pending],
     }
-    if anchors is not None:
-        payload["anchors"] = anchors
     if plan_items is not None:
         payload["plan_items"] = plan_items
     return payload
@@ -3454,8 +3363,9 @@ def _secretary_ask(
                 "error": (
                     "这句「排一下明天」我不替你重排一遍——那条老路径会先把今天已排好的块删掉再重插，"
                     "而排程本体已经退役（裁定 149），重插出来是 0 块：越说越丢。"
-                    "要排就直接说一声「排一下明天」：那一发由我自己写（材料、边界闸、落库都在那一处，"
-                    "过不了闸它一个字都不写）。只想看明天怎么安排，直接问（只读，不写库）。"
+                    "要排就直接说一声「排一下明天」（action=plan_tomorrow）：那一发由我自己写"
+                    "（材料、边界闸、落库都在那一处，过不了闸它一个字都不写）。"
+                    "只想看明天怎么安排，直接问（只读，不写库）。"
                 ),
             }
         return run_plan_day(
