@@ -365,7 +365,20 @@ export interface Translations {
       syncNow: string,
       cadenceCustom: string,
       cadencePresets: Record<string, string>,
-      unknownSource: string
+      unknownSource: string,
+      /**
+       * 「原因」那一句 —— **键就是后端的 `status_code`**（`sources_api.status_of`）。
+       *
+       * 用户 10-22 拍的是：行上只给人看一句这种人话，执行方逐字那句原话进抽屉。
+       * 查不到这一码时界面落下面那个 `reasonUnknown`，**不许把码打上屏**（裁定 45.4）。
+       * 同义的几码（`ready` / `ok` / `per_round`）共用同一句；没列进来的码由界面落到
+       * `reasonUnknown` 那一句，所以第三方采集器新增一个状态词，屏上也不会变成空白。
+       */
+      reasons: Record<string, string>,
+      reasonUnknown: string,
+      drawerReason: string,
+      /** 抽屉里那一行「上一轮自己怎么说」——**逐字**，不转述（P6）。 */
+      drawerRunNote: string
     }
     network: {
       addExit: string
@@ -1219,18 +1232,6 @@ export interface Translations {
     pendingCount: (count: number) => string
     today: string
     tomorrow: string
-    /**
-     * 裁定 140: the next-day plan, shown on the desktop the morning after it was generated
-     * (通知器降为可选件 ⇒「推」的目的地改成「打开就看得见」). `empty` is what a day with an
-     * answered-but-empty plan says; a day that was never answered says nothing at all.
-     */
-    plan: {
-      empty: string
-      pending: string
-      statusUnknown: string
-      title: (label: string) => string
-      unackable: string
-    }
     /**
      * WP-AGENDA-VIEW slice 1: the Monday-anchored week row. `days` is Monday-first and
      * exactly seven entries — the same D2 the phone side implements (`service/WeekView.ets`).

@@ -80,7 +80,18 @@ vi.mock('@/i18n', () => ({
           syncNow: 'Sync now',
           cadenceCustom: 'Custom',
           cadencePresets: { per_round: 'Follow every round', hourly: 'Hourly', four_hours: 'Every 4 hours', six_hours: 'Every 6 hours', daily: 'Daily at 03:00', weekly: 'Weekly on Monday at 03:00' },
-          unknownSource: 'Source with no recorded name'
+          unknownSource: 'Source with no recorded name',
+          reasons: {
+            captcha_required: 'Manual verification required',
+            internal: 'The local collector is not ready',
+            live: 'Last collection succeeded',
+            never_ran: 'No collection recorded yet',
+            off: 'Turned off manually',
+            unknown_state: 'This collection result is not supported yet',
+          },
+          reasonUnknown: 'This collection result is not supported yet',
+          drawerReason: 'Reason',
+          drawerRunNote: 'Last run message'
         }
       }
     }
@@ -172,7 +183,14 @@ describe('what the row says', () => {
     getSources.mockResolvedValue(payload([
       row({ enabled: false, source: 'dingtalk', status: 'disconnected' }),
       row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' }),
-      row({ enabled: true, has_builder: true, source: 'zju', status: 'error', status_detail: '要人工验证码：这一轮按口径停手' })
+      row({
+        enabled: true,
+        has_builder: true,
+        source: 'zju',
+        status: 'error',
+        status_code: 'captcha_required',
+        status_detail: '要人工验证码：这一轮按口径停手',
+      })
     ]))
 
     render(<SourcesSettings />)
@@ -180,10 +198,14 @@ describe('what the row says', () => {
     await waitFor(() => expect(screen.getByText('Not connected')).toBeTruthy())
     expect(screen.getByText('Connected')).toBeTruthy()
     expect(screen.getByText('Connection problem')).toBeTruthy()
-    // 出错那一行多一句**逐字来自执行方**的话；正常态什么都不多写。
-    expect(screen.getByText('要人工验证码：这一轮按口径停手')).toBeTruthy()
+    // 出错那一行多的是**目录里那句人话**；执行方逐字原话要点开抽屉才出现（用户 10-22 拍的这一格）。
+    expect(screen.getByText('Manual verification required')).toBeTruthy()
+    expect(screen.queryByText('要人工验证码：这一轮按口径停手')).toBeNull()
+    // 正常态什么都不多写，未连接也不多说一句。
     expect(screen.queryByText('Never ran')).toBeNull()
     expect(screen.queryByText('Last run')).toBeNull()
+    expect(screen.queryByText('Turned off manually')).toBeNull()
+    expect(screen.queryByText('Last collection succeeded')).toBeNull()
   })
 
   it('does not draw an off switch for a switch it could not read', async () => {
@@ -200,7 +222,7 @@ describe('what the row says', () => {
   it('opens the drawer on the row, with the readings that used to be invisible', async () => {
     // 旧屏问不到"这条到底采到东西没有"：行上那个数读的是日程库，池里 371 条显示成 0。
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected' })
+      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' })
     ]))
 
     render(<SourcesSettings />)
@@ -213,6 +235,35 @@ describe('what the row says', () => {
     expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('2026-10-22T08:15:14+08:00')
     expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('371')
     expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('class 65')
+    // §1.3：抽屉里那一格是「状态**与原因**」。行上不多写的这句，点开得看得见。
+    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('Reason')
+    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('Last collection succeeded')
+  })
+
+  it('keeps the executor\'s own sentence one click away, not on the row', async () => {
+    // 出错那一行给人话（目录里查的那句），逐字原话收进抽屉——两个都要，但位置不同。
+    getSources.mockResolvedValue(payload([
+      row({
+        enabled: true,
+        source: 'dingtalk',
+        status: 'error',
+        status_code: 'internal',
+        status_detail: '注册表说这条在采，但没有任何一方构造得出它的采集器',
+      })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByText('DingTalk')).toBeTruthy())
+
+    expect(screen.getByText('The local collector is not ready')).toBeTruthy()
+    expect(screen.queryByText(/没有任何一方构造得出/)).toBeNull()
+
+    fireEvent.click(screen.getByText('DingTalk'))
+
+    await waitFor(() => expect(screen.getByTestId('source-drawer-dingtalk')).toBeTruthy())
+    expect(screen.getByTestId('source-run-note-dingtalk').textContent)
+      .toContain('注册表说这条在采，但没有任何一方构造得出它的采集器')
+    expect(screen.getByTestId('source-drawer-dingtalk').textContent).toContain('The local collector is not ready')
   })
 
   it('sends the click to the switch only when the source is configured', async () => {
