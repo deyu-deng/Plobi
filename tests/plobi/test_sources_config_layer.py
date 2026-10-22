@@ -248,11 +248,13 @@ class TestOneReadEntry:
                       "touched_after_last_write", "collecting", "note"):
             assert field in row["zju"], f"既有消费方读的那一格 {field} 没了"
 
-    def test_a_non_collector_source_is_left_alone(self, client):
-        """`manual` 那一档允许按名字分支（存储层自己的词表），别把它硬塞进分类。
+    def test_a_non_collector_source_does_not_take_a_row(self, client):
+        """`manual` 那一档**不进这一屏**——它是存储层的来源档位，不是一条信源。
 
-        它**只在库里真有行时**才出现在读数里（不是注册表派生的那一档）——所以这里
-        先种一行进去，钉的是"它在、但没有分类也没有开关"这一条关系。
+        10-22 改判。旧形状是"键给全、值全 `None`"，理由是"界面别靠 `key in row` 判存在"；
+        现场把它打回来了：屏上角标写「信源 6」而只画得出 5 行，因为 `manual` 没有分类、
+        画不出行，却被 `sources.length` 数了进去。**一个数不上号的角标比一个隐式契约贵**，
+        所以判据回到最简：这一屏列的就是注册表里有的那些条。
         """
         from plobi.agenda import store
 
@@ -266,11 +268,13 @@ class TestOneReadEntry:
         connection.commit()
         connection.close()
 
-        row = {r["source"]: r for r in client.get("/sources").json()["data"]["sources"]}
+        payload = client.get("/sources").json()["data"]
+        listed = [r["source"] for r in payload["sources"]]
 
-        assert "manual" in row
-        assert row["manual"]["category"] is None
-        assert row["manual"]["enabled"] is None
+        assert "manual" not in listed, "库里有的来源档位被当成一条信源列出来了"
+        assert sorted(listed) == sorted(registry.source_ids()), "角标数与行数必须同源，不许各数一份"
+        # 那一档在库里**仍然存在**，只是不归这一屏说：日程库那一侧的读数没被动过
+        assert payload["sources"], "剔掉它不许顺手把整屏剔空"
 
     def test_every_category_is_listed_even_when_empty(self, client):
         listed = {c["id"] for c in client.get("/sources").json()["data"]["categories"]}

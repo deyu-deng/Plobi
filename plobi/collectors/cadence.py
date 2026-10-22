@@ -153,7 +153,10 @@ def reading(source_id: str, *, now: Optional[datetime] = None,
 
     cadence, origin = resolve_cadence(source_id)
     row: dict[str, Any] = {"cadence": cadence, "cadence_origin": origin,
-                           "last_run_at": _last_run_at(ledger, source_id), "next_run_at": ""}
+                           "last_run_at": _last_run_at(ledger, source_id), "next_run_at": "",
+                           # 上一轮那句话（出错时屏上要说清是谁的锅）。没有就是空串，不编。
+                           "last_detail": str(((ledger or {}).get(source_id) or {}).get("last_detail") or "")
+                           if isinstance(ledger, dict) else ""}
 
     if ledger is None and origin != ORIGIN_PER_ROUND:
         row.update(due=True, state="ledger_unreadable",
@@ -218,18 +221,40 @@ def partition(source_ids: Iterable[str], *, now: Optional[datetime] = None
     return tuple(due), skipped
 
 
-def mark_run(source_id: str, *, state: str = "", now: Optional[datetime] = None) -> Optional[Path]:
+def last_run(source_id: str) -> dict[str, str]:
+    """上一轮**碰过它没有、结果是什么、那句话怎么说**。设置页那一屏的"出错原因"读这一格。
+
+    单独一只口是为了让"读台账"这件事只有一个地方做：`reading()` 判的是到没到点，
+    把上一轮的结果塞进去会让那一只函数同时回答两个问题（而这两个问题的失效方式不同——
+    台账读不到时"到点"该回 `True` 照打，"上一轮结果"该回空而不是回"没打过"）。
+    """
+    ledger = _read_ledger() or {}
+    row = ledger.get(source_id) or {}
+
+    return {"state": str(row.get("last_state") or ""),
+            "detail": str(row.get("last_detail") or ""),
+            "at": str(row.get("last_run_at") or "")}
+
+
+def mark_run(source_id: str, *, state: str = "", detail: str = "",
+             now: Optional[datetime] = None) -> Optional[Path]:
     """记下「这一轮真的打过它了」——**打过**，不管打成分工还是失败。
 
     为什么失败也记：频率管的是"多久碰它一次"，不判"碰成功没"。失败还按频率等下一次，
     才有"学校挂了不会变成每 15 分钟重试一次"这一条；碰没碰成在每一轮自己的读数里。
     台账写不进（共享根坏了）返回 ``None`` —— 出声由调用方的那一行读数负责，这里不抛。
+
+    ``detail`` 是 10-22 加的一格：设置页那一屏要把"出错"说成一句人话（「凭据不对」/
+    「要人工验证码」/「页面改了」），而那句话只有跑的那一轮知道。它**逐字存**、不加工，
+    与 `sweep` 那一轮回给日志的是同一句。
     """
     reference = _now_iso(now)
     ledger = _read_ledger()
     if ledger is None:
         ledger = {}
     ledger[source_id] = {"last_run_at": reference, "last_state": state}
+    if detail:
+        ledger[source_id]["last_detail"] = detail[:400]
     try:
         path = ledger_path()
         path.parent.mkdir(parents=True, exist_ok=True)

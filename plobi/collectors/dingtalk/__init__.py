@@ -22,6 +22,8 @@ SPEC = SourceSpec(
     },
     # 对话流（Stream 长连接），与微信同族 ⇒ 「消息」。
     category="message",
+    site="https://www.dingtalk.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
+
     # 名字已经在词表里、但没有任何东西在采它——登记归口与假数据占位是两件事。
     collecting=False,
 )

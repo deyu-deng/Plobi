@@ -183,9 +183,42 @@ def set_enabled(source_id: str, enabled: bool) -> bool:
 
 
 def setup_params(source_id: str) -> dict[str, Any]:
-    """首次配置产出的非密钥参数（路径 / 地址 / 账号名）。没有就是空。"""
+    """首次配置产出的**非密钥**参数（路径 / 地址 / 账号名）。没有就是空。
+
+    密钥那一档**天生不在这里**：它压根不写进 `sources.yaml`（见 :func:`set_setup_params`
+    那一段），所以这一只读口不需要"记得过滤"——它读的那个文件里就没有。
+    """
     row = entry(source_id) or {}
     return {k: v for k, v in row.items() if k != "enabled"}
+
+
+def secret_keys(source_id: str) -> tuple[str, ...]:
+    """这一条声明成 `kind="secret"` 的那几格（值走 `.env`，不回显）。"""
+    from plobi.collectors import registry
+
+    return tuple(f.key for f in registry.spec(source_id).setup_fields if f.kind == "secret")
+
+
+def secret_env_name(source_id: str, key: str) -> str:
+    """`.env` 里那一格叫什么。**一个函数**，不各处拼：拼错一次就是"存进去了但没人读得到"。"""
+    return f"PLOBI_SOURCE_{source_id}_{key}".upper()
+
+
+def secret_configured(source_id: str) -> dict[str, bool]:
+    """每一格密钥**设过没有**——只回布尔。payload 里出现的就是这一格，值永不出门。"""
+    from plobi_cli.config import load_env
+
+    env = load_env()
+
+    return {key: bool(str(env.get(secret_env_name(source_id, key)) or "").strip())
+            for key in secret_keys(source_id)}
+
+
+def set_secret(source_id: str, key: str, value: str) -> None:
+    """写一格密钥进 `.env`（唯一那面密钥的墙）。空串按"清掉"处理。"""
+    from plobi_cli.config import save_env_value_secure
+
+    save_env_value_secure(secret_env_name(source_id, key), value or "")
 
 
 def declared_setup_keys(source_id: str) -> tuple[str, ...]:
@@ -210,14 +243,18 @@ def set_setup_params(source_id: str, params: dict[str, Any]) -> dict[str, Any]:
     自己的读数（`sweep` 那一轮会报它自己的状态），这一层只管存住用户填的东西。
     """
     declared = declared_setup_keys(source_id)
+    secrets = set(secret_keys(source_id))
     # **密钥那一道先跑**，不是为了排版：用户把 token 填进表单时，"这个文件不收密钥"
     # 才是他需要听见的那句，"这个键没声明" 只会让他以为是自己拼错了字段名。
     # 而且这一道是更强的信号——它该赢。
-    secret = [key for key in params if _is_secret_like(key)]
-    if secret:
+    # 10-22 改过一次形状：拦的从"长得像密钥"改成"**没声明成 `kind='secret'` 却长得像密钥**"。
+    # 声明过的走 `.env` 那一面墙（:func:`set_secret`），这个文件仍然一个字都不收——
+    # 拦的对象没变，变的是"声明过的密钥有一条正路可走"，不用再拿"填 .env"当唯一出口。
+    unclaimed = [key for key in params if _is_secret_like(key) and key not in secrets]
+    if unclaimed:
         raise SourceConfigError(
-            f"{source_id}.{secret[0]} 看着像密钥：这个文件不落密钥（`.env` 才是唯一面）。"
-            "请把它写进 .env，配置层只留路径 / 地址 / 账号名。"
+            f"{source_id}.{unclaimed[0]} 看着像密钥，但这条信源没把它声明成 `kind='secret'`："
+            "这个文件不落密钥（`.env` 才是唯一面）。要么在 `SPEC` 里声明它，要么别收这一格。"
         )
     unknown = [key for key in params if key not in declared]
     if unknown:
@@ -225,7 +262,17 @@ def set_setup_params(source_id: str, params: dict[str, Any]) -> dict[str, Any]:
             f"{source_id} 没声明这几格：{'、'.join(unknown)}。"
             f"它声明的是：{'、'.join(declared) or '（空——首次配置不需要填任何非密钥的东西）'}"
         )
-    missing = [key for key in declared if registry_required(source_id, key) and key not in params]
+
+    for key in [k for k in params if k in secrets]:
+        value = str(params.pop(key) or "").strip()
+        if value:
+            set_secret(source_id, key, value)
+        # 空串**不覆盖**已经设过的那一格：界面上那个掩码框是"留空＝不改"，
+        # 不是"留空＝清空"——清空要有显式的动作，否则一次没填就把凭据弄没了。
+
+    missing = [key for key in declared
+               if registry_required(source_id, key) and not str(params.get(key) or "").strip()
+               and not (key in secrets and secret_configured(source_id).get(key))]
     if missing:
         raise SourceConfigError(f"{source_id} 首次配置还缺：{'、'.join(missing)}")
 

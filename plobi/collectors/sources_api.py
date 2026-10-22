@@ -23,12 +23,15 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from plobi.collectors import cadence, registry, sources_config
+from plobi.collectors import cadence, icons, registry, sources_config
 from plobi.collectors.liveness import read_source_liveness
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+#: 数"这一条在池里几条"时最多扫多少行。到顶就说明这一族多到不需要精确数（界面上写"300+"）。
+_POOL_SCAN_LIMIT = 5000
 
 
 class EnabledRequest(BaseModel):
@@ -54,6 +57,75 @@ def _require_registered(source_id: str) -> None:
         raise HTTPException(status_code=404, detail=f"{source_id} 不是一条信源") from None
 
 
+#: 三态的闭集（用户 10-22：「一个信源就一个开关按钮，就三种形态：未连接和连接，然后出错了会有一个报错」）。
+#:
+#: **为什么折态这一件事长在后端**：前端那张 7 条的胶囊表（`sources/verbs.ts`）是"读数 + 判据"
+#: 混在一处算的，于是同一件事在屏上有七种话、在日志里有另一种，而"到底连没连上"这句话
+#: 谁都能改一遍。这一层已经有全部输入（开关、声明、台账里上一轮的状态与那句话、活性、池里的条数），
+#: 算完给出去，前端就只画。判据：**前端不再出现任何状态词表**。
+STATUS_CONNECTED = "connected"
+STATUS_DISCONNECTED = "disconnected"
+STATUS_ERROR = "error"
+
+#: 上一轮那些状态词 → 三态。**没列进来的词一律落 `disconnected` 而不是 `connected`**：
+#: 一个我们没见过的状态词被画成绿点，就是下一颗假绿（裁 191 那颗"没测到就别说成测到"的同一把尺）。
+_ERROR_STATES = frozenset({
+    "auth_failed", "captcha_required", "network_unreachable", "empty_term", "parse_failed",
+    "ics_parse_failed", "collect_failed", "failed", "error",
+})
+_CONNECTED_STATES = frozenset({"live", "ready", "ok", "not_due", "per_round", "throttled"})
+
+
+def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
+              liveness_state: str, has_builder: bool) -> tuple[str, str]:
+    """(状态, 那一格的原因码)。原因码是给界面查语言目录用的，**不是给人看的句子**（裁定 45.4）。
+
+    次序是判据的一部分，所以写在一个函数里而不是散成 `if`：
+    开关没点时"上一轮失败了"不是新闻（本来就没在跑），先报它等于把"我自己关的"画成"坏了"。
+    """
+    if enabled is None:
+        return STATUS_DISCONNECTED, "config_unreadable"       # 读不到 ≠ 没点：界面不许把它画成关着
+    if not enabled:
+        return STATUS_DISCONNECTED, "off"
+    if not has_builder:
+        return STATUS_ERROR, "internal"                        # 注册表说在采却没人构造得出：我们的缺陷
+    if needs_setup:
+        return STATUS_DISCONNECTED, "needs_setup"
+    if last_state in _ERROR_STATES:
+        return STATUS_ERROR, last_state
+    if liveness_state == "no_store":
+        return STATUS_ERROR, "internal"
+    if liveness_state == "live" or last_state in _CONNECTED_STATES:
+        return STATUS_CONNECTED, "live" if liveness_state == "live" else last_state
+    return STATUS_DISCONNECTED, "never_ran"
+
+
+def _pool_counts(source_id: str) -> tuple[int, dict[str, int]]:
+    """这一条在**信息池**里几条、按 `kind` 怎么分。
+
+    为什么必须新读这一格：屏上那个 `events` 计数读的是日程库（`liveness.py` 那句
+    `FROM events GROUP BY source`），而按裁定 193 采集器的东西只进池 ⇒ 教务那 371 条
+    在这一屏上永远是 0，"这条源到底采到东西没有"这句话在屏上问不到（10-22 现场）。
+    两个数都留着：`events` 是"日程库里有多少条"，`pool_count` 是"池里有多少条"——
+    它们是两句不同的话，合成一个数就是下一次那种误判。
+
+    一次按 `source` 问，不按 kind 循环问：那一族索引是 `(source, kind)`，按 source 走一次
+    就够，循环问等于把这一屏的开销乘以种类数。
+    """
+    from plobi.pool import query as pool_query
+
+    try:
+        rows = pool_query(source=source_id, limit=_POOL_SCAN_LIMIT)
+    except Exception as exc:  # noqa: BLE001 - 池读不到就说读不到，-1 是"读不到"而不是"零条"
+        logger.debug("sources: pool unreadable for %s: %s", source_id, exc)
+        return -1, {}
+    by_kind: dict[str, int] = {}
+    for row in rows:
+        by_kind[str(row.get("kind") or "")] = by_kind.get(str(row.get("kind") or ""), 0) + 1
+
+    return sum(by_kind.values()), by_kind
+
+
 def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) -> dict[str, Any]:
     """给活性那一行补上注册表与用户配置层的那几格。
 
@@ -67,17 +139,30 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
     source_id = row["source"]
     if source_id not in registry.source_ids():
         # `manual` 那一档：不是平台，是**来源档位**（`registry.py` 头部那条注记）。
-        # 键**照样给全**，值全 `None` ——面上不该靠 `key in row` 判"这是不是一条
-        # 真信源"，那是要每一处渲染都记得写的隐式契约。给全 + 全 None 才是"没有值"，
-        # 也正好是这一档该说的话：它登记在库里，但不归任何分类。
-        return {**row, "category": None, "enabled": None, "enabled_origin": None,
-                "has_builder": None, "requires_manual_setup": None, "setup": None,
-                "setup_fields": [], "cadence": None, "cadence_origin": None,
-                "next_run_at": None, "due": None, "cadence_state": None, "cadence_note": None}
+        # 10-22 改判：**整行不给**，而不是"键给全、值全 None"。上一版那个形状在屏上留下
+        # 了一个真实的坏读数——角标写「信源 6」而屏上只有 5 行，因为 `manual` 没有分类、
+        # 画不出行，却被 `sources.length` 数了进去。一条画不出来的行不该占一个计数。
+        # 判据也回到最简单的那句：这一屏列的是**注册表里有的那些条**。
+        return None
 
     spec = registry.spec(source_id)
     enabled = None if switches is None else switches.get(source_id)
     origin = None if enabled is None else ("config" if sources_config.entry(source_id) else "spec")
+    last = cadence.last_run(source_id)
+    fields = [{"key": f.key, "label": f.label, "kind": f.kind, "required": f.required, "help": f.help}
+              for f in spec.setup_fields]
+    # 密钥那一档：值**永不出门**，只回"设过没有"。界面上那格因此是写入口，不是读数口。
+    configured = sources_config.secret_configured(source_id)
+    params = sources_config.setup_params(source_id)
+    # 「还缺必填吗」两种都要问：普通格看盘上那份参数，密钥格看 `.env` 里设过没有——
+    # 只看前者会让一条凭据早就配好的源永远显示"去设置"，那是一颗按了回到原地的按钮。
+    needs_setup = any(f["required"] and not (
+        configured.get(f["key"]) if f["kind"] == "secret" else str(params.get(f["key"]) or "").strip())
+        for f in fields)
+    pool_count, pool_kinds = _pool_counts(source_id)
+    status, status_code = status_of(enabled=enabled, needs_setup=needs_setup,
+                                    last_state=last["state"], liveness_state=row.get("state") or "",
+                                    has_builder=spec.builder is not None)
 
     return {
         **row,
@@ -91,14 +176,26 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         **cadence.cadence_env(source_id),
         "has_builder": spec.builder is not None,
         "requires_manual_setup": spec.capabilities.get("requires_manual_setup"),
-        "setup": None if enabled is None else sources_config.setup_params(source_id),
+        "setup": None if enabled is None else {k: v for k, v in params.items() if k not in configured},
+        "secrets": configured,
+        # 三态那一格（用户 10-22：「一个信源就一个开关按钮，就三种形态」）。**由这一层算**，
+        # 前端不再留第二套词表；`status_detail` 只在出错态给，且逐字来自上一轮（不转述）。
+        "status": status,
+        "status_code": status_code,
+        "status_detail": last["detail"] if status == STATUS_ERROR else "",
+        "last_run_at": last["at"],
+        "last_state": last["state"],
+        # 池里的条数：这一屏原来只有日程库那个 `events` 计数，于是按裁 193 只进池的教务
+        # 在这里永远是 0——"这条源采到东西没有"问不到。两个数各说各的话，不合成一个。
+        "pool_count": pool_count,
+        "pool_kinds": pool_kinds,
+        # 图标：从这条**自己声明的那个网站**抓一次（没有声明就空串，界面退品牌表再退首字母）。
+        "icon": icons.icon_data_url(source_id, spec.site) if spec.site else "",
+        "site": spec.site,
         # 声明照原样给，**label 不翻译**：界面先查语言目录的
         # `settings.sources.fields.<key>`，查不到才回这一格。这样第三方包零改动就能
         # 出现在界面上（只是没翻译），而我们自己那四条四语言齐全。
-        "setup_fields": [
-            {"key": f.key, "label": f.label, "kind": f.kind, "required": f.required, "help": f.help}
-            for f in spec.setup_fields
-        ],
+        "setup_fields": fields,
     }
 
 
@@ -117,12 +214,16 @@ async def collect_sources_route():
         logger.warning("collect/sources: config layer unreadable: %s", exc)
 
     data = read_source_liveness(None, expected_sources=expected, switches=switches)
+    # `_enrich` 对不在注册表里的那一行回 `None`（`manual` 那一档）——这里**真的把它剔掉**，
+    # 而不是留着让界面自己 filter：屏上那个「信源 6」的角标数的是这个数组的长度，
+    # 留一行画不出来的东西进去，就是一个数不上号的角标（10-22 现场：角标 6、行 5）。
+    rows = [item for item in (_enrich(row, switches) for row in data["sources"]) if item is not None]
 
     return {
         "ok": True,
         "data": {
             **data,
-            "sources": [_enrich(row, switches) for row in data["sources"]],
+            "sources": rows,
             "categories": [
                 {"id": category, "sources": members}
                 for category, members in registry.sources_by_category().items()
