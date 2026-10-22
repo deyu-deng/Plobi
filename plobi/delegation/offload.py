@@ -140,6 +140,15 @@ class OffloadResult:
     #: 这个 id 是从哪个键读到的（``result.session_id`` / ``sessionId`` / ``conversation_id`` / ``""``）。
     #: 厂商换信封时这一格当场说出"我们读了什么"，而不是让前端猜。
     external_session_source: str = ""
+    #: 这一趟的回执身份（`WP-OFFLOAD-REPLY`）：通道派活时现造，回执文件以它命名。
+    job: str = ""
+    #: 那家软件自己写回来的那段话。空串是读数（它没回），不是失败。
+    reply: str = ""
+    #: `filed` / `raw` / `empty` / `not_filed` / `unreadable`——回执怎么来的，四句分开说。
+    reply_status: str = ""
+    #: 该向谁交代（名册那一行的名字，空 = L1 那一轮）。**不是收件人**：
+    #: 回执只进这一本账，不替它给谁的会话发消息（用户 10-22：外包要有区分的工具）。
+    reply_to: str = ""
 
     @property
     def ok(self) -> bool:
@@ -163,16 +172,26 @@ def summarize_round(results: Iterable[OffloadResult]) -> str:
     for index, item in enumerate(results, start=1):
         flag = item.permission_flag or "（它没有放开档可传）"
         artifacts = "、".join(f"{p}#{_sha12(p)}" for p in item.artifact_paths) or "没有落盘产出"
+        #: 回执那一格（`WP-OFFLOAD-REPLY`）：它自己写回来的话优先于我们替它总结的那句；
+        #: 没回也要出声——「它没回」和「它回了但我们没读到」是两句不同的话。
+        if item.reply:
+            receipt = f"｜它自己回：{item.reply[:160]}"
+        elif item.reply_status == "not_filed":
+            receipt = "｜它没回话（只带回我们的读数）"
+        elif item.reply_status:
+            receipt = f"｜回执读不到：{item.reply_status}"
+        else:
+            receipt = ""
         if item.ok:
             cost = _money(item)
             lines.append(
                 f"{index}. 交给 {item.agent}｜目录 {item.cwd}｜权限档 {flag}｜"
-                f"耗时 {item.duration_seconds:.0f}s｜产出 {artifacts}｜{cost}"
+                f"耗时 {item.duration_seconds:.0f}s｜产出 {artifacts}｜{cost}{receipt}"
             )
         else:
             lines.append(
                 f"{index}. 交给 {item.agent}（没成）｜目录 {item.cwd}｜权限档 {flag}｜"
-                f"{failure_note(item.failure)}"
+                f"{failure_note(item.failure)}{receipt}"
             )
     return "\n".join(lines) if lines else "这一轮没有外包：全程是我自己干的。"
 
@@ -248,6 +267,13 @@ class RoundLedger:
             # `agent` 早就有了（契约第 3 条据此拒绝再登一个 kind 字段）。
             "external_session": result.external_session,
             "external_session_source": result.external_session_source,
+            # 回执那一族（`WP-OFFLOAD-REPLY`）：这一趟的身份、它自己写回来的那段话、
+            # 以及那个读数怎么来的。`reply_to` 是"该向谁交代"，不是收件人——
+            # 回执不替它发消息，只进这一本账（用户 10-22：外包要有区分的工具，别长在 say 上）。
+            "job": result.job,
+            "reply": result.reply,
+            "reply_status": result.reply_status,
+            "reply_to": result.reply_to,
         }
         target = self.path
         target.parent.mkdir(parents=True, exist_ok=True)
