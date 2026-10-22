@@ -650,3 +650,141 @@ def test_reachability_probe_uses_a_real_socket():
     finally:
         listener.close()
 
+
+
+# ── 回执口（WP-OFFLOAD-REPLY）：派活时给身份，它写文件，我们收 ──────────────
+
+def _capture_run(seen, workdir):
+    def fake_run(argv, **kwargs):
+        seen["argv"] = list(argv)
+        seen["env"] = kwargs["env"]
+        return _Completed(stdout=json.dumps({"result": "ok", "usage": {}}))
+    return fake_run
+
+
+@pytest.fixture
+def replies(tmp_path, monkeypatch):
+    """把回执目录钉在 tmp——不许有测试往真家写文件。"""
+    root = tmp_path / "replies"
+    monkeypatch.setenv(offload.REPLY_DIR_ENV, str(root))
+    return root
+
+
+def test_the_reply_handle_is_a_file_named_by_this_runs_job(workdir, replies, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    offload.run_task("把课表采完", cwd=workdir, agent="qoder", reply_to="Sindri")
+
+    task = seen["argv"][seen["argv"].index("-p") + 1]
+    target = seen["env"][offload.REPLY_FILE_ENV]
+    assert "【回执】" in task
+    assert target.endswith(".json") and replies.name in target
+    # 任务书里那条路径与环境变量里那个必须是同一个值，否则它写到别处＝永远收不到
+    assert target.replace("\\", "/") in task.replace("\\", "/")
+
+
+def test_reply_written_by_the_external_agent_is_collected_once(workdir, replies, monkeypatch):
+    """它写回来的东西要收进结果，并且**读一次就收走**（下一轮不许重复计数）。"""
+    def fake_run(argv, **kwargs):
+        path = Path(kwargs["env"][offload.REPLY_FILE_ENV])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"text": "暗号是：紫罗兰三号。", "status": "ok"}', encoding="utf-8")
+        return _Completed(stdout=json.dumps({"result": "done", "usage": {}}))
+
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
+    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+
+    result = offload.run_task("读 note.txt 回暗号", cwd=workdir, agent="qoder", reply_to="Sindri")
+
+    assert result.reply == "暗号是：紫罗兰三号。"
+    assert result.reply_status == "filed" and result.job and result.reply_to == "Sindri"
+    assert list(replies.glob("*.json")) == [], "收走＝回执文件不再留在盘上"
+
+
+def test_a_run_that_filed_nothing_says_not_filed_not_a_failure(workdir, replies, monkeypatch):
+    """它没回话是一种**读数**，不许和"我们读坏了"混成一句，也不许因此把成功的活判失败。"""
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run({}, workdir))
+
+    result = offload.run_task("干活", cwd=workdir, agent="qoder")
+
+    assert result.reply == "" and result.reply_status == "not_filed"
+    assert result.reply_to == "", "没人指名该向谁交代就留空，不硬编一个"
+
+
+def test_a_read_only_qoder_run_is_not_judged_by_missing_artifacts(workdir, replies, monkeypatch):
+    """「exit 0 但没落盘」那条实测判据不许套到没测过的第三家身上。
+
+    10-22 真跑踩过：Qoder 读了文件、答对了内容，只因为没写文件就被判成"没干活"。
+    """
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run({}, workdir))
+
+    result = offload.run_task("只读，别改文件", cwd=workdir, agent="qoder")
+    assert result.ok is True, "只读活没有产出是正常形状"
+
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    measured = offload.run_task("干活", cwd=workdir)
+    assert measured.ok is False and "no artifact" in measured.error, "CodeBuddy 那条实测判据还在"
+
+
+# ── 第三家进来之后：差异在表里，不在 if 梯子里 ─────────────────────────────
+
+def test_each_family_keeps_its_own_mode_spellings():
+    """CodeBuddy 的档名拼到 Qoder 上必须是**错**，不是"差不多能用"。
+
+    这张表存在的理由就是这个：三家共用一条 `if` 梯子时，最可能出的事故是
+    拿那家的档名去校这家，然后静默落到默认档＝一次没人察觉的全放开。
+    """
+    assert offload.permission_flags("codebuddy") == ("-y", "--permission-mode=bypassPermissions")
+    assert offload.permission_flags("agy") == ("--dangerously-skip-permissions",)
+    assert offload.permission_flags("qoder") == ("--permission-mode", "default")
+
+    with pytest.raises(ValueError):
+        offload.permission_flags("qoder", "bypassPermissions")   # 那是 CodeBuddy 的拼写
+    with pytest.raises(ValueError):
+        offload.permission_flags("codebuddy", "bypass_permissions")  # 那是 Qoder 的拼写
+
+
+def test_qoder_default_is_the_conservative_mode(monkeypatch):
+    """未实测过它的放开档行为 ⇒ 默认给最保守那一档，不拿"应该有"当"有"。"""
+    monkeypatch.delenv(offload.QODER_PERMISSION_MODE_ENV, raising=False)
+    assert offload.DEFAULT_QODER_PERMISSION_MODE == "default"
+    monkeypatch.setenv(offload.QODER_PERMISSION_MODE_ENV, "bypass_permissions")
+    assert offload.permission_flags("qoder") == ("--permission-mode", "bypass_permissions")
+
+
+def test_qoder_child_does_not_inherit_the_sdk_entrypoint(workdir, monkeypatch):
+    """Qoder Desktop 里派活时，那三个 SDK 变量必须洗掉，否则 CLI 直接拒普通调用。"""
+    seen = {}
+    for key in offload.QODER_SDK_ENV:
+        monkeypatch.setenv(key, "set-by-the-desktop")
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    offload.run_task("看一眼 README 回一句", cwd=workdir, agent="qoder")
+
+    assert [key for key in offload.QODER_SDK_ENV if key in seen["env"]] == []
+    assert seen["argv"][0] == "/usr/bin/qodercli"
+    assert "--permission-mode" in seen["argv"] and "default" in seen["argv"]
+
+
+def test_other_families_still_inherit_the_environment(workdir, monkeypatch):
+    """洗变量只针对 Qoder——CodeBuddy 那一族的现有行为不许被这张表顺手改掉。"""
+    seen = {}
+    monkeypatch.setenv(offload.QODER_SDK_ENV[0], "keep-me")
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="codebuddy": "/usr/bin/codebuddy")
+    monkeypatch.setattr(offload.subprocess, "run", _capture_run(seen, workdir))
+
+    offload.run_task("干活", cwd=workdir)
+
+    assert seen["env"].get(offload.QODER_SDK_ENV[0]) == "keep-me"
+
+
+def test_unknown_family_is_not_silently_treated_as_codebuddy():
+    """表里没有的一家 ⇒ 认不出，不回落。回落＝用错旗标去起一个不存在的命令。"""
+    assert offload.agent_spec("not-a-real-agent") is None
+    assert offload.resolve_command("not-a-real-agent") == ""
+    assert offload.permission_flags("not-a-real-agent") == ()

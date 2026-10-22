@@ -24,8 +24,11 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
+import secrets
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -62,6 +65,23 @@ PROXY_ENV = "PLOBI_OFFLOAD_PROXY"
 
 AGENT_CODEBUDDY = "codebuddy"
 AGENT_AGY = "agy"
+AGENT_QODER = "qoder"
+
+#: Qoder CLI 那一家的结构性事实。命令名是 `qodercli`（`qoder` 那个垫片会先经过
+#: `~/.qoder/entry/qoder-dispatcher.ps1` 再回到 `qodercli`，两条都认，但表里只写一个真名）。
+QODER_COMMAND_ENV = "PLOBI_OFFLOAD_QODER_COMMAND"
+QODER_PERMISSION_MODE_ENV = "PLOBI_OFFLOAD_QODER_PERMISSION_MODE"
+QODER_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_QODER_EXTRA_ARGS"
+#: 它自己 `--help` 列的档位。**拼写与 CodeBuddy 不是一套**（`bypass_permissions` vs
+#: `bypassPermissions`），所以每家各有一份名单，谁也不许拿另一家的名单去校验。
+QODER_PERMISSION_MODES = ("default", "accept_edits", "bypass_permissions", "dont_ask", "auto")
+#: 默认给**最保守那一档**，不是最开的那一档。CodeBuddy 那边默认放开是有实测依据的
+#: （放开才真写文件）；Qoder 这边没测过，未测就选最开的档＝拿他的仓库当试验场。
+DEFAULT_QODER_PERMISSION_MODE = "default"
+#: Qoder Desktop 起子进程时带这三个变量。CLI 一看到就认定自己是被人从 Agent SDK 里起的，
+#: 直接要求 `--print --input-format stream-json --output-format stream-json` 并拒绝普通调用
+#: （`sdk_invalid_args`）。所以派给它的活必须在把这份环境交出去之前把它们洗掉。
+QODER_SDK_ENV = ("QODER_AGENT_SDK_ENTRYPOINT", "QODER_AGENT_SDK_DAEMON", "QODER_AGENT_SDK_VERSION")
 
 #: Where an offload may NOT run: the four repositories on this box.
 FORBIDDEN_CWD_NAMES = ("Plobi-Desktop", "Plobi-Harmony-App", "Code", "Docs")
@@ -96,6 +116,16 @@ class OffloadResult:
     external_session: str = ""
     #: Which key that id came from (`result.session_id` / `sessionId` / `conversation_id` / "").
     external_session_source: str = ""
+    #: 这一趟的**回执身份**。派活时现造，交给那家软件（环境变量 + 任务书里那条落盘路径），
+    #: 它写回来的文件必须叫这个名字才算这一趟的（持有即认证，见 :func:`collect_reply`）。
+    job: str = ""
+    #: 它自己写回来的那段话。空串是**读数**（它没回），不是失败。
+    reply: str = ""
+    #: `filed` / `not_filed` / `empty` / `raw` / `unreadable` —— 回执这一格怎么来的。
+    reply_status: str = ""
+    #: 这一趟是谁派的（名册里那一行的名字；空 = L1 那一轮，名册里没有那一行）。
+    #: 回执**不发给它**——回执只进台账；这一格是"该向谁交代"的读数。
+    reply_to: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -115,15 +145,80 @@ def _which_prefer_executable(name: str) -> str:
     return shutil.which(name) or ""
 
 
+@dataclasses.dataclass(frozen=True)
+class ExternalAgentSpec:
+    """一家外部 AI 软件「怎么被起来」的结构性事实。
+
+    为什么是一张表而不是 `if agent == …` 的梯子：第三家进来时，梯子要在
+    :func:`resolve_command` / :func:`permission_flags` / :func:`extra_args` 三个函数里
+    各加一条分支，漏一处就是「这家悄悄用了那家的旗标」——CodeBuddy 的
+    `bypassPermissions` 拼到 Qoder 上根本不是一个合法档位，正是这一类。
+    差异收在一格里，公共层只认表。
+    """
+
+    name: str
+    binary_name: str
+    command_env: str
+    extra_args_env: str
+    permission_modes: tuple[str, ...] = ()
+    default_permission_mode: str = ""
+    permission_mode_env: str = ""
+    #: `eq` → `--permission-mode=x`（CodeBuddy）；`sep` → `--permission-mode x`（Qoder）。
+    permission_shape: str = "eq"
+    permission_prefix: tuple[str, ...] = ()
+    #: 没有阶梯的那一家（agy）：只有一个开关，配置为真 ⇒ 给这一串旗标。
+    skip_flag: tuple[str, ...] = ()
+    skip_permissions_env: str = ""
+    #: 把环境交给子进程之前要洗掉的变量（Qoder 见 :data:`QODER_SDK_ENV`）。
+    scrub_env: tuple[str, ...] = ()
+    #: 「exit 0 但没落盘 ⇒ 它其实没干活」这条判据**适用于哪几家**。
+    #: CodeBuddy 与 agy 是实测出来的（`dontAsk` 那两跑：exit 0、烧 114k token、零产出，
+    #: 因为它压根不能写）；Qoder 还没测过，而 10-22 现读它**读了文件并答对了内容**、
+    #: 只是没写文件——对它套这条判据会把一次成功的只读活判成失败。未测 ⇒ 不启用。
+    artifact_required: bool = True
+
+
+EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
+    AGENT_CODEBUDDY: ExternalAgentSpec(
+        AGENT_CODEBUDDY, "codebuddy", COMMAND_ENV, EXTRA_ARGS_ENV,
+        permission_modes=PERMISSION_MODES, default_permission_mode=DEFAULT_PERMISSION_MODE,
+        permission_mode_env=PERMISSION_MODE_ENV, permission_prefix=("-y",),
+    ),
+    AGENT_AGY: ExternalAgentSpec(
+        AGENT_AGY, "agy", AGY_COMMAND_ENV, AGY_EXTRA_ARGS_ENV,
+        skip_flag=("--dangerously-skip-permissions",), skip_permissions_env=AGY_SKIP_ENV,
+    ),
+    AGENT_QODER: ExternalAgentSpec(
+        AGENT_QODER, "qodercli", QODER_COMMAND_ENV, QODER_EXTRA_ARGS_ENV,
+        permission_modes=QODER_PERMISSION_MODES,
+        default_permission_mode=DEFAULT_QODER_PERMISSION_MODE,
+        permission_mode_env=QODER_PERMISSION_MODE_ENV, permission_shape="sep",
+        scrub_env=QODER_SDK_ENV, artifact_required=False,
+    ),
+}
+
+
+def agent_spec(agent: str) -> Optional[ExternalAgentSpec]:
+    """认不出的一家 ⇒ ``None``，由调用方决定怎么报——不猜一个默认的。"""
+    return EXTERNAL_AGENTS.get(agent)
+
+
+def scrub_child_env(agent: str, env: dict[str, str]) -> dict[str, str]:
+    """就地洗掉这家不该看到的变量（同一份 dict，不另造一份"真源"）。"""
+    spec = agent_spec(agent)
+    for key in (spec.scrub_env if spec else ()):
+        env.pop(key, None)
+    return env
+
+
 def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
-    if agent == AGENT_AGY:
-        return os.environ.get(AGY_COMMAND_ENV, "").strip() or _which_prefer_executable("agy")
-    override = os.environ.get(COMMAND_ENV, "").strip()
+    spec = agent_spec(agent)
+    if spec is None:
+        return ""
+    override = os.environ.get(spec.command_env, "").strip()
     if override:
         return override
-    if agent != AGENT_CODEBUDDY:
-        return ""
-    return _which_prefer_executable("codebuddy")
+    return _which_prefer_executable(spec.binary_name)
 
 
 def permission_flags(agent: str = AGENT_CODEBUDDY, mode: Optional[str] = None) -> tuple[str, ...]:
@@ -133,27 +228,33 @@ def permission_flags(agent: str = AGENT_CODEBUDDY, mode: Optional[str] = None) -
     says HIGH/CRITICAL still prompt. The mode is the lever, and it stays
     dial-downable. agy has no ladder — one switch, also config-gated.
     """
-    if agent == AGENT_AGY:
-        skip = os.environ.get(AGY_SKIP_ENV, "1").strip().lower()
-        return ("--dangerously-skip-permissions",) if skip in {"1", "true", "yes"} else ()
-    if agent != AGENT_CODEBUDDY:
+    spec = agent_spec(agent)
+    if spec is None:
         return ()
-    requested = (mode or os.environ.get(PERMISSION_MODE_ENV, "").strip())
+    if spec.skip_permissions_env:
+        skip = os.environ.get(spec.skip_permissions_env, "1").strip().lower()
+        return spec.skip_flag if skip in {"1", "true", "yes"} else ()
+    if not spec.permission_modes:
+        return ()
+    requested = (mode or os.environ.get(spec.permission_mode_env, "").strip())
     if not requested:
-        requested = DEFAULT_PERMISSION_MODE
-    if requested not in PERMISSION_MODES:
+        requested = spec.default_permission_mode
+    if requested not in spec.permission_modes:
         # Never fall back to a default here: the default is now the most open
         # mode, so silently substituting it would turn a typo'd env value into a
         # full bypass.
         raise ValueError(
-            f"unknown CodeBuddy permission mode {requested!r}; "
-            f"refusing to guess (advertised: {', '.join(PERMISSION_MODES)})"
+            f"unknown {agent} permission mode {requested!r}; "
+            f"refusing to guess (advertised: {', '.join(spec.permission_modes)})"
         )
-    return ("-y", f"--permission-mode={requested}")
+    flag = (f"--permission-mode={requested}" if spec.permission_shape == "eq"
+            else f"--permission-mode {requested}")
+    return (*spec.permission_prefix, *flag.split())
 
 
 def extra_args(agent: str = AGENT_CODEBUDDY) -> tuple[str, ...]:
-    env = AGY_EXTRA_ARGS_ENV if agent == AGENT_AGY else EXTRA_ARGS_ENV
+    spec = agent_spec(agent)
+    env = spec.extra_args_env if spec else EXTRA_ARGS_ENV
     raw = os.environ.get(env, "").strip()
     return tuple(part for part in raw.split() if part) if raw else ()
 
@@ -185,6 +286,97 @@ def is_sandboxed() -> bool:
     """Whether the child really runs isolated. Without a container runtime this
     must stay False, and the report must say "非沙箱放开"."""
     return os.environ.get(SANDBOX_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
+#: 回执这一族的三个落点。目录与台账同处（`$PLOBI_HOME/plobi/delegation/replies/`），
+#: 这样"谁派了哪一趟、那一趟回了没有"两份账在同一个根下，不会各长一套。
+REPLIES_DIRNAME = "replies"
+REPLY_DIR_ENV = "PLOBI_OFFLOAD_REPLY_DIR"
+REPLY_FILE_ENV = "PLOBI_OFFLOAD_REPLY_FILE"
+
+#: job token 只允许这一族字符：它同时是**文件名**，所以必须先于任何拼路径被校一遍。
+_JOB_SAFE = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
+
+
+def new_job_token() -> str:
+    """现造一枚回执身份。不取自增、不取自时间——它同时是能力凭证。"""
+    return secrets.token_urlsafe(16)
+
+
+def replies_dir() -> Path:
+    """回执目录（不存在就建）。覆盖位是给测试与第二块盘用的，不是给用户配置的。"""
+    override = os.environ.get(REPLY_DIR_ENV, "").strip()
+    if override:
+        base = Path(override)
+    else:
+        from plobi.delegation.offload import RoundLedger
+
+        base = RoundLedger().path.parent / REPLIES_DIRNAME
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def reply_path_for(job: str) -> Optional[Path]:
+    """这一趟的回执文件路径。token 不合法 ⇒ ``None``（**不猜、不洗白**）。"""
+    if not _JOB_SAFE.match(job or ""):
+        return None
+    return replies_dir() / f"{job}.json"
+
+
+def collect_reply(job: str) -> tuple[str, str]:
+    """把那家软件写回来的回执读掉并**收走**（读一次就没了，免得下一轮重复计数）。
+
+    返回 ``(文本, 状态)``。状态是读数不是异常：
+
+    - ``filed``   —— 按我们给的形状写的 JSON，`text` 非空；
+    - ``raw``     —— 它写了文件但形状不对，整份内容当文本收下（照实标出来）；
+    - ``empty``   —— 文件在但没内容；
+    - ``not_filed`` —— 它没写（这一趟它没回话）；
+    - ``unreadable`` —— 读不动（权限/坏盘），与"没回"是两句不同的话。
+    """
+    path = reply_path_for(job)
+    if path is None:
+        return "", "not_filed"
+    if not path.exists():
+        return "", "not_filed"
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return "", "unreadable"
+    finally:
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+    if not raw:
+        return "", "empty"
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw, "raw"
+    if isinstance(payload, dict):
+        text = str(payload.get("text") or payload.get("result") or "").strip()
+        return (text, "filed") if text else ("", "empty")
+    return raw, "raw"
+
+
+def reply_instructions(job: str, reply_file: Path) -> str:
+    """拼进任务书末尾那一格：你是谁、把结果写成哪个文件、什么形状。
+
+    为什么是**写文件**而不是敲我们一条命令（用户 10-22 定：外包要有区分的工具，不许长在
+    `say` 上）：外部软件各有各的 shell 与解释器，唯一每家都做得到的动作是写一个文件；
+    而文件名就是这一趟的 job token ⇒ 持有即认证，它冒充不了别的趟，也不需要开本机网络口。
+    """
+    target = str(reply_file).replace("\\", "/")
+    body = chr(10).join([
+        "——",
+        f"【回执】这一趟你的身份是 job `{job}`"
+        f"（派活方把同一个值也放进了环境变量 `{REPLY_FILE_ENV}`）。",
+        "干完之后，把结果写成一个 JSON 文件，路径必须是：",
+        f"  {target}",
+        '文件内容形状：{"text": "你要报告的那一段话", "status": "ok 或 blocked"}',
+        "只写结论和对方该看的文件路径；整篇内容不要贴进去，对方会自己去读。",
+        "写不了这个文件就什么都不要写——不回话是一种读数，我们不拿它当失败。",
+    ])
+    return chr(10) * 2 + body + chr(10)
 
 
 def default_workdir() -> Path:
@@ -419,7 +611,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     parser = argparse.ArgumentParser(description="Offload one task to a local external agent")
     parser.add_argument("--task", required=True)
-    parser.add_argument("--agent", default=AGENT_CODEBUDDY, choices=(AGENT_CODEBUDDY, AGENT_AGY))
+    parser.add_argument("--agent", default=AGENT_CODEBUDDY, choices=tuple(EXTERNAL_AGENTS))
     parser.add_argument("--cwd", default="")
     parser.add_argument("--permission-mode", default="")
     parser.add_argument("--timeout", type=float, default=900.0)
@@ -443,8 +635,13 @@ def run_task(
     agent: str = AGENT_CODEBUDDY,
     permission_mode: Optional[str] = None,
     timeout: float = 900.0,
+    reply_to: str = "",
 ) -> OffloadResult:
-    """Hand one real task to a local external agent and report the four answers."""
+    """Hand one real task to a local external agent and report the four answers.
+
+    ``reply_to`` 是**派活那一侧的 Agent 名字**（可空），只进台账当"该向谁交代"的读数；
+    回执本身走文件（见 :func:`reply_instructions`），不靠它填收件人。
+    """
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     allowed, why = cwd_is_allowed(workdir)
     try:
@@ -470,8 +667,21 @@ def run_task(
     if not binary:
         return fail(f"external agent {agent!r} has no drivable command on this machine")
 
+    # 回执身份：每次派活现造一枚 token，任务书里那条落盘路径与子进程环境里那个值
+    # 都指向同一趟。它写不写、写了是不是这一趟的，都是**可核的读数**。
+    reply_to = (reply_to or "").strip()
+    job = new_job_token()
+    reply_file = reply_path_for(job)
+    if reply_file is not None:
+        task = task + reply_instructions(job, reply_file)
+
     argv = (binary, "-p", task, "--output-format", "json", *flags, *extra_args(agent))
     env = dict(os.environ)
+    # 从 Qoder Desktop 里派活时，子进程会继承那三个 SDK 变量，CLI 一看就拒普通调用
+    # （`sdk_invalid_args`）。洗掉它的条件是**结构性事实**，写在表里，不是 if 分支。
+    scrub_child_env(agent, env)
+    if reply_file is not None:
+        env[REPLY_FILE_ENV] = str(reply_file)
     proxy, proxy_source = resolve_proxy()
     knob = bool(os.environ.get(PROXY_ENV, "").strip())
     if proxy and knob:
@@ -533,11 +743,19 @@ def run_task(
     produced = bool(artifacts)
     ok = completed.returncode == 0 and bool(text or produced)
     error = ""
+    spec = agent_spec(agent)
+    #: 「没落盘就算没干活」这条实测判据只对**测过的那几家**成立（见
+    #: ``ExternalAgentSpec.artifact_required``）。对没测过的一家套用它，会把一次
+    #: 真读了文件并答对内容的只活判成失败——10-22 在 Qoder 上就是这么误判的。
+    must_produce = bool(spec and spec.artifact_required)
     if completed.returncode != 0:
         error = ((completed.stderr or "").strip()[:400] or f"exit={completed.returncode}")
-    elif not produced:
+    elif must_produce and not produced:
         error = "exit 0 but no artifact was written — the agent did not actually do the work"
         ok = False
+
+    # 回执：它自己写回来的那个文件（读一次就收走）。没写是读数 `not_filed`，不是失败。
+    reply, reply_status = collect_reply(job)
 
     if _looks_unreachable(error):
         # Measured: agy is a Go binary that dials straight out. With no proxy in
@@ -559,6 +777,7 @@ def run_task(
         text=text, ok=ok, error=error, produced=produced,
         proxy=proxy, proxy_source=proxy_source,
         external_session=external_session, external_session_source=external_session_source,
+        job=job, reply=reply, reply_status=reply_status, reply_to=reply_to,
     )
 
 
