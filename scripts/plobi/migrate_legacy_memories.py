@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -67,19 +68,45 @@ def _chunks(path: Path) -> list[str]:
     return [c.strip() for c in text.split(ENTRY_DELIMITER) if c.strip()]
 
 
-def plan(legacy: Path | None = None) -> list[tuple[str, str, str]]:
+# 无损拆分：只在「；」「。」之后下刀，分隔符留在前一段尾巴上，所以
+# "".join(split_lossless(x)) == x 逐字成立——不丢一个字，也不改一个字。
+_BOUNDARY_RE = re.compile(r"(?<=[；。])")
+MIN_FRAGMENT = 12
+
+
+def split_lossless(chunk: str) -> list[str]:
+    """把一整段拆成条目名单（可证明无损：拼回去必须等于原文，否则不拆）。
+
+    短段不拆（拆出一句「铁律：」这种没头没尾的碎片反而更差）；拆完任何一段太短、
+    或拼回去不等于原文，就退回整段——**宁可不拆，也不许改写成另一句话**。
+    """
+    parts = [p for p in _BOUNDARY_RE.split(chunk) if p.strip()]
+    if len(parts) < 2:
+        return [chunk]
+    if "".join(parts) != chunk:
+        return [chunk]
+    if any(len(p.strip("；。 \n")) < MIN_FRAGMENT for p in parts):
+        return [chunk]
+    return parts
+
+
+def plan(legacy: Path | None = None, *, split: bool = False,
+         source_by_scope: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     """[(scope, 原文条目, 出处)] —— 只读，不碰任何文件。"""
     legacy = legacy or _legacy_dir()
+    sources = source_by_scope or SOURCE_BY_SCOPE
     out: list[tuple[str, str, str]] = []
     for fname, scope in LEGACY_SCOPES:
         for chunk in _chunks(legacy / fname):
-            out.append((scope, chunk, SOURCE_BY_SCOPE[scope]))
+            for piece in (split_lossless(chunk) if split else [chunk]):
+                out.append((scope, piece, sources[scope]))
     return out
 
 
-def migrate(*, apply: bool = False, legacy: Path | None = None) -> dict:
+def migrate(*, apply: bool = False, legacy: Path | None = None,
+            split: bool = False, source_by_scope: dict[str, str] | None = None) -> dict:
     """把 plan() 的条目并进新那三份。已存在的原文不重复插。"""
-    items = plan(legacy)
+    items = plan(legacy, split=split, source_by_scope=source_by_scope)
     store = load_on_disk_store()
     added: dict[str, int] = {}
     for scope, chunk, source in items:
@@ -104,14 +131,30 @@ def migrate(*, apply: bool = False, legacy: Path | None = None) -> dict:
     }
 
 
-def verify_migrated(store, items: list[tuple[str, str, str]]) -> list[str]:
-    """返回「在新位置上找不到的原文」名单。空名单 = 可以删。"""
-    missing: list[str] = []
-    for scope, chunk, _ in items:
+def verify_migrated(store, originals: list[tuple[str, str, str]], *,
+                    split: bool = False) -> list[str]:
+    """返回「新家拼不回原文」的名单。空名单 = 可以删。
+
+    对账以**未拆**的原文为准：拆过的条目必须逐段找得到、顺序不乱、且片段连起来
+    逐字等于原文——「确认没用」的另一半是「确认没拆坏」。
+    """
+    problems: list[str] = []
+    for scope, chunk, _ in originals:
         entries = store._entries_for(scope)
-        if not any(chunk in e for e in entries):
-            missing.append(f"{scope}: {chunk[:60]}")
-    return missing
+        frags = split_lossless(chunk) if split else [chunk]
+        positions: list[int] = []
+        for frag in frags:
+            hits = [i for i, e in enumerate(entries) if frag in e]
+            if not hits:
+                problems.append(f"{scope}: 新家找不到这段 → {frag[:50]}")
+                break
+            positions.append(hits[0])
+        else:
+            if positions != sorted(positions):
+                problems.append(f"{scope}: 片段顺序不对，拼不回原文")
+            elif "".join(frags) != chunk:
+                problems.append(f"{scope}: 片段连起来不等于原文（拆损了）")
+    return problems
 
 
 def delete_legacy(legacy: Path) -> list[str]:
@@ -138,18 +181,22 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--apply", action="store_true", help="真的写进新那三份（默认只算）")
     ap.add_argument("--delete", action="store_true", help="对账通过后删掉旧目录（需 --apply）")
+    ap.add_argument("--split", action="store_true",
+                    help="按「；」「。」边界无损拆条（可拼回原文才拆）")
     args = ap.parse_args(argv)
 
     legacy = _legacy_dir()
-    items = plan(legacy)
-    print(f"旧位置 = {legacy}  现存条目 = {len(items)}")
+    originals = plan(legacy)              # 对账以未拆原文为准
+    items = plan(legacy, split=args.split)
+    print(f"旧位置 = {legacy}  现存条目 = {len(originals)}"
+          f"{f'（拆成 {len(items)} 条）' if args.split else ''}")
     for scope, chunk, source in items:
         print(f"  → {scope}: {chunk[:70]}{'…' if len(chunk) > 70 else ''}  〔出处 {source}〕")
     if not items:
         print("没有要搬的存量（旧目录不存在或为空）。")
         return 0
 
-    res = migrate(apply=args.apply, legacy=legacy)
+    res = migrate(apply=args.apply, legacy=legacy, split=args.split)
     verb = "已写入" if args.apply else "打算写入"
     for scope, n in (res["added"] or {}).items():
         print(f"{verb} {scope}: {n} 条 -> {res['targets'][scope]}")
@@ -158,13 +205,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     store = res["store"]
-    missing = verify_migrated(store, items)
-    if missing:
-        print(f"RED — {len(missing)} 条原文在新位置上找不到，旧目录保留：")
-        for m in missing:
+    problems = verify_migrated(store, originals, split=args.split)
+    if problems:
+        print(f"RED — {len(problems)} 条在新家拼不回原文，旧目录保留：")
+        for m in problems:
             print(f"  - {m}")
         return 1
-    print(f"对账通过：{len(items)} 条原文全部能在新位置找到。")
+    print(f"对账通过：{len(originals)} 条原文都能在新位置逐字拼回来。")
 
     if args.delete:
         removed = delete_legacy(legacy)

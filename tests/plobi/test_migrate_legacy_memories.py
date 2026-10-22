@@ -90,6 +90,40 @@ def test_verify_refuses_delete_when_a_chunk_is_missing(mig, legacy_home):
     assert mig._legacy_dir().exists()
 
 
+def test_split_is_lossless_and_refuses_when_a_piece_is_stubby(mig):
+    """拆只许按边界下刀：拼回去必须逐字等于原文，片段太短就整段退回。"""
+    run_on = ("铁律一：单 WP 单 commit，前缀 [WP-XXX]；"
+              "铁律二：不 push，用户说推才推；"
+              "铁律三：测试入口 scripts/run_tests.sh，禁直调 pytest。")
+    parts = mig.split_lossless(run_on)
+    assert len(parts) == 3, parts
+    assert "".join(parts) == run_on, "无损：拆完拼回去要逐字等于原文"
+    assert mig.split_lossless("很短的一段") == ["很短的一段"]
+    assert mig.split_lossless("甲；乙") == ["甲；乙"], "片段太短就别拆"
+
+
+def test_cli_split_then_delete_still_reconciles(mig, tmp_path, monkeypatch):
+    root = tmp_path / "plobihome2"
+    root.mkdir()
+    monkeypatch.setenv("PLOBI_HOME", str(root))
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+    monkeypatch.setattr(mt, "get_shared_plobi_root", lambda: root)
+    old = root / "memories"
+    old.mkdir()
+    (old / "MEMORY.md").write_text(
+        "铁律一：单 WP 单 commit，前缀 [WP-XXX]；铁律二：不 push，用户说推才推。",
+        encoding="utf-8",
+    )
+
+    originals = mig.plan(legacy=old)          # 删之前先记下未拆原文
+    assert mig.main(["--apply", "--delete", "--split"]) == 0
+    entries = mt.load_on_disk_store()._entries_for("global")
+    assert len(entries) == 2, "拆成两条卡片，而不是一整段"
+    assert all("〔出处 Docs/README.md" in e for e in entries)
+    assert mig.verify_migrated(mt.load_on_disk_store(), originals, split=True) == []
+    assert not old.exists()
+
+
 def test_cli_deletes_only_after_the_reconciliation_passes(mig, legacy_home, capsys):
     assert mig.main(["--apply", "--delete"]) == 0
     out = capsys.readouterr().out
@@ -106,6 +140,6 @@ def test_cli_without_delete_keeps_the_legacy_dir(mig, legacy_home):
 
 def test_cli_red_when_verify_fails(mig, legacy_home, monkeypatch):
     """If the new home silently loses a chunk, the CLI must not remove the old one."""
-    monkeypatch.setattr(mig, "verify_migrated", lambda store, items: ["global: 丢了一条"])
+    monkeypatch.setattr(mig, "verify_migrated", lambda store, items, **kw: ["global: 丢了一条"])
     assert mig.main(["--apply", "--delete"]) == 1
     assert mig._legacy_dir().is_dir()
