@@ -40,7 +40,7 @@ class _FakePipeline:
 
 
 def _eight_blocks(_conn, day=TOMORROW):
-    """八块互不重叠、都在清醒窗内、不压午餐——就是想让库里确实有八块带 `planner` 的行。"""
+    """八块互不重叠——就是想让库里确实有八块带 `planner` 的行。"""
     spans = [("09:00", "09:50"), ("10:00", "10:50"), ("11:00", "11:50"), ("13:00", "13:50"),
              ("14:00", "14:50"), ("15:00", "15:50"), ("16:00", "16:50"), ("17:00", "17:50")]
     items = [{"title": f"{COURSE} 第{i + 1}次作业", "start_at": f"{day}T{a}:00",
@@ -64,10 +64,6 @@ def _seed_eight(conn, db_path) -> list[tuple]:
     """落一版八块的真计划，并回**逐字快照**（含 id 与 evidence，不只数行）。"""
     store.create_event(conn, title=f"{COURSE} 第三次作业", start_at=f"{TOMORROW}T20:00:00",
                        kind="ddl", status="pending", source="zju", evidence={"course": COURSE})
-    store.upsert_routine_template(conn, template_id="seed-sleep", title="睡眠",
-                                  start_time="23:30", end_time="07:30", enabled=True)
-    store.upsert_routine_template(conn, template_id="seed-lunch", title="午餐",
-                                  start_time="12:00", end_time="12:40", enabled=True)
     result = llm_planning.plan_and_store_day(TOMORROW, conn=conn, proposal_fn=_eight_blocks)
     assert result["ok"] is True, result
     assert result["block_count"] == 8, result

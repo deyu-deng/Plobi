@@ -62,8 +62,8 @@ export const $completedEventIds = computed($agendaEvents, events => new Set(
 /**
  * WP-PLAN-ACK-NO-FAKE-CHECK：服务端**答过有这些事件**的那一份 id 集合。
  *
- * 计划行带的 `event_id` 不一定真有一条事件——排程自造的 `l1:block-3` / `routine:seed-lunch`
- * 就不是事件 id，后端对它们直接 `EventNotFound` → 404。画一颗点下去只会报错的勾，
+ * 计划行带的 `event_id` 不一定真有一条事件——排程自造的 `l1:block-3`
+ * 就不是事件 id，后端对它直接 `EventNotFound` → 404。画一颗点下去只会报错的勾，
  * 比不画更坏。所以面上先问一句「这颗 id 在服务端那份 events 里吗」。
  *
  * 窗口对得上才成立：`GET /api/agenda` 不带参数时默认是**今天 00:00 → 明天 23:59:59**

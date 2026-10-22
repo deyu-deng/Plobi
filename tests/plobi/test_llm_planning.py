@@ -2,7 +2,7 @@
 
 两条测试，钉的都是**行为/关系**，不是数值：
 
-1. 不合格就**退回去重问**，代码不许顺手改数据（不裁时间、不挪条目、不删通勤）；
+1. 不合格就**退回去重问**，代码不许顺手改数据（不裁时间、不挪条目、不删条目）；
    问题清单原样带回给 L1；缺「为什么这么排」（149④ 的留痕）也算不合格。
 2. 「相邻两项之间只够一次步行通勤的那种间隔，不许再写一条通勤占掉它」写成**关系判据**
    （通勤条目 ≥ 它两侧那段空档 ⇒ 违规），不是"通勤超过 N 分钟"那种阈值——
@@ -15,23 +15,12 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime
 
 import pytest
 
 from plobi.agenda import llm_planning as lp
 
 DAY = "2026-10-16"
-
-ANCHORS = [
-    {"id": "routine:sleep", "title": "睡觉", "template_id": "sleep",
-     "start_at": f"{DAY}T23:00:00", "end_at": "2026-10-17T07:00:00", "flex": False},
-    {"id": "routine:lunch", "title": "午饭", "template_id": "lunch",
-     "start_at": f"{DAY}T12:00:00", "end_at": f"{DAY}T12:45:00", "flex": False},
-]
-
-WAKING = (datetime.fromisoformat(f"{DAY}T07:30:00"),
-          datetime.fromisoformat(f"{DAY}T23:00:00"))
 
 
 def _item(title: str, start: str, end: str) -> dict:
@@ -43,9 +32,8 @@ def fake_planner(monkeypatch):
     """把材料口与库连接都换成假的：这两条测试不许碰真 agenda.db，更不许碰模型。"""
     materials = {
         "for_date": DAY,
-        "waking_window": (WAKING[0].isoformat(), WAKING[1].isoformat()),
         "classes": [], "deadlines": [], "other_events": [],
-        "routine_anchors": ANCHORS, "anchors_moved": [], "project_pace": [],
+        "today_items": [], "avoid_windows": [], "project_pace": [],
         "yesterday": {"status": "missing", "summary": "昨夜未生成计划"},
         "missing": ["昨天的完成情况（plan_items 还没有状态列，R-099 在落）"],
     }
@@ -56,17 +44,18 @@ def fake_planner(monkeypatch):
 def test_a_bad_proposal_is_sent_back_untouched_with_its_own_problems(fake_planner):
     """149②「校验不过退回重排，不许静默改数据」+ 149④ 的留痕。
 
-    假 L1 第一版把午饭挤掉了、也没写「为什么这么排」；第二版两样都改对。断言四件事：
-    被退回去重问（两次调用）· 两个问题都原样带回去了 · **第一版那批条目一个字段都没被
-    代码动过**（顺手挪开或删掉，就是把"没法执行"修成"更难看的没法执行"）· 第二版才通过。
+    假 L1 第一版双订了一段（11:30–13:00 与 12:00–12:45 叠在一起）、也没写「为什么这么排」；
+    第二版两样都改对。断言四件事：被退回去重问（两次调用）· 两个问题都原样带回去了 ·
+    **第一版那批条目一个字段都没被代码动过** · 第二版才通过。
     """
-    bad = [_item("写 Resonote 的 M1", "11:30", "13:00")]
+    bad = [
+        _item("写 Resonote 的 M1", "11:30", "13:00"),
+        _item("午饭", "12:00", "12:45"),
+    ]
     bad_snapshot = copy.deepcopy(bad)
     good = [
         _item("写 Resonote 的 M1", "09:00", "11:00"),
-        # 锚点自己那一行要带得上身份，否则校验会把它当成「挤掉午饭的第三条事」。
-        {"title": "午饭", "id": "routine:lunch", "template_id": "lunch",
-         "start_at": f"{DAY}T12:00:00", "end_at": f"{DAY}T12:45:00"},
+        _item("午饭", "12:00", "12:45"),
     ]
     prompts: list[str] = []
 
@@ -76,15 +65,11 @@ def test_a_bad_proposal_is_sent_back_untouched_with_its_own_problems(fake_planne
         那就是我们上一版的真状态（块数 0，理由写成"没有任何能落的时间块"）。"""
         prompts.append(prompt)
         if len(prompts) == 1:
-            return json.dumps({"items": bad})  # 挤掉午饭，且没交 reason
+            return json.dumps({"items": bad})  # 双订，且没交 reason
         return (
             "好的，按规则排完这一天。\n\n```json\n"
             + json.dumps({"schedule": [{"time": it["start_at"][11:16], "end": it["end_at"][11:16],
-                                        "title": it["title"],
-                                        # 别名形状也得把锚点身份带上——校验只认 id/template_id，
-                                        # 光靠标题认锚点就是让代码去猜模型想说什么。
-                                        **({"id": it["id"], "template_id": it["template_id"]}
-                                           if "template_id" in it else {})}
+                                        "title": it["title"]}
                                        for it in good],
                           "reason": "上午脑子最清楚，把最难的放前面"}, ensure_ascii=False)
             + "\n```"
@@ -93,7 +78,7 @@ def test_a_bad_proposal_is_sent_back_untouched_with_its_own_problems(fake_planne
     proposal = lp.plan_with_llm(DAY, fake_llm, conn=object())
 
     assert len(prompts) == 2, "第一版就该被打回，不是直接落库"
-    assert "挤掉" in prompts[1] and "为什么这么排" in prompts[1], prompts[1]
+    assert "双订" in prompts[1] and "为什么这么排" in prompts[1], prompts[1]
     assert bad == bad_snapshot, "代码不许动 L1 交回来的条目"
     assert [row["title"] for row in proposal.items] == [row["title"] for row in good]
     assert proposal.reason.startswith("上午脑子最清楚") and proposal.attempts == 2
@@ -113,8 +98,8 @@ def test_a_commute_that_fills_the_gap_is_a_violation_and_a_longer_gap_is_not(fak
         _item("大学物理实验", "11:30", "12:00"),
     ]
 
-    tight = lp.validate_proposal(fills, anchors=ANCHORS, waking=WAKING)
-    loose = lp.validate_proposal(fits, anchors=ANCHORS, waking=WAKING)
+    tight = lp.validate_proposal(fills)
+    loose = lp.validate_proposal(fits)
 
     assert any("通勤" in v and "空档" in v for v in tight), tight
     assert not any("通勤" in v and "空档" in v for v in loose), loose

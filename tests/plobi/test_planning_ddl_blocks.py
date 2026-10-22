@@ -318,13 +318,11 @@ class TestNoFallbackAfterTheSplitIsRetired:
     ) -> None:
         """兜底要么随本体消失、要么自报没排成的人话 —— 这里两样都要：块没了，话也要有。"""
         _ddl(conn, "实验报告二", f"{DAY}T20:00:00", course="线性代数")
-        _enable_anchor(db_path, "seed-lunch")   # 有作息可写，evidence 那格才会被建起来
 
         plan = generate_evening_plan(DAY, db_path=db_path)
 
         assert NO_PLANNER_NOTE in plan.summary, plan.summary
-        assert plan.evidence["planner_note"] == NO_PLANNER_NOTE
-        assert plan.evidence["block_count"] == 0
+        assert plan.evidence is None, "没块就不该编一份 evening_plan 证据出来"
         # 面上那句必须说清"没排"，而不是留一句看起来像排过了的空话
         assert "没排" in plan.summary or "没有" in plan.summary
 
@@ -620,68 +618,19 @@ class TestCapAndEquality:
 # ③ 边界四条：由唯一那道闸判（不再由均分判）
 # --------------------------------------------------------------------------- #
 
-def _enable_anchor(db_path, template_id):
-    connection = store.connect(db_path)
-    try:
-        tpl = store.get_routine_template(connection, template_id)
-        return store.upsert_routine_template(
-            connection, template_id=tpl.id, title=tpl.title, start_time=tpl.start_time,
-            end_time=tpl.end_time, weekdays=list(tpl.weekdays), enabled=True,
-        )
-    finally:
-        connection.close()
-
-
-def _gate_inputs(db_path):
-    """边界闸要的两样材料，全从生产口径取：作息锚点 + 清醒窗口。"""
-    from plobi.agenda import llm_planning, planning
-
-    connection = store.connect(db_path)
-    try:
-        kept, _yielded, _moved = planning.place_anchors_for_day(connection, DAY, [])
-        anchors = planning.kept_anchors_as_dicts(kept)
-        waking = tuple(llm_planning._dt(value) for value in
-                       llm_planning._waking_window(connection, DAY))
-    finally:
-        connection.close()
-    return anchors, waking
-
 
 class TestTheGateNotTheSplit:
-    """「睡眠与三餐不许被挤掉」「同一时段不许双订」现在归 :func:`validate_proposal` 管。
+    """「同一时段不许双订」现在归 :func:`validate_proposal` 管。
 
-    这两格先前是**均分顺带**办到的（它只在空窗里切块，所以撞不上锚点）。本体删了，判据不能
+    这两格先前是**均分顺带**办到的（它只在空窗里切块，所以撞不上）。本体删了，判据不能
     跟着没 ⇒ 直接钉那道闸：`plan_and_store_day` 写库前过它、`plan_edits.move_plan_item` 也过它，
     同一道闸只此一处（裁定 94：同一事实一份真源）。
     """
 
-    def test_a_block_that_squeezes_out_sleep_and_meals_is_rejected(self, db_path) -> None:
-        from plobi.agenda.llm_planning import validate_proposal
-
-        for template_id in ("seed-sleep", "seed-lunch", "seed-dinner"):
-            _enable_anchor(db_path, template_id)
-        anchors, waking = _gate_inputs(db_path)
-        titles = [anchor["title"] for anchor in anchors]
-        assert "睡眠" in titles and "午餐" in titles and "晚餐" in titles, titles
-
-        def block_over(title, anchor):
-            return {
-                "event_id": "l1:block-1", "title": title, "kind": "task", "conflict_with": [],
-                "start_at": anchor["start_at"], "end_at": anchor["end_at"], "evidence": {},
-            }
-
-        for anchor in anchors:
-            problems = validate_proposal(
-                [block_over("写作业 · 挤掉作息", anchor)], anchors=anchors, waking=waking)
-            assert any("挤掉了作息锚点" in p and anchor["title"] in p for p in problems), (
-                f"{anchor['title']}（{anchor['start_at']}–{anchor['end_at']}）被挤掉却过了闸：{problems}"
-            )
-
     def test_a_block_with_no_reason_is_rejected(self, db_path, conn) -> None:
-        """裁定 149④：缺「为什么这么排」= 没留痕，与挤掉作息同档不合格。"""
+        """裁定 149④：缺「为什么这么排」= 没留痕，不合格。"""
         from plobi.agenda.llm_planning import PlanRejected, plan_with_llm
 
-        _enable_anchor(db_path, "seed-sleep")
         seen: list[str] = []
 
         def fake_llm(prompt):
@@ -696,7 +645,6 @@ class TestTheGateNotTheSplit:
     def test_two_blocks_in_the_same_slot_are_rejected(self, db_path) -> None:
         from plobi.agenda.llm_planning import validate_proposal
 
-        anchors, waking = _gate_inputs(db_path)
         start, end = _slot(0)
         rows = [
             {"event_id": f"l1:block-{i}", "title": f"同一时段 {i}", "kind": "task",
@@ -705,19 +653,18 @@ class TestTheGateNotTheSplit:
             for i in (1, 2)
         ]
 
-        problems = validate_proposal(rows, anchors=anchors, waking=waking)
+        problems = validate_proposal(rows)
         assert any("同一时段双订" in p for p in problems), problems
 
     def test_a_clean_proposal_passes_the_same_gate(self, db_path) -> None:
         """对照：上一格不是"任何提案都红"。"""
         from plobi.agenda.llm_planning import validate_proposal
 
-        anchors, waking = _gate_inputs(db_path)
         rows = [{"event_id": "l1:block-1", "title": "推进 · Plobi", "kind": "task",
                  "conflict_with": [], "start_at": _slot(0)[0].isoformat(),
                  "end_at": _slot(0)[1].isoformat(), "evidence": {}}]
 
-        assert validate_proposal(rows, anchors=anchors, waking=waking) == []
+        assert validate_proposal(rows) == []
 
     def test_written_plan_items_never_double_book(self, bare_registry, db_path, conn) -> None:
         """面上那条不双订的关系，最后还得在**落库的行**上成立（闸过了≠写得对）。"""

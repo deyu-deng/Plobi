@@ -444,13 +444,7 @@ def build_checkin(
 
 
 def _current_config_snapshot(conn) -> dict:
-    """模板与节奏现值——起草时给 L2 的“当前配置”上下文。"""
-    try:
-        templates = [
-            t.to_dict() for t in store.list_routine_templates(conn, enabled_only=True)
-        ]
-    except Exception:
-        templates = []
+    """节奏现值——起草时给 L2 的“当前配置”上下文。"""
     try:
         from .planning import paced_projects
 
@@ -460,7 +454,7 @@ def _current_config_snapshot(conn) -> dict:
         ]
     except Exception:
         pace = []
-    return {"routine_templates": templates, "project_pace": pace}
+    return {"project_pace": pace}
 
 
 def format_checkin_text(card: "store.CheckinCard | dict") -> str:
@@ -521,31 +515,21 @@ def archive_free_text(
 def propose_config_change(
     conn,
     *,
-    routine_updates: Optional[list[dict]] = None,
     pace_updates: Optional[list[dict]] = None,
     avoid_windows: Optional[list[dict]] = None,
     now: Optional[datetime] = None,
 ) -> store.CheckinCard:
     """用户在回访会话里的明确指令 → 配置提案卡。**不直接生效**。
 
-    ``routine_updates``: [{"template_id", "start_time"?, "end_time"?}]
     ``pace_updates``:    [{"project_id", "weekly_hours"}]
     每天每类一张提案卡（重复调用 = 覆盖为最新提案）。
     """
     moment = now or datetime.now()
-    routine_updates = list(routine_updates or [])
     pace_updates = list(pace_updates or [])
     avoid_windows = list(avoid_windows or [])
-    if not routine_updates and not pace_updates and not avoid_windows:
+    if not pace_updates and not avoid_windows:
         raise store.AgendaValidationError("proposal needs at least one change")
 
-    for upd in routine_updates:
-        tid = str(upd.get("template_id") or "").strip()
-        if store.get_routine_template(conn, tid) is None:
-            raise store.AgendaValidationError(f"unknown routine template {tid!r}")
-        for field_name in ("start_time", "end_time"):
-            if upd.get(field_name) is not None:
-                store._validate_hhmm(upd[field_name], field_name)
     if pace_updates:
         from plobi.agents.registry import load_registry
 
@@ -579,18 +563,6 @@ def propose_config_change(
         cleaned_windows.append({"start_time": start_h, "end_time": end_h})
 
     questions = []
-    for upd in routine_updates:
-        tid = str(upd.get("template_id"))
-        questions.append(
-            {
-                "key": f"proposal:routine:{tid}",
-                "text": (
-                    f"把作息模板 {tid} 的时间改为 "
-                    f"{upd.get('start_time') or '（不变）'}-{upd.get('end_time') or '（不变）'}？"
-                ),
-                "evidence": {"template_id": tid},
-            }
-        )
     for upd in pace_updates:
         pid = str(upd.get("project_id"))
         questions.append(
@@ -623,7 +595,6 @@ def propose_config_change(
         questions=questions,
         payload={
             "changes": {
-                "routine_updates": routine_updates,
                 "pace_updates": pace_updates,
                 "avoid_windows": cleaned_windows,
             }
@@ -638,23 +609,10 @@ def apply_proposal(conn, card: store.CheckinCard) -> list[str]:
     changes = (card.payload or {}).get("changes") or {}
     applied: list[str] = []
 
-    for upd in changes.get("routine_updates") or []:
-        current = store.get_routine_template(conn, str(upd.get("template_id") or ""))
-        if current is None:
-            continue
-        store.upsert_routine_template(
-            conn,
-            template_id=current.id,
-            title=current.title,
-            start_time=str(upd.get("start_time") or current.start_time),
-            end_time=str(upd.get("end_time") or current.end_time),
-            weekdays=list(current.weekdays),
-            enabled=current.enabled if upd.get("enabled") is None else bool(upd["enabled"]),
-        )
-        applied.append(f"routine:{current.id}")
-
     pace_updates = changes.get("pace_updates") or []
     if pace_updates:
+        from dataclasses import replace
+
         from plobi.agents.registry import load_registry
 
         registry = load_registry()
@@ -662,7 +620,7 @@ def apply_proposal(conn, card: store.CheckinCard) -> list[str]:
             entry = registry.get(str(upd.get("project_id") or ""))
             if entry is None:
                 continue
-            entry.pace = {"weekly_hours": float(upd["weekly_hours"])}
+            registry.upsert(replace(entry, pace={"weekly_hours": float(upd["weekly_hours"])}))
             applied.append(f"pace:{entry.name}")
         registry.save()
     return applied

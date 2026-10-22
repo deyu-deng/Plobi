@@ -119,72 +119,7 @@ class PlanItem:
         return data
 
 
-ROUTINE_KIND = "routine"  # routine_templates.kind is fixed; never an events word
-
-# WP-MEALS-FLEX: 三餐是弹性窗（人授权的事实：窗 + 时长，不是模型编的）。
-# sleep 无窗 = 钉死（重叠即让位，不滑）。新库三餐出厂仍 disabled（C4 旧
-# 口径），窗是这一刀带进来的新字段——用户主动 enable 时才走弹性落位。
-# 启用时的弹性行为在 :mod:`plobi.agenda.planning` 里有单测保证。
-ROUTINE_SEEDS: tuple[dict, ...] = (
-    {
-        "id": "seed-sleep",
-        "title": "睡眠",
-        "start_time": "23:30",
-        "end_time": "07:30",  # 跨午夜：end < start → 结束在次日
-        "weekdays": [],
-    },
-    {
-        "id": "seed-breakfast",
-        "title": "早餐",
-        "start_time": "07:40",
-        "end_time": "08:20",
-        "weekdays": [],
-        "window": {"start": "07:00", "end": "09:00", "duration_min": 40},
-    },
-    {
-        "id": "seed-lunch",
-        "title": "午餐",
-        "start_time": "12:00",
-        "end_time": "12:40",
-        "weekdays": [],
-        "window": {"start": "11:30", "end": "13:30", "duration_min": 40},
-    },
-    {
-        "id": "seed-dinner",
-        "title": "晚餐",
-        "start_time": "18:30",
-        "end_time": "19:10",
-        "weekdays": [],
-        "window": {"start": "17:30", "end": "20:00", "duration_min": 40},
-    },
-)
-
 MAX_DURATION_MIN = 24 * 60
-
-
-@dataclass
-class RoutineTemplate:
-    """A user-authored daily-routine anchor (C4). Evidence source, not an event."""
-
-    id: str
-    title: str
-    start_time: str  # "HH:MM"
-    end_time: str  # "HH:MM"; earlier than start_time ⇒ ends next day
-    weekdays: tuple[int, ...] = ()  # 0=Mon..6=Sun; empty ⇒ every day
-    enabled: bool = False
-    kind: str = ROUTINE_KIND
-    # WP-MEALS-FLEX 弹性窗：三者一起有 = 弹性（首选放不下就在窗内挪），
-    # 一起空 = 钉死（重叠即让位）。窗与时长是人授权的，绝不由模型补。
-    window_start: str = ""  # "HH:MM"，空 = 无窗
-    window_end: str = ""  # "HH:MM"，须晚于 window_start（同日窗）
-    duration_min: Optional[int] = None
-    created_at: str = ""
-    updated_at: str = ""
-
-    def to_dict(self) -> dict:
-        data = asdict(self)
-        data["weekdays"] = list(self.weekdays)
-        return data
 
 
 class AgendaValidationError(ValueError):
@@ -309,20 +244,6 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_plan_items_plan_sort
             ON plan_items(plan_id, sort_order);
-        CREATE TABLE IF NOT EXISTS routine_templates (
-            id           TEXT PRIMARY KEY,
-            title        TEXT NOT NULL,
-            kind         TEXT NOT NULL DEFAULT 'routine',
-            start_time   TEXT NOT NULL,
-            end_time     TEXT NOT NULL,
-            weekdays     TEXT,
-            enabled      INTEGER NOT NULL DEFAULT 0,
-            window_start TEXT NOT NULL DEFAULT '',
-            window_end   TEXT NOT NULL DEFAULT '',
-            duration_min INTEGER,
-            created_at   TEXT NOT NULL,
-            updated_at   TEXT NOT NULL
-        );
         CREATE TABLE IF NOT EXISTS checkin_cards (
             id             TEXT PRIMARY KEY,
             for_date       TEXT NOT NULL,
@@ -338,16 +259,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
-    migrated = _ensure_routine_window_columns(conn)
     _ensure_event_completed_column(conn)
-    events_migrated = _ensure_event_location_notes_columns(conn)
-    _seed_routine_templates(conn)
-    if migrated:
-        # 只在真正补列的那一次 init 里收养出厂态三餐行；此后用户清窗不会被复活。
-        _adopt_factory_windows(conn)
-    if events_migrated:
-        # 同样只在真正补列时打开出厂作息：用户改过的一行不准 enable。
-        _enable_factory_meals_and_sleep(conn)
+    _ensure_event_location_notes_columns(conn)
     conn.commit()
 
 
@@ -427,6 +340,18 @@ def _validate_enum(value: str, allowed: Iterable[str], field_name: str) -> str:
     return value
 
 
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_hhmm(value: Any, field_name: str) -> str:
+    text = str(value or "").strip()
+    if not _HHMM_RE.match(text):
+        raise AgendaValidationError(
+            f"{field_name} must be HH:MM (00:00-23:59), got {value!r}"
+        )
+    return text
+
+
 # --- WP-DAY-SURFACE: events 表加 location/notes 列，旧库幂等补列 -----------
 
 
@@ -459,51 +384,6 @@ def _ensure_event_location_notes_columns(conn: sqlite3.Connection) -> bool:
 
 
 # --- WP-DAY-SURFACE: 出厂作息在 init 时打开（仍是出厂钟点才碰） ---------
-
-
-# 哪几个 seed id 在生产中应被视为「出厂态」并默认启用——昼夜循环。
-_FACTORY_FACTORY_TEMPLATES: tuple[str, ...] = (
-    "seed-sleep",
-    "seed-breakfast",
-    "seed-lunch",
-    "seed-dinner",
-)
-
-
-def _enable_factory_meals_and_sleep(conn: sqlite3.Connection) -> None:
-    """首次补 events 列的 init 上顺手打开出厂作息。
-
-    约束（与 MEALS-FLEX adopt 一致）：仅当 title/start_time/end_time 仍是
-    ``ROUTINE_SEEDS`` 的出厂值，且用户从未手动 ``enable`` 过——才写
-    ``enabled=1``。已经被用户动过的行（包括他手动 disable、修改钟点、修改
-    标题）一字不动，**绝不**改回去。
-    """
-    by_id = {seed["id"]: seed for seed in ROUTINE_SEEDS}
-    for template_id in _FACTORY_FACTORY_TEMPLATES:
-        seed = by_id.get(template_id)
-        if seed is None:
-            continue
-        row = conn.execute(
-            """
-            SELECT title, start_time, end_time, enabled
-              FROM routine_templates WHERE id = ?
-            """,
-            (template_id,),
-        ).fetchone()
-        if row is None:
-            continue
-        if row["enabled"]:
-            continue  # 用户已经手动 enable（或 disable 后又被 enable）了
-        if (
-            row["title"] != seed["title"]
-            or row["start_time"] != seed["start_time"]
-            or row["end_time"] != seed["end_time"]
-        ):
-            continue  # 用户改了钟点/标题 → 一行不动
-        conn.execute(
-            "UPDATE routine_templates SET enabled = 1, updated_at = ? WHERE id = ?",
-            (now_iso(), template_id),
-        )
 
 
 # --- CRUD -------------------------------------------------------------------
@@ -1045,7 +925,7 @@ def list_plan_items(conn: sqlite3.Connection, plan_id: str) -> list[PlanItem]:
 # 裁 175：计划行只许引用**真存在的 events 行**
 # ---------------------------------------------------------------------------
 
-# 排程自己造的那块身份（``l1:block-3``／``routine:seed-lunch``／``project:aura``）不是事件身份：
+# 排程自己造的那块身份（``l1:block-3``／``project:aura``）不是事件身份：
 # 界面上那颗勾点下去要写的 ``events.completed_at`` 根本没有那一行可写 ⇒ 前端只能画一个点不动的勾
 # （已闭的 ``WP-PLAN-ACK-NO-FAKE-CHECK`` 就是把它改成"查无此行就说记不了"）。
 # 真源还是同一句：**先落成 events 那一行，再进计划**。这一格是那条规矩的落笔处——所有写
@@ -1062,11 +942,9 @@ def is_plan_artifact(event: "Event") -> bool:
     """这一行是**排程的结果**，不是排程的素材。
 
     裁 175 让每一格计划行都必须指到一条真 ``events`` 行，于是过去那些自造身份
-    （``l1:block-3``／``routine:seed-lunch``）现在都成了真行。真行会被读回素材侧，
+    （``l1:block-3``）现在都成了真行。真行会被读回素材侧，
     那就得先说清它算不算素材——**不算**：不然"昨晚给某块补了身份"会变成"今晚它被当成
-    一条新作业再排一次"（作业池那条 ``_ddl_candidates`` 与锚点落位的占用表都读 ``events``，
-    两处都按这一句挡，10-18 现核过第二处不挡就会把当天的午餐锚点挤掉：
-    ``tests/plobi/test_day_surface.py`` 那两条）。
+    一条新作业再排一次"（作业池那条 ``_ddl_candidates`` 读 ``events``，按这一句挡）。
     """
     return (event.evidence or {}).get(PLAN_ARTIFACT_KEY) == PLAN_ARTIFACT_MARK
 
@@ -1091,7 +969,7 @@ def _plan_event_identity(plan: DailyPlan, item: "PlanItem") -> str:
        排程只是给它加了个前缀）⇒ 就用那把 id 落行。事件被上游 resync 删掉时，
        计划行还认得它原来是谁，下次采集回来按 uid 也对得上（判据原文要的就是
        "``ddl:evt_ac46920dc0c1`` 在 events 里要有行"，不是"有一行别的什么"）。
-    ② 其余（``l1:block-N``／``routine:seed-x``／``project:x``）⇒ 由「那天 + kind + 标题」
+    ② 其余（``l1:block-N``／``project:x``）⇒ 由「那天 + kind + 标题」
        推出一个确定性 id：同一晚重排落同一行，不同天各一行。
     """
     raw = (item.event_id or "").strip()
@@ -1111,11 +989,6 @@ def _find_material_event(conn: sqlite3.Connection, event_id: str) -> Optional[Ev
 
     认两种对法：id 本身（``ddl:evt_x`` 去掉前缀就是它），以及采集器存在 ``evidence.uid``
     里的那把。找到就复用它的 id——同一门课的 ddl 不该因为排程写了个前缀就变成两条事。
-
-    **故意不认 ``evidence.template_id``**：作息模板那一格（``seed-sleep``）是**与日子无关**的
-    类，拿它去匹配就会让 10-19 的"睡觉"锚点与 10-20 的那一条撞成同一行事件（10-18 写第一版时
-    就有这个形状，被 ``test_planning.py::test_anchor_only_plan_is_pending_not_empty`` 顶出来）。
-    模板那一类走 :func:`_plan_event_seed`：身份里带 ``plan.for_date``，一天一行。
     """
     raw = (event_id or "").strip()
     if not raw:
@@ -1189,10 +1062,9 @@ def ensure_plan_item_events(
     return out
 
 
-# 计划行的 evidence 里那些"材料形状"的键（``kind: routine`` / ``template_id`` / ``source``）
+# 计划行的 evidence 里那些"材料形状"的键（``kind`` / ``source`` / 材料侧附加格）
 # **不抄进事件**。只带采集器身份 ``uid`` 那一把——它是"这条作业是谁"的凭证，明天采集回来还要按它对齐。
-# 其余一律留在计划行上。抄过去的后果现核过：作息模板那一格会让这一行看起来像"今天真吃过午餐了"，
-# 当天 surface 就把午餐锚点从 anchors 里撤了（``tests/plobi/test_day_surface.py`` 两条顶出来的）。
+# 其余一律留在计划行上，免得这一行看起来像"素材侧真有这条事"。
 _PLAN_EVENT_MATERIAL_KEYS = ("uid",)
 
 
@@ -1287,276 +1159,6 @@ def replace_plan_items(
         written.append(item)
     conn.commit()
     return list_plan_items(conn, plan_id)
-
-
-# --- routine templates (C4) --------------------------------------------------
-
-_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-
-
-def _validate_hhmm(value: Any, field_name: str) -> str:
-    text = str(value or "").strip()
-    if not _HHMM_RE.match(text):
-        raise AgendaValidationError(
-            f"{field_name} must be HH:MM (00:00-23:59), got {value!r}"
-        )
-    return text
-
-
-def _validate_weekdays(value: Any) -> tuple[int, ...]:
-    """weekdays: JSON array of ints 0=Mon..6=Sun; empty/None ⇒ every day."""
-    if value is None or value == "":
-        return ()
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.JSONDecodeError as exc:
-            raise AgendaValidationError(f"weekdays is not valid JSON: {value!r}") from exc
-    if not isinstance(value, (list, tuple)):
-        raise AgendaValidationError("weekdays must be a list of ints 0-6")
-    days = tuple(int(v) for v in value)
-    for day in days:
-        if not 0 <= day <= 6:
-            raise AgendaValidationError(f"weekday out of range 0-6: {day}")
-    return tuple(sorted(set(days)))
-
-
-def _ensure_routine_window_columns(conn: sqlite3.Connection) -> bool:
-    """Old DB: ALTER the three window columns in (idempotent).
-
-    Returns ``True`` when a column was just added — that is the one moment a
-    factory-state meal row may be adopted (see :func:`_adopt_factory_windows`),
-    so a window the user later clears is never resurrected.
-    """
-    cols = {row["name"] for row in conn.execute("PRAGMA table_info(routine_templates)")}
-    added = False
-    for name, ddl in (
-        ("window_start", "TEXT NOT NULL DEFAULT ''"),
-        ("window_end", "TEXT NOT NULL DEFAULT ''"),
-        ("duration_min", "INTEGER"),
-    ):
-        if name not in cols:
-            conn.execute(f"ALTER TABLE routine_templates ADD COLUMN {name} {ddl}")
-            added = True
-    return added
-
-
-def _adopt_factory_windows(conn: sqlite3.Connection) -> None:
-    """One-time migration: factory-state meal rows gain their window + enabled.
-
-    Only rows that still carry the factory clock AND factory title are
-    adopted — a user-edited row keeps its times and stays however the user
-    left it (empty window = pinned), never force-enabled.
-    """
-    for seed in ROUTINE_SEEDS:
-        window = seed.get("window")
-        if not window:
-            continue
-        row = conn.execute(
-            "SELECT title, start_time, end_time, window_start FROM routine_templates WHERE id = ?",
-            (seed["id"],),
-        ).fetchone()
-        if row is None or row["window_start"]:
-            continue
-        if (
-            row["title"] != seed["title"]
-            or row["start_time"] != seed["start_time"]
-            or row["end_time"] != seed["end_time"]
-        ):
-            continue
-        conn.execute(
-            """
-            UPDATE routine_templates
-               SET window_start = ?, window_end = ?, duration_min = ?,
-                   enabled = 1, updated_at = ?
-             WHERE id = ?
-            """,
-            (
-                window["start"],
-                window["end"],
-                int(window["duration_min"]),
-                now_iso(),
-                seed["id"],
-            ),
-        )
-
-
-def _seed_routine_templates(conn: sqlite3.Connection) -> None:
-    """Insert the default template set once; never overwrite user edits.
-
-    三餐种子带弹性窗并直接启用（新库即弹）；睡眠仍出厂禁用。
-    """
-    stamp = now_iso()
-    for seed in ROUTINE_SEEDS:
-        window = seed.get("window") or {}
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO routine_templates (
-                id, title, kind, start_time, end_time, weekdays,
-                enabled, window_start, window_end, duration_min,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                seed["id"],
-                seed["title"],
-                ROUTINE_KIND,
-                seed["start_time"],
-                seed["end_time"],
-                _dumps_list([str(d) for d in seed["weekdays"]]) or "[]",
-                1 if seed.get("enabled") else 0,
-                str(window.get("start", "")),
-                str(window.get("end", "")),
-                int(window["duration_min"]) if window.get("duration_min") else None,
-                stamp,
-                stamp,
-            ),
-        )
-
-
-def _row_to_template(row: sqlite3.Row) -> RoutineTemplate:
-    weekdays_raw = row["weekdays"]
-    try:
-        weekdays = tuple(int(d) for d in json.loads(weekdays_raw)) if weekdays_raw else ()
-    except (TypeError, json.JSONDecodeError):
-        weekdays = ()
-    duration_raw = row["duration_min"] if "duration_min" in row.keys() else None
-    return RoutineTemplate(
-        id=row["id"],
-        title=row["title"],
-        start_time=row["start_time"],
-        end_time=row["end_time"],
-        weekdays=weekdays,
-        enabled=bool(row["enabled"]),
-        kind=row["kind"] or ROUTINE_KIND,
-        window_start=(row["window_start"] if "window_start" in row.keys() else "") or "",
-        window_end=(row["window_end"] if "window_end" in row.keys() else "") or "",
-        duration_min=int(duration_raw) if duration_raw is not None else None,
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
-def upsert_routine_template(
-    conn: sqlite3.Connection,
-    *,
-    template_id: str = "",
-    title: str = "",
-    start_time: str = "",
-    end_time: str = "",
-    weekdays: Any = None,
-    enabled: bool = False,
-    window_start: Any = None,
-    window_end: Any = None,
-    duration_min: Any = None,
-) -> RoutineTemplate:
-    """Create or update one routine template. ``kind`` is fixed to ``routine``.
-
-    WP-MEALS-FLEX 弹性窗：三个窗参数**全不传** = 保持原值（新建则空 = 钉死，
-    旧调用方——回访/看板——行为不变）；任一传了就三个一起算，要么全有（合法
-    同日窗 + (0, 1440] 分钟），要么全空（显式清窗 → 钉死），半套一律拒绝。
-    """
-    title = str(title or "").strip()
-    if not title:
-        raise AgendaValidationError("title is required")
-    start = _validate_hhmm(start_time, "start_time")
-    end = _validate_hhmm(end_time, "end_time")
-    if start == end:
-        raise AgendaValidationError("start_time and end_time must differ")
-    days = _validate_weekdays(weekdays)
-    stamp = now_iso()
-    tid = str(template_id or "").strip() or f"rt_{uuid.uuid4().hex[:12]}"
-    existing = get_routine_template(conn, tid)
-    created_at = existing.created_at if existing else stamp
-
-    if window_start is None and window_end is None and duration_min is None:
-        win_start = existing.window_start if existing else ""
-        win_end = existing.window_end if existing else ""
-        minutes = existing.duration_min if existing else None
-    else:
-        win_start = str(window_start if window_start is not None else "").strip()
-        win_end = str(window_end if window_end is not None else "").strip()
-        minutes = duration_min
-        if win_start or win_end or minutes is not None:
-            win_start = _validate_hhmm(win_start, "window_start")
-            win_end = _validate_hhmm(win_end, "window_end")
-            if minutes is None:
-                raise AgendaValidationError("duration_min is required when a window is set")
-            minutes = int(minutes)
-            if minutes <= 0 or minutes > MAX_DURATION_MIN:
-                raise AgendaValidationError(
-                    f"duration_min must be in (0, {MAX_DURATION_MIN}]"
-                )
-            if win_end <= win_start:
-                raise AgendaValidationError("window_end must be later than window_start")
-        else:
-            win_start = win_end = ""
-            minutes = None
-
-    conn.execute(
-        """
-        INSERT INTO routine_templates (
-            id, title, kind, start_time, end_time, weekdays,
-            enabled, window_start, window_end, duration_min,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            title=excluded.title,
-            kind=excluded.kind,
-            start_time=excluded.start_time,
-            end_time=excluded.end_time,
-            weekdays=excluded.weekdays,
-            enabled=excluded.enabled,
-            window_start=excluded.window_start,
-            window_end=excluded.window_end,
-            duration_min=excluded.duration_min,
-            updated_at=excluded.updated_at
-        """,
-        (
-            tid,
-            title,
-            ROUTINE_KIND,
-            start,
-            end,
-            _dumps_list([str(d) for d in days]) or "[]",
-            1 if enabled else 0,
-            win_start,
-            win_end,
-            minutes,
-            created_at,
-            stamp,
-        ),
-    )
-    conn.commit()
-    stored = get_routine_template(conn, tid)
-    assert stored is not None
-    return stored
-
-
-def get_routine_template(conn: sqlite3.Connection, template_id: str) -> Optional[RoutineTemplate]:
-    row = conn.execute(
-        "SELECT * FROM routine_templates WHERE id = ?", (str(template_id),)
-    ).fetchone()
-    return _row_to_template(row) if row else None
-
-
-def list_routine_templates(
-    conn: sqlite3.Connection, *, enabled_only: bool = False
-) -> list[RoutineTemplate]:
-    sql = "SELECT * FROM routine_templates"
-    if enabled_only:
-        sql += " WHERE enabled = 1"
-    sql += " ORDER BY start_time ASC, id ASC"
-    rows = conn.execute(sql).fetchall()
-    return [_row_to_template(r) for r in rows]
-
-
-def delete_routine_template(conn: sqlite3.Connection, template_id: str) -> bool:
-    cursor = conn.execute(
-        "DELETE FROM routine_templates WHERE id = ?", (str(template_id),)
-    )
-    conn.commit()
-    return cursor.rowcount > 0
 
 
 # --- checkin cards (C6) -------------------------------------------------------

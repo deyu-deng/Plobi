@@ -70,11 +70,7 @@ def pipeline(secretary_home, tmp_path):
 
 
 def _seed(conn):
-    """三条块 + 两条作息锚点（午饭钉死、睡觉跨零点 ⇒ 清醒窗 07:00–23:00）。"""
-    store.upsert_routine_template(conn, template_id="lunch", title="午饭",
-                                  start_time="12:00", end_time="12:45", enabled=True)
-    store.upsert_routine_template(conn, template_id="sleep", title="睡觉",
-                                  start_time="23:00", end_time="07:00", enabled=True)
+    """三条互不重叠的块（白天 07–15 点）。"""
     plan = store.upsert_daily_plan(conn, for_date=DAY, status="pending",
                                    summary="测试用计划", event_count=0,
                                    evidence={"kind": "test"})
@@ -134,19 +130,19 @@ def test_a_spoken_move_lands_on_the_plan_and_touches_nothing_else(pipeline):
         conn.close()
 
 
-def test_a_move_that_squeezes_lunch_is_refused_in_plain_words_and_writes_nothing(pipeline):
-    """判据③ + 「不许假成功」：挤掉午饭 / 指不到那块 ⇒ 一句人话 + 原计划一字未改。"""
+def test_a_move_that_double_books_is_refused_in_plain_words_and_writes_nothing(pipeline):
+    """判据③ + 「不许假成功」：与已排块双订 / 指不到那块 ⇒ 一句人话 + 原计划一字未改。"""
     conn = store.connect(pipeline.service.db_path)
     try:
         store.init_db(conn)
         plan = _seed(conn)
         before = _rows(conn, plan.id)
 
-        squeezed = _move(pipeline, user_text="下午那块挪到午饭",
+        squeezed = _move(pipeline, user_text="下午那块挪到九点半",
                          title="推进 · Wealth-Lab",
-                         start_at=f"{DAY}T12:00:00", end_at=f"{DAY}T12:45:00")
+                         start_at=f"{DAY}T09:30:00", end_at=f"{DAY}T10:30:00")
         assert squeezed["ok"] is False, squeezed
-        assert "午饭" in squeezed["error"] or "挤掉" in squeezed["error"], squeezed
+        assert "双订" in squeezed["error"], squeezed
         assert _rows(conn, plan.id) == before, "改不动的时候一个字节都不许写"
 
         missing = _move(pipeline, user_text="把没排过的那块挪走", title="不存在的块",

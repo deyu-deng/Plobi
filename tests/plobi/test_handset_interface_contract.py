@@ -71,7 +71,6 @@ EVENT_ROW_FIELDS = {
 }
 DAY_EVENT_ROW_FIELDS = EVENT_ROW_FIELDS | {"overlaps"}
 DAY_TOP_LEVEL_FIELDS = {
-    "anchors",
     "avoid_windows",
     "conflicts",
     "date",
@@ -79,7 +78,6 @@ DAY_TOP_LEVEL_FIELDS = {
     "plan_items",
     "plan_status",
 }
-ANCHOR_ROW_FIELDS = {"end_at", "flex", "id", "start_at", "template_id", "title"}
 PLAN_ITEM_ROW_FIELDS = {"end_at", "event_id", "evidence", "id", "kind", "start_at", "title"}
 CONFLICT_ROW_FIELDS = {"end_at", "left_id", "right_id", "start_at"}
 REDEEM_RESPONSE_FIELDS = {"deviceId", "scopes", "token"}
@@ -273,8 +271,6 @@ def test_day_surface_field_for_field(seeded):
         assert set(item) == PLAN_ITEM_ROW_FIELDS
         # WP-PLAN-COMPLETION-ACK 判据③：完成态打在事件上 ⇒ 计划项必须带得回 event_id。
         assert item["event_id"] == ids["left"]
-    for anchor in payload["anchors"]:
-        assert set(anchor) == ANCHOR_ROW_FIELDS
     assert isinstance(payload["avoid_windows"], list)
 
 

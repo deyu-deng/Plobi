@@ -108,7 +108,6 @@ describe('AgendaView shows the next-day plan (裁定 140)', () => {
       // Only the day endpoint exists for this purpose; anything else answers "no plan".
       if (path.includes(`date=${tomorrow}`)) {
         return {
-          anchors: [],
           conflicts: [],
           date: tomorrow,
           events: [eventOn(tomorrow)],
@@ -119,7 +118,7 @@ describe('AgendaView shows the next-day plan (裁定 140)', () => {
         }
       }
 
-      return { anchors: [], conflicts: [], date: tomorrow, events: [], plan_items: [], plan_status: null }
+      return { conflicts: [], date: tomorrow, events: [], plan_items: [], plan_status: null }
     })
 
     const previous = (window as { plobiDesktop?: unknown }).plobiDesktop

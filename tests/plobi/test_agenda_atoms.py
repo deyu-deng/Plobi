@@ -10,8 +10,6 @@
 3. **一条一件、逐条点名**：一批里第 N 条坏了不影响前 N-1 条，也不许吞掉——`errors` 里要说得出为什么。
 4. **旧 `mutate_agenda` 那五条 `action` 的等价路径**逐条验：create／update（＝改时改名，就是 move_block）、
    delete（`status=cancelled`）、按 id 勾完成（`completed`）。
-   **对照表里还缺的那一条本档不假装覆盖**：作息模板（`add_life_block` 写的是 `routine_templates` 那张表，
-   带自己的撞段闸门）——它需要一枚模板原子，没做就不许撤那张 intent 表（判据③）。
 """
 
 from __future__ import annotations

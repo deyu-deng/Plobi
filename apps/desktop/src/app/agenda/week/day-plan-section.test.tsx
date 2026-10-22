@@ -78,7 +78,7 @@ describe('DayPlanSection through the default context', () => {
 
 /**
  * WP-PLAN-ACK-NO-FAKE-CHECK — 今天那份 13 行里 12 行的 `event_id` 是排程自造的
- * （`l1:block-3` / `routine:seed-lunch`），`events` 表里查无此行；点下去后端
+ * （`l1:block-3`），`events` 表里查无此行；点下去后端
  * `EventNotFound` → 404 → 一条「操作失败」。画一颗只会报错的勾比不画更坏。
  */
 function event(id: string): AgendaEvent {

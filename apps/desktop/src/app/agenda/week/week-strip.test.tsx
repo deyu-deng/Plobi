@@ -172,8 +172,8 @@ describe('AgendaWeekStrip', () => {
         events={events}
         fetchDay={async (dayKey: string) =>
           dayKey === '2026-10-10'
-            ? { anchors: [], conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }], date: dayKey, events: [], plan_items: [] }
-            : { anchors: [], conflicts: [], date: dayKey, events: [], plan_items: [] }
+            ? { conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }], date: dayKey, events: [], plan_items: [] }
+            : { conflicts: [], date: dayKey, events: [], plan_items: [] }
         }
         onPickDay={() => undefined}
         pickedDayKey={null}
@@ -222,7 +222,6 @@ describe('AgendaWeekStrip', () => {
       <AgendaWeekStrip
         events={[]}
         fetchDay={async (dayKey: string) => ({
-          anchors: [],
           conflicts: [],
           date: dayKey,
           events: [],
@@ -275,7 +274,7 @@ describe('AgendaWeekStrip', () => {
 
     // Answer the new week, then let the old week dribble in late.
     for (const call of pending) {
-      call.resolve({ anchors: [], conflicts: [], date: call.dayKey, events: [], plan_items: [] })
+      call.resolve({ conflicts: [], date: call.dayKey, events: [], plan_items: [] })
     }
 
     await waitFor(() => {
@@ -284,7 +283,6 @@ describe('AgendaWeekStrip', () => {
 
     for (const call of staleWeek) {
       call.resolve({
-        anchors: [],
         conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }],
         date: call.dayKey,
         events: [],

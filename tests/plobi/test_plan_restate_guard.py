@@ -17,8 +17,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import pytest
 
 from plobi.agenda import llm_planning, store
@@ -48,7 +46,7 @@ PROPOSED = [
 #: 那四块是真活，必须留下。
 LEGIT = [item["title"] for item in PROPOSED[3:]]
 
-REASON = "三节课与午、晚餐锚点是不可动的骨架原样保留，其余空白全部填实。"
+REASON = "三节课是不可动的骨架原样保留，其余空白全部填实。"
 
 
 @pytest.fixture()
@@ -59,19 +57,13 @@ def conn(tmp_path):
 
 
 def _seed_the_real_day(conn) -> None:
-    """照今天那面真库摆：三门课、一份今晚的截止、三条作息模板（清醒窗与锚点都从这算）。"""
+    """照今天那面真库摆：三门课、一份今晚的截止。"""
     for title, start, end in CLASSES:
         store.create_event(conn, title=title, start_at=f"{DAY}T{start}", end_at=f"{DAY}T{end}",
                            kind="class", source="timetable",
                            evidence={"uid": title, "calendar_name": "浙大课程表-2026-2027秋冬"})
     store.create_event(conn, title=DDL_TITLE, start_at=f"{DAY}T23:59:00", kind="ddl",
                        status="pending", source="zju", evidence={"course": "电工电子学实验"})
-    store.upsert_routine_template(conn, template_id="seed-sleep", title="睡眠",
-                                  start_time="23:30", end_time="07:30", enabled=True)
-    store.upsert_routine_template(conn, template_id="seed-lunch", title="午餐",
-                                  start_time="12:25", end_time="13:05", enabled=True)
-    store.upsert_routine_template(conn, template_id="seed-dinner", title="晚餐",
-                                  start_time="18:30", end_time="19:10", enabled=True)
 
 
 def _proposal(items, reason=REASON):
@@ -100,7 +92,7 @@ class TestTheCounterExample:
 
         assert result["ok"] is True, result
         rows = _items_of(conn)
-        assert len(rows) == 10, f"骨架 3＋作息 2＋截止 1＋秘书 4 应为 10，现读 {len(rows)}"
+        assert len(rows) == 8, f"课 3＋截止 1＋秘书 4 应为 8，现读 {len(rows)}"
         for title, _s, _e in CLASSES:
             assert sum(1 for r in rows if r["title"] == title) == 1, f"{title} 还是排了两遍"
         assert llm_planning.duplicate_slot_titles(rows) == []
@@ -127,8 +119,8 @@ class TestTheCounterExample:
         assert "理论力学（甲）" in logged
 
 
-class TestTheSkeletonStaysSeparate:
-    """骸架与秘书排的块在**数据里**分得开（显示面那一半归 `WP-PLAN-ITEM-DETAIL-FE`）。"""
+class TestTheEventRowsStaySeparate:
+    """课表行与秘书排的块在**数据里**分得开（显示面那一半归 `WP-PLAN-ITEM-DETAIL-FE`）。"""
 
     def test_each_origin_is_readable_from_kind_and_evidence(self, conn):
         _seed_the_real_day(conn)
@@ -137,13 +129,11 @@ class TestTheSkeletonStaysSeparate:
 
         rows = _items_of(conn)
         classes = [r for r in rows if r["kind"] == "class"]
-        routines = [r for r in rows if "template_id" in r["evidence"]]
         blocks = [r for r in rows if r["evidence"].get("planner") == "l1"]
 
         assert len(classes) == 3 and len(blocks) == 4
-        assert {r["evidence"]["template_id"] for r in routines} == {"seed-lunch", "seed-dinner"}
-        # 作息锚点是代码给的，不许"交给 L1 自己想"（裁 149 第五条）：它不带 planner=l1 那种署名
-        assert all("planner" not in r["evidence"] for r in routines)
+        # 课表行来自材料，不是秘书排的（不许"交给 L1 自己想"）：它不带 planner=l1 那种署名
+        assert all("planner" not in r["evidence"] for r in classes)
 
 
 class TestTheGateNamesItForTheModel:
@@ -151,11 +141,9 @@ class TestTheGateNamesItForTheModel:
         """同一枚判据要能让模型下一发别再交——只摘不说是把错吞进库里。"""
         _seed_the_real_day(conn)
         materials = llm_planning.plan_materials(conn, DAY)
-        waking = tuple(datetime.fromisoformat(v) for v in materials["waking_window"])
 
         problems = llm_planning.validate_proposal(
-            PROPOSED, anchors=materials["routine_anchors"], waking=waking,
-            scheduled=materials["today_items"])
+            PROPOSED, scheduled=materials["today_items"])
 
         named = [p for p in problems if "又排了一遍" in p]
         assert len(named) == 3, problems

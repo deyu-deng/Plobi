@@ -10,9 +10,8 @@
 1. **代码不许替 L1 改数据**。校验只报问题，不修数据：不裁时间、不挪条目、不删通勤。
    不通过就带着问题清单**退回重排**（:func:`plan_with_llm` 的重问回路），
    重排到上限仍不过 ⇒ 抛 :class:`PlanRejected` 让调用方当场点名，**绝不静默落一版"差不多"的**。
-2. **边界只有五条**（:func:`validate_proposal`）：睡眠与三餐锚点不许被挤掉 · 同一时段不许双订 ·
-   总量不许超过当天清醒窗口 · 占满相邻两项之间唯一间隔的通勤条目不许存在 ·
-   不许排在人**批准过**的避开时段（`avoid_windows`）里。
+2. **边界只有四条**（:func:`validate_proposal`）：同一时段不许双订 · 同一件事不许复述当天已有的那条 ·
+   占满相邻两项之间唯一间隔的通勤条目不许存在 · 不许排在人**批准过**的避开时段（`avoid_windows`）里。
    第四条是**关系判据**（通勤条目 ≥ 它两侧可用的空档 ⇒ 违规），不是"通勤超过 N 分钟"那种数字。
    第五条是退役均分之后补的：那条偏好原来由均分自己躲开，代码不再排块之后**只剩闸能执行它**——
    光写进材料里让模型"自己注意"，等于用户那句「那段时间别排事」没人负责。
@@ -42,7 +41,6 @@ PROJECT_BLOCK_EVIDENCE_KIND = planning.PROJECT_BLOCK_EVIDENCE_KIND
 
 # 睡眠锚点的识别词（作息种子是用户自己写的模板，不是我们编的分类）。判据用词表而不是
 # 模板 id：模板 id 会变，"睡觉要睡"不会。
-_SLEEP_WORDS = ("觉", "睡")
 
 # 通勤类条目的识别：标题里带这些词。同一条作业换教室不算通勤，那是课表本身。
 _COMMUTE_WORDS = ("通勤", "走路", "步行", "赶车", "坐车", "地铁", "公交", "骑车")
@@ -90,8 +88,6 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
     # （现核铁证就是 `ddl:evt_ac46920dc0c1` 连排五天）。
     events = store.list_events(conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
                                include_completed=False) or []
-    kept, _yielded, moved = planning.place_anchors_for_day(conn, day, list(events))
-    anchors = planning.kept_anchors_as_dicts(kept)
     yesterday = planning.l1_plan_view(_shift_day(day, -1), [], db_path=None)
     # 判据「作业信源接进来」：作业**不是当天的日程**，它是"某天之前要交"。只看当天那一格，
     # 现核 2026-10-17 就是 `ddl 0 条` ⇒ L1 永远看不见有作业要写，排出来的"满"是假的满。
@@ -115,7 +111,6 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
 
     return {
         "for_date": day,
-        "waking_window": _waking_window(conn, day),
         "classes": _by_kind(events, "class"),
         "deadlines": _by_kind(events, "ddl", "task"),
         "upcoming_deadlines": upcoming,
@@ -124,8 +119,6 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
         # 之前只有 classes／deadlines／other_events 三个分桶，闸拿不到"这一面已有的全部条目"，
         # 于是「把课又排一遍」那种提案没人拦（2026-10-20 图上那三张空壳）。
         "today_items": [_event_row(e) for e in events],
-        "routine_anchors": anchors,
-        "anchors_moved": moved,
         # 用户**批准过**的「避开时段」（checkin 卡的 avoid_windows）。退役前是均分自己躲开它们；
         # 换成秘书排之后，这一格必须跟着进材料，否则"我说过那段时间别排事"这句话就没人执行了。
         # 未批准的窗不进来（`list_active_avoid_windows` 只读 confirmed 那张卡）。
@@ -191,8 +184,7 @@ def build_prompt(materials: dict[str, Any], *, extra: Optional[Sequence[str]] = 
 
     lines = [
         "你来排明天（" + str(materials.get("for_date")) + "）的一天。规则四条，一条都不能破：",
-        "1) **一天排满**：清醒窗口内不留大块空白；但**睡眠与三餐锚点不许被挤掉**，"
-        "它们占的时段就是你的边界。",
+        "1) **一天排满**：不留大块空白。",
         "2) **同一时段不许双订**：两件事不许叠在一起。"
         "材料里 `classes` / `deadlines` / `other_events` 那些条**本来就已经在当天日程里了**——"
         "你要排的是它们之外的空白，把它们原样再写一条不算「保留」，那种提案会被当场打回"
@@ -204,8 +196,8 @@ def build_prompt(materials: dict[str, Any], *, extra: Optional[Sequence[str]] = 
         "**三条口径**（裁定 148 里缺的那两类 + 人已批准的避开时段）：",
         "- `avoid_windows` 是人**批准过**的「那段时间别排事」。撞上它的提案会被当场打回，"
         "别指望写一句理由糊过去；材料里没有这一格就是没有（不存在的窗不许你替用户记着）。",
-        "- 生活块就在 `routine_anchors` 里（吃饭／睡觉这类作息）——它们是你排程的**边界**，不是可以省掉的"
-        "装饰；材料里没有的生活类别（运动／休息／杂务…）**不许替用户编**，他想要会在对话里自己加，加了就进下一轮材料。",
+        "- 吃饭／睡觉这类生活块如果人让你安排，就用普通条目排进去；材料里没有的生活类别"
+        "（运动／休息／杂务…）**不许替用户编**，他想要会在对话里自己说。",
         "- `quota_budget` 那一格是**估的**：这台只有发数与 token 是真数，钱读不出来时 `money` 就是 `null`——"
         "`null` 是「读不出来」，不是「没花」。按「今天还能打几发」权衡，别把它当余额报给用户。",
         "",
@@ -230,8 +222,6 @@ def build_prompt(materials: dict[str, Any], *, extra: Optional[Sequence[str]] = 
 def validate_proposal(
     items: Iterable[dict[str, Any]],
     *,
-    anchors: Sequence[dict[str, Any]],
-    waking: tuple[datetime, datetime],
     avoid: Sequence[dict[str, Any]] = (),
     scheduled: Sequence[dict[str, Any]] = (),
 ) -> list[str]:
@@ -245,27 +235,14 @@ def validate_proposal(
             problems.append(f"「{_title(row)}」缺起止时间")
     timed = [(row, span) for row, span in spans if span is not None]
 
-    # 边界一：生活锚点不许被挤掉
-    for anchor in anchors:
-        a_span = _span_of(anchor)
-        if a_span is None:
-            continue
-        for row, (start, end) in timed:
-            if is_anchor_echo(row, anchor) or not _overlaps(start, end, *a_span):
-                continue
-            problems.append(
-                f"「{_title(row)}」挤掉了作息锚点「{_title(anchor)}」"
-                f"（{a_span[0].strftime('%H:%M')}–{a_span[1].strftime('%H:%M')}）"
-            )
-
-    # 边界二：不许双订
+    # 边界一：不许双订
     for i in range(len(timed)):
         for j in range(i + 1, len(timed)):
             (row_a, (s_a, e_a)), (row_b, (s_b, e_b)) = timed[i], timed[j]
             if _overlaps(s_a, e_a, s_b, e_b):
                 problems.append(f"「{_title(row_a)}」与「{_title(row_b)}」同一时段双订")
 
-    # 边界六：不许把当天**已经有**的那一件事再排一遍（同时段、标题归一后全等）。
+    # 边界二：不许把当天**已经有**的那一件事再排一遍（同时段、标题归一后全等）。
     # 边界二只看提案内部的两两，看不见课表当天已经落的那条 `class` 行——图上「一个时段三张卡、
     # 两张是空壳」就是从这里漏出去的（现核 2026-10-20：三节课各被复述成一条 `task`）。
     # 这一条点名给模型看，是让它**别再交**这一发；落库前 :func:`_block_rows_from_proposal`
@@ -278,15 +255,7 @@ def validate_proposal(
                     f"（{_span[0].strftime('%H:%M')}–{_span[1].strftime('%H:%M')} 同段同题，那条已经在日程里了）"
                 )
 
-    # 边界三：总量不许超过当天清醒窗口
-    for row, (start, end) in timed:
-        if start < waking[0] or end > waking[1]:
-            problems.append(
-                f"「{_title(row)}」排在清醒窗口之外"
-                f"（{start.strftime('%H:%M')}–{end.strftime('%H:%M')}）"
-            )
-
-    # 边界五：人批准过的「避开时段」。均分那套自己躲开它；换成秘书排之后，
+    # 边界三：人批准过的「避开时段」。均分那套自己躲开它；换成秘书排之后，
     # 这条只能落在闸上——只写进材料里让模型"自己注意"，等于这句话没人执行。
     for window in avoid:
         w_span = _span_of(window)
@@ -340,14 +309,12 @@ def plan_with_llm(
     conn = conn or store.connect(None)
     try:
         materials = plan_materials(conn, day)
-        anchors = materials["routine_anchors"]
-        waking = tuple(_dt(value) for value in materials["waking_window"])
         prompt = build_prompt(materials)
         seen: list[str] = []
         for attempt in range(1, max_replans + 2):
             parsed = _parse_proposal(llm_call(prompt), day)
             proposal = parsed["items"]
-            problems = validate_proposal(proposal, anchors=anchors, waking=waking,
+            problems = validate_proposal(proposal,
                                  avoid=materials.get("avoid_windows") or [],
                                  scheduled=materials.get("today_items") or [])
             if not parsed["reason"]:
@@ -494,29 +461,6 @@ def _title(row: dict[str, Any]) -> str:
     return str(row.get("title") or row.get("id") or "（无名条目）")
 
 
-def _is_anchor_row(row: dict[str, Any], anchor: dict[str, Any]) -> bool:
-    if row.get("template_id") and row.get("template_id") == anchor.get("template_id"):
-        return True
-    return str(row.get("id") or "") == str(anchor.get("id") or "")
-
-
-def is_anchor_echo(row: dict[str, Any], anchor: dict[str, Any]) -> bool:
-    """这一条**就是那个锚点本身**，不是挤掉它的第三件事。
-
-    模型爱把作息原样复述回来（10-17 15:5x 在这台真库上现读：那一发交回的「早餐／午餐／晚餐」
-    三段与锚点同名同段），而它交的形状里没有 `id` / `template_id` 可认。只按身份认，等于把
-    用户自己说过的那三段当成新事情打回——重问三轮还是同一颗钉子（那三发就是这么全军的）。
-    所以这里加一条**只在标题与两个钟点全等时**成立的认法：标题差一个字、时段比锚点宽或窄，
-    仍然算挤掉。放宽的那一格只吞掉复述，不吞掉真违规。
-    """
-    if _is_anchor_row(row, anchor):
-        return True
-    r_span, a_span = _span_of(row), _span_of(anchor)
-    if r_span is None or a_span is None:
-        return False
-    return _title(row) == _title(anchor) and r_span == a_span
-
-
 def _title_key(text: Any) -> str:
     """标题归一：去掉所有空白再比大小写。判据是**归一后全等**，不是相似——差一个字算两件事。"""
     return "".join(str(text or "").split()).casefold()
@@ -553,44 +497,6 @@ def duplicate_slot_titles(rows: Sequence[dict[str, Any]]) -> list[tuple[str, str
 def _is_commute(row: dict[str, Any]) -> bool:
     title = _title(row)
     return any(word in title for word in _COMMUTE_WORDS)
-
-
-def _waking_window(conn: Any, day: str) -> tuple[str, str]:
-    """清醒窗口 = 「前一段睡眠结束」→「当天这段睡眠开始」。
-
-    睡眠锚点跨零点（今天 23:30 → 明早 07:30），所以**只查当天那一条会把窗口算反**
-    （起点晚于终点 ⇒ 边界三把每份提案都打回）。这里同时取前一天与当天两天的睡眠段。
-    真取数跑出来的第一条错就是这个，测试里手喂窗口把它盖住了。
-    """
-    spans: list[tuple[datetime, datetime]] = []
-    for probe in (_shift_day(day, -1), day):
-        try:
-            rows = planning.enabled_anchors_for_day(conn, probe)
-        except Exception:
-            rows = []
-        for template, start, end in rows:
-            if _is_sleep(template):
-                spans.append((start, end))
-    return _waking_from_spans(spans, day)
-
-
-def _is_sleep(template: Any) -> bool:
-    return any(word in str(getattr(template, "title", "")) for word in _SLEEP_WORDS)
-
-
-def _waking_from_spans(spans: Sequence[tuple[datetime, datetime]], day: str) -> tuple[str, str]:
-    """从**给定的睡眠段**算清醒窗——同一条算式，库里的和"挪之后假想的"都走这里。
-
-    对话要挪睡眠块时校验器得知道新窗口，而那时库还没改；如果那里再写一遍算法，
-    两套迟早各说各话（裁定 94）。
-    """
-    waking_start = next((end for _start, end in spans if end.date().isoformat() == day), None)
-    waking_end = next((start for start, _end in spans if start.date().isoformat() == day), None)
-    if waking_start is not None and waking_end is not None and waking_start < waking_end:
-        return waking_start.isoformat(), waking_end.isoformat()
-
-    # 拿不全就退回整天，并在材料里照实说这是兜底——不假装知道作息。
-    return f"{day}T00:00:00", f"{day}T23:59:00"
 
 
 def _shift_day(day: str, delta: int) -> str:
@@ -661,11 +567,10 @@ def default_llm_call(route: Any = None) -> Callable[[str], Any]:
 #: 裁定 161（10-16）：**没有任何可排材料时不许打模型**——花钱问模型「今天没什么可排」既贵又
 #: 会凭空排出块来（实测那条 `status=empty` 就是这么变成 `pending` 的）。空这一格由
 #: `planning.py` 既有的 `status=empty` 分支负责对人说话（「明天没有日程，计划为空，不是没跑」）。
-NOTHING_TO_SCHEDULE_NOTE = "明天没有任何可排材料（课、作业、待办、作息锚点、项目节奏全空），没有问模型"
+NOTHING_TO_SCHEDULE_NOTE = "明天没有任何可排材料（课、作业、待办、项目节奏全空），没有问模型"
 
 _MATERIAL_KEYS = (
-    "classes", "deadlines", "upcoming_deadlines", "other_events",
-    "routine_anchors", "anchors_moved", "project_pace",
+    "classes", "deadlines", "upcoming_deadlines", "other_events", "project_pace",
 )
 
 
@@ -678,7 +583,6 @@ def _block_rows_from_proposal(
     items: Iterable[dict[str, Any]],
     reason: str,
     sources: list[tuple[str, str]],
-    anchors: Sequence[dict[str, Any]] = (),
     scheduled: Sequence[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
     """把提案条目收成 `plan_items` 那一格的形状（**evidence 的口径只在这一处定义**）。
@@ -688,23 +592,16 @@ def _block_rows_from_proposal(
     两处各写一份，面上「是谁排的」就会有两套说法（裁定 94）。
     对不上材料也留一句「对不上」，不许空着——空着那一格看起来像排过了，实际没人知道为什么。
 
-    `anchors` 那一格用来把**模型复述回来的作息**摘掉：那些行不是它排的新事情，而写库那一步
-    本来就从材料里的锚点真源落一遍（`_anchor_item_row`）。不摘就会得到两条「午餐」——
-    多一条不是"更详细"，是让面上与手机清单出现没人排过的第二遍饭。摘这个动作只认
-    :func:`is_anchor_echo` 那一条全等判据，别的行一律原样留下。
-
-    `scheduled` 同一族判据的**另一半**：当天已经会落成条目的那些行（课表里的课、当天的作业／截止）。
-    2026-10-20 图上「一个时段三张卡、两张是空壳」就是这一格空着——模型把三节课各复述成一块 `task`，
-    作息那侧摘得掉、课这侧没人摘。摘的条件是 :func:`restates`（时段全等＋标题归一后全等），
-    **并且出声**（`logger.warning`）：静默摘行会把「模型交错了」伪装成「今天就这么排」。
+    `scheduled` 是当天已经会落成条目的那些行（课表里的课、当天的作业／截止）。
+    2026-10-20 图上「一个时段三张卡、两张是空壳」就是这一格空着——模型把三节课各复述成一块 `task`。
+    摘的条件是 :func:`restates`（时段全等＋标题归一后全等），**并且出声**（`logger.warning`）：
+    静默摘行会把「模型交错了」伪装成「今天就这么排」。
     """
     blocks: list[dict[str, Any]] = []
     dropped: list[str] = []
     for item in items:
         span = _span_of(item)
         if span is None:
-            continue
-        if any(is_anchor_echo(item, anchor) for anchor in anchors):
             continue
         if any(restates(item, existing) for existing in scheduled):
             dropped.append(_title(item))
@@ -759,7 +656,6 @@ def blocks_from_l1(
 
     blocks = _block_rows_from_proposal(proposal.items, proposal.reason,
                                        _material_index(materials),
-                                       anchors=materials["routine_anchors"],
                                        scheduled=materials.get("today_items") or [])
     if not blocks:
         return [], "L1 交回来的提案里没有任何能落的时间块"
@@ -814,30 +710,10 @@ def _event_item_row(event: Any, overlaps: dict[str, list[str]]) -> dict[str, Any
     }
 
 
-def _anchor_item_row(anchor: dict[str, Any]) -> dict[str, Any]:
-    """作息锚点那一行（吃饭／睡觉）。真源是 `routine_templates`，这里只是把材料里那条落成行。"""
-    evidence: dict[str, Any] = {
-        "kind": planning.ROUTINE_EVIDENCE_KIND,
-        "template_id": anchor.get("template_id"),
-    }
-    if anchor.get("flex"):
-        evidence["flex"] = True
-    return {
-        "event_id": str(anchor.get("id") or f"routine:{anchor.get('template_id')}"),
-        "title": str(anchor.get("title") or ""),
-        "start_at": str(anchor.get("start_at")),
-        "end_at": str(anchor.get("end_at")),
-        "kind": "task",
-        "conflict_with": [],
-        "evidence": evidence,
-    }
-
-
 def _mouth_summary(
     day: str,
     event_count: int,
     conflict_count: int,
-    anchor_count: int,
     blocks: Sequence[dict[str, Any]],
     reason: str,
 ) -> str:
@@ -846,8 +722,6 @@ def _mouth_summary(
         f"明天有{event_count}项日程，其中{conflict_count}处时间重叠。"
         if conflict_count else f"明天有{event_count}项日程，时间无重叠。"
     ) if event_count else f"{day} 没有日程。"
-    if anchor_count:
-        head += f"含{anchor_count}项作息锚点。"
     return f"{head}秘书自己排了{len(blocks)}块。{reason}".rstrip("。") + f"。（{MOUTH_PLAN_SOURCE}）"
 
 
@@ -869,10 +743,10 @@ def plan_and_store_day(
     2. **提案**：默认走 :func:`plan_with_llm`（同一发模型、同一条退回重排回路）；
        `proposal_fn(conn, day) -> (items, reason)` 是**测试的注入点**，给假提案用——
        生产不传，测试绝不用真模型。
-    3. **闸**：装配出来的块再过一次 `validate_proposal`（锚点 / 双订 / 清醒窗 / 通勤空档），
+    3. **闸**：装配出来的块再过一次 `validate_proposal`（双订 / 复述 / 避开时段 / 通勤空档），
        **不过就整笔不写**，返回点名拒绝 + 一句人话。绝不降级回均分（裁定 149／161③）。
-    4. **写**：`daily_plans`（按 `for_date` 覆盖）+ `plan_items`（当天真事件 + 作息锚点 +
-       秘书排的块），每块 `evidence` 带 `planner`（谁排的）与 `source`（指回材料哪一条）。
+    4. **写**：`daily_plans`（按 `for_date` 覆盖）+ `plan_items`（当天真事件 + 秘书排的块），
+       每块 `evidence` 带 `planner`（谁排的）与 `source`（指回材料哪一条）。
 
     这条路**不叫** `planning.generate_evening_plan`、也不碰 `scripts/`——脚本排程整条已退役（裁定 163）。
     """
@@ -880,8 +754,6 @@ def plan_and_store_day(
     conn = conn or store.connect(None)
     try:
         materials = plan_materials(conn, day)
-        anchors = materials["routine_anchors"]
-        waking = tuple(_dt(value) for value in materials["waking_window"])
 
         if nothing_to_schedule(materials):
             return _refusal(NOTHING_TO_SCHEDULE_NOTE, for_date=day,
@@ -924,7 +796,6 @@ def plan_and_store_day(
                 ["没交 reason"], for_date=day, status="no_reason")
 
         blocks = _block_rows_from_proposal(items, reason, _material_index(materials),
-                                       anchors=anchors,
                                        scheduled=materials.get("today_items") or [])
         if not blocks:
             return _refusal(
@@ -932,7 +803,7 @@ def plan_and_store_day(
                 for_date=day, status="no_blocks")
 
         # ③ 过闸：唯一一处写入前置。拆掉这一步，下面那个「同时段双订」的提案就会直接落库。
-        problems = validate_proposal(blocks, anchors=anchors, waking=waking,
+        problems = validate_proposal(blocks,
                              avoid=materials.get("avoid_windows") or [],
                              scheduled=materials.get("today_items") or [])
         if problems:
@@ -948,7 +819,6 @@ def plan_and_store_day(
         overlaps, conflict_rows = planning.compute_event_overlaps(events)
         conflict_count = len(conflict_rows)
         rows: list[dict[str, Any]] = [_event_item_row(event, overlaps) for event in events]
-        rows += [_anchor_item_row(anchor) for anchor in anchors]
         rows += [dict(block) for block in blocks]
         rows.sort(key=lambda row: str(row["start_at"]))
         for index, row in enumerate(rows):
@@ -958,7 +828,7 @@ def plan_and_store_day(
             1 for block in blocks
             if (block.get("evidence") or {}).get("kind") == planning.DDL_BLOCK_EVIDENCE_KIND
         )
-        summary = _mouth_summary(day, len(events), conflict_count, len(anchors), blocks, reason)
+        summary = _mouth_summary(day, len(events), conflict_count, blocks, reason)
         # 写之前先把这一批行验一遍：表头与条目是**两笔**写，中间挂掉就会留下「表头是新的、
         # 条目被清空」的半份计划——那正是「落到真实 entry」的反面，比不写更难看。
         broken = [
@@ -987,7 +857,6 @@ def plan_and_store_day(
                 "planner": MOUTH_PLANNER,
                 "source": MOUTH_PLAN_SOURCE,
                 "planner_note": reason,
-                "anchor_count": len(anchors),
                 "block_count": len(blocks),
                 # 治理线读的就是这两位（作业块数与项目块数），分开记，别让人再从中文里解析一遍。
                 "ddl_block_count": ddl_count,

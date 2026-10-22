@@ -654,35 +654,19 @@ export interface AgendaEventPatch {
   title?: string
 }
 
-/**
- * WP-DAY-FACE: anchors are the day's routine blocks (sleep / meals) the
- * backend surfaces on `/api/agenda/day`. They sit on the same axis as events
- * with a distinct colour, never block-conflict, and are NOT actionable.
- */
-export interface AgendaAnchor {
-  /** Free-form label; rendered verbatim. */
-  label: string
-  /** Inclusive start of the anchor (naive local ISO). */
-  start_at: string
-  /** Inclusive end of the anchor (naive local ISO). Anchors always span. */
-  end_at: string
-}
-
-/** A plan item shown on the day axis alongside events / anchors. */
+/** A plan item shown on the day axis alongside events. */
 export interface AgendaPlanItem {
   end_at: null | string
-  /** Plan items always render in the same anchor lane; never become pending. */
   id: string
   notes?: null | string
-  /** `anchor` / `event` / `plan` — always present in API output. */
-  lane: 'anchor' | 'event' | 'plan'
+  /** `event` / `plan` — always present in API output. */
+  lane: 'event' | 'plan'
   start_at: string
   title: string
 }
 
 /** Wire shape for `GET /api/agenda/day?date=YYYY-MM-DD`. */
 export interface AgendaDay {
-  anchors: AgendaAnchor[]
   /**
    * Optional confirmed avoid-windows (e.g. "Lunchtime 12:00–13:00", "Focus block").
    * Drawn full-width as a faint, untitled, pointer-events:none band behind the
