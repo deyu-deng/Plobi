@@ -320,9 +320,7 @@ export interface Translations {
         website: string
         custom: string
       }
-      disable: string
       emptyExternal: string
-      enable: string
       /**
        * 首次配置字段的显示名，**按 key 查**。查不到时界面回退到后端声明里那个英文
        * 缺省值——所以第三方信源包零改动就能出现在界面上，只是没翻译。
@@ -342,32 +340,31 @@ export interface Translations {
       installedNone: string
       loadingLog: string
       loadFailed: string
-      /**
-       * 「注册表说在采，却构造不出采集器」那一格 —— 产品缺陷。界面上只给这两个词，
-       * 不给那一整段解释（那段进交账，不进界面）。
-       */
-      noBuilder: string
       packageName: string
-      /** 状态胶囊。与 `sources/verbs.ts` 的 `VERB_RULES` 一一对应。 */
-      pillLive: string
-      pillNoStore: string
-      pillNotStarted: string
-      pillStale: string
-      pillSwitchOff: string
-      pillUnknown: string
       remove: string
       removeFailed: string
       saveFailed: string
       saveSetup: string
-      /** 首次配置那一格的按钮。`setupNeeded` = 还没配（所以文案更显眼）。 */
-      setup: string
-      setupNeeded: string
       switchFailed: string
       title: string
       tryFailed: string
-      tryOnce: string
       tryRunsForReal: string
       tryRunning: string
+      /** 三态那一行（后端算的 `status`）。只有出错态多一行原因，正常态什么都不多写。 */
+      /** 抽屉那几格读数 + 频率预设（键是 `sources/setup-fields.tsx` 那张表）。 */
+      statusConnected: string,
+      statusDisconnected: string,
+      statusError: string,
+      drawerLastRun: string,
+      drawerNextRun: string,
+      drawerNeverRun: string,
+      drawerNextEveryRound: string,
+      drawerPoolCount: string,
+      drawerPoolUnreadable: string,
+      drawerAgendaCount: string,
+      syncNow: string,
+      cadenceCustom: string,
+      cadencePresets: Record<string, string>,
       unknownSource: string
     }
     network: {

@@ -1,32 +1,35 @@
 /**
- * 设置 → 信源：按分类分组的信源，每条一行（`ListRow`）+ 一个状态胶囊 + 一个动词。
+ * 设置 → 信源：一条信源一行，**行上只有一颗开关**，其余信息在点开的抽屉里。
  *
- * 用户 10-19 第二轮拍定：**界面上只留胶囊，其余全删。** 这一版的规矩：
+ * 10-22 用户对着这一屏说的原话：「**一个信源就一个开关按钮，就三种形态：未连接和连接，
+ * 然后出错了会有一个报错。不要有这么多按钮**」＋「**第一次点击就引导配置跳转到相应的界面。
+ * 然后点击一个信源抽屉就会展开，就会显示相关信息**」。这一版就是那两句：
  *
- * 1. **只说测到的最短那一句。** 状态是一个 `Pill`（「正在采集」/「停了」/「没开」…）。
- *    后端那句工程说明、什么时候进的账、「不猜」那段自白——**一律不上屏**：它们进日志
- *    与通知，不进界面。上一版把 `note` 整段渲染出来（连 `**加粗**` 的星号都在界面上），
- *    那是把内部文档贴到了用户脸上。
- * 2. **胶囊与按钮同源。** 两者都从 `sources/verbs.ts` 那一张表来（`pillFor` / `verbFor`），
- *    分开算就会出现「胶囊说开着、按钮说试一次」那种自相矛盾的一行。
- * 3. **空分类整块不画。** 见 `visibleGroups`。
- * 4. **主题随应用走。** 全程用仓里那套件（`ListRow` / `Pill` / `SectionHeading` /
- *    `EmptyState`），零字面色值。
+ * 1. **状态是后端算的三态**（`sources_api.status_of`），这里只画一个点与一个词；
+ *    出错时多一行**逐字来自上一轮**的话（不转述、不总结，P6）。正常态那一行什么都不多写。
+ * 2. **行上只剩一颗开关**。旧版那三颗文字按钮（「首次配置」「试一次」「停掉」）里，
+ *    「停掉」就是开关的 off，「试一次」搬进抽屉改名「立即同步」，「首次配置」变成
+ *    **点这一行**展开的那片抽屉。
+ * 3. **必填没填时，点开关不动开关，直接展开抽屉并聚焦第一格** —— 一颗"开了但什么都没发生"
+ *    的开关是这一屏最容易骗人的一种形状。
+ * 4. **主题随应用走**：全程用仓里那套件（`ListRow` / `Switch` / `Pill` / `SectionHeading`），
+ *    零字面色值。
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Cpu, FolderOpen, Globe, Layers3, MessageCircle, Package, Play, Users } from '@/lib/icons'
+import { Cpu, FolderOpen, Globe, Layers3, MessageCircle, Package, Users } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
-import { ListRow, Pill, SectionHeading, SettingsContent } from './primitives'
+import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
 import { SourceAvatar } from './sources/source-icon'
-import { groupByCategory, needsSetup, pillFor, pillTone, verbFor, visibleGroups } from './sources/verbs'
+import { groupByCategory, needsSetup, statusOf, visibleGroups } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
@@ -46,6 +49,9 @@ export function SourcesSettings() {
   const [payload, setPayload] = useState<null | SourcesPayload>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState<null | string>(null)
+  const [open, setOpen] = useState<null | string>(null)
+  // 只有"因为缺配置而被引导进抽屉"那一次要自动聚焦；单纯点开抽屉不该抢光标。
+  const [guide, setGuide] = useState<null | string>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -53,7 +59,7 @@ export function SourcesSettings() {
       setLoadFailed(false)
     } catch (err) {
       // 读不到就老实说读不到。画一个空面板等于说"一条信源都没有"——那是两句不同的话。
-      // 不把 err 写上面的规矩同本节注释：原因进控制台与通知，不上屏。
+      // 原因进控制台与通知，不上屏（同旧版那条规矩）。
       console.error('[settings/sources] getSources failed', err)
       setLoadFailed(true)
     }
@@ -64,6 +70,14 @@ export function SourcesSettings() {
   }, [reload])
 
   const onToggle = async (row: SourceRow, enabled: boolean) => {
+    // 第一次点开关而它必填没填 ⇒ **引导去配置**，不是把开关拨上去再报"没反应"。
+    if (enabled && needsSetup(row)) {
+      setOpen(row.source)
+      setGuide(row.source)
+
+      return
+    }
+
     setBusy(row.source)
 
     try {
@@ -82,8 +96,7 @@ export function SourcesSettings() {
     try {
       const result = await trySource(row.source)
       await reload()
-      // 逐字显示执行方自己那句话。这一层不转述、不总结（P6）——跑完的细节看这里，
-      // 而设置页那一行只负责说"它现在什么状态"。
+      // 逐字显示执行方自己那句话。这一层不转述、不总结（P6）。
       notify({ kind: result.ok ? 'success' : 'error', message: result.detail })
     } catch (err) {
       notifyError(err, labels.tryFailed)
@@ -92,23 +105,9 @@ export function SourcesSettings() {
     }
   }
 
-  if (loadFailed) {
-    return (
-      <SettingsContent>
-        <SectionHeading icon={Layers3} title={labels.title} />
-        <p className="text-sm text-muted-foreground" data-testid="sources-failed">{labels.loadFailed}</p>
-      </SettingsContent>
-    )
-  }
-
-  // 双保险：api 层已经校验过形状（见 ./sources/api.ts 的 parseSourcesPayload），
-  // 但这一层再加一道——一个字段缺失曾经把整个应用崩进根 error boundary，而那正是
-  // 「绝不许因为一格数据把用户面前的东西全弄没」的形状。
-  if (
-    !payload ||
-    !Array.isArray(payload.sources) ||
-    !Array.isArray(payload.categories)
-  ) {
+  if (loadFailed || !payload || !Array.isArray(payload.sources) || !Array.isArray(payload.categories)) {
+    // 双保险：api 层已经校验过形状（见 ./sources/api.ts），这里再挡一道——
+    // 一个字段缺失曾经把整个应用崩进根 error boundary。
     return (
       <SettingsContent>
         <SectionHeading icon={Layers3} title={labels.title} />
@@ -135,11 +134,17 @@ export function SourcesSettings() {
           {group.rows.map(row => (
             <SourceRowView
               busy={busy === row.source}
+              guiding={guide === row.source}
               key={row.source}
               labels={labels}
+              onActivate={() => {
+                setOpen(open === row.source ? null : row.source)
+                setGuide(null)
+              }}
               onReload={reload}
               onToggle={onToggle}
               onTry={onTry}
+              open={open === row.source}
               row={row}
             />
           ))}
@@ -151,76 +156,131 @@ export function SourcesSettings() {
 
 function SourceRowView({
   busy,
+  guiding,
   labels,
+  onActivate,
   onReload,
   onTry,
   onToggle,
+  open,
   row
 }: {
   busy: boolean
+  guiding: boolean
   labels: Labels
+  onActivate: () => void
   onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
   onToggle: (row: SourceRow, enabled: boolean) => Promise<void>
+  open: boolean
   row: SourceRow
 }) {
   const { t } = useI18n()
-  const [setupOpen, setSetupOpen] = useState(false)
-  const verb = verbFor(row)
-  const setupPending = needsSetup(row)
+  const status = statusOf(row)
   const displayName = t.agenda.sources[row.source as keyof typeof t.agenda.sources] ?? labels.unknownSource
+  const checked = row.enabled ?? false
 
   return (
     <ListRow
       action={
-        <div className="flex items-center justify-end gap-1.5">
-          {row.setup_fields.length > 0 ? (
-            <Button
-              aria-expanded={setupOpen}
-              onClick={() => { setSetupOpen(open => !open) }}
-              size="sm"
-              variant="textStrong"
-            >
-              {setupPending ? labels.setupNeeded : labels.setup}
-            </Button>
-          ) : null}
-
-          <Pill tone={pillTone(row)}>{labels[pillFor(row)]}</Pill>
-
-          {verb === 'try' ? (
-            <Button
-              disabled={busy}
-              onClick={() => { void onTry(row) }}
-              size="sm"
-              title={labels.tryRunsForReal}
-              variant="secondary"
-            >
-              <Play className="mr-1.5 size-3.5" />
-              {busy ? labels.tryRunning : labels.tryOnce}
-            </Button>
-          ) : verb === 'enable' || verb === 'disable' ? (
-            <Button
-              disabled={busy || row.enabled === null}
-              onClick={() => { void onToggle(row, verb === 'enable') }}
-              size="sm"
-              variant="secondary"
-            >
-              {verb === 'enable' ? labels.enable : labels.disable}
-            </Button>
-          ) : null}
-        </div>
+        // 行上**只有这一颗**。旧版这里最多三颗文字按钮，用户的话是「不要有这么多按钮」。
+        <Switch
+          aria-label={`${displayName} — ${labels[STATUS_KEY[status]]}`}
+          checked={checked}
+          disabled={busy || row.enabled === null}
+          onCheckedChange={next => { void onToggle(row, next) }}
+          size="xs"
+        />
       }
+      below={open
+        ? <SourceDrawer busy={busy} guiding={guiding} labels={labels} onReload={onReload} onTry={onTry} row={row} />
+        : undefined}
+      description={
+        <span className="flex flex-wrap items-center gap-2">
+          <span aria-hidden="true" className={STATUS_DOT[status]} />
+          <span>{labels[STATUS_KEY[status]]}</span>
+          {/* 只有出错态多这一行，且逐字是上一轮执行方那句话。正常态什么都不多写。 */
+            status === 'error' && row.status_detail ? <span className="text-destructive">{row.status_detail}</span> : null}
+        </span>
+      }
+      expanded={open}
+      onActivate={onActivate}
       title={
-        // 名字 + 图标一起（用户 10-19 第三轮）。图标在前、名字在后，与会话列表那一族
-        // 同形；查不到图标的那一条退回首字母，见 `sources/source-icon.tsx`。
+        // 图标 + 名字。图标优先用后端从这条**自己声明的网站**抓来的 favicon，
+        // 没有就退本地品牌表，再退首字母（见 `sources/source-icon.tsx`）。
         <span className="flex min-w-0 items-center gap-2">
-          <SourceAvatar displayName={displayName} sourceId={row.source} />
+          <SourceAvatar
+            category={row.category ?? undefined}
+            displayName={displayName}
+            iconUrl={row.icon || undefined}
+            sourceId={row.source}
+          />
           <span className="truncate">{displayName}</span>
         </span>
       }
-      {...(setupOpen && row.setup_fields.length > 0
-        ? { below: <SetupFields busy={busy} labels={labels} onSaved={onReload} row={row} /> }
-        : {})}
     />
+  )
+}
+
+const STATUS_KEY = {
+  connected: 'statusConnected',
+  disconnected: 'statusDisconnected',
+  error: 'statusError'
+} as const
+
+const STATUS_DOT = {
+  connected: 'size-1.5 rounded-full bg-primary',
+  disconnected: 'size-1.5 rounded-full bg-(--ui-text-tertiary)',
+  error: 'size-1.5 rounded-full bg-destructive'
+} as const
+
+/** 点开的那片抽屉：上一次／下一次／池里几条／设置／立即同步。 */
+function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
+  busy: boolean
+  guiding: boolean
+  labels: Labels
+  onReload: () => Promise<void>
+  onTry: (row: SourceRow) => Promise<void>
+  row: SourceRow
+}) {
+  const kinds = Object.entries(row.pool_kinds ?? {}).sort((a, b) => b[1] - a[1])
+
+  return (
+    <div className="mt-2 space-y-3 rounded-lg bg-(--ui-bg-secondary) p-3" data-testid={`source-drawer-${row.source}`}>
+      <dl className="grid gap-x-4 gap-y-1 text-[length:var(--conversation-caption-font-size)] sm:grid-cols-2">
+        <Detail label={labels.drawerLastRun} value={row.last_run_at || labels.drawerNeverRun} />
+        <Detail label={labels.drawerNextRun} value={row.next_run_at || labels.drawerNextEveryRound} />
+        <Detail
+          label={labels.drawerPoolCount}
+          value={row.pool_count === undefined || row.pool_count < 0
+            ? labels.drawerPoolUnreadable
+            : `${row.pool_count}${kinds.length > 0 ? `（${kinds.slice(0, 4).map(([kind, count]) => `${kind} ${count}`).join(' · ')}）` : ''}`}
+        />
+        <Detail label={labels.drawerAgendaCount} value={String(row.events)} />
+      </dl>
+
+      {row.setup_fields.length > 0
+        ? <SetupFields busy={busy} focusFirst={guiding} labels={labels} onSaved={onReload} row={row} />
+        : null}
+
+      <Button
+        disabled={busy}
+        onClick={() => { void onTry(row) }}
+        size="sm"
+        title={labels.tryRunsForReal}
+        variant="secondary"
+      >
+        {busy ? labels.tryRunning : labels.syncNow}
+      </Button>
+    </div>
+  )
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-2">
+      <dt className="shrink-0 text-(--ui-text-tertiary)">{label}</dt>
+      <dd className="min-w-0 truncate">{value}</dd>
+    </div>
   )
 }

@@ -50,27 +50,44 @@ function monogramFor(displayName: string): string {
 }
 
 export function SourceAvatar({
+  category,
   className,
   displayName,
+  iconUrl,
   sourceId
 }: {
+  category?: string
   className?: string
   displayName: string
+  /** 后端从这条**自己声明的那个网站**抓来的 favicon（data URL）。空/缺＝没有。 */
+  iconUrl?: string
   sourceId: string
 }) {
-  const spec = SOURCE_ICONS[sourceId]
-
   const base = cn(
-    'inline-grid size-6 shrink-0 place-items-center rounded-md text-[length:var(--conversation-caption-font-size)] font-medium',
+    'inline-grid size-6 shrink-0 place-items-center overflow-hidden rounded-md text-[length:var(--conversation-caption-font-size)] font-medium',
     className
   )
 
-  // 查不到 = 一个还没被这张表认领的信源（多半是第三方包）。**这不是错误**，所以不给
-  // 中性底色之外再加任何提示——用户要的是"看得见"，不是"看得懂为什么"。
+  // 抓来的图标优先，且**不给底染**：网站自己的 favicon 已经带了它自己的形状与颜色，
+  // 再套一层品牌色就变成两件事叠在一个 24px 方块里。
+  if (iconUrl) {
+    return (
+      <span aria-hidden="true" className={base} data-testid={`source-avatar-img-${sourceId}`}>
+        <img alt="" className="size-4 object-contain" src={iconUrl} />
+      </span>
+    )
+  }
+
+  const spec = SOURCE_ICONS[sourceId]
+
+  // 查不到 = 一个还没被这张表认领的信源（多半是第三方包，或它那个站没抓到图标）。
+  // 网站那一类退地球、别的退首字母——**这不是错误**，所以不给中性底色之外再加任何提示。
   if (!spec) {
+    const Generic = category === 'website' ? Globe : null
+
     return (
       <span aria-hidden="true" className={cn(base, 'bg-(--ui-bg-tertiary) text-(--ui-text-tertiary)')}>
-        {monogramFor(displayName)}
+        {Generic ? <Generic className="size-3.5" /> : monogramFor(displayName)}
       </span>
     )
   }

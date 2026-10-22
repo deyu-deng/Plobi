@@ -37,12 +37,44 @@ export interface SourceRow {
   source: string
   state: string
   touched_after_last_write: boolean
+
+  // —— 10-22 `WP-SOURCE-SURFACE` 新加的这几格：**三态由后端算**，前端不再留第二套词表 ——
+
+  /** 未连接 / 已连接 / 出错。判据只有一处：`sources_api.status_of`（后端）。 */
+  status?: 'connected' | 'disconnected' | 'error'
+  /** 给界面查语言目录用的原因码（**不是给人看的句子**，裁定 45.4：slug 不上屏）。 */
+  status_code?: string
+  /** 出错时那一句人话，**逐字**来自上一轮执行方（不转述、不总结）。正常态恒为空。 */
+  status_detail?: string
+  /** 上一轮真打的时间与状态词（抽屉里那一行「上一次」）。 */
+  last_run_at?: string
+  last_state?: string
+  /** 每源一行频率：生效值 + 它从哪来 + 下一次该打在几点 + 到没到点（后端算的，见 `cadence_env`）。 */
+  cadence?: string
+  cadence_origin?: 'config' | 'per_round' | 'spec' | null
+  cadence_state?: string
+  cadence_note?: string
+  next_run_at?: string
+  due?: boolean
+  /** 这一条在**信息池**里几条。旧屏只有日程库那个 `events`，于是按裁 193 只进池的教务
+   *  在这屏永远是 0。`-1` 是"池读不到"，不是"零条"。 */
+  pool_count?: number
+  pool_kinds?: Record<string, number>
+  /** 从这条**自己声明的那个网站**抓来的图标（data URL）。空串＝没有，退品牌表再退首字母。 */
+  icon?: string
+  site?: string
+  /** 密钥那一格**设过没有**。值永不出现在这条读数里（那是"星号"那一格的牙齿）。 */
+  secrets?: Record<string, boolean>
 }
 
 export interface SetupField {
   help: string
   key: string
-  kind: 'path' | 'text' | 'url'
+  /**
+   * `secret`：`type=password` 且**只写不读**（值走 `.env`，读数里只有"设过没有"，留空＝不改）。
+   * `cadence`：预设下拉，存进去的仍是那一句 cron（运行时一个字没改，改的只是画法）。
+   */
+  kind: 'cadence' | 'path' | 'secret' | 'text' | 'url'
   label: string
   required: boolean
 }

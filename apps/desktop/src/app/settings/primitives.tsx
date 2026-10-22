@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
@@ -66,6 +67,8 @@ export function ListRow({
   hint,
   action,
   below,
+  onActivate,
+  expanded,
   wide = false
 }: {
   title: ReactNode
@@ -73,8 +76,19 @@ export function ListRow({
   hint?: ReactNode
   action?: ReactNode
   below?: ReactNode
+  /**
+   * 给整行标题加"点开"这一层（`WP-SOURCE-SURFACE`：一条信源一行，行上只留一颗开关，
+   * 其余信息收进点开的抽屉）。**不传就等于不存在**——其余设置页一个字不变。
+   * `expanded` 只管 `aria-expanded` 与那个尖角，画法由调用方决定。
+   */
+  expanded?: boolean
+  onActivate?: () => void
   wide?: boolean
 }) {
+  const heading = (
+    <div className="text-[length:var(--conversation-text-font-size)] font-medium text-foreground">{title}</div>
+  )
+
   return (
     // Container-queried, not viewport-queried: the label/control split keys on
     // the row's own pane width, so a narrow detail column (messaging, split
@@ -87,7 +101,17 @@ export function ListRow({
         )}
       >
         <div className="min-w-0">
-          <div className="text-[length:var(--conversation-text-font-size)] font-medium text-foreground">{title}</div>
+          {onActivate ? (
+            <button
+              aria-expanded={expanded ?? false}
+              className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1 rounded-md px-1 text-left hover:bg-(--ui-bg-hover)"
+              onClick={onActivate}
+              type="button"
+            >
+              {heading}
+              <DisclosureCaret className="mt-1 size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded ?? false} />
+            </button>
+          ) : heading}
           {description && (
             <div className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
               {description}
