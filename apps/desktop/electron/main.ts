@@ -32,7 +32,7 @@ import {
 import nodePty from 'node-pty'
 
 import { dashboardFallbackArgs, serveBackendArgs, sourceDeclaresServe } from './backend-command'
-import { buildDesktopBackendEnv, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
+import { buildDesktopBackendEnv, dedupeEnvKeys, desktopCliSearchPath, normalizePlobiHomeRoot } from './backend-env'
 import { canImportAigwCli, canImportPlobiCli, verifyPlobiCli } from './backend-probes'
 import { reconcileGatewayKey } from './aigw-key-reconcile'
 import {
@@ -176,6 +176,12 @@ import {
   sandboxPreflight
 } from './update-relaunch'
 import { isOfficialSshRemote, OFFICIAL_REPO_HTTPS_URL } from './update-remote'
+import {
+  hasProxyEnv,
+  parseChromiumProxyResult,
+  proxyFromProxyRules,
+  proxyUrlToGitEnv
+} from './git-proxy'
 import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
 import {
   computeWindowOptions,
@@ -198,6 +204,10 @@ if (USER_DATA_OVERRIDE) {
 
 const DEV_SERVER = process.env.PLOBI_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged || Boolean(process.env.PLOBI_DESKTOP_IS_PACKAGED)
+// WP-TRAY-SLIM — 托盘诊断明细默认不进菜单，无论 dev 还是打包态（用户只该看到健康摘要
+// 与操作项）。只有显式 PLOBI_TRAY_DEBUG=1 才把 aigw-key 对账行、detail tooltip 与
+// egress 全量 rows 放回托盘；完整诊断明细始终落在 logs/desktop.log。
+const TRAY_DEBUG = process.env.PLOBI_TRAY_DEBUG === '1' || process.env.PLOBI_TRAY_DEBUG === 'true'
 
 // 装机后不碰命令行（口径 32）：随包的引擎三件套在 app 资源里，Python 侧无从自己发现
 // `process.resourcesPath`，只能由这里交给每一个子进程。源码态没有这个变量 ⇒
@@ -1627,7 +1637,10 @@ function backendSupportsServe(backend) {
       const prefix = backend.args && backend.args[0] === '-m' ? backend.args.slice(0, 2) : []
       execFileSync(backend.command, [...prefix, 'serve', '--help'], {
         cwd: backend.root || undefined,
-        env: { ...process.env, PLOBI_HOME, ...(backend.env || {}) },
+        // dedupeEnvKeys：继承来的环境可能带大小写重复的键（HTTPS_PROXY 与
+        // https_proxy 这类，沙箱代理塞的）。Node 不介意，PowerShell / .NET 一碰就抛
+        // ⇒ 子进程 exit 1073807364 ⇒ bootstrap 被杀 ⇒ 后端起不来 ⇒ L2 进不去。
+        env: { ...dedupeEnvKeys(process.env), PLOBI_HOME, ...(backend.env || {}) },
         timeout: 15000,
         stdio: 'ignore',
         windowsHide: true
@@ -2233,14 +2246,110 @@ function resolveUpdateRoot() {
   return candidates.find(c => directoryExists(path.join(c, '.git'))) || candidates[0] || ACTIVE_PLOBI_ROOT
 }
 
-function runGit(args, options: any = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+// ─── A route out for git children (root fix for the update check) ───────────
+//
+// `session.setProxy()` teaches **Chromium** how to leave this machine
+// (egress-proxy.ts). A spawned `git` is not Chromium: it gets whatever
+// environment we hand it and has to route itself. On a machine whose direct
+// egress to github.com is intercepted (直连官方源被本机代理拦) and whose GUI
+// environment carries no proxy variables, that child dies with
+// `Failed to connect to github.com:443` — and the About panel can only say
+// "We couldn't reach the update server" (it even receives the real reason and
+// drops it; see about-settings.tsx).
+//
+// One reading, several renderings (裁定 94): nothing here DECIDES routing. It
+// only translates an answer that already exists into `http_proxy`-shaped env
+// vars, in this order —
+//   1. explicit override   PLOBI_GIT_PROXY / PLOBI_DESKTOP_GIT_PROXY
+//   2. already-all-there   the launcher's own env wins; we never overwrite it
+//   3. the egress table    desktopProxyConfig(view).proxyRules
+//   4. the OS's answer     session.resolveProxy() (covers WinINET/system)
+//   5. direct              no proxy env at all
+// Cached for a few minutes because resolveProxy() and the backend poll both
+// cost a round trip, and every git child would otherwise repeat them.
+
+const GIT_PROXY_CACHE_MS = 5 * 60_000
+let gitProxyCache: { at: number; url: string | null } | null = null
+let gitProxyInFlight: Promise<string | null> | null = null
+
+function explicitGitProxyOverride(): string | null {
+  const raw = process.env.PLOBI_GIT_PROXY || process.env.PLOBI_DESKTOP_GIT_PROXY
+
+  return raw && raw.trim() ? raw.trim() : null
+}
+
+async function resolveGitProxyUrlUncached(): Promise<string | null> {
+  const override = explicitGitProxyOverride()
+
+  if (override) {
+    return override
+  }
+
+  // The launcher already gave us a route (a terminal that exported
+  // https_proxy=…). Respect it rather than substituting a second opinion.
+  if (hasProxyEnv(process.env as any)) {
+    return null
+  }
+
+  const egressAnswer: any = egressObservation?.answer
+  const view = egressAnswer?.desktop_proxy ?? null
+  const fromTable = proxyFromProxyRules(desktopProxyConfig(view).proxyRules)
+
+  if (fromTable) {
+    return fromTable
+  }
+
+  try {
+    // What Chromium would use for this exact host — includes the machine's own
+    // system/WinINET proxy settings, which git cannot read by itself.
+    const answer = await session.defaultSession.resolveProxy(OFFICIAL_REPO_HTTPS_URL)
+
+    return parseChromiumProxyResult(answer)
+  } catch (err) {
+    rememberLog(`[git-proxy] resolveProxy failed: ${String((err as Error)?.message || err)}`)
+
+    return null
+  }
+}
+
+async function resolveGitProxyUrl(): Promise<string | null> {
+  const now = Date.now()
+
+  if (gitProxyCache && now - gitProxyCache.at < GIT_PROXY_CACHE_MS) {
+    return gitProxyCache.url
+  }
+
+  if (!gitProxyInFlight) {
+    gitProxyInFlight = resolveGitProxyUrlUncached()
+      .then(url => {
+        gitProxyCache = { at: Date.now(), url }
+
+        return url
+      })
+      .finally(() => {
+        gitProxyInFlight = null
+      })
+  }
+
+  return gitProxyInFlight
+}
+
+async function runGit(args, options: any = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+  const proxyUrl = await resolveGitProxyUrl()
+  const proxyEnv = proxyUrl ? proxyUrlToGitEnv(proxyUrl) : {}
+
   return new Promise((resolve, reject) => {
     const child = spawn(
       resolveGitBinary(),
       IS_WINDOWS ? ['-c', 'windows.appendAtomically=false', ...args] : args,
       hiddenWindowsChildOptions({
         cwd: options.cwd,
-        env: { ...process.env, ...((options.env || {}) as any), GIT_TERMINAL_PROMPT: '0' },
+        env: {
+          ...process.env,
+          ...(proxyEnv as any),
+          ...((options.env || {}) as any),
+          GIT_TERMINAL_PROMPT: '0'
+        },
         stdio: ['ignore', 'pipe', 'pipe']
       })
     )
@@ -2924,7 +3033,7 @@ function runStreamedUpdate(command, args, { cwd, env, stage }: any = {}) {
         args,
         hiddenWindowsChildOptions({
           cwd,
-          env: { ...process.env, ...(env || {}) },
+          env: { ...dedupeEnvKeys(process.env), ...(env || {}) },
           stdio: ['ignore', 'pipe', 'pipe']
         })
       )
@@ -7556,6 +7665,49 @@ function deferredRowName(row: { name: { en: string; zh: string } }, language: Re
   return language === 'zh' ? row.name.zh : row.name.en
 }
 
+// ─── WP-TRAY-SLIM — user-facing tray labels for the deferred ledger ─────────
+// The ledger rows are the single source of truth for BOTH renderings (tray
+// menu and boot-progress payload), and the boot payload is a diagnostics
+// surface, so the ledger itself keeps raw names, ports and English state
+// words. This tray-side wrapper is where developer vocabulary is translated
+// for users:
+//
+//   * ports (`:8000`, `:5030`) are diagnostics, not product vocabulary — dropped;
+//   * the state word becomes plain language (正常 / 延后 / 检查中 / 异常) instead of
+//     the internal `ready` / `deferred` / `probing` / `red`;
+//   * developer-only rows stay visible only in an unpackaged dev run, where
+//     the tray is a debugging surface — packaged users only see rows they can
+//     understand at a glance.
+const DEFERRED_TRAY_STATE_WORDS: Record<string, { zh: string; en: string }> = {
+  ready: { zh: '正常', en: 'ok' },
+  probing: { zh: '检查中', en: 'checking' },
+  deferred: { zh: '延后（非故障）', en: 'deferred (not a fault)' },
+  red: { zh: '异常', en: 'error' }
+}
+
+/** True when the row exists for developers, not for end users. */
+function isDeveloperLedgerRow(id: string): boolean {
+  return id === KEY_RECONCILE_ROW_ID
+}
+
+/** User-facing tray label for one deferred-ledger row (no ports, plain wording). */
+function trayDeferredLabel(
+  row: { id: string; name: { en: string; zh: string }; state: string },
+  language: ReturnType<typeof trayLanguage>
+) {
+  const stateWord = DEFERRED_TRAY_STATE_WORDS[row.state]
+  const state = stateWord ? (language === 'zh' ? stateWord.zh : stateWord.en) : row.state
+  // chatlog's vendor name is developer vocabulary; users just see WeChat collection.
+  const name =
+    row.id === 'chatlog'
+      ? language === 'zh'
+        ? '微信采集'
+        : 'WeChat collection'
+      : deferredRowName(row, language)
+
+  return `${name} · ${state}`
+}
+
 // ─── WP-TRAY-RESTART —「重启应用」 ────────────────────────────────────────────
 //
 // Why this is not `app.relaunch()`: this box runs the desktop in DEV mode, where
@@ -7966,6 +8118,8 @@ let egressObservation: { remote: boolean; answer: unknown } = { remote: false, a
 let egressPollBusy = false
 let egressPollTimer: ReturnType<typeof setInterval> | null = null
 let egressBadgeTone: EgressTone | null = null
+// 完整诊断明细只进 desktop.log；同一读数不重复刷屏（WP-TRAY-SLIM）。
+let lastEgressDiagKey = ''
 
 function egressStrings() {
   return egressTrayStrings(trayLanguage(app.getLocale()))
@@ -8055,6 +8209,18 @@ async function pollEgressIndicator() {
     rememberLog(`[egress-proxy] applying it failed: ${String(err?.message || err)}`)
   })
 
+  // WP-TRAY-SLIM — the full diagnostic rows (rules, listen, pid, engine files, path,
+  // ruling numbers) never surface in the menu by default; they still land here, in
+  // logs/desktop.log, for developers. Same snapshot as the menu, logged on change.
+  const egressDiag = egressIndicatorNow()
+  const egressDiagKey = JSON.stringify(egressDiag.rows.map(row => [row.label, row.toolTip]))
+  if (egressDiagKey !== lastEgressDiagKey) {
+    lastEgressDiagKey = egressDiagKey
+    rememberLog(
+      `[egress-tray] diagnostics: ${egressDiag.rows.map(row => `${row.label} :: ${row.toolTip}`).join(' | ')}`
+    )
+  }
+
   applyEgressBadge()
   refreshTrayMenu()
 }
@@ -8122,23 +8288,35 @@ function refreshTrayMenu() {
         // payload is rendering #2 of the very same rows(); adding a row here must
         // never need a parallel status store. A subsystem that was postponed by
         // R-047 is shown as "deferred", never hidden and never coloured green.
+        // WP-TRAY-SLIM — what users see is the tray-side wrapper: plain names,
+        // no ports, no internal state words; developer-only rows (gateway-key
+        // reconciliation) and full diagnostic tooltips stay behind an explicit
+        // PLOBI_TRAY_DEBUG=1 — otherwise the tray is user-facing even in dev.
         { type: 'separator' },
         {
           label: labels.deferredGroup,
-          submenu: deferredSidecarLedger.rows().map(row => ({
-            enabled: false,
-            label: `${deferredRowName(row, language)} · ${row.state}${row.port > 0 ? ` (:${row.port})` : ''}`,
-            toolTip: row.detail
-          }))
+          submenu: deferredSidecarLedger
+            .rows()
+            .filter(row => (TRAY_DEBUG ? true : !isDeveloperLedgerRow(row.id)))
+            .map(row => ({
+              enabled: false,
+              label: trayDeferredLabel(row, language),
+              ...(TRAY_DEBUG ? { toolTip: row.detail } : {})
+            }))
         },
         // WP-EGRESS-ROUTING — rendering #3 of the one egress reading (the other two
         // are `plobi network status` and the settings panel). Disabled rows: this
         // group reports, it never starts or stops anything — that is `plobi network
         // start|stop|reload`'s job, and a tray click must not become a second owner
-        // of the engine's lifecycle.
+        // of the engine's lifecycle. WP-TRAY-SLIM — the menu carries only the health
+        // summary line (no rule counts, ports, pids or membership tables) by default;
+        // the full diagnostic rows come back only with PLOBI_TRAY_DEBUG=1 and always
+        // live in logs/desktop.log regardless.
         {
           label: `${egressText.group} · ${egressText.tone[egress.tone]}`,
-          submenu: egress.rows.map(row => ({ enabled: false, label: row.label, toolTip: row.toolTip }))
+          submenu: TRAY_DEBUG
+            ? egress.rows.map(row => ({ enabled: false, label: row.label, toolTip: row.toolTip }))
+            : [{ enabled: false, label: egressText.tone[egress.tone] }]
         },
         { type: 'separator' },
         {
