@@ -148,6 +148,9 @@ def to_ledger_result(channel_result: Any) -> LedgerResult:
         job=str(getattr(channel_result, "job", "") or ""),
         reply=str(getattr(channel_result, "reply", "") or ""),
         reply_status=str(getattr(channel_result, "reply_status", "") or ""),
+        # 通道从 stdout 解析出来的正文（`agent/external_offload._parse_envelope` 的 `text`）。
+        # 以前它在这一跳被丢掉 ⇒ 台账里没有它说过的一句话，界面上那一格无事可显示。
+        answer=str(getattr(channel_result, "text", "") or ""),
         reply_to=str(getattr(channel_result, "reply_to", "") or ""),
     )
 

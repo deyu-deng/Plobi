@@ -149,6 +149,12 @@ class OffloadResult:
     #: 该向谁交代（名册那一行的名字，空 = L1 那一轮）。**不是收件人**：
     #: 回执只进这一本账，不替它给谁的会话发消息（用户 10-22：外包要有区分的工具）。
     reply_to: str = ""
+    #: 它这一趟**口头**回给我们的那段（通道从 stdout 解析出来的正文）。
+    #: 与 `reply` 分开是有原因的：`reply` 是它按我们给的路径**自己写回来的文件**，
+    #: `answer` 只是它随回包说的话。10-22 实测那一趟（qoder／24.9s／11 个落盘产物）
+    #: 就是"活干了、话说了、回执文件没写"——把这种形状读成"它没回话"，
+    #: 界面上那一格除了失败没有别的东西可显示。
+    answer: str = ""
 
     @property
     def ok(self) -> bool:
@@ -176,6 +182,9 @@ def summarize_round(results: Iterable[OffloadResult]) -> str:
         #: 没回也要出声——「它没回」和「它回了但我们没读到」是两句不同的话。
         if item.reply:
             receipt = f"｜它自己回：{item.reply[:160]}"
+        elif item.answer.strip():
+            # 回执文件没落，但它这趟随包说了话——两件事分开报，别合成一句"没回话"。
+            receipt = f"｜回执文件它没写，但它口头回了：{item.answer.strip()[:160]}"
         elif item.reply_status == "not_filed":
             receipt = "｜它没回话（只带回我们的读数）"
         elif item.reply_status:
@@ -274,6 +283,9 @@ class RoundLedger:
             "reply": result.reply,
             "reply_status": result.reply_status,
             "reply_to": result.reply_to,
+            # 它随回包说的话（截一段）。没有它，界面上那一格除了"它没回话"无事可显示，
+            # 而 10-22 实测那一趟是**干了活也说了话、只是没写回执文件**。
+            "answer_excerpt": (result.answer or "").strip()[:280],
         }
         target = self.path
         target.parent.mkdir(parents=True, exist_ok=True)
