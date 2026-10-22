@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 
-import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
@@ -9,6 +8,7 @@ import type { OffloadRound } from '@/types/plobi'
 
 import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
 import { SidebarCount } from './chrome'
+import { OffloadVendorAvatar } from './offload-vendor-icon'
 
 /**
  * 点进一个 L2 时，左栏这一格换成**它把活外包给了谁**（WP-L2-OUTSOURCE-ENTRY 入口面③）。
@@ -87,7 +87,7 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
               title={group.target}
               type="button"
             >
-              <Codicon name="rocket" />
+              <OffloadVendorAvatar vendor={group.target} />
               <span className="min-w-0 flex-1 truncate">{group.target}</span>
               <SidebarCount>{group.rounds.length}</SidebarCount>
               <DisclosureCaret className="shrink-0 text-(--ui-text-tertiary)" open={open} />
