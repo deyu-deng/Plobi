@@ -26,7 +26,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -186,31 +185,6 @@ def is_sandboxed() -> bool:
     """Whether the child really runs isolated. Without a container runtime this
     must stay False, and the report must say "非沙箱放开"."""
     return os.environ.get(SANDBOX_ENV, "").strip().lower() in {"1", "true", "yes"}
-
-
-def speak_back_command(reply_to: str, *, python: Optional[str] = None) -> str:
-    """外包那一条**回话命令**（用户 2026-10-22：L2「干完了却开不了口」）。
-
-    这里不实现投递：它敲的是 ``plobi say``，与内部 Agent 用的 ``say`` 工具共用同一条
-    :func:`plugins.plobi-north-star.channel.handle_say`（裁 94：一条事实一处真源）。
-    所以落点、留痕、唤醒三件事两边逐字相同——桌面看得见，也是因为两边落同一个会话。
-
-    用 ``<解释器> -m plobi_cli.main`` 而不是裸 ``plobi``：这台盘上另有一份装机运行时，
-    裸命令会解析到**它**，回话就发到别人的家去了。
-    """
-    exe = (python or sys.executable).replace("\\", "/")
-    return f'"{exe}" -m plobi_cli.main say --to "{reply_to}" --text "<你要说的那一段>"'
-
-
-def reply_block(reply_to: str, speaker: str) -> str:
-    """拼进任务书末尾那一格。写死两句话：你是谁、怎么回、别贴整篇内容。"""
-    return (
-        "\n\n——\n"
-        f"【回话】你这一趟的身份是「{speaker}」（已带在你的环境里，别改、也别在命令里自报别的名字）。\n"
-        f"干完之后用这一条把结果说回「{reply_to}」——它自己会醒过来接着干，不用你等：\n"
-        f"  {speak_back_command(reply_to)}\n"
-        "只说结论和对方该看的文件路径；整篇内容不要贴进去，对方会自己去读。\n"
-    )
 
 
 def default_workdir() -> Path:
@@ -469,15 +443,8 @@ def run_task(
     agent: str = AGENT_CODEBUDDY,
     permission_mode: Optional[str] = None,
     timeout: float = 900.0,
-    reply_to: str = "",
-    speak_as: str = "",
 ) -> OffloadResult:
-    """Hand one real task to a local external agent and report the four answers.
-
-    ``reply_to`` 是**派活那一侧的 Agent 名字**（可空）。给了就在任务书末尾附上回话那一格，
-    并把 ``PLOBI_AGENT_ID`` 带进子进程环境——那条命令是给它敲的，不是给它猜的。
-    没给就什么都不加：**不硬编一个收件人**，回不去话比回到错的人好（裁 177 的反面是匿名执行）。
-    """
+    """Hand one real task to a local external agent and report the four answers."""
     workdir = Path(cwd).resolve() if cwd else default_workdir()
     allowed, why = cwd_is_allowed(workdir)
     try:
@@ -503,17 +470,8 @@ def run_task(
     if not binary:
         return fail(f"external agent {agent!r} has no drivable command on this machine")
 
-    speaker = (speak_as or agent).strip()
-    reply_to = (reply_to or "").strip()
-    if reply_to:
-        task = task + reply_block(reply_to, speaker)
-
     argv = (binary, "-p", task, "--output-format", "json", *flags, *extra_args(agent))
     env = dict(os.environ)
-    if reply_to:
-        # 与 ``agent_ask`` 起子进程时同一只把手（``child_env["PLOBI_AGENT_ID"] = entry.name``）：
-        # 身份由派发方写进环境，回话那枚 CLI 只认它——命令行上没有 ``--as``。
-        env["PLOBI_AGENT_ID"] = speaker
     proxy, proxy_source = resolve_proxy()
     knob = bool(os.environ.get(PROXY_ENV, "").strip())
     if proxy and knob:
