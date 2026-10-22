@@ -105,6 +105,33 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
         ("volatile (memory/profile/timestamp)", len(volatile), _bytes(volatile)),
     ]
 
+    # 固定前缀预算判定（与每轮开始那一行警告同一函数、同一判据）。
+    from agent.prompt_builder import prompt_budget_verdict
+
+    try:
+        from agent.model_metadata import get_model_context_length
+
+        window = get_model_context_length(
+            agent.model or "",
+            base_url=getattr(agent, "base_url", ""),
+            api_key=getattr(agent, "api_key", ""),
+            provider=getattr(agent, "provider", ""),
+        )
+    except Exception:
+        window = None
+
+    budget = prompt_budget_verdict(
+        full,
+        tools_json,
+        context_length=window,
+        sections=[
+            ("stable tier (身份/指引/技能索引)", stable),
+            ("context tier (AGENTS.md 与工作目录文件)", context),
+            ("volatile tier (记忆/画像/时间戳)", volatile),
+            ("tool schemas", tools_json),
+        ],
+    )
+
     return {
         "platform": platform,
         "model": getattr(agent, "model", "") or "",
@@ -114,6 +141,7 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
         "user_profile": {"chars": len(user_block), "bytes": _bytes(user_block)},
         "tools": {"count": len(tools), "json_bytes": _bytes(tools_json)},
         "sections": sections,
+        "budget": budget,
     }
 
 
@@ -143,6 +171,31 @@ def render_breakdown(data: Dict[str, Any]) -> str:
     lines.append("")
     tools = data["tools"]
     lines.append(f"  Tool schemas         : {tools['json_bytes']:>8,} B  ({_fmt_kb(tools['json_bytes'])}, {tools['count']} tools)")
+    lines.append("")
+    b = data.get("budget") or {}
+    if b:
+        est = "窗口未知，只按地板 12,000" if not b.get("context_length") else (
+            f"窗口 {b['context_length']:,} × {int(b['window_fraction'] * 100)}%"
+        )
+        flag = "超" if b.get("over") else "在预算内"
+        lines.append(
+            f"  Per-call prefix      : {b['used_tokens']:,} tokens "
+            f"(system {b['system_prompt_tokens']:,} + tools {b['tools_tokens']:,}) "
+            f"— {flag}，上限 {b['limit_tokens']:,} ({est})"
+        )
+        lines.append(
+            "                         token 数是仓里既有粗估（约 4 字符/token），"
+            "中文比英文密，所以这行是**下界**：真实值可能到 1.5–2 倍。"
+        )
+        if b.get("biggest", {}).get("label"):
+            lines.append(
+                f"  Biggest block        : {b['biggest']['label']} — {b['biggest']['tokens']:,} tokens"
+            )
+        if b.get("over"):
+            lines.append(
+                "                         这一份是**每一轮都付**的固定成本。要收就从上面那块收；"
+                "确要放宽写 config 的 prompt_max_tokens。"
+            )
     return "\n".join(lines)
 
 

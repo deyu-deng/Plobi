@@ -376,6 +376,42 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
     # prompt) — build from scratch.
     agent._cached_system_prompt = agent._build_system_prompt(system_message)
 
+    # 固定前缀预算：系统提示 + 工具 schema 是**每一轮都付**的成本，它超线不会报错，
+    # 只是把对话与按需检索的头寸挤掉（长上下文退化实测临界点在窗口占用 ~43%）。
+    # 所以这里出声一次，并点名该收哪一块 —— 只说"超了"不给方向等于没报。
+    try:
+        import json as _json
+
+        from agent.prompt_builder import prompt_budget_verdict
+
+        _compressor = getattr(agent, "context_compressor", None)
+        _window = getattr(_compressor, "context_length", None) or getattr(
+            agent, "context_length", None
+        )
+        _tools_json = _json.dumps(getattr(agent, "tools", None) or [], ensure_ascii=False)
+        _verdict = prompt_budget_verdict(
+            agent._cached_system_prompt or "",
+            _tools_json,
+            context_length=_window,
+            sections=[
+                ("系统提示（含 AGENTS.md 与技能索引）", agent._cached_system_prompt or ""),
+                (f"工具 schema（{len(getattr(agent, 'tools', None) or [])} 枚）", _tools_json),
+            ],
+        )
+        agent._prompt_budget = _verdict
+        if _verdict["over"]:
+            logger.warning(
+                "System-prompt prefix is %s tokens vs a budget of %s (%.0f%% of the %s-token "
+                "window). Biggest block: %s at %s tokens. Every turn pays this; trim it or "
+                "raise prompt_max_tokens / use a larger-context model.",
+                f"{_verdict['used_tokens']:,}", f"{_verdict['limit_tokens']:,}",
+                _verdict["window_fraction"] * 100, f"{_window or 0:,}",
+                _verdict["biggest"]["label"] or "unknown",
+                f"{_verdict['biggest']['tokens']:,}",
+            )
+    except Exception as _budget_exc:  # 预算判定绝不能中止一轮对话
+        logger.debug("Prompt-budget check skipped: %s", _budget_exc)
+
     # Plugin hook: on_session_start — fired once when a brand-new
     # session is created (not on continuation).  Plugins can use this
     # to initialise session-scoped state (e.g. warm a memory cache).
