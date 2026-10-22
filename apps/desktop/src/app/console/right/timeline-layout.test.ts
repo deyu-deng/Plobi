@@ -7,7 +7,6 @@ import {
   emptyDay,
   HOUR_HEIGHT,
   layoutDay,
-  MIN_BLOCK_HEIGHT,
   minutesOf
 } from './timeline-layout'
 
@@ -35,13 +34,13 @@ describe('layoutDay', () => {
     expect(layoutDay([event('a', `${DAY}T09:00:00`)], '2026-09-12')).toBeNull()
   })
 
-  it('always exposes at least the 08:00–23:00 tick marks', () => {
+  it('always exposes the whole day: the 00:00 axis through the 23:00 tick', () => {
     const day = layoutDay([event('a', `${DAY}T09:00:00`, `${DAY}T11:00:00`)], DAY)
 
     expect(day).not.toBeNull()
-    expect(day?.hours[0]).toBe(8)
+    expect(day?.hours[0]).toBe(0)
     expect(day?.hours.at(-1)).toBe(23)
-    expect(day?.spanStartMinutes).toBe(8 * 60)
+    expect(day?.spanStartMinutes).toBe(0)
     expect(day?.spanEndMinutes).toBe(24 * 60)
   })
 
@@ -52,27 +51,28 @@ describe('layoutDay', () => {
     expect(block?.source && 'start_at' in block.source ? block.source.start_at.slice(11, 16) : '').toBe('09:00')
     expect(block?.source && 'end_at' in block.source ? block.source.end_at?.slice(11, 16) : null).toBe('11:00')
     expect(block?.openEnded).toBe(false)
-    // Two hours → two hour-heights; 09:00 is one hour past the 08:00 axis start.
+    // 该多长就多长：两小时就是两个格高；09:00 在零点轴往下第九格。
     expect(block?.heightPx).toBe(2 * HOUR_HEIGHT)
-    expect(block?.topPx).toBe(HOUR_HEIGHT)
+    expect(block?.topPx).toBe(9 * HOUR_HEIGHT)
   })
 
-  it('never invents an end: a missing end_at becomes a minimum-height marker', () => {
+  it('never invents an end: a missing end_at is a line, not a made-up hour', () => {
     const day = layoutDay([event('a', `${DAY}T09:00:00`)], DAY)
     const block = day?.blocks[0]
 
     expect(block?.openEnded).toBe(true)
     expect(block?.endClock).toBeNull()
-    expect(block?.heightPx).toBe(MIN_BLOCK_HEIGHT)
+    // 零高度＝渲染层画一条横贯当天的线（用户 2026-10-21：deadline 就是一条线）。
+    expect(block?.heightPx).toBe(0)
   })
 
-  it('widens the axis for entries outside 08:00–23:00', () => {
+  it('keeps one fixed axis for every day: early and late rows never rescale it', () => {
     const early = layoutDay([event('a', `${DAY}T06:30:00`, `${DAY}T07:00:00`)], DAY)
     const late = layoutDay([event('b', `${DAY}T23:40:00`, `${DAY}T23:59:00`)], DAY)
 
-    expect(early?.spanStartMinutes).toBe(6 * 60)
-    expect(late?.spanEndMinutes).toBeGreaterThan(24 * 60 - 1)
-    // Even widened, the tick marks stay on whole hours inside the span.
+    expect(early?.spanStartMinutes).toBe(0)
+    expect(early?.blocks[0]?.topPx).toBe(6.5 * HOUR_HEIGHT)
+    expect(late?.spanEndMinutes).toBe(24 * 60)
     expect(late?.hours.at(-1)).toBe(23)
   })
 
@@ -254,19 +254,19 @@ describe('layoutDay', () => {
     const day = layoutDay([event('evening', `${DAY}T18:30:00`, `${DAY}T22:30:00`)], DAY)
     const block = day?.blocks[0]
 
-    // 10.5 hours past the 08:00 axis start.
-    expect(block?.topPx).toBe(10.5 * HOUR_HEIGHT)
-    expect(block?.topPx).toBe(462)
+    // 轴从 00:00 起：18:30 就是第 18.5 格。
+    expect(block?.topPx).toBe(18.5 * HOUR_HEIGHT)
+    expect(block?.topPx).toBe(814)
     expect(block?.heightPx).toBe(4 * HOUR_HEIGHT)
-    expect(day?.spanStartMinutes).toBe(8 * 60)
+    expect(day?.spanStartMinutes).toBe(0)
   })
 
   it('draws a cross-midnight row down to the axis bottom instead of going negative', () => {
     const day = layoutDay([], DAY, [{ end_at: `${DAY}T07:00:00`, label: '睡眠', start_at: `${DAY}T22:00:00` }])
     const block = (day?.blocks ?? []).find(row => row.lane === 'anchor')
 
-    expect(block?.topPx).toBe((22 * 60 - 8 * 60) / 60 * HOUR_HEIGHT)
-    // 22:00 → axis bottom (24:00) = 2h, NOT max(MIN, negative).
+    expect(block?.topPx).toBe(22 * HOUR_HEIGHT)
+    // 22:00 → 轴尾（24:00）= 两小时；负的算法早被夹掉了，这里也没有最小高度可撑。
     expect(block?.heightPx).toBe(2 * HOUR_HEIGHT)
     expect(block?.heightPx).toBeGreaterThan(0)
   })
@@ -299,8 +299,8 @@ describe('avoid_windows (裁定 39 / WP-AXIS-TODAY)', () => {
 
     expect(day?.avoidBands).toHaveLength(1)
     const [band] = day?.avoidBands ?? []
-    // 12:00 is 4h past the 08:00 axis start at 44px/h.
-    expect(band?.topPx).toBe(4 * HOUR_HEIGHT)
+    // 12:00 = 零点轴往下第 12 格。
+    expect(band?.topPx).toBe(12 * HOUR_HEIGHT)
     expect(band?.heightPx).toBe(HOUR_HEIGHT)
   })
 
@@ -315,10 +315,10 @@ describe('avoid_windows (裁定 39 / WP-AXIS-TODAY)', () => {
 })
 
 describe('emptyDay (裁定 37.2 — today axis even with zero rows)', () => {
-  it('returns the 08:00–23:00 ticks with no blocks or avoid bands', () => {
+  it('returns the 00:00–23:00 ticks with no blocks or avoid bands', () => {
     const day = emptyDay('2026-09-16')
 
-    expect(day.hours[0]).toBe(8)
+    expect(day.hours[0]).toBe(0)
     expect(day.hours.at(-1)).toBe(23)
     expect(day.blocks).toEqual([])
     expect(day.avoidBands).toEqual([])

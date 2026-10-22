@@ -79,12 +79,24 @@ describe('Timeline (day axis)', () => {
     expect(screen.getByText('event-b')).toBeTruthy()
   })
 
-  it('draws the 08:00–23:00 hour axis on each day', () => {
+  it('draws the whole-day 00:00–23:00 hour axis on each day', () => {
     render(<Timeline events={[event('a', dateAt(0, 9), { end_at: dateAt(0, 11) })]} />)
 
     // Today + tomorrow both render an axis, so tick labels repeat per day.
-    expect(screen.getAllByText('08:00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('00:00').length).toBeGreaterThan(0)
     expect(screen.getAllByText('23:00').length).toBeGreaterThan(0)
+  })
+
+  it('puts the date and the weekday next to the 今天／明天 label', () => {
+    const todayKey = dateAtTime(0, '00:00').slice(0, 10)
+
+    render(<Timeline events={[event('h', dateAt(0, 9), { end_at: dateAt(0, 10) })]} />)
+
+    // 光「今天／明天」分不清这一轴是几号，跨零点尤其看不出来（Apple 日历的抬头带着日期）。
+    const heading = screen.getByTestId(`timeline-date-${todayKey}`)
+
+    expect(heading.textContent).toMatch(/\d/)
+    expect(heading.textContent).not.toBe(todayKey)
   })
 
   it('prints the start–end span on the block', () => {
@@ -93,10 +105,15 @@ describe('Timeline (day axis)', () => {
     expect(screen.getByText('09:00–11:00')).toBeTruthy()
   })
 
-  it('says the end is unwritten instead of inventing an hour', () => {
+  it('draws an entry with no end as one line across the day, not a block', () => {
     render(<Timeline events={[event('o', dateAt(0, 9))]} />)
 
-    expect(screen.getByText('no end time')).toBeTruthy()
+    const line = screen.getByTestId('timeline-block-o')
+
+    // 用户 2026-10-21：deadline 应该就是一条线。它不再是那块压着别人的 22px 矩形。
+    expect(line.getAttribute('data-open-ended')).toBe('true')
+    expect(line.textContent).toContain('event-o')
+    expect(line.textContent).not.toContain('no end time')
   })
 
   it('keeps the pending tag on pending entries', () => {
@@ -150,12 +167,12 @@ describe('Timeline (day axis)', () => {
   it('places a block on its own clock tick, not at the axis top (裁定 32.1)', () => {
     render(<Timeline events={[event('evening', dateAtTime(0, '18:30'), { end_at: dateAtTime(0, '22:30') })]} />)
 
-    // 18:30 is 10.5h past the 08:00 axis start at 44px/h.
+    // 轴从 00:00 起：18:30 = 第 18.5 格 × 44px。
     const top = topPxOf('timeline-block-evening')
 
-    expect(top).toBe(462)
+    expect(top).toBe(814)
     expect(top).toBeGreaterThan(0)
-    expect(styleOf('timeline-block-evening')).toMatch(/top:\s*462px/)
+    expect(styleOf('timeline-block-evening')).toMatch(/top:\s*814px/)
   })
 
   it('keeps a morning block above an evening block instead of stacking both at the top', () => {
@@ -168,8 +185,8 @@ describe('Timeline (day axis)', () => {
       />
     )
 
-    expect(topPxOf('timeline-block-morning')).toBe(44)
-    expect(topPxOf('timeline-block-evening')).toBe(462)
+    expect(topPxOf('timeline-block-morning')).toBe(396)
+    expect(topPxOf('timeline-block-evening')).toBe(814)
   })
 
   it('gives non-overlapping routines one full-width column, not two half-width slivers', () => {
@@ -238,9 +255,9 @@ describe('Timeline (day axis)', () => {
         <Timeline events={[event('a', dateAt(0, 9), { end_at: dateAt(0, 11) })]} />
       )
 
-      // 10:00 sits 2h past the 08:00 axis start at 44px/h.
+      // 10:00 = 零点轴往下第 10 格 × 44px。
       const nowEl = screen.getByTestId('timeline-now')
-      expect(topPxOf('timeline-now')).toBe(88)
+      expect(topPxOf('timeline-now')).toBe(440)
       // 裁定 40: the line uses --ui-accent, NOT the secondary stroke colour,
       // otherwise it disappears against the hour grid (regression). The
       // accent lives on the inner bar (a child span); the wrapper itself
@@ -308,8 +325,8 @@ describe('Timeline (day axis)', () => {
     try {
       vi.setSystemTime(new Date(2026, 8, 16, 10, 0, 0))
       render(<Timeline events={[event('b', dateAt(1, 14), { end_at: dateAt(1, 15) })]} />)
-      // 10:00 → 2h past 08:00 = 88px.
-      expect(topPxOf('timeline-now')).toBe(88)
+      // 10:00 → 零点轴起第 10 格 = 440px。
+      expect(topPxOf('timeline-now')).toBe(440)
     } finally {
       vi.useRealTimers()
     }
@@ -328,9 +345,9 @@ describe('Timeline (day axis)', () => {
 
     const bands = screen.getAllByTestId(/^timeline-avoid-/)
     expect(bands).toHaveLength(2)
-    // 12:00 is 4h past 08:00 → 176px; 14:30 → 286px.
-    expect(bands[0].getAttribute('style')).toMatch(/top:\s*176px/)
-    expect(bands[1].getAttribute('style')).toMatch(/top:\s*286px/)
+    // 轴从 00:00 起：12:00 → 528px；14:30 → 638px。
+    expect(bands[0].getAttribute('style')).toMatch(/top:\s*528px/)
+    expect(bands[1].getAttribute('style')).toMatch(/top:\s*638px/)
     // Untitled + non-interactive (the testid holds no children text).
     expect(bands[0].textContent).toBe('')
     expect(bands[0].className).toContain('pointer-events-none')

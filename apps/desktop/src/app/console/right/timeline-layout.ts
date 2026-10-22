@@ -20,30 +20,32 @@ export interface TimelineAvoidBand {
  *   - `plan` — planned project work, drawn in the same anchor lane.
  *
  * Rules that come straight from the rulings:
- * - The axis always shows at least 08:00 → 23:00 and stretches to fit anything
- *   outside that window, so an early or late entry is never clipped away.
- * - A block's height follows `start_at` → `end_at`. A missing `end_at` is NOT
- *   stretched into a fake hour: it gets the minimum height and is flagged
- *   `openEnded` so the UI can say「未写结束」.
+ * - The axis is the **whole local day**: 00:00 → 24:00, every hour ticked. An
+ *   early or late entry is never clipped and the rail never rescales itself
+ *   between days (用户 2026-10-21：「每天的时间轴从 0:00 开始算」).
+ * - A block's height is exactly `start_at` → `end_at` — 该多长就多长, no
+ *   readability floor (用户 2026-10-21). A missing `end_at` is NOT stretched
+ *   into a fake hour: it is a **deadline**, laid out as a zero-height row at its
+ *   instant and flagged `openEnded` so the UI draws one line across the day.
  * - Side-by-side overlaps (裁定 31.1 / 36.2): all lanes share one grid, so
  *   blocks that collide in time — even across lanes — split into columns and
  *   each takes `1 / columnCount` of the axis width, where columnCount is the
  *   widest column of that block's own overlap cluster. Only the blocks whose
- *   intervals actually intersect are flagged `overlaps`. Open-ended blocks do
- *   NOT participate in the overlap test — they'd swallow a column.
+ *   intervals actually intersect are flagged `overlaps`. Deadline rows do
+ *   NOT participate in the overlap test — they span the full width as a line.
  * - A block's vertical position is `topPx` (px from the axis top); the renderer
  *   MUST apply it, otherwise every block stacks at the top (裁定 32.1).
  */
 
 import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
-export const TIMELINE_START_HOUR = 8
+/** The axis always starts at local midnight. */
+export const TIMELINE_START_HOUR = 0
+/** ... and ends at the last ticked hour; the span runs to 24:00. */
 export const TIMELINE_END_HOUR = 23
 
 /** Pixels per hour on the day axis. */
 export const HOUR_HEIGHT = 44
-/** Minimum block height so a zero-length (or open-ended) entry stays readable. */
-export const MIN_BLOCK_HEIGHT = 22
 /** Horizontal width fraction reserved for the hour-label gutter. */
 export const LABEL_GUTTER_FRACTION = 0.18
 /** Outer axis padding (px) so the leftmost column has breathing room. */
@@ -85,7 +87,8 @@ export interface TimelineBlock {
   lane: TimelineLane
   /** True when this block shares its column slice with another at the same time. */
   overlaps: boolean
-  /** `end_at` is missing (never guessed) — width is the minimum, no overlap test. */
+  /** `end_at` is missing (never guessed) — a deadline: height 0, no overlap
+   *  test, and the UI draws it as one line across the day with the title on it. */
   openEnded: boolean
   /** The source row: an agenda event, an anchor, or a plan item. */
   source: AgendaAnchor | AgendaEvent | AgendaPlanItem
@@ -162,20 +165,12 @@ function pxOf(minutes: number, spanStartMinutes: number): number {
  * axis bottom rather than producing a negative height (裁定 32.1). Open-ended
  * rows keep the honest minimum — never a fabricated hour.
  */
-function blockHeightPx(
-  startMinutes: number,
-  endMinutes: number,
-  spanEndMinutes: number,
-  openEnded: boolean
-): number {
-  if (openEnded) {
-    return MIN_BLOCK_HEIGHT
-  }
-
+function blockHeightPx(startMinutes: number, endMinutes: number, spanEndMinutes: number): number {
+  // 跨午夜的行（如 23:30 → 07:30 写成同一天）画到轴尾，不给出负高度（裁定 32.1）。
   const clampedEnd = endMinutes < startMinutes ? spanEndMinutes : endMinutes
-  const naturalHeight = ((clampedEnd - startMinutes) / 60) * HOUR_HEIGHT
 
-  return Math.max(MIN_BLOCK_HEIGHT, Math.round(naturalHeight))
+  // 该多长就多长：没有可读性下限，短会就是一条窄边。
+  return Math.round(((clampedEnd - startMinutes) / 60) * HOUR_HEIGHT)
 }
 
 /**
@@ -231,46 +226,13 @@ export function layoutDay(
     return null
   }
 
-  const starts: number[] = []
-  const ends: number[] = []
+  // 轴就是这一整天：00:00 → 24:00，逐小时打点。不再按当天内容伸缩——
+  // 用户 2026-10-21 要的是「每天的时间轴从 0:00 开始算」，两天并排看时刻度也对得上。
+  const spanStartMinutes = TIMELINE_START_HOUR * 60
+  const spanEndMinutes = (TIMELINE_END_HOUR + 1) * 60
 
-  for (const event of eventRows) {
-    starts.push(minutesOf(event.start_at))
-    ends.push(event.end_at ? minutesOf(event.end_at) : minutesOf(event.start_at))
-  }
-
-  for (const anchor of anchorRows) {
-    starts.push(minutesOf(anchor.start_at))
-    ends.push(minutesOf(anchor.end_at))
-  }
-
-  for (const plan of planRows) {
-    starts.push(minutesOf(plan.start_at))
-    ends.push(plan.end_at ? minutesOf(plan.end_at) : minutesOf(plan.start_at))
-  }
-
-  // include avoid windows in the axis span only when the day has any of them
-  // (empty avoid arrays would otherwise push the floor to ±Infinity).
-  const avoidStartMinutes = avoidWindows.map(window => minutesOf(window.start_at))
-  const avoidEndMinutes = avoidWindows.map(window => minutesOf(window.end_at))
-  const spansMinStart = starts.length === 0 && avoidStartMinutes.length === 0
-    ? [TIMELINE_START_HOUR * 60]
-    : [...starts, ...avoidStartMinutes]
-  const spansMaxEnd = ends.length === 0 && avoidEndMinutes.length === 0
-    ? [TIMELINE_END_HOUR * 60]
-    : [...ends, ...avoidEndMinutes]
-
-  const minMinutes = Math.min(...spansMinStart)
-  const maxMinutes = Math.max(...spansMaxEnd)
-
-  // At least 08:00–23:00; widen to whatever the day actually contains.
-  const spanStartMinutes = Math.min(TIMELINE_START_HOUR * 60, Math.floor(minMinutes / 60) * 60)
-  const spanEndMinutes = Math.max((TIMELINE_END_HOUR + 1) * 60, Math.ceil(maxMinutes / 60) * 60)
-
-  // Ticks are hour marks *inside* the span: 08:00–23:00 by default, so the
-  // default axis never shows a "24:00" label.
   const hours: number[] = []
-  for (let hour = spanStartMinutes / 60; hour * 60 < spanEndMinutes; hour += 1) {
+  for (let hour = TIMELINE_START_HOUR; hour <= TIMELINE_END_HOUR; hour += 1) {
     hours.push(hour)
   }
 
@@ -363,11 +325,12 @@ export function layoutDay(
   const columnCounts = clusterColumnCounts(grid)
 
   for (const candidate of grid) {
+    // 没有结束时间的行 `endMinutes === startMinutes` ⇒ 高度天然是 0：它就是一条线，
+    // 不是一块压着别人的矩形。
     candidate.block.heightPx = blockHeightPx(
       candidate.startMinutes,
       candidate.endMinutes,
-      spanEndMinutes,
-      candidate.block.openEnded
+      spanEndMinutes
     )
     candidate.block.widthFraction = 1 / (columnCounts.get(candidate) ?? 1)
   }
@@ -380,9 +343,8 @@ export function layoutDay(
       const startMinutes = minutesOf(window.start_at)
       const endMinutes = minutesOf(window.end_at)
       const topPx = Math.round(pxOf(startMinutes, spanStartMinutes))
-      const heightPx = Math.max(
-        MIN_BLOCK_HEIGHT,
-        Math.round(((Math.max(startMinutes, Math.min(endMinutes, spanEndMinutes)) - startMinutes) / 60) * HOUR_HEIGHT)
+      const heightPx = Math.round(
+        ((Math.max(startMinutes, Math.min(endMinutes, spanEndMinutes)) - startMinutes) / 60) * HOUR_HEIGHT
       )
 
       return { heightPx, topPx }
