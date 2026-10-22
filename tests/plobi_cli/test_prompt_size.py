@@ -72,6 +72,27 @@ def test_breakdown_keys_and_shape(isolated_home):
     assert data["system_prompt"]["bytes"] > 0
 
 
+def test_budget_verdict_is_computed_on_the_real_offline_path(isolated_home):
+    """离线也能出判决：数字来自真拼一次前缀，不是手填样例。"""
+    data = compute_prompt_breakdown("cli")
+    b = data["budget"]
+    assert set(b) >= {
+        "used_tokens", "system_prompt_tokens", "tools_tokens",
+        "limit_tokens", "over", "biggest",
+    }
+    assert b["used_tokens"] == b["system_prompt_tokens"] + b["tools_tokens"]
+    assert b["used_tokens"] > 0 and b["limit_tokens"] > 0
+    assert b["over"] is (b["used_tokens"] > b["limit_tokens"])
+    # 最大一块必须点名（"超了"却不说是哪块等于没报）
+    assert b["biggest"]["tokens"] > 0
+
+
+def test_rendered_report_shows_the_ceiling(isolated_home):
+    text = render_breakdown(compute_prompt_breakdown("cli"))
+    assert "Per-call prefix" in text and "上限" in text
+    assert "下界" in text, "粗估对中文偏低这件事必须写在报告里，不能装作是精确值"
+
+
 def test_runs_offline_without_credentials(isolated_home, monkeypatch):
     """No provider credentials configured → still produces a breakdown."""
     for var in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "NOUS_API_KEY",

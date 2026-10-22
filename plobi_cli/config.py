@@ -1452,6 +1452,14 @@ DEFAULT_CONFIG = {
     # and override the dynamic behavior. Separate from read_file tool limits.
     "context_file_max_chars": None,
 
+    # 每轮都付的固定前缀（系统提示 + 工具 schema）的 token 上限。``null``（默认）＝按
+    # 模型窗口取 10%，最少 12,000。为什么是 10%：公开的长上下文退化实测把临界点定在
+    # 窗口占用 ~43%（128K 模型 ≈ 55K tokens 总输入）就开始掉分，而前缀是**每一轮都占**
+    # 的那部分——它挤掉的正是对话与检索头寸，所以按"窗口一小片"而不是"没填满就行"来算。
+    # 超线只在会话开始出一行声（不改行为、不静默裁剪），并且 ``plobi prompt-size`` 里看得见。
+    # 与 ``context_file_max_chars``（只治 AGENTS.md 那类项目文档的单文件截断）是两件事。
+    "prompt_max_tokens": None,
+
     # Maximum characters returned by a single read_file call.  Reads that
     # exceed this are rejected with guidance to use offset+limit.
     # 100K chars ≈ 25–35K tokens across typical tokenisers.

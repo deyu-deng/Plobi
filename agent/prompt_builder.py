@@ -1198,6 +1198,18 @@ def _dynamic_context_file_max_chars(context_length: Optional[int]) -> int:
     return max(CONTEXT_FILE_MAX_CHARS, min(budget, _CONTEXT_FILE_DYNAMIC_CEILING))
 
 
+def _positive_int_config(value: object) -> Optional[int]:
+    """配置里的正整数键值；``bool`` 不算数（YAML 写 ``true`` 会被 int 子类读成 1）。
+
+    两个上限键（``context_file_max_chars`` / ``prompt_max_tokens``）共用这一条判据，
+    否则哪天只有一个防住了这类手误。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    num = int(value)
+    return num if num > 0 else None
+
+
 def _get_context_file_max_chars(context_length: Optional[int] = None) -> int:
     """Return the context-file truncation limit.
 
@@ -1211,12 +1223,75 @@ def _get_context_file_max_chars(context_length: Optional[int] = None) -> int:
     try:
         from plobi_cli.config import load_config
 
-        val = load_config().get("context_file_max_chars")
-        if isinstance(val, (int, float)) and val > 0:
-            return int(val)
+        pinned = _positive_int_config(load_config().get("context_file_max_chars"))
+        if pinned is not None:
+            return pinned
     except Exception as e:
         logger.debug("Could not read context_file_max_chars from config: %s", e)
     return _dynamic_context_file_max_chars(context_length)
+
+# ── 固定前缀的预算：系统提示 + 工具 schema，每轮都付的那一部分 ──────────────────
+# 一条判据、两个消费者：会话开始那一行警告（agent/system_prompt.py 排空截断警告处）
+# 和 ``plobi prompt-size`` 的报告。不在 CLI 里再抄一份算法。
+# 10% 这个数不是审美：公开的长上下文退化实测把临界定在窗口占用 ~43%（128K 模型
+# ≈ 55K tokens 总输入）就开始掉分，而前缀是每一轮都占的固定成本——它挤掉的正是
+# 对话与按需检索的头寸，所以按「窗口的一小片」算，而不是「没填满就行」。
+_PROMPT_BUDGET_WINDOW_FRACTION = 0.10
+_PROMPT_BUDGET_FLOOR_TOKENS = 12_000
+
+
+def get_prompt_max_tokens(context_length: Optional[int] = None) -> int:
+    """前缀上限：配置 ``prompt_max_tokens`` → 窗口 × 10% → 地板 12,000。"""
+    try:
+        from plobi_cli.config import load_config
+
+        pinned = _positive_int_config(load_config().get("prompt_max_tokens"))
+        if pinned is not None:
+            return pinned
+    except Exception as exc:  # pragma: no cover - config 读不到就走推导
+        logger.debug("Could not read prompt_max_tokens from config: %s", exc)
+    if not isinstance(context_length, int) or context_length <= 0:
+        return _PROMPT_BUDGET_FLOOR_TOKENS
+    return max(
+        _PROMPT_BUDGET_FLOOR_TOKENS,
+        int(context_length * _PROMPT_BUDGET_WINDOW_FRACTION),
+    )
+
+
+def prompt_budget_verdict(
+    system_prompt: str,
+    tools_json: str = "",
+    context_length: Optional[int] = None,
+    sections: Optional[list] = None,
+) -> dict:
+    """这一轮固定前缀花多少 token、上限多少、超没超、该收哪一块。
+
+    ``sections`` 是 ``[(label, text)]``。只有「超了」不给方向等于没报——这台现读
+    前缀里约九成是工具 schema 与 AGENTS.md，记忆只占几百 token，所以点名必须是
+    具体某一块，而不是"总共超了"。
+    """
+    from agent.model_metadata import estimate_tokens_rough
+
+    sp_tokens = estimate_tokens_rough(system_prompt or "")
+    tool_tokens = estimate_tokens_rough(tools_json or "")
+    used = sp_tokens + tool_tokens
+    limit = get_prompt_max_tokens(context_length)
+    biggest_label, biggest_tokens = "", 0
+    for label, text in (sections or []):
+        n = estimate_tokens_rough(text or "")
+        if n > biggest_tokens:
+            biggest_label, biggest_tokens = str(label), n
+    return {
+        "used_tokens": used,
+        "system_prompt_tokens": sp_tokens,
+        "tools_tokens": tool_tokens,
+        "limit_tokens": limit,
+        "over": used > limit,
+        "context_length": context_length,
+        "window_fraction": _PROMPT_BUDGET_WINDOW_FRACTION,
+        "biggest": {"label": biggest_label, "tokens": biggest_tokens},
+    }
+
 
 # Collect truncation warnings so the caller (run_agent) can surface them.
 # A ContextVar (not a module-global list) isolates accumulation per thread /
