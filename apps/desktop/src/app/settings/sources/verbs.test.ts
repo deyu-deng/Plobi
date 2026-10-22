@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SourceRow } from './api'
-import { groupByCategory, needsSetup, statusOf, switchOn, visibleGroups } from './verbs'
+import { groupByCategory, needsSetup, statusOf, statusReason, switchOn, visibleGroups } from './verbs'
 
 function row(over: Partial<SourceRow> = {}): SourceRow {
   return {
@@ -42,6 +42,15 @@ describe('the three states', () => {
     // 正常态那一行什么都不多写（用户 10-19 第二轮那条"只留最短的一句"仍然生效）。
     expect(row({ status: 'error', status_detail: '要人工验证码' }).status_detail).toBe('要人工验证码')
     expect(row({ status: 'connected', status_detail: '' }).status_detail).toBe('')
+
+    // 后端给的是原因码（裁定 45.4：slug 不上屏），界面只查目录：① 有这一码就说那一句；
+    // ② 没见过的码落兜底句，**不许空白**，也不许把码本身画出去。
+    const copy = { reasonUnknown: '暂未适配', reasons: { internal: '本机采集组件暂未就绪', off: '已手动停用' } }
+
+    expect(statusReason(row({ status: 'error', status_code: 'internal' }), copy)).toBe('本机采集组件暂未就绪')
+    expect(statusReason(row({ status: 'disconnected', status_code: 'off' }), copy)).toBe('已手动停用')
+    expect(statusReason(row({ status: 'disconnected', status_code: 'we_never_heard_of_this' }), copy)).toBe('暂未适配')
+    expect(statusReason(row({ status: 'connected' }), copy)).toBe('暂未适配')
   })
 })
 

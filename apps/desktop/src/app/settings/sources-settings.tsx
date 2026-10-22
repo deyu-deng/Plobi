@@ -6,7 +6,9 @@
  * 然后点击一个信源抽屉就会展开，就会显示相关信息**」。这一版就是那两句：
  *
  * 1. **状态是后端算的三态**（`sources_api.status_of`），这里只画一个点与一个词；
- *    出错时多一行**逐字来自上一轮**的话（不转述、不总结，P6）。正常态那一行什么都不多写。
+ *    出错时多一行**一句人话原因**（后端给原因码，四语在 `settings.sources.reasons` 里查，
+ *    用户 10-22：「人话一句，但是语言产品化一点」）。执行方逐字那句原话**进抽屉**，
+ *    不上行（P6 那条"不转述"仍然成立：原话一个字没改，只是挪了位置）。正常态那一行什么都不多写。
  * 2. **行上只剩一颗开关**。旧版那三颗文字按钮（「首次配置」「试一次」「停掉」）里，
  *    「停掉」就是开关的 off，「试一次」搬进抽屉改名「立即同步」，「首次配置」变成
  *    **点这一行**展开的那片抽屉。
@@ -29,7 +31,7 @@ import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, tryS
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
 import { SourceAvatar } from './sources/source-icon'
-import { groupByCategory, needsSetup, statusOf, visibleGroups } from './sources/verbs'
+import { groupByCategory, needsSetup, statusOf, statusReason, visibleGroups } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
@@ -199,8 +201,9 @@ function SourceRowView({
         <span className="flex flex-wrap items-center gap-2">
           <span aria-hidden="true" className={STATUS_DOT[status]} />
           <span>{labels[STATUS_KEY[status]]}</span>
-          {/* 只有出错态多这一行，且逐字是上一轮执行方那句话。正常态什么都不多写。 */
-            status === 'error' && row.status_detail ? <span className="text-destructive">{row.status_detail}</span> : null}
+          {/* 只有出错态多这一行，且是**目录里那句人话**（码不上屏，裁定 45.4）。
+              执行方逐字原话在抽屉里。正常态什么都不多写——用户 10-22：「不要有这么多东西」。 */
+            status === 'error' ? <span className="text-destructive">{statusReason(row, labels)}</span> : null}
         </span>
       }
       expanded={open}
@@ -234,7 +237,7 @@ const STATUS_DOT = {
   error: 'size-1.5 rounded-full bg-destructive'
 } as const
 
-/** 点开的那片抽屉：上一次／下一次／池里几条／设置／立即同步。 */
+/** 点开的那片抽屉：原因／上一次／下一次／池里几条／日程里几条／设置／立即同步。 */
 function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
   busy: boolean
   guiding: boolean
@@ -248,8 +251,12 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
   return (
     <div className="mt-2 space-y-3 rounded-lg bg-(--ui-bg-secondary) p-3" data-testid={`source-drawer-${row.source}`}>
       <dl className="grid gap-x-4 gap-y-1 text-[length:var(--conversation-caption-font-size)] sm:grid-cols-2">
+        <Detail label={labels.drawerReason} value={statusReason(row, labels)} />
         <Detail label={labels.drawerLastRun} value={row.last_run_at || labels.drawerNeverRun} />
-        <Detail label={labels.drawerNextRun} value={row.next_run_at || labels.drawerNextEveryRound} />
+        <Detail
+          label={labels.drawerNextRun}
+          value={row.next_run_at || labels.drawerNextEveryRound}
+        />
         <Detail
           label={labels.drawerPoolCount}
           value={row.pool_count === undefined || row.pool_count < 0
@@ -258,6 +265,18 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
         />
         <Detail label={labels.drawerAgendaCount} value={String(row.events)} />
       </dl>
+
+      {/* 执行方逐字那一句留在这里，不进那一行：它是我们读给排障的人听的，不是给"这条源怎么了"
+          那一格用的（用户 10-22：行上要人话、要产品化）。 */}
+      {row.status_detail
+        ? (
+            <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)" data-testid={`source-run-note-${row.source}`}>
+              {labels.drawerRunNote}
+              {' — '}
+              {row.status_detail}
+            </p>
+          )
+        : null}
 
       {row.setup_fields.length > 0
         ? <SetupFields busy={busy} focusFirst={guiding} labels={labels} onSaved={onReload} row={row} />

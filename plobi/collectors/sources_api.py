@@ -80,6 +80,11 @@ def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
               liveness_state: str, has_builder: bool) -> tuple[str, str]:
     """(状态, 那一格的原因码)。原因码是给界面查语言目录用的，**不是给人看的句子**（裁定 45.4）。
 
+    界面这一侧每一码都有落点（同义的几码共用一句话），查不到的落「暂未适配」那一句，
+    所以下面这一串是闭集、加词就要加四语：`config_unreadable` / `off` / `needs_setup` /
+    `never_ran` / `unknown_state` / `internal` / `live` / `ready` / `ok` / `not_due` /
+    `per_round` / `throttled` / `_ERROR_STATES` 里那九个原词。
+
     次序是判据的一部分，所以写在一个函数里而不是散成 `if`：
     开关没点时"上一轮失败了"不是新闻（本来就没在跑），先报它等于把"我自己关的"画成"坏了"。
     """
@@ -97,6 +102,12 @@ def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
         return STATUS_ERROR, "internal"
     if liveness_state == "live" or last_state in _CONNECTED_STATES:
         return STATUS_CONNECTED, "live" if liveness_state == "live" else last_state
+    # 台账里有结果、但那一个词我们两边都不认：这既不是"成功"也不是"没跑过"，是**我们读不懂**。
+    # 用户 10-22 就这一格拍的是「灰点『未连接』＋原因写这一轮的结果我们不认识」（措辞按他要求产品化）。
+    # 画成绿点是假绿（裁 191），画成"出错"是假故障——第三方采集器每加一个新状态词就全体变红，
+    # 那一屏当天就没人在看了。
+    if last_state:
+        return STATUS_DISCONNECTED, "unknown_state"
     return STATUS_DISCONNECTED, "never_ran"
 
 
@@ -280,7 +291,10 @@ async def try_source(source_id: str):
 
     # 手点一次**也算碰过它了**：不记账的话，"每天三点"配上下午手点一次，晚上那轮会再去打
     # 一遍学校——频率问的是"多久碰一次"，不是"钟走到几点了"。节流那一格本来就是这么算的。
-    cadence.mark_run(source_id, state=str(row.get("state") or ""))
+    # `detail` 必须一起记：台账那一格每次是**整行重写**的，只给状态词就把这一轮刚跑出来的
+    # 那句人话抹掉了，而抽屉里"上一轮说明"读的就是它——动词的存在理由（"现在到底行不行"）
+    # 会因此把自己刚产生的答案删掉。
+    cadence.mark_run(source_id, state=str(row.get("state") or ""), detail=str(row.get("detail") or ""))
     return {"ok": True, "data": row}
 
 
