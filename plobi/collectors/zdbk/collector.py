@@ -366,6 +366,11 @@ def _practice_rows(page: str) -> list[dict]:
 
     这条就是"学校改页面我们就红"的那一条（用户 10-21 拍：接）。所以它**不猜列名**——
     整行文本进 `cells`，标题取第一段；哪天页面换了，坏的是条数与标题，不是把别的东西当实践分。
+
+    **这里不许造 `row_id`**：这一家在这一格从来没给过 id（10-21 实测那页只有 2 行 `<tr>`），
+    以前我按行号拼了一枚 `practice-<序号>-<前 16 字>`，那是**位置当身份**——学校把表换个序
+    整族就换身份，池里就会长出第二份。留空 ⇒ :func:`_identity` 自己退到"整行内容哈希"，
+    并在 `context.identity_key` 里写清走的是哪条路（这是**读数**，不是猜）。
     """
     rows: list[dict] = []
     for raw in re.findall(r"<tr[^>]*>(.*?)</tr>", page, flags=re.S | re.I):
@@ -376,8 +381,7 @@ def _practice_rows(page: str) -> list[dict]:
         text = [_clean(body) for _tag, body in cells]
         text = [cell for cell in text if cell]
         if len(text) >= 2 and any(re.search(r"[一-鿿]", cell) for cell in text):
-            rows.append({"row_id": f"practice-{len(rows)}-" + _clean(text[0])[:16],
-                         "kcmc": text[0], "cells": text})
+            rows.append({"kcmc": text[0], "cells": text})
     return rows
 
 
