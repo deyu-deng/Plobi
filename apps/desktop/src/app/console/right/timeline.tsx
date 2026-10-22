@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 
 import { PanelSectionLabel } from '@/app/overlays/panel'
-import { useI18n } from '@/i18n'
+import { currentI18nLocale, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { AgendaAnchor, AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
 
@@ -43,6 +43,25 @@ function localDateKey(date: Date): string {
 
 function padHour(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`
+}
+
+/**
+ * 抬头上那串「几号 · 星期几」。Apple 日历那一族的抬头不只有"今天"——光看
+ * 「今天／明天」分不清这一轴是几号，跨零点尤其看不出来。跟着界面语言走，
+ * 不自己写死四种语言的星期名。
+ */
+function dateHeadingOf(dayKey: string): string {
+  const date = new Date(`${dayKey}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) {
+    return dayKey
+  }
+
+  return new Intl.DateTimeFormat(currentI18nLocale(), {
+    day: '2-digit',
+    month: '2-digit',
+    weekday: 'short'
+  }).format(date)
 }
 
 /**
@@ -85,7 +104,6 @@ function DayAxis({
   containerRef,
   day,
   label,
-  noEndLabel,
   nowMinutes,
   pendingLabel
 }: {
@@ -94,7 +112,6 @@ function DayAxis({
   containerRef?: (node: HTMLDivElement | null) => void
   day: TimelineDay
   label: string
-  noEndLabel: string
   /** Local wall-clock minutes since midnight, only for the LOCAL today axis. */
   nowMinutes?: number
   pendingLabel: string
@@ -113,7 +130,15 @@ function DayAxis({
       data-testid={`timeline-day-${day.key}`}
       ref={containerRef}
     >
-      <PanelSectionLabel>{label}</PanelSectionLabel>
+      <div className="flex items-baseline justify-between gap-2">
+        <PanelSectionLabel>{label}</PanelSectionLabel>
+        <span
+          className="shrink-0 tabular-nums text-[0.62rem] text-(--ui-text-tertiary)"
+          data-testid={`timeline-date-${day.key}`}
+        >
+          {dateHeadingOf(day.key)}
+        </span>
+      </div>
       <div className="relative" style={{ height: day.totalHeightPx }}>
         {day.hours.map(hour => (
           <div
@@ -168,6 +193,32 @@ function DayAxis({
           const widthPx = `calc(${widthPct}% - ${LANE_INSET_PX}px)`
           const leftPx = `calc(${leftPct}% + ${LANE_INSET_PX}px)`
 
+          if (block.openEnded) {
+            // 没有结束时间＝那一刻，不是一段。画成**横贯当天的一条线**、标题挂在线上
+            // （Apple 日历里 deadline 就是这个形状）。它以前是一块 22px 的最小高度矩形，
+            // 于是 13:13 那条直接压在 13:25 的课上——线不参与列切分，也不遮任何人。
+            return (
+              <div
+                className="absolute inset-x-0 z-10 flex items-center gap-1.5"
+                data-lane={block.lane}
+                data-open-ended="true"
+                data-testid={`timeline-block-${block.id ?? `deadline-${index}`}`}
+                key={block.id ?? `deadline-${index}-${block.startMinutes}`}
+                style={{ top: block.topPx }}
+              >
+                <span className="w-9 shrink-0 tabular-nums text-[0.62rem] text-(--ui-accent)">
+                  {clockOf(block.source && 'start_at' in block.source ? block.source.start_at : '')}
+                </span>
+                <span className="size-1.5 shrink-0 rotate-45 border border-(--ui-accent) bg-(--ui-accent)/30" />
+                <span className="min-w-0 max-w-[42%] truncate text-[0.72rem] text-foreground/90">{block.title}</span>
+                {block.status === 'pending' ? (
+                  <span className="shrink-0 text-[0.62rem] text-amber-600/90">{pendingLabel}</span>
+                ) : null}
+                <span className="h-px min-w-0 flex-1 bg-(--ui-accent)/45" />
+              </div>
+            )
+          }
+
           return (
             <div
               className={cn(
@@ -186,7 +237,8 @@ function DayAxis({
                 // pins every block to the container top — the "everything
                 // stacked at 06:00" bug. Always place by the computed offset.
                 top: block.topPx,
-                height: Math.max(block.heightPx, 20),
+                // 该多长就多长：短会就是窄的一条，不为了塞字放大它。
+                height: block.heightPx,
                 left: leftPx,
                 width: widthPx
               }}
@@ -201,9 +253,6 @@ function DayAxis({
                 ) : null}
                 <span className="min-w-0 truncate text-[0.72rem] text-foreground/90">{block.title}</span>
               </div>
-              {block.lane === 'event' && block.openEnded ? (
-                <span className="block truncate text-[0.6rem] text-(--ui-text-tertiary)">{noEndLabel}</span>
-              ) : null}
               {block.location ? (
                 <span className="block truncate text-[0.6rem] text-(--ui-text-tertiary)">{block.location}</span>
               ) : null}
@@ -374,7 +423,6 @@ export function Timeline({
                   ? t.console.timeline.tomorrow
                   : day.key
             }
-            noEndLabel={t.agenda.noEnd}
             nowMinutes={day.key === todayKey ? nowMinutes : undefined}
             pendingLabel={t.console.timeline.pending}
           />
