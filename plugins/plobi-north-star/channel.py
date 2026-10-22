@@ -156,8 +156,23 @@ def resolve_recipient(name: str):
 # ── from：运行时写入，不许模型自报（裁 183④）────────────────────────────
 
 
-def current_agent_name() -> str:
-    """当前这一轮的 Agent 身份。取不到就一个中性称呼，绝不让模型自己填。"""
+def current_agent_name(session_id: str = "") -> str:
+    """当前这一轮的 Agent 身份。取不到就一个中性称呼，绝不让模型自己填（裁 183④）。
+
+    2026-10-22 之前这里**只读进程环境**。裁定 180 之后桌面是一台后端（不按分身起
+    独立子进程），同一个进程里可以同时跑着好几个会话，`os.environ` 谁的值为先就是谁
+    ——于是同一屏里署出三个名字，人分不清这句话是谁说的。判据改成**读会话那一行**
+    （`sessions.agent_id`，裁定 180 的行级归属），进程环境退成"会话还没落账时"的兜底。
+    """
+    sid = (session_id or "").strip()
+    if sid:
+        try:
+            row = _session_db().get_session(sid) or {}
+            landed = str(row.get("agent_id") or "").strip()
+            if landed:
+                return landed
+        except Exception:  # noqa: BLE001 - 读不到会话 ≠ 不能署名，往下走兜底
+            logger.debug("say/ask: 按会话号取身份失败 session_id=%s", sid, exc_info=True)
     for key in ("PLOBI_AGENT_ID", "PLOBI_AGENT"):
         value = os.environ.get(key, "").strip()
         if value:
@@ -288,14 +303,14 @@ def handle_say(args: dict, **kwargs) -> str:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
             return failure
-        session_id, message_id = _deliver(entry, text, sender=current_agent_name())
+        session_id, message_id = _deliver(entry, text, sender=current_agent_name(kwargs.get("session_id") or ""))
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"say 失败：{exc}")
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
         "trace_id": trace_id,
-        "from": current_agent_name(),
+        "from": current_agent_name(kwargs.get("session_id") or ""),
         "to": entry.name,
         "ts": datetime.now().replace(microsecond=0).isoformat(),
         "parts": text,
@@ -305,29 +320,52 @@ def handle_say(args: dict, **kwargs) -> str:
     return _result(
         True, mode="say", trace_id=trace_id, to=entry.name,
         session_id=session_id, message_id=message_id,
-        deliverer=current_agent_name(),
+        deliverer=current_agent_name(kwargs.get("session_id") or ""),
     )
 
 
 def handle_ask(args: dict, **kwargs) -> str:
-    """投递并等。投递只做一次——超时不重发，那会把一段话说成两段。"""
+    """问一句并等它答——**答落在同一屏**。投递只做一次，超时不重发。
+
+    2026-10-22 现核的两处断点都在这条路上。旧形状先把话 `_deliver` 进 A 屏，再叫
+    `AA.handle_agent_ask` 按**名字**重判一次收件人并起一个全新会话：
+    ① 重判那一侧的闸还按「角色是不是项目分身」（`plobi/agents/registry.py:1142`），
+      agenda 因此 0.06 秒被拒，而 `say` 同一时刻发得出去（现读名单 24 对 23，差的
+      就是 agenda 那一行）——两枚工具对同一个人判定不一致；
+    ② 子进程 argv 里没有 `--resume`，真跑完了回答也落在另一条 `source=cli` 的新会话，
+      A 屏只剩那句问话——用户在屏幕上看到的「发出去了但那个 Agent 没反应」。
+
+    现在：收件人只由 `resolve_recipient` 判一次（与 `say` 同一份名单），子进程
+    `--resume` 到对方那一屏，问话与回答都写进那一屏。**叫不动**（构建失败 / 拒 /
+    超时 / 非零退出，且那一屏一条消息都没多出来）才回退成一次投递，让人至少看得见
+    这句话；已经落过就不补，那会把一段话说成两段。
+    """
     args = args if isinstance(args, dict) else {}
+    sender = current_agent_name(kwargs.get("session_id") or "")
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
             return failure
-        sender = current_agent_name()
-        session_id, message_id = _deliver(entry, text, sender=sender)
+        db = _session_db()
+        session_id = db.latest_conversational_session_for_agent(entry.name) or ""
+        if not session_id:
+            # 那一屏还不存在：开一条空的，让子进程那一问成为它的第一条。先 _deliver
+            # 再 resume 会把同一句话落成两条。
+            session_id = "chan_" + uuid.uuid4().hex[:16]
+            db.create_session(session_id, source="agent_message", agent_id=entry.name)
+        before = db.message_count(session_id=session_id)
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"ask 失败：{exc}")
 
     started = time.time()
     answer, failure = "", None
     try:
-        payload = {"agent": entry.name, "question": text}
-        if str(args.get("timeout") or "").strip():
-            payload["timeout"] = int(args["timeout"])
-        raw = AA.handle_agent_ask(payload)
+        raw = AA.handle_agent_ask(
+            {"agent": entry.name, "question": text},
+            entry=entry,
+            resume_session=session_id,
+            asker=sender,
+        )
         try:
             parsed = json.loads(raw)
         except (TypeError, ValueError):
@@ -341,6 +379,15 @@ def handle_ask(args: dict, **kwargs) -> str:
     except Exception as exc:  # noqa: BLE001 - 问不到也要把「话已送到」说清楚
         failure = {"error": f"「{entry.name}」这一轮没答上来：{exc}"}
 
+    delivered_id = ""
+    if failure is not None:
+        try:
+            landed = db.message_count(session_id=session_id) > before
+        except Exception:  # noqa: BLE001 - 数不清就当作已落，宁可少发一条也不要发两条
+            landed = True
+        if not landed:
+            _session, delivered_id = _deliver(entry, text, sender=sender)
+
     _trace({
         "kind": "ask",
         "trace_id": uuid.uuid4().hex[:12],
@@ -349,12 +396,13 @@ def handle_ask(args: dict, **kwargs) -> str:
         "ts": datetime.now().replace(microsecond=0).isoformat(),
         "parts": text,
         "session_id": session_id,
-        "message_id": message_id,
+        "message_id": delivered_id,
         "waited_seconds": round(time.time() - started, 2),
         "answer": answer[:_PART_MAX_CHARS],
     })
     if failure is not None:
-        return _result(False, delivered=True, to=entry.name, session_id=session_id, **failure)
+        return _result(False, delivered=bool(delivered_id), to=entry.name,
+                       session_id=session_id, **failure)
     return _result(True, mode="ask", to=entry.name, session_id=session_id, answer=answer)
 
 

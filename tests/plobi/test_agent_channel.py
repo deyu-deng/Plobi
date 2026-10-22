@@ -47,8 +47,9 @@ class _FakeSessionDB:
     = 最新可见会话」模拟——测试要造「有会话」就往 existing 放一行。
     """
 
-    def __init__(self, existing: list[dict] | None = None):
+    def __init__(self, existing: list[dict] | None = None, sessions: dict | None = None):
         self.existing = existing or []
+        self.sessions = sessions or {}
         self.created: list[tuple] = []
         self.appended: list[tuple] = []
 
@@ -71,14 +72,23 @@ class _FakeSessionDB:
         self.appended.append((session_id, role, content, asked_by))
         return f"m_{len(self.appended)}"
 
+    def message_count(self, session_id=None, agent_id=None):
+        """那一屏已有几条——ask 的回退投递靠它判「子进程已经落过话没有」。"""
+        if session_id is None:
+            return len(self.appended)
+        return sum(1 for row in self.appended if row[0] == session_id)
 
-def _roster_of(*names: str, archived: tuple[str, ...] = ()):
-    """一个只认这几个名字的假名册。"""
+    def get_session(self, session_id):
+        return dict(self.sessions.get(session_id) or {})
+
+
+def _roster_of(*names: str, archived: tuple[str, ...] = (), role: str = "l2_project"):
+    """一个只认这几个名字的假名册。`role` 用来造日程秘书那一行（不是项目分身）。"""
     from plobi.agents.registry import AgentEntry
 
     agents: dict[str, AgentEntry] = {}
     for name in names:
-        agents[name] = AgentEntry.from_dict(name, {"role": "l2_project", "category": "projects"})
+        agents[name] = AgentEntry.from_dict(name, {"role": role, "category": "projects"})
     for name in archived:
         agents[name] = AgentEntry.from_dict(name, {"role": "l2_project", "category": "projects", "archived": True})
 
@@ -234,64 +244,143 @@ def test_say_delivery_failure_is_not_a_fake_success(CH, monkeypatch, db):
 # ─── ask：投递一次，等，超时不丢「已送到」 ──────────────────────────────────
 
 
-def test_ask_delivers_once_and_returns_the_answer(CH, monkeypatch, db):
-    """投递只做一次；答案从 agent_ask 那条生产路子读回。"""
+def test_ask_resumes_the_recipient_screen_and_answers_there(CH, monkeypatch, db):
+    """断点②「答落在另一屏」：子进程必须 --resume 到对方那一屏，且问话与答案都在那儿。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
-    monkeypatch.setenv("PLOBI_AGENT_ID", "Aura")
-    calls: list[dict] = []
+    db.existing = [{"session_id": "chan_nymo_screen"}]
+    seen: dict = {}
 
-    def _fake_ask(payload):
-        calls.append(payload)
-        return json.dumps({"ok": True, "answer": "分身本人的回答：还剩测试没补。"})
+    def _fake_ask(payload, *, entry=None, resume_session="", asker=""):
+        seen.update(payload=payload, entry=getattr(entry, "name", None),
+                    resume_session=resume_session, asker=asker)
+        db.appended.append(("chan_nymo_screen", "user", "导出排期", "Aura"))
+        db.appended.append(("chan_nymo_screen", "assistant", "还剩测试没补。", ""))
+        return json.dumps({"ok": True, "answer": "还剩测试没补。", "session_id": "chan_nymo_screen"})
 
     monkeypatch.setattr(CH.AA, "handle_agent_ask", _fake_ask)
 
-    out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["导出排期"], "timeout": 120}))
+    out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["导出排期"]}))
 
-    assert out["ok"] is True and out["mode"] == "ask"
+    assert out["ok"] is True and out["session_id"] == "chan_nymo_screen"
     assert "还剩测试没补" in out["answer"]
-    assert len(db.appended) == 1, "投递只做一次——超时也不许多发"
-    assert calls == [{"agent": "Nymo", "question": "导出排期", "timeout": 120}]
+    assert seen["resume_session"] == "chan_nymo_screen", "答要落回那一屏，不是新开一条"
+    assert seen["entry"] == "Nymo", "收件人由 resolve_recipient 判一次，交给下层的应是那一行"
 
 
-def test_ask_keeps_delivered_true_when_the_answer_fails(CH, monkeypatch, db):
-    """问不到 ≠ 没送到：delivered=True 与错误一起回，别让模型以为没发。"""
+def test_ask_does_not_post_the_question_twice(CH, monkeypatch, db):
+    """成功那一趟不许再 _deliver：问话是子进程自己那一轮，投第二次就是说两遍。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
-    monkeypatch.setattr(CH.AA, "handle_agent_ask", lambda payload: json.dumps({"ok": False, "error": "起不来"}))
+    db.existing = [{"session_id": "chan_nymo_screen"}]
+    monkeypatch.setattr(CH.AA, "handle_agent_ask",
+                        lambda payload, **kw: json.dumps({"ok": True, "answer": "好"}))
 
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
 
-    assert out["ok"] is False
-    assert out["delivered"] is True, "话已经送到，这个事实不许被错误吞掉"
-    assert "起不来" in json.dumps(out, ensure_ascii=False)
-    assert len(db.appended) == 1
+    assert out["ok"] is True
+    assert db.appended == [], "投递只做一次——这一趟一次都不许由我们补发"
 
 
-def test_ask_timeout_still_reports_delivery(CH, monkeypatch, db):
-    """WP-ASK-TIMEOUT-PARTIAL 乙档：超时不丢已付费的部分，也不丢「已送达」。"""
+def test_ask_opens_a_screen_when_the_recipient_has_none(CH, monkeypatch, db):
+    """对方还没有可对话会话：开一条空的再 resume 过去，不能让它落到分身自起的新会话。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
+    seen: list[str] = []
+    monkeypatch.setattr(CH.AA, "handle_agent_ask",
+                        lambda payload, **kw: seen.append(kw["resume_session"]) or json.dumps({"ok": True, "answer": "好"}))
 
-    def _slow(payload):
-        raise TimeoutError("child timed out")
+    out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
+
+    assert out["ok"] is True
+    assert len(db.created) == 1 and db.created[0][2] == "Nymo"
+    assert seen[0] == db.created[0][0]
+
+
+def test_ask_failure_with_nothing_landed_delivers_once(CH, monkeypatch, db):
+    """问不到 ≠ 没送到：那一屏一条消息都没多出来时补投递一次，delivered=True 要说清。"""
+    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
+    db.existing = [{"session_id": "chan_nymo_screen"}]
+    monkeypatch.setattr(CH.AA, "handle_agent_ask",
+                        lambda payload, **kw: json.dumps({"ok": False, "error": "起不来"}))
+
+    out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
+
+    assert out["ok"] is False and out["delivered"] is True, "话已经送到，这个事实不许被错误吞掉"
+    assert len(db.appended) == 1 and db.appended[0][0] == "chan_nymo_screen"
+
+
+def test_ask_timeout_after_the_child_wrote_does_not_double_post(CH, monkeypatch, db):
+    """子进程已经落过话（超时/半句）时不再补投递——那一屏已经有这句问话了。"""
+    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
+    db.existing = [{"session_id": "chan_nymo_screen"}]
+
+    def _slow(payload, **kw):
+        db.appended.append(("chan_nymo_screen", "user", "在吗", "Aura"))
+        return json.dumps({"ok": False, "error": "63 秒内没答完", "partial_answer": "半句"})
 
     monkeypatch.setattr(CH.AA, "handle_agent_ask", _slow)
 
     out = json.loads(CH.handle_ask({"to": "Nymo", "parts": ["在吗"]}))
 
-    assert out["ok"] is False and out["delivered"] is True
-    assert "没答上来" in json.dumps(out, ensure_ascii=False)
+    assert out["ok"] is False and out["delivered"] is False
+    assert len(db.appended) == 1, "只许有子进程那一条，不许我们补第二遍"
+    assert "没答完" in json.dumps(out, ensure_ascii=False)
+
+
+def test_ask_reaches_a_non_project_row_the_role_gate_refuses(CH, monkeypatch, db):
+    """断点①的回归：日程秘书（role=l2_agenda）say 发得出，ask 也必须问得到。
+
+    现读旧形状：`say` 的名单 24 行、这一侧 23 行，差的正是 agenda ——0.06 秒就被
+    `plobi/agents/registry.py:1142` 那道角色闸拒掉。两枚工具对同一个人不许各判一次。
+    """
+    monkeypatch.setattr(CH, "_roster", lambda: _roster_of("agenda", role="l2_agenda"))
+    db.existing = [{"session_id": "chan_agenda_screen"}]
+    got: list = []
+    monkeypatch.setattr(CH.AA, "handle_agent_ask",
+                        lambda payload, *, entry=None, **kw: got.append(getattr(entry, "name", None)) or json.dumps({"ok": True, "answer": "收到"}))
+
+    out = json.loads(CH.handle_ask({"to": "agenda", "parts": ["早报排一下"]}))
+
+    assert out["ok"] is True, "不该再被角色闸拒"
+    assert got == ["agenda"]
 
 
 def test_ask_trace_records_the_wait(CH, monkeypatch, db, trace):
     """ask 的痕比 say 多记等了多久与答案。"""
     monkeypatch.setattr(CH, "_roster", lambda: _roster_of("Nymo"))
-    monkeypatch.setattr(CH.AA, "handle_agent_ask", lambda payload: json.dumps({"ok": True, "answer": "好"}))
+    db.existing = [{"session_id": "chan_nymo_screen"}]
+    monkeypatch.setattr(CH.AA, "handle_agent_ask",
+                        lambda payload, **kw: json.dumps({"ok": True, "answer": "好"}))
 
     CH.handle_ask({"to": "Nymo", "parts": ["在吗"]})
 
     rows = trace()
     assert len(rows) == 1 and rows[0]["kind"] == "ask"
     assert "waited_seconds" in rows[0] and rows[0]["answer"] == "好"
+
+
+# ─── 同一只手：--resume 与署名 ─────────────────────────────────────────────
+
+
+def test_build_child_command_resumes_before_the_subcommand(CH):
+    """`--resume` 是顶层旗标（main.py 的 _TOP_LEVEL_VALUE_FLAGS），必须排在 `chat` 之前。"""
+    from plobi.agents.registry import AgentEntry
+
+    entry = AgentEntry.from_dict("Nymo", {"role": "l2_project", "category": "projects"})
+    argv, _env, _cwd = CH.AA.build_child_command(entry, "问一句", resume_session="chan_abc")
+    assert "--resume" in argv
+    assert argv[argv.index("--resume") + 1] == "chan_abc"
+    assert argv.index("--resume") < argv.index("chat"), argv
+    plain, _, _ = CH.AA.build_child_command(entry, "问一句")
+    assert "--resume" not in plain, "不指定就不该凭空加这一段"
+
+
+def test_current_agent_name_reads_the_session_row_not_the_process_env(CH, monkeypatch, db):
+    """断点③：一台后端跑多个会话（裁 180/168），os.environ 谁的值为先就是谁 ⇒ 署名串人。"""
+    monkeypatch.setenv("PLOBI_AGENT_ID", "别的会话的身份")
+    db.sessions = {"chan_l1": {"session_id": "chan_l1", "agent_id": ""}}
+    assert CH.current_agent_name("chan_l1") == "别的会话的身份", "会话那行没落账时仍走兜底"
+    db.sessions = {"chan_l1": {"session_id": "chan_l1", "agent_id": "Aura"}}
+    assert CH.current_agent_name("chan_l1") == "Aura", "会话有身份就读会话，不吃进程环境"
+    assert CH.current_agent_name("") == "别的会话的身份", "没有会话号时才退回进程环境"
 
 
 # ─── 名册判据 ──────────────────────────────────────────────────────────────

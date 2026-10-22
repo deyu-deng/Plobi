@@ -519,8 +519,21 @@ def _project_cwd(entry) -> str:
     return ""
 
 
-def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[list[str], dict[str, str], Optional[str]]:
+def build_child_command(
+    entry,
+    prompt: str,
+    *,
+    asked_by: str = "l1",
+    resume_session: Optional[str] = None,
+) -> tuple[list[str], dict[str, str], Optional[str]]:
     """Return ``(argv, env, cwd)`` for one face-to-face question.
+
+    ``resume_session`` is the conversation the question was just put into. Given,
+    the child answers **inside that session** instead of opening a fresh one —
+    裁定 183 要的是「答落回同一屏」，2026-10-22 实测少了这两个字：问理论力学那一次
+    子进程跑完了，回答落在另一条 ``source=cli`` 的新会话里，屏幕上那一屏只有问话没有
+    下文（用户原话「和死掉了一样」）。``--resume`` 是顶层旗标（
+    ``plobi_cli/main.py`` 的 ``_TOP_LEVEL_VALUE_FLAGS``），必须排在 ``chat`` 之前。
 
     **形状按裁定 42 + 180**（2026-10-22 改写；旧版是 `-p <profile>` 那一套，
     用户当场点破「profile 概念怎么又回归了」——那一套正是裁定 42 判废的
@@ -588,6 +601,11 @@ def build_child_command(entry, prompt: str, *, asked_by: str = "l1") -> tuple[li
         "-q",
         prompt,
     ]
+    if (resume_session or "").strip():
+        # 排在子命令之前：`--resume` 是顶层旗标，落在 `chat` 后面会被当成别的东西。
+        # 按 `chat` 的位置插，不数前缀长度——`resolve_plobi_argv()`  returned 的段数本来就随安装布局变。
+        _chat_at = argv.index("chat")
+        argv[_chat_at:_chat_at] = ["--resume", str(resume_session).strip()]
     # 这条问在分身自己的会话里要能和"主人亲手打的"分开（messages.asked_by）。
     # 子进程是唯一会读到它的地方，所以随 env 传下去，不写进 prompt 文本里。
     child_env["PLOBI_ASKED_BY"] = asked_by or "l1"
@@ -778,26 +796,32 @@ def _run_child(argv, env, cwd, limit: float) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def handle_agent_ask(args: dict, **kwargs) -> str:
+def handle_agent_ask(args: dict, *, entry=None, resume_session: str = "", asker: str = "", **kwargs) -> str:
     """Ask one project 分身 a question; hand its answer back to the secretary.
 
     Every branch returns a JSON string — this must never raise into the L1
     conversation loop.
+
+    ``entry`` / ``resume_session`` are for :func:`channel.handle_ask`（裁定 183 那张
+    嘴）：收件人已经由**名册里没归档的那一行**判过了，这里不许再按「角色是不是项目
+    分身」判第二次——两枚原子对同一个人判定不一致，就是用户看到的「0.06 秒就被拒」
+    （现读：`say` 的名单 24 行，这一侧 23 行，缺的那一行正是 `agenda`）。
     """
     args = args if isinstance(args, dict) else {}
     name = str(args.get("agent") or "").strip()
     question = str(args.get("question") or "").strip()
 
-    try:
-        entries = askable_entries()
-    except Exception as exc:  # an unreadable roster ≠ a broken turn
-        logger.warning("plobi_agent_ask: registry unreadable: %s", exc)
-        return tool_error("读不到项目 / 课程的 L2 Agent 名册，这次问不了。", ok=False)
+    if entry is None:
+        try:
+            entries = askable_entries()
+        except Exception as exc:  # an unreadable roster ≠ a broken turn
+            logger.warning("plobi_agent_ask: registry unreadable: %s", exc)
+            return tool_error("读不到项目 / 课程的 L2 Agent 名册，这次问不了。", ok=False)
 
-    try:
-        entry = resolve_target(name, entries=entries)
-    except AskRefusal as refusal:
-        return tool_error(refusal.message, ok=False, available=refusal.available)
+        try:
+            entry = resolve_target(name, entries=entries)
+        except AskRefusal as refusal:
+            return tool_error(refusal.message, ok=False, available=refusal.available)
 
     if not question:
         return tool_error(
@@ -808,8 +832,9 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
     limit = budget.seconds
     try:
         argv, env, cwd = build_child_command(
-            entry, compose_question(question, entry=entry),
+            entry, compose_question(question, entry=entry, asker=asker or "总秘书"),
             asked_by=f"l1:{kwargs.get('task_id') or kwargs.get('session_id') or ''}".rstrip(":") or "l1",
+            resume_session=resume_session,
         )
     except AskRefusal as refusal:
         return tool_error(refusal.message, ok=False, available=refusal.available)
@@ -869,7 +894,9 @@ def handle_agent_ask(args: dict, **kwargs) -> str:
             exit_code=result["returncode"],
         )
 
-    session_id = _new_session_id(entry, not_before=started)
+    # 同一屏叫醒时那一屏的号是调用方给的，不必再去猜「最新那一条」——_new_session_id 那套
+    # 时间地板 + agent_id 的猜测只在没有指定会话时用（旧嘴 `plobi_agent_ask` 那条路）。
+    session_id = (resume_session or "").strip() or _new_session_id(entry, not_before=started)
     answer = _session_answer(entry, session_id) or _fallback_answer(result["stdout"])
     answer = answer.strip()
     if not answer:
