@@ -995,6 +995,17 @@ def _ensure_default_soul_md(home: Path) -> None:
     _secure_file(soul_path)
 
 
+# What a Plobi home genuinely owns. ONE list, two consumers: the plain branch
+# creates these, the managed branch only *requires* the first three (a NixOS
+# activation is expected to have made them). Keeping it in one place is the whole
+# point — ``memories/`` was retired by 裁定 42/178 and the two branches drifted:
+# the plain one seeded a dir nothing reads (so a cleaned-up home looked un-cleaned),
+# while the managed one RAISED when that same dir was absent, which would have made
+# a fresh managed install unbootable. Neither list can carry it now.
+_HOME_REQUIRED_SUBDIRS = ("cron", "sessions", "logs")
+_HOME_EXTRA_SUBDIRS = ("logs/curator", "pairing", "hooks", "image_cache", "audio_cache", "skills")
+
+
 def ensure_plobi_home():
     """Ensure ~/.plobi directory structure exists with secure permissions.
 
@@ -1021,16 +1032,7 @@ def ensure_plobi_home():
     else:
         home.mkdir(parents=True, exist_ok=True)
         _secure_dir(home)
-        for subdir in (
-            # "memories" dropped: 裁定 42/178 moved the ledgers to
-            # ``<shared root>/memory/`` (GLOBAL.md + one per agent + USER.md), so
-            # nothing reads ``<home>/memories`` any more — and seeding it on every
-            # ``load_config()`` resurrected the retired dir right after it was
-            # cleaned up, which made "删掉了" look false. Writers create what they
-            # write; this list is only what the home genuinely still owns.
-            "cron", "sessions", "logs", "logs/curator",
-            "pairing", "hooks", "image_cache", "audio_cache", "skills",
-        ):
+        for subdir in _HOME_REQUIRED_SUBDIRS + _HOME_EXTRA_SUBDIRS:
             d = home / subdir
             d.mkdir(parents=True, exist_ok=True)
             _secure_dir(d)
@@ -1044,7 +1046,7 @@ def _ensure_plobi_home_managed(home: Path):
             f"PLOBI_HOME {home} does not exist. "
             "Run 'sudo nixos-rebuild switch' first."
         )
-    for subdir in ("cron", "sessions", "logs", "memories"):
+    for subdir in _HOME_REQUIRED_SUBDIRS:
         d = home / subdir
         if not d.is_dir():
             raise RuntimeError(
