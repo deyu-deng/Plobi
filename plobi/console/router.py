@@ -1460,6 +1460,33 @@ def agent_notes(agent_id: str) -> Optional[dict]:
     )
 
 
+def _cwd_under_folder(cwd: str, home: str) -> bool:
+    """Is this round's working directory inside that agent's bound folder?
+
+    Two things the raw string compare got wrong, both measured on this box:
+
+    * **Case.** The roster may say ``D:\\projects\\Sindri`` while the ledger records
+      whatever case the filesystem resolved — ``D:\\Projects\\Sindri``. A byte compare
+      made this panel permanently empty even though a round existed. Normalisation must
+      follow *this platform's* path semantics (``os.path.normcase``): case-insensitive on
+      Windows, case-sensitive on POSIX, where case is part of the data.
+    * **Boundary.** ``startswith`` matched ``D:\\projects\\Sindri-2`` against a home of
+      ``D:\\projects\\Sindri`` — that attributes one agent's offloaded work to its
+      sibling, which is worse than missing it.
+
+    Different Windows drives must not compare as nested (``relpath`` raises there).
+    """
+    cwd, home = (cwd or "").strip(), (home or "").strip()
+    if not cwd or not home:
+        return False
+    try:
+        rel = os.path.relpath(os.path.normcase(os.path.abspath(cwd)),
+                              os.path.normcase(os.path.abspath(home)))
+    except ValueError:
+        return False
+    return rel != os.pardir and not rel.startswith(os.pardir + os.sep)
+
+
 def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
     """这一格**外包出去**的轮次：给了谁、在哪个目录、开了什么权限档、花了多少。
 
@@ -1468,7 +1495,8 @@ def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
 
     归属靠 ``cwd`` 落在这个分身的 ``project_path`` 之下：流水是按**目录**记的，因为交出去
     的本来就是"某个目录里的一段活"。**没有绑定目录就不猜**——回空表并说明原因，
-    而不是把所有外包都算到它头上（那比漏报更坏）。
+    而不是把所有外包都算到它头上（那比漏报更坏）。比较走 :func:`_cwd_under_folder`
+    （本平台的路径大小写语义 + 目录边界），逐字符 ``startswith`` 两头都会错。
     """
     from plobi.delegation.offload import RoundLedger, total_usd
 
@@ -1482,9 +1510,7 @@ def agent_offloads(agent_id: str, *, limit: int = 20) -> Optional[dict]:
         matched: list[dict] = []
         reason = "这一条没有绑定目录；外包流水按目录归属，所以不猜哪段是它交出去的"
     else:
-        normalized = home.rstrip("\\/")
-        matched = [r for r in rows
-                   if str(r.get("cwd") or "").startswith(normalized)]
+        matched = [r for r in rows if _cwd_under_folder(str(r.get("cwd") or ""), home)]
         reason = ""
     newest_first = sorted(matched, key=lambda r: str(r.get("ts") or ""), reverse=True)
     picked = newest_first[:max(0, int(limit))]
