@@ -731,11 +731,17 @@ def run_task(
             errors="replace", timeout=timeout,
         )
     except subprocess.TimeoutExpired:
+        # 超时的一趟**照样可能已经写了回执**（它干完但没退出，或它先回话再卡住）。
+        # 这一支以前直接构造一个不带身份的 `OffloadResult`，于是台账里那一行的
+        # `job`/`reply` 全空——10-22 实测到的一行 1157s 的记录就是这样丢的身份。
+        late_reply, late_status = collect_reply(reply_file)
         return OffloadResult(
             agent=agent, cwd=str(workdir), permission_flags=flags, sandboxed=sandboxed,
             exit_code=None, duration_s=time.time() - started, argv=argv, usage={},
             cost=None, cost_status="unknown", artifacts=(), text="", ok=False,
             error=f"external agent did not finish within {timeout:.0f}s",
+            job=job, reply=late_reply, reply_status=late_status or "not_filed",
+            reply_to=reply_to,
         )
     except OSError as exc:
         return fail(f"cannot start {binary}: {exc}")
