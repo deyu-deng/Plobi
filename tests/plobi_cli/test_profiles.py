@@ -177,6 +177,25 @@ class TestCreateProfile:
                        "cron", "home"]:
             assert not (profile_dir / subdir).exists(), f"still seeded: {subdir}"
 
+    def test_ensure_home_does_not_reseed_the_retired_memories_dir(self, profile_env):
+        """``ensure_plobi_home()`` 是第二台播种机——每一轮 ``load_config()`` 都跑它。
+
+        ``memories/`` 被裁定 42/178 退休之后，它仍每次把那个目录建回来：2026-10-21
+        真跑迁移脚本时实测撞到——删完存量、下一句读配置就看见目录又在那儿了，「旧东西
+        删掉了」当场变成谎话。运行必需的 ``sessions``/``logs`` 要继续建，退休的那个不建。
+        """
+        from plobi_cli.config import ensure_plobi_home
+        from plobi_constants import get_plobi_home
+
+        home = get_plobi_home()
+        ensure_plobi_home()
+        assert (home / "sessions").is_dir() and (home / "logs").is_dir()
+
+        shutil.rmtree(home / "memories", ignore_errors=True)
+        ensure_plobi_home()
+        assert not (home / "memories").exists(), "退休目录不该被重建"
+        assert (home / "sessions").is_dir(), "该建的还得建"
+
     def test_roster_style_create_adds_only_the_opt_out_marker(self, profile_env):
         """The roster path (``AgentRegistry.spawn``) creates with ``no_skills``.
         That adds the opt-out marker — the brake that keeps ``plobi update`` from
