@@ -191,26 +191,29 @@ def test_sync_turn_writer_soft_failure_is_warning_only(
     assert any("not written" in r.message for r in caplog.records)
 
 
-def test_sync_turn_turn_note_failure_still_publishes_agenda(
+def test_sync_turn_publishes_agenda_and_writes_no_chat_material(
     vault, agenda_env, provider, monkeypatch
 ):
-    """turn 笔记与日程摘要是两个独立接缝：一个失败不拖死另一个。"""
+    """裁定 198：``sync_turn`` 不再往脑里落第二份聊天原文，每日摘要那条腿照旧要落。
+
+    钉两件事：① 这一趟**没有任何一次写**的路径里带 ``raw``（原料区作废，写者归零）；
+    ② 日程摘要照旧发布（会话正本是单库 ``state.db``，不是脑里那份拷贝）。
+    """
     provider.initialize("sess-1")
 
     import plobi.mind.writer as writer_mod
 
+    written: list[str] = []
     real_write_one = writer_mod.MindWriter.write_one
-    calls = {"n": 0}
 
-    def flaky_write_one(self, rel, content, *, mode="overwrite"):
-        if "chat-logs/exports" in rel:
-            calls["n"] += 1
-            raise RuntimeError("exports dir gone")
+    def spy_write_one(self, rel, content, *, mode="overwrite"):
+        written.append(rel)
         return real_write_one(self, rel, content, mode=mode)
 
-    monkeypatch.setattr(writer_mod.MindWriter, "write_one", flaky_write_one)
+    monkeypatch.setattr(writer_mod.MindWriter, "write_one", spy_write_one)
     provider.sync_turn("你好", "在的。")
-    assert calls["n"] == 1
+
+    assert not [rel for rel in written if "raw" in rel.split("/")], written
     assert (vault / "Vault" / "projects" / "Plobi" / "daily").is_dir()
 
 

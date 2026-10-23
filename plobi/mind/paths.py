@@ -34,12 +34,21 @@ SAFE_PREFIXES: tuple[str, ...] = (
     "Loom/wiki/entities",
     "Loom/wiki/sources",
     "Loom/wiki/comparisons",
-    "Loom/raw/chat-logs/exports",
-    "Loom/raw/chat-logs/digested",
 )
 
-# AI-authored prose belongs in Loom; the human surface forbids AI meta-commentary.
-AI_WRITE_ROOT = "Loom/raw/chat-logs/digested"
+# AI 写的那两样（当日日程摘要与打勾回复）住**人读面**，不住原料区。
+#
+# 以前这里是 ``Loom/raw/chat-logs/digested``——那格是旧 Mind 形态（单层 ``Loom/`` ＋
+# Mac↔Win 靠 git 传聊天原文）留下的处理区。用户 2026-10-23 10:0x 判「raw 那一类原料在现在
+# 的形态里不需要了」（正本在单库 ``state.db``，行级归属，裁定 180），裁定 158 又判「摘要与
+# 打勾回复要进 vault 的 git 且入库看得见」。两条合起来只剩一个落点：vault。
+#
+# 选 ``Vault/projects/Plobi/ai-daily`` 而不是 ``Vault/diary``／``Vault/notes``：那两格是人写的
+# 日记与学科笔记，AI 去那儿放评价性文字正是老注释忌讳的「人读面混进 AI 元评论」。这一格
+# 只装**纯事实**（哪天排了什么、哪条勾了、谁勾的），不带评价语气——裁定 158 判据③当场选的
+# 就是这一种，写在这里当留痕。vault 故意没有远端（裁定 72／126），所以「原文不上云」与
+# 「摘要入库、可被读回」两头同时成立。
+AI_WRITE_ROOT = "Vault/projects/Plobi/ai-daily"
 
 VAULT_LOGICAL = "Vault"
 MIND_LOGICAL = "Loom"

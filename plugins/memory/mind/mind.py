@@ -302,65 +302,29 @@ class MindProvider(MemoryProvider):
         session_id: str = "",
         messages: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        """Write a distilled turn note to Loom/raw/chat-logs/exports/.
+        """每轮**不再**往脑里落第二份聊天原文（裁定 198，用户 10-23 10:0x）。
 
-        Appends ``<kebab-session>.md`` (one section per turn) via MindWriter.
-        Refuses the write unless the resolved path is inside SAFE_PREFIXES.
+        旧腿是 ``Loom/raw/chat-logs/exports/<会话>.md`` 逐轮 append——那是旧 Mind 形态
+        （单层 ``Loom/`` ＋ Mac↔Win 靠 git 传原文）的处理区。现在会话的正本是单库
+        ``state.db``（裁定 180 行级归属），再抄一份进**带远端**的脑仓，等于把裁定 157
+        那句「聊天原文不上云」每天往前推一次。现核：那批文件的写者只有这里，
+        **读侧一个都没有**（``retrieval.py`` 不扫 ``raw/``），所以关掉这条腿不丢任何检索能力。
 
-        同时触发写接缝的每日日程摘要（独立 try 域：turn 笔记失败不拖死它，
-        反之亦然）。
+        每日日程摘要那条腿保留（M2 ⑥ 要它），落点已按裁定 158 换进 vault 的人读面。
         """
         self._maybe_publish_daily_agenda()
-        try:
-            root = _resolve_root()
-            if not root.is_dir():
-                return
-            kebab = _kebab(session_id) or "chat"
-            rel = f"Loom/raw/chat-logs/exports/{kebab}.md"
-            if not _is_safe(real_target(rel, root), root):
-                logger.warning("[mind] refused sync_turn write: %s", rel)
-                return
-
-            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            body = (
-                f"## {stamp}\n\n"
-                f"### user\n{user_content.strip()}\n\n"
-                f"### assistant\n{assistant_content.strip()}\n\n"
-            )
-            result = MindWriter(root, run_verifier=True, commit=False).write_one(
-                rel, body, mode="append"
-            )
-            if not result.ok:
-                logger.warning("[mind] sync_turn write failed: %s", result.detail)
-        except Exception as exc:  # noqa: BLE001 - persistence is non-fatal
-            logger.warning("[mind] sync_turn failed (non-fatal): %s", exc)
 
     # -- session boundary ------------------------------------------------
 
     def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
-        """Digest the session into Loom/raw/chat-logs/digested/<YYYY-MM-DD>/.
+        """会话收尾不再往脑的原料区写 digest（裁定 198）；这里是**有意的空操作**。
 
-        One digest per session (kebab session id, fallback ``session``),
-        written via MindWriter after an ``_is_safe`` assertion.
+        旧腿写 ``Loom/raw/chat-logs/digested/<日期>/<会话>-digest.md``。它和 turn note 同一个病：
+        正本在 ``state.db``，脑仓不该收第二份拷贝，而且现核也没有任何读侧。
+        digest 这件事本身没有作废——它的归宿是 L1 那道闸（计划＋sha256＋你点头）之后进正典，
+        归 ``WP-MEMORY-LAYERING``。:func:`_render_digest` 因此保留给那一刀，别当死代码删掉。
         """
-        try:
-            root = _resolve_root()
-            if not root.is_dir() or not messages:
-                return
-            today = datetime.now().strftime("%Y-%m-%d")
-            kebab = _kebab(self._session_id) or "session"
-            rel = f"Loom/raw/chat-logs/digested/{today}/{kebab}-digest.md"
-            if not _is_safe(real_target(rel, root), root):
-                logger.warning("[mind] refused on_session_end write: %s", rel)
-                return
-
-            result = MindWriter(root, run_verifier=True, commit=False).write_one(
-                rel, _render_digest(messages), mode="overwrite"
-            )
-            if not result.ok:
-                logger.warning("[mind] on_session_end write failed: %s", result.detail)
-        except Exception as exc:  # noqa: BLE001 - session end must not raise
-            logger.warning("[mind] on_session_end failed (non-fatal): %s", exc)
+        return None
 
     # -- mirror built-in memory writes -----------------------------------
 
