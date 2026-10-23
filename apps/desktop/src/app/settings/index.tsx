@@ -15,6 +15,8 @@ import { OverlayMain, OverlayNav, type OverlayNavGroup, OverlaySplitLayout } fro
 import { OverlayView } from '../overlays/overlay-view'
 import { SKILLS_ROUTE } from '../routes'
 
+import { SkillsView } from '@/app/skills'
+
 import { AboutSettings } from './about-settings'
 import { AppearanceSettings } from './appearance-settings'
 import { ConfigSettings } from './config-settings'
@@ -25,6 +27,7 @@ import { NetworkSettings } from './network-settings'
 import { NotificationsSettings } from './notifications-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
 import { SessionsSettings } from './sessions-settings'
+import { OffloadSettings } from './offload-settings'
 import { SourcesSettings } from './sources-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
@@ -37,6 +40,8 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'notifications',
   'sessions',
   'sources',
+  'offload',
+  'capabilities',
   'about'
 ]
 
@@ -137,14 +142,14 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       onSelect: () => setActiveView('notifications')
     },
     {
-      // Capabilities 总入口（全局真源 + per-agent 开关，2026-10-19 用户裁定）。
-      // 真源页面就是 /skills（技能 / 工具集 / MCP / Hub 四张全局表）；设置里
-      // 这一项是入口不是拷贝——不复制面板，跳过去。
-      active: false,
+      // 全局清单只住这一处（2026-10-20 用户裁定）：技能 / 工具集 / MCP / Hub
+      // 四张**全局**表。它是全局真源本身，不是某个 Agent 的减法视图——所以渲染
+      // 在设置 overlay 里，而不是跳出去、也不进任何 Agent 的界面。
+      active: activeView === 'capabilities',
       icon: Package,
       id: 'capabilities',
       label: t.settings.nav.capabilities,
-      onSelect: () => navigate(SKILLS_ROUTE)
+      onSelect: () => setActiveView('capabilities' as SettingsViewId)
     },
     {
       active: activeView === 'providers',
@@ -183,6 +188,13 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       id: 'sources',
       label: t.settings.nav.sources,
       onSelect: () => setActiveView('sources')
+    },
+    {
+      active: activeView === 'offload',
+      icon: Package,
+      id: 'offload',
+      label: t.settings.nav.offload,
+      onSelect: () => setActiveView('offload')
     },
     {
       active: activeView === 'gateway',
@@ -298,6 +310,10 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
             <NotificationsSettings />
           ) : activeView === 'sources' ? (
             <SourcesSettings />
+          ) : activeView === 'offload' ? (
+            <OffloadSettings />
+          ) : activeView === 'capabilities' ? (
+            <SkillsView />
           ) : (
             <SessionsSettings />
           )}

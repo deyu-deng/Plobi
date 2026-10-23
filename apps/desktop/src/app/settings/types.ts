@@ -6,10 +6,12 @@ import type { EnvVarInfo } from '@/types/plobi'
 
 export type SettingsView =
   | 'about'
+  | 'capabilities'
   | 'gateway'
   | 'keys'
   | 'network'
   | 'notifications'
+  | 'offload'
   | 'providers'
   | 'sessions'
   | 'sources'
