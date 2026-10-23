@@ -1905,6 +1905,25 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
         logger.debug("Could not ensure PLOBI_HOME before loading SOUL.md: %s", e)
 
     soul_path = get_plobi_home() / "SOUL.md"
+    # WP-AGENT-SOUL-SHARED（2026-10-23）：L2 的身份不再由「一整个家」承载，而是
+    # 共享层下按 agent 一份（裁定 42 §42.2 第 6 项；写侧见
+    # `plobi/agents/registry.ensure_l2_identity_soul`）。
+    #
+    # 只有手里有 `PLOBI_AGENT_ID` 才进这个分支——`build_child_command` 与桌面
+    # 都会放它，L1（无该变量）**逐字不走这里**，行为与改动前一致。
+    # 共享层那份不在时安静回退顶层：家还在的老安装不因此瞎掉。
+    _agent_id = (os.environ.get("PLOBI_AGENT_ID") or "").strip()
+    if _agent_id and _agent_id != "default":
+        _shared = None
+        try:
+            from plobi.agents.registry import shared_soul_path_for
+
+            _shared = shared_soul_path_for(_agent_id)
+        except Exception as exc:  # registry 解析不了就别改行为，仍读顶层
+            logger.debug("shared soul path unavailable for %s: %s", _agent_id, exc)
+        if _shared is not None and _shared.is_file():
+            soul_path = _shared
+
     if not soul_path.exists():
         return None
     try:

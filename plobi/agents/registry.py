@@ -4338,14 +4338,52 @@ def build_l2_identity_soul_block(
     return "\n".join(lines) + "\n"
 
 
+# ── 身份的共享层落点（WP-AGENT-SOUL-SHARED）────────────────────────────────
+#
+# 裁定 42 §42.2 第 6 项：一个项目分身 = 名册一行 + 最多三个覆盖（人设片段 /
+# 模型 / 密钥）。今天人设片段的承载仍是「一整个家」里的 ``SOUL.md``——
+# 这是 24 个家清不掉的最后一处承重，也是 10-23 11:36 那次「搬完家左栏全瘫」
+# 的同类风险（那次瘫的是判据，这次会是身份）。
+#
+# 落点换成共享层下一份按 agent 区分的文件，与
+# :func:`plobi.routing.models.shared_config_path` 同一个 root、同一套理由。
+
+
+def shared_souls_root() -> Path:
+    """身份那一片的根：共享层下 ``souls/``（一份，不按分身复印）。"""
+    from plobi_constants import get_shared_plobi_root
+
+    return get_shared_plobi_root() / "souls"
+
+
+def shared_soul_path_for(agent_name: str) -> Path:
+    """某个 Agent 的身份文件。键 = **名册 name**，不是 profile 名。
+
+    读侧（``agent/prompt_builder.load_soul_md``）手里只有 ``PLOBI_AGENT_ID``
+    ——那是 ``build_child_command`` 放进去的 ``entry.name``。两侧用同一个键，
+    读侧就不必反查名册，也不会因为「name 与 profile 名不一致」而读空。
+    """
+    return shared_souls_root() / f"{_project_safe_id(agent_name)}.md"
+
+
+def shared_soul_path(entry) -> Path:
+    """这一行的身份文件（键是它的名册 name）。"""
+    return shared_soul_path_for(entry.name)
+
+
 def ensure_l2_identity_soul(
     entry: AgentEntry, *, home: Path | str | None = None
 ) -> bool:
-    """Upsert a project 分身's OWN assignment into its profile ``SOUL.md``.
+    """Upsert a project 分身's OWN assignment into its identity file.
 
-    ``agent/prompt_builder.load_soul_md()`` reads ``get_plobi_home()/SOUL.md``
-    and nothing else, so a 分身's identity can only come from its own file — the
-    profiles shipped a 512-byte upstream stub (裁定 42 §6(c)). Shape copied from
+    **落点（WP-AGENT-SOUL-SHARED，2026-10-23）**：默认写**共享层**那一份
+    :func:`shared_soul_path`（``<shared root>/souls/<名册 name>.md``），
+    ``agent/prompt_builder.load_soul_md()`` 在 ``PLOBI_AGENT_ID`` 存在时优先读它。
+    身份从此不由「一整个家」承载——那是裁定 42 要拆掉的东西，也是 10-23 11:36
+    那次事故的同类风险。显式传 ``home=`` 时仍写那个家的 ``SOUL.md``（旧形状，
+    给还在按家起的调用方一条退路）。
+
+    其余契约不变：Shape copied from
     :func:`ensure_l1_secretary_routing_soul`: strip the known fences, then
     append; the two contracts never coexist in one file. No-op when the content
     already matches, and never written onto the default (L1) profile.
@@ -4356,18 +4394,28 @@ def ensure_l2_identity_soul(
     text exists is decided by :func:`_soul_persona_text` (the upstream stub is
     not a persona) and handed to the renderer as ``persona_written``.
     """
-    from plobi_constants import get_plobi_home
-
     if entry.role == L1_SECRETARY_ROLE or entry.profile_name == "default":
         return False
 
-    target = Path(home) if home is not None else get_plobi_home()
-    if not target.is_dir():
-        # 分身还没落地（spawn 未跑 / profile 目录被移走）。不要为了一份 SOUL.md
-        # 凭空建 profile 目录 —— 那是第二真源，见 :func:`_resolvable_project_cwd`
-        # 的同款判据（宁可不给，也不编造落点）。
-        return False
-    soul_path = target / "SOUL.md"
+    if home is not None:
+        # 旧形状（显式指定一个家）：家不在就按旧契约 no-op——那是「分身还没落地」，
+        # 不为一份 SOUL.md 凭空造 profile 目录（宁可不给，也不编造落点）。
+        target = Path(home)
+        if not target.is_dir():
+            return False
+        soul_path = target / "SOUL.md"
+    else:
+        # 新形状（默认，WP-AGENT-SOUL-SHARED）：身份落在共享层下按 agent 一份，
+        # **家不再是前提**。判据曾被「盘上有没有家」绑住过一次，一次数据搬家
+        # 就把整条左栏打瘫（10-23 11:36 现读 0/0/24）；身份不再犯同一个错。
+        soul_path = shared_soul_path(entry)
+        try:
+            soul_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "plobi: shared soul dir not writable for %s: %s", entry.name, exc
+            )
+            return False
     existing = ""
     if soul_path.is_file():
         existing = soul_path.read_text(encoding="utf-8")
