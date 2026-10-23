@@ -238,7 +238,12 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'code_execution.mode': ['project', 'strict'],
   'context.engine': ['compressor', 'default', 'custom'],
   'delegation.reasoning_effort': ['', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-  'memory.provider': ['', 'mind', 'builtin', 'hindsight', 'honcho'],
+  // `''` is the real off switch for the external brain (the built-in MEMORY.md layer
+  // stays); `mind` is what the backend ships as the official surface. There used to be a
+  // `builtin` entry here — it is not a provider plugin, and measured behaviour for it is
+  // byte-for-byte the `''` case, so it was a second label for one state. Anything listed
+  // after `''` must be a directory under Code's `plugins/memory/` (a Python test enforces it).
+  'memory.provider': ['', 'mind', 'hindsight', 'honcho'],
   // Terminal execution backends — kept in sync with the dispatch ladder in
   // tools/terminal_tool.py::_create_environment (local/docker/singularity/
   // modal/daytona/ssh). Remote backends need extra env (image, tokens, host).
@@ -271,6 +276,19 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   // NeuTTS local inference device.
   'tts.neutts.device': ['cpu', 'cuda', 'mps'],
   'updates.non_interactive_local_changes': ['stash', 'discard']
+}
+
+/**
+ * Labels for the external-memory dropdown. It used to render `''` as a blank row and
+ * `builtin` as though it were a provider; measured against the backend, both of those
+ * mount nothing, so the blank row WAS the off switch and `builtin` was a second name for
+ * it. `''` is now labelled as what it does, and the official brain is named without the
+ * word "default" -- what a fresh install resolves to is `memory.provider` in
+ * plobi_cli/config.py's DEFAULT_CONFIG, and this file must not re-declare it.
+ */
+export const MEMORY_PROVIDER_LABELS: Record<string, string> = {
+  '': 'Off - built-in memory only',
+  mind: 'Mind - the official brain',
 }
 
 export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
@@ -401,8 +419,14 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
   memory: {
     memoryEnabled: 'Persistent Memory',
     userProfileEnabled: 'User Profile',
-    memoryCharLimit: 'Memory Budget',
+    writeApproval: 'Ask Before Writing',
+    globalCharLimit: 'Shared Memory Budget (chars)',
+    agentCharLimit: 'Per-Agent Memory Budget (chars)',
     userCharLimit: 'Profile Budget',
+    statusCharLimit: 'Per-Agent Status Budget (chars)',
+    l1StatusCharLimit: 'Status Digest Cap (chars)',
+    squeezePressure: 'Sinking Threshold (0-1)',
+    nudgeInterval: 'Memory Nudge (turns)',
     provider: 'Memory Provider'
   },
   context: {
@@ -464,8 +488,13 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     enabled: 'Create rollback snapshots before file edits.'
   },
   memory: {
-    memoryEnabled: 'Save durable memories that can help future sessions.',
-    userProfileEnabled: 'Maintain a compact profile of user preferences.'
+    writeApproval: "Every memory write first shows a plan plus each file's sha256 and waits for your yes; a background turn stages it instead of committing. Rejecting once sends that class back to asking.",
+    globalCharLimit: 'GLOBAL.md — facts that hold for every agent.',
+    agentCharLimit: "Each agent's own MEMORY.md. Replaces the old single 'Memory Budget' key.",
+    statusCharLimit: 'The few-line STATUS digest each agent keeps for the secretary to read.',
+    l1StatusCharLimit: 'Total budget for the digest the secretary reads — it never reads full per-agent memory.',
+    squeezePressure: 'When a scope is this full, content squeezed out of short-term memory rises to the pending layer for approval. Below it, a removal is just an edit and must not flood the gate.',
+    nudgeInterval: 'How often the agent is reminded to consolidate memory. 0 turns it off.'
   },
   context: {
     engine: 'Strategy for managing long conversations near the context limit.'
@@ -553,8 +582,14 @@ export const SECTIONS: DesktopConfigSection[] = [
     keys: [
       'memory.memory_enabled',
       'memory.user_profile_enabled',
-      'memory.memory_char_limit',
+      'memory.write_approval',
+      'memory.global_char_limit',
+      'memory.agent_char_limit',
       'memory.user_char_limit',
+      'memory.status_char_limit',
+      'memory.l1_status_char_limit',
+      'memory.squeeze_pressure',
+      'memory.nudge_interval',
       'memory.provider',
       'context.engine',
       'compression.enabled',
