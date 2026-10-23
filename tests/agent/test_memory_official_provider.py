@@ -129,7 +129,8 @@ def test_desktop_memory_surface_only_exposes_keys_the_backend_reads():
 
     honoured = {"memory." + v for v in _MEMORY_LIMIT_KEYS.values()} | {
         "memory.memory_enabled", "memory.user_profile_enabled",
-        "memory.write_approval", "memory.provider", "memory.nudge_interval",
+        "memory.write_approval", "memory.mind_write_approval",
+        "memory.provider", "memory.nudge_interval",
     }
     dead = [k for k in exposed if k not in honoured]
     assert not dead, f"桌面在写后端不读的键：{dead}"

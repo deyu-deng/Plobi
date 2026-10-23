@@ -365,6 +365,48 @@ class TrustLedger:
         return [self.entries[k].__dict__ for k in sorted(self.entries)]
 
 
+def record_rejection(plan: "Plan", *, source: str = "l1", reason: str = "",
+                     ledger: Optional["TrustLedger"] = None) -> None:
+    """驳回一笔计划：那一类内容立刻退回「先问」，且这条记录可追溯是谁、哪一类、为什么。
+
+    裁定 156／198：门槛会移动，但**被驳回一次就要回头**——所以驳回不是「丢掉这张纸」，
+    是给信任账记一笔 ``rejected``。``TrustLedger.should_ask`` 读的就是这条记录：
+    该类下一次不必等到 streak 归零就已经在问。
+    """
+    cats = sorted(set(plan.categories.values())) or ["other"]
+    book = ledger if ledger is not None else TrustLedger()
+    for cat in cats:
+        book.record("rejected", cat, source, reason or "用户驳回")
+
+
+def record_rejection(plan: "Plan", *, source: str = "l1", reason: str = "",
+                     ledger: Optional["TrustLedger"] = None) -> None:
+    """驳回一笔计划：那一类内容立刻退回「先问」，且这条记录可追溯是谁、哪一类、为什么。
+
+    裁定 156／198：门槛会移动，但**被驳回一次就要回头**——所以驳回不是「丢掉这张纸」，
+    是给信任账记一笔 ``rejected``。``TrustLedger.should_ask`` 读的就是这条记录：
+    该类下一次不必等到 streak 归零就已经在问。
+    """
+    cats = sorted(set(plan.categories.values())) or ["other"]
+    book = ledger if ledger is not None else TrustLedger()
+    for cat in cats:
+        book.record("rejected", cat, source, reason or "用户驳回")
+
+
+def record_rejection(plan: "Plan", *, source: str = "l1", reason: str = "",
+                     ledger: Optional["TrustLedger"] = None) -> None:
+    """驳回一笔计划：那一类内容立刻退回「先问」，且这条记录可追溯是谁、哪一类、为什么。
+
+    裁定 156／198：门槛会移动，但**被驳回一次就要回头**——所以驳回不是「丢掉这张纸」，
+    是给信任账记一笔 ``rejected``。``TrustLedger.should_ask`` 读的就是这条记录：
+    该类下一次不必等到 streak 归零就已经在问。
+    """
+    cats = sorted(set(plan.categories.values())) or ["other"]
+    book = ledger if ledger is not None else TrustLedger()
+    for cat in cats:
+        book.record("rejected", cat, source, reason or "用户驳回")
+
+
 def default_ledger_path() -> Path:
     home = os.environ.get("PLOBI_HOME", "").strip()
     base = Path(home) if home else Path.home() / ".plobi"

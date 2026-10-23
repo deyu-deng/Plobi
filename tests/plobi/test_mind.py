@@ -10,6 +10,21 @@ from pathlib import Path
 
 import pytest
 
+@pytest.fixture(autouse=True)
+def _l1_gate_off_here(monkeypatch):
+    """这一档测的是「写/提交」那条管线本身，不是 L1 那道闸。
+
+    闸有自己的测试档（``tests/plobi/test_mind_l1_gate.py``）；这里按「显式要求时才拦」跑，
+    否则每个用例都会被正确地问一次「要不要点头」，把管线测试变成待确认层测试。
+    """
+    import plobi.mind.writer as writer_mod
+
+    monkeypatch.setattr(
+        writer_mod.MindWriter, "_approval_required",
+        lambda self: self.require_approval is True,
+    )
+
+
 from plobi.agenda.mind_sync import publish_daily_summary, summary_relative_path
 from plobi.agenda.service import AgendaService
 from plobi.mind import paths
@@ -450,7 +465,7 @@ def test_commit_skipped_when_root_is_nested_in_an_enclosing_repo(tmp_path, monke
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
 
-    writer = MindWriter(root, commit=True, run_verifier=False)
+    writer = MindWriter(root, commit=True, run_verifier=False, require_approval=False)
     result = writer.write_one("Vault/inbox/x.md", "x")
 
     # The write itself is unaffected by the guard.
@@ -472,7 +487,7 @@ def test_commit_happens_when_root_is_its_own_repo(tmp_path, monkeypatch):
     _init_repo(root)
     monkeypatch.setenv("MIND_ROOT", str(root))
 
-    writer = MindWriter(root, commit=True, run_verifier=False)
+    writer = MindWriter(root, commit=True, run_verifier=False, require_approval=False)
     result = writer.write_one("Vault/inbox/x.md", "x")
 
     assert result.ok is True
