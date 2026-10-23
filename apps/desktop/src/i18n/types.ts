@@ -309,7 +309,29 @@ export interface Translations {
       notifications: string
       network: string
       sources: string
+      offload: string
       capabilities: string
+    }
+    offload: {
+      title: string
+      note: string
+      loading: string
+      refresh: string
+      probedAt: string
+      usable: string
+      blocked: string
+      login: string
+      loginYes: string
+      loginNo: string
+      loginUnknown: string
+      hintSaysMaybe: string
+      today: string
+      lastAt: string
+      itSaid: string
+      resumeYes: string
+      resumeNo: string
+      sessionId: string
+      notInstalled: string
     }
     sources: {
       categories: {
