@@ -1111,31 +1111,33 @@ def profile_name_blocker(entry: AgentEntry) -> str:
 ASKABLE_ROLE = "l2_project"
 
 
-def _profile_landed(entry: AgentEntry) -> Optional[bool]:
-    """这条记录的家在盘上落地了吗（探不到时返回 None，不瞎判）。"""
-    canon = entry.profile_name
-    if not canon or canon == "default":
-        return None
-    try:
-        from plobi_cli.profiles import profile_exists
+def has_agent_identity(entry: AgentEntry) -> bool:
+    """裁定 192：**身份就是名册这一行本身**——判据是这一行有没有角色路由，不再是盘上有没有一个家。
 
-        return bool(profile_exists(canon))
-    except Exception:  # pragma: no cover - plobi_cli 解析不了的那套测试环境
-        logger.debug("plobi: profile_exists probe skipped for %s", canon, exc_info=True)
-        return None
+    `l2_course` 是数据记录，故意不进 ``DEFAULT_ROUTES``（`plobi/routing/models.py:31-38`：没有路由
+    就 ``resolve()`` 抛），所以它天然不在这把尺里；`l1_secretary`/`l2_agenda`/`l2_planner`/`l2_project`
+    都有路由，就是能对话的对象。``registered`` 那一格章也要盖上——Mind 投影进来的
+    占位行（``registered=False``）不是手下，否则「一个能问的人都没有」那种关门判据会失效。
+
+    这一格取代原来那三条"探目录"的判据：`profiles/<name>` 在裁 178 乙案里本来就要消失，
+    把"有没有身份"绑在它上面，等于让一次数据搬家把整条左栏打瘫（10-23 11:36 真发生过一次）。
+    """
+    from plobi.routing.models import DEFAULT_ROUTES
+
+    return bool(entry.registered) and entry.role in DEFAULT_ROUTES
 
 
 def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
     """L1 现在能不能用 ``plobi_agent_ask`` 问到这一条；问不到就给一句原因。
 
-    只看结构性事实，不看任何一句文本：归档 / 角色 / profile 名建不建得出来
-    （:func:`profile_name_blocker`）/ 家在不在盘上。名单与工具**必须读同一份判据**
+    只看结构性事实，不看任何一句文本：归档 / 这一行有没有角色路由
+    （:func:`has_agent_identity`，裁 192：身份就是名册这一行，不看盘）/ profile 名建不建得出来
+    （:func:`profile_name_blocker`）。名单与工具**必须读同一份判据**
     ——以前 ``run_project_status`` 报「有这个人」而那枚嘴报「问不到」，
     两边各判一次，秘书就只能靠试（R-072）。
 
-    探不到盘（``plobi_cli`` 解析不了的那套测试环境）时**不判成问不到**：宁可留一行
-    可以试的，也不能把手下从名单里悄悄抹掉——抹掉才是这一刀要修的 bug。家真的在
-    这一步之后被人收走时，那枚嘴建命令那一步还会再拒一次。
+    **不再探盘**：`profiles/<name>` 在裁 178 乙案里本来就要消失，把"问得到"绑在目录存在上，
+    会让一次数据搬家把 L1 的名单清空（10-23 11:36 发生过）。
     """
     if entry.archived:
         return False, "这一条已经归档，问不到它。"
@@ -1144,16 +1146,11 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
             f"这一条的角色是 ``{entry.role}``，不是项目分身，不归那枚嘴问"
             "（日程秘书有它自己的沟通路：say / ask）。"
         )
-    if not entry.profile_name or entry.profile_name == "default":
-        return False, "这一条没有自己的家（profile 名空或撞了 default），问不到。"
+    if not has_agent_identity(entry):
+        return False, f"这一条的角色是 ``{entry.role}``，是数据记录、没有路由，问不到。"
     blocker = profile_name_blocker(entry)
     if blocker:
         return False, blocker
-    if _profile_landed(entry) is False:
-        return False, (
-            f"「{entry.display_name or entry.name}」还没在这台机器上落地"
-            f"（profiles/{entry.profile_name} 不存在）——登记 / 新建一次就问到它。"
-        )
     return True, ""
 
 
@@ -1172,31 +1169,24 @@ def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
     也就是 spawn 不会失败。这正是裁定 146②(b) 那句「不许列在那儿点不动」的
     可执行形状。三条否决，全是结构性事实：
 
-    1. ``profile_name`` 空——**还没拿到身份**的课程条目（``l2_course``）与没绑
-       profile 的数据行：没有运行时可连，点进去只会得到一张空壳。有身份的课程行
-       （``l2_project`` + 显式 ``profile: l2-course-*``，裁定 143②）走下面两条，
-       是可点的——别把它们一并打回不可点；
+    1. 这一行**没有角色路由**（:func:`has_agent_identity`，裁 192）——课程数据条目
+       （``l2_course`` 故意不进 ``DEFAULT_ROUTES``）没有运行时可连，点进去只会是一张空壳。
+       有身份的课程行（``l2_project`` + ``category: courses``，裁定 143②）有路由，照样可点；
     2. ``profile_name_blocker`` 非空——保留名（名册里那条 ``Plobi`` 行的
        ``l2-plobi``，小写化撞上安装本身）这类永远建不出家的形状，点了就是一次
-       必然失败的 spawn；
-    3. 家还没在盘上落地（``profiles/<name>`` 不存在）——点了会掉进 respawn
-       guard 的永久门（无限重起那一格），不如现在就说明白。
+       必然失败的 spawn。
 
-    探不到盘（测试环境）时**不判成点不动**——宁可留一行可以试的，也不能把
-    能用的分身从名单里悄悄抹掉；真点了起不来的，spawn 那道门还会再拒一次。
+    **原来还有第 3 条「家在不在盘上」，10-23 已删**：那条把"能不能点"绑在
+    ``profiles/<name>`` 存在上，而裁 178 乙案的终态就是这个目录不存在——
+    11:36 一次整屋搬家因此把 24 行左栏全部打成点不动（事故，已回滚）。
     """
     if entry.archived:
         return False, "这一条已经归档。"
-    if not entry.profile_name or entry.profile_name == "default":
+    if not has_agent_identity(entry):
         return False, "这一条没有自己的运行时（课程是数据记录，不是可对话的分身）——点进去也只会是一张空壳。"
     blocker = profile_name_blocker(entry)
     if blocker:
         return False, blocker
-    if _profile_landed(entry) is False:
-        return False, (
-            f"「{entry.display_name or entry.name}」还没在这台机器上落地"
-            f"（profiles/{entry.profile_name} 不存在）——登记 / 新建一次就能点。"
-        )
     return True, ""
 
 

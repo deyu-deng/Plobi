@@ -141,7 +141,7 @@ def test_the_description_guess_is_gone_from_every_judgement():
     assert not hasattr(registry_mod.AgentEntry, "is_mind_placeholder")
 
     # 两道判据：既不认占位前缀，也不引用那份只为渲染存在的识别。
-    for fn in (registry_mod.agent_askability, registry_mod._profile_landed):
+    for fn in (registry_mod.agent_askability, registry_mod.has_agent_identity):
         src = inspect.getsource(fn)
         assert "description" not in src, fn.__name__
         assert "L2_PLACEHOLDER_DESCRIPTION_PREFIX" not in src, fn.__name__
