@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import agent_ask as AA
+from . import wake as WK
 
 logger = logging.getLogger(__name__)
 
@@ -286,41 +287,43 @@ def _deliver_or_fail(to: str, parts: Any) -> tuple[Optional[object], Optional[st
 
 
 def handle_say(args: dict, **kwargs) -> str:
-    """投递即返回。这一步不许抛进 L1 的对话循环。
+    """投递即返回；投递成功之后**替收件人起一轮**，不等它跑完（裁定 200）。
 
-    2026-10-22：**只投递，不叫醒**。早几版在这里加过"投递之后起一个后台子进程
-    把对方叫醒"（`wake_agent`），它复用 `agent_ask.build_child_command` 那条
-    `-p <profile>` 的老路——用户当场点破「profile 概念怎么又回归了？不是说了取消
-    profile 了吗？」。那一套正是裁定 42 判废的「一个 profile 就是一整套 Plobi」，
-    整族已删（连 `build_child_command` 也已改成共享层 + agent 身份的形状）。
+    用户 10-23 原话：「收件人收到消息会像收到用户消息一样直接开始工作。即使我不去
+    打开那个 Agent」，「本质就是用户给它发了一个消息一样」。所以消息落进对方自己的
+    会话（user 角色）之后，用 `ask` 已经跑通的那条 spawn 手把那一屏续上一轮——不等，
+    让它自己干。**不是**早几版那条 `-p <profile>` 的老路（那套 10-22 已被用户当面
+    否掉、整族删除），命令形状与 `ask` 同一份（`wake.py` 的四条护栏写在那边）。
 
-    「对方不打开就不干活」这个诉求本身没消失，但它的正确解在**对方那一侧的运行时**：
-    消息落进单库（`PLOBI_STATE_HOME`）里它自己的会话，桌面打开这个 Agent 就看到。
-    在 L1 这一侧起一个 profile 家的进程去"替它醒"，是用废弃机制换一个效果。
+    叫不醒不算 `say` 失败：话已经送到了，返回值里照实写 `woke=false` + 原因。
     """
     args = args if isinstance(args, dict) else {}
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
             return failure
-        session_id, message_id = _deliver(entry, text, sender=current_agent_name(kwargs.get("session_id") or ""))
+        sender = current_agent_name(kwargs.get("session_id") or "")
+        session_id, message_id = _deliver(entry, text, sender=sender)
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"say 失败：{exc}")
+    woke, wake_note = WK.wake_agent(entry, session_id, sender=sender)
     trace_id = uuid.uuid4().hex[:12]
     _trace({
         "kind": "say",
         "trace_id": trace_id,
-        "from": current_agent_name(kwargs.get("session_id") or ""),
+        "from": sender,
         "to": entry.name,
         "ts": datetime.now().replace(microsecond=0).isoformat(),
         "parts": text,
         "session_id": session_id,
         "message_id": message_id,
+        "woke": woke,
+        "wake": wake_note,
     })
     return _result(
         True, mode="say", trace_id=trace_id, to=entry.name,
         session_id=session_id, message_id=message_id,
-        deliverer=current_agent_name(kwargs.get("session_id") or ""),
+        deliverer=sender, woke=woke, wakeNote=wake_note,
     )
 
 
