@@ -104,6 +104,42 @@ def test_desktop_dropdown_offers_the_official_provider():
     assert values[1] == OFFICIAL_MEMORY_PROVIDER, line.strip()
 
 
+def _quoted_keys(block: str) -> list[str]:
+    """从 `keys: [ 'a.b', 'c.d' ]` 里取出那些引号包住的键名。"""
+    inside = block.split("keys: [", 1)[1].split("]", 1)[0]
+    return [tok.strip().strip("'\"") for tok in inside.split(",") if tok.strip()]
+
+
+def test_desktop_memory_surface_only_exposes_keys_the_backend_reads():
+    """设置里 "Memory & Context" 那一格列出的每个 `memory.*` 键，后端必须真的读它。
+
+    存在理由（2026-10-23 现读）：那一格挂着 `memory.memory_char_limit`，而裁定 181 之后
+    三份上限的真名是 `global_char_limit` / `agent_char_limit` / `user_char_limit`
+    （`tools/memory_tool.py` 的 `_MEMORY_LIMIT_KEYS` 是唯一那只手）——桌面能改、改了没人读，
+    正是本仓反复犯的「桌面显示一个、后端解析另一个」。整条记忆分层既然要在这一格里可设，
+    这一条就是它的地板。
+    """
+    from tools.memory_tool import _MEMORY_LIMIT_KEYS
+
+    text = io.open(DESKTOP_CONSTANTS, encoding="utf-8").read()
+    at = text.index("id: 'memory',")
+    block = text[at:at + 1400]
+    exposed = [k for k in _quoted_keys(block) if k.startswith("memory.")]
+    assert len(exposed) >= 8, f"那一格只剩 {exposed}，整条分层没面可设"
+
+    honoured = {"memory." + v for v in _MEMORY_LIMIT_KEYS.values()} | {
+        "memory.memory_enabled", "memory.user_profile_enabled",
+        "memory.write_approval", "memory.provider", "memory.nudge_interval",
+    }
+    dead = [k for k in exposed if k not in honoured]
+    assert not dead, f"桌面在写后端不读的键：{dead}"
+    assert "memory.memory_char_limit" not in exposed
+    # 三份上限 + 两格 STATUS + 压线 + 点头闸，缺一件就是「整套没做完」还挂着✓
+    for needed in ("memory.global_char_limit", "memory.agent_char_limit", "memory.user_char_limit",
+                   "memory.squeeze_pressure", "memory.write_approval"):
+        assert needed in exposed, f"分层的那颗旋钮不在面上：{needed}"
+
+
 # ---- official does not mean privileged ---------------------------------------
 
 
