@@ -455,6 +455,31 @@ def reply_instructions(job: str, reply_file: Path) -> str:
     return chr(10) * 2 + body + chr(10)
 
 
+#: 任务书落盘名。Windows 上的 `qodercli` 是一个批处理壳（`.cmd`），而 cmd.exe
+#: **在第一个换行处把参数截断**——10-23 实测：两行提示只到得了第一行，于是拼在末尾
+#: 的【回执】整段从没进过它的上下文，跑多少趟都是 `not_filed`。凡是批处理入口且任务书
+#: 带换行的，就改成交给它读一个文件；同一份文本、同一条路径，只是换了投递方式。
+TASK_PREFIX = ".offload-task-"
+
+
+def task_file_for(workdir: Path, job: str) -> Optional[Path]:
+    if not _JOB_SAFE.match(job or ""):
+        return None
+    return Path(workdir) / f"{TASK_PREFIX}{job}.md"
+
+
+def needs_task_file(binary: str, prompt: str) -> bool:
+    """批处理壳吃不下换行；直连的可执行文件（`.exe`）照旧内联。"""
+    return ("\n" in prompt or "\r" in prompt) and binary.lower().endswith((".cmd", ".bat"))
+
+
+def task_file_prompt(path: Path) -> str:
+    return (
+        "这一趟的任务书在下面这个文件里，它是**唯一的任务来源**："
+        f"{str(path).replace(chr(92), '/')}。先读它，再照它执行；不要凭猜。"
+    )
+
+
 def default_workdir() -> Path:
     """Where an offload lands when the caller names no cwd.
 
@@ -566,7 +591,8 @@ def _collect_artifacts(root: Path, before: dict[str, float]) -> tuple[dict[str, 
             # Our own audit files are evidence about the run, not products of it.
             continue
         mtime = path.stat().st_mtime
-        if path.name not in before or mtime > before[path.name]:
+        rel = str(path.relative_to(root))
+        if rel not in before or mtime > before[rel]:
             with contextlib.suppress(OSError):
                 out.append({"path": str(path), "bytes": path.stat().st_size, "sha256_12": _digest(path)})
     return tuple(out)
@@ -751,7 +777,16 @@ def run_task(
     if reply_file is not None:
         task = task + reply_instructions(job, reply_file)
 
-    argv = build_argv(agent, binary, task, flags, extra_args(agent))
+    # 批处理壳会把带换行的任务书截到第一行（见 `TASK_PREFIX`）：换成交给它读文件。
+    prompt = task
+    task_file: Optional[Path] = None
+    if needs_task_file(binary, task):
+        task_file = task_file_for(workdir, job)
+        if task_file is not None:
+            with contextlib.suppress(OSError):
+                task_file.write_text(task, encoding="utf-8")
+                prompt = task_file_prompt(task_file)
+    argv = build_argv(agent, binary, prompt, flags, extra_args(agent))
     env = dict(os.environ)
     # 从 Qoder Desktop 里派活时，子进程会继承那三个 SDK 变量，CLI 一看就拒普通调用
     # （`sdk_invalid_args`）。洗掉它的条件是**结构性事实**，写在表里，不是 if 分支。
@@ -787,7 +822,7 @@ def run_task(
         reachable, why = egress_is_reachable(proxy)
         if not reachable:
             return fail(why)
-    before = {p.name: p.stat().st_mtime for p in workdir.rglob("*") if p.is_file()}
+    before = {str(p.relative_to(workdir)): p.stat().st_mtime for p in workdir.rglob("*") if p.is_file()}
 
     started = time.time()
     try:
@@ -811,6 +846,10 @@ def run_task(
         )
     except OSError as exc:
         return fail(f"cannot start {binary}: {exc}")
+    finally:
+        if task_file is not None:
+            with contextlib.suppress(OSError):
+                task_file.unlink(missing_ok=True)
     duration = time.time() - started
 
     text, usage, external_session, external_session_source = _parse_envelope(completed.stdout or "")

@@ -10,6 +10,8 @@ negative half of 判据 3.
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -703,6 +705,50 @@ def test_a_run_that_filed_nothing_says_not_filed_not_a_failure(workdir, monkeypa
 
     assert result.reply == "" and result.reply_status == "not_filed"
     assert result.reply_to == "", "没人指名该向谁交代就留空，不硬编一个"
+
+
+def test_a_batch_shim_gets_the_task_as_a_file_because_cmd_eats_newlines(workdir, monkeypatch):
+    """`.cmd` 壳在第一个换行处截参数：10-23 实测两行提示只到得了第一行，拼在末尾的
+    【回执】整段从没进过它的上下文——跑多少趟都是 `not_filed`，而它还会如实回"已写"。
+    """
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = list(argv)
+        prompt = argv[argv.index("-p") + 1]
+        seen["prompt"] = prompt
+        match = re.search(r"\.offload-task-[A-Za-z0-9_-]+\.md", prompt)
+        assert match, f"批处理壳应拿到一个任务书路径，拿到的是：{prompt!r}"
+        seen["task"] = (workdir / match.group(0)).read_text(encoding="utf-8")
+        return _Completed(stdout=json.dumps({"result": "ok", "usage": {}}))
+
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "C:/bin/qodercli.cmd")
+    monkeypatch.setattr(offload.subprocess, "run", fake_run)
+
+    offload.run_task("第一行要求\n第二行要求", cwd=workdir, agent="qoder", reply_to="Sindri")
+
+    assert "\n" not in seen["prompt"], "给壳的那一格不许带换行，否则后半截会被吃掉"
+    assert "第一行要求" in seen["task"] and "第二行要求" in seen["task"]
+    assert "【回执】" in seen["task"], "回执说明必须整段到它手上"
+    assert list(workdir.glob(offload.TASK_PREFIX + "*")) == [], "任务书读完收走，不在用户仓里留垃圾"
+
+
+def test_a_new_file_is_not_hidden_by_a_nested_file_with_the_same_basename(tmp_path):
+    """产物扫描按相对路径记账。按 basename 记时，子目录里同名的旧文件会把新产物挤掉，
+    而"有产物"又被当成成功的证据——10-23 一趟 `Not logged in` 就是这样显示成 ok 的。"""
+    nested = tmp_path / "scan" / "sub"
+    nested.mkdir(parents=True)
+    old = nested / ".gitignore"
+    old.write_text("old", encoding="utf-8")
+    fresh = tmp_path / "scan" / ".gitignore"
+    fresh.write_text("new", encoding="utf-8")
+    os.utime(old, (10, 10))
+    os.utime(fresh, (20, 20))
+
+    root = tmp_path / "scan"
+    found = {p["path"] for p in offload._collect_artifacts(root, {str(Path("sub") / ".gitignore"): 30.0})}
+
+    assert found == {str(fresh)}
 
 
 def test_a_read_only_qoder_run_is_not_judged_by_missing_artifacts(workdir, monkeypatch):

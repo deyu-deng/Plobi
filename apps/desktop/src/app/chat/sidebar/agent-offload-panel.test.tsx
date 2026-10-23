@@ -3,8 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as PlobiApi from '@/plobi'
-import type { OffloadRound } from '@/types/plobi'
 
+import type { OffloadRoundWithReply } from './agent-offloads'
 import { AgentOffloadPanel } from './agent-offload-panel'
 
 const getAgentOffloads = vi.fn()
@@ -16,7 +16,7 @@ vi.mock('@/plobi', async importOriginal => ({
   offloadResume: (agent: string, sessionId: string) => offloadResume(agent, sessionId),
 }))
 
-function round(over: Partial<OffloadRound> = {}): OffloadRound {
+function round(over: Partial<OffloadRoundWithReply> = {}): OffloadRoundWithReply {
   return {
     agent: 'codebuddy',
     artifacts: [{ path: 'D:/projects/Aura/today.py', sha256_12: '3da942743391' }],
@@ -30,7 +30,7 @@ function round(over: Partial<OffloadRound> = {}): OffloadRound {
   }
 }
 
-function payload(rounds: OffloadRound[], unattributedReason = '') {
+function payload(rounds: OffloadRoundWithReply[], unattributedReason = '') {
   return {
     data: {
       agent: 'l2-aura',
@@ -68,7 +68,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-async function renderPanel(rounds: OffloadRound[], unattributedReason = '') {
+async function renderPanel(rounds: OffloadRoundWithReply[], unattributedReason = '') {
   getAgentOffloads.mockResolvedValue(payload(rounds, unattributedReason))
   const view = render(<AgentOffloadPanel agentId="l2-aura" />)
 
@@ -101,6 +101,15 @@ describe('AgentOffloadPanel', () => {
     expect(text).toContain('cost unknown')
     expect(text).toContain('usage_reported_without_price')
     expect(text).not.toContain('$0')
+  })
+
+  it('它写回来的回执原文就在行里，不用再跳去外部软件去猜', async () => {
+    await renderPanel([round({ reply: '# Sindri — 工作目录', reply_status: 'filed' })])
+    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+
+    const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
+
+    expect(row.textContent).toContain('It said: # Sindri — 工作目录')
   })
 
   it('点一行是把落盘的产物交给主进程打开（file:// 而不是裸路径）', async () => {

@@ -1464,6 +1464,7 @@ export interface Translations {
     offloadsTitle: string
     offloadsLoading: string
     offloadsEmpty: string
+    offloadsReply: string
     offloadsBackToList: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string

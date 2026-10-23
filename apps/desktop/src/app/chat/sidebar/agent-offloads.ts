@@ -14,15 +14,27 @@
 
 import type { OffloadRound } from '@/types/plobi'
 
+/**
+ * 台账里那一族回执字段（`reply`/`reply_status`/`reply_to`）。`OffloadRound` 由别的
+ * 认领方持有，这里只做**结构扩展**，不往共享类型档里加行。
+ */
+export type OffloadRoundReply = {
+  reply?: string
+  reply_status?: string
+  reply_to?: string
+}
+
+export type OffloadRoundWithReply = OffloadRound & OffloadRoundReply
+
 export type { OffloadRound }
 
-export type OffloadGroup = { rounds: OffloadRound[], target: string }
+export type OffloadGroup = { rounds: OffloadRoundWithReply[], target: string }
 
 const UNKNOWN_TARGET = 'unknown'
 
 /** 按外包对象分组；组内新的在前，组间按名字稳定排序（侧栏不许跳来跳去）。 */
-export function groupRoundsByTarget(rounds: readonly OffloadRound[]): OffloadGroup[] {
-  const byTarget = new Map<string, OffloadRound[]>()
+export function groupRoundsByTarget(rounds: readonly OffloadRoundWithReply[]): OffloadGroup[] {
+  const byTarget = new Map<string, OffloadRoundWithReply[]>()
 
   for (const round of rounds) {
     const target = (round.agent ?? '').trim() || UNKNOWN_TARGET

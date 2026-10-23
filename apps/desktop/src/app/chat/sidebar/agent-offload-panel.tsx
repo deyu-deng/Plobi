@@ -4,9 +4,9 @@ import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { getAgentOffloads, offloadResume } from '@/plobi'
-import type { OffloadRound } from '@/types/plobi'
 
 import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
+import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarCount } from './chrome'
 import { OffloadVendorAvatar } from './offload-vendor-icon'
 
@@ -20,7 +20,7 @@ import { OffloadVendorAvatar } from './offload-vendor-icon'
 export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack?: () => void }) {
   const { t } = useI18n()
   const c = t.console
-  const [rounds, setRounds] = useState<null | OffloadRound[]>(null)
+  const [rounds, setRounds] = useState<null | OffloadRoundWithReply[]>(null)
   const [note, setNote] = useState('')
   const [openTarget, setOpenTarget] = useState<null | string>(null)
 
@@ -107,7 +107,7 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
   )
 }
 
-function OffloadRoundRow({ round }: { round: OffloadRound }) {
+function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
   const { t } = useI18n()
   const c = t.console
   const plan = jumpTargetFor(round)
@@ -155,6 +155,12 @@ function OffloadRoundRow({ round }: { round: OffloadRound }) {
       type="button"
     >
       <span className="truncate text-[0.75rem]">{round.brief || round.cwd || '—'}</span>
+      {round.reply && (
+        <span className="line-clamp-3 text-[0.7rem] leading-snug text-(--ui-text-secondary)">
+          {c.offloadsReply}
+          {round.reply}
+        </span>
+      )}
       {round.failure && (
         <span className="truncate text-[0.68rem] text-(--ui-red)">{round.failure}</span>
       )}
