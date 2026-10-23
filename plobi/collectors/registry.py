@@ -242,6 +242,13 @@ class SourceSpec:
     #: 空串是一个读数：这一条声明了端口却没有给出怎么拉起它，那么"打开"只能如实报一句
     #: "我不会自己起它"，不许假装开了。
     sidecar_start: str = ""
+    #: 这一条**按会话准入**吗（微信那种"一条信源里有很多个群与人"的形状）。
+    #:
+    #: 面不许按信源名字决定"要不要画那一份名单"（判据 4），所以这一格必须是**声明**：
+    #: 声明了，抽屉里就多那一块"每个群聊/私聊采不采"；没声明就一个字都不多。
+    #: 名单本身与准入落点早就有了（`/api/collect/talkers` 与 `TalkerStore`），
+    #: 缺的只是把它挂到一个看得见的地方——用户 10-23 问的正是这一格。
+    conversation_scoped: bool = False
 
     def __post_init__(self) -> None:
         if not self.source_id or not self.source_id.strip():

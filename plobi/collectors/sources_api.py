@@ -187,6 +187,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         **cadence.cadence_env(source_id),
         "has_builder": spec.builder is not None,
         "requires_manual_setup": spec.capabilities.get("requires_manual_setup"),
+        # 有这一格才画那一份"每个群聊/私聊采不采"的名单（声明，不按名字分支）。
+        "conversation_scoped": bool(spec.conversation_scoped),
         "setup": None if enabled is None else {k: v for k, v in params.items() if k not in configured},
         "secrets": configured,
         # 三态那一格（用户 10-22：「一个信源就一个开关按钮，就三种形态」）。**由这一层算**，

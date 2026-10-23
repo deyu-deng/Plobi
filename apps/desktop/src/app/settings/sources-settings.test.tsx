@@ -31,6 +31,12 @@ vi.mock('./sources/api', async () => {
   }
 })
 
+// 名单那一块自己的测试在它档里（`talker-collection.test.tsx`）；这一档只钉"它挂在哪一行上"，
+// 所以打桩替掉它——不然它自己的 i18n 取键会把这一档整片带崩（那是另一档的契约，不是这里的）。
+vi.mock('@/app/agenda/talker/talker-collection', () => ({
+  TalkerCollection: () => <div data-testid="talker-panel-stub" />
+}))
+
 vi.mock('@/plobi', () => ({
   getActionStatus: (name: string, lines?: number) => getActionStatus(name, lines)
 }))
@@ -245,7 +251,10 @@ describe('what the row says', () => {
     getSources.mockResolvedValue(payload([
       row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', next_run_at: '2026-10-24T08:15:00+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' }),
       // 关着的一条：它没有"下一次"，所以那一格写破折号，不写「跟着每一轮」（那句话对一条停用的源是假的）。
-      row({ enabled: false, source: 'timetable', status: 'disconnected', status_code: 'off' })
+      // 关着的一条：它没有“下一次”，那一格写破折号（那句话对停用的源是假的）。
+      row({ enabled: false, source: 'timetable', status: 'disconnected', status_code: 'off' }),
+      // 按会话准入的那一条：名单挂在它自己那一行下面（画不画由后端那句声明决定）。
+      row({ conversation_scoped: true, enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
     ]))
 
     render(<SourcesSettings />)
@@ -274,6 +283,15 @@ describe('what the row says', () => {
     await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
     // 关着的一条没有"下一次"：那一格是破折号（频率那一格照旧说它跟着每一轮）。
     expect(screen.getByTestId('source-drawer-timetable').textContent).toContain('—')
+    // 名单只跟着“按会话准入”的那一条：没声明的那两条一块都不画。
+    expect(screen.queryByTestId('source-talkers-zdbk')).toBeNull()
+    expect(screen.queryByTestId('source-talkers-timetable')).toBeNull()
+
+    // 名字在屏上出现两处（可见标题 + 开关的无障碍名），点标题那一处。
+    fireEvent.click(screen.getAllByText('WeChat')[0])
+
+    await waitFor(() => expect(screen.getByTestId('source-talkers-wechat')).toBeTruthy())
+    expect(screen.getByTestId('talker-panel-stub')).toBeTruthy()
   })
 
   it('keeps the executor\'s own sentence one click away, not on the row', async () => {

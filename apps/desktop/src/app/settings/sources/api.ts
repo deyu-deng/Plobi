@@ -65,6 +65,12 @@ export interface SourceRow {
   site?: string
   /** 密钥那一格**设过没有**。值永不出现在这条读数里（那是"星号"那一格的牙齿）。 */
   secrets?: Record<string, boolean>
+  /**
+   * 这一条**按会话准入**吗（微信那种一条信源里有很多群与人的形状）。
+   *
+   * 由后端从声明给（`SourceSpec.conversation_scoped`），面不许按信源名字自己决定画不画。
+   */
+  conversation_scoped?: boolean
 }
 
 export interface SetupField {

@@ -20,6 +20,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { TalkerCollection } from '@/app/agenda/talker/talker-collection'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
@@ -206,7 +207,17 @@ function SourceRowView({
         />
       }
       below={open
-        ? <SourceDrawer busy={busy} guiding={guiding} labels={labels} onReload={onReload} onTry={onTry} row={row} />
+        ? (
+            <SourceDrawer
+              busy={busy}
+              guiding={guiding}
+              labels={labels}
+              onClose={() => { setOpen(null) }}
+              onReload={onReload}
+              onTry={onTry}
+              row={row}
+            />
+          )
         : undefined}
       description={
         <span className="flex flex-wrap items-center gap-2">
@@ -249,10 +260,12 @@ const STATUS_DOT = {
 } as const
 
 /** 点开的那片抽屉：原因／上一次／下一次／池里几条／日程里几条／设置／立即同步。 */
-function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
+function SourceDrawer({ busy, guiding, labels, onClose, onReload, onTry, row }: {
   busy: boolean
   guiding: boolean
   labels: Labels
+  /** 名单那一块自带的"关闭"用它：关掉的是这一行点开的那片抽屉，不是另开一层。 */
+  onClose: () => void
   onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
   row: SourceRow
@@ -317,6 +330,18 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
       >
         {busy ? labels.tryRunning : labels.syncNow}
       </Button>
+
+      {/* 按会话准入的那一条（微信）：每个群聊/私聊采不采，就在这一行下面定。
+          组件与接口都是现成的（`/api/collect/talkers` + `TalkerStore`），**这里只是把它挂上**——
+          用户 10-23 问「微信要可以设置对各个群聊和私聊的采集情况」，那份名单此前一行都没上过屏。
+          画不画由后端那句声明决定（`conversation_scoped`），面不按信源名字分支。 */}
+      {row.conversation_scoped
+        ? (
+            <div className="border-t border-(--ui-border-tertiary) pt-3" data-testid={`source-talkers-${row.source}`}>
+              <TalkerCollection onClose={onClose} />
+            </div>
+          )
+        : null}
     </div>
   )
 }
