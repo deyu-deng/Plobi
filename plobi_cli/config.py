@@ -1002,8 +1002,19 @@ def _ensure_default_soul_md(home: Path) -> None:
 # the plain one seeded a dir nothing reads (so a cleaned-up home looked un-cleaned),
 # while the managed one RAISED when that same dir was absent, which would have made
 # a fresh managed install unbootable. Neither list can carry it now.
+#
+# Third shape (裁定 178 乙案, WP-PROFILE-STOP-SEEDING): a **named profile** home
+# (``<root>/profiles/<name>``) only ever gets the REQUIRED three. The extras and
+# the default ``SOUL.md`` belong to the one shared home — seeding them per profile
+# is what made "停止播种" look done while every live profile still resurrected its
+# own identity and skill dir on the next ``load_config()``.
 _HOME_REQUIRED_SUBDIRS = ("cron", "sessions", "logs")
 _HOME_EXTRA_SUBDIRS = ("logs/curator", "pairing", "hooks", "image_cache", "audio_cache", "skills")
+
+
+def _is_named_profile_home(home: Path) -> bool:
+    """``…/profiles/<name>`` 就是一家命名分身；共享根、装好的家都不算。"""
+    return home.parent.name == "profiles"
 
 
 def ensure_plobi_home():
@@ -1012,13 +1023,18 @@ def ensure_plobi_home():
     In managed mode (NixOS), dirs are created by the activation script with
     setgid + group-writable (2770). We skip mkdir and set umask(0o007) so
     any files created (e.g. SOUL.md) are group-writable (0660).
+
+    Named profile homes are deliberately narrower: only ``_HOME_REQUIRED_SUBDIRS``
+    and never a default ``SOUL.md`` (裁定 178 乙案 — identity lives on the roster row,
+    not in a per-profile copy).
     """
     home = get_plobi_home()
+    named_profile = _is_named_profile_home(home)
     # Named profiles must be created explicitly (e.g. ``plobi profile create``).
     # If a stale process keeps running after the profile was renamed/deleted,
     # silently mkdir-ing the old PLOBI_HOME would resurrect an empty skeleton
     # and make the deleted profile reappear in Desktop/profile lists.
-    if home.parent.name == "profiles" and not home.exists():
+    if named_profile and not home.exists():
         raise FileNotFoundError(
             f"Named profile home does not exist: {home}. "
             "Create the profile explicitly before using it."
@@ -1026,21 +1042,29 @@ def ensure_plobi_home():
     if is_managed():
         old_umask = os.umask(0o007)
         try:
-            _ensure_plobi_home_managed(home)
+            _ensure_plobi_home_managed(home, named_profile=named_profile)
         finally:
             os.umask(old_umask)
     else:
         home.mkdir(parents=True, exist_ok=True)
         _secure_dir(home)
-        for subdir in _HOME_REQUIRED_SUBDIRS + _HOME_EXTRA_SUBDIRS:
+        subdirs = (
+            _HOME_REQUIRED_SUBDIRS
+            if named_profile
+            else _HOME_REQUIRED_SUBDIRS + _HOME_EXTRA_SUBDIRS
+        )
+        for subdir in subdirs:
             d = home / subdir
             d.mkdir(parents=True, exist_ok=True)
             _secure_dir(d)
-        _ensure_default_soul_md(home)
+        if not named_profile:
+            _ensure_default_soul_md(home)
 
 
-def _ensure_plobi_home_managed(home: Path):
+def _ensure_plobi_home_managed(home: Path, named_profile: bool | None = None):
     """Managed-mode variant: verify dirs exist (activation creates them), seed SOUL.md."""
+    if named_profile is None:
+        named_profile = _is_named_profile_home(home)
     if not home.is_dir():
         raise RuntimeError(
             f"PLOBI_HOME {home} does not exist. "
@@ -1053,6 +1077,9 @@ def _ensure_plobi_home_managed(home: Path):
                 f"{d} does not exist. "
                 "Run 'sudo nixos-rebuild switch' first."
             )
+    if named_profile:
+        # 命名分身到此为止：共享那几样（curator 报告目录、默认人设）不在这家里落。
+        return
     # Curator reports dir is a sub-path of logs/; create it if missing.
     # In managed mode the activation script may not know about this subdir,
     # so we mkdir it ourselves (it's inside an already-secured logs/ dir).

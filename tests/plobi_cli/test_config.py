@@ -125,6 +125,46 @@ class TestEnsurePlobiHome:
             assert (profile_home / "sessions").is_dir()
             assert not (profile_home / "memories").exists(), "退休目录不再被播种"
 
+    def test_named_profile_home_seeds_only_the_required_three(self, tmp_path):
+        """裁定 178 乙案：命名分身只拿运行必需那三样，共享的那几样与默认人设不落它家。
+
+        这是「停止播种」原先只在**创建侧**成立的那半（`create_profile` 之后确实干净），
+        而会在下一轮 `load_config()` 被 `ensure_plobi_home()` 当场补回来——
+        10-23 00:0x 现场实测：新建那一家跑一轮就多出 `SOUL.md`(513 B) 与
+        `audio_cache`/`hooks`/`image_cache`/`logs/curator`/`pairing`/`skills`。
+        """
+        profile_home = tmp_path / ".plobi" / "profiles" / "coder"
+        profile_home.mkdir(parents=True)
+        with patch.dict(os.environ, {"PLOBI_HOME": str(profile_home)}):
+            ensure_plobi_home()
+
+        for required in ("cron", "sessions", "logs"):
+            assert (profile_home / required).is_dir(), required
+        for shared in ("skills", "hooks", "pairing", "image_cache", "audio_cache", "logs/curator"):
+            assert not (profile_home / shared).exists(), f"共享件不许按分身播种：{shared}"
+        assert not (profile_home / "SOUL.md").exists(), "人设只在共享根一份；分身的身份在名册行上"
+
+    def test_named_profile_home_stays_narrow_on_every_rerun(self, tmp_path):
+        """跑两轮也一样——这格才是"运行侧"的那个判据（一轮干净不算数）。"""
+        profile_home = tmp_path / ".plobi" / "profiles" / "coder"
+        profile_home.mkdir(parents=True)
+        with patch.dict(os.environ, {"PLOBI_HOME": str(profile_home)}):
+            ensure_plobi_home()
+            ensure_plobi_home()
+        assert not (profile_home / "SOUL.md").exists()
+        assert not (profile_home / "skills").exists()
+
+    def test_managed_branch_also_leaves_named_profile_alone(self, tmp_path):
+        """两个分支不许再互漂（`memories` 那次就是这么漂的）：托管分支对命名分身同样收手。"""
+        from plobi_cli.config import _ensure_plobi_home_managed
+
+        profile_home = tmp_path / ".plobi" / "profiles" / "coder"
+        for sub in ("cron", "sessions", "logs"):
+            (profile_home / sub).mkdir(parents=True)
+        _ensure_plobi_home_managed(profile_home)  # 不抛
+        assert not (profile_home / "SOUL.md").exists()
+        assert not (profile_home / "logs" / "curator").exists()
+
     def test_missing_named_profile_is_not_recreated(self, tmp_path):
         profile_home = tmp_path / ".plobi" / "profiles" / "coder"
         with patch.dict(os.environ, {"PLOBI_HOME": str(profile_home)}):
