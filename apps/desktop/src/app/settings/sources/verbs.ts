@@ -77,6 +77,44 @@ export function statusReason(row: SourceRow, labels: { reasonUnknown: string, re
   return (code ? labels.reasons[code] : undefined) ?? labels.reasonUnknown
 }
 
+/**
+ * 一个时刻离现在多远 —— **给屏上一句人话**（用户 10-23：「下一次（显示多久之前，不要显示一个时间）」）。
+ *
+ * 只回一个可翻译的"量"，句子在各语言目录里拼；没给时刻就回 `null`（不编一个"未知"出来）。
+ * 分档照人读的粒度分：一分钟内说"刚刚"，一天半以上说"天"，中间说小时。
+ */
+export function relativeTime(iso: string, now: number = Date.now()):
+{ days: number, hours: number, minutes: number, past: boolean, unit: 'days' | 'hours' | 'just' | 'minutes' } | null {
+  if (!iso) {
+    return null
+  }
+
+  const at = Date.parse(iso)
+
+  if (Number.isNaN(at)) {
+    return null
+  }
+
+  const delta = at - now
+  const minutes = Math.round(Math.abs(delta) / 60_000)
+
+  if (minutes < 1) {
+    return { days: 0, hours: 0, minutes: 0, past: delta < 0, unit: 'just' }
+  }
+
+  if (minutes < 60) {
+    return { days: 0, hours: 0, minutes, past: delta < 0, unit: 'minutes' }
+  }
+
+  const hours = Math.round(minutes / 60)
+
+  if (hours < 36) {
+    return { days: 0, hours, minutes, past: delta < 0, unit: 'hours' }
+  }
+
+  return { days: Math.round(hours / 24), hours, minutes, past: delta < 0, unit: 'days' }
+}
+
 /** 按分类分组。**空分类不出现** —— 见 `visibleGroups` 的理由。 */export function groupByCategory(
   rows: SourceRow[],
   categories: { id: string; sources: string[] }[]

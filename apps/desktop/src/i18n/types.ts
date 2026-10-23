@@ -377,6 +377,14 @@ export interface Translations {
       statusConnected: string,
       statusDisconnected: string,
       statusError: string,
+      drawerEvery: string
+      timeJustNow: string
+      timeMinutesAgo: string
+      timeHoursAgo: string
+      timeDaysAgo: string
+      timeMinutesIn: string
+      timeHoursIn: string
+      timeDaysIn: string
       drawerLastRun: string,
       drawerNextRun: string,
       drawerNeverRun: string,

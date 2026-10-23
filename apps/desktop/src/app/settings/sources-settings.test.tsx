@@ -70,6 +70,14 @@ vi.mock('@/i18n', () => ({
           statusConnected: 'Connected',
           statusDisconnected: 'Not connected',
           statusError: 'Connection problem',
+          drawerEvery: 'Frequency',
+          timeJustNow: 'Just now',
+          timeMinutesAgo: '{n} min ago',
+          timeHoursAgo: '{n} h ago',
+          timeDaysAgo: '{n} d ago',
+          timeMinutesIn: 'in {n} min',
+          timeHoursIn: 'in {n} h',
+          timeDaysIn: 'in {n} d',
           drawerLastRun: 'Last run',
           drawerNextRun: 'Next run',
           drawerNeverRun: 'Never ran',
@@ -231,7 +239,7 @@ describe('what the row says', () => {
   it('opens the drawer on the row, with the readings that used to be invisible', async () => {
     // 旧屏问不到"这条到底采到东西没有"：行上那个数读的是日程库，池里 371 条显示成 0。
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' }),
+      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', next_run_at: '2026-10-24T08:15:00+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' }),
       // 关着的一条：它没有"下一次"，所以那一格写破折号，不写「跟着每一轮」（那句话对一条停用的源是假的）。
       row({ enabled: false, source: 'timetable', status: 'disconnected', status_code: 'off' })
     ]))
@@ -243,18 +251,25 @@ describe('what the row says', () => {
     fireEvent.click(screen.getByText('Source with no recorded name'))
 
     await waitFor(() => expect(screen.getByTestId('source-drawer-zdbk')).toBeTruthy())
-    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('2026-10-22T08:15:14+08:00')
-    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('371')
-    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('class 65')
-    // §1.3：抽屉里那一格是「状态**与原因**」。行上不多写的这句，点开得看得见。
-    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('Reason')
-    expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('Last collection succeeded')
+    const drawer = screen.getByTestId('source-drawer-zdbk').textContent ?? ''
+    // 用户 10-23：「下一次（显示多久之前，不要显示一个时间）」⇒ 绝对时刻**不上屏**。
+    expect(drawer).not.toContain('2026-10-22T08:15:14+08:00')
+    expect(drawer).not.toContain('2026-10-24T08:15:00+08:00')
+    expect(drawer).toMatch(/(h|d) ago/)
+    expect(drawer).toMatch(/in \d+ (h|min|d)/)
+    // 通用那几格还在：原因、频率；池里/日程里压成一行小字。
+    expect(drawer).toContain('Reason')
+    expect(drawer).toContain('Last collection succeeded')
+    expect(drawer).toContain('Frequency')
+    expect(drawer).toContain('Every round')
+    expect(drawer).toContain('371')
+    expect(drawer).toContain('class 65')
 
     fireEvent.click(screen.getByText('Timetable'))
 
     await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
+    // 关着的一条没有"下一次"：那一格是破折号（频率那一格照旧说它跟着每一轮）。
     expect(screen.getByTestId('source-drawer-timetable').textContent).toContain('—')
-    expect(screen.getByTestId('source-drawer-timetable').textContent).not.toContain('Every round')
   })
 
   it('keeps the executor\'s own sentence one click away, not on the row', async () => {
