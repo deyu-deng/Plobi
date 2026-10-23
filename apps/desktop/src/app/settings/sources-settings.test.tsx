@@ -222,7 +222,9 @@ describe('what the row says', () => {
   it('opens the drawer on the row, with the readings that used to be invisible', async () => {
     // 旧屏问不到"这条到底采到东西没有"：行上那个数读的是日程库，池里 371 条显示成 0。
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' })
+      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' }),
+      // 关着的一条：它没有"下一次"，所以那一格写破折号，不写「跟着每一轮」（那句话对一条停用的源是假的）。
+      row({ enabled: false, source: 'timetable', status: 'disconnected', status_code: 'off' })
     ]))
 
     render(<SourcesSettings />)
@@ -238,6 +240,12 @@ describe('what the row says', () => {
     // §1.3：抽屉里那一格是「状态**与原因**」。行上不多写的这句，点开得看得见。
     expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('Reason')
     expect(screen.getByTestId('source-drawer-zdbk').textContent).toContain('Last collection succeeded')
+
+    fireEvent.click(screen.getByText('Timetable'))
+
+    await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
+    expect(screen.getByTestId('source-drawer-timetable').textContent).toContain('—')
+    expect(screen.getByTestId('source-drawer-timetable').textContent).not.toContain('Every round')
   })
 
   it('keeps the executor\'s own sentence one click away, not on the row', async () => {
