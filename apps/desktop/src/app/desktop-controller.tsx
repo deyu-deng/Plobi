@@ -34,7 +34,6 @@ import {
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
   RIGHT_RAIL_VIEW_NOTES,
-  setFileBrowserOpen,
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH
@@ -43,9 +42,10 @@ import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
-import { $reviewOpen, closeReview, openReview, REVIEW_PANE_ID } from '../store/review'
+import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
 import {
   $activeSessionId,
+  $agentCwd,
   $currentCwd,
   $freshDraftReady,
   $gatewayState,
@@ -111,16 +111,15 @@ import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from './layout-constants'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { PetGenerateOverlay } from './pet-generate/pet-generate-overlay'
-import { RightSidebarPane, RightSidebarSectionHeader } from './right-sidebar'
+import { RightSidebarPane } from './right-sidebar'
 import { FileActionDialogs } from './right-sidebar/file-actions'
 import { RemoteFolderPicker } from './right-sidebar/files/remote-picker'
 import { ReviewPane } from './right-sidebar/review'
-import { $terminalTakeover, setTerminalTakeover } from './right-sidebar/store'
+import { $terminalTakeover } from './right-sidebar/store'
 import { TerminalPaneChrome } from './right-sidebar/terminal/chrome'
 import { PersistentTerminal } from './right-sidebar/terminal/persistent'
 import { closeActiveTerminal } from './right-sidebar/terminal/terminals'
 import {
-  AGENDA_ROUTE,
   HOME_ROUTE,
   isShellPageView,
   NEW_CHAT_ROUTE,
@@ -129,11 +128,7 @@ import {
   SETTINGS_ROUTE,
   shellLevelForPath
 } from './routes'
-import {
-  WorkbenchLauncher,
-  type WorkbenchLauncherAction,
-  type WorkbenchLauncherItem
-} from './workbench/launcher'
+import { RightRailWorkbench, type RightRailTab } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -157,7 +152,6 @@ import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
 import { useStatusSnapshot } from './shell/hooks/use-status-snapshot'
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from './shell/model-menu-panel'
-import { SidebarPanelLabel } from './shell/sidebar-label'
 import type { StatusbarItem } from './shell/statusbar-controls'
 import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
@@ -185,6 +179,7 @@ export function DesktopController() {
   const gatewayState = useStore($gatewayState)
   const activeSessionId = useStore($activeSessionId)
   const currentCwd = useStore($currentCwd)
+  const agentCwd = useStore($agentCwd)
   const freshDraftReady = useStore($freshDraftReady)
   const resumeFailedSessionId = useStore($resumeFailedSessionId)
   const resumeExhaustedSessionId = useStore($resumeExhaustedSessionId)
@@ -284,57 +279,7 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level === 'l1')
   const [agendaAdding, setAgendaAdding] = useState(false)
-  const [launcherOpen, setLauncherOpen] = useState(false)
-  // L1 has one right rail; the launcher decides which surface owns it. On L2 the
-  // file tree / review keep their existing independent gates.
-  const [l1Surface, setL1Surface] = useState<'agenda' | 'files' | 'review'>('agenda')
-
-  const launcherItems: WorkbenchLauncherItem[] = [
-    { icon: 'folder-opened', id: 'files', title: t.rightSidebar.files },
-    {
-      disabled: !currentCwd.trim(),
-      hint: currentCwd.trim() ? undefined : t.rightSidebar.noFolderSelected,
-      icon: 'git-pull-request',
-      id: 'review',
-      title: t.keybinds.actions['view.toggleReview']
-    },
-    { icon: 'terminal', id: 'terminal', title: t.rightSidebar.terminal },
-    { icon: 'calendar', id: 'agenda', title: t.console.timeline.title }
-  ]
-
-  const handleLauncherPick = useCallback(
-    (id: WorkbenchLauncherAction) => {
-      setLauncherOpen(false)
-
-      if (id === 'files') {
-        closeReview()
-        setFileBrowserOpen(true)
-        setL1Surface('files')
-
-        return
-      }
-
-      if (id === 'review') {
-        setFileBrowserOpen(false)
-        openReview()
-        setL1Surface('review')
-
-        return
-      }
-
-      if (id === 'terminal') {
-        setTerminalTakeover(true)
-
-        return
-      }
-
-      setFileBrowserOpen(false)
-      closeReview()
-      setL1Surface('agenda')
-      navigate(AGENDA_ROUTE)
-    },
-    [navigate]
-  )
+  const [rightTab, setRightTab] = useState<RightRailTab>('agenda')
 
   useEffect(() => {
     if (!level) {
@@ -1214,18 +1159,7 @@ export function DesktopController() {
   // layer) so pane resize handles still paint above it. Terminals own their state
   // (incl. a snapshotted cwd) independent of the session, so switching sessions
   // never rebuilds or closes them; toggling the pane never rebuilds the shells.
-  const mainOverlays = (
-    <>
-      <PersistentTerminal onAddSelectionToChat={composer.addTerminalSelectionAttachment} />
-      <WorkbenchLauncher
-        items={launcherItems}
-        labels={{ title: t.rightSidebar.panelsAria }}
-        onClose={() => setLauncherOpen(false)}
-        onPick={handleLauncherPick}
-        open={launcherOpen}
-      />
-    </>
-  )
+  const mainOverlays = <PersistentTerminal onAddSelectionToChat={composer.addTerminalSelectionAttachment} />
 
   const overlays = (
     <>
@@ -1338,11 +1272,7 @@ export function DesktopController() {
     (secretaryShellOpen && previewRailContent && previewPaneOpen) ||
     (isL2 && !narrowViewport && fileBrowserOpen) ||
     (isL2 && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen) ||
-    (level === 'l1' &&
-      !narrowViewport &&
-      ((l1Surface === 'agenda' && agendaPaneOpen) ||
-        (l1Surface === 'files' && fileBrowserOpen) ||
-        (l1Surface === 'review' && Boolean(currentCwd.trim()) && reviewOpen)))
+    (level === 'l1' && !narrowViewport && agendaPaneOpen)
 
   // Once the terminal would share its rail with another sidebar, drop it to a
   // full-width row beneath them rather than cramming in one more skinny column.
@@ -1373,10 +1303,9 @@ export function DesktopController() {
   const fileBrowserPane = (
     <Pane
       defaultOpen={false}
-      // WP-D: the file tree is the L2 workspace rail (§5.3). WP-WORKBENCH-LAUNCHER
-      // (用户 10-23): L1 may surface it only after the launcher explicitly picks
-      // the files surface; the default secretary rail stays the agenda.
-      disabled={!isL2 && l1Surface !== 'files'}
+      // WP-D: the file tree is the L2 workspace rail (§5.3). On L1 the workbench's
+      // files tab hosts its own embedded tree; this column stays L2-only.
+      disabled={!isL2}
       forceCollapsed={narrowViewport}
       hoverReveal
       id="file-browser"
@@ -1390,7 +1319,8 @@ export function DesktopController() {
       {/* Key on the project (cwd) so switching projects unmounts the old tree and
           mounts a fresh one straight into its skeleton — no stale-then-blip. */}
       <RightSidebarPane
-        key={currentCwd || 'no-cwd'}
+        cwd={agentCwd}
+        key={agentCwd || 'no-cwd'}
         onActivateFile={path => composer.insertContextPathInlineRef(path)}
         onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
       />
@@ -1407,7 +1337,7 @@ export function DesktopController() {
       // gate so the pane stays mounted as a collapsed overlay — `toggleReview`
       // then slides it in/out via the forced-reveal pin, exactly like ⌘B for the
       // sidebar. Still requires a repo (no diffs to show otherwise).
-      disabled={!currentCwd.trim() || (!narrowViewport && !reviewOpen) || (!isL2 && l1Surface !== 'review')}
+      disabled={!isL2 || !currentCwd.trim() || (!narrowViewport && !reviewOpen)}
       forceCollapsed={narrowViewport}
       hoverReveal
       id={REVIEW_PANE_ID}
@@ -1439,12 +1369,13 @@ export function DesktopController() {
   const agendaTimelinePane = (
     <Pane
       defaultOpen
-      disabled={level !== 'l1' || l1Surface !== 'agenda'}
+      disabled={level !== 'l1'}
       divider
       forceCollapsed={narrowViewport}
       hoverReveal
       id="agenda-timeline"
       key="agenda-timeline"
+      maxWidth={FILE_BROWSER_MAX_WIDTH}
       minWidth={FILE_BROWSER_MIN_WIDTH}
       resizable
       side={railSide}
@@ -1459,50 +1390,66 @@ export function DesktopController() {
             : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
         )}
       >
-        <RightSidebarSectionHeader>
-          <div className="flex min-w-0 flex-1">
-            <SidebarPanelLabel>{t.console.timeline.title}</SidebarPanelLabel>
-          </div>
-          {/* 这条轴没有「打开完整看板」那颗按钮：完整日程页的入口全应用只有状态栏那一个
-              chip（它还带 pending 计数）。这里再放一个，同一个页面就有两张门，用户说不清
-              哪条才是正路——日程入口收成一处（WP-RAIL-AGENT-EQUAL）。 */}
-          <Button
-            aria-label={t.console.timeline.addEvent}
-            onClick={() => setAgendaAdding(open => !open)}
-            size="icon-xs"
-            title={t.console.timeline.addEvent}
-            variant="ghost"
-          >
-            <Codicon name="add" size="0.8125rem" />
-          </Button>
-        </RightSidebarSectionHeader>
-
-        {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {/* 裁定 40: the today axis (with its "now" line) MUST mount even
-             when the rail is still loading or the day payload is empty.
-             Otherwise a fresh relaunch lands the user on the loader /
-             error / empty-state and they never see today's axis. */}
-          {agendaLoading && agendaEvents.length === 0 ? (
-            <div aria-hidden="true" className="flex justify-center py-4">
-              <PageLoader label={t.console.timeline.title} />
-            </div>
-          ) : null}
-          {agendaError && agendaEvents.length === 0 ? (
-            <div className="flex justify-center pb-2">
-              <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
-                {t.console.timeline.retry}
+        <RightRailWorkbench
+          activeTab={rightTab}
+          agenda={
+            <>
+              {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
+              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                {/* 裁定 40: the today axis (with its "now" line) MUST mount even
+                   when the rail is still loading or the day payload is empty.
+                   Otherwise a fresh relaunch lands the user on the loader /
+                   error / empty-state and they never see today's axis. */}
+                {agendaLoading && agendaEvents.length === 0 ? (
+                  <div aria-hidden="true" className="flex justify-center py-4">
+                    <PageLoader label={t.console.timeline.title} />
+                  </div>
+                ) : null}
+                {agendaError && agendaEvents.length === 0 ? (
+                  <div className="flex justify-center pb-2">
+                    <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
+                      {t.console.timeline.retry}
+                    </Button>
+                  </div>
+                ) : null}
+                <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
+                {agendaRhythmOff && !agendaLoading ? (
+                  <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
+                    {t.agenda.rhythmOff}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          }
+          files={
+            agentCwd.trim() ? (
+              <RightSidebarPane
+                cwd={agentCwd}
+                embedded
+                key={agentCwd}
+                onActivateFile={path => composer.insertContextPathInlineRef(path)}
+                onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
+              />
+            ) : null
+          }
+          labels={t.workbench}
+          onTabChange={setRightTab}
+          trailing={
+            rightTab === 'agenda' ? (
+              /* 完整日程页的入口全应用只有状态栏那一个 chip（它还带 pending 计数），
+                 这里只保留「加一条」；同一个页面不许有第二张门。 */
+              <Button
+                aria-label={t.console.timeline.addEvent}
+                onClick={() => setAgendaAdding(open => !open)}
+                size="icon-xs"
+                title={t.console.timeline.addEvent}
+                variant="ghost"
+              >
+                <Codicon name="add" size="0.8125rem" />
               </Button>
-            </div>
-          ) : null}
-          <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
-          {agendaRhythmOff && !agendaLoading ? (
-            <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
-              {t.agenda.rhythmOff}
-            </p>
-          ) : null}
-        </div>
+            ) : null
+          }
+        />
       </aside>
     </Pane>
   )
@@ -1539,13 +1486,6 @@ export function DesktopController() {
     </Pane>
   )
 
-  const launcherTool = {
-    icon: <Codicon name="multiple-windows" />,
-    id: 'workbench-launcher',
-    label: t.rightSidebar.panelsAria,
-    onSelect: () => setLauncherOpen(open => !open)
-  }
-
   return (
     <AppShell
       leftStatusbarItems={leftStatusbarItems}
@@ -1561,7 +1501,7 @@ export function DesktopController() {
       }
       statusbarItems={statusbarItems}
       terminalPaneOpen={terminalSidebarOpen}
-      titlebarTools={[...titlebarToolGroups.flat.right, launcherTool]}
+      titlebarTools={titlebarToolGroups.flat.right}
     >
       {!isSecondaryWindow() && (
         <Pane

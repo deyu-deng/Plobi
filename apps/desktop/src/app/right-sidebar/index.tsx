@@ -20,15 +20,20 @@ import { ProjectTree } from './files/tree'
 import { useProjectTree } from './files/use-project-tree'
 
 interface RightSidebarPaneProps {
+  cwd?: string
+  embedded?: boolean
   onActivateFile: (path: string) => void
   onActivateFolder: (path: string) => void
 }
 
-export function RightSidebarPane({ onActivateFile, onActivateFolder }: RightSidebarPaneProps) {
+export function RightSidebarPane({ cwd, embedded = false, onActivateFile, onActivateFolder }: RightSidebarPaneProps) {
   const { t } = useI18n()
   const r = t.rightSidebar
   const panesFlipped = useStore($panesFlipped)
-  const currentCwd = useStore($currentCwd).trim()
+  const storeCwd = useStore($currentCwd).trim()
+  // Explicit cwd wins: the workbench binds the tree to the current Agent, never
+  // to the global remembered workspace.
+  const currentCwd = (cwd ?? storeCwd).trim()
 
   // The file tree is simply "browse the session's working directory". If the
   // session has a cwd — a repo, a sibling worktree, or any folder — show it. A
@@ -75,10 +80,15 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }: RightSide
     <aside
       aria-label={r.aria}
       className={cn(
-        'before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)',
-        panesFlipped
-          ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-          : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+        'before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden text-(--ui-text-tertiary)',
+        embedded
+          ? 'bg-transparent'
+          : cn(
+              'border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)',
+              panesFlipped
+                ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+                : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+            )
       )}
     >
       <FilesystemTab

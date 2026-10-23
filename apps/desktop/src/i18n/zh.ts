@@ -285,7 +285,7 @@ export const zh: Translations = {
   settings: {
     offload: {
       title: '外包',
-      note: '把一段活交给外面的 AI 软件，让它在自己的窗口里干。把它的订阅/API 借来当模型，是 Providers 那一屏的事——两边不共用一张表。',
+      note: '将任务交给外部 AI 应用，由它在自己的界面中完成。该应用的订阅或 API 在 Providers 页面中配置为模型，与本页设置相互独立。',
       loading: '正在读…',
       refresh: '再读一次',
       probedAt: '读数时刻',
@@ -436,7 +436,7 @@ export const zh: Translations = {
       addNode: '添加成员',
       addRule: '添加规则',
       binary: '引擎程序路径',
-      catchAll: '最后一条必须是 "*"——子进程能表达的只有这一个兜底出口。',
+      catchAll: '最后一条必须是 "*"——这是唯一可用的默认出口。',
       direct: '直连',
       engine: '规则引擎',
       engineOnly: '仅引擎识别',
@@ -446,7 +446,7 @@ export const zh: Translations = {
       groups: '组（引擎侧的节点池）',
       importPath: '池子文件路径（mihomo 的 config.yaml）',
       importPool: '从池子文件导入成员与组',
-      intro: '决定每个目标走哪条出口。默认只接管 Plobi 自己发起的流量——下面那颗开关才决定要不要把本机的系统代理也交给我们；不接管时不写系统代理、不接管 DNS，你自己开的浏览器与终端仍走原来的路。',
+      intro: '决定每个目标使用的网络出口。默认仅接管 Plobi 自身流量；开启系统代理接管后，本机系统代理与 DNS 才由 Plobi 管理，否则浏览器与终端仍按原有网络设置运行。',
       match: '匹配（域名、*.后缀、CIDR、geosite:… 或 *）',
       members: '成员（逗号分隔，或 *）',
       name: '名称',
@@ -454,9 +454,9 @@ export const zh: Translations = {
       port: '监听端口',
       server: '地址',
       proxyApplied: '接管结果',
-      proxyDeclaredNotApplied: '表里说要接管，但系统代理不是我们的——可能出口带不动被拒了，也可能别人改了设置。跑 `plobi network proxy on` 看它此刻的理由。',
+      proxyDeclaredNotApplied: '配置要求接管系统代理，但当前系统代理未被接管——可能是出口受限或系统设置被修改。可在设置中重新开启系统代理接管。',
       proxyNotOurs: '没接管：只有 Plobi 起的进程按这张表走。',
-      proxyOurs: '本机的系统代理现在是 Plobi 在管：走系统代理的程序都按这张表选路。硬编直连的原生流量（多数游戏、命令行工具）不在这一格里——那一档要 TUN。',
+      proxyOurs: '本机系统代理由 Plobi 接管：使用系统代理的程序将按此表选路。忽略系统代理、直接连接网络的程序（多数游戏、命令行工具）不在此列，需通过 TUN 模式接管。',
       proxyUnsupported: '这一格目前只实现 Windows，这台没法接管系统代理。',
       refused: '未保存',
         remove: '删除',
@@ -944,7 +944,7 @@ export const zh: Translations = {
       saveForRestart: '保存到下次重启',
       saveAndReconnect: '保存并重连',
       diagnostics: '诊断',
-      diagnosticsDesc: '在文件管理器中显示 desktop.log，网关启动失败时很有用。',
+      diagnosticsDesc: '在文件管理器中显示日志文件，网关启动失败时可用于排查。',
       openLogs: '打开日志',
       incompleteTitle: '远程网关配置不完整',
       incompleteSignIn: '切换到远程前，请输入远程 URL 并完成登录。',
@@ -1822,7 +1822,7 @@ export const zh: Translations = {
     agentMenuArchiveFailed: '这个 Agent 没能归档：',
     agentMenuEdit: '编辑这个 Agent…',
     agentEditTitle: '编辑 Agent',
-    agentEditBody: '这里改的是你和 {name} 之间的那层东西：左栏里它的名字、它的样子、它干活的文件夹。它的 ID 和家不动——改那两样，它已经聊过的对话就找不到主人了。',
+    agentEditBody: '此处可修改 {name} 在侧边栏中的名称、图标与工作目录。其内部标识保持不变——修改标识会导致历史对话无法关联。',
     agentEditNameLabel: '左栏里叫它什么',
     agentEditAppearanceLabel: '图标与颜色',
     agentEditAppearanceClear: '清掉图标和颜色',
@@ -2231,7 +2231,7 @@ export const zh: Translations = {
       removeWorktree: '移除工作树',
       removeWorktreeFailed: '无法移除工作树（存在未提交更改？）',
       removeWorktreeConfirm:
-        '从 git 中移除（删除工作树目录，但保留分支），或仅从侧边栏隐藏该泳道并将工作树保留在磁盘上。',
+        '从仓库中移除该项目（删除本地工作目录，但保留 Git 分支）；或仅从侧边栏隐藏该项目，保留磁盘上的文件。',
       removeWorktreeDirty: '此工作树有未提交的更改。强制移除（丢弃这些更改），或仅隐藏泳道并保留在磁盘上。',
       forceRemove: '强制移除',
       enter: label => `打开 ${label}`,
@@ -2538,7 +2538,7 @@ export const zh: Translations = {
     settingUpTitle: '正在设置 Plobi Agent',
     finishingTitle: '正在收尾',
     failedDesc:
-      '某个安装步骤失败。在 Windows 上，如果另一个 Plobi CLI 或桌面实例正在运行，可能会出现这种情况。请停止正在运行的 Plobi 实例后重试。可查看下面的详情或 desktop 日志中的完整记录。',
+      '某个安装步骤失败。在 Windows 上，如果另一个 Plobi CLI 或桌面实例正在运行，可能会出现这种情况。请停止正在运行的 Plobi 实例后重试。可查看下方详情或完整日志。',
     activeDesc: '这是一次性设置。Plobi 安装器正在下载依赖并配置你的机器。之后启动会跳过此步骤。',
     progress: (completed, total) => `${completed}/${total} 个步骤已完成`,
     currentStage: stage => ` -- 当前：${stage}`,
@@ -3149,7 +3149,7 @@ export const zh: Translations = {
     archiveFailed: '归档失败',
     cwdChangeFailed: '工作目录更改失败',
     cwdStagedTitle: '工作目录已暂存',
-    cwdStagedMessage: '重启桌面后端后，工作目录更改才会应用到当前活跃会话。',
+    cwdStagedMessage: '工作目录更改将在重启桌面应用后，应用于当前活跃会话。',
     modelSwitchFailed: '模型切换失败',
     quotaFallbackTitle: '订阅模型暂时不可用',
     quotaFallbackMessage: (from, to, reason) => `${from} 现在用不了——${reason}。本次对话已切到 ${to}。`,
@@ -3214,5 +3214,15 @@ export const zh: Translations = {
       description: '显示移动端侧边栏。',
       toggle: '切换侧边栏'
     }
+  },
+
+  workbench: {
+    aria: '右侧栏',
+    tabs: {
+      agenda: '日程',
+      files: '工作区文件'
+    },
+    noFolderTitle: '此 Agent 未绑定目录',
+    noFolderBody: '给它绑定一个目录后，这里会显示它的文件树。'
   }
 }

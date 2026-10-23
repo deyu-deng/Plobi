@@ -2684,4 +2684,14 @@ export interface Translations {
       toggle: string
     }
   }
+
+  workbench: {
+    aria: string
+    tabs: {
+      agenda: string
+      files: string
+    }
+    noFolderTitle: string
+    noFolderBody: string
+  }
 }
