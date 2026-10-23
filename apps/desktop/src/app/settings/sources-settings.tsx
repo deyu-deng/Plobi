@@ -255,7 +255,9 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
         <Detail label={labels.drawerLastRun} value={row.last_run_at || labels.drawerNeverRun} />
         <Detail
           label={labels.drawerNextRun}
-          value={row.next_run_at || labels.drawerNextEveryRound}
+          value={row.enabled === false
+            ? '—'
+            : row.next_run_at || labels.drawerNextEveryRound}
         />
         <Detail
           label={labels.drawerPoolCount}
