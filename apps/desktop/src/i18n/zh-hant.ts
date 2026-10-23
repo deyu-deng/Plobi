@@ -1587,6 +1587,7 @@ export const zhHant = defineLocale({
     offloadsTitle: '外包給',
     offloadsLoading: '正在讀外包流水…',
     offloadsEmpty: '這一格還沒把活外包出去過。',
+    offloadsReply: '它回：',
     offloadsBackToList: 'Agent 清單',
     offloadsLoadFailed: '外包流水讀不出來：後端沒答這一格（不是「沒有外包」）。',
     offloadsNoArtifact: '這一輪沒有可打開的產物（多半是沒幹成）。',
