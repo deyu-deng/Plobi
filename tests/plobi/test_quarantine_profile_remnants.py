@@ -192,6 +192,14 @@ def _run_house(qr, root: Path, apply: bool, capsys, date=DATE) -> dict:
     return {"rc": rc, "report": json.loads(capsys.readouterr().out)}
 
 
+def _run_restore(qr, root: Path, apply: bool, capsys, date=DATE) -> dict:
+    argv = ["--date", date, "--restore", "--profiles-root", str(root)]
+    if apply:
+        argv.insert(0, "--apply")
+    rc = qr.main(argv)
+    return {"rc": rc, "report": json.loads(capsys.readouterr().out)}
+
+
 def test_whole_house_moves_every_home_and_keeps_the_bytes(qr, root, capsys):
     """整屋退役的判据：`homes_after == 0`，而每个家的字节在隔离区里一个不少。
 
@@ -229,3 +237,32 @@ def test_whole_house_rerun_is_idempotent(qr, root, capsys):
     assert second["homes_before"] == 0
     assert second["planned_moves"] == 0
     assert second["moved"] == []
+
+
+def test_restore_moves_every_home_back(qr, root, capsys):
+    """回滚一次过早的整屋搬运：家数回到 2，屋里那本 `state.db` 原样在。"""
+    _run_house(qr, root, apply=True, capsys=capsys)
+    plan = _run_restore(qr, root, apply=False, capsys=capsys)["report"]
+    assert plan["planned_moves"] == 2
+    assert (root / "aura").exists() is False, "dry-run 不许动盘"
+
+    res = _run_restore(qr, root, apply=True, capsys=capsys)
+    rep = res["report"]
+    assert res["rc"] == 0 and rep["errors"] == []
+    assert rep["homes_after"] == 2
+    assert (root / "aura" / "state.db").is_file()
+    assert (root / "aura" / "SOUL.md").is_file()
+
+
+def test_restore_never_overwrites_a_home_that_came_back(qr, root, capsys):
+    """若某一家已经被 spawn 重新建出来了，restore 必须 skip 它——
+    覆盖等于把别人新写的东西压成我那份旧副本。"""
+    _run_house(qr, root, apply=True, capsys=capsys)
+    (root / "aura").mkdir(parents=True)
+    (root / "aura" / "fresh.txt").write_text("别人建的\n", encoding="utf-8")
+
+    rep = _run_restore(qr, root, apply=True, capsys=capsys)["report"]
+    assert [s["home"] for s in rep["skipped_target_exists"]] == ["aura"]
+    assert {m["home"] for m in rep["moved"]} == {"kit"}
+    assert (root / "aura" / "fresh.txt").is_file(), "skip 就是不动它"
+    assert not (root / "aura" / "state.db").exists()
