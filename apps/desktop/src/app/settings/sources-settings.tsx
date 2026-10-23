@@ -30,8 +30,9 @@ import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
+import { parseCadence } from './sources/setup-fields'
 import { SourceAvatar } from './sources/source-icon'
-import { groupByCategory, needsSetup, statusOf, statusReason, visibleGroups } from './sources/verbs'
+import { groupByCategory, needsSetup, relativeTime, statusOf, statusReason, visibleGroups } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
@@ -250,23 +251,36 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
 
   return (
     <div className="mt-2 space-y-3 rounded-lg bg-(--ui-bg-secondary) p-3" data-testid={`source-drawer-${row.source}`}>
+      {/* 通用那几格（用户 10-23：「只显示通用部分，包括上一次，下一次（显示多久之前，
+          不要显示一个时间），频率」）——**绝对时刻不上屏**，人读的是"多久以前/以后"。 */}
       <dl className="grid gap-x-4 gap-y-1 text-[length:var(--conversation-caption-font-size)] sm:grid-cols-2">
         <Detail label={labels.drawerReason} value={statusReason(row, labels)} />
-        <Detail label={labels.drawerLastRun} value={row.last_run_at || labels.drawerNeverRun} />
+        <Detail
+          label={labels.drawerLastRun}
+          value={relativeLabel(row.last_run_at, labels) ?? labels.drawerNeverRun}
+        />
         <Detail
           label={labels.drawerNextRun}
           value={row.enabled === false
             ? '—'
-            : row.next_run_at || labels.drawerNextEveryRound}
+            : relativeLabel(row.next_run_at, labels) ?? labels.drawerNextEveryRound}
         />
-        <Detail
-          label={labels.drawerPoolCount}
-          value={row.pool_count === undefined || row.pool_count < 0
-            ? labels.drawerPoolUnreadable
-            : `${row.pool_count}${kinds.length > 0 ? `（${kinds.slice(0, 4).map(([kind, count]) => `${kind} ${count}`).join(' · ')}）` : ''}`}
-        />
-        <Detail label={labels.drawerAgendaCount} value={String(row.events)} />
+        <Detail label={labels.drawerEvery} value={frequencyLabel(row.cadence, labels)} />
       </dl>
+
+      {/* 池里/日程里两格留着，但压成一行小字：它们回答的是"这条采到东西没有"（裁 193 之后
+          池才是落点），不是主视线里的东西。 */}
+      <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+        {labels.drawerPoolCount}
+        {' '}
+        {row.pool_count === undefined || row.pool_count < 0
+          ? labels.drawerPoolUnreadable
+          : `${row.pool_count}${kinds.length > 0 ? `（${kinds.slice(0, 4).map(([kind, count]) => `${kind} ${count}`).join(' · ')}）` : ''}`}
+        {' · '}
+        {labels.drawerAgendaCount}
+        {' '}
+        {String(row.events)}
+      </p>
 
       {/* 执行方逐字那一句留在这里，不进那一行：它是我们读给排障的人听的，不是给"这条源怎么了"
           那一格用的（用户 10-22：行上要人话、要产品化）。 */}
@@ -304,4 +318,55 @@ function Detail({ label, value }: { label: string; value: string }) {
       <dd className="min-w-0 truncate">{value}</dd>
     </div>
   )
+}
+
+/** 「上一次/下一次」那句人话。拿不到时刻就回 null（调用方决定写"还没跑过/跟着每一轮"）。 */
+function relativeLabel(iso: string | undefined, labels: Labels): null | string {
+  const rel = relativeTime(iso ?? '')
+
+  if (!rel) {
+    return null
+  }
+
+  if (rel.unit === 'just') {
+    return labels.timeJustNow
+  }
+
+  if (rel.unit === 'minutes') {
+    return (rel.past ? labels.timeMinutesAgo : labels.timeMinutesIn).replace('{n}', String(rel.minutes))
+  }
+
+  if (rel.unit === 'hours') {
+    return (rel.past ? labels.timeHoursAgo : labels.timeHoursIn).replace('{n}', String(rel.hours))
+  }
+
+  return (rel.past ? labels.timeDaysAgo : labels.timeDaysIn).replace('{n}', String(rel.days))
+}
+
+/** 频率那一格的人话：把存量 cron 读回它本来停的那一档。自定义的才原样显示表达式。 */
+function frequencyLabel(cadence: string | undefined, labels: Labels): string {
+  const parsed = parseCadence(cadence ?? '')
+  const clock = `${String(parsed.hour).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`
+
+  switch (parsed.mode) {
+    case 'every_round': {
+      return labels.cadenceModeEveryRound
+    }
+
+    case 'every_hours': {
+      return labels.cadenceEveryHours.replace('{n}', String(parsed.hours))
+    }
+
+    case 'daily': {
+      return `${labels.cadenceModeDaily} ${clock}`
+    }
+
+    case 'weekly': {
+      return `${labels.cadenceWeekdays[String(parsed.dow)] ?? ''} ${clock}`.trim()
+    }
+
+    default: {
+      return parsed.raw
+    }
+  }
 }
