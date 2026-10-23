@@ -2937,5 +2937,15 @@ export const zhHant = defineLocale({
       description: '顯示行動裝置側邊欄。',
       toggle: '切換側邊欄'
     }
+  },
+
+  workbench: {
+    aria: '右側欄',
+    tabs: {
+      agenda: '行程',
+      files: '工作區檔案'
+    },
+    noFolderTitle: '此 Agent 未綁定目錄',
+    noFolderBody: '給它綁定一個目錄後，這裡會顯示它的檔案樹。'
   }
 })

@@ -3076,5 +3076,15 @@ export const en: Translations = {
       description: 'Displays the mobile sidebar.',
       toggle: 'Toggle Sidebar'
     }
+  },
+
+  workbench: {
+    aria: 'Right rail',
+    tabs: {
+      agenda: 'Agenda',
+      files: 'Workspace files'
+    },
+    noFolderTitle: 'This agent has no folder',
+    noFolderBody: 'Bind a folder to this agent to browse its files here.'
   }
 }

@@ -3037,5 +3037,15 @@ export const ja = defineLocale({
       description: 'モバイルサイドバーを表示します。',
       toggle: 'サイドバーを切り替え'
     }
+  },
+
+  workbench: {
+    aria: '右サイドバー',
+    tabs: {
+      agenda: '予定',
+      files: 'ワークスペースのファイル'
+    },
+    noFolderTitle: 'このエージェントにはフォルダが未設定です',
+    noFolderBody: 'フォルダを設定すると、ここにファイルツリーが表示されます。'
   }
 })
