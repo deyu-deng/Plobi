@@ -329,20 +329,19 @@ def test_unaskable_row_stays_on_the_roster_and_says_why(home, monkeypatch):
 
     # 没被偷偷删掉——他还在名单里。
     assert payload["roster"] == ["live", "no-home"]
-    assert payload["askable"] == ["live"]
+    # 裁定 192（10-23）：`no-home` 家不在盘上也照样问得到——身份就是名册这一行。
+    # 原来这一条断的是 ["live"]（另一行因"家没落地"被标问不到），那把尺已被删。
+    assert payload["askable"] == ["live", "no-home"]
     assert payload["mind_candidates"] == ["seed"]
     # 归档的那条哪儿都不出现（裁定 19：留在盘上，但从默认名单里藏掉）。
     assert "gone" not in {row["id"] for row in payload["projects"]}
+    # 未登记的那条（Mind 投影）仍然不算手下——关门判据靠这一格章。
+    assert "seed" not in payload["askable"]
 
-    row = next(r for r in payload["projects"] if r["id"] == "no-home")
-    assert row["registered"] is True and row["askable"] is False
-    assert "还没在这台机器上落地" in row["not_askable_because"]
-
-    # 工具那一侧不许把他说成「查无此人」：给的是名单里同一句原因。
-    body = json.loads(AA.handle_agent_ask({"agent": "no-home", "question": "在吗"}))
-    assert body["ok"] is False
-    assert "还没在这台机器上落地" in body["error"]
-    assert body["available"] == ["live"]
+    # 工具与名单必须给同一批人（同源判据不许各算一次）。
+    body = json.loads(AA.handle_agent_ask({"agent": "gone", "question": "在吗"}))
+    assert body["ok"] is False and "归档" in body["error"]
+    assert sorted(body["available"]) == ["live", "no-home"]
 
 
 def test_archived_and_agenda_rows_get_their_own_reason(home, monkeypatch):
@@ -353,8 +352,8 @@ def test_archived_and_agenda_rows_get_their_own_reason(home, monkeypatch):
 
     agenda = json.loads(AA.handle_agent_ask({"agent": "agenda", "question": "在吗"}))
     assert agenda["ok"] is False and "不是项目分身" in agenda["error"]
-    # 拒答里报出来的「能问的」必须是真能问的那一行。
-    assert agenda["available"] == ["live"]
+    # 拒答里报出来的「能问的」必须是真能问的那两行（家在与不在都一样，裁 192）。
+    assert sorted(agenda["available"]) == ["live", "no-home"]
 
 
 def test_roster_askable_set_and_the_tools_gate_are_the_same_list(home, monkeypatch):

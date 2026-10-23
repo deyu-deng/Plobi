@@ -83,13 +83,18 @@ def test_course_role_is_the_one_the_ask_list_and_router_both_accept():
     assert profile_name_blocker(entry) == ""
 
 
-def test_askability_reason_names_the_missing_home_not_the_category(monkeypatch):
-    """家还没落地时，那句原因要指「去登记/新建一次」，不许推给「课程不归我问」。"""
-    monkeypatch.setattr("plobi.agents.registry._profile_landed", lambda entry: False)
+def test_a_missing_home_no_longer_changes_askability(tmp_path, monkeypatch):
+    """裁定 192（10-23）：家不在家在盘上，**不再**改变可问性。
+
+    原来这一条钉的是「家没落地时要指『去登记/新建一次』」；那把尺把 L1 的名单绑在
+    `profiles/<name>` 存在上，10-23 11:36 一次整屋搬家因此把 24 行左栏全打成点不动。
+    现在身份只看名册这一行（角色有没有路由 + registered 那一格章）。
+    """
     entry = _course_entry()
 
+    assert not (tmp_path / "profiles" / entry.profile_name).exists()  # 前提：盘上没有这个家
     askable, reason = agent_askability(entry)
 
-    assert askable is False
-    assert "没在这台机器上落地" in reason
+    assert askable is True
+    assert reason == ""
     assert L2_COURSE not in reason

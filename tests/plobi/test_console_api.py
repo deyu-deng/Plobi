@@ -200,14 +200,16 @@ def test_post_l2_project_appears_in_list(client, _isolated_state, monkeypatch):
         "id", "name", "status", "model", "todayCalls", "profile", "category", "mindSubtree",
         "icon", "color",
         "disabledSkills", "disabledToolsets", "disabledMcpServers",
-        "askable", "notAskableReason", "navigable", "notNavigableReason",
+        "askable", "navigable",
         "modelOverride",
         "projectPath", "projectPaths", "working",
     }
-    # 这一条刚登记、spawn 被 stub 掉了 → 家还没落地 → 左栏据此先不点它，
-    # 并把原因原样透出去（而不是让用户点进去撞 spawn 失败）。
-    assert body["data"]["navigable"] is False
-    assert "还没在这台机器上落地" in body["data"]["notNavigableReason"]
+    # 裁定 192（10-23）：身份就是名册这一行。这一条刚登记、角色有路由 ⇒ **当场就可点**，
+    # 不再等盘上出现一个 `profiles/<name>`——那两条"不可点/不可问"的原因键因此整个省略
+    # （None 被 router 那道剥键器的规矩去掉，前端按"没有原因"处理）。
+    # 这条断言就是防回退的牙：谁再把可点性绑到目录存在上，这里会红。
+    assert body["data"]["navigable"] is True
+    assert body["data"]["askable"] is True
     ids = [row["id"] for row in client.get("/api/agents").json()["data"]]
     assert "plobi-code" in ids
     assert _isolated_state.get("plobi-code").role == "l2_project"

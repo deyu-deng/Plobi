@@ -116,9 +116,14 @@ def test_identified_course_row_is_navigable_and_askable(tmp_path, home):
     assert entry.profile_name == "l2-course-ee"
 
 
-def test_identified_course_row_is_refused_while_its_home_is_missing(tmp_path, home):
-    """Same row, home not landed yet: still refused — clicking would spawn-fail.
-    The fix for that is landing the home (spawn), not greying the row forever."""
+def test_identified_course_row_is_clickable_without_a_home(tmp_path, home):
+    """裁定 192（10-23）：有身份的课程行**不需要盘上有一个家**才可点。
+
+    这条原来钉的是反方向（"家没落地就先把行灰掉，否则点了 spawn 失败"）。那个前提随
+    单后端（裁 168）与乙案（裁 178）一起没了：点击不再 spawn 一个带 `--profile` 的进程，
+    而把家当"能不能点"的证据，会让一次数据搬家把整条左栏打瘫——10-23 11:36 就是这么红的。
+    防 2026-10-13 那个重启循环的牙在隔壁那条：`l2_course`（无路由的数据行）仍然不可点。
+    """
     reg = _load(
         tmp_path,
         {
@@ -131,9 +136,10 @@ def test_identified_course_row_is_refused_while_its_home_is_missing(tmp_path, ho
     )
     entry = reg.get("电工电子学")
 
+    assert not (home / "profiles" / "l2-course-ee").exists()  # 前提：盘上没有这个家
     navigable, reason = agent_navigability(entry)
-    assert navigable is False
-    assert "落地" in reason or "家" in reason
+    assert navigable is True
+    assert reason == ""
 
 
 def test_course_row_without_identity_stays_non_navigable(tmp_path, home):
