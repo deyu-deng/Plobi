@@ -62,6 +62,10 @@ vi.mock('@/i18n', () => ({
           removeFailed: 'That removal did not finish.',
           saveFailed: 'Could not save those.',
           saveSetup: 'Save',
+          sidecarUp: 'Collection service started',
+          sidecarNotUp: 'Switch is on, but the collection service did not come up',
+          sidecarDown: 'Collection service stopped',
+          sidecarNotDown: 'Switch is off, but the collection service is still answering',
           switchFailed: 'Could not change the switch.',
           title: 'Sources',
           tryFailed: 'That run did not come back.',
@@ -309,6 +313,28 @@ describe('what the row says', () => {
     fireEvent.click(switches(container)[0])
 
     await waitFor(() => expect(setSourceEnabled).toHaveBeenCalledWith('wechat', true))
+    // 没有本机服务的信源：开关之后**不多说话**（用户 10-23 要的是"这条有进程就说进程"，不是每条都弹一句）。
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('says whether the own service of a source actually came up', async () => {
+    // 用户 10-23：「微信那个按钮形同虚设。我打开还是关闭都是显示未连接」⇒ 开关现在会真的
+    // 拉起/收掉那条自己的服务，而屏上要说得出**它到底活没活**（后端回读数，句子在四语目录里）。
+    setSourceEnabled.mockResolvedValue({ action: 'started_not_listening', detail: '后端那句原文',
+                                         listening: false, port: 5030 })
+    getSources.mockResolvedValue(payload([
+      row({ enabled: false, has_builder: true, source: 'wechat', status: 'disconnected' })
+    ]))
+
+    const { container } = render(<SourcesSettings />)
+    await waitFor(() => expect(switches(container).length).toBe(1))
+    fireEvent.click(switches(container)[0])
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'error',
+      message: 'Switch is on, but the collection service did not come up'
+    })))
+    expect(screen.queryByText('后端那句原文')).toBeNull()
   })
 
   it('guides an unconfigured source into the form instead of flipping a dead switch', async () => {

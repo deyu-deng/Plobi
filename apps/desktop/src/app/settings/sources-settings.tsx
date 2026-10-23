@@ -84,8 +84,18 @@ export function SourcesSettings() {
     setBusy(row.source)
 
     try {
-      await setSourceEnabled(row.source, enabled)
+      const sidecar = await setSourceEnabled(row.source, enabled)
       await reload()
+
+      // 这一条有本机服务 ⇒ 开关说了"开/关"还不够，得说那个进程现在到底活没活。
+      // 句子由界面拼（后端给的是读数 `listening`，裁定 45.4）；后端那句中文原文进控制台。
+      if (sidecar) {
+        console.info('[settings/sources] sidecar', row.source, sidecar.action, sidecar.detail)
+        notify({
+          kind: sidecar.listening === enabled ? 'success' : 'error',
+          message: sidecarOutcomeLabel(sidecar.listening, enabled, labels)
+        })
+      }
     } catch (err) {
       notifyError(err, labels.switchFailed)
     } finally {
@@ -369,4 +379,13 @@ function frequencyLabel(cadence: string | undefined, labels: Labels): string {
       return parsed.raw
     }
   }
+}
+
+/** 开关之后那一句：只说"服务活没活"，四语各一句（后端那句原文只进控制台）。 */
+function sidecarOutcomeLabel(listening: boolean, wanted: boolean, labels: Labels): string {
+  if (wanted) {
+    return listening ? labels.sidecarUp : labels.sidecarNotUp
+  }
+
+  return listening ? labels.sidecarNotDown : labels.sidecarDown
 }

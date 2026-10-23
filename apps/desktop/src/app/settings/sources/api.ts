@@ -182,12 +182,34 @@ export async function getSources(): Promise<SourcesPayload> {
   )
 }
 
-export async function setSourceEnabled(sourceId: string, enabled: boolean): Promise<void> {
-  await window.plobiDesktop.api({
+/**
+ * 那颗开关的**另一半**：这一条自己那个本机服务被怎么处理了。
+ *
+ * 用户 10-23：「我希望开始和关闭是会真的切断这条信源的采集程序」——所以后端不只是写一个布尔，
+ * 它按声明（`sidecar_port` / `sidecar_start`）去拉起或收掉那个进程，并把结果回给面。
+ * 没声明端口的信源这一格是 `undefined`（面因此什么都不多说一句）。
+ *
+ * 面**只认 `listening` 这个读数**，句子在自己那四语目录里拼（裁定 45.4：后端给状态，界面给话）。
+ */
+export interface SidecarNote {
+  action: string
+  detail: string
+  listening: boolean
+  port: number
+}
+
+export async function setSourceEnabled(sourceId: string, enabled: boolean): Promise<SidecarNote | undefined> {
+  const data = unwrapData<Record<string, unknown>>(await window.plobiDesktop.api({
     path: `/api/collect/sources/${encodeURIComponent(sourceId)}/enabled`,
     method: 'POST',
     body: { enabled }
-  })
+  }), `/api/collect/sources/${sourceId}/enabled`)
+
+  const note = data?.sidecar as Partial<SidecarNote> | undefined
+
+  return typeof note?.listening === 'boolean'
+    ? { action: note.action ?? '', detail: note.detail ?? '', listening: note.listening, port: Number(note.port ?? 0) }
+    : undefined
 }
 
 /**

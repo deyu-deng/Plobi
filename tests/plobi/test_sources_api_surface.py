@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from plobi.collectors import cadence, icons, registry, sources_api, sources_config
+from plobi.collectors import cadence, icons, registry, sidecar, sources_api, sources_config
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
@@ -266,6 +266,58 @@ class TestIconsComeFromTheDeclaration:
         row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["zdbk"]
 
         assert row["icon"] == "" and row["site"] == "https://zdbk.zju.edu.cn"
+
+
+class TestTheSwitchCutsTheProcess:
+    """用户 10-23：「**微信那个按钮形同虚设……我希望开始和关闭是会真的切断这条信源的采集程序**」。
+
+    钉的是"那颗开关背后确实动了一个进程"，而且**只动声明了端口的那一条**、
+    只动听在那个端口上的进程。全部用假件：不真杀、不真拉、不占固定端口。
+    """
+
+    def test_apply_follows_the_declaration_not_the_name(self) -> None:
+        from types import SimpleNamespace
+
+        probe = SimpleNamespace(sidecar_port=5099, sidecar_start="scripts/nope.ps1")
+
+        # 没声明端口的（微信以外那三条都这样）⇒ 这个模块一个字都不做。
+        assert sidecar.apply(SimpleNamespace(sidecar_port=None, sidecar_start=""), enabled=True) is None
+
+        killed: list[int] = []
+        off = sidecar.apply(probe, enabled=False, listening=lambda _port: True,
+                            finder=lambda _port: [4242], killer=killed.append, spawn=lambda _s: None)
+        assert killed == [4242], "关掉必须真的收到那个端口上的进程，而不是只写一个布尔"
+        assert off["port"] == 5099
+
+        started: list[str] = []
+        on = sidecar.apply(probe, enabled=True, listening=lambda _port: False,
+                           finder=lambda _port: [], killer=lambda _pid: False,
+                           spawn=started.append, wait_seconds=0.0)
+        assert started == ["scripts/nope.ps1"], "打开要按**声明的那条命令**去拉，不按信源名字"
+        assert on["action"] == "started_not_listening", "拉起了但端口没应答，就说没应答（不许报成开了）"
+
+        # 已经在跑的不许再拉一遍：一次点击不该起两个服务。
+        calls: list[str] = []
+        again = sidecar.apply(probe, enabled=True, listening=lambda _port: True,
+                              finder=lambda _port: [], killer=lambda _pid: False,
+                              spawn=calls.append)
+        assert calls == [] and again["action"] == "already_running"
+
+    def test_port_listening_is_a_real_socket_read(self) -> None:
+        """这一格不许是"我以为它在"：真开一个 listen 的套接字读一次，关掉再读一次。"""
+        import socket
+
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+
+        try:
+            assert sidecar.port_listening(port) is True
+        finally:
+            listener.close()
+
+        assert sidecar.port_listening(port) is False
 
 
 class TestPoolCountsReachTheScreen:
