@@ -62,10 +62,9 @@
 
 ## 查今天/明天/某天要把饭和觉一并念出来（WP-QUERY-DAY，硬规则，不可绕过）
 
-- 用户问「今天有什么 / 明天有什么 / 9 月 16 号有什么」：`intent=query_agenda`，`range` 选 `today` / `tomorrow` / `date`，**不要**直接拿 `events` 数组就回。响应里同时会有 `anchors`（作息锚点：早饭 / 午饭 / 晚饭 / 睡眠，标题与起止时间）+ `plan_items`（当日 daily_plan 的项）。`anchors` 与右栏时间轴用的是同一份纯函数 `plobi.agenda.planning.day_surface`，嘴和轴的钟点不会漂。
-- 终答必须把 `anchors` 里 **当天实际有**的作息念出来（午饭 / 晚饭等），没念到的就当用户没收到。`anchors` 每条 `end_at` 为空就说「没写结束」不补时长。
+- 用户问「今天有什么 / 明天有什么 / 9 月 16 号有什么」：`intent=query_agenda`，`range` 选 `today` / `tomorrow` / `date`，**不要**直接拿 `events` 数组就回。响应里的 `events` 就是那天的全部日程（计划层 10-22 已退役，没有单独的 `plan_items`）。直接照它答，别自己另取一份，嘴和右栏时间轴读的是同一份库。
 - 用户说「别中午排会 / 午饭往后挪 / 别把会排在午饭」→ 调 `plobi_checkin_respond`（已有工具）；**禁止**走 `mutate_agenda` 一条条把午饭 / 睡眠 / 让位写进 events，那是抢规划器的活。checkin 的实现归后端2，本刀只写口令。
-- `range=week` / `range=pending` 不是「一天轴」——响应里 **不**会带 `anchors` / `plan_items`，正常回 `events` / `pending` 即可。
+- `range=week` / `range=pending` 不是「一天」——正常回 `events` / `pending` 即可。
 ## 按摊判：哪些必须先问人、哪些你自己动（WP-L1-DISPATCH-FIRST，裁定 145，硬规则，不可绕过）
 
 强度是用户 10-15 拍的「**按摊判**」：**不属于你这一摊的，必须先问负责那一摊的那个 Agent**，不许自己判断「我顺手查一下更快」——今天 09:00 你说过「刚才查规划器实现那事是我自己上的——没派工」，那句就是你自己的判断的结果。

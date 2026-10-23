@@ -76,19 +76,6 @@ export interface AgentCreateRequest {
   color?: string
 }
 
-/** L1-safe plan snapshot on `plobi_secretary_ask` (no plan_items). */
-export type DailyPlanStatus = 'empty' | 'pending' | 'confirmed' | 'dismissed' | 'missing'
-
-export interface DailyPlanL1View {
-  conflict_count: number
-  empty: boolean
-  event_count: number
-  for_date: string
-  stale: boolean
-  status: DailyPlanStatus
-  summary: string
-}
-
 /** §5 GET /api/agents — one row per L2 worker. */
 export interface Agent {
   /**

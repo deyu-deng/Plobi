@@ -18,10 +18,10 @@
 3. **排完必须留一句"为什么这么排"**（裁定 145 的留痕要求）。缺这句的提案直接算不合格——
    它和"派了工要写派给谁"是同一条纪律，不是文案要求。
 
-前置（`WP-PLAN-COMPLETION-ACK` / `R-099`：`plan_items` 没有状态列 ⇒ 同一条作业连排五天）
-由产品线在落。本模块①②③④ 那几步**不写库**：它只负责把材料给出去、把边界守住、把不合格的退回去。
-裁定 163（10-16 22:5x「不要用脚本排程。让日程秘书自己排一次明天的计划。要落到真实的 entry 里面」）
-之后多了第⑤ 步 :func:`plan_and_store_day`：**过闸才写**，没过闸整笔不写——写库这件事仍然
+完成态（`WP-PLAN-COMPLETION-ACK` / `R-099`）的真源已经是 `events.completed_at`，
+计划层（`daily_plans` / `plan_items`）10-22 整层退役。本模块①②③ 那几步**不写库**：
+它只负责把材料给出去、把边界守住、把不合格的退回去。第⑤ 步
+:func:`plan_and_store_day`：**过闸才写 events**，没过闸整笔不写——写库这件事仍然
 绑在同一道 :func:`validate_proposal` 上，不是另起一台没有闸的写入器。
 """
 
@@ -86,9 +86,27 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
     # include_completed=False：人承认做完的那条**不进材料**（R-099 / Code `3f5d0208` 的读侧）。
     # 均分那段是在生成侧关掉的；换成 L1 之后，关掉的地方就是这里——否则同一条作业还会被排第二次
     # （现核铁证就是 `ddl:evt_ac46920dc0c1` 连排五天）。
-    events = store.list_events(conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
-                               include_completed=False) or []
-    yesterday = planning.l1_plan_view(_shift_day(day, -1), [], db_path=None)
+    # 秘书自己排出来的块**不进材料**：它们是排程的结果，不是素材。若不挡，
+    # 第二天晚上会把昨晚的「写作业 · X」当成一条新作业再排一遍（标题还会越套越长）。
+    events = [
+        event for event in (store.list_events(
+            conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
+            include_completed=False) or [])
+        if not store.is_planner_event(event)
+    ]
+    yesterday_day = _shift_day(day, -1)
+    yesterday_events = store.list_events(
+        conn, start_from=f"{yesterday_day}T00:00:00",
+        start_to=f"{yesterday_day}T23:59:59") or []
+    # 完成态的真源是 events.completed_at（R-099）；昨天的账只看这一格。
+    yesterday = {
+        "date": yesterday_day,
+        "events": [_event_row(event) for event in yesterday_events],
+        "completed": [
+            event.title for event in yesterday_events
+            if getattr(event, "completed_at", None)
+        ],
+    }
     # 判据「作业信源接进来」：作业**不是当天的日程**，它是"某天之前要交"。只看当天那一格，
     # 现核 2026-10-17 就是 `ddl 0 条` ⇒ L1 永远看不见有作业要写，排出来的"满"是假的满。
     todays = {str(getattr(e, "id", "")) for e in events}
@@ -97,12 +115,10 @@ def plan_materials(conn: Any, day: str) -> dict[str, Any]:
         start_to=f"{_shift_day(day, DDL_LOOKAHEAD_DAYS)}T23:59:59",
         include_completed=False) or [])
         if str(getattr(e, "kind", "")) in ("ddl", "task")
-        and str(getattr(e, "id", "")) not in todays]
+        and str(getattr(e, "id", "")) not in todays
+        and not store.is_planner_event(e)]
 
     missing: list[str] = []
-    # 完成态（R-099）落地之前，「昨天做完了哪些」这台读不出来——照实说，不拿 event 数量冒充。
-    if not _has_completion_state():
-        missing.append("昨天的完成情况（plan_items 还没有状态列，R-099 在落）")
 
     # 裁定 148 那一维「额度」：读得出的只有发数与 token，钱读不出来就照实标估（R-106②）。
     budget = quota_budget()
@@ -302,8 +318,8 @@ def plan_with_llm(
 ) -> Proposal:
     """让 L1 排一版：给材料 → 收提案 → 校边界 → 不合格带问题清单重问。
 
-    `llm_call(prompt)` 返回 dict（`items` + `reason`）或 JSON 字符串。**不写库**：
-    完成态那一半（R-099）落地之前，写库这条路归 `planning.generate_evening_plan`。
+    `llm_call(prompt)` 返回 dict（`items` + `reason`）或 JSON 字符串。**不写库**；
+    写库归 :func:`plan_and_store_day`（过同一道闸后直接写 events）。
     """
     owns_conn = conn is None
     conn = conn or store.connect(None)
@@ -484,7 +500,7 @@ def restates(row: dict[str, Any], other: dict[str, Any]) -> bool:
 def duplicate_slot_titles(rows: Sequence[dict[str, Any]]) -> list[tuple[str, str]]:
     """一面计划里所有「同时段同题」的行对——**判据就是它的数量，0 才算修好**。
 
-    行形状按 `plan_items`／提案那一族读：`title` + `start_at` + `end_at`。
+    行形状按提案那一族读：`title` + `start_at` + `end_at`。
     """
     pairs: list[tuple[str, str]] = []
     for i in range(len(rows)):
@@ -522,19 +538,6 @@ def _event_row(event: Any) -> dict[str, Any]:
     }
 
 
-def _has_completion_state() -> bool:
-    """`plan_items` 有没有状态列（R-099）。现核：没有 ⇒ 材料里照实标缺。"""
-    try:
-        conn = store.connect(None)
-    except Exception:
-        return False
-    try:
-        columns = {row[1] for row in conn.execute("pragma table_info(plan_items)")}
-    finally:
-        conn.close()
-    return bool({"status", "done", "completed_at"} & columns)
-
-
 # --------------------------------------------------------------------------- #
 # ④ 接进生成路径：项目块 / 作业块由 L1 排，代码不再均分（裁定 149）
 # --------------------------------------------------------------------------- #
@@ -565,8 +568,8 @@ def default_llm_call(route: Any = None) -> Callable[[str], Any]:
 
 
 #: 裁定 161（10-16）：**没有任何可排材料时不许打模型**——花钱问模型「今天没什么可排」既贵又
-#: 会凭空排出块来（实测那条 `status=empty` 就是这么变成 `pending` 的）。空这一格由
-#: `planning.py` 既有的 `status=empty` 分支负责对人说话（「明天没有日程，计划为空，不是没跑」）。
+#: 会凭空排出块来（实测那条空计划就是这么变成待确认的）。空这一格照实回
+#: `status=nothing_to_schedule`，由调用方对人说「明天没有任何可排材料」。
 NOTHING_TO_SCHEDULE_NOTE = "明天没有任何可排材料（课、作业、待办、项目节奏全空），没有问模型"
 
 _MATERIAL_KEYS = (
@@ -585,7 +588,7 @@ def _block_rows_from_proposal(
     sources: list[tuple[str, str]],
     scheduled: Sequence[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
-    """把提案条目收成 `plan_items` 那一格的形状（**evidence 的口径只在这一处定义**）。
+    """把提案条目收成排程块的形状（**evidence 的口径只在这一处定义**）。
 
     晚间计划口（:func:`blocks_from_l1`）与秘书嘴上那一发（:func:`plan_and_store_day`）共用这一个
     构造口：`planner` 是「谁排的」、`source` 指回材料里那一条（哪门课的哪份作业 / 哪个项目）。
@@ -612,7 +615,6 @@ def _block_rows_from_proposal(
         kind = (planning.DDL_BLOCK_EVIDENCE_KIND if source.startswith("ddl:")
                 else PROJECT_BLOCK_EVIDENCE_KIND)
         blocks.append({
-            "event_id": f"l1:block-{len(blocks) + 1}",
             "title": _title(item),
             "start_at": span[0].isoformat(),
             "end_at": span[1].isoformat(),
@@ -663,14 +665,10 @@ def blocks_from_l1(
 
 
 # --------------------------------------------------------------------------- #
-# ⑤ 秘书的嘴落库：排一次 → 过同一道闸 → 才写 daily_plans + plan_items（裁定 163）
+# ⑤ 秘书的嘴落库：排一次 → 过同一道闸 → 才写 **events**（裁定 163；10-22 计划层退役）
 # --------------------------------------------------------------------------- #
 
-#: 这份计划是**秘书自己排的**，不是晚间脚本排的。`daily_plans.evidence.kind` 上那一句署名；
-#: 治理线读的还是 `block_count` / `ddl_block_count` 那两位，没有另立口径。
-MOUTH_PLAN_EVIDENCE_KIND = "agent_planned_day"
-#: `daily_plans.evidence.source` 上「谁排的」那一格（条目级的 `planner` / `source` 见
-#: :func:`_block_rows_from_proposal`，两位口径与 `blocks_from_l1` 完全一致）。
+#: 条目级 evidence 上「谁排的」那一格（与 :func:`_block_rows_from_proposal` 一致）。
 MOUTH_PLANNER = "l1"
 MOUTH_PLAN_SOURCE = "l1:secretary_mouth"
 
@@ -679,35 +677,14 @@ def _refusal(reason: str, violations: Sequence[str] = (), **extra: Any) -> dict[
     """一句人话 + `written=0`。
 
     返回形状与 :func:`plobi.agenda.plan_edits.move_plan_item` 的失败分支**同族**（R-105）：
-    `{ok: False, reason, violations}`。撤销与重试不在这里造第二套——重试就是再叫一次
-    :func:`plan_and_store_day`（`upsert_daily_plan` 按 `for_date` 覆盖同一行），
+    `{ok: False, reason, violations}`。重试就是再叫一次 :func:`plan_and_store_day`
+    （:func:`plobi.agenda.store.upsert_planner_events` 按（日, kind, 标题）覆盖同一行），
     撤销就是走既有的 `move_block` / 确认流，这里只保证**没过闸时一个字节都不写**。
     """
     payload: dict[str, Any] = {"ok": False, "reason": reason, "written": 0,
                                "violations": list(violations)}
     payload.update(extra)
     return payload
-
-
-def _event_item_row(event: Any, overlaps: dict[str, list[str]]) -> dict[str, Any]:
-    """当天真事件那一行（与 `planning.generate_evening_plan` 的 event 桶同一形状）。
-
-    `evidence` 里原样带上事件自己的证据（`uid` / `course` / `msg_id`…），这样这一行随时能
-    指回它是哪条日程——嘴排的那几个块靠 :func:`_match_source` 挂到这些名字上。
-    """
-    evidence: dict[str, Any] = {"kind": "event", "event_id": event.id}
-    if isinstance(event.evidence, dict):
-        evidence.update({key: value for key, value in event.evidence.items()
-                         if value is not None})
-    return {
-        "event_id": event.id,
-        "title": event.title,
-        "start_at": str(event.start_at),
-        "end_at": str(event.end_at) if event.end_at else None,
-        "kind": str(event.kind),
-        "conflict_with": list(overlaps.get(str(event.id), [])),
-        "evidence": evidence,
-    }
 
 
 def _mouth_summary(
@@ -739,16 +716,15 @@ def plan_and_store_day(
     要落到真实的 entry 里面。」所以这条路的四步是写死的顺序：
 
     1. **材料**：:func:`plan_materials` 那五样真材料（一课都不许多报）。没材料就**连模型都不打**
-       （裁定 161），人也确认过（`status=confirmed`）的那天直接不重排——要改一块走 `move_block`。
+       （裁定 161）。
     2. **提案**：默认走 :func:`plan_with_llm`（同一发模型、同一条退回重排回路）；
        `proposal_fn(conn, day) -> (items, reason)` 是**测试的注入点**，给假提案用——
        生产不传，测试绝不用真模型。
     3. **闸**：装配出来的块再过一次 `validate_proposal`（双订 / 复述 / 避开时段 / 通勤空档），
        **不过就整笔不写**，返回点名拒绝 + 一句人话。绝不降级回均分（裁定 149／161③）。
-    4. **写**：`daily_plans`（按 `for_date` 覆盖）+ `plan_items`（当天真事件 + 秘书排的块），
+    4. **写**：排出来的块**直接落成 events**（用户 10-22「计划整层退役，夜间直接写 events」），
        每块 `evidence` 带 `planner`（谁排的）与 `source`（指回材料哪一条）。
-
-    这条路**不叫** `planning.generate_evening_plan`、也不碰 `scripts/`——脚本排程整条已退役（裁定 163）。
+       不再写 `daily_plans` / `plan_items`。
     """
     owns_conn = conn is None
     conn = conn or store.connect(None)
@@ -758,15 +734,6 @@ def plan_and_store_day(
         if nothing_to_schedule(materials):
             return _refusal(NOTHING_TO_SCHEDULE_NOTE, for_date=day,
                             status="nothing_to_schedule", written=0)
-
-        # 人确认过的那天不归嘴管（与 `generate_evening_plan` 同一口径）。放在**打模型之前**：
-        # 已经有人签过字的一天，连问模型那一发都不该花。
-        existing = store.get_daily_plan(conn, day)
-        if existing is not None and existing.status == "confirmed":
-            return _refusal(
-                f"{day} 那份计划你已经确认过（确认{existing.confirm_seq}），我不重排。"
-                "要改哪一块请在对话里点名（走 move_block）。",
-                for_date=day, status="confirmed_plan", plan_id=existing.id)
 
         # ② 出提案（测试注入假提案；生产只走 L1 那一发）
         if proposal_fn is not None:
@@ -812,69 +779,42 @@ def plan_and_store_day(
                 f"{day} 那份计划一个字没写，也不换回均分（裁定 149／161③）。",
                 problems, for_date=day, status="rejected")
 
-        # ④ 写：daily_plans 表头 + 当天整面 plan_items
-        events = list(store.list_events(
-            conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
-            include_completed=False) or [])
-        overlaps, conflict_rows = planning.compute_event_overlaps(events)
-        conflict_count = len(conflict_rows)
-        rows: list[dict[str, Any]] = [_event_item_row(event, overlaps) for event in events]
-        rows += [dict(block) for block in blocks]
-        rows.sort(key=lambda row: str(row["start_at"]))
-        for index, row in enumerate(rows):
-            row["sort_order"] = index
-
-        ddl_count = sum(
-            1 for block in blocks
-            if (block.get("evidence") or {}).get("kind") == planning.DDL_BLOCK_EVIDENCE_KIND
-        )
-        summary = _mouth_summary(day, len(events), conflict_count, blocks, reason)
-        # 写之前先把这一批行验一遍：表头与条目是**两笔**写，中间挂掉就会留下「表头是新的、
-        # 条目被清空」的半份计划——那正是「落到真实 entry」的反面，比不写更难看。
-        broken = [
-            row for row in rows
-            if not str(row.get("title") or "").strip()
-            or not str(row.get("event_id") or "").strip()
-            or not str(row.get("start_at") or "").strip()
-            or not (row.get("evidence") or {})
-        ]
-        if broken:
-            return _refusal(
-                f"装配出来的计划有 {len(broken)} 行缺标题／缺指回的那一条／缺开始时间，"
-                f"整批不写。{day} 那份计划一个字没写。",
-                for_date=day, status="malformed_rows")
-        plan = store.upsert_daily_plan(
+        # ④ 写：排出来的块直接落成 events（计划层已整层退役，不再写 daily_plans/plan_items）
+        written = store.upsert_planner_events(
             conn,
-            for_date=day,
-            status="pending",
-            summary=summary,
-            conflict_count=conflict_count,
-            event_count=len(events),
-            confirm_seq=store.next_confirm_seq(conn),
-            confirm_seq_at=store.now_iso(),
-            evidence={
-                "kind": MOUTH_PLAN_EVIDENCE_KIND,
-                "planner": MOUTH_PLANNER,
-                "source": MOUTH_PLAN_SOURCE,
-                "planner_note": reason,
-                "block_count": len(blocks),
-                # 治理线读的就是这两位（作业块数与项目块数），分开记，别让人再从中文里解析一遍。
-                "ddl_block_count": ddl_count,
-                "project_block_count": len(blocks) - ddl_count,
-            },
+            day,
+            blocks,
+            planner=MOUTH_PLANNER,
+            reason=reason,
+            written_by=MOUTH_PLAN_SOURCE,
         )
-        written = store.replace_plan_items(conn, plan.id, rows)
+        events = store.list_events(
+            conn, start_from=f"{day}T00:00:00", start_to=f"{day}T23:59:59",
+            include_completed=False) or []
+        _, conflict_rows = planning.compute_event_overlaps(events)
+        event_count = sum(1 for event in events if not store.is_planner_event(event))
+        summary = _mouth_summary(day, event_count, len(conflict_rows), blocks, reason)
         return {
             "ok": True,
-            "status": plan.status,
+            "status": "planned",
             "for_date": day,
-            "plan_id": plan.id,
             "summary": summary,
             "reason": reason,
             "block_count": len(blocks),
-            "item_count": len(written),
-            "conflict_count": conflict_count,
             "written": len(written),
+            "event_ids": [event.id for event in written],
+            "events": [
+                {
+                    "id": event.id,
+                    "title": event.title,
+                    "start_at": event.start_at,
+                    "end_at": event.end_at,
+                    "kind": event.kind,
+                    "source": event.source,
+                }
+                for event in written
+            ],
+            "conflict_count": len(conflict_rows),
             "blocks": [dict(block["evidence"]) for block in blocks],
         }
     finally:

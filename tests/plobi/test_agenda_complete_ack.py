@@ -86,12 +86,3 @@ def test_completed_row_is_still_readable_and_an_unknown_id_is_not_invented(clien
 
     missing = client.post("/api/agenda/evt_nope/complete")
     assert missing.status_code == 404, "id 不存在不许静默成功"
-
-    # 界面上那颗勾要打在事件上，所以计划那一行必须把 `event_id` 带出去（判据③的前置）。
-    # 直接钉序列化函数：走 `/day` 会撞上"路由开的是默认家目录那份库"那个既有洞，不拿来当断言。
-    from plobi.agenda.planning import _plan_item_dict
-    from plobi.agenda.store import PlanItem
-
-    row = _plan_item_dict(PlanItem(id="pi_1", plan_id="dp_1", event_id=event_id,
-                                   title="期中考", start_at="2026-08-25T14:00:00"))
-    assert row["event_id"] == event_id, "计划行不带 event_id ⇒ 界面无处承认完成，只能再排一遍"

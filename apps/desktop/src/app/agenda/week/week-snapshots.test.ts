@@ -29,7 +29,6 @@ function day(overrides: Partial<AgendaDay> = {}): AgendaDay {
   return {
     date: '2026-10-10',
     events: [],
-    plan_items: [],
     ...overrides
   }
 }

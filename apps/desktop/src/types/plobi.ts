@@ -654,17 +654,6 @@ export interface AgendaEventPatch {
   title?: string
 }
 
-/** A plan item shown on the day axis alongside events. */
-export interface AgendaPlanItem {
-  end_at: null | string
-  id: string
-  notes?: null | string
-  /** `event` / `plan` — always present in API output. */
-  lane: 'event' | 'plan'
-  start_at: string
-  title: string
-}
-
 /** Wire shape for `GET /api/agenda/day?date=YYYY-MM-DD`. */
 export interface AgendaDay {
   /**
@@ -684,9 +673,6 @@ export interface AgendaDay {
   conflicts?: AgendaConflict[]
   date: string
   events: AgendaEvent[]
-  plan_items: AgendaPlanItem[]
-  /** `pending` / `approved` / … — the daily plan's status, null when no plan exists. */
-  plan_status?: null | string
 }
 
 /**

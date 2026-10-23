@@ -13,9 +13,9 @@ export interface TimelineAvoidBand {
  * returns, and the vitest suite pins the arithmetic (hour span, block height,
  * open-ended events, side-by-side columns) without mounting anything.
  *
- * Two block lanes share the same axis:
- *   - `event` — the real agenda rows (the user's meetings / events);
- *   - `plan` — planned project work, drawn as a background band.
+ * One block lane: the real agenda rows (the user's meetings / events). The
+ * old planned-work lane retired with the plan layer (10-22) — the nightly
+ * planner writes events, so there is nothing separate left to paint.
  *
  * Rules that come straight from the rulings:
  * - The axis is the **whole local day**: 00:00 → 24:00, every hour ticked. An
@@ -25,8 +25,8 @@ export interface TimelineAvoidBand {
  *   readability floor (用户 2026-10-21). A missing `end_at` is NOT stretched
  *   into a fake hour: it is a **deadline**, laid out as a zero-height row at its
  *   instant and flagged `openEnded` so the UI draws one line across the day.
- * - Side-by-side overlaps (裁定 31.1 / 36.2): all lanes share one grid, so
- *   blocks that collide in time — even across lanes — split into columns and
+ * - Side-by-side overlaps (裁定 31.1 / 36.2): one grid, so
+ *   blocks that collide in time split into columns and
  *   each takes `1 / columnCount` of the axis width, where columnCount is the
  *   widest column of that block's own overlap cluster. Only the blocks whose
  *   intervals actually intersect are flagged `overlaps`. Deadline rows do
@@ -35,7 +35,7 @@ export interface TimelineAvoidBand {
  *   MUST apply it, otherwise every block stacks at the top (裁定 32.1).
  */
 
-import type { AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaAvoidWindow, AgendaEvent } from '@/types/plobi'
 
 /** The axis always starts at local midnight. */
 export const TIMELINE_START_HOUR = 0
@@ -48,8 +48,6 @@ export const HOUR_HEIGHT = 44
 export const LABEL_GUTTER_FRACTION = 0.18
 /** Outer axis padding (px) so the leftmost column has breathing room. */
 export const LANE_INSET_PX = 6
-
-export type TimelineLane = 'event' | 'plan'
 
 export function dayKeyOf(iso: string): string {
   return (iso ?? '').slice(0, 10)
@@ -81,20 +79,18 @@ export interface TimelineBlock {
   endClock: null | string
   /** Horizontal fraction (0–1) of the axis this block occupies. */
   widthFraction: number
-  /** Block kind on the axis. */
-  lane: TimelineLane
   /** True when this block shares its column slice with another at the same time. */
   overlaps: boolean
   /** `end_at` is missing (never guessed) — a deadline: height 0, no overlap
    *  test, and the UI draws it as one line across the day with the title on it. */
   openEnded: boolean
-  /** The source row: an agenda event or a plan item. */
-  source: AgendaEvent | AgendaPlanItem
+  /** The source row: an agenda event. */
+  source: AgendaEvent
   /** Stable id from `source.id` when present. */
   id: null | string
   /** Title text to render in the block. */
   title: string
-  /** `status` only present when `source` is an AgendaEvent. */
+  /** Agenda event status. */
   status: AgendaEvent['status'] | null
   /** Optional location text — pulled from `AgendaEvent.location` (manual) or
    *  `evidence.location` (extracted) — never both, the renderer picks. */
@@ -126,7 +122,7 @@ export interface TimelineDay {
 
 /**
  * A minimum day axis: the default 00:00–24:00 ticks and a flat height. Used when
- * today carries no events, plans, or avoid windows — the rail still paints an
+ * today carries no events or avoid windows — the rail still paints an
  * empty "today" axis (裁定 37.2 / 39), so the user can see the now line and the
  * day's structure.
  */
@@ -197,15 +193,13 @@ interface OverlapCandidate {
 /**
  * Lay out one day. Returns null when nothing paints on `dayKey`.
  *
- * Both lanes are laid out on ONE grid (裁定 36.2, "苹果那种"): a block that
- * collides with any other block — whatever its lane — moves to its own column.
- * Blocks that collide with nothing stay full width. The lane still decides the
- * skin (`data-lane` + the stroke classes), not the column band.
+ * All blocks are laid out on ONE grid (裁定 36.2, "苹果那种"): a block that
+ * collides with any other block moves to its own column. Blocks that collide
+ * with nothing stay full width.
  */
 export function layoutDay(
   events: AgendaEvent[],
   dayKey: string,
-  plans: AgendaPlanItem[] = [],
   avoidWindows: AgendaAvoidWindow[] = []
 ): TimelineDay | null {
   const eventRows = events
@@ -213,12 +207,7 @@ export function layoutDay(
     .slice()
     .sort((left, right) => minutesOf(left.start_at) - minutesOf(right.start_at))
 
-  const planRows = plans
-    .filter(row => dayKeyOf(row.start_at) === dayKey)
-    .slice()
-    .sort((left, right) => minutesOf(left.start_at) - minutesOf(right.start_at))
-
-  if (eventRows.length === 0 && planRows.length === 0 && avoidWindows.length === 0) {
+  if (eventRows.length === 0 && avoidWindows.length === 0) {
     return null
   }
 
@@ -242,7 +231,6 @@ export function layoutDay(
         endClock: event.end_at ? clockOf(event.end_at) : null,
         heightPx: 0,
         id: event.id,
-        lane: 'event' as TimelineLane,
         location: event.location?.trim() || event.evidence?.location?.trim() || null,
         openEnded: endMinutes === null,
         overlaps: false,
@@ -258,36 +246,10 @@ export function layoutDay(
     }
   })
 
-  const planCandidates: OverlapCandidate[] = planRows.map(plan => {
-    const startMinutes = minutesOf(plan.start_at)
-    const endMinutes = plan.end_at ? minutesOf(plan.end_at) : null
-
-    return {
-      block: {
-        column: 0,
-        endClock: plan.end_at ? clockOf(plan.end_at) : null,
-        heightPx: 0,
-        id: plan.id,
-        lane: 'plan' as TimelineLane,
-        location: null,
-        openEnded: endMinutes === null,
-        overlaps: false,
-        source: plan,
-        startMinutes,
-        status: null,
-        title: plan.title,
-        topPx: Math.round(pxOf(startMinutes, spanStartMinutes)),
-        widthFraction: 0
-      },
-      endMinutes: effectiveEnd(startMinutes, endMinutes, spanEndMinutes),
-      startMinutes
-    }
-  })
-
-  // ONE grid for both lanes (裁定 36.2): a lecture and a planned block that
-  // intersect get different columns instead of stacking as two translucent
-  // layers. Blocks that collide with nothing keep the full width.
-  const grid = [...eventCandidates, ...planCandidates].sort(
+  // ONE grid (裁定 36.2): blocks that intersect get different columns instead
+  // of stacking as two translucent layers. Blocks that collide with nothing
+  // keep the full width.
+  const grid = [...eventCandidates].sort(
     (left, right) => left.startMinutes - right.startMinutes
   )
 
@@ -324,13 +286,7 @@ export function layoutDay(
   const result: TimelineDay = {
     avoidBands,
     axisContentFraction: 1 - LABEL_GUTTER_FRACTION,
-    // Lane order (events → plans) is presentation-only: the renderer's
-    // z-index decides layering, and it keeps block test ids stable across the
-    // one-grid merge.
-    blocks: [
-      ...eventCandidates.map(candidate => candidate.block),
-      ...planCandidates.map(candidate => candidate.block)
-    ],
+    blocks: eventCandidates.map(candidate => candidate.block),
     hours,
     key: dayKey,
     spanEndMinutes,

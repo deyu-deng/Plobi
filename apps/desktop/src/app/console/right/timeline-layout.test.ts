@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AgendaEvent, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaEvent } from '@/types/plobi'
 
 import {
   dayKeysOf,
@@ -27,10 +27,6 @@ function event(id: string, startAt: string, endAt: null | string = null, status:
     title: `event-${id}`,
     updated_at: now
   }
-}
-
-function plan(id: string, title: string, startAt: string, endAt: string): AgendaPlanItem {
-  return { end_at: endAt, id, lane: 'plan', start_at: startAt, title }
 }
 
 describe('layoutDay', () => {
@@ -90,7 +86,7 @@ describe('layoutDay', () => {
       DAY
     )
 
-    const blocks = (day?.blocks ?? []).filter(block => block.lane === 'event')
+    const blocks = (day?.blocks ?? [])
     expect(blocks.map(block => block.id)).toEqual(['early', 'clash', 'late'])
     expect(blocks.map(block => block.column)).toEqual([0, 1, 0])
   })
@@ -110,7 +106,7 @@ describe('layoutDay', () => {
       DAY
     )
 
-    const blocks = (day?.blocks ?? []).filter(block => block.lane === 'event')
+    const blocks = (day?.blocks ?? [])
     const sorted = blocks.slice().sort((a, b) => a.startMinutes - b.startMinutes)
 
     expect(sorted.map(block => block.id)).toEqual(['left', 'right'])
@@ -126,7 +122,7 @@ describe('layoutDay', () => {
       DAY
     )
 
-    const blocks = (day?.blocks ?? []).filter(block => block.lane === 'event')
+    const blocks = (day?.blocks ?? [])
     const pinned = blocks.find(block => block.id === 'pinned')
     const meeting = blocks.find(block => block.id === 'meeting')
 
@@ -137,94 +133,17 @@ describe('layoutDay', () => {
     expect(meeting?.widthFraction).toBe(1)
   })
 
-  it('lays every lane out on ONE grid: a colliding class and plan split columns (裁定 36.2)', () => {
-    const day = layoutDay(
-      [event('lecture', `${DAY}T08:00:00`, `${DAY}T09:35:00`)],
-      DAY,
-      [plan('breakfast', '早餐', `${DAY}T07:40:00`, `${DAY}T08:20:00`)]
-    )
-
-    const blocks = day?.blocks ?? []
-    const lecture = blocks.find(block => block.lane === 'event' && block.id === 'lecture')
-    const breakfast = blocks.find(block => block.lane === 'plan')
-
-    // Breakfast starts first, so it owns column 0; the lecture moves beside it.
-    expect(breakfast?.column).toBe(0)
-    expect(lecture?.column).toBe(1)
-    expect(lecture?.widthFraction).toBeCloseTo(0.5)
-    expect(breakfast?.widthFraction).toBeCloseTo(0.5)
-    expect(lecture?.overlaps).toBe(true)
-    expect(breakfast?.overlaps).toBe(true)
-  })
-
-  it('keeps every lane that collides with nothing at full width', () => {
-    const day = layoutDay(
-      [event('lecture', `${DAY}T09:00:00`, `${DAY}T11:00:00`)],
-      DAY,
-      [plan('p1', '写文档', `${DAY}T16:00:00`, `${DAY}T18:00:00`)]
-    )
-
-    const blocks = day?.blocks ?? []
-    const lecture = blocks.find(block => block.lane === 'event' && block.id === 'lecture')
-    const planBlock = blocks.find(block => block.lane === 'plan')
-
-    expect(lecture?.lane).toBe('event')
-    expect(planBlock?.title).toBe('写文档')
-    // Two separate clusters → two column-0 blocks at full width.
-    expect([lecture, planBlock].map(block => block?.column)).toEqual([0, 0])
-    expect([lecture, planBlock].map(block => block?.widthFraction)).toEqual([1, 1])
-    expect(blocks.every(block => block.overlaps === false)).toBe(true)
-  })
-
-  it('keeps non-overlapping plans in one full-width column (裁定 32.1)', () => {
-    const day = layoutDay([], DAY, [
-      plan('lunch', '午饭', `${DAY}T12:00:00`, `${DAY}T13:00:00`),
-      plan('dinner', '晚饭', `${DAY}T18:00:00`, `${DAY}T19:00:00`)
-    ])
-
-    const plans = (day?.blocks ?? []).filter(block => block.lane === 'plan')
-
-    expect(plans.map(block => block.title)).toEqual(['午饭', '晚饭'])
-    // One column, full width — not two 50% slivers stacked at the axis top.
-    expect(plans.every(block => block.column === 0)).toBe(true)
-    expect(plans.every(block => block.widthFraction === 1)).toBe(true)
-    expect(plans.every(block => block.overlaps === false)).toBe(true)
-  })
-
-  it('splits only the plans that really collide', () => {
-    const day = layoutDay([], DAY, [
-      plan('lunch', '午饭', `${DAY}T12:00:00`, `${DAY}T13:00:00`),
-      plan('pills', '吃药', `${DAY}T12:30:00`, `${DAY}T13:30:00`),
-      plan('dinner', '晚饭', `${DAY}T18:00:00`, `${DAY}T19:00:00`)
-    ])
-
-    const plans = (day?.blocks ?? []).filter(block => block.lane === 'plan')
-    const lunch = plans.find(block => block.title === '午饭')
-    const pills = plans.find(block => block.title === '吃药')
-    const dinner = plans.find(block => block.title === '晚饭')
-
-    expect(lunch?.column).toBe(0)
-    expect(pills?.column).toBe(1)
-    expect(dinner?.column).toBe(0)
-    expect(lunch?.overlaps).toBe(true)
-    expect(pills?.overlaps).toBe(true)
-    expect(dinner?.overlaps).toBe(false)
-    // The clash pair splits; the unrelated dinner keeps the whole width
-    // (per-cluster counts, 裁定 36.2).
-    expect(lunch?.widthFraction).toBeCloseTo(0.5)
-    expect(pills?.widthFraction).toBeCloseTo(0.5)
-    expect(dinner?.widthFraction).toBe(1)
-  })
-
   it('draws a cross-midnight row down to the axis bottom and puts a late event beside it', () => {
     const day = layoutDay(
-      [event('call', `${DAY}T23:00:00`, `${DAY}T23:45:00`)],
-      DAY,
-      [plan('sleep', '睡眠', `${DAY}T22:00:00`, `${DAY}T07:00:00`)]
+      [
+        event('sleep', `${DAY}T22:00:00`, `${DAY}T07:00:00`),
+        event('call', `${DAY}T23:00:00`, `${DAY}T23:45:00`)
+      ],
+      DAY
     )
 
     const blocks = day?.blocks ?? []
-    const sleep = blocks.find(block => block.lane === 'plan')
+    const sleep = blocks.find(block => block.id === 'sleep')
     const call = blocks.find(block => block.id === 'call')
 
     expect(sleep?.heightPx).toBe(2 * HOUR_HEIGHT)
@@ -243,7 +162,7 @@ describe('layoutDay', () => {
       DAY
     )
 
-    const blocks = (day?.blocks ?? []).filter(block => block.lane === 'event')
+    const blocks = (day?.blocks ?? [])
     const flagged = blocks.filter(block => block.overlaps).map(block => block.id)
 
     // The 09:00 lecture shares no minute with the 14:00/15:00 clash.
@@ -263,8 +182,8 @@ describe('layoutDay', () => {
   })
 
   it('draws a cross-midnight row down to the axis bottom instead of going negative', () => {
-    const day = layoutDay([], DAY, [plan('sleep', '睡眠', `${DAY}T22:00:00`, `${DAY}T07:00:00`)])
-    const block = (day?.blocks ?? []).find(row => row.lane === 'plan')
+    const day = layoutDay([event('sleep', `${DAY}T22:00:00`, `${DAY}T07:00:00`)], DAY)
+    const block = (day?.blocks ?? [])[0]
 
     expect(block?.topPx).toBe(22 * HOUR_HEIGHT)
     // 22:00 → 轴尾（24:00）= 两小时；负的算法早被夹掉了，这里也没有最小高度可撑。
@@ -293,7 +212,6 @@ describe('avoid_windows (裁定 39 / WP-AXIS-TODAY)', () => {
     const day = layoutDay(
       [],
       DAY,
-      [],
       [{ end_at: `${DAY}T13:00:00`, start_at: `${DAY}T12:00:00` }]
     )
 
@@ -305,11 +223,11 @@ describe('avoid_windows (裁定 39 / WP-AXIS-TODAY)', () => {
   })
 
   it('returns null for a day with only no rows and no avoid windows', () => {
-    expect(layoutDay([], DAY, [], [])).toBeNull()
+    expect(layoutDay([], DAY, [])).toBeNull()
   })
 
   it('keeps an empty avoid list a no-op', () => {
-    const day = layoutDay([event('lecture', `${DAY}T09:00:00`, `${DAY}T11:00:00`)], DAY, [], [])
+    const day = layoutDay([event('lecture', `${DAY}T09:00:00`, `${DAY}T11:00:00`)], DAY)
     expect(day?.avoidBands).toEqual([])
   })
 })

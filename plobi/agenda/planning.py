@@ -1,35 +1,25 @@
-"""Nightly next-day planner: read events, mark overlaps, write an evidenced plan.
+"""Agenda read helpers: overlaps, avoid windows, and the day surface.
 
-Zero LLM. No commute/homework invention. Every ``plan_items`` row must carry
-evidence (store refuses empty). Empty windows write an honest empty plan.
-Confirmed plans are not overwritten. See Docs/DESIGN-M2-PLANNING.md §1–2.
+计划层已于 10-22 整层退役（用户拍板）：夜间排程直接写 ``events``。这个模块现在
+只剩白天看板要用的读侧计算，不再生成或读 ``daily_plans`` / ``plan_items``。
 """
 
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Any, Callable, Iterable, Optional
+from datetime import datetime, timedelta
+from typing import Any, Iterable, Optional
 
 from . import store
-from .store import AgendaValidationError, DailyPlan, Event, PlanItem
-
-EMPTY_PLAN_SUMMARY = "明天没有日程。今夜计划为空，不是没跑。"
-EMPTY_PLAN_PUSH = "明天没有日程，计划为空"
-_MESSAGE_EVIDENCE_KEYS = ("msg_id", "talker", "sent_at", "snippet")
+from .store import Event
 
 # C5 project pace blocks: deterministic rules only, zero LLM.
 PROJECT_BLOCK_EVIDENCE_KIND = "project_block"
 # 无主 DDL（没挂上任何 pace 项目的截止事件）自己拿一块——用户那句
 # 「未提交作业要排进写作业时间」要的就是这块。它不扩 events 词表（kind 仍是 task），
-# 只在 plan_items.evidence.kind 上标出来，与 project_block 同一手法。
+# 只在 evidence.kind 上标出来，与 project_block 同一手法。
 DDL_BLOCK_EVIDENCE_KIND = "ddl_block"
-MAX_BLOCK_MINUTES = 120  # 每块 ≤2h
-MIN_BLOCK_MINUTES = 30  # 不足 30 分钟的零头空窗不排（无意义碎片）
 DDL_LOOKAHEAD_DAYS = 14  # DDL 临近优先的排序窗口
-# 裁定 121 一（用户 10-11 拍）：作业块**当日时长合计**上限，单位分钟。用户给的数，不是我编的。
-DDL_DAILY_BUDGET_MINUTES = 240
 
 
 def _as_dt(value: Any) -> datetime:
@@ -62,45 +52,6 @@ def intervals_overlap(a_start: Any, a_end: Any, b_start: Any, b_end: Any) -> boo
     if b_e is None:
         return a_s <= b_s < a_e
     return a_s < b_e and b_s < a_e
-
-
-def _as_for_date(value: Any) -> str:
-    if value is None:
-        return (datetime.now().date() + timedelta(days=1)).isoformat()
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    day = str(value).strip()
-    if not day:
-        raise AgendaValidationError("for_date is required")
-    return day[:10]
-
-
-def _day_window(day: str) -> tuple[datetime, datetime]:
-    parsed = date.fromisoformat(day)
-    start = datetime.combine(parsed, datetime.min.time())
-    end = datetime.combine(parsed, datetime.max.time()).replace(microsecond=0)
-    return start, end
-
-
-def _item_evidence(event: Event) -> dict:
-    payload: dict[str, Any] = {"kind": "event", "event_id": event.id}
-    extra = event.evidence if isinstance(event.evidence, dict) else {}
-    for key in _MESSAGE_EVIDENCE_KEYS:
-        if extra.get(key) is not None:
-            payload[key] = extra[key]
-    return payload
-
-
-def _conflict_map(events: list[Event]) -> dict[str, list[str]]:
-    mapping: dict[str, list[str]] = {event.id: [] for event in events}
-    for index, left in enumerate(events):
-        for right in events[index + 1 :]:
-            if intervals_overlap(left.start_at, left.end_at, right.start_at, right.end_at):
-                mapping[left.id].append(right.id)
-                mapping[right.id].append(left.id)
-    return mapping
 
 
 # --- project pace blocks (C5) --------------------------------------------------
@@ -296,295 +247,7 @@ def _next_ddl(conn: Any, entry_name: str, window_from: datetime,
     return min(moments) if moments else None
 
 
-NO_PLANNER_NOTE = (
-    "（没有排程入口：这一版一个项目块/作业块都没排，面上那些就是当天已有的日程与作息。"
-    "不是排满了，也不是排砸了——要让 L1 排，就得把 planner 接上。）"
-)
-
-
-def _l1_blocks(
-    conn: Any,
-    day: str,
-    events: list[Event],
-    window_from: datetime,
-    window_to: datetime,
-    *,
-    planner: Optional[Callable[[Any, str], tuple[list[dict], str]]] = None,
-) -> tuple[list[dict], list, list, str]:
-    """项目块 / 作业块交给 L1（裁定 149）。返回 ``(blocks, unscheduled, deferred, note)``。
-
-    `planner(conn, day) -> (blocks, note)` 是**显式**注入点：生产由秘书那一发
-    :func:`plobi.agenda.llm_planning.blocks_from_l1`（材料口 + 提示 + 边界校验 + 退回重排）；
-    不传就是没排，**绝不默认去打一发模型**（9d7e4e58 那颗雷：默认回退到真外部调用，
-    一跑就花钱、同一条测试还跟着路由通不通漂）。测试要块就自己给一个假的。
-
-    **这里没有第二条路**：那套把剩余空窗按日预算分给每个项目 / 每条作业的均分分配函数，
-    连同它只服务自己的私有 helper 与"没人接线时兜一版均分"那条兜底，已随裁定 149／163③
-    整体删除。为什么不留兜底：静默换回一版"看起来排满了"的均分，就是把「没法执行」修成
-    「更难看的没法执行」，而用户明说过「一定要 LLM 参与。不要代码自动生成」「不要用脚本排程」。
-    排不出来 ⇒ 一个块不写，并在面上照实说没排（见 :data:`NO_PLANNER_NOTE`）。
-
-    第 2、3 位（``unscheduled`` / ``deferred``）**恒为空**：那是均分自己算出来的"欠了几小时 /
-    排不下的作业"，换成 L1 之后只有 planner 本人知道自己放弃了什么，而它的返回形状就是
-    ``(blocks, note)`` 两位（与 :func:`plobi.agenda.llm_planning.blocks_from_l1` 一致）。
-    留这两位是为了 ``_plan_summary`` 那两句不必改口径；不许拿它们造第二套分配数学。
-    """
-    if planner is None:
-        # 没接线就照实没排。这一格会拼进 daily_plans.summary，面上看得见"这不是 L1 排的"。
-        return [], [], [], NO_PLANNER_NOTE
-    try:
-        blocks, note = planner(conn, day)
-    except Exception as exc:  # 通道炸了也不写假块
-        return [], [], [], f"L1 那一轮没排成（{type(exc).__name__}: {str(exc)[:120]}），今天没有项目块"
-    return list(blocks), [], [], note
-
-
-def _pending_summary(event_count: int, conflict_count: int) -> str:
-    if conflict_count:
-        return f"明天有{event_count}项日程，其中{conflict_count}处时间重叠。"
-    return f"明天有{event_count}项日程，时间无重叠。"
-
-
-def _plan_summary(
-    event_count: int,
-    pair_count: int,
-    blocks: Optional[list[dict]] = None,
-    unscheduled: Optional[list[dict]] = None,
-    deferred_ddl: Optional[list[dict]] = None,
-) -> str:
-    """One paragraph for L1 / DingTalk (L1 cost discipline unchanged)."""
-    blocks = blocks or []
-    unscheduled = unscheduled or []
-    deferred_ddl = deferred_ddl or []
-    # 是"到上限了"还是"没空窗了"：前者是政策，后者是当天太满，两句话不一样。
-    ddl_minutes_used = sum(
-        (
-            datetime.fromisoformat(item["end_at"]) - datetime.fromisoformat(item["start_at"])
-        ).total_seconds()
-        / 60.0
-        for item in blocks
-        if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
-    )
-    ddl_cap_hit = deferred_ddl and ddl_minutes_used >= DDL_DAILY_BUDGET_MINUTES - MIN_BLOCK_MINUTES
-    # 两句要各说各的数：把作业块报成"项目推进块"是谎，反过来也一样。
-    project_block_count = sum(
-        1 for item in blocks if (item.get("evidence") or {}).get("kind") == PROJECT_BLOCK_EVIDENCE_KIND
-    )
-    ddl_block_count = sum(
-        1 for item in blocks if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
-    )
-    block_phrase = "、".join(
-        part
-        for part in (
-            f"{project_block_count}项项目推进块" if project_block_count else "",
-            f"{ddl_block_count}项作业块" if ddl_block_count else "",
-        )
-        if part
-    )
-    if not event_count:
-        text = f"明天没有日程，排了{block_phrase}。" if block_phrase else EMPTY_PLAN_SUMMARY
-    else:
-        text = _pending_summary(event_count, pair_count)
-        if block_phrase:
-            text += f"另排{block_phrase}。"
-    if deferred_ddl:
-        # 排不下的要说出来并给原因，不许悄悄少排——「上限 4 小时」这条判据就靠这句可见。
-        capped = ddl_cap_hit
-        text += (
-            f"另有{len(deferred_ddl)}条作业今天没排上"
-            + ("（已到当日 4 小时作业上限）" if capped else "（没有装得下的空窗了）")
-            + "。"
-        )
-    if unscheduled:
-        misses = "；".join(
-            f"{entry['project']}（缺{entry['missing_hours']:g}小时）"
-            for entry in unscheduled
-        )
-        text += f"未能安排：{misses}。"
-    return text
-
-
-def format_evening_plan_text(plan: DailyPlan, *, summary: Optional[str] = None) -> str:
-    """DingTalk body. Empty plans always include ``EMPTY_PLAN_PUSH``."""
-    text = plan.summary if summary is None else summary
-    lines = [f"[Plobi] 明日计划 {plan.for_date}", text]
-    if plan.status == "empty" and EMPTY_PLAN_PUSH not in text:
-        lines.append(EMPTY_PLAN_PUSH)
-    elif plan.status == "pending" and plan.confirm_seq is not None:
-        lines.append(f"回复：确认{plan.confirm_seq} / 忽略{plan.confirm_seq}")
-    return "\n".join(lines)
-
-
-def generate_evening_plan(
-    for_date: Any = None,
-    *,
-    db_path: Path | str | None = None,
-    planner: Optional[Callable[[Any, str], tuple[list[dict], str]]] = None,
-) -> DailyPlan:
-    """Snapshot tomorrow (or ``for_date``) from events.
-
-    Event items first, then the L1-authored blocks. ``event_count == 0`` with
-    no blocks → ``status=empty``. A ``confirmed`` row is returned unchanged.
-    """
-    day = _as_for_date(for_date)
-    window_from, window_to = _day_window(day)
-    conn = store.connect(db_path)
-    try:
-        existing = store.get_daily_plan(conn, day)
-        if existing is not None and existing.status == "confirmed":
-            return existing
-
-        # WP-PLAN-COMPLETION-ACK：人承认做完的那条**不再被排**（现核铁证是同一条
-        # `ddl:evt_ac46920dc0c1` 连排五天 10-12…10-16）。只在这一侧关掉已完成的；
-        # 读侧（日 surface / 看板）照旧看得见历史，默认值没动。
-        # 排程造的那一行（每格计划行一条）不进这份占用表——`list_events` 默认就把它挡了
-        # （见那里的 ``include_plan_artifacts``）。
-        events = store.list_events(conn, start_from=window_from, start_to=window_to,
-                                   include_completed=False)
-        # 裁定 149：项目块 / 作业块**由 L1 排**，代码不再均分。
-        # 排不出来就是没有块——不悄悄换回一版均分（那正是这条要退役的形状）。
-        blocks, unscheduled, deferred_ddl, plan_note = _l1_blocks(
-            conn, day, events, window_from, window_to, planner=planner
-        )
-
-        if not events and not blocks:
-            plan = store.upsert_daily_plan(
-                conn,
-                for_date=day,
-                status="empty",
-                summary=EMPTY_PLAN_SUMMARY,
-                conflict_count=0,
-                event_count=0,
-                confirm_seq=None,
-                confirm_seq_at=None,
-                evidence={
-                    "kind": "empty_window",
-                    "from": window_from.isoformat(),
-                    "to": window_to.isoformat(),
-                    "event_count": 0,
-                },
-            )
-            store.replace_plan_items(conn, plan.id, [])
-            stored = store.get_daily_plan(conn, day)
-            assert stored is not None
-            return stored
-
-        conflicts = _conflict_map(events)
-        pair_count = sum(len(ids) for ids in conflicts.values()) // 2
-        conflict_count = pair_count
-        seq = store.next_confirm_seq(conn)
-        seq_at = store.now_iso()
-        summary = _plan_summary(len(events), pair_count, blocks, unscheduled, deferred_ddl)
-        # 裁定 149④：L1 那句「为什么这么排」要上得了面（接裁定 145 的留痕）；
-        # 没排成时同一格照实说没排成与原因——**不拿一句空话冒充排过了**。
-        if plan_note:
-            summary = f"{summary.rstrip('。')}。{plan_note}"
-        evidence: Optional[dict] = None
-        if blocks or unscheduled:
-            ddl_items = [
-                item for item in blocks if (item.get("evidence") or {}).get("kind") == DDL_BLOCK_EVIDENCE_KIND
-            ]
-            evidence = {
-                "kind": "evening_plan",
-                "planner_note": plan_note,
-                "block_count": len(blocks),
-                # 治理线的判据要读的就是这两位：作业块的**时长合计**与项目块的数量，
-                # 分开记，别让人从 summary 的中文里再解析一遍。
-                "ddl_block_count": len(ddl_items),
-                "ddl_minutes": round(
-                    sum(
-                        (
-                            datetime.fromisoformat(item["end_at"])
-                            - datetime.fromisoformat(item["start_at"])
-                        ).total_seconds()
-                        / 60.0
-                        for item in ddl_items
-                    ),
-                    1,
-                ),
-                "project_block_count": len(blocks) - len(ddl_items),
-            }
-            if deferred_ddl:
-                evidence["ddl_deferred"] = len(deferred_ddl)
-            if unscheduled:
-                evidence["unscheduled"] = unscheduled
-        plan = store.upsert_daily_plan(
-            conn,
-            for_date=day,
-            status="pending",
-            summary=summary,
-            conflict_count=conflict_count,
-            event_count=len(events),
-            confirm_seq=seq,
-            confirm_seq_at=seq_at,
-            evidence=evidence,
-        )
-        items = []
-        for index, event in enumerate(events):
-            evidence = _item_evidence(event)
-            if not evidence:
-                raise AgendaValidationError("plan_items evidence is required")
-            items.append(
-                {
-                    "event_id": event.id,
-                    "title": event.title,
-                    "start_at": event.start_at,
-                    "end_at": event.end_at,
-                    "kind": event.kind,
-                    "sort_order": index,
-                    "conflict_with": conflicts[event.id],
-                    "evidence": evidence,
-                }
-            )
-        items.extend(blocks)
-        items.sort(key=lambda item: str(item["start_at"]))
-        for index, item in enumerate(items):
-            item["sort_order"] = index
-        store.replace_plan_items(conn, plan.id, items)
-        stored = store.get_daily_plan(conn, day)
-        assert stored is not None
-        return stored
-    finally:
-        conn.close()
-
-
-def l1_plan_view(
-    for_date: Any,
-    current_event_ids: Iterable[str],
-    *,
-    db_path: Path | str | None = None,
-) -> dict:
-    """L1-safe plan header. Never returns ``plan_items``."""
-    day = _as_for_date(for_date)
-    current = {str(item) for item in current_event_ids}
-    conn = store.connect(db_path)
-    try:
-        plan = store.get_daily_plan(conn, day)
-        if plan is None:
-            return {
-                "status": "missing",
-                "summary": "昨夜未生成计划",
-                "for_date": day,
-                "event_count": 0,
-                "conflict_count": 0,
-                "stale": False,
-                "empty": False,
-            }
-        planned = {item.event_id for item in store.list_plan_items(conn, plan.id)}
-        return {
-            "status": plan.status,
-            "summary": plan.summary,
-            "for_date": plan.for_date,
-            "event_count": plan.event_count,
-            "conflict_count": plan.conflict_count,
-            "stale": planned != current,
-            "empty": plan.status == "empty",
-        }
-    finally:
-        conn.close()
-
-
-# --- WP-DAY-SURFACE: 重叠判定 + plan_items 直读 ------------------------------
+# --- WP-DAY-SURFACE: 重叠判定 -------------------------------------------------
 
 
 def compute_event_overlaps(events: list[Event]) -> tuple[dict[str, list[str]], list[dict]]:
@@ -618,16 +281,6 @@ def compute_event_overlaps(events: list[Event]) -> tuple[dict[str, list[str]], l
     return overlaps, conflicts
 
 
-def plan_items_for_day(
-    conn: Any, day: str
-) -> tuple[Optional[DailyPlan], list[PlanItem]]:
-    """当日 daily_plan（无则 None）+ plan_items 列表。"""
-    plan = store.get_daily_plan(conn, day)
-    if plan is None:
-        return None, []
-    return plan, store.list_plan_items(conn, plan.id)
-
-
 def avoid_windows_for_day(conn: Any, day: str) -> list[dict]:
     """当天 confirmed 的 avoid 窗（WP-MEAL-DEDUPE 顺手）。pending 不出现。"""
     try:
@@ -659,33 +312,14 @@ def day_surface(
     day: str,
     events: list[Event],
 ) -> dict:
-    """白天看板用的「今天」快照：events（含 location/overlaps）+ 可选 plan_items + conflicts。
+    """白天看板用的「今天」快照：events（含 location/overlaps）+ conflicts。
 
-    与晚间 20:00 的 generate_evening_plan 不同：**不**写库、不要求已有计划。
-    ``avoid_windows`` 带当天 confirmed avoid 窗（缺省 ``[]``）。
+    **不**写库。``avoid_windows`` 带当天 confirmed avoid 窗（缺省 ``[]``）。
     """
-    plan, items = plan_items_for_day(conn, day)
     overlaps, conflicts = compute_event_overlaps(events)
     return {
         "date": day,
-        "plan_items": [_plan_item_dict(item) for item in items],
         "overlaps": overlaps,
         "conflicts": conflicts,
-        "plan_status": plan.status if plan is not None else None,
         "avoid_windows": avoid_windows_for_day(conn, day),
-    }
-
-
-def _plan_item_dict(item: PlanItem) -> dict:
-    return {
-        # WP-PLAN-COMPLETION-ACK 判据③：界面上那颗「做完了」要打在**事件**上（完成态的真源在
-        # `events.completed_at`，不在会被每晚重排抹掉的 `plan_items`），所以这一行必须把
-        # `event_id` 带出去——否则界面只能拿到一句标题，无处可认。
-        "event_id": item.event_id,
-        "id": item.id,
-        "title": item.title,
-        "start_at": item.start_at,
-        "end_at": item.end_at,
-        "kind": item.kind,
-        "evidence": item.evidence,
     }

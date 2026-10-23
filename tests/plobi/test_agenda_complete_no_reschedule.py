@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from plobi.agenda import llm_planning, planning, store
+from plobi.agenda import llm_planning, store
 
 DUE = date(2026, 10, 18)          # 铁证那条的截止日（真库 start_at=2026-10-18T23:55:00）
 DAYS = (date(2026, 10, 16), date(2026, 10, 17), DUE)
@@ -89,9 +89,17 @@ def _planner_from_materials(conn, day):
 
 
 def _planned_ids(connection, db_path, day: date) -> set[str]:
-    """重跑那一天那份计划，取计划里的事件 id（去掉 `ddl:` 那一层前缀，比的是同一件事）。"""
-    plan = planning.generate_evening_plan(day, db_path=db_path, planner=_planner_from_materials)
-    return {item.event_id.split(":", 1)[-1] for item in store.list_plan_items(connection, plan.id)}
+    """重跑那一天那一发，取落成 events 的作业来源 id（比的是同一件事，不是行 id）。"""
+    result = llm_planning.plan_and_store_day(
+        day.isoformat(), conn=connection, proposal_fn=_planner_from_materials)
+    if result.get("status") == "nothing_to_schedule":
+        return set()   # 材料里一条作业都没有 ⇒ 那天没有可排的块，不是失败
+    assert result["ok"] is True, result
+    return {
+        str(block.get("source", "")).split(":", 1)[-1]
+        for block in result["blocks"]
+        if str(block.get("source", "")).startswith("ddl:")
+    }
 
 
 def test_without_an_ack_the_same_ddl_is_planned_on_every_day_up_to_its_deadline(conn, db_path):
