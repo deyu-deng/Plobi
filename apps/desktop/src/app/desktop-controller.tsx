@@ -34,6 +34,7 @@ import {
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
   RIGHT_RAIL_VIEW_NOTES,
+  setFileBrowserOpen,
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH
@@ -42,7 +43,7 @@ import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
-import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
+import { $reviewOpen, closeReview, openReview, REVIEW_PANE_ID } from '../store/review'
 import {
   $activeSessionId,
   $currentCwd,
@@ -114,11 +115,12 @@ import { RightSidebarPane, RightSidebarSectionHeader } from './right-sidebar'
 import { FileActionDialogs } from './right-sidebar/file-actions'
 import { RemoteFolderPicker } from './right-sidebar/files/remote-picker'
 import { ReviewPane } from './right-sidebar/review'
-import { $terminalTakeover } from './right-sidebar/store'
+import { $terminalTakeover, setTerminalTakeover } from './right-sidebar/store'
 import { TerminalPaneChrome } from './right-sidebar/terminal/chrome'
 import { PersistentTerminal } from './right-sidebar/terminal/persistent'
 import { closeActiveTerminal } from './right-sidebar/terminal/terminals'
 import {
+  AGENDA_ROUTE,
   HOME_ROUTE,
   isShellPageView,
   NEW_CHAT_ROUTE,
@@ -127,6 +129,11 @@ import {
   SETTINGS_ROUTE,
   shellLevelForPath
 } from './routes'
+import {
+  WorkbenchLauncher,
+  type WorkbenchLauncherAction,
+  type WorkbenchLauncherItem
+} from './workbench/launcher'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -277,6 +284,57 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level === 'l1')
   const [agendaAdding, setAgendaAdding] = useState(false)
+  const [launcherOpen, setLauncherOpen] = useState(false)
+  // L1 has one right rail; the launcher decides which surface owns it. On L2 the
+  // file tree / review keep their existing independent gates.
+  const [l1Surface, setL1Surface] = useState<'agenda' | 'files' | 'review'>('agenda')
+
+  const launcherItems: WorkbenchLauncherItem[] = [
+    { icon: 'folder-opened', id: 'files', title: t.rightSidebar.files },
+    {
+      disabled: !currentCwd.trim(),
+      hint: currentCwd.trim() ? undefined : t.rightSidebar.noFolderSelected,
+      icon: 'git-pull-request',
+      id: 'review',
+      title: t.keybinds.actions['view.toggleReview']
+    },
+    { icon: 'terminal', id: 'terminal', title: t.rightSidebar.terminal },
+    { icon: 'calendar', id: 'agenda', title: t.console.timeline.title }
+  ]
+
+  const handleLauncherPick = useCallback(
+    (id: WorkbenchLauncherAction) => {
+      setLauncherOpen(false)
+
+      if (id === 'files') {
+        closeReview()
+        setFileBrowserOpen(true)
+        setL1Surface('files')
+
+        return
+      }
+
+      if (id === 'review') {
+        setFileBrowserOpen(false)
+        openReview()
+        setL1Surface('review')
+
+        return
+      }
+
+      if (id === 'terminal') {
+        setTerminalTakeover(true)
+
+        return
+      }
+
+      setFileBrowserOpen(false)
+      closeReview()
+      setL1Surface('agenda')
+      navigate(AGENDA_ROUTE)
+    },
+    [navigate]
+  )
 
   useEffect(() => {
     if (!level) {
@@ -1156,7 +1214,18 @@ export function DesktopController() {
   // layer) so pane resize handles still paint above it. Terminals own their state
   // (incl. a snapshotted cwd) independent of the session, so switching sessions
   // never rebuilds or closes them; toggling the pane never rebuilds the shells.
-  const mainOverlays = <PersistentTerminal onAddSelectionToChat={composer.addTerminalSelectionAttachment} />
+  const mainOverlays = (
+    <>
+      <PersistentTerminal onAddSelectionToChat={composer.addTerminalSelectionAttachment} />
+      <WorkbenchLauncher
+        items={launcherItems}
+        labels={{ title: t.rightSidebar.panelsAria }}
+        onClose={() => setLauncherOpen(false)}
+        onPick={handleLauncherPick}
+        open={launcherOpen}
+      />
+    </>
+  )
 
   const overlays = (
     <>
@@ -1269,7 +1338,11 @@ export function DesktopController() {
     (secretaryShellOpen && previewRailContent && previewPaneOpen) ||
     (isL2 && !narrowViewport && fileBrowserOpen) ||
     (isL2 && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen) ||
-    (level === 'l1' && !narrowViewport && agendaPaneOpen)
+    (level === 'l1' &&
+      !narrowViewport &&
+      ((l1Surface === 'agenda' && agendaPaneOpen) ||
+        (l1Surface === 'files' && fileBrowserOpen) ||
+        (l1Surface === 'review' && Boolean(currentCwd.trim()) && reviewOpen)))
 
   // Once the terminal would share its rail with another sidebar, drop it to a
   // full-width row beneath them rather than cramming in one more skinny column.
@@ -1300,10 +1373,10 @@ export function DesktopController() {
   const fileBrowserPane = (
     <Pane
       defaultOpen={false}
-      // WP-D: the file tree is the L2 workspace rail (§5.3) — the secretary L1
-      // route must never surface a workspace switcher. Pure-chat `chatOpen` is
-      // gone (WP-E); only L2 enables this column.
-      disabled={!isL2}
+      // WP-D: the file tree is the L2 workspace rail (§5.3). WP-WORKBENCH-LAUNCHER
+      // (用户 10-23): L1 may surface it only after the launcher explicitly picks
+      // the files surface; the default secretary rail stays the agenda.
+      disabled={!isL2 && l1Surface !== 'files'}
       forceCollapsed={narrowViewport}
       hoverReveal
       id="file-browser"
@@ -1334,7 +1407,7 @@ export function DesktopController() {
       // gate so the pane stays mounted as a collapsed overlay — `toggleReview`
       // then slides it in/out via the forced-reveal pin, exactly like ⌘B for the
       // sidebar. Still requires a repo (no diffs to show otherwise).
-      disabled={!isL2 || !currentCwd.trim() || (!narrowViewport && !reviewOpen)}
+      disabled={!currentCwd.trim() || (!narrowViewport && !reviewOpen) || (!isL2 && l1Surface !== 'review')}
       forceCollapsed={narrowViewport}
       hoverReveal
       id={REVIEW_PANE_ID}
@@ -1366,7 +1439,7 @@ export function DesktopController() {
   const agendaTimelinePane = (
     <Pane
       defaultOpen
-      disabled={level !== 'l1'}
+      disabled={level !== 'l1' || l1Surface !== 'agenda'}
       divider
       forceCollapsed={narrowViewport}
       hoverReveal
@@ -1466,6 +1539,13 @@ export function DesktopController() {
     </Pane>
   )
 
+  const launcherTool = {
+    icon: <Codicon name="multiple-windows" />,
+    id: 'workbench-launcher',
+    label: t.rightSidebar.panelsAria,
+    onSelect: () => setLauncherOpen(open => !open)
+  }
+
   return (
     <AppShell
       leftStatusbarItems={leftStatusbarItems}
@@ -1481,7 +1561,7 @@ export function DesktopController() {
       }
       statusbarItems={statusbarItems}
       terminalPaneOpen={terminalSidebarOpen}
-      titlebarTools={titlebarToolGroups.flat.right}
+      titlebarTools={[...titlebarToolGroups.flat.right, launcherTool]}
     >
       {!isSecondaryWindow() && (
         <Pane
