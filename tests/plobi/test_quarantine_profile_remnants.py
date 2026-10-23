@@ -180,3 +180,52 @@ def test_missing_profiles_root_is_not_a_crash(qr, tmp_path, capsys):
     assert rep["before"]["homes"] == 0
     assert rep["planned"]["moves"] == 0
     assert rep["root_resolved_by"] == "--profiles-root"
+
+
+# ── 第 4 步：整屋退役 ──────────────────────────────────────────────────────
+
+def _run_house(qr, root: Path, apply: bool, capsys, date=DATE) -> dict:
+    argv = ["--date", date, "--whole-house", "--profiles-root", str(root)]
+    if apply:
+        argv.insert(0, "--apply")
+    rc = qr.main(argv)
+    return {"rc": rc, "report": json.loads(capsys.readouterr().out)}
+
+
+def test_whole_house_moves_every_home_and_keeps_the_bytes(qr, root, capsys):
+    """整屋退役的判据：`homes_after == 0`，而每个家的字节在隔离区里一个不少。
+
+    这比"甲组六类归零"更硬：`state.db` / `cron/jobs.json` / `SOUL.md` / `.env` 全在屋里，
+    整屋搬走之后它们仍然在盘上、只是不再被当作"一家分身"。
+    """
+    before = _run_house(qr, root, apply=False, capsys=capsys)
+    assert before["report"]["homes_before"] == 2
+    assert before["report"]["planned_moves"] == 2
+    assert (root / "aura").is_dir(), "dry-run 不许动盘"
+
+    res = _run_house(qr, root, apply=True, capsys=capsys)
+    rep = res["report"]
+    assert res["rc"] == 0, rep
+    assert rep["homes_after"] == 0
+    q = root.parent / f"_quarantine-{DATE}" / "profiles"
+    assert (q / "aura" / "state.db").is_file(), "真账跟着屋走，只移不删"
+    assert (q / "aura" / "cron" / "jobs.json").is_file()
+    assert (q / "aura" / "SOUL.md").is_file()
+    assert qr.tree_bytes(q / "aura") == rep["values_before"]["aura"]
+
+
+def test_whole_house_refuses_when_active_home_is_inside(qr, root, monkeypatch, capsys):
+    """活跃家就在 `profiles/` 里时**必须拒**——那是"把正在用的家搬走"。"""
+    monkeypatch.setenv("PLOBI_HOME", str(root / "aura"))
+    # 拒的那一趟只印一行人话、不印 JSON，所以这里直接调 main，别走 json 解析。
+    rc = qr.main(["--date", DATE, "--whole-house", "--apply", "--profiles-root", str(root)])
+    assert rc == 2
+    assert (root / "aura").is_dir(), "拒了就不许动盘"
+
+
+def test_whole_house_rerun_is_idempotent(qr, root, capsys):
+    _run_house(qr, root, apply=True, capsys=capsys)
+    second = _run_house(qr, root, apply=True, capsys=capsys)["report"]
+    assert second["homes_before"] == 0
+    assert second["planned_moves"] == 0
+    assert second["moved"] == []
