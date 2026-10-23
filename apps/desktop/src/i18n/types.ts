@@ -1276,6 +1276,16 @@ export interface Translations {
       thisWeek: string
       today: string
     }
+    /** 用户 10-22 / 10-23：日历四态（年/月/周/日），仿鸿蒙日历。 */
+    calendar: {
+      modes: Record<'year' | 'month' | 'week' | 'day', string>
+      today: string
+      prev: string
+      next: string
+      more: (count: number) => string
+      noEvents: string
+      allDay: string
+    }
     emptyTitle: string
     emptyDesc: string
     newEvent: string

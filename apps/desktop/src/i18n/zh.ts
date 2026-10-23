@@ -825,7 +825,7 @@ export const zh: Translations = {
       notSet: '未设置',
       commaSeparated: '逗号分隔的值',
       loading: '正在加载 Plobi 配置...',
-      emptyTitle: '无可配置项',
+    emptyTitle: '无可配置项',
       emptyDesc: '此分区没有可调整的设置。',
       failedLoad: '设置加载失败',
       autosaveFailed: '自动保存失败',
@@ -1655,6 +1655,15 @@ export const zh: Translations = {
       range: (from, to) => `${from} → ${to}`,
       thisWeek: '回到本周',
       today: '今天'
+    },
+    calendar: {
+      modes: { year: '年', month: '月', week: '周', day: '日' },
+      today: '今天',
+      prev: '上一个',
+      next: '下一个',
+      more: count => `还有 ${count} 项`,
+      noEvents: '暂无日程',
+      allDay: '全天'
     },
     emptyTitle: '暂无日程',
     emptyDesc: '从消息里识别到的日程会出现在这里，你也可以自己添加。',

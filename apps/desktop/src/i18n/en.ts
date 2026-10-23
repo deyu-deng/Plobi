@@ -637,7 +637,7 @@ export const en: Translations = {
       notSet: 'Not set',
       commaSeparated: 'comma-separated values',
       loading: 'Loading Plobi configuration...',
-      emptyTitle: 'Nothing to configure',
+    emptyTitle: 'Nothing to configure',
       emptyDesc: 'This section has no adjustable settings.',
       failedLoad: 'Settings failed to load',
       autosaveFailed: 'Autosave failed',
@@ -1482,6 +1482,15 @@ export const en: Translations = {
       range: (from, to) => `${from} → ${to}`,
       thisWeek: 'This week',
       today: 'today'
+    },
+    calendar: {
+      modes: { year: 'Year', month: 'Month', week: 'Week', day: 'Day' },
+      today: 'Today',
+      prev: 'Previous',
+      next: 'Next',
+      more: count => `${count} more`,
+      noEvents: 'Nothing scheduled',
+      allDay: 'All day'
     },
     emptyTitle: 'Nothing scheduled',
     emptyDesc: 'Entries picked up from messages appear here, and you can add your own.',
