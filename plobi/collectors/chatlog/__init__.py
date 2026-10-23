@@ -56,6 +56,8 @@ SPEC = SourceSpec(
     # 端口与启动脚本都是**声明**，公共层照它们办事、仍然不出现任何信源名字（判据 4）。
     sidecar_port=5030,
     sidecar_start="scripts/chatlog_server.ps1",
+    # 一条信源里面有很多个会话 ⇒ 采集情况要能按群聊/私聊逐个定（名单与准入在 `/api/collect/talkers`）。
+    conversation_scoped=True,
 
     builder=_build,
 )
