@@ -52,6 +52,11 @@ SPEC = SourceSpec(
     category="message",
     site="https://weixin.qq.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
 
+    # 开关的另一半：这一条背后有一个常驻进程（chatlog），关掉它就该真的收掉（用户 10-23）。
+    # 端口与启动脚本都是**声明**，公共层照它们办事、仍然不出现任何信源名字（判据 4）。
+    sidecar_port=5030,
+    sidecar_start="scripts/chatlog_server.ps1",
+
     builder=_build,
 )
 

@@ -23,7 +23,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from plobi.collectors import cadence, icons, registry, sources_config
+from plobi.collectors import cadence, icons, registry, sidecar, sources_config
 from plobi.collectors.liveness import read_source_liveness
 
 logger = logging.getLogger(__name__)
@@ -255,7 +255,13 @@ async def set_source_enabled(source_id: str, body: EnabledRequest):
         enabled = sources_config.set_enabled(source_id, body.enabled)
     except sources_config.SourceConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"ok": True, "data": {"source": source_id, "enabled": enabled}}
+    # 开关的另一半（用户 10-23：「打开还是关闭都是显示未连接……要真的切断这条信源的采集程序」）：
+    # **照声明**拉起/收掉这一条自己的本机服务。没有声明端口的信源回 None，这里一个字不写。
+    service_note = sidecar.apply(registry.spec(source_id), enabled=enabled)
+    data = {"source": source_id, "enabled": enabled}
+    if service_note is not None:
+        data["sidecar"] = service_note
+    return {"ok": True, "data": data}
 
 
 @router.post("/sources/{source_id}/try", name="collect_source_try")

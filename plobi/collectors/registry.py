@@ -231,12 +231,25 @@ class SourceSpec:
     #: 默认空元组**不是**"可以随便省略"——空是一个合法读数，意思是"首次配置不需要用户
     #: 填任何非密钥的东西"（微信要的是扫码与密钥，两样都不在这一层，所以它就该是空的）。
     setup_fields: tuple[SetupField, ...] = ()
+    #: 这一条在**本机有自己的常驻服务**时，那个服务的端口（`None`＝没有要开关的进程）。
+    #:
+    #: 用户 10-23 对着那一屏说：「**微信那个按钮形同虚设。我打开还是关闭都是显示未连接。
+    #: 然后我希望开始和关闭是会真的切断这条信源的采集程序**」。开关若只改一个布尔、
+    #: 却把进程留在那儿，它就是个假动作；这一格把"那颗开关背后其实有一个进程"变成**声明**，
+    #: 于是 :mod:`plobi.collectors.sidecar` 能照它去拉起/收掉，而公共层仍然不按信源名字分支。
+    sidecar_port: Optional[int] = None
+    #: 拉起上面那个服务要跑的脚本（**仓库相对路径**，如 ``scripts/chatlog_server.ps1``）。
+    #: 空串是一个读数：这一条声明了端口却没有给出怎么拉起它，那么"打开"只能如实报一句
+    #: "我不会自己起它"，不许假装开了。
+    sidecar_start: str = ""
 
     def __post_init__(self) -> None:
         if not self.source_id or not self.source_id.strip():
             raise ValueError("source_id 不能是空串")
         if not self.category:
             raise ValueError(f"{self.source_id} 没声明分类（category 必填，见 spec-layer §2）")
+        if self.sidecar_port is not None and not (0 < int(self.sidecar_port) < 65536):
+            raise ValueError(f"{self.source_id} 的 sidecar_port 不是合法端口：{self.sidecar_port}")
         if self.category not in CATEGORY_SLUGS:
             raise UnknownCategory(
                 f"{self.source_id} 的分类 {self.category!r} 不在闭集里："

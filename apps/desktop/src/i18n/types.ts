@@ -367,6 +367,10 @@ export interface Translations {
       removeFailed: string
       saveFailed: string
       saveSetup: string
+      sidecarUp: string
+      sidecarNotUp: string
+      sidecarDown: string
+      sidecarNotDown: string
       switchFailed: string
       title: string
       tryFailed: string
