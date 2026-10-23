@@ -50,6 +50,13 @@ vi.mock('@/plobi', () => ({
 
 import { AgendaView } from './index'
 
+/** The calendar anchors on this instant; fixtures are built around 2026-09-11. */
+const NOW = new Date('2026-09-11T08:00:00')
+
+function renderBoard() {
+  return render(<AgendaView now={NOW} onClose={() => {}} />)
+}
+
 describe('AgendaView empty board (WP-A7-EMPTY)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -89,11 +96,12 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
     $agendaEvents.set([withEnd, openEnded])
     $agendaSelectedId.set('e-open')
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
 
-    // R-009: the list prints the span, and says so when the end is unwritten.
+    // R-009: the time axis prints the real span; an unwritten end stays a point.
     expect(await screen.findByText('09:00–11:00')).toBeTruthy()
-    expect(screen.getByText('09:00 · no end time')).toBeTruthy()
+    expect(screen.getAllByText('开题讨论').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('09:00').length).toBeGreaterThanOrEqual(1)
 
     // The detail names who said it (evidence.sender + conversation name).
     await waitFor(() => {
@@ -121,7 +129,7 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
     $agendaEvents.set([anonymous])
     $agendaSelectedId.set('e-anon')
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
 
     await waitFor(() => {
       expect(screen.getByText('Unknown')).toBeTruthy()
@@ -141,7 +149,7 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
       updated_at: '2026-09-10T00:00:00Z'
     })
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
     ;(await screen.findAllByRole('button', { name: 'New entry' }))[0].click()
 
     fireEvent.change(await screen.findByLabelText('Title'), { target: { value: 'meeting' } })
@@ -178,7 +186,7 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
       updated_at: '2026-09-10T00:00:00Z'
     })
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
     ;(await screen.findAllByRole('button', { name: 'New entry' }))[0].click()
 
     fireEvent.change(await screen.findByLabelText('Title'), { target: { value: 'no-end' } })
@@ -193,7 +201,7 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
   })
 
   it('editor rejects an end earlier than start with a form-level error', async () => {
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
     ;(await screen.findAllByRole('button', { name: 'New entry' }))[0].click()
 
     fireEvent.change(await screen.findByLabelText('Title'), { target: { value: 'oops' } })
@@ -224,18 +232,18 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
     $agendaEvents.set([detailed])
     $agendaSelectedId.set('e-detail')
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
 
     expect(await screen.findByText('东2-101')).toBeTruthy()
     expect(screen.getByText('带电脑')).toBeTruthy()
   })
 
   it('keeps the empty board usable without a collection entry', async () => {
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
 
     // 会话采集已从日程面板撤掉（用户 10-22：信源只进信息池，Agent 自由调用）。
     // 空板上仍要看得见「暂无日程」和新建入口。
-    expect(screen.getByText('Nothing scheduled')).toBeTruthy()
+    expect(screen.getAllByText('Nothing scheduled').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('New entry')).toBeTruthy()
   })
 })
@@ -271,7 +279,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
   })
 
   async function openPreview() {
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
 
     const row = await screen.findByRole('button', { name: 'Import schedule file' })
 
@@ -310,7 +318,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
   it('does nothing at all when the picker is cancelled', async () => {
     selectDesktopPaths.mockResolvedValue([])
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
     ;(await screen.findByRole('button', { name: 'Import schedule file' })).click()
 
     await waitFor(() => {
@@ -350,7 +358,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
       path: 'C:/Users/x/ke.ics'
     })
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
 
     expect(await screen.findByText('课程表-2026-2027秋冬 · 225 entries')).toBeTruthy()
   })
@@ -358,7 +366,7 @@ describe('AgendaView timetable import (WP-ICS-BOARD, 裁定 29.3)', () => {
   it('surfaces a failed preview as a notification without opening the dialog', async () => {
     previewTimetable.mockRejectedValue(new Error('bad ics'))
 
-    render(<AgendaView onClose={() => {}} />)
+    renderBoard()
     ;(await screen.findByRole('button', { name: 'Import schedule file' })).click()
 
     await waitFor(() => {

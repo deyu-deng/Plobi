@@ -758,7 +758,7 @@ export const zhHant = defineLocale({
       notSet: '未設定',
       commaSeparated: '逗號分隔的值',
       loading: '正在載入 Plobi 設定...',
-      emptyTitle: '無可設定項目',
+    emptyTitle: '無可設定項目',
       emptyDesc: '此區段沒有可調整的設定。',
       failedLoad: '設定載入失敗',
       autosaveFailed: '自動儲存失敗',
@@ -1397,6 +1397,15 @@ export const zhHant = defineLocale({
       range: (from, to) => `${from} → ${to}`,
       thisWeek: '回到本週',
       today: '今天'
+    },
+    calendar: {
+      modes: { year: '年', month: '月', week: '週', day: '日' },
+      today: '今天',
+      prev: '上一個',
+      next: '下一個',
+      more: count => `還有 ${count} 項`,
+      noEvents: '暫無日程',
+      allDay: '全天'
     },
     emptyTitle: '目前沒有行程',
     emptyDesc: '從訊息中辨識到的行程會顯示在這裡，你也可以自己新增。',

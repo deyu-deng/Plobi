@@ -772,7 +772,7 @@ export const ja = defineLocale({
       notSet: '未設定',
       commaSeparated: 'カンマ区切りの値',
       loading: 'Plobi の設定を読み込み中...',
-      emptyTitle: '設定項目がありません',
+    emptyTitle: '設定項目がありません',
       emptyDesc: 'このセクションには調整できる設定がありません。',
       failedLoad: '設定の読み込みに失敗しました',
       autosaveFailed: '自動保存に失敗しました',
@@ -1443,6 +1443,15 @@ export const ja = defineLocale({
       range: (from, to) => `${from} → ${to}`,
       thisWeek: '今週に戻る',
       today: '今日'
+    },
+    calendar: {
+      modes: { year: '年', month: '月', week: '週', day: '日' },
+      today: '今日',
+      prev: '前へ',
+      next: '次へ',
+      more: count => `他 ${count} 件`,
+      noEvents: '予定なし',
+      allDay: '終日'
     },
     emptyTitle: '予定はありません',
     emptyDesc: 'メッセージから検出された予定がここに表示されます。手動で追加もできます。',
