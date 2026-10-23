@@ -147,13 +147,14 @@ class TestSecretsNeverLandHere:
         另一道纪律是「值里那个东西根本不该走这条路」（密钥归 .env），两道之间
         不是靠正则能补上的。
         """
-        sources_config.set_setup_params("zju", {"account": "a-real-secret-in-a-plain-field",
-                                           "base_url": "https://example.invalid"})
+        # 10-23 起 `zju` 那两格已删（采集器根本不读它们，用户当场问了「填了会发生什么」）。
+        # 这一条要证的是"**值**里那个东西不被扫"，所以借一条有普通格的源：`timetable.ics_path`。
+        sources_config.set_setup_params("timetable", {"ics_path": "a-real-secret-in-a-plain-field"})
 
-        assert sources_config.setup_params("zju")["account"] == "a-real-secret-in-a-plain-field"
+        assert sources_config.setup_params("timetable")["ics_path"] == "a-real-secret-in-a-plain-field"
 
     def test_nested_structures_are_refused(self, client):
-        response = client.post("/sources/zju/setup", json={"params": {"base_url": {"a": 1}}})
+        response = client.post("/sources/timetable/setup", json={"params": {"ics_path": {"a": 1}}})
 
         assert response.status_code in (400, 422)
 
