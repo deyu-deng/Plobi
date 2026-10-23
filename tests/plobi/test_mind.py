@@ -20,8 +20,8 @@ def _l1_gate_off_here(monkeypatch):
     import plobi.mind.writer as writer_mod
 
     monkeypatch.setattr(
-        writer_mod.MindWriter, "_approval_required",
-        lambda self: self.require_approval is True,
+        writer_mod.MindWriter, "_gate_refusals",
+        lambda self, batch: ["显式要求先点头"] if self.require_approval is True else [],
     )
 
 

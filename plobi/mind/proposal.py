@@ -43,6 +43,12 @@ PLAN_TTL_SECONDS = 6 * 3600
 # become a score a model assigns to itself.
 AUTO_THRESHOLD = 8
 
+# 永不自动的**类别**（用户 2026-10-23 四拍：日记＋画像＋删除）。:func:`never_auto` 管
+# 「改写过去」这个动作，这张表管「这一类内容攒够多少次也不自动」——两边都要问，因为
+# 类别是从路径推出来的，而删除这条腿 writer 今天还没有（它出现时必须同时进 never_auto，
+# tests/plobi/test_mind_trust_ramp.py 里那颗钉就是防这个）。
+NEVER_AUTO_CATEGORIES = ("diary", "persona")
+
 
 @dataclass(frozen=True)
 class Change:
@@ -367,39 +373,10 @@ class TrustLedger:
 
 def record_rejection(plan: "Plan", *, source: str = "l1", reason: str = "",
                      ledger: Optional["TrustLedger"] = None) -> None:
-    """驳回一笔计划：那一类内容立刻退回「先问」，且这条记录可追溯是谁、哪一类、为什么。
+    """驳回一笔计划：那一类立刻退回「先问」，且这笔账可追溯是哪一类、为什么。
 
-    裁定 156／198：门槛会移动，但**被驳回一次就要回头**——所以驳回不是「丢掉这张纸」，
-    是给信任账记一笔 ``rejected``。``TrustLedger.should_ask`` 读的就是这条记录：
-    该类下一次不必等到 streak 归零就已经在问。
-    """
-    cats = sorted(set(plan.categories.values())) or ["other"]
-    book = ledger if ledger is not None else TrustLedger()
-    for cat in cats:
-        book.record("rejected", cat, source, reason or "用户驳回")
-
-
-def record_rejection(plan: "Plan", *, source: str = "l1", reason: str = "",
-                     ledger: Optional["TrustLedger"] = None) -> None:
-    """驳回一笔计划：那一类内容立刻退回「先问」，且这条记录可追溯是谁、哪一类、为什么。
-
-    裁定 156／198：门槛会移动，但**被驳回一次就要回头**——所以驳回不是「丢掉这张纸」，
-    是给信任账记一笔 ``rejected``。``TrustLedger.should_ask`` 读的就是这条记录：
-    该类下一次不必等到 streak 归零就已经在问。
-    """
-    cats = sorted(set(plan.categories.values())) or ["other"]
-    book = ledger if ledger is not None else TrustLedger()
-    for cat in cats:
-        book.record("rejected", cat, source, reason or "用户驳回")
-
-
-def record_rejection(plan: "Plan", *, source: str = "l1", reason: str = "",
-                     ledger: Optional["TrustLedger"] = None) -> None:
-    """驳回一笔计划：那一类内容立刻退回「先问」，且这条记录可追溯是谁、哪一类、为什么。
-
-    裁定 156／198：门槛会移动，但**被驳回一次就要回头**——所以驳回不是「丢掉这张纸」，
-    是给信任账记一笔 ``rejected``。``TrustLedger.should_ask`` 读的就是这条记录：
-    该类下一次不必等到 streak 归零就已经在问。
+    裁定 156／199：门槛**会移动**，但降级要立刻生效 —— ``TrustLedger.record`` 对
+    ``rejected`` 把 streak 归零，所以下一次 ``should_ask`` 一定返回 True。
     """
     cats = sorted(set(plan.categories.values())) or ["other"]
     book = ledger if ledger is not None else TrustLedger()

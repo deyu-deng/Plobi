@@ -421,6 +421,7 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     userProfileEnabled: 'User Profile',
     writeApproval: 'Ask Before Writing',
     mindWriteApproval: 'Ask Before Writing Into the Brain',
+    mindWriteAutoApprove: 'Let the Brain Write on Its Own Once Trusted',
     globalCharLimit: 'Shared Memory Budget (chars)',
     agentCharLimit: 'Per-Agent Memory Budget (chars)',
     userCharLimit: 'Profile Budget',
@@ -490,7 +491,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
   },
   memory: {
     writeApproval: "Every memory write first shows a plan plus each file's sha256 and waits for your yes; a background turn stages it instead of committing. Rejecting once sends that class back to asking.",
-    mindWriteApproval: 'Every write into the brain (L2) first shows a plan with each file\'s new and old sha256 plus the object identity of both roots, and waits for your yes. Rejecting once sends that class straight back to asking.',
     globalCharLimit: 'GLOBAL.md — facts that hold for every agent.',
     agentCharLimit: "Each agent's own MEMORY.md. Replaces the old single 'Memory Budget' key.",
     statusCharLimit: 'The few-line STATUS digest each agent keeps for the secretary to read.',
@@ -586,6 +586,7 @@ export const SECTIONS: DesktopConfigSection[] = [
       'memory.user_profile_enabled',
       'memory.write_approval',
       'memory.mind_write_approval',
+      'memory.mind_write_auto_approve',
       'memory.global_char_limit',
       'memory.agent_char_limit',
       'memory.user_char_limit',

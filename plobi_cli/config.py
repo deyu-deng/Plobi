@@ -2330,6 +2330,11 @@ DEFAULT_CONFIG = {
         # + 你点头**；被驳回一次，那一类内容立刻退回必问（``proposal.record_rejection`` 记的那笔）。
         # 默认开是这个裁定的结论，不是方便开关——要改默认值必须回裁定。
         "mind_write_approval": True,
+        # 「攒够 8 次就自己落」那条 ramp 的总开关（裁定 199，用户 10-23 四拍）。出厂**关**：
+        # 开它等于第一次把「可以不问我」交给系统，那是用户的手艺不是代码的默认；关着的时候
+        # 写脑一律先点头，信任账照旧累积。日记／画像／删除三类永远先问，这颗开关对它们无效
+        # （proposal.NEVER_AUTO_CATEGORIES）。
+        "mind_write_auto_approve": False,
         # 三份记忆各自的上限（裁定 181，任务书第 2 步）。以前只有一格
         # ``memory_char_limit``——那时 MEMORY.md 只有一份、没有作用域这一维。
         # ~2.75 chars/token。
