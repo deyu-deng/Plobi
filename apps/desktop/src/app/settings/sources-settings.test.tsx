@@ -78,6 +78,13 @@ vi.mock('@/i18n', () => ({
           drawerPoolUnreadable: 'Pool unreadable',
           drawerAgendaCount: 'In the agenda',
           syncNow: 'Sync now',
+          cadenceModeEveryRound: 'Every round',
+          cadenceModeEveryHours: 'Every few hours',
+          cadenceModeDaily: 'Daily',
+          cadenceModeWeekly: 'Weekly',
+          cadenceEveryHours: 'Every {n} hours',
+          cadenceAdvanced: 'Custom expression',
+          cadenceWeekdays: { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' },
           cadenceCustom: 'Custom',
           cadencePresets: { per_round: 'Follow every round', hourly: 'Hourly', four_hours: 'Every 4 hours', six_hours: 'Every 6 hours', daily: 'Daily at 03:00', weekly: 'Weekly on Monday at 03:00' },
           unknownSource: 'Source with no recorded name',
@@ -171,9 +178,11 @@ describe('what the row says', () => {
     // 名字出现两次不奇怪：可见的那一处 + 开关的无障碍名（读屏要听得出"这是微信的开关"）。
     expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0)
     expect(screen.getByText('Connected')).toBeTruthy()
+
     for (const label of ['Stop', 'Start', 'Set up', 'Try once']) {
       expect(screen.queryByRole('button', { name: label })).toBeNull()
     }
+
     // 后端那句 note 一个字都不上屏（这条是 10-19 立的，没因为改版松过）。
     expect(screen.queryByText(/一整段工程说明/)).toBeNull()
     expect(container.textContent).not.toMatch(/\*\*/)
@@ -489,9 +498,9 @@ describe('the drawer’s form', () => {
     expect(box.value).toBe('')
   })
 
-  it('offers the cadence as presets, and stores the cron behind the words', async () => {
-    // 「频率也莫名奇妙的用一个英文，太丑了」⇒ 默认那一格是中文的一句话，
-    // 但**存进配置的仍是那一句 cron**（运行时一个字没改，改的只是画法）。
+  it('offers the cadence as controls, and stores the cron behind the words', async () => {
+    // 用户 10-23：「频率设置这样用机器语言还是不好，可能可以用一个可交互的旋钮」⇒
+    // 屏上是四颗能按的钮 + 滑杆/时间，cron 只在"自定义表达式"里；存进配置的仍是 cron。
     saveSourceSetup.mockResolvedValue(undefined)
     await openDrawer(row({
       category: 'local',
@@ -506,13 +515,25 @@ describe('the drawer’s form', () => {
       status: 'connected'
     }), 'Timetable')
 
+    const field = () => screen.getByTestId('cadence-field')
+
+    // 旧的两种形状都不在：没有下拉、也没有裸 cron 文本框（谁把它们改回来，这一条当场红）。
+    expect(screen.queryByRole('combobox', { name: 'Collection cadence' })).toBeNull()
     expect(screen.queryByRole('textbox', { name: 'Collection cadence' })).toBeNull()
-    // Radix 的 Select 是 pointerdown 开的，`fireEvent.click` 打不开它（jsdom 里点半天没反应就是这一条）
-    // Radix 的 Select 在 jsdom 里开不起来（要真指针事件），所以这里钉的是**屏上看得见的那两句**：
-    // 存进去的是 `every 1h`，画出来的是一句人话；而那个裸 cron 文本框**不在屏上**——
-    // 谁把它改回一个输入框，这一条当场红。
-    expect(screen.getByRole('combobox', { name: 'Collection cadence' }).textContent).toContain('Hourly')
-    expect(screen.queryByRole('textbox', { name: 'Collection cadence' })).toBeNull()
+    // 存量的 `every 1h` 读成"每隔几小时"那一档，滑杆停在 1。
+    expect(screen.getByRole('button', { name: 'Every few hours' }).getAttribute('aria-pressed')).toBe('true')
+    expect(field().getAttribute('data-cadence')).toBe('every 1h')
+    // 拨到"每天"：出时间控件，存下去的形状立刻变成 `分 时 * * *`。
+    fireEvent.click(screen.getByRole('button', { name: 'Daily' }))
+    expect(field().querySelector('input[type="time"]')).toBeTruthy()
+    expect(field().getAttribute('data-cadence')).toMatch(/^\d{2} \d{2} \* \* \*$/)
+    // 拨到"每周"：多出七个星期钮，点周三之后 cron 的末位就是 3。
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Wed' }))
+    expect(field().getAttribute('data-cadence')).toMatch(/^\d{2} \d{2} \* \* 3$/)
+    // 回到"每一轮"：存的是空串（＝跟着全局那一轮），不是把上一句留在文件里。
+    fireEvent.click(screen.getByRole('button', { name: 'Every round' }))
+    expect(field().getAttribute('data-cadence')).toBe('')
   })
 })
 

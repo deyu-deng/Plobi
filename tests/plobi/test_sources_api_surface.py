@@ -74,7 +74,10 @@ class TestThreeStates:
                      ("connected", "live"), id="按频率还没到点仍是已连接"),
         pytest.param(dict(enabled=True, needs_setup=False, last_state="we_never_heard_of_this",
                           liveness_state="never", has_builder=True),
-                     ("disconnected", "never_ran"), id="没见过的状态词不许画成绿点"),
+                     ("disconnected", "unknown_state"), id="没见过的状态词不许画成绿点也不许说成没跑过"),
+        pytest.param(dict(enabled=True, needs_setup=False, last_state="",
+                          liveness_state="never", has_builder=True),
+                     ("disconnected", "never_ran"), id="台账空的才说没跑过"),
         pytest.param(dict(enabled=True, needs_setup=False, last_state="",
                           liveness_state="no_store", has_builder=True),
                      ("error", "internal"), id="读不到库是我们的缺陷，不是用户的信源坏了"),
@@ -88,9 +91,8 @@ class TestThreeStates:
     def test_only_the_error_state_carries_a_sentence(self, client) -> None:
         """`status_detail` 逐字来自上一轮，且**只在出错态**出现——正常态那一屏不许长出一行工程话。"""
         sources_config.set_enabled("zju", True)
-        # 先把必填那两格填上：没配好时「缺配置」该赢过「上一轮失败」（见上面那张表），
-        # 不填就测不到出错态这一支。
-        sources_config.set_setup_params("zju", {"base_url": "https://courses.zju.edu.cn", "account": "3160100000"})
+        # 10-23 起 `zju` 没有首次配置格了（那两格采集器根本不读，被删）⇒ 点开就是配好的，
+        # 于是「上一轮失败」这一支直接可达，不必先填格。
         cadence.mark_run("zju", state="auth_failed", detail="凭据不对：这一轮换不到会话")
 
         row = self._zju(client)
@@ -104,6 +106,27 @@ class TestThreeStates:
     @staticmethod
     def _zju(client) -> dict:
         return {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["zju"]
+
+    def test_a_hand_run_records_the_reason_it_just_produced(self, client, monkeypatch) -> None:
+        """「立即同步」跑完，那句原话要**跟着记进台账**。
+
+        台账那一格每轮是整行重写的：只给状态词就等于这个动词把自己刚拿到的答案删掉，
+        屏上从此只剩一句「连接异常」——而它存在的理由正是回答"现在到底行不行"。
+        """
+        seen: dict[str, str] = {}
+
+        def mark(source_id, *, state="", detail=""):
+            seen.update({"detail": detail, "source": source_id, "state": state})
+
+        def fake_sweep(**kwargs):
+            return {"sources": [{"detail": "要人工验证码：这一轮按口径停手", "ok": False,
+                                 "source": "zju", "state": "captcha_required"}]}
+
+        monkeypatch.setattr(cadence, "mark_run", mark)
+        monkeypatch.setattr("plobi.collectors.sweep.run_sweep", fake_sweep)
+
+        assert client.post("/api/collect/sources/zju/try").status_code == 200
+        assert seen == {"detail": "要人工验证码：这一轮按口径停手", "source": "zju", "state": "captcha_required"}
 
 
 class TestSecretsAreWriteOnly:

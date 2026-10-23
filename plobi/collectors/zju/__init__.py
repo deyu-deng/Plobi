@@ -11,7 +11,7 @@
 它不再由 ``registry.py`` 那一行手写元组登记**，加一条信源＝加一个这样的包。
 """
 
-from plobi.collectors.registry import SetupField, SourceSpec, register
+from plobi.collectors.registry import SourceSpec, register
 
 from .collector import PullReport, ZjuCollector, to_local_naive, to_occurrences
 from .config import ZjuConfig
@@ -70,27 +70,13 @@ SPEC = SourceSpec(
     category="website",
     site="https://courses.zju.edu.cn",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
 
-    # 首次配置两格，都是**非密钥**：地址与账号名。密码与那两个 key 在根 `.env`
-    # 里（能力位注记原话「账密已给（根 .env）」），**声明层压根不收密钥**——
-    # 所以这里只能声明这两格，这不是省略。
-    setup_fields=(
-        # **两格都改成"选填"**（10-22 现读撞出来的假阴性）：这一条早就在正常进账
-        # （池里 49 条），可 `required=True` 让新加的那一屏把它判成「未连接：缺首次配置」——
-        # 因为它的真凭据在根 `.env`（`auth.read_credentials()` 那一只读路）、地址有代码默认值，
-        # 这两格从来只是**覆盖位**。声明层的 `required` 现在是屏上那颗开关的判据，
-        # 再把它标成必填就是拿一个可选覆盖位去挡一条已经活着的信源。
-        SetupField(
-            key="base_url",
-            label="School system address",
-            kind="url",
-            help="Only if your school's portal differs from the built-in one.",
-        ),
-        SetupField(
-            key="account",
-            label="Account name",
-            help="Not the password — that stays in .env.",
-        ),
-    ),
+    # **这一条没有首次配置格**（10-23 删掉「教务系统地址」「账号名」两格）。
+    # 用户对着那一屏问的是「这个地址的填空真的有用吗？我填了地址又会发生什么呢？还有账户名填了会有什么用呢？」
+    # ——答案是没有：采集器**一个字都没读**这两格（SSO 入口是 `auth.` 里的常量，账号密码只走
+    # `auth.read_credentials()` 那一只读路）。留着它俩等于给用户一个"我配了点什么"的假动作，
+    # 而声明层写进 `sources.yaml` 的键从此没有任何消费方。删掉不是丢功能，是把假动作收走。
+    # 能力位注记原话「账密已给（根 .env）」仍然成立；要不要支持"换一所学校"，等真有第二种学校时再开格。
+    setup_fields=(),
     # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
     # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
     # 新条目进待确认」⇒ 这一格从此是一条被点过的读数，不是我替他填的默认值（判据 1）。

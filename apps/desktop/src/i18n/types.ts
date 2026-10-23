@@ -385,6 +385,15 @@ export interface Translations {
       drawerPoolUnreadable: string,
       drawerAgendaCount: string,
       syncNow: string,
+      cadenceModeEveryRound: string
+      cadenceModeEveryHours: string
+      cadenceModeDaily: string
+      cadenceModeWeekly: string
+      /** `{n}` 会换成小时数（同 `agentMenuArchiveConfirmBody` 那套占位符写法）。 */
+      cadenceEveryHours: string
+      cadenceAdvanced: string
+      /** 周几：键是 `0`..`6`（0=周日），值是该语言的短名。 */
+      cadenceWeekdays: Record<string, string>
       cadenceCustom: string,
       cadencePresets: Record<string, string>,
       unknownSource: string,
@@ -1310,6 +1319,18 @@ export interface Translations {
     locationPlaceholder: string
     notesLabel: string
     notesPlaceholder: string
+    /** 用户 10-23：具体安排（可勾选清单）与附件。 */
+    detailsLabel: string
+    detailPlaceholder: string
+    addDetail: string
+    attachmentsLabel: string
+    addAttachment: string
+    noAttachments: string
+    openAttachment: string
+    removeAttachment: string
+    attachmentAdded: string
+    attachmentRemoved: string
+    attachmentFailed: string
     /** WP-DAY-FACE: quiet banner when `/api/agenda/day` is unavailable. */
     rhythmOff: string
     /** Who said it (evidence.sender); absent → `unknown`. */
