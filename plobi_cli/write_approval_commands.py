@@ -138,31 +138,36 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
     return "\n".join(out)
 
 
+def _remember_rejection(rec) -> None:
+    """驳回要进信任账（裁定 156／199：被驳一次，那一类立刻退回必问）。"""
+    payload = (rec or {}).get("payload", {})
+    if payload.get("kind") != "mind_plan":
+        return
+    try:
+        from plobi.mind import proposal as L1
+
+        L1.record_rejection(L1.Plan.from_json(payload["plan"]), reason="用户驳回")
+    except Exception:  # noqa: BLE001 - 记不上账不该让驳回本身失败
+        pass
+
+
 def _apply_one(subsystem: str, rec, memory_store):
     payload = rec.get("payload", {})
     try:
         if subsystem == wa.MEMORY and payload.get("kind") == "mind_plan":
-            # 写脑那张计划（裁定 198）：点这一下等于「你说的就是这个哈希」。
-            # apply_plan 会重新比对象身份、每档新旧 sha256 与 TTL —— 过期、被人先改过、
-            # 或换了个根，都在这儿被拒，不落一个字。
+            # 写脑那张计划：点这一下＝「你说的就是这个哈希」。apply_plan 会重新比对象身份、
+            # 每档新旧 sha256 与 TTL；过期、人先改过、换了根，都在这儿被拒，不落一个字。
             from plobi.mind import proposal as L1
             from plobi.mind.paths import resolve_roots
-
             from plobi.mind.writer import MindWriter
 
             plan = L1.Plan.from_json(payload["plan"])
-            # 点头这一趟必须**绕开**自己那道闸，否则 apply 会再出一张计划（自我套娃）。
-            # 落库与提交照旧，闸只在「人还没点头」那一步生效。
+            # 点头这一趟必须绕开自己那道闸，否则 apply 会再出一张计划（自我套娃）。
             report = L1.apply_plan(
                 plan, approved=plan.digest, roots=resolve_roots(),
                 writer=MindWriter(require_approval=False),
             )
-            if report.ok:
-                return True, ""
-            return False, (
-                "计划已过期、或对象/内容在点头之前变过（对象身份、sha256 或 TTL 不符）"
-                "—— 重出一张计划再点头。"
-            )
+            return (True, "") if report.ok else (False, "计划过期或对象/内容已变，重出一张再点头")
         if subsystem == wa.MEMORY:
             if memory_store is None:
                 return False, "memory store unavailable"
@@ -194,32 +199,6 @@ def _reject(subsystem: str, rest: List[str]) -> str:
     if wa.discard_pending(subsystem, target):
         return f"Rejected pending {subsystem} write '{target}'."
     return f"No pending {subsystem} write with id '{target}'."
-
-
-def _remember_rejection(rec) -> None:
-    """驳回要进信任账（裁定 156：被驳一次，那一类立刻退回必问）。"""
-    payload = (rec or {}).get("payload", {})
-    if payload.get("kind") != "mind_plan":
-        return
-    try:
-        from plobi.mind import proposal as L1
-
-        L1.record_rejection(L1.Plan.from_json(payload["plan"]), reason="用户驳回")
-    except Exception:  # noqa: BLE001 - 记不上账不该把驳回本身弄失败
-        pass
-
-
-def _remember_rejection(rec) -> None:
-    """驳回要进信任账（裁定 156：被驳一次，那一类立刻退回必问）。"""
-    payload = (rec or {}).get("payload", {})
-    if payload.get("kind") != "mind_plan":
-        return
-    try:
-        from plobi.mind import proposal as L1
-
-        L1.record_rejection(L1.Plan.from_json(payload["plan"]), reason="用户驳回")
-    except Exception:  # noqa: BLE001 - 记不上账不该把驳回本身弄失败
-        pass
 
 
 def _diff(rest: List[str]) -> str:
