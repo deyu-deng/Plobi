@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { $agendaEvents, $agendaLoading, $agendaError, $agendaSelectedId } from '@/store/agenda'
+import { $agendaError, $agendaEvents, $agendaLoading, $agendaSelectedId } from '@/store/agenda'
 
 const notify = vi.hoisted(() => vi.fn())
 const notifyError = vi.hoisted(() => vi.fn())
@@ -33,18 +33,22 @@ vi.mock('./timetable/api', () => ({
 getTimetable.mockResolvedValue(null)
 
 const getAgenda = vi.hoisted(() => vi.fn())
+const addAgendaAttachment = vi.hoisted(() => vi.fn())
 const confirmAgendaEvent = vi.hoisted(() => vi.fn())
 const createAgendaEvent = vi.hoisted(() => vi.fn())
 const deleteAgendaEvent = vi.hoisted(() => vi.fn())
 const dismissAgendaEvent = vi.hoisted(() => vi.fn())
+const removeAgendaAttachment = vi.hoisted(() => vi.fn())
 const updateAgendaEvent = vi.hoisted(() => vi.fn())
 
 vi.mock('@/plobi', () => ({
+  addAgendaAttachment: (...args: unknown[]) => addAgendaAttachment(...args),
   confirmAgendaEvent: (...args: unknown[]) => confirmAgendaEvent(...args),
   createAgendaEvent: (...args: unknown[]) => createAgendaEvent(...args),
   deleteAgendaEvent: (...args: unknown[]) => deleteAgendaEvent(...args),
   dismissAgendaEvent: (...args: unknown[]) => dismissAgendaEvent(...args),
   getAgenda: (...args: unknown[]) => getAgenda(...args),
+  removeAgendaAttachment: (...args: unknown[]) => removeAgendaAttachment(...args),
   updateAgendaEvent: (...args: unknown[]) => updateAgendaEvent(...args)
 }))
 
@@ -84,6 +88,7 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
       title: '组会',
       updated_at: '2026-09-10T00:00:00Z'
     }
+
     const openEnded = {
       ...withEnd,
       end_at: null,
@@ -245,6 +250,184 @@ describe('AgendaView empty board (WP-A7-EMPTY)', () => {
     // 空板上仍要看得见「暂无日程」和新建入口。
     expect(screen.getAllByText('Nothing scheduled').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('New entry')).toBeTruthy()
+  })
+})
+
+describe('AgendaView checklist + attachments (用户 10-23)', () => {
+  const base = {
+    confirm_seq: null,
+    confirm_seq_at: null,
+    created_at: '2026-09-10T00:00:00Z',
+    end_at: null,
+    kind: 'task' as const,
+    source: 'manual' as const,
+    status: 'confirmed' as const,
+    updated_at: '2026-09-10T00:00:00Z'
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    $agendaEvents.set([])
+    $agendaLoading.set(false)
+    $agendaError.set(null)
+    $agendaSelectedId.set(null)
+    getAgenda.mockResolvedValue([])
+    getTimetable.mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('creates an event together with its checklist', async () => {
+    createAgendaEvent.mockResolvedValue({
+      ...base,
+      attachments: [],
+      details: [{ done: false, id: 'd1', text: '带电脑' }],
+      id: 'new-check',
+      start_at: '2026-09-11T15:00:00',
+      title: '开会'
+    })
+
+    renderBoard()
+    ;(await screen.findAllByRole('button', { name: 'New entry' }))[0].click()
+    fireEvent.change(await screen.findByLabelText('Title'), { target: { value: '开会' } })
+    fireEvent.change(screen.getByLabelText('Starts'), { target: { value: '2026-09-11T15:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
+    fireEvent.change(screen.getByLabelText('e.g. bring the lab report'), { target: { value: '带电脑' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(createAgendaEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          details: [expect.objectContaining({ done: false, text: '带电脑' })],
+          title: '开会'
+        })
+      )
+    })
+  })
+
+  it('toggles one checklist item through the event API', async () => {
+    const event = {
+      ...base,
+      attachments: [],
+      details: [{ done: false, id: 'd1', text: '带电脑' }],
+      id: 'e-check',
+      start_at: '2026-09-11T15:00:00',
+      title: '开会'
+    }
+
+    updateAgendaEvent.mockResolvedValue({
+      ...event,
+      details: [{ done: true, id: 'd1', text: '带电脑' }]
+    })
+    getAgenda.mockResolvedValue([event])
+    $agendaEvents.set([event])
+    $agendaSelectedId.set('e-check')
+
+    renderBoard()
+
+    fireEvent.click(await screen.findByLabelText('带电脑'))
+
+    await waitFor(() => {
+      expect(updateAgendaEvent).toHaveBeenCalledWith('e-check', {
+        details: [{ done: true, id: 'd1', text: '带电脑' }]
+      })
+    })
+  })
+
+  it('copies a picked file into the backend and lists it under the event', async () => {
+    const event = {
+      ...base,
+      attachments: [],
+      details: [],
+      id: 'e-att',
+      start_at: '2026-09-11T15:00:00',
+      title: '交报告'
+    }
+
+    const withAttachment = {
+      ...event,
+      attachments: [
+        {
+          added_at: '2026-09-11T15:00:00',
+          id: 'a1',
+          name: '报告.pdf',
+          path: 'D:/Data/AppData/plobi/home/attachments/agenda/e-att/a1-报告.pdf',
+          size: 2048
+        }
+      ]
+    }
+
+    selectDesktopPaths.mockResolvedValue(['D:/Desktop/报告.pdf'])
+    addAgendaAttachment.mockResolvedValue(withAttachment)
+    getAgenda.mockResolvedValue([event])
+    $agendaEvents.set([event])
+    $agendaSelectedId.set('e-att')
+
+    renderBoard()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add attachment' }))
+
+    await waitFor(() => {
+      expect(addAgendaAttachment).toHaveBeenCalledWith('e-att', 'D:/Desktop/报告.pdf')
+    })
+    expect(await screen.findByText('报告.pdf')).toBeTruthy()
+    expect(screen.getByText('2.0 KB')).toBeTruthy()
+  })
+
+  it('opens an attachment through the desktop bridge and removes only the copy', async () => {
+    const openExternal = vi.fn()
+    const previous = (window as { plobiDesktop?: unknown }).plobiDesktop
+
+    Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: { openExternal } })
+
+    try {
+      const event = {
+        ...base,
+        attachments: [
+          {
+            added_at: '2026-09-11T15:00:00',
+            id: 'a1',
+            name: '报告.pdf',
+            path: 'D:/Data/AppData/plobi/home/attachments/agenda/e-att/a1-报告.pdf',
+            size: 10
+          }
+        ],
+        details: [],
+        id: 'e-att',
+        start_at: '2026-09-11T15:00:00',
+        title: '交报告'
+      }
+
+      removeAgendaAttachment.mockResolvedValue({ ...event, attachments: [] })
+      getAgenda.mockResolvedValue([event])
+      $agendaEvents.set([event])
+      $agendaSelectedId.set('e-att')
+
+      renderBoard()
+
+      fireEvent.click(await screen.findByText('报告.pdf'))
+
+      expect(openExternal).toHaveBeenCalledWith(
+        'file:///D:/Data/AppData/plobi/home/attachments/agenda/e-att/a1-%E6%8A%A5%E5%91%8A.pdf'
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove attachment' }))
+
+      await waitFor(() => {
+        expect(removeAgendaAttachment).toHaveBeenCalledWith('e-att', 'a1')
+      })
+      await waitFor(() => {
+        expect(screen.queryByText('报告.pdf')).toBeNull()
+      })
+    } finally {
+      if (previous) {
+        Object.defineProperty(window, 'plobiDesktop', { configurable: true, value: previous })
+      } else {
+        Reflect.deleteProperty(window, 'plobiDesktop')
+      }
+    }
   })
 })
 

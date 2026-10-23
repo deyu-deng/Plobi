@@ -26,7 +26,7 @@ DEFAULT_LIMIT = 100
 MAX_LIMIT = 500
 
 #: 能改的那几格（与 `AgendaService.update_manual` 的白名单同一份，不另开一条写入口）。
-EDITABLE_FIELDS = ("title", "start_at", "end_at", "kind", "location", "notes")
+EDITABLE_FIELDS = ("title", "start_at", "end_at", "kind", "location", "notes", "details")
 #: 状态那一格只认库里已有的两种值；给别的照实点名退回，不猜模型想要什么。
 ACCEPTED_STATUS = ("confirmed", "cancelled")
 
@@ -62,7 +62,7 @@ _AGENDA_WRITE_SCHEMA: Dict[str, Any] = {
     "description": (
         "写日程这一面：`items` 是一批记录，**一条一件原子事**，逐条落库、逐条回报。\n\n"
         "每条记录的字段：`event_id`（给了就是改那一行，不给就是**新建一行**）、`title`、`start_at`、`end_at`、"
-        "`kind`、`location`、`notes`；`status` 只能是 `confirmed`（把等人认下的那条认下）或 `cancelled`"
+        "`kind`、`location`、`notes`、`details`（可勾选清单，`[{text, done}]`）；`status` 只能是 `confirmed`（把等人认下的那条认下）或 `cancelled`"
         "（不要那条了：待确认的回滚、已经落定的删掉）；`completed` 是**人承认这条做完了**那一刻，传 false 撤销。\n"
         "时间轴重叠**不拒写**——重叠是事实，由面上标红，不是把写挡住的理由（人令不拒）。\n"
         "没有 `action`／`intent`／`mode`：要改哪条就带它的 `event_id`，先 `agenda_read` 拿到真实 id。\n"
@@ -84,6 +84,17 @@ _AGENDA_WRITE_SCHEMA: Dict[str, Any] = {
                         "kind": {"type": "string", "description": "class／task／ddl／rest／meeting…默认 task。"},
                         "location": {"type": "string", "description": "地点。"},
                         "notes": {"type": "string", "description": "备注。"},
+                        "details": {
+                            "type": "array",
+                            "description": "具体安排：可勾选清单，整份替换。每项 {text, done?}，空文字项会被丢掉。",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "text": {"type": "string"},
+                                    "done": {"type": "boolean"},
+                                },
+                            },
+                        },
                         "status": {
                             "type": "string",
                             "enum": list(ACCEPTED_STATUS),
@@ -279,6 +290,7 @@ def _write_one(service: Any, item: Any) -> Dict[str, Any]:
             kind=str(item.get("kind") or "").strip() or "task",
             location=item.get("location"),
             notes=item.get("notes"),
+            details=item.get("details"),
         )
         return {"action": "created", **_brief(event)}
 

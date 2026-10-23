@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Optional
+from uuid import uuid4
 
+from . import attachments as attachments_store
 from . import store
 from .store import AgendaValidationError, Event
 
@@ -48,6 +50,31 @@ class ManualTargetAmbiguous(AgendaError):
     def __init__(self, candidates: list[dict]):
         super().__init__("multiple candidate events matched")
         self.candidates = candidates
+
+
+def _normalize_details(value: Any) -> list[dict]:
+    """具体安排：只收有文字的项；id 缺了就补一个，done 只认真值。"""
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise AgendaValidationError("details 必须是清单")
+    out: list[dict] = []
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        out.append(
+            {
+                "done": bool(row.get("done")),
+                "id": str(row.get("id") or uuid4().hex),
+                "text": text[:500],
+            }
+        )
+        if len(out) >= 50:
+            break
+    return out
 
 
 def _candidate_brief(event: Event) -> dict:
@@ -145,9 +172,11 @@ class AgendaService:
         kind: str = "task",
         location: Optional[str] = None,
         notes: Optional[str] = None,
+        details: Optional[list] = None,
     ) -> Event:
         """WP-DAY-SURFACE: 手写日程可带地点/备注；空串视为未填。
 
+        用户 10-23：另可带一份可勾选的具体安排（清单）；附件在创建后单独挂。
         时间轴重叠是「事实」，**不**拒绝写入（人令不拒；重叠由看板标红）。
         """
         text = (str(location).strip() if location is not None else "") or None
@@ -163,10 +192,11 @@ class AgendaService:
                 source="manual",
                 location=text,
                 notes=text_notes,
+                details=_normalize_details(details),
             )
 
     def update_manual(self, event_id: str, **fields: Any) -> Event:
-        allowed = {"title", "start_at", "end_at", "kind", "location", "notes"}
+        allowed = {"title", "start_at", "end_at", "kind", "location", "notes", "details"}
         unknown = set(fields) - allowed
         if unknown:
             raise AgendaValidationError(f"cannot edit field(s): {sorted(unknown)}")
@@ -176,6 +206,8 @@ class AgendaService:
                 continue
             if k in {"location", "notes"}:
                 patch[k] = (str(v).strip() or None) if v is not None else None
+            elif k == "details":
+                patch[k] = _normalize_details(v)
             else:
                 patch[k] = v
         with self._conn() as conn:
@@ -204,6 +236,21 @@ class AgendaService:
                 action="manual_delete",
                 event_source=current.source,
             )
+        attachments_store.delete_event_attachments(event_id)
+
+    def add_attachment(self, event_id: str, source_path: str) -> Event:
+        with self._conn() as conn:
+            current = store.get_event(conn, event_id)
+            if current is None:
+                raise EventNotFound(event_id)
+            return attachments_store.add_attachment(conn, current, source_path)
+
+    def remove_attachment(self, event_id: str, attachment_id: str) -> Event:
+        with self._conn() as conn:
+            current = store.get_event(conn, event_id)
+            if current is None:
+                raise EventNotFound(event_id)
+            return attachments_store.remove_attachment(conn, current, attachment_id)
 
     def resolve_manual_target(
         self,

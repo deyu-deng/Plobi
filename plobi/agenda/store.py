@@ -60,6 +60,10 @@ class Event:
     # WP-DAY-SURFACE: 手动日程可带地点与备注（课表导入时从 evidence 摊平）。
     location: Optional[str] = None
     notes: Optional[str] = None
+    # 用户 10-23：具体安排（可勾选清单）与附件。两者都只属于这一行，
+    # 不写 evidence（那里是信源指纹，混进去会被排练程当成素材）。
+    details: list = field(default_factory=list)
+    attachments: list = field(default_factory=list)
     # WP-PLAN-COMPLETION-ACK：人承认「这条做完了」的那一刻。真源只在事件上；
     # 夜间排程按（日, kind, 标题）覆盖同一行时不动这一格。见 `mark_event_completed`。
     completed_at: Optional[str] = None
@@ -187,6 +191,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     _ensure_event_completed_column(conn)
     _ensure_event_location_notes_columns(conn)
+    _ensure_event_detail_columns(conn)
     conn.commit()
 
 
@@ -216,6 +221,33 @@ def _dumps(value: Optional[dict]) -> Optional[str]:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _loads_json_list(raw: Any) -> list:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return value if isinstance(value, list) else []
+
+
+def _dumps_list(value: Optional[list]) -> Optional[str]:
+    if not value:
+        return None
+    return json.dumps(list(value), ensure_ascii=False)
+
+
+def _ensure_event_detail_columns(conn: sqlite3.Connection) -> bool:
+    """旧库 ALTER：events 加 details / attachments 两列（nullable TEXT）。"""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
+    added = False
+    for name in ("details", "attachments"):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {name} TEXT")
+            added = True
+    return added
+
+
 def _row_to_event(row: sqlite3.Row) -> Event:
     # WP-DAY-SURFACE: 旧库行可能没有 location/notes 列 → 默认空串（=无）。
     columns = row.keys()
@@ -227,8 +259,10 @@ def _row_to_event(row: sqlite3.Row) -> Event:
         kind=row["kind"],
         status=row["status"],
         source=row["source"],
-        location=(row["location"] if "location" in columns else "") or None or None,
+        location=(row["location"] if "location" in columns else "") or None,
         notes=(row["notes"] if "notes" in columns else "") or None,
+        details=_loads_json_list(row["details"]) if "details" in columns else [],
+        attachments=_loads_json_list(row["attachments"]) if "attachments" in columns else [],
         completed_at=((row["completed_at"] if "completed_at" in columns else "") or None),
         evidence=_loads(row["evidence"]),
         prev_value=_loads(row["prev_value"]),
@@ -309,6 +343,8 @@ def create_event(
     event_id: Optional[str] = None,
     location: Optional[str] = None,
     notes: Optional[str] = None,
+    details: Optional[list] = None,
+    attachments: Optional[list] = None,
     prev_value: Optional[dict] = None,
     confirm_seq: Optional[int] = None,
     confirm_seq_at: Optional[str] = None,
@@ -339,6 +375,8 @@ def create_event(
         evidence=evidence,
         location=location,
         notes=notes,
+        details=list(details or []),
+        attachments=list(attachments or []),
         prev_value=prev_value,
         confirm_seq=confirm_seq,
         confirm_seq_at=confirm_seq_at,
@@ -348,9 +386,9 @@ def create_event(
     conn.execute(
         """
         INSERT OR IGNORE INTO events (id, title, start_at, end_at, kind, status, source,
-                            location, notes, evidence, prev_value,
+                            location, notes, details, attachments, evidence, prev_value,
                             confirm_seq, confirm_seq_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             event.id,
@@ -362,6 +400,8 @@ def create_event(
             event.source,
             event.location or None,
             event.notes or None,
+            _dumps_list(event.details),
+            _dumps_list(event.attachments),
             _dumps(event.evidence),
             _dumps(event.prev_value),
             event.confirm_seq,
@@ -448,6 +488,8 @@ _UPDATABLE = {
     "completed_at",
     "location",
     "notes",
+    "details",
+    "attachments",
     "evidence",
     "prev_value",
     "confirm_seq",
@@ -482,6 +524,8 @@ def update_event(conn: sqlite3.Connection, event_id: str, **fields: Any) -> Opti
             value = text or None
         if name in {"evidence", "prev_value"}:
             value = _dumps(value)
+        if name in {"details", "attachments"}:
+            value = _dumps_list(value)
         assignments.append(f"{name} = ?")
         params.append(value)
 

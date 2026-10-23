@@ -606,7 +606,24 @@ export interface AgendaPrevValue {
   title?: string
 }
 
+/** 用户 10-23：日程的具体安排（一条一个可勾选小项）。 */
+export interface AgendaDetailItem {
+  done: boolean
+  id: string
+  text: string
+}
+
+/** 用户 10-23：附件元数据；`path` 指向家目录里的副本，不是用户原来的位置。 */
+export interface AgendaAttachment {
+  added_at: string
+  id: string
+  name: string
+  path: string
+  size: number
+}
+
 export interface AgendaEvent {
+  attachments?: AgendaAttachment[]
   confirm_seq?: null | number
   confirm_seq_at?: null | string
   created_at: string
@@ -618,6 +635,8 @@ export interface AgendaEvent {
   location?: null | string
   /** WP-DAY-FACE: free-form notes the user typed (manual events). */
   notes?: null | string
+  /** 具体安排：可勾选清单；整份替换，不合并。 */
+  details?: AgendaDetailItem[]
   /**
    * WP-AGENDA-VIEW: ids this row overlaps, **computed by the backend**
    * (`plobi/agenda/planning.py` `compute_event_overlaps`, half-open `[start, end)`
@@ -635,6 +654,7 @@ export interface AgendaEvent {
 }
 
 export interface AgendaEventCreate {
+  details?: AgendaDetailItem[]
   end_at?: string
   kind?: AgendaKind
   /** WP-DAY-FACE: optional venue. The server treats null / missing identically. */
@@ -646,6 +666,7 @@ export interface AgendaEventCreate {
 }
 
 export interface AgendaEventPatch {
+  details?: AgendaDetailItem[]
   end_at?: null | string
   kind?: AgendaKind
   location?: null | string

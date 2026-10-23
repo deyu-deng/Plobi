@@ -13,7 +13,8 @@
    `entry/src/main/ets/model/AgendaEvent.ets` 的 `AgendaEvent` 没这个字段；
 ② 单日快照的 `avoid_windows`（避让时段）——同文件 `DayPayload` 没有，而 README:68 那行写着
    「含冲突、避让时段」⇒ 那份文档与它自己的模型也不一致。
-计划层 10-22 退役后，单日快照不再有 `plan_items` / `plan_status`；鸿蒙 `DayParser` 读的是旧形状，
+计划层 10-22 退役后，单日快照不再有 `plan_items` / `plan_status`；用户 10-23 又给事件加了
+`details`（可勾选清单）与 `attachments`（附件元数据）两格——鸿蒙 `AgendaEvent` 还没跟上，
 移动端整段押后，这里只钉后端真值。
 
 跑法（免额度、免真机、免 LAN）：
@@ -52,10 +53,12 @@ BROWSER_AT = "browser-access-token-for-contract-probe"
 # ---- 载荷形状：后端今天的真值。改这里=改契约，得同步鸿蒙 README 与 model/AgendaEvent.ets ----
 
 EVENT_ROW_FIELDS = {
+    "attachments",
     "completed_at",
     "confirm_seq",
     "confirm_seq_at",
     "created_at",
+    "details",
     "end_at",
     "evidence",
     "id",

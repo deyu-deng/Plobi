@@ -39,6 +39,7 @@ class EventCreate(BaseModel):
     kind: str = "task"
     location: Optional[str] = None
     notes: Optional[str] = None
+    details: Optional[list[dict]] = None
 
 
 class EventPatch(BaseModel):
@@ -48,12 +49,19 @@ class EventPatch(BaseModel):
     kind: Optional[str] = None
     location: Optional[str] = None
     notes: Optional[str] = None
+    details: Optional[list[dict]] = None
 
 
 class EventComplete(BaseModel):
     """``false`` 是撤销承认，不是删除——历史一行不动。"""
 
     completed: bool = True
+
+
+class AttachmentAdd(BaseModel):
+    """用户从本机选中的文件路径；后端复制进 Plobi 家目录后才挂到日程上。"""
+
+    path: str = Field(min_length=1)
 
 
 def _service() -> AgendaService:
@@ -162,6 +170,7 @@ async def create_event(body: EventCreate):
         kind=body.kind,
         location=body.location,
         notes=body.notes,
+        details=body.details,
     )
     return _serialize(event)
 
@@ -208,4 +217,17 @@ async def complete_event(event_id: str, body: Optional[EventComplete] = None):
         event_id,
         completed=(body.completed if body is not None else True),
     )
+    return _serialize(event)
+
+
+@router.post("/{event_id}/attachments")
+async def add_attachment(event_id: str, body: AttachmentAdd):
+    """复制选中的文件进 Plobi 家目录，再把元数据挂到这条日程。"""
+    event = await _call(_service().add_attachment, event_id, body.path)
+    return _serialize(event)
+
+
+@router.delete("/{event_id}/attachments/{attachment_id}")
+async def remove_attachment(event_id: str, attachment_id: str):
+    event = await _call(_service().remove_attachment, event_id, attachment_id)
     return _serialize(event)
