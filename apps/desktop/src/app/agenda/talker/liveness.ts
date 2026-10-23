@@ -65,7 +65,9 @@ export function buildSourceViews(
   payload: null | SourceLivenessPayload,
   names: Record<string, string>
 ): SourceView[] {
-  if (!payload) {
+  // 两道都挡：`null`（取数失败）与"有对象但没有那一格数组"（后端比面旧、或信封没剥）。
+  // 这一格崩过一次是把整棵组件树送进 error boundary，用户看到的是整个面板不见。
+  if (!payload || !Array.isArray(payload.sources)) {
     return []
   }
 
