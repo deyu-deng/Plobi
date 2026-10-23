@@ -157,7 +157,10 @@ def _render_digest(messages: List[Dict[str, Any]]) -> str:
 
 
 class MindProvider(MemoryProvider):
-    """Plobi memory provider that bridges to the Mind vault."""
+    """Plobi memory provider that bridges to the Mind vault.
+
+    内核模块（裁定 198：官方脑不是插件形态）——`plugins/memory/mind/` 只剩注册壳与 CLI。
+    """
 
     def __init__(self) -> None:
         self._session_id: str = ""
