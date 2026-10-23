@@ -202,6 +202,27 @@ def plan_whole_house(profiles_root: Path, date_tag: str, homes: list[Path]) -> t
     return moves, skipped
 
 
+def plan_restore(profiles_root: Path, date_tag: str) -> tuple[list[dict], list[dict]]:
+    """把某一次整屋退役**逐字搬回**：``_quarantine-<日期>/profiles/<name>`` → ``profiles/<name>``。
+
+    存在即 skip，**不覆盖**——若那一家已经被别的进程建回来了（spawn 会），
+    覆盖等于把别人写的东西当我的旧副本压回去。返回 ``(moves, skipped)``，纯算不碰盘。
+    """
+    src_root = profiles_root.parent / f"{QUARANTINE_PREFIX}{date_tag}" / "profiles"
+    moves: list[dict] = []
+    skipped: list[dict] = []
+    if not src_root.is_dir():
+        return moves, [{"home": "*", "missing_source": str(src_root)}]
+    for h in sorted(p for p in src_root.iterdir() if p.is_dir()):
+        dst = profiles_root / h.name
+        if dst.exists():
+            skipped.append({"home": h.name, "target_exists": str(dst)})
+            continue
+        moves.append({"home": h.name, "class": "restore", "src": str(h),
+                      "dst": str(dst), "bytes": tree_bytes(h)})
+    return moves, skipped
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ADR-0013 甲组存量隔离 / 第 4 步整屋退役（只移不删）")
     ap.add_argument("--apply", action="store_true", help="真搬。不加这个参数只出计划。")
@@ -212,6 +233,9 @@ def main(argv=None) -> int:
     ap.add_argument("--whole-house", action="store_true",
                     help="第 4 步整屋退役：把 profiles/<name> 整个移进 "
                          "<共享根>/_quarantine-<日期>/profiles/<name>（含 state.db/凭据/技能，只移不删）")
+    ap.add_argument("--restore", action="store_true",
+                    help="把某次整屋退役逐字搬回 profiles/（存在即 skip，不覆盖）——"
+                         "用于回滚一次过早的数据搬运，不是恢复 profile 设计")
     args = ap.parse_args(argv)
 
     if args.profiles_root:
@@ -223,6 +247,29 @@ def main(argv=None) -> int:
         root_source = "_get_profiles_root()"
 
     homes = homes_of(profiles_root)
+
+    if args.restore:
+        moves, skipped = plan_restore(profiles_root, args.date)
+        done, errors = apply_moves(moves) if args.apply else ([], [])
+        print(json.dumps({
+            "mode": "apply" if args.apply else "dry-run",
+            "batch": "restore",
+            "profiles_root": str(profiles_root),
+            "root_resolved_by": root_source,
+            "from": str(profiles_root.parent / f"{QUARANTINE_PREFIX}{args.date}" / "profiles"),
+            "planned_moves": len(moves),
+            "planned_bytes": sum(m["bytes"] for m in moves),
+            "skipped_target_exists": skipped,
+            "moved": done,
+            "errors": errors,
+            "homes_before": len(homes),
+            "homes_after": len(homes_of(profiles_root)),
+        }, ensure_ascii=False, indent=2))
+        if not args.apply:
+            print("\n(dry-run——加 --apply 才搬回。判据：homes_after 回到搬走之前的家数；"
+                  "目标已存在的一律 skip，不覆盖别人建回来的东西)", file=sys.stderr)
+            return 0
+        return 1 if errors else 0
 
     if args.whole_house:
         # 动整屋之前先确认真实活跃家不在要被搬的那棵树里——否则等于把正在用的家搬走。
