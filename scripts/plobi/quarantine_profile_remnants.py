@@ -146,9 +146,10 @@ def apply_moves(moves: list[dict]) -> tuple[list[dict], list[dict]]:
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(dst))
-            done.append({"home": m["home"], "class": m["class"], "to": str(dst)})
+            done.append({"home": m["home"], "class": m.get("class", "whole-house"), "to": str(dst)})
         except OSError as exc:
-            errors.append({"home": m["home"], "class": m["class"], "error": f"{type(exc).__name__}: {exc}"})
+            errors.append({"home": m["home"], "class": m.get("class", "whole-house"),
+                           "error": f"{type(exc).__name__}: {exc}"})
     return done, errors
 
 
@@ -179,13 +180,38 @@ def read_chain(homes: list[Path]) -> dict:
             "shared_copy_missing": missing, "errors": errors}
 
 
+def plan_whole_house(profiles_root: Path, date_tag: str, homes: list[Path]) -> tuple[list[dict], list[dict]]:
+    """整屋退役：``<root>/profiles/<name>`` → ``<root>/_quarantine-<日期>/profiles/<name>``。
+
+    为什么把隔离区放在 ``profiles/`` **外面**：`plobi profile list` 与探针都按
+    ``profiles/`` 下的子目录数家，把 ``_quarantine-*`` 放进去虽然名字以 ``_`` 开头、
+    也容易在某条忘记过滤的读路上变成一个"名字叫 quarantine 的分身"。放在共享根下、
+    与 ``profiles/`` 平级，既在同一个盘上、又不改变"家里还剩几个"这个读数。
+
+    返回 ``(moves, skipped)``。纯算，不碰盘。
+    """
+    moves: list[dict] = []
+    skipped: list[dict] = []
+    for h in homes:
+        dst = profiles_root.parent / f"{QUARANTINE_PREFIX}{date_tag}" / "profiles" / h.name
+        if dst.exists():
+            skipped.append({"home": h.name, "already": str(dst)})
+            continue
+        moves.append({"home": h.name, "class": "whole-house", "src": str(h),
+                      "dst": str(dst), "bytes": tree_bytes(h)})
+    return moves, skipped
+
+
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="ADR-0013 甲组存量隔离（只移不删）")
+    ap = argparse.ArgumentParser(description="ADR-0013 甲组存量隔离 / 第 4 步整屋退役（只移不删）")
     ap.add_argument("--apply", action="store_true", help="真搬。不加这个参数只出计划。")
     ap.add_argument("--date", default=date.today().strftime("%Y%m%d"),
                     help="隔离目录的日期后缀（默认今天；写死是为了重跑幂等）")
     ap.add_argument("--profiles-root", default=None,
                     help="调试用：覆盖 `plobi_cli.profiles._get_profiles_root()`")
+    ap.add_argument("--whole-house", action="store_true",
+                    help="第 4 步整屋退役：把 profiles/<name> 整个移进 "
+                         "<共享根>/_quarantine-<日期>/profiles/<name>（含 state.db/凭据/技能，只移不删）")
     args = ap.parse_args(argv)
 
     if args.profiles_root:
@@ -197,6 +223,45 @@ def main(argv=None) -> int:
         root_source = "_get_profiles_root()"
 
     homes = homes_of(profiles_root)
+
+    if args.whole_house:
+        # 动整屋之前先确认真实活跃家不在要被搬的那棵树里——否则等于把正在用的家搬走。
+        from plobi_constants import get_plobi_home
+        active = get_plobi_home().resolve()
+        try:
+            active.relative_to(profiles_root.resolve())
+            print(f"REFUSED — 活跃 PLOBI_HOME 就在 profiles 根里：{active}", file=sys.stderr)
+            return 2
+        except ValueError:
+            pass
+
+        moves, skipped = plan_whole_house(profiles_root, args.date, homes)
+        # 体积必须在**搬之前**量：搬完再量等于在问空路径，会得到一排 0（我第一版就是这么错的，
+        # 是 `test_whole_house_moves_every_home_and_keeps_the_bytes` 抓出来的）。
+        values_before = {h.name: tree_bytes(h) for h in homes}
+        done, errors = apply_moves(moves) if args.apply else ([], [])
+        homes_after = homes_of(profiles_root)
+        print(json.dumps({
+            "mode": "apply" if args.apply else "dry-run",
+            "batch": "whole-house",
+            "profiles_root": str(profiles_root),
+            "root_resolved_by": root_source,
+            "quarantine_root": str(profiles_root.parent / f"{QUARANTINE_PREFIX}{args.date}" / "profiles"),
+            "homes_before": len(homes),
+            "homes_after": len(homes_after),
+            "values_before": values_before,
+            "planned_moves": len(moves),
+            "planned_bytes": sum(m["bytes"] for m in moves),
+            "already_quarantined": skipped,
+            "moved": done,
+            "errors": errors,
+        }, ensure_ascii=False, indent=2))
+        if not args.apply:
+            print("\n(dry-run——加 --apply 才搬。判据：homes_after == 0；每个家的字节数在 "
+                  "_quarantine-<日期>/profiles/ 下原样可查；真删仍要用户签)", file=sys.stderr)
+            return 0
+        return 1 if (homes_after or errors) else 0
+
     before = measure(profiles_root, homes)
     moves, refused, skipped = plan_moves(profiles_root, args.date, homes)
     chain_before = read_chain(homes) if args.apply else None
