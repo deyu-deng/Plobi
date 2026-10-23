@@ -331,7 +331,7 @@ def test_free_text_archived_to_mind_daily_digest():
         "我想把睡眠改到 23 点", day=moment, writer=writer
     ) is True
     relative, content, mode = writer.calls[0]
-    assert "Loom/raw/chat-logs/digested/2026-09-10/checkin-replies.md" == relative
+    assert "Vault/projects/Plobi/ai-daily/2026-09-10/checkin-replies.md" == relative
     assert mode == "append"
     assert "睡眠改到 23 点" in content
 

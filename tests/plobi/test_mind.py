@@ -46,13 +46,28 @@ def vault(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "relative",
     [
-        "Loom/raw/chat-logs/digested/2026-08-25/agenda.md",
+        "Vault/projects/Plobi/ai-daily/2026-08-25/agenda.md",
         "Vault/projects/Plobi/notes.md",
         "Vault/inbox/idea.md",
     ],
 )
 def test_safe_paths_are_accepted(relative):
     assert is_safe_relative(relative) is True
+
+
+def test_no_raw_zone_is_writable_and_ai_writes_face_the_human_surface():
+    """原料区作废（裁定 198）：白名单里不许再出现任何 ``raw`` 段，AI 写的那格必须在 vault 一侧。
+
+    为什么钉这两条：``Loom/raw/chat-logs/*`` 那两条白名单项是旧 Mind 形态留下的门——门开着，
+    provider 就会继续往带远端的脑仓抄第二份聊天原文，正是裁定 157 判过的事。会话的正本现在
+    在单库 ``state.db``（裁定 180），所以这道门要关；而摘要与打勾回复按裁定 158 归人读面。
+    """
+    from plobi.mind import AI_WRITE_ROOT
+    from plobi.mind.paths import SAFE_PREFIXES
+
+    assert not [p for p in SAFE_PREFIXES if "raw" in p.split("/")], SAFE_PREFIXES
+    assert AI_WRITE_ROOT.split("/")[0] == "Vault", AI_WRITE_ROOT
+    assert is_safe_relative(f"{AI_WRITE_ROOT}/2026-10-23/agenda.md") is True
 
 
 @pytest.mark.parametrize(
@@ -92,12 +107,23 @@ def test_no_hardcoded_drive_letters_in_paths_module():
 # --- writer -----------------------------------------------------------------
 
 
-def test_write_lands_under_loom(vault):
+def test_ai_daily_digest_lands_in_the_human_surface(vault):
+    """AI 写的每日摘要住人读面（裁 158），不住原料区（裁 198）。
+
+    钉的是关系不是路径字面量：`AI_WRITE_ROOT` 指到哪，文件就落到哪，且那个位置里
+    不许出现 `raw` 这一段——原料区作废之后，任何把摘要送回脑仓的处理都算违规。
+    """
+    from plobi.mind import AI_WRITE_ROOT
+    from plobi.mind.paths import real_target
+
+    rel = f"{AI_WRITE_ROOT}/2026-08-25/agenda.md"
+    assert "raw" not in rel.split("/")
+
     writer = MindWriter(vault, run_verifier=False)
-    result = writer.write_one("Loom/raw/chat-logs/digested/2026-08-25/agenda.md", "# 摘要\n")
+    result = writer.write_one(rel, "# 摘要\n")
 
     assert result.ok is True
-    assert (vault / "raw/chat-logs/digested/2026-08-25/agenda.md").read_text(encoding="utf-8") == "# 摘要\n"
+    assert real_target(rel, vault).read_text(encoding="utf-8") == "# 摘要\n"
 
 
 def test_unsafe_write_is_skipped_not_fatal(vault):

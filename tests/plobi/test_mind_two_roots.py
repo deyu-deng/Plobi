@@ -163,13 +163,14 @@ def test_logical_target_relabels_a_flattened_brain_path(mind, monkeypatch):
 def test_first_file_in_an_absent_zone_is_still_inside_it(mind, monkeypatch):
     """The zones are defined by the path, not by whether the directory exists yet.
 
-    A ``is_dir()`` guard here made the provider refuse ``sync_turn``'s first export
-    write — caught by the existing adapter family, not by this suite.
+    一个 ``is_dir()`` 守卫当年让 ``sync_turn`` 第一次写导出就吃闭门羹（那是旧原料区的形状，
+    裁定 198 之后那条腿已经作废）。判据本身照旧要钉：区域由**路径**定义，不由目录在不在定义。
+    换一格还活着的区（wiki 的概念层）来钉它。
     """
     monkeypatch.delenv("VAULT_ROOT", raising=False)
-    assert not (mind / "raw" / "chat-logs" / "exports").exists()
-    assert logical_target(mind / "raw/chat-logs/exports/chat.md", mind) == (
-        "Loom/raw/chat-logs/exports/chat.md"
+    assert not (mind / "wiki" / "concepts").exists()
+    assert logical_target(mind / "wiki" / "concepts" / "chat.md", mind) == (
+        "Loom/wiki/concepts/chat.md"
     )
 
 
