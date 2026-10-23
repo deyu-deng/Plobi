@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from tools.registry import registry
@@ -37,8 +37,7 @@ _AGENDA_READ_SCHEMA: Dict[str, Any] = {
         "所有参数都是**筛选条件**（全部可省）：`start`／`end` 时间范围（`YYYY-MM-DD` 或带时分秒）、"
         "`source` 哪条信源（manual／timetable／zju…）、`kind` 类型（class／task／ddl／rest…）、"
         "`contains` 标题或备注里含这段文字、`include_cancelled` 要不要连已取消的一起给、`limit` 最多几条。\n"
-        "一个参数都不给 = 今天到明天那一批。除条目外还带回 `pending`（等人认下的那一队）与 "
-        "`plans`（范围内那几天的计划表头：谁排的、几块、有没有冲突）。\n"
+        "一个参数都不给 = 今天到明天那一批。除条目外还带回 `pending`（等人认下的那一队）。\n"
         "这一枚**只读**，什么都不会改。"
     ),
     "parameters": {
@@ -131,20 +130,6 @@ def _brief(event: Any) -> Dict[str, Any]:
     return data
 
 
-def _days_in(start_text: Optional[str], end_text: Optional[str]) -> List[str]:
-    """范围内的每一天（拿来取计划表头）。上限 31 天——再多就是范围给错了。"""
-    first = date.fromisoformat((start_text or datetime.now().date().isoformat())[:10])
-    last = date.fromisoformat((end_text or first.isoformat())[:10])
-    if last < first:
-        first, last = last, first
-    days: List[str] = []
-    cursor = first
-    while cursor <= last and len(days) < 31:
-        days.append(cursor.isoformat())
-        cursor = cursor + timedelta(days=1)
-    return days
-
-
 def _bound(value: Optional[str], *, end_of_day: bool = False) -> Optional[str]:
     """给的是**光一天**（`2026-10-21`）就铺成那一整天。
 
@@ -209,19 +194,6 @@ def agenda_read(
     except Exception:  # noqa: BLE001 - 那一队只是背景信息，读不到不影响这一批条目
         pending = []
 
-    plans: List[Dict[str, Any]] = []
-    try:
-        for day in _days_in(start_text, end_text):
-            plan = service.get_plan(day)
-            if plan is not None:
-                plans.append({
-                    "id": plan.id, "for_date": plan.for_date, "status": plan.status,
-                    "generated_at": plan.generated_at, "summary": plan.summary,
-                    "conflict_count": plan.conflict_count, "event_count": plan.event_count,
-                })
-    except Exception:  # noqa: BLE001 - 同上
-        pass
-
     return json.dumps(
         {
             "ok": True,
@@ -230,7 +202,6 @@ def agenda_read(
             "truncated": len(items) > capped,
             "range": {"start": start_text, "end": end_text},
             "pending": pending,
-            "plans": plans,
         },
         ensure_ascii=False,
     )

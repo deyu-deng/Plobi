@@ -6,8 +6,7 @@
  * its `start_at` and `end_at`; side-by-side overlaps (裁定 31.1 / 36.2, "苹果
  * 那种") get their own column — across ALL lanes, not per lane — so two
  * colliding events sit next to each other instead of stacking as two
- * translucent layers. The lane only decides the skin (裁定 34.3): solid for
- * events, dotted + accent rail for planned work. Open-ended blocks stay
+ * translucent layers. Open-ended blocks stay
  * honest — a full-width line at that instant, never a fabricated hour.
  * Today's axis also draws a "now" line at the local clock.
  *
@@ -20,7 +19,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { PanelSectionLabel } from '@/app/overlays/panel'
 import { currentI18nLocale, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import type { AgendaAvoidWindow, AgendaEvent, AgendaPlanItem } from '@/types/plobi'
+import type { AgendaAvoidWindow, AgendaEvent } from '@/types/plobi'
 
 import {
   type RailDay,
@@ -71,20 +70,10 @@ function dateHeadingOf(dayKey: string): string {
 }
 
 /**
- * Lane skin for one block. Two lanes share the axis, so the stroke style
- * carries the identity — at a glance you must be able to tell "this is a class
- * / a hand-written event" from "this is planned work" (裁定 34.3). Only
- * existing UI vars, no new design language:
- *   - event  → solid border, tinted by status (unchanged);
- *   - plan   → dotted hairline + a thick `--ui-accent` left rail (the same
- *     accent rail `pending-event-card` uses for "this is a proposal").
+ * Skin for one block: solid border, tinted by status / overlap. Only existing
+ * UI vars, no new design language.
  */
 function blockBorderClass(block: TimelineBlock): string {
-  if (block.lane === 'plan') {
-    return 'border-dotted border-(--ui-stroke-tertiary) border-l-2 border-l-(--ui-accent) bg-(--ui-accent)/5'
-  }
-
-  // events (lane === 'event')
   if (block.overlaps) {
     return 'border-amber-500/70 bg-amber-500/10'
   }
@@ -201,7 +190,6 @@ function DayAxis({
             return (
               <div
                 className="absolute inset-x-0 z-10 flex items-center gap-1.5"
-                data-lane={block.lane}
                 data-open-ended="true"
                 data-testid={`timeline-block-${block.id ?? `deadline-${index}`}`}
                 key={block.id ?? `deadline-${index}-${block.startMinutes}`}
@@ -223,13 +211,9 @@ function DayAxis({
           return (
             <div
               className={cn(
-                'absolute overflow-hidden rounded-md border px-1.5 py-0.5',
-                // Plans are the day's soft background band; the real events
-                // must never be covered by one (裁定 32.1 独立 lane).
-                block.lane === 'event' ? 'z-10' : 'z-0',
+                'absolute z-10 overflow-hidden rounded-md border px-1.5 py-0.5',
                 blockBorderClass(block)
               )}
-              data-lane={block.lane}
               data-overlap={block.overlaps ? 'true' : undefined}
               data-testid={`timeline-block-${block.id ?? `block-${index}`}`}
               key={block.id ?? `block-${index}-${block.startMinutes}`}
@@ -249,7 +233,7 @@ function DayAxis({
                   {clockOf(block.source && 'start_at' in block.source ? block.source.start_at : '')}
                   {block.endClock ? `–${block.endClock}` : ''}
                 </span>
-                {block.lane === 'event' && block.status === 'pending' ? (
+                {block.status === 'pending' ? (
                   <span className="shrink-0 text-[0.62rem] text-amber-600/90">{pendingLabel}</span>
                 ) : null}
                 <span className="min-w-0 truncate text-[0.72rem] text-foreground/90">{block.title}</span>
@@ -267,13 +251,11 @@ function DayAxis({
 
 export function Timeline({
   avoidWindows,
-  events,
-  plans
+  events
 }: {
   /** Confirmed avoid windows keyed by day (rendered as faint bands). */
   avoidWindows?: AgendaAvoidWindow[]
   events: AgendaEvent[]
-  plans?: AgendaPlanItem[]
 }) {
   const { t } = useI18n()
   const todayKey = localDateKey(new Date())
@@ -323,12 +305,12 @@ export function Timeline({
     scroller.scrollTop = Math.max(0, offsetWithinScroller - 16)
   }, [todayKey])
 
-  // Defensive dedupe: any upstream layer that appends the same event/plan
-  // twice (e.g. day endpoint returning today's block on top of the all-events
-  // window) would otherwise make `layoutDay` greedy-split the duplicate into
-  // its own column, so the same class would render at half-width on the right
-  // of its real column (WP-AXIS-INSIGHT). We dedupe by id when present, and
-  // by `(start_at, title)` for id-less rows (plans / avoid windows).
+  // Defensive dedupe: any upstream layer that appends the same event twice
+  // (e.g. a day window overlapping the all-events window) would otherwise make
+  // `layoutDay` greedy-split the duplicate into its own column, so the same
+  // class would render at half-width on the right of its real column
+  // (WP-AXIS-INSIGHT). We dedupe by id when present, and by
+  // `(start_at, title)` for id-less rows (avoid windows).
   // The first occurrence wins; ordering is preserved.
   function dedupe<T extends { id?: null | string; start_at: string; title?: string }>(rows: T[]): T[] {
     const seenIds = new Set<string>()
@@ -360,10 +342,9 @@ export function Timeline({
   const seed: RailDay = useMemo(
     () => ({
       avoidWindows: dedupe(avoidWindows ?? []),
-      events: dedupe(events),
-      plans: dedupe(plans ?? [])
+      events: dedupe(events)
     }),
-    [events, plans, avoidWindows]
+    [events, avoidWindows]
   )
 
   const rail = useAgendaRailDay(selected, seed, [todayKey, tomorrowKey])
@@ -371,7 +352,7 @@ export function Timeline({
   const week = weekKeysOf(selected)
 
   const day = useMemo(
-    () => layoutDay(rail.events, selected, rail.plans, rail.avoidWindows) ?? emptyDay(selected),
+    () => layoutDay(rail.events, selected, rail.avoidWindows) ?? emptyDay(selected),
     [rail, selected]
   )
 

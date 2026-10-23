@@ -34,8 +34,8 @@ def fake_planner(monkeypatch):
         "for_date": DAY,
         "classes": [], "deadlines": [], "other_events": [],
         "today_items": [], "avoid_windows": [], "project_pace": [],
-        "yesterday": {"status": "missing", "summary": "昨夜未生成计划"},
-        "missing": ["昨天的完成情况（plan_items 还没有状态列，R-099 在落）"],
+        "yesterday": {"date": "2026-10-15", "events": [], "completed": []},
+        "missing": [],
     }
     monkeypatch.setattr(lp, "plan_materials", lambda conn, day: materials)
     return materials

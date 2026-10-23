@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from . import store
-from .store import AgendaValidationError, DailyPlan, Event
+from .store import AgendaValidationError, Event
 
 # Fields a pending change may overwrite, and which we snapshot into prev_value.
 _DIFFABLE = ("title", "start_at", "end_at")
@@ -31,10 +31,6 @@ class AgendaError(Exception):
 
 
 class EventNotFound(AgendaError):
-    pass
-
-
-class PlanNotFound(AgendaError):
     pass
 
 
@@ -60,11 +56,6 @@ def _candidate_brief(event: Event) -> dict:
         "title": event.title,
         "start_at": event.start_at,
     }
-
-
-def _plan_is_empty(plan: DailyPlan) -> bool:
-    """Empty plans are honest zero-event snapshots; they stay out of 改动率."""
-    return plan.status == "empty" or plan.event_count <= 0
 
 
 @dataclass
@@ -110,7 +101,7 @@ class AgendaService:
         — the SQL boundary *does* pass `2026-09-16T11:30:00 >= 2026-09-17T00:00:00`
         = False, so duplicates in real DBs are not the SQLite fault the user
         suspected, but the dedupe is still the right safety. First occurrence
-        wins; ordering from `_order_by_confirmed_plans` is preserved.
+        wins; the store's ``start_at`` order is preserved.
         """
         if start_from is None and start_to is None:
             today = datetime.now().date()
@@ -123,10 +114,9 @@ class AgendaService:
                 start_to=start_to,
                 include_cancelled=include_cancelled,
             )
-            ordered = self._order_by_confirmed_plans(conn, events)
             seen_ids: set[str] = set()
             deduped: list[Event] = []
-            for event in ordered:
+            for event in events:
                 if event.id in seen_ids:
                     continue
                 seen_ids.add(event.id)
@@ -143,67 +133,6 @@ class AgendaService:
     def list_pending(self) -> list[Event]:
         with self._conn() as conn:
             return store.list_events(conn, status="pending")
-
-    def get_plan(self, for_date: str | None = None) -> DailyPlan | None:
-        """Plan header for ``for_date`` (default: today). Missing → ``None``."""
-        day = for_date or datetime.now().date().isoformat()
-        with self._conn() as conn:
-            return store.get_daily_plan(conn, day)
-
-    def list_pending_plans(self) -> list[DailyPlan]:
-        """All ``pending`` daily plans, oldest ``for_date`` first."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT id FROM daily_plans WHERE status = 'pending' ORDER BY for_date ASC"
-            ).fetchall()
-            plans: list[DailyPlan] = []
-            for row in rows:
-                plan = store.get_daily_plan_by_id(conn, row["id"])
-                if plan is not None:
-                    plans.append(plan)
-            return plans
-
-    def _order_by_confirmed_plans(
-        self, conn: sqlite3.Connection, events: list[Event]
-    ) -> list[Event]:
-        """C3: days with a confirmed plan follow ``plan_items.sort_order``.
-
-        Dates without a confirmed plan keep the store's start_at order.
-        Events on a planned day that are not in the plan stay after plan items.
-        """
-        if not events:
-            return events
-
-        groups: dict[str, list[Event]] = {}
-        date_order: list[str] = []
-        for event in events:
-            day = event.start_at[:10] if len(event.start_at) >= 10 else ""
-            if day not in groups:
-                groups[day] = []
-                date_order.append(day)
-            groups[day].append(event)
-
-        ordered: list[Event] = []
-        for day in date_order:
-            chunk = groups[day]
-            if not day:
-                ordered.extend(chunk)
-                continue
-            plan = store.get_daily_plan(conn, day)
-            if plan is None or plan.status != "confirmed":
-                ordered.extend(chunk)
-                continue
-            items = store.list_plan_items(conn, plan.id)
-            if not items:
-                ordered.extend(chunk)
-                continue
-            rank = {item.event_id: item.sort_order for item in items}
-            in_plan = [event for event in chunk if event.id in rank]
-            rest = [event for event in chunk if event.id not in rank]
-            in_plan.sort(key=lambda event: rank[event.id])
-            ordered.extend(in_plan)
-            ordered.extend(rest)
-        return ordered
 
     # --- manual edits (user is the source of truth) -------------------------
 
@@ -485,9 +414,9 @@ class AgendaService:
     def set_completed(self, event_id: str, completed: bool = True) -> Event:
         """承认这条做完了（或撤销承认）——WP-PLAN-COMPLETION-ACK 的面上那一下。
 
-        完成态只存在事件上，不复制进 ``plan_items``：每晚重排会对当天那一份
-        ``replace_plan_items`` 先删再插，把"做完了"写在会被它本该拦住的那次重排
-        抹掉的表里，等于第二天又排一遍。撤销清回 None，不删行、不动历史。
+        完成态只存在 ``events.completed_at``：每晚重排按（日, kind, 标题）覆盖同一条
+        事件行，这一格一律不动，所以「做完了」不会被第二晚抹掉。撤销清回 None，
+        不删行、不动历史。
         """
         with self._conn() as conn:
             current = store.get_event(conn, event_id)
@@ -503,62 +432,15 @@ class AgendaService:
         assert updated is not None
         return updated
 
-    # --- daily plan decisions (same machine as events; events stay put) -----
-
-    def confirm_plan(self, plan_id: str) -> DailyPlan:
-        """``pending`` / ``empty`` → ``confirmed``. Never mutates ``events``."""
-        with self._conn() as conn:
-            current = store.get_daily_plan_by_id(conn, plan_id)
-            if current is None:
-                raise PlanNotFound(plan_id)
-            if current.status not in ("pending", "empty"):
-                return current
-            updated = store.set_plan_status(
-                conn, plan_id, "confirmed", clear_seq=True
-            )
-            if not _plan_is_empty(current):
-                store.log_action(
-                    conn,
-                    event_id=plan_id,
-                    action="confirm",
-                    event_source="plan",
-                    detail="plan",
-                )
-        assert updated is not None
-        return updated
-
-    def dismiss_plan(self, plan_id: str) -> DailyPlan:
-        """``pending`` / ``empty`` → ``dismissed``. Never mutates ``events``."""
-        with self._conn() as conn:
-            current = store.get_daily_plan_by_id(conn, plan_id)
-            if current is None:
-                raise PlanNotFound(plan_id)
-            if current.status not in ("pending", "empty"):
-                return current
-            updated = store.set_plan_status(
-                conn, plan_id, "dismissed", clear_seq=True
-            )
-            if not _plan_is_empty(current):
-                store.log_action(
-                    conn,
-                    event_id=plan_id,
-                    action="dismiss",
-                    event_source="plan",
-                    detail="plan",
-                )
-        assert updated is not None
-        return updated
-
     # --- DingTalk short-sequence protocol -----------------------------------
 
-    def resolve_by_seq(self, seq: int, *, accept: bool) -> Event | DailyPlan | store.CheckinCard | None:
-        """Pending event → plan → checkin card. Expired stays expired."""
+    def resolve_by_seq(self, seq: int, *, accept: bool) -> Event | store.CheckinCard | None:
+        """Pending event → checkin card. Expired stays expired."""
         with self._conn() as conn:
             event = store.find_by_confirm_seq(conn, seq)
-            plan = None if event is not None else store.find_plan_by_confirm_seq(conn, seq)
             card = (
                 None
-                if event is not None or plan is not None
+                if event is not None
                 else store.find_card_by_confirm_seq(conn, seq)
             )
 
@@ -566,11 +448,6 @@ class AgendaService:
             if not store.confirm_seq_is_live(event):
                 raise ConfirmSeqExpired(f"confirm_seq={seq}")
             return self.confirm(event.id) if accept else self.dismiss(event.id)
-
-        if plan is not None:
-            if not store.confirm_seq_is_live(plan):
-                raise ConfirmSeqExpired(f"confirm_seq={seq}")
-            return self.confirm_plan(plan.id) if accept else self.dismiss_plan(plan.id)
 
         if card is not None:
             if not store.confirm_seq_is_live(card):

@@ -73,13 +73,14 @@ def _proposal(items, reason=REASON):
 
 
 def _items_of(conn):
-    plan = store.get_daily_plan(conn, DAY)
-    assert plan is not None, "秘书这一发没落到 daily_plans"
+    events = store.list_events(
+        conn, start_from=f"{DAY}T00:00:00", start_to=f"{DAY}T23:59:59")
+    assert events, "秘书这一发没落到 events"
     return [
-        {"title": it.title, "kind": it.kind, "start_at": str(it.start_at),
-         "end_at": str(it.end_at), "evidence": dict(it.evidence or {})}
-        for it in store.list_plan_items(conn, plan.id)
-        if str(it.start_at)[:10] == DAY
+        {"title": event.title, "kind": event.kind, "start_at": str(event.start_at),
+         "end_at": str(event.end_at), "evidence": dict(event.evidence or {})}
+        for event in events
+        if str(event.start_at)[:10] == DAY
     ]
 
 

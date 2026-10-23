@@ -30,7 +30,7 @@ from .service import (
     EventNotFound,
     get_service,
 )
-from .store import DailyPlan, Event
+from .store import Event
 
 logger = logging.getLogger(__name__)
 
@@ -111,17 +111,6 @@ def format_pending(event: Event) -> str:
     return "\n".join(lines)
 
 
-def format_pending_plan(plan: DailyPlan) -> str:
-    """Same §7 card skeleton as events: header + one summary + 确认N/忽略N."""
-    seq = plan.confirm_seq if plan.confirm_seq is not None else "?"
-    lines = [f"【待确认 #{seq}】明日计划"]
-    summary = (plan.summary or "").strip()
-    if summary:
-        lines.append(summary)
-    lines.append(f"回复: 确认{seq} / 忽略{seq}")
-    return "\n".join(lines)
-
-
 class PendingDispatcher:
     def __init__(
         self,
@@ -141,22 +130,15 @@ class PendingDispatcher:
         return self._notifier or get_notifier()
 
     def notify_pending(self, events: Optional[list[Event]] = None) -> list[str]:
-        """Push one message per pending event.
-
-        Pending plans go out only on a full sweep (``events is None``).
-        Watchdog/webhook pass a specific event list — those already have a
-        20:00 evening-plan card and must not be re-pushed every 10 minutes.
-        """
+        """Push one message per pending event."""
         targets = events if events is not None else self.service.list_pending()
-        plans = self.service.list_pending_plans() if events is None else []
-        if not targets and not plans:
+        if not targets:
             return []
 
         if not self.notifier.configured:
             logger.info(
-                "agenda: %d pending change(s) + %d pending plan(s) but no notifier configured",
+                "agenda: %d pending change(s) but no notifier configured",
                 len(targets),
-                len(plans),
             )
             return []
 
@@ -168,12 +150,6 @@ class PendingDispatcher:
             else:
                 # Leave it pending; the next sweep retries rather than losing it.
                 logger.warning("agenda: notify failed for %s: %s", event.id, outcome.detail)
-        for plan in plans:
-            outcome = self.notifier.send(format_pending_plan(plan))
-            if outcome.ok:
-                sent.append(plan.id)
-            else:
-                logger.warning("agenda: notify failed for %s: %s", plan.id, outcome.detail)
         return sent
 
     def handle_reply(self, text: str) -> Optional[str]:
@@ -190,11 +166,6 @@ class PendingDispatcher:
             return f"[Plobi] 没有待确认的 {command.seq} 号，可能已经处理过了。"
 
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        if isinstance(resolved, DailyPlan):
-            if command.accept:
-                return f"[Plobi] 已确认：明日计划（{stamp}）"
-            return f"[Plobi] 已忽略 {command.seq} 号，今夜计划已否决（{stamp}）。"
 
         if command.accept:
             title = resolved.title if resolved else str(command.seq)

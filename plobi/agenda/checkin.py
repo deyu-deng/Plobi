@@ -127,68 +127,6 @@ def _topic_event_diffs(conn, now: datetime) -> list[dict]:
     return topics
 
 
-def _topic_plan_status(conn, now: datetime) -> Optional[dict]:
-    """b. 昨夜计划（即今天的 daily_plan）状态；dismissed 列出条目。"""
-    today = now.date().isoformat()
-    plan = store.get_daily_plan(conn, today)
-    if plan is None:
-        return None
-    detail: dict[str, Any] = {"plan_id": plan.id, "status": plan.status}
-    summary = f"昨夜生成的今日计划状态是「{plan.status}」"
-    if plan.status == "dismissed":
-        items = store.list_plan_items(conn, plan.id)
-        titles = "、".join(i.title for i in items) or "（无条目）"
-        detail["items"] = [i.title for i in items]
-        summary += f"，被忽略的条目：{titles}"
-    return {
-        "key": f"plan_status:{today}",
-        "topic": "plan_status",
-        "evidence": detail,
-        "summary": summary,
-    }
-
-
-def _topic_unadvanced_projects(conn, now: datetime, *, days: int) -> list[dict]:
-    """c. pace 项目连续 N 天的推进块被忽略/过期（未被确认）。"""
-    from .planning import paced_projects
-
-    topics: list[dict] = []
-    for entry, weekly_hours in paced_projects():
-        hit_dates: list[str] = []
-        for offset in range(1, days + 1):
-            day = (now.date() - timedelta(days=offset)).isoformat()
-            plan = store.get_daily_plan(conn, day)
-            if plan is None or plan.status == "confirmed":
-                break  # 无计划或已确认 → 推进观察中断
-            blocks = [
-                item
-                for item in store.list_plan_items(conn, plan.id)
-                if item.evidence.get("kind") == "project_block"
-                and item.evidence.get("project_id") == entry.name
-            ]
-            if not blocks:
-                break  # 那天根本没排它的块 → 观察中断
-            hit_dates.append(day)
-        if len(hit_dates) >= days:
-            topics.append(
-                {
-                    "key": f"unadvanced:{entry.name}",
-                    "topic": "project_unadvanced",
-                    "evidence": {
-                        "project_id": entry.name,
-                        "days": len(hit_dates),
-                        "dates": hit_dates,
-                        "weekly_hours": weekly_hours,
-                    },
-                    "summary": (
-                        f"项目「{entry.name}」的推进块已连续 {len(hit_dates)} 天"
-                        f"未被确认（每周目标 {weekly_hours:g} 小时）"
-                    ),
-                }
-            )
-    return topics
-
-
 def _topic_change_rate(conn, now: datetime, *, window_days: int, threshold: float, min_sample: int) -> list[dict]:
     """d. 改动率异常：近 N 天某类（按 kind 聚合）日程被改动比例超阈值。"""
     since = (now - timedelta(days=window_days)).isoformat()
@@ -386,12 +324,6 @@ def build_checkin(
 
         topics: list[dict] = []
         topics.extend(_topic_event_diffs(conn, moment))
-        plan_topic = _topic_plan_status(conn, moment)
-        if plan_topic:
-            topics.append(plan_topic)
-        topics.extend(
-            _topic_unadvanced_projects(conn, moment, days=int(cfg.get("unadvanced_days", 6)))
-        )
         rate_topics = _topic_change_rate(
             conn,
             moment,

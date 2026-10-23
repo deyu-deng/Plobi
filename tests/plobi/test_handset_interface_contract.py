@@ -8,13 +8,13 @@
 - 载荷面：**逐字段等值**（不是 `>=`）。多一个字段，鸿蒙那边就有一处 `DayParser` 拿不到它；
   少一个字段，就是拆一份已发布的契约（139④(a)：改名 / 删口 / 开私口都算违契约）。
 
-**鸿蒙那侧现在没跟着走的三个字段**（本刀按后端真值钉住，只报归属、不改别人那族文件）：
+**鸿蒙那侧现在没跟着走的字段**（本刀按后端真值钉住，只报归属、不改别人那族文件）：
 ① 事件行的 `completed_at`（`WP-PLAN-COMPLETION-ACK`：完成态真源在事件上）——
    `entry/src/main/ets/model/AgendaEvent.ets` 的 `AgendaEvent` 没这个字段；
-② 计划项行的 `event_id`（同一把刀判据③：「做完了」打在事件上，就得把 event_id 带出来）——
-   同文件 `PlanItem` 没有；
-③ 单日快照的 `avoid_windows`（避让时段）——同文件 `DayPayload` 没有，而 README:68 那行写着
+② 单日快照的 `avoid_windows`（避让时段）——同文件 `DayPayload` 没有，而 README:68 那行写着
    「含冲突、避让时段」⇒ 那份文档与它自己的模型也不一致。
+计划层 10-22 退役后，单日快照不再有 `plan_items` / `plan_status`；鸿蒙 `DayParser` 读的是旧形状，
+移动端整段押后，这里只钉后端真值。
 
 跑法（免额度、免真机、免 LAN）：
 `bash scripts/run_tests.sh tests/plobi/test_handset_interface_contract.py`
@@ -75,10 +75,7 @@ DAY_TOP_LEVEL_FIELDS = {
     "conflicts",
     "date",
     "events",
-    "plan_items",
-    "plan_status",
 }
-PLAN_ITEM_ROW_FIELDS = {"end_at", "event_id", "evidence", "id", "kind", "start_at", "title"}
 CONFLICT_ROW_FIELDS = {"end_at", "left_id", "right_id", "start_at"}
 REDEEM_RESPONSE_FIELDS = {"deviceId", "scopes", "token"}
 REDEEM_SCOPES = {"agenda:read", "agenda:confirm", "task:read"}
@@ -163,7 +160,7 @@ def surface(tmp_path, monkeypatch):
 
 @pytest.fixture
 def seeded(surface):
-    """Overlapping confirmed pair, a point DDL, a pending row, a cancelled row, and a plan."""
+    """Overlapping confirmed pair, a point DDL, a pending row, a cancelled row."""
     client, token, store_ = surface
     service = agenda_service.get_service()
     left = service.create_manual(
@@ -179,22 +176,6 @@ def seeded(surface):
         store.update_event(conn, pending.id, status="pending")
         cancelled = service.create_manual(title="取消 E", start_at=f"{DAY}T16:00:00")
         store.update_event(conn, cancelled.id, status="cancelled")
-        plan = store.upsert_daily_plan(conn, for_date=DAY, status="pending", summary="今晚排的")
-        store.replace_plan_items(
-            conn,
-            plan.id,
-            [
-                {
-                    "event_id": left.id,
-                    "title": "推进块",
-                    "start_at": f"{DAY}T12:00:00",
-                    "end_at": f"{DAY}T12:40:00",
-                    "kind": "task",
-                    "evidence": {"kind": "manual"},
-                }
-            ],
-        )
-
     return client, token, {
         "ddl": ddl.id,
         "left": left.id,
@@ -234,7 +215,7 @@ def test_read_surface_answers_and_matches_the_documented_lanes(seeded):
 
 
 def test_day_surface_field_for_field(seeded):
-    """单日快照 = 桌面同一份 `day_surface`：七块、逐字段等值，冲突与避让都在这一个响应里。"""
+    """单日快照 = 桌面同一份 `day_surface`：四块、逐字段等值，冲突与避让都在这一个响应里。"""
     client, token, ids = seeded
 
     day = client.get(f"{HANDSET_API_PREFIX}/agenda/day", params={"date": DAY}, headers=_bearer(token))
@@ -244,7 +225,6 @@ def test_day_surface_field_for_field(seeded):
 
     assert set(payload) == DAY_TOP_LEVEL_FIELDS, "单日快照的块数变了：鸿蒙 DayParser 要跟着改"
     assert payload["date"] == DAY
-    assert payload["plan_status"] == "pending"
     assert {row["id"] for row in payload["events"]} == {
         ids["left"],
         ids["right"],
@@ -254,7 +234,7 @@ def test_day_surface_field_for_field(seeded):
     for row in payload["events"]:
         assert set(row) == DAY_EVENT_ROW_FIELDS, "事件行的字段集变了（含 completed_at / overlaps）"
 
-    # 顺序由后端的 `_order_by_confirmed_plans` 决定，不假设 events[0] 是谁 ⇒ 按 id 取。
+    # 顺序由后端 start_at 决定，不假设 events[0] 是谁 ⇒ 按 id 取。
     left_row = next(row for row in payload["events"] if row["id"] == ids["left"])
     right_row = next(row for row in payload["events"] if row["id"] == ids["right"])
 
@@ -267,10 +247,6 @@ def test_day_surface_field_for_field(seeded):
     assert payload["conflicts"], "重叠的那两条应当贡献一行冲突"
     for conflict in payload["conflicts"]:
         assert set(conflict) == CONFLICT_ROW_FIELDS
-    for item in payload["plan_items"]:
-        assert set(item) == PLAN_ITEM_ROW_FIELDS
-        # WP-PLAN-COMPLETION-ACK 判据③：完成态打在事件上 ⇒ 计划项必须带得回 event_id。
-        assert item["event_id"] == ids["left"]
     assert isinstance(payload["avoid_windows"], list)
 
 

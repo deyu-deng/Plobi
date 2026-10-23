@@ -123,22 +123,13 @@ class TestRead:
         assert [i["title"] for i in hits] == ["实验三报告"]
         assert _read(start=TOMORROW, end=TOMORROW, source="manual")["count"] == 2
 
-    def test_pending_and_the_plan_header_come_back_too(self, agenda):
+    def test_pending_comes_back_too(self, agenda):
         _seed_pending(agenda)
-        conn = store.connect(agenda)
-        try:
-            store.upsert_daily_plan(conn, for_date=TOMORROW, status="pending",
-                                    summary="秘书自己排的", event_count=2, conflict_count=1)
-            conn.commit()
-        finally:
-            conn.close()
 
         out = _read(start=TOMORROW, end=TOMORROW)
 
         assert [i["title"] for i in out["pending"]] == ["明天下午三点开组会"]
-        header = out["plans"]
-        assert [p["for_date"] for p in header] == [TOMORROW]
-        assert header[0]["summary"] == "秘书自己排的" and header[0]["conflict_count"] == 1
+        assert "plans" not in out, "计划层 10-22 退役后，读面不再回计划表头"
 
     def test_an_unreadable_time_is_named_not_ignored(self, agenda):
         out = _read(start="下礼拜")

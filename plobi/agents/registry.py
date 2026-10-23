@@ -2120,13 +2120,11 @@ def run_plan_day(
     registry: AgentRegistry | None = None,
     action: str | None = None,
 ) -> dict:
-    """Read tomorrow's (or ``date``'s) plan **from the store** — this function never writes.
+    """Read a day's schedule — or, with ``action=plan_tomorrow``, let the secretary plan it.
 
-    它以前是 ``generate_evening_plan`` 的薄壳，那句 docstring 写着「no mutation」而**它是错的**：
-    ``generate_evening_plan`` 先 DELETE 当天 ``plan_items`` 再重插。均分本体（裁定 149）退役之后
-    那条路重插不出任何块，于是每一次「读」都把秘书排好的块抹掉——10-17 17:2x 实测在案
-    （``WP-PLAN-DAY-CLOBBER``）。现在这里只读 ``daily_plans`` / ``plan_items``：没有那份计划就
-    照实说没有，绝不"顺手生成一份"。要生成由秘书那一发去写（``action=plan_tomorrow``）。
+    用户 10-22 拍「计划整层退役，夜间直接写 events」：这里不再有``daily_plans``／``plan_items``
+    那一层。不带 action 时**只读** events；带 ``action=plan_tomorrow`` 时才打模型、
+    过边界闸、把排出来的块直接写成 events（:func:`plobi.agenda.llm_planning.plan_and_store_day`）。
     """
     from datetime import date as _date, timedelta
 
@@ -2146,13 +2144,40 @@ def run_plan_day(
             "for_date": for_date,
             "user_text": user_text,
         }
-    try:
-        # 只读：读不到就是没有，不生成（生成会 DELETE 当天那批 plan_items）。
-        _conn = _store.connect(db_path)
+
+    if action == "plan_tomorrow":
+        from plobi.agenda import llm_planning
+
         try:
-            plan = _store.get_daily_plan(_conn, for_date)
+            conn = _store.connect(db_path)
+            try:
+                result = llm_planning.plan_and_store_day(for_date, conn=conn)
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.warning("plobi: plan_and_store_day failed for %s: %s", for_date, exc)
+            return {
+                "ok": False,
+                "intent": "plan_day",
+                "error": f"plan_day 失败: {exc}",
+                "for_date": for_date,
+                "written": 0,
+                "user_text": user_text,
+            }
+        result["intent"] = "plan_day"
+        result["user_text"] = user_text
+        return result
+
+    try:
+        conn = _store.connect(db_path)
+        try:
+            events = _store.list_events(
+                conn,
+                start_from=f"{for_date}T00:00:00",
+                start_to=f"{for_date}T23:59:59",
+            )
         finally:
-            _conn.close()
+            conn.close()
     except Exception as exc:
         logger.warning("plobi: plan_day failed for %s: %s", for_date, exc)
         return {
@@ -2163,57 +2188,35 @@ def run_plan_day(
             "user_text": user_text,
         }
 
-    if plan is None:
-        # 读不到就是没有——这一句必须说得出「没有」，不许为了给出东西而现生成一份
-        # （生成 = 先 DELETE 当天那批 plan_items，那正是本刀要堵的口子）。
-        return {
-            "ok": False,
-            "intent": "plan_day",
-            "for_date": for_date,
-            "written": 0,
-            "error": (
-                f"{for_date} 那份计划还没有（我这一条只读，不替你生成）。"
-                "要排就直接说一声「排一下明天」——那一发由我自己写，"
-                "不重排、不删你已经排好的块；只想看就问「明天怎么安排」（只读，不动库）。"
-            ),
-            "items": [],
+    items = [
+        {
+            "id": event.id,
+            "title": event.title,
+            "start_at": event.start_at,
+            "end_at": event.end_at,
+            "kind": event.kind,
+            "evidence": event.evidence,
         }
-
-    items: list[dict] = []
-    try:
-        conn = _store.connect(db_path)
-        try:
-            rows = _store.list_plan_items(conn, plan.id)
-        finally:
-            conn.close()
-        for item in rows:
-            items.append(
-                {
-                    "title": item.title,
-                    "start_at": item.start_at,
-                    "end_at": item.end_at,
-                    "kind": item.kind,
-                    "evidence": item.evidence,
-                }
-            )
-    except Exception as exc:
-        logger.warning("plobi: plan_day item read failed: %s", exc)
-
+        for event in events
+    ]
     return {
         "ok": True,
         "intent": "plan_day",
-        "for_date": plan.for_date,
-        "summary": (plan.summary or "").strip(),
-        "conflict_count": int(plan.conflict_count),
+        "for_date": for_date,
+        "summary": (
+            f"{for_date} 有 {len(items)} 条日程。"
+            if items else f"{for_date} 还没有安排任何事。"
+        ),
+        "written": 0,
         "items": items,
     }
 
 
 # WP-PROJECT-PORTFOLIO: 7 values. ``project_status`` reads Mind's project tree
 # and reports each ``l2_project`` (no chatlog, no agenda L2 spawn). ``plan_day``
-# 自 10-17 起是**纯读**（``store.get_daily_plan``；它以前调 ``generate_evening_plan``，
-# 那个函数先 DELETE 当天 plan_items 再重插 —— `WP-PLAN-DAY-CLOBBER` 就是这一口）。Both are
-# routed before ``ensure_agenda_agent`` so a dead collector cannot block them.
+# 10-22 起计划层退役：不带 ``action`` 只读 events，带 ``action=plan_tomorrow``
+# 才排程并直接写 events。Both are routed before ``ensure_agenda_agent`` so a
+# dead collector cannot block them.
 SECRETARY_ASK_INTENTS = (
     "refresh_agenda",
     "write_briefing",
@@ -2253,8 +2256,8 @@ MUTATE_ACTIONS = ("create", "update", "delete", "cancel_matching", "move_block")
 # cancelled here, and never in 200 delete round-trips.
 #
 # R-105 / WP-PLAN-CHAT-ADJUST: ``move_block`` is the fifth **action**, not an
-# eighth **intent** — 裁定 51 冻结的是七个 intent，嘴还是那张嘴。它改的是
-# ``plan_items``（L1 排出来的那块），不是 ``events``；走
+# eighth **intent** — 裁定 51 冻结的是七个 intent，嘴还是那张嘴。计划层退役后
+# 它改的是日程秘书排出来的那条 **event**（``created_by="planner"``），走
 # :mod:`plobi.agenda.plan_edits`，与排程过同一道边界闸。
 CANCEL_MATCHING_SOURCES: tuple[str, ...] = ("timetable",)
 MUTATE_KINDS = ("meeting", "task", "ddl", "class")
@@ -2268,103 +2271,9 @@ PENDING_STATUSES: tuple[str, ...] = ("pending",)
 # 「今天起 7 天」= today .. today+6 (inclusive).
 QUERY_WEEK_DAYS = 7
 
-MISSING_PLAN_SUMMARY = "昨夜未生成计划"
-PLAN_BRIEFING_STATUSES = frozenset({"pending", "confirmed", "empty"})
-STALE_PLAN_NOTE = "计划生成后日程有变，以看板为准"
-
-
-def _tomorrow_for_date(agenda_summary: dict | None = None) -> str:
-    from datetime import date, timedelta
-
-    listed = (agenda_summary or {}).get("tomorrow")
-    if listed:
-        return str(listed)
-    return (date.today() + timedelta(days=1)).isoformat()
-
-
 def _secretary_db_path(pipeline=None):
     service = getattr(pipeline, "service", None) if pipeline is not None else None
     return getattr(service, "db_path", None) if service is not None else None
-
-
-def _tomorrow_event_ids(agenda_summary: dict | None) -> set[str]:
-    events = (agenda_summary or {}).get("tomorrow_events") or []
-    return {
-        str(event.get("id"))
-        for event in events
-        if isinstance(event, dict) and event.get("id")
-    }
-
-
-def _missing_plan_payload(for_date: str) -> dict:
-    return {
-        "status": "missing",
-        "summary": MISSING_PLAN_SUMMARY,
-        "for_date": for_date,
-        "event_count": 0,
-        "conflict_count": 0,
-        "stale": False,
-        "empty": False,
-    }
-
-
-def _annotate_stale_summary(view: dict) -> dict:
-    if not view.get("stale"):
-        return view
-    summary = (view.get("summary") or "").strip()
-    if STALE_PLAN_NOTE in summary:
-        return view
-    annotated = dict(view)
-    annotated["summary"] = f"{summary}。{STALE_PLAN_NOTE}" if summary else STALE_PLAN_NOTE
-    return annotated
-
-
-def _l1_plan_view_from_store(
-    for_date: str, tomorrow_ids: set[str], db_path
-) -> dict:
-    from plobi.agenda import store
-
-    conn = store.connect(db_path)
-    try:
-        plan = store.get_daily_plan(conn, for_date)
-        if plan is None:
-            return _missing_plan_payload(for_date)
-        items = store.list_plan_items(conn, plan.id)
-        item_ids = {item.event_id for item in items if item.event_id}
-        return {
-            "status": plan.status,
-            "summary": (plan.summary or "").strip(),
-            "for_date": plan.for_date,
-            "event_count": int(plan.event_count),
-            "conflict_count": int(plan.conflict_count),
-            "stale": item_ids != tomorrow_ids,
-            "empty": plan.status == "empty",
-        }
-    finally:
-        conn.close()
-
-
-def _l1_plan_view(
-    pipeline=None,
-    agenda_summary: dict | None = None,
-) -> dict:
-    """Read tomorrow's nightly plan for L1. Prefer planning.l1_plan_view."""
-    for_date = _tomorrow_for_date(agenda_summary)
-    tomorrow_ids = _tomorrow_event_ids(agenda_summary)
-    db_path = _secretary_db_path(pipeline)
-    try:
-        from plobi.agenda.planning import l1_plan_view as planning_view
-    except ImportError:
-        return _annotate_stale_summary(
-            _l1_plan_view_from_store(for_date, tomorrow_ids, db_path)
-        )
-    return _annotate_stale_summary(
-        planning_view(for_date, tomorrow_ids, db_path=db_path)
-    )
-
-
-def _uses_plan_briefing(plan: dict | None) -> bool:
-    return bool(plan) and plan.get("status") in PLAN_BRIEFING_STATUSES
 
 
 def _secretary_service(pipeline=None):
@@ -2610,14 +2519,14 @@ def _run_move_block(
     start_at: str,
     end_at: str | None,
 ) -> dict:
-    """把 L1 排出来的那一块挪到新钟点，**其余块一个字节不动**（R-105 判据①②）。
+    """把排程排出来的那一条挪到新钟点，**其余行一个字节不动**（R-105 判据①②）。
 
-    指哪一块：``event_id`` 或 ``title``，也允许给那块**现在的起始 HH:MM**
-    （query_agenda 回过 plan_items，L1 手上有这些）；对不上或对上两块 ⇒ 一句人话问回去，
-    不替用户猜。新结束时间不给 ⇒ 保留这块原来的时长，不编。
+    指哪一条：``event_id`` 或 ``title``，也允许给那条**现在的起始 HH:MM**
+    （query_agenda 回过当天的行，L1 手上有这些）；对不上或对上两条 ⇒ 一句人话问回去，
+    不替用户猜。新结束时间不给 ⇒ 保留这条原来的时长，不编。
 
-    过闸与排程共用 :func:`plobi.agenda.llm_planning.validate_proposal`：挤掉作息、
-    同一时段双订、越出清醒窗 ⇒ **零写入** + 一句人话（判据③，假成功比失败难查）。
+    过闸与排程共用 :func:`plobi.agenda.llm_planning.validate_proposal`：同一时段双订、
+    复述、避开时段 ⇒ **零写入** + 一句人话（判据③，假成功比失败难查）。
     """
     from plobi.agenda import plan_edits, store
 
@@ -2657,27 +2566,18 @@ def _run_move_block(
 
     changed = result["changed"]
     others = max(int(result.get("item_count", 1)) - 1, 0)
-    if result.get("life_block"):
-        # R-106：作息是 standing 规则，面上必须说清「以后每天」，不许让人以为只挪了明天一次。
-        say = (
-            f"『{changed['title']}』以后每天都是 {changed['to']}（原来 {changed['from']}）；"
-            f"改的是作息模板这一条真源，{PLAN_BLOCK_EDITOR} 按你这句话落的笔：{user_text or '未记原话'}。"
-            + ("那天计划里的那一行已经跟着走了。" if result.get("synced_plan_row")
-               else "那天还没生成计划，明晚 20:00 排的时候自然按新钟点落。")
-        )
-    else:
-        say = (
-            f"『{changed['title']}』从 {changed['from']} 挪到 {changed['to']}；"
-            f"是你这句话让我改的（{PLAN_BLOCK_EDITOR} 落笔）：{user_text or '未记原话'}。"
-            f"那天其余 {others} 块一个字没动。"
-        )
+    say = (
+        f"『{changed['title']}』从 {changed['from']} 挪到 {changed['to']}；"
+        f"是你这句话让我改的（{PLAN_BLOCK_EDITOR} 落笔）：{user_text or '未记原话'}。"
+        f"那天其余 {others} 条一个字没动。"
+    )
     payload: dict = {
         "ok": True,
         "intent": "mutate_agenda",
         "action": "move_block",
         "for_date": day,
+        "event_id": result.get("event_id"),
         "changed": changed,
-        "life_block": bool(result.get("life_block")),
         "user_text": user_text,
         "read_back": result.get("read_back"),
         # 面上就说这一句（判据②：改了哪一块、谁改的、其余没动）。
@@ -2702,12 +2602,12 @@ def run_mutate_agenda(
     """WP-L1-AGENDA-MUTATE: add / change / cancel via the same secretary mouth.
 
     R-105 / WP-PLAN-CHAT-ADJUST adds ``action=move_block`` — the fifth action,
-    still the same frozen seven intents (裁定 51). It edits ``plan_items`` (the
-    block L1 placed), not ``events``, and goes through
-    :mod:`plobi.agenda.plan_edits`, which validates against the very same
-    boundary gate the nightly planner uses. Refusal is a plain sentence plus
-    **zero writes**; a silent re-flow of the rest of the plan is what the
-    ruling forbids, so only the named row is ever rewritten.
+    still the same frozen seven intents (裁定 51). It edits the named
+    ``events`` row (what the nightly planner wrote directly since 10-22) and
+    goes through :mod:`plobi.agenda.plan_edits`, which validates against the
+    very same boundary gate the nightly planner uses. Refusal is a plain
+    sentence plus **zero writes**; a silent re-flow of the rest of the day is
+    what the ruling forbids, so only the named row is ever rewritten.
 
     Goes straight to ``AgendaService`` — never calls ``refresh_agenda`` and
     never touches chatlog, so a dead collector cannot block a write.
@@ -2795,9 +2695,9 @@ def run_mutate_agenda(
                 start_at=start_at,
             )
 
-        # R-105 / WP-PLAN-CHAT-ADJUST：这一条改的是**计划里那一块**（plan_items），
-        # 不是 events——所以它不归 AgendaService 管。与 cancel_matching 一样直接
-        # return：不领日程 L2 的名片，免得「挪一块」顺手 spawn 一个分身。
+        # R-105 / WP-PLAN-CHAT-ADJUST：这一条改的是**被点名的那一行 events**，
+        # 走 plan_edits 的同一道边界闸。与 cancel_matching 一样直接 return：
+        # 不领日程 L2 的名片，免得「挪一块」顺手 spawn 一个分身。
         if action == "move_block":
             return _run_move_block(
                 user_text,
@@ -2972,16 +2872,8 @@ def run_query_agenda(
     ``confirmed`` rows in ``start_at`` order; ``pending`` is listed separately
     so an unconfirmed chatlog candidate never reads as scheduled. Bad or
     missing parameters → ``ok=false`` and zero side effects.
-
-    WP-QUERY-DAY: for ``range in (today, tomorrow, date)`` the response also
-    carries ``plan_items`` (that day's daily plan, ``[]`` if no plan exists
-    yet). ``week`` is a 7-day window and ``pending`` is unbounded — neither
-    is a single-day axis, so neither gets plan_items.
     """
     from datetime import date as _date, datetime as _datetime, timedelta
-
-    from plobi.agenda import planning as _planning
-    from plobi.agenda import store as _store
 
     user_text = (user_text or "").strip()
     window = (str(range).strip().lower() if range else "")
@@ -3038,29 +2930,6 @@ def run_query_agenda(
         ]
     pending.sort(key=lambda event: (event.start_at, event.id))
 
-    # WP-QUERY-DAY: single-day axis = today / tomorrow / date。复用 right rail
-    # 同一份 ``day_surface``，不让 L1 的嘴和前端的时间轴各说各话。week 不是
-    # 「一天」，pending 没有「那一天」——不塞 plan_items。空库 = 空列表
-    # （不要 None，前端可以 .length 一下）。
-    plan_items: list | None = None
-    if start is not None and end is not None and start == end and window in (
-        "today",
-        "tomorrow",
-        "date",
-    ):
-        plan_items = []
-        try:
-            conn = _store.connect(service.db_path)
-            try:
-                surface = _planning.day_surface(conn, start.isoformat(), events)
-            finally:
-                conn.close()
-            plan_items = surface.get("plan_items", [])
-        except Exception:
-            # 计划服务挂了不能让 query 整体跪——日间快照是增强字段，零值
-            # 落地；events / pending 仍然完整。L1 仍能答「今天有什么」。
-            logger.warning("plobi: query_agenda day_surface failed for %s", start)
-
     payload = {
         "ok": True,
         "intent": "query_agenda",
@@ -3071,8 +2940,6 @@ def run_query_agenda(
         "events": [_event_payload(event) for event in events],
         "pending": [_event_payload(event) for event in pending],
     }
-    if plan_items is not None:
-        payload["plan_items"] = plan_items
     return payload
 
 
@@ -3349,25 +3216,8 @@ def _secretary_ask(
         return run_project_status(user_text, pipeline=pipeline, registry=registry)
 
     if intent == "plan_day":
-        # P0（`WP-PLAN-DAY-CLOBBER`，10-17 17:2x）：这句以前不带 action 时会落进
-        # :func:`run_plan_day` →（当时的）``generate_evening_plan``，而那个函数**先 DELETE 当天
-        # `plan_items` 再重插**；排程本体已按裁定 149 退役 ⇒ 它排不出任何块，于是拿一份 0 块的计划
-        # 把秘书 15:53 真排出来的那 8 块抹掉。用户说一句「安排一下明天的任务」反而丢计划。
-        # 现在照实拒绝，一个字都不写；要排由秘书自己那一发去做（它有 `no_blocks` 前置闸，
-        # 过不了闸也是零写入）。想看的走 query_agenda——那一条本来就不写库。
-        if action != "plan_tomorrow":
-            return {
-                "ok": False,
-                "intent": "plan_day",
-                "written": 0,
-                "error": (
-                    "这句「排一下明天」我不替你重排一遍——那条老路径会先把今天已排好的块删掉再重插，"
-                    "而排程本体已经退役（裁定 149），重插出来是 0 块：越说越丢。"
-                    "要排就直接说一声「排一下明天」（action=plan_tomorrow）：那一发由我自己写"
-                    "（材料、边界闸、落库都在那一处，过不了闸它一个字都不写）。"
-                    "只想看明天怎么安排，直接问（只读，不写库）。"
-                ),
-            }
+        # 10-22 用户拍：计划整层退役，夜间直接写 events。不带 ``action`` 就是只读 events；
+        # 带 ``action=plan_tomorrow`` 才打模型并落库（材料→提案→边界闸→写 events，全在一处）。
         return run_plan_day(
             user_text, date=date, pipeline=pipeline, registry=registry, action=action
         )
@@ -3408,11 +3258,6 @@ def _secretary_ask(
         "agenda": summary,
     }
     try:
-        payload["plan"] = _l1_plan_view(pipeline, summary)
-    except Exception as exc:
-        logger.warning("plobi: last-night plan read failed: %s", exc)
-        payload["plan"] = _missing_plan_payload(_tomorrow_for_date(summary))
-    try:
         payload["sessionId"] = append_n3_dispatch(
             entry, user_text=user_text, intent=intent
         )
@@ -3432,7 +3277,6 @@ def _secretary_ask(
         briefing = generate_morning_briefing(
             summary,
             user_text,
-            plan=payload.get("plan"),
             aigw_complete=aigw_complete,
             fallback_complete=fallback_complete,
         )
@@ -3697,20 +3541,7 @@ def list_aigw_models(*, base_url: str | None = None, api_key: str | None = None)
     return ids
 
 
-def _briefing_prompt(
-    agenda_summary: dict, user_text: str, plan: dict | None = None
-) -> str:
-    if _uses_plan_briefing(plan):
-        assert plan is not None
-        lines = [
-            f"用户原话：{user_text}",
-            # 日期只认这份计划自己的 for_date；读不到就说读不到，不拿今天冒充明天（R-103）。
-        f"日期：{plan.get('for_date') or '（昨夜计划没有日期，下面这段不带日期，别当成今天）'}",
-            f"昨夜计划：{plan.get('summary') or ''}",
-            f"冲突数：{int(plan.get('conflict_count') or 0)}",
-            "请写一段简洁中文早报，不要解释调度过程，不要逐条抽取。",
-        ]
-        return "\n".join(lines)
+def _briefing_prompt(agenda_summary: dict, user_text: str) -> str:
     # **不许回落到 `events`**：那一份是 today + tomorrow 拼起来的，
     # 明天空的时候用它 = 把今天的事标成「明日日程」念给用户（R-103）。
     events = list(agenda_summary.get("tomorrow_events") or [])
@@ -3729,13 +3560,7 @@ def _briefing_prompt(
     return "\n".join(lines)
 
 
-def _template_briefing(agenda_summary: dict, plan: dict | None = None) -> str:
-    if _uses_plan_briefing(plan):
-        assert plan is not None
-        summary = (plan.get("summary") or "").strip()
-        conflicts = int(plan.get("conflict_count") or 0)
-        extra = f"（冲突 {conflicts}）" if conflicts else ""
-        return f"{summary}{extra}".strip()
+def _template_briefing(agenda_summary: dict) -> str:
     day = agenda_summary.get("tomorrow") or "（明天）"   # 不回落 today（R-103）
     events = list(agenda_summary.get("tomorrow_events") or [])   # 同上：不回落 events（R-103）
     if not events:
@@ -3799,12 +3624,11 @@ def generate_morning_briefing(
     agenda_summary: dict,
     user_text: str,
     *,
-    plan: dict | None = None,
     aigw_complete=None,
     fallback_complete=None,
 ) -> dict:
     """Default aigw ``workbuddy/*``; on failure, L2 cheap API (route in result)."""
-    prompt = _briefing_prompt(agenda_summary, user_text, plan)
+    prompt = _briefing_prompt(agenda_summary, user_text)
     model = WORKBUDDY_DEFAULT_MODEL
     try:
         if aigw_complete is not None:
@@ -3850,7 +3674,7 @@ def generate_morning_briefing(
         logger.warning("L2 cheap fallback failed: %s", exc)
 
     return {
-        "text": _template_briefing(agenda_summary, plan),
+        "text": _template_briefing(agenda_summary),
         "route": "fallback",
         "model": "template",
     }

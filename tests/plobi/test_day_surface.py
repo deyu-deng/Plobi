@@ -1,7 +1,7 @@
 """WP-DAY-SURFACE — 白天「今天」的接口契约：events + 重叠判定 + 地点备注。
 
 看板从 ``GET /api/agenda/day`` 拿到当天的 events（带 location/notes/overlaps）、
-可用的 plan_items、conflicts 与已确认的 avoid_windows。**现场计算**，不依赖 20:00
+conflicts 与已确认的 avoid_windows（计划层已退役，不再有 plan_items / plan_status）。**现场计算**，不依赖 20:00
 跑过 plan；新增/修改日程**写入**不拒重叠（人令不拒），但响应带 overlaps 提示
 看板标红。作息不是代码的事（由日程 Agent 自己写 events），所以这里没有锚点。
 """
@@ -191,57 +191,6 @@ def test_create_event_schema_accepts_location_and_notes():
 
 
 # ---------------------------------------------------------------------------
-# 已存在的 plan_items 仍然能读出来（day 接口的 plan_items 字段）
-# ---------------------------------------------------------------------------
-
-
-def test_day_surface_includes_plan_items_when_a_plan_exists(svc, conn):
-    svc.create_manual(
-        title="自习",
-        start_at=f"{DAY}T14:00:00",
-        end_at=f"{DAY}T16:00:00",
-        kind="task",
-    )
-    plan = store.upsert_daily_plan(
-        conn,
-        for_date=DAY,
-        status="pending",
-        summary="x",
-    )
-    store.replace_plan_items(
-        conn,
-        plan.id,
-        [
-            {
-                "event_id": "evt_xxx",
-                "title": "写作业",
-                "start_at": f"{DAY}T16:00:00",
-                "end_at": f"{DAY}T17:00:00",
-                "kind": "task",
-                "evidence": {"kind": "ddl_block", "ddl_event_id": "evt_yyy"},
-            }
-        ],
-    )
-    snap = day_surface(conn, DAY, _today_events(conn))
-    assert len(snap["plan_items"]) == 1
-    assert snap["plan_items"][0]["title"] == "写作业"
-    assert snap["plan_status"] == "pending"
-
-
-def test_day_surface_plan_items_empty_when_no_plan(svc, conn):
-    """没有跑过 20:00 的计划：plan_items=[], plan_status=None。"""
-    svc.create_manual(
-        title="电工电子学",
-        start_at=f"{DAY}T10:00:00",
-        end_at=f"{DAY}T12:25:00",
-        kind="class",
-    )
-    snap = day_surface(conn, DAY, _today_events(conn))
-    assert snap["plan_status"] is None
-    assert snap["plan_items"] == []
-
-
-# ---------------------------------------------------------------------------
 # HTTP 端点：GET /api/agenda/day
 # ---------------------------------------------------------------------------
 
@@ -278,8 +227,6 @@ def test_get_day_endpoint_returns_full_contract(svc, conn):
     for e in payload["events"]:
         assert e["title"]
         assert isinstance(e["overlaps"], list)
-    assert payload["plan_status"] is None
-    assert payload["plan_items"] == []
     assert any(c["start_at"][11:16] == "15:30" for c in payload["conflicts"])
 
 

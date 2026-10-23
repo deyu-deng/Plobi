@@ -18,7 +18,7 @@ import re
 import sqlite3
 import threading
 import uuid
-from dataclasses import asdict, dataclass, field, replace as _dc_replace
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -38,8 +38,6 @@ def allowed_sources() -> tuple[str, ...]:
     """读**当时**的注册表。"""
     return registry.allowed_sources()
 
-
-PLAN_STATUSES = ("empty", "pending", "confirmed", "dismissed")
 
 # Human decision ledger (A5 change-rate metric, ADR-0009 byproduct).
 ACTIONS = ("confirm", "dismiss", "manual_edit", "manual_delete", "complete", "uncomplete")
@@ -62,9 +60,8 @@ class Event:
     # WP-DAY-SURFACE: 手动日程可带地点与备注（课表导入时从 evidence 摊平）。
     location: Optional[str] = None
     notes: Optional[str] = None
-    # WP-PLAN-COMPLETION-ACK：人承认「这条做完了」的那一刻。真源在**事件**上，不在
-    # `plan_items` 上——排程每晚把那一天的行 DELETE 后重新插入（`replace_plan_items`），
-    # 状态放在计划行里会被它本该拦住的那次重排抹掉。见 `mark_event_completed`。
+    # WP-PLAN-COMPLETION-ACK：人承认「这条做完了」的那一刻。真源只在事件上；
+    # 夜间排程按（日, kind, 标题）覆盖同一行时不动这一格。见 `mark_event_completed`。
     completed_at: Optional[str] = None
     evidence: Optional[dict] = None
     prev_value: Optional[dict] = None
@@ -75,48 +72,6 @@ class Event:
 
     def to_dict(self) -> dict:
         return asdict(self)
-
-
-@dataclass
-class DailyPlan:
-    """One night's plan for a calendar day (M2). Not an event."""
-
-    id: str
-    for_date: str
-    status: str = "pending"
-    generated_at: str = ""
-    summary: str = ""
-    conflict_count: int = 0
-    event_count: int = 0
-    confirm_seq: Optional[int] = None
-    confirm_seq_at: Optional[str] = None
-    evidence: Optional[dict] = None
-    created_at: str = ""
-    updated_at: str = ""
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-@dataclass
-class PlanItem:
-    """One row in a daily plan; must point at an event and carry evidence."""
-
-    id: str
-    plan_id: str
-    event_id: str
-    title: str
-    start_at: str
-    kind: str = "task"
-    end_at: Optional[str] = None
-    sort_order: int = 0
-    conflict_with: tuple[str, ...] = ()
-    evidence: dict = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        data = asdict(self)
-        data["conflict_with"] = list(self.conflict_with)
-        return data
 
 
 MAX_DURATION_MIN = 24 * 60
@@ -215,35 +170,6 @@ def init_db(conn: sqlite3.Connection) -> None:
             detail       TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_action_log_ts ON action_log(ts);
-        CREATE TABLE IF NOT EXISTS daily_plans (
-            id             TEXT PRIMARY KEY,
-            for_date       TEXT NOT NULL UNIQUE,
-            status         TEXT NOT NULL,
-            generated_at   TEXT NOT NULL,
-            summary        TEXT NOT NULL DEFAULT '',
-            conflict_count INTEGER NOT NULL DEFAULT 0,
-            event_count    INTEGER NOT NULL DEFAULT 0,
-            confirm_seq    INTEGER,
-            confirm_seq_at TEXT,
-            evidence       TEXT,
-            created_at     TEXT NOT NULL,
-            updated_at     TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS plan_items (
-            id            TEXT PRIMARY KEY,
-            plan_id       TEXT NOT NULL,
-            event_id      TEXT NOT NULL,
-            title         TEXT NOT NULL,
-            start_at      TEXT NOT NULL,
-            end_at        TEXT,
-            kind          TEXT NOT NULL DEFAULT 'task',
-            sort_order    INTEGER NOT NULL DEFAULT 0,
-            conflict_with TEXT,
-            evidence      TEXT NOT NULL,
-            FOREIGN KEY (plan_id) REFERENCES daily_plans(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_plan_items_plan_sort
-            ON plan_items(plan_id, sort_order);
         CREATE TABLE IF NOT EXISTS checkin_cards (
             id             TEXT PRIMARY KEY,
             for_date       TEXT NOT NULL,
@@ -288,25 +214,6 @@ def _dumps(value: Optional[dict]) -> Optional[str]:
     if value is None:
         return None
     return json.dumps(value, ensure_ascii=False)
-
-
-def _loads_list(raw: Any) -> list[str]:
-    if not raw:
-        return []
-    try:
-        value = json.loads(raw)
-    except (TypeError, json.JSONDecodeError):
-        logger.warning("agenda: corrupted JSON list in database field: %r", str(raw)[:200])
-        return []
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value]
-
-
-def _dumps_list(value: Iterable[str] | None) -> Optional[str]:
-    if not value:
-        return None
-    return json.dumps(list(value), ensure_ascii=False)
 
 
 def _row_to_event(row: sqlite3.Row) -> Event:
@@ -358,7 +265,7 @@ def _validate_hhmm(value: Any, field_name: str) -> str:
 def _ensure_event_completed_column(conn: sqlite3.Connection) -> bool:
     """旧库 ALTER：events 加 `completed_at`（nullable TEXT，空 = 没承认过）。
 
-    additive、不动任何已有行 ⇒ 现有那 91 条 `plan_items` 与全部 events 照旧读得出来。
+    additive、不动任何已有行 ⇒ 全部 events 照旧读得出来。
     """
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
     if "completed_at" in cols:
@@ -697,9 +604,9 @@ def next_confirm_seq(conn: sqlite3.Connection) -> int:
 
     Sequences restart daily so the numbers users type stay short; combined
     with the TTL check in :func:`confirm_seq_is_live` a stale reply cannot
-    resolve a newer event. Events, daily_plans and checkin_cards share one
-    namespace (DESIGN-M2 §4.1; C6 adds the third table — replies like
-    ``确认3`` must resolve the newest issuer, so MAX spans all three).
+    resolve a newer event. Events and checkin_cards share one namespace
+    (C6: replies like ``确认3`` must resolve the newest issuer, so MAX spans
+    both; the plan layer was retired 10-22).
     """
     today = datetime.now().date().isoformat()
     row = conn.execute(
@@ -708,14 +615,11 @@ def next_confirm_seq(conn: sqlite3.Connection) -> int:
             SELECT MAX(confirm_seq) AS top FROM events
              WHERE confirm_seq_at >= ?
             UNION ALL
-            SELECT MAX(confirm_seq) AS top FROM daily_plans
-             WHERE confirm_seq_at >= ?
-            UNION ALL
             SELECT MAX(confirm_seq) AS top FROM checkin_cards
              WHERE confirm_seq_at >= ?
         )
         """,
-        (today, today, today),
+        (today, today),
     ).fetchone()
     top = row["top"] if row and row["top"] is not None else 0
     return int(top) + 1
@@ -734,7 +638,7 @@ def find_by_confirm_seq(conn: sqlite3.Connection, seq: int) -> Optional[Event]:
 
 
 def confirm_seq_is_live(
-    row: Event | DailyPlan, *, now: Optional[datetime] = None
+    row: Event, *, now: Optional[datetime] = None
 ) -> bool:
     if not row.confirm_seq_at:
         return False
@@ -756,409 +660,120 @@ def confirm_seq_is_live(
     return reference - issued <= timedelta(hours=CONFIRM_SEQ_TTL_HOURS)
 
 
-def find_plan_by_confirm_seq(conn: sqlite3.Connection, seq: int) -> Optional[DailyPlan]:
-    row = conn.execute(
-        """
-        SELECT * FROM daily_plans
-        WHERE confirm_seq = ? AND status = 'pending'
-        ORDER BY confirm_seq_at DESC LIMIT 1
-        """,
-        (int(seq),),
-    ).fetchone()
-    return _row_to_plan(row) if row else None
-
-
-def _row_to_plan(row: sqlite3.Row) -> DailyPlan:
-    return DailyPlan(
-        id=row["id"],
-        for_date=row["for_date"],
-        status=row["status"],
-        generated_at=row["generated_at"],
-        summary=row["summary"] or "",
-        conflict_count=int(row["conflict_count"] or 0),
-        event_count=int(row["event_count"] or 0),
-        confirm_seq=row["confirm_seq"],
-        confirm_seq_at=row["confirm_seq_at"],
-        evidence=_loads(row["evidence"]),
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
-def _row_to_item(row: sqlite3.Row) -> PlanItem:
-    evidence = _loads(row["evidence"]) or {}
-    return PlanItem(
-        id=row["id"],
-        plan_id=row["plan_id"],
-        event_id=row["event_id"],
-        title=row["title"],
-        start_at=row["start_at"],
-        kind=row["kind"] or "task",
-        end_at=row["end_at"],
-        sort_order=int(row["sort_order"] or 0),
-        conflict_with=tuple(_loads_list(row["conflict_with"])),
-        evidence=evidence,
-    )
-
-
-def get_daily_plan(conn: sqlite3.Connection, for_date: str) -> Optional[DailyPlan]:
-    row = conn.execute(
-        "SELECT * FROM daily_plans WHERE for_date = ?",
-        (for_date,),
-    ).fetchone()
-    return _row_to_plan(row) if row else None
-
-
-def get_daily_plan_by_id(conn: sqlite3.Connection, plan_id: str) -> Optional[DailyPlan]:
-    row = conn.execute(
-        "SELECT * FROM daily_plans WHERE id = ?",
-        (plan_id,),
-    ).fetchone()
-    return _row_to_plan(row) if row else None
-
-
-def upsert_daily_plan(
-    conn: sqlite3.Connection,
-    *,
-    for_date: str,
-    status: str,
-    summary: str,
-    conflict_count: int = 0,
-    event_count: int = 0,
-    confirm_seq: Optional[int] = None,
-    confirm_seq_at: Optional[str] = None,
-    evidence: Optional[dict] = None,
-    generated_at: Optional[str] = None,
-    plan_id: Optional[str] = None,
-) -> DailyPlan:
-    """Insert or replace the plan header for ``for_date``. Does not touch items."""
-    _validate_enum(status, PLAN_STATUSES, "status")
-    day = str(for_date).strip()
-    if not day:
-        raise AgendaValidationError("for_date is required")
-    stamp = now_iso()
-    generated = generated_at or stamp
-    existing = get_daily_plan(conn, day)
-    pid = (plan_id or (existing.id if existing else "") or f"plan_{day}").strip()
-    created_at = existing.created_at if existing else stamp
-    conn.execute(
-        """
-        INSERT INTO daily_plans (
-            id, for_date, status, generated_at, summary, conflict_count,
-            event_count, confirm_seq, confirm_seq_at, evidence,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(for_date) DO UPDATE SET
-            id=excluded.id,
-            status=excluded.status,
-            generated_at=excluded.generated_at,
-            summary=excluded.summary,
-            conflict_count=excluded.conflict_count,
-            event_count=excluded.event_count,
-            confirm_seq=excluded.confirm_seq,
-            confirm_seq_at=excluded.confirm_seq_at,
-            evidence=excluded.evidence,
-            updated_at=excluded.updated_at
-        """,
-        (
-            pid,
-            day,
-            status,
-            generated,
-            summary,
-            int(conflict_count),
-            int(event_count),
-            confirm_seq,
-            confirm_seq_at,
-            _dumps(evidence),
-            created_at,
-            stamp,
-        ),
-    )
-    conn.commit()
-    stored = get_daily_plan(conn, day)
-    assert stored is not None
-    return stored
-
-
-def set_plan_status(
-    conn: sqlite3.Connection,
-    plan_id: str,
-    status: str,
-    *,
-    clear_seq: bool = False,
-) -> Optional[DailyPlan]:
-    _validate_enum(status, PLAN_STATUSES, "status")
-    if get_daily_plan_by_id(conn, plan_id) is None:
-        return None
-    if clear_seq:
-        conn.execute(
-            """
-            UPDATE daily_plans
-               SET status = ?, confirm_seq = NULL, confirm_seq_at = NULL,
-                   updated_at = ?
-             WHERE id = ?
-            """,
-            (status, now_iso(), plan_id),
-        )
-    else:
-        conn.execute(
-            "UPDATE daily_plans SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now_iso(), plan_id),
-        )
-    conn.commit()
-    return get_daily_plan_by_id(conn, plan_id)
-
-
-def list_plan_items(conn: sqlite3.Connection, plan_id: str) -> list[PlanItem]:
-    rows = conn.execute(
-        """
-        SELECT * FROM plan_items
-         WHERE plan_id = ?
-         ORDER BY sort_order ASC, start_at ASC
-        """,
-        (plan_id,),
-    ).fetchall()
-    return [_row_to_item(r) for r in rows]
-
 # ---------------------------------------------------------------------------
-# 裁 175：计划行只许引用**真存在的 events 行**
+# 排程落库的 identity 与两类旧记号
 # ---------------------------------------------------------------------------
 
-# 排程自己造的那块身份（``l1:block-3``／``project:aura``）不是事件身份：
-# 界面上那颗勾点下去要写的 ``events.completed_at`` 根本没有那一行可写 ⇒ 前端只能画一个点不动的勾
-# （已闭的 ``WP-PLAN-ACK-NO-FAKE-CHECK`` 就是把它改成"查无此行就说记不了"）。
-# 真源还是同一句：**先落成 events 那一行，再进计划**。这一格是那条规矩的落笔处——所有写
-# ``plan_items`` 的路径（秘书 planner、老的分配器、对话改计划）都从这里过。
+#: 秘书排出来的行用 ``source=manual`` 落库（信源词表只认 manual + 采集器，
+#: 而这一行确实是"人这边"的日程）；真正的来源写在 evidence 的 ``created_by`` 上。
 PLAN_EVENT_SOURCE = "manual"
-# 造出来的那一行身上留的两个记号：``created_by="plan"``（是谁落的）与
-# ``planned_from``（从哪个计划行来的）。排程那一侧要靠第一个记号把"结果"从"素材"里分出去
-# （见 :func:`is_plan_artifact`）。
+#: 旧计划层为了「勾得动」补的影子行记号（``created_by="plan"``）。计划层已退役，
+#: 不再产生新行；读侧继续用它把历史影子行从素材/看板里挡掉。
 PLAN_ARTIFACT_KEY = "created_by"
 PLAN_ARTIFACT_MARK = "plan"
 
 
 def is_plan_artifact(event: "Event") -> bool:
-    """这一行是**排程的结果**，不是排程的素材。
+    """这是**旧计划层补的影子行**，不是排程的素材，也不该出现在看板上。
 
-    裁 175 让每一格计划行都必须指到一条真 ``events`` 行，于是过去那些自造身份
-    （``l1:block-3``）现在都成了真行。真行会被读回素材侧，
-    那就得先说清它算不算素材——**不算**：不然"昨晚给某块补了身份"会变成"今晚它被当成
-    一条新作业再排一次"（作业池那条 ``_ddl_candidates`` 读 ``events``，按这一句挡）。
+    计划层 10-22 整层退役后不再产生这种行；留下的历史行继续按这一句挡掉，
+    否则它们会被当成"当天已有的一条"再排一次（作业池 ``_ddl_candidates`` 也读 ``events``）。
     """
     return (event.evidence or {}).get(PLAN_ARTIFACT_KEY) == PLAN_ARTIFACT_MARK
 
 
-def _plan_event_seed(plan: DailyPlan, item: "PlanItem") -> str:
-    """这一天这一块内容的**稳定身份种子**。
+#: 日程秘书排出来的块写进 events 时打的记号（用户 10-22：「计划整层退役，夜间直接写 events」）。
+#: 与 ``PLAN_ARTIFACT_MARK`` 不同：那一档是旧计划层为了「勾得动」而补的影子行，默认**不显示**；
+#: 这一档就是秘书排的日程本身，看板要显示，也只有它会由本轮重排替换。
+PLANNER_ARTIFACT_MARK = "planner"
 
-    按 (那天, kind, 标题) 取种子，不按 ``l1:block-N`` 那个位置号：排程明晚把同一件事挪个钟点，
-    它还是"那天那条作业"，勾过就还该是勾过的；反过来标题变了就是另一件事，不许继承旧勾。
+
+def upsert_planner_events(
+    conn: sqlite3.Connection,
+    day: str,
+    blocks: Iterable[dict[str, Any]],
+    *,
+    planner: str = "l1",
+    reason: str = "",
+    written_by: str = "l1:secretary_mouth",
+) -> list[Event]:
+    """把排程结果**直接写成 events 行**（计划层退役后的唯一落库口）。
+
+    身份 = (那天, kind, 标题) 的稳定哈希：同一晚重排落在同一行，``completed_at`` 一律不动
+    （完成态是人的账，见裁 148）。这一天由秘书造、这次提案里已经没有的行会被删掉；
+    只删 ``created_by="planner"`` 且没被勾完成的行，人写的和别的信源一律不碰。
     """
-    return f"plan-event:{plan.for_date}:{item.kind}:{item.title.strip().casefold()}"
+    wanted: set[str] = set()
+    for block in blocks:
+        title = str(block.get("title") or "").strip()
+        if not title:
+            continue
+        start = normalize_dt(block.get("start_at"), field_name="start_at")
+        if not start:
+            continue
+        end = normalize_dt(block.get("end_at"), field_name="end_at", required=False)
+        kind = str(block.get("kind") or "task")
+        _validate_enum(kind, KINDS, "kind")
+        evidence = dict(block.get("evidence") or {})
+        evidence.update({
+            PLAN_ARTIFACT_KEY: PLANNER_ARTIFACT_MARK,
+            "planner": planner,
+            "reason": reason,
+            "written_by": written_by,
+            "planned_for": day,
+        })
+        eid = _plan_event_id(
+            f"planner-event:{day}:{kind}:{title.casefold()}"
+        )
+        wanted.add(eid)
+        existing = get_event(conn, eid)
+        if existing is None:
+            create_event(
+                conn,
+                event_id=eid,
+                title=title,
+                start_at=start,
+                end_at=end,
+                kind=kind,
+                status="confirmed",
+                source=PLAN_EVENT_SOURCE,
+                evidence=evidence,
+            )
+        else:
+            update_event(
+                conn,
+                eid,
+                title=title,
+                start_at=start,
+                end_at=end,
+                kind=kind,
+                evidence=evidence,
+            )
+
+    stale = conn.execute(
+        """
+        SELECT id FROM events
+         WHERE start_at >= ? AND start_at <= ?
+           AND COALESCE(json_extract(evidence, '$.created_by'), '') = ?
+           AND COALESCE(completed_at, '') = ''
+        """,
+        (f"{day}T00:00:00", f"{day}T23:59:59", PLANNER_ARTIFACT_MARK),
+    ).fetchall()
+    for row in stale:
+        if row["id"] not in wanted:
+            delete_event(conn, row["id"])
+
+    return [event for event in (get_event(conn, eid) for eid in wanted) if event is not None]
 
 
-_EVENT_ID_SHAPE_RE = re.compile(r"^evt_[0-9a-f]{12}$")
-
-
-def _plan_event_identity(plan: DailyPlan, item: "PlanItem") -> str:
-    """这一行该用哪个 ``events.id``。
-
-    两种情况，顺序固定：
-    ① 那个自造 id 里**本来就带着采集器的身份**（``ddl:evt_ac46920dc0c1`` 这种——
-       排程只是给它加了个前缀）⇒ 就用那把 id 落行。事件被上游 resync 删掉时，
-       计划行还认得它原来是谁，下次采集回来按 uid 也对得上（判据原文要的就是
-       "``ddl:evt_ac46920dc0c1`` 在 events 里要有行"，不是"有一行别的什么"）。
-    ② 其余（``l1:block-N``／``project:x``）⇒ 由「那天 + kind + 标题」
-       推出一个确定性 id：同一晚重排落同一行，不同天各一行。
-    """
-    raw = (item.event_id or "").strip()
-    suffix = raw.split(":", 1)[-1] if ":" in raw else raw
-    if _EVENT_ID_SHAPE_RE.match(suffix):
-        return suffix
-    return "evt_" + hashlib.sha1(_plan_event_seed(plan, item).encode("utf-8")).hexdigest()[:12]
+def is_planner_event(event: "Event") -> bool:
+    """这一行是日程秘书排出来的（不是人写的、也不是采集器抓的）。"""
+    return (event.evidence or {}).get(PLAN_ARTIFACT_KEY) == PLANNER_ARTIFACT_MARK
 
 
 def _plan_event_id(seed: str) -> str:
     """② 那一支的算法，单独留一格好测。"""
     return "evt_" + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
-
-
-def _find_material_event(conn: sqlite3.Connection, event_id: str) -> Optional[Event]:
-    """``ddl:evt_x`` 这类"材料身份加个前缀"的行，去找**那条真事件**。
-
-    认两种对法：id 本身（``ddl:evt_x`` 去掉前缀就是它），以及采集器存在 ``evidence.uid``
-    里的那把。找到就复用它的 id——同一门课的 ddl 不该因为排程写了个前缀就变成两条事。
-    """
-    raw = (event_id or "").strip()
-    if not raw:
-        return None
-    suffix = raw.split(":", 1)[-1] if ":" in raw else raw
-    row = conn.execute(
-        """
-        SELECT * FROM events
-         WHERE id IN (?, ?)
-            OR json_extract(evidence, '$.uid') = ?
-         ORDER BY created_at ASC
-         LIMIT 1
-        """,
-        (raw, suffix, suffix),
-    ).fetchone()
-    return _row_to_event(row) if row is not None else None
-
-
-def ensure_plan_item_events(
-    conn: sqlite3.Connection, plan: DailyPlan, items: Iterable["PlanItem"]
-) -> list["PlanItem"]:
-    """把每一行的 ``event_id`` 换成一个**真在 ``events`` 里**的 id（裁 175）。
-
-    三条分支，顺序固定：
-    ① 已经指到真行 ⇒ 原样过（今天 94 行里那 20 行 ``evt_…`` 就是这一支）；
-    ② 材料身份能对上真事件（``ddl:evt_x``／模板 uid）⇒ 换成那条真事件的 id；
-    ③ 都不是 ⇒ **就地落一行 events**（kind/title/钟点来自这一行，``source=manual``，
-       evidence 里写清是谁造的），再引用它。
-    第③支是幂等的：id 由 ``_plan_event_id`` 从 (那天, kind, 标题) 推出来，同一晚重排
-    拿到的是同一行，只跟新钟点走——``completed_at`` 一律不动，那是人承认过的账（裁 148）。
-    """
-    out: list[PlanItem] = []
-    for item in items:
-        eid = (item.event_id or "").strip()
-        if eid and get_event(conn, eid) is not None:
-            out.append(item)
-            continue
-        material = _find_material_event(conn, eid)
-        if material is not None:
-            out.append(_dc_replace(item, event_id=material.id))
-            continue
-        wanted = _plan_event_identity(plan, item)
-        existing = get_event(conn, wanted)
-        if existing is not None:
-            update_event(
-                conn,
-                wanted,
-                title=item.title,
-                start_at=item.start_at,
-                end_at=item.end_at,
-                kind=item.kind,
-                evidence={**(existing.evidence or {}), **_plan_event_evidence(item, plan)},
-            )
-            out.append(_dc_replace(item, event_id=wanted))
-            continue
-        create_event(
-            conn,
-            event_id=wanted,
-            title=item.title,
-            start_at=item.start_at,
-            end_at=item.end_at,
-            kind=item.kind,
-            status="confirmed" if plan.status == "confirmed" else "pending",
-            source=PLAN_EVENT_SOURCE,
-            evidence=_plan_event_evidence(item, plan),
-        )
-        # INSERT OR IGNORE：撞上同一把确定性 id（同一晚重排、或别的进程刚落过）就取回既有那一行，
-        # 不新增、也不让一次重排把整批写库炸掉。
-        landed = get_event(conn, wanted) or existing
-        out.append(_dc_replace(item, event_id=landed.id))
-    return out
-
-
-# 计划行的 evidence 里那些"材料形状"的键（``kind`` / ``source`` / 材料侧附加格）
-# **不抄进事件**。只带采集器身份 ``uid`` 那一把——它是"这条作业是谁"的凭证，明天采集回来还要按它对齐。
-# 其余一律留在计划行上，免得这一行看起来像"素材侧真有这条事"。
-_PLAN_EVENT_MATERIAL_KEYS = ("uid",)
-
-
-def _plan_event_evidence(item: "PlanItem", plan: DailyPlan) -> dict:
-    """造出来的那一行要说得出自己是谁造的、从哪个计划行来的（不许留匿名行）。"""
-    source_evidence = item.evidence or {}
-    evidence = {
-        PLAN_ARTIFACT_KEY: PLAN_ARTIFACT_MARK,
-        "planned_from": item.event_id,
-        "plan_id": plan.id,
-        "plan_date": plan.for_date,
-    }
-    for key in _PLAN_EVENT_MATERIAL_KEYS:
-        if source_evidence.get(key):
-            evidence[key] = source_evidence[key]
-    return evidence
-
-
-def _plan_item_from_raw(raw: "PlanItem | dict", *, plan_id: str, index: int) -> PlanItem:
-    """把一格计划行归一成 :class:`PlanItem`（校验口径一个字不动）。"""
-    if isinstance(raw, PlanItem):
-        item = raw
-    else:
-        evidence = raw.get("evidence") or {}
-        if not isinstance(evidence, dict) or not evidence:
-            raise AgendaValidationError("plan_items evidence is required")
-        event_id = str(raw.get("event_id") or "").strip()
-        if not event_id:
-            raise AgendaValidationError("plan_items event_id is required")
-        item = PlanItem(
-            id=str(raw.get("id") or f"pit_{uuid.uuid4().hex[:12]}"),
-            plan_id=plan_id,
-            event_id=event_id,
-            title=str(raw.get("title") or "").strip(),
-            start_at=normalize_dt(raw.get("start_at"), field_name="start_at") or "",
-            kind=str(raw.get("kind") or "task"),
-            end_at=normalize_dt(raw.get("end_at"), field_name="end_at", required=False),
-            sort_order=int(raw.get("sort_order") if raw.get("sort_order") is not None else index),
-            conflict_with=tuple(str(x) for x in (raw.get("conflict_with") or ())),
-            evidence=evidence,
-        )
-    if not item.title.strip():
-        raise AgendaValidationError("plan_items title is required")
-    if not item.evidence:
-        raise AgendaValidationError("plan_items evidence is required")
-    if not item.event_id.strip():
-        raise AgendaValidationError("plan_items event_id is required")
-    _validate_enum(item.kind, KINDS, "kind")
-    return item
-
-
-def replace_plan_items(
-    conn: sqlite3.Connection,
-    plan_id: str,
-    items: Iterable[PlanItem | dict],
-) -> list[PlanItem]:
-    """Replace all items for a plan. Empty evidence is refused."""
-    plan = get_daily_plan_by_id(conn, plan_id)
-    if plan is None:
-        raise AgendaValidationError(f"unknown plan_id {plan_id!r}")
-    # 三步顺序是写死的：归一 → 落真事件身份（裁 175）→ 删旧插新。
-    # 归一要在落身份**之前**（门要看 kind/标题/那天 算身份），落身份要在 DELETE **之前**
-    # （中间留缝就等于有一瞬间库里的计划行指不到任何事，界面那一片勾在那一瞬间点不动）。
-    normalized = [
-        _plan_item_from_raw(raw, plan_id=plan_id, index=index)
-        for index, raw in enumerate(items)
-    ]
-    normalized = ensure_plan_item_events(conn, plan, normalized)
-    conn.execute("DELETE FROM plan_items WHERE plan_id = ?", (plan_id,))
-    written: list[PlanItem] = []
-    for item in normalized:
-        conn.execute(
-            """
-            INSERT INTO plan_items (
-                id, plan_id, event_id, title, start_at, end_at, kind,
-                sort_order, conflict_with, evidence
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                item.id,
-                plan_id,
-                item.event_id,
-                item.title,
-                item.start_at,
-                item.end_at,
-                item.kind,
-                int(item.sort_order),
-                _dumps_list(item.conflict_with),
-                json.dumps(item.evidence, ensure_ascii=False),
-            ),
-        )
-        written.append(item)
-    conn.commit()
-    return list_plan_items(conn, plan_id)
 
 
 # --- checkin cards (C6) -------------------------------------------------------

@@ -2,7 +2,7 @@
 
 验收对照（AGENT-TASK-BACKEND C6）：
 1. 脚本逻辑（build_checkin）→ 卡 ≤3 问、每问带 evidence、去重生效；
-2. 「3 天前 dismiss 的计划 + 6 天未推进的 pace 项目」两类选题命中；
+2. 日程改动类选题命中（计划层 10-22 退役，plan_status / 未推进两类随计划一起撤掉）；
 3. 确认N/忽略N 状态机闭环 + 降频护栏；
 4. 配置提案（C6b）确认才落地、忽略不动。
 """
@@ -39,71 +39,7 @@ def env(tmp_path, monkeypatch):
     return db
 
 
-def _mk_plan(db_path, day: str, *, with_block: str | None = None, items=()) -> str:
-    conn = store.connect(db_path)
-    try:
-        plan = store.upsert_daily_plan(
-            conn, for_date=day, status="pending", summary="s"
-        )
-        rows = [
-            {
-                "event_id": f"evt:{title}",
-                "title": title,
-                "start_at": start,
-                "kind": "task",
-                "evidence": {"kind": "event", "event_id": f"evt:{title}"},
-            }
-            for title, start in items
-        ]
-        if with_block:
-            rows.append(
-                {
-                    "event_id": f"project:{with_block}",
-                    "title": f"推进 · {with_block}",
-                    "start_at": f"{day}T09:00:00",
-                    "end_at": f"{day}T10:00:00",
-                    "kind": "task",
-                    "evidence": {
-                        "kind": "project_block",
-                        "project_id": with_block,
-                        "pace": "weekly_hours:6",
-                    },
-                }
-            )
-        store.replace_plan_items(conn, plan.id, rows)
-        return plan.id
-    finally:
-        conn.close()
-
-
 # ── 验收 2：两类选题命中 ─────────────────────────────────────────────────────
-
-
-def test_plan_status_and_unadvanced_topics_hit(env):
-    db = env
-    # 6 天连续未推进：day-1..day-6 各有一个 simulation 块、计划未确认
-    for offset in range(1, 7):
-        day = (NOW - timedelta(days=offset)).date().isoformat()
-        _mk_plan(db, day, with_block="simulation")
-    # 昨夜计划（for_date=今天）被忽略
-    today = NOW.date().isoformat()
-    plan_id = _mk_plan(db, today, items=[("组会", f"{today}T10:00:00")])
-    conn = store.connect(db)
-    try:
-        store.set_plan_status(conn, plan_id, "dismissed", clear_seq=True)
-    finally:
-        conn.close()
-
-    result = checkin.build_checkin(now=NOW, db_path=db, draft=False)
-    assert "card" in result, result
-    assert any(t.startswith("plan_status:") for t in result["topics"])
-    assert "unadvanced:simulation" in result["topics"]
-
-    questions = result["card"]["questions"]
-    assert 1 <= len(questions) <= 3  # ≤3 问
-    assert all(q.get("evidence") for q in questions)  # 每问带 evidence
-    body = checkin.format_checkin_text(result["card"])
-    assert f"确认{result['card']['confirm_seq']}" in body
 
 
 def test_no_topics_means_no_card(env):

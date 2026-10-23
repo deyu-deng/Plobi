@@ -83,7 +83,6 @@ import { AddEventForm } from './console/right/add-event'
 import { Timeline } from './console/right/timeline'
 import {
   $agendaAvoidWindows,
-  $agendaPlans,
   $agendaRhythmOff,
   refreshAgendaTimeline,
   useAgendaTimeline
@@ -197,7 +196,6 @@ export function DesktopController() {
   // WP-D: the L1 agenda rail reads the same single agenda store the full-screen
   // board renders; the controller subscribes so the base Pane can host it.
   const agendaEvents = useStore($agendaEvents)
-  const agendaPlans = useStore($agendaPlans)
   const agendaAvoidWindows = useStore($agendaAvoidWindows)
   const agendaRhythmOff = useStore($agendaRhythmOff)
   const agendaLoading = useStore($agendaLoading)
@@ -1425,7 +1423,7 @@ export function DesktopController() {
               </Button>
             </div>
           ) : null}
-          <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} plans={agendaPlans} />
+          <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
           {agendaRhythmOff && !agendaLoading ? (
             <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
               {t.agenda.rhythmOff}

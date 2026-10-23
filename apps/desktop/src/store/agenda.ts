@@ -46,9 +46,8 @@ export function upsertAgendaEvent(event: AgendaEvent): void {
 }
 
 /**
- * WP-PLAN-COMPLETION-ACK：完成态的**唯一真源是事件那一份**（`events.completed_at`），
- * 不是 `plan_items`——每晚重排会把当天那份先删再插，写在那儿等于第二天又排一遍。
- * 计划那一行因此只带 `event_id` 回来查这一格，自己不存完成态。
+ * WP-PLAN-COMPLETION-ACK：完成态的**唯一真源是事件那一份**（`events.completed_at`）。
+ * 计划层 10-22 已退役，夜间排程按（日, kind, 标题）覆盖同一行时也不动这一格。
  *
  * `AgendaEvent` 的类型里目前没有 `completed_at`（那档文件在别线在派名下，本刀不碰），
  * 所以这里按结构化读一次。**不是**"字段可能不存在"，是"类型还没带上"——别当兜底抄走。

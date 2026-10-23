@@ -13,7 +13,6 @@ import type { AgendaDay } from '@/types/plobi'
 
 import { fetchAllAgendaEvents } from '../api'
 import {
-  $agendaPlans,
   $agendaRhythmOff,
   localDateKey,
   useAgendaTimeline
@@ -21,7 +20,7 @@ import {
 
 vi.mock('../api', () => ({ fetchAllAgendaEvents: vi.fn().mockResolvedValue([]) }))
 
-const DAY: AgendaDay = { date: '2026-09-16', events: [], plan_items: [] }
+const DAY: AgendaDay = { date: '2026-09-16', events: [] }
 
 let restoreDesktopApi: (() => void) | null = null
 
@@ -80,7 +79,6 @@ describe('localDateKey (裁定 33.5)', () => {
 describe('useAgendaTimeline day request (裁定 33.5)', () => {
   beforeEach(() => {
     $agendaEvents.set([])
-    $agendaPlans.set([])
     $agendaRhythmOff.set(false)
     vi.mocked(fetchAllAgendaEvents).mockResolvedValue([])
   })

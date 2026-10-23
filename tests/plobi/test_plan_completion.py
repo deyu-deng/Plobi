@@ -1,12 +1,12 @@
-"""计划项要有完成态（`WP-PLAN-COMPLETION-ACK`）：写完的作业不许第二天又被排进来。
+"""完成态（`WP-PLAN-COMPLETION-ACK`）：写完的作业不许第二天又被排进来。
 
-现核铁证是同一条 `ddl:evt_ac46920dc0c1` 连排五天（10-12…10-16，15 块只对应 5 个 event）。
-两条测试，负例优先，都写成关系不写数值快照：
+现核铁证是同一条 DDL 连排五天。计划层 10-22 退役后，完成态的真源仍是
+`events.completed_at`，排程由 L1 交提案、过闸后直接写 events。两条测试，负例优先：
 
-1. **标完成 → 重跑当晚那份计划**：那一块必须消失，**且不许别的作业块被挪进它的位置**
-   （预算/均分是裁定 148 与秘书线 `WP-PLAN-BY-LLM` 的事，本刀不并）。
-2. **状态落在事件上、不落在那一晚的计划行上**：排程每晚把当天的 `plan_items` DELETE 后重插，
-   把完成态存在计划行里＝存在它会抹掉它的那次重排里。撤销不是删除；查不到那条不许静默成功。
+1. **标完成 → 重跑当晚那一发**：那一条必须从材料里消失（因此提案里也不再出现），
+   **且不许别的作业被挪进它的位置**。
+2. **状态落在事件上**：重排按（日, kind, 标题）覆盖同一行时不动这一格。
+   撤销不是删除；查不到那条不许静默成功。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from datetime import date
 
 import pytest
 
-from plobi.agenda import planning, store
+from plobi.agenda import llm_planning, store
 
 DAY = date(2026, 10, 16)
 
@@ -41,28 +41,44 @@ def _ddl(connection, uid: str, title: str) -> str:
     return event.id
 
 
-def _planned_event_ids(connection, db_path):
-    """`plan_items.event_id` 带来源前缀（现核：`ddl:evt_ac46920dc0c1` 连排五天）
-    ⇒ 比的是**去掉前缀之后**那件事，别把前缀形状当成本刀要钉的关系。"""
-    plan = planning.generate_evening_plan(DAY, db_path=db_path)
-    items = store.list_plan_items(connection, plan.id)
-    return plan, {item.event_id.split(":", 1)[-1] for item in items}
+def _planned_titles(connection, day: date, titles: set[str]) -> set[str]:
+    """让假 L1 按**材料里现有的**作业交提案；返回真正落成 events 的标题。"""
+    def proposal(_conn, for_date):
+        materials = llm_planning.plan_materials(_conn, for_date)
+        wanted = [row for row in materials["deadlines"] if row["title"] in titles]
+        items = []
+        for index, row in enumerate(wanted):
+            hour = 9 + index
+            items.append({
+                "title": row["title"],
+                "start_at": f"{for_date}T{hour:02d}:00:00",
+                "end_at": f"{for_date}T{hour + 1:02d}:00:00",
+            })
+        return items, "按材料里现有的作业排"
+
+    result = llm_planning.plan_and_store_day(
+        day.isoformat(), conn=connection, proposal_fn=proposal)
+    assert result["ok"] is True, result
+    return {event["title"] for event in result["events"]}
 
 
 def test_marking_done_removes_that_block_and_nothing_moves_in(conn, db_path):
     first = _ddl(conn, "evt_first", "第5次课后作业-(2.3)")
-    other = _ddl(conn, "evt_other", "实验报告提交-实验三")
+    _ddl(conn, "evt_other", "实验报告提交-实验三")
+    first_title = "第5次课后作业-(2.3)"
+    other_title = "实验报告提交-实验三"
+    titles = {first_title, other_title}
 
-    _, before = _planned_event_ids(conn, db_path)
-    assert before == {first, other}                       # 两条都在板上（前置，不是断言目标）
+    before = _planned_titles(conn, DAY, titles)
+    assert before == titles                      # 两条都在（前置，不是断言目标）
 
     assert conn.execute("SELECT completed_at FROM events WHERE id = ?", (first,)).fetchone()[0] is None
     store.mark_event_completed(conn, first)
 
-    _, after = _planned_event_ids(conn, db_path)
+    after = _planned_titles(conn, DAY, titles)
 
-    assert after == {other}        # 关系断言：减一条，**没有第三条被挪进来**
-    assert first not in after
+    assert after == {other_title}   # 关系断言：减一条，**没有第三条被挪进来**
+    assert store.get_event(conn, first).completed_at is not None, "完成的那条事件本身不许被删"
 
 
 def test_completion_lives_on_the_event_and_is_not_silent(conn, db_path):

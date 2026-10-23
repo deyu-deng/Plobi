@@ -197,30 +197,6 @@ describe('Timeline (day axis)', () => {
     expect(topPxOf('timeline-block-evening')).toBe(814)
   })
 
-  it('gives non-overlapping plans one full-width column, not two half-width slivers', () => {
-    render(
-      <Timeline
-        events={[]}
-        plans={[
-          { end_at: dateAt(0, 13), id: 'lunch-plan', lane: 'plan', start_at: dateAt(0, 12), title: '午饭' },
-          { end_at: dateAt(0, 19), id: 'dinner-plan', lane: 'plan', start_at: dateAt(0, 18), title: '晚饭' }
-        ]}
-      />
-    )
-
-    const blocks = [
-      screen.getByTestId('timeline-block-lunch-plan'),
-      screen.getByTestId('timeline-block-dinner-plan')
-    ]
-
-    // Same column → same left edge, and each takes the whole 82% content area.
-    expect(leftPctOf('timeline-block-lunch-plan')).toBe(leftPctOf('timeline-block-dinner-plan'))
-    for (const node of blocks) {
-      expect(node.getAttribute('style')).toMatch(/width:\s*calc\(82%/)
-    }
-    expect(blocks.every(node => node.getAttribute('data-overlap') === null)).toBe(true)
-  })
-
   it('marks only the colliding events as overlapping', () => {
     render(
       <Timeline
@@ -235,32 +211,6 @@ describe('Timeline (day axis)', () => {
     expect(screen.getByTestId('timeline-block-morning').getAttribute('data-overlap')).toBeNull()
     expect(screen.getByTestId('timeline-block-left').getAttribute('data-overlap')).toBe('true')
     expect(screen.getByTestId('timeline-block-right').getAttribute('data-overlap')).toBe('true')
-  })
-
-  it('splits a colliding class and planned block into two columns on the shared grid (裁定 36.2)', () => {
-    render(
-      <Timeline
-        events={[event('lecture', dateAtTime(0, '08:00'), { end_at: dateAtTime(0, '09:35') })]}
-        plans={[
-          {
-            end_at: dateAtTime(0, '08:20'),
-            id: 'breakfast-plan',
-            lane: 'plan',
-            start_at: dateAtTime(0, '07:40'),
-            title: '早餐'
-          }
-        ]}
-      />
-    )
-
-    // Breakfast starts first → column 0; the class moves beside it. Two
-    // different column bands at half the content width each — never the same
-    // left edge with a full-width translucent overlay.
-    expect(leftPctOf('timeline-block-breakfast-plan')).toBeLessThan(leftPctOf('timeline-block-lecture'))
-    expect(styleOf('timeline-block-lecture')).toMatch(/width:\s*calc\(41%/)
-    expect(styleOf('timeline-block-breakfast-plan')).toMatch(/width:\s*calc\(41%/)
-    // Each keeps its own clock row (07:40 above the 08:00 class).
-    expect(topPxOf('timeline-block-breakfast-plan')).toBeLessThan(topPxOf('timeline-block-lecture'))
   })
 
   it('draws the "now" line on today only, exactly on the current clock mark (裁定 36.2)', () => {
@@ -440,29 +390,6 @@ it('scrolls today into view inside a scrollable ancestor (裁定 40)', () => {
     expect(matched).toHaveLength(1)
   })
 
-  it('tells a class and planned work apart on one axis (裁定 34.3)', () => {
-    render(
-      <Timeline
-        events={[event('lecture', dateAt(0, 9), { end_at: dateAt(0, 11) })]}
-        plans={[{ end_at: dateAt(0, 17), id: 'p1', lane: 'plan', start_at: dateAt(0, 14), title: '写文档' }]}
-      />
-    )
-
-    const nodeOf = (text: string) => screen.getByText(text).closest('[data-lane]') as HTMLElement
-    const lecture = nodeOf('event-lecture')
-    const plan = nodeOf('写文档')
-
-    // Identity: two different lanes...
-    expect([lecture, plan].map(node => node.getAttribute('data-lane'))).toEqual(['event', 'plan'])
-    // ...rendered with two different skins (class strings must not collide).
-    expect(lecture.className).not.toBe(plan.className)
-
-    // Plan = dotted fill + accent left rail; event keeps its solid border.
-    expect(plan.className).toContain('border-dotted')
-    expect(plan.className).toContain('border-l-(--ui-accent)')
-    expect(lecture.className).not.toContain('border-dotted')
-    expect(lecture.className).not.toContain('border-l-(--ui-accent)')
-  })
 })
 
 describe('shouldRefreshAgendaOnBusyChange (WP-G2)', () => {

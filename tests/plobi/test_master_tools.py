@@ -1355,7 +1355,7 @@ def test_pick_workbuddy_prefers_listed_id():
 
 
 # ---------------------------------------------------------------------------
-# WP-C-WIRE: last-night plan on plobi_secretary_ask (no new intent)
+# 计划层 10-22 退役：refresh_agenda 不再挂 plan 快照，早报直接读明日 events
 # ---------------------------------------------------------------------------
 
 
@@ -1363,118 +1363,25 @@ def _tomorrow_date() -> str:
     return (datetime.now().date() + timedelta(days=1)).isoformat()
 
 
-def _seed_nightly_plan(service, *, status: str, summary: str, event=None, conflict_count: int = 0):
-    from plobi.agenda import store
-
-    tomorrow = _tomorrow_date()
-    conn = store.connect(service.db_path)
-    try:
-        plan = store.upsert_daily_plan(
-            conn,
-            for_date=tomorrow,
-            status=status,
-            summary=summary,
-            event_count=1 if event is not None else 0,
-            conflict_count=conflict_count,
-        )
-        if event is not None:
-            store.replace_plan_items(
-                conn,
-                plan.id,
-                [
-                    {
-                        "event_id": event.id,
-                        "title": event.title,
-                        "start_at": event.start_at,
-                        "kind": event.kind,
-                        "evidence": {"kind": "event", "event_id": event.id},
-                    }
-                ],
-            )
-        return plan
-    finally:
-        conn.close()
-
-
-def test_secretary_ask_exposes_plan_status(stub_spawn, tmp_path):
-    pipe, service, _client = _agenda_pipeline(tmp_path, fail=False)
-    event = service.create_manual(title="组会", start_at=_tomorrow_iso(10), kind="meeting")
-    _seed_nightly_plan(
-        service,
-        status="pending",
-        summary="明天上午组会，冲突 0",
-        event=event,
-    )
-
-    out = run_secretary_ask("refresh_agenda", "明天安排", pipeline=pipe)
-    assert out["ok"] is True
-    assert out["plan"]["status"] == "pending"
-    assert out["plan"]["summary"] == "明天上午组会，冲突 0"
-    assert out["plan"]["for_date"] == _tomorrow_date()
-    assert out["plan"]["event_count"] == 1
-    assert out["plan"]["conflict_count"] == 0
-    assert out["plan"]["stale"] is False
-    assert out["plan"]["empty"] is False
-
-
-def test_secretary_ask_plan_stale_when_event_ids_differ(stub_spawn, tmp_path):
-    pipe, service, _client = _agenda_pipeline(tmp_path, fail=False)
-    service.create_manual(title="新课", start_at=_tomorrow_iso(8), kind="class")
-    _seed_nightly_plan(
-        service,
-        status="pending",
-        summary="昨夜按旧课表写的",
-    )
-
-    out = run_secretary_ask("refresh_agenda", "明天安排", pipeline=pipe)
-    assert out["ok"] is True
-    assert out["plan"]["status"] == "pending"
-    assert out["plan"]["stale"] is True
-    assert "以看板为准" in out["plan"]["summary"]
-
-
-def test_secretary_ask_missing_plan_is_honest(stub_spawn, tmp_path):
+def test_secretary_ask_has_no_plan_snapshot(stub_spawn, tmp_path):
     pipe, service, _client = _agenda_pipeline(tmp_path, fail=False)
     service.create_manual(title="组会", start_at=_tomorrow_iso(10), kind="meeting")
 
     out = run_secretary_ask("refresh_agenda", "明天安排", pipeline=pipe)
     assert out["ok"] is True
-    assert out["plan"]["status"] == "missing"
-    assert out["plan"]["summary"] == "昨夜未生成计划"
-    assert "组会" not in out["plan"]["summary"]
-    assert out["plan"]["empty"] is False
+    assert "plan" not in out
+    assert out["agenda"]["tomorrow_events"], out
 
 
-def test_secretary_ask_dead_does_not_fill_with_plan(stub_spawn, tmp_path):
-    pipe, service, _client = _agenda_pipeline(tmp_path, fail=True)
-    _seed_nightly_plan(
-        service,
-        status="confirmed",
-        summary="昨夜写过明天组会",
-    )
-    out = run_secretary_ask("refresh_agenda", "明天安排", pipeline=pipe)
-    assert out["ok"] is False
-    assert out.get("dead") is True
-    assert not out.get("plan")
-
-
-def test_write_briefing_uses_plan_summary(stub_spawn, tmp_path):
+def test_write_briefing_uses_tomorrow_events(stub_spawn, tmp_path):
     pipe, service, _client = _agenda_pipeline(tmp_path, fail=False)
     event = service.create_manual(title="高数课", start_at=_tomorrow_iso(8), kind="class")
-    plan_summary = "明天早八高数，记得带书"
-    _seed_nightly_plan(
-        service,
-        status="confirmed",
-        summary=plan_summary,
-        event=event,
-        conflict_count=1,
-    )
 
     captured: dict = {}
 
     def capture(prompt):
         captured["prompt"] = prompt
-        return "按昨夜计划：早八高数。"
+        return "早八高数。"
 
     out = run_secretary_ask(
         "write_briefing",
@@ -1484,39 +1391,8 @@ def test_write_briefing_uses_plan_summary(stub_spawn, tmp_path):
     )
     assert out["ok"] is True
     assert out["route"] == "workbuddy"
-    assert plan_summary in captured["prompt"]
-    assert "冲突数：1" in captured["prompt"]
-    assert f"{event.start_at} {event.title}" not in captured["prompt"]
-    assert "- " not in captured["prompt"].split("昨夜计划：", 1)[-1]
-
-
-def test_write_briefing_dismissed_uses_agenda_summary(stub_spawn, tmp_path):
-    pipe, service, _client = _agenda_pipeline(tmp_path, fail=False)
-    event = service.create_manual(title="高数课", start_at=_tomorrow_iso(8), kind="class")
-    _seed_nightly_plan(
-        service,
-        status="dismissed",
-        summary="昨夜计划已被忽略",
-        event=event,
-    )
-
-    captured: dict = {}
-
-    def capture(prompt):
-        captured["prompt"] = prompt
-        return "看板：明早高数课。"
-
-    out = run_secretary_ask(
-        "write_briefing",
-        "根据明天的日程写一段早报",
-        pipeline=pipe,
-        aigw_complete=capture,
-    )
-    assert out["ok"] is True
-    assert out["route"] == "workbuddy"
-    assert out["plan"]["status"] == "dismissed"
-    assert "高数课" in captured["prompt"]
-    assert "昨夜计划已被忽略" not in captured["prompt"]
+    assert f"{event.start_at} {event.title}" in captured["prompt"]
+    assert "昨夜计划" not in captured["prompt"]
 
 
 # ---------------------------------------------------------------------------

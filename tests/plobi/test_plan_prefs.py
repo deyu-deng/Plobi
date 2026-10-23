@@ -6,14 +6,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from pathlib import Path
-
 import pytest
 
 from plobi.agenda import checkin, llm_planning, store
 from plobi.agenda.service import AgendaService
-from plobi.agenda.planning import generate_evening_plan
 from plobi.agents.registry import AgentEntry, AgentRegistry
 
 
@@ -60,29 +56,6 @@ def paced_registry(tmp_path, monkeypatch):
     set_pace("simulation", 14)
     monkeypatch.setattr("plobi.agents.registry.load_registry", lambda path=None: registry)
     return registry
-
-
-def _at(offset: int, hour: int, minute: int = 0) -> str:
-    day = datetime.now().date() + timedelta(days=offset)
-    return datetime.combine(day, datetime.min.time()).replace(
-        hour=hour, minute=minute
-    ).isoformat()
-
-
-def _items(db_path, plan_id):
-    conn = store.connect(db_path)
-    try:
-        return store.list_plan_items(conn, plan_id)
-    finally:
-        conn.close()
-
-
-def _blocks(db_path, plan_id):
-    return [
-        i
-        for i in _items(db_path, plan_id)
-        if i.evidence.get("kind") == "project_block"
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +242,13 @@ def test_confirmed_window_does_not_drop_existing_timetable_event(svc, paced_regi
     finally:
         conn.close()
 
-    plan = generate_evening_plan(DAY, db_path=db_path)
-    items = _items(db_path, plan.id)
-    titles = {it.title for it in items if it.evidence.get("kind") == "event"}
-    assert "电工电子学" in titles
+    connection = store.connect(db_path)
+    try:
+        events = store.list_events(
+            connection, start_from=f"{DAY}T00:00:00", start_to=f"{DAY}T23:59:59")
+    finally:
+        connection.close()
+    assert "电工电子学" in {event.title for event in events}, "avoid 确认不许删已有事件"
 
 
 def test_avoid_window_clipped_to_day_bounds(svc, paced_registry, tmp_path):

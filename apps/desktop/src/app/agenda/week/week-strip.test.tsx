@@ -178,8 +178,8 @@ describe('AgendaWeekStrip', () => {
         events={events}
         fetchDay={async (dayKey: string) =>
           dayKey === '2026-10-10'
-            ? { conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }], date: dayKey, events: [], plan_items: [] }
-            : { conflicts: [], date: dayKey, events: [], plan_items: [] }
+            ? { conflicts: [{ end_at: 'x', left_id: 'a', right_id: 'b', start_at: 'y' }], date: dayKey, events: [] }
+            : { conflicts: [], date: dayKey, events: [] }
         }
         onPickDay={() => undefined}
         pickedDayKey={null}
