@@ -71,7 +71,7 @@ class TestShape:
         """写手能表达的只有记录自己的字段＋两种库里已有的状态值——没有动词菜单。"""
         props = agenda_tools._AGENDA_WRITE_SCHEMA["parameters"]["properties"]["items"]["items"]["properties"]
         assert set(props) == {"event_id", "title", "start_at", "end_at", "kind", "location",
-                              "notes", "status", "completed"}
+                              "notes", "details", "status", "completed"}
         assert props["status"]["enum"] == ["confirmed", "cancelled"]
 
     def test_both_atoms_are_in_the_bundle_every_role_inherits(self):

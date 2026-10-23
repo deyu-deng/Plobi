@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
 import {
   Dialog,
   DialogContent,
@@ -16,11 +17,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { type Translations, useI18n } from '@/i18n'
 import { selectDesktopPaths } from '@/lib/desktop-fs'
 import {
+  addAgendaAttachment,
   confirmAgendaEvent,
   createAgendaEvent,
   deleteAgendaEvent,
   dismissAgendaEvent,
   getAgenda,
+  removeAgendaAttachment,
   updateAgendaEvent
 } from '@/plobi'
 import {
@@ -37,7 +40,7 @@ import {
   upsertAgendaEvent
 } from '@/store/agenda'
 import { notify, notifyError } from '@/store/notifications'
-import type { AgendaEvent, AgendaKind } from '@/types/plobi'
+import type { AgendaAttachment, AgendaDetailItem, AgendaEvent, AgendaKind } from '@/types/plobi'
 
 import {
   Panel,
@@ -98,6 +101,35 @@ function fromInputValue(value: string): string {
   return value.length === 16 ? `${value}:00` : value
 }
 
+/** 附件路径 → `file://` URL；主进程的 openExternal 只认带 scheme 的地址。 */
+function fileUrl(target: string): string {
+  const normalized = target.replace(/\\/g, '/')
+
+  return normalized.startsWith('/')
+    ? `file://${encodeURI(normalized)}`
+    : `file:///${encodeURI(normalized)}`
+}
+
+function newDetailId(): string {
+  return `d_${Math.random().toString(36).slice(2, 10)}`
+}
+
+function fileSizeLabel(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return ''
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 /** Who said it: `evidence.sender` (+ conversation name when chatlog has one). */
 function senderLabel(event: AgendaEvent, a: Translations['agenda']): string {
   const sender = event.evidence?.sender?.trim() || a.unknown
@@ -156,6 +188,7 @@ export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
   const [timetable, setTimetable] = useState<null | { path: string; preview: null | TimetablePreview }>(null)
   const [timetableBusy, setTimetableBusy] = useState(false)
   const [timetableStatus, setTimetableStatus] = useState<null | TimetableStatus>(null)
+  const [attachmentBusy, setAttachmentBusy] = useState<null | string>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -304,19 +337,62 @@ export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
     }
   }
 
-  async function handleEditorSave(values: {
-    endAt: null | string
-    kind: AgendaKind
-    location: null | string
-    notes: null | string
-    startAt: string
-    title: string
-  }) {
+  async function handleAddAttachments(event: AgendaEvent) {
+    try {
+      const paths = await selectDesktopPaths({ multiple: true })
+
+      if (paths.length === 0) {
+        return
+      }
+
+      setAttachmentBusy(event.id)
+      let latest = event
+
+      for (const path of paths) {
+        latest = await addAgendaAttachment(event.id, path)
+      }
+
+      upsertAgendaEvent(latest)
+      notify({ message: a.attachmentAdded })
+    } catch (cause) {
+      notifyError(cause, a.attachmentFailed)
+    } finally {
+      setAttachmentBusy(null)
+    }
+  }
+
+  async function handleRemoveAttachment(event: AgendaEvent, attachment: AgendaAttachment) {
+    setAttachmentBusy(event.id)
+
+    try {
+      upsertAgendaEvent(await removeAgendaAttachment(event.id, attachment.id))
+      notify({ message: a.attachmentRemoved })
+    } catch (cause) {
+      notifyError(cause, a.attachmentFailed)
+    } finally {
+      setAttachmentBusy(null)
+    }
+  }
+
+  async function handleToggleDetail(event: AgendaEvent, index: number) {
+    const details = (event.details ?? []).map((row, position) =>
+      position === index ? { ...row, done: !row.done } : row
+    )
+
+    try {
+      upsertAgendaEvent(await updateAgendaEvent(event.id, { details }))
+    } catch (cause) {
+      notifyError(cause, a.actionFailed)
+    }
+  }
+
+  async function handleEditorSave(values: AgendaEditorValues) {
     if (editor.mode === 'edit' && editor.event) {
       // The editor intentionally keeps `null` distinct from `undefined`: a
       // missing field lets the backend preserve its current value, an
       // explicit null wipes the field back to nothing.
-      const patch: { end_at: null | string; kind: AgendaKind; location: null | string; notes: null | string; start_at: string; title: string } = {
+      const patch = {
+        details: values.details,
         end_at: values.endAt,
         kind: values.kind,
         location: values.location,
@@ -328,6 +404,7 @@ export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
       upsertAgendaEvent(await updateAgendaEvent(editor.event.id, patch))
     } else {
       const created = await createAgendaEvent({
+        details: values.details,
         end_at: values.endAt ?? undefined,
         kind: values.kind,
         location: values.location,
@@ -381,12 +458,16 @@ export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
             {selected ? (
               <AgendaDetail
                 a={a}
+                attachmentsBusy={attachmentBusy === selected.id}
                 busy={busyId === selected.id}
                 event={selected}
+                onAddAttachment={() => void handleAddAttachments(selected)}
                 onConfirm={() => void handleConfirm(selected)}
                 onDelete={() => void handleDelete(selected)}
                 onDismiss={() => void handleDismiss(selected)}
                 onEdit={() => setEditor({ event: selected, mode: 'edit' })}
+                onRemoveAttachment={attachment => void handleRemoveAttachment(selected, attachment)}
+                onToggleDetail={index => void handleToggleDetail(selected, index)}
               />
             ) : events.length === 0 ? (
               <PanelEmpty
@@ -471,20 +552,28 @@ export function AgendaView({ now = new Date(), onClose }: AgendaViewProps) {
 
 function AgendaDetail({
   a,
+  attachmentsBusy,
   busy,
   event,
+  onAddAttachment,
   onConfirm,
   onDelete,
   onDismiss,
-  onEdit
+  onEdit,
+  onRemoveAttachment,
+  onToggleDetail
 }: {
   a: Translations['agenda']
+  attachmentsBusy: boolean
   busy: boolean
   event: AgendaEvent
+  onAddAttachment: () => void
   onConfirm: () => void
   onDelete: () => void
   onDismiss: () => void
   onEdit: () => void
+  onRemoveAttachment: (attachment: AgendaAttachment) => void
+  onToggleDetail: (index: number) => void
 }) {
   const { t } = useI18n()
   const isPending = event.status === 'pending'
@@ -531,6 +620,76 @@ function AgendaDetail({
         />
       </header>
 
+      {event.details?.length ? (
+        <section className="space-y-1.5">
+          <PanelSectionLabel>{a.detailsLabel}</PanelSectionLabel>
+          <ul className="space-y-1">
+            {event.details.map((item, index) => (
+              <li className="flex items-start gap-2 text-[0.8rem]" key={item.id}>
+                <input
+                  aria-label={item.text}
+                  checked={item.done}
+                  className="mt-0.5 size-3.5 shrink-0 accent-(--ui-accent)"
+                  onChange={() => onToggleDetail(index)}
+                  type="checkbox"
+                />
+                <span className={item.done ? 'text-muted-foreground line-through' : 'text-foreground'}>
+                  {item.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <PanelSectionLabel>{a.attachmentsLabel}</PanelSectionLabel>
+          <button
+            aria-label={a.addAttachment}
+            className="flex size-6 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-foreground disabled:opacity-50"
+            disabled={attachmentsBusy}
+            onClick={onAddAttachment}
+            title={a.addAttachment}
+            type="button"
+          >
+            <Codicon name="add" size="0.8rem" />
+          </button>
+        </div>
+        {(event.attachments ?? []).length === 0 ? (
+          <p className="text-[0.7rem] text-(--ui-text-tertiary)">{a.noAttachments}</p>
+        ) : (
+          <ul className="space-y-1">
+            {(event.attachments ?? []).map(attachment => (
+              <li className="flex items-center gap-1.5 rounded-md border border-(--ui-stroke-tertiary) px-1.5 py-1" key={attachment.id}>
+                <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="file" size="0.8rem" />
+                <button
+                  className="min-w-0 flex-1 truncate text-left text-[0.75rem] text-foreground hover:underline"
+                  onClick={() => void window.plobiDesktop?.openExternal?.(fileUrl(attachment.path))}
+                  title={`${a.openAttachment}: ${attachment.path}`}
+                  type="button"
+                >
+                  {attachment.name}
+                </button>
+                <span className="shrink-0 text-[0.6rem] tabular-nums text-(--ui-text-tertiary)">
+                  {fileSizeLabel(attachment.size)}
+                </span>
+                <button
+                  aria-label={a.removeAttachment}
+                  className="flex size-5 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-destructive disabled:opacity-50"
+                  disabled={attachmentsBusy}
+                  onClick={() => onRemoveAttachment(attachment)}
+                  title={a.removeAttachment}
+                  type="button"
+                >
+                  <Codicon name="trash" size="0.75rem" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {event.notes?.trim() ? (
         <section className="space-y-1.5">
           <PanelSectionLabel>{a.notesLabel}</PanelSectionLabel>
@@ -568,6 +727,7 @@ function AgendaDetail({
 }
 
 interface AgendaEditorValues {
+  details: AgendaDetailItem[]
   endAt: null | string
   kind: AgendaKind
   location: null | string
@@ -596,6 +756,7 @@ function AgendaEditorDialog({
   const [endAt, setEndAt] = useState('')
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
+  const [details, setDetails] = useState<AgendaDetailItem[]>([])
   const [kind, setKind] = useState<AgendaKind>('task')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<null | string>(null)
@@ -618,6 +779,7 @@ function AgendaEditorDialog({
     setEndAt(initial?.end_at ? toInputValue(initial.end_at) : '')
     setLocation(initial?.location?.trim() ?? '')
     setNotes(initial?.notes?.trim() ?? '')
+    setDetails((initial?.details ?? []).map(row => ({ ...row })))
     setKind(initial?.kind ?? 'task')
     setError(null)
     setSaving(false)
@@ -652,6 +814,9 @@ function AgendaEditorDialog({
 
     try {
       await onSave({
+        details: details
+          .map(row => ({ ...row, text: row.text.trim() }))
+          .filter(row => row.text.length > 0),
         endAt: endIso,
         kind,
         location: location.trim() || null,
@@ -705,6 +870,47 @@ function AgendaEditorDialog({
             placeholder={a.notesPlaceholder}
             value={notes}
           />
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[0.72rem] text-(--ui-text-secondary)">{a.detailsLabel}</span>
+              <button
+                className="flex items-center gap-1 rounded px-1 py-0.5 text-[0.66rem] text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-foreground"
+                onClick={() => setDetails(rows => [...rows, { done: false, id: newDetailId(), text: '' }])}
+                type="button"
+              >
+                <Codicon name="add" size="0.75rem" />
+                {a.addDetail}
+              </button>
+            </div>
+            {details.map((row, index) => (
+              <div className="flex items-center gap-1" key={row.id}>
+                <input
+                  aria-label={a.detailPlaceholder}
+                  className="min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1 text-[0.78rem] outline-none placeholder:text-(--ui-text-tertiary)"
+                  onChange={changeEvent => {
+                    const text = changeEvent.target.value
+
+                    setDetails(rows =>
+                      rows.map((item, position) => (position === index ? { ...item, text } : item))
+                    )
+                  }}
+                  placeholder={a.detailPlaceholder}
+                  value={row.text}
+                />
+                {row.done ? (
+                  <Codicon className="shrink-0 text-emerald-500" name="check" size="0.8rem" />
+                ) : null}
+                <button
+                  aria-label={t.common.delete}
+                  className="flex size-6 shrink-0 items-center justify-center rounded text-(--ui-text-tertiary) hover:bg-(--ui-surface-2) hover:text-destructive"
+                  onClick={() => setDetails(rows => rows.filter((_, position) => position !== index))}
+                  type="button"
+                >
+                  <Codicon name="trash" size="0.75rem" />
+                </button>
+              </div>
+            ))}
+          </div>
           <Select onValueChange={value => setKind(value as AgendaKind)} value={kind}>
             <SelectTrigger aria-label={a.kindLabel}>
               <SelectValue />

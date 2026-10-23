@@ -21,18 +21,12 @@ import type {
   DebugShareResponse,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
-  PlobiConfig,
-  PlobiConfigRecord,
   LogsResponse,
   McpCatalogResponse,
   McpServerSummary,
   MemoryProviderConfig,
   MemoryProviderOAuthStatus,
   MemoryStatusResponse,
-  NetworkEgressRecord,
-  NetworkPoolImport,
-  NetworkSection,
-  NetworkStatus,
   MessagingPlatformsResponse,
   MessagingPlatformTestResponse,
   MessagingPlatformUpdate,
@@ -41,11 +35,17 @@ import type {
   ModelAssignmentResponse,
   ModelInfoResponse,
   ModelOptionsResponse,
+  NetworkEgressRecord,
+  NetworkPoolImport,
+  NetworkSection,
+  NetworkStatus,
   OAuthPollResponse,
   OAuthProvidersResponse,
   OAuthStartResponse,
   OAuthSubmitResponse,
   PaginatedSessions,
+  PlobiConfig,
+  PlobiConfigRecord,
   ProfileCreatePayload,
   ProfileSetupCommand,
   ProfileSoul,
@@ -117,8 +117,6 @@ export type {
   ElevenLabsVoicesResponse,
   EnvVarInfo,
   GatewayReadyPayload,
-  PlobiConfig,
-  PlobiConfigRecord,
   LogsResponse,
   McpCatalogEntry,
   McpCatalogResponse,
@@ -141,6 +139,8 @@ export type {
   ModelOptionProvider,
   ModelOptionsResponse,
   PaginatedSessions,
+  PlobiConfig,
+  PlobiConfigRecord,
   ProfileCreatePayload,
   ProfileInfo,
   ProfileSetupCommand,
@@ -948,6 +948,21 @@ export function deleteAgendaEvent(eventId: string): Promise<{ id: string; ok: bo
   return window.plobiDesktop.api<{ id: string; ok: boolean }>({
     path: `/api/agenda/${encodeURIComponent(eventId)}`,
     method: 'DELETE'
+  })
+}
+
+export function addAgendaAttachment(eventId: string, path: string): Promise<AgendaEvent> {
+  return window.plobiDesktop.api<AgendaEvent>({
+    body: { path },
+    method: 'POST',
+    path: `/api/agenda/${encodeURIComponent(eventId)}/attachments`
+  })
+}
+
+export function removeAgendaAttachment(eventId: string, attachmentId: string): Promise<AgendaEvent> {
+  return window.plobiDesktop.api<AgendaEvent>({
+    method: 'DELETE',
+    path: `/api/agenda/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`
   })
 }
 
