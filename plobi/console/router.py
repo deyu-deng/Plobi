@@ -1536,6 +1536,19 @@ async def agent_offloads_route(agent_id: str, limit: int = 20):
     return {"ok": True, "data": payload}
 
 
+@router.get("/offload/agents", name="offload_agents")
+async def offload_agents_route(refresh: bool = False):
+    """GET /api/offload/agents — 设置 → 外包 那一屏的取数（一家外部软件一行）。
+
+    与 Providers 那一屏**不是一件事**：那边借订阅/API 当模型，这边是"把活交给那家软件去做"。
+    判据只有一处（`availability()`）；登录态来自厂商自己的探针，读不出的记 `null`。
+    """
+    from plobi.delegation.offload_surface import external_agent_rows
+
+    payload = await run_in_threadpool(external_agent_rows, refresh=refresh)
+    return {"ok": True, "data": payload}
+
+
 # --------------------------------------------------------------------------- #
 # 外包那一轮回到它自己的软件里（WP-L2-OUTSOURCE-ENTRY 入口面③第三级）
 # --------------------------------------------------------------------------- #

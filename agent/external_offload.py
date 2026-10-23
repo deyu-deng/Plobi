@@ -242,6 +242,72 @@ def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
     return _which_prefer_executable(spec.binary_name)
 
 
+#: 各厂商自己的「我登没登」探针。**列模型 / doctor 都比"看凭据目录非空"可靠**——
+#: 2026-10-22 实测：存在性那一套对 `codebuddy`/`qoder` 都报 True，而同一时刻 Qoder CLI
+#: 自己回的是「Not logged in · Please run /login」。三条都不烧 token。
+LOGIN_PROBE_ARGV: dict[str, tuple[str, ...]] = {
+    AGENT_QODER: ("--list-models",),
+    AGENT_CODEBUDDY: ("doctor",),
+    AGENT_AGY: ("models",),
+}
+
+LOGIN_PROBE_TIMEOUT_S = 45.0
+
+#: 厂商自己承认"没登录"的原话（小写匹配）。认不出来的输出一律记 ``None``，**不判成不能**。
+_LOGIN_ABSENT_MARKERS = (
+    "not logged in", "please run /login", "please log in", "login required",
+    "not authenticated", "no api key", "sign in to",
+)
+
+#: "测法不对"的标记：带着会话的 SDK 变量直接敲，子进程会回这个而不是"没登录"。
+_PROBE_BROKEN_MARKERS = ("sdk_invalid_args", "agent sdk entrypoint env")
+
+
+def probe_login(agent: str, *, timeout: float = LOGIN_PROBE_TIMEOUT_S) -> tuple[Optional[bool], str, str]:
+    """Run the vendor's own login probe. Returns ``(verdict, source, detail)``.
+
+    ``verdict`` is ``True`` (logged in) / ``False`` (the vendor says it is not) /
+    ``None`` (could not tell — never read that as "cannot"). ``source`` says how we
+    know: ``probe`` / ``no-probe`` / ``timeout`` / ``probe-broken``.
+
+    Two measured traps on this box (2026-10-22):
+
+    * **Never probe from this process's own environment.** ``qodercli --list-models``
+      run with the session's SDK variables answers ``sdk_invalid_args`` and an exit
+      code of 0 — that is "we probed wrong", not "it is logged out". The spec's
+      ``scrub_env`` is dropped for the child, same as a real offload run does.
+    * The output alone decides; the exit code alone does not (the same run exits 0
+      while failing).
+    """
+    spec = agent_spec(agent)
+    probe = LOGIN_PROBE_ARGV.get(agent)
+    binary = resolve_command(agent)
+    if spec is None or not probe or not binary:
+        return None, "no-probe", "本机没有这一家，或它没有登记登录探针"
+    env = dict(os.environ)
+    for key in spec.scrub_env or ():
+        env.pop(key, None)
+    try:
+        finished = subprocess.run(  # noqa: S603 — argv is a fixed table above
+            [binary, *probe], cwd=tempfile.gettempdir(), env=env,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, errors="replace", timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "timeout", f"探针 {timeout:.0f}s 没回话"
+    except OSError as exc:
+        return None, "probe-broken", f"起不来：{exc}"
+    output = ((finished.stdout or "") + (finished.stderr or "")).strip()
+    low = output.lower()
+    if any(marker in low for marker in _PROBE_BROKEN_MARKERS):
+        return None, "probe-broken", output[:200]
+    if any(marker in low for marker in _LOGIN_ABSENT_MARKERS):
+        return False, "probe", output[:200]
+    if finished.returncode == 0 and output:
+        return True, "probe", ""
+    return None, "probe", output[:200]
+
+
 def permission_flags(agent: str = AGENT_CODEBUDDY, mode: Optional[str] = None) -> tuple[str, ...]:
     """The permissive flags for one run, taken from config — never hardcoded on.
 
