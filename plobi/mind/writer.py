@@ -49,6 +49,15 @@ class WriteResult:
     written: list[str]
     skipped: list[str]
     detail: str = ""
+    # 非空 = 这一趟**没有落盘**，计划已进「待确认」等人点头（裁定 198：写脑先给计划＋哈希＋点头）。
+    staged: str = ""
+    pending_id: str = ""
+    # 非空 = 这一趟**没有落盘**，计划已进「待确认」等人点头（裁定 198：写脑先给计划＋哈希＋点头）。
+    staged: str = ""
+    pending_id: str = ""
+    # 非空 = 这一趟**没有落盘**，计划已进「待确认」等人点头（裁定 198：写脑先给计划＋哈希＋点头）。
+    staged: str = ""
+    pending_id: str = ""
 
 
 class MindWriter:
@@ -59,11 +68,14 @@ class MindWriter:
         commit: bool = True,
         run_verifier: bool = True,
         lock_timeout: float = 30.0,
+        require_approval: bool | None = None,
     ):
         self._explicit_root = root
         self.commit = commit
         self.run_verifier = run_verifier
         self.lock_timeout = lock_timeout
+        # None = 按配置（``memory.mind_write_approval``，出厂开）；显式 True/False 给测试与预演用。
+        self.require_approval = require_approval
 
     @property
     def available(self) -> bool:
@@ -71,6 +83,144 @@ class MindWriter:
 
     def _lock_path(self, root: Path) -> Path:
         return root / ".plobi-mind.lock"
+
+    def _approval_required(self) -> bool:
+        """这一趟要不要先出计划等人点头（裁定 156／198）。
+
+        只拦**真落库**那条腿（``commit=True``）：``commit=False`` 是「只写工作副本」的预演形状，
+        那不是本闸管的事，也不该把测试与人肉预览卡住。配置键是 ``memory.mind_write_approval``，
+        与 ``memory.write_approval``（管 L0 那几份记忆文件）分开——两条腿的节奏不同，
+        合成一个键会出现「关掉 L0 的追问＝顺手把写脑的闸也关了」。
+        """
+        if self.require_approval is not None:
+            return bool(self.require_approval)
+        if not self.commit:
+            return False
+        try:
+            from plobi_cli.config import load_config
+
+            mem = (load_config() or {}).get("memory", {}) or {}
+            return bool(mem.get("mind_write_approval", True))
+        except Exception:  # noqa: BLE001 - 读不到配置时按「先问」办，宁可多问一次
+            logger.warning("mind: 读不到 mind_write_approval，按「先问」处理", exc_info=True)
+            return True
+
+    def _stage_for_approval(self, batch: list[WriteRequest]):
+        """把这一批改写成一张计划，放进**内核**的待确认层（``/memory pending`` 可看）。
+
+        计划里有每一档的新旧 sha256、以及绑 ``MIND_ROOT``/``VAULT_ROOT`` 对象身份的审批哈希；
+        点头时 ``apply_plan`` 会重新比这三样，所以同一份审批 replay 到改名后的根或人先改过的档上都会被拒。
+        """
+        from plobi.mind import proposal as L1
+        from plobi.mind.paths import resolve_roots
+        from tools import write_approval as wa
+
+        roots = resolve_roots()
+        plan = L1.build_plan(
+            [L1.Change(r.relative_path, r.content, r.mode) for r in batch], roots=roots
+        )
+        record = wa.stage_write(
+            wa.MEMORY,
+            {"kind": "mind_plan", "plan": plan.to_json()},
+            summary=plan.human_summary().splitlines()[0],
+            origin="foreground",
+        )
+        logger.info(
+            "mind: 这一批没落盘，已进待确认 plan=%s pending=%s", plan.digest[:12], record.get("id")
+        )
+        return plan, record
+
+    def _approval_required(self) -> bool:
+        """这一趟要不要先出计划等人点头（裁定 156／198）。
+
+        只拦**真落库**那条腿（``commit=True``）：``commit=False`` 是「只写工作副本」的预演形状，
+        那不是本闸管的事，也不该把测试与人肉预览卡住。配置键是 ``memory.mind_write_approval``，
+        与 ``memory.write_approval``（管 L0 那几份记忆文件）分开——两条腿的节奏不同，
+        合成一个键会出现「关掉 L0 的追问＝顺手把写脑的闸也关了」。
+        """
+        if self.require_approval is not None:
+            return bool(self.require_approval)
+        if not self.commit:
+            return False
+        try:
+            from plobi_cli.config import load_config
+
+            mem = (load_config() or {}).get("memory", {}) or {}
+            return bool(mem.get("mind_write_approval", True))
+        except Exception:  # noqa: BLE001 - 读不到配置时按「先问」办，宁可多问一次
+            logger.warning("mind: 读不到 mind_write_approval，按「先问」处理", exc_info=True)
+            return True
+
+    def _stage_for_approval(self, batch: list[WriteRequest]):
+        """把这一批改写成一张计划，放进**内核**的待确认层（``/memory pending`` 可看）。
+
+        计划里有每一档的新旧 sha256、以及绑 ``MIND_ROOT``/``VAULT_ROOT`` 对象身份的审批哈希；
+        点头时 ``apply_plan`` 会重新比这三样，所以同一份审批 replay 到改名后的根或人先改过的档上都会被拒。
+        """
+        from plobi.mind import proposal as L1
+        from plobi.mind.paths import resolve_roots
+        from tools import write_approval as wa
+
+        roots = resolve_roots()
+        plan = L1.build_plan(
+            [L1.Change(r.relative_path, r.content, r.mode) for r in batch], roots=roots
+        )
+        record = wa.stage_write(
+            wa.MEMORY,
+            {"kind": "mind_plan", "plan": plan.to_json()},
+            summary=plan.human_summary().splitlines()[0],
+            origin="foreground",
+        )
+        logger.info(
+            "mind: 这一批没落盘，已进待确认 plan=%s pending=%s", plan.digest[:12], record.get("id")
+        )
+        return plan, record
+
+    def _approval_required(self) -> bool:
+        """这一趟要不要先出计划等人点头（裁定 156／198）。
+
+        只拦**真落库**那条腿（``commit=True``）：``commit=False`` 是「只写工作副本」的预演形状，
+        那不是本闸管的事，也不该把测试与人肉预览卡住。配置键是 ``memory.mind_write_approval``，
+        与 ``memory.write_approval``（管 L0 那几份记忆文件）分开——两条腿的节奏不同，
+        合成一个键会出现「关掉 L0 的追问＝顺手把写脑的闸也关了」。
+        """
+        if self.require_approval is not None:
+            return bool(self.require_approval)
+        if not self.commit:
+            return False
+        try:
+            from plobi_cli.config import load_config
+
+            mem = (load_config() or {}).get("memory", {}) or {}
+            return bool(mem.get("mind_write_approval", True))
+        except Exception:  # noqa: BLE001 - 读不到配置时按「先问」办，宁可多问一次
+            logger.warning("mind: 读不到 mind_write_approval，按「先问」处理", exc_info=True)
+            return True
+
+    def _stage_for_approval(self, batch: list[WriteRequest]):
+        """把这一批改写成一张计划，放进**内核**的待确认层（``/memory pending`` 可看）。
+
+        计划里有每一档的新旧 sha256、以及绑 ``MIND_ROOT``/``VAULT_ROOT`` 对象身份的审批哈希；
+        点头时 ``apply_plan`` 会重新比这三样，所以同一份审批 replay 到改名后的根或人先改过的档上都会被拒。
+        """
+        from plobi.mind import proposal as L1
+        from plobi.mind.paths import resolve_roots
+        from tools import write_approval as wa
+
+        roots = resolve_roots()
+        plan = L1.build_plan(
+            [L1.Change(r.relative_path, r.content, r.mode) for r in batch], roots=roots
+        )
+        record = wa.stage_write(
+            wa.MEMORY,
+            {"kind": "mind_plan", "plan": plan.to_json()},
+            summary=plan.human_summary().splitlines()[0],
+            origin="foreground",
+        )
+        logger.info(
+            "mind: 这一批没落盘，已进待确认 plan=%s pending=%s", plan.digest[:12], record.get("id")
+        )
+        return plan, record
 
     def write(self, requests: Iterable[WriteRequest]) -> WriteResult:
         """Apply a batch under one lock. Unsafe paths are skipped, not fatal."""
@@ -85,6 +235,21 @@ class MindWriter:
 
         written: list[str] = []
         skipped: list[str] = []
+
+        if batch and self._approval_required():
+            plan, record = self._stage_for_approval(batch)
+            return WriteResult(
+                ok=False,
+                written=[],
+                skipped=[r.relative_path for r in batch],
+                staged=plan.digest,
+                pending_id=str(record.get("id") or ""),
+                detail=(
+                    "这一批没有落盘：计划 %s（%d 项）已进待确认，等你点头。"
+                    " 看：/memory pending · 落：/memory approve %s · 不要：/memory reject %s"
+                    % (plan.digest[:12], len(plan.changes), record.get("id"), record.get("id"))
+                ),
+            )
 
         with mind_write_lock(self._lock_path(root), timeout=self.lock_timeout):
             for request in batch:

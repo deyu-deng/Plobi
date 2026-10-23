@@ -2325,6 +2325,11 @@ DEFAULT_CONFIG = {
         #                     /memory reject <id>.
         # To disable memory entirely, use memory_enabled: false instead.
         "write_approval": False,
+        # 写脑（L2）那道闸，和上面那颗分开：上面管 L0 那几份记忆文件（add/replace/remove），
+        # 这颗管「往 Mind 落盘并提交」那条腿。裁定 156／198：初期**每次写都先给计划 + 每档 sha256
+        # + 你点头**；被驳回一次，那一类内容立刻退回必问（``proposal.record_rejection`` 记的那笔）。
+        # 默认开是这个裁定的结论，不是方便开关——要改默认值必须回裁定。
+        "mind_write_approval": True,
         # 三份记忆各自的上限（裁定 181，任务书第 2 步）。以前只有一格
         # ``memory_char_limit``——那时 MEMORY.md 只有一份、没有作用域这一维。
         # ~2.75 chars/token。
