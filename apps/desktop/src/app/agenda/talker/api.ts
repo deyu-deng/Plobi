@@ -74,5 +74,16 @@ export async function completeReview(): Promise<void> {
  * 组件因此能在没有 `window.plobiDesktop` 的环境里安静地什么都不画。
  */
 export async function getSourceLiveness(): Promise<SourceLivenessPayload | null> {
-  return window.plobiDesktop.api<SourceLivenessPayload>({ path: '/api/collect/sources' })
+  const envelope = await window.plobiDesktop.api<{ data?: SourceLivenessPayload } | SourceLivenessPayload>(
+    { path: '/api/collect/sources' }
+  )
+
+  // 这座桥回的是**整个信封** `{ok, data}`（`settings/sources/api.ts` 那边一直在剥它，
+  // 这一只忘了）。不剥就是 `payload.sources` 为 undefined，`.map` 当场把整棵树送进
+  // error boundary——10-23 挂在信源抽屉里第一次真渲染就炸给用户看了。
+  const payload = (envelope as { data?: SourceLivenessPayload } | null)?.data ?? envelope
+
+  return payload && Array.isArray((payload as SourceLivenessPayload).sources)
+    ? (payload as SourceLivenessPayload)
+    : null
 }
