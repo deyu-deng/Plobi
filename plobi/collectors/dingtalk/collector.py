@@ -3,11 +3,12 @@ r"""钉钉那条的采集器：**读本机客户端已经落盘的那份库**，
 落点仍然只有信息池（裁定 193）——这一档只 `pull()`，`sweep.py` 里"只有 `pull()`"那一支负责落池，
 我不新起第二条落库路。
 
-为什么默认一条都不采：这一枚库里装的是**整个钉钉的全部会话**（公司群、同事私聊、审批卡片），
-而 Plobi 要的只是他点出来的那几扇。这一条与微信那一路同一口径（隐私默认关），
-形状上却更硬：微信那份名册有面上那份"每个群/每个人都采不采"的清单可以点，
-钉钉这一版**先只有配置格里那一串 cid**——清单上屏是下一刀（所以 `conversation_scoped`
-这一格这一版留 `False`：那块面板今天只认微信那一份 store，把钉钉指过去会画出一屏错的数据）。
+为什么默认是"采"而界面上仍要有一块名单（用户 10-24 第二轮：「**把微信和钉钉的会话采集都做成
+做到UI里面去。这样太麻烦了**」）：上一刀的形状是"点名为采"，他要先从临时文件里挑 cid 再填进
+一个文本框——那一格在 178 个会话前就是他要拆掉的东西。现在他点开抽屉看到名单，默认全在采，
+不想采哪扇就关哪扇，与微信那一条口径一致（裁定 50／100 一：**只有 `excluded` 拒绝**）。
+形状上却仍比微信更硬一点：微信那份名册有历史（`first_seen_at`、`review_done`），钉钉这份
+只有"排除名单"，因为**没定过 = 采**这件事不需要一行去记它。
 
 时间与撤回：`occurred_at` = **这条消息自己的时间**（`createdAt`，毫秒优先、退秒），
 `recallStatus` 为真的行不取——撤回之后还留在池里就是"库里有一条平台已经说不存在的话"。
@@ -30,43 +31,48 @@ KIND = "message"
 class DingTalkCollector:
     source_id = SOURCE_ID
 
-    def __init__(self, *, local_store: Any, cids: Iterable[str] = (),
+    def __init__(self, *, local_store: Any, excluded: Iterable[str] = (),
                  limit: int = 500, since_ms: int = 0, titles: Optional[dict[str, str]] = None) -> None:
         self.store = local_store
-        self.cids = [str(cid).strip() for cid in cids if str(cid).strip()]
+        # 只有 `excluded` 拒绝（裁定 50／100 一：默认采，用户逐扇关）。采集器**只问这一格**——
+        # 不去读整张名册再自己判一遍，那是第二处判"采不采"。
+        self.excluded = {str(cid).strip() for cid in excluded if str(cid).strip()}
         self.limit = limit
         self.since_ms = since_ms
         self._titles = dict(titles or {})
 
     @classmethod
-    def build(cls, *, config: Optional[dict] = None, opener: Any = None) -> "DingTalkCollector":
-        """生产接线：配置层那一格 cid 名单 + 本机库。
+    def build(cls, *, excluded: Optional[Iterable[str]] = None,
+              opener: Any = None) -> "DingTalkCollector":
+        """生产接线：本机库 + 那份准入名册里被排除的那些。
 
-        `opener` 是注入位（测试不碰盘也不碰日志），默认 :func:`store.open_local_store`。
+        `opener` / `excluded` 都是注入位（测试不碰盘也不碰日志），默认分别走
+        :func:`store.open_local_store` 与 :class:`plobi.collectors.talkers.Ledger`。
         """
-        from plobi.collectors import sources_config
+        if excluded is None:
+            from ..talkers import Ledger
 
-        params = config if config is not None else sources_config.setup_params(SOURCE_ID)
-        raw = str(params.get("conversations") or "")
-        cids = [part.strip() for part in raw.replace("，", ",").split(",") if part.strip()]
+            excluded = Ledger().excluded(SOURCE_ID)
         opened = (opener or store.open_local_store)()
-        return cls(local_store=opened, cids=cids)
+        return cls(local_store=opened, excluded=excluded)
 
     def health(self) -> dict:
-        """能开库、点了几扇、这台的会话总数——三格一起说，少一格就是一次误判。
+        """库开不开、本机几扇、排除了几扇——三格一起说。
 
-        库能开**不等于采得到东西**：一条会话都没点名，那今天就是零条，
-        这句话不许被"ok=True"盖掉（判据 5 那句"成功但空货不能当答案交出去"）。
+        一扇都没定过**不等于采不到**：默认就是采（与微信同一条口径），所以这里 `ok=True`。
+        真要说的那句限制是"本机库里只有客户端已经拉下来的那部分"，而那件事由 `pull()`
+        回来的条数与最新时间说，不由这颗绿灯盖掉。
         """
-        if not self.cids:
-            return {"ok": False, "state": "needs_setup",
-                    "detail": f"本机库在位（{self.store.conversations} 个会话），但一条都没准入"}
         return {"ok": True, "state": "ready",
-                "detail": f"准入 {len(self.cids)} 扇 / 本机共 {self.store.conversations} 个会话"}
+                "detail": f"本机 {self.store.conversations} 个会话，其中排除 {len(self.excluded)} 个"}
 
     def pull(self) -> list[Occurrence]:
-        """只读被点名的那几扇。**纯读**：一个字都不写库、一个字节都不动钉钉那侧。"""
-        rows = store.recent_messages(self.store, self.cids, limit=self.limit, since_ms=self.since_ms)
+        """读**没被排除的那些**会话。**纯读**：一个字都不写库、一个字节都不动钉钉那侧。"""
+        wanted = [row["cid"] for row in store.list_conversations(self.store, limit=self.limit)
+                  if row["cid"] not in self.excluded]
+        if not wanted:
+            return []
+        rows = store.recent_messages(self.store, wanted, limit=self.limit, since_ms=self.since_ms)
         titles = self._conversation_titles()
 
         return [

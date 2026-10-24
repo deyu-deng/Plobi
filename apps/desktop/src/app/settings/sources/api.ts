@@ -273,6 +273,61 @@ export async function getExternalPackages(): Promise<ExternalPackage[]> {
 }
 
 /**
+ * 一扇会话（微信的一个群/一个人、钉钉的一个 cid）在界面上的那一行。
+ *
+ * `status` 是**这条信源自己算好交出来的**（`known` 采 / `excluded` 不采 / `pending` 没定过＝采）——
+ * 名单与状态都来自后端那两只声明的手（`SourceSpec.conversations` / `admission`），
+ * 界面不认识任何一家信源的名字。
+ */
+export interface ConversationRow {
+  id: string
+  kind: string
+  name: string
+  status: string
+}
+
+export interface ConversationsPayload {
+  conversations: ConversationRow[]
+  reason: string
+  state: 'not_supported' | 'ok' | 'unavailable'
+}
+
+/**
+ * 这一条信源今天有哪些会话、各自采不采。
+ *
+ * 三家共用这一条读口（微信 / 钉钉 / 任何第三方按会话的信源）。读不到不是错误：
+ * `state` 会把"这条没有会话这一层"（`not_supported`）与"有，但现在拿不到"（`unavailable`）
+ * 分开说——**0 行**只在 `state=ok` 时才是"今天确实没有会话"这句真话。
+ */
+export async function getConversations(sourceId: string): Promise<ConversationsPayload> {
+  const path = `/api/collect/sources/${encodeURIComponent(sourceId)}/conversations`
+  const body = unwrapData<Partial<ConversationsPayload>>(await window.plobiDesktop.api({ path }), path)
+
+  return {
+    conversations: body.conversations ?? [],
+    reason: body.reason ?? '',
+    state: body.state ?? 'not_supported'
+  }
+}
+
+/** 改一扇会话的准入档位，回的是**改完之后的整份名单**（界面因此不必再读一次）。 */
+export async function setConversationStatus(
+  sourceId: string, id: string, status: string
+): Promise<ConversationsPayload> {
+  const path = `/api/collect/sources/${encodeURIComponent(sourceId)}/conversations`
+
+  const body = unwrapData<Partial<ConversationsPayload>>(await window.plobiDesktop.api({
+    method: 'POST', path, body: { id, status }
+  }), path)
+
+  return {
+    conversations: body.conversations ?? [],
+    reason: body.reason ?? '',
+    state: body.state ?? 'not_supported'
+  }
+}
+
+/**
  * 装 / 卸一个第三方包。**这一轮是异步的**：回的是动作名，不是结果。
  * 拿那个名字去轮日志（`getActionStatus`），成败由**退出码**说话。
  *

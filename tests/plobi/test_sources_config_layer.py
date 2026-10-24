@@ -203,9 +203,9 @@ class TestSetupIsValidatedAgainstTheDeclaration:
         # 只剩每源都有的频率那一格（裁定 191 二）。它不是"又填了一格配置"，是"这一条终于可以被
         # 用户安排成每天几点采"。第三方包同理：不引 `CADENCE_FIELD` 就只有它自己那几格。
         assert sources_config.declared_setup_keys("wechat") == ("cadence",)
-        # 钉钉 10-24 起**真的**要用户点东西了：读的是他本机那份 IM 库，一条会话都没点名
-        # 就一条都不采 ⇒ 那一格是必填（留空不是"全采"，是"零条"）。
-        assert sources_config.declared_setup_keys("dingtalk") == ("conversations", "cadence")
+        # 钉钉那格 cid 文本框 10-24 第二轮撤了：改成抽屉里那块名单（名单与决定都走信源自己
+        # 声明的两只手，不落 `sources.yaml`）⇒ 它和微信一样，只剩每源都有的频率那一格。
+        assert sources_config.declared_setup_keys("dingtalk") == ("cadence",)
 
     def test_a_key_the_source_never_declared_is_refused(self):
         with pytest.raises(sources_config.SourceConfigError, match="没声明"):

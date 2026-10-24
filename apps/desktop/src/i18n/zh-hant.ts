@@ -70,12 +70,12 @@ export const zhHant = defineLocale({
       stateRed: '試過，沒起來',
       deferredHint: '只列這台目前沒在跑的服務，健康的一條都不出現。下面每一行要么是這一波還沒接（要用時 Plobi 自己起，跑起來這行就消失），要么是它試過沒起來——缺哪一步、怎麼回來都寫在行裡。主要對話不受影響。',
       redTitle: '服務故障',
-      redHint: '主要聊天不受影響，但這個服務確實被嘗試啟動過，卻沒有健康地跑起來。這是真正的故障，不是延後；恢復方式請見狀態列閘道選單。',
+      redHint: '主要對話不受影響，但此服務啟動後未能正常恢復，需手動處理；恢復方式請見狀態列閘道選單。',
       // R-082 使用者層級：一句話（哪個採集沒連上）；開發者全文留在收合的詳情裡。
-      // `port` 傳入時已是 ":5030" 形狀，無連接埠則傳空字串。
-      redUserMessage: (name: string, port: string) =>
-        `主要聊天不受影響，但${name}${port ? `（${port}）` : ''}沒有連上——這是真正的故障，不是延後，可以到設定裡查看。`,
-      goToCollectionSettings: '前往採集設定',
+      // 連接埠等內部細節不進入使用者文案。
+      redUserMessage: (name: string, _port: string) =>
+        `主要對話不受影響，但${name}連線失敗，需要手動處理。`,
+      goToCollectionSettings: '前往設定查看詳情',
       enableLabel: '恢復方式',
       statusbarDeferred: (count: number) => `${count} 個後台服務未執行`
     },
@@ -271,6 +271,21 @@ export const zhHant = defineLocale({
       website: '網站',
       email: '信箱',
       custom: '接一個自己的'
+      },
+      conversations: {
+        collect: '採',
+        empty: '沒有符合條件的會話',
+        exclude: '不採',
+        filter: '篩選',
+        kindGroup: '群組',
+        kindSingle: '一對一',
+        loading: '正在讀會話名單…',
+        modeExcluded: '已排除',
+        modeKnown: '在採',
+        summary: '共 {n} 個會話 · 已排除 {excluded}',
+        unavailable: '這份名單現在讀不到',
+        unreadable: '會話名單讀不到。',
+        writeFailed: '沒改成。',
       },
       emptyExternal: '裝了什麼讀不到。',
       fields: {

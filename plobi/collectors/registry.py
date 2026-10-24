@@ -282,6 +282,19 @@ class SourceSpec:
     #: 名单本身与准入落点早就有了（`/api/collect/talkers` 与 `TalkerStore`），
     #: 缺的只是把它挂到一个看得见的地方——用户 10-23 问的正是这一格。
     conversation_scoped: bool = False
+    #: 这一条**今天有哪些会话可以定**：`[{"id","name","kind","status"}]`，名字与准入状态
+    #: 都由这条自己算好再交出来（用户 10-24：「把微信和钉钉的会话采集都做成做到UI里面去」）。
+    #:
+    #: 为什么是**列表函数**而不是又一张表：两家的名单来源根本不是一件事——微信在侧车枚举
+    #: 出来的会话（还会随客户端变），钉钉在**本机库的 `tbconversation`** 里。公共层只要
+    #: "现在能给我一份带状态的名单"这一个形状，两家各自实现它（判据 3：加一条信源不动公共层）。
+    #: `None` 是一个**读数**：这一条没有"会话"这一层（网站、邮箱、本地文件都是）。
+    #: 不许抛：读不到就交给 `sources_api` 收成 `state=unavailable` 那句为什么（同一族昨天
+    #: 刚因为"异常穿过 HTTP 边界"让用户点一下开关拿到一个 500）。
+    conversations: Optional[Callable[[], list[dict]]] = None
+    #: 把一扇会话的准入写成 `known` / `excluded` / `pending`（`pending` = 抹掉决定，回到默认采）。
+    #: 与 :attr:`conversations` 成对出现——只声明一只手就是"界面上有个按钮但写了没人读"。
+    admission: Optional[Callable[[str, str], None]] = None
 
     def __post_init__(self) -> None:
         if not self.source_id or not self.source_id.strip():
@@ -311,6 +324,14 @@ class SourceSpec:
             if setup.key in seen:
                 raise UnknownSetupField(f"{self.source_id} 声明了两个同名的首次配置字段：{setup.key}")
             seen.add(setup.key)
+        if self.conversations is None and self.admission is not None:
+            raise ValueError(
+                f"{self.source_id} 声明了写准入的那只手，却没声明名单从哪来——那会在界面上"
+                "画出两枚按得动但永远没有行的按钮")
+        if self.conversation_scoped and self.conversations is None:
+            raise ValueError(
+                f"{self.source_id} 说自己是「按会话准入」，但给不出名单：界面上那一块会永远空着。"
+                "要么声明 `conversations()`，要么把那一位翻回 False")
         if CADENCE_FIELD.key not in seen:
             # 自动补上去那一条：位置在末尾，**已声明过同名格的包不会被改动**（重复即报错那条
             # 检查在上面先跑）。frozen dataclass 只能这样改回去——改的是这一条自己的元组，

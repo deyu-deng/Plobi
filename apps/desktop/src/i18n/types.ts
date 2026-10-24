@@ -343,6 +343,23 @@ export interface Translations {
         email: string
         custom: string
       }
+      /** 按会话准入的那一条（微信、钉钉）在抽屉里那份名单说的话。
+       *  名单与准入状态都来自后端那两只声明的手，界面不认识任何信源的名字。 */
+      conversations: {
+        collect: string
+        empty: string
+        exclude: string
+        filter: string
+        kindGroup: string
+        kindSingle: string
+        loading: string
+        modeExcluded: string
+        modeKnown: string
+        summary: string
+        unavailable: string
+        unreadable: string
+        writeFailed: string
+      },
       emptyExternal: string
       /**
        * 首次配置字段的显示名，**按 key 查**。查不到时界面回退到后端声明里那个英文

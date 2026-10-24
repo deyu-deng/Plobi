@@ -20,7 +20,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { TalkerCollection } from '@/app/agenda/talker/talker-collection'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
@@ -29,6 +28,7 @@ import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { ConversationList } from './sources/conversation-list'
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
 import { parseCadence } from './sources/setup-fields'
@@ -156,7 +156,6 @@ export function SourcesSettings() {
                 setOpen(open === row.source ? null : row.source)
                 setGuide(null)
               }}
-              onClose={() => { setOpen(null) }}
               onReload={reload}
               onToggle={onToggle}
               onTry={onTry}
@@ -174,7 +173,6 @@ function SourceRowView({
   busy,
   guiding,
   labels,
-  onClose,
   onActivate,
   onReload,
   onTry,
@@ -185,10 +183,6 @@ function SourceRowView({
   busy: boolean
   guiding: boolean
   labels: Labels
-  /** 关掉的是**这一行点开的那片抽屉**（名单那一块自带"关闭"用它）。它必须由父层给：
-   *  `open` 那个状态住在父层，行内组件第二次去摸它就是一颗"查不到名字才想起来修"的红
-   *  ——上一刀就是这么在 `tsc` 里留下一条 `Cannot find name 'setOpen'` 的。 */
-  onClose: () => void
   onActivate: () => void
   onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
@@ -226,7 +220,6 @@ function SourceRowView({
               busy={busy}
               guiding={guiding}
               labels={labels}
-              onClose={onClose}
               onReload={onReload}
               onTry={onTry}
               row={row}
@@ -274,12 +267,10 @@ const STATUS_DOT = {
 } as const
 
 /** 点开的那片抽屉：原因／上一次／下一次／池里几条／日程里几条／设置／立即同步。 */
-function SourceDrawer({ busy, guiding, labels, onClose, onReload, onTry, row }: {
+function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
   busy: boolean
   guiding: boolean
   labels: Labels
-  /** 名单那一块自带的"关闭"用它：关掉的是这一行点开的那片抽屉，不是另开一层。 */
-  onClose: () => void
   onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
   row: SourceRow
@@ -358,14 +349,16 @@ function SourceDrawer({ busy, guiding, labels, onClose, onReload, onTry, row }: 
         {busy ? labels.tryRunning : labels.syncNow}
       </Button>
 
-      {/* 按会话准入的那一条（微信）：每个群聊/私聊采不采，就在这一行下面定。
-          组件与接口都是现成的（`/api/collect/talkers` + `TalkerStore`），**这里只是把它挂上**——
-          用户 10-23 问「微信要可以设置对各个群聊和私聊的采集情况」，那份名单此前一行都没上过屏。
-          画不画由后端那句声明决定（`conversation_scoped`），面不按信源名字分支。 */}
+      {/* 按会话准入的那一条：每个群聊/私聊采不采，就在这一行下面定。
+          名单与决定都由**这条信源自己声明的两只手**给（`SourceSpec.conversations` /
+          `admission`），所以微信与钉钉看到的是同一个组件、同一条路由；第三方包只要同样
+          声明那两手，这里一个字都不用改（判据 3）。画不画仍然由那句声明决定，面不按名字分支。
+          用户 10-24：「把微信和钉钉的会话采集都做成做到UI里面去。这样太麻烦了」——
+          日程板那座首启审查弹窗不在这里，它讲的是"要不要开始采"，不是"每扇采不采"。 */}
       {row.conversation_scoped
         ? (
             <div className="border-t border-(--ui-border-tertiary) pt-3" data-testid={`source-talkers-${row.source}`}>
-              <TalkerCollection onClose={onClose} />
+              <ConversationList labels={labels} source={row.source} />
             </div>
           )
         : null}

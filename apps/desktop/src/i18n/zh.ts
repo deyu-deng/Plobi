@@ -70,12 +70,12 @@ export const zh: Translations = {
       stateRed: '试过，没起来',
       deferredHint: '只列这台当前没在跑的服务，健康的一条都不出现。下面每一行要么是这一波还没接（要用时 Plobi 自己起，跑起来这行就消失），要么是它试过没起来——缺哪一步、怎么回来都写在行里。主对话不受影响。',
       redTitle: '服务故障',
-      redHint: '主对话不受影响，但这个服务确实被尝试启动过，却没有健康起来。这是真故障，不是押后；恢复方式见状态栏网关菜单。',
+      redHint: '主对话不受影响，但此服务启动后未能正常恢复，需手动处理；恢复方式见状态栏网关菜单。',
       // R-082 用户态：一句话（哪条采集没连上）；开发者全文留在折叠的详情里。
-      // `port` 传进来时已是 ":5030" 形状，无端口则传空串。
-      redUserMessage: (name: string, port: string) =>
-        `主对话不受影响，但${name}${port ? `（${port}）` : ''}没有连上——这是真故障，不是押后，可以到设置里查看。`,
-      goToCollectionSettings: '去采集设置',
+      // 端口号等内部细节不进入用户文案。
+      redUserMessage: (name: string, _port: string) =>
+        `主对话不受影响，但${name}连接失败，需要手动处理。`,
+      goToCollectionSettings: '前往设置查看详情',
       enableLabel: '恢复方式',
       statusbarDeferred: (count: number) => `${count} 个后置服务未运行`
     },
@@ -339,6 +339,21 @@ export const zh: Translations = {
       website: '网站',
       email: '邮箱',
       custom: '接一个自己的'
+      },
+      conversations: {
+        collect: '采',
+        empty: '没有符合条件的会话',
+        exclude: '不采',
+        filter: '过滤',
+        kindGroup: '群聊',
+        kindSingle: '一对一',
+        loading: '正在读会话名单…',
+        modeExcluded: '已排除',
+        modeKnown: '在采',
+        summary: '共 {n} 个会话 · 已排除 {excluded}',
+        unavailable: '这份名单现在读不到',
+        unreadable: '会话名单读不到。',
+        writeFailed: '没改成。',
       },
       emptyExternal: '装了什么读不到。',
       fields: {

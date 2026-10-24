@@ -430,3 +430,67 @@ async def set_source_setup(source_id: str, body: SetupRequest):
         status = 400 if ("密钥" in str(exc) or "没声明" in str(exc) or "还缺" in str(exc)) else 503
         raise HTTPException(status_code=status, detail=str(exc)) from exc
     return {"ok": True, "data": {"source": source_id, "setup": saved}}
+
+
+class AdmissionRequest(BaseModel):
+    #: 一扇会话的号（微信是 chatroom/wxid，钉钉是 cid）。**由各家的名单给**，这一层不解释形状。
+    id: str
+    #: `known` = 采、`excluded` = 不采、`pending` = 抹掉决定回到默认（默认是采，裁定 100 一）。
+    status: str
+
+
+def _conversations_of(source_id: str) -> dict:
+    """这份名单**读手在信源自己那侧**，所以它可能抛——抛了要变成读数，不许变 500。
+
+    三种答案分得开，是这一格的全部判据：`not_supported`（这条没有"会话"这一层）、
+    `unavailable`（有，但现在拿不到：侧车没起 / 本机库读不出钥匙 / 盘读不到）、
+    `ok`（拿到了，哪怕 0 扇——"这条今天没有会话"与"读不到"仍是两句话）。
+    """
+    spec = registry.spec(source_id)
+    if spec.conversations is None:
+        return {"state": "not_supported", "conversations": [],
+                "reason": "这一条信源没有「会话」这一层（网站、邮箱、本地文件都是这个答案）"}
+
+    try:
+        rows = list(spec.conversations() or [])
+    except Exception as exc:  # noqa: BLE001 - HTTP 边界：读不到就说读不到，别把那一屏炸掉
+        logger.warning("sources: conversation list for %s failed: %s", source_id, exc)
+        return {"state": "unavailable", "conversations": [],
+                "reason": f"{type(exc).__name__}: {exc}".strip()}
+
+    return {"state": "ok", "conversations": rows}
+
+
+@router.get("/sources/{source_id}/conversations", name="collect_source_conversations")
+async def list_source_conversations(source_id: str):
+    """这一条信源今天有哪些会话、各自采不采（微信与钉钉共用这一条读口）。"""
+    _require_registered(source_id)
+    return {"ok": True, "data": {"source": source_id, **_conversations_of(source_id)}}
+
+
+@router.post("/sources/{source_id}/conversations", name="collect_source_conversation_decide")
+async def decide_source_conversation(source_id: str, body: AdmissionRequest):
+    """写一扇会话的准入决定，写完**立刻把这份名单回回去**（界面不必再读一次）。
+
+    决定写到哪由这条信源自己那只手管：微信写它自己那张 `TalkerStore` 表、钉钉写通用
+    `Ledger`——**一条会话的准入状态只 live 一处**，这一层不合成第二张表。
+    """
+    _require_registered(source_id)
+    spec = registry.spec(source_id)
+    if spec.admission is None:
+        raise HTTPException(status_code=400, detail="这一条信源没有按会话准入这一层")
+    if body.status not in ("known", "excluded", "pending"):
+        raise HTTPException(status_code=400,
+                            detail=f"不认识的准入档位 {body.status!r}：known / excluded / pending")
+    if not str(body.id).strip():
+        raise HTTPException(status_code=400, detail="会话号不能是空串")
+
+    try:
+        spec.admission(str(body.id).strip(), body.status)
+    except Exception as exc:  # noqa: BLE001 - 写不进去也是读数：面上要看得见"这一条没改成"
+        logger.warning("sources: admission write for %s failed: %s", source_id, exc)
+        raise HTTPException(status_code=503,
+                            detail=f"这一条的名册写不进去：{type(exc).__name__}") from exc
+
+    return {"ok": True, "data": {"source": source_id, "id": body.id, "status": body.status,
+                                 **_conversations_of(source_id)}}

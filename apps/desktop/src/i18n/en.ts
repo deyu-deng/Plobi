@@ -70,13 +70,13 @@ export const en: Translations = {
       stateRed: 'tried, did not come up',
       deferredHint: 'Only services that are not running right now are listed here - a healthy one shows nothing. Each row is either not part of this round (Plobi starts it when it is needed and the row disappears) or it was tried and did not come up: the missing step and how it comes back are in the row. Chat is unaffected.',
       redTitle: 'Service fault',
-      redHint: 'Chat is unaffected, but this service was started and never came up healthy. This is a real fault, not a postponement — how to bring it back is in the status bar gateway menu.',
+      redHint: 'Chat is unaffected, but this service failed to recover after startup and needs manual attention; how to bring it back is in the status bar gateway menu.',
       // R-082 user tier: one sentence (which subsystem is not connected) shown
       // as the fault card's message; the developer instructions stay in the
-      // collapsed detail. `port` arrives pre-formatted (":5030") or empty.
-      redUserMessage: (name: string, port: string) =>
-        `Chat is unaffected, but ${name}${port ? ` (${port})` : ''} is not connected — a real fault, not a postponement. You can look into it in Settings.`,
-      goToCollectionSettings: 'Go to collection settings',
+      // collapsed detail. Internal details such as ports stay out of the copy.
+      redUserMessage: (name: string, _port: string) =>
+        `Chat is unaffected, but ${name} failed to connect and needs manual attention.`,
+      goToCollectionSettings: 'View details in Settings',
       enableLabel: 'How it comes back',
       statusbarDeferred: (count: number) => `${count} sidecar${count === 1 ? '' : 's'} not running`
     },
@@ -351,6 +351,21 @@ export const en: Translations = {
       website: 'Websites',
       email: 'Email',
       custom: 'Bring your own'
+      },
+      conversations: {
+        collect: 'Collect',
+        empty: 'No conversations match.',
+        exclude: 'Skip',
+        filter: 'Filter',
+        kindGroup: 'Group',
+        kindSingle: 'Direct',
+        loading: 'Reading the conversation list…',
+        modeExcluded: 'Excluded',
+        modeKnown: 'Collecting',
+        summary: '{n} conversations · {excluded} excluded',
+        unavailable: 'This list could not be read just now',
+        unreadable: 'Could not read the conversation list.',
+        writeFailed: 'That did not save.',
       },
       emptyExternal: 'Could not read what is installed.',
       fields: {

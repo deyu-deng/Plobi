@@ -39,6 +39,43 @@ def _build() -> ChatlogPipeline:
     return _ChatlogPipeline()
 
 
+def _talker_kind(talker: str) -> str:
+    """群聊还是一对一——**规则不在这儿重写一遍**，问那份唯一知道 wxid/chatroom 归类的读手。"""
+    from .client import pool_columns
+
+    return "group" if (pool_columns(talker).get("visibility") or "") == "group" else "single"
+
+
+def _conversations() -> list[dict]:
+    """微信那份会话名单，从**侧车**枚举、从**它自己那张 `TalkerStore`** 读准入状态。
+
+    侧车没在跑就抛（`state=unavailable` 那句为什么由 `sources_api` 那一层收成读数）——
+    这一族的判据 2 早就写死了："枚举没抛异常"不等于活着，0 个会话与到不了是两句话。
+    """
+    from .collect_api import get_pipeline
+
+    pipeline = get_pipeline()
+    health = pipeline.health()
+    if not health["ok"]:
+        raise RuntimeError(health["detail"] or "采集器没在应答")
+
+    store = pipeline.talkers
+    rows = []
+    for session in pipeline.client.list_talker_sessions():
+        rows.append({"id": session.id, "name": session.name or session.id,
+                     "kind": _talker_kind(session.id),
+                     "status": store.status_of(session.id) or "pending"})
+    return rows
+
+
+def _admit(talker: str, status: str) -> None:
+    """写决定到**微信自己那张表**：不搬到通用 `Ledger`，因为一条会话的准入状态只该 live 一处。"""
+    from .collect_api import get_pipeline
+
+    get_pipeline().talkers.set_status(
+        talker, {"known": "known", "excluded": "excluded"}.get(status, "pending"))
+
+
 SPEC = SourceSpec(
     "wechat",
     capabilities={
@@ -56,8 +93,12 @@ SPEC = SourceSpec(
     # 端口与启动脚本都是**声明**，公共层照它们办事、仍然不出现任何信源名字（判据 4）。
     sidecar_port=5030,
     sidecar_start="scripts/chatlog_server.ps1",
-    # 一条信源里面有很多个会话 ⇒ 采集情况要能按群聊/私聊逐个定（名单与准入在 `/api/collect/talkers`）。
+    # 一条信源里面有很多个会话 ⇒ 采集情况要能按群聊/私聊逐个定。
+    # 10-24 起这两只手就是那"怎么定"的正身：名单从侧车枚举、决定写回它自己那张 `TalkerStore`，
+    # 设置页那块面板（`sources/conversation-list.tsx`）与钉钉看到的是**同一个组件、同一条路由**。
     conversation_scoped=True,
+    conversations=_conversations,
+    admission=_admit,
 
     builder=_build,
 )

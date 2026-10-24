@@ -9,6 +9,8 @@ const getSources = vi.fn()
 const setSourceEnabled = vi.fn()
 const trySource = vi.fn()
 const saveSourceSetup = vi.fn()
+const getConversations = vi.fn()
+const setConversationStatus = vi.fn()
 const getExternalPackages = vi.fn()
 const installExternalPackage = vi.fn()
 const removeExternalPackage = vi.fn()
@@ -21,21 +23,17 @@ vi.mock('./sources/api', async () => {
 
   return {
     ...actual,
+    getConversations: (id: string) => getConversations(id),
     getExternalPackages: () => getExternalPackages(),
     getSources: () => getSources(),
     installExternalPackage: (name: string) => installExternalPackage(name),
     removeExternalPackage: (name: string) => removeExternalPackage(name),
     saveSourceSetup: (id: string, params: Record<string, string>) => saveSourceSetup(id, params),
+    setConversationStatus: (id: string, talker: string, status: string) => setConversationStatus(id, talker, status),
     setSourceEnabled: (id: string, enabled: boolean) => setSourceEnabled(id, enabled),
     trySource: (id: string) => trySource(id)
   }
 })
-
-// 名单那一块自己的测试在它档里（`talker-collection.test.tsx`）；这一档只钉"它挂在哪一行上"，
-// 所以打桩替掉它——不然它自己的 i18n 取键会把这一档整片带崩（那是另一档的契约，不是这里的）。
-vi.mock('@/app/agenda/talker/talker-collection', () => ({
-  TalkerCollection: () => <div data-testid="talker-panel-stub" />
-}))
 
 vi.mock('@/plobi', () => ({
   getActionStatus: (name: string, lines?: number) => getActionStatus(name, lines)
@@ -54,6 +52,22 @@ vi.mock('@/i18n', () => ({
         sources: {
           categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', email: 'Mailboxes', custom: 'Bring your own' },
           emptyExternal: 'Could not read what is installed.',
+          conversations: {
+            collect: 'Collect',
+            empty: 'No conversations match.',
+            exclude: 'Skip',
+            filter: 'Filter',
+            kindGroup: 'Group',
+            kindSingle: 'Direct',
+            loading: 'Reading…',
+            modeExcluded: 'Excluded',
+            modeKnown: 'Collecting',
+            summary: '{n} conversations · {excluded} excluded',
+            unavailable: 'This list could not be read just now',
+            unreadable: 'Could not read the conversation list.',
+            writeFailed: 'That did not save.'
+          },
+
           fields: { cadence: 'Collection cadence', ics_path: 'Path to the .ics file' },
           install: 'Install',
           installFailed: 'That install did not finish.',
@@ -173,6 +187,9 @@ function payload(sources: SourceRow[]): SourcesPayload {
 beforeEach(() => {
   vi.clearAllMocks()
   getExternalPackages.mockResolvedValue([])
+  // 抽屉里那块会话面板现在挂在按会话准入的那一条下面；默认给一份能画的名单，
+  // 各条用例自己覆盖它（面板自身的契约在 `sources/conversation-list.test.tsx`）。
+  getConversations.mockResolvedValue({ state: 'ok', reason: '', conversations: [{ id: 'room-1', kind: 'group', name: '工程组', status: 'pending' }]})
 })
 
 afterEach(() => {
@@ -298,7 +315,9 @@ describe('what the row says', () => {
     fireEvent.click(screen.getAllByText('WeChat')[0])
 
     await waitFor(() => expect(screen.getByTestId('source-talkers-wechat')).toBeTruthy())
-    expect(screen.getByTestId('talker-panel-stub')).toBeTruthy()
+    // 微信与钉钉看的是同一块面板：这一条钉的是「挂上了」，不是它自己怎么画。
+    expect(screen.getByTestId('conversations-wechat')).toBeTruthy()
+    expect(screen.getByText('工程组')).toBeTruthy()
   })
 
   it('keeps the executor\'s own sentence one click away, not on the row', async () => {

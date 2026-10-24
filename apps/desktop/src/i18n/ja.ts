@@ -71,11 +71,11 @@ export const ja = defineLocale({
       deferredHint: '現在動いていないサービスだけを列挙します。正常な項目は何も表示しません。各行は「今回の対象外」（必要時に Plobi が起動し、起動すると消える）か「試したが起動しなかった」のどちらかで、欠けている手順と復帰方法は行に書かれます。メインの対話には影響しません。',
       redTitle: 'サービスの障害',
       redHint:
-        'チャットは影響を受けませんが、このサービスは起動が試みられ、正常な状態には至りませんでした。後回しではなく実際の障害です。復帰方法はステータスバーのゲートウェイレンズにあります。',
-      // R-082 ユーザー向け：どのサブシステムがつながっていないかを一文で。開発者向けの全文は折りたたまれた詳細に残ります。
-      redUserMessage: (name: string, port: string) =>
-        `チャットは影響を受けませんが、${name}${port ? ` (${port})` : ''} は接続できませんでした。後回しではなく実際の障害です。設定で確認できます。`,
-      goToCollectionSettings: '収集設定を開く',
+        'チャットには影響ありませんが、このサービスは起動後に正常な状態へ復帰できず、手動での対応が必要です。復帰方法はステータスバーのゲートウェイレンズにあります。',
+      // R-082 ユーザー向け：どのサブシステムがつながっていないかを一文で。開発者向けの全文は折りたたまれた詳細に残ります。ポート番号などの内部情報はユーザー向けの文言に含めません。
+      redUserMessage: (name: string, _port: string) =>
+        `チャットには影響ありませんが、${name} に接続できず、手動での対応が必要です。`,
+      goToCollectionSettings: '設定で詳細を確認',
       enableLabel: '復帰方法',
       statusbarDeferred: (count: number) => `未起動のサービス ${count} 件`
     },
@@ -278,6 +278,21 @@ export const ja = defineLocale({
       website: 'ウェブ',
       email: 'メール',
       custom: '自分で一つを接続'
+      },
+      conversations: {
+        collect: '収集',
+        empty: '該当する会話はありません',
+        exclude: '除外',
+        filter: '絞り込み',
+        kindGroup: 'グループ',
+        kindSingle: '一对一',
+        loading: '会話一覧を読み込んでいます…',
+        modeExcluded: '除外済み',
+        modeKnown: '収集中',
+        summary: '会話 {n} 件 · 除外 {excluded} 件',
+        unavailable: 'この一覧は現在読み込めません',
+        unreadable: '会話一覧を読み取れませんでした。',
+        writeFailed: '保存できませんでした。',
       },
       emptyExternal: 'インストール済みの情報を読み取れませんでした。',
       fields: {

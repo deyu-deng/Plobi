@@ -199,11 +199,11 @@ class TestTheStoreOpens:
 class TestTheCollector:
     def test_a_row_becomes_an_occurrence_with_the_message_s_own_time(self, fake_profile) -> None:
         opened = store.open_local_store()
-        collected = collector_module.DingTalkCollector(local_store=opened, cids=["cid-one"])
+        collected = collector_module.DingTalkCollector(local_store=opened, excluded=[])
 
         rows = collected.pull()
 
-        assert [row.external_id for row in rows] == ["cid-one:1001", "cid-one:1004"]
+        assert [row.external_id for row in rows] == ["cid-one:1001", "cid-two:1003", "cid-one:1004"]
         assert rows[0].kind == "message"
         assert rows[0].title == "这份料明天上午给我"
         assert rows[0].start_at.replace("-", "").replace(":", "").replace(" ", "").isdigit()
@@ -215,7 +215,7 @@ class TestTheCollector:
     def test_a_non_text_message_lands_with_no_body_but_names_its_kind(self, fake_profile) -> None:
         """卡片/文件不解析正文——但这一行要说得出它是哪一类，否则"没有正文"会被读成"没有消息"。"""
         opened = store.open_local_store()
-        collected = collector_module.DingTalkCollector(local_store=opened, cids=["cid-two"])
+        collected = collector_module.DingTalkCollector(local_store=opened, excluded=["cid-one"])
 
         row = collected.pull()[0]
 
@@ -224,38 +224,52 @@ class TestTheCollector:
         assert row.title == "（file）"
         opened.close()
 
-    def test_nothing_is_admitted_by_default_and_health_says_that_in_two_sentences(self, fake_profile) -> None:
-        opened = store.open_local_store()
-        collected = collector_module.DingTalkCollector(local_store=opened, cids=[])
+    def test_the_default_is_collect_and_only_excluded_ones_drop_out(self, fake_profile) -> None:
+        """口径 10-24 第二轮翻成与微信同一条（裁定 50／100 一）：默认采，逐扇可关。
 
-        assert collected.pull() == []
-        health = collected.health()
-        assert health["ok"] is False and health["state"] == "needs_setup"
-        assert "2 个会话" in health["detail"], "库在位 ≠ 采得到——两句话都要说"
+        上一刀那格"点名为采"要他先从临时文件里挑 cid 再填进文本框，那句"太麻烦了"
+        就是对它说的（这一格因此钉的是翻过来之后的方向）。
+        """
+        opened = store.open_local_store()
+
+        everything = collector_module.DingTalkCollector(local_store=opened).pull()
+        skipped = collector_module.DingTalkCollector(local_store=opened, excluded=["cid-one"]).pull()
+        health = collector_module.DingTalkCollector(local_store=opened, excluded=["cid-one"]).health()
+
+        assert [row.external_id for row in everything] == ["cid-one:1001", "cid-two:1003", "cid-one:1004"]
+        assert {row.external_id for row in skipped} == {"cid-two:1003"}
+        assert health["ok"] is True and "排除 1" in health["detail"]
         opened.close()
 
-    def test_the_cid_list_comes_from_the_configured_field(self, fake_profile) -> None:
-        collected = collector_module.DingTalkCollector.build(
-            config={"conversations": "cid-one，cid-two"}, opener=lambda: store.open_local_store())
+    def test_build_reads_the_exclusion_ledger_not_a_text_box(self, fake_profile) -> None:
+        """界面上那格 cid 文本框撤了；`build()` 只问通用名册"排除了哪些"。"""
+        collected = collector_module.DingTalkCollector.build(excluded=["cid-one"],
+                                                             opener=lambda: store.open_local_store())
 
-        assert collected.cids == ["cid-one", "cid-two"], "全角逗号也算分隔：中文输入法下打出来的是它"
+        assert collected.excluded == {"cid-one"}
         collected.store.close()
 
-    def test_the_conversation_field_is_declared_required(self) -> None:
-        """必填是真的必填：没点名就采不到东西。这一格是"假动作"与"闸门"的分界。"""
+    def test_the_cid_text_box_is_gone_and_the_two_hands_are_declared(self) -> None:
+        """界面上那一格换成了一块名单：文本框再留着就是**两处入口写同一个事实**。"""
         from plobi.collectors import registry
 
         registry.ensure_discovered()
-        fields = {field.key: field for field in registry.spec("dingtalk").setup_fields}
+        spec = registry.spec("dingtalk")
 
-        assert fields["conversations"].required is True
-        assert fields["conversations"].kind == "text"
+        assert [field.key for field in spec.setup_fields] == ["cadence"]
+        assert spec.conversation_scoped is True
+        assert callable(spec.conversations) and callable(spec.admission)
 
-    def test_the_talker_panel_is_not_claimed_yet(self) -> None:
-        """那块"每个群/每个人采不采"的面板今天只认微信那一份 store。
-        把钉钉指过去会画出一屏错的数据——所以这一格必须留 `False`，等面板真的通用了再翻。"""
-        from plobi.collectors import registry
+    def test_the_ledger_default_is_collect(self, fake_profile) -> None:
+        """名单上一格都没动 ⇒ 采；只有被标 `excluded` 的那一扇掉出去。"""
+        from plobi.collectors import talkers
 
-        registry.ensure_discovered()
+        opened = store.open_local_store()
+        before = collector_module.DingTalkCollector(local_store=opened).pull()
 
-        assert registry.spec("dingtalk").conversation_scoped is False
+        talkers.Ledger().set_status("dingtalk", "cid-one", "excluded")
+        after = collector_module.DingTalkCollector.build(opener=lambda: opened).pull()
+
+        assert len(before) == 3 and len(after) == 1, "排除 cid-one ⇒ 只剩 cid-two 那一扇的那条"
+        talkers.Ledger().set_status("dingtalk", "cid-one", "pending")
+        assert collector_module.DingTalkCollector.build(opener=lambda: opened).pull() == before

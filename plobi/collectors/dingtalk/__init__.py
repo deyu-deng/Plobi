@@ -12,25 +12,35 @@
 不是目录长得像不像（见 `registry.py` 发现器那一段）。
 """
 
-from plobi.collectors.registry import SetupField, SourceSpec, register
+from plobi.collectors.registry import SourceSpec, register
 
 from . import localdb
 
-#: 首次配置那一格：**要采哪几扇会话**，逗号分隔的 cid。
-#:
-#: 必填，是因为它真的是必填：一条都没点名，这一路今天就采不出任何东西（`health()` 那句
-#: 说的正是这件事）。留空不叫"默认全采"——那等于把他的公司群、同事私聊、审批卡片整箱灌进
-#: 信息池，而这一路要的从来不是整箱（隐私默认关，与微信那份名册同一口径）。
-#:
-#: 名单**怎么上屏**是下一刀：面上那块"每个群/每个人采不采"的面板今天只认微信那一份 store，
-#: 所以下面 `conversation_scoped` 这一版留 `False`——指过去会画出一屏错的数据，
-#: 那比没有面板更糟。这一版的取名单方式是跑一条只读命令把 cid 与标题列给他自己挑
-#: （命令与读数在任务书 §5）。
-_CONVERSATIONS = SetupField(
-    key="conversations", label="Conversations to collect", kind="text", required=True,
-    help="Comma-separated conversation ids (cid). Empty collects nothing — it is not "
-         "\"collect everything\".",
-)
+
+def _conversations() -> list[dict]:
+    """名单从**本机库**来（`tbconversation`），准入状态从通用 `Ledger` 来。
+
+    这一只**可以抛**（没登录 / 读不出钥匙 / 盘读不到）——HTTP 边界那一层会把它收成
+    `state=unavailable` 加那句为什么，界面上因此还能说人话（不在这里吞成空表：
+    "没有会话"与"读不到"是两句话）。
+    """
+    from . import store
+    from ..talkers import Ledger
+
+    opened = store.open_local_store()
+    try:
+        ledger = Ledger()
+        return [{"id": row["cid"], "name": row["title"] or row["cid"], "kind": row["type"],
+                 "status": ledger.status_of("dingtalk", row["cid"])}
+                for row in store.list_conversations(opened, limit=500)]
+    finally:
+        opened.close()
+
+
+def _admit(talker: str, status: str) -> None:
+    from ..talkers import Ledger
+
+    Ledger().set_status("dingtalk", talker, status)
 
 
 def _build():
@@ -65,8 +75,15 @@ SPEC = SourceSpec(
     site="https://www.dingtalk.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项
     # 名字仍然由界面语言目录给（四语各有写法）：这一条不是"一个网站"，那一格的兜底
     # 只对「网站」那一类开（`sources_api._enrich` 那一段写着为什么）。
-    setup_fields=(_CONVERSATIONS,),
-    # 默认不点：这一路读的是他的 IM，而且要点名会话才有意义。
+    setup_fields=(),
+    # 「哪些会话采」上屏用的两只手（用户 10-24：「把微信和钉钉的会话采集都做成做到UI里面去。
+    # 这样太麻烦了」）：名单来自本机库的 `tbconversation`，决定写进通用 `Ledger`。
+    # 上一刀那格 cid 文本框因此撤掉——有了面板还留着它，就是**两处入口写同一个事实**。
+    conversation_scoped=True,
+    conversations=_conversations,
+    admission=_admit,
+    # 默认不点：这一路读的是他的 IM。点上之后**默认全采、逐扇可关**（与微信同一条口径，
+    # 裁定 100 一）——这一条与上一刀"点名为采"相反，改的理由写在任务书顶部那段口径差里。
     # 10-24 之前这颗开关对调度**不起作用**（`collecting_sources()` 只看代码默认值），
     # 所以"默认关"那时只是个装饰；现在它真的算数，这一格才第一次有了"默认关"的含义。
     collecting=False,
