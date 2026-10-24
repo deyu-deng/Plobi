@@ -17,6 +17,9 @@ import { OffloadVendorAvatar } from './offload-vendor-icon'
  * `agent_offloads`）。一行点下去能到哪儿由 `jumpTargetFor()` 决定——跳不进外部软件自己
  * 那条会话时就退成"打开这一轮落盘的东西"，再没有就把这行标成不可点并说清为什么。
  */
+/** 开着这一格时的重读间隔。台账是一行一个 JSON，读它比轮询一次网络便宜得多。 */
+const REFRESH_MS = 5000
+
 export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack?: () => void }) {
   const { t } = useI18n()
   const c = t.console
@@ -27,23 +30,33 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
   useEffect(() => {
     let cancelled = false
 
-    setRounds(null)
-    getAgentOffloads(agentId)
-      .then(body => {
-        if (!cancelled) {
-          setRounds(body?.data?.rounds ?? [])
-          setNote(body?.data?.unattributed_reason ?? '')
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRounds([])
-          setNote(c.offloadsLoadFailed)
-        }
-      })
+    const load = (first: boolean) => {
+      if (first) {
+        setRounds(null)
+      }
+
+      getAgentOffloads(agentId)
+        .then(body => {
+          if (!cancelled) {
+            setRounds(body?.data?.rounds ?? [])
+            setNote(body?.data?.unattributed_reason ?? '')
+          }
+        })
+        .catch(() => {
+          // 已经读到过的表不清空：一次抖动不该把"它外包过什么"抹成读取失败。
+          if (!cancelled && first) {
+            setRounds([])
+            setNote(c.offloadsLoadFailed)
+          }
+        })
+    }
+
+    load(true)
+    const timer = setInterval(() => load(false), REFRESH_MS)
 
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
   }, [agentId, c.offloadsLoadFailed])
 

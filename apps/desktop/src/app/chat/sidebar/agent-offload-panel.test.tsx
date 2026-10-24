@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as PlobiApi from '@/plobi'
@@ -101,6 +101,23 @@ describe('AgentOffloadPanel', () => {
     expect(text).toContain('cost unknown')
     expect(text).toContain('usage_reported_without_price')
     expect(text).not.toContain('$0')
+  })
+
+  it('开着这一格时它会自己重读：L2 刚外包完，不用重新点进来', async () => {
+    vi.useFakeTimers()
+
+    try {
+      getAgentOffloads.mockResolvedValue(payload([round()]))
+      render(<AgentOffloadPanel agentId="l2-aura" />)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(getAgentOffloads).toHaveBeenCalledTimes(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      expect(getAgentOffloads).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('按积分记账的一行显示积分，不显示"花费未知"也不显示 $0', async () => {
