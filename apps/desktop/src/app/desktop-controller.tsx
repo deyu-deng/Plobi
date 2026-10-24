@@ -384,6 +384,18 @@ export function DesktopController() {
     setL2Active(active => (active === 'review' ? 'files' : active))
   }, [agentCwd, isL2])
 
+  // The L2 workbench is the counterpart of Qoder's right rail: show it once on
+  // entering a workspace instead of hiding the tabs behind Ctrl+J.
+  const l2WorkbenchAutoOpened = useRef(false)
+  useEffect(() => {
+    if (!isL2 || l2WorkbenchAutoOpened.current) {
+      return
+    }
+
+    l2WorkbenchAutoOpened.current = true
+    setFileBrowserOpen(true)
+  }, [isL2])
+
   useEffect(() => {
     if (!level) {
       return
