@@ -346,6 +346,7 @@ export const zh: Translations = {
         address: '邮箱地址',
         imap_host: 'IMAP 服务器地址',
         password: '密码或授权码',
+        conversations: '要采的会话（cid，逗号分隔）',
         base_url: '教务系统地址',
         ics_path: '.ics 文件的路径',
         cadence: '采集频率'
