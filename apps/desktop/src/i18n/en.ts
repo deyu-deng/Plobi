@@ -1582,7 +1582,7 @@ export const en: Translations = {
       dingtalk: 'DingTalk',
       manual: 'Added by you',
       timetable: 'Timetable',
-      zju: 'ZJU Courses (XueZaiZJU)',
+      zju: 'ZJU Courses',
       zdbk: 'ZJU Undergraduate Academic Affairs',
       email_qq: 'QQ Mail',
       email_163: 'NetEase Mail (163)',

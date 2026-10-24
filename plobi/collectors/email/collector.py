@@ -177,12 +177,16 @@ class EmailCollector:
         """能连、能登、能数列 —— 不取正文，所以这一句比 `pull()` 便宜。"""
         try:
             self.transport.connect(self.address, self._secret)
-            count = self.transport.select(self.folder)
-            self.transport.close()
-        except EmailUnavailable as exc:
-            return {"ok": False, "detail": exc.detail, "state": exc.state}
+            try:
+                count = self.transport.select(self.folder)
+            except EmailUnavailable as exc:
+                return {"ok": False, "detail": exc.detail, "state": exc.state}
 
-        return {"ok": True, "detail": f"{self.folder} 里 {count} 封", "state": "ready"}
+            return {"ok": True, "detail": f"{self.folder} 里 {count} 封", "state": "ready"}
+        finally:
+            # 收尾那一支必须在 `connect` 成功而 `select` 炸掉那条路上也走：少这一步就是
+            # 每次健康检查攒一条半死的 TLS 连接（`pull()` 那一支的 `finally` 同理）。
+            self.transport.close()
 
     def pull(self) -> list[Occurrence]:
         """最近 :data:`MAX_PER_ROUND` 封 → `Occurrence` 行。**纯读，一个字都不写库**。
@@ -203,8 +207,7 @@ class EmailCollector:
                 if not raw:
                     continue
                 row = self._occurrence(uid, message_from_bytes(raw))
-                if row is not None:
-                    rows.append(row)
+                rows.append(row)
 
             if truncated > 0:
                 logger.info("email %s: 这一轮只取了最近 %d 封，还有 %d 封没取",
@@ -213,7 +216,7 @@ class EmailCollector:
         finally:
             self.transport.close()
 
-    def _occurrence(self, uid: str, message: Message) -> Optional[Occurrence]:
+    def _occurrence(self, uid: str, message: Message) -> Occurrence:
         """一封邮件 → 一行。**幂等键优先 Message-ID**：UID 只在服务器那一箱里稳定，
         同一封邮件转发/另存之后 UID 会变，而 Message-ID 跟着信走。取不到才退 UID（带账号，
         同一家两个号不会互相盖）。"""
