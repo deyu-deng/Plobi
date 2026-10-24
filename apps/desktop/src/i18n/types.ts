@@ -2713,5 +2713,12 @@ export interface Translations {
       loadFailed: string
       invalidUrl: string
     }
+    office: {
+      loading: string
+      unavailable: string
+      readOnly: string
+      truncated: (rows: number, cols: number) => string
+      sheet: string
+    }
   }
 }

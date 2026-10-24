@@ -127,8 +127,9 @@ import {
   SETTINGS_ROUTE,
   shellLevelForPath
 } from './routes'
-import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { BrowserTabPanel } from './workbench/browser-tab'
+import { LocalFilePreview } from './chat/right-rail/preview-file'
+import { fileKindForPath } from './workbench/file-kind'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
@@ -166,6 +167,9 @@ const CronView = lazy(async () => ({ default: (await import('./cron')).CronView 
 const StarmapView = lazy(async () => ({ default: (await import('./starmap')).StarmapView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
+const OfficeFilePreview = lazy(async () => ({
+  default: (await import('./workbench/office-preview')).OfficeFilePreview
+}))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 
 export function DesktopController() {
@@ -439,12 +443,29 @@ export function DesktopController() {
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
-    Object.entries(openFiles).map(([id, { target }]) => [
-      id,
-      <div className="min-h-0 flex-1 overflow-y-auto" key={id}>
-        <LocalFilePreview reloadKey={0} target={target} />
-      </div>
-    ])
+    Object.entries(openFiles).map(([id, { target }]) => {
+      const office = fileKindForPath(target.path ?? '') !== 'other'
+
+      return [
+        id,
+        office ? (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <PageLoader label={t.common.loading} />
+              </div>
+            }
+            key={id}
+          >
+            <OfficeFilePreview labels={t.workbench.office} target={target} />
+          </Suspense>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto" key={id}>
+            <LocalFilePreview reloadKey={0} target={target} />
+          </div>
+        )
+      ]
+    })
   )
 
   useEffect(() => {

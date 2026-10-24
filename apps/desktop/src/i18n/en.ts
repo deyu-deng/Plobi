@@ -3116,6 +3116,13 @@ export const en: Translations = {
       newTabBody: 'Type a URL above and press Enter.',
       loadFailed: 'This page could not be opened',
       invalidUrl: 'Only http/https URLs are supported'
+    },
+    office: {
+      loading: 'Loading file…',
+      unavailable: 'This file cannot be previewed yet',
+      readOnly: 'Read-only preview',
+      truncated: (rows, cols) => `Showing the first ${rows} rows × ${cols} columns`,
+      sheet: 'Sheet'
     }
   }
 }

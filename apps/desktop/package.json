@@ -87,6 +87,7 @@
     "cmdk": "^1.1.1",
     "d3-force": "^3.0.0",
     "dnd-core": "^14.0.1",
+    "docx-preview": "^0.3.6",
     "dompurify": "^3.4.16",
     "fflate": "^0.8.3",
     "hast-util-from-html-isomorphic": "^2.0.0",
@@ -98,6 +99,7 @@
     "motion": "^12.38.0",
     "nanostores": "^1.5.4",
     "node-pty": "1.1.0",
+    "pdfjs-dist": "^4.10.38",
     "radix-ui": "^1.4.3",
     "react": "^19.3.0",
     "react-arborist": "^3.16.0",
@@ -118,7 +120,8 @@
     "unist-util-visit-parents": "^6.0.2",
     "use-stick-to-bottom": "^1.1.6",
     "vfile": "^6.0.3",
-    "web-haptics": "^0.0.6"
+    "web-haptics": "^0.0.6",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
