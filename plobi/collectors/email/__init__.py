@@ -54,7 +54,11 @@ def _spec(provider: EmailProvider) -> SourceSpec:
         category="email",
         display_name=provider.display_name,
         site=provider.site,
-        collecting=True,
+        # 默认**不点**：这一族今天一格账号都没填，而日常那一轮现在真的照开关挑信源
+        # （10-24 那条第 9 条：`collecting_sources()` 从前只看这一格，用户翻的开关不算数）。
+        # 填完配置再翻上去 ⇒ 从下一轮起真的打。默认点着五家，等于每天白撞五次"没填账号"，
+        # 台账里五排 `build_failed` 而屏上什么都说不清——那是噪音，不是状态。
+        collecting=False,
         builder=_builder(provider),
         setup_fields=tuple(fields),
     )
