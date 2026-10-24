@@ -5,9 +5,10 @@ import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 
 export type RightRailTab = 'agenda' | 'files' | 'review'
+export type RightRailTabId = RightRailTab | `file:${string}`
 
 export interface RightRailTabDef {
-  id: RightRailTab
+  id: RightRailTabId
   icon: string
   title: string
 }
@@ -33,13 +34,13 @@ export function RightRailWorkbench({
   tabs,
   trailing
 }: {
-  activeTab: RightRailTab | null
+  activeTab: RightRailTabId | null
   availableTabs: RightRailTabDef[]
-  contents: Partial<Record<RightRailTab, ReactNode>>
+  contents: Partial<Record<string, ReactNode>>
   labels: RightRailWorkbenchLabels
-  onTabChange: (tab: RightRailTab) => void
-  onTabClose: (tab: RightRailTab) => void
-  onTabOpen: (tab: RightRailTab) => void
+  onTabChange: (tab: RightRailTabId) => void
+  onTabClose: (tab: RightRailTabId) => void
+  onTabOpen: (tab: RightRailTabId) => void
   tabs: RightRailTabDef[]
   trailing?: ReactNode
 }) {

@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { useQueryClient } from '@tanstack/react-query'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { beginEntering, endEntering, enterFailure } from '@/app/chat/agent-enter'
@@ -30,7 +30,6 @@ import {
   $panesFlipped,
   $rightRailView,
   FILE_BROWSER_DEFAULT_WIDTH,
-  FILE_BROWSER_MAX_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
   RIGHT_RAIL_VIEW_NOTES,
@@ -41,7 +40,7 @@ import {
 } from '../store/layout'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
-import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
+import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab, type PreviewTarget } from '../store/preview'
 import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
 import { $reviewOpen, closeReview, openReview } from '../store/review'
 import {
@@ -73,7 +72,6 @@ import { requestComposerFocus, requestComposerInsert } from './chat/composer/foc
 import { useComposerActions } from './chat/hooks/use-composer-actions'
 import {
   ChatPreviewRail,
-  PREVIEW_RAIL_MAX_WIDTH,
   PREVIEW_RAIL_MIN_WIDTH,
   PREVIEW_RAIL_PANE_WIDTH
 } from './chat/right-rail'
@@ -129,7 +127,8 @@ import {
   SETTINGS_ROUTE,
   shellLevelForPath
 } from './routes'
-import { RightRailWorkbench, type RightRailTab, type RightRailTabDef } from './workbench/right-rail'
+import { LocalFilePreview } from './chat/right-rail/preview-file'
+import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -280,10 +279,13 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level === 'l1')
   const [agendaAdding, setAgendaAdding] = useState(false)
-  const [l1Tabs, setL1Tabs] = useState<RightRailTab[]>(['files', 'agenda'])
-  const [l1Active, setL1Active] = useState<null | RightRailTab>('agenda')
-  const [l2Tabs, setL2Tabs] = useState<RightRailTab[]>(['files', 'review'])
-  const [l2Active, setL2Active] = useState<null | RightRailTab>('files')
+  const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>(['files', 'agenda'])
+  const [l1Active, setL1Active] = useState<null | RightRailTabId>('agenda')
+  const [l2Tabs, setL2Tabs] = useState<RightRailTabId[]>(['files', 'review'])
+  const [l2Active, setL2Active] = useState<null | RightRailTabId>('files')
+  const [openFiles, setOpenFiles] = useState<
+    Record<string, { def: RightRailTabDef; target: PreviewTarget }>
+  >({})
 
   const workbenchTabDefs: Record<RightRailTab, RightRailTabDef> = {
     agenda: { icon: 'calendar', id: 'agenda', title: t.workbench.tabs.agenda },
@@ -293,8 +295,19 @@ export function DesktopController() {
   const l1TabDefs = [workbenchTabDefs.files, workbenchTabDefs.agenda]
   const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review]
   const isL1Workbench = level === 'l1'
+
+  const openFileTab = useCallback((target: PreviewTarget) => {
+    const key = target.path ?? target.url ?? 'preview'
+    const title = key.split(/[\\/]/).filter(Boolean).pop() ?? key
+    const id = `file:${key}` as RightRailTabId
+
+    setOpenFiles(files => ({ ...files, [id]: { def: { icon: 'file', id, title }, target } }))
+    setL2Tabs(tabs => (tabs.includes(id) ? tabs : [...tabs, id]))
+    setL2Active(id)
+    setFileBrowserOpen(true)
+  }, [])
   const handleWorkbenchTabChange = useCallback(
-    (tab: RightRailTab) => {
+    (tab: RightRailTabId) => {
       if (isL1Workbench) {
         setL1Active(tab)
       } else {
@@ -309,7 +322,7 @@ export function DesktopController() {
   )
 
   const handleWorkbenchTabOpen = useCallback(
-    (tab: RightRailTab) => {
+    (tab: RightRailTabId) => {
       if (isL1Workbench) {
         setL1Tabs(tabs => (tabs.includes(tab) ? tabs : [...tabs, tab]))
         setL1Active(tab)
@@ -327,7 +340,7 @@ export function DesktopController() {
   )
 
   const handleWorkbenchTabClose = useCallback(
-    (tab: RightRailTab) => {
+    (tab: RightRailTabId) => {
       const tabs = isL1Workbench ? l1Tabs : l2Tabs
       const active = isL1Workbench ? l1Active : l2Active
       const index = tabs.indexOf(tab)
@@ -344,6 +357,15 @@ export function DesktopController() {
         if (active === tab) {
           setL2Active(next)
         }
+      }
+
+      if (tab.startsWith('file:')) {
+        setOpenFiles(files => {
+          const next = { ...files }
+          delete next[tab]
+
+          return next
+        })
       }
 
       if (tab === 'review') {
@@ -395,6 +417,29 @@ export function DesktopController() {
     l2WorkbenchAutoOpened.current = true
     setFileBrowserOpen(true)
   }, [isL2])
+
+  // File tabs belong to the Agent's folder; switching folders must not leave a
+  // stale file from the previous workspace open.
+  useEffect(() => {
+    setOpenFiles({})
+    setL2Tabs(tabs => tabs.filter(id => !id.startsWith('file:')))
+    setL2Active(active => (active?.startsWith('file:') ? 'files' : active))
+  }, [agentCwd])
+
+  const l1OpenTabDefs = l1Tabs
+    .map(id => (id === 'files' || id === 'agenda' ? workbenchTabDefs[id] : null))
+    .filter((def): def is RightRailTabDef => Boolean(def))
+  const l2OpenTabDefs = l2Tabs
+    .map(id => (id === 'files' || id === 'review' ? workbenchTabDefs[id] : openFiles[id]?.def))
+    .filter((def): def is RightRailTabDef => Boolean(def))
+  const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
+    Object.entries(openFiles).map(([id, { target }]) => [
+      id,
+      <div className="min-h-0 flex-1 overflow-y-auto" key={id}>
+        <LocalFilePreview reloadKey={0} target={target} />
+      </div>
+    ])
+  )
 
   useEffect(() => {
     if (!level) {
@@ -1397,7 +1442,6 @@ export function DesktopController() {
       disabled={!secretaryShellOpen || !previewRailContent}
       id={PREVIEW_PANE_ID}
       key="preview"
-      maxWidth={PREVIEW_RAIL_MAX_WIDTH}
       minWidth={PREVIEW_RAIL_MIN_WIDTH}
       resizable
       side={railSide}
@@ -1428,6 +1472,7 @@ export function DesktopController() {
       key={agentCwd}
       onActivateFile={path => composer.insertContextPathInlineRef(path)}
       onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
+      onOpenFile={openFileTab}
     />
   ) : null
   const workbenchReviewContent = <ReviewPane embedded key={agentCwd || 'no-cwd'} />
@@ -1442,7 +1487,6 @@ export function DesktopController() {
       hoverReveal
       id="file-browser"
       key="file-browser"
-      maxWidth={FILE_BROWSER_MAX_WIDTH}
       minWidth={FILE_BROWSER_MIN_WIDTH}
       resizable
       side={railSide}
@@ -1454,12 +1498,12 @@ export function DesktopController() {
           availableTabs={l2TabDefs.filter(
             tab => !l2Tabs.includes(tab.id) && (tab.id !== 'review' || Boolean(agentCwd.trim()))
           )}
-          contents={{ files: workbenchFilesContent, review: workbenchReviewContent }}
+          contents={{ files: workbenchFilesContent, review: workbenchReviewContent, ...fileTabContents }}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
           onTabOpen={handleWorkbenchTabOpen}
-          tabs={l2Tabs.map(id => workbenchTabDefs[id])}
+          tabs={l2OpenTabDefs}
         />
       </aside>
     </Pane>
@@ -1486,7 +1530,6 @@ export function DesktopController() {
       hoverReveal
       id="agenda-timeline"
       key="agenda-timeline"
-      maxWidth={FILE_BROWSER_MAX_WIDTH}
       minWidth={FILE_BROWSER_MIN_WIDTH}
       resizable
       side={railSide}
@@ -1529,13 +1572,13 @@ export function DesktopController() {
                 </div>
               </>
             ),
-            files: workbenchFilesContent
+            files: null
           }}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
           onTabOpen={handleWorkbenchTabOpen}
-          tabs={l1Tabs.map(id => workbenchTabDefs[id])}
+          tabs={l1OpenTabDefs}
           trailing={
             l1Active === 'agenda' ? (
               /* 完整日程页的入口全应用只有状态栏那一个 chip（它还带 pending 计数），
@@ -1566,7 +1609,6 @@ export function DesktopController() {
       id="terminal-sidebar"
       key="terminal-sidebar"
       maxHeight="80vh"
-      maxWidth="80vw"
       minHeight="8rem"
       minWidth="22vw"
       resizable
