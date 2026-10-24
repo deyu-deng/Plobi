@@ -239,7 +239,7 @@ export const UserMessage: FC<{
   // the live turn before rewinding.
   // 裁定 201：外面来的话（别的 Agent / cron 结果）不是「人」的气泡——左侧、带头像
   // 和名字；那段 `[来自 X · 时间]` 只在存储里留（模型靠它认出谁在说话），屏上不显。
-  const externalSpeaker = externalSenderOf(customMeta.kind, customMeta.askedBy)
+  const externalSpeaker = externalSenderOf(customMeta.kind, customMeta.askedBy, messageText)
 
   if (externalSpeaker) {
     const split = splitSpeakerPrefix(messageText)

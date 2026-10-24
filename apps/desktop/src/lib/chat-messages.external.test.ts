@@ -13,6 +13,19 @@ describe('externalSenderOf', () => {
     expect(externalSenderOf(undefined, 'cron:01bee4f6f8cd')).toEqual({ kind: 'cron', name: '' })
   })
 
+  it('falls back to the body prefix when the history arm dropped both columns', () => {
+    // 网关 `_history_to_messages` 只带 role+text；前缀是那条路上最后一份身份。
+    expect(externalSenderOf(undefined, undefined, '[来自 plobi · 2026-10-24T11:08:40]\n自检')).toEqual({
+      kind: 'agent',
+      name: ''
+    })
+    expect(externalSenderOf(undefined, undefined, '[Cron 结果 · 早报 · 2026-10-24 08:00:00]\n早')).toEqual({
+      kind: 'cron',
+      name: ''
+    })
+    expect(externalSenderOf(undefined, undefined, '你好')).toBeNull()
+  })
+
   it('leaves owner-keyed rows on the human bubble', () => {
     expect(externalSenderOf('user', 'owner')).toBeNull()
     expect(externalSenderOf(null, null)).toBeNull()

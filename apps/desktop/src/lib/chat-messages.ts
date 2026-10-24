@@ -62,7 +62,11 @@ export type ExternalSpeaker = { kind: ExternalSpeakerKind; name: string }
  * `kind` 优先（新数据都有）；老数据 `kind` 为空时按 `asked_by` 前缀推，
  * **不看正文**——正文前缀迟早会被摘掉。
  */
-export function externalSenderOf(kind: unknown, askedBy: unknown): ExternalSpeaker | null {
+export function externalSenderOf(
+  kind: unknown,
+  askedBy: unknown,
+  text?: unknown,
+): ExternalSpeaker | null {
   const k = typeof kind === 'string' ? kind.trim().toLowerCase() : ''
   const raw = typeof askedBy === 'string' ? askedBy.trim() : ''
 
@@ -71,6 +75,18 @@ export function externalSenderOf(kind: unknown, askedBy: unknown): ExternalSpeak
   }
   if (k === 'agent' || raw.startsWith('say:')) {
     return { kind: 'agent', name: raw.startsWith('say:') ? raw.slice(4).trim() : '' }
+  }
+
+  // 兜底：网关的历史那一臂只带 `role + text`（`tui_gateway/server.py:4961`），
+  // `asked_by` / `kind` 都到不了界面。正文前缀还在，就先按它认——等网关把两列
+  // 带上之后这一段自然失效，不用改调用方。
+  const body = typeof text === 'string' ? text : ''
+
+  if (body.startsWith('[Cron 结果 · ')) {
+    return { kind: 'cron', name: '' }
+  }
+  if (body.startsWith('[来自 ')) {
+    return { kind: 'agent', name: '' }
   }
 
   return null
