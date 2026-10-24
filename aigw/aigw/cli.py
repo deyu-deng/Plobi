@@ -218,6 +218,9 @@ def _auth(args) -> int:
     except KeyboardInterrupt:
         print("\n[aborted]", file=sys.stderr)
         return 1
+    except RuntimeError as exc:
+        print(f"[aigw auth] {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
