@@ -3254,6 +3254,13 @@ export const zh: Translations = {
       newTabBody: '在上方输入网址，回车打开。',
       loadFailed: '这个页面打不开',
       invalidUrl: '只支持 http / https 网址'
+    },
+    office: {
+      loading: '正在加载文件…',
+      unavailable: '这个文件暂时无法预览',
+      readOnly: '只读预览',
+      truncated: (rows, cols) => `只显示前 ${rows} 行 × ${cols} 列`,
+      sheet: '工作表'
     }
   }
 }

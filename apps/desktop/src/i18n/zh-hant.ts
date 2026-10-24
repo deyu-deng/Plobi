@@ -2977,6 +2977,13 @@ export const zhHant = defineLocale({
       newTabBody: '在上方輸入網址，按 Enter 開啟。',
       loadFailed: '這個頁面打不開',
       invalidUrl: '只支援 http / https 網址'
+    },
+    office: {
+      loading: '正在載入檔案…',
+      unavailable: '這個檔案暫時無法預覽',
+      readOnly: '唯讀預覽',
+      truncated: (rows, cols) => `只顯示前 ${rows} 行 × ${cols} 列`,
+      sheet: '工作表'
     }
   }
 })

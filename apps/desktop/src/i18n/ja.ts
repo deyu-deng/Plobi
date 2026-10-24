@@ -3077,6 +3077,13 @@ export const ja = defineLocale({
       newTabBody: '上の URL 欄に入力して Enter を押してください。',
       loadFailed: 'このページを開けませんでした',
       invalidUrl: 'http / https の URL のみ対応しています'
+    },
+    office: {
+      loading: 'ファイルを読み込み中…',
+      unavailable: 'このファイルはまだプレビューできません',
+      readOnly: '読み取り専用プレビュー',
+      truncated: (rows, cols) => `先頭 ${rows} 行 × ${cols} 列のみ表示`,
+      sheet: 'シート'
     }
   }
 })
