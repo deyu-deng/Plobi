@@ -129,6 +129,53 @@ class TestCapabilitiesAreDeclaredNotGuessed:
         assert registry.spec("dingtalk").capabilities["supports_media"] is None
 
 
+class TestTheSwitchIsWhatTheRoundReads:
+    """用户在屏上翻的那颗开关**必须真的决定这一轮打不打它**（10-24 现核到这条读口没接上）。
+
+    病根形状：`collecting_sources()` 从前只看 `SourceSpec.collecting`（代码里那份默认值），
+    于是「关掉」只改了一个布尔、不改调度——那正是 `sources_config` 头部与 `enabled_origin`
+    那几段注记口口声声要回答的「我明明关了怎么还在跑」。判据写成一条能跑的命令，别留成形容词。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _home(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+
+    def test_off_on_the_screen_means_not_dialed_this_round(self) -> None:
+        from plobi.collectors import sources_config
+
+        assert registry.spec("zdbk").collecting is True, "代码默认是开着的——这一格不是判据"
+        sources_config.set_enabled("zdbk", False)
+
+        assert "zdbk" not in registry.collecting_sources()
+
+        sources_config.set_enabled("zdbk", True)
+
+        assert "zdbk" in registry.collecting_sources()
+
+    def test_a_source_the_config_never_mentioned_keeps_the_code_default(self) -> None:
+        """没写过开关的那些条照代码默认走：这一改**不新增"谁都得先点一下"**的形状。"""
+        registry.ensure_discovered()
+
+        assert ("dingtalk" not in registry.collecting_sources()) is (not registry.spec("dingtalk").collecting)
+
+    def test_an_unreadable_config_falls_back_out_loud(self, monkeypatch, caplog) -> None:
+        """读不到配置层就退回代码默认值，但那句话要出声——静默回落就是下一次那颗查不到的故障。"""
+        import logging
+
+        from plobi.collectors import sources_config
+
+        def boom(source_id: str):
+            raise sources_config.SourceConfigError("sources.yaml 坏了")
+
+        monkeypatch.setattr(sources_config, "effective_enabled", boom)
+        caplog.set_level(logging.WARNING)
+
+        registry.collecting_sources()
+
+        assert "配置层读不到" in caplog.text
+
+
 class TestCategoriesAreDeclaredNotGuessed:
     """分类与能力位同一套路（`specs/source-layer.md` §2）：必填、闭集、不许猜。
 
@@ -183,8 +230,13 @@ class TestCategoriesAreDeclaredNotGuessed:
     def test_every_collector_package_declares_its_own_spec(self) -> None:
         """每个内置采集器包**自己**报自己的形状——这是"加一条＝加一个包"的牙齿。
 
-        反过来也钉：注册表那个目录里的每个包都要么有 ``SPEC``、要么明确是公共层子包。
+        反过来也钉：注册表那个目录里的每个包都要么有 ``SPEC``／``SPECS``、要么明确是公共层子包。
         这里只钉前一半（后一半是 `:mod:` 那些不属于采集器的子包，见发现器的注释）。
+
+        10-24 起 ``SPECS``（复数）也是一种合法形状：邮箱那一族五家共用同一只采集器，
+        逐家拆包要把那两百行复制五遍。**牙齿没有因此变松**，因为它钉的一直是后半句：
+        报了名字却没真的登记进注册表 ⇒ 最后那一句 `declared == source_ids()` 当场红；
+        而一个包两样都没报，也照样在这一行红。
         """
         import plobi.collectors as package
 
@@ -196,9 +248,10 @@ class TestCategoriesAreDeclaredNotGuessed:
         for init in sorted(Path(package.__file__).resolve().parent.glob("*/__init__.py")):
             name = init.parent.name
             module = __import__(f"plobi.collectors.{name}", fromlist=["SPEC"])
+            specs = list(getattr(module, "SPECS", None) or []) or [getattr(module, "SPEC", None)]
 
-            assert hasattr(module, "SPEC"), f"{name} 没有报出自己的 SPEC"
-            declared.add(module.SPEC.source_id)
+            assert all(spec is not None for spec in specs), f"{name} 没有报出自己的 SPEC"
+            declared.update(spec.source_id for spec in specs)
 
         assert declared == set(registry.source_ids())
         assert package.__doc__  # 包自己的说明还在（发现器不认识它时按"公共层子包"放过）

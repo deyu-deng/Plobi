@@ -348,11 +348,15 @@ export const en: Translations = {
       social: 'Social media',
       system: 'System',
       website: 'Websites',
+      email: 'Email',
       custom: 'Bring your own'
       },
       emptyExternal: 'Could not read what is installed.',
       fields: {
         account: 'Account name',
+        address: 'Email address',
+        imap_host: 'IMAP server',
+        password: 'Password or app token',
         base_url: 'School system address',
         ics_path: 'Path to the .ics file',
         cadence: 'Collection cadence'
@@ -437,10 +441,15 @@ export const en: Translations = {
         ready: 'Last collection succeeded',
         throttled: 'Skipped, because it ran within the collection interval',
         unknown_state: 'This collection result is not supported yet',
+        client_not_installed: 'No client app for this source on this machine',
+        client_not_logged_in: 'Its client app has never signed in on this machine',
+        local_store_missing: 'Its local data store is not readable here',
+        probe_failed: "This machine's prerequisites could not be read",
       },
       reasonUnknown: 'This collection result is not supported yet',
       drawerReason: 'Reason',
       drawerRunNote: 'Last run message',
+      drawerProbe: 'Local prerequisite',
     },
     network: {
       addExit: 'Add exit',
@@ -1573,8 +1582,13 @@ export const en: Translations = {
       dingtalk: 'DingTalk',
       manual: 'Added by you',
       timetable: 'Timetable',
-      zju: 'Academic affairs (ZJU)',
-      zdbk: "Jiaowu (undergraduate)",
+      zju: 'ZJU Courses (XueZaiZJU)',
+      zdbk: 'ZJU Undergraduate Academic Affairs',
+      email_qq: 'QQ Mail',
+      email_163: 'NetEase Mail (163)',
+      email_gmail: 'Gmail',
+      email_outlook: 'Outlook / Microsoft 365',
+      email_imap: 'Custom IMAP mailbox'
     },
     collect: {
       title: 'Session collection',

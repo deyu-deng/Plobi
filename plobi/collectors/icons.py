@@ -1,5 +1,9 @@
 r"""一条信源在屏上那个小方块 —— **从它自己声明的那个网站抓一次图标**（裁定 194 那条通用性的尾巴）。
 
+同一只模块现在管**两样**都从那个站抓回来的东西：图标，和那个站**自报的名字**（用户 10-24：
+「网站就显示网站名就行了，不要叫什么"教务"」）。名字与图标共用一次首页请求、共用一个缓存目录、
+共用"抓不到就记 miss、不许阻塞那一屏"那三条规矩 —— 因为它们本来就是同一次访问的两个产物。
+
 为什么在这儿抓而不是前端硬编一张表：那张表已经因为少一个 `zdbk` 在屏上画成了
 「没记到名字的信源」——**加一条信源要顺手改前端**这件事，正是信源层一直要消灭的东西
 （`specs/source-layer.md` §8 有一条验收就是这个）。所以图标走的是声明：`SourceSpec.site`
@@ -23,6 +27,7 @@ r"""一条信源在屏上那个小方块 —— **从它自己声明的那个网
 from __future__ import annotations
 
 import base64
+import html
 import logging
 import os
 import re
@@ -121,6 +126,146 @@ def icon_data_url(source_id: str, site: str, opener=urllib.request.urlopen) -> s
     target.write_bytes(blob)
     (icon_dir() / f"{_safe_name(source_id)}{_MISS}").unlink(missing_ok=True)
     return _data_url(mime, blob)
+
+
+#: 站名那一格的缓存后缀（与图标 `.bin` / `.miss` 同目录、同一套"抓过没有"的写法）。
+_NAME_SUFFIX = ".name"
+_NAME_MISS = ".name.miss"
+#: 首页只读这么多就够拿到 `<title>` / `og:site_name`；再多是把别人整站拖进本机缓存。
+_PAGE_BYTES = 64 * 1024
+#: 一个专名不该是一句营销话。「钉钉，AI时代工作方式」→「钉钉」，「X - Login」→「X」。
+_NAME_CUT = ("|", "｜", "—", "–", "-", "·", "•", "，", ",", "。", ":", "：")
+_NAME_MAX = 32
+
+
+def _name_path(source_id: str):
+    return icon_dir() / f"{_safe_name(source_id)}{_NAME_SUFFIX}"
+
+
+def cached_site_name(source_id: str) -> Optional[str]:
+    """盘上有就给；有 miss 标记回 ``""``（**抓过、那上面没有名字**）；都没有回 ``None``（没抓过）。"""
+    path = _name_path(source_id)
+    if path.is_file():
+        return path.read_text(encoding="utf-8").strip()
+    if (icon_dir() / f"{_safe_name(source_id)}{_NAME_MISS}").exists():
+        return ""
+    return None
+
+
+def site_name(source_id: str, site: str, opener=urllib.request.urlopen) -> str:
+    """那个站**自己报**的名字（`og:site_name` → `<title>`），抓不到就是空串。
+
+    与 :func:`icon_data_url` 同一族三条：只走**声明**的那个站、只抓一次并落盘、
+    **永不抛**（名字是装饰性的那一半，它不该把那一屏弄红——第三方包没填 `display_name`
+    而站又打不开时，界面回它自己的语言目录，最后才是「暂未适配」那一句）。
+    """
+    if not site or not site.strip():
+        return ""
+    hit = cached_site_name(source_id)
+    if hit is not None:
+        return hit
+
+    try:
+        name = _name_from(_read_page(site, opener))
+    except Exception as exc:  # noqa: BLE001 - 站方挂了/超时/证书/404 全都是"它没报名字"
+        logger.debug("source site name %s: %s: %s", source_id, type(exc).__name__, exc)
+        name = ""
+
+    icon_dir().mkdir(parents=True, exist_ok=True)
+    if name:
+        _name_path(source_id).write_text(name, encoding="utf-8")
+        (icon_dir() / f"{_safe_name(source_id)}{_NAME_MISS}").unlink(missing_ok=True)
+        return name
+    (icon_dir() / f"{_safe_name(source_id)}{_NAME_MISS}").write_text("", encoding="utf-8")
+    return ""
+
+
+def site_name_now(source_id: str, site: str) -> str:
+    """给那一屏用的那一格：盘上有就给，没有就**后台去抓**并立刻回空串（与 :func:`icon_now` 同形）。"""
+    hit = cached_site_name(source_id)
+    if hit is not None:
+        return hit
+    if not site:
+        return ""
+
+    import threading
+
+    threading.Thread(target=site_name, args=(source_id, site), daemon=True).start()
+
+    return ""
+
+
+def _read_page(site: str, opener, *, hops: int = 2) -> str:
+    """取那个站的首页正文，**跟一次 `<meta http-equiv=refresh>`**。
+
+    这一跳不是洁癖：教务那家（`zdbk.zju.edu.cn`）的根目录现读就是一行 68 字节的
+    `<meta refresh content="1; url=/jwglxt">`，不跟这一跳就永远读不到 `<title>`，
+    而那一个 title（「本科教学管理信息服务平台」）正是用户要的"网站名"。
+    """
+    url = site if re.match(r"^https?://", site) else f"https://{site}"
+    for _ in range(max(hops, 1)):
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            return ""
+        if not parts.path:
+            # 声明里通常只写到 origin（`https://zdbk.zju.edu.cn`）；补一个 "/" 再打，
+            # 不然那一跳的相对目标（`/jwglxt`）没有基准可解，站方给不给 308 是它的心情。
+            url = f"{parts.scheme}://{parts.netloc}/"
+            parts = urllib.parse.urlsplit(url)
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with opener(request, timeout=TIMEOUT_SECONDS) as reply:
+            text = reply.read(_PAGE_BYTES).decode("utf-8", "replace")
+        nxt = _refresh_target(url, text)
+        if not nxt:
+            return text
+        url = nxt
+    return text
+
+
+def _refresh_target(base_url: str, page: str) -> Optional[str]:
+    found = re.search(r"""<meta[^>]*?http-equiv=["']?refresh["']?[^>]*?>""", page, re.I)
+    if not found:
+        return None
+    content = re.search(r"""content=["']\s*\d+\s*;\s*url=([^"'>\s]+)""", found.group(0), re.I)
+    if not content:
+        return None
+    target = urllib.parse.urljoin(base_url, content.group(1).strip())
+    parts = urllib.parse.urlsplit(target)
+    # 只跟**同一个站**那一跳：把"抓个名字"变成"被别人的页面牵着走"是没必要的一张票。
+    if parts.scheme not in ("http", "https") or parts.netloc != urllib.parse.urlsplit(base_url).netloc:
+        return None
+    return target
+
+
+def _name_from(page: str) -> str:
+    """从一段 HTML 里挑出那个站自己的名字；挑不出来回空串。"""
+    if not page:
+        return ""
+
+    og = re.search(
+        r"""<meta[^>]+(?:property|name)=["'](?:og:site_name|twitter:title)["'][^>]*>""", page, re.I
+    )
+    if og:
+        content = re.search(r"""content=["']([^"']+)["']""", og.group(0), re.I)
+        if content and content.group(1).strip():
+            return _shorten(content.group(1))
+
+    title = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
+    if title:
+        return _shorten(title.group(1))
+
+    return ""
+
+
+def _shorten(raw: str) -> str:
+    """收成一个**专名**：切掉分隔符后面的那句话、实体还原、空白归一、限长。"""
+    text = html.unescape(raw or "")
+    head = text
+    for marker in _NAME_CUT:
+        if marker in head:
+            head = head.split(marker, 1)[0]
+    head = re.sub(r"\s+", " ", head).strip()
+    return head[:_NAME_MAX].strip()
 
 
 def _resolve_icon_url(site: str, opener) -> Optional[str]:

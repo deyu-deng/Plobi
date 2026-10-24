@@ -214,6 +214,24 @@ def secret_configured(source_id: str) -> dict[str, bool]:
             for key in secret_keys(source_id)}
 
 
+def secret_value(source_id: str, key: str) -> Optional[str]:
+    """那一格密钥**现在的值**（`None` = 没设）。采集器运行时唯一的读口。
+
+    为什么必须有这一格而不是让各家自己 `os.environ.get(...)`：环境变量只是**落点**，
+    键名规则（:func:`secret_env_name`）是这一层的。各家自己去摸一次环境，就有人会把
+    `PLOBI_SOURCE_…` 拼错成"设了却读不到"，也会在别处（日志、异常信息、`--dry-run` 的
+    回显）顺手打印那个值。**一处读口 = 一处能负责守住"它不进日志"的地方**。
+
+    这一格**永不许出现在 `/api/collect/sources` 的读数里**——那一条由
+    :func:`secret_configured` 与 `sources_api._enrich` 共同钉住（那里只回"设过没有"）。
+    """
+    from plobi_cli.config import load_env
+
+    value = str(load_env().get(secret_env_name(source_id, key)) or "").strip()
+
+    return value or None
+
+
 def set_secret(source_id: str, key: str, value: str) -> None:
     """写一格密钥进 `.env`（唯一那面密钥的墙）。空串按"清掉"处理。"""
     from plobi_cli.config import save_env_value_secure

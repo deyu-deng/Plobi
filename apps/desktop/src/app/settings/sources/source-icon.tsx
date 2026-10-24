@@ -20,7 +20,7 @@
 import { SiGooglecalendar, SiWechat } from '@icons-pack/react-simple-icons'
 import type { ComponentType, SVGProps } from 'react'
 
-import { Globe } from '@/lib/icons'
+import { Globe, Mail } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
 type IconKind = 'brand' | 'generic'
@@ -81,9 +81,11 @@ export function SourceAvatar({
   const spec = SOURCE_ICONS[sourceId]
 
   // 查不到 = 一个还没被这张表认领的信源（多半是第三方包，或它那个站没抓到图标）。
-  // 网站那一类退地球、别的退首字母——**这不是错误**，所以不给中性底色之外再加任何提示。
+  // 网站那一类退地球、邮箱那一类退信封、别的退首字母——**这不是错误**，所以不给中性底色之外
+  // 再加任何提示。邮箱那五家（QQ/163/Gmail/Outlook/自定义）都不在这张品牌表里：它们的名字
+  // 与服务器由包自己声明，图标就退这一格的通用形状，等谁真要给品牌徽标再往表里加行。
   if (!spec) {
-    const Generic = category === 'website' ? Globe : null
+    const Generic = category === 'website' ? Globe : category === 'email' ? Mail : null
 
     return (
       <span aria-hidden="true" className={cn(base, 'bg-(--ui-bg-tertiary) text-(--ui-text-tertiary)')}>

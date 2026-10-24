@@ -52,7 +52,7 @@ vi.mock('@/i18n', () => ({
       agenda: { sources: { dingtalk: 'DingTalk', timetable: 'Timetable', wechat: 'WeChat', zju: 'Academic affairs (ZJU)' } },
       settings: {
         sources: {
-          categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', custom: 'Bring your own' },
+          categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', email: 'Mailboxes', custom: 'Bring your own' },
           emptyExternal: 'Could not read what is installed.',
           fields: { cadence: 'Collection cadence', ics_path: 'Path to the .ics file' },
           install: 'Install',
@@ -108,6 +108,7 @@ vi.mock('@/i18n', () => ({
           unknownSource: 'Source with no recorded name',
           reasons: {
             captcha_required: 'Manual verification required',
+            client_not_logged_in: 'Its client app has never signed in on this machine',
             internal: 'The local collector is not ready',
             live: 'Last collection succeeded',
             never_ran: 'No collection recorded yet',
@@ -116,7 +117,8 @@ vi.mock('@/i18n', () => ({
           },
           reasonUnknown: 'This collection result is not supported yet',
           drawerReason: 'Reason',
-          drawerRunNote: 'Last run message'
+          drawerRunNote: 'Last run message',
+          drawerProbe: 'Local prerequisite'
         }
       }
     }
@@ -145,7 +147,7 @@ function row(over: Partial<SourceRow> = {}): SourceRow {
 }
 
 // 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**。
-const CATEGORIES = ['message', 'social', 'website', 'local', 'system', 'custom']
+const CATEGORIES = ['message', 'social', 'website', 'local', 'system', 'email', 'custom']
 
 function payload(sources: SourceRow[]): SourcesPayload {
   const byCategory = new Map<string, string[]>()
@@ -248,8 +250,13 @@ describe('what the row says', () => {
 
   it('opens the drawer on the row, with the readings that used to be invisible', async () => {
     // 旧屏问不到"这条到底采到东西没有"：行上那个数读的是日程库，池里 371 条显示成 0。
+    // 上一次/下一次都按**现在**算：写死一个时刻的夹具过一天就从「in 4 h」变成「4 h ago」，
+    // 而那句断言钉的是"绝对时刻不上屏、屏上说多久以前/以后"，不是某一个日期。
+    const lastRun = new Date(Date.now() - 2 * 86_400_000).toISOString()
+    const nextRun = new Date(Date.now() + 4 * 3_600_000).toISOString()
+
     getSources.mockResolvedValue(payload([
-      row({ enabled: true, has_builder: true, last_run_at: '2026-10-22T08:15:14+08:00', next_run_at: '2026-10-24T08:15:00+08:00', pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' }),
+      row({ enabled: true, has_builder: true, last_run_at: lastRun, next_run_at: nextRun, pool_count: 371, pool_kinds: { class: 65, major: 238 }, source: 'zdbk', status: 'connected', status_code: 'live' }),
       // 关着的一条：它没有"下一次"，所以那一格写破折号，不写「跟着每一轮」（那句话对一条停用的源是假的）。
       // 关着的一条：它没有“下一次”，那一格写破折号（那句话对停用的源是假的）。
       row({ enabled: false, source: 'timetable', status: 'disconnected', status_code: 'off' }),
@@ -266,8 +273,8 @@ describe('what the row says', () => {
     await waitFor(() => expect(screen.getByTestId('source-drawer-zdbk')).toBeTruthy())
     const drawer = screen.getByTestId('source-drawer-zdbk').textContent ?? ''
     // 用户 10-23：「下一次（显示多久之前，不要显示一个时间）」⇒ 绝对时刻**不上屏**。
-    expect(drawer).not.toContain('2026-10-22T08:15:14+08:00')
-    expect(drawer).not.toContain('2026-10-24T08:15:00+08:00')
+    expect(drawer).not.toContain(lastRun)
+    expect(drawer).not.toContain(nextRun)
     expect(drawer).toMatch(/(h|d) ago/)
     expect(drawer).toMatch(/in \d+ (h|min|d)/)
     // 通用那几格还在：原因、频率；池里/日程里压成一行小字。
@@ -412,6 +419,55 @@ describe('what the row says', () => {
 
     await waitFor(() => expect(screen.getByText('Source with no recorded name')).toBeTruthy())
     expect(screen.queryByText('brand-new-thing')).toBeNull()
+  })
+
+  it('names a third-party source by the site it declared', async () => {
+    // 用户 10-24：「网站就显示网站名就行了」。第三方包没进这张表，它那一行照样有名字——
+    // 名字来自后端那一格读数（声明名或站点自报的名），不是界面替它起的类目词。
+    getSources.mockResolvedValue(payload([
+      row({ category: 'website', display_name: '本科教学管理信息服务平台', enabled: true, has_builder: true, source: 'zdbk', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('本科教学管理信息服务平台')).toBeTruthy())
+  })
+
+  it('still lets the language catalogue name our own sources first', async () => {
+    // 与 `setup_fields.label` 同一套路：声明给缺省值，四语目录优先。这一条钉的是**次序**——
+    // 反过来就会把「微信」画成站方那句营销话。
+    getSources.mockResolvedValue(payload([
+      row({ display_name: '抓来的那个名', enabled: true, has_builder: true, source: 'zju', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByText('Academic affairs (ZJU)')).toBeTruthy())
+    expect(screen.queryByText('抓来的那个名')).toBeNull()
+  })
+
+  it('prints what the machine answered, verbatim, in the drawer', async () => {
+    // 探针那句是**读数**（哪个目录、第几代加密），界面不转述（P6）；行上那一格仍然是
+    // 「未连接」加目录里那句人话——红点留给真的故障。
+    getSources.mockResolvedValue(payload([
+      row({
+        category: 'message',
+        enabled: true,
+        has_builder: false,
+        probe: { code: 'client_not_logged_in', detail: '本地库在位：D:/x/dingtalk_encrypt.db（v3）', ready: false },
+        source: 'dingtalk',
+        status: 'disconnected',
+        status_code: 'client_not_logged_in'
+      })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByText('Not connected')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /DingTalk/ }))
+
+    await waitFor(() => expect(screen.getByTestId('source-probe-dingtalk').textContent)
+      .toContain('本地库在位：D:/x/dingtalk_encrypt.db（v3）'))
+    expect(screen.getByTestId('source-probe-dingtalk').textContent).toContain('Local prerequisite')
   })
 
   it('says "could not read" instead of drawing an empty list', async () => {
