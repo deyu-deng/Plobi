@@ -55,7 +55,7 @@ class _FakeDB:
     def list_sessions_rich(self, **_kwargs):
         return list(self.rows)
 
-    def append_message(self, session_id, *, role=None, content=None, asked_by=None):
+    def append_message(self, session_id, *, role=None, content=None, asked_by=None, kind=None):
         self.appended.append((session_id, role, content, asked_by))
         return "m-user"
 
