@@ -2,7 +2,8 @@ import { ActionBarPrimitive, BranchPickerPrimitive, MessagePrimitive, useAuiStat
 import { type FC, type ReactNode, useCallback, useRef, useState } from 'react'
 
 import { DirectiveContent } from '@/components/assistant-ui/directive-text'
-import { askedByBadge } from '@/lib/chat-messages'
+import { askedByBadge, externalSenderOf, splitSpeakerPrefix } from '@/lib/chat-messages'
+import { ExternalMessage } from '@/components/assistant-ui/thread/external-message'
 import { messageAttachmentRefs, messageContentText } from '@/components/assistant-ui/thread/content'
 import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
 import { UserMessageText } from '@/components/assistant-ui/thread/user-message-text'
@@ -165,9 +166,10 @@ export const UserMessage: FC<{
   // toggles the 2-line clamp so long prompts are still fully readable.
   // 发起方徽标（WP-L2-OUTSOURCE-ENTRY）：值从 `messages.asked_by` 经 metadata.custom
   // 一路带上来 —— 点进一个分身，要分得开哪条是主人自己打的、哪条是秘书代他问的。
-  const askedBy = askedByBadge(
-    useAuiState(s => (s.message.metadata?.custom as { askedBy?: unknown } | undefined)?.askedBy),
+  const customMeta = useAuiState(
+    s => (s.message.metadata?.custom ?? {}) as { askedBy?: unknown; kind?: unknown }
   )
+  const askedBy = askedByBadge(customMeta.askedBy)
   const askedByLabel = askedBy === null
     ? ''
     : askedBy.kind === 'me'
@@ -235,6 +237,22 @@ export const UserMessage: FC<{
   // Restore (re-run this exact prompt) is available everywhere the Stop button
   // isn't — including mid-stream on older prompts, since the action interrupts
   // the live turn before rewinding.
+  // 裁定 201：外面来的话（别的 Agent / cron 结果）不是「人」的气泡——左侧、带头像
+  // 和名字；那段 `[来自 X · 时间]` 只在存储里留（模型靠它认出谁在说话），屏上不显。
+  const externalSpeaker = externalSenderOf(customMeta.kind, customMeta.askedBy)
+
+  if (externalSpeaker) {
+    const split = splitSpeakerPrefix(messageText)
+
+    return (
+      <ExternalMessage
+        kind={externalSpeaker.kind}
+        speaker={split.speaker || externalSpeaker.name}
+        text={split.body}
+      />
+    )
+  }
+
   const showRestore = !readOnly && !showStop && Boolean(onRequestRestoreConfirm) && hasBody
 
   const bubbleClassName = cn(
