@@ -3082,8 +3082,13 @@ export const en: Translations = {
     aria: 'Right rail',
     tabs: {
       agenda: 'Agenda',
-      files: 'Workspace files'
+      files: 'Workspace files',
+      review: 'Review'
     },
+    add: 'Open tab',
+    close: label => `Close ${label}`,
+    emptyTitle: 'No open tabs',
+    emptyBody: 'Use + to open workspace files, agenda, or review.',
     noFolderTitle: 'This agent has no folder',
     noFolderBody: 'Bind a folder to this agent to browse its files here.'
   }

@@ -1,96 +1,194 @@
 import type { ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 
-export type RightRailTab = 'agenda' | 'files'
+export type RightRailTab = 'agenda' | 'files' | 'review'
+
+export interface RightRailTabDef {
+  id: RightRailTab
+  icon: string
+  title: string
+}
 
 export interface RightRailWorkbenchLabels {
   aria: string
-  tabs: {
-    agenda: string
-    files: string
-  }
+  add: string
+  close: (label: string) => string
+  emptyTitle: string
+  emptyBody: string
   noFolderTitle: string
   noFolderBody: string
 }
 
-const TABS = [
-  { icon: 'folder-opened', id: 'files' },
-  { icon: 'calendar', id: 'agenda' }
-] as const
-
 export function RightRailWorkbench({
   activeTab,
-  agenda,
-  files,
+  availableTabs,
+  contents,
   labels,
   onTabChange,
+  onTabClose,
+  onTabOpen,
+  tabs,
   trailing
 }: {
-  activeTab: RightRailTab
-  agenda: ReactNode
-  files: ReactNode | null
+  activeTab: RightRailTab | null
+  availableTabs: RightRailTabDef[]
+  contents: Partial<Record<RightRailTab, ReactNode>>
   labels: RightRailWorkbenchLabels
   onTabChange: (tab: RightRailTab) => void
+  onTabClose: (tab: RightRailTab) => void
+  onTabOpen: (tab: RightRailTab) => void
+  tabs: RightRailTabDef[]
   trailing?: ReactNode
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('mousedown', onPointerDown)
+
+    return () => window.removeEventListener('mousedown', onPointerDown)
+  }, [menuOpen])
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
-        aria-label={labels.aria}
         className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1"
-        role="tablist"
+        ref={menuRef}
       >
-        <div className="flex min-w-0 flex-1 items-center">
-          {TABS.map(tab => (
+        <div
+          aria-label={labels.aria}
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+        >
+          {tabs.map(tab => {
+            const active = tab.id === activeTab
+
+            return (
+              <div
+                className={cn(
+                  'group/tab flex h-7 max-w-44 min-w-24 shrink-0 items-center rounded-md text-xs transition-colors',
+                  active
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                )}
+                data-active={active || undefined}
+                key={tab.id}
+              >
+                <button
+                  aria-label={labels.close(tab.title)}
+                  className="ml-1.5 grid size-3.5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-muted"
+                  onClick={() => onTabClose(tab.id)}
+                  title={labels.close(tab.title)}
+                  type="button"
+                >
+                  <Codicon
+                    className="col-start-1 row-start-1 opacity-100 group-hover/tab:opacity-0 group-focus-within/tab:opacity-0"
+                    name={tab.icon}
+                    size="0.875rem"
+                  />
+                  <Codicon
+                    className="col-start-1 row-start-1 opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
+                    name="close"
+                    size="0.875rem"
+                  />
+                </button>
+                <button
+                  aria-selected={active}
+                  className="flex h-full min-w-0 flex-1 items-center bg-transparent py-0 pr-2 pl-1.5 text-left text-inherit outline-none"
+                  onClick={() => onTabChange(tab.id)}
+                  role="tab"
+                  title={tab.title}
+                  type="button"
+                >
+                  <span className="min-w-0 flex-1 truncate">{tab.title}</span>
+                </button>
+              </div>
+            )
+          })}
+        </div>
+
+        {trailing}
+
+        {availableTabs.length > 0 ? (
+          <div className="relative shrink-0">
             <button
-              aria-selected={activeTab === tab.id}
-              className={cn(
-                'flex h-7 min-w-0 items-center gap-1 rounded-sm border-b-2 px-2 text-[0.68rem] transition-colors',
-                activeTab === tab.id
-                  ? 'border-(--ui-accent) text-foreground'
-                  : 'border-transparent text-(--ui-text-tertiary) hover:text-foreground'
-              )}
-              data-testid={`right-rail-tab-${tab.id}`}
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              role="tab"
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-label={labels.add}
+              className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => setMenuOpen(open => !open)}
+              title={labels.add}
               type="button"
             >
-              <Codicon name={tab.icon} size="0.85rem" />
-              <span className="truncate">{labels.tabs[tab.id]}</span>
+              <Codicon name="add" size="0.85rem" />
             </button>
-          ))}
-        </div>
-        {trailing}
+            {menuOpen ? (
+              <div
+                className="absolute top-8 right-0 z-20 w-44 rounded-lg border border-border bg-popover p-1 shadow-xl"
+                role="menu"
+              >
+                {availableTabs.map(tab => (
+                  <button
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.72rem] text-foreground hover:bg-accent"
+                    key={tab.id}
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onTabOpen(tab.id)
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <Codicon name={tab.icon} size="0.8rem" />
+                    <span className="truncate">{tab.title}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div
-          aria-label={labels.tabs.files}
-          className="flex min-h-0 flex-1 flex-col"
-          data-testid="right-rail-panel-files"
-          hidden={activeTab !== 'files'}
-          role="tabpanel"
-        >
-          {files ?? (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-              <Codicon name="folder" size="1.25rem" />
-              <p className="text-[0.78rem] font-medium text-foreground">{labels.noFolderTitle}</p>
-              <p className="text-[0.68rem] text-(--ui-text-tertiary)">{labels.noFolderBody}</p>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {tabs.length === 0 ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+            <Codicon name="layout-sidebar-right" size="1.25rem" />
+            <p className="text-[0.78rem] font-medium text-foreground">{labels.emptyTitle}</p>
+            <p className="text-[0.68rem] text-(--ui-text-tertiary)">{labels.emptyBody}</p>
+          </div>
+        ) : (
+          tabs.map(tab => (
+            <div
+              aria-label={tab.title}
+              className="flex min-h-0 flex-1 flex-col"
+              data-testid={`right-rail-panel-${tab.id}`}
+              hidden={tab.id !== activeTab}
+              key={tab.id}
+              role="tabpanel"
+            >
+              {contents[tab.id] ??
+                (tab.id === 'files' ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+                    <Codicon name="folder" size="1.25rem" />
+                    <p className="text-[0.78rem] font-medium text-foreground">{labels.noFolderTitle}</p>
+                    <p className="text-[0.68rem] text-(--ui-text-tertiary)">{labels.noFolderBody}</p>
+                  </div>
+                ) : null)}
             </div>
-          )}
-        </div>
-        <div
-          aria-label={labels.tabs.agenda}
-          className="flex min-h-0 flex-1 flex-col"
-          data-testid="right-rail-panel-agenda"
-          hidden={activeTab !== 'agenda'}
-          role="tabpanel"
-        >
-          {agenda}
-        </div>
+          ))
+        )}
       </div>
     </div>
   )

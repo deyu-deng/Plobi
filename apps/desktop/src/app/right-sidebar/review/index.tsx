@@ -49,7 +49,7 @@ import { ReviewShipBar } from './ship-bar'
 // the rest of the app's icon-action rows.
 const ACTION_BTN = 'size-5'
 
-export function ReviewPane() {
+export function ReviewPane({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n()
   const c = t.statusStack.coding
   const panesFlipped = useStore($panesFlipped)
@@ -75,10 +75,15 @@ export function ReviewPane() {
     <aside
       aria-label={c.review}
       className={cn(
-        'before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)',
-        panesFlipped
-          ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-          : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+        'before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden text-(--ui-text-tertiary)',
+        embedded
+          ? 'bg-transparent'
+          : cn(
+              'border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)',
+              panesFlipped
+                ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+                : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+            )
       )}
     >
       {(loading || isRepo) && (

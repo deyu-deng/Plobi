@@ -3043,8 +3043,13 @@ export const ja = defineLocale({
     aria: '右サイドバー',
     tabs: {
       agenda: '予定',
-      files: 'ワークスペースのファイル'
+      files: 'ワークスペースのファイル',
+      review: 'レビュー'
     },
+    add: 'タブを開く',
+    close: label => `${label}を閉じる`,
+    emptyTitle: '開いているタブはありません',
+    emptyBody: '右上の + からワークスペースのファイル、予定、レビューを開けます。',
     noFolderTitle: 'このエージェントにはフォルダが未設定です',
     noFolderBody: 'フォルダを設定すると、ここにファイルツリーが表示されます。'
   }

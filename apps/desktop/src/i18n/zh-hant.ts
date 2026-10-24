@@ -2943,8 +2943,13 @@ export const zhHant = defineLocale({
     aria: '右側欄',
     tabs: {
       agenda: '行程',
-      files: '工作區檔案'
+      files: '工作區檔案',
+      review: '審閱'
     },
+    add: '開啟頁籤',
+    close: label => `關閉${label}`,
+    emptyTitle: '沒有開啟的頁籤',
+    emptyBody: '點右上角的 + 開啟工作區檔案、行程或審閱。',
     noFolderTitle: '此 Agent 未綁定目錄',
     noFolderBody: '給它綁定一個目錄後，這裡會顯示它的檔案樹。'
   }
