@@ -52,6 +52,61 @@ export function askedByBadge(
   return { kind: 'other', raw }
 }
 
+export type ExternalSpeakerKind = 'agent' | 'cron'
+
+export type ExternalSpeaker = { kind: ExternalSpeakerKind; name: string }
+
+/**
+ * 这一条是不是「外面来的」——既不是主人手打，也不是这屏 Agent 自己的回答（裁定 201）。
+ *
+ * `kind` 优先（新数据都有）；老数据 `kind` 为空时按 `asked_by` 前缀推，
+ * **不看正文**——正文前缀迟早会被摘掉。
+ */
+export function externalSenderOf(kind: unknown, askedBy: unknown): ExternalSpeaker | null {
+  const k = typeof kind === 'string' ? kind.trim().toLowerCase() : ''
+  const raw = typeof askedBy === 'string' ? askedBy.trim() : ''
+
+  if (k === 'cron' || raw.startsWith('cron:')) {
+    return { kind: 'cron', name: '' }
+  }
+  if (k === 'agent' || raw.startsWith('say:')) {
+    return { kind: 'agent', name: raw.startsWith('say:') ? raw.slice(4).trim() : '' }
+  }
+
+  return null
+}
+
+/**
+ * `[来自 X · 时间]` / `[Cron 结果 · 作业 · 时间]` → `{ speaker, body }`。
+ *
+ * 那段前缀对**模型**仍然有用（Agent 靠它认出谁在跟它说话），所以存储保留；
+ * 屏上显示时去掉——身份改由 `kind` + `asked_by` 表达（裁定 196）。
+ */
+export function splitSpeakerPrefix(text: string): { speaker: string; body: string } {
+  const s = text ?? ''
+
+  if (!s.startsWith('[')) {
+    return { speaker: '', body: s }
+  }
+
+  const close = s.indexOf(']')
+
+  if (close <= 0 || close > 160) {
+    return { speaker: '', body: s }
+  }
+
+  const head = s.slice(1, close)
+
+  if (head.startsWith('来自 ')) {
+    return { speaker: head.slice(3).split(' · ')[0]?.trim() ?? '', body: s.slice(close + 1).replace(/^\r?\n/, '') }
+  }
+  if (head.startsWith('Cron 结果')) {
+    return { speaker: head.split(' · ')[1]?.trim() ?? '', body: s.slice(close + 1).replace(/^\r?\n/, '') }
+  }
+
+  return { speaker: '', body: s }
+}
+
 export type GatewayEventPayload = {
   text?: string
   rendered?: string
@@ -895,14 +950,17 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
       flushPendingTools(index)
     }
 
+    // `kind` 是 10-24 才加的列（裁定 196/201）；老后端/老行没有它，读的时候按可选。
+    const messageKind = (message as { kind?: unknown }).kind
+
     result.push({
       id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
       role: message.role,
       parts,
       timestamp: message.timestamp,
       // 只有 user 行带发起方；`null` 也要带（那是"这条没记"，不是"没有这一格"）。
-      ...(message.role === 'user' && message.asked_by !== undefined
-        ? { metadata: { custom: { askedBy: message.asked_by } } }
+      ...(message.role === 'user' && (message.asked_by !== undefined || messageKind !== undefined)
+        ? { metadata: { custom: { askedBy: message.asked_by, kind: messageKind } } }
         : {})
     })
 
