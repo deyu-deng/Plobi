@@ -229,6 +229,23 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
             queryKey: explicitSid && sessionId ? ['model-options', sessionId] : ['model-options']
           })
         }
+      } else if (event.type === 'user.notice') {
+        // 裁定 201：别的 Agent / 定时任务「对用户说了一句话」。它落进用户那一屏
+        // （后端写库），这里负责**在别的屏上也提醒他**——点通知直接跳到那一屏。
+        const notice = (event.payload ?? {}) as Record<string, unknown>
+        const noticeTitle = typeof notice.title === 'string' ? notice.title : ''
+        const noticeBody = typeof notice.body === 'string' ? notice.body : ''
+        const noticeTarget =
+          typeof notice.session_id === 'string' && notice.session_id ? notice.session_id : sessionId
+
+        if (noticeBody) {
+          dispatchNativeNotification({
+            body: noticeBody,
+            kind: 'input',
+            sessionId: noticeTarget,
+            title: noticeTitle || translateNow('notifications.native.inputTitle')
+          })
+        }
       } else if (event.type === 'message.start') {
         if (!sessionId) {
           return
