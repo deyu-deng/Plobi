@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as PlobiApi from '@/plobi'
 
-import type { OffloadRoundWithReply } from './agent-offloads'
 import { AgentOffloadPanel } from './agent-offload-panel'
+import type { OffloadRoundWithReply } from './agent-offloads'
 
 const getAgentOffloads = vi.fn()
 const offloadResume = vi.fn()
@@ -101,6 +101,17 @@ describe('AgentOffloadPanel', () => {
     expect(text).toContain('cost unknown')
     expect(text).toContain('usage_reported_without_price')
     expect(text).not.toContain('$0')
+  })
+
+  it('按积分记账的一行显示积分，不显示"花费未知"也不显示 $0', async () => {
+    await renderPanel([round({ cost_status: 'credits_only', usage: { total_cost_usd: 0, total_credits: 3.775 } })])
+    fireEvent.click(screen.getByRole('button', { name: /codebuddy/ }))
+
+    const row = await screen.findByRole('button', { name: /把今天的读数写成页/ })
+
+    expect(row.textContent).toContain('3.78 credits')
+    expect(row.textContent).not.toContain('cost unknown')
+    expect(row.textContent).not.toContain('$0')
   })
 
   it('它写回来的回执原文就在行里，不用再跳去外部软件去猜', async () => {

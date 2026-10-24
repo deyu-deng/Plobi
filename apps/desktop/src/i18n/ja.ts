@@ -1664,6 +1664,7 @@ export const ja = defineLocale({
     offloadsLoading: '外部委託の記録を読み込み中…',
     offloadsEmpty: 'このエージェントはまだ仕事を外部委託していません。',
     offloadsReply: '返答：',
+    offloadsCredits: 'クレジット',
     offloadsBackToList: 'エージェント一覧',
     offloadsLoadFailed: '外部委託の記録を読めません：バックエンドが応答しない（「委託なし」ではない）。',
     offloadsNoArtifact: 'このラウンドに開ける成果物がありません（おそらく未生成）。',

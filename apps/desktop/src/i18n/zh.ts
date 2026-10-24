@@ -1909,6 +1909,7 @@ export const zh: Translations = {
     offloadsLoading: '正在读外包流水…',
     offloadsEmpty: '这一格还没把活外包出去过。',
     offloadsReply: '它回：',
+    offloadsCredits: '积分',
     offloadsBackToList: 'Agent 列表',
     offloadsLoadFailed: '外包流水读不出来：后端没答这一格（不是"没有外包"）。',
     offloadsNoArtifact: '这一轮没有可打开的产物（多半是没干成）。',

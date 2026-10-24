@@ -1749,6 +1749,7 @@ export const en: Translations = {
     offloadsLoading: 'Reading the offload ledger…',
     offloadsEmpty: 'This agent has not offloaded any work yet.',
     offloadsReply: 'It said: ',
+    offloadsCredits: 'credits',
     offloadsBackToList: 'Agent list',
     offloadsLoadFailed: 'Cannot read the offload ledger: the backend did not answer (not "nothing offloaded").',
     offloadsNoArtifact: 'Nothing on disk to open for this round (it most likely produced nothing).',

@@ -669,7 +669,12 @@ def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any], str, str]:
     parts: list[str] = []
     for record in records:
         if isinstance(record.get("usage"), dict):
-            usage = record["usage"]
+            usage = dict(record["usage"])
+        # Qoder 把金额与积分放在**记录顶层**，不在 `usage` 里（10-23 实测）。
+        # 不捞上来的话，一趟真花了 3.78 积分的活会显示成"花费未知"。
+        for key in ("total_cost_usd", "total_credits"):
+            if isinstance(record.get(key), (int, float)):
+                usage[key] = record[key]
         for key in ("result", "text", "response"):
             value = record.get(key)
             if isinstance(value, str) and value.strip():
@@ -682,8 +687,18 @@ def _parse_envelope(stdout: str) -> tuple[str, dict[str, Any], str, str]:
 
 
 def _cost(usage: dict[str, Any]) -> tuple[Optional[float], str]:
-    """Money, or an honest "cannot price". Never 0 for unknown (R-073)."""
+    """Money, or an honest "cannot price". Never 0 for unknown (R-073).
+
+    Qoder reports ``total_cost_usd: 0`` **and** ``total_credits: 3.78`` — billing is in
+    credits there. Reading that 0 as the price would print "$0" for a run that did
+    cost something, so credits win when the dollar figure is zero.
+    """
     total = usage.get("total_cost_usd")
+    credits = usage.get("total_credits")
+    if isinstance(total, (int, float)) and total > 0:
+        return float(total), "reported_by_agent"
+    if isinstance(credits, (int, float)) and credits > 0:
+        return None, "credits_only"
     if isinstance(total, (int, float)):
         return float(total), "reported_by_agent"
     if not usage:

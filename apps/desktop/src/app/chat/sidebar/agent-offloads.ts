@@ -117,6 +117,7 @@ export function jumpTargetFor(round: OffloadRound): JumpPlan {
 export type RoundFacts = {
   costStatus: string
   costUsd: null | number
+  credits: null | number
   durationSeconds: null | number
   permissionFlag: string
 }
@@ -125,15 +126,18 @@ export type RoundFacts = {
  * 一行上的四个读数（给了谁在组头上，这一段是什么与目录由渲染层取 `brief`/`cwd`）。
  *
  * 金额算不出必须是 `null` 而不是 0（R-073）；真报价是 0 也照样是 0。
+ * 有的厂商按积分记账（Qoder：美元报 0、积分报 3.78），两种都收，显示时美元优先。
  */
 export function roundFacts(round: OffloadRound): RoundFacts {
   const usage = (round.usage ?? {}) as Record<string, unknown>
-  const rawCost = usage.cost_usd
+  const rawCost = usage.cost_usd ?? usage.total_cost_usd
+  const rawCredits = usage.total_credits ?? usage.credits
   const seconds = Number(round.duration_seconds)
 
   return {
     costStatus: (round.cost_status ?? '').trim(),
     costUsd: typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null,
+    credits: typeof rawCredits === 'number' && Number.isFinite(rawCredits) ? rawCredits : null,
     durationSeconds: Number.isFinite(seconds) && seconds > 0 ? seconds : null,
     permissionFlag: (round.permission_flag ?? '').trim(),
   }

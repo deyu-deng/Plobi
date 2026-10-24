@@ -155,6 +155,19 @@ describe('roundFacts —— 一行上的读数（判据 2：谁·目录·权限�
     expect(roundFacts(round({ usage: { cost_usd: 0 } })).costUsd).toBe(0)
   })
 
+  it('按积分记账的那家：美元 0 不算价，积分原样带出来', () => {
+    const facts = roundFacts(round({ usage: { total_cost_usd: 0, total_credits: 3.775 } }))
+
+    expect(facts.costUsd).toBe(0)
+    expect(facts.credits).toBe(3.775)
+  })
+
+  it('两种记账键都认（台账里是 total_*，旧样本是短名）', () => {
+    expect(roundFacts(round({ usage: { total_credits: 2 } })).credits).toBe(2)
+    expect(roundFacts(round({ usage: { credits: 2 } })).credits).toBe(2)
+    expect(roundFacts(round()).credits).toBeNull()
+  })
+
   it('耗时缺省或 0 ⇒ null（渲染层就不会写出 "0s"）', () => {
     expect(roundFacts(round({ duration_seconds: 0 })).durationSeconds).toBeNull()
     expect(roundFacts(round({ duration_seconds: undefined })).durationSeconds).toBeNull()

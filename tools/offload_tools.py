@@ -283,7 +283,8 @@ def _check_drivable() -> bool:
     """只判一个当场事实：这台有没有可驱动的外部 Agent 命令。**不当默认关**（见模块头 2）。"""
     from agent import external_offload as channel
 
-    return any(channel.resolve_command(name) for name in (channel.AGENT_CODEBUDDY, channel.AGENT_AGY))
+    # 遍历声明的全家，而不是写死两家：Qoder 已经是一等公民（10-23）。
+    return any(channel.resolve_command(name) for name in channel.EXTERNAL_AGENTS)
 
 
 registry.register(

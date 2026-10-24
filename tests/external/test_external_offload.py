@@ -137,6 +137,22 @@ def test_no_usage_reported_is_its_own_status(workdir, monkeypatch):
     assert result.text == "plain text"
 
 
+def test_credits_are_carried_out_of_the_top_level_envelope(workdir, monkeypatch):
+    """Qoder 把 `total_cost_usd`/`total_credits` 放在**记录顶层**：不捞上来，一趟真花了
+    3.78 积分的活就会显示成"花费未知"（10-23 实测）。美元报 0 也不许当成价。"""
+    envelope = {
+        "type": "result", "result": "done", "session_id": "12834d53-7eee-4489-9063-914b4ccf05bc",
+        "total_cost_usd": 0, "total_credits": 3.775, "usage": {"input_tokens": 0},
+    }
+    monkeypatch.setattr(offload, "resolve_command", lambda agent="qoder": "/usr/bin/qodercli")
+    monkeypatch.setattr(offload.subprocess, "run", lambda *a, **k: _Completed(stdout=json.dumps(envelope)))
+
+    result = offload.run_task("say hi", cwd=workdir, agent="qoder")
+
+    assert result.usage["total_credits"] == 3.775
+    assert result.cost is None and result.cost_status == "credits_only"
+
+
 # ── 裁定 99 二.3: 外包不许落在四个仓里 ─────────────────────────────────────
 
 def test_repo_tree_is_refused_as_cwd(tmp_path):

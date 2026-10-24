@@ -115,12 +115,18 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
   const clickable = plan.kind !== 'none'
   const [error, setError] = useState('')
 
+  const money = facts.costUsd !== null && facts.costUsd > 0
+    ? `$${facts.costUsd}`
+    : facts.credits !== null && facts.credits > 0
+      ? `${Math.round(facts.credits * 100) / 100} ${c.offloadsCredits}`
+      : facts.costUsd !== null
+        ? `$${facts.costUsd}`
+        : `${c.offloadsCostUnknown}${facts.costStatus ? ` (${facts.costStatus})` : ''}`
+
   const parts = [
     facts.permissionFlag,
     facts.durationSeconds === null ? '' : `${facts.durationSeconds.toFixed(0)}s`,
-    facts.costUsd === null
-      ? `${c.offloadsCostUnknown}${facts.costStatus ? ` (${facts.costStatus})` : ''}`
-      : `$${facts.costUsd}`,
+    money,
   ].filter(Boolean)
 
   const reason = plan.reason ? c.offloadsNoArtifact : ''
