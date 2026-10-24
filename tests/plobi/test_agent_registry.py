@@ -220,27 +220,22 @@ def test_upsert_removes_and_round_trips(home):
 
 @pytest.fixture()
 def spawn_env(home, monkeypatch):
-    """把 spawn 的 create_profile 缩到最小：只 mkdir，不碰真实 profile 逻辑。
+    """（WP-REGISTRY-NO-HOME 之后这里基本空了）
 
-    spawn 在测试里必须验证 profile 目录 + 那张共享的路由表；**家里不该出现
-    ``config.yaml``**（以前这一句替它造一份，正是本刀关掉的那扇门）。
-    create_profile 会走 seed skills / clone 等重逻辑，直接替换成 mkdir 即可。
+    B 刀之前这个 fixture 把 ``create_profile`` 换成"只 mkdir"：spawn 会建家，
+    而真 create_profile 要走 seed skills / clone 那套重逻辑。**spawn 现在不再建家**
+    （:meth:`_ensure_shared_layer` 只接共享层那一份），那个桩一个调用方都不剩，
+    删掉——免得下一个人以为 spawn 还在建家。
+
+    仍保留 ``profile_exists`` 的本地口径：个别用例要靠 ``_seed_profile_dir``
+    预建一个家来模拟"已有家"，读侧判据问的就是它。
     """
     import plobi_cli.profiles as profiles_mod
-
-    def fake_create_profile(name, **kwargs):
-        profile_dir = Path(home) / ".plobi" / "profiles" / name
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        (profile_dir / "plobi").mkdir(exist_ok=True)
-        return profile_dir
 
     def fake_profile_exists(name):
         return (Path(home) / ".plobi" / "profiles" / name).is_dir()
 
-    monkeypatch.setattr(profiles_mod, "create_profile", fake_create_profile)
     monkeypatch.setattr(profiles_mod, "profile_exists", fake_profile_exists)
-    monkeypatch.setattr("plobi_cli.profiles.create_profile", fake_create_profile)
-    monkeypatch.setattr("plobi_cli.profiles.profile_exists", fake_profile_exists)
     return home
 
 
@@ -252,6 +247,9 @@ def test_spawn_creates_profile_and_models(spawn_env):
     而顶层反倒没有那一份（``$PLOBI_HOME/plobi/models.json`` 不存在），于是「配一次模型大家能用」
     在机制上不可能成立。改成断言共享那一份存在且生效 + 分身家没有复印件。
     配置文件同理：这一行声明的模型覆盖**在读时叠**，家里不落 ``config.yaml``。
+
+    WP-REGISTRY-NO-HOME（B 刀）之后判据更强：**家不再被创建**，所以"分身家没有
+    复印件"从"检查一个空目录里没有某文件"变成"那个目录压根不存在"。
     """
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="secretary", role="l1_secretary", provider="moonshot", model="kimi-k3"))
@@ -262,8 +260,15 @@ def test_spawn_creates_profile_and_models(spawn_env):
     result = reg.spawn("agenda")
 
     assert result["routing_ok"] is True
-    profile_dir = Path(result["profile_dir"])
-    assert profile_dir.is_dir()
+    # WP-REGISTRY-NO-HOME（B 刀）：spawn 不再建家，而这一行**要按家读配置**
+    # （`_effective_config(spawn_env, profile)` 把 PLOBI_HOME 指到
+    # ``profiles/<profile>``，`ensure_plobi_home()` 对不存在的 named home 是
+    # 拒绝而非播种）。所以家由测试自己预建——模拟「显式 -p 过的机器」。
+    # 注意用 ``result["profile"]``（那一行没显式传 profile，``profile_name``
+    # 回退成名册 name「agenda」），别硬编码「l2-agenda」。
+    # 「名册加一行不建家」那条不变量由 test_registry_no_home.py 钉，这里改回钉
+    # **不往家里写**（本用例真正的主题：复印件）。
+    profile_dir = _seed_profile_dir(spawn_env, result["profile"])
 
     from plobi.routing import ModelRouter
     from plobi.routing.models import shared_config_path
@@ -279,7 +284,7 @@ def test_spawn_creates_profile_and_models(spawn_env):
     assert (agenda_route.provider, agenda_route.model) == ("deepseek", "deepseek-chat")
     # ADR-0011：那张唯一的表断言绿（L1≠L2）
     assert ModelRouter.load(shared).violations() == []
-    # 判据①：这个家不许带路由表复印件
+    # 判据①：这个（预建的）家不许带路由表复印件
     assert not (profile_dir / "plobi" / "models.json").exists(), "spawn 又把整张表复印进了分身家"
     # 判据①的另一半：也不许带配置文件复印件
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
@@ -356,7 +361,9 @@ def test_cli_register_then_spawn(spawn_env, capsys, monkeypatch):
     run_plobi(_Args(plobi_action="agents", agents_action="spawn", name="agenda"))
     out = capsys.readouterr().out
     assert "Spawned agenda" in out
-    assert "plobi -p agenda chat" in out
+    # WP-REGISTRY-NO-HOME：command 不再带 `-p`（那是已判废的形状，裁定 42）。
+    # 只钉 Start 那一行——整段 out 里别处也可能出现 `-p`（usage 文本等）。
+    assert "Start:    plobi chat" in out
     # 落盘后注册表可见
     reg = AgentRegistry.load()
     assert set(reg.names()) == {"agenda", "secretary"}
@@ -604,7 +611,11 @@ def test_spawn_writes_model_section_when_provider_resolves(spawn_env, home):
 
     result = reg.spawn("proj")
 
-    profile_dir = Path(result["profile_dir"])
+    # WP-REGISTRY-NO-HOME：返回值里不再有 profile_dir（家不再被创建）。
+    assert "profile_dir" not in result
+    assert "-p" not in result["command"]
+    # 这一行要按家读配置 ⇒ 家由测试预建；spawn 不许往里写任何东西。
+    profile_dir = _seed_profile_dir(spawn_env, result["profile"])
     assert not (profile_dir / "config.yaml").exists(), "spawn 又往分身家落了一份 config.yaml"
     model = _effective_config(home, result["profile"])["model"]
     assert model["provider"] == provider
@@ -650,7 +661,10 @@ def test_spawn_skips_unresolvable_provider_without_failing(spawn_env, home, capl
         profile_cfg = _effective_config(home, "l2-proj")
 
     assert result["routing_ok"] is True
-    assert Path(result["profile_dir"]) == profile_dir
+    # WP-REGISTRY-NO-HOME：以前这里断言「spawn 复用了那个已存在的家」
+    # （`result["profile_dir"] == profile_dir`）。家不再被创建/复用，改成钉
+    # 「家不受影响、返回值不泄露家路径」。
+    assert "profile_dir" not in result
     assert not (profile_dir / "config.yaml").exists()
     assert profile_cfg["model"] == _CONFIGURED_DEFAULT, "不可解析的 provider 进了生效模型"
     # 原「跳过 model 节不许动 config 的其他键」的新形状：那一行被闸门拒掉之后，这个家

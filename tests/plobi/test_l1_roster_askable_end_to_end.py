@@ -192,11 +192,17 @@ def test_created_agent_is_registered_and_materialized_without_a_second_step(
     assert entry is not None
     # 章是创建那一步盖的，不是事后从描述里反推的。
     assert entry.registered is True
-    # 配套的东西也真的落了盘：profile 家 + 那个分身自己的身份段。
+    # 配套的东西也真的落了盘——**B 刀之后不再是一个家，而是共享层那几份**：
+    #   * 身份：`souls/<名册 name>.md`（A 刀）
+    #   * 模型路由：共享层那一份 models.json
+    #   * 家：不创建（`profiles/stithy` 不该出现）
+    from plobi.agents.registry import shared_soul_path_for
+
     profile_dir = home / ".plobi" / "profiles" / "stithy"
-    assert profile_dir.is_dir()
-    assert (profile_dir / "SOUL.md").is_file()
-    assert ":::PLOBI_L2_IDENTITY:::" in (profile_dir / "SOUL.md").read_text(encoding="utf-8")
+    assert not profile_dir.exists(), "创建 Agent 又落了一个分身家"
+    soul = shared_soul_path_for("stithy")
+    assert soul.is_file(), "身份没落共享层"
+    assert ":::PLOBI_L2_IDENTITY:::" in soul.read_text(encoding="utf-8")
 
     from plobi.agents.registry import run_project_status
 
