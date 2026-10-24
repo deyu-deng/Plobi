@@ -33,6 +33,10 @@ def isolated_home(tmp_path, monkeypatch):
     那种），测试就跑成了网络测试；放了，这一档测的就只是"盘上有就给、没有就回空串并排那一趟"。
     """
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    # 钉钉那条有探针，而探针默认去看 `%APPDATA%\DingTalk`（测试运行器只换 HOME，不换 APPDATA）
+    # ⇒ 不钉这一格，开一次设置页的测试就会去翻**用户真的钉钉本机库**。
+    monkeypatch.setenv("PLOBI_DINGTALK_DATA_DIR", str(tmp_path / "DingTalk"))
+    monkeypatch.setenv("PLOBI_DINGTALK_LOCAL_DIR", str(tmp_path / "ding-local"))
     icons_dir = tmp_path / "icons"
     icons_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("PLOBI_SOURCE_ICON_DIR", str(icons_dir))
@@ -304,6 +308,34 @@ class TestTheSwitchCutsTheProcess:
                               finder=lambda _port: [], killer=lambda _pid: False,
                               spawn=calls.append)
         assert calls == [] and again["action"] == "already_running"
+
+    def test_a_process_we_cannot_wait_on_is_reported_not_raised(self, monkeypatch) -> None:
+        """`terminate()` 收令了，但**等它退出**还要再开一次进程句柄——这台真撞上过 `AccessDenied`。
+
+        旧形状里那一句没接住，于是**用户点一下开关拿到一个 500**：比"收不掉"更坏。
+        现在它是"这句我确认不了"（回 False），开关那一条读数继续走它自己的 `listening` 判据。
+        """
+        import sys
+        import types
+
+        class Denied(Exception):
+            pass
+
+        class Waiter:
+            def terminate(self):
+                return None
+
+            def wait(self, timeout=None):
+                raise Denied("OpenProcess 被拒")
+
+        fake = types.ModuleType("psutil")
+        fake.AccessDenied = Denied
+        fake.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
+        fake.TimeoutExpired = type("TimeoutExpired", (Exception,), {})
+        fake.Process = lambda pid: Waiter()
+        monkeypatch.setitem(sys.modules, "psutil", fake)
+
+        assert sidecar._terminate(4242) is False
 
     def test_port_listening_is_a_real_socket_read(self) -> None:
         """这一格不许是"我以为它在"：真开一个 listen 的套接字读一次，关掉再读一次。"""

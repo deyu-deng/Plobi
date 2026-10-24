@@ -86,10 +86,17 @@ def _terminate(pid: int) -> bool:
     except psutil.TimeoutExpired:
         try:
             process.kill()
-        except psutil.NoSuchProcess:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     except psutil.NoSuchProcess:
         pass
+    except psutil.AccessDenied as exc:
+        # `terminate()` 收下条令了，但**等它退出**这一步也要开进程句柄——这台就撞上过
+        # 一个属主不同/提权过的进程：`OpenProcess` 给 `AccessDenied`。那一颗开关此刻
+        # 的真实状态是"命令发了、我没资格确认它退没退"，不是"收掉了"，也不是"整个动作失败"。
+        # 从前这一支没接住，于是**用户点开关拿到一个 500**——那是比"收不掉"更坏的形状。
+        logger.warning("sidecar: 等不到 pid %s 退出（权限不够）：%s", pid, exc)
+        return False
     return True
 
 

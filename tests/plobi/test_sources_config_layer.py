@@ -21,8 +21,14 @@ from plobi.collectors.sources_api import router
 
 @pytest.fixture(autouse=True)
 def shared_home(tmp_path, monkeypatch):
-    """把共享根钉到临时家——这一份被二十四个分身共享，测试不许碰真的那份。"""
+    """把共享根钉到临时家——这一份被二十四个分身共享，测试不许碰真的那份。
+
+    钉钉那一族也一起钉住：它的读手默认去看 `%APPDATA%\DingTalk`（测试运行器只换了 HOME，
+    APPDATA 还是真的那个），不钉就是一跑 `/sources` 或 `/try` 就去翻**用户真的钉钉本机库**。
+    """
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    monkeypatch.setenv("PLOBI_DINGTALK_DATA_DIR", str(tmp_path / "DingTalk"))
+    monkeypatch.setenv("PLOBI_DINGTALK_LOCAL_DIR", str(tmp_path / "ding-local"))
     monkeypatch.setattr(sources_config, "sources_path", lambda: tmp_path / "plobi" / "sources.yaml")
     return tmp_path
 
@@ -197,7 +203,9 @@ class TestSetupIsValidatedAgainstTheDeclaration:
         # 只剩每源都有的频率那一格（裁定 191 二）。它不是"又填了一格配置"，是"这一条终于可以被
         # 用户安排成每天几点采"。第三方包同理：不引 `CADENCE_FIELD` 就只有它自己那几格。
         assert sources_config.declared_setup_keys("wechat") == ("cadence",)
-        assert sources_config.declared_setup_keys("dingtalk") == ("cadence",)
+        # 钉钉 10-24 起**真的**要用户点东西了：读的是他本机那份 IM 库，一条会话都没点名
+        # 就一条都不采 ⇒ 那一格是必填（留空不是"全采"，是"零条"）。
+        assert sources_config.declared_setup_keys("dingtalk") == ("conversations", "cadence")
 
     def test_a_key_the_source_never_declared_is_refused(self):
         with pytest.raises(sources_config.SourceConfigError, match="没声明"):
@@ -336,12 +344,23 @@ class TestTheVerbs:
         assert row["detail"] == direct["detail"]
 
     def test_try_on_a_source_with_no_builder_says_that_rather_than_inventing_a_reason(self, client):
-        row = client.post("/sources/dingtalk/try").json()["data"]
+        """这一档以前拿钉钉当"没有执行方"的例子——10-24 起那个例子**在这台机器上没了**：
+        钉钉有了执行方（读它自己那份本机库）。注册表里每条真信源都有 builder 是个**好读数**，
+        但那颗分支还得钉得住，所以这里登记一条假信源来验它，而不是回头找一个真的缺陷当夹具。
+        """
+        spec = registry.SourceSpec("nobuilder", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
+                                   category="system", collecting=True)
+        registry.register(spec, replace=True)
 
-        assert row["state"] == "no_builder"
-        # 那句话要说"没东西构造得出来"，不许退化成"没数据"——那正是 `no_builder`
-        # 当年被藏起来的原因（真原因问不到下一层）。
-        assert "构造" in row["detail"]
+        try:
+            row = client.post("/sources/nobuilder/try").json()["data"]
+
+            assert row["state"] == "no_builder"
+            # 那句话要说"没东西构造得出来"，不许退化成"没数据"——那正是 `no_builder`
+            # 当年被藏起来的原因（真原因问不到下一层）。
+            assert "构造" in row["detail"]
+        finally:
+            registry.unregister("nobuilder")
 
     def test_setup_refuses_a_secret_key_with_400(self, client):
         response = client.post("/sources/zju/setup", json={"params": {"api_token": "sk-x"}})
