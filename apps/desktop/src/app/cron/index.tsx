@@ -62,7 +62,7 @@ import { RECIPIENT_NONE, recipientInitialValue, recipientOptions, recipientToPay
 
 const DEFAULT_DELIVER = 'local'
 
-const DELIVERY_VALUES: readonly string[] = ['local', 'telegram', 'discord', 'slack', 'email']
+const DELIVERY_VALUES: readonly string[] = ['local', 'user', 'telegram', 'discord', 'slack', 'email']
 
 const SCHEDULE_OPTIONS: ReadonlyArray<ScheduleOption> = [
   { expr: '0 9 * * *', value: 'daily' },
