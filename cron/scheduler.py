@@ -1567,6 +1567,40 @@ def _deliver_to_recipient_window(job: dict, content: str) -> tuple[Optional[dict
     )
 
 
+def _deliver_to_user_inbox(job: dict, content: str) -> tuple[Optional[dict], Optional[str]]:
+    """``deliver=user``：这一轮说的是**对用户说的话**，落进他 L1 那一屏（裁定 201）。
+
+    与 `_deliver_to_recipient_window` 的区别只有落点：那个给「干活的人看」，
+    这个给「主人看」。拒绝、提醒都归 ``plobi_user_inbox`` 一处管。
+    """
+    from plobi_user_inbox import append_user_message, notify_user
+
+    job_id = str(job.get("id") or "")
+    label = str(job.get("name") or job_id or "cron")
+    stamp = _plobi_now().strftime("%Y-%m-%d %H:%M:%S")
+    session_id, message_id, failure = append_user_message(
+        content,
+        asked_by=f"cron:{job_id}" if job_id else "cron",
+        label=f"Cron 结果 · {label}",
+        when=_plobi_now(),
+    )
+    if failure:
+        logger.warning("Job '%s': 结果发不进用户那一屏：%s", job_id, failure)
+        return None, failure
+    notified = notify_user(content[:400], title=f"{label}", session_id=session_id or "")
+    return (
+        {
+            "via": "user_inbox",
+            "to": "用户",
+            "at": stamp,
+            "session_id": session_id,
+            "message_id": str(message_id),
+            "notified": notified,
+        },
+        None,
+    )
+
+
 def _deliver_result(
     job: dict, content: str, adapters=None, loop=None, delivery_out: Optional[dict] = None
 ) -> Optional[str]:
@@ -1595,6 +1629,13 @@ def _deliver_result(
             if record is not None and delivery_out is not None:
                 delivery_out["record"] = record
             return window_error
+        if deliver_value == "user":
+            # 裁定 201：回访 / 提醒这类「对用户说的话」落进他自己那一屏，
+            # 不是收件人自己的窗口（否则他永远看不到、也没人回答）。
+            record, user_error = _deliver_to_user_inbox(job, content)
+            if record is not None and delivery_out is not None:
+                delivery_out["record"] = record
+            return user_error
         # deliver=origin with no resolvable origin and no configured home
         # channels: treat as local rather than reporting an error.  CLI-created
         # jobs never capture a {platform, chat_id} origin, so failing here would
@@ -2878,6 +2919,15 @@ def run_job(
     # （``plobi_cli/web_server.py`` 的 ``/api/cron/jobs/{id}/runs``）。把收件人塞进会话号
     # 会让每个作业的履历在面上直接清空。
     _cron_session_id = f"cron_{job_id}_{_plobi_now().strftime('%Y%m%d_%H%M%S')}"
+    # 这一轮的会话行先带上主人（裁定 201 的前置）：`sessions.agent_id` 空着的时候，
+    # 工具里 `current_agent_name()` 只能回落成中性名，于是会出现「日程秘书把一句
+    # 该问用户的话发给了自己」那种自指（2026-10-23 21:30 实测）。行已存在（恢复那一趟）
+    # 就保留原样，不覆盖。
+    if _session_db is not None and recipient is not None:
+        try:
+            _session_db.create_session(_cron_session_id, "cron", agent_id=recipient.name)
+        except Exception:
+            logger.debug("Job '%s': cron session row already exists", job_id, exc_info=True)
 
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
     logger.info("Prompt: %s", prompt[:100])

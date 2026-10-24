@@ -286,6 +286,42 @@ def _deliver_or_fail(to: str, parts: Any) -> tuple[Optional[object], Optional[st
     return entry, text, None
 
 
+_USER_TARGETS = {"用户", "主人", "我", "user"}
+
+
+def _is_user_target(name: str) -> bool:
+    """`to=用户` 是一个**有名字的收件人**，不是名册里的行（裁定 201）。"""
+    return (name or "").strip().casefold() in {t.casefold() for t in _USER_TARGETS}
+
+
+def _deliver_to_user(text: str, *, sender: str) -> str:
+    """把话落进主人那一屏，并尽量提醒他一声。"""
+    from plobi_user_inbox import append_user_message, notify_user
+
+    session_id, message_id, failure = append_user_message(
+        text, asked_by=f"say:{sender}", label=f"来自 {sender}"
+    )
+    if failure:
+        return _result(False, error=failure)
+    notified = notify_user(text[:400], title=f"{sender} 找你", session_id=session_id or "")
+    trace_id = uuid.uuid4().hex[:12]
+    _trace({
+        "kind": "say",
+        "trace_id": trace_id,
+        "from": sender,
+        "to": "用户",
+        "ts": datetime.now().replace(microsecond=0).isoformat(),
+        "parts": text,
+        "session_id": session_id,
+        "message_id": message_id,
+        "notified": notified,
+    })
+    return _result(
+        True, mode="say", trace_id=trace_id, to="用户",
+        session_id=session_id, message_id=message_id, deliverer=sender, notified=notified,
+    )
+
+
 def handle_say(args: dict, **kwargs) -> str:
     """投递即返回；投递成功之后**替收件人起一轮**，不等它跑完（裁定 200）。
 
@@ -298,11 +334,21 @@ def handle_say(args: dict, **kwargs) -> str:
     叫不醒不算 `say` 失败：话已经送到了，返回值里照实写 `woke=false` + 原因。
     """
     args = args if isinstance(args, dict) else {}
+    sender = current_agent_name(kwargs.get("session_id") or "")
+    if _is_user_target(args.get("to") or ""):
+        text, parts_error = _parts_to_text(args.get("parts"))
+        if parts_error:
+            return _result(False, error=parts_error)
+        return _deliver_to_user(text, sender=sender)
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
             return failure
-        sender = current_agent_name(kwargs.get("session_id") or "")
+        if entry.name.strip().casefold() == sender.strip().casefold():
+            return _result(
+                False,
+                error=f"「{entry.name}」就是你自己——别发给自己，这条永远不会有回音。要交给用户就用 `to=用户`。",
+            )
         session_id, message_id = _deliver(entry, text, sender=sender)
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"say 失败：{exc}")
@@ -345,10 +391,20 @@ def handle_ask(args: dict, **kwargs) -> str:
     """
     args = args if isinstance(args, dict) else {}
     sender = current_agent_name(kwargs.get("session_id") or "")
+    if _is_user_target(args.get("to") or ""):
+        return _result(
+            False,
+            error="`ask` 只问 Agent——用户回不回不由你等。要交给他就用 `say(to=用户)`。",
+        )
     try:
         entry, text, failure = _deliver_or_fail(args.get("to"), args.get("parts"))
         if failure is not None:
             return failure
+        if entry.name.strip().casefold() == sender.strip().casefold():
+            return _result(
+                False,
+                error="问自己不会得到第二个回答——把问题交给用户就用 `say(to=用户)`。",
+            )
         db = _session_db()
         session_id = db.latest_conversational_session_for_agent(entry.name) or ""
         if not session_id:
