@@ -25,7 +25,8 @@ from typing import Optional
 from plobi.mind.paths import real_target, resolve_roots
 
 #: 摘要落点的前缀由 agenda 那协调器拥有，这里不抄第二份路径规则
-_DIGEST_PREFIX = "Vault/projects/Plobi/daily"
+# 摘要落点在脑里（用户 10-24：vault 不进记忆系统）；以前这里是 Vault/projects/Plobi/daily。
+_DIGEST_PREFIX = "Loom/wiki/daily"
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
