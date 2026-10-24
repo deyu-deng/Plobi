@@ -2690,7 +2690,12 @@ export interface Translations {
     tabs: {
       agenda: string
       files: string
+      review: string
     }
+    add: string
+    close: (label: string) => string
+    emptyTitle: string
+    emptyBody: string
     noFolderTitle: string
     noFolderBody: string
   }

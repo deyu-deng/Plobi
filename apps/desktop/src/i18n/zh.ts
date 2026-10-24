@@ -3220,8 +3220,13 @@ export const zh: Translations = {
     aria: '右侧栏',
     tabs: {
       agenda: '日程',
-      files: '工作区文件'
+      files: '工作区文件',
+      review: '审阅'
     },
+    add: '打开页签',
+    close: label => `关闭${label}`,
+    emptyTitle: '没有打开的页签',
+    emptyBody: '点右上角的 + 打开工作区文件、日程或审阅。',
     noFolderTitle: '此 Agent 未绑定目录',
     noFolderBody: '给它绑定一个目录后，这里会显示它的文件树。'
   }

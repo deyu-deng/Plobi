@@ -34,6 +34,7 @@ import {
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
   RIGHT_RAIL_VIEW_NOTES,
+  setFileBrowserOpen,
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH
@@ -42,7 +43,7 @@ import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
-import { $reviewOpen, REVIEW_PANE_ID } from '../store/review'
+import { $reviewOpen, closeReview, openReview } from '../store/review'
 import {
   $activeSessionId,
   $agentCwd,
@@ -128,7 +129,7 @@ import {
   SETTINGS_ROUTE,
   shellLevelForPath
 } from './routes'
-import { RightRailWorkbench, type RightRailTab } from './workbench/right-rail'
+import { RightRailWorkbench, type RightRailTab, type RightRailTabDef } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -279,7 +280,109 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level === 'l1')
   const [agendaAdding, setAgendaAdding] = useState(false)
-  const [rightTab, setRightTab] = useState<RightRailTab>('agenda')
+  const [l1Tabs, setL1Tabs] = useState<RightRailTab[]>(['files', 'agenda'])
+  const [l1Active, setL1Active] = useState<null | RightRailTab>('agenda')
+  const [l2Tabs, setL2Tabs] = useState<RightRailTab[]>(['files', 'review'])
+  const [l2Active, setL2Active] = useState<null | RightRailTab>('files')
+
+  const workbenchTabDefs: Record<RightRailTab, RightRailTabDef> = {
+    agenda: { icon: 'calendar', id: 'agenda', title: t.workbench.tabs.agenda },
+    files: { icon: 'folder-opened', id: 'files', title: t.workbench.tabs.files },
+    review: { icon: 'git-pull-request', id: 'review', title: t.workbench.tabs.review }
+  }
+  const l1TabDefs = [workbenchTabDefs.files, workbenchTabDefs.agenda]
+  const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review]
+  const isL1Workbench = level === 'l1'
+  const handleWorkbenchTabChange = useCallback(
+    (tab: RightRailTab) => {
+      if (isL1Workbench) {
+        setL1Active(tab)
+      } else {
+        setL2Active(tab)
+      }
+
+      if (tab === 'review') {
+        openReview()
+      }
+    },
+    [isL1Workbench]
+  )
+
+  const handleWorkbenchTabOpen = useCallback(
+    (tab: RightRailTab) => {
+      if (isL1Workbench) {
+        setL1Tabs(tabs => (tabs.includes(tab) ? tabs : [...tabs, tab]))
+        setL1Active(tab)
+      } else {
+        setL2Tabs(tabs => (tabs.includes(tab) ? tabs : [...tabs, tab]))
+        setL2Active(tab)
+        setFileBrowserOpen(true)
+      }
+
+      if (tab === 'review') {
+        openReview()
+      }
+    },
+    [isL1Workbench]
+  )
+
+  const handleWorkbenchTabClose = useCallback(
+    (tab: RightRailTab) => {
+      const tabs = isL1Workbench ? l1Tabs : l2Tabs
+      const active = isL1Workbench ? l1Active : l2Active
+      const index = tabs.indexOf(tab)
+      const remaining = tabs.filter(id => id !== tab)
+      const next = remaining[Math.min(index, remaining.length - 1)] ?? null
+
+      if (isL1Workbench) {
+        setL1Tabs(remaining)
+        if (active === tab) {
+          setL1Active(next)
+        }
+      } else {
+        setL2Tabs(remaining)
+        if (active === tab) {
+          setL2Active(next)
+        }
+      }
+
+      if (tab === 'review') {
+        closeReview()
+      }
+    },
+    [isL1Workbench, l1Active, l1Tabs, l2Active, l2Tabs]
+  )
+
+  // Ctrl+G still drives `$reviewOpen`; the L2 workbench follows it and opens the
+  // same rail column instead of a second Pane.
+  useEffect(() => {
+    if (!isL2 || !reviewOpen || !agentCwd.trim()) {
+      return
+    }
+
+    setL2Tabs(tabs => (tabs.includes('review') ? tabs : [...tabs, 'review']))
+    setL2Active('review')
+    setFileBrowserOpen(true)
+  }, [agentCwd, isL2, reviewOpen])
+
+  useEffect(() => {
+    if (!isL2 || reviewOpen) {
+      return
+    }
+
+    setL2Active(active => (active === 'review' ? 'files' : active))
+  }, [isL2, reviewOpen])
+
+  // An Agent with no bound folder has no repo to review; keep the tab out of
+  // the strip instead of letting it read the L1 remembered workspace.
+  useEffect(() => {
+    if (!isL2 || agentCwd.trim()) {
+      return
+    }
+
+    setL2Tabs(tabs => tabs.filter(id => id !== 'review'))
+    setL2Active(active => (active === 'review' ? 'files' : active))
+  }, [agentCwd, isL2])
 
   useEffect(() => {
     if (!level) {
@@ -1271,7 +1374,6 @@ export function DesktopController() {
   const railColumnOpen =
     (secretaryShellOpen && previewRailContent && previewPaneOpen) ||
     (isL2 && !narrowViewport && fileBrowserOpen) ||
-    (isL2 && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen) ||
     (level === 'l1' && !narrowViewport && agendaPaneOpen)
 
   // Once the terminal would share its rail with another sidebar, drop it to a
@@ -1300,11 +1402,29 @@ export function DesktopController() {
     </Pane>
   )
 
+  const workbenchAsideClass = cn(
+    'relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)',
+    panesFlipped
+      ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+      : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+  )
+
+  const workbenchFilesContent = agentCwd.trim() ? (
+    <RightSidebarPane
+      cwd={agentCwd}
+      embedded
+      key={agentCwd}
+      onActivateFile={path => composer.insertContextPathInlineRef(path)}
+      onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
+    />
+  ) : null
+  const workbenchReviewContent = <ReviewPane embedded key={agentCwd || 'no-cwd'} />
+
   const fileBrowserPane = (
     <Pane
       defaultOpen={false}
-      // WP-D: the file tree is the L2 workspace rail (§5.3). On L1 the workbench's
-      // files tab hosts its own embedded tree; this column stays L2-only.
+      // WP-D: the file tree is the L2 workspace rail (§5.3). The workbench owns
+      // the tabs here too; this column opens through Ctrl+J / review selection.
       disabled={!isL2}
       forceCollapsed={narrowViewport}
       hoverReveal
@@ -1316,41 +1436,20 @@ export function DesktopController() {
       side={railSide}
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
-      {/* Key on the project (cwd) so switching projects unmounts the old tree and
-          mounts a fresh one straight into its skeleton — no stale-then-blip. */}
-      <RightSidebarPane
-        cwd={agentCwd}
-        key={agentCwd || 'no-cwd'}
-        onActivateFile={path => composer.insertContextPathInlineRef(path)}
-        onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
-      />
-    </Pane>
-  )
-
-  const reviewPane = (
-    <Pane
-      defaultOpen
-      // The diff pane only makes sense in a workspace, so force it shut when the
-      // session is detached — "No diffs" then only ever shows inside a project,
-      // never as a second empty panel next to the file browser.
-      // Docked (wide): `reviewOpen` gates it. Narrow: drop `reviewOpen` from the
-      // gate so the pane stays mounted as a collapsed overlay — `toggleReview`
-      // then slides it in/out via the forced-reveal pin, exactly like ⌘B for the
-      // sidebar. Still requires a repo (no diffs to show otherwise).
-      disabled={!isL2 || !currentCwd.trim() || (!narrowViewport && !reviewOpen)}
-      forceCollapsed={narrowViewport}
-      hoverReveal
-      id={REVIEW_PANE_ID}
-      key="review"
-      maxWidth={FILE_BROWSER_MAX_WIDTH}
-      minWidth={FILE_BROWSER_MIN_WIDTH}
-      // Mobile overlay sits at its min width — compact, doesn't bury the chat.
-      overlayWidth={FILE_BROWSER_MIN_WIDTH}
-      resizable
-      side={railSide}
-      width={FILE_BROWSER_DEFAULT_WIDTH}
-    >
-      <ReviewPane key={currentCwd || 'no-cwd'} />
+      <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
+        <RightRailWorkbench
+          activeTab={l2Active}
+          availableTabs={l2TabDefs.filter(
+            tab => !l2Tabs.includes(tab.id) && (tab.id !== 'review' || Boolean(agentCwd.trim()))
+          )}
+          contents={{ files: workbenchFilesContent, review: workbenchReviewContent }}
+          labels={t.workbench}
+          onTabChange={handleWorkbenchTabChange}
+          onTabClose={handleWorkbenchTabClose}
+          onTabOpen={handleWorkbenchTabOpen}
+          tabs={l2Tabs.map(id => workbenchTabDefs[id])}
+        />
+      </aside>
     </Pane>
   )
 
@@ -1382,60 +1481,51 @@ export function DesktopController() {
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
       <aside
-        aria-label={t.console.timeline.title}
-        className={cn(
-          'relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)',
-          panesFlipped
-            ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-        )}
+        aria-label={t.workbench.aria}
+        className={workbenchAsideClass}
       >
         <RightRailWorkbench
-          activeTab={rightTab}
-          agenda={
-            <>
-              {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
-              <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {/* 裁定 40: the today axis (with its "now" line) MUST mount even
-                   when the rail is still loading or the day payload is empty.
-                   Otherwise a fresh relaunch lands the user on the loader /
-                   error / empty-state and they never see today's axis. */}
-                {agendaLoading && agendaEvents.length === 0 ? (
-                  <div aria-hidden="true" className="flex justify-center py-4">
-                    <PageLoader label={t.console.timeline.title} />
-                  </div>
-                ) : null}
-                {agendaError && agendaEvents.length === 0 ? (
-                  <div className="flex justify-center pb-2">
-                    <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
-                      {t.console.timeline.retry}
-                    </Button>
-                  </div>
-                ) : null}
-                <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
-                {agendaRhythmOff && !agendaLoading ? (
-                  <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
-                    {t.agenda.rhythmOff}
-                  </p>
-                ) : null}
-              </div>
-            </>
-          }
-          files={
-            agentCwd.trim() ? (
-              <RightSidebarPane
-                cwd={agentCwd}
-                embedded
-                key={agentCwd}
-                onActivateFile={path => composer.insertContextPathInlineRef(path)}
-                onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
-              />
-            ) : null
-          }
+          activeTab={l1Active}
+          availableTabs={l1TabDefs.filter(tab => !l1Tabs.includes(tab.id))}
+          contents={{
+            agenda: (
+              <>
+                {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
+                <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                  {/* 裁定 40: the today axis (with its "now" line) MUST mount even
+                     when the rail is still loading or the day payload is empty.
+                     Otherwise a fresh relaunch lands the user on the loader /
+                     error / empty-state and they never see today's axis. */}
+                  {agendaLoading && agendaEvents.length === 0 ? (
+                    <div aria-hidden="true" className="flex justify-center py-4">
+                      <PageLoader label={t.console.timeline.title} />
+                    </div>
+                  ) : null}
+                  {agendaError && agendaEvents.length === 0 ? (
+                    <div className="flex justify-center pb-2">
+                      <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
+                        {t.console.timeline.retry}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
+                  {agendaRhythmOff && !agendaLoading ? (
+                    <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
+                      {t.agenda.rhythmOff}
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ),
+            files: workbenchFilesContent
+          }}
           labels={t.workbench}
-          onTabChange={setRightTab}
+          onTabChange={handleWorkbenchTabChange}
+          onTabClose={handleWorkbenchTabClose}
+          onTabOpen={handleWorkbenchTabOpen}
+          tabs={l1Tabs.map(id => workbenchTabDefs[id])}
           trailing={
-            rightTab === 'agenda' ? (
+            l1Active === 'agenda' ? (
               /* 完整日程页的入口全应用只有状态栏那一个 chip（它还带 pending 计数），
                  这里只保留「加一条」；同一个页面不许有第二张门。 */
               <Button
@@ -1586,7 +1676,6 @@ export function DesktopController() {
       */}
       {panesFlipped ? fileBrowserPane : terminalPane}
       {previewPane}
-      {reviewPane}
       {agendaTimelinePane}
       {panesFlipped ? terminalPane : fileBrowserPane}
     </AppShell>
