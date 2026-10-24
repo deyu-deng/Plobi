@@ -2691,6 +2691,7 @@ export interface Translations {
       agenda: string
       files: string
       review: string
+      browser: string
     }
     add: string
     close: (label: string) => string
@@ -2698,5 +2699,16 @@ export interface Translations {
     emptyBody: string
     noFolderTitle: string
     noFolderBody: string
+    browser: {
+      placeholder: string
+      back: string
+      forward: string
+      reload: string
+      go: string
+      newTabTitle: string
+      newTabBody: string
+      loadFailed: string
+      invalidUrl: string
+    }
   }
 }

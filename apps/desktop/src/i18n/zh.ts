@@ -3221,13 +3221,25 @@ export const zh: Translations = {
     tabs: {
       agenda: '日程',
       files: '工作区文件',
-      review: '审阅'
+      review: '审阅',
+      browser: '浏览器'
     },
     add: '打开页签',
     close: label => `关闭${label}`,
     emptyTitle: '没有打开的页签',
-    emptyBody: '点右上角的 + 打开工作区文件、日程或审阅。',
+    emptyBody: '点右上角的 + 打开工作区文件、日程、审阅或浏览器。',
     noFolderTitle: '此 Agent 未绑定目录',
-    noFolderBody: '给它绑定一个目录后，这里会显示它的文件树。'
+    noFolderBody: '给它绑定一个目录后，这里会显示它的文件树。',
+    browser: {
+      placeholder: '输入网址，例如 localhost:3000',
+      back: '后退',
+      forward: '前进',
+      reload: '刷新',
+      go: '打开',
+      newTabTitle: '新标签页',
+      newTabBody: '在上方输入网址，回车打开。',
+      loadFailed: '这个页面打不开',
+      invalidUrl: '只支持 http / https 网址'
+    }
   }
 }

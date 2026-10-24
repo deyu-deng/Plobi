@@ -3044,13 +3044,25 @@ export const ja = defineLocale({
     tabs: {
       agenda: '予定',
       files: 'ワークスペースのファイル',
-      review: 'レビュー'
+      review: 'レビュー',
+      browser: 'ブラウザ'
     },
     add: 'タブを開く',
     close: label => `${label}を閉じる`,
     emptyTitle: '開いているタブはありません',
-    emptyBody: '右上の + からワークスペースのファイル、予定、レビューを開けます。',
+    emptyBody: '右上の + からワークスペースのファイル、予定、レビュー、ブラウザを開けます。',
     noFolderTitle: 'このエージェントにはフォルダが未設定です',
-    noFolderBody: 'フォルダを設定すると、ここにファイルツリーが表示されます。'
+    noFolderBody: 'フォルダを設定すると、ここにファイルツリーが表示されます。',
+    browser: {
+      placeholder: 'URL を入力（例: localhost:3000）',
+      back: '戻る',
+      forward: '進む',
+      reload: '再読み込み',
+      go: '開く',
+      newTabTitle: '新しいタブ',
+      newTabBody: '上の URL 欄に入力して Enter を押してください。',
+      loadFailed: 'このページを開けませんでした',
+      invalidUrl: 'http / https の URL のみ対応しています'
+    }
   }
 })
