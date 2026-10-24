@@ -36,9 +36,18 @@ DRIFT_TEXT = (
 
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
+    """把 cron 存储指到临时家——**必须**走 `use_cron_store`。
+
+    `cron.jobs` 的 `PLOBI_DIR`/`JOBS_FILE` 是 import 期就定死的模块常量（那一段注释写明
+    它刻意锚在「当前活动家」上），所以只 `setenv("PLOBI_HOME")` 对已经导入的本模块无效：
+    夹具作业会直接落进**真库**。现读代价——真 `cron/jobs.json` 里积了 24 条
+    `drift-probe`/`not-drift`/`clear-drift`，全 enabled、每天集体报错。跨上下文改路径的
+    正解是那个 ContextVar 口子（`tests/cron/test_cron_recipient.py` 一直就是这么用的）。
+    """
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
     monkeypatch.setenv("PLOBI_AGENDA_DB", str(tmp_path / "agenda.db"))
-    return tmp_path
+    with jobs.use_cron_store(tmp_path):
+        yield tmp_path
 
 
 # ------------------------------------------------------------------ ② 漂移要出声

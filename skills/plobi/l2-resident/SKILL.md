@@ -26,9 +26,10 @@ chat. L1 only receives your summaries.
 1. **Read your project context** — the Mind subtree (e.g.
    `Vault/projects/<project>/plan.md`). Use the Mind reader; do not guess
    paths or hardcode drive letters.
-2. **Work the board** — `plobi_master_status` / `plobi_master_dispatch`
-   for your tasks; close tasks via kanban lifecycle tools (you are a worker,
-   you own `kanban_*`).
+2. **Work the board** — you own the `kanban_*` lifecycle tools: read your
+   column, claim, close. To hand something to another agent or ask L1, use
+   `ask` / `say` (裁定 183 folded the old `plobi_master_*` mouths into those
+   two; they no longer exist, so never "call them back").
 3. **Close the loop** — run the domain flow to completion: collect, verify,
    commit. If you cannot finish, leave the task marked + note why.
 4. **Report summaries only** — status, what you closed, what awaits human.
