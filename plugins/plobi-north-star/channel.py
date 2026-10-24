@@ -247,6 +247,7 @@ def _deliver(entry, body: str, *, sender: str) -> tuple[str, str]:
         role="user",
         content=f"[来自 {sender} · {stamp}]\n{body}",
         asked_by=sender,
+        kind="agent",
     )
     return session_id, str(message_id)
 # ── 痕（裁 183⑥）────────────────────────────────────────────────────────

@@ -68,7 +68,7 @@ class _FakeSessionDB:
         self.created.append((session_id, source, agent_id))
         return session_id
 
-    def append_message(self, session_id, *, role=None, content=None, asked_by=None):
+    def append_message(self, session_id, *, role=None, content=None, asked_by=None, kind=None):
         self.appended.append((session_id, role, content, asked_by))
         return f"m_{len(self.appended)}"
 

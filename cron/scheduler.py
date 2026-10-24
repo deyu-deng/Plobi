@@ -1549,6 +1549,7 @@ def _deliver_to_recipient_window(job: dict, content: str) -> tuple[Optional[dict
             role="user",
             content=f"[Cron 结果 · {label} · {stamp}]\n{content}",
             asked_by=f"cron:{job_id}" if job_id else "cron",
+            kind="cron",
         )
     except Exception as exc:  # noqa: BLE001 - 发不进窗口要说得出，不许静默当成发过了
         logger.warning("Job '%s': 结果发不进「%s」的窗口：%s", job_id, recipient, exc)
@@ -1583,6 +1584,7 @@ def _deliver_to_user_inbox(job: dict, content: str) -> tuple[Optional[dict], Opt
         asked_by=f"cron:{job_id}" if job_id else "cron",
         label=f"Cron 结果 · {label}",
         when=_plobi_now(),
+        kind="cron",
     )
     if failure:
         logger.warning("Job '%s': 结果发不进用户那一屏：%s", job_id, failure)

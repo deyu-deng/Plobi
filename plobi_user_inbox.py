@@ -41,7 +41,12 @@ def user_inbox_session_id() -> Optional[str]:
 
 
 def append_user_message(
-    body: str, *, asked_by: str, label: str, when: Optional[datetime] = None
+    body: str,
+    *,
+    asked_by: str,
+    label: str,
+    when: Optional[datetime] = None,
+    kind: str = "agent",
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """把一句话落进用户那一屏。返回 ``(session_id, message_id, 错误)``。
 
@@ -58,6 +63,7 @@ def append_user_message(
             role="user",
             content=f"[{label} · {stamp}]\n{body}",
             asked_by=asked_by,
+            kind=kind,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("user_inbox: 写不进那一屏（%s）", exc)
