@@ -24,7 +24,7 @@ import { TalkerCollection } from '@/app/agenda/talker/talker-collection'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Cpu, FolderOpen, Globe, Layers3, MessageCircle, Package, Users } from '@/lib/icons'
+import { Cpu, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Users } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
@@ -40,6 +40,7 @@ type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 /** 分类 → 图标。**不用字母或序号代替图标** —— 旁边就是设置里其他分类的写法。 */
 const CATEGORY_ICON: Record<string, typeof Globe> = {
   custom: Package,
+  email: Mail,
   local: FolderOpen,
   message: MessageCircle,
   social: Users,
@@ -155,6 +156,7 @@ export function SourcesSettings() {
                 setOpen(open === row.source ? null : row.source)
                 setGuide(null)
               }}
+              onClose={() => { setOpen(null) }}
               onReload={reload}
               onToggle={onToggle}
               onTry={onTry}
@@ -172,6 +174,7 @@ function SourceRowView({
   busy,
   guiding,
   labels,
+  onClose,
   onActivate,
   onReload,
   onTry,
@@ -182,6 +185,10 @@ function SourceRowView({
   busy: boolean
   guiding: boolean
   labels: Labels
+  /** 关掉的是**这一行点开的那片抽屉**（名单那一块自带"关闭"用它）。它必须由父层给：
+   *  `open` 那个状态住在父层，行内组件第二次去摸它就是一颗"查不到名字才想起来修"的红
+   *  ——上一刀就是这么在 `tsc` 里留下一条 `Cannot find name 'setOpen'` 的。 */
+  onClose: () => void
   onActivate: () => void
   onReload: () => Promise<void>
   onTry: (row: SourceRow) => Promise<void>
@@ -191,7 +198,14 @@ function SourceRowView({
 }) {
   const { t } = useI18n()
   const status = statusOf(row)
-  const displayName = t.agenda.sources[row.source as keyof typeof t.agenda.sources] ?? labels.unknownSource
+
+  // 名字两级：**语言目录**（我们自己那几条，四语各有写法）→ **后端那一格读数**
+  // （声明名或站点自报的名，第三方包靠这一格零改动就有名字）。
+  // 目录里那两条「教务（…）」已经删掉了——用户 10-24 的原话是「网站就显示网站名就行了，
+  // 不要叫什么"教务"」：那种类目词是界面替一个网站起的名字，而它不该由界面来起。
+  const displayName = t.agenda.sources[row.source as keyof typeof t.agenda.sources]
+    ?? row.display_name ?? labels.unknownSource
+
   const checked = row.enabled ?? false
 
   return (
@@ -212,7 +226,7 @@ function SourceRowView({
               busy={busy}
               guiding={guiding}
               labels={labels}
-              onClose={() => { setOpen(null) }}
+              onClose={onClose}
               onReload={onReload}
               onTry={onTry}
               row={row}
@@ -313,6 +327,19 @@ function SourceDrawer({ busy, guiding, labels, onClose, onReload, onTry, row }: 
               {labels.drawerRunNote}
               {' — '}
               {row.status_detail}
+            </p>
+          )
+        : null}
+
+      {/* 探针那句（只有"这条在本机还不成立"才有）：它是**读数**，逐字来自这条信源自己
+          声明的那只探针，界面不转述。与上面那句同源同档——一个说"上一轮跑成什么样"，
+          一个说"这台机器给不给得出它要的前提"。 */}
+      {row.probe && !row.probe.ready && row.probe.detail
+        ? (
+            <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)" data-testid={`source-probe-${row.source}`}>
+              {labels.drawerProbe}
+              {' — '}
+              {row.probe.detail}
             </p>
           )
         : null}

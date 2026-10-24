@@ -269,11 +269,15 @@ export const zhHant = defineLocale({
       social: '社群媒體',
       system: '系統',
       website: '網站',
+      email: '信箱',
       custom: '接一個自己的'
       },
       emptyExternal: '裝了什麼讀不到。',
       fields: {
         account: '帳號名稱',
+        address: '電子郵件地址',
+        imap_host: 'IMAP 伺服器',
+        password: '密碼或授權碼',
         base_url: '教務系統網址',
         ics_path: '.ics 檔案的路徑',
         cadence: '採集頻率'
@@ -358,10 +362,15 @@ export const zhHant = defineLocale({
         ready: '最近一輪採集成功',
         throttled: '採集間隔內剛執行過',
         unknown_state: '採集結果暫時未適配',
+        client_not_installed: '這台機器上還沒有它的客戶端',
+        client_not_logged_in: '客戶端還沒在本機登入過',
+        local_store_missing: '本機讀不到它的資料',
+        probe_failed: '本機前提讀不到',
       },
       reasonUnknown: '採集結果暫時未適配',
       drawerReason: '原因',
       drawerRunNote: '上一輪說明',
+      drawerProbe: '本機前提',
     },
     network: {
       addExit: '新增出口',
@@ -1488,8 +1497,13 @@ export const zhHant = defineLocale({
       dingtalk: '釘釘',
       manual: '手動新增',
       timetable: '課表',
-      zju: '教務（學在浙大）',
-      zdbk: "教務（學士班）",
+      zju: '學在浙大',
+      zdbk: '大學部教學管理資訊服務平台',
+      email_qq: 'QQ 郵箱',
+      email_163: '網易郵箱',
+      email_gmail: 'Gmail',
+      email_outlook: 'Outlook / Microsoft 365',
+      email_imap: '自訂 IMAP 信箱'
     },
     collect: {
       title: '會話採集',

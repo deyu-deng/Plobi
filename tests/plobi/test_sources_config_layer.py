@@ -124,10 +124,21 @@ class TestSecretsNeverLandHere:
         with pytest.raises(registry.UnknownSetupField):
             registry.SetupField(key="PASSWORD", label="Password")
 
-    def test_no_registered_source_declares_a_secret_like_field(self):
+    def test_a_secret_like_field_is_only_allowed_declared_as_a_secret(self):
+        """拦的从「长得像密钥」改成「**没声明成 `kind='secret'` 却长得像密钥**」（10-22 那一改）。
+
+        邮箱那一族是第一条真用上这一档的信源（`password` 走 `.env`、屏上打星、读数里只有
+        "设过没有"），所以原来那句"任何源都不许出现像密钥的字段"当场过期：它挡的一直是
+        **没声明**的那一支。声明过那一支由另外两条各自钉着——`set_secret` 只写 `.env`，
+        `sources_api._enrich` 只回 `secret_configured` 那本布尔账；下面那条运行时的守卫也原样留着。
+        """
         for source_id in registry.source_ids():
             for setup in registry.spec(source_id).setup_fields:
-                assert not registry.is_secret_like(setup.key), f"{source_id}.{setup.key}"
+                if registry.is_secret_like(setup.key):
+                    assert setup.kind == "secret", f"{source_id}.{setup.key} 长得像密钥却没声明成 secret"
+                # 声明成密钥的那一格，配置层那一份文件里**不许有它的值**。
+                if setup.kind == "secret":
+                    assert setup.key not in (sources_config.entry(source_id) or {})
 
     def test_the_runtime_guard_still_refuses_a_hand_filled_secret(self, client):
         """第二道，**运行时**：手改过的 yaml 或将来改了声明，那一道还在。

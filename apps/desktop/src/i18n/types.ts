@@ -340,6 +340,7 @@ export interface Translations {
         social: string
         system: string
         website: string
+        email: string
         custom: string
       }
       emptyExternal: string
@@ -422,6 +423,8 @@ export interface Translations {
       drawerReason: string,
       /** 抽屉里那一行「上一轮自己怎么说」——**逐字**，不转述（P6）。 */
       drawerRunNote: string
+      /** 「这台机器给不给得出它要的前提」那一句的标签（后端 `probe` 那一格）。 */
+      drawerProbe: string
     }
     network: {
       addExit: string

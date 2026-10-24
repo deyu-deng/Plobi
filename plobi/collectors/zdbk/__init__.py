@@ -46,6 +46,10 @@ SPEC = SourceSpec(
     # 连接器形状是「一个网址 + 账密」，没有客户端要装 ⇒ 「网站」不是「消息」。
     category="website",
     site="https://zdbk.zju.edu.cn",  # 图标从这一格抓一次（collectors/icons.py）；不是配置项，改它要重新装
+    # 这一格是把 10-24 那一次现读**抄回来**：`https://zdbk.zju.edu.cn/` 的根是一条 68 字节的
+    # `<meta refresh>`，跟到 `/jwglxt` 才是登录页，那页的 `<title>` 就是「本科教学管理信息服务平台」。
+    # 写死它而不是每次去跟那一跳：名字是这条信源的身份，不该取决于一次网络请求的成败。
+    display_name="本科教学管理信息服务平台",
     collecting=True,
     builder=_build,
 )

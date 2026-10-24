@@ -276,11 +276,15 @@ export const ja = defineLocale({
       social: 'ソーシャルメディア',
       system: 'システム',
       website: 'ウェブ',
+      email: 'メール',
       custom: '自分で一つを接続'
       },
       emptyExternal: 'インストール済みの情報を読み取れませんでした。',
       fields: {
         account: 'アカウント名',
+        address: 'メールアドレス',
+        imap_host: 'IMAP サーバー',
+        password: 'パスワードまたはアプリ用パスワード',
         base_url: '教务システムのアドレス',
         ics_path: '.ics ファイルのパス',
         cadence: '収集頻度'
@@ -365,10 +369,15 @@ export const ja = defineLocale({
         ready: '直前の収集は成功しました',
         throttled: '収集間隔内のため実行を省略しました',
         unknown_state: 'この収集結果には未対応です',
+        client_not_installed: 'このマシンにクライアントがインストールされていません',
+        client_not_logged_in: 'クライアントがこのマシンでログインされていません',
+        local_store_missing: 'ローカルデータを読み取れません',
+        probe_failed: '前提条件を確認できません',
       },
       reasonUnknown: 'この収集結果には未対応です',
       drawerReason: '理由',
       drawerRunNote: '前回のメッセージ',
+      drawerProbe: 'このマシン上の前提',
     },
     network: {
       addExit: '出口を追加',
@@ -1534,8 +1543,13 @@ export const ja = defineLocale({
       dingtalk: 'DingTalk',
       manual: '手動追加',
       timetable: '時間割',
-      zju: '教務（ZJU）',
-      zdbk: "教務（学部）",
+      zju: '学在浙大',
+      zdbk: '学部教学管理情報サービス',
+      email_qq: 'QQ Mail',
+      email_163: '網易メール（163）',
+      email_gmail: 'Gmail',
+      email_outlook: 'Outlook / Microsoft 365',
+      email_imap: 'カスタム IMAP メール'
     },
     collect: {
       title: 'セッション収集',

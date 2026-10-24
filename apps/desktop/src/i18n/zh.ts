@@ -336,11 +336,15 @@ export const zh: Translations = {
       social: '社交媒体',
       system: '系统',
       website: '网站',
+      email: '邮箱',
       custom: '接一个自己的'
       },
       emptyExternal: '装了什么读不到。',
       fields: {
         account: '账号名',
+        address: '邮箱地址',
+        imap_host: 'IMAP 服务器地址',
+        password: '密码或授权码',
         base_url: '教务系统地址',
         ics_path: '.ics 文件的路径',
         cadence: '采集频率'
@@ -425,10 +429,15 @@ export const zh: Translations = {
         ready: '最近一轮采集成功',
         throttled: '采集间隔内刚执行过',
         unknown_state: '采集结果暂未适配',
+        client_not_installed: '这台机器上还没有它的客户端',
+        client_not_logged_in: '客户端还没在本机登录过',
+        local_store_missing: '本机读不到它的数据',
+        probe_failed: '本机前提读不到',
       },
       reasonUnknown: '采集结果暂未适配',
       drawerReason: '原因',
       drawerRunNote: '上一轮说明',
+      drawerProbe: '本机前提',
     },
     network: {
       addExit: '添加出口',
@@ -1746,8 +1755,13 @@ export const zh: Translations = {
       dingtalk: '钉钉',
       manual: '手动添加',
       timetable: '课表',
-      zju: '教务（学在浙大）',
-      zdbk: "教务（本科）",
+      zju: '学在浙大',
+      zdbk: '本科教学管理信息服务平台',
+      email_qq: 'QQ 邮箱',
+      email_163: '网易邮箱',
+      email_gmail: 'Gmail',
+      email_outlook: 'Outlook / Microsoft 365',
+      email_imap: '自定义 IMAP 邮箱'
     },
     collect: {
       title: '会话采集',

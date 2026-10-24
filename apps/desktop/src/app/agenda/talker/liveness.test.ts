@@ -9,7 +9,7 @@ import { buildSourceViews, type SourceLivenessPayload, type SourceLivenessRow, t
 
 const NAMES = { timetable: '课表', wechat: '微信' }
 
-function row(patch: Partial<SourceLivenessRow>): SourceLivenessRow {
+function row(patch: Partial<SourceLivenessRow> = {}): SourceLivenessRow {
   return {
     age_days: 0.1,
     collecting: true,

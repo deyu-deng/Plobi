@@ -77,7 +77,8 @@ _CONNECTED_STATES = frozenset({"live", "ready", "ok", "not_due", "per_round", "t
 
 
 def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
-              liveness_state: str, has_builder: bool) -> tuple[str, str]:
+              liveness_state: str, has_builder: bool,
+              probe: Optional[dict] = None) -> tuple[str, str]:
     """(状态, 那一格的原因码)。原因码是给界面查语言目录用的，**不是给人看的句子**（裁定 45.4）。
 
     界面这一侧每一码都有落点（同义的几码共用一句话），查不到的落「暂未适配」那一句，
@@ -87,11 +88,19 @@ def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
 
     次序是判据的一部分，所以写在一个函数里而不是散成 `if`：
     开关没点时"上一轮失败了"不是新闻（本来就没在跑），先报它等于把"我自己关的"画成"坏了"。
+
+    `probe` 那一格（用户 10-24 那句「我们组织没有开放CLI。要用别的方式」带出来的）改的是
+    **一颗假故障**：钉钉那行今天点着开关、`builder` 为空 ⇒ 判 `error/internal`，屏上一片红，
+    意思是"我们的产品坏了"。它真正的话是"这台机器现在给不出它要的东西"（客户端装了、从没登录过
+    ⇒ 本地库不存在）——那是**未连接**。探针说"不成立"就落未连接，探针说"成立"而仍然没人构造得出
+    执行方，那才继续是 `internal`（我们的缺陷，不许用探针把它洗绿）。
     """
     if enabled is None:
         return STATUS_DISCONNECTED, "config_unreadable"       # 读不到 ≠ 没点：界面不许把它画成关着
     if not enabled:
         return STATUS_DISCONNECTED, "off"
+    if probe is not None and probe.get("ready") is False:
+        return STATUS_DISCONNECTED, str(probe.get("code") or "probe_unavailable")
     if not has_builder:
         return STATUS_ERROR, "internal"                        # 注册表说在采却没人构造得出：我们的缺陷
     if needs_setup:
@@ -109,6 +118,25 @@ def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
     if last_state:
         return STATUS_DISCONNECTED, "unknown_state"
     return STATUS_DISCONNECTED, "never_ran"
+
+
+def _probe_of(spec) -> Optional[dict]:
+    """这条信源自报的「它在这台机器上成不成立」。
+
+    没声明就是 `None`——界面一个字都不多画（**这一格不是给每条信源都补一个说法**：钉钉那种
+    "要装一个本机客户端"的前置，与填表格那种前置，是两种不同的话）。
+    探针自己抛了也算一条读数：那是"前提读不到"，比让整条读口崩掉换一颗假绿诚实。
+    """
+    if spec.probe is None:
+        return None
+    try:
+        raw = dict(spec.probe() or {})
+    except Exception as exc:  # noqa: BLE001 - 探针坏也要说得出，且不许把那一屏弄红
+        logger.warning("sources: probe %s raised %s", spec.source_id, type(exc).__name__)
+        return {"ready": False, "code": "probe_failed", "detail": f"{type(exc).__name__}: {exc}"}
+
+    return {"ready": bool(raw.get("ready")), "code": str(raw.get("code") or ""),
+            "detail": str(raw.get("detail") or "")}
 
 
 def _pool_counts(source_id: str) -> tuple[int, dict[str, int]]:
@@ -171,9 +199,10 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         configured.get(f["key"]) if f["kind"] == "secret" else str(params.get(f["key"]) or "").strip())
         for f in fields)
     pool_count, pool_kinds = _pool_counts(source_id)
+    probe = _probe_of(spec)
     status, status_code = status_of(enabled=enabled, needs_setup=needs_setup,
                                     last_state=last["state"], liveness_state=row.get("state") or "",
-                                    has_builder=spec.builder is not None)
+                                    has_builder=spec.builder is not None, probe=probe)
 
     return {
         **row,
@@ -205,6 +234,15 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
         # 图标：盘上有就给，没有就**后台去抓一次**并立刻回空串——这一屏不许为一张图等 8 秒。
         "icon": icons.icon_now(source_id, spec.site),
         "site": spec.site,
+        # 名字（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。**声明优先，
+        # 站点自报名兜底**，而且那个兜底**只对「网站」这一类开**：非网站那一族的那个站，
+        # 首页 `<title>` 现读往往是一句营销话（10-24 为图标那一格抓过一次，亲眼见到），
+        # 那不是一条信源的名字；消息类的名称归界面语言目录（四语各有写法）。第三方包两头都能接：
+        # 填 `display_name` 就直接生效，没填而又是网站类，就吃它自己那个站的 `<title>`。
+        "display_name": spec.display_name or (
+            icons.site_name_now(source_id, spec.site) if spec.category == "website" else ""),
+        # 这条在本机成不成立（只有声明了探针的那几条才有这一格；`None` = 这一条没有前置要说）。
+        "probe": probe,
         # 声明照原样给，**label 不翻译**：界面先查语言目录的
         # `settings.sources.fields.<key>`，查不到才回这一格。这样第三方包零改动就能
         # 出现在界面上（只是没翻译），而我们自己那四条四语言齐全。

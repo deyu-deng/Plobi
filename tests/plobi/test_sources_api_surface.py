@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi import FastAPI
@@ -26,10 +27,10 @@ PNG = base64.b64decode(
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
-    """家、图标目录、台账都钉进 tmp，并给每条源**预先放一个 miss 标记**。
+    """家、图标目录、台账都钉进 tmp，并给每条源**预先放一个 miss 标记**（图标一枚、站名一枚）。
 
-    不放这一枚，`icon_now` 会为每条源起一个后台线程去**真打外网**（zdbk.zju.edu.cn 那种），
-    测试就跑成了网络测试；放了，这一档测的就只是"盘上有就给、没有就回空串并排那一趟"。
+    不放这两枚，`icon_now` / `site_name_now` 会为每条源起一个后台线程去**真打外网**（zdbk.zju.edu.cn
+    那种），测试就跑成了网络测试；放了，这一档测的就只是"盘上有就给、没有就回空串并排那一趟"。
     """
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
     icons_dir = tmp_path / "icons"
@@ -38,6 +39,7 @@ def isolated_home(tmp_path, monkeypatch):
     registry.ensure_discovered()
     for source_id in registry.source_ids():
         (icons_dir / f"{source_id}.miss").write_text("", encoding="utf-8")
+        (icons_dir / f"{source_id}.name.miss").write_text("", encoding="utf-8")
 
 
 @pytest.fixture()
@@ -333,3 +335,100 @@ class TestPoolCountsReachTheScreen:
         assert row["pool_count"] == 2
         assert row["pool_kinds"] == {"class": 1, "term": 1}
         assert row["events"] == 0, "两个数是两句话，不许合成一个"
+
+
+class TestTheSourceNamesItself:
+    """名字归一处（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。"""
+
+    def test_a_declared_name_beats_the_fetched_one(self, client) -> None:
+        """声明是**这条信源自己说的**，站点自报的名只填它没说的那格。"""
+        (icons.icon_dir() / "zju.name").write_text("抓来的那个名", encoding="utf-8")
+
+        row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["zju"]
+
+        assert row["display_name"] == "学在浙大"
+
+    def test_a_website_source_without_a_declared_name_gets_the_site_s_own(self, tmp_path) -> None:
+        """第三方包**零改动**也有名字：它声明了网站，站自己报了名，屏上就不用落「没记到名字的信源」。"""
+        spec = registry.SourceSpec(
+            "webtest", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
+            category="website", site="https://example.test", collecting=False)
+        registry.register(spec, replace=True)
+        (icons.icon_dir() / "webtest.name").write_text("Example 门户", encoding="utf-8")
+
+        try:
+            enriched = sources_api._enrich(
+                {"source": "webtest", "state": "never", "events": 0, "note": ""},
+                {"webtest": True})
+        finally:
+            registry.unregister("webtest")
+
+        assert enriched["display_name"] == "Example 门户"
+
+    def test_the_fetched_name_is_never_used_for_a_non_website_source(self, client) -> None:
+        """`www.dingtalk.com` 的首页 `<title>` 现读是「钉钉，AI时代工作方式」——那是一句营销话。
+
+        消息那一族的名字归界面语言目录（四语各有写法），后端因此**不许**替它报名。
+        """
+        (icons.icon_dir() / "dingtalk.name").write_text("钉钉，AI时代工作方式", encoding="utf-8")
+
+        row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["dingtalk"]
+
+        assert row["display_name"] == ""
+
+
+class TestTheProbeReplacesAFalseFault:
+    """`error/internal` 那一颗红点，在"这台机器给不出前提"那种现场是**假故障**。"""
+
+    @pytest.mark.parametrize("probe, expected", (
+        pytest.param(None, ("error", "internal"), id="没有探针_照旧是我们的缺陷"),
+        pytest.param({"ready": True, "code": "local_store_found", "detail": "在位"},
+                     ("error", "internal"), id="探针说明白了_红点不许把自己洗绿"),
+        pytest.param({"ready": False, "code": "client_not_logged_in", "detail": "没登录过"},
+                     ("disconnected", "client_not_logged_in"), id="前提不在_那是未连接"),
+    ))
+    def test_probe_only_speaks_when_it_says_not_ready(self, probe, expected) -> None:
+        assert sources_api.status_of(enabled=True, needs_setup=False, last_state="",
+                                     liveness_state="never", has_builder=False,
+                                     probe=probe) == expected
+
+    def test_a_source_without_a_probe_carries_no_such_row(self, client) -> None:
+        """这一格不是"给每条源都补一个说法"——没声明就一个字都不多。"""
+        row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["zju"]
+
+        assert row["probe"] is None
+
+    def test_the_row_carries_what_the_machine_answers(self, client, monkeypatch) -> None:
+        """钉钉那一行现在说的是**这台机器的真话**，不是"我们的产品坏了"。"""
+        spec = registry.spec("dingtalk")
+        registry._SPECS["dingtalk"] = replace(
+            spec, probe=lambda: {"ready": False, "code": "client_not_logged_in",
+                                 "detail": "客户端装了，但这台机器上它从没登录过"})
+        sources_config.set_enabled("dingtalk", True)
+
+        try:
+            row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["dingtalk"]
+        finally:
+            registry._SPECS["dingtalk"] = spec
+
+        assert (row["status"], row["status_code"]) == ("disconnected", "client_not_logged_in")
+        assert row["probe"]["ready"] is False
+        assert "登录" in row["probe"]["detail"]
+        # 行上那句人话仍然来自语言目录（`status_code` 查表），后端那句只进抽屉（裁定 45.4）。
+        assert row["status_detail"] == "", "非出错态那一格恒为空，这条不变"
+
+    def test_a_probe_that_raises_is_read_as_unreadable_not_as_a_green_dot(self) -> None:
+        def broken() -> dict:
+            raise RuntimeError("盘都读不到")
+
+        spec = registry.SourceSpec("probetest", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
+                                   category="system", probe=broken)
+        registry.register(spec, replace=True)
+
+        try:
+            result = sources_api._probe_of(registry.spec("probetest"))
+        finally:
+            registry.unregister("probetest")
+
+        assert result["ready"] is False
+        assert result["code"] == "probe_failed"

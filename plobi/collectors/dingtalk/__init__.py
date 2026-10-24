@@ -11,6 +11,8 @@
 
 from plobi.collectors.registry import SourceSpec, register
 
+from . import localdb
+
 SPEC = SourceSpec(
     "dingtalk",
     capabilities={
@@ -23,6 +25,16 @@ SPEC = SourceSpec(
     # 对话流（Stream 长连接），与微信同族 ⇒ 「消息」。
     category="message",
     site="https://www.dingtalk.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
+    # 这一条**在本机成不成立**，由探针回答（用户 10-24：「我们组织没有开放CLI。要用别的方式」）。
+    #
+    # 它要改的是屏上那一颗**假故障**：今天这条是 `enabled=true` + `builder=None` ⇒ `error/internal`
+    # （「本机采集组件暂未就绪」＝说我们的产品坏了）。真话是"这台机器给不出它要的前提"——
+    # 甲路（官方 CLI）要组织管理员开通、乙路（企业内部应用）要管理员建应用，而丙路（本地客户端库）
+    # 在这台机器上**客户端从没登录过**。那是**未连接**，不是故障。全文在 :mod:`.localdb` 的模块头。
+    #
+    # 探针说 `ready=True` 而仍然没人构造得出执行方，那一颗红点**继续是红**（不许用探针把
+    # 自己的缺口洗绿）：`sources_api.status_of` 里那一支的次序钉着这条。
+    probe=localdb.probe,
 
     # 名字已经在词表里、但没有任何东西在采它——登记归口与假数据占位是两件事。
     collecting=False,

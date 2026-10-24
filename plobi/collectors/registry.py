@@ -31,8 +31,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from importlib import metadata
 import importlib
+import logging
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
+
+logger = logging.getLogger(__name__)
 
 # 人手写、不是采来的——它是日程库里的"非信源信源"，归存储层自己的词表，不进注册表。
 # ⚠️ **这一档允许按名字分支**（`agenda/service.py` 里那两处 `if source == "manual"`）：
@@ -65,7 +68,12 @@ class CapabilityUnmeasured(RuntimeError):
 #: 分类闭集（用户 10-19 拍定）。**这不是等级表**——闭集里没有一个值表示"更重要"，
 #: 顺序也不表达优先级（`specs/source-layer.md` §2.1）。`custom` 不是第六个分类，
 #: 它是"都不合适？接一个自己的"那个逃生口，也就是可插拔在产品面上的样子。
-SOURCE_CATEGORIES: tuple[str, ...] = ("message", "social", "website", "local", "system", "custom")
+#:
+#: **第七个值 `email` 是用户 10-24 拍的**（「我们要添加一个邮箱信源分类。可以支持用户添加
+#: 各种邮箱」）。加它的那句话按 §2.3 第 4 条写在该节里：它的轴仍是**首次配置要用户做什么**——
+#: 「一个邮箱地址 + 一份授权码/密码」，既不是扫码/授权（消息、社交媒体）、不是指一个路径
+#: （本地）、也不是给一个 URL（网站）。数据形状那一维还是 `kind="mail"`，与分类无关（裁 151 平权）。
+SOURCE_CATEGORIES: tuple[str, ...] = ("message", "social", "website", "local", "system", "email", "custom")
 
 #: 给人看的名字。四语言在 `apps/desktop/src/i18n/{en,zh,ja,zh-hant}.ts` 的
 #: `settings.sources.categories` —— 这里是 slug，不是文案（裁定 45.4 那条：slug 不上屏）。
@@ -222,11 +230,36 @@ class SourceSpec:
     #: 没声明（本地文件、消息客户端这类）就退前端那张品牌表，再退首字母。
     #: 空串是一个**读数**：这一条没有"一个网站"可去。
     site: str = field(default="", kw_only=True)
+    #: 这条信源**自己叫什么**（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。
+    #:
+    #: 它是**专名**，不是句子：不进四语言目录、不当文案翻译（与 :attr:`site` 同一档——
+    #: 声明的是事实，话由界面给）。第三方包填了这一格，屏上就有名字；没填，
+    #: :mod:`plobi.collectors.icons` 会拿它那个站**自报的名字**（首页 `<title>` /
+    #: `og:site_name`，与图标共用那一次抓取）兜住。
+    #:
+    #: 为什么仍然允许界面盖过去：`apps/desktop/src/i18n/*.ts` 那张 `agenda.sources` 表
+    #: 是我们自己那几条的**本地化**（微信／钉钉在四种语言里各有写法），与
+    #: `SetupField.label` 那一格同一套路——声明给缺省值，语言目录优先。
+    #: 空串是一个读数：这一条没给自己起名字。
+    display_name: str = field(default="", kw_only=True)
     collecting: bool = True
     #: 执行方**构造这一条采集器**的唯一入口（`plobi/collectors/sweep.py` 只认这一格，不按名字分支）。
     #: `None` 是一个读数而不是省略：注册表说这条在采、却没有任何一方构造得出它 ——
     #: 2026-10-15 教务那一刀就断在这里（`collecting_sources()` 全仓零调用方）。
     builder: Optional[Callable[[], Any]] = None
+    #: 这条信源**在本机到底成不成立**的那只只读口（用户 10-24：「钉钉你适配一下。我们组织
+    #: 没有开放 CLI。要用别的方式」）。返回 `{"ready": bool, "code": str, "detail": str}`。
+    #:
+    #: 为什么要有这一格而不是在界面上按信源名字判"钉钉特殊"：今天 `builder` 为空 + 开关点着
+    #: 被判成 `error/internal`（屏上一颗红点，意思是"我们的产品坏了"），而钉钉真正的话是
+    #: **"这台机器给不出它要的东西"**——客户端装了但没登录过 ⇒ 本地库不存在。那是**未连接**，
+    #: 不是故障。把这句话变成读数的唯一干净办法，就是让**这条信源自己**回答"你在这台机器上
+    #: 成立吗"，公共层照旧一个字都不按名字分支（判据 3 与能力位同一把尺）。
+    #:
+    #: 与 `Collector.health()` 的分工：`health()` 是**构造得出采集器之后**的连通性；`probe` 是
+    #: **构造不出采集器时**那一段的前置条件。两者不重叠，也不互相兜底。
+    #: 不许抛：探针自己读不到盘/网络时该回 `ready=False` 加一句为什么，红点留给真的故障。
+    probe: Optional[Callable[[], Mapping[str, Any]]] = None
     #: 首次配置要用户填的那几格，**由这一条自己声明**（见 :class:`SetupField`）。
     #: 默认空元组**不是**"可以随便省略"——空是一个合法读数，意思是"首次配置不需要用户
     #: 填任何非密钥的东西"（微信要的是扫码与密钥，两样都不在这一层，所以它就该是空的）。
@@ -368,9 +401,42 @@ def require(source_id: str, key: str) -> bool:
 
 
 def collecting_sources() -> tuple[str, ...]:
+    """**这一轮该打哪几条** = 生效开关点着的那些条。
+
+    2026-10-24 改过判据，改的只有"读哪一格"：这一函数从前只看 `SourceSpec.collecting`
+    （代码里那份**默认值**），于是用户在设置页翻的那颗开关对每天那一轮**什么都不是**——
+    关掉照样打、开着照样不动。那一屏的存在理由恰恰是回答「我明明关了怎么还在跑」
+    （`sources_config.py` 头部与 `enabled_origin` 那几段注记写的就是这句），而当时
+    这一条读口根本没接上它。这不是新拍的口径，是把已有的那句「生效值：用户翻过的优先」
+    真的接到调度那一只手（用户 10-23 原话：「我希望开始和关闭是会真的切断这条信源的采集程序」）。
+
+    为什么是改这一函数而不是在 `sweep.py` / 那条 cron 里再问一次开关：**一处判据一处真源**。
+    那两个调用方现在一个字都不用动，也长不出第二套"什么算在采"。
+
+    回落链本身仍然只在 `sources_config.effective_enabled` 那一处：这里一次调用都没自己写。
+    配置层整个读不到时退回代码默认值并**出声**——那种时候"照旧跑"比"今天全停"更贴近
+    用户的预期，但那句话必须留在日志里（静默回落成默认值正是"我明明关了怎么还在采"的形状）。
+    """
     ensure_discovered()
 
-    return tuple(sorted(sid for sid, item in _SPECS.items() if item.collecting))
+    from plobi.collectors import sources_config
+
+    selected: list[str] = []
+    unreadable: list[str] = []
+
+    for source_id, item in _SPECS.items():
+        try:
+            enabled = sources_config.effective_enabled(source_id)[0]
+        except sources_config.SourceConfigError as exc:
+            enabled = item.collecting
+            unreadable.append(str(exc))
+        if enabled:
+            selected.append(source_id)
+
+    if unreadable:
+        logger.warning("registry: 配置层读不到，这一轮按代码默认值挑信源：%s", "; ".join(unreadable[:2]))
+
+    return tuple(sorted(selected))
 
 
 # ---------------------------------------------------------------------------
