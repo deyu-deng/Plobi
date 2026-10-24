@@ -9830,22 +9830,62 @@ function isAgyOnPath(): boolean {
 function resolveSystemProxyEnv(): Record<string, string> {
   const out: Record<string, string> = {}
   if (process.platform !== 'win32') return out
+
+  // Explicit environment wins over the (often stale) Windows registry entry.
+  // The registry keeps the last proxy address even after the user turns the
+  // switch off, so honouring it unconditionally poisons every child with a
+  // dead proxy (the same failure the 2026-10-14 trust_env incident produced).
+  const envHttp = process.env.HTTP_PROXY || process.env.http_proxy || ''
+  const envHttps = process.env.HTTPS_PROXY || process.env.https_proxy || ''
+  if (envHttp || envHttps) {
+    if (envHttp) {
+      out.HTTP_PROXY = out.http_proxy = envHttp
+    }
+    if (envHttps) {
+      out.HTTPS_PROXY = out.https_proxy = envHttps
+    }
+    out.NO_PROXY = out.no_proxy = 'localhost,127.0.0.1'
+    return out
+  }
+
   try {
     const raw = execFileSync(
       'reg',
-      ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'ProxyServer'],
+      ['query', 'HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings'],
       { windowsHide: true, timeout: 5000 }
     ).toString()
+    const enabled = /ProxyEnable\s+REG_DWORD\s+0x1/i.test(raw)
+    if (!enabled) return out
     const m = raw.match(/ProxyServer\s+REG_SZ\s+(.+)/)
     if (!m) return out
-    let proxy = m[1].trim()
-    if (proxy && !/^https?:\/\//i.test(proxy)) proxy = 'http://' + proxy
-    out.HTTP_PROXY = proxy
-    out.HTTPS_PROXY = proxy
-    out.http_proxy = proxy
-    out.https_proxy = proxy
-    out.NO_PROXY = 'localhost,127.0.0.1'
-    out.no_proxy = 'localhost,127.0.0.1'
+
+    let httpProxy = ''
+    let httpsProxy = ''
+    let socksProxy = ''
+    for (const part of m[1].trim().split(';')) {
+      const [rawKey, rawValue] = part.includes('=')
+        ? part.split('=', 2)
+        : ['http', part]
+      const value = (rawValue || '').trim()
+      if (!value) continue
+      const withScheme = (scheme: string) =>
+        /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `${scheme}://${value}`
+      if (rawKey.toLowerCase() === 'https') {
+        httpsProxy = withScheme('http')
+      } else if (rawKey.toLowerCase() === 'socks' || rawKey.toLowerCase() === 'socks5') {
+        socksProxy = withScheme('socks5')
+      } else {
+        httpProxy = withScheme('http')
+      }
+    }
+
+    if (httpProxy) out.HTTP_PROXY = out.http_proxy = httpProxy
+    if (httpsProxy) out.HTTPS_PROXY = out.https_proxy = httpsProxy
+    else if (httpProxy) out.HTTPS_PROXY = out.https_proxy = httpProxy
+    if (socksProxy && !out.HTTPS_PROXY) out.ALL_PROXY = out.all_proxy = socksProxy
+    if (out.HTTP_PROXY || out.HTTPS_PROXY || out.ALL_PROXY) {
+      out.NO_PROXY = out.no_proxy = 'localhost,127.0.0.1'
+    }
   } catch {
     /* no system proxy configured — leave env untouched */
   }
