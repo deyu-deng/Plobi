@@ -166,6 +166,36 @@ class TestOneProviderIsOneSource:
         assert all(p.port == 993 for p in PROVIDERS)
 
 
+class TestTheDefaultRoundDoesNotDialThem:
+    """五家默认**不点**——日常那一轮现在真的照开关挑信源（纸上 §1 第 9 条）。
+
+    这一条与那颗开关是同一件事的两面：从前 `collecting_sources()` 只看代码默认值，用户翻的
+    那一下不算数；现在它算数了，所以"没填账号的五家默认不打"才有意义，否则每天台账里
+    多五排没人看得懂的 `build_failed`。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _home(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+
+    def test_none_of_the_five_is_in_the_round_by_default(self) -> None:
+        registry.ensure_discovered()
+        selected = set(registry.collecting_sources())
+
+        assert not ({p.source_id for p in PROVIDERS} & selected)
+
+    def test_flipping_the_switch_on_screen_puts_it_in_the_next_round(self) -> None:
+        from plobi.collectors import sources_config
+
+        sources_config.set_enabled("email_qq", True)
+
+        assert "email_qq" in registry.collecting_sources()
+
+        sources_config.set_enabled("email_qq", False)
+
+        assert "email_qq" not in registry.collecting_sources()
+
+
 class TestAPullIsJustMail:
     def test_one_message_becomes_one_row(self) -> None:
         rows = collector(uids=("7",), messages={"7": raw()}).pull()
