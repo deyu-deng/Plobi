@@ -1,43 +1,79 @@
 """钉钉那条的**声明**（`specs/source-layer.md` §3.1）。
 
-它只有声明、没有实现体：本机那个客户端是网关侧的**收发通道**，采集层对它零实现。
-登记可以，编造读数不行（判据 5）——所以 ``collecting=False``，而 ``supports_media``
-保持 ``None``（本仓只做文本收发，没测过媒体），不是拿 ``False`` 冒充测过。
+这一档以前**只有声明没有实现体**（本机那个客户端只是网关侧的收发通道）。2026-10-24 改了：
+用户说「钉钉你两个方式都要支持。用户按需选择。只不过我肯定是用"我登录一次客户端"的方式」
+并且当场登录了客户端 ⇒ 丙路（读那份本机库）第一次有了可验的对象，实现体在
+:mod:`.store`（找目录 / 推钥匙 / 解出只读副本）与 :mod:`.collector`（只取被点名的会话）。
 
-这一档**只有一个包没有 ``__init__.py`` 也会被认出来**：注册表的发现认的是"包顶层有没有
-``SPEC``"，不是"目录长得像不像"。所以本包的模块名与它的 ``source_id`` 不同——发现按
-包走，而 ``SPEC`` 里那个 id 才是信源在词表里的名字。
+登记归口与假数据占位是两件事这条仍然成立：能力位里没实测的那一格留 `None`，
+不拿 `False` 冒充测过（判据 5）。
+
+这一包与它的 `source_id` 同名，但**发现按包走**：注册表认的是"包顶层有没有 `SPEC`"，
+不是目录长得像不像（见 `registry.py` 发现器那一段）。
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
 
 from . import localdb
+
+#: 首次配置那一格：**要采哪几扇会话**，逗号分隔的 cid。
+#:
+#: 必填，是因为它真的是必填：一条都没点名，这一路今天就采不出任何东西（`health()` 那句
+#: 说的正是这件事）。留空不叫"默认全采"——那等于把他的公司群、同事私聊、审批卡片整箱灌进
+#: 信息池，而这一路要的从来不是整箱（隐私默认关，与微信那份名册同一口径）。
+#:
+#: 名单**怎么上屏**是下一刀：面上那块"每个群/每个人采不采"的面板今天只认微信那一份 store，
+#: 所以下面 `conversation_scoped` 这一版留 `False`——指过去会画出一屏错的数据，
+#: 那比没有面板更糟。这一版的取名单方式是跑一条只读命令把 cid 与标题列给他自己挑
+#: （命令与读数在任务书 §5）。
+_CONVERSATIONS = SetupField(
+    key="conversations", label="Conversations to collect", kind="text", required=True,
+    help="Comma-separated conversation ids (cid). Empty collects nothing — it is not "
+         "\"collect everything\".",
+)
+
+
+def _build():
+    """执行方入口。**延迟 import**：`collector` 那一头 import 了 `..base`，而 base 的
+    文档串指着注册表派生的词表——顶层就 import 它在这一族里已经成过环（`zju/_build` 同一处理）。"""
+    from .collector import DingTalkCollector
+
+    return DingTalkCollector.build()
+
 
 SPEC = SourceSpec(
     "dingtalk",
     capabilities={
-        "history_backfill": False,      # Stream 长连接只收连上之后的消息
+        # 实测（2026-10-24 这台，登录后）：本机库里 178 个会话、155 条消息——
+        # 客户端只落它自己已经拉下来的那部分，**这侧没有回捞历史的路径**，所以是 False。
+        # 这一格讲的是我们这侧的契约，不是"钉钉云端没有历史"。
+        "history_backfill": False,
+        # `pull()` 认 `since_ms`（按 `createdAt` 过滤），所以这一格是真的 True。
         "incremental_since": True,
-        "supports_media": None,         # 本仓只做文本收发，没测过媒体
-        "requires_manual_setup": True,  # 开放平台建应用 + 两个 key
+        # 图片/文件那一族：库里 `contentType` 有 2(图)/501(文件)/3100(小程序)，
+        # 但**正文之外的附件怎么取**这一版没实测（`attachments` 那一串 JSON 里的路径
+        # 指向客户端自己的缓存，跨版本换过位置）⇒ 留 None，不拿 False 冒充测过。
+        "supports_media": None,
+        # 要用户自己动一次手：登录桌面客户端 + 点出要采的那几扇会话。
+        "requires_manual_setup": True,
+        # 一轮里没出现不等于"这条消息被取消了"（本机库只是缓存，客户端什么时候清它
+        # 不是我们能预告的），按"本轮未出现"去关闭会判死一批。
         "authoritative_replace": False,
     },
-    # 对话流（Stream 长连接），与微信同族 ⇒ 「消息」。
+    # 对话流，与微信同族 ⇒ 「消息」。
     category="message",
-    site="https://www.dingtalk.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
-    # 这一条**在本机成不成立**，由探针回答（用户 10-24：「我们组织没有开放CLI。要用别的方式」）。
-    #
-    # 它要改的是屏上那一颗**假故障**：今天这条是 `enabled=true` + `builder=None` ⇒ `error/internal`
-    # （「本机采集组件暂未就绪」＝说我们的产品坏了）。真话是"这台机器给不出它要的前提"——
-    # 甲路（官方 CLI）要组织管理员开通、乙路（企业内部应用）要管理员建应用，而丙路（本地客户端库）
-    # 在这台机器上**客户端从没登录过**。那是**未连接**，不是故障。全文在 :mod:`.localdb` 的模块头。
-    #
-    # 探针说 `ready=True` 而仍然没人构造得出执行方，那一颗红点**继续是红**（不许用探针把
-    # 自己的缺口洗绿）：`sources_api.status_of` 里那一支的次序钉着这条。
-    probe=localdb.probe,
-
-    # 名字已经在词表里、但没有任何东西在采它——登记归口与假数据占位是两件事。
+    site="https://www.dingtalk.com",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项
+    # 名字仍然由界面语言目录给（四语各有写法）：这一条不是"一个网站"，那一格的兜底
+    # 只对「网站」那一类开（`sources_api._enrich` 那一段写着为什么）。
+    setup_fields=(_CONVERSATIONS,),
+    # 默认不点：这一路读的是他的 IM，而且要点名会话才有意义。
+    # 10-24 之前这颗开关对调度**不起作用**（`collecting_sources()` 只看代码默认值），
+    # 所以"默认关"那时只是个装饰；现在它真的算数，这一格才第一次有了"默认关"的含义。
     collecting=False,
+    builder=_build,
+    # 这一条在本机成不成立、今天哪条路走得通，由探针回答（它只报"库在不在位"，
+    # 不报"采得到"）。理由与那颗假故障写在 :mod:`.localdb` 的模块头。
+    probe=localdb.probe,
 )
 
 register(SPEC, replace=True)

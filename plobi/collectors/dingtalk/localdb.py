@@ -1,172 +1,80 @@
-r"""钉钉这一条**在本机成不成立** —— 那只探针（用户 10-24：「我们组织没有开放 CLI。要用别的方式」）。
+r"""钉钉这一条在本机成不成立（用户 10-24：「我们组织没有开放 CLI。要用别的方式」＋
+「钉钉你两个方式都要支持。用户按需选择。只不过我肯定是用"我登录一次客户端"的方式」）。
 
-先说这档**不做**什么：不解密、不读正文、不碰进程内存、不联网。它只做一件事——
-回答「这台机器现在给不给得出钉钉那条要的前提」，并把答案变成一个能上屏的读数。
+先说这档**不做**什么：不解密、不读正文、不碰进程内存、不联网。它只回答一句
+**「这台机器今天给得出哪条路」**，并把答案变成能上屏的读数。
 
-为什么要有这一格：屏上那一行今天画的是 `error/internal`（「本机采集组件暂未就绪」），
-那是**说我们在座的某样东西坏了**。它的真话不是这个。真读数（2026-10-24 现核）是：
+三条路今天的形状（2026-10-24 现核，客户端 `D:\Software\DingDing\main\current\DingTalk.exe`
+= 9.0.2.261013001）：
 
-- 甲路（官方 dws CLI，个人身份 OAuth）——**用户组织没开**，这条路要管理员在开发者后台点"CLI 访问管理"，
-  不在我们手里；
-- 乙路（企业内部应用 + Stream 长连接，本仓网关侧已有收发通道）——要 Client ID/Secret，
-  同样要管理员建应用；这台机器上 `$PLOBI_HOME/.env` 现读**没有**那两个键；
-- 丙路（**桌面客户端那份本地库**，与本仓微信那一路同形状）——算法与目录都是公开的
-  （`Docs/reference/dingtalk-collection-survey.md` §4：V2/V3 密钥推导、`dingtalk_encrypt.db`、
-  128 张 `tbmsg_*` 分片表），唯一的前提是**这台机器上有人登录过那个客户端**。
-    现读：客户端装在 `D:\Software\DingDing`，而 `%APPDATA%\DingTalk` 下面只有 `log/package.log`
-    ——**从没登录过**，所以本地库根本不存在，丙路今天能给的是零。
+- **甲 · 官方 dws CLI（个人身份 OAuth → 钉钉 MCP 网关）**——最宽的一条（历史、实时、待办、审批、
+  考勤都给它），但它要求**该组织管理员在开发者后台开通"CLI 访问管理"**，用户原话"我们组织没有开放
+  CLI" ⇒ 今天走不通。这一档只报"这台装没装、配没配"，不去替他猜组织点没点。
+- **乙 · 企业内部应用（Client ID/Secret + Stream）**——本仓网关侧**已有**这条收发通道
+  （`plugins/platforms/dingtalk/adapter.py`），天花板是"被 @ 的那一条"、无历史回读；
+  建应用同样要管理员。这一档报那两个键在不在（只看键名，值一个字节都不读出来）。
+- **丙 · 桌面客户端那份本机库**——用户自己就能解锁的一条（登录一次即可），也就是他选的这条。
+  实现体在 :mod:`.store` 与 :mod:`.collector`；这一档只报"库在不在位"，**不报"采得到"**：
+  库在位但一条会话都没准入，那是零条，两句话不许合成一句（判据 5 那条「成功但空货」的教训）。
 
-所以这一档交的是"把丙路的前提变成一句看得见的话"，**解密器本体押后到有真库可验时**——
-判据在仓里写着：静态绿不算可用（没有一枚真库就写 AES 页解密，我验的是自己编的形状）。
-
-`ready=True` 那一支现在没人能触发（这台机器还没登录过），但它不是留着占位的：它是
-下一刀（真解密 + 落池）的**入口条件**，而那一刀开工前该先跑的就是这一只探针。
+为什么不接 WAL 合并：`store.py` 的模块头写着实测——这台的 3845 帧重放后行数与基础库一致，
+而对密文页算校验和链一帧都对不上 ⇒ 我不 ship 一个"看起来合并了"的路，也不 ship 一个
+解不开的假判据。代价照实写：**最新那几秒到几分钟的写入可能还在 WAL 里**。
 """
 
 from __future__ import annotations
 
 import os
-import re
+import shutil
 from pathlib import Path
 from typing import Any, Optional
 
-#: 测试注入位；界面上不出现这一格。生产走那两只唯一的解析口（:func:`_data_roots` / :func:`_installed`）。
-DB_NAME = "dingtalk_encrypt.db"
-USER_CONFIG_NAME = "user_config"
-#: 目录名那一族：V2 是 `{uid}_v2`，V3 是 `{20 位 hex}_v3`（调研件 §4.2 那一表：**V3 目录名不是 UID**）。
-_PROFILE = re.compile(r"^[0-9A-Za-z]{6,}(_v[23])?$")
+from . import store
 
 
-def data_roots() -> list[Path]:
-    """客户端可能把本机数据放的那几个根（`PLOBI_DINGTALK_DATA_DIR` 是给测试钉的，不是给用户填的）。"""
-    override = (os.environ.get("PLOBI_DINGTALK_DATA_DIR") or "").strip()
-    if override:
-        return [Path(override)]
+def _org_routes() -> dict[str, bool]:
+    """组织侧那两条今天有没有配。**只看键名存在与不为空**，绝不把值带出去。"""
+    from plobi_cli.config import load_env
 
-    roots: list[Path] = []
-    for var in ("APPDATA", "LOCALAPPDATA"):
-        base = (os.environ.get(var) or "").strip()
-        if base:
-            roots.append(Path(base) / "DingTalk")
-
-    # macOS/Linux 那两个常见落点（调研件 §4.1 逐字：`~/.config/DingTalk`、
-    # `~/Library/Application Support/DingTalkMac`）——留着不是"顺手支持一下"，
-    # 是因为这一族的目录**已经在换过一次家**（那条 macOS 的 issue 还开着），
-    # 只认一个根就会把"装了并登录了"读成"没装"。
-    home = Path.home()
-    roots.append(home / ".config" / "DingTalk")
-    roots.append(home / "Library" / "Application Support" / "DingTalkMac")
-
-    return roots
+    env = load_env()
+    configured = bool((os.environ.get("DINGTALK_CLIENT_ID") or env.get("DINGTALK_CLIENT_ID") or "").strip())
+    secret = bool((os.environ.get("DINGTALK_CLIENT_SECRET") or env.get("DINGTALK_CLIENT_SECRET") or "").strip())
+    return {
+        "app": configured and secret,
+        "cli": shutil.which("dws") is not None,
+    }
 
 
-def _profile_dirs(root: Path) -> list[Path]:
-    if not root.is_dir():
-        return []
-    try:
-        return [p for p in sorted(root.iterdir())
-                if p.is_dir() and _PROFILE.match(p.name) and not p.name.startswith(".")]
-    except OSError:
-        return []
+def probe(*, roots: Optional[list[Path]] = None, org: Any = None) -> dict:
+    """`{"ready", "code", "detail"}` ——**这一只探针永不抛**（读不到盘也算一条读数）。
 
-
-def _store_version(profile: Path) -> str:
-    """这一代加密是哪一版（V3 的 salt 在 `user_config` 里，V2 不需要那个文件）。"""
-    if (profile / USER_CONFIG_NAME).is_file():
-        return "v3"
-    if profile.name.endswith("_v2"):
-        return "v2"
-    return "unknown"
-
-
-def _installed() -> bool:
-    """这台机器装过钉钉桌面端没有。**只做存在性判断**，不执行、不读取那个目录里的任何东西。"""
-    import sys
-
-    if sys.platform.startswith("win"):
-        # 10-24 现核：这台那条记录在 **HKLM 的 `WOW6432Node`** 那侧，`DisplayName` 是「钉钉」。
-        # 只扫 HKCU 会把它读成"没装过"——而"没装"与"装了没登录"是两句不同的话，
-        # 界面上落的是两句不同的句子（`client_not_installed` / `client_not_logged_in`）。
-        for hive in ("HKCU", "HKLM"):
-            for base in (r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
-                         r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"):
-                if _uninstall_names(f"{hive}\\{base}"):
-                    return True
-        return any(Path(one).is_dir() for one in _install_candidates())
-
-    return Path("/Applications/DingTalk.app").is_dir() or Path("/Applications/钉钉.app").is_dir()
-
-
-_HIVES = {"HKCU": "HKEY_CURRENT_USER", "HKLM": "HKEY_LOCAL_MACHINE"}
-
-
-def _uninstall_names(key: str) -> list[str]:
-    """那一支下面所有DisplayName里像钉钉的那几个。**读不到就当没有**（不抛）。"""
-    names: list[str] = []
-    try:
-        import winreg
-
-        hive_name, _, sub_key = key.partition("\\")
-        with winreg.OpenKey(getattr(winreg, _HIVES[hive_name]), sub_key) as hkey:
-            for index in range(winreg.QueryInfoKey(hkey)[0]):
-                sub_name = winreg.EnumKey(hkey, index)
-                try:
-                    with winreg.OpenKey(hkey, sub_name) as sub:
-                        value = winreg.QueryValueEx(sub, "DisplayName")[0]
-                except OSError:
-                    continue
-                if isinstance(value, str) and ("ding" in value.lower() or "钉" in value):
-                    names.append(value)
-    except (OSError, ImportError, AttributeError, ValueError):
-        return []
-    return names
-
-
-def _install_candidates() -> list[str]:
-    out = []
-    for var in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
-        base = (os.environ.get(var) or "").strip()
-        if base:
-            out.append(str(Path(base) / "DingDing"))
-            out.append(str(Path(base) / "DingTalk"))
-    return out
-
-
-def probe(*, roots: Optional[list[Path]] = None, installed: Any = None) -> dict:
-    """`{"ready": bool, "code": str, "detail": str}` —— **这一只探针永不抛**。
-
-    读不到盘就说读不到（`local_store_missing`），不把那一屏弄红：那条红点是"我们的产品坏了"
-    的意思，而这里要说的是"这台机器还没给它要的前提"。
+    `ready` 的判据只有一件事：**有没有一条今天走得通的采集路**。今天只有丙。
     """
-    roots = data_roots() if roots is None else roots
-    is_installed = _installed() if installed is None else (installed() if callable(installed) else installed)
+    org_routes = _org_routes() if org is None else (org() if callable(org) else dict(org))
+    org_note = "组织侧：CLI {cli}、企业内部应用 {app}".format(
+        cli="已装" if org_routes.get("cli") else "未装",
+        app="已配" if org_routes.get("app") else "未配")
 
     try:
-        profiles = [one for root in roots for one in _profile_dirs(root)]
-        saw_root = any(root.is_dir() for root in roots)
-    except OSError as exc:  # 盘读不到（权限/网络盘掉了）也是一种"前提不在"
+        found = store.profiles(roots if roots is not None else store.data_roots())
+    except OSError as exc:
         return {"ready": False, "code": "local_store_missing",
-                "detail": f"本机数据目录读不到：{type(exc).__name__}"}
+                "detail": f"本机数据目录读不到：{type(exc).__name__}；{org_note}"}
 
-    with_db = [one for one in profiles if (one / DB_NAME).is_file()]
+    if not found:
+        if any(root.is_dir() for root in (roots or store.data_roots())):
+            return {"ready": False, "code": "client_not_logged_in",
+                    "detail": f"客户端装了、但这台没有已登录的资料目录 ⇒ 本机库里没有东西可采；{org_note}"}
+        return {"ready": False, "code": "client_not_installed",
+                "detail": f"这台机器上没有装过/登录过钉钉桌面客户端；{org_note}"}
 
-    if with_db:
-        # 前提齐了：本地库在位。**注意这一句不等于"能采到东西"**——本地库会不会滞后是
-        # 一条独立的健康判据（调研件 §4.4：dingwave issue #4「dingtalk.db 拿不到最新的消息」，
-        # 至今 open）。那一刀开工时这里就是它的入口。
-        first = with_db[0]
-        return {"ready": True, "code": "local_store_found",
-                "detail": f"本地库在位：{first / DB_NAME}（{_store_version(first)}）"}
-
-    if profiles:
+    profile = found[0]
+    db = store.db_path(profile)
+    if db is None:
         return {"ready": False, "code": "local_store_missing",
-                "detail": f"有 {len(profiles)} 个已登录的资料目录，但里面没有 {DB_NAME}"}
+                "detail": f"资料目录 {profile.name} 在，但里面没有 {store.DB_NAME}；{org_note}"}
 
-    # 资料目录一个都没有，但**根目录在**（安装器自己会建它，这台现读就是 `<APPDATA>\DingTalk\log`）
-    # ⇒ 装过、跑过，只是从没登录过。这一支不看注册表：盘上那个根比一条卸载记录更硬。
-    if saw_root or is_installed:
-        return {"ready": False, "code": "client_not_logged_in",
-                "detail": "桌面客户端装了，但这台机器上它从没登录过 ⇒ 本地库里没有东西可采"}
-
-    return {"ready": False, "code": "client_not_installed",
-            "detail": "这台机器上没有装过钉钉桌面客户端"}
+    # 到这一步丙路成立。注意这一句**不声称**采得到东西：准入名单是空的，今天就是零条。
+    return {"ready": True, "code": "local_store_found",
+            "detail": f"本机库在位：{db.name}（{db.stat().st_size // 1024} KB，{profile.name}）；"
+                      f"采集要逐扇会话点名，一条都没点名就是零条；{org_note}"}
