@@ -256,3 +256,33 @@ def test_catalog_availability_survives_the_grouping_by_provider():
     avail = sources["workbuddy"]["availability"]
     assert avail["selectable"] is True and avail["live"] is True
     assert avail["models"] == 2, "一条活模型不该把整家判死，也不许把 mock 算进来"
+
+
+def test_gateway_quota_snapshot_reports_lowest_bucket_percent():
+    """网关账号对象带 groups 时，`remaining` 读的是最低一档的剩余比例（0–100）。"""
+    accounts = [
+        {
+            "id": "acc-1",
+            "state": "active",
+            "quota": {
+                "groups": [
+                    {
+                        "display_name": "Gemini Models",
+                        "buckets": [
+                            {"bucket_id": "gemini-weekly", "window": "weekly",
+                             "remaining_fraction": 0.42, "reset_time": "2026-10-30T00:00:00Z"},
+                            {"bucket_id": "gemini-5h", "window": "5h",
+                             "remaining_fraction": 0.18, "reset_time": "2026-10-24T23:00:00Z"},
+                        ],
+                    }
+                ]
+            },
+        }
+    ]
+
+    reading = readout.remaining("antigravity", kind="aigw", accounts=accounts, now=NOW)
+
+    assert reading.remaining == 18.0
+    assert reading.unit == readout.UNIT_PERCENT
+    assert reading.reason == readout.REASON_READ
+    assert "gemini-5h" in reading.detail or "18.0" in reading.detail

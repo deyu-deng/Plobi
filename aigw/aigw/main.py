@@ -119,6 +119,22 @@ def _startup_safety_checks(cfg: dict) -> None:
         )
 
 
+QUOTA_REFRESH_SECONDS = 900.0
+
+
+async def _quota_refresh_loop(reg, interval: float) -> None:
+    """Keep account quota snapshots fresh without blocking chat routing."""
+    await reg.ensure_models_refreshed()
+    while True:
+        try:
+            await reg.refresh_quotas()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("quota refresh loop failed: %s: %s", type(exc).__name__, exc)
+        await asyncio.sleep(interval)
+
+
 @app.on_event("startup")
 async def _startup():
     cfg = load()
@@ -153,6 +169,9 @@ async def _startup():
     # fetches its real model list via fetchAvailableModels). Best-effort and
     # non-blocking; /v1/models also triggers it lazily on first call.
     asyncio.create_task(reg.ensure_models_refreshed())
+    quota_task = asyncio.create_task(
+        _quota_refresh_loop(reg, float(cfg.get("quota_refresh_seconds", QUOTA_REFRESH_SECONDS)))
+    )
     sched = Scheduler(reg.providers, **cfg.get("scheduler", {}))
 
     # Token Manager + encrypted vault (optional but recommended)
@@ -185,11 +204,15 @@ async def _startup():
         sched=sched,
         api_key=_declared_api_key(cfg),
         tokenmgr=tokenmgr,
+        quota_task=quota_task,
     )
 
 
 @app.on_event("shutdown")
 async def _shutdown():
+    if STATE.get("quota_task"):
+        with contextlib.suppress(Exception):
+            STATE["quota_task"].cancel()
     if STATE.get("tokenmgr"):
         with contextlib.suppress(Exception):
             await STATE["tokenmgr"].stop()

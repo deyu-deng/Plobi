@@ -57,6 +57,14 @@ logger = logging.getLogger("aigw.antigravity")
 DEFAULT_HOST_DAILY = "https://daily-cloudcode-pa.googleapis.com"
 DEFAULT_HOST_PROD = "https://cloudcode-pa.googleapis.com"
 
+# Quota summary (weekly + 5h buckets) — the capability we absorbed from
+# Antigravity-Manager instead of depending on its GUI/API gateway.
+QUOTA_SUMMARY_ENDPOINTS = (
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
+    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+)
+
 # Headers the real Antigravity client sends. Google rejects the call without a
 # believable x-goog-api-client, so we mirror the binary exactly.
 ANTIGRAVITY_HEADERS = {
@@ -301,6 +309,120 @@ class AntigravityProvider(Provider):
             return False, "credential_expired"
         return True, "ok"
 
+    # --- quota aggregation (internalized from Antigravity-Manager) ------
+    async def refresh_quota(self, acc: Account) -> None:
+        """Poll Google's own quota summary and keep it on the account.
+
+        This is the capability we internalized: no GUI, no local gateway and no
+        second process — the same account credential that serves chat is used
+        to read the weekly / 5h buckets directly. Failure is data, not an
+        exception: the previous snapshot stays visible and is not overwritten
+        with zeros.
+        """
+        try:
+            await self.ensure_fresh(acc)
+            project = await self._project_id(acc)
+            groups = await self.fetch_quota_summary(acc, project=project)
+            models = await self.fetch_model_quotas(acc, project=project)
+        except UpstreamError as exc:
+            logger.warning("antigravity quota refresh skipped for %s: %s", acc.id, exc)
+            return
+        except Exception as exc:
+            logger.warning(
+                "antigravity quota refresh failed for %s: %s: %s",
+                acc.id, type(exc).__name__, exc,
+            )
+            return
+
+        if groups is None and not models:
+            return
+        previous = dict(acc.quota or {})
+        if groups is not None:
+            previous["groups"] = groups
+        if models:
+            previous["models"] = models
+        previous["checked_at"] = int(time.time())
+        previous["source"] = "antigravity:retrieveUserQuotaSummary+fetchAvailableModels"
+        acc.quota = previous
+
+    async def fetch_quota_summary(
+        self, acc: Account, *, project: str = ""
+    ) -> list[dict] | None:
+        """``retrieveUserQuotaSummary`` → group/bucket list, or ``None`` on failure."""
+        payload = {"project": project} if project else {}
+        data = await self._quota_post(acc, QUOTA_SUMMARY_ENDPOINTS, payload, "retrieveUserQuotaSummary")
+        if data is None:
+            return None
+        groups = data.get("groups") if isinstance(data, dict) else None
+        if not isinstance(groups, list):
+            return []
+        out: list[dict] = []
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            buckets: list[dict] = []
+            for bucket in group.get("buckets") or []:
+                if not isinstance(bucket, dict):
+                    continue
+                fraction = _as_fraction(bucket.get("remainingFraction"))
+                if fraction is None:
+                    continue
+                buckets.append({
+                    "bucket_id": str(bucket.get("bucketId") or ""),
+                    "description": bucket.get("description"),
+                    "display_name": bucket.get("displayName"),
+                    "remaining_fraction": fraction,
+                    "reset_time": str(bucket.get("resetTime") or ""),
+                    "window": str(bucket.get("window") or ""),
+                })
+            out.append({
+                "buckets": buckets,
+                "description": group.get("description"),
+                "display_name": str(group.get("displayName") or ""),
+            })
+        return out
+
+    async def fetch_model_quotas(self, acc: Account, *, project: str = "") -> list[dict]:
+        """Model-level quota (``fetchAvailableModels`` → quotaInfo) from the same call."""
+        payload = {"project": project} if project else {}
+        url = f"{self.host}/{self.api_version}:fetchAvailableModels"
+        try:
+            r = await self.http.post(
+                url, headers=self._headers(acc.cred.access_token), json=payload, timeout=20.0
+            )
+        except Exception:
+            return []
+        if r.status_code != 200:
+            return []
+        try:
+            data = r.json()
+        except Exception:
+            return []
+        return _parse_model_quotas(data)
+
+    async def _quota_post(
+        self, acc: Account, endpoints: tuple[str, ...], payload: dict, label: str
+    ) -> dict | None:
+        """Try the official endpoint fallback chain; keep failures out of routing."""
+        for url in endpoints:
+            try:
+                r = await self.http.post(
+                    url, headers=self._headers(acc.cred.access_token),
+                    json=payload, timeout=15.0,
+                )
+            except Exception:
+                continue
+            if r.status_code != 200:
+                continue
+            try:
+                data = r.json()
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                return data
+            logger.warning("antigravity %s returned a non-object payload", label)
+        return None
+
     # --- live model catalog (replaces hardcoded names) ------------------
     async def refresh_models(self, acc: Account) -> list[str] | None:
         """Fetch the live Antigravity model catalog and replace our served list.
@@ -316,7 +438,7 @@ class AntigravityProvider(Provider):
         except UpstreamError as e:
             logger.warning("antigravity model refresh skipped: %s", e)
             return None
-        except Exception as e:  # noqa: BLE001  (any failure → keep seed)
+        except Exception as e:
             logger.warning(
                 "antigravity model refresh failed: %s: %s", type(e).__name__, e
             )
@@ -350,7 +472,7 @@ class AntigravityProvider(Provider):
             r = await self.http.post(
                 url, headers=self._headers(acc.cred.access_token), json=body, timeout=20.0
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise UpstreamError(
                 502,
                 f"antigravity: fetchAvailableModels transport {type(e).__name__}: {e}",
@@ -368,7 +490,7 @@ class AntigravityProvider(Provider):
             )
         try:
             data = r.json()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise UpstreamError(
                 502,
                 f"antigravity: fetchAvailableModels invalid JSON {type(e).__name__}: {e}",
@@ -614,6 +736,44 @@ class AntigravityProvider(Provider):
 
 
 # --- translation helpers ---------------------------------------------------
+def _as_fraction(value: object) -> float | None:
+    """Remaining fraction 0..1; booleans and out-of-range values are not numbers."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not (0.0 <= number <= 1.0):
+        return None
+    return number
+
+
+def _parse_model_quotas(data: object) -> list[dict]:
+    """Model-level quota rows from a ``fetchAvailableModels`` record payload."""
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("models") or data.get("availableModels") or data.get("available_models")
+    if not isinstance(raw, dict):
+        return []
+    out: list[dict] = []
+    for name, info in raw.items():
+        if not isinstance(info, dict):
+            continue
+        quota = info.get("quotaInfo") if isinstance(info.get("quotaInfo"), dict) else {}
+        fraction = _as_fraction(quota.get("remainingFraction"))
+        if fraction is None:
+            continue
+        short = str(name).split("/")[-1]
+        out.append({
+            "display_name": info.get("displayName"),
+            "name": short,
+            "remaining_fraction": fraction,
+            "reset_time": str(quota.get("resetTime") or ""),
+        })
+    return out
+
+
 def _parse_antigravity_models(data: object) -> list[str]:
     """Extract short model ids from a ``fetchAvailableModels`` response.
 

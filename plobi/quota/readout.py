@@ -58,6 +58,8 @@ REMAINING_REASONS = (
 UNIT_USD = "usd"
 UNIT_REQUESTS = "requests"   # 限流窗口剩余请求数：**不是钱**
 UNIT_CREDITS = "credits"
+#: 订阅制额度桶的剩余比例（0–100）。它与钱、与请求数都不同：这是「这一档还能用多久」。
+UNIT_PERCENT = "percent"
 
 #: 网关账号对象 `quota` 里可能出现的字段，按"越像钱越优先"排；命中第一个真读数就停。
 #: `remaining` 这一位是 `aigw/aigw/providers/antigravity.py:610-613` 从
@@ -218,6 +220,59 @@ def fetch_health(
     )
 
 
+def _quota_snapshot(accounts: list[dict[str, Any]]) -> Optional[tuple[float, str, dict[str, str]]]:
+    """Lowest numeric remaining fraction across quota groups/models.
+
+    A single atom needs one number; across several buckets the conservative
+    read is the **lowest** one (that is the bucket that will hit first). The
+    full snapshot stays in the account object; this only picks the warning line.
+    """
+    candidates: list[tuple[float, str, str]] = []
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        quota = account.get("quota") if isinstance(account.get("quota"), dict) else {}
+        whose = str(account.get("id") or "")
+        for group in quota.get("groups") or []:
+            if not isinstance(group, dict):
+                continue
+            gname = str(group.get("display_name") or "quota")
+            for bucket in group.get("buckets") or []:
+                if not isinstance(bucket, dict):
+                    continue
+                fraction = as_number(bucket.get("remaining_fraction"))
+                if fraction is None or not (0.0 <= fraction <= 1.0):
+                    continue
+                label = str(bucket.get("display_name") or bucket.get("bucket_id") or gname)
+                window = str(bucket.get("window") or "")
+                reset = str(bucket.get("reset_time") or "")
+                candidates.append((fraction, f"{label}{(' · ' + window) if window else ''}",
+                                   f"{whose} {gname} {label} {window} {reset}".strip()))
+        for model in quota.get("models") or []:
+            if not isinstance(model, dict):
+                continue
+            fraction = as_number(model.get("remaining_fraction"))
+            if fraction is None or not (0.0 <= fraction <= 1.0):
+                continue
+            label = str(model.get("display_name") or model.get("name") or "model")
+            reset = str(model.get("reset_time") or "")
+            candidates.append((fraction, label, f"{whose} {label} {reset}".strip()))
+    if not candidates:
+        return None
+    fraction, label, evidence = min(candidates, key=lambda item: item[0])
+    return (
+        round(fraction * 100.0, 1),
+        label,
+        {
+            "quota.remaining_fraction": (
+                f"{len(candidates)} 个桶/模型里最低的是「{label}」= {fraction:.4f}；"
+                f"明细在 /healthz 账号对象的 quota.groups / quota.models"
+            ),
+            "evidence": evidence,
+        },
+    )
+
+
 def remaining(
     name: str,
     *,
@@ -258,6 +313,14 @@ def remaining(
 
     if kind == "aigw":
         rows = list(accounts or [])
+        snapshot = _quota_snapshot(rows)
+        if snapshot is not None:
+            value, label, evidence = snapshot
+            return BalanceReading(
+                name, kind, value, UNIT_PERCENT, REASON_READ,
+                f"账号配额快照里最低的一档「{label}」还剩 {value}%（0–100）",
+                "answered", evidence, now,
+            )
         seen_fields: list[str] = []
         # 多家账号**不做合并**：合数是产品决定（求和＝钱包叠得起来吗？取最小＝轮询真会轮到的那家吗？），
         # 在这里发明一种合法就是拿估算值冒充。这一格只交"某一个账号报的那个真数"，并说清是哪一家。

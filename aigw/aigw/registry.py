@@ -126,7 +126,7 @@ class Registry:
         for name in self.providers:
             try:
                 await self._refresh_provider_models(name)
-            except Exception:  # noqa: BLE001  (one bad provider mustn't break others)
+            except Exception:
                 pass
 
     async def _refresh_provider_models(self, name: str) -> None:
@@ -234,3 +234,18 @@ class Registry:
                 }
             )
         return out
+
+    async def refresh_quotas(self) -> None:
+        """Poll every schedulable account's quota summary (best effort).
+
+        One account's failure never stops the others and never raises out of
+        here: the health endpoint must keep rendering the last snapshot.
+        """
+        for prov in self.providers.values():
+            for acc in list(prov.accounts):
+                if not acc.schedulable():
+                    continue
+                try:
+                    await prov.refresh_quota(acc)
+                except Exception:
+                    continue
