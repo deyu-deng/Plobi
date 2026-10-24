@@ -385,8 +385,8 @@ function resolvePlobiHome() {
     // registry keeps the desktop and the CLI on the same home.
     const fromRegistry = readWindowsUserEnvVar('PLOBI_HOME')
 
-    if (fromRegistry) {
-      return normalizePlobiHomeRoot(fromRegistry)
+    if (fromRegistry?.trim()) {
+      return normalizePlobiHomeRoot(fromRegistry.trim())
     }
   }
 
@@ -926,6 +926,7 @@ let previewShortcutActive = false
 let desktopLogBuffer = ''
 let desktopLogFlushTimer = null
 let desktopLogFlushPromise = Promise.resolve()
+let lastDesktopLogFlushWarnAt = 0
 let nativeThemeListenerInstalled = false
 
 // R-051 — the single source of truth for the two subsystems R-047 pushed to the
@@ -1051,8 +1052,16 @@ function flushDesktopLogBufferAsync() {
       await rotateDesktopLogIfNeededAsync()
       await fs.promises.appendFile(DESKTOP_LOG_PATH, chunk)
     })
-    .catch(() => {
-      // Logging must never crash the desktop shell.
+    .catch(err => {
+      // Logging must never crash the desktop shell — but stay visible:
+      // a silent flush failure is exactly what a zero-byte desktop.log looks
+      // like. Throttle to once per 30s so a broken path can't spam stderr.
+      const now = Date.now()
+
+      if (now - (lastDesktopLogFlushWarnAt || 0) > 30_000) {
+        lastDesktopLogFlushWarnAt = now
+        console.error(`[plobi] desktop.log flush failed: ${err?.message || err}`)
+      }
     })
 
   return desktopLogFlushPromise
@@ -1096,6 +1105,11 @@ function rememberLog(chunk) {
 
   scheduleDesktopLogFlush()
 }
+
+// Startup self-check for the desktop.log pipeline: if the path resolver or
+// flush machinery ever regresses, the first line of every run makes it
+// visible instead of a silent zero-byte log.
+rememberLog(`[boot] desktop log ready at ${DESKTOP_LOG_PATH}`)
 
 function openExternalUrl(rawUrl) {
   const raw = String(rawUrl || '').trim()
@@ -4802,8 +4816,14 @@ async function waitForPlobi(baseUrl, token) {
   // wait budget and surface "Timed out connecting … after 15000ms" even though
   // the socket was already listening. Prefer short probes + a longer overall
   // deadline so we ride out transient stalls without failing the boot.
+  //
+  // 2.5s per-probe timeout was far shorter than the backend's ~40s cold start
+  // and leaked "… after 2500ms" into the boot-failure UI, misreporting a
+  // still-starting backend as dead. Align with backend-probes.ts
+  // PROBE_TIMEOUT_MS (15000) so a single probe can ride out a cold-import /
+  // GIL-stall window; the 90s deadline still bounds the whole wait.
   const deadline = Date.now() + 90_000
-  const probeTimeoutMs = 2_500
+  const probeTimeoutMs = 15_000
   let lastError = null
 
   while (Date.now() < deadline) {
@@ -9111,7 +9131,7 @@ async function ensureChatlogServer(): Promise<void> {
   if (!sidecar.ok) {
     // 起不来的真原因就说这个原因，不许冒充"没产物"或"没配 CHATLOG_DATA_KEY"那一格：
     // `server` 在没有 data_key 时是直接退出（上游 manager.go:349）。
-    reportDeferredSubsystem('chatlog', 'red', `微信数据密钥没到手：${sidecar.detail}`)
+    reportDeferredSubsystem('chatlog', 'red', `微信数据读取所需密钥获取失败：${sidecar.detail}`)
     rememberLog(`[sidecar] chatlog key handoff failed: ${sidecar.detail}`)
 
     return
@@ -9171,7 +9191,7 @@ async function ensureChatlogServer(): Promise<void> {
       } else {
         // 到顶了：说一句人话，别再排定时器（这文件上面那两次风暴就是这么来的）。
         reportDeferredSubsystem('chatlog', 'red',
-          `chatlog 连续 ${plan.attempt} 次起来后又退出，已停止自动重拉；微信这一格采不到，重启桌面可再试一次`)
+          `微信消息采集服务连续 ${plan.attempt} 次启动失败，已停止自动重试；重启应用后可再次尝试`)
       }
       // No ledger write here on purpose: a child that dies before the port ever
       // answers is already reported by the poll below, and reporting from the exit
@@ -9676,7 +9696,7 @@ function resolveAigwDir(): string {
   // 4) Bootstrap-installed backend clone (PLOBI_HOME/plobi-agent/aigw).
   //    After first-launch bootstrap the full Plobi repo (including aigw/) is
   //    cloned into PLOBI_HOME, so a packaged desktop can find it there.
-  const plobiHome = process.env.PLOBI_HOME
+  const plobiHome = process.env.PLOBI_HOME?.trim()
   if (plobiHome) {
     const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'aigw')
     if (isAigwDir(bootstrapPath)) {
@@ -9874,7 +9894,7 @@ async function startAigwGateway(
   // Prefer an explicitly-passed token (e.g. from the auth flow); fall back to a
   // previously persisted one so a restart can self-heal without re-login.
   const token = extraEnv.ANTIGRAVITY_REFRESH_TOKEN ?? loadAigwToken() ?? ''
-  const env = { ...process.env, ...resolveSystemProxyEnv(), AIGW_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...extraEnv }
+  const env = { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), AIGW_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...extraEnv }
   const baseUrl = `http://127.0.0.1:${opts.port}/v1`
 
   let child: ReturnType<typeof spawn>
@@ -10034,23 +10054,23 @@ async function authAntigravity(aigwDir: string): Promise<{
   }
 
 
-  // Reuse any previously persisted token so the user doesn't have to re-login
-  // on every reconnect / app restart.
-  let refreshToken = loadAigwToken()
+  // Reuse a legacy token only if the user already had one. New OAuth runs no
+  // longer print the token: `aigw auth` stores it under PLOBI_HOME and the
+  // provider discovers it on startup. That keeps the secret out of stdout/logs
+  // and out of this process's own token file.
+  const legacyToken = loadAigwToken()
 
-  if (!refreshToken) {
-    logAigw('auth: no saved token — running aigw auth antigravity (OAuth bootstrap)')
+  if (!hasStoredAntigravityAccount()) {
+    logAigw('auth: no stored Antigravity account — opening Google sign-in')
 
     try {
-      refreshToken = await runAigwAuthAntigravity(python, aigwDir)
+      const ok = await runAigwAuthAntigravity(python, aigwDir)
 
-      if (!refreshToken) {
+      if (!ok) {
         return { ok: false, code: 'AUTH_FAILED', error: 'Antigravity OAuth authentication failed or was cancelled.' }
       }
 
-      // Persist so future launches can skip the browser login.
-      persistAigwToken(refreshToken)
-      logAigw('auth: OAuth token obtained and persisted')
+      logAigw('auth: OAuth account stored; gateway will discover it from PLOBI_HOME')
     } catch (err: any) {
       logAigw(`auth: aigw auth antigravity error: ${err?.message ?? err}`)
       return {
@@ -10060,14 +10080,16 @@ async function authAntigravity(aigwDir: string): Promise<{
       }
     }
   } else {
-    logAigw('auth: using previously saved token')
+    logAigw('auth: stored Antigravity account found')
   }
 
-  return finishGatewayAuth(
-    'antigravity',
-    configPath,
-    { AIGW_KEY: 'sk-local-antigravity', ANTIGRAVITY_REFRESH_TOKEN: refreshToken }
-  )
+  const extraEnv: Record<string, string> = { AIGW_KEY: 'sk-local-antigravity' }
+
+  if (legacyToken) {
+    extraEnv.ANTIGRAVITY_REFRESH_TOKEN = legacyToken
+  }
+
+  return finishGatewayAuth('antigravity', configPath, extraEnv)
 }
 
 // Workbuddy: rides on the product quota hub (:8000), which already serves the real
@@ -10195,15 +10217,29 @@ async function fetchGatewayModels(baseUrl: string, apiKey: string, appId: string
   }
 }
 
-// Run `aigw auth antigravity` as a child process, capture its stdout, and
-// extract the composite refresh token ("rt|projectId|mpid" on the final success
-// line). Returns the token string, or undefined if auth failed/was cancelled.
-function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<string | undefined> {
+function antigravityAccountsPath(): string {
+  return path.join(PLOBI_HOME, 'plobi', 'antigravity_accounts.json')
+}
+
+function hasStoredAntigravityAccount(): boolean {
+  try {
+    const raw = fs.readFileSync(antigravityAccountsPath(), 'utf8')
+    const data = JSON.parse(raw) as { accounts?: Array<{ refresh_token?: string }> }
+    return Boolean(data.accounts?.some(a => Boolean(a?.refresh_token)))
+  } catch {
+    return false
+  }
+}
+
+// Run `aigw auth antigravity` and wait for it to store the account. The token
+// is never parsed from stdout: it lives in PLOBI_HOME/plobi/antigravity_accounts.json
+// with owner-only permissions, and the provider discovers it from there.
+function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
       ['-m', 'aigw', 'auth', 'antigravity'],
-      { cwd: aigwDir, env: { ...process.env, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
+      { cwd: aigwDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
     )
 
     let stdout = ''
@@ -10236,28 +10272,14 @@ function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<string
         return
       }
 
-      // The OAuth bootstrap prints the composite token on its final line:
-      //   ✅ SUCCESS — Antigravity composite refresh token
-      //   ==================================================
-      //     <refresh_token>|<project_id>|
-      //
-      // We parse the last non-empty line that looks like a composite token.
-      const lines = stdout.split('\n').filter(l => l.trim())
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim()
-        // Composite format: "rt|projectId|" or "rt|projectId|mpid"
-        if (/^[^|]+\|[^\|]*\|[^\|]*$/.test(line)) {
-          resolve(line)
-          return
-        }
+      // The token is deliberately not printed. The child writes it to the
+      // owner-only account file; success means that file now names an account.
+      if (!hasStoredAntigravityAccount()) {
+        reject(new Error('OAuth finished but no Antigravity account was stored.'))
+        return
       }
 
-      resolve(undefined)
-    })
-
-    child.on('error', (err: Error) => {
-      clearTimeout(timeout)
-      reject(err)
+      resolve(true)
     })
   })
 }
