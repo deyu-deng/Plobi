@@ -11100,6 +11100,17 @@ def cmd_profile(args):
             sys.exit(1)
 
     elif action == "create":
+        # 裁 178 乙案第 4 步收口（用户 10-24 21:1x 面令）：**入口关掉，能力留着**。
+        # `profiles.create_profile()` 本体不动——它是库函数，`test_profiles.py` 那十几条与
+        # `test_l2_shared_skills.py` 都在测 clone/clone_all 那套机制；`-p <name>` 的懒建空壳
+        # （`_lazy_create_profile`）是 B 刀故意留的进程落点，也照旧。
+        print(
+            "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再“一家一个分身”。\n"
+            "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。\n"
+            "只需要一个进程落点：plobi -p <name> … 会在盘上没有时懒建一个空壳。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
         name = args.profile_name
         clone = getattr(args, "clone", False)
         clone_all = getattr(args, "clone_all", False)

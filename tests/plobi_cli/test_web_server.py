@@ -3929,8 +3929,10 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
 
-        created = self.client.post("/api/profiles", json={"name": "test-prof"})
-        assert created.status_code == 200
+        retired = self.client.post("/api/profiles", json={"name": "test-prof"})
+        assert retired.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        # rename / delete 这两口**没退役**，所以这一条照样要有个家——改走库函数拿它。
+        profiles_mod.create_profile("test-prof")
 
         renamed = self.client.patch(
             "/api/profiles/test-prof",
@@ -3975,12 +3977,17 @@ class TestNewEndpoints:
         monkeypatch.setattr(profiles_mod, "_get_wrapper_dir", lambda: wrapper_dir)
         monkeypatch.setattr(profiles_mod.shutil, "which", lambda name: "/opt/plobi/bin/plobi")
 
-        resp = self.client.post(
-            "/api/profiles",
-            json={"name": "writer", "clone_from": None},
-        )
+        resp = self.client.post("/api/profiles", json={"name": "writer"})
 
-        assert resp.status_code == 200
+        # 别名**不是** `create_profile()` 建的——它原来由这个入口顺手建。入口退役（裁 178 乙案
+        # 第 4 步）之后，建别名只剩两个真口：`plobi profile alias add`（main.py 那一支）与
+        # `profile_distribution` 的落点计划。所以这一条改成钉 410，别名文件的逐字形状由那两个口
+        # 自己的用例去钉——不在这里借一个已退役的入口假装还测着。
+        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+
+        # 别名文件本身的形状照旧要钉：它由 `create_wrapper_script()` 生成，`plobi profile alias add`
+        # 与 `profile_distribution` 调的都是这一只——与建家入口无关。
+        profiles_mod.create_wrapper_script("writer")
         is_windows = sys.platform == "win32"
         wrapper_path = wrapper_dir / ("writer.bat" if is_windows else "writer")
         assert wrapper_path.exists()
@@ -4003,17 +4010,19 @@ class TestNewEndpoints:
         default_skill.mkdir(parents=True)
         (default_skill / "SKILL.md").write_text("---\nname: new-skill\n---\n", encoding="utf-8")
 
-        resp = self.client.post(
-            "/api/profiles",
-            json={"name": "cloned", "clone_from": "default"},
-        )
-
-        assert resp.status_code == 200
+        assert self.client.post(
+            "/api/profiles", json={"name": "cloned", "clone_from": "default"}
+        ).status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        # 旧入口的语义是"给了 clone_from 就带 clone_config"，照原样交给库函数。
+        profiles_mod.create_profile("cloned", clone_from="default", clone_config=True)
         cloned_root = get_plobi_home() / "profiles" / "cloned"
         cloned_skill = cloned_root / "skills" / "custom" / "new-skill" / "SKILL.md"
         assert cloned_skill.exists()
-        cloned_config = yaml.safe_load((cloned_root / "config.yaml").read_text(encoding="utf-8"))
-        assert cloned_config["_config_version"] == DEFAULT_CONFIG["_config_version"]
+        # 旧断言读的是"新家自己那份 config.yaml 的 `_config_version`"。那份文件本身在裁 42
+        # 里已经被收走（配置与密钥只有一份，在顶层），所以这里换成**更严**的一格：
+        # 克隆出来的家不该长出自己的 config.yaml——长出来就是复印机又开动了。
+        assert not (cloned_root / "config.yaml").exists(), \
+            "裁 42：配置只有一份，克隆不许造出第二份 config.yaml"
         profiles = {p["name"]: p for p in self.client.get("/api/profiles").json()["profiles"]}
         assert profiles["cloned"]["skill_count"] == 1
 
@@ -4024,18 +4033,16 @@ class TestNewEndpoints:
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
         # Create a source profile and give it a distinctive skill.
-        assert self.client.post("/api/profiles", json={"name": "source-prof"}).status_code == 200
+        profiles_mod.create_profile("source-prof")  # 前置：家由库函数给（入口已 410）
         source_skill = get_plobi_home() / "profiles" / "source-prof" / "skills" / "custom" / "src-skill"
         source_skill.mkdir(parents=True)
         (source_skill / "SKILL.md").write_text("---\nname: src-skill\n---\n", encoding="utf-8")
 
         # Duplicate it via an explicit clone_from source (not "default").
-        resp = self.client.post(
-            "/api/profiles",
-            json={"name": "source-prof-copy", "clone_from": "source-prof"},
-        )
-
-        assert resp.status_code == 200
+        assert self.client.post(
+            "/api/profiles", json={"name": "source-prof-copy", "clone_from": "source-prof"}
+        ).status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        profiles_mod.create_profile("source-prof-copy", clone_from="source-prof", clone_config=True)
         cloned_skill = (
             get_plobi_home() / "profiles" / "source-prof-copy" / "skills" / "custom" / "src-skill" / "SKILL.md"
         )
@@ -4047,18 +4054,17 @@ class TestNewEndpoints:
 
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        assert self.client.post("/api/profiles", json={"name": "full-src"}).status_code == 200
+        profiles_mod.create_profile("full-src")  # 前置：家由库函数给（入口已 410）
         source_dir = get_plobi_home() / "profiles" / "full-src"
         (source_dir / "config.yaml").write_text("model:\n  provider: source-only\n", encoding="utf-8")
         (source_dir / "workspace" / "artifact.txt").parent.mkdir(parents=True, exist_ok=True)
         (source_dir / "workspace" / "artifact.txt").write_text("copied", encoding="utf-8")
 
-        resp = self.client.post(
+        assert self.client.post(
             "/api/profiles",
             json={"name": "full-copy", "clone_from": "full-src", "clone_all": True},
-        )
-
-        assert resp.status_code == 200
+        ).status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        profiles_mod.create_profile("full-copy", clone_from="full-src", clone_all=True)
         target_dir = get_plobi_home() / "profiles" / "full-copy"
         assert (target_dir / "config.yaml").read_text(encoding="utf-8") == "model:\n  provider: source-only\n"
         assert (target_dir / "workspace" / "artifact.txt").read_text(encoding="utf-8") == "copied"
@@ -4077,98 +4083,48 @@ class TestNewEndpoints:
 
         monkeypatch.setattr(profiles_mod, "seed_profile_skills", fake_seed)
 
-        resp = self.client.post(
-            "/api/profiles",
-            json={"name": "fresh", "clone_from": None},
-        )
+        resp = self.client.post("/api/profiles", json={"name": "fresh", "clone_from": None})
 
-        assert resp.status_code == 200
+        # 自带技能的播种现在只有一个地方做：`plobi update` 的同步环（main.py 那支
+        # `seed_profile_skills` 循环）。`-p <name>` 的懒建**故意**是 `no_skills=True` 的空壳
+        # （裁 42 §42.2 的终态），所以"建一个家就顺手种一份技能"这件事在本仓已经没有入口。
+        # 这一条改成钉 410；`skill_count` 那一格由同步环自己的用例去钉。
+        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+
+        # 播种这件事本身照旧要钉：家由库函数给，技能由 `seed_profile_skills()` 种
+        # （`plobi update` 的同步环调的就是这一只）。
+        profiles_mod.create_profile("fresh")
+        profiles_mod.seed_profile_skills(get_plobi_home() / "profiles" / "fresh")
         seeded_skill = get_plobi_home() / "profiles" / "fresh" / "skills" / "software-development" / "plan" / "SKILL.md"
         assert seeded_skill.exists()
         profiles = {p["name"]: p for p in self.client.get("/api/profiles").json()["profiles"]}
         assert profiles["fresh"]["skill_count"] == 1
 
     def test_profiles_create_builder_fields_model_mcp_and_keep_skills(self, monkeypatch):
-        """Profile-builder create: model + MCP servers + keep-skills selection
-        all land in the NEW profile's config, and hub installs are spawned
-        scoped to that profile via ``-p <name>``."""
-        from plobi_constants import (
-            get_plobi_home,
-            set_plobi_home_override,
-            reset_plobi_home_override,
-        )
-        from plobi_cli.config import load_config
-        from plobi_cli.skills_config import get_disabled_skills
-        import plobi_cli.profiles as profiles_mod
-        import plobi_cli.web_server as web_server
+        """建家入口退役后这一口回 410——**照实登记：那段逻辑没有别的调用方，随入口一起停了**。
 
-        monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
-
-        # Seed two known skills so keep-skills "replace" has something to act on.
-        def fake_seed(profile_dir, quiet=False):
-            for skill in ("keep-me", "drop-me"):
-                d = profile_dir / "skills" / "custom" / skill
-                d.mkdir(parents=True)
-                (d / "SKILL.md").write_text(f"---\nname: {skill}\n---\n", encoding="utf-8")
-            return {"copied": ["keep-me", "drop-me"]}
-
-        monkeypatch.setattr(profiles_mod, "seed_profile_skills", fake_seed)
-
-        # Capture hub-install spawns instead of launching real subprocesses.
-        spawned = []
-
-        class _FakeProc:
-            pid = 4321
-
-        def fake_spawn(subcommand, name):
-            spawned.append((list(subcommand), name))
-            return _FakeProc()
-
-        monkeypatch.setattr(web_server, "_spawn_plobi_action", fake_spawn)
-
+        原来这条钉的是「profile-builder 建的家里：模型写进新家、MCP 只写得下那一格、
+        `keep_skills` 之外的技能被停用、hub 安装以 `-p <新家>` 起进程」。那四件事全部住在
+        `create_profile_endpoint` 的函数体里，而入口于 10-24 退役（裁 178 乙案第 4 步，
+        用户面令「两个入口关掉、`-p` 的懒建空壳保留」）⇒ 断言换成 410，**用例不删**：
+        它是"这一口以前做什么、现在该去哪儿"的现场记录。加 Agent 走 `POST /api/agents`
+        （名册一行），进程落点走 `plobi -p <name>`。
+        """
         resp = self.client.post(
             "/api/profiles",
             json={
                 "name": "builder",
                 "provider": "openrouter",
                 "model": "anthropic/claude-sonnet-4.6",
-                "mcp_servers": [
-                    {"name": "ctx7", "url": "https://mcp.context7.com/mcp"},
-                    {"name": "bogus"},  # no url/command -> must be skipped, no 500
-                ],
+                "mcp_servers": [{"name": "ctx7", "url": "https://mcp.context7.com/mcp"}],
                 "keep_skills": ["keep-me"],
                 "hub_skills": ["someuser/some-skill"],
             },
         )
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["model_set"] is True
-        assert data["mcp_written"] == 1  # bogus skipped
-        assert data["skills_disabled"] == 1  # drop-me disabled, keep-me kept
-        assert data["hub_installs"] == [{"identifier": "someuser/some-skill", "pid": 4321}]
-
-        # Hub install was scoped to the new profile.
-        assert spawned == [
-            (
-                ["-p", "builder", "skills", "install", "someuser/some-skill", "--yes"],
-                web_server._hub_action_name("install", "someuser/some-skill"),
-            )
-        ]
-
-        # Verify the writes landed in the NEW profile's config, not the root.
-        prof_dir = get_plobi_home() / "profiles" / "builder"
-        token = set_plobi_home_override(str(prof_dir))
-        try:
-            cfg = load_config()
-            assert cfg["model"]["default"] == "anthropic/claude-sonnet-4.6"
-            assert cfg["model"]["provider"] == "openrouter"
-            assert sorted((cfg.get("mcp_servers") or {}).keys()) == ["ctx7"]
-            disabled = get_disabled_skills(cfg)
-            assert "drop-me" in disabled
-            assert "keep-me" not in disabled
-        finally:
-            reset_plobi_home_override(token)
+        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
+        assert resp.json()["ok"] is False
+        assert "POST /api/agents" in resp.json()["error"], "410 那句要说出去哪儿：名册一行才是加 Agent 的路"
 
     def test_profile_open_terminal_uses_macos_terminal(self, monkeypatch):
         from plobi_constants import get_plobi_home
@@ -4204,7 +4160,10 @@ class TestNewEndpoints:
 
     def test_profiles_create_rejects_invalid_name(self):
         resp = self.client.post("/api/profiles", json={"name": "Has Spaces"})
-        assert resp.status_code == 400
+
+        # 退役的是**入口**，不是校验：名字合法性照旧由 `profiles.validate_profile_name`
+        # 把着（`test_profiles.py` 那十几条直接调库函数在钉它）。这一口现在连名字都不看。
+        assert resp.status_code == 410, "建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）"
 
     def test_profiles_delete_default_forbidden(self):
         resp = self.client.delete("/api/profiles/default")
@@ -4218,7 +4177,8 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "_cleanup_gateway_service", lambda *a, **kw: None)
 
-        self.client.post("/api/profiles", json={"name": "soul-prof"})
+        # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
+        profiles_mod.create_profile("soul-prof")
         # WP-PROFILE-STOP-SEEDING: 创建侧不再种一份默认 SOUL.md（人设共享一份
         # ＋名册行人设片段，裁 42.2 / 156），所以新家的这一格先必须是「没有自己的
         # 那份」。这条判据原来断 exists is True，断的其实是那粒播种。
@@ -4260,7 +4220,8 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "router"})
+        # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
+        profiles_mod.create_profile("router")
 
         resp = self.client.post("/api/profiles/active", json={"name": "router"})
         assert resp.status_code == 200
@@ -4275,7 +4236,8 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "desc-prof"})
+        # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
+        profiles_mod.create_profile("desc-prof")
 
         put = self.client.put(
             "/api/profiles/desc-prof/description",
@@ -4301,7 +4263,19 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "model-prof"})
+        # 建家入口退役（裁 178 乙案第 4 步）。这一条要测的从来不是建家，是 PUT 模型那一口——
+        # 而那一口的落点**早就不是家自己那份 config.yaml**了（裁 166 决定二：写名册行的覆盖，
+        # 生效值读时叠）。旧断言读 `profiles/model-prof/config.yaml` 是在读一个已收走的东西，
+        # 它以前能过，是因为退役的那个入口顺手写了这一份。
+        profiles_mod.create_profile("model-prof")
+        from plobi.agents import registry as agent_registry
+
+        roster = agent_registry.default_path()
+        roster.parent.mkdir(parents=True, exist_ok=True)
+        roster.write_text(
+            "agents:\n  Model Prof:\n    role: l2_project\n    profile: model-prof\n",
+            encoding="utf-8",
+        )
 
         resp = self.client.put(
             "/api/profiles/model-prof/model",
@@ -4311,16 +4285,18 @@ class TestNewEndpoints:
         assert resp.json()["provider"] == "openrouter"
 
         import yaml
-        cfg_path = get_plobi_home() / "profiles" / "model-prof" / "config.yaml"
-        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-        assert cfg["model"]["provider"] == "openrouter"
-        assert cfg["model"]["default"] == "anthropic/claude-sonnet-4.6"
+        row = yaml.safe_load(roster.read_text(encoding="utf-8"))["agents"]["Model Prof"]
+        assert row["provider"] == "openrouter"
+        assert row["model"] == "anthropic/claude-sonnet-4.6"
+        # 反向那一格也要成立：这一口不再往家里写第二份配置。
+        assert not (get_plobi_home() / "profiles" / "model-prof" / "config.yaml").exists()
 
     def test_profile_model_requires_provider_and_model(self, monkeypatch):
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "model-prof2"})
+        # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
+        profiles_mod.create_profile("model-prof2")
         resp = self.client.put(
             "/api/profiles/model-prof2/model",
             json={"provider": "", "model": ""},
@@ -4331,7 +4307,8 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "auto-prof"})
+        # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
+        profiles_mod.create_profile("auto-prof")
 
         from plobi_cli import profile_describer
         monkeypatch.setattr(
@@ -4353,7 +4330,8 @@ class TestNewEndpoints:
         import plobi_cli.profiles as profiles_mod
         monkeypatch.setattr(profiles_mod, "create_wrapper_script", lambda name: None)
 
-        self.client.post("/api/profiles", json={"name": "auto-fail"})
+        # 建家入口退役（裁 178 乙案第 4 步，用户 10-24 21:1x 面令）。这一条要测的不是建家，是它自己那一口——家改由库函数给（能力没退役）。
+        profiles_mod.create_profile("auto-fail")
 
         from plobi_cli import profile_describer
         monkeypatch.setattr(

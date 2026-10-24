@@ -13297,6 +13297,21 @@ async def list_profiles_endpoint():
 
 @app.post("/api/profiles")
 async def create_profile_endpoint(body: ProfileCreate):
+    # 裁 178 乙案第 4 步收口（用户 10-24 21:1x 面令）：这一口 410 Gone。
+    # **只关入口**：`GET /api/profiles`（列表）照旧，库函数 `create_profile()` 照旧，
+    # 加 Agent 走 `POST /api/agents`（名册一行）。
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=410,
+        content={
+            "ok": False,
+            "error": (
+                "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再“一家一个分身”。"
+                " 要加 Agent 走 POST /api/agents；只需要进程落点用 plobi -p <name>。"
+            ),
+        },
+    )
     from plobi_cli import profiles as profiles_mod
     explicit_source = (body.clone_from or "").strip()
     if explicit_source:
