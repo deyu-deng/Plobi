@@ -65,13 +65,25 @@ def _digest_state(roots) -> tuple[str, str]:
 
 
 def _persona_state(roots) -> str:
+    """画像两档：详版在脑里（skills/profile/SKILL.md），精简版是 L0 的 USER.md。
+
+    vault 不进记忆系统（用户 2026-10-24 明确）：这一行以前读 Vault/meta/profile，
+    那份已按用户令删除；详版搬回脑里，摘要那份由 L0 自己维护。
+    """
     from plobi.mind.reader import PERSONA_RELATIVE, MindReader
+    from plobi_constants import get_plobi_home
 
     persona = MindReader().persona()
     where = real_target(PERSONA_RELATIVE, roots)
-    if not persona:
-        return f"空 —— 读不到 {where}（L1 每回合都少这一块）"
-    return f"{len(persona)} 字符，来源 {where}"
+    detail = (
+        f"{len(persona)} 字符（脑 · {where}）" if persona else f"空 —— 读不到 {where}"
+    )
+    user_md = get_plobi_home() / "memory" / "USER.md"
+    if user_md.is_file():
+        summary = f"{user_md.stat().st_size} 字节（L0 精简版）"
+    else:
+        summary = "还没生成（L0 精简版）"
+    return f"详版 {detail} · 精简版 {summary}"
 
 
 def _repo_state(repo: Optional[Path]) -> str:

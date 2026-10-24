@@ -69,7 +69,8 @@ PROFILE_PROJECT_LIMIT = 3
 def _profile_block(root: Path) -> str:
     """画像/项目状态的窄切读取（无模型、纯文件）。
 
-    来源：``Vault/meta/profile/profile.md`` + ``Vault/projects/<项目>/plan.md``/
+    来源：``<MIND_ROOT>/skills/profile/SKILL.md``（详版画像，AGENTS §1.5 的唯一权威来源）
+    + ``<MIND_ROOT>/<项目>/plan.md``/
     ``progress.md``（MindReader，大写 Plobi 是当前项目写入位）。为空返回
     ``""``——调用方据此跳过注入，不产生空块。
     """

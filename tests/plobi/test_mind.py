@@ -45,10 +45,11 @@ _REAL_MIND_COMMIT = MindWriter._commit
 @pytest.fixture()
 def vault(tmp_path, monkeypatch):
     root = tmp_path / "Mind"
-    (root / "Vault" / "meta" / "profile").mkdir(parents=True)
+    (root / "skills" / "profile").mkdir(parents=True)
     (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
-    (root / "Vault" / "meta" / "profile" / "profile.md").write_text("我是邓德宇。", encoding="utf-8")
+    # 详版画像在脑里（用户 10-24：vault 不进记忆系统；USER.md 是精简版）
+    (root / "skills" / "profile" / "SKILL.md").write_text("我是邓德宇。", encoding="utf-8")
     (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text("# Plobi\n北极星…", encoding="utf-8")
     (root / "Vault" / "projects" / "Plobi" / "progress.md").write_text("M1 进行中", encoding="utf-8")
     monkeypatch.setenv("MIND_ROOT", str(root))
@@ -550,7 +551,7 @@ def test_reader_pulls_persona_and_projects(vault):
 
 def test_reader_excerpts_are_capped(vault):
     huge = "字" * 50_000
-    (vault / "Vault" / "meta" / "profile" / "profile.md").write_text(huge, encoding="utf-8")
+    (vault / "skills" / "profile" / "SKILL.md").write_text(huge, encoding="utf-8")
 
     persona = MindReader(vault).persona()
     assert len(persona) < 5_000
@@ -559,12 +560,12 @@ def test_reader_excerpts_are_capped(vault):
 def test_reader_reports_missing_persona_instead_of_going_quiet(vault, caplog):
     """The pointer used to name a file the real vault never had; the fixture made
     that phantom path, so production read "" while tests were green."""
-    (vault / "Vault" / "meta" / "profile" / "profile.md").unlink()
+    (vault / "skills" / "profile" / "SKILL.md").unlink()
 
     with caplog.at_level(logging.WARNING, logger="plobi.mind.reader"):
         assert MindReader(vault).persona() == ""
 
-    assert "profile.md" in caplog.text
+    assert "SKILL.md" in caplog.text
 
 
 def test_reader_is_quiet_when_vault_absent(tmp_path):

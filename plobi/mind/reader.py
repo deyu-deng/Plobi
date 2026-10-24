@@ -18,7 +18,10 @@ from .paths import real_target, resolve_root
 
 logger = logging.getLogger(__name__)
 
-PERSONA_RELATIVE = "Vault/meta/profile/profile.md"
+# 详版画像在**脑**里（用户 2026-10-24：「用户画像在 mind 里面有详细信息，USER.md 是精简版」）。
+# 以前这行指 Vault/meta/profile/profile.md —— vault 不进记忆系统，那份也已按用户令删除。
+# skills/profile/SKILL.md 是 AGENTS §1.5 声明的唯一权威来源。
+PERSONA_RELATIVE = "skills/profile/SKILL.md"
 PROJECTS_RELATIVE = "Vault/projects"
 
 # Cap on what any single read may contribute to a prompt.
