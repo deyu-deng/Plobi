@@ -55,7 +55,7 @@ def test_digest_on_disk_but_untracked_is_not_reported_as_committed(two_brain_rep
 
     _, vault = two_brain_repos
     day = datetime.now().date().isoformat()
-    digest = vault / "projects" / "Plobi" / "daily" / f"{day}.md"
+    digest = vault / "wiki" / "daily" / f"{day}.md"
     digest.parent.mkdir(parents=True)
     digest.write_text("# 日程摘要\n", encoding="utf-8")
 
@@ -63,7 +63,7 @@ def test_digest_on_disk_but_untracked_is_not_reported_as_committed(two_brain_rep
     state = next(v for k, v in lines.items() if k.startswith("今日摘要"))
     assert "未入库" in state, state
 
-    _git(vault, "add", f"projects/Plobi/daily/{day}.md")
+    _git(vault, "add", f"wiki/daily/{day}.md")
     _git(vault, "commit", "-m", "chore(plobi): update 1 file(s)")
     lines = dict(mind_cli.status_lines())
     state = next(v for k, v in lines.items() if k.startswith("今日摘要"))
