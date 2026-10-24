@@ -3260,7 +3260,8 @@ export const zh: Translations = {
       unavailable: '这个文件暂时无法预览',
       readOnly: '只读预览',
       truncated: (rows, cols) => `只显示前 ${rows} 行 × ${cols} 列`,
-      sheet: '工作表'
+      sheet: '工作表',
+      legacyNote: '老 .xls 只读值；另存为 .xlsx 可保留颜色和合并单元格。'
     }
   }
 }

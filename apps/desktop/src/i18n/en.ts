@@ -3122,7 +3122,8 @@ export const en: Translations = {
       unavailable: 'This file cannot be previewed yet',
       readOnly: 'Read-only preview',
       truncated: (rows, cols) => `Showing the first ${rows} rows × ${cols} columns`,
-      sheet: 'Sheet'
+      sheet: 'Sheet',
+      legacyNote: 'Old .xls previews values only; save as .xlsx to keep colors and merged cells.'
     }
   }
 }
