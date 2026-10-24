@@ -774,8 +774,47 @@ def get_config_path() -> Path:
     return _resolved_config_path()
 
 
-def agent_config_overlay() -> Dict[str, Any]:
+def _union_agent_blacklists(
+    overlay: Dict[str, Any], current: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """把 overlay 里 ``agent`` 节的三份黑名单与**顶层当时那一份**求并集。
+
+    C 刀（WP-L2-DIET-REGISTRY）：名册行的 ``disabled_toolsets`` 等经 overlay
+    叠上来时，顶层 config 可能已经有用户自己写的同名节。deep_merge 对 list 是
+    **替换**——直接叠会用名册行那份吃掉用户的选择。这三节的正确语义是并集
+    （"两处都说禁"才禁），所以在这里合，然后再交给 _deep_merge（那时两处已经
+    是一个列表，替换即并集）。
+
+    不去重以外的顺序处理：名册行的排前（它是这个分身自己的策略），顶层既有项
+    按原序跟后——diff 才稳定。
+    """
+    agent_section = overlay.get("agent")
+    if not isinstance(agent_section, dict):
+        return overlay
+    base = {}
+    if isinstance(current, dict):
+        base_agent = current.get("agent")
+        if isinstance(base_agent, dict):
+            base = base_agent
+    for key in ("disabled_toolsets", "disabled_skills", "disabled_mcp_servers"):
+        incoming = agent_section.get(key)
+        if not incoming:
+            continue
+        existing = base.get(key)
+        merged: list = [str(n) for n in (existing or [])]
+        for name in incoming:
+            if str(name) not in merged:
+                merged.append(str(name))
+        agent_section[key] = merged
+    return overlay
+
+
+def agent_config_overlay(current: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """活跃家这个 Agent 的**名册行覆盖**（读时算，不落盘）。
+
+    ``current`` = 顶层那一份已加载的 config（``load_config`` 内部传进来）。
+    只有黑名单那几节需要它——并集必须知道顶层当时有什么，替换会吃掉用户
+    自己的选择（模型 / cwd 那两节是"给了就盖"，不需要底座）。
 
     裁 42.2 只允许分身带三项覆盖，其中两项以前是往分身家 ``config.yaml`` 写一节实现
     的：模型（``_write_profile_config`` 写 ``model:``）与工作目录
@@ -784,20 +823,30 @@ def agent_config_overlay() -> Dict[str, Any]:
     与 ``project_path``），这里在 :func:`load_config` 里**叠上去**，判据与
     :func:`plobi.agents.registry.apply_secret_overrides` 同一句：就地叠，不落盘成第二份。
 
-    返回空 dict 的几种情况（都等于「纯顶层值」，不许在这里编造）：活跃家就是共享根、
+    返回空 dict 的几种情况（都等于「纯顶层值」，不许在这里编造）：**没有身份**
+    （既无 ``PLOBI_AGENT_ID``、家也不在 ``profiles/`` 底下）——那正是 L1 / flat；
     名册里查不到这一行、那一行没声明模型覆盖、``project_path`` 空或那个目录不存在
     （宁可不给 cwd，也不把一个假路径塞进会话的工作目录——同 ``apply_l2_project_cwd``
     当年的判据）。
+
+    2026-10-24 C 刀：这道门原来写着「活跃家 == 共享根 ⇒ 返回空」。B 刀
+    （WP-REGISTRY-NO-HOME）之后 L2 分身**不带 ``-p``** 起来，它的家**就是**共享根
+    ⇒ 这道门把全部 per-agent 覆盖（模型 / cwd / 工具集黑名单）一起关在门外。
+    门改成看**身份**（``_active_agent_profile_name`` 认 ``PLOBI_AGENT_ID``，
+    裁定 180 的行级身份），不再看家住哪儿。
     """
     try:
         from plobi_constants import get_plobi_home, get_shared_plobi_root
+        from plobi.agents.registry import (
+            _active_agent_profile_name,
+            profile_config_overlay,
+        )
 
-        home = get_plobi_home()
-        if home == get_shared_plobi_root():
+        who = (_active_agent_profile_name() or "").strip()
+        if not who:
             return {}
-        from plobi.agents.registry import profile_config_overlay
-
-        return profile_config_overlay(home.name)
+        overlay = profile_config_overlay(who)
+        return _union_agent_blacklists(overlay, current)
     except Exception:
         # 名册读不出来 / 底座依赖缺失 ⇒ 不加覆盖，照顶层走。这一层是"补齐复印件里
         # 本来那点每分身不同的值"，它失败只可能让 Agent 回到顶层默认，不可能炸配置读。
@@ -7254,7 +7303,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         # 名册行覆盖叠在顶层那一份之上（ADR-0013 的链条：名册行 → 顶层 → 出厂默认）。
         # managed scope 仍排在它后面赢在叶子上——那是策略层，一个 Agent 的名册行不许
         # 盖过机器级策略（docs/design/managed-scope.md §4.1）。
-        overlay = agent_config_overlay()
+        overlay = agent_config_overlay(config)
         if overlay:
             config = _deep_merge(config, overlay)
 
