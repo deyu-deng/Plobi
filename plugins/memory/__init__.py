@@ -180,15 +180,26 @@ def discover_memory_providers() -> List[Tuple[str, str, bool]]:
     return results
 
 
+# 官方脑不是插件（裁定 198）：内核模块，plugins/memory/mind/ 已退役。
+# 第三方 provider 仍走下面的目录发现——那条路是给别人的。
+CORE_PROVIDERS = {"mind": ("plobi.mind.provider", "MindProvider")}
+
+
 def load_memory_provider(name: str) -> Optional["MemoryProvider"]:
     """Load and return a MemoryProvider instance by name.
 
-    Checks both bundled (``plugins/memory/<name>/``) and user-installed
-    (``$PLOBI_HOME/plugins/<name>/``) directories.  Bundled takes
-    precedence on name collisions.
-
-    Returns None if the provider is not found or fails to load.
+    名字在 CORE_PROVIDERS 里 ⇒ 直接从内核构造，不查插件目录；其余名字仍按 bundled
+    （plugins/memory/<name>/）与用户安装目录发现。
     """
+    core = CORE_PROVIDERS.get((name or "").strip())
+    if core:
+        try:
+            module_name, attr = core
+            module = __import__(module_name, fromlist=[attr])
+            return getattr(module, attr)()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Core memory provider '%s' failed to load: %s", name, exc)
+            return None
     provider_dir = find_provider_dir(name)
     if not provider_dir:
         logger.debug("Memory provider '%s' not found in bundled or user plugins", name)

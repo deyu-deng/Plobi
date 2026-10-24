@@ -1,5 +1,9 @@
 """``plobi mind`` — is the official brain actually alive on this machine?
 
+内核命令（裁定 198／10-23「不要再是插件形态」）：原在 plugins/memory/mind/cli.py，靠
+「当前 provider 是 mind 才被插件发现」挂上，provider 键一空它就消失。它的回答不需要 provider 在跑
+（读的是两个仓与画像文件），所以现在由内核直接注册，与 provider 是谁无关。
+
 The provider mounts itself from ``agent_init``, writes through the serialized
 writer, and reads the persona slice into every primary session. None of that is
 visible anywhere, which is how "the brain is live" became an article of faith:

@@ -242,7 +242,7 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   // stays); `mind` is what the backend ships as the official surface. There used to be a
   // `builtin` entry here — it is not a provider plugin, and measured behaviour for it is
   // byte-for-byte the `''` case, so it was a second label for one state. Anything listed
-  // after `''` must be a directory under Code's `plugins/memory/` (a Python test enforces it).
+  // after `''` is either the core brain (mind) or a directory under Code's plugins/memory/ (a Python test enforces it).
   'memory.provider': ['', 'mind', 'hindsight', 'honcho'],
   // Terminal execution backends — kept in sync with the dispatch ladder in
   // tools/terminal_tool.py::_create_environment (local/docker/singularity/

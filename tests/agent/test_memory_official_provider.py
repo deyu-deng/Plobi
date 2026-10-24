@@ -63,7 +63,7 @@ def test_absent_key_does_not_mean_off_and_empty_key_does_not_mean_default():
 def test_availability_is_answered_by_the_provider_not_by_init(tmp_path, monkeypatch):
     monkeypatch.setenv("MIND_ROOT", str(_fake_brain(tmp_path)))
     provider = load_memory_provider(OFFICIAL_MEMORY_PROVIDER)
-    assert provider is not None, "官方 provider 名字与 plugins/memory/<name>/ 目录对不上"
+    assert provider is not None, "官方 provider 从内核加载失败（它已不是插件目录）"
     assert provider.is_available() is True
 
     monkeypatch.setenv("MIND_ROOT", str(tmp_path / "there-is-no-brain-here"))

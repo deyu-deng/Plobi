@@ -51,7 +51,7 @@ def two_brain_repos(tmp_path, monkeypatch):
 def test_digest_on_disk_but_untracked_is_not_reported_as_committed(two_brain_repos, monkeypatch):
     from datetime import datetime
 
-    import plugins.memory.mind.cli as mind_cli
+    import plobi_cli.mind_commands as mind_cli
 
     _, vault = two_brain_repos
     day = datetime.now().date().isoformat()

@@ -13116,6 +13116,25 @@ def main():
     # =========================================================================
     build_plugins_parser(subparsers, cmd_plugins=cmd_plugins)
 
+    # -------------------------------------------------------------------------
+    # 官方脑的 CLI 是**内核**命令（裁定 198）：与 provider 是谁无关。放在插件发现之前，
+    # 因为那条链被 _plugin_cli_discovery_needed() 的快路径挡着——挂进去等于让
+    # 「脑活着没有」这个问题取决于今天有没有装插件。
+    # -------------------------------------------------------------------------
+    try:
+        from plobi_cli.mind_commands import mind_command as _mind_command
+        from plobi_cli.mind_commands import register_cli as _register_mind_cli
+
+        _mind_parser = subparsers.add_parser(
+            "mind", help="官方脑的状态：画像、今日摘要、两个脑仓的记账（只读）"
+        )
+        _register_mind_cli(_mind_parser)
+        _mind_parser.set_defaults(func=_mind_command)
+    except Exception as _mind_cli_err:  # noqa: BLE001
+        import logging as _logging
+
+        _logging.getLogger(__name__).debug("mind CLI 没挂上：%s", _mind_cli_err)
+
     # =========================================================================
     # Plugin CLI commands — dynamically registered by memory/general plugins.
     # Plugins provide a register_cli(subparser) function that builds their
