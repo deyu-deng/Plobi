@@ -1553,12 +1553,15 @@ async def offload_agents_route(refresh: bool = False):
 # 外包那一轮回到它自己的软件里（WP-L2-OUTSOURCE-ENTRY 入口面③第三级）
 # --------------------------------------------------------------------------- #
 
-#: 白名单：只有这两家在 10-14 现核到「回到那条会话」的旗标（两家 ``--help`` 本机跑过）。
-#: 要加第三家，必须先有 ``agent.external_offload.resolve_command`` 解析得到的入口 + 一条实测旗标，
+#: 白名单：只有这三家在 10-1x/10-23 现核到「回到那条会话」的旗标（``--help`` 本机跑过，
+#: Qoder 那一支还实测过「续上后问它上一轮读到的标题，回的正是原来那行」）。
+#: 要加新的一家，必须先有 ``agent.external_offload.resolve_command`` 解析得到的入口 + 一条实测旗标，
 #: 而不是在这里补一个看起来像的名字。``{session_id}`` 是唯一允许被替换的槽位。
 OFFLOAD_RESUME_ARGV: dict[str, tuple[str, ...]] = {
     "codebuddy": ("--resume", "{session_id}", "--open"),
     "agy": ("--conversation", "{session_id}"),
+    #: Qoder：`--resume <id>` 是续接；`--session-id` 是"新建并指定 id"，别混。
+    "qoder": ("--resume", "{session_id}"),
 }
 
 #: 会话标识只认这些字符。它会被拼进 argv，所以宁可拒一个真的长 id，也不放过一个带元字符的假 id。
@@ -1608,12 +1611,15 @@ def resume_external_session(agent: str, session_id: str) -> dict:
         return {"ok": False, "status": 409, "error": f"那一行记的目录现在不能用：{why}"}
 
     argv = [binary] + [sid if piece == "{session_id}" else piece for piece in pattern]
+    # 桌面/服务进程可能带着那三个 SDK 变量（10-23 实测：不清就 `sdk_invalid_args` 秒退）。
+    # 与派活那条通道共用同一张清洗表，不在这里另写一份。
+    env = channel.scrub_child_env(key, dict(os.environ))
     detach = ({"creationflags": subprocess.CREATE_NEW_CONSOLE} if os.name == "nt"
               else {"start_new_session": True})
     try:
         # argv 全部来自上面那张白名单表 + 一个被字符集校验过的标识，目录来自台账，不经 shell。
         child = subprocess.Popen(  # noqa: S603
-            argv, cwd=workdir, stdin=subprocess.DEVNULL,
+            argv, cwd=workdir, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **detach,
         )
     except OSError as exc:

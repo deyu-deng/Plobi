@@ -173,9 +173,11 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
       )}
       <span className="truncate text-[0.68rem] text-(--ui-text-tertiary)">
         {parts.join(' · ')}
-        {error ? ` · ${error}` : ''}
         {!clickable && reason ? ` · ${reason}` : ''}
       </span>
+      {error && (
+        <span className="truncate text-[0.68rem] text-(--ui-red)">{error}</span>
+      )}
     </button>
   )
 }

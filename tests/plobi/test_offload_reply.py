@@ -185,3 +185,45 @@ def test_a_spoken_answer_is_never_reported_as_silence():
     assert "它没回话" in silent
     # 它自己写回来的那份优先，不能被口头那截抢掉
     assert "它自己回：标题是 Hello_Sindri。" in filed and "口头回" not in filed
+
+
+# ── 点一行跳回它自己的会话（10-23 补 qoder）───────────────────────────────
+
+def test_qoder_resume_is_allowlisted_and_scrubs_the_sdk_entrypoint(monkeypatch, tmp_path):
+    """10-23 实测两件：表里没有 qoder ⇒ 点下去只回「这一家还没有实测过的回跳旗标」；
+    表里有了但不清 SDK 变量 ⇒ `qodercli --resume` 当场 `sdk_invalid_args` 退出，
+    窗口一闪就没了，看起来还是"点了不跳转"。"""
+    import subprocess
+    from types import SimpleNamespace
+
+    import plobi.delegation.offload as offload_mod
+    from plobi.console import router
+
+    captured = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: (
+        captured.update(argv=list(argv), kw=kw), SimpleNamespace(pid=4242))[1])
+    monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/bin/qodercli.cmd")
+    monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+
+    row = {"agent": "qoder", "external_session": "12834d53-7eee-4489-9063-914b4ccf05bc",
+           "cwd": str(tmp_path)}
+
+    class _Stub:
+        def __init__(self, **_kw):
+            pass
+
+        def rows(self):
+            return [dict(row)]
+
+    monkeypatch.setattr(offload_mod, "RoundLedger", _Stub)
+    for key in ("QODER_AGENT_SDK_ENTRYPOINT", "QODER_AGENT_SDK_DAEMON", "QODER_AGENT_SDK_VERSION"):
+        monkeypatch.setenv(key, "1")
+
+    out = router.resume_external_session("qoder", row["external_session"])
+
+    assert out["ok"] is True, out
+    assert captured["argv"][1:] == ["--resume", row["external_session"]]
+    assert captured["kw"]["cwd"] == str(tmp_path)
+    env = captured["kw"]["env"]
+    assert not any(k in env for k in (
+        "QODER_AGENT_SDK_ENTRYPOINT", "QODER_AGENT_SDK_DAEMON", "QODER_AGENT_SDK_VERSION"))
