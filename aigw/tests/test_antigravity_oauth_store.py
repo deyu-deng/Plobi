@@ -18,6 +18,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_CC_CLIENT_SECRET", raising=False)
     monkeypatch.delenv(account_store.ACCOUNTS_ENV, raising=False)
     monkeypatch.delenv(account_store.CLIENT_ENV, raising=False)
+    monkeypatch.setenv(account_store.APP_SCAN_ENV, "0")
     return tmp_path
 
 
@@ -26,6 +27,24 @@ def test_missing_client_pair_is_named_not_faked(home):
     with pytest.raises(RuntimeError) as exc:
         oa.build_auth_url("http://127.0.0.1:1234/callback")
     assert "GOOGLE_CC_CLIENT_ID" in str(exc.value)
+
+
+def test_public_client_pair_is_extracted_from_an_installed_app(home, monkeypatch, tmp_path):
+    fake = tmp_path / "antigravity-tools.exe"
+    fake.write_bytes(
+        b"...REDACTED_GOOGLE_PUBLIC_CLIENT_ID..."
+        b"...REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET..."
+    )
+    monkeypatch.setattr(account_store, "_candidate_binaries", lambda: [fake])
+    monkeypatch.delenv(account_store.APP_SCAN_ENV)
+
+    pair = account_store.client_credentials()
+
+    assert pair == (
+        "REDACTED_GOOGLE_PUBLIC_CLIENT_ID",
+        "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET",
+    )
+    assert account_store.client_path().is_file()
 
 
 def test_client_pair_is_persisted_after_first_run(home, monkeypatch):
