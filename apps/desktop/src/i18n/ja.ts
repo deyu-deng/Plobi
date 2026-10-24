@@ -3076,12 +3076,13 @@ export const ja = defineLocale({
       agenda: '予定',
       files: 'ワークスペースのファイル',
       review: 'レビュー',
-      browser: 'ブラウザ'
+      browser: 'ブラウザ',
+      workspace: 'Office ワークスペース'
     },
     add: 'タブを開く',
     close: label => `${label}を閉じる`,
     emptyTitle: '開いているタブはありません',
-    emptyBody: '右上の + からワークスペースのファイル、予定、レビュー、ブラウザを開けます。',
+    emptyBody: '右上の + からワークスペースのファイル、予定、レビュー、Office ワークスペース、ブラウザを開けます。',
     noFolderTitle: 'このエージェントにはフォルダが未設定です',
     noFolderBody: 'フォルダを設定すると、ここにファイルツリーが表示されます。',
     browser: {
@@ -3108,6 +3109,12 @@ export const ja = defineLocale({
       cancel: 'キャンセル',
       conflict: 'ファイルが外部で変更されたため保存していません。',
       saveFailed: '表を保存できませんでした'
+    },
+    workspace: {
+      loading: 'ローカル Office ワークスペースを開いています…',
+      unavailable: 'ローカル Office ワークスペースに接続できません。',
+      hint: '先に Univer Workspace を起動してください（Server :3020 / Browser :5173）。',
+      retry: '再試行'
     }
   }
 })

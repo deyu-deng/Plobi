@@ -2739,6 +2739,7 @@ export interface Translations {
       files: string
       review: string
       browser: string
+      workspace: string
     }
     add: string
     close: (label: string) => string
@@ -2770,6 +2771,12 @@ export interface Translations {
       cancel: string
       conflict: string
       saveFailed: string
+    }
+    workspace: {
+      loading: string
+      unavailable: string
+      hint: string
+      retry: string
     }
   }
 }

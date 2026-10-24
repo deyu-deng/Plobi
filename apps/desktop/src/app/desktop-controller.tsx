@@ -128,6 +128,7 @@ import {
   shellLevelForPath
 } from './routes'
 import { BrowserTabPanel } from './workbench/browser-tab'
+import { WorkspaceTabPanel } from './workbench/workspace-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
@@ -297,10 +298,21 @@ export function DesktopController() {
     agenda: { icon: 'calendar', id: 'agenda', title: t.workbench.tabs.agenda },
     browser: { icon: 'globe', id: 'browser', title: t.workbench.tabs.browser },
     files: { icon: 'folder-opened', id: 'files', title: t.workbench.tabs.files },
-    review: { icon: 'git-pull-request', id: 'review', title: t.workbench.tabs.review }
+    review: { icon: 'git-pull-request', id: 'review', title: t.workbench.tabs.review },
+    workspace: { icon: 'table', id: 'workspace', title: t.workbench.tabs.workspace }
   }
-  const l1TabDefs = [workbenchTabDefs.files, workbenchTabDefs.agenda, workbenchTabDefs.browser]
-  const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review, workbenchTabDefs.browser]
+  const l1TabDefs = [
+    workbenchTabDefs.files,
+    workbenchTabDefs.agenda,
+    workbenchTabDefs.workspace,
+    workbenchTabDefs.browser
+  ]
+  const l2TabDefs = [
+    workbenchTabDefs.files,
+    workbenchTabDefs.review,
+    workbenchTabDefs.workspace,
+    workbenchTabDefs.browser
+  ]
   const isL1Workbench = level === 'l1'
 
   const openFileTab = useCallback((target: PreviewTarget) => {
@@ -435,12 +447,16 @@ export function DesktopController() {
 
   const l1OpenTabDefs = l1Tabs
     .map(id =>
-      id === 'files' || id === 'agenda' || id === 'browser' ? workbenchTabDefs[id] : null
+      id === 'files' || id === 'agenda' || id === 'browser' || id === 'workspace'
+        ? workbenchTabDefs[id]
+        : null
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
     .map(id =>
-      id === 'files' || id === 'review' || id === 'browser' ? workbenchTabDefs[id] : openFiles[id]?.def
+      id === 'files' || id === 'review' || id === 'browser' || id === 'workspace'
+        ? workbenchTabDefs[id]
+        : openFiles[id]?.def
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
@@ -1530,6 +1546,7 @@ export function DesktopController() {
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
             files: workbenchFilesContent,
             review: workbenchReviewContent,
+            workspace: <WorkspaceTabPanel labels={t.workbench.workspace} />,
             ...fileTabContents
           }}
           labels={t.workbench}
@@ -1606,7 +1623,8 @@ export function DesktopController() {
               </>
             ),
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
-            files: null
+            files: null,
+            workspace: <WorkspaceTabPanel labels={t.workbench.workspace} />
           }}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
