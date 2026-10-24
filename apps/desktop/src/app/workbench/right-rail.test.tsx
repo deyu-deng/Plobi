@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   RightRailWorkbench,
-  type RightRailTab,
+  type RightRailTabId,
   type RightRailTabDef,
   type RightRailWorkbenchLabels
 } from './right-rail'
@@ -25,7 +25,7 @@ const review: RightRailTabDef = { icon: 'git-pull-request', id: 'review', title:
 
 function Host({ initialTabs = [files, agenda] }: { initialTabs?: RightRailTabDef[] }) {
   const [tabs, setTabs] = useState(initialTabs)
-  const [active, setActive] = useState<null | RightRailTab>(initialTabs[0]?.id ?? null)
+  const [active, setActive] = useState<null | RightRailTabId>(initialTabs[0]?.id ?? null)
   const available = [files, agenda, review].filter(tab => !tabs.some(open => open.id === tab.id))
 
   return (
@@ -109,6 +109,30 @@ describe('RightRailWorkbench', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open tab' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Review' }))
     expect(onOpen).toHaveBeenCalledWith('review')
+  })
+
+  it('renders and closes a dynamic file tab', () => {
+    const onClose = vi.fn()
+    const fileTab: RightRailTabDef = { icon: 'file', id: 'file:/tmp/notes.md', title: 'notes.md' }
+
+    render(
+      <RightRailWorkbench
+        activeTab={fileTab.id}
+        availableTabs={[]}
+        contents={{ [fileTab.id]: <div data-testid="file-body">file body</div> }}
+        labels={labels}
+        onTabChange={vi.fn()}
+        onTabClose={onClose}
+        onTabOpen={vi.fn()}
+        tabs={[files, fileTab]}
+      />
+    )
+
+    expect(screen.getByRole('tab', { name: 'notes.md' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByTestId('file-body')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close notes.md' }))
+    expect(onClose).toHaveBeenCalledWith(fileTab.id)
   })
 
   it('shows the empty state when every tab is closed', () => {

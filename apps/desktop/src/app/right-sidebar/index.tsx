@@ -11,7 +11,7 @@ import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { cn } from '@/lib/utils'
 import { $panesFlipped } from '@/store/layout'
 import { notifyError } from '@/store/notifications'
-import { setCurrentSessionPreviewTarget } from '@/store/preview'
+import { setCurrentSessionPreviewTarget, type PreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
 
 import { SidebarPanelLabel } from '../shell/sidebar-label'
@@ -24,9 +24,10 @@ interface RightSidebarPaneProps {
   embedded?: boolean
   onActivateFile: (path: string) => void
   onActivateFolder: (path: string) => void
+  onOpenFile?: (target: PreviewTarget) => void
 }
 
-export function RightSidebarPane({ cwd, embedded = false, onActivateFile, onActivateFolder }: RightSidebarPaneProps) {
+export function RightSidebarPane({ cwd, embedded = false, onActivateFile, onActivateFolder, onOpenFile }: RightSidebarPaneProps) {
   const { t } = useI18n()
   const r = t.rightSidebar
   const panesFlipped = useStore($panesFlipped)
@@ -68,6 +69,12 @@ export function RightSidebarPane({ cwd, embedded = false, onActivateFile, onActi
 
       if (!preview) {
         throw new Error(r.couldNotPreview(path))
+      }
+
+      if (onOpenFile) {
+        onOpenFile(preview)
+
+        return
       }
 
       setCurrentSessionPreviewTarget(preview, 'file-browser', path)
