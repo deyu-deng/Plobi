@@ -51,8 +51,14 @@ _FALLBACK_EXC: tuple[type[BaseException], ...] = (
 
 
 def summary_relative_path(day: Optional[datetime] = None) -> str:
-    target = (day or datetime.now()).date().isoformat()
-    return f"{AI_WRITE_ROOT}/{target}/agenda.md"
+    """当日摘要的落点——**和项目快照同一个文件**（2026-10-24 合并）。
+
+    之前有两条路各写一份：`projects/Plobi/daily/<date>.md`（项目快照）与
+    `projects/Plobi/daily/<date>.md` 与 `projects/Plobi/ai-daily/<date>/agenda.md`（AI 摘要），
+    内容还是同一个渲染器的同一段话。
+    用户看到的后果是「同样一句话让我批两遍」。现在只留前者：一份文件、一个渲染、一次点头。
+    """
+    return project_daily_relative_path(day)
 
 
 def project_daily_relative_path(day: Optional[datetime] = None) -> str:
@@ -74,6 +80,9 @@ def publish_daily_summary(
     ``_FALLBACK_EXC`` 命中）一律返回 ``(False, "summary skipped: ..."))``
     而**不**抛异常——主回合不该再去撞 Plobi memory 工具补课。
     """
+    # 与项目快照同一个文件、同一段内容 ⇒ 直接走那一条腿，不再各写一份。
+    return publish_project_daily_summary(service=service, writer=writer, day=day)
+
     rel = summary_relative_path(day)
     try:
         agenda = service or get_service()

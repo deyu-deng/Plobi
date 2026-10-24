@@ -28,6 +28,19 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _gate_off_here(monkeypatch):
+    """这一档测的是摘要的 fail-open 与提交行为，不是写脑那道闸。
+
+    闸有自己的测试档（tests/plobi/test_mind_l1_gate.py / test_mind_trust_ramp.py）；
+    这里若让闸按出厂默认（先问）参与，摘要会变成待确认计划，测的就不是 fail-open 了。
+    """
+    import plobi.mind.writer as writer_mod
+
+    monkeypatch.setattr(writer_mod.MindWriter, "_gate_refusals", lambda self, batch: [])
+
 import yaml
 
 from plobi.agenda.service import AgendaService

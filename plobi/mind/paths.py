@@ -43,12 +43,14 @@ SAFE_PREFIXES: tuple[str, ...] = (
 # 的形态里不需要了」（正本在单库 ``state.db``，行级归属，裁定 180），裁定 158 又判「摘要与
 # 打勾回复要进 vault 的 git 且入库看得见」。两条合起来只剩一个落点：vault。
 #
-# 选 ``Vault/projects/Plobi/ai-daily`` 而不是 ``Vault/diary``／``Vault/notes``：那两格是人写的
+# 落点就是项目每日快照那一份（``Vault/projects/Plobi/daily``）：2026-10-24 把
+# 「项目快照」与「AI 摘要」两条各写一份的路合成了一条——内容本来就是同一个渲染器的同一段话，
+# 分成两份的后果是用户要批两遍。这一格不是 ``Vault/diary``／``Vault/notes``：那两格是人写的
 # 日记与学科笔记，AI 去那儿放评价性文字正是老注释忌讳的「人读面混进 AI 元评论」。这一格
 # 只装**纯事实**（哪天排了什么、哪条勾了、谁勾的），不带评价语气——裁定 158 判据③当场选的
 # 就是这一种，写在这里当留痕。vault 故意没有远端（裁定 72／126），所以「原文不上云」与
 # 「摘要入库、可被读回」两头同时成立。
-AI_WRITE_ROOT = "Vault/projects/Plobi/ai-daily"
+AI_WRITE_ROOT = "Vault/projects/Plobi/daily"
 
 VAULT_LOGICAL = "Vault"
 MIND_LOGICAL = "Loom"

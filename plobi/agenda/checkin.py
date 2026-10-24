@@ -433,7 +433,7 @@ def archive_free_text(
         return False
     target_day = (day or datetime.now()).date().isoformat()
     stamp = (day or datetime.now()).strftime("%H:%M")
-    relative = f"{AI_WRITE_ROOT}/{target_day}/checkin-replies.md"
+    relative = f"{AI_WRITE_ROOT}/{target_day}-checkin-replies.md"
     content = f"\n- [{stamp}][{source}] {text.strip()}\n"
     result = sink.write_one(relative, content, mode="append")
     if not result.ok:

@@ -61,7 +61,7 @@ def vault(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "relative",
     [
-        "Vault/projects/Plobi/ai-daily/2026-08-25/agenda.md",
+        "Vault/projects/Plobi/daily/2026-08-25.md",
         "Vault/projects/Plobi/notes.md",
         "Vault/inbox/idea.md",
     ],

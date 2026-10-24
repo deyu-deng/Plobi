@@ -29,7 +29,7 @@ def roots(tmp_path, monkeypatch):
     return mind, vault
 
 
-def _stage(roots, content: str = "# 摘要\n", rel: str = "Vault/projects/Plobi/ai-daily/2026-10-23/agenda.md"):
+def _stage(roots, content: str = "# 摘要\n", rel: str = "Vault/projects/Plobi/daily/2026-10-23.md"):
     writer = MindWriter(require_approval=True, commit=False)
     return writer.write_one(rel, content), rel
 
@@ -47,7 +47,7 @@ def test_gate_stages_a_plan_and_writes_nothing(roots, tmp_path):
     assert result.ok is False
     assert result.staged, "没给计划摘要 = 这道闸没起作用"
     assert result.pending_id, "没进待确认层，人就没处点头"
-    assert not (Path(os.environ["VAULT_ROOT"]) / "projects/Plobi/ai-daily/2026-10-23/agenda.md").exists()
+    assert not (Path(os.environ["VAULT_ROOT"]) / "projects/Plobi/daily/2026-10-23.md").exists()
     records = _pending_records(tmp_path)
     assert len(records) == 1 and records[0]["payload"]["kind"] == "mind_plan"
     plan = L1.Plan.from_json(records[0]["payload"]["plan"])
@@ -66,7 +66,7 @@ def test_approving_lands_the_file_and_clears_the_pending(roots, tmp_path):
     )
 
     assert report.ok, report
-    target = Path(os.environ["VAULT_ROOT"]) / "projects/Plobi/ai-daily/2026-10-23/agenda.md"
+    target = Path(os.environ["VAULT_ROOT"]) / "projects/Plobi/daily/2026-10-23.md"
     assert target.read_text(encoding="utf-8") == "# 摘要\n"
 
 
@@ -75,9 +75,9 @@ def test_a_plan_whose_content_moved_under_it_is_refused(roots, tmp_path):
     result, _rel = _stage(roots)
     record = _pending_records(tmp_path)[0]
     plan = L1.Plan.from_json(record["payload"]["plan"])
-    target = Path(os.environ["VAULT_ROOT"]) / "projects/Plobi/ai-daily/2026-10-23"
+    target = Path(os.environ["VAULT_ROOT"]) / "projects/Plobi/daily"
     target.mkdir(parents=True, exist_ok=True)
-    (target / "agenda.md").write_text("人先写的\n", encoding="utf-8")
+    (target / "2026-10-23.md").write_text("人先写的\n", encoding="utf-8")
 
     report = L1.apply_plan(
         plan, approved=plan.digest, roots=resolve_roots(),
@@ -85,7 +85,7 @@ def test_a_plan_whose_content_moved_under_it_is_refused(roots, tmp_path):
     )
 
     assert report.ok is False
-    assert (target / "agenda.md").read_text(encoding="utf-8") == "人先写的\n"
+    assert (target / "2026-10-23.md").read_text(encoding="utf-8") == "人先写的\n"
 
 
 def test_rejection_sends_that_class_back_to_asking(roots, tmp_path):
