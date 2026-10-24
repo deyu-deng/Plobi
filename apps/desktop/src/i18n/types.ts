@@ -2719,6 +2719,7 @@ export interface Translations {
       readOnly: string
       truncated: (rows: number, cols: number) => string
       sheet: string
+      legacyNote: string
     }
   }
 }

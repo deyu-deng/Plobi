@@ -4,10 +4,12 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 import { Codicon } from '@/components/ui/codicon'
+import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
+import { readStyledSheetModel, type StyledSheetModel } from './styled-sheet-model'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -17,6 +19,7 @@ export interface OfficePreviewLabels {
   readOnly: string
   truncated: (rows: number, cols: number) => string
   sheet: string
+  legacyNote: string
 }
 
 interface FileBytesState {
@@ -77,26 +80,58 @@ function useFileBytes(path: string): FileBytesState {
   return state
 }
 
-function PreviewStatus({ error, labels, loading }: { error: boolean; labels: OfficePreviewLabels; loading: boolean }) {
+function PreviewStatus({
+  error,
+  labels,
+  loading,
+  neutral = false
+}: {
+  error: boolean
+  labels: OfficePreviewLabels
+  loading: boolean
+  neutral?: boolean
+}) {
   if (!loading && !error) {
     return null
   }
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-(--ui-sidebar-surface-background)/90 px-4 text-center">
+    <div
+      className={cn(
+        'absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-4 text-center',
+        neutral ? 'bg-white/90 text-[#555]' : 'bg-(--ui-sidebar-surface-background)/90'
+      )}
+    >
       {error ? (
         <>
           <Codicon name="warning" size="1.1rem" />
-          <p className="text-[0.72rem] text-muted-foreground">{labels.unavailable}</p>
+          <p className={neutral ? 'text-[0.72rem] text-[#555]' : 'text-[0.72rem] text-muted-foreground'}>
+            {labels.unavailable}
+          </p>
         </>
       ) : (
         <>
           <Codicon name="loading" size="1.1rem" spinning />
-          <p className="text-[0.72rem] text-muted-foreground">{labels.loading}</p>
+          <p className={neutral ? 'text-[0.72rem] text-[#555]' : 'text-[0.72rem] text-muted-foreground'}>
+            {labels.loading}
+          </p>
         </>
       )}
     </div>
   )
+}
+
+function columnName(index: number): string {
+  let name = ''
+  let value = index
+
+  while (value > 0) {
+    const remainder = (value - 1) % 26
+    name = String.fromCharCode(65 + remainder) + name
+    value = Math.floor((value - 1) / 26)
+  }
+
+  return name
 }
 
 function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
@@ -104,18 +139,19 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
   const [sheetName, setSheetName] = useState('')
   const model = useMemo(() => (bytes ? readSheetModel(bytes, sheetName || undefined) : null), [bytes, sheetName])
   const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
+  const legacy = /\.xls$/iu.test(path)
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1.5">
-        <span className="shrink-0 text-[0.6rem] text-muted-foreground uppercase">{labels.sheet}</span>
+    <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
+      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] bg-[#f8fafc] px-1.5">
+        <span className="shrink-0 text-[0.6rem] text-[#666] uppercase">{labels.sheet}</span>
         <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {(model?.names ?? []).map(name => (
             <button
               className={
                 name === selected
-                  ? 'shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.64rem] text-foreground'
-                  : 'shrink-0 rounded px-1.5 py-0.5 text-[0.64rem] text-muted-foreground hover:bg-muted/60'
+                  ? 'shrink-0 rounded bg-white px-1.5 py-0.5 text-[0.64rem] text-[#111] shadow-sm ring-1 ring-[#d1d5db]'
+                  : 'shrink-0 rounded px-1.5 py-0.5 text-[0.64rem] text-[#666] hover:bg-[#eef2f7]'
               }
               key={name}
               onClick={() => setSheetName(name)}
@@ -125,20 +161,33 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
             </button>
           ))}
         </div>
-        <span className="shrink-0 text-[0.6rem] text-muted-foreground">{labels.readOnly}</span>
+        <span className="shrink-0 text-[0.6rem] text-[#777]">{labels.readOnly}</span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto bg-white">
         <table className="border-collapse text-[0.68rem]">
+          <thead>
+            <tr>
+              <th className="sticky top-0 left-0 z-20 border border-[#d1d5db] bg-[#f3f4f6] px-1.5 py-0.5" />
+              {Array.from({ length: Math.max(1, model?.rows[0]?.length ?? 1) }, (_, index) => (
+                <th
+                  className="sticky top-0 z-10 min-w-16 border border-[#d1d5db] bg-[#f3f4f6] px-1.5 py-0.5 text-center font-normal text-[#666]"
+                  key={index}
+                >
+                  {columnName(index + 1)}
+                </th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
             {(model?.rows ?? []).map((row, rowIndex) => (
-              <tr className="even:bg-muted/20" key={rowIndex}>
-                <th className="sticky left-0 z-10 border border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-1.5 py-0.5 text-right font-normal text-muted-foreground">
+              <tr key={rowIndex}>
+                <th className="sticky left-0 z-10 border border-[#e5e7eb] bg-[#f3f4f6] px-1.5 py-0.5 text-right font-normal text-[#666]">
                   {rowIndex + 1}
                 </th>
                 {row.map((cell, cellIndex) => (
                   <td
-                    className="max-w-64 border border-(--ui-stroke-tertiary) px-1.5 py-0.5 align-top whitespace-pre-wrap"
+                    className="max-w-64 border border-[#e5e7eb] px-1.5 py-0.5 align-top whitespace-pre-wrap"
                     key={cellIndex}
                   >
                     {cell}
@@ -149,13 +198,145 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
           </tbody>
         </table>
         {model?.truncated ? (
-          <p className="px-2 py-1 text-[0.62rem] text-muted-foreground">
-            {labels.truncated(SHEET_MAX_ROWS, SHEET_MAX_COLS)}
-          </p>
+          <p className="px-2 py-1 text-[0.62rem] text-[#666]">{labels.truncated(SHEET_MAX_ROWS, SHEET_MAX_COLS)}</p>
+        ) : null}
+        {legacy ? <p className="px-2 py-1 text-[0.62rem] text-[#666]">{labels.legacyNote}</p> : null}
+      </div>
+
+      <PreviewStatus error={error} labels={labels} loading={loading} neutral />
+    </div>
+  )
+}
+
+function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
+  const { bytes, error, loading } = useFileBytes(path)
+  const [sheetName, setSheetName] = useState('')
+  const [model, setModel] = useState<null | StyledSheetModel>(null)
+  const [parsing, setParsing] = useState(false)
+  const [parseError, setParseError] = useState(false)
+
+  useEffect(() => {
+    if (!bytes) {
+      setModel(null)
+
+      return
+    }
+
+    let active = true
+    setParsing(true)
+    setParseError(false)
+
+    void readStyledSheetModel(bytes, sheetName || undefined)
+      .then(next => {
+        if (active) {
+          setModel(next)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setParseError(true)
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setParsing(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [bytes, sheetName])
+
+  const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
+  const grid = '1px solid #e5e7eb'
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
+      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] bg-[#f8fafc] px-1.5">
+        <span className="shrink-0 text-[0.6rem] text-[#666] uppercase">{labels.sheet}</span>
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {(model?.names ?? []).map(name => (
+            <button
+              className={
+                name === selected
+                  ? 'shrink-0 rounded bg-white px-1.5 py-0.5 text-[0.64rem] text-[#111] shadow-sm ring-1 ring-[#d1d5db]'
+                  : 'shrink-0 rounded px-1.5 py-0.5 text-[0.64rem] text-[#666] hover:bg-[#eef2f7]'
+              }
+              key={name}
+              onClick={() => setSheetName(name)}
+              type="button"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+        <span className="shrink-0 text-[0.6rem] text-[#777]">{labels.readOnly}</span>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto bg-white">
+        <table className="border-collapse text-[0.68rem]">
+          <colgroup>
+            {(model?.widths ?? []).map((width, index) => (
+              <col key={index} style={{ width }} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="sticky top-0 left-0 z-20 border border-[#d1d5db] bg-[#f3f4f6] px-1.5 py-0.5" />
+              {(model?.widths ?? []).map((_, index) => (
+                <th
+                  className="sticky top-0 z-10 border border-[#d1d5db] bg-[#f3f4f6] px-1.5 py-0.5 text-center font-normal text-[#666]"
+                  key={index}
+                >
+                  {columnName(index + 1)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(model?.rows ?? []).map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                <th className="sticky left-0 z-10 border border-[#e5e7eb] bg-[#f3f4f6] px-1.5 py-0.5 text-right font-normal text-[#666]">
+                  {rowIndex + 1}
+                </th>
+                {row.map((cell, cellIndex) =>
+                  cell.hidden ? null : (
+                    <td
+                      colSpan={cell.colspan > 1 ? cell.colspan : undefined}
+                      key={cellIndex}
+                      rowSpan={cell.rowspan > 1 ? cell.rowspan : undefined}
+                      style={{
+                        background: cell.style.background,
+                        borderBottom: cell.style.border.bottom ?? grid,
+                        borderLeft: cell.style.border.left ?? grid,
+                        borderRight: cell.style.border.right ?? grid,
+                        borderTop: cell.style.border.top ?? grid,
+                        color: cell.style.color,
+                        fontStyle: cell.style.italic ? 'italic' : undefined,
+                        fontSize: cell.style.fontSize ? `${cell.style.fontSize}pt` : undefined,
+                        fontWeight: cell.style.bold ? 600 : undefined,
+                        overflow: 'hidden',
+                        textAlign: cell.style.align,
+                        verticalAlign: cell.style.valign,
+                        whiteSpace: cell.style.wrap ? 'pre-wrap' : 'pre'
+                      }}
+                      title={cell.text}
+                    >
+                      {cell.text}
+                    </td>
+                  )
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {model?.truncated ? (
+          <p className="px-2 py-1 text-[0.62rem] text-[#666]">{labels.truncated(SHEET_MAX_ROWS, SHEET_MAX_COLS)}</p>
         ) : null}
       </div>
 
-      <PreviewStatus error={error} labels={labels} loading={loading} />
+      <PreviewStatus error={error || parseError} labels={labels} loading={loading || parsing} neutral />
     </div>
   )
 }
@@ -289,7 +470,13 @@ export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLab
   const kind = fileKindForPath(path)
 
   if (kind === 'sheet') {
-    return <SheetPreview labels={labels} path={path} />
+    const ext = path.split('.').pop()?.toLowerCase()
+
+    return ext === 'xlsx' ? (
+      <StyledSheetPreview labels={labels} path={path} />
+    ) : (
+      <SheetPreview labels={labels} path={path} />
+    )
   }
 
   if (kind === 'pdf') {
