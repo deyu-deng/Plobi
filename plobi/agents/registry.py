@@ -962,6 +962,12 @@ class AgentRegistry:
         # 技能根（`apply_shared_skills_root`）都不需要一个家来承载；会话落单库
         # （裁定 180）。剩下的只有共享层那一份要接好。
         self._ensure_shared_layer(entry)
+        # C 刀：新行的工具集真源写进名册（diet_entry_toolsets 幂等）。
+        # B 刀摘掉的旧调用是 apply_l2_project_diet(家)——家不再被建，那一式已死。
+        try:
+            diet_entry_toolsets(entry)
+        except Exception as exc:  # 不减也不许挡住 spawn
+            logger.debug("plobi: diet (registry row) skipped for %s: %s", entry.name, exc)
 
         # WP-L2-IDENTITY / 裁定 42 §6(c): 分身缺的是「我是谁」。身份现在落在
         # 共享层那一份（A 刀），**不传 home**——传了就又写回分身家，前功尽弃。
@@ -1385,6 +1391,11 @@ def _entry_for_profile_in(entries: list[AgentEntry], want: str) -> Optional[Agen
         landed = (entry.profile_name or "").casefold()
         if landed and landed == want:
             return entry
+        # C 刀：``PLOBI_AGENT_ID`` 带的是**名册 name**（裁定 180 的身份），不一定是
+        # profile 名——一行可以 ``name: Stithy`` 而 ``profile: l2-stithy``。老形状
+        # （家在 profiles/ 下）走上面那段；新形状（共享层 + AGENT_ID）走这段。
+        if entry.name.casefold() == want:
+            return entry
     return None
 
 
@@ -1472,17 +1483,41 @@ def profile_config_overlay(profile_name: str) -> dict:
     cwd = _resolvable_project_cwd(entry)
     if cwd:
         overlay["terminal"] = {"cwd": cwd}
+    # C 刀：三份 per-agent 黑名单也走 overlay（裁定 42 §42.2 的"可选覆盖"延伸到
+    # 减法侧）。消费点是 ``plobi_cli/tools_config.py`` 与 ``agent/skill_utils.py``
+    # 里既有的 ``agent.disabled_toolsets`` / ``disabled_skills`` /
+    # ``disabled_mcp_servers``——不新开读取路径。**并集**在 config.py 那一侧做
+    # （overlay 不知道顶层当时有什么，替换会吃掉用户自己的选择）。
+    disabled: dict = {}
+    if entry.disabled_toolsets:
+        disabled["disabled_toolsets"] = [str(n) for n in entry.disabled_toolsets]
+    if entry.disabled_skills:
+        disabled["disabled_skills"] = [str(n) for n in entry.disabled_skills]
+    if entry.disabled_mcp_servers:
+        disabled["disabled_mcp_servers"] = [str(n) for n in entry.disabled_mcp_servers]
+    if disabled:
+        overlay["agent"] = disabled
     return overlay
 
 
 def _active_agent_profile_name() -> str:
-    """当前进程正在替哪个 Agent 干活（profile 名）；不是分身会话 → ''。
+    """当前进程正在替哪个 Agent 干活；不是分身会话 → ''。
 
-    消费点（技能 / 工具 / MCP 的 per-agent 减法）运行在 slash_worker 里，
-    那里唯一的身份通道就是 ``PLOBI_HOME`` 钉在分身家（裁定 180 之后仍成立的
-    配置面约定）。家不在 ``profiles/`` 底下 = 顶层家 = L1 / flat，没有 per-agent
-    偏好可言。
+    身份通道（2026-10-24 C 刀起，裁定 180 的行级身份）：
+
+    1. **``PLOBI_AGENT_ID`` 优先**——B 刀（WP-REGISTRY-NO-HOME）之后 L2 分身
+       不带 ``-p`` 起来，``PLOBI_HOME`` 是**共享层 root**，家那条判据对它永远
+       为假 ⇒ per-agent 的模型 / cwd / 工具集黑名单整条链失效（连
+       ``agent_config_overlay`` 开头那道「共享根即空」的门都过不去）。
+       名册 name 才是裁定 180 说的身份，它由
+       :func:`plobi.agents.registry` 的调用方（``build_child_command``）注入。
+    2. 回退到家：``PLOBI_HOME`` 在 ``profiles/`` 底下 = 老形状的分身会话
+       （装机链上还有这种进程，回退保证它们逐字不变）。
+    3. 都不是 ⇒ ''（L1 / flat，没有 per-agent 偏好可言）。
     """
+    agent_id = (os.environ.get("PLOBI_AGENT_ID") or "").strip()
+    if agent_id:
+        return agent_id
     try:
         from plobi_constants import get_plobi_home
 
@@ -3950,9 +3985,14 @@ def _explicit_toolset_optins(platform_names, baseline_names) -> set:
 
 
 def apply_l2_project_diet(profile_dir: Path | str | None) -> bool:
-    """WP-L2-DIET: strip terminal / computer_use / code_execution /
-    session_search + every ``plobi-*`` composite from a project L2
-    profile's ``config.yaml``。
+    """**清理工具**（2026-10-24 C 刀起，不再是真源）：strip terminal /
+    computer_use / code_execution / session_search + every ``plobi-*``
+    composite from a project L2 profile's ``config.yaml``。
+
+    ⚠️ 真源已搬进**名册行的 ``disabled_toolsets``**（:func:`diet_entry_toolsets`，
+    读侧经 :func:`profile_config_overlay` 叠 ``agent.disabled_toolsets``）。本函数
+    只剩一个用途：把**已经存在的 24 个分身家**里那份历史 config 剥干净——那些家
+    终将被 quarantine 搬走，搬之前让它们别带着全套工具集的复印件。新行不要再调它。
 
     Touches both the top-level ``toolsets`` and the per-platform
     ``platform_toolsets`` (cli + gateway). Idempotent and reversible: a tool
@@ -4106,29 +4146,68 @@ def apply_shared_skills_root() -> bool:
     return True
 
 
+def diet_entry_toolsets(entry: "AgentEntry") -> bool:
+    """WP-L2-DIET 的**真源**：把 l2_project 的工具集减肥写进名册那一行。
+
+    2026-10-24 C 刀。旧形状是 :func:`apply_l2_project_diet` 剥分身家
+    ``config.yaml``——B 刀（WP-REGISTRY-NO-HOME）之后家不再被建出来，那条路
+    两条触发路径全 no-op；而且它剥的从来是 ``create_profile`` 给的**出厂默认**，
+    跟一个默认值较劲。真源按裁定 42 §42.2 / 裁 166 落在名册行：这一行的
+    ``disabled_toolsets`` 就是"这个分身不该有什么工具"，读侧由
+    :func:`profile_config_overlay` 叠进 ``agent.disabled_toolsets``
+    （``plobi_cli/tools_config.py`` 的既有消费点），不落第二份盘。
+
+    写什么：``L2_PROJECT_DROP_TOOLSETS`` 那四个（terminal / computer_use /
+    code_execution / session_search——"留 terminal 是把 L2 重新变回工人"）。
+    **不写** ``plobi-*`` 复合：它不是用户勾来的，是平台复合，禁它连带禁掉
+    里面every healthy leaf；复合的处置归 ``_filter_l2_project_toolsets``
+    （生成 / 清理侧）。
+
+    契约：
+    - 幂等——已写过的名字不重复追加；
+    - 只追加——用户自己声明过的黑名单一字不动；
+    - 可逆——用户在桌面 / ``plobi tools`` 把某一项开回来 = 改名册行
+      （``web_server.py`` 的 ``disabled_toolsets`` 开关），这里不会在读时
+      重新剥掉（读时过滤会破坏 diet 的可逆契约，所以不做读时过滤）；
+    - 非 l2_project / 已归档 / 类别不在 projects·research ⇒ 不写。
+    """
+    if entry.role != "l2_project" or entry.archived:
+        return False
+    if entry.category not in ("projects", "research"):
+        return False
+    banned = sorted(L2_PROJECT_DROP_TOOLSETS)
+    have = {str(n).casefold() for n in entry.disabled_toolsets}
+    missing = [n for n in banned if n.casefold() not in have]
+    if not missing:
+        return False
+    merged = tuple(entry.disabled_toolsets) + tuple(missing)
+    # AgentEntry 是 frozen dataclass。object.__setattr__ 是 dataclasses 自己的
+    # 逃生口（pickle / copy 重建同款），运行中就地改一格用它是这个类的既定做法；
+    # 换成 replace() 会返回新对象，而三个调用方（spawn / ensure_mind_project_agents
+    # / _diet_existing_l2_project）都是"改进去后 reg.save()"的形状，接不住。
+    object.__setattr__(entry, "disabled_toolsets", merged)
+    return True
+
+
 def _diet_existing_l2_project(entry: "AgentEntry") -> None:
     """WP-L2-DIET / 裁定 33.3: 对注册表里已存在的未归档 ``l2_project`` 行
-    也走减肥。profile 没落地就静默——注册表先行、profile 稍后落地的过渡期
-    不算错，spawn 阶段会再走一遍。"""
+    也走减肥。
+
+    2026-10-24 C 刀：落点从「剥家里的 config.yaml」换成
+    :func:`diet_entry_toolsets`（写名册行）。家不在盘上也照写——真源本来就是
+    名册行，盘上那份只是历史复印件。旧的家清理仍由
+    :func:`apply_l2_project_diet` 承担（定位已降级为清理工具）。
+    """
     if entry.role != "l2_project":
         return
     if entry.archived:
         return
     if entry.category not in ("projects", "research"):
         return
-    profile_name = entry.profile_name
-    if not profile_name:
-        return
     try:
-        from plobi_cli.profiles import get_profile_dir, profile_exists
-
-        if not profile_exists(profile_name):
-            return
-        apply_l2_project_diet(get_profile_dir(profile_name))
+        diet_entry_toolsets(entry)
     except Exception as exc:
-        # plobi_cli may not be importable in the test env; treat as a
-        # silent no-op so the registry row stays visible.
-        logger.debug("plobi: l2 diet (existing) skipped for %s: %s", entry.name, exc)
+        logger.debug("plobi: l2 diet (registry row) skipped for %s: %s", entry.name, exc)
 
 
 
