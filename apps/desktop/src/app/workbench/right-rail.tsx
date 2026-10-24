@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 
-export type RightRailTab = 'agenda' | 'files' | 'review'
+export type RightRailTab = 'agenda' | 'browser' | 'files' | 'review'
 export type RightRailTabId = RightRailTab | `file:${string}`
 
 export interface RightRailTabDef {

@@ -128,6 +128,7 @@ import {
   shellLevelForPath
 } from './routes'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
+import { BrowserTabPanel } from './workbench/browser-tab'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
@@ -289,11 +290,12 @@ export function DesktopController() {
 
   const workbenchTabDefs: Record<RightRailTab, RightRailTabDef> = {
     agenda: { icon: 'calendar', id: 'agenda', title: t.workbench.tabs.agenda },
+    browser: { icon: 'globe', id: 'browser', title: t.workbench.tabs.browser },
     files: { icon: 'folder-opened', id: 'files', title: t.workbench.tabs.files },
     review: { icon: 'git-pull-request', id: 'review', title: t.workbench.tabs.review }
   }
-  const l1TabDefs = [workbenchTabDefs.files, workbenchTabDefs.agenda]
-  const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review]
+  const l1TabDefs = [workbenchTabDefs.files, workbenchTabDefs.agenda, workbenchTabDefs.browser]
+  const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review, workbenchTabDefs.browser]
   const isL1Workbench = level === 'l1'
 
   const openFileTab = useCallback((target: PreviewTarget) => {
@@ -427,10 +429,14 @@ export function DesktopController() {
   }, [agentCwd])
 
   const l1OpenTabDefs = l1Tabs
-    .map(id => (id === 'files' || id === 'agenda' ? workbenchTabDefs[id] : null))
+    .map(id =>
+      id === 'files' || id === 'agenda' || id === 'browser' ? workbenchTabDefs[id] : null
+    )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
-    .map(id => (id === 'files' || id === 'review' ? workbenchTabDefs[id] : openFiles[id]?.def))
+    .map(id =>
+      id === 'files' || id === 'review' || id === 'browser' ? workbenchTabDefs[id] : openFiles[id]?.def
+    )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
     Object.entries(openFiles).map(([id, { target }]) => [
@@ -1498,7 +1504,12 @@ export function DesktopController() {
           availableTabs={l2TabDefs.filter(
             tab => !l2Tabs.includes(tab.id) && (tab.id !== 'review' || Boolean(agentCwd.trim()))
           )}
-          contents={{ files: workbenchFilesContent, review: workbenchReviewContent, ...fileTabContents }}
+          contents={{
+            browser: <BrowserTabPanel labels={t.workbench.browser} />,
+            files: workbenchFilesContent,
+            review: workbenchReviewContent,
+            ...fileTabContents
+          }}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
@@ -1572,6 +1583,7 @@ export function DesktopController() {
                 </div>
               </>
             ),
+            browser: <BrowserTabPanel labels={t.workbench.browser} />,
             files: null
           }}
           labels={t.workbench}

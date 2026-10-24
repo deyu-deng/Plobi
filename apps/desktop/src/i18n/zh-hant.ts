@@ -2944,13 +2944,25 @@ export const zhHant = defineLocale({
     tabs: {
       agenda: '行程',
       files: '工作區檔案',
-      review: '審閱'
+      review: '審閱',
+      browser: '瀏覽器'
     },
     add: '開啟頁籤',
     close: label => `關閉${label}`,
     emptyTitle: '沒有開啟的頁籤',
-    emptyBody: '點右上角的 + 開啟工作區檔案、行程或審閱。',
+    emptyBody: '點右上角的 + 開啟工作區檔案、行程、審閱或瀏覽器。',
     noFolderTitle: '此 Agent 未綁定目錄',
-    noFolderBody: '給它綁定一個目錄後，這裡會顯示它的檔案樹。'
+    noFolderBody: '給它綁定一個目錄後，這裡會顯示它的檔案樹。',
+    browser: {
+      placeholder: '輸入網址，例如 localhost:3000',
+      back: '上一頁',
+      forward: '下一頁',
+      reload: '重新整理',
+      go: '開啟',
+      newTabTitle: '新分頁',
+      newTabBody: '在上方輸入網址，按 Enter 開啟。',
+      loadFailed: '這個頁面打不開',
+      invalidUrl: '只支援 http / https 網址'
+    }
   }
 })

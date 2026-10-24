@@ -3083,13 +3083,25 @@ export const en: Translations = {
     tabs: {
       agenda: 'Agenda',
       files: 'Workspace files',
-      review: 'Review'
+      review: 'Review',
+      browser: 'Browser'
     },
     add: 'Open tab',
     close: label => `Close ${label}`,
     emptyTitle: 'No open tabs',
-    emptyBody: 'Use + to open workspace files, agenda, or review.',
+    emptyBody: 'Use + to open workspace files, agenda, review, or the browser.',
     noFolderTitle: 'This agent has no folder',
-    noFolderBody: 'Bind a folder to this agent to browse its files here.'
+    noFolderBody: 'Bind a folder to this agent to browse its files here.',
+    browser: {
+      placeholder: 'Enter a URL, e.g. localhost:3000',
+      back: 'Back',
+      forward: 'Forward',
+      reload: 'Reload',
+      go: 'Open',
+      newTabTitle: 'New tab',
+      newTabBody: 'Type a URL above and press Enter.',
+      loadFailed: 'This page could not be opened',
+      invalidUrl: 'Only http/https URLs are supported'
+    }
   }
 }
