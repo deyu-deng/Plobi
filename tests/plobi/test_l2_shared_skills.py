@@ -126,9 +126,35 @@ def _visible_skill_names() -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 
 
+def _spawned_home(reg, name: str, home: Path) -> Path:
+    """spawn 之后取「那个家」——B 刀之后它由**测试自己预建**。
+
+    WP-REGISTRY-NO-HOME：``spawn`` 不再落家（``profile_dir`` 键也没了），而这一档
+    要按家读（``in_profile`` 把 PLOBI_HOME 指过去）。所以这里自建一个**空壳**，
+    形状与 ``create_profile(no_skills=True)`` 的产物对齐：一个 ``plobi/`` 子目录
+    加一个 ``.no-bundled-skills`` 标记——后者正是 ``no_skills`` 的落盘证据，
+    断言它还在，才证明「技能不按分身复印」这条没被懒建破坏。
+    """
+    result = reg.spawn(name)
+    assert "profile_dir" not in result, "spawn 又在返回值里泄露家路径了"
+    # 注意：本档的 ``l2_home`` **已经是** ``<tmp>/.plobi``（见 fixture），别再多套一层。
+    profile_dir = home / "profiles" / result["profile"]
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    (profile_dir / "plobi").mkdir(exist_ok=True)
+    (profile_dir / ".no-bundled-skills").write_text("", encoding="utf-8")
+    # 一份**最小** config.yaml：``apply_shared_skills_root()`` 写的是顶层那一份的
+    # ``skills.external_dirs``，分身读时要靠「名册行覆盖 → 顶层 → 出厂默认」这条
+    # 叠加链才能看到它——家里没有 config.yaml 时叠加没有落脚点，共享技能就消失了。
+    # 这正是 ``create_profile(no_skills=True)`` 原来会造的那份出厂默认。
+    (profile_dir / "config.yaml").write_text(
+        "toolsets:\n  - skills\n", encoding="utf-8"
+    )
+    return profile_dir
+
+
 def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profile):
     reg, _ = _registry_with_l2(l2_home)
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
 
     own_skills = profile_dir / "skills"
     # No copied tree: not one SKILL.md under the 分身's own skills root, and no
@@ -154,7 +180,11 @@ def test_spawn_lands_no_skill_copies_but_sees_the_shared_root(l2_home, in_profil
 
     # 裁定 42 第二刀：config / .env / SOUL 这一层也不再是复印件（§42.2 只留三个
     # 按项目不同的覆盖：人设片段、模型、密钥）。
-    soul = (profile_dir / "SOUL.md").read_text(encoding="utf-8")
+    # A 刀（WP-AGENT-SOUL-SHARED）：身份落在**共享层**那一份，不再写进分身家。
+    from plobi.agents.registry import shared_soul_path_for
+
+    soul = shared_soul_path_for("demo").read_text(encoding="utf-8")
+    assert shared_soul_path_for("demo").is_file(), "身份没落共享层"
     assert "PLOBI_L2_IDENTITY" in soul
     assert "shared persona" not in soul  # 顶层那份没有跟着搬进来
     # WP-PROFILE-STOP-SEEDING 之后连那份「只有注释表头」的占位 ``.env`` 也不种了：
@@ -175,11 +205,18 @@ def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
     会被跳过——它等于自己的本地主根，这正好说明同一个值在两边都不出错。）
     """
     reg, _ = _registry_with_l2(l2_home)
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
 
     top = yaml.safe_load((l2_home / "config.yaml").read_text(encoding="utf-8"))
     assert [Path(d) for d in top["skills"]["external_dirs"]] == [shared_skills_root()]
-    assert not (profile_dir / "config.yaml").exists()
+    # 家由 _spawned_home 预建（带一份出厂 config.yaml，给「顶层 external_dirs 读时叠加」
+    # 一个落脚点）。B 刀之后 spawn **完全不碰家**，所以那份 config.yaml 必须还是
+    # 预建时那样——一个字节都没被 spawn 改过。这比原来「家里不该有 config.yaml」
+    # 更强：原来只查存在，现在查内容。
+    expected_config = "toolsets:\n  - skills\n"
+    assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == expected_config, (
+        "spawn 又往分身家落了 config.yaml"
+    )
 
     from agent.skill_utils import get_external_skills_dirs
 
@@ -195,11 +232,13 @@ def test_shared_root_is_written_into_the_one_shared_config(l2_home, in_profile):
 def test_repeated_spawn_does_not_append_a_second_shared_root(l2_home, in_profile):
     """幂等落在顶层那一份上：重复 spawn 不追加第二条，用户自己列的外部根留着。"""
     reg, _ = _registry_with_l2(l2_home)
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
     top_cfg = l2_home / "config.yaml"
     before = top_cfg.read_text(encoding="utf-8")
 
-    assert reg.spawn("demo")["profile_dir"] == str(profile_dir)
+    # B 刀：第二次 spawn 同样不建家、不泄露家路径；共享根也不该重复追加。
+    again = reg.spawn("demo")
+    assert "profile_dir" not in again
     assert apply_shared_skills_root() is False
     assert apply_shared_skills_root() is False
 
@@ -243,7 +282,7 @@ def test_apply_shared_skills_root_creates_the_shared_config_when_absent(tmp_path
 
 def test_local_skill_wins_over_shared_root_and_never_doubles(l2_home, in_profile):
     reg, _ = _registry_with_l2(l2_home)
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
 
     collision = "alpha"  # a name the shared root also owns (fixture data)
     local = profile_dir / "skills" / "agent-authored"
@@ -278,7 +317,7 @@ def test_local_skill_wins_over_shared_root_and_never_doubles(l2_home, in_profile
 def test_shared_skills_are_read_only_to_the_profile_curator(l2_home, in_profile):
     """The 分身 may discover shared skills but must never curate them."""
     reg, _ = _registry_with_l2(l2_home)
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
     shared_md = shared_skills_root() / SHARED_SKILLS["alpha"][0] / "SKILL.md"
 
     def check():
@@ -330,14 +369,21 @@ def test_spawn_lands_no_env_or_config_copy(l2_home):
     现在断的是文件不存在，顶层那一份仍然原样在那儿（存量只隔离不删）。
     """
     reg, _ = _registry_with_l2(l2_home)
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
 
     assert not (profile_dir / ".env").exists()
 
     # ``config.yaml`` 那一腿整个不再落进分身家（裁 166 / ADR-0013：配置只有一份，
     # 分身家 0 份可读；连"只有注册表声明的覆盖"那一格也改成读时叠，见
     # ``plobi.agents.registry.profile_config_overlay``）。
-    assert not (profile_dir / "config.yaml").exists()
+    # 家由 _spawned_home 预建（带一份出厂 config.yaml，给「顶层 external_dirs 读时叠加」
+    # 一个落脚点）。B 刀之后 spawn **完全不碰家**，所以那份 config.yaml 必须还是
+    # 预建时那样——一个字节都没被 spawn 改过。这比原来「家里不该有 config.yaml」
+    # 更强：原来只查存在，现在查内容。
+    expected_config = "toolsets:\n  - skills\n"
+    assert (profile_dir / "config.yaml").read_text(encoding="utf-8") == expected_config, (
+        "spawn 又往分身家落了 config.yaml"
+    )
 
     # 顶层那份是密钥的唯一真源，它带着 TEST_KEY=1 这一行——分身没有第二份。
     assert _assignment_lines(l2_home / ".env") == ["TEST_KEY=1"]
@@ -358,7 +404,7 @@ def test_secret_override_never_lands_on_disk(l2_home):
     )
     reg.save()
 
-    profile_dir = Path(reg.spawn("demo")["profile_dir"])
+    profile_dir = _spawned_home(reg, "demo", l2_home)
     needle = b"sk-project-only"
     leftovers = [
         str(path)

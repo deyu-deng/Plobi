@@ -356,6 +356,25 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # The flag is stripped from sys.argv so argparse never sees it.
 # Falls back to ~/.plobi/active_profile for sticky default.
 # ---------------------------------------------------------------------------
+def _lazy_create_profile(name: str) -> Optional[str]:
+    """显式 `-p <name>` 但盘上没有那个家时，懒建一个**空壳**并返回它的路径。
+
+    WP-REGISTRY-NO-HOME：`spawn`（名册加一行）不再建家，所以「名册里有、盘上没有」
+    成了常态。这条入口只为**显式要求一个家**的调用方兜底，建的是最小空壳
+    （`no_skills=True`），不拷任何东西——裁定 42 §42.2 的终态。
+
+    建不了（名称非法 / 盘写不进去）时返回 None，让调用方照旧报错。
+    """
+    try:
+        from plobi_cli.profiles import create_profile, get_profile_dir
+
+        create_profile(name=name, no_skills=True)
+        return str(get_profile_dir(name))
+    except Exception as exc:  # 名称非法、盘写不进去……都让上层照旧报错
+        print(f"note: could not create profile {name!r} on demand: {exc}", file=sys.stderr)
+        return None
+
+
 def _apply_profile_override() -> None:
     """Pre-parse --profile/-p and set PLOBI_HOME before imports."""
     argv = sys.argv[1:]
@@ -510,8 +529,16 @@ def _apply_profile_override() -> None:
         except FileNotFoundError as exc:
             plobi_home = _resolve_sudo_user_profile_env(profile_name)
             if not plobi_home:
-                print(f"Error: {exc}", file=sys.stderr)
-                sys.exit(1)
+                # WP-REGISTRY-NO-HOME：名册加一行不再建家，但**显式 `-p` 仍然要能跑**
+                # （kanban worker、文档里的用法都还在）。懒建一个**空壳**
+                # （`no_skills=True`：不拷 config.yaml / .env / SOUL.md / 技能，
+                # 裁定 42 §42.2），而不是让人先去 `plobi profile create`。
+                # 10-22 那句「还没在这台机器上落地」的假否定就是从这里来的：
+                # 家明明在名册里，只是盘上没有目录，于是 `say`/`ask` 全部被拒。
+                plobi_home = _lazy_create_profile(profile_name)
+                if not plobi_home:
+                    print(f"Error: {exc}", file=sys.stderr)
+                    sys.exit(1)
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)

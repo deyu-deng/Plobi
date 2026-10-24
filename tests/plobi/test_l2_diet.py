@@ -400,8 +400,11 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     tmp_path, monkeypatch
 ):
     """ensure_mind_project_agents 内部对每个非 agenda / 非 butler 的 l2_project
-    调一次 apply_l2_project_diet。验证：seed 一个 Plobi + Animation 项目 +
-    假 profile（带 terminal），跑完两个 profile 的 config.yaml 都被剥掉。"""
+    调一次 apply_l2_project_diet。
+
+    WP-REGISTRY-NO-HOME（B 刀）之后补一句：这里预建的两个假 profile 就是「家」的
+    全部来源——spawn 不再建家，所以这条路径上的家只能由调用方（或懒建）给。
+    「工具集策略的真源该搬到名册行 / 共享层」属于 C 刀，不在本笔。"""
     from plobi.agents import registry as registry_mod
 
     # 临时 home + Mind 根目录。
@@ -482,7 +485,13 @@ def test_ensure_mind_project_agents_diet_calls_apply_for_each_project(
     for name in ("Plobi", "Animation"):
         profile_dir = home / ".plobi" / "profiles" / f"l2-{name}"
         cfg = yaml.safe_load((profile_dir / "config.yaml").read_text(encoding="utf-8"))
-        assert "terminal" not in cfg.get("toolsets", []), name
+        # WP-REGISTRY-NO-HOME（B 刀）之后这一行反过来钉：**spawn 不再触发 diet**。
+        # 这两个带 terminal 的假 profile 是测试自己预建的，spawn 不该碰它们；
+        # 「工具集策略的真源搬到名册行 / 共享层」是 C 刀的活，函数本体仍由
+        # `test_apply_l2_project_diet_strips_*` 那几条钉着。
+        assert "terminal" in cfg.get("toolsets", []), (
+            "B 刀之后 spawn 不该再替谁剥工具集；真剥等 C 刀"
+        )
         assert "web" in cfg["toolsets"], name
         assert "skills" in cfg["toolsets"], name
 

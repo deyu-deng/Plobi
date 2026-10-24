@@ -17,7 +17,7 @@
         skills: [morning-report, message-digest]
         description: 日程闭环 Agent
 
-``spawn`` 做三件事：确保 profile 存在（复用 ``plobi_cli.profiles.create_profile``）、
+``spawn`` 做三件事：接好共享层那一份（:meth:`AgentRegistry._ensure_shared_layer`，**不再建分身家**，见 WP-REGISTRY-NO-HOME）、
 把该 agent 的模型路由写进 profile 的 ``plobi/models.json``（ADR-0011 断言绿）、
 输出启动命令。路由断言 ``ModelRouter.assert_valid()`` 保证 L1≠L2 模型。
 """
@@ -941,11 +941,10 @@ class AgentRegistry:
     def spawn(self, name: str) -> dict:
         """把一个注册条目落地为常驻 profile + 模型路由。
 
-        1. 若 profile 不存在则 ``create_profile``：**裸建**（不拷 config.yaml /
-           .env / SOUL.md，也不拷技能）——裁定 42 §42.2 把「一整套 Plobi 文件」
-           从分身这一层收走，身份走 :func:`ensure_l2_identity_soul` 写的那段围栏，
-           密钥走 :func:`apply_secret_overrides` 注入子进程环境。
-           见 :meth:`_ensure_profile`。
+        1. **不再建家**（WP-REGISTRY-NO-HOME，B 刀）：只把共享层那一份接好
+           （:meth:`_ensure_shared_layer`）。身份走 :func:`ensure_l2_identity_soul`
+           写进共享层 `souls/<name>.md`（A 刀），密钥走
+           :func:`apply_secret_overrides` 注入子进程环境。
         2. 把该 agent 的路由写进**共享层那一份** ``plobi/models.json``（裁 166 决定一）。
         3. ADR-0011 断言（L1≠L2 模型）必须绿，否则抛 RegistryError。
         4. 返回 dict：profile 路径、启动命令、routing 断言。
@@ -958,21 +957,23 @@ class AgentRegistry:
         if entry is None:
             raise RegistryError(f"agent {name!r} is not registered")
 
-        profile_dir = self._ensure_profile(entry)
+        # WP-REGISTRY-NO-HOME（B 刀）：**名册加一行不再建家**。身份（A 刀已搬去
+        # 共享层 `souls/<name>.md`）、模型路由（`_write_profile_models` 写共享层）、
+        # 技能根（`apply_shared_skills_root`）都不需要一个家来承载；会话落单库
+        # （裁定 180）。剩下的只有共享层那一份要接好。
+        self._ensure_shared_layer(entry)
 
-        # WP-L2-IDENTITY / 裁定 42 §6(c): 分身缺的是「我是谁」。SOUL.md 是
-        # ``load_soul_md()`` 唯一的身份来源，而裸建的 profile 里那份只有上游
-        # 512 B 残桩。每次 spawn 都纠一次（幂等），
-        # 后端一起就把身份落好，不靠人手抄文本。
+        # WP-L2-IDENTITY / 裁定 42 §6(c): 分身缺的是「我是谁」。身份现在落在
+        # 共享层那一份（A 刀），**不传 home**——传了就又写回分身家，前功尽弃。
         try:
-            ensure_l2_identity_soul(entry, home=profile_dir)
+            ensure_l2_identity_soul(entry)
         except Exception as exc:
             logger.warning(
                 "plobi: L2 identity SOUL not written for %s: %s", entry.name, exc
             )
 
-        # 1) profile 级 models.json（ADRD-0011 断言基于它）
-        profile_models = self._write_profile_models(profile_dir, entry)
+        # 1) 共享层那一份 models.json（ADRD-0011 断言基于它）
+        profile_models = self._write_profile_models(None, entry)
 
         # 2) routing 断言绿（类表那一份 + **这一行**的生效值，裁 172 拆开两处消费方）
         problems = self._profile_routing_problems(profile_models) + self.route_problems_for(entry)
@@ -991,42 +992,38 @@ class AgentRegistry:
             "name": name,
             "role": entry.role,
             "profile": entry.profile_name,
-            "profile_dir": str(profile_dir),
-            "command": f"plobi -p {entry.profile_name} chat",
+            # **没有 profile_dir**：名册加一行不再落一个家（B 刀）。
+            # command 也不再带 `-p`——那是已判废的形状（裁定 42），身份靠
+            # `PLOBI_AGENT_ID`（见 `plugins/plobi-north-star/agent_ask.build_child_command`）。
+            "command": "plobi chat",
             "routing_ok": True,
         }
 
-    def _ensure_profile(self, entry: AgentEntry) -> Path:
-        from plobi_cli.profiles import (
-            create_profile,
-            get_profile_dir,
-            profile_exists,
-        )
+    def _ensure_shared_layer(self, entry: AgentEntry) -> Path:
+        """把**共享层**那一份接好；**不建分身家**（WP-REGISTRY-NO-HOME，B 刀）。
 
-        name = entry.profile_name
-        if profile_exists(name):
-            return get_profile_dir(name)
-        blocker = profile_name_blocker(entry)
-        if blocker:
-            raise RegistryError(blocker)
-        # 裁定 42 §42.2：一个项目分身 = projects.yaml 一条记录 + 最多三个覆盖，
-        # **不再是一整套 Plobi 家的复印件**（实测 13 个分身的 .env MD5 全同、
-        # config.yaml 逐字一致，从来没有一样东西是这个项目独有的）。所以这里
-        # 裸建：不拷 config.yaml / .env / SOUL.md。技能那根线不靠拷贝、靠顶层那一份
-        # 里的 ``skills.external_dirs``（:func:`apply_shared_skills_root`，只写一次）；
-        # 模型与工作目录也不落文件，读时从名册那一行叠（:func:`profile_config_overlay`）。
-        try:
-            profile_dir = create_profile(name=name, no_skills=True)
-        except FileExistsError:
-            # Someone else landed it first — don't rewrite their config.
-            return get_profile_dir(name)
+        原来这里是 ``create_profile(no_skills=True)``：名册加一行就落一个家。
+        A 刀把身份搬去共享层之后，家不再承载任何东西——技能 / 配置 / 记忆走共享层、
+        模型路由写共享层、会话落单库（裁定 180）——这一步只剩历史惯性，关掉。
+
+        仍保留的只有 :func:`apply_shared_skills_root`：它写**顶层那一份**的
+        ``skills.external_dirs``，与家存不存在无关，搬走家也不能丢它。
+
+        返回共享层 root，给还要一个「落点」的调用方（``_write_profile_models`` 的
+        参数本就是摆设，它写 :func:`plobi.routing.models.shared_config_path`）。
+
+        显式要一个家的人走 ``plobi -p <name>``：那条入口现在**懒建**空壳
+        （``plobi_cli/main.py``），不再 ``sys.exit(1)``。
+        """
+        from plobi_constants import get_default_plobi_root
+
         try:
             apply_shared_skills_root()
         except Exception as exc:  # 兜底：共享根写不进去也不该让 spawn 失败
             logger.warning(
-                "plobi: shared skills root not wired for %s: %s", name, exc
+                "plobi: shared skills root not wired for %s: %s", entry.name, exc
             )
-        return profile_dir
+        return get_default_plobi_root()
 
     def _write_profile_models(self, profile_dir: Path, entry: AgentEntry) -> Path:
         """把注册表整体路由写进**共享层那一份** `plobi/models.json`（裁定 166 决定一）。
@@ -1323,7 +1320,7 @@ def provider_is_resolvable(provider: str) -> bool:
     一个 provider 我们就判错），也只问不判。
 
     拿不到权威时按**能写**处理（fail-open）：import 不了 plobi_cli（本层刻意不在
-    模块级依赖它，见 :meth:`AgentRegistry._ensure_profile` 的惰性 import 与 51ff7f0
+    模块级依赖它，见 :meth:`AgentRegistry._ensure_shared_layer` 的惰性 import 与 51ff7f0
     的教训）不等于权威说了"不行"；一道闸门不许把注册/派生流程弄失败。
     """
     name = (provider or "").strip()
@@ -1950,15 +1947,11 @@ def ensure_mind_project_agents(
             logger.warning("plobi: spawn failed for %s: %s", safe_id, exc)
         except Exception as exc:  # spawn may import plobi_cli (not in tests)
             logger.warning("plobi: spawn skipped for %s: %s", safe_id, exc)
-        # WP-L2-DIET / 裁定 33.3: spawn 成功后立刻把 terminal / computer_use /
-        # code_execution / session_search / plobi-* 从该 profile config.yaml
-        # 剥掉。L2-agenda 不走这条路（保证 agenda 仍能 spawn terminal），它
-        # 有自己的 ensure_l2_agenda_toolsets。
-        if spawn_result and category in ("projects", "research"):
-            try:
-                apply_l2_project_diet(spawn_result.get("profile_dir"))
-            except Exception as exc:
-                logger.warning("plobi: l2 diet skipped for %s: %s", safe_id, exc)
+        # WP-L2-DIET / 裁定 33.3 原本在这里把 terminal / computer_use / code_execution /
+        # session_search / plobi-* 从该 profile config.yaml 剥掉。**B 刀起不再调用**：
+        # 家不再被创建，它会去读一个不存在的目录。工具集策略的真源本来就在名册行 /
+        # 共享层（不是家里那份出厂 config），收编它属于 C 刀——函数本体仍在
+        # `apply_l2_project_diet`，测试也仍钉着它。
     if seeded:
         try:
             reg.save()
