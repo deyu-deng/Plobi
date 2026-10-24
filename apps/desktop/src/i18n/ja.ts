@@ -3084,7 +3084,13 @@ export const ja = defineLocale({
       readOnly: '読み取り専用プレビュー',
       truncated: (rows, cols) => `先頭 ${rows} 行 × ${cols} 列のみ表示`,
       sheet: 'シート',
-      legacyNote: '旧 .xls は値のみのプレビューです。色と結合を保つには .xlsx で保存してください。'
+      legacyNote: '旧 .xls は値のみのプレビューです。色と結合を保つには .xlsx で保存してください。',
+      save: '保存',
+      saving: '保存中…',
+      saved: '保存しました',
+      cancel: 'キャンセル',
+      conflict: 'ファイルが外部で変更されたため保存していません。',
+      saveFailed: '表を保存できませんでした'
     }
   }
 })

@@ -2984,7 +2984,13 @@ export const zhHant = defineLocale({
       readOnly: '唯讀預覽',
       truncated: (rows, cols) => `只顯示前 ${rows} 行 × ${cols} 列`,
       sheet: '工作表',
-      legacyNote: '舊 .xls 唯讀值；另存為 .xlsx 可保留顏色與合併儲存格。'
+      legacyNote: '舊 .xls 唯讀值；另存為 .xlsx 可保留顏色與合併儲存格。',
+      save: '儲存',
+      saving: '儲存中…',
+      saved: '已儲存',
+      cancel: '取消',
+      conflict: '檔案已在外部變更，未儲存。',
+      saveFailed: '表格儲存失敗'
     }
   }
 })

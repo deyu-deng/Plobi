@@ -9,7 +9,7 @@ import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
-import { readStyledSheetModel, type StyledSheetModel } from './styled-sheet-model'
+import { applyStyledSheetEdits, readStyledSheetModel, sameBytes, type SheetEdits, type StyledSheetModel } from './styled-sheet-model'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -20,6 +20,12 @@ export interface OfficePreviewLabels {
   truncated: (rows: number, cols: number) => string
   sheet: string
   legacyNote: string
+  save: string
+  saving: string
+  saved: string
+  cancel: string
+  conflict: string
+  saveFailed: string
 }
 
 interface FileBytesState {
@@ -53,7 +59,7 @@ async function readFileBytes(path: string): Promise<Uint8Array> {
   return new TextEncoder().encode(decodeURIComponent(payload))
 }
 
-function useFileBytes(path: string): FileBytesState {
+function useFileBytes(path: string, reloadKey = 0): FileBytesState {
   const [state, setState] = useState<FileBytesState>({ bytes: null, error: false, loading: true })
 
   useEffect(() => {
@@ -75,7 +81,7 @@ function useFileBytes(path: string): FileBytesState {
     return () => {
       active = false
     }
-  }, [path])
+  }, [path, reloadKey])
 
   return state
 }
@@ -209,11 +215,15 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
 }
 
 function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
-  const { bytes, error, loading } = useFileBytes(path)
+  const [reloadKey, setReloadKey] = useState(0)
+  const { bytes, error, loading } = useFileBytes(path, reloadKey)
   const [sheetName, setSheetName] = useState('')
   const [model, setModel] = useState<null | StyledSheetModel>(null)
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState(false)
+  const [edits, setEdits] = useState<SheetEdits>({})
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<null | 'conflict' | 'failed' | 'saved'>(null)
 
   useEffect(() => {
     if (!bytes) {
@@ -250,6 +260,79 @@ function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; pat
 
   const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
   const grid = '1px solid #e5e7eb'
+  const dirty = Object.keys(edits).length > 0
+  const noticeLabel =
+    notice === 'failed'
+      ? labels.saveFailed
+      : notice === 'conflict'
+        ? labels.conflict
+        : notice === 'saved'
+          ? labels.saved
+          : ''
+
+  const handleCellBlur = (sheet: string, key: string, original: string, text: string) => {
+    setEdits(previous => {
+      const cells = { ...(previous[sheet] ?? {}) }
+
+      if (text === original) {
+        delete cells[key]
+      } else {
+        cells[key] = text
+      }
+
+      const next = { ...previous }
+
+      if (Object.keys(cells).length > 0) {
+        next[sheet] = cells
+      } else {
+        delete next[sheet]
+      }
+
+      return next
+    })
+    setNotice(null)
+  }
+
+  const save = async () => {
+    if (!bytes || saving || !dirty) {
+      return
+    }
+
+    setSaving(true)
+    setNotice(null)
+
+    try {
+      const current = await readFileBytes(path)
+
+      if (!sameBytes(current, bytes)) {
+        setNotice('conflict')
+
+        return
+      }
+
+      const next = await applyStyledSheetEdits(bytes, edits)
+      const write = window.plobiDesktop?.writeFileBuffer
+
+      if (!write) {
+        throw new Error('Save bridge unavailable')
+      }
+
+      await write(path, next)
+      setEdits({})
+      setNotice('saved')
+      setReloadKey(value => value + 1)
+    } catch {
+      setNotice('failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cancel = () => {
+    setEdits({})
+    setNotice(null)
+    setReloadKey(value => value + 1)
+  }
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
@@ -271,7 +354,35 @@ function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; pat
             </button>
           ))}
         </div>
-        <span className="shrink-0 text-[0.6rem] text-[#777]">{labels.readOnly}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          {noticeLabel ? (
+            <span
+              className={
+                notice === 'conflict' || notice === 'failed'
+                  ? 'text-[0.6rem] text-[#b91c1c]'
+                  : 'text-[0.6rem] text-[#15803d]'
+              }
+            >
+              {noticeLabel}
+            </span>
+          ) : null}
+          <button
+            className="rounded px-1.5 py-0.5 text-[0.62rem] text-[#444] hover:bg-[#eef2f7] disabled:opacity-40"
+            disabled={!dirty || saving}
+            onClick={() => void save()}
+            type="button"
+          >
+            {saving ? labels.saving : labels.save}
+          </button>
+          <button
+            className="rounded px-1.5 py-0.5 text-[0.62rem] text-[#666] hover:bg-[#eef2f7] disabled:opacity-40"
+            disabled={!dirty || saving}
+            onClick={cancel}
+            type="button"
+          >
+            {labels.cancel}
+          </button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto bg-white">
@@ -300,8 +411,11 @@ function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; pat
                 <th className="sticky left-0 z-10 border border-[#e5e7eb] bg-[#f3f4f6] px-1.5 py-0.5 text-right font-normal text-[#666]">
                   {rowIndex + 1}
                 </th>
-                {row.map((cell, cellIndex) =>
-                  cell.hidden ? null : (
+                {row.map((cell, cellIndex) => {
+                  const cellKey = `${rowIndex + 1}:${cellIndex + 1}`
+                  const display = edits[selected]?.[cellKey] ?? cell.text
+
+                  return cell.hidden ? null : (
                     <td
                       colSpan={cell.colspan > 1 ? cell.colspan : undefined}
                       key={cellIndex}
@@ -323,10 +437,19 @@ function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; pat
                       }}
                       title={cell.text}
                     >
-                      {cell.text}
+                      <div
+                        className="min-h-[1.2em] cursor-text outline-none focus:ring-1 focus:ring-[#93c5fd]"
+                        contentEditable
+                        onBlur={event =>
+                          handleCellBlur(selected, cellKey, cell.text, event.currentTarget.textContent ?? '')
+                        }
+                        suppressContentEditableWarning
+                      >
+                        {display}
+                      </div>
                     </td>
                   )
-                )}
+                })}
               </tr>
             ))}
           </tbody>

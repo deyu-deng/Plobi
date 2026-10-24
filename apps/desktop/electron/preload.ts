@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   revealPath: targetPath => ipcRenderer.invoke('plobi:fs:reveal', targetPath),
   renamePath: (targetPath, newName) => ipcRenderer.invoke('plobi:fs:rename', targetPath, newName),
   writeTextFile: (filePath, content) => ipcRenderer.invoke('plobi:fs:writeText', filePath, content),
+  writeFileBuffer: (filePath, data) => ipcRenderer.invoke('plobi:fs:writeBuffer', filePath, data),
   trashPath: targetPath => ipcRenderer.invoke('plobi:fs:trash', targetPath),
   git: {
     worktreeList: repoPath => ipcRenderer.invoke('plobi:git:worktreeList', repoPath),

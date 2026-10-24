@@ -138,6 +138,65 @@ function cellStyle(cell: ExcelJS.Cell): StyledSheetCell['style'] {
   }
 }
 
+export interface SheetEdits {
+  [sheetName: string]: {
+    [cellKey: string]: string
+  }
+}
+
+function parseEditedValue(text: string): null | number | string {
+  if (text === '') {
+    return null
+  }
+
+  const trimmed = text.trim()
+
+  if (/^-?(0|[1-9]\d*)(\.\d+)?$/u.test(trimmed)) {
+    return Number(trimmed)
+  }
+
+  return text
+}
+
+export function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) {
+    return false
+  }
+
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+export async function applyStyledSheetEdits(bytes: Uint8Array, edits: SheetEdits): Promise<Uint8Array> {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0])
+
+  for (const [sheetName, cells] of Object.entries(edits)) {
+    const worksheet = workbook.getWorksheet(sheetName)
+
+    if (!worksheet) {
+      continue
+    }
+
+    for (const [cellKey, text] of Object.entries(cells)) {
+      const [row, col] = cellKey.split(':').map(Number) as [number, number]
+
+      if (!Number.isInteger(row) || !Number.isInteger(col) || row < 1 || col < 1) {
+        continue
+      }
+
+      worksheet.getCell(row, col).value = parseEditedValue(text)
+    }
+  }
+
+  return new Uint8Array((await workbook.xlsx.writeBuffer()) as ArrayBuffer)
+}
+
 export async function readStyledSheetModel(
   bytes: Uint8Array,
   sheetName?: string

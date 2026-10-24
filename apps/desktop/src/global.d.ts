@@ -78,6 +78,7 @@ declare global {
       readFileText: (filePath: string) => Promise<PlobiReadFileTextResult>
       selectPaths: (options?: PlobiSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
+      writeFileBuffer: (filePath: string, data: ArrayBuffer | Uint8Array) => Promise<{ path: string }>
       saveImageFromUrl: (url: string) => Promise<boolean>
       saveImageBuffer: (data: ArrayBuffer | Uint8Array, ext: string) => Promise<string>
       saveClipboardImage: () => Promise<string>

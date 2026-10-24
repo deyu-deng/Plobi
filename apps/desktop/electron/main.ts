@@ -11073,6 +11073,32 @@ ipcMain.handle('plobi:fs:writeText', async (_event, filePath, content) => {
   return { path: resolved }
 })
 
+// Binary sibling of the text writer above. Used by the local spreadsheet
+// editor to write an .xlsx buffer back without going through a text codec.
+ipcMain.handle('plobi:fs:writeBuffer', async (_event, filePath, data) => {
+  const raw = String(filePath || '').trim()
+
+  if (!raw) {
+    throw new Error('Invalid path')
+  }
+
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer)
+
+  if (bytes.byteLength > 25_000_000) {
+    throw new Error('File too large')
+  }
+
+  const resolved = resolveRequestedPathForIpc(expandUserPath(raw), { purpose: 'Write file' })
+
+  if (!directoryExists(path.dirname(resolved))) {
+    throw new Error('Parent directory does not exist')
+  }
+
+  await fs.promises.writeFile(resolved, Buffer.from(bytes))
+
+  return { path: resolved }
+})
+
 // Move a file/folder to the OS trash (recoverable) — the VS Code "Delete"
 // default. `shell.trashItem` routes to Finder/Explorer/Files trash per platform.
 ipcMain.handle('plobi:fs:trash', async (_event, targetPath) => {

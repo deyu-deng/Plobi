@@ -3295,7 +3295,13 @@ export const zh: Translations = {
       readOnly: '只读预览',
       truncated: (rows, cols) => `只显示前 ${rows} 行 × ${cols} 列`,
       sheet: '工作表',
-      legacyNote: '老 .xls 只读值；另存为 .xlsx 可保留颜色和合并单元格。'
+      legacyNote: '老 .xls 只读值；另存为 .xlsx 可保留颜色和合并单元格。',
+      save: '保存',
+      saving: '保存中…',
+      saved: '已保存',
+      cancel: '取消',
+      conflict: '文件已在外部改动，未保存。',
+      saveFailed: '表格保存失败'
     }
   }
 }

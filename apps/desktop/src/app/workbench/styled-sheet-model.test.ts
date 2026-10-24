@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs'
 import { describe, expect, it } from 'vitest'
 
-import { readStyledSheetModel } from './styled-sheet-model'
+import { applyStyledSheetEdits, readStyledSheetModel } from './styled-sheet-model'
 
 async function styledWorkbook(): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook()
@@ -29,5 +29,17 @@ describe('readStyledSheetModel', () => {
     })
     expect(model.rows[0]![1]!.hidden).toBe(true)
     expect(model.rows[1]![0]!.text).toBe('left')
+  })
+
+  it('writes edited values back without dropping styles', async () => {
+    const edited = await applyStyledSheetEdits(await styledWorkbook(), {
+      S1: { '2:1': 'changed', '2:2': '42' }
+    })
+    const model = await readStyledSheetModel(edited)
+
+    expect(model.rows[1]![0]!.text).toBe('changed')
+    expect(model.rows[1]![1]!.text).toBe('42')
+    expect(model.rows[0]![0]!.style.background).toBe('#ffff00')
+    expect(model.rows[0]![0]!.colspan).toBe(2)
   })
 })

@@ -2746,6 +2746,12 @@ export interface Translations {
       truncated: (rows: number, cols: number) => string
       sheet: string
       legacyNote: string
+      save: string
+      saving: string
+      saved: string
+      cancel: string
+      conflict: string
+      saveFailed: string
     }
   }
 }

@@ -3163,7 +3163,13 @@ export const en: Translations = {
       readOnly: 'Read-only preview',
       truncated: (rows, cols) => `Showing the first ${rows} rows × ${cols} columns`,
       sheet: 'Sheet',
-      legacyNote: 'Old .xls previews values only; save as .xlsx to keep colors and merged cells.'
+      legacyNote: 'Old .xls previews values only; save as .xlsx to keep colors and merged cells.',
+      save: 'Save',
+      saving: 'Saving…',
+      saved: 'Saved',
+      cancel: 'Cancel',
+      conflict: 'The file changed on disk; nothing was saved.',
+      saveFailed: 'Could not save the spreadsheet'
     }
   }
 }
