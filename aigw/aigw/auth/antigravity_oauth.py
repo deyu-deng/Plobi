@@ -36,11 +36,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-OAUTH_CLIENT_ID = os.environ.get("GOOGLE_CC_CLIENT_ID")
-OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_CC_CLIENT_SECRET")
+from . import account_store
+
 # The Antigravity (Google Gemini Code Assist) OAuth client credentials are not
-# hardcoded in this repository. Set GOOGLE_CC_CLIENT_ID and
-# GOOGLE_CC_CLIENT_SECRET in the environment before using this module.
+# hardcoded in this repository. `client_credentials()` reads them from the
+# environment, or from the owner-only file written by a previous bootstrap.
 OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
@@ -77,11 +77,23 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def client_credentials() -> tuple[str, str]:
+    pair = account_store.client_credentials()
+    if not pair[0] or not pair[1]:
+        raise RuntimeError(
+            "Antigravity OAuth client pair is missing. Set GOOGLE_CC_CLIENT_ID and "
+            "GOOGLE_CC_CLIENT_SECRET once, then run `aigw auth antigravity` again. "
+            "The pair is stored in an owner-only file outside git after the first run."
+        )
+    return pair
+
+
 def build_auth_url(redirect_uri: str) -> tuple[str, str]:
     """Return (authorization_url, pkce_verifier)."""
     verifier, challenge = _pkce()
+    client_id, _client_secret = client_credentials()
     params = {
-        "client_id": OAUTH_CLIENT_ID,
+        "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(OAUTH_SCOPES),
@@ -199,9 +211,10 @@ def _run_callback_server(port: int, timeout: int = 120) -> str | None:
 # --------------------------------------------------------------------------
 def exchange_code(verifier: str, code: str, redirect_uri: str) -> dict:
     """Exchange an authorization code for tokens. Returns the JSON body."""
+    client_id, client_secret = client_credentials()
     body = {
-        "client_id": OAUTH_CLIENT_ID,
-        "client_secret": OAUTH_CLIENT_SECRET,
+        "client_id": client_id,
+        "client_secret": client_secret,
         "code": code,
         "code_verifier": verifier,
         "grant_type": "authorization_code",
@@ -246,10 +259,29 @@ def discover_project(access_token: str) -> str:
     return proj or ""
 
 
+def fetch_userinfo(access_token: str) -> dict:
+    """Best-effort e-mail/name for the account row; never needed for the token itself."""
+    try:
+        r = httpx.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15.0,
+        )
+    except Exception:
+        return {}
+    if r.status_code != 200:
+        return {}
+    try:
+        data = r.json()
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 # --------------------------------------------------------------------------
 # end-to-end bootstrap
 # --------------------------------------------------------------------------
-def run_bootstrap() -> str:
+def run_bootstrap(*, print_token: bool = False) -> str:
     """Full bootstrap: start local callback, open browser, exchange code."""
     port = _find_free_port()
     redirect_uri = f"http://127.0.0.1:{port}/callback"
@@ -293,24 +325,29 @@ def run_bootstrap() -> str:
     access = tokens.get("access_token")
     print("Discovering Cloud Code project id...")
     project = discover_project(access) if access else ""
+    user = fetch_userinfo(access) if access else {}
+    email = str(user.get("email") or "").strip()
 
+    # Persist the token before printing anything: the capability is now ours,
+    # not a value the user has to paste into a tracked config file.
+    account_store.save_client(*client_credentials())
+    account = account_store.upsert_account({
+        "added_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        "email": email,
+        "id": f"antigravity-{secrets.token_hex(6)}",
+        "name": str(user.get("name") or ""),
+        "project_id": project,
+        "refresh_token": refresh,
+    })
     composite = f"{refresh}|{project}|"
-
     print("\n" + "=" * 68)
-    print("  ✅ SUCCESS — Antigravity composite refresh token")
+    print("  SUCCESS — Antigravity account stored")
     print("=" * 68)
-    print(f"\n  {composite}\n")
-
-    print("Use it in config.yaml:\n")
-    print("  providers:")
-    print("    antigravity:")
-    print("      enabled: true")
-    print("      accounts:")
-    print("        - id: primary")
-    print(f'          refresh_token: "{composite}"')
-    print(f"\nOr export:  export ANTIGRAVITY_REFRESH_TOKEN='{composite}'")
-    if project:
-        print(f"\n  Discovered project id: {project}")
+    print(f"\n  account: {email or account['id']}")
+    print(f"  project: {project or '(discovered at runtime)'}")
+    print(f"  file:    {account_store.accounts_path()}")
+    if print_token:
+        print(f"\n  composite token (explicit --print-token):\n  {composite}\n")
     else:
-        print("\n  (no project id discovered — adapter will call loadCodeAssist at runtime)")
+        print("\n  Token is not printed. The gateway will read it from the file above.")
     return composite

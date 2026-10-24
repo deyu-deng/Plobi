@@ -214,7 +214,7 @@ def _auth(args) -> int:
         print(f"auth for '{args.app}' is not implemented yet", file=sys.stderr)
         return 1
     try:
-        oa.run_bootstrap()
+        oa.run_bootstrap(print_token=bool(getattr(args, "print_token", False)))
     except KeyboardInterrupt:
         print("\n[aborted]", file=sys.stderr)
         return 1
@@ -265,6 +265,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="antigravity",
         choices=["antigravity"],
         help="provider to bootstrap",
+    )
+    ap.add_argument(
+        "--print-token",
+        action="store_true",
+        help="also print the composite token (default: store it in an owner-only file)",
     )
     ap.set_defaults(func=_auth)
 
