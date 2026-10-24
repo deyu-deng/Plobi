@@ -845,5 +845,5 @@ def test_mind_summary_succeeds_on_clean_repo(vault, monkeypatch):
     assert result.ok is True
     assert result.detail == "committed"
     # 文件确实写出来了
-    written_files = list((vault / "Vault" / "projects" / "Plobi" / "daily").glob("*.md"))
+    written_files = list((vault / "wiki" / "daily").glob("*.md"))
     assert len(written_files) == 1

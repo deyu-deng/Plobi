@@ -14,7 +14,7 @@ import pytest
 from plobi.mind import proposal as L1
 from plobi.mind.writer import MindWriter, WriteRequest
 
-AGENDA = "Vault/projects/Plobi/daily/2026-10-23.md"
+AGENDA = "Loom/wiki/daily/2026-10-23.md"
 
 
 @pytest.fixture()
@@ -88,5 +88,5 @@ def test_delete_style_ops_have_no_automatic_route_yet(roots):
     必须同时给 never_auto 加一条，否则这里会红。
     """
     assert L1.never_auto("Vault/diary/x.md", "overwrite") == "rewrites-the-user's-own-record"
-    assert L1.never_auto("Vault/projects/Plobi/daily/a.md", "overwrite") == ""
+    assert L1.never_auto("Loom/wiki/daily/a.md", "overwrite") == ""
     assert "delete" not in L1.MODES, "加了删除操作就得同步给 never_auto 补一条，不能让它自动"

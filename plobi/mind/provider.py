@@ -273,7 +273,7 @@ class MindProvider(MemoryProvider):
         """WP-MIND 写接缝：每会话每天一次，把当日日程摘要发进 Mind。
 
         走既有 ``plobi.agenda.mind_sync`` 通道（MindWriter 串行服务、无模型
-        渲染、目标 ``Vault/projects/Plobi/daily/<date>.md``）。不新增 API、
+        渲染、目标 ``Loom/wiki/daily/<date>.md``（vault 不进记忆系统））。不新增 API、
         不并行写。任何失败只降级为日志告警，绝不阻塞主对话流；非 primary
         上下文（cron/flush）直接跳过，运行时状态真源始终是 SQLite（ADR-0007）。
         """
@@ -344,7 +344,7 @@ class MindProvider(MemoryProvider):
         - ``remove`` actions never delete from the second brain (log only).
         - concept/entity/source-kind metadata routes to ``Loom/wiki/concepts/``
           (``plobi-<slug>.md``); everything else lands in
-          ``Vault/projects/Plobi/<slug>.md``.
+          ``Loom/wiki/memory/<slug>.md``. vault 不进记忆系统（用户 10-24）。
         - Writes go through MindWriter after an ``_is_safe`` assertion.
 
         Triggered by MemoryManager.notify_memory_tool_write (verified caller
@@ -366,7 +366,7 @@ class MindProvider(MemoryProvider):
             if kind in ("concept", "entity", "source") or "concepts" in str(target).lower():
                 rel = f"Loom/wiki/concepts/plobi-{slug}.md"
             else:
-                rel = f"Vault/projects/Plobi/{slug}.md"
+                rel = f"Loom/wiki/memory/{slug}.md"
 
             if not _is_safe(real_target(rel, root), root):
                 logger.warning("[mind] refused on_memory_write: %s", rel)

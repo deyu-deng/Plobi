@@ -2,7 +2,7 @@
 
 对照 MIND_ADAPTER_PLAN.md（Docs/）与任务书验收：
 1. 读接缝——prefetch 召回带画像/项目状态摘要（日志可证，失败降级）；
-2. 写接缝——每日日程摘要经 mind_sync → Vault/projects/Plobi/daily/，
+2. 写接缝——每日日程摘要经 mind_sync → Loom/wiki/daily/（脑里；vault 不进记忆系统），
    无模型、串行 MindWriter、幂等；写失败只告警不阻塞主对话流。
 3. 边界——运行时状态真源仍是 SQLite（ADR-0007）；非 primary 上下文不写。
 """
@@ -35,14 +35,9 @@ from plobi.agenda import store
 
 
 def _load_provider_module():
-    """plugins/ 目录按文件路径加载（不触发包级发现副作用）。"""
-    path = (
-        Path(__file__).resolve().parents[2]
-        / "plugins" / "memory" / "mind" / "mind.py"
-    )
-    spec = importlib.util.spec_from_file_location("mind_provider_under_test", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    """provider 已在内核（裁定 198）：直接按包导入，不再按文件路径加载插件目录。"""
+    import plobi.mind.provider as module
+
     return module
 
 
@@ -53,10 +48,11 @@ MIND_MOD = _load_provider_module()
 def vault(tmp_path, monkeypatch):
     """临时 Mind vault：persona + 大写 Plobi 项目（当前写入位）。"""
     root = tmp_path / "Mind"
-    (root / "Vault" / "meta" / "profile").mkdir(parents=True)
+    (root / "skills" / "profile").mkdir(parents=True)
     (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
-    (root / "Vault" / "meta" / "profile" / "profile.md").write_text(
+    # 详版画像在脑里（用户 10-24：vault 不进记忆系统；USER.md 是精简版）
+    (root / "skills" / "profile" / "SKILL.md").write_text(
         "我是小龟，浙大本科生。", encoding="utf-8"
     )
     (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text(
@@ -121,7 +117,7 @@ def test_profile_block_is_bounded(tmp_path, monkeypatch):
     assert "…" in block
 
 
-# ── 接缝 2：写——每日日程摘要 → Vault/projects/Plobi/daily/ ─────────────────
+# ── 接缝 2：写——每日日程摘要 → Loom/wiki/daily/（脑里；vault 不进记忆系统）─────────
 
 
 @pytest.fixture()
@@ -151,7 +147,7 @@ def test_sync_turn_publishes_daily_agenda_once(vault, agenda_env, provider):
 
     provider.sync_turn("今天有什么安排？", "今天 10 点有组会汇报。")
 
-    daily = vault / "Vault" / "projects" / "Plobi" / "daily"
+    daily = vault / "wiki" / "daily"
     files = list(daily.glob("*.md"))
     assert len(files) == 1  # 当日一个文件
     content = files[0].read_text(encoding="utf-8")
@@ -167,7 +163,7 @@ def test_sync_turn_skips_non_primary_context(vault, agenda_env):
     provider = MIND_MOD.MindProvider()
     provider.initialize("sess-cron", agent_context="cron")
     provider.sync_turn("x", "y")
-    assert not (vault / "Vault" / "projects" / "Plobi" / "daily").exists()
+    assert not (vault / "wiki" / "daily").exists()
 
 
 def test_sync_turn_write_failure_never_blocks_turn(
@@ -229,7 +225,7 @@ def test_sync_turn_publishes_agenda_and_writes_no_chat_material(
     provider.sync_turn("你好", "在的。")
 
     assert not [rel for rel in written if "raw" in rel.split("/")], written
-    assert (vault / "Vault" / "projects" / "Plobi" / "daily").is_dir()
+    assert (vault / "wiki" / "daily").is_dir()
 
 
 def test_publish_project_daily_summary_is_safe_and_idempotent(vault, agenda_env, tmp_path):
@@ -240,13 +236,13 @@ def test_publish_project_daily_summary_is_safe_and_idempotent(vault, agenda_env,
     from plobi.mind.writer import MindWriter
 
     rel = project_daily_relative_path()
-    assert rel.startswith("Vault/projects/Plobi/daily/")
+    assert rel.startswith("Loom/wiki/daily/")
     writer = MindWriter(vault, run_verifier=False, commit=False)
     first = publish_project_daily_summary(writer=writer)
     assert first.ok, first.detail
     second = publish_project_daily_summary(writer=writer)
     assert second.ok
-    files = list((vault / "Vault" / "projects" / "Plobi" / "daily").glob("*.md"))
+    files = list((vault / "wiki" / "daily").glob("*.md"))
     assert len(files) == 1  # 覆盖而非累积
 
 

@@ -62,7 +62,7 @@ def vault(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "relative",
     [
-        "Vault/projects/Plobi/daily/2026-08-25.md",
+        "Loom/wiki/daily/2026-08-25.md",
         "Vault/projects/Plobi/notes.md",
         "Vault/inbox/idea.md",
     ],
@@ -71,7 +71,7 @@ def test_safe_paths_are_accepted(relative):
     assert is_safe_relative(relative) is True
 
 
-def test_no_raw_zone_is_writable_and_ai_writes_face_the_human_surface():
+def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     """原料区作废（裁定 198）：白名单里不许再出现任何 ``raw`` 段，AI 写的那格必须在 vault 一侧。
 
     为什么钉这两条：``Loom/raw/chat-logs/*`` 那两条白名单项是旧 Mind 形态留下的门——门开着，
@@ -82,7 +82,9 @@ def test_no_raw_zone_is_writable_and_ai_writes_face_the_human_surface():
     from plobi.mind.paths import SAFE_PREFIXES
 
     assert not [p for p in SAFE_PREFIXES if "raw" in p.split("/")], SAFE_PREFIXES
-    assert AI_WRITE_ROOT.split("/")[0] == "Vault", AI_WRITE_ROOT
+    # 用户 10-24：「vault 不要进记忆系统」⇒ AI 写的那份必须在脑里（Loom），不许落人读面。
+    assert AI_WRITE_ROOT.split("/")[0] == "Loom", AI_WRITE_ROOT
+    assert not AI_WRITE_ROOT.startswith("Vault/"), AI_WRITE_ROOT
     assert is_safe_relative(f"{AI_WRITE_ROOT}/2026-10-23/agenda.md") is True
 
 
