@@ -15,7 +15,8 @@ import {
   routeSessionId,
   shellLevelForPath,
   shouldSyncSessionUrl,
-  showsComposerCodingRow
+  showsComposerCodingRow,
+  VAULT_ROUTE
 } from './routes'
 
 // U6 (spec §3.5): the S1 three-column console is the cold-start landing and
@@ -55,6 +56,14 @@ describe('routes (U6 landing inversion)', () => {
     // WP-E: reporting `chat` here re-enabled the preview rail on an empty
     // center (Navigate→L1), causing a full-bleed markdown flash.
     expect(appViewForPath('/sess-123')).toBe('console')
+  })
+
+  it('routes /vault to the vault page and keeps the left rail mounted', () => {
+    expect(VAULT_ROUTE).toBe('/vault')
+    expect(appViewForPath('/vault')).toBe('vault')
+    expect(isShellPageView('vault')).toBe(true)
+    expect(isOverlayView('vault')).toBe(false)
+    expect(routeSessionId('/vault')).toBeNull()
   })
 
   it('treats console and workbench as first-class routes, not overlays', () => {

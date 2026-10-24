@@ -999,6 +999,32 @@ export interface Translations {
     }
   }
 
+  vault: {
+    title: string
+    subtitle: (agents: number, withHome: number) => string
+    searchPlaceholder: string
+    all: string
+    loading: string
+    loadFailed: string
+    retry: string
+    refresh: string
+    emptyTitle: string
+    emptyDesc: string
+    noMatchTitle: string
+    noMatchDesc: string
+    readOnly: string
+    updated: string
+    milestones: (done: number, total: number) => string
+    workDir: string
+    copyPath: string
+    notBuilt: string
+    notBuiltDesc: (filename: string) => string
+    noHome: string
+    noHomeDesc: string
+    categories: Record<string, string>
+    docs: Record<string, string>
+    statuses: Record<string, string>
+  }
   starmap: {
     title: string
     subtitle: (nodes: number, clusters: number) => string

@@ -171,6 +171,7 @@ const OfficeFilePreview = lazy(async () => ({
   default: (await import('./workbench/office-preview')).OfficeFilePreview
 }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
+const VaultView = lazy(async () => ({ default: (await import('./vault')).VaultView }))
 
 export function DesktopController() {
   const queryClient = useQueryClient()
@@ -1730,6 +1731,14 @@ export function DesktopController() {
               </Suspense>
             }
             path="artifacts"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <VaultView />
+              </Suspense>
+            }
+            path="vault"
           />
           {/* Overlay routes: center stays empty; the card mounts via
               `overlays` from `useOverlayRouting`. Missing a stub here lets

@@ -240,6 +240,7 @@ export const en: Translations = {
       'nav.artifacts': 'Open artifacts',
       'nav.cron': 'Open scheduled jobs',
       'nav.agents': 'Open agents',
+      'nav.vault': 'Open vault',
       'session.new': 'New session',
       'session.newWindow': 'New session in window',
       'session.next': 'Next session',
@@ -1108,6 +1109,44 @@ export const en: Translations = {
     }
   },
 
+  vault: {
+    title: 'Vault',
+    subtitle: (agents, withHome) => `${agents} agents · ${withHome} with dossiers`,
+    searchPlaceholder: 'Search agents…',
+    all: 'All',
+    loading: 'Loading…',
+    loadFailed: 'Could not read the vault',
+    retry: 'Retry',
+    refresh: 'Refresh',
+    emptyTitle: 'No agents yet',
+    emptyDesc: 'Agents appear here once they are registered.',
+    noMatchTitle: 'Nothing matches',
+    noMatchDesc: 'Try another category or a shorter search.',
+    readOnly: 'Read-only',
+    updated: 'Updated',
+    milestones: (done, total) => `${done}/${total} milestones`,
+    workDir: 'Working folder',
+    copyPath: 'Copy path',
+    notBuilt: 'This dossier has not been written yet',
+    notBuiltDesc: filename => `Expected file: ${filename}`,
+    noHome: 'No dossier folder bound yet',
+    noHomeDesc: 'This agent has no vault folder, so there is nothing to read here.',
+    categories: {
+      projects: 'Projects',
+      research: 'Research',
+      courses: 'Courses',
+      butler: 'Butler',
+      events: 'Events'
+    },
+    docs: {
+      plan: 'Plan',
+      progress: 'Progress',
+      research: 'Research',
+      requirements: 'Requirements',
+      syllabus: 'Teaching plan'
+    },
+    statuses: { active: 'Active', paused: 'Paused', done: 'Done', archived: 'Archived' }
+  },
   starmap: {
     title: 'Memory Graph',
     subtitle: (nodes, clusters) => `${nodes} skills across ${clusters} categories`,
@@ -1999,6 +2038,7 @@ export const en: Translations = {
   sidebar: {
     nav: {
       'new-session': 'New session',
+      vault: 'Vault',
       skills: 'Capabilities',
       messaging: 'Messaging',
       artifacts: 'Artifacts',

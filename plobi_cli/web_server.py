@@ -385,6 +385,13 @@ from plobi.console.router import router as _console_router  # noqa: E402
 
 app.include_router(_console_router, prefix="/api", tags=["console"])
 
+# Vault dossier (WP-VAULT-AGENTS-VIEW): one page per L2 agent — the roster row
+# plus its two or three standard documents, read-only. Kept in its own module so
+# the console module stays the projection of §5 and nothing else.
+from plobi.mind.vault_api import router as _vault_router  # noqa: E402
+
+app.include_router(_vault_router, prefix="/api", tags=["vault"])
+
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
 # The desktop shell mints the token and injects it via

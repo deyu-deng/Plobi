@@ -232,6 +232,7 @@ export const zh: Translations = {
       'nav.artifacts': '打开制品',
       'nav.cron': '打开定时任务',
       'nav.agents': '打开智能体',
+      'nav.vault': '打开档案',
       'session.new': '新建会话',
       'session.newWindow': '在新窗口中新建会话',
       'session.next': '下一个会话',
@@ -1285,6 +1286,38 @@ export const zh: Translations = {
     }
   },
 
+  vault: {
+    title: '档案',
+    subtitle: (agents, withHome) => `${agents} 个 Agent · ${withHome} 个已有档案`,
+    searchPlaceholder: '搜索 Agent…',
+    all: '全部',
+    loading: '加载中…',
+    loadFailed: '读不到 vault 档案',
+    retry: '重试',
+    refresh: '刷新',
+    emptyTitle: '还没有 Agent',
+    emptyDesc: '名册里登记过 Agent 之后会出现在这里。',
+    noMatchTitle: '没有匹配的',
+    noMatchDesc: '换个类别，或把搜索词缩短一点。',
+    readOnly: '只读',
+    updated: '更新',
+    milestones: (done, total) => `${done}/${total} 个里程碑`,
+    workDir: '工作目录',
+    copyPath: '复制路径',
+    notBuilt: '这份档案还没建',
+    notBuiltDesc: filename => `应当是：${filename}`,
+    noHome: '这个 Agent 还没有绑档案文件夹',
+    noHomeDesc: '名册里它的领地是空的，所以这里没有可读的内容。',
+    categories: { projects: '项目', research: '研究', courses: '课程', butler: '管家', events: '事件' },
+    docs: {
+      plan: '计划',
+      progress: '进展',
+      research: '研究',
+      requirements: '课程要求',
+      syllabus: '教学计划'
+    },
+    statuses: { active: '进行中', paused: '暂停', done: '结束', archived: '已归档' }
+  },
   starmap: {
     title: '记忆图谱',
     subtitle: (nodes, clusters) => `${clusters} 个类别中的 ${nodes} 个技能`,
@@ -2170,6 +2203,7 @@ export const zh: Translations = {
   sidebar: {
     nav: {
       'new-session': '新建会话',
+      vault: '档案',
       skills: '技能与工具',
       messaging: '消息平台',
       artifacts: '产物',

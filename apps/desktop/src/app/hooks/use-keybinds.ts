@@ -48,7 +48,8 @@ import {
   MESSAGING_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
-  SKILLS_ROUTE
+  SKILLS_ROUTE,
+  VAULT_ROUTE
 } from '../routes'
 
 export interface KeybindRuntimeDeps {
@@ -116,6 +117,7 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.artifacts': () => navigate(ARTIFACTS_ROUTE),
     'nav.cron': () => navigate(CRON_ROUTE),
     'nav.agents': () => navigate(AGENTS_ROUTE),
+    'nav.vault': () => navigate(VAULT_ROUTE),
 
     'session.new': () => {
       // Match the sidebar New Session button. A plain keyboard new chat should
