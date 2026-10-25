@@ -88,6 +88,62 @@ providers:
     accounts:
       - { id: desktop-store }
 
+  # 2026-10-25 接入：四条订阅 CLI（Codex / Claude Code / OpenCode / Kiro / Cline）。
+  # 共同点：用户自己已登录的 CLI 被当成一次性子进程驱动；没装那个二进制就 0 账号
+  # 自动停用，不影响其它腿。prompt 对这批 CLI 是位置参数，所以用 args_template
+  # 声明位置；{model_flag} 只在真解析出模型时展开。都跑在私有 cwd（不碰工作树）。
+  # 额度：codex / claude / opencode 读各自本机凭据 + 官方 usage 端点；kiro/cline
+  # 没有统一的本机额度端点，宁可空着也不编一个数。
+  codex_cli:
+    enabled: true
+    binary: codex
+    args_template: ["exec", "{model_flag}", "{prompt}", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]
+    model_flag: "--model"
+    timeout: 300
+    models: [codex/gpt-5.4, codex/gpt-5.4-mini, codex/gpt-5.3-codex]
+    model_map: { codex/gpt-5.4: gpt-5.4, codex/gpt-5.4-mini: gpt-5.4-mini, codex/gpt-5.3-codex: gpt-5.3-codex }
+    accounts: [{ id: codex-default }]
+
+  claude_code_cli:
+    enabled: true
+    binary: claude
+    args_template: ["{model_flag}", "-p", "{prompt}", "--output-format", "json"]
+    model_flag: "--model"
+    timeout: 300
+    models: [claude/sonnet-4-6, claude/opus-4-6, claude/haiku-4-5]
+    model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
+    accounts: [{ id: claude-default }]
+
+  opencode_cli:
+    enabled: true
+    binary: opencode
+    args_template: ["run", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [opencode/default]
+    model_map: { opencode/default: "" }
+    accounts: [{ id: opencode-default }]
+
+  kiro_cli:
+    enabled: true
+    binary: kiro-cli
+    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [kiro/default]
+    model_map: { kiro/default: "" }
+    accounts: [{ id: kiro-default }]
+
+  cline_cli:
+    enabled: true
+    binary: cline
+    args_template: ["--json", "{model_flag}", "{prompt}"]
+    model_flag: "-m"
+    timeout: 300
+    models: [cline/default]
+    model_map: { cline/default: "" }
+    accounts: [{ id: cline-default }]
+
   # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。
   # 2026-10-11 那把桥接的是 agy（Google）；这条是用户 10-12 拍的第二条订阅口——
   # 它比 agy 那条好用在一处：本地那张 auth 记录里 access 约 28 天、refresh 约 30 天，

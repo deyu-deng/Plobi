@@ -11,10 +11,13 @@ Subclasses / config only need to declare:
   - binary        : command on PATH (or absolute path / script file)
   - interpreter   : optional (e.g. python) used to run a script `binary`
   - prompt_flag   : argv flag that carries the prompt            (e.g. "-p")
+  - args_template : optional argv skeleton with {prompt} / {model}
+                    (needed when the prompt is positional: `codex exec <p>`)
   - model_flag    : optional argv flag for the model             (e.g. "--model")
   - served_models : tuple of unified model ids this provider answers
   - model_map     : unified id -> CLI model string
   - extra_args    : fixed argv appended to every invocation
+  - isolate_workspace : run in a private scratch cwd (agent CLIs can edit files)
 
 The conversation is flattened into a single prompt and sent statelessly; the CLI
 gets full context each turn (correct for a gateway, which is itself stateless).
@@ -65,6 +68,24 @@ def _strip_ansi(s: str) -> str:
     return _ANSI_RE.sub("", s)
 
 
+def default_workspace(name: str) -> str:
+    """A private cwd for agent CLIs that may edit files.
+
+    Chat routed through the hub is a single question, not a coding session; the
+    CLI must not get the gateway's own working tree (or the user's repo) as cwd.
+    Root precedence: ``QUOTA_HUB_WORKSPACE_ROOT`` → ``PLOBI_HOME/quota_hub-workspaces``
+    → ``~/.quota_hub/workspaces``. The directory is created by ``_spawn``; merely
+    constructing/discovering a provider writes nothing.
+    """
+    root = os.environ.get("QUOTA_HUB_WORKSPACE_ROOT", "").strip()
+    if not root:
+        home = os.environ.get("PLOBI_HOME", "").strip()
+        root = str(Path(home) / "quota_hub-workspaces") if home else str(
+            Path.home() / ".quota_hub" / "workspaces"
+        )
+    return str(Path(root) / name)
+
+
 def _chunk(cid: str, model: str, text=None, finish=None) -> dict:
     delta = {} if text is None else {"content": text}
     return {
@@ -96,10 +117,18 @@ class CliProvider(Provider):
     binary: str = ""
     interpreter: str | None = None
     prompt_flag: str = "-p"
+    args_template: list[str] = []
     model_flag: str = "--model"
     extra_args: list[str] = []
     timeout: float = 120.0
     cwd: str | None = None
+    #: Agent CLIs (codex/claude/opencode/kiro/cline) can edit files; give them a
+    #: private scratch directory instead of whatever tree the gateway was launched
+    #: from. ``workspace`` config overrides the path.
+    isolate_workspace: bool = False
+    #: JSON-output CLIs cannot be line-streamed as plain text; run once and emit
+    #: the parsed answer as a single chunk (still a valid OpenAI stream).
+    stream_from_chat: bool = False
     model_map: dict[str, str] = {}
     #: Public id prefix for discovered models. A composed provider (WorkbuddyHybrid)
     #: sets this to its own name so this class's registry key never leaks into the
@@ -112,10 +141,13 @@ class CliProvider(Provider):
         self.binary = config.get("binary", self.binary)
         self.interpreter = config.get("interpreter", self.interpreter)
         self.prompt_flag = config.get("prompt_flag", self.prompt_flag)
+        self.args_template = list(config.get("args_template", self.args_template))
         self.model_flag = config.get("model_flag", self.model_flag)
         self.extra_args = list(config.get("extra_args", self.extra_args))
         self.timeout = float(config.get("timeout", self.timeout))
         self.cwd = config.get("cwd") or None
+        if not self.cwd and self.isolate_workspace:
+            self.cwd = config.get("workspace") or default_workspace(self.name)
         self.model_map = {**self.model_map, **config.get("model_map", {})}
         self.env_extra = {k: str(v) for k, v in config.get("env", {}).items()}
         if config.get("models"):
@@ -190,6 +222,8 @@ class CliProvider(Provider):
         argv = ([self.interpreter] if self.interpreter else []) + [self.binary_path, "--help"]
         env = dict(os.environ)
         env.update(self.env_extra)
+        if self.cwd:
+            os.makedirs(self.cwd, exist_ok=True)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *argv,
@@ -258,8 +292,41 @@ class CliProvider(Provider):
         argv.append(self.binary_path or self.binary)
         argv += list(self.extra_args)
         argv += list(acc.cred.extra.get("args", []))
-        argv += [self.prompt_flag, self.format_prompt(oai_req)]
+        prompt = self.format_prompt(oai_req)
         model = self._cli_model(oai_req["model"])
+
+        if self.args_template:
+            used_prompt = False
+            used_model = False
+            for token in self.args_template:
+                if token == "{prompt}":
+                    argv.append(prompt)
+                    used_prompt = True
+                    continue
+                if token == "{model_flag}":
+                    if self.model_flag and model:
+                        argv += [self.model_flag, model]
+                        used_model = True
+                    continue
+                if token == "{model}":
+                    if model:
+                        argv.append(model)
+                        used_model = True
+                    continue
+                rendered = token.replace("{prompt}", prompt).replace("{model}", model)
+                if rendered != token:
+                    used_prompt = used_prompt or "{prompt}" in token
+                    used_model = used_model or "{model}" in token
+                argv.append(rendered)
+            if not used_prompt:
+                # A template without the placeholder is still usable; keep the
+                # prompt in the conventional slot instead of dropping it.
+                argv += [self.prompt_flag, prompt] if self.prompt_flag else [prompt]
+            if self.model_flag and model and not used_model:
+                argv += [self.model_flag, model]
+            return argv
+
+        argv += [self.prompt_flag, prompt]
         # Only append a model flag when a real model was resolved — some CLIs
         # error on an empty/None --model, and many default sensibly without it.
         if self.model_flag and model:
@@ -268,7 +335,7 @@ class CliProvider(Provider):
 
     # --- response parsing ------------------------------------------------
     def parse_response(self, stdout: str, oai_req: dict) -> dict:
-        text = _strip_ansi(stdout).strip()
+        text = _strip_ansi(stdout).replace("\r\n", "\n").strip()
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
             "object": "chat.completion",
@@ -289,6 +356,9 @@ class CliProvider(Provider):
         argv = self.build_invocation(acc, oai_req)
         env = dict(os.environ)
         env.update(self.env_extra)
+        if self.cwd:
+            # Isolated agent cwd: created lazily so discovery/tests stay read-only.
+            os.makedirs(self.cwd, exist_ok=True)
         return await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
@@ -352,6 +422,18 @@ class CliProvider(Provider):
             )
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
+        if self.stream_from_chat:
+            # JSON-output CLIs must be parsed as a whole. Run once, then emit the
+            # parsed answer as one chunk so callers still get a valid stream.
+            resp = await self.chat(acc, oai_req)
+            cid = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+            model = oai_req["model"]
+            text = resp["choices"][0]["message"]["content"]
+            if text:
+                yield _chunk(cid, model, text)
+            yield _chunk(cid, model, None, finish="stop")
+            return
+
         try:
             proc = await self._spawn(acc, oai_req)
         except FileNotFoundError as e:

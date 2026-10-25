@@ -23,8 +23,13 @@ import time
 import httpx
 
 from .providers.apps.antigravity import AntigravityCliProvider, AntigravityProvider
+from .providers.apps.claude_code import ClaudeCodeCliProvider
+from .providers.apps.cline import ClineCliProvider
+from .providers.apps.codex import CodexCliProvider
 from .providers.apps.cursor import CursorProvider
+from .providers.apps.kiro import KiroCliProvider
 from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
+from .providers.apps.opencode import OpenCodeCliProvider
 from .providers.apps.workbuddy import (
     WorkbuddyApiProvider,
     WorkbuddyCliProvider,
@@ -48,6 +53,15 @@ from .providers.mock import MockProvider
 #                        envelope, needs a captured OAuth token — NON-compliant)
 #   antigravity_cli   -> Google `agy` CLI spawned as a subprocess (opendesign-style,
 #                        uses the user's own Google quota, no token scraping)
+#   codex_cli         -> OpenAI Codex CLI (`codex exec --json`) + native 5h/weekly
+#                        quota from /backend-api/wham/usage
+#   claude_code_cli   -> Anthropic Claude Code (`claude -p --output-format json`) +
+#                        native 5h/weekly usage from api.anthropic.com/api/oauth/usage
+#   opencode_cli      -> OpenCode (`opencode run`) + OpenCode Go 5h/weekly/monthly
+#                        usage from opencode.ai/zen/go/v1/usage
+#   kiro_cli          -> AWS Kiro CLI (`kiro-cli chat --no-interactive`) + model
+#                        catalog from `--list-models --format json`
+#   cline_cli         -> Cline CLI (`cline --json`) NDJSON answer stream
 #   marvis_cli        -> any CLI-based Marvis (openmarvis / marvisx-cli / ...) spawned
 #                        as a subprocess; config-driven, no token scraping
 #   marvis_gui        -> Tencent consumer Marvis (marvis.qq.com): native GUI app with
@@ -63,6 +77,11 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     "cursor": CursorProvider,
     "antigravity": AntigravityProvider,
     "antigravity_cli": AntigravityCliProvider,
+    "codex_cli": CodexCliProvider,
+    "claude_code_cli": ClaudeCodeCliProvider,
+    "opencode_cli": OpenCodeCliProvider,
+    "kiro_cli": KiroCliProvider,
+    "cline_cli": ClineCliProvider,
     "marvis_cli": MarvisCliProvider,
     "marvis_gui": MarvisGuiProvider,
     "workbuddy_api": WorkbuddyApiProvider,

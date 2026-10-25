@@ -131,12 +131,16 @@ async def _quota_refresh_loop(reg, interval: float) -> None:
             network = await asyncio.to_thread(probe_network)
             STATE["network"] = network
             if not network["ok"]:
+                # The probe names Google hosts (the Antigravity OAuth path). Other
+                # legs have their own endpoints: Claude/Codex/OpenCode may still be
+                # reachable while Google is not, so a failed Google probe must not
+                # skip the whole pool. Each provider keeps its last snapshot on its
+                # own failure (see refresh_quota).
                 logger.warning(
-                    "quota refresh skipped: network unreachable (%s). %s",
+                    "Google endpoints unreachable (%s); other quota legs keep their own "
+                    "endpoint checks. %s",
                     ", ".join(network.get("failed") or []), network.get("advice", ""),
                 )
-                await asyncio.sleep(interval)
-                continue
         try:
             await reg.refresh_quotas()
         except asyncio.CancelledError:

@@ -81,6 +81,57 @@ providers:
     accounts:
       - { id: agy-default }
 
+  # --- other subscription CLIs (auto-disable if not installed) -----------
+  codex_cli:
+    enabled: true
+    binary: codex
+    args_template: ["exec", "{model_flag}", "{prompt}", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]
+    model_flag: "--model"
+    timeout: 300
+    models: [codex/gpt-5.4, codex/gpt-5.4-mini, codex/gpt-5.3-codex]
+    model_map: { codex/gpt-5.4: gpt-5.4, codex/gpt-5.4-mini: gpt-5.4-mini, codex/gpt-5.3-codex: gpt-5.3-codex }
+    accounts: [{ id: codex-default }]
+
+  claude_code_cli:
+    enabled: true
+    binary: claude
+    args_template: ["{model_flag}", "-p", "{prompt}", "--output-format", "json"]
+    model_flag: "--model"
+    timeout: 300
+    models: [claude/sonnet-4-6, claude/opus-4-6, claude/haiku-4-5]
+    model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
+    accounts: [{ id: claude-default }]
+
+  opencode_cli:
+    enabled: true
+    binary: opencode
+    args_template: ["run", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [opencode/default]
+    model_map: { opencode/default: "" }
+    accounts: [{ id: opencode-default }]
+
+  kiro_cli:
+    enabled: true
+    binary: kiro-cli
+    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [kiro/default]
+    model_map: { kiro/default: "" }
+    accounts: [{ id: kiro-default }]
+
+  cline_cli:
+    enabled: true
+    binary: cline
+    args_template: ["--json", "{model_flag}", "{prompt}"]
+    model_flag: "-m"
+    timeout: 300
+    models: [cline/default]
+    model_map: { cline/default: "" }
+    accounts: [{ id: cline-default }]
+
   workbuddy:
     enabled: true
     prefer: cli

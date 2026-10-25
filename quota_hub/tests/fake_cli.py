@@ -22,10 +22,21 @@ Prompt sentinels (checked in order):
     SIMULATE_STDERR_NOISE        normal answer + a large stderr blob
 plus, for --help:
     env FAKE_CLI_HELP_NO_LIST=1  --help that advertises no model list at all
+
+Output dialect (env FAKE_CLI_MODE), so one script can stand in for each new CLI:
+    codex    JSONL: item.completed agent_message + turn.completed usage
+    claude   one JSON object: {result, is_error, usage}
+    cline    NDJSON: agent_event then run_result
+    kiro     terminal frame lines around the answer (adapter must strip)
+    opencode/""  plain text
+
+The prompt may be positional (`codex exec "<p>"`, `opencode run "<p>"`), not only
+behind -p; positional detection skips known flags and their values.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -37,13 +48,75 @@ HELP_TEXT = """Usage: fake [options] [command] [prompt]
                               model ID. Currently supported: (alpha-1, beta-2, gamma-3)
 """
 
+# Flags whose next argv token is a value, not the positional prompt.
+_VALUE_FLAGS = {
+    "-m",
+    "--model",
+    "--sandbox",
+    "--format",
+    "--output-format",
+    "--cwd",
+    "--dir",
+    "--agent",
+    "-c",
+}
+
 
 def _prompt_of(args: list[str]) -> str:
     if "-p" in args:
         i = args.index("-p")
         if i + 1 < len(args):
             return args[i + 1]
-    return ""
+    positional: list[str] = []
+    skip = False
+    for token in args:
+        if skip:
+            skip = False
+            continue
+        if token in _VALUE_FLAGS:
+            skip = True
+            continue
+        if token.startswith("-"):
+            continue
+        positional.append(token)
+    return positional[-1] if positional else ""
+
+
+def _emit(mode: str, prompt: str) -> None:
+    if mode == "codex":
+        rows = [
+            {"type": "thread.started", "thread_id": "fake"},
+            {"type": "item.completed", "item": {"type": "reasoning", "text": "hidden"}},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": f"CODEX<<{prompt}>>"}},
+            {"type": "turn.completed", "usage": {"input_tokens": 5, "output_tokens": 3}},
+        ]
+        sys.stdout.write("\n".join(json.dumps(row) for row in rows) + "\n")
+        return
+    if mode == "claude":
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": f"CLAUDE<<{prompt}>>",
+                    "usage": {"input_tokens": 4, "output_tokens": 2},
+                }
+            )
+            + "\n"
+        )
+        return
+    if mode == "cline":
+        rows = [
+            {"type": "agent_event", "event": {"text": "partial"}},
+            {"type": "run_result", "text": f"CLINE<<{prompt}>>"},
+        ]
+        sys.stdout.write("\n".join(json.dumps(row) for row in rows) + "\n")
+        return
+    if mode == "kiro":
+        sys.stdout.write(f"╭──────────────╮\n│ Kiro banner  │\n╰──────────────╯\nKIRO<<{prompt}>>\n")
+        return
+    sys.stdout.write(f"FAKE_CLI<<{prompt}>>\n")
 
 
 def main() -> None:
@@ -73,7 +146,7 @@ def main() -> None:
     if "SIMULATE_STDERR_NOISE" in prompt:
         sys.stderr.write("E" * 200_000 + "\n")
 
-    sys.stdout.write(f"FAKE_CLI<<{prompt}>>\n")
+    _emit(os.environ.get("FAKE_CLI_MODE", ""), prompt)
 
 
 if __name__ == "__main__":

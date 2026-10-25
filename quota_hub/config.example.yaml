@@ -225,6 +225,75 @@ providers:
     accounts:
       - { id: agy-default }        # one seat per locally-installed `agy`
 
+  # --- Codex / Claude Code / OpenCode / Kiro / Cline (spawn-based) ------
+  # Each leg drives the user's own already-signed-in CLI. Auto-disables (0
+  # accounts) when the binary is absent. The prompt is positional for these
+  # CLIs, so `args_template` says where it goes; {model_flag} expands to
+  # `--model <m>` only when a model is resolved. They run in a private cwd
+  # (QUOTA_HUB_WORKSPACE_ROOT, else PLOBI_HOME/quota_hub-workspaces/<app>).
+  codex_cli:
+    enabled: true
+    binary: codex
+    args_template: ["exec", "{model_flag}", "{prompt}", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]
+    model_flag: "--model"
+    timeout: 300
+    models: [codex/gpt-5.4, codex/gpt-5.4-mini, codex/gpt-5.3-codex]
+    model_map:
+      codex/gpt-5.4: gpt-5.4
+      codex/gpt-5.4-mini: gpt-5.4-mini
+      codex/gpt-5.3-codex: gpt-5.3-codex
+    # Quota: $CODEX_HOME/auth.json (default ~/.codex) -> /backend-api/wham/usage
+    accounts: [{ id: codex-default }]
+
+  claude_code_cli:
+    enabled: true
+    binary: claude
+    args_template: ["{model_flag}", "-p", "{prompt}", "--output-format", "json"]
+    model_flag: "--model"
+    timeout: 300
+    models: [claude/sonnet-4-6, claude/opus-4-6, claude/haiku-4-5]
+    model_map:
+      claude/sonnet-4-6: claude-sonnet-4-6
+      claude/opus-4-6: claude-opus-4-6
+      claude/haiku-4-5: claude-haiku-4-5
+    # Quota: ~/.claude/.credentials.json -> api.anthropic.com/api/oauth/usage
+    accounts: [{ id: claude-default }]
+
+  opencode_cli:
+    enabled: true
+    binary: opencode
+    args_template: ["run", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [opencode/default]       # add provider/model ids you use
+    model_map: { opencode/default: "" }
+    # Quota: ~/.local/share/opencode/auth.json opencode-go key ->
+    #        opencode.ai/zen/go/v1/usage (Go plan only)
+    accounts: [{ id: opencode-default }]
+
+  kiro_cli:
+    enabled: true
+    binary: kiro-cli
+    args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
+    model_flag: "--model"
+    timeout: 300
+    models: [kiro/default]           # refreshed from `chat --list-models --format json`
+    model_map: { kiro/default: "" }
+    # Quota: Kiro 1.x exposes /usage only in an interactive V3 session; no
+    # headless quota read, so this leg deliberately leaves quota empty.
+    accounts: [{ id: kiro-default }]
+
+  cline_cli:
+    enabled: true
+    binary: cline
+    args_template: ["--json", "{model_flag}", "{prompt}"]
+    model_flag: "-m"
+    timeout: 300
+    models: [cline/default]          # add the provider/model ids you use
+    model_map: { cline/default: "" }
+    # Quota: Cline fronts the user's own provider key; no unified local endpoint.
+    accounts: [{ id: cline-default }]
+
   # --- Marvis via a CLI (spawn-based, compliant) ------------------------
   # Generic adapter for ANY CLI-based Marvis build (openmarvis / marvisx-cli /
   # lobe's `marvis` / a future Tencent Marvis CLI). Spawns the binary as a
