@@ -293,7 +293,12 @@ export const UserMessage: FC<{
         }
         messageId={messageId}
       >
-        <ActionBarPrimitive.Root className="relative w-full max-w-full" data-slot="aui_user-bubble-actions">
+        <ActionBarPrimitive.Root
+          // 裁定 201：**外面来的都在右**——主人自己打的也属于「外面」，靠右并收窄；
+          // 这屏 Agent 自己的回答留在左侧（纯文本）。宽度上限与外部气泡同一把尺。
+          className="relative ml-auto w-full max-w-[min(86%,44rem)] self-end"
+          data-slot="aui_user-bubble-actions"
+        >
           <div className="human-message-with-todos-wrapper flex w-full flex-col gap-0">
             {askedByLabel && (
               <span
