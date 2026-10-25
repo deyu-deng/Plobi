@@ -23,3 +23,12 @@ def test_nothing_recorded_stays_none_rather_than_becoming_owner():
 def test_blank_or_whitespace_env_is_not_a_label():
     assert resolve_asked_by(None, env={"PLOBI_ASKED_BY": "   "}) is None
     assert resolve_asked_by({"asked_by": ""}, env={}) is None
+
+
+def test_kind_follows_the_same_precedence():
+    """裁定 196/201：`kind` 与 `asked_by` 同一条优先级，派生方用环境交代。"""
+    from run_agent import resolve_kind
+
+    assert resolve_kind({"kind": "system"}, env={"PLOBI_MESSAGE_KIND": "agent"}) == "system"
+    assert resolve_kind({"role": "user"}, env={"PLOBI_MESSAGE_KIND": "system"}) == "system"
+    assert resolve_kind({"role": "user"}, env={}) is None

@@ -609,6 +609,8 @@ def build_child_command(
     # 这条问在分身自己的会话里要能和"主人亲手打的"分开（messages.asked_by）。
     # 子进程是唯一会读到它的地方，所以随 env 传下去，不写进 prompt 文本里。
     child_env["PLOBI_ASKED_BY"] = asked_by or "l1"
+    # 这一轮写进对方那一屏的是**那个 Agent 说的话**（右侧气泡），不是系统事件。
+    child_env["PLOBI_MESSAGE_KIND"] = "agent"
     return argv, child_env, cwd or None
 
 

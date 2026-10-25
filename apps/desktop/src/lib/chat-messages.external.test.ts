@@ -30,6 +30,18 @@ describe('externalSenderOf', () => {
     expect(externalSenderOf(undefined, undefined, '你好')).toBeNull()
   })
 
+  it('keeps system events out of the conversation shapes', () => {
+    expect(externalSenderOf('system', 'say:plobi')).toEqual({ kind: 'system', name: 'plobi' })
+    expect(externalSenderOf('system', undefined, '【plobi 刚给你发了一条消息】…')).toEqual({
+      kind: 'system',
+      name: ''
+    })
+  })
+
+  it('names the secretary for l1-keyed agent rows', () => {
+    expect(externalSenderOf('agent', 'l1:sess-1')).toEqual({ kind: 'agent', name: '总秘书' })
+  })
+
   it('leaves owner-keyed rows on the human bubble', () => {
     expect(externalSenderOf('user', 'owner')).toBeNull()
     expect(externalSenderOf(null, null)).toBeNull()

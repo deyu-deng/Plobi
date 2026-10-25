@@ -52,7 +52,7 @@ export function askedByBadge(
   return { kind: 'other', raw }
 }
 
-export type ExternalSpeakerKind = 'agent' | 'cron'
+export type ExternalSpeakerKind = 'agent' | 'cron' | 'system'
 
 export type ExternalSpeaker = { kind: ExternalSpeakerKind; name: string }
 
@@ -70,11 +70,15 @@ export function externalSenderOf(
   const k = typeof kind === 'string' ? kind.trim().toLowerCase() : ''
   const raw = typeof askedBy === 'string' ? askedBy.trim() : ''
 
+  if (k === 'system') {
+    return { kind: 'system', name: raw.startsWith('say:') ? raw.slice(4).trim() : '' }
+  }
   if (k === 'cron' || raw.startsWith('cron:')) {
     return { kind: 'cron', name: '' }
   }
   if (k === 'agent' || raw.startsWith('say:')) {
-    return { kind: 'agent', name: raw.startsWith('say:') ? raw.slice(4).trim() : '' }
+    const name = raw.startsWith('say:') ? raw.slice(4).trim() : raw.startsWith('l1') ? '总秘书' : ''
+    return { kind: 'agent', name }
   }
 
   // 兜底：网关的历史那一臂只带 `role + text`（`tui_gateway/server.py:4961`），

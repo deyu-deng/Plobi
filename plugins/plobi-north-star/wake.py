@@ -112,6 +112,8 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
 
     env["PLOBI_WAKE"] = "1"
     env["PLOBI_ASKED_BY"] = f"say:{sender}"
+    # 这一轮写进那一屏的 prompt 是**系统事件**（居中、无气泡），不是谁说的话。
+    env["PLOBI_MESSAGE_KIND"] = "system"
 
     log_path = _wake_log_path()
     try:

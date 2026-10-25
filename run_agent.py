@@ -263,6 +263,7 @@ _MAX_TOOL_WORKERS = 8
 #: cron、消息网关等一律不写 ⇒ NULL，界面显式说"这条没记发起方"——**不拿 owner 当默认**，
 #: 那是把猜测显示成事实（用户 10-13 拍的那格）。
 ASKED_BY_ENV = "PLOBI_ASKED_BY"
+KIND_ENV = "PLOBI_MESSAGE_KIND"
 
 
 def resolve_asked_by(message: dict = None, env: dict = None) -> Optional[str]:
@@ -271,6 +272,19 @@ def resolve_asked_by(message: dict = None, env: dict = None) -> Optional[str]:
     if own:
         return own
     value = ((env if env is not None else os.environ).get(ASKED_BY_ENV) or "").strip()
+    return value or None
+
+
+def resolve_kind(message: dict = None, env: dict = None) -> Optional[str]:
+    """这一条属于哪一类（裁定 196/201）：消息自己带的 > 进程环境 > 没记。
+
+    被唤醒 / 被代问的子进程拿不到库，只能由派生方用环境变量交代——叫醒那轮的
+    提示词是**系统事件**（居中、无气泡），代问那轮是**那个 Agent 说的话**（右侧气泡）。
+    """
+    own = ((message or {}).get("kind") or "").strip()
+    if own:
+        return own
+    value = ((env if env is not None else os.environ).get(KIND_ENV) or "").strip()
     return value or None
 
 
@@ -1911,6 +1925,7 @@ class AIAgent:
                     role=role,
                     content=content,
                     asked_by=resolve_asked_by(msg) if role == "user" else None,
+                    kind=resolve_kind(msg) if role == "user" else None,
                     tool_name=msg.get("tool_name"),
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
