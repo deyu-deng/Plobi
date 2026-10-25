@@ -1417,6 +1417,9 @@ def _profile_runtime_scope(profile_home: "Path"):
       1. ``set_plobi_home_override`` — redirects ``get_plobi_home()`` (config,
          skills, memory, SOUL, sessions) to the profile's home. Contextvar, so
          it propagates into the agent worker thread via ``copy_context()``.
+         **家不在盘上时折回共享根**（裁 178 乙案 第 4 步）：切到一个不存在的家不会
+         得到隔离，只会得到 `ensure_plobi_home()` 原地建回来的空壳 + 一本新开的空
+         ``state.db``；身份本来就记在 ``sessions.agent_id`` 上，不靠换家。
       2. ``set_secret_scope`` — installs the profile's ``.env`` secrets as the
          authoritative credential source, so ``get_secret`` reads this profile's
          keys and never the process-global ``os.environ`` (which in a
@@ -1428,15 +1431,35 @@ def _profile_runtime_scope(profile_home: "Path"):
     returns an isolated dict — which is what keeps subprocesses (MCP, kanban)
     from inheriting cross-profile secrets.
     """
-    from plobi_constants import set_plobi_home_override, reset_plobi_home_override
+    from plobi_constants import (
+        reset_plobi_home_override,
+        set_plobi_home_override,
+        shared_root_for,
+    )
     from agent.secret_scope import (
         build_profile_secret_scope,
         set_secret_scope,
         reset_secret_scope,
     )
 
-    home_token = set_plobi_home_override(str(profile_home))
-    secret_token = set_secret_scope(build_profile_secret_scope(Path(profile_home)))
+    # 裁 178 乙案 第 4 步：家已经不在了就**别再切过去**。切过去不等于"隔离"，而是
+    # 让 `ensure_plobi_home()` 把那个退役的家原地建回来、并在里面新开一本空
+    # `state.db`（10-25 15:14 实测：`profiles/l2-agenda/state.db`，sessions=0）。
+    # 家还在的照旧走原语义——这一格是 multiplexer 的既有形状，不在这次收口范围里。
+    # 两条腿跟着**同一个**家走（config 折到哪，密钥就折到哪）：只折 config 会让这一轮
+    # 拿到一个空 scope，`get_secret` 从此处处返回 None——静默断粮比复活空壳更难查。
+    given = Path(profile_home)
+    effective_home = given if given.is_dir() else shared_root_for(given)
+    if effective_home != given:
+        logger.info(
+            "plobi: profile home %s is gone — scoping this turn to the shared root %s "
+            "(identity stays on sessions.agent_id; 裁 178 乙案 第 4 步)",
+            given,
+            effective_home,
+        )
+
+    home_token = set_plobi_home_override(str(effective_home))
+    secret_token = set_secret_scope(build_profile_secret_scope(effective_home))
     try:
         yield
     finally:
