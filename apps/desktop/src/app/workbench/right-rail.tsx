@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 
-export type RightRailTab = 'agenda' | 'browser' | 'files' | 'review'
+export type RightRailTab = 'agenda' | 'browser' | 'files' | 'review' | 'terminal'
 export type RightRailTabId = RightRailTab | `file:${string}`
 
 export interface RightRailTabDef {
@@ -12,15 +12,6 @@ export interface RightRailTabDef {
   icon: string
   title: string
   description?: string
-}
-
-export interface RightRailExtraAction {
-  description?: string
-  icon: string
-  id: string
-  onSelect: () => void
-  shortcut?: string
-  title: string
 }
 
 export interface RightRailWorkbenchLabels {
@@ -37,13 +28,11 @@ function EmptyAction({
   description,
   icon,
   onClick,
-  shortcut,
   title
 }: {
   description?: string
   icon: string
   onClick: () => void
-  shortcut?: string
   title: string
 }) {
   return (
@@ -63,9 +52,6 @@ function EmptyAction({
           </span>
         ) : null}
       </span>
-      {shortcut ? (
-        <span className="shrink-0 text-[0.62rem] text-(--ui-text-tertiary)">{shortcut}</span>
-      ) : null}
     </button>
   )
 }
@@ -74,7 +60,6 @@ export function RightRailWorkbench({
   activeTab,
   availableTabs,
   contents,
-  extraActions,
   labels,
   onTabChange,
   onTabClose,
@@ -85,7 +70,6 @@ export function RightRailWorkbench({
   activeTab: RightRailTabId | null
   availableTabs: RightRailTabDef[]
   contents: Partial<Record<string, ReactNode>>
-  extraActions?: RightRailExtraAction[]
   labels: RightRailWorkbenchLabels
   onTabChange: (tab: RightRailTabId) => void
   onTabClose: (tab: RightRailTabId) => void
@@ -96,7 +80,7 @@ export function RightRailWorkbench({
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const hasTabs = tabs.length > 0
-  const hasActions = availableTabs.length > 0 || Boolean(extraActions?.length)
+  const hasActions = availableTabs.length > 0
 
   useEffect(() => {
     if (!menuOpen) {
@@ -208,24 +192,6 @@ export function RightRailWorkbench({
                       <span className="truncate">{tab.title}</span>
                     </button>
                   ))}
-                  {extraActions?.length ? (
-                    <div className="my-1 h-px bg-border" role="separator" />
-                  ) : null}
-                  {extraActions?.map(action => (
-                    <button
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.72rem] text-foreground hover:bg-accent"
-                      key={action.id}
-                      onClick={() => {
-                        setMenuOpen(false)
-                        action.onSelect()
-                      }}
-                      role="menuitem"
-                      type="button"
-                    >
-                      <Codicon name={action.icon} size="0.8rem" />
-                      <span className="truncate">{action.title}</span>
-                    </button>
-                  ))}
                 </div>
               ) : null}
             </div>
@@ -264,16 +230,6 @@ export function RightRailWorkbench({
                   key={tab.id}
                   onClick={() => onTabOpen(tab.id)}
                   title={tab.title}
-                />
-              ))}
-              {extraActions?.map(action => (
-                <EmptyAction
-                  description={action.description}
-                  icon={action.icon}
-                  key={action.id}
-                  onClick={action.onSelect}
-                  shortcut={action.shortcut}
-                  title={action.title}
                 />
               ))}
             </div>

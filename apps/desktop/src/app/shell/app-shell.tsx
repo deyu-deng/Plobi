@@ -45,7 +45,6 @@ interface AppShellProps {
   /** L1: titlebar right-rail button toggles the agenda pane, not the file tree. */
   rightRail?: { open: boolean; toggle: () => void }
   statusbarItems?: readonly StatusbarItem[]
-  terminalPaneOpen?: boolean
   titlebarTools?: readonly TitlebarTool[]
 }
 
@@ -74,7 +73,6 @@ export function AppShell({
   previewPaneOpen = false,
   rightRail,
   statusbarItems,
-  terminalPaneOpen = false,
   titlebarTools
 }: AppShellProps) {
   const sidebarOpen = useStore($sidebarOpen)
@@ -117,9 +115,9 @@ export function AppShell({
   // is uncovered there regardless of their stored open state. A standalone
   // session window renders no sidebar at all, so its edge is always uncovered.
   const collapsibleLeftPaneOpen = panesFlipped ? fileBrowserOpen : sidebarOpen
-  // The terminal + preview rails never force-collapse, so when they're the
-  // leftmost open pane (flipped layout) they cover the edge even when narrow.
-  const persistentLeftPaneOpen = panesFlipped && (terminalPaneOpen || previewPaneOpen)
+  // The preview rail never force-collapses, so when it's the leftmost open pane
+  // (flipped layout) it covers the edge even when narrow.
+  const persistentLeftPaneOpen = panesFlipped && previewPaneOpen
 
   const leftEdgePaneOpen =
     !isSecondaryWindow() && ((!narrowViewport && collapsibleLeftPaneOpen) || persistentLeftPaneOpen)

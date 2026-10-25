@@ -2776,6 +2776,7 @@ export interface Translations {
       files: string
       review: string
       browser: string
+      terminal: string
     }
     actions: {
       agenda: string
@@ -2783,7 +2784,6 @@ export interface Translations {
       review: string
       browser: string
       terminal: string
-      openTerminal: string
     }
     add: string
     close: (label: string) => string

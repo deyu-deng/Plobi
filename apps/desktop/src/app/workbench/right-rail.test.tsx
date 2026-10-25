@@ -156,26 +156,4 @@ describe('RightRailWorkbench', () => {
     expect(onOpen).toHaveBeenCalledWith('agenda')
   })
 
-  it('opens an extra action from the empty state', () => {
-    const onTerminal = vi.fn()
-
-    render(
-      <RightRailWorkbench
-        activeTab={null}
-        availableTabs={[]}
-        contents={{}}
-        extraActions={[
-          { id: 'terminal', icon: 'terminal', title: 'Open terminal', onSelect: onTerminal }
-        ]}
-        labels={labels}
-        onTabChange={vi.fn()}
-        onTabClose={vi.fn()}
-        onTabOpen={vi.fn()}
-        tabs={[]}
-      />
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }))
-    expect(onTerminal).toHaveBeenCalledTimes(1)
-  })
 })

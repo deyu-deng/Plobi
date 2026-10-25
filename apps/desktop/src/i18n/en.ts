@@ -3188,15 +3188,15 @@ export const en: Translations = {
       agenda: 'Agenda',
       files: 'Workspace files',
       review: 'Review',
-      browser: 'Browser'
+      browser: 'Browser',
+      terminal: 'Terminal'
     },
     actions: {
       agenda: "Today's timeline and quick add",
       files: "Browse this agent's folder",
       review: 'Review changes in this workspace',
       browser: 'Open a page in the built-in browser',
-      terminal: 'Open a terminal in this folder',
-      openTerminal: 'Open terminal'
+      terminal: 'Open a terminal in this folder'
     },
     add: 'Open tab',
     close: label => `Close ${label}`,

@@ -3082,15 +3082,15 @@ export const ja = defineLocale({
       agenda: '予定',
       files: 'ワークスペースのファイル',
       review: 'レビュー',
-      browser: 'ブラウザ'
+      browser: 'ブラウザ',
+      terminal: 'ターミナル'
     },
     actions: {
       agenda: '今日のスケジュール',
       files: 'この Agent のフォルダーを表示',
       review: 'このワークスペースの変更を確認',
       browser: '内蔵ブラウザーでページを開く',
-      terminal: 'このフォルダーでターミナルを開く',
-      openTerminal: 'ターミナルを開く'
+      terminal: 'このフォルダーでターミナルを開く'
     },
     add: 'タブを開く',
     close: label => `${label}を閉じる`,

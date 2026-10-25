@@ -2,7 +2,6 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useMemo } from 'react'
 
 import type { CommandCenterSection } from '@/app/command-center'
-import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
 import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
 import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
 import { Codicon } from '@/components/ui/codicon'
@@ -10,7 +9,7 @@ import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import type { DesktopDeferredSubsystem } from '@/global'
 import { type Translations, useI18n } from '@/i18n'
 import { deferredRowLabel, readDeferredLedgerView } from '@/lib/desktop-deferred-sidecars'
-import { Activity, AlertCircle, Clock, Command, Hash, Loader2, Terminal, Zap, ZapFilled } from '@/lib/icons'
+import { Activity, AlertCircle, Clock, Command, Hash, Loader2, Zap, ZapFilled } from '@/lib/icons'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
@@ -44,7 +43,6 @@ import type { StatusbarItem, StatusbarSelectModifiers } from '../statusbar-contr
 
 interface StatusbarItemsOptions {
   agentsOpen: boolean
-  chatOpen: boolean
   commandCenterOpen: boolean
   extraLeftItems: readonly StatusbarItem[]
   extraRightItems: readonly StatusbarItem[]
@@ -54,8 +52,6 @@ interface StatusbarItemsOptions {
   openCommandCenterSection: (section: CommandCenterSection) => void
   freshDraftReady: boolean
   requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
-  /** True on L1/L2 secretary shell and legacy chat — shows the terminal toggle. */
-  shellOpen?: boolean
   statusSnapshot: StatusResponse | null
   toggleCommandCenter: () => void
 }
@@ -98,7 +94,6 @@ export function DeferredLedgerRow({
 
 export function useStatusbarItems({
   agentsOpen,
-  chatOpen,
   commandCenterOpen,
   extraLeftItems,
   extraRightItems,
@@ -108,14 +103,12 @@ export function useStatusbarItems({
   openCommandCenterSection,
   freshDraftReady,
   requestGateway,
-  shellOpen = false,
   statusSnapshot,
   toggleCommandCenter
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
   const copy = t.shell.statusbar
   const activeSessionId = useStore($activeSessionId)
-  const terminalTakeover = useStore($terminalTakeover)
   const yoloActive = useStore($yoloActive)
   const busy = useStore($busy)
   const currentUsage = useStore($currentUsage)
@@ -488,17 +481,6 @@ export function useStatusbarItems({
         title: yoloActive ? copy.yoloOn : copy.yoloOff,
         variant: 'action'
       },
-      {
-        className: `w-7 justify-center px-0${terminalTakeover ? ' bg-accent/55 text-foreground' : ''}`,
-        // L1/L2 share the secretary shell — the terminal toggle must stay
-        // visible there too (chatOpen alone only covers the legacy /new path).
-        hidden: !chatOpen && !shellOpen,
-        icon: <Terminal className="size-3.5" />,
-        id: 'terminal',
-        onSelect: () => setTerminalTakeover(!$terminalTakeover.get()),
-        title: terminalTakeover ? copy.hideTerminal : copy.showTerminal,
-        variant: 'action'
-      },
       clientVersionItem,
       ...(backendVersionItem ? [backendVersionItem] : [])
     ],
@@ -506,7 +488,6 @@ export function useStatusbarItems({
       activeSessionId,
       backendVersionItem,
       busy,
-      chatOpen,
       clientVersionItem,
       contextBar,
       contextUsage,
@@ -514,9 +495,7 @@ export function useStatusbarItems({
       currentUsage,
       requestGateway,
       sessionStartedAt,
-      shellOpen,
       showYoloToggle,
-      terminalTakeover,
       toggleYolo,
       turnStartedAt,
       yoloActive

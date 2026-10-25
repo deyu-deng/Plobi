@@ -130,7 +130,7 @@ import {
 import { BrowserTabPanel } from './workbench/browser-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
-import { RightRailWorkbench, type RightRailExtraAction, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
+import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -283,7 +283,7 @@ export function DesktopController() {
 
   // The L1 rail owns the agenda poll; every other route leaves the store cold
   // (`enabled: false` → no seed, no 8s interval).
-  useAgendaTimeline(level === 'l1')
+  useAgendaTimeline(level !== null)
   const [agendaAdding, setAgendaAdding] = useState(false)
   const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>([])
   const [l1Active, setL1Active] = useState<null | RightRailTabId>(null)
@@ -317,21 +317,22 @@ export function DesktopController() {
       icon: 'git-pull-request',
       id: 'review',
       title: t.workbench.tabs.review
+    },
+    terminal: {
+      description: t.workbench.actions.terminal,
+      icon: 'terminal',
+      id: 'terminal',
+      title: t.workbench.tabs.terminal
     }
   }
-  const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser]
-  const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review, workbenchTabDefs.browser]
-  const extraActions: RightRailExtraAction[] | undefined = conversationShellOpen
-    ? [
-        {
-          description: t.workbench.actions.terminal,
-          icon: 'terminal',
-          id: 'terminal',
-          onSelect: () => setTerminalTakeover(true),
-          title: t.workbench.actions.openTerminal
-        }
-      ]
-    : undefined
+  const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser, workbenchTabDefs.terminal]
+  const l2TabDefs = [
+    workbenchTabDefs.files,
+    workbenchTabDefs.agenda,
+    workbenchTabDefs.review,
+    workbenchTabDefs.browser,
+    workbenchTabDefs.terminal
+  ]
   const isL1Workbench = level === 'l1'
 
   const openFileTab = useCallback((target: PreviewTarget) => {
@@ -355,6 +356,10 @@ export function DesktopController() {
       if (tab === 'review') {
         openReview()
       }
+
+      if (tab === 'terminal') {
+        setTerminalTakeover(true)
+      }
     },
     [isL1Workbench]
   )
@@ -372,6 +377,10 @@ export function DesktopController() {
 
       if (tab === 'review') {
         openReview()
+      }
+
+      if (tab === 'terminal') {
+        setTerminalTakeover(true)
       }
     },
     [isL1Workbench]
@@ -409,9 +418,53 @@ export function DesktopController() {
       if (tab === 'review') {
         closeReview()
       }
+
+      if (tab === 'terminal') {
+        setTerminalTakeover(false)
+      }
     },
     [isL1Workbench, l1Active, l1Tabs, l2Active, l2Tabs]
   )
+
+  // The terminal is a right-rail tab now; the store stays the single open/close
+  // signal so the status stack, command palette and keybinds keep working.
+  useEffect(() => {
+    if (!level) {
+      return
+    }
+
+    if (terminalTakeover) {
+      if (isL1Workbench) {
+        setL1Tabs(tabs => (tabs.includes('terminal') ? tabs : [...tabs, 'terminal']))
+        setL1Active('terminal')
+        setPaneOpen('agenda-timeline', true)
+      } else {
+        setL2Tabs(tabs => (tabs.includes('terminal') ? tabs : [...tabs, 'terminal']))
+        setL2Active('terminal')
+        setFileBrowserOpen(true)
+      }
+
+      return
+    }
+
+    if (l1Tabs.includes('terminal')) {
+      const index = l1Tabs.indexOf('terminal')
+      const remaining = l1Tabs.filter(id => id !== 'terminal')
+      setL1Tabs(remaining)
+      if (l1Active === 'terminal') {
+        setL1Active(remaining[Math.min(index, remaining.length - 1)] ?? null)
+      }
+    }
+
+    if (l2Tabs.includes('terminal')) {
+      const index = l2Tabs.indexOf('terminal')
+      const remaining = l2Tabs.filter(id => id !== 'terminal')
+      setL2Tabs(remaining)
+      if (l2Active === 'terminal') {
+        setL2Active(remaining[Math.min(index, remaining.length - 1)] ?? null)
+      }
+    }
+  }, [level, terminalTakeover])
 
   // Ctrl+G still drives `$reviewOpen`; the L2 workbench follows it and opens the
   // same rail column instead of a second Pane.
@@ -465,11 +518,13 @@ export function DesktopController() {
   }, [agentCwd])
 
   const l1OpenTabDefs = l1Tabs
-    .map(id => (id === 'agenda' || id === 'browser' ? workbenchTabDefs[id] : null))
+    .map(id => (id === 'agenda' || id === 'browser' || id === 'terminal' ? workbenchTabDefs[id] : null))
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
     .map(id =>
-      id === 'files' || id === 'review' || id === 'browser' ? workbenchTabDefs[id] : openFiles[id]?.def
+      id === 'files' || id === 'review' || id === 'browser' || id === 'agenda' || id === 'terminal'
+        ? workbenchTabDefs[id]
+        : openFiles[id]?.def
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
@@ -523,10 +578,6 @@ export function DesktopController() {
       writeL1MainSessionId(profile, id)
     }
   }, [activeSessionId, level, selectedStoredSessionId])
-
-  // WP-D: the terminal takeover applies to the whole secretary shell, not just
-  // the legacy chat routes.
-  const terminalSidebarOpen = conversationShellOpen && terminalTakeover
 
   const titlebarToolGroups = useGroupRegistry<TitlebarTool>()
   const statusbarItemGroups = useGroupRegistry<StatusbarItem>()
@@ -1335,7 +1386,6 @@ export function DesktopController() {
 
   const { leftStatusbarItems, statusbarItems } = useStatusbarItems({
     agentsOpen,
-    chatOpen,
     commandCenterOpen,
     extraLeftItems: statusbarItemGroups.flat.left,
     extraRightItems: statusbarItemGroups.flat.right,
@@ -1345,7 +1395,6 @@ export function DesktopController() {
     freshDraftReady,
     openCommandCenterSection,
     requestGateway,
-    shellOpen: conversationShellOpen,
     statusSnapshot,
     toggleCommandCenter
   })
@@ -1483,17 +1532,6 @@ export function DesktopController() {
   const sidebarSide = panesFlipped ? 'right' : 'left'
   const railSide = panesFlipped ? 'left' : 'right'
 
-  // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
-  // hover-reveal overlays (narrow window) don't take a column, so they don't count.
-  const railColumnOpen =
-    (secretaryShellOpen && previewRailContent && previewPaneOpen) ||
-    (isL2 && !narrowViewport && fileBrowserOpen) ||
-    (level === 'l1' && !narrowViewport && agendaPaneOpen)
-
-  // Once the terminal would share its rail with another sidebar, drop it to a
-  // full-width row beneath them rather than cramming in one more skinny column.
-  const terminalAsRow = terminalSidebarOpen && railColumnOpen
-
   const previewPane = (
     <Pane
       disabled={!secretaryShellOpen || !previewRailContent}
@@ -1533,6 +1571,48 @@ export function DesktopController() {
     />
   ) : null
   const workbenchReviewContent = <ReviewPane embedded key={agentCwd || 'no-cwd'} />
+  const agendaTabContent = (
+    <>
+      {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {/* 裁定 40: the today axis (with its "now" line) MUST mount even
+           when the rail is still loading or the day payload is empty.
+           Otherwise a fresh relaunch lands the user on the loader /
+           error / empty-state and they never see today's axis. */}
+        {agendaLoading && agendaEvents.length === 0 ? (
+          <div aria-hidden="true" className="flex justify-center py-4">
+            <PageLoader label={t.console.timeline.title} />
+          </div>
+        ) : null}
+        {agendaError && agendaEvents.length === 0 ? (
+          <div className="flex justify-center pb-2">
+            <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
+              {t.console.timeline.retry}
+            </Button>
+          </div>
+        ) : null}
+        <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
+        {agendaRhythmOff && !agendaLoading ? (
+          <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
+            {t.agenda.rhythmOff}
+          </p>
+        ) : null}
+      </div>
+    </>
+  )
+  const agendaAddButton = (
+    /* 完整日程页的入口全应用只有状态栏那一个 chip（它还带 pending 计数），
+       这里只保留「加一条」；同一个页面不许有第二张门。 */
+    <Button
+      aria-label={t.console.timeline.addEvent}
+      onClick={() => setAgendaAdding(open => !open)}
+      size="icon-xs"
+      title={t.console.timeline.addEvent}
+      variant="ghost"
+    >
+      <Codicon name="add" size="0.8125rem" />
+    </Button>
+  )
 
   const fileBrowserPane = (
     <Pane
@@ -1556,17 +1636,19 @@ export function DesktopController() {
             tab => !l2Tabs.includes(tab.id) && (tab.id !== 'review' || Boolean(agentCwd.trim()))
           )}
           contents={{
+            agenda: agendaTabContent,
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
             files: workbenchFilesContent,
             review: workbenchReviewContent,
+            terminal: isL1Workbench ? null : <TerminalPaneChrome />,
             ...fileTabContents
           }}
-          extraActions={extraActions}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
           onTabOpen={handleWorkbenchTabOpen}
           tabs={l2OpenTabDefs}
+          trailing={l2Active === 'agenda' ? agendaAddButton : null}
         />
       </aside>
     </Pane>
@@ -1581,9 +1663,8 @@ export function DesktopController() {
 
   // WP-D: the L1 secretary rail, rebuilt on the base Pane system. Same agenda
   // store and same four states the old console `RightRail` rendered — only the
-  // chrome moved from a hand-rolled aside to the shell's right rail. Disabled
-  // (fully collapsed) everywhere but L1, so the schedule never bleeds into a
-  // workspace view.
+  // chrome moved from a hand-rolled aside to the shell's right rail. This Pane
+  // is L1-only; L2 gets the same `agendaTabContent` inside its own workbench.
   const agendaTimelinePane = (
     <Pane
       defaultOpen
@@ -1606,92 +1687,19 @@ export function DesktopController() {
           activeTab={l1Active}
           availableTabs={l1TabDefs.filter(tab => !l1Tabs.includes(tab.id))}
           contents={{
-            agenda: (
-              <>
-                {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
-                <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                  {/* 裁定 40: the today axis (with its "now" line) MUST mount even
-                     when the rail is still loading or the day payload is empty.
-                     Otherwise a fresh relaunch lands the user on the loader /
-                     error / empty-state and they never see today's axis. */}
-                  {agendaLoading && agendaEvents.length === 0 ? (
-                    <div aria-hidden="true" className="flex justify-center py-4">
-                      <PageLoader label={t.console.timeline.title} />
-                    </div>
-                  ) : null}
-                  {agendaError && agendaEvents.length === 0 ? (
-                    <div className="flex justify-center pb-2">
-                      <Button onClick={() => void refreshAgendaTimeline()} size="xs" variant="ghost">
-                        {t.console.timeline.retry}
-                      </Button>
-                    </div>
-                  ) : null}
-                  <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
-                  {agendaRhythmOff && !agendaLoading ? (
-                    <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
-                      {t.agenda.rhythmOff}
-                    </p>
-                  ) : null}
-                </div>
-              </>
-            ),
+            agenda: agendaTabContent,
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
-            files: null
+            files: null,
+            terminal: isL1Workbench ? <TerminalPaneChrome /> : null
           }}
-          extraActions={extraActions}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
           onTabOpen={handleWorkbenchTabOpen}
           tabs={l1OpenTabDefs}
-          trailing={
-            l1Active === 'agenda' ? (
-              /* 完整日程页的入口全应用只有状态栏那一个 chip（它还带 pending 计数），
-                 这里只保留「加一条」；同一个页面不许有第二张门。 */
-              <Button
-                aria-label={t.console.timeline.addEvent}
-                onClick={() => setAgendaAdding(open => !open)}
-                size="icon-xs"
-                title={t.console.timeline.addEvent}
-                variant="ghost"
-              >
-                <Codicon name="add" size="0.8125rem" />
-              </Button>
-            ) : null
-          }
+          trailing={l1Active === 'agenda' ? agendaAddButton : null}
         />
       </aside>
-    </Pane>
-  )
-
-  const terminalPane = (
-    <Pane
-      bottomRow={terminalAsRow}
-      defaultOpen
-      disabled={!terminalSidebarOpen}
-      divider
-      height="38vh"
-      id="terminal-sidebar"
-      key="terminal-sidebar"
-      maxHeight="80vh"
-      minHeight="8rem"
-      minWidth="22vw"
-      resizable
-      side={railSide}
-      width="42vw"
-    >
-      {/* As a column the terminal clears the titlebar; as a bottom row it sits
-          below the rail's panes (so it fills its row edge-to-edge) and gets a
-          left border separating it from the chat — the column-mode separator
-          lives on the resize sash, which moves to the top edge as a row. */}
-      <div
-        className={cn(
-          'relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)',
-          terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'
-        )}
-      >
-        <TerminalPaneChrome />
-      </div>
     </Pane>
   )
 
@@ -1709,7 +1717,6 @@ export function DesktopController() {
           : undefined
       }
       statusbarItems={statusbarItems}
-      terminalPaneOpen={terminalSidebarOpen}
       titlebarTools={titlebarToolGroups.flat.right}
     >
       {!isSecondaryWindow() && (
@@ -1798,13 +1805,13 @@ export function DesktopController() {
       </PaneMain>
       {/*
         Order within a side maps to column order. Default (rail on the right):
-        main | terminal | preview | review | agenda. Flipped (rail on the left):
-        mirror so terminal stays adjacent to the chat.
+        main | preview | review | agenda. Flipped (rail on the left): mirror so
+        the workbench stays adjacent to the chat.
       */}
-      {panesFlipped ? fileBrowserPane : terminalPane}
+      {panesFlipped ? fileBrowserPane : null}
       {previewPane}
       {agendaTimelinePane}
-      {panesFlipped ? terminalPane : fileBrowserPane}
+      {panesFlipped ? null : fileBrowserPane}
     </AppShell>
   )
 }

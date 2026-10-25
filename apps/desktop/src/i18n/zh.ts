@@ -3320,15 +3320,15 @@ export const zh: Translations = {
       agenda: '日程',
       files: '工作区文件',
       review: '审阅',
-      browser: '浏览器'
+      browser: '浏览器',
+      terminal: '终端'
     },
     actions: {
       agenda: '今天的日程时间轴',
       files: '浏览当前 Agent 的目录',
       review: '查看当前工作区的改动',
       browser: '在内置浏览器打开网页',
-      terminal: '在当前目录打开终端',
-      openTerminal: '打开终端'
+      terminal: '在当前目录打开终端'
     },
     add: '打开页签',
     close: label => `关闭${label}`,
