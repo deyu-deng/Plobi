@@ -168,6 +168,7 @@ class MindWriter:
 
         written: list[str] = []
         skipped: list[str] = []
+        schema_refusals: list[str] = []
 
         if batch and self._gate_refusals(batch):
             plan, record = self._stage_for_approval(batch)
@@ -193,6 +194,21 @@ class MindWriter:
                     skipped.append(request.relative_path)
                     continue
 
+                # 词表闸（§12.7 第 1 条）：正典页的 frontmatter 值必须落在脑里那份
+                # ``wiki/meta/schema.json`` 里，新页还得带上那一格要求的键。
+                # 与脑侧 verifier 读同一份真源——门松（存量只 WARN），闸紧（新页拒写）。
+                from plobi.mind import schema as mind_schema
+
+                bad = mind_schema.violations(
+                    request.relative_path, request.content, root=root,
+                    creating=(request.mode != "append"),
+                )
+                if bad:
+                    logger.warning("mind: refused by schema gate: %s", "; ".join(bad))
+                    schema_refusals.extend(bad)
+                    skipped.append(request.relative_path)
+                    continue
+
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if request.mode == "append" and target.exists():
                     with open(target, "a", encoding="utf-8") as handle:
@@ -202,6 +218,9 @@ class MindWriter:
                 written.append(request.relative_path)
 
             if not written:
+                if schema_refusals:
+                    return WriteResult(ok=False, written=[], skipped=skipped,
+                                       detail="词表闸拒了：" + "；".join(schema_refusals))
                 return WriteResult(ok=False, written=[], skipped=skipped, detail="nothing written")
 
             if self.run_verifier:

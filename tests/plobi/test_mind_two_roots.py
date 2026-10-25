@@ -315,7 +315,7 @@ def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
     ).write(
         [
             WriteRequest("Vault/notes/ch01.md", "# note\n"),
-            WriteRequest("Loom/wiki/concepts/srtp.md", "# concept\n"),
+            WriteRequest("Loom/wiki/concepts/srtp.md", "---\ntype: concept\n---\n\n# concept\n"),
         ]
     )
 

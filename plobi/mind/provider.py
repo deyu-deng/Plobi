@@ -372,14 +372,27 @@ class MindProvider(MemoryProvider):
             kind = str(meta.get("kind", "")).lower()
             if kind in ("concept", "entity", "source") or "concepts" in str(target).lower():
                 rel = f"Loom/wiki/concepts/plobi-{slug}.md"
+                page_type = kind if kind in ("concept", "entity", "source") else "concept"
             else:
                 rel = f"Loom/wiki/memory/{slug}.md"
+                page_type = "synthesis"
 
             if not is_memory_zone(rel) or not _is_safe(real_target(rel, root), root):
                 logger.warning("[mind] refused on_memory_write (outside MEMORY_ZONES): %s", rel)
                 return
 
-            body = f"# {slug}\n\n{content.strip()}\n"
+            # 正典页要带词表里合法的键，否则落盘前会被 MindWriter 的闸拒掉
+            # （plobi/mind/schema.py 与脑侧 verifier 读同一份 wiki/meta/schema.json）。
+            # status 一律 unreviewed：这条镜像是 AI 写的，没人复核过就不假装复核过。
+            body = (
+                "---\n"
+                f"type: {page_type}\n"
+                "status: unreviewed\n"
+                f"tags: [plobi-memory]\n"
+                f"title: plobi-{slug}\n"
+                "---\n\n"
+                f"# {slug}\n\n{content.strip()}\n"
+            )
             result = MindWriter(root, run_verifier=True, commit=False).write_one(
                 rel, body, mode="overwrite"
             )
