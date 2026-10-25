@@ -66,6 +66,7 @@ def spawn(WK, tmp_path, monkeypatch):
     """把唤醒要碰的外部东西全指到 tmp；返回记录 Popen 的列表。"""
     monkeypatch.delenv("PLOBI_WAKE", raising=False)
     monkeypatch.setattr(WK, "_wake_dir", lambda: tmp_path / "wake")
+    monkeypatch.setattr(WK, "_plobi_root", lambda: tmp_path)
     (tmp_path / "wake").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(WK, "_wake_log_path", lambda: tmp_path / "wake.log")
 
@@ -122,6 +123,7 @@ def test_a_woken_turn_never_wakes_the_next_hop(WK, spawn, monkeypatch):
 def test_a_failed_spawn_is_reported_not_raised(WK, tmp_path, monkeypatch):
     monkeypatch.delenv("PLOBI_WAKE", raising=False)
     monkeypatch.setattr(WK, "_wake_dir", lambda: tmp_path / "wake")
+    monkeypatch.setattr(WK, "_plobi_root", lambda: tmp_path)
     (tmp_path / "wake").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(WK, "_wake_log_path", lambda: tmp_path / "wake.log")
     monkeypatch.setattr(
@@ -149,7 +151,7 @@ class _FakeDB:
     def create_session(self, session_id, *, source=None, agent_id=None):
         return session_id
 
-    def append_message(self, session_id, *, role=None, content=None, asked_by=None):
+    def append_message(self, session_id, *, role=None, content=None, asked_by=None, kind=None):
         self.appended.append((session_id, role, content, asked_by))
         return "m1"
 
@@ -198,3 +200,41 @@ def test_a_failed_wake_does_not_turn_say_into_an_error(CH, monkeypatch):
     assert out["ok"] is True, "话已经送到了，叫不醒不等于 say 失败"
     assert out["woke"] is False
     assert "没家" in out["wakeNote"]
+
+
+def test_a_round_already_running_blocks_the_wake(WK, spawn, tmp_path):
+    """cron 正在那一屏跑：不许再叫醒（两轮同屏＝两份钱 + 两条打架的历史）。"""
+    import plobi_round_lock as RL
+
+    held = RL.acquire("agenda", tmp_path, holder="cron:j1")
+    try:
+        ok, note = WK.wake_agent(_entry(), "sess-1", sender="L1")
+        assert ok is False
+        assert "正在跑另一轮" in note
+        assert spawn == []
+    finally:
+        RL.release(held)
+
+
+def test_a_failed_spawn_gives_the_round_back(WK, tmp_path, monkeypatch):
+    import plobi_round_lock as RL
+
+    monkeypatch.delenv("PLOBI_WAKE", raising=False)
+    monkeypatch.setattr(WK, "_wake_dir", lambda: tmp_path / "wake")
+    monkeypatch.setattr(WK, "_plobi_root", lambda: tmp_path)
+    (tmp_path / "wake").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(WK, "_wake_log_path", lambda: tmp_path / "wake.log")
+    monkeypatch.setattr(
+        WK.AA, "build_child_command", lambda entry, prompt, asked_by="l1", resume_session=None: (["plobi"], {}, None)
+    )
+
+    def _boom(argv, **kwargs):
+        raise OSError("no such binary")
+
+    monkeypatch.setattr(WK.subprocess, "Popen", _boom)
+
+    assert WK.wake_agent(_entry(), "sess-1", sender="L1")[0] is False
+
+    again = RL.acquire("agenda", tmp_path)
+    assert again is not None, "起不来必须把跑道还回去"
+    RL.release(again)

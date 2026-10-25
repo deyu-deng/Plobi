@@ -90,6 +90,35 @@ def _already_waking(marker: Path) -> bool:
         return False
 
 
+def _release_round(marker) -> None:
+    try:
+        import plobi_round_lock as RL
+
+        RL.release(marker)
+    except Exception:  # noqa: BLE001
+        logger.debug("say: round lock 没放掉", exc_info=True)
+
+
+def _rehold_round(marker, *, agent_name: str, pid: int, holder: str) -> None:
+    if marker is None:
+        return
+    try:
+        Path(marker).write_text(
+            json.dumps(
+                {
+                    "pid": int(pid),
+                    "agent": agent_name,
+                    "holder": holder,
+                    "at": datetime.now().replace(microsecond=0).isoformat(),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.warning("say: round lock 没改成子进程 pid（不影响这一趟）", exc_info=True)
+
+
 def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
     """投递之后让那个 Agent 自己开始干。返回 ``(起没起得来, 一句说明)``。"""
     if os.environ.get("PLOBI_WAKE") == "1":
@@ -98,6 +127,17 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
     marker = _wake_dir() / f"{_safe_slug(entry.name)}.json"
     if _already_waking(marker):
         return False, "它已经在干上一件活了，这条等它做完再看。"
+
+    # 与 cron 共用同一把「这一屏同时只跑一轮」的锁（`plobi_round_lock`）：
+    # 两个回合同时落进同一屏＝两份钱 + 两条互相打架的历史。
+    try:
+        import plobi_round_lock as RL
+
+        round_lock = RL.acquire(entry.name, _plobi_root(), holder=f"say:{sender}")
+    except Exception:  # noqa: BLE001 - 锁坏了不等于这一轮不能叫醒
+        round_lock = None
+    if round_lock is None:
+        return False, "它正在跑另一轮（cron 或别的唤醒），这条等它做完再看。"
 
     try:
         argv, env, cwd = AA.build_child_command(
@@ -108,6 +148,7 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
         )
     except Exception as exc:  # noqa: BLE001 - 叫不醒也不许炸掉说话人的回合
         logger.warning("say: 唤醒命令拼不出来（%s）", exc)
+        _release_round(round_lock)
         return False, f"叫不醒它：{exc}"
 
     env["PLOBI_WAKE"] = "1"
@@ -133,10 +174,16 @@ def wake_agent(entry, session_id: str, *, sender: str) -> tuple[bool, str]:
                 start_new_session=True,
             )
     except FileNotFoundError:
+        _release_round(round_lock)
         return False, "这台机器上找不到可执行的命令行，叫不醒它。"
     except OSError as exc:
         logger.warning("say: 唤醒失败（%s）", exc)
+        _release_round(round_lock)
         return False, f"叫不醒它：{exc}"
+
+    # 锁改记**子进程**的 pid：父进程这一趟马上就返回了，记父 pid 会立刻变成
+    # 「过期」，cron 那边就能同时开跑；记子 pid，cron 看得到它在跑。
+    _rehold_round(round_lock, agent_name=entry.name, pid=proc.pid, holder=f"say:{sender}")
 
     try:
         marker.write_text(

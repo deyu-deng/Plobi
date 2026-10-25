@@ -1503,74 +1503,32 @@ def _is_channel_dm_topic(
 
 
 def _round_lock_path(agent_name: str) -> Path:
-    import hashlib
+    import plobi_round_lock as RL
 
-    slug = "".join(ch for ch in agent_name if ch.isalnum() or ch in "-_")[:40]
-    digest = hashlib.sha1(agent_name.encode("utf-8")).hexdigest()[:8]
-    root = _get_plobi_home() / "plobi" / "round-locks"
-    root.mkdir(parents=True, exist_ok=True)
-    return root / f"{slug or 'agent'}-{digest}.json"
+    return RL.lock_path(agent_name, _get_plobi_home())
 
 
 def _acquire_agent_round(agent_name: str, *, job_id: str = "") -> Optional[Path]:
     """同一个人同时只跑一轮：抢到返回标记路径，抢不到返回 ``None``。
 
-    cron 到点、`say` 的叫醒子进程都可能往同一屏写——两个回合同时落进去，
-    就是两份钱加两条互相打架的历史。标记里记 pid：活着的进程挡住后来者，
-    死掉的（崩了/被杀了）当过期直接接管。
+    锁只有一份实现（``plobi_round_lock``），`say` 的叫醒子进程拿的是同一把——
+    两个回合同时落进同一屏＝两份钱 + 两条互相打架的历史。持有者崩了当过期接管。
     """
-    marker = _round_lock_path(agent_name)
-    payload = json.dumps(
-        {
-            "pid": os.getpid(),
-            "job": job_id,
-            "agent": agent_name,
-            "at": _plobi_now().replace(microsecond=0).isoformat(),
-        },
-        ensure_ascii=False,
-    )
-    try:
-        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        try:
-            held = json.loads(marker.read_text(encoding="utf-8"))
-            pid = int(held.get("pid") or 0)
-        except (OSError, ValueError, TypeError):
-            pid = 0
-        if pid and _pid_alive(pid):
-            return None
-        try:
-            marker.write_text(payload, encoding="utf-8")
-            return marker
-        except OSError:
-            return None
-    except OSError:
-        # 落不下锁就别把这一轮也吞了：宁可跑，也不要静默不跑。
-        return None
-    try:
-        os.write(fd, payload.encode("utf-8"))
-    finally:
-        os.close(fd)
-    return marker
+    import plobi_round_lock as RL
+
+    return RL.acquire(agent_name, _get_plobi_home(), holder=f"cron:{job_id}" if job_id else "cron")
 
 
 def _release_agent_round(marker: Optional[Path]) -> None:
-    if marker is None:
-        return
-    try:
-        marker.unlink(missing_ok=True)
-    except OSError:
-        logger.debug("round lock 没删掉（不影响这一趟）", exc_info=True)
+    import plobi_round_lock as RL
+
+    RL.release(marker)
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+    import plobi_round_lock as RL
+
+    return RL._pid_alive(pid)
 
 
 def _window_history_for(entry, limit: int = 40) -> Optional[list]:
