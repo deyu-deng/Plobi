@@ -154,7 +154,7 @@ export function BetterSheetEditor({ labels, path }: { labels: OfficePreviewLabel
           : ''
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col bg-white text-[#111]">
       {readyBytes ? (
         <div className="min-h-0 flex-1">
           <XlsxEditor
