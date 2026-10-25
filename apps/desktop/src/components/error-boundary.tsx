@@ -1,8 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
-
-import { Button } from '@/components/ui/button'
-import { ErrorState } from '@/components/ui/error-state'
-import { useI18n } from '@/i18n'
+import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from 'react'
 
 export interface ErrorBoundaryFallbackProps {
   error: Error
@@ -115,26 +111,74 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
-function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps) {
-  const { t } = useI18n()
+const FALLBACK_BTN: CSSProperties = {
+  padding: '6px 14px',
+  borderRadius: 8,
+  border: '1px solid #3a3f4b',
+  background: '#242833',
+  color: '#e6e7ea',
+  cursor: 'pointer',
+  font: 'inherit'
+}
 
+/**
+ * 根错误页**不许再依赖任何会被同一次热更弄坏的模块**（用户 10-25 白屏事故）。
+ *
+ * 上一版这里用了 `useI18n()` + `ErrorState` + `Button`。当悬空引用正好落在 i18n
+ * 那条链上时（今天就是：`NotebookTabs is not defined` 之后 i18n 也进了坏状态），
+ * **错误页自己也抛** ⇒ React 卸掉整棵树 ⇒ 用户看到纯白屏、连"重载"按钮都没有。
+ * 所以这一页只用裸 HTML + 内联样式：错误页是整个界面的最后一道网，它自己不能有依赖。
+ */
+function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps) {
   return (
-    <div className="fixed inset-0 z-[1500] grid place-items-center bg-(--ui-chat-surface-background) p-6">
-      <ErrorState
-        className="w-full max-w-[28rem]"
-        description={error.message || t.errors.boundaryDesc}
-        title={t.errors.boundaryTitle}
-      >
-        <Button className="font-semibold" onClick={reset} size="lg">
-          {t.common.retry}
-        </Button>
-        <Button onClick={() => window.location.reload()} variant="text">
-          {t.errors.reloadWindow}
-        </Button>
-        <Button onClick={() => void window.plobiDesktop?.revealLogs()?.catch(() => undefined)} variant="text">
-          {t.errors.openLogs}
-        </Button>
-      </ErrorState>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1500,
+        display: 'grid',
+        placeItems: 'center',
+        padding: 24,
+        background: '#16181d',
+        color: '#e6e7ea',
+        font: "13px/1.6 system-ui, -apple-system, 'Segoe UI', sans-serif"
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: '34rem' }}>
+        <div style={{ marginBottom: 8, fontSize: 16, fontWeight: 600 }}>
+          界面出错了 · Something went wrong
+        </div>
+        <pre
+          style={{
+            margin: '0 0 14px',
+            maxHeight: '16rem',
+            overflow: 'auto',
+            padding: 12,
+            border: '1px solid #2c303a',
+            borderRadius: 8,
+            background: '#1f2229',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word'
+          }}
+        >
+          {error.message}
+        </pre>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={reset} style={FALLBACK_BTN} type="button">
+            重试 · Retry
+          </button>
+          <button onClick={() => window.location.reload()} style={FALLBACK_BTN} type="button">
+            重载窗口 · Reload
+          </button>
+          <button
+            onClick={() => void window.plobiDesktop?.revealLogs?.()?.catch(() => undefined)}
+            style={{ ...FALLBACK_BTN, background: 'transparent' }}
+            type="button"
+          >
+            打开日志 · Logs
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
