@@ -1,20 +1,19 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { renderAsync } from 'docx-preview'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
-import { PageLoader } from '@/components/page-loader'
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
+import { GenOfficeSheetEditor } from './genoffice-sheet'
 import { useFileBytes } from './file-bytes'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-const BetterSheetEditor = lazy(async () => ({ default: (await import('./better-sheet')).BetterSheetEditor }))
 
 export interface OfficePreviewLabels {
   loading: string
@@ -31,6 +30,7 @@ export interface OfficePreviewLabels {
   saveFailed: string
   reload: string
   review: string
+  hint: string
 }
 
 function PreviewStatus({
@@ -293,15 +293,7 @@ export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLab
     const ext = path.split('.').pop()?.toLowerCase()
 
     return ext === 'xlsx' ? (
-      <Suspense
-        fallback={
-          <div className="flex min-h-0 flex-1 items-center justify-center bg-white">
-            <PageLoader label={labels.loading} />
-          </div>
-        }
-      >
-        <BetterSheetEditor labels={labels} path={path} />
-      </Suspense>
+      <GenOfficeSheetEditor labels={labels} path={path} />
     ) : (
       <SheetPreview labels={labels} path={path} />
     )

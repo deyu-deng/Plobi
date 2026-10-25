@@ -2772,6 +2772,7 @@ export interface Translations {
       saveFailed: string
       review: string
       reload: string
+      hint: string
     }
   }
 }

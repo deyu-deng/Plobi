@@ -3188,7 +3188,8 @@ export const en: Translations = {
       conflict: 'The file changed on disk; nothing was saved.',
       saveFailed: 'Could not save the spreadsheet',
       review: 'Review',
-      reload: 'Reload'
+      reload: 'Reload',
+      hint: 'The GenOffice editor is not running. Restart Plobi or rebuild the editor.'
     }
   }
 }

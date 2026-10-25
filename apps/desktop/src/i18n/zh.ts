@@ -3320,7 +3320,8 @@ export const zh: Translations = {
       conflict: '文件已在外部改动，未保存。',
       saveFailed: '表格保存失败',
       review: '审阅',
-      reload: '重新加载'
+      reload: '重新加载',
+      hint: 'GenOffice 编辑器没有启动；重启 Plobi 或重新构建编辑器。'
     }
   }
 }

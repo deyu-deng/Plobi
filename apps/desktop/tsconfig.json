@@ -22,5 +22,6 @@
     }
   },
   "include": ["src", "../shared/src"],
+  "exclude": ["src/genoffice"],
   "references": [{ "path": "./tsconfig.electron.json" }]
 }

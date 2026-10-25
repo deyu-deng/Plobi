@@ -162,6 +162,7 @@ import {
   SESSION_WINDOW_MIN_HEIGHT,
   SESSION_WINDOW_MIN_WIDTH
 } from './session-windows'
+import { registerGenOffice } from './genoffice'
 import { nativeOverlayWidth as computeNativeOverlayWidth, macTitleBarOverlayHeight } from './titlebar-overlay-width'
 import { resolveBehindCount, shouldCountCommits } from './update-count'
 import { readLiveUpdateMarker, writeUpdateMarker } from './update-marker'
@@ -8459,6 +8460,8 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
     // windows, stalling the live answer until refocus. See session-windows.ts.
     webPreferences: chatWindowWebPreferences(PRELOAD_PATH)
   })
+
+  registerGenOffice(mainWindow)
 
   if (IS_MAC) {
     mainWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)

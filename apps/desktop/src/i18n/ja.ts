@@ -3109,7 +3109,8 @@ export const ja = defineLocale({
       conflict: 'ファイルが外部で変更されたため保存していません。',
       saveFailed: '表を保存できませんでした',
       review: 'レビュー',
-      reload: '再読み込み'
+      reload: '再読み込み',
+      hint: 'GenOffice エディターが起動していません。Plobi を再起動するか、エディターを再ビルドしてください。'
     }
   }
 })

@@ -3009,7 +3009,8 @@ export const zhHant = defineLocale({
       conflict: '檔案已在外部變更，未儲存。',
       saveFailed: '表格儲存失敗',
       review: '審閱',
-      reload: '重新載入'
+      reload: '重新載入',
+      hint: 'GenOffice 編輯器沒有啟動；重新啟動 Plobi 或重新建置編輯器。'
     }
   }
 })
