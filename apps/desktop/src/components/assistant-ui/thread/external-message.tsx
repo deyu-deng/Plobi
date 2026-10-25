@@ -3,6 +3,7 @@ import type { FC } from 'react'
 
 import { $consoleAgents } from '@/app/console/store/agents'
 import { Codicon } from '@/components/ui/codicon'
+import { splitFilePointers } from '@/lib/chat-messages'
 import { cn } from '@/lib/utils'
 
 import { UserMessageText } from './user-message-text'
@@ -63,7 +64,20 @@ export const ExternalMessage: FC<{ kind: 'agent' | 'cron' | 'system'; speaker: s
             'text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95'
           )}
         >
-          <UserMessageText className="wrap-anywhere" text={text} />
+          {splitFilePointers(text).map((segment, index) =>
+            segment.kind === 'file' ? (
+              <div
+                className="mt-1 flex items-center gap-1.5 rounded-md border border-border/65 bg-(--ui-chat-surface-background) px-2 py-1 text-[0.75rem] text-(--ui-text-secondary)"
+                key={`file-${index}`}
+                title={segment.path}
+              >
+                <Codicon name="file" size="0.75rem" />
+                <span className="truncate font-mono">{segment.path}</span>
+              </div>
+            ) : (
+              <UserMessageText className="wrap-anywhere" key={`text-${index}`} text={segment.text} />
+            ),
+          )}
         </div>
       </div>
       <div

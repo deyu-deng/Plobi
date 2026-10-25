@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { externalSenderOf, splitSpeakerPrefix } from './chat-messages'
+import { externalSenderOf, splitFilePointers, splitSpeakerPrefix } from './chat-messages'
 
 describe('externalSenderOf', () => {
   it('reads the new kind column first', () => {
@@ -71,5 +71,20 @@ describe('splitSpeakerPrefix', () => {
   it('leaves a body that only looks bracketed alone', () => {
     expect(splitSpeakerPrefix('[备注] 这不是前缀')).toEqual({ speaker: '', body: '[备注] 这不是前缀' })
     expect(splitSpeakerPrefix('没有前缀')).toEqual({ speaker: '', body: '没有前缀' })
+  })
+})
+
+describe('splitFilePointers', () => {
+  it('pulls file pointers out of the paragraph', () => {
+    expect(splitFilePointers('先看这段\n[文件] vault/proj/note.md\n看完再说')).toEqual([
+      { kind: 'text', text: '先看这段' },
+      { kind: 'file', path: 'vault/proj/note.md' },
+      { kind: 'text', text: '看完再说' }
+    ])
+  })
+
+  it('leaves a normal paragraph alone', () => {
+    expect(splitFilePointers('没有指针')).toEqual([{ kind: 'text', text: '没有指针' }])
+    expect(splitFilePointers('')).toEqual([])
   })
 })

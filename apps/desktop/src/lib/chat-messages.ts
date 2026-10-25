@@ -127,6 +127,47 @@ export function splitSpeakerPrefix(text: string): { speaker: string; body: strin
   return { speaker: '', body: s }
 }
 
+export type MessageSegment = { kind: 'text'; text: string } | { kind: 'file'; path: string }
+
+/**
+ * 把正文里 `[文件] 路径` 那几行拆出来单独渲染（裁定 196 ④）。
+ *
+ * `say`/`ask` 的 `parts` 里带文件指针时，正文是「一段话 + [文件] 路径」；指针混在
+ * 段落里读起来像正文。拆出来渲染成卡片，文字仍按原样保留换行。
+ */
+export function splitFilePointers(text: string): MessageSegment[] {
+  const segments: MessageSegment[] = []
+  let buffer: string[] = []
+
+  const flush = () => {
+    const merged = buffer.join('\n').trimEnd()
+
+    if (merged.trim()) {
+      segments.push({ kind: 'text', text: merged })
+    }
+
+    buffer = []
+  }
+
+  for (const line of (text ?? '').split('\n')) {
+    if (line.startsWith('[文件] ')) {
+      flush()
+      const path = line.slice('[文件] '.length).trim()
+
+      if (path) {
+        segments.push({ kind: 'file', path })
+      }
+
+      continue
+    }
+
+    buffer.push(line)
+  }
+  flush()
+
+  return segments
+}
+
 export type GatewayEventPayload = {
   text?: string
   rendered?: string
