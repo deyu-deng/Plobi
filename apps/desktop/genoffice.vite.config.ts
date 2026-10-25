@@ -1,14 +1,14 @@
 import {
-  createOpenDeskOfficeSheetsRendererViteConfig,
-  createOpenDeskOfficeSheetsViteAliases
+  createOpenDeskOfficeRendererViteConfig,
+  createOpenDeskOfficeViteAliases
 } from '@bitclub.ai/opendesk-office/vite'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const base = createOpenDeskOfficeSheetsRendererViteConfig()
-const packageAliases = createOpenDeskOfficeSheetsViteAliases()
+const base = createOpenDeskOfficeRendererViteConfig()
+const packageAliases = createOpenDeskOfficeViteAliases()
 
 // The workspace hoists Univer once; the vendor imports must resolve to that
 // same instance or its DI tokens split (ThemeService/SheetsFilterService).
@@ -37,7 +37,7 @@ export default defineConfig({
     outDir: path.resolve(here, 'dist/genoffice'),
     emptyOutDir: true,
     rolldownOptions: {
-      input: 'sheets.html'
+      input: { slides: 'slides.html', word: 'word.html', sheets: 'sheets.html' }
     }
   }
 })

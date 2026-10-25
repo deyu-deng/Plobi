@@ -1,4 +1,4 @@
-export type FileKind = 'docx' | 'other' | 'pdf' | 'sheet'
+export type FileKind = 'docx' | 'other' | 'pdf' | 'pptx' | 'sheet'
 
 export function fileKindForPath(path: string): FileKind {
   const clean = path.split(/[?#]/u)[0]?.toLowerCase() ?? ''
@@ -15,6 +15,10 @@ export function fileKindForPath(path: string): FileKind {
 
   if (ext === 'docx') {
     return 'docx'
+  }
+
+  if (ext === 'pptx') {
+    return 'pptx'
   }
 
   return 'other'

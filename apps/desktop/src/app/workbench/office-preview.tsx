@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { renderAsync } from 'docx-preview'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
@@ -8,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
-import { GenOfficeSheetEditor } from './genoffice-sheet'
+import { GenOfficeFileEditor } from './genoffice-editor'
 import { useFileBytes } from './file-bytes'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
 
@@ -231,60 +230,6 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   )
 }
 
-function DocxPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
-  const { bytes, error, loading } = useFileBytes(path)
-  const hostRef = useRef<HTMLDivElement | null>(null)
-  const [rendering, setRendering] = useState(false)
-  const [renderError, setRenderError] = useState(false)
-
-  useEffect(() => {
-    const host = hostRef.current
-
-    if (!host || !bytes) {
-      return
-    }
-
-    let cancelled = false
-    host.replaceChildren()
-    setRendering(true)
-    setRenderError(false)
-
-    void renderAsync(bytes, host, undefined, {
-      breakPages: true,
-      className: 'docx-preview',
-      ignoreHeight: true,
-      ignoreWidth: true,
-      inWrapper: true,
-      useBase64URL: true
-    })
-      .catch(() => {
-        if (!cancelled) {
-          setRenderError(true)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setRendering(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
-      host.replaceChildren()
-    }
-  }, [bytes])
-
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="flex h-8 shrink-0 items-center justify-end border-b border-(--ui-stroke-tertiary) px-2">
-        <span className="text-[0.6rem] text-muted-foreground">{labels.readOnly}</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-2" ref={hostRef} />
-      <PreviewStatus error={error || renderError} labels={labels} loading={loading || rendering} />
-    </div>
-  )
-}
-
 export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLabels; target: PreviewTarget }) {
   const path = target.path ?? ''
   const kind = fileKindForPath(path)
@@ -293,7 +238,7 @@ export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLab
     const ext = path.split('.').pop()?.toLowerCase()
 
     return ext === 'xlsx' ? (
-      <GenOfficeSheetEditor labels={labels} path={path} />
+      <GenOfficeFileEditor kind="sheets" labels={labels} path={path} />
     ) : (
       <SheetPreview labels={labels} path={path} />
     )
@@ -304,7 +249,11 @@ export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLab
   }
 
   if (kind === 'docx') {
-    return <DocxPreview labels={labels} path={path} />
+    return <GenOfficeFileEditor kind="word" labels={labels} path={path} />
+  }
+
+  if (kind === 'pptx') {
+    return <GenOfficeFileEditor kind="slides" labels={labels} path={path} />
   }
 
   return null

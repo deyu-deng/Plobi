@@ -5,15 +5,37 @@ import { Codicon } from '@/components/ui/codicon'
 
 import type { OfficePreviewLabels } from './office-preview'
 
+export type GenOfficeKind = 'slides' | 'sheets' | 'word'
+
 interface GenOfficeWebview extends HTMLElement {
   reload?: () => void
 }
 
-const editorBaseUrl = import.meta.env.DEV
-  ? 'http://127.0.0.1:5175/sheets.html'
-  : new URL('genoffice/sheets.html', window.location.href).href
+const EDITOR_PAGE: Record<GenOfficeKind, string> = {
+  slides: 'slides.html',
+  sheets: 'sheets.html',
+  word: 'word.html'
+}
 
-export function GenOfficeSheetEditor({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
+const DEV_EDITOR_BASE = 'http://127.0.0.1:5175'
+
+function editorUrl(kind: GenOfficeKind): string {
+  const page = EDITOR_PAGE[kind]
+
+  return import.meta.env.DEV
+    ? `${DEV_EDITOR_BASE}/${page}`
+    : new URL(`genoffice/${page}`, window.location.href).href
+}
+
+export function GenOfficeFileEditor({
+  kind,
+  labels,
+  path
+}: {
+  kind: GenOfficeKind
+  labels: OfficePreviewLabels
+  path: string
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const webviewRef = useRef<GenOfficeWebview | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -42,7 +64,7 @@ export function GenOfficeSheetEditor({ labels, path }: { labels: OfficePreviewLa
       return
     }
 
-    void bridge()
+    void bridge(kind)
       .then(preloadUrl => {
         if (!active || !hostRef.current) {
           return
@@ -51,9 +73,9 @@ export function GenOfficeSheetEditor({ labels, path }: { labels: OfficePreviewLa
         const webview = document.createElement('webview') as GenOfficeWebview
         webview.className = 'block h-full w-full border-0 bg-white'
         webview.setAttribute('preload', preloadUrl)
-        webview.setAttribute('partition', 'persist:plobi-genoffice')
+        webview.setAttribute('partition', `persist:plobi-genoffice-${kind}`)
         webview.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes')
-        webview.setAttribute('src', `${editorBaseUrl}?file=${encodeURIComponent(path)}`)
+        webview.setAttribute('src', `${editorUrl(kind)}?file=${encodeURIComponent(path)}`)
         host.replaceChildren(webview)
         webviewRef.current = webview
 
@@ -87,7 +109,7 @@ export function GenOfficeSheetEditor({ labels, path }: { labels: OfficePreviewLa
       webviewRef.current = null
       host.replaceChildren()
     }
-  }, [path, reloadKey])
+  }, [kind, path, reloadKey])
 
   const retry = () => {
     setFailed(false)
@@ -96,8 +118,8 @@ export function GenOfficeSheetEditor({ labels, path }: { labels: OfficePreviewLa
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
-      <div className="min-h-0 flex-1" data-testid="genoffice-sheet-host" ref={hostRef} />
+    <div className="relative flex h-full min-h-0 flex-1 flex-col bg-white text-[#111]">
+      <div className="min-h-0 flex-1" data-testid="genoffice-file-host" ref={hostRef} />
 
       {failed || bridgeMissing ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white px-6 text-center">
