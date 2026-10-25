@@ -1,3 +1,4 @@
+import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -5,14 +6,17 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { useI18n } from '@/i18n'
+import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 import {
   getAuxiliaryModels,
   getGlobalModelInfo,
   getGlobalModelOptions,
   getMoaModels,
   getRecommendedDefaultModel,
-  savePlobiConfig,
   saveMoaModels,
+  savePlobiConfig,
   setEnvVar,
   setModelAssignment
 } from '@/plobi'
@@ -23,17 +27,20 @@ import type {
   ModelOptionProvider,
   StaleAuxAssignment
 } from '@/plobi'
-import { useI18n } from '@/i18n'
-import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import {
+  $connectedDesktopApps,
+  requestQuotaCatalog
+} from '@/store/desktop-quotas'
 import { notifyError } from '@/store/notifications'
 import { startManualLocalEndpoint, startManualProviderOAuth } from '@/store/onboarding'
 
 import { invalidatePlobiConfig, setPlobiConfigCache, usePlobiConfigRecord } from '../hooks/use-config-record'
 import { useOnProfileSwitch } from '../hooks/use-on-profile-switch'
+import { humanizeProviderRows } from '../shell/model-provider-label'
 
 import { CONTROL_TEXT } from './constants'
 import { getNested, setNested } from './helpers'
+import { mainProviderRows } from './provider-rows'
 import { ListRow, Pill, SectionHeading } from './primitives'
 
 // Skeleton mirror of the Model settings DOM so the page keeps its shape while
@@ -124,6 +131,16 @@ const AUX_TASKS: readonly AuxTaskMeta[] = [
 
 const NO_PROVIDERS: readonly ModelOptionProvider[] = [{ name: '—', slug: '', models: [] }]
 
+/**
+ * Provider rows for the main-model picker.
+ *
+ * The quota hub (`aigw`) is routing plumbing, not a vendor the user picks. When
+ * the shell has pushed at least one connected quota app, replace the hub row
+ * with one row per software (`WorkBuddy`, `Antigravity`) — all still routing to
+ * `aigw` but carrying a unique `ui_key` so the Select can tell them apart.
+ * Before the first frame (or when no app is connected) keep one neutral
+ * fallback row instead of showing the internal hub name.
+ */
 // Radix <Select> renders a blank trigger when `value` matches no <SelectItem>.
 // A custom model (e.g. one added via config that isn't in the provider's
 // curated list) would vanish — surface the active value so it stays selectable.
@@ -221,7 +238,17 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
 
       setMainModel({ model: modelInfo.model, provider: modelInfo.provider })
       setProviders(modelOptions.providers || [])
-      setSelectedProvider(prev => prev || modelInfo.provider)
+      const rows = mainProviderRows(modelOptions.providers || [])
+      setSelectedProvider(prev => {
+        if (prev && rows.some(row => (row.ui_key ?? row.slug) === prev)) {
+          return prev
+        }
+        const match =
+          rows.find(
+            row => row.slug === modelInfo.provider && (row.models ?? []).includes(modelInfo.model)
+          ) ?? rows.find(row => row.slug === modelInfo.provider)
+        return match?.ui_key ?? match?.slug ?? modelInfo.provider
+      })
       setSelectedModel(prev => prev || modelInfo.model)
       setAuxiliary(auxiliaryModels)
       setMoa(moaModels)
@@ -248,6 +275,13 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     void refresh()
   }, [refresh])
 
+  // The shell owns the hub catalog read; ask for one frame when this page opens
+  // so the hub's per-software rows (WorkBuddy / Antigravity) replace the route
+  // row without waiting for the next 60s broadcast.
+  useEffect(() => {
+    requestQuotaCatalog()
+  }, [])
+
   // A profile switch swaps the backend under the mounted panel — reload for the
   // new profile (bumping the epoch first so any in-flight A request is discarded).
   useOnProfileSwitch(() => {
@@ -256,15 +290,50 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   })
 
   const providerOptions = providers.length ? providers : NO_PROVIDERS
+  const connectedApps = useStore($connectedDesktopApps)
+  const mainProviderOptions = useMemo(
+    () => mainProviderRows(providers.length ? providers : []),
+    // `connectedApps` is read inside quotaProviders; including it here makes the
+    // rows recompute when the shell pushes a fresh quota frame.
+    [providers, connectedApps]
+  )
+  const auxProviderOptions = useMemo(
+    () => humanizeProviderRows(providerOptions),
+    [providerOptions]
+  )
+
+  // A hub frame can arrive after the model list. If the current selection still
+  // holds the raw routing slug (`aigw`), move it to the matching software row
+  // instead of leaving a value the Select no longer offers.
+  useEffect(() => {
+    if (!selectedProvider) {
+      return
+    }
+    if (mainProviderOptions.some(row => (row.ui_key ?? row.slug) === selectedProvider)) {
+      return
+    }
+    const match =
+      mainProviderOptions.find(row => row.slug === selectedProvider) ??
+      (mainModel
+        ? mainProviderOptions.find(
+            row => row.slug === mainModel.provider && (row.models ?? []).includes(mainModel.model)
+          )
+        : undefined)
+    if (match) {
+      setSelectedProvider(match.ui_key ?? match.slug)
+    }
+  }, [mainProviderOptions, mainModel, selectedProvider])
 
   // MoA reference/aggregator slots must never be the moa virtual provider —
   // that would create a recursive MoA tree (the backend rejects it on save).
   // Hide it from the slot selectors so it isn't offered as a dead choice.
-  const moaSlotProviderOptions = providerOptions.filter(provider => (provider.slug || '').toLowerCase() !== 'moa')
+  const moaSlotProviderOptions = auxProviderOptions.filter(
+    provider => (provider.slug || '').toLowerCase() !== 'moa'
+  )
 
   const selectedProviderRow = useMemo(
-    () => providers.find(provider => provider.slug === selectedProvider),
-    [providers, selectedProvider]
+    () => mainProviderOptions.find(provider => (provider.ui_key ?? provider.slug) === selectedProvider),
+    [mainProviderOptions, selectedProvider]
   )
 
   const selectedProviderModels = selectedProviderRow?.models ?? []
@@ -491,13 +560,18 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     setError('')
 
     try {
-      const result = await setModelAssignment({ model: selectedModel, provider: selectedProvider, scope: 'main' })
+      const providerForSave = selectedProviderRow?.slug ?? selectedProvider
+      const result = await setModelAssignment({
+        model: selectedModel,
+        provider: providerForSave,
+        scope: 'main'
+      })
 
       if (profileEpoch.current !== epoch) {
         return
       }
 
-      const provider = result.provider || selectedProvider
+      const provider = result.provider || providerForSave
       const model = result.model || selectedModel
       setMainModel({ provider, model })
       setSwitchStaleAux(result.stale_aux ?? [])
@@ -508,7 +582,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     } finally {
       setApplying(false)
     }
-  }, [onMainModelChanged, refresh, selectedModel, selectedProvider])
+  }, [onMainModelChanged, refresh, selectedModel, selectedProvider, selectedProviderRow])
 
   const setAuxiliaryToMain = useCallback(
     async (task: string) => {
@@ -605,8 +679,11 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
               <SelectValue placeholder={m.provider} />
             </SelectTrigger>
             <SelectContent>
-              {providerOptions.map(provider => (
-                <SelectItem key={provider.slug || 'none'} value={provider.slug || 'none'}>
+              {mainProviderOptions.map(provider => (
+                <SelectItem
+                  key={(provider.ui_key ?? provider.slug) || 'none'}
+                  value={(provider.ui_key ?? provider.slug) || 'none'}
+                >
                   {provider.name}
                 </SelectItem>
               ))}
@@ -787,7 +864,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                           <SelectValue placeholder={m.provider} />
                         </SelectTrigger>
                         <SelectContent>
-                          {providerOptions.map(provider => (
+                          {auxProviderOptions.map(provider => (
                             <SelectItem key={provider.slug || 'none'} value={provider.slug || 'none'}>
                               {provider.name}
                             </SelectItem>

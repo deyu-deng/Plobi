@@ -87,6 +87,14 @@ export function isMockProvider(provider: Pick<ModelOptionProvider, 'slug'>): boo
   return provider.slug.trim().toLowerCase() === 'mock'
 }
 
+/** Humanize names without dropping unconfigured / empty rows (Settings setup
+ *  surfaces need those rows to offer a key or OAuth flow). */
+export function humanizeProviderRows(providers: readonly ModelOptionProvider[]): ModelOptionProvider[] {
+  return providers
+    .filter(provider => !isMockProvider(provider))
+    .map(provider => ({ ...provider, name: humanizeProviderName(provider) }))
+}
+
 /**
  * Full display pipeline for the selector's provider list: drop the mock
  * provider, drop mock/ models from every provider, and humanize group names.

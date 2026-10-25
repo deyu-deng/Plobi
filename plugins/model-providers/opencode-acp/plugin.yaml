@@ -1,0 +1,5 @@
+name: opencode-acp-provider
+kind: model-provider
+version: 1.0.0
+description: OpenCode free models via the OpenCode ACP process
+author: Plobi

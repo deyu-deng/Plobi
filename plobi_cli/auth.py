@@ -231,6 +231,25 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         auth_type="external_process",
         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL,
         base_url_env_var="COPILOT_ACP_BASE_URL",
+        extra={
+            "command": "copilot",
+            "args": ["--acp", "--stdio"],
+            "command_env": "PLOBI_COPILOT_ACP_COMMAND",
+            "args_env": "PLOBI_COPILOT_ACP_ARGS",
+        },
+    ),
+    "opencode-acp": ProviderConfig(
+        id="opencode-acp",
+        name="OpenCode Free",
+        auth_type="external_process",
+        inference_base_url="acp://opencode",
+        base_url_env_var="OPENCODE_ACP_BASE_URL",
+        extra={
+            "command": "opencode",
+            "args": ["acp"],
+            "command_env": "PLOBI_OPENCODE_ACP_COMMAND",
+            "args_env": "PLOBI_OPENCODE_ACP_ARGS",
+        },
     ),
     "gemini": ProviderConfig(
         id="gemini",
@@ -1527,6 +1546,10 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
     # not by the user explicitly configuring anthropic in Plobi.
     _IMPLICIT_ENV_VARS = {"CLAUDE_CODE_OAUTH_TOKEN"}
     pconfig = PROVIDER_REGISTRY.get(normalized)
+    if pconfig and pconfig.auth_type == "external_process":
+        # A locally installed CLI (opencode / copilot) is itself the explicit
+        # choice: there is no key to paste and no auth store entry to wait for.
+        return bool(get_external_process_provider_status(normalized).get("configured"))
     if pconfig and pconfig.auth_type == "api_key":
         for env_var in pconfig.api_key_env_vars:
             if env_var in _IMPLICIT_ENV_VARS:
@@ -6290,19 +6313,39 @@ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
     }
 
 
+def _external_process_launch(pconfig: ProviderConfig) -> tuple[str, list[str]]:
+    """Command/args for an external-process provider, from its registry entry.
+
+    The Copilot entry keeps its long-standing env knobs; newer ACP providers
+    (OpenCode) declare their own in ``ProviderConfig.extra`` so one branch does
+    not have to know every product name.
+    """
+    extra = pconfig.extra or {}
+    command_env = str(extra.get("command_env") or "").strip()
+    args_env = str(extra.get("args_env") or "").strip()
+    command = (
+        (os.getenv(command_env, "").strip() if command_env else "")
+        or str(extra.get("command") or "").strip()
+        or "copilot"
+    )
+    if pconfig.id == "copilot-acp":
+        command = os.getenv("COPILOT_CLI_PATH", "").strip() or command
+    raw_args = os.getenv(args_env, "").strip() if args_env else ""
+    if raw_args:
+        args = shlex.split(raw_args)
+    else:
+        declared = extra.get("args")
+        args = list(declared) if isinstance(declared, (list, tuple)) else ["--acp", "--stdio"]
+    return command, args
+
+
 def get_external_process_provider_status(provider_id: str) -> Dict[str, Any]:
     """Status snapshot for providers that run a local subprocess."""
     pconfig = PROVIDER_REGISTRY.get(provider_id)
     if not pconfig or pconfig.auth_type != "external_process":
         return {"configured": False}
 
-    command = (
-        os.getenv("PLOBI_COPILOT_ACP_COMMAND", "").strip()
-        or os.getenv("COPILOT_CLI_PATH", "").strip()
-        or "copilot"
-    )
-    raw_args = os.getenv("PLOBI_COPILOT_ACP_ARGS", "").strip()
-    args = shlex.split(raw_args) if raw_args else ["--acp", "--stdio"]
+    command, args = _external_process_launch(pconfig)
     base_url = os.getenv(pconfig.base_url_env_var, "").strip() if pconfig.base_url_env_var else ""
     if not base_url:
         base_url = pconfig.inference_base_url
@@ -6520,25 +6563,19 @@ def resolve_external_process_provider_credentials(provider_id: str) -> Dict[str,
     if not base_url:
         base_url = pconfig.inference_base_url
 
-    command = (
-        os.getenv("PLOBI_COPILOT_ACP_COMMAND", "").strip()
-        or os.getenv("COPILOT_CLI_PATH", "").strip()
-        or "copilot"
-    )
-    raw_args = os.getenv("PLOBI_COPILOT_ACP_ARGS", "").strip()
-    args = shlex.split(raw_args) if raw_args else ["--acp", "--stdio"]
+    command, args = _external_process_launch(pconfig)
     resolved_command = shutil.which(command) if command else None
     if not resolved_command and not base_url.startswith("acp+tcp://"):
         raise AuthError(
-            f"Could not find the Copilot CLI command '{command}'. "
-            "Install GitHub Copilot CLI or set PLOBI_COPILOT_ACP_COMMAND/COPILOT_CLI_PATH.",
+            f"Could not find the {pconfig.name} command '{command}'. "
+            f"Install it or set the provider's command env var.",
             provider=provider_id,
-            code="missing_copilot_cli",
+            code=("missing_copilot_cli" if provider_id == "copilot-acp" else f"missing_{provider_id}_cli"),
         )
 
     return {
         "provider": provider_id,
-        "api_key": "copilot-acp",
+        "api_key": provider_id,
         "base_url": base_url.rstrip("/"),
         "command": resolved_command or command,
         "args": args,

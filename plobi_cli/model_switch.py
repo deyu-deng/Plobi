@@ -1761,6 +1761,14 @@ def list_authenticated_providers(
         has_creds = False
         if overlay.auth_type == "aws_sdk":
             has_creds = _has_aws_sdk_creds_for_listing(plobi_slug)
+        elif overlay.auth_type == "external_process":
+            try:
+                from plobi_cli.auth import get_external_process_provider_status
+                has_creds = bool(
+                    get_external_process_provider_status(plobi_slug).get("configured")
+                )
+            except Exception:
+                has_creds = False
         elif overlay.extra_env_vars:
             has_creds = any(os.environ.get(ev) for ev in overlay.extra_env_vars)
         # Also check api_key_env_vars from PROVIDER_REGISTRY for api_key auth_type
