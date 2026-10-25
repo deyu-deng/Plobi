@@ -1,12 +1,8 @@
 import { atom } from 'nanostores'
 
-import { persistBoolean, storedBoolean } from '@/lib/storage'
-
-const TAKEOVER_KEY = 'plobi.desktop.terminalTakeover'
-
-export const $terminalTakeover = atom(storedBoolean(TAKEOVER_KEY, false))
-
-$terminalTakeover.subscribe(active => persistBoolean(TAKEOVER_KEY, active))
+// No persistence: right-rail tabs start empty on relaunch, so a terminal tab
+// must not reopen itself from the last session's panel state.
+export const $terminalTakeover = atom(false)
 
 export const setTerminalTakeover = (active: boolean) => $terminalTakeover.set(active)
 
