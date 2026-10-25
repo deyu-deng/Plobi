@@ -11,6 +11,16 @@ export interface RightRailTabDef {
   id: RightRailTabId
   icon: string
   title: string
+  description?: string
+}
+
+export interface RightRailExtraAction {
+  description?: string
+  icon: string
+  id: string
+  onSelect: () => void
+  shortcut?: string
+  title: string
 }
 
 export interface RightRailWorkbenchLabels {
@@ -23,10 +33,48 @@ export interface RightRailWorkbenchLabels {
   noFolderBody: string
 }
 
+function EmptyAction({
+  description,
+  icon,
+  onClick,
+  shortcut,
+  title
+}: {
+  description?: string
+  icon: string
+  onClick: () => void
+  shortcut?: string
+  title: string
+}) {
+  return (
+    <button
+      className="group flex w-full items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-muted/25 px-3 py-3 text-left transition-colors hover:bg-muted/60"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:text-foreground">
+        <Codicon name={icon} size="1.1rem" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[0.8rem] font-medium text-foreground">{title}</span>
+        {description ? (
+          <span className="mt-0.5 block truncate text-[0.66rem] text-muted-foreground">
+            {description}
+          </span>
+        ) : null}
+      </span>
+      {shortcut ? (
+        <span className="shrink-0 text-[0.62rem] text-(--ui-text-tertiary)">{shortcut}</span>
+      ) : null}
+    </button>
+  )
+}
+
 export function RightRailWorkbench({
   activeTab,
   availableTabs,
   contents,
+  extraActions,
   labels,
   onTabChange,
   onTabClose,
@@ -37,6 +85,7 @@ export function RightRailWorkbench({
   activeTab: RightRailTabId | null
   availableTabs: RightRailTabDef[]
   contents: Partial<Record<string, ReactNode>>
+  extraActions?: RightRailExtraAction[]
   labels: RightRailWorkbenchLabels
   onTabChange: (tab: RightRailTabId) => void
   onTabClose: (tab: RightRailTabId) => void
@@ -46,6 +95,8 @@ export function RightRailWorkbench({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const hasTabs = tabs.length > 0
+  const hasActions = availableTabs.length > 0 || Boolean(extraActions?.length)
 
   useEffect(() => {
     if (!menuOpen) {
@@ -65,111 +116,125 @@ export function RightRailWorkbench({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div
-        className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1"
-        ref={menuRef}
-      >
+      {hasTabs ? (
         <div
-          aria-label={labels.aria}
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
+          className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1"
+          ref={menuRef}
         >
-          {tabs.map(tab => {
-            const active = tab.id === activeTab
+          <div
+            aria-label={labels.aria}
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+          >
+            {tabs.map(tab => {
+              const active = tab.id === activeTab
 
-            return (
-              <div
-                className={cn(
-                  'group/tab flex h-7 max-w-44 min-w-24 shrink-0 items-center rounded-md text-xs transition-colors',
-                  active
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                )}
-                data-active={active || undefined}
-                key={tab.id}
-              >
-                <button
-                  aria-label={labels.close(tab.title)}
-                  className="ml-1.5 grid size-3.5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-muted"
-                  onClick={() => onTabClose(tab.id)}
-                  title={labels.close(tab.title)}
-                  type="button"
+              return (
+                <div
+                  className={cn(
+                    'group/tab flex h-7 max-w-44 min-w-24 shrink-0 items-center rounded-md text-xs transition-colors',
+                    active
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                  )}
+                  data-active={active || undefined}
+                  key={tab.id}
                 >
-                  <Codicon
-                    className="col-start-1 row-start-1 opacity-100 group-hover/tab:opacity-0 group-focus-within/tab:opacity-0"
-                    name={tab.icon}
-                    size="0.875rem"
-                  />
-                  <Codicon
-                    className="col-start-1 row-start-1 opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
-                    name="close"
-                    size="0.875rem"
-                  />
-                </button>
-                <button
-                  aria-selected={active}
-                  className="flex h-full min-w-0 flex-1 items-center bg-transparent py-0 pr-2 pl-1.5 text-left text-inherit outline-none"
-                  onClick={() => onTabChange(tab.id)}
-                  role="tab"
-                  title={tab.title}
-                  type="button"
-                >
-                  <span className="min-w-0 flex-1 truncate">{tab.title}</span>
-                </button>
-              </div>
-            )
-          })}
-        </div>
-
-        {trailing}
-
-        {availableTabs.length > 0 ? (
-          <div className="relative shrink-0">
-            <button
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
-              aria-label={labels.add}
-              className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={() => setMenuOpen(open => !open)}
-              title={labels.add}
-              type="button"
-            >
-              <Codicon name="add" size="0.85rem" />
-            </button>
-            {menuOpen ? (
-              <div
-                className="absolute top-8 right-0 z-20 w-44 rounded-lg border border-border bg-popover p-1 shadow-xl"
-                role="menu"
-              >
-                {availableTabs.map(tab => (
                   <button
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.72rem] text-foreground hover:bg-accent"
-                    key={tab.id}
-                    onClick={() => {
-                      setMenuOpen(false)
-                      onTabOpen(tab.id)
-                    }}
-                    role="menuitem"
+                    aria-label={labels.close(tab.title)}
+                    className="ml-1.5 grid size-3.5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-muted"
+                    onClick={() => onTabClose(tab.id)}
+                    title={labels.close(tab.title)}
                     type="button"
                   >
-                    <Codicon name={tab.icon} size="0.8rem" />
-                    <span className="truncate">{tab.title}</span>
+                    <Codicon
+                      className="col-start-1 row-start-1 opacity-100 group-hover/tab:opacity-0 group-focus-within/tab:opacity-0"
+                      name={tab.icon}
+                      size="0.875rem"
+                    />
+                    <Codicon
+                      className="col-start-1 row-start-1 opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
+                      name="close"
+                      size="0.875rem"
+                    />
                   </button>
-                ))}
-              </div>
-            ) : null}
+                  <button
+                    aria-selected={active}
+                    className="flex h-full min-w-0 flex-1 items-center bg-transparent py-0 pr-2 pl-1.5 text-left text-inherit outline-none"
+                    onClick={() => onTabChange(tab.id)}
+                    role="tab"
+                    title={tab.title}
+                    type="button"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{tab.title}</span>
+                  </button>
+                </div>
+              )
+            })}
           </div>
-        ) : null}
-      </div>
+
+          {trailing}
+
+          {hasActions ? (
+            <div className="relative shrink-0">
+              <button
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                aria-label={labels.add}
+                className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setMenuOpen(open => !open)}
+                title={labels.add}
+                type="button"
+              >
+                <Codicon name="add" size="0.85rem" />
+              </button>
+              {menuOpen ? (
+                <div
+                  className="absolute top-8 right-0 z-20 w-48 rounded-lg border border-border bg-popover p-1 shadow-xl"
+                  role="menu"
+                >
+                  {availableTabs.map(tab => (
+                    <button
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.72rem] text-foreground hover:bg-accent"
+                      key={tab.id}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        onTabOpen(tab.id)
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Codicon name={tab.icon} size="0.8rem" />
+                      <span className="truncate">{tab.title}</span>
+                    </button>
+                  ))}
+                  {extraActions?.length ? (
+                    <div className="my-1 h-px bg-border" role="separator" />
+                  ) : null}
+                  {extraActions?.map(action => (
+                    <button
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.72rem] text-foreground hover:bg-accent"
+                      key={action.id}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        action.onSelect()
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      <Codicon name={action.icon} size="0.8rem" />
+                      <span className="truncate">{action.title}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {tabs.length === 0 ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-            <Codicon name="layout-sidebar-right" size="1.25rem" />
-            <p className="text-[0.78rem] font-medium text-foreground">{labels.emptyTitle}</p>
-            <p className="text-[0.68rem] text-(--ui-text-tertiary)">{labels.emptyBody}</p>
-          </div>
-        ) : (
+        {hasTabs ? (
           tabs.map(tab => (
             <div
               aria-label={tab.title}
@@ -189,6 +254,36 @@ export function RightRailWorkbench({
                 ) : null)}
             </div>
           ))
+        ) : hasActions ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-3 py-6">
+            <div className="flex w-full max-w-[21rem] flex-col gap-2.5">
+              {availableTabs.map(tab => (
+                <EmptyAction
+                  description={tab.description}
+                  icon={tab.icon}
+                  key={tab.id}
+                  onClick={() => onTabOpen(tab.id)}
+                  title={tab.title}
+                />
+              ))}
+              {extraActions?.map(action => (
+                <EmptyAction
+                  description={action.description}
+                  icon={action.icon}
+                  key={action.id}
+                  onClick={action.onSelect}
+                  shortcut={action.shortcut}
+                  title={action.title}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+            <Codicon name="layout-sidebar-right" size="1.25rem" />
+            <p className="text-[0.78rem] font-medium text-foreground">{labels.emptyTitle}</p>
+            <p className="text-[0.68rem] text-(--ui-text-tertiary)">{labels.emptyBody}</p>
+          </div>
         )}
       </div>
     </div>

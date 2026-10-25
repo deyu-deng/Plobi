@@ -2978,6 +2978,14 @@ export const zhHant = defineLocale({
       review: '審閱',
       browser: '瀏覽器'
     },
+    actions: {
+      agenda: '今天的行程時間軸',
+      files: '瀏覽目前 Agent 的目錄',
+      review: '檢視目前工作區的變更',
+      browser: '在內建瀏覽器開啟網頁',
+      terminal: '在目前目錄開啟終端機',
+      openTerminal: '開啟終端機'
+    },
     add: '開啟頁籤',
     close: label => `關閉${label}`,
     emptyTitle: '沒有開啟的頁籤',

@@ -2767,6 +2767,14 @@ export interface Translations {
       review: string
       browser: string
     }
+    actions: {
+      agenda: string
+      files: string
+      review: string
+      browser: string
+      terminal: string
+      openTerminal: string
+    }
     add: string
     close: (label: string) => string
     emptyTitle: string

@@ -114,7 +114,7 @@ import { RightSidebarPane } from './right-sidebar'
 import { FileActionDialogs } from './right-sidebar/file-actions'
 import { RemoteFolderPicker } from './right-sidebar/files/remote-picker'
 import { ReviewPane } from './right-sidebar/review'
-import { $terminalTakeover } from './right-sidebar/store'
+import { $terminalTakeover, setTerminalTakeover } from './right-sidebar/store'
 import { TerminalPaneChrome } from './right-sidebar/terminal/chrome'
 import { PersistentTerminal } from './right-sidebar/terminal/persistent'
 import { closeActiveTerminal } from './right-sidebar/terminal/terminals'
@@ -130,7 +130,7 @@ import {
 import { BrowserTabPanel } from './workbench/browser-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
-import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
+import { RightRailWorkbench, type RightRailExtraAction, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -285,22 +285,53 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level === 'l1')
   const [agendaAdding, setAgendaAdding] = useState(false)
-  const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>(['agenda'])
-  const [l1Active, setL1Active] = useState<null | RightRailTabId>('agenda')
-  const [l2Tabs, setL2Tabs] = useState<RightRailTabId[]>(['files', 'review'])
-  const [l2Active, setL2Active] = useState<null | RightRailTabId>('files')
+  const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>([])
+  const [l1Active, setL1Active] = useState<null | RightRailTabId>(null)
+  const [l2Tabs, setL2Tabs] = useState<RightRailTabId[]>([])
+  const [l2Active, setL2Active] = useState<null | RightRailTabId>(null)
   const [openFiles, setOpenFiles] = useState<
     Record<string, { def: RightRailTabDef; target: PreviewTarget }>
   >({})
 
   const workbenchTabDefs: Record<RightRailTab, RightRailTabDef> = {
-    agenda: { icon: 'calendar', id: 'agenda', title: t.workbench.tabs.agenda },
-    browser: { icon: 'globe', id: 'browser', title: t.workbench.tabs.browser },
-    files: { icon: 'folder-opened', id: 'files', title: t.workbench.tabs.files },
-    review: { icon: 'git-pull-request', id: 'review', title: t.workbench.tabs.review }
+    agenda: {
+      description: t.workbench.actions.agenda,
+      icon: 'calendar',
+      id: 'agenda',
+      title: t.workbench.tabs.agenda
+    },
+    browser: {
+      description: t.workbench.actions.browser,
+      icon: 'globe',
+      id: 'browser',
+      title: t.workbench.tabs.browser
+    },
+    files: {
+      description: t.workbench.actions.files,
+      icon: 'folder-opened',
+      id: 'files',
+      title: t.workbench.tabs.files
+    },
+    review: {
+      description: t.workbench.actions.review,
+      icon: 'git-pull-request',
+      id: 'review',
+      title: t.workbench.tabs.review
+    }
   }
   const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser]
   const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review, workbenchTabDefs.browser]
+  const extraActions: RightRailExtraAction[] | undefined = conversationShellOpen
+    ? [
+        {
+          description: t.workbench.actions.terminal,
+          icon: 'terminal',
+          id: 'terminal',
+          onSelect: () => setTerminalTakeover(true),
+          title: t.workbench.actions.openTerminal
+        }
+      ]
+    : undefined
   const isL1Workbench = level === 'l1'
 
   const openFileTab = useCallback((target: PreviewTarget) => {
@@ -1530,6 +1561,7 @@ export function DesktopController() {
             review: workbenchReviewContent,
             ...fileTabContents
           }}
+          extraActions={extraActions}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
@@ -1606,6 +1638,7 @@ export function DesktopController() {
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
             files: null
           }}
+          extraActions={extraActions}
           labels={t.workbench}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}

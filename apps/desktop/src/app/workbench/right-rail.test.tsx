@@ -135,7 +135,9 @@ describe('RightRailWorkbench', () => {
     expect(onClose).toHaveBeenCalledWith(fileTab.id)
   })
 
-  it('shows the empty state when every tab is closed', () => {
+  it('opens a tab from the empty-state action list', () => {
+    const onOpen = vi.fn()
+
     render(
       <RightRailWorkbench
         activeTab={null}
@@ -144,12 +146,36 @@ describe('RightRailWorkbench', () => {
         labels={labels}
         onTabChange={vi.fn()}
         onTabClose={vi.fn()}
+        onTabOpen={onOpen}
+        tabs={[]}
+      />
+    )
+
+    expect(screen.queryByRole('tablist')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Agenda' }))
+    expect(onOpen).toHaveBeenCalledWith('agenda')
+  })
+
+  it('opens an extra action from the empty state', () => {
+    const onTerminal = vi.fn()
+
+    render(
+      <RightRailWorkbench
+        activeTab={null}
+        availableTabs={[]}
+        contents={{}}
+        extraActions={[
+          { id: 'terminal', icon: 'terminal', title: 'Open terminal', onSelect: onTerminal }
+        ]}
+        labels={labels}
+        onTabChange={vi.fn()}
+        onTabClose={vi.fn()}
         onTabOpen={vi.fn()}
         tabs={[]}
       />
     )
 
-    expect(screen.getByText(labels.emptyTitle)).toBeTruthy()
-    expect(screen.getByText(labels.emptyBody)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open terminal' }))
+    expect(onTerminal).toHaveBeenCalledTimes(1)
   })
 })
