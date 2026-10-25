@@ -179,6 +179,48 @@ class Table:
         """Exit names only the engine can act on — nodes and groups."""
         return frozenset(self.nodes) | frozenset(self.groups)
 
+    @property
+    def front_door(self) -> Optional[str]:
+        """The engine's own listener URL — how a client joins the policy it enforces.
+
+        A rule whose exit is a node or a group (``ss://``/``vmess://`` semantics)
+        is **engine-only**: no HTTP client can be handed such an exit, because
+        ``HTTPS_PROXY`` cannot carry it.  The client can still obey the rule — by
+        sending its traffic to the engine and letting the engine apply the whole
+        table.  That is what this address is for, and it is the engine's own
+        ``mixed-port`` on loopback: the one address we know is ours.
+
+        Empty when the table declares no engine port — then a client has no way in
+        and the rule stays dropped (named by :attr:`env_dropped_rules`).
+        """
+        if not self.engine_mixed_port:
+            return None
+        return f"http://127.0.0.1:{self.engine_mixed_port}"
+
+    def client_url(self, name: str) -> Optional[str]:
+        """The URL a client (spawned child or in-process HTTP) should use for exit ``name``.
+
+        ``None`` means *this table cannot say* — never "direct": a caller that
+        treats it as direct would route traffic somewhere the table never pointed.
+        """
+        if name in self.proxies:
+            return self.proxies[name]
+        if name in self.engine_names:
+            return self.client_front_door
+        return None
+
+    @property
+    def client_front_door(self) -> Optional[str]:
+        """The front door — but only when clients actually go *through* the engine.
+
+        A direct catch-all means "children bypass the engine" (``NO_PROXY=*``); in
+        that shape the engine-only rules are lost for them, exactly as they were
+        before the front door existed.
+        """
+        if not self.rules or self.rules[-1].via == DIRECT:
+            return None
+        return self.front_door
+
     def _rule_is_engine_only(self, rule: "Rule") -> bool:
         return rule.kind == "geosite" or (
             rule.via.startswith("proxy:") and rule.via[len("proxy:") :] in self.engine_names
@@ -202,12 +244,21 @@ class Table:
         * the rule is an **address range** that is not loopback — ``NO_PROXY`` has
           no range vocabulary, and ``urllib``/``httpx`` ignore a CIDR entry outright
           (see :data:`LOOPBACK_EXPANSION`), so that traffic goes to the catch-all.
+
+        A node/group exit is **not** dropped when the engine's front door is
+        reachable: the child cannot dial the node, but it can send the traffic to
+        the engine, which applies the very same table to it.  What the child
+        cannot do is *decide* the rule itself — that is what the engine does.
         """
         if not self.active:
             return ()
         if self.rules[-1].via != DIRECT:
             base = tuple(
-                r for r in self.rules if self._rule_is_engine_only(r) and r.kind != "geosite"
+                r
+                for r in self.rules
+                if self._rule_is_engine_only(r)
+                and r.kind != "geosite"
+                and not self.client_front_door
             )
         else:
             base = tuple(
@@ -229,9 +280,9 @@ class Table:
             if name in self.engine_names:
                 raise EgressConfigError(
                     f"proxy:{name} is a node or group — only the engine can act on it, and a URL "
-                    f"cannot be derived from it.  To let spawned tools and our own HTTP clients use "
-                    f"it, declare the engine's front door (http://127.0.0.1:<mixed_port>) under "
-                    f"network.egress.proxies and point those rules at it."
+                    f"cannot be derived from it.  A client does not need one: it reaches the "
+                    f"engine through its front door (http://127.0.0.1:<mixed_port>) and the "
+                    f"engine applies the table to that traffic."
                 ) from None
             raise EgressConfigError(
                 f"network.egress.rules references proxy:{name} but "
@@ -807,8 +858,11 @@ def default_decision(table: Table) -> Optional[Decision]:
     if table._rule_is_engine_only(rule):
         # The catch-all is an engine-side member: there is no URL any caller here
         # can be handed, and inventing one would route traffic somewhere the
-        # table never pointed.
-        return None
+        # table never pointed.  The engine's own front door is not an invention —
+        # it is the address the engine listens on, and the engine applies this
+        # same table to whatever arrives there.
+        front = table.client_front_door
+        return Decision(proxy_url=front, rule=rule) if front else None
     if rule.via == DIRECT:
         return Decision(proxy_url=None, rule=rule)
     return Decision(proxy_url=table.proxy_url(rule.via[len("proxy:") :]), rule=rule)
@@ -825,7 +879,13 @@ def decide(table: Table, host: str) -> Optional[Decision]:
         if table._rule_is_engine_only(rule):
             # geosite matchers need the engine's data files, and a node/group exit
             # has no URL to hand out: both fall through to the next rule instead
-            # of guessing, and both are named by engine_only_rules.
+            # of guessing, and both are named by engine_only_rules.  Unless the
+            # engine's front door is open, in which case the answer for both is
+            # the same — "let the engine decide" — because the engine applies
+            # this very table to the traffic that arrives there.
+            front = table.client_front_door
+            if front:
+                return Decision(proxy_url=front, rule=rule)
             continue
         if rule.via == DIRECT:
             return Decision(proxy_url=None, rule=rule)

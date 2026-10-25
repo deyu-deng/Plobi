@@ -63,8 +63,18 @@ def compile_config(
 
     declared: set[str] = set()
     proxies: list[dict[str, Any]] = []
+    #: URL exits that point at the engine's **own** listener.  They are the front
+    #: door a client walks in through, and the engine must not forward to them —
+    #: that is traffic into its own accept queue.  So they are not emitted as
+    #: engine proxies at all, and a rule that targets one is refused below with
+    #: the words that say what to write instead.
+    own_listener: set[str] = set()
     for name in sorted(table.proxies):
-        entry = _proxy_entry(name, table.proxies[name])
+        url = table.proxies[name]
+        if _is_own_listener(url, port):
+            own_listener.add(name)
+            continue
+        entry = _proxy_entry(name, url)
         declared.add(name)
         proxies.append(entry)
 
@@ -91,6 +101,17 @@ def compile_config(
     rules: list[str] = []
     for rule in table.rules:
         target = "DIRECT" if rule.via == "direct" else rule.via[len("proxy:") :]
+        if target in own_listener:
+            raise EgressConfigError(
+                f"rule '{rule.match}' targets '{target}', which is the engine's own "
+                f"mixed-port (http://127.0.0.1:{port}) — the compiled config would route "
+                f"traffic to the engine itself: it hands it to its own accept queue and "
+                f"every connection dies there.  mihomo validates it anyway (observed on "
+                f'this box: rc=0, "test is successful"), so only the compiler can stop it.  '
+                f"Point the engine's own rule at a node or a group (network.egress.nodes / "
+                f"network.egress.groups); clients reach the engine through the front door "
+                f"on their own."
+            )
         if target != "DIRECT" and target not in declared:
             raise EgressConfigError(
                 f"rule '{rule.match}' targets '{target}', which is neither declared under "
@@ -170,6 +191,17 @@ def _tun_for_engine(tun: dict[str, Any]) -> dict[str, Any]:
 _SELF_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
 
+def _is_own_listener(url: str, port: int) -> bool:
+    """Is this URL the engine's own mixed-port on this machine?"""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    try:
+        url_port = parsed.port or 0
+    except ValueError:
+        return False
+    return host in _SELF_HOSTS and url_port == port
+
+
 def _refuse_self_reference(proxies: list[dict[str, Any]], port: int) -> None:
     """Reject a table that tells the engine to hand traffic to itself.
 
@@ -183,11 +215,16 @@ def _refuse_self_reference(proxies: list[dict[str, Any]], port: int) -> None:
     address``, and the churn pushed this box's TimeWait to ~15.6k ephemeral
     sockets.  **A validation that cannot see it is why the compiler must refuse
     it** — otherwise the supervision slice starts a dead loop as its first act.
+
+    Only the entries the engine would *dial* are checked: a node whose server is
+    the engine's own listener.  The engine's **front door** (a URL exit on the
+    same address) is not in this list at all — clients walk in through it, and
+    the engine must not treat it as an upstream of its own.
     """
     for entry in proxies:
         if entry["port"] == port and str(entry["server"]).lower() in _SELF_HOSTS:
             raise EgressConfigError(
-                f"network.egress.proxies.{entry['name']} points at "
+                f"network.egress.nodes.{entry['name']} points at "
                 f"{entry['server']}:{port}, which is the engine's own "
                 f"mixed-port — the compiled config would route traffic to the engine "
                 f"itself.  mihomo validates it anyway (observed on this box: rc=0, "

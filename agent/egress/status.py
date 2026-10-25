@@ -87,14 +87,25 @@ def render(
 
     lines.append(f"table: {len(table.rules)} rule(s), catch-all {table.rules[-1].via}")
     if table.nodes or table.groups:
-        lines.append(
-            f"membership: {len(table.nodes)} node(s), {len(table.groups)} group(s) — engine-side; "
-            f"a spawned child cannot be told about these"
-        )
+        if table.client_front_door:
+            lines.append(
+                f"membership: {len(table.nodes)} node(s), {len(table.groups)} group(s) — engine-side; "
+                f"a spawned child cannot dial them, so it goes in through the engine's front door "
+                f"({table.client_front_door}) and the engine applies this table to that traffic"
+            )
+        else:
+            lines.append(
+                f"membership: {len(table.nodes)} node(s), {len(table.groups)} group(s) — engine-side; "
+                f"a spawned child cannot be told about these"
+            )
     for rule in table.rules:
         tags = []
         if rule in table.engine_only_rules:
-            tags.append("engine-only, not visible to spawned children")
+            tags.append(
+                "the engine decides it"
+                if table.client_front_door
+                else "engine-only, not visible to spawned children"
+            )
         if rule in table.env_dropped_rules and rule not in table.engine_only_rules:
             tags.append("no vocabulary for it in a spawned child's env")
         tag = f"  ({'; '.join(tags)})" if tags else ""

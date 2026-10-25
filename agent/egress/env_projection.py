@@ -79,7 +79,7 @@ def apply_egress_env(
         env["no_proxy"] = "*"
         return env
 
-    proxy_url, _reason = gate(table.proxy_url(catch_all.via[len("proxy:") :]))
+    proxy_url, _reason = gate(table.client_url(catch_all.via[len("proxy:") :]) or "")
     if not proxy_url:
         return env
 

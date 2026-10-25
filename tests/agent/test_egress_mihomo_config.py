@@ -361,3 +361,41 @@ def test_a_missing_credential_refuses_by_naming_the_variable(monkeypatch):
     monkeypatch.delenv("U_JP", raising=False)
     with pytest.raises(EgressConfigError, match="U_JP"):
         compile_config(_membership_table())
+
+
+def test_the_vpn_shape_compiles_and_the_front_door_stays_out_of_the_engine(monkeypatch):
+    """The shape a machine-wide VPN needs: the engine owns the pool, the clients
+    walk in through the engine's own listener.
+
+    One rule list has to serve two projections, and the two targets differ — the
+    engine wants the group (``MATCH,POOL``), a client wants a URL.  The URL is
+    the engine's front door, and the engine must never treat its own listener as
+    an upstream: it would hand the traffic to its own accept queue.  So the
+    front door is not emitted as an engine proxy, and the rule that names it is
+    refused with words that say what to write instead.
+    """
+    monkeypatch.setenv("PW_HK1", "x")
+    table = load_table(config={"network": {"egress": {
+        "proxies": {"front": {"url": f"http://127.0.0.1:{_MIXED}"}},
+        "nodes": {"hk1": {"type": "ss", "server": "hk1.example.test", "port": 8388,
+                          "cipher": "aes-256-gcm", "password_env": "PW_HK1"}},
+        "groups": {"POOL": {"type": "url-test", "include": ["hk1"], "interval": 300}},
+        "rules": [{"match": "geosite:cn", "via": "direct"},
+                  {"match": "*", "via": "proxy:POOL"}],
+        "engine": {"enabled": True, "mixed_port": _MIXED,
+                   "dns": {"default_nameserver": ["223.5.5.5"], "nameserver": ["223.5.5.5"]}},
+    }}})
+    doc = _render(table)
+    assert doc["rules"] == ["GEOSITE,cn,DIRECT", "MATCH,POOL"]
+    assert [p["name"] for p in doc["proxies"]] == ["hk1"], "the front door is not an engine proxy"
+    assert doc["proxy-groups"][0]["name"] == "POOL"
+
+    # The same table with the catch-all aimed at the front door: the engine would
+    # forward into itself, and `-t` would say "test is successful" anyway.
+    loop = load_table(config={"network": {"egress": {
+        "proxies": {"front": {"url": f"http://127.0.0.1:{_MIXED}"}},
+        "rules": [{"match": "*", "via": "proxy:front"}],
+        "engine": {"enabled": True, "mixed_port": _MIXED},
+    }}})
+    with pytest.raises(EgressConfigError, match="own mixed-port"):
+        compile_config(loop)

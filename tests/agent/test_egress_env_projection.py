@@ -343,3 +343,25 @@ def test_a_dead_exit_does_not_take_the_mirrors_with_it():
     )
     env = apply_egress_env({}, table, gate=lambda url: (None, "down"))
     assert env == {"npm_config_registry": "https://registry.npmmirror.com"}
+
+
+def test_a_child_joins_the_engine_through_its_front_door():
+    """The catch-all names a group, which no child can dial — and does not need to.
+
+    A child that could not be told the exit would go direct, which is the exact
+    failure 裁定 94 names: the table says "everything else goes through the pool"
+    and the child quietly ignores it.  The way in is the engine's own listener:
+    the child sends the traffic there and the engine applies this same table to it.
+    """
+    table = load_table(config={"network": {"egress": {
+        "nodes": {"hk1": {"type": "ss", "server": "hk1.example.test", "port": 8388,
+                          "cipher": "aes-256-gcm", "password_env": "PW_HK1"}},
+        "groups": {"POOL": {"type": "url-test", "include": ["hk1"]}},
+        "rules": [{"match": "127.0.0.0/8", "via": "direct"},
+                  {"match": "*", "via": "proxy:POOL"}],
+        "engine": {"enabled": True, "mixed_port": 7895},
+    }}})
+    env = apply_egress_env({}, table, gate=lambda url: (url, "alive"))
+    assert env["HTTPS_PROXY"] == env["HTTP_PROXY"] == "http://127.0.0.1:7895"
+    assert table.env_dropped_rules == (), "the rule is not lost: the engine decides it"
+    assert egress.default_decision(table).proxy_url == "http://127.0.0.1:7895"

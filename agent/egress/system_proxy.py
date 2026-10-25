@@ -242,9 +242,16 @@ def plan(table: Optional[Table] = None, *, home: str | Path | None = None) -> Pr
         from agent.egress.engine import usable_exit
 
         try:
-            exit_url = table.proxy_url(catch_all.via[len("proxy:") :])
+            exit_url = table.client_url(catch_all.via[len("proxy:") :])
         except EgressConfigError as exc:
             return ProxyPlan(False, f"兜底出口不能用：{exc}")
+        if not exit_url:
+            return ProxyPlan(
+                False,
+                f"兜底出口 {catch_all.via} 说不清该往哪儿送：它既不是一个 URL 出口，"
+                f"也没有引擎的前门（network.egress.engine.mixed_port 没写）——"
+                f"整机的流量没有去处，不能接管",
+            )
         carried, reason = usable_exit(exit_url)
         if not carried:
             return ProxyPlan(False, f"出口 {exit_url} 此刻带不动流量（{reason}）——接管整机会让这台没有出口")
