@@ -250,6 +250,7 @@ export const UserMessage: FC<{
         speaker={split.speaker || externalSpeaker.name}
         text={split.body}
         quoted={(customMeta as { quoted?: import('@/lib/chat-messages').QuotedPreview }).quoted ?? null}
+        messageId={messageId}
       />
     )
   }

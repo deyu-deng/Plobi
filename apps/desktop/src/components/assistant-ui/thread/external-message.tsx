@@ -20,7 +20,9 @@ export const ExternalMessage: FC<{
   speaker: string
   text: string
   quoted?: null | QuotedPreview
-}> = ({ kind, speaker, text, quoted }) => {
+  /** 时间轴靠它做锚点（`[data-message-id]`）——这个属性丢了，列表点了就跳不过去。 */
+  messageId?: string
+}> = ({ kind, speaker, text, quoted, messageId }) => {
   const agents = useStore($consoleAgents)
 
   if (kind === 'system') {
@@ -33,6 +35,8 @@ export const ExternalMessage: FC<{
       <div
         className="flex w-full justify-center py-1"
         data-kind="system"
+        data-message-id={messageId}
+        data-role="user"
         data-slot="aui_external-system"
       >
         <div className="max-w-[min(86%,44rem)] px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/60">
@@ -55,6 +59,8 @@ export const ExternalMessage: FC<{
     <div
       className="flex w-full items-start justify-end gap-2 py-1"
       data-kind={kind}
+      data-message-id={messageId}
+      data-role="user"
       data-slot="aui_external-message"
     >
       <div className="flex min-w-0 max-w-[min(86%,44rem)] flex-col items-end">

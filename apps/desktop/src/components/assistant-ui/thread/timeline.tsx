@@ -1,6 +1,7 @@
 import { useAuiState } from '@assistant-ui/react'
 import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { splitSpeakerPrefix } from '@/lib/chat-messages'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
 
@@ -25,8 +26,12 @@ const POPOVER_SHELL =
   'absolute right-full top-1/2 z-50 max-h-[min(22rem,calc(100vh-8rem))] w-80 max-w-[min(20rem,calc(100vw-2rem))] -translate-y-1/2 overflow-x-hidden overflow-y-auto overscroll-contain rounded-lg border p-1 text-popover-foreground transition-[opacity,transform] duration-100 ease-out group-hover/timeline:transition-none'
 
 function userPromptText(content: unknown): string {
+  // 时间轴那一列只该显示「人话」：`[来自 X · 时间]` / `[Cron 结果 · 作业 · 时间]`
+  // 是存储里的身份前缀，列表里显示它既长又读不出东西（裁定 196）。
+  const plain = (text: string) => splitSpeakerPrefix(text).body.trim() || text.trim()
+
   if (typeof content === 'string') {
-    return content
+    return plain(content)
   }
 
   if (!Array.isArray(content)) {
