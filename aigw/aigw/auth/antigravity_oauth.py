@@ -37,6 +37,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from . import account_store
+from ..network_probe import probe_network
 
 # The Antigravity (Google Gemini Code Assist) OAuth client credentials are not
 # hardcoded in this repository. `client_credentials()` reads them from the
@@ -283,6 +284,14 @@ def fetch_userinfo(access_token: str) -> dict:
 # --------------------------------------------------------------------------
 def run_bootstrap(*, print_token: bool = False) -> str:
     """Full bootstrap: start local callback, open browser, exchange code."""
+    network = probe_network()
+    if not network["ok"]:
+        print("\n[network] Google endpoints are unreachable from this machine:", file=sys.stderr)
+        for check in network["checks"]:
+            if not check["ok"]:
+                print(f"  - {check['name']}: {check['error']}", file=sys.stderr)
+        raise RuntimeError(network["advice"])
+
     port = _find_free_port()
     redirect_uri = f"http://127.0.0.1:{port}/callback"
 

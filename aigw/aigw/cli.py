@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 from .auth import antigravity_oauth as oa
+from .network_probe import probe_network
 from .config import load
 from .tokens import desktop_stores as ds
 
@@ -209,6 +210,24 @@ def _status(args) -> int:
     return 0
 
 
+def _probe(args) -> int:
+    result = probe_network()
+    if getattr(args, "json", False):
+        import json
+
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"proxy: {result['proxy'] or '(none detected)'}")
+        for check in result["checks"]:
+            print(f"  {'ok  ' if check['ok'] else 'FAIL'} {check['name']:<16} "
+                  f"{check.get('status') or '-'} {check['latency_ms']}ms {check['error']}")
+        if result["ok"]:
+            print("network: reachable")
+        else:
+            print(f"network: unreachable\n{result['advice']}", file=sys.stderr)
+    return 0 if result["ok"] else 2
+
+
 def _auth(args) -> int:
     if args.app != "antigravity":
         print(f"auth for '{args.app}' is not implemented yet", file=sys.stderr)
@@ -260,6 +279,10 @@ def build_parser() -> argparse.ArgumentParser:
     stp = sub.add_parser("status", help="query a running gateway")
     stp.add_argument("--config", default=None)
     stp.set_defaults(func=_status)
+
+    pp = sub.add_parser("probe", help="check whether Google/OAuth endpoints are reachable")
+    pp.add_argument("--json", action="store_true", help="machine-readable result")
+    pp.set_defaults(func=_probe)
 
     ap = sub.add_parser("auth", help="OAuth bootstrap — obtain a provider refresh token")
     ap.add_argument(

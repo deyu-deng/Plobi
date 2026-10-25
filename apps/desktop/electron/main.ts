@@ -10100,6 +10100,18 @@ async function authAntigravity(aigwDir: string): Promise<{
   // and out of this process's own token file.
   const legacyToken = loadAigwToken()
 
+  if (hasStoredAntigravityAccount()) {
+    const probe = await runAigwProbe(python, aigwDir)
+
+    if (!probe.ok) {
+      return {
+        ok: false,
+        code: 'NETWORK_UNREACHABLE',
+        error: probe.advice || 'Google 端点不可达。请检查代理设置后重试。'
+      }
+    }
+  }
+
   if (!hasStoredAntigravityAccount()) {
     logAigw('auth: no stored Antigravity account — opening Google sign-in')
 
@@ -10255,6 +10267,46 @@ async function fetchGatewayModels(baseUrl: string, apiKey: string, appId: string
   } catch {
     return null
   }
+}
+
+function runAigwProbe(
+  python: string,
+  aigwDir: string
+): Promise<{ ok: boolean; advice?: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      python,
+      ['-m', 'aigw', 'probe', '--json'],
+      {
+        cwd: aigwDir,
+        env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: false
+      }
+    )
+
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (d: Buffer) => {
+      stdout += d.toString()
+    })
+    child.stderr?.on('data', (d: Buffer) => {
+      stderr += d.toString()
+    })
+    const timeout = setTimeout(() => {
+      try { child.kill() } catch { /* ignore */ }
+      reject(new Error('网络探针超时'))
+    }, 20_000)
+    child.on('exit', (code: number | null) => {
+      clearTimeout(timeout)
+      try {
+        const parsed = JSON.parse(stdout.trim())
+        resolve({ ok: Boolean(parsed.ok), advice: String(parsed.advice || '') })
+      } catch {
+        reject(new Error(stderr.trim() || `network probe exited with code ${code}`))
+      }
+    })
+  })
 }
 
 function antigravityAccountsPath(): string {

@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from . import __version__
 from .config import load
 from .providers.base import UpstreamError
+from .network_probe import probe_network
 from .registry import Registry
 from .scheduler import NoAccountAvailable, Scheduler
 from .tokens.manager import TokenManager
@@ -126,6 +127,16 @@ async def _quota_refresh_loop(reg, interval: float) -> None:
     """Keep account quota snapshots fresh without blocking chat routing."""
     await reg.ensure_models_refreshed()
     while True:
+        if any(prov.accounts for prov in reg.providers.values()):
+            network = await asyncio.to_thread(probe_network)
+            STATE["network"] = network
+            if not network["ok"]:
+                logger.warning(
+                    "quota refresh skipped: network unreachable (%s). %s",
+                    ", ".join(network.get("failed") or []), network.get("advice", ""),
+                )
+                await asyncio.sleep(interval)
+                continue
         try:
             await reg.refresh_quotas()
         except asyncio.CancelledError:
@@ -323,6 +334,8 @@ async def healthz():
         out[name] = out["providers"][name]["accounts"]
     if STATE.get("tokenmgr"):
         out["tokens"] = STATE["tokenmgr"].status()
+    if STATE.get("network"):
+        out["network"] = STATE["network"]
     return out
 
 
