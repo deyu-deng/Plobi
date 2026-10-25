@@ -289,10 +289,8 @@ def remaining(
     数只从三个真源取，优先级按"越像钱越优先"，全部是别人已经算好的读数：
     ① 探针回来的 `SourceStatus.remaining_usd`（只有接了 `balance_fn` 才会有）；
     ② 源对象自己的 `remaining_usd()`；
-    ③ 网关 `/healthz` 账号对象里的 `quota`（今天有写入方的是 `antigravity`、
-       以及 `codex_cli`／`claude_code_cli`／`opencode_cli` 三条订阅 CLI 腿；
-       Kiro/Cline 没有统一的本机额度端点，空着就是空着）。那一位数是限流窗口的
-       剩余比例，单位会照实写成 `percent`）。
+    ③ 网关 `/healthz` 账号对象里的 `quota`（今天整台只有 `antigravity` 有写入方，
+       而且那一位数是限流窗口的剩余请求数，单位会照实写成 `requests`）。
     其余一律 `None`，并把"为什么"归到 `REMAINING_REASONS` 里的一格。
     """
     now = time.time() if now is None else now
