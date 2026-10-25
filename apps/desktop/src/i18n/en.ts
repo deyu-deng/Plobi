@@ -3155,13 +3155,12 @@ export const en: Translations = {
       agenda: 'Agenda',
       files: 'Workspace files',
       review: 'Review',
-      browser: 'Browser',
-      workspace: 'Office workspace'
+      browser: 'Browser'
     },
     add: 'Open tab',
     close: label => `Close ${label}`,
     emptyTitle: 'No open tabs',
-    emptyBody: 'Use + to open workspace files, agenda, review, the Office workspace, or the browser.',
+    emptyBody: 'Use + to open workspace files, agenda, review, or the browser.',
     noFolderTitle: 'This agent has no folder',
     noFolderBody: 'Bind a folder to this agent to browse its files here.',
     browser: {
@@ -3187,13 +3186,9 @@ export const en: Translations = {
       saved: 'Saved',
       cancel: 'Cancel',
       conflict: 'The file changed on disk; nothing was saved.',
-      saveFailed: 'Could not save the spreadsheet'
-    },
-    workspace: {
-      loading: 'Opening the local Office workspace…',
-      unavailable: 'The local Office workspace is not reachable.',
-      hint: 'Start Univer Workspace first (server :3020, browser :5173).',
-      retry: 'Retry'
+      saveFailed: 'Could not save the spreadsheet',
+      review: 'Review',
+      reload: 'Reload'
     }
   }
 }

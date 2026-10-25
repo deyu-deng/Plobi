@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { renderAsync } from 'docx-preview'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
+import { PageLoader } from '@/components/page-loader'
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
+import { useFileBytes } from './file-bytes'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
-import { applyStyledSheetEdits, readStyledSheetModel, sameBytes, type SheetEdits, type StyledSheetModel } from './styled-sheet-model'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
+const BetterSheetEditor = lazy(async () => ({ default: (await import('./better-sheet')).BetterSheetEditor }))
 
 export interface OfficePreviewLabels {
   loading: string
@@ -26,64 +29,8 @@ export interface OfficePreviewLabels {
   cancel: string
   conflict: string
   saveFailed: string
-}
-
-interface FileBytesState {
-  bytes: null | Uint8Array
-  error: boolean
-  loading: boolean
-}
-
-async function readFileBytes(path: string): Promise<Uint8Array> {
-  const dataUrl = await window.plobiDesktop.readFileDataUrl(path)
-  const comma = dataUrl.indexOf(',')
-
-  if (comma < 0) {
-    throw new Error('Invalid data URL')
-  }
-
-  const header = dataUrl.slice(0, comma)
-  const payload = dataUrl.slice(comma + 1)
-
-  if (header.includes(';base64')) {
-    const binary = atob(payload)
-    const bytes = new Uint8Array(binary.length)
-
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index)
-    }
-
-    return bytes
-  }
-
-  return new TextEncoder().encode(decodeURIComponent(payload))
-}
-
-function useFileBytes(path: string, reloadKey = 0): FileBytesState {
-  const [state, setState] = useState<FileBytesState>({ bytes: null, error: false, loading: true })
-
-  useEffect(() => {
-    let active = true
-    setState({ bytes: null, error: false, loading: true })
-
-    void readFileBytes(path)
-      .then(bytes => {
-        if (active) {
-          setState({ bytes, error: false, loading: false })
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setState({ bytes: null, error: true, loading: false })
-        }
-      })
-
-    return () => {
-      active = false
-    }
-  }, [path, reloadKey])
-
-  return state
+  reload: string
+  review: string
 }
 
 function PreviewStatus({
@@ -210,256 +157,6 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
       </div>
 
       <PreviewStatus error={error} labels={labels} loading={loading} neutral />
-    </div>
-  )
-}
-
-function StyledSheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
-  const [reloadKey, setReloadKey] = useState(0)
-  const { bytes, error, loading } = useFileBytes(path, reloadKey)
-  const [sheetName, setSheetName] = useState('')
-  const [model, setModel] = useState<null | StyledSheetModel>(null)
-  const [parsing, setParsing] = useState(false)
-  const [parseError, setParseError] = useState(false)
-  const [edits, setEdits] = useState<SheetEdits>({})
-  const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState<null | 'conflict' | 'failed' | 'saved'>(null)
-
-  useEffect(() => {
-    if (!bytes) {
-      setModel(null)
-
-      return
-    }
-
-    let active = true
-    setParsing(true)
-    setParseError(false)
-
-    void readStyledSheetModel(bytes, sheetName || undefined)
-      .then(next => {
-        if (active) {
-          setModel(next)
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setParseError(true)
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setParsing(false)
-        }
-      })
-
-    return () => {
-      active = false
-    }
-  }, [bytes, sheetName])
-
-  const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
-  const grid = '1px solid #e5e7eb'
-  const dirty = Object.keys(edits).length > 0
-  const noticeLabel =
-    notice === 'failed'
-      ? labels.saveFailed
-      : notice === 'conflict'
-        ? labels.conflict
-        : notice === 'saved'
-          ? labels.saved
-          : ''
-
-  const handleCellBlur = (sheet: string, key: string, original: string, text: string) => {
-    setEdits(previous => {
-      const cells = { ...(previous[sheet] ?? {}) }
-
-      if (text === original) {
-        delete cells[key]
-      } else {
-        cells[key] = text
-      }
-
-      const next = { ...previous }
-
-      if (Object.keys(cells).length > 0) {
-        next[sheet] = cells
-      } else {
-        delete next[sheet]
-      }
-
-      return next
-    })
-    setNotice(null)
-  }
-
-  const save = async () => {
-    if (!bytes || saving || !dirty) {
-      return
-    }
-
-    setSaving(true)
-    setNotice(null)
-
-    try {
-      const current = await readFileBytes(path)
-
-      if (!sameBytes(current, bytes)) {
-        setNotice('conflict')
-
-        return
-      }
-
-      const next = await applyStyledSheetEdits(bytes, edits)
-      const write = window.plobiDesktop?.writeFileBuffer
-
-      if (!write) {
-        throw new Error('Save bridge unavailable')
-      }
-
-      await write(path, next)
-      setEdits({})
-      setNotice('saved')
-      setReloadKey(value => value + 1)
-    } catch {
-      setNotice('failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const cancel = () => {
-    setEdits({})
-    setNotice(null)
-    setReloadKey(value => value + 1)
-  }
-
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] bg-[#f8fafc] px-1.5">
-        <span className="shrink-0 text-[0.6rem] text-[#666] uppercase">{labels.sheet}</span>
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {(model?.names ?? []).map(name => (
-            <button
-              className={
-                name === selected
-                  ? 'shrink-0 rounded bg-white px-1.5 py-0.5 text-[0.64rem] text-[#111] shadow-sm ring-1 ring-[#d1d5db]'
-                  : 'shrink-0 rounded px-1.5 py-0.5 text-[0.64rem] text-[#666] hover:bg-[#eef2f7]'
-              }
-              key={name}
-              onClick={() => setSheetName(name)}
-              type="button"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {noticeLabel ? (
-            <span
-              className={
-                notice === 'conflict' || notice === 'failed'
-                  ? 'text-[0.6rem] text-[#b91c1c]'
-                  : 'text-[0.6rem] text-[#15803d]'
-              }
-            >
-              {noticeLabel}
-            </span>
-          ) : null}
-          <button
-            className="rounded px-1.5 py-0.5 text-[0.62rem] text-[#444] hover:bg-[#eef2f7] disabled:opacity-40"
-            disabled={!dirty || saving}
-            onClick={() => void save()}
-            type="button"
-          >
-            {saving ? labels.saving : labels.save}
-          </button>
-          <button
-            className="rounded px-1.5 py-0.5 text-[0.62rem] text-[#666] hover:bg-[#eef2f7] disabled:opacity-40"
-            disabled={!dirty || saving}
-            onClick={cancel}
-            type="button"
-          >
-            {labels.cancel}
-          </button>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto bg-white">
-        <table className="border-collapse text-[0.68rem]">
-          <colgroup>
-            {(model?.widths ?? []).map((width, index) => (
-              <col key={index} style={{ width }} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr>
-              <th className="sticky top-0 left-0 z-20 border border-[#d1d5db] bg-[#f3f4f6] px-1.5 py-0.5" />
-              {(model?.widths ?? []).map((_, index) => (
-                <th
-                  className="sticky top-0 z-10 border border-[#d1d5db] bg-[#f3f4f6] px-1.5 py-0.5 text-center font-normal text-[#666]"
-                  key={index}
-                >
-                  {columnName(index + 1)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {(model?.rows ?? []).map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                <th className="sticky left-0 z-10 border border-[#e5e7eb] bg-[#f3f4f6] px-1.5 py-0.5 text-right font-normal text-[#666]">
-                  {rowIndex + 1}
-                </th>
-                {row.map((cell, cellIndex) => {
-                  const cellKey = `${rowIndex + 1}:${cellIndex + 1}`
-                  const display = edits[selected]?.[cellKey] ?? cell.text
-
-                  return cell.hidden ? null : (
-                    <td
-                      colSpan={cell.colspan > 1 ? cell.colspan : undefined}
-                      key={cellIndex}
-                      rowSpan={cell.rowspan > 1 ? cell.rowspan : undefined}
-                      style={{
-                        background: cell.style.background,
-                        borderBottom: cell.style.border.bottom ?? grid,
-                        borderLeft: cell.style.border.left ?? grid,
-                        borderRight: cell.style.border.right ?? grid,
-                        borderTop: cell.style.border.top ?? grid,
-                        color: cell.style.color,
-                        fontStyle: cell.style.italic ? 'italic' : undefined,
-                        fontSize: cell.style.fontSize ? `${cell.style.fontSize}pt` : undefined,
-                        fontWeight: cell.style.bold ? 600 : undefined,
-                        overflow: 'hidden',
-                        textAlign: cell.style.align,
-                        verticalAlign: cell.style.valign,
-                        whiteSpace: cell.style.wrap ? 'pre-wrap' : 'pre'
-                      }}
-                      title={cell.text}
-                    >
-                      <div
-                        className="min-h-[1.2em] cursor-text outline-none focus:ring-1 focus:ring-[#93c5fd]"
-                        contentEditable
-                        onBlur={event =>
-                          handleCellBlur(selected, cellKey, cell.text, event.currentTarget.textContent ?? '')
-                        }
-                        suppressContentEditableWarning
-                      >
-                        {display}
-                      </div>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {model?.truncated ? (
-          <p className="px-2 py-1 text-[0.62rem] text-[#666]">{labels.truncated(SHEET_MAX_ROWS, SHEET_MAX_COLS)}</p>
-        ) : null}
-      </div>
-
-      <PreviewStatus error={error || parseError} labels={labels} loading={loading || parsing} neutral />
     </div>
   )
 }
@@ -596,7 +293,15 @@ export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLab
     const ext = path.split('.').pop()?.toLowerCase()
 
     return ext === 'xlsx' ? (
-      <StyledSheetPreview labels={labels} path={path} />
+      <Suspense
+        fallback={
+          <div className="flex min-h-0 flex-1 items-center justify-center bg-white">
+            <PageLoader label={labels.loading} />
+          </div>
+        }
+      >
+        <BetterSheetEditor labels={labels} path={path} />
+      </Suspense>
     ) : (
       <SheetPreview labels={labels} path={path} />
     )

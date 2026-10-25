@@ -3287,13 +3287,12 @@ export const zh: Translations = {
       agenda: '日程',
       files: '工作区文件',
       review: '审阅',
-      browser: '浏览器',
-      workspace: 'Office 工作区'
+      browser: '浏览器'
     },
     add: '打开页签',
     close: label => `关闭${label}`,
     emptyTitle: '没有打开的页签',
-    emptyBody: '点右上角的 + 打开工作区文件、日程、审阅、Office 工作区或浏览器。',
+    emptyBody: '点右上角的 + 打开工作区文件、日程、审阅或浏览器。',
     noFolderTitle: '此 Agent 未绑定目录',
     noFolderBody: '给它绑定一个目录后，这里会显示它的文件树。',
     browser: {
@@ -3319,13 +3318,9 @@ export const zh: Translations = {
       saved: '已保存',
       cancel: '取消',
       conflict: '文件已在外部改动，未保存。',
-      saveFailed: '表格保存失败'
-    },
-    workspace: {
-      loading: '正在打开本地 Office 工作区…',
-      unavailable: '本地 Office 工作区连不上。',
-      hint: '先启动本地 Univer Workspace（Server :3020 / Browser :5173）。',
-      retry: '重试'
+      saveFailed: '表格保存失败',
+      review: '审阅',
+      reload: '重新加载'
     }
   }
 }

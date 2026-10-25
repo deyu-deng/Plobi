@@ -2976,13 +2976,12 @@ export const zhHant = defineLocale({
       agenda: '行程',
       files: '工作區檔案',
       review: '審閱',
-      browser: '瀏覽器',
-      workspace: 'Office 工作區'
+      browser: '瀏覽器'
     },
     add: '開啟頁籤',
     close: label => `關閉${label}`,
     emptyTitle: '沒有開啟的頁籤',
-    emptyBody: '點右上角的 + 開啟工作區檔案、行程、審閱、Office 工作區或瀏覽器。',
+    emptyBody: '點右上角的 + 開啟工作區檔案、行程、審閱或瀏覽器。',
     noFolderTitle: '此 Agent 未綁定目錄',
     noFolderBody: '給它綁定一個目錄後，這裡會顯示它的檔案樹。',
     browser: {
@@ -3008,13 +3007,9 @@ export const zhHant = defineLocale({
       saved: '已儲存',
       cancel: '取消',
       conflict: '檔案已在外部變更，未儲存。',
-      saveFailed: '表格儲存失敗'
-    },
-    workspace: {
-      loading: '正在開啟本機 Office 工作區…',
-      unavailable: '本機 Office 工作區連不上。',
-      hint: '先啟動本機 Univer Workspace（Server :3020 / Browser :5173）。',
-      retry: '重試'
+      saveFailed: '表格儲存失敗',
+      review: '審閱',
+      reload: '重新載入'
     }
   }
 })
