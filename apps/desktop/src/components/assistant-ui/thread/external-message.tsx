@@ -6,6 +6,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { type QuotedPreview, splitFilePointers } from '@/lib/chat-messages'
 import { cn } from '@/lib/utils'
 
+import { QuoteButton } from './quote-button'
 import { UserMessageText } from './user-message-text'
 
 /**
@@ -57,7 +58,7 @@ export const ExternalMessage: FC<{
 
   return (
     <div
-      className="flex w-full items-start justify-end gap-2 py-1"
+      className="group/external flex w-full items-start justify-end gap-2 py-1"
       data-kind={kind}
       data-message-id={messageId}
       data-role="user"
@@ -91,6 +92,13 @@ export const ExternalMessage: FC<{
             ),
           )}
         </div>
+      </div>
+      <div className="mt-px flex shrink-0 flex-col items-center gap-0.5">
+        <QuoteButton
+          className="opacity-0 group-hover/external:opacity-100"
+          id={messageId}
+          text={quoted?.text ?? text}
+        />
       </div>
       <div
         aria-hidden

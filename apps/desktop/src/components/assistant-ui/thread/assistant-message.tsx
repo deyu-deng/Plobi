@@ -20,6 +20,7 @@ import { formatMessageTimestamp } from '@/components/assistant-ui/thread/timesta
 import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { Codicon } from '@/components/ui/codicon'
+import { QuoteButton } from '@/components/assistant-ui/thread/quote-button'
 import { CopyButton } from '@/components/ui/copy-button'
 import {
   DropdownMenu,
@@ -177,6 +178,7 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, getMessageText,
         )}
         data-slot="aui_msg-actions"
       >
+        <QuoteButton id={messageId} text={getMessageText()} />
         <CopyButton appearance="icon" buttonSize="icon" label={copy.copy} text={getMessageText} />
         {canReload && (
           <ActionBarPrimitive.Reload asChild>

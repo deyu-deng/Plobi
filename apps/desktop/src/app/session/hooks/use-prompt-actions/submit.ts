@@ -395,7 +395,15 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
 
         try {
           await withSessionBusyRetry(() =>
-            requestGateway('prompt.submit', { session_id: liveSessionId, text }, PROMPT_SUBMIT_REQUEST_TIMEOUT_MS)
+            requestGateway(
+              'prompt.submit',
+              {
+                session_id: liveSessionId,
+                text,
+                ...(options?.replyTo ? { reply_to: options.replyTo } : {}),
+              },
+              PROMPT_SUBMIT_REQUEST_TIMEOUT_MS,
+            )
           )
         } catch (firstErr) {
           // Timeouts recover the same way as "session not found": a starved
@@ -408,7 +416,15 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
             if (recoveredId) {
               liveSessionId = recoveredId
               await withSessionBusyRetry(() =>
-                requestGateway('prompt.submit', { session_id: recoveredId, text }, PROMPT_SUBMIT_REQUEST_TIMEOUT_MS)
+                requestGateway(
+                  'prompt.submit',
+                  {
+                    session_id: recoveredId,
+                    text,
+                    ...(options?.replyTo ? { reply_to: options.replyTo } : {}),
+                  },
+                  PROMPT_SUBMIT_REQUEST_TIMEOUT_MS,
+                )
               )
             } else if (sessionContextDrifted()) {
               return abortForSessionSwitch(sessionId)

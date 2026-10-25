@@ -226,4 +226,6 @@ export function visibleUserIndexAtOrdinal(messages: readonly ChatMessage[], targ
 export interface SubmitTextOptions {
   attachments?: ComposerAttachment[]
   fromQueue?: boolean
+  /** 这条在引用哪一条消息（`messages.reply_to`，裁定 196 ④）。 */
+  replyTo?: string
 }

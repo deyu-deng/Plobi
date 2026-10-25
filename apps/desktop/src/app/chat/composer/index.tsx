@@ -6,6 +6,7 @@ import { useLocation } from 'react-router-dom'
 import { showsComposerCodingRow, shellLevelForPath } from '@/app/routes'
 import { composerFill, composerSurfaceGlass } from '@/components/chat/composer-dock'
 import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { chatMessageText } from '@/lib/chat-messages'
 import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images'
@@ -16,6 +17,7 @@ import { POPOUT_WIDTH_REM } from '@/store/composer-popout'
 import { removeQueuedPrompt } from '@/store/composer-queue'
 import { toggleReview } from '@/store/review'
 import { $gatewayState } from '@/store/session'
+import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
 import { $threadScrolledUp } from '@/store/thread-scroll'
 import { $autoSpeakReplies } from '@/store/voice-prefs'
 import { useTheme } from '@/themes'
@@ -211,6 +213,13 @@ export function ChatBar() {
 
   // The submit engine — the orchestration seam where draft + queue meet. Owns
   // the submit decision tree, the send-with-restore primitive, and steer.
+  const quoteTarget = useStore($quoteTarget)
+
+  // 引用只对同一屏里的消息有意义：换会话就丢掉，别把 A 屏的 reply_to 带到 B 屏。
+  useEffect(() => {
+    clearQuoteTarget()
+  }, [sessionId])
+
   const { steerDraft, submitDraft } = useComposerSubmit({
     activeQueueSessionKey,
     activeQueueSessionKeyRef,
@@ -856,6 +865,23 @@ export function ChatBar() {
           }
         >
           {showHelpHint && <HelpHint />}
+          {quoteTarget && (
+            <div
+              className="mx-2 mt-1 flex items-start gap-2 rounded border-l-2 border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-2 py-1 text-[0.75rem] leading-5 text-(--ui-text-tertiary)"
+              data-slot="composer-quote"
+            >
+              <span className="line-clamp-1 min-w-0 flex-1">{quoteTarget.text}</span>
+              <button
+                aria-label="Clear quote"
+                className="grid size-5 shrink-0 place-items-center rounded text-(--ui-text-quaternary) hover:bg-(--chrome-action-hover) hover:text-(--ui-text-secondary)"
+                onClick={() => clearQuoteTarget()}
+                title="Clear quote"
+                type="button"
+              >
+                <Codicon name="close" size="0.75rem" />
+              </button>
+            </div>
+          )}
           {trigger && !argStageEmpty && (
             <ComposerTriggerPopover
               activeIndex={triggerActive}

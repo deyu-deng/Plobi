@@ -5,6 +5,7 @@ import { triggerHaptic } from '@/lib/haptics'
 import { clearSessionDraft, type ComposerAttachment } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
 import { enqueueQueuedPrompt, type QueuedPromptEntry } from '@/store/composer-queue'
+import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
 
 import { useChatContext } from '../../context'
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
@@ -89,8 +90,25 @@ export function useComposerSubmit({
       stashAt(submittedScope, text, submittedAttachments)
     }
 
-    void Promise.resolve(attachments ? onSubmit(text, { attachments }) : onSubmit(text))
-      .then(accepted => void (accepted === false ? restore() : clearSessionDraft(submittedScope)))
+    // 引用条（裁定 196 ④）：发出去时把 `reply_to` 一起带上；发成功才清掉引用，
+    // 被网关拒了（restore）就留着，用户改完再发还是引着那一条。
+    const quote = $quoteTarget.get()
+    const options = {
+      ...(attachments ? { attachments } : {}),
+      ...(quote ? { replyTo: quote.id } : {}),
+    }
+
+    void Promise.resolve(Object.keys(options).length ? onSubmit(text, options) : onSubmit(text))
+      .then(accepted => {
+        if (accepted === false) {
+          restore()
+          return
+        }
+        clearSessionDraft(submittedScope)
+        if (quote) {
+          clearQuoteTarget()
+        }
+      })
       .catch(restore)
   }
 

@@ -4,6 +4,7 @@ import { type FC, type ReactNode, useCallback, useRef, useState } from 'react'
 import { DirectiveContent } from '@/components/assistant-ui/directive-text'
 import { askedByBadge, externalSenderOf, splitSpeakerPrefix } from '@/lib/chat-messages'
 import { ExternalMessage } from '@/components/assistant-ui/thread/external-message'
+import { QuoteButton } from '@/components/assistant-ui/thread/quote-button'
 import { messageAttachmentRefs, messageContentText } from '@/components/assistant-ui/thread/content'
 import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
 import { UserMessageText } from '@/components/assistant-ui/thread/user-message-text'
@@ -302,15 +303,22 @@ export const UserMessage: FC<{
           data-slot="aui_user-bubble-actions"
         >
           <div className="human-message-with-todos-wrapper flex w-full flex-col gap-0">
-            {askedByLabel && (
-              <span
-                className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)"
-                data-slot="aui_user-asked-by"
-                title={askedBy?.raw || undefined}
-              >
-                {askedByLabel}
-              </span>
-            )}
+            <div className="flex items-center gap-1">
+              {askedByLabel && (
+                <span
+                  className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)"
+                  data-slot="aui_user-asked-by"
+                  title={askedBy?.raw || undefined}
+                >
+                  {askedByLabel}
+                </span>
+              )}
+              <QuoteButton
+                className="ml-auto opacity-0 group-hover/user-message:opacity-100"
+                id={messageId}
+                text={messageText}
+              />
+            </div>
             <div className="relative w-full">
               {readOnly || !canEdit ? (
                 // Spectator transcript, and any runtime without an `onEdit` (the
