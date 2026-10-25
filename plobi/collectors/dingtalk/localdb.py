@@ -74,7 +74,9 @@ def probe(*, roots: Optional[list[Path]] = None, org: Any = None) -> dict:
         return {"ready": False, "code": "local_store_missing",
                 "detail": f"资料目录 {profile.name} 在，但里面没有 {store.DB_NAME}；{org_note}"}
 
-    # 到这一步丙路成立。注意这一句**不声称**采得到东西：准入名单是空的，今天就是零条。
+    # 到这一步丙路成立。这一句只报**前提**，不报结果：库在位不等于已经采到过一条东西。
+    # 旧半句「采集要逐扇会话点名，一条都没点名就是零条」指的是 10-24 之前那个 cid 文本框，
+    # 准入翻成"默认采、逐扇可关"（Code `03b4510f`）之后它会把人指回一个已经删掉的入口。
     return {"ready": True, "code": "local_store_found",
             "detail": f"本机库在位：{db.name}（{db.stat().st_size // 1024} KB，{profile.name}）；"
-                      f"采集要逐扇会话点名，一条都没点名就是零条；{org_note}"}
+                      f"默认全采，不想要哪一扇在设置页那份名单里关掉；{org_note}"}

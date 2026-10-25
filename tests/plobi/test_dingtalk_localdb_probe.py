@@ -52,8 +52,12 @@ class TestTheRoutes:
         assert result["code"] == "local_store_missing"
 
     def test_the_local_store_is_in_place(self, tmp_path) -> None:
-        """丙路成立。注意那句**不等于"采得到"**——`recent_messages` 一条都没点名时就是零条，
-        这条限制必须由探针自己说出来，否则下一位读的人会以为"ready"就是可用。"""
+        """丙路成立。这句只报**前提**、不报结果——库在位不等于已经采到过一条东西，
+        这一层限制必须由探针自己说出来，否则下一位读的人会以为 "ready" 就是可用。
+
+        10-24 准入翻成「默认采、逐扇可关」（Code `03b4510f`）之后，那句「要逐扇会话点名」
+        会把人指回一个已经删掉的入口 ⇒ 老话一并钉成"不许回来"。
+        """
         profile = tmp_path / "DingTalk" / "e34da8455d4779ae5786_v3" / "DBFiles"
         profile.mkdir(parents=True)
         (profile / "dingtalk.db").write_bytes(b"\x00" * 4096)
@@ -61,7 +65,8 @@ class TestTheRoutes:
         result = localdb.probe()
 
         assert result["ready"] is True and result["code"] == "local_store_found"
-        assert "逐扇会话点名" in result["detail"] and "零条" in result["detail"]
+        assert "默认全采" in result["detail"] and "不想要哪一扇" in result["detail"]
+        assert "点名" not in result["detail"]
 
     def test_an_unreadable_disk_says_so_instead_of_throwing(self, monkeypatch) -> None:
         """探针**永不抛**：读不到盘也是"前提不在"，那一屏不该因此变红或白屏。"""
