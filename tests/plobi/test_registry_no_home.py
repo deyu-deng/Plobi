@@ -8,8 +8,9 @@
   ① `spawn` 之后 `profiles/<name>` **不被创建**（家数不变）；
   ② 共享技能根仍接上（`apply_shared_skills_root` 不许丢）；
   ③ 共享层 `models.json` 与 `souls/<name>.md` 仍各只有一份、内容正确；
-  ④ 显式 `-p` 在家不存在时**懒建空壳**成功（不再 `sys.exit(1)`——10-22 那句
-     「还没在这台机器上落地」的假否定就从那里来）；
+  ④ 显式 `-p` 在家不存在时**折回共享根**、**不建家**（WP-PROFILE-LAZY-HOME-OFF：
+     用户 10-25 改判「不保留了。但是kanban的能力要有」——懒建空壳那一支退役了，
+     家目录不再被任何入口建出来；身份改由名册那一行带，`PLOBI_AGENT_ID`）；
   ⑤ `spawn` 返回值里没有 `profile_dir`、`command` 不含 `-p`（不把废弃形状教出去）。
 """
 
@@ -103,28 +104,32 @@ def test_shared_layer_has_exactly_one_copy_of_each(home):
     assert stray == [], f"共享件被复印进了分身家: {stray}"
 
 
-def test_explicit_dash_p_lazily_creates_an_empty_home(home):
-    """④ 显式 `-p` 在家不存在时懒建成功——不再 sys.exit(1)。"""
-    from plobi_cli.main import _lazy_create_profile
+def test_explicit_dash_p_folds_to_the_shared_root(home):
+    """④ 显式 `-p` 在家不存在时**折回共享根**——不建家（WP-PROFILE-LAZY-HOME-OFF）。
+
+    懒建空壳那一支已经退役（用户 10-25 改判「不保留了。但是kanban的能力要有」）：
+    家目录不再被任何入口建出来，`-p` 仍是进程落点，家不在时落到共享根。
+    """
+    from plobi_cli.main import _fold_to_shared_root
 
     profiles_root = _plobi_root(home) / "profiles"
     assert not (profiles_root / "l2-agenda").exists()
 
-    created = _lazy_create_profile("l2-agenda")
+    folded = _fold_to_shared_root("l2-agenda")
 
-    assert created is not None
-    assert Path(created) == profiles_root / "l2-agenda"
-    assert (profiles_root / "l2-agenda").is_dir()
-    # 空壳：不拷 config / .env / SOUL / 技能（裁定 42 §42.2）。
+    assert folded is not None
+    assert Path(folded) == _plobi_root(home), "折回的不是共享根"
+    assert not (profiles_root / "l2-agenda").exists(), "又建了一个分身家"
+    # 一个字节都不建：不拷 config / .env / SOUL / 技能（也不建目录本身）。
     assert not (profiles_root / "l2-agenda" / "config.yaml").exists()
     assert not (profiles_root / "l2-agenda" / "SOUL.md").exists()
 
 
-def test_lazy_create_reports_failure_instead_of_raising(home):
-    """④b 建不了（名称非法）时返回 None，让上层照旧报错。"""
-    from plobi_cli.main import _lazy_create_profile
+def test_fold_reports_failure_instead_of_raising(home):
+    """④b 名称非法时返回 None，让上层照旧报错。"""
+    from plobi_cli.main import _fold_to_shared_root
 
-    assert _lazy_create_profile("bad name!!") is None
+    assert _fold_to_shared_root("bad name!!") is None
 
 
 def test_spawn_result_carries_no_profile_dir_and_no_dash_p(home):

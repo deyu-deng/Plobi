@@ -356,23 +356,75 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # The flag is stripped from sys.argv so argparse never sees it.
 # Falls back to ~/.plobi/active_profile for sticky default.
 # ---------------------------------------------------------------------------
-def _lazy_create_profile(name: str) -> Optional[str]:
-    """显式 `-p <name>` 但盘上没有那个家时，懒建一个**空壳**并返回它的路径。
+def _fold_to_shared_root(name: str) -> Optional[str]:
+    """显式 `-p <name>` 但盘上没有那个家时：**不建**，折回共享根并返回它的路径。
 
-    WP-REGISTRY-NO-HOME：`spawn`（名册加一行）不再建家，所以「名册里有、盘上没有」
-    成了常态。这条入口只为**显式要求一个家**的调用方兜底，建的是最小空壳
-    （`no_skills=True`），不拷任何东西——裁定 42 §42.2 的终态。
+    WP-PROFILE-LAZY-HOME-OFF（裁 178 乙案 · 192）：家目录不再被任何入口建出来——
+    `spawn` 早已不建（WP-REGISTRY-NO-HOME），`plobi profile create` 已关成 rc 2，
+    `POST /api/profiles` 已 410，懒建是最后一条还开着的口子。用户 10-25 改判
+    「**不保留了。但是kanban的能力要有**」⇒ 这条口子关上，但 `-p` 仍是进程落点：
+    家不在时落到**共享根**，身份改由**名册那一行**带着（`_apply_folded_identity`）。
 
-    建不了（名称非法 / 盘写不进去）时返回 None，让调用方照旧报错。
+    家**在** ⇒ 原样返回那一家（老装机逐字不变，一个字节都不动）。
+    名称非法 ⇒ 返 None（上层照旧报错）。
     """
     try:
-        from plobi_cli.profiles import create_profile, get_profile_dir
+        from plobi_cli.profiles import get_profile_dir, normalize_profile_name, validate_profile_name
+        from plobi_constants import shared_root_for
 
-        create_profile(name=name, no_skills=True)
-        return str(get_profile_dir(name))
-    except Exception as exc:  # 名称非法、盘写不进去……都让上层照旧报错
-        print(f"note: could not create profile {name!r} on demand: {exc}", file=sys.stderr)
+        canon = normalize_profile_name(name)
+        validate_profile_name(canon)
+        given = get_profile_dir(canon)
+        if given.is_dir():
+            return str(given)
+        return str(shared_root_for(given))
+    except Exception as exc:  # 名称非法、盘读不出来……都让上层照旧报错
+        print(f"note: could not resolve profile {name!r}: {exc}", file=sys.stderr)
         return None
+
+
+def _agent_id_for_profile(name: str) -> str:
+    """`-p` 指的那个 Agent 在**名册**里的 `name`（裁定 180 的行级身份）。
+
+    `-p` 给的是**落点名**（本机 24 行名册里有 11 行 `name ≠ profile`，如
+    `name: agenda` / `profile: l2-agenda`），身份要的是**名册那一行的 name**——
+    共享层的人设文件 `souls/<name>.md` 也是按它命名的。查不到给空串。
+    """
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        entry = entry_for_profile(name)
+        if entry is not None:
+            return entry.name
+    except Exception:
+        pass
+    return ""
+
+
+def _apply_folded_identity(name: str, *, explicit: bool) -> None:
+    """折回共享根之后补身份：名册那一行的 `name` → `PLOBI_AGENT_ID`。
+
+    家不在盘上时，**唯一的身份来源就是名册**（裁定 192：身份是名册那一行，
+    不是盘上一个目录）。查得到就带上；查不到：
+      * 显式 `-p` ⇒ **报错退出**——不许悄悄以 L1 的身份替那个人干活；
+      * 粘性的 `active_profile`（不是显式 `-p`）⇒ 只出一行 note，继续在共享根上跑
+        （不许因为一个过期的小文件把每一次 `plobi` 启动都打死）。
+    """
+    agent_id = _agent_id_for_profile(name)
+    if agent_id:
+        os.environ["PLOBI_AGENT_ID"] = agent_id
+        return
+    if explicit:
+        print(
+            f"Error: no Agent named {name!r} in the roster — an Agent is a roster row, "
+            "not a directory on disk (add the row first: `plobi agent register` or POST /api/agents)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(
+        f"note: {name!r} is not an Agent in the roster — running at the shared root without identity",
+        file=sys.stderr,
+    )
 
 
 def _apply_profile_override() -> None:
@@ -522,6 +574,7 @@ def _apply_profile_override() -> None:
 
     # 3. If we found a profile, resolve and set PLOBI_HOME
     if profile_name is not None:
+        folded = False
         try:
             from plobi_cli.profiles import resolve_profile_env
 
@@ -529,16 +582,16 @@ def _apply_profile_override() -> None:
         except FileNotFoundError as exc:
             plobi_home = _resolve_sudo_user_profile_env(profile_name)
             if not plobi_home:
-                # WP-REGISTRY-NO-HOME：名册加一行不再建家，但**显式 `-p` 仍然要能跑**
-                # （kanban worker、文档里的用法都还在）。懒建一个**空壳**
-                # （`no_skills=True`：不拷 config.yaml / .env / SOUL.md / 技能，
-                # 裁定 42 §42.2），而不是让人先去 `plobi profile create`。
-                # 10-22 那句「还没在这台机器上落地」的假否定就是从这里来的：
-                # 家明明在名册里，只是盘上没有目录，于是 `say`/`ask` 全部被拒。
-                plobi_home = _lazy_create_profile(profile_name)
+                # WP-PROFILE-LAZY-HOME-OFF：家目录不再被任何入口建出来（裁 178 乙案）。
+                # `-p` 仍是进程落点，但家不在时**折回共享根**，身份改由名册那一行带
+                # （裁定 180 / 192）——既不懒建空壳，也不静默地以 L1 的身份替人干活。
+                # kanban 那条腿不受影响：它的子进程仍带 `-p <assignee>`，而 assignee
+                # 是名册里的一行 ⇒ 折回共享根后照样以 assignee 的身份起。
+                plobi_home = _fold_to_shared_root(profile_name)
                 if not plobi_home:
                     print(f"Error: {exc}", file=sys.stderr)
                     sys.exit(1)
+                folded = True
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -550,6 +603,10 @@ def _apply_profile_override() -> None:
             )
             return
         os.environ["PLOBI_HOME"] = plobi_home
+        if folded:
+            # 身份要在 PLOBI_HOME 落到共享根**之后**才查：名册是共享件
+            # （`<root>/plobi/projects.yaml`），查之前得先站在正确的根上。
+            _apply_folded_identity(profile_name, explicit=consume > 0)
         # Strip the flag from argv so argparse doesn't choke
         if consume > 0 and profile_index is not None:
             start = profile_index + 1  # +1 because argv is sys.argv[1:]
@@ -11102,12 +11159,13 @@ def cmd_profile(args):
     elif action == "create":
         # 裁 178 乙案第 4 步收口（用户 10-24 21:1x 面令）：**入口关掉，能力留着**。
         # `profiles.create_profile()` 本体不动——它是库函数，`test_profiles.py` 那十几条与
-        # `test_l2_shared_skills.py` 都在测 clone/clone_all 那套机制；`-p <name>` 的懒建空壳
-        # （`_lazy_create_profile`）是 B 刀故意留的进程落点，也照旧。
+        # `test_l2_shared_skills.py` 都在测 clone/clone_all 那套机制。
+        # WP-PROFILE-LAZY-HOME-OFF（用户 10-25 改判「不保留了。但是kanban的能力要有」）：
+        # `-p <name>` 的懒建空壳也退了——家不在时折回共享根，身份取名册那一行。
         print(
             "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再“一家一个分身”。\n"
             "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。\n"
-            "只需要一个进程落点：plobi -p <name> … 会在盘上没有时懒建一个空壳。",
+            "只需要一个进程落点：plobi -p <name> … 在盘上没有那个家时折回共享根，身份取名册那一行。",
             file=sys.stderr,
         )
         sys.exit(2)
