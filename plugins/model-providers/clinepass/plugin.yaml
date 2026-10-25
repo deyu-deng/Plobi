@@ -1,0 +1,5 @@
+name: clinepass-provider
+kind: model-provider
+version: 1.0.0
+description: ClinePass (OpenAI-compatible subscription models)
+author: Plobi

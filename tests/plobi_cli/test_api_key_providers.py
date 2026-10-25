@@ -41,6 +41,7 @@ class TestProviderRegistry:
         ("minimax-cn", "MiniMax (China)", "api_key"),
         ("kilocode", "Kilo Code", "api_key"),
         ("gmi", "GMI Cloud", "api_key"),
+        ("clinepass", "ClinePass", "api_key"),
     ])
     def test_provider_registered(self, provider_id, name, auth_type):
         assert provider_id in PROVIDER_REGISTRY
@@ -109,6 +110,12 @@ class TestProviderRegistry:
         pconfig = PROVIDER_REGISTRY["huggingface"]
         assert pconfig.api_key_env_vars == ("HF_TOKEN",)
         assert pconfig.base_url_env_var == "HF_BASE_URL"
+
+    def test_clinepass_env_vars(self):
+        pconfig = PROVIDER_REGISTRY["clinepass"]
+        assert pconfig.api_key_env_vars == ("CLINE_API_KEY", "CLINEPASS_API_KEY")
+        assert pconfig.base_url_env_var == "CLINE_BASE_URL"
+        assert pconfig.inference_base_url == "https://api.cline.bot/api/v1"
 
     def test_base_urls(self):
         assert PROVIDER_REGISTRY["copilot"].inference_base_url == "https://api.githubcopilot.com"

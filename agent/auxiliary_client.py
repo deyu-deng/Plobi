@@ -471,6 +471,7 @@ _API_KEY_PROVIDER_AUX_MODELS_FALLBACK: Dict[str, str] = {
     "anthropic": "claude-haiku-4-5-20251001",
     "opencode-zen": "gemini-3-flash",
     "opencode-go": "glm-5",
+    "clinepass": "deepseek-v4-flash",
     "kilocode": "google/gemini-3-flash-preview",
     "ollama-cloud": "nemotron-3-nano:30b",
     "tencent-tokenhub": "hy3-preview",
