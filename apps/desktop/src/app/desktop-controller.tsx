@@ -285,7 +285,7 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level === 'l1')
   const [agendaAdding, setAgendaAdding] = useState(false)
-  const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>(['files', 'agenda'])
+  const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>(['agenda'])
   const [l1Active, setL1Active] = useState<null | RightRailTabId>('agenda')
   const [l2Tabs, setL2Tabs] = useState<RightRailTabId[]>(['files', 'review'])
   const [l2Active, setL2Active] = useState<null | RightRailTabId>('files')
@@ -299,7 +299,7 @@ export function DesktopController() {
     files: { icon: 'folder-opened', id: 'files', title: t.workbench.tabs.files },
     review: { icon: 'git-pull-request', id: 'review', title: t.workbench.tabs.review }
   }
-  const l1TabDefs = [workbenchTabDefs.files, workbenchTabDefs.agenda, workbenchTabDefs.browser]
+  const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser]
   const l2TabDefs = [workbenchTabDefs.files, workbenchTabDefs.review, workbenchTabDefs.browser]
   const isL1Workbench = level === 'l1'
 
@@ -434,9 +434,7 @@ export function DesktopController() {
   }, [agentCwd])
 
   const l1OpenTabDefs = l1Tabs
-    .map(id =>
-      id === 'files' || id === 'agenda' || id === 'browser' ? workbenchTabDefs[id] : null
-    )
+    .map(id => (id === 'agenda' || id === 'browser' ? workbenchTabDefs[id] : null))
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
     .map(id =>
