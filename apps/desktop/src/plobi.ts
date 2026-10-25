@@ -37,6 +37,7 @@ import type {
   ModelOptionsResponse,
   NetworkEgressRecord,
   NetworkPoolImport,
+  NetworkSubscriptionImport,
   NetworkSection,
   NetworkStatus,
   OAuthPollResponse,
@@ -493,6 +494,20 @@ export function importNetworkPool(path: string): Promise<NetworkPoolImport> {
     body: { path },
     method: 'POST',
     path: '/api/network/egress/import-pool'
+  })
+}
+
+/**
+ * Pull (or paste) a subscription and get table shape back. The answer carries `*_env` **names**
+ * only — the credentials were written to the root `.env` by the import itself, so nothing that
+ * crosses this IPC, gets logged, or ends up in a screenshot can contain a password.
+ */
+export function importNetworkSubscription(input: { text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
+  return window.plobiDesktop.api<NetworkSubscriptionImport>({
+    ...profileScoped(),
+    body: { text: input.text ?? '', url: input.url ?? '' },
+    method: 'POST',
+    path: '/api/network/egress/import-subscription'
   })
 }
 

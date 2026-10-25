@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Globe } from '@/lib/icons'
-import { getNetworkEgress, getNetworkStatus, importNetworkPool, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
+import { getNetworkEgress, getNetworkStatus, importNetworkPool, importNetworkSubscription, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
 import type {
   NetworkEgressBlock,
   NetworkEgressRecord,
@@ -74,6 +74,19 @@ function toExitRows(record: NetworkEgressRecord | null): ExitRow[] {
     name,
     url: entry?.url ?? ''
   }))
+}
+
+/** 合并而不是覆盖：同名以进来那份为准（订阅更新就是更新），不同名的手写条目保留。 */
+function mergeByName<T extends { name: string }>(current: T[], incoming: T[]): T[] {
+  const byName = new Map<string, T>()
+
+  for (const row of current) {
+    byName.set(row.name.trim(), row)
+  }
+  for (const row of incoming) {
+    byName.set(row.name.trim(), row)
+  }
+  return [...byName.values()].filter((row) => row.name.trim())
 }
 
 export function toNodeRows(record: NetworkEgressRecord | null): NodeRow[] {
@@ -255,6 +268,7 @@ export function NetworkSettings() {
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [groups, setGroups] = useState<GroupRow[]>([])
   const [poolPath, setPoolPath] = useState('')
+  const [subUrl, setSubUrl] = useState('')
   const [poolNotes, setPoolNotes] = useState<string[]>([])
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
@@ -353,6 +367,38 @@ export function NetworkSettings() {
       const envNames = answer.env_names ?? []
 
       setPoolNotes([...(answer.notes ?? []), ...(envNames.length ? [`需要这些环境变量：${envNames.join(', ')}`] : [])])
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /**
+   * 订阅：点一下才拉（不自动拉，不静默重试）。回来的成员与组**并进**当前行——同一个名字以订阅为准，
+   * 手写的其他成员保留，因为"更新我的订阅"不该把用户自己加的节点抹掉。仍然要点保存才写盘。
+   */
+  const importSubscription = async () => {
+    setImporting(true)
+    setError('')
+    try {
+      const answer = await importNetworkSubscription({ url: subUrl.trim() })
+      const fetched = { network: { egress: { groups: answer.groups ?? [], nodes: answer.nodes ?? [] } } } as unknown as NetworkEgressRecord
+      const nextNodes = toNodeRows(fetched)
+      const nextGroups = toGroupRows(fetched)
+
+      setNodes((current) => mergeByName(current, nextNodes))
+      setGroups((current) => mergeByName(current, nextGroups))
+      const envNames = answer.secret_env_names ?? []
+      const notes = (answer.notes ?? []).concat(
+        answer.format ? [`认出的格式：${answer.format}；成员 ${nextNodes.length} 个、组 ${nextGroups.length} 个`] : [],
+        envNames.length ? [`凭据已写进根 .env，表里只留这些名字：${envNames.join(', ')}`] : []
+      )
+
+      setPoolNotes(notes)
+      if (!answer.ok && notes.length === 0) {
+        setError('订阅里没有可用的成员')
+      }
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -486,6 +532,17 @@ export function NetworkSettings() {
           </Button>
         </div>
         <Input onChange={(event) => setPoolPath(event.target.value)} placeholder={copy.importPath} value={poolPath} />
+        <div className="flex items-center gap-2">
+          <Input
+            className="flex-1"
+            onChange={(event) => setSubUrl(event.target.value)}
+            placeholder={copy.subUrl}
+            value={subUrl}
+          />
+          <Button disabled={importing || !subUrl.trim()} onClick={() => void importSubscription()} size="sm" variant="outline">
+            {importing ? '…' : copy.importSub}
+          </Button>
+        </div>
         {poolNotes.map((note, index) => (
           <p className={CAPTION} key={index}>
             {note}

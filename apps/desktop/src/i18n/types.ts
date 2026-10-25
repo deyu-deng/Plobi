@@ -469,6 +469,8 @@ export interface Translations {
       groups: string
       importPath: string
       importPool: string
+      importSub: string
+      subUrl: string
       intro: string
       match: string
       members: string

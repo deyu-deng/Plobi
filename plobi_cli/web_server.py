@@ -14648,6 +14648,45 @@ async def post_network_import_pool(body: NetworkPoolImport) -> Dict[str, Any]:
     }
 
 
+class NetworkSubscriptionImport(BaseModel):
+    url: str = ""
+    text: str = ""
+    profile: Optional[str] = None
+
+
+@app.post("/api/network/egress/import-subscription")
+async def post_network_import_subscription(body: NetworkSubscriptionImport) -> Dict[str, Any]:
+    """Pull (or paste) a subscription and unfold it into table shape — **names out, values nowhere**.
+
+    The ruled shape (用户 10-16, 甲): a click fetches, the result lands as `nodes`/`groups` in the
+    table, so the pane can see every member and a rule can reference a group. We deliberately do NOT
+    hand the URL to mihomo's `proxy-providers` — that would put membership outside the one table this
+    whole surface reads from (裁定 94), and the status command would stop describing what is serving.
+
+    Credentials are written to the root `.env` as `PLOBI_EGRESS_*` by the import itself; the response
+    carries only the **variable names**. An unreachable subscription is one sentence and one attempt
+    (no silent retry — 裁定 101).
+    """
+    from agent.egress import subscription
+
+    try:
+        answer = subscription.update(url=body.url or "", text=body.text or "")
+    except subscription.SubscriptionError as exc:
+        return {"ok": False, "format": "", "nodes": [], "groups": [], "secret_env_names": [],
+                "notes": [str(exc)]}
+    except Exception as exc:  # noqa: BLE001 - a malformed file is an answer, not a 500
+        return {"ok": False, "format": "", "nodes": [], "groups": [], "secret_env_names": [],
+                "notes": [f"{type(exc).__name__}: {str(exc)[:200]}"]}
+    return {
+        "ok": answer["ok"],
+        "format": answer["format"],
+        "nodes": answer["nodes"],
+        "groups": answer["groups"],
+        "secret_env_names": answer["secret_env_names"],
+        "notes": answer["notes"],
+    }
+
+
 class NetworkSystemProxyUpdate(BaseModel):
     enabled: bool
     profile: Optional[str] = None

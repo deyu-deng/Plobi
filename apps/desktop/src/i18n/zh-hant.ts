@@ -410,6 +410,8 @@ export const zhHant = defineLocale({
       groups: '組（引擎側的節點池）',
       importPath: '池子檔路徑（mihomo 的 config.yaml）',
       importPool: '從池子檔匯入成員與組',
+      importSub: '拉取訂閱並展開成成員與組',
+      subUrl: '訂閱連結（點一下才拉取；失敗不靜默重試）',
       intro: '決定每個目標走哪條出口。預設只接管 Plobi 自己發起的流量——下面那顆開關才決定要不要把本機的系統代理也交給我們；不接管時不寫系統代理、不接管 DNS——你開的瀏覽器與終端機仍走原本的路。',
       match: '比對（網域、*.字尾、CIDR、geosite:… 或 *）',
       members: '成員（逗號分隔，或 *）',

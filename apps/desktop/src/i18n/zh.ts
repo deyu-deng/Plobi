@@ -478,6 +478,8 @@ export const zh: Translations = {
       groups: '组（供引擎使用的节点集合）',
       importPath: '配置文件路径（代理池的配置文件）',
       importPool: '从配置文件导入成员与组',
+      importSub: '拉取订阅并展开成成员与组',
+      subUrl: '订阅链接（点一下才拉；失败不静默重试）',
       intro: '决定每个目标使用的网络出口。默认仅接管 Plobi 自身流量；开启系统代理接管后，本机系统代理与 DNS 才由 Plobi 管理，否则浏览器与终端仍按原有网络设置运行。',
       match: '匹配（域名、*.后缀、CIDR、geosite:… 或 *）',
       members: '成员（逗号分隔，或 *）',

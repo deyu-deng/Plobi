@@ -93,3 +93,31 @@ def test_a_group_naming_an_unknown_member_is_refused_with_that_member_named():
 
     assert written is False, "拒因没回到调用方：面板会以为导入成功了"
     assert any("ghost" in line for line in refusals), refusals
+
+
+def test_a_pasted_subscription_lands_as_names_and_a_refusal_comes_back_as_words(monkeypatch):
+    """订阅那一颗按钮走的是同一条纪律：值进 `.env`，路上跑的只有名字；认不下来就说人话。"""
+    import plobi_cli.config as cfg
+    from plobi_cli.web_server import NetworkSubscriptionImport, post_network_import_subscription
+
+    written: dict[str, str] = {}
+
+    monkeypatch.setattr(cfg, "save_env_value_secure", lambda k, v: written.__setitem__(k, v))
+    body = ("ss://YWExMjM6cGFzc3dvcmQx@203.0.113.9:8388#hk\n"
+            "trojan://s3cr3t-LEAK-sub@198.51.100.7:443#de")
+
+    answer = asyncio.run(post_network_import_subscription(NetworkSubscriptionImport(text=body)))
+
+    assert answer["ok"] is True and answer["format"] == "link-list", answer
+    assert {n["name"] for n in answer["nodes"]} == {"hk", "de"}, answer["nodes"]
+    assert sorted(written) == sorted(answer["secret_env_names"]), (written, answer["secret_env_names"])
+    wire = json.dumps(answer, ensure_ascii=False)
+
+    for value in written.values():
+        assert value not in wire, "订阅导入的返回值里不许有凭据值——它会经过 IPC、日志与截图"
+    assert "password_env" in wire, answer["nodes"]
+
+    refused = asyncio.run(post_network_import_subscription(NetworkSubscriptionImport(text="这不是订阅，是一段中文")))
+
+    assert refused["ok"] is False and refused["nodes"] == [] and refused["secret_env_names"] == []
+    assert refused["notes"] and "认不出来" in refused["notes"][0], refused

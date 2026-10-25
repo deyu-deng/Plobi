@@ -1291,6 +1291,15 @@ export interface NetworkPoolImport {
   ok?: boolean
 }
 
+export interface NetworkSubscriptionImport {
+  format?: string
+  groups?: NetworkEgressBlock['groups']
+  nodes?: NetworkEgressBlock['nodes']
+  notes?: string[]
+  ok?: boolean
+  secret_env_names?: string[]
+}
+
 export interface NetworkSection {
   egress?: NetworkEgressBlock
   force_ipv4?: boolean

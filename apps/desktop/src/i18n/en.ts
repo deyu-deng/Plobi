@@ -490,6 +490,8 @@ export const en: Translations = {
       groups: 'Groups (a set of nodes for the engine to use)',
       importPath: 'Config file path (the proxy pool config file)',
       importPool: 'Import members and groups from a config file',
+      importSub: 'Pull the subscription and unfold it into members and groups',
+      subUrl: 'Subscription URL (fetched only when you click; no silent retry)',
       intro:
         'Which exit each destination uses. By default only what Plobi starts is routed — the switch below decides whether this machine\'s system proxy is handed over too. Without it Plobi does not set the system proxy and does not take over DNS; your browser and your own terminal keep their own route.',
       match: 'Match (domain, *.suffix, CIDR, geosite:…, or *)',
