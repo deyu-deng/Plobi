@@ -310,7 +310,9 @@ def test_a_batch_spanning_both_repos_commits_into_the_repo_that_owns_each_file(
     monkeypatch.setenv("MIND_ROOT", str(mind))
     monkeypatch.setenv("VAULT_ROOT", str(vault))
 
-    result = MindWriter(mind, commit=True, run_verifier=False).write(
+    result = MindWriter(
+        mind, commit=True, run_verifier=False, require_approval=False
+    ).write(
         [
             WriteRequest("Vault/notes/ch01.md", "# note\n"),
             WriteRequest("Loom/wiki/concepts/srtp.md", "# concept\n"),

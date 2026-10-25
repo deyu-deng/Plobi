@@ -24,6 +24,10 @@ from typing import Optional, Union
 # Logical prefixes, stable across both layouts. ``Loom/`` names the brain's own
 # subtree even after the flatten, because the string is what ledgers, prompts and
 # the desktop speak; only ``real_target`` knows where it physically lives.
+VAULT_LOGICAL = "Vault"
+MIND_LOGICAL = "Loom"
+VAULT_ROOT_ENV = "VAULT_ROOT"
+
 SAFE_PREFIXES: tuple[str, ...] = (
     "Vault/projects/Plobi",
     "Vault/meta",
@@ -40,7 +44,36 @@ SAFE_PREFIXES: tuple[str, ...] = (
     "Loom/wiki/memory",
 )
 
-# AI 写的那两样（当日日程摘要与打勾回复）住**人读面**，不住原料区。
+# 记忆系统的活动面 = 上面那张表里属于**脑**的那几格。
+#
+# ``SAFE_PREFIXES`` 比这一格宽，而且必须宽：课程分身往 ``Vault/notes/<课>/`` 写学科笔记、
+# 名册往 ``Vault/research/<项目>`` 登记，那些是**人读面上的产物**，走同一个 MindWriter 的
+# 管道路由（裁定 72／126 的两仓拆分＋跨仓 git），不是记忆。
+# 用户 2026-10-24/25 两次判「vault 不要进记忆系统」「摘要往 vault 写算越界」，落到代码上
+# 就是这一格：记忆的**召回**与**记忆写入**只认 ``Loom/…``，从结构上派生、不另列一张会漂的表。
+MEMORY_ZONES: tuple[str, ...] = tuple(
+    prefix for prefix in SAFE_PREFIXES if prefix.startswith(f"{MIND_LOGICAL}/")
+)
+
+
+def is_memory_zone(logical: str) -> bool:
+    """True when a LOGICAL path belongs to the memory system's own surface.
+
+    The vault deliberately answers ``False`` here even though its zones are
+    writable by the plumbing service — see :data:`MEMORY_ZONES` for why the two
+    lists are not the same thing.
+    """
+    text = str(logical or "").replace("\\", "/")
+    return any(
+        text == zone or text.startswith(f"{zone}/") for zone in MEMORY_ZONES
+    )
+
+# AI 写的那两样（当日日程摘要与打勾回复）住**脑里的日页面**，不住原料区、也不住 vault。
+#
+# 更正留痕（2026-10-25）：下面这段是 10-23/24 写的，其中「进 vault 的 git」「只剩一个落点：
+# vault」两句已被后来的裁定盖掉——用户 10-24「vault 不要进记忆系统」、10-25 判往 vault 写
+# 「算越界」，摘要与打勾回复因此落在 ``Loom/wiki/daily``（脑仓，随定时推上私有远端）。
+# 原文留着是因为它记着当时的判据形状，读的时候以上面这两句为准。
 #
 # 以前这里是 ``Loom/raw/chat-logs/digested``——那格是旧 Mind 形态（单层 ``Loom/`` ＋
 # Mac↔Win 靠 git 传聊天原文）留下的处理区。用户 2026-10-23 10:0x 判「raw 那一类原料在现在
@@ -56,10 +89,6 @@ SAFE_PREFIXES: tuple[str, ...] = (
 # 就是这一种，写在这里当留痕。vault 故意没有远端（裁定 72／126），所以「原文不上云」与
 # 「摘要入库、可被读回」两头同时成立。
 AI_WRITE_ROOT = "Loom/wiki/daily"
-
-VAULT_LOGICAL = "Vault"
-MIND_LOGICAL = "Loom"
-VAULT_ROOT_ENV = "VAULT_ROOT"
 
 # Ruling 2026-10-14: the brain loses its ``Loom/`` level (flatten), and the human
 # surface leaves for ``VAULT_ROOT``. The move commit flips this one line; until it

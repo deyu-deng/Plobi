@@ -11,10 +11,12 @@ Runtime state (agenda, DDLs) lives in SQLite instead — see ADR-0007.
 
 from .paths import (
     AI_WRITE_ROOT,
+    MEMORY_ZONES,
     SAFE_PREFIXES,
     MindUnavailable,
     Roots,
     UnsafeMindPath,
+    is_memory_zone,
     is_safe_relative,
     logical_target,
     real_target,
@@ -26,6 +28,7 @@ from .writer import MindWriter, WriteRequest, WriteResult, get_writer, set_write
 
 __all__ = [
     "AI_WRITE_ROOT",
+    "MEMORY_ZONES",
     "MindContext",
     "MindReader",
     "MindUnavailable",
@@ -38,6 +41,7 @@ __all__ = [
     "WriteResult",
     "get_reader",
     "get_writer",
+    "is_memory_zone",
     "is_safe_relative",
     "logical_target",
     "real_target",

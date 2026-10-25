@@ -262,7 +262,20 @@ def apply_plan(plan: Plan, *, approved: str, roots, writer=None,
     # approved *this* plan by digest, which is exactly the explicit yes those paths
     # require. The rule lives on the automatic route (should_ask), where there is
     # no yes to point at.
+    #
+    # MEMORY_ZONES is enforced here, and it is not the same list as the plumbing
+    # service's SAFE_PREFIXES: a human approving a plan must not be how the memory
+    # system ends up writing into the read-only-by-ruling human surface
+    # (``Vault/…``). User 2026-10-24「vault 不要进记忆系统」/ 10-25「算越界」.
+    from plobi.mind.paths import is_memory_zone
+
     for change in plan.changes:
+        if not is_memory_zone(change.logical_path):
+            report.denied.append(Denied(
+                "not-a-memory-zone: 记忆系统只写脑里（Loom/wiki/*），"
+                f"这一格在人读面：{change.logical_path}",
+                change.logical_path))
+            continue
         result = _write(roots, change, writer)
         if getattr(result, "ok", True):
             report.written.append(change.logical_path)

@@ -100,3 +100,25 @@ def test_rejection_sends_that_class_back_to_asking(roots, tmp_path):
 
     for cat in set(plan.categories.values()) or {"other"}:
         assert L1.TrustLedger(path=ledger.path).should_ask(cat, "l1") is True
+
+
+def test_an_approved_plan_aimed_at_the_human_surface_is_still_refused(roots, tmp_path):
+    """点过头也不写人读面：记忆的落点只有脑（用户 10-24「vault 不要进记忆系统」、10-25「算越界」）。
+
+    这条钉的是「审批不是绕路的口子」。管道服务本身可以往 ``Vault/notes`` 写课程笔记
+    （那是人读面上的产物，走另一条路），但**记忆**那一条——先出计划、人点头、再落盘——
+    批的必须是 ``MEMORY_ZONES`` 里的一格；否则一次误批就把 AI 的话放进了人的笔记本。
+    """
+    result, rel = _stage(roots, rel="Vault/notes/ch01.md")
+    record = _pending_records(tmp_path)[0]
+    plan = L1.Plan.from_json(record["payload"]["plan"])
+
+    report = L1.apply_plan(
+        plan, approved=plan.digest, roots=resolve_roots(),
+        writer=MindWriter(require_approval=False, commit=False),
+    )
+
+    assert report.ok is False
+    assert report.denied and "not-a-memory-zone" in report.denied[0].reason
+    assert not (Path(os.environ["VAULT_ROOT"]) / "notes" / "ch01.md").exists()
+    assert result.staged, "计划照旧出得来——被拒的是落点，不是那道闸"

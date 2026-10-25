@@ -14,20 +14,19 @@ Mind repo (official):  ``mind/`` (lowercase, inside the repository;
                        env ``MIND_ROOT`` overrides — never hardcode drive letters)
 Mind verifier:         Loom/scripts/verifier.py (inside the Mind repo)
 
-Why a plugin and not core changes?
-  Plobi memory is provider-pluginized (AGENTS.md: "capability at the edges").
-  Adding ``plugins/memory/mind/`` + setting ``memory.provider: mind`` in
-  config.yaml is the *only* integration step — agent/memory_provider.py,
-  memory_manager.py, and run_agent.py are NOT touched.  (Verified 2026-07-13.)
+Why core and not a plugin?
+  裁定 42.3／用户 2026-10-25「不要再是插件形态了」：本提供者现在是内核的官方记忆面
+  （``agent/memory_manager.py::OFFICIAL_MEMORY_PROVIDER``），``plugins/memory/mind/`` 已退役。
+  ``load_memory_provider`` 用 ``CORE_PROVIDERS`` 短路解析 ``mind``，配置项不变。
 
 Compliance boundary (CRITICAL — see plan §3/§5):
   Mind's git pre-commit verifier BLOCKS commits where:
     (1) Vault/projects top-level dir names != AGENTS.md §1 declaration, OR
     (2) （技能已不在脑仓：2026-10-25 迁到 $PLOBI_HOME/skills，本条对脑不再适用）
-  All REAL writes must stay inside SAFE_PREFIXES below. Writing elsewhere
-  (new top-level project dir, new skill dir, AGENTS.md edits) risks BLOCKING
-  Mind's commits or polluting the second brain. When implementing, assert the
-  resolved path is under a SAFE_PREFIX before any write.
+  **记忆**的读写只在 ``MEMORY_ZONES``（脑里的 ``Loom/wiki/*``）内——人读面 ``Vault/…``
+  不属于记忆系统（用户 10-24「vault 不要进记忆系统」、10-25「算越界」）。宽的那张
+  ``SAFE_PREFIXES`` 只服务管道写入（课程笔记、名册登记），别把两者当同一张表。
+  Writing outside either risks BLOCKING Mind's commits or polluting the brain.
 """
 from __future__ import annotations
 
@@ -40,7 +39,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
-from plobi.mind.paths import SAFE_PREFIXES, logical_target, real_target
+from plobi.mind.paths import (
+    MEMORY_ZONES,
+    SAFE_PREFIXES,
+    is_memory_zone,
+    logical_target,
+    real_target,
+)
 from plobi.mind.writer import MindWriter
 
 logger = logging.getLogger(__name__)
@@ -339,13 +344,15 @@ class MindProvider(MemoryProvider):
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Mirror Plobi MEMORY.md/USER.md writes into the Mind vault.
+        """Mirror Plobi MEMORY.md/USER.md writes into the brain (L2 canon).
 
         - ``remove`` actions never delete from the second brain (log only).
         - concept/entity/source-kind metadata routes to ``Loom/wiki/concepts/``
           (``plobi-<slug>.md``); everything else lands in
           ``Loom/wiki/memory/<slug>.md``. vault 不进记忆系统（用户 10-24）。
-        - Writes go through MindWriter after an ``_is_safe`` assertion.
+        - 双重检查：既要落在**记忆区**（:func:`is_memory_zone` ⇒ ``MEMORY_ZONES``，
+          前缀表里属于脑的那半），也要过管道闸 ``_is_safe``。所以一条指向
+          ``Vault/…`` 的记忆写入会被拒——尽管管道服务确实有正当理由往那儿写课程笔记。
 
         Triggered by MemoryManager.notify_memory_tool_write (verified caller
         at tool_executor.py:1301 / agent_runtime_helpers.py:2298).
@@ -368,8 +375,8 @@ class MindProvider(MemoryProvider):
             else:
                 rel = f"Loom/wiki/memory/{slug}.md"
 
-            if not _is_safe(real_target(rel, root), root):
-                logger.warning("[mind] refused on_memory_write: %s", rel)
+            if not is_memory_zone(rel) or not _is_safe(real_target(rel, root), root):
+                logger.warning("[mind] refused on_memory_write (outside MEMORY_ZONES): %s", rel)
                 return
 
             body = f"# {slug}\n\n{content.strip()}\n"
