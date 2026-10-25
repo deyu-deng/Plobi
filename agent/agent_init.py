@@ -915,6 +915,7 @@ def init_agent(
             if agent.provider in {"copilot-acp", "opencode-acp"}:
                 client_kwargs["command"] = agent.acp_command
                 client_kwargs["args"] = agent.acp_args
+                client_kwargs["select_model"] = agent.provider == "opencode-acp"
             effective_base = base_url
             if base_url_host_matches(effective_base, "openrouter.ai"):
                 from agent.auxiliary_client import build_or_headers

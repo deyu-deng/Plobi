@@ -407,6 +407,7 @@ class CopilotACPClient:
         acp_cwd: str | None = None,
         command: str | None = None,
         args: list[str] | None = None,
+        select_model: bool = False,
         **_: Any,
     ):
         self.api_key = api_key or "copilot-acp"
@@ -414,6 +415,7 @@ class CopilotACPClient:
         self._default_headers = dict(default_headers or {})
         self._acp_command = acp_command or command or _resolve_command()
         self._acp_args = list(acp_args or args or _resolve_args())
+        self._select_model = bool(select_model)
         self._acp_cwd = str(Path(acp_cwd or os.getcwd()).resolve())
         self.chat = _ACPChatNamespace(self)
         self.is_closed = False
@@ -470,10 +472,17 @@ class CopilotACPClient:
             _numeric = [float(v) for v in _candidates if isinstance(v, (int, float))]
             _effective_timeout = max(_numeric) if _numeric else _DEFAULT_TIMEOUT_SECONDS
 
-        response_text, reasoning_text = self._run_prompt(
-            prompt_text,
-            timeout_seconds=_effective_timeout,
-        )
+        if self._select_model:
+            response_text, reasoning_text = self._run_prompt(
+                prompt_text,
+                timeout_seconds=_effective_timeout,
+                model=model,
+            )
+        else:
+            response_text, reasoning_text = self._run_prompt(
+                prompt_text,
+                timeout_seconds=_effective_timeout,
+            )
 
         tool_calls, cleaned_text = _extract_tool_calls_from_text(response_text)
 
@@ -501,7 +510,9 @@ class CopilotACPClient:
             return _completion_to_stream_chunks(completion)
         return completion
 
-    def _run_prompt(self, prompt_text: str, *, timeout_seconds: float) -> tuple[str, str]:
+    def _run_prompt(
+        self, prompt_text: str, *, timeout_seconds: float, model: str | None = None
+    ) -> tuple[str, str]:
         try:
             proc = subprocess.Popen(
                 [self._acp_command] + self._acp_args,
@@ -640,6 +651,25 @@ class CopilotACPClient:
             session_id = str(session.get("sessionId") or "").strip()
             if not session_id:
                 raise RuntimeError("Copilot ACP did not return a sessionId.")
+
+            # Best-effort model selection. `session/set_model` is an unstable ACP
+            # extension; Copilot may not implement it, while OpenCode maps it to
+            # its providerID/modelID pair. A missing method must not fail the turn
+            # — the agent simply keeps its own default model.
+            model_id = (model or "").strip()
+            if model_id and self._select_model:
+                candidates = [model_id]
+                if "/" not in model_id:
+                    candidates.append(f"opencode/{model_id}")
+                for candidate in candidates:
+                    try:
+                        _request(
+                            "session/set_model",
+                            {"sessionId": session_id, "modelId": candidate},
+                        )
+                        break
+                    except RuntimeError:
+                        continue
 
             text_parts: list[str] = []
             reasoning_parts: list[str] = []
