@@ -23,6 +23,10 @@ describe('externalSenderOf', () => {
       kind: 'cron',
       name: ''
     })
+    expect(externalSenderOf(undefined, undefined, '[定时任务 · 早报 · 2026-10-24 08:00:00]\n读安排')).toEqual({
+      kind: 'cron',
+      name: ''
+    })
     expect(externalSenderOf(undefined, undefined, '你好')).toBeNull()
   })
 
@@ -45,6 +49,10 @@ describe('splitSpeakerPrefix', () => {
     expect(splitSpeakerPrefix('[Cron 结果 · plobi-morning-report · 2026-10-23 08:00:00]\n早报')).toEqual({
       speaker: 'plobi-morning-report',
       body: '早报'
+    })
+    expect(splitSpeakerPrefix('[定时任务 · plobi-morning-report · 2026-10-24 08:00:00]\n读安排')).toEqual({
+      speaker: 'plobi-morning-report',
+      body: '读安排'
     })
   })
 

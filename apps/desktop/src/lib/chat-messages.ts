@@ -82,7 +82,7 @@ export function externalSenderOf(
   // 带上之后这一段自然失效，不用改调用方。
   const body = typeof text === 'string' ? text : ''
 
-  if (body.startsWith('[Cron 结果 · ')) {
+  if (body.startsWith('[Cron 结果 · ') || body.startsWith('[定时任务 · ')) {
     return { kind: 'cron', name: '' }
   }
   if (body.startsWith('[来自 ')) {
@@ -116,7 +116,7 @@ export function splitSpeakerPrefix(text: string): { speaker: string; body: strin
   if (head.startsWith('来自 ')) {
     return { speaker: head.slice(3).split(' · ')[0]?.trim() ?? '', body: s.slice(close + 1).replace(/^\r?\n/, '') }
   }
-  if (head.startsWith('Cron 结果')) {
+  if (head.startsWith('Cron 结果') || head.startsWith('定时任务')) {
     return { speaker: head.split(' · ')[1]?.trim() ?? '', body: s.slice(close + 1).replace(/^\r?\n/, '') }
   }
 

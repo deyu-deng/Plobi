@@ -1502,6 +1502,47 @@ def _is_channel_dm_topic(
     return is_channel
 
 
+def _recipient_window_session(db, agent_name: str) -> tuple[str, bool]:
+    """收件人「打开就该看到」的那一屏；没有就开一条 `agent_message` 的。"""
+    import uuid
+
+    session_id = db.latest_conversational_session_for_agent(agent_name)
+    created = not session_id
+    if created:
+        session_id = "chan_" + uuid.uuid4().hex[:16]
+        db.create_session(session_id, source="agent_message", agent_id=agent_name)
+    return session_id, created
+
+
+def _write_cron_prompt_to_window(job: dict, entry) -> Optional[str]:
+    """把这一轮的 prompt 写进收件人自己的窗口（右侧、闹钟头像）。
+
+    用户 10-24：「定时任务的 prompt 也要上屏」。写的是**作业记录上那段提示词**
+    （人配的那句），不是内部拼给模型的整段框架话——后者带一堆 IMPORTANT 噪声。
+    跑之前就写：这一轮崩了，屏上也看得见它被交代了什么。
+    """
+    prompt = str(job.get("prompt") or "").strip()
+    if not prompt:
+        return None
+
+    from plobi_state import SessionDB
+
+    job_id = str(job.get("id") or "")
+    label = str(job.get("name") or job_id or "cron")
+    stamp = _plobi_now().strftime("%Y-%m-%d %H:%M:%S")
+    db = SessionDB()
+    session_id, _created = _recipient_window_session(db, entry.name)
+    return str(
+        db.append_message(
+            session_id,
+            role="user",
+            content=f"[定时任务 · {label} · {stamp}]\n{prompt}",
+            asked_by=f"cron:{job_id}" if job_id else "cron",
+            kind="cron",
+        )
+    )
+
+
 def _deliver_to_recipient_window(job: dict, content: str) -> tuple[Optional[dict], Optional[str]]:
     """把到点结果发进**收件人那一行「打开就该看到」的会话**。
 
@@ -1531,23 +1572,18 @@ def _deliver_to_recipient_window(job: dict, content: str) -> tuple[Optional[dict
     recipient = entry.name
 
     job_id = str(job.get("id") or "")
-    label = str(job.get("name") or job_id or "cron")
     stamp = _plobi_now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        import uuid
-
         from plobi_state import SessionDB
 
         db = SessionDB()
-        session_id = db.latest_conversational_session_for_agent(recipient)
-        created = not session_id
-        if created:
-            session_id = "chan_" + uuid.uuid4().hex[:16]
-            db.create_session(session_id, source="agent_message", agent_id=recipient)
+        session_id, created = _recipient_window_session(db, recipient)
+        # 裁定 201：这一条是**那个 Agent 自己的回答**——assistant 角色，屏上就是正常
+        # 回复（左侧），不再套前缀、也不再冒充「用户说的话」。
         message_id = db.append_message(
             session_id,
-            role="user",
-            content=f"[Cron 结果 · {label} · {stamp}]\n{content}",
+            role="assistant",
+            content=content,
             asked_by=f"cron:{job_id}" if job_id else "cron",
             kind="cron",
         )
@@ -2930,6 +2966,12 @@ def run_job(
             _session_db.create_session(_cron_session_id, "cron", agent_id=recipient.name)
         except Exception:
             logger.debug("Job '%s': cron session row already exists", job_id, exc_info=True)
+    if recipient is not None:
+        # 用户 10-24：prompt 也要上屏（右侧、闹钟头像）。跑之前写，崩了也看得见。
+        try:
+            _write_cron_prompt_to_window(job, recipient)
+        except Exception:
+            logger.debug("Job '%s': 写不进收件人窗口的 prompt", job_id, exc_info=True)
 
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
     logger.info("Prompt: %s", prompt[:100])

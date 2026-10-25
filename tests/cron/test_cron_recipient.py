@@ -367,20 +367,42 @@ def test_a_local_run_with_a_recipient_lands_in_that_agent_window(window_home):
     assert record["session_created"] is False
     rows = db.get_messages("sess-window")
     assert len(rows) == 1
-    assert rows[0]["role"] == "user"
-    assert "今天三节课" in rows[0]["content"]
+    # 裁定 201：这一条是那个 Agent 自己的回答——assistant、正常回复，不套前缀。
+    assert rows[0]["role"] == "assistant"
+    assert rows[0]["kind"] == "cron"
+    assert rows[0]["content"] == "今天三节课"
 
 
 def test_the_trace_names_who_carried_the_message(window_home):
-    """痕迹里要说得出是**哪一道作业**送来的——`[Cron 结果 · 早报]` 那一行 + asked_by。"""
+    """痕迹里要说得出是**哪一道作业**送来的——靠 asked_by 那一格，不靠正文。"""
     db = _db()
     db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
 
     _deliver(_window_job(id="job-77", name="额度提醒"))
 
     row = db.get_messages("sess-window")[-1]
-    assert "[Cron 结果 · 额度提醒" in row["content"]
     assert row["asked_by"] == "cron:job-77"
+    assert row["content"] == "今天三节课"
+
+
+def test_the_job_prompt_is_written_into_the_window_first(window_home):
+    """用户 10-24：定时任务的 prompt 也要上屏（右侧、闹钟头像）。"""
+    from cron.scheduler import _write_cron_prompt_to_window
+
+    class _Entry:
+        name = RECIPIENT
+
+    db = _db()
+    db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
+
+    _write_cron_prompt_to_window({"id": "job-9", "name": "早报", "prompt": "读一下今天的安排"}, _Entry())
+
+    row = db.get_messages("sess-window")[-1]
+    assert row["role"] == "user"
+    assert row["kind"] == "cron"
+    assert row["content"].startswith("[定时任务 · 早报 · ")
+    assert "读一下今天的安排" in row["content"]
+    assert row["asked_by"] == "cron:job-9"
 
 
 def test_a_local_run_without_a_recipient_stays_silent(window_home):
