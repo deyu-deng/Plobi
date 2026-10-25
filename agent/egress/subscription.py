@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import os
 import re
@@ -237,12 +238,18 @@ def parse(text: str) -> dict[str, Any]:
 def _env_name(node_name: str, field: str, port: int) -> str:
     """Deterministic, stable across re-imports, and readable enough to debug from `.env`.
 
-    Names come out of a Clash subscription in whatever script the airport chose, so the ASCII slug
-    is often empty (`东京` → nothing). Port + field keep it unique without inventing a counter that
-    would move a node's secret to a different variable when somebody reorders the list.
+    Measured on a real ikuuu subscription (10-25): names are `🇭🇰 香港W01`-style, so an
+    ASCII-only slug collapses to whatever Latin letters survive in the middle of the CJK name —
+    `PLOBI_EGRESS_W01_19272_PASSWORD`, which is worse than useless when three nodes all end in "W01".
+    A short hash of the *whole* name keeps it unique and stable; the port still carries the real
+    disambiguation, and nodes with Latin names keep the readable slug.
     """
     slug = re.sub(r"[^A-Za-z0-9]+", "_", node_name).strip("_").upper()
-    return f"{ENV_PREFIX}_{slug or 'SUB'}_{port}_{field.upper()}"
+    if len(slug) < 3 or re.search(r"[^\x00-\x7f]", node_name):
+        # Any non-ASCII in the name means the slug is lossy by construction (`🇭🇰 香港W01` → `W01`),
+        # so prefer an honest hash over a half-name that looks like it identifies something.
+        slug = "N" + hashlib.sha1(node_name.encode("utf-8")).hexdigest()[:8].upper()
+    return f"{ENV_PREFIX}_{slug}_{port}_{field.upper()}"
 
 
 def attach_env_names(nodes: list[dict[str, Any]], *, write: bool = True) -> tuple[list[dict[str, Any]], list[str], list[str]]:
