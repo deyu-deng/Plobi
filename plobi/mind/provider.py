@@ -23,7 +23,7 @@ Why a plugin and not core changes?
 Compliance boundary (CRITICAL — see plan §3/§5):
   Mind's git pre-commit verifier BLOCKS commits where:
     (1) Vault/projects top-level dir names != AGENTS.md §1 declaration, OR
-    (2) Loom/skills skill count != AGENTS.md declaration.
+    (2) （技能已不在脑仓：2026-10-25 迁到 $PLOBI_HOME/skills，本条对脑不再适用）
   All REAL writes must stay inside SAFE_PREFIXES below. Writing elsewhere
   (new top-level project dir, new skill dir, AGENTS.md edits) risks BLOCKING
   Mind's commits or polluting the second brain. When implementing, assert the
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # --- Compliance boundary -------------------------------------------------
 # Real writes MUST resolve under one of these relative prefixes (relative to
 # MIND_ROOT). These are the zones Mind's verifier does NOT block. Do not add
-# Vault/projects/<new> or Loom/skills/<new> here — those require editing Mind's
+# Vault/projects/<new> or $PLOBI_HOME/skills/<new> here — those require editing
 # own AGENTS.md declarations, which this plugin must never do automatically.
 # NOTE: the Plobi project zone is the official capitalised ``Plobi`` dir —
 # the lowercase ``plobi`` dir is a legacy Plobi archive and must never be

@@ -5,7 +5,7 @@ Three rules from the North Star contract:
 - the vault path is resolved from ``MIND_ROOT``; **no drive letters in code**
   (Docs/SPEC-FINAL.md, Mind path rule)
 - writes stay inside the prefixes Mind's own verifier tolerates; creating a new
-  ``Vault/projects/<x>`` or ``Loom/skills/<x>`` would require editing Mind's
+  ``Vault/projects/<x>`` or a skill under ``$PLOBI_HOME/skills`` would require editing Mind's
   AGENTS.md declarations, which no agent may do automatically
 - ``Vault/…`` / ``Loom/…`` are **logical** paths (ruling 2026-10-14, decisions.md
   in the brain). The human-facing surface may sit in a sibling repository, so a
