@@ -28,7 +28,7 @@ import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Cpu, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Users } from '@/lib/icons'
+import { Cpu, DeviceWatch, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Rss, Users } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
@@ -43,10 +43,14 @@ import { groupByCategory, needsSetup, relativeTime, statusOf, statusReason, visi
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
-/** 分类 → 图标。**不用字母或序号代替图标** —— 旁边就是设置里其他分类的写法。 */
+/** 分类 → 图标。**不用字母或序号代替图标** —— 旁边就是设置里其他分类的写法。
+ *  「订阅」「设备」这两格今天还没有成员（空类整块不画 ⇒ 图标今天上不了屏），
+ *  但"有类名没图标"是半件事，真接上那天就得回头补 —— 所以一起给（用户 10-25 拍的两格）。 */
 const CATEGORY_ICON: Record<string, typeof Globe> = {
   custom: Package,
+  device: DeviceWatch,
   email: Mail,
+  feed: Rss,
   local: FolderOpen,
   message: MessageCircle,
   social: Users,

@@ -336,7 +336,9 @@ export const zh: Translations = {
       message: '消息',
       social: '社交媒体',
       system: '系统',
+      device: '设备',
       website: '网站',
+      feed: '订阅',
       email: '邮箱',
       custom: '接一个自己的'
       },

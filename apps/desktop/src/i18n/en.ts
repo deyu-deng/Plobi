@@ -348,7 +348,9 @@ export const en: Translations = {
       message: 'Messaging',
       social: 'Social media',
       system: 'System',
+      device: 'Devices',
       website: 'Websites',
+      feed: 'Feeds',
       email: 'Email',
       custom: 'Bring your own'
       },

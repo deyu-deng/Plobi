@@ -275,7 +275,9 @@ export const ja = defineLocale({
       message: 'メッセージ',
       social: 'ソーシャルメディア',
       system: 'システム',
+      device: 'デバイス',
       website: 'ウェブ',
+      feed: 'フィード',
       email: 'メール',
       custom: '自分で一つを接続'
       },

@@ -51,7 +51,7 @@ vi.mock('@/i18n', () => ({
       agenda: { sources: { dingtalk: 'DingTalk', timetable: 'Timetable', wechat: 'WeChat', zju: 'Academic affairs (ZJU)' } },
       settings: {
         sources: {
-          categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', website: 'Websites', email: 'Mailboxes', custom: 'Bring your own' },
+          categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', device: 'Devices', website: 'Websites', feed: 'Feeds', email: 'Mailboxes', custom: 'Bring your own' },
           emptyExternal: 'Could not read what is installed.',
           conversations: {
             collect: 'Collect',
@@ -162,8 +162,8 @@ function row(over: Partial<SourceRow> = {}): SourceRow {
   }
 }
 
-// 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**。
-const CATEGORIES = ['message', 'social', 'website', 'local', 'system', 'email', 'custom']
+// 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**（那几段的屏上顺序由它决定）。
+const CATEGORIES = ['message', 'social', 'website', 'feed', 'local', 'system', 'device', 'email', 'custom']
 
 function payload(sources: SourceRow[]): SourcesPayload {
   const byCategory = new Map<string, string[]>()

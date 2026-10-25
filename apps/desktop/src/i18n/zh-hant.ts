@@ -268,7 +268,9 @@ export const zhHant = defineLocale({
       message: '訊息',
       social: '社群媒體',
       system: '系統',
+      device: '裝置',
       website: '網站',
+      feed: '訂閱',
       email: '信箱',
       custom: '接一個自己的'
       },

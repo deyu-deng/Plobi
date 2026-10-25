@@ -259,7 +259,8 @@ class TestCategoriesAreDeclaredNotGuessed:
     def test_grouping_keeps_empty_categories(self) -> None:
         """空分类也要出现——"这一类还没接任何信源"也是一句话，不该由界面自己编。
 
-        六个分类逐个在，且分组里的每个 id 都真属于它那一类。
+        闭集里每一类逐个在（这一句不写数字：10-25 加「订阅」「设备」时就差把"六个"改成"八个"，
+        而数字每次加类都要重新发现一次），且分组里的每个 id 都真属于它那一类。
         """
         grouped = registry.sources_by_category()
 
@@ -267,6 +268,19 @@ class TestCategoriesAreDeclaredNotGuessed:
         for category, members in grouped.items():
             for member in members:
                 assert registry.source_category(member) == category
+
+    def test_the_closed_set_order_is_the_screen_order(self) -> None:
+        """这一格的**顺序就是设置页里那几段的顺序**，所以它得写死，不能让后来人凭手感挪。
+
+        两条形状判据：`custom` 恒在最后——它不是分类，是"接一个自己的"那个逃生口，位置上要看着
+        像出口；新加的两类**按接入形态就近放**（「订阅」紧跟「网站」，差的是多实例那一件；
+        「设备」紧跟「系统」，都是本机外的东西自己冒出来）。
+        """
+        order = registry.SOURCE_CATEGORIES
+
+        assert order[-1] == "custom"
+        assert order[order.index("website") + 1] == "feed"
+        assert order[order.index("system") + 1] == "device"
 
 
 class TestDiscoveryCannotFailSilently:

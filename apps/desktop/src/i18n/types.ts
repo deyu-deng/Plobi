@@ -339,7 +339,11 @@ export interface Translations {
         message: string
         social: string
         system: string
+        /** 「配对一台设备」那一格（用户 10-25 拍的两格之一）。 */
+        device: string
         website: string
+        /** 「给一个订阅地址，且一类里可多条」那一格。 */
+        feed: string
         email: string
         custom: string
       }
