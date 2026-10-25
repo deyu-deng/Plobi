@@ -32,3 +32,12 @@ def test_kind_follows_the_same_precedence():
     assert resolve_kind({"kind": "system"}, env={"PLOBI_MESSAGE_KIND": "agent"}) == "system"
     assert resolve_kind({"role": "user"}, env={"PLOBI_MESSAGE_KIND": "system"}) == "system"
     assert resolve_kind({"role": "user"}, env={}) is None
+
+
+def test_reply_to_follows_the_same_precedence():
+    """裁定 196 ④：这条在回哪一条，与 asked_by/kind 同一条优先级。"""
+    from run_agent import resolve_reply_to
+
+    assert resolve_reply_to({"reply_to": "4091"}, env={"PLOBI_REPLY_TO": "9"}) == "4091"
+    assert resolve_reply_to({"role": "user"}, env={"PLOBI_REPLY_TO": "9"}) == "9"
+    assert resolve_reply_to({"role": "user"}, env={}) is None

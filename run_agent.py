@@ -275,6 +275,18 @@ def resolve_asked_by(message: dict = None, env: dict = None) -> Optional[str]:
     return value or None
 
 
+REPLY_TO_ENV = "PLOBI_REPLY_TO"
+
+
+def resolve_reply_to(message: dict = None, env: dict = None) -> Optional[str]:
+    """这条 user 消息在回哪一条（裁定 196 ④）：消息自己带的 > 进程环境 > 没记。"""
+    own = ((message or {}).get("reply_to") or "").strip()
+    if own:
+        return own
+    value = ((env if env is not None else os.environ).get(REPLY_TO_ENV) or "").strip()
+    return value or None
+
+
 def resolve_kind(message: dict = None, env: dict = None) -> Optional[str]:
     """这一条属于哪一类（裁定 196/201）：消息自己带的 > 进程环境 > 没记。
 
@@ -1926,6 +1938,7 @@ class AIAgent:
                     content=content,
                     asked_by=resolve_asked_by(msg) if role == "user" else None,
                     kind=resolve_kind(msg) if role == "user" else None,
+                    reply_to=resolve_reply_to(msg) if role == "user" else None,
                     tool_name=msg.get("tool_name"),
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
@@ -5827,6 +5840,7 @@ class AIAgent:
         persist_user_message: Optional[str] = None,
         persist_user_timestamp: Optional[float] = None,
         moa_config: Optional[dict[str, Any]] = None,
+        reply_to: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Forwarder — see ``agent.conversation_loop.run_conversation``."""
         from agent.conversation_loop import run_conversation
@@ -5840,6 +5854,7 @@ class AIAgent:
             persist_user_message,
             persist_user_timestamp=persist_user_timestamp,
             moa_config=moa_config,
+            reply_to=reply_to,
         )
 
     def chat(self, message: str, stream_callback: Optional[callable] = None) -> str:

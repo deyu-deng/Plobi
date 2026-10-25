@@ -8500,6 +8500,9 @@ def _rewrite_prompt_submit_text(sid: str, text: Any) -> Any:
 def _(rid, params: dict) -> dict:
     sid, text = params.get("session_id", ""), params.get("text", "")
     truncate_user_ordinal = params.get("truncate_before_user_ordinal")
+    # 引用条（裁定 196 ④）：桌面把「在回哪一条」带过来，原样落到这条 user 消息上。
+    raw_reply_to = params.get("reply_to")
+    reply_to = str(raw_reply_to).strip() if isinstance(raw_reply_to, (str, int)) else ""
     session, err = _sess_nowait(params, rid)
     if err:
         return err
@@ -8581,7 +8584,7 @@ def _(rid, params: dict) -> dict:
                 session["running"] = False
                 _clear_inflight_turn(session)
                 return
-        _run_prompt_submit(rid, sid, session, text)
+        _run_prompt_submit(rid, sid, session, text, reply_to=reply_to or None)
 
     run_thread = threading.Thread(target=run_after_agent_ready, daemon=True)
     # Keep a handle so session.interrupt can tell a live turn from a stuck
@@ -8969,7 +8972,7 @@ def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     return stop
 
 
-def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+def _run_prompt_submit(rid, sid: str, session: dict, text: Any, reply_to: Optional[str] = None) -> None:
     with session["history_lock"]:
         history = list(session["history"])
         history_version = int(session.get("history_version", 0))
@@ -9118,6 +9121,8 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 "conversation_history": list(history),
                 "stream_callback": _stream,
             }
+            if reply_to:
+                run_kwargs["reply_to"] = reply_to
             try:
                 if "task_id" in inspect.signature(agent.run_conversation).parameters:
                     run_kwargs["task_id"] = session["session_key"]

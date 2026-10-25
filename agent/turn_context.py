@@ -133,6 +133,7 @@ def build_turn_context(
     set_session_context,
     set_current_write_origin,
     ra,
+    reply_to: Optional[str] = None,
 ) -> TurnContext:
     """Run the once-per-turn setup and return the loop's input context.
 
@@ -315,6 +316,9 @@ def build_turn_context(
 
     # Add user message.
     user_msg = {"role": "user", "content": user_message}
+    if reply_to:
+        # 引用条（裁定 196 ④）：这一条在回哪一条，随这条 user 消息一起落库。
+        user_msg["reply_to"] = str(reply_to)
     messages.append(user_msg)
     current_turn_user_idx = len(messages) - 1
     agent._persist_user_message_idx = current_turn_user_idx
