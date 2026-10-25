@@ -64,8 +64,14 @@ export const $rightRailActiveTabId = persistentAtom<RightRailTabId>(
 
 export const RIGHT_RAIL_VIEW_PREVIEW = 'preview'
 export const RIGHT_RAIL_VIEW_NOTES = 'notes'
+export const RIGHT_RAIL_VIEW_DIARY = 'diary'
+export const RIGHT_RAIL_VIEW_PROGRESS = 'progress'
 
-export type RightRailView = typeof RIGHT_RAIL_VIEW_PREVIEW | typeof RIGHT_RAIL_VIEW_NOTES
+export type RightRailView =
+  | typeof RIGHT_RAIL_VIEW_PREVIEW
+  | typeof RIGHT_RAIL_VIEW_NOTES
+  | typeof RIGHT_RAIL_VIEW_DIARY
+  | typeof RIGHT_RAIL_VIEW_PROGRESS
 
 // Which face the right rail shows on an agent route: the file preview it has
 // always had, or that agent's brain notes (WP-MIND-NOTES-VIEW). Persisted, so the
@@ -76,7 +82,12 @@ export const $rightRailView = persistentAtom<RightRailView>(
   RIGHT_RAIL_VIEW_STORAGE_KEY,
   RIGHT_RAIL_VIEW_PREVIEW,
   {
-    decode: raw => (raw === RIGHT_RAIL_VIEW_NOTES ? RIGHT_RAIL_VIEW_NOTES : RIGHT_RAIL_VIEW_PREVIEW),
+    decode: raw =>
+      raw === RIGHT_RAIL_VIEW_NOTES ||
+      raw === RIGHT_RAIL_VIEW_DIARY ||
+      raw === RIGHT_RAIL_VIEW_PROGRESS
+        ? raw
+        : RIGHT_RAIL_VIEW_PREVIEW,
     encode: view => view
   }
 )

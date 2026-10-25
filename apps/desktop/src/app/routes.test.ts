@@ -15,8 +15,8 @@ import {
   routeSessionId,
   shellLevelForPath,
   shouldSyncSessionUrl,
-  showsComposerCodingRow,
-  VAULT_ROUTE
+  KNOWLEDGE_ROUTE,
+  showsComposerCodingRow
 } from './routes'
 
 // U6 (spec §3.5): the S1 three-column console is the cold-start landing and
@@ -58,12 +58,12 @@ describe('routes (U6 landing inversion)', () => {
     expect(appViewForPath('/sess-123')).toBe('console')
   })
 
-  it('routes /vault to the vault page and keeps the left rail mounted', () => {
-    expect(VAULT_ROUTE).toBe('/vault')
-    expect(appViewForPath('/vault')).toBe('vault')
-    expect(isShellPageView('vault')).toBe(true)
-    expect(isOverlayView('vault')).toBe(false)
-    expect(routeSessionId('/vault')).toBeNull()
+  it('routes /knowledge to the notes library and keeps the left rail mounted', () => {
+    expect(KNOWLEDGE_ROUTE).toBe('/knowledge')
+    expect(appViewForPath('/knowledge')).toBe('knowledge')
+    expect(isShellPageView('knowledge')).toBe(true)
+    expect(isOverlayView('knowledge')).toBe(false)
+    expect(routeSessionId('/knowledge')).toBeNull()
   })
 
   it('treats console and workbench as first-class routes, not overlays', () => {

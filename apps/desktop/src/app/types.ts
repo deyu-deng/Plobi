@@ -128,8 +128,8 @@ export type SidebarNavId =
   | 'messaging'
   | 'new-session'
   | 'settings'
+  | 'knowledge'
   | 'skills'
-  | 'vault'
 
 export interface SidebarNavItem {
   id: SidebarNavId

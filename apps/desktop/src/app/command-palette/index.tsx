@@ -73,9 +73,9 @@ import {
   MESSAGING_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
+  KNOWLEDGE_ROUTE,
   SKILLS_ROUTE,
-  STARMAP_ROUTE,
-  VAULT_ROUTE
+  STARMAP_ROUTE
 } from '../routes'
 import { FIELD_LABELS, SECTIONS } from '../settings/constants'
 import { fieldCopyForSchemaKey } from '../settings/field-copy'
@@ -461,7 +461,7 @@ export function CommandPalette() {
             run: go(CRON_ROUTE)
           },
           { action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) },
-          { action: 'nav.vault', icon: NotebookTabs, id: 'nav-vault', label: t.vault.title, run: go(VAULT_ROUTE) },
+          { action: 'nav.knowledge', icon: NotebookTabs, id: 'nav-knowledge', label: t.vault.title, run: go(KNOWLEDGE_ROUTE) },
           {
             icon: Starmap,
             id: 'nav-starmap',

@@ -1016,8 +1016,35 @@ export interface Translations {
     }
   }
 
+  diary: {
+    title: string
+    placeholder: string
+    save: string
+    saving: string
+    saved: string
+    savedWithCommit: (sha: string) => string
+    unchanged: string
+    unsaved: string
+    loadFailed: string
+    saveFailed: string
+    prevDay: string
+    nextDay: string
+    today: string
+    chars: (n: number) => string
+    entries: string
+    bold: string
+    italic: string
+    heading: string
+    bulletList: string
+    orderedList: string
+    quote: string
+    code: string
+    undo: string
+    redo: string
+  }
   vault: {
     title: string
+    progressTitle: string
     subtitle: (agents: number, withHome: number) => string
     searchPlaceholder: string
     all: string
