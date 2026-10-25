@@ -19,11 +19,64 @@ The ACP client already used for GitHub Copilot is generic enough for this
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+
 from providers import register_provider
 from providers.base import ProviderProfile
 
 
-opencode_acp = ProviderProfile(
+class OpenCodeACPProfile(ProviderProfile):
+    """OpenCode free models; ask the installed CLI for its own catalog."""
+
+    def fetch_models(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float = 15.0,
+    ) -> list[str] | None:
+        command = os.environ.get("PLOBI_OPENCODE_ACP_COMMAND", "").strip()
+        if not command:
+            command = shutil.which("opencode") or ""
+        if not command:
+            try:
+                from plobi_cli.auth import _opencode_desktop_cli
+
+                command = _opencode_desktop_cli()
+            except Exception:
+                command = ""
+        if not command:
+            return None
+        try:
+            done = subprocess.run(
+                [command, "models"],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=max(2.0, float(timeout)),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if done.returncode != 0:
+            return None
+        ids: list[str] = []
+        for line in (done.stdout or "").splitlines():
+            model = line.strip()
+            if not model:
+                continue
+            if model.startswith("opencode/"):
+                model = model[len("opencode/") :]
+            # Free-tier admission belongs to OpenCode; only advertise the
+            # channels that are actually free, never the paid ones.
+            if model.endswith("-free") or model == "big-pickle":
+                if model not in ids:
+                    ids.append(model)
+        return ids or None
+
+
+opencode_acp = OpenCodeACPProfile(
     name="opencode-acp",
     aliases=("opencode-free", "opencode-cli", "zen-free"),
     api_mode="chat_completions",
@@ -35,16 +88,15 @@ opencode_acp = ProviderProfile(
     auth_type="external_process",
     supports_health_check=False,
     fallback_models=(
+        "beam-free",
         "big-pickle",
-        "deepseek-v4-flash-free",
-        "mimo-v2.5-free",
-        "ling-3.0-flash-fin-free",
+        "deepseek-v4.1-flash-free",
+        "flint-40b-free",
+        "glm-5.3-flash-free",
+        "mimo-v2.6-flash-free",
         "nemotron-3-ultra-free",
         "nemotron-3.5-lightning-free",
-        "muse-spark-1.3-contributor-free",
-        "muse-spark-1.2-contributor-free",
-        "jev-1.13-free",
-        "step-5-preview-free",
+        "nemotron-3.5-super-vl-free",
     ),
 )
 

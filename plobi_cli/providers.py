@@ -100,6 +100,12 @@ PLOBI_OVERLAYS: Dict[str, PlobiOverlay] = {
         base_url_override="acp://opencode",
         base_url_env_var="OPENCODE_ACP_BASE_URL",
     ),
+    "cline-acp": PlobiOverlay(
+        transport="openai_chat",
+        auth_type="external_process",
+        base_url_override="acp://cline",
+        base_url_env_var="CLINE_ACP_BASE_URL",
+    ),
     "github-copilot": PlobiOverlay(
         transport="openai_chat",
         extra_env_vars=("COPILOT_GITHUB_TOKEN", "GH_TOKEN"),
@@ -380,6 +386,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "openai-codex": "OpenAI Codex",
     "copilot-acp": "GitHub Copilot ACP",
     "opencode-acp": "OpenCode Free",
+    "cline-acp": "Cline",
     "stepfun": "StepFun Step Plan",
     "xiaomi": "Xiaomi MiMo",
     "gmi": "GMI Cloud",

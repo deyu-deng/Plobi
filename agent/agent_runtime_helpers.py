@@ -1691,7 +1691,7 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
     httpx_verify = resolve_httpx_verify(ca_bundle=ssl_ca_cert, ssl_verify=ssl_verify_cfg)
     _validate_proxy_env_urls()
     _validate_base_url(client_kwargs.get("base_url"))
-    if agent.provider in {"copilot-acp", "opencode-acp"} or str(client_kwargs.get("base_url", "")).startswith("acp://"):
+    if agent.provider in {"copilot-acp", "opencode-acp", "cline-acp"} or str(client_kwargs.get("base_url", "")).startswith("acp://"):
         from agent.copilot_acp_client import CopilotACPClient
 
         client = CopilotACPClient(**client_kwargs)

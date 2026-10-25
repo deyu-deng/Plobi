@@ -660,16 +660,28 @@ class CopilotACPClient:
             if model_id and self._select_model:
                 candidates = [model_id]
                 if "/" not in model_id:
-                    candidates.append(f"opencode/{model_id}")
+                    candidates.insert(0, f"opencode/{model_id}")
                 for candidate in candidates:
                     try:
                         _request(
-                            "session/set_model",
-                            {"sessionId": session_id, "modelId": candidate},
+                            "session/set_config_option",
+                            {"sessionId": session_id, "configId": "model", "value": candidate},
                         )
                         break
                     except RuntimeError:
                         continue
+                else:
+                    # Older ACP agents expose the unstable session/set_model
+                    # method instead of session config options.
+                    for candidate in candidates:
+                        try:
+                            _request(
+                                "session/set_model",
+                                {"sessionId": session_id, "modelId": candidate},
+                            )
+                            break
+                        except RuntimeError:
+                            continue
 
             text_parts: list[str] = []
             reasoning_parts: list[str] = []

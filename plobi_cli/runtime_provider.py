@@ -1833,7 +1833,7 @@ def resolve_runtime_provider(
                 "requested_provider": requested_provider,
             }
 
-    if provider in {"copilot-acp", "opencode-acp"}:
+    if provider in {"copilot-acp", "opencode-acp", "cline-acp"}:
         creds = resolve_external_process_provider_credentials(provider)
         return {
             "provider": provider,

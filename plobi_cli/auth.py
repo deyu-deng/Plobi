@@ -251,6 +251,19 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
             "args_env": "PLOBI_OPENCODE_ACP_ARGS",
         },
     ),
+    "cline-acp": ProviderConfig(
+        id="cline-acp",
+        name="Cline",
+        auth_type="external_process",
+        inference_base_url="acp://cline",
+        base_url_env_var="CLINE_ACP_BASE_URL",
+        extra={
+            "command": "cline",
+            "args": ["--acp"],
+            "command_env": "PLOBI_CLINE_ACP_COMMAND",
+            "args_env": "PLOBI_CLINE_ACP_ARGS",
+        },
+    ),
     "gemini": ProviderConfig(
         id="gemini",
         name="Google AI Studio",
@@ -6313,12 +6326,37 @@ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
     }
 
 
+def _opencode_desktop_cli() -> str:
+    """Path to the CLI bundled with the OpenCode desktop app.
+
+    The desktop installer ships `resources/opencode-cli.exe`; it supports the
+    same `acp` subcommand as the npm CLI. Users should not need a second install
+    just to expose the free models Plobi already sees in the desktop app.
+    """
+    candidates: list[Path] = []
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    if local:
+        programs = Path(local) / "Programs"
+        candidates.append(programs / "@opencodedesktop" / "resources" / "opencode-cli.exe")
+        try:
+            candidates.extend(programs.glob("*/resources/opencode-cli.exe"))
+        except OSError:
+            pass
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return str(candidate)
+        except OSError:
+            continue
+    return ""
+
+
 def _external_process_launch(pconfig: ProviderConfig) -> tuple[str, list[str]]:
     """Command/args for an external-process provider, from its registry entry.
 
     The Copilot entry keeps its long-standing env knobs; newer ACP providers
-    (OpenCode) declare their own in ``ProviderConfig.extra`` so one branch does
-    not have to know every product name.
+    (OpenCode / Cline) declare their own in ``ProviderConfig.extra`` so one
+    branch does not have to know every product name.
     """
     extra = pconfig.extra or {}
     command_env = str(extra.get("command_env") or "").strip()
@@ -6330,6 +6368,10 @@ def _external_process_launch(pconfig: ProviderConfig) -> tuple[str, list[str]]:
     )
     if pconfig.id == "copilot-acp":
         command = os.getenv("COPILOT_CLI_PATH", "").strip() or command
+    if pconfig.id == "opencode-acp" and not shutil.which(command):
+        bundled = _opencode_desktop_cli()
+        if bundled:
+            command = bundled
     raw_args = os.getenv(args_env, "").strip() if args_env else ""
     if raw_args:
         args = shlex.split(raw_args)

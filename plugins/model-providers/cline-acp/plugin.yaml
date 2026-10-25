@@ -1,0 +1,5 @@
+name: cline-acp-provider
+kind: model-provider
+version: 1.0.0
+description: Cline free/CLI models via the Cline ACP process
+author: Plobi

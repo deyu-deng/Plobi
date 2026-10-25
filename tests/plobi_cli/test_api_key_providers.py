@@ -31,6 +31,7 @@ class TestProviderRegistry:
     @pytest.mark.parametrize("provider_id,name,auth_type", [
         ("copilot-acp", "GitHub Copilot ACP", "external_process"),
         ("opencode-acp", "OpenCode Free", "external_process"),
+        ("cline-acp", "Cline", "external_process"),
         ("copilot", "GitHub Copilot", "api_key"),
         ("huggingface", "Hugging Face", "api_key"),
         ("zai", "Z.AI / GLM", "api_key"),
@@ -392,6 +393,17 @@ class TestApiKeyProviderStatus:
         assert status["args"] == ["acp"]
         assert status["base_url"] == "acp://opencode"
 
+    def test_cline_acp_status_detects_local_cli(self, monkeypatch):
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        status = get_external_process_provider_status("cline-acp")
+
+        assert status["configured"] is True
+        assert status["command"] == "cline"
+        assert status["resolved_command"] == "/usr/local/bin/cline"
+        assert status["args"] == ["--acp"]
+        assert status["base_url"] == "acp://cline"
+
     def test_get_auth_status_dispatches_to_external_process(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
 
@@ -517,6 +529,17 @@ class TestResolveApiKeyProviderCredentials:
         assert creds["base_url"] == "acp://opencode"
         assert creds["command"] == "/usr/local/bin/opencode"
         assert creds["args"] == ["acp"]
+
+    def test_resolve_cline_acp_with_local_cli(self, monkeypatch):
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        creds = resolve_external_process_provider_credentials("cline-acp")
+
+        assert creds["provider"] == "cline-acp"
+        assert creds["api_key"] == "cline-acp"
+        assert creds["base_url"] == "acp://cline"
+        assert creds["command"] == "/usr/local/bin/cline"
+        assert creds["args"] == ["--acp"]
 
     def test_resolve_kimi_with_key(self, monkeypatch):
         monkeypatch.setenv("KIMI_API_KEY", "kimi-secret-key")
@@ -736,6 +759,20 @@ class TestRuntimeProviderResolution:
         assert result["base_url"] == "acp://opencode"
         assert result["command"] == "/usr/local/bin/opencode"
         assert result["args"] == ["acp"]
+
+    def test_runtime_cline_acp_uses_process_runtime(self, monkeypatch):
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        from plobi_cli.runtime_provider import resolve_runtime_provider
+
+        result = resolve_runtime_provider(requested="cline-acp")
+
+        assert result["provider"] == "cline-acp"
+        assert result["api_mode"] == "chat_completions"
+        assert result["api_key"] == "cline-acp"
+        assert result["base_url"] == "acp://cline"
+        assert result["command"] == "/usr/local/bin/cline"
+        assert result["args"] == ["--acp"]
 
 
 # =============================================================================
