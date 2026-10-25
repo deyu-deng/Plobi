@@ -17,8 +17,19 @@ export function mainProviderRows(providers: readonly ModelOptionProvider[]): Mod
   const rows = quotaProviders(providers)
   const hasQuotaGroups = rows.some(row => (row.slug || '').toLowerCase() === 'aigw')
   const hub = providers.find(provider => (provider.slug || '').toLowerCase() === 'aigw')
+  const prefixes = new Set(
+    (hub?.models ?? [])
+      .map(model => String(model).split('/', 1)[0]?.trim().toLowerCase())
+      .filter(Boolean)
+  )
+  const fallbackName =
+    prefixes.size === 1
+      ? humanizeProviderRows([
+          { name: String([...prefixes][0]), slug: String([...prefixes][0]) }
+        ])[0]?.name ?? '订阅额度'
+      : '订阅额度'
   const withFallback =
-    !hasQuotaGroups && hub ? [...rows, { ...hub, name: '订阅额度' }] : rows
+    !hasQuotaGroups && hub ? [...rows, { ...hub, name: fallbackName }] : rows
 
   return humanizeProviderRows(withFallback).map(row => ({
     ...row,
