@@ -370,6 +370,8 @@ export interface Translations {
        * 缺省值——所以第三方信源包零改动就能出现在界面上，只是没翻译。
        */
       /** 大类那一段的头：折叠/展开给 aria-label，errors 带 `{n}`（0 条报错时不画那半句）。 */
+      /** 格子旁边那句指路，键是 `<信源>.<字段>`。缺这一格也画得出——退回这条自己声明的 `help`。 */
+      fieldsHelp?: Record<string, string>
       groups: {
         collapse: string
         errors: string

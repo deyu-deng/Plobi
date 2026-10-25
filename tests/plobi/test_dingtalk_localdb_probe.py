@@ -105,7 +105,10 @@ class TestItIsDeclaredNotBranchedListed:
     def test_sources_that_declare_none_carry_no_such_row(self) -> None:
         registry.ensure_discovered()
 
-        assert all(registry.spec(sid).probe is None for sid in ("zju", "zdbk", "wechat", "timetable"))
+        # 名单照现状，不照印象：微信 10-25 起也声明了探针（四种缺法要分得开，裁定 203 第 2 条），
+        # 所以这里只剩"确实没有那一只手"的三家。判据本身没松：**没声明就不许画那一行**。
+        assert all(registry.spec(sid).probe is None for sid in ("timetable", "zdbk", "zju"))
+        assert registry.spec("wechat").probe is not None
 
     def test_the_probe_shape_is_the_three_keys_the_screen_reads(self) -> None:
         spec = registry.SourceSpec("probeshape", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),

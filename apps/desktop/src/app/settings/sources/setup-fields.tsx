@@ -40,6 +40,8 @@ type Labels = {
   cadenceModeWeekly: string
   cadenceWeekdays: Record<string, string>
   fields: Record<string, string>
+  /** 格子旁边那句指路，键是 `<信源>.<字段>`。缺这一格也画得出——退回这条自己声明的 `help`。 */
+  fieldsHelp?: Record<string, string>
   saveFailed: string
   saveSetup: string
 }
@@ -213,6 +215,7 @@ export function SetupFields({
           autoFocus={focusFirst && index === 0}
           busy={busy || saving}
           field={field}
+          help={helpFor(row.source, field, labels)}
           key={field.key}
           label={labels.fields[field.key] ?? field.label}
           labels={labels}
@@ -232,6 +235,7 @@ function FieldInput({
   autoFocus,
   busy,
   field,
+  help,
   label,
   labels,
   onChange,
@@ -240,6 +244,7 @@ function FieldInput({
   autoFocus?: boolean
   busy: boolean
   field: SetupField
+  help?: string
   label: string
   labels: Labels
   onChange: (value: string) => void
@@ -264,21 +269,31 @@ function FieldInput({
           className="mt-1"
           disabled={busy}
           onChange={event => onChange(event.target.value)}
-          placeholder={placeholderFor(field, labels)}
           type={field.kind === 'secret' ? 'password' : field.kind === 'url' ? 'url' : 'text'}
           value={value}
         />
       )}
+      {help && field.kind !== 'cadence'
+        ? (
+            <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)" data-testid={`field-help-${field.key}`}>
+              {help}
+            </p>
+          )
+        : null}
     </div>
   )
 }
 
-function placeholderFor(field: SetupField, labels: Labels): string | undefined {
-  if (field.kind === 'secret') {
-    return undefined
-  }
-
-  return field.kind === 'path' ? field.help : undefined
+/**
+ * 这一格旁边那句指路（裁定 203 第 1 条：用户知道的东西进界面，**旁边要写清去哪拿**）。
+ *
+ * 两级，和名字同款：先查**语言目录**（`fieldsHelp['<信源>.<键>']`，四语都有），
+ * 查不到才退回这条信源自己声明的 `help`（第三方包零改动也有一句，只是没翻译）。
+ * 旧版只在 `kind === 'path'` 时把 help 当占位符用 ⇒ 最卡人的那几格（授权码、服务器地址）
+ * **声明了也没上屏**，屏幕上是一个空密码框加一句「密码或授权码」。
+ */
+function helpFor(source: string, field: SetupField, labels: Labels): string | undefined {
+  return labels.fieldsHelp?.[`${source}.${field.key}`] ?? field.help
 }
 
 /**

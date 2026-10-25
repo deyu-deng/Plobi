@@ -70,6 +70,7 @@ vi.mock('@/i18n', () => ({
           },
 
           fields: { cadence: 'Collection cadence', ics_path: 'Path to the .ics file' },
+          fieldsHelp: { 'zju.data_thing': 'Catalog sentence beside a secret field' },
           groups: { collapse: 'Collapse this group', errors: '{n} needing attention', expand: 'Expand this group' },
           install: 'Install',
           installFailed: 'That install did not finish.',
@@ -592,6 +593,25 @@ describe('the drawer’s form', () => {
 
     expect(screen.getByLabelText('Their own field')).toBeTruthy()
     expect(screen.queryByLabelText('Path to the .ics file')).toBeNull()
+  })
+
+  it('puts that sentence beside EVERY kind of field — not only the path one', async () => {
+    // 裁定 203 第 1 条：进界面的格子，旁边要写清"去哪拿这个东西"。旧版只在 `kind === 'path'`
+    // 时把 help 当占位符 ⇒ 授权码那一格（`secret`）最卡人，却连一句声明都看不见。
+    await openDrawer(row({
+      enabled: true,
+      has_builder: true,
+      setup_fields: [
+        { help: 'Their own hint', key: 'data_thing', kind: 'secret', label: 'Their secret', required: true },
+        { help: 'Path hint from the backend', key: 'ics_path', kind: 'path', label: 'Path', required: true }
+      ],
+      source: 'zju',
+      status: 'disconnected'
+    }), 'Academic affairs (ZJU)')
+
+    // 语言目录里有这句就用目录的（四语），没有才退回这条信源自己声明的 help（第三方包零改动也有一句）
+    expect(screen.getByTestId('field-help-data_thing').textContent).toBe('Catalog sentence beside a secret field')
+    expect(screen.getByTestId('field-help-ics_path').textContent).toBe('Path hint from the backend')
   })
 
   it('will not save while a required field is empty', async () => {

@@ -76,6 +76,22 @@ def _admit(talker: str, status: str) -> None:
         talker, {"known": "known", "excluded": "excluded"}.get(status, "pending"))
 
 
+def _probe() -> dict:
+    """微信这一条在本机**缺哪一步**——构建工具、可执行产物、数据密钥、服务应答，四步分别说。
+
+    与钉钉那枚探针同一只手（`SourceSpec.probe`），公共层照样不认识微信：这一句只报前提，
+    不报今天采没采到，也不报"能采多少"。四步的判断本来就在采集器自己那侧（`sidecar.diagnose`），
+    这里只是把它接到声明层那一只手上，让设置页说得得出名字——
+    10-25 之前这一条没有探针，四种不同的病在屏幕上并成一句「采集服务未能启动」。
+    """
+    from plobi.collectors import sidecar as common
+    from . import sidecar as local
+
+    listening = common.port_listening(SPEC.sidecar_port or 0)
+    state, note = local.diagnose(healthy=listening)
+    return {"ready": state == local.STATE_READY, "code": state, "detail": note}
+
+
 SPEC = SourceSpec(
     "wechat",
     capabilities={
@@ -99,6 +115,8 @@ SPEC = SourceSpec(
     conversation_scoped=True,
     conversations=_conversations,
     admission=_admit,
+    # 缺哪一步要分得开（裁定 203 第 2 条：取不到就明说什么取不到）——这一格让上面那只手有地方说话。
+    probe=_probe,
 
     builder=_build,
 )
