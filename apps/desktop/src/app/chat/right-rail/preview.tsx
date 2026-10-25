@@ -19,10 +19,8 @@ import {
   $rightRailActiveTabId,
   $rightRailView,
   RIGHT_RAIL_PREVIEW_TAB_ID,
-  RIGHT_RAIL_VIEW_DIARY,
   RIGHT_RAIL_VIEW_NOTES,
   RIGHT_RAIL_VIEW_PREVIEW,
-  RIGHT_RAIL_VIEW_PROGRESS,
   type RightRailTabId,
   selectRightRailTab,
   setRightRailView
@@ -39,8 +37,6 @@ import {
 } from '@/store/preview'
 import { $dirtyPreviewUrls } from '@/store/preview-edit'
 
-import { AgentProgressPane } from './agent-progress-pane'
-import { DiaryPane } from './diary-pane'
 import { AgentNotesList, RAIL_CARD, RAIL_CARD_BODY, RAIL_CARD_TITLE } from './notes-list'
 import { PreviewPane } from './preview-pane'
 import { SelectionToChat } from './selection-to-chat'
@@ -121,14 +117,10 @@ export function ChatPreviewRail({
   // The notes view is only offered where there is a current agent to read notes
   // for; off an agent route the rail stays the pure preview surface it always was.
   const notesMode = Boolean(agentId) && railView === RIGHT_RAIL_VIEW_NOTES
-  const progressMode = Boolean(agentId) && railView === RIGHT_RAIL_VIEW_PROGRESS
-  // The diary belongs to the person, not to an agent, so it is offered on every
-  // route; notes and progress read one agent's dossier and stay agent-scoped.
-  const diaryMode = railView === RIGHT_RAIL_VIEW_DIARY
   // `notesMode` already implies a non-empty id; name it so TS agrees.
   const notesAgentId = agentId ?? ''
 
-  if (!activeTab && !notesMode && !progressMode && !diaryMode) {
+  if (!activeTab && !notesMode) {
     return null
   }
 
@@ -241,23 +233,23 @@ export function ChatPreviewRail({
             )
           })}
         </div>
-        {/* Faces of this rail. The diary is the person's, so it is always offered;
-            notes and progress read the current agent's dossier and only appear on
-            an agent route. */}
-        <div className="flex shrink-0 items-center gap-0.5 self-center">
-          <Tip label={t.preview.tab}>
-            <button
-              aria-label={t.preview.tab}
-              aria-pressed={!notesMode && !progressMode && !diaryMode}
-              className={RAIL_VIEW_ICON(!notesMode && !progressMode && !diaryMode)}
-              data-testid="rail-view-preview"
-              onClick={() => setRightRailView(RIGHT_RAIL_VIEW_PREVIEW)}
-              type="button"
-            >
-              <Codicon name="file" size="0.75rem" />
-            </button>
-          </Tip>
-          {agentId && (
+        {agentId && (
+          // Icon group, not a second tab strip: the notes view is a different face
+          // of this rail, not another file, and widening RightRailTabId for it would
+          // drag a non-file id through the tab-close helpers.
+          <div className="flex shrink-0 items-center gap-0.5 self-center">
+            <Tip label={t.preview.tab}>
+              <button
+                aria-label={t.preview.tab}
+                aria-pressed={!notesMode}
+                className={RAIL_VIEW_ICON(!notesMode)}
+                data-testid="rail-view-preview"
+                onClick={() => setRightRailView(RIGHT_RAIL_VIEW_PREVIEW)}
+                type="button"
+              >
+                <Codicon name="file" size="0.75rem" />
+              </button>
+            </Tip>
             <Tip label={t.console.notes.title}>
               <button
                 aria-label={t.console.notes.title}
@@ -270,34 +262,8 @@ export function ChatPreviewRail({
                 <Codicon name="note" size="0.75rem" />
               </button>
             </Tip>
-          )}
-          {agentId && (
-            <Tip label={t.vault.progressTitle}>
-              <button
-                aria-label={t.vault.progressTitle}
-                aria-pressed={progressMode}
-                className={RAIL_VIEW_ICON(progressMode)}
-                data-testid="rail-view-progress"
-                onClick={() => setRightRailView(RIGHT_RAIL_VIEW_PROGRESS)}
-                type="button"
-              >
-                <Codicon name="graph" size="0.75rem" />
-              </button>
-            </Tip>
-          )}
-          <Tip label={t.diary.title}>
-            <button
-              aria-label={t.diary.title}
-              aria-pressed={diaryMode}
-              className={RAIL_VIEW_ICON(diaryMode)}
-              data-testid="rail-view-diary"
-              onClick={() => setRightRailView(RIGHT_RAIL_VIEW_DIARY)}
-              type="button"
-            >
-              <Codicon name="book" size="0.75rem" />
-            </button>
-          </Tip>
-        </div>
+          </div>
+        )}
         <button
           aria-label={t.preview.closePane}
           className="mr-1.5 grid size-6 shrink-0 self-center place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/rail-tabs:opacity-100 [-webkit-app-region:no-drag]"
@@ -309,11 +275,7 @@ export function ChatPreviewRail({
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden" ref={bodyRef}>
-        {diaryMode ? (
-          <DiaryPane />
-        ) : progressMode ? (
-          <AgentProgressPane agentId={notesAgentId} />
-        ) : notesMode ? (
+        {notesMode ? (
           <div className="h-full overflow-y-auto py-1">
             <AgentNotesList agentId={notesAgentId} />
           </div>

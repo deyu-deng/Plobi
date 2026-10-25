@@ -369,15 +369,15 @@ export interface Translations {
        * 首次配置字段的显示名，**按 key 查**。查不到时界面回退到后端声明里那个英文
        * 缺省值——所以第三方信源包零改动就能出现在界面上，只是没翻译。
        */
+      fields: Record<string, string>
       /** 大类那一段的头：折叠/展开给 aria-label，errors 带 `{n}`（0 条报错时不画那半句）。 */
-      /** 格子旁边那句指路，键是 `<信源>.<字段>`。缺这一格也画得出——退回这条自己声明的 `help`。 */
+      /** 格子旁边那句指路，键是 `<信源>.<字段>`；查不到就退回这条自己声明的 help。 */
       fieldsHelp?: Record<string, string>
       groups: {
         collapse: string
         errors: string
         expand: string
       }
-      fields: Record<string, string>
       install: string
       installFailed: string
       installPlaceholder: string
@@ -2777,14 +2777,18 @@ export interface Translations {
     aria: string
     tabs: {
       agenda: string
+      diary: string
       files: string
+      progress: string
       review: string
       browser: string
       terminal: string
     }
     actions: {
       agenda: string
+      diary: string
       files: string
+      progress: string
       review: string
       browser: string
       terminal: string

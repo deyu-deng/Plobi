@@ -131,6 +131,8 @@ import { BrowserTabPanel } from './workbench/browser-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
+import { AgentProgressPane } from './chat/right-rail/agent-progress-pane'
+import { DiaryPane } from './chat/right-rail/diary-pane'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -323,15 +325,34 @@ export function DesktopController() {
       icon: 'terminal',
       id: 'terminal',
       title: t.workbench.tabs.terminal
+    },
+    diary: {
+      description: t.workbench.actions.diary,
+      icon: 'book',
+      id: 'diary',
+      title: t.workbench.tabs.diary
+    },
+    progress: {
+      description: t.workbench.actions.progress,
+      icon: 'graph',
+      id: 'progress',
+      title: t.workbench.tabs.progress
     }
   }
-  const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser, workbenchTabDefs.terminal]
+  const l1TabDefs = [
+    workbenchTabDefs.agenda,
+    workbenchTabDefs.browser,
+    workbenchTabDefs.terminal,
+    workbenchTabDefs.diary
+  ]
   const l2TabDefs = [
     workbenchTabDefs.files,
     workbenchTabDefs.agenda,
     workbenchTabDefs.review,
     workbenchTabDefs.browser,
-    workbenchTabDefs.terminal
+    workbenchTabDefs.terminal,
+    workbenchTabDefs.diary,
+    workbenchTabDefs.progress
   ]
   const isL1Workbench = level === 'l1'
 
@@ -369,6 +390,7 @@ export function DesktopController() {
       if (isL1Workbench) {
         setL1Tabs(tabs => (tabs.includes(tab) ? tabs : [...tabs, tab]))
         setL1Active(tab)
+        setPaneOpen('agenda-timeline', true)
       } else {
         setL2Tabs(tabs => (tabs.includes(tab) ? tabs : [...tabs, tab]))
         setL2Active(tab)
@@ -518,11 +540,21 @@ export function DesktopController() {
   }, [agentCwd])
 
   const l1OpenTabDefs = l1Tabs
-    .map(id => (id === 'agenda' || id === 'browser' || id === 'terminal' ? workbenchTabDefs[id] : null))
+    .map(id =>
+      id === 'agenda' || id === 'browser' || id === 'terminal' || id === 'diary'
+        ? workbenchTabDefs[id]
+        : null
+    )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
     .map(id =>
-      id === 'files' || id === 'review' || id === 'browser' || id === 'agenda' || id === 'terminal'
+      id === 'files' ||
+      id === 'review' ||
+      id === 'browser' ||
+      id === 'agenda' ||
+      id === 'terminal' ||
+      id === 'diary' ||
+      id === 'progress'
         ? workbenchTabDefs[id]
         : openFiles[id]?.def
     )
@@ -1633,12 +1665,17 @@ export function DesktopController() {
         <RightRailWorkbench
           activeTab={l2Active}
           availableTabs={l2TabDefs.filter(
-            tab => !l2Tabs.includes(tab.id) && (tab.id !== 'review' || Boolean(agentCwd.trim()))
+            tab =>
+              !l2Tabs.includes(tab.id) &&
+              (tab.id !== 'review' || Boolean(agentCwd.trim())) &&
+              (tab.id !== 'progress' || Boolean(activeAgentId))
           )}
           contents={{
             agenda: agendaTabContent,
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
+            diary: <DiaryPane />,
             files: workbenchFilesContent,
+            progress: activeAgentId ? <AgentProgressPane agentId={activeAgentId} /> : null,
             review: workbenchReviewContent,
             terminal: isL1Workbench ? null : <TerminalPaneChrome />,
             ...fileTabContents
@@ -1689,6 +1726,7 @@ export function DesktopController() {
           contents={{
             agenda: agendaTabContent,
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
+            diary: <DiaryPane />,
             files: null,
             terminal: isL1Workbench ? <TerminalPaneChrome /> : null
           }}
