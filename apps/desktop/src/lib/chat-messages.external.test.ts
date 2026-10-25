@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { externalSenderOf, splitFilePointers, splitSpeakerPrefix } from './chat-messages'
+import { externalSenderOf, quotedPreview, splitFilePointers, splitSpeakerPrefix } from './chat-messages'
 
 describe('externalSenderOf', () => {
   it('reads the new kind column first', () => {
@@ -86,5 +86,24 @@ describe('splitFilePointers', () => {
   it('leaves a normal paragraph alone', () => {
     expect(splitFilePointers('没有指针')).toEqual([{ kind: 'text', text: '没有指针' }])
     expect(splitFilePointers('')).toEqual([])
+  })
+})
+
+describe('quotedPreview', () => {
+  it('strips the speaker prefix and collapses the quote into one line', () => {
+    expect(quotedPreview({ id: 7, content: '[来自 plobi · 2026-10-24T11:08:40]\n第一行\n第二行' })).toEqual({
+      id: '7',
+      text: '第一行 第二行'
+    })
+  })
+
+  it('returns null when the row is missing or empty', () => {
+    expect(quotedPreview(undefined)).toBeNull()
+    expect(quotedPreview({ id: 7, content: '' })).toBeNull()
+  })
+
+  it('truncates a long quote', () => {
+    const preview = quotedPreview({ id: 1, content: 'x'.repeat(200) })
+    expect(preview?.text.length).toBe(80)
   })
 })

@@ -3,7 +3,7 @@ import type { FC } from 'react'
 
 import { $consoleAgents } from '@/app/console/store/agents'
 import { Codicon } from '@/components/ui/codicon'
-import { splitFilePointers } from '@/lib/chat-messages'
+import { type QuotedPreview, splitFilePointers } from '@/lib/chat-messages'
 import { cn } from '@/lib/utils'
 
 import { UserMessageText } from './user-message-text'
@@ -15,11 +15,12 @@ import { UserMessageText } from './user-message-text'
  * 头像用名册里已有的 `icon`/`color`（与左栏同一套），没有就退名字首字；
  * 定时任务统一一枚闹钟，不再按作业名取字——作业名仍写在气泡上方。
  */
-export const ExternalMessage: FC<{ kind: 'agent' | 'cron' | 'system'; speaker: string; text: string }> = ({
-  kind,
-  speaker,
-  text
-}) => {
+export const ExternalMessage: FC<{
+  kind: 'agent' | 'cron' | 'system'
+  speaker: string
+  text: string
+  quoted?: null | QuotedPreview
+}> = ({ kind, speaker, text, quoted }) => {
   const agents = useStore($consoleAgents)
 
   if (kind === 'system') {
@@ -64,6 +65,11 @@ export const ExternalMessage: FC<{ kind: 'agent' | 'cron' | 'system'; speaker: s
             'text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95'
           )}
         >
+          {quoted ? (
+            <div className="mb-1 border-l-2 border-(--ui-stroke-tertiary) pl-2 text-[0.75rem] leading-5 text-(--ui-text-tertiary)">
+              <span className="line-clamp-2">{quoted.text}</span>
+            </div>
+          ) : null}
           {splitFilePointers(text).map((segment, index) =>
             segment.kind === 'file' ? (
               <div

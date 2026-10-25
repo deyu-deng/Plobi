@@ -151,7 +151,7 @@ class _FakeDB:
     def create_session(self, session_id, *, source=None, agent_id=None):
         return session_id
 
-    def append_message(self, session_id, *, role=None, content=None, asked_by=None, kind=None):
+    def append_message(self, session_id, *, role=None, content=None, asked_by=None, kind=None, reply_to=None):
         self.appended.append((session_id, role, content, asked_by))
         return "m1"
 
@@ -238,3 +238,57 @@ def test_a_failed_spawn_gives_the_round_back(WK, tmp_path, monkeypatch):
     again = RL.acquire("agenda", tmp_path)
     assert again is not None, "起不来必须把跑道还回去"
     RL.release(again)
+
+
+def test_say_refuses_a_reply_to_that_is_not_in_that_screen(CH, monkeypatch):
+    """引用一条不在那一屏里的消息：当场拒，不挂空引用。"""
+    from plobi.agents.registry import AgentEntry
+
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+
+    class DB:
+        def latest_conversational_session_for_agent(self, _a):
+            return "sess-window"
+
+        def get_messages(self, _sid):
+            return [{"id": 1, "content": "在的"}]
+
+        def append_message(self, *_a, **_k):
+            raise AssertionError("不该写入")
+
+    monkeypatch.setattr(CH, "_session_db", lambda: DB())
+    monkeypatch.setattr(CH, "_trace", lambda record: None)
+    monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "话", None))
+
+    out = json.loads(CH.handle_say({"to": "agenda", "parts": ["话"], "reply_to": "999"}))
+
+    assert out["ok"] is False
+    assert "找不到要引用的" in out["error"]
+
+
+def test_say_carries_a_reply_to_that_exists(CH, monkeypatch):
+    from plobi.agents.registry import AgentEntry
+
+    entry = AgentEntry.from_dict("agenda", {"role": "l2_agenda"})
+    seen: list[dict] = []
+
+    class DB:
+        def latest_conversational_session_for_agent(self, _a):
+            return "sess-window"
+
+        def get_messages(self, _sid):
+            return [{"id": 4091, "content": "在的"}]
+
+        def append_message(self, _sid, **kwargs):
+            seen.append(kwargs)
+            return "m-quote"
+
+    monkeypatch.setattr(CH, "_session_db", lambda: DB())
+    monkeypatch.setattr(CH, "_trace", lambda record: None)
+    monkeypatch.setattr(CH, "_deliver_or_fail", lambda to, parts: (entry, "话", None))
+    monkeypatch.setattr(CH.WK, "wake_agent", lambda *a, **k: (False, "测试里不叫醒"))
+
+    out = json.loads(CH.handle_say({"to": "agenda", "parts": ["话"], "reply_to": "4091"}))
+
+    assert out["ok"] is True
+    assert seen and seen[-1]["reply_to"] == "4091"

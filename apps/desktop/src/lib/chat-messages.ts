@@ -168,6 +168,28 @@ export function splitFilePointers(text: string): MessageSegment[] {
   return segments
 }
 
+export type QuotedPreview = { id: string; text: string }
+
+/**
+ * 被引用那条的预览：去掉说话人前缀、压成一行、截 80 字。
+ * 找不到（id 指空、老数据）就 ``null``——界面上宁可不显示，也不挂一条空引用。
+ */
+export function quotedPreview(row: unknown): QuotedPreview | null {
+  if (!row || typeof row !== 'object') {
+    return null
+  }
+  const source = row as { id?: unknown; content?: unknown }
+  const id = source.id === undefined || source.id === null ? '' : String(source.id)
+  const raw = typeof source.content === 'string' ? source.content : ''
+  const body = splitSpeakerPrefix(raw).body.replace(/\s+/g, ' ').trim()
+
+  if (!id || !body) {
+    return null
+  }
+
+  return { id, text: body.slice(0, 80) }
+}
+
 export type GatewayEventPayload = {
   text?: string
   rendered?: string
@@ -882,6 +904,15 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
   let pendingToolTimestamp: number | undefined
   let activeAssistantIndex: null | number = null
 
+  // 引用条（裁定 196 ④）：先建一份 id→原始行，后面每条看一眼 `reply_to` 指向谁。
+  const rawById = new Map<string, SessionMessage>()
+  for (const row of messages) {
+    const rawId = (row as { id?: unknown }).id
+    if (rawId !== undefined && rawId !== null) {
+      rawById.set(String(rawId), row)
+    }
+  }
+
   const clearPendingTools = () => {
     pendingToolParts = []
     pendingToolTimestamp = undefined
@@ -1013,6 +1044,8 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
 
     // `kind` 是 10-24 才加的列（裁定 196/201）；老后端/老行没有它，读的时候按可选。
     const messageKind = (message as { kind?: unknown }).kind
+    const replyTo = (message as { reply_to?: unknown }).reply_to
+    const quoted = replyTo ? quotedPreview(rawById.get(String(replyTo))) : null
 
     result.push({
       id: `${message.timestamp || Date.now()}-${index}-${message.role}`,
@@ -1025,8 +1058,9 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
         ? { createdAt: new Date(message.timestamp * 1000) }
         : {}),
       // 只有 user 行带发起方；`null` 也要带（那是"这条没记"，不是"没有这一格"）。
-      ...(message.role === 'user' && (message.asked_by !== undefined || messageKind !== undefined)
-        ? { metadata: { custom: { askedBy: message.asked_by, kind: messageKind } } }
+      ...(message.role === 'user' &&
+      (message.asked_by !== undefined || messageKind !== undefined || quoted)
+        ? { metadata: { custom: { askedBy: message.asked_by, kind: messageKind, quoted } } }
         : {})
     })
 

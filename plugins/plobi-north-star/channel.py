@@ -79,6 +79,13 @@ SAY_SCHEMA = {
                 "description": "要说的内容，一段或多段。",
                 "items": _PART_ITEM,
             },
+            "reply_to": {
+                "type": "string",
+                "description": (
+                    "要引用哪一条消息——填它在对方那一屏里的消息 id（`say` 的返回值里有 `message_id`）。"
+                    "不填就是不引用。填了但那一屏里没有这条，会当场报错，不会挂一条空引用。"
+                ),
+            },
         },
         "required": ["to", "parts"],
     },
@@ -220,7 +227,7 @@ def _session_db():
     return SessionDB()
 
 
-def _deliver(entry, body: str, *, sender: str) -> tuple[str, str]:
+def _deliver(entry, body: str, *, sender: str, reply_to: str = "") -> tuple[str, str]:
     """把 ``body`` 追加到接收方「打开就该看到」的那个会话；没有就开一个。
 
     返回 ``(session_id, message_id)``。异常往外抛——调用方负责变成一句人话，
@@ -242,12 +249,24 @@ def _deliver(entry, body: str, *, sender: str) -> tuple[str, str]:
         db.create_session(session_id, source="agent_message", agent_id=entry.name)
 
     stamp = datetime.now().replace(microsecond=0).isoformat()
+    # 引用一条已有消息（用户 10-24 要的「引用条」）：id 必须真在**这一屏**里，
+    # 写个不存在的 id 会让界面上挂一条指向空气的引用——宁可当场说找不到。
+    reply_to = (reply_to or "").strip()
+    if reply_to:
+        try:
+            known = {str(row.get("id")) for row in db.get_messages(session_id)}
+        except Exception:  # noqa: BLE001 - 读不出来就不带引用，话照发
+            known = set()
+        if known and reply_to not in known:
+            raise ValueError(f"找不到要引用的那条消息（id={reply_to}）——它不在这屏里。")
+
     message_id = db.append_message(
         session_id,
         role="user",
         content=f"[来自 {sender} · {stamp}]\n{body}",
         asked_by=sender,
         kind="agent",
+        reply_to=reply_to or None,
     )
     return session_id, str(message_id)
 # ── 痕（裁 183⑥）────────────────────────────────────────────────────────
@@ -350,7 +369,9 @@ def handle_say(args: dict, **kwargs) -> str:
                 False,
                 error=f"「{entry.name}」就是你自己——别发给自己，这条永远不会有回音。要交给用户就用 `to=用户`。",
             )
-        session_id, message_id = _deliver(entry, text, sender=sender)
+        session_id, message_id = _deliver(
+            entry, text, sender=sender, reply_to=str(args.get("reply_to") or "")
+        )
     except Exception as exc:  # noqa: BLE001
         return _result(False, error=f"say 失败：{exc}")
     woke, wake_note = WK.wake_agent(entry, session_id, sender=sender)

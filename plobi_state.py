@@ -818,6 +818,7 @@ CREATE TABLE IF NOT EXISTS messages (
     platform_message_id TEXT,
     asked_by TEXT,
     kind TEXT,
+    reply_to TEXT,
     observed INTEGER DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     compacted INTEGER NOT NULL DEFAULT 0
@@ -3773,6 +3774,7 @@ class SessionDB:
         observed: bool = False,
         asked_by: Optional[str] = None,
         kind: Optional[str] = None,
+        reply_to: Optional[str] = None,
         effect_disposition: Optional[str] = None,
         timestamp: Any = None,
     ) -> int:
@@ -3829,8 +3831,8 @@ class SessionDB:
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, effect_disposition, timestamp, token_count, finish_reason,
                    reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                   codex_message_items, platform_message_id, observed, active, asked_by, kind)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   codex_message_items, platform_message_id, observed, active, asked_by, kind, reply_to)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -3852,6 +3854,7 @@ class SessionDB:
                     1,
                     asked_by,
                     kind,
+                    reply_to,
                 ),
             )
             msg_id = cursor.lastrowid
@@ -3924,8 +3927,8 @@ class SessionDB:
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, effect_disposition, timestamp, token_count, finish_reason,
                    reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                   codex_message_items, platform_message_id, observed, active, asked_by, kind)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   codex_message_items, platform_message_id, observed, active, asked_by, kind, reply_to)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -3947,6 +3950,7 @@ class SessionDB:
                     1,
                     msg.get("asked_by"),
                     msg.get("kind"),
+                    msg.get("reply_to"),
                 ),
             )
             inserted += 1
