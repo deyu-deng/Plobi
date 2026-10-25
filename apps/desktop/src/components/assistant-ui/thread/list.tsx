@@ -3,6 +3,7 @@ import {
   type ComponentProps,
   type CSSProperties,
   type FC,
+  Fragment,
   memo,
   type ReactNode,
   useCallback,
@@ -25,6 +26,7 @@ import {
 import { isSecondaryWindow } from '@/store/windows'
 
 import { MessageRenderBoundary } from '../message-render-boundary'
+import { ThreadTimeSeparator } from './time-separator'
 
 type ThreadMessageComponents = ComponentProps<typeof ThreadPrimitive.MessageByIndex>['components']
 
@@ -310,11 +312,17 @@ const ThreadMessageListInner: FC<ThreadMessageListProps> = ({
                       data-slot="aui_turn-pair"
                     >
                       {group.indices.map(index => (
-                        <ThreadPrimitive.MessageByIndex components={components} index={index} key={index} />
+                        <Fragment key={index}>
+                          <ThreadTimeSeparator index={index} />
+                          <ThreadPrimitive.MessageByIndex components={components} index={index} />
+                        </Fragment>
                       ))}
                     </div>
                   ) : (
-                    <ThreadPrimitive.MessageByIndex components={components} index={group.index} />
+                    <>
+                      <ThreadTimeSeparator index={group.index} />
+                      <ThreadPrimitive.MessageByIndex components={components} index={group.index} />
+                    </>
                   )}
                 </MessageRenderBoundary>
               </div>

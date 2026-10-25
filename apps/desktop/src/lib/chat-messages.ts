@@ -978,6 +978,11 @@ export function toChatMessages(messages: SessionMessage[]): ChatMessage[] {
       role: message.role,
       parts,
       timestamp: message.timestamp,
+      // 渲染层（时间分隔头、助手消息那一刻的小字）读的是 `createdAt`；
+      // 库里存的是 epoch 秒（可能带小数），这里只做一次换算。
+      ...(typeof message.timestamp === 'number' && Number.isFinite(message.timestamp)
+        ? { createdAt: new Date(message.timestamp * 1000) }
+        : {}),
       // 只有 user 行带发起方；`null` 也要带（那是"这条没记"，不是"没有这一格"）。
       ...(message.role === 'user' && (message.asked_by !== undefined || messageKind !== undefined)
         ? { metadata: { custom: { askedBy: message.asked_by, kind: messageKind } } }
