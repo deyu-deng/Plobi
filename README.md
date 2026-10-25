@@ -54,7 +54,7 @@ Every AI tool gives away free quota, but using them all means constant context-s
 - **Failover routing** — automatic source switching when a provider goes unhealthy or hits quota
 - **Butler alerts** — scheduled morning reports, todo digests, and quota-warning notifications
 
-### Local AI Gateway (aigw)
+### Quota Hub (quota_hub)
 - OpenAI-compatible `/v1/chat/completions` endpoint on `localhost`
 - Three integration modes: spawn-CLI (compliant), GUI automation, reverse-engineered API
 - Sticky sessions, circuit breaking, rate limiting, encrypted credential vault
@@ -151,7 +151,7 @@ export OPENAI_BASE_URL=https://api.example.com/v1
 │  └─────────┘  └──────────┘  └───────┬───────┘  │
 │                                     │           │
 │  ┌─────────────┐  ┌────────────┐   │           │
-│  │ Quota Pool  │  │  aigw      │←──┘           │
+│  │ Quota Pool  │  │ quota_hub  │←──┘           │
 │  │ (health)    │  │ (routing)  │               │
 │  └─────────────┘  └─────┬──────┘               │
 └──────────────────────────┼──────────────────────┘
@@ -166,7 +166,7 @@ export OPENAI_BASE_URL=https://api.example.com/v1
 
 ```
 ├── agent/              # Core agent runtime (LangGraph)
-├── aigw/               # Local AI gateway (OpenAI-compatible)
+├── quota_hub/          # Local quota gateway (OpenAI-compatible)
 ├── apps/desktop/       # Electron desktop app
 ├── plobi/             # Plobi-specific modules
 │   ├── agenda/         # Agenda service & collectors

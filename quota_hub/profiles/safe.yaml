@@ -1,0 +1,126 @@
+# quota_hub — SAFE profile (recommended default)
+#
+# Only ToS-friendly / local routes:
+#   - mock          (always on; zero network, zero vendor accounts)
+#   - *_cli         (spawn a locally installed & already-authenticated CLI)
+#   - workbuddy     (hybrid: CLI first, GUI only if CLI missing — GUI is gray)
+#
+# Reverse / token-scrape providers (cursor, antigravity HTTP) are OFF here.
+# For research capture see config.example.yaml and set mode carefully.
+#
+# Boot:
+#   quota_hub start --config profiles/safe.yaml
+#   # or:  set QUOTA_HUB_CONFIG=profiles/safe.yaml
+#
+# Env:
+#   QUOTA_HUB_KEY   local API key your software sends (Bearer)
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  api_key: ${QUOTA_HUB_KEY:-sk-local-dev-key}
+
+logging:
+  level: INFO
+
+trust_env: false
+
+# Vault not required for CLI/mock (CLIs own their own auth). Keep off by default.
+vault:
+  enabled: false
+
+scheduler:
+  max_retries: 3
+  global_concurrency: 32
+  per_account_concurrency: 4
+  sticky_ttl: 1800
+  strategy: least_fail
+
+aliases:
+  # Friendly names for Plobi / Plobi clients
+  plobi/mock: mock/static
+  plobi/echo: mock/echo
+  plobi/fast: antigravity_cli/gemini-3-flash
+  plobi/code: antigravity_cli/gemini-3-pro
+
+routing:
+  rules:
+    # Prefer real CLI flash; fall back to mock when agy is not installed.
+    - match: "auto"
+      providers: [antigravity_cli, mock]
+      model: antigravity_cli/gemini-3-flash
+
+providers:
+
+  # --- always-on local mock (dev / demo / CI) ----------------------------
+  mock:
+    enabled: true
+    mode: static
+    reply: "mock reply"
+    embedding_dim: 8
+    models: ["mock/echo", "mock/static", "mock/embedding"]
+    accounts:
+      - { id: mock-ok, mode: static }
+      - { id: mock-echo, mode: echo }
+
+  # --- compliant CLI seats (auto-disable if binary not on PATH) ----------
+  antigravity_cli:
+    enabled: true
+    binary: agy
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180
+    models:
+      - antigravity_cli/gemini-3-pro
+      - antigravity_cli/gemini-3-flash
+      - antigravity_cli/claude-sonnet-4-6
+    model_map:
+      antigravity_cli/gemini-3-pro: gemini-3-pro
+      antigravity_cli/gemini-3-flash: gemini-3-flash
+      antigravity_cli/claude-sonnet-4-6: claude-sonnet-4-6
+    accounts:
+      - { id: agy-default }
+
+  workbuddy:
+    enabled: true
+    prefer: cli
+    models:
+      - workbuddy/default
+    cli:
+      binary: workbuddy
+      prompt_flag: "-p"
+      model_flag: "--model"
+      timeout: 180
+      model_map:
+        workbuddy/default: default
+      accounts:
+        - { id: wb-cli-1 }
+    # GUI left empty on purpose in safe profile (opt-in via config.example).
+    gui: {}
+
+  marvis_cli:
+    enabled: true
+    binary: openmarvis
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180
+    models:
+      - marvis_cli/default
+    model_map:
+      marvis_cli/default: default
+    accounts:
+      - { id: marvis-default }
+
+  # --- explicitly OFF in safe profile ------------------------------------
+  antigravity:
+    enabled: false
+  cursor:
+    enabled: false
+  workbuddy_api:
+    enabled: false
+  workbuddy_cli:
+    enabled: false
+  workbuddy_gui:
+    enabled: false
+  marvis_gui:
+    enabled: false

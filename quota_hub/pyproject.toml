@@ -1,0 +1,85 @@
+[project]
+name = "quota_hub"
+version = "0.2.0"
+description = "Local OpenAI-compatible gateway that aggregates desktop-app quota (Cursor/Antigravity/Workbuddy)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx[http2]>=0.27",
+    "pyyaml>=6.0",
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+vault = ["keyring>=24.0"]            # OS keyring backend for the encrypted vault
+discover = ["mitmproxy>=10.0"]       # protocol capture addon
+protobuf = ["protobuf>=4.0"]         # generate cursor_pb2 stubs
+dev = [
+    "ruff>=0.6",                     # linter + formatter (replaces flake8/black/isort)
+    "mypy>=1.11",                    # static type checker
+    "pytest>=8.2",                   # test runner
+    "pytest-asyncio>=0.23",          # async test support
+    "types-PyYAML>=6.0",             # type stubs for deps
+    "types-requests>=2.32",
+]
+
+[project.scripts]
+quota-hub = "quota_hub.cli:main"
+aigw = "quota_hub.cli:main"   # compatibility alias for existing scripts
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["quota_hub*"]
+
+# ---------------------------------------------------------------------------
+# Quality tooling — see engineering-uplift-plan.md (Layer 1)
+# Dev install:  pip install -e ".[dev]"
+# Local gates:  ruff check . && ruff format --check . && mypy quota_hub && pytest
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["quota_hub"]
+exclude = ["quota_hub/proto/*_pb2.py", ".venv"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle + pyflakes (errors). I: isort. B: bugbear. UP: pyupgrade.
+# C4: comprehension. SIM: simplify. RUF: ruff-specific. ASYNC: async safety.
+select = ["E", "F", "I", "B", "UP", "C4", "SIM", "RUF", "ASYNC"]
+ignore = ["E501"]   # line length is enforced by the formatter, not the linter
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may use broad excepts, imports, and assert-heavy style.
+"tests/*" = ["B", "F401", "F811", "S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+# Start lenient: only check annotated code. Ratchet up later
+# (disallow_untyped_defs = true) once the codebase is typed.
+check_untyped_defs = false
+disallow_untyped_defs = false
+exclude = ["tests/", "quota_hub/proto/"]
+
+[[tool.mypy.overrides]]
+module = "quota_hub.proto.*"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"

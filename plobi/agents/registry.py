@@ -3406,7 +3406,11 @@ WORKBUDDY_DEFAULT_MODEL = "workbuddy/deepseek-chat"
 
 # The only list of env var *names* for this endpoint — the ``model-providers/aigw``
 # profile and ``scripts/plobi/doctor.py`` import it instead of writing their own.
-AIGW_URL_ENV_VARS: tuple[str, ...] = ("PLOBI_AIGW_URL", "PLOBI_QUOTA_AIGW_URL")
+AIGW_URL_ENV_VARS: tuple[str, ...] = (
+    "PLOBI_QUOTA_HUB_URL",
+    "PLOBI_AIGW_URL",
+    "PLOBI_QUOTA_AIGW_URL",
+)
 
 
 def aigw_base_url() -> str:
@@ -3426,9 +3430,13 @@ def aigw_base_url() -> str:
 # the agents layer, the ``model-providers/aigw`` profile (as the api-key
 # resolver's declared fallback), ``scripts/plobi/doctor.py`` and
 # ``plobi.quota.config``.  None of them re-implements this chain.
-AIGW_KEY_ENV_VARS: tuple[str, ...] = ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY")
+AIGW_KEY_ENV_VARS: tuple[str, ...] = (
+    "QUOTA_HUB_API_KEY",
+    "AIGW_API_KEY",
+    "PLOBI_QUOTA_AIGW_KEY",
+)
 AIGW_DEV_DEFAULT_API_KEY = "sk-local-dev-key"
-AIGW_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "aigw" / "config.yaml"
+AIGW_GATEWAY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "quota_hub" / "config.yaml"
 
 # ``api_key: ${AIGW_KEY:-sk-local-dev-key}`` is a valid form in the gateway's own
 # config (the gateway expands it at startup), so the reader expands it too —

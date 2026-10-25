@@ -3,7 +3,7 @@ key against the key the gateway declares, and goes red instead of guessing.
 
 Background (待决 #29, ruled 2026-10-08): the gateway owns the value (甲), consumers
 may keep a fallback but must reconcile at runtime and be *visible* when they
-disagree (乙).  Before this change `aigw_start.ps1` probed `/v1/models` with a
+disagree (乙).  Before this change `quota_hub_start.ps1` probed `/v1/models` with a
 Bearer literal written into the script, so a rotated gateway key showed up as an
 unexplained 401 — the same misdiagnosis this workspace already paid for twice.
 
@@ -37,7 +37,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PS1 = _REPO_ROOT / "scripts" / "plobi" / "aigw_start.ps1"
+_PS1 = _REPO_ROOT / "scripts" / "plobi" / "quota_hub_start.ps1"
 
 # Env vars that feed the key this script resolves.  Every run starts from a
 # cleaned env so a developer's real credential cannot decide a verdict.
@@ -55,7 +55,7 @@ _PWSH = shutil.which("powershell.exe") or shutil.which("powershell")
 
 pytestmark = pytest.mark.skipif(
     not (_PWSH and sys.platform.startswith("win")),
-    reason="aigw_start.ps1 is the Windows start script; no PowerShell host here",
+    reason="quota_hub_start.ps1 is the Windows start script; no PowerShell host here",
 )
 
 
@@ -274,7 +274,7 @@ def test_unreachable_declaration_reader_is_not_checked(tmp_path: Path):
     all.  Same source, so this exercises the real guard rather than a mock.
     """
     fake_root = tmp_path / "no-venv-checkout"
-    script_copy = fake_root / "scripts" / "plobi" / "aigw_start.ps1"
+    script_copy = fake_root / "scripts" / "plobi" / "quota_hub_start.ps1"
     script_copy.parent.mkdir(parents=True)
     shutil.copyfile(_PS1, script_copy)
     config = write_config(fake_root, "cfg.yaml", f"server:\n  api_key: {FAKE_DECLARED}\n")
@@ -322,7 +322,7 @@ def test_no_hardcoded_bearer_literal_survives_in_the_script():
     """
     source = _PS1.read_text(encoding="utf-8")
     assert "sk-local-dev-key" not in source, (
-        "aigw_start.ps1 carries a key literal again; the probe key must come "
+        "quota_hub_start.ps1 carries a key literal again; the probe key must come "
         "from the gateway's own declaration (WP-AIGW-KEY-LITERALS)"
     )
     assert not re.search(r'Bearer\s+"sk-', source), (
@@ -353,7 +353,7 @@ def test_script_reconciles_through_the_shared_reader_not_a_second_parser():
         if "api_key" in line and re.search(r"(-match|-like|\[regex\])", line)
     ]
     assert not offenders, (
-        "aigw_start.ps1 is parsing server.api_key itself again; ask the gateway's "
+        "quota_hub_start.ps1 is parsing server.api_key itself again; ask the gateway's "
         f"declared value instead: {offenders}"
     )
     for verdict in ("MATCH", "MISMATCH", "NOT_CHECKED"):

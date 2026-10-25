@@ -34,7 +34,7 @@
 import { createHash } from 'node:crypto'
 
 /** Same order, same names as `main.ts`'s `productQuotaApiKey()` -- pinned there. */
-export const ENV_ORDER = ['AIGW_API_KEY', 'PLOBI_AIGW_API_KEY'] as const
+export const ENV_ORDER = ['QUOTA_HUB_API_KEY', 'AIGW_API_KEY', 'PLOBI_AIGW_API_KEY'] as const
 /** Same literal as Python's `AIGW_DEV_DEFAULT_API_KEY`. */
 export const DEV_DEFAULT_API_KEY = 'sk-local-dev-key'
 /** Same label Python's `aigw_credential_source()` prints, so one report has one vocabulary. */

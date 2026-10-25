@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+// =============================================================================
+//  cursor.proto  —  SKELETON, NOT A REAL SCHEMA
+// -----------------------------------------------------------------------------
+//  Cursor's chat traffic is NOT REST. It is the Connect/gRPC service
+//  `aiserver.v1.ChatService` (method `StreamUnifiedChat`), sent with content-type
+//  `application/connect+proto` and guarded by an `x-cursor-checksum` anti-abuse
+//  header. The real message shapes are undocumented.
+//
+//  HOW TO TURN A CAPTURE INTO A WORKING STUB
+//  1. Capture a real request with tools/mitm_discover.py (it base64-dumps the raw
+//     protobuf bytes into captures/api2.cursor.sh/*.json).
+//  2. Recover the field layout:
+//       protoc --decode_raw < captures/api2.cursor.sh/<file>.bin
+//  3. Write the real `message` definitions below (StreamUnifiedChatRequest /
+//     StreamUnifiedChatResponse and their nested types) based on that output.
+//  4. Generate Python stubs:
+//       protoc --python_out=aigw/proto --proto_path=aigw/proto cursor.proto
+//     This produces aigw/proto/cursor_pb2.py which cursor_proto.py imports.
+//  5. Fill in _build_request() / _parse_response() in cursor_proto.py.
+//
+//  Until cursor_pb2.py exists, CursorProvider.chat() raises a clear 501 instead of
+//  silently returning garbage.
+// =============================================================================
+
+package aiserver.v1;
+
+// message StreamUnifiedChatRequest {
+//   // VERIFY field numbers/names from `protoc --decode_raw` output, e.g.:
+//   // string feature = 1;
+//   // repeated ConversationMessage conversation = 2;
+//   // string model = 3;
+//   // bool is_agentic = 4;
+// }
+
+// message StreamUnifiedChatResponse {
+//   // VERIFY: typically a union / oneof of text deltas, tool calls, citations...
+// }

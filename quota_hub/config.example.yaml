@@ -1,0 +1,293 @@
+# quota_hub — unified desktop-quota gateway config (FULL / research)
+# copy to config.yaml and fill in. env vars: ${VAR} or ${VAR:-default}
+#
+# Prefer profiles/safe.yaml for day-to-day use (mock + CLI only, reverse OFF):
+#   quota_hub start --config profiles/safe.yaml
+# This file documents every provider, including reverse / GUI research routes.
+
+server:
+  host: 127.0.0.1          # keep it local; do NOT bind 0.0.0.0 without auth in front
+  port: 8000
+  api_key: ${QUOTA_HUB_KEY:-sk-local-dev-key}   # downstream key your software sends
+
+# --- Logging (optional) ----------------------------------------------------
+# level: DEBUG|INFO|WARNING|ERROR ; file: optional log file path
+logging:
+  level: INFO
+  # file: /var/log/quota_hub.log
+
+trust_env: false           # do not inherit system HTTP_PROXY for upstream calls
+
+# --- Token Manager ----------------------------------------------------------
+# Encrypted credential vault + proactive background refresh + per-app health.
+#   enabled:    turn the TokenManager on
+#   backend:    auto | keyring | file  (keyring uses OS keychain when available)
+#   persist:    write refreshed creds to the encrypted vault so restarts don't
+#               immediately re-trigger re-auth (only where the upstream allows
+#               replaying the stored refresh token)
+#   preempt_sec: refresh a token this many seconds BEFORE it expires
+#   refresh_interval: background refresh loop period (seconds)
+vault:
+  enabled: true
+  backend: auto
+  persist: false
+  preempt_sec: 300
+  refresh_interval: 120
+
+# --- Scheduler ---------------------------------------------------------------
+scheduler:
+  max_retries: 3
+  global_concurrency: 32
+  per_account_concurrency: 4
+  sticky_ttl: 1800         # seconds a conversation stays pinned to one account
+  strategy: least_fail     # least_fail | round_robin
+
+# --- Routing rules -----------------------------------------------------------
+# Aliases rename a concrete model. Routing rules can fan a name out to an ORDERED
+# list of candidate providers (cross-app failover). Only providers that actually
+# serve the resolved model are tried, so list providers that mirror the model.
+#   match:   glob, e.g. "auto", "gemini-*", "cursor/*"
+#   providers: ordered candidate list (failover order)
+#   model:   optional concrete model override
+aliases:
+  gpt-4o: cursor/gpt-4o
+  gemini: antigravity/gemini-3-pro
+
+routing:
+  rules:
+    # "fast" fails over between Antigravity and Cursor for the same target model.
+    # Both providers must serve antigravity/gemini-3-flash for this to be useful.
+    - match: "fast"
+      providers: [antigravity, cursor]
+      model: antigravity/gemini-3-flash
+
+providers:
+
+  antigravity:
+    enabled: false                    # research: reverse Cloud Code; prefer antigravity_cli
+    use_local_session: true           # auto-read ~/.antigravity/db.sqlite
+    client_id: ${ANTIGRAVITY_CLIENT_ID}     # capture via mitm_discover.py (Google OAuth client)
+    client_secret: ${ANTIGRAVITY_CLIENT_SECRET:-}
+    # VERIFY these from a captured request before expecting 200s:
+    host: https://daily-cloudcode-pa.sandbox.googleapis.com
+    api_version: v1internal
+    thinking: false                   # emit thinkingConfig when true
+    cloudcode:
+      envelope: false                 # wrap gemini body in Cloud Code envelope
+      project: ${ANTIGRAVITY_CC_PROJECT:-}   # VERIFY: cloudcode project id
+      request_field: request          # VERIFY: field name carrying the gemini body
+      signature: ${ANTIGRAVITY_CC_SIG:-}     # VERIFY: thinking signature to replay
+    extra_headers: {}                 # mirror captured client-metadata headers
+    accounts:                          # optional extra exported tokens for pooling
+      - id: ag-2
+        label: second google account
+        refresh_token: ${AG2_REFRESH_TOKEN:-}
+
+  cursor:
+    enabled: false                    # research: protobuf chat still incomplete
+    use_local_session: true           # auto-read Cursor state.vscdb
+    # Transport strategy when chat is requested:
+    #   use_proto: true  -> binary Connect/protobuf (needs cursor_pb2 stubs)
+    #   fallback:  auto | proto | connect_json
+    #     auto         -> use proto if stubs present, else connect_json if templated
+    #     connect_json -> JSON Connect transport (needs connect_json_body_template)
+    use_proto: false
+    fallback: auto
+    checksum: ${CURSOR_CHECKSUM:-}     # x-cursor-checksum (see burpheart/cursor-tap)
+    host: https://api2.cursor.sh
+    chat_path: /aiserver.v1.ChatService/StreamUnifiedChat
+    model_map: {}                      # e.g. {"cursor/auto": "claude-4-sonnet"}
+    # Connect-JSON fallback body template. Cursor's message schema is undocumented,
+    # so you map the OpenAI request yourself. Placeholders: {model} {prompt}
+    # {system} {messages} (messages is the raw JSON array).
+    # connect_json_body_template:
+    #   model: "{model}"
+    #   prompt: "{prompt}"
+    #   history: "{messages}"
+    accounts: []
+
+  # --- Workbuddy: HYBRID (recommended) ---------------------------------
+  # Prefers the Workbuddy CLI; only falls back to GUI automation when no CLI is
+  # present. See quota_hub/providers/workbuddy_hybrid.py. If `cli:` is omitted the
+  # whole block is treated as CLI config; if `gui:` is omitted GUI is skipped.
+  workbuddy:
+    enabled: true                     # hybrid: CLI first (compliant), GUI optional
+    prefer: cli                       # cli | gui  (which route to try first)
+    models:
+      - workbuddy/default
+    cli:
+      binary: workbuddy              # override if your CLI is named differently
+      # interpreter: python          # set only if `binary` is a script
+      prompt_flag: "-p"
+      model_flag: "--model"
+      timeout: 180
+      model_map:
+        workbuddy/default: default
+      accounts:
+        - { id: wb-cli-1 }
+    gui:
+      window_title: "WorkBuddy"       # substring/regex of the main window title
+      send_key: "{Enter}"
+      response_timeout: 120
+      stable_poll: 1.0
+      stable_threshold: 3
+      models:
+        - workbuddy/default
+      # TODO: run `quota_hub workbuddy-dump` and replace with the real controls.
+      input:
+        control: EditControl
+        regex_name: ".*"
+      output:
+        control: TextControl
+        regex_name: ".*"
+      accounts:
+        - { id: wb-gui-1 }
+
+  # --- Workbuddy: CLI only (spawn-based, compliant) --------------------
+  # Standalone spawn-CLI route. Auto-disables (0 accounts) if `binary` not found.
+  workbuddy_cli:
+    enabled: false                    # set true if you want it as a separate provider
+    binary: workbuddy
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180
+    models:
+      - workbuddy/default
+    model_map:
+      workbuddy/default: default
+    accounts:
+      - { id: wb-cli-1 }
+
+  # --- Workbuddy: GUI only (Windows UI Automation, compliant) ----------
+  # Standalone GUI route. Auto-disables if uiautomation / the window is absent.
+  workbuddy_gui:
+    enabled: false                    # set true if you want it as a separate provider
+    window_title: "WorkBuddy"
+    send_key: "{Enter}"
+    response_timeout: 120
+    stable_poll: 1.0
+    stable_threshold: 3
+    models:
+      - workbuddy/default
+    input:
+      control: EditControl
+      regex_name: ".*"
+    output:
+      control: TextControl
+      regex_name: ".*"
+    accounts:
+      - { id: wb-gui-1 }
+
+  # --- Workbuddy: LEGACY HTTP passthrough (NON-compliant fallback) -----
+  # Only for builds that expose a clean HTTP API you can call with YOUR OWN key.
+  # Prefer workbuddy_cli / workbuddy_gui / workbuddy above.
+  workbuddy_api:
+    enabled: false
+    base_url: ${WORKBUDDY_BASE_URL:-https://REPLACE_ME}
+    dialect: openai                    # openai | anthropic
+    chat_path: /v1/chat/completions
+    chat_path_template: null          # e.g. "/v1/messages" (may contain {model_upstream})
+    models: ["workbuddy/default"]
+    model_map: { "workbuddy/default": "default" }
+    auth:
+      type: bearer                     # bearer | header
+      header: x-api-key
+    # header_templates: any required header, with {token}/{account_id}/{model}/...
+    header_templates:
+      - { name: "x-app-version", value: "9.2.1" }
+      - { name: "x-device-id",  value: "{account_id}" }
+    extra_headers: {}                  # static fallback headers (lowest priority)
+    accounts:
+      - id: wb-1
+        token: ${WORKBUDDY_TOKEN:-}
+
+  # --- Antigravity via the official `agy` CLI (spawn-based, compliant) -----
+  # Drives the user's own `agy` binary (non-interactive: `agy -p "<prompt>"
+  # [--model ...]`). The CLI consumes the user's own Google quota and owns its
+  # auth — no token capture, minimal ToS risk. Install:
+  #   curl -fsSL https://antigravity.google/cli/install.sh | bash
+  # The provider is auto-disabled (0 accounts) if `agy` is not on PATH.
+  antigravity_cli:
+    enabled: true
+    binary: agy                    # command resolved on PATH
+    interpreter: null              # set to "python" only if `binary` is a script
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180                   # seconds before the CLI is killed
+    models:
+      - antigravity_cli/gemini-3-pro
+      - antigravity_cli/gemini-3-flash
+      - antigravity_cli/claude-sonnet-4-6
+    model_map:
+      antigravity_cli/gemini-3-pro: gemini-3-pro
+      antigravity_cli/gemini-3-flash: gemini-3-flash
+      antigravity_cli/claude-sonnet-4-6: claude-sonnet-4-6
+    accounts:
+      - { id: agy-default }        # one seat per locally-installed `agy`
+
+  # --- Marvis via a CLI (spawn-based, compliant) ------------------------
+  # Generic adapter for ANY CLI-based Marvis build (openmarvis / marvisx-cli /
+  # lobe's `marvis` / a future Tencent Marvis CLI). Spawns the binary as a
+  # subprocess and translates its stdout into an OpenAI ChatCompletion. All CLI
+  # specifics come from config. The provider is auto-disabled (0 accounts) if the
+  # binary is not on PATH.
+  #
+  # NOTE: Tencent consumer Marvis (marvis.qq.com) is a native GUI app with NO CLI
+  # and NO inbound API — it cannot use this provider. Use a GUI-automation adapter.
+  marvis_cli:
+    enabled: true
+    binary: openmarvis              # e.g. openmarvis | marvis | agy-style binary
+    interpreter: null               # set to "python" only if `binary` is a script
+    prompt_flag: "-p"
+    model_flag: "--model"           # leave "" if the CLI has no model flag
+    timeout: 180
+    models:
+      - marvis_cli/default
+    model_map:
+      marvis_cli/default: default
+    accounts:
+      - { id: marvis-default }
+
+  # --- Tencent Marvis (marvis.qq.com) via GUI automation -----------------
+  # EXPERIMENTAL / Windows-only / needs a live GUI session. Tencent Marvis is a
+  # native system GUI with no CLI and no API, so we drive its chat box through
+  # Windows UI Automation (the GUI analog of spawn-CLI — no token scraping).
+  # FRAGILE: control selectors change between versions. After installing Marvis
+  # and `pip install -r requirements.gui.txt`, run `quota_hub marvis-dump` on the
+  # Windows machine to discover the real `input` / `output` selectors, then fill
+  # them in below. Provider auto-disables if uiautomation or the window is absent.
+  marvis_gui:
+    enabled: false                  # Windows GUI only; enable after marvis-dump
+    window_title: "Marvis"          # substring/regex of the main window title
+    send_key: "{Enter}"             # key that submits the prompt
+    response_timeout: 120           # max seconds to wait for a reply
+    stable_poll: 1.0                # seconds between response-area reads
+    stable_threshold: 3             # N unchanged reads => reply is settled
+    models:
+      - marvis_gui/default
+    # TODO: run `quota_hub marvis-dump` and replace these with the real controls.
+    input:
+      control: EditControl          # or DocumentControl / PaneControl ...
+      regex_name: ".*"              # narrow this down from the dump output
+    output:
+      control: TextControl
+      regex_name: ".*"
+    accounts:
+      - { id: marvis-gui-default }
+
+  # --- Mock provider (ToS-safe, for dev/demo and testing) -----------------
+  # No network, no vendor account. Returns OpenAI-shaped replies so you can boot
+  # the gateway today, point your own client at it, and run the e2e test suite.
+  # Per-account `mode`: echo | static | fail (retryable 429) | dead (reauth 401).
+  mock:
+    enabled: true
+    mode: static                 # default mode for accounts without their own
+    reply: "mock reply"          # canned text for `static` mode
+    latency_ms: 0                # artificial upstream latency
+    embedding_dim: 8             # vector size for /v1/embeddings (mock only)
+    models: ["mock/echo", "mock/static", "mock/fail", "mock/dead", "mock/embedding"]
+    accounts:
+      - { id: mock-ok,   mode: static }
+      - { id: mock-echo, mode: echo }
+      # - { id: mock-fail, mode: fail }   # uncomment to exercise scheduler failover
+      # - { id: mock-dead, mode: dead }   # uncomment to exercise reauth -> 503

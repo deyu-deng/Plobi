@@ -1,0 +1,62 @@
+# quota_hub — Antigravity (Google) gateway config — COMPLIANT (opendesign-style CLI route)
+#
+# This gateway does NOT capture any token. It spawns YOUR OWN `agy` CLI
+# (Google's official Antigravity / Cloud Code CLI) as a subprocess and
+# translates its stdout into OpenAI-compatible responses. `agy` owns its own
+# Google auth + quota, so there is zero reverse-engineering and minimal ToS
+# risk — the same pattern Open Design uses to drive claude/codex/cursor/plobi.
+#
+#   Install agy once:  curl -fsSL https://antigravity.google/cli/install.sh | bash
+#   (first run opens a browser to do the Google OAuth login interactively)
+#
+# The provider auto-disables (0 accounts) if `agy` is not on PATH, so this
+# config is safe to ship as-is.
+#
+# The gateway serves OpenAI-compatible endpoints on 127.0.0.1:8019:
+#   GET  /v1/models
+#   POST /v1/chat/completions
+#   GET  /healthz
+# Auth: a single local api_key (sk-...) so only your own software calls quota_hub.
+
+server:
+  host: 127.0.0.1
+  port: 8019
+  api_key: ${QUOTA_HUB_KEY:-sk-local-antigravity}
+
+logging:
+  level: INFO
+
+providers:
+  # Drives the user's own `agy` binary (non-interactive: `agy -p "<prompt>"
+  # [--model ...]`). The CLI consumes the user's own Google quota and owns its
+  # auth — no token capture. Install:
+  #   curl -fsSL https://antigravity.google/cli/install.sh | bash
+  # The provider is auto-disabled (0 accounts) if `agy` is not on PATH.
+  antigravity_cli:
+    enabled: true
+    binary: agy                    # command resolved on PATH
+    interpreter: null              # set to "python" only if `binary` is a script
+    prompt_flag: "-p"
+    model_flag: "--model"
+    timeout: 180                   # seconds before the CLI is killed
+    models:
+      - antigravity_cli/gemini-3-pro
+      - antigravity_cli/gemini-3-flash
+      - antigravity_cli/claude-sonnet-4-6
+    model_map:
+      antigravity_cli/gemini-3-pro: gemini-3-pro
+      antigravity_cli/gemini-3-flash: gemini-3-flash
+      antigravity_cli/claude-sonnet-4-6: claude-sonnet-4-6
+    accounts:
+      - { id: agy-default }        # one seat per locally-installed `agy`
+
+# Keep the legacy `antigravity/*` model ids routable so the desktop client
+# (which prefixes models with the app slug) keeps working after the provider
+# was renamed to `antigravity_cli`.
+aliases:
+  antigravity/gemini-3-pro: antigravity_cli/gemini-3-pro
+  antigravity/gemini-3-flash: antigravity_cli/gemini-3-flash
+  antigravity/claude-sonnet-4-6: antigravity_cli/claude-sonnet-4-6
+
+routing:
+  rules: []

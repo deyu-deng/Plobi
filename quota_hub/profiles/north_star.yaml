@@ -1,0 +1,19 @@
+# quota_hub profile — North Star bypass path (Antigravity etc.)
+# HID remains primary for Marvis; this profile is the software fallback.
+
+aliases:
+  plobi/master-bypass: antigravity_cli/gemini-3-flash
+  plobi/antigravity: antigravity_cli/gemini-3-flash
+
+routing:
+  rules:
+    - match: "plobi/antigravity"
+      providers: [antigravity_cli, mock]
+      model: antigravity_cli/gemini-3-flash
+    - match: "auto"
+      providers: [antigravity_cli, mock]
+      model: antigravity_cli/gemini-3-flash
+
+# Notes:
+# - Marvis is NOT routed here (GUI/HID only).
+# - Cursor reverse path stays exploratory; prefer HID adapter until stable.

@@ -136,17 +136,17 @@ test('the shell ladder keeps AIGW_API_KEY ahead of PLOBI_AIGW_API_KEY', () => {
 const mainTs = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'main.ts'), 'utf-8')
 
 test('main.ts productQuotaApiKey() is still the ladder this module mirrors', () => {
-  const wanted = `process.env.${ENV_ORDER[0]} || process.env.${ENV_ORDER[1]} || '${DEV_DEFAULT_API_KEY}'`
+  const wanted = `process.env.${ENV_ORDER[0]} || process.env.${ENV_ORDER[1]} || process.env.${ENV_ORDER[2]} || '${DEV_DEFAULT_API_KEY}'`
   assert.ok(mainTs.includes(wanted), `main.ts 的取值阶梯与本模块不同：要找「${wanted}」`)
 })
 
 // ── 已知分叉，钉住而不是悄悄抹平（要合并就两处一起改，本行同步更新） ────────────────
-test('known divergence: the Python ladder names a different second variable', () => {
-  // registry.py `AIGW_KEY_ENV_VARS` = ("AIGW_API_KEY", "PLOBI_QUOTA_AIGW_KEY"),
-  // while the shell's second rung is PLOBI_AIGW_API_KEY. Reported to 治理线 rather
-  // than fixed here: quietly changing which variable the shell honours would move
-  // behaviour under a user who set one of them.
-  assert.equal(ENV_ORDER[1], 'PLOBI_AIGW_API_KEY')
+test('the ladder carries the new name and both legacy rungs', () => {
+  // QUOTA_HUB_API_KEY is the new owner; the two old names stay after it so a
+  // user who set either one keeps working through the rename.
+  assert.equal(ENV_ORDER[0], 'QUOTA_HUB_API_KEY')
+  assert.equal(ENV_ORDER[1], 'AIGW_API_KEY')
+  assert.equal(ENV_ORDER[2], 'PLOBI_AIGW_API_KEY')
   assert.ok(
     mainTs.includes('PLOBI_AIGW_API_KEY'),
     'main.ts 不再认 PLOBI_AIGW_API_KEY —— 那就与本表与 Python 名单一起统一，别只改一边',

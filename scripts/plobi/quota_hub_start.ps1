@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    Start the local aigw (OpenAI-compatible desktop-quota gateway).
+    Start the local quota hub (OpenAI-compatible desktop-quota gateway).
 
 .DESCRIPTION
-    Reads port from Code/aigw/config.yaml (do not assume 8000).
+    Reads port from Code/quota_hub/config.yaml (do not assume 8000).
     If that port is already listening, print 已在跑 and probe /v1/models
     instead of starting a second copy. Pass -Recycle to stop that listener
-    when its command line contains "aigw start", then start again so a
+    when its command line contains "quota_hub start", then start again so a
     config.yaml change is picked up. Keys stay in env / that yaml —
     this script never hardcodes production secrets.
 
@@ -31,12 +31,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$aigwDir = Join-Path $repoRoot "aigw"
+$quotaHubDir = Join-Path $repoRoot "quota_hub"
 if (-not $Config) {
-    $Config = Join-Path $aigwDir "config.yaml"
+    $Config = Join-Path $quotaHubDir "config.yaml"
 }
 if (-not (Test-Path $Config)) {
-    Write-Error "aigw config not found: $Config"
+    Write-Error "quota hub config not found: $Config"
     exit 1
 }
 
@@ -114,8 +114,8 @@ function Stop-AigwListeners {
     $stopChild = New-Object System.Collections.Generic.List[int]
     foreach ($listenerId in $listenerPids) {
         $cmd = Get-ProcessCommandLine -ProcessId $listenerId
-        if (-not $cmd -or ($cmd -notlike "*aigw start*")) {
-            Write-Error "Recycle refused: PID $listenerId on :$Port is not an aigw start process. cmd=$cmd"
+        if (-not $cmd -or ($cmd -notlike "*quota_hub start*")) {
+            Write-Error "Recycle refused: PID $listenerId on :$Port is not a quota_hub start process. cmd=$cmd"
             exit 1
         }
         $stopChild.Add($listenerId)
@@ -123,7 +123,7 @@ function Stop-AigwListeners {
         if ($proc -and $proc.ParentProcessId) {
             $parentId = [int]$proc.ParentProcessId
             $parentCmd = Get-ProcessCommandLine -ProcessId $parentId
-            if ($parentCmd -and ($parentCmd -like "*aigw start*")) {
+            if ($parentCmd -and ($parentCmd -like "*quota_hub start*")) {
                 $stopParent.Add($parentId)
             }
         }
@@ -133,7 +133,7 @@ function Stop-AigwListeners {
     foreach ($stopId in @($stopParent + $stopChild)) {
         if ($seen.ContainsKey($stopId)) { continue }
         $seen[$stopId] = $true
-        Write-Host "Recycle: stopping PID $stopId (cmdline matches aigw start)"
+        Write-Host "Recycle: stopping PID $stopId (cmdline matches quota_hub start)"
         Stop-Process -Id $stopId -Force -ErrorAction SilentlyContinue
     }
 
@@ -221,7 +221,7 @@ function Get-AigwKeyReconciliation {
             DeclaredFp  = $null
             Key         = $null
             Marker      = "AIGW_KEY_VERDICT=NOT_CHECKED gateway_config=$ConfigPath reason=$reason"
-            Detail      = "aigw key NOT CHECKED: could not read the gateway's declared server.api_key from $ConfigPath ($reason). Not probing with a key nobody declared, and not assuming this script's key matches."
+            Detail      = "quota hub key NOT CHECKED: could not read the gateway's declared server.api_key from $ConfigPath ($reason). Not probing with a key nobody declared, and not assuming this script's key matches."
         }
     }
 
@@ -239,7 +239,7 @@ function Get-AigwKeyReconciliation {
                 DeclaredFp = $declaredFp
                 Key        = $key
                 Marker     = "AIGW_KEY_VERDICT=MATCH script_source=$usedSource script_fp=$usedFp gateway_fp=$declaredFp gateway_config=$ConfigPath"
-                Detail     = "aigw key ok: this script sends $usedSource fp=$usedFp and the gateway declares fp=$declaredFp in $ConfigPath"
+                Detail     = "quota hub key ok: this script sends $usedSource fp=$usedFp and the gateway declares fp=$declaredFp in $ConfigPath"
             }
         }
         "MISMATCH" {
@@ -250,7 +250,7 @@ function Get-AigwKeyReconciliation {
                 DeclaredFp = $declaredFp
                 Key        = $null
                 Marker     = "AIGW_KEY_VERDICT=MISMATCH script_source=$usedSource script_fp=$usedFp gateway_fp=$declaredFp gateway_config=$ConfigPath"
-                Detail     = "aigw key MISMATCH: the gateway uses server.api_key in $ConfigPath (fp=$declaredFp) but this script uses $usedSource (fp=$usedFp). Refusing to probe: one of the two is stale, and the 401 you would get reads like a dead key."
+                Detail     = "quota hub key MISMATCH: the gateway uses server.api_key in $ConfigPath (fp=$declaredFp) but this script uses $usedSource (fp=$usedFp). Refusing to probe: one of the two is stale, and the 401 you would get reads like a dead key."
             }
         }
         default {
@@ -261,7 +261,7 @@ function Get-AigwKeyReconciliation {
                 DeclaredFp = $null
                 Key        = $null
                 Marker     = "AIGW_KEY_VERDICT=NOT_CHECKED script_source=$usedSource script_fp=$usedFp gateway_config=$ConfigPath reason=no readable server.api_key"
-                Detail     = "aigw key NOT CHECKED: $ConfigPath declares no server.api_key this script can read (it uses $usedSource fp=$usedFp). Not treating 'cannot tell' as 'agrees', and not probing with a hardcoded fallback."
+                Detail     = "quota hub key NOT CHECKED: $ConfigPath declares no server.api_key this script can read (it uses $usedSource fp=$usedFp). Not treating 'cannot tell' as 'agrees', and not probing with a hardcoded fallback."
             }
         }
     }
@@ -294,7 +294,7 @@ if ($KeyCheck) {
     Write-Host $check.Marker
     Write-Host $check.Detail
     if ($check.Verdict -ne "MATCH") {
-        Write-Error "aigw key check failed: $($check.Verdict)"
+        Write-Error "quota hub key check failed: $($check.Verdict)"
         exit 1
     }
     exit 0
@@ -312,13 +312,13 @@ if (Test-LocalPortListening -Port $port) {
     Write-Host $check.Marker
     Write-Host $check.Detail
     if ($check.Verdict -ne "MATCH") {
-        Write-Error "aigw health check refused: the key this script would send ($($check.Verdict)) is not the key the gateway declares in $Config"
+        Write-Error "quota hub health check refused: the key this script would send ($($check.Verdict)) is not the key the gateway declares in $Config"
         exit 1
     }
     Show-AigwModels -Port $port -Key $check.Key
     exit 0
 }
 
-Set-Location $aigwDir
-Write-Host "Starting aigw with $Config using $python (port $port)"
-& $python -m aigw start --config $Config
+Set-Location $quotaHubDir
+Write-Host "Starting quota hub with $Config using $python (port $port)"
+& $python -m quota_hub start --config $Config

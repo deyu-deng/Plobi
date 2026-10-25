@@ -9239,7 +9239,7 @@ const PRODUCT_QUOTA_PORT = 8000
 const PRODUCT_QUOTA_BASE = `http://127.0.0.1:${PRODUCT_QUOTA_PORT}/v1`
 
 function productQuotaApiKey(): string {
-  return process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
+  return process.env.QUOTA_HUB_API_KEY || process.env.AIGW_API_KEY || process.env.PLOBI_AIGW_API_KEY || 'sk-local-dev-key'
 }
 
 // WP-AIGW-KEY-LITERALS (consumer's half, 裁定 94). Both sides of one rule:
@@ -9660,7 +9660,7 @@ const logAigw = (s: string) => {
 function isAigwDir(dir: string): boolean {
   try {
     return fs.existsSync(path.join(dir, 'config.antigravity-desktop.yaml')) ||
-           fs.existsSync(path.join(dir, 'aigw', '__init__.py'))
+           fs.existsSync(path.join(dir, 'quota_hub', '__init__.py'))
   } catch {
     return false
   }
@@ -9668,12 +9668,13 @@ function isAigwDir(dir: string): boolean {
 
 function resolveAigwDir(): string {
   // 1) Explicit override (for packaged builds or non-standard layouts).
-  if (process.env.PLOBI_AIGW_DIR) {
-    return process.env.PLOBI_AIGW_DIR
+  const explicitDir = process.env.PLOBI_QUOTA_HUB_DIR || process.env.PLOBI_AIGW_DIR
+  if (explicitDir) {
+    return explicitDir
   }
 
   // 2) Dev layout: apps/desktop -> apps -> repo root -> aigw
-  const devPath = path.resolve(app.getAppPath(), '..', '..', 'aigw')
+  const devPath = path.resolve(app.getAppPath(), '..', '..', 'quota_hub')
   if (isAigwDir(devPath)) {
     return devPath
   }
@@ -9686,7 +9687,7 @@ function resolveAigwDir(): string {
   for (let i = 0; i < 8; i++) {
     const parent = path.dirname(cursor)
     if (parent === cursor) break
-    const candidate = path.join(parent, 'aigw')
+    const candidate = path.join(parent, 'quota_hub')
     if (isAigwDir(candidate)) {
       return candidate
     }
@@ -9698,7 +9699,7 @@ function resolveAigwDir(): string {
   //    cloned into PLOBI_HOME, so a packaged desktop can find it there.
   const plobiHome = process.env.PLOBI_HOME?.trim()
   if (plobiHome) {
-    const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'aigw')
+    const bootstrapPath = path.join(plobiHome, 'plobi-agent', 'quota_hub')
     if (isAigwDir(bootstrapPath)) {
       return bootstrapPath
     }
@@ -9934,7 +9935,7 @@ async function startAigwGateway(
   // Prefer an explicitly-passed token (e.g. from the auth flow); fall back to a
   // previously persisted one so a restart can self-heal without re-login.
   const token = extraEnv.ANTIGRAVITY_REFRESH_TOKEN ?? loadAigwToken() ?? ''
-  const env = { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), AIGW_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...extraEnv }
+  const env = { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), QUOTA_HUB_CONFIG: configPath, PYTHONUNBUFFERED: '1', ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}), ...extraEnv }
   const baseUrl = `http://127.0.0.1:${opts.port}/v1`
 
   let child: ReturnType<typeof spawn>
@@ -9942,7 +9943,7 @@ async function startAigwGateway(
   try {
     child = spawn(
       python,
-      ['-m', 'aigw', 'start', '--config', configPath, '--host', '127.0.0.1', '--port', String(opts.port)],
+      ['-m', 'quota_hub', 'start', '--config', configPath, '--host', '127.0.0.1', '--port', String(opts.port)],
       { cwd: aigwDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
     )
   } catch (err) {
@@ -10135,7 +10136,7 @@ async function authAntigravity(aigwDir: string): Promise<{
     logAigw('auth: stored Antigravity account found')
   }
 
-  const extraEnv: Record<string, string> = { AIGW_KEY: 'sk-local-antigravity' }
+  const extraEnv: Record<string, string> = { QUOTA_HUB_KEY: 'sk-local-antigravity' }
 
   if (legacyToken) {
     extraEnv.ANTIGRAVITY_REFRESH_TOKEN = legacyToken
@@ -10203,7 +10204,7 @@ async function authCursor(aigwDir: string): Promise<{
     }
   }
 
-  return finishGatewayAuth('cursor', configPath, { AIGW_KEY: 'sk-local-cursor' })
+  return finishGatewayAuth('cursor', configPath, { QUOTA_HUB_KEY: 'sk-local-cursor' })
 }
 
 // Whether a local Cursor installation has a session we can read.
@@ -10276,7 +10277,7 @@ function runAigwProbe(
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
-      ['-m', 'aigw', 'probe', '--json'],
+      ['-m', 'quota_hub', 'probe', '--json'],
       {
         cwd: aigwDir,
         env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' },
@@ -10330,7 +10331,7 @@ function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<boolea
   return new Promise((resolve, reject) => {
     const child = spawn(
       python,
-      ['-m', 'aigw', 'auth', 'antigravity'],
+      ['-m', 'quota_hub', 'auth', 'antigravity'],
       { cwd: aigwDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
     )
 

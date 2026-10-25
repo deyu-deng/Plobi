@@ -32,6 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 AIGW_CONFIG_CANDIDATES = (
+    REPO_ROOT / "quota_hub" / "config.yaml",
+    REPO_ROOT / "quota_hub" / "config.example.yaml",
     REPO_ROOT / "aigw" / "config.yaml",
     REPO_ROOT / "aigw" / "config.example.yaml",
 )
@@ -104,7 +106,7 @@ DEFERRED_SOURCE_ID: dict[str, Optional[str]] = {
     "aigw": None,
 }
 
-DEFERRED_SUFFIX = "deferred — 不是坏了：这一档不归「该跑而没跑」那一型，真跑起来自己就变绿。怎么回到绿："
+DEFERRED_SUFFIX = "稍后自动启动 — 不是故障：需要时会自动运行并恢复正常。如何手动启动："
 
 
 def source_switched_on(check_id: str) -> bool:
@@ -753,10 +755,10 @@ def _desktop_token_status() -> dict[str, Any]:
 
     Never returns a token — see ``antigravity_desktop_token_status``.
     """
-    aigw_root = REPO_ROOT / "aigw"
-    if str(aigw_root) not in sys.path:
-        sys.path.insert(0, str(aigw_root))
-    from aigw.tokens import desktop_stores as ds
+    hub_root = REPO_ROOT / "quota_hub"
+    if str(hub_root) not in sys.path:
+        sys.path.insert(0, str(hub_root))
+    from quota_hub.tokens import desktop_stores as ds
 
     return ds.antigravity_desktop_token_status()
 

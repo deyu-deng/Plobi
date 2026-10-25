@@ -1,0 +1,10 @@
+# Windows-only GUI-automation dependency for the Tencent Marvis (marvis.qq.com)
+# provider. NOT a dependency of the core gateway — installing it on Linux/CI will
+# fail (uiautomation is Windows-only). Install only on the Windows machine that
+# actually runs Marvis with a visible GUI session:
+#
+#     pip install -r requirements.gui.txt
+#
+# After installing, discover the real control selectors with:
+#     quota_hub marvis-dump
+uiautomation>=2.0.29

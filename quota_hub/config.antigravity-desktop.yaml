@@ -1,0 +1,36 @@
+# quota_hub — Antigravity (Google) gateway config — DESKTOP (token route)
+#
+# This config uses the `antigravity` token-based provider (reverse-engineered
+# Cloud Code / Gemini protocol). The refresh token is obtained via Google OAuth
+# (`quota_hub auth antigravity`) and injected at runtime through the
+# ANTIGRAVITY_REFRESH_TOKEN environment variable by the desktop's
+# plobi-gateway:auth handler.
+#
+# This replaces the CLI route (config.antigravity.yaml) which depends on a
+# fictional `agy` binary that does not exist.
+
+server:
+  host: 127.0.0.1
+  port: 8019
+  api_key: ${QUOTA_HUB_KEY:-sk-local-antigravity}
+
+logging:
+  level: INFO
+
+providers:
+  # Token-based Antigravity provider: uses a Google OAuth refresh token to
+  # call daily-cloudcode-pa.googleapis.com directly. The token is injected
+  # via ANTIGRAVITY_REFRESH_TOKEN env var by the desktop auth handler.
+  antigravity:
+    enabled: true
+    host: https://daily-cloudcode-pa.googleapis.com
+    api_version: v1internal
+    accounts:
+      - { id: primary }   # refresh_token from env ANTIGRAVITY_REFRESH_TOKEN
+
+# No static aliases: the Antigravity adapter now discovers its real model list
+# live from upstream (fetchAvailableModels) and serves it via /v1/models. Static
+# aliases here would only surface stale/non-existent model ids in the catalog.
+
+routing:
+  rules: []

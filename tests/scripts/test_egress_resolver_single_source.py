@@ -19,7 +19,7 @@ from agent.egress import rules as egress
 from agent.external_offload import resolve_proxy
 
 REPO = Path(__file__).resolve().parents[2]
-PRODUCT_DIRS = ("agent", "tools", "gateway", "plobi_cli", "aigw", "plugins")
+PRODUCT_DIRS = ("agent", "tools", "gateway", "plobi_cli", "quota_hub", "plugins")
 
 
 def test_only_the_egress_parser_reads_the_config_key():

@@ -20,8 +20,10 @@
  * actually works.
  *
  * Both probes are deliberately fast and forgiving:
- *   - 5s timeout (a hung interpreter beats forever, but we still give
- *     slow disks / cold caches room to breathe)
+ *   - 15s timeout (a hung interpreter beats forever, but we still give
+ *     slow disks / cold caches / cold Python imports room to breathe;
+ *     a cold-start `plobi.EXE --version` was measured at ~10.6s on
+ *     Windows, so 5s used to false-negative healthy candidates)
  *   - stdio ignored (we only care about exit code; stdout/stderr are
  *     not surfaced to the user, just to recentPlobiLog for forensics
  *     via the caller's catch block if it chooses)
@@ -34,7 +36,7 @@
 
 import { execFileSync } from 'node:child_process'
 
-const PROBE_TIMEOUT_MS = 5000
+const PROBE_TIMEOUT_MS = 15000
 
 /**
  * Return the Python snippet used to verify Plobi can import far enough to
@@ -117,7 +119,7 @@ function canImportPlobiCli(pythonPath: string, opts: { cwd?: string; env?: Recor
  * @returns {string}
  */
 function aigwRuntimeImportProbe() {
-  return 'import aigw.cli'
+  return 'import quota_hub.cli'
 }
 
 /**
