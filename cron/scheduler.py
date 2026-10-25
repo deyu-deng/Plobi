@@ -1502,6 +1502,104 @@ def _is_channel_dm_topic(
     return is_channel
 
 
+def _round_lock_path(agent_name: str) -> Path:
+    import hashlib
+
+    slug = "".join(ch for ch in agent_name if ch.isalnum() or ch in "-_")[:40]
+    digest = hashlib.sha1(agent_name.encode("utf-8")).hexdigest()[:8]
+    root = _get_plobi_home() / "plobi" / "round-locks"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / f"{slug or 'agent'}-{digest}.json"
+
+
+def _acquire_agent_round(agent_name: str, *, job_id: str = "") -> Optional[Path]:
+    """同一个人同时只跑一轮：抢到返回标记路径，抢不到返回 ``None``。
+
+    cron 到点、`say` 的叫醒子进程都可能往同一屏写——两个回合同时落进去，
+    就是两份钱加两条互相打架的历史。标记里记 pid：活着的进程挡住后来者，
+    死掉的（崩了/被杀了）当过期直接接管。
+    """
+    marker = _round_lock_path(agent_name)
+    payload = json.dumps(
+        {
+            "pid": os.getpid(),
+            "job": job_id,
+            "agent": agent_name,
+            "at": _plobi_now().replace(microsecond=0).isoformat(),
+        },
+        ensure_ascii=False,
+    )
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        try:
+            held = json.loads(marker.read_text(encoding="utf-8"))
+            pid = int(held.get("pid") or 0)
+        except (OSError, ValueError, TypeError):
+            pid = 0
+        if pid and _pid_alive(pid):
+            return None
+        try:
+            marker.write_text(payload, encoding="utf-8")
+            return marker
+        except OSError:
+            return None
+    except OSError:
+        # 落不下锁就别把这一轮也吞了：宁可跑，也不要静默不跑。
+        return None
+    try:
+        os.write(fd, payload.encode("utf-8"))
+    finally:
+        os.close(fd)
+    return marker
+
+
+def _release_agent_round(marker: Optional[Path]) -> None:
+    if marker is None:
+        return
+    try:
+        marker.unlink(missing_ok=True)
+    except OSError:
+        logger.debug("round lock 没删掉（不影响这一趟）", exc_info=True)
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _window_history_for(entry, limit: int = 40) -> Optional[list]:
+    """把收件人那一屏最近的消息当成这一轮的上下文（裁定 201）。
+
+    用户 10-24：「cron 的本质还是新启动了一个会话……而不是像用户发消息一样接着整个
+    会话的上下文呢？」——现核确实如此。`run_conversation` 支持 ``conversation_history``，
+    所以这一轮不再是白纸：把那一屏最近的 user/assistant 行喂进去，它接得上之前聊过什么，
+    而 cron 自己的 transcript 仍留在 `cron_*` 那条会话里（运行历史那一页不受影响）。
+    """
+    try:
+        from plobi_state import SessionDB
+
+        db = SessionDB()
+        session_id = db.latest_conversational_session_for_agent(entry.name)
+        if not session_id:
+            return None
+        rows = db.get_messages(session_id)
+    except Exception as exc:  # noqa: BLE001 - 读不到上下文不等于这一轮不能跑
+        logger.debug("cron: 读不到「%s」那一屏的历史（%s）", getattr(entry, "name", "?"), exc)
+        return None
+    history = [
+        {"role": row.get("role"), "content": row.get("content")}
+        for row in (rows or [])[-limit:]
+        if row.get("role") in ("user", "assistant") and row.get("content")
+    ]
+    return history or None
+
+
 def _recipient_window_session(db, agent_name: str) -> tuple[str, bool]:
     """收件人「打开就该看到」的那一屏；没有就开一条 `agent_message` 的。"""
     import uuid
@@ -3446,12 +3544,32 @@ def run_job(
                     "Job '%s': run_claim heartbeat failed", job_name, exc_info=True
                 )
 
+        _round_marker = (
+            _acquire_agent_round(recipient.name, job_id=job_id) if recipient is not None else None
+        )
+        if recipient is not None and _round_marker is None:
+            logger.warning(
+                "Job '%s': 「%s」那一屏已经有一轮在跑，这一趟跳过", job_id, recipient.name
+            )
+            return (
+                False,
+                "",
+                "",
+                f"「{recipient.name}」那一屏已经有一轮在跑（两个回合同时落进去会把历史搅乱）",
+            )
+
+        _window_history = _window_history_for(recipient) if recipient is not None else None
         _cron_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         # Preserve scheduler-scoped ContextVar state (for example skill-declared
         # env passthrough registrations) when the cron run hops into the worker
         # thread used for inactivity timeout monitoring.
         _cron_context = contextvars.copy_context()
-        _cron_future = _cron_pool.submit(_cron_context.run, agent.run_conversation, prompt)
+        _cron_future = _cron_pool.submit(
+            _cron_context.run,
+            agent.run_conversation,
+            prompt,
+            conversation_history=_window_history,
+        )
         _inactivity_timeout = False
         try:
             if _cron_inactivity_limit is None:
@@ -3495,6 +3613,7 @@ def run_job(
             raise
         finally:
             _cron_pool.shutdown(wait=False, cancel_futures=True)
+            _release_agent_round(_round_marker)
 
         if _inactivity_timeout:
             # Build diagnostic summary from the agent's activity tracker.

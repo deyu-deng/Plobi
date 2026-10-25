@@ -467,3 +467,57 @@ def test_the_trace_is_one_cell_on_the_job_and_a_silent_run_clears_it(window_home
 
         mark_job_run(job["id"], True)
         assert get_job(job["id"])["last_delivery"] is None, "这一轮没投就要清空，别留旧痕迹"
+
+
+# ------------------------------------- 同一屏同时只跑一轮 + 接着上下文（裁定 201）
+
+def test_a_second_round_on_the_same_screen_is_refused_while_one_is_alive(window_home):
+    from cron.scheduler import _acquire_agent_round, _release_agent_round
+
+    first = _acquire_agent_round(RECIPIENT, job_id="j1")
+    try:
+        assert first is not None
+        assert _acquire_agent_round(RECIPIENT, job_id="j2") is None, "同一屏不许并发两轮"
+    finally:
+        _release_agent_round(first)
+
+    again = _acquire_agent_round(RECIPIENT, job_id="j3")
+    try:
+        assert again is not None, "上一轮放掉之后要能再抢"
+    finally:
+        _release_agent_round(again)
+
+
+def test_a_dead_holder_does_not_block_the_next_round(window_home):
+    import json
+
+    from cron.scheduler import _acquire_agent_round, _release_agent_round, _round_lock_path
+
+    marker = _round_lock_path(RECIPIENT)
+    marker.write_text(json.dumps({"pid": 999999, "agent": RECIPIENT}), encoding="utf-8")
+
+    got = _acquire_agent_round(RECIPIENT, job_id="j4")
+    try:
+        assert got is not None, "死掉的持有者应当被接管"
+    finally:
+        _release_agent_round(got)
+
+
+def test_the_round_sees_the_recent_conversation_of_that_screen(window_home):
+    from cron.scheduler import _window_history_for
+
+    db = _db()
+    db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
+    for i in range(5):
+        db.append_message("sess-window", role="user", content=f"u{i}")
+        db.append_message("sess-window", role="assistant", content=f"a{i}")
+
+    class _Entry:
+        name = RECIPIENT
+
+    history = _window_history_for(_Entry(), limit=4)
+
+    assert history is not None
+    assert [h["role"] for h in history] == ["user", "assistant"] * 2
+    assert history[-1]["content"] == "a4"
+    assert len(history) == 4
