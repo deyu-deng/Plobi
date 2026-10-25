@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import queue
 import tempfile
 import unittest
 from pathlib import Path
@@ -312,3 +313,201 @@ def test_run_prompt_passes_home_when_parent_env_is_clean(monkeypatch, tmp_path):
 
     assert "env" in captured["kwargs"]
     assert captured["kwargs"]["env"]["HOME"]
+
+
+# ── Windows spawn resolution + multi-CLI error wording ───────────────
+
+
+def test_spawnable_resolves_a_bare_name_from_path(monkeypatch):
+    """npm-style ``gemini.CMD`` is invisible to CreateProcess unless given in full.
+
+    Measured 2026-10-25: ``shutil.which("gemini")`` finds the wrapper but
+    ``Popen(["gemini", "--acp"])`` raises FileNotFoundError, while the absolute
+    path starts fine.
+    """
+    from agent.copilot_acp_client import _spawnable
+
+    monkeypatch.setattr(
+        "agent.copilot_acp_client.shutil.which",
+        lambda name: r"D:\Runtimes\Languages\Node\gemini.CMD" if name == "gemini" else None,
+    )
+    assert _spawnable("gemini") == r"D:\Runtimes\Languages\Node\gemini.CMD"
+
+
+def test_spawnable_leaves_explicit_paths_and_missing_names_alone(monkeypatch):
+    from agent.copilot_acp_client import _spawnable
+
+    monkeypatch.setattr("agent.copilot_acp_client.shutil.which", lambda name: None)
+    # Already an explicit path → nothing to look up.
+    assert _spawnable("/usr/local/bin/opencode") == "/usr/local/bin/opencode"
+    assert _spawnable(r"D:\Portables\cli\opencode\opencode.exe") == (
+        r"D:\Portables\cli\opencode\opencode.exe"
+    )
+    # Not installed → keep the declared name so the caller's own error still names it.
+    assert _spawnable("copilot") == "copilot"
+    assert _spawnable("") == ""
+
+
+class _ScriptedAcpProcess:
+    """Minimal bidirectional stand-in for an ACP child process."""
+
+    def __init__(self, replies):
+        self._replies = replies
+        self._out = queue.Queue()
+        self.stdin = _LineWriter(self)
+        self.stdout = _LineReader(self._out)
+        self.stderr = _LineReader(queue.Queue())
+        self.returncode = None
+        self.terminated = False
+
+    def poll(self):
+        return None
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+class _LineWriter:
+    def __init__(self, proc):
+        self._proc = proc
+
+    def write(self, text):
+        try:
+            msg = json.loads(text)
+        except Exception:
+            return
+        reply = self._proc._replies.get(msg.get("method"))
+        if reply is None:
+            return
+        body = {"jsonrpc": "2.0", "id": msg.get("id")}
+        body.update(reply)
+        self._proc._out.put(json.dumps(body) + "\n")
+
+    def flush(self):
+        pass
+
+
+class _LineReader:
+    def __init__(self, q):
+        self._q = q
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        item = self._q.get()
+        if item is None:
+            raise StopIteration
+        return item
+
+
+def _reply_for(method_result=None, error=None):
+    if error is not None:
+        return {"error": error}
+    return {"result": method_result}
+
+
+def _patch_popen(proc):
+    return _patch(
+        "agent.copilot_acp_client.subprocess.Popen",
+        return_value=proc,
+    )
+
+
+def test_session_new_auth_failure_names_the_cli_and_says_signed_in(monkeypatch, tmp_path):
+    """A signed-out CLI answers -32000 on session/new, after a good handshake.
+
+    Verified live against gemini 0.65.0 / qwen 0.26.0 / cline 3.0.73. The old
+    wording said "Copilot ACP", which blamed the wrong product and told the user
+    nothing about how to fix it.
+    """
+    monkeypatch.setattr("agent.copilot_acp_client.shutil.which", lambda name: None)
+    proc = _ScriptedAcpProcess(
+        {
+            "initialize": _reply_for(
+                {"protocolVersion": 1, "agentInfo": {"name": "qwen-code", "version": "0.26.0"}}
+            ),
+            "session/new": _reply_for(
+                error={
+                    "code": -32000,
+                    "message": "Authentication required: Use Qwen Code CLI to authenticate first.",
+                }
+            ),
+        }
+    )
+    client = CopilotACPClient(
+        api_key="qwen-acp",
+        base_url="acp://qwen",
+        acp_command="qwen",
+        acp_args=["--acp"],
+        acp_cwd=str(tmp_path),
+    )
+
+    with _patch_popen(proc):
+        with pytest.raises(RuntimeError) as excinfo:
+            client._run_prompt("hi", timeout_seconds=3)
+
+    text = str(excinfo.value)
+    assert "qwen is not signed in" in text
+    assert "own their own credentials" in text or "owns its own credentials" in text
+    assert "Authentication required" in text
+    assert "Copilot" not in text
+
+
+def test_non_auth_error_names_the_cli_that_answered(monkeypatch, tmp_path):
+    monkeypatch.setattr("agent.copilot_acp_client.shutil.which", lambda name: None)
+    proc = _ScriptedAcpProcess(
+        {
+            "initialize": _reply_for({"protocolVersion": 1}),
+            "session/new": _reply_for(error={"code": -32601, "message": "Method not found"}),
+        }
+    )
+    client = CopilotACPClient(
+        api_key="gemini-acp",
+        base_url="acp://gemini",
+        acp_command="gemini",
+        acp_args=["--acp"],
+        acp_cwd=str(tmp_path),
+    )
+
+    with _patch_popen(proc):
+        with pytest.raises(RuntimeError) as excinfo:
+            client._run_prompt("hi", timeout_seconds=3)
+
+    assert "ACP session/new failed (gemini)" in str(excinfo.value)
+
+
+def test_model_candidates_keep_opencodes_measured_namespaced_shape():
+    """OpenCode's agent is the one CLI proven to want providerID/modelID."""
+    from agent.copilot_acp_client import _acp_namespace, _model_candidates
+
+    ns = _acp_namespace("acp://opencode")
+    assert ns == "opencode"
+    assert _model_candidates("big-pickle", ns) == ["opencode/big-pickle", "big-pickle"]
+    # An id that already carries a prefix goes through untouched.
+    assert _model_candidates("opencode/big-pickle", ns) == ["opencode/big-pickle"]
+
+
+def test_model_candidates_do_not_guess_a_prefix_for_the_other_clis():
+    """A namespaced guess could be accepted-but-ignored, i.e. a silent wrong model."""
+    from agent.copilot_acp_client import _acp_namespace, _model_candidates
+
+    assert _model_candidates("gemini-3-pro", _acp_namespace("acp://gemini")) == ["gemini-3-pro"]
+    assert _model_candidates("qwen3.5-plus", _acp_namespace("acp://qwen")) == ["qwen3.5-plus"]
+    assert _model_candidates("deepseek-v4-flash", _acp_namespace("acp://cline")) == [
+        "deepseek-v4-flash"
+    ]
+    # A real HTTP base_url has no ACP namespace at all.
+    assert _acp_namespace("https://api.cline.bot/api/v1") == ""
+
+
+def test_model_candidates_drop_an_empty_model_id():
+    from agent.copilot_acp_client import _model_candidates
+
+    assert _model_candidates("   ", "opencode") == []

@@ -1,0 +1,5 @@
+name: gemini-acp-provider
+kind: model-provider
+version: 1.0.0
+description: Gemini CLI free tier via ACP
+author: Plobi

@@ -264,6 +264,32 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
             "args_env": "PLOBI_CLINE_ACP_ARGS",
         },
     ),
+    "gemini-acp": ProviderConfig(
+        id="gemini-acp",
+        name="Gemini CLI",
+        auth_type="external_process",
+        inference_base_url="acp://gemini",
+        base_url_env_var="GEMINI_ACP_BASE_URL",
+        extra={
+            "command": "gemini",
+            "args": ["--acp"],
+            "command_env": "PLOBI_GEMINI_ACP_COMMAND",
+            "args_env": "PLOBI_GEMINI_ACP_ARGS",
+        },
+    ),
+    "qwen-acp": ProviderConfig(
+        id="qwen-acp",
+        name="Qwen Code",
+        auth_type="external_process",
+        inference_base_url="acp://qwen",
+        base_url_env_var="QWEN_ACP_BASE_URL",
+        extra={
+            "command": "qwen",
+            "args": ["--acp"],
+            "command_env": "PLOBI_QWEN_ACP_COMMAND",
+            "args_env": "PLOBI_QWEN_ACP_ARGS",
+        },
+    ),
     "gemini": ProviderConfig(
         id="gemini",
         name="Google AI Studio",
@@ -6327,13 +6353,39 @@ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
 
 
 def _opencode_desktop_cli() -> str:
-    """Path to the CLI bundled with the OpenCode desktop app.
+    """Locate an OpenCode CLI that can speak ``acp``, without a second install.
 
-    The desktop installer ships `resources/opencode-cli.exe`; it supports the
-    same `acp` subcommand as the npm CLI. Users should not need a second install
-    just to expose the free models Plobi already sees in the desktop app.
+    Order matters for a machine that keeps its tools under ``D:\\Portables\\cli``
+    (this workspace's D-drive policy) and may have installed the desktop app on
+    top of it. Measured 2026-10-25: the desktop app was uninstalled and only the
+    portable CLI remains, so the desktop bundle must not be the only answer.
+
+      1. ``PLOBI_OPENCODE_CLI_PATH`` — explicit override, always wins.
+      2. ``opencode`` / ``opencode-cli`` on PATH — the user's own install.
+      3. The portable CLI dir (``D:\\Portables\\cli\\opencode``, or
+         ``PLOBI_PORTABLES_CLI`` where that lives on this machine).
+      4. The CLI bundled inside the OpenCode desktop app's ``resources``.
+
+    Returns "" when nothing resolves; the provider then simply reports as not
+    configured instead of claiming a binary that is not there.
     """
+    override = os.environ.get("PLOBI_OPENCODE_CLI_PATH", "").strip()
+    if override and Path(override).is_file():
+        return override
+
     candidates: list[Path] = []
+    for name in ("opencode", "opencode-cli"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
+
+    portable_root = os.environ.get("PLOBI_PORTABLES_CLI", "").strip()
+    portable_dirs = [Path(portable_root) / "opencode"] if portable_root else []
+    # The D-drive convention on this machine; harmless on others (is_file() False).
+    portable_dirs.append(Path("D:/Portables/cli/opencode"))
+    for base in portable_dirs:
+        candidates.extend([base / "opencode.exe", base / "opencode-cli.exe", base / "opencode"])
+
     local = os.environ.get("LOCALAPPDATA", "").strip()
     if local:
         programs = Path(local) / "Programs"

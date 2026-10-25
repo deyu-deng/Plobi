@@ -32,6 +32,8 @@ class TestProviderRegistry:
         ("copilot-acp", "GitHub Copilot ACP", "external_process"),
         ("opencode-acp", "OpenCode Free", "external_process"),
         ("cline-acp", "Cline", "external_process"),
+        ("gemini-acp", "Gemini CLI", "external_process"),
+        ("qwen-acp", "Qwen Code", "external_process"),
         ("copilot", "GitHub Copilot", "api_key"),
         ("huggingface", "Hugging Face", "api_key"),
         ("zai", "Z.AI / GLM", "api_key"),
@@ -404,6 +406,26 @@ class TestApiKeyProviderStatus:
         assert status["args"] == ["--acp"]
         assert status["base_url"] == "acp://cline"
 
+    def test_gemini_acp_status_detects_local_cli(self, monkeypatch):
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        status = get_external_process_provider_status("gemini-acp")
+
+        assert status["configured"] is True
+        assert status["command"] == "gemini"
+        assert status["args"] == ["--acp"]
+        assert status["base_url"] == "acp://gemini"
+
+    def test_qwen_acp_status_detects_local_cli(self, monkeypatch):
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        status = get_external_process_provider_status("qwen-acp")
+
+        assert status["configured"] is True
+        assert status["command"] == "qwen"
+        assert status["args"] == ["--acp"]
+        assert status["base_url"] == "acp://qwen"
+
     def test_get_auth_status_dispatches_to_external_process(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
 
@@ -773,6 +795,19 @@ class TestRuntimeProviderResolution:
         assert result["base_url"] == "acp://cline"
         assert result["command"] == "/usr/local/bin/cline"
         assert result["args"] == ["--acp"]
+
+    def test_runtime_gemini_and_qwen_acp_use_process_runtime(self, monkeypatch):
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        from plobi_cli.runtime_provider import resolve_runtime_provider
+
+        gemini = resolve_runtime_provider(requested="gemini-acp")
+        qwen = resolve_runtime_provider(requested="qwen-acp")
+
+        assert gemini["base_url"] == "acp://gemini"
+        assert gemini["command"] == "/usr/local/bin/gemini"
+        assert qwen["base_url"] == "acp://qwen"
+        assert qwen["command"] == "/usr/local/bin/qwen"
 
 
 # =============================================================================

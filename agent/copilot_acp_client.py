@@ -13,6 +13,7 @@ import os
 import queue
 import re
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -31,6 +32,9 @@ from agent.redact import redact_sensitive_text
 from tools.environments.local import plobi_subprocess_env
 
 ACP_MARKER_BASE_URL = "acp://copilot"
+ACP_MARKER_SCHEME = "acp://"
+#: ACP agents whose model ids are proven to need a "<namespace>/" prefix.
+_NAMESPACED_ACP_NAMESPACES = {"opencode"}
 _DEFAULT_TIMEOUT_SECONDS = 900.0
 
 _TOOL_CALL_BLOCK_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
@@ -65,6 +69,66 @@ def _resolve_command() -> str:
         or os.getenv("COPILOT_CLI_PATH", "").strip()
         or "copilot"
     )
+
+
+def _acp_namespace(base_url: str | None) -> str:
+    """The `acp://<name>` marker of this client's CLI, or "" when there is none.
+
+    Used only to build a namespaced model id candidate; see ``_model_candidates``.
+    """
+    text = str(base_url or "")
+    if not text.lower().startswith(ACP_MARKER_SCHEME):
+        return ""
+    return text.split("://", 1)[1].strip("/").strip().lower()
+
+
+def _model_candidates(model_id: str, namespace: str) -> list[str]:
+    """The ACP model id(s) to send for one requested model.
+
+    OpenCode's agent is the one CLI here measured to want its own
+    ``providerID/modelID`` pair — ``opencode/<free-model>`` is the value that
+    actually switched the session (2026-10-24, ``session/set_config_option``).
+    Its picker strips that prefix for display, so it is re-added here, with the
+    bare id kept as a fallback.
+
+    Gemini / Qwen / Cline are NOT given a namespaced guess. An ACP agent that
+    accepts an unknown config value without validating it would keep its own
+    default model, and the user would silently get a different model than the
+    one they picked — the worst failure shape available. So for those, the plain
+    CLI model name is sent and nothing else.
+    """
+    raw = (model_id or "").strip()
+    if not raw:
+        return []
+    if "/" in raw:
+        return [raw]
+    if namespace in _NAMESPACED_ACP_NAMESPACES:
+        return [f"{namespace}/{raw}", raw]
+    return [raw]
+
+
+def _spawnable(command: str) -> str:
+    """Turn a declared CLI *name* into something CreateProcess will accept.
+
+    Measured on this Windows machine 2026-10-25: npm installs these CLIs as
+    ``gemini.CMD`` / ``qwen.CMD`` / ``cline.CMD`` next to ``node.exe``, and
+    ``shutil.which("gemini")`` finds them, but
+    ``subprocess.Popen(["gemini", "--acp"])`` raises
+    ``FileNotFoundError: [WinError 2]`` — CreateProcess only appends ``.exe``,
+    never ``.cmd``. The full path does spawn (verified by the ACP handshake
+    probe). So a bare name is resolved here, at the one place the child is
+    actually launched, instead of in the status/inventory surface that reports
+    it — those must keep showing what the user configured.
+
+    Anything with a path separator is already an explicit path and goes through
+    untouched; a name that does not resolve also goes through untouched, so the
+    caller still gets its normal "could not start" error rather than a silent
+    substitution.
+    """
+    raw = (command or "").strip()
+    if not raw or "/" in raw or "\\" in raw:
+        return raw
+    return shutil.which(raw) or raw
 
 
 def _resolve_args() -> list[str]:
@@ -515,7 +579,7 @@ class CopilotACPClient:
     ) -> tuple[str, str]:
         try:
             proc = subprocess.Popen(
-                [self._acp_command] + self._acp_args,
+                [_spawnable(self._acp_command)] + self._acp_args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -598,9 +662,24 @@ class CopilotACPClient:
                     continue
                 if "error" in msg:
                     err = msg.get("error") or {}
-                    raise RuntimeError(
-                        f"Copilot ACP {method} failed: {err.get('message') or err}"
-                    )
+                    detail = str(err.get("message") or err)
+                    # This client now drives five different CLIs, so "Copilot ACP"
+                    # would blame the wrong product, and "Authentication required"
+                    # is only actionable if it names the CLI to log into. The
+                    # handshake itself succeeds unsigned; it is `session/new` that
+                    # answers -32000 (measured 2026-10-25 on gemini/qwen/cline).
+                    who = Path(self._acp_command or "").name or "ACP CLI"
+                    if "auth" in detail.lower():
+                        raise RuntimeError(
+                            f"{who} is not signed in, so it refuses to start a session.\n\n"
+                            "These CLIs own their own credentials — Plobi never holds or "
+                            "copies them. Open a terminal and run the CLI interactively "
+                            f"once (`{self._acp_command}`) and follow its login prompt; "
+                            f"if it does not start one, its auth subcommand is listed in "
+                            f"`{self._acp_command} --help`.\n\n"
+                            f"Original error:\n{detail}"
+                        )
+                    raise RuntimeError(f"ACP {method} failed ({who}): {detail}")
                 return msg.get("result")
 
             stderr_text = "\n".join(stderr_tail).strip()
@@ -658,9 +737,7 @@ class CopilotACPClient:
             # — the agent simply keeps its own default model.
             model_id = (model or "").strip()
             if model_id and self._select_model:
-                candidates = [model_id]
-                if "/" not in model_id:
-                    candidates.insert(0, f"opencode/{model_id}")
+                candidates = _model_candidates(model_id, _acp_namespace(self.base_url))
                 for candidate in candidates:
                     try:
                         _request(

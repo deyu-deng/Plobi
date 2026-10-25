@@ -106,6 +106,18 @@ PLOBI_OVERLAYS: Dict[str, PlobiOverlay] = {
         base_url_override="acp://cline",
         base_url_env_var="CLINE_ACP_BASE_URL",
     ),
+    "gemini-acp": PlobiOverlay(
+        transport="openai_chat",
+        auth_type="external_process",
+        base_url_override="acp://gemini",
+        base_url_env_var="GEMINI_ACP_BASE_URL",
+    ),
+    "qwen-acp": PlobiOverlay(
+        transport="openai_chat",
+        auth_type="external_process",
+        base_url_override="acp://qwen",
+        base_url_env_var="QWEN_ACP_BASE_URL",
+    ),
     "github-copilot": PlobiOverlay(
         transport="openai_chat",
         extra_env_vars=("COPILOT_GITHUB_TOKEN", "GH_TOKEN"),
@@ -387,6 +399,8 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "copilot-acp": "GitHub Copilot ACP",
     "opencode-acp": "OpenCode Free",
     "cline-acp": "Cline",
+    "gemini-acp": "Gemini CLI",
+    "qwen-acp": "Qwen Code",
     "stepfun": "StepFun Step Plan",
     "xiaomi": "Xiaomi MiMo",
     "gmi": "GMI Cloud",
