@@ -365,6 +365,12 @@ export interface Translations {
        * 首次配置字段的显示名，**按 key 查**。查不到时界面回退到后端声明里那个英文
        * 缺省值——所以第三方信源包零改动就能出现在界面上，只是没翻译。
        */
+      /** 大类那一段的头：折叠/展开给 aria-label，errors 带 `{n}`（0 条报错时不画那半句）。 */
+      groups: {
+        collapse: string
+        errors: string
+        expand: string
+      }
       fields: Record<string, string>
       install: string
       installFailed: string

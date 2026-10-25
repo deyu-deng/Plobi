@@ -300,10 +300,14 @@ export const ja = defineLocale({
         address: 'メールアドレス',
         imap_host: 'IMAP サーバー',
         password: 'パスワードまたはアプリ用パスワード',
-        conversations: '収集する会話（cid、カンマ区切り）',
         base_url: '教务システムのアドレス',
         ics_path: '.ics ファイルのパス',
         cadence: '収集頻度'
+      },
+      groups: {
+        collapse: 'この分類をたたむ',
+        errors: '{n} 件要注意',
+        expand: 'この分類を開く'
       },
       install: 'インストール',
       installFailed: 'その実行は完了しませんでした。',

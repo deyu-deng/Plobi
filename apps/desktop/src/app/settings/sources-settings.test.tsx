@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SourcesSettings } from './sources-settings'
 import type * as SourcesApi from './sources/api'
 import type { SourceRow, SourcesPayload } from './sources/api'
+import { $fold } from './sources/collapse'
 
 const getSources = vi.fn()
 const setSourceEnabled = vi.fn()
@@ -69,6 +70,7 @@ vi.mock('@/i18n', () => ({
           },
 
           fields: { cadence: 'Collection cadence', ics_path: 'Path to the .ics file' },
+          groups: { collapse: 'Collapse this group', errors: '{n} needing attention', expand: 'Expand this group' },
           install: 'Install',
           installFailed: 'That install did not finish.',
           installPlaceholder: 'package name',
@@ -186,6 +188,12 @@ function payload(sources: SourceRow[]): SourcesPayload {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 折叠是**本机偏好**，jsdom 的 localStorage 在同一档里是连着的：不清就会让上一条用例点过
+  // 的那一段在下一条里还是折着的（一个假的"这一组没东西"）。
+  //
+  // 这一档其余那些用例讲的是**行与抽屉**，不是折叠，所以默认把每一段都记成"他明说展开"；
+  // 折叠自己的判据在下面 `the categories fold` 那一族里，它们逐条把偏好清回空表（＝没动过 ⇒ 吃读数）。
+  $fold.set(Object.fromEntries(CATEGORIES.map(id => [id, 'open' as const])))
   getExternalPackages.mockResolvedValue([])
   // 抽屉里那块会话面板现在挂在按会话准入的那一条下面；默认给一份能画的名单，
   // 各条用例自己覆盖它（面板自身的契约在 `sources/conversation-list.test.tsx`）。
@@ -773,5 +781,102 @@ describe('bring your own', () => {
     render(<SourcesSettings />)
 
     await waitFor(() => expect(screen.getByText('这个包装上了但载不进来。')).toBeTruthy())
+  })
+})
+
+describe('the categories fold', () => {
+  // 折叠的三态里，**空表＝"没动过"**，这时候段开不开才由读数决定。这一族的每条用例都自己清表，
+  // 因为上面那一条默认把每一段都记成"他明说展开"（那些用例讲的是行与抽屉，不是折叠）。
+  beforeEach(() => {
+    $fold.set({})
+  })
+
+  it('opens only the group with something broken, and does not draw the rows of the rest', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' }),
+      row({ category: 'website', enabled: true, has_builder: true, source: 'zju', status: 'error', status_code: 'captcha_required' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-website-toggle')).toBeTruthy())
+    expect(screen.getByTestId('source-group-website-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getAllByText('Academic affairs (ZJU)').length).toBeGreaterThan(0)
+
+    // 没报错的那段收起之后，它那些行**不在 DOM 里**（不是 display:none）——
+    // 178 行那种名单折起来还留在树里，折叠就只剩视觉、没有性能那句话可说。
+    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('WeChat')).toBeNull()
+  })
+
+  it('keeps a group he folded folded, even when something inside it breaks', async () => {
+    // 他明说收起的那一段，**永不被读数翻面**：一条信源从正常变成报错、或从报错回到正常，
+    // 都不该把他刚折好的那段自己弹开——那是屏幕在动，不是数据在动。
+    $fold.set({ message: 'collapsed' })
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'error', status_code: 'network_unreachable' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-message-toggle')).toBeTruthy())
+    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('WeChat')).toBeNull()
+    // 折起来不等于这条信源停了：开关仍在那条数据里，只是不画。
+    expect($fold.get()).toEqual({ message: 'collapsed' })
+  })
+
+  it('clicking a header brings that group back and writes one word', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-message-toggle')).toBeTruthy())
+    expect(screen.queryByText('WeChat')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('source-group-message-toggle'))
+
+    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0)
+    // 记下来的就是"他明说展开"这一个词，不是"当前开着的段全表"——没点过的段不该占一格。
+    expect($fold.get()).toEqual({ message: 'open' })
+
+    fireEvent.click(screen.getByTestId('source-group-message-toggle'))
+    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
+    expect($fold.get()).toEqual({ message: 'collapsed' })
+  })
+
+  it('says the count always, and the broken half only when there is one', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'email', source: 'email_qq' }),
+      row({ category: 'email', source: 'email_163' }),
+      row({ category: 'email', source: 'email_gmail' }),
+      row({ category: 'email', source: 'email_outlook' }),
+      row({ category: 'email', source: 'email_imap' }),
+      row({ category: 'website', enabled: true, has_builder: true, source: 'zju', status: 'error', status_code: 'captcha_required' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-email-toggle')).toBeTruthy())
+    // 5 条全正常 ⇒ 只画一个数字。0 条报错不画成"· 0 条报错"（那是噪声不是信息）。
+    expect(screen.getByTestId('source-group-email-toggle').textContent).toBe('Mailboxes5')
+    expect(screen.getByTestId('source-group-website-toggle').textContent)
+      .toBe('Websites1 · 1 needing attention')
+  })
+
+  it('never folds the group that holds the install action', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    // 「接一个自己的」那段里 0 行 —— 按自动规则它会被折起来，而那颗安装入口第一天就被折没了。
+    await waitFor(() => expect(screen.getByTestId('source-group-custom-toggle')).toBeTruthy())
+    expect(screen.getByTestId('source-group-custom-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId('external-sources')).toBeTruthy()
   })
 })

@@ -373,10 +373,14 @@ export const en: Translations = {
         address: 'Email address',
         imap_host: 'IMAP server',
         password: 'Password or app token',
-        conversations: 'Conversations to collect (cids, comma-separated)',
         base_url: 'School system address',
         ics_path: 'Path to the .ics file',
         cadence: 'Collection cadence'
+      },
+      groups: {
+        collapse: 'Collapse this group',
+        errors: '{n} needing attention',
+        expand: 'Expand this group'
       },
       install: 'Install',
       installFailed: 'The installation did not complete.',

@@ -293,10 +293,14 @@ export const zhHant = defineLocale({
         address: '電子郵件地址',
         imap_host: 'IMAP 伺服器',
         password: '密碼或授權碼',
-        conversations: '要採的會話（cid，逗號分隔）',
         base_url: '教務系統網址',
         ics_path: '.ics 檔案的路徑',
         cadence: '採集頻率'
+      },
+      groups: {
+        collapse: '收合這一類',
+        errors: '{n} 條報錯',
+        expand: '展開這一類'
       },
       install: '裝上',
       installFailed: '那一輪沒跑成。',

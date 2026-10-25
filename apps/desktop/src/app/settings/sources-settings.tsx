@@ -16,11 +16,16 @@
  *    的开关是这一屏最容易骗人的一种形状。
  * 4. **主题随应用走**：全程用仓里那套件（`ListRow` / `Switch` / `Pill` / `SectionHeading`），
  *    零字面色值。
+ * 5. **大类可以折叠**（用户 10-25：「不同大类的信源也可以折叠起来」）：每段的头按得动，
+ *    收起时那一段的行**根本不画**（不是 `display:none`），头那格仍留「条数 · N 条报错」——
+ *    折起来还能扫出哪一段有问题，这才是折叠的价值。三态与落点见 `./sources/collapse.ts`。
  */
 
+import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Cpu, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Users } from '@/lib/icons'
@@ -28,6 +33,7 @@ import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { getSources, setSourceEnabled, type SourceRow, type SourcesPayload, trySource } from './sources/api'
+import { $fold, decide, isOpen } from './sources/collapse'
 import { ConversationList } from './sources/conversation-list'
 import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
@@ -57,6 +63,9 @@ export function SourcesSettings() {
   const [open, setOpen] = useState<null | string>(null)
   // 只有"因为缺配置而被引导进抽屉"那一次要自动聚焦；单纯点开抽屉不该抢光标。
   const [guide, setGuide] = useState<null | string>(null)
+  // 折叠状态是一个订阅中的 store ⇒ 必须和其他 hook 一样在**任何提前 return 之前**取，
+  // 不然"读数还没到"那一趟与到了那一趟的 hook 数量不一致，React 直接抛。
+  const fold = useStore($fold)
 
   const reload = useCallback(async () => {
     try {
@@ -137,34 +146,60 @@ export function SourcesSettings() {
     <SettingsContent>
       <SectionHeading icon={Layers3} meta={String(payload.sources.length)} title={labels.title} />
 
-      {groups.map(group => (
-        <section className="mt-4" data-testid={`source-group-${group.category}`} key={group.category}>
-          <SectionHeading
-            icon={CATEGORY_ICON[group.category] ?? Layers3}
-            title={labels.categories[group.category as keyof Labels['categories']] ?? group.category}
-          />
+      {groups.map(group => {
+        // 异常只数后端三态里那一格（判据在 `sources_api.status_of`，这里不建第二条）。
+        const errors = group.rows.filter(row => statusOf(row) === 'error').length
+        const expanded = isOpen(fold, { category: group.category, errors })
 
-          {group.category === 'custom' ? <ExternalSources labels={labels} onChanged={reload} /> : null}
+        return (
+          <section className="mt-4" data-testid={`source-group-${group.category}`} key={group.category}>
+            <button
+              aria-expanded={expanded}
+              aria-label={expanded ? labels.groups.collapse : labels.groups.expand}
+              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center rounded-md px-1 text-left hover:bg-(--ui-bg-hover)"
+              data-testid={`source-group-${group.category}-toggle`}
+              onClick={() => { decide(group.category, !expanded) }}
+              type="button"
+            >
+              <span className="min-w-0 flex-1">
+                <SectionHeading
+                  icon={CATEGORY_ICON[group.category] ?? Layers3}
+                  // 0 条报错不画那半句（与"没定过的不画徽章"同一条判据：画上去是噪声不是信息）。
+                  meta={errors > 0 ? `${group.rows.length} · ${labels.groups.errors.replace('{n}', String(errors))}` : String(group.rows.length)}
+                  title={labels.categories[group.category as keyof Labels['categories']] ?? group.category}
+                />
+              </span>
+              <DisclosureCaret className="size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded} />
+            </button>
 
-          {group.rows.map(row => (
-            <SourceRowView
-              busy={busy === row.source}
-              guiding={guide === row.source}
-              key={row.source}
-              labels={labels}
-              onActivate={() => {
-                setOpen(open === row.source ? null : row.source)
-                setGuide(null)
-              }}
-              onReload={reload}
-              onToggle={onToggle}
-              onTry={onTry}
-              open={open === row.source}
-              row={row}
-            />
-          ))}
-        </section>
-      ))}
+            {expanded
+              ? (
+                  <>
+                    {group.category === 'custom' ? <ExternalSources labels={labels} onChanged={reload} /> : null}
+
+                    {group.rows.map(row => (
+                      <SourceRowView
+                        busy={busy === row.source}
+                        guiding={guide === row.source}
+                        key={row.source}
+                        labels={labels}
+                        onActivate={() => {
+                          setOpen(open === row.source ? null : row.source)
+                          setGuide(null)
+                        }}
+                        onReload={reload}
+                        onToggle={onToggle}
+                        onTry={onTry}
+                        open={open === row.source}
+                        row={row}
+                      />
+                    ))}
+                  </>
+                )
+              : null}
+          </section>
+        )
+      })}
     </SettingsContent>
   )
 }
