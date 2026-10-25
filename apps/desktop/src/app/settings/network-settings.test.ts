@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { NetworkEgressBlock, NetworkEgressRecord, NetworkStatusSystemProxy } from '@/types/plobi'
 
-import { appliedNote, buildSection, proxyStateText, toGroupRows, toNodeRows } from './network-settings'
+import { appliedNote, buildSection, mergeByName, proxyStateText, toGroupRows, toNodeRows } from './network-settings'
 
 const record = (egress: NetworkEgressBlock | null): NetworkEgressRecord =>
   ({ declared: true, network: { egress: egress ?? undefined } }) as NetworkEgressRecord
@@ -171,5 +171,27 @@ describe('appliedNote', () => {
     const section = buildSection([{ name: 'home', url: 'http://127.0.0.1:7895' }], rows, toNodeRows(source), toGroupRows(source), source)
 
     expect(section.egress?.rules).toEqual([{ match: 'github.com', via: 'n01 hk' }])
+  })
+
+  it('names an imported member by its own name, not by its position', () => {
+    // 订阅导入的答案必须是**映射**（表自己的形状）。面板按键取名字：早先后端回的是
+    // `[{name, ...}, ...]` 这样的列表，面板取到的是 "0"、"1"、"2" —— 导入的成员全叫序号。
+    const rows = toNodeRows(record({ nodes: { '🇭🇰 香港W01': { port: 19272, server: 'hk01.entry.example', type: 'ss' } } }))
+
+    expect(rows.map((row) => row.name)).toEqual(['🇭🇰 香港W01'])
+  })
+
+  it('keeps a member the user added by hand when a subscription comes in', () => {
+    // 同名以订阅为准（更新就是更新），不同名的保留 —— "更新订阅"不该抹掉用户自己加的节点。
+    const current = [
+      { name: '我自己加的', server: 'mine.example' },
+      { name: '香港W01', server: 'old.example' }
+    ]
+    const incoming = [{ name: '香港W01', server: 'new.example' }]
+
+    expect(mergeByName(current, incoming)).toEqual([
+      { name: '我自己加的', server: 'mine.example' },
+      { name: '香港W01', server: 'new.example' }
+    ])
   })
 })

@@ -71,7 +71,7 @@ def compile_config(
     own_listener: set[str] = set()
     for name in sorted(table.proxies):
         url = table.proxies[name]
-        if _is_own_listener(url, port):
+        if is_own_listener(url, port):
             own_listener.add(name)
             continue
         entry = _proxy_entry(name, url)
@@ -191,7 +191,7 @@ def _tun_for_engine(tun: dict[str, Any]) -> dict[str, Any]:
 _SELF_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
 
-def _is_own_listener(url: str, port: int) -> bool:
+def is_own_listener(url: str, port: int) -> bool:
     """Is this URL the engine's own mixed-port on this machine?"""
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()

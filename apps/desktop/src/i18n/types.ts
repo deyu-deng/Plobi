@@ -472,6 +472,9 @@ export interface Translations {
       importPath: string
       importPool: string
       importSub: string
+      importClient: string
+      importClientButton: string
+      importClientMissing: string
       subUrl: string
       intro: string
       match: string

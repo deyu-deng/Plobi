@@ -1298,6 +1298,12 @@ export interface NetworkSubscriptionImport {
   notes?: string[]
   ok?: boolean
   secret_env_names?: string[]
+  source?: string
+}
+
+/** The local clients whose own cache this machine can read a subscription out of. */
+export interface NetworkImportClients {
+  clients?: { id: string; note: string; present?: boolean }[]
 }
 
 export interface NetworkSection {

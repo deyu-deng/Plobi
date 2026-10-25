@@ -14648,38 +14648,74 @@ async def post_network_import_pool(body: NetworkPoolImport) -> Dict[str, Any]:
     }
 
 
+@app.get("/api/network/egress/import-clients")
+async def get_network_import_clients() -> Dict[str, Any]:
+    """Which local clients this machine can read a subscription out of.
+
+    Some providers ship a desktop client and no "copy subscription link" button — the
+    config those clients fetched is already on this box, so the pane offers a button
+    instead of asking the user for a link they cannot find.  Only names and whether the
+    cache is there; the path is the user's own file and does not need to cross the wire.
+    """
+    import os
+
+    from agent.egress import local_clients
+
+    clients = []
+    for name, spec in sorted(local_clients.KNOWN_CLIENTS.items()):
+        clients.append({
+            "id": name,
+            "note": spec["note"],
+            "present": os.path.isfile(os.path.expandvars(spec["store"])),
+        })
+    return {"clients": clients}
+
+
 class NetworkSubscriptionImport(BaseModel):
     url: str = ""
     text: str = ""
+    client: str = ""
     profile: Optional[str] = None
 
 
 @app.post("/api/network/egress/import-subscription")
 async def post_network_import_subscription(body: NetworkSubscriptionImport) -> Dict[str, Any]:
-    """Pull (or paste) a subscription and unfold it into table shape — **names out, values nowhere**.
+    """Pull (or paste, or read out of a local client) a subscription and unfold it into table shape.
 
     The ruled shape (用户 10-16, 甲): a click fetches, the result lands as `nodes`/`groups` in the
     table, so the pane can see every member and a rule can reference a group. We deliberately do NOT
     hand the URL to mihomo's `proxy-providers` — that would put membership outside the one table this
     whole surface reads from (裁定 94), and the status command would stop describing what is serving.
 
+    `client` reads the subscription out of a **desktop client's own cache** — some providers ship a
+    client and no "copy subscription link" button, and the config it fetched is already on this box.
+    Same reader as `plobi network import-subscription` (口径 32: one reader, not two).
+
     Credentials are written to the root `.env` as `PLOBI_EGRESS_*` by the import itself; the response
     carries only the **variable names**. An unreachable subscription is one sentence and one attempt
     (no silent retry — 裁定 101).
+
+    `nodes` and `groups` are **mappings**, because that is the shape the table holds and the shape
+    the pane edits. A list of `{name, ...}` dicts reads as "0", "1", "2" once it is keyed by name —
+    which is how the pane was naming imported members.
     """
-    from agent.egress import subscription
+    from agent.egress import local_clients, subscription
+    from plobi_cli.egress_config import read_subscription
 
     try:
-        answer = subscription.update(url=body.url or "", text=body.text or "")
-    except subscription.SubscriptionError as exc:
-        return {"ok": False, "format": "", "nodes": [], "groups": [], "secret_env_names": [],
+        answer = read_subscription(
+            url=body.url or "", text=body.text or "", client=body.client or ""
+        )
+    except (subscription.SubscriptionError, local_clients.LocalClientError) as exc:
+        return {"ok": False, "format": "", "nodes": {}, "groups": {}, "secret_env_names": [],
                 "notes": [str(exc)]}
     except Exception as exc:  # noqa: BLE001 - a malformed file is an answer, not a 500
-        return {"ok": False, "format": "", "nodes": [], "groups": [], "secret_env_names": [],
+        return {"ok": False, "format": "", "nodes": {}, "groups": {}, "secret_env_names": [],
                 "notes": [f"{type(exc).__name__}: {str(exc)[:200]}"]}
     return {
         "ok": answer["ok"],
         "format": answer["format"],
+        "source": answer["source"],
         "nodes": answer["nodes"],
         "groups": answer["groups"],
         "secret_env_names": answer["secret_env_names"],

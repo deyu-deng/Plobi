@@ -18,9 +18,41 @@ into ``["[object Object]"]`` on the first touch — reproduced on this box
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from agent.egress import rules as egress
+
+#: Places a node can be named after, and the group that name lands it in.
+#:
+#: The Chinese word is the authority, not the flag: a real ikuuu list (measured on this
+#: box 10-25) names its US nodes "🇺🇲 美国W01", and that flag is the **US Virgin Islands** —
+#: matching flags alone would put the US nodes in a group nobody asked for.  Sorted by
+#: length so "印度尼西亚" is read before "印度".
+_REGION_WORDS: tuple[tuple[str, str], ...] = tuple(sorted(
+    (
+        ("新加坡", "新加坡"), ("澳大利亚", "澳大利亚"), ("乌克兰", "乌克兰"),
+        ("马来西亚", "马来西亚"), ("菲律宾", "菲律宾"), ("阿根廷", "阿根廷"),
+        ("俄罗斯", "俄罗斯"), ("加拿大", "加拿大"), ("土耳其", "土耳其"),
+        ("印度尼西亚", "印尼"), ("西班牙", "西班牙"), ("南非", "南非"),
+        ("印度", "印度"), ("韩国", "韩国"), ("香港", "香港"),
+        ("澳门", "澳门"), ("台湾", "台湾"), ("日本", "日本"),
+        ("美国", "美国"), ("英国", "英国"), ("德国", "德国"),
+        ("法国", "法国"), ("泰国", "泰国"), ("越南", "越南"),
+        ("巴西", "巴西"), ("荷兰", "荷兰"), ("印尼", "印尼"),
+        ("意大利", "意大利"),
+    ),
+    key=lambda pair: -len(pair[0]),
+))
+
+#: Flags that are unambiguous, used only when the name carries no place word.
+_FLAG_REGIONS: dict[str, str] = {
+    "🇭🇰": "香港", "🇯🇵": "日本", "🇰🇷": "韩国", "🇸🇬": "新加坡",
+    "🇹🇼": "台湾", "🇺🇸": "美国", "🇬🇧": "英国", "🇩🇪": "德国",
+    "🇫🇷": "法国", "🇨🇦": "加拿大", "🇦🇺": "澳大利亚", "🇷🇺": "俄罗斯",
+    "🇮🇳": "印度", "🇹🇷": "土耳其", "🇳🇱": "荷兰", "🇦🇷": "阿根廷",
+    "🇲🇴": "澳门",
+}
 
 
 def validate_egress(network_block: Any) -> tuple[bool, list[str]]:
@@ -189,3 +221,259 @@ def replace_egress(network_block: Any) -> tuple[bool, list[str]]:
     # backend reading its old cache would make the UI and the product disagree.
     egress.load_table(force_reload=True)
     return True, []
+
+
+# ---------------------------------------------------------------------------
+# Subscription import: the one reader, and the one writer
+# ---------------------------------------------------------------------------
+
+
+def region_of(name: str) -> str:
+    """Which place a node is named after — the group it belongs in.  ``""`` when unknown."""
+    text = str(name or "")
+    for word, region in _REGION_WORDS:
+        if word in text:
+            return region
+    for flag, region in _FLAG_REGIONS.items():
+        if flag in text:
+            return region
+    return ""
+
+
+def build_pool_groups(
+    node_names: list[str],
+    *,
+    pool_name: str = "POOL",
+    interval: int = 300,
+) -> dict[str, dict[str, Any]]:
+    """A select group per place, plus one url-test pool over everything imported.
+
+    A subscription fetched by a desktop client often carries **no groups at all** —
+    the ikuuu one measured on this box is 46 members and 0 groups, because its
+    plugin builds the groups at runtime.  A table with members but no group has
+    nothing a rule can point at except a single node, and a rule per node is not a
+    working VPN.  So the import builds the two shapes a rule actually needs: a
+    place per region to pin a node in, and one pool to hand the catch-all to.
+    """
+    by_region: dict[str, list[str]] = {}
+    for name in node_names:
+        region = region_of(name)
+        if region:
+            by_region.setdefault(region, []).append(name)
+    groups: dict[str, dict[str, Any]] = {
+        region: {"type": "select", "include": list(members)}
+        for region, members in sorted(by_region.items())
+    }
+    if node_names:
+        groups[pool_name] = {"type": "url-test", "include": list(node_names), "interval": interval}
+    return groups
+
+
+def _own_listener_names(block: dict[str, Any]) -> set[str]:
+    """The proxy names that point at the engine's own listener — the front door.
+
+    A rule that hands traffic to the front door looks right to a reader (the front
+    door *is* where clients go) and is fatal to the engine (it would forward into
+    its own accept queue).  So the import says so out loud instead of silently
+    leaving a table that cannot compile.
+    """
+    from agent.egress.mihomo_config import is_own_listener
+
+    engine = block.get("engine") or {}
+    try:
+        port = int(engine.get("mixed_port") or 0)
+    except (TypeError, ValueError):
+        return set()
+    if not port:
+        return set()
+    names: set[str] = set()
+    for name, entry in (block.get("proxies") or {}).items():
+        url = str((entry or {}).get("url") or "")
+        if url and is_own_listener(url, port):
+            names.add(str(name))
+    return names
+
+
+def _node_entry(node: dict[str, Any]) -> dict[str, Any]:
+    """One member in the table's shape: the mapping's key is the name, not a field."""
+    return {str(k): v for k, v in node.items() if k != "name"}
+
+
+def _group_entry(group: dict[str, Any]) -> dict[str, Any]:
+    """One group in the table's shape.  The health-check URL is dropped: the table's
+    groups do not carry one (the compiler sets its own), so keeping it would be a
+    value in the table that nothing reads."""
+    entry: dict[str, Any] = {
+        "type": str(group.get("type") or "select"),
+        "include": list(group.get("include") or []),
+    }
+    interval = int(group.get("interval") or 0)
+    if interval:
+        entry["interval"] = interval
+    return entry
+
+
+def read_subscription(
+    *,
+    url: str = "",
+    text: str = "",
+    path: str = "",
+    client: str = "",
+    write_secrets: bool = True,
+    pool_name: str = "POOL",
+) -> dict[str, Any]:
+    """Pull a subscription from wherever it lives and unfold it into table shape.
+
+    Four sources, one reader: a URL, a pasted body, a file, or **the cache of a
+    desktop client that has no export button**.  The last one exists because on this
+    box the user's provider ships a client and no way to copy the subscription link
+    — but the client fetched the same Clash yaml we need and cached it, so the
+    bytes are already here.
+
+    The answer carries **names, never values**: credentials go to the root ``.env``
+    (when ``write_secrets``) and the table keeps ``*_env`` names.  ``nodes`` and
+    ``groups`` are mappings — the table's own shape — because that is what the
+    runtime reads and what the pane edits.
+    """
+    from agent.egress import local_clients, subscription
+
+    notes: list[str] = []
+    source = ""
+    body = ""
+    if client:
+        body, source = local_clients.read_cache(client)
+    elif path:
+        try:
+            body = Path(path).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise subscription.SubscriptionError(
+                f"读不了 {path}：{type(exc).__name__}: {exc}"
+            ) from None
+        source = str(path)
+    elif url:
+        body = subscription.fetch(url)
+        source = url
+    elif text:
+        body = text
+        source = "（粘贴的文本）"
+    else:
+        raise subscription.SubscriptionError(
+            "给我一个来源：--url / --file / --from-client，或者直接粘一段配置文本"
+        )
+
+    parsed = subscription.parse(body)
+    members, written, notes2 = subscription.attach_env_names(parsed["nodes"], write=write_secrets)
+    notes += list(parsed["notes"]) + list(notes2)
+
+    nodes = {str(m["name"]): _node_entry(m) for m in members}
+    incoming_groups = {str(g["name"]): _group_entry(g) for g in parsed["groups"]}
+    built = build_pool_groups(list(nodes), pool_name=pool_name)
+    if incoming_groups:
+        notes.append(f"订阅自带 {len(incoming_groups)} 个组")
+    else:
+        notes.append(
+            f"订阅没有组：按名字里的地方建了 {len(built) - 1} 个 select 组，"
+            f"外加一个 url-test 的 {pool_name}（兜底规则指它）"
+        )
+
+    return {
+        "ok": bool(nodes),
+        "format": str(parsed["format"]),
+        "source": source,
+        "nodes": nodes,
+        "groups": {**built, **incoming_groups},
+        "secret_env_names": list(written),
+        "notes": notes,
+    }
+
+
+def import_subscription(
+    *,
+    url: str = "",
+    text: str = "",
+    path: str = "",
+    client: str = "",
+    apply: bool = True,
+    write_secrets: bool = True,
+    catch_all: str = "",
+    pool_name: str = "POOL",
+) -> dict[str, Any]:
+    """Read a subscription and **write it into the table**.
+
+    Merge semantics match the pane's, so the two surfaces agree: a name that comes
+    in wins, a name that does not is kept.  "更新我的订阅" must not delete the node
+    the user added by hand, and must not leave the old member of a renamed node
+    behind forever either.
+
+    ``catch_all`` points the table's last rule at a group — the engine's own
+    catch-all cannot be the engine's own listener (the compiler refuses that), so a
+    table that wants the pool to carry foreign traffic says so here, out loud.
+
+    ``apply=False`` writes **nothing at all** — not the table, not the credentials.
+    """
+    from agent.egress import subscription
+
+    answer = read_subscription(
+        url=url, text=text, path=path, client=client,
+        write_secrets=write_secrets and apply, pool_name=pool_name,
+    )
+    if not answer["ok"]:
+        answer["wrote"] = False
+        return answer
+
+    network = dict(read_egress().get("network") or {})
+    block = dict(network.get("egress") or {})
+    nodes = dict(block.get("nodes") or {})
+    groups = dict(block.get("groups") or {})
+
+    added_nodes = [name for name in answer["nodes"] if name not in nodes]
+    added_groups = [name for name in answer["groups"] if name not in groups]
+    nodes.update(answer["nodes"])
+    groups.update(answer["groups"])
+
+    rules = list(block.get("rules") or [])
+    if catch_all:
+        if not rules:
+            answer["notes"].append(f"表里还没有规则，没有兜底规则可指 —— {catch_all} 建好了，但没人指它")
+        else:
+            last = dict(rules[-1])
+            last["via"] = f"proxy:{catch_all}"
+            rules[-1] = last
+            answer["notes"].append(f"兜底规则改成了 proxy:{catch_all}")
+    elif rules and str(rules[-1].get("via", "")).startswith("proxy:"):
+        target = str(rules[-1].get("via"))[len("proxy:"):]
+        if target in _own_listener_names(block):
+            answer["notes"].append(
+                f"兜底规则还指着 proxy:{target}——那是引擎自己的前门（引擎不能把流量交给它自己的"
+                f"接收入口），要让它带流量就把兜底指到 {pool_name}"
+            )
+
+    block["nodes"] = nodes
+    block["groups"] = groups
+    if rules:
+        block["rules"] = rules
+    network["egress"] = block
+
+    if not apply:
+        answer["wrote"] = False
+        answer["added_nodes"] = added_nodes
+        answer["added_groups"] = added_groups
+        answer["nodes"] = nodes
+        answer["groups"] = groups
+        return answer
+
+    ok, issues = replace_egress(network)
+    answer["wrote"] = ok
+    answer["added_nodes"] = added_nodes
+    answer["added_groups"] = added_groups
+    answer["nodes"] = nodes
+    answer["groups"] = groups
+    if not ok:
+        answer["ok"] = False
+        answer["notes"].append("表没写下去：" + "；".join(issues))
+    else:
+        answer["notes"].append(
+            f"表里现在有 {len(nodes)} 个成员、{len(groups)} 个组"
+            f"（新增 {len(added_nodes)} 个成员、{len(added_groups)} 个组）"
+        )
+    return answer

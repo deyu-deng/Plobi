@@ -36,6 +36,7 @@ import type {
   ModelInfoResponse,
   ModelOptionsResponse,
   NetworkEgressRecord,
+  NetworkImportClients,
   NetworkPoolImport,
   NetworkSubscriptionImport,
   NetworkSection,
@@ -498,16 +499,28 @@ export function importNetworkPool(path: string): Promise<NetworkPoolImport> {
 }
 
 /**
- * Pull (or paste) a subscription and get table shape back. The answer carries `*_env` **names**
- * only — the credentials were written to the root `.env` by the import itself, so nothing that
- * crosses this IPC, gets logged, or ends up in a screenshot can contain a password.
+ * Pull (or paste, or read out of a local client) a subscription and get table shape back. The answer
+ * carries `*_env` **names** only — the credentials were written to the root `.env` by the import
+ * itself, so nothing that crosses this IPC, gets logged, or ends up in a screenshot can contain a
+ * password.
+ *
+ * `client` reads the subscription out of a desktop client's own cache: some providers ship a client
+ * and no "copy subscription link" button, but the config it fetched is already on this box.
  */
-export function importNetworkSubscription(input: { text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
+export function importNetworkSubscription(input: { client?: string; text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
   return window.plobiDesktop.api<NetworkSubscriptionImport>({
     ...profileScoped(),
-    body: { text: input.text ?? '', url: input.url ?? '' },
+    body: { client: input.client ?? '', text: input.text ?? '', url: input.url ?? '' },
     method: 'POST',
     path: '/api/network/egress/import-subscription'
+  })
+}
+
+/** The local clients whose own cache this machine can read a subscription out of. */
+export function getNetworkImportClients(): Promise<NetworkImportClients> {
+  return window.plobiDesktop.api<NetworkImportClients>({
+    ...profileScoped(),
+    path: '/api/network/egress/import-clients'
   })
 }
 

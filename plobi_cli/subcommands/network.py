@@ -41,6 +41,42 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
         help="Print the credential values to migrate into .env (off by default)",
     )
     export_parser.set_defaults(func=cmd_network)
+    # 订阅进表：三个来源，一个读者。`--from-client` 读的是本机客户端自己缓存的那份
+    # （有些订阅商只给软件、不给"复制订阅链接"的按钮，但配置就在这台机器上）。
+    import_parser = network_sub.add_parser(
+        "import-subscription",
+        help="Pull a subscription and unfold it into the table's nodes and groups",
+        description="Pull a subscription (URL / file / a local client's own cache) and write it "
+        "into network.egress.nodes and .groups.  Credentials go to the root .env; the table keeps "
+        "only the *_env names.  A subscription that carries no groups gets a select group per place "
+        "and one url-test POOL, so a rule has something to point at.",
+    )
+    import_parser.add_argument("--url", default="", help="Subscription URL (fetched once, no silent retry)")
+    import_parser.add_argument("--file", dest="file", default="", help="A config file or a link list on disk")
+    import_parser.add_argument(
+        "--from-client",
+        dest="from_client",
+        default="",
+        help="Read the subscription out of a local client's own cache (e.g. ikuuu)",
+    )
+    import_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be written; write nothing (not the table, not the .env)",
+    )
+    import_parser.add_argument(
+        "--catch-all",
+        dest="catch_all",
+        default="",
+        help="Point the table's last rule at this group (e.g. POOL)",
+    )
+    import_parser.add_argument(
+        "--pool-name",
+        dest="pool_name",
+        default="POOL",
+        help="Name of the url-test group the import builds (default: POOL)",
+    )
+    import_parser.set_defaults(func=cmd_network)
     # 整机那一格：接管/交还系统的代理。`on --dry-run` 先看要改什么，不写注册表。
     proxy_parser = network_sub.add_parser(
         "proxy",

@@ -13,6 +13,7 @@ someone else already holds is reported, never taken over.
 from __future__ import annotations
 
 import argparse
+import sys
 
 
 def cmd_network(args: argparse.Namespace) -> int:
@@ -29,6 +30,9 @@ def cmd_network(args: argparse.Namespace) -> int:
 
     if action == "export-pool":
         return _export_pool(args)
+
+    if action == "import-subscription":
+        return _import_subscription(args)
 
     if action == "proxy":
         return _proxy(args)
@@ -96,6 +100,60 @@ def _persist_switch(desired: bool) -> None:
         print(f"network.egress.system_proxy.enabled = {str(desired).lower()}（下次开机照这个走）")
     else:
         print(f"⚠️ 系统设置已经改了，但开关没落盘：{'；'.join(issues)}")
+
+
+def _import_subscription(args: argparse.Namespace) -> int:
+    """Pull a subscription and write it into the table.
+
+    One reader for all three sources, so the command line and the pane cannot
+    disagree about what a subscription turns into.
+    """
+    from agent.egress import local_clients, subscription
+    from plobi_cli.egress_config import import_subscription
+
+    given = [
+        name
+        for name, value in (
+            ("--url", getattr(args, "url", "")),
+            ("--file", getattr(args, "file", "")),
+            ("--from-client", getattr(args, "from_client", "")),
+        )
+        if value
+    ]
+    if len(given) > 1:
+        print(f"给一个来源就行，现在给了 {'、'.join(given)}")
+        return 2
+
+    dry = bool(getattr(args, "dry_run", False))
+    try:
+        answer = import_subscription(
+            url=getattr(args, "url", "") or "",
+            path=getattr(args, "file", "") or "",
+            client=getattr(args, "from_client", "") or "",
+            apply=not dry,
+            catch_all=getattr(args, "catch_all", "") or "",
+            pool_name=getattr(args, "pool_name", "") or "POOL",
+        )
+    except (subscription.SubscriptionError, local_clients.LocalClientError) as exc:
+        print(str(exc))
+        return 1
+    except Exception as exc:  # noqa: BLE001 — a bad source is an answer, not a traceback
+        print(f"{type(exc).__name__}: {exc}")
+        return 1
+
+    print(f"来源：{answer['source']}")
+    print(f"格式：{answer['format']}；成员 {len(answer['nodes'])} 个、组 {len(answer['groups'])} 个")
+    print(f"凭据：{len(answer['secret_env_names'])} 个写进根 .env，表里只留 *_env 名字")
+    for note in answer["notes"]:
+        print(f"— {note}")
+
+    if dry:
+        print("--- 没有写任何东西：表、.env 都原样 ---")
+        return 0 if answer["ok"] else 1
+    if not answer.get("wrote"):
+        return 1
+    print("表写好了。下一句：`plobi network reload` 让引擎照新的表走。")
+    return 0
 
 
 def _export_pool(args: argparse.Namespace) -> int:

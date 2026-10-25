@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Globe } from '@/lib/icons'
-import { getNetworkEgress, getNetworkStatus, importNetworkPool, importNetworkSubscription, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
+import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, importNetworkPool, importNetworkSubscription, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
 import type {
   NetworkEgressBlock,
   NetworkEgressRecord,
+  NetworkImportClients,
   NetworkSection,
   NetworkStatus,
   NetworkStatusSystemProxy
@@ -77,7 +78,7 @@ function toExitRows(record: NetworkEgressRecord | null): ExitRow[] {
 }
 
 /** 合并而不是覆盖：同名以进来那份为准（订阅更新就是更新），不同名的手写条目保留。 */
-function mergeByName<T extends { name: string }>(current: T[], incoming: T[]): T[] {
+export function mergeByName<T extends { name: string }>(current: T[], incoming: T[]): T[] {
   const byName = new Map<string, T>()
 
   for (const row of current) {
@@ -269,6 +270,7 @@ export function NetworkSettings() {
   const [groups, setGroups] = useState<GroupRow[]>([])
   const [poolPath, setPoolPath] = useState('')
   const [subUrl, setSubUrl] = useState('')
+  const [localClients, setLocalClients] = useState<NonNullable<NetworkImportClients['clients']>>([])
   const [poolNotes, setPoolNotes] = useState<string[]>([])
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
@@ -292,6 +294,9 @@ export function NetworkSettings() {
     load().catch((error: unknown) => alive && setError(String(error)))
     getNetworkStatus()
       .then((next) => alive && setStatus(next))
+      .catch(() => {})
+    getNetworkImportClients()
+      .then((next) => alive && setLocalClients(next.clients ?? []))
       .catch(() => {})
     return () => {
       alive = false
@@ -383,20 +388,8 @@ export function NetworkSettings() {
     setError('')
     try {
       const answer = await importNetworkSubscription({ url: subUrl.trim() })
-      const fetched = { network: { egress: { groups: answer.groups ?? [], nodes: answer.nodes ?? [] } } } as unknown as NetworkEgressRecord
-      const nextNodes = toNodeRows(fetched)
-      const nextGroups = toGroupRows(fetched)
-
-      setNodes((current) => mergeByName(current, nextNodes))
-      setGroups((current) => mergeByName(current, nextGroups))
-      const envNames = answer.secret_env_names ?? []
-      const notes = (answer.notes ?? []).concat(
-        answer.format ? [`认出的格式：${answer.format}；成员 ${nextNodes.length} 个、组 ${nextGroups.length} 个`] : [],
-        envNames.length ? [`凭据已写进根 .env，表里只留这些名字：${envNames.join(', ')}`] : []
-      )
-
-      setPoolNotes(notes)
-      if (!answer.ok && notes.length === 0) {
+      applyImport(answer)
+      if (!answer.ok && !(answer.notes ?? []).length) {
         setError('订阅里没有可用的成员')
       }
     } catch (cause: unknown) {
@@ -404,6 +397,50 @@ export function NetworkSettings() {
     } finally {
       setImporting(false)
     }
+  }
+
+  /**
+   * 从本机客户端自己的缓存里读订阅。有些订阅商只给软件、不给"复制订阅链接"的按钮——但它拉下来的
+   * 配置就在这台机器上（DPAPI 加密，用户的用户上下文），读它比让人换订阅商实际得多。
+   */
+  const importFromClient = async (client: string) => {
+    setImporting(true)
+    setError('')
+    try {
+      const answer = await importNetworkSubscription({ client })
+      applyImport(answer)
+      if (!answer.ok && !(answer.notes ?? []).length) {
+        setError('这个客户端的缓存里没有可用的成员')
+      }
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 一次导入的共同落法：成员与组并进当前行，凭据名字与格式写进 notes。 */
+  const applyImport = (answer: {
+    format?: string
+    groups?: NetworkEgressBlock['groups']
+    nodes?: NetworkEgressBlock['nodes']
+    notes?: string[]
+    ok?: boolean
+    secret_env_names?: string[]
+  }) => {
+    const fetched = { network: { egress: { groups: answer.groups ?? {}, nodes: answer.nodes ?? {} } } } as unknown as NetworkEgressRecord
+    const nextNodes = toNodeRows(fetched)
+    const nextGroups = toGroupRows(fetched)
+
+    setNodes((current) => mergeByName(current, nextNodes))
+    setGroups((current) => mergeByName(current, nextGroups))
+    const envNames = answer.secret_env_names ?? []
+
+    setPoolNotes([
+      ...(answer.notes ?? []),
+      ...(answer.format ? [`认出的格式：${answer.format}；成员 ${nextNodes.length} 个、组 ${nextGroups.length} 个`] : []),
+      ...(envNames.length ? [`凭据已写进根 .env，表里只留这些名字：${envNames.join(', ')}`] : [])
+    ])
   }
 
   return (
@@ -543,6 +580,22 @@ export function NetworkSettings() {
             {importing ? '…' : copy.importSub}
           </Button>
         </div>
+        {localClients.map((client) => (
+          <div className="flex items-center gap-2" key={client.id}>
+            <p className={CAPTION}>
+              {copy.importClient}: {client.note}
+              {client.present ? '' : ` — ${copy.importClientMissing}`}
+            </p>
+            <Button
+              disabled={importing || !client.present}
+              onClick={() => void importFromClient(client.id)}
+              size="sm"
+              variant="outline"
+            >
+              {importing ? '…' : copy.importClientButton}
+            </Button>
+          </div>
+        ))}
         {poolNotes.map((note, index) => (
           <p className={CAPTION} key={index}>
             {note}

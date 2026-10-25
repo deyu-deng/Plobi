@@ -109,7 +109,8 @@ def test_a_pasted_subscription_lands_as_names_and_a_refusal_comes_back_as_words(
     answer = asyncio.run(post_network_import_subscription(NetworkSubscriptionImport(text=body)))
 
     assert answer["ok"] is True and answer["format"] == "link-list", answer
-    assert {n["name"] for n in answer["nodes"]} == {"hk", "de"}, answer["nodes"]
+    # 映射，不是列表：面板按名字取键，列表形状会取到 "0"、"1"、"2"。
+    assert set(answer["nodes"]) == {"hk", "de"}, answer["nodes"]
     assert sorted(written) == sorted(answer["secret_env_names"]), (written, answer["secret_env_names"])
     wire = json.dumps(answer, ensure_ascii=False)
 
@@ -119,5 +120,5 @@ def test_a_pasted_subscription_lands_as_names_and_a_refusal_comes_back_as_words(
 
     refused = asyncio.run(post_network_import_subscription(NetworkSubscriptionImport(text="这不是订阅，是一段中文")))
 
-    assert refused["ok"] is False and refused["nodes"] == [] and refused["secret_env_names"] == []
+    assert refused["ok"] is False and refused["nodes"] == {} and refused["secret_env_names"] == []
     assert refused["notes"] and "认不出来" in refused["notes"][0], refused
