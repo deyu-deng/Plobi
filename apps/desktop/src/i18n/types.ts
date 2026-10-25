@@ -1058,7 +1058,6 @@ export interface Translations {
   }
   vault: {
     title: string
-    progressTitle: string
     subtitle: (agents: number, withHome: number) => string
     searchPlaceholder: string
     all: string

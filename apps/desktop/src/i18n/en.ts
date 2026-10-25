@@ -1185,7 +1185,6 @@ export const en: Translations = {
   },
   vault: {
     title: 'Knowledge',
-    progressTitle: 'Goals & progress',
     subtitle: (agents, withHome) => `${agents} agents · ${withHome} with dossiers`,
     searchPlaceholder: 'Search notes…',
     all: 'All',
@@ -1204,8 +1203,8 @@ export const en: Translations = {
     copyPath: 'Copy path',
     notBuilt: 'This dossier has not been created yet',
     notBuiltDesc: filename => `Expected file: ${filename}`,
-    noHome: 'No dossier folder bound for this agent yet',
-    noHomeDesc: 'This agent has no dossier folder bound, so there is nothing to read here.',
+    noHome: 'Not connected yet',
+    noHomeDesc: 'This agent has no dossier folder in the roster, so there is nothing to read here.',
     categories: {
       projects: 'Projects',
       research: 'Research',
@@ -3214,7 +3213,7 @@ export const en: Translations = {
       agenda: 'Agenda',
       diary: 'Diary',
       files: 'Workspace files',
-      progress: 'Goals & progress',
+      progress: 'Dossier',
       review: 'Review',
       browser: 'Browser',
       terminal: 'Terminal'
@@ -3223,7 +3222,7 @@ export const en: Translations = {
       agenda: "Today's timeline and quick add",
       diary: "Write today's entry",
       files: "Browse this agent's folder",
-      progress: 'Goals, milestones and recent progress',
+      progress: "This agent's dossier: plan, progress and research",
       review: 'Review changes in this workspace',
       browser: 'Open a page in the built-in browser',
       terminal: 'Open a terminal in this folder'

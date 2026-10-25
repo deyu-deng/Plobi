@@ -1362,7 +1362,6 @@ export const zh: Translations = {
   },
   vault: {
     title: '知识库',
-    progressTitle: '目标进度',
     subtitle: (agents, withHome) => `${agents} 个 Agent · ${withHome} 个已有档案`,
     searchPlaceholder: '搜索笔记…',
     all: '全部',
@@ -1381,8 +1380,8 @@ export const zh: Translations = {
     copyPath: '复制路径',
     notBuilt: '该档案尚未创建',
     notBuiltDesc: filename => `应当是：${filename}`,
-    noHome: '该 Agent 尚未绑定档案文件夹',
-    noHomeDesc: '该 Agent 尚未绑定档案文件夹，因此这里没有可读内容。',
+    noHome: '未接入',
+    noHomeDesc: '名册里这个 Agent 还没有档案文件夹，所以这里没有可读的内容。',
     categories: { projects: '项目', research: '研究', courses: '课程', butler: '管家', events: '事件' },
     docs: {
       plan: '计划',
@@ -3346,7 +3345,7 @@ export const zh: Translations = {
       agenda: '日程',
       diary: '日记',
       files: '工作区文件',
-      progress: '目标进度',
+      progress: '档案',
       review: '审阅',
       browser: '浏览器',
       terminal: '终端'
@@ -3355,7 +3354,7 @@ export const zh: Translations = {
       agenda: '今天的日程时间轴',
       diary: '写今天这一篇',
       files: '浏览当前 Agent 的目录',
-      progress: '目标、里程碑与最近的进展',
+      progress: '这个 Agent 的档案：计划、进展与资料',
       review: '查看当前工作区的改动',
       browser: '在内置浏览器打开网页',
       terminal: '在当前目录打开终端'
