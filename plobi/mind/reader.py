@@ -18,10 +18,10 @@ from .paths import real_target, resolve_root
 
 logger = logging.getLogger(__name__)
 
-# 详版画像在**脑**里（用户 2026-10-24：「用户画像在 mind 里面有详细信息，USER.md 是精简版」）。
-# 以前这行指 Vault/meta/profile/profile.md —— vault 不进记忆系统，那份也已按用户令删除。
-# skills/profile/SKILL.md 是 AGENTS §1.5 声明的唯一权威来源。
-PERSONA_RELATIVE = "skills/profile/SKILL.md"
+# 详版画像在**脑**里，而且**不是 skill**（用户 2026-10-24：「用户画像这种东西不能以 skill 存在，
+# 应该是 mind 的一个部分」）。它从 skills/profile/SKILL.md 搬到了 persona/，与 skills 这条线彻底脱钩；
+# 精简版仍是 L0 的 USER.md。
+PERSONA_RELATIVE = "persona/profile.md"
 PROJECTS_RELATIVE = "Vault/projects"
 
 # Cap on what any single read may contribute to a prompt.

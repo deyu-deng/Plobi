@@ -66,7 +66,7 @@ def _digest_state(roots) -> tuple[str, str]:
 
 
 def _persona_state(roots) -> str:
-    """画像两档：详版在脑里（skills/profile/SKILL.md），精简版是 L0 的 USER.md。
+    """画像两档：详版在脑里（persona/profile.md），精简版是 L0 的 USER.md。
 
     vault 不进记忆系统（用户 2026-10-24 明确）：这一行以前读 Vault/meta/profile，
     那份已按用户令删除；详版搬回脑里，摘要那份由 L0 自己维护。

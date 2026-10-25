@@ -48,11 +48,11 @@ MIND_MOD = _load_provider_module()
 def vault(tmp_path, monkeypatch):
     """临时 Mind vault：persona + 大写 Plobi 项目（当前写入位）。"""
     root = tmp_path / "Mind"
-    (root / "skills" / "profile").mkdir(parents=True)
+    (root / "persona").mkdir(parents=True)
     (root / "Vault" / "projects" / "Plobi").mkdir(parents=True)
     (root / "AGENTS.md").write_text("# Mind", encoding="utf-8")
     # 详版画像在脑里（用户 10-24：vault 不进记忆系统；USER.md 是精简版）
-    (root / "skills" / "profile" / "SKILL.md").write_text(
+    (root / "persona" / "profile.md").write_text(
         "我是小龟，浙大本科生。", encoding="utf-8"
     )
     (root / "Vault" / "projects" / "Plobi" / "plan.md").write_text(
