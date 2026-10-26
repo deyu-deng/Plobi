@@ -29,7 +29,16 @@ MIND_LOGICAL = "Loom"
 VAULT_ROOT_ENV = "VAULT_ROOT"
 
 SAFE_PREFIXES: tuple[str, ...] = (
-    "Vault/projects/Plobi",
+    # 人读面上的产物：一个 Agent 的档案就是它自己那一格（用户 2026-10-25 拍「白名单放开到
+    # 全部项目＋研究」——此前只有 ``Vault/projects/Plobi`` 一家，其余 11 个项目与整个
+    # ``Vault/research`` 的写在 ``safe_target`` 就抛 ``UnsafeMindPath``，而 writer 按 skip
+    # 记账、屏上看不见，这就是档案停在 09-28 的机械原因）。
+    # 这一格宽的是**路径**，不是**权限**：写仍过 L1 那道闸（裁 199），日记／画像／删除永不自动。
+    "Vault/projects",
+    "Vault/research",
+    "Vault/courses",
+    "Vault/butler",
+    "Vault/events",
     "Vault/meta",
     "Vault/notes",
     "Vault/diary",

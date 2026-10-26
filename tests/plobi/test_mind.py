@@ -30,7 +30,7 @@ from plobi.agenda.service import AgendaService
 from plobi.mind import paths
 from plobi.mind import writer as writer_module
 from plobi.mind.lock import MindLockTimeout, mind_write_lock
-from plobi.mind.paths import UnsafeMindPath, is_safe_relative, resolve_root, safe_target
+from plobi.mind.paths import UnsafeMindPath, is_memory_zone, is_safe_relative, resolve_root, safe_target
 from plobi.mind.reader import MindReader
 from plobi.mind.writer import MindWriter, WriteRequest
 
@@ -92,7 +92,7 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
     "relative",
     [
         "AGENTS.md",                       # would rewrite Mind's own contract
-        "Vault/projects/新项目/plan.md",    # new project dir trips the verifier
+        "vault/projects/Aura/plan.md",     # 逻辑前缀大小写敏感：小写 vault 不是那格
         "Loom/skills/whatever/SKILL.md",   # skill count declaration
         "../outside.md",
         "/etc/passwd",
@@ -101,6 +101,20 @@ def test_no_raw_zone_and_ai_writes_stay_inside_the_brain():
 )
 def test_unsafe_paths_are_refused(relative):
     assert is_safe_relative(relative) is False
+
+
+def test_dossier_homes_are_open_after_2026_10_25():
+    """用户 2026-10-25 拍「白名单放开到全部项目＋研究」⇒ 路径层不再拦别人的档案格。
+
+    原来这一格靠路径层拦「新建项目目录会把脑仓 verifier 顶住」；现在那道防线挪到提交前：
+    ``MindWriter._verify`` 跑脑自己的 ``verifier --strict``，不干净就**拒绝提交并说明原因**
+    （``writer.py:228-234``），比静默 skip 至少是看得见的。立项仍然只有
+    ``plobi/mind/project_tree.py`` 那一把手（它会同步 AGENTS.md §1 与 INDEX.md）。
+    """
+    assert is_safe_relative("Vault/projects/新项目/plan.md") is True
+    assert is_safe_relative("Vault/research/新课题/progress.md") is True
+    # 放开的是路径，不是记忆面：vault 再宽也不进记忆系统（用户 10-24/25 两次判）。
+    assert is_memory_zone("Vault/projects/新项目/plan.md") is False
 
 
 def test_safe_target_rejects_traversal(vault):

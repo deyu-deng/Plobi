@@ -30,6 +30,7 @@ Compliance boundary (CRITICAL — see plan §3/§5):
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -42,9 +43,11 @@ from agent.memory_provider import MemoryProvider
 from plobi.mind.paths import (
     MEMORY_ZONES,
     SAFE_PREFIXES,
+    UnsafeMindPath,
     is_memory_zone,
     logical_target,
     real_target,
+    safe_target,
 )
 from plobi.mind.writer import MindWriter
 
@@ -61,6 +64,12 @@ logger = logging.getLogger(__name__)
 # SAFE_PREFIXES is imported from plobi.mind.paths — the single source of
 # truth. Do NOT redefine it here; updating one without the other causes
 # security checks to diverge.
+
+# 档案读写那两枚工具的名字与窄读上限（WP-MIND-DOSSIER-WRITE）。
+MIND_READ_TOOL = "mind_read"
+MIND_WRITE_TOOL = "mind_write"
+MIND_READ_MAX_CHARS = 24_000
+MIND_WRITE_MAX_CHARS = 60_000
 
 MAX_DIGEST_TURNS = 40
 MAX_DIGEST_CHARS_PER_MSG = 1200
@@ -197,8 +206,151 @@ class MindProvider(MemoryProvider):
         )
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        """P0: no model-facing tools. P1 will expose mind_read/write/search."""
-        return []
+        """档案读写两枚原子工具（WP-MIND-DOSSIER-WRITE，用户 2026-10-25 拍）。
+
+        裁定 185：一枚工具只干一件事——所以是 ``mind_read`` 与 ``mind_write`` 两只手，
+        不是一颗带 ``action`` 的开关。写一律走 :class:`MindWriter`，因此过 L1 那道闸：
+        这台出厂 ``mind_write_auto_approve`` 关着，落不了盘就照实回「已进待批 + id」。
+        """
+        return [
+            {
+                "name": MIND_READ_TOOL,
+                "description": (
+                    "Read one file from the brain/human surface by its LOGICAL path, "
+                    "e.g. ``Vault/projects/Aura/progress.md`` or ``Loom/wiki/concepts/x.md``. "
+                    "Only paths inside the allowed zones resolve; anything else comes back "
+                    "as an error, never as an empty file."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path relative to the brain root, e.g. Vault/projects/Aura/plan.md",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": MIND_WRITE_TOOL,
+                "description": (
+                    "Overwrite one file on the human surface by its LOGICAL path, e.g. "
+                    "``Vault/projects/Aura/progress.md``. This is how a dossier stays "
+                    "current: rewrite the whole file, keeping its frontmatter and bumping "
+                    "``updated`` to today. The write is checked by the trust gate — the "
+                    "result says whether it landed, went to the pending queue (with an id), "
+                    "or was refused, and why. Never report success the model did not read back."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path relative to the brain root, e.g. Vault/research/SRTP/progress.md",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The full new contents of that file (markdown).",
+                        },
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+        ]
+
+    # -- model-facing dossier tools (WP-MIND-DOSSIER-WRITE) --------------
+
+    def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
+        """Serve ``mind_read`` / ``mind_write``; anything else is an explicit no-op."""
+        if tool_name == MIND_READ_TOOL:
+            return json.dumps(self._tool_read(args), ensure_ascii=False)
+        if tool_name == MIND_WRITE_TOOL:
+            return json.dumps(self._tool_write(args), ensure_ascii=False)
+        return json.dumps(
+            {"success": False, "error": f"mind provider does not handle tool {tool_name!r}"},
+            ensure_ascii=False,
+        )
+
+    def _tool_read(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        from plobi.mind.paths import MindUnavailable, is_safe_relative, require_root
+
+        path = str((args or {}).get("path") or "").strip()
+        if not path:
+            return {"success": False, "error": "path is required"}
+        if not is_safe_relative(path):
+            return {
+                "success": False,
+                "error": f"{path} 不在可读写的面里",
+                "allowed_prefixes": list(SAFE_PREFIXES),
+            }
+        try:
+            root = require_root(self._mind_root)
+            target = safe_target(root, path)
+        except (MindUnavailable, UnsafeMindPath) as exc:
+            return {"success": False, "error": str(exc)}
+        if not target.is_file():
+            return {"success": False, "error": f"{path} 还不存在（读不到不等于空文件，别当它是空的）"}
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return {"success": False, "error": str(exc)}
+        truncated = len(text) > MIND_READ_MAX_CHARS
+        return {
+            "success": True,
+            "path": path,
+            "content": text[:MIND_READ_MAX_CHARS],
+            "chars": len(text),
+            "truncated": truncated,
+        }
+
+    def _tool_write(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        from plobi.mind.paths import MindUnavailable, is_safe_relative
+        from plobi.mind.writer import WriteRequest
+
+        payload = args or {}
+        path = str(payload.get("path") or "").strip()
+        content = payload.get("content")
+        if not path:
+            return {"success": False, "error": "path is required"}
+        if not isinstance(content, str) or not content.strip():
+            return {"success": False, "error": "content must be a non-empty string"}
+        if len(content) > MIND_WRITE_MAX_CHARS:
+            return {
+                "success": False,
+                "error": f"content too large ({len(content)} chars > {MIND_WRITE_MAX_CHARS})",
+            }
+        if not is_safe_relative(path):
+            return {
+                "success": False,
+                "error": f"{path} 不在可写的面里",
+                "allowed_prefixes": list(SAFE_PREFIXES),
+            }
+        try:
+            writer = MindWriter(self._mind_root)
+            result = writer.write([WriteRequest(relative_path=path, content=content)])
+        except MindUnavailable as exc:
+            return {"success": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - a failed write must not crash the turn
+            logger.warning("[mind] mind_write(%s) failed: %s", path, exc)
+            return {"success": False, "error": str(exc)}
+
+        if result.staged:
+            return {
+                "success": False,
+                "staged": True,
+                "pending_id": result.pending_id,
+                "path": path,
+                "detail": result.detail,
+            }
+        if result.ok and path in result.written:
+            return {"success": True, "written": result.written, "path": path, "detail": result.detail}
+        return {
+            "success": False,
+            "path": path,
+            "error": "这一笔没有落盘",
+            "detail": result.detail or f"{path} 被写路径的守卫拒了",
+        }
 
     # -- recall (per-turn, injected as context) --------------------------
 
