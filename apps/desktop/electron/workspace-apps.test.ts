@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import path from 'node:path'
 import { describe, it } from 'node:test'
 
 import { detectedApplications, listWorkspaceApplications } from './workspace-apps'
@@ -20,7 +21,9 @@ describe('workspace applications', () => {
 
   it('only exposes applications whose launcher exists', () => {
     for (const application of detectedApplications()) {
-      if (application.id === 'file-manager') {
+      if (application.id === 'file-manager' || !path.isAbsolute(application.command)) {
+        // Command-less system entries (file manager) and PATH-only fallbacks
+        // (e.g. no terminal emulator installed) are allowed.
         continue
       }
 
