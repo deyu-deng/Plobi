@@ -11,6 +11,8 @@ import {
   SiVercel
 } from '@icons-pack/react-simple-icons'
 import { useStore } from '@nanostores/react'
+
+import { useStaleAfter } from '@/app/hooks/use-stale-after'
 import { useQuery } from '@tanstack/react-query'
 import { type ComponentType, type SVGProps, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -1559,6 +1561,9 @@ const brandFor = (name: string) => {
 // favicon service for it would leak that hostname off-box.
 function McpAvatar({ className, name, status }: { className?: string; name: string; status: ServerStatus }) {
   const brand = brandFor(name)
+  // probing 的圆点是无限脉冲：后端 30 秒才超时的话，一个弹层里十几个点会一起闪。
+  // 8 秒还探不出来就停脉冲（静态灰），状态本身不变。
+  const stale = useStaleAfter(status === 'probing', 8000)
 
   return (
     <span
@@ -1578,7 +1583,7 @@ function McpAvatar({ className, name, status }: { className?: string; name: stri
         aria-hidden
         className={cn(
           'absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-(--ui-chat-surface-background)',
-          STATUS_DOT[status]
+          status === 'probing' && stale ? 'bg-foreground/40' : STATUS_DOT[status]
         )}
       />
     </span>

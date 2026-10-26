@@ -11,6 +11,7 @@ import type { DesktopUpdateCommit, DesktopUpdateStage, DesktopUpdateStatus } fro
 import { useI18n } from '@/i18n'
 import { buildCommitChangelog, type CommitGroup } from '@/lib/commit-changelog'
 import { AlertCircle, Check, Copy, Terminal } from '@/lib/icons'
+import { useStaleAfter } from './hooks/use-stale-after'
 import { resolveUpdateCopy, type UpdateTarget } from '@/lib/update-copy'
 import { cn } from '@/lib/utils'
 import {
@@ -370,6 +371,9 @@ function ApplyingView({ apply, isBackend }: { apply: UpdateApplyState; isBackend
     typeof apply.percent === 'number' && Number.isFinite(apply.percent)
       ? Math.max(2, Math.min(100, Math.round(apply.percent)))
       : null
+  // 进度拿不到时那条脉冲是无限动画：等过 8 秒就停脉冲、明说"还没回来"，
+  // 否则一个 30 秒才超时的请求会让整个弹层看起来一直在闪（10-26 用户报）。
+  const stale = useStaleAfter(percent === null, 8000)
 
   return (
     <div className="grid gap-5 px-6 pb-6 pt-7">
@@ -388,11 +392,16 @@ function ApplyingView({ apply, isBackend }: { apply: UpdateApplyState; isBackend
         <div
           className={cn(
             'h-full rounded-full bg-primary transition-[width] duration-300 ease-out',
-            percent === null && 'w-1/3 animate-pulse'
+            percent === null && (stale ? 'w-1/3 bg-foreground/30' : 'w-1/3 animate-pulse')
           )}
           style={percent !== null ? { width: `${percent}%` } : undefined}
         />
       </div>
+      {stale ? (
+        <p className="-mt-3 text-center text-xs text-muted-foreground">
+          还没回来 · Still waiting — 这个弹层不再闪了，等后台回答或直接关掉
+        </p>
+      ) : null}
 
       {recentLog.length > 1 ? (
         <div className="max-h-24 overflow-hidden rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-left font-mono text-[11px] leading-4 text-muted-foreground">
