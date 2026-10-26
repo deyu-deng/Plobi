@@ -370,3 +370,91 @@ describe('disconnect (the user\'s own verdict)', () => {
     expect($connectedDesktopApps.get().workbuddy?.models).toEqual(['hy3'])
   })
 })
+
+
+/**
+  * Measured on this machine 2026-10-26: the hub folded the CodeBuddy HTTP channel
+  * into the `workbuddy` key, but the pre-rename `workbuddy_api` record stayed in
+  * Local Storage forever (discovery only ever ADDED). Both rows kept the hub's
+  * slug and humanized to the same brand name, so the picker's group key collided —
+  * React unmounted one subtree and mounted the other on every pass, which re-fired
+  * the panel's mount effect and asked the hub again: an endless flicker.
+ */
+describe('quota store hygiene', () => {
+  beforeEach(() => {
+    $connectedDesktopApps.set({})
+  })
+
+  it('prunes a leg the hub no longer reports once the hub has answered', () => {
+    markConnected({ id: 'workbuddy_api', models: ['hy3'], name: 'Workbuddy' })
+
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+
+    expect($connectedDesktopApps.get().workbuddy_api).toBeUndefined()
+    expect($connectedDesktopApps.get().workbuddy?.models).toEqual(['hy3'])
+  })
+
+  it('never prunes on a frame the hub did not answer', () => {
+    markConnected({ id: 'workbuddy_api', models: ['hy3'] })
+
+    // Empty frame = the read failed (hub down / key rejected). That is not evidence
+    // the leg is gone, and a failed read must not empty the picker.
+    applyDiscoveredQuotaApps([])
+    expect($connectedDesktopApps.get().workbuddy_api?.models).toEqual(['hy3'])
+
+    applyDiscoveredQuotaApps([frame('workbuddy', { answered: false, models: [] })])
+    // `workbuddy` is in this frame, so it is held; the leg the hub did not answer
+    // about stays too, and NOTHING is pruned — a failed read is not a census.
+    expect(Object.keys($connectedDesktopApps.get()).sort()).toEqual(['workbuddy', 'workbuddy_api'])
+    expect($connectedDesktopApps.get().workbuddy_api?.models).toEqual(['hy3'])
+  })
+
+  it('keeps an opt-out through the prune: the user said stop, the hub does not vote', () => {
+    markConnected({ id: 'workbuddy_api', models: ['hy3'] })
+    markDisconnected('workbuddy_api')
+
+    applyDiscoveredQuotaApps([frame('workbuddy', { models: ['hy3'] })])
+
+    expect($connectedDesktopApps.get().workbuddy_api?.optedOut).toBe(true)
+  })
+
+  it('does not notify subscribers when a frame changes nothing', () => {
+    const seen: string[] = []
+    const unsubscribe = $connectedDesktopApps.subscribe(apps => seen.push(Object.keys(apps).join(',')))
+
+    try {
+      const payload = { id: 'workbuddy', models: ['hy3'], name: 'Workbuddy' }
+
+      markConnected(payload)
+      const afterFirst = seen.length
+
+      // The same verdict again (the 60s tick, or a second app in the same frame
+      // that does not touch this one) must be silent — one new object per app per
+      // frame used to wake every subscriber N times for one hub read.
+      markConnected(payload)
+      markConnected(payload)
+
+      expect(seen.length).toBe(afterFirst)
+
+      markConnected({ ...payload, models: ['hy3', 'glm-5.3'] })
+      expect(seen.length).toBe(afterFirst + 1)
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('gives two same-named legs distinct row identities', () => {
+    // Both legs of one software humanize to the same brand ON PURPOSE (the card
+    // describes the software) — so the display name can never be the row key.
+    markConnected({ id: 'workbuddy', models: ['hy3'], name: 'Workbuddy' })
+    markConnected({ id: 'workbuddy_api', models: ['hy3'], name: 'Workbuddy' })
+
+    const rows = quotaProviders(catalog(['workbuddy/hy3', 'workbuddy_api/hy3'])).filter(
+      row => row.slug === 'aigw'
+    )
+
+    expect(rows).toHaveLength(2)
+    expect(rows.map(row => row.ui_key)).toEqual(['aigw::workbuddy', 'aigw::workbuddy_api'])
+    expect(new Set(rows.map(row => row.ui_key)).size).toBe(2)
+  })
+})

@@ -154,8 +154,52 @@ export function markConnected(app: {
     answered: app.answered ?? previous?.answered
   }
 
+  // An unchanged verdict is not news. Without this guard a single frame writes one
+  // BRAND-NEW object per app, and nanostores compares with `Object.is` — so every
+  // subscriber is notified once per app, per frame. The composer's frame reaction
+  // then re-runs (and can re-issue a model switch, which invalidates the model
+  // catalog and refetches it) up to N times for one hub read. Measured on this
+  // machine 2026-10-26: a persisted stale record made two rows share a React key,
+  // and this amplification is what turned that into an endless flicker.
+  if (previous && sameRecord(previous, next[app.id])) {
+    return
+  }
+
   $connectedDesktopApps.set(next)
   persistString(STORE_KEY, JSON.stringify(next))
+}
+
+/**
+ * Shallow structural equality for one app record — the fields are primitives,
+ * a string array and one flat `blocked` map, so a shallow walk is complete.
+ * Key ORDER matters to the caller that persists with `JSON.stringify`, but this
+ * function only decides "notify or not", and both sides are built by the same
+ * literal above.
+ */
+function sameRecord(a: ConnectedDesktopApp, b: ConnectedDesktopApp): boolean {
+  if (
+    a.id !== b.id ||
+    a.name !== b.name ||
+    a.connected !== b.connected ||
+    a.optedOut !== b.optedOut ||
+    a.baseUrl !== b.baseUrl ||
+    a.apiKey !== b.apiKey ||
+    a.answered !== b.answered ||
+    a.models.length !== b.models.length ||
+    a.models.some((model, i) => model !== b.models[i])
+  ) {
+    return false
+  }
+
+  const aBlocked = a.blocked ?? {}
+  const bBlocked = b.blocked ?? {}
+  const keys = Object.keys(aBlocked)
+
+  if (keys.length !== Object.keys(bBlocked).length) {
+    return false
+  }
+
+  return keys.every(model => aBlocked[model] === bBlocked[model])
 }
 
 /**
@@ -247,6 +291,31 @@ export function applyDiscoveredQuotaApps(apps: QuotaAppFrame[]): void {
       blocked: app.blocked ?? {},
       models: app.answered ? app.models : (known?.models ?? [])
     })
+  }
+
+  // A frame the hub answered is a complete census: anything we are still holding
+  // that the hub did not report is an identity it no longer serves, so it goes.
+  //
+  // This is the cleanup half of the same ruling that keeps `optedOut` alive. The
+  // store is persisted in Local Storage and the discovery path only ever ADDS, so
+  // before this a renamed or retired leg lived here forever — on this machine a
+  // `workbuddy_api` record from before the hub folded that channel into `workbuddy`
+  // survived and rendered a SECOND row with the same display name as the live one,
+  // which collided in the picker's grouping key. Nothing is archived: the hub's own
+  // next frame is the authority on what exists, and re-appearing is automatic.
+  //
+  // An opt-out is the user's word, not the hub's, and survives exactly as above.
+  if (apps.some(app => app.answered)) {
+    const reported = new Set(apps.map(app => app.id))
+    const current = $connectedDesktopApps.get()
+    const kept = Object.fromEntries(
+      Object.entries(current).filter(([id, app]) => reported.has(id) || app.optedOut)
+    )
+
+    if (Object.keys(kept).length !== Object.keys(current).length) {
+      $connectedDesktopApps.set(kept)
+      persistString(STORE_KEY, JSON.stringify(kept))
+    }
   }
 }
 
@@ -340,7 +409,13 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
       models,
       name: app.name,
       pricing,
-      total_models: models.length
+      total_models: models.length,
+      // Every clone row carries the HUB's slug (that is the routing identity a pick
+      // must keep), so `slug` alone cannot tell two rows apart and the display name
+      // cannot either — two legs of one software humanize to the same brand by
+      // design. This key is the row's own identity: one software LEG per hub app id.
+      // The picker groups on it; 设置页 also keys on it.
+      ui_key: `${hubRow.slug}::${app.id}`
     })
   }
 

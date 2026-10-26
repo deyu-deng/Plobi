@@ -249,7 +249,16 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
       ) : (
         <div className="max-h-[max(150px,30dvh)] overflow-y-auto py-0.5">
           {groups.map(group => (
-            <DropdownMenuGroup className="py-0.5" key={`${group.provider.slug}:${group.provider.name}`}>
+            <DropdownMenuGroup
+              className="py-0.5"
+              // Hub clone rows all share the hub's slug, and two legs of one software
+              // share its brand name after humanizing — so `slug:name` is NOT unique
+              // and React cannot reconcile a duplicated key (it unmounts one subtree
+              // and mounts another, which re-fires this panel's mount effect and asks
+              // the hub again: a self-sustaining flicker). `ui_key` is the row's own
+              // identity; the fallback keeps non-hub rows keying the way they always did.
+              key={group.provider.ui_key ?? `${group.provider.slug}:${group.provider.name}`}
+            >
               <DropdownMenuLabel className={dropdownMenuSectionLabel}>{group.provider.name}</DropdownMenuLabel>
               {group.families.map(family => {
                 // The active id may be the base or its -fast sibling; either
