@@ -50,11 +50,7 @@ export function OverlayView({
   return (
     <div
       className={cn(
-        // 不用 `backdrop-blur`：这一层是 `fixed inset-0`，等于每一帧都把**整个窗口**
-        // 重新模糊一次。底下聊天区一直在动、上层又会被后台轮询带着重渲染，于是
-        // 设置/能力这些整屏浮层会持续闪（用户 10-26 报「点开设置一直在闪」）。
-        // 压暗提到 /28 补回一点对比度；2px 的模糊本来也几乎看不出来。
-        'fixed inset-0 z-50 bg-black/28',
+        'fixed inset-0 z-50 bg-black/22 backdrop-blur-[0.125rem]',
         // Equidistant inset on every side. The top value is driven by the
         // titlebar height so the card clears the OS traffic-lights vertically;
         // since the card top already sits below them, the left needs no extra
