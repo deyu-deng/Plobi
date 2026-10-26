@@ -451,6 +451,31 @@ def _working_agent_names() -> set[str]:
         return set()
 
 
+def _db_read_or(default, fn, *args, **kwargs):
+    """这一行的读数读不到时给默认值，**别让整张名单 500**。
+
+    事故形状（2026-10-24 23:2x 用户看到「智能体」整段空、聊天顶上弹
+    「恢复失败 resume failed: database is locked」）：左栏是一次拉 24 行的接口，
+    其中任意一行去 `state.db` 读「今天打了几次卡 / 刚才走的哪条腿」时撞上
+    `database is locked`（WAL 下另一个进程正在写、busy_timeout 到点），
+    整张单子就 500；前端把失败画成了「一个 Agent 都没有」。
+
+    真因是那一格读不出来，不是那 24 个 Agent 不存在。所以这里只吞
+    `locked` / `busy` 两种，别的异常照抛（别把真 bug 也吞了）。
+    """
+    try:
+        return fn(*args, **kwargs)
+    except sqlite3.OperationalError as exc:
+        msg = str(exc).lower()
+        if "locked" not in msg and "busy" not in msg:
+            raise
+        logger.warning(
+            "plobi console: %s 读不到（%s）——这一格按默认值 %r 降级，名单照出",
+            getattr(fn, "__name__", fn), exc, default,
+        )
+        return default
+
+
 def agent_row(entry: AgentEntry, *, working: bool = False) -> dict:
     """``Agent`` in console/types.ts — id/name/status/model/todayCalls + profile.
 
@@ -468,8 +493,10 @@ def agent_row(entry: AgentEntry, *, working: bool = False) -> dict:
     """
     # 单库后（裁定 180）session id、用量、腿读数同库同源：session id 按
     # sessions.agent_id 取，用量/腿按这些 id 在同一库（default_db_path）聚合。
-    totals = totals_for_agent(entry.name)
-    leg = leg_for_sessions(sessions_for_agent(entry.name))
+    # 这三读都会碰 state.db；库被写者占着时按默认值降级，名单照出（见 _db_read_or）。
+    session_ids = _db_read_or([], sessions_for_agent, entry.name)
+    totals = _db_read_or(UsageTotals(), totals_for_agent, entry.name)
+    leg = _db_read_or(None, leg_for_sessions, session_ids)
     # R-072：这一行现在问不问得到，判据只有 agent_askability 一份——名单和
     # plobi_agent_ask 的嘴不许各判一次（日程秘书走 secretary_ask，所以 agenda
     # 行 askable=False 却完全点得动；askable 是嘴的判据，不是点击的判据）。
