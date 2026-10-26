@@ -450,7 +450,9 @@ def test_l1_secretary_soul_upsert(tmp_path):
     text = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
     assert L1_SOUL_BEGIN in text
     assert "PLOBI_L1" in text
-    assert "plobi_secretary_ask" in text
+    # 10-24：开机强写进 SOUL.md 的那一段不许再教已删工具（裁定 183）。
+    assert "plobi_secretary_ask" not in text
+    assert "agenda_read" in text
     assert "session_search" in text
     ensure_l1_secretary_routing_soul(home=tmp_path)
     text2 = (tmp_path / "SOUL.md").read_text(encoding="utf-8")

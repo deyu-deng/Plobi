@@ -142,8 +142,9 @@ def register(ctx) -> None:
     except Exception:
         logger.debug("plobi-north-star: toolset ensure on active profile skipped", exc_info=True)
     ctx.register_hook("pre_gateway_dispatch", _on_pre_gateway_dispatch)
-    # WP-BE-13 / 裁定 21.1: pin §8.2's two frozen L1 utterances onto
-    # plobi_secretary_ask at the GUI/dashboard user-turn boundary.
+    # WP-BE-13 / 裁定 21.1: pin §8.2's two frozen L1 utterances onto the
+    # ``ask`` atom at the GUI/dashboard user-turn boundary (裁定 183 换了嘴：
+    # 旧那 7 枚 intent 枚举全删，硬路由跟着指 ask，标签留在 hard_route 的表里).
     # (裁定 21.1 有效：软路由 2026-09-08 已失败，窄硬路由就是当前产品形态；
     #  任何 QA 验证需要软路由对照时，用临时分支，不许关交付钩子。)
     ctx.register_hook("pre_prompt_submit", HR.on_pre_prompt_submit)
@@ -152,8 +153,9 @@ def register(ctx) -> None:
     from . import l1_budget as _l1b
     ctx.register_hook("on_session_start", _l1b.on_session_start)
     logger.info(
-        "plobi-north-star: registered deep tool 'plobi' + 6 narrow tools "
-        "(incl. plobi_secretary_ask, plobi_agent_ask) + gateway hook "
+        "plobi-north-star: registered deep tool 'plobi' + the say/ask channel "
+        "tools (裁定 183 折掉了 plobi_secretary_ask / plobi_agent_ask / "
+        "plobi_master_*，别再照旧名报数) + gateway hook "
         "+ §8.2 hard route"
         " + L1 budget hook"
     )

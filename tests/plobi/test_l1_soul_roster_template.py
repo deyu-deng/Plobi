@@ -86,7 +86,10 @@ def test_a_broken_template_fails_loud_instead_of_quietly_losing_the_contract(tmp
 def test_template_names_the_mouth_that_asks_the_roster():
     from plobi.agents.registry import L1_SOUL_BLOCK
 
-    assert "plobi_agent_ask" in L1_SOUL_BLOCK, "L1 的 SOUL 里还是没提这张嘴"
+    # 裁定 183 之后这张嘴叫 `ask`（旧 `plobi_agent_ask` 已删）；钉反方向：
+    # 模板里再出现那个名字，就是教 L1 每轮去调一个不存在的工具。
+    assert "`ask`" in L1_SOUL_BLOCK, "L1 的 SOUL 里还是没提这张嘴"
+    assert "plobi_agent_ask" not in L1_SOUL_BLOCK
     # 名单从哪来 + 每一行的三格。
     assert "roster" in L1_SOUL_BLOCK
     assert "askable" in L1_SOUL_BLOCK
@@ -107,9 +110,13 @@ def test_template_stops_routing_everything_to_the_agenda_secretary():
 
     assert "日程 / 项目 / 排天 / 待确认 **第一动作**只有 `plobi_secretary_ask`" not in L1_SOUL_BLOCK
     assert "日程 / 排天 / 待确认 / 项目进度：第一动作仍是已有的 `plobi_secretary_ask`" not in L1_SOUL_BLOCK
-    # 但日程那一摊的入口没被顺手改掉（裁定 32 / 33 / 40 / 44 的合同还在）。
-    assert "plobi_secretary_ask" in L1_SOUL_BLOCK
-    assert "七个 intent 一个不增" in L1_SOUL_BLOCK
+    # 10-24 改判这条断言的方向：裁定 183 把那枚带七个 intent 的嘴整批删了，
+    # 模板里再留着它，就是教 L1 每轮去调一个不存在的工具（现读真 SOUL.md 里 11 处）。
+    # 日程那一摊的入口还在，只是换成了两枚原子 + 一张嘴（裁定 185：工具面只给原子）。
+    assert "plobi_secretary_ask" not in L1_SOUL_BLOCK
+    assert "plobi_agent_ask" not in L1_SOUL_BLOCK
+    assert "agenda_read" in L1_SOUL_BLOCK and "agenda_write" in L1_SOUL_BLOCK
+    assert "`ask`" in L1_SOUL_BLOCK
 
 
 def test_template_puts_the_builtin_agenda_secretary_on_the_same_footing_as_other_l2():
@@ -149,7 +156,7 @@ def test_existing_l1_home_upgrades_at_next_boot_and_keeps_user_text(isolated_hom
     text = _soul(isolated_home)
     # 新合同整段进来……
     assert L1_SOUL_BLOCK.strip() in text
-    assert "plobi_agent_ask" in text
+    assert "`ask`" in text
     # ……旧的那一段一个字都不留（否则一份 SOUL 里两段 L1 合同互相打脸）。
     assert "## 旧版" not in text
     assert text.count(L1_SOUL_BEGIN) == 1

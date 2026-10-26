@@ -532,13 +532,12 @@ def test_soul_block_bans_master_tools_as_entry_but_not_any_tool():
     from plobi.agents.registry import L1_SOUL_BLOCK
 
     assert "派工不是工人" in L1_SOUL_BLOCK
-    for not_an_entry_point in (
-        "plobi_master_dispatch",
-        "plobi_master_preview",
-        "plobi_master_status",
-        "plobi_master_approve",
-    ):
-        assert not_an_entry_point in L1_SOUL_BLOCK, not_an_entry_point
+    # 10-24 翻向：那四枚嘴连同 `plobi_secretary_ask` / `plobi_agent_ask` 一起随裁定 183
+    # 删了。这一段要钉的是「不许把已删的名字当可用入口」——点整族即可，逐个列死名字
+    # 只会让模型去找一个不存在的工具（今天左栏与夜里那轮撞空就是这么来的）。
+    assert "plobi_master_*" in L1_SOUL_BLOCK
+    for gone in ("plobi_secretary_ask", "plobi_agent_ask"):
+        assert gone not in L1_SOUL_BLOCK, gone
     # 主树治理（人批）留着；「L1 同样没有 terminal」那句死了。
     assert "D:\\Projects\\Plobi\\Code" in L1_SOUL_BLOCK
     assert "人批" in L1_SOUL_BLOCK
@@ -552,11 +551,14 @@ def test_soul_block_bans_master_tools_as_entry_but_not_any_tool():
     assert "工具由用户在产品里给" in L1_SOUL_BLOCK
 
 
-def test_soul_block_first_action_is_plobi_secretary_ask():
+def test_soul_block_first_action_is_the_agenda_atoms_not_a_deleted_mouth():
     from plobi.agents.registry import L1_SOUL_BLOCK
 
-    # 派工不是工人段：硬钉第一动作只有 plobi_secretary_ask。
+    # 派工不是工人段：第一动作仍然硬钉着，但钉的是现役原子——
+    # `plobi_secretary_ask` 已随裁定 183 删除，模板里出现它＝教模型撞空。
     idx = L1_SOUL_BLOCK.index("派工不是工人")
     section = L1_SOUL_BLOCK[idx:]
-    assert "plobi_secretary_ask" in section
+    assert "plobi_secretary_ask" not in section
+    assert "agenda_read" in section
+    assert "`ask`" in section
     assert "第一动作" in section
