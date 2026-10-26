@@ -2351,6 +2351,14 @@ export interface Translations {
     searchEmptyBody: string
     searching: string
     searchLimited: (count: number) => string
+    searchIndexLimited: (count: number) => string
+    hideWorkspaceSidebar: string
+    openWith: (name: string) => string
+    chooseOpenWith: string
+    openInFileManager: string
+    openInTerminal: string
+    workspaceAppsLoading: string
+    openWorkspaceFailed: string
     previewUnavailable: string
     couldNotPreview: (path: string) => string
     noProjectTitle: string

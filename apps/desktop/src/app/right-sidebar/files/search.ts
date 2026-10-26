@@ -1,5 +1,5 @@
 import type { PlobiReadDirResult } from '@/global'
-import { readDesktopDir } from '@/lib/desktop-fs'
+import { isDesktopFsRemoteMode, readDesktopDir, searchDesktopWorkspaceFiles } from '@/lib/desktop-fs'
 import { ALWAYS_EXCLUDED } from '@/lib/excluded-paths'
 
 export interface ProjectFileSearchResult {
@@ -9,6 +9,7 @@ export interface ProjectFileSearchResult {
 }
 
 export interface ProjectFileSearch {
+  indexedFiles?: number
   results: ProjectFileSearchResult[]
   scannedDirs: number
   truncated: boolean
@@ -34,6 +35,29 @@ const DEFAULTS = {
   directoryLimit: 160,
   maxDepth: 12,
   resultLimit: 120
+}
+
+export async function searchProjectFilesWithIndex(
+  root: string,
+  query: string,
+  options: { refresh?: boolean } = {}
+): Promise<ProjectFileSearch> {
+  if (!isDesktopFsRemoteMode() && window.plobiDesktop?.searchWorkspaceFiles) {
+    try {
+      const result = await searchDesktopWorkspaceFiles(root, query, options.refresh)
+
+      return {
+        indexedFiles: result.indexedFiles,
+        results: result.results,
+        scannedDirs: 0,
+        truncated: result.truncated
+      }
+    } catch {
+      // Index unavailable or failed to build — fall through to the bounded walk.
+    }
+  }
+
+  return searchProjectFiles(root, query)
 }
 
 export async function searchProjectFiles(

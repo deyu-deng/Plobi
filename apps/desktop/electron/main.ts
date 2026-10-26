@@ -123,7 +123,9 @@ import {
 } from './egress-tray'
 import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
 import { applyDesktopProxy, desktopProxyConfig, describeDesktopProxy } from './egress-proxy'
+import { invalidateWorkspaceIndex, searchWorkspaceIndex } from './fs-index'
 import { readDirForIpc } from './fs-read-dir'
+import { listWorkspaceApplications, openWorkspaceWithApplication } from './workspace-open'
 import { probeGatewayWebSocket } from './gateway-ws-probe'
 import { scanGitRepos } from './git-repo-scan'
 import {
@@ -11117,6 +11119,31 @@ function disposeTerminalSession(id) {
 }
 
 ipcMain.handle('plobi:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
+
+ipcMain.handle('plobi:fs:searchIndex', async (_event, root, query, refresh) => {
+  try {
+    return await searchWorkspaceIndex(String(root || ''), String(query || ''), { refresh: Boolean(refresh) })
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'index-error',
+      indexedFiles: 0,
+      results: [],
+      truncated: false
+    }
+  }
+})
+
+ipcMain.handle('plobi:fs:invalidateIndex', (_event, root) => {
+  invalidateWorkspaceIndex(root ? String(root) : undefined)
+
+  return true
+})
+
+ipcMain.handle('plobi:workspace:apps', async () => listWorkspaceApplications())
+
+ipcMain.handle('plobi:workspace:openWith', async (_event, root, appId) =>
+  openWorkspaceWithApplication(String(root || ''), String(appId || ''))
+)
 
 ipcMain.handle('plobi:fs:gitRoot', async (_event, startPath) => gitRootForIpc(startPath))
 

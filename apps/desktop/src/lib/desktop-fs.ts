@@ -2,7 +2,9 @@ import type {
   PlobiConnection,
   PlobiReadDirResult,
   PlobiReadFileTextResult,
-  PlobiSelectPathsOptions
+  PlobiSelectPathsOptions,
+  PlobiWorkspaceApplication,
+  PlobiWorkspaceFileSearchResult
 } from '@/global'
 import { $connection } from '@/store/session'
 
@@ -64,6 +66,41 @@ export async function readDesktopDir(path: string): Promise<PlobiReadDirResult> 
   }
 
   return remoteFsApi<PlobiReadDirResult>(fsPath('list', path))
+}
+
+export async function searchDesktopWorkspaceFiles(
+  root: string,
+  query: string,
+  refresh = false
+): Promise<PlobiWorkspaceFileSearchResult> {
+  const search = bridge().searchWorkspaceFiles
+
+  if (!search) {
+    throw new Error('Workspace index is unavailable')
+  }
+
+  return search(root, query, refresh)
+}
+
+export async function invalidateDesktopWorkspaceIndex(root?: string): Promise<void> {
+  await bridge().invalidateWorkspaceIndex?.(root)
+}
+
+export async function listDesktopWorkspaceApplications(): Promise<PlobiWorkspaceApplication[]> {
+  return (await bridge().listWorkspaceApplications?.()) ?? []
+}
+
+export async function openDesktopWorkspaceWith(
+  root: string,
+  appId: string
+): Promise<{ error?: string; ok: boolean }> {
+  const open = bridge().openWorkspaceWithApplication
+
+  if (!open) {
+    return { error: 'Open with is unavailable', ok: false }
+  }
+
+  return open(root, appId)
 }
 
 export async function readDesktopFileText(path: string): Promise<PlobiReadFileTextResult> {

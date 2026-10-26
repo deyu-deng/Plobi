@@ -1,27 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { FS_HIDDEN_NAMES } from './fs-noise'
 import { resolveDirectoryForIpc } from './hardening'
 
 const FS_READDIR_STAT_CONCURRENCY = 16
-
-// Always-hidden noise (covers non-git projects too; gitignore catches many of
-// these, but the project tree should keep the same hygiene without one).
-const FS_READDIR_HIDDEN = new Set([
-  '.git',
-  '.hg',
-  '.svn',
-  '.cache',
-  '.next',
-  '.turbo',
-  '.venv',
-  '__pycache__',
-  'build',
-  'dist',
-  'node_modules',
-  'target',
-  'venv'
-])
 
 function direntIsDirectory(dirent) {
   return typeof dirent.isDirectory === 'function' && dirent.isDirectory()
@@ -92,7 +75,7 @@ async function readDirForIpc(dirPath, options: any = {}) {
 
   try {
     const dirents = await fsImpl.promises.readdir(resolved, { withFileTypes: true })
-    const visibleDirents = dirents.filter(dirent => !FS_READDIR_HIDDEN.has(dirent.name))
+    const visibleDirents = dirents.filter(dirent => !FS_HIDDEN_NAMES.has(dirent.name))
     const entries = await mapWithStatConcurrency(visibleDirents, dirent => entryForDirent(dirent, resolved, fsImpl))
 
     entries.sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))

@@ -8,6 +8,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { FileTypeIcon } from '@/components/ui/file-type-icon'
 import { useDelayedTrue } from '@/hooks/use-delayed-true'
 import { useI18n } from '@/i18n'
+import { invalidateDesktopWorkspaceIndex } from '@/lib/desktop-fs'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { cn } from '@/lib/utils'
 import { $panesFlipped } from '@/store/layout'
@@ -22,6 +23,7 @@ import { fileIconTint } from './files/file-tint'
 import { ProjectTree } from './files/tree'
 import { useProjectFileSearch } from './files/use-project-file-search'
 import { useProjectTree } from './files/use-project-tree'
+import { WorkspaceOpenWith } from './files/workspace-open'
 
 interface RightSidebarPaneProps {
   cwd?: string
@@ -29,9 +31,17 @@ interface RightSidebarPaneProps {
   onActivateFile: (path: string) => void
   onActivateFolder: (path: string) => void
   onOpenFile?: (target: PreviewTarget) => void
+  onToggleWorkspaceSidebar?: () => void
 }
 
-export function RightSidebarPane({ cwd, embedded = false, onActivateFile, onActivateFolder, onOpenFile }: RightSidebarPaneProps) {
+export function RightSidebarPane({
+  cwd,
+  embedded = false,
+  onActivateFile,
+  onActivateFolder,
+  onOpenFile,
+  onToggleWorkspaceSidebar
+}: RightSidebarPaneProps) {
   const { t } = useI18n()
   const r = t.rightSidebar
   const panesFlipped = useStore($panesFlipped)
@@ -118,6 +128,7 @@ export function RightSidebarPane({ cwd, embedded = false, onActivateFile, onActi
         onNodeOpenChange={setNodeOpen}
         onPreviewFile={previewFile}
         onRefresh={() => void refreshRoot()}
+        onToggleWorkspaceSidebar={onToggleWorkspaceSidebar}
         openState={openState}
       />
     </aside>
@@ -130,6 +141,7 @@ interface FilesystemTabProps extends FileTreeBodyProps {
   hasWorkspace: boolean
   onCollapseAll: () => void
   onRefresh: () => void
+  onToggleWorkspaceSidebar?: () => void
 }
 
 // Sidebar palette + hover-reveal: header actions stay reachable while moving
@@ -155,12 +167,14 @@ function FilesystemTab({
   onNodeOpenChange,
   onPreviewFile,
   onRefresh,
+  onToggleWorkspaceSidebar,
   openState
 }: FilesystemTabProps) {
   const { t } = useI18n()
   const r = t.rightSidebar
   const [query, setQuery] = useState('')
-  const search = useProjectFileSearch(cwd, query)
+  const [searchRefresh, setSearchRefresh] = useState(0)
+  const search = useProjectFileSearch(cwd, query, searchRefresh)
   const filtering = query.trim().length > 0
 
   // No working directory (a bare/detached chat) → no tree, just a terse hint.
@@ -172,14 +186,31 @@ function FilesystemTab({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <RightSidebarSectionHeader>
+        {onToggleWorkspaceSidebar ? (
+          <Button
+            aria-label={r.hideWorkspaceSidebar}
+            className={HEADER_ACTION_CLASS}
+            onClick={onToggleWorkspaceSidebar}
+            size="icon-xs"
+            title={r.hideWorkspaceSidebar}
+            variant="ghost"
+          >
+            <Codicon name="layout-sidebar-right" size="0.8125rem" />
+          </Button>
+        ) : null}
         <div className="flex min-w-0 flex-1">
           <SidebarPanelLabel>{cwdName}</SidebarPanelLabel>
         </div>
+        <WorkspaceOpenWith cwd={cwd} />
         <Button
           aria-label={r.refreshTree}
           className={HEADER_ACTION_LABEL_REVEAL}
           disabled={loading}
-          onClick={onRefresh}
+          onClick={() => {
+            void invalidateDesktopWorkspaceIndex(cwd)
+            setSearchRefresh(value => value + 1)
+            onRefresh()
+          }}
           size="icon-xs"
           title={r.refreshTree}
           variant="ghost"
@@ -241,6 +272,7 @@ function FilesystemTab({
       {filtering ? (
         <FileSearchResults
           cwd={cwd}
+          indexedFiles={search.indexedFiles}
           loading={search.loading}
           onPreviewFile={onPreviewFile}
           results={search.results}
@@ -269,6 +301,7 @@ function FilesystemTab({
 
 interface FileSearchResultsProps {
   cwd: string
+  indexedFiles?: number
   loading: boolean
   onPreviewFile?: (path: string) => void
   results: ReturnType<typeof useProjectFileSearch>['results']
@@ -278,7 +311,15 @@ interface FileSearchResultsProps {
 
 const SEARCH_SKELETON_WIDTHS = ['w-28', 'w-20', 'w-36', 'w-24', 'w-32', 'w-16']
 
-function FileSearchResults({ cwd, loading, onPreviewFile, results, scannedDirs, truncated }: FileSearchResultsProps) {
+function FileSearchResults({
+  cwd,
+  indexedFiles,
+  loading,
+  onPreviewFile,
+  results,
+  scannedDirs,
+  truncated
+}: FileSearchResultsProps) {
   const { t } = useI18n()
   const r = t.rightSidebar
 
@@ -327,7 +368,7 @@ function FileSearchResults({ cwd, loading, onPreviewFile, results, scannedDirs, 
       ))}
       {truncated ? (
         <p className="px-2 pt-1 pb-2 text-[0.66rem] leading-relaxed text-(--ui-text-tertiary)">
-          {r.searchLimited(scannedDirs)}
+          {indexedFiles !== undefined ? r.searchIndexLimited(indexedFiles) : r.searchLimited(scannedDirs)}
         </p>
       ) : null}
     </div>

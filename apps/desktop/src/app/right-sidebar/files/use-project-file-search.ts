@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 
-import { type ProjectFileSearch, searchProjectFiles } from './search'
+import { isDesktopFsRemoteMode, searchDesktopWorkspaceFiles } from '@/lib/desktop-fs'
+
+import { type ProjectFileSearch, searchProjectFilesWithIndex } from './search'
 
 const EMPTY: ProjectFileSearch & { loading: boolean } = {
+  indexedFiles: undefined,
   loading: false,
   results: [],
   scannedDirs: 0,
@@ -11,8 +14,26 @@ const EMPTY: ProjectFileSearch & { loading: boolean } = {
 
 const SEARCH_DEBOUNCE_MS = 160
 
-export function useProjectFileSearch(root: string, query: string): ProjectFileSearch & { loading: boolean } {
+export function useProjectFileSearch(
+  root: string,
+  query: string,
+  refreshToken = 0
+): ProjectFileSearch & { loading: boolean } {
   const [state, setState] = useState(EMPTY)
+
+  // Warm the workspace index when the files tab mounts: the first typed query
+  // then filters an in-memory list instead of walking the disk.
+  useEffect(() => {
+    if (!root || isDesktopFsRemoteMode() || !window.plobiDesktop?.searchWorkspaceFiles) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void searchDesktopWorkspaceFiles(root, '').catch(() => {})
+    }, 400)
+
+    return () => window.clearTimeout(timer)
+  }, [root])
 
   useEffect(() => {
     const needle = query.trim()
@@ -27,7 +48,7 @@ export function useProjectFileSearch(root: string, query: string): ProjectFileSe
     setState({ ...EMPTY, loading: true })
 
     const timer = window.setTimeout(() => {
-      void searchProjectFiles(root, needle).then(
+      void searchProjectFilesWithIndex(root, needle).then(
         next => {
           if (!cancelled) {
             setState({ ...next, loading: false })
@@ -45,7 +66,7 @@ export function useProjectFileSearch(root: string, query: string): ProjectFileSe
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [query, root])
+  }, [query, refreshToken, root])
 
   return state
 }

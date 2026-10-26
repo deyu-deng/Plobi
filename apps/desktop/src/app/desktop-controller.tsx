@@ -1600,6 +1600,7 @@ export function DesktopController() {
       onActivateFile={path => composer.insertContextPathInlineRef(path)}
       onActivateFolder={path => composer.insertContextPathInlineRef(path, true)}
       onOpenFile={openFileTab}
+      onToggleWorkspaceSidebar={() => setFileBrowserOpen(false)}
     />
   ) : null
   const workbenchReviewContent = <ReviewPane embedded key={agentCwd || 'no-cwd'} />

@@ -109,6 +109,14 @@ declare global {
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<PlobiReadDirResult>
       gitRoot?: (path: string) => Promise<string | null>
+      searchWorkspaceFiles?: (
+        root: string,
+        query: string,
+        refresh?: boolean
+      ) => Promise<PlobiWorkspaceFileSearchResult>
+      invalidateWorkspaceIndex?: (root?: string) => Promise<boolean>
+      listWorkspaceApplications?: () => Promise<PlobiWorkspaceApplication[]>
+      openWorkspaceWithApplication?: (root: string, appId: string) => Promise<{ error?: string; ok: boolean }>
       // Reveal a path in the OS file manager (Finder / Explorer).
       revealPath?: (path: string) => Promise<boolean>
       // Rename a file/folder in place (new base name, same parent dir).
@@ -812,6 +820,19 @@ export interface PlobiReadDirEntry {
   name: string
   path: string
   isDirectory: boolean
+}
+
+export interface PlobiWorkspaceApplication {
+  group: 'editor' | 'location' | 'terminal'
+  id: string
+  name: string
+}
+
+export interface PlobiWorkspaceFileSearchResult {
+  error?: string
+  indexedFiles: number
+  results: Array<{ name: string; path: string; relativeDir: string }>
+  truncated: boolean
 }
 
 export interface PlobiReadDirResult {
