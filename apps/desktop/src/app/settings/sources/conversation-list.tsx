@@ -17,19 +17,65 @@
  * 就是下一句"我以为它没东西"。
  */
 
+import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import type { useI18n } from '@/i18n'
 
-import { type ConversationsPayload, getConversations, setConversationStatus } from './api'
+import { type ConversationRow, type ConversationsPayload, getConversations, setConversationStatus } from './api'
+import { $rosterFold, decideRoster, isRosterOpen } from './collapse'
 
 /** `settings.sources` 那一片的话（四语言目录给，这里不造句）。 */
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
+/**
+ * 三组的**顺序**（他 10-26 拍的就是这三组：群聊／私聊／公众号）。
+ * 判据与词表住在后端（`plobi/collectors/chatlog/client.py` 的 `ROSTER_KINDS` 那段），
+ * 这里只定画的次序；认不出的类别（第三方包给的别的词）不丢——排在最后，拿它自己的词上屏，
+ * 不并成"私聊"（那是一颗把别人的形状吞掉的合并）。
+ */
+const KIND_ORDER = ['group', 'private', 'official']
+
+/**
+ * `2026-10-26T15:48:03+08:00` → `10-26 15:48`（今年之内不写年）。
+ *
+ * 这一格用**绝对时间**，而不是行上那套"3 小时前"：167 行里那句相对话要心算，
+ * 而名单要问的是"哪一扇还活着"——两个问题不该共用一句人话。
+ * 拿不到时刻就回空串（调用方什么都不画），不许拿"现在"顶一个假读数。
+ */
+function clockLabel(value: string | undefined): string {
+  if (!value) {
+    return ''
+  }
+
+  const at = Date.parse(value)
+
+  if (Number.isNaN(at)) {
+    return ''
+  }
+
+  const d = new Date(at)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+
+  return d.getFullYear() === new Date().getFullYear()
+    ? `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+    : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 类别 → 那一组的话（同一个词表也用于行上的旧标签位，一处词表）。 */
+function kindLabel(kind: string, labels: Labels): string {
+  const table = labels.conversations.kinds as unknown as Record<string, string>
+
+  return table[kind] ?? kind
+}
+
 export function ConversationList({ labels, source }: { labels: Labels, source: string }) {
   const c = labels.conversations
+  // 折叠状态在**钩子区**取（放在那几个 early return 之后就是违钩子规则，上一刀在大折叠那屏踩过一次）。
+  const rosterFold = useStore($rosterFold)
 
   const [payload, setPayload] = useState<ConversationsPayload | null>(null)
   const [readFailed, setReadFailed] = useState(false)
@@ -85,11 +131,42 @@ export function ConversationList({ labels, source }: { labels: Labels, source: s
     }
   }
 
-  const rows = useMemo(() => {
+  /**
+   * 分成他要的那三组。三条判据都写在这里而不是散进 JSX：
+   *
+   * - **只画真出现了的组**：微信有公众号，钉钉没有 ⇒ 钉钉那屏不该多一段空的"公众号"
+   *   （与大折叠那屏"空分类整块不画"同一条判据）；认不出的类别排到最后，不并组。
+   * - **组内按"最近一条"倒序**（他 10-26：「加时间，并按它倒序」）。没给时间的排到最后——
+   *   空是"这条信源没报这一格"，不是"很旧"，所以拿 `Date.parse` 的 `NaN` 单独一档，不折成 0。
+   * - **过滤在分组之前**：他打一个词想看的是"这个名字在哪一组"，不是"某一组里的匹配行"。
+   */
+  const groups = useMemo(() => {
     const all = payload?.conversations ?? []
     const needle = filter.trim().toLowerCase()
+    const kept = needle ? all.filter(row => row.name.toLowerCase().includes(needle)) : all
+    const present = [...new Set(kept.map(row => row.kind))]
 
-    return needle ? all.filter(row => row.name.toLowerCase().includes(needle)) : all
+    const order = [
+      ...KIND_ORDER.filter(kind => present.includes(kind)),
+      ...present.filter(kind => !KIND_ORDER.includes(kind))
+    ]
+
+    const stamp = (row: ConversationRow): number => {
+      const at = Date.parse(row.last_at ?? '')
+
+      return Number.isNaN(at) ? -1 : at
+    }
+
+    return order.map(kind => {
+      const rows = kept.filter(row => row.kind === kind).sort((a, b) => stamp(b) - stamp(a))
+
+      return {
+        count: rows.length,
+        excluded: rows.filter(row => row.status === 'excluded').length,
+        kind,
+        rows
+      }
+    })
   }, [filter, payload])
 
   if (loading) {
@@ -118,7 +195,7 @@ export function ConversationList({ labels, source }: { labels: Labels, source: s
   const excluded = payload.conversations.filter(row => row.status === 'excluded').length
 
   return (
-    <div className="space-y-2" data-testid={`conversations-${source}`}>
+    <div className="space-y-1" data-testid={`conversations-${source}`}>
       {writeFailed
         ? (
             <p className="text-[length:var(--conversation-caption-font-size)] text-destructive" data-testid={`conversations-${source}-write-failed`}>
@@ -144,34 +221,71 @@ export function ConversationList({ labels, source }: { labels: Labels, source: s
           : null}
       </div>
 
-      {rows.length === 0
-        ? <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">{c.empty}</p>
+      {groups.length === 0
+        ? <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)" data-testid={`conversations-${source}-empty`}>{c.empty}</p>
         : null}
 
-      <ul className="max-h-64 space-y-1 overflow-y-auto pr-1">
-        {rows.map(row => (
-          <li className="flex items-center gap-2" data-testid={`conversation-row-${row.id}`} key={row.id}>
-            <span className="min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)]" title={row.name}>
-              {row.name}
-            </span>
-            <span className="shrink-0 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-              {row.kind === 'group' ? c.kindGroup : c.kindSingle}
-            </span>
-            {/* 没定过（＝默认采）**不画徽章**：178 行里挂 178 个灰点，那不是信息，是噪声。 */}
-            {row.status !== 'pending'
-              ? <span className="shrink-0 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">{row.status === 'excluded' ? c.modeExcluded : c.modeKnown}</span>
-              : null}
-            <Button
-              disabled={!!busy}
-              onClick={() => { void decide(row.id, row.status === 'excluded' ? 'pending' : 'excluded') }}
-              size="xs"
-              variant="ghost"
+      {/* 三组、每组各自可折（他 10-26：「而且请按类别折叠在抽屉里面」）。
+          折起来只藏那一组的行，组头那格永远在——段数与每段几扇是他要的读数。 */}
+      {groups.map(group => {
+        const open = isRosterOpen(rosterFold, source, group.kind)
+
+        return (
+          <section data-testid={`conversations-${source}-group-${group.kind}`} key={group.kind}>
+            <button
+              aria-expanded={open}
+              aria-label={`${kindLabel(group.kind, labels)} — ${open ? labels.groups.collapse : labels.groups.expand}`}
+              className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 text-left hover:bg-(--ui-bg-hover)"
+              data-testid={`conversations-${source}-group-${group.kind}-toggle`}
+              onClick={() => { decideRoster(rosterFold, source, group.kind, !open) }}
+              type="button"
             >
-              {row.status === 'excluded' ? c.collect : c.exclude}
-            </Button>
-          </li>
-        ))}
-      </ul>
+              <DisclosureCaret className="size-3 shrink-0 text-(--ui-text-tertiary)" open={open} />
+              <span className="min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)] font-medium">
+                {kindLabel(group.kind, labels)}
+              </span>
+              {/* 组头只说两件事：几扇、其中几扇被他关了。一扇都没关就不写那半句
+                  （与"没定过的不画徽章"同一条判据：画上去是噪声，不是信息）。 */}
+              <span className="shrink-0 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+                {group.excluded > 0
+                  ? `${group.count} · ${c.excludedOf.replace('{n}', String(group.excluded))}`
+                  : String(group.count)}
+              </span>
+            </button>
+
+            {open
+              ? (
+                  <ul className="ml-2 space-y-0.5 border-l border-(--ui-border) py-0.5 pl-2" data-testid={`conversations-${source}-rows-${group.kind}`}>
+                    {group.rows.map(row => (
+                      <li className="flex items-center gap-2" data-testid={`conversation-row-${row.id}`} key={row.id}>
+                        {/* 查不到名字的那一行拿会话号上屏，但**念成号**：灰字 + 一句"没查到名字"。
+                            拿一个号假装是名字，比让他看到号更难查——他会以为那是个人。 */}
+                        <span
+                          className={`min-w-0 flex-1 truncate text-[length:var(--conversation-caption-font-size)] ${row.resolved === false ? 'text-(--ui-text-tertiary)' : ''}`}
+                          title={row.resolved === false ? `${row.name} — ${c.unnamed}` : row.name}
+                        >
+                          {row.name}
+                        </span>
+                        {row.last_at
+                          ? <span className="shrink-0 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)" data-testid={`conversation-time-${row.id}`}>{clockLabel(row.last_at)}</span>
+                          : null}
+                        {/* 行上**只有这一颗**（他的原话：「每个条目旁边给一个开关就行了」）。
+                            开关不画第三档：开＝采（含"没定过"，默认就是采），关＝不采。 */}
+                        <Switch
+                          aria-label={`${row.name} — ${row.status === 'excluded' ? c.exclude : c.collect}`}
+                          checked={row.status !== 'excluded'}
+                          disabled={!!busy}
+                          onCheckedChange={next => { void decide(row.id, next ? 'pending' : 'excluded') }}
+                          size="xs"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )
+              : null}
+          </section>
+        )
+      })}
     </div>
   )
 }

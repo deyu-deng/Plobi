@@ -184,23 +184,29 @@ export function SourcesSettings() {
                   <>
                     {group.category === 'custom' ? <ExternalSources labels={labels} onChanged={reload} /> : null}
 
-                    {group.rows.map(row => (
-                      <SourceRowView
-                        busy={busy === row.source}
-                        guiding={guide === row.source}
-                        key={row.source}
-                        labels={labels}
-                        onActivate={() => {
-                          setOpen(open === row.source ? null : row.source)
-                          setGuide(null)
-                        }}
-                        onReload={reload}
-                        onToggle={onToggle}
-                        onTry={onTry}
-                        open={open === row.source}
-                        row={row}
-                      />
-                    ))}
+                    {/* 行**缩进一档并挂一条左边界**（用户 10-26：「大类组头，和最顶层的信源，
+                        还是要区分一下。缩进一点」）。此前组头与行同宽同级，那一屏读起来是
+                        十个并列的行加三行大字标题，"谁属于哪一组"全靠猜。
+                        抽屉里的会话名单分组用的就是这个形状——两处同一形状，不各造一套。 */}
+                    <div className="ml-2 space-y-1 border-l border-(--ui-border) pl-2" data-testid={`source-group-${group.category}-rows`}>
+                      {group.rows.map(row => (
+                        <SourceRowView
+                          busy={busy === row.source}
+                          guiding={guide === row.source}
+                          key={row.source}
+                          labels={labels}
+                          onActivate={() => {
+                            setOpen(open === row.source ? null : row.source)
+                            setGuide(null)
+                          }}
+                          onReload={reload}
+                          onToggle={onToggle}
+                          onTry={onTry}
+                          open={open === row.source}
+                          row={row}
+                        />
+                      ))}
+                    </div>
                   </>
                 )
               : null}

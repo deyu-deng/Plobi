@@ -57,13 +57,12 @@ vi.mock('@/i18n', () => ({
             collect: 'Collect',
             empty: 'No conversations match.',
             exclude: 'Skip',
+            excludedOf: '{n} turned off',
             filter: 'Filter',
-            kindGroup: 'Group',
-            kindSingle: 'Direct',
+            kinds: { group: 'Groups', official: 'Official accounts', private: 'Direct chats' },
             loading: 'Reading…',
-            modeExcluded: 'Excluded',
-            modeKnown: 'Collecting',
             summary: '{n} conversations · {excluded} excluded',
+            unnamed: 'No name found (this is the raw ID)',
             unavailable: 'This list could not be read just now',
             unreadable: 'Could not read the conversation list.',
             writeFailed: 'That did not save.'
@@ -827,6 +826,27 @@ describe('the categories fold', () => {
     // 178 行那种名单折起来还留在树里，折叠就只剩视觉、没有性能那句话可说。
     expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('WeChat')).toBeNull()
+  })
+
+  it('hangs the rows under the header, not beside it', async () => {
+    // 用户 10-26：「大类组头，和最顶层的信源，还是要区分一下。缩进一点」——
+    // 此前组头与行同宽同级，那一屏读起来是"三行大字 + 十个并列的行"，谁属于哪一组全靠猜。
+    // 这一段先明说展开（默认规则是有报错才展开，这里要验的是展开之后的层级形状）。
+    $fold.set({ message: 'open' })
+    getSources.mockResolvedValue(payload([
+      row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+
+    await waitFor(() => expect(screen.getByTestId('source-group-message-rows')).toBeTruthy())
+    const rows = screen.getByTestId('source-group-message-rows')
+
+    // 行在这个容器里，容器**缩进一档并挂一条左边界**；组头不在里面（否则缩进就成了套娃）。
+    expect(rows.textContent).toContain('WeChat')
+    expect(rows.className).toContain('ml-2')
+    expect(rows.className).toContain('border-l')
+    expect(rows.contains(screen.getByTestId('source-group-message-toggle'))).toBe(false)
   })
 
   it('keeps a group he folded folded, even when something inside it breaks', async () => {

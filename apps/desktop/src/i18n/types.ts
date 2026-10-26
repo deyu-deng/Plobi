@@ -353,13 +353,12 @@ export interface Translations {
         collect: string
         empty: string
         exclude: string
+        excludedOf: string
         filter: string
-        kindGroup: string
-        kindSingle: string
+        kinds: { group: string; official: string; private: string }
         loading: string
-        modeExcluded: string
-        modeKnown: string
         summary: string
+        unnamed: string
         unavailable: string
         unreadable: string
         writeFailed: string

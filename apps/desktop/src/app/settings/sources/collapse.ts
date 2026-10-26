@@ -80,3 +80,33 @@ export function isOpen(fold: Record<string, Fold>, group: { category: string, er
 export function decide(category: string, open: boolean) {
   $fold.set({ ...$fold.get(), [category]: open ? 'open' : 'collapsed' })
 }
+
+/**
+ * 抽屉里那份**会话名单**的分组折叠（用户 10-26：「而且请按类别折叠在抽屉里面」）。
+ *
+ * 键是 `信源.类别` 两级：同是「群聊」，微信那份和钉钉那份是两件事，共用一个键就会
+ * 出现"我在微信里折了群聊，钉钉那侧也跟着折了"这种查不出来的联动。
+ * 与大折叠同一档持久化闸（本机记住、不进 `sources.yaml`），但**是另一个键名**。
+ *
+ * 默认**展开**——与大折叠那条（有报错才展开）不一样，理由写在这里而不是照搬过去：
+ * 大折叠那屏他扫的是"哪条坏了"，收起没坏处；这份名单是他**为挑会话才点开的**，
+ * 默认收起等于让他多点两下才看到第一行。他明说过的段仍永不被读数翻面。
+ */
+export const $rosterFold = persistentAtom<Record<string, Fold>>(
+  storageKey('desktop.settings.conversations.fold'),
+  {},
+  folds
+)
+
+export const rosterFoldKey = (source: string, kind: string): string => `${source}.${kind}`
+
+export function isRosterOpen(fold: Record<string, Fold>, source: string, kind: string): boolean {
+  const decided = fold[rosterFoldKey(source, kind)]
+
+  return decided === undefined ? true : decided === 'open'
+}
+
+/** 只记他明说过的：折起来写 `collapsed`，重新展开写 `open`（回到默认不删别组）。 */
+export function decideRoster(fold: Record<string, Fold>, source: string, kind: string, open: boolean) {
+  $rosterFold.set({ ...fold, [rosterFoldKey(source, kind)]: open ? 'open' : 'collapsed' })
+}

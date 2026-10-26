@@ -250,13 +250,44 @@ def open_local_store(*, profiles_dir: Optional[Iterable[Path]] = None,
     raise LocalStoreUnavailable("local_store_missing", last_error or "没试出可用的钥匙")
 
 
+def local_iso_from_epoch(value: object) -> str:
+    """库里那一格 epoch（**毫秒**，这台现核 178 扇全是 integer）→ 带本地时区的 ISO。
+
+    形状要与微信那侧 `/api/v1/session` 的 `nTime`（`2026-10-26T15:48:03+08:00`）**一致**：
+    两族共用一份名单组件，时间给两种形状就是让界面猜一次。认不出来就回空串
+    （空串在界面上排到最后、什么时间都不画），不拿"现在"去顶一个假读数。
+    """
+    from datetime import datetime
+
+    try:
+        number = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+    seconds = number / 1000 if number > 100_000_000_000 else float(number)
+    try:
+        return datetime.fromtimestamp(seconds).astimezone().isoformat(timespec="seconds")
+    except (OSError, OverflowError, ValueError):
+        return ""
+
+
 def list_conversations(store: LocalStore, *, limit: int = 200) -> list[dict]:
-    """面上/排障用的那份名单：**只有 cid、标题、单聊还是群聊、最后一条时间**，不取正文。"""
+    """面上/排障用的那份名单：**只有 cid、标题、群还是私聊、最后一条时间**，不取正文。
+
+    `type` 那一格交的是**名单那一档的词**（`group`/`private`，见
+    `chatlog/client.py` 的 `ROSTER_KINDS` 那段——两族共用一张词表，别各造一套）。
+    `last_at` 是归一过的 ISO；`last_modify` 保留库里那个原始数（排障要看它到底存了什么）。
+    **这一格不是"最后一条"的权威时间**：读的是主库，最新那几分钟可能还在 `-wal` 里
+    （为什么没合并见本档顶部那段实测）。
+    """
     rows = store.connection.execute(
         "SELECT cid, title, type, lastModify FROM tbconversation ORDER BY lastModify DESC LIMIT ?",
         (limit,)).fetchall()
-    return [{"cid": str(cid), "title": str(title or ""), "type": "group" if int(t or 0) == 2 else "single",
-             "last_modify": str(last or "")} for cid, title, t, last in rows]
+    return [{"cid": str(cid), "title": str(title or ""),
+             "type": "group" if int(t or 0) == 2 else "private",
+             "last_at": local_iso_from_epoch(last), "last_modify": str(last or "")}
+            for cid, title, t, last in rows]
 
 
 TEXT_TYPE = 1

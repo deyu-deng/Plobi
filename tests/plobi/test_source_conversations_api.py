@@ -45,7 +45,7 @@ def client() -> TestClient:
 def declared():
     """一条声明了那两手的假信源；名单与决定都在测试进程里，不碰盘也不碰侧车。"""
     rows = [{"id": "room-1", "kind": "group", "name": "工程组", "status": "pending"},
-            {"id": "p-1", "kind": "single", "name": "李四", "status": "pending"}]
+            {"id": "p-1", "kind": "private", "name": "李四", "status": "pending"}]
     written: list[tuple[str, str]] = []
 
     spec = registry.SourceSpec(

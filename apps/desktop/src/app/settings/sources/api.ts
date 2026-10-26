@@ -286,9 +286,16 @@ export async function getExternalPackages(): Promise<ExternalPackage[]> {
  */
 export interface ConversationRow {
   id: string
+  /** 名单那一档，三值闭集：`group`／`private`／`official`（判据与词表在
+   * `plobi/collectors/chatlog/client.py` 的 `ROSTER_KINDS` 那段，**与池里 `visibility` 两档不是一张表**）。 */
   kind: string
   name: string
   status: string
+  /** 这一扇最后一条在什么时候（他 10-26：「加时间，并按它倒序」）。按会话的信源都该给，
+   * 第三方包没给就是空串——空串排到最后，不编一个时间出来。 */
+  last_at?: string
+  /** `name` 是真名字还是走投无路拿了会话号顶上。缺这一格当作**没查到**（宁缺勿假）。 */
+  resolved?: boolean
 }
 
 export interface ConversationsPayload {

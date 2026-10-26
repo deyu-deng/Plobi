@@ -39,19 +39,17 @@ def _build() -> ChatlogPipeline:
     return _ChatlogPipeline()
 
 
-def _talker_kind(talker: str) -> str:
-    """群聊还是一对一——**规则不在这儿重写一遍**，问那份唯一知道 wxid/chatroom 归类的读手。"""
-    from .client import pool_columns
-
-    return "group" if (pool_columns(talker).get("visibility") or "") == "group" else "single"
-
-
 def _conversations() -> list[dict]:
     """微信那份会话名单，从**侧车**枚举、从**它自己那张 `TalkerStore`** 读准入状态。
 
     侧车没在跑就抛（`state=unavailable` 那句为什么由 `sources_api` 那一层收成读数）——
     这一族的判据 2 早就写死了："枚举没抛异常"不等于活着，0 个会话与到不了是两句话。
+
+    每一格都按界面上那一行给：`name` 是**他认得出的名字**（备注优先，查不到才是会话号并由
+    `resolved` 说明白）、`kind` 是群／私聊／公众号里的哪一组、`last_at` 是这一扇最后一条在什么时候。
+    那一手的判据不写在这里，在 :mod:`.roster`（三张表怎么拼、群为什么不许用 `nickName`）。
     """
+    from . import roster
     from .collect_api import get_pipeline
 
     pipeline = get_pipeline()
@@ -59,13 +57,7 @@ def _conversations() -> list[dict]:
     if not health["ok"]:
         raise RuntimeError(health["detail"] or "采集器没在应答")
 
-    store = pipeline.talkers
-    rows = []
-    for session in pipeline.client.list_talker_sessions():
-        rows.append({"id": session.id, "name": session.name or session.id,
-                     "kind": _talker_kind(session.id),
-                     "status": store.status_of(session.id) or "pending"})
-    return rows
+    return roster.rows(pipeline.client, status_of=pipeline.talkers.status_of)
 
 
 def _admit(talker: str, status: str) -> None:
