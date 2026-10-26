@@ -218,6 +218,17 @@ declare global {
       // calls this when it opens. The renderer's own fetch is preflighted and the hub
       // sends no CORS headers, so this is the only way to get a current verdict.
       requestQuotaApps?: () => Promise<boolean>
+      authCatalog?: () => Promise<
+        Array<{
+          aggregate: boolean
+          id: string
+          kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
+          live: boolean
+          login?: null | { detail?: string; state?: string; url?: string }
+          name: string
+          reason: string
+        }>
+      >
       getBootstrapState: () => Promise<DesktopBootstrapState>
       resetBootstrap: () => Promise<{ ok: boolean }>
       repairBootstrap: () => Promise<{ ok: boolean }>

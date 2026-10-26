@@ -34,6 +34,7 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ListRow, LoadingState, SettingsContent } from './primitives'
+import { buildLoginCards, type LoginCard } from './quota-login-cards'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
@@ -62,6 +63,8 @@ export const PROVIDER_VIEWS = ['accounts', 'keys', 'desktop'] as const
 // `aigw auth antigravity`); cursor and workbuddy ride on the user's already
 // logged-in local session (no OAuth) via their aigw providers.
 interface DesktopQuotaApp {
+  /** True when the hub serves this software's quota and the picker can route to it. */
+  aggregate?: boolean
   id: string
   name: string
   description: string
@@ -400,7 +403,12 @@ function DesktopQuotasView() {
         // (`sk-local-dev-key`) — use whatever the hub returned, and only fall
         // back to the per-app key (`sk-local-<appId>`) for the standalone gateways
         // (Antigravity / Cursor) that still mint their own.
-        markConnected({
+        // A login-only leg (Gemini/Qwen as ACP) has no hub models to route, so it must
+        // not be written into the routing store: that store decides what the picker
+        // offers, and an empty row there is a promise we cannot keep.
+        const isRoutedLeg = desktopApps.find(candidate => candidate.id === appId)?.aggregate !== false
+
+        if (isRoutedLeg) markConnected({
           id: appId,
           // A manual connect is not a health verdict either: seed whatever the
           // connect call reported, and nothing otherwise — the hub's frame arrives a
@@ -410,8 +418,15 @@ function DesktopQuotasView() {
           apiKey: res.apiKey ?? `sk-local-${appId}`
         })
         setConn((prev) => ({ ...prev, [appId]: 'connected' }))
-        // Ask the shell for the hub's live catalog + verdict.
+        // Ask the shell for the hub's live catalog + verdict, and re-read the sign-in
+        // catalog so the card's own line ("browser step waiting" → "connected") is
+        // true without closing the page.
         requestQuotaCatalog()
+        void window.plobiDesktop?.authCatalog?.().then(rows => {
+          if (rows.length) {
+            setAuthCatalog(buildLoginCards(rows))
+          }
+        })
       } else {
         setConn((prev) => ({ ...prev, [appId]: 'error' }))
         setErrInfo((prev) => ({ ...prev, [appId]: { code: res.code, message: res.error, installHint: res.installHint } }))
@@ -465,7 +480,44 @@ function DesktopQuotasView() {
   // hub says when it vouches for none of a software's models belongs on that
   // control as its tooltip — it is the reason the button is still there, not a
   // status line the row should be shouting.
-  const cards = DESKTOP_QUOTA_APPS.map(app => {
+  // Which software this screen offers is the hub's answer, not a list in this file:
+  // adding a leg must never mean editing the app (user 2026-10-26). The seed list
+  // stays only as the pre-first-frame fallback so the screen is never blank while the
+  // hub is still coming up — and it is never what decides whether a leg exists.
+  const [authCatalog, setAuthCatalog] = useState<LoginCard[]>([])
+
+  useEffect(() => {
+    let alive = true
+
+    void window.plobiDesktop?.authCatalog?.().then(rows => {
+      if (alive && rows.length) {
+        setAuthCatalog(buildLoginCards(rows))
+      }
+    })
+
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const desktopApps = useMemo<DesktopQuotaApp[]>(
+    () =>
+      authCatalog.length
+        ? authCatalog.map(card => ({
+            aggregate: card.aggregate,
+            description: card.description,
+            id: card.id,
+            name: card.name,
+            // `verified` is the shell's word for "a click can act on this", which is
+            // the same question as the hub's `connectable`; a leg that is already
+            // connected keeps its button visible but disabled by the card logic.
+            verified: card.connectable || card.connected
+          }))
+        : DESKTOP_QUOTA_APPS,
+    [authCatalog]
+  )
+
+  const cards = desktopApps.map(app => {
     const verdict = quotaAppVerdict(quotaApps, QUOTA_APP_PEERS[app.id] ?? [app.id])
     const click = conn[app.id] || 'idle'
     // `off` is the user's own verdict and outranks the hub's, so it never reads as

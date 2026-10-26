@@ -256,6 +256,9 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   // Re-ask the hub and push a fresh frame to every window, now. The model picker
   // calls this on open so what a leg can serve is decided at the moment of picking.
   requestQuotaApps: () => ipcRenderer.invoke('plobi:quota-apps:refresh'),
+  // Which software a click can sign into, and how — asked from the hub so this
+  // surface never carries its own list of product names.
+  authCatalog: () => ipcRenderer.invoke('plobi-auth:catalog'),
   // First-launch bootstrap progress -- emitted by the install.ps1 stage
   // runner in main.ts (apps/desktop/electron/bootstrap-runner.ts).
   // Renderer's install overlay subscribes to live events and queries the

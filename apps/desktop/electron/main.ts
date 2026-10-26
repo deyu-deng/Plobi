@@ -10107,6 +10107,60 @@ ipcMain.handle('plobi-gateway:stop', async (_event, appId?: string) => {
   return { ok: true, running: false }
 })
 
+/**
+ * The sign-in catalog: every leg a click can connect, with the hub's live verdict.
+ *
+ * This is what replaces the shell's two hardcoded name lists
+ * (`DESKTOP_QUOTA_APPS` / `QUOTA_APP_PEERS` in providers-settings). Those had to be
+ * edited whenever a leg was added, and — measured 2026-10-26 — they were how one
+ * software ended up with two rows in the picker after the hub renamed a channel.
+ * The hub knows which legs exist; the renderer asks it.
+ */
+async function fetchAuthCatalog(): Promise<
+  Array<{
+    id: string
+    name: string
+    kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
+    live: boolean
+    reason: string
+    aggregate: boolean
+    login?: { state?: string; detail?: string; url?: string } | null
+  }>
+> {
+  const base = PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')
+
+  try {
+    const res = await fetch(`${base}/plobi/auth`, {
+      headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
+      signal: AbortSignal.timeout(8000)
+    })
+
+    if (!res.ok) {
+      rememberLog(`[auth] catalog read failed: HTTP ${res.status}`)
+
+      return []
+    }
+
+    const data = (await res.json()) as { data?: Array<Record<string, unknown>> }
+
+    return (data.data ?? []).map(row => ({
+      id: String(row.id ?? ''),
+      name: String(row.name ?? row.id ?? ''),
+      kind: (String(row.kind ?? 'none') as 'none' | 'local_session' | 'cli_login' | 'oauth'),
+      live: Boolean(row.live),
+      reason: String(row.reason ?? ''),
+      aggregate: Boolean(row.aggregate),
+      login: (row.login ?? null) as { state?: string; detail?: string; url?: string } | null
+    }))
+  } catch (error) {
+    // An unreachable hub is not "you have no legs": the renderer keeps its last
+    // catalog on screen rather than blanking the screen the user was reading.
+    rememberLog(`[auth] catalog read failed: ${(error as Error).message}`)
+
+    return []
+  }
+}
+
 ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   const aigwDir = resolveAigwDir()
 
