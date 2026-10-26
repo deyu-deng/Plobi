@@ -55,6 +55,15 @@ def machine(tmp_path, monkeypatch):
     return written
 
 
+@pytest.fixture(autouse=True)
+def no_real_pac_server(monkeypatch):
+    """These tests must not leave a detached PAC server behind on the test box."""
+    from agent.egress import pac_server
+
+    monkeypatch.setattr(pac_server, "start", lambda port, **kw: (True, "test: up"))
+    monkeypatch.setattr(pac_server, "stop", lambda **kw: (True, "test: nothing to stop"))
+
+
 # ── the PAC ────────────────────────────────────────────────────────────────
 
 
@@ -122,7 +131,9 @@ def test_enable_backs_up_then_points_the_system_at_our_pac(machine, tmp_path):
     plan = system_proxy.enable(_table(), home=tmp_path)
     assert plan.ok, plan.reason
     assert machine["ProxyEnable"] == 1
-    assert machine["AutoConfigURL"].startswith("file:///")
+    # WinINET does not load a file:// PAC (measured 2026-10-25), so the registry has
+    # to carry the http URL of our PAC server; the file stays on disk as well.
+    assert machine["AutoConfigURL"].startswith("http://127.0.0.1:")
     assert machine["AutoConfigURL"].endswith(system_proxy.PAC_BASENAME)
     egress_dir = tmp_path / "egress"  # _home(home) is <home>/egress, not <home>
     assert (egress_dir / system_proxy.PAC_BASENAME).exists()
