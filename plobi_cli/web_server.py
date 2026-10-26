@@ -4342,7 +4342,7 @@ def get_sessions(
         )
     profile_name: Optional[str] = None
     if profile:
-        profile_name, _ = _cron_profile_home(profile)
+        profile_name = _scope_name_for_read(profile)
     try:
         db = _open_session_db_for_profile(profile)
         try:
@@ -4447,7 +4447,7 @@ def get_profiles_sessions(
     profile_name: Optional[str] = None
     scoped = (profile or "").strip()
     if scoped and scoped != "all":
-        profile_name, _ = _cron_profile_home(scoped)
+        profile_name = _scope_name_for_read(scoped)
 
     min_message_count = max(0, min_messages)
     archived_only = archived == "only"
@@ -10170,7 +10170,7 @@ async def get_session_detail(session_id: str, profile: Optional[str] = None):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         if profile:
-            session["profile"] = _cron_profile_home(profile)[0]
+            session["profile"] = _scope_name_for_read(profile)
         _honest_session_cost(session)
         return session
     finally:
@@ -10646,6 +10646,45 @@ def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
     if not profiles_mod.profile_exists(canon):
         raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
     return canon, profiles_mod.get_profile_dir(canon)
+
+
+def _roster_has_scope(scope: str) -> bool:
+    """名册里有没有这一行（身份判据：裁 180／192 —— 身份＝名册那一行）。"""
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        return entry_for_profile(scope) is not None
+    except Exception:
+        return False
+
+
+def _scope_name_for_read(profile: Optional[str]) -> str:
+    """作用域值 → 规范名；存在性问**名册那一行**，不问盘上的家目录。
+
+    家目录那条腿已经退役（裁 42／178 乙案）：``profiles/<name>/`` 不再被任何入口建出来，
+    10-24 隔离又把 23 具旧家搬进了 ``_quarantine-20261024/``。名册那 24 行还在——所以
+    「这个作用域存不存在」要问名册。问目录就是问一个已经不存在的东西：10-26 用户报的
+    那句 ``Profile 'srtp' does not exist.`` 正是这么来的（作用域是名册行的 ``profile_name``，
+    家没了、名册行还在）。
+
+    三个都算数的：``default``（L1 那个伪作用域）· 名册里查得到的行 · 家**还在**盘上的
+    （``coder`` 那具空壳还在，别人正按老口径用它）。三样都不沾 ⇒ 404，与从前同一句话。
+    """
+    from plobi_cli import profiles as profiles_mod
+
+    raw = (profile or "default").strip() or "default"
+    try:
+        canon = profiles_mod.normalize_profile_name(raw)
+        profiles_mod.validate_profile_name(canon)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if canon == "default":
+        return canon
+    if _roster_has_scope(canon):
+        return canon
+    if profiles_mod.profile_exists(canon):
+        return canon
+    raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
 
 
 def _annotate_cron_job(job: Dict[str, Any], profile: str, home: Path) -> Dict[str, Any]:

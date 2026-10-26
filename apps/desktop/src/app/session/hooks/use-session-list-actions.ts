@@ -187,6 +187,9 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
         setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
         setSessionProfileTotals(result.profile_totals ?? {})
       }
+    } catch {
+      // 一个作用域被后端拒了（名册里没有这一行）不许拖垮整台开机，
+      // 也不许因为一次 throw 把下面那三句刷新跳过去——侧栏保留上一批行。
     } finally {
       if (refreshSessionsRequestRef.current === requestId) {
         setSessionsLoading(false)

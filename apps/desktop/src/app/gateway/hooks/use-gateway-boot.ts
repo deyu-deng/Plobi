@@ -493,7 +493,7 @@ export function useGatewayBoot({
           message: translateNow('boot.steps.loadingSessions'),
           progress: 99
         })
-        await callbacksRef.current.refreshSessions()
+        await callbacksRef.current.refreshSessions().catch(() => undefined)
         completeDesktopBoot()
         bootCompleted = true
       } catch (err) {
