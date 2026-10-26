@@ -116,6 +116,15 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   writeTextFile: (filePath, content) => ipcRenderer.invoke('plobi:fs:writeText', filePath, content),
   writeFileBuffer: (filePath, data) => ipcRenderer.invoke('plobi:fs:writeBuffer', filePath, data),
   genofficePreloadUrl: kind => ipcRenderer.invoke('genoffice:preload-url', kind),
+  genofficeRequestClose: (kind, webContentsId) =>
+    ipcRenderer.invoke(
+      kind === 'sheets'
+        ? 'sheets-host:request-close'
+        : kind === 'word'
+          ? 'word-host:request-close'
+          : 'slides-host:request-close',
+      webContentsId
+    ),
   trashPath: targetPath => ipcRenderer.invoke('plobi:fs:trash', targetPath),
   git: {
     worktreeList: repoPath => ipcRenderer.invoke('plobi:git:worktreeList', repoPath),

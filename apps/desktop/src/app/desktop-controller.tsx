@@ -132,6 +132,7 @@ import {
 import { BrowserTabPanel } from './workbench/browser-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
+import { requestGenOfficeClose } from './workbench/genoffice-sessions'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { AgentProgressPane } from './chat/right-rail/agent-progress-pane'
 import { DiaryPane } from './chat/right-rail/diary-pane'
@@ -298,6 +299,7 @@ export function DesktopController() {
     Record<string, { def: RightRailTabDef; target: PreviewTarget }>
   >({})
   const [dirtyCloseTab, setDirtyCloseTab] = useState<null | RightRailTabId>(null)
+  const closingFileTabs = useRef(new Set<RightRailTabId>())
 
   const workbenchTabDefs: Record<RightRailTab, RightRailTabDef> = {
     agenda: {
@@ -454,17 +456,40 @@ export function DesktopController() {
 
   const handleWorkbenchTabClose = useCallback(
     (tab: RightRailTabId) => {
-      if (tab.startsWith('file:')) {
-        const url = openFiles[tab]?.target.url
+      if (!tab.startsWith('file:')) {
+        commitWorkbenchTabClose(tab)
 
-        if (url && dirtyPreviewUrls[url]) {
+        return
+      }
+
+      const target = openFiles[tab]?.target
+      const filePath = target?.path ?? ''
+      const officeEditable = /\.(xlsx|docx|pptx)$/iu.test(filePath)
+
+      if (!officeEditable) {
+        if (target?.url && dirtyPreviewUrls[target.url]) {
           setDirtyCloseTab(tab)
 
           return
         }
+
+        commitWorkbenchTabClose(tab)
+
+        return
       }
 
-      commitWorkbenchTabClose(tab)
+      if (closingFileTabs.current.has(tab)) {
+        return
+      }
+
+      closingFileTabs.current.add(tab)
+      void requestGenOfficeClose(filePath)
+        .then(canClose => {
+          if (canClose) {
+            commitWorkbenchTabClose(tab)
+          }
+        })
+        .finally(() => closingFileTabs.current.delete(tab))
     },
     [commitWorkbenchTabClose, dirtyPreviewUrls, openFiles]
   )

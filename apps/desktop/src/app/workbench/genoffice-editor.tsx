@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { PageLoader } from '@/components/page-loader'
 import { Codicon } from '@/components/ui/codicon'
 
+import { registerGenOfficeCloseHandler } from './genoffice-sessions'
 import type { OfficePreviewLabels } from './office-preview'
 import { useFileRevision } from './use-file-revision'
 
 export type GenOfficeKind = 'slides' | 'sheets' | 'word'
 
 interface GenOfficeWebview extends HTMLElement {
+  getWebContentsId?: () => number
   reload?: () => void
 }
 
@@ -40,12 +42,28 @@ export function GenOfficeFileEditor({
   const hostRef = useRef<HTMLDivElement | null>(null)
   const webviewRef = useRef<GenOfficeWebview | null>(null)
   const webviewFocusedRef = useRef(false)
+  const webContentsIdRef = useRef<number | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [bridgeMissing, setBridgeMissing] = useState(false)
   const [diskChanged, setDiskChanged] = useState(false)
   const { change: diskChange } = useFileRevision(path)
+
+  useEffect(
+    () =>
+      registerGenOfficeCloseHandler(path, async () => {
+        const bridge = window.plobiDesktop?.genofficeRequestClose
+        const webContentsId = webContentsIdRef.current
+
+        if (!bridge || !webContentsId) {
+          return true
+        }
+
+        return bridge(kind, webContentsId)
+      }),
+    [kind, path]
+  )
 
   useEffect(() => {
     if (diskChange === 0) {
@@ -121,12 +139,16 @@ export function GenOfficeFileEditor({
         const onBlur = () => {
           webviewFocusedRef.current = false
         }
+        const onDomReady = () => {
+          webContentsIdRef.current = webview.getWebContentsId?.() ?? null
+        }
 
         webview.addEventListener('did-start-loading', onStart)
         webview.addEventListener('did-stop-loading', onStop)
         webview.addEventListener('did-fail-load', onFail)
         webview.addEventListener('focus', onFocus)
         webview.addEventListener('blur', onBlur)
+        webview.addEventListener('dom-ready', onDomReady)
       })
       .catch(() => {
         if (active) {
@@ -138,6 +160,7 @@ export function GenOfficeFileEditor({
     return () => {
       active = false
       webviewFocusedRef.current = false
+      webContentsIdRef.current = null
       webviewRef.current = null
       host.replaceChildren()
     }
