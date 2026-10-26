@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import __version__
 from .config import load
+from . import authflow
 from .providers.base import UpstreamError
 from .providers.apps.antigravity.network import probe_network
 from .registry import Registry
@@ -341,6 +342,81 @@ async def healthz():
     if STATE.get("network"):
         out["network"] = STATE["network"]
     return out
+
+
+# ── click-to-browser sign-in ─────────────────────────────────────────────
+# The desktop's 连接 button asks HERE instead of carrying a list of product names:
+# `GET /plobi/auth` is the catalog of legs a click can sign into (with each one's
+# live verdict), `POST /plobi/auth/{app}` starts the flow, and `GET` on the same path
+# is what the button polls until the leg comes back. The flows themselves run in the
+# providers' own hands — a CLI's login command or the Antigravity PKCE path — because
+# the rule of this whole layer is that the credential belongs to the desktop app, and
+# Plobi never reads, copies, prints or persists it.
+@app.get("/plobi/auth")
+async def plobi_auth_catalog(authorization: str = Header(None)):
+    _auth(authorization)
+    reg = STATE.get("reg")
+    rows = authflow.auth_catalog(reg)
+    live = authflow.MANAGER.status()
+    for row in rows:
+        row["login"] = live.get(row["id"])
+    return {"object": "list", "data": rows}
+
+
+async def _recheck_after_login(app_id: str) -> None:
+    """After a sign-in, let the leg re-discover itself and refresh its catalog."""
+    reg = STATE.get("reg")
+    if reg is None:
+        return
+    prov = reg.providers.get(app_id)
+    if prov is None:
+        return
+    try:
+        await prov.discover_accounts()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("quota_hub").warning(
+            "post-login discovery failed for %s: %s: %s", app_id, type(exc).__name__, exc
+        )
+        return
+    acc = next((a for a in prov.accounts if a.schedulable()), None)
+    if acc is None:
+        return
+    try:
+        await reg._refresh_provider_models(app_id)
+        await prov.refresh_quota(acc)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@app.post("/plobi/auth/{app_id}")
+async def plobi_auth_start(app_id: str, authorization: str = Header(None)):
+    _auth(authorization)
+    reg = STATE.get("reg")
+    plan = authflow.login_plan_for(reg, app_id)
+    plan["on_success"] = lambda: _recheck_after_login(app_id)
+    session = await authflow.MANAGER.start(app_id, plan)
+    return session.as_dict()
+
+
+@app.get("/plobi/auth/{app_id}")
+async def plobi_auth_status(app_id: str, authorization: str = Header(None)):
+    _auth(authorization)
+    session = authflow.MANAGER.get(app_id)
+    reg = STATE.get("reg")
+    plan = authflow.login_plan_for(reg, app_id)
+    prov = reg.providers.get(app_id) if reg else None
+    live, reason = reg.credential_health(prov) if (reg and prov) else (
+        bool(authflow._resolve_binary(plan.get("binary", ""))),
+        "已装，待本人登录" if authflow._resolve_binary(plan.get("binary", "")) else "这台机器上还没装它的 CLI",
+    )
+    return {
+        "app": app_id,
+        "name": plan.get("name") or app_id,
+        "kind": plan.get("kind", "none"),
+        "live": bool(live),
+        "reason": reason,
+        "login": session.as_dict() if session else None,
+    }
 
 
 @app.post("/v1/chat/completions")

@@ -122,6 +122,14 @@ class CliProvider(Provider):
     extra_args: list[str] = []
     timeout: float = 120.0
     cwd: str | None = None
+    #: argv that starts this CLI's OWN sign-in flow (Cline: ``("auth",)``).
+    #: None means "not declared" — and "we have not wired this" is a different claim
+    #: from "this leg is broken", so the desktop must show the first one. Declare it
+    #: only after reading the CLI's own `--help`: an invented argv would open a
+    #: browser at the wrong place and read as a working button.
+    login_args: tuple[str, ...] | None = None
+    #: A person has to click through a window, so this is far looser than chat.
+    login_timeout: float = 300.0
     #: Agent CLIs (codex/claude/opencode/kiro/cline) can edit files; give them a
     #: private scratch directory instead of whatever tree the gateway was launched
     #: from. ``workspace`` config overrides the path.
@@ -150,9 +158,36 @@ class CliProvider(Provider):
             self.cwd = config.get("workspace") or default_workspace(self.name)
         self.model_map = {**self.model_map, **config.get("model_map", {})}
         self.env_extra = {k: str(v) for k, v in config.get("env", {}).items()}
+        # A config file may declare the login argv for a CLI we have not verified
+        # ourselves; that is the owner's call on their own machine, not a guess of ours.
+        if "login_args" in config:
+            self.login_args = tuple(str(a) for a in (config.get("login_args") or []))
+        self.login_timeout = float(config.get("login_timeout", self.login_timeout))
         if config.get("models"):
             self.served_models = tuple(config["models"])
         self.binary_path: str | None = None
+
+    # --- sign-in ---------------------------------------------------------
+    def login_plan(self) -> dict:
+        """Spawn-based legs sign in through their OWN login command.
+
+        The plan is honest about the two reasons it cannot work yet — the CLI is not
+        on PATH, and nobody has read its login argv out of `--help`. Both report as
+        "not wired on our side", never as a credential failure, because the user
+        would otherwise go looking for a sign-in that is not the problem.
+        """
+        if self.login_args is None:
+            return {
+                "kind": "none",
+                "reason": "这一条腿的登录命令还没从它自己的 --help 里核出来",
+            }
+        return {
+            "kind": "cli_login",
+            "binary": self.binary,
+            "argv": list(self.login_args),
+            "timeout": self.login_timeout,
+            "name": self.display_name or self.name,
+        }
 
     # --- discovery -------------------------------------------------------
     def _binary_present(self) -> bool:

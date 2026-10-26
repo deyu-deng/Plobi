@@ -10119,8 +10119,53 @@ ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   if (appId === 'cursor') {
     return authCursor(aigwDir)
   }
-  return { ok: false, error: `auth not implemented for '${appId}'` }
+  // Anything else asks the hub how it signs in, instead of the shell carrying a list
+  // of product names. The hub owns the answer (`GET /plobi/auth`: local_session /
+  // cli_login / oauth / none), runs the CLI's own login command, and hands the URL it
+  // printed to the browser — the user never types a command (his ruling 2026-10-26).
+  // A leg whose login we have not wired says so in its own words; it must not read as
+  // a credential failure, because it is not one.
+  return authViaHub(appId)
 })
+
+/**
+ * Sign in to a hub-owned leg by having the hub run its own login flow.
+ *
+ * Deliberately thin: the hub decides *how* (a CLI's login argv, or Antigravity's
+ * PKCE), opens the browser itself, and reports the outcome under
+ * `GET /plobi/auth/{id}` while the desktop polls. This function owns only two
+ * things — handing the key over and telling the caller what the hub said — so a new
+ * leg never means editing this file again.
+ */
+async function authViaHub(appId: string): Promise<{ ok: boolean; code?: string; error?: string; url?: string }> {
+  const base = PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')
+
+  try {
+    const res = await fetch(`${base}/plobi/auth/${encodeURIComponent(appId)}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${productQuotaApiKey()}` },
+      signal: AbortSignal.timeout(15000)
+    })
+
+    if (!res.ok) {
+      return { ok: false, code: `HTTP_${res.status}`, error: `本地额度服务拒绝了这次登录请求（HTTP ${res.status}）` }
+    }
+
+    const session = (await res.json()) as { detail?: string; kind?: string; state?: string; url?: string }
+
+    if (session.kind === 'none') {
+      return { ok: false, code: 'NOT_WIRED', error: session.detail || '这一条腿还没接上点一下就能登录的路' }
+    }
+
+    // `pending` is the normal answer for a CLI login: the browser is opening and the
+    // CLI is waiting for the user. The card turns green when the hub's catalog reports
+    // the leg live again, so do not report that as a failure here.
+    return { ok: true, code: session.state, url: session.url, error: session.detail }
+  } catch (error) {
+    return { ok: false, code: 'HUB_UNREACHABLE', error: `连不上本地额度服务：${(error as Error).message}` }
+  }
+}
+
 
 // Antigravity: Google OAuth (browser login) → persist composite refresh token →
 // start the token-based gateway on 8019.

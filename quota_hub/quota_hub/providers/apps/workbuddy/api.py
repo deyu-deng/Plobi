@@ -67,6 +67,18 @@ def _flatten_oai(parts) -> str:
 
 class WorkbuddyApiProvider(Provider):
     name = "workbuddy_api"
+    display_name = "CodeBuddy"
+
+    def login_plan(self) -> dict:
+        """No sign-in of ours to do: this leg reads the desktop app's own local session.
+
+        The user already signed into CodeBuddy over there. Telling him to "connect" here
+        would be a lie about where the credential lives, so the honest answer is
+        "already signed in next door" — and if that session is gone, the verdict that
+        says so is `credential_health()`, not a broken button.
+        """
+        return {"kind": "local_session", "name": self.display_name,
+                "reason": "它用的是 CodeBuddy 桌面端自己的登录，Plobi 这边不用再登一次"}
     # Own-key HTTP passthrough: tools only if upstream dialect supports them.
     default_capabilities = Capabilities(
         stream=True,

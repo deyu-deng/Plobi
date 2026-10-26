@@ -146,6 +146,12 @@ def _tz_name() -> str:
 
 class CursorProvider(Provider):
     name = "cursor"
+    display_name = "Cursor"
+
+    def login_plan(self) -> dict:
+        """Cursor rides the user's already-logged-in editor session; nothing to open."""
+        return {"kind": "local_session", "name": self.display_name,
+                "reason": "它用的是 Cursor 自己那套登录，Plobi 这边不用再登一次"}
     default_capabilities = Capabilities(
         stream=True,
         tools=False,

@@ -58,7 +58,12 @@ def _models_from_payload(data) -> list[str]:
 
 class KiroCliProvider(CliProvider):
     name = "kiro_cli"
+    display_name = "Kiro"
     binary = "kiro-cli"
+    # Verified from `kiro-cli login --help` on this machine 2026-10-26
+    # (`kiro-cli auth` does not exist — it errors "unrecognized subcommand").
+    # Kiro is a login-only candidate for the model picker, not a tool-capable leg.
+    login_args = ("login",)
     prompt_flag = ""  # prompt is positional
     args_template = [
         "chat",

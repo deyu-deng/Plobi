@@ -129,6 +129,8 @@ class Provider:
     """Base class. Subclasses implement the abstract methods."""
 
     name: str = "base"
+    # Human label for the sign-in surface (the registry key is routing vocabulary).
+    display_name: str = ""
     # model ids this provider serves in the unified namespace, e.g. "cursor/gpt-4o"
     served_models: tuple[str, ...] = ()
     # Default capability flags; subclasses override ``capabilities()`` when needed.
@@ -142,6 +144,27 @@ class Provider:
     def capabilities(self) -> Capabilities:
         """Return capability flags for this provider (overridable per subclass)."""
         return self.default_capabilities
+
+    # --- sign-in ---------------------------------------------------------
+    def login_plan(self) -> dict:
+        """How the user signs into THIS provider, stated by the provider itself.
+
+        The desktop's 连接 button asks the hub for a plan instead of carrying a
+        hardcoded list of product names, so adding a leg never means editing the
+        app. Shapes:
+
+          ``{"kind": "local_session", "reason": ...}``  already signed in over there
+          ``{"kind": "cli_login", "binary": ..., "argv": [...], "timeout": ...}``
+                run that CLI's own login; it prints the URL and waits
+          ``{"kind": "oauth", "runner": callable}``      the provider owns a browser
+                OAuth flow (Antigravity: PKCE + local callback)
+          ``{"kind": "none", "reason": ...}``            **we did not wire it** — which
+                is not the same claim as "it is broken", and must never read as one.
+
+        Declaring nothing is the default on purpose: an unverified login command
+        would open a browser to the wrong place and look like a working button.
+        """
+        return {"kind": "none", "reason": "not declared"}
 
     # --- lifecycle -------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:

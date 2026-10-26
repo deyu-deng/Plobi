@@ -85,6 +85,26 @@ CLIENT_METADATA = {
 
 class AntigravityProvider(Provider):
     name = "antigravity"
+    display_name = "Antigravity"
+
+    def login_plan(self) -> dict:
+        """Google OAuth with a local callback — the flow this adapter already owns.
+
+        `run_bootstrap` starts the loopback server, opens the browser itself, and
+        stores the refresh token under PLOBI_HOME without printing it, which is the
+        same boundary the desktop's existing Antigravity path relies on
+        (`electron/main.ts` → `aigw auth antigravity`). Handing the callable to the
+        hub's login manager keeps one click path for every leg while leaving the
+        PKCE details here, where they belong.
+        """
+        from . import oauth as _oauth
+
+        return {
+            "kind": "oauth",
+            "name": self.display_name,
+            "runner": lambda: _oauth.run_bootstrap(print_token=False),
+        }
+
     # Reverse / research path: tools+stream work when token is live.
     default_capabilities = Capabilities(
         stream=True,

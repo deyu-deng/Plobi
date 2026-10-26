@@ -59,6 +59,7 @@ def _parse_cline_events(stdout: str) -> str:
 
 class ClineCliProvider(CliProvider):
     name = "cline_cli"
+    display_name = "Cline"
     binary = "cline"
     prompt_flag = ""  # prompt is positional
     args_template = ["--json", "{model_flag}", "{prompt}"]
@@ -68,6 +69,10 @@ class ClineCliProvider(CliProvider):
     stream_from_chat = True
     served_models = ("cline/default",)
     model_map = {"cline/default": ""}
+    # Verified from `cline auth --help` on this machine 2026-10-26:
+    #   Usage: cline auth [options] [provider]
+    # Run with no provider argument it starts its own sign-in and prints the URL.
+    login_args = ("auth",)
 
     def parse_response(self, stdout: str, oai_req: dict) -> dict:
         text = _parse_cline_events(stdout)
