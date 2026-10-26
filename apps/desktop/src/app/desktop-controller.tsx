@@ -1753,7 +1753,27 @@ export function DesktopController() {
       rightRail={
         level === 'l1'
           ? { open: agendaPaneOpen, toggle: () => togglePane('agenda-timeline') }
-          : undefined
+          : level !== null
+            ? {
+                open: fileBrowserOpen,
+                toggle: () => {
+                  if (fileBrowserOpen) {
+                    setFileBrowserOpen(false)
+
+                    return
+                  }
+
+                  if (l2Tabs.length === 0) {
+                    setL2Tabs(['files'])
+                    setL2Active('files')
+                  } else if (l2Active === null) {
+                    setL2Active(l2Tabs[0])
+                  }
+
+                  setFileBrowserOpen(true)
+                }
+              }
+            : undefined
       }
       statusbarItems={statusbarItems}
       titlebarTools={titlebarToolGroups.flat.right}
