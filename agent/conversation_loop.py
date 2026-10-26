@@ -650,6 +650,10 @@ def run_conversation(
     persist_user_message: Optional[str] = None,
     persist_user_timestamp: Optional[float] = None,
     moa_config: Optional[dict[str, Any]] = None,
+    # 「这一轮在回哪一条」（引用条）。可选、只影响落库那一格，不影响怎么跑；
+    # 不传就是"没有在回谁"。`build_turn_context` 负责把它挂到 user_msg 上，
+    # 真正写库在 `run_agent.resolve_reply_to`。@WP-SAY-ACTS b0449dd2 漏了这一层。
+    reply_to: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run a complete conversation with tool calling until completion.
@@ -709,6 +713,7 @@ def run_conversation(
         set_session_context=set_session_context,
         set_current_write_origin=set_current_write_origin,
         ra=_ra,
+        reply_to=reply_to,
     )
     user_message = _ctx.user_message
     original_user_message = _ctx.original_user_message
