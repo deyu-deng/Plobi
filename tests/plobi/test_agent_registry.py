@@ -125,6 +125,65 @@ def test_load_missing_returns_empty(home):
     assert reg.path == default_path()
 
 
+# ---------------------------------------------------------------------------
+# 原子落盘（2026-10-26 现场：改一个 Agent 的工作目录 ⇒ 左栏「全部 Agent 不见了」）
+# ---------------------------------------------------------------------------
+
+
+def test_save_is_atomic_the_target_is_never_half_written(home, monkeypatch):
+    """名册落盘必须是「同目录临时文件 + rename」，不许直接覆写目标。
+
+    钉的是**顺序**，不是"最后内容对"：rename 发生的那一刻，目标文件里还得是上一版
+    完整内容，新版整份躺在那个临时文件里。直接 `write_text` 覆写做不到这一点——
+    并发读（左栏那次 `GET /api/agents`）会读到截断态，24 行名册瞬间读成 0 行。
+    """
+    reg = AgentRegistry.load()
+    reg.upsert(_entry(name="first", role="l2_project"))
+    path = reg.save()
+    assert "first" in path.read_text(encoding="utf-8")
+
+    seen = {}
+    real_replace = os.replace
+
+    def spy_replace(src, dst):
+        seen["target"] = Path(dst).read_text(encoding="utf-8")
+        seen["tmp"] = Path(src).read_text(encoding="utf-8")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", spy_replace)
+    second = AgentRegistry.load(path)
+    second.upsert(_entry(name="second", role="l2_project"))
+    second.save()
+
+    assert "second" not in seen["target"], "rename 时目标已经是新版/半截 —— 不是原子写"
+    assert "first" in seen["target"]
+    assert "second" in seen["tmp"]
+    assert "second" in path.read_text(encoding="utf-8")
+    assert not list(path.parent.glob(f"{path.name}.tmp-*")), "临时文件没清掉"
+
+
+def test_save_failure_leaves_the_previous_registry_intact(home, monkeypatch):
+    """写中途炸了（盘满/序列化抛）也不许把原来那份 24 行的名册毁掉。"""
+    reg = AgentRegistry.load()
+    reg.upsert(_entry(name="keepme", role="l2_project"))
+    path = reg.save()
+
+    import yaml as _yaml
+
+    def boom(*_a, **_kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(_yaml, "safe_dump", boom)
+    second = AgentRegistry.load(path)
+    second.upsert(_entry(name="ghost", role="l2_project"))
+    with pytest.raises(OSError):
+        second.save()
+
+    assert "keepme" in path.read_text(encoding="utf-8")
+    assert "ghost" not in path.read_text(encoding="utf-8")
+    assert not list(path.parent.glob(f"{path.name}.tmp-*"))
+
+
 def test_round_trip_preserves_entries(home):
     reg = AgentRegistry.load()
     reg.upsert(_entry(name="agenda", skills=("a", "b"), description="日程闭环"))

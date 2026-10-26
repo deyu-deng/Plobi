@@ -98,19 +98,21 @@ function unwrapEnvelope<T>(payload: unknown): T {
 /**
  * §5 GET /api/agents — exactly what the registry holds, nothing invented.
  *
- * An unreachable backend and an empty registry both answer `[]`: the rail's
- * empty state is then honest, where a fabricated fallback row would hide both
- * the offline case and the "never registered" case it replaced.
+ * ⚠️ 失败**必须抛**，不许在这里折成 `[]`。旧写法把「后端没答上来」和「名册真的空的」
+ * 压成同一个返回值，于是 2026-10-26 那次「改完一个 Agent 的工作目录，左栏全部消失」
+ * 现场里：请求打到错误端口拿 404 → 这里返回 `[]` → 上层把错误位清成 `null` →
+ * 24 行名册整栏不见、屏幕上一句提示都没有（用户只能以为数据丢了）。
+ * 空名册与读不到是两件事，只有调用方（`store/agents`）能同时看见这两件。
  */
 export async function fetchAgents(): Promise<Agent[]> {
-  try {
-    const payload = await window.plobiDesktop.api<unknown>({ path: '/api/agents' })
-    const rows = unwrapEnvelope<Agent[]>(payload)
+  const payload = await window.plobiDesktop.api<unknown>({ path: '/api/agents' })
+  const rows = unwrapEnvelope<Agent[]>(payload)
 
-    return Array.isArray(rows) ? rows : []
-  } catch {
-    return []
+  if (!Array.isArray(rows)) {
+    throw new Error('console API /api/agents 的回包不是一个列表')
   }
+
+  return rows
 }
 
 /** §5 POST /api/agents — human-created project L2 (裁定 18). */

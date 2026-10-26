@@ -228,11 +228,33 @@ describe('fetchAgents (WP-BE-1)', () => {
     }
   })
 
-  it('returns an empty array when the request fails', async () => {
+  it('rejects when the request fails — a dead backend must not look like an empty registry', async () => {
     const restore = stubPlobiDesktop(vi.fn().mockRejectedValue(new Error('offline')))
 
     try {
-      expect(await fetchAgents()).toEqual([])
+      // 2026-10-26 现场：请求打到错误端口拿 404，这里旧写法返回 `[]`，
+      // 于是 24 行名册整栏消失且界面上一句提示都没有。失败要抛给调用方。
+      await expect(fetchAgents()).rejects.toThrow('offline')
+    } finally {
+      restore()
+    }
+  })
+
+  it('rejects when the envelope says ok:false instead of handing back an empty list', async () => {
+    const restore = stubPlobiDesktop(vi.fn().mockResolvedValue({ error: 'registry unreadable', ok: false }))
+
+    try {
+      await expect(fetchAgents()).rejects.toThrow('registry unreadable')
+    } finally {
+      restore()
+    }
+  })
+
+  it('rejects when the payload is not a list', async () => {
+    const restore = stubPlobiDesktop(vi.fn().mockResolvedValue({ data: { unexpected: true }, ok: true }))
+
+    try {
+      await expect(fetchAgents()).rejects.toThrow('不是一个列表')
     } finally {
       restore()
     }

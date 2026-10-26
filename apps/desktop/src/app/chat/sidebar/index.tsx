@@ -34,7 +34,7 @@ import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
 import { createAgent } from '../../console/api'
-import { $consoleAgents, $consoleAgentsLoading, refreshConsoleAgents } from '../../console/store/agents'
+import { $consoleAgents, $consoleAgentsError, $consoleAgentsLoading, refreshConsoleAgents } from '../../console/store/agents'
 import { secretaryShellLabel } from '../../desktop-controller-utils'
 import {
   agentRoute,
@@ -141,6 +141,9 @@ export function ChatSidebar({
     setOffloadsBackToList(false)
   }, [l2Id])
   const secretaryAgentsLoading = useStore($consoleAgentsLoading)
+  // 读失败与「名册真的空」必须长成两张脸：前者要留着上一栏并给一句人话＋重试，
+  // 后者才是空态。2026-10-26 那次整栏消失就是因为这两件事在界面上无法区分。
+  const secretaryAgentsError = useStore($consoleAgentsError)
 
   // 左栏现在只有 Agents 一张列表（裁定 38/39 终态：会话/profile 不再是产品
   // 概念），overlay 页也常驻 → 名册在挂载时拉一次。
@@ -421,6 +424,16 @@ export function ChatSidebar({
               <div className="flex shrink-0 items-center pb-1 pt-0.5">
                 <SidebarPanelLabel>{c.agentsTitle}</SidebarPanelLabel>
               </div>
+              {secretaryAgentsError && (
+                <div className="mb-1 flex items-start gap-2 px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
+                  <span className="min-w-0 flex-1" title={secretaryAgentsError}>
+                    {c.agentsLoadFailed}
+                  </span>
+                  <Button onClick={() => void refreshConsoleAgents()} size="sm" type="button" variant="ghost">
+                    {t.common.retry}
+                  </Button>
+                </div>
+              )}
               {secretaryAgents.length === 0 ? (
                 <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
                   {secretaryAgentsLoading ? c.agentsLoading : c.agentsEmptyDesc}

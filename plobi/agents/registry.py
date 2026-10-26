@@ -706,10 +706,19 @@ class AgentRegistry:
             "version": REGISTRY_VERSION,
             "agents": {name: entry.to_dict() for name, entry in sorted(self.agents.items())},
         }
-        target.write_text(
-            yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
-            encoding="utf-8",
-        )
+        text = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+        # 原子落盘：先写同目录的临时文件，再 rename 覆盖。旧写法是 `write_text`
+        # 直接覆写——名册有 24 行、每次改一格都要整档重写，而左栏那次
+        # `GET /api/agents` 是并发读同一个文件：撞上写窗口就读到半截（或空）文件，
+        # 于是 2026-10-26 出现「改完一个 Agent 的工作目录，左栏全部消失」。
+        # `os.replace` 在同一目录内是原子的（Windows 与 POSIX 都是），读者要么看到
+        # 旧的一份完整文件、要么看到新的一份完整文件，不会看到中间态。
+        tmp = target.with_name(f"{target.name}.tmp-{os.getpid()}")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
         return target
 
     # ------------------------------------------------------------------ #
