@@ -151,3 +151,37 @@ class TestDingTalkRosterShape:
 
     def test_seconds_are_still_seconds(self):
         assert store.local_iso_from_epoch(1792822458)[:10] == store.local_iso_from_epoch(1792822458000)[:10]
+
+    def test_the_handler_hands_time_and_named_to_the_panel(self, monkeypatch):
+        """两族共用一块面板 ⇒ 声明那一头也得把这两格交出去。
+
+        这台 10-26 现读到过缺口：钉钉 178 行一个时间都没有，倒序因此排不动。
+        """
+        from plobi.collectors import dingtalk as pkg
+        from plobi.collectors import talkers
+
+        closed: list[bool] = []
+
+        class Opened:
+            def close(self):
+                closed.append(True)
+
+        class Ledger:
+            def status_of(self, source, talker):
+                return "excluded" if talker == "cid-one" else "pending"
+
+        monkeypatch.setattr(store, "open_local_store", lambda *a, **kw: Opened())
+        monkeypatch.setattr(store, "list_conversations", lambda _opened, *, limit=None: [
+            {"cid": "cid-one", "title": "工程组", "type": "group",
+             "last_at": "2026-10-26T15:48:03+08:00", "last_modify": "1792822458246"},
+            {"cid": "cid-two", "title": "", "type": "private",
+             "last_at": "", "last_modify": "0"}])
+        monkeypatch.setattr(talkers, "Ledger", Ledger)
+
+        rows = {row["id"]: row for row in pkg._conversations()}
+
+        assert rows["cid-one"]["last_at"] == "2026-10-26T15:48:03+08:00"
+        assert rows["cid-two"]["resolved"] is False, "标题空 ⇒ 那一格是会话号，界面要念成「没查到名字」"
+        assert rows["cid-two"]["name"] == "cid-two"
+        assert rows["cid-one"]["status"] == "excluded"
+        assert closed == [True], "那条路要关连接，不许留一枚打开的句柄"

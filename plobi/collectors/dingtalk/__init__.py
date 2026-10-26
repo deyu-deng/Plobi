@@ -31,6 +31,7 @@ def _conversations() -> list[dict]:
     try:
         ledger = Ledger()
         return [{"id": row["cid"], "name": row["title"] or row["cid"], "kind": row["type"],
+                 "last_at": row["last_at"], "resolved": bool(row["title"]),
                  "status": ledger.status_of("dingtalk", row["cid"])}
                 for row in store.list_conversations(opened, limit=500)]
     finally:
