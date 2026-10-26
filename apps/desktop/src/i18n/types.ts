@@ -2847,6 +2847,9 @@ export interface Translations {
       hint: string
       diskChanged: string
       dismiss: string
+      convertToXlsx: string
+      converting: string
+      convertFailed: string
     }
   }
 }

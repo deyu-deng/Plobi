@@ -574,6 +574,9 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   // signal and it flips just once when crossing the clean↔dirty boundary.
   // `selfReload` re-runs the load after a save without the parent.
   const [editing, setEditing] = useState(false)
+  const [draftPreview, setDraftPreview] = useState(false)
+  const [draftSample, setDraftSample] = useState('')
+  const draftPreviewRef = useRef(false)
   const draftRef = useRef('')
   const baselineRef = useRef('')
   const [dirty, setDirty] = useState(false)
@@ -594,6 +597,9 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   useEffect(() => {
     setUserMode(null)
     setEditing(false)
+    setDraftPreview(false)
+    draftPreviewRef.current = false
+    setDraftSample('')
     setDirty(false)
     setSaving(false)
     setSaveError(null)
@@ -724,6 +730,11 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   // triggers a single re-render at most.
   const handleEditorChange = useCallback((value: string) => {
     draftRef.current = value
+
+    if (draftPreviewRef.current) {
+      setDraftSample(value)
+    }
+
     const next = value !== baselineRef.current
     setDirty(prev => (prev === next ? prev : next))
   }, [])
@@ -745,6 +756,9 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
     setSaving(false)
     setSaveError(null)
     setConflict(false)
+    setDraftPreview(false)
+    draftPreviewRef.current = false
+    setDraftSample(text)
     setEditing(true)
   }
 
@@ -788,6 +802,8 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
 
   const cancelEdit = () => {
     setEditing(false)
+    setDraftPreview(false)
+    draftPreviewRef.current = false
     setSaveError(null)
     setConflict(false)
   }
@@ -846,12 +862,25 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   // the SAME container + fixed-height header as the read view so entering edit
   // never shifts the body — only the trailing controls and the body swap.
   if (editing) {
+    const draftMarkdown = (state.language || target.language) === 'markdown'
+
     return (
       <div className="flex h-full flex-col overflow-hidden bg-transparent">
         <PreviewModeSwitcher
-          active="source"
-          modes={[]}
-          onSelect={() => {}}
+          active={draftPreview ? 'rendered' : 'source'}
+          modes={draftMarkdown ? ['source', 'rendered'] : []}
+          onSelect={mode => {
+            if (mode === 'rendered') {
+              setDraftSample(draftRef.current)
+              draftPreviewRef.current = true
+              setDraftPreview(true)
+
+              return
+            }
+
+            draftPreviewRef.current = false
+            setDraftPreview(false)
+          }}
           trailing={<EditControls dirty={dirty} onCancel={cancelEdit} onSave={() => void saveEdit()} saving={saving} />}
         />
         {conflict && (
@@ -882,14 +911,21 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-hidden">
-          <CodeEditor
-            filePath={filePath}
-            initialValue={baselineRef.current}
-            key={editorKey}
-            onCancel={cancelEdit}
-            onChange={handleEditorChange}
-            onSave={() => void saveEdit()}
-          />
+          <div className={cn('h-full', draftPreview && 'hidden')}>
+            <CodeEditor
+              filePath={filePath}
+              initialValue={baselineRef.current}
+              key={editorKey}
+              onCancel={cancelEdit}
+              onChange={handleEditorChange}
+              onSave={() => void saveEdit()}
+            />
+          </div>
+          {draftPreview ? (
+            <div className="h-full overflow-auto">
+              <MarkdownPreview text={draftSample} />
+            </div>
+          ) : null}
         </div>
       </div>
     )

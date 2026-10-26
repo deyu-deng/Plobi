@@ -37,8 +37,8 @@ _PLOBI_CORE_TOOLS = [
     # read-only terminal tab (both gated on PLOBI_DESKTOP via check_fn —
     # hidden outside the GUI).
     "read_terminal", "close_terminal",
-    # File manipulation
-    "read_file", "write_file", "patch", "search_files",
+    # File manipulation + read-only view of the human's open desktop tabs
+    "read_file", "write_file", "patch", "search_files", "list_open_files",
     # Vision + image generation
     "vision_analyze", "image_generate",
     # Skills
@@ -204,8 +204,8 @@ TOOLSETS = {
     
 
     "file": {
-        "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
-        "tools": ["read_file", "write_file", "patch", "search_files"],
+        "description": "File manipulation tools: read, write, patch (with fuzzy matching), search (content + files), and see the human's open desktop tabs",
+        "tools": ["read_file", "write_file", "patch", "search_files", "list_open_files"],
         "includes": []
     },
     

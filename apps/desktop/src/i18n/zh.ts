@@ -3419,6 +3419,9 @@ export const zh: Translations = {
       hint: 'GenOffice 编辑器没有启动；重启 Plobi 或重新构建编辑器。'
       diskChanged: '文件已在磁盘更新；重新加载会丢弃编辑器里未保存的内容。',
       dismiss: '稍后处理'
+      convertToXlsx: '转换为 .xlsx 编辑',
+      converting: '转换中…',
+      convertFailed: '转换失败'
     }
   }
 }

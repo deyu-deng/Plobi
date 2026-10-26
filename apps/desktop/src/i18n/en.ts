@@ -3287,6 +3287,9 @@ export const en: Translations = {
       hint: 'The GenOffice editor is not running. Restart Plobi or rebuild the editor.'
       diskChanged: 'The file changed on disk. Reloading discards unsaved edits in the editor.',
       dismiss: 'Later'
+      convertToXlsx: 'Convert to .xlsx',
+      converting: 'Converting…',
+      convertFailed: 'Conversion failed'
     }
   }
 }

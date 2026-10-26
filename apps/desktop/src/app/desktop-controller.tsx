@@ -494,6 +494,50 @@ export function DesktopController() {
     [commitWorkbenchTabClose, dirtyPreviewUrls, openFiles]
   )
 
+  // Publish a read-only snapshot for agents: which files the human has open,
+  // which editor owns them, and whether a text buffer is dirty. Debounced so a
+  // burst of tab changes doesn't rewrite the file repeatedly.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const activeTab = isL1Workbench ? l1Active : l2Active
+      const files: Array<{
+        active: boolean
+        dirty: boolean | null
+        editor: string
+        path: string
+        title: string
+      }> = []
+
+      for (const [id, entry] of Object.entries(openFiles)) {
+        const path = entry.target.path ?? ''
+
+        if (!path) {
+          continue
+        }
+
+        const officeEditable = /\.(xlsx|docx|pptx)$/iu.test(path)
+        const previewOnly = /\.(xls|pdf)$/iu.test(path)
+        const editor = officeEditable ? 'genoffice' : previewOnly ? 'preview' : 'text'
+
+        files.push({
+          active: id === activeTab,
+          dirty: editor === 'text' ? Boolean(entry.target.url && dirtyPreviewUrls[entry.target.url]) : null,
+          editor,
+          path,
+          title: entry.def.title
+        })
+      }
+
+      void window.plobiDesktop?.setOpenFilesSnapshot?.({
+        agentId: activeAgentId || 'l1',
+        files,
+        workspace: agentCwd
+      })
+    }, 250)
+
+    return () => window.clearTimeout(timer)
+  }, [activeAgentId, agentCwd, dirtyPreviewUrls, isL1Workbench, l1Active, l2Active, openFiles])
+
   // The terminal is a right-rail tab now; the store stays the single open/close
   // signal so the status stack, command palette and keybinds keep working.
   useEffect(() => {
@@ -620,7 +664,7 @@ export function DesktopController() {
             }
             key={id}
           >
-            <OfficeFilePreview labels={t.workbench.office} target={target} />
+            <OfficeFilePreview labels={t.workbench.office} onOpenFile={openFileTab} target={target} />
           </Suspense>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto" key={id}>

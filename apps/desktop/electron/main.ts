@@ -459,6 +459,49 @@ const DEFAULT_UPDATE_BRANCH = 'main'
 // errors.log, gateway.log produced by plobi_logging.setup_logging — one log
 // directory per user, regardless of which UI surface produced the line.
 const DESKTOP_LOG_PATH = path.join(PLOBI_HOME, 'logs', 'desktop.log')
+
+// Read-only visibility for agents: the desktop publishes which files the human
+// currently has open and whether a text editor has unsaved edits. The file
+// lives under the root home so profile-scoped agents resolve the same snapshot.
+const OPEN_FILES_SNAPSHOT_PATH = path.join(PLOBI_HOME, 'runtime', 'open-files.json')
+
+function normalizeOpenFilesSnapshot(raw: unknown) {
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const files = Array.isArray(source.files) ? source.files.slice(0, 100) : []
+
+  return {
+    agentId: String(source.agentId || '').slice(0, 200),
+    files: files
+      .map(item => {
+        const file = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
+        const pathValue = String(file.path || '').slice(0, 4096)
+
+        if (!pathValue) {
+          return null
+        }
+
+        return {
+          active: Boolean(file.active),
+          dirty: file.dirty === true ? true : file.dirty === false ? false : null,
+          editor: file.editor === 'genoffice' ? 'genoffice' : 'text',
+          path: pathValue,
+          title: String(file.title || '').slice(0, 256)
+        }
+      })
+      .filter(Boolean),
+    updatedAt: new Date().toISOString(),
+    workspace: String(source.workspace || '').slice(0, 4096)
+  }
+}
+
+async function writeOpenFilesSnapshot(raw: unknown) {
+  const snapshot = normalizeOpenFilesSnapshot(raw)
+  const directory = path.dirname(OPEN_FILES_SNAPSHOT_PATH)
+  const temporary = `${OPEN_FILES_SNAPSHOT_PATH}.${process.pid}.tmp`
+  await fs.promises.mkdir(directory, { recursive: true })
+  await fs.promises.writeFile(temporary, JSON.stringify(snapshot, null, 2), 'utf8')
+  await fs.promises.rename(temporary, OPEN_FILES_SNAPSHOT_PATH)
+}
 const DESKTOP_LOG_FLUSH_MS = 120
 const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
 // Bound desktop.log on disk. It is an append-only forensic log, so a boot loop
@@ -11122,6 +11165,16 @@ function disposeTerminalSession(id) {
 ipcMain.handle('plobi:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
 
 ipcMain.handle('plobi:fs:stat', async (_event, filePath) => statFileForIpc(String(filePath || '')))
+
+ipcMain.handle('plobi:open-files:set', async (_event, snapshot) => {
+  try {
+    await writeOpenFilesSnapshot(snapshot)
+
+    return true
+  } catch {
+    return false
+  }
+})
 
 ipcMain.handle('plobi:fs:searchIndex', async (_event, root, query, refresh) => {
   try {

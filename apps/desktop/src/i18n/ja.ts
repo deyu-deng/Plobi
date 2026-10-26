@@ -3175,6 +3175,9 @@ export const ja = defineLocale({
       hint: 'GenOffice エディターが起動していません。Plobi を再起動するか、エディターを再ビルドしてください。'
       diskChanged: 'ファイルがディスク上で更新されました。再読み込みすると、エディター内の未保存の変更は失われます。',
       dismiss: '後で'
+      convertToXlsx: '.xlsx に変換して編集',
+      converting: '変換中…',
+      convertFailed: '変換に失敗しました'
     }
   }
 })

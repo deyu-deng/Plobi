@@ -129,6 +129,19 @@ export async function readDesktopFileText(path: string): Promise<PlobiReadFileTe
 // IPC; remote writes hit the dashboard's POST /api/fs/write-text (same path
 // hardening, parent-must-exist, size cap) so the editor behaves identically in
 // both modes. Stale-on-disk detection is the caller's job (re-read before save).
+export async function writeDesktopFileBuffer(
+  path: string,
+  data: ArrayBuffer | Uint8Array
+): Promise<{ path: string }> {
+  const desktop = bridge()
+
+  if (!desktop.writeFileBuffer) {
+    throw new Error('Binary saving is not available')
+  }
+
+  return desktop.writeFileBuffer(path, data)
+}
+
 export async function writeDesktopFileText(path: string, content: string): Promise<{ path: string }> {
   const desktop = bridge()
 

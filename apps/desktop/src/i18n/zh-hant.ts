@@ -3075,6 +3075,9 @@ export const zhHant = defineLocale({
       hint: 'GenOffice 編輯器沒有啟動；重新啟動 Plobi 或重新建置編輯器。'
       diskChanged: '檔案已在磁碟更新；重新載入會捨棄編輯器裡未儲存的內容。',
       dismiss: '稍後處理'
+      convertToXlsx: '轉換為 .xlsx 編輯',
+      converting: '轉換中…',
+      convertFailed: '轉換失敗'
     }
   }
 })

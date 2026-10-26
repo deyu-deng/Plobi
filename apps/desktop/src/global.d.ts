@@ -110,6 +110,11 @@ declare global {
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<PlobiReadDirResult>
       statFile?: (path: string) => Promise<{ error?: string; mtimeMs: number; size: number }>
+      setOpenFilesSnapshot?: (snapshot: {
+        agentId: string
+        files: Array<{ active: boolean; dirty: boolean | null; editor: string; path: string; title: string }>
+        workspace: string
+      }) => Promise<boolean>
       gitRoot?: (path: string) => Promise<string | null>
       searchWorkspaceFiles?: (
         root: string,

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import * as XLSX from 'xlsx'
 
 import { Codicon } from '@/components/ui/codicon'
+import { statDesktopFile, writeDesktopFileBuffer } from '@/lib/desktop-fs'
 import { cn } from '@/lib/utils'
 import type { PreviewTarget } from '@/store/preview'
 
@@ -33,6 +35,9 @@ export interface OfficePreviewLabels {
   hint: string
   diskChanged: string
   dismiss: string
+  convertToXlsx: string
+  converting: string
+  convertFailed: string
 }
 
 function PreviewStatus({
@@ -89,13 +94,58 @@ function columnName(index: number): string {
   return name
 }
 
-function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
+function SheetPreview({
+  labels,
+  onOpenFile,
+  path
+}: {
+  labels: OfficePreviewLabels
+  onOpenFile?: (target: PreviewTarget) => void
+  path: string
+}) {
   const { change } = useFileRevision(path)
   const { bytes, error, loading } = useFileBytes(path, change)
   const [sheetName, setSheetName] = useState('')
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState(false)
   const model = useMemo(() => (bytes ? readSheetModel(bytes, sheetName || undefined) : null), [bytes, sheetName])
   const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
   const legacy = /\.xls$/iu.test(path)
+
+  const convertToXlsx = async () => {
+    if (!bytes || converting) {
+      return
+    }
+
+    setConverting(true)
+    setConvertError(false)
+
+    try {
+      const workbook = XLSX.read(bytes, { cellDates: true, cellStyles: true, type: 'array' })
+      const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+      const stem = path.replace(/\.xls$/iu, '')
+      let candidate = `${stem}.xlsx`
+      let suffix = 1
+
+      while (await statDesktopFile(candidate)) {
+        candidate = `${stem}-converted${suffix > 1 ? `-${suffix}` : ''}.xlsx`
+        suffix += 1
+      }
+
+      await writeDesktopFileBuffer(candidate, output)
+      onOpenFile?.({
+        kind: 'file',
+        label: candidate.split(/[\\/]/).pop() ?? candidate,
+        path: candidate,
+        source: 'file-browser',
+        url: candidate
+      })
+    } catch {
+      setConvertError(true)
+    } finally {
+      setConverting(false)
+    }
+  }
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-white text-[#111]">
@@ -117,7 +167,19 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
             </button>
           ))}
         </div>
-        <span className="shrink-0 text-[0.6rem] text-[#777]">{labels.readOnly}</span>
+        {legacy ? (
+          <button
+            className="shrink-0 rounded border border-[#d1d5db] px-1.5 py-0.5 text-[0.6rem] font-medium text-[#333] transition-colors hover:bg-[#f3f4f6] disabled:opacity-50"
+            disabled={!bytes || converting}
+            onClick={() => void convertToXlsx()}
+            type="button"
+          >
+            {converting ? labels.converting : labels.convertToXlsx}
+          </button>
+        ) : null}
+        <span className={cn('shrink-0 text-[0.6rem]', convertError ? 'text-[#b91c1c]' : 'text-[#777]')}>
+          {convertError ? labels.convertFailed : labels.readOnly}
+        </span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto bg-white">
@@ -235,7 +297,15 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   )
 }
 
-export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLabels; target: PreviewTarget }) {
+export function OfficeFilePreview({
+  labels,
+  onOpenFile,
+  target
+}: {
+  labels: OfficePreviewLabels
+  onOpenFile?: (target: PreviewTarget) => void
+  target: PreviewTarget
+}) {
   const path = target.path ?? ''
   const kind = fileKindForPath(path)
 
@@ -245,7 +315,7 @@ export function OfficeFilePreview({ labels, target }: { labels: OfficePreviewLab
     return ext === 'xlsx' ? (
       <GenOfficeFileEditor kind="sheets" labels={labels} path={path} />
     ) : (
-      <SheetPreview labels={labels} path={path} />
+      <SheetPreview labels={labels} onOpenFile={onOpenFile} path={path} />
     )
   }
 

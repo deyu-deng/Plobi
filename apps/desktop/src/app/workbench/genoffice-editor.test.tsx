@@ -21,7 +21,10 @@ const labels: OfficePreviewLabels = {
   review: 'Review',
   hint: 'Restart Plobi to load the editor.',
   diskChanged: 'The file changed on disk',
-  dismiss: 'Later'
+  dismiss: 'Later',
+  convertToXlsx: 'Convert to .xlsx',
+  converting: 'Converting…',
+  convertFailed: 'Conversion failed'
 }
 
 afterEach(() => {
