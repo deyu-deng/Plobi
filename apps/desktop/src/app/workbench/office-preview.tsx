@@ -9,6 +9,7 @@ import type { PreviewTarget } from '@/store/preview'
 import { fileKindForPath } from './file-kind'
 import { GenOfficeFileEditor } from './genoffice-editor'
 import { useFileBytes } from './file-bytes'
+import { useFileRevision } from './use-file-revision'
 import { readSheetModel, SHEET_MAX_COLS, SHEET_MAX_ROWS } from './sheet-model'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -30,6 +31,8 @@ export interface OfficePreviewLabels {
   reload: string
   review: string
   hint: string
+  diskChanged: string
+  dismiss: string
 }
 
 function PreviewStatus({
@@ -161,7 +164,8 @@ function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: str
 }
 
 function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
-  const { bytes, error, loading } = useFileBytes(path)
+  const { change } = useFileRevision(path)
+  const { bytes, error, loading } = useFileBytes(path, change)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [rendering, setRendering] = useState(false)
   const [renderError, setRenderError] = useState(false)

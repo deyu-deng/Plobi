@@ -6,7 +6,9 @@ describe('fileKindForPath', () => {
   it('routes the formats WorkBuddy previews locally', () => {
     expect(fileKindForPath('a.xlsx')).toBe('sheet')
     expect(fileKindForPath('a.XLS')).toBe('sheet')
-    expect(fileKindForPath('a.csv')).toBe('sheet')
+    // CSV/TSV are text files: humans and agents edit the same bytes.
+    expect(fileKindForPath('a.csv')).toBe('other')
+    expect(fileKindForPath('a.tsv')).toBe('other')
     expect(fileKindForPath('a.pdf')).toBe('pdf')
     expect(fileKindForPath('a.docx')).toBe('docx')
     expect(fileKindForPath('a.PDF?raw=1')).toBe('pdf')

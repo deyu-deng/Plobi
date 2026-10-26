@@ -2722,6 +2722,8 @@ export const ja = defineLocale({
       'このファイルは開いてから変更されています。あなたの版で上書きするか、編集を破棄して再読み込みしますか？',
     overwrite: '上書き',
     discardReload: '破棄して再読み込み',
+    discardCloseBody: 'このタブを閉じると、未保存の変更は失われます。',
+    discardCloseConfirm: '閉じる',
     console: {
       deselect: 'エントリーの選択を解除',
       select: 'エントリーを選択',
@@ -3171,6 +3173,8 @@ export const ja = defineLocale({
       review: 'レビュー',
       reload: '再読み込み',
       hint: 'GenOffice エディターが起動していません。Plobi を再起動するか、エディターを再ビルドしてください。'
+      diskChanged: 'ファイルがディスク上で更新されました。再読み込みすると、エディター内の未保存の変更は失われます。',
+      dismiss: '後で'
     }
   }
 })

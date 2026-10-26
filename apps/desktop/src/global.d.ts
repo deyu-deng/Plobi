@@ -108,6 +108,7 @@ declare global {
       revealLogs: () => Promise<{ ok: boolean; path: string; error?: string }>
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<PlobiReadDirResult>
+      statFile?: (path: string) => Promise<{ error?: string; mtimeMs: number; size: number }>
       gitRoot?: (path: string) => Promise<string | null>
       searchWorkspaceFiles?: (
         root: string,

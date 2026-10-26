@@ -2655,6 +2655,8 @@ export const zhHant = defineLocale({
     diskChangedBody: '此檔案自開啟以來已變更。用你的版本覆寫，還是放棄你的編輯並重新載入？',
     overwrite: '覆寫',
     discardReload: '放棄並重新載入',
+    discardCloseBody: '關閉這個頁籤會捨棄未儲存的修改。',
+    discardCloseConfirm: '仍然關閉',
     console: {
       deselect: '取消選取項目',
       select: '選取項目',
@@ -3071,6 +3073,8 @@ export const zhHant = defineLocale({
       review: '審閱',
       reload: '重新載入',
       hint: 'GenOffice 編輯器沒有啟動；重新啟動 Plobi 或重新建置編輯器。'
+      diskChanged: '檔案已在磁碟更新；重新載入會捨棄編輯器裡未儲存的內容。',
+      dismiss: '稍後處理'
     }
   }
 })

@@ -2997,6 +2997,8 @@ export const zh: Translations = {
     diskChangedBody: '此文件自打开以来已更改。用你的版本覆盖，还是放弃你的编辑并重新加载？',
     overwrite: '覆盖',
     discardReload: '放弃并重新加载',
+    discardCloseBody: '关闭这个页签会丢弃未保存的修改。',
+    discardCloseConfirm: '仍然关闭',
     console: {
       deselect: '取消选择条目',
       select: '选择条目',
@@ -3415,6 +3417,8 @@ export const zh: Translations = {
       review: '审阅',
       reload: '重新加载',
       hint: 'GenOffice 编辑器没有启动；重启 Plobi 或重新构建编辑器。'
+      diskChanged: '文件已在磁盘更新；重新加载会丢弃编辑器里未保存的内容。',
+      dismiss: '稍后处理'
     }
   }
 }

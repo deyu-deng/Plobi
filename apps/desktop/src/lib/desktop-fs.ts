@@ -68,6 +68,20 @@ export async function readDesktopDir(path: string): Promise<PlobiReadDirResult> 
   return remoteFsApi<PlobiReadDirResult>(fsPath('list', path))
 }
 
+export async function statDesktopFile(path: string): Promise<{ mtimeMs: number; size: number } | null> {
+  try {
+    const result = await bridge().statFile?.(path)
+
+    if (!result || result.error) {
+      return null
+    }
+
+    return { mtimeMs: result.mtimeMs, size: result.size }
+  } catch {
+    return null
+  }
+}
+
 export async function searchDesktopWorkspaceFiles(
   root: string,
   query: string,

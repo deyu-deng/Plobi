@@ -125,6 +125,7 @@ import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
 import { applyDesktopProxy, desktopProxyConfig, describeDesktopProxy } from './egress-proxy'
 import { invalidateWorkspaceIndex, searchWorkspaceIndex } from './fs-index'
 import { readDirForIpc } from './fs-read-dir'
+import { statFileForIpc } from './fs-stat'
 import { listWorkspaceApplications, openWorkspaceWithApplication } from './workspace-open'
 import { probeGatewayWebSocket } from './gateway-ws-probe'
 import { scanGitRepos } from './git-repo-scan'
@@ -11119,6 +11120,8 @@ function disposeTerminalSession(id) {
 }
 
 ipcMain.handle('plobi:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
+
+ipcMain.handle('plobi:fs:stat', async (_event, filePath) => statFileForIpc(String(filePath || '')))
 
 ipcMain.handle('plobi:fs:searchIndex', async (_event, root, query, refresh) => {
   try {

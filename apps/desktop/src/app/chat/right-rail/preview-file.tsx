@@ -14,6 +14,7 @@ import { requestComposerFocus, requestComposerInsertRefs } from '@/app/chat/comp
 import { droppedFileInlineRef } from '@/app/chat/composer/inline-refs'
 import { PLOBI_PATHS_MIME } from '@/app/chat/hooks/use-composer-actions'
 import { isAddSelectionShortcut } from '@/app/right-sidebar/terminal/selection'
+import { useFileRevision } from '@/app/workbench/use-file-revision'
 import { RichCodeBlock } from '@/components/assistant-ui/embeds'
 import { CodeEditor } from '@/components/chat/code-editor'
 import { FileDiffPanel } from '@/components/chat/diff-lines'
@@ -587,6 +588,8 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   const hoverRef = useRef(false)
   const filePath = filePathForTarget(target)
   const isImage = target.previewKind === 'image'
+  const { change: diskChange } = useFileRevision(filePath)
+  const lastDiskChange = useRef(0)
 
   useEffect(() => {
     setUserMode(null)
@@ -597,7 +600,34 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
     setConflict(false)
     draftRef.current = ''
     baselineRef.current = ''
+    lastDiskChange.current = 0
   }, [filePath, reloadKey])
+
+  // An agent (or another editor) wrote this file. A read-only view just
+  // re-reads; a clean editor drops back to the read view; unsaved work gets the
+  // overwrite/discard banner instead of being clobbered.
+  useEffect(() => {
+    if (diskChange === 0 || diskChange === lastDiskChange.current) {
+      return
+    }
+
+    lastDiskChange.current = diskChange
+
+    if (editing) {
+      if (dirty) {
+        setConflict(true)
+
+        return
+      }
+
+      setEditing(false)
+      setSelfReload(value => value + 1)
+
+      return
+    }
+
+    setSelfReload(value => value + 1)
+  }, [diskChange])
 
   // HTML files are rendered as source code, not in a webview - so they take
   // the same path as plain text files. `previewKind === 'binary'` arrives

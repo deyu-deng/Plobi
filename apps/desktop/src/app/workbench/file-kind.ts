@@ -5,7 +5,7 @@ export function fileKindForPath(path: string): FileKind {
   const dot = clean.lastIndexOf('.')
   const ext = dot >= 0 ? clean.slice(dot + 1) : ''
 
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || ext === 'tsv') {
+  if (ext === 'xlsx' || ext === 'xls') {
     return 'sheet'
   }
 

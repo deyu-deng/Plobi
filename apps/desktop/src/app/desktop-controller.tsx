@@ -14,6 +14,7 @@ import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useI18n } from '@/i18n'
 import { isFocusWithin } from '@/lib/keybinds/combo'
@@ -41,6 +42,7 @@ import {
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab, type PreviewTarget } from '../store/preview'
+import { $dirtyPreviewUrls } from '../store/preview-edit'
 import { $activeGatewayProfile, $profiles, $profileScope, ensureGatewayProfile, normalizeProfileKey, refreshProfiles } from '../store/profile'
 import { $reviewOpen, closeReview, openReview } from '../store/review'
 import {
@@ -199,6 +201,7 @@ export function DesktopController() {
   const terminalTakeover = useStore($terminalTakeover)
   const reviewOpen = useStore($reviewOpen)
   const fileBrowserOpen = useStore($fileBrowserOpen)
+  const dirtyPreviewUrls = useStore($dirtyPreviewUrls)
   const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
   const panesFlipped = useStore($panesFlipped)
@@ -294,6 +297,7 @@ export function DesktopController() {
   const [openFiles, setOpenFiles] = useState<
     Record<string, { def: RightRailTabDef; target: PreviewTarget }>
   >({})
+  const [dirtyCloseTab, setDirtyCloseTab] = useState<null | RightRailTabId>(null)
 
   const workbenchTabDefs: Record<RightRailTab, RightRailTabDef> = {
     agenda: {
@@ -408,7 +412,7 @@ export function DesktopController() {
     [isL1Workbench]
   )
 
-  const handleWorkbenchTabClose = useCallback(
+  const commitWorkbenchTabClose = useCallback(
     (tab: RightRailTabId) => {
       const tabs = isL1Workbench ? l1Tabs : l2Tabs
       const active = isL1Workbench ? l1Active : l2Active
@@ -446,6 +450,23 @@ export function DesktopController() {
       }
     },
     [isL1Workbench, l1Active, l1Tabs, l2Active, l2Tabs]
+  )
+
+  const handleWorkbenchTabClose = useCallback(
+    (tab: RightRailTabId) => {
+      if (tab.startsWith('file:')) {
+        const url = openFiles[tab]?.target.url
+
+        if (url && dirtyPreviewUrls[url]) {
+          setDirtyCloseTab(tab)
+
+          return
+        }
+      }
+
+      commitWorkbenchTabClose(tab)
+    },
+    [commitWorkbenchTabClose, dirtyPreviewUrls, openFiles]
   )
 
   // The terminal is a right-rail tab now; the store stays the single open/close
@@ -1485,6 +1506,22 @@ export function DesktopController() {
       <SessionSwitcher />
       <FileActionDialogs />
       <RemoteFolderPicker />
+      <ConfirmDialog
+        confirmLabel={t.preview.discardCloseConfirm}
+        description={t.preview.discardCloseBody}
+        destructive
+        dismissOnConfirm
+        onClose={() => setDirtyCloseTab(null)}
+        onConfirm={() => {
+          if (dirtyCloseTab) {
+            commitWorkbenchTabClose(dirtyCloseTab)
+          }
+
+          setDirtyCloseTab(null)
+        }}
+        open={dirtyCloseTab !== null}
+        title={t.preview.unsavedChanges}
+      />
 
       {settingsOpen && (
         <Suspense fallback={null}>

@@ -2440,6 +2440,8 @@ export interface Translations {
     diskChangedBody: string
     overwrite: string
     discardReload: string
+    discardCloseBody: string
+    discardCloseConfirm: string
     console: {
       deselect: string
       select: string
@@ -2843,6 +2845,8 @@ export interface Translations {
       review: string
       reload: string
       hint: string
+      diskChanged: string
+      dismiss: string
     }
   }
 }

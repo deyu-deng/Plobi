@@ -2846,6 +2846,8 @@ export const en: Translations = {
       'This file changed since you opened it. Overwrite it with your version, or discard your edits and reload?',
     overwrite: 'Overwrite',
     discardReload: 'Discard & reload',
+    discardCloseBody: 'Closing this tab discards the unsaved edits.',
+    discardCloseConfirm: 'Close anyway',
     console: {
       deselect: 'Deselect entry',
       select: 'Select entry',
@@ -3283,6 +3285,8 @@ export const en: Translations = {
       review: 'Review',
       reload: 'Reload',
       hint: 'The GenOffice editor is not running. Restart Plobi or rebuild the editor.'
+      diskChanged: 'The file changed on disk. Reloading discards unsaved edits in the editor.',
+      dismiss: 'Later'
     }
   }
 }

@@ -19,7 +19,9 @@ const labels: OfficePreviewLabels = {
   saveFailed: 'Save failed',
   reload: 'Reload',
   review: 'Review',
-  hint: 'Restart Plobi to load the editor.'
+  hint: 'Restart Plobi to load the editor.',
+  diskChanged: 'The file changed on disk',
+  dismiss: 'Later'
 }
 
 afterEach(() => {

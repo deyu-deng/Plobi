@@ -4,6 +4,7 @@ import { PageLoader } from '@/components/page-loader'
 import { Codicon } from '@/components/ui/codicon'
 
 import type { OfficePreviewLabels } from './office-preview'
+import { useFileRevision } from './use-file-revision'
 
 export type GenOfficeKind = 'slides' | 'sheets' | 'word'
 
@@ -38,10 +39,31 @@ export function GenOfficeFileEditor({
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const webviewRef = useRef<GenOfficeWebview | null>(null)
+  const webviewFocusedRef = useRef(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [bridgeMissing, setBridgeMissing] = useState(false)
+  const [diskChanged, setDiskChanged] = useState(false)
+  const { change: diskChange } = useFileRevision(path)
+
+  useEffect(() => {
+    if (diskChange === 0) {
+      return
+    }
+
+    // The editor's own save also bumps mtime. While the webview owns focus,
+    // treat the write as the human's and don't nag; an agent edit made while
+    // focus is elsewhere still raises the reload bar.
+    const webview = webviewRef.current
+    const active = document.activeElement
+
+    if (webviewFocusedRef.current || (webview && (active === webview || webview.contains(active)))) {
+      return
+    }
+
+    setDiskChanged(true)
+  }, [diskChange])
 
   useEffect(() => {
     const host = hostRef.current
@@ -93,9 +115,18 @@ export function GenOfficeFileEditor({
           }
         }
 
+        const onFocus = () => {
+          webviewFocusedRef.current = true
+        }
+        const onBlur = () => {
+          webviewFocusedRef.current = false
+        }
+
         webview.addEventListener('did-start-loading', onStart)
         webview.addEventListener('did-stop-loading', onStop)
         webview.addEventListener('did-fail-load', onFail)
+        webview.addEventListener('focus', onFocus)
+        webview.addEventListener('blur', onBlur)
       })
       .catch(() => {
         if (active) {
@@ -106,12 +137,14 @@ export function GenOfficeFileEditor({
 
     return () => {
       active = false
+      webviewFocusedRef.current = false
       webviewRef.current = null
       host.replaceChildren()
     }
   }, [kind, path, reloadKey])
 
   const retry = () => {
+    setDiskChanged(false)
     setFailed(false)
     setLoading(true)
     setReloadKey(value => value + 1)
@@ -119,6 +152,28 @@ export function GenOfficeFileEditor({
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col bg-white text-[#111]">
+      {diskChanged ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#e5c07b] bg-[#fff8e6] px-2 py-1.5 text-[0.68rem] text-[#6b4e00]">
+          <Codicon name="warning" size="0.8rem" />
+          <span className="min-w-0 flex-1">{labels.diskChanged}</span>
+          <button
+            className="shrink-0 rounded border border-[#d8b45a] px-1.5 py-0.5 font-medium hover:bg-[#f7e7bd]"
+            onClick={retry}
+            type="button"
+          >
+            {labels.reload}
+          </button>
+          <button
+            aria-label={labels.dismiss}
+            className="grid size-5 shrink-0 place-items-center rounded hover:bg-[#f7e7bd]"
+            onClick={() => setDiskChanged(false)}
+            title={labels.dismiss}
+            type="button"
+          >
+            <Codicon name="close" size="0.7rem" />
+          </button>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1" data-testid="genoffice-file-host" ref={hostRef} />
 
       {failed || bridgeMissing ? (
