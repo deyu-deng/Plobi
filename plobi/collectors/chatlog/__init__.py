@@ -76,6 +76,12 @@ def _admit(talker: str, status: str) -> None:
         talker, {"known": "known", "excluded": "excluded"}.get(status, "pending"))
 
 
+#: 这只探针会交出去的码，**写成字面量**是给 `scripts/check_status_copy_coverage.py` 数得出来：
+#: 只写 `{"code": state}` 的话，屏幕上真会出现的一句话在目录里缺没缺句子没人知道（门只能靠猜）。
+#: 与 `sidecar.diagnose` 那一族 `STATE_*` 逐一对应，测试 `test_source_screen_copy_names_nothing.py` 钉住不漂移。
+PROBE_CODES = ("build_missing", "go_missing", "key_missing", "not_listening", "ready")
+
+
 def _probe() -> dict:
     """微信这一条在本机**缺哪一步**——构建工具、可执行产物、数据密钥、服务应答，四步分别说。
 

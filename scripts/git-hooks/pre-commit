@@ -46,3 +46,8 @@ fi
 "$PY" "$ROOT/scripts/check_claim_scope.py"
 
 "$PY" "$ROOT/scripts/check_arch_gates.py"
+
+# 屏幕上会出现的每个状态词，四语目录都得有一句带下一步的人话（裁定 203 第 4 条）。
+# 缺句子＝指引断供，当场红：`no_credential`、`no_path_configured` 这一类他自己就能修的码，
+# 以前在屏幕上统一落「暂未适配」。
+"$PY" "$ROOT/scripts/check_status_copy_coverage.py"

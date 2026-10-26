@@ -48,6 +48,20 @@ class TestTheFourDiseasesAreFourSentences:
         for note in notes.values():
             assert "：" in note or "。" in note, "那句话要带下一步，不是一个词"
 
+    def test_the_declared_codes_match_what_the_probe_can_hand_back(self) -> None:
+        """`PROBE_CODES` 那一格字面量是给门数用的（`scripts/check_status_copy_coverage.py`）。
+
+        门只能数字面量：探针真交出去的码与那格不一致，它检查的就是空气——
+        屏幕上真会出现的一句话缺没缺四语句子，又回到没人知道。
+        """
+        from plobi.collectors.chatlog import PROBE_CODES
+
+        produced = {getattr(wx, name) for name in dir(wx) if name.startswith("STATE_")}
+
+        assert set(PROBE_CODES) == produced, (
+            f"探针交出去的码与声明不一致：多了 {produced - set(PROBE_CODES)}、"
+            f"少了 {set(PROBE_CODES) - produced}")
+
 
 class TestNothingOnScreenNamesADeveloperArtifact:
     @pytest.mark.parametrize("state", [
