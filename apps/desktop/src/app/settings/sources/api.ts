@@ -219,6 +219,11 @@ export interface SidecarNote {
   detail: string
   listening: boolean
   port: number
+  /**
+   * 拉起之前那一步准备（如"先替他取一次本机密钥"）说的那句话。缺位＝这一条没有准备那一步。
+   * 面照样不认识它是谁的准备：后端给读数，界面只把这句话并进那一条通知里（裁定 45.4）。
+   */
+  prepare?: string
 }
 
 export async function setSourceEnabled(sourceId: string, enabled: boolean): Promise<SidecarNote | undefined> {

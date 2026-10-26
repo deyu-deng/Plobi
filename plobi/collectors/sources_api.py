@@ -197,11 +197,11 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
     # 密钥那一档：值**永不出门**，只回"设过没有"。界面上那格因此是写入口，不是读数口。
     configured = sources_config.secret_configured(source_id)
     params = sources_config.setup_params(source_id)
-    # 「还缺必填吗」两种都要问：普通格看盘上那份参数，密钥格看 `.env` 里设过没有——
-    # 只看前者会让一条凭据早就配好的源永远显示"去设置"，那是一颗按了回到原地的按钮。
-    needs_setup = any(f["required"] and not (
-        configured.get(f["key"]) if f["kind"] == "secret" else str(params.get(f["key"]) or "").strip())
-        for f in fields)
+    # 「还缺必填吗」问的是 `sources_config.field_configured` 那一处（配置格 / 新密钥键 / 这条声明的
+    # 历史键名回退，三处任一即算填过）：只看前者会把"早就在 `.env` 里配过账密"的人念成没配，
+    # 于是一颗开关只把抽屉打开让他再填一遍——判据不许比真读口窄。
+    needs_setup = any(f["required"] and not sources_config.field_configured(source_id, f["key"])
+                      for f in fields)
     pool_count, pool_kinds = _pool_counts(source_id)
     probe = _probe_of(spec)
     status, status_code = status_of(enabled=enabled, needs_setup=needs_setup,

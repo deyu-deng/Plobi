@@ -33,6 +33,10 @@ def isolated_home(tmp_path, monkeypatch):
     那种），测试就跑成了网络测试；放了，这一档测的就只是"盘上有就给、没有就回空串并排那一趟"。
     """
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    # 密钥那一档写的是**共享根**那份 `.env`（裁定 89 甲），不是 `PLOBI_HOME` 下面——
+    # 所以这里别指望 `set_secret` 落进 tmp：要测写入就照
+    # `test_the_value_goes_to_env_and_never_comes_back_out` 那样把 `save_env_value_secure` 换掉
+    # （10-26 现核：不换的话值既进不了 tmp、也不该进他机器上那一份）。
     # 钉钉那条有探针，而探针默认去看 `%APPDATA%\DingTalk`（测试运行器只换 HOME，不换 APPDATA）
     # ⇒ 不钉这一格，开一次设置页的测试就会去翻**用户真的钉钉本机库**。
     monkeypatch.setenv("PLOBI_DINGTALK_DATA_DIR", str(tmp_path / "DingTalk"))
@@ -94,11 +98,13 @@ class TestThreeStates:
     def test_the_table(self, case, expected) -> None:
         assert sources_api.status_of(**case) == expected
 
-    def test_only_the_error_state_carries_a_sentence(self, client) -> None:
+    def test_only_the_error_state_carries_a_sentence(self, client, monkeypatch) -> None:
         """`status_detail` 逐字来自上一轮，且**只在出错态**出现——正常态那一屏不许长出一行工程话。"""
         sources_config.set_enabled("zju", True)
-        # 10-23 起 `zju` 没有首次配置格了（那两格采集器根本不读，被删）⇒ 点开就是配好的，
-        # 于是「上一轮失败」这一支直接可达，不必先填格。
+        # 10-26 起 `zju` 的账密在界面上填（裁定 203）⇒ 要先"算填过"才走得到「上一轮失败」这一支。
+        # 这一档的主角是三态与那句原话，不是凭据落点，所以按本档既有的打法把这一个前提钉住
+        # （`isolated_home` 只钉 `PLOBI_HOME`，密钥墙走的是共享根，往那儿写真值既落不进 tmp 也是脏）。
+        monkeypatch.setattr(sources_config, "field_configured", lambda sid, key: True)
         cadence.mark_run("zju", state="auth_failed", detail="凭据不对：这一轮换不到会话")
 
         row = self._zju(client)

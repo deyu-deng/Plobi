@@ -22,7 +22,8 @@ _ADDRESS = SetupField(key="address", label="Email address", kind="text", require
 #: 密钥那一档：值只进 `.env`（`PLOBI_SOURCE_<id>_PASSWORD`）、屏上打星、读数里只有"设过没有"。
 #: 这一族的注记：QQ / 163 / Gmail 要的是**授权码或应用专用密码**，不是网页登录密码——
 #: 那句话由 `fields.password` 那四语来说，不写在这一格的 `help` 里（help 是英文缺省值）。
-_PASSWORD = SetupField(key="password", label="Password or app token", kind="secret", required=True)
+_PASSWORD = SetupField(key="password", label="Password or app token", kind="secret", required=True,
+                       help="This provider needs an app/auth code, not your web login password — turn on IMAP in that mailbox’s settings and generate one")
 #: 只有 `email_imap` 那一行有这一格：不在表里的那一家（企业邮箱、自建 IMAP）填服务器就能接。
 _HOST = SetupField(key="imap_host", label="IMAP server", kind="text", required=True,
                    help="e.g. imap.example.com — always TLS on port 993")

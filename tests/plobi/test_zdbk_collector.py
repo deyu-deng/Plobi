@@ -391,7 +391,9 @@ class TestRegisteredShape:
         assert spec.capabilities["history_backfill"] is True
         assert spec.capabilities["authoritative_replace"] is False, \
             "按学期查的端点，缺席不等于取消——这句是实测的结论"
-        assert [f.key for f in spec.setup_fields] == ["cadence"]
+        # 10-26 起账密在界面上填（裁定 203 第 1 条：只有用户知道的信息进界面），
+        # 频率那一格由声明层自动注入。两格都是采集器真读的，不是 10-23 被删掉的那种假动作。
+        assert [f.key for f in spec.setup_fields] == ["username", "password", "cadence"]
 
     def test_the_package_never_calls_the_agenda_seam(self) -> None:
         import re

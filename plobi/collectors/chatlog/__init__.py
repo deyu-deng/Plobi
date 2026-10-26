@@ -82,6 +82,13 @@ def _admit(talker: str, status: str) -> None:
 PROBE_CODES = ("build_missing", "go_missing", "key_missing", "not_listening", "ready")
 
 
+def _prepare() -> tuple[bool, str]:
+    """拉起服务之前的那次准备：替他试一次取密钥。失败也只是"少一件事做成"，不是故障。"""
+    from . import keyhand
+
+    return keyhand.fetch()
+
+
 def _probe() -> dict:
     """微信这一条在本机**缺哪一步**——构建工具、可执行产物、数据密钥、服务应答，四步分别说。
 
@@ -123,6 +130,9 @@ SPEC = SourceSpec(
     admission=_admit,
     # 缺哪一步要分得开（裁定 203 第 2 条：取不到就明说什么取不到）——这一格让上面那只手有地方说话。
     probe=_probe,
+    # 数据密钥**不由他抄**：点开开关那一刻产品自己用 vendored 产物那一条 `key` 子命令取一次
+    # （裁定 203 口径 2）。取没取到只回一句话，值永不出门；这一步抛了什么也不许把那次点击炸掉。
+    sidecar_prepare=_prepare,
 
     builder=_build,
 )

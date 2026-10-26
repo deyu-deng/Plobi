@@ -292,6 +292,7 @@ export const zhHant = defineLocale({
       emptyExternal: '裝了什麼讀不到。',
       fields: {
         account: '帳號名稱',
+        username: '帳號',
         address: '電子郵件地址',
         imap_host: 'IMAP 伺服器',
         password: '密碼或授權碼',
@@ -311,7 +312,11 @@ export const zhHant = defineLocale({
         'email_imap.address': '要收信的那個信箱地址',
         'email_imap.imap_host': '服務商提供的 IMAP 伺服器地址，例如 imap.example.com；埠 993、僅 TLS',
         'email_imap.password': '服務商給 IMAP 用的密碼或專用授權碼——有些要另行產生',
-        'timetable.ics_path': '把課程表匯出成 .ics 檔案並指向它；學期换了再匯出一次'
+        'timetable.ics_path': '把課程表匯出成 .ics 檔案並指向它；學期换了再匯出一次',
+        'zju.username': '你在學校統一认证的帳號，和登入這個網站用的是同一個',
+        'zju.password': '那個帳號的密碼；只留在本機，不會出現在日誌或匯出裡',
+        'zdbk.username': '你在學校統一认证的帳號（與「學在浙大」同一個）',
+        'zdbk.password': '那個帳號的密碼；只留在本機，不會出現在日誌或匯出裡',
       },
       groups: {
         collapse: '收合這一類',

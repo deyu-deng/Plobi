@@ -204,21 +204,61 @@ def secret_env_name(source_id: str, key: str) -> str:
     return f"PLOBI_SOURCE_{source_id}_{key}".upper()
 
 
+def _env_names(source_id: str, key: str) -> list[str]:
+    """这一格该按什么顺序去读：**自己的新键优先，历史键名只读回退**（裁定 203 第 3 条）。
+
+    回退名单是那条信源**自己声明**的（`SourceSpec.credential_aliases`）——公共层不认信源名字，
+    也不替谁猜它以前把凭据藏在哪。写只写新键：历史键名不由产品写，两处都能写就真有两个答案。
+    """
+    names = [secret_env_name(source_id, key)]
+    try:
+        from plobi.collectors import registry
+
+        aliases = dict(registry.spec(source_id).credential_aliases or {})
+    except Exception:  # noqa: BLE001 - 没注册（早于发现的调用方、测试里的假条）就只认新键
+        return names
+    for legacy in tuple(aliases.get(key) or ()):
+        if legacy and legacy not in names:
+            names.append(str(legacy))
+    return names
+
+
 def secret_configured(source_id: str) -> dict[str, bool]:
-    """每一格密钥**设过没有**——只回布尔。payload 里出现的就是这一格，值永不出门。"""
+    """每一格密钥**设过没有**——只回布尔。payload 里出现的就是这一格，值永不出门。
+
+    回退名单也算：只有历史 `.env` 键的那一位，界面上不许被念成"还没配"——
+    那是一颗按了回到原地的开关（`needs_setup` 走的就是这一格）。
+    """
     from plobi_cli.config import load_env
 
     env = load_env()
 
-    return {key: bool(str(env.get(secret_env_name(source_id, key)) or "").strip())
+    return {key: any(str(env.get(name) or "").strip() for name in _env_names(source_id, key))
             for key in secret_keys(source_id)}
+
+
+def field_configured(source_id: str, key: str) -> bool:
+    """这一格**算不算填过了**——`needs_setup` 与那颗"引导去配置"的开关都问这一句。
+
+    三个来源任一即可：配置层那一格（非密钥格）、新密钥键、以及这条自己声明的历史键名回退。
+    少了回退这一支就会说出那种假话：他早就在 `.env` 里配过账密，界面却说"还没配"，
+    点开关只把抽屉打开让他再填一遍（一颗按了回到原地的开关）。真读口
+    （:func:`secret_value`、`zju.auth.read_credentials`）本来就读这三处，判据不能比读口窄。
+    """
+    from plobi_cli.config import load_env
+
+    if str(setup_params(source_id).get(key) or "").strip():
+        return True
+    env = load_env()
+
+    return any(str(env.get(name) or "").strip() for name in _env_names(source_id, key))
 
 
 def secret_value(source_id: str, key: str) -> Optional[str]:
     """那一格密钥**现在的值**（`None` = 没设）。采集器运行时唯一的读口。
 
     为什么必须有这一格而不是让各家自己 `os.environ.get(...)`：环境变量只是**落点**，
-    键名规则（:func:`secret_env_name`）是这一层的。各家自己去摸一次环境，就有人会把
+    键名规则与回退顺序（:func:`_env_names`）是这一层的。各家自己去摸一次环境，就有人会把
     `PLOBI_SOURCE_…` 拼错成"设了却读不到"，也会在别处（日志、异常信息、`--dry-run` 的
     回显）顺手打印那个值。**一处读口 = 一处能负责守住"它不进日志"的地方**。
 
@@ -227,9 +267,14 @@ def secret_value(source_id: str, key: str) -> Optional[str]:
     """
     from plobi_cli.config import load_env
 
-    value = str(load_env().get(secret_env_name(source_id, key)) or "").strip()
+    env = load_env()
 
-    return value or None
+    for name in _env_names(source_id, key):
+        value = str(env.get(name) or "").strip()
+        if value:
+            return value
+
+    return None
 
 
 def set_secret(source_id: str, key: str, value: str) -> None:

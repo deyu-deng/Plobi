@@ -108,7 +108,10 @@ export function SourcesSettings() {
         console.info('[settings/sources] sidecar', row.source, sidecar.action, sidecar.detail)
         notify({
           kind: sidecar.listening === enabled ? 'success' : 'error',
+          // 几种不同的病不许并成一句（用户 10-25 拍「只把话说清」）：光说"未能启动"，
+          // 他分不清是没装构建工具、没产物、没密钥还是端口没起。准备那一步的话由后端给。
           message: sidecarOutcomeLabel(sidecar.listening, enabled, labels)
+            + (sidecar.prepare ? `；${sidecar.prepare}` : '')
         })
       }
     } catch (err) {

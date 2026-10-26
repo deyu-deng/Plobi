@@ -8,7 +8,17 @@
 这样的包，`registry.py` 里不出现任何信源 id。
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
+
+from ..zju.auth import CREDENTIAL_PASSWORD_KEY, CREDENTIAL_USER_KEY
+
+
+#: 与「学在浙大」同一套统一认证：**这两格这条自己读**（`auth.read_credentials("zdbk")`），
+#: 不是挂在那一行上的假动作。历史键名同样只读回退（裁定 203 第 3 条）。
+_USERNAME = SetupField(key="username", label="Account", kind="text", required=True,
+                       help="Your school SSO account — the same one you sign in with here")
+_PASSWORD = SetupField(key="password", label="Password", kind="secret", required=True,
+                       help="That account's password; it stays on this machine, never in logs")
 
 
 def _build() -> object:
@@ -50,6 +60,9 @@ SPEC = SourceSpec(
     # `<meta refresh>`，跟到 `/jwglxt` 才是登录页，那页的 `<title>` 就是「本科教学管理信息服务平台」。
     # 写死它而不是每次去跟那一跳：名字是这条信源的身份，不该取决于一次网络请求的成败。
     display_name="本科教学管理信息服务平台",
+    # 账号与密码**在界面上填**（裁定 203 第 1 条；这一条自己读它们，见 `_build` 里那句注入）。
+    setup_fields=(_USERNAME, _PASSWORD),
+    credential_aliases={"username": (CREDENTIAL_USER_KEY,), "password": (CREDENTIAL_PASSWORD_KEY,)},
     collecting=True,
     builder=_build,
 )

@@ -11,8 +11,9 @@
 它不再由 ``registry.py`` 那一行手写元组登记**，加一条信源＝加一个这样的包。
 """
 
-from plobi.collectors.registry import SourceSpec, register
+from plobi.collectors.registry import SetupField, SourceSpec, register
 
+from .auth import CREDENTIAL_PASSWORD_KEY, CREDENTIAL_USER_KEY
 from .collector import PullReport, ZjuCollector, to_local_naive, to_occurrences
 from .config import ZjuConfig
 from .status import (
@@ -21,6 +22,14 @@ from .status import (
     note_for,
 )
 
+
+#: 这两格是 10-26 按**裁定 203**加回来的：账号与密码只有用户知道 ⇒ 就该在界面上填，
+#: 而不是让他去编辑一个文件。（10-23 删掉的是「教务系统地址」「账号名」那两格**没人读**的假动作；
+#: 这两格是采集器真读的：`auth.read_credentials()` 先读它们，再回退历史键名。）
+_USERNAME = SetupField(key="username", label="Account", kind="text", required=True,
+                       help="Your school SSO account — the same one you sign in with here")
+_PASSWORD = SetupField(key="password", label="Password", kind="secret", required=True,
+                       help="That account's password; it stays on this machine, never in logs")
 
 def _build() -> ZjuCollector:
     """教务那条的执行方入口。**延迟 import**：``collector`` 那头要读注册表派生的词表，
@@ -76,13 +85,11 @@ SPEC = SourceSpec(
     #: 不是这条信源没有名字。第三方的网站类信源不填这一格，就吃站点自报的名（`icons.py`）。
     display_name="学在浙大",
 
-    # **这一条没有首次配置格**（10-23 删掉「教务系统地址」「账号名」两格）。
-    # 用户对着那一屏问的是「这个地址的填空真的有用吗？我填了地址又会发生什么呢？还有账户名填了会有什么用呢？」
-    # ——答案是没有：采集器**一个字都没读**这两格（SSO 入口是 `auth.` 里的常量，账号密码只走
-    # `auth.read_credentials()` 那一只读路）。留着它俩等于给用户一个"我配了点什么"的假动作，
-    # 而声明层写进 `sources.yaml` 的键从此没有任何消费方。删掉不是丢功能，是把假动作收走。
-    # 能力位注记原话「账密已给（根 .env）」仍然成立；要不要支持"换一所学校"，等真有第二种学校时再开格。
-    setup_fields=(),
+    # 账号与密码**在界面上填**（裁定 203 第 1 条）。历史键名留作只读回退：
+    # 这台机器上早就配过的人不必重填，但新键优先——否则他在界面上改了密码却被一份旧值盖住，
+    # 那正是"改了没生效"那种查不出来的形状。SSO 入口地址仍是常量（换学校的事没发生之前不开格）。
+    setup_fields=(_USERNAME, _PASSWORD),
+    credential_aliases={"username": (CREDENTIAL_USER_KEY,), "password": (CREDENTIAL_PASSWORD_KEY,)},
     # 采集器与入库都真跑过（交账在任务书里），缺的是**执行方那一层**，10-15 补在
     # `plobi/collectors/sweep.py`。用户 2026-10-15 13:0x 拍的形状是「每天自动采，
     # 新条目进待确认」⇒ 这一格从此是一条被点过的读数，不是我替他填的默认值（判据 1）。

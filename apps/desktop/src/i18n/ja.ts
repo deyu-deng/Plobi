@@ -299,6 +299,7 @@ export const ja = defineLocale({
       emptyExternal: 'インストール済みの情報を読み取れませんでした。',
       fields: {
         account: 'アカウント名',
+        username: 'アカウント',
         address: 'メールアドレス',
         imap_host: 'IMAP サーバー',
         password: 'パスワードまたはアプリ用パスワード',
@@ -318,7 +319,11 @@ export const ja = defineLocale({
         'email_imap.address': '受信するメールアドレス',
         'email_imap.imap_host': 'プロバイダの IMAP サーバー（例 imap.example.com）。ポート 993・TLS のみ',
         'email_imap.password': 'プロバイダが IMAP 用に発行するパスワードまたは専用認証コード',
-        'timetable.ics_path': '時間割を .ics で書き出し、そのパスを指定。学期が変わったら再書き出し'
+        'timetable.ics_path': '時間割を .ics で書き出し、そのパスを指定。学期が変わったら再書き出し',
+        'zju.username': '学校の統一認証アカウント（このサイトへのログインと同じ）',
+        'zju.password': 'そのアカウントのパスワード。このマシンにだけ保存され、ログや書き出しには出ません',
+        'zdbk.username': '学校の統一認証アカウント（「学在浙大」と同じ）',
+        'zdbk.password': 'そのアカウントのパスワード。このマシンにだけ保存され、ログや書き出しには出ません',
       },
       groups: {
         collapse: 'この分類をたたむ',

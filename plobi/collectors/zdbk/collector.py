@@ -23,7 +23,7 @@
   **空是一个读数**（"学校在这一行里没给日子"），填一个推算出来的才是错。
   日子本身有来源了：同一家的校历那一页（上表 `school_calendar`）写着学期起止，那两个串照原样进池。
   **"第 N 周周几是几号"仍然不许我在写入口算**——那是把两族数据拼成一个新事实，判权在读池那侧（裁 186）。
-- **凭据只走 `auth.read_credentials()` 那一只读路**（裁 110 二）：本包不 `open('.env')`、
+- **凭据只走 `auth.read_credentials("zdbk")` 那一只读路**（裁 110 二 + 裁 203）：本包不 `open('.env')`、
   不读 `os.environ`；CAS 那条链收在 :func:`plobi.collectors.zju.auth.cas_login_to`，
   三家共用一只，不各写一遍（裁 94）。
 """
@@ -403,7 +403,7 @@ class ZdbkCollector:
     def __init__(self, *, transport: Transport,
                  config: Optional[ZdbkConfig] = None,
                  credentials: Optional[tuple[str, str]] = None,
-                 credential_reader: Callable[[], Optional[tuple[str, str]]] = auth.read_credentials,
+                 credential_reader: Callable[[], Optional[tuple[str, str]]] = (lambda: auth.read_credentials("zdbk")),
                  now: Callable[[], float] = time.time,
                  sleep: Callable[[float], None] = time.sleep,
                  spread: Callable[[float, float], float] = random.uniform):

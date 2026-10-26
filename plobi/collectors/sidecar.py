@@ -154,6 +154,19 @@ def apply(spec, *, enabled: bool,
         if not script:
             return {"action": "cannot_start", "detail": "这一条没声明怎么拉起自己的服务",
                     "listening": False, "port": port}
+        # 准备那一手是**声明**（如"先替他取一次本机密钥"），公共层不认识它是谁的、做什么：
+        # 它抛了也不许把这次点击变成 500——最坏就是没做成，那句原因照实并进读数。
+        prepare = getattr(spec, "sidecar_prepare", None)
+        prepared = ""
+        if prepare is not None:
+            try:
+                ok, note = prepare()
+                prepared = ("" if ok else "准备那一步：") + (note or "")
+                if ok:
+                    logger.debug("sidecar prepare ok: %s", note)
+            except Exception as exc:  # noqa: BLE001 - 一次点击不该被准备步骤炸掉
+                prepared = f"准备那一步没做成：{type(exc).__name__}。"
+                logger.warning("sidecar prepare failed: %s", exc)
         pid = spawn(script)
         deadline = time.monotonic() + max(0.0, float(wait_seconds))
         now_listening = False
@@ -165,6 +178,7 @@ def apply(spec, *, enabled: bool,
                 break
             time.sleep(0.25)
         return {"action": "started" if now_listening else "started_not_listening",
+                "prepare": prepared,
                 "detail": (f"已拉起（pid {pid}），{port} 在应答" if now_listening
                            else f"已拉起（pid {pid}），但 {port} 还没开始应答"),
                 "listening": now_listening, "port": port}

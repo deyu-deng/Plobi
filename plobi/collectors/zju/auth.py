@@ -144,18 +144,26 @@ class UrllibTransport:
         return self._send(urllib.request.Request(url, data=payload, headers=headers, method="POST"))
 
 
-def read_credentials() -> Optional[tuple[str, str]]:
-    """只走产品那一条凭据真源读账密；拿不到就 ``None``（不猜、不回退到第二处）。
+def read_credentials(source_id: str = "zju") -> Optional[tuple[str, str]]:
+    """读这一条的账密，**顺序只有一处定义**：先界面那两格，再历史键名回退。
 
-    真源 = 根 ``.env``（裁定 89 甲 / 裁定 110 二）：``credential_env_path()`` +
-    ``get_env_value_prefer_dotenv()``。**不许在本包里自己 ``open('.env')`` 或读
-    ``os.environ``** —— 抄第二条读路就是再造一份会不一致的"真源"。
-    任何一条路上都不打印、不日志、不落盘这两个值。
+    10-26（裁定 203）之前屏上没有这两格，值只能来自根 `.env` 的 `ZJU_USERNAME`/`ZJU_PASSWORD`；
+    现在账号名走配置层那一格（它不是密钥，是"只有用户知道的信息"里非密的那一半），
+    密码走密钥墙（`sources_config.secret_value`，值永不出门、永不进日志）。
+    两边都拿不到就 ``None``——**不猜、不回退到第三处**。
+
+    仍然不许在本包里自己 `open('.env')` 或读 `os.environ`：那等于再造一份会不一致的真源
+    （裁定 89 甲 / 110 二）。历史键名这一次读用 `get_env_value_prefer_dotenv`，
+    它是产品那一条读口，不是第二条。
     """
+    from plobi.collectors import sources_config
     from plobi_cli.config import get_env_value_prefer_dotenv
 
-    username = (get_env_value_prefer_dotenv(CREDENTIAL_USER_KEY) or "").strip()
-    password = (get_env_value_prefer_dotenv(CREDENTIAL_PASSWORD_KEY) or "").strip()
+    params = sources_config.setup_params(source_id)
+    username = (str(params.get("username") or "").strip()
+                or (get_env_value_prefer_dotenv(CREDENTIAL_USER_KEY) or "").strip())
+    password = (sources_config.secret_value(source_id, "password")
+                or (get_env_value_prefer_dotenv(CREDENTIAL_PASSWORD_KEY) or "").strip())
     if not username or not password:
         return None
     return username, password

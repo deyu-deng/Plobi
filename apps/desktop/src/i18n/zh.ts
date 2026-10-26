@@ -360,6 +360,7 @@ export const zh: Translations = {
       emptyExternal: '装了什么读不到。',
       fields: {
         account: '账号名',
+        username: '账号',
         address: '邮箱地址',
         imap_host: 'IMAP 服务器地址',
         password: '密码或授权码',
@@ -379,7 +380,11 @@ export const zh: Translations = {
         'email_imap.address': '要收件的那个邮箱地址',
         'email_imap.imap_host': '服务商给的 IMAP 服务器地址，例如 imap.example.com；端口 993、只走 TLS',
         'email_imap.password': '服务商给 IMAP 用的密码或专用授权码——有的服务要另行生成，去该邮箱的 IMAP 设置页看',
-        'timetable.ics_path': '把课程表导出一个 .ics 文件，指它在本机的路径；学期换了重新导出一次即可'
+        'timetable.ics_path': '把课程表导出一个 .ics 文件，指它在本机的路径；学期换了重新导出一次即可',
+        'zju.username': '你在学校统一认证里的账号，和登录这个网站用的是同一个',
+        'zju.password': '那个账号的密码；只留在本机，不会出现在日志或导出里',
+        'zdbk.username': '你在学校统一认证里的账号（与「学在浙大」同一个）',
+        'zdbk.password': '那个账号的密码；只留在本机，不会出现在日志或导出里',
       },
       groups: {
         collapse: '收起这一类',

@@ -372,6 +372,7 @@ export const en: Translations = {
       emptyExternal: 'Could not read what is installed.',
       fields: {
         account: 'Account name',
+        username: 'Account',
         address: 'Email address',
         imap_host: 'IMAP server',
         password: 'Password or app token',
@@ -391,7 +392,11 @@ export const en: Translations = {
         'email_imap.address': 'The mailbox to read',
         'email_imap.imap_host': 'The IMAP host your provider documents, e.g. imap.example.com — port 993, TLS only',
         'email_imap.password': 'The password or app-specific code your provider issues for IMAP — some require generating one',
-        'timetable.ics_path': 'Export your timetable as a .ics file and point at it; re-export when the term changes'
+        'timetable.ics_path': 'Export your timetable as a .ics file and point at it; re-export when the term changes',
+        'zju.username': 'Your school SSO account — the same one you sign in with here',
+        'zju.password': "That account's password; it stays on this machine and never appears in logs or exports",
+        'zdbk.username': "Your school SSO account (the same one as for '学在浙大')",
+        'zdbk.password': "That account's password; it stays on this machine and never appears in logs or exports",
       },
       groups: {
         collapse: 'Collapse this group',
