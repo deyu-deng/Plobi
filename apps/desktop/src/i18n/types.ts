@@ -2344,6 +2344,13 @@ export interface Translations {
     openFolder: string
     refreshTree: string
     collapseAll: string
+    filterFiles: string
+    filterPlaceholder: string
+    clearFilter: string
+    searchEmpty: string
+    searchEmptyBody: string
+    searching: string
+    searchLimited: (count: number) => string
     previewUnavailable: string
     couldNotPreview: (path: string) => string
     noProjectTitle: string

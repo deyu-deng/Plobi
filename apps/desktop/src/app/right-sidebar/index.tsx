@@ -1,10 +1,11 @@
 import { useStore } from '@nanostores/react'
-import type { ComponentProps } from 'react'
+import { type ComponentProps, useState } from 'react'
 
 import { TreeSkeleton } from '@/components/chat/skeletons'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { FileTypeIcon } from '@/components/ui/file-type-icon'
 import { useDelayedTrue } from '@/hooks/use-delayed-true'
 import { useI18n } from '@/i18n'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
@@ -16,7 +17,10 @@ import { $currentCwd } from '@/store/session'
 
 import { SidebarPanelLabel } from '../shell/sidebar-label'
 
+import { FileEntryContextMenu } from './file-actions'
+import { fileIconTint } from './files/file-tint'
 import { ProjectTree } from './files/tree'
+import { useProjectFileSearch } from './files/use-project-file-search'
 import { useProjectTree } from './files/use-project-tree'
 
 interface RightSidebarPaneProps {
@@ -155,6 +159,9 @@ function FilesystemTab({
 }: FilesystemTabProps) {
   const { t } = useI18n()
   const r = t.rightSidebar
+  const [query, setQuery] = useState('')
+  const search = useProjectFileSearch(cwd, query)
+  const filtering = query.trim().length > 0
 
   // No working directory (a bare/detached chat) → no tree, just a terse hint.
   // Switching workspace is a project/worktree action, never a raw folder picker.
@@ -191,20 +198,138 @@ function FilesystemTab({
           <Codicon name="collapse-all" size="0.8125rem" />
         </Button>
       </RightSidebarSectionHeader>
-      <FileTreeBody
-        collapseNonce={collapseNonce}
-        cwd={cwd}
-        data={data}
-        error={error}
-        loading={loading}
-        onActivateFile={onActivateFile}
-        onActivateFolder={onActivateFolder}
-        onLoadChildren={onLoadChildren}
-        onNodeOpenChange={onNodeOpenChange}
-        onPreviewFile={onPreviewFile}
-        onRetry={onRefresh}
-        openState={openState}
-      />
+      <div className="flex h-10 shrink-0 items-center px-1.5">
+        <div className="relative w-full">
+          <Codicon
+            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-(--ui-text-tertiary)"
+            name="search"
+            size="0.8125rem"
+          />
+          <input
+            aria-label={r.filterFiles}
+            className="h-8 w-full appearance-none rounded-md border border-transparent bg-(--ui-bg-quaternary) pr-7 pl-7 text-xs text-foreground outline-none transition-colors placeholder:text-(--ui-text-tertiary) focus:border-(--ui-stroke-secondary) [&::-webkit-search-cancel-button]:hidden"
+            onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Escape') {
+                setQuery('')
+              }
+            }}
+            placeholder={r.filterPlaceholder}
+            type="search"
+            value={query}
+          />
+          {search.loading ? (
+            <Codicon
+              className="absolute top-1/2 right-2 -translate-y-1/2 text-(--ui-text-tertiary)"
+              name="loading"
+              size="0.75rem"
+              spinning
+            />
+          ) : query ? (
+            <button
+              aria-label={r.clearFilter}
+              className="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-row-hover-background) hover:text-foreground"
+              onClick={() => setQuery('')}
+              title={r.clearFilter}
+              type="button"
+            >
+              <Codicon name="close" size="0.75rem" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {filtering ? (
+        <FileSearchResults
+          cwd={cwd}
+          loading={search.loading}
+          onPreviewFile={onPreviewFile}
+          results={search.results}
+          scannedDirs={search.scannedDirs}
+          truncated={search.truncated}
+        />
+      ) : (
+        <FileTreeBody
+          collapseNonce={collapseNonce}
+          cwd={cwd}
+          data={data}
+          error={error}
+          loading={loading}
+          onActivateFile={onActivateFile}
+          onActivateFolder={onActivateFolder}
+          onLoadChildren={onLoadChildren}
+          onNodeOpenChange={onNodeOpenChange}
+          onPreviewFile={onPreviewFile}
+          onRetry={onRefresh}
+          openState={openState}
+        />
+      )}
+    </div>
+  )
+}
+
+interface FileSearchResultsProps {
+  cwd: string
+  loading: boolean
+  onPreviewFile?: (path: string) => void
+  results: ReturnType<typeof useProjectFileSearch>['results']
+  scannedDirs: number
+  truncated: boolean
+}
+
+const SEARCH_SKELETON_WIDTHS = ['w-28', 'w-20', 'w-36', 'w-24', 'w-32', 'w-16']
+
+function FileSearchResults({ cwd, loading, onPreviewFile, results, scannedDirs, truncated }: FileSearchResultsProps) {
+  const { t } = useI18n()
+  const r = t.rightSidebar
+
+  if (loading && results.length === 0) {
+    return (
+      <div aria-busy="true" aria-label={r.searching} className="min-h-0 flex-1 px-1.5 py-1" role="status">
+        {SEARCH_SKELETON_WIDTHS.map(width => (
+          <div className="flex h-7 items-center gap-2 px-1" key={width}>
+            <span className="size-3.5 shrink-0 rounded-sm bg-(--ui-bg-quaternary)" />
+            <span className={cn('h-3 rounded-sm bg-(--ui-bg-quaternary)', width)} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (results.length === 0) {
+    return <EmptyState body={r.searchEmptyBody} icon="search" title={r.searchEmpty} />
+  }
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-1" data-testid="file-search-results">
+      {results.map(item => (
+        <FileEntryContextMenu
+          isDirectory={false}
+          key={item.path}
+          name={item.name}
+          path={item.path}
+          relativeTo={cwd}
+        >
+          <button
+            className="row-hover flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-xs text-(--ui-text-secondary) hover:text-foreground"
+            onClick={() => onPreviewFile?.(item.path)}
+            title={item.path}
+            type="button"
+          >
+            <FileTypeIcon className={fileIconTint(item.path)} path={item.path} size="0.875rem" />
+            <span className="min-w-0 shrink truncate font-medium">{item.name}</span>
+            {item.relativeDir ? (
+              <span className="min-w-0 flex-1 truncate text-[0.66rem] text-(--ui-text-tertiary)">
+                {item.relativeDir}
+              </span>
+            ) : null}
+          </button>
+        </FileEntryContextMenu>
+      ))}
+      {truncated ? (
+        <p className="px-2 pt-1 pb-2 text-[0.66rem] leading-relaxed text-(--ui-text-tertiary)">
+          {r.searchLimited(scannedDirs)}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -337,9 +462,10 @@ export function PaneEmptyState({ label }: { label: string }) {
 }
 
 // Richer empty/error state (title + body) for the file tree's read failures.
-export function EmptyState({ body, title }: { body: string; title?: string }) {
+export function EmptyState({ body, icon, title }: { body: string; icon?: string; title?: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
+      {icon ? <Codicon className="mb-1 text-(--ui-text-quaternary)" name={icon} size="1.75rem" /> : null}
       {title && (
         <div className="text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75">{title}</div>
       )}

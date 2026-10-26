@@ -4,6 +4,7 @@ import { type NodeApi, type NodeRendererProps, type RowRendererProps, Tree, type
 
 import { TreeSkeleton } from '@/components/chat/skeletons'
 import { Codicon } from '@/components/ui/codicon'
+import { FileTypeIcon } from '@/components/ui/file-type-icon'
 import { useResizeObserver } from '@/hooks/use-resize-observer'
 import { cn } from '@/lib/utils'
 import { $repoChangeByPath, type RepoChangeKind } from '@/store/coding-status'
@@ -13,12 +14,13 @@ import { $revealInTreeRequest } from '@/store/layout'
 import { FileEntryContextMenu, InlineRenameInput, isRenameShortcut } from '../file-actions'
 
 import { getFileTreeDndManager } from './dnd-manager'
+import { fileIconTint } from './file-tint'
 import type { TreeNode } from './use-project-tree'
 
-const ROW_HEIGHT = 22
-const INDENT = 10
-/** Fixed base inset (`px-6.5`) layered on top of arborist's depth indent. */
-const TREE_ROW_INSET = '17px'
+const ROW_HEIGHT = 28
+const INDENT = 14
+/** Fixed base inset layered on top of arborist's depth indent (Qoder: 8 + 14/depth). */
+const TREE_ROW_INSET = '8px'
 
 function withTreeInset(paddingLeft: number | string | undefined): string {
   if (typeof paddingLeft === 'number') {
@@ -275,7 +277,7 @@ function ProjectTreeRow({
       aria-expanded={isFolder ? node.isOpen : undefined}
       aria-selected={node.isSelected}
       className={cn(
-        'group/row row-hover flex h-full select-none items-center gap-1 border border-transparent px-3 text-xs font-normal leading-(--file-tree-row-height) text-(--ui-text-secondary) hover:text-foreground',
+        'group/row row-hover flex h-full select-none items-center gap-1 rounded-md border border-transparent pr-1.5 text-xs font-normal leading-5 text-(--ui-text-secondary) hover:text-foreground',
         node.isSelected && 'bg-(--ui-row-active-background) text-foreground',
         isPlaceholder && 'pointer-events-none italic text-muted-foreground/70'
       )}
@@ -299,13 +301,8 @@ function ProjectTreeRow({
         if (isFolder) {
           node.toggle()
         } else {
+          // Qoder opens on a single click; select first so the row stays lit.
           node.select()
-        }
-      }}
-      onDoubleClick={event => {
-        event.stopPropagation()
-
-        if (!isFolder && !isPlaceholder && $renamingPath.get() !== node.data.id) {
           onPreviewFile?.(node.data.id)
         }
       }}
@@ -329,19 +326,29 @@ function ProjectTreeRow({
       }}
       title={node.data.id}
     >
-      {/* No chevron column — the folder icon (open/closed) already carries the
-          expand state, so the extra glyph was pure noise. */}
-      <span aria-hidden className="flex w-3.5 items-center justify-center text-(--ui-text-tertiary)">
+      <span aria-hidden className="flex size-5 shrink-0 items-center justify-center text-(--ui-text-tertiary)">
         {isPlaceholder && !isErrorPlaceholder ? (
           <Codicon name="loading" size="0.75rem" spinning />
         ) : isErrorPlaceholder ? (
           <Codicon name="warning" size="0.75rem" />
         ) : isFolder ? (
-          <Codicon name={node.isOpen ? 'folder-opened' : 'folder'} size="0.875rem" />
-        ) : (
-          <Codicon name="file" size="0.875rem" />
-        )}
+          <Codicon
+            className={cn('transition-transform duration-150', node.isOpen && 'rotate-90')}
+            name="chevron-right"
+            size="0.875rem"
+          />
+        ) : null}
       </span>
+      {!isPlaceholder && isFolder ? (
+        <Codicon
+          className="shrink-0 text-(--ui-text-tertiary)"
+          name={node.isOpen ? 'folder-opened' : 'folder'}
+          size="0.875rem"
+        />
+      ) : null}
+      {!isPlaceholder && !isFolder ? (
+        <FileTypeIcon className={fileIconTint(node.data.id)} path={node.data.id} size="0.875rem" />
+      ) : null}
       {editing ? (
         <InlineRenameInput name={node.data.name} path={node.data.id} />
       ) : (

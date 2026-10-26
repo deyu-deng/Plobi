@@ -21,10 +21,12 @@ describe('RightSidebarPane', () => {
     readDir.mockReset()
     readDir.mockResolvedValue({ entries: [{ isDirectory: false, name: 'README.md', path: '/repo/README.md' }] })
     installBridge()
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 320, 600))
   })
 
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
     $connection.set(null)
     setCurrentCwd('')
     resetProjectTreeState()
@@ -53,5 +55,19 @@ describe('RightSidebarPane', () => {
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Refresh tree' })).toBeNull())
     expect(readDir).not.toHaveBeenCalled()
+  })
+
+  it('opens a file on a single click (Qoder behavior)', async () => {
+    setCurrentCwd('/repo')
+    const onOpenFile = vi.fn()
+
+    render(
+      <RightSidebarPane onActivateFile={vi.fn()} onActivateFolder={vi.fn()} onOpenFile={onOpenFile} />
+    )
+
+    fireEvent.click(await screen.findByText('README.md'))
+
+    await waitFor(() => expect(onOpenFile).toHaveBeenCalled())
+    expect(onOpenFile.mock.calls[0][0].path).toBe('/repo/README.md')
   })
 })
