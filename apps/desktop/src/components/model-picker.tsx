@@ -194,7 +194,18 @@ function ModelResults({
         const unavailable = new Set(provider.unavailable_models ?? [])
 
         return (
-          <CommandGroup heading={<ProviderHeading provider={provider} />} key={provider.slug}>
+          <CommandGroup
+            heading={<ProviderHeading provider={provider} />}
+            // Every hub clone row carries the HUB's slug — that is the routing
+            // identity a pick must keep — so `slug` alone cannot tell two legs
+            // apart, and `name` cannot either (two legs of one software humanize to
+            // the same brand by design). A duplicated key here is not cosmetic: React
+            // unmounts one subtree and mounts the other on every render, which
+            // re-fires the panel's mount effect and asks the hub again — the
+            // self-sustaining flicker this same shape caused in the composer
+            // dropdown (Code `93b073e8`). `ui_key` is the row's own identity.
+            key={provider.ui_key ?? `${provider.slug}:${provider.name}`}
+          >
             {provider.warning && (
               <div className="px-2 pb-2">
                 <InlineNotice className="px-2.5 py-1.5 text-xs" kind="warning">
@@ -216,7 +227,10 @@ function ModelResults({
                     locked && 'cursor-not-allowed opacity-45'
                   )}
                   disabled={locked}
-                  key={`${provider.slug}:${model}`}
+                  // Same identity as the group above, so a row is keyable even when
+                  // two hub legs happen to serve the same model id. `value` stays the
+                  // routing string — it is what cmdk selects on, not what React keys on.
+                  key={`${provider.ui_key ?? provider.slug}:${model}`}
                   onSelect={() => {
                     if (!locked) {
                       onSelectModel(provider, model)
