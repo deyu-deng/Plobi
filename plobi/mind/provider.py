@@ -238,7 +238,11 @@ class MindProvider(MemoryProvider):
                     "Overwrite one file on the human surface by its LOGICAL path, e.g. "
                     "``Vault/projects/Aura/progress.md``. This is how a dossier stays "
                     "current: rewrite the whole file, keeping its frontmatter and bumping "
-                    "``updated`` to today. The write is checked by the trust gate — the "
+                    "``updated`` to today. Notes under ``Vault/notes/`` carry a hard "
+                    "contract: frontmatter must have title, tags and belongs (a registered "
+                    "agent name), exactly one top-level heading matching the title, and an "
+                    "existing topic folder — miss any of those and the write is refused "
+                    "with the reasons listed. The write is checked by the trust gate — the "
                     "result says whether it landed, went to the pending queue (with an id), "
                     "or was refused, and why. Never report success the model did not read back."
                 ),
@@ -305,6 +309,7 @@ class MindProvider(MemoryProvider):
         }
 
     def _tool_write(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        from plobi.mind.notes_contract import validate_note
         from plobi.mind.paths import MindUnavailable, is_safe_relative
         from plobi.mind.writer import WriteRequest
 
@@ -325,6 +330,16 @@ class MindProvider(MemoryProvider):
                 "success": False,
                 "error": f"{path} 不在可写的面里",
                 "allowed_prefixes": list(SAFE_PREFIXES),
+            }
+        # 笔记那一格另有一道硬约束（用户 10-25 答「不合规拒写」）：缺 title/tags/belongs、
+        # 一篇多个一级标题、发明新主题目录，一律拒，并把缺什么逐条说回去。
+        notes_problems = validate_note(path, content)
+        if notes_problems:
+            return {
+                "success": False,
+                "path": path,
+                "error": "笔记不合规，没有写入",
+                "problems": notes_problems,
             }
         try:
             writer = MindWriter(self._mind_root)
