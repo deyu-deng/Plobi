@@ -90,7 +90,8 @@ function columnName(index: number): string {
 }
 
 function SheetPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
-  const { bytes, error, loading } = useFileBytes(path)
+  const { change } = useFileRevision(path)
+  const { bytes, error, loading } = useFileBytes(path, change)
   const [sheetName, setSheetName] = useState('')
   const model = useMemo(() => (bytes ? readSheetModel(bytes, sheetName || undefined) : null), [bytes, sheetName])
   const selected = model && model.names.includes(sheetName) ? sheetName : (model?.names[0] ?? '')
