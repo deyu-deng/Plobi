@@ -24,7 +24,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from plobi.collectors import cadence, icons, registry, sidecar, sources_config
-from plobi.collectors.liveness import read_source_liveness
+from plobi.collectors.liveness import read_pool_liveness, read_source_liveness
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,8 @@ def _pool_counts(source_id: str) -> tuple[int, dict[str, int]]:
     return sum(by_kind.values()), by_kind
 
 
-def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) -> dict[str, Any]:
+def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
+            agenda_counts: Optional[dict[str, int]] = None) -> dict[str, Any]:
     """给活性那一行补上注册表与用户配置层的那几格。
 
     `collecting` 在这里被**覆写**成生效值（用户翻过的优先），但 `enabled_origin` 同时
@@ -174,6 +175,9 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
     `switches` 是**读口已经算好的那一份**，不在这里第二次去问配置层：第二次问就是
     第二次可能抛，而这一层抛出去就没法把"读不到开关"说成一行读数了——那正是这格
     存在的理由。开关读不到时 `switches[sid]` 是 `None`，于是下面那一支照实回 `None`。
+
+    `row` 现在来自**池**（活性问的是"还在不在采"），而 `events` 那一格说的是一句不同的话：
+    **日程库里落了几条**，由 `agenda_counts` 给。两个数各读各的库，谁也不许由谁推断。
     """
     source_id = row["source"]
     if source_id not in registry.source_ids():
@@ -206,6 +210,10 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]]) 
 
     return {
         **row,
+        # 活性读的是池，所以 `row["events"]` 是池里的行数；那一格的名字说的是日程库，
+        # 这里按名字把它改回日程库的数（读不到那份库时 `agenda_counts` 是空，落 0 是**读数**：
+        # 日程库里确实没有这一条的任何一行）。池里几条另有 `pool_count` 那一格。
+        "events": (agenda_counts or {}).get(source_id, 0),
         "category": spec.category,
         "enabled": enabled,
         "enabled_origin": origin,
@@ -264,11 +272,16 @@ async def collect_sources_route():
         # "每一条都按代码默认"：后者会让面照常画出一个**看起来正常**的开关。
         logger.warning("collect/sources: config layer unreadable: %s", exc)
 
-    data = read_source_liveness(None, expected_sources=expected, switches=switches)
+    data = read_pool_liveness(None, expected_sources=expected, switches=switches)
+    # `events` 那一格仍要日程库的数：**两只手各答各的问题**（10-26 现核出的那处自相矛盾就是
+    # 一只手读错库留下的——池里 200 条，日程库里 0 行，屏上同时说"已连接"和"从来没采过"）。
+    # 活性改读池；日程里落了几条继续读日程库，两次分组查询，不许由一个数推另一个数。
+    agenda = {row["source"]: row["events"]
+              for row in read_source_liveness(None, expected_sources=expected, switches=switches)["sources"]}
     # `_enrich` 对不在注册表里的那一行回 `None`（`manual` 那一档）——这里**真的把它剔掉**，
     # 而不是留着让界面自己 filter：屏上那个「信源 6」的角标数的是这个数组的长度，
     # 留一行画不出来的东西进去，就是一个数不上号的角标（10-22 现场：角标 6、行 5）。
-    rows = [item for item in (_enrich(row, switches) for row in data["sources"]) if item is not None]
+    rows = [item for item in (_enrich(row, switches, agenda) for row in data["sources"]) if item is not None]
 
     return {
         "ok": True,

@@ -1,8 +1,15 @@
 """每条信源最后一次**真的落库**在什么时候 —— 用来回答"采集还在不在跑"。
 
 存在的理由是一条我们反复量到的坑：**代码合了 ≠ 会在采**。配置齐、端点在、产物在，
-都可能一行新数据都没进过。所以这里不去读"配了什么"，只读 `events` 表里每个 `source`
+都可能一行新数据都没进过。所以这里不去读"配了什么"，只读落库里每个 `source`
 最后一次进新条目的时刻，并把"距今多少天"翻成一句状态话。
+
+**两只手，两份库，各答各的问题**（10-26 现核出来的那条自相矛盾就是它们混成一处留下的）：
+
+- :func:`read_pool_liveness` —— 读**池**（`pool_items.captured_at`）。设置页那条"还在不在采"用它：
+  用户 10 月拍的口径是所有信源直接进池、不落别的库，所以采没采到只在池里说得出。
+- :func:`read_source_liveness` —— 读**日程库**（`events.created_at`）。今天只剩课表那一屏用它，
+  它问的是"日程里落了几条"，那是另一句话，不许从这里推池子，也不许反过来。
 
 三条口径：
 - **只报读数，不猜原因**。这里没有"为什么停了"的答案——只有"最后一次进新行是几点"。
@@ -51,7 +58,7 @@ _NOTES = {
         "想知道为什么，去读同一条信源自己的状态与那句失败话。"
     ),
     STATE_NEVER: "库里就没有这一条信源的任何一行：从来没有成功采过。",
-    STATE_NO_STORE: "读不到日程库（`agenda.db` 不在或读不开）：这个探针对整条采集链什么都不能说。",
+    STATE_NO_STORE: "读不到那一份库（文件不在，或开着读不进来）：这个探针对整条采集链什么都不能说。",
 }
 
 
@@ -115,13 +122,71 @@ def read_source_liveness(
     expected_sources: tuple[str, ...] = (),
     switches: Optional[dict[str, bool]] = None,
 ) -> dict[str, Any]:
-    """每条信源的活性。`expected_sources` 里没出现过的信源补一行 `never`，不静默省略。
+    """读**日程库**里每个 `source` 最后一次进新条目是几点（`events` 那一族）。
 
+    今天只剩一处该用它：课表那一屏要回答的是"这条在日程里落了几条"，不是"还在不在采"。
+    设置页那条问的是后者，它读的是池——见 :func:`read_pool_liveness`。
+    """
+    return _probe(
+        Path(db_path) if db_path else _default_db(),
+        table="events",
+        created_col="created_at",
+        store_word="日程库",
+        now=now,
+        stale_after_days=stale_after_days,
+        expected_sources=expected_sources,
+        switches=switches,
+    )
+
+
+def read_pool_liveness(
+    db_path: Optional[Path] = None,
+    *,
+    now: Optional[datetime] = None,
+    stale_after_days: float = STALE_AFTER_DAYS,
+    expected_sources: tuple[str, ...] = (),
+    switches: Optional[dict[str, bool]] = None,
+) -> dict[str, Any]:
+    """读**池**里每个 `source` 最后一次进新条目是几点（`pool_items.captured_at`）。
+
+    为什么要有这一只而不再是 `read_source_liveness`：用户 10 月拍的口径是
+    「所有信源直接进池，不落别的库」，采集器落的确实是池；而活性那一只手还在读日程库，
+    于是同一行能同时给出 `pool_count=200` 和「从来没有成功采过」——10-26 他填完 QQ 邮箱
+    真跑了一轮，就把这处没换过来源照出来了（账在 `Docs/tasks/source-setup-guidance-task.md` §4.5）。
+    两格各读各的真源、不许互推：**池里几条**问的是采没采到，**日程里几条**问的是板上有几条。
+    """
+    from plobi.pool import store as pool_store
+
+    return _probe(
+        Path(db_path) if db_path else pool_store.path(),
+        table="pool_items",
+        created_col="captured_at",
+        store_word="那口池",
+        now=now,
+        stale_after_days=stale_after_days,
+        expected_sources=expected_sources,
+        switches=switches,
+    )
+
+
+def _probe(
+    path: Optional[Path],
+    *,
+    table: str,
+    created_col: str,
+    store_word: str,
+    now: Optional[datetime],
+    stale_after_days: float,
+    expected_sources: tuple[str, ...],
+    switches: Optional[dict[str, bool]],
+) -> dict[str, Any]:
+    """两份库同一个判据：只认"进新条目"那一列，`updated_at` 不参与（见模块头那条 10-15 反例）。
+
+    `expected_sources` 里没出现过的信源补一行 `never`，不静默省略。
     `switches` 不传就去问注册表（唯一真源）；传进来是给测试钉读数用的，跳过那次问。
     """
     reference = now or datetime.now()
     flags = collecting_flags() if switches is None else dict(switches)
-    path = Path(db_path) if db_path else _default_db()
 
     if path is None or not path.is_file():
         return {
@@ -130,7 +195,7 @@ def read_source_liveness(
             "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False,
                                        flags.get(source), note_for(STATE_NO_STORE)).as_dict()
                         for source in (expected_sources or ("(unknown)",))],
-            "verdict": "读不到日程库，这条探针什么都不能说",
+            "verdict": f"读不到{store_word}，这条探针什么都不能说",
         }
 
     rows: dict[str, tuple[int, str, str]] = {}
@@ -138,8 +203,8 @@ def read_source_liveness(
     try:
         conn.row_factory = sqlite3.Row
         for row in conn.execute(
-            "SELECT source, COUNT(*) AS n, MAX(created_at) AS created, MAX(updated_at) AS updated"
-            " FROM events GROUP BY source"
+            f"SELECT source, COUNT(*) AS n, MAX({created_col}) AS created, MAX(updated_at) AS updated"
+            f" FROM {table} GROUP BY source"
         ):
             rows[str(row["source"] or "")] = (int(row["n"] or 0), _iso(row["created"]), _iso(row["updated"]))
     except sqlite3.Error as exc:                      # 表不存在 / 库被独占：说读不到，不编 0 条
@@ -150,7 +215,7 @@ def read_source_liveness(
             "sources": [SourceLiveness(source, STATE_NO_STORE, 0, "", "", None, False,
                                        flags.get(source), note_for(STATE_NO_STORE)).as_dict()
                         for source in (expected_sources or ("(unknown)",))],
-            "verdict": f"读不动日程库：{exc}",
+            "verdict": f"读不动{store_word}：{exc}",
         }
     finally:
         conn.close()
@@ -164,7 +229,7 @@ def read_source_liveness(
             state = STATE_NEVER
             age = None
         else:
-            age = _age_days(created, reference)          # 判活只认 created_at，见模块头的 10-15 反例
+            age = _age_days(created, reference)          # 判活只认进新条目那一列，见模块头的 10-15 反例
             state = STATE_STALE if age is None or age > stale_after_days else STATE_LIVE
         touched = bool(created and updated and updated > created)
         out.append(SourceLiveness(source, state, count, _iso(created), _iso(updated), age,
@@ -174,7 +239,7 @@ def read_source_liveness(
     # 只把"读得到开关且确实是关"的算进这一格：`None`（这条不在注册表里，如 `manual`）不算"没点"。
     off = sorted(s.source for s in out if s.state != STATE_LIVE and s.collecting is False)
     if not out:
-        verdict = "库里一条信源都没有：这条链没有在采"
+        verdict = f"{store_word}里一条信源都没有：这条链没有在采"
     elif not live:
         verdict = "每一条信源都超时没进新条目 —— 没有东西进来（本地改动不算）"
         if off:

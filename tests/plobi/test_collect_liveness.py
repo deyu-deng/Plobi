@@ -174,15 +174,32 @@ class TestNotes:
 
 class TestEndpoint:
     def test_sources_route_lives_under_the_existing_prefix(self, tmp_path, monkeypatch):
-        """不开新前缀（§3.3），且探针走的是真读路：把 PLOBI_HOME 指到临时库上。"""
+        """不开新前缀（§3.3），且探针走的是真读路：把**共享家目录**指到临时库上。
+
+        10-26 改过一次：这一屏的活性读的是**池**（`read_pool_liveness`），日程库那一份
+        只回答"日程里落了几条"。所以两样都要摆——临时池 + 临时日程库。
+        ⚠️ 钉的是 `get_shared_plobi_root`，不是 `get_plobi_home`：池的路径解析走前者
+        （`pool/store.py:78`），只钉后者的话这一档会去读**他机器上那口真池**。
+        """
         import plobi_constants
         from plobi.collectors.chatlog.collect_api import router
+        from plobi.pool import store as pool_store
+        from plobi.pool.store import PoolItem
 
         _store(tmp_path, [_row("timetable", 0), _row("zju", 6)])
         monkeypatch.setattr(plobi_constants, "get_plobi_home", lambda: tmp_path)
+        monkeypatch.setattr(plobi_constants, "get_shared_plobi_root", lambda: tmp_path)
         (tmp_path / "plobi").mkdir(exist_ok=True)
         (tmp_path / "plobi" / "agenda.db").write_bytes((tmp_path / "agenda.db").read_bytes())
 
+        def _ts(days_ago: float) -> str:
+            return (NOW - timedelta(days=days_ago)).isoformat(timespec="seconds")
+
+        pool_store.land([
+            PoolItem(source="timetable", external_id="c1", kind="event", title="一节排课", captured_at=_ts(0)),
+            PoolItem(source="timetable", external_id="c2", kind="event", title="另一节排课", captured_at=_ts(0)),
+            PoolItem(source="zju", external_id="g1", kind="grade", title="一门成绩", captured_at=_ts(6)),
+        ], db_path=pool_store.path())
         app = FastAPI()
         app.include_router(router, prefix="/api/collect")
         body = TestClient(app).get("/api/collect/sources").json()
@@ -191,6 +208,8 @@ class TestEndpoint:
         got = by_source(body["data"])
         assert got["timetable"]["state"] == STATE_LIVE
         assert got["zju"]["state"] == STATE_STALE
+        # 两个数各读各的库：池里 2 条、日程库里 1 行。合成一个就是下一次那种误判。
+        assert got["timetable"]["pool_count"] == 2 and got["timetable"]["events"] == 1
 
     def test_liveness_never_invents_a_registry_source(self, tmp_path, monkeypatch):
         from plobi.collectors import registry
