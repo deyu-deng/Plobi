@@ -80,7 +80,7 @@ class DingTalkCollector:
                 source=self.source_id,
                 # cid 进键：同一 mid 在转发/引用链里不保证跨会话唯一，而 (会话, mid) 唯一。
                 external_id=f"{row['cid']}:{row['mid']}",
-                title=_one_line(row["text"]) or f"（{store.KNOWN_TYPES.get(row['content_type'], '非文本')}）",
+                title=_one_line(row["text"]) or f"（{store.content_label(row['content_type'])}）",
                 start_at=_local_iso(row["created_at"]),
                 kind=KIND,
                 evidence={

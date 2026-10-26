@@ -17,12 +17,12 @@ r"""钉钉那一版本机库的**读手**：找到资料目录 → 推出钥匙 
 3. **默认什么都读不到**：没有准入的会话 ⇒ `pull()` 回空表。这一格是隐私默认关（与微信
    那一份名册同一口径），不是"忘了实现"。
 
-WAL 那一格照实说：这一版我没接合并。理由是一条实测——这台的 `-wal` 有 3845 帧，我把帧页
-逐帧解密并按 SQLite 那套累加和重算校验和之后，**行数与只读基础库完全一样**（`tbmsg_*` 都是
-155、`tbconversation` 都是 178、`integrity_check ok`），而对**密文页**算链则一帧都对不上
-⇒ 我不能声称"WAL 里还有更新的东西被我解出来了"，也不能声称"合并已实现"。它带来的真实风险
-是**最新几秒到几分钟的写入可能还在 WAL 里没进基础库**，所以 `latest_message_at` 那一格要
-跟着健康判据一起看（调研件 §4.4 那条「dingtalk.db 拿不到最新的消息」就是这一族的历史）。
+WAL 那一格：这一版**接了合并**（`_merge_wal_pages`）。前一版的说法是"合了也一样"，那是错的判断，
+2026-10-26 用同一枚库重测：不合 ⇒ 聊天 156 条、最新停在 10-24；按提交组合并 ⇒ **246 条、
+最新 10-26 21:54**，`PRAGMA integrity_check` 仍 `ok`。`calendar_v2.db` 更直接：基础库只有一页、
+一张表都开不出来，21 张表（`calendar` 6 行、`calendar_event` 6 行）全在 `-wal` 里。
+形状上的实测结论也记在这里，免得下一个人重走：**WAL 头与帧头是明文，帧里的页数据是密文，
+而帧校验和不按 SQLite 那套累加和算**——所以合并的依据只能是盐值 + 提交标记。
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import sqlite3
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -43,6 +44,8 @@ from typing import Any, Iterable, Optional
 PBKDF2_SALT = b"666DingT"
 PBKDF2_ITERATIONS = 1000
 PAGE = 4096
+#: SQLite WAL 的两个魔数（末位那一位说校验和按大端还是小端算；这一版不算校验和，见 `_merge_wal_pages`）
+_WAL_MAGICS = (0x377F0682, 0x377F0683)
 DB_NAME = "dingtalk.db"
 #: V3 目录名是账号哈希（20 位 hex），V2 目录名**就是** UID。两种形状分开认——
 #: 上一版探针用一条宽松的"字母数字就行"把它们全认成了资料目录，于是 `%APPDATA%\DingTalk\config`
@@ -176,15 +179,89 @@ def local_dir() -> Path:
 
 def _decrypt_pages(source: Path, key: bytes, target: Path) -> int:
     """整页 ECB 解一遍（从偏移 0 开始，**没有跳过的文件头**——这一点也是实测：
-    页 0 就是加密的 SQLite 魔法）。返回页数。"""
+    页 0 就是加密的 SQLite 魔法），并把那一枚 `-wal` 按提交组合并进副本。返回写出的页数。
+
+    为什么必须合 WAL（这台 10-26 实测）：客户端把最新那批写入留在 `-wal` 里没checkpoint——
+    不合的话聊天 156 条、最新一条停在 10-24，合完 **246 条、最新 10-26 21:54**，
+    `PRAGMA integrity_check` 仍是 `ok`。`calendar_v2.db` 更狠：基础库就一页（0 张表），
+    21 张表全在 WAL 里。
+    """
     data = source.read_bytes()
+    if not data:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"")
+        return 0
+    page = _page_size_of(_decrypt_block(key, data[:min(len(data), PAGE) - min(len(data), PAGE) % 16]))
+    pages: dict[int, bytes] = {}
+    for offset in range(0, len(data) - page + 1, page):
+        pages[offset // page + 1] = _decrypt_block(key, data[offset:offset + page])
+    total = len(pages)
+    wal = Path(str(source) + "-wal")
+    if wal.is_file():
+        try:
+            total = _merge_wal_pages(pages, wal.read_bytes(), key, page, total)
+        except (OSError, ValueError, struct.error):
+            pass  # WAL 读不成就先交基础库那一版：少几帧比整族读不到好，也不该在这里抛
     target.parent.mkdir(parents=True, exist_ok=True)
-    pages = 0
+    if 1 in pages:
+        # 合完就把副本的"WAL 模式"那两个字节改回普通日志（页 1 头第 18、19 字节）：
+        # 留着 2 的话 SQLite 连只读连接都要去建 `-wal`/`-shm`，于是我们的解密目录里
+        # 长出一枚盐值对不上的空 WAL（这台 10-26 在 `PLOBI_HOME` 里现读到过），下一次读它的人
+        # 就要再猜一次那枚 WAL 算不算数。副本本身已经含全部提交页，改这两个字节是无损的。
+        pages[1] = pages[1][:18] + b"\x01\x01" + pages[1][20:]
     with target.open("wb") as handle:
-        for offset in range(0, len(data), PAGE):
-            handle.write(_decrypt_block(key, data[offset:offset + PAGE]))
-            pages += 1
-    return pages
+        for number in range(1, total + 1):
+            handle.write(pages.get(number, b"\x00" * page))
+    # 副本自己那对 -wal/-shm 必须清掉：上一版留下过一枚对不上盐值的 WAL，留着就是让 SQLite 再猜一次
+    for suffix in ("-wal", "-shm"):
+        Path(str(target) + suffix).unlink(missing_ok=True)
+    return total
+
+
+def _page_size_of(head: bytes) -> int:
+    """页长在解密后的页 1 头第 16 字节那两个字节里（值 1 表示 65536）。
+
+    **只认 512–65536 之间的 2 的幂**，否则回 `PAGE`：钥匙不对时那两格是垃圾，
+    垃圾值（比如 4660）不是 16 的倍数，一路切下去会在 AES 那里抛 `ValueError`——
+    而"钥匙不对"应当是一句人话（`LocalStoreUnavailable`），不是一颗崩在解密里的异常。
+    """
+    try:
+        raw = struct.unpack(">H", head[16:18])[0] if len(head) >= 18 else 0
+    except struct.error:
+        return PAGE
+    size = 65536 if raw == 1 else raw
+    return size if 512 <= size <= 65536 and size & (size - 1) == 0 else PAGE
+
+
+def _merge_wal_pages(pages: dict[int, bytes], wal: bytes, key: bytes, page: int,
+                     base_pages: int) -> int:
+    """把 `-wal` 的帧按**提交组**盖进页表（就地改 `pages`），返回合并后的总页数。
+
+    DingTalk 那个 VFS 的形状是实测的：**帧头与 WAL 头是明文，帧里的页数据是密文，
+    而帧校验和不按 SQLite 那套累加和算**（10-26 逐帧对过：对密文算、对明文算都不对）。
+    所以判"这一帧能不能要"的依据换成两条：盐值与 WAL 头一致 + 只在 `dbsize>0` 那帧落定一笔事务，
+    **尾巴上没收完的那组整个丢掉**——不丢就会合出一棵引用了空页的树（`invalid page number`）。
+    """
+    if len(wal) < 32:
+        return base_pages
+    magic, _version, wal_page, _ckpt, salt_1, salt_2, _c0, _c1 = struct.unpack(">8I", wal[:32])
+    if magic not in _WAL_MAGICS or wal_page != page:
+        return base_pages
+    total = base_pages
+    pending: dict[int, bytes] = {}
+    offset = 32
+    while offset + 24 + page <= len(wal):
+        header = wal[offset:offset + 24]
+        page_no, db_size, frame_salt_1, frame_salt_2 = struct.unpack(">4I", header[:16])
+        if (frame_salt_1, frame_salt_2) != (salt_1, salt_2):
+            break  # 换了一代 WAL（checkpoint 之后盐值会重开），后面那些不属于这一份
+        pending[page_no] = _decrypt_block(key, wal[offset + 24:offset + 24 + page])
+        if db_size:  # 这一帧是一笔事务的最后一帧：整组此刻才可信
+            pages.update(pending)
+            pending = {}
+            total = max(total, db_size)
+        offset += 24 + page
+    return total
 
 
 def _decrypt_block(key: bytes, block: bytes) -> bytes:
@@ -278,8 +355,8 @@ def list_conversations(store: LocalStore, *, limit: int = 200) -> list[dict]:
     `type` 那一格交的是**名单那一档的词**（`group`/`private`，见
     `chatlog/client.py` 的 `ROSTER_KINDS` 那段——两族共用一张词表，别各造一套）。
     `last_at` 是归一过的 ISO；`last_modify` 保留库里那个原始数（排障要看它到底存了什么）。
-    **这一格不是"最后一条"的权威时间**：读的是主库，最新那几分钟可能还在 `-wal` 里
-    （为什么没合并见本档顶部那段实测）。
+    读的是**合过 `-wal` 的那份副本**，所以"最新几分钟还在 WAL 里没进主库"这一条不再是缺口
+    （为什么必须合，见本档顶部那段实测）。
     """
     rows = store.connection.execute(
         "SELECT cid, title, type, lastModify FROM tbconversation ORDER BY lastModify DESC LIMIT ?",
@@ -291,10 +368,95 @@ def list_conversations(store: LocalStore, *, limit: int = 200) -> list[dict]:
 
 
 TEXT_TYPE = 1
-#: 这些类型的正文这一版**不解析**（卡片/文件/图片/小程序各是一套自己的 JSON），
-#: 但行照样进池——只是 `text` 留空、`content_type` 说清是哪一类。把"没解析"写成"没有内容"
-#: 就是下一颗假读数。
-KNOWN_TYPES = {1: "text", 2: "image", 102: "reply", 501: "file", 2950: "card", 3100: "miniapp"}
+#: 非文本那几类各自**实测**长什么样（10-26 逐类扒过这台 155 条样本，键路径抄在下面）。
+#: 一张表说清"哪些已经解得出、哪些还解不出"——把"没解析"写成"没有内容"就是下一颗假读数。
+#: 屏上不许出现英文键名，所以另有一张给人看的中文名词表（`content_label`）。
+KNOWN_TYPES = {1: "text", 2: "image", 102: "link", 500: "space_file", 501: "file",
+               1200: "markdown", 1201: "action_card", 1600: "ding", 2900: "card",
+               2950: "card", 3100: "miniapp"}
+_LABELS = {"text": "消息", "image": "图片", "link": "链接", "space_file": "群文件",
+           "file": "文件", "markdown": "卡片", "action_card": "卡片", "ding": "DING",
+           "card": "卡片", "miniapp": "小程序", "other": "非文本消息"}
+#: 每一类先取哪几个字段当"这句话"（顺序 = 实测里哪个字段真是人看的那一格；
+#: `LastMessageI18n` 是互动卡片那句"最后一条"的多语言表，`_pick` 那一头再挑一种语言）。
+_TEXT_KEYS = ("title", "LastMessageI18n", "text", "f_name", "dingContent", "biz_custom_title",
+              "interactiveCardLastMessage", "searchDesc", "desc", "markdown", "cname")
+_I18N_KEYS = ("zh_CN", "zh-CN", "zh", "zh_Hans", "en_US", "default")
+
+
+def content_label(content_type: int) -> str:
+    """给人看的那一个名词（屏上原来打的是 `（card）` 这种英文键名）。"""
+    return _LABELS.get(KNOWN_TYPES.get(int(content_type or 0), "other"), _LABELS["other"])
+
+
+def _loads(raw: Any) -> Any:
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pick(node: Any) -> str:
+    """把"这一格到底是不是给人看的那句"这件事一次算清：dict 走语言表，字符串可能是又一层 JSON。"""
+    if isinstance(node, str) and node[:1] in "[{":
+        node = _loads(node)
+    if isinstance(node, dict):
+        for key in _I18N_KEYS:
+            if isinstance(node.get(key), str) and node[key].strip():
+                return node[key].strip()
+        return next((value.strip() for value in node.values()
+                     if isinstance(value, str) and value.strip()), "")
+    return node.strip() if isinstance(node, str) else ""
+
+
+def _human_size(raw: Any) -> str:
+    try:
+        number = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+    for unit, edge in (("GB", 1024 ** 3), ("MB", 1024 ** 2), ("KB", 1024)):
+        if number >= edge:
+            return f"{number / edge:.1f} {unit}"
+    return f"{int(number)} B"
+
+
+def _attachment_texts(parsed: dict) -> list[str]:
+    """`attachments[].extension` 那一层套娃是这台的真形状：外面是列表，每格再解一次 JSON。"""
+    out: list[str] = []
+    for item in parsed.get("attachments") or []:
+        if not isinstance(item, dict):
+            continue
+        body = _loads(item.get("extension")) if isinstance(item.get("extension"), str) else item.get("extension")
+        if not isinstance(body, dict):
+            body = {}
+        name = next((_pick(body.get(key)) for key in _TEXT_KEYS if _pick(body.get(key))), "")
+        if name:
+            size = _human_size(body.get("f_size") or item.get("size"))
+            out.append(f"{name}（{size}）" if size else name)
+    return out
+
+
+def describe_of(content: Any, content_type: int) -> str:
+    """这一条消息**给人读的那一句**。解析不出来就回空串，由调用方落回中文名词。
+
+    文本类仍是库里那句原文（一个字节不改）；其余每一类只从实测有的那几格取，
+    不猜、不编——猜出来的正文是假读数，比空白更贵。
+    """
+    parsed = _loads(content)
+    if not isinstance(parsed, dict):
+        return ""
+    if int(content_type or 0) == TEXT_TYPE:
+        return str(parsed.get("text") or "")
+    pieces = _attachment_texts(parsed)
+    if not pieces:  # 图片那一类把名字与尺寸放在**顶层**，不在 attachments 里
+        name = next((_pick(parsed.get(key)) for key in ("filename", "title", "text", "nick")
+                     if _pick(parsed.get(key))), "")
+        size = _human_size(parsed.get("picSize") or parsed.get("size"))
+        if name:
+            pieces = [f"{name}（{size}）" if size else name]
+    return " ".join(pieces[:3])
 
 
 def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
@@ -322,22 +484,10 @@ def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
                 continue  # 已撤回的不再进池
             out.append({"cid": str(cid), "mid": str(mid), "sender_id": str(sender or ""),
                         "created_at": str(created or ""), "content_type": int(content_type or 0),
-                        "text": _text_of(content, int(content_type or 0)),
+                        "text": describe_of(content, int(content_type or 0)),
                         "at_ids": str(at_ids or ""), "shard": shard})
     out.sort(key=lambda row: row["created_at"])
     return out[:limit]
-
-
-def _text_of(content: Any, content_type: int) -> str:
-    if content_type != TEXT_TYPE or not content:
-        return ""
-    try:
-        parsed = json.loads(content)
-    except (TypeError, ValueError):
-        return ""
-    if isinstance(parsed, dict):
-        return str(parsed.get("text") or "")
-    return ""
 
 
 def copy_out(store_db: Path, destination: Path) -> Path:

@@ -213,7 +213,10 @@ class TestTheCollector:
         opened.close()
 
     def test_a_non_text_message_lands_with_no_body_but_names_its_kind(self, fake_profile) -> None:
-        """卡片/文件不解析正文——但这一行要说得出它是哪一类，否则"没有正文"会被读成"没有消息"。"""
+        """解不出正文的那一行仍要说得出它是哪一类，否则"没有正文"会被读成"没有消息"。
+
+        那一格原先打的是英文键名（`（file）`）——10-26 改成中文名词：屏上不许多一个只有我们看得懂的词。
+        """
         opened = store.open_local_store()
         collected = collector_module.DingTalkCollector(local_store=opened, excluded=["cid-one"])
 
@@ -221,7 +224,7 @@ class TestTheCollector:
 
         assert row.evidence["text"] == ""
         assert row.evidence["content_kind"] == "file"
-        assert row.title == "（file）"
+        assert row.title == "（文件）"
         opened.close()
 
     def test_the_default_is_collect_and_only_excluded_ones_drop_out(self, fake_profile) -> None:
