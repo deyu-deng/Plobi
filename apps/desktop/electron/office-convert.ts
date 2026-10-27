@@ -1,39 +1,40 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { resolveRequestedPathForIpc } from './hardening'
 
 // Mirrors src/lib/legacy-office.ts for the main process. The renderer owns the
 // routing copy (which formats show the conversion card); this copy owns the
 // actual conversion target. Keep the two extension tables in sync.
-const LEGACY_OFFICE: Record<string, { kind: 'sheet' | 'slides' | 'word'; targetExt: 'docx' | 'pptx' | 'xlsx' }> = {
-  doc: { kind: 'word', targetExt: 'docx' },
-  docm: { kind: 'word', targetExt: 'docx' },
-  dot: { kind: 'word', targetExt: 'docx' },
-  dotm: { kind: 'word', targetExt: 'docx' },
-  odt: { kind: 'word', targetExt: 'docx' },
-  ott: { kind: 'word', targetExt: 'docx' },
-  rtf: { kind: 'word', targetExt: 'docx' },
-  wps: { kind: 'word', targetExt: 'docx' },
-  dps: { kind: 'slides', targetExt: 'pptx' },
-  odp: { kind: 'slides', targetExt: 'pptx' },
-  otp: { kind: 'slides', targetExt: 'pptx' },
-  pot: { kind: 'slides', targetExt: 'pptx' },
-  potm: { kind: 'slides', targetExt: 'pptx' },
-  ppt: { kind: 'slides', targetExt: 'pptx' },
-  pptm: { kind: 'slides', targetExt: 'pptx' },
-  et: { kind: 'sheet', targetExt: 'xlsx' },
-  ods: { kind: 'sheet', targetExt: 'xlsx' },
-  ots: { kind: 'sheet', targetExt: 'xlsx' },
-  xls: { kind: 'sheet', targetExt: 'xlsx' },
-  xlsm: { kind: 'sheet', targetExt: 'xlsx' },
-  xlt: { kind: 'sheet', targetExt: 'xlsx' },
-  xltm: { kind: 'sheet', targetExt: 'xlsx' }
+const LEGACY_OFFICE: Record<string, 'docx' | 'pptx' | 'xlsx'> = {
+  doc: 'docx',
+  docm: 'docx',
+  dot: 'docx',
+  dotm: 'docx',
+  odt: 'docx',
+  ott: 'docx',
+  rtf: 'docx',
+  wps: 'docx',
+  dps: 'pptx',
+  odp: 'pptx',
+  otp: 'pptx',
+  pot: 'pptx',
+  potm: 'pptx',
+  ppt: 'pptx',
+  pptm: 'pptx',
+  et: 'xlsx',
+  ods: 'xlsx',
+  ots: 'xlsx',
+  xls: 'xlsx',
+  xlsm: 'xlsx',
+  xlt: 'xlsx',
+  xltm: 'xlsx'
 }
 
-function legacyOfficeFormat(path: string) {
-  const clean = path.split(/[?#]/u)[0]?.toLowerCase() ?? ''
+function legacyOfficeTarget(inputPath: string) {
+  const clean = inputPath.split(/[?#]/u)[0]?.toLowerCase() ?? ''
   const dot = clean.lastIndexOf('.')
   const ext = dot >= 0 ? clean.slice(dot + 1) : ''
 
@@ -54,6 +55,14 @@ interface ConvertOptions {
 
 const DEFAULT_TIMEOUT_MS = 180_000
 
+function isFile(candidate: string) {
+  try {
+    return fs.statSync(candidate).isFile()
+  } catch {
+    return false
+  }
+}
+
 function findOnPath(names: string[]): string | null {
   const directories = (process.env.PATH || '').split(path.delimiter).filter(Boolean)
   const extensions =
@@ -66,18 +75,55 @@ function findOnPath(names: string[]): string | null {
       for (const extension of extensions) {
         const candidate = path.join(directory, `${name}${extension}`)
 
-        try {
-          if (fs.statSync(candidate).isFile()) {
-            return candidate
-          }
-        } catch {
-          // Keep looking.
+        if (isFile(candidate)) {
+          return candidate
         }
       }
     }
   }
 
   return null
+}
+
+const LIBREOFFICE_PATHS =
+  process.platform === 'win32'
+    ? [
+        'D:\\Software\\LibreOffice\\program\\soffice.exe',
+        'D:\\Portables\\gui\\LibreOffice\\program\\soffice.exe',
+        'D:\\Portables\\cli\\libreoffice\\program\\soffice.exe',
+        'C:\\Program Files\\LibreOffice\\program\\soffice.exe',
+        'C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe'
+      ]
+    : process.platform === 'darwin'
+      ? ['/Applications/LibreOffice.app/Contents/MacOS/soffice']
+      : [
+          '/usr/bin/soffice',
+          '/usr/bin/libreoffice',
+          '/usr/lib/libreoffice/program/soffice',
+          '/opt/libreoffice/program/soffice',
+          '/snap/bin/libreoffice'
+        ]
+
+function findLibreOffice(): string | null {
+  const override = process.env.PLOBI_LIBREOFFICE_PATH?.trim()
+
+  if (override) {
+    const binary = fs.existsSync(override) && fs.statSync(override).isDirectory()
+      ? path.join(override, 'program', process.platform === 'win32' ? 'soffice.exe' : 'soffice')
+      : override
+
+    if (isFile(binary)) {
+      return binary
+    }
+  }
+
+  for (const candidate of LIBREOFFICE_PATHS) {
+    if (isFile(candidate)) {
+      return candidate
+    }
+  }
+
+  return findOnPath(['soffice', 'libreoffice'])
 }
 
 function outputCandidates(inputPath: string, targetExt: string) {
@@ -118,48 +164,20 @@ async function pickOutput(inputPath: string, targetExt: string): Promise<{ outpu
   throw new Error('too many converted copies beside this file')
 }
 
-const POWERSHELL_SCRIPT = String.raw`param(
-  [Parameter(Mandatory=$true)][string]$InputPath,
-  [Parameter(Mandatory=$true)][string]$OutputPath,
-  [Parameter(Mandatory=$true)][ValidateSet('word','slides','sheet')][string]$Kind
-)
-$ErrorActionPreference = 'Stop'
-$progIds = switch ($Kind) {
-  'word'   { @('Word.Application', 'KWPS.Application') }
-  'slides' { @('PowerPoint.Application', 'KWPP.Application') }
-  'sheet'  { @('Excel.Application', 'KET.Application') }
-}
-$app = $null
-foreach ($progId in $progIds) {
-  try { $app = New-Object -ComObject $progId; break } catch { $app = $null }
-}
-if ($null -eq $app) { throw "No installed office engine can convert $Kind files." }
-try {
-  try { $app.Visible = $false } catch {}
-  try { $app.DisplayAlerts = 0 } catch {}
-  if ($Kind -eq 'word') {
-    $doc = $app.Documents.Open($InputPath, $false, $true)
-    try { $doc.SaveAs2($OutputPath, 16) } finally { $doc.Close(0) }
-  } elseif ($Kind -eq 'slides') {
-    $pres = $app.Presentations.Open($InputPath, $true, $false, $false)
-    try { $pres.SaveAs($OutputPath, 24) } finally { $pres.Close() }
-  } else {
-    $book = $app.Workbooks.Open($InputPath, 0, $true)
-    try { $book.SaveAs($OutputPath, 51) } finally { $book.Close($false) }
-  }
-  Write-Output 'OK'
-} finally {
-  try { $app.Quit() } catch {}
-}
-`
-
 function runProcess(
   command: string,
   args: string[],
   timeoutMs: number
 ): Promise<{ code: number; stderr: string; stdout: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    const env = { ...process.env }
+
+    // LibreOffice ships its own Python; an inherited PYTHONHOME/PYTHONPATH from
+    // a dev venv makes it print prefix errors and can break conversions.
+    delete env.PYTHONHOME
+    delete env.PYTHONPATH
+
+    const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -194,23 +212,46 @@ function runProcess(
   })
 }
 
+// LibreOffice serializes on a single user profile; overlapping conversions from
+// two tabs would otherwise race on that profile lock.
+let conversionQueue: Promise<unknown> = Promise.resolve()
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = conversionQueue.then(task, task)
+  conversionQueue = run.catch(() => {})
+
+  return run
+}
+
 async function convertWithLibreOffice(
+  soffice: string,
   inputPath: string,
   outputPath: string,
   targetExt: string,
   cacheDir: string,
   timeoutMs: number
 ): Promise<LegacyConversionResult> {
-  const soffice = findOnPath(['soffice'])
-
-  if (!soffice) {
-    return { error: 'libreoffice-missing', ok: false }
-  }
-
   await fs.promises.mkdir(cacheDir, { recursive: true })
+
+  const profileDir = path.join(cacheDir, 'profile')
+  const produced = path.join(cacheDir, `${path.basename(inputPath).replace(/\.[^.]+$/u, '')}.${targetExt}`)
+
+  await fs.promises.rm(produced, { force: true })
+
   const result = await runProcess(
     soffice,
-    ['--headless', '--convert-to', targetExt, '--outdir', cacheDir, inputPath],
+    [
+      '--headless',
+      '--norestore',
+      '--nodefault',
+      '--nolockcheck',
+      `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
+      '--convert-to',
+      targetExt,
+      '--outdir',
+      cacheDir,
+      inputPath
+    ],
     timeoutMs
   )
 
@@ -218,68 +259,39 @@ async function convertWithLibreOffice(
     return { error: result.stderr.trim() || 'libreoffice-failed', ok: false }
   }
 
-  const produced = path.join(cacheDir, `${path.basename(inputPath).replace(/\.[^.]+$/u, '')}.${targetExt}`)
+  let producedStat: fs.Stats
+
+  try {
+    producedStat = await fs.promises.stat(produced)
+  } catch {
+    // LibreOffice exits 0 even when the filter refuses the document.
+    return { error: result.stdout.trim() || result.stderr.trim() || 'libreoffice-failed', ok: false }
+  }
+
+  if (!producedStat.isFile() || producedStat.size === 0) {
+    return { error: 'libreoffice-produced-empty-file', ok: false }
+  }
+
+  await fs.promises.rm(outputPath, { force: true })
   await fs.promises.rename(produced, outputPath)
 
   return { ok: true, path: outputPath }
-}
-
-async function convertWithCom(
-  inputPath: string,
-  outputPath: string,
-  kind: 'sheet' | 'slides' | 'word',
-  cacheDir: string,
-  timeoutMs: number
-): Promise<LegacyConversionResult> {
-  if (process.platform !== 'win32') {
-    return { error: 'no-office-converter', ok: false }
-  }
-
-  await fs.promises.mkdir(cacheDir, { recursive: true })
-  const scriptPath = path.join(cacheDir, `convert-${process.pid}-${Date.now()}.ps1`)
-  await fs.promises.writeFile(scriptPath, POWERSHELL_SCRIPT, 'utf8')
-
-  try {
-    const powershell = process.env.SystemRoot
-      ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-      : 'powershell.exe'
-    const result = await runProcess(
-      powershell,
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        scriptPath,
-        '-InputPath',
-        inputPath,
-        '-OutputPath',
-        outputPath,
-        '-Kind',
-        kind
-      ],
-      timeoutMs
-    )
-
-    if (result.code !== 0) {
-      return { error: result.stderr.trim() || 'office-conversion-failed', ok: false }
-    }
-
-    return { ok: true, path: outputPath }
-  } finally {
-    await fs.promises.rm(scriptPath, { force: true }).catch(() => {})
-  }
 }
 
 export async function convertLegacyOffice(
   inputPath: string,
   options: ConvertOptions
 ): Promise<LegacyConversionResult> {
-  const format = legacyOfficeFormat(inputPath)
+  const targetExt = legacyOfficeTarget(inputPath)
 
-  if (!format) {
+  if (!targetExt) {
     return { error: 'unsupported-format', ok: false }
+  }
+
+  const soffice = findLibreOffice()
+
+  if (!soffice) {
+    return { error: 'libreoffice-missing', ok: false }
   }
 
   let resolved: string
@@ -299,7 +311,7 @@ export async function convertLegacyOffice(
   let reused: boolean
 
   try {
-    ;({ output, reused } = await pickOutput(resolved, format.targetExt))
+    ;({ output, reused } = await pickOutput(resolved, targetExt))
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'output-error', ok: false }
   }
@@ -308,16 +320,18 @@ export async function convertLegacyOffice(
     return { ok: true, path: output, reused: true }
   }
 
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const libreOffice = findOnPath(['soffice'])
-
-  if (libreOffice) {
-    const result = await convertWithLibreOffice(resolved, output, format.targetExt, options.cacheDir, timeoutMs)
-
-    if (result.ok) {
-      return result
-    }
+  try {
+    return await enqueue(() =>
+      convertWithLibreOffice(
+        soffice,
+        resolved,
+        output,
+        targetExt,
+        options.cacheDir,
+        options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+      )
+    )
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'conversion-failed', ok: false }
   }
-
-  return convertWithCom(resolved, output, format.kind, options.cacheDir, timeoutMs)
 }
