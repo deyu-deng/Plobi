@@ -175,6 +175,88 @@ def _build_subprocess_env() -> dict[str, str]:
     return env
 
 
+#: What the child MCP server needs in order to find Plobi again. Deliberately an
+#: allowlist: `os.environ` at this point can hold provider keys, and forwarding
+#: those into a third-party CLI's child process would be a leak, not a convenience.
+_MCP_CHILD_ENV = (
+    "PLOBI_HOME",
+    "PLOBI_QUIET",
+    "PLOBI_REDACT_SECRETS",
+    "PYTHONPATH",
+    "PYTHONUTF8",
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+)
+
+
+def _acp_mcp_servers() -> list[dict[str, Any]]:
+    """Plobi's tool surface, in the shape ACP's `session/new` expects.
+
+    The mechanism in use today is a prompt line telling the model it MUST print
+    tool calls inside a pseudo-XML block, which we then regex out of prose. That is
+    not the CLI's native protocol and a strict endpoint does not guarantee it, so
+    the honest fix is to hand the agent real tools over MCP and let the results come
+    back as tool results.
+
+    Two wire details that bite, both measured rather than assumed:
+
+      * ACP's stdio server entry takes `env` as an array of ``{name, value}`` pairs.
+        `render_mcp_config()` returns a dict; passing it through unchanged drops
+        `PLOBI_HOME`, and the child then reads a different home than the one the
+        user launched Plobi against.
+      * `PLOBI_HOME` must be present even when the parent only knows it through the
+        resolved default, because the child is a fresh interpreter.
+    """
+    if os.getenv("PLOBI_ACP_MCP_TOOLS", "").strip().lower() in {"0", "false", "no", "off"}:
+        return []
+
+    try:
+        from agent.transports.plobi_quota_mcp_server import render_mcp_config
+
+        config = render_mcp_config()
+    except Exception:  # noqa: BLE001 — no tool surface is better than a broken one
+        return []
+
+    command = str(config.get("command") or "")
+    if not command:
+        return []
+
+    env = dict(config.get("env") or {})
+    if not str(env.get("PLOBI_HOME") or "").strip():
+        try:
+            from plobi_constants import get_plobi_home
+
+            env["PLOBI_HOME"] = str(get_plobi_home())
+        except Exception:  # noqa: BLE001
+            pass
+    for name in _MCP_CHILD_ENV:
+        if name not in env:
+            value = os.environ.get(name, "").strip()
+            if value:
+                env[name] = value
+
+    return [
+        {
+            "name": "plobi",
+            "type": "stdio",
+            "command": command,
+            "args": [str(arg) for arg in (config.get("args") or [])],
+            "env": [
+                {"name": name, "value": env[name]}
+                for name in _MCP_CHILD_ENV
+                if name in env
+            ],
+        }
+    ]
+
+
 def _jsonrpc_error(message_id: Any, code: int, message: str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
@@ -724,7 +806,9 @@ class CopilotACPClient:
                 "session/new",
                 {
                     "cwd": self._acp_cwd,
-                    "mcpServers": [],
+                    # Plobi's tools, offered over MCP: the agent can call them for
+                    # real instead of being asked to print them into its answer.
+                    "mcpServers": _acp_mcp_servers(),
                 },
             ) or {}
             session_id = str(session.get("sessionId") or "").strip()
