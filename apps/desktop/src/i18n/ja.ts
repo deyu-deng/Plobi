@@ -3177,6 +3177,11 @@ export const ja = defineLocale({
       convertToXlsx: '.xlsx に変換して編集',
       converting: '変換中…',
       convertFailed: '変換に失敗しました'
+      legacyTitle: '旧形式の Office ファイル',
+      legacyBody: (sourceExt, targetExt) =>
+        `.${sourceExt} はここで直接編集できません。先に .${targetExt} へ変換してください。元のファイルは残ります。`,
+      legacyConvertNote: '変換はローカルのオフィスエンジンで実行され、コピーだけを作成します。',
+      convertLegacy: targetExt => `.${targetExt} に変換して編集`
     }
   }
 })

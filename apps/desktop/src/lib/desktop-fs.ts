@@ -68,6 +68,21 @@ export async function readDesktopDir(path: string): Promise<PlobiReadDirResult> 
   return remoteFsApi<PlobiReadDirResult>(fsPath('list', path))
 }
 
+export async function convertDesktopLegacyOffice(path: string): Promise<{
+  error?: string
+  ok: boolean
+  path?: string
+  reused?: boolean
+}> {
+  const convert = bridge().convertLegacyOffice
+
+  if (!convert) {
+    return { error: 'Legacy conversion is unavailable', ok: false }
+  }
+
+  return convert(path)
+}
+
 export async function statDesktopFile(path: string): Promise<{ mtimeMs: number; size: number } | null> {
   try {
     const result = await bridge().statFile?.(path)

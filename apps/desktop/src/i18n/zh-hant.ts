@@ -3077,6 +3077,10 @@ export const zhHant = defineLocale({
       convertToXlsx: '轉換為 .xlsx 編輯',
       converting: '轉換中…',
       convertFailed: '轉換失敗'
+      legacyTitle: '舊版 Office 檔案',
+      legacyBody: (sourceExt, targetExt) => `.${sourceExt} 不能在這裡直接編輯；先轉換為 .${targetExt}，原檔案保留。`,
+      legacyConvertNote: '轉換由本機辦公引擎完成；只建立副本，不改原檔案。',
+      convertLegacy: targetExt => `轉換為 .${targetExt} 編輯`
     }
   }
 })

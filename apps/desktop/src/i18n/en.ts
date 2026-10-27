@@ -3289,6 +3289,11 @@ export const en: Translations = {
       convertToXlsx: 'Convert to .xlsx',
       converting: 'Converting…',
       convertFailed: 'Conversion failed'
+      legacyTitle: 'Legacy Office file',
+      legacyBody: (sourceExt, targetExt) =>
+        `.${sourceExt} cannot be edited here directly; convert it to .${targetExt} first. The original stays untouched.`,
+      legacyConvertNote: 'Conversion runs in the local office engine and only creates a copy.',
+      convertLegacy: targetExt => `Convert to .${targetExt} and edit`
     }
   }
 }

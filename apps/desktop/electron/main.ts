@@ -124,6 +124,7 @@ import {
 import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
 import { applyDesktopProxy, desktopProxyConfig, describeDesktopProxy } from './egress-proxy'
 import { invalidateWorkspaceIndex, searchWorkspaceIndex } from './fs-index'
+import { convertLegacyOffice } from './office-convert'
 import { readDirForIpc } from './fs-read-dir'
 import { statFileForIpc } from './fs-stat'
 import { listWorkspaceApplications, openWorkspaceWithApplication } from './workspace-open'
@@ -11268,6 +11269,12 @@ function disposeTerminalSession(id) {
 ipcMain.handle('plobi:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
 
 ipcMain.handle('plobi:fs:stat', async (_event, filePath) => statFileForIpc(String(filePath || '')))
+
+ipcMain.handle('plobi:office:convert-legacy', async (_event, filePath) =>
+  convertLegacyOffice(String(filePath || ''), {
+    cacheDir: path.join(PLOBI_HOME, 'cache', 'office-convert')
+  })
+)
 
 ipcMain.handle('plobi:open-files:set', async (_event, snapshot) => {
   try {

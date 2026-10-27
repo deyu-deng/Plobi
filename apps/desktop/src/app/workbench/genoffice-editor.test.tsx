@@ -24,7 +24,11 @@ const labels: OfficePreviewLabels = {
   dismiss: 'Later',
   convertToXlsx: 'Convert to .xlsx',
   converting: 'Converting…',
-  convertFailed: 'Conversion failed'
+  convertFailed: 'Conversion failed',
+  legacyTitle: 'Legacy Office file',
+  legacyBody: (sourceExt, targetExt) => `.${sourceExt} → .${targetExt}`,
+  legacyConvertNote: 'Creates a copy.',
+  convertLegacy: targetExt => `Convert to .${targetExt}`
 }
 
 afterEach(() => {

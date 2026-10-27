@@ -2849,6 +2849,10 @@ export interface Translations {
       convertToXlsx: string
       converting: string
       convertFailed: string
+      legacyTitle: string
+      legacyBody: (sourceExt: string, targetExt: string) => string
+      legacyConvertNote: string
+      convertLegacy: (targetExt: string) => string
     }
   }
 }

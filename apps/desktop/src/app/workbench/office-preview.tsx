@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import * as XLSX from 'xlsx'
 
 import { Codicon } from '@/components/ui/codicon'
-import { statDesktopFile, writeDesktopFileBuffer } from '@/lib/desktop-fs'
+import { convertDesktopLegacyOffice } from '@/lib/desktop-fs'
 import { cn } from '@/lib/utils'
+import { legacyOfficeFormat, type LegacyOfficeFormat } from '@/lib/legacy-office'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
@@ -38,6 +38,10 @@ export interface OfficePreviewLabels {
   convertToXlsx: string
   converting: string
   convertFailed: string
+  legacyTitle: string
+  legacyBody: (sourceExt: string, targetExt: string) => string
+  legacyConvertNote: string
+  convertLegacy: (targetExt: string) => string
 }
 
 function PreviewStatus({
@@ -121,24 +125,18 @@ function SheetPreview({
     setConvertError(false)
 
     try {
-      const workbook = XLSX.read(bytes, { cellDates: true, cellStyles: true, type: 'array' })
-      const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
-      const stem = path.replace(/\.xls$/iu, '')
-      let candidate = `${stem}.xlsx`
-      let suffix = 1
+      const result = await convertDesktopLegacyOffice(path)
 
-      while (await statDesktopFile(candidate)) {
-        candidate = `${stem}-converted${suffix > 1 ? `-${suffix}` : ''}.xlsx`
-        suffix += 1
+      if (!result.ok || !result.path) {
+        throw new Error(result.error || 'conversion failed')
       }
 
-      await writeDesktopFileBuffer(candidate, output)
       onOpenFile?.({
         kind: 'file',
-        label: candidate.split(/[\\/]/).pop() ?? candidate,
-        path: candidate,
+        label: result.path.split(/[\\/]/).pop() ?? result.path,
+        path: result.path,
         source: 'file-browser',
-        url: candidate
+        url: result.path
       })
     } catch {
       setConvertError(true)
@@ -297,6 +295,76 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
   )
 }
 
+function LegacyOfficePreview({
+  format,
+  labels,
+  onOpenFile,
+  path
+}: {
+  format: LegacyOfficeFormat
+  labels: OfficePreviewLabels
+  onOpenFile?: (target: PreviewTarget) => void
+  path: string
+}) {
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState(false)
+  const sourceExt = path.split(/[?#]/u)[0]?.split('.').pop()?.toUpperCase() ?? ''
+
+  const convert = async () => {
+    if (converting) {
+      return
+    }
+
+    setConverting(true)
+    setConvertError(false)
+
+    try {
+      const result = await convertDesktopLegacyOffice(path)
+
+      if (!result.ok || !result.path) {
+        throw new Error(result.error || 'conversion failed')
+      }
+
+      onOpenFile?.({
+        kind: 'file',
+        label: result.path.split(/[\\/]/).pop() ?? result.path,
+        path: result.path,
+        source: 'file-browser',
+        url: result.path
+      })
+    } catch {
+      setConvertError(true)
+    } finally {
+      setConverting(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-(--ui-sidebar-surface-background) px-6 text-center">
+      <Codicon name="file" size="1.5rem" />
+      <p className="text-[0.8rem] font-medium text-foreground">{labels.legacyTitle}</p>
+      <p className="max-w-sm text-[0.68rem] leading-relaxed text-muted-foreground">
+        {labels.legacyBody(sourceExt, format.targetExt)}
+      </p>
+      <button
+        className="rounded-md border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-3 py-1.5 text-[0.7rem] font-medium text-foreground transition-colors hover:bg-(--ui-row-hover-background) disabled:opacity-50"
+        disabled={converting}
+        onClick={() => void convert()}
+        type="button"
+      >
+        {converting ? labels.converting : labels.convertLegacy(format.targetExt)}
+      </button>
+      {convertError ? (
+        <p className="text-[0.66rem] text-destructive">{labels.convertFailed}</p>
+      ) : (
+        <p className="max-w-sm text-[0.62rem] leading-relaxed text-(--ui-text-tertiary)">
+          {labels.legacyConvertNote}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function OfficeFilePreview({
   labels,
   onOpenFile,
@@ -308,6 +376,11 @@ export function OfficeFilePreview({
 }) {
   const path = target.path ?? ''
   const kind = fileKindForPath(path)
+  const legacy = legacyOfficeFormat(path)
+
+  if (kind === 'legacy' && legacy) {
+    return <LegacyOfficePreview format={legacy} labels={labels} onOpenFile={onOpenFile} path={path} />
+  }
 
   if (kind === 'sheet') {
     const ext = path.split('.').pop()?.toLowerCase()

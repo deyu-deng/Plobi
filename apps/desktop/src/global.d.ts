@@ -115,6 +115,12 @@ declare global {
         files: Array<{ active: boolean; dirty: boolean | null; editor: string; path: string; title: string }>
         workspace: string
       }) => Promise<boolean>
+      convertLegacyOffice?: (path: string) => Promise<{
+        error?: string
+        ok: boolean
+        path?: string
+        reused?: boolean
+      }>
       gitRoot?: (path: string) => Promise<string | null>
       searchWorkspaceFiles?: (
         root: string,

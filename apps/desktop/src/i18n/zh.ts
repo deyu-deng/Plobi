@@ -3421,6 +3421,10 @@ export const zh: Translations = {
       convertToXlsx: '转换为 .xlsx 编辑',
       converting: '转换中…',
       convertFailed: '转换失败'
+      legacyTitle: '旧版 Office 文件',
+      legacyBody: (sourceExt, targetExt) => `.${sourceExt} 不能在这里直接编辑；先转换为 .${targetExt}，原文件保留。`,
+      legacyConvertNote: '转换由本机办公引擎完成；只新建副本，不改原文件。',
+      convertLegacy: targetExt => `转换为 .${targetExt} 编辑`
     }
   }
 }

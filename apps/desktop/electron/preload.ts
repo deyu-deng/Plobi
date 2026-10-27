@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   readDir: dirPath => ipcRenderer.invoke('plobi:fs:readDir', dirPath),
   statFile: filePath => ipcRenderer.invoke('plobi:fs:stat', filePath),
   setOpenFilesSnapshot: snapshot => ipcRenderer.invoke('plobi:open-files:set', snapshot),
+  convertLegacyOffice: filePath => ipcRenderer.invoke('plobi:office:convert-legacy', filePath),
   gitRoot: startPath => ipcRenderer.invoke('plobi:fs:gitRoot', startPath),
   searchWorkspaceFiles: (root, query, refresh) => ipcRenderer.invoke('plobi:fs:searchIndex', root, query, refresh),
   invalidateWorkspaceIndex: root => ipcRenderer.invoke('plobi:fs:invalidateIndex', root),
