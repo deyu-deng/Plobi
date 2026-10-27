@@ -133,6 +133,7 @@ import {
 import { BrowserTabPanel } from './workbench/browser-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
+import { isModelPath } from './workbench/model-paths'
 import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
 import { requestGenOfficeClose } from './workbench/genoffice-sessions'
 import { DiaryCaptureOverlay } from './diary/capture-overlay'
@@ -182,6 +183,9 @@ const MediaPreview = lazy(async () => ({
 }))
 const ArchivePreview = lazy(async () => ({
   default: (await import('./workbench/archive-preview')).ArchivePreview
+}))
+const ThreePreview = lazy(async () => ({
+  default: (await import('./workbench/three-preview')).ThreePreview
 }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
@@ -675,7 +679,8 @@ export function DesktopController() {
       const media = mediaKind(target.path ?? '')
       const isMedia = media === 'audio' || media === 'video'
       const isArchive = /\.zip$/iu.test(target.path ?? '')
-      const office = !isMedia && !isArchive && fileKindForPath(target.path ?? '') !== 'other'
+      const is3d = isModelPath(target.path ?? '')
+      const office = !isMedia && !isArchive && !is3d && fileKindForPath(target.path ?? '') !== 'other'
 
       return [
         id,
@@ -700,6 +705,25 @@ export function DesktopController() {
             key={id}
           >
             <ArchivePreview labels={t.workbench.office} path={target.path ?? ''} />
+          </Suspense>
+        ) : is3d ? (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <PageLoader label={t.common.loading} />
+              </div>
+            }
+            key={id}
+          >
+            <ThreePreview
+              labels={{
+                loading: t.common.loading,
+                openExternal: t.workbench.office.openExternal,
+                readOnly: t.workbench.office.readOnly,
+                unavailable: t.preview.unavailable
+              }}
+              path={target.path ?? ''}
+            />
           </Suspense>
         ) : office ? (
           <Suspense

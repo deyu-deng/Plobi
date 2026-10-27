@@ -41,6 +41,8 @@ import { DelimitedGrid } from './delimited-grid'
 import { HtmlPreview } from '@/app/workbench/html-preview'
 import { ArchivePreview } from '@/app/workbench/archive-preview'
 import { MediaPreview } from '@/app/workbench/media-preview'
+import { isModelPath } from '@/app/workbench/model-paths'
+import { ThreePreview } from '@/app/workbench/three-preview'
 import { NotebookPreview } from '@/app/workbench/notebook-preview'
 import { mediaKind } from '@/lib/media'
 
@@ -607,6 +609,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   const mediaType = mediaKind(filePath)
   const isMedia = mediaType === 'audio' || mediaType === 'video'
   const isArchive = /\.zip$/iu.test(filePath.split(/[?#]/u)[0] ?? filePath)
+  const is3d = isModelPath(filePath)
   const [gridMode, setGridMode] = useState(false)
   const delimitedTooLarge = useMemo(
     () => (delimited && state.text !== undefined ? parseDelimited(state.text, delimited).tooLarge : false),
@@ -681,7 +684,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
         return
       }
 
-      if (isMedia || isArchive) {
+      if (isMedia || isArchive || is3d) {
         setState({ loading: false })
 
         return
@@ -1011,6 +1014,20 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   if (isMedia) {
     return (
       <MediaPreview
+        labels={{
+          loading: t.preview.loading,
+          openExternal: t.workbench.office.openExternal,
+          readOnly: t.workbench.office.readOnly,
+          unavailable: t.preview.unavailable
+        }}
+        path={filePath}
+      />
+    )
+  }
+
+  if (is3d) {
+    return (
+      <ThreePreview
         labels={{
           loading: t.preview.loading,
           openExternal: t.workbench.office.openExternal,
