@@ -53,7 +53,8 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
 
   const related = data?.sessions.filter(session => session.related === true) ?? []
   const unknown = data?.sessions.filter(session => session.related === null) ?? []
-  const visible = showUnknown ? [...related, ...unknown] : related
+  // 一条相关的都没有时，先把「待判断」摆出来（按应用分组）——否则第一次打开只是一句空话。
+  const visible = showUnknown || related.length === 0 ? [...related, ...unknown] : related
   const groups = groupByVendor(visible)
 
   return (
