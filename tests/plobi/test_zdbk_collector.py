@@ -387,7 +387,7 @@ class TestRegisteredShape:
     def test_registered_as_a_website_with_all_bits_declared(self) -> None:
         spec = registry.spec("zdbk")
 
-        assert spec.category == "website"
+        assert spec.category == "site"
         assert spec.capabilities["history_backfill"] is True
         assert spec.capabilities["authoritative_replace"] is False, \
             "按学期查的端点，缺席不等于取消——这句是实测的结论"

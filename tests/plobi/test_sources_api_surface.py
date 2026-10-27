@@ -178,7 +178,7 @@ class TestSecretsAreWriteOnly:
         monkeypatch.setattr("plobi_cli.config.save_env_value_secure",
                             lambda key, value: written.__setitem__(key, value))
         registry.register(registry.SourceSpec(
-            "probe", capabilities={key: False for key in registry.CAPABILITY_KEYS}, category="website",
+            "probe", capabilities={key: False for key in registry.CAPABILITY_KEYS}, category="site",
             builder=lambda: object(),
             setup_fields=(registry.SetupField(key="password", label="Password", kind="secret", required=True),)),
             replace=True)
@@ -198,7 +198,7 @@ class TestSecretsAreWriteOnly:
 
     def test_a_required_secret_already_set_does_not_ask_again(self, monkeypatch) -> None:
         registry.register(registry.SourceSpec(
-            "probe2", capabilities={key: False for key in registry.CAPABILITY_KEYS}, category="website",
+            "probe2", capabilities={key: False for key in registry.CAPABILITY_KEYS}, category="site",
             builder=lambda: object(),
             setup_fields=(registry.SetupField(key="password", label="Password", kind="secret", required=True),)),
             replace=True)
@@ -411,7 +411,7 @@ class TestTheSourceNamesItself:
         """第三方包**零改动**也有名字：它声明了网站，站自己报了名，屏上就不用落「没记到名字的信源」。"""
         spec = registry.SourceSpec(
             "webtest", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-            category="website", site="https://example.test", collecting=False)
+            category="site", site="https://example.test", collecting=False)
         registry.register(spec, replace=True)
         (icons.icon_dir() / "webtest.name").write_text("Example 门户", encoding="utf-8")
 
@@ -481,7 +481,7 @@ class TestTheProbeReplacesAFalseFault:
             raise RuntimeError("盘都读不到")
 
         spec = registry.SourceSpec("probetest", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                   category="system", probe=broken)
+                                   category="software", probe=broken)
         registry.register(spec, replace=True)
 
         try:

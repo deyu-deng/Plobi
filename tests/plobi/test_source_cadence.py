@@ -235,7 +235,7 @@ class TestTheLedgerItself:
         同名覆盖一次，设置面那句"这条信源还活着吗"就变成"到点没"——两个不同的问题共用
         一个键，是这一层最容易犯也最难查的错。
         """
-        fake_sources(SourceSpec("wechat", CAPS, category="social"))
+        fake_sources(SourceSpec("wechat", CAPS, category="site"))
 
         env = cadence.cadence_env("wechat")
 

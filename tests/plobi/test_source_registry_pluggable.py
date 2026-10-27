@@ -43,7 +43,7 @@ def fake_platform():
                 "requires_manual_setup": False,
                 "authoritative_replace": False,
             },
-            category="website",
+            category="site",
         )
     )
     yield FAKE
@@ -91,11 +91,11 @@ class TestAddingAPlatformDoesNotTouchTheCommonLayer:
 class TestCapabilitiesAreDeclaredNotGuessed:
     def test_partial_declaration_is_refused(self) -> None:
         with pytest.raises(ValueError, match="少了能力位声明"):
-            registry.SourceSpec("halfdone", {"history_backfill": True}, category="website")
+            registry.SourceSpec("halfdone", {"history_backfill": True}, category="site")
 
     def test_unknown_capability_name_is_refused(self) -> None:
         with pytest.raises(ValueError, match="不认识的能力位"):
-            registry.SourceSpec("typo", {"histroy_backfill": True, **{k: False for k in registry.CAPABILITY_KEYS if k != "histroy_backfill"}}, category="website")
+            registry.SourceSpec("typo", {"histroy_backfill": True, **{k: False for k in registry.CAPABILITY_KEYS if k != "histroy_backfill"}}, category="site")
 
         with pytest.raises(registry.UnknownCapability):
             registry.capability("wechat", "histroy_backfill")
@@ -279,8 +279,8 @@ class TestCategoriesAreDeclaredNotGuessed:
         order = registry.SOURCE_CATEGORIES
 
         assert order[-1] == "custom"
-        assert order[order.index("website") + 1] == "feed"
-        assert order[order.index("system") + 1] == "device"
+        assert order[order.index("site") + 1] == "feed"
+        assert order[order.index("file") + 1] == "device"
 
 
 class TestDiscoveryCannotFailSilently:
@@ -383,15 +383,16 @@ class TestRegisteredSourcesDeclareTheirRealShape:
         assert named == [], f"公共层按名字分支了：{named}"
 
     def test_wechat_and_zju_sit_in_different_categories(self) -> None:
-        """这两条的分属是**连接器形状**那一维，不是数据形状也不是重要性：
+        """这一格 10-27 收成**一条轴**（这条数据从哪来），所以断言的是轴上的位置：
 
-        微信骑本机已登录的客户端（对话流），教务只有一个 Web 系统（地址 + 账密）。
-        钉钉与微信同族；课表归「本地」是因为注册表注记写的是"用户往某目录放 .ics"。
+        微信、钉钉、幕布都骑本机装好的那个客户端 ⇒ 「软件」；教务只有一个 Web 系统 ⇒ 「网站」；
+        课表讲的是"用户往某目录放一个 .ics" ⇒ 「文件」（它以前挂在「本地」，那一格混的是载体轴）。
+        数据形状（对话流 / 文档 / 日程）不再占这一格——它是池里的 `kind`，屏上那排 chip 由它派生。
         """
-        assert registry.source_category("wechat") == "message"
-        assert registry.source_category("dingtalk") == "message"
-        assert registry.source_category("zju") == "website"
-        assert registry.source_category("timetable") == "local"
+        assert registry.source_category("wechat") == "software"
+        assert registry.source_category("dingtalk") == "software"
+        assert registry.source_category("zju") == "site"
+        assert registry.source_category("timetable") == "file"
 
 
 class TestCommonLayerCarriesNoSourceNameBranch:
@@ -402,7 +403,7 @@ class TestCommonLayerCarriesNoSourceNameBranch:
     因为不会有 collector 来声明它。所以下面只禁四个真信源名，别"顺手统一"把它也收进来。
     """
 
-    FORBIDDEN = re.compile(r'(==|!=|\bin)\s*\(?\s*"(wechat|timetable|dingtalk|zju)"')
+    FORBIDDEN = re.compile(r'(==|!=|\bin)\s*\(?\s*"(wechat|timetable|dingtalk|zju|mubu)"')
 
     def scanned(self):
         # 规划层（planning.py）今晚起也算公共层：它新加的"无主 DDL 作业块"与项目关联口径

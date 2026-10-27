@@ -74,7 +74,7 @@ def rows(service: AgendaService, source: str):
 
 class TestCloseAbsentOnlyWhenTheSourceDeclaredIt:
     def test_absent_row_is_marked_done_and_the_row_survives(self, sources, service) -> None:
-        sources(SourceSpec("authsrc", AUTH_CAPS, category="website"))
+        sources(SourceSpec("authsrc", AUTH_CAPS, category="site"))
         kept = seed(service, "authsrc", "1")
         gone = seed(service, "authsrc", "2")
 
@@ -89,7 +89,7 @@ class TestCloseAbsentOnlyWhenTheSourceDeclaredIt:
 
     def test_a_reappearing_row_is_un_marked(self, sources, service) -> None:
         """反悔路径：缺席是**推断**，一次抖动不该把作业判死。"""
-        sources(SourceSpec("authsrc", AUTH_CAPS, category="website"))
+        sources(SourceSpec("authsrc", AUTH_CAPS, category="site"))
         uid = seed(service, "authsrc", "7")
 
         authoritative_round(service, [])  # 空轮不关（见下面那条断言），这里先造一个已关的状态
@@ -102,7 +102,7 @@ class TestCloseAbsentOnlyWhenTheSourceDeclaredIt:
         assert not rows(service, "authsrc")[uid].completed_at
 
     def test_an_additive_source_has_not_a_single_row_touched(self, sources, service) -> None:
-        sources(SourceSpec("addsrc", ADDITIVE_CAPS, category="social"))
+        sources(SourceSpec("addsrc", ADDITIVE_CAPS, category="site"))
         uid = seed(service, "addsrc", "1")
 
         report = authoritative_round(service, [occurrence("addsrc", "other")])
@@ -112,7 +112,7 @@ class TestCloseAbsentOnlyWhenTheSourceDeclaredIt:
 
     def test_an_unmeasured_capability_refuses_to_act(self, sources, service) -> None:
         """`None` 不等于 `False`，也不等于"先当权威跑一下试试"。"""
-        sources(SourceSpec("unsrc", UNMEASURED_CAPS, category="website"))
+        sources(SourceSpec("unsrc", UNMEASURED_CAPS, category="site"))
         uid = seed(service, "unsrc", "1")
 
         report = authoritative_round(service, [occurrence("unsrc", "other")])
@@ -124,7 +124,7 @@ class TestCloseAbsentOnlyWhenTheSourceDeclaredIt:
 class TestGuards:
     def test_an_empty_round_closes_nothing(self, sources, service) -> None:
         """48 → 0 那种"整条清单空了"更像选择器坏了，不像作业清零。宁可晚一轮再关。"""
-        sources(SourceSpec("authsrc", AUTH_CAPS, category="website"))
+        sources(SourceSpec("authsrc", AUTH_CAPS, category="site"))
         uid = seed(service, "authsrc", "1")
 
         report = authoritative_round(service, [])
@@ -138,7 +138,7 @@ class TestGuards:
         没有这一条，"本轮未出现"就从"这一类里没出现"漂成"这家整体没提到它"，
         而下一个人没法从读数里看出漂了。
         """
-        sources(SourceSpec("authsrc", AUTH_CAPS, category="website"))
+        sources(SourceSpec("authsrc", AUTH_CAPS, category="site"))
         other_kind = seed(service, "authsrc", "9", kind="task")
         absent_ddl = seed(service, "authsrc", "8", kind="ddl")
 
@@ -152,7 +152,7 @@ class TestGuards:
         """排程自己造的"计划项行"（裁 175）不是素材，永远不该被采集轮的缺席判定关掉。"""
         from plobi.agenda.store import PLAN_ARTIFACT_KEY
 
-        sources(SourceSpec("authsrc", AUTH_CAPS, category="website"))
+        sources(SourceSpec("authsrc", AUTH_CAPS, category="site"))
         artifact = service.create_from_source(
             title="焊接作业一", start_at="2026-10-20T19:10:00", kind="ddl", source="authsrc",
             evidence={PLAN_ARTIFACT_KEY: "plan", "uid": "plan-artifact-1"},
@@ -165,7 +165,7 @@ class TestGuards:
 
     def test_uid_is_the_identity_not_the_title(self, sources, service) -> None:
         """去重键是站方那个 `uid`（`_row_keys` 那一套），标题改过字也不该被当成"消失了"。"""
-        sources(SourceSpec("authsrc", AUTH_CAPS, category="website"))
+        sources(SourceSpec("authsrc", AUTH_CAPS, category="site"))
         uid = seed(service, "authsrc", "44")
 
         report = authoritative_round(service, [occurrence("authsrc", "44", title="改过名的作业")])

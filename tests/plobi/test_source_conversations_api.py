@@ -49,7 +49,7 @@ def declared():
     written: list[tuple[str, str]] = []
 
     spec = registry.SourceSpec(
-        FAKE, capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False), category="message",
+        FAKE, capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False), category="software",
         conversation_scoped=True, conversations=lambda: rows,
         admission=lambda talker, status: written.append((talker, status)))
     registry.register(spec, replace=True)
@@ -88,7 +88,7 @@ class TestTheThreeAnswers:
             raise RuntimeError("侧车没在应答")
 
         spec = registry.SourceSpec("raiser", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                   category="message", conversation_scoped=True, conversations=boom)
+                                   category="software", conversation_scoped=True, conversations=boom)
         registry.register(spec, replace=True)
 
         try:
@@ -103,7 +103,7 @@ class TestTheThreeAnswers:
     def test_a_lister_returning_nothing_when_unavailable_does_not_look_empty(self, client) -> None:
         """`unavailable` 与 `ok + 0 行`在界面上落两句不同的话，所以后端必须先分清楚。"""
         spec = registry.SourceSpec("silent", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                   category="message", conversation_scoped=True,
+                                   category="software", conversation_scoped=True,
                                    conversations=lambda: (_ for _ in ()).throw(OSError("盘读不到")))
         registry.register(spec, replace=True)
 
@@ -136,7 +136,7 @@ class TestDecisions:
             raise OSError("名册写不进去")
 
         spec = registry.SourceSpec("writefail", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                   category="message", conversation_scoped=True,
+                                   category="software", conversation_scoped=True,
                                    conversations=lambda: [], admission=broken)
         registry.register(spec, replace=True)
 
@@ -150,12 +150,12 @@ class TestDecisions:
         """只声明"写决定"却不给名单 = 界面上两枚按得动但永远没有行的按钮。"""
         with pytest.raises(ValueError, match="名单从哪来"):
             registry.SourceSpec("onehand", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                category="message", admission=lambda talker, status: None)
+                                category="software", admission=lambda talker, status: None)
 
     def test_claiming_conversation_scoping_without_a_lister_is_refused(self) -> None:
         with pytest.raises(ValueError, match="给不出名单"):
             registry.SourceSpec("liar", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                category="message", conversation_scoped=True)
+                                category="software", conversation_scoped=True)
 
 
 class TestTheLedger:

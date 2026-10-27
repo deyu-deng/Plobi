@@ -112,7 +112,7 @@ class TestItIsDeclaredNotBranchedListed:
 
     def test_the_probe_shape_is_the_three_keys_the_screen_reads(self) -> None:
         spec = registry.SourceSpec("probeshape", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                   category="system", probe=localdb.probe)
+                                   category="software", probe=localdb.probe)
         registry.register(spec, replace=True)
 
         try:

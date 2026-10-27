@@ -267,10 +267,10 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
         # 名字（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。**声明优先，
         # 站点自报名兜底**，而且那个兜底**只对「网站」这一类开**：非网站那一族的那个站，
         # 首页 `<title>` 现读往往是一句营销话（10-24 为图标那一格抓过一次，亲眼见到），
-        # 那不是一条信源的名字；消息类的名称归界面语言目录（四语各有写法）。第三方包两头都能接：
+        # 那不是一条信源的名字；软件那一族的名称归界面语言目录（四语各有写法）。第三方包两头都能接：
         # 填 `display_name` 就直接生效，没填而又是网站类，就吃它自己那个站的 `<title>`。
         "display_name": spec.display_name or (
-            icons.site_name_now(source_id, spec.site) if spec.category == "website" else ""),
+            icons.site_name_now(source_id, spec.site) if spec.category == "site" else ""),
         # 这条在本机成不成立（只有声明了探针的那几条才有这一格；`None` = 这一条没有前置要说）。
         "probe": probe,
         # 声明照原样给，**label 不翻译**：界面先查语言目录的

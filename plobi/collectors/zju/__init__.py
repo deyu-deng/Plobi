@@ -76,7 +76,7 @@ SPEC = SourceSpec(
         "authoritative_replace": True,
     },
     # 无客户端可装 ⇒ 连接器形状是「一个地址 + 账密」，归「网站」不归「消息」。
-    category="website",
+    category="site",
     site="https://courses.zju.edu.cn",  # 图标从这一格抓一次（`collectors/icons.py`）；不是配置项，改它要重新装
     #: 这一条**叫什么**由它自己说（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。
     #: 「学在浙大」是这个平台自己的名字（`Docs/DECISIONS.md` 裁定 190 那一行用的就是这四个字）。

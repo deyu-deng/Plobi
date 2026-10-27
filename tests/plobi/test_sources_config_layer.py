@@ -349,7 +349,7 @@ class TestTheVerbs:
         但那颗分支还得钉得住，所以这里登记一条假信源来验它，而不是回头找一个真的缺陷当夹具。
         """
         spec = registry.SourceSpec("nobuilder", capabilities=dict.fromkeys(registry.CAPABILITY_KEYS, False),
-                                   category="system", collecting=True)
+                                   category="software", collecting=True)
         registry.register(spec, replace=True)
 
         try:
