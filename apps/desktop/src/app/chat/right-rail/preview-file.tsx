@@ -36,6 +36,9 @@ import { setPreviewDirty } from '@/store/preview-edit'
 import { $currentCwd } from '@/store/session'
 import { notifyWorkspaceChanged } from '@/store/workspace-events'
 
+import { delimitedKind, parseDelimited } from './delimited'
+import { DelimitedGrid } from './delimited-grid'
+
 const SHIKI_THEME = { dark: 'github-dark-default', light: 'github-light-default' } as const
 const TEXT_PREVIEW_MAX_BYTES = 512 * 1024
 const SOURCE_CHUNK_LINES = 200
@@ -358,6 +361,7 @@ function PreviewModeSwitcher({
 
   const label: Record<PreviewViewMode, string> = {
     diff: t.preview.diff,
+    grid: t.preview.grid,
     rendered: t.preview.renderedPreview,
     source: t.preview.source
   }
@@ -559,7 +563,7 @@ function SourceView({ filePath, language, text }: { filePath: string; language: 
   )
 }
 
-type PreviewViewMode = 'diff' | 'rendered' | 'source'
+type PreviewViewMode = 'diff' | 'grid' | 'rendered' | 'source'
 
 export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; target: PreviewTarget }) {
   const { t } = useI18n()
@@ -591,12 +595,20 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   const hoverRef = useRef(false)
   const filePath = filePathForTarget(target)
   const isImage = target.previewKind === 'image'
+  const delimited = delimitedKind(filePath)
+  const [gridMode, setGridMode] = useState(false)
+  const delimitedTooLarge = useMemo(
+    () => (delimited && state.text !== undefined ? parseDelimited(state.text, delimited).tooLarge : false),
+    [delimited, state.text]
+  )
+  const canUseGrid = Boolean(delimited) && !delimitedTooLarge
   const { change: diskChange } = useFileRevision(filePath)
   const lastDiskChange = useRef(0)
 
   useEffect(() => {
     setUserMode(null)
     setEditing(false)
+    setGridMode(false)
     setDraftPreview(false)
     draftPreviewRef.current = false
     setDraftSample('')
@@ -757,6 +769,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
     setSaveError(null)
     setConflict(false)
     setDraftPreview(false)
+    setGridMode(canUseGrid)
     draftPreviewRef.current = false
     setDraftSample(text)
     setEditing(true)
@@ -863,23 +876,44 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   // never shifts the body — only the trailing controls and the body swap.
   if (editing) {
     const draftMarkdown = (state.language || target.language) === 'markdown'
+    const editModes: PreviewViewMode[] = canUseGrid
+      ? ['grid', 'source']
+      : draftMarkdown
+        ? ['source', 'rendered']
+        : []
+    const activeEditMode: PreviewViewMode = gridMode ? 'grid' : draftPreview ? 'rendered' : 'source'
 
     return (
       <div className="flex h-full flex-col overflow-hidden bg-transparent">
         <PreviewModeSwitcher
-          active={draftPreview ? 'rendered' : 'source'}
-          modes={draftMarkdown ? ['source', 'rendered'] : []}
+          active={activeEditMode}
+          modes={editModes}
           onSelect={mode => {
-            if (mode === 'rendered') {
-              setDraftSample(draftRef.current)
-              draftPreviewRef.current = true
-              setDraftPreview(true)
+            if (mode === 'grid') {
+              setGridMode(true)
+              setDraftPreview(false)
+              draftPreviewRef.current = false
+              setEditorKey(key => key + 1)
 
               return
             }
 
-            draftPreviewRef.current = false
-            setDraftPreview(false)
+            if (mode === 'source') {
+              if (gridMode) {
+                setEditorKey(key => key + 1)
+              }
+
+              setGridMode(false)
+              setDraftPreview(false)
+              draftPreviewRef.current = false
+
+              return
+            }
+
+            setGridMode(false)
+            setDraftSample(draftRef.current)
+            draftPreviewRef.current = true
+            setDraftPreview(true)
           }}
           trailing={<EditControls dirty={dirty} onCancel={cancelEdit} onSave={() => void saveEdit()} saving={saving} />}
         />
@@ -910,22 +944,41 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
             {t.preview.saveFailed(saveError)}
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <div className={cn('h-full', draftPreview && 'hidden')}>
-            <CodeEditor
-              filePath={filePath}
-              initialValue={baselineRef.current}
-              key={editorKey}
-              onCancel={cancelEdit}
+        <div
+          className="min-h-0 flex-1 overflow-hidden"
+          onKeyDown={event => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+              event.preventDefault()
+              void saveEdit()
+            }
+          }}
+        >
+          {gridMode && delimited ? (
+            <DelimitedGrid
+              key={`grid-${editorKey}`}
+              kind={delimited}
               onChange={handleEditorChange}
-              onSave={() => void saveEdit()}
+              text={draftRef.current}
             />
-          </div>
-          {draftPreview ? (
-            <div className="h-full overflow-auto">
-              <MarkdownPreview text={draftSample} />
-            </div>
-          ) : null}
+          ) : (
+            <>
+              <div className={cn('h-full', draftPreview && 'hidden')}>
+                <CodeEditor
+                  filePath={filePath}
+                  initialValue={draftRef.current}
+                  key={editorKey}
+                  onCancel={cancelEdit}
+                  onChange={handleEditorChange}
+                  onSave={() => void saveEdit()}
+                />
+              </div>
+              {draftPreview ? (
+                <div className="h-full overflow-auto">
+                  <MarkdownPreview text={draftSample} />
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     )
@@ -976,6 +1029,10 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
     // Order the toggle reads left→right; default lands on the most useful view.
     const modes: PreviewViewMode[] = []
 
+    if (canUseGrid) {
+      modes.push('grid')
+    }
+
     if (isMarkdown) {
       modes.push('rendered')
     }
@@ -986,7 +1043,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
       modes.push('diff')
     }
 
-    const autoMode: PreviewViewMode = hasDiff ? 'diff' : isMarkdown ? 'rendered' : 'source'
+    const autoMode: PreviewViewMode = hasDiff ? 'diff' : canUseGrid ? 'grid' : isMarkdown ? 'rendered' : 'source'
     const mode = userMode && modes.includes(userMode) ? userMode : autoMode
 
     return (
@@ -1023,8 +1080,10 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
             ) : null
           }
         />
-        <div className="min-h-0 flex-1 overflow-auto">
-          {mode === 'rendered' ? (
+        <div className={cn('min-h-0 flex-1', mode === 'grid' ? 'overflow-hidden' : 'overflow-auto')}>
+          {mode === 'grid' && delimited ? (
+            <DelimitedGrid kind={delimited} readOnly text={state.text} />
+          ) : mode === 'rendered' ? (
             <MarkdownPreview text={state.text} />
           ) : mode === 'diff' ? (
             <FileDiffPanel

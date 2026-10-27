@@ -2421,6 +2421,11 @@ export interface Translations {
     sourceLineTitle: string
     source: string
     renderedPreview: string
+    grid: string
+    row: string
+    column: string
+    addRow: string
+    addColumn: string
     diff: string
     unknownSize: string
     binaryTitle: string
