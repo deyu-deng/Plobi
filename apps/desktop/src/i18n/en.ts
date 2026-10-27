@@ -2004,6 +2004,7 @@ export const en: Translations = {
     },
     deliveryLabels: {
       local: 'This desktop',
+      user: 'Me (L1 chat)',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',

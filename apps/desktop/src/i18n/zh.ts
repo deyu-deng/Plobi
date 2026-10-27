@@ -2170,6 +2170,7 @@ export const zh: Translations = {
     },
     deliveryLabels: {
       local: '此桌面',
+      user: '我（L1 聊天）',
       telegram: 'Telegram',
       discord: 'Discord',
       slack: 'Slack',

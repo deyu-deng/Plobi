@@ -25,7 +25,6 @@ export const QuoteButton: FC<{ id?: string; text: string; className?: string }> 
         className
       )}
       onClick={() => setQuoteTarget({ id, text })}
-      title="Quote"
       type="button"
     >
       <Codicon name="comment" size="0.75rem" />
