@@ -391,6 +391,7 @@ class TestRegisteredSourcesDeclareTheirRealShape:
         """
         assert registry.source_category("wechat") == "software"
         assert registry.source_category("dingtalk") == "software"
+        assert registry.source_category("mubu") == "software"
         assert registry.source_category("zju") == "site"
         assert registry.source_category("timetable") == "file"
 
