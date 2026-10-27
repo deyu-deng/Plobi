@@ -1002,22 +1002,18 @@ export const en: Translations = {
       loading: 'Loading providers...',
       desktopQuotas: {
         title: 'Desktop Quotas',
-        intro:
-          'Connect the desktop apps whose subscriptions Plobi can route through. Sign in once — Plobi handles the rest in the background.',
-        connect: 'Connect',
-        connected: 'Connected',
-        notConnected: 'Not connected',
-        // Disconnect is the user's own switch, not a failure: it stops Plobi from
-        // routing through this software and says nothing about the app itself.
-        disconnect: 'Disconnect',
+        intro: 'Subscription quota from the apps on this machine.',
+        // The card says what the software is; its shape says what state it is in.
+        // These three labels are for assistive tech and the tooltip, never body copy.
+        configure: 'Configure',
+        useQuota: 'Use in Plobi',
+        connecting: 'Waiting for the sign-in',
+        // Turning this off is the user's own switch, not a failure: it stops Plobi
+        // from routing through this software and says nothing about the app itself.
         disconnectConfirm: provider =>
           `Stop using ${provider} in Plobi? Its models will no longer be offered here. This does not sign you out of ${provider} itself.`,
         disconnectedToast: provider => `${provider} is no longer used in Plobi.`,
-        connectError: provider => `Could not connect to ${provider}`,
-        notVerified: 'Connection capture not yet verified for this app',
-        useHub: 'Use this Hub',
-        hubRunning: 'Hub running',
-        hubStopped: 'Hub stopped'
+        connectError: provider => `Could not connect to ${provider}`
       }
     },
     sessions: {

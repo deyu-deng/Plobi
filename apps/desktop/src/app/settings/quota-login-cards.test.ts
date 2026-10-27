@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildLoginCards, type AuthCatalogRow } from './quota-login-cards'
+import { type AuthCatalogRow, buildLoginCards, cardControl, cardDetail, type LoginCard, QUOTA_CARD_INTROS } from './quota-login-cards'
 
 function row(over: Partial<AuthCatalogRow> = {}): AuthCatalogRow {
   return {
@@ -79,5 +79,66 @@ describe('buildLoginCards', () => {
 
   it('drops a row with no id so no anonymous card can render', () => {
     expect(buildLoginCards([row({ id: '' })])).toEqual([])
+  })
+})
+
+/**
+ * The card grammar as a decision (`Docs/specs/settings-card-system.md` §2): exactly one
+ * control per row, chosen by its shape, and the explanation of anything wrong lives on
+ * that control rather than in the row's text.
+ */
+describe('cardControl', () => {
+  const cards = buildLoginCards([
+    row({ id: 'antigravity', kind: 'oauth' }),
+    row({ id: 'workbuddy', kind: 'local_session', live: true, name: 'CodeBuddy' }),
+    row({ aggregate: false, id: 'gemini-cli', kind: 'cli_login', live: true, name: 'Gemini CLI' })
+  ])
+
+  const [signedOut, signedIn, loginOnly]: LoginCard[] = cards
+
+  it('a signed-out software a click can sign in is a plus', () => {
+    expect(cardControl(signedOut, 'unknown')).toBe('plus')
+  })
+
+  it('software already in use is a switch', () => {
+    expect(cardControl(signedIn, 'unknown')).toBe('switch')
+  })
+
+  it('the user turning it off keeps the switch, unchecked', () => {
+    // Their verdict outranks the hub's: the row must show the switch either way, or
+    // there is no way back except clicking something that is not there.
+    expect(cardControl(signedIn, 'off')).toBe('switch')
+    expect(cardControl(signedIn, 'on')).toBe('switch')
+  })
+
+  it('a signed-in login-only CLI gets no control: Plobi owns no toggle for it', () => {
+    expect(cardControl(loginOnly, 'unknown')).toBe('none')
+  })
+
+  it('a sign-in waiting on the browser is the one middle state a row may show', () => {
+    const [pending] = buildLoginCards([row({ id: 'antigravity', kind: 'oauth', login: { state: 'pending' } })])
+
+    expect(cardControl(pending, 'unknown')).toBe('loader')
+  })
+
+  it('a leg with nothing to click shows nothing, not a greyed-out lie', () => {
+    const [wired] = buildLoginCards([row({ id: 'codex_cli', kind: 'none', name: 'Codex' })])
+
+    expect(cardControl(wired, 'unknown')).toBe('none')
+  })
+
+  it('the reason goes on the control and the machine token stays out of it', () => {
+    const detail = cardDetail(signedIn, undefined, 'Its sign-in has expired')
+
+    expect(detail).toContain('sign-in has expired')
+    // `reason: ''` here and `live` on the card: the credential verdict is never the
+    // sentence, and a raw machine value must not leak into the tooltip either.
+    expect(detail).not.toMatch(/\bok\b|credential_expired|no_tools/)
+  })
+
+  it('every one-liner on this screen is a line, not a paragraph', () => {
+    for (const [id, intro] of Object.entries(QUOTA_CARD_INTROS)) {
+      expect(intro.length, id).toBeLessThanOrEqual(20)
+    }
   })
 })

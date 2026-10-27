@@ -1049,21 +1049,18 @@ export const zhHant = defineLocale({
       loading: '正在載入提供方...',
       desktopQuotas: {
         title: '桌面額度',
-        intro: '連線那些訂閱額度可被 Plobi 直接路由的桌面軟體。只需登入一次，其餘技術細節由 Plobi 在背景處理。',
-        connect: '連線',
-        connected: '已連線',
-        notConnected: '未連線',
+        intro: '這台機器上各個軟體的訂閱額度。',
+        // 卡片講「這是什麼」，形狀講「它現在是什麼狀態」。這三句只給讀屏和 tooltip，
+        // 不當正文上屏。
+        configure: '設定',
+        useQuota: '在 Plobi 中使用',
+        connecting: '等待登入完成',
         // 斷開是使用者自己按下的開關，不是故障：它只讓 Plobi 不再走這條額度，
         // 對那個軟體自己的登入狀態一字不提。
-        disconnect: '中斷連線',
         disconnectConfirm: provider =>
           `不再在 Plobi 裡使用 ${provider}？它的模型不會再出現在這裡。這不會登出 ${provider} 自己的登入。`,
         disconnectedToast: provider => `Plobi 已不再使用 ${provider}。`,
-        connectError: provider => `無法連線 ${provider}`,
-        notVerified: '該軟體的連線擷取尚未驗證',
-        useHub: '使用此樞紐',
-        hubRunning: '樞紐執行中',
-        hubStopped: '樞紐已停止'
+        connectError: provider => `無法連線 ${provider}`
       }
     },
     sessions: {

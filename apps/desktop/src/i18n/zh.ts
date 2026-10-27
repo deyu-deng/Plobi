@@ -1184,21 +1184,18 @@ export const zh: Translations = {
       loading: '正在加载提供方...',
       desktopQuotas: {
         title: '桌面额度',
-        intro: '连接那些订阅额度可被 Plobi 直接路由的桌面软件。只需登录一次，其余技术细节由 Plobi 在后台处理。',
-        connect: '连接',
-        connected: '已连接',
-        notConnected: '未连接',
+        intro: '这台机器上各个软件的订阅额度。',
+        // 卡片讲「这是什么」，形状讲「它现在是什么状态」。这三句只给读屏和 tooltip，
+        // 不当正文上屏。
+        configure: '配置',
+        useQuota: '在 Plobi 中使用',
+        connecting: '等待登录完成',
         // 断开是用户自己按下的开关，不是故障：它只让 Plobi 不再走这条额度，
         // 对那个软件自己的登录状态一字不提。
-        disconnect: '断开连接',
         disconnectConfirm: provider =>
           `不再在 Plobi 里使用 ${provider}？它的模型不会再出现在这里。这不会退出 ${provider} 自己的登录。`,
         disconnectedToast: provider => `Plobi 已不再使用 ${provider}。`,
-        connectError: provider => `无法连接 ${provider}`,
-        notVerified: '该软件的连接捕获尚未验证',
-        useHub: '使用此枢纽',
-        hubRunning: '枢纽运行中',
-        hubStopped: '枢纽已停止'
+        connectError: provider => `无法连接 ${provider}`
       }
     },
     sessions: {

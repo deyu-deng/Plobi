@@ -63,6 +63,7 @@ export function NavLink({
 
 export function ListRow({
   title,
+  icon,
   description,
   hint,
   action,
@@ -72,6 +73,12 @@ export function ListRow({
   wide = false
 }: {
   title: ReactNode
+  /**
+   * 卡片语法的第一格（`Docs/specs/settings-card-system.md` §1）：名字左边那颗图标。
+   * **间距归原语，不归调用方**——`gap-2` 与 `shrink-0` 由这里保证，调用方只递节点。
+   * 不传就等于不存在，其余设置页一个字不变。
+   */
+  icon?: ReactNode
   description?: ReactNode
   hint?: ReactNode
   action?: ReactNode
@@ -89,6 +96,29 @@ export function ListRow({
     <div className="text-[length:var(--conversation-text-font-size)] font-medium text-foreground">{title}</div>
   )
 
+  const label = (
+    <div className="min-w-0">
+      {onActivate ? (
+        <button
+          aria-expanded={expanded ?? false}
+          className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1 rounded-md px-1 text-left hover:bg-(--ui-bg-hover)"
+          onClick={onActivate}
+          type="button"
+        >
+          {heading}
+          <DisclosureCaret className="mt-1 size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded ?? false} />
+        </button>
+      ) : heading}
+      {description && (
+        <div className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+          {description}
+        </div>
+      )}
+      {hint && <div className="mt-1 block font-mono text-[0.68rem] text-muted-foreground/45">{hint}</div>}
+      {below}
+    </div>
+  )
+
   return (
     // Container-queried, not viewport-queried: the label/control split keys on
     // the row's own pane width, so a narrow detail column (messaging, split
@@ -100,26 +130,14 @@ export function ListRow({
           !wide && '@2xl:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] @2xl:items-center'
         )}
       >
-        <div className="min-w-0">
-          {onActivate ? (
-            <button
-              aria-expanded={expanded ?? false}
-              className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1 rounded-md px-1 text-left hover:bg-(--ui-bg-hover)"
-              onClick={onActivate}
-              type="button"
-            >
-              {heading}
-              <DisclosureCaret className="mt-1 size-3.5 shrink-0 text-(--ui-text-tertiary)" open={expanded ?? false} />
-            </button>
-          ) : heading}
-          {description && (
-            <div className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-              {description}
-            </div>
-          )}
-          {hint && <div className="mt-1 block font-mono text-[0.68rem] text-muted-foreground/45">{hint}</div>}
-          {below}
-        </div>
+        {icon ? (
+          <div className="flex min-w-0 items-start gap-2">
+            <span className="shrink-0">{icon}</span>
+            {label}
+          </div>
+        ) : (
+          label
+        )}
         {action && <div className={cn('min-w-0', !wide && '@2xl:justify-self-end')}>{action}</div>}
       </div>
     </div>

@@ -45,8 +45,8 @@ export interface LoginCard {
   pending: boolean
 }
 
-const INTRO: Record<string, string> = {
-  antigravity: 'Google Antigravity 订阅额度',
+export const QUOTA_CARD_INTROS: Record<string, string> = {
+  antigravity: 'Antigravity 订阅额度',
   claude_code_cli: 'Claude Code 订阅额度',
   cline_cli: 'Cline 账号池额度',
   codex_cli: 'Codex 订阅额度',
@@ -58,6 +58,57 @@ const INTRO: Record<string, string> = {
   workbuddy: 'CodeBuddy 订阅额度',
   workbuddy_api: 'CodeBuddy 订阅额度'
 }
+
+/**
+ * Whether Plobi routes this software today. `unknown` is not a fifth state the user
+ * can see: it is the store having nothing to say, so the card falls back to the
+ * hub's credential verdict.
+ */
+export type RoutingVerdict = 'off' | 'on' | 'unknown'
+
+/** The one control a row is allowed to show. See `Docs/specs/settings-card-system.md` §2. */
+export type CardControl = 'loader' | 'none' | 'plus' | 'switch'
+
+/**
+ * The card grammar, as a decision rather than as markup:
+ *
+ * - the user's own `off` outranks everything — the switch stays, unchecked, because
+ *   only the person who turned it off may turn it back on;
+ * - otherwise a routed software shows the switch, and a signed-in login-only CLI
+ *   shows nothing at all (Plobi owns no toggle for it, and a grey control would be
+ *   a promise that pressing it does something);
+ * - a signed-out software that this machine can start a sign-in for shows `+`;
+ * - the browser step in flight is the one middle state a click can own.
+ *
+ * "Unusable right now" is deliberately absent: that is not a shape, it is the
+ * tooltip on whichever control is already here (`cardDetail`).
+ */
+export function cardControl(card: LoginCard, routing: RoutingVerdict): CardControl {
+  if (routing === 'off') {
+    return 'switch'
+  }
+
+  if (routing === 'on') {
+    return 'switch'
+  }
+
+  if (!card.connected) {
+    return card.pending ? 'loader' : card.connectable ? 'plus' : 'none'
+  }
+
+  return card.aggregate ? 'switch' : 'none'
+}
+
+/**
+ * The whole explanation of a row, in the one place it is allowed to live: the
+ * control's tooltip. `reason` is the store's human line for why the leg cannot
+ * serve a turn right now; `error` is what the shell said when a click failed.
+ * Neither is ever body copy — see `Docs/specs/settings-card-system.md` §4.
+ */
+export function cardDetail(card: LoginCard, error?: string, reason?: string): string {
+  return [reason, card.detail, error].filter(Boolean).join(' · ')
+}
+
 
 export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
   return rows
@@ -77,7 +128,7 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
           .filter(Boolean)
           .join(' · '),
         id: row.id,
-        intro: INTRO[row.id] ?? `${row.name} 订阅额度`,
+        intro: QUOTA_CARD_INTROS[row.id] ?? `${row.name} 订阅额度`,
         name: row.name,
         pending
       }

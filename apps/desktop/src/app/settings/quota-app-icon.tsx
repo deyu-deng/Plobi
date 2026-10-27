@@ -6,13 +6,23 @@
  * 假 logo 等于替它认领身份）。表在这里，不在 hub：图标是装饰，缺了不影响那条腿能不能用。
  */
 
-import { SiCline, SiCodebuddy, SiCursor, SiGooglegemini, SiOpencode, SiQwen } from '@icons-pack/react-simple-icons'
+// 逐个字形深引，不走包的 barrel：`@icons-pack/react-simple-icons` 的 index 重导出约
+// 三千个模块，冷启动时整片进转换图。2026-10-27 在这台实测过一次——`providers-settings`
+// 的测试档一旦把 barrel 拉进图里，第一个用例光等模块解析就超过 5 s 超时线。
+import SiCline from '@icons-pack/react-simple-icons/icons/SiCline'
+import SiCodebuddy from '@icons-pack/react-simple-icons/icons/SiCodebuddy'
+import SiCursor from '@icons-pack/react-simple-icons/icons/SiCursor'
+import SiGooglegemini from '@icons-pack/react-simple-icons/icons/SiGooglegemini'
+import SiOpencode from '@icons-pack/react-simple-icons/icons/SiOpencode'
+import SiQwen from '@icons-pack/react-simple-icons/icons/SiQwen'
 import type { ComponentType, SVGProps } from 'react'
 
 import { cn } from '@/lib/utils'
 
 interface QuotaIconSpec {
-  Icon?: ComponentType<SVGProps<SVGSVGElement>>
+  // `title` 是 simple-icons 那一族自己加的无障碍属性（SVG 规范里没有 `<svg title>`），
+  // 所以类型要写全，不能只当 `SVGProps`。
+  Icon?: ComponentType<SVGProps<SVGSVGElement> & { title?: string }>
   color: string
 }
 
@@ -48,7 +58,9 @@ export function QuotaAppIcon({ className, id, name }: { className?: string; id: 
       style={{ backgroundColor: `color-mix(in srgb, ${spec?.color ?? 'var(--dt-foreground)'} 16%, transparent)` }}
     >
       {spec?.Icon ? (
-        <spec.Icon aria-hidden className="size-4" color={spec.color} />
+        // `title=""`：字形是装饰（整颗 `aria-hidden`），而 simple-icons 无条件渲染一个
+        // `<title>`，默认值是品牌名——那会在屏上多出第二个"CodeBuddy"，读屏也念两遍。
+        <spec.Icon aria-hidden className="size-4" color={spec.color} title="" />
       ) : (
         <span className="text-[0.8rem] font-semibold" style={{ color: spec?.color }}>
           {monogram}

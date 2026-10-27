@@ -11,6 +11,8 @@ import {
 } from '@/store/desktop-quotas'
 import type { EnvVarInfo, OAuthProvider } from '@/types/plobi'
 
+import type { AuthCatalogRow } from './quota-login-cards'
+
 const listOAuthProviders = vi.fn()
 const disconnectOAuthProvider = vi.fn()
 const getEnvVars = vi.fn()
@@ -177,12 +179,24 @@ describe('ProvidersSettings', () => {
   })
 })
 
-// The Desktop Quotas cards describe desktop software by its subscription, and the
-// only thing that may say whether one is connected is the hub that serves it. The
-// bug these pin down: the badge read a *click* instead, so a hub serving 18 models
-// behind the user's back still showed "Not connected" until the button was pressed.
-describe('Desktop Quotas cards report the hub verdict', () => {
-  /** The frame the main process pushes when the hub vouches for one model. */
+// The card grammar (`Docs/specs/settings-card-system.md`): one row per piece of
+// software the hub says is on this machine, and the *shape* of the single control on
+// that row is its state. The bugs these pin down are the two ways this screen used to
+// lie — a hand-copied list of apps it showed while the hub had said nothing, and two
+// text buttons that spelled the state out as sentences.
+const authRow = (id: string, over: Partial<AuthCatalogRow> = {}): AuthCatalogRow => ({
+  aggregate: true,
+  id,
+  installed: true,
+  kind: 'oauth',
+  live: false,
+  name: id === 'workbuddy' ? 'CodeBuddy' : id === 'gemini-cli' ? 'Gemini CLI' : 'Antigravity',
+  reason: 'not signed in',
+  ...over
+})
+
+describe('Desktop Quotas cards are the hub catalog', () => {
+  /** The frame the main process pushes when the hub vouches for a model. */
   function frame(id: string, over: { blocked?: Record<string, string>; models?: string[] } = {}) {
     applyDiscoveredQuotaApps([
       {
@@ -196,6 +210,16 @@ describe('Desktop Quotas cards report the hub verdict', () => {
     ])
   }
 
+  function shell(rows: AuthCatalogRow[], auth = vi.fn().mockResolvedValue({ models: [], ok: true })) {
+    window.plobiDesktop = {
+      authCatalog: vi.fn().mockResolvedValue(rows),
+      plobiGateway: { auth },
+      requestQuotaApps: vi.fn()
+    } as never
+
+    return auth
+  }
+
   beforeEach(() => {
     $connectedDesktopApps.set({})
   })
@@ -206,87 +230,102 @@ describe('Desktop Quotas cards report the hub verdict', () => {
     return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
   }
 
-  it('reports CodeBuddy connected without a single click once the hub serves it', async () => {
-    frame('workbuddy', { models: ['hy3'] })
-
-    await renderDesktopQuotas()
-
-    // The button carries the state and nothing else does: no status chip beside
-    // the name, no banner over the list. It reads connected and is disabled,
-    // because there is nothing left to press.
-    const connected = await screen.findByRole('button', { name: 'Connected' })
-
-    expect((connected as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getAllByRole('button', { name: 'Connect' })).toHaveLength(1)
-    expect(screen.getByText('CodeBuddy')).toBeTruthy()
-    expect(screen.getByText(/Tencent CodeBuddy/)).toBeTruthy()
-  })
-
-  it('leaves both rows offering to connect while the hub has said nothing', async () => {
-    await renderDesktopQuotas()
-
-    const offers = await screen.findAllByRole('button', { name: 'Connect' })
-
-    expect(offers).toHaveLength(2)
-
-    for (const offer of offers) {
-      expect((offer as HTMLButtonElement).disabled).toBe(false)
-    }
-  })
-
-  it('keeps the hub\'s reason on the button that would fix it, not on the row', async () => {
-    frame('workbuddy', { blocked: { 'hy3': 'credential_expired' }, models: [] })
-
-    await renderDesktopQuotas()
-
-    const offers = await screen.findAllByRole('button', { name: 'Connect' })
-
-    expect(offers).toHaveLength(2)
-    // The software is unusable, so the button stays pressable and carries the
-    // reason as its tooltip — and the reason is nowhere else on the page.
-    const unusable = offers.find(offer => /its sign-in has expired/.test(offer.getAttribute('title') ?? ''))
-
-    expect(unusable).toBeTruthy()
-    expect(screen.queryByText(/sign-in has expired/)).toBeNull()
-  })
-
-  it('never reports a connected software the hub answered nothing about', async () => {
-    applyDiscoveredQuotaApps([
-      { answered: false, apiKey: 'sk-local-dev-key', baseUrl: 'http://127.0.0.1:8000/v1', blocked: {}, id: 'workbuddy', models: [] }
+  it('shows one row per software the hub reported, each with exactly one control', async () => {
+    shell([
+      authRow('antigravity'),
+      authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })
     ])
 
     await renderDesktopQuotas()
 
-    expect(await screen.findAllByRole('button', { name: 'Connect' })).toHaveLength(2)
+    expect(await screen.findByText('CodeBuddy')).toBeTruthy()
+    expect(screen.getByText('Antigravity')).toBeTruthy()
+    // The invariant, not a snapshot: a row never carries two controls, and a software
+    // the hub did not list never appears at all.
+    expect(screen.getAllByRole('switch')).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Configure' })).toHaveLength(1)
+  })
+
+  it('offers `+` for a signed-out software and a switch for one already in use', async () => {
+    shell([authRow('antigravity'), authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+    frame('workbuddy', { models: ['hy3'] })
+
+    await renderDesktopQuotas()
+
+    const plus = await screen.findByRole('button', { name: 'Configure' })
+
+    expect((plus as HTMLButtonElement).disabled).toBe(false)
+    // Shape is the state: the switch says "in use" without the row saying it in words.
+    expect(screen.getAllByRole('switch')[0]).toBeTruthy()
+    expect(screen.queryByText('Connected')).toBeNull()
+    expect(screen.queryByText('Not connected')).toBeNull()
+  })
+
+  it('gives a signed-in login-only CLI no control, because Plobi has nothing to toggle', async () => {
+    shell([authRow('gemini-cli', { aggregate: false, kind: 'cli_login', live: true, reason: 'signed in' })])
+
+    await renderDesktopQuotas()
+
+    expect(await screen.findByText('Gemini CLI')).toBeTruthy()
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Configure' })).toHaveLength(0)
+  })
+
+  it('shows no software names while the shell has not answered', async () => {
+    // A catalog read that never returns: the old screen fell back to a checked-in list
+    // of two apps here, which is exactly how an unconfigured machine saw model rows.
+    window.plobiDesktop = {
+      authCatalog: vi.fn().mockReturnValue(new Promise(() => undefined)),
+      plobiGateway: { auth: vi.fn() },
+      requestQuotaApps: vi.fn()
+    } as never
+
+    await renderDesktopQuotas()
+
+    expect(screen.queryByText('CodeBuddy')).toBeNull()
+    expect(screen.queryByText('Antigravity')).toBeNull()
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Configure' })).toHaveLength(0)
+  })
+
+  it('keeps the hub\'s reason on the control that would fix it, not on the row', async () => {
+    shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+    frame('workbuddy', { blocked: { 'hy3': 'credential_expired' }, models: [] })
+
+    await renderDesktopQuotas()
+
+    const control = await screen.findByRole('switch')
+
+    // The leg is unusable, so the switch stays pressable and carries the reason as its
+    // tooltip — and the reason is nowhere else on the page.
+    expect(control.getAttribute('title')).toMatch(/sign-in has expired/)
+    expect(screen.queryByText(/sign-in has expired/)).toBeNull()
   })
 })
 
-// Connect once and the hub keeps the app wired up on every launch from then on —
-// that is the whole point of a subscription leg. Disconnect is the user taking
-// that back: Plobi stops routing through the software, and it has to *stay*
-// stopped, because the hub re-reads every 60 seconds and will happily report the
-// app as serving the whole time.
-describe('Desktop Quotas disconnect', () => {
+// Turning the switch off is the user taking back the routing decision, and it has to
+// *stay* taken back: the hub re-reads every 60 seconds and will happily report the
+// app as serving the whole time. So it is a flag on the store record, not a deletion.
+describe('Desktop Quotas switch', () => {
   function frame(id: string, models: string[]) {
     applyDiscoveredQuotaApps([
       { answered: true, apiKey: 'sk-local-dev-key', baseUrl: 'http://127.0.0.1:8000/v1', blocked: {}, id, models }
     ])
   }
 
+  const auth = vi.fn()
+
   beforeEach(() => {
     $connectedDesktopApps.set({})
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    // The Electron bridge a jsdom window does not have. `auth` is the shell's
-    // "re-read the hub" call, so a manual Connect round-trips through it.
+    auth.mockResolvedValue({ apiKey: 'sk-local-dev-key', baseUrl: 'http://127.0.0.1:8000/v1', models: ['hy3'], ok: true })
+    // The Electron bridge a jsdom window does not have.
     window.plobiDesktop = {
-      plobiGateway: {
-        auth: vi.fn().mockResolvedValue({
-          apiKey: 'sk-local-dev-key',
-          baseUrl: 'http://127.0.0.1:8000/v1',
-          models: ['hy3'],
-          ok: true
-        })
-      },
+      authCatalog: vi.fn().mockResolvedValue([
+        authRow('antigravity'),
+        authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })
+      ]),
+      plobiGateway: { auth },
       requestQuotaApps: vi.fn()
     } as never
   })
@@ -297,26 +336,36 @@ describe('Desktop Quotas disconnect', () => {
     return render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
   }
 
-  /** The cards render in catalog order: Antigravity, then CodeBuddy. */
-  const codeBuddyConnect = () => screen.getAllByRole('button', { name: 'Connect' })[1]
+  /** The cards render in catalog order: Antigravity's `+`, then CodeBuddy's switch. */
+  function codeBuddySwitch() {
+    return screen.getAllByRole('switch')[0] as HTMLElement
+  }
 
-  it('offers Disconnect only once something is connected', async () => {
+  it('changes the shape when the hub starts serving it', async () => {
+    // First read: signed out, so a `+`. Second read (after the click): the hub says it
+    // is in, so the very same row shows a switch — the state moved into the shape.
+    const catalog = vi
+      .fn()
+      .mockResolvedValueOnce([authRow('antigravity')])
+      .mockResolvedValueOnce([authRow('antigravity', { live: true, reason: 'signed in' })])
+
+    window.plobiDesktop = {
+      authCatalog: catalog,
+      plobiGateway: { auth },
+      requestQuotaApps: vi.fn()
+    } as never
+
     await renderDesktopQuotas()
+    fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
 
-    expect((await screen.findAllByRole('button', { name: 'Connect' })).length).toBe(2)
-    expect(screen.queryByRole('button', { name: 'Disconnect' })).toBeNull()
-
-    frame('workbuddy', ['hy3'])
-    fireEvent.click(codeBuddyConnect())
-
-    expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeTruthy()
+    await waitFor(() => expect(screen.getAllByRole('switch')).toHaveLength(1))
   })
 
-  it('stops routing through the software once the user disconnects it', async () => {
+  it('stops routing through the software when the user turns it off', async () => {
     frame('workbuddy', ['hy3'])
 
     await renderDesktopQuotas()
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+    fireEvent.click(await screen.findByRole('switch'))
 
     // The hub's next frame still reports the models. The flag is what decides,
     // and that is the whole reason it is a flag and not a deleted record.
@@ -331,35 +380,40 @@ describe('Desktop Quotas disconnect', () => {
     frame('workbuddy', ['hy3'])
 
     await renderDesktopQuotas()
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+    fireEvent.click(await screen.findByRole('switch'))
 
     const asked = vi.mocked(window.confirm).mock.calls[0]?.[0] ?? ''
 
     expect(asked).toContain('CodeBuddy')
     // Signing out of the app is a different button, somewhere else. This copy has
-    // to draw the line itself, or the user reads "Disconnect" as "log me out".
+    // to draw the line itself, or the user reads the switch as "log me out".
     expect(asked).toContain('does not sign you out')
   })
 
-  it('keeps the connection when the user declines the confirmation', async () => {
+  it('stays on when the user declines the confirmation', async () => {
     vi.mocked(window.confirm).mockReturnValue(false)
     frame('workbuddy', ['hy3'])
 
     await renderDesktopQuotas()
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+    fireEvent.click(await screen.findByRole('switch'))
 
     expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({
       models: ['hy3'],
       state: 'ok'
     })
+    expect((codeBuddySwitch() as HTMLButtonElement).getAttribute('aria-checked')).toBe('true')
   })
 
-  it('brings the software back when the user connects again', async () => {
+  it('brings the software back on the switch, with no dialog', async () => {
     frame('workbuddy', ['hy3'])
 
     await renderDesktopQuotas()
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
-    fireEvent.click(await codeBuddyConnect())
+    fireEvent.click(await screen.findByRole('switch'))
+    vi.mocked(window.confirm).mockClear()
+
+    expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy'])).toEqual({ state: 'off' })
+
+    fireEvent.click(codeBuddySwitch())
 
     await waitFor(() =>
       expect(quotaAppVerdict($connectedDesktopApps.get(), ['workbuddy', 'workbuddy_api'])).toEqual({
@@ -368,5 +422,30 @@ describe('Desktop Quotas disconnect', () => {
       })
     )
     expect(quotaSelectionBlock('workbuddy/hy3')).toBeNull()
+    expect(window.confirm).not.toHaveBeenCalled()
+  })
+
+  it('starts the sign-in through the shell and waits on the spinner', async () => {
+    let release: (value: { models: string[]; ok: boolean }) => void = () => undefined
+
+    auth.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          release = resolve
+        })
+    )
+
+    await renderDesktopQuotas()
+    fireEvent.click(await screen.findByRole('button', { name: 'Configure' }))
+
+    await waitFor(() => expect(auth).toHaveBeenCalledWith('antigravity'))
+    // The one middle state a press can own: the `+` becomes a spinner while the
+    // browser step is out, then goes back on its own.
+    expect(screen.getByRole('button', { name: 'Waiting for the sign-in' })).toBeTruthy()
+
+    release({ models: [], ok: true })
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Waiting for the sign-in' })).toBeNull())
   })
 })
+

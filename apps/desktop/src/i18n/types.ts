@@ -892,17 +892,12 @@ export interface Translations {
       desktopQuotas: {
         title: string
         intro: string
-        connect: string
-        connected: string
-        notConnected: string
-        disconnect: string
+        configure: string
+        useQuota: string
+        connecting: string
         disconnectConfirm: (provider: string) => string
         disconnectedToast: (provider: string) => string
         connectError: (provider: string) => string
-        notVerified: string
-        useHub: string
-        hubRunning: string
-        hubStopped: string
       }
     }
     sessions: {

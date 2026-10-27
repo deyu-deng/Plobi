@@ -1075,21 +1075,18 @@ export const ja = defineLocale({
       loading: 'プロバイダーを読み込み中...',
       desktopQuotas: {
         title: 'デスクトップ割り当て',
-        intro: 'Plobi がルーティングできるサブスクリプションを持つデスクトップアプリを接続します。一度サインインすれば、残りは Plobi がバックグラウンドで処理します。',
-        connect: '接続',
-        connected: '接続済み',
-        notConnected: '未接続',
+        intro: 'このマシンにあるアプリのサブスクリプション割り当て。',
+        // カードは「何が使えるか」だけを述べ、状態は形が伝えます。この 3 つは
+        // スクリーンリーダーとツールチップ用で、本文には出しません。
+        configure: '設定',
+        useQuota: 'Plobi で使う',
+        connecting: 'サインインの完了を待っています',
         // 切断はユーザー自身が押したスイッチであり、故障ではありません。Plobi が
         // そのアプリを経由しないようにするだけで、アプリ側のサインインには触れません。
-        disconnect: '切断',
         disconnectConfirm: provider =>
           `Plobi で ${provider} を使わなくしますか？このアプリ名はここで表示されなくなります。${provider} 自体のサインアウトは行われません。`,
         disconnectedToast: provider => `Plobi は ${provider} を使わなくなりました。`,
-        connectError: provider => `${provider} に接続できませんでした`,
-        notVerified: 'このアプリの接続取得はまだ検証されていません',
-        useHub: 'このハブを使用',
-        hubRunning: 'ハブ稼働中',
-        hubStopped: 'ハブ停止中'
+        connectError: provider => `${provider} に接続できませんでした`
       }
     },
     sessions: {

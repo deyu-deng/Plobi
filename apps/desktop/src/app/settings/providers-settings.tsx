@@ -14,8 +14,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { RowButton } from '@/components/ui/row-button'
 import { SearchField } from '@/components/ui/search-field'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Check, ChevronDown, ChevronRight, Globe, KeyRound, Loader2, Terminal, Trash2 } from '@/lib/icons'
+import { Check, ChevronDown, ChevronRight, Globe, KeyRound, Loader2, Plus, Terminal, Trash2 } from '@/lib/icons'
 import { normalize } from '@/lib/text'
 import { cn } from '@/lib/utils'
 import { disconnectOAuthProvider, listOAuthProviders } from '@/plobi'
@@ -34,7 +36,8 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ListRow, LoadingState, SettingsContent } from './primitives'
-import { buildLoginCards, type LoginCard } from './quota-login-cards'
+import { QuotaAppIcon } from './quota-app-icon'
+import { buildLoginCards, cardControl, cardDetail, type LoginCard, type RoutingVerdict } from './quota-login-cards'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
@@ -53,39 +56,11 @@ function GroupLabel({ children }: { children: ReactNode }) {
 // Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
 export const PROVIDER_VIEWS = ['accounts', 'keys', 'desktop'] as const
 
-// Catalog of closed-source desktop apps whose subscription quota Plobi can
-// route through (aigw upstream adapters). This is the *presentation* list —
-// the backend aigw registry (PROVIDER_CLASSES in aigw/registry.py) is the
-// source of truth and should stay in sync with it.
+// Which software this screen offers is the hub's answer, never a list in this file:
+// adding a leg must not mean editing the app (user 2026-10-26). The screen therefore
+// has no names of its own to fall back on while the catalog is coming up — it shows
+// the shape of rows without inventing what is in them.
 //
-// `verified` reflects whether aigw's adapter for that app is wired into the
-// desktop connect flow. Antigravity uses the token route (Google OAuth via
-// `aigw auth antigravity`); cursor and workbuddy ride on the user's already
-// logged-in local session (no OAuth) via their aigw providers.
-interface DesktopQuotaApp {
-  /** True when the hub serves this software's quota and the picker can route to it. */
-  aggregate?: boolean
-  id: string
-  name: string
-  description: string
-  verified: boolean
-}
-
-const DESKTOP_QUOTA_APPS: DesktopQuotaApp[] = [
-  {
-    id: 'antigravity',
-    name: 'Antigravity',
-    description: 'Google agent platform — Gemini models via your Google account (OAuth sign-in).',
-    verified: true   // token route wired: aigw auth antigravity -> gateway
-  },
-  {
-    id: 'workbuddy',
-    name: 'CodeBuddy',
-    description: 'Tencent CodeBuddy — routes through your local CodeBuddy (CLI or Desktop) subscription quota, no sign-in needed.',
-    verified: true   // rides the shared product hub on :8000 (its config.yaml spawns the Workbuddy CLI)
-  }
-]
-
 // One piece of desktop software can be served by more than one hub leg — CodeBuddy has
 // the CLI transport and the subscription HTTP transport, and only the latter can bring
 // tool calls back into our loop. The card describes the *software*, so its status is
@@ -93,6 +68,12 @@ const DESKTOP_QUOTA_APPS: DesktopQuotaApp[] = [
 const QUOTA_APP_PEERS: Record<string, string[]> = {
   workbuddy: ['workbuddy', 'workbuddy_api']
 }
+
+/** Every hub leg that is the same piece of software behind this card. */
+function peerLegs(id: string): string[] {
+  return QUOTA_APP_PEERS[id] ?? [id]
+}
+
 
 export type ProviderView = (typeof PROVIDER_VIEWS)[number]
 
@@ -346,12 +327,12 @@ function NoProviderKeys() {
   )
 }
 
-// Desktop Quotas — third provider pillar (parallel to Account / API key).
-// Lists the closed-source desktop apps whose subscription quota Plobi can
-// route through. The Local Hub (aigw aggregator) is auto-managed by the
-// backend once an app is connected, so it is intentionally not surfaced here.
-// Frontend stays thin: it triggers backend OAuth and shows status; all token
-// capture and routing lives in the backend.
+// Desktop Quotas — third provider pillar (parallel to Account / API key). One card
+// per piece of software on this machine whose subscription quota Plobi can use, and
+// the card grammar lives in `Docs/specs/settings-card-system.md`: icon, name, one
+// short line, and exactly one control whose *shape* is the state. Nothing here
+// explains how the hub works, and nothing here names the software itself — the hub's
+// catalog does.
 function DesktopQuotasView() {
   const { t } = useI18n()
   const dq = t.settings.providers.desktopQuotas
@@ -368,19 +349,31 @@ function DesktopQuotasView() {
     not_offered: t.desktop.quotaReason.not_offered
   }
 
-  // Per-app connection state: idle | connecting | connected | error
-  type ConnState = 'idle' | 'connecting' | 'connected' | 'error'
+  // The hub's sign-in catalog: which software this machine has, and what a click can
+  // do about each. `null` means "the shell has not answered yet" — rows then show as
+  // placeholders, never as remembered names.
+  const [authCatalog, setAuthCatalog] = useState<null | LoginCard[]>(null)
+
+  // What a click is doing right now, per leg. It is not a status: the hub's catalog
+  // decides what the row shows, this only covers the moment a press is in flight.
+  type ConnState = 'connecting' | 'error' | 'idle'
   const [conn, setConn] = useState<Record<string, ConnState>>({})
-  // Per-app failure detail surfaced in the error affordance.
+  // Per-app failure detail, surfaced on the control that failed as its tooltip.
   const [errInfo, setErrInfo] = useState<Record<string, { code?: string; message?: string; installHint?: string }>>({})
 
-  // Keep the model list fresh: re-fetch each connected app's live catalog from
+  const readAuthCatalog = useCallback(() => {
+    void window.plobiDesktop?.authCatalog?.().then(rows => {
+      setAuthCatalog(buildLoginCards(rows))
+    })
+  }, [])
+
   // Ask the shell to re-read the hub whenever this view opens. The renderer cannot
   // read the hub itself (its preflight fails — the hub sends no CORS headers), so the
   // hub's own pickability verdict arrives on the pushed frame.
   useEffect(() => {
     requestQuotaCatalog()
-  }, [])
+    readAuthCatalog()
+  }, [readAuthCatalog])
 
   // --- Connect handler (Antigravity via the compliant `agy` CLI route) ---
   // The backend does NOT run an OAuth flow. It verifies the user's own `agy`
@@ -406,9 +399,9 @@ function DesktopQuotasView() {
         // A login-only leg (Gemini/Qwen as ACP) has no hub models to route, so it must
         // not be written into the routing store: that store decides what the picker
         // offers, and an empty row there is a promise we cannot keep.
-        const isRoutedLeg = desktopApps.find(candidate => candidate.id === appId)?.aggregate !== false
+        const isRoutedLeg = authCatalog?.find(candidate => candidate.id === appId)?.aggregate !== false
 
-        if (isRoutedLeg) markConnected({
+        if (isRoutedLeg) {markConnected({
           id: appId,
           // A manual connect is not a health verdict either: seed whatever the
           // connect call reported, and nothing otherwise — the hub's frame arrives a
@@ -416,17 +409,13 @@ function DesktopQuotasView() {
           models: res.models ?? [],
           baseUrl: res.baseUrl,
           apiKey: res.apiKey ?? `sk-local-${appId}`
-        })
-        setConn((prev) => ({ ...prev, [appId]: 'connected' }))
-        // Ask the shell for the hub's live catalog + verdict, and re-read the sign-in
-        // catalog so the card's own line ("browser step waiting" → "connected") is
-        // true without closing the page.
+        })}
+
+        // The click is over; what the row shows from here is the hub's answer, not
+        // this local state, so it goes back to idle and the catalog is re-read.
+        setConn((prev) => ({ ...prev, [appId]: 'idle' }))
         requestQuotaCatalog()
-        void window.plobiDesktop?.authCatalog?.().then(rows => {
-          if (rows.length) {
-            setAuthCatalog(buildLoginCards(rows))
-          }
-        })
+        readAuthCatalog()
       } else {
         setConn((prev) => ({ ...prev, [appId]: 'error' }))
         setErrInfo((prev) => ({ ...prev, [appId]: { code: res.code, message: res.error, installHint: res.installHint } }))
@@ -436,111 +425,130 @@ function DesktopQuotasView() {
     }
   }
 
-  // --- Disconnect handler ---
+  // --- The switch ---
   // Connect once and the hub keeps this app wired up on every launch from then
-  // on (`WP-AIGW-BOOTSYNC`), which is the whole point of the quota leg: you log
-  // in once over there. Disconnect is therefore not "log out" — Plobi owns no
+  // on (`WP-AIGW-BOOTSYNC`), which is the whole point of a subscription leg: you log
+  // in once over there. Turning it off is therefore not "log out" — Plobi owns no
   // credential for a CodeBuddy/WorkBuddy subscription — it is the user saying
   // *stop routing through this*. So it flips one flag on the store record, and
   // every read path (picker, landing spot, composer fallback) consults it.
-  const handleDisconnect = (app: DesktopQuotaApp) => {
-    if (!window.confirm(dq.disconnectConfirm(app.name))) {
+  const handleTurnOff = (card: LoginCard) => {
+    if (!window.confirm(dq.disconnectConfirm(card.name))) {
       return
     }
 
-    for (const leg of QUOTA_APP_PEERS[app.id] ?? [app.id]) {
+    for (const leg of peerLegs(card.id)) {
       markDisconnected(leg)
     }
 
-    // The connect/error state belonged to the action the user just took the back
-    // out of, so it goes with it rather than lingering as a stale badge.
-    setConn((prev) => {
-      const next = { ...prev }
-
-      delete next[app.id]
-
-      return next
-    })
+    // A failed click from before is no longer about this switch, so it goes with it
+    // rather than lingering in the tooltip.
+    setConn((prev) => ({ ...prev, [card.id]: 'idle' }))
     setErrInfo((prev) => {
       const next = { ...prev }
 
-      delete next[app.id]
+      delete next[card.id]
 
       return next
     })
-    notify({ kind: 'success', message: dq.disconnectedToast(app.name), title: app.name })
+    notify({ kind: 'success', message: dq.disconnectedToast(card.name), title: card.name })
   }
 
-  // One card per piece of software, and the hub's verdict decides it — the click
-  // only ever owns the two states a button press can be in right now.
-  //
-  // The verdict arrives whether or not the user ever pressed anything (裁定 46:
-  // the hub is the source, and the hub is what the models come from), so the row
-  // is the software, its blurb, and the one control that can act on it. What the
-  // hub says when it vouches for none of a software's models belongs on that
-  // control as its tooltip — it is the reason the button is still there, not a
-  // status line the row should be shouting.
-  // Which software this screen offers is the hub's answer, not a list in this file:
-  // adding a leg must never mean editing the app (user 2026-10-26). The seed list
-  // stays only as the pre-first-frame fallback so the screen is never blank while the
-  // hub is still coming up — and it is never what decides whether a leg exists.
-  const [authCatalog, setAuthCatalog] = useState<LoginCard[]>([])
-
-  useEffect(() => {
-    let alive = true
-
-    void window.plobiDesktop?.authCatalog?.().then(rows => {
-      if (alive && rows.length) {
-        setAuthCatalog(buildLoginCards(rows))
-      }
-    })
-
-    return () => {
-      alive = false
+  // Only the person who turned this off may turn it back on, and that needs no
+  // dialog: it is the reverse of a choice they just made, not a new consequence.
+  const handleTurnOn = (card: LoginCard) => {
+    for (const leg of peerLegs(card.id)) {
+      markConnected({ id: leg })
     }
-  }, [])
 
-  const desktopApps = useMemo<DesktopQuotaApp[]>(
+    requestQuotaCatalog()
+  }
+
+  // One card per piece of software, and the hub's verdict decides it. The row is the
+  // software, its one line, and the one control that can act on it — the control's
+  // *shape* is the state (`Docs/specs/settings-card-system.md` §2), so the row never
+  // says "connected" or "expired" out loud. Why a leg cannot serve a turn right now
+  // rides on that control as its tooltip: it is the reason the switch is still there,
+  // not a status line the screen should be shouting.
+  const rows = useMemo(
     () =>
-      authCatalog.length
-        ? authCatalog.map(card => ({
-            aggregate: card.aggregate,
-            // LoginCard 只有 `intro`（一行简介）与 `detail`（只做 tooltip）；
-            // 回退时这里读了一个已经不存在的字段，屏上那一行会空掉。
-            description: card.intro,
-            id: card.id,
-            name: card.name,
-            // `verified` is the shell's word for "a click can act on this", which is
-            // the same question as the hub's `connectable`; a leg that is already
-            // connected keeps its button visible but disabled by the card logic.
-            verified: card.connectable || card.connected
-          }))
-        : DESKTOP_QUOTA_APPS,
-    [authCatalog]
+      (authCatalog ?? []).map(card => {
+        const verdict = quotaAppVerdict(quotaApps, peerLegs(card.id))
+        // `off` is the user's own verdict and outranks the hub's, so a leg the hub is
+        // still happily serving does not read as on.
+        const routing: RoutingVerdict = verdict.state === 'off' ? 'off' : verdict.state === 'ok' ? 'on' : 'unknown'
+        const click = conn[card.id] ?? 'idle'
+        const error = click === 'error' ? errInfo[card.id] : undefined
+
+        // The hub's reason belongs on the control that would fix it.
+        const reason
+          = verdict.state === 'unusable'
+            ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
+            : ''
+
+        return {
+          card,
+          checked: routing !== 'off',
+          control: cardControl(card, routing),
+          detail: cardDetail(card, error ? `${dq.connectError(card.name)}${error.message ? `：${error.message}` : ''}` : undefined, reason),
+          // A click that is still in flight is the only moment a control is disabled.
+          isBusy: click === 'connecting'
+        }
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [authCatalog, conn, dq, errInfo, quotaApps, quotaReason]
   )
 
-  const cards = desktopApps.map(app => {
-    const verdict = quotaAppVerdict(quotaApps, QUOTA_APP_PEERS[app.id] ?? [app.id])
-    const click = conn[app.id] || 'idle'
-    // `off` is the user's own verdict and outranks the hub's, so it never reads as
-    // "connected" no matter how many models the hub is still serving.
-    const isConnected = verdict.state === 'ok' || (verdict.state === 'unanswered' && click === 'connected')
+  /** The one control this row is allowed to show, in the shape the state asks for. */
+  function renderControl(row: (typeof rows)[number]) {
+    const { card, checked, control, detail, isBusy } = row
 
-    return {
-      app,
-      isConnected,
-      isConnecting: click === 'connecting',
-      // The hub's reason belongs on the control that would fix it.
-      reason: verdict.state === 'unusable'
-        ? quotaReason[verdict.reason] ?? t.desktop.quotaReason.unknown(verdict.reason)
-        : '',
-      // A click that failed while the hub still vouches for this software is not
-      // news: the verdict the models come from is the hub's, and it says it works.
-      error: click === 'error' && !isConnected ? errInfo[app.id] : undefined,
-      // Only the user turns this off, so only the user turns it back on.
-      turnOff: isConnected ? () => handleDisconnect(app) : null
+    if (control === 'switch') {
+      return (
+        <Switch
+          aria-label={dq.useQuota}
+          checked={checked}
+          onCheckedChange={value => (value ? handleTurnOn(card) : handleTurnOff(card))}
+          title={detail || undefined}
+        />
+      )
     }
-  })
+
+    // A click still in flight is the only moment this control is grey: it is not
+    // broken, it is busy. Everything else that is wrong rides on the tooltip.
+    if (control === 'plus' || isBusy) {
+      if (isBusy) {
+        return (
+          <Button aria-label={dq.connecting} disabled size="icon-sm" type="button" variant="secondary">
+            <Loader2 className="size-4 animate-spin" />
+          </Button>
+        )
+      }
+
+      return (
+        <Button
+          aria-label={dq.configure}
+          onClick={() => handleConnect(card.id)}
+          size="icon-sm"
+          title={detail || undefined}
+          type="button"
+          variant="secondary"
+        >
+          <Plus className="size-4" />
+        </Button>
+      )
+    }
+
+    if (control === 'loader') {
+      return (
+        <Button aria-label={dq.connecting} disabled size="icon-sm" type="button" variant="secondary">
+          <Loader2 className="size-4 animate-spin" />
+        </Button>
+      )
+    }
+
+    return null
+  }
 
   return (
     <SettingsContent>
@@ -551,54 +559,32 @@ function DesktopQuotasView() {
         </p>
       </div>
 
-      <div className="grid gap-2">
-        {cards.map(({ app, error, isConnected, isConnecting, reason, turnOff }) => {
-          const canConnect = app.verified && !isConnected && !isConnecting
-          const connectError = typeof dq.connectError === 'function' ? dq.connectError(app.name) : dq.connectError
-
-          return (
+      {authCatalog === null ? (
+        // The screen does not guess what is on this machine, so while the shell has
+        // not answered it shows the shape of rows without any words in them.
+        <div className="grid gap-2">
+          {[0, 1, 2].map(index => (
             <ListRow
-              action={
-                <div className="flex items-center gap-1">
-                  {turnOff && (
-                    <Button
-                      onClick={turnOff}
-                      size="sm"
-                      type="button"
-                      variant="text"
-                    >
-                      {dq.disconnect}
-                    </Button>
-                  )}
-                  <Button
-                    disabled={!canConnect}
-                    onClick={() => canConnect && handleConnect(app.id)}
-                    size="sm"
-                    title={reason || undefined}
-                    type="button"
-                    variant={isConnected ? 'secondary' : 'default'}
-                  >
-                    {isConnecting && <Loader2 className="size-3.5 animate-spin" />}
-                    {isConnected && <Check className="size-3.5" />}
-                    {isConnected ? dq.connected : dq.connect}
-                  </Button>
-                </div>
-              }
-              below={error ? (
-                <div className="mt-2 text-xs text-destructive">
-                  <p>{connectError}</p>
-                  {error.message && (
-                    <pre className="mt-1 overflow-x-auto rounded bg-(--ui-bg-quaternary) px-2 py-1 text-[0.7rem] leading-5 text-(--ui-text-secondary)">{error.message}</pre>
-                  )}
-                </div>
-              ) : undefined}
-              description={app.description}
-              key={app.id}
-              title={app.name}
+              description={<Skeleton className="h-3 w-40" />}
+              icon={<Skeleton className="size-8 rounded-lg" />}
+              key={index}
+              title={<Skeleton className="h-4 w-28" />}
             />
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {rows.map(row => (
+            <ListRow
+              action={renderControl(row)}
+              description={row.card.intro}
+              icon={<QuotaAppIcon id={row.card.id} name={row.card.name} />}
+              key={row.card.id}
+              title={row.card.name}
+            />
+          ))}
+        </div>
+      )}
     </SettingsContent>
   )
 }
