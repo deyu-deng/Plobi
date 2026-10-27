@@ -6902,7 +6902,7 @@ def check_respawn_guard(conn: sqlite3.Connection, task_id: str) -> Optional[str]
 
 def has_spawnable_ready(conn: sqlite3.Connection) -> bool:
     """Return True iff there is at least one ready+assigned+unclaimed task
-    whose assignee maps to a real Plobi profile.
+    whose assignee maps to a real Plobi identity.
 
     Used by the gateway- and CLI-embedded dispatchers' health telemetry to
     decide whether ``0 spawned`` is a "stuck" condition (real spawnable
@@ -6910,7 +6910,12 @@ def has_spawnable_ready(conn: sqlite3.Connection) -> bool:
     lanes like ``orion-cc`` / ``orion-research`` waiting on terminals
     that pull tasks via ``claim_task`` directly).
 
-    Falls back to "any ready+assigned" if ``profile_exists`` is not
+    The identity test is the **roster row** (裁 192：身份＝名册那一行), not the
+    profile home directory: the homes are retired (裁 42／178 乙案) and
+    ``profile_exists()`` answers False for every real agent now, which
+    silently turned "there is spawnable work" into "nothing to do".
+
+    Falls back to "any ready+assigned" if the profiles module is not
     importable (e.g. partial install) — preserves the old behavior so
     the warning still fires in degraded environments.
     """
@@ -6922,19 +6927,19 @@ def has_spawnable_ready(conn: sqlite3.Connection) -> bool:
     if not rows:
         return False
     try:
-        from plobi_cli.profiles import profile_exists  # local import: avoids cycle
+        from plobi_cli.profiles import identity_exists  # local import: avoids cycle
     except Exception:
         # Can't introspect — assume spawnable, preserve legacy behavior.
         return True
     for row in rows:
-        if profile_exists(row["assignee"]):
+        if identity_exists(row["assignee"]):
             return True
     return False
 
 
 def has_spawnable_review(conn: sqlite3.Connection) -> bool:
     """Return True iff there is at least one review+assigned+unclaimed task
-    whose assignee maps to a real Plobi profile.
+    whose assignee maps to a real Plobi identity.
 
     Mirror of :func:`has_spawnable_ready` for the review column —
     used by the health telemetry to decide whether the dispatcher
@@ -6948,11 +6953,11 @@ def has_spawnable_review(conn: sqlite3.Connection) -> bool:
     if not rows:
         return False
     try:
-        from plobi_cli.profiles import profile_exists  # local import: avoids cycle
+        from plobi_cli.profiles import identity_exists  # local import: avoids cycle
     except Exception:
         return True
     for row in rows:
-        if profile_exists(row["assignee"]):
+        if identity_exists(row["assignee"]):
             return True
     return False
 
@@ -7156,14 +7161,14 @@ def _dispatch_once_locked(
     _default_assignee_resolved = False
     if _default_assignee:
         try:
-            from plobi_cli.profiles import profile_exists as _pe
+            from plobi_cli.profiles import identity_exists as _pe
             _default_assignee_resolved = bool(_pe(_default_assignee))
         except Exception:
             # Profiles module not importable (test stubs, exotic envs).
             # Trust the operator's config and try the assignment; the
-            # downstream profile_exists check on the assigned row will
-            # bucket it as nonspawnable if the profile genuinely isn't
-            # there, with the existing diagnostic.
+            # downstream identity check on the assigned row will bucket it
+            # as nonspawnable if the identity genuinely isn't there, with
+            # the existing diagnostic.
             _default_assignee_resolved = True
     for row in ready_rows:
         if max_spawn is not None and running_count + spawned >= max_spawn:
@@ -7212,21 +7217,27 @@ def _dispatch_once_locked(
             else:
                 result.skipped_unassigned.append(row["id"])
                 continue
-        # Skip ready tasks whose assignee is not a real Plobi profile.
+        # Skip ready tasks whose assignee is not a real Plobi identity.
         # `_default_spawn` invokes ``plobi -p <assignee>`` which fails
         # with "Profile 'X' does not exist" when the assignee names a
         # control-plane lane (e.g. an interactive Claude Code terminal
         # like ``orion-cc`` / ``orion-research``) rather than a Plobi
-        # profile. Those task lanes are pulled by terminals via
+        # agent. Those task lanes are pulled by terminals via
         # ``claim_task`` directly and should NEVER auto-spawn — the
         # subprocess would crash on startup, get reaped as a zombie,
         # the task would loop back to ``ready`` on next tick, and we'd
         # burn CPU forever (#kanban-dispatcher-crash-loop 2026-05-05).
+        #
+        # The test is the **roster row** (裁 192：身份＝名册那一行), not the
+        # profile home directory: homes are retired (裁 42／178 乙案), so
+        # ``profile_exists()`` said False for every real agent and the
+        # whole board stopped dispatching — every assigned task landed in
+        # ``skipped_nonspawnable``（用户 10-27：「kanban 的能力要有」）。
         try:
-            from plobi_cli.profiles import profile_exists  # local import: avoids cycle
+            from plobi_cli.profiles import identity_exists  # local import: avoids cycle
         except Exception:
-            profile_exists = None  # type: ignore[assignment]
-        if profile_exists is not None and not profile_exists(row_assignee):
+            identity_exists = None  # type: ignore[assignment]
+        if identity_exists is not None and not identity_exists(row_assignee):
             # Bucket separately from skipped_unassigned: the operator
             # cannot fix this by assigning a profile (the assignee IS the
             # intended owner — a terminal lane). Health telemetry uses
@@ -7363,10 +7374,10 @@ def _dispatch_once_locked(
             result.skipped_unassigned.append(row["id"])
             continue
         try:
-            from plobi_cli.profiles import profile_exists
+            from plobi_cli.profiles import identity_exists
         except Exception:
-            profile_exists = None  # type: ignore[assignment]
-        if profile_exists is not None and not profile_exists(row["assignee"]):
+            identity_exists = None  # type: ignore[assignment]
+        if identity_exists is not None and not identity_exists(row["assignee"]):
             result.skipped_nonspawnable.append(row["id"])
             continue
         if dry_run:

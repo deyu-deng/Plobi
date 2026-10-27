@@ -140,6 +140,50 @@ def use_cron_store(home: Union[str, Path]):
         _cron_store_override.reset(token)
 
 
+@contextlib.contextmanager
+def use_cron_store_dir(cron_dir: Union[str, Path]):
+    """Route cron storage to an explicit **cron directory**.
+
+    :func:`use_cron_store` takes a *home* and appends ``cron``; this one takes the
+    cron directory itself. 共享根下按名册行分的那几份存储落在
+    ``<cron>/agents/<slug>/``（用户 10-27 拍板：排程的落点住在共享根下、按名册行分一份），
+    那一层不是「家」，所以不能靠 home + ``/cron`` 凑出来。
+    """
+    resolved = Path(cron_dir).expanduser().resolve()
+    token = _cron_store_override.set(
+        _CronStorePaths(
+            cron_dir=resolved,
+            jobs_file=resolved / "jobs.json",
+            output_dir=resolved / "output",
+        )
+    )
+    try:
+        yield
+    finally:
+        _cron_store_override.reset(token)
+
+
+def discover_cron_stores() -> List[Path]:
+    """这一台上的 cron 存储目录：默认那一份 ＋ 共享根下按名册行分的那几份。
+
+    默认那一份是 ``<home>/cron``；每一名册行一份是 ``<home>/cron/agents/<slug>/``。
+    只有**装了作业**的那几份才算（``jobs.json`` 在场）——空目录不占调度。
+
+    调度器按这份清单逐份跑（``cron/scheduler.py::tick``），否则界面里建出来、落在
+    名册行那一格里的作业会永远不触发——那就是又一条「看得见但不跑」的假货。
+    """
+    base = _current_cron_store().cron_dir
+    out: List[Path] = [base]
+    agents_dir = base / "agents"
+    try:
+        for child in sorted(agents_dir.iterdir()):
+            if child.is_dir() and (child / "jobs.json").is_file():
+                out.append(child)
+    except OSError:
+        pass
+    return out
+
+
 def get_cron_output_dir() -> Path:
     """Return the output directory for the active cron store context."""
     return _current_cron_store().output_dir

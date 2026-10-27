@@ -56,10 +56,18 @@ def _patch_extra_body():
 
 
 def _patch_list_profiles(names: list[str]):
-    """Pretend the named profiles exist. The decomposer uses
-    profiles_mod.list_profiles() to build the roster + valid-set, and
-    profiles_mod.profile_exists() to resolve orchestrator/default."""
+    """Pretend the named identities exist.
+
+    The decomposer reads its roster from the **agent registry**（名册那一行，
+    裁 192）——``list_roster_agents()``——and resolves orchestrator/default via
+    ``identity_exists()``. The old source was a directory scan of
+    ``profiles/`` (``list_profiles``), which now returns only ``default``
+    because the homes are retired (裁 42／178 乙案) — so the double has to
+    model the new source. ``list_profiles`` is still patched because other
+    parts of the CLI surface in this file still ask for it.
+    """
     from types import SimpleNamespace
+
     fake_profiles = [
         SimpleNamespace(
             name=n, is_default=(i == 0), description=f"desc for {n}",
@@ -67,8 +75,20 @@ def _patch_list_profiles(names: list[str]):
         )
         for i, n in enumerate(names)
     ]
+    fake_roster = [
+        {
+            "name": n,
+            "display_name": n,
+            "profile_name": n.lower(),
+            "role": "l2_project",
+            "description": f"desc for {n}",
+            "archived": False,
+        }
+        for n in names
+    ]
     return [
         patch("plobi_cli.profiles.list_profiles", return_value=fake_profiles),
+        patch("plobi_cli.profiles.list_roster_agents", return_value=fake_roster),
         patch("plobi_cli.profiles.profile_exists", side_effect=lambda x: x in names),
         patch("plobi_cli.profiles.get_active_profile_name", return_value=names[0] if names else "default"),
     ]

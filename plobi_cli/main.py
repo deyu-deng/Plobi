@@ -11059,6 +11059,9 @@ def cmd_profile(args):
     """Profile management — create, delete, list, switch, alias."""
     from plobi_cli.profiles import (
         list_profiles,
+        list_identity_profiles,
+        identity_exists,
+        archive_identity,
         create_profile,
         delete_profile,
         get_profile_dir,
@@ -11084,7 +11087,7 @@ def cmd_profile(args):
         print(f"\nActive profile: {profile_name}")
         print(f"Path:           {dhh}")
 
-        profiles = list_profiles()
+        profiles = list_identity_profiles()
         for p in profiles:
             if p.name == profile_name or (profile_name == "default" and p.is_default):
                 if p.model:
@@ -11104,7 +11107,9 @@ def cmd_profile(args):
         return
 
     if action == "list":
-        profiles = list_profiles()
+        # 名单问**名册**（裁 192）：家退休之后目录扫描只剩 default 一行，
+        # 用户看到的名单不能只剩那一行。
+        profiles = list_identity_profiles()
         active = get_active_profile_name()
 
         if not profiles:
@@ -11293,23 +11298,24 @@ def cmd_profile(args):
             sys.exit(1)
 
     elif action == "retire":
-        # 裁定 42 §42.4: 退役只盖章，不删目录 —— 目录里是用户的运行数据。
+        # 裁定 42 §42.4：退役只标记，不删东西。以前是往家目录里盖一枚 `.retired`；
+        # 家目录退休之后那枚章没地方盖了，退役落到**名册行上那一格 archived**
+        # （裁定 19：归档行留在名册里，只是从默认名单里藏起来）。
         name = args.profile_name
         try:
             canon = normalize_profile_name(name)
-            profile_dir = get_profile_dir(name)
         except ValueError as e:
             print(f"Error: {e}")
             sys.exit(1)
         if canon == "default":
             print("Error: cannot retire the default profile (~/.plobi) — it is the installation itself.")
             sys.exit(1)
-        if not profile_dir.is_dir():
+        if not identity_exists(canon):
             print(f"Error: profile '{canon}' does not exist.")
             sys.exit(1)
-        if mark_profile_retired(profile_dir, reason=getattr(args, "reason", "")):
-            print(f"\nProfile '{canon}' marked retired at {profile_dir}")
-            print("Nothing was deleted. Remove .retired in that directory to use it again.\n")
+        if archive_identity(canon, archived=True):
+            print(f"\nProfile '{canon}' marked retired (its roster row is archived).")
+            print("Nothing was deleted. Un-archive that roster row to use it again.\n")
         else:
             print(f"Profile '{canon}' is already retired.")
 
@@ -11346,40 +11352,45 @@ def cmd_profile(args):
 
         # Show current description if no operation requested.
         if name and not text_value and not auto_flag:
+            # 描述的真源是**名册那一行**（家退休之后没有家目录可读）；
+            # default 没有名册行，落在共享根那一份 profile.yaml 上。
             try:
-                if _profiles_mod.normalize_profile_name(name) == "default":
-                    from plobi_constants import get_plobi_home as _hh
-                    profile_dir = Path(_hh())
-                else:
-                    profile_dir = _profiles_mod.get_profile_dir(name)
+                canon = _profiles_mod.normalize_profile_name(name)
             except Exception as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 sys.exit(1)
-            if not profile_dir.is_dir():
-                print(f"Error: profile '{name}' not found", file=sys.stderr)
-                sys.exit(1)
-            meta = _profiles_mod.read_profile_meta(profile_dir)
-            desc = meta.get("description") or ""
+            if canon == "default":
+                from plobi_constants import get_plobi_home as _hh
+                meta = _profiles_mod.read_profile_meta(Path(_hh()))
+                desc = meta.get("description") or ""
+                auto = bool(meta.get("description_auto"))
+            else:
+                if not _profiles_mod.identity_exists(canon):
+                    print(f"Error: profile '{name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                desc, auto = _profiles_mod.read_identity_description(canon)
             if not desc:
                 print(f"(no description set for '{name}')")
             else:
-                tag = "[auto] " if meta.get("description_auto") else ""
+                tag = "[auto] " if auto else ""
                 print(f"{tag}{desc}")
             sys.exit(0)
 
         # --text path: just write the user-authored description.
         if text_value:
             try:
-                if _profiles_mod.normalize_profile_name(name) == "default":
+                canon = _profiles_mod.normalize_profile_name(name)
+                if canon == "default":
                     from plobi_constants import get_plobi_home as _hh
-                    profile_dir = Path(_hh())
+                    _profiles_mod.write_profile_meta(
+                        Path(_hh()),
+                        description=text_value,
+                        description_auto=False,
+                    )
                 else:
-                    profile_dir = _profiles_mod.get_profile_dir(name)
-                _profiles_mod.write_profile_meta(
-                    profile_dir,
-                    description=text_value,
-                    description_auto=False,
-                )
+                    if not _profiles_mod.write_identity_description(canon, text_value):
+                        print(f"Error: profile '{name}' not found", file=sys.stderr)
+                        sys.exit(1)
                 print(f"Description updated for '{name}'.")
             except Exception as exc:
                 print(f"Error: {exc}", file=sys.stderr)
@@ -11417,8 +11428,8 @@ def cmd_profile(args):
     elif action == "show":
         name = args.profile_name
         from plobi_cli.profiles import (
-            get_profile_dir,
-            profile_exists,
+            identity_exists,
+            identity_home,
             _read_config_model,
             _check_gateway_running,
             _count_skills,
@@ -11427,11 +11438,22 @@ def cmd_profile(args):
             find_alias_for_profile,
         )
 
-        if not profile_exists(name):
+        # 身份判据问名册那一行（裁 192）；家只有一份（共享根）。
+        if not identity_exists(name):
             print(f"Error: Profile '{name}' does not exist.")
             sys.exit(1)
-        profile_dir = get_profile_dir(name)
+        profile_dir = identity_home(name)
         model, provider = _read_config_model(profile_dir)
+        # 名册行上的覆盖（裁 172：这一行的生效值）叠在共享那一份之上。
+        try:
+            from plobi.agents.registry import entry_for_profile
+
+            _entry = entry_for_profile(name)
+            if _entry is not None:
+                model = getattr(_entry, "model", "") or model
+                provider = getattr(_entry, "provider", "") or provider
+        except Exception:
+            pass
         gw = _check_gateway_running(profile_dir)
         skills = _count_skills(profile_dir)
         dist_name, dist_version, dist_source = _read_distribution_meta(profile_dir)
@@ -11465,9 +11487,9 @@ def cmd_profile(args):
         remove = getattr(args, "remove", False)
         custom_name = getattr(args, "alias_name", None)
 
-        from plobi_cli.profiles import profile_exists, validate_alias_name
+        from plobi_cli.profiles import identity_exists, validate_alias_name
 
-        if not profile_exists(name):
+        if not identity_exists(name):
             print(f"Error: Profile '{name}' does not exist.")
             sys.exit(1)
 
@@ -11521,6 +11543,17 @@ def cmd_profile(args):
             sys.exit(1)
 
     elif action == "import":
+        # 10-27 收口：这一口是**仅存的建家入口**（``import_profile`` 会
+        # ``shutil.move`` 出 ``profiles/<name>/``）。家目录那条腿已经退休，
+        # 留着它就等于「家随时能回来」——那正是 10-24／10-25 反复清掉的东西。
+        # 库函数 ``import_profile`` 本体不动（它是库能力，不是入口）。
+        print(
+            "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再“一家一个分身”。\n"
+            "这条入口只搬“家”，而家已经没有了——搬进来只会把分身概念复活。\n"
+            "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
         from plobi_cli.profiles import import_profile
 
         try:
@@ -11542,6 +11575,15 @@ def cmd_profile(args):
             sys.exit(1)
 
     elif action == "install":
+        # 10-27 收口：这一口也是建家入口（``install_distribution`` 会
+        # ``target.mkdir`` 出 ``profiles/<name>/``）。同 import，一起关。
+        print(
+            "profile 已退役（裁 178 乙案第 4 步）：Agent 是名册里的一行，不再“一家一个分身”。\n"
+            "这条入口只搬“家”，而家已经没有了——搬进来只会把分身概念复活。\n"
+            "要加 Agent：桌面「新建智能体」或 POST /api/agents（名册一行）。",
+            file=sys.stderr,
+        )
+        sys.exit(2)
         import tempfile
         from plobi_cli.profile_distribution import (
             plan_install,

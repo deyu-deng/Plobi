@@ -172,22 +172,22 @@ def describe_profile(
     descriptions (``description_auto: true``) are always replaceable.
     """
     canon = profiles_mod.normalize_profile_name(profile_name)
-    if not profiles_mod.profile_exists(canon):
-        # Special case: "default" exists as a virtual profile name
-        # mapped to the default home dir. profile_exists() handles it.
+    # 身份判据问名册那一行（裁 192），不问家目录。
+    if not profiles_mod.identity_exists(canon):
         return DescribeOutcome(canon, False, "profile not found")
 
+    # 家退休之后只有一份家（共享根）：技能 / 模型 / 脚本都从那儿读。
     try:
-        if canon == "default":
-            from plobi_constants import get_plobi_home  # type: ignore
-            profile_dir = Path(get_plobi_home())
-        else:
-            profile_dir = profiles_mod.get_profile_dir(canon)
+        profile_dir = profiles_mod.identity_home(canon)
     except Exception as exc:
         return DescribeOutcome(canon, False, f"cannot resolve profile dir: {exc}")
 
     # Honor curated descriptions unless --overwrite.
-    existing = profiles_mod.read_profile_meta(profile_dir)
+    if canon == "default":
+        existing = profiles_mod.read_profile_meta(profile_dir)
+    else:
+        _desc, _auto = profiles_mod.read_identity_description(canon)
+        existing = {"description": _desc, "description_auto": _auto}
     if existing.get("description") and not existing.get("description_auto") and not overwrite:
         return DescribeOutcome(
             canon,
@@ -273,13 +273,18 @@ def describe_profile(
         description = val.strip()[:280]
 
     try:
-        profiles_mod.write_profile_meta(
-            profile_dir,
-            description=description,
-            description_auto=True,
-        )
+        if canon == "default":
+            profiles_mod.write_profile_meta(
+                profile_dir,
+                description=description,
+                description_auto=True,
+            )
+        elif not profiles_mod.write_identity_description(
+            canon, description, description_auto=True
+        ):
+            return DescribeOutcome(canon, False, "failed to write roster row")
     except Exception as exc:
-        return DescribeOutcome(canon, False, f"failed to write profile.yaml: {exc}")
+        return DescribeOutcome(canon, False, f"failed to write description: {exc}")
 
     return DescribeOutcome(canon, True, "described", description=description)
 
@@ -291,7 +296,7 @@ def list_describable_profiles(*, missing_only: bool = True) -> list[str]:
     description. ``missing_only=False`` returns every profile.
     """
     out: list[str] = []
-    for p in profiles_mod.list_profiles():
+    for p in profiles_mod.list_identity_profiles():
         if missing_only and (p.description or "").strip() and not p.description_auto:
             continue
         out.append(p.name)

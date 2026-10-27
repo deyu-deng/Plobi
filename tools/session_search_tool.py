@@ -164,7 +164,9 @@ def _resolve_profile_db(profile: str):
 
     canon = profiles_mod.normalize_profile_name(profile)
     profiles_mod.validate_profile_name(canon)
-    if not profiles_mod.profile_exists(canon):
+    # 身份判据问名册那一行（裁 192），不问家目录——家都退役了，问目录会让
+    # 桌面里 `@session:<profile>/<id>` 这种链接**每一趟都抛错**。
+    if not profiles_mod.identity_exists(canon):
         raise ValueError(f"profile '{canon}' does not exist")
 
     return None

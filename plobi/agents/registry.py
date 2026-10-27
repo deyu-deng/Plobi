@@ -318,6 +318,9 @@ class AgentEntry:
     mind_subtree: str = ""  # 相对 MIND_ROOT 的项目子树（L2 直读）
     skills: tuple[str, ...] = ()
     description: str = ""
+    # 这段描述是**自动生成**的（还没被人确认）。描述的落点搬到共享层之后
+    # （裁 42／178 乙案）真源就是名册行上这一格——左栏与卡片读的就是它。
+    description_auto: bool = False
     # WP-AGENT-DISPLAY-NAME / 裁定 37.1：左栏 / 卡片显示的人名（保留大小写）。
     # ``name`` 永远是小写 slug（id）；``display_name`` 空时回退 id。description
     # 不再承担显示名职责——它继续存长标语 / 一句话意图。
@@ -469,6 +472,8 @@ class AgentEntry:
             data["disabled_mcp_servers"] = list(self.disabled_mcp_servers)
         if self.description:
             data["description"] = self.description
+        if self.description_auto:
+            data["description_auto"] = True
         if self.display_name:
             data["display_name"] = self.display_name
         if self.pace:
@@ -549,6 +554,7 @@ class AgentEntry:
                 str(s) for s in (raw.get("disabled_mcp_servers") or ()) if str(s).strip()
             ),
             description=str(raw.get("description") or ""),
+            description_auto=bool(raw.get("description_auto") or False),
             display_name=str(raw.get("display_name") or ""),
             pace=pace,
             category=_normalize_category(raw.get("category")),
@@ -1692,11 +1698,10 @@ def ensure_agenda_agent(registry: AgentRegistry | None = None) -> tuple[AgentEnt
     reg = registry or load_registry()
     existing, spawned = register_agenda_agent(reg)
 
-    from plobi_cli.profiles import profile_exists
-
-    if not profile_exists(existing.profile_name):
-        reg.spawn(existing.name)
-    elif spawned:
+    # 家退休之后，「家不在 ⇒ 补一次 spawn」这条判据**恒为真** ⇒ 每次开机都重跑
+    # 一遍 spawn（10-27 现读）。判据翻成**这一行还没落地**：名册行刚登记 ⇒ 落地
+    # 一次；已经在名册里 ⇒ 共享层那一份早已接好，不必再动（裁 192：身份＝名册那一行）。
+    if spawned:
         # Newly registered into an already-present profile (unusual) — still
         # run spawn so models.json / config.yaml stay in sync.
         try:

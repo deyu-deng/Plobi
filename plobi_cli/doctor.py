@@ -2351,10 +2351,14 @@ def run_doctor(args):
             check_warn(f"{_active_memory_provider} check failed", str(_e))
 
     try:
-        from plobi_cli.profiles import list_profiles, _get_wrapper_dir, profile_exists
+        from plobi_cli.profiles import (
+            list_identity_profiles,
+            _get_wrapper_dir,
+            identity_exists,
+        )
         import re as _re
 
-        named_profiles = [p for p in list_profiles() if not p.is_default]
+        named_profiles = [p for p in list_identity_profiles() if not p.is_default]
         if named_profiles:
             _section("Profiles")
             check_ok(f"{len(named_profiles)} profile(s) found")
@@ -2387,7 +2391,7 @@ def run_doctor(args):
                         content = wrapper.read_text()
                         if "plobi -p" in content:
                             _m = _re.search(r"plobi -p (\S+)", content)
-                            if _m and not profile_exists(_m.group(1)):
+                            if _m and not identity_exists(_m.group(1)):
                                 check_warn(f"Orphan alias: {wrapper.name} → profile '{_m.group(1)}' no longer exists")
                     except Exception:
                         pass

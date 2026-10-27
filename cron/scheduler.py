@@ -3964,6 +3964,38 @@ def _notify_provider_jobs_changed() -> None:
 def tick(verbose: bool = True, adapters=None, loop=None, sync: bool = True) -> int:
     """
     Check and run all due jobs.
+
+    共享根下按名册行分的那几份存储（``<cron>/agents/<slug>/``，用户 10-27 拍板）
+    **逐份跑**：只跑默认那一份的话，落在名册行那一格里的作业会永远不触发——那是又一条
+    「界面里看得见、实际不跑」的假货。
+
+    Uses a file lock so only one tick runs at a time, even when the gateway's
+    in-process ticker and a standalone daemon or manual tick overlap.
+
+    Args:
+        verbose: Whether to print status messages
+        adapters: Optional dict mapping Platform → live adapter (from gateway)
+        loop: Optional asyncio event loop (from gateway) for live adapter sends
+
+    Returns:
+        Number of jobs executed (0 if another tick is already running)
+    """
+    from cron.jobs import discover_cron_stores, use_cron_store_dir
+
+    total = 0
+    for store in discover_cron_stores():
+        with use_cron_store_dir(store):
+            total += _tick_store(
+                verbose=verbose, adapters=adapters, loop=loop, sync=sync
+            )
+    return total
+
+
+def _tick_store(verbose: bool = True, adapters=None, loop=None, sync: bool = True) -> int:
+    """跑**一份**存储里到点的作业（:func:`tick` 的本体，按存储逐份调用）。"""
+
+    """
+    Check and run all due jobs.
     
     Uses a file lock so only one tick runs at a time, even if the gateway's
     in-process ticker and a standalone daemon or manual tick overlap.

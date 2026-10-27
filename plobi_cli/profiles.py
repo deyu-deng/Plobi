@@ -425,6 +425,195 @@ def profile_exists(name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# 身份判据（裁 192：身份＝名册那一行，不是家目录）
+# ---------------------------------------------------------------------------
+
+def roster_has_agent(name: str) -> bool:
+    """名册里有没有这一行——**身份判据**。
+
+    家目录那条腿已经退役（裁 42／178 乙案）：``profiles/<name>/`` 不再被任何入口建出来，
+    10-24 隔离把 23 具旧家搬走，10-27 用户签字把隔离区彻底删了。于是「这个名字是不是一个
+    真实身份」**不能再问目录**——问目录等于问一个已经不存在的东西（10-26 桌面那句
+    ``Profile 'srtp' does not exist.`` 就是这么来的）。
+
+    读口：``plobi/agents/registry.py`` 的 ``entry_for_profile``（按 ``profile_name`` 或
+    ``name`` 大小写不敏感匹配，跳过归档行）。这里刻意**不直接依赖 registry**——它在
+    ``plobi_cli`` 之外也要能用，且 registry 保持纯数据（见 registry 模块里那段自陈）。
+    """
+    try:
+        from plobi.agents.registry import entry_for_profile
+    except Exception:
+        return False
+    try:
+        canon = normalize_profile_name(name)
+    except ValueError:
+        return False
+    try:
+        return entry_for_profile(canon) is not None
+    except Exception:
+        return False
+
+
+def identity_exists(name: str) -> bool:
+    """这个身份存在吗：``default`` 伪作用域 · 名册那一行 · 家还在盘上的（老装机兜底）。
+
+    三样都不沾 ⇒ 这个名字不是任何真实身份。凡是「这个身份在不在」这一问（谁能被派活、
+    谁的名字合法、这个作用域存不存在）都该用这里，而不是 :func:`profile_exists`。
+
+    顺序有讲究：**先问名册**，再问目录。老装机（家还在盘上）上两种口径都算数；
+    新形态（家全退役）上只有名册算数——反过来先问目录的话，家没了的机器上
+    每个真身份都会被判成不存在（10-26 桌面那句 ``Profile 'srtp' does not exist.``）。
+    """
+    try:
+        canon = normalize_profile_name(name)
+    except ValueError:
+        return False
+    if canon == "default":
+        return True
+    if roster_has_agent(canon):
+        return True
+    try:
+        return bool(profile_exists(canon))
+    except Exception:
+        return False
+
+
+def list_roster_agents(include_archived: bool = False) -> List[dict]:
+    """名册上的身份清单（名字 + 名册那一行）。
+
+    与 :func:`list_profiles` 的区别：那一支是**目录扫描**（现在只会回 ``default`` 一行，
+    因为家都退役了），这一支问**名册**（真正的身份清单）。凡是「用户看到的那份名单」都该用
+    这一支——看板给 LLM 的名册、`plobi profile list`、doctor 的 Profiles 段都是。
+
+    ``include_archived=True`` 时把归档行也带上（``plobi profile list`` 要看得见退役的那几行，
+    就像从前目录还在那儿、只是标了「retired」）。
+    """
+    try:
+        from plobi.agents.registry import AgentRegistry
+    except Exception:
+        return []
+    try:
+        registry = AgentRegistry.load()
+    except Exception:
+        return []
+    out: List[dict] = []
+    for entry in registry.entries():
+        if entry.archived and not include_archived:
+            continue
+        out.append(
+            {
+                "name": entry.name,
+                "display_name": getattr(entry, "display_name", "") or entry.name,
+                "profile_name": entry.profile_name,
+                "role": getattr(entry, "role", None),
+                "description": getattr(entry, "description", "") or "",
+                "description_auto": bool(getattr(entry, "description_auto", False)),
+                "archived": bool(entry.archived),
+            }
+        )
+    return out
+
+
+def archive_identity(name: str, archived: bool = True) -> bool:
+    """把名册那一行标成归档（或取消归档）——**退役的真源**。
+
+    以前退役是往家目录里盖一枚 ``.retired``（裁定 42 §42.4「只盖章，不删目录」）。
+    家目录退休之后那枚章没地方盖，退役落到名册行上那一格 ``archived``
+    （裁定 19：归档行留在名册里，只是从默认名单里藏起来）。
+    """
+    try:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        from plobi.agents.registry import AgentRegistry, entry_for_profile
+    except Exception:
+        return False
+    try:
+        registry = AgentRegistry.load()
+    except Exception:
+        return False
+    entry = entry_for_profile(normalize_profile_name(name))
+    if entry is None:
+        return False
+    if bool(entry.archived) == bool(archived):
+        # 已经是这个状态了：没变化，返回 False（调用方那句「已经退役了」才说得准）。
+        return False
+    stamp = datetime.now(timezone.utc).isoformat() if archived else ""
+    try:
+        registry.upsert(replace(entry, archived=bool(archived), archived_at=stamp))
+        registry.save()
+    except Exception:
+        return False
+    return True
+
+
+def identity_home(name: str) -> Path:
+    """这个身份的**家**：共享根那一份。
+
+    家目录退休之后只有一份家（裁 42／178 乙案）：身份是名册那一行，它的三项覆盖
+    （模型 / 密钥 / 工作目录）在读时叠上去，家只是那三项的落点。
+    """
+    return _get_default_plobi_home()
+
+
+def read_identity_description(name: str) -> Tuple[str, bool]:
+    """名册那一行上写的描述 ＋ 「这段是自动生成的」那一格。
+
+    描述以前住在 ``<家>/profile.yaml``；家退休之后那一份家没了，描述的真源就是名册行
+    上的 ``description``（左栏与卡片读的就是它）。
+    """
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        entry = entry_for_profile(normalize_profile_name(name))
+    except Exception:
+        return "", False
+    if entry is None:
+        return "", False
+    return (
+        (getattr(entry, "description", "") or "").strip(),
+        bool(getattr(entry, "description_auto", False)),
+    )
+
+
+def write_identity_description(
+    name: str,
+    text: str,
+    *,
+    description_auto: bool = False,
+) -> bool:
+    """把描述写回**名册那一行**（裁 166：配置单一真源 ＋ 覆盖写名册行）。
+
+    返回 False 表示「名册里没有这一行」或写入失败——调用方据此回一句人话，不静默。
+    """
+    try:
+        from dataclasses import replace
+
+        from plobi.agents.registry import AgentRegistry, entry_for_profile
+    except Exception:
+        return False
+    try:
+        registry = AgentRegistry.load()
+    except Exception:
+        return False
+    entry = entry_for_profile(normalize_profile_name(name))
+    if entry is None:
+        return False
+    try:
+        registry.upsert(
+            replace(
+                entry,
+                description=(text or "").strip(),
+                description_auto=bool(description_auto),
+            )
+        )
+        registry.save()
+    except Exception:
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Alias / wrapper script management
 # ---------------------------------------------------------------------------
 
@@ -926,6 +1115,85 @@ def write_profile_meta(
 # ---------------------------------------------------------------------------
 # CRUD operations
 # ---------------------------------------------------------------------------
+
+def list_identity_profiles() -> List[ProfileInfo]:
+    """身份清单：``default`` ＋ 名册上的每一行——**用户看到的那份名单**。
+
+    :func:`list_profiles` 列的是**家**（``profiles/`` 下的目录扫描）；家退休之后它只会回
+    ``default`` 一行，于是 ``plobi profile list``、doctor 的 Profiles 段、看板给 LLM 的
+    名册全都看到空名单。身份的真源是**名册那一行**（裁 192），所以这份清单问名册。
+
+    每条记录的 ``path`` 是**共享根**那一份家（配置 / 凭据 / 技能现在只有一份），
+    ``name`` 是名册那一行的名字，``description`` 取名册行上写的那句。
+    """
+    out: List[ProfileInfo] = []
+    shared = _get_default_plobi_home()
+    try:
+        model, provider = _read_config_model(shared)
+    except Exception:
+        model, provider = None, None
+    try:
+        dist_name, dist_version, dist_source = _read_distribution_meta(shared)
+    except Exception:
+        dist_name = dist_version = dist_source = None
+    try:
+        skill_count = _count_skills(shared)
+    except Exception:
+        skill_count = 0
+    try:
+        gateway_running = _check_gateway_running(shared)
+    except Exception:
+        gateway_running = False
+    alias_map = build_alias_map()
+    wrapper_dir = _get_wrapper_dir()
+    is_windows = sys.platform == "win32"
+
+    out.append(ProfileInfo(
+        name="default",
+        path=shared,
+        is_default=True,
+        gateway_running=gateway_running,
+        model=model,
+        provider=provider,
+        has_env=(shared / ".env").exists(),
+        skill_count=skill_count,
+        distribution_name=dist_name,
+        distribution_version=dist_version,
+        distribution_source=dist_source,
+        description="",
+        description_auto=False,
+    ))
+
+    for agent in list_roster_agents(include_archived=True):
+        name = agent.get("name") or ""
+        if not name:
+            continue
+        slug = agent.get("profile_name") or ""
+        alias_name = alias_map.get(normalize_profile_name(name)) or alias_map.get(slug)
+        if alias_name:
+            alias_path = wrapper_dir / (f"{alias_name}.bat" if is_windows else alias_name)
+        else:
+            alias_path = None
+        out.append(ProfileInfo(
+            name=name,
+            path=shared,
+            is_default=False,
+            gateway_running=gateway_running,
+            model=model,
+            provider=provider,
+            has_env=(shared / ".env").exists(),
+            skill_count=skill_count,
+            alias_path=alias_path if (alias_path and alias_path.exists()) else None,
+            alias_name=alias_name,
+            distribution_name=dist_name,
+            distribution_version=dist_version,
+            distribution_source=dist_source,
+            description=agent.get("description") or "",
+            description_auto=bool(agent.get("description_auto")),
+            retired=bool(agent.get("archived")),
+        ))
+    return out
+
 
 def list_profiles() -> List[ProfileInfo]:
     """Return info for all profiles, including the default."""
@@ -1823,10 +2091,12 @@ def set_active_profile(name: str) -> None:
     """
     canon = normalize_profile_name(name)
     validate_profile_name(canon)
-    if canon != "default" and not profile_exists(canon):
+    if canon != "default" and not identity_exists(canon):
+        # 身份判据问名册那一行（裁 192），不问家目录——家都退役了。
+        # 提示**不再指向** `plobi profile create`：那条入口 10-25 已退 2。
         raise FileNotFoundError(
             f"Profile '{canon}' does not exist. "
-            f"Create it with: plobi profile create {canon}"
+            f"No roster row with that name."
         )
 
     path = _get_active_profile_path()

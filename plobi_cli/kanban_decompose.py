@@ -187,7 +187,9 @@ def _resolve_orchestrator_profile(cfg: dict) -> str:
     explicit = (kanban_cfg.get("orchestrator_profile") or "").strip()
     if explicit:
         try:
-            if profiles_mod.profile_exists(explicit):
+            # 身份判据问名册那一行（裁 192），不问家目录——家都退役了，
+            # 问目录会把用户配的 orchestrator 静默换成 active_default。
+            if profiles_mod.identity_exists(explicit):
                 return explicit
         except Exception:
             pass
@@ -204,7 +206,8 @@ def _resolve_default_assignee(cfg: dict) -> str:
     explicit = (kanban_cfg.get("default_assignee") or "").strip()
     if explicit:
         try:
-            if profiles_mod.profile_exists(explicit):
+            # 同上：名册判据，不是目录判据。
+            if profiles_mod.identity_exists(explicit):
                 return explicit
         except Exception:
             pass
@@ -220,22 +223,36 @@ def _build_roster() -> tuple[list[dict], set[str]]:
     Each roster entry is ``{name, description, has_description}``. The
     valid-set is used after the LLM responds to rewrite invalid
     assignees to the default fallback.
+
+    The roster comes from the **agent registry**（名册那一行），not from a
+    directory scan of ``profiles/``: the profile homes are retired (裁 42／
+    178 乙案), so the scan now returns only ``default`` and the decomposer
+    had an empty roster to route with — every fan-out fell back to the
+    default assignee.
     """
     roster: list[dict] = []
     valid: set[str] = set()
     try:
-        all_profiles = profiles_mod.list_profiles()
+        agents = profiles_mod.list_roster_agents()
     except Exception as exc:
-        logger.warning("decompose: failed to list profiles: %s", exc)
+        logger.warning("decompose: failed to list roster agents: %s", exc)
         return roster, valid
-    for p in all_profiles:
-        desc = (p.description or "").strip()
+    for p in agents:
+        desc = (p.get("description") or "").strip()
+        name = p.get("name") or ""
+        if not name:
+            continue
         roster.append({
-            "name": p.name,
-            "description": desc or f"(no description; profile named {p.name!r})",
+            "name": name,
+            "description": desc or f"(no description; agent named {name!r})",
             "has_description": bool(desc),
         })
-        valid.add(p.name)
+        valid.add(name)
+        # The slug is the same identity（名册行的 ``profile_name``）；LLM 常回它，
+        # 所以它也得算「认得的 assignee」，否则一次合法回包会被当成非法改派。
+        slug = p.get("profile_name") or ""
+        if slug:
+            valid.add(slug)
     return roster, valid
 
 

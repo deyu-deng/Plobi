@@ -10362,7 +10362,8 @@ async def prune_sessions_endpoint(body: SessionPrune):
     _effective_older_than = body.older_than_days
     if has_window or (_attr_filters_set and not _older_than_explicit):
         _effective_older_than = None
-    profile_home = _cron_profile_home(body.profile)[1] if body.profile else get_plobi_home()
+    # 家目录退休后，会话的家只有一份（共享根）；这里问的是「那一份」在哪儿。
+    profile_home = _cron_runtime_home() if body.profile else get_plobi_home()
     db = _open_session_db_for_profile(body.profile)
     try:
         filters = dict(
@@ -10624,17 +10625,110 @@ def _validate_dashboard_cron_context_from(
 
 
 def _cron_profile_dicts() -> List[Dict[str, Any]]:
-    """Return dashboard profile records, falling back to a directory scan."""
+    """cron 面板里可选的那些作用域：默认那一份 ＋ 名册上的每一行。
+
+    家目录退休之后，目录扫描只剩 ``default`` 一行——面板上就再也选不到「日程秘书那一行」
+    的排程，``?profile=all`` 也只看得到默认那一份。这里问**名册**（裁 192：身份＝名册那一行）。
+    """
     from plobi_cli import profiles as profiles_mod
+
+    shared = _cron_runtime_home()
     try:
-        return [_profile_to_dict(p) for p in profiles_mod.list_profiles()]
+        agents = profiles_mod.list_roster_agents()
     except Exception:
-        _log.exception("Failed to list profiles for cron dashboard; falling back to directory scan")
-        return _fallback_profile_dicts(profiles_mod)
+        _log.exception("Failed to list roster agents for cron dashboard")
+        agents = []
+
+    def _shared_facts() -> Dict[str, Any]:
+        try:
+            model, provider = profiles_mod._read_config_model(shared)
+        except Exception:
+            model, provider = None, None
+        try:
+            skill_count = profiles_mod._count_skills(shared)
+        except Exception:
+            skill_count = 0
+        return {
+            "model": model,
+            "provider": provider,
+            "has_env": (shared / ".env").exists(),
+            "skill_count": skill_count,
+            "gateway_running": False,
+        }
+
+    facts = _shared_facts()
+    out: List[Dict[str, Any]] = [dict(
+        name="default",
+        path=str(_cron_store_root()),
+        is_default=True,
+        description="",
+        description_auto=False,
+        distribution_name=None,
+        distribution_version=None,
+        distribution_source=None,
+        has_alias=False,
+        **facts,
+    )]
+    for agent in agents:
+        name = agent.get("name") or ""
+        if not name:
+            continue
+        out.append(dict(
+            name=name,
+            path=str(_cron_store_dir_for(agent.get("profile_name") or name)),
+            is_default=False,
+            description=agent.get("description") or "",
+            description_auto=False,
+            distribution_name=None,
+            distribution_version=None,
+            distribution_source=None,
+            has_alias=False,
+            **facts,
+        ))
+    return out
+
+
+def _cron_store_root() -> Path:
+    """cron 存储的根：共享根下那一份（``<shared>/cron``）。
+
+    家目录那条腿已经退休（裁 42／178 乙案）：排程的存储不再按分身各挂一份家，
+    而是住在共享根下（用户 10-27 拍板：共享根下按名册行分一份）。
+    """
+    try:
+        from plobi_constants import get_shared_plobi_root
+
+        return Path(get_shared_plobi_root()) / "cron"
+    except Exception:
+        return Path(get_plobi_home()) / "cron"
+
+
+def _cron_store_dir_for(slug: str) -> Path:
+    """某一名册行的那一份 cron 存储：``<shared>/cron/agents/<slug>/``。"""
+    return _cron_store_root() / "agents" / slug
+
+
+def _cron_runtime_home() -> Path:
+    """排程跑起来时的**家**：共享根那一份（配置 / 凭据 / 技能 / 脚本都在那儿）。
+
+    以前是分身自己的家（每家的 ``.env``、``config.yaml``、``skills/`` 各一份），
+    现在身份＝名册那一行、家只有一份（裁 166／178 乙案），所以运行时家就是共享根。
+    """
+    try:
+        from plobi_constants import get_shared_plobi_root
+
+        return Path(get_shared_plobi_root())
+    except Exception:
+        return Path(get_plobi_home())
 
 
 def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
-    """Resolve a profile query value to (profile_name, PLOBI_HOME)."""
+    """作用域值 → (名册那一行的名字, 这一行的 cron 存储目录)。
+
+    存在性问**名册那一行**（裁 192），不问家目录：家都退役了，问目录会让「给一个被
+    隔离过的角色排个程」直接 404（10-26 桌面那句同源兄弟）。存储落点按用户 10-27
+    拍板：**共享根下按名册行分一份**（``<shared>/cron/agents/<slug>/``），
+    不再是 ``profiles/<slug>/``——家目录那条腿已经退休。
+    """
     from plobi_cli import profiles as profiles_mod
 
     raw = (profile or "default").strip() or "default"
@@ -10643,9 +10737,22 @@ def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
         profiles_mod.validate_profile_name(canon)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if not profiles_mod.profile_exists(canon):
+    if canon == "default":
+        return canon, _cron_store_root()
+    if not profiles_mod.identity_exists(canon):
         raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
-    return canon, profiles_mod.get_profile_dir(canon)
+    # 同一行的两个写法（名册 name 与它的 profile_name）要落在**同一份**存储里，
+    # 否则「用显示名建的作业」和「用 slug 建的作业」会分家两份。
+    row_slug = canon
+    try:
+        from plobi.agents.registry import entry_for_profile
+
+        entry = entry_for_profile(canon)
+        if entry is not None and entry.profile_name:
+            row_slug = entry.profile_name
+    except Exception:
+        pass
+    return canon, _cron_store_dir_for(row_slug)
 
 
 def _roster_has_scope(scope: str) -> bool:
@@ -10697,30 +10804,34 @@ def _annotate_cron_job(job: Dict[str, Any], profile: str, home: Path) -> Dict[st
 
 
 def _call_cron_for_profile(target_profile: Optional[str], func_name: str, *args, **kwargs):
-    """Run cron.jobs helpers against the selected profile's cron directory.
+    """Run cron.jobs helpers against the selected identity's cron store.
 
-    The dashboard is a single process that can inspect many profiles. Route
+    The dashboard is a single process that can inspect many identities. Route
     storage through cron.jobs' execution-context override so dashboard calls
     cannot retarget a concurrent desktop ticker's load/save transaction.
+
+    两件事分开了：**存储**是那一行自己的那一份（``<shared>/cron/agents/<slug>/``，
+    用户 10-27 拍板），**运行时家**是共享根那一份（配置 / 凭据 / 技能只有一份）。
     """
-    profile_name, home = _cron_profile_home(target_profile)
+    profile_name, store_dir = _cron_profile_home(target_profile)
+    runtime_home = _cron_runtime_home()
     from cron import jobs as cron_jobs
     from plobi_constants import (
         reset_plobi_home_override,
         set_plobi_home_override,
     )
 
-    token = set_plobi_home_override(str(home))
+    token = set_plobi_home_override(str(runtime_home))
     try:
-        with cron_jobs.use_cron_store(home):
+        with cron_jobs.use_cron_store_dir(store_dir):
             result = getattr(cron_jobs, func_name)(*args, **kwargs)
     finally:
         reset_plobi_home_override(token)
 
     if isinstance(result, list):
-        return [_annotate_cron_job(j, profile_name, home) for j in result]
+        return [_annotate_cron_job(j, profile_name, runtime_home) for j in result]
     if isinstance(result, dict):
-        return _annotate_cron_job(result, profile_name, home)
+        return _annotate_cron_job(result, profile_name, runtime_home)
     return result
 
 
@@ -10862,8 +10973,9 @@ async def list_cron_job_runs(job_id: str, profile: Optional[str] = None, limit: 
 
 def _create_cron_job_sync(body: CronJobCreate, profile: str = "default"):
     try:
-        profile_name, profile_home = _cron_profile_home(profile)
-        script = _normalize_dashboard_cron_script(body.script, profile_home)
+        profile_name, _store_dir = _cron_profile_home(profile)
+        # 脚本沙箱是**运行时家**（共享根）那一份——家目录退休后，脚本只有一份。
+        script = _normalize_dashboard_cron_script(body.script, _cron_runtime_home())
         skills = _cron_string_list(body.skills)
         context_from = _cron_string_list(body.context_from)
         _validate_dashboard_cron_context_from(context_from, profile_name)
@@ -10939,13 +11051,13 @@ def _update_cron_job_sync(job_id: str, body: CronJobUpdate, profile: Optional[st
     if not selected:
         raise HTTPException(status_code=404, detail="Job not found")
     try:
-        profile_name, profile_home = _cron_profile_home(selected)
+        profile_name, _store_dir = _cron_profile_home(selected)
         existing = _call_cron_for_profile(profile_name, "get_job", job_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Job not found")
         updates = _normalize_dashboard_cron_updates(
             body.updates,
-            profile_home,
+            _cron_runtime_home(),
         )
         if "context_from" in updates:
             _validate_dashboard_cron_context_from(
@@ -11040,12 +11152,12 @@ def _fire_cron_job_for_profile(profile: str, job_id: str) -> bool:
     """Run ONE due cron job end-to-end for ``profile`` via the resolved
     scheduler provider's ``fire_due`` (store CAS claim + ``run_one_job``).
 
-    Scope both cron storage and the runtime Plobi home so the job's store,
-    config, credentials, scripts, skills, and output all belong to the selected
-    profile. Runs with no live adapters; delivery falls back to the per-platform
-    send path.
+    存储是那一行自己的那一份（``<shared>/cron/agents/<slug>/``），运行时家是共享根
+    那一份（配置 / 凭据 / 技能 / 输出都在那儿）。Runs with no live adapters;
+    delivery falls back to the per-platform send path.
     """
-    _profile_name, home = _cron_profile_home(profile)
+    _profile_name, store_dir = _cron_profile_home(profile)
+    runtime_home = _cron_runtime_home()
     from cron import jobs as cron_jobs
     from cron.scheduler_provider import resolve_cron_scheduler
     from plobi_constants import (
@@ -11053,9 +11165,9 @@ def _fire_cron_job_for_profile(profile: str, job_id: str) -> bool:
         set_plobi_home_override,
     )
 
-    token = set_plobi_home_override(str(home))
+    token = set_plobi_home_override(str(runtime_home))
     try:
-        with cron_jobs.use_cron_store(home):
+        with cron_jobs.use_cron_store_dir(store_dir):
             provider = resolve_cron_scheduler()
             return bool(provider.fire_due(job_id, adapters=None, loop=None))
     finally:

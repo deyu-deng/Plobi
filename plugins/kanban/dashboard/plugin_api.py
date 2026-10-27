@@ -2130,7 +2130,7 @@ def list_profile_roster():
     """
     try:
         from plobi_cli import profiles as profiles_mod
-        profiles = profiles_mod.list_profiles()
+        profiles = profiles_mod.list_identity_profiles()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"failed to list profiles: {exc}")
     return {
@@ -2161,20 +2161,18 @@ def update_profile_description(profile_name: str, payload: DescribeBody):
     try:
         from plobi_cli import profiles as profiles_mod
         canon = profiles_mod.normalize_profile_name(profile_name)
+        text = (payload.description or "").strip()
         if canon == "default":
             from plobi_constants import get_plobi_home  # type: ignore
             from pathlib import Path as _Path
-            profile_dir = _Path(get_plobi_home())
-        else:
-            profile_dir = profiles_mod.get_profile_dir(canon)
-        if not profile_dir.is_dir():
+            profiles_mod.write_profile_meta(
+                _Path(get_plobi_home()),
+                description=text,
+                description_auto=False,
+            )
+        elif not profiles_mod.write_identity_description(canon, text):
+            # 描述的真源是名册那一行（裁 166／192）：家退休之后没有家目录可写。
             raise HTTPException(status_code=404, detail=f"profile '{profile_name}' not found")
-        text = (payload.description or "").strip()
-        profiles_mod.write_profile_meta(
-            profile_dir,
-            description=text,
-            description_auto=False,
-        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -2290,9 +2288,11 @@ def get_orchestration_settings():
     try:
         from plobi_cli import profiles as profiles_mod
         active_default = profiles_mod.get_active_profile_name() or "default"
-        if not resolved_orch or not profiles_mod.profile_exists(resolved_orch):
+        # 身份判据问名册那一行（裁 192），不问家目录：家都退役了，问目录会把用户配的
+        # orchestrator / default_assignee 静默换成 active_default（配置被无声忽略）。
+        if not resolved_orch or not profiles_mod.identity_exists(resolved_orch):
             resolved_orch = active_default
-        if not resolved_default or not profiles_mod.profile_exists(resolved_default):
+        if not resolved_default or not profiles_mod.identity_exists(resolved_default):
             resolved_default = active_default
     except Exception:
         active_default = "default"
@@ -2342,7 +2342,7 @@ def set_orchestration_settings(payload: OrchestrationSettingsBody):
         name = (payload.orchestrator_profile or "").strip()
         if name and profiles_mod is not None:
             try:
-                if not profiles_mod.profile_exists(name):
+                if not profiles_mod.identity_exists(name):
                     raise HTTPException(
                         status_code=400,
                         detail=f"profile '{name}' does not exist",
@@ -2357,7 +2357,7 @@ def set_orchestration_settings(payload: OrchestrationSettingsBody):
         name = (payload.default_assignee or "").strip()
         if name and profiles_mod is not None:
             try:
-                if not profiles_mod.profile_exists(name):
+                if not profiles_mod.identity_exists(name):
                     raise HTTPException(
                         status_code=400,
                         detail=f"profile '{name}' does not exist",
