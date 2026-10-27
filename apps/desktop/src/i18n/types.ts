@@ -2869,6 +2869,9 @@ export interface Translations {
       loading: string
       unavailable: string
       readOnly: string
+      findPlaceholder: string
+      copyAll: string
+      copied: string
       truncated: (rows: number, cols: number) => string
       sheet: string
       legacyNote: string

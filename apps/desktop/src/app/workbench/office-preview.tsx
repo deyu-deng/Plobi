@@ -4,6 +4,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 import { Codicon } from '@/components/ui/codicon'
 import { convertDesktopLegacyOffice } from '@/lib/desktop-fs'
+import { Copy, Search } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { legacyOfficeFormat, type LegacyOfficeFormat } from '@/lib/legacy-office'
 import type { PreviewTarget } from '@/store/preview'
@@ -21,6 +22,9 @@ export interface OfficePreviewLabels {
   loading: string
   unavailable: string
   readOnly: string
+  findPlaceholder: string
+  copyAll: string
+  copied: string
   truncated: (rows: number, cols: number) => string
   sheet: string
   legacyNote: string
@@ -224,12 +228,41 @@ function SheetPreview({
   )
 }
 
+interface PdfTextNode {
+  end: number
+  node: Text
+  start: number
+}
+
+type HighlightRegistryLike = {
+  delete: (name: string) => void
+  set: (name: string, highlight: unknown) => void
+}
+
+function pdfTextNodeAt(nodes: PdfTextNode[], offset: number) {
+  for (const item of nodes) {
+    if (offset >= item.start && offset <= item.end) {
+      return { node: item.node, offset: Math.min(offset - item.start, item.node.data.length) }
+    }
+  }
+
+  return null
+}
+
 function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
   const { change } = useFileRevision(path)
   const { bytes, error, loading } = useFileBytes(path, change)
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const textLayersRef = useRef<HTMLDivElement[]>([])
+  const textNodesRef = useRef<PdfTextNode[]>([])
+  const matchRangesRef = useRef<Range[]>([])
   const [rendering, setRendering] = useState(false)
   const [renderError, setRenderError] = useState(false)
+  const [query, setQuery] = useState('')
+  const [matchCount, setMatchCount] = useState(0)
+  const [activeMatch, setActiveMatch] = useState(0)
+  const [copied, setCopied] = useState(false)
+  const [textVersion, setTextVersion] = useState(0)
 
   useEffect(() => {
     const host = hostRef.current
@@ -241,8 +274,14 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
     let cancelled = false
     let pdf: pdfjsLib.PDFDocumentProxy | null = null
     host.replaceChildren()
+    textLayersRef.current = []
+    textNodesRef.current = []
+    matchRangesRef.current = []
     setRendering(true)
     setRenderError(false)
+    setQuery('')
+    setMatchCount(0)
+    setActiveMatch(0)
 
     void (async () => {
       try {
@@ -259,12 +298,49 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
 
           const page = await pdf.getPage(pageNumber)
           const viewport = page.getViewport({ scale: 1.2 })
+          const wrapper = document.createElement('div')
+          wrapper.className = 'plobi-pdf-page'
+          wrapper.style.width = `${viewport.width}px`
+          wrapper.style.height = `${viewport.height}px`
+
           const canvas = document.createElement('canvas')
-          canvas.className = 'mx-auto mb-3 block h-auto max-w-full shadow-sm'
+          canvas.className = 'h-full w-full'
           canvas.width = viewport.width
           canvas.height = viewport.height
-          host.append(canvas)
+          wrapper.append(canvas)
+
+          const textLayer = document.createElement('div')
+          textLayer.className = 'plobi-pdf-text'
+          textLayer.style.height = `${viewport.height}px`
+          textLayer.style.setProperty('--scale-factor', String(viewport.scale))
+          textLayer.style.width = `${viewport.width}px`
+          wrapper.append(textLayer)
+          host.append(wrapper)
+
           await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+
+          if (cancelled) {
+            break
+          }
+
+          try {
+            const layer = new pdfjsLib.TextLayer({
+              container: textLayer,
+              textContentSource: page.streamTextContent(),
+              viewport
+            })
+            await layer.render()
+
+            if (!cancelled) {
+              textLayersRef.current.push(textLayer)
+            }
+          } catch {
+            // Scanned pages have no text layer; the canvas still previews.
+          }
+        }
+
+        if (!cancelled) {
+          setTextVersion(value => value + 1)
         }
       } catch {
         if (!cancelled) {
@@ -284,10 +360,169 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
     }
   }, [bytes])
 
+  useEffect(() => {
+    const registry = (CSS as unknown as { highlights?: HighlightRegistryLike }).highlights
+    registry?.delete('plobi-pdf-search')
+    registry?.delete('plobi-pdf-search-current')
+    matchRangesRef.current = []
+    setMatchCount(0)
+    setActiveMatch(0)
+
+    const needle = query.trim().toLocaleLowerCase()
+
+    if (!needle) {
+      return
+    }
+
+    const nodes: PdfTextNode[] = []
+    let text = ''
+
+    for (const layer of textLayersRef.current) {
+      const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT)
+      let current = walker.nextNode()
+
+      while (current) {
+        const node = current as Text
+
+        if (node.data) {
+          nodes.push({ end: text.length + node.data.length, node, start: text.length })
+          text += node.data
+        }
+
+        current = walker.nextNode()
+      }
+
+      text += '\n'
+    }
+
+    textNodesRef.current = nodes
+    const haystack = text.toLocaleLowerCase()
+    const ranges: Range[] = []
+    let at = haystack.indexOf(needle)
+
+    while (at >= 0 && ranges.length < 300) {
+      const start = pdfTextNodeAt(nodes, at)
+      const end = pdfTextNodeAt(nodes, at + needle.length)
+
+      if (start && end) {
+        const range = document.createRange()
+        range.setStart(start.node, start.offset)
+        range.setEnd(end.node, end.offset)
+        ranges.push(range)
+      }
+
+      at = haystack.indexOf(needle, at + needle.length)
+    }
+
+    matchRangesRef.current = ranges
+    setMatchCount(ranges.length)
+    setActiveMatch(0)
+  }, [query, textVersion])
+
+  useEffect(() => {
+    const registry = (CSS as unknown as { highlights?: HighlightRegistryLike }).highlights
+    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight
+
+    if (!registry || !HighlightCtor) {
+      return
+    }
+
+    const ranges = matchRangesRef.current
+    registry.delete('plobi-pdf-search')
+    registry.delete('plobi-pdf-search-current')
+
+    if (!ranges.length) {
+      return
+    }
+
+    registry.set('plobi-pdf-search', new HighlightCtor(...ranges))
+    const current = ranges[Math.min(activeMatch, ranges.length - 1)]
+
+    if (current) {
+      registry.set('plobi-pdf-search-current', new HighlightCtor(current))
+      current.startContainer.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [activeMatch, matchCount])
+
+  const stepMatch = (direction: number) => {
+    if (!matchCount) {
+      return
+    }
+
+    setActiveMatch(value => (value + direction + matchCount) % matchCount)
+  }
+
+  const copyAll = async () => {
+    const text = textLayersRef.current
+      .map(layer => layer.innerText)
+      .join('\n\n')
+      .trim()
+
+    if (!text) {
+      return
+    }
+
+    let copiedOk = false
+
+    try {
+      copiedOk = (await window.plobiDesktop?.writeClipboard?.(text)) ?? false
+    } catch {
+      copiedOk = false
+    }
+
+    if (!copiedOk) {
+      try {
+        await navigator.clipboard.writeText(text)
+        copiedOk = true
+      } catch {
+        copiedOk = false
+      }
+    }
+
+    if (copiedOk) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="flex h-8 shrink-0 items-center justify-end border-b border-(--ui-stroke-tertiary) px-2">
-        <span className="text-[0.6rem] text-muted-foreground">{labels.readOnly}</span>
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <Search className="size-3 shrink-0 text-muted-foreground" />
+          <input
+            className="h-5 min-w-0 flex-1 rounded border border-(--ui-stroke-tertiary) bg-transparent px-1.5 text-[0.64rem] outline-none placeholder:text-muted-foreground focus:border-(--ui-stroke-secondary)"
+            onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                stepMatch(event.shiftKey ? -1 : 1)
+              }
+
+              if (event.key === 'Escape') {
+                setQuery('')
+              }
+            }}
+            placeholder={labels.findPlaceholder}
+            value={query}
+          />
+          {query ? (
+            <span className="shrink-0 text-[0.6rem] tabular-nums text-muted-foreground">
+              {matchCount ? `${Math.min(activeMatch + 1, matchCount)}/${matchCount}` : '0/0'}
+            </span>
+          ) : null}
+        </div>
+        <button
+          className="flex shrink-0 items-center gap-1 rounded px-1 text-[0.6rem] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+          disabled={!textVersion}
+          onClick={() => void copyAll()}
+          title={copied ? labels.copied : labels.copyAll}
+          type="button"
+        >
+          <Copy className="size-3" />
+          <span>{copied ? labels.copied : labels.copyAll}</span>
+        </button>
+        <span className="shrink-0 text-[0.6rem] text-muted-foreground">{labels.readOnly}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2" ref={hostRef} />
       <PreviewStatus error={error || renderError} labels={labels} loading={loading || rendering} />

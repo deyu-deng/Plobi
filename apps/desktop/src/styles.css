@@ -1883,3 +1883,48 @@ text-* variant utilities. */ .btn-arc {
     opacity: 0.4;
   }
 }
+
+/* PDF preview: transparent selectable text over the rendered canvas. */
+.plobi-pdf-page {
+  position: relative;
+  margin: 0 auto 12px;
+}
+
+.plobi-pdf-page canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.plobi-pdf-text {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  user-select: text;
+}
+
+.plobi-pdf-text span,
+.plobi-pdf-text br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
+.plobi-pdf-text ::selection {
+  background: rgb(37 99 235 / 28%);
+}
+
+::highlight(plobi-pdf-search) {
+  background-color: rgb(250 204 21 / 60%);
+}
+
+::highlight(plobi-pdf-search-current) {
+  background-color: rgb(245 158 11 / 90%);
+}
