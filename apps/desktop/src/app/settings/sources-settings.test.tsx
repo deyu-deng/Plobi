@@ -118,6 +118,12 @@ vi.mock('@/i18n', () => ({
           cadenceModeWeekly: 'Weekly',
           cadenceEveryHours: 'Every {n} hours',
           cadenceAdvanced: 'Custom expression',
+          cadenceDial: 'Collection frequency dial',
+          cadenceDialHint: 'Clockwise runs more often.',
+          cadenceEveryN: 'Every {n} {unit}',
+          cadenceNumber: 'Every',
+          cadenceUnit: 'Unit',
+          cadenceUnits: { days: 'days', hours: 'hours', minutes: 'minutes' },
           cadenceWeekdays: { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' },
           cadenceCustom: 'Custom',
           cadencePresets: { per_round: 'Follow every round', hourly: 'Hourly', four_hours: 'Every 4 hours', six_hours: 'Every 6 hours', daily: 'Daily at 03:00', weekly: 'Weekly on Monday at 03:00' },
@@ -708,17 +714,17 @@ describe('the drawer’s form', () => {
     expect(box.value).toBe('')
   })
 
-  it('offers the cadence as controls, and stores the cron behind the words', async () => {
-    // 用户 10-23：「频率设置这样用机器语言还是不好，可能可以用一个可交互的旋钮」⇒
-    // 屏上是四颗能按的钮 + 滑杆/时间，cron 只在"自定义表达式"里；存进配置的仍是 cron。
+  it('turns one dial for the cadence, with a number and a unit beside it', async () => {
+    // 用户 10-27：「cron 我说了不用设计这么多挡位。你就做一个旋钮……往一遍旋就是频率越来越高……
+    // 然后旁边放一个框。可以调整单位和具体数字」。上一版的四颗模式钮整排撤掉——
+    // 这条测试就是钉"它不许回来"，同时钉存出去的仍是 `cadence.py` 认的那一句。
     saveSourceSetup.mockResolvedValue(undefined)
     await openDrawer(row({
       category: 'local',
       enabled: true,
       has_builder: true,
-      setup: { cadence: 'every 1h' },
+      setup: { cadence: 'every 6h' },
       setup_fields: [
-        { help: '', key: 'ics_path', kind: 'path', label: 'Path to the .ics file', required: true },
         { help: '', key: 'cadence', kind: 'cadence', label: 'Collection cadence', required: false }
       ],
       source: 'timetable',
@@ -726,25 +732,45 @@ describe('the drawer’s form', () => {
     }), 'Timetable')
 
     const field = () => screen.getByTestId('cadence-field')
+    const dial = screen.getByRole('slider', { name: 'Collection frequency dial' })
 
-    // 旧的两种形状都不在：没有下拉、也没有裸 cron 文本框（谁把它们改回来，这一条当场红）。
+    // 挡位整排不许回来，也不许退回下拉或裸 cron 文本框。
+    for (const name of ['Every round', 'Every few hours', 'Daily', 'Weekly']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+
     expect(screen.queryByRole('combobox', { name: 'Collection cadence' })).toBeNull()
     expect(screen.queryByRole('textbox', { name: 'Collection cadence' })).toBeNull()
-    // 存量的 `every 1h` 读成"每隔几小时"那一档，滑杆停在 1。
-    expect(screen.getByRole('button', { name: 'Every few hours' }).getAttribute('aria-pressed')).toBe('true')
-    expect(field().getAttribute('data-cadence')).toBe('every 1h')
-    // 拨到"每天"：出时间控件，存下去的形状立刻变成 `分 时 * * *`。
-    fireEvent.click(screen.getByRole('button', { name: 'Daily' }))
-    expect(field().querySelector('input[type="time"]')).toBeTruthy()
-    expect(field().getAttribute('data-cadence')).toMatch(/^\d{2} \d{2} \* \* \*$/)
-    // 拨到"每周"：多出七个星期钮，点周三之后 cron 的末位就是 3。
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Wed' }))
-    expect(field().getAttribute('data-cadence')).toMatch(/^\d{2} \d{2} \* \* 3$/)
-    // 回到"每一轮"：存的是空串（＝跟着全局那一轮），不是把上一句留在文件里。
-    fireEvent.click(screen.getByRole('button', { name: 'Every round' }))
+    // 存量那一句读得回来：旋钮停在"每 6 小时"，旁边那两格说的是同一件事。
+    expect(dial.getAttribute('aria-valuetext')).toBe('Every 6 hours')
+    expect((screen.getByRole('spinbutton', { name: 'Every' }) as HTMLInputElement).value).toBe('6')
+    expect((screen.getByRole('combobox', { name: 'Unit' }) as HTMLSelectElement).value).toBe('h')
+
+    // 往右一档 = 更勤（顺时针方向由用户拍），存的还是 `every Nh` 那一句整齐写法。
+    fireEvent.keyDown(dial, { key: 'ArrowRight' })
+    expect(field().getAttribute('data-cadence')).toBe('every 4h')
+    // 那两格管精确值：改数字不动单位，换单位不动数字。
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Every' }), { target: { value: '3' } })
+    expect(field().getAttribute('data-cadence')).toBe('every 3h')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Unit' }), { target: { value: 'd' } })
+    expect(field().getAttribute('data-cadence')).toBe('every 3d')
+
+    // 最左那一格＝跟着全局每一轮，存的是空串（不是把上一句留在文件里）；最右是 5 分钟。
+    for (let i = 0; i < 24; i += 1) {
+      fireEvent.keyDown(dial, { key: 'ArrowLeft' })
+    }
+
+    expect(dial.getAttribute('aria-valuetext')).toBe('Every round')
     expect(field().getAttribute('data-cadence')).toBe('')
+
+    for (let i = 0; i < 24; i += 1) {
+      fireEvent.keyDown(dial, { key: 'ArrowRight' })
+    }
+
+    expect(dial.getAttribute('aria-valuetext')).toBe('Every 5 minutes')
+    expect(field().getAttribute('data-cadence')).toBe('every 5m')
   })
+
 })
 
 describe('bring your own', () => {

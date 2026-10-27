@@ -449,6 +449,13 @@ export const en: Translations = {
       cadenceModeWeekly: 'Weekly',
       cadenceEveryHours: 'Every {n} hours',
       cadenceAdvanced: 'Custom expression',
+      cadenceDial: 'Collection frequency dial',
+      cadenceDialHint: 'Clockwise runs more often; counter-clockwise runs less often.',
+      cadenceEveryN: 'Every {n} {unit}',
+      cadenceNumber: 'Every',
+      cadenceUnit: 'Unit',
+      cadenceUnits: { days: 'days', hours: 'hours', minutes: 'minutes' },
+
       cadenceWeekdays: { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' },
       cadenceCustom: 'Custom',
       cadencePresets: {

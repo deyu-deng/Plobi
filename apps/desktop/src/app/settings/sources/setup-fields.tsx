@@ -30,9 +30,17 @@ import { notifyError } from '@/store/notifications'
 
 import type { SetupField, SourceRow } from './api'
 import { saveSourceSetup } from './api'
+import { CadenceDial } from './cadence-dial'
 
 type Labels = {
   cadenceAdvanced: string
+  /** 旋钮那三格话：aria 标签、方向提示、以及「每 N 单位」那一句（用户 10-27 拍的新形状）。 */
+  cadenceDial: string
+  cadenceDialHint: string
+  cadenceEveryN: string
+  cadenceNumber: string
+  cadenceUnit: string
+  cadenceUnits: { days: string, hours: string, minutes: string }
   cadenceEveryHours: string
   cadenceModeDaily: string
   cadenceModeEveryHours: string
@@ -297,94 +305,28 @@ function helpFor(source: string, field: SetupField, labels: Labels): string | un
 }
 
 /**
- * 频率控件：四档 + 一个收起来的「自定义表达式」。
+ * 频率控件：**一颗旋钮 + 一个数字与单位的小框**，外加一个收起来的「自定义表达式」。
  *
- * **不用 `Select`**：用户 10-23 那一句「可交互的旋钮」要的是"能直接拨"的东西——滑杆与时间选择器
- * 拨一下就变，而下拉框是"点两下再从列表里认一行"。两处都不是自由文本，cron 只在最后那一档出现。
+ * 10-23 那一版是四档模式按钮（每轮／每 N 小时／每天／每周）加一串子控件，用户 10-27 说的是
+ * 「**cron 我说了不用设计这么多挡位。你就做一个旋钮……往一遍旋就是频率越来越高，反之就是越来越慢。
+ * 然后旁边放一个框。可以给一个输入框。可以调整单位和具体数字**」。
+ * 所以挡位整排撤掉，只留"多勤"这一件事；存出去的还是 `cadence.py` 认的那一句
+ * （`every 90m`／`every 6h`／`every 2d`，最左＝跟着全局每一轮 ⇒ 空串），运行时一个字没动。
+ *
+ * 旋钮装不下的写法（比如"每周星期一 03:00"那种 cron）不进旋钮：**那一句原样留在自定义那一格**，
+ * 一打开就看得见——旋钮不假装它能表达所有 cron。
  */
 function CadenceField({ labels, onChange, value }: {
   labels: Labels
   onChange: (value: string) => void
   value: string
 }) {
-  const parsed = parseCadence(value)
-  const [advanced, setAdvanced] = useState(parsed.mode === 'custom')
-  const update = (patch: Partial<typeof parsed>) => onChange(cadenceCron({ ...parsed, ...patch }))
-
-  const modes: { key: CadenceMode; label: string }[] = [
-    { key: 'every_round', label: labels.cadenceModeEveryRound },
-    { key: 'every_hours', label: labels.cadenceModeEveryHours },
-    { key: 'daily', label: labels.cadenceModeDaily },
-    { key: 'weekly', label: labels.cadenceModeWeekly }
-  ]
+  const fitsTheDial = !value.trim() || /^every\s+\d+\s*[mhd]$/i.test(value.trim())
+  const [advanced, setAdvanced] = useState(!fitsTheDial)
 
   return (
     <div className="mt-1 space-y-2" data-cadence={value} data-testid="cadence-field">
-      <div aria-label={labels.fields.cadence ?? 'cadence'} className="flex flex-wrap gap-1" role="group">
-        {modes.map(mode => (
-          <button
-            aria-pressed={parsed.mode === mode.key}
-            className={parsed.mode === mode.key
-              ? 'rounded-md bg-(--ui-bg-secondary) px-2 py-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-primary)'
-              : 'rounded-md px-2 py-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'}
-            key={mode.key}
-            onClick={() => { setAdvanced(false); update({ mode: mode.key }) }}
-            type="button"
-          >
-            {mode.label}
-          </button>
-        ))}
-      </div>
-
-      {parsed.mode === 'every_hours' ? (
-        <label className="flex items-center gap-2 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary)">
-          <input
-            aria-label={labels.cadenceModeEveryHours}
-            className="min-w-0 flex-1 accent-(--ui-text-primary)"
-            max={12}
-            min={1}
-            onChange={event => update({ hours: clampHours(Number(event.target.value)) })}
-            type="range"
-            value={parsed.hours}
-          />
-          <span className="shrink-0 text-(--ui-text-primary)">
-            {labels.cadenceEveryHours.replace('{n}', String(parsed.hours))}
-          </span>
-        </label>
-      ) : null}
-
-      {parsed.mode === 'daily' || parsed.mode === 'weekly' ? (
-        <div className="flex flex-wrap items-center gap-1">
-          {parsed.mode === 'weekly'
-            ? ['1', '2', '3', '4', '5', '6', '0'].map(day => (
-                <button
-                  aria-pressed={parsed.dow === Number(day)}
-                  className={parsed.dow === Number(day)
-                    ? 'rounded-md bg-(--ui-bg-secondary) px-2 py-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-primary)'
-                    : 'rounded-md px-2 py-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-secondary) hover:bg-(--ui-bg-secondary)'}
-                  key={day}
-                  onClick={() => update({ dow: Number(day) })}
-                  type="button"
-                >
-                  {labels.cadenceWeekdays[day] ?? day}
-                </button>
-              ))
-            : null}
-          <Input
-            aria-label={labels.fields.cadence ?? 'time'}
-            className="w-32"
-            onChange={event => {
-              const [hour, minute] = event.target.value.split(':')
-
-              if (hour && minute) {
-                update({ hour: Number(hour), minute: Number(minute) })
-              }
-            }}
-            type="time"
-            value={`${two(parsed.hour)}:${two(parsed.minute)}`}
-          />
-        </div>
-      ) : null}
+      <CadenceDial labels={labels} onChange={onChange} value={value} />
 
       <button
         className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary) underline-offset-2 hover:underline"
@@ -399,7 +341,6 @@ function CadenceField({ labels, onChange, value }: {
           aria-label={labels.cadenceAdvanced}
           className="font-mono"
           onChange={event => onChange(event.target.value)}
-          onFocus={() => { if (parsed.mode !== 'custom') { onChange(value || '0 3 * * *') } }}
           placeholder="0 3 * * *"
           value={value}
         />

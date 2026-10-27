@@ -376,6 +376,13 @@ export const ja = defineLocale({
       cadenceModeWeekly: '毎週',
       cadenceEveryHours: '{n}時間ごと',
       cadenceAdvanced: 'カスタム式',
+      cadenceDial: '収集頻度のダイヤル',
+      cadenceDialHint: '時計回りで頻繁に、反時計回りに間隔を長くします。',
+      cadenceEveryN: '{n} {unit}ごと',
+      cadenceNumber: '毎',
+      cadenceUnit: '単位',
+      cadenceUnits: { days: '日', hours: '時間', minutes: '分' },
+
       cadenceWeekdays: { '0': '日', '1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土' },
       cadenceCustom: 'カスタム',
       cadencePresets: {

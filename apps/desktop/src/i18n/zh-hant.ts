@@ -369,6 +369,13 @@ export const zhHant = defineLocale({
       cadenceModeWeekly: '每週',
       cadenceEveryHours: '每 {n} 小時',
       cadenceAdvanced: '自訂表示式',
+      cadenceDial: '採集頻率旋鈕',
+      cadenceDialHint: '順時針越來越勤，逆時針越來越疏。',
+      cadenceEveryN: '每 {n} {unit}',
+      cadenceNumber: '每',
+      cadenceUnit: '單位',
+      cadenceUnits: { days: '天', hours: '小時', minutes: '分鐘' },
+
       cadenceWeekdays: { '0': '週日', '1': '週一', '2': '週二', '3': '週三', '4': '週四', '5': '週五', '6': '週六' },
       cadenceCustom: '自訂',
       cadencePresets: {

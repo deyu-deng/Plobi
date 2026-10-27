@@ -437,6 +437,13 @@ export const zh: Translations = {
       cadenceModeWeekly: '每周',
       cadenceEveryHours: '每 {n} 小时',
       cadenceAdvanced: '自定义表达式',
+      cadenceDial: '采集频率旋钮',
+      cadenceDialHint: '顺时针越来越勤，逆时针越来越疏。',
+      cadenceEveryN: '每 {n} {unit}',
+      cadenceNumber: '每',
+      cadenceUnit: '单位',
+      cadenceUnits: { days: '天', hours: '小时', minutes: '分钟' },
+
       cadenceWeekdays: { '0': '周日', '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六' },
       cadenceCustom: '自定义',
       cadencePresets: {

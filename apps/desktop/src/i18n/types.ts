@@ -433,6 +433,13 @@ export interface Translations {
       /** `{n}` 会换成小时数（同 `agentMenuArchiveConfirmBody` 那套占位符写法）。 */
       cadenceEveryHours: string
       cadenceAdvanced: string
+      cadenceDial: string
+      cadenceDialHint: string
+      cadenceEveryN: string
+      cadenceNumber: string
+      cadenceUnit: string
+      cadenceUnits: Record<'days' | 'hours' | 'minutes', string>
+
       /** 周几：键是 `0`..`6`（0=周日），值是该语言的短名。 */
       cadenceWeekdays: Record<string, string>
       cadenceCustom: string,
