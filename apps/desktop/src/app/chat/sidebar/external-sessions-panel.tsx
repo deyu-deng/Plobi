@@ -1,0 +1,226 @@
+import { useEffect, useState } from 'react'
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useI18n } from '@/i18n'
+import { cn } from '@/lib/utils'
+
+import {
+  getAgentExternalSessions,
+  getExternalTranscript,
+  sendExternalMessage,
+  titleOf,
+  whenText
+} from './external-sessions'
+import type { ExternalMessage, ExternalSession, ExternalSessionsData } from './external-sessions'
+
+/**
+ * 左栏「外包给」下方那一组：这台机器上跟这个 Agent 的项目有关的**外部软件会话**
+ * （WP-EXTERNAL-SESSIONS）。点一条在 Plobi 里读、在这里说——不再弹命令行窗口。
+ *
+ * 只在 Plobi 这一侧成立：Qoder 桌面 App 的索引是另一套，这边改名/说话不会同步过去。
+ */
+export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
+  const { t } = useI18n()
+  const c = t.console
+  const [data, setData] = useState<null | ExternalSessionsData>(null)
+  const [note, setNote] = useState('')
+  const [open, setOpen] = useState<null | ExternalSession>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setData(null)
+    setNote('')
+    getAgentExternalSessions(agentId)
+      .then(body => {
+        if (!cancelled) {
+          setData(body?.data ?? { projects: [], reason: '', sessions: [], vendor: 'qoder' })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setData({ projects: [], reason: c.externalSessionsLoadFailed, sessions: [], vendor: 'qoder' })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [agentId, c.externalSessionsLoadFailed])
+
+  return (
+    <div className="flex flex-col gap-px">
+      <span className="px-1 text-[0.7rem] uppercase text-(--ui-text-tertiary)">{c.externalSessionsTitle}</span>
+
+      {data === null && (
+        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
+          {c.externalSessionsLoading}
+        </div>
+      )}
+
+      {data !== null && data.sessions.length === 0 && (
+        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
+          {note || data.reason || c.externalSessionsEmpty}
+        </div>
+      )}
+
+      {data?.sessions.map(session => (
+        <button
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-(--ui-bg-secondary)"
+          key={`${session.vendor}-${session.id}`}
+          onClick={() => setOpen(session)}
+          title={session.project}
+          type="button"
+        >
+          <span className="min-w-0 flex-1 truncate text-[0.78rem]">{titleOf(session)}</span>
+          <span className="shrink-0 text-[0.65rem] text-(--ui-text-quaternary)">{whenText(session.updated_at)}</span>
+        </button>
+      ))}
+
+      {open && <TranscriptSheet agentId={agentId} onClose={() => setOpen(null)} session={open} />}
+    </div>
+  )
+}
+
+function TranscriptSheet({
+  agentId,
+  onClose,
+  session
+}: {
+  agentId: string
+  onClose: () => void
+  session: ExternalSession
+}) {
+  const { t } = useI18n()
+  const c = t.console
+  const [messages, setMessages] = useState<null | ExternalMessage[]>(null)
+  const [draft, setDraft] = useState('')
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    getExternalTranscript(agentId, session.vendor, session.id)
+      .then(body => {
+        if (!cancelled) {
+          setMessages(body?.data?.messages ?? [])
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMessages([])
+          setError(c.externalSessionsLoadFailed)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [agentId, session.id, session.vendor, c.externalSessionsLoadFailed])
+
+  const send = () => {
+    const text = draft.trim()
+
+    if (!text || pending) {
+      return
+    }
+
+    setPending(true)
+    setError('')
+    setDraft('')
+    setMessages(prev => [...(prev ?? []), { role: 'user', text }])
+
+    sendExternalMessage(agentId, session.vendor, session.id, text)
+      .then(body => {
+        setMessages(prev => [...(prev ?? []), { role: 'assistant', text: String(body?.data?.reply ?? '') }])
+      })
+      .catch((reason: unknown) => {
+        setError(`${c.externalSessionsSendFailed}${failureText(reason)}`)
+      })
+      .finally(() => setPending(false))
+  }
+
+  return (
+    <Dialog onOpenChange={next => { if (!next) {onClose()} }} open>
+      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
+        <DialogHeader>
+          <DialogTitle className="truncate text-sm">{titleOf(session)}</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex min-h-[220px] flex-1 flex-col gap-2 overflow-y-auto py-1">
+          {messages === null && (
+            <span className="text-[0.75rem] text-(--ui-text-tertiary)">{c.externalSessionsLoading}</span>
+          )}
+          {messages !== null && messages.length === 0 && (
+            <span className="text-[0.75rem] text-(--ui-text-tertiary)">{c.externalSessionsNoMessages}</span>
+          )}
+          {messages?.map((message, index) => (
+            <div
+              className={cn(
+                'max-w-[85%] whitespace-pre-wrap rounded-lg px-2.5 py-1.5 text-[0.78rem] leading-snug',
+                message.role === 'user'
+                  ? 'self-end bg-(--ui-accent) text-(--ui-accent-foreground)'
+                  : 'self-start bg-(--ui-bg-secondary) text-(--ui-text)'
+              )}
+              key={`${message.role}-${index}`}
+            >
+              {message.text}
+            </div>
+          ))}
+          {pending && (
+            <span className="self-start text-[0.72rem] text-(--ui-text-tertiary)">{c.externalSessionsSending}</span>
+          )}
+          {error && <span className="self-start text-[0.72rem] text-(--ui-red)">{error}</span>}
+        </div>
+
+        <form
+          className="flex items-end gap-2 border-t border-(--ui-stroke-tertiary) pt-2"
+          onSubmit={event => {
+            event.preventDefault()
+            send()
+          }}
+        >
+          <textarea
+            className="min-h-9 flex-1 resize-none rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1 text-[0.8rem] outline-none focus:border-(--ui-stroke-secondary)"
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                send()
+              }
+            }}
+            placeholder={c.externalSessionsInput}
+            rows={2}
+            value={draft}
+          />
+          <button
+            className="rounded-md bg-(--ui-accent) px-3 py-1.5 text-[0.8rem] text-(--ui-accent-foreground) disabled:opacity-60"
+            disabled={pending || !draft.trim()}
+            type="submit"
+          >
+            {pending ? c.externalSessionsSending : c.externalSessionsSend}
+          </button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** `fetchJson` 对非 2xx 是 reject，消息形如 `400: {...}`；把那句话取出来给人看。 */
+function failureText(reason: unknown): string {
+  const raw = reason instanceof Error ? reason.message : String(reason ?? '')
+  const start = raw.indexOf('{')
+
+  if (start >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(start)) as { error?: unknown }
+
+      if (typeof parsed.error === 'string' && parsed.error) {
+        return parsed.error
+      }
+    } catch {
+      // 不是 JSON 就按原文
+    }
+  }
+
+  return raw.slice(0, 160)
+}
