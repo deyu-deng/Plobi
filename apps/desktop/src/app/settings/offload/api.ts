@@ -52,10 +52,36 @@ export async function getOffloadAgents(refresh = false): Promise<OffloadPayload>
   const response: unknown = await window.plobiDesktop.api({
     path: `/api/offload/agents${refresh ? '?refresh=1' : ''}`
   })
+
   const record = response as { data?: unknown } | null
   const payload = (record && typeof record === 'object' && 'data' in record ? record.data : response) as OffloadPayload
+
   if (!payload || !Array.isArray(payload.agents)) {
     throw new Error('后端回的形状不是外包清单：agents 不是数组')
   }
+
   return payload
+}
+
+export interface SessionSource {
+  readable: boolean
+  reason: string
+  root: string
+  sendable: boolean
+  sessions: number
+  vendor: string
+}
+
+/** 本机上各家 AI 软件的会话存在哪、读不读得动（设置 → 外包 那一段）。 */
+export async function getSessionSources(): Promise<SessionSource[]> {
+  const response: unknown = await window.plobiDesktop.api({ path: '/api/external-sessions/sources' })
+  const record = response as { data?: unknown } | null
+
+  const payload = (record && typeof record === 'object' && 'data' in record ? record.data : response) as
+    | { sources?: unknown }
+    | null
+
+  const sources = payload?.sources
+
+  return Array.isArray(sources) ? (sources as SessionSource[]) : []
 }

@@ -332,6 +332,13 @@ export interface Translations {
       resumeNo: string
       sessionId: string
       notInstalled: string
+      sessionsTitle: string
+      sessionsNote: string
+      sessionsReadable: string
+      sessionsUnreadable: string
+      sessionsCount: string
+      sessionsSendable: string
+      sessionsReadOnly: string
     }
     sources: {
       categories: {
@@ -1576,6 +1583,9 @@ export interface Translations {
     externalSessionsSend: string
     externalSessionsSending: string
     externalSessionsSendFailed: string
+    externalSessionsShowUnknown: string
+    externalSessionsHideUnknown: string
+    externalSessionsReadOnly: string
     offloadsBackToList: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string

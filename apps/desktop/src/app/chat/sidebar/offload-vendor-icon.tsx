@@ -31,6 +31,8 @@ type VendorIconSpec = {
 const VENDOR_ICONS: Record<string, VendorIconSpec> = {
   agy: { monogram: 'A' },
   codebuddy: { Icon: SiCodebuddy, monogram: 'C' },
+  cursor: { monogram: 'C' },
+  marvis: { monogram: 'M' },
   // 品牌方还没进 simple-icons ⇒ 首字母。**不自己画一个"Qoder 的样子"**。
   qoder: { monogram: 'Q' },
 }

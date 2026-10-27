@@ -284,6 +284,93 @@ RUN_SCHEMA = {
 }
 
 
+SCAN_SCHEMA = {
+    "name": "external_sessions_scan",
+    "description": (
+        "列出本机上各家 AI 软件的会话（Qoder / CodeBuddy / Marvis），并带上**已经自动算好的**相关判断："
+        "`related=true`（项目目录或标题点到你）／`null`（还没判断）／`false`（你标过无关）。"
+        "用户问「有哪些跟我有关的对话」、或你要决定跟哪条继续谈之前，先扫这一遍；"
+        "**判不准的别猜**，看完标题与项目再决定，标完用 external_sessions_mark 记下来。"
+    ),
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+MARK_SCHEMA = {
+    "name": "external_sessions_mark",
+    "description": (
+        "把你对会话归属的判断记下来（左栏与下一次 scan 都按它过滤）。只标你**确定**的："
+        "有关系的标 related=true，确认无关的标 related=false，其余留空让它继续待判断。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "vendor": {"type": "string", "description": "哪家软件：qoder / codebuddy / marvis。"},
+                        "id": {"type": "string", "description": "scan 回来的会话号。"},
+                        "related": {"type": "boolean", "description": "跟你有关＝true，无关＝false。"},
+                    },
+                    "required": ["vendor", "id", "related"],
+                },
+            },
+        },
+        "required": ["items"],
+    },
+}
+
+
+def _agent_identity() -> str:
+    from gateway.session_context import get_session_env
+
+    return (get_session_env("PLOBI_AGENT_ID") or "").strip()
+
+
+def _handle_scan(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，判不了归属"}, ensure_ascii=False)
+
+    from plobi.delegation.external_sessions import sessions_for_agent
+
+    payload = sessions_for_agent(agent)
+    rows = [
+        {
+            "id": item["id"],
+            "project": item.get("project") or "",
+            "related": item.get("related"),
+            "related_source": item.get("related_source"),
+            "title": item.get("title") or "",
+            "updated_at": item.get("updated_at") or "",
+            "vendor": item["vendor"],
+        }
+        for item in payload["sessions"]
+    ]
+    counts = {"related": 0, "unknown": 0, "unrelated": 0}
+    for row in rows:
+        counts["related" if row["related"] is True else "unrelated" if row["related"] is False else "unknown"] += 1
+
+    return json.dumps({"counts": counts, "ok": True, "sessions": rows[:80], "sources": payload.get("sources", [])},
+                      ensure_ascii=False)
+
+
+def _handle_mark(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，记不了归属"}, ensure_ascii=False)
+    items = args.get("items")
+    if not isinstance(items, list):
+        return json.dumps({"ok": False, "error": "items 要给一个数组"}, ensure_ascii=False)
+
+    from plobi.delegation.external_sessions import mark_for_agent
+
+    result = mark_for_agent(agent, [item for item in items if isinstance(item, dict)])
+
+    return json.dumps(result, ensure_ascii=False)
+
+
 def _check_drivable() -> bool:
     """只判一个当场事实：这台有没有可驱动的外部 Agent 命令。**不当默认关**（见模块头 2）。"""
     from agent import external_offload as channel
@@ -308,4 +395,22 @@ registry.register(
     handler=_handle_run,
     check_fn=_check_drivable,
     emoji="📤",
+)
+
+registry.register(
+    name="external_sessions_scan",
+    toolset=TOOLSET,
+    schema=SCAN_SCHEMA,
+    handler=_handle_scan,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_sessions_mark",
+    toolset=TOOLSET,
+    schema=MARK_SCHEMA,
+    handler=_handle_mark,
+    check_fn=_check_drivable,
+    emoji="🗂",
 )

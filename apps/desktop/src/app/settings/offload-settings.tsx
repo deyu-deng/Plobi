@@ -12,12 +12,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { vendorLabel } from '@/app/chat/sidebar/external-sessions'
 import { OffloadVendorAvatar } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
 import { Package, RefreshCw } from '@/lib/icons'
 
-import { getOffloadAgents, type OffloadAgent, type OffloadPayload } from './offload/api'
+import { getOffloadAgents, getSessionSources, type OffloadAgent, type OffloadPayload, type SessionSource } from './offload/api'
 import { ListRow, LoadingState, Pill, SectionHeading, SettingsContent } from './primitives'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
@@ -32,6 +33,7 @@ function money(value: number | null, status: string): string {
   if (value === null || value === undefined) {
     return status === 'no_usage_reported' ? '—' : '—'
   }
+
   return `$${value.toFixed(2)}`
 }
 
@@ -39,14 +41,17 @@ export function OffloadSettings() {
   const { t } = useI18n()
   const s = t.settings.offload
   const [payload, setPayload] = useState<OffloadPayload | null>(null)
+  const [sources, setSources] = useState<SessionSource[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async (refresh: boolean) => {
     setBusy(true)
     setError('')
+
     try {
       setPayload(await getOffloadAgents(refresh))
+      setSources(await getSessionSources())
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -59,8 +64,10 @@ export function OffloadSettings() {
   }, [load])
 
   const loginText = (agent: OffloadAgent): string => {
-    if (agent.logged_in.value === true) return s.loginYes
-    if (agent.logged_in.value === false) return s.loginNo
+    if (agent.logged_in.value === true) {return s.loginYes}
+
+    if (agent.logged_in.value === false) {return s.loginNo}
+
     return s.loginUnknown
   }
 
@@ -82,7 +89,6 @@ export function OffloadSettings() {
       {!payload && !error ? <LoadingState label={s.loading} /> : null}
       {payload?.agents.map(agent => (
         <ListRow
-          key={agent.name}
           action={
             <Pill tone={agent.can_use ? 'primary' : 'muted'}>
               {agent.can_use ? s.usable : s.blocked}
@@ -112,11 +118,40 @@ export function OffloadSettings() {
           }
           description={agent.installed ? agent.binary : s.notInstalled}
           hint={agent.version ? `${agent.name} ${agent.version}` : undefined}
+          key={agent.name}
           title={
             <span className="flex items-center gap-2">
               <OffloadVendorAvatar vendor={agent.name} />
               <span>{agent.name}</span>
               <span className={MONO}>{agent.permission_flag}</span>
+            </span>
+          }
+        />
+      ))}
+
+      <SectionHeading icon={Package} title={s.sessionsTitle} />
+      <p className={`${CAPTION} pb-1`}>{s.sessionsNote}</p>
+      {sources.map(source => (
+        <ListRow
+          action={
+            <Pill tone={source.readable ? 'primary' : 'muted'}>
+              {source.readable ? s.sessionsReadable : s.sessionsUnreadable}
+            </Pill>
+          }
+          below={
+            <div className="mt-1 space-y-1">
+              <div className={CAPTION}>
+                {source.sessions} {s.sessionsCount} · {source.sendable ? s.sessionsSendable : s.sessionsReadOnly}
+              </div>
+              {source.reason ? <div className={CAPTION}>{source.reason}</div> : null}
+            </div>
+          }
+          description={source.root || '—'}
+          key={source.vendor}
+          title={
+            <span className="flex items-center gap-2">
+              <OffloadVendorAvatar vendor={source.vendor} />
+              <span>{vendorLabel(source.vendor)}</span>
             </span>
           }
         />

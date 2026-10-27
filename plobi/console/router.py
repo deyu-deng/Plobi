@@ -1692,6 +1692,16 @@ async def offload_resume_route(request: Request):
 # 会话，所以这里不假装能驱动它的窗口。归属只从名册登记的项目目录解析，请求方递来的路径
 # 一律不看（和 `resume_external_session` 同一条理由：自由路径＝放开任意目录）。
 
+@router.get("/external-sessions/sources", name="external_session_sources")
+async def external_session_sources_route():
+    """GET /api/external-sessions/sources — 设置里那一段：每家软件、会话在哪、读不读得动。"""
+    from plobi.delegation.external_sessions import session_sources
+
+    payload = await run_in_threadpool(session_sources)
+
+    return {"ok": True, "data": {"sources": payload}}
+
+
 @router.get("/agents/{agent_id}/external-sessions", name="agent_external_sessions")
 async def agent_external_sessions_route(agent_id: str):
     """GET /api/agents/:id/external-sessions — 这个 Agent 项目下的外部会话。"""

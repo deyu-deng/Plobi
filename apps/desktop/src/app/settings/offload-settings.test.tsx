@@ -8,18 +8,23 @@
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { OffloadSettings } from './offload-settings'
 import type * as OffloadApi from './offload/api'
 import type { OffloadPayload } from './offload/api'
 
 const getOffloadAgents = vi.fn()
+const getSessionSources = vi.fn()
 
 vi.mock('./offload/api', async () => {
   const actual = await vi.importActual<typeof OffloadApi>('./offload/api')
 
-  return { ...actual, getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh) }
+  return {
+    ...actual,
+    getOffloadAgents: (refresh?: boolean) => getOffloadAgents(refresh),
+    getSessionSources: () => getSessionSources()
+  }
 })
 
 const payload: OffloadPayload = {
@@ -85,6 +90,13 @@ const payload: OffloadPayload = {
   note: '这一屏管的是把活外包给那家软件；把它的订阅/API 当模型用在 Providers。'
 }
 
+beforeEach(() => {
+  getSessionSources.mockResolvedValue([
+    { readable: true, reason: '', root: 'C:/Users/me/.qoder/projects', sendable: true, sessions: 113, vendor: 'qoder' },
+    { readable: false, reason: '还没找到它的会话存放', root: '.', sendable: false, sessions: 0, vendor: 'agy' }
+  ])
+})
+
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
@@ -97,7 +109,7 @@ describe('settings → offload', () => {
     await waitFor(() => expect(screen.getByText('qoder')).toBeTruthy())
 
     expect(screen.getByText('codebuddy')).toBeTruthy()
-    expect(screen.getByText('agy')).toBeTruthy()
+    expect(screen.getAllByText('agy').length).toBeGreaterThan(0)
     expect(screen.getByText(payload.agents[0].why_not)).toBeTruthy()
     expect(screen.getByText(payload.agents[2].why_not)).toBeTruthy()
     expect(getOffloadAgents).toHaveBeenCalledWith(false)
@@ -110,10 +122,10 @@ describe('settings → offload', () => {
 
     expect(screen.getByText(/Not logged in · Please run \/login/)).toBeTruthy()
     // 有证据的那一家才出现"上一趟它自己说没登录"；agy 没有证据 ⇒ 只能出现"no evidence yet"
-    expect(screen.getAllByText(/on the last run it said it is not logged in/).length).toBe(1)
-    expect(screen.getByText(/no evidence yet/)).toBeTruthy()
+    expect(screen.getAllByText(/The last connection reported not signed in/).length).toBe(1)
+    expect(screen.getByText(/No sign-in status available yet/)).toBeTruthy()
     // 回跳能力：只有 codebuddy 与 agy 登记了口，qoder 没有
-    expect(screen.getAllByText(/no registered way back into its screen yet/).length).toBe(1)
+    expect(screen.getAllByText(/no registered way back to that screen yet/).length).toBe(1)
   })
 
   it('reads again when the refresh control is used', async () => {
@@ -124,4 +136,14 @@ describe('settings → offload', () => {
     fireEvent.click(screen.getByText('Read again'))
     await waitFor(() => expect(getOffloadAgents).toHaveBeenCalledWith(true))
   })
+  it('设置里看得见每家软件的会话存在哪、读不读得动、能不能说', async () => {
+    getOffloadAgents.mockResolvedValue(payload)
+    render(<OffloadSettings />)
+    await waitFor(() => expect(screen.getByText('External conversations')).toBeTruthy())
+
+    expect(screen.getByText('C:/Users/me/.qoder/projects')).toBeTruthy()
+    expect(screen.getByText('113 conversations · can talk')).toBeTruthy()
+    expect(screen.getByText('还没找到它的会话存放')).toBeTruthy()
+  })
+
 })
