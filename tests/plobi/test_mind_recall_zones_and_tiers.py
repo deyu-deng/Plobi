@@ -39,10 +39,11 @@ def _page(path: Path, hits: int, *, extra: str = "") -> None:
 
 
 def test_recall_only_reads_the_brain_never_the_human_surface(brain):
-    """人读面里再多的关键词命中也不进上下文（MEMORY_ZONES 只含脑那一半）。"""
+    """人读面里再多的关键词命中也不进上下文（MEMORY_ZONES 只含脑那一半）；目录页也不挤占预算。"""
     mind, vault = brain
     _page(vault / "notes" / "人写的笔记.md", 40, extra=_VAULT_SENTINEL)     # strongest, wrong repo
     _page(mind / "wiki" / "concepts" / "储能.md", 3)                        # weaker, but it is canon
+    _page(mind / "wiki" / "concepts" / "INDEX.md", 30, extra="目录：什么都提一句")  # 泛指页，最会抢分
 
     out = retrieval.search(mind, _HAY, limit=5)
     joined = "\n\n".join(out)
@@ -50,6 +51,7 @@ def test_recall_only_reads_the_brain_never_the_human_surface(brain):
     assert out, "脑里有命中就该给东西"
     assert _VAULT_SENTINEL not in joined, "人读面那一页一个字节都不许进上下文"
     assert "人写的笔记" not in joined
+    assert "INDEX" not in joined, "目录页短而泛指，挤掉真页的预算＝负例"
     for block in out:
         rel = block.splitlines()[0][len("### Mind: "):]
         assert any(rel == zone or rel.startswith(zone + "/") for zone in MEMORY_ZONES), rel

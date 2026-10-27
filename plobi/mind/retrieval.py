@@ -131,6 +131,24 @@ def _clip(text: str, max_chars: int) -> str:
     return text[:max_chars].rstrip(" ,;:") + "…"
 
 
+def _nav_names(root: Path) -> frozenset:
+    """Skip-list for navigational pages, read from the same schema the gates use.
+
+    ``index.md`` / ``hot.md`` / ``README.md`` are short, generic lists: they score
+    well on any query (they name everything) and crowd the real pages out of the
+    budget. The list lives in ``wiki/meta/schema.json`` so the vocabulary file stays
+    the one source; if it cannot be read we fall back to the known five.
+    """
+    fallback = frozenset({"INDEX.md", "index.md", "hot.md", "log.md", "overview.md", "README.md"})
+    try:
+        from plobi.mind.schema import load_schema
+
+        names = load_schema(root).get("skip_names") or []
+    except Exception:  # noqa: BLE001 - recall must never die on a metadata read
+        return fallback
+    return frozenset(str(n) for n in names) | fallback if names else fallback
+
+
 def _tiers_for(text: str, terms: List[str]) -> Dict[str, str]:
     """The same page at three depths, each independently capped.
 
@@ -180,6 +198,7 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
 
     collected: List[Dict] = []
     overfetch = max(limit * OVERFETCH_FACTOR, limit)
+    nav = _nav_names(root)
     for prefix in MEMORY_ZONES:
         if len(collected) >= overfetch:
             break
@@ -187,6 +206,8 @@ def search(mind_root: Path, query: str, limit: int = 5) -> List[str]:
         if not base.is_dir():
             continue
         for md in sorted(base.rglob("*.md")):
+            if md.name in nav:
+                continue      # 目录页与门面页不是知识：它们短、泛指，挤掉真页的预算
             try:
                 text = _read_md(md)
             except OSError:
