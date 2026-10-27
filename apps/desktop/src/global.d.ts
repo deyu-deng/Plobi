@@ -224,6 +224,8 @@ declare global {
           id: string
           kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
           live: boolean
+          installed: boolean
+          login_reason: string
           login?: null | { detail?: string; state?: string; url?: string }
           name: string
           reason: string

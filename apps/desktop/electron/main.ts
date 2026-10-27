@@ -10122,7 +10122,9 @@ async function fetchAuthCatalog(): Promise<
     name: string
     kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
     live: boolean
+    installed: boolean
     reason: string
+    login_reason: string
     aggregate: boolean
     login?: { state?: string; detail?: string; url?: string } | null
   }>
@@ -10148,7 +10150,9 @@ async function fetchAuthCatalog(): Promise<
       name: String(row.name ?? row.id ?? ''),
       kind: (String(row.kind ?? 'none') as 'none' | 'local_session' | 'cli_login' | 'oauth'),
       live: Boolean(row.live),
+      installed: row.installed === undefined ? Boolean(row.live) : Boolean(row.installed),
       reason: String(row.reason ?? ''),
+      login_reason: String(row.login_reason ?? ''),
       aggregate: Boolean(row.aggregate),
       login: (row.login ?? null) as { state?: string; detail?: string; url?: string } | null
     }))

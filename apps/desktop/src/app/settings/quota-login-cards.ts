@@ -7,7 +7,11 @@ export interface AuthCatalogRow {
   aggregate: boolean
   id: string
   kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
+  /** The CLI is on this machine. NOT the same claim as "already signed in". */
+  installed?: boolean
   live: boolean
+  /** The plan's own words when there is no click to offer ("we did not wire it"). */
+  login_reason?: string
   login?: null | { detail?: string; state?: string; url?: string }
   name: string
   reason: string
@@ -41,7 +45,10 @@ const MISSING_CLI = /没在这台机器上找到/
  *   app's own login, and a 连接 button there would be a lie about where the
  *   credential lives.
  * - `none` is "we have not wired this", which is not "it is broken" — it keeps the
- *   reason the hub gave and shows no button, instead of a control that fails.
+ *   plan's own words (`login_reason`, never the credential verdict: printing "ok"
+ *   under a card is a machine token, not an answer) and shows no button.
+ * - `installed` is not `live`. A CLI on PATH that nobody has signed into must still
+ *   offer the click; treating "installed" as "connected" hid the only way in.
  * - a CLI that is not installed is not a sign-in problem either; the reason already
  *   says the CLI is missing, so no button.
  * - `oauth` / `cli_login` while the leg is dead IS the button, and its label says the
@@ -52,7 +59,10 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
     .filter(row => row.id)
     .map(row => {
       const pending = row.login?.state === 'pending'
-      const missingCli = MISSING_CLI.test(row.reason) || MISSING_CLI.test(row.login?.detail ?? '')
+      const missingCli =
+        row.installed === false ||
+        MISSING_CLI.test(row.reason) ||
+        MISSING_CLI.test(row.login?.detail ?? '')
       const wired = row.kind === 'oauth' || row.kind === 'cli_login'
 
       let description: string
@@ -60,9 +70,9 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
       if (pending) {
         description = '浏览器里那一步等你点完，回来这里就会变成已连接'
       } else if (row.kind === 'local_session') {
-        description = row.reason || '用的是这个软件自己的登录，Plobi 这边不用再登一次'
+        description = row.login_reason || '用的是这个软件自己的登录，Plobi 这边不用再登一次'
       } else if (row.kind === 'none') {
-        description = row.reason || '这一条还没接上点一下就能登录的路'
+        description = row.login_reason || row.reason || '这一条还没接上点一下就能登录的路'
       } else if (row.live) {
         description = '已连接'
       } else if (missingCli) {
@@ -70,7 +80,10 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
       } else if (row.kind === 'oauth') {
         description = '登录过期了，点连接会跳到浏览器'
       } else {
-        description = row.reason || '点连接会跳到浏览器登录，回来就能选它的模型'
+        // Both halves matter: where it stands, and what the button will do.
+        description = row.reason
+          ? `${row.reason}，点连接会跳到浏览器`
+          : '点连接会跳到浏览器登录，回来就能选它的模型'
       }
 
       return {

@@ -337,13 +337,20 @@ def auth_catalog(registry) -> list[dict]:
         plan = prov.login_plan()
         plan.setdefault("name", getattr(prov, "display_name", "") or name)
         live, reason = registry.credential_health(prov)
+        kind = plan.get("kind", "none")
         rows.append(
             {
                 "id": name,
                 "name": plan.get("name") or name,
-                "kind": plan.get("kind", "none"),
+                "kind": kind,
                 "live": bool(live),
+                "installed": True,
                 "reason": reason,
+                # The plan's own words when there is no click to offer. `reason` above
+                # is the credential verdict ("ok", "credential_expired") — printing
+                # that under a card would put a machine token on screen (measured
+                # 2026-10-26: Codex/Claude/OpenCode cards read "ok").
+                "login_reason": str(plan.get("reason") or "") if kind in {"none", "local_session"} else "",
                 "aggregate": True,
             }
         )
@@ -352,13 +359,22 @@ def auth_catalog(registry) -> list[dict]:
     for name, plan in LOGIN_ONLY_TARGETS.items():
         if name in seen:
             continue
+        installed = _resolve_binary(plan.get("binary", "")) is not None
         rows.append(
             {
                 "id": name,
                 "name": plan.get("name", name),
                 "kind": "cli_login",
-                "live": _resolve_binary(plan.get("binary", "")) is not None,
-                "reason": "已装，待本人登录" if _resolve_binary(plan.get("binary", "")) else "这台机器上还没装它的 CLI",
+                # `live` is a SIGN-IN verdict and nothing else. Having the binary on
+                # PATH is `installed`, not "already signed in" — conflating the two
+                # made the settings card read "已连接" and hide its button for a CLI
+                # nobody had logged into (measured 2026-10-26: Gemini/Qwen both said
+                # 已连接 with no way to sign in). For login-only legs we have no
+                # credential probe, so the honest answer is "not signed in yet".
+                "live": False,
+                "installed": installed,
+                "reason": "已装，还没登录过" if installed else "这台机器上还没装它的 CLI",
+                "login_reason": "",
                 "aggregate": False,
             }
         )
