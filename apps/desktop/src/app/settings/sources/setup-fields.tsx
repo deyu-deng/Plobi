@@ -26,11 +26,30 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { selectDesktopPaths } from '@/lib/desktop-fs'
 import { notifyError } from '@/store/notifications'
 
 import type { SetupField, SourceRow } from './api'
 import { saveSourceSetup } from './api'
 import { CadenceDial } from './cadence-dial'
+
+/** 桌面壳在才有系统自带的文件选择框（`window.plobiDesktop.selectPaths` 是 preload 那一层挂的桥）。 */
+function canBrowse(): boolean {
+  return typeof window !== 'undefined' && typeof window.plobiDesktop?.selectPaths === 'function'
+}
+
+/** 选完填进同一格；空手回来（取消）不动已有的值。走的是仓里那一只共用的手，远程那一档它自己管。 */
+async function pickPath(labels: Labels, onChange: (value: string) => void, title: string): Promise<void> {
+  try {
+    const picked = await selectDesktopPaths({ directories: false, multiple: false, title })
+
+    if (picked.length > 0) {
+      onChange(picked[0])
+    }
+  } catch (err) {
+    notifyError(err, labels.browseFailed)
+  }
+}
 
 type Labels = {
   cadenceAdvanced: string
@@ -41,7 +60,9 @@ type Labels = {
   cadenceNumber: string
   cadenceUnit: string
   cadenceUnits: { days: string, hours: string, minutes: string }
+  cadenceEveryDays: string
   cadenceEveryHours: string
+  cadenceEveryMinutes: string
   cadenceModeDaily: string
   cadenceModeEveryHours: string
   cadenceModeEveryRound: string
@@ -50,32 +71,49 @@ type Labels = {
   fields: Record<string, string>
   /** 格子旁边那句指路，键是 `<信源>.<字段>`。缺这一格也画得出——退回这条自己声明的 `help`。 */
   fieldsHelp?: Record<string, string>
+  browse: string
+  browseFailed: string
   saveFailed: string
   saveSetup: string
 }
 
-type CadenceMode = 'custom' | 'daily' | 'every_hours' | 'every_round' | 'weekly'
+type CadenceMode = 'custom' | 'daily' | 'every_days' | 'every_hours' | 'every_minutes' | 'every_round' | 'weekly'
 
 /** 读一句存量 cron → 控件该停在哪一档。认不出就落「自定义」，**不猜**。 */
 export function parseCadence(value: string): {
+  days: number
   dow: number
   hour: number
   hours: number
+  minutes: number
   minute: number
   mode: CadenceMode
   raw: string
 } {
   const raw = value.trim()
-  const base = { dow: 1, hour: 3, hours: 4, minute: 0, mode: 'custom' as CadenceMode, raw }
+  const base = { days: 2, dow: 1, hour: 3, hours: 4, minutes: 30, minute: 0, mode: 'custom' as CadenceMode, raw }
 
   if (!raw) {
     return { ...base, mode: 'every_round' }
   }
 
-  const legacy = /^(?:every\s*|每\s*)(\d{1,2})\s*h$/i.exec(raw)
+  // 旋钮存出去的就是这一族写法：`every 20m` / `every 6h` / `every 2d`（`每 6h` 是老账，照读）。
+  // 频率那一格**在行上也得说人话**——这三种单位都读回来，否则抽屉里那格退成 `every 30m` 这种机器词。
+  const steppedByUnit = /^(?:every\s*|每\s*)(\d{1,3})\s*([mhd])$/i.exec(raw)
 
-  if (legacy) {
-    return { ...base, hours: clampHours(Number(legacy[1])), mode: 'every_hours' }
+  if (steppedByUnit) {
+    const amount = Number(steppedByUnit[1])
+    const unit = steppedByUnit[2].toLowerCase()
+
+    if (unit === 'm') {
+      return { ...base, minutes: Math.min(720, Math.max(1, Math.round(amount))), mode: 'every_minutes' }
+    }
+
+    if (unit === 'd') {
+      return { ...base, days: Math.min(60, Math.max(1, Math.round(amount))), mode: 'every_days' }
+    }
+
+    return { ...base, hours: clampHours(amount), mode: 'every_hours' }
   }
 
   const stepped = /^(\d{1,2})\s+\*\/(\d{1,2})\s+\*\s+\*\s+\*$/.exec(raw)
@@ -270,6 +308,30 @@ function FieldInput({
 
       {field.kind === 'cadence' ? (
         <CadenceField labels={labels} onChange={onChange} value={value} />
+      ) : field.kind === 'path' && canBrowse() ? (
+        // 路径这一格不许让人手抄（裁定 203 第 2 条）：给一枚「浏览」，走系统自己的文件选择框，
+        // 选完把那条绝对路径填进同一格——**还是那一格、还是那一个保存动作**，不另起一套落库形状。
+        <div className="mt-1 flex items-center gap-1">
+          <Input
+            aria-label={label}
+            autoFocus={autoFocus}
+            className="min-w-0 flex-1"
+            disabled={busy}
+            onChange={event => onChange(event.target.value)}
+            value={value}
+          />
+
+          <Button
+            disabled={busy}
+            onClick={() => {
+              void pickPath(labels, onChange, label)
+            }}
+            size="sm"
+            variant="secondary"
+          >
+            {labels.browse}
+          </Button>
+        </div>
       ) : (
         <Input
           aria-label={label}

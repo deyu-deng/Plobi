@@ -341,18 +341,35 @@ export interface Translations {
       sessionsReadOnly: string
     }
     sources: {
+      /** 一条轴：这条数据**从哪来**（10-27 收的，见 `registry.py` 那一格与
+       *  `Docs/tasks/source-category-tags-task.md`）。「是什么形状」不在这里——那是池里的 `kind`。 */
       categories: {
-        local: string
-        message: string
-        social: string
-        system: string
+        /** 本机装好的一个客户端（微信、钉钉、幕布）。 */
+        software: string
+        /** 一个网站/Web 系统（学在浙大、本科教务）。 */
+        site: string
         /** 「配对一台设备」那一格（用户 10-25 拍的两格之一）。 */
         device: string
-        website: string
         /** 「给一个订阅地址，且一类里可多条」那一格。 */
         feed: string
         email: string
+        /** 用户往某目录放的那一个文件（课表 .ics）。 */
+        file: string
         custom: string
+      }
+      /** 顶部那一排标签：这条数据在池里是什么形状（真源=池里那条 `kind`，10-27）。
+       *  **只画翻得成人话的**：没在这张表里的 `kind` 是机器词，不进 chip 那一排。 */
+      tags: {
+        class: string
+        ddl: string
+        doc: string
+        event: string
+        mail: string
+        material: string
+        meeting: string
+        message: string
+        note: string
+        task: string
       }
       /** 按会话准入的那一条（微信、钉钉）在抽屉里那份名单说的话。
        *  名单与准入状态都来自后端那两只声明的手，界面不认识任何信源的名字。 */
@@ -403,6 +420,8 @@ export interface Translations {
       removeFailed: string
       saveFailed: string
       saveSetup: string
+      browse: string
+      browseFailed: string
       sidecarUp: string
       sidecarNotUp: string
       sidecarDown: string
@@ -438,7 +457,9 @@ export interface Translations {
       cadenceModeDaily: string
       cadenceModeWeekly: string
       /** `{n}` 会换成小时数（同 `agentMenuArchiveConfirmBody` 那套占位符写法）。 */
+      cadenceEveryDays: string
       cadenceEveryHours: string
+      cadenceEveryMinutes: string
       cadenceAdvanced: string
       cadenceDial: string
       cadenceDialHint: string

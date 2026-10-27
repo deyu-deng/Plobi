@@ -278,15 +278,25 @@ export const ja = defineLocale({
     },
     sources: {
       categories: {
-      local: 'ローカル',
-      message: 'メッセージ',
-      social: 'ソーシャルメディア',
-      system: 'システム',
-      device: 'デバイス',
-      website: 'ウェブ',
+      software: 'ソフトウェア',
+      site: 'ウェブ',
       feed: 'フィード',
       email: 'メール',
+      file: 'ファイル',
+      device: 'デバイス',
       custom: '自分で一つを接続'
+      },
+      tags: {
+        message: 'メッセージ',
+        event: '予定',
+        mail: 'メール',
+        doc: 'ドキュメント',
+        task: 'タスク',
+        note: 'メモ',
+        class: '授業',
+        ddl: '締切',
+        meeting: '会議',
+        material: '教材'
       },
       conversations: {
         collect: '収集',
@@ -349,6 +359,8 @@ export const ja = defineLocale({
       removeFailed: 'アンインストールに失敗しました。',
       saveFailed: '保存に失敗しました。',
       saveSetup: '保存',
+      browse: '参照',
+      browseFailed: 'ファイル選択を開けませんでした。',
       sidecarUp: '収集サービスを開始しました',
       sidecarNotUp: 'スイッチは入っていますが、収集サービスが起動しませんでした',
       sidecarDown: '収集サービスを停止しました',
@@ -381,7 +393,9 @@ export const ja = defineLocale({
       cadenceModeEveryHours: '数時間ごと',
       cadenceModeDaily: '毎日',
       cadenceModeWeekly: '毎週',
+      cadenceEveryDays: '{n}日ごと',
       cadenceEveryHours: '{n}時間ごと',
+      cadenceEveryMinutes: '{n}分ごと',
       cadenceAdvanced: 'カスタム式',
       cadenceDial: '収集頻度のダイヤル',
       cadenceDialHint: '時計回りで頻繁に、反時計回りに間隔を長くします。',
@@ -1608,6 +1622,7 @@ export const ja = defineLocale({
     sources: {
       wechat: 'WeChat',
       dingtalk: 'DingTalk',
+      mubu: 'Mubu',
       manual: '手動追加',
       timetable: '時間割',
       zju: '学在浙大',

@@ -339,15 +339,25 @@ export const zh: Translations = {
     },
     sources: {
       categories: {
-      local: '本地',
-      message: '消息',
-      social: '社交媒体',
-      system: '系统',
-      device: '设备',
-      website: '网站',
+      software: '软件',
+      site: '网站',
       feed: '订阅',
       email: '邮箱',
+      file: '文件',
+      device: '设备',
       custom: '接一个自己的'
+      },
+      tags: {
+        class: '课程',
+        ddl: '截止',
+        doc: '文档',
+        event: '日程',
+        mail: '邮件',
+        material: '教材',
+        meeting: '会议',
+        message: '消息',
+        note: '便条',
+        task: '事项'
       },
       conversations: {
         collect: '采',
@@ -410,6 +420,8 @@ export const zh: Translations = {
       removeFailed: '卸载失败。',
       saveFailed: '保存失败。',
       saveSetup: '存',
+      browse: '浏览',
+      browseFailed: '打不开文件选择框。',
       sidecarUp: '采集服务已启动',
       sidecarNotUp: '开关已打开，但采集服务未能启动',
       sidecarDown: '采集服务已停止',
@@ -442,7 +454,9 @@ export const zh: Translations = {
       cadenceModeEveryHours: '每隔几小时',
       cadenceModeDaily: '每天',
       cadenceModeWeekly: '每周',
+      cadenceEveryDays: '每 {n} 天',
       cadenceEveryHours: '每 {n} 小时',
+      cadenceEveryMinutes: '每 {n} 分钟',
       cadenceAdvanced: '自定义表达式',
       cadenceDial: '采集频率旋钮',
       cadenceDialHint: '顺时针越来越勤，逆时针越来越疏。',
@@ -1889,6 +1903,7 @@ export const zh: Translations = {
     sources: {
       wechat: '微信',
       dingtalk: '钉钉',
+      mubu: '幕布',
       manual: '手动添加',
       timetable: '课表',
       zju: '学在浙大',

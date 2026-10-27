@@ -271,15 +271,25 @@ export const zhHant = defineLocale({
     },
     sources: {
       categories: {
-      local: '本機',
-      message: '訊息',
-      social: '社群媒體',
-      system: '系統',
-      device: '裝置',
-      website: '網站',
+      software: '軟體',
+      site: '網站',
       feed: '訂閱',
       email: '信箱',
+      file: '檔案',
+      device: '裝置',
       custom: '接一個自己的'
+      },
+      tags: {
+        message: '訊息',
+        event: '日程',
+        mail: '郵件',
+        doc: '文件',
+        task: '事項',
+        note: '便條',
+        class: '課程',
+        ddl: '截止',
+        meeting: '會議',
+        material: '教材'
       },
       conversations: {
         collect: '採',
@@ -342,6 +352,8 @@ export const zhHant = defineLocale({
       removeFailed: '解除安裝失敗。',
       saveFailed: '儲存失敗。',
       saveSetup: '存',
+      browse: '瀏覽',
+      browseFailed: '打不開檔案選擇框。',
       sidecarUp: '採集服務已啟動',
       sidecarNotUp: '開關已開啟，但採集服務未能啟動',
       sidecarDown: '採集服務已停止',
@@ -374,7 +386,9 @@ export const zhHant = defineLocale({
       cadenceModeEveryHours: '每隔幾小時',
       cadenceModeDaily: '每天',
       cadenceModeWeekly: '每週',
+      cadenceEveryDays: '每 {n} 天',
       cadenceEveryHours: '每 {n} 小時',
+      cadenceEveryMinutes: '每 {n} 分鐘',
       cadenceAdvanced: '自訂表示式',
       cadenceDial: '採集頻率旋鈕',
       cadenceDialHint: '順時針越來越勤，逆時針越來越疏。',
@@ -1562,6 +1576,7 @@ export const zhHant = defineLocale({
     sources: {
       wechat: '微信',
       dingtalk: '釘釘',
+      mubu: '幕布',
       manual: '手動新增',
       timetable: '課表',
       zju: '學在浙大',

@@ -28,7 +28,7 @@ import { Button } from '@/components/ui/button'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { Cpu, DeviceWatch, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Rss, Users } from '@/lib/icons'
+import { DeviceWatch, FolderOpen, Globe, Layers3, Mail, MessageCircle, Package, Rss } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
@@ -39,11 +39,13 @@ import { ExternalSources } from './sources/external-sources'
 import { SetupFields } from './sources/setup-fields'
 import { parseCadence } from './sources/setup-fields'
 import { SourceAvatar } from './sources/source-icon'
+import { $tags, keepsRow, tagOptions, toggleTag } from './sources/tags'
 import { groupByCategory, needsSetup, relativeTime, statusOf, statusReason, visibleGroups } from './sources/verbs'
 
 type Labels = ReturnType<typeof useI18n>['t']['settings']['sources']
 
 /** 分类 → 图标。**不用字母或序号代替图标** —— 旁边就是设置里其他分类的写法。
+ *  10-27 分类收成一条轴（这条数据**从哪来**）之后，七个值一一对得上一个形状；
  *  「订阅」「设备」这两格今天还没有成员（空类整块不画 ⇒ 图标今天上不了屏），
  *  但"有类名没图标"是半件事，真接上那天就得回头补 —— 所以一起给（用户 10-25 拍的两格）。 */
 const CATEGORY_ICON: Record<string, typeof Globe> = {
@@ -51,11 +53,9 @@ const CATEGORY_ICON: Record<string, typeof Globe> = {
   device: DeviceWatch,
   email: Mail,
   feed: Rss,
-  local: FolderOpen,
-  message: MessageCircle,
-  social: Users,
-  system: Cpu,
-  website: Globe
+  file: FolderOpen,
+  site: Globe,
+  software: MessageCircle
 }
 
 export function SourcesSettings() {
@@ -70,6 +70,9 @@ export function SourcesSettings() {
   // 折叠状态是一个订阅中的 store ⇒ 必须和其他 hook 一样在**任何提前 return 之前**取，
   // 不然"读数还没到"那一趟与到了那一趟的 hook 数量不一致，React 直接抛。
   const fold = useStore($fold)
+  // 顶部那一排标签＝"只看这几种形状"。它是**浏览决定**，与折叠同一档持久化（本机记住、
+  // 不进 `sources.yaml`）；形状的真源是池里那条 `kind`，这里不另建一处（10-27 那条口径）。
+  const tags = useStore($tags)
 
   const reload = useCallback(async () => {
     try {
@@ -147,11 +150,41 @@ export function SourcesSettings() {
     )
   }
 
+
   const groups = visibleGroups(groupByCategory(payload.sources, payload.categories))
+    // 筛过之后**每组重新数一遍**：组头那一格条数说的是"这一段现在画了几行"，
+    // 不是"这一段一共有几行"——画一个筛掉却仍写原数的组头就是一句假话。
+    .map(group => ({ ...group, rows: group.rows.filter(row => keepsRow(row, tags)) }))
+    .filter(group => group.rows.length > 0 || group.category === 'custom')
+
+  // 只画翻得成人话的形状：没进目录的 `kind` 是机器词，不许直接上屏（屏幕文案纪律）。
+  const chips = tagOptions(payload.sources).filter(kind => labels.tags[kind as keyof Labels['tags']])
 
   return (
     <SettingsContent>
       <SectionHeading icon={Layers3} meta={String(payload.sources.length)} title={labels.title} />
+
+      {chips.length > 0
+        ? (
+            <div className="mt-2 flex flex-wrap gap-1" data-testid="source-tags">
+              {chips.map(kind => (
+                <button
+                  aria-pressed={tags.includes(kind)}
+                  className={`rounded-full border px-2 py-0.5 text-[length:var(--conversation-caption-font-size)] ${
+                    tags.includes(kind)
+                      ? 'border-(--ui-border-strong) bg-(--ui-bg-hover) text-(--ui-text-primary)'
+                      : 'border-(--ui-border) text-(--ui-text-tertiary)'}`}
+                  data-testid={`source-tag-${kind}`}
+                  key={kind}
+                  onClick={() => { $tags.set(toggleTag(tags, kind)) }}
+                  type="button"
+                >
+                  {labels.tags[kind as keyof Labels['tags']]}
+                </button>
+              ))}
+            </div>
+          )
+        : null}
 
       {groups.map(group => {
         // 异常只数后端三态里那一格（判据在 `sources_api.status_of`，这里不建第二条）。
@@ -459,8 +492,16 @@ function frequencyLabel(cadence: string | undefined, labels: Labels): string {
       return labels.cadenceModeEveryRound
     }
 
+    case 'every_days': {
+      return labels.cadenceEveryDays.replace('{n}', String(parsed.days))
+    }
+
     case 'every_hours': {
       return labels.cadenceEveryHours.replace('{n}', String(parsed.hours))
+    }
+
+    case 'every_minutes': {
+      return labels.cadenceEveryMinutes.replace('{n}', String(parsed.minutes))
     }
 
     case 'daily': {

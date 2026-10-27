@@ -5,6 +5,7 @@ import { SourcesSettings } from './sources-settings'
 import type * as SourcesApi from './sources/api'
 import type { SourceRow, SourcesPayload } from './sources/api'
 import { $fold } from './sources/collapse'
+import { $tags } from './sources/tags'
 
 const getSources = vi.fn()
 const setSourceEnabled = vi.fn()
@@ -18,6 +19,10 @@ const removeExternalPackage = vi.fn()
 const getActionStatus = vi.fn()
 const notify = vi.fn()
 const notifyError = vi.fn()
+
+const picker = vi.hoisted(() => vi.fn(async () => ['D:/school/课程.ics']))
+
+vi.mock('@/lib/desktop-fs', () => ({ selectDesktopPaths: picker }))
 
 vi.mock('./sources/api', async () => {
   const actual = await vi.importActual<typeof SourcesApi>('./sources/api')
@@ -48,10 +53,11 @@ vi.mock('@/store/notifications', () => ({
 vi.mock('@/i18n', () => ({
   useI18n: () => ({
     t: {
-      agenda: { sources: { dingtalk: 'DingTalk', timetable: 'Timetable', wechat: 'WeChat', zju: 'Academic affairs (ZJU)' } },
+      agenda: { sources: { dingtalk: 'DingTalk', mubu: 'Mubu', timetable: 'Timetable', wechat: 'WeChat', zju: 'Academic affairs (ZJU)' } },
       settings: {
         sources: {
-          categories: { local: 'Local', message: 'Messaging', social: 'Social media', system: 'System', device: 'Devices', website: 'Websites', feed: 'Feeds', email: 'Mailboxes', custom: 'Bring your own' },
+          categories: { software: 'Software', site: 'Websites', feed: 'Feeds', email: 'Mailboxes', file: 'Files', device: 'Devices', custom: 'Bring your own' },
+          tags: { class: 'Class', ddl: 'Deadline', doc: 'Document', event: 'Event', mail: 'Mail', material: 'Material', meeting: 'Meeting', message: 'Message', note: 'Note', task: 'Task' },
           emptyExternal: 'Could not read what is installed.',
           conversations: {
             collect: 'Collect',
@@ -83,6 +89,8 @@ vi.mock('@/i18n', () => ({
           remove: 'Remove',
           removeFailed: 'That removal did not finish.',
           saveFailed: 'Could not save those.',
+          browse: 'Browse',
+          browseFailed: 'Could not open the file picker.',
           saveSetup: 'Save',
           sidecarUp: 'Collection service started',
           sidecarNotUp: 'Switch is on, but the collection service did not come up',
@@ -116,7 +124,9 @@ vi.mock('@/i18n', () => ({
           cadenceModeEveryHours: 'Every few hours',
           cadenceModeDaily: 'Daily',
           cadenceModeWeekly: 'Weekly',
+          cadenceEveryDays: 'Every {n} days',
           cadenceEveryHours: 'Every {n} hours',
+          cadenceEveryMinutes: 'Every {n} minutes',
           cadenceAdvanced: 'Custom expression',
           cadenceDial: 'Collection frequency dial',
           cadenceDialHint: 'Clockwise runs more often.',
@@ -152,7 +162,7 @@ vi.mock('@/i18n', () => ({
 function row(over: Partial<SourceRow> = {}): SourceRow {
   return {
     age_days: null,
-    category: 'message',
+    category: 'software',
     collecting: null,
     enabled: null,
     enabled_origin: null,
@@ -171,7 +181,7 @@ function row(over: Partial<SourceRow> = {}): SourceRow {
 }
 
 // 与后端 `SOURCE_CATEGORIES` 同序。**顺序照闭集，不照字母**（那几段的屏上顺序由它决定）。
-const CATEGORIES = ['message', 'social', 'website', 'feed', 'local', 'system', 'device', 'email', 'custom']
+const CATEGORIES = ['software', 'site', 'feed', 'email', 'file', 'device', 'custom']
 
 function payload(sources: SourceRow[]): SourcesPayload {
   const byCategory = new Map<string, string[]>()
@@ -392,7 +402,7 @@ describe('what the row says', () => {
         enabled: false,
         enabled_origin: 'spec',
         source: 'timetable',
-        category: 'local',
+        category: 'file',
         status: 'disconnected',
         status_code: 'never_enabled',
       })
@@ -450,7 +460,7 @@ describe('what the row says', () => {
     const ICS = { help: '', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
 
     getSources.mockResolvedValue(payload([
-      row({ category: 'local', enabled: false, has_builder: true, setup: {}, setup_fields: [ICS], source: 'timetable', status: 'disconnected' })
+      row({ category: 'file', enabled: false, has_builder: true, setup: {}, setup_fields: [ICS], source: 'timetable', status: 'disconnected' })
     ]))
 
     const { container } = render(<SourcesSettings />)
@@ -485,7 +495,7 @@ describe('what the row says', () => {
 
   it('shows the site icon the backend fetched, not a letter', async () => {
     getSources.mockResolvedValue(payload([
-      row({ category: 'website', enabled: true, has_builder: true, icon: 'data:image/png;base64,AAA', source: 'zdbk', status: 'connected' })
+      row({ category: 'site', enabled: true, has_builder: true, icon: 'data:image/png;base64,AAA', source: 'zdbk', status: 'connected' })
     ]))
 
     render(<SourcesSettings />)
@@ -507,7 +517,7 @@ describe('what the row says', () => {
     // 用户 10-24：「网站就显示网站名就行了」。第三方包没进这张表，它那一行照样有名字——
     // 名字来自后端那一格读数（声明名或站点自报的名），不是界面替它起的类目词。
     getSources.mockResolvedValue(payload([
-      row({ category: 'website', display_name: '本科教学管理信息服务平台', enabled: true, has_builder: true, source: 'zdbk', status: 'connected' })
+      row({ category: 'site', display_name: '本科教学管理信息服务平台', enabled: true, has_builder: true, source: 'zdbk', status: 'connected' })
     ]))
 
     render(<SourcesSettings />)
@@ -533,7 +543,7 @@ describe('what the row says', () => {
     // 「未连接」加目录里那句人话——红点留给真的故障。
     getSources.mockResolvedValue(payload([
       row({
-        category: 'message',
+        category: 'software',
         enabled: true,
         has_builder: false,
         probe: { code: 'client_not_logged_in', detail: '本地库在位：D:/x/dingtalk_encrypt.db（v3）', ready: false },
@@ -584,9 +594,9 @@ describe('what does not get rendered', () => {
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByTestId('source-group-message')).toBeTruthy())
-    expect(screen.queryByTestId('source-group-social')).toBeNull()
-    expect(screen.queryByTestId('source-group-system')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('source-group-software')).toBeTruthy())
+    expect(screen.queryByTestId('source-group-feed')).toBeNull()
+    expect(screen.queryByTestId('source-group-device')).toBeNull()
     expect(screen.queryByText('Nothing connected in this category yet.')).toBeNull()
   })
 
@@ -611,6 +621,48 @@ describe('what does not get rendered', () => {
 })
 
 describe('the drawer’s form', () => {
+  it('lets the system file picker fill a path field instead of making him type it', async () => {
+    // 裁定 203 第 2 条：路径这一格不许手抄。桌面壳在 ⇒ 旁边一枚「浏览」，选完填进同一格。
+    picker.mockClear()
+    ;(window as { plobiDesktop?: unknown }).plobiDesktop = { selectPaths: vi.fn() }
+    await openDrawer(row({
+      category: 'file',
+      enabled: true,
+      has_builder: true,
+      setup_fields: [
+        { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path', label: 'Path to the .ics file', required: true }
+      ],
+      source: 'timetable',
+      status: 'disconnected'
+    }), 'Timetable')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }))
+
+    await waitFor(() => expect(picker).toHaveBeenCalledTimes(1))
+    expect(picker).toHaveBeenCalledWith(expect.objectContaining({ directories: false, multiple: false }))
+    expect((screen.getByLabelText('Path to the .ics file') as HTMLInputElement).value).toBe('D:/school/课程.ics')
+
+    delete (window as { plobiDesktop?: unknown }).plobiDesktop
+  })
+
+  it('keeps the plain box when there is no shell to browse with', async () => {
+    // 没有桌面壳（测试环境、非桌面构建）⇒ 不许画一枚按了没反应的钮。
+    delete (window as { plobiDesktop?: unknown }).plobiDesktop
+    await openDrawer(row({
+      category: 'file',
+      enabled: true,
+      has_builder: true,
+      setup_fields: [
+        { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path', label: 'Path to the .ics file', required: true }
+      ],
+      source: 'timetable',
+      status: 'disconnected'
+    }), 'Timetable')
+
+    expect(screen.queryByRole('button', { name: 'Browse' })).toBeNull()
+    expect(screen.getByLabelText('Path to the .ics file')).toBeTruthy()
+  })
+
   const ICS = { help: 'Absolute path on this machine.', key: 'ics_path', kind: 'path' as const, label: 'Path to the .ics file', required: true }
 
   async function openDrawer(rowInput: SourceRow, displayName: string) {
@@ -622,7 +674,7 @@ describe('the drawer’s form', () => {
   }
 
   it('holds the form only after the row is opened', async () => {
-    await openDrawer(row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
+    await openDrawer(row({ category: 'file', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
 
     expect(screen.getByTestId('setup-timetable')).toBeTruthy()
   })
@@ -637,7 +689,7 @@ describe('the drawer’s form', () => {
 
   it('draws only the fields the source itself declared, and falls back to its label', async () => {
     await openDrawer(row({
-      category: 'local',
+      category: 'file',
       enabled: true,
       has_builder: true,
       setup_fields: [{ ...ICS, key: 'third_party_thing', label: 'Their own field' }],
@@ -669,7 +721,7 @@ describe('the drawer’s form', () => {
   })
 
   it('will not save while a required field is empty', async () => {
-    await openDrawer(row({ category: 'local', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
+    await openDrawer(row({ category: 'file', enabled: true, has_builder: true, setup_fields: [ICS], source: 'timetable', status: 'disconnected' }), 'Timetable')
 
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect(saveSourceSetup).not.toHaveBeenCalled()
@@ -678,7 +730,7 @@ describe('the drawer’s form', () => {
   it('sends only the filled fields, never an empty string', async () => {
     saveSourceSetup.mockResolvedValue(undefined)
     await openDrawer(row({
-      category: 'local',
+      category: 'file',
       enabled: true,
       has_builder: true,
       setup_fields: [ICS, { help: '', key: 'note', kind: 'text', label: 'Note', required: false }],
@@ -698,7 +750,7 @@ describe('the drawer’s form', () => {
     // 于是这一格钉的是两件事：**type=password**，且**这里永远没有它的旧值**
     // （后端只回"设过没有"，所以掩码框里不许出现一串星号假装是原值）。
     await openDrawer(row({
-      category: 'local',
+      category: 'file',
       enabled: true,
       has_builder: true,
       secrets: { password: true },
@@ -714,13 +766,43 @@ describe('the drawer’s form', () => {
     expect(box.value).toBe('')
   })
 
+  it('reads minutes and days back as words, not as the stored string', async () => {
+    // 旋钮今天能存 `every 30m` 与 `every 2d`，而行上那格（`frequencyLabel`）从前只认小时：
+    // 存得出去、读不回来 ⇒ 抽屉里那一格退成 `every 30m` 这种机器词（屏幕文案纪律：机器词不上屏）。
+    await openDrawer(row({
+      cadence: 'every 30m',
+      category: 'software',
+      enabled: true,
+      has_builder: true,
+      source: 'mubu',
+      status: 'connected'
+    }), 'Mubu')
+
+    expect(screen.getByTestId('source-drawer-mubu').textContent).toContain('Every 30 minutes')
+    expect(screen.getByTestId('source-drawer-mubu').textContent).not.toContain('every 30m')
+  })
+
+  it('reads a two-day cadence back as words too', async () => {
+    await openDrawer(row({
+      cadence: 'every 2d',
+      category: 'software',
+      enabled: true,
+      has_builder: true,
+      source: 'mubu',
+      status: 'connected'
+    }), 'Mubu')
+
+    expect(screen.getByTestId('source-drawer-mubu').textContent).toContain('Every 2 days')
+    expect(screen.getByTestId('source-drawer-mubu').textContent).not.toContain('every 2d')
+  })
+
   it('turns one dial for the cadence, with a number and a unit beside it', async () => {
     // 用户 10-27：「cron 我说了不用设计这么多挡位。你就做一个旋钮……往一遍旋就是频率越来越高……
     // 然后旁边放一个框。可以调整单位和具体数字」。上一版的四颗模式钮整排撤掉——
     // 这条测试就是钉"它不许回来"，同时钉存出去的仍是 `cadence.py` 认的那一句。
     saveSourceSetup.mockResolvedValue(undefined)
     await openDrawer(row({
-      category: 'local',
+      category: 'file',
       enabled: true,
       has_builder: true,
       setup: { cadence: 'every 6h' },
@@ -888,18 +970,18 @@ describe('the categories fold', () => {
   it('opens only the group with something broken, and does not draw the rows of the rest', async () => {
     getSources.mockResolvedValue(payload([
       row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' }),
-      row({ category: 'website', enabled: true, has_builder: true, source: 'zju', status: 'error', status_code: 'captcha_required' })
+      row({ category: 'site', enabled: true, has_builder: true, source: 'zju', status: 'error', status_code: 'captcha_required' })
     ]))
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByTestId('source-group-website-toggle')).toBeTruthy())
-    expect(screen.getByTestId('source-group-website-toggle').getAttribute('aria-expanded')).toBe('true')
+    await waitFor(() => expect(screen.getByTestId('source-group-site-toggle')).toBeTruthy())
+    expect(screen.getByTestId('source-group-site-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getAllByText('Academic affairs (ZJU)').length).toBeGreaterThan(0)
 
     // 没报错的那段收起之后，它那些行**不在 DOM 里**（不是 display:none）——
     // 178 行那种名单折起来还留在树里，折叠就只剩视觉、没有性能那句话可说。
-    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByTestId('source-group-software-toggle').getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('WeChat')).toBeNull()
   })
 
@@ -907,38 +989,38 @@ describe('the categories fold', () => {
     // 用户 10-26：「大类组头，和最顶层的信源，还是要区分一下。缩进一点」——
     // 此前组头与行同宽同级，那一屏读起来是"三行大字 + 十个并列的行"，谁属于哪一组全靠猜。
     // 这一段先明说展开（默认规则是有报错才展开，这里要验的是展开之后的层级形状）。
-    $fold.set({ message: 'open' })
+    $fold.set({ software: 'open' })
     getSources.mockResolvedValue(payload([
       row({ enabled: true, has_builder: true, source: 'wechat', status: 'connected' })
     ]))
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByTestId('source-group-message-rows')).toBeTruthy())
-    const rows = screen.getByTestId('source-group-message-rows')
+    await waitFor(() => expect(screen.getByTestId('source-group-software-rows')).toBeTruthy())
+    const rows = screen.getByTestId('source-group-software-rows')
 
     // 行在这个容器里，容器**缩进一档并挂一条左边界**；组头不在里面（否则缩进就成了套娃）。
     expect(rows.textContent).toContain('WeChat')
     expect(rows.className).toContain('ml-2')
     expect(rows.className).toContain('border-l')
-    expect(rows.contains(screen.getByTestId('source-group-message-toggle'))).toBe(false)
+    expect(rows.contains(screen.getByTestId('source-group-software-toggle'))).toBe(false)
   })
 
   it('keeps a group he folded folded, even when something inside it breaks', async () => {
     // 他明说收起的那一段，**永不被读数翻面**：一条信源从正常变成报错、或从报错回到正常，
     // 都不该把他刚折好的那段自己弹开——那是屏幕在动，不是数据在动。
-    $fold.set({ message: 'collapsed' })
+    $fold.set({ software: 'collapsed' })
     getSources.mockResolvedValue(payload([
       row({ enabled: true, has_builder: true, source: 'wechat', status: 'error', status_code: 'network_unreachable' })
     ]))
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByTestId('source-group-message-toggle')).toBeTruthy())
-    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
+    await waitFor(() => expect(screen.getByTestId('source-group-software-toggle')).toBeTruthy())
+    expect(screen.getByTestId('source-group-software-toggle').getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('WeChat')).toBeNull()
     // 折起来不等于这条信源停了：开关仍在那条数据里，只是不画。
-    expect($fold.get()).toEqual({ message: 'collapsed' })
+    expect($fold.get()).toEqual({ software: 'collapsed' })
   })
 
   it('clicking a header brings that group back and writes one word', async () => {
@@ -948,19 +1030,19 @@ describe('the categories fold', () => {
 
     render(<SourcesSettings />)
 
-    await waitFor(() => expect(screen.getByTestId('source-group-message-toggle')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('source-group-software-toggle')).toBeTruthy())
     expect(screen.queryByText('WeChat')).toBeNull()
 
-    fireEvent.click(screen.getByTestId('source-group-message-toggle'))
+    fireEvent.click(screen.getByTestId('source-group-software-toggle'))
 
-    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId('source-group-software-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0)
     // 记下来的就是"他明说展开"这一个词，不是"当前开着的段全表"——没点过的段不该占一格。
-    expect($fold.get()).toEqual({ message: 'open' })
+    expect($fold.get()).toEqual({ software: 'open' })
 
-    fireEvent.click(screen.getByTestId('source-group-message-toggle'))
-    expect(screen.getByTestId('source-group-message-toggle').getAttribute('aria-expanded')).toBe('false')
-    expect($fold.get()).toEqual({ message: 'collapsed' })
+    fireEvent.click(screen.getByTestId('source-group-software-toggle'))
+    expect(screen.getByTestId('source-group-software-toggle').getAttribute('aria-expanded')).toBe('false')
+    expect($fold.get()).toEqual({ software: 'collapsed' })
   })
 
   it('says the count always, and the broken half only when there is one', async () => {
@@ -970,7 +1052,7 @@ describe('the categories fold', () => {
       row({ category: 'email', source: 'email_gmail' }),
       row({ category: 'email', source: 'email_outlook' }),
       row({ category: 'email', source: 'email_imap' }),
-      row({ category: 'website', enabled: true, has_builder: true, source: 'zju', status: 'error', status_code: 'captcha_required' })
+      row({ category: 'site', enabled: true, has_builder: true, source: 'zju', status: 'error', status_code: 'captcha_required' })
     ]))
 
     render(<SourcesSettings />)
@@ -978,7 +1060,7 @@ describe('the categories fold', () => {
     await waitFor(() => expect(screen.getByTestId('source-group-email-toggle')).toBeTruthy())
     // 5 条全正常 ⇒ 只画一个数字。0 条报错不画成"· 0 条报错"（那是噪声不是信息）。
     expect(screen.getByTestId('source-group-email-toggle').textContent).toBe('Mailboxes5')
-    expect(screen.getByTestId('source-group-website-toggle').textContent)
+    expect(screen.getByTestId('source-group-site-toggle').textContent)
       .toBe('Websites1 · 1 needing attention')
   })
 
@@ -993,5 +1075,90 @@ describe('the categories fold', () => {
     await waitFor(() => expect(screen.getByTestId('source-group-custom-toggle')).toBeTruthy())
     expect(screen.getByTestId('source-group-custom-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByTestId('external-sources')).toBeTruthy()
+  })
+})
+
+describe('the shape chips filter that row list', () => {
+  // 用户 10-27：「我偏向 1，然后用户可用标签筛选。挺好的」——轴只剩一条（从哪来），
+  // "是什么形状"降成标签，而标签的真源**只有池里那条 `kind`**。
+  beforeEach(() => {
+    $tags.set([])
+  })
+
+  const shaped = () => payload([
+    row({ category: 'software', enabled: true, has_builder: true, pool_kinds: { class: 65, message: 4 }, source: 'zdbk', status: 'connected' }),
+    row({ category: 'software', enabled: true, has_builder: true, pool_kinds: { message: 120 }, source: 'wechat', status: 'connected' }),
+    row({ category: 'site', enabled: true, has_builder: true, pool_kinds: { doc: 13 }, source: 'mubu', status: 'connected' })
+  ])
+
+  it('offers one chip per shape that is really in the pool, biggest first', async () => {
+    getSources.mockResolvedValue(shaped())
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-tags')).toBeTruthy())
+
+    const chips = screen.getAllByTestId(/^source-tag-/).map(node => node.getAttribute('data-testid'))
+    expect(chips).toEqual(['source-tag-message', 'source-tag-class', 'source-tag-doc'])
+  })
+
+  it('does not put a machine word on screen', async () => {
+    getSources.mockResolvedValue(payload([
+      row({ category: 'site', enabled: true, has_builder: true, pool_kinds: { major: 238 }, source: 'zdbk', status: 'connected' })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-group-site-toggle')).toBeTruthy())
+
+    // 没进语言目录的形状（`major`）不当 chip：那一屏不出现没翻成人话的机器词。
+    expect(screen.queryByTestId('source-tag-major')).toBeNull()
+  })
+
+  it('keeps only the rows carrying the shape he picked, and recounts the group', async () => {
+    getSources.mockResolvedValue(shaped())
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-tag-doc')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('source-tag-doc'))
+
+    await waitFor(() => expect(screen.queryByText('WeChat')).toBeNull())
+    expect(screen.getByText('Mubu')).toBeTruthy()
+    // 组头那一格条数说的是"这一段现在画了几行"，不是"这一段一共几行"。
+    expect(screen.getByTestId('source-group-site-toggle').textContent).toContain('1')
+    expect(screen.queryByTestId('source-group-software-toggle')).toBeNull()
+  })
+
+  it('is a browsing decision: it lands in localStorage, never in the source config', async () => {
+    getSources.mockResolvedValue(shaped())
+
+    const { unmount } = render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-tag-class')).toBeTruthy())
+    fireEvent.click(screen.getByTestId('source-tag-class'))
+
+    expect(JSON.parse(window.localStorage.getItem('plobi.desktop.settings.sources.tags') ?? 'null')).toEqual(['class'])
+    expect(setSourceEnabled).not.toHaveBeenCalled()
+
+    // 关掉再开还在（与折叠同一档"本机记住"）；摘掉那一枚 chip 之后空表不占一格。
+    unmount()
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-tag-class')).toBeTruthy())
+    expect(screen.getByTestId('source-tag-class').getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(screen.getByTestId('source-tag-class'))
+    expect(window.localStorage.getItem('plobi.desktop.settings.sources.tags')).toBeNull()
+  })
+
+  it('leaves the whole list alone while nothing is picked', async () => {
+    getSources.mockResolvedValue(shaped())
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getByTestId('source-tag-message')).toBeTruthy())
+
+    expect(screen.getByTestId('source-tag-message').getAttribute('aria-pressed')).toBe('false')
+    // 一个都没选＝没筛：三行都画着（不是"一个都没采到所以空屏"那一句）。
+    // 名字在两处（图标 `<title>` 与那一格文本），所以数一下而不是取唯一。
+    expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Mubu').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('source-group-site-toggle')).toBeTruthy()
   })
 })

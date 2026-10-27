@@ -351,15 +351,25 @@ export const en: Translations = {
     },
     sources: {
       categories: {
-      local: 'Local',
-      message: 'Messaging',
-      social: 'Social media',
-      system: 'System',
-      device: 'Devices',
-      website: 'Websites',
+      software: 'Software',
+      site: 'Websites',
       feed: 'Feeds',
       email: 'Email',
+      file: 'Files',
+      device: 'Devices',
       custom: 'Bring your own'
+      },
+      tags: {
+        message: 'Message',
+        event: 'Event',
+        mail: 'Mail',
+        doc: 'Document',
+        task: 'Task',
+        note: 'Note',
+        class: 'Class',
+        ddl: 'Deadline',
+        meeting: 'Meeting',
+        material: 'Material'
       },
       conversations: {
         collect: 'Collect',
@@ -422,6 +432,8 @@ export const en: Translations = {
       removeFailed: 'Failed to uninstall.',
       saveFailed: 'Failed to save.',
       saveSetup: 'Save',
+      browse: 'Browse',
+      browseFailed: 'Could not open the file picker.',
       sidecarUp: 'Collection service started',
       sidecarNotUp: 'The switch is on, but the collection service failed to start',
       sidecarDown: 'Collection service stopped',
@@ -454,7 +466,9 @@ export const en: Translations = {
       cadenceModeEveryHours: 'Every few hours',
       cadenceModeDaily: 'Daily',
       cadenceModeWeekly: 'Weekly',
+      cadenceEveryDays: 'Every {n} days',
       cadenceEveryHours: 'Every {n} hours',
+      cadenceEveryMinutes: 'Every {n} minutes',
       cadenceAdvanced: 'Custom expression',
       cadenceDial: 'Collection frequency dial',
       cadenceDialHint: 'Clockwise runs more often; counter-clockwise runs less often.',
@@ -1722,6 +1736,7 @@ export const en: Translations = {
     sources: {
       wechat: 'WeChat',
       dingtalk: 'DingTalk',
+      mubu: 'Mubu',
       manual: 'Added by you',
       timetable: 'Timetable',
       zju: 'ZJU Courses',
