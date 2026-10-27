@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ExternalSessionsPanel } from './external-sessions-panel'
 
 const api = vi.fn()
+const getApi = () => api
 
 const LIST = {
   ok: true,
@@ -123,6 +124,22 @@ describe('ExternalSessionsPanel', () => {
 
     expect(await screen.findByText(/这次没有登进去/)).toBeTruthy()
     expect(screen.queryByText(/\{"ok"/)).toBeNull()
+  })
+
+  it('开着这一格时每 5 秒重读：L2 在聊天里标完，左栏自己收窄', async () => {
+    vi.useFakeTimers()
+    try {
+      getApi().mockImplementation(() => Promise.resolve(LIST))
+      render(<ExternalSessionsPanel agentId="Sindri" />)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      const first = getApi().mock.calls.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+
+      expect(getApi().mock.calls.length).toBe(first + 1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('空表说原因，不画空壳', async () => {

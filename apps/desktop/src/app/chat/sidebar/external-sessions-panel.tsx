@@ -33,21 +33,32 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let cancelled = false
-    setData(null)
-    getAgentExternalSessions(agentId)
-      .then(body => {
-        if (!cancelled) {
-          setData(body?.data ?? { projects: [], reason: '', sessions: [] })
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setData({ projects: [], reason: c.externalSessionsLoadFailed, sessions: [] })
-        }
-      })
+
+    const load = (first: boolean) => {
+      if (first) {
+        setData(null)
+      }
+      getAgentExternalSessions(agentId)
+        .then(body => {
+          if (!cancelled) {
+            setData(body?.data ?? { projects: [], reason: '', sessions: [] })
+          }
+        })
+        .catch(() => {
+          // 读到过的表不清空：一次抖动不该把「它有哪些会话」抹成读取失败。
+          if (!cancelled && first) {
+            setData({ projects: [], reason: c.externalSessionsLoadFailed, sessions: [] })
+          }
+        })
+    }
+
+    load(true)
+    // L2 在聊天里标完 related，这一格要自己收窄——不用再点一次。
+    const timer = setInterval(() => load(false), 5000)
 
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
   }, [agentId, c.externalSessionsLoadFailed])
 
