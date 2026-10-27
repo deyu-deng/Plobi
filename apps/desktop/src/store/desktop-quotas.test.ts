@@ -5,7 +5,6 @@ import type { ModelOptionProvider } from '@/types/plobi'
 import {
   $connectedDesktopApps,
   applyDiscoveredQuotaApps,
-  DESKTOP_QUOTA_MODELS,
   findQuotaHubRow,
   firstSelectableQuotaModel,
   hubAppOfModel,
@@ -133,13 +132,23 @@ describe('quotaProviders', () => {
     expect(quotaProviders(withoutHub)).toEqual(withoutHub)
   })
 
-  it('prefers the live gateway catalog over the checked-in seed', () => {
+  it('prefers the live gateway catalog and has no seed to prefer over it', async () => {
     markConnected({ id: 'antigravity', models: ['glm-5.9-pro-max'] })
 
     expect(rows(['antigravity/glm-5.9-pro-max'])[0]?.models).toEqual(['antigravity/glm-5.9-pro-max'])
     // the point of the test: a model only the live gateway knows must be offered,
-    // and a seed entry the gateway no longer serves must not shadow it
-    expect(DESKTOP_QUOTA_MODELS.antigravity).not.toContain('glm-5.9-pro-max')
+    // and there is no renderer-side table of "what the hub serves" left to shadow it
+    expect((await import('./desktop-quotas')) as Record<string, unknown>).not.toHaveProperty('DESKTOP_QUOTA_MODELS')
+  })
+
+  it('an app the hub never answered for contributes no ids at all', () => {
+    // The old behaviour revived a hand-copied list here (`antigravity/gemini-3-pro-high`
+    // and friends), so a machine whose hub was down still showed quota models — names
+    // nobody had just confirmed, which is precisely what the picker must never do.
+    markConnected({ id: 'antigravity', models: [] })
+
+    expect(quotaProviders(catalog([]))).toHaveLength(1)
+    expect(rows(['antigravity/gemini-3-pro-high'])[0]?.models ?? []).toEqual([])
   })
 
   it('a seed id the backend does not actually offer never reaches the picker', () => {

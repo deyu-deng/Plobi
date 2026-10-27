@@ -19,8 +19,8 @@ import type { ModelOptionProvider, ModelPricing } from '@/types/plobi'
 // uses. What this store decides is only *which* of the hub's channels may be
 // offered: a leg whose credential has expired or that cannot carry tool calls
 // leaves the list on its own and comes back when the desktop app renews it —
-// no name list is involved anywhere in this file. `DESKTOP_QUOTA_MODELS` is only
-// a seed for the window before the first read has ever landed.
+// no name list is involved anywhere in this file. Every id on screen comes from
+// the hub's own frame, and a leg the hub has not answered for contributes nothing.
 // ---------------------------------------------------------------------------
 
 export interface ConnectedDesktopApp {
@@ -42,8 +42,7 @@ export interface ConnectedDesktopApp {
   /**
    * True when the last catalog read actually reached the hub. Pruning is only
    * allowed on a frame we asked about: an unreachable hub must never be reported
-   * as "you have no models", and the checked-in seed below must never be revived
-   * to cover for a leg the hub said is dead.
+   * as "you have no models", and no id may be offered for a leg the hub said is dead.
    */
   answered?: boolean
   /**
@@ -60,38 +59,13 @@ export interface ConnectedDesktopApp {
 
 const STORE_KEY = 'plobi.desktop.desktop-quotas'
 
-// Served model ids per app (slug prefix stripped — the provider slug carries it).
-// These MUST stay in sync with aigw's AntigravityProvider.served_models (minus
-// the `antigravity/` slug prefix). The real Antigravity (Google Gemini Code
-// Assist) model ids carry suffixes such as `-preview`.
-export const DESKTOP_QUOTA_MODELS: Record<string, string[]> = {
-  antigravity: [
-    'gemini-3-flash',
-    'gemini-3-pro-high',
-    'gemini-3-pro-low',
-    'gemini-3.1-pro-high',
-    'gemini-3.1-pro-low',
-    'claude-opus-4-6-thinking',
-    'claude-opus-4-5-thinking',
-    'claude-sonnet-4-6',
-  ],
-  // Fallback seed only — the real list is fetched live from the aigw gateway's
-  // /v1/models (which serves the Workbuddy provider's configured catalog).
-  workbuddy: [
-    'workbuddy/default',
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-    'gpt-5',
-    'gemini-3-flash',
-  ],
-  // Fallback seed only — the real list is fetched live from the aigw gateway's
-  // /v1/models (which serves the Cursor provider's configured catalog).
-  cursor: [
-    'gpt-4o',
-    'claude-4-sonnet',
-    'auto',
-  ],
-}
+// There used to be a `DESKTOP_QUOTA_MODELS` table here — a hand-copied list of
+// "what the hub serves per app". It is gone on purpose: it was the one place in this
+// file that could put a model name on screen that nobody had just confirmed, and it
+// only came back while the hub was NOT answering (`answered !== true`), i.e. exactly
+// when the picker should be empty rather than remembered. The hub's frame is the only
+// source of these ids now; the header comment of this file says "no name list is
+// involved anywhere in this file", and this is what made that sentence true.
 
 export const DESKTOP_QUOTA_NAMES: Record<string, string> = {
   antigravity: 'Antigravity',
@@ -340,14 +314,9 @@ export function findQuotaHubRow(providers: readonly Pick<ModelOptionProvider, 's
 
 /** The bare ids the hub still says are usable for one app, as backend model ids. */
 function pickableModelIds(app: ConnectedDesktopApp): string[] {
-  const models =
-    app.models && app.models.length
-      ? app.models
-      : app.answered === true
-        ? []
-        : (DESKTOP_QUOTA_MODELS[app.id] ?? [])
-
-  return models.map(model => `${app.id}/${model}`)
+  // Only ids the hub actually reported for this app. Nothing is inferred, revived,
+  // or remembered from a table in this file.
+  return (app.models ?? []).map(model => `${app.id}/${model}`)
 }
 
 /**
