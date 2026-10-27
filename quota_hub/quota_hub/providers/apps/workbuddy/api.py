@@ -69,6 +69,14 @@ class WorkbuddyApiProvider(Provider):
     name = "workbuddy_api"
     display_name = "CodeBuddy"
 
+    def present(self) -> bool:
+        """Present only if the local CodeBuddy session (or a configured key) exists.
+
+        This leg rides software the user already installed; with neither a session nor
+        a key there is nothing here to show a card for, and nothing to download.
+        """
+        return bool(self.accounts)
+
     def login_plan(self) -> dict:
         """No sign-in of ours to do: this leg reads the desktop app's own local session.
 

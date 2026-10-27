@@ -170,8 +170,8 @@ class LoginManager:
         if not binary:
             session.state = "unsupported"
             session.detail = (
-                f"没在这台机器上找到 {plan.get('binary') or '这个 CLI'}；"
-                "装好之后这一条会自己回来（我们不代装、也不猜路径）"
+                f"这台机器上没有 {plan.get('binary') or '这个 CLI'}。Plobi 不代下载、不代安装"
+                "（用户 2026-10-27 令：只扫描已有的产品），所以这条腿先不出现"
             )
             session.finished_at = time.time()
             return
@@ -334,6 +334,13 @@ def auth_catalog(registry) -> list[dict]:
     seen: set[str] = set()
 
     for name, prov in (registry.providers.items() if registry else {}):
+        # The card list IS the scan result (user ruling 2026-10-27). A product that is
+        # not on this machine gets no card: Plobi does not download apps or CLIs, so a
+        # row saying "not found here" would only be an invitation to go install one by
+        # hand — which is the experience the ruling removes.
+        probe = getattr(prov, "present", None)
+        if callable(probe) and not probe():
+            continue
         plan = prov.login_plan()
         plan.setdefault("name", getattr(prov, "display_name", "") or name)
         live, reason = registry.credential_health(prov)
@@ -360,6 +367,9 @@ def auth_catalog(registry) -> list[dict]:
         if name in seen:
             continue
         installed = _resolve_binary(plan.get("binary", "")) is not None
+        if not installed:
+            # Scan semantics: the CLI is not here, so there is no card to pick.
+            continue
         rows.append(
             {
                 "id": name,

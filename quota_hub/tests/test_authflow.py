@@ -145,7 +145,9 @@ def test_a_missing_binary_is_not_installed_for_and_not_called_a_failure(tmp_path
     )
 
     assert session.state == "unsupported"
-    assert "没在这台机器上找到" in session.detail
+    assert "这台机器上没有" in session.detail
+    # And it must not read as an offer to install anything (user ruling 2026-10-27).
+    assert "代下载" in session.detail
 
 
 def test_on_success_hook_runs_only_after_a_good_login(tmp_path, monkeypatch):
@@ -235,3 +237,42 @@ def test_two_clicks_do_not_start_two_logins(tmp_path, monkeypatch):
     first, second = asyncio.run(_both())
 
     assert first is second
+
+
+def test_the_catalog_is_the_scan_result_not_a_wish_list(monkeypatch):
+    """Absent products get no card (user ruling 2026-10-27: 只扫描已有的产品，不代下载).
+
+    A row that says "not installed here" is an invitation to go install something by
+    hand, which is exactly the experience this ruling removes.
+    """
+    from quota_hub.providers.apps.codex.cli import CodexCliProvider
+
+    class _Reg:
+        providers = {"codex_cli": CodexCliProvider({}, None)}
+
+        def credential_health(self, prov):
+            return True, "ok"
+
+    monkeypatch.setattr(CodexCliProvider, "_binary_present", lambda self: False)
+    ids = {row["id"] for row in authflow.auth_catalog(_Reg())}
+    assert "codex_cli" not in ids
+
+    monkeypatch.setattr(CodexCliProvider, "_binary_present", lambda self: True)
+    ids = {row["id"] for row in authflow.auth_catalog(_Reg())}
+    assert "codex_cli" in ids
+
+
+def test_a_login_only_target_without_its_cli_is_omitted(monkeypatch):
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: None)
+
+    assert authflow.auth_catalog(None) == []
+
+
+def test_an_installed_target_is_listed_as_not_signed_in(monkeypatch):
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\gemini.exe")
+
+    rows = {row["id"]: row for row in authflow.auth_catalog(None)}
+
+    assert rows["gemini-cli"]["live"] is False
+    assert rows["gemini-cli"]["installed"] is True
+    assert "还没登录" in rows["gemini-cli"]["reason"]

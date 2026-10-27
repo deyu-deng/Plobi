@@ -167,6 +167,11 @@ class CliProvider(Provider):
             self.served_models = tuple(config["models"])
         self.binary_path: str | None = None
 
+    # --- presence --------------------------------------------------------
+    def present(self) -> bool:
+        """A spawn-based leg exists exactly when its binary does. Nothing to install."""
+        return self._binary_present()
+
     # --- sign-in ---------------------------------------------------------
     def login_plan(self) -> dict:
         """Spawn-based legs sign in through their OWN login command.

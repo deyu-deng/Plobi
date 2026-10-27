@@ -148,6 +148,10 @@ class CursorProvider(Provider):
     name = "cursor"
     display_name = "Cursor"
 
+    def present(self) -> bool:
+        """Cursor has to be installed and signed in over there before a card is useful."""
+        return bool(self.accounts)
+
     def login_plan(self) -> dict:
         """Cursor rides the user's already-logged-in editor session; nothing to open."""
         return {"kind": "local_session", "name": self.display_name,

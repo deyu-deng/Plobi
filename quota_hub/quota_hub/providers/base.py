@@ -145,6 +145,19 @@ class Provider:
         """Return capability flags for this provider (overridable per subclass)."""
         return self.default_capabilities
 
+    # --- presence --------------------------------------------------------
+    def present(self) -> bool:
+        """Is this product installed on this machine at all?
+
+        The settings surface lists what the scan finds (user ruling 2026-10-27:
+        「自动扫描用户电脑中存在的产品，并选择相应卡片」) — Plobi never downloads an
+        app or a CLI for the user, so a product that is not here has no card to show.
+        Providers that ride a local desktop session override this with the probe they
+        already have; a browser-OAuth leg (Antigravity) is reachable by signing in, so
+        it stays visible without any local install.
+        """
+        return True
+
     # --- sign-in ---------------------------------------------------------
     def login_plan(self) -> dict:
         """How the user signs into THIS provider, stated by the provider itself.
