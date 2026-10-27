@@ -25,6 +25,8 @@ export interface OfficePreviewLabels {
   findPlaceholder: string
   copyAll: string
   copied: string
+  openExternal: string
+  archiveEmpty: string
   truncated: (rows: number, cols: number) => string
   sheet: string
   legacyNote: string

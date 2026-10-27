@@ -11,6 +11,8 @@ const labels: OfficePreviewLabels = {
   findPlaceholder: 'Find text',
   copyAll: 'Copy all text',
   copied: 'Copied',
+  openExternal: 'Open with system app',
+  archiveEmpty: 'This archive is empty',
   truncated: (rows, cols) => `${rows} × ${cols}`,
   sheet: 'Sheet',
   legacyNote: '',

@@ -3112,6 +3112,8 @@ export const zhHant = defineLocale({
       findPlaceholder: '尋找文字',
       copyAll: '複製全文',
       copied: '已複製',
+      openExternal: '用系統應用程式開啟',
+      archiveEmpty: '空壓縮檔',
       truncated: (rows, cols) => `只顯示前 ${rows} 行 × ${cols} 列`,
       sheet: '工作表',
       legacyNote: '舊 .xls 唯讀值；另存為 .xlsx 可保留顏色與合併儲存格。',

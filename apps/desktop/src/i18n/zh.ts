@@ -3463,6 +3463,8 @@ export const zh: Translations = {
       findPlaceholder: '查找文字',
       copyAll: '复制全文',
       copied: '已复制',
+      openExternal: '用系统应用打开',
+      archiveEmpty: '空压缩包',
       truncated: (rows, cols) => `只显示前 ${rows} 行 × ${cols} 列`,
       sheet: '工作表',
       legacyNote: '老 .xls 只读值；另存为 .xlsx 可保留颜色和合并单元格。',

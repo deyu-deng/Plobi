@@ -18,6 +18,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useI18n } from '@/i18n'
 import { isFocusWithin } from '@/lib/keybinds/combo'
+import { mediaKind } from '@/lib/media'
 import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
@@ -175,6 +176,12 @@ const MessagingView = lazy(async () => ({ default: (await import('./messaging'))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const OfficeFilePreview = lazy(async () => ({
   default: (await import('./workbench/office-preview')).OfficeFilePreview
+}))
+const MediaPreview = lazy(async () => ({
+  default: (await import('./workbench/media-preview')).MediaPreview
+}))
+const ArchivePreview = lazy(async () => ({
+  default: (await import('./workbench/archive-preview')).ArchivePreview
 }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
@@ -665,11 +672,36 @@ export function DesktopController() {
     .filter((def): def is RightRailTabDef => Boolean(def))
   const fileTabContents: Record<string, ReactNode> = Object.fromEntries(
     Object.entries(openFiles).map(([id, { target }]) => {
-      const office = fileKindForPath(target.path ?? '') !== 'other'
+      const media = mediaKind(target.path ?? '')
+      const isMedia = media === 'audio' || media === 'video'
+      const isArchive = /\.zip$/iu.test(target.path ?? '')
+      const office = !isMedia && !isArchive && fileKindForPath(target.path ?? '') !== 'other'
 
       return [
         id,
-        office ? (
+        isMedia ? (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <PageLoader label={t.common.loading} />
+              </div>
+            }
+            key={id}
+          >
+            <MediaPreview labels={t.workbench.office} path={target.path ?? ''} />
+          </Suspense>
+        ) : isArchive ? (
+          <Suspense
+            fallback={
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <PageLoader label={t.common.loading} />
+              </div>
+            }
+            key={id}
+          >
+            <ArchivePreview labels={t.workbench.office} path={target.path ?? ''} />
+          </Suspense>
+        ) : office ? (
           <Suspense
             fallback={
               <div className="flex min-h-0 flex-1 items-center justify-center">

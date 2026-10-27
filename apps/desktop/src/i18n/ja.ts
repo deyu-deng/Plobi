@@ -3212,6 +3212,8 @@ export const ja = defineLocale({
       findPlaceholder: 'テキストを検索',
       copyAll: '全文をコピー',
       copied: 'コピーしました',
+      openExternal: 'システムアプリで開く',
+      archiveEmpty: '空のアーカイブ',
       truncated: (rows, cols) => `先頭 ${rows} 行 × ${cols} 列のみ表示`,
       sheet: 'シート',
       legacyNote: '旧 .xls は値のみのプレビューです。色と結合を保つには .xlsx で保存してください。',

@@ -38,6 +38,11 @@ import { notifyWorkspaceChanged } from '@/store/workspace-events'
 
 import { delimitedKind, parseDelimited } from './delimited'
 import { DelimitedGrid } from './delimited-grid'
+import { HtmlPreview } from '@/app/workbench/html-preview'
+import { ArchivePreview } from '@/app/workbench/archive-preview'
+import { MediaPreview } from '@/app/workbench/media-preview'
+import { NotebookPreview } from '@/app/workbench/notebook-preview'
+import { mediaKind } from '@/lib/media'
 
 const SHIKI_THEME = { dark: 'github-dark-default', light: 'github-light-default' } as const
 const TEXT_PREVIEW_MAX_BYTES = 512 * 1024
@@ -596,6 +601,12 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   const filePath = filePathForTarget(target)
   const isImage = target.previewKind === 'image'
   const delimited = delimitedKind(filePath)
+  const isNotebook = /\.ipynb$/iu.test(filePath.split(/[?#]/u)[0] ?? filePath)
+  const isHtmlFile = /\.html?$/iu.test(filePath.split(/[?#]/u)[0] ?? filePath)
+  const isRichPreview = isNotebook || isHtmlFile
+  const mediaType = mediaKind(filePath)
+  const isMedia = mediaType === 'audio' || mediaType === 'video'
+  const isArchive = /\.zip$/iu.test(filePath.split(/[?#]/u)[0] ?? filePath)
   const [gridMode, setGridMode] = useState(false)
   const delimitedTooLarge = useMemo(
     () => (delimited && state.text !== undefined ? parseDelimited(state.text, delimited).tooLarge : false),
@@ -665,6 +676,12 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
       }
 
       if (!isImage && !isText) {
+        setState({ loading: false })
+
+        return
+      }
+
+      if (isMedia || isArchive) {
         setState({ loading: false })
 
         return
@@ -876,9 +893,10 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   // never shifts the body — only the trailing controls and the body swap.
   if (editing) {
     const draftMarkdown = (state.language || target.language) === 'markdown'
+    const draftRich = draftMarkdown || isNotebook || isHtmlFile
     const editModes: PreviewViewMode[] = canUseGrid
       ? ['grid', 'source']
-      : draftMarkdown
+      : draftRich
         ? ['source', 'rendered']
         : []
     const activeEditMode: PreviewViewMode = gridMode ? 'grid' : draftPreview ? 'rendered' : 'source'
@@ -974,13 +992,48 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
               </div>
               {draftPreview ? (
                 <div className="h-full overflow-auto">
-                  <MarkdownPreview text={draftSample} />
+                  {isNotebook ? (
+                    <NotebookPreview text={draftSample} />
+                  ) : isHtmlFile ? (
+                    <HtmlPreview text={draftSample} />
+                  ) : (
+                    <MarkdownPreview text={draftSample} />
+                  )}
                 </div>
               ) : null}
             </>
           )}
         </div>
       </div>
+    )
+  }
+
+  if (isMedia) {
+    return (
+      <MediaPreview
+        labels={{
+          loading: t.preview.loading,
+          openExternal: t.workbench.office.openExternal,
+          readOnly: t.workbench.office.readOnly,
+          unavailable: t.preview.unavailable
+        }}
+        path={filePath}
+      />
+    )
+  }
+
+  if (isArchive) {
+    return (
+      <ArchivePreview
+        labels={{
+          archiveEmpty: t.workbench.office.archiveEmpty,
+          loading: t.preview.loading,
+          openExternal: t.workbench.office.openExternal,
+          readOnly: t.workbench.office.readOnly,
+          unavailable: t.preview.unavailable
+        }}
+        path={filePath}
+      />
     )
   }
 
@@ -1026,6 +1079,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
   if (isText && state.text !== undefined) {
     const isMarkdown = (state.language || target.language) === 'markdown'
     const hasDiff = Boolean(state.diff && state.diff.trim())
+    const richPreview = isMarkdown || isRichPreview
     // Order the toggle reads left→right; default lands on the most useful view.
     const modes: PreviewViewMode[] = []
 
@@ -1033,7 +1087,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
       modes.push('grid')
     }
 
-    if (isMarkdown) {
+    if (richPreview) {
       modes.push('rendered')
     }
 
@@ -1043,7 +1097,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
       modes.push('diff')
     }
 
-    const autoMode: PreviewViewMode = hasDiff ? 'diff' : canUseGrid ? 'grid' : isMarkdown ? 'rendered' : 'source'
+    const autoMode: PreviewViewMode = hasDiff ? 'diff' : canUseGrid ? 'grid' : richPreview ? 'rendered' : 'source'
     const mode = userMode && modes.includes(userMode) ? userMode : autoMode
 
     return (
@@ -1084,7 +1138,13 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
           {mode === 'grid' && delimited ? (
             <DelimitedGrid kind={delimited} readOnly text={state.text} />
           ) : mode === 'rendered' ? (
-            <MarkdownPreview text={state.text} />
+            isNotebook ? (
+              <NotebookPreview text={state.text} />
+            ) : isHtmlFile ? (
+              <HtmlPreview text={state.text} />
+            ) : (
+              <MarkdownPreview text={state.text} />
+            )
           ) : mode === 'diff' ? (
             <FileDiffPanel
               className="mx-0 mb-0 h-full max-h-none"

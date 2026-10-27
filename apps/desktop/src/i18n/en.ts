@@ -3331,6 +3331,8 @@ export const en: Translations = {
       findPlaceholder: 'Find text',
       copyAll: 'Copy all text',
       copied: 'Copied',
+      openExternal: 'Open with system app',
+      archiveEmpty: 'This archive is empty',
       truncated: (rows, cols) => `Showing the first ${rows} rows × ${cols} columns`,
       sheet: 'Sheet',
       legacyNote: 'Old .xls previews values only; save as .xlsx to keep colors and merged cells.',
