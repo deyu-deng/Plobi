@@ -3224,6 +3224,9 @@ export const en: Translations = {
       no_desktop_credential: 'No sign-in credentials for it were found on this machine',
       no_tools: 'that channel does not return tool calls to Plobi',
       not_offered: 'This channel is not currently offered by the gateway',
+      // Not a name list and not a verdict we invented: the upstream refused this id
+      // twice in a row, so it sits out a while and comes back when it works again.
+      model_rejected: 'the app did not serve that model the last two times we asked',
       // Not a hub reason: the user pressed Disconnect themselves, so this says so
       // rather than blaming the app or the machine.
       disconnected: 'you turned it off',

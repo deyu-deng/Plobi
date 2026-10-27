@@ -22,6 +22,7 @@ import time
 
 import httpx
 
+from . import model_health
 from .providers.apps.antigravity import AntigravityCliProvider, AntigravityProvider
 from .providers.apps.claude_code import ClaudeCodeCliProvider
 from .providers.apps.cline import ClineCliProvider
@@ -220,13 +221,17 @@ class Registry:
             prov = self.providers.get(prov_name) if prov_name else None
             caps = prov.capabilities().as_dict() if prov else {}
             live, reason = self.credential_health(prov) if prov else (False, "unknown_provider")
+            refused = model_health.quarantined(m)
             # A model is *selectable* only when it can actually serve an agent turn.
             # The owner ruled on 2026-10-12 that no surface needs a `tools=False` leg
             # (L1, L2 and cron all need tool calls to come back into our loop), so a
             # text-only transport is not pickable — it stays usable as an offload
             # channel. Dead credentials drop out of that view too, and reappear on
             # their own once the desktop app renews them: no name list is involved.
-            usable = live and bool(caps.get("tools"))
+            # A third way an id is not pickable: the upstream itself refused it twice
+            # (`model_rejected`) — the config says the leg serves it, the traffic says
+            # it does not right now, and the traffic is the measurement.
+            usable = live and bool(caps.get("tools")) and not refused
             # Filtering is a *view*, not the endpoint's default. `/v1/models` is the
             # OpenAI-compat catalog and `plobi.quota.gateway` derives the quota apps
             # from it; silently shrinking it would make those surfaces report "no
@@ -249,7 +254,11 @@ class Registry:
                     "live": live,
                     "live_reason": reason,
                     "selectable": usable,
-                    "unselectable_reason": ("" if usable else (reason if not live else "no_tools")),
+                    "unselectable_reason": (
+                        ""
+                        if usable
+                        else ("model_rejected" if refused else (reason if not live else "no_tools"))
+                    ),
                 }
             )
         return out

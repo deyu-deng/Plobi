@@ -19,6 +19,7 @@ import random
 import time
 from collections.abc import AsyncIterator
 
+from . import model_health
 from .providers.base import Account, AccountState, Provider, UpstreamError
 from .tokens.manager import Health, TokenManager
 
@@ -128,8 +129,12 @@ class Scheduler:
                     result = await self.providers[chosen].chat(acc, oai_req)
                 acc.fail_count = max(0, acc.fail_count - 1)
                 self._touch(acc)
+                model_health.record_success(oai_req.get("model", ""))
                 return result
             except UpstreamError as e:
+                # Evidence about the *id*, not the account: a 400/404 that talks about
+                # the model is how a renamed or un-served model announces itself.
+                model_health.record_refusal(oai_req.get("model", ""), e.status, str(e))
                 self._apply_error(acc, e, session_id)
                 last_err = e
                 if not e.retryable and not e.reauth:
@@ -150,6 +155,10 @@ class Scheduler:
                     yield chunk
                 acc.fail_count = max(0, acc.fail_count - 1)
                 self._touch(acc)
+                model_health.record_success(oai_req.get("model", ""))
+            except UpstreamError as e:
+                model_health.record_refusal(oai_req.get("model", ""), e.status, str(e))
+                raise
             finally:
                 sem.release()
                 self._global_sem.release()

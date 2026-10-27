@@ -3358,6 +3358,9 @@ export const zh: Translations = {
       no_desktop_credential: '本机未读取到它的登录凭据',
       no_tools: '这条通道不把工具调用交回 Plobi',
       not_offered: '该通道当前未在网关中列出',
+      // 不是我们编的名字，也不是我们编的判断：上游连着两次没把这个模型给回来，
+      // 它就先歇一会儿，能用了再自己回来。
+      model_rejected: '最近两次向它要这个模型，都没给回来',
       // 不是网关那边的理由：是你自己按了断开连接，所以这里不赖那个软件或这台机器。
       disconnected: '你把它关掉了',
       unknown: reason => `不可用（${reason}）`

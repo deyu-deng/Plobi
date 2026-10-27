@@ -3011,6 +3011,9 @@ export const zhHant = defineLocale({
       no_desktop_credential: '本機未讀取到它的登入憑證',
       no_tools: '這條通道不把工具調用交回 Plobi',
       not_offered: '該通道目前未在閘道中列出',
+      // 不是我們編的名字，也不是我們編的判斷：上游連著兩次沒把這個模型給回來，
+      // 它就先歇一會兒，能用了再自己回來。
+      model_rejected: '最近兩次向它要這個模型，都沒給回來',
       // 不是網關那邊的理由：是你自己按了中斷連線，所以這裡不賴那個軟體或這台機器。
       disconnected: '你把它關掉了',
       unknown: reason => `不可用（${reason}）`

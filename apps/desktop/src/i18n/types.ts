@@ -2788,6 +2788,7 @@ export interface Translations {
       no_desktop_credential: string
       no_tools: string
       not_offered: string
+      model_rejected: string
       disconnected: string
       unknown: (reason: string) => string
     }

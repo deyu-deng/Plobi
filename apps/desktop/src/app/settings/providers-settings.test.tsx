@@ -301,6 +301,21 @@ describe('Desktop Quotas cards are the hub catalog', () => {
     expect(control.getAttribute('title')).toMatch(/sign-in has expired/)
     expect(screen.queryByText(/sign-in has expired/)).toBeNull()
   })
+
+  it('names the refusal the same way it names an expired sign-in: on the control only', async () => {
+    // The hub measures which ids the upstream actually serves (`model_rejected`); the
+    // row must not turn that measurement into a sentence about the model.
+    shell([authRow('workbuddy', { kind: 'local_session', live: true, reason: 'signed in' })])
+    frame('workbuddy', { blocked: { 'hy3': 'model_rejected' }, models: [] })
+
+    await renderDesktopQuotas()
+
+    const control = await screen.findByRole('switch')
+
+    expect(control.getAttribute('title')).toMatch(/did not serve that model/)
+    expect(screen.queryByText(/did not serve that model/)).toBeNull()
+    expect(screen.queryByText('model_rejected')).toBeNull()
+  })
 })
 
 // Turning the switch off is the user taking back the routing decision, and it has to
