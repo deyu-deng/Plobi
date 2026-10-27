@@ -35,6 +35,7 @@ import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from .. import login_ledger
 from .base import Account, Capabilities, Credential, Provider, UpstreamError
 
 # Phrases a CLI prints when it has no session. Deliberately narrow: matching only
@@ -199,6 +200,20 @@ class CliProvider(Provider):
         if self.interpreter:
             return Path(self.binary).is_file()
         return shutil.which(self.binary) is not None or Path(self.binary).is_file()
+
+    # --- credential ------------------------------------------------------
+    def credential_health(self) -> tuple[bool, str]:
+        """A CLI leg is signed in only if Plobi ran its login and it exited 0.
+
+        The default verdict in the registry is "live, ok" for anything that does not
+        answer — reasonable for a leg that owns a credential store we can read, and a
+        lie for a leg we have never asked. Spawn-based CLIs fall in the second group:
+        their token lives inside the CLI, so the only evidence we are allowed to have
+        is the sign-in we watched happen. Without it the card keeps its `+`.
+        """
+        if login_ledger.verified(self.name):
+            return True, "ok"
+        return False, "not_signed_in"
 
     async def discover_accounts(self) -> list[Account]:
         import logging

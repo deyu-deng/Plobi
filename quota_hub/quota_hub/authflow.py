@@ -32,6 +32,8 @@ import shutil
 import time
 import webbrowser
 
+from . import login_ledger
+
 # A login URL, as CLIs actually print it. Trailing punctuation a sentence ends with
 # is dropped below rather than here: `https://example.com/login.` must not lose its
 # last path character to a period that is part of the sentence.
@@ -262,9 +264,16 @@ class LoginManager:
         success we re-discover accounts and re-read the provider's own model list.
         Failure to refresh is not a login failure and is swallowed on purpose: the
         sign-in did happen, and the next quota/health tick picks the catalog up.
+
+        The ledger write comes first: a spawn-based leg has no credential we can
+        read, so *this* is the evidence its `credential_health()` answers from. Without
+        it the card would keep offering the `+` the user just made unnecessary.
         """
         on_success = plan.get("on_success")
-        if session.state != "ok" or not callable(on_success):
+        if session.state != "ok":
+            return
+        login_ledger.remember(session.app_id)
+        if not callable(on_success):
             return
         try:
             result = on_success()
