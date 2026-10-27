@@ -30,6 +30,20 @@ function editorUrl(kind: GenOfficeKind): string {
     : new URL(`genoffice/${page}`, window.location.href).href
 }
 
+// The preload and renderer are built together into dist/genoffice. Prefer the
+// built page next to the preload: a stale Vite optimizer cache (504 Outdated
+// Optimize Dep) otherwise leaves the dev webview blank while the shell still
+// looks healthy. Rebuild via `npm run build:genoffice` after changing vendor UI.
+function builtEditorUrl(preloadUrl: string, kind: GenOfficeKind): string | null {
+  const marker = `/${kind}-preload.cjs`
+
+  if (!preloadUrl.includes(marker)) {
+    return null
+  }
+
+  return preloadUrl.replace(marker, `/${EDITOR_PAGE[kind]}`)
+}
+
 export function GenOfficeFileEditor({
   kind,
   labels,
@@ -115,7 +129,8 @@ export function GenOfficeFileEditor({
         webview.setAttribute('preload', preloadUrl)
         webview.setAttribute('partition', `persist:plobi-genoffice-${kind}`)
         webview.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes')
-        webview.setAttribute('src', `${editorUrl(kind)}?file=${encodeURIComponent(path)}`)
+        const src = builtEditorUrl(preloadUrl, kind) ?? editorUrl(kind)
+        webview.setAttribute('src', `${src}?file=${encodeURIComponent(path)}`)
         host.replaceChildren(webview)
         webviewRef.current = webview
 

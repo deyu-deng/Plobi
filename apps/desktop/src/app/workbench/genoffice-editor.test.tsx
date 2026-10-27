@@ -52,7 +52,7 @@ describe('GenOfficeFileEditor', () => {
     expect(webview.getAttribute('partition')).toBe('persist:plobi-genoffice-sheets')
     expect(webview.getAttribute('webpreferences')).toContain('nodeIntegration=no')
     expect(webview.getAttribute('src')).toBe(
-      'http://127.0.0.1:5175/sheets.html?file=D%3A%2Fwork%2F%E6%96%87%E7%8C%AE%E6%B1%87%E6%80%BB%E8%A1%A8.xlsx'
+      'file:///plobi/sheets.html?file=D%3A%2Fwork%2F%E6%96%87%E7%8C%AE%E6%B1%87%E6%80%BB%E8%A1%A8.xlsx'
     )
   })
 
@@ -72,7 +72,7 @@ describe('GenOfficeFileEditor', () => {
 
     expect(preload).toHaveBeenCalledWith('word')
     expect(webview.getAttribute('src')).toBe(
-      'http://127.0.0.1:5175/word.html?file=D%3A%2Fwork%2Freport.docx'
+      'file:///plobi/word.html?file=D%3A%2Fwork%2Freport.docx'
     )
 
     const failure = new Event('did-fail-load')
