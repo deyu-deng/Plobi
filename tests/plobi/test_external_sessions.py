@@ -1,11 +1,12 @@
-"""外部会话（WP-EXTERNAL-SESSIONS）的三条判据：列、读、说。
+"""外部会话（WP-EXTERNAL-SESSIONS）：自动发现、L2 过滤、读、说。
 
-全部用 tmp 里的假 Qoder 目录，不碰这台机器上真的会话（真机只读一次在验收里做）。
+全部用 tmp 里的假家目录，不碰这台机器上真的会话（真机读数在验收里另做）。
 """
 
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,133 +19,77 @@ from plobi.delegation import external_sessions as es  # noqa: E402
 
 
 @pytest.fixture
-def qoder(tmp_path, monkeypatch):
-    """一个假的 ~/.qoder：``projects/<键>/<会话号>.jsonl`` + ``<会话号>/state.json``。"""
-    root = tmp_path / "qoder"
-    root.mkdir()
-    monkeypatch.setenv("QODER_CONFIG_DIR", str(root))
-    return root
+def homes(tmp_path, monkeypatch):
+    """三家各自的根 + 一个钉住的 PLOBI_HOME（L2 标记写在那里）。"""
+    qoder = tmp_path / "qoder"
+    codebuddy = tmp_path / "codebuddy"
+    marvis = tmp_path / "marvis"
+    home = tmp_path / "home"
+    for directory in (qoder, codebuddy, marvis / "database", home):
+        directory.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("QODER_CONFIG_DIR", str(qoder))
+    monkeypatch.setenv("CODEBUDDY_CONFIG_DIR", str(codebuddy))
+    monkeypatch.setenv("MARVIS_HOME", str(marvis))
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    es._ALL_CACHE.update({"at": 0.0, "rows": []})
+    es._META_CACHE.clear()
+
+    return SimpleNamespace(qoder=qoder, codebuddy=codebuddy, marvis=marvis, home=home)
 
 
-def make_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
-                 updated: str = "2026-10-27T10:00:00.000Z") -> Path:
+def qoder_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
+                  updated: str = "2026-10-27T10:00:00.000Z") -> None:
     directory = root / "projects" / es.project_key(project)
     directory.mkdir(parents=True, exist_ok=True)
-    jsonl = directory / f"{session_id}.jsonl"
     records = [
-        {"type": "workspace-directories", "value": [project]},
+        {"type": "workspace-directories", "sessionId": session_id, "directories": [project]},
         {"type": "user", "message": {"role": "user", "content": prompt}},
         {"type": "assistant", "message": {"role": "assistant", "content": [
             {"type": "thinking", "thinking": "不该进 transcript"},
             {"type": "text", "text": reply},
         ]}},
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "tool_result", "content": "工具结果也不该进"},
-        ]}},
     ]
-    jsonl.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+    (directory / f"{session_id}.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
     (directory / session_id).mkdir(exist_ok=True)
     (directory / session_id / "state.json").write_text(
-        json.dumps({"sessionId": session_id, "createdAt": updated, "updatedAt": updated}), encoding="utf-8"
+        json.dumps({"sessionId": session_id, "updatedAt": updated}), encoding="utf-8")
+
+
+def codebuddy_session(root: Path, cwd: str, session_id: str, *, prompt: str, reply: str,
+                      stamp: int = 1791337771584) -> None:
+    directory = root / "projects" / es.project_key(cwd)
+    directory.mkdir(parents=True, exist_ok=True)
+    records = [
+        {"type": "message", "role": "user", "sessionId": session_id, "cwd": cwd, "timestamp": stamp,
+         "content": [{"type": "input_text", "text": prompt}]},
+        {"type": "message", "role": "assistant", "sessionId": session_id, "cwd": cwd, "timestamp": stamp + 1000,
+         "content": [{"type": "output_text", "text": reply}]},
+    ]
+    (directory / f"{session_id}.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+
+
+def marvis_session(root: Path, session_id: str, *, title: str, prompt: str, reply: str,
+                   updated: str = "2026-10-27T12:00:00+00:00") -> None:
+    db = root / "database" / "data.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        "create table conversations (conversation_id text, title text, updated_at text);"
+        "create table messages (conversation_id text, role text, content text, message_seq text, created_at text);"
     )
-
-    return jsonl
-
-
-def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
-    assert es.project_key(r"D:\Projects\Sindri") == "D--Projects-Sindri"
-    assert es.project_key("D:/Projects/Sindri") == "D--Projects-Sindri"
-
-
-def test_only_sessions_under_the_agents_own_projects_are_listed(qoder):
-    make_session(qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了",
-                 updated="2026-10-27T09:00:00.000Z")
-    make_session(qoder, r"D:\Projects\Sindri", "bbbbbbbb-2222", prompt="第二条", reply="好",
-                 updated="2026-10-27T11:00:00.000Z")
-    make_session(qoder, r"D:\Projects\Other", "cccccccc-3333", prompt="别处", reply="不该出现")
-
-    payload = es.list_sessions([r"D:\Projects\Sindri"])
-
-    ids = [item["id"] for item in payload["sessions"]]
-    assert ids == ["bbbbbbbb-2222", "aaaaaaaa-1111"], "新的在前，且只列这个项目的"
-    assert payload["sessions"][0]["title"] == "第二条"
-    assert payload["sessions"][0]["updated_at"].startswith("2026-10-27T11:00")
+    con.execute("insert into conversations values (?,?,?)", (session_id, title, updated))
+    con.executemany("insert into messages values (?,?,?,?,?)", [
+        (session_id, "user", prompt, "1", updated),
+        (session_id, "assistant", reply, "2", updated),
+    ])
+    con.commit()
+    con.close()
 
 
-def test_an_empty_list_says_why_instead_of_an_empty_shell(qoder):
-    payload = es.list_sessions([r"D:\Projects\Nothing"])
-
-    assert payload["sessions"] == [] and payload["reason"]
-    assert es.list_sessions([])["reason"], "没登记目录也要有一句原因"
-
-
-def test_the_transcript_keeps_dialogue_and_drops_tool_noise(qoder):
-    make_session(qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
-
-    out = es.read_transcript([r"D:\Projects\Sindri"], "aaaaaaaa-1111")
-
-    assert out["ok"] is True
-    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
-    assert out["data"]["messages"][0]["text"] == "先读 README"
-    assert out["data"]["messages"][1]["text"] == "读完了"
-    assert "不该进" not in json.dumps(out, ensure_ascii=False)
-
-
-@pytest.mark.parametrize("bad", ["../secret", "", "a/b", "x" * 200])
-def test_a_session_id_that_is_not_a_name_never_reaches_the_filesystem(qoder, bad):
-    assert es.read_transcript([r"D:\Projects\Sindri"], bad)["ok"] is False
-
-
-def test_a_session_of_another_agent_is_not_readable(qoder):
-    make_session(qoder, r"D:\Projects\Other", "cccccccc-3333", prompt="别处", reply="不该出现")
-
-    assert es.read_transcript([r"D:\Projects\Sindri"], "cccccccc-3333")["ok"] is False
-
-
-def test_sending_resumes_that_session_and_scrubs_the_sdk_env(qoder, monkeypatch):
-    make_session(qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
-    seen = {}
-
-    def fake_run(argv, **kwargs):
-        seen["argv"] = list(argv)
-        seen["env"] = kwargs["env"]
-        seen["cwd"] = kwargs["cwd"]
-        return SimpleNamespace(returncode=0, stdout=json.dumps({
-            "type": "result", "result": "又是那行", "session_id": "aaaaaaaa-1111",
-            "total_cost_usd": 0, "total_credits": 1.25, "usage": {},
-        }), stderr="")
-
-    from agent import external_offload as channel
-
-    monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/bin/qodercli.cmd")
-    monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
-    monkeypatch.setattr(channel.subprocess, "run", fake_run)
-    monkeypatch.setenv("QODER_AGENT_SDK_ENTRYPOINT", "1")
-
-    out = es.send_message([r"D:\Projects\Sindri"], "aaaaaaaa-1111", "标题是什么？")
-
-    assert out["ok"] is True, out
-    assert seen["argv"][1:3] == ["--resume", "aaaaaaaa-1111"]
-    assert seen["argv"][-2:] == ["-p", "标题是什么？"]
-    assert seen["cwd"] == r"D:\Projects\Sindri"
-    assert "QODER_AGENT_SDK_ENTRYPOINT" not in seen["env"]
-    assert out["data"]["reply"] == "又是那行"
-    assert out["data"]["credits"] == 1.25
-
-
-def test_an_empty_message_is_refused_before_anything_is_spawned(qoder, monkeypatch):
-    from agent import external_offload as channel
-
-    monkeypatch.setattr(channel.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("不该起进程")))
-
-    assert es.send_message([r"D:\Projects\Sindri"], "aaaaaaaa-1111", "   ")["ok"] is False
-
-
-def test_sessions_for_an_agent_use_its_registry_paths(qoder, monkeypatch):
-    make_session(qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
-
+def stub_registry(monkeypatch, name: str, project: str):
     class _Registry:
-        agents = {"Sindri": SimpleNamespace(project_path=r"D:\Projects\Sindri", project_paths=(r"D:\Projects\Sindri",))}
+        agents = {name: SimpleNamespace(name=name, display_name="", project_path=project, project_paths=(project,))}
 
         @classmethod
         def load(cls):
@@ -154,8 +99,126 @@ def test_sessions_for_an_agent_use_its_registry_paths(qoder, monkeypatch):
 
     monkeypatch.setattr(registry_mod, "AgentRegistry", _Registry)
 
-    payload = es.sessions_for_agent("Sindri")
 
-    assert payload["projects"] == [r"D:\Projects\Sindri"]
-    assert [item["id"] for item in payload["sessions"]] == ["aaaaaaaa-1111"]
-    assert es.sessions_for_agent("Nobody")["reason"]
+def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
+    assert es.project_key(r"D:\Projects\Sindri") == "D--Projects-Sindri"
+    assert es.project_key("D:/Projects/Sindri") == "D--Projects-Sindri"
+
+
+def test_discovery_finds_every_readable_vendor_and_says_what_it_cannot_read(homes):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    codebuddy_session(homes.codebuddy, r"D:\Temp", "01a1140d-30ed", prompt="写个函数", reply="写好了")
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="你是想说 Computer 吗")
+
+    found = {item["vendor"] for item in es.all_sessions()}
+    assert found == {"qoder", "codebuddy", "marvis"}
+
+    sources = {item["vendor"]: item for item in es.session_sources()}
+    assert sources["qoder"]["sessions"] == 1 and sources["codebuddy"]["sessions"] == 1
+    assert sources["marvis"]["sessions"] == 1
+    assert sources["cursor"]["readable"] is False and sources["cursor"]["reason"]
+    assert sources["agy"]["readable"] is False and sources["agy"]["reason"]
+
+
+def test_related_comes_from_path_then_title_then_l2_marks(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    codebuddy_session(homes.codebuddy, r"D:\Temp", "01a1140d-30ed", prompt="给 Sindri 写个脚本", reply="写好了")
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="嗯")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+
+    rows = {f"{item['vendor']}:{item['id']}": item for item in es.sessions_for_agent("Sindri")["sessions"]}
+
+    assert rows["qoder:aaaaaaaa-1111"]["related"] is True
+    assert rows["qoder:aaaaaaaa-1111"]["related_source"] == "path"
+    assert rows["codebuddy:01a1140d-30ed"]["related"] is True
+    assert rows["codebuddy:01a1140d-30ed"]["related_source"] == "title"
+    assert rows["marvis:conv_00b52c85"]["related"] is None
+    assert rows["marvis:conv_00b52c85"]["related_source"] == "unknown"
+
+
+def test_l2_marks_override_the_auto_score_and_are_written_once(homes, monkeypatch):
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="嗯")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+
+    assert es.mark_for_agent("Sindri", [{"vendor": "marvis", "id": "conv_00b52c85", "related": True}])["data"]["written"] == 1
+
+    rows = {item["id"]: item for item in es.sessions_for_agent("Sindri")["sessions"]}
+    assert rows["conv_00b52c85"]["related"] is True
+    assert rows["conv_00b52c85"]["related_source"] == "l2"
+    assert json.loads((homes.home / "external_sessions" / "relevance.json").read_text(encoding="utf-8"))
+
+
+def test_transcripts_read_dialogue_and_drop_tool_noise(homes):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    codebuddy_session(homes.codebuddy, r"D:\Temp", "01a1140d-30ed", prompt="写个函数", reply="写好了")
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="你是想说 Computer 吗")
+
+    qoder = es.read_transcript("qoder", "aaaaaaaa-1111")
+    codebuddy = es.read_transcript("codebuddy", "01a1140d-30ed")
+    marvis = es.read_transcript("marvis", "conv_00b52c85")
+
+    assert [m["role"] for m in qoder["data"]["messages"]] == ["user", "assistant"]
+    assert "不该进" not in json.dumps(qoder, ensure_ascii=False)
+    assert codebuddy["data"]["messages"][1]["text"] == "写好了"
+    assert marvis["data"]["messages"][0]["text"] == "Computor"
+
+
+@pytest.mark.parametrize("bad", ["../secret", "", "a/b", "x" * 200])
+def test_a_session_id_that_is_not_a_name_never_reaches_the_filesystem(homes, bad):
+    assert es.read_transcript("qoder", bad)["ok"] is False
+
+
+def test_a_marked_false_session_leaves_the_agents_scope(homes, monkeypatch):
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="嗯")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    es.mark_for_agent("Sindri", [{"vendor": "marvis", "id": "conv_00b52c85", "related": False}])
+
+    assert es.transcript_for_agent("Sindri", "marvis", "conv_00b52c85")["ok"] is False
+
+
+def test_sending_is_qoder_only_and_resumes_with_scrubbed_env(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="嗯")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    es.mark_for_agent("Sindri", [{"vendor": "marvis", "id": "conv_00b52c85", "related": True}])
+
+    assert es.send_for_agent("Sindri", "marvis", "conv_00b52c85", "你好")["ok"] is False
+
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = list(argv)
+        seen["env"] = kwargs["env"]
+        seen["cwd"] = kwargs["cwd"]
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            "type": "result", "result": "又是那行", "total_cost_usd": 0, "total_credits": 1.25, "usage": {},
+        }), stderr="")
+
+    from agent import external_offload as channel
+
+    monkeypatch.setattr(channel, "resolve_command", lambda _a="": "D:/bin/qodercli.cmd")
+    monkeypatch.setattr(channel, "cwd_is_allowed", lambda _p: (True, ""))
+    monkeypatch.setattr(channel.subprocess, "run", fake_run)
+    monkeypatch.setenv("QODER_AGENT_SDK_ENTRYPOINT", "1")
+
+    out = es.send_for_agent("Sindri", "qoder", "aaaaaaaa-1111", "标题是什么？")
+
+    assert out["ok"] is True, out
+    assert seen["argv"][1:3] == ["--resume", "aaaaaaaa-1111"]
+    assert seen["argv"][-2:] == ["-p", "标题是什么？"]
+    assert seen["cwd"] == r"D:\Projects\Sindri"
+    assert "QODER_AGENT_SDK_ENTRYPOINT" not in seen["env"]
+    assert out["data"]["reply"] == "又是那行" and out["data"]["credits"] == 1.25
+
+
+def test_an_empty_message_is_refused_before_anything_is_spawned(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+
+    assert es.send_for_agent("Sindri", "qoder", "aaaaaaaa-1111", "   ")["ok"] is False
+
+
+def test_an_unknown_agent_gets_a_reason_not_an_empty_shell(homes):
+    payload = es.sessions_for_agent("Nobody")
+
+    assert payload["reason"] and payload["sessions"] == []

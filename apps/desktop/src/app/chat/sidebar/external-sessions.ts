@@ -8,17 +8,29 @@
 export type ExternalSession = {
   id: string
   project: string
+  /** `true` 相关 / `null` 待判断 / `false` L2 标过无关（面板不显示）。 */
+  related: boolean | null
+  related_source: 'l2' | 'path' | 'title' | 'unknown' | string
+  sendable: boolean
   title: string
   updated_at: string
+  vendor: string
+}
+
+export type ExternalSessionSource = {
+  readable: boolean
+  reason: string
+  root: string
+  sendable: boolean
+  sessions: number
   vendor: string
 }
 
 export type ExternalSessionsData = {
   projects: string[]
   reason: string
-  root?: string
   sessions: ExternalSession[]
-  vendor: string
+  sources?: ExternalSessionSource[]
 }
 
 export type ExternalMessage = {
@@ -41,6 +53,10 @@ function api<T>(path: string, init?: { body?: unknown, method?: string, timeoutM
 
 export function getAgentExternalSessions(agentId: string): Promise<{ data: ExternalSessionsData, ok: boolean }> {
   return api(`/api/agents/${encodeURIComponent(agentId)}/external-sessions`)
+}
+
+export function getSessionSources(): Promise<{ data: { sources: ExternalSessionSource[] }, ok: boolean }> {
+  return api('/api/external-sessions/sources')
 }
 
 export function getExternalTranscript(
@@ -92,4 +108,47 @@ export function whenText(iso: string, now = new Date()): string {
 /** 标题是首条用户话，可能很长；列表里只留第一行（后端已经截到 120 字）。 */
 export function titleOf(session: ExternalSession): string {
   return (session.title || '').trim().split('\n')[0] || session.id.slice(0, 8)
+}
+
+export type VendorGroup = { sessions: ExternalSession[], vendor: string }
+
+/** 按软件分组；组内新的在前，组间按固定顺序（不跟着条数跳）。 */
+const VENDOR_ORDER = ['qoder', 'codebuddy', 'marvis', 'cursor', 'agy']
+
+export function groupByVendor(sessions: readonly ExternalSession[]): VendorGroup[] {
+  const byVendor = new Map<string, ExternalSession[]>()
+
+  for (const session of sessions) {
+    const list = byVendor.get(session.vendor)
+
+    if (list) {
+      list.push(session)
+    } else {
+      byVendor.set(session.vendor, [session])
+    }
+  }
+
+  return [...byVendor.entries()]
+    .map(([vendor, list]) => ({
+      sessions: [...list].sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''))),
+      vendor,
+    }))
+    .sort((a, b) => {
+      const ai = VENDOR_ORDER.indexOf(a.vendor)
+      const bi = VENDOR_ORDER.indexOf(b.vendor)
+
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
+    })
+}
+
+export function vendorLabel(vendor: string): string {
+  const known: Record<string, string> = {
+    agy: 'agy',
+    codebuddy: 'CodeBuddy',
+    cursor: 'Cursor',
+    marvis: 'Marvis',
+    qoder: 'Qoder'
+  }
+
+  return known[vendor] ?? vendor
 }

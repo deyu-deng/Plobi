@@ -15,6 +15,9 @@ const LIST = {
     sessions: [{
       id: 'aaaaaaaa-1111',
       project: 'D:/Projects/Sindri',
+      related: true,
+      related_source: 'path',
+      sendable: true,
       title: '先读 README，把标题写进回执文件',
       updated_at: '2026-10-27T10:00:00.000Z',
       vendor: 'qoder'
@@ -67,6 +70,7 @@ describe('ExternalSessionsPanel', () => {
     route()
     render(<ExternalSessionsPanel agentId="Sindri" />)
 
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
     fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
 
     expect(await screen.findByText('读完了，标题是 Sindri')).toBeTruthy()
@@ -81,6 +85,7 @@ describe('ExternalSessionsPanel', () => {
   it('能在这个面板里说一句，回复接在 transcript 后面', async () => {
     route()
     render(<ExternalSessionsPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
     fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
     await screen.findByText('读完了，标题是 Sindri')
 
@@ -109,6 +114,7 @@ describe('ExternalSessionsPanel', () => {
       return Promise.resolve(TRANSCRIPT)
     })
     render(<ExternalSessionsPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
     fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
     await screen.findByText('读完了，标题是 Sindri')
 
@@ -125,4 +131,45 @@ describe('ExternalSessionsPanel', () => {
 
     await waitFor(() => expect(screen.getByText('这一条没有绑定目录')).toBeTruthy())
   })
+  it('L2 标过无关的不出现；还没判断的收在开关里', async () => {
+    api.mockImplementation(({ path }: { path: string }) => {
+      if (path.endsWith('/external-sessions')) {
+        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
+          { ...LIST.data.sessions[0], id: 'rel-1', title: '相关的一条', related: true },
+          { ...LIST.data.sessions[0], id: 'no-1', title: '无关的一条', related: false },
+          { ...LIST.data.sessions[0], id: 'un-1', title: '待判断的一条', related: null }
+        ] } })
+      }
+
+      return Promise.resolve(TRANSCRIPT)
+    })
+    render(<ExternalSessionsPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
+
+    expect(await screen.findByText('相关的一条')).toBeTruthy()
+    expect(screen.queryByText('无关的一条')).toBeNull()
+    expect(screen.queryByText('待判断的一条')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Unjudged/ }))
+    expect(await screen.findByText('待判断的一条')).toBeTruthy()
+  })
+
+  it('只读的那家不给输入框，明确说不能从这里说话', async () => {
+    api.mockImplementation(({ path }: { path: string }) => {
+      if (path.endsWith('/external-sessions')) {
+        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
+          { ...LIST.data.sessions[0], id: 'conv_1', sendable: false, title: 'Computor', vendor: 'marvis' }
+        ] } })
+      }
+
+      return Promise.resolve({ ok: true, data: { id: 'conv_1', messages: [{ role: 'user', text: 'Computor' }], project: '', vendor: 'marvis' } })
+    })
+    render(<ExternalSessionsPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Marvis/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Computor/ }))
+
+    expect(await screen.findByText('You cannot speak to this app from Plobi yet.')).toBeTruthy()
+    expect(screen.queryByPlaceholderText('Say something to it…')).toBeNull()
+  })
+
 })
