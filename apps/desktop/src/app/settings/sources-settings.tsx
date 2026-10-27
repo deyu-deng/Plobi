@@ -359,13 +359,16 @@ function SourceDrawer({ busy, guiding, labels, onReload, onTry, row }: {
       </p>
 
       {/* 执行方逐字那一句留在这里，不进那一行：它是我们读给排障的人听的，不是给"这条源怎么了"
-          那一格用的（用户 10-22：行上要人话、要产品化）。 */}
+          那一格用的（用户 10-22：行上要人话、要产品化）。
+          10-27 改的是**什么时候出现**：后端那一格现在除了出错态，也在"上一轮没成功而胶囊是绿的"
+          时给旗子（微信那行 `not_listening` 被活性盖成已连接，屏幕上原先没地方说这句话）。
+          屏上写的那一句按 `last_state` 查四语目录——目录里有就用人话，逐字原话只当兜底。 */}
       {row.status_detail
         ? (
             <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)" data-testid={`source-run-note-${row.source}`}>
               {labels.drawerRunNote}
               {' — '}
-              {row.status_detail}
+              {(row.last_state ? labels.reasons[row.last_state] : undefined) ?? row.status_detail}
             </p>
           )
         : null}

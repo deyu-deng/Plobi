@@ -63,13 +63,34 @@ def client(tmp_path) -> TestClient:
     return TestClient(app)
 
 
+class TestTheRunNote:
+    """「上一轮说明」那一格：绿点盖不住没应答的那一轮（用户 10-27 对着微信那一行问的）。"""
+
+    def test_a_green_pill_with_a_silent_round_still_says_the_round(self):
+        assert sources_api.run_note({"state": "not_listening", "detail": "5030 没在应答"},
+                                    "connected") == "5030 没在应答"
+
+    def test_a_successful_round_does_not_add_a_line(self):
+        assert sources_api.run_note({"state": "ready", "detail": "进了 12 条"}, "connected") == ""
+
+    def test_an_error_round_is_the_old_behaviour_kept(self):
+        assert sources_api.run_note({"state": "auth_failed", "detail": "授权码不对"}, "error") == "授权码不对"
+
+    def test_a_round_with_no_sentence_of_its_own_gives_nothing_to_show(self):
+        assert sources_api.run_note({"state": "not_listening", "detail": ""}, "disconnected") == ""
+
+
 class TestThreeStates:
     """用户 10-22：「一个信源就一个开关按钮，就三种形态：未连接和连接，出错了会有一个报错」。"""
 
     @pytest.mark.parametrize("case, expected", (
         pytest.param(dict(enabled=False, needs_setup=False, last_state="auth_failed",
-                          liveness_state="live", has_builder=True),
+                          liveness_state="live", has_builder=True, enabled_origin="config"),
                      ("disconnected", "off"), id="自己关着的不算出错"),
+        pytest.param(dict(enabled=False, needs_setup=False, last_state="build_failed",
+                          liveness_state="never", has_builder=True, enabled_origin="spec"),
+                     ("disconnected", "never_enabled"),
+                     id="这条默认关着的不许说成他手动停的"),
         pytest.param(dict(enabled=True, needs_setup=True, last_state="auth_failed",
                           liveness_state="never", has_builder=True),
                      ("disconnected", "needs_setup"), id="没配好的先说缺配置"),

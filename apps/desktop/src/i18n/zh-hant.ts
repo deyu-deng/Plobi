@@ -381,6 +381,7 @@ export const zhHant = defineLocale({
       },
       unknownSource: '沒記到名字的信源',
       reasons: {
+        build_failed: '這一輪沒辦法把採集器建構起來，通常是必填的那幾格還差著。',
         auth_failed: '身分憑證無效或已過期',
         captcha_required: '需要人工完成驗證',
         collect_failed: '本輪採集未完成',
@@ -396,6 +397,7 @@ export const zhHant = defineLocale({
         never_ran: '尚無採集記錄',
         not_due: '尚未到設定的採集時間',
         off: '已手動停用',
+        never_enabled: '還沒啟用過。點開這一行看它要什麼，再決定要不要打開開關。',
         ok: '最近一輪採集成功',
         parse_failed: '頁面結構已變更，暫時無法解析',
         per_round: '最近一輪採集成功',

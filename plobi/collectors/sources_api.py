@@ -45,6 +45,21 @@ class SetupRequest(BaseModel):
     params: dict[str, str]
 
 
+def run_note(last: dict, status: str) -> str:
+    """「上一轮说明」那一格什么时候该有话，判据写在这一处。
+
+    出错态当然要有；**"上一轮没成功而胶囊是绿的"更要**——微信这行 10-27 就是这样：
+    `not_listening` 既不在出错词表也不在成功词表 ⇒ 活性把它盖成 `connected/live`，
+    而屏幕上没有任何一个位置说得出那句"这一轮采集器没应答"。
+    """
+    state = last.get("state") or ""
+
+    if status == STATUS_ERROR or (state and state not in _CONNECTED_STATES):
+        return str(last.get("detail") or "")
+
+    return ""
+
+
 def _require_registered(source_id: str) -> None:
     """面上**只能对注册表里有的那条**动手。`manual` 不在注册表里 ⇒ 404，不是 400。
 
@@ -70,19 +85,19 @@ STATUS_ERROR = "error"
 #: 上一轮那些状态词 → 三态。**没列进来的词一律落 `disconnected` 而不是 `connected`**：
 #: 一个我们没见过的状态词被画成绿点，就是下一颗假绿（裁 191 那颗"没测到就别说成测到"的同一把尺）。
 _ERROR_STATES = frozenset({
-    "auth_failed", "captcha_required", "network_unreachable", "empty_term", "parse_failed",
-    "ics_parse_failed", "collect_failed", "failed", "error",
+    "auth_failed", "build_failed", "captcha_required", "network_unreachable", "empty_term",
+    "parse_failed", "ics_parse_failed", "collect_failed", "failed", "error",
 })
 _CONNECTED_STATES = frozenset({"live", "ready", "ok", "not_due", "per_round", "throttled"})
 
 
 def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
               liveness_state: str, has_builder: bool,
-              probe: Optional[dict] = None) -> tuple[str, str]:
+              probe: Optional[dict] = None, enabled_origin: str = "") -> tuple[str, str]:
     """(状态, 那一格的原因码)。原因码是给界面查语言目录用的，**不是给人看的句子**（裁定 45.4）。
 
     界面这一侧每一码都有落点（同义的几码共用一句话），查不到的落「暂未适配」那一句，
-    所以下面这一串是闭集、加词就要加四语：`config_unreadable` / `off` / `needs_setup` /
+    所以下面这一串是闭集、加词就要加四语：`config_unreadable` / `off` / `never_enabled` / `needs_setup` /
     `never_ran` / `unknown_state` / `internal` / `live` / `ready` / `ok` / `not_due` /
     `per_round` / `throttled` / `_ERROR_STATES` 里那九个原词。
 
@@ -98,7 +113,12 @@ def status_of(*, enabled: Optional[bool], needs_setup: bool, last_state: str,
     if enabled is None:
         return STATUS_DISCONNECTED, "config_unreadable"       # 读不到 ≠ 没点：界面不许把它画成关着
     if not enabled:
-        return STATUS_DISCONNECTED, "off"
+        # 「已手动停用」与「还没启用过」是两句不同的话——而且第二句是关于**我们**的，
+        # 第一句是关于**他**的。把 `enabled_origin=spec`（这条默认关、他一次都没碰过）报成
+        # "已手动停用"，就是让屏上写一句他没做过的动作（用户 10-27 对着那五行说的）。
+        if enabled_origin == "config":
+            return STATUS_DISCONNECTED, "off"                 # 他自己关的
+        return STATUS_DISCONNECTED, "never_enabled"           # 这条默认关，他一次都没碰过
     if probe is not None and probe.get("ready") is False:
         return STATUS_DISCONNECTED, str(probe.get("code") or "probe_unavailable")
     if not has_builder:
@@ -206,7 +226,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
     probe = _probe_of(spec)
     status, status_code = status_of(enabled=enabled, needs_setup=needs_setup,
                                     last_state=last["state"], liveness_state=row.get("state") or "",
-                                    has_builder=spec.builder is not None, probe=probe)
+                                    has_builder=spec.builder is not None, probe=probe,
+                                    enabled_origin=origin or "")
 
     return {
         **row,
@@ -232,7 +253,8 @@ def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],
         # 前端不再留第二套词表；`status_detail` 只在出错态给，且逐字来自上一轮（不转述）。
         "status": status,
         "status_code": status_code,
-        "status_detail": last["detail"] if status == STATUS_ERROR else "",
+        # 界面拿这一格当"要不要多写那一行"的旗子，句子本身按 `last_state` 查四语目录（见 `verbs.ts`）。
+        "status_detail": run_note(last, status),
         "last_run_at": last["at"],
         "last_state": last["state"],
         # 池里的条数：这一屏原来只有日程库那个 `events` 计数，于是按裁 193 只进池的教务

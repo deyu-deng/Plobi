@@ -127,7 +127,9 @@ vi.mock('@/i18n', () => ({
             client_not_logged_in: 'Its client app has never signed in on this machine',
             internal: 'The local collector is not ready',
             live: 'Last collection succeeded',
+            never_enabled: 'Never enabled',
             never_ran: 'No collection recorded yet',
+            not_listening: 'The collection service did not answer',
             off: 'Turned off manually',
             unknown_state: 'This collection result is not supported yet',
           },
@@ -352,6 +354,53 @@ describe('what the row says', () => {
     expect(screen.getByTestId('source-run-note-dingtalk').textContent)
       .toContain('注册表说这条在采，但没有任何一方构造得出它的采集器')
     expect(screen.getByTestId('source-drawer-dingtalk').textContent).toContain('The local collector is not ready')
+  })
+
+  it('says the silent round out loud even while the pill stays green', async () => {
+    // 微信那行 10-27 的真形状：`not_listening` 两边词表都不在 ⇒ 活性把它盖成 connected/live，
+    // 屏幕上原先没地方说这句。现在抽屉里那一行**用目录里的人话**，逐字原话只当兜底。
+    getSources.mockResolvedValue(payload([
+      row({
+        enabled: true,
+        source: 'wechat',
+        status: 'connected',
+        status_code: 'live',
+        last_state: 'not_listening',
+        status_detail: '5030 没在应答',
+      })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getAllByText('WeChat').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByText('WeChat')[0])
+
+    await waitFor(() => expect(screen.getByTestId('source-drawer-wechat')).toBeTruthy())
+    expect(screen.getByTestId('source-run-note-wechat').textContent)
+      .toContain('The collection service did not answer')
+  })
+
+  it('does not blame the user for a source that was never switched on', async () => {
+    // `enabled_origin=spec` ⇒ 后端给 never_enabled；「已手动停用」只能留给他真的关过的那一行。
+    getSources.mockResolvedValue(payload([
+      row({
+        enabled: false,
+        enabled_origin: 'spec',
+        source: 'timetable',
+        category: 'local',
+        status: 'disconnected',
+        status_code: 'never_enabled',
+      })
+    ]))
+
+    render(<SourcesSettings />)
+    await waitFor(() => expect(screen.getAllByText('Timetable').length).toBeGreaterThan(0))
+    // 行上只有胶囊，原因在抽屉那一格（10-22 拍的就是"行上三个形态，报错才多一句"）——
+    // 所以这里要判的是抽屉里那句"原因"到底说给谁听。
+    fireEvent.click(screen.getAllByText('Timetable')[0])
+
+    await waitFor(() => expect(screen.getByTestId('source-drawer-timetable')).toBeTruthy())
+    expect(screen.getByTestId('source-drawer-timetable').textContent).toContain('Never enabled')
+    expect(screen.getByTestId('source-drawer-timetable').textContent).not.toContain('Turned off manually')
   })
 
   it('sends the click to the switch only when the source is configured', async () => {

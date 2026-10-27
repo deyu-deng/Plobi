@@ -461,6 +461,7 @@ export const en: Translations = {
       },
       unknownSource: 'Source without a recorded name',
       reasons: {
+        build_failed: 'That round could not build the collector; required fields are usually still missing.',
         auth_failed: 'Credentials are invalid or expired',
         captcha_required: 'Manual verification required',
         collect_failed: 'Collection did not complete',
@@ -476,6 +477,7 @@ export const en: Translations = {
         never_ran: 'No collection recorded yet',
         not_due: 'Not yet due for the scheduled collection',
         off: 'Turned off manually',
+        never_enabled: 'Never enabled. Open this row to see what it needs, then decide whether to turn it on.',
         ok: 'Last collection succeeded',
         parse_failed: 'Page structure changed; parsing is unavailable',
         per_round: 'Last collection succeeded',

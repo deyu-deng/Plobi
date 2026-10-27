@@ -388,6 +388,7 @@ export const ja = defineLocale({
       },
       unknownSource: '名前の記録がないソース',
       reasons: {
+        build_failed: 'このラウンドで収集機能を構築できませんでした。通常は必須項目が未入力です。',
         auth_failed: '認証情報が無効または期限切れです',
         captcha_required: '手動での確認が必要です',
         collect_failed: '今回の収集は完了できませんでした',
@@ -403,6 +404,7 @@ export const ja = defineLocale({
         never_ran: '収集記録はまだありません',
         not_due: '設定された収集時刻になっていません',
         off: '手動で無効化されています',
+        never_enabled: 'まだ有効にしていません。この行を開くと、必要な項目が見えます。',
         ok: '直前の収集は成功しました',
         parse_failed: 'ページ構成が変更され、解析できない状態です',
         per_round: '直前の収集は成功しました',

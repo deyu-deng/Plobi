@@ -449,6 +449,7 @@ export const zh: Translations = {
       },
       unknownSource: '未记录名称的信源',
       reasons: {
+        build_failed: '这一轮没能把采集器构造起来，通常是必填的那几格还差着。',
         auth_failed: '身份凭据无效或已过期',
         captcha_required: '需要人工完成验证',
         collect_failed: '本轮采集未完成',
@@ -464,6 +465,7 @@ export const zh: Translations = {
         never_ran: '尚无采集记录',
         not_due: '尚未到设定的采集时间',
         off: '已手动停用',
+        never_enabled: '还没启用过。点开这一行看它要什么，再决定要不要打开开关。',
         ok: '最近一轮采集成功',
         parse_failed: '页面结构已变更，暂时无法解析',
         per_round: '最近一轮采集成功',
