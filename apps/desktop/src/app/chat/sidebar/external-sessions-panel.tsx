@@ -71,6 +71,11 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
   return (
     <div className="flex flex-col gap-px">
       <span className="px-1 text-[0.7rem] uppercase text-(--ui-text-tertiary)">{c.externalSessionsTitle}</span>
+      {data !== null && (related.length > 0 || unknown.length > 0) && (
+        <span className="px-2 text-[0.65rem] text-(--ui-text-quaternary)">
+          {c.externalSessionsRelated} {related.length} · {c.externalSessionsShowUnknown} {unknown.length}
+        </span>
+      )}
 
       {data === null && (
         <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">

@@ -67,6 +67,13 @@ function route(sendReply = '第二句回话') {
 }
 
 describe('ExternalSessionsPanel', () => {
+  it('标题下面把「相关 / 待判断」数出来：过滤在不在工作，一眼看得见', async () => {
+    route()
+    render(<ExternalSessionsPanel agentId="Sindri" />)
+
+    expect(await screen.findByText('related 1 · Unjudged 0')).toBeTruthy()
+  })
+
   it('按项目列出会话，点一条在 Plobi 里读 transcript（不跳外部软件）', async () => {
     route()
     render(<ExternalSessionsPanel agentId="Sindri" />)
