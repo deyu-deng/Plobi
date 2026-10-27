@@ -137,7 +137,7 @@ def _commit_one(root: Path, relative: str, day: _date) -> dict[str, Any]:
     return {"committed": True, "commit": head.stdout.strip(), "detail": ""}
 
 
-def save_entry(value: str, text: str, *, commit: bool = True) -> dict[str, Any]:
+def save_entry(value: str, text: str, *, commit: bool = True, base_text: str | None = None) -> dict[str, Any]:
     day = parse_day(value)
     encoded = (text or "").encode("utf-8")
     if len(encoded) > MAX_DIARY_BYTES:
@@ -145,6 +145,14 @@ def save_entry(value: str, text: str, *, commit: bool = True) -> dict[str, Any]:
     root = _diary_root()
     root.mkdir(parents=True, exist_ok=True)
     path = _entry_path(day, root)
+    merged: list[str] = []
+    if base_text is not None and path.is_file():
+        try:
+            merged = _lines_added_on_disk(path.read_text(encoding="utf-8", errors="replace"), base_text, text)
+        except OSError:
+            merged = []
+        if merged:
+            text = (text.rstrip("\n") + "\n\n" + "\n".join(merged) + "\n") if text.strip() else "\n".join(merged) + "\n"
     body = text if text.endswith("\n") else text + "\n"
     # 先写同目录临时文件再换名：写到一半崩掉不会留下半篇日记。
     handle, tmp = tempfile.mkstemp(prefix=".diary-", suffix=".tmp", dir=str(root))
@@ -169,5 +177,42 @@ def save_entry(value: str, text: str, *, commit: bool = True) -> dict[str, Any]:
         "filename": path.name,
         "fsPath": str(path),
         "bytes": len(body.encode("utf-8")),
+        "merged": len(merged),
         **result,
     }
+
+
+def _lines_added_on_disk(disk: str, base_text: str, incoming: str) -> list[str]:
+    """编辑器打开之后盘上多出来的行（就是浮层快记那几条），合并回这次要写的正文。
+
+    不这么做会丢字：人开着今天这篇在写，中间按快捷键记了一句，编辑器保存是**整篇覆盖**，
+    刚记的那句就没了。按行比对、保留盘上顺序，已经在新正文里的不重复塞。
+    """
+    known = {line.strip() for line in base_text.splitlines() if line.strip()}
+    fresh = {line.strip() for line in incoming.splitlines() if line.strip()}
+    return [
+        line
+        for line in disk.splitlines()
+        if line.strip() and line.strip() not in known and line.strip() not in fresh
+    ]
+
+
+def append_entry(value: str, line: str, *, commit: bool = True) -> dict[str, Any]:
+    """往当天那篇**末尾**接一行 ``- HH:MM 内容``（用户 10-26：「接在当天的日记之后」）。"""
+    text = (line or "").strip()
+    if not text:
+        raise ValueError("a capture needs a non-empty line")
+    if "\n" in text or "\r" in text:
+        raise ValueError("a capture must be one line")
+    day = parse_day(value)
+    key = day.strftime("%Y-%m-%d")
+    entry = read_entry(key)
+    addition = f"- {datetime.now().strftime('%H:%M')} {text}"
+    body = entry["text"]
+    if body.strip():
+        merged_text = body.rstrip("\n") + "\n" + addition + "\n"
+    else:
+        merged_text = addition + "\n"
+    result = save_entry(key, merged_text, commit=commit)
+    result["line"] = addition
+    return result

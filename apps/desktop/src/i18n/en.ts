@@ -455,7 +455,6 @@ export const en: Translations = {
       cadenceNumber: 'Every',
       cadenceUnit: 'Unit',
       cadenceUnits: { days: 'days', hours: 'hours', minutes: 'minutes' },
-
       cadenceWeekdays: { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' },
       cadenceCustom: 'Custom',
       cadencePresets: {
@@ -1197,7 +1196,14 @@ export const en: Translations = {
     quote: 'Quote',
     code: 'Code block',
     undo: 'Undo',
-    redo: 'Redo'
+    redo: 'Redo',
+    notWritten: 'Not written',
+    captureTitle: 'Jot one line · today',
+    capturePlaceholder: 'That thought — write it down…',
+    captureHint: 'Enter saves it to the end of today and closes',
+    captureEnter: 'Esc discards',
+    merged: n => `merged ${n} jotted line${n === 1 ? '' : 's'}`,
+    mergedInto: (merged, saved) => `${merged} · ${saved}`
   },
   vault: {
     title: 'Knowledge',
@@ -3306,12 +3312,12 @@ export const en: Translations = {
       saveFailed: 'Could not save the spreadsheet',
       review: 'Review',
       reload: 'Reload',
-      hint: 'The GenOffice editor is not running. Restart Plobi or rebuild the editor.'
+      hint: 'The GenOffice editor is not running. Restart Plobi or rebuild the editor.',
       diskChanged: 'The file changed on disk. Reloading discards unsaved edits in the editor.',
-      dismiss: 'Later'
+      dismiss: 'Later',
       convertToXlsx: 'Convert to .xlsx',
       converting: 'Converting…',
-      convertFailed: 'Conversion failed'
+      convertFailed: 'Conversion failed',
       legacyTitle: 'Legacy Office file',
       legacyBody: (sourceExt, targetExt) =>
         `.${sourceExt} cannot be edited here directly; convert it to .${targetExt} first. The original stays untouched.`,

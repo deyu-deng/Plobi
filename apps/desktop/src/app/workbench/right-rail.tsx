@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils'
 export type RightRailTab =
   | 'agenda'
   | 'browser'
-  | 'diary'
   | 'files'
   | 'progress'
   | 'review'

@@ -43,6 +43,7 @@ import {
   HOME_ROUTE,
   MESSAGING_ROUTE,
   type ShellLevel,
+  DIARY_ROUTE,
   KNOWLEDGE_ROUTE,
   SKILLS_ROUTE
 } from '../../routes'
@@ -75,7 +76,8 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
   },
   { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
   { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
-  { id: 'knowledge', label: '', icon: props => <Codicon name="book" {...props} />, route: KNOWLEDGE_ROUTE }
+  { id: 'knowledge', label: '', icon: props => <Codicon name="book" {...props} />, route: KNOWLEDGE_ROUTE },
+  { id: 'diary', label: '', icon: props => <Codicon name="edit" {...props} />, route: DIARY_ROUTE }
 ]
 
 // NAV row chrome (the top icon rail): height/typography live here so the
@@ -389,7 +391,8 @@ export function ChatSidebar({
                   (item.id === 'skills' && currentView === 'skills') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
                   (item.id === 'artifacts' && currentView === 'artifacts') ||
-                  (item.id === 'knowledge' && currentView === 'knowledge')
+                  (item.id === 'knowledge' && currentView === 'knowledge') ||
+                  (item.id === 'diary' && currentView === 'diary')
 
                 return (
                   <SidebarMenuItem key={item.id}>

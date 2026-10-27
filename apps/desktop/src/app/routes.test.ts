@@ -5,17 +5,18 @@ import {
   agentRouteId,
   appViewForPath,
   CONSOLE_ROUTE,
+  DIARY_ROUTE,
   HOME_ROUTE,
   isAgentRoute,
   isNewChatRoute,
   isOverlayView,
   isShellPageView,
+  KNOWLEDGE_ROUTE,
   NEW_CHAT_ROUTE,
   pathnameFromRouteToken,
   routeSessionId,
   shellLevelForPath,
   shouldSyncSessionUrl,
-  KNOWLEDGE_ROUTE,
   showsComposerCodingRow
 } from './routes'
 
@@ -56,6 +57,13 @@ describe('routes (U6 landing inversion)', () => {
     // WP-E: reporting `chat` here re-enabled the preview rail on an empty
     // center (Navigate→L1), causing a full-bleed markdown flash.
     expect(appViewForPath('/sess-123')).toBe('console')
+  })
+
+  it('routes /diary to the diary page', () => {
+    expect(DIARY_ROUTE).toBe('/diary')
+    expect(appViewForPath('/diary')).toBe('diary')
+    expect(isShellPageView('diary')).toBe(true)
+    expect(routeSessionId('/diary')).toBeNull()
   })
 
   it('routes /knowledge to the notes library and keeps the left rail mounted', () => {

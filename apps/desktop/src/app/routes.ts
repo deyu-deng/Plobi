@@ -18,6 +18,7 @@ export const AGENTS_ROUTE = '/agents'
 export const CONSOLE_ROUTE = '/console'
 export const STARMAP_ROUTE = '/starmap'
 export const KNOWLEDGE_ROUTE = '/knowledge'
+export const DIARY_ROUTE = '/diary'
 
 export type AppView =
   | 'agenda'
@@ -30,6 +31,7 @@ export type AppView =
   | 'cron'
   | 'messaging'
   | 'settings'
+  | 'diary'
   | 'knowledge'
   | 'skills'
   | 'starmap'
@@ -45,6 +47,7 @@ export type AppRouteId =
   | 'messaging'
   | 'new'
   | 'settings'
+  | 'diary'
   | 'knowledge'
   | 'skills'
   | 'starmap'
@@ -67,7 +70,8 @@ export const APP_ROUTES = [
   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
   { id: 'console', path: CONSOLE_ROUTE, view: 'console' },
   { id: 'starmap', path: STARMAP_ROUTE, view: 'starmap' },
-  { id: 'knowledge', path: KNOWLEDGE_ROUTE, view: 'knowledge' }
+  { id: 'knowledge', path: KNOWLEDGE_ROUTE, view: 'knowledge' },
+  { id: 'diary', path: DIARY_ROUTE, view: 'diary' }
 ] as const satisfies readonly AppRoute[]
 
 const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route.path, route.view]))
@@ -98,7 +102,7 @@ export function isOverlayView(view: AppView): boolean {
 // Plobi always left the left rail mounted on these routes; U6/WP-A gated the
 // sidebar on `chatOpen` / secretary `level`, which hid it on /skills and made
 // the page feel inescapable. Overlays (settings, cron, …) still cover the shell.
-export const SHELL_PAGE_VIEWS: ReadonlySet<AppView> = new Set(['artifacts', 'knowledge', 'messaging', 'skills'])
+export const SHELL_PAGE_VIEWS: ReadonlySet<AppView> = new Set(['artifacts', 'diary', 'knowledge', 'messaging', 'skills'])
 
 export function isShellPageView(view: AppView): boolean {
   return SHELL_PAGE_VIEWS.has(view)

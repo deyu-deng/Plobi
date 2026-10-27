@@ -110,3 +110,49 @@ def test_list_entries_is_newest_first(vault):
     data = diary.list_entries()
     assert [row["date"] for row in data["entries"]] == ["2026-03-04", "2026-01-02"]
     assert data["entries"][0]["weekday"] == "Wednesday"
+
+
+def test_capture_appends_a_stamped_line_at_the_end(vault):
+    diary.save_entry("2026-10-27", "上午把管线跑通了。", commit=False)
+
+    result = diary.append_entry("2026-10-27", "跟导师吵完，其实我担心的是时间")
+    assert result["line"].startswith("- ") and result["line"].endswith("时间")
+
+    text = (vault / "diary" / "2026-10-27-Tuesday.md").read_text(encoding="utf-8")
+    assert text.splitlines() == ["上午把管线跑通了。", result["line"]]
+
+
+def test_capture_on_a_day_with_nothing_yet_creates_the_file(vault):
+    result = diary.append_entry("2026-11-02", "第一句")
+    text = (vault / "diary" / "2026-11-02-Monday.md").read_text(encoding="utf-8")
+    assert text.strip() == result["line"]
+
+
+def test_capture_refuses_empty_and_multiline(vault):
+    with pytest.raises(ValueError):
+        diary.append_entry("2026-10-27", "   ")
+    with pytest.raises(ValueError):
+        diary.append_entry("2026-10-27", "两句\n拼在一起")
+
+
+def test_saving_the_editor_does_not_eat_a_capture_made_while_it_was_open(vault):
+    """用户 10-26 的形状：编辑器开着写，中途用快捷键记了一句，保存不能把那句冲掉。"""
+    diary.save_entry("2026-10-27", "早上的原文。", commit=False)
+    base = diary.read_entry("2026-10-27")["text"]
+    diary.append_entry("2026-10-27", "路过记的一句", commit=False)
+
+    saved = diary.save_entry("2026-10-27", "早上的原文。\n\n下午补了一段。", commit=False, base_text=base)
+    assert saved["merged"] == 1
+
+    text = (vault / "diary" / "2026-10-27-Tuesday.md").read_text(encoding="utf-8")
+    assert "下午补了一段。" in text
+    assert "- " in text and "路过记的一句" in text
+
+
+def test_without_base_the_save_is_a_plain_overwrite(vault):
+    diary.save_entry("2026-10-27", "原文。", commit=False)
+    diary.append_entry("2026-10-27", "会被覆盖的那句", commit=False)
+
+    diary.save_entry("2026-10-27", "整篇重写。", commit=False)
+    text = (vault / "diary" / "2026-10-27-Tuesday.md").read_text(encoding="utf-8")
+    assert text == "整篇重写。\n"

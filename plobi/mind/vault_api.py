@@ -109,8 +109,30 @@ async def put_vault_diary_entry(day: str, body: dict):
     text = body.get("text") if isinstance(body, dict) else None
     if not isinstance(text, str):
         return _error(400, "body must be {\"text\": \"...\"}")
+    # ``base`` = 编辑器打开时那份原文。带上它，保存前就能把"这期间浮层快记的那几条"
+    # 合并回来，而不是被整篇覆盖掉；不带就是不要求合并。
+    base = body.get("base")
+    if base is not None and not isinstance(base, str):
+        return _error(400, '"base" must be a string when present')
     try:
-        data = await run_in_threadpool(save_entry, day, text)
+        data = await run_in_threadpool(save_entry, day, text, base_text=base)
+    except ValueError as exc:
+        return _error(400, str(exc))
+    except Exception as exc:
+        return _unavailable("diary", exc)
+    return {"ok": True, "data": data}
+
+
+@router.post("/vault/diary/{day}/capture")
+async def capture_vault_diary_entry(day: str, body: dict):
+    """路过记一句：往当天那篇末尾接一行 ``- HH:MM …``，记完浮层就收。"""
+    from plobi.mind.diary import append_entry
+
+    line = body.get("line") if isinstance(body, dict) else None
+    if not isinstance(line, str):
+        return _error(400, "body must be {\"line\": \"...\"}")
+    try:
+        data = await run_in_threadpool(append_entry, day, line)
     except ValueError as exc:
         return _error(400, str(exc))
     except Exception as exc:

@@ -439,7 +439,6 @@ export interface Translations {
       cadenceNumber: string
       cadenceUnit: string
       cadenceUnits: Record<'days' | 'hours' | 'minutes', string>
-
       /** 周几：键是 `0`..`6`（0=周日），值是该语言的短名。 */
       cadenceWeekdays: Record<string, string>
       cadenceCustom: string,
@@ -1064,6 +1063,13 @@ export interface Translations {
     code: string
     undo: string
     redo: string
+    notWritten: string
+    captureTitle: string
+    capturePlaceholder: string
+    captureHint: string
+    captureEnter: string
+    merged: (n: number) => string
+    mergedInto: (merged: string, saved: string) => string
   }
   vault: {
     title: string

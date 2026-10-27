@@ -39,6 +39,7 @@ import {
 import { openNewSessionInNewWindow } from '@/store/windows'
 import { useTheme } from '@/themes/context'
 
+import { toggleDiaryCapture } from '@/store/diary-capture'
 import { requestComposerFocus, requestVoiceToggle } from '../chat/composer/focus'
 import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from '../layout-constants'
 import {
@@ -48,6 +49,7 @@ import {
   MESSAGING_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
+  DIARY_ROUTE,
   KNOWLEDGE_ROUTE,
   SKILLS_ROUTE
 } from '../routes'
@@ -118,6 +120,8 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.cron': () => navigate(CRON_ROUTE),
     'nav.agents': () => navigate(AGENTS_ROUTE),
     'nav.knowledge': () => navigate(KNOWLEDGE_ROUTE),
+    'nav.diary': () => navigate(DIARY_ROUTE),
+    'diary.capture': toggleDiaryCapture,
 
     'session.new': () => {
       // Match the sidebar New Session button. A plain keyboard new chat should

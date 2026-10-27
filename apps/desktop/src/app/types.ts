@@ -128,6 +128,7 @@ export type SidebarNavId =
   | 'messaging'
   | 'new-session'
   | 'settings'
+  | 'diary'
   | 'knowledge'
   | 'skills'
 

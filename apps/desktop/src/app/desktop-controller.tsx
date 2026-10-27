@@ -132,10 +132,11 @@ import {
 import { BrowserTabPanel } from './workbench/browser-tab'
 import { LocalFilePreview } from './chat/right-rail/preview-file'
 import { fileKindForPath } from './workbench/file-kind'
+import { queryGenOfficeDirty } from './workbench/genoffice-dirty'
 import { requestGenOfficeClose } from './workbench/genoffice-sessions'
+import { DiaryCaptureOverlay } from './diary/capture-overlay'
 import { RightRailWorkbench, type RightRailTab, type RightRailTabDef, type RightRailTabId } from './workbench/right-rail'
 import { AgentProgressPane } from './chat/right-rail/agent-progress-pane'
-import { DiaryPane } from './chat/right-rail/diary-pane'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { SessionSwitcher } from './session-switcher'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
@@ -177,6 +178,7 @@ const OfficeFilePreview = lazy(async () => ({
 }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
+const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryView }))
 
 export function DesktopController() {
   const queryClient = useQueryClient()
@@ -332,12 +334,6 @@ export function DesktopController() {
       id: 'terminal',
       title: t.workbench.tabs.terminal
     },
-    diary: {
-      description: t.workbench.actions.diary,
-      icon: 'book',
-      id: 'diary',
-      title: t.workbench.tabs.diary
-    },
     progress: {
       description: t.workbench.actions.progress,
       icon: 'graph',
@@ -345,19 +341,13 @@ export function DesktopController() {
       title: t.workbench.tabs.progress
     }
   }
-  const l1TabDefs = [
-    workbenchTabDefs.agenda,
-    workbenchTabDefs.browser,
-    workbenchTabDefs.terminal,
-    workbenchTabDefs.diary
-  ]
+  const l1TabDefs = [workbenchTabDefs.agenda, workbenchTabDefs.browser, workbenchTabDefs.terminal]
   const l2TabDefs = [
     workbenchTabDefs.files,
     workbenchTabDefs.agenda,
     workbenchTabDefs.review,
     workbenchTabDefs.browser,
     workbenchTabDefs.terminal,
-    workbenchTabDefs.diary,
     workbenchTabDefs.progress
   ]
   const isL1Workbench = level === 'l1'
@@ -495,48 +485,75 @@ export function DesktopController() {
   )
 
   // Publish a read-only snapshot for agents: which files the human has open,
-  // which editor owns them, and whether a text buffer is dirty. Debounced so a
-  // burst of tab changes doesn't rewrite the file repeatedly.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const activeTab = isL1Workbench ? l1Active : l2Active
-      const files: Array<{
-        active: boolean
-        dirty: boolean | null
-        editor: string
-        path: string
-        title: string
-      }> = []
+  // which editor owns them, and whether the editor has unsaved work. Debounced
+  // so a burst of tab changes doesn't rewrite the file repeatedly; Office dirty
+  // state is re-queried every few seconds because it lives in the webview.
+  const publishOpenFilesSnapshot = useCallback(async () => {
+    const activeTab = isL1Workbench ? l1Active : l2Active
+    const files: Array<{
+      active: boolean
+      dirty: boolean | null
+      editor: string
+      path: string
+      title: string
+    }> = []
 
-      for (const [id, entry] of Object.entries(openFiles)) {
-        const path = entry.target.path ?? ''
+    for (const [id, entry] of Object.entries(openFiles)) {
+      const path = entry.target.path ?? ''
 
-        if (!path) {
-          continue
-        }
-
-        const officeEditable = /\.(xlsx|docx|pptx)$/iu.test(path)
-        const previewOnly = /\.(xls|pdf)$/iu.test(path)
-        const editor = officeEditable ? 'genoffice' : previewOnly ? 'preview' : 'text'
-
-        files.push({
-          active: id === activeTab,
-          dirty: editor === 'text' ? Boolean(entry.target.url && dirtyPreviewUrls[entry.target.url]) : null,
-          editor,
-          path,
-          title: entry.def.title
-        })
+      if (!path) {
+        continue
       }
 
-      void window.plobiDesktop?.setOpenFilesSnapshot?.({
-        agentId: activeAgentId || 'l1',
-        files,
-        workspace: agentCwd
+      const officeEditable = /\.(xlsx|docx|pptx)$/iu.test(path)
+      const previewOnly = /\.(xls|pdf)$/iu.test(path)
+      const editor = officeEditable ? 'genoffice' : previewOnly ? 'preview' : 'text'
+      const dirty =
+        editor === 'text'
+          ? Boolean(entry.target.url && dirtyPreviewUrls[entry.target.url])
+          : editor === 'genoffice'
+            ? await queryGenOfficeDirty(path)
+            : null
+
+      files.push({
+        active: id === activeTab,
+        dirty,
+        editor,
+        path,
+        title: entry.def.title
       })
+    }
+
+    void window.plobiDesktop?.setOpenFilesSnapshot?.({
+      agentId: activeAgentId || 'l1',
+      files,
+      workspace: agentCwd
+    })
+  }, [activeAgentId, agentCwd, dirtyPreviewUrls, isL1Workbench, l1Active, l2Active, openFiles])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void publishOpenFilesSnapshot()
     }, 250)
 
     return () => window.clearTimeout(timer)
-  }, [activeAgentId, agentCwd, dirtyPreviewUrls, isL1Workbench, l1Active, l2Active, openFiles])
+  }, [publishOpenFilesSnapshot])
+
+  useEffect(() => {
+    const hasOffice = Object.values(openFiles).some(({ target }) =>
+      /\.(xlsx|docx|pptx)$/iu.test(target.path ?? '')
+    )
+
+    if (!hasOffice) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      void publishOpenFilesSnapshot()
+    }, 4000)
+
+    return () => window.clearInterval(timer)
+  }, [openFiles, publishOpenFilesSnapshot])
 
   // The terminal is a right-rail tab now; the store stays the single open/close
   // signal so the status stack, command palette and keybinds keep working.
@@ -631,9 +648,7 @@ export function DesktopController() {
 
   const l1OpenTabDefs = l1Tabs
     .map(id =>
-      id === 'agenda' || id === 'browser' || id === 'terminal' || id === 'diary'
-        ? workbenchTabDefs[id]
-        : null
+      id === 'agenda' || id === 'browser' || id === 'terminal' ? workbenchTabDefs[id] : null
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
@@ -643,7 +658,6 @@ export function DesktopController() {
       id === 'browser' ||
       id === 'agenda' ||
       id === 'terminal' ||
-      id === 'diary' ||
       id === 'progress'
         ? workbenchTabDefs[id]
         : openFiles[id]?.def
@@ -1571,6 +1585,7 @@ export function DesktopController() {
       <GatewayConnectingOverlay />
       <BootFailureOverlay />
       <CommandPalette />
+      <DiaryCaptureOverlay />
       <PetGenerateOverlay />
       <SessionSwitcher />
       <FileActionDialogs />
@@ -1780,7 +1795,6 @@ export function DesktopController() {
           contents={{
             agenda: agendaTabContent,
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
-            diary: <DiaryPane />,
             files: workbenchFilesContent,
             progress: activeAgentId ? <AgentProgressPane agentId={activeAgentId} /> : null,
             review: workbenchReviewContent,
@@ -1833,7 +1847,6 @@ export function DesktopController() {
           contents={{
             agenda: agendaTabContent,
             browser: <BrowserTabPanel labels={t.workbench.browser} />,
-            diary: <DiaryPane />,
             files: null,
             terminal: isL1Workbench ? <TerminalPaneChrome /> : null
           }}
@@ -1942,6 +1955,14 @@ export function DesktopController() {
               </Suspense>
             }
             path="knowledge"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <DiaryView />
+              </Suspense>
+            }
+            path="diary"
           />
           {/* Overlay routes: center stays empty; the card mounts via
               `overlays` from `useOverlayRouting`. Missing a stub here lets

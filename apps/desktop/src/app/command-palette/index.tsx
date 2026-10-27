@@ -34,6 +34,7 @@ import {
   Package,
   Palette,
   PawPrint,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
@@ -73,6 +74,7 @@ import {
   MESSAGING_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
+  DIARY_ROUTE,
   KNOWLEDGE_ROUTE,
   SKILLS_ROUTE,
   STARMAP_ROUTE
@@ -462,6 +464,7 @@ export function CommandPalette() {
           },
           { action: 'nav.agents', icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) },
           { action: 'nav.knowledge', icon: NotebookTabs, id: 'nav-knowledge', label: t.vault.title, run: go(KNOWLEDGE_ROUTE) },
+          { action: 'nav.diary', icon: Pencil, id: 'nav-diary', label: t.diary.title, run: go(DIARY_ROUTE) },
           {
             icon: Starmap,
             id: 'nav-starmap',

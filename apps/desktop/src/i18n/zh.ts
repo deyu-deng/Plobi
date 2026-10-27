@@ -443,7 +443,6 @@ export const zh: Translations = {
       cadenceNumber: '每',
       cadenceUnit: '单位',
       cadenceUnits: { days: '天', hours: '小时', minutes: '分钟' },
-
       cadenceWeekdays: { '0': '周日', '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六' },
       cadenceCustom: '自定义',
       cadencePresets: {
@@ -1374,7 +1373,14 @@ export const zh: Translations = {
     quote: '引用',
     code: '代码块',
     undo: '撤销',
-    redo: '重做'
+    redo: '重做',
+    notWritten: '没写过',
+    captureTitle: '记一句 · 今天',
+    capturePlaceholder: '脑子里那句，先记下来…',
+    captureHint: '回车存进今天这一篇的末尾，窗口自动收掉',
+    captureEnter: 'Esc 不存就走',
+    merged: n => `并回 ${n} 条随手记`,
+    mergedInto: (merged, saved) => `${merged} · ${saved}`
   },
   vault: {
     title: '知识库',
@@ -3438,12 +3444,12 @@ export const zh: Translations = {
       saveFailed: '表格保存失败',
       review: '审阅',
       reload: '重新加载',
-      hint: 'GenOffice 编辑器没有启动；重启 Plobi 或重新构建编辑器。'
+      hint: 'GenOffice 编辑器没有启动；重启 Plobi 或重新构建编辑器。',
       diskChanged: '文件已在磁盘更新；重新加载会丢弃编辑器里未保存的内容。',
-      dismiss: '稍后处理'
+      dismiss: '稍后处理',
       convertToXlsx: '转换为 .xlsx 编辑',
       converting: '转换中…',
-      convertFailed: '转换失败'
+      convertFailed: '转换失败',
       legacyTitle: '旧版 Office 文件',
       legacyBody: (sourceExt, targetExt) => `.${sourceExt} 不能在这里直接编辑；先转换为 .${targetExt}，原文件保留。`,
       legacyConvertNote: '转换由本机办公引擎完成；只新建副本，不改原文件。',
