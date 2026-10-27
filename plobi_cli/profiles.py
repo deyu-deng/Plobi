@@ -20,6 +20,7 @@ Usage::
     plobi profile delete coder          # remove profile + alias + service
 """
 
+import io
 import json
 import os
 import re
@@ -1116,6 +1117,241 @@ def write_profile_meta(
 # CRUD operations
 # ---------------------------------------------------------------------------
 
+def identity_store_key(name: str) -> str:
+    """名册行的**存储目录键**（排程那一族的落点用）。
+
+    键＝名册 name（与身份文件同一把钥匙）；只把不适合做目录名的字符换成 ``-``，
+    免得一个带斜杠的名字造出嵌套目录。
+    """
+    import re
+
+    cleaned = re.sub(r"[^\w.-]+", "-", (name or "").strip()).strip("-")
+    return cleaned or "agent"
+
+
+def _roster_row(name: str):
+    """名册里那一行：先按 ``name`` 精确找，再按 ``profile_name`` 找；找不到给 None。"""
+    from plobi.agents.registry import AgentRegistry
+
+    try:
+        registry = AgentRegistry.load()
+    except Exception:
+        return None, None
+    canon = normalize_profile_name(name)
+    for entry in registry.entries():
+        if entry.name.casefold() == canon.casefold():
+            return registry, entry
+    for entry in registry.entries():
+        if (entry.profile_name or "").casefold() == canon.casefold():
+            return registry, entry
+    return registry, None
+
+
+def delete_identity(name: str, yes: bool = False) -> Path:
+    """删掉**名册那一行** ＋ 它在共享层的那几份产物（留一份能看回来的底）。
+
+    家目录退休之后（裁 42／178 乙案），「删一个分身」的对象就是名册那一行：
+    这一行从 ``projects.yaml`` 里去掉；它自己的身份文件（``souls/<名册 name>.md``）
+    与它那一份排程存储（``cron/agents/<名册 name>/``）一并挪进
+    ``<shared>/.deleted-agents/<名册 name>-<时刻>/``。
+
+    **留底是必须的**：名册文件（``$PLOBI_HOME/plobi/projects.yaml``）不在任何 git 仓里，
+    删了就没有历史——留底目录里放着那一行的 yaml 与它的身份文件，手工放回即可恢复。
+    """
+    from datetime import datetime
+
+    import yaml
+
+    canon = normalize_profile_name(name)
+    if canon == "default":
+        raise ValueError(
+            "Cannot delete the default profile (~/.plobi).\n"
+            "To remove everything, use: plobi uninstall"
+        )
+    registry, entry = _roster_row(canon)
+    if entry is None:
+        raise FileNotFoundError(f"Profile '{canon}' does not exist.")
+
+    shared = _get_default_plobi_home()
+    soul = _shared_soul_path(entry)
+    store = shared / "cron" / "agents" / identity_store_key(entry.name)
+
+    print(f"\nAgent:   {entry.name}")
+    if entry.role:
+        print(f"Role:    {entry.role}")
+    if entry.description:
+        print(f"About:   {entry.description}")
+    items = ["Its roster row (projects.yaml)"]
+    if soul.exists():
+        items.append(f"Its identity file ({soul.name})")
+    if store.is_dir():
+        items.append(f"Its cron store ({store})")
+    print("\nThis will remove:")
+    for item in items:
+        print(f"  • {item}")
+    print(f"  • (a copy is kept under {shared / '.deleted-agents'})")
+
+    if not yes:
+        print()
+        try:
+            confirm = input(f"Type '{entry.name}' to confirm: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            return shared / ".deleted-agents"
+        if confirm != entry.name:
+            print("Cancelled.")
+            return shared / ".deleted-agents"
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = shared / ".deleted-agents" / f"{entry.name}-{stamp}"
+    backup.mkdir(parents=True, exist_ok=True)
+    with io.open(backup / "agent.yaml", "w", encoding="utf-8", newline="\n") as f:
+        yaml.safe_dump(
+            {"agents": {entry.name: entry.to_dict()}},
+            f,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    if soul.exists():
+        shutil.move(str(soul), str(backup / soul.name))
+    if store.is_dir():
+        shutil.move(str(store), str(backup / "cron"))
+
+    registry.agents.pop(entry.name, None)
+    registry.save()
+
+    alias = build_alias_map().get(entry.name) or build_alias_map().get(entry.profile_name or "")
+    if alias:
+        try:
+            remove_wrapper_script(alias)
+        except Exception:
+            pass
+    print(f"\n✓ Removed '{entry.name}' from the roster.")
+    print(f"  Kept a copy in {backup}")
+    return backup
+
+
+def export_identity(name: str, output_path: str) -> Path:
+    """导出**名册那一行** ＋ 它的身份文件，成一个 tar.gz。
+
+    家退休之后没有「一家一个分身」可导了——能导的只有这一行（它的模型覆盖、工作目录、
+    人设片段、密钥覆盖都在这一行上）与它的身份文件（``souls/<名册 name>.md``）。
+    """
+    import tempfile
+
+    import yaml
+
+    canon = normalize_profile_name(name)
+    registry, entry = _roster_row(canon)
+    if entry is None:
+        raise FileNotFoundError(f"Profile '{canon}' does not exist.")
+
+    output = Path(output_path)
+    base = str(output).removesuffix(".tar.gz").removesuffix(".tgz")
+    soul = _shared_soul_path(entry)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        staged = Path(tmpdir) / entry.name
+        staged.mkdir(parents=True, exist_ok=True)
+        with io.open(staged / "agent.yaml", "w", encoding="utf-8", newline="\n") as f:
+            yaml.safe_dump(
+                {"agents": {entry.name: entry.to_dict()}},
+                f,
+                sort_keys=False,
+                allow_unicode=True,
+            )
+        if soul.exists():
+            shutil.copy2(soul, staged / soul.name)
+        result = shutil.make_archive(base, "gztar", tmpdir, entry.name)
+    return Path(result)
+
+
+def rename_identity(old_name: str, new_name: str) -> str:
+    """改名册那一行（名册 name ＝ 身份），连同它在共享层的那几份产物。
+
+    改名的连带三样：身份文件（``souls/<名册 name>.md``）、它那一份排程存储
+    （``cron/agents/<名册 name>/``）、以及总账里那些会话的 ``agent_id``
+    ——不改最后一样，这一行的会话历史会掉队（总账是单库，归属键就是名册 name）。
+
+    ``profile_name``（旧家目录名）**不动**：它现在只是这一行的别名，改它会让旧写法失效。
+    """
+    from dataclasses import replace
+
+    old_canon = normalize_profile_name(old_name)
+    # 键＝名册 name ＝ 身份：**保留用户写的大小写**（``Aura`` 与 ``aura`` 是两样东西：
+    # 身份文件 ``souls/Aura.md`` 与总账里的 ``agent_id`` 都按原样记）。
+    new_key = str(new_name or "").strip()
+    if not new_key:
+        raise ValueError("The new name cannot be empty.")
+    if new_key.casefold() == "default":
+        raise ValueError("Cannot rename to 'default' — it is reserved.")
+    if old_canon == "default":
+        raise ValueError("Cannot rename the default profile.")
+
+    registry, entry = _roster_row(old_canon)
+    if entry is None:
+        raise FileNotFoundError(f"Profile '{old_canon}' does not exist.")
+    for other in registry.entries():
+        if other.name != entry.name and other.name.casefold() == new_key.casefold():
+            raise ValueError(
+                f"'{other.name}' already exists — a name that differs only in case is not allowed."
+            )
+    if new_key.casefold() == entry.name.casefold():
+        raise FileExistsError(f"Profile '{new_key}' already exists.")
+
+    shared = _get_default_plobi_home()
+    old_soul = _shared_soul_path(entry)
+    new_soul = _shared_soul_path_for_name(new_key)
+    if old_soul.exists():
+        new_soul.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old_soul), str(new_soul))
+    old_store = shared / "cron" / "agents" / identity_store_key(entry.name)
+    new_store = shared / "cron" / "agents" / identity_store_key(new_key)
+    if old_store.is_dir():
+        new_store.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old_store), str(new_store))
+
+    # 总账里的归属键跟着改名（单库 + agent_id 列，裁 180）
+    try:
+        import sqlite3
+
+        from plobi_state import get_plobi_state_home
+
+        db_path = get_plobi_state_home() / "state.db"
+        if db_path.is_file():
+            conn = sqlite3.connect(str(db_path), timeout=10)
+            try:
+                conn.execute(
+                    "UPDATE sessions SET agent_id = ? WHERE agent_id = ?",
+                    (new_key, entry.name),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception:
+        pass
+
+    registry.agents.pop(entry.name, None)
+    registry.agents[new_key] = replace(entry, name=new_key)
+    registry.save()
+    print(f"✓ Renamed '{entry.name}' → '{new_key}'")
+    return new_key
+
+
+def _shared_soul_path(entry):
+    """那一行的身份文件（共享层 ``souls/<名册 name>.md``）。"""
+    from plobi.agents.registry import shared_soul_path
+
+    return shared_soul_path(entry)
+
+
+def _shared_soul_path_for_name(name: str):
+    """按名字取身份文件的路径（改名时用）。"""
+    from plobi.agents.registry import shared_soul_path_for
+
+    return shared_soul_path_for(name)
+
+
 def list_identity_profiles() -> List[ProfileInfo]:
     """身份清单：``default`` ＋ 名册上的每一行——**用户看到的那份名单**。
 
@@ -1290,7 +1526,14 @@ def profiles_to_serve(multiplex: bool) -> List[Tuple[str, Path]]:
     """
     active = get_active_profile_name() or "default"
     if not multiplex:
-        return [(active, get_profile_dir(active))]
+        # 家**还在**就原样用（老装机逐字不变）；家不在了（这台的现状）才折回共享根
+        # ——否则网关会把 PLOBI_HOME 指到一个不存在的目录上。
+        from plobi_constants import shared_root_for
+
+        active_home = get_profile_dir(active)
+        if active_home.is_dir():
+            return [(active, active_home)]
+        return [(active, shared_root_for(active_home))]
 
     serve: List[Tuple[str, Path]] = [("default", _get_default_plobi_home())]
 

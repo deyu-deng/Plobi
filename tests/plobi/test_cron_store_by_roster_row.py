@@ -29,9 +29,11 @@ def cron_home(tmp_path, monkeypatch):
         "agents:\n"
         "  agenda:\n"
         "    role: l2_agenda\n"
+        "    profile: l2-agenda\n"
         "    description: 日程秘书\n"
         "  Aura:\n"
         "    role: l2_project\n"
+        "    profile: aura\n"
         "    description: 名册上的那一行\n",
         encoding="utf-8",
     )
@@ -85,6 +87,36 @@ def test_same_row_two_spellings_share_one_store(cron_home):
     _n1, dir1 = ws._cron_profile_home("Aura")
     _n2, dir2 = ws._cron_profile_home("aura")
     assert dir1 == dir2
+
+
+def test_store_key_is_the_roster_name_not_the_slug(cron_home):
+    """存储目录的键＝**名册 name**（与身份文件 ``souls/<name>.md`` 同一把钥匙）。
+
+    早先按 ``profile_name`` 建目录 ⇒ ``agenda`` 那行落到 ``l2-agenda/``，
+    与搬作业时用的键（``agenda``）对不上，接口读出来 0 个作业。
+    """
+    ws = _web_server()
+    _name, store_dir = ws._cron_profile_home("agenda")
+    assert store_dir == cron_home / "cron" / "agents" / "agenda"
+    # 那行的 slug 是 l2-agenda —— 两种写法都落到同一份
+    _n, same_dir = ws._cron_profile_home("l2-agenda")
+    assert same_dir == store_dir
+
+
+def test_roster_name_with_capitals_is_not_a_400(cron_home):
+    """名册行名**可以带大写**（``Aura``）：过了名册这一关就不该再被 slug 形状挡住。"""
+    ws = _web_server()
+    from fastapi import HTTPException
+
+    # `Aura` 那行的 name 带大写、profile 是 `aura`
+    assert ws._resolve_profile_dir("Aura").is_dir()
+    # 不存在的名字：形状对 ⇒ 404，形状不对 ⇒ 400
+    with pytest.raises(HTTPException) as exc:
+        ws._resolve_profile_dir("no-such-row")
+    assert exc.value.status_code == 404
+    with pytest.raises(HTTPException) as exc:
+        ws._resolve_profile_dir("不合法 的 名字!")
+    assert exc.value.status_code == 400
 
 
 def test_scheduler_discovers_row_stores(cron_home):

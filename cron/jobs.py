@@ -173,6 +173,16 @@ def discover_cron_stores() -> List[Path]:
     名册行那一格里的作业会永远不触发——那就是又一条「看得见但不跑」的假货。
     """
     base = _current_cron_store().cron_dir
+    if _cron_store_override.get() is None:
+        # 存储上下文之外调用时，基址要**现取**（与调度器同一把尺：
+        # ``cron/scheduler.py::_get_plobi_home``）——模块导入那一刻钉死的 ``CRON_DIR``
+        # 在改过 PLOBI_HOME 的进程里是错的那一份（测试与多家场景都会撞上）。
+        try:
+            from cron.scheduler import _get_plobi_home
+
+            base = _get_plobi_home() / "cron"
+        except Exception:
+            pass
     out: List[Path] = [base]
     agents_dir = base / "agents"
     try:

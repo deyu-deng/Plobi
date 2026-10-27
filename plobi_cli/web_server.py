@@ -10695,16 +10695,25 @@ def _cron_store_root() -> Path:
     而是住在共享根下（用户 10-27 拍板：共享根下按名册行分一份）。
     """
     try:
-        from plobi_constants import get_shared_plobi_root
+        from plobi_cli import profiles as profiles_mod
 
-        return Path(get_shared_plobi_root()) / "cron"
+        # 走 **profiles 模块那一份**家的解析（不是 plobi_constants 那一份）：
+        # 重定向过家的调用方与测试必须看到同一份根，否则它写进去的排程输出
+        # 接口读不到（``test_cron_output_visible`` 那条红就是这么来的）。
+        return Path(profiles_mod._get_default_plobi_home()) / "cron"
     except Exception:
         return Path(get_plobi_home()) / "cron"
 
 
 def _cron_store_dir_for(slug: str) -> Path:
-    """某一名册行的那一份 cron 存储：``<shared>/cron/agents/<slug>/``。"""
-    return _cron_store_root() / "agents" / slug
+    """某一名册行的那一份 cron 存储：``<shared>/cron/agents/<名字>/``。
+
+    键＝**名册 name**（与身份文件 ``souls/<名册 name>.md`` 同一把钥匙），
+    目录名的净化走 ``profiles.identity_store_key``（与删／改名那两处同一把尺）。
+    """
+    from plobi_cli import profiles as profiles_mod
+
+    return _cron_store_root() / "agents" / profiles_mod.identity_store_key(slug)
 
 
 def _cron_runtime_home() -> Path:
@@ -10714,9 +10723,9 @@ def _cron_runtime_home() -> Path:
     现在身份＝名册那一行、家只有一份（裁 166／178 乙案），所以运行时家就是共享根。
     """
     try:
-        from plobi_constants import get_shared_plobi_root
+        from plobi_cli import profiles as profiles_mod
 
-        return Path(get_shared_plobi_root())
+        return Path(profiles_mod._get_default_plobi_home())
     except Exception:
         return Path(get_plobi_home())
 
@@ -10743,16 +10752,19 @@ def _cron_profile_home(profile: Optional[str]) -> Tuple[str, Path]:
         raise HTTPException(status_code=404, detail=f"Profile '{canon}' does not exist.")
     # 同一行的两个写法（名册 name 与它的 profile_name）要落在**同一份**存储里，
     # 否则「用显示名建的作业」和「用 slug 建的作业」会分家两份。
-    row_slug = canon
+    # 键取**名册 name**——与身份文件 ``souls/<名册 name>.md`` 同一把钥匙
+    # （早先按 ``profile_name`` 建目录 ⇒ ``agenda`` 那行落到 ``l2-agenda/``，
+    #  与搬作业时用的键 ``agenda`` 对不上，读出来 0 个作业）。
+    row_key = canon
     try:
         from plobi.agents.registry import entry_for_profile
 
         entry = entry_for_profile(canon)
-        if entry is not None and entry.profile_name:
-            row_slug = entry.profile_name
+        if entry is not None and entry.name:
+            row_key = entry.name
     except Exception:
         pass
-    return canon, _cron_store_dir_for(row_slug)
+    return canon, _cron_store_dir_for(row_key)
 
 
 def _roster_has_scope(scope: str) -> bool:
@@ -13295,15 +13307,45 @@ def _fallback_profile_dicts(profiles_mod) -> List[Dict[str, Any]]:
 
 
 def _resolve_profile_dir(name: str) -> Path:
-    """Validate ``name`` and resolve to its directory or raise an HTTPException."""
+    """校验这个名字，并解析成**运行时那一份家**（共享根）。
+
+    家目录退休之后（裁 42／178 乙案），这一族不再有「一家一个分身」的家：
+    身份＝名册那一行（裁 192），配置／凭据／技能／身份文件都在共享层一份。
+    所以这里问的是**名册里有没有这一行**，给回去的是**共享根**——
+    以前给回去的是 ``profiles/<name>/``，那目录早就不在了（10-24 搬走、10-27 删净）。
+    """
     from plobi_cli import profiles as profiles_mod
     try:
-        profiles_mod.validate_profile_name(name)
+        canon = profiles_mod.normalize_profile_name(name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if not profiles_mod.profile_exists(name):
-        raise HTTPException(status_code=404, detail=f"Profile '{name}' does not exist.")
-    return profiles_mod.get_profile_dir(name)
+    # 名册上的行名**可以带大写**（``Aura``），而 ``validate_profile_name`` 只认
+    # 小写 slug ⇒ 顺序要改成：先归一 → 先问名册（名册行不过形状那一关）→ 再按
+    # slug 形状报错。形状不对又不在名册上的，仍是 400。
+    if profiles_mod.identity_exists(canon):
+        return profiles_mod.identity_home(canon)
+    try:
+        profiles_mod.validate_profile_name(canon)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    raise HTTPException(status_code=404, detail=f"Profile '{name}' does not exist.")
+
+
+def _shared_soul_path_for(name: str) -> Path:
+    """这个 Agent 的身份文件：共享层 ``souls/<名册 name>.md``（A 刀已就位）。
+
+    键是**名册 name**（读侧 ``PLOBI_AGENT_ID`` 手里就是它），不是 profile 名——
+    两侧用同一个键，读侧就不必反查名册。``default`` 没有名册行，落在共享根那份
+    ``SOUL.md``（人设共享一份 ＋ 名册行人设片段作覆盖，裁 42.2）。
+    """
+    from plobi.agents.registry import entry_for_profile, shared_soul_path_for, shared_souls_root
+    from plobi_cli import profiles as profiles_mod
+
+    canon = profiles_mod.normalize_profile_name(name)
+    entry = entry_for_profile(canon)
+    if entry is not None:
+        return shared_soul_path_for(entry.name)
+    return shared_souls_root().parent / "SOUL.md"
 
 
 def _profile_setup_command(name: str) -> str:
@@ -13436,13 +13478,15 @@ def _disable_unselected_skills(profile_dir: Path, keep: List[str]) -> int:
 
 @app.get("/api/profiles")
 async def list_profiles_endpoint():
+    # 10-27 改名册语义（用户拍板）：这份名单问**名册**（裁 192），不扫目录——
+    # 家退休之后目录扫描只剩 ``default`` 一行，用户看到的就是空名单。
     from plobi_cli import profiles as profiles_mod
     try:
         loop = asyncio.get_running_loop()
-        profiles = await loop.run_in_executor(None, profiles_mod.list_profiles)
+        profiles = await loop.run_in_executor(None, profiles_mod.list_identity_profiles)
         return {"profiles": [_profile_to_dict(p) for p in profiles]}
     except Exception:
-        _log.exception("GET /api/profiles failed; falling back to profile directory scan")
+        _log.exception("GET /api/profiles failed; falling back to the roster")
         return {"profiles": _fallback_profile_dicts(profiles_mod)}
 
 
@@ -13676,9 +13720,10 @@ async def open_profile_terminal_endpoint(name: str):
 
 @app.patch("/api/profiles/{name}")
 async def rename_profile_endpoint(name: str, body: ProfileRename):
+    # 10-27 改名册语义（用户拍板）：改的是**名册那一行的键**，不是家目录。
     from plobi_cli import profiles as profiles_mod
     try:
-        path = profiles_mod.rename_profile(name, body.new_name)
+        new_name = profiles_mod.rename_identity(name, body.new_name)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except (ValueError, FileExistsError) as e:
@@ -13686,17 +13731,18 @@ async def rename_profile_endpoint(name: str, body: ProfileRename):
     except Exception as e:
         _log.exception("PATCH /api/profiles/%s failed", name)
         raise HTTPException(status_code=500, detail=str(e))
-    return {"ok": True, "name": body.new_name, "path": str(path)}
+    return {"ok": True, "name": new_name}
 
 
 @app.delete("/api/profiles/{name}")
 async def delete_profile_endpoint(name: str):
-    """Delete a profile. The dashboard collects the user's confirmation in
-    its own dialog before this request, so we always pass ``yes=True`` to
-    skip the CLI's interactive prompt."""
+    """删掉**名册那一行** ＋ 它在共享层的那几份产物（留一份底）。
+
+    10-27 改名册语义（用户拍板）：家退休之后没有「分身家」可删了，删的对象是
+    那一行。仪表盘那边自己收确认，所以这里一律 ``yes=True``。"""
     from plobi_cli import profiles as profiles_mod
     try:
-        path = profiles_mod.delete_profile(name, yes=True)
+        backup = profiles_mod.delete_identity(name, yes=True)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -13704,12 +13750,13 @@ async def delete_profile_endpoint(name: str):
     except Exception as e:
         _log.exception("DELETE /api/profiles/%s failed", name)
         raise HTTPException(status_code=500, detail=str(e))
-    return {"ok": True, "path": str(path)}
+    return {"ok": True, "backup": str(backup)}
 
 
 @app.get("/api/profiles/{name}/soul")
 async def get_profile_soul(name: str):
-    soul_path = _resolve_profile_dir(name) / "SOUL.md"
+    _resolve_profile_dir(name)
+    soul_path = _shared_soul_path_for(name)
     if soul_path.exists():
         try:
             return {"content": soul_path.read_text(encoding="utf-8"), "exists": True}
@@ -13720,7 +13767,8 @@ async def get_profile_soul(name: str):
 
 @app.put("/api/profiles/{name}/soul")
 async def update_profile_soul(name: str, body: ProfileSoulUpdate):
-    soul_path = _resolve_profile_dir(name) / "SOUL.md"
+    _resolve_profile_dir(name)
+    soul_path = _shared_soul_path_for(name)
     try:
         soul_path.write_text(body.content, encoding="utf-8")
     except OSError as e:
@@ -13738,14 +13786,21 @@ async def update_profile_description_endpoint(name: str, body: ProfileDescriptio
     auto-describer won't overwrite it on a sweep.
     """
     from plobi_cli import profiles as profiles_mod
-    profile_dir = _resolve_profile_dir(name)
+    _resolve_profile_dir(name)
     text = (body.description or "").strip()
+    canon = profiles_mod.normalize_profile_name(name)
     try:
-        profiles_mod.write_profile_meta(
-            profile_dir,
-            description=text,
-            description_auto=False,
-        )
+        if canon == "default":
+            profiles_mod.write_profile_meta(
+                profiles_mod.identity_home(canon),
+                description=text,
+                description_auto=False,
+            )
+        elif not profiles_mod.write_identity_description(canon, text):
+            # 描述的真源是名册那一行（裁 166／192）：家退休之后没有家目录可写。
+            raise HTTPException(status_code=404, detail=f"Profile '{name}' does not exist.")
+    except HTTPException:
+        raise
     except Exception as e:
         _log.exception("PUT /api/profiles/%s/description failed", name)
         raise HTTPException(status_code=500, detail=str(e))

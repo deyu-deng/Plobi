@@ -11062,6 +11062,7 @@ def cmd_profile(args):
         list_identity_profiles,
         identity_exists,
         archive_identity,
+        delete_identity,
         create_profile,
         delete_profile,
         get_profile_dir,
@@ -11289,10 +11290,12 @@ def cmd_profile(args):
             sys.exit(1)
 
     elif action == "delete":
+        # 10-27 改名册语义（用户拍板）：删的对象是**名册那一行** ＋ 它在共享层的
+        # 那几份产物（身份文件、排程存储），留一份底在 ``.deleted-agents/``。
         name = args.profile_name
         yes = getattr(args, "yes", False)
         try:
-            delete_profile(name, yes=yes)
+            delete_identity(name, yes=yes)
         except (ValueError, FileNotFoundError) as e:
             print(f"Error: {e}")
             sys.exit(1)
@@ -11520,23 +11523,25 @@ def cmd_profile(args):
                     print(f"⚠ {_get_wrapper_dir()} is not in your PATH.")
 
     elif action == "rename":
-        from plobi_cli.profiles import rename_profile
+        # 10-27 改名册语义（用户拍板）：改的是**名册那一行的键**（名册 name ＝ 身份），
+        # 连同身份文件、排程存储、总账里的归属键一起改。
+        from plobi_cli.profiles import rename_identity
 
         try:
-            new_dir = rename_profile(args.old_name, args.new_name)
-            print(f"\nProfile renamed: {args.old_name} → {args.new_name}")
-            print(f"Path: {new_dir}\n")
+            new_name = rename_identity(args.old_name, args.new_name)
+            print(f"\nAgent renamed: {args.old_name} → {new_name}")
         except (ValueError, FileExistsError, FileNotFoundError) as e:
             print(f"Error: {e}")
             sys.exit(1)
 
     elif action == "export":
-        from plobi_cli.profiles import export_profile
+        # 10-27 改名册语义（用户拍板）：导的是**名册那一行**（yaml）＋ 它的身份文件。
+        from plobi_cli.profiles import export_identity
 
         name = args.profile_name
         output = args.output or f"{name}.tar.gz"
         try:
-            result_path = export_profile(name, output)
+            result_path = export_identity(name, output)
             print(f"✓ Exported '{name}' to {result_path}")
         except (ValueError, FileNotFoundError) as e:
             print(f"Error: {e}")
