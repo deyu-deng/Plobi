@@ -5,6 +5,7 @@ import { triggerHaptic } from '@/lib/haptics'
 import { useSessionSlice } from '@/lib/use-session-slice'
 import { type ComposerAttachment } from '@/store/composer'
 import { resetBrowseState } from '@/store/composer-input-history'
+import { $quoteTarget, clearQuoteTarget } from '@/store/quote'
 import {
   $queuedPromptsBySession,
   enqueueQueuedPrompt,
@@ -170,12 +171,23 @@ export function useComposerQueue({
       return false
     }
 
-    if (!enqueueQueuedPrompt(activeQueueSessionKey, { text, attachments })) {
+    const quote = $quoteTarget.get()
+
+    if (
+      !enqueueQueuedPrompt(activeQueueSessionKey, {
+        text,
+        attachments,
+        ...(quote ? { replyTo: quote.id } : {}),
+      })
+    ) {
       return false
     }
 
     clearDraft()
     attachmentsAtom.set([])
+    if (quote) {
+      clearQuoteTarget()
+    }
     triggerHaptic('selection')
 
     return true
@@ -199,7 +211,11 @@ export function useComposerQueue({
 
       try {
         const accepted = await Promise.resolve(
-          onSubmit(entry.text, { attachments: entry.attachments, fromQueue: true })
+          onSubmit(entry.text, {
+            attachments: entry.attachments,
+            fromQueue: true,
+            ...(entry.replyTo ? { replyTo: entry.replyTo } : {}),
+          })
         )
 
         if (accepted === false) {

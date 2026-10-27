@@ -206,7 +206,14 @@ export function useComposerSubmit({
 
     void Promise.resolve(onSteer(text)).then(accepted => {
       if (!accepted && activeQueueSessionKey) {
-        enqueueQueuedPrompt(activeQueueSessionKey, { text, attachments: [] })
+        enqueueQueuedPrompt(activeQueueSessionKey, {
+          text,
+          attachments: [],
+          ...($quoteTarget.get() ? { replyTo: $quoteTarget.get()!.id } : {}),
+        })
+        if ($quoteTarget.get()) {
+          clearQuoteTarget()
+        }
       }
     })
   }
