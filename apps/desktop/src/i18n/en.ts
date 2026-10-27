@@ -1849,6 +1849,7 @@ export const en: Translations = {
     externalSessionsShowUnknown: 'Unjudged',
     externalSessionsHideUnknown: 'Hide unjudged',
     externalSessionsReadOnly: 'You cannot speak to this app from Plobi yet.',
+    externalSessionsRelated: 'related',
     offloadsBackToList: 'Agent list',
     offloadsLoadFailed: 'Could not read the offload records: the server returned no data (not "nothing was offloaded").',
     offloadsNoArtifact: 'There is no artifact to open for this task (it may not have completed).',

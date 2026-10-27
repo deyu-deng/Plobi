@@ -2009,6 +2009,7 @@ export const zh: Translations = {
     externalSessionsShowUnknown: '待判断',
     externalSessionsHideUnknown: '收起待判断',
     externalSessionsReadOnly: '这家还不能从 Plobi 里说话。',
+    externalSessionsRelated: '相关',
     offloadsBackToList: 'Agent 列表',
     offloadsLoadFailed: '外包记录读取失败：服务端未返回数据（并非没有外包任务）。',
     offloadsNoArtifact: '本次任务没有可打开的产物（可能未执行成功）。',

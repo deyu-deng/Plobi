@@ -1728,6 +1728,7 @@ export const ja = defineLocale({
     externalSessionsShowUnknown: '未判定',
     externalSessionsHideUnknown: '未判定を隠す',
     externalSessionsReadOnly: 'このアプリにはまだ Plobi から話しかけられません。',
+    externalSessionsRelated: '関連',
     offloadsBackToList: 'エージェント一覧',
     offloadsLoadFailed: '外部委託の記録を読み込めませんでした：サーバーがデータを返しませんでした（委託がないわけではありません）。',
     offloadsNoArtifact: 'このタスクには開ける成果物がありません（おそらく正常に完了していません）。',

@@ -1682,6 +1682,7 @@ export const zhHant = defineLocale({
     externalSessionsShowUnknown: '待判斷',
     externalSessionsHideUnknown: '收起待判斷',
     externalSessionsReadOnly: '這家還不能從 Plobi 裡說話。',
+    externalSessionsRelated: '相關',
     offloadsBackToList: 'Agent 清單',
     offloadsLoadFailed: '外包記錄讀取失敗：伺服端未回傳資料（並非沒有外包任務）。',
     offloadsNoArtifact: '本次任務沒有可開啟的產物（可能未執行成功）。',

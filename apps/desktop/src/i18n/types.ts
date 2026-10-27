@@ -1586,6 +1586,7 @@ export interface Translations {
     externalSessionsShowUnknown: string
     externalSessionsHideUnknown: string
     externalSessionsReadOnly: string
+    externalSessionsRelated: string
     offloadsBackToList: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string
