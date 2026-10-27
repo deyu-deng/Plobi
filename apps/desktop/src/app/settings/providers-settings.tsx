@@ -505,7 +505,9 @@ function DesktopQuotasView() {
       authCatalog.length
         ? authCatalog.map(card => ({
             aggregate: card.aggregate,
-            description: card.description,
+            // LoginCard 只有 `intro`（一行简介）与 `detail`（只做 tooltip）；
+            // 回退时这里读了一个已经不存在的字段，屏上那一行会空掉。
+            description: card.intro,
             id: card.id,
             name: card.name,
             // `verified` is the shell's word for "a click can act on this", which is
