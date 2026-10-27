@@ -4,6 +4,11 @@ import { PageLoader } from '@/components/page-loader'
 import { Codicon } from '@/components/ui/codicon'
 
 import { registerGenOfficeCloseHandler } from './genoffice-sessions'
+import {
+  officeDiskChangeAction,
+  queryGenOfficeEditorDirty,
+  registerGenOfficeDirtyProvider
+} from './genoffice-dirty'
 import type { OfficePreviewLabels } from './office-preview'
 import { useFileRevision } from './use-file-revision'
 
@@ -57,6 +62,7 @@ export function GenOfficeFileEditor({
   const webviewRef = useRef<GenOfficeWebview | null>(null)
   const webviewFocusedRef = useRef(false)
   const webContentsIdRef = useRef<number | null>(null)
+  const pendingDiskChangeRef = useRef(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
@@ -79,23 +85,58 @@ export function GenOfficeFileEditor({
     [kind, path]
   )
 
+  useEffect(
+    () =>
+      registerGenOfficeDirtyProvider(path, () =>
+        queryGenOfficeEditorDirty(kind, webContentsIdRef.current)
+      ),
+    [kind, path]
+  )
+
   useEffect(() => {
     if (diskChange === 0) {
       return
     }
 
-    // The editor's own save also bumps mtime. While the webview owns focus,
-    // treat the write as the human's and don't nag; an agent edit made while
-    // focus is elsewhere still raises the reload bar.
-    const webview = webviewRef.current
-    const active = document.activeElement
+    let cancelled = false
 
-    if (webviewFocusedRef.current || (webview && (active === webview || webview.contains(active)))) {
-      return
+    const evaluate = async () => {
+      const webview = webviewRef.current
+      const active = document.activeElement
+      const focused =
+        webviewFocusedRef.current || Boolean(webview && (active === webview || webview.contains(active)))
+      const dirty = await queryGenOfficeEditorDirty(kind, webContentsIdRef.current)
+
+      if (cancelled) {
+        return
+      }
+
+      const action = officeDiskChangeAction(focused, dirty)
+
+      if (action === 'reload') {
+        pendingDiskChangeRef.current = false
+        setDiskChanged(false)
+        setReloadKey(value => value + 1)
+
+        return
+      }
+
+      if (action === 'prompt') {
+        pendingDiskChangeRef.current = false
+        setDiskChanged(true)
+
+        return
+      }
+
+      pendingDiskChangeRef.current = true
     }
 
-    setDiskChanged(true)
-  }, [diskChange])
+    void evaluate()
+
+    return () => {
+      cancelled = true
+    }
+  }, [diskChange, kind])
 
   useEffect(() => {
     const host = hostRef.current
@@ -125,7 +166,7 @@ export function GenOfficeFileEditor({
         }
 
         const webview = document.createElement('webview') as GenOfficeWebview
-        webview.className = 'block h-full w-full border-0 bg-white'
+        webview.className = 'flex h-full w-full border-0 bg-white'
         webview.setAttribute('preload', preloadUrl)
         webview.setAttribute('partition', `persist:plobi-genoffice-${kind}`)
         webview.setAttribute('webpreferences', 'contextIsolation=yes,nodeIntegration=no,sandbox=yes')
@@ -153,6 +194,17 @@ export function GenOfficeFileEditor({
         }
         const onBlur = () => {
           webviewFocusedRef.current = false
+
+          if (!pendingDiskChangeRef.current) {
+            return
+          }
+
+          pendingDiskChangeRef.current = false
+          void queryGenOfficeEditorDirty(kind, webContentsIdRef.current).then(dirty => {
+            if (dirty === true) {
+              setDiskChanged(true)
+            }
+          })
         }
         const onDomReady = () => {
           webContentsIdRef.current = webview.getWebContentsId?.() ?? null
@@ -182,6 +234,7 @@ export function GenOfficeFileEditor({
   }, [kind, path, reloadKey])
 
   const retry = () => {
+    pendingDiskChangeRef.current = false
     setDiskChanged(false)
     setFailed(false)
     setLoading(true)

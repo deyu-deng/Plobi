@@ -25,8 +25,8 @@ LIST_OPEN_FILES_SCHEMA = {
         "List files currently open in the Plobi desktop's right rail, including which editor "
         "owns each file and whether the human has unsaved edits (dirty). Call this before "
         "overwriting or deleting a file the human may be editing. Read-only: it never saves, "
-        "locks or changes anything. Office editors report dirty=null because their internal "
-        "unsaved state is not exposed; treat that as 'unknown, ask before overwriting'."
+        "locks or changes anything. Editor-mounted Office files report dirty=true/false; "
+        "dirty=null means the editor did not answer, so treat it as 'unknown, ask before overwriting'."
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
@@ -69,9 +69,9 @@ def _handle_list_open_files(args: Any = None, **_kwargs: Any) -> str:
         )
 
     note = (
-        "dirty=true means the human has unsaved edits in the text editor; do not overwrite "
-        "without their decision. dirty=null means the editor does not expose dirty state; "
-        "ask before replacing it."
+        "dirty=true means the human has unsaved edits in the text or Office editor; do not "
+        "overwrite without their decision. dirty=null means the editor did not answer (not "
+        "mounted or unresponsive); ask before replacing it."
     )
     updated_at = payload.get("updatedAt") or ""
 

@@ -42,6 +42,27 @@ def test_reports_dirty_text_and_unknown_office(tmp_path, monkeypatch):
     assert "unsaved" in result["note"].lower()
 
 
+def test_reports_office_dirty_when_the_editor_answers(tmp_path, monkeypatch):
+    monkeypatch.setattr(open_files_tool, "get_default_plobi_root", lambda: tmp_path)
+    _write_snapshot(
+        tmp_path,
+        {
+            "agentId": "l2:coder",
+            "files": [
+                {"active": True, "dirty": False, "editor": "genoffice", "path": "/w/a.xlsx", "title": "a.xlsx"},
+                {"active": False, "dirty": True, "editor": "genoffice", "path": "/w/b.docx", "title": "b.docx"},
+            ],
+            "updatedAt": "2999-01-01T00:00:00.000Z",
+            "workspace": "/w",
+        },
+    )
+
+    result = json.loads(open_files_tool._handle_list_open_files({}))
+
+    assert [file["dirty"] for file in result["files"]] == [False, True]
+    assert "unsaved" in result["note"].lower()
+
+
 def test_marks_an_old_snapshot_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(open_files_tool, "get_default_plobi_root", lambda: tmp_path)
     _write_snapshot(

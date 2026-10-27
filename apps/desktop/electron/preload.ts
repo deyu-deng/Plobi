@@ -127,6 +127,8 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
           : 'slides-host:request-close',
       webContentsId
     ),
+  genofficeQueryDirty: (kind, webContentsId) =>
+    ipcRenderer.invoke('genoffice:query-dirty', kind, webContentsId),
   trashPath: targetPath => ipcRenderer.invoke('plobi:fs:trash', targetPath),
   git: {
     worktreeList: repoPath => ipcRenderer.invoke('plobi:git:worktreeList', repoPath),

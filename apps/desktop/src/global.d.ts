@@ -81,6 +81,7 @@ declare global {
       writeFileBuffer: (filePath: string, data: ArrayBuffer | Uint8Array) => Promise<{ path: string }>
       genofficePreloadUrl: (kind: 'slides' | 'sheets' | 'word') => Promise<string>
       genofficeRequestClose?: (kind: 'slides' | 'sheets' | 'word', webContentsId: number) => Promise<boolean>
+      genofficeQueryDirty?: (kind: 'slides' | 'sheets' | 'word', webContentsId: number) => Promise<boolean | null>
       saveImageFromUrl: (url: string) => Promise<boolean>
       saveImageBuffer: (data: ArrayBuffer | Uint8Array, ext: string) => Promise<string>
       saveClipboardImage: () => Promise<string>

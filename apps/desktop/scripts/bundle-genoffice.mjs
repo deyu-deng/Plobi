@@ -3,7 +3,7 @@
 // module and CommonJS vendor code that an ESM main bundle cannot import.
 import { build } from 'esbuild'
 import { createOpenDeskOfficeViteAliases } from '@bitclub.ai/opendesk-office/vite'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, promises as fsPromises } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,6 +42,40 @@ const aliasPlugin = {
   }
 }
 
+// OfficeCLI (and some other writers) serialize SpreadsheetML with a prefix on
+// every main-namespace element (`<x:sheet>`). The stock gateway's regexes only
+// match the default namespace and report "no readable worksheets". Strip the
+// prefix from the XML strings it reads; the rest of the package is untouched.
+const xlsxPrefixTolerancePlugin = {
+  name: 'xlsx-prefix-tolerance',
+  setup(build) {
+    build.onLoad({ filter: /[\\/]dist[\\/]sheets-main\.js$/ }, async args => {
+      const source = await fsPromises.readFile(args.path, 'utf8')
+      const needle = 'const zip = await createBufferEntrySource(buffer);'
+      const occurrences = source.split(needle).length - 1
+
+      if (occurrences !== 1) {
+        throw new Error(`xlsx prefix patch: expected one readBasicWorkbook needle, found ${occurrences}`)
+      }
+
+      const injection = `${needle}
+  const __plobiReadText = zip.readText.bind(zip);
+  zip.readText = async (name) => {
+    const text = await __plobiReadText(name);
+    if (!/^xl\\/.*\\.xml$/i.test(name)) return text;
+    const main = /xmlns:([A-Za-z_][\\w.-]*)="http:\\/\\/schemas\\.openxmlformats\\.org\\/spreadsheetml\\/2006\\/main"/.exec(text);
+    if (!main) return text;
+    const prefix = main[1];
+    return text
+      .replace(new RegExp("<" + prefix + ":", "g"), "<")
+      .replace(new RegExp("</" + prefix + ":", "g"), "</");
+  };`
+
+      return { contents: source.replace(needle, injection), loader: 'js' }
+    })
+  }
+}
+
 await build({
   entryPoints: [path.join(appRoot, 'scripts', 'genoffice-host-entry.ts')],
   outfile: path.join(dist, 'host.cjs'),
@@ -50,7 +84,7 @@ await build({
   format: 'cjs',
   target: 'node20',
   external: ['electron'],
-  plugins: [assetPlugin],
+  plugins: [xlsxPrefixTolerancePlugin, assetPlugin],
   loader: { '.css': 'empty', '.ttf': 'empty', '.wasm': 'empty', '.png': 'empty' },
   define: { 'process.env.NODE_ENV': '"production"' },
   logLevel: 'info'
