@@ -490,23 +490,18 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "nemotron-3.5-lightning-free",
         "nemotron-3.5-super-vl-free",
     ],
-    "cline-acp": [
-        "deepseek/deepseek-v4-flash",
-        "minimax/minimax-m3",
-    ],
-    "gemini-acp": [
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-3-pro",
-        "gemini-3-flash",
-    ],
-    "qwen-acp": [
-        "qwen3.7-plus",
-        "qwen3.7-max",
-        "qwen3.6-plus",
-        "qwen3.5-plus",
-        "qwen3-coder-plus",
-    ],
+    # Empty on purpose: an ACP leg names its own models (see
+    # plugins/model-providers/cline-acp/__init__.py). A seeded list here would
+    # outlive the CLI and put a name nobody can call into the picker.
+    "cline-acp": [],
+    # Empty on purpose: an ACP leg names its own models (see
+    # plugins/model-providers/gemini-acp/__init__.py). A seeded list here would
+    # outlive the CLI and put a name nobody can call into the picker.
+    "gemini-acp": [],
+    # Empty on purpose: an ACP leg names its own models (see
+    # plugins/model-providers/qwen-acp/__init__.py). A seeded list here would
+    # outlive the CLI and put a name nobody can call into the picker.
+    "qwen-acp": [],
     "clinepass": [
         "glm-5.2",
         "kimi-k3",

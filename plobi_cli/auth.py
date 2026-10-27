@@ -1559,6 +1559,19 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
     """
     normalized = (provider_id or "").strip().lower()
 
+    # An external-process (ACP/CLI) leg is answered FIRST, and by the CLI itself.
+    # Every branch below is a *hint* that the user once pointed at this provider —
+    # `model.provider` in config.yaml, an auth.json entry, a pooled credential — and
+    # a hint is not a working leg. Measured 2026-10-27 on this machine: config.yaml
+    # said `model.provider: qwen-acp` while qwen-code 0.26.0 refused `session/new`
+    # with "Authentication required", so the default leg named a provider that could
+    # not serve one turn. No login ⇒ not configured ⇒ it does not reach the picker.
+    _pconfig = PROVIDER_REGISTRY.get(normalized)
+    if _pconfig and _pconfig.auth_type == "external_process":
+        return bool(
+            external_process_login_state(normalized, timeout=20.0, use_cache=True).get("logged_in")
+        )
+
     # 1. Check auth.json active_provider
     try:
         auth_store = _load_auth_store()
@@ -1586,9 +1599,17 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
     _IMPLICIT_ENV_VARS = {"CLAUDE_CODE_OAUTH_TOKEN"}
     pconfig = PROVIDER_REGISTRY.get(normalized)
     if pconfig and pconfig.auth_type == "external_process":
-        # A locally installed CLI (opencode / copilot) is itself the explicit
-        # choice: there is no key to paste and no auth store entry to wait for.
-        return bool(get_external_process_provider_status(normalized).get("configured"))
+        # A locally installed CLI is not yet the user's choice: it becomes one when
+        # that CLI answers ACP with a usable session (signed in). Measured on this
+        # machine 2026-10-27: gemini / qwen / cline all resolve on PATH and all refuse
+        # `session/new` with an auth error, so "binary found" would have put three
+        # providers and their seeded model names into the picker while every pick 401s.
+        #
+        # A cold probe costs seconds, so this reads the cached answer when there is
+        # one and probes synchronously only when there is not — the picker's own
+        # warm-up keeps that rare on the first paint after an install.
+        state = external_process_login_state(normalized, timeout=20.0, use_cache=True)
+        return bool(state.get("logged_in"))
     if pconfig and pconfig.auth_type == "api_key":
         for env_var in pconfig.api_key_env_vars:
             if env_var in _IMPLICIT_ENV_VARS:
@@ -6433,6 +6454,35 @@ def _external_process_launch(pconfig: ProviderConfig) -> tuple[str, list[str]]:
     return command, args
 
 
+def external_process_login_state(
+    provider_id: str, *, timeout: float = 20.0, use_cache: bool = True
+) -> Dict[str, Any]:
+    """Ask the CLI itself whether it is signed in, and what models it really has.
+
+    This replaces the old rule "the binary resolved on PATH ⇒ configured", which put
+    an installed-but-never-signed-in CLI into the model picker with hand-copied model
+    names, and made picking one fail with an auth error. The CLI's own ACP answer is
+    the only evidence we accept.
+    """
+    pconfig = PROVIDER_REGISTRY.get(provider_id)
+    if not pconfig or pconfig.auth_type != "external_process":
+        return {"installed": False, "logged_in": False, "models": (), "detail": "not external_process"}
+
+    command, args = _external_process_launch(pconfig)
+    from . import acp_session
+
+    info = acp_session.probe_acp_session(command, args, timeout=timeout, use_cache=use_cache)
+    return {
+        "installed": info.installed,
+        "logged_in": info.logged_in,
+        "models": info.models,
+        "current_model": info.current_model,
+        "detail": info.detail,
+        "command": command,
+        "args": args,
+    }
+
+
 def get_external_process_provider_status(provider_id: str) -> Dict[str, Any]:
     """Status snapshot for providers that run a local subprocess."""
     pconfig = PROVIDER_REGISTRY.get(provider_id)
@@ -6445,15 +6495,21 @@ def get_external_process_provider_status(provider_id: str) -> Dict[str, Any]:
         base_url = pconfig.inference_base_url
 
     resolved_command = shutil.which(command) if command else None
+    login = external_process_login_state(provider_id)
     return {
-        "configured": bool(resolved_command or base_url.startswith("acp+tcp://")),
+        # "configured" used to mean "we found the binary". It now means the CLI
+        # answered for itself, which is the only claim the settings screen makes.
+        "configured": bool(login.get("logged_in")) or bool(base_url.startswith("acp+tcp://")),
+        "logged_in": bool(login.get("logged_in")),
+        "installed": bool(login.get("installed")),
+        "login_detail": str(login.get("detail") or ""),
+        "live_models": list(login.get("models") or []),
         "provider": provider_id,
         "name": pconfig.name,
         "command": command,
         "args": args,
         "resolved_command": resolved_command,
         "base_url": base_url,
-        "logged_in": bool(resolved_command or base_url.startswith("acp+tcp://")),
     }
 
 

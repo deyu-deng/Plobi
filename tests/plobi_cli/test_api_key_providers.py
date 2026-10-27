@@ -322,6 +322,44 @@ class TestResolveProvider:
 # API Key Provider Status tests
 # =============================================================================
 
+def _signed_in_cli(monkeypatch, *, models=("model-a", "model-b")):
+    """Pretend the CLI answered ACP with a usable session.
+
+    `configured`/`logged_in` for an external-process provider is now the CLI's own
+    answer (`session/new` succeeding), not "the binary is on PATH" — the old rule put
+    installed-but-never-signed-in CLIs into the model picker with seeded names, and
+    every pick then failed with an auth error.
+    """
+
+    def _state(provider_id, *, timeout=20.0, use_cache=True):
+        return {
+            "installed": True,
+            "logged_in": True,
+            "models": tuple(models),
+            "current_model": models[0] if models else "",
+            "detail": "",
+            "command": provider_id,
+            "args": [],
+        }
+
+    monkeypatch.setattr("plobi_cli.auth.external_process_login_state", _state)
+
+
+def _installed_but_signed_out(monkeypatch, *, detail="Authentication required"):
+    def _state(provider_id, *, timeout=20.0, use_cache=True):
+        return {
+            "installed": True,
+            "logged_in": False,
+            "models": (),
+            "current_model": "",
+            "detail": detail,
+            "command": provider_id,
+            "args": [],
+        }
+
+    monkeypatch.setattr("plobi_cli.auth.external_process_login_state", _state)
+
+
 class TestApiKeyProviderStatus:
 
     def test_unconfigured_provider(self):
@@ -374,6 +412,7 @@ class TestApiKeyProviderStatus:
     def test_copilot_acp_status_detects_local_cli(self, monkeypatch):
         monkeypatch.setenv("PLOBI_COPILOT_ACP_ARGS", "--acp --stdio --debug")
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         status = get_external_process_provider_status("copilot-acp")
 
@@ -386,6 +425,7 @@ class TestApiKeyProviderStatus:
 
     def test_opencode_acp_status_detects_local_cli(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         status = get_external_process_provider_status("opencode-acp")
 
@@ -397,6 +437,7 @@ class TestApiKeyProviderStatus:
 
     def test_cline_acp_status_detects_local_cli(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         status = get_external_process_provider_status("cline-acp")
 
@@ -408,6 +449,7 @@ class TestApiKeyProviderStatus:
 
     def test_gemini_acp_status_detects_local_cli(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         status = get_external_process_provider_status("gemini-acp")
 
@@ -418,6 +460,7 @@ class TestApiKeyProviderStatus:
 
     def test_qwen_acp_status_detects_local_cli(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         status = get_external_process_provider_status("qwen-acp")
 
@@ -428,6 +471,7 @@ class TestApiKeyProviderStatus:
 
     def test_get_auth_status_dispatches_to_external_process(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         status = get_auth_status("copilot-acp")
 
@@ -531,6 +575,7 @@ class TestResolveApiKeyProviderCredentials:
     def test_resolve_copilot_acp_with_local_cli(self, monkeypatch):
         monkeypatch.setenv("PLOBI_COPILOT_ACP_ARGS", "--acp --stdio")
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         creds = resolve_external_process_provider_credentials("copilot-acp")
 
@@ -543,6 +588,7 @@ class TestResolveApiKeyProviderCredentials:
 
     def test_resolve_opencode_acp_with_local_cli(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         creds = resolve_external_process_provider_credentials("opencode-acp")
 
@@ -554,6 +600,7 @@ class TestResolveApiKeyProviderCredentials:
 
     def test_resolve_cline_acp_with_local_cli(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         creds = resolve_external_process_provider_credentials("cline-acp")
 
@@ -755,6 +802,7 @@ class TestRuntimeProviderResolution:
 
     def test_runtime_copilot_acp_uses_process_runtime(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
         monkeypatch.setenv("PLOBI_COPILOT_ACP_ARGS", "--acp --stdio --debug")
 
         from plobi_cli.runtime_provider import resolve_runtime_provider
@@ -770,6 +818,7 @@ class TestRuntimeProviderResolution:
 
     def test_runtime_opencode_acp_uses_process_runtime(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         from plobi_cli.runtime_provider import resolve_runtime_provider
 
@@ -784,6 +833,7 @@ class TestRuntimeProviderResolution:
 
     def test_runtime_cline_acp_uses_process_runtime(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         from plobi_cli.runtime_provider import resolve_runtime_provider
 
@@ -798,6 +848,7 @@ class TestRuntimeProviderResolution:
 
     def test_runtime_gemini_and_qwen_acp_use_process_runtime(self, monkeypatch):
         monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch)
 
         from plobi_cli.runtime_provider import resolve_runtime_provider
 
@@ -1421,3 +1472,59 @@ class TestMinimaxOAuthProvider:
             "doesn't fire the 'No auxiliary LLM provider configured' warning "
             "for every minimax-oauth session."
         )
+
+
+class TestExternalProcessLoginGate:
+    """The picker's two honest answers, both measured on this machine 2026-10-27.
+
+    gemini-cli 0.65.0 / qwen-code 0.26.0 / cline 3.0.73 all resolve on PATH and all
+    refuse `session/new` with an auth error. Under the old rule each of them was
+    "configured", so the model picker offered them with hand-copied model names and
+    every pick came back an auth failure.
+    """
+
+    def test_installed_but_signed_out_cli_is_not_configured(self, monkeypatch):
+        from plobi_cli.auth import get_external_process_provider_status, is_provider_explicitly_configured
+
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _installed_but_signed_out(monkeypatch, detail="Authentication required: Call authenticate first")
+
+        status = get_external_process_provider_status("gemini-acp")
+
+        assert status["installed"] is True
+        assert status["logged_in"] is False
+        assert status["configured"] is False
+        # nothing to offer, so nothing may be offered
+        assert status["live_models"] == []
+        assert is_provider_explicitly_configured("gemini-acp") is False
+
+    def test_config_yaml_naming_the_provider_does_not_outvote_the_cli(self, monkeypatch):
+        from plobi_cli.auth import is_provider_explicitly_configured
+        # Live state found on this machine: config.yaml said `model.provider: qwen-acp`
+        # while qwen-code refused `session/new`. A config hint is not a working leg.
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _installed_but_signed_out(monkeypatch)
+        monkeypatch.setattr(
+            "plobi_cli.config.load_config", lambda: {"model": {"provider": "qwen-acp"}}
+        )
+
+        assert is_provider_explicitly_configured("qwen-acp") is False
+
+    def test_signed_in_cli_reports_its_own_model_names(self, monkeypatch):
+        from plobi_cli.auth import get_external_process_provider_status, is_provider_explicitly_configured
+
+        monkeypatch.setattr("plobi_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        _signed_in_cli(monkeypatch, models=("gemini-3.1-pro-preview", "gemini-3.5-flash"))
+
+        status = get_external_process_provider_status("gemini-acp")
+
+        assert status["configured"] is True
+        assert status["live_models"] == ["gemini-3.1-pro-preview", "gemini-3.5-flash"]
+        assert is_provider_explicitly_configured("gemini-acp") is True
+
+    def test_acp_providers_ship_no_seeded_model_names(self):
+        """A seed list is how a wrong model name reaches the picker after a CLI upgrade."""
+        from plobi_cli.models import _PROVIDER_MODELS
+
+        for provider in ("gemini-acp", "qwen-acp", "cline-acp"):
+            assert _PROVIDER_MODELS.get(provider) == [], provider
