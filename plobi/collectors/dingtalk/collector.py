@@ -16,6 +16,7 @@ r"""钉钉那条的采集器：**读本机客户端已经落盘的那份库**，
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from typing import Any, Iterable, Optional
 
@@ -23,16 +24,20 @@ from ..base import Occurrence
 from . import store
 
 SOURCE_ID = "dingtalk"
-#: 聊天流进池的 `kind`。日程/审批那一族在**另一枚库**（`calendar_v2.db` / `ding.db`，
-#: 同一把钥匙解得开），这一版没接——所以这里不预留一个假的 kind 名。
+#: 聊天流进池的 `kind`。
 KIND = "message"
+#: 日历那一枚库（`calendar_v2.db`）进池的 `kind`。用户 10-26 拍「进池，kind 我定」——
+#: 这个词是**给下一把刀读的契约**（排程那侧今天还不读池，见 `WP-PLAN-READS-POOL`），
+#: 所以写在这里而不是散在界面里。
+KIND_EVENT = "event"
 
 
 class DingTalkCollector:
     source_id = SOURCE_ID
 
     def __init__(self, *, local_store: Any, excluded: Iterable[str] = (),
-                 limit: int = 500, since_ms: int = 0, titles: Optional[dict[str, str]] = None) -> None:
+                 limit: int = 500, since_ms: int = 0, titles: Optional[dict[str, str]] = None,
+                 calendar_opener: Any = None) -> None:
         self.store = local_store
         # 只有 `excluded` 拒绝（裁定 50／100 一：默认采，用户逐扇关）。采集器**只问这一格**——
         # 不去读整张名册再自己判一遍，那是第二处判"采不采"。
@@ -40,6 +45,9 @@ class DingTalkCollector:
         self.limit = limit
         self.since_ms = since_ms
         self._titles = dict(titles or {})
+        self._calendar_opener = calendar_opener or store.open_calendar_store
+        #: 日历那一腿这一轮到底怎么样（读到了几条 / 为什么读不到）——由 `health()` 说，不闷着。
+        self.calendar_note = ""
 
     @classmethod
     def build(cls, *, excluded: Optional[Iterable[str]] = None,
@@ -48,6 +56,7 @@ class DingTalkCollector:
 
         `opener` / `excluded` 都是注入位（测试不碰盘也不碰日志），默认分别走
         :func:`store.open_local_store` 与 :class:`plobi.collectors.talkers.Ledger`。
+        日历那一枚库不在这里开——它是 `pull()` 里独立的一腿，开不开不该决定这一整条源活不活。
         """
         if excluded is None:
             from ..talkers import Ledger
@@ -57,17 +66,23 @@ class DingTalkCollector:
         return cls(local_store=opened, excluded=excluded)
 
     def health(self) -> dict:
-        """库开不开、本机几扇、排除了几扇——三格一起说。
+        """库开不开、本机几扇、排除了几扇、日历那一腿怎么样——四格一起说。
 
         一扇都没定过**不等于采不到**：默认就是采（与微信同一条口径），所以这里 `ok=True`。
         真要说的那句限制是"本机库里只有客户端已经拉下来的那部分"，而那件事由 `pull()`
         回来的条数与最新时间说，不由这颗绿灯盖掉。
         """
-        return {"ok": True, "state": "ready",
-                "detail": f"本机 {self.store.conversations} 个会话，其中排除 {len(self.excluded)} 个"}
+        detail = (f"本机 {self.store.rows} 个会话，其中排除 {len(self.excluded)} 个"
+                  f"；日历：{self.calendar_note or '这一轮还没读过'}")
+        return {"ok": True, "state": "ready", "detail": detail}
 
     def pull(self) -> list[Occurrence]:
-        """读**没被排除的那些**会话。**纯读**：一个字都不写库、一个字节都不动钉钉那侧。"""
+        """两腿一起读：聊天（被排除的那几扇不读）+ 日历那一枚库。**纯读**，一个字都不写库。"""
+        occurrences = self._chat_occurrences()
+        occurrences.extend(self._calendar_occurrences())
+        return occurrences
+
+    def _chat_occurrences(self) -> list[Occurrence]:
         wanted = [row["cid"] for row in store.list_conversations(self.store, limit=self.limit)
                   if row["cid"] not in self.excluded]
         if not wanted:
@@ -97,6 +112,51 @@ class DingTalkCollector:
                 },
             )
             for row in rows
+        ]
+
+    def _calendar_occurrences(self) -> list[Occurrence]:
+        """`calendar_v2.db` 那几行进池（用户 10-26 拍：「进池，kind 我定」⇒ `KIND_EVENT`）。
+
+        这一腿**读不到不许把整条源弄红**：聊天那 233 条与日历那 6 行不是同一件事，
+        拿一次开不了 `calendar_v2.db` 去关掉屏幕上那颗开关就是一句假话。
+        但也不许吞成"本机没有日程"——为什么读不到由 `health()` 那张嘴说出去。
+        """
+        try:
+            opened = self._calendar_opener()
+        except store.LocalStoreUnavailable as exc:
+            self.calendar_note = f"读不到（{exc.code}）"
+            return []
+        try:
+            events = store.calendar_events(opened, limit=self.limit, since_ms=self.since_ms)
+        except sqlite3.Error as exc:
+            self.calendar_note = f"开不了（{type(exc).__name__}）"
+            return []
+        finally:
+            opened.close()
+        self.calendar_note = f"{len(events)} 条（合过 WAL 的那一版）"
+
+        return [
+            Occurrence(
+                source=self.source_id,
+                external_id=f"event:{event['event_id']}",
+                title=event["subject"],
+                start_at=_local_iso(event["start_time"]),
+                end_at=_local_iso(event["end_time"]) or None,
+                kind=KIND_EVENT,
+                location=event["location"] or None,
+                evidence={
+                    "calendar_id": event["calendar_id"],
+                    "folder_id": event["folder_id"],
+                    "unique_id": event["unique_id"],
+                    "all_day": event["all_day"],
+                    "biz_type": event["biz_type"],
+                    "calendar_source": event["source"],
+                    "start_time": event["start_time"],
+                    "end_time": event["end_time"],
+                    "origin": f"local-store:{opened.profile}:{store.CALENDAR_DB}",
+                },
+            )
+            for event in events
         ]
 
     def _conversation_titles(self) -> dict[str, str]:

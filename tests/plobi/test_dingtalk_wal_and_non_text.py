@@ -16,6 +16,7 @@ r"""钉钉本机库这一刀的续刀（`WP-DINGTALK-LOCAL-STORE`）：**合 WAL
 """
 
 import base64
+import collections
 import json
 import sqlite3
 import struct
@@ -238,6 +239,76 @@ class TestNonTextReadsAsASentence:
     def test_a_broken_payload_is_not_a_crash(self):
         assert store.describe_of("不是 JSON", 2950) == ""
         assert store.describe_of(None, 1) == ""
+
+
+class TestTheCalendarLeg:
+    """日历那一枚库（`calendar_v2.db`）进池这一腿（用户 10-26 拍：「进池，kind 我定」）。"""
+
+    @staticmethod
+    def _make_calendar_db(profile: Path) -> None:
+        plain = profile / "DBFiles" / "plain_cal.db"
+        connection = sqlite3.connect(plain)
+        connection.execute("PRAGMA page_size=4096")
+        connection.executescript(
+            "CREATE TABLE calendar (calendar_id INTEGER, biz_type TEXT, source INTEGER, folder_id TEXT);"
+            "CREATE TABLE calendar_event (event_id INTEGER, calendar_id INTEGER, folder_id TEXT,"
+            " subject TEXT, location TEXT, start_time INTEGER, end_time INTEGER,"
+            " all_day_event INTEGER, unique_id TEXT);")
+        connection.execute("INSERT INTO calendar VALUES (777, 'meeting', 2, 'f-1')")
+        connection.executemany("INSERT INTO calendar_event VALUES (?,?,?,?,?,?,?,?,?)",
+                               [(1001, 777, "f-1", "周会", "3 号楼 201", 1_792_900_000_000,
+                                 1_792_903_800_000, 0, "u-1"),
+                                (1002, 777, "f-1", "   ", "", 1_792_910_000_000, 0, 1, "u-2")])
+        connection.commit()
+        connection.close()
+        (profile / "DBFiles" / store.CALENDAR_DB).write_bytes(
+            encrypt_pages(plain.read_bytes(), store.derive_key(UID, SALT)))
+        plain.unlink()
+
+    @pytest.fixture()
+    def cal_profile(self, wal_profile) -> Path:
+        self._make_calendar_db(wal_profile)
+        return wal_profile
+
+    def test_the_calendar_rows_land_with_the_event_kind(self, cal_profile) -> None:
+        opened = store.open_local_store()
+        try:
+            collected = collector_module.DingTalkCollector(local_store=opened)
+            occurrences = collected.pull()
+        finally:
+            opened.close()
+
+        events = [o for o in occurrences if o.kind == collector_module.KIND_EVENT]
+        assert [o.title for o in events] == ["周会"], "标题空白那一行不该进池（读不懂的读数比空着更贵）"
+        assert events[0].external_id == "event:1001"
+        assert events[0].location == "3 号楼 201"
+        assert events[0].end_at and events[0].end_at > events[0].start_at
+        assert events[0].evidence["calendar_id"] == "777"
+        assert events[0].evidence["origin"].endswith(store.CALENDAR_DB)
+        assert collected.calendar_note.startswith("1 条")
+
+    def test_chat_and_calendar_come_out_of_the_same_round(self, cal_profile) -> None:
+        opened = store.open_local_store()
+        try:
+            kinds = collections.Counter(o.kind for o in collector_module.DingTalkCollector(
+                local_store=opened).pull())
+        finally:
+            opened.close()
+
+        assert kinds[collector_module.KIND] == 4 and kinds[collector_module.KIND_EVENT] == 1
+
+    def test_a_missing_calendar_store_does_not_kill_the_chat_leg(self, wal_profile) -> None:
+        """日历那枚库开不了 ⇒ 聊天那 4 条照进，但那一句为什么必须在 `health()` 里说得出。"""
+        opened = store.open_local_store()
+        try:
+            collected = collector_module.DingTalkCollector(local_store=opened)
+            occurrences = collected.pull()
+            detail = collected.health()["detail"]
+        finally:
+            opened.close()
+
+        assert [o.kind for o in occurrences] == [collector_module.KIND] * 4
+        assert "日历：读不到" in detail, "把「这枚库盘上没有」闷成一句「没日程」就是假读数"
 
 
 class TestThePoolRow:

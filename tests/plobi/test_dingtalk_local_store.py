@@ -152,7 +152,7 @@ class TestTheKey:
 
         opened = store.open_local_store(candidates=[UID])
 
-        assert opened.conversations == 2
+        assert opened.rows == 2
         opened.close()
 
 
@@ -161,7 +161,7 @@ class TestTheStoreOpens:
         opened = store.open_local_store()
 
         try:
-            assert opened.conversations == 2
+            assert opened.rows == 2
             assert [row["title"] for row in store.list_conversations(opened)] == ["李四", "工程组"]
             assert Path(store.local_dir()).is_dir(), "解密副本落在 PLOBI_HOME 那一侧（D 盘），不在仓里"
         finally:

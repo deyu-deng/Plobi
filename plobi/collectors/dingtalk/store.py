@@ -47,6 +47,11 @@ PAGE = 4096
 #: SQLite WAL 的两个魔数（末位那一位说校验和按大端还是小端算；这一版不算校验和，见 `_merge_wal_pages`）
 _WAL_MAGICS = (0x377F0682, 0x377F0683)
 DB_NAME = "dingtalk.db"
+#: 日历那一族在同一条资料目录里的另一枚库（同一把钥匙，10-26 实测解得开）。
+CALENDAR_DB = "calendar_v2.db"
+#: 打开一枚库时要验的那张表：拿它当"这枚库是我们认的那一族"的判据，别拿空库当读数。
+CHAT_TABLE = "tbconversation"
+CALENDAR_TABLE = "calendar_event"
 #: V3 目录名是账号哈希（20 位 hex），V2 目录名**就是** UID。两种形状分开认——
 #: 上一版探针用一条宽松的"字母数字就行"把它们全认成了资料目录，于是 `%APPDATA%\DingTalk\config`
 #: 这种也算进去了，报出「有 8 个已登录的资料目录」这种假读数。
@@ -95,13 +100,23 @@ def profiles(roots: Optional[Iterable[Path]] = None) -> list[Path]:
     return found
 
 
-def db_path(profile: Path) -> Optional[Path]:
+def db_path(profile: Path, db_name: str = DB_NAME) -> Optional[Path]:
     """那枚加密库。旧形状在目录根部，这一版在 `DBFiles/` 里——两种都认，因为**它确实换过位置**。"""
-    for candidate in (profile / "DBFiles" / DB_NAME, profile / DB_NAME,
-                      profile / "dingtalk_encrypt.db"):
+    candidates = [profile / "DBFiles" / db_name, profile / db_name]
+    if db_name == DB_NAME:
+        candidates.append(profile / "dingtalk_encrypt.db")  # 调研件那一句是旧版本的落点，这台没有这个文件
+    for candidate in candidates:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _copy_name(profile: Path, uid: str, db_name: str) -> Path:
+    """解密副本的名字。聊天那一枚**保持上一版的形状**（`{profile}--{uidhash}.db`），
+    否则改了命名会把已经在 `PLOBI_HOME` 里的那份明文副本变成孤儿——清不掉的明文比难看更糟。
+    """
+    stem = f"{profile.name}--{hashlib.md5(uid.encode()).hexdigest()[:8]}"
+    return local_dir() / (f"{stem}.db" if db_name == DB_NAME else f"{stem}--{Path(db_name).stem}.db")
 
 
 def _salt_of(profile: Path) -> str:
@@ -158,11 +173,16 @@ def uid_candidates(roots: Optional[Iterable[Path]] = None, *, limit: int = 3000)
 
 @dataclass(frozen=True)
 class LocalStore:
-    """一枚**解好密的**只读副本。故意不带密钥字段：谁 `repr` 它都不会漏出钥匙。"""
+    """一枚**解好密并合过 WAL 的**只读副本。故意不带密钥字段：谁 `repr` 它都不会漏出钥匙。
+
+    `rows` = 打开时那张**被要求的表**有多少行（聊天那枚是 `tbconversation`，
+    日历那枚是 `calendar_event`）。这一格不是"会话数"——同一只手开两种库，
+    名字要说清它数的是哪一张表。
+    """
 
     connection: sqlite3.Connection
     profile: str
-    conversations: int
+    rows: int
 
     def close(self) -> None:
         self.connection.close()
@@ -274,20 +294,24 @@ def _decrypt_block(key: bytes, block: bytes) -> bytes:
 
 def open_local_store(*, profiles_dir: Optional[Iterable[Path]] = None,
                      candidates: Optional[list[str]] = None,
-                     decrypt_page: Any = None) -> LocalStore:
-    """找到钥匙、解出副本、开一个只读连接。**任何一步走不通就抛 `LocalStoreUnavailable`**。
+                     decrypt_page: Any = None,
+                     db_name: str = DB_NAME,
+                     require_table: str = CHAT_TABLE) -> LocalStore:
+    """找到钥匙、解出副本（含 WAL 合并）、开一个只读连接。**任何一步走不通就抛 `LocalStoreUnavailable`**。
 
     `decrypt_page` 是注入位（测试用一枚自己造的明文库加密成"假密文"，全程零真数据）。
+    `db_name` / `require_table` 让同一只手开**同一条资料目录里的另一枚库**（日历那枚）——
+    同一把钥匙、同一套 WAL 合并、同一个"页头不是 SQLite 就换下一个 UID"的判据，不另起一份。
     """
     profile_list = list(profiles(profiles_dir))
     if not profile_list:
         raise LocalStoreUnavailable("client_not_logged_in",
                                     "本机没有已登录的钉钉资料目录（登录一次客户端才会出现）")
 
-    source = db_path(profile_list[0])
+    source = db_path(profile_list[0], db_name)
     if source is None:
         raise LocalStoreUnavailable("local_store_missing",
-                                    f"{profile_list[0].name} 里找不到 {DB_NAME}")
+                                    f"{profile_list[0].name} 里找不到 {db_name}")
 
     page_reader = decrypt_page or _decrypt_pages
     salt = _salt_of(profile_list[0])
@@ -301,7 +325,7 @@ def open_local_store(*, profiles_dir: Optional[Iterable[Path]] = None,
     for uid in uid_list:
         # V3 要 salt，V2 不要——两支分开走，因为这台机器上**目录名形状就是这两族的判据**。
         key = derive_key(uid, salt) if is_v3 else derive_key_v2(uid)
-        target = local_dir() / f"{profile_list[0].name}--{hashlib.md5(uid.encode()).hexdigest()[:8]}.db"
+        target = _copy_name(profile_list[0], uid, db_name)
         try:
             page_reader(source, key, target)
         except OSError as exc:
@@ -315,14 +339,13 @@ def open_local_store(*, profiles_dir: Optional[Iterable[Path]] = None,
             continue
         connection = sqlite3.connect(f"file:{target.as_posix()}?mode=ro", uri=True)
         try:
-            conversations = connection.execute("SELECT count(*) FROM tbconversation").fetchone()[0]
+            rows = connection.execute(f'SELECT count(*) FROM "{require_table}"').fetchone()[0]
         except sqlite3.Error:
             connection.close()
             target.unlink(missing_ok=True)
-            last_error = "解开了但没有会话表——这不是我们认的那枚库"
+            last_error = f"解开了但没有「{require_table}」这张表——这不是我们认的那枚库"
             continue
-        return LocalStore(connection=connection, profile=profile_list[0].name,
-                          conversations=int(conversations))
+        return LocalStore(connection=connection, profile=profile_list[0].name, rows=int(rows))
 
     raise LocalStoreUnavailable("local_store_missing", last_error or "没试出可用的钥匙")
 
@@ -488,6 +511,39 @@ def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
                         "at_ids": str(at_ids or ""), "shard": shard})
     out.sort(key=lambda row: row["created_at"])
     return out[:limit]
+
+
+def open_calendar_store(**kwargs: Any) -> LocalStore:
+    """日历那一枚库：同一条资料目录、同一把钥匙、同一套 WAL 合并。
+
+    这台实测（10-26）：不合 WAL 它只剩一页、一张表都开不出来；合完 `calendar_event` 6 行。
+    """
+    return open_local_store(db_name=CALENDAR_DB, require_table=CALENDAR_TABLE, **kwargs)
+
+
+def calendar_events(store: LocalStore, *, limit: int = 200, since_ms: int = 0) -> list[dict]:
+    """`calendar_event` 配上它那一本 `calendar` 的来源：**只有标题、起止、地点、全天**。
+
+    两条判据是现核出来的，不是洁癖：`subject` 空的行不交（一条没有主题的日程进池就是一颗
+    谁也读不懂的读数），`extension` 那一层套娃这一版不碰（和聊天那族同一个道理——
+    没逐类实测过就不写解析）。
+    """
+    rows = store.connection.execute(
+        "SELECT e.event_id, e.calendar_id, e.folder_id, e.subject, e.location,"
+        "       e.start_time, e.end_time, e.all_day_event, e.unique_id,"
+        "       c.biz_type, c.source, c.folder_id"
+        '  FROM "calendar_event" e LEFT JOIN "calendar" c ON c.calendar_id = e.calendar_id '
+        " WHERE e.start_time > ?"
+        "   AND e.subject IS NOT NULL AND TRIM(e.subject) <> ''"
+        " ORDER BY e.start_time DESC LIMIT ?", (since_ms, limit)).fetchall()
+    return [{"event_id": str(event_id), "calendar_id": str(calendar_id),
+             "folder_id": str(folder or ""), "subject": str(subject),
+             "location": str(location or ""), "start_time": str(start or ""),
+             "end_time": str(end or ""), "all_day": int(all_day or 0),
+             "unique_id": str(unique or ""), "biz_type": str(biz or ""),
+             "source": str(source or "")}
+            for event_id, calendar_id, folder, subject, location, start, end, all_day,
+            unique, biz, source, _c_folder in rows]
 
 
 def copy_out(store_db: Path, destination: Path) -> Path:
