@@ -75,6 +75,33 @@ def cursor_root() -> Path:
     return Path.home() / ".cursor" / "projects"
 
 
+def cursor_db() -> Path:
+    """Cursor 的 composer 存在 VS Code 那套 ``state.vscdb`` 里（只读打开）。"""
+    override = os.environ.get("CURSOR_HOME", "").strip()
+    if override:
+        return Path(os.path.expanduser(override)) / "User" / "globalStorage" / "state.vscdb"
+    candidates = []
+    for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("APPDATA")):
+        if base:
+            candidates.append(Path(base) / "Cursor" / "User" / "globalStorage" / "state.vscdb")
+    candidates.append(Path("D:/Data/AppData/Cursor/User/globalStorage/state.vscdb"))
+    candidates.append(Path.home() / ".cursor" / "User" / "globalStorage" / "state.vscdb")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    return candidates[0]
+
+
+def agy_db() -> Path:
+    """agy（Antigravity CLI）的会话摘要库。"""
+    override = os.environ.get("AGY_HOME", "").strip()
+    base = Path(os.path.expanduser(override)) if override else Path.home() / ".gemini" / "antigravity-cli"
+
+    return base / "conversation_summaries.db"
+
+
+
 def project_key(path: str) -> str:
     """绝对路径 → 那两家按项目分目录的键（所有非字母数字都变 ``-``）。"""
     return re.sub(r"[^A-Za-z0-9]", "-", str(path or "").strip())
@@ -316,13 +343,160 @@ def _marvis_sessions() -> list[dict[str, Any]]:
     return out
 
 
+# ── Cursor（state.vscdb 里的 composerData，只读）───────────────────────────
+
+def _file_uri_to_path(uri: str) -> str:
+    """``file:///d%3A/Projects/Plobi`` → ``d:\\Projects\\Plobi``；读不出就原样。"""
+    from urllib.parse import unquote
+
+    text = unquote(str(uri or "").strip())
+    if text.lower().startswith("file:///"):
+        text = text[8:]
+    text = text.replace("/", "\\")
+    if len(text) >= 2 and text[1] == ":":
+        text = text[0].upper() + text[1:]
+
+    return text
+
+
+def _cursor_workspace_path(db: Path, workspace_id: str) -> str:
+    if not workspace_id:
+        return ""
+    candidate = db.parent.parent / "workspaceStorage" / workspace_id / "workspace.json"
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    for key in ("folder", "workspace", "configuration"):
+        value = payload.get(key) if isinstance(payload, dict) else None
+        if isinstance(value, str) and value.strip():
+            return _file_uri_to_path(value)
+
+    return ""
+
+
+def _cursor_messages(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Cursor 的对话在 ``conversationMap`` 里；顺序以 ``fullConversationHeadersOnly`` 为准。"""
+    cmap = data.get("conversationMap")
+    if not isinstance(cmap, dict):
+        return []
+    order = [
+        str(item.get("bubbleId"))
+        for item in (data.get("fullConversationHeadersOnly") or [])
+        if isinstance(item, dict) and item.get("bubbleId")
+    ] or list(cmap.keys())
+    messages: list[dict[str, Any]] = []
+    for bubble_id in order:
+        bubble = cmap.get(bubble_id)
+        if not isinstance(bubble, dict):
+            continue
+        kind = bubble.get("type")
+        role = "user" if kind in (1, "user") else "assistant" if kind in (2, "assistant") else ""
+        if not role:
+            continue
+        text = bubble.get("text") or bubble.get("richText") or ""
+        if isinstance(text, str) and text.strip():
+            messages.append({"role": role, "text": text.strip(), "ts": ""})
+
+    return messages
+
+
+def _cursor_sessions() -> list[dict[str, Any]]:
+    db = cursor_db()
+    if not db.is_file():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            headers = con.execute(
+                "select composerId, workspaceId, createdAt, lastUpdatedAt, isArchived from composerHeaders"
+            ).fetchall()
+            for composer_id, workspace_id, created, updated, archived in headers:
+                session_id = str(composer_id or "")
+                if archived or not SESSION_ID_RE.match(session_id):
+                    continue
+                if session_id.startswith("draft-") or session_id == "empty-state-draft":
+                    continue
+                row = con.execute(
+                    "select value from cursorDiskKV where key = ?", (f"composerData:{session_id}",)
+                ).fetchone()
+                if not row:
+                    continue
+                data = json.loads(row[0])
+                messages = _cursor_messages(data)
+                first_user = next((m["text"] for m in messages if m["role"] == "user"), "")
+                if not first_user:
+                    continue
+                stamp = updated or created
+                when = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(int(stamp) / 1000)) if stamp else ""
+                out.append({
+                    "id": session_id,
+                    "project": _cursor_workspace_path(db, str(workspace_id or "")),
+                    "sendable": False,
+                    "title": first_user.splitlines()[0][:120],
+                    "updated_at": when,
+                    "vendor": VENDOR_CURSOR,
+                })
+        finally:
+            con.close()
+    except (sqlite3.Error, json.JSONDecodeError, ValueError):
+        return []
+
+    return out
+
+
+# ── agy（Antigravity CLI，会话摘要库）──────────────────────────────────────
+
+def _agy_sessions() -> list[dict[str, Any]]:
+    db = agy_db()
+    if not db.is_file():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = con.execute(
+                "select conversation_id, title, preview, last_modified_time, workspace_uris "
+                "from conversation_summaries order by last_modified_time desc"
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+    out: list[dict[str, Any]] = []
+    for conversation_id, title, preview, updated, uris in rows:
+        session_id = str(conversation_id or "")
+        if not SESSION_ID_RE.match(session_id):
+            continue
+        project = ""
+        try:
+            parsed = json.loads(uris) if isinstance(uris, str) else uris
+            if isinstance(parsed, list) and parsed:
+                project = _file_uri_to_path(str(parsed[0]))
+        except (json.JSONDecodeError, TypeError):
+            project = ""
+        out.append({
+            "id": session_id,
+            "project": project,
+            "sendable": False,
+            "title": str(title or preview or session_id)[:120],
+            "updated_at": str(updated or ""),
+            "vendor": VENDOR_AGY,
+        })
+
+    return out
+
+
 # ── 发现与来源 ────────────────────────────────────────────────────────────
 
 def all_sessions() -> list[dict[str, Any]]:
     now = time.time()
     if _ALL_CACHE["rows"] and now - float(_ALL_CACHE["at"]) < _ALL_TTL:
         return list(_ALL_CACHE["rows"])
-    sessions = [*_qoder_sessions(), *_codebuddy_sessions(), *_marvis_sessions()]
+    sessions = [
+        *_qoder_sessions(), *_codebuddy_sessions(), *_marvis_sessions(),
+        *_cursor_sessions(), *_agy_sessions(),
+    ]
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
     _ALL_CACHE["rows"] = sessions
     _ALL_CACHE["at"] = now
@@ -332,7 +506,7 @@ def all_sessions() -> list[dict[str, Any]]:
 
 def session_sources() -> list[dict[str, Any]]:
     """设置那一屏要看的：这台上每家外部软件、会话在哪、读不读得动、能不能说。"""
-    counts = {VENDOR_QODER: 0, VENDOR_CODEBUDDY: 0, VENDOR_MARVIS: 0}
+    counts = {VENDOR_QODER: 0, VENDOR_CODEBUDDY: 0, VENDOR_MARVIS: 0, VENDOR_CURSOR: 0, VENDOR_AGY: 0}
     for item in all_sessions():
         counts[item["vendor"]] = counts.get(item["vendor"], 0) + 1
 
@@ -346,13 +520,20 @@ def session_sources() -> list[dict[str, Any]]:
             "vendor": vendor,
         }
 
+    cursor = cursor_db()
+    agy = agy_db()
+
     return [
         source(VENDOR_QODER, qoder_root(), readable=True, reason=""),
         source(VENDOR_CODEBUDDY, codebuddy_root(), readable=True, reason=""),
         source(VENDOR_MARVIS, marvis_db().parent, readable=True, reason=""),
-        source(VENDOR_CURSOR, cursor_root(), readable=False,
-               reason="桌面版把对话放进 workspaceStorage 的 state.vscdb 里，还没接"),
-        source(VENDOR_AGY, Path(""), readable=False, reason="还没找到它的会话存放"),
+        source(VENDOR_CURSOR, cursor.parent,
+               readable=cursor.is_file(),
+               reason="" if cursor.is_file() else "没找到 Cursor 的 state.vscdb"),
+        source(VENDOR_AGY, agy.parent,
+               readable=False,
+               reason=("标题与工作区能读，正文在它的 brain 里还没接" if agy.is_file()
+                       else "没找到 agy 的会话摘要库")),
     ]
 
 
@@ -559,6 +740,24 @@ def _marvis_transcript(session_id: str) -> list[dict[str, Any]]:
     return [{"role": role, "text": str(content), "ts": str(created or "")} for role, content, created in rows if str(content).strip()]
 
 
+def _cursor_transcript(session_id: str) -> list[dict[str, Any]]:
+    db = cursor_db()
+    if not db.is_file():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        try:
+            row = con.execute(
+                "select value from cursorDiskKV where key = ?", (f"composerData:{session_id}",)
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+    return _cursor_messages(json.loads(row[0])) if row else []
+
+
 def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
     session = _locate(vendor, session_id)
     if session is None:
@@ -569,6 +768,10 @@ def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
         messages = _codebuddy_transcript(session_id)
     elif vendor == VENDOR_MARVIS:
         messages = _marvis_transcript(session_id)
+    elif vendor == VENDOR_CURSOR:
+        messages = _cursor_transcript(session_id)
+    elif vendor == VENDOR_AGY:
+        return {"ok": False, "status": 501, "error": "这家只读得到标题与工作区，正文还没接"}
     else:
         return {"ok": False, "status": 400, "error": "这家外部软件的会话还读不了"}
 

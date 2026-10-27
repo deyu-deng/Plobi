@@ -30,11 +30,14 @@ def homes(tmp_path, monkeypatch):
     monkeypatch.setenv("QODER_CONFIG_DIR", str(qoder))
     monkeypatch.setenv("CODEBUDDY_CONFIG_DIR", str(codebuddy))
     monkeypatch.setenv("MARVIS_HOME", str(marvis))
+    monkeypatch.setenv("CURSOR_HOME", str(tmp_path / "cursor-home"))
+    monkeypatch.setenv("AGY_HOME", str(tmp_path / "agy-home"))
     monkeypatch.setenv("PLOBI_HOME", str(home))
     es._ALL_CACHE.update({"at": 0.0, "rows": []})
     es._META_CACHE.clear()
 
-    return SimpleNamespace(qoder=qoder, codebuddy=codebuddy, marvis=marvis, home=home)
+    return SimpleNamespace(qoder=qoder, codebuddy=codebuddy, marvis=marvis, home=home,
+                           cursor=tmp_path / "cursor-home", agy=tmp_path / "agy-home")
 
 
 def qoder_session(root: Path, project: str, session_id: str, *, prompt: str, reply: str,
@@ -100,24 +103,89 @@ def stub_registry(monkeypatch, name: str, project: str):
     monkeypatch.setattr(registry_mod, "AgentRegistry", _Registry)
 
 
+def cursor_session(root: Path, workspace_id: str, session_id: str, *, prompt: str, reply: str,
+                   project: str, stamp: int = 1791337771584) -> None:
+    base = root / "User"
+    (base / "globalStorage").mkdir(parents=True, exist_ok=True)
+    (base / "workspaceStorage" / workspace_id).mkdir(parents=True, exist_ok=True)
+    (base / "workspaceStorage" / workspace_id / "workspace.json").write_text(
+        json.dumps({"folder": project}), encoding="utf-8")
+    con = sqlite3.connect(base / "globalStorage" / "state.vscdb")
+    con.executescript(
+        "create table composerHeaders (composerId text, workspaceId text, createdAt integer,"
+        " lastUpdatedAt integer, isArchived integer);"
+        "create table cursorDiskKV (key text primary key, value text);"
+    )
+    con.execute("insert into composerHeaders values (?,?,?,?,0)", (session_id, workspace_id, stamp, stamp))
+    data = {
+        "composerId": session_id,
+        "conversationMap": {
+            "b1": {"type": 1, "text": prompt},
+            "b2": {"type": 2, "text": reply},
+        },
+        "fullConversationHeadersOnly": [{"bubbleId": "b1"}, {"bubbleId": "b2"}],
+    }
+    con.execute("insert into cursorDiskKV values (?,?)", (f"composerData:{session_id}", json.dumps(data)))
+    con.commit()
+    con.close()
+
+
+def agy_session(root: Path, session_id: str, *, title: str, project_uri: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(root / "conversation_summaries.db")
+    con.executescript(
+        "create table conversation_summaries (conversation_id text, title text, preview text,"
+        " last_modified_time text, workspace_uris text);"
+    )
+    con.execute("insert into conversation_summaries values (?,?,?,?,?)",
+                (session_id, title, title, "2026-10-10 10:29:41.3721344+00:00", json.dumps([project_uri])))
+    con.commit()
+    con.close()
+
+
 def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
     assert es.project_key(r"D:\Projects\Sindri") == "D--Projects-Sindri"
     assert es.project_key("D:/Projects/Sindri") == "D--Projects-Sindri"
 
 
-def test_discovery_finds_every_readable_vendor_and_says_what_it_cannot_read(homes):
+def test_discovery_finds_every_vendor_on_this_machine(homes):
     qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
     codebuddy_session(homes.codebuddy, r"D:\Temp", "01a1140d-30ed", prompt="写个函数", reply="写好了")
     marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="你是想说 Computer 吗")
+    cursor_session(homes.cursor, "ws1", "899631c0-fbf9", prompt="给 Sindri 写脚本", reply="写好了",
+                   project="file:///d%3A/Projects/Sindri")
+    agy_session(homes.agy, "ca174f50-f11a", title="Simple Greeting", project_uri="file:///D:/Temp")
 
     found = {item["vendor"] for item in es.all_sessions()}
-    assert found == {"qoder", "codebuddy", "marvis"}
+    assert found == {"qoder", "codebuddy", "marvis", "cursor", "agy"}
 
     sources = {item["vendor"]: item for item in es.session_sources()}
-    assert sources["qoder"]["sessions"] == 1 and sources["codebuddy"]["sessions"] == 1
-    assert sources["marvis"]["sessions"] == 1
-    assert sources["cursor"]["readable"] is False and sources["cursor"]["reason"]
-    assert sources["agy"]["readable"] is False and sources["agy"]["reason"]
+    assert [sources[v]["sessions"] for v in ("qoder", "codebuddy", "marvis", "cursor", "agy")] == [1, 1, 1, 1, 1]
+    assert sources["cursor"]["readable"] is True
+    assert sources["agy"]["readable"] is False and "正文" in sources["agy"]["reason"]
+
+
+def test_cursor_transcript_comes_from_the_composer_map(homes):
+    cursor_session(homes.cursor, "ws1", "899631c0-fbf9", prompt="给 Sindri 写脚本", reply="写好了",
+                   project="file:///d%3A/Projects/Sindri")
+
+    out = es.read_transcript("cursor", "899631c0-fbf9")
+
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    assert out["data"]["messages"][1]["text"] == "写好了"
+    assert out["data"]["project"] == r"D:\Projects\Sindri"
+
+
+def test_agy_gives_titles_but_says_the_transcript_is_not_wired(homes):
+    agy_session(homes.agy, "ca174f50-f11a", title="Simple Greeting", project_uri="file:///D:/Temp")
+
+    rows = {item["id"]: item for item in es.all_sessions()}
+    assert rows["ca174f50-f11a"]["title"] == "Simple Greeting"
+    assert rows["ca174f50-f11a"]["project"] == r"D:\Temp"
+
+    out = es.read_transcript("agy", "ca174f50-f11a")
+    assert out["ok"] is False and out["status"] == 501
 
 
 def test_related_comes_from_path_then_title_then_l2_marks(homes, monkeypatch):
