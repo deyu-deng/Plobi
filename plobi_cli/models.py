@@ -1867,6 +1867,42 @@ def curated_models_for_provider(
     return [(m, "") for m in models]
 
 
+def hub_selectable_model_ids(api_key: str, base_url: str, *, timeout: float = 6.0) -> list[str] | None:
+    """Ask the local quota hub which of its models may actually be picked.
+
+    ``/v1/models`` answers every row with ``selectable`` + ``unselectable_reason``:
+    a leg whose credential has expired, or a text-only transport that cannot bring
+    a tool call back into Plobi's loop, is still LISTED there because the OpenAI
+    catalogue endpoint must stay complete for other consumers. The picker is not
+    that consumer — measured 2026-10-27 it was offering 35 hub models of which 18
+    could serve a turn, and picking one of the other 17 was a guaranteed failure.
+
+    ``?selectable=1`` is the hub's own filter, so the verdict stays in one place.
+    ``None`` means "the hub did not answer" — the caller then keeps whatever it had,
+    because an unreachable hub must never be reported as "you have no models".
+    """
+    if not base_url:
+        return None
+
+    import json
+    import urllib.request
+
+    root = base_url.rstrip("/")
+    url = f"{root}/models?selectable=1" if root.endswith("/v1") else f"{root}/v1/models?selectable=1"
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # localhost: never proxied
+
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001 — unreachable hub is a normal state
+        return None
+
+    rows = (payload or {}).get("data") or []
+    return [str(row.get("id")) for row in rows if row.get("id")]
+
+
+
 def _provider_keys(provider: str) -> set[str]:
     key = (provider or "").strip().lower()
     normalized = normalize_provider(provider)
@@ -2351,6 +2387,39 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     normalized = normalize_provider(provider)
     if normalized == "openrouter":
         return model_ids(force_refresh=force_refresh)
+    if normalized == "aigw":
+        # The quota hub answers for itself which legs can serve a turn.
+        api_key, base_url = "", ""
+        try:
+            # Same source the aigw provider profile itself uses. Resolving through
+            # the credential pool instead pointed at a stale `http://127.0.0.1:8000`
+            # that today is held by an unrelated http.server (404), which read as
+            # "the hub is down" while the hub was in fact answering elsewhere.
+            from plobi.agents.registry import aigw_api_key, aigw_base_url
+
+            api_key = (aigw_api_key() or "").strip()
+            base_url = (aigw_base_url() or "").strip()
+        except Exception:  # noqa: BLE001
+            api_key = base_url = ""
+        if not base_url:
+            try:
+                from plobi_cli.auth import resolve_api_key_provider_credentials
+
+                creds = resolve_api_key_provider_credentials("aigw")
+                api_key = api_key or str(creds.get("api_key") or "").strip()
+                base_url = str(creds.get("base_url") or "").strip()
+            except Exception:  # noqa: BLE001
+                pass
+        hub_models = hub_selectable_model_ids(api_key, base_url)
+        if hub_models is not None:
+            return hub_models
+        # The hub did not answer. A cached hub catalog is exactly how a model that
+        # cannot be called stays on screen: measured 2026-10-27, port 8000 was held
+        # by an unrelated `http.server` (404 on /v1/models) while
+        # $PLOBI_HOME/provider_models_cache.json still carried 35 hub models — 17 of
+        # them already dead (expired credential / text-only transport) before that.
+        # Nothing the hub has not vouched for right now goes into the picker.
+        return []
     if normalized == "openai-codex":
         from plobi_cli.codex_models import get_codex_model_ids
 
@@ -2681,6 +2750,24 @@ def _credential_fingerprint(provider: str) -> str:
     except Exception:
         pass
 
+    # An ACP/CLI leg's own answer is part of its identity: the model list it
+    # reported while signed in must not survive a logout (or a never-completed
+    # first sign-in). Measured 2026-10-27: gemini-acp / qwen-acp / cline-acp each
+    # had a cached catalog of 4 / 5 / 2 models while every one of those CLIs
+    # refused `session/new` with an auth error, so the picker offered them anyway.
+    try:
+        from plobi_cli.auth import PROVIDER_REGISTRY, external_process_login_state
+
+        _pcfg = PROVIDER_REGISTRY.get(provider)
+        if _pcfg is not None and getattr(_pcfg, "auth_type", "") == "external_process":
+            _state = external_process_login_state(provider)
+            parts.append(
+                f"acp-login={int(bool(_state.get('logged_in')))}"
+                f"@{','.join(_state.get('models') or ())[:120]}"
+            )
+    except Exception:
+        pass
+
     # OAuth / external-file mtimes that change on re-auth
     try:
         from plobi_constants import get_plobi_home
@@ -2729,7 +2816,13 @@ def _load_provider_models_cache() -> dict:
             return {}
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        # The hub's catalog is never a cached answer (see `cached_provider_model_ids`);
+        # drop the entry a previous build wrote so it cannot come back.
+        if data.pop("aigw", None) is not None:
+            _save_provider_models_cache(data)
+        return data
     except Exception:
         return {}
 
@@ -2759,6 +2852,15 @@ def cached_provider_model_ids(
     normalized = normalize_provider(provider) or (provider or "")
     if not normalized:
         return []
+
+    # The quota hub is its own live authority, so its catalog is never cached.
+    # Measured 2026-10-27: the hub was NOT running and `provider_model_ids("aigw")`
+    # correctly answered with nothing, yet the picker still offered 35 hub models
+    # read straight out of `$PLOBI_HOME/provider_models_cache.json` — 17 of which
+    # were already dead (expired credential, text-only transport) even while the hub
+    # WAS up. A cached hub list is a promise the hub did not just make.
+    if normalized == "aigw":
+        return provider_model_ids("aigw")
 
     cache = _load_provider_models_cache()
     fp = _credential_fingerprint(normalized)
