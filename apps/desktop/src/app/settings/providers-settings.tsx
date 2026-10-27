@@ -35,7 +35,6 @@ import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { ListRow, LoadingState, SettingsContent } from './primitives'
 import { buildLoginCards, type LoginCard } from './quota-login-cards'
-import { QuotaAppIcon } from './quota-app-icon'
 
 // The embedded terminal (and thus the "run disconnect command" path) only
 // exists in the Electron desktop shell, not the web dashboard.
@@ -506,10 +505,7 @@ function DesktopQuotasView() {
       authCatalog.length
         ? authCatalog.map(card => ({
             aggregate: card.aggregate,
-            // One short line: what quota this is. Why a leg is unusable stays on the
-            // control (the existing `reason` tooltip), not in the body.
-            description: card.intro,
-            detail: card.detail,
+            description: card.description,
             id: card.id,
             name: card.name,
             // `verified` is the shell's word for "a click can act on this", which is
@@ -596,12 +592,7 @@ function DesktopQuotasView() {
               ) : undefined}
               description={app.description}
               key={app.id}
-              title={
-                <span className="flex items-center gap-2">
-                  <QuotaAppIcon id={app.id} name={app.name} />
-                  <span>{app.name}</span>
-                </span>
-              }
+              title={app.name}
             />
           )
         })}
