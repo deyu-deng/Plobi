@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from .notes_contract import INDEX_FILE_NAMES
 from .paths import MindUnavailable, real_target
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,8 @@ def build_library() -> dict[str, Any]:
     for path in sorted(root.rglob("*.md")):
         if any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
+        if path.name in INDEX_FILE_NAMES:
+            continue  # 目录件不是笔记——混进来会在知识库上多出一个「未分类」
         scanned += 1
         if len(notes) >= MAX_NOTES:
             skipped += 1

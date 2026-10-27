@@ -49,13 +49,14 @@ def notes(tmp_path, monkeypatch):
 def test_library_lists_only_notes(notes):
     data = nl.build_library()
 
-    assert data["totals"]["listed"] == 4
+    # INDEX.md 是目录件不是笔记（和 notes_contract 那一闸同一口径），别让它混进知识库里。
+    assert data["totals"]["listed"] == 3
     assert {row["path"] for row in data["notes"]} >= {
         "Vault/notes/数学 Math/微积分.md",
         "Vault/notes/工程 Engineer/图学.md",
         "Vault/notes/根目录笔记.md",
-        "Vault/notes/INDEX.md",
     }
+    assert all(row["path"] != "Vault/notes/INDEX.md" for row in data["notes"])
     assert all(".hidden" not in row["path"] for row in data["notes"])
     assert {t["name"] for t in data["topics"]} == {"数学 Math", "工程 Engineer", "未分类"}
 

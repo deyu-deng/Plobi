@@ -1,6 +1,6 @@
 """笔记硬约束：不合规就拒写，并逐条说清缺了什么（WP-NOTES-CONTRACT）。
 
-用户 2026-10-25 答的是最硬那一档：「硬约束，不合规拒写」。这里钉住四条规则，
+用户 2026-10-25 答的是最硬那一档：「硬约束，不合规拒写」。这里钉住五条规则，
 以及一条边界：**只管 Agent 写笔记这一手**，人自己写不需要闸门。
 """
 
@@ -87,6 +87,23 @@ def test_one_topic_per_note_and_the_heading_must_match_the_title(notes):
     assert any("不一致" in p for p in validate_note("Vault/notes/数学 Math/e.md", mismatched, notes))
 
 
+def test_headings_inside_a_code_fence_are_examples_not_headings(notes):
+    """讲 Markdown 的笔记会在 ``` 里示范 `# 一级标题`——那不算本篇的标题。
+
+    存量核对时实测到的假阳性：`工具 Tools/软件 Software/Obsidian.md` 只有一个真标题，
+    按行扫却数出 18 个，一篇合规笔记被判成「一篇只许一个一级标题」。
+    """
+    fenced = GOOD.replace(
+        "一段正文。",
+        "```\n# 一级标题\n# 另一个一级标题\n```\n\n~~~\n# 还有一个\n~~~\n\n一段正文。",
+    )
+    assert validate_note("Vault/notes/数学 Math/fence.md", fenced, notes) == []
+
+
+def test_topic_readme_is_an_index_not_a_note(notes):
+    assert validate_note("Vault/notes/数学 Math/README.md", "# 这一目录的索引\n", notes) == []
+
+
 def test_new_topic_folders_are_not_invented_by_a_write(notes):
     problems = validate_note("Vault/notes/新发明主题/x.md", GOOD, notes)
     assert any("新发明主题" in p for p in problems)
@@ -97,6 +114,29 @@ def test_the_gate_only_covers_notes(notes):
     assert validate_note("Vault/projects/Aura/progress.md", "随便什么", notes) == []
     assert validate_note("Vault/notes/INDEX.md", "# 索引\n", notes) == []
     assert validate_note("Vault/notes/数学 Math/x.txt", "x", notes)
+
+
+def test_public_knowledge_declares_an_empty_belongs(notes):
+    """用户 2026-10-27：`belongs` 这一格必须在，但可以是 []（＝公共知识）。"""
+    public = GOOD.replace("belongs: [Aura]", "belongs: []")
+    assert validate_note("Vault/notes/数学 Math/傅里叶.md", public, notes) == []
+
+    absent = GOOD.replace("belongs: [Aura]\n", "")
+    problems = validate_note("Vault/notes/数学 Math/傅里叶.md", absent, notes)
+    assert any("belongs" in p for p in problems)
+
+
+def test_relates_is_the_second_axis_and_must_be_real(notes):
+    """微积分这种：不属于谁，但很多 Agent 的任务用得上 —— 关联记在 `relates`。"""
+    linked = GOOD.replace("belongs: [Aura]", "belongs: []\nrelates: [Aura]")
+    assert validate_note("Vault/notes/数学 Math/傅里叶.md", linked, notes) == []
+
+    empty_relates = GOOD.replace("belongs: [Aura]", "belongs: []\nrelates: []")
+    assert any("relates" in p for p in validate_note("Vault/notes/数学 Math/a.md", empty_relates, notes))
+
+    fake = GOOD.replace("belongs: [Aura]", "belongs: []\nrelates: [没这个分身]")
+    problems = validate_note("Vault/notes/数学 Math/b.md", fake, notes)
+    assert any("没这个分身" in p for p in problems)
 
 
 def test_mind_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monkeypatch):
