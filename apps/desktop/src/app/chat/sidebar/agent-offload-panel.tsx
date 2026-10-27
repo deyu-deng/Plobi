@@ -8,6 +8,7 @@ import { getAgentOffloads, offloadResume } from '@/plobi'
 import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarCount } from './chrome'
+import { ExternalSessionsPanel } from './external-sessions-panel'
 import { OffloadVendorAvatar } from './offload-vendor-icon'
 
 /**
@@ -116,6 +117,8 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
           </div>
         )
       })}
+
+      <ExternalSessionsPanel agentId={agentId} />
     </div>
   )
 }

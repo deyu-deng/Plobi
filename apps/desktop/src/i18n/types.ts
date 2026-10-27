@@ -1561,6 +1561,15 @@ export interface Translations {
     offloadsEmpty: string
     offloadsReply: string
     offloadsCredits: string
+    externalSessionsTitle: string
+    externalSessionsLoading: string
+    externalSessionsEmpty: string
+    externalSessionsLoadFailed: string
+    externalSessionsNoMessages: string
+    externalSessionsInput: string
+    externalSessionsSend: string
+    externalSessionsSending: string
+    externalSessionsSendFailed: string
     offloadsBackToList: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string

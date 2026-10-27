@@ -1683,6 +1683,58 @@ async def offload_resume_route(request: Request):
     return {"ok": True, "data": result.get("data") or {}}
 
 
+# --------------------------------------------------------------------------- #
+# 外部软件自己的会话（WP-EXTERNAL-SESSIONS）：列、读、说
+# --------------------------------------------------------------------------- #
+#
+# 用户 10-27：左栏要看得见「这台机器上跟这个 L2 项目有关的所有对话」，L2 能像他一样
+# 在里面说话。**只在 Plobi 这一侧做**：Qoder 桌面 App 的索引是另一套，实测不认 CLI 写的
+# 会话，所以这里不假装能驱动它的窗口。归属只从名册登记的项目目录解析，请求方递来的路径
+# 一律不看（和 `resume_external_session` 同一条理由：自由路径＝放开任意目录）。
+
+@router.get("/agents/{agent_id}/external-sessions", name="agent_external_sessions")
+async def agent_external_sessions_route(agent_id: str):
+    """GET /api/agents/:id/external-sessions — 这个 Agent 项目下的外部会话。"""
+    from plobi.delegation.external_sessions import sessions_for_agent
+
+    payload = await run_in_threadpool(sessions_for_agent, agent_id)
+
+    return {"ok": True, "data": payload}
+
+
+@router.get("/agents/{agent_id}/external-sessions/{vendor}/{session_id}", name="agent_external_session")
+async def agent_external_session_route(agent_id: str, vendor: str, session_id: str):
+    """GET …/external-sessions/:vendor/:id — 那一条的 transcript。"""
+    from plobi.delegation.external_sessions import transcript_for_agent
+
+    result = await run_in_threadpool(transcript_for_agent, agent_id, vendor, session_id)
+    if not result.get("ok"):
+        return _error(int(result.get("status") or 404), str(result.get("error") or "unknown"))
+
+    return {"ok": True, "data": result.get("data") or {}}
+
+
+@router.post("/agents/{agent_id}/external-sessions/{vendor}/{session_id}/send", name="agent_external_session_send")
+async def agent_external_session_send_route(agent_id: str, vendor: str, session_id: str, request: Request):
+    """POST …/external-sessions/:vendor/:id/send — 把一句话送进那条会话（续接）。"""
+    from plobi.delegation.external_sessions import send_for_agent
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "text is required")
+    if not isinstance(body, dict):
+        return _error(400, "text is required")
+
+    result = await run_in_threadpool(
+        send_for_agent, agent_id, vendor, session_id, str(body.get("text") or "")
+    )
+    if not result.get("ok"):
+        return _error(int(result.get("status") or 400), str(result.get("error") or "unknown"))
+
+    return {"ok": True, "data": result.get("data") or {}}
+
+
 @router.get("/agents/{agent_id}/notes")
 async def agent_notes_route(agent_id: str):
     """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""

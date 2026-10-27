@@ -57,9 +57,14 @@ beforeEach(() => {
   offloadResume.mockReset()
   offloadResume.mockResolvedValue({ data: { agent: 'codebuddy', argv: [], cwd: 'D:/projects/Aura', pid: 4242 }, ok: true })
   // The renderer only ever has this bridge in the desktop shell.
+  // `api` 是「外部会话」那一组要用的；这一档只关心外包行，给它一个空表。
   Object.defineProperty(window, 'plobiDesktop', {
     configurable: true,
-    value: { ...(window.plobiDesktop || {}), openExternal },
+    value: {
+      ...(window.plobiDesktop || {}),
+      api: vi.fn().mockResolvedValue({ data: { projects: [], reason: '', sessions: [], vendor: 'qoder' }, ok: true }),
+      openExternal
+    }
   })
 })
 
