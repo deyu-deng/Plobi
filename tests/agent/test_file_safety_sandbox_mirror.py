@@ -172,7 +172,7 @@ class TestGetSandboxMirrorWarning:
         # Must hint at what the agent likely meant.
         assert "profiles/group1/SOUL.md" in warn
         # Must name the bypass kwarg shared with the cross-profile guard.
-        assert "cross_profile=True" in warn
+        assert "cross_agent=True" in warn
 
     def test_warning_is_defense_in_depth_not_boundary(self, tmp_path):
         from agent.file_safety import get_sandbox_mirror_warning

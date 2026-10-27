@@ -396,23 +396,23 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         active_profile = "default"
     if active_profile == "default":
         stable_parts.append(
-            "Active Plobi profile: default. Other profiles (if any) live "
-            "under ~/.plobi/profiles/<name>/. Each profile has its own "
-            "skills/, plugins/, and cron/ that affect a different "
-            "session than this one. Do not modify another profile's "
-            "skills/plugins/cron unless the user explicitly directs "
-            "you to."
+            "Plobi keeps ONE shared home (~/.plobi/): skills/, plugins/ and "
+            "cron/ are a single shared copy that every agent uses — there "
+            "are no per-agent home directories any more. Each agent keeps "
+            "only its own few files under that shared home (its identity "
+            "sheet, its memory, its cron store). Leave another agent's alone "
+            "unless the user explicitly directs you to."
         )
     else:
         stable_parts.append(
-            f"Active Plobi profile: {active_profile}. This session reads "
-            f"and writes ~/.plobi/profiles/{active_profile}/. The default "
-            f"profile's data lives at ~/.plobi/skills/, ~/.plobi/plugins/, "
-            f"~/.plobi/cron/ — those belong to a "
-            f"different session run from a different shell. Do NOT modify "
-            f"another profile's skills/plugins/cron unless the user "
-            f"explicitly directs you to. The cross-profile write guard will "
-            f"refuse such writes by default; pass cross_profile=True only "
+            f"Active agent: {active_profile} (a row in the roster). Plobi "
+            f"keeps ONE shared home (~/.plobi/): skills/, plugins/ and cron/ "
+            f"are a single shared copy that every agent uses — there are no "
+            f"per-agent home directories any more. This agent's own few "
+            f"files (its identity sheet, its memory, its cron store) live under "
+            f"that shared home too. Leave another agent's alone unless the user "
+            f"explicitly directs you to. The write guard refuses paths that "
+            f"point into a retired per-agent home; pass cross_agent=True only "
             f"after explicit direction."
         )
 

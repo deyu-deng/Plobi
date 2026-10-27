@@ -167,7 +167,7 @@ def _resolve_profile_db(profile: str):
     # 身份判据问名册那一行（裁 192），不问家目录——家都退役了，问目录会让
     # 桌面里 `@session:<profile>/<id>` 这种链接**每一趟都抛错**。
     if not profiles_mod.identity_exists(canon):
-        raise ValueError(f"profile '{canon}' does not exist")
+        raise ValueError(f"agent '{canon}' does not exist")
 
     return None
 
@@ -683,7 +683,7 @@ def session_search(
         try:
             profile_db = _resolve_profile_db(profile)
         except Exception as e:
-            return tool_error(f"profile '{profile}': {e}", success=False)
+            return tool_error(f"agent '{profile}': {e}", success=False)
         if profile_db is not None:
             db = profile_db
             current_session_id = None
@@ -806,11 +806,11 @@ SESSION_SEARCH_SCHEMA = {
         "       - When messages_before or messages_after is < window, you're at the "
         "start or end of the session.\n\n"
         "  3) READ — pass `session_id` only (no around_message_id):\n"
-        "     session_search(session_id=\"...\", profile=\"work\")\n"
+        "     session_search(session_id=\"...\", agent=\"work\")\n"
         "     Dumps the whole session by id (first 20 + last 10 messages when "
-        "large). This is how you resolve an `@session:<profile>/<id>` link the "
-        "user dropped into the chat: split the value on `/` into profile + id "
-        "and call session_search(session_id=id, profile=profile).\n\n"
+        "large). This is how you resolve an `@session:<agent>/<id>` link the "
+        "user dropped into the chat: split the value on `/` into agent + id "
+        "and call session_search(session_id=id, agent=agent).\n\n"
         "  4) BROWSE — no args:\n"
         "     session_search()\n"
         "     Returns recent sessions chronologically: titles, previews, timestamps. "
@@ -895,13 +895,13 @@ SESSION_SEARCH_SCHEMA = {
                     "behaviour) or 'tool' to search tool output only."
                 ),
             },
-            "profile": {
+            "agent": {
                 "type": "string",
                 "description": (
-                    "Optional. Read sessions from another Plobi profile's database "
-                    "(read-only). Use when resolving an `@session:<profile>/<id>` link: "
-                    "pass the profile segment here with session_id as the id segment. "
-                    "Omit to use the current profile."
+                    "Optional. Read sessions from another agent's sessions "
+                    "(read-only). Use when resolving an `@session:<agent>/<id>` link: "
+                    "pass the agent segment here with session_id as the id segment. "
+                    "Omit to use the current agent's sessions."
                 ),
             },
         },
@@ -925,7 +925,8 @@ registry.register(
         around_message_id=args.get("around_message_id"),
         window=args.get("window", 5),
         sort=args.get("sort"),
-        profile=args.get("profile"),
+        # 新名 ``agent``；老名 ``profile`` 照样收（旧 transcript／旧调用）。
+        profile=args.get("agent") or args.get("profile"),
         db=kw.get("db"),
         current_session_id=kw.get("current_session_id"),
     ),

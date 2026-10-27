@@ -68,7 +68,7 @@ class TestGetContainerMirrorWarning:
         )
         assert warn is not None
         assert "profiles/group1/SOUL.md" in warn
-        assert "cross_profile=True" in warn
+        assert "cross_agent=True" in warn
 
 
 class TestOrthogonality:

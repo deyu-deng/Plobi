@@ -203,7 +203,7 @@ class TestGetCrossProfileWarning:
         assert "default" in warn
         assert "plobi-security" in warn
         # Must name the bypass kwarg.
-        assert "cross_profile=True" in warn
+        assert "cross_agent=True" in warn
         # Must reference the area.
         assert "skills" in warn
 

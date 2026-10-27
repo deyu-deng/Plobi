@@ -242,17 +242,25 @@ class TestSystemPromptActiveProfile:
         # See agent/system_prompt.py for the exact wording.
 
     def test_named_profile_line_in_prompt_text(self, fake_plobi):
-        """When active profile is 'plobi-security', the prompt warns
-        explicitly about NOT modifying default's skills/plugins/cron/memories."""
-        # Spot-check by reading the source — the contract is:
-        # (1) names the active profile, (2) names the default-profile
-        # paths, (3) says "do not modify another profile's" without
-        # explicit user direction.
+        """When active profile is 'plobi-security', the prompt says who the
+        agent is and warns against touching another agent's files.
+
+        契约（10-27 随 WP-PROFILE-VOCAB 改过）：家目录那条腿已退休——提示词里
+        ① 点明**身份是名册上的一行**（``Active agent:``）；② 说清**只有一份共享家**
+        （``ONE shared home``），不再有「每 Agent 一个家」那套说法；③ 说「别动别人的
+        那几份」；④ 绕过那个旗标叫 ``cross_agent=True``。
+        """
         from pathlib import Path
         src = Path("agent/system_prompt.py").read_text()
-        assert "Active Plobi profile" in src
-        assert "cross_profile=True" in src
-        assert "~/.plobi/profiles/" in src
-        # Both branches present (default and named profile).
-        assert "Active Plobi profile: default" in src
-        assert "Active Plobi profile: {active_profile}" in src
+        assert "Active agent:" in src
+        assert "cross_agent=True" in src
+        # 一份共享家 + 「没有按 Agent 分的家」这句话必须在（那句旧话是假的）
+        assert "ONE shared home" in src
+        assert "no per-agent home directories any more" in src
+        # 别动别人的那几份
+        assert "Leave another agent's alone" in src
+        # 两个分支都在（默认身份与有名有姓的身份）
+        assert "Plobi keeps ONE shared home" in src
+        assert "Active agent: {active_profile}" in src
+        # 旧词不许再出现在给模型看的段落里（内部名不算）
+        assert "Active Plobi profile" not in src

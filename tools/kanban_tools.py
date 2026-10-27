@@ -1551,7 +1551,7 @@ KANBAN_UNBLOCK_SCHEMA = {
     "name": "kanban_unblock",
     "description": (
         "Move a blocked Kanban task back to ready. Orchestrator-only — only "
-        "profiles with the kanban toolset can unblock routed work; "
+        "agents with the kanban toolset can unblock routed work; "
         "dispatcher-spawned task workers never see this tool."
     ),
     "parameters": {

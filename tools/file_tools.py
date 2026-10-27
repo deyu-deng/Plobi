@@ -1665,7 +1665,8 @@ def _mark_verification_stale(
 
 
 def write_file_tool(path: str, content: str, task_id: str = "default",
-                    cross_profile: bool = False,
+                    cross_agent: bool = False,
+                    cross_profile: bool | None = None,
                     session_id: str | None = None) -> str:
     """Write content to a file.
 
@@ -1678,7 +1679,9 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
     sensitive_err = _check_sensitive_path(path, task_id)
     if sensitive_err:
         return tool_error(sensitive_err)
-    if not cross_profile:
+    if cross_profile:
+        cross_agent = True  # 老名字（旧的调用与旧 transcript 仍会用它）
+    if not cross_agent:
         cross_warning = _check_cross_profile_path(path, task_id)
         if cross_warning:
             return tool_error(cross_warning)
@@ -1749,7 +1752,8 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
 
 def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                new_string: str = None, replace_all: bool = False, patch: str = None,
-               task_id: str = "default", cross_profile: bool = False,
+               task_id: str = "default", cross_agent: bool = False,
+               cross_profile: bool | None = None,
                session_id: str | None = None) -> str:
     """Patch a file using replace mode or V4A patch format.
 
@@ -1806,7 +1810,9 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         sensitive_err = _check_sensitive_path(_p, task_id)
         if sensitive_err:
             return tool_error(sensitive_err)
-        if not cross_profile:
+        if cross_profile:
+            cross_agent = True  # 老名字
+        if not cross_agent:
             cross_warning = _check_cross_profile_path(_p, task_id)
             if cross_warning:
                 return tool_error(cross_warning)
@@ -2061,9 +2067,9 @@ WRITE_FILE_SCHEMA = {
         "properties": {
             "path": {"type": "string", "description": "Path to the file to write (will be created if it doesn't exist, overwritten if it does)"},
             "content": {"type": "string", "description": "Complete content to write to the file"},
-            "cross_profile": {
+            "cross_agent": {
                 "type": "boolean",
-                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another Plobi profile's skills/plugins/cron/memories — by default these writes are blocked with a warning because they affect a different profile than the one this session is running under.",
+                "description": "Opt out of the cross-agent soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another agent's skills/plugins/cron/memories — by default these writes are blocked with a warning because they affect a different agent than the one this session is running as.",
                 "default": False,
             },
         },
@@ -2112,9 +2118,9 @@ PATCH_SCHEMA = {
                 "type": "string",
                 "description": "REQUIRED when mode='patch'. V4A format patch content. Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ context hint @@\n context line\n-removed line\n+added line\n*** End Patch",
             },
-            "cross_profile": {
+            "cross_agent": {
                 "type": "boolean",
-                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another Plobi profile's skills/plugins/cron/memories.",
+                "description": "Opt out of the cross-agent soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another agent's skills/plugins/cron/memories.",
                 "default": False,
             },
         },
@@ -2169,7 +2175,8 @@ def _handle_write_file(args, **kw):
         )
     return write_file_tool(
         path=args["path"], content=args["content"], task_id=tid,
-        cross_profile=bool(args.get("cross_profile", False)),
+        # 新名 ``cross_agent``；老名 ``cross_profile`` 照样收（旧 transcript／旧调用）。
+        cross_agent=bool(args.get("cross_agent", args.get("cross_profile", False))),
         session_id=kw.get("session_id"),
     )
 
@@ -2180,7 +2187,8 @@ def _handle_patch(args, **kw):
         mode=args.get("mode", "replace"), path=args.get("path"),
         old_string=args.get("old_string"), new_string=args.get("new_string"),
         replace_all=args.get("replace_all", False), patch=args.get("patch"), task_id=tid,
-        cross_profile=bool(args.get("cross_profile", False)),
+        # 新名 ``cross_agent``；老名 ``cross_profile`` 照样收（旧 transcript／旧调用）。
+        cross_agent=bool(args.get("cross_agent", args.get("cross_profile", False))),
         session_id=kw.get("session_id"),
     )
 

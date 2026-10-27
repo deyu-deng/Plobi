@@ -14,13 +14,17 @@ def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
     # =========================================================================
     # profile command
     # =========================================================================
+    # ``plobi agent`` 是同一个命令族的新名字（用户 10-27：Agent 就是名册上的一行，
+    # 「profile」这个词不该再教给 Agent）。老名字 ``plobi profile`` 照旧能用——
+    # 那是用户手打的命令，不是 Agent 的词汇表。
     profile_parser = subparsers.add_parser(
         "profile",
-        help="Manage profiles — multiple isolated Plobi instances",
+        aliases=["agent"],
+        help="Manage agents — the roster of identities (alias: plobi agent)",
     )
     profile_subparsers = profile_parser.add_subparsers(dest="profile_action")
 
-    profile_subparsers.add_parser("list", help="List all profiles")
+    profile_subparsers.add_parser("list", help="List all agents (the roster)")
     profile_use = profile_subparsers.add_parser(
         "use", help="Set sticky default profile"
     )

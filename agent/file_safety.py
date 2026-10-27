@@ -467,12 +467,12 @@ def get_cross_profile_warning(path: str) -> Optional[str]:
     return (
         f"Cross-profile write blocked by soft guard: {info['target_path']} "
         f"belongs to Plobi profile {info['target_profile']!r}, but the "
-        f"agent is running under profile {info['active_profile']!r}. "
-        f"Editing another profile's {info['area']}/ will affect that "
-        f"profile's future sessions, not the one you are currently in. "
+        f"agent is running as {info['active_profile']!r}. "
+        f"Editing another agent's {info['area']}/ will affect that "
+        f"agent's future sessions, not the one you are currently in. "
         f"Confirm with the user before proceeding. To bypass this guard "
         f"after explicit user direction, retry the call with "
-        f"``cross_profile=True``. (Defense-in-depth — not a security "
+        f"``cross_agent=True``. (Defense-in-depth — not a security "
         f"boundary; the terminal tool can still bypass.)"
     )
 
@@ -581,7 +581,7 @@ def get_sandbox_mirror_warning(path: str) -> Optional[str]:
         f"under the real PLOBI_HOME. Use the host-side tool for "
         f"authoritative state (e.g. ``memory`` for memories), or address "
         f"the host path directly. To bypass this guard after explicit "
-        f"user direction, retry the call with ``cross_profile=True``. "
+        f"user direction, retry the call with ``cross_agent=True``. "
         f"(Defense-in-depth — not a security boundary; the terminal tool "
         f"can still bypass.)"
     )
@@ -658,7 +658,7 @@ def get_container_mirror_warning(
         f"{info['inner_path']!r} under the real PLOBI_HOME. Use the "
         f"host-side tool for authoritative state (e.g. ``memory`` for "
         f"memories), or address the host path directly. To bypass after "
-        f"explicit user direction, retry with ``cross_profile=True``. "
+        f"explicit user direction, retry with ``cross_agent=True``. "
         f"(Defense-in-depth — not a security boundary; the terminal tool "
         f"can still bypass.)"
     )
