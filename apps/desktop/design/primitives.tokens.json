@@ -1,0 +1,100 @@
+{
+  "primitive": {
+    "warm": {
+      "0": { "value": "#ffffff" },
+      "50": { "value": "#f4f5f3" },
+      "100": { "value": "#e9eae5" },
+      "200": { "value": "#d5dbd8" },
+      "300": { "value": "#b9bab1" },
+      "400": { "value": "#8a8b83" },
+      "500": { "value": "#5a5b55" },
+      "600": { "value": "#3d3e39" },
+      "700": { "value": "#2e2f2b" },
+      "800": { "value": "#22221f" },
+      "850": { "value": "#191b1a" },
+      "900": { "value": "#141414" },
+      "950": { "value": "#0e0f0e" }
+    },
+    "accent": {
+      "100": { "value": "#f6e3dc" },
+      "200": { "value": "#eec4b6" },
+      "300": { "value": "#e2a08c" },
+      "400": { "value": "#d68067" },
+      "500": { "value": "#c96442" },
+      "600": { "value": "#b4553a" },
+      "700": { "value": "#94452f" },
+      "800": { "value": "#6f3424" },
+      "900": { "value": "#4c2419" }
+    },
+    "green": {
+      "300": { "value": "#9be6b3" },
+      "400": { "value": "#8ee5a1" },
+      "500": { "value": "#73cd94" },
+      "700": { "value": "#335942" }
+    },
+    "amber": {
+      "300": { "value": "#ffe9a8" },
+      "500": { "value": "#ffd666" },
+      "700": { "value": "#6b5320" }
+    },
+    "red": {
+      "300": { "value": "#f2a5a5" },
+      "500": { "value": "#d64545" },
+      "700": { "value": "#6d2a2a" }
+    }
+  },
+  "type": {
+    "family": {
+      "sans": { "value": "\"Inter Variable\", \"Inter\", \"Noto Sans SC\", \"PingFang SC\", \"Microsoft YaHei UI\", system-ui, sans-serif" },
+      "mono": { "value": "\"JetBrains Mono\", \"Cascadia Code\", ui-monospace, SFMono-Regular, Menlo, monospace" }
+    },
+    "size": {
+      "xs": { "value": "12px" },
+      "sm": { "value": "14px" },
+      "base": { "value": "16px" },
+      "lg": { "value": "18px" },
+      "xl": { "value": "20px" },
+      "2xl": { "value": "24px" }
+    },
+    "line": {
+      "tight": { "value": "1.25" },
+      "snug": { "value": "1.4" },
+      "base": { "value": "1.5" },
+      "loose": { "value": "1.75" }
+    },
+    "weight": {
+      "regular": { "value": "400" },
+      "medium": { "value": "500" },
+      "semibold": { "value": "600" },
+      "bold": { "value": "700" }
+    }
+  },
+  "radius": {
+    "xs": { "value": "2px" },
+    "sm": { "value": "4px" },
+    "md": { "value": "6px" },
+    "lg": { "value": "8px" },
+    "xl": { "value": "12px" },
+    "2xl": { "value": "16px" },
+    "full": { "value": "999px" }
+  },
+  "space": {
+    "0": { "value": "0px" },
+    "1": { "value": "2px" },
+    "2": { "value": "4px" },
+    "3": { "value": "6px" },
+    "4": { "value": "8px" },
+    "5": { "value": "10px" },
+    "6": { "value": "12px" },
+    "7": { "value": "16px" },
+    "8": { "value": "20px" },
+    "9": { "value": "24px" },
+    "10": { "value": "32px" }
+  },
+  "motion": {
+    "fast": { "value": "120ms" },
+    "base": { "value": "180ms" },
+    "slow": { "value": "240ms" },
+    "ease": { "value": "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+  }
+}
