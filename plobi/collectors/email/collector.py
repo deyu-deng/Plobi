@@ -29,6 +29,7 @@ from email.message import Message
 from typing import Any, Optional
 
 from ..base import Occurrence
+from .body import body_of
 from .providers import EmailProvider
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,7 @@ class EmailCollector:
         message_id = _message_id(message)
         subject = _decode(message.get("Subject"))
         sender = _decode(message.get("From"))
+        body, body_kind = body_of(message)
 
         return Occurrence(
             source=self.source_id,
@@ -231,7 +233,7 @@ class EmailCollector:
             start_at=_when(message),
             kind=KIND,
             evidence={
-                "text": _body_text(message),
+                "text": body,
                 "from": sender,
                 "to": _decode(message.get("To")),
                 "subject": subject,
@@ -239,6 +241,8 @@ class EmailCollector:
                 "folder": self.folder,
                 "uid": str(uid),
                 "message_id": message_id,
+                # 这段正文是原样（plain）还是从 HTML 啃出来的（html）——留痕，别让人拿它当同一种东西。
+                "body_kind": body_kind,
                 # 这一格是**这行自己的出处**：以后有人问"这条是谁的哪个文件夹里的哪一封"，
                 # 不必再猜一次键名怎么拼（P6：出处跟着数据走，不留一张外部对照表）。
                 "origin": f"imap://{self.provider.host or '<user-supplied>'}/{self.folder}/{uid}",
@@ -281,28 +285,5 @@ def _when(message: Message) -> str:
     return parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _body_text(message: Message) -> str:
-    """正文只取 text/plain 那一段（HTML 与附件都不进 —— `supports_media` 那一格因此留 `None`）。"""
-    part = message
-    if message.is_multipart():
-        for candidate in message.walk():
-            if candidate.get_content_maintype() == "text" and \
-                    (candidate.get_content_subtype() or "") == "plain" and \
-                    candidate.get("Content-Disposition") not in ("attachment", "inline"):
-                part = candidate
-                break
-        else:
-            return ""
-
-    try:
-        payload = part.get_payload(decode=True)
-    except (TypeError, ValueError):
-        return ""
-    if not payload:
-        return ""
-    charset = part.get_content_charset() or "utf-8"
-
-    try:
-        return payload.decode(charset, errors="replace").strip()
-    except LookupError:
-        return payload.decode("utf-8", errors="replace").strip()
+#: 啃 HTML 的三刀：整块先丢（`<script>` 里的代码不是正文）、换行标记留下（不然整封挤成一行）、
+#: 其余标签去掉。不引解析器，也不假装读懂表格布局。

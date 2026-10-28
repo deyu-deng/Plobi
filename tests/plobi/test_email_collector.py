@@ -439,3 +439,103 @@ class TestTheSecretReadPort:
 
         assert sources_config.secret_configured("email_qq") == {"password": True}
         assert SECRET not in repr(sources_config.secret_configured("email_qq"))
+
+
+def _mail(*parts: tuple[str, str], boundary: str = "P") -> bytes:
+    """拼一封 multipart/alternative：`parts` 是 `(subtype, 正文)`，按给的顺序排——顺序本身就是要钉的东西。"""
+    CR, NL = chr(13), chr(10)
+    lines = [
+        "Message-ID: <html-1@mail.test>",
+        "From: 通知 <bot@mail.test>",
+        "To: me@qq.com",
+        "Subject: 通知",
+        "Date: Fri, 27 Oct 2026 09:00:00 +0800",
+        f'Content-Type: multipart/alternative; boundary="{boundary}"',
+        "",
+    ]
+
+    for subtype, body in parts:
+        lines += [
+            f"--{boundary}",
+            f"Content-Type: text/{subtype}; charset=utf-8",
+            "",
+            body,
+            "",
+        ]
+
+    lines += [f"--{boundary}--", ""]
+
+    return (CR + NL).join(lines).encode("utf-8")
+
+
+
+class TestTheBodyTakesWhicheverPartIsThere:
+    """旧版只认 `text/plain`，找不到就交回空串 ⇒ HTML-only 那一整类邮件正文整封丢掉。
+
+    这几条钉的是新那一格：**plain 优先**（发信人自己给的纯文本比我们啃 HTML 更真），
+    没有才啃 HTML，并且**留痕说清是哪一种**。
+    """
+
+    def test_prefers_the_plain_part_even_when_html_comes_first(self) -> None:
+        mail = _mail(("html", "<p>HTML 那一版</p>"), ("plain", "纯文本那一版"))
+
+        row = collector(uids=("7",), messages={"7": mail}).pull()[0]
+
+        assert row.evidence["text"] == "纯文本那一版"
+        assert row.evidence["body_kind"] == "plain"
+
+    def test_reads_an_html_only_mail_as_text(self) -> None:
+        """这一封在旧版是**整封丢掉**的：正文空，只剩标题。"""
+        mail = _mail(("html", "<div><p>本周五 24:00 前提交</p><p>地点：3 号楼</p></div>"))
+
+        row = collector(uids=("7",), messages={"7": mail}).pull()[0]
+
+        assert "本周五 24:00 前提交" in row.evidence["text"]
+        assert "地点：3 号楼" in row.evidence["text"]
+        assert "<" not in row.evidence["text"] and ">" not in row.evidence["text"]
+        assert row.evidence["body_kind"] == "html"
+
+    def test_drops_script_and_style_blocks_entirely(self) -> None:
+        """去掉标签留下 `<script>` 里的代码是脏数据：整块丢，不是只丢尖括号。"""
+        mail = _mail(("html", '<script>var 别把这段当正文="x"</script><style>p{color:red}</style>'
+                              '<p>看得见的那句</p>'))
+
+        row = collector(uids=("7",), messages={"7": mail}).pull()[0]
+
+        assert row.evidence["text"] == "看得见的那句"
+        assert "别把这段当正文" not in row.evidence["text"]
+        assert "color:red" not in row.evidence["text"]
+
+    def test_a_pure_attachment_mail_is_an_empty_body_not_a_made_up_one(self) -> None:
+        """只有附件的一封：正文是空这个**读数**，不是错误，也不许拿标题填一个假的。"""
+        crlf = chr(13) + chr(10)
+        mail = crlf.join([
+            "Message-ID: <att@mail.test>",
+            "From: 寄件 <a@mail.test>",
+            "Subject: 附件",
+            "Date: Fri, 27 Oct 2026 09:00:00 +0800",
+            'Content-Type: multipart/mixed; boundary="A"',
+            "",
+            "--A",
+            "Content-Type: application/pdf",
+            'Content-Disposition: attachment; filename="a.pdf"',
+            "",
+            "JVBERi0xLjQ=",
+            "--A--",
+            "",
+        ]).encode("utf-8")
+
+        row = collector(uids=("8",), messages={"8": mail}).pull()[0]
+
+        assert row.evidence["text"] == ""
+        assert row.evidence["body_kind"] == "none"
+
+    def test_the_flavour_is_recorded_per_row_not_assumed(self) -> None:
+        """两种邮件并排进池时，`body_kind` 分别说得出自己是原样还是啃出来的。"""
+        rows = collector(uids=("1", "2"), messages={
+            "1": _mail(("plain", "原样那一封")),
+            "2": _mail(("html", "<p>啃出来那一封</p>")),
+        }).pull()
+
+        assert sorted(row.evidence["body_kind"] for row in rows) == ["html", "plain"]
+        assert len({row.evidence["body_kind"] for row in rows}) == 2

@@ -43,8 +43,9 @@ def _spec(provider: EmailProvider) -> SourceSpec:
             "history_backfill": False,
             # `pull(since=…)` 收了不用：每轮取最近那一截，幂等交给 Message-ID（与 zju 同写法）。
             "incremental_since": False,
-            # 正文只解析 text/plain；HTML/附件**没实测**。留 None 是让消费方在"未实测"上报错，
-            # 而不是拿一个 False 冒充测过（判据 5）。
+            # 正文：plain 优先，没有才把 HTML 啃成文本（`WP-EMAIL-HTML-BODY`，那一格留了
+            # `body_kind` 说清是哪一种）。**附件仍未取**——这一格问的是媒体，留 None 是让消费方
+            # 在"未实测"上报错，而不是拿一个 False 冒充测过（判据 5）。
             "supports_media": None,
             # 要用户自己填：邮箱地址 + 授权码（Gmail 那类还要先开应用专用密码）。
             "requires_manual_setup": True,
