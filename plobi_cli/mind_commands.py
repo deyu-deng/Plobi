@@ -82,6 +82,14 @@ def _persona_state(roots) -> str:
     user_md = get_plobi_home() / "memory" / "USER.md"
     if user_md.is_file():
         summary = f"{user_md.stat().st_size} 字节（L0 精简版）"
+        # 精简版是**手工蒸**出来的（改详版→再蒸馏一次），没有任何自动派生路径，
+        # 所以它会悄悄落后。把"落后"这件事变成看得见的一句话，而不是靠谁记得。
+        try:
+            drift = user_md.stat().st_mtime - (where.stat().st_mtime if where.is_file() else 0)
+            if where.is_file() and drift < 0:
+                summary += f" · 落后详版 {int(-drift / 3600) // 24 + 1} 天，该重蒸一次"
+        except OSError:
+            pass
     else:
         summary = "还没生成（L0 精简版）"
     return f"详版 {detail} · 精简版 {summary}"

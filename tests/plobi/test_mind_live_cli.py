@@ -86,3 +86,38 @@ def test_the_cli_surface_resolves_the_official_provider_without_a_config_key(
     config = Path(os.environ["PLOBI_HOME"]) / "config.yaml"
     config.write_text("memory:\n  provider: ''\n", encoding="utf-8")
     assert _get_active_memory_provider() is None
+
+
+def test_persona_status_says_when_the_condensed_copy_lags(tmp_path, monkeypatch):
+    """精简版是手工蒸的，没有自动派生路径 ⇒ `plobi mind status` 那行必须把"落后"说出来。
+
+    反着也要成立：精简版比详版新（正常状态）时不许喊重蒸，否则这句提醒天天响、变成没人看的噪音。
+    """
+    import time
+
+    from plobi.mind.paths import Roots
+    from plobi_cli.mind_commands import _persona_state
+
+    mind = tmp_path / "Mind"
+    (mind / "persona").mkdir(parents=True)
+    home = tmp_path / "home"
+    (home / "memory").mkdir(parents=True)
+    profile = mind / "persona" / "profile.md"
+    user_md = home / "memory" / "USER.md"
+    profile.write_text("# 用户画像\n\n- 姓名：小龟\n", encoding="utf-8")
+    user_md.write_text("邓德彧（小龟）…\n", encoding="utf-8")
+    monkeypatch.setenv("MIND_ROOT", str(mind))
+    monkeypatch.setenv("PLOBI_HOME", str(home))
+    roots = Roots(mind=mind, vault=None)
+
+    # 精简版与详版同日 ⇒ 别喊
+    now = time.time()
+    os.utime(profile, (now - 86400 * 5, now - 86400 * 5))
+    os.utime(user_md, (now, now))
+    assert "该重蒸" not in _persona_state(roots), _persona_state(roots)
+
+    # 详版被改过、精简版还是老的 ⇒ 说出来（谁改画像谁欠这一次蒸馏）
+    os.utime(profile, (now, now))
+    os.utime(user_md, (now - 3600, now - 3600))
+    line = _persona_state(roots)
+    assert "该重蒸" in line, line
