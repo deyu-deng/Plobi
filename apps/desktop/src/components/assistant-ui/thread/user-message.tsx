@@ -56,7 +56,7 @@ export function StickyHumanMessageContainer({
 // so without the carve-out, clicking a stuck bubble drags the window instead of
 // opening the edit composer.
 export const USER_BUBBLE_BASE_CLASS =
-  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto rounded-xl border border-border/65 bg-(--ui-chat-surface-background) px-3 py-2 text-left [-webkit-app-region:no-drag]'
+  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto rounded-xl border border-border/65 bg-(--dt-user-bubble) px-3 py-2 text-left [-webkit-app-region:no-drag]'
 
 export const USER_ACTION_ICON_BUTTON_CLASS =
   'grid place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
@@ -171,6 +171,12 @@ export const UserMessage: FC<{
     s => (s.message.metadata?.custom ?? {}) as { askedBy?: unknown; kind?: unknown }
   )
   const askedBy = askedByBadge(customMeta.askedBy)
+  // 这一支只渲染「人」的消息：没有发起方记录（历史行被网关那条路剥掉了）也仍然是「我」。
+  const speakerLabel = !askedBy || askedBy.kind === 'me' || askedBy.kind === 'unrecorded'
+    ? copy.askedByMe
+    : askedBy.kind === 'secretary'
+      ? copy.askedBySecretary
+      : askedBy.raw
   const askedByLabel = askedBy === null
     ? ''
     : askedBy.kind === 'me'
@@ -260,7 +266,8 @@ export const UserMessage: FC<{
 
   const bubbleClassName = cn(
     USER_BUBBLE_BASE_CLASS,
-    'cursor-pointer pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors',
+    // 与外部气泡同一条宽度行为：内容多长就多宽（上限 86%/44rem），不撑满整行。
+    'w-auto max-w-full cursor-pointer pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors',
     'border-(--ui-stroke-tertiary) hover:border-(--ui-stroke-secondary)'
   )
 
@@ -304,13 +311,13 @@ export const UserMessage: FC<{
         >
           <div className="human-message-with-todos-wrapper flex min-w-0 flex-1 flex-col gap-0">
             <div className="flex items-center gap-1">
-              {askedByLabel && (
+              {speakerLabel && (
                 <span
                   className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)"
                   data-slot="aui_user-asked-by"
                   title={askedBy?.raw || undefined}
                 >
-                  {askedByLabel}
+                  {speakerLabel}
                 </span>
               )}
               <QuoteButton
@@ -429,9 +436,9 @@ export const UserMessage: FC<{
           <div
             aria-hidden
             className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) text-[10px] font-medium text-(--ui-text-secondary)"
-            title={askedByLabel || undefined}
+            title={speakerLabel || undefined}
           >
-            {(askedByLabel || '').trim().slice(0, 1).toUpperCase()}
+            {(speakerLabel || '').trim().slice(0, 1).toUpperCase()}
           </div>
         </ActionBarPrimitive.Root>
       </StickyHumanMessageContainer>
