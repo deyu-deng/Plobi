@@ -60,21 +60,30 @@ export function humanizeProviderName(provider: Pick<ModelOptionProvider, 'name' 
     }
   }
 
-  // 2. Direct-API providers show the vendor's own name.
+  // 2. The routing plumbing is not a vendor, whatever the gateway called itself.
+  //    Measured 2026-10-28: `providers.aigw.name` read "Local Quota Hub" and showed up
+  //    verbatim on a surface that had no per-software clone to fall back on. The
+  //    gateway rename is fixed at the source too; this is the belt-and-braces so a
+  //    future name like "本地额度网关" cannot reach a screen either.
+  if (/(quota hub|local quota)/i.test(name) || /额度网关|本地额度/.test(name)) {
+    return '订阅额度'
+  }
+
+  // 3. Direct-API providers show the vendor's own name.
   const vendor = vendorLabelForSlug(slug)
 
   if (vendor) {
     return vendor
   }
 
-  // 3. Otherwise strip internal vocabulary from whatever the gateway sent.
+  // 4. Otherwise strip internal vocabulary from whatever the gateway sent.
   const stripped = name.replace(INTERNAL_WORDS, ' ').replace(/\s+/g, ' ').trim()
 
   if (stripped) {
     return stripped
   }
 
-  // 4. Last resort: derive from the slug so no group is ever untitled.
+  // 5. Last resort: derive from the slug so no group is ever untitled.
   return titleCaseSlug(slug || 'Models')
 }
 

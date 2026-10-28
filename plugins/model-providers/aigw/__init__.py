@@ -85,7 +85,9 @@ aigw = AigwProfile(
     name="aigw",
     aliases=(),  # keep the alias table untouched; the name is already `aigw`
     api_mode="chat_completions",
-    display_name="Local Quota Hub",
+    # 屏上永远读「订阅额度」，不读这个网关自己的名字（用户 10-28 第二次点到
+    # 「Local Quota Hub」上屏）。软件名由渲染层逐条克隆出来，这一格只是兜底。
+    display_name="订阅额度",
     description=(
         "Local quota gateway — desktop quota apps (Antigravity / Cursor / "
         "Workbuddy) behind one OpenAI-compatible endpoint"

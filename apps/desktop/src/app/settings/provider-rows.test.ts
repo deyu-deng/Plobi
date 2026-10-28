@@ -26,6 +26,16 @@ describe('mainProviderRows', () => {
     expect(rows.find(row => row.name === '订阅额度')?.ui_key).toBe('aigw::订阅额度')
   })
 
+  it("never lets the gateway own name reach a row, even with no software connected", () => {
+    // Measured 2026-10-28: `providers.aigw.name` read "Local Quota Hub" and showed up
+    // on a surface without a per-software clone. The source is renamed; this pins the
+    // renderer so the next such name cannot slip through either.
+    const rows = mainProviderRows([{ models: ['workbuddy/hy3'], name: 'Local Quota Hub', slug: 'aigw' }])
+
+    expect(rows.map(row => row.name)).not.toContain('Local Quota Hub')
+    expect(rows.some(row => /quota hub/i.test(row.name))).toBe(false)
+  })
+
   it('replaces the hub with one row per connected software and keeps the real routing slug', () => {
     markConnected({ id: 'workbuddy', models: ['hy3'], name: 'WorkBuddy' })
 
