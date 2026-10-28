@@ -49,20 +49,32 @@ class OpenCodeACPProfile(ProviderProfile):
                 command = ""
         if not command:
             return None
+        raw_ids: list[str] = []
+        # Preferred: ask the agent itself. opencode v2.0.32 has no `models` subcommand
+        # (measured 2026-10-28), but `session/new` answers with `configOptions`, whose
+        # `model` entry lists every id it accepts — free and paid alike.
         try:
-            done = subprocess.run(
-                [command, "models"],
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=max(2.0, float(timeout)),
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        if done.returncode != 0:
-            return None
+            from agent.copilot_acp_client import acp_model_catalog
+
+            raw_ids = acp_model_catalog(command, ["acp"], cwd=os.getcwd(), timeout=max(10.0, float(timeout) * 4))
+        except Exception:  # noqa: BLE001 - the legacy path below is the fallback
+            raw_ids = []
+        if not raw_ids:
+            try:
+                done = subprocess.run(
+                    [command, "models"],
+                    capture_output=True,
+                    text=True,
+                    errors="replace",
+                    timeout=max(2.0, float(timeout)),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+            if done.returncode != 0:
+                return None
+            raw_ids = list((done.stdout or "").splitlines())
         ids: list[str] = []
-        for line in (done.stdout or "").splitlines():
+        for line in raw_ids:
             model = line.strip()
             if not model:
                 continue
