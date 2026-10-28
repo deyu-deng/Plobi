@@ -6,6 +6,7 @@ export type ExpertRun = {
   messages: number
   model: string
   parent_session_id: string
+  role?: string
   started_at: number
   status: 'done' | 'running'
   tool_calls: number
@@ -51,6 +52,7 @@ export function elapsedText(expert: ExpertRun, now = Date.now()): string {
   }
 
   const seconds = Math.max(0, Math.round(now / 1000 - expert.started_at))
+
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 

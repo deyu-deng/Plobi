@@ -2380,6 +2380,7 @@ def delegate_task(
     role: Optional[str] = None,
     background: Optional[bool] = None,
     parent_agent=None,
+    toolsets: Optional[List[str]] = None,
 ) -> str:
     """
     Spawn one or more child agents to handle delegated tasks.
@@ -2522,9 +2523,9 @@ def delegate_task(
                 task_index=i,
                 goal=t["goal"],
                 context=t.get("context"),
-                # Subagents always inherit the parent's toolsets; the model
-                # cannot choose or narrow them (no model-facing toolsets arg).
-                toolsets=None,
+                # 默认继承父的工具面；「专家」那一族会给角色自己的一层（只取交集，
+                # 子智能体永远拿不到父没有的工具）。模型没有这个参数。
+                toolsets=t.get("toolsets") or toolsets,
                 model=creds["model"],
                 max_iterations=effective_max_iter,
                 task_count=n_tasks,
@@ -2799,6 +2800,14 @@ def delegate_task(
                 logger.debug("Subagent cost rollup failed", exc_info=True)
 
         total_duration = round(time.monotonic() - overall_start, 2)
+
+        # 给每条结果带上它自己的子会话号：左栏「专家」那一格/角色侧记都靠它。
+        for entry in results:
+            index = entry.get("task_index")
+            if isinstance(index, int) and 0 <= index < len(children):
+                entry.setdefault(
+                    "child_session_id", getattr(children[index][2], "session_id", "") or ""
+                )
 
         return {
             "results": results,

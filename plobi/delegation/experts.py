@@ -48,6 +48,20 @@ def _first_user_text(con: sqlite3.Connection, session_id: str) -> str:
     return str(row[0]).strip() if row else ""
 
 
+def _role_of(session_id: str) -> str:
+    """这一趟派的是哪类专家（`tools/expert_tools.py` 在派完时写下的侧记）。"""
+    try:
+        from tools.expert_tools import experts_dir
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        payload = json.loads((experts_dir() / f"{session_id}.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    role = payload.get("role") if isinstance(payload, dict) else ""
+    return str(role or "").strip()
+
+
 def _live_by_child_session() -> dict[str, dict[str, Any]]:
     try:
         from tools.delegate_tool import list_active_subagents
@@ -102,6 +116,7 @@ def experts_for_agent(agent_name: str, *, limit: int = 50) -> dict[str, Any]:
                 "model": str(record.get("model") or model or ""),
                 "parent_session_id": str(parent or ""),
                 "started_at": float(started or 0),
+                "role": _role_of(sid),
                 "status": "running" if record else "done",
                 "tool_calls": int(record.get("tool_count") or tools or 0),
             })

@@ -53,6 +53,13 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
   const experts = data?.experts ?? []
   const running = experts.filter(expert => expert.status === 'running').length
 
+  const roleLabels: Record<string, string> = {
+    browser: c.expertRoleBrowser,
+    computer: c.expertRoleComputer,
+    file: c.expertRoleFile,
+    software: c.expertRoleSoftware
+  }
+
   return (
     <div className="flex flex-col gap-px">
       <span className="flex items-center gap-1 px-1 text-[0.7rem] uppercase text-(--ui-text-tertiary)">
@@ -90,6 +97,11 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
               expert.status === 'running' ? 'animate-pulse bg-(--ui-accent)' : 'bg-(--ui-stroke-tertiary)'
             )}
           />
+          {expert.role && (
+            <span className="shrink-0 rounded bg-(--ui-bg-secondary) px-1 text-[0.6rem] text-(--ui-text-tertiary)">
+              {roleLabels[expert.role] ?? expert.role}
+            </span>
+          )}
           <span className="min-w-0 flex-1 truncate text-[0.75rem]">{goalLine(expert)}</span>
           <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
             {elapsedText(expert)}
