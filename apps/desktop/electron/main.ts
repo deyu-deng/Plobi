@@ -10196,6 +10196,8 @@ async function fetchAuthCatalog(): Promise<
     name: string
     kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
     live: boolean
+    /** Has the user signed in? `live` can still be false when the egress node is down. */
+    signed_in: boolean
     installed: boolean
     reason: string
     login_reason: string
@@ -10224,6 +10226,7 @@ async function fetchAuthCatalog(): Promise<
       name: String(row.name ?? row.id ?? ''),
       kind: (String(row.kind ?? 'none') as 'none' | 'local_session' | 'cli_login' | 'oauth'),
       live: Boolean(row.live),
+      signed_in: row.signed_in === undefined ? Boolean(row.live) : Boolean(row.signed_in),
       installed: row.installed === undefined ? Boolean(row.live) : Boolean(row.installed),
       reason: String(row.reason ?? ''),
       login_reason: String(row.login_reason ?? ''),
