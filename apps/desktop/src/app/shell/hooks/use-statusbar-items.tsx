@@ -15,6 +15,7 @@ import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusba
 import { cn } from '@/lib/utils'
 import { setGlobalYolo, setSessionYolo } from '@/lib/yolo-session'
 import { $agendaPendingCount } from '@/store/agenda'
+import { $mindPendingCount, setMindPendingOpen } from '@/store/mind-pending'
 import { $desktopBoot } from '@/store/boot'
 import {
   $activeSessionId,
@@ -117,6 +118,7 @@ export function useStatusbarItems({
   const turnStartedAt = useStore($turnStartedAt)
   const subagentsBySession = useStore($subagentsBySession)
   const agendaPendingCount = useStore($agendaPendingCount)
+  const mindPendingCount = useStore($mindPendingCount)
   const updateStatus = useStore($updateStatus)
   const updateApply = useStore($updateApply)
   const backendUpdateStatus = useStore($backendUpdateStatus)
@@ -414,11 +416,25 @@ export function useStatusbarItems({
         title: copy.openAgenda,
         to: AGENDA_ROUTE,
         variant: 'action'
+      },
+      {
+        // 写进脑之前要点的那一下（WP-MIND-PENDING-VISIBLE）：过去只有 CLI 看得见，
+        // 于是摘要每天进闸、六小时作废、没人点头。计数进状态栏，点开就是那一屏。
+        className: cn(mindPendingCount > 0 && 'text-amber-500 hover:text-amber-500'),
+        detail: mindPendingCount > 0 ? t.mindPending.count(mindPendingCount) : undefined,
+        icon: <Codicon name="book" size="0.75rem" />,
+        id: 'mind-pending',
+        label: t.mindPending.label,
+        onSelect: () => setMindPendingOpen(true),
+        title: t.mindPending.open,
+        variant: 'action'
       }
     ],
     [
       agendaPendingCount,
       agentsOpen,
+      mindPendingCount,
+      t,
       commandCenterOpen,
       copy,
       gatewayMenuContent,

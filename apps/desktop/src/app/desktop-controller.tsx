@@ -165,6 +165,7 @@ import { ModelMenuPanel } from './shell/model-menu-panel'
 import type { StatusbarItem } from './shell/statusbar-controls'
 import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
+import { MindPendingOverlay } from '@/app/mind-pending-overlay'
 import { UpdatesOverlay } from './updates-overlay'
 
 const AgendaView = lazy(async () => ({ default: (await import('./agenda')).AgendaView }))
@@ -1638,6 +1639,7 @@ export function DesktopController() {
       <SessionPickerOverlay onResume={resumeSession} />
       <ModelVisibilityOverlay gateway={gatewayRef.current || undefined} onOpenProviders={openProviderSettings} />
       <UpdatesOverlay />
+      <MindPendingOverlay />
       <GatewayConnectingOverlay />
       <BootFailureOverlay />
       <CommandPalette />
