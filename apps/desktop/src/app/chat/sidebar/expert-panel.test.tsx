@@ -46,10 +46,10 @@ describe('ExpertPanel', () => {
     )
     render(<ExpertPanel agentId="Sindri" />)
 
-    expect(await screen.findByText('running 1')).toBeTruthy()
+    expect(await screen.findByText('1/2')).toBeTruthy()
     expect(screen.getByText('把三份资料折成一份汇总')).toBeTruthy()
     expect(screen.getByText('查一下这门课的作业')).toBeTruthy()
-    expect(screen.getByText('File')).toBeTruthy()
+    expect(screen.getByTitle('File')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /把三份资料折成一份汇总/ }))
 
@@ -74,10 +74,11 @@ describe('ExpertPanel', () => {
     }
   })
 
-  it('没派过就说一句，不画空壳', async () => {
+  it('没派过整格不出现，屏上不放解释句', async () => {
     api.mockResolvedValue({ ok: true, data: { experts: [], reason: '名册里 Sindri 还没有会话' } })
-    render(<ExpertPanel agentId="Sindri" />)
+    const { container } = render(<ExpertPanel agentId="Sindri" />)
 
-    await waitFor(() => expect(screen.getByText('名册里 Sindri 还没有会话')).toBeTruthy())
+    await waitFor(() => expect(api).toHaveBeenCalled())
+    await waitFor(() => expect(container.firstChild).toBeNull())
   })
 })

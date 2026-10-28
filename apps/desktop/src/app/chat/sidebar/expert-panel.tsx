@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 
+import { Codicon } from '@/components/ui/codicon'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
+import { SidebarSectionHeader } from './chrome'
 import { elapsedText, getAgentExperts, getExpertLog, goalLine, logLine } from './expert-runs'
 import type { ExpertLogMessage, ExpertRun, ExpertRunsData } from './expert-runs'
 
@@ -13,12 +15,14 @@ import type { ExpertLogMessage, ExpertRun, ExpertRunsData } from './expert-runs'
  *
  * 名单与日志都读同一个状态库：专家就是一条 `source=subagent` 的子会话，
  * 日志复用 `/api/sessions/:id/messages`。正在干的时候每 3.5 秒自读。
+ * 没派过整格就不出现——屏上不放句子。
  */
 export function ExpertPanel({ agentId }: { agentId: string }) {
   const { t } = useI18n()
   const c = t.console
   const [data, setData] = useState<null | ExpertRunsData>(null)
   const [open, setOpen] = useState<null | ExpertRun>(null)
+  const [show, setShow] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -36,7 +40,7 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
         })
         .catch(() => {
           if (!cancelled && first) {
-            setData({ experts: [], reason: c.expertsLoadFailed })
+            setData({ experts: [] })
           }
         })
     }
@@ -48,74 +52,85 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
       cancelled = true
       clearInterval(timer)
     }
-  }, [agentId, c.expertsLoadFailed])
+  }, [agentId])
 
   const experts = data?.experts ?? []
-  const running = experts.filter(expert => expert.status === 'running').length
 
-  const roleLabels: Record<string, string> = {
-    browser: c.expertRoleBrowser,
-    computer: c.expertRoleComputer,
-    file: c.expertRoleFile,
-    software: c.expertRoleSoftware
+  if (experts.length === 0) {
+    return null
   }
+
+  const running = experts.filter(expert => expert.status === 'running').length
 
   return (
     <div className="flex flex-col gap-px">
-      <span className="flex items-center gap-1 px-1 text-[0.7rem] uppercase text-(--ui-text-tertiary)">
-        <span className="min-w-0 flex-1 truncate">{c.expertsTitle}</span>
-        {running > 0 && (
-          <span className="shrink-0 text-[0.62rem] font-normal normal-case text-(--ui-accent)">
-            {c.expertsRunning} {running}
-          </span>
-        )}
-      </span>
+      <SidebarSectionHeader
+        icon={<Codicon name="hubot" size="0.875rem" />}
+        label={c.expertsTitle}
+        meta={running > 0 ? `${running}/${experts.length}` : experts.length}
+        onToggle={() => setShow(value => !value)}
+        open={show}
+      />
 
-      {data === null && (
-        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-          {c.expertsLoading}
-        </div>
-      )}
-
-      {data !== null && experts.length === 0 && (
-        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-          {data.reason || c.expertsEmpty}
-        </div>
-      )}
-
-      {experts.map(expert => (
-        <button
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-(--ui-bg-secondary)"
-          key={expert.id}
-          onClick={() => setOpen(expert)}
-          title={expert.goal}
-          type="button"
-        >
-          <span
-            className={cn(
-              'size-1.5 shrink-0 rounded-full',
-              expert.status === 'running' ? 'animate-pulse bg-(--ui-accent)' : 'bg-(--ui-stroke-tertiary)'
-            )}
-          />
-          {expert.role && (
-            <span className="shrink-0 rounded bg-(--ui-bg-secondary) px-1 text-[0.6rem] text-(--ui-text-tertiary)">
-              {roleLabels[expert.role] ?? expert.role}
+      {show &&
+        experts.map(expert => (
+          <button
+            className="grid min-h-[1.625rem] grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md pl-2 pr-1 text-left hover:bg-(--ui-bg-secondary)"
+            key={expert.id}
+            onClick={() => setOpen(expert)}
+            title={expert.goal}
+            type="button"
+          >
+            <span
+              className={cn(
+                'size-1.5 rounded-full',
+                expert.status === 'running' ? 'animate-pulse bg-(--ui-accent)' : 'bg-(--ui-stroke-tertiary)'
+              )}
+            />
+            <RoleIcon role={expert.role} />
+            <span className="min-w-0 truncate text-[0.8125rem] leading-none text-(--ui-text-secondary)">
+              {goalLine(expert)}
             </span>
-          )}
-          <span className="min-w-0 flex-1 truncate text-[0.75rem]">{goalLine(expert)}</span>
-          <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
-            {elapsedText(expert)}
-            {expert.tool_calls > 0 ? ` · ${expert.tool_calls}` : ''}
-          </span>
-        </button>
-      ))}
+            <span className="flex items-center gap-1 text-[0.62rem] text-(--ui-text-quaternary)">
+              {expert.status === 'running' && elapsedText(expert)}
+              {expert.tool_calls > 0 && (
+                <span className="flex items-center gap-0.5">
+                  <Codicon name="tools" size="0.6875rem" />
+                  {expert.tool_calls}
+                </span>
+              )}
+            </span>
+          </button>
+        ))}
 
-      {open && <ExpertLog agentId={agentId} expert={open} onClose={() => setOpen(null)} />}
+      {open && <ExpertLog expert={open} onClose={() => setOpen(null)} />}
     </div>
   )
 }
 
-function ExpertLog({ agentId, expert, onClose }: { agentId: string; expert: ExpertRun; onClose: () => void }) {
+const ROLE_ICONS: Record<string, { icon: string, label: 'expertRoleBrowser' | 'expertRoleComputer' | 'expertRoleFile' | 'expertRoleSoftware' }> = {
+  browser: { icon: 'globe', label: 'expertRoleBrowser' },
+  computer: { icon: 'device-desktop', label: 'expertRoleComputer' },
+  file: { icon: 'file', label: 'expertRoleFile' },
+  software: { icon: 'terminal', label: 'expertRoleSoftware' }
+}
+
+function RoleIcon({ role }: { role?: string }) {
+  const { t } = useI18n()
+  const spec = role ? ROLE_ICONS[role] : undefined
+
+  if (!spec) {
+    return <span className="size-3.5" />
+  }
+
+  return (
+    <span className="grid size-3.5 place-items-center text-(--ui-text-tertiary)" title={t.console[spec.label]}>
+      <Codicon name={spec.icon} size="0.8125rem" />
+    </span>
+  )
+}
+
+function ExpertLog({ expert, onClose }: { expert: ExpertRun, onClose: () => void }) {
   const { t } = useI18n()
   const c = t.console
   const [messages, setMessages] = useState<null | ExpertLogMessage[]>(null)
@@ -148,22 +163,26 @@ function ExpertLog({ agentId, expert, onClose }: { agentId: string; expert: Expe
         clearInterval(timer)
       }
     }
-  }, [agentId, expert.id, expert.status, c.expertsLoadFailed])
+  }, [expert.id, expert.status, c.expertsLoadFailed])
+
+  // 第一条用户消息就是任务书本身；标题已经写着同一句话，不再在正文里占一大块。
+  const lines = (messages ?? []).slice(1)
+  const ready = messages !== null && lines.length === 0 && !error
 
   return (
     <Dialog onOpenChange={next => { if (!next) {onClose()} }} open>
-      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
+      <DialogContent className="flex max-h-[70vh] max-w-xl flex-col gap-2">
         <DialogHeader>
-          <DialogTitle className="truncate text-sm">{c.expertsLog}</DialogTitle>
-          <p className="truncate text-[0.72rem] text-(--ui-text-tertiary)">{goalLine(expert)}</p>
+          <DialogTitle className="truncate text-[0.8125rem]">{goalLine(expert)}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-h-[200px] flex-1 flex-col gap-1 overflow-y-auto py-1">
+        <div className="flex min-h-[160px] flex-1 flex-col gap-1 overflow-y-auto">
           {messages === null && !error && (
-            <span className="text-[0.75rem] text-(--ui-text-tertiary)">{c.expertsLoading}</span>
+            <span className="text-[0.72rem] text-(--ui-text-tertiary)">{c.expertsLoading}</span>
           )}
           {error && <span className="text-[0.72rem] text-(--ui-red)">{error}</span>}
-          {messages?.map((message, index) => {
+          {ready && <span className="text-[0.72rem] text-(--ui-text-tertiary)">{c.expertsEmpty}</span>}
+          {lines.map((message, index) => {
             const line = logLine(message)
 
             if (!line.text) {
@@ -173,12 +192,12 @@ function ExpertLog({ agentId, expert, onClose }: { agentId: string; expert: Expe
             return (
               <div
                 className={cn(
-                  'whitespace-pre-wrap rounded-md px-2 py-1 text-[0.74rem] leading-snug',
+                  'whitespace-pre-wrap text-[0.74rem] leading-snug',
                   line.kind === 'tool'
                     ? 'font-mono text-[0.68rem] text-(--ui-text-quaternary)'
                     : message.role === 'user'
-                      ? 'self-end bg-(--ui-accent) text-(--ui-accent-foreground)'
-                      : 'self-start bg-(--ui-bg-secondary) text-(--ui-text)'
+                      ? 'text-(--ui-text-tertiary)'
+                      : 'text-(--ui-text)'
                 )}
                 key={`${message.role}-${index}`}
               >
