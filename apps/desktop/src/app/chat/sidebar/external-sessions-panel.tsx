@@ -104,7 +104,6 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
     <div className="flex flex-col gap-px">
       <SidebarSectionHeader
         collapsible={false}
-        icon={<Codicon name="comment-discussion" size="0.875rem" />}
         label={c.externalSessionsTitle}
         meta={related.length > 0 ? related.length : ''}
         onToggle={() => undefined}
