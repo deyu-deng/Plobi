@@ -23,6 +23,7 @@ import time
 import httpx
 
 from . import model_health
+from .providers.acp import AcpProvider
 from .providers.apps.antigravity import AntigravityCliProvider, AntigravityProvider
 from .providers.apps.claude_code import ClaudeCodeCliProvider
 from .providers.apps.cline import ClineCliProvider
@@ -119,8 +120,13 @@ class Registry:
         for name, pcfg in self.config.get("providers", {}).items():
             if not pcfg.get("enabled", True):
                 continue
-            cls = PROVIDER_CLASSES[name]
-            prov = cls(pcfg, self.http)
+            # `transport: acp` is the operator's switch for "this leg can take our tools
+            # through an ACP session" (see docs/tasks/quota-leg-tools-via-mcp-task.md).
+            # It stays a config decision: adding such a leg never means editing a table.
+            if str(pcfg.get("transport") or "").lower() == "acp":
+                prov = AcpProvider({**pcfg, "leg": name}, self.http)
+            else:
+                prov = PROVIDER_CLASSES[name](pcfg, self.http)
             await prov.discover_accounts()
             self.providers[name] = prov
             for m in prov.served_models:
