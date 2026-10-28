@@ -258,6 +258,38 @@ def start(port: int, *, home: str | Path | None = None, timeout: float = 6.0) ->
     return False, "PAC 服务起来了但没应答（pid %d，日志 %s）" % (proc.pid, log_path)
 
 
+def _terminate_tree(proc: Any, psutil: Any) -> list:
+    """Kill the recorded process **and its children**.
+
+    On Windows a venv's ``python.exe`` is a launcher that re-execs the base
+    interpreter as a child, so the pid we recorded is not the one holding the
+    port (measured 10-26: pid 37696 → child 37736 owned :7896).  Terminating only
+    the parent leaves a server behind that nothing can stop.
+    """
+    family = []
+    try:
+        family = proc.children(recursive=True)
+    except Exception:
+        family = []
+    family = family + [proc]
+    for p in family:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    try:
+        psutil.wait_procs(family, timeout=3)
+    except Exception:
+        pass
+    for p in family:
+        try:
+            if p.is_running():
+                p.kill()
+        except Exception:
+            pass
+    return family
+
+
 def stop(*, home: str | Path | None = None) -> tuple[bool, str]:
     """Stop the PAC server we started — and only that one."""
     record = _read_record(home)
@@ -270,16 +302,22 @@ def stop(*, home: str | Path | None = None) -> tuple[bool, str]:
     try:
         import psutil
         proc = psutil.Process(record["pid"])
-        proc.terminate()
-        try:
-            proc.wait(timeout=3)
-        except Exception:
-            proc.kill()
+        family = _terminate_tree(proc, psutil)
     except Exception as exc:  # already gone counts as stopped
         _clear_record(home=home)
         return True, "PAC 服务本来就不在了（%s）" % type(exc).__name__
     _clear_record(home=home)
-    return True, "已停掉 PAC 服务（pid %d）" % record["pid"]
+    port = record.get("port")
+    if isinstance(port, int) and port:
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            alive, _ = health(port, timeout=0.3)
+            if not alive:
+                return True, "已停掉 PAC 服务（pid %d，共 %d 个进程）" % (record["pid"], len(family))
+            time.sleep(0.15)
+        return False, "已杀 pid %d 及其 %d 个子进程，但 %d 上还有东西在应答——去查是谁" % (
+            record["pid"], len(family) - 1, port)
+    return True, "已停掉 PAC 服务（pid %d，共 %d 个进程）" % (record["pid"], len(family))
 
 
 def status(port: int, *, home: str | Path | None = None) -> dict[str, Any]:

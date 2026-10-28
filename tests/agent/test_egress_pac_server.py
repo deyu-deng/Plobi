@@ -168,3 +168,45 @@ def test_the_pac_server_record_says_which_pid_is_ours(tmp_path, monkeypatch):
     ok, why = pac_server.stop(home=tmp_path)
     assert not ok and "不是我们的" in why, why
     assert pac_server._read_record(home=tmp_path) is None, "a stranger's pid must not be left in our record"
+
+
+def test_stopping_kills_the_children_too_because_the_venv_python_is_a_launcher():
+    """Measured 10-26: the recorded pid was a launcher and its child owned the port."""
+    order: list[tuple[str, int]] = []
+
+    class FakeProc:
+        def __init__(self, pid, kids=(), running=True, stubborn=False):
+            self.pid = pid
+            self._kids = list(kids)
+            self.running = running
+            self.stubborn = stubborn
+
+        def children(self, recursive=False):
+            return list(self._kids)
+
+        def terminate(self):
+            order.append(("terminate", self.pid))
+            if not self.stubborn:
+                self.running = False
+
+        def is_running(self):
+            return self.running
+
+        def kill(self):
+            order.append(("kill", self.pid))
+
+    child = FakeProc(2, stubborn=True)  # a child that ignores terminate
+    child2 = FakeProc(3, running=False)
+    parent = FakeProc(1, kids=(child, child2))
+
+    class FakePsutil:
+        @staticmethod
+        def wait_procs(procs, timeout=0):
+            return [], []
+
+    family = pac_server._terminate_tree(parent, FakePsutil)
+
+    assert [p.pid for p in family] == [2, 3, 1], "children first, then the launcher"
+    assert ("terminate", 3) in order and ("terminate", 1) in order
+    assert ("kill", 2) in order, "a child that survived terminate has to be killed"
+    assert ("kill", 1) not in order, order
