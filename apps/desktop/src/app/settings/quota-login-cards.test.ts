@@ -35,10 +35,10 @@ describe('buildLoginCards', () => {
   })
 
   it('an installed CLI nobody signed into still offers the plus', () => {
-    // Measured 2026-10-26: Gemini/Qwen are on PATH and not signed in; treating
+    // Measured 2026-10-26: Qwen is on PATH and not signed in; treating
     // "installed" as "connected" hid the only way in.
     const [card] = buildLoginCards([
-      row({ aggregate: false, id: 'gemini-cli', installed: true, live: false, name: 'Gemini CLI' })
+      row({ aggregate: false, id: 'qwen-cli', installed: true, live: false, name: 'Qwen Code' })
     ])
 
     expect(card.connectable).toBe(true)
@@ -91,7 +91,7 @@ describe('cardControl', () => {
   const cards = buildLoginCards([
     row({ id: 'antigravity', kind: 'oauth' }),
     row({ id: 'workbuddy', kind: 'local_session', live: true, name: 'CodeBuddy' }),
-    row({ aggregate: false, id: 'gemini-cli', kind: 'cli_login', live: true, name: 'Gemini CLI' })
+    row({ aggregate: false, id: 'qwen-cli', kind: 'cli_login', live: true, name: 'Qwen Code' })
   ])
 
   const [signedOut, signedIn, loginOnly]: LoginCard[] = cards

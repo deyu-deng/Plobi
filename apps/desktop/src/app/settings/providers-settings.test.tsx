@@ -190,7 +190,14 @@ const authRow = (id: string, over: Partial<AuthCatalogRow> = {}): AuthCatalogRow
   installed: true,
   kind: 'oauth',
   live: false,
-  name: id === 'workbuddy' ? 'CodeBuddy' : id === 'gemini-cli' ? 'Gemini CLI' : 'Antigravity',
+  name:
+    id === 'workbuddy'
+      ? 'CodeBuddy'
+      : id === 'qwen-cli'
+        ? 'Qwen Code'
+        : id === 'gemini_api'
+          ? 'Gemini CLI'
+          : 'Antigravity',
   reason: 'not signed in',
   ...over
 })
@@ -262,13 +269,24 @@ describe('Desktop Quotas cards are the hub catalog', () => {
   })
 
   it('gives a signed-in login-only CLI no control, because Plobi has nothing to toggle', async () => {
-    shell([authRow('gemini-cli', { aggregate: false, kind: 'cli_login', live: true, reason: 'signed in' })])
+    shell([authRow('qwen-cli', { aggregate: false, kind: 'cli_login', live: true, reason: 'signed in' })])
+
+    await renderDesktopQuotas()
+
+    expect(await screen.findByText('Qwen Code')).toBeTruthy()
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Configure' })).toHaveLength(0)
+  })
+
+  it('gives the Gemini leg a plus, because signing it in is a click and not a terminal', async () => {
+    // The shape this whole file exists to keep: `gemini_api` is a hub leg whose sign-in
+    // Plobi can start. It used to be a login-only row whose button opened a video.
+    shell([authRow('gemini_api', { kind: 'oauth', live: false })])
 
     await renderDesktopQuotas()
 
     expect(await screen.findByText('Gemini CLI')).toBeTruthy()
-    expect(screen.queryAllByRole('switch')).toHaveLength(0)
-    expect(screen.queryAllByRole('button', { name: 'Configure' })).toHaveLength(0)
+    expect(await screen.findByRole('button', { name: 'Configure' })).toBeTruthy()
   })
 
   it('shows no software names while the shell has not answered', async () => {

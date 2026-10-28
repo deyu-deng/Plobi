@@ -131,6 +131,10 @@ class CliProvider(Provider):
     login_args: tuple[str, ...] | None = None
     #: A person has to click through a window, so this is far looser than chat.
     login_timeout: float = 300.0
+    #: This CLI refuses its own login without a terminal (measured 2026-10-28:
+    #: `cline auth` → "interactive auth setup requires a TTY"). Those get a real window
+    #: instead of a pipe — see `authflow.LoginManager._run_console_login`.
+    login_tty: bool = False
     #: Agent CLIs (codex/claude/opencode/kiro/cline) can edit files; give them a
     #: private scratch directory instead of whatever tree the gateway was launched
     #: from. ``workspace`` config overrides the path.
@@ -164,6 +168,8 @@ class CliProvider(Provider):
         if "login_args" in config:
             self.login_args = tuple(str(a) for a in (config.get("login_args") or []))
         self.login_timeout = float(config.get("login_timeout", self.login_timeout))
+        if "login_tty" in config:
+            self.login_tty = bool(config.get("login_tty"))
         if config.get("models"):
             self.served_models = tuple(config["models"])
         self.binary_path: str | None = None
@@ -192,6 +198,7 @@ class CliProvider(Provider):
             "binary": self.binary,
             "argv": list(self.login_args),
             "timeout": self.login_timeout,
+            "tty": bool(self.login_tty),
             "name": self.display_name or self.name,
         }
 

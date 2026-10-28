@@ -26,7 +26,14 @@ def test_missing_client_pair_is_named_not_faked(home):
     assert account_store.client_credentials() == ("", "")
     with pytest.raises(RuntimeError) as exc:
         oa.build_auth_url("http://127.0.0.1:1234/callback")
-    assert "GOOGLE_CC_CLIENT_ID" in str(exc.value)
+    # Refusing is the contract; the wording is the other half. This sentence lands in the
+    # login session's `detail`, which the settings card shows — so it must not read like
+    # an instruction to open a terminal (user ruling 2026-10-26: 用户不接触命令行), and it
+    # must not name an environment variable as if that were the user's business.
+    message = str(exc.value)
+    assert "GOOGLE_CC_CLIENT_ID" not in message
+    assert "quota_hub auth" not in message
+    assert "客户端" in message
 
 
 def test_public_client_pair_is_extracted_from_an_installed_app(home, monkeypatch, tmp_path):

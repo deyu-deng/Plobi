@@ -71,8 +71,10 @@ class ClineCliProvider(CliProvider):
     model_map = {"cline/default": ""}
     # Verified from `cline auth --help` on this machine 2026-10-26:
     #   Usage: cline auth [options] [provider]
-    # Run with no provider argument it starts its own sign-in and prints the URL.
+    # Re-measured 2026-10-28: with a pipe it prints "interactive auth setup requires a
+    # TTY" and exits 1 — so this login needs a window, not a spawned pipe.
     login_args = ("auth",)
+    login_tty = True
 
     def parse_response(self, stdout: str, oai_req: dict) -> dict:
         text = _parse_cline_events(stdout)

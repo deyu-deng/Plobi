@@ -103,7 +103,7 @@ class AntigravityProvider(Provider):
         return {
             "kind": "oauth",
             "name": self.display_name,
-            "runner": lambda: _oauth.run_bootstrap(print_token=False),
+            "runner": lambda on_url=None: _oauth.run_bootstrap(print_token=False, on_url=on_url),
         }
 
     # Reverse / research path: tools+stream work when token is live.

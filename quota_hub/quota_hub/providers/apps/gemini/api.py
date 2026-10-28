@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -85,6 +86,15 @@ def read_credential() -> dict[str, Any] | None:
         "refresh_token": str(data.get("refresh_token") or ""),
         "expires_at": expires_at,
     }
+
+
+def _refreshable(data: dict[str, Any]) -> bool:
+    """Can we mint a new access token ourselves? Needs both halves of the CLI's own flow."""
+    if not str(data.get("refresh_token") or ""):
+        return False
+    from . import oauth as _oauth
+
+    return _oauth.discover_client() is not None
 
 
 def _functions(tools: Any) -> list[dict[str, Any]]:
@@ -198,15 +208,26 @@ class GeminiApiProvider(Provider):
 
     # --- presence / credential -------------------------------------------
     def present(self) -> bool:
-        return read_credential() is not None
+        """This leg is on the machine when its CLI is — a credential is the *next* step.
+
+        Conflating the two hid the card entirely on a machine with `gemini` installed and
+        nobody signed in yet (`present()` gated the settings list, `credential_health()`
+        was already the thing that said "not signed in"). The scan result decides what
+        appears; only a verdict the user can act on decides what stays out of the picker.
+        """
+        if read_credential() is not None:
+            return True
+        return shutil.which(str(self.config.get("binary", "gemini"))) is not None
 
     def login_plan(self) -> dict:
+        # Plobi runs the CLI's own Google consent, because the CLI's own login cannot be
+        # driven from a button (its argv is measured dead in `oauth.py`'s module header).
+        from . import oauth as _oauth
+
         return {
-            "kind": "cli_login",
-            "binary": self.config.get("binary", "gemini"),
-            "argv": list(self.config.get("login_args", ["--version"])),
-            "timeout": float(self.config.get("login_timeout", 300.0)),
+            "kind": "oauth",
             "name": self.display_name,
+            "runner": lambda on_url=None: _oauth.run_login(on_url=on_url),
         }
 
     def credential_health(self) -> tuple[bool, str]:
@@ -218,7 +239,11 @@ class GeminiApiProvider(Provider):
         if self.proxy_reason != "ok":
             return False, self.proxy_reason
         expires = float(data.get("expires_at") or 0.0)
-        if expires and expires <= time.time():
+        if expires and expires <= time.time() and not _refreshable(data):
+            # A short-lived access token is not a dead leg: the CLI's own credential
+            # carries a refresh token, and `ensure_fresh()` mints a new access token with
+            # it. Saying "expired" here would drop a working model out of the picker an
+            # hour after he signed in — the exact thing he ruled out for the next restart.
             return False, "credential_expired"
         return True, "ok"
 
@@ -276,8 +301,18 @@ class GeminiApiProvider(Provider):
         return self.accounts
 
     async def ensure_fresh(self, acc: Account) -> None:
-        if acc.cred.is_expired():
-            raise UpstreamError(401, "gemini credential expired — sign in again with `gemini`", reauth=True)
+        if not acc.cred.is_expired():
+            return
+        from . import oauth as _oauth
+
+        if _oauth.refresh_credential():
+            data = read_credential() or {}
+            acc.cred.access_token = str(data.get("access_token") or acc.cred.access_token)
+            acc.cred.expires_at = float(data.get("expires_at") or 0.0)
+            if data.get("refresh_token"):
+                acc.cred.refresh_token = str(data["refresh_token"])
+            return
+        raise UpstreamError(401, "gemini 这条腿的登录已经用不动了，需要在设置里重新点一次", reauth=True)
 
     # --- the turn ----------------------------------------------------------
     def _payload(self, oai_req: dict) -> dict[str, Any]:

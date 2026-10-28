@@ -394,7 +394,7 @@ async def plobi_auth_start(app_id: str, authorization: str = Header(None)):
     reg = STATE.get("reg")
     plan = authflow.login_plan_for(reg, app_id)
     plan["on_success"] = lambda: _recheck_after_login(app_id)
-    session = await authflow.MANAGER.start(app_id, plan)
+    session = await authflow.MANAGER.start(app_id, plan, settle=2.0)
     return session.as_dict()
 
 

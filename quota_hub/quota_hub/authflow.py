@@ -26,18 +26,63 @@ Two kinds of row come out of this:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import shutil
+import subprocess
+import sys
 import time
+import urllib.parse
 import webbrowser
 
 from . import login_ledger
 
-# A login URL, as CLIs actually print it. Trailing punctuation a sentence ends with
-# is dropped below rather than here: `https://example.com/login.` must not lose its
-# last path character to a period that is part of the sentence.
+# A login URL, as CLIs actually print it — and *only* a login URL. Measured 2026-10-28:
+# a CLI whose argv we guessed wrong prints its own usage text, and that text contains a
+# URL (the YouTube link in `--yolo`'s help line). The hub scraped it and opened his
+# browser on a video, which is what "点击登录不跳转，跳转的是 YouTube" was. So a printed
+# URL counts only when it reads like a sign-in endpoint.
 _URL_RE = re.compile(r"https?://[^\s<>'\"]+")
+_SIGNIN_HINTS = (
+    "oauth", "authorize", "consent", "signin", "sign-in", "/login", "client_id=",
+    "response_type=", "code_challenge=", "/sso", "device", "/auth",
+)
+
+
+def _looks_like_sign_in(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    # A loopback URL is the CLI's own callback page — opening it is how a code gets lost.
+    if host in {"localhost"} or host.startswith("127.") or host.startswith("0.0.0.0"):
+        return False
+    haystack = f"{host}{parsed.path}?{parsed.query}"
+    return any(hint in haystack for hint in _SIGNIN_HINTS)
+
+
+def sign_in_url(text: str) -> str:
+    """The first URL in this line that a browser should open, or ''."""
+    for match in _URL_RE.finditer(text):
+        url = _trim_url(match.group(0))
+        if _looks_like_sign_in(url):
+            return url
+    return ""
+
+
+#: What the CLI's own words mean when a login command refuses because it is *already*
+#: signed in. That is a success for us — the credential exists, which is the whole
+#: question `credential_health()` asks. Measured 2026-10-28 on `kiro-cli login`.
+_ALREADY_SIGNED_IN = ("already logged in", "already signed in", "already authenticated")
+
+
+def _says_already_signed_in(lines: list[str]) -> bool:
+    joined = " ".join(lines).lower()
+    return any(phrase in joined for phrase in _ALREADY_SIGNED_IN)
 
 #: Legs with no hub provider, listed by the binary the user already installed and the
 #: argv that starts its sign-in. Verified on this machine 2026-10-26 from each CLI's
@@ -49,20 +94,19 @@ _URL_RE = re.compile(r"https?://[^\s<>'\"]+")
 #: declared here either: an unverified argv would open a browser to the wrong thing
 #: and read as a working button.
 LOGIN_ONLY_TARGETS: dict[str, dict] = {
-    "gemini-cli": {
-        "name": "Gemini CLI",
-        "binary": "gemini",
-        # `gemini` has no `auth`/`login` subcommand (verified from --help): its first
-        # interactive run performs the Google sign-in and opens the browser itself.
-        # `--reauth` forces that path again.
-        "argv": ["--reauth"],
-    },
     "qwen-cli": {
         "name": "Qwen Code",
         "binary": "qwen",
         # qwen's OAuth tier is selected by auth type; `qwen auth` is marked removed.
+        # Measured 2026-10-28: with a pipe instead of a terminal this prints a warning
+        # and quits, so it needs a real window — `tty` below.
         "argv": ["--auth-type=qwen-oauth"],
+        "tty": True,
     },
+    # Gemini used to sit here with `--reauth`. That flag does not exist in the installed
+    # 0.65.0 (verified: usage text, exit 41), and the leg is now driven by the registry's
+    # own `gemini_api` provider, which runs the CLI's Google consent directly. A product
+    # gets one card, and a card gets one verified command.
 }
 
 
@@ -140,8 +184,15 @@ class LoginManager:
     def status(self) -> dict:
         return {app: s.as_dict() for app, s in self._sessions.items()}
 
-    async def start(self, app_id: str, plan: dict) -> LoginSession:
-        """Begin (or reuse) a sign-in. Never two at once for the same leg."""
+    async def start(self, app_id: str, plan: dict, *, settle: float = 0.0) -> LoginSession:
+        """Begin (or reuse) a sign-in. Never two at once for the same leg.
+
+        `settle` is how long the caller may wait for the first thing the click was for:
+        the URL to open, or a verdict. A browser hand-off that has not appeared 2 s after
+        the button is not going to appear soon, and the desktop's own poll picks the row
+        up anyway — but a click that returns before the URL exists is a click that looks
+        dead, which is the complaint this answers.
+        """
         current = self._sessions.get(app_id)
         if current and current.state == "pending":
             return current
@@ -165,7 +216,19 @@ class LoginManager:
             session.detail = plan.get("reason") or "这一条腿还没有接上点一下就能登录的路"
             session.finished_at = time.time()
 
+        if settle > 0 and session.task is not None:
+            await self._settle(session, settle)
         return session
+
+    async def _settle(self, session: LoginSession, timeout: float) -> None:
+        """Poll one session until it has a URL, a verdict, or the wait is over."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if session.url or session.state != "pending" or session.task is None:
+                return
+            if session.task.done():
+                return
+            await asyncio.sleep(0.05)
 
     async def _run_cli_login(self, session: LoginSession, plan: dict) -> None:
         binary = _resolve_binary(plan.get("binary", ""))
@@ -181,6 +244,14 @@ class LoginManager:
         argv = [binary, *[str(a) for a in plan.get("argv") or []]]
         log = logging.getLogger("quota_hub")
         log.info("login start: %s (state stays token-free)", session.app_id)
+
+        if plan.get("tty"):
+            # Some CLIs refuse their own login without a terminal (`cline auth` says so in
+            # words: "interactive auth setup requires a TTY"). A pipe is therefore not a
+            # login path for them. Give the child a real window instead: it runs its own
+            # sign-in, opens its own browser, and we still get its exit code — the one
+            # piece of evidence the ledger is allowed to keep.
+            return await self._run_console_login(session, argv, plan)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -210,16 +281,16 @@ class LoginManager:
                 tail.append(text)
                 del tail[:-30]
                 if not opened:
-                    match = _URL_RE.search(text)
-                    if match:
-                        session.url = _trim_url(match.group(0))
+                    url = sign_in_url(text)
+                    if url:
+                        session.url = url
                         opened = True
                         # Opening a browser is UI, not I/O we should await on; a CLI
                         # that also opens its own browser makes this a harmless no-op.
                         try:
                             await asyncio.to_thread(webbrowser.open, session.url)
                         except Exception as exc:  # noqa: BLE001
-                            log.warning("login: could not open %s: %s", session.url, exc)
+                            log.warning("login: could not open %s: %s", url, exc)
 
         timeout = float(plan.get("timeout", 300.0))
         try:
@@ -251,9 +322,58 @@ class LoginManager:
         if proc.returncode == 0:
             session.state = "ok"
             session.detail = "登录命令自己跑完了；凭据归那个 CLI，我们没读也没存"
+        elif _says_already_signed_in(tail):
+            # The CLI's own verdict beats its exit code here: it refused to sign in again
+            # because it is signed in, which is exactly what the card wanted to learn.
+            session.state = "ok"
+            session.detail = "它那边已经是登录状态，不用再来一次"
         else:
             session.state = "failed"
             session.detail = "；".join(tail[-2:])[:300] or f"登录命令退出码 {proc.returncode}"
+
+        await self._finish(session, plan)
+
+    async def _run_console_login(self, session: LoginSession, argv: list[str], plan: dict) -> None:
+        """Run a login command in its own window, for the CLIs that demand a terminal."""
+        timeout = float(plan.get("timeout", 300.0))
+        kwargs: dict = {"stdin": subprocess.DEVNULL}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+        else:
+            kwargs["start_new_session"] = True
+        try:
+            proc = await asyncio.create_subprocess_exec(*argv, **kwargs)
+        except (OSError, ValueError) as exc:
+            session.state = "failed"
+            session.detail = f"起不动它的登录窗口：{type(exc).__name__}: {exc}"
+            session.finished_at = time.time()
+            return
+
+        session.detail = "登录窗口已经打开，浏览器里那一步要本人走完"
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            session.state = "failed"
+            session.detail = f"登录在 {timeout:.0f}s 内没有完成"
+            session.finished_at = time.time()
+            return
+        except asyncio.CancelledError:
+            session.state = "failed"
+            session.detail = "登录过程被取消了（窗口被关掉）"
+            session.finished_at = time.time()
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            raise
+
+        session.finished_at = time.time()
+        if proc.returncode == 0:
+            session.state = "ok"
+            session.detail = "登录窗口里的命令自己跑完了；凭据归那个 CLI，我们没读也没存"
+        else:
+            session.state = "failed"
+            session.detail = "登录窗口里那一步没有走完"
 
         await self._finish(session, plan)
 
@@ -293,8 +413,22 @@ class LoginManager:
             session.detail = "这条腿声明了 oauth，但没有给出可执行的登录入口"
             session.finished_at = time.time()
             return
+
+        def record_url(url: str) -> None:
+            session.url = url
+            # The hub is a detached child process; its own `webbrowser` may not resolve a
+            # browser at all. Recording the URL is what lets the desktop shell — which
+            # does own the browser — open it, and what lets a re-click show the link.
+            logging.getLogger("quota_hub").info("login %s: consent url recorded", app_id)
+
         try:
-            await asyncio.to_thread(runner)
+            # A runner that can hand the URL over gets told where to put it; the older
+            # ones (Antigravity's bootstrap) take no argument and open the browser
+            # themselves, which is the behaviour their own tests pin.
+            if "on_url" in inspect.signature(runner).parameters:
+                await asyncio.to_thread(runner, on_url=record_url)
+            else:
+                await asyncio.to_thread(runner)
             session.state = "ok"
             session.detail = "浏览器里那一步已经走完"
         except asyncio.CancelledError:
@@ -331,6 +465,7 @@ def login_plan_for(registry, app_id: str) -> dict:
             "name": entry.pop("name", key),
             "binary": entry.pop("binary", key),
             "argv": entry.pop("argv", []),
+            "tty": bool(entry.pop("tty", False)),
             "source": "login-only",
         }
 

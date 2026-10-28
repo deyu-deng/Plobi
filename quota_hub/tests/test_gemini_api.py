@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import types
 
 import httpx
 import pytest
@@ -133,22 +134,62 @@ def test_plain_text_stays_plain_text(tmp_path, monkeypatch):
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_no_credential_file_means_no_card_and_no_models(tmp_path, monkeypatch):
+def test_no_credential_but_the_cli_installed_still_gets_its_card(tmp_path, monkeypatch):
+    """A leg the user can sign into by clicking is PRESENT, not absent.
+
+    Gating the card on the credential made the whole Gemini row disappear on a machine
+    that has `gemini` installed and nobody signed in yet — so the one button that could
+    have fixed it was not on screen. `present()` is the scan; `credential_health()` is
+    the verdict that keeps it out of the picker.
+    """
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, present=False))
+    monkeypatch.setattr("quota_hub.providers.apps.gemini.api.shutil", types.SimpleNamespace(which=lambda name: r"C:\fake\gemini.exe"))
 
     async def _go():
         async with _http({}) as http:
             prov = _leg(http)
-            assert prov.present() is False
+            assert prov.present() is True
             assert prov.credential_health() == (False, "no_desktop_credential")
+            assert prov.login_plan()["kind"] == "oauth"
             assert await prov.discover_accounts() == []
             assert prov.served_models == ()
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_an_expired_google_token_reports_expired(tmp_path, monkeypatch):
+def test_no_credential_and_no_cli_is_no_card_at_all(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, present=False))
+    monkeypatch.setattr("quota_hub.providers.apps.gemini.api.shutil", types.SimpleNamespace(which=lambda name: None))
+
+    async def _go():
+        async with _http({}) as http:
+            prov = _leg(http)
+            assert prov.present() is False
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_an_expired_token_with_a_way_to_refresh_it_is_still_a_live_leg(tmp_path, monkeypatch):
+    """An access token lives ~1h; the picker must not empty itself an hour after login.
+
+    He asked for a box that is right after a restart. Restarting an hour later used to
+    drop every Gemini model because the short-lived token had gone stale while the
+    refresh token — the CLI's own, the one `ensure_fresh()` uses — was still good.
+    """
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, expires_in=-60))
+    monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.discover_client", lambda: ("cid", "secret"))
+
+    async def _go():
+        async with _http({}) as http:
+            prov = _leg(http)
+            assert prov.credential_health() == (True, "ok")
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_an_expired_token_we_cannot_remint_reports_expired(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, expires_in=-60))
+    monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.discover_client", lambda: None)
 
     async def _go():
         async with _http({}) as http:
@@ -157,6 +198,37 @@ def test_an_expired_google_token_reports_expired(tmp_path, monkeypatch):
             assert await prov.discover_accounts() == []
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_ensure_fresh_mints_a_new_access_token_instead_of_failing_the_turn(tmp_path, monkeypatch):
+    from quota_hub.providers.base import UpstreamError
+
+    store = _store(tmp_path, expires_in=-60)
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", store)
+    monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.discover_client", lambda: ("cid", "secret"))
+    refreshed: list[bool] = []
+
+    def _fake_refresh():
+        refreshed.append(True)
+        data = {"access_token": "new-access", "refresh_token": "r",
+                "expiry_date": int((time.time() + 3600) * 1000)}
+        (tmp_path / "oauth_creds.json").write_text(json.dumps(data), encoding="utf-8")
+        return True
+
+    monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.refresh_credential", _fake_refresh)
+
+    async def _go():
+        async with _http({}) as http:
+            prov = _leg(http)
+            acc = (await prov.discover_accounts())[0]
+            acc.cred.expires_at = time.time() - 10
+            await prov.ensure_fresh(acc)
+            return acc
+
+    acc = asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    assert refreshed == [True]
+    assert acc.cred.access_token == "new-access"
+    assert not acc.cred.is_expired()
 
 
 def test_the_model_list_is_the_only_name_source(tmp_path, monkeypatch):

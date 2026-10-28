@@ -201,10 +201,223 @@ def test_catalog_lists_every_aggregated_leg_plus_the_login_only_targets():
     assert rows["antigravity"]["kind"] == "oauth"
     assert rows["antigravity"]["live"] is False
     assert rows["antigravity"]["reason"] == "credential_expired"
-    # The ACP legs Plobi drives but the hub does not aggregate still get a click.
-    assert {"gemini-cli", "qwen-cli"} <= set(rows)
-    assert rows["gemini-cli"]["aggregate"] is False
-    assert rows["gemini-cli"]["kind"] == "cli_login"
+    # The ACP/CLI legs Plobi drives but the hub does not aggregate still get a click.
+    assert "qwen-cli" in rows
+    assert rows["qwen-cli"]["aggregate"] is False
+    assert rows["qwen-cli"]["kind"] == "cli_login"
+    # Gemini is NOT a login-only row: it is a registry leg with its own sign-in plan, and
+    # `--reauth` was a guessed argv that opened his browser on a YouTube link instead.
+    assert "gemini-cli" not in rows
+
+
+def test_a_url_that_is_not_a_sign_in_page_is_never_opened(tmp_path, monkeypatch):
+    """Measured 2026-10-28: a wrong argv prints usage, and usage contains a URL.
+
+    `gemini --reauth` (which does not exist) answered with its own help, whose `--yolo`
+    line links to YouTube. The hub scraped that and opened it. So the scrape now has to
+    recognise a sign-in endpoint, not "the first http thing in the buffer".
+    """
+    opened: list[str] = []
+    monkeypatch.setattr(authflow.webbrowser, "open", lambda url: opened.append(url) or True)
+    body = (
+        "import sys\n"
+        "print('  -y, --yolo  Auto-approve all (see "
+        "https://www.youtube.com/watch?v=xvFZjo5PgG0 for details)')\n"
+        "print('  -h, --help  Show help')\n"
+        "sys.exit(41)\n"
+    )
+
+    session = _login(
+        "usage-only",
+        {"kind": "cli_login", "name": "Fake", "binary": sys.executable, "argv": [_script(tmp_path, body)]},
+    )
+
+    assert session.url == ""
+    assert opened == []
+    assert session.state == "failed"
+
+
+def test_the_sign_in_url_wins_even_when_other_urls_came_first(tmp_path, monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(authflow.webbrowser, "open", lambda url: opened.append(url) or True)
+    body = (
+        "import sys\n"
+        "print('docs at https://example.com/docs/getting-started')\n"
+        "print('sign in at https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=y')\n"
+        "sys.exit(0)\n"
+    )
+
+    session = _login(
+        "two-urls",
+        {"kind": "cli_login", "name": "Fake", "binary": sys.executable, "argv": [_script(tmp_path, body)]},
+    )
+
+    assert session.url == "https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=y"
+    assert opened == [session.url]
+
+
+def test_a_loopback_callback_page_is_not_something_to_open(tmp_path, monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr(authflow.webbrowser, "open", lambda url: opened.append(url) or True)
+    body = (
+        "import sys\n"
+        "print('listening on http://localhost:8085/oauth/callback')\n"
+        "print('sign in: https://sso.vendor.test/authorize?client_id=q')\n"
+        "sys.exit(0)\n"
+    )
+
+    session = _login(
+        "loopback",
+        {"kind": "cli_login", "name": "Fake", "binary": sys.executable, "argv": [_script(tmp_path, body)]},
+    )
+
+    assert session.url == "https://sso.vendor.test/authorize?client_id=q"
+
+
+def test_already_signed_in_words_are_a_success_not_a_failed_click(tmp_path, monkeypatch):
+    """`kiro-cli login` on a machine that IS signed in refuses, in words, and exits 1.
+
+    Reading that as a failure made a working leg keep offering the `+` — and put the CLI's
+    own "please run kiro-cli logout" sentence on the screen, which sends the user to a
+    command line. The CLI's verdict about its own state is the evidence we want.
+    """
+    monkeypatch.setattr(authflow.webbrowser, "open", lambda url: True)
+    body = (
+        "import sys\n"
+        "print('error: Already logged in, please logout with kiro-cli logout first', file=sys.stderr)\n"
+        "sys.exit(1)\n"
+    )
+
+    session = _login(
+        "kiro_cli",
+        {"kind": "cli_login", "name": "Kiro", "binary": sys.executable, "argv": [_script(tmp_path, body)]},
+    )
+
+    assert session.state == "ok", session.detail
+    assert "kiro-cli logout" not in session.detail
+
+
+def test_a_tty_plan_gets_a_real_window_instead_of_a_pipe(monkeypatch):
+    """Some CLIs refuse their login without a terminal (`cline auth`, measured 10-28).
+
+    The window is the fix, so the plan must actually ask for one: a new console on
+    Windows, a new session elsewhere, and no pipes pretending to be a login.
+    """
+    seen: dict = {}
+
+    class _Proc:
+        returncode = 0
+
+        async def wait(self):
+            return 0
+
+    async def _fake_exec(*argv, **kwargs):
+        seen["argv"] = argv
+        seen["kwargs"] = kwargs
+        return _Proc()
+
+    monkeypatch.setattr(authflow.asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\cline.exe")
+
+    session = _login(
+        "cline_cli",
+        {"kind": "cli_login", "name": "Cline", "binary": "cline", "argv": ["auth"], "tty": True},
+    )
+
+    assert session.state == "ok", session.detail
+    assert "stdout" not in seen["kwargs"]
+    if sys.platform == "win32":
+        assert seen["kwargs"]["creationflags"] == authflow.subprocess.CREATE_NEW_CONSOLE
+    else:
+        assert seen["kwargs"]["start_new_session"] is True
+
+
+def test_a_click_waits_for_the_url_it_is_supposed_to_return(tmp_path):
+    """The desktop opens what the POST hands back, so the POST must not outrun the CLI.
+
+    Measured 2026-10-28: `authViaHub` returned `pending` with an empty `url`, and the
+    settings view only re-reads the catalog once — so a leg that does print a sign-in
+    link still looked like a button that does nothing.
+    """
+    body = (
+        "import time, sys\n"
+        "time.sleep(0.2)\n"
+        "print('go to https://accounts.google.com/o/oauth2/v2/auth?client_id=q', flush=True)\n"
+        "time.sleep(0.4)\n"
+        "sys.exit(0)\n"
+    )
+    plan = {"kind": "cli_login", "name": "Slow", "binary": sys.executable, "argv": [_script(tmp_path, body)]}
+    manager = authflow.LoginManager()
+
+    async def _go():
+        # `start()` answers while the human still has the browser open, which is the whole
+        # point of the wait; the task is then joined like any other login.
+        session = await manager.start("slow-settle", plan, settle=2.0)
+        at_click = session.url
+        await manager.wait("slow-settle")
+        return at_click, session
+
+    at_click, session = asyncio.run(_go())
+
+    assert at_click == "https://accounts.google.com/o/oauth2/v2/auth?client_id=q"
+    assert session.state == "ok"
+
+
+def test_a_click_without_the_wait_still_returns_straight_away(tmp_path):
+    body = (
+        "import time, sys\n"
+        "time.sleep(0.5)\n"
+        "print('https://accounts.google.com/o/oauth2/v2/auth?client_id=q', flush=True)\n"
+        "sys.exit(0)\n"
+    )
+    plan = {"kind": "cli_login", "name": "Slow", "binary": sys.executable, "argv": [_script(tmp_path, body)]}
+    manager = authflow.LoginManager()
+
+    async def _go():
+        session = await manager.start("slow-nowait", plan)
+        at_click = session.url
+        await manager.wait("slow-nowait")
+        return at_click
+
+    assert asyncio.run(_go()) == ""
+
+
+def test_a_login_that_needs_no_browser_is_not_made_to_wait(tmp_path):
+    async def _go():
+        return await authflow.LoginManager().start(
+            "local", {"kind": "local_session", "name": "CodeBuddy"}, settle=5.0
+        )
+
+    session = asyncio.run(_go())
+
+    assert session.state == "ok"
+
+
+def test_an_oauth_runner_that_reports_its_url_leaves_the_browser_to_the_shell():
+    """The hub is a detached child; the desktop is the process that owns the browser."""
+    calls: list[object] = []
+
+    def _runner(on_url=None):
+        calls.append(on_url)
+        on_url("https://accounts.google.com/o/oauth2/v2/auth?client_id=x")
+
+    session = _login("antigravity", {"kind": "oauth", "name": "Antigravity", "runner": _runner})
+
+    assert session.state == "ok", session.detail
+    assert session.url == "https://accounts.google.com/o/oauth2/v2/auth?client_id=x"
+    assert callable(calls[0])
+
+
+def test_an_old_oauth_runner_takes_no_argument_and_still_works(monkeypatch):
+    ran: list[str] = []
+
+    def _legacy():
+        ran.append("ran")
+
+    session = _login("antigravity", {"kind": "oauth", "name": "Antigravity", "runner": _legacy})
+
+    assert session.state == "ok"
+    assert ran == ["ran"]
 
 
 def test_local_session_legs_answer_without_a_browser(tmp_path, monkeypatch):
@@ -269,10 +482,10 @@ def test_a_login_only_target_without_its_cli_is_omitted(monkeypatch):
 
 
 def test_an_installed_target_is_listed_as_not_signed_in(monkeypatch):
-    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\gemini.exe")
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\qwen.exe")
 
     rows = {row["id"]: row for row in authflow.auth_catalog(None)}
 
-    assert rows["gemini-cli"]["live"] is False
-    assert rows["gemini-cli"]["installed"] is True
-    assert "还没登录" in rows["gemini-cli"]["reason"]
+    assert rows["qwen-cli"]["live"] is False
+    assert rows["qwen-cli"]["installed"] is True
+    assert "还没登录" in rows["qwen-cli"]["reason"]

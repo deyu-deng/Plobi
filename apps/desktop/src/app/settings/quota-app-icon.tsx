@@ -33,11 +33,9 @@ const QUOTA_ICONS: Record<string, QuotaIconSpec> = {
   cline_cli: { Icon: SiCline, color: '#171412' },
   codex_cli: { color: '#10A37F' },
   cursor: { Icon: SiCursor, color: '#7B61FF' },
-  gemini_cli: { Icon: SiGooglegemini, color: '#4285F4' },
-  'gemini-cli': { Icon: SiGooglegemini, color: '#4285F4' },
+  gemini_api: { Icon: SiGooglegemini, color: '#4285F4' },
   kiro_cli: { color: '#FF9900' },
   opencode_cli: { Icon: SiOpencode, color: '#1B1D21' },
-  qwen_cli: { Icon: SiQwen, color: '#615CED' },
   'qwen-cli': { Icon: SiQwen, color: '#615CED' },
   workbuddy: { Icon: SiCodebuddy, color: '#0052D9' },
   workbuddy_api: { Icon: SiCodebuddy, color: '#0052D9' }

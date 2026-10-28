@@ -51,7 +51,7 @@ export const QUOTA_CARD_INTROS: Record<string, string> = {
   cline_cli: 'Cline 账号池额度',
   codex_cli: 'Codex 订阅额度',
   cursor: 'Cursor 订阅额度',
-  'gemini-cli': 'Gemini CLI 免费额度',
+  gemini_api: 'Gemini CLI 免费额度',
   kiro_cli: 'Kiro 订阅额度',
   opencode_cli: 'OpenCode 免费额度',
   'qwen-cli': 'Qwen Code 免费额度',
