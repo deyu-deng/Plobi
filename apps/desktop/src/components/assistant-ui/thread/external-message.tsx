@@ -6,6 +6,13 @@ import { Codicon } from '@/components/ui/codicon'
 import { type QuotedPreview, splitFilePointers } from '@/lib/chat-messages'
 import { cn } from '@/lib/utils'
 
+import {
+  MESSAGE_EXTERNAL_BUBBLE,
+  MESSAGE_ROW,
+  MESSAGE_SYSTEM_LINE,
+  MessageAvatar,
+  MessageByline,
+} from './message-shell'
 import { QuoteButton } from './quote-button'
 import { UserMessageText } from './user-message-text'
 
@@ -40,7 +47,7 @@ export const ExternalMessage: FC<{
         data-role="user"
         data-slot="aui_external-system"
       >
-        <div className="max-w-[min(86%,44rem)] px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/60">
+        <div className={MESSAGE_SYSTEM_LINE}>
           <UserMessageText className="wrap-anywhere" text={line} />
         </div>
       </div>
@@ -53,25 +60,19 @@ export const ExternalMessage: FC<{
       : undefined
 
   const label = speaker || (kind === 'cron' ? '定时任务' : 'Agent')
-  const letter = label.trim().slice(0, 1).toUpperCase()
   const accent = roster?.color || undefined
 
   return (
     <div
-      className="group/external flex w-full items-start justify-end gap-2 py-1"
+      className={`group/external ${MESSAGE_ROW}`}
       data-kind={kind}
       data-message-id={messageId}
       data-role="user"
       data-slot="aui_external-message"
     >
       <div className="flex min-w-0 max-w-[min(86%,44rem)] flex-col items-end">
-        <div className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)">{label}</div>
-        <div
-          className={cn(
-            'rounded-xl border border-border/65 bg-(--ui-chat-surface-background) px-3 py-2 text-left',
-            'text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95'
-          )}
-        >
+        <MessageByline label={label} />
+        <div className={MESSAGE_EXTERNAL_BUBBLE}>
           {quoted ? (
             <div className="mb-1 border-l-2 border-(--ui-stroke-tertiary) pl-2 text-[0.75rem] leading-5 text-(--ui-text-tertiary)">
               <span className="line-clamp-2">{quoted.text}</span>
@@ -100,20 +101,7 @@ export const ExternalMessage: FC<{
           text={quoted?.text ?? text}
         />
       </div>
-      <div
-        aria-hidden
-        className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) text-[10px] font-medium text-(--ui-text-secondary)"
-        style={accent ? { borderColor: accent, color: accent } : undefined}
-        title={label}
-      >
-        {kind === 'cron' ? (
-          <Codicon name="clock" size="0.75rem" />
-        ) : roster?.icon ? (
-          <Codicon name={roster.icon} size="0.75rem" />
-        ) : (
-          letter
-        )}
-      </div>
+      <MessageAvatar accent={accent} icon={kind === 'cron' ? 'clock' : roster?.icon} label={label} />
     </div>
   )
 }

@@ -4,6 +4,11 @@ import { type FC, type ReactNode, useCallback, useRef, useState } from 'react'
 import { DirectiveContent } from '@/components/assistant-ui/directive-text'
 import { askedByBadge, externalSenderOf, splitSpeakerPrefix } from '@/lib/chat-messages'
 import { ExternalMessage } from '@/components/assistant-ui/thread/external-message'
+import {
+  MESSAGE_BYLINE,
+  MESSAGE_MAX_WIDTH,
+  MESSAGE_OWNER_BUBBLE,
+} from '@/components/assistant-ui/thread/message-shell'
 import { QuoteButton } from '@/components/assistant-ui/thread/quote-button'
 import { messageAttachmentRefs, messageContentText } from '@/components/assistant-ui/thread/content'
 import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
@@ -56,7 +61,10 @@ export function StickyHumanMessageContainer({
 // so without the carve-out, clicking a stuck bubble drags the window instead of
 // opening the edit composer.
 export const USER_BUBBLE_BASE_CLASS =
-  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto rounded-xl border border-border/65 bg-(--dt-user-bubble) px-3 py-2 text-left [-webkit-app-region:no-drag]'
+  cn(
+    'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto [-webkit-app-region:no-drag]',
+    MESSAGE_OWNER_BUBBLE,
+  )
 
 export const USER_ACTION_ICON_BUTTON_CLASS =
   'grid place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
@@ -303,14 +311,14 @@ export const UserMessage: FC<{
         <ActionBarPrimitive.Root
           // 裁定 201：**外面来的都在右**——主人自己打的也属于「外面」，靠右并收窄；
           // 这屏 Agent 自己的回答留在左侧（纯文本）。宽度上限与外部气泡同一把尺。
-          className="relative ml-auto flex w-full max-w-[min(86%,44rem)] items-start justify-end gap-2 self-end"
+          className={`relative ml-auto flex w-full ${MESSAGE_MAX_WIDTH} items-start justify-end gap-2 self-end`}
           data-slot="aui_user-bubble-actions"
         >
           <div className="human-message-with-todos-wrapper flex min-w-0 flex-1 flex-col gap-0">
             <div className={cn('flex items-center gap-1', !showByline && 'h-0 overflow-visible')}>
               {showByline && (
                 <span
-                  className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)"
+                  className={MESSAGE_BYLINE}
                   data-slot="aui_user-asked-by"
                   title={askedBy?.raw || undefined}
                 >
