@@ -229,18 +229,35 @@ class AcpSession:
         await self.proc.stdin.drain()
 
     async def _read(self, timeout: float) -> dict[str, Any]:
+        """Next JSON-RPC message, skipping whatever else the CLI printed first.
+
+        Measured 2026-10-28 with `opencode`: a wrong subcommand (`--acp` instead of `acp`)
+        made it print its help text on stdout, and this client died on the first line.
+        A CLI that welcomes you with a banner is normal; a protocol client that treats a
+        banner as "the session is broken" is not. Non-JSON lines are logged and skipped,
+        bounded so a chatty process cannot spin here forever.
+        """
         if self.proc is None or self.proc.stdout is None:
             raise AcpError(f"{self.name} is not running")
-        try:
-            line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=timeout)
-        except asyncio.TimeoutError as exc:
-            raise AcpError(f"{self.name} did not answer within {timeout:.0f}s") from exc
-        if not line:
-            raise AcpError(f"{self.name} closed its stdout")
-        try:
-            return json.loads(line.decode("utf-8", "replace"))
-        except ValueError as exc:
-            raise AcpError(f"{self.name} sent a non-JSON line") from exc
+        deadline = time.monotonic() + timeout
+        skipped = 0
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise AcpError(f"{self.name} did not send a JSON-RPC message within {timeout:.0f}s")
+            try:
+                line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=left)
+            except asyncio.TimeoutError as exc:
+                raise AcpError(f"{self.name} did not answer within {timeout:.0f}s") from exc
+            if not line:
+                raise AcpError(f"{self.name} closed its stdout")
+            try:
+                return json.loads(line.decode("utf-8", "replace"))
+            except ValueError:
+                skipped += 1
+                log.debug("[acp:%s] non-JSON line skipped: %s", self.name, line[:120])
+                if skipped >= 400:
+                    raise AcpError(f"{self.name} never sent a JSON-RPC message ({skipped} non-JSON lines)")
 
     async def _request(self, method: str, params: dict[str, Any], *, timeout: float) -> dict[str, Any]:
         self._next_id += 1

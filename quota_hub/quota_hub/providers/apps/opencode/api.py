@@ -1,7 +1,7 @@
 """OpenCode Zen as an OpenAI-compatible leg — the Sub2API route (裁定 204).
 
 The rule the owner set on 2026-10-28: a `no_tools` leg is fixed by reading that product's
-**own** local credential and talking to its **own** HTTP API through `apicompat`, not by
+**own** local credential and talking to its **own** HTTP API, not by
 declaring the leg text-only. OpenCode is the first one that fits end to end, measured
 that day on this machine:
 

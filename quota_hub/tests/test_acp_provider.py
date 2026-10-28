@@ -137,3 +137,17 @@ def test_the_leg_is_pickable_only_once_its_sign_in_was_watched(tmp_path):
         assert rows["fake_acp/default"]["capabilities"]["tools"] is True
 
     _run(_go())
+
+
+def test_a_cli_that_greets_with_a_banner_is_not_a_broken_session(tmp_path):
+    """Measured 2026-10-28: `opencode --acp` (wrong subcommand) printed its help text on
+    stdout and this client died on the first line. A banner is normal; dying on it is not."""
+
+    async def _go():
+        sess = AcpSession(argv=[sys.executable, FAKE, "--banner"], cwd=str(tmp_path), name="fake")
+        await sess.start()
+        text = await sess.prompt("hi")
+        assert "hello from fake acp" in text
+        await sess.close()
+
+    _run(_go())

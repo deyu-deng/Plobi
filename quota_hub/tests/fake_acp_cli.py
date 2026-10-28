@@ -8,6 +8,7 @@ Modes (argv):
   --permission  asks the client for permission (our MCP tool option + a foreign one)
               before answering, and echoes which option was chosen.
   --silent    never answers session/prompt (the timeout path).
+  --banner    prints non-JSON lines before every message (a CLI that greets you).
 """
 
 import json
@@ -28,6 +29,10 @@ def update(kind, **extra):
 def main():
     pending_permission = None
     prompt_id = None
+    if MODE == "--banner":
+        sys.stdout.write("welcome to fake acp" + chr(10))
+        sys.stdout.write("(this line is not JSON)" + chr(10))
+        sys.stdout.flush()
     for line in sys.stdin:
         line = line.strip()
         if not line:
