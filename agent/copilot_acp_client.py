@@ -9,6 +9,7 @@ back into the minimal shape Plobi expects from an OpenAI client.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import queue
 import re
@@ -33,6 +34,8 @@ from tools.environments.local import plobi_subprocess_env
 
 ACP_MARKER_BASE_URL = "acp://copilot"
 ACP_MARKER_SCHEME = "acp://"
+
+logger = logging.getLogger("plobi.acp")
 #: ACP agents whose model ids are proven to need a "<namespace>/" prefix.
 _NAMESPACED_ACP_NAMESPACES = {"opencode"}
 _DEFAULT_TIMEOUT_SECONDS = 900.0
@@ -62,6 +65,111 @@ def _is_gh_copilot_deprecation_message(stderr_text: str) -> bool:
         return False
     return any(marker in lower for marker in _DEPRECATION_MARKERS)
 
+
+
+def acp_model_catalog(
+    command: str,
+    args: list[str] | None = None,
+    *,
+    cwd: str | None = None,
+    timeout: float = 25.0,
+) -> list[str]:
+    """Ask an agent for its **own** model catalog over ACP (裁定 204 第 5 条).
+
+    `opencode models` does not exist in opencode v2.0.32 (measured 2026-10-28: the CLI
+    offers `acp` / `api` / `mcp` / `run` / `service` only), so the seed list in the
+    provider profile was standing in for the real one. The session does expose it:
+    `session/new` answers with `configOptions`, and the entry whose id is ``model``
+    carries every id the agent will accept (41 on this machine, 9 of them free).
+
+    One short session, no prompt, nothing spent: initialize → session/new → read →
+    terminate. Returns [] on any failure — a catalog we cannot read is not a catalog.
+    """
+    if not command:
+        return []
+    argv = [command, *(args or ["acp"])]
+    env = {k: v for k, v in os.environ.items() if k in _MCP_CHILD_ENV}
+    proc: subprocess.Popen[str] | None = None
+    try:
+        proc = subprocess.Popen(
+            argv,
+            cwd=cwd or None,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        lines: "queue.Queue[str | None]" = queue.Queue()
+        stdout = proc.stdout
+        assert stdout is not None
+
+        def _pump() -> None:
+            try:
+                for line in stdout:
+                    lines.put(line)
+            except Exception:  # noqa: BLE001 - a dead pipe is a closed catalog
+                pass
+            finally:
+                lines.put(None)
+
+        import threading
+
+        threading.Thread(target=_pump, daemon=True).start()
+        deadline = time.monotonic() + timeout
+
+        def send(payload: dict[str, Any]) -> None:
+            assert proc is not None and proc.stdin is not None
+            proc.stdin.write(json.dumps(payload) + chr(10))
+            proc.stdin.flush()
+
+        def read_until(rid: int) -> dict[str, Any] | None:
+            while True:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return None
+                try:
+                    line = lines.get(timeout=left)
+                except queue.Empty:
+                    return None
+                if line is None:
+                    return None
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    continue  # a banner is not a protocol error
+                if msg.get("id") == rid and ("result" in msg or "error" in msg):
+                    return msg
+
+        send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1, "clientCapabilities": {}}})
+        if read_until(1) is None:
+            return []
+        # No tools here: listing models must not spawn the MCP server.
+        send({"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": cwd or os.getcwd(), "mcpServers": []}})
+        answer = read_until(2)
+        if answer is None or "error" in answer:
+            return []
+        options = (answer.get("result") or {}).get("configOptions") or []
+        for option in options:
+            if str(option.get("id") or "") != "model":
+                continue
+            return [str(v.get("value") or "") for v in (option.get("options") or []) if v.get("value")]
+        return []
+    except (OSError, ValueError):
+        return []
+    finally:
+        if proc is not None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except Exception:  # noqa: BLE001 - a leftover child must not fail a catalog read
+                try:
+                    proc.kill()
+                except Exception:  # noqa: BLE001
+                    pass
 
 def _resolve_command() -> str:
     return (
@@ -565,6 +673,8 @@ class CopilotACPClient:
         self._acp_cwd = str(Path(acp_cwd or os.getcwd()).resolve())
         self.chat = _ACPChatNamespace(self)
         self.is_closed = False
+        #: Tool-call updates seen on the last turn (工单 §5.4 的观测点).
+        self.last_tool_events: list[dict[str, Any]] = []
         self._active_process: subprocess.Popen[str] | None = None
         self._active_process_lock = threading.Lock()
 
@@ -709,7 +819,7 @@ class CopilotACPClient:
 
         next_id = 0
 
-        def _request(method: str, params: dict[str, Any], *, text_parts: list[str] | None = None, reasoning_parts: list[str] | None = None) -> Any:
+        def _request(method: str, params: dict[str, Any], *, text_parts: list[str] | None = None, reasoning_parts: list[str] | None = None, tool_events: list[dict[str, Any]] | None = None) -> Any:
             nonlocal next_id
             next_id += 1
             request_id = next_id
@@ -737,6 +847,7 @@ class CopilotACPClient:
                     cwd=self._acp_cwd,
                     text_parts=text_parts,
                     reasoning_parts=reasoning_parts,
+                    tool_events=tool_events,
                 ):
                     continue
 
@@ -846,6 +957,8 @@ class CopilotACPClient:
 
             text_parts: list[str] = []
             reasoning_parts: list[str] = []
+            tool_events: list[dict[str, Any]] = []
+            self.last_tool_events = tool_events
             _request(
                 "session/prompt",
                 {
@@ -859,7 +972,11 @@ class CopilotACPClient:
                 },
                 text_parts=text_parts,
                 reasoning_parts=reasoning_parts,
+                tool_events=tool_events,
             )
+            if tool_events:
+                # Observable on purpose: 工单 §5.4 的判据就是"工具真的回来了"。
+                logger.info("ACP turn carried %d tool call update(s)", len(tool_events))
             return "".join(text_parts), "".join(reasoning_parts)
         finally:
             self.close()
@@ -872,6 +989,7 @@ class CopilotACPClient:
         cwd: str,
         text_parts: list[str] | None,
         reasoning_parts: list[str] | None,
+        tool_events: list[dict[str, Any]] | None = None,
     ) -> bool:
         method = msg.get("method")
         if not isinstance(method, str):
@@ -889,6 +1007,18 @@ class CopilotACPClient:
                 text_parts.append(chunk_text)
             elif kind == "agent_thought_chunk" and chunk_text and reasoning_parts is not None:
                 reasoning_parts.append(chunk_text)
+            elif kind in {"tool_call", "tool_call_update"}:
+                # 工单 §6 点过名的第三种形状：既不处理也不吭声。工具往返正是靠这两种
+                # 更新证明的（CLI 在调**我们的** MCP 工具），丢掉它们等于让验收无从下手。
+                event = {
+                    "kind": kind,
+                    "id": str(update.get("toolCallId") or update.get("tool_call_id") or ""),
+                    "title": str(update.get("title") or ""),
+                    "status": str(update.get("status") or ""),
+                }
+                if tool_events is not None:
+                    tool_events.append(event)
+                logger.debug("ACP tool update: %s", event)
             return True
 
         if process.stdin is None:
