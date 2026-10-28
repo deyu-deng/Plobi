@@ -392,6 +392,13 @@ from plobi.mind.vault_api import router as _vault_router  # noqa: E402
 
 app.include_router(_vault_router, prefix="/api", tags=["vault"])
 
+# 待确认那批纸的读口/批口（WP-MIND-PENDING-VISIBLE，用户 10-27「先让它进人眼」）：
+# 摘要每天进闸、6 小时作废、只有 CLI 看得见 ⇒ 屏幕上得有一个数和一个面板。
+# 行为仍归 plobi_cli.write_approval_commands，这里只是把它接成 HTTP，不另写一遍 apply。
+from plobi.mind.pending_api import register_memory_pending_api  # noqa: E402
+
+register_memory_pending_api(app)
+
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
 # The desktop shell mints the token and injects it via
