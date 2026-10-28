@@ -9255,7 +9255,7 @@ async function ensureChatlogServer(): Promise<void> {
 
       if (polled.state === 'ready') {
         chatlogRespawn.reset()
-        reportDeferredSubsystem('chatlog', 'ready', `${chatlogLedgerRow(polled).body} (pid=${chatlogChild?.pid ?? '?'})`)
+        reportDeferredSubsystem('chatlog', 'ready', `${chatlogLedgerRow(polled).body}`)
         rememberLog('[sidecar] chatlog answering on :5030 after spawn')
         return
       }
@@ -9271,7 +9271,7 @@ async function ensureChatlogServer(): Promise<void> {
     // speculate "(WeChat login / CHATLOG_DATA_KEY?)" here).
     const last = await chatlogCollectorAnswer()
 
-    reportDeferredSubsystem('chatlog', 'red', `spawned ${exe} and it is still not reachable — collector says: ${chatlogLedgerRow(last).body}`)
+    reportDeferredSubsystem('chatlog', 'red', `微信采集服务启动后仍不可用：${chatlogLedgerRow(last).body}`)
     rememberLog(`[sidecar] chatlog spawned but red: ${chatlogLedgerRow(last).body}`)
   } catch (error) {
     // RED: a spawn that threw is a fault on a service we deliberately tried to
@@ -9627,7 +9627,7 @@ async function ensureProductAigw(): Promise<void> {
   })
 
   if (result.ok) {
-    reportDeferredSubsystem('aigw', 'ready', `healthy on :8000 (pid=${result.pid ?? '?'})`)
+    reportDeferredSubsystem('aigw', 'ready', `本地额度服务已就绪`)
     rememberLog(`[sidecar] product aigw ready on :8000 pid=${result.pid ?? '?'}`)
     // The hub just came up: derive + push its catalog so the model selector
     // populates itself. Fire-and-forget — a slow CLI discovery must not stall
@@ -9943,6 +9943,36 @@ function resolveSystemProxyEnv(): Record<string, string> {
   return out
 }
 
+// Self-heal budget for the local hub. Measured 2026-10-28 in the live desktop log:
+// `aigw product (8000) exited with code 1073807364`, and from then on every poll logged
+// "product quota catalog unavailable (TypeError: fetch failed)" — the picker had no
+// quota models until the whole app was restarted, because the exit handler only logged.
+// A hub that dies mid-run is a child process, not a product state: bring it back, at
+// most three times per ten minutes, and forget the budget once it answers healthz again.
+const AIGW_RESTART_WINDOW_MS = 10 * 60_000
+const AIGW_RESTART_MAX = 3
+const AIGW_RESTART_DELAY_MS = 5_000
+const aigwRestartBudget: Record<string, { count: number; first: number }> = {}
+
+function mayRestartAigw(appId: string): boolean {
+  const now = Date.now()
+  const slot = aigwRestartBudget[appId]
+
+  if (!slot || now - slot.first > AIGW_RESTART_WINDOW_MS) {
+    aigwRestartBudget[appId] = { count: 1, first: now }
+
+    return true
+  }
+
+  if (slot.count >= AIGW_RESTART_MAX) {
+    return false
+  }
+
+  slot.count += 1
+
+  return true
+}
+
 async function startAigwGateway(
   appId: string,
   configPath: string,
@@ -10005,6 +10035,29 @@ async function startAigwGateway(
   child.on('exit', (code: number | null) => {
     clearAigwChild(appId)
     logAigw(`aigw ${appId} (${opts.port}) exited with code ${code}`)
+
+    // Only the product hub carries the picker's quota models; a per-app gateway is
+    // started on demand by a click, and that click is its retry. Quitting means the
+    // child was supposed to die.
+    if (appId !== 'product' || isQuittingByUser || isQuittingForHandoff) {
+      return
+    }
+
+    if (!mayRestartAigw(appId)) {
+      logAigw(`aigw ${appId}: left down — ${AIGW_RESTART_MAX} restarts inside 10 min already`)
+
+      return
+    }
+
+    logAigw(`aigw ${appId}: restarting in ${AIGW_RESTART_DELAY_MS / 1000}s`)
+
+    setTimeout(() => {
+      void startAigwGateway(appId, configPath, extraEnv, opts).then(result => {
+        if (!result.ok) {
+          logAigw(`aigw ${appId}: restart failed — ${result.error ?? 'unknown'}`)
+        }
+      })
+    }, AIGW_RESTART_DELAY_MS)
   })
 
   setAigwChild(appId, child)
@@ -10020,6 +10073,9 @@ async function startAigwGateway(
       })
 
       if (res.ok) {
+        // It answers again: this is a fresh run, not a crash loop.
+        delete aigwRestartBudget[appId]
+
         return { ok: true, baseUrl, pid: child.pid ?? null }
       }
     } catch {
@@ -10225,6 +10281,7 @@ async function authViaHub(appId: string): Promise<{ ok: boolean; code?: string; 
   }
 }
 
+ipcMain.handle('plobi-auth:catalog', async () => fetchAuthCatalog())
 
 // Antigravity: Google OAuth (browser login) → persist composite refresh token →
 // start the token-based gateway on 8019.
