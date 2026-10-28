@@ -128,13 +128,14 @@ def probe_network(
     failed = [check for check in checks if not check["ok"]]
     if not proxy:
         advice = (
-            "没有检测到 HTTP(S)_PROXY。国内网络直连 Google 会超时；请打开代理软件的"
-            "「系统代理」开关，或设置 HTTPS_PROXY/ALL_PROXY 后再试。TUN 不是必需的。"
+            "没有可用的代理。国内网络直连 Google 会超时；给要访问 Google 的那几条腿单独配代理："
+            "`quota_hub/config.yaml` 的 `providers.<腿>.proxy`（或 `QUOTA_HUB_GEMINI_PROXY`），"
+            "填 `http://127.0.0.1:<端口>` 这类地址。只承载那条腿，不用开 TUN。"
         )
     else:
         advice = (
             f"代理 {proxy} 已配置，但 Google 端点连不上。请确认代理进程还在、端口正确，"
-            "并且浏览器也能打开 accounts.google.com。TUN 不是必需的。"
+            "并且浏览器也能打开 accounts.google.com。代理只作用于配了它的那条腿，不需要开 TUN。"
         )
     return {
         "ok": not failed,
