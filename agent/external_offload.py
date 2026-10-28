@@ -66,6 +66,24 @@ PROXY_ENV = "PLOBI_OFFLOAD_PROXY"
 AGENT_CODEBUDDY = "codebuddy"
 AGENT_AGY = "agy"
 AGENT_QODER = "qoder"
+#: 裁定 205：ACP 腿（工具在上游闭环执行、回来是文本）不进模型清单，归这一栏。
+#: 它们本来就在本机装好、也已登录过——外包这一栏才是它们该出现的地方。
+AGENT_OPENCODE = "opencode"
+AGENT_CLINE = "cline"
+AGENT_GEMINI = "gemini"
+CLINE_COMMAND_ENV = "PLOBI_OFFLOAD_CLINE_COMMAND"
+CLINE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_CLINE_EXTRA_ARGS"
+CLINE_YOLO_ENV = "PLOBI_OFFLOAD_CLINE_YOLO"
+GEMINI_COMMAND_ENV = "PLOBI_OFFLOAD_GEMINI_COMMAND"
+GEMINI_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_GEMINI_EXTRA_ARGS"
+GEMINI_YOLO_ENV = "PLOBI_OFFLOAD_GEMINI_YOLO"
+OPENCODE_COMMAND_ENV = "PLOBI_OFFLOAD_OPENCODE_COMMAND"
+OPENCODE_EXTRA_ARGS_ENV = "PLOBI_OFFLOAD_OPENCODE_EXTRA_ARGS"
+#: `opencode run --help` 现核（v2.0.32）：`--auto` = 自动批准未被显式拒绝的权限。
+OPENCODE_AUTO_ENV = "PLOBI_OFFLOAD_OPENCODE_AUTO"
+#: 这台机器上它住在便携目录、不在 PATH（`D:\_POLICY` 的 Portables 约定）；
+#: 别处没有这两个文件时 is_file() 为假，等价于没装。
+PORTABLES_FALLBACK = {"opencode": "D:/Portables/cli/opencode/opencode.exe"}
 
 #: Qoder CLI 那一家的结构性事实。命令名是 `qodercli`（`qoder` 那个垫片会先经过
 #: `~/.qoder/entry/qoder-dispatcher.ps1` 再回到 `qodercli`，两条都认，但表里只写一个真名）。
@@ -194,6 +212,29 @@ EXTERNAL_AGENTS: dict[str, ExternalAgentSpec] = {
         AGENT_AGY, "agy", AGY_COMMAND_ENV, AGY_EXTRA_ARGS_ENV,
         skip_flag=("--dangerously-skip-permissions",), skip_permissions_env=AGY_SKIP_ENV,
     ),
+    AGENT_CLINE: ExternalAgentSpec(
+        AGENT_CLINE, "cline", CLINE_COMMAND_ENV, CLINE_EXTRA_ARGS_ENV,
+        # 现核 v：`cline [options] [command] [prompt]`，提示词是位置参数，`--json` 出机器读的流，
+        # `-y/--yolo` 自动批准"有限的"工具集（厂商自己的措辞，别读成全放开）。
+        skip_flag=("-y",), skip_permissions_env=CLINE_YOLO_ENV,
+        artifact_required=False,
+        argv_template=("--json", "{flags}", "{extra}", "{task}"),
+    ),
+    AGENT_GEMINI: ExternalAgentSpec(
+        AGENT_GEMINI, "gemini", GEMINI_COMMAND_ENV, GEMINI_EXTRA_ARGS_ENV,
+        # 现核：`-p/--prompt` 才是非交互；不加它就是交互 CLI（会把子进程挂住）。
+        skip_flag=("-y",), skip_permissions_env=GEMINI_YOLO_ENV,
+        artifact_required=False,
+        argv_template=("-p", "{task}", "{flags}", "{extra}"),
+    ),
+    AGENT_OPENCODE: ExternalAgentSpec(
+        AGENT_OPENCODE, "opencode", OPENCODE_COMMAND_ENV, OPENCODE_EXTRA_ARGS_ENV,
+        # `run [flags] [<message...>]`：消息是变长位置参数，旗标必须排在它前面。
+        skip_flag=("--auto",), skip_permissions_env=OPENCODE_AUTO_ENV,
+        # 没测过它是否"exit 0 但没落盘"，所以不套那条判据（与 Qoder 同理）。
+        artifact_required=False,
+        argv_template=("run", "--format", "json", "{flags}", "{extra}", "{task}"),
+    ),
     AGENT_QODER: ExternalAgentSpec(
         AGENT_QODER, "qodercli", QODER_COMMAND_ENV, QODER_EXTRA_ARGS_ENV,
         permission_modes=QODER_PERMISSION_MODES,
@@ -218,6 +259,22 @@ def scrub_child_env(agent: str, env: dict[str, str]) -> dict[str, str]:
     return env
 
 
+def spawn_argv(argv: tuple[str, ...] | list[str]) -> list[str]:
+    """argv as the OS can actually start it.
+
+    Windows' CreateProcess only appends ``.exe``; an npm shim (`cline.cmd`, `gemini.cmd`)
+    fails there with "not a valid Win32 application". Wrap those in `cmd /c` — measured
+    2026-10-28 while moving these CLIs into the offload column, where their only
+    installed form *is* the shim.
+    """
+    parts = list(argv)
+    if not parts:
+        return parts
+    if os.name == "nt" and parts[0].lower().endswith((".cmd", ".bat")):
+        return [os.environ.get("COMSPEC") or "cmd.exe", "/c", *parts]
+    return parts
+
+
 def build_argv(agent: str, binary: str, task: str, flags: tuple[str, ...],
                extra: tuple[str, ...]) -> tuple[str, ...]:
     """按这一家登记的排法拼 argv（`{task}` / `{flags}` / `{extra}` 是模板位）。
@@ -239,7 +296,13 @@ def resolve_command(agent: str = AGENT_CODEBUDDY) -> str:
     override = os.environ.get(spec.command_env, "").strip()
     if override:
         return override
-    return _which_prefer_executable(spec.binary_name)
+    found = _which_prefer_executable(spec.binary_name)
+    if found:
+        return found
+    portable = PORTABLES_FALLBACK.get(spec.binary_name, "")
+    if portable and os.path.isfile(portable):
+        return portable
+    return ""
 
 
 #: 各厂商自己的「我登没登」探针。**列模型 / doctor 都比"看凭据目录非空"可靠**——
@@ -289,7 +352,7 @@ def probe_login(agent: str, *, timeout: float = LOGIN_PROBE_TIMEOUT_S) -> tuple[
         env.pop(key, None)
     try:
         finished = subprocess.run(  # noqa: S603 — argv is a fixed table above
-            [binary, *probe], cwd=tempfile.gettempdir(), env=env,
+            spawn_argv([binary, *probe]), cwd=tempfile.gettempdir(), env=env,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, errors="replace", timeout=timeout,
         )
@@ -842,7 +905,7 @@ def run_task(
     started = time.time()
     try:
         completed = subprocess.run(  # noqa: S603 — argv is built above from config
-            list(argv), cwd=str(workdir), env=env, stdin=subprocess.DEVNULL,
+            spawn_argv(argv), cwd=str(workdir), env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             errors="replace", timeout=timeout,
         )
