@@ -21,11 +21,15 @@ import asyncio
 import json
 import os
 import re
+import shutil
+import subprocess
+import time
 
 from ...base import Account
 from ...cli import CliProvider, _strip_ansi
 
 _HELP_TIMEOUT = 20.0
+_WHOAMI_TTL = 600.0
 
 # stdout is designed for a terminal; drop the frame/UI noise, keep the answer.
 _UI_LINE = re.compile(r"^\s*(?:[╭╰│─╮╯▔▁]|>\s)")
@@ -78,6 +82,47 @@ class KiroCliProvider(CliProvider):
     stream_from_chat = True
     served_models = ("kiro/default",)
     model_map = {"kiro/default": ""}
+    #: The CLI's own answer about its session. `kiro-cli login` refuses when already
+    #: signed in, so a click cannot be the only way to learn the truth.
+    whoami_argv = ("whoami",)
+
+    def credential_health(self) -> tuple[bool, str]:
+        live, reason = super().credential_health()
+        if live:
+            return True, "ok"
+        if self.signed_in_over_cli():
+            return True, "ok"
+        return False, reason
+
+    def signed_in_over_cli(self, ttl: float = _WHOAMI_TTL) -> bool:
+        """Ask the CLI whether it has a session, and remember the answer for a while.
+
+        Measured 2026-10-28: the owner IS signed into Kiro (`Logged in with GitHub`), but
+        `login_ledger` only records sign-ins *we* started — so the card told him to log in
+        and the picker hid a leg that works. The login ledger stays the stronger evidence;
+        this is a credential probe, not a guess: it reads the CLI's own verdict, spends no
+        quota, and keeps nothing it prints (the e-mail in that output is not stored).
+        """
+        now = time.time()
+        cached = getattr(self, "_whoami_seen", None)
+        if cached is not None and now - cached[0] < ttl:
+            return cached[1]
+        binary = self.binary_path or shutil.which(self.binary)
+        live = False
+        if binary:
+            try:
+                proc = subprocess.run(
+                    [binary, *self.whoami_argv],
+                    capture_output=True,
+                    text=True,
+                    timeout=8.0,
+                    env=dict(os.environ, **self.env_extra),
+                )
+                live = proc.returncode == 0 and proc.stdout.strip().lower().startswith("logged in")
+            except (OSError, subprocess.TimeoutExpired, ValueError):
+                live = False
+        self._whoami_seen = (now, live)
+        return live
 
     def parse_response(self, stdout: str, oai_req: dict) -> dict:
         text = _clean_kiro_stdout(stdout)
