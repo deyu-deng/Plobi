@@ -172,3 +172,28 @@ def test_both_documented_key_names_are_accepted(tmp_path, monkeypatch, field):
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(path))
 
     assert (read_credential() or {}).get("access_token") == "tok"
+
+
+def test_the_leg_takes_its_own_proxy_and_nothing_else_does(monkeypatch, tmp_path):
+    """裁定 206 的落地：Google 系那条腿单独挂代理，不用 TUN、也不动全局 trust_env。"""
+    import quota_hub.providers.apps.gemini.api as mod
+
+    captured: dict = {}
+    real = mod.httpx.AsyncClient
+
+    class _Recorder:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _Recorder)
+    try:
+        mod.GeminiApiProvider({"proxy": "http://127.0.0.1:7890"}, None)
+        assert captured.get("proxy") == "http://127.0.0.1:7890"
+        captured.clear()
+        mod.GeminiApiProvider({}, None)  # no proxy configured -> no dedicated client
+        assert "proxy" not in captured
+    finally:
+        monkeypatch.setattr(mod.httpx, "AsyncClient", real)

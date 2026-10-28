@@ -120,6 +120,9 @@ providers:
   # functionCall 翻成 OpenAI tool_calls；登录由 `gemini` 自己做，我们只读它写下的凭据。
   gemini_api:
     enabled: true
+    # 只给这条腿挂代理（不靠 TUN、不靠 trust_env）：填 http://127.0.0.1:7890 这类地址；留空＝直连。
+    # 代理只承载 Google 系流量；它挂了只坏这一条腿，不会像 10-14 那样拖垮全部上游。
+    proxy: ""
 
   opencode_api:
     enabled: true

@@ -13,6 +13,14 @@ only be read *after* that sign-in; it accepts the documented Google OAuth names
 (`access_token` / `refresh_token` / `expiry_date`) and the short forms, and treats
 anything it cannot parse as "no credential" — never as "signed in".
 
+**No TUN needed (裁定 206 follow-up, user 2026-10-28)**: the hub runs with
+`trust_env: false` (2026-10-14: a dead local proxy poisoned every upstream), so this leg
+cannot lean on `HTTP(S)_PROXY` either — and Google is unreachable directly on this network.
+So the leg takes an **explicit per-leg proxy** (`providers.gemini_api.proxy`, or
+`QUOTA_HUB_GEMINI_PROXY`), used only by this leg's client. A dead proxy then breaks one
+leg with a clear error instead of every upstream at once, and the rest of the hub stays
+direct. Nothing else about the machine (no TUN, no system-wide proxy) has to change.
+
 The translation is the part the ACP legs cannot give:
 
     Gemini `functionCall {name, args}`  →  OpenAI `tool_calls[{id, function{name, arguments}}]`
@@ -30,6 +38,8 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from ....providers.base import Account, Capabilities, Credential, Provider, UpstreamError
 
@@ -166,6 +176,14 @@ class GeminiApiProvider(Provider):
         self.base_url = str(config.get("base_url") or BASE_URL).rstrip("/")
         self.timeout = float(config.get("timeout", 180.0))
         self.served_models: tuple[str, ...] = tuple(config.get("models") or ())
+        # Per-leg proxy: only Google traffic goes through it (see the module header).
+        self.proxy = str(
+            config.get("proxy") or os.environ.get("QUOTA_HUB_GEMINI_PROXY") or ""
+        ).strip()
+        self._proxied = None
+        if self.proxy:
+            self._proxied = httpx.AsyncClient(proxy=self.proxy, timeout=httpx.Timeout(self.timeout, connect=15.0))
+            log.info("[gemini_api] using an explicit proxy for this leg only")
 
     # --- presence / credential -------------------------------------------
     def present(self) -> bool:
@@ -192,7 +210,8 @@ class GeminiApiProvider(Provider):
     # --- accounts / models ------------------------------------------------
     async def _list_models(self, token: str) -> list[str]:
         try:
-            res = await self.http.get(
+            client = self._proxied or self.http
+            res = await client.get(
                 f"{self.base_url}/models",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=self.timeout,
@@ -263,7 +282,8 @@ class GeminiApiProvider(Provider):
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         model = str(oai_req.get("model") or "")
         bare = model.split("/", 1)[1] if "/" in model else model
-        res = await self.http.post(
+        client = self._proxied or self.http
+        res = await client.post(
             f"{self.base_url}/models/{bare}:generateContent",
             headers={"Authorization": f"Bearer {acc.cred.access_token}", "content-type": "application/json"},
             json=self._payload(oai_req),
