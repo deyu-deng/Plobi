@@ -26,6 +26,61 @@ class ChatlogUnavailable(RuntimeError):
     """chatlog is not reachable (service down, WeChat logged out, …)."""
 
 
+#: 引擎回的那一格里，非文本消息的**键藏在 `contents` 里**（不在 `content` 那句人话里）。
+#: 下面这张表只登记本机量到过的形状：type 3=图、43=视频、34=语音、49=文件/链接/合并转发
+#: （49 的 `subType` 5 是链接分享、57 是引用——引用里还套着一层 `contents`，那是被引的那条自己）。
+#: 没有量到的写法一律交回空表，不猜一个键名出来（"键名不是语义"那条口径）。
+_MEDIA_TYPES: dict[str, str] = {"3": "image", "34": "voice", "43": "video"}
+_KEYS_BY_KIND: dict[str, tuple[str, ...]] = {
+    "image": ("md5",),
+    "video": ("md5", "rawmd5"),
+    "voice": ("voice",),
+    "file": ("md5", "filekey"),
+}
+
+
+def _one_media(kind: str, node: dict) -> Optional[dict]:
+    keys = _KEYS_BY_KIND.get(kind, ())
+    for name in keys:
+        value = str(node.get(name) or "").strip()
+        if value:
+            return {"kind": kind, "key": value, "key_name": name,
+                    "path": str(node.get("path") or ""), "name": str(node.get("title") or "")}
+    return None
+
+
+def media_of(raw: dict) -> list[dict]:
+    """一条聊天记录里的媒体件（0..n 个）。返回 `[{kind, key, key_name, path, name}, …]`。
+
+    `key` 就是引擎那四只口（`/image/{key}`、`/video/{key}`、`/voice/{key}`、`/file/{key}`）
+    吃的那个键：图与视频是 **md5 的十六进制串**，语音是它自己的 voice id。
+    """
+    out: list[dict] = []
+    contents = raw.get("contents")
+    if not isinstance(contents, dict):
+        return out
+
+    kind = _MEDIA_TYPES.get(str(raw.get("type")))
+    if kind:
+        found = _one_media(kind, contents)
+        if found:
+            out.append(found)
+
+    # 49 那一族里文件与"引用别条消息"都可能出现：文件直接取，引用套一层递归一次（只一层，防回环）。
+    if str(raw.get("type")) == "49":
+        file_found = _one_media("file", contents)
+        if file_found:
+            out.append(file_found)
+        refer = contents.get("refer")
+        if isinstance(refer, dict):
+            nested = media_of({"type": str(refer.get("type")), "contents": refer.get("contents")})
+            for item in nested:
+                item["from_refer"] = True
+                out.append(item)
+
+    return out
+
+
 @dataclass(frozen=True)
 class ChatMessage:
     msg_id: str
@@ -38,9 +93,16 @@ class ChatMessage:
     # report that honestly rather than guessing, because "who sent it" is the
     # whole point of the extraction (WP-EXTRACT-CONTEXT).
     is_self: Optional[bool] = None
+    #: 这条消息带的媒体件（`media_of` 的量法）。空元组是一个读数：这条没有媒体，
+    #: 或这一版的 `contents` 长得不认识——两种都**不许**被读成"取失败了"。
+    media: tuple[dict, ...] = ()
 
     @property
     def is_empty(self) -> bool:
+        """"这条能不能当一句话读"。**故意不看 `media`**：媒体那一条腿今天还没接进落点，
+        把只有图没有字的消息放进现有那条链，会得到一批空正文的行——那是假"采到了"。
+        接媒体那一只口的时候，这一格与它的调用方一起改（见 `tasks/wechat-media-task.md` §1 第 5 条）。
+        """
         return not self.content.strip()
 
 
@@ -134,10 +196,11 @@ def normalize_message(raw: Any, *, fallback_talker: str = "") -> Optional[ChatMe
         return None
 
     content = _first(raw, "content", "Content", "msg", "message", "text")
-    if content is None:
-        return None
-    content = str(content).strip()
-    if not content:
+    content = "" if content is None else str(content).strip()
+    media = tuple(media_of(raw))
+    if not content and not media:
+        # 既没字也没件才丢。**只有图没有字的一条要留得下来**——否则媒体那一腿永远拿不到东西；
+        # 而"能不能当一句话读"是另一格（`ChatMessage.is_empty`），现有那条链照旧不看媒体。
         return None
 
     talker = str(_first(raw, "talker", "Talker", "chatroom", "roomId") or fallback_talker or "")
@@ -154,6 +217,7 @@ def normalize_message(raw: Any, *, fallback_talker: str = "") -> Optional[ChatMe
         sent_at=sent_at,
         content=content,
         is_self=_parse_is_self(raw),
+        media=media,
     )
 
 
@@ -188,6 +252,33 @@ class ChatlogClient:
             return json.loads(body)
         except json.JSONDecodeError as exc:
             raise ChatlogUnavailable(f"chatlog returned non-JSON: {body[:120]}") from exc
+
+    def media_info(self, kind: str, key: str) -> dict:
+        """`/{kind}/{key}?info=1` → 那一件自己的元数据（`{type,key,path,name,size,modifyTime}`）。
+
+        键是 `media_of` 交出来的那一个（图/视频＝md5 十六进制串，语音＝voice id）。
+        """
+        payload = self._get(f"/{kind}/{urllib.parse.quote(str(key), safe='')}", {"info": "1"})
+
+        return payload if isinstance(payload, dict) else {}
+
+    def media_bytes(self, kind: str, key: str) -> tuple[bytes, str]:
+        """取回那一件的字节，返回 `(bytes, content_type)`。
+
+        引擎那头会 302 到 `/data/{path}`，`.dat` 由它自己解成真的图/视频——**我们不碰密钥**，
+        解密的活儿一直在侧车那一侧（这一只口只是把它已经解好的东西搬回来）。
+        """
+        return self._get_bytes(f"/{kind}/{urllib.parse.quote(str(key), safe='')}")
+
+    def _get_bytes(self, path: str) -> tuple[bytes, str]:
+        # Seam for tests: every byte-facing read funnels through here.
+        url = f"{self.base_url}{path}"
+        request = urllib.request.Request(url, headers={"Accept": "*/*"})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return response.read(), response.headers.get("Content-Type") or ""
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            raise ChatlogUnavailable(f"chatlog media fetch failed: {exc}") from exc
 
     def healthy(self) -> bool:
         # chatlog v0.5.2 exposes only /health; older/newer builds may differ.
