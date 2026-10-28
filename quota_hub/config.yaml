@@ -116,6 +116,11 @@ providers:
 
   # OpenCode Zen（裁定 204）：读本机 OAuth（~/.local/share/opencode/opencode.db 的 credential 表），
   # 打它自己的 OpenAI 兼容口；模型名取它 /models 的自报清单，上游不报就没有模型，不回退到申报表。
+  # Gemini CLI（裁定 204）：读 ~/.gemini/oauth_creds.json 的 Google OAuth，打 generateContent，
+  # functionCall 翻成 OpenAI tool_calls；登录由 `gemini` 自己做，我们只读它写下的凭据。
+  gemini_api:
+    enabled: true
+
   opencode_api:
     enabled: true
     base_url: https://opencode.ai/zen/v1

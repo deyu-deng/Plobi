@@ -1,0 +1,174 @@
+"""Gemini 这条腿的判据：原生 `functionCall` 必须被翻成 OpenAI `tool_calls`。
+
+为什么这条腿值得单独写：ACP 那一路（opencode 实测）里工具是**上游闭环执行**、
+回到 Plobi 的是一条成稿，`tool_calls` 恒为 0——L1 没法据此决定下一步。CodeBuddy／
+Antigravity 那两条之所以能带工具，是因为它们走的是"本机凭据 → 厂商 HTTP → 原生
+function call"。Gemini 这一笔就是同一个形状（裁定 204）。
+
+本文件的替身全都用合成凭据与 MockTransport，**不读、不碰真 `~/.gemini`**。
+
+Run:
+    cd Code && scripts/run_tests.sh -j 1 quota_hub/tests/test_gemini_api.py
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+
+import httpx
+import pytest
+from quota_hub.providers.apps.gemini.api import GeminiApiProvider, read_credential
+
+BASE = "https://gemini.test/v1beta"
+
+
+def _store(tmp_path, *, access="test-access", expires_in=3600.0, present=True):
+    path = tmp_path / "oauth_creds.json"
+    if not present:
+        return str(path)
+    data = {"access_token": access, "refresh_token": "r", "token_type": "Bearer"}
+    if expires_in is not None:
+        data["expiry_date"] = int((time.time() + expires_in) * 1000)  # the CLI's own unit
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return str(path)
+
+
+def _models(*names: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={"models": [{"name": f"models/{n}", "supportedGenerationMethods": ["generateContent"]} for n in names]},
+    )
+
+
+def _http(routes: dict[str, httpx.Response]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path in routes:
+            return routes[request.url.path]
+        return httpx.Response(404, json={"error": "route"})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def test_a_function_call_comes_back_as_openai_tool_calls(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return _models("gemini-2.5-flash")
+        if request.url.path.endswith(":generateContent"):
+            seen.update(json.loads(request.content.decode()))
+            return httpx.Response(
+                200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [{"functionCall": {"name": "read_file", "args": {"path": "/etc/hostname"}}}]
+                            },
+                            "finishReason": "STOP",
+                        }
+                    ],
+                    "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 3, "totalTokenCount": 15},
+                },
+            )
+        return httpx.Response(404, json={"error": "route"})
+
+    async def _go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            prov = GeminiApiProvider({"base_url": BASE}, http)
+            assert prov.credential_health() == (True, "ok")
+            acc = (await prov.discover_accounts())[0]
+            assert prov.served_models == ("gemini_api/gemini-2.5-flash",)
+
+            tools = [{"type": "function", "function": {"name": "read_file", "description": "read", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}}]
+            out = await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}], "tools": tools})
+
+        # the tool schema reached the vendor, in its own dialect
+        assert seen["tools"][0]["functionDeclarations"][0]["name"] == "read_file"
+        choice = out["choices"][0]
+        assert choice["finish_reason"] == "tool_calls"
+        call = choice["message"]["tool_calls"][0]
+        assert call["function"]["name"] == "read_file"
+        assert json.loads(call["function"]["arguments"]) == {"path": "/etc/hostname"}
+        assert out["usage"]["total_tokens"] == 15
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_plain_text_stays_plain_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/models"):
+            return _models("gemini-2.5-flash")
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "hello"}]}, "finishReason": "STOP"}]})
+
+    async def _go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            prov = GeminiApiProvider({"base_url": BASE}, http)
+            acc = (await prov.discover_accounts())[0]
+            out = await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}]})
+        assert out["choices"][0]["message"]["content"] == "hello"
+        assert "tool_calls" not in out["choices"][0]["message"]
+        assert out["choices"][0]["finish_reason"] == "stop"
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_no_credential_file_means_no_card_and_no_models(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, present=False))
+
+    async def _go():
+        async with _http({}) as http:
+            prov = GeminiApiProvider({"base_url": BASE}, http)
+            assert prov.present() is False
+            assert prov.credential_health() == (False, "no_desktop_credential")
+            assert await prov.discover_accounts() == []
+            assert prov.served_models == ()
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_an_expired_google_token_reports_expired(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, expires_in=-60))
+
+    async def _go():
+        async with _http({}) as http:
+            prov = GeminiApiProvider({"base_url": BASE}, http)
+            assert prov.credential_health() == (False, "credential_expired")
+            assert await prov.discover_accounts() == []
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_the_model_list_is_the_only_name_source(tmp_path, monkeypatch):
+    """裁定 204.5: no `/models` ⇒ no models. A default table would be a second truth."""
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({"/v1beta/models": httpx.Response(403, json={"error": "no key"})}) as http:
+            prov = GeminiApiProvider({"base_url": BASE, "models": ["gemini_api/declared"]}, http)
+            await prov.discover_accounts()
+            assert prov.served_models == ()
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_garbage_file_is_treated_as_absent(tmp_path, monkeypatch):
+    bad = tmp_path / "oauth_creds.json"
+    bad.write_text("not json", encoding="utf-8")
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(bad))
+
+    assert read_credential() is None
+
+
+@pytest.mark.parametrize("field", ["access", "access_token"])
+def test_both_documented_key_names_are_accepted(tmp_path, monkeypatch, field):
+    path = tmp_path / "oauth_creds.json"
+    path.write_text(json.dumps({field: "tok"}), encoding="utf-8")
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(path))
+
+    assert (read_credential() or {}).get("access_token") == "tok"
