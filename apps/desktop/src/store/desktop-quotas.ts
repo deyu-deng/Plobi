@@ -340,10 +340,18 @@ function pickableModelIds(app: ConnectedDesktopApp): string[] {
  * the input comes back untouched rather than a list of promises we cannot keep.
  */
 export function quotaProviders(providers: readonly ModelOptionProvider[]): ModelOptionProvider[] {
-  const hubRow = providers.find(provider => QUOTA_HUB_ROW.test(provider.slug))
+  // A provider the user's config names but whose credential is not there cannot serve
+  // a turn. `explicit_only` keeps such rows on purpose so setup surfaces can offer the
+  // affordance (see `authenticated` in types/plobi.ts) — but this function feeds the
+  // *chat* pickers, where "named in a config" without "signed in" must not become a
+  // selectable row. Measured on this machine 2026-10-27 with the hub live: the payload
+  // carried `qwen-acp` (authenticated: false, nobody ever signed in) beside the 18
+  // usable hub models, and the composer was pinned to it.
+  const usable = providers.filter(provider => provider.authenticated !== false)
+  const hubRow = usable.find(provider => QUOTA_HUB_ROW.test(provider.slug))
 
   if (!hubRow) {
-    return [...providers]
+    return [...usable]
   }
 
   const offered = new Set(hubRow.models ?? [])
@@ -388,7 +396,7 @@ export function quotaProviders(providers: readonly ModelOptionProvider[]): Model
     })
   }
 
-  return [...providers.filter(provider => provider !== hubRow), ...groups]
+  return [...usable.filter(provider => provider !== hubRow), ...groups]
 }
 
 

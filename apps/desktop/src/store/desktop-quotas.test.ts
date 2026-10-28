@@ -151,6 +151,20 @@ describe('quotaProviders', () => {
     expect(rows(['antigravity/gemini-3-pro-high'])[0]?.models ?? []).toEqual([])
   })
 
+  it('drops a provider the config names but whose sign-in never happened', () => {
+    // Measured on this machine 2026-10-27 with the hub live: `model.provider` was
+    // `qwen-acp` and nobody had signed into Qwen, so the payload carried that row
+    // (authenticated: false) beside the 18 usable hub models. A row can only be in a
+    // chat picker when it can serve a turn; setup surfaces ask for unconfigured rows
+    // explicitly and do not go through this function.
+    const rows = quotaProviders([
+      { authenticated: false, models: ['qwen/default'], name: 'Qwen Code', slug: 'qwen-acp' },
+      { models: ['x/y'], name: 'Legacy row without the flag', slug: 'legacy' }
+    ])
+
+    expect(rows.map(row => row.slug)).toEqual(['legacy'])
+  })
+
   it('a seed id the backend does not actually offer never reaches the picker', () => {
     // `cursor` is a seed-only app with no frame: its ids would surface as
     // `cursor/gpt-4o`, and the catalog says there is no such channel.
