@@ -10165,6 +10165,23 @@ ipcMain.handle('plobi-gateway:stop', async (_event, appId?: string) => {
 })
 
 /**
+ * Open a sign-in link in the user's browser, at most once per link.
+ *
+ * Deduplicated on purpose: the settings view re-reads this catalog on a timer, and a
+ * browser that opens a fresh tab on every poll is worse than one that never opens.
+ */
+const openedAuthUrls = new Set<string>()
+
+function openAuthUrlOnce(key: string, url: string): void {
+  if (!url || openedAuthUrls.has(key)) {
+    return
+  }
+
+  openedAuthUrls.add(key)
+  openExternalUrl(url)
+}
+
+/**
  * The sign-in catalog: every leg a click can connect, with the hub's live verdict.
  *
  * This is what replaces the shell's two hardcoded name lists
@@ -10202,7 +10219,7 @@ async function fetchAuthCatalog(): Promise<
 
     const data = (await res.json()) as { data?: Array<Record<string, unknown>> }
 
-    return (data.data ?? []).map(row => ({
+    const rows = (data.data ?? []).map(row => ({
       id: String(row.id ?? ''),
       name: String(row.name ?? row.id ?? ''),
       kind: (String(row.kind ?? 'none') as 'none' | 'local_session' | 'cli_login' | 'oauth'),
@@ -10213,6 +10230,17 @@ async function fetchAuthCatalog(): Promise<
       aggregate: Boolean(row.aggregate),
       login: (row.login ?? null) as { state?: string; detail?: string; url?: string } | null
     }))
+
+    // A sign-in link the hub found *after* the click still has to reach the browser. The
+    // hub is a detached child process: its own `webbrowser` may resolve nothing, and this
+    // process is the one that owns the desktop's browser.
+    for (const row of rows) {
+      if (row.login?.state === 'pending' && row.login.url) {
+        openAuthUrlOnce(`${row.id}|${row.login.url}`, row.login.url)
+      }
+    }
+
+    return rows
   } catch (error) {
     // An unreachable hub is not "you have no legs": the renderer keeps its last
     // catalog on screen rather than blanking the screen the user was reading.
@@ -10270,6 +10298,12 @@ async function authViaHub(appId: string): Promise<{ ok: boolean; code?: string; 
 
     if (session.kind === 'none') {
       return { ok: false, code: 'NOT_WIRED', error: session.detail || '这一条腿还没接上点一下就能登录的路' }
+    }
+
+    // The hub now waits a moment for the link before answering, so a leg whose CLI prints
+    // a sign-in URL has it here. Opening it is this process's job, not the hub's.
+    if (session.url) {
+      openAuthUrlOnce(`${appId}|${session.url}`, session.url)
     }
 
     // `pending` is the normal answer for a CLI login: the browser is opening and the
