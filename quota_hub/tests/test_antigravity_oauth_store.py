@@ -4,11 +4,62 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
-
+from quota_hub import google_oauth
 from quota_hub.providers.apps.antigravity import account_store
 from quota_hub.providers.apps.antigravity import oauth as oa
 from quota_hub.providers.apps.antigravity import AntigravityProvider
+
+
+def test_the_google_login_leaves_through_the_same_node_as_the_leg(monkeypatch, home):
+    """回归本体的判据：抽公共流程那天，这条腿的换令牌改成了直连。
+
+    用户因此在浏览器里走完两次登录、两次都被回 401——`401` 不是 Google 给的，是这台机器上
+    拦直连的人给的。所以 `sign_in` 必须拿到节点，且节点不在的时候不许先把他的浏览器开出去。
+    """
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_SECRET", "secret")
+    seen: dict = {}
+
+    def _fake_sign_in(**kwargs):
+        seen.update(kwargs)
+        return {"refresh_token": "r", "access_token": "a"}
+
+    monkeypatch.setattr(oa.google_oauth, "sign_in", _fake_sign_in)
+    monkeypatch.setattr(oa, "probe_network", lambda: {"ok": True, "checks": []})
+    monkeypatch.setattr(oa, "resolve_proxy", lambda: ("http://127.0.0.1:1", "ok"))
+
+    oa.run_bootstrap(print_token=False)
+
+    assert seen["proxy"] == "http://127.0.0.1:1"
+    assert seen["client_id"] == "cid"
+
+
+def test_a_missing_node_refuses_before_his_browser_is_opened(monkeypatch, home):
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(oa, "probe_network", lambda: {"ok": True, "checks": []})
+    monkeypatch.setattr(oa, "resolve_proxy", lambda: ("", "no_proxy"))
+    opened: list[str] = []
+
+    monkeypatch.setattr(oa.google_oauth, "sign_in", lambda **k: opened.append(k.get("on_url") or "called"))
+
+    with pytest.raises(RuntimeError) as exc:
+        oa.run_bootstrap(print_token=False, on_url=lambda url: opened.append(url))
+
+    assert "VPN" in str(exc.value)
+    assert "no_proxy" not in str(exc.value)
+    assert opened == []
+
+
+def test_a_google_error_is_named_and_a_non_google_answer_says_so():
+    """`HTTP 401` 单独出现时是两种相反的故障：客户端对不上，或者根本没出门。"""
+    res = httpx.Response(401, headers={"content-type": "text/html"}, text="<html>blocked</html>")
+    assert "不是 Google 给的" in google_oauth._token_error(res)
+
+    res = httpx.Response(401, json={"error": "invalid_client"})
+    assert "invalid_client" in google_oauth._token_error(res)
 
 
 @pytest.fixture()

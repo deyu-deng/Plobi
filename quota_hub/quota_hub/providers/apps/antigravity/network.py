@@ -21,6 +21,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from ....egress import proxy_url as egress_proxy_url
+
 #: Hosts used by the OAuth flow / Cloud Code quota API.
 DEFAULT_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("google-accounts", "https://accounts.google.com/"),
@@ -29,8 +31,18 @@ DEFAULT_ENDPOINTS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _masked_proxy() -> str:
-    raw = (
+def _configured_proxy() -> tuple[str, str]:
+    """The route a Google leg will actually take: the Settings → VPN node first, then env.
+
+    Measured 2026-10-28: the probe read only `HTTP(S)_PROXY`, so it could report "no proxy"
+    about to be wrong, while the login was already leaving through the node — and the advice
+    line then described a network that was not the one in use. One door for every Google
+    leg (裁定 206), so one door for the diagnosis too.
+    """
+    node, reason = egress_proxy_url()
+    if node:
+        return node, "ok"
+    env = (
         os.environ.get("HTTPS_PROXY")
         or os.environ.get("https_proxy")
         or os.environ.get("HTTP_PROXY")
@@ -39,6 +51,12 @@ def _masked_proxy() -> str:
         or os.environ.get("all_proxy")
         or ""
     ).strip()
+    if env:
+        return env, "ok"
+    return "", reason
+
+
+def _mask(raw: str) -> str:
     if not raw:
         return ""
     try:
@@ -78,13 +96,17 @@ def probe_network(
     (and a useful advice line) instead of a frozen Connect button.
     """
     factory = client_factory or (lambda **kw: httpx.Client(**kw))
-    proxy = _masked_proxy()
+    raw_proxy, node_reason = _configured_proxy()
+    # The probe measures the route the leg will really take — including the proxy itself.
+    # With `trust_env=True` it measured the ambient environment instead, so a machine whose
+    # hub runs direct-but-proxied-per-leg produced advice about a network nobody was using.
+    proxy = _mask(raw_proxy)
     results: dict[int, dict] = {}
 
     def _one(index: int, name: str, url: str) -> None:
         started = time.time()
         try:
-            with factory(trust_env=True, timeout=timeout, follow_redirects=False) as client:
+            with factory(proxy=raw_proxy or None, trust_env=False, timeout=timeout, follow_redirects=False) as client:
                 response = client.get(url)
             results[index] = {
                 "name": name,
@@ -128,14 +150,15 @@ def probe_network(
     failed = [check for check in checks if not check["ok"]]
     if not proxy:
         advice = (
-            "没有可用的代理。国内网络直连 Google 会超时；给要访问 Google 的那几条腿单独配代理："
-            "`quota_hub/config.yaml` 的 `providers.<腿>.proxy`（或 `QUOTA_HUB_GEMINI_PROXY`），"
-            "填 `http://127.0.0.1:<端口>` 这类地址。只承载那条腿，不用开 TUN。"
+            "这台机器直连 Google 不通，而设置里的 VPN 还没有可用节点。"
+            "在「设置 → VPN」加一个节点再点一次就行，不用开 TUN。"
+            if node_reason == "no_proxy"
+            else "设置里的 VPN 节点现在连不上。确认那个代理还开着、端口没改。"
         )
     else:
         advice = (
-            f"代理 {proxy} 已配置，但 Google 端点连不上。请确认代理进程还在、端口正确，"
-            "并且浏览器也能打开 accounts.google.com。代理只作用于配了它的那条腿，不需要开 TUN。"
+            f"出口 {proxy} 已配置，但 Google 端点连不上。确认那个代理还开着、端口正确，"
+            "并且浏览器也能打开 accounts.google.com。不用开 TUN。"
         )
     return {
         "ok": not failed,

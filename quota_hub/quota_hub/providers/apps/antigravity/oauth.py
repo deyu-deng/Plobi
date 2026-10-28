@@ -21,7 +21,7 @@ Run it with::
 
 from __future__ import annotations
 
-import logging
+import os
 import secrets
 import sys
 from typing import Callable
@@ -29,8 +29,12 @@ from typing import Callable
 import httpx
 
 from .... import google_oauth
+from ....egress import proxy_url
 from . import account_store
 from .network import probe_network
+
+#: Same knob the leg itself reads, so a login and the traffic it enables leave the same way.
+PROXY_ENV = "QUOTA_HUB_ANTIGRAVITY_PROXY"
 
 OAUTH_AUTH_URL = google_oauth.OAUTH_AUTH_URL
 OAUTH_TOKEN_URL = google_oauth.OAUTH_TOKEN_URL
@@ -38,8 +42,6 @@ OAUTH_SCOPES = list(google_oauth.CODE_ASSIST_SCOPES)
 
 #: The host used for loadCodeAssist project discovery during bootstrap.
 LOAD_CODE_ASSIST_HOST = "https://daily-cloudcode-pa.googleapis.com"
-
-log = logging.getLogger("quota_hub")
 
 
 def client_credentials() -> tuple[str, str]:
@@ -61,7 +63,8 @@ def build_auth_url(redirect_uri: str) -> tuple[str, str]:
 def exchange_code(verifier: str, code: str, redirect_uri: str) -> dict:
     """Exchange an authorization code for tokens. Returns the JSON body."""
     client_id, client_secret = client_credentials()
-    return google_oauth.exchange(client_id, client_secret, code, verifier, redirect_uri)
+    proxy, _reason = resolve_proxy()
+    return google_oauth.exchange(client_id, client_secret, code, verifier, redirect_uri, proxy=proxy)
 
 
 def discover_project(access_token: str) -> str:
@@ -117,6 +120,20 @@ def fetch_userinfo(access_token: str) -> dict:
 # --------------------------------------------------------------------------
 # end-to-end bootstrap
 # --------------------------------------------------------------------------
+def resolve_proxy() -> tuple[str, str]:
+    """The egress this flow must use — the same node the leg itself uses.
+
+    Measured 2026-10-28: when the shared flow was extracted, this leg lost its proxy and
+    the code exchange went out **direct** — on this network that never reaches Google, and
+    the user did the whole browser step twice for a `401`. The consent URL, the loopback
+    callback and the token exchange all have to leave through the same door the leg uses.
+    """
+    explicit = str(os.environ.get(PROXY_ENV) or "").strip()
+    if explicit:
+        return explicit, "ok"
+    return proxy_url()
+
+
 def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | None = None) -> str:
     """Full bootstrap: start local callback, open browser, exchange code, store account."""
     network = probe_network()
@@ -128,9 +145,16 @@ def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | 
         raise RuntimeError(network["advice"])
 
     client_id, client_secret = client_credentials()
+    proxy, proxy_reason = resolve_proxy()
+    if proxy_reason != "ok":
+        raise RuntimeError(
+            "登录要走 Google，得先在设置里那个 VPN 里有一个可用的节点"
+            if proxy_reason == "no_proxy"
+            else "设置里的 VPN 节点现在连不上，登录这一步过不去"
+        )
     tokens = google_oauth.sign_in(
         client_id=client_id, client_secret=client_secret,
-        scopes=OAUTH_SCOPES, on_url=on_url,
+        scopes=OAUTH_SCOPES, proxy=proxy, on_url=on_url,
     )
 
     refresh = tokens.get("refresh_token")

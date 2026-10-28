@@ -156,6 +156,26 @@ def wait_for_code(port: int, timeout: float = 300.0) -> str:
     raise TimeoutError(f"浏览器里没有完成这次登录（{timeout:.0f}s 内没等到回调）")
 
 
+def _token_error(res: httpx.Response) -> str:
+    """Name the failure the way it can be acted on, without echoing anything secret.
+
+    A bare `HTTP 401` told the user nothing yesterday: it is equally a bad client pair
+    (Google answers with `error=invalid_client`) and a *local* answer — a proxy or a PAC
+    interception replying with HTML, in which case the client pair is fine and the door is
+    the problem. Those two need opposite fixes, so the message says which one it saw.
+    """
+    code = ""
+    try:
+        body = res.json()
+        if isinstance(body, dict):
+            code = str(body.get("error") or "")
+    except ValueError:
+        code = ""
+    if code:
+        return f"Google 在这一步回了 {code}（HTTP {res.status_code}）"
+    return f"这一步的答复不是 Google 给的（HTTP {res.status_code}）：先检查设置里那个 VPN 节点"
+
+
 def exchange(client_id: str, client_secret: str, code: str, verifier: str,
              redirect_uri: str, *, proxy: str = "", timeout: float = 30.0) -> dict:
     body = {
@@ -170,7 +190,7 @@ def exchange(client_id: str, client_secret: str, code: str, verifier: str,
     with httpx.Client(proxy=proxy or None, timeout=timeout, trust_env=False) as client:
         res = client.post(OAUTH_TOKEN_URL, data=body)
     if not res.is_success:
-        raise RuntimeError(f"Google 拒绝了这次令牌交换（HTTP {res.status_code}）")
+        raise RuntimeError(_token_error(res))
     return res.json()
 
 
@@ -185,7 +205,7 @@ def refresh(client_id: str, client_secret: str, refresh_token: str,
     with httpx.Client(proxy=proxy or None, timeout=timeout, trust_env=False) as client:
         res = client.post(OAUTH_TOKEN_URL, data=body)
     if not res.is_success:
-        raise RuntimeError(f"Google 拒绝了这次令牌刷新（HTTP {res.status_code}）")
+        raise RuntimeError(_token_error(res))
     return res.json()
 
 
