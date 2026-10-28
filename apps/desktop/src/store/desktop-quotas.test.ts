@@ -165,6 +165,17 @@ describe('quotaProviders', () => {
     expect(rows.map(row => row.slug)).toEqual(['legacy'])
   })
 
+  it('a Sub2API-shaped leg reads as its product, not as the hub provider id', () => {
+    // 裁定 204 made these legs first-class; `opencode_api` is a machine name and must
+    // never be what the picker shows.
+    markConnected({ id: 'opencode_api', models: ['big-pickle'] })
+
+    const row = quotaProviders(catalog(['opencode_api/big-pickle'])).find(r => r.slug === 'aigw')
+
+    expect(row?.name).toBe('OpenCode Zen')
+    expect(row?.models).toEqual(['opencode_api/big-pickle'])
+  })
+
   it('a seed id the backend does not actually offer never reaches the picker', () => {
     // `cursor` is a seed-only app with no frame: its ids would surface as
     // `cursor/gpt-4o`, and the catalog says there is no such channel.
