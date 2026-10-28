@@ -1660,41 +1660,6 @@ def _deliver_to_recipient_window(job: dict, content: str) -> tuple[Optional[dict
     )
 
 
-def _deliver_to_user_inbox(job: dict, content: str) -> tuple[Optional[dict], Optional[str]]:
-    """``deliver=user``：这一轮说的是**对用户说的话**，落进他 L1 那一屏（裁定 201）。
-
-    与 `_deliver_to_recipient_window` 的区别只有落点：那个给「干活的人看」，
-    这个给「主人看」。拒绝、提醒都归 ``plobi_user_inbox`` 一处管。
-    """
-    from plobi_user_inbox import append_user_message, notify_user
-
-    job_id = str(job.get("id") or "")
-    label = str(job.get("name") or job_id or "cron")
-    stamp = _plobi_now().strftime("%Y-%m-%d %H:%M:%S")
-    session_id, message_id, failure = append_user_message(
-        content,
-        asked_by=f"cron:{job_id}" if job_id else "cron",
-        label=f"Cron 结果 · {label}",
-        when=_plobi_now(),
-        kind="cron",
-    )
-    if failure:
-        logger.warning("Job '%s': 结果发不进用户那一屏：%s", job_id, failure)
-        return None, failure
-    notified = notify_user(content[:400], title=f"{label}", session_id=session_id or "")
-    return (
-        {
-            "via": "user_inbox",
-            "to": "用户",
-            "at": stamp,
-            "session_id": session_id,
-            "message_id": str(message_id),
-            "notified": notified,
-        },
-        None,
-    )
-
-
 def _deliver_result(
     job: dict, content: str, adapters=None, loop=None, delivery_out: Optional[dict] = None
 ) -> Optional[str]:

@@ -113,36 +113,3 @@ def test_ask_cannot_target_the_user(CH):
 
     assert out["ok"] is False
     assert "say(to=用户)" in out["error"]
-
-
-def test_cron_deliver_user_writes_the_same_screen(tmp_path, monkeypatch):
-    import plobi_user_inbox as UI
-    from cron import scheduler as S
-
-    written = []
-    monkeypatch.setattr(
-        UI,
-        "append_user_message",
-        lambda body, **kw: (written.append((body, kw)), (USER_SESSION, "m1", None))[1],
-    )
-    monkeypatch.setattr(UI, "notify_user", lambda body, **kw: True)
-
-    record, error = S._deliver_to_user_inbox({"id": "job1", "name": "回访"}, "做完了吗？")
-
-    assert error is None
-    assert record["via"] == "user_inbox" and record["to"] == "用户"
-    assert record["session_id"] == USER_SESSION
-    assert written and written[0][0] == "做完了吗？"
-    assert written[0][1]["asked_by"] == "cron:job1"
-
-
-def test_cron_deliver_user_reports_a_missing_screen(monkeypatch):
-    import plobi_user_inbox as UI
-    from cron import scheduler as S
-
-    monkeypatch.setattr(UI, "append_user_message", lambda body, **kw: (None, None, "找不到你那一屏"))
-
-    record, error = S._deliver_to_user_inbox({"id": "job2", "name": "回访"}, "做完了吗？")
-
-    assert record is None
-    assert error and "找不到" in error
