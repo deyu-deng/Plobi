@@ -156,9 +156,12 @@ def probe_network(
             else "设置里的 VPN 节点现在连不上。确认那个代理还开着、端口没改。"
         )
     else:
+        # The proxy answers, so "check the proxy is running" is not the useful sentence: the
+        # measured state at 22:25 today was a live node passing `accounts.google.com` and
+        # dropping TLS to `oauth2.googleapis.com`. What he can do is pick another node.
         advice = (
-            f"出口 {proxy} 已配置，但 Google 端点连不上。确认那个代理还开着、端口正确，"
-            "并且浏览器也能打开 accounts.google.com。不用开 TUN。"
+            "出口节点在跑，但 Google 的登录服务连不上（一般是这个节点或分组不放 Google）。"
+            "在「设置 → VPN」换一个节点或分组再点一次，不用开 TUN。"
         )
     return {
         "ok": not failed,

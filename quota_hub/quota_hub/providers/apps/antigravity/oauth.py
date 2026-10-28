@@ -21,6 +21,7 @@ Run it with::
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import sys
@@ -138,10 +139,11 @@ def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | 
     """Full bootstrap: start local callback, open browser, exchange code, store account."""
     network = probe_network()
     if not network["ok"]:
-        print("\n[network] Google endpoints are unreachable from this machine:", file=sys.stderr)
-        for check in network["checks"]:
-            if not check["ok"]:
-                print(f"  - {check['name']}: {check['error']}", file=sys.stderr)
+        # What reaches the screen is the CLI's one-line `[quota_hub auth] …` sentence, because
+        # the desktop uses this child's whole stderr as the error text (measured 2026-10-28:
+        # the printed `UNEXPECTED_EOF_WHILE_READING` lines showed up in front of the user).
+        # The per-endpoint detail is already logged by the periodic probe, so nothing here
+        # repeats it.
         raise RuntimeError(network["advice"])
 
     client_id, client_secret = client_credentials()
@@ -159,11 +161,14 @@ def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | 
 
     refresh = tokens.get("refresh_token")
     if not refresh:
-        print("[FAILED] Google did not return a refresh_token.", file=sys.stderr)
-        raise SystemExit(1)
+        # A one-shot CLI run dies with a message; a click must not: an empty error string on
+        # the settings card is the silent degradation he rules out. This state is Google
+        # handing us an access token but no way to renew it, which means he has to consent
+        # again — a sentence he can act on, not a stack trace.
+        raise RuntimeError("Google 这一趟没有给可续用的登录凭据，需要再点一次并在浏览器里重新授权")
 
     access = tokens.get("access_token")
-    print("Discovering Cloud Code project id...")
+    logging.getLogger("quota_hub").info("antigravity: discovering the Code Assist project id")
     project = discover_project(access) if access else ""
     user = fetch_userinfo(access) if access else {}
     email = str(user.get("email") or "").strip()

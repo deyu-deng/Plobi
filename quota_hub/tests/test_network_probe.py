@@ -55,5 +55,8 @@ def test_failure_names_the_hosts_and_masks_proxy_credentials(monkeypatch):
     assert result["ok"] is False
     assert result["failed"] == ["google-accounts", "cloud-code"]
     assert result["proxy"] == "http://***:***@127.0.0.1:7890"
-    assert "代理" in result["advice"]
+    # 2026-10-28 文案改向：节点明明在跑、只是这条路被节点不放行时，"确认代理还开着"是错的
+    # 指导；能做的事是换一个节点，而那个入口在屏上叫「设置 → VPN」。
+    assert "节点" in result["advice"]
+    assert "VPN" in result["advice"]
     assert "pass" not in result["proxy"]
