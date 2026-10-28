@@ -10,7 +10,7 @@ const DATA = {
   ok: true,
   data: {
     experts: [
-      { goal: '把三份资料折成一份汇总', id: 'kid-1', messages: 4, model: 'glm', parent_session_id: 'p1', started_at: Date.now() / 1000 - 30, status: 'running', tool_calls: 2 },
+      { goal: '把三份资料折成一份汇总', id: 'kid-1', messages: 4, model: 'glm', parent_session_id: 'p1', role: 'file', started_at: Date.now() / 1000 - 30, status: 'running', tool_calls: 2 },
       { goal: '查一下这门课的作业', id: 'kid-2', messages: 6, model: 'glm', parent_session_id: 'p1', started_at: Date.now() / 1000 - 600, status: 'done', tool_calls: 5 }
     ],
     live: 1
@@ -49,6 +49,7 @@ describe('ExpertPanel', () => {
     expect(await screen.findByText('running 1')).toBeTruthy()
     expect(screen.getByText('把三份资料折成一份汇总')).toBeTruthy()
     expect(screen.getByText('查一下这门课的作业')).toBeTruthy()
+    expect(screen.getByText('File')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /把三份资料折成一份汇总/ }))
 
