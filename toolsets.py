@@ -301,6 +301,7 @@ TOOLSETS = {
             # 的话，quiet 那种没触发工具发现的进程就看不见它们（10-27 实测：子进程报
             # 「我当前没有这两个工具」）。
             "external_sessions_scan", "external_sessions_mark",
+            "external_sessions_rename", "external_sessions_archive", "external_sessions_delete",
         ],
         "includes": [],
     },

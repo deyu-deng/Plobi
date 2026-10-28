@@ -322,6 +322,88 @@ MARK_SCHEMA = {
 }
 
 
+
+RENAME_SCHEMA = {
+    "name": "external_sessions_rename",
+    "description": "给本机某一条外部会话改个只在你这里生效的名字（对方软件自己的界面不跟着变）。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string", "description": "qoder / codebuddy / marvis / cursor / agy。"},
+            "id": {"type": "string", "description": "scan 回来的会话号。"},
+            "title": {"type": "string", "description": "新名字，一句话。"},
+        },
+        "required": ["vendor", "id", "title"],
+    },
+}
+
+ARCHIVE_SCHEMA = {
+    "name": "external_sessions_archive",
+    "description": "把一条外部会话收进「已归档」（还在，只是从主列表折起来）；传 archived=false 放回来。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string"},
+            "id": {"type": "string"},
+            "archived": {"type": "boolean", "description": "true 收起来，false 放回来。默认 true。"},
+        },
+        "required": ["vendor", "id"],
+    },
+}
+
+DELETE_SCHEMA = {
+    "name": "external_sessions_delete",
+    "description": (
+        "删掉一条外部会话。**不是真删**：文件搬到本机回收站（可恢复）；Marvis/Cursor 那两家只隐藏、"
+        "不动它们的库。动手前先跟用户确认是哪一条。"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "vendor": {"type": "string"},
+            "id": {"type": "string"},
+        },
+        "required": ["vendor", "id"],
+    },
+}
+
+
+def _handle_rename(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，记不了账"}, ensure_ascii=False)
+    from plobi.delegation.external_sessions import update_for_agent
+
+    result = update_for_agent(agent, str(args.get("vendor") or ""), str(args.get("id") or ""),
+                              {"title": str(args.get("title") or "")})
+
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _handle_archive(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，记不了账"}, ensure_ascii=False)
+    from plobi.delegation.external_sessions import update_for_agent
+
+    archived = args.get("archived", True)
+    result = update_for_agent(agent, str(args.get("vendor") or ""), str(args.get("id") or ""),
+                              {"archived": bool(archived)})
+
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _handle_delete(args: Dict[str, Any], **_kw: Any) -> str:
+    agent = _agent_identity()
+    if not agent:
+        return json.dumps({"ok": False, "error": "这个会话没有 Agent 名，记不了账"}, ensure_ascii=False)
+    from plobi.delegation.external_sessions import delete_for_agent
+
+    result = delete_for_agent(agent, str(args.get("vendor") or ""), str(args.get("id") or ""))
+
+    return json.dumps(result, ensure_ascii=False)
+
+
 def _agent_identity() -> str:
     from gateway.session_context import get_session_env
 
@@ -411,6 +493,33 @@ registry.register(
     toolset=TOOLSET,
     schema=MARK_SCHEMA,
     handler=_handle_mark,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_sessions_rename",
+    toolset=TOOLSET,
+    schema=RENAME_SCHEMA,
+    handler=_handle_rename,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_sessions_archive",
+    toolset=TOOLSET,
+    schema=ARCHIVE_SCHEMA,
+    handler=_handle_archive,
+    check_fn=_check_drivable,
+    emoji="🗂",
+)
+
+registry.register(
+    name="external_sessions_delete",
+    toolset=TOOLSET,
+    schema=DELETE_SCHEMA,
+    handler=_handle_delete,
     check_fn=_check_drivable,
     emoji="🗂",
 )

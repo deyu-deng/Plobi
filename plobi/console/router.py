@@ -1745,6 +1745,53 @@ async def agent_external_session_send_route(agent_id: str, vendor: str, session_
     return {"ok": True, "data": result.get("data") or {}}
 
 
+@router.patch("/agents/{agent_id}/external-sessions/{vendor}/{session_id}", name="agent_external_session_update")
+async def agent_external_session_update_route(agent_id: str, vendor: str, session_id: str, request: Request):
+    """PATCH …/external-sessions/:vendor/:id — 改名 / 置顶 / 归档（只记我们这一侧）。"""
+    from plobi.delegation.external_sessions import update_for_agent
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "title, pinned or archived is required")
+    if not isinstance(body, dict):
+        return _error(400, "title, pinned or archived is required")
+
+    fields = {key: body[key] for key in ("title", "pinned", "archived") if key in body}
+    if not fields:
+        return _error(400, "title, pinned or archived is required")
+
+    result = await run_in_threadpool(update_for_agent, agent_id, vendor, session_id, fields)
+    if not result.get("ok"):
+        return _error(int(result.get("status") or 400), str(result.get("error") or "unknown"))
+
+    return {"ok": True, "data": result.get("data") or {}}
+
+
+@router.delete("/agents/{agent_id}/external-sessions/{vendor}/{session_id}", name="agent_external_session_delete")
+async def agent_external_session_delete_route(agent_id: str, vendor: str, session_id: str):
+    """DELETE …/external-sessions/:vendor/:id — 搬进回收站（可恢复），数据库那两家只隐藏。"""
+    from plobi.delegation.external_sessions import delete_for_agent
+
+    result = await run_in_threadpool(delete_for_agent, agent_id, vendor, session_id)
+    if not result.get("ok"):
+        return _error(int(result.get("status") or 400), str(result.get("error") or "unknown"))
+
+    return {"ok": True, "data": result.get("data") or {}}
+
+
+@router.post("/agents/{agent_id}/external-sessions/{vendor}/{session_id}/restore", name="agent_external_session_restore")
+async def agent_external_session_restore_route(agent_id: str, vendor: str, session_id: str):
+    """POST …/external-sessions/:vendor/:id/restore — 从回收站搬回来。"""
+    from plobi.delegation.external_sessions import restore_for_agent
+
+    result = await run_in_threadpool(restore_for_agent, agent_id, vendor, session_id)
+    if not result.get("ok"):
+        return _error(int(result.get("status") or 400), str(result.get("error") or "unknown"))
+
+    return {"ok": True, "data": result.get("data") or {}}
+
+
 @router.get("/agents/{agent_id}/notes")
 async def agent_notes_route(agent_id: str):
     """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""
