@@ -8,6 +8,7 @@ import { getAgentOffloads, offloadResume } from '@/plobi'
 import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
 import { SidebarCount } from './chrome'
+import { ExpertPanel } from './expert-panel'
 import { ExternalSessionsPanel } from './external-sessions-panel'
 import { OffloadVendorAvatar } from './offload-vendor-icon'
 
@@ -69,6 +70,8 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
 
   return (
     <div className="flex flex-col gap-px">
+      <ExpertPanel agentId={agentId} />
+
       <div className="flex items-center gap-1 px-1">
         <span className="min-w-0 flex-1 truncate text-[0.7rem] uppercase text-(--ui-text-tertiary)">
           {c.offloadsTitle}

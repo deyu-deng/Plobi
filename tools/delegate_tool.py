@@ -1875,6 +1875,12 @@ def _run_single_child(
         _register_subagent(
             {
                 "subagent_id": _subagent_id,
+                # 左栏「专家」那一格要能从这条记录找到它的工作日志（子会话）。
+                "child_session_id": (
+                    getattr(child, "session_id", None)
+                    if isinstance(getattr(child, "session_id", None), str)
+                    else None
+                ),
                 "parent_id": _parent_sid if isinstance(_parent_sid, str) else None,
                 "depth": _tui_depth,
                 "goal": goal,

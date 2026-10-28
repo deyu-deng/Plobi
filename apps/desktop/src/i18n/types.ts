@@ -1604,6 +1604,12 @@ export interface Translations {
     externalSessionsReadOnly: string
     externalSessionsRelated: string
     externalSessionsArchived: string
+    expertsTitle: string
+    expertsRunning: string
+    expertsEmpty: string
+    expertsLoading: string
+    expertsLoadFailed: string
+    expertsLog: string
     externalSessionsRename: string
     externalSessionsSave: string
     externalSessionsCancel: string

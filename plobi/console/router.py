@@ -1792,6 +1792,16 @@ async def agent_external_session_restore_route(agent_id: str, vendor: str, sessi
     return {"ok": True, "data": result.get("data") or {}}
 
 
+@router.get("/agents/{agent_id}/experts", name="agent_experts")
+async def agent_experts_route(agent_id: str):
+    """GET /api/agents/:id/experts — 这个 Agent 派出去过的**临时专家**（子会话，非名册 Agent）。"""
+    from plobi.delegation.experts import experts_for_agent
+
+    payload = await run_in_threadpool(experts_for_agent, agent_id)
+
+    return {"ok": True, "data": payload}
+
+
 @router.get("/agents/{agent_id}/notes")
 async def agent_notes_route(agent_id: str):
     """GET /api/agents/:id/notes — notes whose ``belongs:`` names this agent."""
