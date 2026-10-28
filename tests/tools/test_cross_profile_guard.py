@@ -35,6 +35,30 @@ def fake_plobi(tmp_path, monkeypatch):
     coder_home = root / "profiles" / "coder"
     (coder_home / "skills").mkdir(parents=True)
 
+    # 共享层下按名册行分的那三份（10-27 随 WP-PROFILE-GUARD-SCOPE）：
+    # 身份页、它自己的记忆、它那一份排程存储。
+    (root / "souls").mkdir(parents=True)
+    (root / "souls" / "Aura.md").write_text("# Aura\n", encoding="utf-8")
+    (root / "memory" / "agents" / "aura").mkdir(parents=True)
+    (root / "cron" / "agents" / "aura").mkdir(parents=True)
+
+    # 名册（身份的真源）：守卫靠它把「键」还原成「名册上的名字」。
+    roster = root / "plobi" / "projects.yaml"
+    roster.parent.mkdir(parents=True, exist_ok=True)
+    roster.write_text(
+        "agents:\n"
+        "  Aura:\n"
+        "    role: l2_project\n"
+        "    profile: aura\n"
+        "  plobi-security:\n"
+        "    role: l2_project\n"
+        "    profile: plobi-security\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
+    # 身份＝名册那一行（裁定 180）：这个会话是 plobi-security。
+    monkeypatch.setenv("PLOBI_AGENT_ID", "plobi-security")
+
     monkeypatch.setenv("PLOBI_HOME", str(sec_home))
 
     import plobi_constants
@@ -67,31 +91,50 @@ class TestWriteFileCrossProfileGuard:
         assert target.exists()
         assert target.read_text() == "in-profile content"
 
-    def test_cross_profile_write_blocked_by_default(self, fake_plobi):
-        """The May 2026 incident — security-profile session edits default
-        profile's skill. Must be blocked."""
+    def test_cross_agent_write_blocked_by_default(self, fake_plobi):
+        """同一个事故的**新形状**：plobi-security 那个会话去改 Aura 的身份页。
+
+        旧形状是「改默认家的技能」；家退休之后共享层是大家的，
+        真正「属于别人」的是共享层下按名册行分的那几份 —— 身份页／记忆／排程存储。
+        """
         from tools.file_tools import write_file_tool
-        target = fake_plobi["root"] / "skills" / "shared-skill" / "SKILL.md"
+        target = fake_plobi["root"] / "souls" / "Aura.md"
         original = target.read_text()
         result_json = write_file_tool(str(target), "OVERWRITTEN")
         result = json.loads(result_json)
-        assert result.get("error"), "Cross-profile write should be refused"
-        assert "cross-profile" in result["error"].lower()
-        assert "default" in result["error"]
+        assert result.get("error"), "Cross-agent write should be refused"
+        assert "cross-agent" in result["error"].lower()
+        assert "Aura" in result["error"]
         assert "plobi-security" in result["error"]
         # File untouched.
         assert target.read_text() == original
 
-    def test_cross_profile_True_bypass(self, fake_plobi):
-        """Explicit override after user direction must succeed."""
+    def test_shared_layer_write_is_allowed(self, fake_plobi):
+        """共享层是大家的 ⇒ 不拦（拦了就是不让 Agent 管自己的技能）。"""
         from tools.file_tools import write_file_tool
         target = fake_plobi["root"] / "skills" / "shared-skill" / "SKILL.md"
+        result_json = write_file_tool(str(target), "everyone's copy")
+        result = json.loads(result_json)
+        assert not result.get("error"), f"Shared layer must stay writable: {result}"
+        assert target.read_text() == "everyone's copy"
+
+    def test_cross_agent_bypass(self, fake_plobi):
+        """Explicit override after user direction must succeed (新参数名 ＋ 旧名)。"""
+        from tools.file_tools import write_file_tool
+        target = fake_plobi["root"] / "souls" / "Aura.md"
         result_json = write_file_tool(
-            str(target), "user-directed override", cross_profile=True
+            str(target), "user-directed override", cross_agent=True
         )
         result = json.loads(result_json)
-        assert not result.get("error"), f"cross_profile=True must succeed: {result}"
+        assert not result.get("error"), f"cross_agent=True must succeed: {result}"
         assert target.read_text() == "user-directed override"
+
+        # 旧名照样收（旧 transcript／旧调用不许坏）。
+        result_json = write_file_tool(
+            str(target), "old kwarg still works", cross_profile=True
+        )
+        result = json.loads(result_json)
+        assert not result.get("error"), f"cross_profile=True must still work: {result}"
 
     def test_non_plobi_path_unaffected(self, fake_plobi, tmp_path):
         from tools.file_tools import write_file_tool
@@ -109,53 +152,53 @@ class TestWriteFileCrossProfileGuard:
 
 
 class TestPatchCrossProfileGuard:
-    def test_cross_profile_patch_blocked(self, fake_plobi):
+    def test_cross_agent_patch_blocked(self, fake_plobi):
         from tools.file_tools import patch_tool
-        target = fake_plobi["root"] / "skills" / "shared-skill" / "SKILL.md"
+        target = fake_plobi["root"] / "souls" / "Aura.md"
         original = target.read_text()
         result_json = patch_tool(
             mode="replace",
             path=str(target),
-            old_string="default copy.",
+            old_string="# Aura",
             new_string="HIJACKED.",
         )
         result = json.loads(result_json)
         assert result.get("error")
-        assert "cross-profile" in result["error"].lower()
+        assert "cross-agent" in result["error"].lower()
         assert target.read_text() == original
 
-    def test_cross_profile_patch_bypass(self, fake_plobi):
+    def test_cross_agent_patch_bypass(self, fake_plobi):
         from tools.file_tools import patch_tool
-        target = fake_plobi["root"] / "skills" / "shared-skill" / "SKILL.md"
+        target = fake_plobi["root"] / "souls" / "Aura.md"
         result_json = patch_tool(
             mode="replace",
             path=str(target),
-            old_string="default copy.",
+            old_string="# Aura",
             new_string="user-directed update.",
-            cross_profile=True,
+            cross_agent=True,
         )
         result = json.loads(result_json)
-        assert not result.get("error"), f"cross_profile=True bypass: {result}"
+        assert not result.get("error"), f"cross_agent=True bypass: {result}"
         assert "user-directed update." in target.read_text()
 
     def test_v4a_patch_extracts_path_for_guard(self, fake_plobi):
         """V4A patches embed the target paths in the patch body, not in
         a ``path`` kwarg. The guard must still apply."""
         from tools.file_tools import patch_tool
-        target = fake_plobi["root"] / "skills" / "shared-skill" / "SKILL.md"
+        target = fake_plobi["root"] / "souls" / "Aura.md"
         original = target.read_text()
         v4a = (
             "*** Begin Patch\n"
             f"*** Update File: {target}\n"
             "@@\n"
-            "-default copy.\n"
+            "-# Aura\n"
             "+HIJACKED.\n"
             "*** End Patch"
         )
         result_json = patch_tool(mode="patch", patch=v4a)
         result = json.loads(result_json)
-        assert result.get("error"), f"V4A cross-profile must block: {result}"
-        assert "cross-profile" in result["error"].lower()
+        assert result.get("error"), f"V4A cross-agent must block: {result}"
+        assert "cross-agent" in result["error"].lower()
         assert target.read_text() == original
 
 

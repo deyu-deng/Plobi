@@ -55,6 +55,28 @@ def fake_plobi(tmp_path, monkeypatch):
     (coder_home / "skills" / "foo").mkdir(parents=True)
     (coder_home / "skills" / "foo" / "SKILL.md").write_text("# coder skill\n")
 
+    # 共享层下按名册行分的那三份（10-27 随 WP-PROFILE-GUARD-SCOPE）：
+    # 身份页、它自己的记忆、它那一份排程存储。
+    (root / "souls").mkdir(parents=True)
+    (root / "souls" / "Aura.md").write_text("# Aura\n", encoding="utf-8")
+    (root / "memory" / "agents" / "aura").mkdir(parents=True)
+    (root / "cron" / "agents" / "aura").mkdir(parents=True)
+
+    # 名册（身份的真源）：守卫靠它把「键」还原成「名册上的名字」。
+    roster = root / "plobi" / "projects.yaml"
+    roster.parent.mkdir(parents=True, exist_ok=True)
+    roster.write_text(
+        "agents:\n"
+        "  Aura:\n"
+        "    role: l2_project\n"
+        "    profile: aura\n"
+        "  plobi-security:\n"
+        "    role: l2_project\n"
+        "    profile: plobi-security\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
+
     # Monkeypatch the resolver functions used by file_safety so each test
     # can choose which profile is "active".
     import plobi_constants
@@ -120,17 +142,19 @@ class TestClassifyCrossProfileTarget:
         )
         assert result is None
 
-    def test_security_writing_default_skill(self, fake_plobi, monkeypatch):
-        """The exact incident from May 2026."""
+    def test_shared_layer_is_not_anyones_private_area(self, fake_plobi, monkeypatch):
+        """共享层那几样**不是**谁的私有物 ⇒ 不判（10-27 随 WP-PROFILE-GUARD-SCOPE）。
+
+        旧世界里「默认家的 skills」＝``<root>/skills/``（默认家＝共享根），
+        所以那一句是「某个人的」；家退休之后默认家不再独占了——
+        ``<root>/skills/`` 是**大家的**。拦它就是不让 Agent 管自己的技能。
+        """
         _set_active_home(monkeypatch, fake_plobi["security_home"])
         from agent.file_safety import classify_cross_profile_target
         result = classify_cross_profile_target(
             str(fake_plobi["default_home"] / "skills" / "foo" / "SKILL.md")
         )
-        assert result is not None
-        assert result["active_profile"] == "plobi-security"
-        assert result["target_profile"] == "default"
-        assert result["area"] == "skills"
+        assert result is None
 
     def test_default_writing_security_skill(self, fake_plobi, monkeypatch):
         """Inverse direction — default-profile session reaching into a named profile."""
@@ -153,13 +177,12 @@ class TestClassifyCrossProfileTarget:
         assert result["target_profile"] == "coder"
 
     @pytest.mark.parametrize("area", ["skills", "plugins", "cron"])
-    def test_all_profile_scoped_areas_classified(self, fake_plobi, monkeypatch, area):
+    def test_shared_layer_areas_not_classified(self, fake_plobi, monkeypatch, area):
+        """共享层那三处一律不判（10-27 随 WP-PROFILE-GUARD-SCOPE）。"""
         _set_active_home(monkeypatch, fake_plobi["security_home"])
         from agent.file_safety import classify_cross_profile_target
         target = fake_plobi["default_home"] / area / "foo.txt"
-        result = classify_cross_profile_target(str(target))
-        assert result is not None
-        assert result["area"] == area
+        assert classify_cross_profile_target(str(target)) is None
 
     def test_non_plobi_path_returns_none(self, fake_plobi, monkeypatch, tmp_path):
         _set_active_home(monkeypatch, fake_plobi["security_home"])
@@ -192,26 +215,27 @@ class TestGetCrossProfileWarning:
             str(fake_plobi["security_home"] / "skills" / "foo" / "SKILL.md")
         ) is None
 
-    def test_cross_profile_warning_names_both_profiles(self, fake_plobi, monkeypatch):
+    def test_cross_profile_warning_names_both_agents(self, fake_plobi, monkeypatch):
+        """警告要说清**谁的哪一份** ＋ 现在的身份是谁 ＋ 怎么绕（10-27 新形状）。"""
         _set_active_home(monkeypatch, fake_plobi["security_home"])
         from agent.file_safety import get_cross_profile_warning
         warn = get_cross_profile_warning(
-            str(fake_plobi["default_home"] / "skills" / "foo" / "SKILL.md")
+            str(fake_plobi["root"] / "souls" / "Aura.md")
         )
         assert warn is not None
-        # Must name BOTH profiles so the model knows which is which.
-        assert "default" in warn
+        # Must name BOTH agents so the model knows which is which.
+        assert "Aura" in warn
         assert "plobi-security" in warn
         # Must name the bypass kwarg.
         assert "cross_agent=True" in warn
         # Must reference the area.
-        assert "skills" in warn
+        assert "identity" in warn
 
     def test_warning_is_defense_in_depth_not_boundary(self, fake_plobi, monkeypatch):
         _set_active_home(monkeypatch, fake_plobi["security_home"])
         from agent.file_safety import get_cross_profile_warning
         warn = get_cross_profile_warning(
-            str(fake_plobi["default_home"] / "skills" / "foo" / "SKILL.md")
+            str(fake_plobi["root"] / "souls" / "Aura.md")
         )
         # Must self-document as defense-in-depth so future reviewers
         # don't promote it to a hard block.
@@ -253,12 +277,12 @@ class TestMemoriesIsNotProfileScoped:
         assert classify_cross_profile_target(str(target)) is None
 
     def test_surviving_areas_still_guarded(self, fake_plobi, monkeypatch):
-        """Regression guard: dropping memories must not weaken skills/plugins/cron."""
+        """新形状下「还活着的区域」＝每 Agent 自己的那三份（10-27）。"""
         _set_active_home(monkeypatch, fake_plobi["security_home"])
         from agent.file_safety import classify_cross_profile_target
         result = classify_cross_profile_target(
-            str(fake_plobi["root"] / "skills" / "foo" / "SKILL.md")
+            str(fake_plobi["root"] / "souls" / "Aura.md")
         )
         assert isinstance(result, dict)
-        assert result["area"] == "skills"
-        assert result["target_profile"] == "default"
+        assert result["area"] == "identity"
+        assert result["target_profile"] == "Aura"

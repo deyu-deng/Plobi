@@ -412,7 +412,9 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             f"files (its identity sheet, its memory, its cron store) live under "
             f"that shared home too. Leave another agent's alone unless the user "
             f"explicitly directs you to. The write guard refuses paths that "
-            f"point into a retired per-agent home; pass cross_agent=True only "
+            f"point into another agent's own files (its identity sheet, its "
+            f"memory, its cron store) or into a retired per-agent home; pass "
+            f"cross_agent=True only "
             f"after explicit direction."
         )
 
