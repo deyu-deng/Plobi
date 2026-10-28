@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 
 import httpx
 import pytest
@@ -34,6 +35,42 @@ def test_the_google_login_leaves_through_the_same_node_as_the_leg(monkeypatch, h
 
     assert seen["proxy"] == "http://127.0.0.1:1"
     assert seen["client_id"] == "cid"
+
+
+def test_the_consent_asks_google_the_way_the_working_clients_do(monkeypatch, home):
+    """线级细节是从别人**跑通的实现**里读来的，不是我们发明的（2026-10-28）。
+
+    抄的是 `router-for-me/CLIProxyAPI` 的 `internal/auth/antigravity/{constants.go,auth.go}`：
+    固定回调口 51121、路径 `/oauth-callback`、**完全不用 PKCE**。我们原先那套随机口 +
+    S256 challenge 是自己想的，等于多塞一种会失败的可能。
+    """
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_SECRET", "secret")
+    seen: dict = {}
+
+    monkeypatch.setattr(oa.google_oauth, "sign_in", lambda **k: seen.update(k) or {"access_token": "a", "refresh_token": "r"})
+    monkeypatch.setattr(oa, "probe_network", lambda: {"ok": True, "checks": []})
+    monkeypatch.setattr(oa, "resolve_proxy", lambda: ("http://127.0.0.1:1", "ok"))
+
+    oa.run_bootstrap(print_token=False)
+
+    assert seen["use_pkce"] is False
+    assert seen["redirect_host"] == "localhost"
+    assert seen["redirect_path"] == "/oauth-callback"
+    assert seen["preferred_port"] == 51121
+
+
+def test_a_busy_callback_port_falls_back_instead_of_failing_the_click():
+    """那个固定口可能被厂商自己的应用占着——占了也不能让这一跳死。"""
+    held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    held.bind(("127.0.0.1", 0))
+    held.listen(1)
+    try:
+        taken = held.getsockname()[1]
+        assert google_oauth._reserve_port(taken) != taken
+        assert google_oauth._reserve_port(0) > 0
+    finally:
+        held.close()
 
 
 def test_a_missing_node_refuses_before_his_browser_is_opened(monkeypatch, home):

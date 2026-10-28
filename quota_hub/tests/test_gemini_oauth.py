@@ -245,7 +245,7 @@ def test_the_shared_flow_opens_the_browser_only_after_reporting_the_url(monkeypa
     monkeypatch.setattr(gem_oauth.google_oauth.webbrowser, "open", lambda url: order.append("browser"))
     monkeypatch.setattr(
         gem_oauth.google_oauth, "wait_for_code",
-        lambda port, timeout=300.0: (order.append("wait") or "code-123"),
+        lambda port, timeout=300.0, **kw: (order.append("wait") or "code-123"),
     )
 
     def _record(url):

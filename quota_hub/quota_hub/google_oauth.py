@@ -92,13 +92,14 @@ class _Callback(BaseHTTPRequestHandler):
 
     code: str | None = None
     error: str | None = None
+    callback_path: str = "/callback"
 
     def log_message(self, format: str, *args) -> None:
         pass
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/callback":
+        if parsed.path != _Callback.callback_path:
             self.send_error(404)
             return
         qs = urllib.parse.parse_qs(parsed.query)
@@ -135,12 +136,13 @@ def _page(title: str, line: str, *, bad: bool) -> str:
     )
 
 
-def wait_for_code(port: int, timeout: float = 300.0) -> str:
+def wait_for_code(port: int, timeout: float = 300.0, *, path: str = "/callback") -> str:
     """Block until the browser hands us one code. Raises on error or timeout."""
     import time
 
     _Callback.code = None
     _Callback.error = None
+    _Callback.callback_path = path
     server = HTTPServer(("127.0.0.1", port), _Callback)
     server.timeout = 1
     deadline = time.time() + timeout
@@ -209,15 +211,37 @@ def refresh(client_id: str, client_secret: str, refresh_token: str,
     return res.json()
 
 
+def _reserve_port(preferred: int) -> int:
+    """Take the product's registered callback port when it is free, else any free port.
+
+    A fixed port is what the vendor's own client registration expects
+    (`…/oauth-callback` on 51121 for Antigravity, learned from CLIProxyAPI's
+    implementation, not invented here). Something else may already hold it — that is not a
+    reason to fail the click, because Google matches loopback origins by host.
+    """
+    if not preferred:
+        return free_port()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", preferred))
+        except OSError:
+            return free_port()
+    return preferred
+
+
 def sign_in(*, client_id: str, client_secret: str, scopes: list[str],
             proxy: str = "", timeout: float = 300.0, use_pkce: bool = True,
-            on_url: Callback | None = None) -> dict:
+            redirect_host: str = "127.0.0.1", redirect_path: str = "/callback",
+            preferred_port: int = 0, on_url: Callback | None = None) -> dict:
     """One full consent: URL → browser → loopback code → tokens. Returns Google's JSON.
 
     The caller persists whatever it needs; this module holds nothing after it returns.
+    `use_pkce` / `redirect_host` / `redirect_path` / `preferred_port` exist because the
+    products differ on all four and none of them is our invention — each leg states the
+    shape its own CLI or client registration uses.
     """
-    port = free_port()
-    redirect_uri = f"http://127.0.0.1:{port}/callback"
+    port = _reserve_port(preferred_port)
+    redirect_uri = f"http://{redirect_host}:{port}{redirect_path}"
     url, verifier = auth_url(client_id, redirect_uri, scopes, use_pkce=use_pkce)
     if on_url is not None:
         on_url(url)
@@ -225,5 +249,5 @@ def sign_in(*, client_id: str, client_secret: str, scopes: list[str],
         webbrowser.open(url)
     except Exception:  # noqa: BLE001 — the URL is handed to `on_url` above for a reason
         pass
-    code = wait_for_code(port, timeout=timeout)
+    code = wait_for_code(port, timeout=timeout, path=redirect_path)
     return exchange(client_id, client_secret, code, verifier, redirect_uri, proxy=proxy)

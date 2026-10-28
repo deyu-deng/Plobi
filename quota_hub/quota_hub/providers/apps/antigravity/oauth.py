@@ -44,6 +44,16 @@ OAUTH_SCOPES = list(google_oauth.CODE_ASSIST_SCOPES)
 #: The host used for loadCodeAssist project discovery during bootstrap.
 LOAD_CODE_ASSIST_HOST = "https://daily-cloudcode-pa.googleapis.com"
 
+#: The callback shape this client is registered with — learned by reading a working
+#: implementation of the same flow (`router-for-me/CLIProxyAPI`,
+#: `internal/auth/antigravity/{constants.go,auth.go}`, verified 2026-10-28), not guessed:
+#: fixed loopback port, path `/oauth-callback`, and **no PKCE at all** — their consent URL
+#: sends `access_type/client_id/prompt/redirect_uri/response_type/scope/state` only, and
+#: the token exchange sends no `code_verifier`. Our own invented shape (random port +
+#: S256 challenge) was one more way for this click to fail.
+CALLBACK_PORT = 51121
+CALLBACK_PATH = "/oauth-callback"
+
 
 def client_credentials() -> tuple[str, str]:
     pair = account_store.client_credentials()
@@ -156,7 +166,12 @@ def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | 
         )
     tokens = google_oauth.sign_in(
         client_id=client_id, client_secret=client_secret,
-        scopes=OAUTH_SCOPES, proxy=proxy, on_url=on_url,
+        scopes=OAUTH_SCOPES, proxy=proxy,
+        use_pkce=False,
+        redirect_host="localhost",
+        redirect_path=CALLBACK_PATH,
+        preferred_port=CALLBACK_PORT,
+        on_url=on_url,
     )
 
     refresh = tokens.get("refresh_token")
