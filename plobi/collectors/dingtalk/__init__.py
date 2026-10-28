@@ -61,10 +61,14 @@ SPEC = SourceSpec(
         "history_backfill": False,
         # `pull()` 认 `since_ms`（按 `createdAt` 过滤），所以这一格是真的 True。
         "incremental_since": True,
-        # 图片/文件那一族：库里 `contentType` 有 2(图)/501(文件)/3100(小程序)，
-        # 但**正文之外的附件怎么取**这一版没实测（`attachments` 那一串 JSON 里的路径
-        # 指向客户端自己的缓存，跨版本换过位置）⇒ 留 None，不拿 False 冒充测过。
-        "supports_media": None,
+        # 图片/文件那一族：10-28 这台改成**实测过**的一格——`dingtalk.db` 里有一纸
+        # `im_image_info`（`url_md5/local_path/cid/mid/size`），本机 3 条记录的 `local_path`
+        # **全部在盘上**（4 586／23 262／47 074 字节，落在客户端的 `resource_cache`），
+        # `store.media_index` + `stage_media` 把那些件收进 Plobi 自己的家（上限：单件 20MB、
+        # 一轮 60 件，到顶在 `health()` 里报数）。
+        # 但这一格只说"这台机器上现在有什么"：**文件类消息没有这样一纸索引**，
+        # `ExtensionFiles`／`AudioFiles` 今天是空的 ⇒ 客户端没下载过就没有字节，我们不造假。
+        "supports_media": True,
         # 要用户自己动一次手：登录桌面客户端 + 点出要采的那几扇会话。
         "requires_manual_setup": True,
         # 一轮里没出现不等于"这条消息被取消了"（本机库只是缓存，客户端什么时候清它

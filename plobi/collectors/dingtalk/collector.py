@@ -37,7 +37,8 @@ class DingTalkCollector:
 
     def __init__(self, *, local_store: Any, excluded: Iterable[str] = (),
                  limit: int = 500, since_ms: int = 0, titles: Optional[dict[str, str]] = None,
-                 calendar_opener: Any = None) -> None:
+                 calendar_opener: Any = None, media: Optional[dict[str, list[dict]]] = None,
+                 media_index: Any = None, stage_media: Any = None) -> None:
         self.store = local_store
         # 只有 `excluded` 拒绝（裁定 50／100 一：默认采，用户逐扇关）。采集器**只问这一格**——
         # 不去读整张名册再自己判一遍，那是第二处判"采不采"。
@@ -48,6 +49,12 @@ class DingTalkCollector:
         self._calendar_opener = calendar_opener or store.open_calendar_store
         #: 日历那一腿这一轮到底怎么样（读到了几条 / 为什么读不到）——由 `health()` 说，不闷着。
         self.calendar_note = ""
+        #: 媒体那一格：`None` = 这一轮自己去问索引；传一份字典 = 注入位（测试不碰盘）。
+        self._media = media
+        self._media_index = media_index or store.media_index
+        self._stage_media = stage_media or store.stage_media
+        #: 「本机索引里有几条、真取回几条、因为什么没取」——由 `health()` 说出去。
+        self.media_note = ""
 
     @classmethod
     def build(cls, *, excluded: Optional[Iterable[str]] = None,
@@ -66,15 +73,17 @@ class DingTalkCollector:
         return cls(local_store=opened, excluded=excluded)
 
     def health(self) -> dict:
-        """库开不开、本机几扇、排除了几扇、日历那一腿怎么样——四格一起说。
+        """库开不开、本机几扇、排除了几扇、日历与媒体那两腿怎么样——四格一起说。
 
         一扇都没定过**不等于采不到**：默认就是采（与微信同一条口径），所以这里 `ok=True`。
         真要说的那句限制是"本机库里只有客户端已经拉下来的那部分"，而那件事由 `pull()`
         回来的条数与最新时间说，不由这颗绿灯盖掉。
         """
         detail = (f"本机 {self.store.rows} 个会话，其中排除 {len(self.excluded)} 个"
-                  f"；日历：{self.calendar_note or '这一轮还没读过'}")
+                  f"；日历：{self.calendar_note or '这一轮还没读过'}"
+                  f"；图片：{self.media_note or '这一轮还没问过索引'}")
         return {"ok": True, "state": "ready", "detail": detail}
+
 
     def pull(self) -> list[Occurrence]:
         """两腿一起读：聊天（被排除的那几扇不读）+ 日历那一枚库。**纯读**，一个字都不写库。"""
@@ -89,9 +98,12 @@ class DingTalkCollector:
             return []
         rows = store.recent_messages(self.store, wanted, limit=self.limit, since_ms=self.since_ms)
         titles = self._conversation_titles()
+        media = self._media_for(rows)
 
-        return [
-            Occurrence(
+        occurrences: list[Occurrence] = []
+        for row in rows:
+            items = media.get(str(row["mid"]), [])
+            occurrences.append(Occurrence(
                 source=self.source_id,
                 # cid 进键：同一 mid 在转发/引用链里不保证跨会话唯一，而 (会话, mid) 唯一。
                 external_id=f"{row['cid']}:{row['mid']}",
@@ -109,10 +121,44 @@ class DingTalkCollector:
                     "at_ids": row["at_ids"],
                     # 出处：这一行是从哪一枚本机库、哪一张分片表读来的。排障时不用再猜一次。
                     "origin": f"local-store:{self.store.profile}:{row['shard']}",
+                    # 媒体那一格：`[]` 是一个读数（这没有可取的缓存件），不是错误。
+                    "media": items,
                 },
-            )
-            for row in rows
-        ]
+            ))
+        return occurrences
+
+    def _media_for(self, rows: list[dict]) -> dict[str, list[dict]]:
+        """聊天里的图片：**先问索引，再把盘上真有的那几件收进 Plobi 的家**。
+
+        索引那一纸只覆盖客户端真的下过并缓存过的件（这台 10-28 现读：3 条，全在盘上）；
+        文件类消息本机没有这样一纸索引，`ExtensionFiles` 今天空 ⇒ 没点下载就没有字节。
+        所以这一格说的永远是"这台机器上现在有什么"，不是"钉钉云端有什么"——那两句话不许混。
+        """
+        if self._media is None:
+            try:
+                self._media = self._media_index(self.store, mids=[str(r["mid"]) for r in rows])
+            except Exception as exc:  # noqa: BLE001 - 索引读不到不许把整条源弄红
+                self._media = {}
+                self.media_note = f"问不到（{type(exc).__name__}）"
+                return {}
+
+        if not self._media:
+            self.media_note = "本机索引里没有这一轮的件"
+            return {}
+
+        out: dict[str, list[dict]] = {}
+        saved = skipped = dropped = 0
+        for mid, items in self._media.items():
+            staged, gone, over = self._stage_media(items)
+            out[str(mid)] = staged
+            saved += len(staged)
+            skipped += gone
+            dropped += over
+
+        self.media_note = (f"索引 {len(self._media)} 条，取回 {saved} 件"
+                           + (f"，本机已无 {skipped} 件" if skipped else "")
+                           + (f"，超单件上限放弃 {dropped} 件" if dropped else ""))
+        return out
 
     def _calendar_occurrences(self) -> list[Occurrence]:
         """`calendar_v2.db` 那几行进池（用户 10-26 拍：「进池，kind 我定」⇒ `KIND_EVENT`）。

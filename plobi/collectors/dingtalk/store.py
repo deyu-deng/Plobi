@@ -197,6 +197,105 @@ def local_dir() -> Path:
     return get_plobi_home() / "plobi" / "dingtalk-local"
 
 
+#: 图片本体从客户端缓存复制过来的落点（**在 Plobi 家里，不在 C 盘的客户端目录里留第二份**）。
+MEDIA_DIR_NAME = "dingtalk-media"
+#: 单张上限与一轮上限：到顶就在读数里说"还有几件没取"，不静默丢（那条"成功但空货"的同形教训）。
+MAX_MEDIA_BYTES = 20 * 1024 * 1024
+MAX_MEDIA_PER_ROUND = 60
+
+
+def media_dir() -> Path:
+    override = (os.environ.get("PLOBI_DINGTALK_MEDIA_DIR") or "").strip()
+    if override:
+        return Path(override)
+    from plobi_constants import get_plobi_home
+
+    return get_plobi_home() / "plobi" / MEDIA_DIR_NAME
+
+
+def media_index(opened: "LocalStore", *, mids: Optional[list[str]] = None,
+                limit: int = MAX_MEDIA_PER_ROUND) -> dict[str, list[dict]]:
+    """`im_image_info` 那一纸**媒体索引**：`mid → [{md5, path, size_bytes, exists, …}]`。
+
+    这台 10-28 现读（只打形状与存在性，不打路径值）：索引里 3 条，`local_path` **三条全在盘上**，
+    落在 `…\\<UID>_v3\\resource_cache\\<md5 前缀>\\<md5>`，真实字节 4 586／23 262／47 074。
+    ⚠️ 那纸上的 `size` 一格是**KB 取整**（写的是 4／23／47），不是字节——所以这里以盘上实际大小为准，
+    别拿它当字节数用。
+
+    它只覆盖**客户端真的下过并缓存过**的那些图：文件类消息（`content_type` 501）在本机没有这样一纸索引，
+    `ExtensionFiles`／`AudioFiles` 今天全空 ⇒ 没点下载就没有字节，任何代码都造不出来。
+    """
+    where, args = "", []
+    if mids:
+        where = f"WHERE mid IN ({', '.join('?' for _ in mids)})"
+        args = [str(mid) for mid in mids]
+
+    sql = (f"SELECT mid, url_md5, local_path, size, image_type, create_at FROM im_image_info "
+           f"{where} ORDER BY create_at DESC LIMIT ?")
+    try:
+        rows = list(opened.connection.execute(sql, [*args, limit]))
+    except sqlite3.Error:
+        # 没有这一纸索引（版本换了/库里没这张表）⇒ 交回空表：这是"这侧没媒体可取"的读数，不是故障。
+        return {}
+
+    out: dict[str, list[dict]] = {}
+    for mid, url_md5, local_path, size_kb, image_type, create_at in rows:
+        path = Path(str(local_path or ""))
+        exists = bool(str(local_path)) and path.is_file()
+        out.setdefault(str(mid), []).append({
+            "kind": "image",
+            "md5": str(url_md5 or ""),
+            "local_path": str(local_path or ""),
+            "claimed_kb": size_kb,
+            "size_bytes": path.stat().st_size if exists else 0,
+            "exists": exists,
+            "image_type": image_type,
+            "created_at": create_at,
+        })
+    return out
+
+
+def stage_media(items: list[dict], *, into: Optional[Path] = None,
+                budget: int = MAX_MEDIA_BYTES) -> tuple[list[dict], int, int]:
+    """把盘上真有的那几件复制进 Plobi 的家（幂等：同 md5 同大小就不重抄）。
+
+    返回 `(取回的清单, 跳过的件数, 这一轮放弃的件数)`——**放弃要说得出数**，静默截断是假话。
+    读不到源文件（客户端刚清缓存）不当错误：那一条退回"本机没有"这一格。
+    """
+    import shutil
+
+    root = into or media_dir()
+    saved: list[dict] = []
+    skipped = dropped = 0
+
+    for item in items:
+        source = Path(item.get("local_path") or "")
+        if not item.get("exists") or not source.is_file():
+            skipped += 1
+            continue
+
+        size = int(item.get("size_bytes") or source.stat().st_size)
+        if size > budget:
+            dropped += 1
+            continue
+        budget -= size
+
+        target_dir = root / str(item.get("md5") or "no-md5")
+        target = target_dir / (source.name or f"{item.get('md5', 'media')}")
+        if target.exists() and target.stat().st_size == size:
+            saved.append({**item, "saved_to": str(target), "size_bytes": size, "reused": True})
+            continue
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        except OSError:
+            skipped += 1
+            continue
+        saved.append({**item, "saved_to": str(target), "size_bytes": size, "reused": False})
+
+    return saved, skipped, dropped
+
+
 def _decrypt_pages(source: Path, key: bytes, target: Path) -> int:
     """整页 ECB 解一遍（从偏移 0 开始，**没有跳过的文件头**——这一点也是实测：
     页 0 就是加密的 SQLite 魔法），并把那一枚 `-wal` 按提交组合并进副本。返回写出的页数。
