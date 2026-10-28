@@ -347,6 +347,8 @@ function DesktopQuotasView() {
     // The hub's own measurement: the upstream refused this id twice, so it sits the
     // box out for a while. A name we cannot serve is a reason to hide it, not to shout.
     model_rejected: t.desktop.quotaReason.model_rejected,
+    // Measured: the Free tier refuses HTTP turns, so the leg is not offered at all.
+    no_subscription: t.desktop.quotaReason.no_subscription,
     no_desktop_credential: t.desktop.quotaReason.no_desktop_credential,
     no_tools: t.desktop.quotaReason.no_tools,
     not_offered: t.desktop.quotaReason.not_offered

@@ -2799,6 +2799,7 @@ export interface Translations {
       no_tools: string
       not_offered: string
       model_rejected: string
+      no_subscription: string
       disconnected: string
       unknown: (reason: string) => string
     }

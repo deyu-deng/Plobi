@@ -3024,6 +3024,8 @@ export const zhHant = defineLocale({
       // 不是我們編的名字，也不是我們編的判斷：上游連著兩次沒把這個模型給回來，
       // 它就先歇一會兒，能用了再自己回來。
       model_rejected: '最近兩次向它要這個模型，都沒給回來',
+      // 10-28 實測：Free 池在 HTTP 上直接 429，只有付費訂閱（或 key）才服務得了回合。
+      no_subscription: '這條通道要付費訂閱或一個 API key 才能用',
       // 不是網關那邊的理由：是你自己按了中斷連線，所以這裡不賴那個軟體或這台機器。
       disconnected: '你把它關掉了',
       unknown: reason => `不可用（${reason}）`

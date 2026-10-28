@@ -3371,6 +3371,8 @@ export const zh: Translations = {
       // 不是我们编的名字，也不是我们编的判断：上游连着两次没把这个模型给回来，
       // 它就先歇一会儿，能用了再自己回来。
       model_rejected: '最近两次向它要这个模型，都没给回来',
+      // 10-28 实测：Free 池在 HTTP 上直接 429，只有付费订阅（或 key）才服务得了回合。
+      no_subscription: '这条渠道要付费订阅或一个 API key 才能用',
       // 不是网关那边的理由：是你自己按了断开连接，所以这里不赖那个软件或这台机器。
       disconnected: '你把它关掉了',
       unknown: reason => `不可用（${reason}）`

@@ -3237,6 +3237,9 @@ export const en: Translations = {
       // Not a name list and not a verdict we invented: the upstream refused this id
       // twice in a row, so it sits out a while and comes back when it works again.
       model_rejected: 'the app did not serve that model the last two times we asked',
+      // Measured 2026-10-28: the Free pool answers 429 over HTTP; only a paid plan (or a
+      // key) can serve a turn. Tooltip only — the row itself just is not offered.
+      no_subscription: 'this channel needs a paid plan or an API key before Plobi can use it',
       // Not a hub reason: the user pressed Disconnect themselves, so this says so
       // rather than blaming the app or the machine.
       disconnected: 'you turned it off',
