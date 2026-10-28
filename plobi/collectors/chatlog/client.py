@@ -26,6 +26,17 @@ class ChatlogUnavailable(RuntimeError):
     """chatlog is not reachable (service down, WeChat logged out, …)."""
 
 
+class MediaNotFound(ChatlogUnavailable):
+    """侧车回 404：**这一件它现在还不知道**。
+
+    与「侧车没了」是两件事，必须分得开（10-28 实测到根因为止）：引擎的自动解密只吃
+    `fsnotify` 的实时事件，微信把媒体索引的新行先写在 `hardlink.db-wal` 里，
+    checkpoint 进主文件那一刻才触发重解——所以侧车读到的那份索引**永远滞后**，
+    比它上次启动/上次 checkpoint 更新的那几件就是 404。字节这一腿本身是通的
+    （索引里有的那几枚，实测回真 JPEG）。
+    """
+
+
 #: 引擎回的那一格里，非文本消息的**键藏在 `contents` 里**（不在 `content` 那句人话里）。
 #: 下面这张表只登记本机量到过的形状：type 3=图、43=视频、34=语音、49=文件/链接/合并转发
 #: （49 的 `subType` 5 是链接分享、57 是引用——引用里还套着一层 `contents`，那是被引的那条自己）。
@@ -245,6 +256,10 @@ class ChatlogClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 body = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise MediaNotFound(f"chatlog has no such media: {path}") from exc
+            raise ChatlogUnavailable(f"chatlog request failed: {exc}") from exc
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             raise ChatlogUnavailable(f"chatlog request failed: {exc}") from exc
 
@@ -277,6 +292,10 @@ class ChatlogClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return response.read(), response.headers.get("Content-Type") or ""
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise MediaNotFound(f"chatlog has no such media: {path}") from exc
+            raise ChatlogUnavailable(f"chatlog media fetch failed: {exc}") from exc
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
             raise ChatlogUnavailable(f"chatlog media fetch failed: {exc}") from exc
 

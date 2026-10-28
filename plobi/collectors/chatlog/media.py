@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .client import ChatlogUnavailable
+from .client import ChatlogUnavailable, MediaNotFound
 
 #: 单件上限与一轮上限：到顶就报数，不静默截断（那条"成功但空货"的反面教训）。
 MAX_MEDIA_BYTES = 50 * 1024 * 1024
@@ -53,17 +54,23 @@ def _safe_key(key: str) -> str:
     return str(key or "").strip()
 
 
-def stage_media(client, items: list[dict], *, into: Optional[Path] = None,
-                budget: int = MAX_MEDIA_BYTES, max_files: int = MAX_MEDIA_PER_ROUND
-                ) -> tuple[list[dict], int, int, int]:
-    """取回这一轮的媒体件，返回 `(取回的, 认不出的键, 失败的, 放弃的)`。
+@dataclass(frozen=True)
+class MediaRound:
+    """一轮媒体落点的账，四件事分开记（合并成一个"跳过 N 件"就读不出该修哪一个）。"""
 
-    四个数分开是有意的：**"这键不像键"、"侧车说没有这件"、"太大不取"是三件不同的事**，
-    合并成一个"跳过 N 件"就读不出该修哪一个。
-    """
+    saved: list[dict] = field(default_factory=list)
+    malformed: int = 0  # 键不像键（这一版的 `contents` 长得不认识）
+    failed: int = 0  # 侧车有问题 / 落盘写不进去
+    dropped: int = 0  # 到顶了（单件过大、或一轮的件数用完）
+    absent: int = 0  # **侧车现在还不知道这一件**：索引滞后，下一轮要重试它
+
+
+def stage_media(client, items: list[dict], *, into: Optional[Path] = None,
+                budget: int = MAX_MEDIA_BYTES, max_files: int = MAX_MEDIA_PER_ROUND) -> MediaRound:
+    """取回这一轮的媒体件，落到 `media_dir()`；已经落过的按 `key` 幂等复用。"""
     root = into or media_dir()
     saved: list[dict] = []
-    malformed = failed = dropped = 0
+    malformed = failed = dropped = absent = 0
 
     for item in items:
         kind = str(item.get("kind") or "")
@@ -85,6 +92,9 @@ def stage_media(client, items: list[dict], *, into: Optional[Path] = None,
 
         try:
             payload, content_type = client.media_bytes(kind, key)
+        except MediaNotFound:
+            absent += 1
+            continue
         except ChatlogUnavailable:
             failed += 1
             continue
@@ -109,4 +119,4 @@ def stage_media(client, items: list[dict], *, into: Optional[Path] = None,
         saved.append({**item, "saved_to": str(target), "size_bytes": len(payload),
                       "content_type": content_type, "reused": False})
 
-    return saved, malformed, failed, dropped
+    return MediaRound(saved=saved, malformed=malformed, failed=failed, dropped=dropped, absent=absent)

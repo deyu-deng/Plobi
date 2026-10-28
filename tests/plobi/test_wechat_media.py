@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from plobi.collectors.chatlog import media as M
 from plobi.collectors.chatlog.client import ChatlogUnavailable
+from plobi.collectors.chatlog.client import MediaNotFound
 from plobi.collectors.chatlog.client import media_of as media_of
 from plobi.collectors.chatlog.client import normalize_message
 
@@ -73,15 +74,19 @@ class TestTheKeysComeFromContents:
 
 
 class FakeSidecar:
-    def __init__(self, payloads: dict[str, tuple[bytes, str]], *, fail: tuple[str, ...] = ()) -> None:
+    def __init__(self, payloads: dict[str, tuple[bytes, str]], *, fail: tuple[str, ...] = (),
+                 absent: tuple[str, ...] = ()) -> None:
         self.payloads = payloads
         self.fail = set(fail)
+        self.absent = set(absent)
         self.asked: list[tuple[str, str]] = []
 
     def media_bytes(self, kind: str, key: str):
         self.asked.append((kind, key))
         if key in self.fail:
-            raise ChatlogUnavailable("no such media")
+            raise ChatlogUnavailable("chatlog request failed: HTTP Error 500")
+        if key in self.absent:
+            raise MediaNotFound("chatlog has no such media")
         return self.payloads.get(key, (b"", ""))
 
 
@@ -94,57 +99,65 @@ class TestStagingIntoPlobisOwnHome:
     def test_the_bytes_land_with_the_suffix_the_engine_said(self, tmp_path) -> None:
         sidecar = FakeSidecar({self.MD5: (b"\x89PNG\r\n\x1a\n" + b"z" * 20, "image/png")})
 
-        saved, malformed, failed, dropped = M.stage_media(sidecar, self.items(), into=tmp_path)
+        res = M.stage_media(sidecar, self.items(), into=tmp_path)
 
-        assert (malformed, failed, dropped) == (0, 0, 0)
-        target = Path(saved[0]["saved_to"])
+        assert (res.malformed, res.failed, res.dropped, res.absent) == (0, 0, 0, 0)
+        target = Path(res.saved[0]["saved_to"])
         assert target.parent == tmp_path / "image"
         assert target.name == f"{self.MD5}.png" and target.is_file()
-        assert saved[0]["reused"] is False
+        assert res.saved[0]["reused"] is False
 
     def test_a_second_round_reuses_the_file_it_already_has(self, tmp_path) -> None:
         sidecar = FakeSidecar({self.MD5: (b"payload" * 3, "image/jpeg")})
         M.stage_media(sidecar, self.items(), into=tmp_path)
 
-        saved, _, _, _ = M.stage_media(sidecar, self.items(), into=tmp_path)
+        res = M.stage_media(sidecar, self.items(), into=tmp_path)
 
-        assert saved[0]["reused"] is True
+        assert res.saved[0]["reused"] is True
         assert sidecar.asked == [("image", self.MD5)], "第二圈不该再问一次侧车"
 
     def test_a_key_that_is_not_a_key_is_refused_before_it_touches_the_path(self, tmp_path) -> None:
         """消息里带的字符串不许决定文件名：这一格挡的是路径穿越，不是"格式不好看"。"""
         sidecar = FakeSidecar({})
 
-        saved, malformed, failed, dropped = M.stage_media(
-            sidecar, self.items(key="../../../../Windows/win.ini"), into=tmp_path)
+        res = M.stage_media(sidecar, self.items(key="../../../../Windows/win.ini"), into=tmp_path)
 
-        assert (saved, malformed, failed, dropped) == ([], 1, 0, 0)
+        assert (res.saved, res.malformed, res.failed, res.dropped) == ([], 1, 0, 0)
         assert sidecar.asked == []
         assert not (tmp_path.parent / "Windows").exists()
 
-    def test_a_sidecar_answer_of_none_is_counted_as_failed_not_missing_media(self, tmp_path) -> None:
+    def test_a_broken_sidecar_is_counted_as_failed_not_as_missing_media(self, tmp_path) -> None:
+        """「侧车答不上来」是坏了，要算在 failed 那一格——它和"这件还没进索引"是两件事。"""
         sidecar = FakeSidecar({}, fail=("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",))
 
-        saved, malformed, failed, dropped = M.stage_media(
-            sidecar, self.items(key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), into=tmp_path)
+        res = M.stage_media(sidecar, self.items(key="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), into=tmp_path)
 
-        assert (saved, malformed, failed, dropped) == ([], 0, 1, 0)
+        assert (res.saved, res.failed, res.absent) == ([], 1, 0)
+
+    def test_a_404_is_counted_as_absent_so_the_next_round_can_retry_it(self, tmp_path) -> None:
+        """侧车回 404 ⇒ 这一件它今天还不知道（索引滞后）：记在 absent 那一格，别混进"坏了"。"""
+        sidecar = FakeSidecar({}, absent=(self.MD5,))
+
+        res = M.stage_media(sidecar, self.items(), into=tmp_path)
+
+        assert (res.saved, res.failed, res.absent) == ([], 0, 1)
+        assert not (tmp_path / "image").exists()
 
     def test_an_oversized_item_is_dropped_and_the_number_says_so(self, tmp_path) -> None:
         sidecar = FakeSidecar({self.MD5: (b"x" * 5_000, "image/png")})
 
-        saved, _, _, dropped = M.stage_media(sidecar, self.items(), into=tmp_path, budget=1_000)
+        res = M.stage_media(sidecar, self.items(), into=tmp_path, budget=1_000)
 
-        assert saved == [] and dropped == 1
+        assert res.saved == [] and res.dropped == 1
 
     def test_the_round_cap_stops_asking_and_reports_what_it_gave_up_on(self, tmp_path) -> None:
         payloads = {f"{i:032x}": (b"x" * 10, "image/png") for i in range(3)}
         sidecar = FakeSidecar(payloads)
         items = [{"kind": "image", "key": k} for k in payloads]
 
-        saved, _, _, dropped = M.stage_media(sidecar, items, into=tmp_path, max_files=1)
+        res = M.stage_media(sidecar, items, into=tmp_path, max_files=1)
 
-        assert len(saved) == 1 and dropped == 2
+        assert len(res.saved) == 1 and res.dropped == 2
         # 到顶之后**一次都不该再问侧车**——否则封顶只保护了磁盘，没保护那次往返。
         assert len(sidecar.asked) == 1
 
@@ -152,3 +165,50 @@ class TestStagingIntoPlobisOwnHome:
         monkeypatch.setenv("PLOBI_WECHAT_MEDIA_DIR", str(tmp_path / "media"))
 
         assert M.media_dir() == tmp_path / "media"
+
+
+class TestTheEngineSaysNo:
+    """404 与"侧车没了"必须是两种异常：前者是**这一件它还不知道**，下一轮该重试；后者是故障。"""
+
+    @staticmethod
+    def _raise(code: int):
+        import urllib.error
+
+        def _boom(_request, timeout=None):  # noqa: ANN001
+            raise urllib.error.HTTPError("http://127.0.0.1:5030/image/x", code, "nope", {}, None)
+
+        return _boom
+
+    def test_a_404_on_bytes_is_a_media_not_found(self, monkeypatch) -> None:
+        from plobi.collectors.chatlog import client as C
+
+        monkeypatch.setattr(C.urllib.request, "urlopen", self._raise(404))
+
+        try:
+            C.ChatlogClient("http://127.0.0.1:5030").media_bytes("image", "9" * 32)
+        except C.MediaNotFound:
+            return
+        except C.ChatlogUnavailable as exc:  # 没分开会走这条
+            raise AssertionError(f"404 被当成侧车故障了：{exc}") from exc
+        raise AssertionError("404 居然算成功")
+
+    def test_a_404_on_info_is_the_same_answer(self, monkeypatch) -> None:
+        from plobi.collectors.chatlog import client as C
+
+        monkeypatch.setattr(C.urllib.request, "urlopen", self._raise(404))
+
+        import pytest
+
+        with pytest.raises(C.MediaNotFound):
+            C.ChatlogClient("http://127.0.0.1:5030").media_info("image", "9" * 32)
+
+    def test_any_other_http_status_stays_a_broken_sidecar(self, monkeypatch) -> None:
+        from plobi.collectors.chatlog import client as C
+
+        monkeypatch.setattr(C.urllib.request, "urlopen", self._raise(503))
+
+        import pytest
+
+        with pytest.raises(C.ChatlogUnavailable) as got:
+            C.ChatlogClient("http://127.0.0.1:5030").media_bytes("image", "9" * 32)
+        assert not isinstance(got.value, C.MediaNotFound)
