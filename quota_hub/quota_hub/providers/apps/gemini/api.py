@@ -1,32 +1,29 @@
-"""Gemini (Google account via the Gemini CLI's own OAuth) as an OpenAI-shaped leg.
+"""Gemini (Google account, via the Gemini CLI's own OAuth) as a tool-carrying leg.
 
 The shape is the one that already works for CodeBuddy and Antigravity (裁定 204): read the
-product's **own** local credential, call the vendor's documented HTTP API, and translate
-the answer into OpenAI `tool_calls` — the only shape L1 can drive.
+product's **own** local credential, call the vendor HTTP API that credential is valid for,
+and hand back OpenAI `tool_calls` — the only shape an agent loop can drive.
 
-Measured 2026-10-28 on this machine: `gemini --acp` answers
-`Gemini API key is missing or not configured`, and `~/.gemini/` holds `config/`,
-`history/`, `installation_id`, `projects.json` — **no credential file**. So this leg is
-dark until the owner signs the CLI in once (`gemini` → its own browser/device flow). The
-reader below is deliberately tolerant about the file's key names because the shape can
-only be read *after* that sign-in; it accepts the documented Google OAuth names
-(`access_token` / `refresh_token` / `expiry_date`) and the short forms, and treats
-anything it cannot parse as "no credential" — never as "signed in".
+Which API that credential is valid for is the whole lesson of this file. Measured 2026-10-28
+in the installed 0.65.0 bundle: `oauth-personal` sets
+`CODE_ASSIST_ENDPOINT = https://cloudcode-pa.googleapis.com` and
+`CODE_ASSIST_API_VERSION = v1internal`. A Google-account token is a **Code Assist** token, so
+the earlier version of this leg — `generativelanguage.googleapis.com/v1beta` — was the wrong
+door: no matter how well the answer was translated, the call could not have succeeded. It now
+shares one `CloudCodeClient` implementation with the Antigravity leg, and the only per-leg
+inputs are the credential's location, the host, and the client identity the product reports.
 
-**No TUN needed (裁定 206 follow-up, user 2026-10-28)**: the hub runs with
-`trust_env: false` (2026-10-14: a dead local proxy poisoned every upstream), so this leg
-cannot lean on `HTTP(S)_PROXY` either — and Google is unreachable directly on this network.
-So the leg takes an **explicit per-leg proxy** (`providers.gemini_api.proxy`, or
-`QUOTA_HUB_GEMINI_PROXY`), used only by this leg's client. A dead proxy then breaks one
-leg with a clear error instead of every upstream at once, and the rest of the hub stays
-direct. Nothing else about the machine (no TUN, no system-wide proxy) has to change.
+`~/.gemini/` on this machine holds `config/`, `history/`, `installation_id`, `projects.json`
+and **no credential file** — so the leg stays dark (no card claim of a login, no models)
+until the owner signs in once from the settings card. The reader is tolerant about key names
+because the shape can only be confirmed after that sign-in; anything it cannot parse is "no
+credential", never "signed in".
 
-The translation is the part the ACP legs cannot give:
-
-    Gemini `functionCall {name, args}`  →  OpenAI `tool_calls[{id, function{name, arguments}}]`
-
-Ids are synthesised (`call_<n>`) because Google's shape carries none; arguments are
-re-serialised to JSON text, which is what an OpenAI client expects back.
+**No TUN needed (裁定 206 follow-up)**: the hub's shared client runs `trust_env: false`
+(2026-10-14: a dead local proxy had poisoned every upstream), so this leg resolves its own
+egress — Settings → VPN's node, or `providers.gemini_api.proxy` / `QUOTA_HUB_GEMINI_PROXY` —
+and uses it only for this leg. A dead node then breaks one leg with its own reason while the
+rest of the hub stays direct.
 """
 
 from __future__ import annotations
@@ -44,12 +41,25 @@ import httpx
 
 from ....egress import proxy_url
 from ....providers.base import Account, Capabilities, Credential, Provider, UpstreamError
+from ....providers.cloudcode import CloudCodeClient
 
 log = logging.getLogger("quota_hub")
 
 STORE_ENV = "QUOTA_HUB_GEMINI_STORE"
-BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-#: (There is no default model list on purpose: `/models` is the only name source.)
+#: Measured in the installed CLI 2026-10-28 (`chunk-DKZARV6U.js`): the Code Assist endpoint
+#: and api version it drives with an `oauth-personal` token. That token is a Code Assist
+#: credential — it has no business at `generativelanguage.googleapis.com`, which is the
+#: API-key door. This leg used to point there, which is why it could never have served a
+#: turn however carefully the answer was translated.
+CLOUDCODE_HOST = "https://cloudcode-pa.googleapis.com"
+API_VERSION = "v1internal"
+#: The one client identity measured from that bundle (`pluginType: "GEMINI"`). Everything
+#: else about this product's envelope is configuration, not a guess: override with
+#: `client_metadata` / `headers` / `user_agent` / `request_type` in config.yaml, and treat
+#: the shape as unverified against a live token until the owner has signed in once.
+CLIENT_METADATA = {"pluginType": "GEMINI"}
+#: (There is no default model list on purpose: `fetchAvailableModels` is the only name
+#: source — 裁定 204.5.)
 
 
 def store_path() -> Path:
@@ -97,86 +107,6 @@ def _refreshable(data: dict[str, Any]) -> bool:
     return _oauth.discover_client() is not None
 
 
-def _functions(tools: Any) -> list[dict[str, Any]]:
-    """OpenAI `tools` → Gemini `functionDeclarations` (parameters are JSON Schema too)."""
-    declarations: list[dict[str, Any]] = []
-    for tool in tools or []:
-        fn = (tool or {}).get("function") or {}
-        name = str(fn.get("name") or "").strip()
-        if not name:
-            continue
-        decl: dict[str, Any] = {"name": name}
-        if fn.get("description"):
-            decl["description"] = str(fn["description"])
-        params = fn.get("parameters")
-        if isinstance(params, dict) and params:
-            decl["parameters"] = params
-        declarations.append(decl)
-    return declarations
-
-
-def _to_openai(model: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Gemini `generateContent` answer → OpenAI chat.completion."""
-    candidates = body.get("candidates") or [{}]
-    candidate = candidates[0] if isinstance(candidates[0], dict) else {}
-    parts = ((candidate.get("content") or {}).get("parts")) or []
-    text_parts: list[str] = []
-    tool_calls: list[dict[str, Any]] = []
-    for index, part in enumerate(parts):
-        if not isinstance(part, dict):
-            continue
-        if "text" in part:
-            text_parts.append(str(part["text"]))
-        call = part.get("functionCall")
-        if isinstance(call, dict) and call.get("name"):
-            args = call.get("args")
-            tool_calls.append(
-                {
-                    "id": f"call_{index}_{call['name']}",
-                    "type": "function",
-                    "function": {
-                        "name": str(call["name"]),
-                        "arguments": json.dumps(args or {}, ensure_ascii=False),
-                    },
-                }
-            )
-    finish = "tool_calls" if tool_calls else str(candidate.get("finishReason") or "stop").lower()
-    if finish not in {"stop", "tool_calls", "length", "content_filter"}:
-        finish = "stop"
-    message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts) or (None if tool_calls else "")}
-    if tool_calls:
-        message["tool_calls"] = tool_calls
-    usage = body.get("usageMetadata") or {}
-    return {
-        "id": f"gemini-{int(time.time())}",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [{"index": 0, "finish_reason": finish, "message": message}],
-        "usage": {
-            "prompt_tokens": int(usage.get("promptTokenCount") or 0),
-            "completion_tokens": int(usage.get("candidatesTokenCount") or 0),
-            "total_tokens": int(usage.get("totalTokenCount") or 0),
-        },
-    }
-
-
-def _contents(messages: Any) -> list[dict[str, Any]]:
-    contents: list[dict[str, Any]] = []
-    for msg in messages or []:
-        if not isinstance(msg, dict):
-            continue
-        role = str(msg.get("role") or "user")
-        text = msg.get("content")
-        if not isinstance(text, str):
-            text = "" if text is None else json.dumps(text, ensure_ascii=False)
-        if not text.strip():
-            continue
-        gemini_role = "model" if role == "assistant" else "user"
-        contents.append({"role": gemini_role, "parts": [{"text": text}]})
-    return contents
-
-
 def egress_proxy() -> tuple[str, str]:
     """Kept as the name this leg's tests use; the resolver lives in `quota_hub/egress.py`."""
     return proxy_url()
@@ -189,7 +119,12 @@ class GeminiApiProvider(Provider):
 
     def __init__(self, config: dict, http) -> None:
         super().__init__(config, http)
-        self.base_url = str(config.get("base_url") or BASE_URL).rstrip("/")
+        self.host = str(config.get("host") or CLOUDCODE_HOST).rstrip("/")
+        self.api_version = str(config.get("api_version") or API_VERSION)
+        self.client_metadata = dict(config.get("client_metadata") or CLIENT_METADATA)
+        self.thinking = bool(config.get("thinking", False))
+        self.project_id = str(config.get("project_id") or "")
+        self.MODEL_MAP = dict(config.get("model_map") or {})
         self.timeout = float(config.get("timeout", 180.0))
         self.served_models: tuple[str, ...] = tuple(config.get("models") or ())
         # Per-leg proxy: only Google traffic goes through it (see the module header).
@@ -201,10 +136,28 @@ class GeminiApiProvider(Provider):
             # 裁定 206：设置里那个 VPN 节点就是全 Plobi 的出口，腿不用再单独填一次。
             shared, self.proxy_reason = egress_proxy()
             self.proxy = shared
-        self._proxied = None
+        # One client for this leg, pointed at the node — and only when a node is in play.
+        # Without one the leg rides the hub's shared client, so a dead proxy breaks this leg
+        # with its own reason instead of every upstream at once.
+        self.client = http or httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, connect=15.0))
         if self.proxy:
-            self._proxied = httpx.AsyncClient(proxy=self.proxy, timeout=httpx.Timeout(self.timeout, connect=15.0))
+            self.client = httpx.AsyncClient(
+                proxy=self.proxy, timeout=httpx.Timeout(self.timeout, connect=15.0)
+            )
             log.info("[gemini_api] using an explicit proxy for this leg only")
+        self.cloudcode = CloudCodeClient(
+            self.client,
+            host=self.host,
+            api_version=self.api_version,
+            headers=dict(config.get("headers") or {}),
+            client_metadata=self.client_metadata,
+            user_agent=str(config.get("user_agent") or "GeminiCLI"),
+            request_type=str(config.get("request_type") or "chat_assistant"),
+            extra_headers=dict(config.get("extra_headers") or {}),
+            thinking=self.thinking,
+            timeout=self.timeout,
+            label="gemini_api",
+        )
 
     # --- presence / credential -------------------------------------------
     def present(self) -> bool:
@@ -255,36 +208,29 @@ class GeminiApiProvider(Provider):
         return True, "ok"
 
     # --- accounts / models ------------------------------------------------
-    async def _list_models(self, token: str) -> list[str]:
+    async def _discovered_models(self, token: str) -> list[str]:
+        """The names the account is entitled to, from Code Assist itself (裁定 204.5).
+
+        No default table: this leg used to read `generativelanguage /models`, which is a
+        different product's door — a Google-account (Code Assist) token does not work there,
+        so the leg could never have served a turn no matter how carefully the answer was
+        translated. `fetchAvailableModels` is the one name source that matches the token.
+        """
+        project = ""
         try:
-            client = self._proxied or self.http
-            res = await client.get(
-                f"{self.base_url}/models",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=self.timeout,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[gemini_api] model list unreachable: %s", type(exc).__name__)
-            return []
-        if res.status_code != 200:
-            return []
+            project = await self.cloudcode.load_project(token)
+        except Exception:  # noqa: BLE001 — project is best-effort, the list is not
+            project = ""
+        self.project_id = project
         try:
-            body = res.json()
-        except ValueError:
+            short = await self.cloudcode.available_models(token, project)
+        except UpstreamError as exc:
+            log.warning("[gemini_api] model list refused: %s", exc)
             return []
-        ids: list[str] = []
-        for row in body.get("models") or []:
-            name = str((row or {}).get("name") or "")
-            if not name.startswith("models/"):
-                continue
-            methods = row.get("supportedGenerationMethods") or []
-            if "generateContent" not in methods:
-                continue
-            ids.append(f"{self.name}/{name.split('/', 1)[1]}")
-        return ids
+        return [f"{self.name}/{m}" for m in short]
 
     async def discover_accounts(self) -> list[Account]:
-        live, _reason = self.credential_health()
+        live, _reason = self.signed_in()
         data = read_credential()
         if not live or data is None:
             self.accounts = []
@@ -300,11 +246,11 @@ class GeminiApiProvider(Provider):
                     access_token=token,
                     refresh_token=str(data.get("refresh_token") or ""),
                     expires_at=float(data.get("expires_at") or 0.0),
+                    extra={"session_id": f"plobi-{self.name}"},
                 ),
             )
         ]
-        # 裁定 204.5：名字只认上游自报。`/models` 读不到就是没有模型，不拿默认表顶替。
-        self.served_models = tuple(await self._list_models(token))
+        self.served_models = tuple(await self._discovered_models(token)) if self.credential_health()[0] else ()
         return self.accounts
 
     async def ensure_fresh(self, acc: Account) -> None:
@@ -322,46 +268,28 @@ class GeminiApiProvider(Provider):
         raise UpstreamError(401, "gemini 这条腿的登录已经用不动了，需要在设置里重新点一次", reauth=True)
 
     # --- the turn ----------------------------------------------------------
-    def _payload(self, oai_req: dict) -> dict[str, Any]:
-        payload: dict[str, Any] = {"contents": _contents(oai_req.get("messages"))}
-        declarations = _functions(oai_req.get("tools"))
-        if declarations:
-            payload["tools"] = [{"functionDeclarations": declarations}]
-        generation: dict[str, Any] = {}
-        if oai_req.get("temperature") is not None:
-            generation["temperature"] = oai_req["temperature"]
-        if oai_req.get("max_tokens"):
-            generation["maxOutputTokens"] = oai_req["max_tokens"]
-        if generation:
-            payload["generationConfig"] = generation
-        return payload
+    def _short_model(self, oai_model: str) -> str:
+        return self.MODEL_MAP.get(oai_model) or (oai_model.split("/", 1)[1] if "/" in oai_model else oai_model)
 
     async def chat(self, acc: Account, oai_req: dict) -> dict:
-        model = str(oai_req.get("model") or "")
-        bare = model.split("/", 1)[1] if "/" in model else model
-        client = self._proxied or self.http
-        res = await client.post(
-            f"{self.base_url}/models/{bare}:generateContent",
-            headers={"Authorization": f"Bearer {acc.cred.access_token}", "content-type": "application/json"},
-            json=self._payload(oai_req),
-            timeout=self.timeout,
+        project = acc.cred.extra.get("project_id") or self.project_id or await self.cloudcode.load_project(
+            acc.cred.access_token
         )
-        if res.status_code != 200:
-            raise UpstreamError(res.status_code, res.text[:400])
-        try:
-            return _to_openai(model, res.json())
-        except ValueError as exc:
-            raise UpstreamError(502, f"gemini answered a non-JSON body: {exc}") from exc
+        return await self.cloudcode.chat(
+            token=acc.cred.access_token,
+            project=project,
+            model=self._short_model(str(oai_req.get("model") or "")),
+            oai_req=oai_req,
+            session_id=str(acc.cred.extra.get("session_id") or ""),
+        )
 
-    async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
-        # v1 folds the answer into one chunk (SSE proxying needs its own tests); the
-        # turn shape is what matters, and `tool_calls` survive the fold.
-        result = await self.chat(acc, oai_req)
-        choice = (result.get("choices") or [{}])[0]
-        yield {
-            "id": result["id"],
-            "object": "chat.completion.chunk",
-            "created": result["created"],
-            "model": result["model"],
-            "choices": [{"index": 0, "delta": choice.get("message") or {}, "finish_reason": choice.get("finish_reason")}],
-        }
+    async def chat_stream(self, acc: Account, oai_req: AsyncIterator | dict) -> AsyncIterator[dict]:
+        project = self.project_id or await self.cloudcode.load_project(acc.cred.access_token)
+        async for chunk in self.cloudcode.chat_stream(
+            token=acc.cred.access_token,
+            project=project,
+            model=self._short_model(str(oai_req.get("model") or "")),
+            oai_req=oai_req,
+            session_id=str(acc.cred.extra.get("session_id") or ""),
+        ):
+            yield chunk

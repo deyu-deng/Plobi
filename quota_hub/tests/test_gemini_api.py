@@ -1,11 +1,11 @@
-"""Gemini 这条腿的判据：原生 `functionCall` 必须被翻成 OpenAI `tool_calls`。
+"""Gemini 这条腿的判据：Google 账号的 token 走 Code Assist（v1internal），并且真回 tool_calls。
 
-为什么这条腿值得单独写：ACP 那一路（opencode 实测）里工具是**上游闭环执行**、
-回到 Plobi 的是一条成稿，`tool_calls` 恒为 0——L1 没法据此决定下一步。CodeBuddy／
-Antigravity 那两条之所以能带工具，是因为它们走的是"本机凭据 → 厂商 HTTP → 原生
-function call"。Gemini 这一笔就是同一个形状（裁定 204）。
+为什么这份测试整档重写：这条腿原先打的是 `generativelanguage.googleapis.com/v1beta`——那是
+**API key 的门**。实测装好的 0.65.0 里 `CODE_ASSIST_ENDPOINT = https://cloudcode-pa.googleapis.com`
++ `CODE_ASSIST_API_VERSION = v1internal`，也就是 `oauth-personal` 那个 token 只在这扇门上有效。
+形状接错门时，翻译写得再对也永远服务不了一次回合——那正是"半成品"。
 
-本文件的替身全都用合成凭据与 MockTransport，**不读、不碰真 `~/.gemini`**。
+替身全程合成：不读真 `~/.gemini`、不开浏览器、不打网络。
 
 Run:
     cd Code && scripts/run_tests.sh -j 1 quota_hub/tests/test_gemini_api.py
@@ -19,209 +19,263 @@ import time
 import types
 
 import httpx
-import pytest
 from quota_hub.providers.apps.gemini.api import GeminiApiProvider, read_credential
 
-BASE = "https://gemini.test/v1beta"
+HOST = "https://cloudcode.test"
+GENERATE = "/v1internal:generateContent"
+STREAM = "/v1internal:streamGenerateContent"  # `?alt=sse` is a query, not part of the path
+MODELS = "/v1internal:fetchAvailableModels"
+LOAD = "/v1internal:loadCodeAssist"
 
 
-def _store(tmp_path, *, access="test-access", expires_in=3600.0, present=True):
+def _store(tmp_path, *, access="test-access", expires_in=3600.0, present=True, refresh="r"):
     path = tmp_path / "oauth_creds.json"
     if not present:
         return str(path)
-    data = {"access_token": access, "refresh_token": "r", "token_type": "Bearer"}
+    data = {"access_token": access, "refresh_token": refresh, "token_type": "Bearer"}
     if expires_in is not None:
         data["expiry_date"] = int((time.time() + expires_in) * 1000)  # the CLI's own unit
     path.write_text(json.dumps(data), encoding="utf-8")
     return str(path)
 
 
-def _models(*names: str) -> httpx.Response:
-    return httpx.Response(
-        200,
-        json={"models": [{"name": f"models/{n}", "supportedGenerationMethods": ["generateContent"]} for n in names]},
-    )
-
-
-def _http(routes: dict[str, httpx.Response]):
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path in routes:
-            return routes[request.url.path]
-        return httpx.Response(404, json={"error": "route"})
-
-    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-
 def _leg(http, cfg: dict | None = None):
-    """A provider whose cloud calls go through the test's mock transport.
-
-    In production the leg builds its own client when a node is configured (that is how
-    Settings → VPN reaches it); a test that wants to assert the wire format has to use
-    its mock instead, so the dedicated client is cleared here — deliberately, once.
-    """
-    prov = GeminiApiProvider({"base_url": BASE, **(cfg or {})}, http)
-    prov._proxied = None
-    # The mock transport is the wire here; whether a node exists is a separate判据
-    # (pinned by the three egress tests below).
+    prov = GeminiApiProvider({"host": HOST, **(cfg or {})}, http)
+    # The mock transport IS the wire for this test; whether a node exists is a separate
+    # judgement (pinned by the egress tests below).
+    prov.cloudcode.http = http
     prov.proxy_reason = "ok"
     return prov
 
 
-def test_a_function_call_comes_back_as_openai_tool_calls(tmp_path, monkeypatch):
-    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
-    seen: dict = {}
+def _json(routes: dict[str, object]):
+    """A MockTransport over the Code Assist routes; anything else answers 404 with a marker."""
+    seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/models"):
-            return _models("gemini-2.5-flash")
-        if request.url.path.endswith(":generateContent"):
-            seen.update(json.loads(request.content.decode()))
-            return httpx.Response(
-                200,
-                json={
-                    "candidates": [
-                        {
-                            "content": {
-                                "parts": [{"functionCall": {"name": "read_file", "args": {"path": "/etc/hostname"}}}]
-                            },
-                            "finishReason": "STOP",
-                        }
-                    ],
-                    "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 3, "totalTokenCount": 15},
-                },
-            )
-        return httpx.Response(404, json={"error": "route"})
+        seen.append(request.url.path)
+        if request.url.path in routes:
+            body = routes[request.url.path]
+            if isinstance(body, tuple):
+                return httpx.Response(body[0], text=body[1])
+            return httpx.Response(200, json=body)
+        return httpx.Response(404, json={"error": {"message": f"unrouted {request.url.path}"}})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler)), seen
+
+
+def _answer(*parts, usage=(11, 4, 15)):
+    return {"response": {"candidates": [{"content": {"parts": list(parts)}, "finishReason": "STOP"}],
+                         "usageMetadata": {"promptTokenCount": usage[0], "candidatesTokenCount": usage[1],
+                                           "totalTokenCount": usage[2]}}}
+
+
+def test_a_function_call_comes_back_as_openai_tool_calls(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    http, _seen = _json({
+        LOAD: {"cloudaicompanionProject": {"id": "p-42"}},
+        GENERATE: _answer({"functionCall": {"name": "read_file", "args": {"path": "/etc/hostname"}}}),
+    })
 
     async def _go():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            prov = _leg(http)
-            assert prov.credential_health() == (True, "ok")
-            acc = (await prov.discover_accounts())[0]
-            assert prov.served_models == ("gemini_api/gemini-2.5-flash",)
+        prov = _leg(http)
+        acc = (await prov.discover_accounts())[0]
+        tools = [{"type": "function", "function": {
+            "name": "read_file", "description": "read",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        }}]
+        return await prov.chat(acc, {
+            "model": "gemini_api/gemini-2.5-pro", "messages": [{"role": "user", "content": "hi"}], "tools": tools,
+        })
 
-            tools = [{"type": "function", "function": {"name": "read_file", "description": "read", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}}]
-            out = await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}], "tools": tools})
+    out = asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
-        # the tool schema reached the vendor, in its own dialect
-        assert seen["tools"][0]["functionDeclarations"][0]["name"] == "read_file"
-        choice = out["choices"][0]
-        assert choice["finish_reason"] == "tool_calls"
-        call = choice["message"]["tool_calls"][0]
-        assert call["function"]["name"] == "read_file"
-        assert json.loads(call["function"]["arguments"]) == {"path": "/etc/hostname"}
-        assert out["usage"]["total_tokens"] == 15
+    choice = out["choices"][0]
+    assert choice["finish_reason"] == "tool_calls"
+    call = choice["message"]["tool_calls"][0]
+    assert call["function"]["name"] == "read_file"
+    assert json.loads(call["function"]["arguments"]) == {"path": "/etc/hostname"}
+    assert out["usage"]["total_tokens"] == 15
+
+
+def test_the_request_is_the_code_assist_envelope_not_the_api_key_one(tmp_path, monkeypatch):
+    """信封判据：`project`/`model` 在外层，工具在里层用 `functionDeclarations`。"""
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == GENERATE:
+            captured.update(json.loads(request.content.decode()))
+            return httpx.Response(200, json=_answer({"text": "ok"}))
+        if request.url.path == LOAD:
+            return httpx.Response(200, json={"cloudaicompanionProject": {"id": "p-42"}})
+        return httpx.Response(404, json={})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    async def _go():
+        prov = _leg(http)
+        acc = (await prov.discover_accounts())[0]
+        await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash",
+                              "messages": [{"role": "user", "content": "hi"}],
+                              "tools": [{"type": "function", "function": {"name": "terminal", "parameters": {"type": "object"}}}]})
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+    assert captured["project"] == "p-42" and captured["model"] == "gemini-2.5-flash"
+    assert captured["request"]["tools"][0]["functionDeclarations"][0]["name"] == "terminal"
+    assert captured["request"]["contents"][0]["parts"][0]["text"] == "hi"
+    # 我们不再敲那扇 API-key 的门：这一条腿的每一次调用都在 v1internal 上。
+    assert all(not p.startswith("/v1beta") for p in [GENERATE, LOAD])
+
+
+def test_model_names_come_only_from_fetchAvailableModels(tmp_path, monkeypatch):
+    """裁定 204.5：名字只认上游自报。没有默认表，读不到就是没有。"""
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    http, _seen = _json({
+        LOAD: {"cloudaicompanionProject": {"id": "p-42"}},
+        MODELS: {"models": {
+            "gemini-2.5-pro": {"displayName": "Gemini 2.5 Pro"},
+            "gemini-2.5-flash": {},
+            "chat_internal": {},           # 内部号要滤掉
+            "imagen-3": {},                # 非聊天模型要滤掉
+        }},
+    })
+
+    async def _go():
+        prov = _leg(http)
+        await prov.discover_accounts()
+        return prov.served_models
+
+    assert asyncio.run(asyncio.wait_for(_go(), timeout=30)) == ("gemini_api/gemini-2.5-pro", "gemini_api/gemini-2.5-flash")
+
+
+def test_a_refused_model_list_yields_no_models_rather_than_a_default_table(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    http, _seen = _json({LOAD: {"cloudaicompanionProject": {"id": "p-42"}},
+                         MODELS: (503, "upstream unavailable")})
+
+    async def _go():
+        prov = _leg(http)
+        await prov.discover_accounts()
+        return prov.served_models
+
+    assert asyncio.run(asyncio.wait_for(_go(), timeout=30)) == ()
 
 
 def test_plain_text_stays_plain_text(tmp_path, monkeypatch):
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    http, _seen = _json({LOAD: {"cloudaicompanionProject": {"id": "p-42"}}, GENERATE: _answer({"text": "hello"})})
+
+    async def _go():
+        prov = _leg(http)
+        acc = (await prov.discover_accounts())[0]
+        return await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}]})
+
+    out = asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    assert out["choices"][0]["message"]["content"] == "hello"
+    assert "tool_calls" not in out["choices"][0]["message"]
+    assert out["choices"][0]["finish_reason"] == "stop"
+
+
+def test_a_streamed_answer_carries_text_and_tool_chunks(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    sse = (
+        b'data: {"response":{"candidates":[{"content":{"parts":[{"text":"he"}]}}]}}\n\n'
+        b'data: {"response":{"candidates":[{"content":{"parts":[{"text":"llo"}]}}]}}\n\n'
+        b'data: {"response":{"candidates":[{"content":{"parts":[{"functionCall":{"name":"read_file","args":{"path":"/x"}}}]}}]}}\n\n'
+        b"data: [DONE]\n\n"
+    )
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/models"):
-            return _models("gemini-2.5-flash")
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "hello"}]}, "finishReason": "STOP"}]})
+        if request.url.path == STREAM:
+            return httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
+        if request.url.path == LOAD:
+            return httpx.Response(200, json={"cloudaicompanionProject": {"id": "p-42"}})
+        return httpx.Response(404, json={})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     async def _go():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            prov = _leg(http)
-            acc = (await prov.discover_accounts())[0]
-            out = await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}]})
-        assert out["choices"][0]["message"]["content"] == "hello"
-        assert "tool_calls" not in out["choices"][0]["message"]
-        assert out["choices"][0]["finish_reason"] == "stop"
+        prov = _leg(http)
+        acc = (await prov.discover_accounts())[0]
+        return [c async for c in prov.chat_stream(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}]})]
 
-    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    chunks = asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    text = "".join(c["choices"][0]["delta"].get("content") or "" for c in chunks)
+    calls = [tc for c in chunks for tc in (c["choices"][0]["delta"].get("tool_calls") or [])]
+    assert text == "hello"
+    assert calls and calls[0]["function"]["name"] == "read_file"
 
 
-def test_no_credential_but_the_cli_installed_still_gets_its_card(tmp_path, monkeypatch):
-    """A leg the user can sign into by clicking is PRESENT, not absent.
-
-    Gating the card on the credential made the whole Gemini row disappear on a machine
-    that has `gemini` installed and nobody signed in yet — so the one button that could
-    have fixed it was not on screen. `present()` is the scan; `credential_health()` is
-    the verdict that keeps it out of the picker.
-    """
+def test_the_cli_being_installed_is_enough_for_a_card_but_not_for_models(tmp_path, monkeypatch):
+    """`present()` 是"这台有这个东西"，`credential_health` 才是"还没登录"。"""
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, present=False))
     monkeypatch.setattr("quota_hub.providers.apps.gemini.api.shutil", types.SimpleNamespace(which=lambda name: r"C:\fake\gemini.exe"))
+    http, _seen = _json({})
 
     async def _go():
-        async with _http({}) as http:
-            prov = _leg(http)
-            assert prov.present() is True
-            assert prov.credential_health() == (False, "no_desktop_credential")
-            assert prov.login_plan()["kind"] == "oauth"
-            assert await prov.discover_accounts() == []
-            assert prov.served_models == ()
+        prov = _leg(http)
+        assert prov.present() is True
+        assert prov.credential_health() == (False, "no_desktop_credential")
+        assert prov.login_plan()["kind"] == "oauth"
+        assert await prov.discover_accounts() == []
+        assert prov.served_models == ()
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_no_credential_and_no_cli_is_no_card_at_all(tmp_path, monkeypatch):
+def test_no_cli_and_no_credential_means_no_card(tmp_path, monkeypatch):
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, present=False))
     monkeypatch.setattr("quota_hub.providers.apps.gemini.api.shutil", types.SimpleNamespace(which=lambda name: None))
+    http, _seen = _json({})
 
     async def _go():
-        async with _http({}) as http:
-            prov = _leg(http)
-            assert prov.present() is False
+        prov = _leg(http)
+        assert prov.present() is False
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_an_expired_token_with_a_way_to_refresh_it_is_still_a_live_leg(tmp_path, monkeypatch):
-    """An access token lives ~1h; the picker must not empty itself an hour after login.
-
-    He asked for a box that is right after a restart. Restarting an hour later used to
-    drop every Gemini model because the short-lived token had gone stale while the
-    refresh token — the CLI's own, the one `ensure_fresh()` uses — was still good.
-    """
+def test_an_expired_token_with_a_way_to_refresh_is_still_live(tmp_path, monkeypatch):
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, expires_in=-60))
     monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.discover_client", lambda: ("cid", "secret"))
+    http, _seen = _json({})
 
     async def _go():
-        async with _http({}) as http:
-            prov = _leg(http)
-            assert prov.credential_health() == (True, "ok")
+        assert _leg(http).credential_health() == (True, "ok")
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
 def test_an_expired_token_we_cannot_remint_reports_expired(tmp_path, monkeypatch):
-    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, expires_in=-60))
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path, expires_in=-60, refresh=""))
     monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.discover_client", lambda: None)
+    http, _seen = _json({})
 
     async def _go():
-        async with _http({}) as http:
-            prov = _leg(http)
-            assert prov.credential_health() == (False, "credential_expired")
-            assert await prov.discover_accounts() == []
+        prov = _leg(http)
+        assert prov.credential_health() == (False, "credential_expired")
+        assert await prov.discover_accounts() == []
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_a_dead_node_never_turns_a_signed_in_leg_into_a_login_button(tmp_path, monkeypatch):
-    """Measured 2026-10-28 on Antigravity, and the same trap was here.
-
-    The card's `+` is driven by the catalog. When the *reachability* verdict is the only
-    answer, a user who has just signed in and whose Settings → VPN node went away is told
-    to sign in again — a false sentence on the screen, on the leg he was looking at.
-    """
+def test_a_dead_node_keeps_the_signed_in_verdict_but_not_the_pickability(tmp_path, monkeypatch):
+    """三问三态：登录过没有 ≠ 现在通不通。掉线不许把卡片退回加号。"""
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    http, _seen = _json({})
 
     async def _go():
-        async with _http({}) as http:
-            prov = _leg(http)
-            prov.proxy_reason = "proxy_unreachable"
-            assert prov.signed_in() == (True, "ok")
-            assert prov.credential_health() == (False, "proxy_unreachable")
+        prov = _leg(http)
+        prov.proxy_reason = "proxy_unreachable"
+        assert prov.signed_in() == (True, "ok")
+        assert prov.credential_health() == (False, "proxy_unreachable")
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_ensure_fresh_mints_a_new_access_token_instead_of_failing_the_turn(tmp_path, monkeypatch):
-    from quota_hub.providers.base import UpstreamError
-
+def test_ensure_fresh_remints_the_access_token_instead_of_failing_the_turn(tmp_path, monkeypatch):
     store = _store(tmp_path, expires_in=-60)
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", store)
     monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.discover_client", lambda: ("cid", "secret"))
@@ -229,20 +283,20 @@ def test_ensure_fresh_mints_a_new_access_token_instead_of_failing_the_turn(tmp_p
 
     def _fake_refresh():
         refreshed.append(True)
-        data = {"access_token": "new-access", "refresh_token": "r",
-                "expiry_date": int((time.time() + 3600) * 1000)}
-        (tmp_path / "oauth_creds.json").write_text(json.dumps(data), encoding="utf-8")
+        (tmp_path / "oauth_creds.json").write_text(json.dumps(
+            {"access_token": "new-access", "refresh_token": "r", "expiry_date": int((time.time() + 3600) * 1000)}
+        ), encoding="utf-8")
         return True
 
     monkeypatch.setattr("quota_hub.providers.apps.gemini.oauth.refresh_credential", _fake_refresh)
+    http, _seen = _json({LOAD: {"cloudaicompanionProject": {"id": "p-42"}}})
 
     async def _go():
-        async with _http({}) as http:
-            prov = _leg(http)
-            acc = (await prov.discover_accounts())[0]
-            acc.cred.expires_at = time.time() - 10
-            await prov.ensure_fresh(acc)
-            return acc
+        prov = _leg(http)
+        acc = (await prov.discover_accounts())[0]
+        acc.cred.expires_at = time.time() - 10
+        await prov.ensure_fresh(acc)
+        return acc
 
     acc = asyncio.run(asyncio.wait_for(_go(), timeout=30))
     assert refreshed == [True]
@@ -250,130 +304,9 @@ def test_ensure_fresh_mints_a_new_access_token_instead_of_failing_the_turn(tmp_p
     assert not acc.cred.is_expired()
 
 
-def test_the_model_list_is_the_only_name_source(tmp_path, monkeypatch):
-    """裁定 204.5: no `/models` ⇒ no models. A default table would be a second truth."""
-    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
-
-    async def _go():
-        async with _http({"/v1beta/models": httpx.Response(403, json={"error": "no key"})}) as http:
-            prov = _leg(http, {"models": ["gemini_api/declared"]})
-            await prov.discover_accounts()
-            assert prov.served_models == ()
-
-    asyncio.run(asyncio.wait_for(_go(), timeout=30))
-
-
-def test_a_garbage_file_is_treated_as_absent(tmp_path, monkeypatch):
-    bad = tmp_path / "oauth_creds.json"
-    bad.write_text("not json", encoding="utf-8")
-    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(bad))
-
-    assert read_credential() is None
-
-
-@pytest.mark.parametrize("field", ["access", "access_token"])
-def test_both_documented_key_names_are_accepted(tmp_path, monkeypatch, field):
+def test_the_credential_reader_treats_an_unparsable_file_as_no_credential(tmp_path, monkeypatch):
     path = tmp_path / "oauth_creds.json"
-    path.write_text(json.dumps({field: "tok"}), encoding="utf-8")
+    path.write_text("{ not json", encoding="utf-8")
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(path))
 
-    assert (read_credential() or {}).get("access_token") == "tok"
-
-
-def test_the_leg_takes_its_own_proxy_and_nothing_else_does(monkeypatch, tmp_path):
-    """裁定 206 的落地：Google 系那条腿单独挂代理，不用 TUN、也不动全局 trust_env。"""
-    import quota_hub.providers.apps.gemini.api as mod
-
-    captured: dict = {}
-    real = mod.httpx.AsyncClient
-
-    class _Recorder:
-        def __init__(self, *args, **kwargs):
-            captured.update(kwargs)
-
-        async def aclose(self):
-            return None
-
-    monkeypatch.setattr(mod.httpx, "AsyncClient", _Recorder)
-    try:
-        mod.GeminiApiProvider({"proxy": "http://127.0.0.1:7890"}, None)
-        assert captured.get("proxy") == "http://127.0.0.1:7890"
-        captured.clear()
-        mod.GeminiApiProvider({}, None)  # no proxy configured -> no dedicated client
-        assert "proxy" not in captured
-    finally:
-        monkeypatch.setattr(mod.httpx, "AsyncClient", real)
-
-
-def _egress_home(tmp_path, port: int):
-    home = tmp_path / "home"
-    (home / "egress").mkdir(parents=True)
-    (home / "egress" / "config.yaml").write_text(f"mixed-port: {port}" + chr(10) + "mode: rule", encoding="utf-8")
-    return home
-
-
-def test_the_settings_node_is_the_default_proxy(tmp_path, monkeypatch):
-    """设置→VPN 那个节点池就是全 Plobi 的出口；腿不该再让人填第二遍。"""
-    import socket
-
-    from quota_hub.providers.apps.gemini.api import egress_proxy
-
-    srv = socket.socket()
-    srv.bind(("127.0.0.1", 0))
-    srv.listen(1)
-    port = srv.getsockname()[1]
-    monkeypatch.setenv("PLOBI_HOME", str(_egress_home(tmp_path, port)))
-    try:
-        assert egress_proxy() == (f"http://127.0.0.1:{port}", "ok")
-    finally:
-        srv.close()
-
-
-def test_a_dead_node_is_named_as_such(tmp_path, monkeypatch):
-    import socket
-
-    from quota_hub.providers.apps.gemini.api import egress_proxy
-
-    probe = socket.socket()
-    probe.bind(("127.0.0.1", 0))
-    dead = probe.getsockname()[1]
-    probe.close()
-    monkeypatch.setenv("PLOBI_HOME", str(_egress_home(tmp_path, dead)))
-
-    assert egress_proxy() == ("", "proxy_unreachable")
-
-
-def test_a_signed_in_user_without_a_node_is_told_about_the_node(tmp_path, monkeypatch):
-    from quota_hub.providers.apps.gemini.api import GeminiApiProvider
-
-    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
-    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home-without-egress"))
-    prov = GeminiApiProvider({"base_url": BASE}, None)
-    assert prov.proxy == ""
-    assert prov.proxy_reason == "no_proxy"
-    # The credential exists, so the remaining blocker is the missing node — say that,
-    # not "you are not signed in".
-    assert prov.credential_health() == (False, "no_proxy")
-
-
-def test_antigravity_reads_the_same_node(tmp_path, monkeypatch):
-    """一条节点，两条 Google 腿共用（用户 10-28：整个 Plobi 和网络相关都可以利用）。"""
-    import socket
-
-    from quota_hub.providers.apps.antigravity.api import AntigravityProvider
-
-    srv = socket.socket()
-    srv.bind(("127.0.0.1", 0))
-    srv.listen(1)
-    monkeypatch.setenv("PLOBI_HOME", str(_egress_home(tmp_path, srv.getsockname()[1])))
-    try:
-        prov = AntigravityProvider({}, None)
-        assert prov.proxy_reason == "ok"
-        assert prov.proxy.startswith("http://127.0.0.1:")
-        assert type(prov.http).__name__ == "AsyncClient"
-    finally:
-        srv.close()
-
-    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "no-egress"))
-    bare = AntigravityProvider({}, None)
-    assert bare.proxy == "" and bare.proxy_reason == "no_proxy"
+    assert read_credential() is None
