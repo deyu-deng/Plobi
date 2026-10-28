@@ -1726,11 +1726,19 @@ def _deliver_result(
         if deliver_value == "local":
             return window_error
         if deliver_value == "user":
-            # 裁定 201 的「也给你看一份」：落进用户 L1 那一屏，并提醒他一声。
-            record, user_error = _deliver_to_user_inbox(job, content)
-            if record is not None and delivery_out is not None:
-                delivery_out["record"] = {**window_record, "copied_to": "用户"} if window_record else record
-            return window_error or user_error
+            # 用户 10-28：「总秘书不用把日程秘书的话重复一遍」——**不再往 L1 抄一份正文**
+            # （那会占着「我」的右侧位置，L1 还会照着复述一遍）。只提醒他一声，
+            # 点通知直接跳到那个 Agent 的那一屏。
+            from plobi_user_inbox import notify_user
+
+            notified = notify_user(
+                content[:400],
+                title=str(job.get("name") or job.get("id") or "cron"),
+                session_id=str((window_record or {}).get("session_id") or ""),
+            )
+            if window_record is not None and delivery_out is not None:
+                delivery_out["record"] = {**window_record, "notified": notified}
+            return window_error
         # deliver=origin with no resolvable origin and no configured home
         # channels: treat as local rather than reporting an error.  CLI-created
         # jobs never capture a {platform, chat_id} origin, so failing here would

@@ -530,8 +530,10 @@ def test_a_user_delivery_also_lands_in_the_agents_own_window(window_home, monkey
 
     db = _db()
     db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
-    monkeypatch.setattr(UI, "append_user_message", lambda body, **kw: ("u-sess", "m-user", None))
-    monkeypatch.setattr(UI, "notify_user", lambda body, **kw: True)
+    copied: list = []
+    notified: list = []
+    monkeypatch.setattr(UI, "append_user_message", lambda body, **kw: (copied.append(body), ("u-sess", "m-user", None))[1])
+    monkeypatch.setattr(UI, "notify_user", lambda body, **kw: (notified.append(kw), True)[1])
 
     out: dict = {}
     error = _deliver_result(
@@ -544,5 +546,5 @@ def test_a_user_delivery_also_lands_in_the_agents_own_window(window_home, monkey
     rows = db.get_messages("sess-window")
     assert rows[-1]["role"] == "assistant", "回答先落回它自己的窗口"
     assert rows[-1]["content"] == "做完了吗"
-    assert out["record"]["session_id"] == "sess-window"
-    assert out["record"].get("copied_to") == "用户"
+    assert copied == [], "用户 10-28：不再往 L1 抄正文（总秘书不该复述日程秘书的话）"
+    assert notified and notified[0]["session_id"] == "sess-window", "只提醒，且点通知跳到那个 Agent"
