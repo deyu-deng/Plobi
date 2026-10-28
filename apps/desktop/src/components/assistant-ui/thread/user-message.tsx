@@ -424,7 +424,7 @@ export const UserMessage: FC<{
                 text={messageText}
               />
             </div>
-            <div className="relative w-full">
+            <div className="relative flex w-full justify-end">
               {readOnly || !canEdit ? (
                 // Spectator transcript, and any runtime without an `onEdit` (the
                 // console shell submits through its own injected `submit`, so its
