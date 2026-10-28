@@ -9,6 +9,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+import time
+from pathlib import Path
 from typing import Any, Optional
 
 ROLES: dict[str, dict[str, Any]] = {
@@ -80,3 +84,39 @@ def stamp_goal(key: str, goal: str) -> str:
         return body
 
     return f"{spec['duty']}\n\n——\n{body}"
+
+
+def body_of(key: str, text: str) -> str:
+    """把盖过章的任务书取回人写的那一段（左栏标题、进度标签都读它）。"""
+    spec = role_spec(key)
+    body = str(text or "")
+    if not spec:
+        return body.strip()
+    prefix = f"{spec['duty']}\n\n——\n"
+    return body[len(prefix):].strip() if body.startswith(prefix) else body.strip()
+
+
+def experts_dir() -> Path:
+    """角色侧记的落点：`$PLOBI_HOME/experts/<子会话>.json`（左栏那一格读它）。"""
+    override = os.environ.get("PLOBI_EXPERTS_DIR", "").strip()
+    if override:
+        return Path(os.path.expanduser(override))
+    from plobi_constants import get_plobi_home
+
+    return get_plobi_home() / "experts"
+
+
+def record_role(child_session_id: str, role: str, goal: str) -> None:
+    sid = str(child_session_id or "").strip()
+    if not sid or role not in ROLES:
+        return
+    path = experts_dir() / f"{sid}.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"role": role, "goal": goal, "at": time.strftime("%Y-%m-%dT%H:%M:%S")},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass

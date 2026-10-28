@@ -2372,6 +2372,37 @@ def _recover_tasks_from_json_string(
     return parsed, None
 
 
+def _apply_expert_presets(task_list: List[Dict[str, Any]]) -> str:
+    """把 `tasks[].expert`（file/browser/software/computer）落成职责与工具面。
+
+    返回空串表示没问题；非空是一句给人看的错（未知角色）。
+    没有 expert 的任务原样不动——这一支不影响普通派工。
+    """
+    from plobi.delegation.expert_roles import role_spec, stamp_goal
+
+    for task in task_list:
+        key = str(task.get("expert") or "").strip().lower()
+        if not key:
+            continue
+        spec = role_spec(key)
+        if spec is None:
+            return f"未知专家角色 {key!r}：只有 file / browser / software / computer 四种"
+        task["goal"] = stamp_goal(key, str(task.get("goal") or ""))
+        task["toolsets"] = list(spec["toolsets"])
+        task["role"] = "leaf"
+
+    return ""
+
+
+def _expert_body(task: Dict[str, Any]) -> str:
+    """任务书里人写的那一段（专家预设在前面盖了职责章，标签/侧记不要它）。"""
+    from plobi.delegation.expert_roles import body_of
+
+    key = str(task.get("expert") or "").strip().lower()
+    goal = str(task.get("goal") or "")
+    return body_of(key, goal) if key else goal
+
+
 def delegate_task(
     goal: Optional[str] = None,
     context: Optional[str] = None,
@@ -2484,6 +2515,11 @@ def delegate_task(
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
 
+    # 专家预设（tasks[].expert）在这里展开：职责写在任务书最前面、只给它那一层工具面。
+    _expert_error = _apply_expert_presets(task_list)
+    if _expert_error:
+        return tool_error(_expert_error)
+
     if not task_list:
         return tool_error("No tasks provided.")
 
@@ -2501,7 +2537,7 @@ def delegate_task(
 
     n_tasks = len(task_list)
     # Track goal labels for progress display (truncated for readability)
-    task_labels = [t["goal"][:40] for t in task_list]
+    task_labels = [_expert_body(t)[:40] for t in task_list]
 
     # Save parent tool names BEFORE any child construction mutates the global.
     # _build_child_agent() calls AIAgent() which calls get_tool_definitions(),
@@ -2802,12 +2838,18 @@ def delegate_task(
         total_duration = round(time.monotonic() - overall_start, 2)
 
         # 给每条结果带上它自己的子会话号：左栏「专家」那一格/角色侧记都靠它。
+        from plobi.delegation.expert_roles import record_role
+
         for entry in results:
             index = entry.get("task_index")
-            if isinstance(index, int) and 0 <= index < len(children):
-                entry.setdefault(
-                    "child_session_id", getattr(children[index][2], "session_id", "") or ""
-                )
+            if not isinstance(index, int) or not (0 <= index < len(children)):
+                continue
+            child_session_id = getattr(children[index][2], "session_id", "") or ""
+            entry.setdefault("child_session_id", child_session_id)
+            task = task_list[index] if index < len(task_list) else {}
+            role = str(task.get("expert") or "").strip().lower()
+            if role:
+                record_role(child_session_id, role, _expert_body(task))
 
         return {
             "results": results,
@@ -3279,6 +3321,16 @@ def _build_top_level_description() -> str:
         f"2. Batch (parallel): provide 'tasks' array with up to {max_children} "
         f"items concurrently for this user (configured via "
         f"delegation.max_concurrent_children in config.yaml). {nesting_clause}\n\n"
+        "EXPERTS (specialised workers, tasks[] only): set 'expert' on a task to "
+        "dispatch a preset specialist instead of a general worker. Available "
+        "presets: 'file' (文件整理：find/read/write files), 'browser' (网页操作："
+        "browse/fetch/extract), 'software' (软件操作：drive GUI apps), "
+        "'computer' (电脑操作：shell, processes, system state). The preset fixes "
+        "that child's toolset and prefixes its goal with its duty; your 'goal' "
+        "text is appended after it. Use an expert whenever the task maps onto "
+        "one of these four kinds of work, rather than doing it yourself and "
+        "rather than hand-picking toolsets. Experts are subagents, not new "
+        "agents: they appear in the left sidebar with their own work log.\n\n"
         "BOTH MODES RUN IN THE BACKGROUND. delegate_task returns immediately — "
         "you and the user keep working, and each subagent's full result "
         "re-enters the conversation as its own new message when it finishes. A "
@@ -3338,6 +3390,8 @@ def _build_tasks_param_description() -> str:
         f"Batch mode: tasks to run in parallel (up to {max_children} for this "
         f"user, set via delegation.max_concurrent_children). Each gets "
         "its own subagent with isolated context and terminal session. "
+        "Each item may set 'expert' (file/browser/software/computer) to "
+        "dispatch a preset specialist instead of a general worker. "
         "When provided, top-level goal/context/toolsets are ignored."
     )
 
@@ -3450,6 +3504,15 @@ DELEGATE_TASK_SCHEMA = {
                             "type": "string",
                             "enum": ["leaf", "orchestrator"],
                             "description": "Per-task role override. See top-level 'role' for semantics.",
+                        },
+                        "expert": {
+                            "type": "string",
+                            "enum": ["file", "browser", "software", "computer"],
+                            "description": (
+                                "把这条活交给哪一类**临时专家**：file=文件资料、browser=网页抄录、"
+                                "software=装跑修软件、computer=系统与窗口。给了它就只带那一类工具面，"
+                                "任务书前面自动加上它的职责；它不进团队名单、用完即丢。"
+                            ),
                         },
                     },
                     "required": ["goal"],

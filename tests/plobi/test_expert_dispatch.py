@@ -1,16 +1,18 @@
-"""临时专家派工（WP-L3-EXPERTS 第二拍）：四类角色 + 职责前缀 + 角色侧记。"""
+"""临时专家的四类角色（WP-L3-EXPERTS 第二拍）：任务里给 expert，职责与工具面自动展开。
+
+不 spawn 子智能体：只钉「预设怎么展开」与「角色侧记怎么落」这两件纯逻辑。
+"""
 
 from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from plobi.delegation import expert_roles  # noqa: E402
-from tools import expert_tools  # noqa: E402
+from tools.delegate_tool import _apply_expert_presets, _expert_body  # noqa: E402
 
 
 def test_the_four_roles_have_their_own_toolsets_and_duty_lines():
@@ -22,54 +24,44 @@ def test_the_four_roles_have_their_own_toolsets_and_duty_lines():
     assert all(row["duty"] for row in rows.values())
 
 
-def test_dispatch_prefixes_the_duty_line_and_narrows_the_toolsets(tmp_path, monkeypatch):
-    monkeypatch.setenv(expert_tools.EXPERTS_DIR_ENV, str(tmp_path / "experts"))
-    seen = {}
+def test_expert_preset_prefixes_the_duty_and_narrows_the_toolsets():
+    tasks = [{"goal": "把三份资料折成一份汇总", "expert": "file"}]
 
-    def fake_delegate(**kwargs):
-        seen.update(kwargs)
-        return json.dumps({"results": [{"child_session_id": "kid-1", "status": "completed", "summary": "写好了"}]})
-
-    import tools.delegate_tool as delegate
-
-    monkeypatch.setattr(delegate, "delegate_task", fake_delegate)
-
-    out = json.loads(expert_tools.handle(
-        {"role": "file", "goal": "把三份资料折成一份汇总"},
-        parent_agent=SimpleNamespace(session_id="parent-1"),
-    ))
-
-    assert out["expert"]["role"] == "file"
-    assert seen["toolsets"] == ["file"], "只给它文件那一层手"
-    assert "你是文件与资料专家" in seen["goal"]
-    assert seen["goal"].rstrip().endswith("把三份资料折成一份汇总")
-    assert out["results"][0]["child_session_id"] == "kid-1"
+    assert _apply_expert_presets(tasks) == ""
+    assert "你是文件与资料专家" in tasks[0]["goal"]
+    assert tasks[0]["goal"].rstrip().endswith("把三份资料折成一份汇总")
+    assert tasks[0]["toolsets"] == ["file"]
+    assert tasks[0]["role"] == "leaf"
 
 
-def test_dispatch_writes_the_role_sidecar_for_the_rail(tmp_path, monkeypatch):
-    monkeypatch.setenv(expert_tools.EXPERTS_DIR_ENV, str(tmp_path / "experts"))
-    import tools.delegate_tool as delegate
+def test_the_stamped_goal_still_reads_back_as_the_humans_sentence():
+    tasks = [{"goal": "把三份资料折成一份汇总", "expert": "file"}]
 
-    monkeypatch.setattr(
-        delegate, "delegate_task",
-        lambda **kw: json.dumps({"results": [{"child_session_id": "kid-9", "status": "completed"}]}),
-    )
+    _apply_expert_presets(tasks)
 
-    expert_tools.handle({"role": "browser", "goal": "抄下课程页的截止时间"},
-                        parent_agent=SimpleNamespace(session_id="p"))
+    assert _expert_body(tasks[0]) == "把三份资料折成一份汇总"
 
-    sidecar = tmp_path / "experts" / "kid-9.json"
-    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+
+def test_a_task_without_expert_is_untouched():
+    tasks = [{"goal": "普通的一段活"}]
+
+    assert _apply_expert_presets(tasks) == ""
+    assert tasks[0] == {"goal": "普通的一段活"}
+
+
+def test_an_unknown_role_is_refused_with_the_four_names():
+    tasks = [{"goal": "x", "expert": "god"}]
+
+    error = _apply_expert_presets(tasks)
+
+    assert "file" in error and "browser" in error
+
+
+def test_the_role_sidecar_is_written_for_the_rail(tmp_path, monkeypatch):
+    monkeypatch.setenv("PLOBI_EXPERTS_DIR", str(tmp_path / "experts"))
+
+    expert_roles.record_role("kid-9", "browser", "抄下课程页的截止时间")
+
+    payload = json.loads((tmp_path / "experts" / "kid-9.json").read_text(encoding="utf-8"))
     assert payload["role"] == "browser"
     assert payload["goal"] == "抄下课程页的截止时间"
-
-
-def test_an_unknown_role_is_refused_with_the_four_names(monkeypatch):
-    import tools.delegate_tool as delegate
-
-    monkeypatch.setattr(delegate, "delegate_task", lambda **kw: (_ for _ in ()).throw(AssertionError("不该派")))
-
-    out = json.loads(expert_tools.handle({"role": "god", "goal": "x"},
-                                         parent_agent=SimpleNamespace(session_id="p")))
-
-    assert out["ok"] is False and "file" in out["error"]
