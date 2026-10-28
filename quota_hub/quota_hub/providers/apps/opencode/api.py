@@ -23,6 +23,16 @@ Boundaries kept on purpose:
   removing.
 * If `/models` cannot be read, the leg serves **no** models. Falling back to a declared
   list is what the ruling forbids.
+
+**Measured 2026-10-28, and it changed this leg's contract**: the Free pool is refused over
+HTTP — one tiny completion with a `tools` array came back
+`429 {"type":"error","error":{"type":"FreeUsageLimitError", "message":"Free usage limit
+reached. Free models work in OpenCode ... subscribe to OpenCode Go"}}`. So an OAuth
+credential from the store is **not** evidence that a turn can be served here: Free exists
+only inside the OpenCode client (that is what the ACP leg is for). This leg therefore
+serves models only when the account carries a paid plan or the operator hands us a key
+(`OPENCODE_ZEN_API_KEY` / config `api_key`); otherwise it reports `no_subscription` and
+the box stays empty — which is the honest answer to "你有 Zen 吗".
 """
 
 from __future__ import annotations
@@ -93,23 +103,30 @@ class OpencodeApiProvider(Provider):
         self.timeout = float(config.get("timeout", 120.0))
         self.served_models = ()
         self._credential: dict[str, Any] | None = None
+        # A paid plan / API key is the only way a turn is served over HTTP (see header).
+        self.api_key = str(
+            config.get("api_key") or os.environ.get("OPENCODE_ZEN_API_KEY") or os.environ.get("OPENCODE_API_KEY") or ""
+        ).strip()
 
     # --- presence / credential -------------------------------------------
     def present(self) -> bool:
         return read_credential() is not None
 
     def login_plan(self) -> dict:
-        # The CLI owns the sign-in; the hub only reads what it writes afterwards.
+        # No click to offer: signing in again does not create an entitlement. The Free
+        # pool works inside the OpenCode client (that is the ACP leg); over HTTP the only
+        # way in is a paid plan or a key, which is configuration, not a sign-in.
         return {
-            "kind": "cli_login",
-            "binary": self.config.get("binary", "opencode"),
-            "argv": list(self.config.get("login_args", ["auth", "login"])),
-            "timeout": float(self.config.get("login_timeout", 300.0)),
+            "kind": "none",
+            "reason": "Free 池在 HTTP 上不给用；要 OpenCode Go 订阅或一个 API key（OPENCODE_ZEN_API_KEY）",
             "name": self.display_name,
         }
 
     def _credential_state(self) -> tuple[bool, str, dict[str, Any] | None]:
         data = read_credential()
+        if self.api_key:
+            # The operator plugged a Zen/Go key: that is a subscription we can bill.
+            return True, "ok", data or {"access": self.api_key}
         if data is None:
             return False, "no_desktop_credential", None
         expires = data.get("expires")
@@ -120,7 +137,10 @@ class OpencodeApiProvider(Provider):
                 return False, "credential_expired", data
         if not str(data.get("access") or data.get("access_token") or ""):
             return False, "no_desktop_credential", None
-        return True, "ok", data
+        # Measured: the Free pool refuses HTTP turns (429 FreeUsageLimitError). The
+        # credential is real; the entitlement is not. Saying "ok" here is what put 44
+        # unusable ids in the model box on 2026-10-28.
+        return False, "no_subscription", data
 
     def credential_health(self) -> tuple[bool, str]:
         live, reason, _ = self._credential_state()

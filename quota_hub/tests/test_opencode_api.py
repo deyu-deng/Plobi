@@ -70,7 +70,7 @@ def test_the_leg_reports_the_names_the_upstream_lists(tmp_path, monkeypatch):
 
     async def _go():
         async with _http({"/v1/models": _models("big-pickle", "beam-free")}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             accounts = await prov.discover_accounts()
             assert accounts, "a present credential must yield one account"
             assert prov.served_models == ("opencode_api/big-pickle", "opencode_api/beam-free")
@@ -84,7 +84,7 @@ def test_no_upstream_list_means_no_models_at_all(tmp_path, monkeypatch):
 
     async def _go():
         async with _http({"/v1/models": httpx.Response(403, json={"error": "forbidden"})}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE, "models": ["opencode_api/declared-only"]}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key", "models": ["opencode_api/declared-only"]}, http)
             await prov.discover_accounts()
             # Ruling 204.5: a declared list is not a measurement.
             assert prov.served_models == ()
@@ -151,7 +151,7 @@ def test_a_turn_passes_tools_through_and_returns_tool_calls(tmp_path, monkeypatc
 
     async def _go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             acc = (await prov.discover_accounts())[0]
             tools = [{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}]
             out = await prov.chat(
@@ -188,7 +188,40 @@ def test_an_unknown_expiry_is_still_a_present_credential(tmp_path, monkeypatch, 
 
     async def _go():
         async with _http({"/v1/models": _models("big-pickle")}) as http:
-            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "test-key"}, http)
             assert prov.credential_health() == (True, "ok")
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_store_credential_alone_is_not_a_subscription(tmp_path, monkeypatch):
+    """Measured 2026-10-28: the Free pool refuses HTTP turns (`429 FreeUsageLimitError`).
+
+    The credential is real, the entitlement is not — so this must report `no_subscription`
+    and contribute no models. Saying "ok" here is what put 44 unusable ids in the box.
+    """
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({"/v1/models": _models("big-pickle", "glm-5.3-flash-free")}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            assert prov.present() is True
+            assert prov.credential_health() == (False, "no_subscription")
+            assert await prov.discover_accounts() == []
+            assert prov.served_models == ()
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_configured_key_turns_the_leg_on_without_any_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path, present=False))
+
+    async def _go():
+        async with _http({"/v1/models": _models("jev-1.13")}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "zen-key"}, http)
+            assert prov.credential_health() == (True, "ok")
+            accounts = await prov.discover_accounts()
+            assert accounts and accounts[0].cred.access_token == "zen-key"
+            assert prov.served_models == ("opencode_api/jev-1.13",)
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
