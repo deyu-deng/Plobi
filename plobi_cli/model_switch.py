@@ -1752,6 +1752,13 @@ def list_authenticated_providers(
         if pid.lower() in seen_slugs:
             continue
 
+        # 裁定 205（用户 2026-10-28）：「那就不属于 provider 了，放到外包那一栏去了」。
+        # ACP 腿的工具在**上游闭环执行**、回到 Plobi 的是一条成稿，不是 tool_calls——
+        # 实测证据见裁定 204 那张表（`terminal` 跑出文件、`tool_calls` 为 0）。所以它们
+        # 不进模型清单：那一栏只放"能被当成一个模型选"的东西；它们归外包。
+        if getattr(overlay, "auth_type", "") == "external_process":
+            continue
+
         # Resolve Plobi slug — e.g. "github-copilot" → "copilot"
         plobi_slug = _mdev_to_plobi.get(pid, pid)
         if plobi_slug.lower() in seen_slugs:
