@@ -49,6 +49,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from ....egress import proxy_url
+from ....providers.cloudcode import CloudCodeClient
 from . import account_store
 from ....tokens import desktop_stores as ds
 from ...base import Account, AccountState, Capabilities, Credential, Provider, UpstreamError
@@ -82,6 +83,21 @@ CLIENT_METADATA = {
     "pluginType": 2,
     "platform": 3,  # 3 = macOS in the proxy's platform enum
 }
+
+
+# Re-exported so the leg's own callers and tests keep their import path; the code now
+# lives in `providers/cloudcode_wire.py`.
+from ...cloudcode_wire import (  # noqa: F401
+    _describe_google_error,
+    _as_text,
+    _to_gemini_tools,
+    _extract_gemini_text,
+    _extract_gemini_function_call,
+    _gemini_to_oai,
+    _chunk,
+    _tool_chunk,
+    _parse_antigravity_models,
+)
 
 
 class AntigravityProvider(Provider):
@@ -157,6 +173,19 @@ class AntigravityProvider(Provider):
             import httpx as _httpx
 
             self.http = _httpx.AsyncClient(proxy=self.proxy, timeout=_httpx.Timeout(120.0, connect=15.0))
+        # One envelope implementation for every leg that holds a Google-account (Code
+        # Assist) token: this leg and the Gemini CLI leg both run on it, so a format fix
+        # lands once. `self.http` is already the proxied client when a node is configured.
+        self.cloudcode = CloudCodeClient(
+            self.http,
+            host=self.host,
+            api_version=self.api_version,
+            headers=dict(ANTIGRAVITY_HEADERS),
+            client_metadata=self.client_metadata,
+            extra_headers=self.extra_headers,
+            thinking=self.thinking,
+            label="antigravity",
+        )
 
     # --- discovery -------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:
@@ -517,51 +546,10 @@ class AntigravityProvider(Provider):
         return short_ids
 
     async def fetch_available_models(self, acc: Account) -> list[str]:
-        """Call ``POST /v1internal:fetchAvailableModels`` and return short ids.
+        """The account's own entitlement list — the transport raises, we do not guess."""
+        return await self.cloudcode.available_models(acc.cred.access_token, await self._project_id(acc))
 
-        Raises ``UpstreamError`` on transport / auth / parse failure so the
-        caller's ``refresh_models`` can decide whether to keep the seed.
-        """
-        # The model catalog is project-scoped; pass the managed project id when
-        # we can discover it (loadCodeAssist is best-effort and returns "" on
-        # failure, in which case we send an empty body as the API also accepts).
-        pid = ""
-        try:
-            pid = await self._project_id(acc)
-        except Exception:
-            pid = ""
-        body = {"project": pid} if pid else {}
-        url = f"{self.host}/{self.api_version}:fetchAvailableModels"
-        try:
-            r = await self.http.post(
-                url, headers=self._headers(acc.cred.access_token), json=body, timeout=20.0
-            )
-        except Exception as e:
-            raise UpstreamError(
-                502,
-                f"antigravity: fetchAvailableModels transport {type(e).__name__}: {e}",
-            )
-        if r.status_code == 401:
-            raise UpstreamError(
-                401, "antigravity: fetchAvailableModels unauthorized", reauth=True
-            )
-        if r.status_code != 200:
-            # Surface the body so we can diagnose a 400/403 from the real API.
-            snippet = (r.text or "")[:500]
-            raise UpstreamError(
-                r.status_code,
-                f"antigravity: fetchAvailableModels returned {r.status_code}: {snippet}",
-            )
-        try:
-            data = r.json()
-        except Exception as e:
-            raise UpstreamError(
-                502,
-                f"antigravity: fetchAvailableModels invalid JSON {type(e).__name__}: {e}",
-            )
-        return _parse_antigravity_models(data)
-
-    # --- project discovery ----------------------------------------------
+    # --- project discovery ------------------------------------------------
     async def _project_id(self, acc: Account) -> str:
         if acc.cred.extra.get("project_id"):
             return acc.cred.extra["project_id"]
@@ -572,226 +560,45 @@ class AntigravityProvider(Provider):
         return self.fallback_project
 
     async def _load_code_assist(self, acc: Account) -> str:
-        url = f"{self.host}/{self.api_version}:loadCodeAssist"
-        body = {"metadata": self.client_metadata, "mode": 1}
-        try:
-            r = await self.http.post(
-                url, headers=self._headers(acc.cred.access_token), json=body, timeout=20.0
-            )
-        except Exception:
-            return ""
-        if r.status_code != 200:
-            return ""
-        try:
-            data = r.json()
-        except Exception:
-            return ""
-        # Every other failure mode above returns "" (transport, non-200, bad JSON);
-        # a well-formed response of the *wrong shape* used to crash out of here on
-        # ``list.get`` — found while testing the unwrap in chat() (same class of
-        # unguarded-shape assumption, 2026-10-11).
-        proj = data.get("cloudaicompanionProject") if isinstance(data, dict) else None
-        if isinstance(proj, dict):
-            proj = proj.get("id", "")
-        return proj or ""
+        return await self.cloudcode.load_project(acc.cred.access_token, acc.cred.extra.get("session_id", ""))
 
-    # --- request path ----------------------------------------------------
+    # --- request path (delegated to `providers/cloudcode.py`) -------------
+    # Kept as named methods because the leg's own tests and `refresh_models` reach for
+    # them, and because a name that says `_url(False)` is worth more here than an inline call.
     def _url(self, stream: bool) -> str:
-        if stream:
-            return f"{self.host}/{self.api_version}:streamGenerateContent?alt=sse"
-        return f"{self.host}/{self.api_version}:generateContent"
+        return self.cloudcode.url(stream)
 
     def _headers(
         self, token: str, session_id: str = "", model: str = "", accept: str = "application/json"
     ) -> dict:
-        h = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": accept,
-            **ANTIGRAVITY_HEADERS,
-        }
-        h.update(self.extra_headers)
-        if session_id:
-            h["X-Machine-Session-Id"] = session_id
-        # Claude thinking models need this beta header
-        low = model.lower()
-        if "claude" in low and "thinking" in low:
-            h["anthropic-beta"] = "interleaved-thinking-2025-05-14"
-        return h
+        return self.cloudcode.headers_for(token, session_id, model, accept)
 
     def _short_model(self, oai_model: str) -> str:
         return self.MODEL_MAP.get(oai_model, oai_model.split("/")[-1])
 
-    def _to_gemini(self, oai_req: dict, session_id: str) -> dict:
-        contents, system_txt = [], []
-        for m in oai_req["messages"]:
-            role = m["role"]
-            if role == "system":
-                system_txt.append(_as_text(m.get("content")))
-                continue
-            if role == "tool":
-                # OpenAI tool result -> Gemini functionResponse (user turn)
-                contents.append(
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "functionResponse": {
-                                    "name": m.get("name", ""),
-                                    "response": {"result": _as_text(m.get("content"))},
-                                }
-                            }
-                        ],
-                    }
-                )
-                continue
-            parts = []
-            if role == "assistant" and m.get("tool_calls"):
-                for tc in m["tool_calls"]:
-                    fn = tc.get("function", {})
-                    raw = fn.get("arguments", "{}")
-                    try:
-                        args = json.loads(raw) if isinstance(raw, str) else (raw or {})
-                    except Exception:
-                        args = {}
-                    parts.append({"functionCall": {"name": fn.get("name", ""), "args": args or {}}})
-            else:
-                text = _as_text(m.get("content"))
-                if text:
-                    parts.append({"text": text})
-            if parts:
-                grole = "model" if role == "assistant" else "user"
-                contents.append({"role": grole, "parts": parts})
-
-        body = {"contents": contents}
-        if system_txt:
-            # the real client sends systemInstruction with role:"user"
-            body["systemInstruction"] = {
-                "role": "user",
-                "parts": [{"text": "\n".join(system_txt)}],
-            }
-        gen = {}
-        if "temperature" in oai_req:
-            gen["temperature"] = oai_req["temperature"]
-        if "max_tokens" in oai_req:
-            gen["maxOutputTokens"] = oai_req["max_tokens"]
-        if self.thinking or oai_req.get("reasoning_effort"):
-            budget = {"minimal": 1024, "low": 4096, "medium": 8192, "high": 16384}.get(
-                oai_req.get("reasoning_effort"), 8192
-            )
-            gen["thinkingConfig"] = {
-                "thinkingBudget": budget,
-                "includeThoughts": bool(self.thinking),
-            }
-        if gen:
-            body["generationConfig"] = gen
-        tools = _to_gemini_tools(oai_req.get("tools"))
-        if tools:
-            body["tools"] = tools
-        body["sessionId"] = session_id
-        return body
-
     def _wrap(self, oai_req: dict, project: str, model: str, session_id: str) -> dict:
-        inner = self._to_gemini(oai_req, session_id)
-        return {
-            "project": project,
-            "model": model,
-            "request": inner,
-            "userAgent": "antigravity",
-            "requestType": "agent",
-            "requestId": "agent-" + uuid.uuid4().hex,
-        }
+        return self.cloudcode.wrap(oai_req, project, model, session_id)
 
     async def chat(self, acc: Account, oai_req: dict) -> dict:
-        project = await self._project_id(acc)
-        sid = acc.cred.extra.get("session_id", "")
-        model = self._short_model(oai_req["model"])
-        payload = self._wrap(oai_req, project, model, sid)
-        r = await self.http.post(
-            self._url(False),
-            headers=self._headers(acc.cred.access_token, sid, model),
-            json=payload,
-            timeout=120.0,
+        return await self.cloudcode.chat(
+            token=acc.cred.access_token,
+            project=await self._project_id(acc),
+            model=self._short_model(oai_req["model"]),
+            oai_req=oai_req,
+            session_id=acc.cred.extra.get("session_id", ""),
+            on_response=lambda r: self._note_quota(acc, r),
         )
-        err = self._classify_http(r.status_code)
-        if err:
-            self._note_quota(acc, r)
-            raise err
-        try:
-            data = r.json()
-        except Exception as e:
-            raise UpstreamError(502, f"antigravity: invalid JSON response ({e})")
-        # Google returns {"error": {...}} on failure (e.g. region lock 400).
-        if isinstance(data, dict) and "error" in data:
-            e = data["error"]
-            raise UpstreamError(
-                502,
-                f"antigravity upstream: {_describe_google_error(e)}",
-                retryable=False,
-            )
-        # The API wraps the Gemini payload in a top-level "response" object.
-        # These two lines used to sit INSIDE the `if` above, i.e. after its
-        # `raise` — so a *successful* upstream answer fell off the end of chat()
-        # and the caller received None. Measured 2026-10-11: the subscription
-        # answered, `resp["choices"]` was None, and the failure looked like a
-        # translation gap rather than an unreachable return statement.
-        if not isinstance(data, dict):
-            raise UpstreamError(502, "antigravity: upstream returned a non-object payload")
-        data = data.get("response", data)
-        return _gemini_to_oai(data, oai_req["model"], project)
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
-        project = await self._project_id(acc)
-        sid = acc.cred.extra.get("session_id", "")
-        model = self._short_model(oai_req["model"])
-        payload = self._wrap(oai_req, project, model, sid)
-        cid = f"chatcmpl-{uuid.uuid4().hex[:24]}"
-        async with self.http.stream(
-            "POST",
-            self._url(True),
-            headers=self._headers(acc.cred.access_token, sid, model, accept="text/event-stream"),
-            json=payload,
-            timeout=120.0,
-        ) as r:
-            err = self._classify_http(r.status_code)
-            if err:
-                self._note_quota(acc, r)
-                raise err
-            async for line in r.aiter_lines():
-                line = line.strip()
-                # Google returns error JSON (e.g. 400 region lock) inside the
-                # SSE stream with status 200; surface it instead of yielding
-                # an empty "successful" completion.
-                if line.startswith("data:") and "[DONE]" not in line:
-                    try:
-                        probe = json.loads(line[5:].strip())
-                        if isinstance(probe, dict) and "error" in probe:
-                            e = probe["error"]
-                            raise UpstreamError(
-                                502,
-                                f"antigravity upstream: {_describe_google_error(e)}",
-                                retryable=False,
-                            )
-                    except (json.JSONDecodeError, UpstreamError):
-                        pass
-                if not line or not line.startswith("data:"):
-                    continue
-                payload_s = line[5:].strip()
-                if not payload_s or payload_s == "[DONE]":
-                    continue
-                try:
-                    obj = json.loads(payload_s)
-                except json.JSONDecodeError:
-                    continue
-                # The API wraps the Gemini payload in a top-level "response" object.
-                obj = obj.get("response", obj)
-                text = _extract_gemini_text(obj)
-                if text:
-                    yield _chunk(cid, oai_req["model"], text)
-                fn = _extract_gemini_function_call(obj)
-                if fn:
-                    yield _tool_chunk(cid, oai_req["model"], fn)
-            yield _chunk(cid, oai_req["model"], None, finish="stop")
+        async for chunk in self.cloudcode.chat_stream(
+            token=acc.cred.access_token,
+            project=await self._project_id(acc),
+            model=self._short_model(oai_req["model"]),
+            oai_req=oai_req,
+            session_id=acc.cred.extra.get("session_id", ""),
+            on_response=lambda r: self._note_quota(acc, r),
+        ):
+            yield chunk
 
     def _note_quota(self, acc, resp):
         rem = resp.headers.get("x-ratelimit-remaining")
@@ -838,216 +645,3 @@ def _parse_model_quotas(data: object) -> list[dict]:
     return out
 
 
-def _parse_antigravity_models(data: object) -> list[str]:
-    """Extract short model ids from a ``fetchAvailableModels`` response.
-
-    The real Google Cloud Code Assist API returns a **record** mapping model
-    id -> quota info::
-
-        {"models": {"gemini-3-pro-high": {"displayName": "...", "quotaInfo": {...}}, ...}}
-
-    We also tolerate the list shapes seen in some reverse-engineered clients::
-
-        {"models": [{"name": "models/gemini-3-pro"}, ...]}
-        {"models": ["gemini-3-pro", ...]}
-        {"availableModels": [...]} / {"available_models": [...]}
-
-    Any ``models/`` or ``publishers/`` catalog prefix is stripped, and internal
-    / placeholder models (``chat_*``, ``rev19*``, ``tab_*``, ``*image*``,
-    embeddings, tts) are dropped so the user only sees real, chattable models.
-    """
-    if not isinstance(data, dict):
-        return []
-    raw = None
-    for key in ("models", "availableModels", "available_models"):
-        v = data.get(key)
-        if v:
-            raw = v
-            break
-    if raw is None:
-        return []
-
-    raw_ids: list[str] = []
-    if isinstance(raw, dict):
-        # Record shape: keys are the model ids.
-        raw_ids.extend(str(k) for k in raw.keys())
-    elif isinstance(raw, list):
-        for item in raw:
-            mid = ""
-            if isinstance(item, str):
-                mid = item
-            elif isinstance(item, dict):
-                mid = (
-                    item.get("name")
-                    or item.get("id")
-                    or item.get("model")
-                    or item.get("modelId")
-                    or ""
-                )
-            if mid:
-                raw_ids.append(str(mid))
-
-    ids: list[str] = []
-    for mid in raw_ids:
-        mid = (mid or "").strip()
-        if not mid:
-            continue
-        # Strip a leading catalog prefix like "models/" / "publishers/".
-        mid = mid.split("/")[-1]
-        low = mid.lower()
-        # Drop internal / non-chat models that real clients filter out.
-        if low.startswith(("chat_", "rev19", "tab_")):
-            continue
-        if any(s in low for s in ("image", "embedding", "tts")):
-            continue
-        if mid and mid not in ids:
-            ids.append(mid)
-    return ids
-
-
-def _describe_google_error(e: dict) -> str:
-    """Human-readable message for a Google ``{"error": {...}}`` payload.
-
-    Google Code Assist rejects calls from unsupported regions with a bare
-    ``FAILED_PRECONDITION`` / ``"User location is not supported for the API use"``
-    — which is the expected failure for mainland-China networks. Surface that
-    clearly instead of a cryptic status string.
-    """
-    msg = (e.get("message") or "unknown error") if isinstance(e, dict) else str(e)
-    if "User location is not supported" in msg or "location is not supported" in msg:
-        return (
-            f"{msg}. Google Code Assist (Antigravity) is not available in this "
-            "region — connect through a compliant overseas network to use it."
-        )
-    return msg
-
-
-def _as_text(content) -> str:
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(p.get("text", "") for p in content if isinstance(p, dict))
-    return str(content)
-
-
-def _to_gemini_tools(tools):
-    if not tools:
-        return None
-    decls = []
-    for t in tools:
-        if not isinstance(t, dict) or t.get("type") != "function":
-            continue
-        fn = t.get("function", {})
-        decls.append(
-            {
-                "name": fn.get("name", ""),
-                "description": fn.get("description", ""),
-                "parameters": fn.get("parameters", {}),
-            }
-        )
-    return [{"functionDeclarations": decls}] if decls else None
-
-
-def _extract_gemini_text(obj: dict) -> str:
-    try:
-        return "".join(
-            p.get("text", "") for p in obj["candidates"][0]["content"]["parts"] if "text" in p
-        )
-    except (KeyError, IndexError, TypeError):
-        return ""
-
-
-def _extract_gemini_function_call(obj: dict):
-    try:
-        for p in obj["candidates"][0]["content"]["parts"]:
-            if "functionCall" in p:
-                return p["functionCall"]
-    except (KeyError, IndexError, TypeError):
-        return None
-    return None
-
-
-def _gemini_to_oai(obj: dict, model: str, project: str) -> dict:
-    text_parts = []
-    tool_calls = []
-    try:
-        for p in obj["candidates"][0]["content"]["parts"]:
-            if "text" in p:
-                text_parts.append(p["text"])
-            elif "functionCall" in p:
-                fc = p["functionCall"]
-                tool_calls.append(
-                    {
-                        "id": "call_" + uuid.uuid4().hex[:8],
-                        "type": "function",
-                        "function": {
-                            "name": fc.get("name", ""),
-                            "arguments": json.dumps(fc.get("args", {}), ensure_ascii=False),
-                        },
-                    }
-                )
-    except (KeyError, IndexError, TypeError):
-        pass
-    usage = obj.get("usageMetadata", {})
-    msg = {"role": "assistant", "content": "".join(text_parts) if text_parts else None}
-    if tool_calls:
-        msg["tool_calls"] = tool_calls
-    return {
-        "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "finish_reason": "tool_calls" if tool_calls else "stop",
-                "message": msg,
-            }
-        ],
-        "usage": {
-            "prompt_tokens": usage.get("promptTokenCount", 0),
-            "completion_tokens": usage.get("candidatesTokenCount", 0),
-            "total_tokens": usage.get("totalTokenCount", 0),
-        },
-    }
-
-
-def _chunk(cid: str, model: str, text, finish=None) -> dict:
-    delta = {} if text is None else {"content": text}
-    return {
-        "id": cid,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-    }
-
-
-def _tool_chunk(cid: str, model: str, fn: dict) -> dict:
-    return {
-        "id": cid,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {
-                    "tool_calls": [
-                        {
-                            "index": 0,
-                            "id": "call_" + uuid.uuid4().hex[:8],
-                            "type": "function",
-                            "function": {
-                                "name": fn.get("name", ""),
-                                "arguments": json.dumps(fn.get("args", {}), ensure_ascii=False),
-                            },
-                        }
-                    ]
-                },
-                "finish_reason": None,
-            }
-        ],
-    }

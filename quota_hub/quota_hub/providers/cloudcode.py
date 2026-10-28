@@ -23,18 +23,18 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Callable
 
-from .apps.antigravity.api import (
-    _as_text,
-    _chunk,
+from .cloudcode_wire import (
     _describe_google_error,
-    _extract_gemini_function_call,
-    _extract_gemini_text,
-    _gemini_to_oai,
-    _parse_antigravity_models,
+    _as_text,
     _to_gemini_tools,
+    _extract_gemini_text,
+    _extract_gemini_function_call,
+    _gemini_to_oai,
+    _chunk,
     _tool_chunk,
+    _parse_antigravity_models,
 )
 from .base import UpstreamError
 
@@ -201,11 +201,16 @@ class CloudCodeClient:
         reauth = status == 401
         return UpstreamError(status, f"{self.label}: upstream returned {status}", reauth=reauth, retryable=status in (429, 500, 502, 503))
 
-    async def chat(self, *, token: str, project: str, model: str, oai_req: dict, session_id: str = "") -> dict:
+    async def chat(self, *, token: str, project: str, model: str, oai_req: dict, session_id: str = "",
+                   on_response: Callable[[Any], None] | None = None) -> dict:
         payload = self.wrap(oai_req, project, model, session_id)
         r = await self.http.post(
             self.url(False), headers=self.headers_for(token, session_id, model), json=payload, timeout=self.timeout
         )
+        # The leg may still want to read the response itself (rate-limit headers, quota
+        # notes) without knowing anything about the envelope.
+        if on_response is not None:
+            on_response(r)
         err = self._classify(r.status_code)
         if err:
             raise err
@@ -220,7 +225,8 @@ class CloudCodeClient:
         # Code Assist wraps the Gemini payload in a top-level "response" object.
         return _gemini_to_oai(data.get("response", data), oai_req["model"], project)
 
-    async def chat_stream(self, *, token: str, project: str, model: str, oai_req: dict, session_id: str = "") -> AsyncIterator[dict]:
+    async def chat_stream(self, *, token: str, project: str, model: str, oai_req: dict, session_id: str = "",
+                          on_response: Callable[[Any], None] | None = None) -> AsyncIterator[dict]:
         payload = self.wrap(oai_req, project, model, session_id)
         cid = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         async with self.http.stream(
@@ -230,6 +236,8 @@ class CloudCodeClient:
             json=payload,
             timeout=self.timeout,
         ) as r:
+            if on_response is not None:
+                on_response(r)
             err = self._classify(r.status_code)
             if err:
                 raise err
