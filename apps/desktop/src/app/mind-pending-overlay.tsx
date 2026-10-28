@@ -32,13 +32,20 @@ export function MindPendingOverlay() {
   const [busy, setBusy] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
 
+  // 轮询挂在这个组件上，不挂在那颗角标上：`use-statusbar-items.tsx` 由在派的
+  // `WP-WORKBENCH-LAUNCHER` 独占（串行一次一家，我不抢），而这一档是本刀新建的、归本线。
+  // 覆盖层平时是关着的，但 store 是共享的 ⇒ 角标数照刷。进闸的纸是 cron 在后台写的，
+  // 只在打开时才拉一次＝数永远是 0，那等于把「进人眼」做成「点了才看见」。
   useEffect(() => {
-    if (!open) {
-      return undefined
-    }
     void refreshMindPending()
-    const timer = window.setInterval(() => void refreshMindPending(), 30_000)
+    const timer = window.setInterval(() => void refreshMindPending(), 5 * 60_000)
     return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (open) {
+      void refreshMindPending()
+    }
   }, [open])
 
   const act = async (id: string, verb: 'approve' | 'reject') => {
