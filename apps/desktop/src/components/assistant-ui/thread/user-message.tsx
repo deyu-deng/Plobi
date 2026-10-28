@@ -1,14 +1,9 @@
 import { ActionBarPrimitive, BranchPickerPrimitive, MessagePrimitive, useAuiState } from '@assistant-ui/react'
+import { useStore } from '@nanostores/react'
 import { type FC, type ReactNode, useCallback, useRef, useState } from 'react'
 
+import { $consoleAgents } from '@/app/console/store/agents'
 import { DirectiveContent } from '@/components/assistant-ui/directive-text'
-import { askedByBadge, externalSenderOf, splitSpeakerPrefix } from '@/lib/chat-messages'
-import { ExternalMessage } from '@/components/assistant-ui/thread/external-message'
-import {
-  MESSAGE_BYLINE,
-  MESSAGE_MAX_WIDTH,
-  MESSAGE_OWNER_BUBBLE,
-} from '@/components/assistant-ui/thread/message-shell'
 import { QuoteButton } from '@/components/assistant-ui/thread/quote-button'
 import { messageAttachmentRefs, messageContentText } from '@/components/assistant-ui/thread/content'
 import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
@@ -16,11 +11,35 @@ import { UserMessageText } from '@/components/assistant-ui/thread/user-message-t
 import { Codicon } from '@/components/ui/codicon'
 import { useResizeObserver } from '@/hooks/use-resize-observer'
 import { useI18n } from '@/i18n'
+import { askedByBadge, externalSenderOf, splitFilePointers, splitSpeakerPrefix } from '@/lib/chat-messages'
 import { triggerHaptic } from '@/lib/haptics'
 import { StopFilled } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notifyThreadEditOpen } from '@/store/thread-scroll'
 import { isWatchWindow } from '@/store/windows'
+
+/** 一张气泡最宽多少——所有消息同一把尺。 */
+const MESSAGE_MAX_WIDTH = 'max-w-[min(86%,44rem)]'
+
+/** 气泡表面：圆角 / 描边 / 内边距 / 字号行高。底色按哪一档决定。 */
+const MESSAGE_SURFACE =
+  'rounded-xl border border-border/65 px-3 py-2 text-left text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95'
+
+/** 主人自己的消息（右、强调色、不署名）。 */
+const OWNER_BUBBLE = cn(MESSAGE_SURFACE, 'bg-(--dt-user-bubble)')
+
+/** 别人发来的消息（右、中性色）。 */
+const EXTERNAL_BUBBLE = cn(MESSAGE_SURFACE, 'bg-(--ui-chat-surface-background)')
+
+const MESSAGE_AVATAR =
+  'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) text-[10px] font-medium text-(--ui-text-secondary)'
+
+const MESSAGE_BYLINE = 'px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)'
+
+const MESSAGE_SYSTEM_LINE = cn(
+  MESSAGE_MAX_WIDTH,
+  'px-2 py-0.5 text-center text-[0.6875rem] leading-5 text-muted-foreground/60',
+)
 
 export function StickyHumanMessageContainer({
   attachments,
@@ -63,7 +82,7 @@ export function StickyHumanMessageContainer({
 export const USER_BUBBLE_BASE_CLASS =
   cn(
     'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto [-webkit-app-region:no-drag]',
-    MESSAGE_OWNER_BUBBLE,
+    OWNER_BUBBLE,
   )
 
 export const USER_ACTION_ICON_BUTTON_CLASS =
@@ -114,6 +133,7 @@ export const UserMessage: FC<{
 }> = ({ onCancel, onRequestRestoreConfirm }) => {
   const { t } = useI18n()
   const copy = t.assistant.thread
+  const agents = useStore($consoleAgents)
   const messageId = useAuiState(s => s.message.id)
   const content = useAuiState(s => s.message.content)
   const messageText = messageContentText(content)
@@ -255,15 +275,88 @@ export const UserMessage: FC<{
 
   if (externalSpeaker) {
     const split = splitSpeakerPrefix(messageText)
+    const speaker = split.speaker || externalSpeaker.name
+    const label = speaker || (externalSpeaker.kind === 'cron' ? '定时任务' : 'Agent')
+    const quoted = (customMeta as { quoted?: { text: string } | null }).quoted ?? null
+
+    if (externalSpeaker.kind === 'system') {
+      // 系统事件：居中灰字、无气泡无头像（裁定 196 ③）。
+      return (
+        <div
+          className="flex w-full justify-center py-1"
+          data-kind="system"
+          data-message-id={messageId}
+          data-role="user"
+          data-slot="aui_external-system"
+        >
+          <div className={MESSAGE_SYSTEM_LINE}>
+            <UserMessageText className="wrap-anywhere" text={split.body} />
+          </div>
+        </div>
+      )
+    }
+
+    const roster = externalSpeaker.kind === 'agent'
+      ? agents.find(agent => agent.name.trim().toLowerCase() === speaker.trim().toLowerCase())
+      : undefined
+    const accent = roster?.color || undefined
 
     return (
-      <ExternalMessage
-        kind={externalSpeaker.kind}
-        speaker={split.speaker || externalSpeaker.name}
-        text={split.body}
-        quoted={(customMeta as { quoted?: import('@/lib/chat-messages').QuotedPreview }).quoted ?? null}
-        messageId={messageId}
-      />
+      <div
+        className="group/external flex w-full items-start justify-end gap-2 py-1"
+        data-kind={externalSpeaker.kind}
+        data-message-id={messageId}
+        data-role="user"
+        data-slot="aui_external-message"
+      >
+        <div className="mt-px flex shrink-0 flex-col items-center gap-0.5">
+          <QuoteButton
+            className="opacity-0 group-hover/external:opacity-100"
+            id={messageId}
+            text={quoted?.text ?? split.body}
+          />
+        </div>
+        <div className={cn('flex min-w-0 flex-col items-end', MESSAGE_MAX_WIDTH)}>
+          <div className={MESSAGE_BYLINE} data-slot="aui_message-byline" title={label}>
+            {label}
+          </div>
+          <div className={EXTERNAL_BUBBLE}>
+            {quoted ? (
+              <div className="mb-1 border-l-2 border-(--ui-stroke-tertiary) pl-2 text-[0.75rem] leading-5 text-(--ui-text-tertiary)">
+                <span className="line-clamp-2">{quoted.text}</span>
+              </div>
+            ) : null}
+            {splitFilePointers(split.body).map((segment, index) =>
+              segment.kind === 'file' ? (
+                <div
+                  className="mt-1 flex items-center gap-1.5 rounded-md border border-border/65 bg-(--ui-chat-surface-background) px-2 py-1 text-[0.75rem] text-(--ui-text-secondary)"
+                  key={`file-${index}`}
+                  title={segment.path}
+                >
+                  <Codicon name="file" size="0.75rem" />
+                  <span className="truncate font-mono">{segment.path}</span>
+                </div>
+              ) : (
+                <UserMessageText className="wrap-anywhere" key={`text-${index}`} text={segment.text} />
+              ),
+            )}
+          </div>
+        </div>
+        <div
+          aria-hidden
+          className={MESSAGE_AVATAR}
+          style={accent ? { borderColor: accent, color: accent } : undefined}
+          title={label}
+        >
+          {externalSpeaker.kind === 'cron' ? (
+            <Codicon name="clock" size="0.75rem" />
+          ) : roster?.icon ? (
+            <Codicon name={roster.icon} size="0.75rem" />
+          ) : (
+            label.trim().slice(0, 1).toUpperCase()
+          )}
+        </div>
+      </div>
     )
   }
 
