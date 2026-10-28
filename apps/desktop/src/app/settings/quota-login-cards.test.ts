@@ -45,6 +45,29 @@ describe('buildLoginCards', () => {
     expect(card.connected).toBe(false)
   })
 
+  it('a signed-in leg with a dead node stays a switch, not a login button', () => {
+    // 用户 2026-10-28 的原话：「之前 Antigravity 正常跳转并显示我登录了，回来之后还是一个加号，
+    // 而不是一个打开的开关」。hub 把「能不能服务」和「登录过没有」答在同一个字段里，节点一掉，
+    // 卡片就退回 `+`——那是对他刚做过的事说假话。
+    const [card] = buildLoginCards([
+      row({ id: 'antigravity', kind: 'oauth', live: false, signed_in: true, reason: 'proxy_unreachable' })
+    ])
+
+    expect(card.connected).toBe(true)
+    expect(card.connectable).toBe(false)
+    expect(cardControl(card, 'unknown')).toBe('switch')
+    // 原因仍然要说得出，只是它属于 tooltip，不属于按钮的形状。
+    expect(card.detail).toContain('proxy_unreachable')
+  })
+
+  it('a leg with no sign-in answer yet is still a plus', () => {
+    // 旧目录没有 `signed_in` 字段时退回 `live`，不发明第三种状态。
+    const [card] = buildLoginCards([row({ id: 'antigravity', kind: 'oauth', live: false })])
+
+    expect(card.connected).toBe(false)
+    expect(card.connectable).toBe(true)
+  })
+
   it('a signed-in leg is a switch, not a second sign-in', () => {
     const [card] = buildLoginCards([row({ live: true })])
 

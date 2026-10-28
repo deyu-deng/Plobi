@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -266,6 +266,33 @@ describe('Desktop Quotas cards are the hub catalog', () => {
     expect(screen.getAllByRole('switch')[0]).toBeTruthy()
     expect(screen.queryByText('Connected')).toBeNull()
     expect(screen.queryByText('Not connected')).toBeNull()
+  })
+
+  it('keeps asking while the browser still has the sign-in', async () => {
+    // 登录跳浏览器那一步是分钟级的。以前这个视图只在挂载和点击回执时读一次目录，
+    // 所以他登录完回到屏幕上看到的还是那个 `+`（2026-10-28 现场报）。
+    shell([authRow('gemini_api', { login: { state: 'pending', url: 'https://accounts.google.com/o/oauth2/v2/auth?x=1' } })] as AuthCatalogRow[])
+    vi.useFakeTimers()
+
+    try {
+      await act(async () => {
+        const { ProvidersSettings } = await import('./providers-settings')
+
+        render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
+        await Promise.resolve()
+      })
+
+      const reads = window.plobiDesktop.authCatalog as ReturnType<typeof vi.fn>
+      const before = reads.mock.calls.length
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000)
+      })
+
+      expect(reads.mock.calls.length).toBeGreaterThan(before)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('gives a signed-in login-only CLI no control, because Plobi has nothing to toggle', async () => {

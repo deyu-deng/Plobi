@@ -21,6 +21,9 @@ export interface AuthCatalogRow {
   kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
   /** A credential verdict: signed in, not signed in. Never "installed". */
   live: boolean
+  /** Has the user completed a sign-in? `live` may still be false because the node is down. */
+  signed_in?: boolean
+  signed_in_reason?: string
   /** The plan's own words when there is no click to offer. Tooltip material only. */
   login_reason?: string
   login?: null | { detail?: string; state?: string; url?: string }
@@ -119,11 +122,16 @@ export function buildLoginCards(rows: readonly AuthCatalogRow[]): LoginCard[] {
       // `installed` is the scan answer; a login-only leg with no probe is honest about
       // being signed out (`live=false`), which is exactly when the `+` must appear.
       const installed = row.installed !== false
+      // Two questions, two fields (measured 2026-10-28 on Antigravity): has he signed in,
+      // and can the leg serve right now. `live` also carries reachability — a Settings →
+      // VPN node going away used to turn the card back into a `+` and tell him he had not
+      // logged in. The `+` answers the first question only.
+      const signedIn = row.signed_in ?? row.live
 
       return {
         aggregate: row.aggregate,
-        connected: row.live,
-        connectable: wired && installed && !row.live && !pending,
+        connected: signedIn,
+        connectable: wired && installed && !signedIn && !pending,
         detail: [row.login_reason, row.live ? '' : row.reason, row.login?.detail ?? '']
           .filter(Boolean)
           .join(' · '),

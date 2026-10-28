@@ -200,6 +200,25 @@ def test_an_expired_token_we_cannot_remint_reports_expired(tmp_path, monkeypatch
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
+def test_a_dead_node_never_turns_a_signed_in_leg_into_a_login_button(tmp_path, monkeypatch):
+    """Measured 2026-10-28 on Antigravity, and the same trap was here.
+
+    The card's `+` is driven by the catalog. When the *reachability* verdict is the only
+    answer, a user who has just signed in and whose Settings → VPN node went away is told
+    to sign in again — a false sentence on the screen, on the leg he was looking at.
+    """
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+
+    async def _go():
+        async with _http({}) as http:
+            prov = _leg(http)
+            prov.proxy_reason = "proxy_unreachable"
+            assert prov.signed_in() == (True, "ok")
+            assert prov.credential_health() == (False, "proxy_unreachable")
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
 def test_ensure_fresh_mints_a_new_access_token_instead_of_failing_the_turn(tmp_path, monkeypatch):
     from quota_hub.providers.base import UpstreamError
 

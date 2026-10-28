@@ -488,6 +488,8 @@ def auth_catalog(registry) -> list[dict]:
         plan = prov.login_plan()
         plan.setdefault("name", getattr(prov, "display_name", "") or name)
         live, reason = registry.credential_health(prov)
+        signed_probe = getattr(prov, "signed_in", None)
+        signed, signed_reason = signed_probe() if callable(signed_probe) else (live, reason)
         kind = plan.get("kind", "none")
         rows.append(
             {
@@ -495,6 +497,11 @@ def auth_catalog(registry) -> list[dict]:
                 "name": plan.get("name") or name,
                 "kind": kind,
                 "live": bool(live),
+                # The card's shape (`+` vs switch) reads THIS, never `live`: `live` also
+                # answers reachability, and a dead node must not offer him a login he
+                # already did. The reason for the difference stays on the tooltip.
+                "signed_in": bool(signed),
+                "signed_in_reason": signed_reason,
                 "installed": True,
                 "reason": reason,
                 # The plan's own words when there is no click to offer. `reason` above

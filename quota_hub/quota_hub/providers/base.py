@@ -158,6 +158,27 @@ class Provider:
         """
         return True
 
+    def signed_in(self) -> tuple[bool, str]:
+        """Does the user have a credential for this leg? A *credential* question only.
+
+        Two things must not be answered with one field, because the settings card turns
+        the second one into a login button the user already pressed:
+
+          * `signed_in` — he has a session over there. Changes when he signs in, or when
+            that credential expires.
+          * `credential_health` — can this leg serve a turn *right now*. Also folds in
+            reachability (the Settings → VPN node), which is a network condition no
+            amount of logging in fixes.
+
+        Legs whose credential we can read override this. The default keeps the two
+        answers equal, which is honest for a leg with no node involved.
+        """
+        health = getattr(self, "credential_health", None)
+        if not callable(health):
+            return True, "ok"
+        live, reason = health()
+        return bool(live), str(reason or "ok")
+
     # --- sign-in ---------------------------------------------------------
     def login_plan(self) -> dict:
         """How the user signs into THIS provider, stated by the provider itself.

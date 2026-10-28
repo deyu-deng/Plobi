@@ -230,14 +230,11 @@ class GeminiApiProvider(Provider):
             "runner": lambda on_url=None: _oauth.run_login(on_url=on_url),
         }
 
-    def credential_health(self) -> tuple[bool, str]:
+    def signed_in(self) -> tuple[bool, str]:
+        """Credential only — the node is a separate question (see `Provider.signed_in`)."""
         data = read_credential()
         if data is None:
             return False, "no_desktop_credential"
-        # Credential first (it is the step a fresh install has to take), node second:
-        # once a sign-in exists, "no node / node down" is the reason a turn cannot run.
-        if self.proxy_reason != "ok":
-            return False, self.proxy_reason
         expires = float(data.get("expires_at") or 0.0)
         if expires and expires <= time.time() and not _refreshable(data):
             # A short-lived access token is not a dead leg: the CLI's own credential
@@ -245,6 +242,16 @@ class GeminiApiProvider(Provider):
             # it. Saying "expired" here would drop a working model out of the picker an
             # hour after he signed in — the exact thing he ruled out for the next restart.
             return False, "credential_expired"
+        return True, "ok"
+
+    def credential_health(self) -> tuple[bool, str]:
+        live, reason = self.signed_in()
+        if not live:
+            return False, reason
+        # Once a sign-in exists, "no node / node down" is the reason a turn cannot run —
+        # and it must not be reported as a missing login.
+        if self.proxy_reason != "ok":
+            return False, self.proxy_reason
         return True, "ok"
 
     # --- accounts / models ------------------------------------------------

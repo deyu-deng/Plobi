@@ -383,6 +383,21 @@ function DesktopQuotasView() {
     readAuthCatalog()
   }, [readAuthCatalog])
 
+  // While a sign-in is waiting on him in the browser, keep asking. Without this the card
+  // only updates when the view re-mounts, so a login that finished perfectly kept showing
+  // the `+` he had already pressed (his report 2026-10-28: 「登录完了回来还是个加号」).
+  const anyPending = Boolean(authCatalog?.some(card => card.pending))
+  useEffect(() => {
+    if (!anyPending) {return}
+
+    const timer = setInterval(() => {
+      readAuthCatalog()
+      requestQuotaCatalog()
+    }, 4000)
+
+    return () => clearInterval(timer)
+  }, [anyPending, readAuthCatalog])
+
   // --- Connect handler (Antigravity via the compliant `agy` CLI route) ---
   // The backend does NOT run an OAuth flow. It verifies the user's own `agy`
   // CLI is installed and starts the local gateway. No token is returned, so

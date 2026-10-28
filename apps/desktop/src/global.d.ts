@@ -232,6 +232,8 @@ declare global {
           id: string
           kind: 'none' | 'local_session' | 'cli_login' | 'oauth'
           live: boolean
+          /** Has the user signed in? `live` can still be false when the egress node is down. */
+          signed_in: boolean
           installed: boolean
           login_reason: string
           login?: null | { detail?: string; state?: string; url?: string }

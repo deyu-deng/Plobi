@@ -341,12 +341,13 @@ class AntigravityProvider(Provider):
                 reauth=True,
             )
 
-    def credential_health(self) -> tuple[bool, str]:
-        """Local-only: what the desktop app's own record says about this token.
+    def signed_in(self) -> tuple[bool, str]:
+        """Credential only: does the desktop app's own record hold a token for us?
 
-        We cannot renew it ourselves (no OAuth client pair), so "expired" really
-        means "open agy once" — which is why it is a visibility problem, not a
-        retry problem.
+        The node question is deliberately absent here. Measured 2026-10-28: with this
+        folded into one verdict, a signed-in user whose egress node was down saw the card
+        fall back to `+` — a button that says "you have not logged in", which is false, on
+        the screen he was looking at right after logging in.
         """
         st = ds.antigravity_desktop_token_status()
         if not st.get("present"):
@@ -354,6 +355,18 @@ class AntigravityProvider(Provider):
         left = st.get("expires_in_seconds")
         if left is not None and left <= 0:
             return False, "credential_expired"
+        return True, "ok"
+
+    def credential_health(self) -> tuple[bool, str]:
+        """Local-only: what the desktop app's own record says about this token.
+
+        We cannot renew it ourselves (no OAuth client pair), so "expired" really
+        means "open agy once" — which is why it is a visibility problem, not a
+        retry problem.
+        """
+        live, reason = self.signed_in()
+        if not live:
+            return False, reason
         # Signed in, but Google is unreachable without the node — say which of the two
         # it is, so the card's tooltip points at Settings → VPN instead of at a login.
         if getattr(self, "proxy_reason", "ok") != "ok":

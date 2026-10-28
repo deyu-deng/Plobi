@@ -420,6 +420,59 @@ def test_an_old_oauth_runner_takes_no_argument_and_still_works(monkeypatch):
     assert ran == ["ran"]
 
 
+def test_a_signed_in_leg_with_a_dead_node_is_not_offered_as_a_login_again():
+    """The two verdicts are two fields, because they are two questions (measured 10-28).
+
+    `live` answers "can it serve a turn right now" (credential ∧ node). The card's `+`
+    must read the credential alone — otherwise an egress node going away tells a user who
+    just signed in that he hasn't, which is exactly what the Antigravity card did.
+    """
+    class _Prov(Provider):
+        name = "google_like"
+        display_name = "Google-ish"
+
+        def login_plan(self):
+            return {"kind": "oauth", "name": "Google-ish", "runner": lambda: None}
+
+        def signed_in(self):
+            return True, "ok"
+
+        def credential_health(self):
+            return False, "proxy_unreachable"
+
+    class _Reg:
+        providers = {"google_like": _Prov({}, None)}
+
+        def credential_health(self, prov):
+            return prov.credential_health()
+
+    row = {r["id"]: r for r in authflow.auth_catalog(_Reg())}["google_like"]
+
+    assert row["signed_in"] is True
+    assert row["live"] is False
+    assert row["reason"] == "proxy_unreachable"
+    assert row["signed_in_reason"] == "ok"
+
+
+def test_a_leg_that_answers_nothing_about_credentials_is_listed_as_signed_in():
+    """`Provider.signed_in` defaults to the credential verdict — no invented third state."""
+    class _Prov(Provider):
+        name = "plain"
+
+        def credential_health(self):
+            return False, "not_signed_in"
+
+    class _Reg:
+        providers = {"plain": _Prov({}, None)}
+
+        def credential_health(self, prov):
+            return prov.credential_health()
+
+    row = {r["id"]: r for r in authflow.auth_catalog(_Reg())}["plain"]
+
+    assert (row["signed_in"], row["live"]) == (False, False)
+
+
 def test_local_session_legs_answer_without_a_browser(tmp_path, monkeypatch):
     monkeypatch.setattr(authflow.webbrowser, "open", lambda url: (_ for _ in ()).throw(AssertionError("no browser")))
 
