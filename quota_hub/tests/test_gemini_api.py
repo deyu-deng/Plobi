@@ -51,6 +51,21 @@ def _http(routes: dict[str, httpx.Response]):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
+def _leg(http, cfg: dict | None = None):
+    """A provider whose cloud calls go through the test's mock transport.
+
+    In production the leg builds its own client when a node is configured (that is how
+    Settings → VPN reaches it); a test that wants to assert the wire format has to use
+    its mock instead, so the dedicated client is cleared here — deliberately, once.
+    """
+    prov = GeminiApiProvider({"base_url": BASE, **(cfg or {})}, http)
+    prov._proxied = None
+    # The mock transport is the wire here; whether a node exists is a separate判据
+    # (pinned by the three egress tests below).
+    prov.proxy_reason = "ok"
+    return prov
+
+
 def test_a_function_call_comes_back_as_openai_tool_calls(tmp_path, monkeypatch):
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
     seen: dict = {}
@@ -78,7 +93,7 @@ def test_a_function_call_comes_back_as_openai_tool_calls(tmp_path, monkeypatch):
 
     async def _go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            prov = GeminiApiProvider({"base_url": BASE}, http)
+            prov = _leg(http)
             assert prov.credential_health() == (True, "ok")
             acc = (await prov.discover_accounts())[0]
             assert prov.served_models == ("gemini_api/gemini-2.5-flash",)
@@ -108,7 +123,7 @@ def test_plain_text_stays_plain_text(tmp_path, monkeypatch):
 
     async def _go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            prov = GeminiApiProvider({"base_url": BASE}, http)
+            prov = _leg(http)
             acc = (await prov.discover_accounts())[0]
             out = await prov.chat(acc, {"model": "gemini_api/gemini-2.5-flash", "messages": [{"role": "user", "content": "hi"}]})
         assert out["choices"][0]["message"]["content"] == "hello"
@@ -123,7 +138,7 @@ def test_no_credential_file_means_no_card_and_no_models(tmp_path, monkeypatch):
 
     async def _go():
         async with _http({}) as http:
-            prov = GeminiApiProvider({"base_url": BASE}, http)
+            prov = _leg(http)
             assert prov.present() is False
             assert prov.credential_health() == (False, "no_desktop_credential")
             assert await prov.discover_accounts() == []
@@ -137,7 +152,7 @@ def test_an_expired_google_token_reports_expired(tmp_path, monkeypatch):
 
     async def _go():
         async with _http({}) as http:
-            prov = GeminiApiProvider({"base_url": BASE}, http)
+            prov = _leg(http)
             assert prov.credential_health() == (False, "credential_expired")
             assert await prov.discover_accounts() == []
 
@@ -150,7 +165,7 @@ def test_the_model_list_is_the_only_name_source(tmp_path, monkeypatch):
 
     async def _go():
         async with _http({"/v1beta/models": httpx.Response(403, json={"error": "no key"})}) as http:
-            prov = GeminiApiProvider({"base_url": BASE, "models": ["gemini_api/declared"]}, http)
+            prov = _leg(http, {"models": ["gemini_api/declared"]})
             await prov.discover_accounts()
             assert prov.served_models == ()
 
@@ -197,3 +212,54 @@ def test_the_leg_takes_its_own_proxy_and_nothing_else_does(monkeypatch, tmp_path
         assert "proxy" not in captured
     finally:
         monkeypatch.setattr(mod.httpx, "AsyncClient", real)
+
+
+def _egress_home(tmp_path, port: int):
+    home = tmp_path / "home"
+    (home / "egress").mkdir(parents=True)
+    (home / "egress" / "config.yaml").write_text(f"mixed-port: {port}" + chr(10) + "mode: rule", encoding="utf-8")
+    return home
+
+
+def test_the_settings_node_is_the_default_proxy(tmp_path, monkeypatch):
+    """设置→VPN 那个节点池就是全 Plobi 的出口；腿不该再让人填第二遍。"""
+    import socket
+
+    from quota_hub.providers.apps.gemini.api import egress_proxy
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    monkeypatch.setenv("PLOBI_HOME", str(_egress_home(tmp_path, port)))
+    try:
+        assert egress_proxy() == (f"http://127.0.0.1:{port}", "ok")
+    finally:
+        srv.close()
+
+
+def test_a_dead_node_is_named_as_such(tmp_path, monkeypatch):
+    import socket
+
+    from quota_hub.providers.apps.gemini.api import egress_proxy
+
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    dead = probe.getsockname()[1]
+    probe.close()
+    monkeypatch.setenv("PLOBI_HOME", str(_egress_home(tmp_path, dead)))
+
+    assert egress_proxy() == ("", "proxy_unreachable")
+
+
+def test_a_signed_in_user_without_a_node_is_told_about_the_node(tmp_path, monkeypatch):
+    from quota_hub.providers.apps.gemini.api import GeminiApiProvider
+
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", _store(tmp_path))
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home-without-egress"))
+    prov = GeminiApiProvider({"base_url": BASE}, None)
+    assert prov.proxy == ""
+    assert prov.proxy_reason == "no_proxy"
+    # The credential exists, so the remaining blocker is the missing node — say that,
+    # not "you are not signed in".
+    assert prov.credential_health() == (False, "no_proxy")

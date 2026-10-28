@@ -166,6 +166,40 @@ def _contents(messages: Any) -> list[dict[str, Any]]:
     return contents
 
 
+def egress_proxy() -> tuple[str, str]:
+    """The node the user configured in Settings → VPN, as an HTTP proxy URL.
+
+    The VPN chip already owns a node pool and runs a Clash-style engine; its
+    `mixed-port` is the one address every client in Plobi can share (measured
+    2026-10-28: `PLOBI_HOME/egress/config.yaml`, `mixed-port: 7895`). So a leg does
+    not need its own proxy string — it needs to know whether that port is alive.
+    """
+    home = os.environ.get("PLOBI_HOME", "").strip()
+    if not home:
+        return "", "no_proxy"
+    cfg = Path(home) / "egress" / "config.yaml"
+    if not cfg.is_file():
+        return "", "no_proxy"
+    port = 0
+    try:
+        for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() in {"mixed-port", "port", "socks-port"} and value.strip().isdigit():
+                port = int(value.strip())
+                break
+    except OSError:
+        return "", "no_proxy"
+    if not port:
+        return "", "no_proxy"
+    import socket
+
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+            pass
+    except OSError:
+        return "", "proxy_unreachable"
+    return f"http://127.0.0.1:{port}", "ok"
+
 class GeminiApiProvider(Provider):
     name = "gemini_api"
     display_name = "Gemini CLI"
@@ -177,9 +211,14 @@ class GeminiApiProvider(Provider):
         self.timeout = float(config.get("timeout", 180.0))
         self.served_models: tuple[str, ...] = tuple(config.get("models") or ())
         # Per-leg proxy: only Google traffic goes through it (see the module header).
-        self.proxy = str(
-            config.get("proxy") or os.environ.get("QUOTA_HUB_GEMINI_PROXY") or ""
-        ).strip()
+        explicit = str(config.get("proxy") or os.environ.get("QUOTA_HUB_GEMINI_PROXY") or "").strip()
+        self.proxy_reason = "ok"
+        if explicit:
+            self.proxy = explicit
+        else:
+            # 裁定 206：设置里那个 VPN 节点就是全 Plobi 的出口，腿不用再单独填一次。
+            shared, self.proxy_reason = egress_proxy()
+            self.proxy = shared
         self._proxied = None
         if self.proxy:
             self._proxied = httpx.AsyncClient(proxy=self.proxy, timeout=httpx.Timeout(self.timeout, connect=15.0))
@@ -202,6 +241,10 @@ class GeminiApiProvider(Provider):
         data = read_credential()
         if data is None:
             return False, "no_desktop_credential"
+        # Credential first (it is the step a fresh install has to take), node second:
+        # once a sign-in exists, "no node / node down" is the reason a turn cannot run.
+        if self.proxy_reason != "ok":
+            return False, self.proxy_reason
         expires = float(data.get("expires_at") or 0.0)
         if expires and expires <= time.time():
             return False, "credential_expired"
