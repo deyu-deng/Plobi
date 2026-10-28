@@ -1610,6 +1610,10 @@ export interface Translations {
     expertsLoading: string
     expertsLoadFailed: string
     expertsLog: string
+    expertRoleFile: string
+    expertRoleBrowser: string
+    expertRoleSoftware: string
+    expertRoleComputer: string
     externalSessionsRename: string
     externalSessionsSave: string
     externalSessionsCancel: string
