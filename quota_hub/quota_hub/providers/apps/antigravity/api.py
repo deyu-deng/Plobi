@@ -48,6 +48,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 
+from ....egress import proxy_url
 from . import account_store
 from ....tokens import desktop_stores as ds
 from ...base import Account, AccountState, Capabilities, Credential, Provider, UpstreamError
@@ -147,6 +148,15 @@ class AntigravityProvider(Provider):
         self.served_models = list(self._SEED_MODELS)
         self.MODEL_MAP = dict(self._SEED_MODEL_MAP)
         self.models_refreshed = False
+        # The node from Settings → VPN (裁定 206 / 用户 10-28): the hub's shared client
+        # runs with trust_env=false, so a Google leg can only reach the network through an
+        # explicit proxy. One node, shared by every leg that needs it.
+        explicit = str(config.get("proxy") or os.environ.get("QUOTA_HUB_ANTIGRAVITY_PROXY") or "").strip()
+        self.proxy, self.proxy_reason = (explicit, "ok") if explicit else proxy_url()
+        if self.proxy:
+            import httpx as _httpx
+
+            self.http = _httpx.AsyncClient(proxy=self.proxy, timeout=_httpx.Timeout(120.0, connect=15.0))
 
     # --- discovery -------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:
@@ -344,6 +354,10 @@ class AntigravityProvider(Provider):
         left = st.get("expires_in_seconds")
         if left is not None and left <= 0:
             return False, "credential_expired"
+        # Signed in, but Google is unreachable without the node — say which of the two
+        # it is, so the card's tooltip points at Settings → VPN instead of at a login.
+        if getattr(self, "proxy_reason", "ok") != "ok":
+            return False, self.proxy_reason
         return True, "ok"
 
     # --- quota aggregation (internalized from Antigravity-Manager) ------

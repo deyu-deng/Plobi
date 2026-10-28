@@ -263,3 +263,26 @@ def test_a_signed_in_user_without_a_node_is_told_about_the_node(tmp_path, monkey
     # The credential exists, so the remaining blocker is the missing node — say that,
     # not "you are not signed in".
     assert prov.credential_health() == (False, "no_proxy")
+
+
+def test_antigravity_reads_the_same_node(tmp_path, monkeypatch):
+    """一条节点，两条 Google 腿共用（用户 10-28：整个 Plobi 和网络相关都可以利用）。"""
+    import socket
+
+    from quota_hub.providers.apps.antigravity.api import AntigravityProvider
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    monkeypatch.setenv("PLOBI_HOME", str(_egress_home(tmp_path, srv.getsockname()[1])))
+    try:
+        prov = AntigravityProvider({}, None)
+        assert prov.proxy_reason == "ok"
+        assert prov.proxy.startswith("http://127.0.0.1:")
+        assert type(prov.http).__name__ == "AsyncClient"
+    finally:
+        srv.close()
+
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "no-egress"))
+    bare = AntigravityProvider({}, None)
+    assert bare.proxy == "" and bare.proxy_reason == "no_proxy"

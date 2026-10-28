@@ -41,6 +41,7 @@ from typing import Any
 
 import httpx
 
+from ....egress import proxy_url
 from ....providers.base import Account, Capabilities, Credential, Provider, UpstreamError
 
 log = logging.getLogger("quota_hub")
@@ -167,38 +168,9 @@ def _contents(messages: Any) -> list[dict[str, Any]]:
 
 
 def egress_proxy() -> tuple[str, str]:
-    """The node the user configured in Settings → VPN, as an HTTP proxy URL.
+    """Kept as the name this leg's tests use; the resolver lives in `quota_hub/egress.py`."""
+    return proxy_url()
 
-    The VPN chip already owns a node pool and runs a Clash-style engine; its
-    `mixed-port` is the one address every client in Plobi can share (measured
-    2026-10-28: `PLOBI_HOME/egress/config.yaml`, `mixed-port: 7895`). So a leg does
-    not need its own proxy string — it needs to know whether that port is alive.
-    """
-    home = os.environ.get("PLOBI_HOME", "").strip()
-    if not home:
-        return "", "no_proxy"
-    cfg = Path(home) / "egress" / "config.yaml"
-    if not cfg.is_file():
-        return "", "no_proxy"
-    port = 0
-    try:
-        for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
-            key, _, value = line.partition(":")
-            if key.strip() in {"mixed-port", "port", "socks-port"} and value.strip().isdigit():
-                port = int(value.strip())
-                break
-    except OSError:
-        return "", "no_proxy"
-    if not port:
-        return "", "no_proxy"
-    import socket
-
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1.0):
-            pass
-    except OSError:
-        return "", "proxy_unreachable"
-    return f"http://127.0.0.1:{port}", "ok"
 
 class GeminiApiProvider(Provider):
     name = "gemini_api"
