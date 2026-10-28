@@ -321,6 +321,7 @@ def read_subscription(
     client: str = "",
     write_secrets: bool = True,
     pool_name: str = "POOL",
+    keep_groups: bool = False,
 ) -> dict[str, Any]:
     """Pull a subscription from wherever it lives and unfold it into table shape.
 
@@ -368,7 +369,17 @@ def read_subscription(
     nodes = {str(m["name"]): _node_entry(m) for m in members}
     incoming_groups = {str(g["name"]): _group_entry(g) for g in parsed["groups"]}
     built = build_pool_groups(list(nodes), pool_name=pool_name)
-    if incoming_groups:
+    if incoming_groups and keep_groups:
+        notes.append(
+            f"订阅自带 {len(incoming_groups)} 个组，按选择**没有导入**——"
+            f"保留表里现有的分组，成员照更新（要换成它那套就去掉 keep_groups）"
+        )
+        # The parser's group-level warnings describe groups we are about to throw away
+        # (`组 '…' 引用的 DIRECT … 已去掉`) — showing them would send the user looking
+        # for a problem that does not exist in the table we are keeping.
+        notes = [n for n in notes if not n.startswith("组 ")]
+        incoming_groups = {}
+    elif incoming_groups:
         notes.append(f"订阅自带 {len(incoming_groups)} 个组")
     else:
         notes.append(
@@ -397,6 +408,9 @@ def import_subscription(
     write_secrets: bool = True,
     catch_all: str = "",
     pool_name: str = "POOL",
+    keep_groups: bool = False,
+    refresh: bool = False,
+    save_url: bool = False,
 ) -> dict[str, Any]:
     """Read a subscription and **write it into the table**.
 
@@ -413,9 +427,19 @@ def import_subscription(
     """
     from agent.egress import subscription
 
+    if refresh:
+        url = subscription.saved_url()
+        if not url:
+            raise subscription.SubscriptionError(
+                f"没有存过订阅链接（`{subscription.SUB_URL_ENV}` 在根 `.env` 里是空的）——"
+                f"先用 --url 导一次并加 --save，之后就能只点「更新」"
+            )
+        # 「更新」= 换成员，不换我排版好的分组（用户 10-28 拍）。
+        keep_groups = True
+
     answer = read_subscription(
         url=url, text=text, path=path, client=client,
-        write_secrets=write_secrets and apply, pool_name=pool_name,
+        write_secrets=write_secrets and apply, pool_name=pool_name, keep_groups=keep_groups,
     )
     if not answer["ok"]:
         answer["wrote"] = False
@@ -476,4 +500,12 @@ def import_subscription(
             f"表里现在有 {len(nodes)} 个成员、{len(groups)} 个组"
             f"（新增 {len(added_nodes)} 个成员、{len(added_groups)} 个组）"
         )
+        if save_url:
+            # Only after the table actually took it: a stored link that points at a
+            # subscription this table rejected would make 「更新」 fail forever.
+            stored = subscription.save_url(url)
+            answer["stored_as"] = stored
+            answer["notes"].append(
+                f"订阅链接存进了根 `.env`（`{stored}`，值不回显）——以后只点「更新」就能刷"
+            )
     return answer

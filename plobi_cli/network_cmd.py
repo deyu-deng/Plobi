@@ -120,8 +120,12 @@ def _import_subscription(args: argparse.Namespace) -> int:
         )
         if value
     ]
+    refresh = bool(getattr(args, "refresh", False))
     if len(given) > 1:
         print(f"给一个来源就行，现在给了 {'、'.join(given)}")
+        return 2
+    if refresh and given:
+        print("--refresh 用的是存过的那个链接，别再给来源（要换来源就先不带 --refresh 导一次）")
         return 2
 
     dry = bool(getattr(args, "dry_run", False))
@@ -133,6 +137,9 @@ def _import_subscription(args: argparse.Namespace) -> int:
             apply=not dry,
             catch_all=getattr(args, "catch_all", "") or "",
             pool_name=getattr(args, "pool_name", "") or "POOL",
+            keep_groups=bool(getattr(args, "keep_groups", False)),
+            refresh=refresh,
+            save_url=bool(getattr(args, "save", False)),
         )
     except (subscription.SubscriptionError, local_clients.LocalClientError) as exc:
         print(str(exc))
@@ -144,6 +151,8 @@ def _import_subscription(args: argparse.Namespace) -> int:
     print(f"来源：{answer['source']}")
     print(f"格式：{answer['format']}；成员 {len(answer['nodes'])} 个、组 {len(answer['groups'])} 个")
     print(f"凭据：{len(answer['secret_env_names'])} 个写进根 .env，表里只留 *_env 名字")
+    if answer.get("stored_as"):
+        print(f"订阅链接：已存（变量名 {answer['stored_as']}，值不回显）——以后 `--refresh` 就能刷")
     for note in answer["notes"]:
         print(f"— {note}")
 

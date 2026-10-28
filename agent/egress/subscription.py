@@ -36,6 +36,11 @@ MAX_BYTES = 4_000_000
 TIMEOUT_SECONDS = 20.0
 ENV_PREFIX = "PLOBI_EGRESS"
 
+#: Where the "refresh from the provider" link lives. The link **is** a credential —
+#: whoever holds it uses the plan — so it goes to the root `.env` like every other
+#: secret, and no surface ever prints it back (转存、显示、日志都不行).
+SUB_URL_ENV = "PLOBI_EGRESS_SUBSCRIPTION_URL"
+
 #: mihomo/Clash 的成员类型 ↔ 表里的类型（表里那份 `_NODE_TYPES` 是唯一口径，这里只做别名映射）
 _TYPE_ALIAS = {
     "ss": "ss", "shadowsocks": "ss", "ssr": "ss",
@@ -312,6 +317,32 @@ def fetch(url: str, *, timeout: float = TIMEOUT_SECONDS) -> str:
     if len(payload) > MAX_BYTES:
         raise SubscriptionError(f"订阅超过 {MAX_BYTES} 字节，不像一份节点清单，拒收")
     return payload.decode("utf-8", "replace")
+
+
+def saved_url() -> str:
+    """The stored refresh link — **internal only**; no surface prints this back."""
+    from plobi_cli.config import get_env_value
+
+    return (get_env_value(SUB_URL_ENV) or "").strip()
+
+
+def has_saved_url() -> bool:
+    """Whether a refresh link is stored — a boolean, so the pane can offer 「更新」."""
+    return bool(saved_url())
+
+
+def save_url(url: str) -> str:
+    """Keep the link in the root ``.env`` so a refresh needs no app and no retyping.
+
+    Returns the variable **name**, never the value.
+    """
+    from plobi_cli.config import save_env_value_secure
+
+    link = (url or "").strip()
+    if not re.match(r"^https?://", link):
+        raise SubscriptionError("只存 http(s):// 的订阅链接——文件路径与粘贴的文本不值得长期留着")
+    save_env_value_secure(SUB_URL_ENV, link)
+    return SUB_URL_ENV
 
 
 def update(*, url: str = "", text: str = "", write_secrets: bool = True) -> dict[str, Any]:

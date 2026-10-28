@@ -14888,7 +14888,21 @@ class NetworkSubscriptionImport(BaseModel):
     url: str = ""
     text: str = ""
     client: str = ""
+    #: Re-pull the link stored by an earlier `save` — no URL needed, no app needed.
+    refresh: bool = False
+    #: Keep the link in the root `.env` (a link **is** a credential; the response only names it).
+    save: bool = False
+    #: Keep the table's own groups instead of the subscription's (user 10-28: refresh = new members).
+    keep_groups: bool = False
     profile: Optional[str] = None
+
+
+@app.get("/api/network/egress/subscription")
+async def get_network_subscription() -> Dict[str, Any]:
+    """Whether a refresh link is stored — a **boolean**, never the link itself."""
+    from agent.egress import subscription
+
+    return {"saved": subscription.has_saved_url(), "env": subscription.SUB_URL_ENV}
 
 
 @app.post("/api/network/egress/import-subscription")
@@ -14915,9 +14929,18 @@ async def post_network_import_subscription(body: NetworkSubscriptionImport) -> D
     from agent.egress import local_clients, subscription
     from plobi_cli.egress_config import read_subscription
 
+    url = body.url or ""
+    if body.refresh:
+        # 「更新」: the link the user stored once, not one retyped into the box.
+        url = subscription.saved_url()
+        if not url:
+            return {"ok": False, "format": "", "nodes": {}, "groups": {}, "secret_env_names": [],
+                    "notes": [f"没有存过订阅链接（{subscription.SUB_URL_ENV} 是空的）——"
+                              f"先把链接粘进框里点一次「导入」，之后就能只点「更新」"]}
     try:
         answer = read_subscription(
-            url=body.url or "", text=body.text or "", client=body.client or ""
+            url=url, text=body.text or "", client=body.client or "",
+            keep_groups=bool(body.keep_groups or body.refresh),
         )
     except (subscription.SubscriptionError, local_clients.LocalClientError) as exc:
         return {"ok": False, "format": "", "nodes": {}, "groups": {}, "secret_env_names": [],
@@ -14925,6 +14948,17 @@ async def post_network_import_subscription(body: NetworkSubscriptionImport) -> D
     except Exception as exc:  # noqa: BLE001 - a malformed file is an answer, not a 500
         return {"ok": False, "format": "", "nodes": {}, "groups": {}, "secret_env_names": [],
                 "notes": [f"{type(exc).__name__}: {str(exc)[:200]}"]}
+
+    stored = ""
+    if body.save and url:
+        # Storing the link does not write the table: the pane still merges into the draft
+        # and 保存 writes it. A link that cannot be parsed was already refused above.
+        try:
+            stored = subscription.save_url(url)
+            answer["notes"].append(f"订阅链接存进了根 `.env`（`{stored}`，值不回显）")
+        except subscription.SubscriptionError as exc:
+            answer["notes"].append(str(exc))
+
     return {
         "ok": answer["ok"],
         "format": answer["format"],
@@ -14933,6 +14967,7 @@ async def post_network_import_subscription(body: NetworkSubscriptionImport) -> D
         "groups": answer["groups"],
         "secret_env_names": answer["secret_env_names"],
         "notes": answer["notes"],
+        "stored_as": stored,
     }
 
 

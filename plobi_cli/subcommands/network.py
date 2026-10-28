@@ -76,6 +76,22 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
         default="POOL",
         help="Name of the url-test group the import builds (default: POOL)",
     )
+    import_parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Remember the URL in the root .env (PLOBI_EGRESS_SUBSCRIPTION_URL) so --refresh needs no app",
+    )
+    import_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Re-pull the URL stored by --save; keeps the table's own groups, updates the members",
+    )
+    import_parser.add_argument(
+        "--keep-groups",
+        dest="keep_groups",
+        action="store_true",
+        help="Do not import the subscription's own groups (keep the table's; members still update)",
+    )
     import_parser.set_defaults(func=cmd_network)
     # 整机那一格：接管/交还系统的代理。`on --dry-run` 先看要改什么，不写注册表。
     proxy_parser = network_sub.add_parser(

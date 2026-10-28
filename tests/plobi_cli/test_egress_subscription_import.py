@@ -201,3 +201,103 @@ def test_a_local_client_that_is_not_there_says_one_sentence():
 
     assert "ikuuu" in local_clients.clients(), local_clients.clients()
     assert any("ikuuu" in line for line in local_clients.describe()), local_clients.describe()
+
+
+# ── 10-28 用户拍「接进来，保留我现在的分组」：刷新来源 + 不换组 ──────────────────
+
+#: 真链接的形状（现核 10-28：494 KB、46 成员、11 个自带组、9816 条规则）。
+WITH_GROUPS = IKUUU_LIKE + """\
+proxy-groups:
+  - name: '🔰 选择节点'
+    type: select
+    proxies: ['🇭🇰 香港W01', '🇺🇲 美国W01 | IEPL']
+  - name: '🐟 漏网之鱼'
+    type: select
+    proxies: ['🔰 选择节点']
+"""
+
+
+def test_keep_groups_drops_the_providers_groups_and_says_so(env_writer):
+    answer = egress_config.read_subscription(text=WITH_GROUPS, keep_groups=True)
+
+    assert "🔰 选择节点" not in answer["groups"], answer["groups"]
+    assert "🐟 漏网之鱼" not in answer["groups"], answer["groups"]
+    # 我们的形状照旧：地名 select + 一个 url-test 池，成员一个不少。
+    assert answer["groups"]["香港"]["include"] == ["🇭🇰 香港W01"], answer["groups"]
+    assert answer["groups"]["POOL"]["type"] == "url-test", answer["groups"]
+    assert len(answer["groups"]["POOL"]["include"]) == 4, answer["groups"]["POOL"]
+    assert any("没有导入" in note for note in answer["notes"]), answer["notes"]
+
+
+def test_without_the_flag_the_providers_own_groups_still_come_in(env_writer):
+    """默认行为不变：第一次导入照收它给的组（换不换是用户在上面那一格拍的）。"""
+    answer = egress_config.read_subscription(text=WITH_GROUPS)
+
+    assert "🔰 选择节点" in answer["groups"], answer["groups"]
+
+
+def test_refresh_pulls_the_stored_link_and_never_takes_the_providers_groups(env_writer, table, monkeypatch):
+    from agent.egress import subscription
+
+    seen: dict = {}
+    monkeypatch.setattr(subscription, "saved_url", lambda: "https://sub.example/link/abc?clash=3")
+
+    def fake_read(**kwargs):
+        seen.update(kwargs)
+        return {"ok": True, "format": "clash-yaml", "source": kwargs.get("url", ""),
+                "nodes": {"🇭🇰 香港W01": {"type": "ss", "server": "hk.example", "port": 1}},
+                "groups": {"香港": {"type": "select", "include": ["🇭🇰 香港W01"]}},
+                "secret_env_names": [], "notes": []}
+
+    monkeypatch.setattr(egress_config, "read_subscription", fake_read)
+    table["network"] = {"egress": {"rules": [{"match": "*", "via": "proxy:POOL"}]}}
+
+    answer = egress_config.import_subscription(refresh=True)
+
+    assert seen["url"] == "https://sub.example/link/abc?clash=3", seen
+    assert seen["keep_groups"] is True, "「更新」= 换成员，不换我排好的分组"
+    assert answer["wrote"] is True, answer["notes"]
+
+
+def test_refresh_without_a_stored_link_says_what_to_do(env_writer, table, monkeypatch):
+    from agent.egress import subscription
+
+    monkeypatch.setattr(subscription, "saved_url", lambda: "")
+
+    with pytest.raises(subscription.SubscriptionError) as unknown:
+        egress_config.import_subscription(refresh=True)
+
+    said = str(unknown.value)
+    assert "--save" in said and subscription.SUB_URL_ENV in said, said
+
+
+def test_the_link_is_stored_only_after_the_table_actually_took_it(env_writer, table, monkeypatch):
+    from agent.egress import subscription
+
+    stored: list[str] = []
+    monkeypatch.setattr(subscription, "save_url", lambda url: (stored.append(url), subscription.SUB_URL_ENV)[1])
+    monkeypatch.setattr(egress_config, "read_subscription", lambda **kw: {
+        "ok": True, "format": "clash-yaml", "source": kw.get("url", ""),
+        "nodes": {"x": {"type": "ss", "server": "x.example", "port": 1}},
+        "groups": {"POOL": {"type": "url-test", "include": ["x"]}},
+        "secret_env_names": [], "notes": []})
+    table["network"] = {"egress": {"rules": [{"match": "*", "via": "direct"}]}}
+
+    ok = egress_config.import_subscription(url="https://sub.example/a", save_url=True)
+    assert ok["stored_as"] == subscription.SUB_URL_ENV, ok
+    assert stored == ["https://sub.example/a"], stored
+
+    stored.clear()
+    monkeypatch.setattr(egress_config, "replace_egress", lambda block: (False, ["parser says no"]))
+    bad = egress_config.import_subscription(url="https://sub.example/b", save_url=True)
+    assert bad.get("ok") is False and "parser says no" in " ".join(bad["notes"]), bad
+    assert stored == [], "表没吃下去就不许把链接存成「下次还用这一条」"
+
+
+def test_a_refresh_link_that_is_not_http_is_refused(monkeypatch):
+    from agent.egress import subscription
+
+    with pytest.raises(subscription.SubscriptionError) as unknown:
+        subscription.save_url("D:/somewhere/config.yaml")
+
+    assert "http(s)://" in str(unknown.value), str(unknown.value)

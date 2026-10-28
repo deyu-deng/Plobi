@@ -507,12 +507,30 @@ export function importNetworkPool(path: string): Promise<NetworkPoolImport> {
  * `client` reads the subscription out of a desktop client's own cache: some providers ship a client
  * and no "copy subscription link" button, but the config it fetched is already on this box.
  */
-export function importNetworkSubscription(input: { client?: string; text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
+export function importNetworkSubscription(input: { client?: string; keepGroups?: boolean; refresh?: boolean; save?: boolean; text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
   return window.plobiDesktop.api<NetworkSubscriptionImport>({
     ...profileScoped(),
-    body: { client: input.client ?? '', text: input.text ?? '', url: input.url ?? '' },
+    body: {
+      client: input.client ?? '',
+      keep_groups: input.keepGroups ?? false,
+      refresh: input.refresh ?? false,
+      save: input.save ?? false,
+      text: input.text ?? '',
+      url: input.url ?? ''
+    },
     method: 'POST',
     path: '/api/network/egress/import-subscription'
+  })
+}
+
+/**
+ * Whether a refresh link is already stored. A **boolean** — the link itself is a credential
+ * and never comes back out of the backend (it lives in the root `.env`).
+ */
+export function getNetworkSubscription(): Promise<{ saved: boolean; env?: string }> {
+  return window.plobiDesktop.api<{ saved: boolean; env?: string }>({
+    ...profileScoped(),
+    path: '/api/network/egress/subscription'
   })
 }
 

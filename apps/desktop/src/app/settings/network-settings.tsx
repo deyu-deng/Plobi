@@ -387,7 +387,9 @@ export function NetworkSettings() {
     setImporting(true)
     setError('')
     try {
-      const answer = await importNetworkSubscription({ url: subUrl.trim() })
+      // The link is a credential: storing it in the root .env now means 「更新」 later needs
+      // neither the app nor retyping (CLI: `plobi network import-subscription --refresh`).
+      const answer = await importNetworkSubscription({ keepGroups: true, save: true, url: subUrl.trim() })
       applyImport(answer)
       if (!answer.ok && !(answer.notes ?? []).length) {
         setError('订阅里没有可用的成员')
