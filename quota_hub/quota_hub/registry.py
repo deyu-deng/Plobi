@@ -32,6 +32,7 @@ from .providers.apps.cursor import CursorProvider
 from .providers.apps.kiro import KiroCliProvider
 from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
 from .providers.apps.opencode import OpenCodeCliProvider
+from .providers.apps.opencode.api import OpencodeApiProvider
 from .providers.apps.workbuddy import (
     WorkbuddyApiProvider,
     WorkbuddyCliProvider,
@@ -82,6 +83,8 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     "codex_cli": CodexCliProvider,
     "claude_code_cli": ClaudeCodeCliProvider,
     "opencode_cli": OpenCodeCliProvider,
+    # 裁定 204：本机 OAuth → 它自己的 OpenAI 兼容口（带工具），模型名取上游自报。
+    "opencode_api": OpencodeApiProvider,
     "kiro_cli": KiroCliProvider,
     "cline_cli": ClineCliProvider,
     "marvis_cli": MarvisCliProvider,

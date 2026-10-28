@@ -114,6 +114,12 @@ providers:
     model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
     accounts: [{ id: claude-default }]
 
+  # OpenCode Zen（裁定 204）：读本机 OAuth（~/.local/share/opencode/opencode.db 的 credential 表），
+  # 打它自己的 OpenAI 兼容口；模型名取它 /models 的自报清单，上游不报就没有模型，不回退到申报表。
+  opencode_api:
+    enabled: true
+    base_url: https://opencode.ai/zen/v1
+
   opencode_cli:
     enabled: true
     binary: opencode
