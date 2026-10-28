@@ -72,7 +72,6 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
 
       <SidebarSectionHeader
         collapsible={false}
-        icon={<Codicon name="send" size="0.875rem" />}
         label={c.offloadsTitle}
         meta={rounds.length > 0 ? rounds.length : ''}
         onToggle={() => undefined}
