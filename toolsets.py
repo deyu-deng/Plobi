@@ -297,6 +297,10 @@ TOOLSETS = {
         ),
         "tools": [
             "external_offload_status", "external_offload_run",
+            # 会话面那两枚（列/判）。**必须列在这张静态表里**：只挂在运行期注册表上
+            # 的话，quiet 那种没触发工具发现的进程就看不见它们（10-27 实测：子进程报
+            # 「我当前没有这两个工具」）。
+            "external_sessions_scan", "external_sessions_mark",
         ],
         "includes": [],
     },

@@ -239,7 +239,12 @@ class TestOptInAndPolicy:
         from toolsets import TOOLSETS, _PLOBI_CORE_TOOLS
 
         assert "offload" in TOOLSETS
-        assert set(TOOLSETS["offload"]["tools"]) == {"external_offload_status", "external_offload_run"}
+        assert set(TOOLSETS["offload"]["tools"]) == {
+            "external_offload_status",
+            "external_offload_run",
+            "external_sessions_scan",
+            "external_sessions_mark",
+        }
         for name in TOOLSETS["offload"]["tools"]:
             assert name not in _PLOBI_CORE_TOOLS, "进了核心包就等于默认开（裁定 78）"
         assert not [k for k, v in TOOLSETS.items() if "offload" in (v.get("includes") or [])], \
@@ -262,3 +267,17 @@ class TestOptInAndPolicy:
         # 它落 Plobi 家（这台 D 盘），不是 tempfile.gettempdir()（C 盘），
         # 见 agent/external_offload.py::default_workdir 的注释。
         assert captured["cwd"] == str(tmp_path / "plobi-home-offload")
+
+
+def test_the_offload_toolset_lists_all_four_tools_statically():
+    """只挂在运行期注册表上，quiet 那种没触发工具发现的进程就看不见它们（10-27 实测）。"""
+    from toolsets import get_toolset
+
+    tools = set(get_toolset("offload", include_registry=False)["tools"])
+
+    assert {
+        "external_offload_status",
+        "external_offload_run",
+        "external_sessions_scan",
+        "external_sessions_mark",
+    } <= tools

@@ -487,6 +487,46 @@ def _agy_sessions() -> list[dict[str, Any]]:
     return out
 
 
+def agy_brain_root() -> Path:
+    """agy（Antigravity CLI）的会话正文根：``brain/<会话号>/.system_generated/logs/``。"""
+    override = os.environ.get("AGY_HOME", "").strip()
+    base = Path(os.path.expanduser(override)) if override else Path.home() / ".gemini" / "antigravity-cli"
+
+    return base / "brain"
+
+
+def _agy_user_text(content: str) -> str:
+    """agy 的用户输入外面裹着几段元数据（``<USER_REQUEST>``／``<USER_SETTINGS_CHANGE>``…），
+    只取人真正说的那一段；没有包裹就整段留用。"""
+    text = str(content or "")
+    if "<USER_REQUEST>" in text and "</USER_REQUEST>" in text:
+        start = text.index("<USER_REQUEST>") + len("<USER_REQUEST>")
+        end = text.index("</USER_REQUEST>", start)
+        return text[start:end].strip()
+    if text.startswith("<") and ">" in text:
+        return ""
+    return text.strip()
+
+
+def _agy_transcript(session_id: str) -> list[dict[str, Any]]:
+    """agy 的对话在 ``.system_generated/logs/transcript.jsonl``（一行一条 step）。"""
+    path = agy_brain_root() / session_id / ".system_generated" / "logs" / "transcript.jsonl"
+    if not path.is_file():
+        return []
+    messages: list[dict[str, Any]] = []
+    for record in _records(path):
+        kind = record.get("type")
+        if kind == "USER_INPUT":
+            text = _agy_user_text(record.get("content"))
+            if text:
+                messages.append({"role": "user", "text": text, "ts": str(record.get("created_at") or "")})
+        elif kind == "PLANNER_RESPONSE":
+            text = str(record.get("content") or "").strip()
+            if text and text != "None":
+                messages.append({"role": "assistant", "text": text, "ts": str(record.get("created_at") or "")})
+    return messages
+
+
 # ── 发现与来源 ────────────────────────────────────────────────────────────
 
 def all_sessions() -> list[dict[str, Any]]:
@@ -531,9 +571,8 @@ def session_sources() -> list[dict[str, Any]]:
                readable=cursor.is_file(),
                reason="" if cursor.is_file() else "没找到 Cursor 的 state.vscdb"),
         source(VENDOR_AGY, agy.parent,
-               readable=False,
-               reason=("标题与工作区能读，正文在它的 brain 里还没接" if agy.is_file()
-                       else "没找到 agy 的会话摘要库")),
+               readable=agy.is_file(),
+               reason="" if agy.is_file() else "没找到 agy 的会话摘要库"),
     ]
 
 
@@ -771,7 +810,7 @@ def read_transcript(vendor: str, session_id: str) -> dict[str, Any]:
     elif vendor == VENDOR_CURSOR:
         messages = _cursor_transcript(session_id)
     elif vendor == VENDOR_AGY:
-        return {"ok": False, "status": 501, "error": "这家只读得到标题与工作区，正文还没接"}
+        messages = _agy_transcript(session_id)
     else:
         return {"ok": False, "status": 400, "error": "这家外部软件的会话还读不了"}
 

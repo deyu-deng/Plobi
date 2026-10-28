@@ -143,6 +143,21 @@ def agy_session(root: Path, session_id: str, *, title: str, project_uri: str) ->
     con.close()
 
 
+def agy_transcript(root: Path, session_id: str, *, prompt: str, reply: str) -> None:
+    """agy 把对话放在 ``brain/<会话号>/.system_generated/logs/transcript.jsonl``。"""
+    logs = root / "brain" / session_id / ".system_generated" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    wrapped = f"<USER_REQUEST>\n{prompt}\n</USER_REQUEST>\n<USER_SETTINGS_CHANGE>无关的一段</USER_SETTINGS_CHANGE>"
+    records = [
+        {"step_index": 0, "type": "USER_INPUT", "created_at": "2026-10-10T06:36:51Z", "content": wrapped},
+        {"step_index": 1, "type": "PLANNER_RESPONSE", "content": "None"},
+        {"step_index": 2, "type": "GENERIC", "content": "工具输出不是对话"},
+        {"step_index": 3, "type": "PLANNER_RESPONSE", "content": reply},
+    ]
+    (logs / "transcript.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
+
+
 def test_the_project_key_is_the_absolute_path_with_punctuation_flattened():
     assert es.project_key(r"D:\Projects\Sindri") == "D--Projects-Sindri"
     assert es.project_key("D:/Projects/Sindri") == "D--Projects-Sindri"
@@ -162,7 +177,7 @@ def test_discovery_finds_every_vendor_on_this_machine(homes):
     sources = {item["vendor"]: item for item in es.session_sources()}
     assert [sources[v]["sessions"] for v in ("qoder", "codebuddy", "marvis", "cursor", "agy")] == [1, 1, 1, 1, 1]
     assert sources["cursor"]["readable"] is True
-    assert sources["agy"]["readable"] is False and "正文" in sources["agy"]["reason"]
+    assert sources["agy"]["readable"] is True
 
 
 def test_cursor_transcript_comes_from_the_composer_map(homes):
@@ -177,15 +192,18 @@ def test_cursor_transcript_comes_from_the_composer_map(homes):
     assert out["data"]["project"] == r"D:\Projects\Sindri"
 
 
-def test_agy_gives_titles_but_says_the_transcript_is_not_wired(homes):
+def test_agy_gives_titles_and_its_transcript(homes):
     agy_session(homes.agy, "ca174f50-f11a", title="Simple Greeting", project_uri="file:///D:/Temp")
 
     rows = {item["id"]: item for item in es.all_sessions()}
     assert rows["ca174f50-f11a"]["title"] == "Simple Greeting"
     assert rows["ca174f50-f11a"]["project"] == r"D:\Temp"
 
+    # 正文在 brain/<会话号>/.system_generated/logs/transcript.jsonl 里，读得到
+    agy_transcript(homes.agy, "ca174f50-f11a", prompt="Hello", reply="Hi")
     out = es.read_transcript("agy", "ca174f50-f11a")
-    assert out["ok"] is False and out["status"] == 501
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
 
 
 def test_related_comes_from_path_then_title_then_l2_marks(homes, monkeypatch):
@@ -284,6 +302,29 @@ def test_an_empty_message_is_refused_before_anything_is_spawned(homes, monkeypat
     stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
 
     assert es.send_for_agent("Sindri", "qoder", "aaaaaaaa-1111", "   ")["ok"] is False
+
+
+def test_agy_transcript_reads_the_conversation_from_its_brain(homes):
+    agy_session(homes.agy, "b728e107-050e", title="Fib", project_uri="file:///D:/Temp")
+    agy_transcript(homes.agy, "b728e107-050e", prompt="写个 fib.py", reply="写好了，fib.py 就在目录里")
+
+    out = es.read_transcript("agy", "b728e107-050e")
+
+    assert out["ok"] is True
+    assert [m["role"] for m in out["data"]["messages"]] == ["user", "assistant"]
+    assert out["data"]["messages"][0]["text"] == "写个 fib.py"
+    assert out["data"]["messages"][1]["text"] == "写好了，fib.py 就在目录里"
+    # 工具输出与 "None" 不算对话
+    assert "工具输出不是对话" not in json.dumps(out, ensure_ascii=False)
+
+
+def test_agy_is_now_readable_in_the_sources_list(homes):
+    agy_session(homes.agy, "ca174f50-f11a", title="Simple Greeting", project_uri="file:///D:/Temp")
+
+    sources = {item["vendor"]: item for item in es.session_sources()}
+
+    assert sources["agy"]["readable"] is True
+    assert sources["agy"]["sessions"] == 1
 
 
 def test_an_unknown_agent_gets_a_reason_not_an_empty_shell(homes):
