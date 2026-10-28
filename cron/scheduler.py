@@ -1713,23 +1713,24 @@ def _deliver_result(
     Returns None on success, or an error string on failure.
     """
     targets = _resolve_delivery_targets(job)
+    deliver_value = _normalize_deliver_value(job.get("deliver", "local"))
+
+    # 用户 10-27：「到点了，预设的提示词发到日程秘书的界面里，然后她就像回复用户一样
+    # 直接回复」——所以**回答永远先落回那个 Agent 自己的窗口**（assistant，左侧正常回复），
+    # 不论这一轮之后还要不要发去平台/发给用户。`deliver=user` 只是**额外**再抄一份给用户。
+    window_record, window_error = _deliver_to_recipient_window(job, content)
+    if window_record is not None and delivery_out is not None:
+        delivery_out["record"] = window_record
+
     if not targets:
-        deliver_value = _normalize_deliver_value(job.get("deliver", "local"))
         if deliver_value == "local":
-            # 「此桌面」这一档的语义（用户 10-22 拍「连存量一起改」）：作业写了
-            # 收件人 ⇒ 结果发进那一行自己的窗口；没写（脚本作业）⇒ 按设计不出声，
-            # 与改语义之前逐字一致。存量 15 条作业因此一个字都不用改。
-            record, window_error = _deliver_to_recipient_window(job, content)
-            if record is not None and delivery_out is not None:
-                delivery_out["record"] = record
             return window_error
         if deliver_value == "user":
-            # 裁定 201：回访 / 提醒这类「对用户说的话」落进他自己那一屏，
-            # 不是收件人自己的窗口（否则他永远看不到、也没人回答）。
+            # 裁定 201 的「也给你看一份」：落进用户 L1 那一屏，并提醒他一声。
             record, user_error = _deliver_to_user_inbox(job, content)
             if record is not None and delivery_out is not None:
-                delivery_out["record"] = record
-            return user_error
+                delivery_out["record"] = {**window_record, "copied_to": "用户"} if window_record else record
+            return window_error or user_error
         # deliver=origin with no resolvable origin and no configured home
         # channels: treat as local rather than reporting an error.  CLI-created
         # jobs never capture a {platform, chat_id} origin, so failing here would
@@ -1742,10 +1743,10 @@ def _deliver_result(
                 "skipping delivery (output saved in last_output)",
                 job.get("name", job.get("id", "?")),
             )
-            return None
+            return window_error
         msg = f"no delivery target resolved for deliver={deliver_value}"
         logger.warning("Job '%s': %s", job["id"], msg)
-        return msg
+        return window_error or msg
 
     from tools.send_message_tool import _send_to_platform
     from gateway.config import load_gateway_config, Platform

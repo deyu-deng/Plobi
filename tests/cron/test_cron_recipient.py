@@ -521,3 +521,28 @@ def test_the_round_sees_the_recent_conversation_of_that_screen(window_home):
     assert [h["role"] for h in history] == ["user", "assistant"] * 2
     assert history[-1]["content"] == "a4"
     assert len(history) == 4
+
+
+def test_a_user_delivery_also_lands_in_the_agents_own_window(window_home, monkeypatch):
+    """用户 10-27：回答先落回那个 Agent 自己的窗口；`deliver=user` 只是再抄一份给用户。"""
+    import plobi_user_inbox as UI
+    from cron.scheduler import _deliver_result
+
+    db = _db()
+    db.create_session("sess-window", source="agent_message", agent_id=RECIPIENT)
+    monkeypatch.setattr(UI, "append_user_message", lambda body, **kw: ("u-sess", "m-user", None))
+    monkeypatch.setattr(UI, "notify_user", lambda body, **kw: True)
+
+    out: dict = {}
+    error = _deliver_result(
+        {"deliver": "user", "id": "j9", "name": "回访", "recipient": RECIPIENT},
+        "做完了吗",
+        delivery_out=out,
+    )
+
+    assert error is None, error
+    rows = db.get_messages("sess-window")
+    assert rows[-1]["role"] == "assistant", "回答先落回它自己的窗口"
+    assert rows[-1]["content"] == "做完了吗"
+    assert out["record"]["session_id"] == "sess-window"
+    assert out["record"].get("copied_to") == "用户"

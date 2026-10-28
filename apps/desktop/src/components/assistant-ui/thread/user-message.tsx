@@ -56,7 +56,7 @@ export function StickyHumanMessageContainer({
 // so without the carve-out, clicking a stuck bubble drags the window instead of
 // opening the edit composer.
 export const USER_BUBBLE_BASE_CLASS =
-  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto rounded-xl border bg-(--dt-user-bubble) px-3 py-2 text-left [-webkit-app-region:no-drag]'
+  'composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto rounded-xl border border-border/65 bg-(--ui-chat-surface-background) px-3 py-2 text-left [-webkit-app-region:no-drag]'
 
 export const USER_ACTION_ICON_BUTTON_CLASS =
   'grid place-items-center rounded-md bg-transparent text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground disabled:cursor-default disabled:text-(--ui-text-quaternary) disabled:opacity-70'
@@ -299,10 +299,10 @@ export const UserMessage: FC<{
         <ActionBarPrimitive.Root
           // 裁定 201：**外面来的都在右**——主人自己打的也属于「外面」，靠右并收窄；
           // 这屏 Agent 自己的回答留在左侧（纯文本）。宽度上限与外部气泡同一把尺。
-          className="relative ml-auto w-full max-w-[min(86%,44rem)] self-end"
+          className="relative ml-auto flex w-full max-w-[min(86%,44rem)] items-start justify-end gap-2 self-end"
           data-slot="aui_user-bubble-actions"
         >
-          <div className="human-message-with-todos-wrapper flex w-full flex-col gap-0">
+          <div className="human-message-with-todos-wrapper flex min-w-0 flex-1 flex-col gap-0">
             <div className="flex items-center gap-1">
               {askedByLabel && (
                 <span
@@ -423,6 +423,15 @@ export const UserMessage: FC<{
                 {copy.goForward}
               </BranchPickerPrimitive.Next>
             </BranchPickerPrimitive.Root>
+          </div>
+          {/* 与外部气泡同一套：右边一个圆头像，名字由上方那行 `askedByLabel` 承担。
+              主人自己也属于「外面」（裁定 201），所以形状必须一样。 */}
+          <div
+            aria-hidden
+            className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) text-[10px] font-medium text-(--ui-text-secondary)"
+            title={askedByLabel || undefined}
+          >
+            {(askedByLabel || '').trim().slice(0, 1).toUpperCase()}
           </div>
         </ActionBarPrimitive.Root>
       </StickyHumanMessageContainer>
