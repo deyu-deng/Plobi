@@ -1,6 +1,6 @@
 """知识库：``vault/notes`` 的只读目录（WP-VAULT-AGENTS-VIEW，用户 10-24 重排）。
 
-用户把那面墙定成「知识库」，里面**只放笔记**——研究/课程的文档不进这里。
+用户把那面墙定成「知识库」，里面**只放笔记**——研究/课程的文档不进这里，只有标题的壳也不进（用户 10-27：「只留有内容的」）。
 这个模块只做三件事：扫、给元数据、按路径读一篇正文；不建目录、不搬文件、不改笔记。
 
 路径安全：对外只认 ``Vault/notes/...`` 这种逻辑路径，读之前再解析一次并确认落点在
@@ -24,6 +24,33 @@ logger = logging.getLogger(__name__)
 NOTES_LOGICAL_ROOT = "Vault/notes"
 MAX_NOTES = 800
 EXCERPT_CHARS = 120
+# 一条「是不是壳」的形状线，不是内容好坏的评分线：只有标题、或标题下一句「待补」的那种不进屏。
+# 真正薄的那 9 篇是用户 2026-10-27 逐档勾掉删的（vault `5ef55ab`），别指望这条线替那次判断。
+# 这台现存笔记最低那一档是 1890 净字（ArkTS），所以这条线今天一篇都不藏。
+MIN_NOTE_NET_CHARS = 30
+
+
+def _net_chars(text: str) -> int:
+    """正文净字：去掉 frontmatter、围栏代码块与标题行，只数真写了的字。
+
+    讲 Markdown／Obsidian 的那几篇会有几十行示范代码，按文件字节判会把壳判成有内容。
+    """
+    body = text
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end >= 0:
+            body = text[end + 4 :]
+    total = 0
+    inside = False
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped[:3] in ("```", "~~~"):
+            inside = not inside
+            continue
+        if inside or not stripped or stripped.startswith("#"):
+            continue
+        total += len(stripped)
+    return total
 
 
 def _notes_root() -> Path:
@@ -108,7 +135,7 @@ def build_library() -> dict[str, Any]:
 
     notes: list[dict[str, Any]] = []
     topics: dict[str, int] = {}
-    scanned = skipped = 0
+    scanned = skipped = hidden = 0
     for path in sorted(root.rglob("*.md")):
         if any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
@@ -122,6 +149,9 @@ def build_library() -> dict[str, Any]:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             skipped += 1
+            continue
+        if _net_chars(text) < MIN_NOTE_NET_CHARS:
+            hidden += 1  # 壳不进屏，但数得出来：藏了没藏是要能核的一句
             continue
         meta = _frontmatter(text)
         rel = path.relative_to(root)
@@ -147,7 +177,7 @@ def build_library() -> dict[str, Any]:
         "notes": notes,
         "topics": [{"name": name, "count": count} for name, count in sorted(topics.items())],
         "tags": sorted({tag for note in notes for tag in note["tags"]}),
-        "totals": {"scanned": scanned, "listed": len(notes), "skipped": skipped},
+        "totals": {"scanned": scanned, "listed": len(notes), "skipped": skipped, "hidden": hidden},
     }
 
 
