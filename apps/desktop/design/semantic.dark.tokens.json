@@ -1,37 +1,38 @@
 {
   "surface": {
-    "canvas": { "value": "{primitive.warm.950}" },
-    "base": { "value": "{primitive.warm.900}" },
-    "raised": { "value": "{primitive.warm.850}" },
-    "sunken": { "value": "#0a0b0a" },
-    "overlay": { "value": "#1c1d1b" },
-    "hover": { "value": "#232420" },
-    "selected": { "value": "#2a2b26" }
+    "canvas": { "value": "#0f0f0f" },
+    "chrome": { "value": "#141414" },
+    "base": { "value": "#161616" },
+    "raised": { "value": "#1b1b1b" },
+    "block": { "value": "#1f1f1f" },
+    "sunken": { "value": "#0b0b0a" },
+    "hover": { "value": "#232323" },
+    "selected": { "value": "#2a2a2a" }
   },
   "text": {
-    "primary": { "value": "#f2f3ef" },
-    "secondary": { "value": "#b9bab1" },
-    "tertiary": { "value": "#8a8b83" },
-    "disabled": { "value": "#5a5b55" },
-    "on-accent": { "value": "#1a0f0b" }
+    "primary": { "value": "#f2f2f2" },
+    "secondary": { "value": "#b4b4b4" },
+    "tertiary": { "value": "#8a8a8a" },
+    "disabled": { "value": "#5f5f5f" },
+    "on-accent": { "value": "#0b0b0a" }
   },
   "stroke": {
-    "hairline": { "value": "#2e2f2b" },
-    "strong": { "value": "#3d3e39" },
+    "hairline": { "value": "#2a2a2a" },
+    "strong": { "value": "#3a3a3a" },
     "focus": { "value": "{primitive.accent.400}" }
   },
   "accent": {
-    "base": { "value": "{primitive.accent.500}" },
-    "hover": { "value": "{primitive.accent.400}" },
-    "press": { "value": "{primitive.accent.600}" },
-    "soft": { "value": "#33221b" }
+    "base": { "value": "{primitive.accent.400}" },
+    "hover": { "value": "#82ab92" },
+    "press": { "value": "{primitive.accent.500}" },
+    "soft": { "value": "#1e2a24" }
   },
   "status": {
-    "ok": { "value": "{primitive.green.500}" },
-    "ok-soft": { "value": "#1c2f24" },
-    "warn": { "value": "{primitive.amber.500}" },
+    "ok": { "value": "{primitive.accent.400}" },
+    "ok-soft": { "value": "#1e2a24" },
+    "warn": { "value": "{primitive.amber.300}" },
     "warn-soft": { "value": "#332a14" },
-    "danger": { "value": "{primitive.red.500}" },
+    "danger": { "value": "{primitive.red.300}" },
     "danger-soft": { "value": "#3a1e1e" }
   },
   "shadow": {

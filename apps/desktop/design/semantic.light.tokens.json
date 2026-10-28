@@ -1,41 +1,42 @@
 {
   "surface": {
-    "canvas": { "value": "{primitive.warm.50}" },
-    "base": { "value": "{primitive.warm.0}" },
-    "raised": { "value": "{primitive.warm.50}" },
-    "sunken": { "value": "{primitive.warm.100}" },
-    "overlay": { "value": "{primitive.warm.0}" },
-    "hover": { "value": "{primitive.warm.100}" },
-    "selected": { "value": "{primitive.warm.200}" }
+    "canvas": { "value": "{primitive.neutral.0}" },
+    "chrome": { "value": "{primitive.neutral.50}" },
+    "base": { "value": "{primitive.neutral.0}" },
+    "raised": { "value": "{primitive.neutral.0}" },
+    "block": { "value": "{primitive.neutral.50}" },
+    "sunken": { "value": "{primitive.neutral.25}" },
+    "hover": { "value": "{primitive.neutral.150}" },
+    "selected": { "value": "{primitive.neutral.200}" }
   },
   "text": {
-    "primary": { "value": "{primitive.warm.900}" },
-    "secondary": { "value": "{primitive.warm.600}" },
-    "tertiary": { "value": "{primitive.warm.500}" },
-    "disabled": { "value": "{primitive.warm.400}" },
-    "on-accent": { "value": "{primitive.warm.0}" }
+    "primary": { "value": "{primitive.neutral.950}" },
+    "secondary": { "value": "{primitive.neutral.600}" },
+    "tertiary": { "value": "{primitive.neutral.500}" },
+    "disabled": { "value": "{primitive.neutral.400}" },
+    "on-accent": { "value": "{primitive.neutral.0}" }
   },
   "stroke": {
-    "hairline": { "value": "{primitive.warm.200}" },
-    "strong": { "value": "{primitive.warm.300}" },
+    "hairline": { "value": "{primitive.neutral.200}" },
+    "strong": { "value": "{primitive.neutral.300}" },
     "focus": { "value": "{primitive.accent.500}" }
   },
   "accent": {
-    "base": { "value": "{primitive.accent.600}" },
-    "hover": { "value": "{primitive.accent.500}" },
-    "press": { "value": "{primitive.accent.700}" },
+    "base": { "value": "{primitive.accent.500}" },
+    "hover": { "value": "{primitive.accent.400}" },
+    "press": { "value": "{primitive.accent.600}" },
     "soft": { "value": "{primitive.accent.100}" }
   },
   "status": {
-    "ok": { "value": "{primitive.green.700}" },
-    "ok-soft": { "value": "#e6f4ea" },
-    "warn": { "value": "{primitive.amber.700}" },
+    "ok": { "value": "{primitive.accent.500}" },
+    "ok-soft": { "value": "{primitive.accent.100}" },
+    "warn": { "value": "{primitive.amber.500}" },
     "warn-soft": { "value": "#fbf3dd" },
-    "danger": { "value": "{primitive.red.700}" },
+    "danger": { "value": "{primitive.red.500}" },
     "danger-soft": { "value": "#fbe9e9" }
   },
   "shadow": {
-    "overlay": { "value": "0 8px 24px -8px rgba(24,20,16,0.18), 0 2px 6px rgba(24,20,16,0.08)" },
-    "popover": { "value": "0 12px 32px -12px rgba(24,20,16,0.22), 0 2px 8px rgba(24,20,16,0.10)" }
+    "overlay": { "value": "0 8px 24px -8px rgba(17,17,17,0.12), 0 2px 6px rgba(17,17,17,0.06)" },
+    "popover": { "value": "0 12px 32px -12px rgba(17,17,17,0.16), 0 2px 8px rgba(17,17,17,0.08)" }
   }
 }
