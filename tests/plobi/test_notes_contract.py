@@ -139,7 +139,7 @@ def test_relates_is_the_second_axis_and_must_be_real(notes):
     assert any("没这个分身" in p for p in problems)
 
 
-def test_mind_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monkeypatch):
+def test_vault_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monkeypatch):
     provider = MindProvider()
     provider.initialize("sess-notes", agent_context="primary")
     monkeypatch.setattr(
@@ -148,7 +148,7 @@ def test_mind_write_refuses_a_non_compliant_note_and_writes_nothing(notes, monke
 
     result = json.loads(
         provider.handle_tool_call(
-            "mind_write",
+            "vault_write",
             {"path": "Vault/notes/数学 Math/拉普拉斯.md", "content": "# 拉普拉斯\n\n没有 frontmatter。\n"},
         )
     )

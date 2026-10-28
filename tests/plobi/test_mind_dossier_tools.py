@@ -1,4 +1,4 @@
-"""档案写腿：白名单放开到全部项目＋研究，以及 mind_read / mind_write 两枚原子工具。
+"""档案写腿：白名单放开到全部项目＋研究，以及 vault_read / vault_write 两枚原子工具。
 
 用户 2026-10-25：「档案严重过时了……Agent 会自己维护吗？」两答＝给模型一枚写档案的手、
 白名单放开到全部项目与研究。这里钉住三件事：**能写了**（以前静默 skip）、**放开 vault 不
@@ -68,7 +68,7 @@ def test_paths_still_refuse_escapes_and_legacy_zones(roots):
 def test_the_two_tools_are_atomic(roots):
     _mind, _vault, provider = roots
     schemas = provider.get_tool_schemas()
-    assert [schema["name"] for schema in schemas] == ["mind_read", "mind_write"]
+    assert [schema["name"] for schema in schemas] == ["vault_read", "vault_write"]
     for schema in schemas:
         # 裁定 185：不许用 action/mode 这类选分支的参数把两件事塞进一枚工具。
         assert "action" not in schema["parameters"]["properties"]
@@ -76,24 +76,26 @@ def test_the_two_tools_are_atomic(roots):
     assert set(schemas[1]["parameters"]["properties"]) == {"path", "content"}
 
 
-def test_mind_read_returns_the_file_or_says_it_is_missing(roots):
+def test_vault_read_returns_the_file_or_says_it_is_missing(roots):
     _mind, _vault, provider = roots
 
-    ok = json.loads(provider.handle_tool_call("mind_read", {"path": "Vault/projects/Aura/progress.md"}))
+    ok = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/projects/Aura/progress.md"}))
     assert ok["success"] is True
     assert "上一句还停在九月" in ok["content"]
 
-    missing = json.loads(provider.handle_tool_call("mind_read", {"path": "Vault/projects/Aura/plan.md"}))
+    missing = json.loads(provider.handle_tool_call("vault_read", {"path": "Vault/projects/Aura/plan.md"}))
     assert missing["success"] is False
     assert "还不存在" in missing["error"]
 
-    # 白名单外（脑的原料区已作废）要指名道姓拒掉，并把可写的面报回去
-    outside = json.loads(provider.handle_tool_call("mind_read", {"path": "Loom/raw/chat-logs/x.md"}))
-    assert outside["success"] is False
-    assert "Vault/projects" in outside["allowed_prefixes"]
+    # 工具面只认人读面：脑里的东西（原料区与 wiki 那两格都算）一律指名道姓拒掉。
+    # 用户 2026-10-27 拍「读也改：vault_read + vault_write」，代价就是模型再没有查脑仓的手。
+    for outside_path in ("Loom/raw/chat-logs/x.md", "Loom/wiki/concepts/x.md", "random/file.md"):
+        outside = json.loads(provider.handle_tool_call("vault_read", {"path": outside_path}))
+        assert outside["success"] is False
+        assert "Vault/" in outside["error"]
 
 
-def test_mind_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
+def test_vault_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, monkeypatch):
     _mind, vault, provider = roots
     staged = []
 
@@ -106,7 +108,7 @@ def test_mind_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, mon
 
     result = json.loads(
         provider.handle_tool_call(
-            "mind_write", {"path": "Vault/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
+            "vault_write", {"path": "Vault/research/SRTP/progress.md", "content": "# SRTP · 进度\n\n新东西。\n"}
         )
     )
     assert result["success"] is False
@@ -118,7 +120,7 @@ def test_mind_write_goes_to_the_pending_queue_when_the_gate_is_closed(roots, mon
     assert not (vault / "research" / "SRTP" / "progress.md").exists()
 
 
-def test_mind_write_lands_when_the_gate_opens(roots, monkeypatch):
+def test_vault_write_lands_when_the_gate_opens(roots, monkeypatch):
     _mind, vault, provider = roots
     monkeypatch.setattr(writer_module.MindWriter, "_gate_refusals", lambda self, batch: [])
     monkeypatch.setattr(
@@ -129,23 +131,23 @@ def test_mind_write_lands_when_the_gate_opens(roots, monkeypatch):
 
     result = json.loads(
         provider.handle_tool_call(
-            "mind_write", {"path": "Vault/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
+            "vault_write", {"path": "Vault/projects/Aura/progress.md", "content": "# Aura · 进度\n\n今天写完了。\n"}
         )
     )
     assert result["success"] is True, result
     assert (vault / "projects" / "Aura" / "progress.md").read_text(encoding="utf-8").startswith("# Aura · 进度")
 
 
-def test_mind_write_refuses_empty_oversized_and_unknown_tools(roots):
+def test_vault_write_refuses_empty_oversized_and_unknown_tools(roots):
     _mind, _vault, provider = roots
 
-    empty = json.loads(provider.handle_tool_call("mind_write", {"path": "Vault/projects/Aura/plan.md", "content": "  "}))
+    empty = json.loads(provider.handle_tool_call("vault_write", {"path": "Vault/projects/Aura/plan.md", "content": "  "}))
     assert empty["success"] is False and "non-empty" in empty["error"]
 
     big = json.loads(
         provider.handle_tool_call(
-            "mind_write",
-            {"path": "Vault/projects/Aura/plan.md", "content": "x" * (provider_module.MIND_WRITE_MAX_CHARS + 1)},
+            "vault_write",
+            {"path": "Vault/projects/Aura/plan.md", "content": "x" * (provider_module.VAULT_WRITE_MAX_CHARS + 1)},
         )
     )
     assert big["success"] is False and "too large" in big["error"]
