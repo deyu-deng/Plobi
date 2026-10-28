@@ -17,3 +17,5 @@ from quota_hub import login_ledger, model_health
 def isolated_ledgers(tmp_path, monkeypatch):
     monkeypatch.setenv(login_ledger.LEDGER_ENV, str(tmp_path / "login-ledger.json"))
     monkeypatch.setenv(model_health.MODEL_HEALTH_ENV, str(tmp_path / "model-health.json"))
+    # Spawn-based legs get a scratch cwd by default; keep that out of the real home too.
+    monkeypatch.setenv("QUOTA_HUB_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
