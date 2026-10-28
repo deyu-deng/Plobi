@@ -74,6 +74,18 @@
   --dl-motion-base: 180ms;
   --dl-motion-slow: 240ms;
   --dl-motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dl-layout-rail: 186px;
+  --dl-layout-rail-wide: 240px;
+  --dl-layout-header: 26px;
+  --dl-layout-right-panel: 172px;
+  --dl-layout-content-max: 720px;
+  --dl-layout-row: 30px;
+  --dl-layout-row-comfy: 34px;
+  --dl-layout-control: 26px;
+  --dl-layout-gutter: 12px;
+  --dl-layout-gap: 8px;
+  --dl-layout-section-gap: 16px;
+  --dl-layout-icon: 14px;
   --dl-surface-canvas: #0f0f0f;
   --dl-surface-chrome: #141414;
   --dl-surface-base: #161616;
@@ -96,6 +108,9 @@
   --dl-status-danger-soft: #3a1e1e;
   --dl-shadow-overlay: 0 8px 24px -8px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35);
   --dl-shadow-popover: 0 12px 32px -12px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+  --dl-layout-radius-control: var(--dl-radius-sm);
+  --dl-layout-radius-card: var(--dl-radius-md);
+  --dl-layout-radius-panel: var(--dl-radius-lg);
   --dl-stroke-focus: var(--dl-primitive-accent-400);
   --dl-accent-base: var(--dl-primitive-accent-400);
   --dl-accent-press: var(--dl-primitive-accent-500);

@@ -1,0 +1,19 @@
+{
+  "layout": {
+    "rail": { "value": "186px" },
+    "rail-wide": { "value": "240px" },
+    "header": { "value": "26px" },
+    "right-panel": { "value": "172px" },
+    "content-max": { "value": "720px" },
+    "row": { "value": "30px" },
+    "row-comfy": { "value": "34px" },
+    "control": { "value": "26px" },
+    "gutter": { "value": "12px" },
+    "gap": { "value": "8px" },
+    "section-gap": { "value": "16px" },
+    "icon": { "value": "14px" },
+    "radius-control": { "value": "{radius.sm}" },
+    "radius-card": { "value": "{radius.md}" },
+    "radius-panel": { "value": "{radius.lg}" }
+  }
+}

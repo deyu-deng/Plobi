@@ -1,7 +1,9 @@
 /**
  * 设计语言令牌构建（`npm run design:tokens`）。
  *
- * 真源是 `design/*.tokens.json`（三层之上一、二层：primitive + semantic 的明暗两套），
+ * 真源是 `design/*.tokens.json`：`primitives`（原始值）+ `layout`（结构与密度：栅格/行高/控件/
+ * 面板宽——这是**设计语言**的骨架）+ `semantic.{light,dark}`（语义色，**只是一套参照主题**：
+ * 颜色归 `themes/` 那套运行时主题引擎管，用户可以换，所以不许把某个色板当语言本身）。
  * 产物是 `src/design-tokens.css`（**生成物，不许手改**）。
  *
  * 两条硬约束：
@@ -14,6 +16,7 @@ import StyleDictionary from 'style-dictionary'
 const dark = new StyleDictionary({
   source: [
     'design/primitives.tokens.json',
+    'design/layout.tokens.json',
     'design/semantic.dark.tokens.json',
   ],
   platforms: {
@@ -35,6 +38,7 @@ const dark = new StyleDictionary({
 const light = new StyleDictionary({
   source: [
     'design/primitives.tokens.json',
+    'design/layout.tokens.json',
     'design/semantic.light.tokens.json',
   ],
   platforms: {
