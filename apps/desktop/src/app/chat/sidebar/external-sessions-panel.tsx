@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 
 import { OffloadVendorAvatar } from '@/app/chat/sidebar/offload-vendor-icon'
+import { Codicon } from '@/components/ui/codicon'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
+import { SidebarSectionHeader } from './chrome'
 import {
   deleteExternalSession,
   getAgentExternalSessions,
@@ -77,8 +79,9 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
   const related = active.filter(session => session.related === true)
   const unknown = active.filter(session => session.related === null)
   // 一条相关的都没有时，先把「待判断」摆出来（按应用分组）——否则第一次打开只是一句空话。
-  const visible = showUnknown || related.length === 0 ? [...related, ...unknown] : related
+  const visible = showUnknown ? [...related, ...unknown] : related
   const groups = groupByVendor(visible)
+  const nothing = data !== null && visible.length === 0 && archived.length === 0
 
   const restore = () => {
     if (!notice) {
@@ -93,26 +96,20 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
       .catch(() => undefined)
   }
 
+  if (nothing) {
+    return null
+  }
+
   return (
     <div className="flex flex-col gap-px">
-      <span className="px-1 text-[0.7rem] uppercase text-(--ui-text-tertiary)">{c.externalSessionsTitle}</span>
-      {data !== null && (related.length > 0 || unknown.length > 0) && (
-        <span className="px-2 text-[0.65rem] text-(--ui-text-quaternary)">
-          {c.externalSessionsRelated} {related.length} · {c.externalSessionsShowUnknown} {unknown.length}
-        </span>
-      )}
-
-      {data === null && (
-        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-          {c.externalSessionsLoading}
-        </div>
-      )}
-
-      {data !== null && visible.length === 0 && archived.length === 0 && (
-        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-          {data.reason || c.externalSessionsEmpty}
-        </div>
-      )}
+      <SidebarSectionHeader
+        collapsible={false}
+        icon={<Codicon name="comment-discussion" size="0.875rem" />}
+        label={c.externalSessionsTitle}
+        meta={related.length > 0 ? related.length : ''}
+        onToggle={() => undefined}
+        open
+      />
 
       {groups.map(group => {
         const expanded = openVendor === group.vendor
@@ -153,22 +150,34 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
 
       {unknown.length > 0 && (
         <button
-          className="px-2 py-0.5 text-left text-[0.68rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+          aria-label={showUnknown ? c.externalSessionsHideUnknown : c.externalSessionsShowUnknown}
+          className={cn(
+            'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-bg-secondary)',
+            showUnknown ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'
+          )}
           onClick={() => setShowUnknown(value => !value)}
+          title={showUnknown ? c.externalSessionsHideUnknown : c.externalSessionsShowUnknown}
           type="button"
         >
-          {showUnknown ? c.externalSessionsHideUnknown : `${c.externalSessionsShowUnknown} (${unknown.length})`}
+          <Codicon name={showUnknown ? 'eye' : 'eye-closed'} size="0.75rem" />
+          {unknown.length}
         </button>
       )}
 
       {archived.length > 0 && (
         <div className="flex flex-col gap-px">
           <button
-            className="px-2 py-0.5 text-left text-[0.68rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+            aria-label={c.externalSessionsArchived}
+            className={cn(
+              'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-bg-secondary)',
+              showArchived ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'
+            )}
             onClick={() => setShowArchived(value => !value)}
+            title={c.externalSessionsArchived}
             type="button"
           >
-            {c.externalSessionsArchived} ({archived.length})
+            <Codicon name="archive" size="0.75rem" />
+            {archived.length}
           </button>
           {showArchived &&
             archived.map(session => (

@@ -67,11 +67,21 @@ function route(sendReply = '第二句回话') {
 }
 
 describe('ExternalSessionsPanel', () => {
-  it('标题下面把「相关 / 待判断」数出来：过滤在不在工作，一眼看得见', async () => {
-    route()
+  it('标题旁只留一个数；待判断的收在眼睛图标里', async () => {
+    api.mockImplementation(({ path }: { path: string }) => {
+      if (path.endsWith('/external-sessions')) {
+        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
+          { ...LIST.data.sessions[0], id: 'rel-1', related: true },
+          { ...LIST.data.sessions[0], id: 'un-1', related: null }
+        ] } })
+      }
+
+      return Promise.resolve(TRANSCRIPT)
+    })
     render(<ExternalSessionsPanel agentId="Sindri" />)
 
-    expect(await screen.findByText('related 1 · Unjudged 0')).toBeTruthy()
+    expect(await screen.findByText('External conversations')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Unjudged' })).toBeTruthy()
   })
 
   it('按项目列出会话，点一条在 Plobi 里读 transcript（不跳外部软件）', async () => {
@@ -149,11 +159,12 @@ describe('ExternalSessionsPanel', () => {
     }
   })
 
-  it('空表说原因，不画空壳', async () => {
+  it('空表整格不出现，屏上不放解释句', async () => {
     api.mockResolvedValue({ ok: true, data: { projects: [], reason: '这一条没有绑定目录', sessions: [], vendor: 'qoder' } })
-    render(<ExternalSessionsPanel agentId="Sindri" />)
+    const { container } = render(<ExternalSessionsPanel agentId="Sindri" />)
 
-    await waitFor(() => expect(screen.getByText('这一条没有绑定目录')).toBeTruthy())
+    await waitFor(() => expect(api).toHaveBeenCalled())
+    await waitFor(() => expect(container.firstChild).toBeNull())
   })
   it('L2 标过无关的不出现；还没判断的收在开关里', async () => {
     api.mockImplementation(({ path }: { path: string }) => {
@@ -209,10 +220,11 @@ describe('ExternalSessionsPanel', () => {
     })
     render(<ExternalSessionsPanel agentId="Sindri" />)
 
-    expect(await screen.findByText('related 1 · Unjudged 0')).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
+    expect(await screen.findByText('活着的一条')).toBeTruthy()
     expect(screen.queryByText('归档的一条')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: /Archived \(1\)/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Archived' }))
     expect(await screen.findByText('归档的一条')).toBeTruthy()
   })
 

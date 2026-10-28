@@ -222,6 +222,16 @@ def test_related_comes_from_path_then_title_then_l2_marks(homes, monkeypatch):
     assert rows["marvis:conv_00b52c85"]["related_source"] == "unknown"
 
 
+def test_a_session_in_another_directory_is_filtered_out_not_left_unknown(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Plobi", "bbbbbbbb-2222", prompt="看一下额度", reply="看完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+
+    rows = {item["id"]: item for item in es.sessions_for_agent("Sindri")["sessions"]}
+
+    assert rows["bbbbbbbb-2222"]["related"] is False
+    assert rows["bbbbbbbb-2222"]["related_source"] == "path-miss"
+
+
 def test_l2_marks_override_the_auto_score_and_are_written_once(homes, monkeypatch):
     marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="嗯")
     stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")

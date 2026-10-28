@@ -17,7 +17,8 @@
 
 - 发现：扫每家的固定根目录，不扫盘；项目路径只从会话自己的记录里读，或从名册登记里比。
 - 过滤：L2 的三个来源依次是「它自己标过的（sidecar）」→「项目目录命中」→「标题里点到它的名字」；
-  都不中的是 ``related=None``（待判断），不冒充「不相关」。
+  会话自己写明在**别的目录**的记 ``related=False``（这是筛完，不是待判），
+  只有连目录都没有（如 Marvis）的才留 ``None``（待判断），不冒充「不相关」。
 - 说：``qodercli --resume <id> -p <text>`` —— 这条旗标实测过（10-23、10-27 各一次真回话）。
 """
 
@@ -844,7 +845,8 @@ def _related(entry, session: dict[str, Any], marks: dict[str, bool]) -> tuple[Op
         return marks[key], "l2"
 
     project = _norm(session.get("project"))
-    for path in _project_paths(entry):
+    project_paths = _project_paths(entry)
+    for path in project_paths:
         base = _norm(path)
         if project and (project == base or project.startswith(f"{base}/")):
             return True, "path"
@@ -853,6 +855,11 @@ def _related(entry, session: dict[str, Any], marks: dict[str, bool]) -> tuple[Op
     for word in _identity_words(entry):
         if word in haystack:
             return True, "title"
+
+    # 会话自己写明在哪个目录，而这个 Agent 的目录是另一处 ⇒ 不是它的活，不必留给人再判一遍。
+    # 没有目录（Marvis）或 Agent 没登记目录的，仍然留给 L2 判。
+    if project and project_paths:
+        return False, "path-miss"
 
     return None, "unknown"
 
