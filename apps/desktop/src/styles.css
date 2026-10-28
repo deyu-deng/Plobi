@@ -3,6 +3,8 @@
 @import 'tw-shimmer';
 @import 'katex/dist/katex.min.css';
 @import '@vscode/codicons/dist/codicon.css';
+@import './design-tokens.light.css';
+@import './design-tokens.dark.css';
 @custom-variant dark (&:is(.dark *));
 
 /* Sidebar sections: tall viewports give each its own scroller; compact ones
