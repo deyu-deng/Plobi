@@ -65,7 +65,6 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
   return (
     <div className="flex flex-col gap-px">
       <SidebarSectionHeader
-        icon={<Codicon name="hubot" size="0.875rem" />}
         label={c.expertsTitle}
         meta={running > 0 ? `${running}/${experts.length}` : experts.length}
         onToggle={() => setShow(value => !value)}
