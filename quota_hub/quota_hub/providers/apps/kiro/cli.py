@@ -145,6 +145,9 @@ class KiroCliProvider(CliProvider):
     timeout = 300.0
     isolate_workspace = True
     stream_from_chat = True
+    #: Discovered ids keep the same prefix the seed and config use, so the
+    #: picker shows one namespace for one product.
+    model_prefix = "kiro"
     served_models = ("kiro/default",)
     model_map = {"kiro/default": ""}
     #: The last ACP-shaped run, for the quota fields and for the tool evidence.
@@ -289,12 +292,19 @@ class KiroCliProvider(CliProvider):
         except (OSError, ValueError, asyncio.TimeoutError):
             return None
         raw = _strip_ansi(stdout.decode(errors="replace")).strip()
-        start = raw.find("[") if "[" in raw else raw.find("{")
-        if start < 0:
-            return None
-        try:
-            data = json.loads(raw[start:])
-        except json.JSONDecodeError:
+        # The payload is an OBJECT whose first value is an array: cutting at the first
+        # `[` — which is what this used to do — leaves a trailing `}` and the parse fails,
+        # so the leg silently kept its one-row seed. Try the whole body first.
+        data = None
+        for candidate in (raw, raw[raw.find("["):] if "[" in raw else "", raw[raw.find("{"):] if "{" in raw else ""):
+            if not candidate:
+                continue
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            break
+        if data is None:
             return None
         short = _models_from_payload(data)
         if not short:

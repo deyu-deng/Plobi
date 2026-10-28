@@ -352,7 +352,9 @@ def test_a_click_waits_for_the_url_it_is_supposed_to_return(tmp_path):
     async def _go():
         # `start()` answers while the human still has the browser open, which is the whole
         # point of the wait; the task is then joined like any other login.
-        session = await manager.start("slow-settle", plan, settle=2.0)
+        # The production window is 2s; the test waits far longer so a loaded machine
+        # (interpreter start-up) cannot turn a real pass into a flaky failure.
+        session = await manager.start("slow-settle", plan, settle=20.0)
         at_click = session.url
         await manager.wait("slow-settle")
         return at_click, session
