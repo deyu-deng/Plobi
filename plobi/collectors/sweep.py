@@ -24,9 +24,13 @@ def _row(source: str, *, ok: bool, state: str, detail: str, counts: Optional[dic
     return {"source": source, "ok": ok, "state": state, "detail": detail, **(counts or {})}
 
 
-def run_sweep(*, service: Any = None, sources: Optional[tuple[str, ...]] = None,
-              apply_mode: Optional[str] = None) -> dict[str, Any]:
-    """跑一轮采集。返回逐条读数 + 一句总结；**任何一条都不静默省略**。"""
+def run_sweep(*, service: Any = None, sources: Optional[tuple[str, ...]] = None) -> dict[str, Any]:
+    """跑一轮采集。返回逐条读数 + 一句总结；**任何一条都不静默省略**。
+
+    `apply_mode` **已删**（WP-POOL，`specs/source-pool.md`）：「落库档位」是**日程**的
+    概念，而这一层现在只往信息池写。留着那个参数就等于还留着一条「直接落日程」的路，
+    而那种路是靠自觉守住的——删掉它，这一层连表达那件事的形状都没有。
+    """
     from plobi.collectors import registry
 
     selected = tuple(registry.collecting_sources() if sources is None else sources)
@@ -52,7 +56,7 @@ def run_sweep(*, service: Any = None, sources: Optional[tuple[str, ...]] = None,
                              detail=f"{type(exc).__name__}: {exc}"))
             continue
 
-        rows.append(_collect_one(source, collector, service=service, apply_mode=apply_mode))
+        rows.append(_collect_one(source, collector, service=service))
 
     ran = [r for r in rows if r["ok"]]
     if not rows:
@@ -64,7 +68,7 @@ def run_sweep(*, service: Any = None, sources: Optional[tuple[str, ...]] = None,
     return {"sources": rows, "ran": len(ran), "total": len(rows), "verdict": verdict}
 
 
-def _collect_one(source: str, collector: Any, *, service: Any, apply_mode: Optional[str]) -> dict[str, Any]:
+def _collect_one(source: str, collector: Any, *, service: Any) -> dict[str, Any]:
     collect = getattr(collector, "collect", None)
     if callable(collect):
         try:
@@ -79,10 +83,10 @@ def _collect_one(source: str, collector: Any, *, service: Any, apply_mode: Optio
                     detail=f"进去 {result.get('created', 0)} 条新、{result.get('unchanged', 0)} 条原样",
                     counts=counts)
 
-    # 契约那一格：只有 pull() 的采集器，落库必须走同一个 ingest，档位不许在这一层猜。
-    if apply_mode is None:
-        return _row(source, ok=False, state="no_apply_mode",
-                    detail="这条只有 `pull()`，落库档位（pending / confirmed）没人给 ⇒ 不落库，不替你猜")
+    # 契约那一格：只有 `pull()` 的采集器，落点是**池**。
+    # 旧形状这里有一道 `no_apply_mode` 闸（「档位没人给 ⇒ 不落库」）——**那一格整条删了**：
+    # 「落库档位」这个概念属于日程（ADR-0009 的待确认/已确认），而池子不区分那两档。
+    # 留着它就等于还留着「日程落库需要一个人给档位」的形状，而池子不需要那个人。
     try:
         occurrences = collector.pull()
     except Exception as exc:                                  # noqa: BLE001
@@ -90,8 +94,25 @@ def _collect_one(source: str, collector: Any, *, service: Any, apply_mode: Optio
         detail = str(getattr(exc, "detail", "") or "") or f"{type(exc).__name__}: {exc}"
         return _row(source, ok=False, state=state, detail=detail)
 
-    from plobi.collectors.ingest import ingest_occurrences
+    # WP-POOL（`specs/source-pool.md`）：`pull()` 那一族**也只写池**。
+    # 旧形状在这里 `ingest_occurrences(service, …, apply=apply_mode)` —— 于是任何一条
+    # 有 `pull()` 的信源都能直接改日程，而这正是用户 10-19 说的「信息直接去修改日程」。
+    #
+    # `apply_mode` 这个参数**整个从签名里删了**：留着它就是留着那条路，而「留着但是
+    # 不用」靠的是自觉。删掉它，这一层连表达「直接落日程」的形状都没有。
+    from plobi.pool import PoolItem
+    from plobi.pool import land as pool_land
 
-    result = ingest_occurrences(service, occurrences, apply=apply_mode)  # type: ignore[arg-type]
-    created = result.get("created", 0) if isinstance(result, dict) else getattr(result, "created", 0)
-    return _row(source, ok=True, state="ready", detail=f"拉了 {len(occurrences)} 行，进去 {created} 条新")
+    result = pool_land([
+        PoolItem(
+            source=source,
+            external_id=occurrence.external_id,
+            kind=occurrence.kind or "note",
+            title=occurrence.title or "",
+            body=occurrence.evidence.get("text", "") if occurrence.evidence else "",
+            context=occurrence.evidence or {},
+            occurred_at=occurrence.start_at,
+        )
+        for occurrence in occurrences
+    ])
+    return _row(source, ok=True, state="ready", detail=f"拉了 {len(occurrences)} 行，进池 {result['created']} 条新")

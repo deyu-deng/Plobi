@@ -120,7 +120,7 @@ def test_tiers_load_coerces_invalid_grades_to_info(tmp_path: Path) -> None:
 # --- confirm weight path -----------------------------------------------------
 
 
-def test_task_tier_bare_clock_enters_confirm_with_weight(tmp_path: Path) -> None:
+def test_task_tier_bare_clock_enters_confirm_with_weight(tmp_path: Path, _pool) -> None:
     """Acceptance #1 (unit-test proof): a task talker's ambiguous message is
     confirmed and carries the higher source weight."""
     pipeline = _pipeline(
@@ -135,12 +135,14 @@ def test_task_tier_bare_clock_enters_confirm_with_weight(tmp_path: Path) -> None
 
     assert report.unresolved == 0
     assert report.created or report.updated
-    event = pipeline.service.list_pending()[0]
-    assert event.evidence["tier"] == "task"
-    assert event.evidence["source_weight"] == 2
+    # WP-POOL：采到的东西落**池**，tier 权重那一格现在在 `context` 里（旧形状在
+    # `events.evidence`）。断言读的是同一个事实，不是换了个名字。
+    pooled = _pooled(_pool)[0]
+    assert pooled["context"]["tier"] == "task"
+    assert pooled["context"]["source_weight"] == 2
 
 
-def test_info_tier_bare_clock_stays_unresolved(tmp_path: Path) -> None:
+def test_info_tier_bare_clock_stays_unresolved(tmp_path: Path, _pool) -> None:
     """Regression: info-tier behaviour is unchanged — ambiguous clock refused."""
     pipeline = _pipeline(tmp_path, config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True))
     report = IngestReport()
@@ -149,14 +151,14 @@ def test_info_tier_bare_clock_stays_unresolved(tmp_path: Path) -> None:
     assert pipeline.service.list_pending() == []
 
 
-def test_info_tier_scheduled_message_still_confirmed(tmp_path: Path) -> None:
+def test_info_tier_scheduled_message_still_confirmed(tmp_path: Path, _pool) -> None:
     pipeline = _pipeline(tmp_path, config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True))
     report = IngestReport()
     pipeline.handle_message(_message("明天下午三点开组会", msg_id="i2"), report)
     assert report.unresolved == 0
-    event = pipeline.service.list_pending()[0]
-    assert event.evidence["tier"] == "info"
-    assert event.evidence["source_weight"] == 1
+    pooled = _pooled(_pool)[0]
+    assert pooled["context"]["tier"] == "info"
+    assert pooled["context"]["source_weight"] == 1
 
 
 def test_confirmer_hook_respects_explicit_tier_of() -> None:
@@ -211,3 +213,23 @@ def test_report_table_contains_tier_column() -> None:
     assert "tier" in text
     # The task row must show its declared grade.
     assert "task" in text
+
+
+# WP-POOL（`specs/source-pool.md`）：落点从 `agenda.db` 换成信息池，所以这几档要有一个
+# **临时的池**。不钉的话，`handle_message` 会去写真的共享那一份 —— 而那正是要防的
+# 「测试碰了真数据」。
+@pytest.fixture(autouse=True)
+def _pool(tmp_path: Path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool) -> list:
+    """池子里那一行。**不是** `service.list_pending()` —— 那是日程，采集器不再写它。"""
+    return pool.query()

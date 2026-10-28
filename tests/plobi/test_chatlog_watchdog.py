@@ -143,7 +143,7 @@ def test_recovery_resets_counter_and_allows_next_episode(tmp_path):
     assert len(heal_calls) == 2, "新断连周期允许再次自愈"
 
 
-def test_sweep_results_are_notified_through_dispatcher(tmp_path):
+def test_sweep_results_are_notified_through_dispatcher(tmp_path, _pool):
     notifier = RecordingNotifier()
     service = AgendaService(tmp_path / "agenda.db")
     client = FakeClient(fail=False)
@@ -177,8 +177,29 @@ def test_sweep_results_are_notified_through_dispatcher(tmp_path):
     )
 
     result = watchdog.tick()
-    assert result["sweep"]["created"]
-    assert notifier.sent, "巡检发现的待确认项必须推送"
+    assert result["sweep"]["created"], "巡检扫到的那一条要落进池"
+    rows = _pooled(_pool)
+    assert len(rows) == 1
+    assert service.list_pending() == [], "采集这一腿不写日程，所以也不推送"
+    assert notifier.sent == []
+
+    # 「待确认项必须推送」那条守卫还在，只是搬到了 Agent 那一跳之后：
+    # 读池 → 走日程那条唯一的写路径 → 推送跟着「变成待确认」走。
+    from plobi.collectors.base import Occurrence
+    from plobi.collectors.ingest import ingest_occurrences
+
+    context = dict(rows[0]["context"] or {})
+    landed = ingest_occurrences(
+        service,
+        [Occurrence(source=rows[0]["source"], external_id=rows[0]["external_id"],
+                    title=rows[0]["title"], start_at=context.get("event_at") or rows[0]["occurred_at"],
+                    kind=rows[0]["kind"], evidence=context)],
+        apply="pending",
+    )
+    assert landed["created"] == 1
+    # 推送这一步在产品里跟着「有人把它变成待确认」走（webhook 的 _notify / 日程工具那条手）
+    agenda_dispatch._DEFAULT.notify_pending([service.get(landed["ids"][0])])
+    assert notifier.sent, "变成待确认之后必须推送"
 
 
 # --- WP-POOL（`specs/source-pool.md`）--------------------------------------------

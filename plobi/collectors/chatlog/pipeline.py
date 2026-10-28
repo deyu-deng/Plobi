@@ -22,10 +22,13 @@ from typing import Optional
 from plobi.agenda import AgendaService, get_service
 from plobi.agenda.rules import match as rule_match
 from plobi.agenda.rules import snippet
-from plobi.collectors.base import Occurrence
-from plobi.collectors.ingest import ingest_occurrences
+# WP-POOL（`specs/source-pool.md`）：采集器的落点是**池**，不是日程库。这一层刻意
+# 不再 import `ingest_occurrences` —— 少一个 import 就少一条「顺手落日程」的路。
+from plobi.pool import PoolItem
+from plobi.pool import land as pool_land
 
 from .client import ChatlogClient, ChatlogUnavailable, ChatMessage
+from .client import pool_columns as client_pool_columns
 from .config import CollectorConfig
 from .confirm import Candidate, Confirmer, ConfirmContext, HeuristicConfirmer
 from .state import SeenStore, TalkerStore
@@ -286,9 +289,18 @@ class ChatlogPipeline:
             "tier": candidate.tier,
             "source_weight": candidate.weight,
         }
+        if candidate.end_at:
+            evidence["end_at"] = candidate.end_at
         talker_name = context.talker_name if context is not None else None
         if talker_name:
             evidence["talker_name"] = talker_name
+        # 裁 189：规则抽出来的那个「事情发生在什么时候」不是这条消息自己的时间，
+        # 它挪进 `context.event_at`——列里 `occurred_at` 归位成**这条在信源那边真实发生的时刻**
+        # （微信就是发送时间）。原来这里直接把 `candidate.start_at` 写进列，于是 12 条里
+        # 混进过 `2026-10-24T14:00:00` 那种"还没开的会"，`ORDER BY occurred_at DESC` 与 `since`
+        # 就都不是它们看起来的那个意思了。
+        if candidate.start_at:
+            evidence["event_at"] = candidate.start_at
 
         target_id = self._find_change_target(candidate) if candidate.is_change else None
         if target_id:
@@ -296,34 +308,40 @@ class ChatlogPipeline:
             # message into an ADR-0009 pending change on the target event.
             evidence["target_event_id"] = target_id
 
-        # WP-COLLECTOR-ICS: chatlog is the first Collector implementation —
-        # the final write goes through the same shared landing path as the
-        # timetable (and every future) source. apply="pending": message-
-        # derived facts still await the human decision (ADR-0009).
-        result = ingest_occurrences(
-            self.service,
+        # WP-POOL（用户 10-19 原话）：**这一层不再往 `agenda.db` 写任何东西。**
+        # 采到的东西落进信息池；「要不要变成一条日程」由 Agent 读池之后自己判断、
+        # 再用日程工具去做。原先这里 `ingest_occurrences(..., apply="pending")`
+        # 让每条消息**直接**变成一条待确认日程——那正是「信息直接去修改日程」。
+        #
+        # 正文在这里进池（`text` 那一格）：旧形状下正文只活在 `events.evidence` 的
+        # 命中片段里，Agent 一个字都读不到（`specs/source-pool.md` §2）。
+        # 裁 187①：这两列在**写侧**带上，值就是手里那份 username——不回填旧行，
+        # 旧的留空是拍过的口径（`plobi/pool/store.py:61-63`）。
+        columns = client_pool_columns(message.talker)
+        result = pool_land(
             [
-                Occurrence(
+                PoolItem(
                     source=self.source_id,
                     external_id=message.msg_id,
-                    title=candidate.title,
-                    start_at=candidate.start_at,
-                    end_at=candidate.end_at,
-                    kind=candidate.kind,
-                    location=None,
-                    evidence=evidence,
+                    kind=candidate.kind or "message",
+                    title=candidate.title or "",
+                    body=message.content or "",
+                    context=evidence,
+                    # 形状由池那一侧唯一的归一点管（`store.normalize_time`：aware→本机 naive、
+                    # epoch 秒/毫秒都收，原样自动落进 `context.sent_at_raw`），采集侧不再自己拼一种。
+                    occurred_at=message.sent_at,
+                    visibility=columns["visibility"],
+                    conversation=columns["conversation"],
                 )
-            ],
-            apply="pending",
+            ]
         )
 
         if result["created"]:
-            report.created.append(result["ids"][0])
+            report.created.append(message.msg_id)
         elif result["updated"]:
-            report.updated.append(result["ids"][0])
-        # unchanged (change target matched but nothing moved): no report entry,
-        # exactly like the pre-Protocol "not result.changed_fields" early return.
-        # 库里已有这条了才落 seen——判据 6 的另一半（写成功但没记上=重跑幂等，
+            report.updated.append(message.msg_id)
+        # 池里已有这条且没变：不再报——与旧形状那句 early return 同义。
+        # 池里有了才落 seen——判据 6 的方向不变（写成功但没记上=重跑幂等，
         # 记上了但没写=永久丢，所以只有这个方向是安全的）。
         self.seen.mark_seen(message.msg_id)
 

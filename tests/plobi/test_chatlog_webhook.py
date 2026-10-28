@@ -61,12 +61,13 @@ def _record(content: str, msg_id: str = "w1", talker: str = "班级群") -> dict
     }
 
 
-def test_single_record_creates_pending_entry(client):
+def test_single_record_lands_one_pool_row(client, _pool):
     response = client.post("/api/chatlog/webhook", json=_record("明天下午三点开组会"))
 
     assert response.status_code == 200
     assert len(response.json()["created"]) == 1
-    assert len(client.pipeline.service.list_pending()) == 1
+    assert len(_pooled(_pool)) == 1
+    assert client.pipeline.service.list_pending() == [], "这一腿不写日程库"
 
 
 def test_batch_under_data_key(client):
@@ -76,12 +77,12 @@ def test_batch_under_data_key(client):
     assert len(response.json()["created"]) == 2
 
 
-def test_replay_of_same_message_is_deduped(client):
+def test_replay_of_same_message_is_deduped(client, _pool):
     client.post("/api/chatlog/webhook", json=_record("明天下午三点开组会"))
     second = client.post("/api/chatlog/webhook", json=_record("明天下午三点开组会"))
 
     assert second.json()["skipped_duplicate"] == 1
-    assert len(client.pipeline.service.list_pending()) == 1
+    assert len(_pooled(_pool)) == 1
 
 
 def test_non_whitelisted_talker_is_rejected_even_when_pushed(client):
@@ -113,3 +114,23 @@ def test_sweep_endpoint_runs_the_pipeline(client):
     body = client.post("/api/chatlog/sweep").json()
 
     assert body["scanned"] == 0
+
+
+# --- WP-POOL（`specs/source-pool.md`）--------------------------------------------
+# 落点从 `agenda.db` 换成信息池：采集器**不再**往日程写。给这几档一个临时的池，
+# 不钉的话它们会写**真的**共享那一份 —— 那正是要防的"测试碰了真数据"。
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool, **filters):
+    """池子里那些行。不是 `service.list_pending()` -- 那是日程，采集器不再写它。"""
+    return pool.query(**filters)

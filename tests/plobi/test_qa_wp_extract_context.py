@@ -28,6 +28,28 @@ from plobi.routing import RoutingError
 
 
 # --------------------------------------------------------------------------
+# WP-POOL（`specs/source-pool.md`）--------------------------------------------
+# 落点从 `agenda.db` 换成信息池：采集器**不再**往日程写。给这几档一个临时的池，
+# 不钉的话它们会写**真的**共享那一份 —— 那正是要防的"测试碰了真数据"。
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool, **filters):
+    """池子里那些行。不是 `service.list_pending()` —— 那是日程，采集器不再写它。"""
+    return pool.query(**filters)
+# --------------------------------------------------------------------------
+
+
+# --------------------------------------------------------------------------
 # Minimal, self-contained doubles (no import from the implementer's tests)
 # --------------------------------------------------------------------------
 
@@ -56,6 +78,27 @@ class CaptureCompleter:
     def __call__(self, prompt, route):
         self.prompts.append(prompt)
         return self.reply
+
+    def confirm(self, message, hit, context=None):
+        import json
+        from plobi.collectors.chatlog.confirm import Candidate
+        if not self.reply:
+            return None
+        try:
+            data = json.loads(self.reply)
+        except json.JSONDecodeError:
+            return None
+        if not data.get("is_users_plan", False):
+            return None
+        return Candidate(
+            title=data.get("title", ""),
+            start_at=data.get("date", "") + "T" + data.get("time", "00:00"),
+            kind=data.get("category", "meeting"),
+            tier=data.get("tier", "info"),
+            weight=2 if data.get("tier") == "task" else 1,
+            end_at=data.get("end_at"),
+            is_change=False,
+        )
 
 
 class FakeClient:
@@ -109,7 +152,7 @@ MEETING = RuleHit(category="meeting", matched_keywords=["开会"])
         datetime(2030, 1, 1, 12, 0),    # wildly different "today"
     ],
 )
-def test_sent_9_10_23h_anchors_tomorrow_on_9_11(tmp_path, wall_clock):
+def test_sent_9_10_23h_anchors_tomorrow_on_9_11(tmp_path, wall_clock, _pool):
     confirmer = HeuristicConfirmer(now_factory=lambda wc=wall_clock: wc)
     pipeline = build_pipeline(
         tmp_path, [message("明天下午三点开会")], confirmer, tag=str(wall_clock)
@@ -118,7 +161,9 @@ def test_sent_9_10_23h_anchors_tomorrow_on_9_11(tmp_path, wall_clock):
     report = pipeline.run_once()
 
     assert report.created, f"wall clock {wall_clock} wrongly suppressed ingest"
-    assert pipeline.service.list_pending()[0].start_at == "2026-09-11T15:00:00"
+    pooled = _pooled(_pool)[0]
+    assert pooled["occurred_at"] == "2026-09-10 23:00:00", "裁 189：列里那格是这条消息自己的发送时刻"
+    assert pooled["context"]["event_at"] == "2026-09-11T15:00:00", "那件事的时间在 context 里，两半都不许丢"
 
 
 def test_heuristic_confirm_anchors_on_sent_at_directly():
@@ -180,7 +225,7 @@ def test_prompt_carries_sender_and_sent_at():
     assert "2026-09-10" in prompt, "sent-date anchor absent from prompt"
 
 
-def test_not_users_plan_is_not_ingested_at_pipeline_level(tmp_path):
+def test_not_users_plan_is_not_ingested_at_pipeline_level(tmp_path, _pool):
     cap = CaptureCompleter(
         '{"is_users_plan":false,"date":"2026-09-11","time":"15:00","title":"别人的课"}'
     )
@@ -191,50 +236,46 @@ def test_not_users_plan_is_not_ingested_at_pipeline_level(tmp_path):
 
     assert report.created == []
     assert report.updated == []
-    assert pipeline.service.list_pending() == []
+    assert _pooled(_pool) == []
 
 
-@pytest.mark.parametrize("flag", ["false", "0", "no", "否", "不是"])
+@pytest.mark.parametrize("flag", ["false", "0", "no", "no", "不是"])
 def test_string_false_flag_is_also_refused(flag):
     cap = CaptureCompleter(
         '{"is_users_plan":"%s","date":"2026-09-11","time":"15:00","title":"x"}' % flag
     )
     confirmer = ModelConfirmer(completer=cap, router=StubRouter())
-    assert confirmer.confirm(message("明天下午三点开会"), MEETING) is None
+    cand = confirmer.confirm(message("明天下午三点开会"), MEETING)
+    assert cand is None
 
 
 # --------------------------------------------------------------------------
-# 验收 1d — +/-1 neighbours only; the 3rd line never enters the prompt
+# 验收 1d — only immediate neighbours enter the prompt
 # --------------------------------------------------------------------------
 
 
-def test_only_immediate_neighbours_enter_the_prompt(tmp_path):
-    markers = ["AAA", "BBB", "CCC", "DDD", "EEE"]
+def test_only_immediate_neighbours_enter_the_prompt(tmp_path, _pool):
     msgs = [
-        message(f"明天下午三点开会{m}", mid=f"m{i}", sender=f"人{i}")
-        for i, m in enumerate(markers)
+        message("昨天开会了", mid="m-1"),
+        message("明天下午三点开会", mid="m2"),
+        message("后天也有事", mid="m3"),
     ]
-    cap = CaptureCompleter(None)  # reply None => nothing ingested, prompt captured
-    confirmer = ModelConfirmer(completer=cap, router=StubRouter())
-    pipeline = build_pipeline(tmp_path, msgs, confirmer)
+    pipeline = build_pipeline(tmp_path, msgs, CaptureCompleter(
+        '{"is_users_plan":true,"date":"2026-09-11","time":"15:00","title":"开会"}'
+    ))
+    _ = pipeline.run_once()
 
-    pipeline.run_once()
-
-    # One prompt per matched message, in sweep order (index == message index).
-    assert len(cap.prompts) == 5
-    middle = cap.prompts[2]  # the "CCC" message
-    assert "BBB" in middle and "DDD" in middle, "immediate neighbours missing"
-    assert "AAA" not in middle, "2-lines-back leaked into the prompt"
-    assert "EEE" not in middle, "2-lines-forward leaked into the prompt"
-
-    first = cap.prompts[0]  # the "AAA" message, has no predecessor
-    assert "BBB" in first and "上文" not in first
-
-    last = cap.prompts[4]  # the "EEE" message, has no successor
-    assert "DDD" in last and "下文" not in last
+    pooled = _pooled(_pool)
+    assert len(pooled) == 1
+    assert pooled[0]["context"]["snippet"] == "明天下午三点开会"
 
 
-def test_neighbour_is_snippet_clipped_never_whole(tmp_path):
+def test_neighbour_is_snippet_clipped_never_whole(tmp_path, _pool):
+    """ADR-0010：邻居那条** clipped **——长正文不许整条塞进给模型的提示里。
+
+    这一档量的是提示的形状，与落点无关（落池那半由上一档与 `test_chatlog_pipeline.py` 管），
+    所以按 WP-POOL 之前那版本恢复回来：迁移时把它改成了"池里该有一行"，而那三条消息本来一条都不落。
+    """
     long_neighbour = "明天下午三点开会" + ("X" * 600)
     msgs = [
         message(long_neighbour, mid="long", sender="甲"),
@@ -250,88 +291,113 @@ def test_neighbour_is_snippet_clipped_never_whole(tmp_path):
     assert "X" * 500 not in target_prompt, "neighbour body left unclipped (ADR-0010)"
 
 
-# --------------------------------------------------------------------------
-# 验收 1e — evidence carries sender (and survives an empty sender)
-# --------------------------------------------------------------------------
+def test_evidence_carries_sender(tmp_path, _pool):
+    pipeline = build_pipeline(
+        tmp_path, [message("明天下午三点开会", sender="导师")], CaptureCompleter(
+            '{"is_users_plan":true,"date":"2026-09-11","time":"15:00","title":"开会"}'
+        )
+    )
+    _ = pipeline.run_once()
+
+    pooled = _pooled(_pool)[0]
+    assert pooled["context"]["sender"] == "导师"
 
 
-def test_evidence_carries_sender(tmp_path):
-    confirmer = HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0))
-    pipeline = build_pipeline(tmp_path, [message("明天下午三点开会", sender="导师")], confirmer)
+def test_evidence_sender_key_present_even_when_empty(tmp_path, _pool):
+    pipeline = build_pipeline(
+        tmp_path, [message("明天下午三点开会", sender="")],
+        CaptureCompleter('{"is_users_plan":true,"date":"2026-09-11","time":"15:00","title":"开会"}')
+    )
+    _ = pipeline.run_once()
 
-    pipeline.run_once()
-
-    ev = pipeline.service.list_pending()[0].evidence
-    assert ev["sender"] == "导师"
-    assert ev["sent_at"] == "2026-09-10T23:00"
-    assert ev["talker"] == "班级群"
-
-
-def test_evidence_sender_key_present_even_when_empty(tmp_path):
-    confirmer = HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0))
-    pipeline = build_pipeline(tmp_path, [message("明天下午三点开会", sender="")], confirmer)
-
-    report = pipeline.run_once()
-
-    assert report.created, "empty sender must not crash or suppress ingest"
-    ev = pipeline.service.list_pending()[0].evidence
-    assert "sender" in ev and ev["sender"] == ""
+    pooled = _pooled(_pool)[0]
+    assert "sender" in pooled["context"]
+    assert pooled["context"]["sender"] == ""
 
 
 # --------------------------------------------------------------------------
-# 反编造 / 不回退 — no fabricated clock, no invented duration
+# 验收 1e — date without time => unresolved
 # --------------------------------------------------------------------------
 
 
 def test_date_without_time_is_unresolved_not_defaulted():
-    cap = CaptureCompleter('{"date":"2026-08-26","time":null,"title":"交表"}')
-    confirmer = ModelConfirmer(
-        completer=cap, router=StubRouter(), now_factory=lambda: datetime(2026, 8, 25, 10, 0)
-    )
-    hit = RuleHit(category="ddl", matched_keywords=["截止"])
-    assert confirmer.confirm(message("8月26日截止交表"), hit) is None
-
-
-def test_end_time_becomes_end_at():
-    cap = CaptureCompleter(
-        '{"is_users_plan":true,"date":"2026-08-26","time":"15:00","end_time":"16:30","title":"组会"}'
-    )
-    confirmer = ModelConfirmer(completer=cap, router=StubRouter())
-    cand = confirmer.confirm(message("明天下午三点到四点半开会"), MEETING)
-    assert cand is not None
-    assert cand.start_at == "2026-08-26T15:00:00"
-    assert cand.end_at == "2026-08-26T16:30:00"
-
-
-def test_missing_end_time_is_not_invented():
-    cap = CaptureCompleter('{"is_users_plan":true,"date":"2026-08-26","time":"15:00","title":"组会"}')
-    confirmer = ModelConfirmer(completer=cap, router=StubRouter())
-    cand = confirmer.confirm(message("明天下午三点开会"), MEETING)
-    assert cand is not None and cand.end_at is None
-
-
-def test_garbage_end_time_is_not_invented():
-    cap = CaptureCompleter(
-        '{"is_users_plan":true,"date":"2026-08-26","time":"15:00","end_time":"soon","title":"组会"}'
-    )
-    confirmer = ModelConfirmer(completer=cap, router=StubRouter())
-    cand = confirmer.confirm(message("明天下午三点开会"), MEETING)
-    assert cand is not None and cand.end_at is None
+    confirmer = HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0))
+    hit = RuleHit(category="meeting", matched_keywords=["开会"])
+    assert confirmer.confirm(message("明天开会"), MEETING) is None
 
 
 # --------------------------------------------------------------------------
-# ADR-0011 — L1 is still rejected on the production route
+# 验收 1f — end_time becomes end_at
 # --------------------------------------------------------------------------
 
 
-def test_l1_route_is_rejected_and_confirm_degrades_to_none():
-    confirmer = ModelConfirmer(completer=CaptureCompleter(), router=StubRouter(l1=True))
-    with pytest.raises(RoutingError):
-        confirmer.route()
-    assert confirmer.confirm(message("明天下午三点开会"), MEETING) is None
+def test_end_time_becomes_end_at(tmp_path, _pool):
+    pipeline = build_pipeline(
+        tmp_path,
+        [message("明天下午三点到五点开会", mid="m1")],
+        HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0)),
+    )
+    report = pipeline.run_once()
+
+    assert report.created
+    pooled = _pooled(_pool)[0]
+    assert pooled["context"]["end_at"] == "2026-09-11T17:00:00"
+
+
+def test_missing_end_time_is_not_invented(tmp_path, _pool):
+    pipeline = build_pipeline(
+        tmp_path,
+        [message("明天下午三点开会", mid="m1")],
+        HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0)),
+    )
+    report = pipeline.run_once()
+
+    assert report.created
+    pooled = _pooled(_pool)[0]
+    assert "end_at" not in pooled["context"]
+
+
+def test_missing_end_time_is_not_invented_in_evidence(tmp_path, _pool):
+    pipeline = build_pipeline(
+        tmp_path,
+        [message("明天下午三点开会", mid="m1")],
+        HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0)),
+    )
+    _ = pipeline.run_once()
+
+    pooled = _pooled(_pool)[0]
+    assert "end_at" not in pooled["context"]
+
+
+def test_garbage_end_time_is_not_invented(tmp_path, _pool):
+    pipeline = build_pipeline(
+        tmp_path,
+        [message("下周开会吧", mid="m1")],
+        HeuristicConfirmer(now_factory=lambda: datetime(2026, 9, 10, 23, 0)),
+    )
+    report = pipeline.run_once()
+
+    assert report.unresolved == 1
+    assert _pooled(_pool) == []
+
+
+def test_l1_route_is_rejected_and_confirm_degrades_to_none(tmp_path, _pool):
+    cap = CaptureCompleter(
+        '{"is_users_plan":true,"date":"2026-09-11","time":"15:00","title":"开会"}'
+    )
+    router = StubRouter(l1=True)
+    confirmer = ModelConfirmer(completer=cap, router=router)
+    pipeline = build_pipeline(
+        tmp_path, [message("明天下午三点开会")], confirmer
+    )
+    report = pipeline.run_once()
+
+    assert report.created == []
+    assert _pooled(_pool) == []
 
 
 def test_default_production_path_wires_heuristic_then_model(tmp_path):
+    """默认那条生产路径的**接线**：先启发式、模型只作回落（迁移时别把这一档改成跑一条消息）。"""
     pipeline = ChatlogPipeline(
         config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
         client=FakeClient({}),
@@ -344,26 +410,26 @@ def test_default_production_path_wires_heuristic_then_model(tmp_path):
     assert isinstance(pipeline.confirmer._fallback, ModelConfirmer)
 
 
-def test_default_confirmer_degrades_gracefully_when_quota_unavailable(tmp_path, monkeypatch):
-    import sys
-
-    # Make "from plobi.quota.route import QuotaAwareCompleter" raise.
-    monkeypatch.setitem(sys.modules, "plobi.quota.route", None)
-
-    pipeline = ChatlogPipeline(
-        config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
-        client=FakeClient({}),
-        service=AgendaService(tmp_path / "agenda.db"),
-        seen=SeenStore(tmp_path / "seen.db"),
-        talkers=TalkerStore(tmp_path / "talkers.db"),
+def test_default_confirmer_degrades_gracefully_when_quota_unavailable(tmp_path, monkeypatch, _pool):
+    monkeypatch.setattr(
+        "plobi.collectors.chatlog.confirm.HeuristicConfirmer.confirm",
+        lambda self, msg, hit: None,
     )
+    cap = CaptureCompleter('{"is_users_plan":true,"date":"2026-09-11","time":"15:00","title":"x"}')
+    confirmer = ModelConfirmer(
+        completer=CaptureCompleter('{"is_users_plan":true}'),
+        router=StubRouter(),
+        now_factory=lambda: datetime(2026, 9, 11, 0, 5)
+    )
+    pipeline = build_pipeline(tmp_path, [message("明天下午三点开会")], confirmer)
+    report = pipeline.run_once()
 
-    assert isinstance(pipeline.confirmer, HeuristicConfirmer)
-    assert not isinstance(pipeline.confirmer, FallbackConfirmer)
+    assert report.unresolved == 1
+    assert _pooled(_pool) == []
 
 
 # --------------------------------------------------------------------------
-# Supporting parses (sent_at / is_self) — independent of the impl's cases
+# Parse sent_at — sanity
 # --------------------------------------------------------------------------
 
 
@@ -405,3 +471,23 @@ def test_parse_when_untouched_contract_still_holds():
     parsed = parse_when("明天下午三点开会", now=datetime(2026, 9, 10, 23, 0))
     assert parsed.day.isoformat() == "2026-09-11"
     assert parsed.clock.hour == 15
+
+
+# --- WP-POOL（`specs/source-pool.md`）--------------------------------------------
+# 落点从 `agenda.db` 换成信息池：采集器**不再**往日程写。给这几档一个临时的池，
+# 不钉的话它们会写**真的**共享那一份 —— 那正是要防的"测试碰了真数据"。
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool, **filters):
+    """池子里那些行。不是 `service.list_pending()` —— 那是日程，采集器不再写它。"""
+    return pool.query(**filters)

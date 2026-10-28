@@ -128,13 +128,13 @@ def test_blacklist_webhook_excluded_talker_never_ingested(tmp_path):
     assert pipeline.seen.already_seen("m1") is False
 
 
-def test_duplicate_message_is_ingested_once(pipeline):
+def test_duplicate_message_is_ingested_once(pipeline, _pool):
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点开组会"), report)
     pipeline.handle_message(message("明天下午三点开组会"), report)
 
     assert report.skipped_duplicate == 1
-    assert len(pipeline.service.list_pending()) == 1
+    assert len(_pooled(_pool)) == 1
 
 
 def test_chatter_is_filtered_before_any_confirm(pipeline):
@@ -145,31 +145,37 @@ def test_chatter_is_filtered_before_any_confirm(pipeline):
     assert pipeline.service.list_pending() == []
 
 
-def test_schedule_message_lands_pending_with_snippet_evidence(pipeline):
+def test_schedule_message_lands_the_pool_with_snippet_evidence(pipeline, _pool):
+    """WP-POOL：这一条落的是**池**，不是日程。规则抽到的事在 `context`，列里那格时间是这条消息自己。"""
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点开组会，别迟到"), report)
 
-    pending = pipeline.service.list_pending()
-    assert len(pending) == 1
-    event = pending[0]
-    assert event.status == "pending"
-    assert event.source == "wechat"
-    assert event.start_at == "2026-08-26T15:00:00"
-    assert event.kind == "meeting"
-    assert event.confirm_seq == 1
-    assert event.evidence["talker"] == "班级群"
-    assert "组会" in event.evidence["snippet"]
-    assert report.created == [event.id]
+    rows = _pooled(_pool)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["source"] == "wechat"
+    assert row["external_id"] == "m1"
+    assert row["kind"] == "meeting"
+    assert row["title"] == "明天下午三点开组会，别迟到", "短句直接当标题（`_title_from`：≤40 字原样）"
+    assert row["body"] == "明天下午三点开组会，别迟到", "正文进池（旧形状下正文只活在片段里）"
+    assert row["occurred_at"] == "2026-08-25 10:00:00", "列里只准一种形状：这条消息自己的发送时刻"
+    assert row["context"]["event_at"] == "2026-08-26T15:00:00", "裁 189：那件事的时间挪进 context"
+    assert row["context"]["talker"] == "班级群"
+    assert "组会" in row["context"]["snippet"]
+    assert report.created == ["m1"]
+    assert pipeline.service.list_pending() == [], "采集器一个字都不往日程库写"
 
 
-def test_evidence_carries_only_a_snippet_not_the_whole_thread(pipeline):
+def test_evidence_carries_only_a_snippet_not_the_whole_thread(pipeline, _pool):
     long_message = "明天下午三点开组会 " + ("闲聊内容 " * 200)
     report = IngestReport()
     pipeline.handle_message(message(long_message), report)
 
-    evidence = pipeline.service.list_pending()[0].evidence
-    assert len(evidence["snippet"]) <= 400
-    assert len(evidence["snippet"]) < len(long_message)
+    row = _pooled(_pool)[0]
+    # 片段那一格仍然是短的（命中处），**但整条正文进了池**——Agent 要读得到原话。
+    assert len(row["context"]["snippet"]) <= 400
+    assert len(row["context"]["snippet"]) < len(long_message)
+    assert row["body"] == long_message
 
 
 def test_ambiguous_time_is_left_unresolved(pipeline):
@@ -181,7 +187,8 @@ def test_ambiguous_time_is_left_unresolved(pipeline):
     assert pipeline.service.list_pending() == []
 
 
-def test_reschedule_updates_the_matching_event(pipeline):
+def test_reschedule_lands_a_pool_row_naming_the_target_event(pipeline, _pool):
+    """改时间的那条：池里那一行**说出它改的是哪条日程**，但它不动日程库（裁 186–191）。"""
     original = pipeline.service.create_manual(
         title="组会", start_at="2026-08-26T15:00:00", kind="meeting"
     )
@@ -189,11 +196,13 @@ def test_reschedule_updates_the_matching_event(pipeline):
     report = IngestReport()
     pipeline.handle_message(message("明天的组会改到下午四点", msg_id="m2"), report)
 
-    assert report.updated == [original.id]
-    updated = pipeline.service.get(original.id)
-    assert updated.status == "pending"
-    assert updated.start_at == "2026-08-26T16:00:00"
-    assert updated.prev_value["start_at"] == "2026-08-26T15:00:00"
+    row = _pooled(_pool)[0]
+    assert row["context"]["target_event_id"] == original.id
+    assert row["context"]["event_at"] == "2026-08-26T16:00:00"
+    assert report.created == ["m2"] and report.updated == []
+    untouched = pipeline.service.get(original.id)
+    assert untouched.start_at == "2026-08-26T15:00:00", "采集这一腿不许把日程改掉"
+    assert pipeline.service.list_pending() == []
 
 
 def test_unrelated_change_does_not_hijack_an_event(pipeline):
@@ -603,18 +612,18 @@ def test_list_talker_sessions_carries_the_chatlog_display_name(monkeypatch):
 # --------------------------------------------------------------------------
 
 
-def test_evidence_records_who_sent_the_message(pipeline):
-    """The board shows "谁说的" — sender must ride into the evidence."""
+def test_evidence_records_who_sent_the_message(pipeline, _pool):
+    """屏上那句"谁说的"——发送者与发送时刻要跟着这条一起进池。"""
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点开组会"), report)
 
-    evidence = pipeline.service.list_pending()[0].evidence
-    assert evidence["sender"] == "导师"
-    assert evidence["sent_at"] == "2026-08-25 10:00:00"
-    assert evidence["talker"] == "班级群"
+    context = _pooled(_pool)[0]["context"]
+    assert context["sender"] == "导师"
+    assert context["sent_at"] == "2026-08-25 10:00:00"
+    assert context["talker"] == "班级群"
 
 
-def test_message_sent_last_night_anchors_tomorrow_on_its_sent_time(tmp_path):
+def test_message_sent_last_night_anchors_tomorrow_on_its_sent_time(tmp_path, _pool):
     """Sent 9/10 23:00, "明天下午三点" → 9/11 15:00, not the wall-clock day."""
     sent = ChatMessage(
         msg_id="s1",
@@ -635,7 +644,9 @@ def test_message_sent_last_night_anchors_tomorrow_on_its_sent_time(tmp_path):
     report = pipeline.run_once()
 
     assert report.created, "the anchored message should have been ingested"
-    assert pipeline.service.list_pending()[0].start_at == "2026-09-11T15:00:00"
+    row = _pooled(_pool)[0]
+    assert row["context"]["event_at"] == "2026-09-11T15:00:00"
+    assert row["occurred_at"] == "2026-09-10 23:00:00", "列里那条的时间＝消息自己的发送时刻"
 
 
 def test_neighbours_are_capped_at_one_each_side(tmp_path):
@@ -698,17 +709,19 @@ def test_dirty_shape_date_without_clock_lands_no_invented_morning(pipeline):
     assert pipeline.service.list_pending() == []
 
 
-def test_dirty_shape_missing_end_time_stays_missing(pipeline):
+def test_dirty_shape_missing_end_time_stays_missing(pipeline, _pool):
     """「明天下午三点面试」有开始没结束：时间要准、`end_at` 要**仍是空**，不编一小时。"""
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点面试", msg_id="eq-2"), report)
 
-    pending = pipeline.service.list_pending()
-    assert len(pending) == 1
-    event = pending[0]
-    assert event.start_at == "2026-08-26T15:00:00"
-    assert event.end_at is None
-    assert event.source == "wechat"
+    rows = _pooled(_pool)
+    assert len(rows) == 1
+    row = rows[0]
+    # 裁 189：消息里那件事的时间在 `context.event_at`，列里 `occurred_at` 是这条消息自己的时刻。
+    assert row["context"]["event_at"] == "2026-08-26T15:00:00"
+    assert "end_at" not in row["context"]
+    assert row["source"] == "wechat"
+    assert pipeline.service.list_pending() == [], "采集器不写日程"
 
 
 def test_dirty_shape_chatter_with_a_meeting_keyword_never_lands(pipeline):
@@ -724,21 +737,45 @@ def test_dirty_shape_chatter_with_a_meeting_keyword_never_lands(pipeline):
         assert pipeline.service.list_pending() == [], text
 
 
-def test_dirty_shape_stated_range_lands_both_ends(pipeline):
+def test_dirty_shape_stated_range_lands_both_ends(pipeline, _pool):
     """修到的那一类：明写「三点到五点」时结束时间必须落库，没说的仍然空着。"""
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点到五点开组会", msg_id="eq-4"), report)
 
-    event = pipeline.service.list_pending()[0]
-    assert event.start_at == "2026-08-26T15:00:00"
-    assert event.end_at == "2026-08-26T17:00:00"
+    row = _pooled(_pool)[0]
+    assert row["context"]["event_at"] == "2026-08-26T15:00:00"
+    assert row["context"]["end_at"] == "2026-08-26T17:00:00"
 
 
-def test_dirty_shape_mixed_spellings_do_not_slip_two_hours(pipeline):
+def test_dirty_shape_mixed_spellings_do_not_slip_two_hours(pipeline, _pool):
     """同一条消息用两种写法（三点 / 17:00）时，开始时间不许被尾巴那个钟点顶掉。"""
     report = IngestReport()
     pipeline.handle_message(message("明天下午三点到17:00开组会", msg_id="eq-5"), report)
 
-    event = pipeline.service.list_pending()[0]
-    assert event.start_at == "2026-08-26T15:00:00"
-    assert event.end_at == "2026-08-26T17:00:00"
+    row = _pooled(_pool)[0]
+    assert row["context"]["event_at"] == "2026-08-26T15:00:00"
+    assert row["context"]["end_at"] == "2026-08-26T17:00:00"
+
+
+# --------------------------------------------------------------------------
+# WP-POOL（`specs/source-pool.md`）：落点从 `agenda.db` 换成信息池，所以这一档要有一个
+# **临时的池**。不钉的话，`handle_message` 会去写真的共享那一份——而那正是要防的「测试碰了真数据」。
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool) -> list:
+    """池里那些行。**不是** `service.list_pending()`——那是日程，采集器不再写它。"""
+    return pool.query()
+

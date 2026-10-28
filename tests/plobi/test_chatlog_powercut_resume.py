@@ -55,24 +55,44 @@ def make_pipeline(tmp_path, *, real_ingest=None):
 
 
 def run_ingest_step(pipeline, *, die_after: bool):
-    """在写入那一层"断电"：die_after=False 是还没写就死，True 是写完才死。"""
-    real = pipeline_module.ingest_occurrences
+    """在写入那一层"断电"：die_after=False 是还没写就死，True 是写完才死。
 
-    def fake(service, items, **kwargs):
+    WP-POOL：那一层现在叫 `pool_land`（落点是池，不是日程库）。
+    """
+    real = pipeline_module.pool_land
+
+    def fake(items):
         if not die_after:
             raise PowerCut("killed before anything was written")
-        result = real(service, items, **kwargs)
+        result = real(items)
         raise PowerCut("killed right after the write committed")
 
     return fake
 
 
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    """断电这一族量的就是「写进去没有」——写的是**池**。不钉这一格，它们会写真的那一份。"""
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool) -> list:
+    return pool.query()
+
+
 class TestKilledBeforeTheWrite:
-    def test_message_is_not_burned_as_seen(self, tmp_path, monkeypatch) -> None:
+    def test_message_is_not_burned_as_seen(self, tmp_path, monkeypatch, _pool) -> None:
         pipeline, service = make_pipeline(tmp_path)
         monkeypatch.setattr(
             pipeline_module,
-            "ingest_occurrences",
+            "pool_land",
             run_ingest_step(pipeline, die_after=False),
         )
 
@@ -81,13 +101,14 @@ class TestKilledBeforeTheWrite:
 
         # 旧形状在这里已经把 msg_id 记进 seen 了 ⇒ 重启后当重复跳过，整条永久丢。
         assert pipeline.seen.already_seen("m1") is False
-        assert service.list_pending() == []
+        assert _pooled(_pool) == []
+        assert service.list_pending() == [], "采集这一腿本来就不写日程"
 
-    def test_the_same_pull_lands_after_restart(self, tmp_path, monkeypatch) -> None:
+    def test_the_same_pull_lands_after_restart(self, tmp_path, monkeypatch, _pool) -> None:
         pipeline, service = make_pipeline(tmp_path)
         monkeypatch.setattr(
             pipeline_module,
-            "ingest_occurrences",
+            "pool_land",
             run_ingest_step(pipeline, die_after=False),
         )
 
@@ -98,15 +119,16 @@ class TestKilledBeforeTheWrite:
         pipeline.handle_message(message(), report)
 
         assert len(report.created) == 1, "中断续跑：重启后同一条消息必须真能落库"
+        assert len(_pooled(_pool)) == 1
         assert pipeline.seen.already_seen("m1") is True
 
 
 class TestKilledAfterTheWrite:
-    def test_rerun_does_not_duplicate_the_event(self, tmp_path, monkeypatch) -> None:
+    def test_rerun_does_not_duplicate_the_event(self, tmp_path, monkeypatch, _pool) -> None:
         pipeline, service = make_pipeline(tmp_path)
         monkeypatch.setattr(
             pipeline_module,
-            "ingest_occurrences",
+            "pool_land",
             run_ingest_step(pipeline, die_after=True),
         )
 
@@ -114,56 +136,60 @@ class TestKilledAfterTheWrite:
             pipeline.handle_message(message(), IngestReport())
 
         # 写成功了但 seen 没记上 —— 这是 at-least-once 的窗口，重跑必须幂等。
-        assert len(service.list_pending()) == 1
+        assert len(_pooled(_pool)) == 1
         monkeypatch.undo()
         report = IngestReport()
         pipeline.handle_message(message(), report)
 
-        assert len(service.list_pending()) == 1, "重跑多出一条 = 落点不按 (source, uid) 幂等"
+        assert len(_pooled(_pool)) == 1, "重跑多出一条 = 落点不按 (source, uid) 幂等"
         assert report.created == [], "已存在的那条不该再算 created"
         assert pipeline.seen.already_seen("m1") is True
 
 
 class TestLibraryStaysWhole:
-    def test_no_half_row_and_the_db_is_consistent(self, tmp_path, monkeypatch) -> None:
+    def test_no_half_row_and_the_db_is_consistent(self, tmp_path, monkeypatch, _pool) -> None:
         pipeline, service = make_pipeline(tmp_path)
 
         pipeline.handle_message(message("明天上午十点在新大楼答辩", msg_id="m0"), IngestReport())
         pipeline.handle_message(message("后天下午三点组会", msg_id="m1"), IngestReport())
         monkeypatch.setattr(
             pipeline_module,
-            "ingest_occurrences",
+            "pool_land",
             run_ingest_step(pipeline, die_after=False),
         )
         with pytest.raises(PowerCut):
             pipeline.handle_message(message("周五晚上七点聚餐", msg_id="m2"), IngestReport())
 
-        rows = service.list_pending()
-        assert [row.evidence["msg_id"] for row in rows] == ["m0", "m1"]
+        rows = _pooled(_pool)
+        # 池的读手按 occurred_at 倒序给（ newest first 是它的契约），这一档量的是"哪几条在"，不比顺序。
+        assert sorted(row["external_id"] for row in rows) == ["m0", "m1"]
         for row in rows:
-            assert row.title and row.start_at and row.evidence["snippet"], "半条脏记录"
-            assert row.source == "wechat"
+            assert row["title"] and row["context"].get("event_at") and row["context"]["snippet"], "半条脏记录"
+            assert row["source"] == "wechat"
+            assert row["body"], "正文是池里那一格，空正文=半条"
 
         import sqlite3
 
-        conn = sqlite3.connect(str(tmp_path / "agenda.db"))
-        try:
-            assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        finally:
-            conn.close()
+        for db, label in (("pool.db", "池"), ("agenda.db", "日程")):
+            conn = sqlite3.connect(str(tmp_path / db))
+            try:
+                assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok", label
+            finally:
+                conn.close()
+        assert service.list_pending() == [], "断电这一族也不该往日程库里写任何东西"
         # 被杀那一条既不在库里、也不在 seen 里 —— 状态一致，可以续跑。
         assert pipeline.seen.already_seen("m2") is False
 
 
 class TestTheOldDedupeGateStillWorks:
-    def test_already_processed_message_is_skipped(self, tmp_path) -> None:
+    def test_already_processed_message_is_skipped(self, tmp_path, _pool) -> None:
         pipeline, service = make_pipeline(tmp_path)
         pipeline.handle_message(message(), IngestReport())
         report = IngestReport()
         pipeline.handle_message(message(), report)
 
         assert report.skipped_duplicate == 1
-        assert len(service.list_pending()) == 1
+        assert len(_pooled(_pool)) == 1
 
 
 def test_rejects_an_unknown_source_id_as_before() -> None:

@@ -161,7 +161,7 @@ def test_sweep_lookback_days_zero_clamps_to_one(api):
 # ---------------------------------------------------------------------------
 
 
-def test_same_msg_id_across_two_days_ingested_once(tmp_path):
+def test_same_msg_id_across_two_days_ingested_once(tmp_path, _pool):
     client = RecordingClient(
         {"班级群": [make_message("明天下午三点开组会", msg_id="dup-1")]}
     )
@@ -172,7 +172,7 @@ def test_same_msg_id_across_two_days_ingested_once(tmp_path):
     assert len(client.calls) == 2
     assert len(report.created) == 1
     assert report.skipped_duplicate == 1
-    assert len(pipeline.service.list_pending()) == 1
+    assert len(_pooled(_pool)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ def test_refresh_agenda_unhealthy_raises_chatlog_dead_even_after_review(tmp_path
     assert client.calls == [], "dead chatlog must not be fetched at all"
 
 
-def test_lookback_sweep_survives_chatlog_unavailable(tmp_path):
+def test_lookback_sweep_survives_chatlog_unavailable(tmp_path, _pool):
     client = RecordingClient({"班级群": []}, fail=True)
     pipeline = make_pipeline(tmp_path, client, known=["班级群"])
 
@@ -265,4 +265,24 @@ def test_lookback_sweep_survives_chatlog_unavailable(tmp_path):
     # Every day was still attempted, nothing crashed, nothing ingested.
     assert len(client.calls) == 3
     assert report.created == []
-    assert pipeline.service.list_pending() == []
+    assert _pooled(_pool) == []
+
+
+# --- WP-POOL（`specs/source-pool.md`）--------------------------------------------
+# 落点从 `agenda.db` 换成信息池：采集器**不再**往日程写。给这几档一个临时的池，
+# 不钉的话它们会写**真的**共享那一份 —— 那正是要防的"测试碰了真数据"。
+@pytest.fixture(autouse=True)
+def _pool(tmp_path):
+    import plobi.pool as pool
+
+    original = pool.store.path
+    pool.store.path = lambda: tmp_path / "pool.db"
+    try:
+        yield pool
+    finally:
+        pool.store.path = original
+
+
+def _pooled(pool, **filters):
+    """池子里那些行。不是 `service.list_pending()` -- 那是日程，采集器不再写它。"""
+    return pool.query(**filters)
