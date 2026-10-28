@@ -327,6 +327,76 @@ def test_agy_is_now_readable_in_the_sources_list(homes):
     assert sources["agy"]["sessions"] == 1
 
 
+# ── 管：改名 / 置顶 / 归档 / 删除（回收站）────────────────────────────────
+
+def test_rename_is_ours_only_and_shows_in_the_list(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+
+    assert es.update_for_agent("Sindri", "qoder", "aaaaaaaa-1111", {"title": "课本那一节"})["ok"] is True
+
+    rows = {item["id"]: item for item in es.sessions_for_agent("Sindri")["sessions"]}
+    assert rows["aaaaaaaa-1111"]["title"] == "课本那一节"
+    # 原文件一个字没动：我们只在账本里改名
+    assert "先读 README" in (homes.qoder / "projects" / es.project_key(r"D:\Projects\Sindri") / "aaaaaaaa-1111.jsonl").read_text(encoding="utf-8")
+
+
+def test_pinned_goes_first_and_archived_leaves_the_active_list(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="旧的一条", reply="好",
+                  updated="2026-10-01T09:00:00.000Z")
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "bbbbbbbb-2222", prompt="新的一条", reply="好",
+                  updated="2026-10-27T09:00:00.000Z")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+
+    es.update_for_agent("Sindri", "qoder", "aaaaaaaa-1111", {"pinned": True})
+    es.update_for_agent("Sindri", "qoder", "bbbbbbbb-2222", {"archived": True})
+
+    rows = es.sessions_for_agent("Sindri")["sessions"]
+    assert rows[0]["id"] == "aaaaaaaa-1111" and rows[0]["pinned"] is True
+    assert [row["id"] for row in rows] == ["aaaaaaaa-1111", "bbbbbbbb-2222"]
+    assert rows[1]["archived"] is True
+
+
+def test_delete_moves_the_session_to_trash_and_restore_brings_it_back(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Sindri", "aaaaaaaa-1111", prompt="先读 README", reply="读完了")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    directory = homes.qoder / "projects" / es.project_key(r"D:\Projects\Sindri")
+
+    out = es.delete_for_agent("Sindri", "qoder", "aaaaaaaa-1111")
+
+    assert out["ok"] is True
+    assert not (directory / "aaaaaaaa-1111.jsonl").exists()
+    trash = list((homes.home / "external_sessions" / "trash" / "qoder").rglob("aaaaaaaa-1111.jsonl"))
+    assert trash and trash[0].read_text(encoding="utf-8")
+    assert es.sessions_for_agent("Sindri")["sessions"] == []
+
+    assert es.restore_for_agent("Sindri", "qoder", "aaaaaaaa-1111")["ok"] is True
+    assert (directory / "aaaaaaaa-1111.jsonl").exists()
+    assert [row["id"] for row in es.sessions_for_agent("Sindri")["sessions"]] == ["aaaaaaaa-1111"]
+
+
+def test_a_database_vendor_is_hidden_not_moved(homes, monkeypatch):
+    marvis_session(homes.marvis, "conv_00b52c85", title="Computor", prompt="Computor", reply="嗯")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    es.mark_for_agent("Sindri", [{"vendor": "marvis", "id": "conv_00b52c85", "related": True}])
+    db = homes.marvis / "database" / "data.db"
+    before = db.read_bytes()
+
+    out = es.delete_for_agent("Sindri", "marvis", "conv_00b52c85")
+
+    assert out["ok"] is True and out["data"]["deleted"]["hid_only"] is True
+    assert db.read_bytes() == before, "数据库那家的库一个字节都不许动"
+    assert es.sessions_for_agent("Sindri")["sessions"] == []
+
+
+def test_a_session_outside_the_agents_scope_cannot_be_deleted(homes, monkeypatch):
+    qoder_session(homes.qoder, r"D:\Projects\Other", "cccccccc-3333", prompt="别处", reply="好")
+    stub_registry(monkeypatch, "Sindri", r"D:\Projects\Sindri")
+    es.mark_for_agent("Sindri", [{"vendor": "qoder", "id": "cccccccc-3333", "related": False}])
+
+    assert es.delete_for_agent("Sindri", "qoder", "cccccccc-3333")["ok"] is False
+
+
 def test_an_unknown_agent_gets_a_reason_not_an_empty_shell(homes):
     payload = es.sessions_for_agent("Nobody")
 

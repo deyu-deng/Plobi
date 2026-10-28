@@ -6,9 +6,12 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
 import {
+  deleteExternalSession,
   getAgentExternalSessions,
   getExternalTranscript,
   groupByVendor,
+  patchExternalSession,
+  restoreExternalSession,
   sendExternalMessage,
   titleOf,
   vendorLabel,
@@ -18,10 +21,11 @@ import type { ExternalMessage, ExternalSession, ExternalSessionsData } from './e
 
 /**
  * 左栏「外包给」下方那一组：这台机器上各家 AI 软件里**跟这个 Agent 有关**的会话
- * （WP-EXTERNAL-SESSIONS）。应用图标 → 展开 → 点一条在 Plobi 里读、在这里说。
+ * （WP-EXTERNAL-SESSIONS）。应用图标 → 展开 → 点一条在 Plobi 里读、在这里说、改名/归档/删除。
  *
- * 只显示 `related === true` 的；`null` 是「L2 还没判断」，收在下面那颗开关里；
- * `false` 是 L2 标过无关的，不出现。只在 Plobi 这一侧成立：Qoder 的窗口不跟着变。
+ * 只显示 `related === true` 的；`null` 是「L2 还没判断」，收在开关里；`false` 不出现。
+ * 归档的折在底部；删除＝搬进本机回收站（可恢复）。改名只在我们这一侧生效——
+ * 那家软件自己的界面不跟着变（它的索引是另一套，实测如此）。
  */
 export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
   const { t } = useI18n()
@@ -29,7 +33,11 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
   const [data, setData] = useState<null | ExternalSessionsData>(null)
   const [open, setOpen] = useState<null | ExternalSession>(null)
   const [openVendor, setOpenVendor] = useState<null | string>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [showUnknown, setShowUnknown] = useState(false)
+  const [notice, setNotice] = useState<null | { id: string, vendor: string }>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const reload = () => setReloadKey(value => value + 1)
 
   useEffect(() => {
     let cancelled = false
@@ -38,6 +46,7 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
       if (first) {
         setData(null)
       }
+
       getAgentExternalSessions(agentId)
         .then(body => {
           if (!cancelled) {
@@ -53,20 +62,36 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
     }
 
     load(true)
-    // L2 在聊天里标完 related，这一格要自己收窄——不用再点一次。
+    // L2 在聊天里标完/改了名，这一格要自己收窄——不用再点一次。
     const timer = setInterval(() => load(false), 5000)
 
     return () => {
       cancelled = true
       clearInterval(timer)
     }
-  }, [agentId, c.externalSessionsLoadFailed])
+  }, [agentId, c.externalSessionsLoadFailed, reloadKey])
 
-  const related = data?.sessions.filter(session => session.related === true) ?? []
-  const unknown = data?.sessions.filter(session => session.related === null) ?? []
+  const all = data?.sessions ?? []
+  const active = all.filter(session => !session.archived)
+  const archived = all.filter(session => session.archived)
+  const related = active.filter(session => session.related === true)
+  const unknown = active.filter(session => session.related === null)
   // 一条相关的都没有时，先把「待判断」摆出来（按应用分组）——否则第一次打开只是一句空话。
   const visible = showUnknown || related.length === 0 ? [...related, ...unknown] : related
   const groups = groupByVendor(visible)
+
+  const restore = () => {
+    if (!notice) {
+      return
+    }
+
+    restoreExternalSession(agentId, notice.vendor, notice.id)
+      .then(() => {
+        setNotice(null)
+        reload()
+      })
+      .catch(() => undefined)
+  }
 
   return (
     <div className="flex flex-col gap-px">
@@ -83,7 +108,7 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
         </div>
       )}
 
-      {data !== null && visible.length === 0 && (
+      {data !== null && visible.length === 0 && archived.length === 0 && (
         <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
           {data.reason || c.externalSessionsEmpty}
         </div>
@@ -136,18 +161,71 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
         </button>
       )}
 
-      {open && <TranscriptSheet agentId={agentId} onClose={() => setOpen(null)} session={open} />}
+      {archived.length > 0 && (
+        <div className="flex flex-col gap-px">
+          <button
+            className="px-2 py-0.5 text-left text-[0.68rem] text-(--ui-text-quaternary) hover:text-(--ui-text-secondary)"
+            onClick={() => setShowArchived(value => !value)}
+            type="button"
+          >
+            {c.externalSessionsArchived} ({archived.length})
+          </button>
+          {showArchived &&
+            archived.map(session => (
+              <button
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1 pl-5 text-left hover:bg-(--ui-bg-secondary)"
+                key={`archived-${session.vendor}-${session.id}`}
+                onClick={() => setOpen(session)}
+                type="button"
+              >
+                <span className="min-w-0 flex-1 truncate text-[0.75rem] text-(--ui-text-tertiary)">
+                  {titleOf(session)}
+                </span>
+                <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
+                  {vendorLabel(session.vendor)}
+                </span>
+              </button>
+            ))}
+        </div>
+      )}
+
+      {notice && (
+        <div className="flex items-center gap-2 px-2 py-0.5 text-[0.68rem] text-(--ui-text-tertiary)">
+          <span className="min-w-0 flex-1 truncate">{c.externalSessionsDeleted}</span>
+          <button className="shrink-0 text-(--ui-accent) hover:underline" onClick={restore} type="button">
+            {c.externalSessionsRestore}
+          </button>
+        </div>
+      )}
+
+      {open && (
+        <TranscriptSheet
+          agentId={agentId}
+          onChanged={reload}
+          onClose={() => setOpen(null)}
+          onDeleted={session => {
+            setOpen(null)
+            setNotice({ id: session.id, vendor: session.vendor })
+            reload()
+          }}
+          session={open}
+        />
+      )}
     </div>
   )
 }
 
 function TranscriptSheet({
   agentId,
+  onChanged,
   onClose,
+  onDeleted,
   session
 }: {
   agentId: string
+  onChanged: () => void
   onClose: () => void
+  onDeleted: (session: ExternalSession) => void
   session: ExternalSession
 }) {
   const { t } = useI18n()
@@ -156,6 +234,9 @@ function TranscriptSheet({
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -199,11 +280,108 @@ function TranscriptSheet({
       .finally(() => setPending(false))
   }
 
+  const saveRename = () => {
+    const title = renameDraft.trim()
+
+    if (!title) {
+      return
+    }
+
+    patchExternalSession(agentId, session.vendor, session.id, { title })
+      .then(() => {
+        setRenaming(false)
+        onChanged()
+      })
+      .catch((reason: unknown) => setError(failureText(reason)))
+  }
+
+  const toggleArchive = () => {
+    patchExternalSession(agentId, session.vendor, session.id, { archived: !session.archived })
+      .then(() => {
+        onChanged()
+        onClose()
+      })
+      .catch((reason: unknown) => setError(failureText(reason)))
+  }
+
+  const remove = () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+
+      return
+    }
+
+    deleteExternalSession(agentId, session.vendor, session.id)
+      .then(() => onDeleted(session))
+      .catch((reason: unknown) => setError(failureText(reason)))
+  }
+
   return (
     <Dialog onOpenChange={next => { if (!next) {onClose()} }} open>
       <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
         <DialogHeader>
-          <DialogTitle className="truncate text-sm">{titleOf(session)}</DialogTitle>
+          {renaming ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                className="min-w-0 flex-1 rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1 text-sm outline-none focus:border-(--ui-stroke-secondary)"
+                onChange={event => setRenameDraft(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    saveRename()
+                  }
+
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    setRenaming(false)
+                  }
+                }}
+                value={renameDraft}
+              />
+              <button className="shrink-0 text-[0.75rem] text-(--ui-accent)" onClick={saveRename} type="button">
+                {c.externalSessionsSave}
+              </button>
+              <button
+                className="shrink-0 text-[0.75rem] text-(--ui-text-tertiary)"
+                onClick={() => setRenaming(false)}
+                type="button"
+              >
+                {c.externalSessionsCancel}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <DialogTitle className="min-w-0 flex-1 truncate text-sm">{titleOf(session)}</DialogTitle>
+              <button
+                className="shrink-0 text-[0.72rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
+                onClick={() => {
+                  setRenameDraft(titleOf(session))
+                  setRenaming(true)
+                }}
+                type="button"
+              >
+                {c.externalSessionsRename}
+              </button>
+              <button
+                className="shrink-0 text-[0.72rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
+                onClick={toggleArchive}
+                type="button"
+              >
+                {session.archived ? c.externalSessionsUnarchive : c.externalSessionsArchive}
+              </button>
+              <button
+                className={cn(
+                  'shrink-0 text-[0.72rem]',
+                  confirmDelete ? 'font-semibold text-(--ui-red)' : 'text-(--ui-text-tertiary) hover:text-(--ui-text)'
+                )}
+                onClick={remove}
+                type="button"
+              >
+                {confirmDelete ? c.externalSessionsDeleteConfirm : c.externalSessionsDelete}
+              </button>
+            </div>
+          )}
         </DialogHeader>
 
         <div className="flex min-h-[220px] flex-1 flex-col gap-2 overflow-y-auto py-1">

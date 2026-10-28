@@ -576,6 +576,183 @@ def session_sources() -> list[dict[str, Any]]:
     ]
 
 
+# ── Plobi 侧的会话账本：改名 / 置顶 / 归档 / 删除（回收站）────────────────
+#
+# 用户 10-28 拍：L2 要像他一样「支配」这些对话。账本只放**我们这一侧**——
+# Qoder 桌面 App 的索引是另一套（实测不认 CLI 写的会话），所以名字只在 Plobi 里生效。
+# 删除是**搬家**，永远不 rm：搬到 `$PLOBI_HOME/external_sessions/trash/…`，账本记原路径，可恢复。
+
+INDEX_VERSION = 1
+
+
+def index_file() -> Path:
+    from plobi_constants import get_plobi_home
+
+    return get_plobi_home() / "external_sessions" / "index.json"
+
+
+def _load_index() -> dict[str, Any]:
+    try:
+        payload = json.loads(index_file().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _save_index(payload: dict[str, Any]) -> bool:
+    path = index_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        return False
+
+    return True
+
+
+def _agent_index(payload: dict[str, Any], agent: str) -> dict[str, Any]:
+    entries = payload.get(agent)
+    if not isinstance(entries, dict):
+        entries = {}
+        payload[agent] = entries
+
+    return entries
+
+
+def _key(vendor: str, session_id: str) -> str:
+    return f"{vendor}:{session_id}"
+
+
+def _entry_for_session(entries: dict[str, Any], vendor: str, session_id: str) -> dict[str, Any]:
+    entry = entries.get(_key(vendor, session_id))
+    return entry if isinstance(entry, dict) else {}
+
+
+def update_entry(
+    agent: str, vendor: str, session_id: str, *,
+    title: Optional[str] = None, pinned: Optional[bool] = None, archived: Optional[bool] = None,
+) -> dict[str, Any]:
+    """改名 / 置顶 / 归档。只记这一家这一条，别处不动。"""
+    if vendor not in (VENDOR_QODER, VENDOR_CODEBUDDY, VENDOR_MARVIS, VENDOR_CURSOR, VENDOR_AGY):
+        return {"ok": False, "status": 400, "error": "不认识这家软件"}
+    if not SESSION_ID_RE.match(str(session_id or "")):
+        return {"ok": False, "status": 400, "error": "会话号不是可执行形状"}
+    payload = _load_index()
+    entries = _agent_index(payload, agent)
+    entry = dict(_entry_for_session(entries, vendor, session_id))
+    if title is not None:
+        entry["title"] = str(title).strip()[:120]
+    if pinned is not None:
+        entry["pinned"] = bool(pinned)
+    if archived is not None:
+        entry["archived"] = bool(archived)
+    entries[_key(vendor, session_id)] = entry
+    if not _save_index(payload):
+        return {"ok": False, "status": 500, "error": "账本写不进去（磁盘只读？）"}
+
+    return {"ok": True, "data": {"entry": entry}}
+
+
+def _vendor_root(vendor: str) -> Path:
+    return {
+        VENDOR_QODER: qoder_root(),
+        VENDOR_CODEBUDDY: codebuddy_root(),
+        VENDOR_AGY: agy_brain_root(),
+    }.get(vendor, Path(""))
+
+
+def _session_payload_paths(vendor: str, session_id: str) -> list[Path]:
+    """这一条会话在本机上的落盘物：Qoder/CodeBuddy 是 jsonl(+state 目录)，agy 是 brain 目录。"""
+    paths: list[Path] = []
+    if vendor in (VENDOR_QODER, VENDOR_CODEBUDDY):
+        root = _vendor_root(vendor)
+        if not root.is_dir():
+            return []
+        for jsonl in root.glob(f"*/{session_id}.jsonl"):
+            paths.append(jsonl)
+            state = jsonl.parent / session_id
+            if state.is_dir():
+                paths.append(state)
+    elif vendor == VENDOR_AGY:
+        brain = agy_brain_root() / session_id
+        if brain.is_dir():
+            paths.append(brain)
+
+    return paths
+
+
+def delete_entry(agent: str, vendor: str, session_id: str) -> dict[str, Any]:
+    """删除＝搬到回收站。数据库那两家（Marvis/Cursor）只隐藏，不动它们的库。"""
+    if vendor not in (VENDOR_QODER, VENDOR_CODEBUDDY, VENDOR_MARVIS, VENDOR_CURSOR, VENDOR_AGY):
+        return {"ok": False, "status": 400, "error": "不认识这家软件"}
+    if not SESSION_ID_RE.match(str(session_id or "")):
+        return {"ok": False, "status": 400, "error": "会话号不是可执行形状"}
+    if _locate(vendor, session_id) is None:
+        return {"ok": False, "status": 404, "error": "没发现这条会话"}
+
+    payload = _load_index()
+    entries = _agent_index(payload, agent)
+    paths = _session_payload_paths(vendor, session_id)
+    moved: list[dict[str, str]] = []
+    trash_dir: Optional[Path] = None
+    if paths:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        trash_dir = index_file().parent / "trash" / vendor / f"{session_id}-{stamp}"
+        try:
+            trash_dir.mkdir(parents=True, exist_ok=True)
+            root = _vendor_root(vendor).resolve()
+            for path in paths:
+                resolved = path.resolve()
+                if root not in resolved.parents and resolved != root:
+                    return {"ok": False, "status": 400, "error": "目标不在那家软件的目录里，拒绝搬"}
+                target = trash_dir / resolved.name
+                os.replace(resolved, target)
+                moved.append({"from": str(path), "to": str(target)})
+        except OSError as exc:
+            return {"ok": False, "status": 500, "error": f"搬去回收站失败：{exc}"}
+
+    entry = dict(_entry_for_session(entries, vendor, session_id))
+    entry["deleted"] = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "moved": moved,
+        "trash": str(trash_dir) if trash_dir else "",
+        "hid_only": not paths,
+    }
+    entries[_key(vendor, session_id)] = entry
+    if not _save_index(payload):
+        return {"ok": False, "status": 500, "error": "账本写不进去（磁盘只读？）"}
+
+    return {"ok": True, "data": {"deleted": entry["deleted"]}}
+
+
+def restore_entry(agent: str, vendor: str, session_id: str) -> dict[str, Any]:
+    payload = _load_index()
+    entries = _agent_index(payload, agent)
+    entry = dict(_entry_for_session(entries, vendor, session_id))
+    deleted = entry.get("deleted")
+    if not isinstance(deleted, dict):
+        return {"ok": False, "status": 409, "error": "账本里没有这一条的删除记录"}
+    for item in deleted.get("moved") or []:
+        if not isinstance(item, dict):
+            continue
+        src = Path(str(item.get("to") or ""))
+        dst = Path(str(item.get("from") or ""))
+        try:
+            if src.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(src, dst)
+        except OSError as exc:
+            return {"ok": False, "status": 500, "error": f"搬回来失败：{exc}"}
+    entry.pop("deleted", None)
+    entries[_key(vendor, session_id)] = entry
+    if not _save_index(payload):
+        return {"ok": False, "status": 500, "error": "账本写不进去（磁盘只读？）"}
+
+    return {"ok": True, "data": {"entry": entry}}
+
+
 # ── L2 的归属过滤 ─────────────────────────────────────────────────────────
 
 def _marks_file() -> Path:
@@ -686,13 +863,27 @@ def sessions_for_agent(agent_name: str) -> dict[str, Any]:
         return {"projects": [], "reason": f"名册里没有 {agent_name}", "sessions": [], "sources": session_sources()}
 
     marks = load_marks(entry.name if hasattr(entry, "name") else agent_name)
+    agent_key = entry.name if hasattr(entry, "name") else agent_name
+    ledger = _agent_index(_load_index(), agent_key)
     sessions = []
     for session in all_sessions():
+        record = _entry_for_session(ledger, session["vendor"], session["id"])
+        if isinstance(record.get("deleted"), dict):
+            # 删掉的是**读数**：它还在盘上（或只在账本里藏着），但这一屏不再列。
+            continue
         related, source = _related(entry, session, marks)
-        sessions.append({**session, "related": related, "related_source": source})
-    # 先按时间倒序，再按档位稳定排序：同一档里仍然是新的在前。
+        if isinstance(record.get("title"), str) and record["title"].strip():
+            session = {**session, "title": record["title"].strip()}
+        sessions.append({
+            **session,
+            "archived": bool(record.get("archived")),
+            "pinned": bool(record.get("pinned")),
+            "related": related,
+            "related_source": source,
+        })
+    # 先按时间倒序，再按「置顶 → 档位」稳定排序：同一档里仍然是新的在前。
     sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
-    sessions.sort(key=lambda item: {True: 0, None: 1, False: 2}[item["related"]])
+    sessions.sort(key=lambda item: (0 if item.get("pinned") else 1, {True: 0, None: 1, False: 2}[item["related"]]))
 
     return {
         "projects": _project_paths(entry),
@@ -903,3 +1094,25 @@ def mark_for_agent(agent_name: str, items: Iterable[dict[str, Any]]) -> dict[str
     written = mark_sessions(entry.name if hasattr(entry, "name") else agent_name, items)
 
     return {"ok": True, "data": {"written": written}}
+
+def update_for_agent(agent_name: str, vendor: str, session_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    if not _in_agent_scope(agent_name, vendor, session_id):
+        return {"ok": False, "status": 404, "error": "这条会话不在这个 Agent 的名单里"}
+
+    return update_entry(agent_name, vendor, session_id,
+                        title=fields.get("title"), pinned=fields.get("pinned"),
+                        archived=fields.get("archived"))
+
+
+def delete_for_agent(agent_name: str, vendor: str, session_id: str) -> dict[str, Any]:
+    if not _in_agent_scope(agent_name, vendor, session_id):
+        return {"ok": False, "status": 404, "error": "这条会话不在这个 Agent 的名单里"}
+
+    return delete_entry(agent_name, vendor, session_id)
+
+
+def restore_for_agent(agent_name: str, vendor: str, session_id: str) -> dict[str, Any]:
+    if _entry_for(agent_name) is None:
+        return {"ok": False, "status": 404, "error": f"名册里没有 {agent_name}"}
+
+    return restore_entry(agent_name, vendor, session_id)

@@ -6,7 +6,9 @@
  */
 
 export type ExternalSession = {
+  archived?: boolean
   id: string
+  pinned?: boolean
   project: string
   /** `true` 相关 / `null` 待判断 / `false` L2 标过无关（面板不显示）。 */
   related: boolean | null
@@ -151,4 +153,38 @@ export function vendorLabel(vendor: string): string {
   }
 
   return known[vendor] ?? vendor
+}
+
+export function patchExternalSession(
+  agentId: string,
+  vendor: string,
+  sessionId: string,
+  fields: { archived?: boolean, pinned?: boolean, title?: string }
+): Promise<{ data: { entry?: Record<string, unknown> }, ok: boolean }> {
+  return api(
+    `/api/agents/${encodeURIComponent(agentId)}/external-sessions/${encodeURIComponent(vendor)}/${encodeURIComponent(sessionId)}`,
+    { body: fields, method: 'PATCH' }
+  )
+}
+
+export function deleteExternalSession(
+  agentId: string,
+  vendor: string,
+  sessionId: string
+): Promise<{ data: Record<string, unknown>, ok: boolean }> {
+  return api(
+    `/api/agents/${encodeURIComponent(agentId)}/external-sessions/${encodeURIComponent(vendor)}/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' }
+  )
+}
+
+export function restoreExternalSession(
+  agentId: string,
+  vendor: string,
+  sessionId: string
+): Promise<{ data: Record<string, unknown>, ok: boolean }> {
+  return api(
+    `/api/agents/${encodeURIComponent(agentId)}/external-sessions/${encodeURIComponent(vendor)}/${encodeURIComponent(sessionId)}/restore`,
+    { method: 'POST' }
+  )
 }

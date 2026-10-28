@@ -196,4 +196,65 @@ describe('ExternalSessionsPanel', () => {
     expect(screen.queryByPlaceholderText('Say something to it…')).toBeNull()
   })
 
+  it('归档的收在「已归档」里，不在主列表', async () => {
+    api.mockImplementation(({ path }: { path: string }) => {
+      if (path.endsWith('/external-sessions')) {
+        return Promise.resolve({ ok: true, data: { projects: [], reason: '', sessions: [
+          { ...LIST.data.sessions[0], id: 'a1', title: '活着的一条', related: true },
+          { ...LIST.data.sessions[0], id: 'a2', title: '归档的一条', related: true, archived: true }
+        ] } })
+      }
+
+      return Promise.resolve(TRANSCRIPT)
+    })
+    render(<ExternalSessionsPanel agentId="Sindri" />)
+
+    expect(await screen.findByText('related 1 · Unjudged 0')).toBeTruthy()
+    expect(screen.queryByText('归档的一条')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Archived \(1\)/ }))
+    expect(await screen.findByText('归档的一条')).toBeTruthy()
+  })
+
+  it('改名走 PATCH：只改我们这一侧', async () => {
+    route()
+    render(<ExternalSessionsPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
+    await screen.findByText('读完了，标题是 Sindri')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.change(screen.getByDisplayValue(/先读 README/), { target: { value: '新名字' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      body: { title: '新名字' },
+      method: 'PATCH',
+      path: '/api/agents/Sindri/external-sessions/qoder/aaaaaaaa-1111'
+    })))
+  })
+
+  it('删除先要确认，删完说「移到回收站」并给恢复', async () => {
+    route()
+    render(<ExternalSessionsPanel agentId="Sindri" />)
+    fireEvent.click(await screen.findByRole('button', { name: /Qoder/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /先读 README/ }))
+    await screen.findByText('读完了，标题是 Sindri')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm?' }))
+
+    expect(await screen.findByText('Moved to trash')).toBeTruthy()
+    expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'DELETE',
+      path: '/api/agents/Sindri/external-sessions/qoder/aaaaaaaa-1111'
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(api).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      path: expect.stringContaining('/aaaaaaaa-1111/restore')
+    })))
+  })
+
 })
