@@ -1525,6 +1525,19 @@ export const ja = defineLocale({
   },
 
 
+  mindPending: {
+    label: '承認待ち',
+    count: count => `${count} 件 承認待ち`,
+    open: '承認待ちの一覧を開く',
+    title: '承認待ち',
+    desc: 'これらは Brain に書き込もうとしています。',
+    approve: '承認',
+    reject: '却下',
+    empty: '待っているものはありません',
+    expired: '期限切れ',
+    gateOff: 'Brain への書き込みは事前確認不要です',
+    failed: '適用されませんでした',
+  },
   agenda: {
     close: '予定を閉じる',
     title: '予定',
@@ -3135,6 +3148,8 @@ export const ja = defineLocale({
       model_rejected: 'この前 2 回の依頼で、そのモデルは返されませんでした',
       // 10-28 実測：Free プールは HTTP では 429。有料プランかキーがないとターンを返せません。
       no_subscription: 'このチャネルは有料プランか API キーがないと使えません',
+      no_proxy: 'VPN ノードが未設定のため、このチャネルには接続できません',
+      proxy_unreachable: 'VPN ノードが応答していません。起動してから再試行してください',
       // ハブ側の理由ではありません。ユーザーが自分で切断した状態なので、そのアプリ
       // でもこのマシンでもなく、「あなたが切りました」とそのまま伝えます。
       disconnected: 'あなたが切りました',
@@ -3236,6 +3251,12 @@ export const ja = defineLocale({
       copied: 'コピーしました',
       openExternal: 'システムアプリで開く',
       archiveEmpty: '空のアーカイブ',
+      highlight: 'ハイライト',
+      note: 'メモ',
+      saveMarks: 'PDF に書き込む',
+      restoreOriginal: '元に戻す',
+      marksSaved: 'ファイルに書き込みました',
+      notePlaceholder: 'メモの内容',
       truncated: (rows, cols) => `先頭 ${rows} 行 × ${cols} 列のみ表示`,
       sheet: 'シート',
       legacyNote: '旧 .xls は値のみのプレビューです。色と結合を保つには .xlsx で保存してください。',

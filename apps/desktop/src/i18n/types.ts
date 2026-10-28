@@ -1390,6 +1390,19 @@ export interface Translations {
     nameLabel: string
   },
 
+  mindPending: {
+    label: string
+    count: (count: number) => string
+    open: string
+    title: string
+    desc: string
+    approve: string
+    reject: string
+    empty: string
+    expired: string
+    gateOff: string
+    failed: string
+  }
   agenda: {
     close: string
     title: string
@@ -2810,6 +2823,8 @@ export interface Translations {
       not_offered: string
       model_rejected: string
       no_subscription: string
+      no_proxy: string
+      proxy_unreachable: string
       disconnected: string
       unknown: (reason: string) => string
     }
@@ -2913,6 +2928,12 @@ export interface Translations {
       copied: string
       openExternal: string
       archiveEmpty: string
+      highlight: string
+      note: string
+      saveMarks: string
+      restoreOriginal: string
+      marksSaved: string
+      notePlaceholder: string
       truncated: (rows: number, cols: number) => string
       sheet: string
       legacyNote: string

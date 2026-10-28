@@ -349,6 +349,9 @@ function DesktopQuotasView() {
     model_rejected: t.desktop.quotaReason.model_rejected,
     // Measured: the Free tier refuses HTTP turns, so the leg is not offered at all.
     no_subscription: t.desktop.quotaReason.no_subscription,
+    // Settings → VPN owns the node; these two say why a Google leg cannot run.
+    no_proxy: t.desktop.quotaReason.no_proxy,
+    proxy_unreachable: t.desktop.quotaReason.proxy_unreachable,
     no_desktop_credential: t.desktop.quotaReason.no_desktop_credential,
     no_tools: t.desktop.quotaReason.no_tools,
     not_offered: t.desktop.quotaReason.not_offered

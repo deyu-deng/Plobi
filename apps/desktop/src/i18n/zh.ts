@@ -1806,6 +1806,19 @@ export const zh: Translations = {
     nameLabel: '名称',
   },
 
+  mindPending: {
+    label: '待批',
+    count: count => `${count} 条待批`,
+    open: '打开等你点头的那些',
+    title: '等你点头',
+    desc: '这些要写进脑里。',
+    approve: '点头',
+    reject: '驳回',
+    empty: '没有要点头的',
+    expired: '已过期',
+    gateOff: '现在写脑不用先点头',
+    failed: '没批成',
+  },
   agenda: {
     close: '关闭日程',
     title: '日程',
@@ -3383,6 +3396,9 @@ export const zh: Translations = {
       model_rejected: '最近两次向它要这个模型，都没给回来',
       // 10-28 实测：Free 池在 HTTP 上直接 429，只有付费订阅（或 key）才服务得了回合。
       no_subscription: '这条渠道要付费订阅或一个 API key 才能用',
+      // 设置→VPN 那个节点没配或没起来；两者都不是凭据问题。
+      no_proxy: '还没配 VPN 节点，这条渠道连不上',
+      proxy_unreachable: 'VPN 节点没应答——把它起起来再试',
       // 不是网关那边的理由：是你自己按了断开连接，所以这里不赖那个软件或这台机器。
       disconnected: '你把它关掉了',
       unknown: reason => `不可用（${reason}）`
@@ -3487,6 +3503,12 @@ export const zh: Translations = {
       copied: '已复制',
       openExternal: '用系统应用打开',
       archiveEmpty: '空压缩包',
+      highlight: '高亮',
+      note: '批注',
+      saveMarks: '写入 PDF',
+      restoreOriginal: '还原',
+      marksSaved: '已写入文件',
+      notePlaceholder: '批注内容',
       truncated: (rows, cols) => `只显示前 ${rows} 行 × ${cols} 列`,
       sheet: '工作表',
       legacyNote: '老 .xls 只读值；另存为 .xlsx 可保留颜色和合并单元格。',

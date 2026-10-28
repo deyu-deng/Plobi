@@ -1638,6 +1638,19 @@ export const en: Translations = {
     nameLabel: 'Name',
   },
 
+  mindPending: {
+    label: 'To approve',
+    count: count => `${count} to approve`,
+    open: 'Open items awaiting your nod',
+    title: 'Awaiting your nod',
+    desc: 'These would be written into the brain.',
+    approve: 'Approve',
+    reject: 'Reject',
+    empty: 'Nothing waiting',
+    expired: 'Expired',
+    gateOff: 'Writes to the brain no longer ask first',
+    failed: 'Not applied',
+  },
   agenda: {
     close: 'Close agenda',
     title: 'Agenda',
@@ -3250,6 +3263,9 @@ export const en: Translations = {
       // Measured 2026-10-28: the Free pool answers 429 over HTTP; only a paid plan (or a
       // key) can serve a turn. Tooltip only — the row itself just is not offered.
       no_subscription: 'this channel needs a paid plan or an API key before Plobi can use it',
+      // The node configured in Settings → VPN is missing or down; both are not credential problems.
+      no_proxy: 'no VPN node is configured yet, so this channel cannot be reached',
+      proxy_unreachable: 'the VPN node is not answering — start it, then try again',
       // Not a hub reason: the user pressed Disconnect themselves, so this says so
       // rather than blaming the app or the machine.
       disconnected: 'you turned it off',
@@ -3355,6 +3371,12 @@ export const en: Translations = {
       copied: 'Copied',
       openExternal: 'Open with system app',
       archiveEmpty: 'This archive is empty',
+      highlight: 'Highlight',
+      note: 'Note',
+      saveMarks: 'Write to PDF',
+      restoreOriginal: 'Restore',
+      marksSaved: 'Written to file',
+      notePlaceholder: 'Note text',
       truncated: (rows, cols) => `Showing the first ${rows} rows × ${cols} columns`,
       sheet: 'Sheet',
       legacyNote: 'Old .xls previews values only; save as .xlsx to keep colors and merged cells.',

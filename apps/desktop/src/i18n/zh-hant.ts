@@ -1479,6 +1479,19 @@ export const zhHant = defineLocale({
   },
 
 
+  mindPending: {
+    label: '待批',
+    count: count => `${count} 則待批`,
+    open: '打開等你點頭的那些',
+    title: '等你點頭',
+    desc: '這些要寫進腦裡。',
+    approve: '點頭',
+    reject: '駁回',
+    empty: '沒有要你點頭的',
+    expired: '已逾期',
+    gateOff: '現在寫腦不用先點頭',
+    failed: '沒批成',
+  },
   agenda: {
     close: '關閉行程',
     title: '行程',
@@ -3036,6 +3049,8 @@ export const zhHant = defineLocale({
       model_rejected: '最近兩次向它要這個模型，都沒給回來',
       // 10-28 實測：Free 池在 HTTP 上直接 429，只有付費訂閱（或 key）才服務得了回合。
       no_subscription: '這條通道要付費訂閱或一個 API key 才能用',
+      no_proxy: '還沒設定 VPN 節點，這條通道連不上',
+      proxy_unreachable: 'VPN 節點沒有回應——把它啟動後再試',
       // 不是網關那邊的理由：是你自己按了中斷連線，所以這裡不賴那個軟體或這台機器。
       disconnected: '你把它關掉了',
       unknown: reason => `不可用（${reason}）`
@@ -3136,6 +3151,12 @@ export const zhHant = defineLocale({
       copied: '已複製',
       openExternal: '用系統應用程式開啟',
       archiveEmpty: '空壓縮檔',
+      highlight: '高亮',
+      note: '批註',
+      saveMarks: '寫入 PDF',
+      restoreOriginal: '還原',
+      marksSaved: '已寫入檔案',
+      notePlaceholder: '批註內容',
       truncated: (rows, cols) => `只顯示前 ${rows} 行 × ${cols} 列`,
       sheet: '工作表',
       legacyNote: '舊 .xls 唯讀值；另存為 .xlsx 可保留顏色與合併儲存格。',
