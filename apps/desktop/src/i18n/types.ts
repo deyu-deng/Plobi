@@ -1603,6 +1603,16 @@ export interface Translations {
     externalSessionsHideUnknown: string
     externalSessionsReadOnly: string
     externalSessionsRelated: string
+    externalSessionsArchived: string
+    externalSessionsRename: string
+    externalSessionsSave: string
+    externalSessionsCancel: string
+    externalSessionsArchive: string
+    externalSessionsUnarchive: string
+    externalSessionsDelete: string
+    externalSessionsDeleteConfirm: string
+    externalSessionsDeleted: string
+    externalSessionsRestore: string
     offloadsBackToList: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string
