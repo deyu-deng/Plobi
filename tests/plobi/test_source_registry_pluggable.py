@@ -107,14 +107,13 @@ class TestCapabilitiesAreDeclaredNotGuessed:
     def test_unmeasured_bit_is_not_silently_false(self) -> None:
         """sources-shape §3 与网关反着来的那一条：兜底猜一个值＝静默按某种口径跑。
 
-        原先这一格举的是 ``zju.history_backfill``，再往后举的是 ``zju.authoritative_replace``
-        ——两样都在 10-20 被实测掉了（后者依据是 `plobi-source-collect` 五轮正文，注记写在
-        `zju/__init__.py` 里）。举过期例子会把这条测试变成一张旧照片，所以现在举**真的还没测**的那位：
-        钉钉只做文本收发，媒体那一格从没碰过。
+        原先这一格举的是钉钉的 `supports_media`——**10-28 它被实测掉了**（`im_image_info` 索引 3 条、
+        三条本机都在盘上，取回 3 件），举过期例子等于把这条守卫改成旧照片。
+        现在举真的还没测的那位：幕布那一族只量过大纲正文，媒体那一格从没碰过（邮箱五家同一格也是 `None`）。
         """
-        assert registry.capability("dingtalk", "supports_media") is None
+        assert registry.capability("mubu", "supports_media") is None
         with pytest.raises(registry.CapabilityUnmeasured):
-            registry.require("dingtalk", "supports_media")
+            registry.require("mubu", "supports_media")
 
     def test_registered_but_not_collecting_is_visible_as_such(self) -> None:
         """钉钉在词表里、但没东西在采它——登记归口 ≠ 假数据占位。
@@ -125,8 +124,9 @@ class TestCapabilitiesAreDeclaredNotGuessed:
         assert "dingtalk" in store.allowed_sources()
         assert "dingtalk" not in registry.collecting_sources()
         assert registry.spec("dingtalk").collecting is False
-        # 未实测的能力位仍然是 `None`（不许因为"开始采了"就顺手填成 False）：
-        assert registry.spec("dingtalk").capabilities["supports_media"] is None
+        # 钉钉那枚能力位现在量到了 `True`（10-28：`im_image_info` 索引 3 条、三条本机都在盘上、取回 3 件）；
+        # 「没测就不许填」那条守卫换举幕布，见上一档。
+        assert registry.spec("dingtalk").capabilities["supports_media"] is True
 
 
 class TestTheSwitchIsWhatTheRoundReads:
