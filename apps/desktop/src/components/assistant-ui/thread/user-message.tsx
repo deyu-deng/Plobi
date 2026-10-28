@@ -171,12 +171,9 @@ export const UserMessage: FC<{
     s => (s.message.metadata?.custom ?? {}) as { askedBy?: unknown; kind?: unknown }
   )
   const askedBy = askedByBadge(customMeta.askedBy)
-  // 这一支只渲染「人」的消息：没有发起方记录（历史行被网关那条路剥掉了）也仍然是「我」。
-  const speakerLabel = !askedBy || askedBy.kind === 'me' || askedBy.kind === 'unrecorded'
-    ? copy.askedByMe
-    : askedBy.kind === 'secretary'
-      ? copy.askedBySecretary
-      : askedBy.raw
+  // 自己的消息**不写名字**（微信也不在自己的气泡上署名）；只有「总秘书代问」这类
+  // 第三方发起的才在气泡上方标一行，说明这不是主人亲手打的。
+  const showByline = Boolean(askedBy && (askedBy.kind === 'secretary' || askedBy.kind === 'other'))
   const askedByLabel = askedBy === null
     ? ''
     : askedBy.kind === 'me'
@@ -310,14 +307,14 @@ export const UserMessage: FC<{
           data-slot="aui_user-bubble-actions"
         >
           <div className="human-message-with-todos-wrapper flex min-w-0 flex-1 flex-col gap-0">
-            <div className="flex items-center gap-1">
-              {speakerLabel && (
+            <div className={cn('flex items-center gap-1', !showByline && 'h-0 overflow-visible')}>
+              {showByline && (
                 <span
                   className="px-1 pb-0.5 text-[10px] leading-none text-(--ui-text-tertiary)"
                   data-slot="aui_user-asked-by"
                   title={askedBy?.raw || undefined}
                 >
-                  {speakerLabel}
+                  {askedByLabel}
                 </span>
               )}
               <QuoteButton
@@ -430,15 +427,6 @@ export const UserMessage: FC<{
                 {copy.goForward}
               </BranchPickerPrimitive.Next>
             </BranchPickerPrimitive.Root>
-          </div>
-          {/* 与外部气泡同一套：右边一个圆头像，名字由上方那行 `askedByLabel` 承担。
-              主人自己也属于「外面」（裁定 201），所以形状必须一样。 */}
-          <div
-            aria-hidden
-            className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) text-[10px] font-medium text-(--ui-text-secondary)"
-            title={speakerLabel || undefined}
-          >
-            {(speakerLabel || '').trim().slice(0, 1).toUpperCase()}
           </div>
         </ActionBarPrimitive.Root>
       </StickyHumanMessageContainer>
