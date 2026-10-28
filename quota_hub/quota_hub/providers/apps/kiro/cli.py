@@ -23,9 +23,10 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 
-from ...base import Account
+from ...base import Account, Capabilities
 from ...cli import CliProvider, _strip_ansi
 
 _HELP_TIMEOUT = 20.0
@@ -60,6 +61,68 @@ def _models_from_payload(data) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+
+MCP_SERVER_NAME = "plobi"
+MCP_ENV_TTL = 300.0
+
+
+def parse_stream_json(stdout: str) -> dict:
+    """Kiro's `--output-format stream-json` answer (ACP-shaped JSONL) → what we need.
+
+    Tolerant by design: a run that prints no JSON Lines at all is the old text shape, and
+    we must not turn a format change into an empty answer.
+    """
+    chunks: list[str] = []
+    tool_events: list[dict] = []
+    credits = 0.0
+    context_percent = None
+    final_text = ""
+    stop_reason = ""
+    saw_json = False
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        saw_json = True
+        data = event.get("data") or {}
+        kind = event.get("type")
+        if kind == "sessionUpdate":
+            update = data.get("update") or {}
+            if update.get("sessionUpdate") == "agent_message_chunk":
+                text = ((update.get("content") or {}).get("text")) or ""
+                if text:
+                    chunks.append(text)
+            elif str(update.get("sessionUpdate") or "").startswith("tool_call"):
+                tool_events.append(update)
+        elif kind == "metadata":
+            if data.get("contextUsagePercentage") is not None:
+                context_percent = data["contextUsagePercentage"]
+            for row in data.get("meteringUsage") or []:
+                if isinstance(row, dict) and str(row.get("unit", "")).startswith("credit"):
+                    try:
+                        credits += float(row.get("value") or 0.0)
+                    except (TypeError, ValueError):
+                        pass
+        elif kind == "runFinished":
+            final_text = str(data.get("finalText") or "")
+            stop_reason = str(data.get("stopReason") or data.get("status") or "")
+    text = "".join(chunks) or final_text
+    return {
+        "text": text if saw_json else _clean_kiro_stdout(stdout),
+        "tool_events": tool_events,
+        "credits": credits,
+        "context_percent": context_percent,
+        "stop_reason": stop_reason,
+        "shaped": saw_json,
+    }
+
+
 class KiroCliProvider(CliProvider):
     name = "kiro_cli"
     display_name = "Kiro"
@@ -73,6 +136,8 @@ class KiroCliProvider(CliProvider):
         "chat",
         "--no-interactive",
         "--trust-all-tools",
+        "--output-format",
+        "stream-json",
         "{model_flag}",
         "{prompt}",
     ]
@@ -82,6 +147,8 @@ class KiroCliProvider(CliProvider):
     stream_from_chat = True
     served_models = ("kiro/default",)
     model_map = {"kiro/default": ""}
+    #: The last ACP-shaped run, for the quota fields and for the tool evidence.
+    last_run: dict = {}
     #: The CLI's own answer about its session. `kiro-cli login` refuses when already
     #: signed in, so a click cannot be the only way to learn the truth.
     whoami_argv = ("whoami",)
@@ -125,8 +192,81 @@ class KiroCliProvider(CliProvider):
         return live
 
     def parse_response(self, stdout: str, oai_req: dict) -> dict:
-        text = _clean_kiro_stdout(stdout)
-        return super().parse_response(text, oai_req)
+        parsed = parse_stream_json(stdout)
+        # The credit cost arrives in the same stream: this is the leg's only honest
+        # spend signal, so it goes on the account rather than being thrown away.
+        self.last_run = parsed
+        if self.accounts:
+            acc = self.accounts[0]
+            if parsed["credits"]:
+                acc.quota["credits_used_last_turn"] = round(parsed["credits"], 4)
+            if parsed["context_percent"] is not None:
+                acc.quota["context_percent"] = round(float(parsed["context_percent"]), 2)
+        return super().parse_response(parsed["text"], oai_req)
+
+    # --- the tool surface: registered, not claimed ----------------------
+    def capabilities(self) -> Capabilities:
+        caps = self.default_capabilities.as_dict()
+        # `tools` is only true once OUR MCP server is in Kiro's config, i.e. once a tool
+        # call can actually come back into Plobi. A text-only transport must stay out of
+        # the picker (the gate is the owner's ruling, not our preference).
+        caps["tools"] = bool(self.mcp_registered())
+        return Capabilities(**caps)
+
+    def mcp_config(self) -> tuple[str, list[str], dict]:
+        """The command Kiro should run to reach Plobi's own tool surface."""
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."))
+        home = os.environ.get("PLOBI_HOME", "").strip()
+        env = {"PYTHONPATH": repo_root}
+        if home:
+            env["PLOBI_HOME"] = home
+        return sys.executable, ["-m", "agent.transports.plobi_quota_mcp_server"], env
+
+    def mcp_registered(self, ttl: float = MCP_ENV_TTL) -> bool:
+        """Is `plobi` in Kiro's MCP config? Register once if the leg is allowed to."""
+        now = time.time()
+        cached = getattr(self, "_mcp_seen", None)
+        if cached is not None and now - cached[0] < ttl:
+            return cached[1]
+        wired = self._mcp_listed()
+        if not wired and self.config.get("register_mcp", True):
+            self._mcp_add()
+            wired = self._mcp_listed()
+        self._mcp_seen = (now, wired)
+        return wired
+
+    def _run_mcp(self, argv: list[str]) -> str:
+        binary = self.binary_path or shutil.which(self.binary)
+        if not binary:
+            return ""
+        try:
+            proc = subprocess.run(
+                [binary, *argv], capture_output=True, text=True, timeout=25.0,
+                env=dict(os.environ, **self.env_extra),
+            )
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return ""
+        return (proc.stdout or "") + (proc.stderr or "")
+
+    def _mcp_listed(self) -> bool:
+        out = self._run_mcp(["mcp", "list"])
+        if out.strip().startswith(("[", "{")):
+            try:
+                data = json.loads(out[out.strip().index(out.strip()[0]):])
+            except ValueError:
+                data = None
+            if data is not None:
+                return MCP_SERVER_NAME in json.dumps(data)
+        return re.search(r"(?<![A-Za-z0-9_])" + MCP_SERVER_NAME + r"(?![A-Za-z0-9_])", out) is not None
+
+    def _mcp_add(self) -> None:
+        command, args, env = self.mcp_config()
+        self._run_mcp([
+            "mcp", "add", "--name", MCP_SERVER_NAME, "--scope", "global", "--force",
+            "--command", command, "--args", json.dumps(args),
+            *[item for pair in env.items() for item in ("--env", f"{pair[0]}={pair[1]}")],
+        ])
+
 
     async def refresh_models(self, acc: Account) -> list[str] | None:
         """Ask the CLI for its own model list (``--list-models --format json``)."""
