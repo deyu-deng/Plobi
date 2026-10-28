@@ -12,6 +12,7 @@ import io
 import pytest
 
 from plobi.collectors import registry, sweep
+from plobi.collectors.base import Occurrence
 from plobi.collectors.registry import SourceSpec
 
 CAPS = {
@@ -83,26 +84,48 @@ class TestOneFailureDoesNotTakeTheOthers:
 
 
 class TestLandingSemantics:
-    def test_pull_only_source_without_a_mode_refuses_to_land(self, fake_sources):
-        """只有 `pull()` 的采集器，档位没人给 ⇒ 不落库、不替他猜（判据 7 那颗雷反过来）。"""
+    def test_pull_only_source_lands_in_the_pool_with_no_mode_to_ask_for(self, fake_sources, monkeypatch):
+        """只有 `pull()` 的采集器**照落**，而且**没有档位可问**。
+
+        WP-POOL（`specs/source-pool.md`，用户 10-19 原话「不要直接在日程库里面落
+        东西」）：这一层只往信息池写。「落库档位」是**日程**的概念（ADR-0009 的
+        待确认/已确认），池子不区分那两档——所以旧形状那道「没人给档位 ⇒ 不落库」
+        的闸（`no_apply_mode`）**整条删了**：留着它就是还留着「日程落库需要一个人
+        给档位」的形状，而池子不需要那个人。
+        """
+        calls: list = []
+        import plobi.pool as pool
+
+        monkeypatch.setattr(pool, "land", lambda items, **_kw: calls.append(len(items)) or {"created": len(items)})
         fake_sources(SourceSpec("p", CAPS, collecting=True, builder=lambda: _PullOnly([]), category="custom"))
 
         row = sweep.run_sweep(sources=("p",))["sources"][0]
 
-        assert row["ok"] is False and row["state"] == "no_apply_mode"
+        assert row["ok"] is True
+        assert row["state"] == "ready"
+        assert calls == [0]
 
-    def test_pull_only_source_lands_through_the_single_ingest_entry(self, fake_sources, monkeypatch):
-        """落库必须走 `ingest_occurrences` 那一条口（没有第二条路可以 fork pending 语义）。"""
-        calls: list = []
+    def test_pull_only_source_never_reaches_the_agenda_store(self, fake_sources, monkeypatch):
+        """**这一格是整篇规格的中心**：这一层不认识 `agenda.db`，所以那条路是断的。"""
         import plobi.collectors.ingest as ingest
+        import plobi.pool as pool
 
-        monkeypatch.setattr(ingest, "ingest_occurrences",
-                            lambda service, rows, apply=None: calls.append((len(rows), apply)) or {"created": 1})
-        fake_sources(SourceSpec("q", CAPS, collecting=True, builder=lambda: _PullOnly([1, 2]), category="custom"))
+        def boom(*_args, **_kwargs):
+            raise AssertionError("采集路径碰了日程库 —— 边界破了")
 
-        row = sweep.run_sweep(sources=("q",), apply_mode="pending")["sources"][0]
+        monkeypatch.setattr(ingest, "ingest_occurrences", boom)
+        monkeypatch.setattr(pool, "land", lambda items, **_kw: {"created": len(items)})
+        fake_sources(SourceSpec("q", CAPS, collecting=True, category="custom", builder=lambda: _PullOnly([1, 2])))
 
-        assert row["ok"] is True and calls == [(2, "pending")]
+        row = sweep.run_sweep(sources=("q",))["sources"][0]
+
+        assert row["ok"] is True and row["state"] == "ready"
+
+    def test_run_sweep_no_longer_takes_an_apply_mode(self):
+        """那个参数**从签名里删了**，不是留着不用——留着就等于还留着一扇门。"""
+        import inspect
+
+        assert "apply_mode" not in inspect.signature(sweep.run_sweep).parameters
 
 
 class TestVerdict:
@@ -299,4 +322,15 @@ class _PullOnly:
         self._rows = rows
 
     def pull(self, *, since=None):
-        return list(self._rows)
+        # WP-POOL：`pull()` 现在落的是**池**，而池要的是 `external_id` / `title` /
+        # `evidence` 那几格。旧形状只回原始行（`[1, 2]`），因为 `ingest_occurrences`
+        # 会去读 `occurrence.*`——现在换了个更挑的落点，所以这一档得给真形状。
+        return [
+            occurrence if isinstance(occurrence, Occurrence) else Occurrence(
+                source="q",
+                external_id=f"x{index}",
+                title=str(occurrence),
+                start_at="2026-10-19T08:00:00",
+            )
+            for index, occurrence in enumerate(self._rows)
+        ]
