@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
@@ -7,7 +8,7 @@ import { getAgentOffloads, offloadResume } from '@/plobi'
 
 import { externalHandleOf, groupRoundsByTarget, jumpTargetFor, roundFacts } from './agent-offloads'
 import type { OffloadRoundWithReply } from './agent-offloads'
-import { SidebarCount } from './chrome'
+import { SidebarCount, SidebarSectionHeader } from './chrome'
 import { ExpertPanel } from './expert-panel'
 import { ExternalSessionsPanel } from './external-sessions-panel'
 import { OffloadVendorAvatar } from './offload-vendor-icon'
@@ -26,7 +27,6 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
   const { t } = useI18n()
   const c = t.console
   const [rounds, setRounds] = useState<null | OffloadRoundWithReply[]>(null)
-  const [note, setNote] = useState('')
   const [openTarget, setOpenTarget] = useState<null | string>(null)
 
   useEffect(() => {
@@ -41,14 +41,12 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
         .then(body => {
           if (!cancelled) {
             setRounds(body?.data?.rounds ?? [])
-            setNote(body?.data?.unattributed_reason ?? '')
           }
         })
         .catch(() => {
           // 已经读到过的表不清空：一次抖动不该把"它外包过什么"抹成读取失败。
           if (!cancelled && first) {
             setRounds([])
-            setNote(c.offloadsLoadFailed)
           }
         })
     }
@@ -60,10 +58,10 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
       cancelled = true
       clearInterval(timer)
     }
-  }, [agentId, c.offloadsLoadFailed])
+  }, [agentId])
 
   if (rounds === null) {
-    return <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">{c.offloadsLoading}</div>
+    return null
   }
 
   const groups = groupRoundsByTarget(rounds)
@@ -72,26 +70,26 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
     <div className="flex flex-col gap-px">
       <ExpertPanel agentId={agentId} />
 
-      <div className="flex items-center gap-1 px-1">
-        <span className="min-w-0 flex-1 truncate text-[0.7rem] uppercase text-(--ui-text-tertiary)">
-          {c.offloadsTitle}
-        </span>
-        {onBack && (
-          <button
-            className="shrink-0 text-[0.7rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
-            onClick={onBack}
-            type="button"
-          >
-            {c.offloadsBackToList}
-          </button>
-        )}
-      </div>
-
-      {groups.length === 0 && (
-        <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-          {note || c.offloadsEmpty}
-        </div>
-      )}
+      <SidebarSectionHeader
+        collapsible={false}
+        icon={<Codicon name="send" size="0.875rem" />}
+        label={c.offloadsTitle}
+        meta={rounds.length > 0 ? rounds.length : ''}
+        onToggle={() => undefined}
+        open
+        action={
+          onBack ? (
+            <button
+              aria-label={c.offloadsBackToList}
+              className="shrink-0 text-[0.7rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
+              onClick={onBack}
+              type="button"
+            >
+              <Codicon name="arrow-left" size="0.8125rem" />
+            </button>
+          ) : undefined
+        }
+      />
 
       {groups.map(group => {
         const open = openTarget === group.target
