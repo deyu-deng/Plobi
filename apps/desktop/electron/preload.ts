@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('plobiDesktop', {
   renamePath: (targetPath, newName) => ipcRenderer.invoke('plobi:fs:rename', targetPath, newName),
   writeTextFile: (filePath, content) => ipcRenderer.invoke('plobi:fs:writeText', filePath, content),
   writeFileBuffer: (filePath, data) => ipcRenderer.invoke('plobi:fs:writeBuffer', filePath, data),
+  writeFileBufferAtomic: (filePath, data) => ipcRenderer.invoke('plobi:fs:writeBufferAtomic', filePath, data),
   genofficePreloadUrl: kind => ipcRenderer.invoke('genoffice:preload-url', kind),
   genofficeRequestClose: (kind, webContentsId) =>
     ipcRenderer.invoke(

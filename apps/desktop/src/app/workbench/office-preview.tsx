@@ -3,13 +3,14 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 import { Codicon } from '@/components/ui/codicon'
-import { convertDesktopLegacyOffice } from '@/lib/desktop-fs'
+import { convertDesktopLegacyOffice, writeDesktopFileBufferAtomic } from '@/lib/desktop-fs'
 import { Copy, Search } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { legacyOfficeFormat, type LegacyOfficeFormat } from '@/lib/legacy-office'
 import type { PreviewTarget } from '@/store/preview'
 
 import { fileKindForPath } from './file-kind'
+import { bakePdfMarks, markColor, markId, type PdfMark, type PdfMarkRect } from './pdf-marks'
 import { GenOfficeFileEditor } from './genoffice-editor'
 import { useFileBytes } from './file-bytes'
 import { useFileRevision } from './use-file-revision'
@@ -27,6 +28,12 @@ export interface OfficePreviewLabels {
   copied: string
   openExternal: string
   archiveEmpty: string
+  highlight: string
+  note: string
+  saveMarks: string
+  restoreOriginal: string
+  marksSaved: string
+  notePlaceholder: string
   truncated: (rows: number, cols: number) => string
   sheet: string
   legacyNote: string
@@ -251,20 +258,32 @@ function pdfTextNodeAt(nodes: PdfTextNode[], offset: number) {
   return null
 }
 
+const PDF_SCALE = 1.2
+
 function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: string }) {
   const { change } = useFileRevision(path)
   const { bytes, error, loading } = useFileBytes(path, change)
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const pageRefs = useRef(new Map<number, HTMLElement>())
+  const sourceBytesRef = useRef<Uint8Array | null>(null)
   const textLayersRef = useRef<HTMLDivElement[]>([])
   const textNodesRef = useRef<PdfTextNode[]>([])
   const matchRangesRef = useRef<Range[]>([])
-  const [rendering, setRendering] = useState(false)
-  const [renderError, setRenderError] = useState(false)
   const [query, setQuery] = useState('')
   const [matchCount, setMatchCount] = useState(0)
   const [activeMatch, setActiveMatch] = useState(0)
-  const [copied, setCopied] = useState(false)
   const [textVersion, setTextVersion] = useState(0)
+  const bakedRef = useRef(false)
+  const [rendering, setRendering] = useState(false)
+  const [renderError, setRenderError] = useState(false)
+  const [marks, setMarks] = useState<PdfMark[]>([])
+  const [noteMode, setNoteMode] = useState(false)
+  const [noteDraft, setNoteDraft] = useState<{ pageIndex: number; x: number; y: number } | null>(null)
+  const [noteText, setNoteText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     const host = hostRef.current
@@ -276,14 +295,22 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
     let cancelled = false
     let pdf: pdfjsLib.PDFDocumentProxy | null = null
     host.replaceChildren()
+    pageRefs.current.clear()
     textLayersRef.current = []
-    textNodesRef.current = []
-    matchRangesRef.current = []
     setRendering(true)
     setRenderError(false)
     setQuery('')
     setMatchCount(0)
     setActiveMatch(0)
+    setMarks([])
+    setNoteMode(false)
+    setNoteDraft(null)
+
+    if (!bakedRef.current) {
+      // pdf.js transfers the buffer to its worker, which detaches ours — keep a
+      // copy for the bake step.
+      sourceBytesRef.current = bytes.slice()
+    }
 
     void (async () => {
       try {
@@ -299,9 +326,10 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
           }
 
           const page = await pdf.getPage(pageNumber)
-          const viewport = page.getViewport({ scale: 1.2 })
+          const viewport = page.getViewport({ scale: PDF_SCALE })
           const wrapper = document.createElement('div')
           wrapper.className = 'plobi-pdf-page'
+          wrapper.dataset.pdfPage = String(pageNumber)
           wrapper.style.width = `${viewport.width}px`
           wrapper.style.height = `${viewport.height}px`
 
@@ -317,7 +345,11 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
           textLayer.style.setProperty('--scale-factor', String(viewport.scale))
           textLayer.style.width = `${viewport.width}px`
           wrapper.append(textLayer)
+          wrapper.addEventListener('click', event =>
+            startNote(pageNumber, event as unknown as React.MouseEvent)
+          )
           host.append(wrapper)
+          pageRefs.current.set(pageNumber, wrapper)
 
           await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
 
@@ -446,12 +478,154 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
     }
   }, [activeMatch, matchCount])
 
+  useEffect(() => {
+    for (const [pageNumber, element] of pageRefs.current) {
+      element.querySelectorAll('.plobi-pdf-mark').forEach(node => node.remove())
+
+      for (const mark of marks.filter(item => item.pageIndex + 1 === pageNumber)) {
+        for (const rect of mark.rects) {
+          const box = document.createElement('div')
+          box.className = 'plobi-pdf-mark'
+          box.style.background = mark.color
+          box.style.height = `${rect.height}px`
+          box.style.left = `${rect.x}px`
+          box.style.top = `${rect.y}px`
+          box.style.width = `${rect.width}px`
+
+          if (mark.text) {
+            box.title = mark.text
+          }
+
+          element.append(box)
+        }
+      }
+    }
+  }, [marks])
+
   const stepMatch = (direction: number) => {
     if (!matchCount) {
       return
     }
 
     setActiveMatch(value => (value + direction + matchCount) % matchCount)
+  }
+
+  const addHighlight = () => {
+    const selection = window.getSelection()
+
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      return
+    }
+
+    const range = selection.getRangeAt(0)
+    const groups = new Map<number, PdfMarkRect[]>()
+
+    for (const clientRect of Array.from(range.getClientRects())) {
+      if (clientRect.width < 1 || clientRect.height < 1) {
+        continue
+      }
+
+      for (const [pageNumber, element] of pageRefs.current) {
+        const pageRect = element.getBoundingClientRect()
+
+        if (clientRect.bottom < pageRect.top || clientRect.top > pageRect.bottom) {
+          continue
+        }
+
+        const list = groups.get(pageNumber) ?? []
+        list.push({
+          height: clientRect.height,
+          width: clientRect.width,
+          x: clientRect.left - pageRect.left,
+          y: clientRect.top - pageRect.top
+        })
+        groups.set(pageNumber, list)
+      }
+    }
+
+    if (!groups.size) {
+      return
+    }
+
+    setMarks(previous => [
+      ...previous,
+      ...Array.from(groups.entries()).map(([pageIndex, rects]) => ({
+        color: markColor('highlight'),
+        id: markId(),
+        kind: 'highlight' as const,
+        pageIndex: pageIndex - 1,
+        rects,
+        scale: PDF_SCALE
+      }))
+    ])
+    selection.removeAllRanges()
+  }
+
+  const startNote = (pageIndex: number, event: React.MouseEvent) => {
+    if (!noteMode) {
+      return
+    }
+
+    const element = pageRefs.current.get(pageIndex)
+
+    if (!element) {
+      return
+    }
+
+    const rect = element.getBoundingClientRect()
+    setNoteDraft({ pageIndex, x: event.clientX - rect.left, y: event.clientY - rect.top })
+    setNoteText('')
+  }
+
+  const commitNote = () => {
+    if (!noteDraft) {
+      return
+    }
+
+    const text = noteText.trim()
+
+    if (text) {
+      setMarks(previous => [
+        ...previous,
+        {
+          color: markColor('note'),
+          id: markId(),
+          kind: 'note',
+          pageIndex: noteDraft.pageIndex - 1,
+          rects: [{ height: 16, width: 16, x: noteDraft.x, y: noteDraft.y }],
+          scale: PDF_SCALE,
+          text
+        }
+      ])
+    }
+
+    setNoteDraft(null)
+    setNoteText('')
+    setNoteMode(false)
+  }
+
+  const writeMarks = async (payload: PdfMark[], restore: boolean) => {
+    const source = sourceBytesRef.current
+
+    if (!source) {
+      return
+    }
+
+    setSaving(true)
+    setSaveError(null)
+
+    try {
+      const baked = restore ? source : await bakePdfMarks(source, payload)
+      await writeDesktopFileBufferAtomic(path, baked)
+      bakedRef.current = !restore
+      setMarks([])
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 2500)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const copyAll = async () => {
@@ -526,8 +700,87 @@ function PdfPreview({ labels, path }: { labels: OfficePreviewLabels; path: strin
         </button>
         <span className="shrink-0 text-[0.6rem] text-muted-foreground">{labels.readOnly}</span>
       </div>
+
+      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2">
+        <button
+          className="flex items-center gap-1 rounded px-1 text-[0.6rem] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onMouseDown={event => event.preventDefault()}
+          onClick={addHighlight}
+          title={labels.highlight}
+          type="button"
+        >
+          <Codicon name="paintcan" size="0.72rem" />
+          <span>{labels.highlight}</span>
+        </button>
+        <button
+          className={cn(
+            'flex items-center gap-1 rounded px-1 text-[0.6rem] transition-colors hover:bg-accent',
+            noteMode ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'
+          )}
+          onClick={() => {
+            setNoteMode(value => !value)
+            setNoteDraft(null)
+          }}
+          title={labels.note}
+          type="button"
+        >
+          <Codicon name="comment" size="0.72rem" />
+          <span>{labels.note}</span>
+        </button>
+        <button
+          className="flex items-center gap-1 rounded px-1 text-[0.6rem] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+          disabled={!marks.length || saving}
+          onClick={() => void writeMarks(marks, false)}
+          title={labels.saveMarks}
+          type="button"
+        >
+          <Codicon name="save" size="0.72rem" />
+          <span>{marks.length ? `${labels.saveMarks} (${marks.length})` : labels.saveMarks}</span>
+        </button>
+        {bakedRef.current ? (
+          <button
+            className="flex items-center gap-1 rounded px-1 text-[0.6rem] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+            disabled={saving}
+            onClick={() => void writeMarks([], true)}
+            title={labels.restoreOriginal}
+            type="button"
+          >
+            <Codicon name="discard" size="0.72rem" />
+            <span>{labels.restoreOriginal}</span>
+          </button>
+        ) : null}
+        {saved ? <span className="text-[0.6rem] text-emerald-600">{labels.marksSaved}</span> : null}
+        {saveError ? <span className="truncate text-[0.6rem] text-destructive">{saveError}</span> : null}
+      </div>
+
       <div className="min-h-0 flex-1 overflow-auto p-2" ref={hostRef} />
       <PreviewStatus error={error || renderError} labels={labels} loading={loading || rendering} />
+      {noteDraft ? (
+        <div
+          className="absolute z-20"
+          style={{ left: 12, top: 64 }}
+        >
+          <input
+            autoFocus
+            className="h-6 w-48 rounded border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) px-1.5 text-[0.66rem] outline-none"
+            onBlur={commitNote}
+            onChange={event => setNoteText(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                commitNote()
+              }
+
+              if (event.key === 'Escape') {
+                setNoteDraft(null)
+                setNoteText('')
+              }
+            }}
+            placeholder={labels.notePlaceholder}
+            value={noteText}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }

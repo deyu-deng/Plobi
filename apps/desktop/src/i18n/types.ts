@@ -2934,6 +2934,12 @@ export interface Translations {
       restoreOriginal: string
       marksSaved: string
       notePlaceholder: string
+      highlight: string
+      note: string
+      saveMarks: string
+      restoreOriginal: string
+      marksSaved: string
+      notePlaceholder: string
       truncated: (rows: number, cols: number) => string
       sheet: string
       legacyNote: string

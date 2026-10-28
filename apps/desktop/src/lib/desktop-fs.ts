@@ -157,6 +157,19 @@ export async function writeDesktopFileBuffer(
   return desktop.writeFileBuffer(path, data)
 }
 
+export async function writeDesktopFileBufferAtomic(
+  path: string,
+  data: ArrayBuffer | Uint8Array
+): Promise<{ path: string }> {
+  const desktop = bridge()
+
+  if (!desktop.writeFileBufferAtomic) {
+    return writeDesktopFileBuffer(path, data)
+  }
+
+  return desktop.writeFileBufferAtomic(path, data)
+}
+
 export async function writeDesktopFileText(path: string, content: string): Promise<{ path: string }> {
   const desktop = bridge()
 

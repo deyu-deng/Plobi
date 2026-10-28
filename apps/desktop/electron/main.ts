@@ -11467,6 +11467,48 @@ ipcMain.handle('plobi:fs:writeBuffer', async (_event, filePath, data) => {
   return { path: resolved }
 })
 
+// Same contract as writeBuffer, but the bytes land through a temp file and a
+// rename: a half-written PDF (crash, power loss) would otherwise destroy the
+// document the user still has open.
+ipcMain.handle('plobi:fs:writeBufferAtomic', async (_event, filePath, data) => {
+  const raw = String(filePath || '').trim()
+
+  if (!raw) {
+    throw new Error('Invalid path')
+  }
+
+  const bytes = data instanceof Uint8Array ? new Uint8Array(data) : new Uint8Array(data as ArrayBuffer)
+
+  if (bytes.byteLength > 25_000_000) {
+    throw new Error('File too large')
+  }
+
+  const resolved = resolveRequestedPathForIpc(expandUserPath(raw), { purpose: 'Write file' })
+
+  if (!directoryExists(path.dirname(resolved))) {
+    throw new Error('Parent directory does not exist')
+  }
+
+  const temp = path.join(
+    path.dirname(resolved),
+    `.${path.basename(resolved)}.plobi-${process.pid}-${Date.now()}.tmp`
+  )
+
+  try {
+    await fs.promises.writeFile(temp, Buffer.from(bytes))
+    await fs.promises.rename(temp, resolved)
+  } catch (error) {
+    await fs.promises.rm(temp, { force: true }).catch(() => {})
+
+    throw error
+  }
+
+  return { path: resolved }
+})
+
+// Move a file/folder to the OS trash (recoverable) — the VS Code "Delete"
+// default. `shell.trashItem` routes to Finder/Explorer/Files trash per platform.
+
 // Move a file/folder to the OS trash (recoverable) — the VS Code "Delete"
 // default. `shell.trashItem` routes to Finder/Explorer/Files trash per platform.
 ipcMain.handle('plobi:fs:trash', async (_event, targetPath) => {

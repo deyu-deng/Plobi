@@ -1917,6 +1917,13 @@ text-* variant utilities. */ .btn-arc {
   transform-origin: 0 0;
 }
 
+.plobi-pdf-mark {
+  position: absolute;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
 .plobi-pdf-text ::selection {
   background: rgb(37 99 235 / 28%);
 }

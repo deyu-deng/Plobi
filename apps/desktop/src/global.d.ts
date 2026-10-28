@@ -79,6 +79,7 @@ declare global {
       selectPaths: (options?: PlobiSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
       writeFileBuffer: (filePath: string, data: ArrayBuffer | Uint8Array) => Promise<{ path: string }>
+      writeFileBufferAtomic?: (filePath: string, data: ArrayBuffer | Uint8Array) => Promise<{ path: string }>
       genofficePreloadUrl: (kind: 'slides' | 'sheets' | 'word') => Promise<string>
       genofficeRequestClose?: (kind: 'slides' | 'sheets' | 'word', webContentsId: number) => Promise<boolean>
       genofficeQueryDirty?: (kind: 'slides' | 'sheets' | 'word', webContentsId: number) => Promise<boolean | null>
