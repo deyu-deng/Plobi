@@ -106,8 +106,81 @@ def mcp_servers(*, enabled: bool = True) -> list[dict[str, Any]]:
     ]
 
 
+def _auth_methods(result: dict[str, Any]) -> list[dict[str, str]]:
+    """The sign-in methods this CLI offers, as it named them (`[]` when none)."""
+    out: list[dict[str, str]] = []
+    for item in (result or {}).get("authMethods") or (result or {}).get("auth_methods") or []:
+        if not isinstance(item, dict):
+            continue
+        mid = str(item.get("id") or "")
+        if mid:
+            out.append({"id": mid, "name": str(item.get("name") or mid)})
+    return out
+
+
 class AcpError(RuntimeError):
     """The session died, timed out, or the CLI refused the handoff."""
+
+
+class AcpAuthRequired(AcpError):
+    """The CLI answered the way an unsigned-in CLI answers.
+
+    Measured 2026-10-29 with cline 3.0.74: `initialize` succeeds and lists
+    `authMethods`, but `session/new` comes back `-32000 Authentication required:
+    Call authenticate before starting a session`. That single refusal is the honest
+    answer to the credentials question — the CLI knows its own sign-in state, so the
+    leg asks it instead of guessing from a file layout or from our login ledger.
+    """
+
+
+class AcpMethodUnknown(AcpError):
+    """This CLI does not speak that method — a missing seam, not a failed request."""
+
+
+def _refusal(method: str, err: Any) -> AcpError:
+    """One error raised per refusal, so callers can tell "sign in" from "protocol".
+
+    ACP carries no "am I authenticated?" flag; an unsigned CLI says it in the error it
+    returns for the method that needs the credential. Matching on its own words keeps
+    that distinction without inventing a status of our own.
+    """
+    if isinstance(err, dict) and err.get("code") == -32601:
+        return AcpMethodUnknown(f"{method}: {err.get('message') or 'method not found'}")
+    text = json.dumps(err, ensure_ascii=False) if isinstance(err, (dict, list)) else str(err)
+    if "authentication required" in text.lower() or "call authenticate" in text.lower():
+        return AcpAuthRequired(f"{method}: {text}")
+    return AcpError(f"{method} failed: {text}")
+
+
+def _models_of(result: dict[str, Any]) -> tuple[list[dict[str, str]], str]:
+    """`[{"id","name"}]` + the current id, from whatever shape this CLI answered with.
+
+    The ACP spec puts this in `NewSessionResponse.models.availableModels`; a CLI that
+    predates it answers with `availableModelIds` (bare ids). Both are read, neither is
+    invented: an agent that reports no models leaves the list empty, and the leg then
+    serves no model instead of a name we typed into a config file.
+    """
+    models = result.get("models")
+    if not isinstance(models, dict):
+        return [], ""
+    current = str(models.get("currentModelId") or models.get("current_model_id") or "")
+    raw = models.get("availableModels") or models.get("available_models") or []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, str):
+            mid, name = item, item
+        elif isinstance(item, dict):
+            mid = str(item.get("modelId") or item.get("model_id") or item.get("id") or "")
+            name = str(item.get("name") or item.get("label") or mid)
+        else:
+            continue
+        if not mid or mid in seen:
+            continue
+        seen.add(mid)
+        out.append({"id": mid, "name": name})
+    return out, current
+
 
 
 class AcpSession:
@@ -137,6 +210,13 @@ class AcpSession:
         self.tools_handed_over = False
         #: Count of tool calls the CLI made through our MCP server this session.
         self.tool_calls = 0
+        #: `authMethods` from the CLI's own `initialize` answer (`[]` = none advertised).
+        self.auth_methods: list[dict[str, str]] = []
+        #: Models this CLI reported for the session, in its own words, plus its current one.
+        self.available_models: list[dict[str, str]] = []
+        self.current_model = ""
+        #: False once `session/set_model` is refused — the leg then serves one model only.
+        self.model_switch_supported = True
         self._lock = asyncio.Lock()
         self._next_id = 0
         self._stderr_task: asyncio.Task | None = None
@@ -198,7 +278,7 @@ class AcpSession:
             log.debug("[acp:%s] %s", self.name, line.decode("utf-8", "replace").rstrip())
 
     async def _handshake(self) -> None:
-        await self._request(
+        init = await self._request(
             "initialize",
             {
                 "protocolVersion": 1,
@@ -206,19 +286,52 @@ class AcpSession:
             },
             timeout=self.start_timeout,
         )
-        servers = mcp_servers(enabled=self.tools_enabled)
-        created = await self._request(
-            "session/new",
-            {"cwd": self.cwd, "mcpServers": servers},
-            timeout=self.start_timeout,
-        )
+        self.auth_methods = _auth_methods(init)
+        try:
+            created = await self._request(
+                "session/new",
+                {"cwd": self.cwd, "mcpServers": mcp_servers(enabled=self.tools_enabled)},
+                timeout=self.start_timeout,
+            )
+        except AcpAuthRequired:
+            self.session_id = None
+            raise
         session_id = (created or {}).get("sessionId") or (created or {}).get("session_id")
         if not session_id:
             raise AcpError(f"{self.name} answered session/new without a session id")
         self.session_id = str(session_id)
+        self.available_models, self.current_model = _models_of(created or {})
         # Earned, not assumed: the CLI got a session WITH our tools attached.
-        self.tools_handed_over = bool(servers)
-        log.info("[acp:%s] session %s ready (tools handed over: %s)", self.name, self.session_id, self.tools_handed_over)
+        self.tools_handed_over = bool(mcp_servers(enabled=self.tools_enabled))
+        log.info(
+            "[acp:%s] session %s ready (tools handed over: %s, models: %d)",
+            self.name, self.session_id, self.tools_handed_over, len(self.available_models),
+        )
+
+    # --- model choice ----------------------------------------------------
+    async def set_model(self, model_id: str) -> bool:
+        """Ask the CLI to run this model; False when it says it cannot.
+
+        The picker sends `<leg>/<model>`, so the turn has to land on the model the user
+        chose. A CLI with no `session/set_model` (or one that rejects that id) is not a
+        reason to *silently* answer with a different model — the caller serves only the
+        model the CLI itself reported in that case.
+        """
+        if not self.alive or not model_id:
+            return False
+        assert self.session_id is not None
+        try:
+            await self._request(
+                "session/set_model",
+                {"sessionId": self.session_id, "modelId": model_id},
+                timeout=self.start_timeout,
+            )
+        except AcpMethodUnknown as exc:
+            log.info("[acp:%s] %s — serving only the model this CLI is already on", self.name, exc)
+            self.model_switch_supported = False
+            return False
+        self.current_model = model_id
+        return True
 
     # --- json-rpc --------------------------------------------------------
     async def _send(self, payload: dict[str, Any]) -> None:
@@ -271,7 +384,7 @@ class AcpSession:
             msg = await self._read(left)
             if msg.get("id") == rid and ("result" in msg or "error" in msg):
                 if "error" in msg:
-                    raise AcpError(f"{method} failed: {msg['error']}")
+                    raise _refusal(method, msg["error"])
                 return msg.get("result") or {}
             # Server-initiated traffic while we wait: answer it, then keep waiting.
             await self._handle_server_message(msg)
@@ -342,7 +455,7 @@ class AcpSession:
                 msg = await self._read(left)
                 if msg.get("id") == rid and ("result" in msg or "error" in msg):
                     if "error" in msg:
-                        raise AcpError(f"session/prompt failed: {msg['error']}")
+                        raise _refusal("session/prompt", msg["error"])
                     break
                 if msg.get("method") == "session/update":
                     update = (msg.get("params") or {}).get("update") or {}
@@ -382,7 +495,7 @@ class AcpSession:
                 msg = await self._read(left)
                 if msg.get("id") == rid and ("result" in msg or "error" in msg):
                     if "error" in msg:
-                        raise AcpError(f"session/prompt failed: {msg['error']}")
+                        raise _refusal("session/prompt", msg["error"])
                     return
                 if msg.get("method") == "session/update":
                     update = (msg.get("params") or {}).get("update") or {}

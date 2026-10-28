@@ -148,14 +148,15 @@ providers:
     model_map: { kiro/default: "" }
     accounts: [{ id: kiro-default }]
 
+  # Cline 走它自己的 ACP 口（`cline --acp`，10-29 实测 3.0.74）：模型名由它 `session/new`
+  # 自报，工具面由 `mcpServers` 交进去，登录状态也由它自己说（没登录时它回
+  # "Authentication required"）。`--json` 那种一坨 stdout 的形态带不回 tool_calls，
+  # 即便他哪天登上了，选择框也只会把它判成 `no_tools` 而不予列出。
+  # 不写 models：名单由这条腿现读，读不到就是零条，不抄一份会过期的。
   cline_cli:
     enabled: true
     binary: cline
-    args_template: ["--json", "{model_flag}", "{prompt}"]
-    model_flag: "-m"
     timeout: 300
-    models: [cline/default]
-    model_map: { cline/default: "" }
     accounts: [{ id: cline-default }]
 
   # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。

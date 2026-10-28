@@ -19,7 +19,6 @@ from pathlib import Path
 from quota_hub.providers.apps.claude_code import ClaudeCodeCliProvider
 from quota_hub.providers.apps.claude_code.cli import _parse_claude_result, _parse_claude_usage
 from quota_hub.providers.apps.cline import ClineCliProvider
-from quota_hub.providers.apps.cline.cli import _parse_cline_events
 from quota_hub.providers.apps.codex import CodexCliProvider
 from quota_hub.providers.apps.codex.cli import (
     _parse_codex_events,
@@ -91,14 +90,10 @@ def test_kiro_default_model_does_not_invent_a_model_flag():
     assert "--no-interactive" in argv and "--trust-all-tools" in argv
 
 
-def test_cline_invocation_uses_json_and_model_before_prompt():
-    prov = ClineCliProvider({"binary": "cline"}, None)
-    prov.binary_path = "cline"
-    argv = prov.build_invocation(
-        _account("cline_cli"),
-        {"model": "cline/default", "messages": [{"role": "user", "content": "hi"}]},
+def test_cline_invocation_is_gone_because_acp_replaced_it():
+    assert not hasattr(ClineCliProvider, "build_invocation"), (
+        "Cline answers over ACP now; a `--json` argv shape would be a second, unused door"
     )
-    assert argv == ["cline", "--json", "[user]\nhi"]
 
 
 def test_codex_jsonl_takes_only_the_agent_message_and_usage():
@@ -148,19 +143,6 @@ def test_claude_json_result_and_error_shapes():
         raise AssertionError("is_error must raise")
     except UpstreamError as exc:
         assert exc.status == 502
-
-
-def test_cline_ndjson_prefers_run_result_then_agent_event():
-    stream = "\n".join(
-        [
-            json.dumps({"type": "agent_event", "event": {"text": "partial"}}),
-            json.dumps({"type": "run_result", "text": "final answer"}),
-        ]
-    )
-    assert _parse_cline_events(stream) == "final answer"
-
-    only_agent = json.dumps({"type": "agent_event", "event": {"text": "from event"}})
-    assert _parse_cline_events(only_agent) == "from event"
 
 
 def test_codex_usage_windows_are_normalized():
@@ -355,12 +337,6 @@ def test_claude_full_spawn_reads_the_json_result(tmp_path):
     out = _spawn_chat(prov, "claude/sonnet-4-6")
     assert out["choices"][0]["message"]["content"] == "CLAUDE<<[user]\nhello world>>"
     assert out["usage"]["total_tokens"] == 6
-
-
-def test_cline_full_spawn_prefers_run_result(tmp_path):
-    prov = ClineCliProvider(_fake_cfg("cline", tmp_path), None)
-    out = _spawn_chat(prov, "cline/default")
-    assert out["choices"][0]["message"]["content"] == "CLINE<<[user]\nhello world>>"
 
 
 def test_kiro_full_spawn_strips_the_terminal_frame(tmp_path):

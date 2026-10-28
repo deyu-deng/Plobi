@@ -283,14 +283,14 @@ providers:
     # headless quota read, so this leg deliberately leaves quota empty.
     accounts: [{ id: kiro-default }]
 
+  # Cline answers over its own ACP stdio port (`cline --acp`): the CLI's `session/new`
+  # reply is both the sign-in verdict and the model list, and our tools go in through
+  # its `mcpServers`. No `models:` key on purpose — a name list here would be a second
+  # copy of a fact Cline already reports, and it rots on its next upgrade.
   cline_cli:
     enabled: true
     binary: cline
-    args_template: ["--json", "{model_flag}", "{prompt}"]
-    model_flag: "-m"
     timeout: 300
-    models: [cline/default]          # add the provider/model ids you use
-    model_map: { cline/default: "" }
     # Quota: Cline fronts the user's own provider key; no unified local endpoint.
     accounts: [{ id: cline-default }]
 

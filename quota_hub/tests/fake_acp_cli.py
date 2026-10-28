@@ -9,12 +9,29 @@ Modes (argv):
               before answering, and echoes which option was chosen.
   --silent    never answers session/prompt (the timeout path).
   --banner    prints non-JSON lines before every message (a CLI that greets you).
+  --needs-auth  refuses session/new the way an unsigned CLI does (measured on cline
+              3.0.74: `-32000 Authentication required: Call authenticate before
+              starting a session`) and names its sign-in methods in `initialize`.
+  --no-set-model  does not speak `session/set_model` (-32601), so a leg riding it can
+              serve one model only: the one that session is already on.
 """
 
 import json
 import sys
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else ""
+
+#: The models this stand-in claims to run, in its own ids and names. Answering with them
+#: is what lets a test pin "the picker showed what the CLI reported, not a config list".
+MODELS = {
+    "currentModelId": "m-a",
+    "availableModels": [
+        {"modelId": "m-a", "name": "Model A"},
+        {"modelId": "m-b", "name": "Model B"},
+    ],
+}
+
+chosen_model = "m-a"
 
 
 def send(payload):
@@ -27,6 +44,7 @@ def update(kind, **extra):
 
 
 def main():
+    global chosen_model
     pending_permission = None
     prompt_id = None
     if MODE == "--banner":
@@ -57,14 +75,35 @@ def main():
             continue
 
         if method == "initialize":
-            send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1, "agentCapabilities": {}}})
+            result = {"protocolVersion": 1, "agentCapabilities": {}}
+            if MODE == "--needs-auth":
+                result["authMethods"] = [{"id": "fake", "name": "Sign in with Fake"}]
+            send({"jsonrpc": "2.0", "id": mid, "result": result})
         elif method == "session/new":
+            if MODE == "--needs-auth":
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": mid,
+                        "error": {
+                            "code": -32000,
+                            "message": "Authentication required: Call authenticate before starting a session",
+                        },
+                    }
+                )
+                continue
             params = msg.get("params") or {}
             servers = params.get("mcpServers") or []
-            send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "fake-session"}})
+            send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "fake-session", "models": MODELS}})
             if MODE != "--no-tools" and servers:
                 update("tool_call", toolCallId="t1", title="plobi: read_file", status="pending")
                 update("tool_call_update", toolCallId="t1", status="completed")
+        elif method == "session/set_model":
+            if MODE == "--no-set-model":
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "unsupported"}})
+                continue
+            chosen_model = str((msg.get("params") or {}).get("modelId") or "")
+            send({"jsonrpc": "2.0", "id": mid, "result": {}})
         elif method == "session/prompt":
             if MODE == "--silent":
                 continue
@@ -86,7 +125,10 @@ def main():
                     }
                 )
                 continue
-            update("agent_message_chunk", content={"type": "text", "text": "hello from fake acp"})
+            update(
+                "agent_message_chunk",
+                content={"type": "text", "text": f"hello from fake acp on {chosen_model}"},
+            )
             send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
         else:
             if mid is not None:

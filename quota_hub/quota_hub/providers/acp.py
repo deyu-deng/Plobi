@@ -9,10 +9,13 @@ here.
 
 Honest edges:
 
-* The model id is the leg's, not ours. ACP CLIs pick their own model inside the
-  session, so a leg serves one virtual id (`<leg>/default`) unless its config declares
-  otherwise. Inventing per-model ids would be a name list — exactly what the picker no
-  longer accepts.
+* **The model names are the CLI's.** ACP answers `session/new` with the models that
+  session can actually run, and the leg serves exactly those, prefixed `<leg>/<id>`.
+  A CLI that reports none leaves the leg with zero models — a config-file name list
+  would be a second copy of a fact the upstream already owns (裁定 46).
+* **Which model a turn uses is asked, not assumed.** A turn on a chosen id goes through
+  `session/set_model` first. A CLI that refuses that call gets one model served (its own
+  current one) rather than a list where picking any name but the default silently lies.
 * If the CLI accepts the session but not the handoff (`mcpServers` ignored), the leg
   downgrades itself: `capabilities().tools` turns false on the next read, so the picker
   stops offering it instead of pretending a turn can interact with Plobi.
@@ -24,11 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from .. import login_ledger
-from ..acp import AcpError, AcpSession, mcp_servers, spawnable
+from ..acp import AcpAuthRequired, AcpError, AcpSession, mcp_servers, spawnable
 from .base import Account, Capabilities, Provider, UpstreamError
 from .cli import default_workspace
 
@@ -73,6 +77,8 @@ class AcpProvider(Provider):
     #: argv tail that puts the CLI into ACP mode.
     acp_args: tuple[str, ...] = ("--acp",)
     default_capabilities = Capabilities(stream=True, tools=True, sessionful=True)
+    #: How long one handshake answer stays good for (the CLI owns its own state).
+    probe_ttl = 600.0
 
     def __init__(self, config: dict, http) -> None:
         super().__init__(config, http)
@@ -84,9 +90,15 @@ class AcpProvider(Provider):
         self.timeout = float(config.get("timeout", 300.0))
         self.cwd = config.get("cwd") or config.get("workspace") or default_workspace(self.name)
         self.env_extra = {k: str(v) for k, v in (config.get("env") or {}).items()}
-        if config.get("models"):
-            self.served_models = tuple(config["models"])
+        self.model_prefix = str(config.get("model_prefix") or getattr(self, "model_prefix", "") or self.name)
+        self.probe_timeout = float(config.get("probe_timeout", 20.0))
+        # Deliberately NOT read from config: `served_models` is whatever the CLI answers
+        # for its own session, and an unsigned-in CLI answers nothing.
+        self.model_map: dict[str, str] = {}
         self._sessions: dict[str, AcpSession] = {}
+        #: The CLI's own answer to "are you signed in, and with which models?".
+        self._probe: dict[str, Any] = {}
+        self._probed_at = 0.0
 
     # --- presence / sign-in ----------------------------------------------
     def present(self) -> bool:
@@ -94,27 +106,34 @@ class AcpProvider(Provider):
 
     def login_plan(self) -> dict:
         # A spawn-based leg signs in through its own command; same contract as cli.py.
-        args = self.config.get("login_args")
+        args = self.config.get("login_args", getattr(self, "login_args", None))
         if args is None:
             return {"kind": "none", "reason": "这一条腿的登录命令还没从它自己的 --help 里核出来"}
         return {
             "kind": "cli_login",
             "binary": self.binary,
             "argv": list(args),
+            "tty": bool(self.config.get("login_tty", getattr(self, "login_tty", False))),
             "timeout": float(self.config.get("login_timeout", 300.0)),
             "name": self.display_name or self.name,
         }
 
     # --- capabilities ------------------------------------------------------
     def credential_health(self) -> tuple[bool, str]:
-        """Same rule as the CLI legs: only a sign-in we watched happen counts.
+        """What the CLI said about its own session last time we opened one.
 
-        The session can start without one (some CLIs answer anyway), so "a session
-        exists" is not a credential verdict either.
+        `session/new` is the credential test: an unsigned CLI refuses it in words
+        (cline 3.0.74: "Authentication required: Call authenticate before starting a
+        session"), a signed one hands back a session id and its model list. That answer
+        beats our login ledger, which can only ever report that a window was watched
+        exiting cleanly.
         """
-        if login_ledger.verified(self.name):
+        probed = self._probe.get("probed")
+        if not probed:
+            return False, "not_probed"
+        if self._probe.get("signed_in"):
             return True, "ok"
-        return False, "not_signed_in"
+        return False, str(self._probe.get("reason") or "not_signed_in")
 
     def capabilities(self) -> Capabilities:
         """`tools` means "we handed our tool surface into this session".
@@ -130,7 +149,14 @@ class AcpProvider(Provider):
 
     # --- accounts ---------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:
-        """One seat: the CLI's own sign-in. Presence is the only thing we can see."""
+        """One seat: the CLI's own sign-in. Presence is the only thing we can see.
+
+        The handshake deliberately does not happen here — `Registry.build()` awaits this
+        method before the hub answers on :8000, and spawning a node CLI costs ~10 measured
+        seconds (cline 3.0.74 on this machine, 2026-10-29). The model refresh task the hub
+        starts right after build calls `refresh_models()`, which probes; a restart is
+        therefore not made slower by a leg that answers slowly.
+        """
         if not self.present():
             self.accounts = []
             return []
@@ -141,18 +167,93 @@ class AcpProvider(Provider):
     async def ensure_fresh(self, acc: Account) -> None:
         return None
 
+    # --- the CLI's own answers ---------------------------------------------
+    async def probe(self, *, force: bool = False) -> dict[str, Any]:
+        """Open one session, read what the CLI reports, close it again.
+
+        Called at startup and again after a sign-in, so the card's switch and the model
+        list both come from the same handshake rather than from a ledger guess. The child
+        is not kept: an idle CLI process per leg would be a leak nobody asked for, and
+        the turn path spawns on demand anyway.
+        """
+        now = time.time()
+        if not force and self._probe.get("probed") and now - self._probed_at < self.probe_ttl:
+            return self._probe
+        verdict: dict[str, Any] = {"probed": True, "signed_in": False, "reason": "not_signed_in", "models": []}
+        binary = spawnable(self.binary)
+        if binary:
+            sess = self._new_session(binary)
+            try:
+                await sess.start()
+                verdict["signed_in"] = True
+                verdict["models"] = list(sess.available_models)
+                verdict["current"] = sess.current_model
+                # Prove the switch seam before claiming a list of selectable models:
+                # re-selecting the model the session is already on must be accepted.
+                target = sess.current_model or (sess.available_models[0]["id"] if sess.available_models else "")
+                if target:
+                    try:
+                        await sess.set_model(target)
+                    except AcpError as exc:
+                        log.info("[acp:%s] set_model probe refused: %s", self.name, exc)
+                verdict["switch"] = sess.model_switch_supported
+            except AcpAuthRequired:
+                verdict["reason"] = "not_signed_in"
+            except AcpError as exc:
+                # The CLI is there but the session did not come up. Not a credential
+                # verdict — saying so keeps "installed", "signed in" and "works today"
+                # three separate answers on screen.
+                verdict["reason"] = "session_failed"
+                verdict["detail"] = str(exc)
+                log.info("[acp:%s] probe could not open a session: %s", self.name, exc)
+            finally:
+                await sess.close()
+        else:
+            verdict["reason"] = "binary_missing"
+        self._probe = verdict
+        self._probed_at = now
+        self._apply_probed_models()
+        return verdict
+
+    def _apply_probed_models(self) -> list[str]:
+        """Turn the CLI's reported models into this leg's served ids."""
+        models = self._probe.get("models") or []
+        if self._probe.get("switch") is False and self._probe.get("current"):
+            # No set_model: only the CLI's own current model is really selectable.
+            models = [m for m in models if m["id"] == self._probe["current"]] or [
+                {"id": str(self._probe["current"]), "name": str(self._probe["current"])}
+            ]
+        shorts = [m["id"] for m in models if m.get("id")]
+        self.model_map = {f"{self.model_prefix}/{s}": s for s in shorts}
+        self.served_models = tuple(self.model_map)
+        return shorts
+
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        """The catalog is the probe's; re-open a session when we have nothing yet."""
+        if not self._probe.get("signed_in"):
+            await self.probe(force=True)
+        shorts = self._apply_probed_models()
+        return shorts if shorts else None
+
     # --- session plumbing --------------------------------------------------
+    def _new_session(self, binary: str, *, start_timeout: float | None = None) -> AcpSession:
+        # `session/new` refuses a cwd it cannot stat (measured on cline: -32602 with the
+        # words "expected string, received null"), so the workspace exists before spawn.
+        os.makedirs(self.cwd, exist_ok=True)
+        return AcpSession(
+            argv=[binary, *self.acp_args],
+            cwd=self.cwd,
+            env_extra=self.env_extra,
+            name=self.name,
+            prompt_timeout=self.timeout,
+            start_timeout=self.probe_timeout if start_timeout is None else start_timeout,
+        )
+
     def _session(self, acc: Account) -> AcpSession:
         sess = self._sessions.get(acc.id)
         if sess is None:
             binary = spawnable(self.binary) or self.binary
-            sess = AcpSession(
-                argv=[binary, *self.acp_args],
-                cwd=self.cwd,
-                env_extra=self.env_extra,
-                name=self.name,
-                prompt_timeout=self.timeout,
-            )
+            sess = self._new_session(binary)
             self._sessions[acc.id] = sess
         return sess
 
@@ -160,8 +261,35 @@ class AcpProvider(Provider):
         sess = self._session(acc)
         try:
             await sess.start()
+        except AcpAuthRequired as exc:
+            # The CLI just told us it has no credential — the card must say so, and the
+            # model list goes with it (an unsigned session reports no models).
+            self._probe = {"probed": True, "signed_in": False, "reason": "not_signed_in", "models": []}
+            self._apply_probed_models()
+            raise UpstreamError(401, f"{self.name}: 那边还没登录，或登录已失效", reauth=True) from exc
         except AcpError as exc:
             raise UpstreamError(502, f"{self.name}: {exc}") from exc
+        model = str(oai_req.get("model") or "")
+        if self.model_map and model and model not in self.model_map:
+            # A name this CLI never reported. Refusing beats answering from whichever
+            # model the session happens to be on.
+            raise UpstreamError(
+                404,
+                f"{self.name}: {self.binary} 自己没报过 {model} 这个模型",
+                retryable=False,
+            )
+        short = self.model_map.get(model, "")
+        if short and sess.current_model != short:
+            try:
+                chosen = await sess.set_model(short)
+            except AcpError as exc:
+                raise UpstreamError(404, f"{self.name}: {exc}", retryable=False) from exc
+            if not chosen:
+                raise UpstreamError(
+                    400,
+                    f"{self.name}: 这条腿的 CLI 不肯换模型，只能用它自己那一个",
+                    retryable=False,
+                )
         return sess
 
     async def chat(self, acc: Account, oai_req: dict) -> dict:

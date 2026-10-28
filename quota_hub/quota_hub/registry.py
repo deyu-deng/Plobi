@@ -65,7 +65,9 @@ from .providers.mock import MockProvider
 #                        usage from opencode.ai/zen/go/v1/usage
 #   kiro_cli          -> AWS Kiro CLI (`kiro-cli chat --no-interactive`) + model
 #                        catalog from `--list-models --format json`
-#   cline_cli         -> Cline CLI (`cline --json`) NDJSON answer stream
+#   cline_cli         -> Cline CLI over its own ACP stdio port (`cline --acp`): models
+#                        from `session/new`, tools via `mcpServers`, sign-in state from
+#                        the CLI's own refusal
 #   marvis_cli        -> any CLI-based Marvis (openmarvis / marvisx-cli / ...) spawned
 #                        as a subprocess; config-driven, no token scraping
 #   marvis_gui        -> Tencent consumer Marvis (marvis.qq.com): native GUI app with

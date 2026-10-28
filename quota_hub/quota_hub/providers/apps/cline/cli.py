@@ -1,83 +1,32 @@
-"""Cline CLI — spawn-based chat leg.
+"""Cline CLI — an ACP leg, because that is the only door Cline opens to us.
 
-Chat (compliant): the user's already-authenticated ``cline`` binary runs one task:
+Measured on this machine 2026-10-29 with cline 3.0.74 (`cline --acp`, JSON-RPC over
+stdio): `initialize` answers with `agentInfo` and three `authMethods`, and `session/new`
+refuses with `-32000 Authentication required: Call authenticate before starting a
+session` until he has signed in. Once it accepts, the same answer carries the models that
+session can run.
 
-    cline --json "<prompt>" -m <model>
+So this leg asks Cline three separate questions and takes its own words for each:
+signed in? which models? does it honor `session/set_model`? — which is what
+`providers/acp.py` does. The spawn form (`cline --json "<prompt>"`) stays out of it: it
+flattens the conversation into one stdout blob, so a tool call has nowhere to go and the
+picker would refuse the leg as `no_tools` even on the day he logs in.
 
-``--json`` streams NDJSON. We read the final ``run_result.text`` when present,
-otherwise the last ``agent_event`` text. No auto-approve flag is passed: a chat
-gateway must not silently let the CLI edit the workspace. It runs in a private
-scratch cwd anyway.
-
-Quota: Cline is a client for whatever provider the user configured (Cline
-Provider / ClinePass / own key). There is no local unified quota endpoint, so
-this leg leaves ``acc.quota`` empty instead of inventing one.
-
-Install : npm i -g cline
-Verify  : cline --version ; cline auth ; cline --json "say hi"
+Login is Cline's own command, in a window: `cline auth` prints
+"interactive auth setup requires a TTY" when its stdout is a pipe (re-measured
+2026-10-28), so the card opens a console instead of a pipe and keeps the exit code.
 """
 from __future__ import annotations
 
-import json
-import re
-
-from ...base import Account, UpstreamError
-from ...cli import CliProvider
-
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+from ...acp import AcpProvider
 
 
-def _parse_cline_events(stdout: str) -> str:
-    """Return the final answer text from Cline's NDJSON event stream."""
-    answer = ""
-    for line in stdout.splitlines():
-        line = _ANSI.sub("", line).strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
-        kind = str(event.get("type") or "")
-        if kind == "run_result":
-            text = event.get("text")
-            if not isinstance(text, str):
-                result = event.get("result")
-                text = result.get("text") if isinstance(result, dict) else ""
-            if isinstance(text, str) and text.strip():
-                answer = text.strip()
-        elif kind == "agent_event":
-            payload = event.get("event")
-            if isinstance(payload, dict):
-                text = payload.get("text")
-                if isinstance(text, str) and text.strip():
-                    answer = text.strip()
-    return answer
-
-
-class ClineCliProvider(CliProvider):
+class ClineCliProvider(AcpProvider):
     name = "cline_cli"
     display_name = "Cline"
     binary = "cline"
-    prompt_flag = ""  # prompt is positional
-    args_template = ["--json", "{model_flag}", "{prompt}"]
-    model_flag = "-m"
-    timeout = 300.0
-    isolate_workspace = True
-    stream_from_chat = True
-    served_models = ("cline/default",)
-    model_map = {"cline/default": ""}
-    # Verified from `cline auth --help` on this machine 2026-10-26:
-    #   Usage: cline auth [options] [provider]
-    # Re-measured 2026-10-28: with a pipe it prints "interactive auth setup requires a
-    # TTY" and exits 1 — so this login needs a window, not a spawned pipe.
+    acp_args = ("--acp",)
+    #: The picker shows `cline/<what Cline itself calls it>`.
+    model_prefix = "cline"
     login_args = ("auth",)
     login_tty = True
-
-    def parse_response(self, stdout: str, oai_req: dict) -> dict:
-        text = _parse_cline_events(stdout)
-        if not text:
-            raise UpstreamError(502, "cline: --json produced no answer event")
-        return super().parse_response(text, oai_req)

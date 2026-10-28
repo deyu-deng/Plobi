@@ -9,17 +9,22 @@ credential, no vendor CLI.
 
 Run:
     cd Code && scripts/run_tests.sh -j 1 quota_hub/tests/test_acp_provider.py
+
+The second half this knife pins (measured on cline 3.0.74, 2026-10-29): the CLI's own
+`session/new` is the credential question, and the same answer carries the models that
+session can run. A leg therefore claims a sign-in and a model list only from those bytes —
+never from our login ledger, and never from a name typed into config.yaml.
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 import httpx
 import pytest
-from quota_hub import login_ledger
 from quota_hub.acp import AcpError, AcpSession, mcp_servers
 from quota_hub.providers.acp import AcpProvider
 
@@ -31,7 +36,6 @@ def _cfg(tmp_path: Path, mode: str = "", **extra) -> dict:
         "binary": sys.executable,
         "acp_args": [FAKE] + ([mode] if mode else []),
         "leg": "fake_acp",
-        "models": ["fake_acp/default"],
         "timeout": 20,
         "cwd": str(tmp_path),
         **extra,
@@ -82,9 +86,10 @@ def test_streaming_hands_back_deltas_and_closes_with_stop(tmp_path):
     async def _go():
         prov = AcpProvider(_cfg(tmp_path), None)
         acc = (await prov.discover_accounts())[0]
-        chunks = [chunk async for chunk in prov.chat_stream(acc, {"messages": [{"content": "hi", "role": "user"}], "model": "fake_acp/default"})]
+        await prov.refresh_models(acc)
+        chunks = [chunk async for chunk in prov.chat_stream(acc, {"messages": [{"content": "hi", "role": "user"}], "model": "fake_acp/m-b"})]
         text = "".join((c["choices"][0]["delta"].get("content") or "") for c in chunks)
-        assert "hello from fake acp" in text
+        assert "hello from fake acp on m-b" in text
         assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
         await prov.aclose()
 
@@ -116,25 +121,89 @@ def test_a_silent_cli_times_out_instead_of_hanging_the_hub(tmp_path):
 
 
 # ------------------------------------------------------------ the picker view
-def test_the_leg_is_pickable_only_once_its_sign_in_was_watched(tmp_path):
+def _registry(http, tmp_path: Path, mode: str = ""):
+    from quota_hub.registry import Registry
+
+    cfg = {
+        "providers": {"fake_acp": {**_cfg(tmp_path, mode), "transport": "acp"}},
+        "routing": {"rules": []},
+        "server": {"api_key": "k"},
+    }
+    return Registry(cfg, http)
+
+
+def test_the_cli_opens_a_session_so_the_leg_is_pickable_with_its_own_models(tmp_path):
     async def _go():
-        cfg = {
-            "providers": {"fake_acp": {**_cfg(tmp_path), "transport": "acp"}},
-            "routing": {"rules": []},
-            "server": {"api_key": "k"},
-        }
         async with httpx.AsyncClient() as http:
-            from quota_hub.registry import Registry
-
-            reg = await Registry(cfg, http).build()
-            # Same gate as every other leg: signed in AND tools, nothing else.
-            assert reg.list_models(selectable_only=True) == []
-
-            login_ledger.remember("fake_acp")
+            reg = await _registry(http, tmp_path).build()
+            # The handshake is the model-refresh task's job, not build()'s — see below.
+            await reg.ensure_models_refreshed()
             rows = {row["id"]: row for row in reg.list_models(selectable_only=True)}
+        # The names are the CLI's (`session/new` answered m-a/m-b), not a config list.
+        assert sorted(rows) == ["fake_acp/m-a", "fake_acp/m-b"]
+        assert rows["fake_acp/m-a"]["capabilities"]["tools"] is True
+        # Same gate as every other leg: usable = the CLI's session answer AND tools.
+        assert rows["fake_acp/m-a"]["live"] is True
 
-        assert "fake_acp/default" in rows
-        assert rows["fake_acp/default"]["capabilities"]["tools"] is True
+    _run(_go())
+
+
+def test_a_slow_cli_does_not_hold_the_hub_off_the_port(tmp_path):
+    """build() must not wait for the handshake: measured 9.8s for cline 3.0.74 alone."""
+
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        started = time.monotonic()
+        accounts = await prov.discover_accounts()
+        assert len(accounts) == 1
+        assert time.monotonic() - started < 1.0, "discover_accounts spawned the CLI"
+        assert prov.credential_health() == (False, "not_probed")
+        await prov.refresh_models(accounts[0])
+        assert prov.credential_health() == (True, "ok")
+
+    _run(_go())
+
+
+def test_an_unsigned_cli_offers_no_models_and_no_switch(tmp_path):
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path, "--needs-auth"), None)
+        acc = (await prov.discover_accounts())[0]
+        assert await prov.refresh_models(acc) is None
+        assert prov.credential_health() == (False, "not_signed_in")
+        assert prov.served_models == ()
+
+        async with httpx.AsyncClient() as http:
+            reg = await _registry(http, tmp_path, "--needs-auth").build()
+            await reg.ensure_models_refreshed()
+        assert reg.list_models(selectable_only=True) == []
+
+    _run(_go())
+
+
+def test_a_turn_runs_on_the_model_the_picker_chose(tmp_path):
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+        out = await prov.chat(acc, {"messages": [{"role": "user", "content": "hi"}], "model": "fake_acp/m-b"})
+        assert "on m-b" in out["choices"][0]["message"]["content"]
+        await prov.aclose()
+
+    _run(_go())
+
+
+def test_a_cli_that_will_not_switch_models_serves_only_the_one_it_is_on(tmp_path):
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path, "--no-set-model"), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+        # m-b was reported, but a leg that cannot switch must not offer it: picking it
+        # would answer from a different model than the one chosen.
+        assert prov.served_models == ("fake_acp/m-a",)
+        with pytest.raises(Exception) as exc:
+            await prov.chat(acc, {"messages": [{"role": "user", "content": "hi"}], "model": "fake_acp/m-b"})
+        assert getattr(exc.value, "status", 0) in (400, 404)
+        await prov.aclose()
 
     _run(_go())
 
