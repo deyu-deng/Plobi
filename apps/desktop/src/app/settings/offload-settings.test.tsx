@@ -103,29 +103,28 @@ afterEach(() => {
 })
 
 describe('settings → offload', () => {
-  it('renders one row per vendor and keeps the backend’s reason verbatim', async () => {
+  it('renders one row per vendor; the backend’s reason is kept verbatim in the hover tip', async () => {
     getOffloadAgents.mockResolvedValue(payload)
     render(<OffloadSettings />)
     await waitFor(() => expect(screen.getByText('qoder')).toBeTruthy())
 
     expect(screen.getByText('codebuddy')).toBeTruthy()
     expect(screen.getAllByText('agy').length).toBeGreaterThan(0)
-    expect(screen.getByText(payload.agents[0].why_not)).toBeTruthy()
-    expect(screen.getByText(payload.agents[2].why_not)).toBeTruthy()
+    const tips = [...document.querySelectorAll('[title]')].map(node => node.getAttribute('title') || '')
+    expect(tips.some(tip => tip.includes(payload.agents[0].why_not))).toBe(true)
+    expect(tips.some(tip => tip.includes(payload.agents[2].why_not))).toBe(true)
     expect(getOffloadAgents).toHaveBeenCalledWith(false)
   })
 
-  it('shows what it actually said, and never reports "no evidence" as a logout', async () => {
+  it('sign-in state is a mark with a name, not a paragraph; the last reply stays out of the card', async () => {
     getOffloadAgents.mockResolvedValue(payload)
     render(<OffloadSettings />)
     await waitFor(() => expect(screen.getByText('qoder')).toBeTruthy())
 
-    expect(screen.getByText(/Not logged in · Please run \/login/)).toBeTruthy()
     // 有证据的那一家才出现"上一趟它自己说没登录"；agy 没有证据 ⇒ 只能出现"no evidence yet"
-    expect(screen.getAllByText(/The last connection reported not signed in/).length).toBe(1)
-    expect(screen.getByText(/No sign-in status available yet/)).toBeTruthy()
-    // 回跳能力：只有 codebuddy 与 agy 登记了口，qoder 没有
-    expect(screen.getAllByText(/no registered way back to that screen yet/).length).toBe(1)
+    expect(screen.getAllByLabelText(/not signed in/).length).toBe(1)
+    expect(screen.getByLabelText(/No sign-in status available yet/)).toBeTruthy()
+    expect(screen.queryByText(/Not logged in · Please run \/login/)).toBeNull()
   })
 
   it('reads again when the refresh control is used', async () => {
@@ -141,9 +140,11 @@ describe('settings → offload', () => {
     render(<OffloadSettings />)
     await waitFor(() => expect(screen.getByText('External conversations')).toBeTruthy())
 
-    expect(screen.getByText('C:/Users/me/.qoder/projects')).toBeTruthy()
-    expect(screen.getByText('113 conversations · can talk')).toBeTruthy()
-    expect(screen.getByText('还没找到它的会话存放')).toBeTruthy()
+    expect(screen.getByText('113 conversations')).toBeTruthy()
+    expect(screen.getByText('Readable')).toBeTruthy()
+    const tips = [...document.querySelectorAll('[title]')].map(node => node.getAttribute('title') || '')
+    expect(tips.some(tip => tip.includes('C:/Users/me/.qoder/projects'))).toBe(true)
+    expect(tips.some(tip => tip.includes('还没找到它的会话存放'))).toBe(true)
   })
 
 })

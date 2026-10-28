@@ -16,13 +16,12 @@ import { vendorLabel } from '@/app/chat/sidebar/external-sessions'
 import { OffloadVendorAvatar } from '@/app/chat/sidebar/offload-vendor-icon'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
-import { Package, RefreshCw } from '@/lib/icons'
+import { AlertCircle, CheckCircle2, HelpCircle, Package, RefreshCw } from '@/lib/icons'
 
 import { getOffloadAgents, getSessionSources, type OffloadAgent, type OffloadPayload, type SessionSource } from './offload/api'
 import { ListRow, LoadingState, Pill, SectionHeading, SettingsContent } from './primitives'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
-const MONO = 'font-mono text-[0.68rem] text-(--ui-text-tertiary)'
 
 function shortTime(iso: string): string {
   // 后端给的是 UTC ISO；只做"给人看"的截取，不做时区换算（那是显示器的事）。
@@ -71,6 +70,19 @@ export function OffloadSettings() {
     return s.loginUnknown
   }
 
+  // 机器细节（二进制、旗标、会话号、后端给的原因）进悬停提示：屏上只留「这是什么 + 现在能不能用」。
+  const agentTip = (agent: OffloadAgent): string =>
+    [
+      agent.installed ? agent.binary : s.notInstalled,
+      agent.permission_flag,
+      loginText(agent),
+      agent.why_not,
+      agent.resume_supported ? s.resumeYes : s.resumeNo,
+      agent.last_round?.external_session ? `${s.sessionId} ${agent.last_round.external_session}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n')
+
   return (
     <SettingsContent>
       <SectionHeading
@@ -78,7 +90,6 @@ export function OffloadSettings() {
         meta={payload ? `${s.probedAt} ${shortTime(payload.probed_at)}` : undefined}
         title={s.title}
       />
-      <p className={`${CAPTION} pb-1`}>{s.note}</p>
       <div className="pb-2">
         <Button disabled={busy} onClick={() => void load(true)} size="sm" variant="ghost">
           <RefreshCw className={busy ? 'animate-spin' : ''} />
@@ -88,74 +99,68 @@ export function OffloadSettings() {
       {error ? <p className="pb-2 text-sm text-(--ui-text-danger)">{error}</p> : null}
       {!payload && !error ? <LoadingState label={s.loading} /> : null}
       {payload?.agents.map(agent => (
-        <ListRow
-          action={
-            <Pill tone={agent.can_use ? 'primary' : 'muted'}>
-              {agent.can_use ? s.usable : s.blocked}
-            </Pill>
-          }
-          below={
-            <div className="mt-2 space-y-1">
-              {agent.why_not ? <div className={CAPTION}>{agent.why_not}</div> : null}
-              <div className={CAPTION}>
-                {s.login}: {loginText(agent)}
-                {agent.logged_in.value === null && agent.login_hint ? ` · ${s.hintSaysMaybe}` : ''}
-              </div>
-              <div className={CAPTION}>
-                {s.today}: {agent.today.rounds} · {money(agent.today.total_usd, agent.today.cost_status)}
-                {agent.today.last_ts ? ` · ${s.lastAt} ${shortTime(agent.today.last_ts)}` : ''}
-              </div>
-              {agent.last_round?.answer_excerpt ? (
+        <div key={agent.name} title={agentTip(agent)}>
+          <ListRow
+            action={
+              <Pill tone={agent.can_use ? 'primary' : 'muted'}>
+                {agent.can_use ? s.usable : s.blocked}
+              </Pill>
+            }
+            below={
+              agent.today.rounds > 0 || agent.today.last_ts ? (
                 <div className={CAPTION}>
-                  {s.itSaid}: {agent.last_round.answer_excerpt}
+                  {s.today} {agent.today.rounds} · {money(agent.today.total_usd, agent.today.cost_status)}
+                  {agent.today.last_ts ? ` · ${shortTime(agent.today.last_ts)}` : ''}
                 </div>
-              ) : null}
-              <div className={CAPTION}>
-                {agent.resume_supported ? s.resumeYes : s.resumeNo}
-                {agent.last_round?.external_session ? ` · ${s.sessionId} ${agent.last_round.external_session}` : ''}
-              </div>
-            </div>
-          }
-          description={agent.installed ? agent.binary : s.notInstalled}
-          hint={agent.version ? `${agent.name} ${agent.version}` : undefined}
-          key={agent.name}
-          title={
-            <span className="flex items-center gap-2">
-              <OffloadVendorAvatar vendor={agent.name} />
-              <span>{agent.name}</span>
-              <span className={MONO}>{agent.permission_flag}</span>
-            </span>
-          }
-        />
+              ) : undefined
+            }
+            hint={agent.version || undefined}
+            title={
+              <span className="flex items-center gap-2">
+                <OffloadVendorAvatar vendor={agent.name} />
+                <span>{agent.name}</span>
+                <LoginMark agent={agent} label={loginText(agent)} />
+              </span>
+            }
+          />
+        </div>
       ))}
 
       <SectionHeading icon={Package} title={s.sessionsTitle} />
-      <p className={`${CAPTION} pb-1`}>{s.sessionsNote}</p>
       {sources.map(source => (
-        <ListRow
-          action={
-            <Pill tone={source.readable ? 'primary' : 'muted'}>
-              {source.readable ? s.sessionsReadable : s.sessionsUnreadable}
-            </Pill>
-          }
-          below={
-            <div className="mt-1 space-y-1">
+        <div key={source.vendor} title={[source.root, source.reason].filter(Boolean).join('\n')}>
+          <ListRow
+            action={
+              <Pill tone={source.readable ? 'primary' : 'muted'}>
+                {source.readable ? s.sessionsReadable : s.sessionsUnreadable}
+              </Pill>
+            }
+            below={
               <div className={CAPTION}>
-                {source.sessions} {s.sessionsCount} · {source.sendable ? s.sessionsSendable : s.sessionsReadOnly}
+                {source.sessions} {s.sessionsCount}
               </div>
-              {source.reason ? <div className={CAPTION}>{source.reason}</div> : null}
-            </div>
-          }
-          description={source.root || '—'}
-          key={source.vendor}
-          title={
-            <span className="flex items-center gap-2">
-              <OffloadVendorAvatar vendor={source.vendor} />
-              <span>{vendorLabel(source.vendor)}</span>
-            </span>
-          }
-        />
+            }
+            title={
+              <span className="flex items-center gap-2">
+                <OffloadVendorAvatar vendor={source.vendor} />
+                <span>{vendorLabel(source.vendor)}</span>
+              </span>
+            }
+          />
+        </div>
       ))}
     </SettingsContent>
   )
+}
+
+function LoginMark({ agent, label }: { agent: OffloadAgent, label: string }) {
+  if (agent.logged_in.value === false) {
+    return <AlertCircle aria-label={label} className="size-3.5 shrink-0 text-(--ui-text-danger)" />
+  }
+
+  if (agent.logged_in.value === true) {
+    return <CheckCircle2 aria-label={label} className="size-3.5 shrink-0 text-(--theme-primary)" />
+  }
+
+  return <HelpCircle aria-label={label} className="size-3.5 shrink-0 text-(--ui-text-quaternary)" />
 }
