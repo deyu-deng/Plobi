@@ -430,3 +430,36 @@ async def test_a_quota_refusal_rotates_to_the_next_account_and_retries(monkeypat
     assert calls["n"] == 2, "the turn was not retried after the rotation"
     assert out["choices"][0]["message"]["content"] == "ok"
     assert acc.cred.access_token == "FRESH"
+
+
+@pytest.mark.asyncio
+async def test_an_account_without_quota_is_replaced_before_the_turn(monkeypatch):
+    """Their CLI lists accounts without their remaining quota (the dashboard has it, in an
+    encrypted store we do not read), so the reachable form of "pick the healthiest" is:
+    we read the quota of the account we are on, and switch before the request fails."""
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    seen = {}
+
+    class _Cloudcode:
+        async def chat(self, **kwargs):
+            seen["token"] = kwargs.get("token")
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    prov.cloudcode = _Cloudcode()
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec",
+                                    desktop_store=True)
+    acc.quota["remaining"] = 0
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", lambda **_kw: (True, "switched"))
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() + 3000, "expires_in_seconds": 3000})
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: "FRESH")
+
+    await prov.chat(acc, {"model": "antigravity/gemini-3-flash",
+                          "messages": [{"role": "user", "content": "hi"}]})
+
+    assert seen["token"] == "FRESH", "the turn went out on the account with no quota left"

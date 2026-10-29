@@ -706,7 +706,29 @@ class AntigravityProvider(Provider):
         acc.state = AccountState.ACTIVE
         return True
 
+    async def _rotate_if_exhausted(self, acc: Account) -> None:
+        """Move on before the request fails, when we already know the quota is gone.
+
+        Their CLI lists accounts without their remaining quota (the dashboard has it, in an
+        encrypted store we do not read), so "pick the healthiest account" is not reachable
+        from here. What *is* reachable is the quota of the account we are on: we read it
+        ourselves (`x-ratelimit-remaining`, and the quota summary), so when it says
+        nothing is left we switch first and send the turn on the next account.
+        """
+        remaining = (getattr(acc, "quota", None) or {}).get("remaining")
+        if remaining is None:
+            return
+        try:
+            left = float(remaining)
+        except (TypeError, ValueError):
+            return
+        if left > 0:
+            return
+        logger.info("antigravity: the active account has no quota left; rotating before the turn")
+        await self._rotate_account(acc)
+
     async def chat(self, acc: Account, oai_req: dict) -> dict:
+        await self._rotate_if_exhausted(acc)
         try:
             return await self._cloudcode_chat(acc, oai_req)
         except UpstreamError as exc:
@@ -716,6 +738,7 @@ class AntigravityProvider(Provider):
             return await self._cloudcode_chat(acc, oai_req)
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
+        await self._rotate_if_exhausted(acc)
         try:
             async for chunk in self._cloudcode_stream(acc, oai_req):
                 yield chunk
