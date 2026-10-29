@@ -138,29 +138,21 @@ def test_models() -> None:
     # base attribute (Provider.served_models) is just an empty tuple, so the
     # catalog must be asserted on a built instance.
     prov = build_provider()
-    expected = {
-        "antigravity/gemini-3-flash",
-        "antigravity/gemini-3-pro-high",
-        "antigravity/gemini-3-pro-low",
-        "antigravity/gemini-3.1-pro-high",
-        "antigravity/gemini-3.1-pro-low",
-        "antigravity/claude-opus-4-6-thinking",
-        "antigravity/claude-opus-4-5-thinking",
-        "antigravity/claude-sonnet-4-6",
-    }
-    for m in prov.served_models:
-        check(m in expected, f"served model {m}")
-    check(
-        set(prov.served_models) == expected,
-        "served catalog matches the seed catalog exactly",
-    )
+    # No hand-copied catalog on purpose (measured 2026-10-29 against the real Antigravity
+    # app: it now offers Gemini 4 Argon / Gemini 3.8 Flash / Claude Opus 5.5 / Claude
+    # Sonnet 5.5 / GPT-OSS 120B, and the old hand-copied ids are gone upstream). Until
+    # upstream answers, this leg offers nothing — and the card says why.
+    check(tuple(prov.served_models) == (), "no hand-copied catalog before upstream answers")
+    check(dict(prov.MODEL_MAP) == {}, "no hand-copied mapping before upstream answers")
+
+    # What upstream says is what we serve, and the prefix is stripped for the wire.
+    prov.served_models = ("antigravity/gemini-4-argon-medium",)
+    prov.MODEL_MAP = {"antigravity/gemini-4-argon-medium": "gemini-4-argon-medium"}
     for m in prov.served_models:
         check(
             prov.MODEL_MAP[m] == m.split("/", 1)[1],
             f"MODEL_MAP strips antigravity/ prefix for {m}",
         )
-
-
 def test_composite() -> None:
     print("[Composite refresh token]")
     rt, pid, mpid = ds.parse_composite_refresh("REF|PROJ|MP")

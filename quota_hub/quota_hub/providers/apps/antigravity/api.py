@@ -140,17 +140,15 @@ class AntigravityProvider(Provider):
     # frontend never needs to hardcode model names. The ids below mirror the
     # real Google Cloud Code Assist catalog (verified 2026-07) so the fallback
     # is accurate even if the live fetch can't reach Google.
-    _SEED_MODELS = (
-        "antigravity/gemini-3-flash",
-        "antigravity/gemini-3-pro-high",
-        "antigravity/gemini-3-pro-low",
-        "antigravity/gemini-3.1-pro-high",
-        "antigravity/gemini-3.1-pro-low",
-        "antigravity/claude-opus-4-6-thinking",
-        "antigravity/claude-opus-4-5-thinking",
-        "antigravity/claude-sonnet-4-6",
-    )
-    _SEED_MODEL_MAP = {m: m.split("/", 1)[1] for m in _SEED_MODELS}
+    #: No seed list on purpose. Measured 2026-10-29 against the real Antigravity app:
+    #: it now offers Gemini 4 Argon, Gemini 3.8 Flash, Claude Opus 5.5, Claude Sonnet 5.5
+    #: and GPT-OSS 120B — the old hand-copied ids (Gemini 3/3.1, Claude 4.6) are gone
+    #: upstream, so keeping them was a trap: he would pick one, the turn would fail, and
+    #: the model would be written off as refused. The only name source is upstream's own
+    #: `fetchAvailableModels` (see `refresh_models`); until it answers, this leg offers
+    #: nothing — which is honest, and the card says why.
+    _SEED_MODELS: tuple[str, ...] = ()
+    _SEED_MODEL_MAP: dict[str, str] = {}
 
     def __init__(self, config, http):
         super().__init__(config, http)
