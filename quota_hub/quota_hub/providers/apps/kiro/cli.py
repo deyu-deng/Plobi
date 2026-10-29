@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -338,10 +339,35 @@ class KiroCliProvider(CliProvider):
 
 
     async def refresh_models(self, acc: Account) -> list[str] | None:
-        """Ask the CLI for its own model list (``--list-models --format json``)."""
+        """Ask the CLI for its own model list (``--list-models --format json``).
+
+        Retried once, and the reason is logged when both attempts fail. Measured
+        2026-10-29: at cold boot this call sometimes came back unusable while the same
+        command run by hand answered in 1.8 s — and because stderr was discarded the
+        failure was invisible, so the leg kept serving its one-row seed and the picker
+        offered a model literally named `default`.
+        """
         if not self.binary_path:
             return None
-        argv = [self.binary_path, "chat", "--list-models", "--format", "json"]
+        reason = ""
+        for attempt in (1, 2):
+            short, reason = await self._fetch_models_once()
+            if short:
+                prefix = self.model_prefix or self.name
+                self.served_models = tuple(f"{prefix}/{m}" for m in short)
+                self.model_map = {f"{prefix}/{m}": m for m in short}
+                self.models_refreshed = True
+                return short
+            if attempt == 1:
+                await asyncio.sleep(0.6)
+        logging.getLogger("quota_hub").warning(
+            "%s model refresh failed twice (%s); keeping the seed catalog", self.name, reason
+        )
+        return None
+
+    async def _fetch_models_once(self) -> tuple[list[str], str]:
+        """One `--list-models` attempt: (short ids, why it failed or "")."""
+        argv = [self.binary_path or self.binary, "chat", "--list-models", "--format", "json"]
         env = dict(os.environ)
         env.update(self.env_extra)
         if self.cwd:
@@ -350,13 +376,17 @@ class KiroCliProvider(CliProvider):
             proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=self.cwd,
                 env=env,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=_HELP_TIMEOUT)
-        except (OSError, ValueError, asyncio.TimeoutError):
-            return None
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_HELP_TIMEOUT)
+        except OSError as exc:
+            return [], f"spawn: {exc}"
+        except asyncio.TimeoutError:
+            return [], f"no answer in {_HELP_TIMEOUT:.0f}s"
+        if proc.returncode != 0:
+            return [], f"exit {proc.returncode}: {stderr.decode(errors='replace').strip()[:200]}"
         raw = _strip_ansi(stdout.decode(errors="replace")).strip()
         # The payload is an OBJECT whose first value is an array: cutting at the first
         # `[` — which is what this used to do — leaves a trailing `}` and the parse fails,
@@ -371,12 +401,8 @@ class KiroCliProvider(CliProvider):
                 continue
             break
         if data is None:
-            return None
+            return [], f"unparseable output: {raw[:120]}"
         short = _models_from_payload(data)
         if not short:
-            return None
-        prefix = self.model_prefix or self.name
-        self.served_models = tuple(f"{prefix}/{m}" for m in short)
-        self.model_map = {f"{prefix}/{m}": m for m in short}
-        self.models_refreshed = True
-        return short
+            return [], f"no model ids in output: {raw[:120]}"
+        return short, ""

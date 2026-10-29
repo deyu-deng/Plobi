@@ -205,3 +205,44 @@ def test_a_run_that_only_ends_with_final_text_still_answers():
     prov._streamed_text = False
     line = json.dumps({"type": "runFinished", "data": {"finalText": "整段答案"}})
     assert prov.stream_text(line.encode("utf-8")) == "整段答案"
+
+
+def test_a_failed_model_list_is_retried_once_before_keeping_the_seed():
+    """Measured 2026-10-29: the same `--list-models` that answers in 1.8 s by hand came
+    back unusable at cold boot, and the leg then served its one-row seed — which the
+    picker offers as a model literally named `default`."""
+    prov = KiroCliProvider({"binary": "kiro-cli"}, None)
+    prov.binary_path = "kiro-cli"
+    calls = {"n": 0}
+
+    async def _once():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return [], "exit 1: busy"
+        return ["m1", "m2"], ""
+
+    prov._fetch_models_once = _once
+    shorts = asyncio.run(prov.refresh_models(None))
+
+    assert calls["n"] == 2
+    assert shorts == ["m1", "m2"]
+    assert prov.served_models == ("kiro/m1", "kiro/m2")
+
+
+def test_both_attempts_failing_keeps_the_seed_and_says_why(caplog):
+    import logging
+
+    prov = KiroCliProvider({"binary": "kiro-cli"}, None)
+    prov.binary_path = "kiro-cli"
+    prov.served_models = ("kiro/default",)
+
+    async def _once():
+        return [], "exit 1: locked"
+
+    prov._fetch_models_once = _once
+    with caplog.at_level(logging.WARNING, logger="quota_hub"):
+        assert asyncio.run(prov.refresh_models(None)) is None
+
+    assert prov.served_models == ("kiro/default",)
+    assert "model refresh failed twice" in caplog.text
+    assert "locked" in caplog.text
