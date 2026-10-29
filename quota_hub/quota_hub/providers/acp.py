@@ -98,6 +98,8 @@ class AcpProvider(Provider):
         # for its own session, and an unsigned-in CLI answers nothing.
         self.model_map: dict[str, str] = {}
         self._sessions: dict[str, AcpSession] = {}
+        #: What each live session has already been told (see `_prepare`).
+        self._sent: dict[str, list[dict]] = {}
         #: The CLI's own answer to "are you signed in, and with which models?".
         self._probe: dict[str, Any] = {}
         self._probed_at = 0.0
@@ -294,12 +296,43 @@ class AcpProvider(Provider):
                 )
         return sess
 
-    async def chat(self, acc: Account, oai_req: dict) -> dict:
+    async def _prepare(self, acc: Account, oai_req: dict) -> tuple[AcpSession, str, list[dict]]:
+        """Session + the text this turn carries + the history now in play.
+
+        ACP sessions are stateful, so the client's history must be split: whatever this
+        session already saw stays out, and only the new tail goes in. Measured 2026-10-29:
+        every turn used to re-send the whole conversation into the same session, so turn N
+        handed the CLI turns 1..N-1 again — duplicated context that grows every turn and
+        shows the model its own earlier answer quoted back at it. When the client rewinds
+        or compacts the history the prefix no longer matches, and the session is replaced:
+        an old session holding turns we are no longer sending is worse than paying its boot.
+        """
+        msgs = [m for m in (oai_req.get("messages") or []) if isinstance(m, dict)]
+        sess = self._session(acc)
+        sent = self._sent.get(acc.id)
+        if sent is not None and msgs[: len(sent)] != sent:
+            await sess.close()
+            self._sent.pop(acc.id, None)
+            sent = None
         sess = await self._turn(acc, oai_req)
+        tail = msgs[len(sent):] if sent is not None else msgs
+        return sess, _flatten(tail), msgs
+
+    async def _discard(self, acc: Account) -> None:
+        """A failed turn leaves the session's state unknown — start clean next time."""
+        self._sent.pop(acc.id, None)
+        sess = self._sessions.pop(acc.id, None)
+        if sess is not None:
+            await sess.close()
+
+    async def chat(self, acc: Account, oai_req: dict) -> dict:
+        sess, text_in, msgs = await self._prepare(acc, oai_req)
         try:
-            text = await sess.prompt(_flatten(oai_req.get("messages")))
+            text = await sess.prompt(text_in)
         except AcpError as exc:
+            await self._discard(acc)
             raise UpstreamError(502, f"{self.name}: {exc}") from exc
+        self._sent[acc.id] = msgs
         if sess.tool_calls:
             log.info("[%s] turn finished after %d tool call(s) through Plobi's MCP server", self.name, sess.tool_calls)
         return {
@@ -317,16 +350,19 @@ class AcpProvider(Provider):
         }
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
-        sess = await self._turn(acc, oai_req)
+        sess, text_in, msgs = await self._prepare(acc, oai_req)
         cid = f"acp-{self.name}"
         model = oai_req.get("model", "")
         try:
-            async for delta in sess.stream(_flatten(oai_req.get("messages"))):
+            async for delta in sess.stream(text_in):
                 yield _chunk(cid, model, delta)
         except AcpError as exc:
+            await self._discard(acc)
             raise UpstreamError(502, f"{self.name}: {exc}") from exc
+        self._sent[acc.id] = msgs
         yield _chunk(cid, model, "", "stop")
 
     async def aclose(self) -> None:
         sessions, self._sessions = list(self._sessions.values()), {}
+        self._sent = {}
         await asyncio.gather(*(s.close() for s in sessions), return_exceptions=True)

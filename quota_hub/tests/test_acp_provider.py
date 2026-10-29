@@ -297,3 +297,57 @@ def test_a_cli_that_greets_with_a_banner_is_not_a_broken_session(tmp_path):
         await sess.close()
 
     _run(_go())
+
+
+def test_a_second_turn_sends_only_what_the_session_has_not_seen(tmp_path):
+    """A stateful session used to be handed the whole conversation on every turn: turn N
+    re-sent turns 1..N-1, so the model saw its own earlier answer quoted back at it (and
+    the context grew every turn). Measured 2026-10-29 from the code, before this pin."""
+
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+
+        first = [{"role": "user", "content": "hello"}]
+        _sess, text1, _msgs = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": first})
+        assert text1 == "user: hello"
+        prov._sent[acc.id] = first
+
+        second = first + [
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "again"},
+        ]
+        _sess, text2, _msgs = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": second})
+        assert text2 == "assistant: hi\n\nuser: again"
+
+        await prov.aclose()
+
+    _run(_go())
+
+
+def test_a_rewound_history_restarts_the_session(tmp_path):
+    """The client compacts or starts over: the prefix no longer matches, so the old
+    session (which still holds turns we are not sending) is replaced, not reused."""
+
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+
+        first = [{"role": "user", "content": "one"}]
+        sess, _text, _msgs = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": first})
+        await sess.start()
+        pid_before = sess.proc.pid
+        prov._sent[acc.id] = first
+
+        other = [{"role": "user", "content": "totally different"}]
+        sess2, text2, _msgs = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": other})
+
+        assert sess2 is sess                       # same seat, new child
+        assert sess2.proc.pid != pid_before        # it was really replaced
+        assert text2 == "user: totally different"  # and the whole history went in
+
+        await prov.aclose()
+
+    _run(_go())
