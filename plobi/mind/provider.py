@@ -569,7 +569,7 @@ class MindProvider(MemoryProvider):
             result = publish_project_daily_summary()
             if result.ok:
                 logger.info(
-                    "[mind] daily agenda summary published to Vault/projects/Plobi"
+                    "[mind] daily agenda summary published to Loom/wiki/daily"
                 )
             else:
                 logger.warning(
@@ -594,9 +594,13 @@ class MindProvider(MemoryProvider):
         那句「聊天原文不上云」每天往前推一次。现核：那批文件的写者只有这里，
         **读侧一个都没有**（``retrieval.py`` 不扫 ``raw/``），所以关掉这条腿不丢任何检索能力。
 
-        每日日程摘要那条腿保留（M2 ⑥ 要它），落点已按裁定 158 换进 vault 的人读面。
+        **每日日程摘要那条自动腿已停**（用户 2026-10-29 原话：「每日摘要是干什么用的。
+        我都没有定义过。是你自己说的东西。」）——它每轮想写一份 `wiki/daily/<日期>.md`，
+        但那份计划从来没被点过头，于是每开一个新进程/新一天就再排一张，待确认层里堆到 22 张、
+        21 张过期。没有人要它，就不该拿它去问人。函数 `_maybe_publish_daily_agenda` 留着，
+        要跑得由人显式叫；`AgendaService.daily_summary` 的确定性渲染本身没动。
         """
-        self._maybe_publish_daily_agenda()
+        # self._maybe_publish_daily_agenda()  # 停用，理由见上；不要再悄悄接回来
 
     # -- session boundary ------------------------------------------------
 
