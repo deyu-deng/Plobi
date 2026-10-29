@@ -133,6 +133,17 @@ class AcpAuthRequired(AcpError):
     """
 
 
+class AcpTimeout(AcpError):
+    """No answer inside the window — which is not the same as a refusal.
+
+    Measured 2026-10-29 with qwen-code 0.26.0: the process needs ~20 s before it reads
+    stdin at all, so an `initialize` sent at spawn is dropped and never answered. A
+    client that treats that silence as "this CLI cannot speak ACP" writes off a leg that
+    works; resending the same request once it is up is the difference. A *refusal* (an
+    error object) is never retried — that is the CLI answering.
+    """
+
+
 class AcpMethodUnknown(AcpError):
     """This CLI does not speak that method — a missing seam, not a failed request."""
 
@@ -196,6 +207,7 @@ class AcpSession:
         tools_enabled: bool = True,
         prompt_timeout: float = 300.0,
         start_timeout: float = 60.0,
+        init_attempt_timeout: float = 8.0,
     ) -> None:
         self.argv = argv
         self.cwd = cwd
@@ -204,6 +216,8 @@ class AcpSession:
         self.tools_enabled = tools_enabled
         self.prompt_timeout = prompt_timeout
         self.start_timeout = start_timeout
+        #: How long one `initialize` attempt may stay silent before we resend it.
+        self.init_attempt_timeout = init_attempt_timeout
         self.proc: asyncio.subprocess.Process | None = None
         self.session_id: str | None = None
         #: True only when `session/new` was accepted WITH our tools attached.
@@ -278,14 +292,7 @@ class AcpSession:
             log.debug("[acp:%s] %s", self.name, line.decode("utf-8", "replace").rstrip())
 
     async def _handshake(self) -> None:
-        init = await self._request(
-            "initialize",
-            {
-                "protocolVersion": 1,
-                "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False}},
-            },
-            timeout=self.start_timeout,
-        )
+        init = await self._initialize()
         self.auth_methods = _auth_methods(init)
         try:
             created = await self._request(
@@ -309,6 +316,32 @@ class AcpSession:
         )
 
     # --- model choice ----------------------------------------------------
+    async def _initialize(self) -> dict[str, Any]:
+        """Send `initialize`, resending while the CLI may still be booting.
+
+        Measured 2026-10-29: `qwen --acp` needs ~20 s before it reads stdin, and a request
+        sent before that is dropped without a word. Each resend carries a fresh id, so a
+        late answer to an earlier one is just an unknown response, not a wrong result.
+        A refusal (an error object) is never retried — that is the CLI answering.
+        """
+        params = {
+            "protocolVersion": 1,
+            "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False}},
+        }
+        deadline = time.monotonic() + max(self.start_timeout, 1.0)
+        attempt = 0
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise AcpTimeout(
+                    f"{self.name} never answered initialize within {self.start_timeout:.0f}s"
+                )
+            attempt += 1
+            try:
+                return await self._request("initialize", params, timeout=min(left, self.init_attempt_timeout))
+            except AcpTimeout as exc:
+                log.info("[acp:%s] initialize attempt %d unheard (%s) — resending", self.name, attempt, exc)
+
     async def set_model(self, model_id: str) -> bool:
         """Ask the CLI to run this model; False when it says it cannot.
 
@@ -357,11 +390,11 @@ class AcpSession:
         while True:
             left = deadline - time.monotonic()
             if left <= 0:
-                raise AcpError(f"{self.name} did not send a JSON-RPC message within {timeout:.0f}s")
+                raise AcpTimeout(f"{self.name} did not send a JSON-RPC message within {timeout:.0f}s")
             try:
                 line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=left)
             except asyncio.TimeoutError as exc:
-                raise AcpError(f"{self.name} did not answer within {timeout:.0f}s") from exc
+                raise AcpTimeout(f"{self.name} did not answer within {timeout:.0f}s") from exc
             if not line:
                 raise AcpError(f"{self.name} closed its stdout")
             try:
@@ -380,7 +413,7 @@ class AcpSession:
         while True:
             left = deadline - time.monotonic()
             if left <= 0:
-                raise AcpError(f"{self.name} did not answer {method} within {timeout:.0f}s")
+                raise AcpTimeout(f"{self.name} did not answer {method} within {timeout:.0f}s")
             msg = await self._read(left)
             if msg.get("id") == rid and ("result" in msg or "error" in msg):
                 if "error" in msg:

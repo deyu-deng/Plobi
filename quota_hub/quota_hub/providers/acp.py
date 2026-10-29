@@ -85,6 +85,8 @@ class AcpProvider(Provider):
         # The leg's own name (the config key). Ledger entries, accounts and login plans
         # are all keyed by it, so two ACP legs must never share the class default.
         self.name = str(config.get("leg") or config.get("name") or self.name)
+        # The card's own line ("Qwen Code", "Cline"). Machine ids never reach the screen.
+        self.display_name = str(config.get("display_name") or getattr(self, "display_name", ""))
         self.binary = config.get("binary", getattr(self, "binary", "acp"))
         self.acp_args = tuple(config.get("acp_args", self.acp_args))
         self.timeout = float(config.get("timeout", 300.0))

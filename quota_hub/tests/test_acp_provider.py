@@ -109,6 +109,25 @@ def test_only_our_own_tool_option_is_approved(tmp_path):
     _run(_go())
 
 
+def test_a_cli_that_drops_the_first_handshake_is_not_written_off(tmp_path):
+    """Measured 2026-10-29: `qwen --acp` does not read stdin for ~20 s, so the first
+    `initialize` is swallowed. Silence is not a refusal — the client resends."""
+
+    async def _go():
+        sess = AcpSession(
+            argv=[sys.executable, FAKE, "--slow-init"],
+            cwd=str(tmp_path),
+            name="slow",
+            start_timeout=10.0,
+            init_attempt_timeout=1.0,
+        )
+        await sess.start()
+        assert sess.session_id == "fake-session"
+        await sess.close()
+
+    _run(_go())
+
+
 def test_a_silent_cli_times_out_instead_of_hanging_the_hub(tmp_path):
     async def _go():
         sess = AcpSession(argv=[sys.executable, FAKE, "--silent"], cwd=str(tmp_path), name="fake", prompt_timeout=0.5)

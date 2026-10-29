@@ -182,7 +182,18 @@ def test_on_success_hook_runs_only_after_a_good_login(tmp_path, monkeypatch):
     assert calls == ["refreshed"]  # the failed login did not trigger a refresh
 
 
-def test_catalog_lists_every_aggregated_leg_plus_the_login_only_targets():
+def test_catalog_lists_every_aggregated_leg_plus_the_login_only_targets(monkeypatch):
+    # A login-only row is still a legitimate shape (a product whose only wired door is its
+    # own login command). Qwen used to be the one real entry; it moved into the registry
+    # as an ACP leg on 2026-10-29, so the shape is pinned with a stand-in instead of a
+    # product name that no longer lives here.
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\ghost.exe")
+    monkeypatch.setattr(
+        authflow,
+        "LOGIN_ONLY_TARGETS",
+        {"ghost-cli": {"name": "Ghost", "binary": "ghost", "argv": ["login"], "tty": True}},
+    )
+
     class _Prov(Provider):
         name = "antigravity"
         display_name = "Antigravity"
@@ -201,10 +212,9 @@ def test_catalog_lists_every_aggregated_leg_plus_the_login_only_targets():
     assert rows["antigravity"]["kind"] == "oauth"
     assert rows["antigravity"]["live"] is False
     assert rows["antigravity"]["reason"] == "credential_expired"
-    # The ACP/CLI legs Plobi drives but the hub does not aggregate still get a click.
-    assert "qwen-cli" in rows
-    assert rows["qwen-cli"]["aggregate"] is False
-    assert rows["qwen-cli"]["kind"] == "cli_login"
+    # A login-only target still gets a click, and is not an aggregated model row.
+    assert rows["ghost-cli"]["aggregate"] is False
+    assert rows["ghost-cli"]["kind"] == "cli_login"
     # Gemini is NOT a login-only row: it is a registry leg with its own sign-in plan, and
     # `--reauth` was a guessed argv that opened his browser on a YouTube link instead.
     assert "gemini-cli" not in rows
@@ -532,15 +542,25 @@ def test_the_catalog_is_the_scan_result_not_a_wish_list(monkeypatch):
 
 def test_a_login_only_target_without_its_cli_is_omitted(monkeypatch):
     monkeypatch.setattr(authflow, "_resolve_binary", lambda name: None)
+    monkeypatch.setattr(
+        authflow,
+        "LOGIN_ONLY_TARGETS",
+        {"ghost-cli": {"name": "Ghost", "binary": "ghost", "argv": ["login"], "tty": True}},
+    )
 
     assert authflow.auth_catalog(None) == []
 
 
 def test_an_installed_target_is_listed_as_not_signed_in(monkeypatch):
-    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\qwen.exe")
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\ghost.exe")
+    monkeypatch.setattr(
+        authflow,
+        "LOGIN_ONLY_TARGETS",
+        {"ghost-cli": {"name": "Ghost", "binary": "ghost", "argv": ["login"], "tty": True}},
+    )
 
     rows = {row["id"]: row for row in authflow.auth_catalog(None)}
 
-    assert rows["qwen-cli"]["live"] is False
-    assert rows["qwen-cli"]["installed"] is True
-    assert "还没登录" in rows["qwen-cli"]["reason"]
+    assert rows["ghost-cli"]["live"] is False
+    assert rows["ghost-cli"]["installed"] is True
+    assert "还没登录" in rows["ghost-cli"]["reason"]

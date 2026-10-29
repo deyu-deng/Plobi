@@ -94,19 +94,12 @@ def _says_already_signed_in(lines: list[str]) -> bool:
 #: declared here either: an unverified argv would open a browser to the wrong thing
 #: and read as a working button.
 LOGIN_ONLY_TARGETS: dict[str, dict] = {
-    "qwen-cli": {
-        "name": "Qwen Code",
-        "binary": "qwen",
-        # qwen's OAuth tier is selected by auth type; `qwen auth` is marked removed.
-        # Measured 2026-10-28: with a pipe instead of a terminal this prints a warning
-        # and quits, so it needs a real window — `tty` below.
-        "argv": ["--auth-type=qwen-oauth"],
-        "tty": True,
-    },
-    # Gemini used to sit here with `--reauth`. That flag does not exist in the installed
-    # 0.65.0 (verified: usage text, exit 41), and the leg is now driven by the registry's
-    # own `gemini_api` provider, which runs the CLI's Google consent directly. A product
-    # gets one card, and a card gets one verified command.
+    # Qwen used to be the one entry here: a card with a login command and nothing behind
+    # it — no models, no tools, nothing a picker could offer. Measured 2026-10-29, its
+    # `--acp` port answers `initialize` after ~20 s and refuses `session/new` until the
+    # user signs in, which is exactly what `transport: acp` reads. So the leg moved to
+    # the registry (`qwen-cli` in config.yaml) and this table is empty on purpose: a
+    # product gets one card, and that card now has a model list behind it once he logs in.
 }
 
 

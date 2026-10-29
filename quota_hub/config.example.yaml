@@ -294,6 +294,22 @@ providers:
     # Quota: Cline fronts the user's own provider key; no unified local endpoint.
     accounts: [{ id: cline-default }]
 
+  # Any CLI that speaks ACP over stdio can be a leg: `transport: acp` makes the registry
+  # build it from this block alone (no entry in `PROVIDER_CLASSES`). The hub asks it three
+  # things — signed in? which models? can you switch models? — and serves only what the
+  # CLI itself reports. `probe_timeout` must cover its boot time (qwen needs ~20 s before
+  # it reads stdin; the client resends `initialize` in the meantime).
+  qwen-cli:
+    enabled: true
+    transport: acp
+    binary: qwen
+    display_name: Qwen Code
+    model_prefix: qwen
+    timeout: 300
+    probe_timeout: 30
+    login_args: ["--auth-type=qwen-oauth"]
+    login_tty: true
+
   # --- Marvis via a CLI (spawn-based, compliant) ------------------------
   # Generic adapter for ANY CLI-based Marvis build (openmarvis / marvisx-cli /
   # lobe's `marvis` / a future Tencent Marvis CLI). Spawns the binary as a

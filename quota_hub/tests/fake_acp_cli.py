@@ -14,12 +14,15 @@ Modes (argv):
               starting a session`) and names its sign-in methods in `initialize`.
   --no-set-model  does not speak `session/set_model` (-32601), so a leg riding it can
               serve one model only: the one that session is already on.
+  --slow-init   drops the first `initialize` without a word and answers later ones —
+              the shape of qwen-code 0.26.0, which does not read stdin for ~20 s.
 """
 
 import json
 import sys
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else ""
+_init_seen = 0
 
 #: The models this stand-in claims to run, in its own ids and names. Answering with them
 #: is what lets a test pin "the picker showed what the CLI reported, not a config list".
@@ -44,7 +47,7 @@ def update(kind, **extra):
 
 
 def main():
-    global chosen_model
+    global chosen_model, _init_seen
     pending_permission = None
     prompt_id = None
     if MODE == "--banner":
@@ -75,6 +78,9 @@ def main():
             continue
 
         if method == "initialize":
+            _init_seen += 1
+            if MODE == "--slow-init" and _init_seen == 1:
+                continue
             result = {"protocolVersion": 1, "agentCapabilities": {}}
             if MODE == "--needs-auth":
                 result["authMethods"] = [{"id": "fake", "name": "Sign in with Fake"}]

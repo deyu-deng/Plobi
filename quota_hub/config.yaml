@@ -159,6 +159,22 @@ providers:
     timeout: 300
     accounts: [{ id: cline-default }]
 
+  # Qwen Code 也走它自己的 ACP 口（`qwen --acp`，10-29 实测 0.26.0）：`initialize` 回
+  # `qwen-code` + 登录方式，没登录时 `session/new` 拒。它有个脾气——**启动后约 20 秒
+  # 才开始读 stdin**，这之前发的 `initialize` 会被吞，所以 `probe_timeout` 给到 30 秒，
+  # 客户端会隔几秒重发一次（重发逻辑在 `quota_hub/acp.py`，不是这条腿特有的）。
+  # 模型名同样不抄：登录后由它 `session/new` 自报。
+  qwen-cli:
+    enabled: true
+    transport: acp
+    binary: qwen
+    display_name: Qwen Code
+    model_prefix: qwen
+    timeout: 300
+    probe_timeout: 30
+    login_args: ["--auth-type=qwen-oauth"]
+    login_tty: true
+
   # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。
   # 2026-10-11 那把桥接的是 agy（Google）；这条是用户 10-12 拍的第二条订阅口——
   # 它比 agy 那条好用在一处：本地那张 auth 记录里 access 约 28 天、refresh 约 30 天，
