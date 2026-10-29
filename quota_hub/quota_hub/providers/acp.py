@@ -316,6 +316,10 @@ class AcpProvider(Provider):
             sent = None
         sess = await self._turn(acc, oai_req)
         tail = msgs[len(sent):] if sent is not None else msgs
+        if not tail:
+            # A retry with the same history (a client timeout, say): the session has nothing
+            # new, but an empty prompt is not a question. Ask the last user turn again.
+            tail = [m for m in msgs if str(m.get("role") or "") == "user"][-1:] or msgs[-1:]
         return sess, _flatten(tail), msgs
 
     async def _discard(self, acc: Account) -> None:

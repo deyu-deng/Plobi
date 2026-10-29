@@ -351,3 +351,27 @@ def test_a_rewound_history_restarts_the_session(tmp_path):
         await prov.aclose()
 
     _run(_go())
+
+
+def test_a_retry_of_the_same_history_asks_the_last_question_again(tmp_path):
+    """A client that times out and re-sends the identical history must not produce an
+    empty prompt — the session has nothing new, but a retry is still a question."""
+
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+
+        msgs = [
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "answer"},
+            {"role": "user", "content": "second"},
+        ]
+        prov._sent[acc.id] = msgs
+
+        _sess, text, _msgs = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": msgs})
+        assert text == "user: second"
+
+        await prov.aclose()
+
+    _run(_go())
