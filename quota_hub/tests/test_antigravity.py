@@ -627,6 +627,65 @@ def test_an_absent_slot_is_not_signed_in_and_asks_nobody(monkeypatch, tmp_path):
     assert asked == [], "nothing to renew: the tool must not be run"
 
 
+def test_the_tool_is_handed_the_exit_node_it_needs_to_renew(monkeypatch):
+    """The tool renews the account against Google **itself**, so it needs the way out.
+
+    Measured 2026-10-29 23:49: without a proxy it answered "无法连接 Google 授权服务器"
+    and the shared slot stayed stale — the leg then said "credential expired" and the
+    card fell back to a `+`. The node from Settings → VPN is the sanctioned exit for
+    every Google byte (裁定 206), and the tool reads the standard proxy variables.
+    """
+    import os
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    seen: dict = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "switched"
+        stderr = ""
+
+    def _fake_run(binary, env, timeout):
+        seen["env"] = env
+        return _Proc()
+
+    monkeypatch.setattr(tool_bridge, "find_tool", lambda: r"C:\fake\antigravity-tools.exe")
+    monkeypatch.setattr(tool_bridge, "proxy_url", lambda: ("http://127.0.0.1:7895", "ok"))
+    monkeypatch.setattr(tool_bridge, "_run_tool", _fake_run)
+
+    ok, detail = tool_bridge.refresh_via_tool()
+    assert ok, detail
+    assert seen["env"]["HTTPS_PROXY"] == "http://127.0.0.1:7895"
+    assert seen["env"]["HTTP_PROXY"] == "http://127.0.0.1:7895"
+
+
+def test_without_a_node_the_tool_gets_no_proxy_of_ours(monkeypatch):
+    """No node configured ⇒ we inject nothing; the tool's own environment stands."""
+    import os
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    seen: dict = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "switched"
+        stderr = ""
+
+    def _fake_run(binary, env, timeout):
+        seen["env"] = env
+        return _Proc()
+
+    monkeypatch.setattr(tool_bridge, "find_tool", lambda: r"C:\fake\antigravity-tools.exe")
+    monkeypatch.setattr(tool_bridge, "proxy_url", lambda: ("", "no_proxy"))
+    monkeypatch.setattr(tool_bridge, "_run_tool", _fake_run)
+
+    ok, detail = tool_bridge.refresh_via_tool()
+    assert ok, detail
+    assert seen["env"].get("HTTPS_PROXY") == os.environ.get("HTTPS_PROXY")
+
+
 def test_a_spent_quota_says_so_instead_of_pretending_to_be_logged_out(monkeypatch, tmp_path):
     """Every model answered 429 RESOURCE_EXHAUSTED while the credential was healthy.
 

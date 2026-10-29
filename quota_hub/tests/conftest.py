@@ -28,11 +28,17 @@ def no_external_tools(monkeypatch):
     The Antigravity leg asks Antigravity Tools to re-push its account when the shared
     Keychain slot goes stale (measured 2026-10-29). That is a real side effect on the
     owner's machine — it switches the account the agy CLI uses — so the whole suite runs
-    with the bridge stubbed out.
+    with the process launch stubbed out. The stub sits on the launch, not on the
+    decision: the question "what environment does that call get?" stays answerable.
     """
     from quota_hub.providers.apps.antigravity import tool_bridge
 
-    monkeypatch.setattr(tool_bridge, "refresh_via_tool", lambda **_kw: (False, "stubbed in tests"))
+    class _Stub:
+        returncode = 1
+        stdout = ""
+        stderr = "stubbed in tests"
+
+    monkeypatch.setattr(tool_bridge, "_run_tool", lambda *_a, **_k: _Stub())
 
 
 @pytest.fixture(autouse=True)

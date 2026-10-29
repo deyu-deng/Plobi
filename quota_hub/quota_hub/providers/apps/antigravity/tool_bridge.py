@@ -28,6 +28,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ....egress import proxy_url
+
 log = logging.getLogger("quota_hub")
 
 #: Where the tool lives. The first existing path wins; the PATH lookup is the fallback.
@@ -53,18 +55,28 @@ def refresh_via_tool(*, timeout: float = 60.0) -> tuple[bool, str]:
 
     Returns (ok, detail). `ok` means the tool ran and reported success — it is the
     tool's own verdict, not ours, because it owns the credential.
+
+    The tool renews that account against Google **itself**, so it needs the way out:
+    measured 2026-10-29 23:49, without a proxy it answered "无法连接 Google 授权服务器"
+    and the shared slot stayed stale (the leg then said "credential expired" and the
+    card fell back to a `+`). The node from Settings → VPN is the sanctioned exit for
+    every Google byte (裁定 206), and the tool reads the standard proxy variables — so
+    we hand it that same node instead of letting it go out direct.
     """
     binary = find_tool()
     if not binary:
         return False, "这台机器上没有 Antigravity Tools"
+    env = dict(os.environ)
+    proxy, reason = proxy_url()
+    if proxy and reason == "ok":
+        env["HTTPS_PROXY"] = proxy
+        env["HTTP_PROXY"] = proxy
+        env["ALL_PROXY"] = proxy
+        env["https_proxy"] = proxy
+        env["http_proxy"] = proxy
+        env["all_proxy"] = proxy
     try:
-        proc = subprocess.run(
-            [binary, "switch", "--target", TARGET],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=dict(os.environ),
-        )
+        proc = _run_tool(binary, env, timeout)
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return False, f"{type(exc).__name__}: {exc}"
     out = (proc.stdout or "") + (proc.stderr or "")
@@ -72,3 +84,19 @@ def refresh_via_tool(*, timeout: float = 60.0) -> tuple[bool, str]:
         return False, out.strip()[:200] or f"退出码 {proc.returncode}"
     log.info("antigravity: credential refreshed through Antigravity Tools")
     return True, out.strip()[:200]
+
+
+def _run_tool(binary: str, env: dict, timeout: float):
+    """The one place this module starts a process.
+
+    Kept behind its own name so the test suite can forbid the binary without also
+    forbidding the question "what environment does that call get?" (no test may drive
+    another product's binary — `tests/conftest.py` stubs this one).
+    """
+    return subprocess.run(
+        [binary, "switch", "--target", TARGET],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env,
+    )
