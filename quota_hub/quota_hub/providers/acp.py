@@ -60,6 +60,15 @@ def _flatten(messages: Any) -> str:
     return "\n\n".join(lines)
 
 
+def _conversation(messages: Any) -> list[dict]:
+    """The dialogue only — the system prompt is set when a session starts (see `_prepare`)."""
+    return [
+        m
+        for m in (messages or [])
+        if isinstance(m, dict) and str(m.get("role") or "") != "system"
+    ]
+
+
 def _chunk(cid: str, model: str, text: str = "", finish: str | None = None) -> dict:
     return {
         "choices": [{"delta": ({"content": text} if text else {}), "finish_reason": finish, "index": 0}],
@@ -303,23 +312,32 @@ class AcpProvider(Provider):
         session already saw stays out, and only the new tail goes in. Measured 2026-10-29:
         every turn used to re-send the whole conversation into the same session, so turn N
         handed the CLI turns 1..N-1 again — duplicated context that grows every turn and
-        shows the model its own earlier answer quoted back at it. When the client rewinds
-        or compacts the history the prefix no longer matches, and the session is replaced:
+        shows the model its own earlier answer quoted back at it. When the dialogue itself
+        is rewound or compacted the prefix no longer matches, and the session is replaced:
         an old session holding turns we are no longer sending is worse than paying its boot.
+
+        The comparison deliberately ignores the system message. Plobi rebuilds its system
+        prompt per turn (a date, the current state); counting that as a rewind would restart
+        the session — and pay the CLI's ten-to-twenty-five second boot — on every single
+        turn. A fresh session still gets the whole history including the prompt.
         """
         msgs = [m for m in (oai_req.get("messages") or []) if isinstance(m, dict)]
         sess = self._session(acc)
         sent = self._sent.get(acc.id)
-        if sent is not None and msgs[: len(sent)] != sent:
+        conversation = _conversation(msgs)
+        if sent is None:
+            tail = msgs
+        elif conversation[: len(_conversation(sent))] == _conversation(sent):
+            tail = conversation[len(_conversation(sent)):]
+        else:
             await sess.close()
             self._sent.pop(acc.id, None)
-            sent = None
-        sess = await self._turn(acc, oai_req)
-        tail = msgs[len(sent):] if sent is not None else msgs
+            tail = msgs
         if not tail:
             # A retry with the same history (a client timeout, say): the session has nothing
             # new, but an empty prompt is not a question. Ask the last user turn again.
             tail = [m for m in msgs if str(m.get("role") or "") == "user"][-1:] or msgs[-1:]
+        sess = await self._turn(acc, oai_req)
         return sess, _flatten(tail), msgs
 
     async def _discard(self, acc: Account) -> None:

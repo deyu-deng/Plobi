@@ -375,3 +375,36 @@ def test_a_retry_of_the_same_history_asks_the_last_question_again(tmp_path):
         await prov.aclose()
 
     _run(_go())
+
+
+def test_a_rebuilt_system_prompt_does_not_restart_the_session(tmp_path):
+    """Plobi rebuilds its system prompt every turn (a date, the current state). Counting
+    that as a rewind would restart the CLI — and pay its boot — on every turn."""
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+
+        first = [
+            {"role": "system", "content": "today is Monday"},
+            {"role": "user", "content": "hello"},
+        ]
+        sess, text1, _ = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": first})
+        await sess.start()
+        pid_before = sess.proc.pid
+        prov._sent[acc.id] = first
+
+        second = [
+            {"role": "system", "content": "today is Tuesday"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "and again"},
+        ]
+        sess2, text2, _ = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": second})
+
+        assert sess2.proc.pid == pid_before        # same child: no restart
+        assert text2 == "assistant: hi\n\nuser: and again"
+
+        await prov.aclose()
+
+    _run(_go())
