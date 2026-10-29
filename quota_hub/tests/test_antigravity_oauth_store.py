@@ -13,6 +13,20 @@ from quota_hub.providers.apps.antigravity import oauth as oa
 from quota_hub.providers.apps.antigravity import AntigravityProvider
 
 
+@pytest.fixture(autouse=True)
+def _no_google_calls(monkeypatch):
+    """These tests are about our storage and proxy wiring, not about Google answering.
+
+    Measured 2026-10-29: `run_bootstrap` was faked only as far as `sign_in`, so
+    `discover_project` and `fetch_userinfo` still posted to Google with a fake token —
+    with the Settings → VPN node half-up they blocked to their 20 s timeouts each and
+    this 9-test file turned into minutes. A test that needs Google to answer is not
+    testing us, so both calls are stubbed here for the whole file.
+    """
+    monkeypatch.setattr(oa, "discover_project", lambda _token: "")
+    monkeypatch.setattr(oa, "fetch_userinfo", lambda _token: {})
+
+
 def test_the_google_login_leaves_through_the_same_node_as_the_leg(monkeypatch, home):
     """回归本体的判据：抽公共流程那天，这条腿的换令牌改成了直连。
 
