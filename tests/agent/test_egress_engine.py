@@ -549,3 +549,31 @@ def test_the_pool_file_is_named_as_a_credential_file_that_is_not_ours_to_rewrite
 
     assert rep.config_source == "pool"
     assert any("not ours to rewrite" in n for n in rep.notes), rep.notes
+
+
+def test_a_reload_that_cannot_compile_leaves_the_running_engine_alone(
+    tmp_path, pool, fake_binary, inert, monkeypatch
+):
+    """10-29 现核：表被面板抹空之后的一次 reload —— 先把在跑的引擎停了，再编译失败。
+
+    结果是系统代理还指着那个端口，而端口上什么都没有了。重载的语义是"换成新的"，
+    不是"先把能用的停掉再试试"，所以编译必须发生在停止**之前**。
+    """
+    from agent.egress.rules import EgressConfigError
+
+    home = tmp_path / "home"
+    table = _table(include=[str(pool)], binary=fake_binary)
+    fake = FakePsutil({4242: {"name": "mihomo.exe", "created": 1000.0}}, up=inert["up"], port=_PORT)
+    monkeypatch.setattr(engine, "_psutil", lambda: fake)
+    assert ensure(table, home=home, wait_s=0).state == OURS
+    assert inert["up"] == {_PORT}
+
+    def boom(snap, tbl):
+        raise EgressConfigError("nodes.乌克兰W01.password_env names 'PLOBI_EGRESS_X' but that variable is not set")
+
+    monkeypatch.setattr(engine, "_render", boom)
+    rep = engine.reload_engine(table, home=home)
+
+    assert fake.terminated == [], "编译不出来就不许先停在跑的引擎"
+    assert inert["up"] == {_PORT}, "在跑的引擎必须还在服务"
+    assert rep.state == OURS and "没动在跑的引擎" in rep.detail, rep

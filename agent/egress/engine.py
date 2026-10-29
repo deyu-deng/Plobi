@@ -651,6 +651,19 @@ def reload_engine(table: Table, *, home: str | Path | None = None) -> EngineRepo
     if current.state == FOREIGN:
         return replace(current, notes=(*current.notes, "reload refused: this engine was not started by Plobi"))
     if current.state == OURS:
+        # **Compile before stopping anything.**  Measured 10-29 on this box: the settings
+        # pane wiped the members, the next reload stopped the running engine, the render
+        # then raised — so the machine kept a system proxy pointing at a dead port with
+        # nothing listening.  A reload that cannot produce a config is not a reload.
+        try:
+            _render(snap, table)
+        except Exception as exc:  # noqa: BLE001 - any render failure is a reason not to stop
+            return EngineReport(
+                OURS,
+                f"新表编译不出来，**没动在跑的引擎**：{type(exc).__name__}: {str(exc)[:180]}",
+                snap.port, str(snap.workdir or ""), snap.source,
+                notes=(*snap.notes, "reload refused before the stop — the old config is still serving"),
+            )
         stopped = stop_ours(table, home=home)
         if stopped.state != STOPPED:
             return replace(current, notes=(*current.notes, f"reload refused: {stopped.detail}"))
