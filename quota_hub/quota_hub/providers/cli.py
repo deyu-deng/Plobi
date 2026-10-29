@@ -483,6 +483,16 @@ class CliProvider(Provider):
                 cooldown=15.0,
             )
 
+    def stream_text(self, raw: bytes, acc: Account | None = None) -> str:
+        """One chunk of the CLI's stdout → the text a streaming client should see.
+
+        Default: the bytes as printed. A leg whose stream is JSONL overrides this to pull
+        the assistant delta out of each line — that is how Kiro streams the model's token
+        groups instead of handing the whole answer back at the end, without a second copy
+        of the process plumbing below.
+        """
+        return _strip_ansi(raw.decode(errors="replace"))
+
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         if self.stream_from_chat:
             # JSON-output CLIs must be parsed as a whole. Run once, then emit the
@@ -516,14 +526,14 @@ class CliProvider(Provider):
                     )
                 if not line:
                     break
-                text = _strip_ansi(line.decode(errors="replace"))
+                text = self.stream_text(line, acc)
                 if text:
                     collected.append(text)
                     yield _chunk(cid, model, text)
             # flush any trailing bytes emitted without a final newline
             rest = await stdout.read()
             if rest:
-                text = _strip_ansi(rest.decode(errors="replace"))
+                text = self.stream_text(rest, acc)
                 if text:
                     collected.append(text)
                     yield _chunk(cid, model, text)
