@@ -243,11 +243,16 @@ def sign_in(*, client_id: str, client_secret: str, scopes: list[str],
     port = _reserve_port(preferred_port)
     redirect_uri = f"http://{redirect_host}:{port}{redirect_path}"
     url, verifier = auth_url(client_id, redirect_uri, scopes, use_pkce=use_pkce)
+    # Whoever takes the URL opens it — not both. The hub hands it to the desktop, which
+    # opens exactly one tab (`openAuthUrlOnce`); calling `webbrowser.open` here as well
+    # put a second tab on his screen for every click (measured 2026-10-29). A CLI run
+    # passes no `on_url`, so it still opens the browser itself.
     if on_url is not None:
         on_url(url)
-    try:
-        webbrowser.open(url)
-    except Exception:  # noqa: BLE001 — the URL is handed to `on_url` above for a reason
-        pass
+    else:
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 — the URL is handed to `on_url` above for a reason
+            pass
     code = wait_for_code(port, timeout=timeout, path=redirect_path)
     return exchange(client_id, client_secret, code, verifier, redirect_uri, proxy=proxy)
