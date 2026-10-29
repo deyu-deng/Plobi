@@ -387,3 +387,102 @@ def test_a_model_list_that_stays_empty_keeps_what_we_had(monkeypatch):
 
     assert asyncio.run(prov.refresh_models(acc)) is None
     assert prov.served_models == ("gemini_api/old-one",)
+
+
+def _id_token(azp: str) -> str:
+    """A JWT-shaped id_token whose payload names the client that asked for consent."""
+    import base64
+
+    def seg(obj: dict) -> str:
+        raw = json.dumps(obj).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    return f"{seg({'alg': 'none'})}.{seg({'azp': azp, 'aud': azp})}.sig"
+
+
+def test_our_credential_lives_in_our_own_home_not_in_the_clis_file(tmp_path, monkeypatch):
+    """The Gemini CLI's own file belongs to whoever wrote it last.
+
+    Measured 2026-10-29 23:19 on this machine: the Antigravity Tools' `switch --target
+    agy` had put the Antigravity app's token in `~/.gemini/oauth_creds.json` (the agy
+    CLI is a Gemini-CLI fork and keeps the same path). Two products, one file: whoever
+    wrote last wins and the card flips back and forth. Our own home is ours alone.
+    """
+    from quota_hub.providers.apps.gemini.api import store_path
+
+    monkeypatch.delenv("QUOTA_HUB_GEMINI_STORE", raising=False)
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
+    path = store_path()
+    assert path == tmp_path / "home" / "plobi" / "gemini_creds.json"
+    assert ".gemini" not in str(path)
+
+
+def test_a_credential_another_product_minted_is_not_signed_in(tmp_path, monkeypatch):
+    """The id_token's `azp` claim names the client that asked for consent.
+
+    Google answers `free-tier: UNSUPPORTED_CLIENT` for another product's credential —
+    no project, and `fetchAvailableModels` says 403 PERMISSION_DENIED — so the card
+    must not claim a login this leg cannot use.
+    """
+    from quota_hub.providers.apps.gemini import oauth as goauth
+
+    store = tmp_path / "gemini_creds.json"
+    store.write_text(
+        json.dumps({
+            "access_token": "other-access",
+            "refresh_token": "r",
+            "expiry_date": int((time.time() + 3600) * 1000),
+            "id_token": _id_token("999999999999-otherclient.apps.googleusercontent.com"),
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(store))
+    monkeypatch.setattr(goauth, "discover_client", lambda: ("111111111111-gemini.apps.googleusercontent.com", "secret"))
+
+    prov = _leg(_json({})[0])
+    live, reason = prov.signed_in()
+    assert live is False
+    assert "Gemini CLI" in reason, reason
+
+
+def test_a_credential_the_gemini_client_minted_is_signed_in(tmp_path, monkeypatch):
+    """The same check, the other way round: our own client's token is a real login."""
+    from quota_hub.providers.apps.gemini import oauth as goauth
+
+    store = tmp_path / "gemini_creds.json"
+    store.write_text(
+        json.dumps({
+            "access_token": "our-access",
+            "refresh_token": "r",
+            "expiry_date": int((time.time() + 3600) * 1000),
+            "id_token": _id_token("111111111111-gemini.apps.googleusercontent.com"),
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(store))
+    monkeypatch.setattr(goauth, "discover_client", lambda: ("111111111111-gemini.apps.googleusercontent.com", "secret"))
+
+    prov = _leg(_json({})[0])
+    live, reason = prov.signed_in()
+    assert live is True, reason
+
+
+def test_a_credential_without_an_id_token_is_not_taken_away(tmp_path, monkeypatch):
+    """Absence of evidence is not evidence: no id_token means we cannot tell."""
+    from quota_hub.providers.apps.gemini import oauth as goauth
+
+    store = tmp_path / "gemini_creds.json"
+    store.write_text(
+        json.dumps({
+            "access_token": "our-access",
+            "refresh_token": "r",
+            "expiry_date": int((time.time() + 3600) * 1000),
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(store))
+    monkeypatch.setattr(goauth, "discover_client", lambda: ("111111111111-gemini.apps.googleusercontent.com", "secret"))
+
+    prov = _leg(_json({})[0])
+    live, reason = prov.signed_in()
+    assert live is True, reason

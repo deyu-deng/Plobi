@@ -14,10 +14,16 @@ shares one `CloudCodeClient` implementation with the Antigravity leg, and the on
 inputs are the credential's location, the host, and the client identity the product reports.
 
 `~/.gemini/` on this machine holds `config/`, `history/`, `installation_id`, `projects.json`
-and **no credential file** — so the leg stays dark (no card claim of a login, no models)
-until the owner signs in once from the settings card. The reader is tolerant about key names
-because the shape can only be confirmed after that sign-in; anything it cannot parse is "no
-credential", never "signed in".
+and a credential file — but that file belongs to whoever wrote it last: measured 2026-10-29
+23:19, the Antigravity Tools' `switch --target agy` had put the **Antigravity app's**
+token there (the agy CLI is a Gemini-CLI fork and keeps the same path). Google answers
+`free-tier: UNSUPPORTED_CLIENT` for that credential — no project, and
+`fetchAvailableModels` says 403 PERMISSION_DENIED — so "a credential exists" was never
+"this is a Gemini CLI session". The leg therefore keeps **its own** credential in Plobi's
+home, and reads the CLI's file only as a fallback, deciding by the id_token's `azp`
+claim (which OAuth client asked for consent) whether it may call itself signed in. The
+reader is tolerant about key names because the shape can only be confirmed after a
+sign-in; anything it cannot parse is "no credential", never "signed in".
 
 **No TUN needed (裁定 206 follow-up)**: the hub's shared client runs `trust_env: false`
 (2026-10-14: a dead local proxy had poisoned every upstream), so this leg resolves its own
@@ -29,6 +35,7 @@ rest of the hub stays direct.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -63,15 +70,56 @@ CLIENT_METADATA = {"pluginType": "GEMINI"}
 #: source — 裁定 204.5.)
 
 
+def _root() -> Path:
+    home = os.environ.get("PLOBI_HOME", "").strip()
+    return (Path(home) / "plobi") if home else (Path.home() / ".plobi" / "plobi")
+
+
 def store_path() -> Path:
+    """Where **our** sign-in keeps its credential — never the CLI's own file.
+
+    Measured 2026-10-29 23:19 on this machine: the Antigravity Tools' `switch --target
+    agy` rewrites `~/.gemini/oauth_creds.json` with the Antigravity account's token
+    (byte-identical to the Credential Manager slot), because the agy CLI is a
+    Gemini-CLI fork and keeps the same file. Two products, one file: whoever wrote last
+    wins, and the card flips back and forth. Our own home is ours alone.
+    """
     explicit = os.environ.get(STORE_ENV, "").strip()
-    if explicit:
-        return Path(explicit)
-    return Path.home() / ".gemini" / "oauth_creds.json"
+    return Path(explicit) if explicit else _root() / "gemini_creds.json"
 
 
 def read_credential() -> dict[str, Any] | None:
-    path = store_path()
+    """The credential **our** sign-in left behind. Nothing else counts.
+
+    The CLI's own file is another product's file (the agy CLI writes there too), so it
+    is neither read nor written: reading it would import somebody else's session into
+    this leg, and writing it would start the two of them overwriting each other.
+    """
+    return _read_credential_file(store_path())
+
+
+def _minted_by_another_client(data: dict[str, Any]) -> bool:
+    """Is the credential we hold one that the Gemini CLI's own client did not ask for?
+
+    Only positive evidence counts: a credential without an id_token (or one carrying no
+    `azp` claim), and a machine where the CLI's client pair cannot be found, are both
+    "we cannot tell" — never "not signed in". We never take a working state away on
+    absence of evidence.
+    """
+    claims = _id_token_claims(str(data.get("id_token") or ""))
+    minted_by = str(claims.get("azp") or "")
+    if not minted_by:
+        return False
+    from . import oauth as _oauth
+
+    client = _oauth.discover_client()
+    expected = str(client[0]) if client else ""
+    if not expected:
+        return False
+    return minted_by != expected
+
+
+def _read_credential_file(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
@@ -96,7 +144,24 @@ def read_credential() -> dict[str, Any] | None:
         "access_token": token,
         "refresh_token": str(data.get("refresh_token") or ""),
         "expires_at": expires_at,
+        # The id_token is a JWT whose claims name the OAuth client that asked for
+        # consent — the only local way to tell a Gemini CLI session from another
+        # product's credential (see `_minted_by_another_client`).
+        "id_token": str(data.get("id_token") or ""),
     }
+
+
+def _id_token_claims(id_token: str) -> dict[str, Any]:
+    """The claims of the credential's id_token (a JWT) — never the token itself."""
+    parts = id_token.split(".")
+    if len(parts) < 2:
+        return {}
+    raw = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(raw))
+    except (ValueError, TypeError):
+        return {}
+    return claims if isinstance(claims, dict) else {}
 
 
 def _refreshable(data: dict[str, Any]) -> bool:
@@ -191,10 +256,24 @@ class GeminiApiProvider(Provider):
         }
 
     def signed_in(self) -> tuple[bool, str]:
-        """Credential only — the node is a separate question (see `Provider.signed_in`)."""
+        """Credential only — the node is a separate question (see `Provider.signed_in`).
+
+        "There is a credential" is not "this is a Gemini CLI session". The file this leg
+        reads can hold **another product's** token — measured 2026-10-29 23:2x on this
+        machine: the Antigravity app's (`azp` = 1071006060591-… while the Gemini CLI's
+        own client is 681255809395-…), which Google answers with
+        `free-tier: UNSUPPORTED_CLIENT`: no project, and `fetchAvailableModels` says
+        403 PERMISSION_DENIED. The id_token's `azp` claim names who asked for consent,
+        so the question is settled locally, in milliseconds.
+        """
         data = read_credential()
         if data is None:
             return False, "no_desktop_credential"
+        if _minted_by_another_client(data):
+            return False, (
+                "手里这份不是 Gemini CLI 登的（上游说这个客户端用不了免费额度）——"
+                "点一下这张卡重新登一次就好"
+            )
         expires = float(data.get("expires_at") or 0.0)
         if expires and expires <= time.time() and not _refreshable(data):
             # A short-lived access token is not a dead leg: the CLI's own credential

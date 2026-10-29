@@ -20,10 +20,12 @@ So we discover that pair at run time from that bundle rather than hardcoding som
 copy of it: nothing lands in git, and the consent screen he sees is Google's own, for
 Gemini CLI's own client — the same one his terminal would have used.
 
-Where the result goes: `~/.gemini/oauth_creds.json`, the file the CLI itself writes, in
-the shape it itself reads (`access_token` / `refresh_token` / `expiry_date` in ms). One
-credential, one owner-visible place, and the hub's leg reads exactly what the CLI would.
-We print no token, ever.
+Where the result goes: **our own store** (`PLOBI_HOME/plobi/gemini_creds.json`), in the shape
+the CLI itself reads (`access_token` / `refresh_token` / `expiry_date` in ms). Not the CLI's own
+file: measured 2026-10-29 23:19, the Antigravity Tools' `switch --target agy` rewrites
+`~/.gemini/oauth_creds.json` with the Antigravity account's token (the agy CLI is a
+Gemini-CLI fork and keeps the same file) — two products, one file, and the card flips back
+and forth. One credential, one owner, our own home. We print no token, ever.
 """
 
 from __future__ import annotations
@@ -140,10 +142,10 @@ def reset_discovery_cache() -> None:
 
 
 def write_credential(tokens: dict, *, store: Path | None = None) -> Path:
-    """Merge Google's answer into the CLI's own credential file.
+    """Merge Google's answer into our own credential store.
 
-    Unknown keys already in that file are kept: gemini-cli stores more than the token
-    (project id, credits), and a login through Plobi must not cost him that.
+    Unknown keys already in that file are kept: the CLI's own shape carries more than
+    the token (project id, credits), and a login through Plobi must not cost him that.
     """
     path = store or _api.store_path()
     data: dict = {}
@@ -183,7 +185,7 @@ def proxy_for_leg() -> tuple[str, str]:
 
 
 def run_login(on_url: Callable[[str], None] | None = None) -> dict:
-    """The click path: consent in his browser, credential in the CLI's own file."""
+    """The click path: consent in his browser, credential in our own store."""
     pair = discover_client()
     if pair is None:
         raise RuntimeError("这台机器上的 Gemini CLI 没有给出它的登录客户端，这条路走不通")
