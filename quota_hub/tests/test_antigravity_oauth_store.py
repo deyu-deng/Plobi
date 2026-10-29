@@ -301,3 +301,24 @@ def test_a_flaky_node_is_looked_at_twice_before_the_click_is_refused(home, monke
     oa.run_bootstrap(print_token=False)
 
     assert calls["n"] == 2, "the click was refused after a single unlucky probe"
+
+
+def test_a_refused_client_points_at_the_tool_that_actually_works(home, monkeypatch):
+    """Measured 2026-10-29: Google refused our exchange with `invalid_client`, and the
+    same pair was refused with Antigravity's own User-Agent and with a browser TLS
+    fingerprint too — so that client is not the one this account was authorized with.
+    The account lives in Antigravity Tools, so the message has to say that."""
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CC_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(oa, "probe_network", lambda *a, **k: {"ok": True, "advice": "", "checks": []})
+    monkeypatch.setattr(oa, "resolve_proxy", lambda: ("http://127.0.0.1:7895", "ok"))
+
+    def _refused(**_kwargs):
+        raise RuntimeError("Google 在这一步回了 invalid_client（HTTP 401）")
+
+    monkeypatch.setattr(oa.google_oauth, "sign_in", _refused)
+
+    with pytest.raises(RuntimeError) as exc:
+        oa.run_bootstrap(print_token=False)
+
+    assert "Antigravity Tools" in str(exc.value)

@@ -172,15 +172,33 @@ def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | 
         # repeats it.
         raise RuntimeError(network["advice"])
 
-    tokens = google_oauth.sign_in(
-        client_id=client_id, client_secret=client_secret,
-        scopes=OAUTH_SCOPES, proxy=proxy,
-        use_pkce=False,
-        redirect_host="localhost",
-        redirect_path=CALLBACK_PATH,
-        preferred_port=CALLBACK_PORT,
-        on_url=on_url,
-    )
+    try:
+        tokens = google_oauth.sign_in(
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=OAUTH_SCOPES,
+            proxy=proxy,
+            use_pkce=False,
+            redirect_host="localhost",
+            redirect_path=CALLBACK_PATH,
+            preferred_port=CALLBACK_PORT,
+            on_url=on_url,
+        )
+    except RuntimeError as exc:
+        # Measured 2026-10-29 (user report): Google refused the exchange with
+        # `invalid_client` — and not because of our request: the same pair, the same
+        # refresh token and the same code fail with and without Antigravity's own
+        # User-Agent and browser TLS fingerprint. That client simply is not the one this
+        # account was authorized with; the account lives in Antigravity Tools, which can
+        # refresh it. So point at the working path instead of leaving him at a dead end.
+        if "invalid_client" in str(exc):
+            raise RuntimeError(
+                "Google 拒了这对 client（invalid_client）：同一对 client 换 Antigravity 的 "
+                "User-Agent、换浏览器 TLS 指纹也一样被拒，所以这条路走不通。"
+                "用 Antigravity Tools 登录一次（它自己那对 client 是通的），"
+                "Plobi 从同一个 Keychain 槽读它的账号。"
+            ) from exc
+        raise
 
     refresh = tokens.get("refresh_token")
     if not refresh:
