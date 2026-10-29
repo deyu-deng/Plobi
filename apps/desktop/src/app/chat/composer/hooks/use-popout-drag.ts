@@ -41,12 +41,18 @@ interface ComposerPopoutGesturesOptions {
   position: PopoutPosition
 }
 
-function gestureTargetOk(target: EventTarget | null) {
+export function gestureTargetOk(target: EventTarget | null) {
   if (!(target instanceof Element)) {
     return false
   }
 
-  return !target.closest('button, a, input, textarea, select, [role="menuitem"], [data-radix-popper-content-wrapper]')
+  // The quote bar hosts selectable text AND the quote's own clear (×) button —
+  // both of which a peel-off gesture used to steal: dragging the quoted text
+  // popped the whole composer off the dock (2026-10-29 user report). The bar
+  // never gestures; its buttons are already covered by the `button` guard.
+  return !target.closest(
+    'button, a, input, textarea, select, [role="menuitem"], [data-radix-popper-content-wrapper], [data-slot="composer-quote"]'
+  )
 }
 
 /** Floating composer's 5px outer frame — grab here to drag without long-press. */
