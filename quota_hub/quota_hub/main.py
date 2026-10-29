@@ -239,6 +239,16 @@ async def _shutdown():
     if STATE.get("tokenmgr"):
         with contextlib.suppress(Exception):
             await STATE["tokenmgr"].stop()
+    # Close every leg that holds a child process (an ACP session is a live `cline`/`qwen`
+    # node process). The desktop reaps the whole tree with `taskkill /T` on quit, but a
+    # graceful stop — Ctrl+C in dev, a test teardown — runs this handler and nothing else.
+    reg = STATE.get("reg")
+    if reg is not None:
+        for prov in list(reg.providers.values()):
+            close = getattr(prov, "aclose", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    await close()
     with contextlib.suppress(Exception):
         await STATE["http"].aclose()
 

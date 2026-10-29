@@ -270,3 +270,31 @@ def test_one_slow_leg_does_not_delay_the_others():
         assert elapsed < 0.75, f"the legs ran one after another ({elapsed:.2f}s)"
 
     asyncio.run(_go())
+
+
+def test_shutdown_closes_the_legs_that_hold_child_processes(monkeypatch):
+    """An ACP session is a live `cline`/`qwen` node process. The desktop reaps the tree
+    with `taskkill /T` on quit, but a graceful stop (Ctrl+C in dev, a test teardown) runs
+    this handler and nothing else — measured 2026-10-29: it closed the shared client and
+    left the children behind."""
+    closed: list[str] = []
+
+    class _Prov:
+        async def aclose(self):
+            closed.append("leg")
+
+    class _Reg:
+        providers = {"a": _Prov()}
+
+    class _Http:
+        async def aclose(self):
+            closed.append("http")
+
+    monkeypatch.setitem(main.STATE, "reg", _Reg())
+    monkeypatch.setitem(main.STATE, "http", _Http())
+    monkeypatch.setitem(main.STATE, "quota_task", None)
+    monkeypatch.setitem(main.STATE, "tokenmgr", None)
+
+    asyncio.run(main._shutdown())
+
+    assert closed == ["leg", "http"]
