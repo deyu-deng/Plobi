@@ -384,3 +384,38 @@ def test_the_switch_leaves_everything_else_in_the_block_alone(tmp_path, monkeypa
     assert on_disk["nodes"] == block["egress"]["nodes"], "the node pool is not this switch's to rewrite"
     assert on_disk["groups"] == block["egress"]["groups"]
     assert on_disk["engine"]["dns"]["nameserver"] == ["223.5.5.5"]
+
+
+def test_put_refuses_an_empty_draft_that_would_delete_every_member(monkeypatch):
+    """10-29 这台机器上真的发生过：面板没读到表，草稿是空的，一按保存把 46 个成员连组带规则全抹了。
+
+    整体替换语义本身没错（深合并删不掉东西），错的是**允许用一份从没读到表的草稿去替换**。
+    所以「送来的表一个成员都没有、而盘上有」必须在写盘之前停住，并要求一个显式的 force。
+    """
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from plobi_cli import egress_config, web_server as ws
+
+    monkeypatch.setattr(
+        egress_config, "read_egress",
+        lambda: {"network": {"egress": {"nodes": {"a": {}, "b": {}}, "groups": {"POOL": {"type": "url-test"}}}}},
+    )
+    written: list = []
+    monkeypatch.setattr(egress_config, "replace_egress", lambda block: (written.append(block), (True, []))[1])
+    monkeypatch.setattr(ws, "_reload_egress_engine", lambda: {"state": "off", "detail": "", "probe": ""})
+
+    empty = {"egress": {"system_proxy": {"enabled": False}}}
+    with pytest.raises(HTTPException) as refused:
+        asyncio.run(ws.put_network_egress(ws.NetworkEgressUpdate(network=empty), profile=None))
+
+    assert refused.value.status_code == 409, refused.value
+    assert "2 个成员全部删掉" in refused.value.detail, refused.value.detail
+    assert written == [], "被拒的那次必须在写盘之前就停住"
+
+    forced = ws.NetworkEgressUpdate(network=empty, force=True)
+    answer = asyncio.run(ws.put_network_egress(forced, profile=None))
+
+    assert answer["ok"] is True, answer
+    assert written, "说了 force 就该真的写"

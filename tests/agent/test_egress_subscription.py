@@ -131,3 +131,32 @@ def test_unrecognised_shapes_and_a_dead_subscription_refuse_in_one_actionable_se
     with pytest.raises(sub.SubscriptionError) as exc:
         sub.fetch("D:/Temp/not-a-url.yaml")
     assert "导入池子" in str(exc.value), "路径那种要走另一颗按钮，别说含糊的话"
+
+
+def test_a_direct_pull_never_falls_back_to_the_system_proxy(monkeypatch):
+    """10-29 现核：表说「直连」，urllib 却用了注册表里那个死掉的系统代理 ⇒ 10061，而报的是「直连」。
+
+    没有 ProxyHandler 时 urllib 会去读 `getproxies()`（Windows 上就是注册表），所以「直连」必须
+    显式装一个空映射，而不是什么都不装。
+    """
+    from agent.egress import subscription
+
+    seen: dict = {}
+
+    class FakeOpener:
+        def open(self, request, timeout=0):
+            raise OSError("stop before the network")
+
+    def fake_build(*handlers):
+        seen["handlers"] = handlers
+        return FakeOpener()
+
+    monkeypatch.setattr("agent.process_bootstrap._get_proxy_for_base_url", lambda url: "")
+    monkeypatch.setattr(subscription.urllib.request, "build_opener", fake_build)
+
+    with pytest.raises(subscription.SubscriptionError):
+        subscription.fetch("https://example.invalid/sub.yaml")
+
+    proxy_handlers = [h for h in seen["handlers"] if isinstance(h, subscription.urllib.request.ProxyHandler)]
+    assert proxy_handlers, seen["handlers"]
+    assert proxy_handlers[0].proxies == {}, "直连＝空映射；空字符串会被当成没有主机"

@@ -300,10 +300,15 @@ def fetch(url: str, *, timeout: float = TIMEOUT_SECONDS) -> str:
 
     if not re.match(r"^https?://", url or ""):
         raise SubscriptionError("订阅链接要是 http(s):// 开头——文件路径那种走「导入池子」那条按钮")
-    handlers: list[Any] = []
     proxy = _get_proxy_for_base_url(url)
-    if proxy:
-        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    # **Always** install a ProxyHandler: with no handler, urllib falls back to
+    # ``getproxies()``, which on Windows reads the system proxy from the registry.
+    # Measured 10-29: the table said 「直连」 while the registry still pointed at a
+    # dead port, so the pull died with WinError 10061 and the message said "direct".
+    # "Direct" has to mean direct — an empty mapping, not an empty-string host.
+    handlers: list[Any] = [
+        urllib.request.ProxyHandler({"http": proxy, "https": proxy} if proxy else {})
+    ]
     opener = urllib.request.build_opener(*handlers)
     request = urllib.request.Request(url, headers={"User-Agent": "clash"}, method="GET")
     try:

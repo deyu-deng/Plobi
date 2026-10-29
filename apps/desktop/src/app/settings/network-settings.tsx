@@ -279,6 +279,12 @@ export function NetworkSettings() {
   const [saving, setSaving] = useState(false)
   const [proxyBusy, setProxyBusy] = useState(false)
   const [proxyAnswer, setProxyAnswer] = useState<ProxyAnswer | null>(null)
+  //: Whether the table actually came back. Saving from a draft that never loaded
+  //: writes the empty draft over the real table — measured 10-29: the whole table
+  //: (46 members, 17 groups, 3 rules) went to `{system_proxy: {enabled: false}}`
+  //: because the pane loaded nothing and then saved. Nothing may be written until
+  //: a load has succeeded.
+  const [loaded, setLoaded] = useState(false)
 
   const load = async () => {
     const fetched = await getNetworkEgress()
@@ -287,6 +293,7 @@ export function NetworkSettings() {
     setRules(toRuleRows(fetched))
     setNodes(toNodeRows(fetched))
     setGroups(toGroupRows(fetched))
+    setLoaded(true)
   }
 
   useEffect(() => {
@@ -447,8 +454,12 @@ export function NetworkSettings() {
 
   return (
     <SettingsContent>
-      <SectionHeading icon={Globe} meta={status?.engine.state ?? ''} title={copy.title} />
-      <p className={CAPTION}>{copy.intro}</p>
+      <div title={copy.intro}>
+        <SectionHeading icon={Globe} meta={status?.engine.state ?? ''} title={copy.title} />
+      </div>
+      {!loaded ? (
+        <p className="text-sm text-(--ui-text-danger)">读不到当前的出口表：先别保存（保存会把表清空）</p>
+      ) : null}
 
       <div className="grid gap-1">
         <ListRow
@@ -456,7 +467,7 @@ export function NetworkSettings() {
             <Switch
               aria-label={copy.systemProxy}
               checked={status?.system_proxy?.declared ?? false}
-              disabled={!status?.system_proxy?.supported || proxyBusy}
+              disabled={!loaded || !status?.system_proxy?.supported || proxyBusy}
               onCheckedChange={(on) => void setProxy(on)}
             />
           }
@@ -688,7 +699,7 @@ export function NetworkSettings() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button disabled={saving} onClick={() => void save()}>
+        <Button disabled={saving || !loaded} onClick={() => void save()}>
           {saving ? '…' : copy.save}
         </Button>
         {saved && !error ? <span className={CAPTION}>{copy.saved}{applied ? ` · ${applied}` : ''}</span> : null}

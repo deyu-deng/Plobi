@@ -14770,6 +14770,9 @@ class NetworkEgressUpdate(BaseModel):
     # Whole-section replace: deep-merge can add and override but never delete a
     # rule, an exit or a mirror, so the editor has to state the final table.
     network: Optional[Dict[str, Any]] = None
+    #: The pane never sets this; it exists so a deliberate "clear the members" is a
+    #: stated intent rather than something that happens to a stale draft.
+    force: bool = False
     profile: Optional[str] = None
 
 
@@ -14808,9 +14811,24 @@ async def put_network_egress(body: NetworkEgressUpdate, profile: Optional[str] =
     raises on a malformed table, and it sits on the subprocess-spawn path — so a
     save that got through would break the ``terminal`` tool on every later call.
     """
-    from plobi_cli.egress_config import replace_egress
+    from plobi_cli.egress_config import read_egress, replace_egress
 
     with _profile_scope(body.profile or profile):
+        before = (read_egress().get("network") or {}).get("egress") or {}
+        after = ((body.network or {}).get("egress") or {})
+        had = len(before.get("nodes") or {})
+        keeps = len(after.get("nodes") or {})
+        if had and not keeps and not body.force:
+            # Measured 10-29 on this box: the pane failed to load, its draft was empty,
+            # and 保存 wrote the empty draft over the whole table — 46 members, 17 groups
+            # and 3 rules gone in one click. A replace-save that deletes every member has
+            # to be a stated intent, not a side effect of a read that did not happen.
+            raise HTTPException(
+                status_code=409,
+                detail=f"这次保存会把现有的 {had} 个成员全部删掉（送来的表里一个成员都没有）——"
+                       f"多半是面板没读到当前的表。确认要清空就带 force: true 再来，"
+                       f"或者先用 `plobi network status` 看一眼表还在不在",
+            )
         ok, issues = replace_egress(body.network)
     if not ok:
         raise HTTPException(status_code=400, detail="; ".join(issues))
