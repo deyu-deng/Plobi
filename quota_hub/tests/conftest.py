@@ -19,3 +19,17 @@ def isolated_ledgers(tmp_path, monkeypatch):
     monkeypatch.setenv(model_health.MODEL_HEALTH_ENV, str(tmp_path / "model-health.json"))
     # Spawn-based legs get a scratch cwd by default; keep that out of the real home too.
     monkeypatch.setenv("QUOTA_HUB_WORKSPACE_ROOT", str(tmp_path / "workspaces"))
+
+
+@pytest.fixture(autouse=True)
+def no_browser(monkeypatch):
+    """No test may open a real browser tab.
+
+    Measured 2026-10-29: a test called `google_oauth.sign_in` with the network stubbed but
+    the browser left alone, so every suite run dropped a real Chrome window on the owner's
+    desktop — eight of them by the time he said so. Tests still assert the URL where that
+    matters; the *opening* is stubbed here once, for the whole suite.
+    """
+    import webbrowser
+
+    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: True)
