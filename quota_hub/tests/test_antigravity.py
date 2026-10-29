@@ -521,3 +521,107 @@ def test_to_gemini_tools_sanitizes_openai_schema_for_cloudcode_protobuf() -> Non
     parsed = _parse_antigravity_models(catalog)
     assert parsed == ["claude-sonnet-5-5-high", "gemini-3-flash-agent", "gemini-3.5-flash-lite"]
 
+
+
+def _empty_store(monkeypatch, tmp_path) -> None:
+    """No account of ours: the shared slot is then the only source of truth."""
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("ANTIGRAVITY_REFRESH_TOKEN", raising=False)
+
+
+def test_a_stale_slot_renews_the_lease_instead_of_saying_signed_out(monkeypatch, tmp_path):
+    """The slot holds an access token (an hour-long lease); the account behind it is
+    long-lived, and the tool that owns it can re-push a fresh token locally.
+
+    Measured 2026-10-29 23:19: the lease had run out, the account was healthy, and the
+    card had fallen back to a `+` — the user had to send a turn to get it back. The
+    verdict renews the lease itself now, so the card keeps saying "signed in".
+    """
+    import threading
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    slot = {"present": True, "expires_at": time.time() - 600, "expires_in_seconds": -600}
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: dict(slot))
+
+    asked = threading.Event()
+
+    def _fake_refresh(**_kwargs):
+        slot["expires_at"] = time.time() + 1200
+        slot["expires_in_seconds"] = 1200
+        asked.set()
+        return True, "ok"
+
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", _fake_refresh)
+
+    # The first read sees the run-out lease: the tool is asked, and the verdict keeps
+    # the answer it had instead of dropping the card back to a `+`.
+    prov._verdict = (True, "ok")
+    prov._verdict_at = 0.0  # force a re-read of the slot
+    live, reason = prov.signed_in()
+    assert live is True, reason
+    assert asked.wait(5), "the tool that owns the account was never asked"
+
+    # Once the renewal landed, the slot reads fresh again.
+    prov._verdict_at = 0.0
+    live, reason = prov.signed_in()
+    assert live is True, reason
+
+
+def test_a_lease_that_cannot_be_renewed_says_so(monkeypatch, tmp_path):
+    """If the tool cannot re-push the account, the `+` is the honest answer.
+
+    We must not keep the card on forever on a verdict nobody re-checked.
+    """
+    import time
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    slot = {"present": True, "expires_at": time.time() - 600, "expires_in_seconds": -600}
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: dict(slot))
+
+    prov._verdict = (True, "ok")
+    prov._verdict_at = 0.0
+    prov.signed_in()
+
+    # The stub in conftest answers "could not renew"; wait for the background thread
+    # to record that, then the verdict must turn honest.
+    deadline = time.time() + 5
+    while time.time() < deadline and prov._verdict != (False, "credential_expired"):
+        time.sleep(0.02)
+    assert prov._verdict == (False, "credential_expired"), prov._verdict
+
+    # And the next read agrees — the card is honest from here on.
+    prov._verdict_at = 0.0
+    live, reason = prov.signed_in()
+    assert live is False
+    assert reason == "credential_expired"
+
+
+def test_an_absent_slot_is_not_signed_in_and_asks_nobody(monkeypatch, tmp_path):
+    """No credential at all is a plain `+`: there is nothing to renew."""
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": False,
+        "expires_at": None, "expires_in_seconds": None})
+
+    asked = []
+
+    def _fake_refresh(**_kwargs):
+        asked.append(1)
+        return True, "ok"
+
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", _fake_refresh)
+
+    live, reason = prov.signed_in()
+    assert live is False
+    assert reason == "no_desktop_credential"
+    assert asked == [], "nothing to renew: the tool must not be run"

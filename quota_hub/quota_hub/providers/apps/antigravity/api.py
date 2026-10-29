@@ -45,6 +45,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -174,6 +175,16 @@ class AntigravityProvider(Provider):
         self._explicit_proxy = bool(explicit)
         self._bound_proxy = self.proxy
         self._own_client = False
+        # The shared slot holds an *access token* — a lease of about an hour — while the
+        # account behind it is long-lived. Nothing renews that lease while the user is
+        # not sending turns, and the verdict used to read the lease as the account:
+        # measured 2026-10-29 23:19, the token had run out, the account was healthy, and
+        # the card had fallen back to a `+` (the user had to send a turn to get it
+        # back). So the verdict renews the lease itself; these are its bookkeeping.
+        self._verdict: tuple[bool, str] | None = None
+        self._verdict_at = 0.0
+        self._lease_asked_at = 0.0
+        self._lease_refreshing = False
         import httpx as _httpx
         if self.proxy and isinstance(self.http, _httpx.AsyncClient):
             self.http = _httpx.AsyncClient(proxy=self.proxy, timeout=_httpx.Timeout(120.0, connect=15.0))
@@ -462,13 +473,88 @@ class AntigravityProvider(Provider):
         # Last: the desktop app's own record. The node question is deliberately absent
         # here — folding it in once made a signed-in user with a dead node see the `+`
         # again (measured 2026-10-28), which reads as "you never logged in".
+        return self._slot_verdict()
+
+    #: How long a credential verdict is trusted before the slot is read again (the
+    #: desktop re-reads the catalog every few seconds; a CredRead is cheap but not free).
+    _verdict_ttl = 30.0
+    #: How often we may ask the tool that owns the account to re-push it.
+    _lease_ttl = 300.0
+
+    def _slot_verdict(self) -> tuple[bool, str]:
+        """Is the shared slot's credential usable — and renew it when it is not.
+
+        The slot holds an *access token*, a lease with roughly an hour of life; the
+        account behind it is long-lived. The tool that owns the account can re-push a
+        fresh token locally — no browser, no consent page — and it still works while
+        every Google host is blocked (measured 2026-10-29 23:19: one
+        `antigravity-tools switch --target agy` put a token with 22 minutes of life
+        back into the slot, with the node down).
+
+        So a lease that ran out is not "you are signed out": the account is still there
+        and the fix is one local command. The verdict renews the lease itself and keeps
+        answering from what it knows until the renewal lands — the card must not fall
+        back to a `+` because the user was not talking to it.
+        """
+        now = time.time()
+        cached = self._verdict
+        if cached is not None and now - self._verdict_at < self._verdict_ttl:
+            return cached
+
         st = ds.antigravity_desktop_token_status()
         if not st.get("present"):
-            return False, "no_desktop_credential"
-        left = st.get("expires_in_seconds")
-        if left is not None and left <= 0:
-            return False, "credential_expired"
-        return True, "ok"
+            verdict = (False, "no_desktop_credential")
+        else:
+            left = st.get("expires_in_seconds")
+            if left is None or left > 0:
+                verdict = (True, "ok")
+            else:
+                # The lease ran out. Ask the owner of the account to re-push it, and
+                # keep the answer we had while that happens: the card must not fall back
+                # to a `+` because the user was not talking to it. The renewal owns the
+                # verdict from here (it writes the slot's real state when it finishes),
+                # so this read must not write over it.
+                self._renew_lease()
+                return cached if cached is not None else (False, "credential_expired")
+        self._verdict = verdict
+        self._verdict_at = now
+        return verdict
+
+    def _renew_lease(self) -> None:
+        """Ask the tool that owns the account to re-push it into the shared slot.
+
+        Fire-and-forget: a catalog read must not wait on a subprocess, and the desktop
+        re-reads the catalog every few seconds anyway.
+        """
+        if self._lease_refreshing:
+            return
+        now = time.time()
+        if now - self._lease_asked_at < self._lease_ttl:
+            return
+        self._lease_asked_at = now
+        self._lease_refreshing = True
+
+        def _work() -> None:
+            try:
+                ok, detail = tool_bridge.refresh_via_tool()
+            except Exception as exc:  # a broken tool must not take the hub down
+                ok, detail = False, f"{type(exc).__name__}: {exc}"
+            self._lease_refreshing = False
+            if ok:
+                # Read the slot back: the tool said it re-pushed the account, and the
+                # slot is the only thing that says whether that landed.
+                st = ds.antigravity_desktop_token_status()
+                left = st.get("expires_in_seconds")
+                fresh = bool(st.get("present")) and (left is None or left > 0)
+                verdict = (True, "ok") if fresh else (False, "credential_expired")
+            else:
+                # We asked and it did not work — now the `+` is the honest answer.
+                verdict = (False, "credential_expired")
+                logger.warning("antigravity: the credential could not be renewed: %s", detail)
+            self._verdict = verdict
+            self._verdict_at = time.time()
+
+        threading.Thread(target=_work, name="antigravity-lease", daemon=True).start()
 
     def credential_health(self) -> tuple[bool, str]:
         """Local-only: what the desktop app's own record says about this token.
