@@ -10256,15 +10256,18 @@ async function fetchAuthCatalog(): Promise<
 ipcMain.handle('plobi-gateway:auth', async (_event, appId: string) => {
   const aigwDir = resolveAigwDir()
 
-  if (appId === 'antigravity') {
-    return authAntigravity(aigwDir)
-  }
   if (appId === 'workbuddy') {
     return authWorkbuddy()
   }
   if (appId === 'cursor') {
     return authCursor(aigwDir)
   }
+  // Antigravity used to have a branch of its own here: it started a *second* gateway
+  // (`config.antigravity-desktop.yaml`, its own port) and drove `quota_hub auth
+  // antigravity` from the shell. The card list and the model picker read the product
+  // hub on :8000, which never learned that a login had just happened — measured
+  // 2026-10-28: he finished Google sign-in twice and the card stayed a `+`. The hub owns
+  // that leg (`GET /plobi/auth` answers kind=oauth), so it now takes the generic path.
   // Anything else asks the hub how it signs in, instead of the shell carrying a list
   // of product names. The hub owns the answer (`GET /plobi/auth`: local_session /
   // cli_login / oauth / none), runs the CLI's own login command, and hands the URL it
