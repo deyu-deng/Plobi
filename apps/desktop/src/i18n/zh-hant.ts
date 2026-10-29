@@ -3049,6 +3049,9 @@ export const zhHant = defineLocale({
       model_rejected: '最近兩次向它要這個模型，都沒給回來',
       // 10-28 實測：Free 池在 HTTP 上直接 429，只有付費訂閱（或 key）才服務得了回合。
       no_subscription: '這條通道要付費訂閱或一個 API key 才能用',
+      // 10-29 23:5x 實測：登入是好的、節點也是好的，上游對每個模型都回 429
+      // RESOURCE_EXHAUSTED —— 那個帳號的額度用完了。
+      quota_exhausted: '那個帳號的額度用完了，等它恢復再試',
       no_proxy: '還沒設定 VPN 節點，這條通道連不上',
       proxy_unreachable: 'VPN 節點沒有回應——把它啟動後再試',
       // 不是網關那邊的理由：是你自己按了中斷連線，所以這裡不賴那個軟體或這台機器。

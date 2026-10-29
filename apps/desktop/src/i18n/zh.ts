@@ -3397,6 +3397,9 @@ export const zh: Translations = {
       model_rejected: '最近两次向它要这个模型，都没给回来',
       // 10-28 实测：Free 池在 HTTP 上直接 429，只有付费订阅（或 key）才服务得了回合。
       no_subscription: '这条渠道要付费订阅或一个 API key 才能用',
+      // 10-29 23:5x 实测：登录是好的、节点也是好的，上游对每个模型都回 429
+      // RESOURCE_EXHAUSTED —— 那个账号的额度用完了。
+      quota_exhausted: '那个账号的额度用完了，等它恢复再试',
       // 设置→VPN 那个节点没配或没起来；两者都不是凭据问题。
       no_proxy: '还没配 VPN 节点，这条渠道连不上',
       proxy_unreachable: 'VPN 节点没应答——把它起起来再试',

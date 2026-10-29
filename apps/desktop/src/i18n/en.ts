@@ -3264,6 +3264,9 @@ export const en: Translations = {
       // Measured 2026-10-28: the Free pool answers 429 over HTTP; only a paid plan (or a
       // key) can serve a turn. Tooltip only — the row itself just is not offered.
       no_subscription: 'this channel needs a paid plan or an API key before Plobi can use it',
+      // Measured 2026-10-29 23:5x: the sign-in was fine and the node was fine, and every
+      // model answered 429 RESOURCE_EXHAUSTED — that account's allowance was spent.
+      quota_exhausted: 'that account has used up its quota — it will work again once it resets',
       // The node configured in Settings → VPN is missing or down; both are not credential problems.
       no_proxy: 'no VPN node is configured yet, so this channel cannot be reached',
       proxy_unreachable: 'the VPN node is not answering — start it, then try again',
