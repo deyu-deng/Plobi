@@ -25,6 +25,7 @@ import logging
 import os
 import secrets
 import sys
+import time
 from typing import Callable
 
 import httpx
@@ -147,15 +148,6 @@ def resolve_proxy() -> tuple[str, str]:
 
 def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | None = None) -> str:
     """Full bootstrap: start local callback, open browser, exchange code, store account."""
-    network = probe_network(LOGIN_ENDPOINTS)
-    if not network["ok"]:
-        # What reaches the screen is the CLI's one-line `[quota_hub auth] …` sentence, because
-        # the desktop uses this child's whole stderr as the error text (measured 2026-10-28:
-        # the printed `UNEXPECTED_EOF_WHILE_READING` lines showed up in front of the user).
-        # The per-endpoint detail is already logged by the periodic probe, so nothing here
-        # repeats it.
-        raise RuntimeError(network["advice"])
-
     client_id, client_secret = client_credentials()
     proxy, proxy_reason = resolve_proxy()
     if proxy_reason != "ok":
@@ -164,6 +156,22 @@ def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | 
             if proxy_reason == "no_proxy"
             else "设置里的 VPN 节点现在连不上，登录这一步过不去"
         )
+    network = probe_network(LOGIN_ENDPOINTS)
+    if not network["ok"]:
+        # The node's route to Google is flaky on this machine (measured 2026-10-29: nine of
+        # ten probes failed — TLS handshake timeouts through 127.0.0.1:7895). One more look
+        # before refusing: a refusal opens no browser at all, so a single unlucky probe must
+        # not decide the click.
+        time.sleep(1.5)
+        network = probe_network(LOGIN_ENDPOINTS)
+    if not network["ok"]:
+        # What reaches the screen is the CLI's one-line `[quota_hub auth] …` sentence, because
+        # the desktop uses this child's whole stderr as the error text (measured 2026-10-28:
+        # the printed `UNEXPECTED_EOF_WHILE_READING` lines showed up in front of the user).
+        # The per-endpoint detail is already logged by the periodic probe, so nothing here
+        # repeats it.
+        raise RuntimeError(network["advice"])
+
     tokens = google_oauth.sign_in(
         client_id=client_id, client_secret=client_secret,
         scopes=OAUTH_SCOPES, proxy=proxy,

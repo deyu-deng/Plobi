@@ -272,3 +272,25 @@ def test_a_turn_without_its_node_names_the_node_not_a_missing_account(home, monk
     assert "VPN" in str(exc.value)
     assert exc.value.cooldown == 0.0, "a network condition must not cool the account down"
     assert calls["n"] == 0
+
+
+def test_a_flaky_node_is_looked_at_twice_before_the_click_is_refused(home, monkeypatch):
+    """Measured 2026-10-29 on this machine: nine of ten probes to Google failed through
+    the node (TLS handshake timeouts). A refusal opens no browser at all, so one unlucky
+    probe must not decide the click."""
+    calls = {"n": 0}
+
+    def _probe(*_a, **_k):
+        calls["n"] += 1
+        return {"ok": calls["n"] > 1, "advice": "节点连不上", "checks": []}
+
+    monkeypatch.setattr(oa, "probe_network", _probe)
+    monkeypatch.setattr(oa, "client_credentials", lambda: ("cid", "secret"))
+    monkeypatch.setattr(oa, "resolve_proxy", lambda: ("http://127.0.0.1:7895", "ok"))
+    monkeypatch.setattr(oa, "discover_project", lambda _token: "")
+    monkeypatch.setattr(oa, "fetch_userinfo", lambda _token: {})
+    monkeypatch.setattr(oa.google_oauth, "sign_in", lambda **k: {"refresh_token": "r", "access_token": "a"})
+
+    oa.run_bootstrap(print_token=False)
+
+    assert calls["n"] == 2, "the click was refused after a single unlucky probe"
