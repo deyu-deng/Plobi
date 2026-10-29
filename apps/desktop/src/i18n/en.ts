@@ -2201,6 +2201,7 @@ export const en: Translations = {
     nav: {
       'new-session': 'New session',
       knowledge: 'Knowledge',
+      diary: 'Diary',
       skills: 'Capabilities',
       messaging: 'Messaging',
       artifacts: 'Artifacts',

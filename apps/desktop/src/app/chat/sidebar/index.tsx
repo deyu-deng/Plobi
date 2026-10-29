@@ -67,7 +67,7 @@ import {
 import { hidesAgentSessions, sidebarNavForLevel } from './nav-level'
 import { ProjectDialog } from './project-dialog'
 
-const SIDEBAR_NAV: SidebarNavItem[] = [
+export const SIDEBAR_NAV: SidebarNavItem[] = [
   {
     id: 'skills',
     label: '',

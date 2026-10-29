@@ -2367,6 +2367,7 @@ export const zh: Translations = {
     nav: {
       'new-session': '新建会话',
       knowledge: '知识库',
+      diary: '日记',
       skills: '技能与工具',
       messaging: '消息平台',
       artifacts: '产物',
