@@ -398,10 +398,12 @@ def test_put_refuses_an_empty_draft_that_would_delete_every_member(monkeypatch):
 
     from plobi_cli import egress_config, web_server as ws
 
-    monkeypatch.setattr(
-        egress_config, "read_egress",
-        lambda: {"network": {"egress": {"nodes": {"a": {}, "b": {}}, "groups": {"POOL": {"type": "url-test"}}}}},
-    )
+    class _Seen:
+        nodes = {"a": {}, "b": {}}
+
+    from agent.egress import rules as _rules
+
+    monkeypatch.setattr(_rules, "load_table", lambda *a, **k: _Seen())
     written: list = []
     monkeypatch.setattr(egress_config, "replace_egress", lambda block: (written.append(block), (True, []))[1])
     monkeypatch.setattr(ws, "_reload_egress_engine", lambda: {"state": "off", "detail": "", "probe": ""})

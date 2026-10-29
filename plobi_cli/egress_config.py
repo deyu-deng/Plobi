@@ -55,6 +55,21 @@ _FLAG_REGIONS: dict[str, str] = {
 }
 
 
+def candidate_node_count(network_block: Any) -> int:
+    """How many members this candidate table would leave — **through the parser**.
+
+    Lives here (the one module allowed to name the `egress` key without interpreting
+    it) so a caller like the web surface does not grow its own read of the block —
+    that is exactly what `tests/scripts/test_egress_resolver_single_source.py`
+    ratchets against (裁定 94: one reader).  `-1` = the parser refused it; the save
+    will be rejected on its own merits.
+    """
+    try:
+        return len(egress.parse_table((network_block or {}).get("egress")).nodes)
+    except Exception:  # noqa: BLE001 - a refusal is an answer here, not a crash
+        return -1
+
+
 def validate_egress(network_block: Any) -> tuple[bool, list[str]]:
     """Is this ``network:`` block something the runtime will accept?"""
     if network_block is None:
