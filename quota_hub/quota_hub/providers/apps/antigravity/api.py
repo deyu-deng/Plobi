@@ -332,6 +332,17 @@ class AntigravityProvider(Provider):
             async with acc.lock:
                 if cred.access_token and not cred.is_expired():
                     return
+                if not self._explicit_proxy and self.proxy_reason != "ok":
+                    # The refresh below is a network call, and without the node it cannot
+                    # succeed. Failing here keeps the caller's error honest and costs no
+                    # ten-second timeout (measured 2026-10-29: 11.5 s, then a message that
+                    # read like a config bug).
+                    raise UpstreamError(
+                        503,
+                        "设置里的 VPN 节点现在连不上，把那个代理软件开起来再试",
+                        retryable=True,
+                        cooldown=10.0,
+                    )
                 try:
                     res = await ds.refresh_antigravity(
                         self.http,

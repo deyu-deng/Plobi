@@ -235,3 +235,39 @@ def test_a_node_that_comes_up_after_boot_is_adopted_without_a_restart(home, monk
     assert prov.http is not before
     assert prov.cloudcode.http is prov.http
     asyncio.run(prov.http.aclose())
+
+
+def test_a_turn_without_its_node_names_the_node_not_a_missing_account(home, monkeypatch):
+    """Measured 2026-10-29: with a credential present and the node down, a turn answered
+    `503 no upstream account available: no more accounts for ['antigravity']` after 11.5 s
+    — English, and it reads like a config bug instead of "the node is off"."""
+    from quota_hub import main as hubmain
+    from quota_hub.providers.base import UpstreamError
+    from quota_hub.providers.apps.antigravity import api as aa
+
+    class _Prov:
+        def credential_health(self):
+            return False, "no_proxy"
+
+    assert hubmain._no_account_detail(_Prov()) == "还没配 VPN 节点，这条渠道连不上"
+
+    # The leg refuses *before* the wire: a refresh here would be a ten-second timeout.
+    monkeypatch.setattr(aa, "proxy_url", lambda: ("", "no_proxy"))
+    calls = {"n": 0}
+
+    async def _boom(*a, **k):
+        calls["n"] += 1
+        raise AssertionError("refresh must not be attempted without the node")
+
+    monkeypatch.setattr(aa.ds, "refresh_antigravity", _boom)
+
+    prov = aa.AntigravityProvider({}, None)
+    prov.config = {}
+    acc = prov._make_account(id="a", label="", refresh_token="rt", client_id="c", client_secret="s")
+    acc.cred.access_token = ""
+
+    with pytest.raises(UpstreamError) as exc:
+        asyncio.run(prov.ensure_fresh(acc))
+
+    assert "VPN" in str(exc.value)
+    assert calls["n"] == 0

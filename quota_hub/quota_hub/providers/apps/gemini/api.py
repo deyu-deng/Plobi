@@ -300,6 +300,15 @@ class GeminiApiProvider(Provider):
         await self._rebind_node()
         if not acc.cred.is_expired():
             return
+        if not self._explicit_proxy and self.proxy_reason != "ok":
+            # Renewing is a network call; without the node it cannot succeed. Fail here
+            # instead of after a timeout that reads like a config bug.
+            raise UpstreamError(
+                503,
+                "设置里的 VPN 节点现在连不上，把那个代理软件开起来再试",
+                retryable=True,
+                cooldown=10.0,
+            )
         from . import oauth as _oauth
 
         if _oauth.refresh_credential():
