@@ -309,6 +309,33 @@ def _any_provider_supports(provider, flag: str) -> bool:
     return False
 
 
+#: Why a leg has no schedulable account, in words an error card can show.
+#: Measured 2026-10-29: with a credential present and the Settings → VPN node down, a turn
+#: answered `503 no upstream account available: no more accounts for ['antigravity']` after
+#: 11 s — English, and it reads like a config problem instead of "the node is off".
+_NO_ACCOUNT_WORDS = {
+    "no_proxy": "还没配 VPN 节点，这条渠道连不上",
+    "proxy_unreachable": "VPN 节点没应答——把它起起来再试",
+    "credential_expired": "登录凭据已过期，打开那个应用一次就能续上",
+    "no_desktop_credential": "本机未读取到它的登录凭据",
+    "not_signed_in": "那边还没登录",
+    "not_probed": "还没问过它的登录状态，稍等一下再发",
+}
+
+
+def _no_account_detail(prov) -> str:
+    """The provider's own answer to "why can't this leg serve right now", in Chinese."""
+    if prov is None:
+        return ""
+    try:
+        live, reason = prov.credential_health()
+    except Exception:  # noqa: BLE001 — a probe crash must not mask the original 503
+        return ""
+    if live:
+        return ""
+    return _NO_ACCOUNT_WORDS.get(str(reason), "")
+
+
 @app.get("/v1/models")
 async def models(
     authorization: str = Header(None),
@@ -480,7 +507,13 @@ async def chat_completions(request: Request, authorization: str = Header(None)):
             )
         return JSONResponse(result)
     except NoAccountAvailable as e:
-        raise HTTPException(503, f"no upstream account available: {e}")
+        reg = STATE.get("reg")
+        names = list(provider) if isinstance(provider, (list, tuple)) else [provider]
+        prov0 = next(
+            (reg.providers.get(n) for n in names if reg is not None and reg.providers.get(n) is not None),
+            None,
+        )
+        raise HTTPException(503, _no_account_detail(prov0) or f"no upstream account available: {e}")
     except UpstreamError as e:
         raise HTTPException(e.status if 400 <= e.status < 600 else 502, str(e))
 
@@ -542,7 +575,7 @@ async def embeddings(request: Request, authorization: str = Header(None)):
         raise HTTPException(503, f"no provider for '{prov_name}'")
     acc = next((a for a in prov.accounts if a.schedulable()), None)
     if acc is None:
-        raise HTTPException(503, "no upstream account available")
+        raise HTTPException(503, _no_account_detail(prov) or "no upstream account available")
     try:
         result = await prov.embeddings(acc, body)
         return JSONResponse(result)
