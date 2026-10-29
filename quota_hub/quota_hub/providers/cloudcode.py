@@ -131,34 +131,50 @@ class CloudCodeClient:
         return _parse_antigravity_models(data)
 
     # --- the turn ---------------------------------------------------------
-    def to_gemini(self, oai_req: dict, session_id: str) -> dict:
-        contents, system_txt = [], []
+    def to_gemini(self, oai_req: dict, session_id: str, model: str = "") -> dict:
+        contents: list[dict[str, Any]] = []
+        system_txt: list[str] = []
+        tc_names: dict[str, str] = {}
         for m in oai_req["messages"]:
             role = m["role"]
             if role == "system":
                 system_txt.append(_as_text(m.get("content")))
                 continue
             if role == "tool":
-                contents.append({
-                    "role": "user",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": m.get("name", ""),
-                            "response": {"result": _as_text(m.get("content"))},
-                        }
-                    }],
-                })
+                fn_name = (
+                    m.get("name")
+                    or tc_names.get(str(m.get("tool_call_id") or ""), "")
+                    or "tool_result"
+                )
+                part = {
+                    "functionResponse": {
+                        "name": fn_name,
+                        "response": {"result": _as_text(m.get("content"))},
+                    }
+                }
+                if (
+                    contents
+                    and contents[-1]["role"] == "user"
+                    and all("functionResponse" in p for p in contents[-1]["parts"])
+                ):
+                    contents[-1]["parts"].append(part)
+                else:
+                    contents.append({"role": "user", "parts": [part]})
                 continue
             parts = []
             if role == "assistant" and m.get("tool_calls"):
                 for tc in m["tool_calls"]:
                     fn = tc.get("function", {})
+                    tc_id = str(tc.get("id") or "")
+                    fn_name = str(fn.get("name") or "")
+                    if tc_id and fn_name:
+                        tc_names[tc_id] = fn_name
                     raw = fn.get("arguments", "{}")
                     try:
                         args = json.loads(raw) if isinstance(raw, str) else (raw or {})
                     except Exception:
                         args = {}
-                    parts.append({"functionCall": {"name": fn.get("name", ""), "args": args or {}}})
+                    parts.append({"functionCall": {"name": fn_name, "args": args or {}}})
             else:
                 text = _as_text(m.get("content"))
                 if text:
@@ -174,8 +190,16 @@ class CloudCodeClient:
             gen["temperature"] = oai_req["temperature"]
         if "max_tokens" in oai_req:
             gen["maxOutputTokens"] = oai_req["max_tokens"]
-        if self.thinking or oai_req.get("reasoning_effort"):
-            budget = {"minimal": 1024, "low": 4096, "medium": 8192, "high": 16384}.get(oai_req.get("reasoning_effort"), 8192)
+        low_model = (model or str(oai_req.get("model") or "")).lower().split("/")[-1]
+        fixed_tier = (
+            low_model.endswith(("-low", "-medium", "-high", "-extra-low", "-lite"))
+            or "claude" in low_model
+            or "gpt-oss" in low_model
+        )
+        if self.thinking or (oai_req.get("reasoning_effort") and not fixed_tier):
+            budget = {"minimal": 1024, "low": 4096, "medium": 8192, "high": 16384}.get(
+                oai_req.get("reasoning_effort"), 8192
+            )
             gen["thinkingConfig"] = {"thinkingBudget": budget, "includeThoughts": bool(self.thinking)}
         if gen:
             body["generationConfig"] = gen
@@ -189,17 +213,30 @@ class CloudCodeClient:
         return {
             "project": project,
             "model": model,
-            "request": self.to_gemini(oai_req, session_id),
+            "request": self.to_gemini(oai_req, session_id, model),
             "userAgent": self.user_agent,
             "requestType": self.request_type,
             "requestId": self.request_type + "-" + uuid.uuid4().hex,
         }
 
-    def _classify(self, status: int) -> UpstreamError | None:
+    def _classify(self, status: int, body_text: str = "") -> UpstreamError | None:
         if status in (200, 201):
             return None
         reauth = status == 401
-        return UpstreamError(status, f"{self.label}: upstream returned {status}", reauth=reauth, retryable=status in (429, 500, 502, 503))
+        detail = ""
+        if body_text:
+            try:
+                parsed = json.loads(body_text)
+                if isinstance(parsed, dict) and "error" in parsed:
+                    detail = f": {_describe_google_error(parsed['error'])}"
+            except Exception:
+                detail = f": {body_text.strip()[:240]}"
+        return UpstreamError(
+            status,
+            f"{self.label}: upstream returned {status}{detail}",
+            reauth=reauth,
+            retryable=status in (429, 500, 502, 503),
+        )
 
     async def chat(self, *, token: str, project: str, model: str, oai_req: dict, session_id: str = "",
                    on_response: Callable[[Any], None] | None = None) -> dict:
@@ -211,7 +248,7 @@ class CloudCodeClient:
         # notes) without knowing anything about the envelope.
         if on_response is not None:
             on_response(r)
-        err = self._classify(r.status_code)
+        err = self._classify(r.status_code, getattr(r, "text", "") or "")
         if err:
             raise err
         try:
@@ -238,9 +275,16 @@ class CloudCodeClient:
         ) as r:
             if on_response is not None:
                 on_response(r)
-            err = self._classify(r.status_code)
-            if err:
-                raise err
+            if r.status_code not in (200, 201):
+                raw_err = ""
+                if hasattr(r, "aread"):
+                    try:
+                        raw_err = (await r.aread()).decode("utf-8", "replace")
+                    except Exception:
+                        raw_err = ""
+                err = self._classify(r.status_code, raw_err)
+                if err:
+                    raise err
             async for line in r.aiter_lines():
                 line = line.strip()
                 if line.startswith("data:") and "[DONE]" not in line:

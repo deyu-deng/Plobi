@@ -176,10 +176,10 @@ class AntigravityProvider(Provider):
         self._explicit_proxy = bool(explicit)
         self._bound_proxy = self.proxy
         self._own_client = False
-        if self.proxy:
-            import httpx as _httpx
-
+        import httpx as _httpx
+        if self.proxy and isinstance(self.http, _httpx.AsyncClient):
             self.http = _httpx.AsyncClient(proxy=self.proxy, timeout=_httpx.Timeout(120.0, connect=15.0))
+            self._own_client = True
         # One envelope implementation for every leg that holds a Google-account (Code
         # Assist) token: this leg and the Gemini CLI leg both run on it, so a format fix
         # lands once. `self.http` is already the proxied client when a node is configured.
@@ -418,6 +418,9 @@ class AntigravityProvider(Provider):
 
     async def _rebind_node(self) -> None:
         if self._explicit_proxy:
+            return
+        import httpx as _httpx
+        if not isinstance(self.http, _httpx.AsyncClient) and not self._own_client:
             return
         now = time.time()
         cached = getattr(self, "_proxy_seen", None)

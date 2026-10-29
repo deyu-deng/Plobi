@@ -229,8 +229,12 @@ def test_a_node_that_comes_up_after_boot_is_adopted_without_a_restart(home, monk
     the hub was up sent turns direct even once the card said ok."""
     from quota_hub.providers.apps.antigravity import api as aa
 
+    import httpx
+
     monkeypatch.setattr(aa, "proxy_url", lambda: ("", "proxy_unreachable"))
-    prov = AntigravityProvider({}, None)
+    # A real client: the leg refuses to swap a client it did not create (a test double
+    # must stay a test double), so the rebind only happens with the real thing.
+    prov = AntigravityProvider({}, httpx.AsyncClient())
     prov.config = {}
     before = prov.http
 

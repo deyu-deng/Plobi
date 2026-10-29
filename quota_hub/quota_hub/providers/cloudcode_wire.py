@@ -40,10 +40,31 @@ def _parse_antigravity_models(data: object) -> list[str]:
     if raw is None:
         return []
 
+    excluded_ids: set[str] = set()
+    for key in ("tabModelIds", "imageGenerationModelIds", "audioTranscriptionModelIds", "tieredModelIds"):
+        vals = data.get(key)
+        if isinstance(vals, list):
+            excluded_ids.update(str(x).split("/")[-1] for x in vals if x)
+
     raw_ids: list[str] = []
     if isinstance(raw, dict):
-        # Record shape: keys are the model ids.
-        raw_ids.extend(str(k) for k in raw.keys())
+        has_35_lite = "gemini-3.5-flash-lite" in raw
+        for k, info in raw.items():
+            mid = str(k).strip().split("/")[-1]
+            if isinstance(info, dict):
+                # A missing displayName is NOT a reason to drop the id: the captured
+                # payload (measured 2026-10-29) has entries whose displayName is absent
+                # and which are real models — the internal buckets are recognisable by
+                # their own shape (`-tiered`, `tab_`…), which the common filter below
+                # already drops. Dropping every nameless entry hid a real model
+                # (gemini-2.5-flash) on the Gemini leg.
+                if (
+                    has_35_lite
+                    and mid in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash-thinking")
+                    and info.get("displayName") == "Gemini 3.5 Flash Lite"
+                ):
+                    continue
+            raw_ids.append(mid)
     elif isinstance(raw, list):
         for item in raw:
             mid = ""
@@ -67,14 +88,31 @@ def _parse_antigravity_models(data: object) -> list[str]:
             continue
         # Strip a leading catalog prefix like "models/" / "publishers/".
         mid = mid.split("/")[-1]
+        if mid in excluded_ids:
+            continue
         low = mid.lower()
         # Drop internal / non-chat models that real clients filter out.
-        if low.startswith(("chat_", "rev19", "tab_")):
+        if low.startswith(("chat_", "rev19", "tab_")) or low.endswith("-tiered"):
             continue
         if any(s in low for s in ("image", "embedding", "tts")):
             continue
         if mid and mid not in ids:
             ids.append(mid)
+
+    # Respect upstream's recommended agentModelSorts ordering when present.
+    preferred: list[str] = []
+    for sort_block in data.get("agentModelSorts") or []:
+        if not isinstance(sort_block, dict):
+            continue
+        for grp in sort_block.get("groups") or []:
+            if not isinstance(grp, dict):
+                continue
+            for mid in grp.get("modelIds") or []:
+                short = str(mid).split("/")[-1]
+                if short in ids and short not in preferred:
+                    preferred.append(short)
+    if preferred:
+        ids = preferred + [m for m in ids if m not in preferred]
     return ids
 
 
@@ -105,6 +143,105 @@ def _as_text(content) -> str:
     return str(content)
 
 
+_GEMINI_SCHEMA_SCALAR_KEYS = ("format", "description", "nullable", "minItems", "maxItems")
+
+
+def _sanitize_gemini_schema(schema: Any, *, is_root: bool = False) -> dict[str, Any]:
+    """Sanitize an OpenAI/JSON-Schema dict into Google Cloud Code Assist's Protobuf Schema.
+
+    Cloud Code Assist (`v1internal`) parses `functionDeclarations[].parameters` directly
+    into the Gemini Protobuf `Schema` message and rejects standard JSON Schema extensions
+    with `400 INVALID_ARGUMENT`:
+      - `type: ["string", "null"]` -> Proto field `Schema.type` is scalar, not repeating;
+        must be `type: "string", nullable: True`.
+      - `anyOf` / `oneOf` -> collapsed to first non-null branch (+ `nullable: True`).
+      - Unknown JSON Schema keys (`additionalProperties`, `$schema`, `default`, `title`,
+        `$defs`, `$ref`, `strict`, `examples`, `const`, etc.) -> stripped.
+    """
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}} if is_root else {"type": "string"}
+
+    src = dict(schema)
+    out: dict[str, Any] = {}
+
+    # Unwrap anyOf / oneOf if present.
+    for union_key in ("anyOf", "oneOf"):
+        branches = src.get(union_key)
+        if isinstance(branches, list) and branches:
+            non_null: list[dict[str, Any]] = []
+            saw_null = False
+            for b in branches:
+                if isinstance(b, dict):
+                    if b.get("type") == "null":
+                        saw_null = True
+                    else:
+                        non_null.append(b)
+            if saw_null:
+                out["nullable"] = True
+            if non_null and "type" not in src:
+                merged = dict(non_null[0])
+                for k, v in src.items():
+                    if k not in (union_key, "anyOf", "oneOf"):
+                        merged[k] = v
+                src = merged
+            break
+
+    raw_type = src.get("type")
+    if isinstance(raw_type, list):
+        non_null_types = [str(t) for t in raw_type if t and str(t) != "null"]
+        if "null" in raw_type:
+            out["nullable"] = True
+        out["type"] = non_null_types[0] if non_null_types else "string"
+    elif isinstance(raw_type, str) and raw_type:
+        if raw_type == "null":
+            out["type"] = "string"
+            out["nullable"] = True
+        else:
+            out["type"] = raw_type
+
+    for k in _GEMINI_SCHEMA_SCALAR_KEYS:
+        if k in src and src[k] is not None:
+            out[k] = src[k]
+
+    if isinstance(src.get("enum"), list) and src["enum"]:
+        vals = [str(v) for v in src["enum"] if v is not None]
+        if vals:
+            out["enum"] = vals
+            out.setdefault("type", "string")
+
+    if isinstance(src.get("properties"), dict):
+        props: dict[str, Any] = {}
+        for prop_name, prop_schema in src["properties"].items():
+            props[str(prop_name)] = _sanitize_gemini_schema(prop_schema, is_root=False)
+        out["properties"] = props
+        out["type"] = "object"
+        if isinstance(src.get("required"), list):
+            req = [str(r) for r in src["required"] if str(r) in props]
+            if req:
+                out["required"] = req
+
+    if "items" in src and src["items"] is not None:
+        raw_items = src["items"]
+        if isinstance(raw_items, dict):
+            out["items"] = _sanitize_gemini_schema(raw_items, is_root=False)
+        elif isinstance(raw_items, list) and raw_items:
+            out["items"] = _sanitize_gemini_schema(raw_items[0], is_root=False)
+        else:
+            out["items"] = {"type": "string"}
+        out.setdefault("type", "array")
+
+    if is_root:
+        out.setdefault("type", "object")
+        if out["type"] == "object":
+            out.setdefault("properties", {})
+    else:
+        out.setdefault("type", "object" if "properties" in out else "string")
+        if out["type"] == "array" and "items" not in out:
+            out["items"] = {"type": "string"}
+
+    return out
+
+
 def _to_gemini_tools(tools):
     if not tools:
         return None
@@ -113,11 +250,13 @@ def _to_gemini_tools(tools):
         if not isinstance(t, dict) or t.get("type") != "function":
             continue
         fn = t.get("function", {})
+        raw_params = fn.get("parameters")
+        params = _sanitize_gemini_schema(raw_params, is_root=True) if raw_params is not None else {"type": "object", "properties": {}}
         decls.append(
             {
                 "name": fn.get("name", ""),
                 "description": fn.get("description", ""),
-                "parameters": fn.get("parameters", {}),
+                "parameters": params,
             }
         )
     return [{"functionDeclarations": decls}] if decls else None

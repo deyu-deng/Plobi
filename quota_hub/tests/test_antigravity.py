@@ -463,3 +463,69 @@ async def test_an_account_without_quota_is_replaced_before_the_turn(monkeypatch)
                           "messages": [{"role": "user", "content": "hi"}]})
 
     assert seen["token"] == "FRESH", "the turn went out on the account with no quota left"
+
+
+def test_to_gemini_tools_sanitizes_openai_schema_for_cloudcode_protobuf() -> None:
+    """Measured live 2026-10-29 against Cloud Code Assist v1internal:
+    `type: ["string", "null"]` and unknown JSON Schema keys (`additionalProperties`,
+    `$schema`, `default`, `title`) cause HTTP 400 INVALID_ARGUMENT (`Proto field is
+    not repeating, cannot start list` / `Unknown name`)."""
+    from quota_hub.providers.cloudcode_wire import _parse_antigravity_models, _to_gemini_tools
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "agenda_query",
+                "description": "Query agenda",
+                "parameters": {
+                    "$schema": "http://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "date": {
+                            "type": ["string", "null"],
+                            "description": "ISO date",
+                            "default": None,
+                            "title": "Date",
+                        },
+                        "tags": {
+                            "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
+                        },
+                    },
+                    "required": ["date", "nonexistent"],
+                },
+            },
+        }
+    ]
+    gem = _to_gemini_tools(tools)
+    assert gem is not None
+    params = gem[0]["functionDeclarations"][0]["parameters"]
+    assert "$schema" not in params
+    assert "additionalProperties" not in params
+    assert params["required"] == ["date"]
+    date_prop = params["properties"]["date"]
+    assert date_prop["type"] == "string"
+    assert date_prop["nullable"] is True
+    assert "default" not in date_prop and "title" not in date_prop
+    tags_prop = params["properties"]["tags"]
+    assert tags_prop["type"] == "array"
+    assert tags_prop["nullable"] is True
+
+    # Also verify _parse_antigravity_models drops internal buckets with no displayName
+    # and legacy 2.5 aliases that point to Gemini 3.5 Flash Lite.
+    catalog = {
+        "models": {
+            "gemini-2.5-flash": {"displayName": "Gemini 3.5 Flash Lite"},
+            "gemini-3.5-flash-lite": {"displayName": "Gemini 3.5 Flash Lite"},
+            "gemini-3-flash-agent": {"displayName": "Gemini 3.5 Flash (High)"},
+            "gemini-3.8-flash-tiered": {"displayName": None},
+            "claude-sonnet-5-5-high": {"displayName": "Claude Sonnet 5.5 (High)"},
+        },
+        "agentModelSorts": [
+            {"groups": [{"modelIds": ["claude-sonnet-5-5-high", "gemini-3-flash-agent"]}]}
+        ],
+    }
+    parsed = _parse_antigravity_models(catalog)
+    assert parsed == ["claude-sonnet-5-5-high", "gemini-3-flash-agent", "gemini-3.5-flash-lite"]
+
