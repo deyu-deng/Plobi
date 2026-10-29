@@ -12,11 +12,12 @@ network and no vendor calls.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
 import quota_hub.main as main
-from quota_hub.providers.base import Capabilities
+from quota_hub.providers.base import Account, Capabilities
 from quota_hub.providers.apps.workbuddy import WorkbuddyApiProvider
 from quota_hub.registry import Registry
 from quota_hub.tokens import desktop_stores as ds
@@ -125,6 +126,13 @@ class Recorder:
     async def ensure_models_refreshed(self):
         pass
 
+    def models_refresh_task(self):
+        """The route waits on this (briefly); the stand-in has nothing to refresh."""
+        async def _done():
+            return None
+
+        return _done()
+
     def list_models(self, selectable_only: bool = False):
         self.calls.append(selectable_only)
         return [{"id": "only/when-filtered" if selectable_only else "everything"}]
@@ -232,3 +240,33 @@ def test_workbuddy_api_counts_a_renewable_token_as_live(monkeypatch):
         lambda: {"present": True, "expires_in_seconds": 3600, "can_refresh": True},
     )
     assert prov.credential_health() == (True, "ok")
+
+
+def test_one_slow_leg_does_not_delay_the_others():
+    """Measured 2026-10-29: the spawn-based legs boot their own process before they can
+    name a model (cline ~10 s, qwen ~25 s). Refreshed one after another they pushed the
+    whole step past 35 s, and `/v1/models` waits on it — a desktop that opened in those
+    seconds saw an empty picker. They are independent, so they run together."""
+
+    class _Leg:
+        def __init__(self, name, delay):
+            self.name = name
+            self.delay = delay
+            self.served_models = (f"{name}/seed",)
+            self.accounts = [Account(id=f"{name}-a", provider=name)]
+
+        async def refresh_models(self, acc):
+            await asyncio.sleep(self.delay)
+            self.served_models = (f"{self.name}/real",)
+            return [f"{self.name}/real"]
+
+    async def _go():
+        reg = Registry({"providers": {}, "routing": {"rules": []}}, None)
+        reg.providers = {"a": _Leg("a", 0.4), "b": _Leg("b", 0.4)}
+        started = time.monotonic()
+        await reg._refresh_all_models()
+        elapsed = time.monotonic() - started
+        assert reg.model_to_provider == {"a/real": "a", "b/real": "b"}
+        assert elapsed < 0.75, f"the legs ran one after another ({elapsed:.2f}s)"
+
+    asyncio.run(_go())

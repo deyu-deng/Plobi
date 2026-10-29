@@ -156,12 +156,33 @@ class Registry:
             await self._refresh_all_models()
             self._models_refreshed = True
 
+    def models_refresh_task(self) -> asyncio.Task:
+        """The one model-refresh task for this process, created on first ask.
+
+        A reader that only wants the catalog can wait on this with a short timeout
+        instead of doing the work itself — so a slow leg makes the answer *later*, never
+        makes the request hang, and cancelling a waiter cannot take the refresh down
+        with it.
+        """
+        task = getattr(self, "_refresh_task", None)
+        if task is None:
+            self._refresh_task = asyncio.create_task(self.ensure_models_refreshed())
+        return self._refresh_task
+
     async def _refresh_all_models(self) -> None:
-        for name in self.providers:
-            try:
-                await self._refresh_provider_models(name)
-            except Exception:
-                pass
+        """Refresh every leg at once, not one after another.
+
+        Measured 2026-10-29 on this machine: the spawn-based legs boot their own process
+        before they answer (cline ~10 s, qwen ~25 s). Run in sequence they pushed the
+        whole step past 35 s, and `/v1/models` waits on it — so a desktop that opened
+        during those seconds saw a picker with nothing in it. Each leg is independent,
+        so they run together and the slowest one sets the cost.
+        """
+        names = list(self.providers)
+        await asyncio.gather(
+            *(self._refresh_provider_models(name) for name in names),
+            return_exceptions=True,
+        )
 
     async def _refresh_provider_models(self, name: str) -> None:
         prov = self.providers.get(name)
