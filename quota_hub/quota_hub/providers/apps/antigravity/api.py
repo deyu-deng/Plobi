@@ -185,6 +185,12 @@ class AntigravityProvider(Provider):
         self._verdict_at = 0.0
         self._lease_asked_at = 0.0
         self._lease_refreshing = False
+        # What the upstream last said about this account's quota. Measured 2026-10-29
+        # 23:5x: every model answered 429 RESOURCE_EXHAUSTED while the credential was
+        # healthy and the node was fine — the account's allowance was spent. That is
+        # neither a login problem nor a node problem, and it must not be reported as
+        # either.
+        self.quota_exhausted = False
         import httpx as _httpx
         if self.proxy and isinstance(self.http, _httpx.AsyncClient):
             self.http = _httpx.AsyncClient(proxy=self.proxy, timeout=_httpx.Timeout(120.0, connect=15.0))
@@ -572,6 +578,12 @@ class AntigravityProvider(Provider):
         # sign-in; this stays sync so a catalog read never waits on a socket probe.)
         if self.proxy_reason != "ok":
             return False, self.proxy_reason
+        # The credential is fine and the node is fine, but the upstream says this
+        # account's allowance is spent (measured 2026-10-29 23:5x: every model — Claude,
+        # Gemini, GPT-OSS alike — answered 429 RESOURCE_EXHAUSTED). Saying "logged in"
+        # would send him to the wrong place; saying "expired" would be a lie.
+        if self.quota_exhausted:
+            return False, "quota_exhausted"
         return True, "ok"
 
     # --- quota aggregation (internalized from Antigravity-Manager) ------
@@ -814,27 +826,48 @@ class AntigravityProvider(Provider):
         logger.info("antigravity: the active account has no quota left; rotating before the turn")
         await self._rotate_account(acc)
 
+    def _note_upstream(self, exc: UpstreamError | None) -> None:
+        """Remember what the upstream last said about this account's allowance."""
+        if exc is None:
+            self.quota_exhausted = False
+        elif exc.status == 429:
+            self.quota_exhausted = True
+
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         await self._rotate_if_exhausted(acc)
         try:
-            return await self._cloudcode_chat(acc, oai_req)
+            out = await self._cloudcode_chat(acc, oai_req)
         except UpstreamError as exc:
+            self._note_upstream(exc)
             # Out of quota or the token was revoked: move to the next account and retry once.
             if exc.status not in (401, 429) or not await self._rotate_account(acc):
                 raise
-            return await self._cloudcode_chat(acc, oai_req)
+            try:
+                out = await self._cloudcode_chat(acc, oai_req)
+            except UpstreamError as retry_exc:
+                self._note_upstream(retry_exc)
+                raise
+        self._note_upstream(None)
+        return out
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         await self._rotate_if_exhausted(acc)
         try:
             async for chunk in self._cloudcode_stream(acc, oai_req):
                 yield chunk
+            self._note_upstream(None)
             return
         except UpstreamError as exc:
+            self._note_upstream(exc)
             if exc.status not in (401, 429) or not await self._rotate_account(acc):
                 raise
-        async for chunk in self._cloudcode_stream(acc, oai_req):
-            yield chunk
+        try:
+            async for chunk in self._cloudcode_stream(acc, oai_req):
+                yield chunk
+        except UpstreamError as retry_exc:
+            self._note_upstream(retry_exc)
+            raise
+        self._note_upstream(None)
 
     def _note_quota(self, acc, resp):
         rem = resp.headers.get("x-ratelimit-remaining")

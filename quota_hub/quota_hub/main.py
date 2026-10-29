@@ -330,6 +330,9 @@ _NO_ACCOUNT_WORDS = {
     "no_desktop_credential": "本机未读取到它的登录凭据",
     "not_signed_in": "那边还没登录",
     "not_probed": "还没问过它的登录状态，稍等一下再发",
+    # 10-29 23:5x 实测：凭据好的、节点也是好的，上游对每一个模型都回 429
+    # RESOURCE_EXHAUSTED —— 是那个账号的额度用完了，既不是没登录也不是线路问题。
+    "quota_exhausted": "那个账号的额度用完了，等它恢复再试",
 }
 
 

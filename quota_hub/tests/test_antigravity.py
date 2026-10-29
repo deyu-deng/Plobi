@@ -625,3 +625,31 @@ def test_an_absent_slot_is_not_signed_in_and_asks_nobody(monkeypatch, tmp_path):
     assert live is False
     assert reason == "no_desktop_credential"
     assert asked == [], "nothing to renew: the tool must not be run"
+
+
+def test_a_spent_quota_says_so_instead_of_pretending_to_be_logged_out(monkeypatch, tmp_path):
+    """Every model answered 429 RESOURCE_EXHAUSTED while the credential was healthy.
+
+    Measured 2026-10-29 23:5x: that is the account's allowance being spent — not a
+    login problem and not a node problem. The card must not send him to either, and it
+    must not keep the models in the picker as if they could serve a turn.
+    """
+    import time
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() + 1800, "expires_in_seconds": 1800})
+    prov.proxy_reason = "ok"
+
+    # Signed in, node fine — and the upstream says the allowance is gone.
+    assert prov.signed_in() == (True, "ok")
+    prov.quota_exhausted = True
+    live, reason = prov.credential_health()
+    assert live is False
+    assert reason == "quota_exhausted"
+
+    # And a turn that works clears it again.
+    prov.quota_exhausted = False
+    assert prov.credential_health() == (True, "ok")
