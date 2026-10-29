@@ -80,7 +80,7 @@ providers:
   #    generateContent+tools 回 `Request contains an invalid argument`。
   antigravity:
     enabled: true
-    host: https://daily-cloudcode-pa.googleapis.com
+    host: https://cloudcode-pa.googleapis.com
     api_version: v1internal
     # 不写 refresh_token：这条腿的凭据来自桌面应用自己维护的本机存储
     # （Windows: Credential Manager `gemini:antigravity`；macOS: Keychain）。
@@ -179,6 +179,22 @@ providers:
     login_args: ["--auth-type=qwen-oauth"]
     login_tty: true
 
+  # Qoder 走它自己的 ACP 口（`qodercli --acp --strict-mcp-config`，10-29 实测 0.1.42）：
+  # `--strict-mcp-config` 忽略 ~/.qoder/settings.json 里的用户自定义 MCP，只挂载我们在
+  # `session/new` 里传入的 Plobi MCP 工具服务，避免外部 MCP 卡死会话握手。
+  # 模型名单（Sonus / Cantus / Qwen3.8-Max / Kimi-K3.1-Pro / GLM-5.3 / DeepSeek-V4-Pro 等 15 条）
+  # 由 `session/new` 实时自报，支持 `session/set_model` 动态切模型。
+  qoder:
+    enabled: true
+    transport: acp
+    binary: qodercli
+    acp_args: ["--acp", "--strict-mcp-config"]
+    display_name: Qoder
+    model_prefix: qoder
+    timeout: 300
+    probe_timeout: 20
+    login_args: ["login"]
+
   # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。
   # 2026-10-11 那把桥接的是 agy（Google）；这条是用户 10-12 拍的第二条订阅口——
   # 它比 agy 那条好用在一处：本地那张 auth 记录里 access 约 28 天、refresh 约 30 天，
@@ -207,23 +223,21 @@ providers:
     # `Docs/PROGRESS.md` 10-13 那行；正解是让这条腿自己去取活目录（下一个格子），
     # 但在那之前，少一条就是选择框里少一条能用的模型——用户 10-13 19:4x 就是为这个骂的。
     models:
+      - workbuddy/hy4-preview
       - workbuddy/hy3
       - workbuddy/hy3-x
-      - workbuddy/hy4-preview
-      - workbuddy/glm-5.1
-      - workbuddy/glm-5.2
+      - workbuddy/deepseek-v4.1-flash
+      - workbuddy/deepseek-v4-pro
+      - workbuddy/step-5-preview
       - workbuddy/glm-5.3
       - workbuddy/glm-5.3-flash
-      - workbuddy/glm-5v-turbo
-      - workbuddy/kimi-k2.6
-      - workbuddy/kimi-k2.7
-      - workbuddy/kimi-k2.8-preview
-      - workbuddy/kimi-k3-1
-      - workbuddy/deepseek-v4-pro
-      - workbuddy/deepseek-v4.1-flash
-      - workbuddy/minimax-m2.7
-      - workbuddy/minimax-m3
-      - workbuddy/step-5-preview
+      - workbuddy/glm-5.2
       - workbuddy/space-bunny
+      - workbuddy/minimax-m3.1-flash
+      - workbuddy/minimax-m2.7
+      - workbuddy/kimi-k3.1-pro
+      - workbuddy/kimi-k3-1
+      - workbuddy/kimi-k2.8-preview
+      - workbuddy/mimo-v2.6-pro
     accounts:
       - { id: desktop }

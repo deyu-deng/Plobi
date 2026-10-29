@@ -442,3 +442,29 @@ def test_a_respawned_session_gets_the_whole_conversation_again(tmp_path):
         await prov.aclose()
 
     _run(_go())
+
+
+def test_opaque_internal_model_ids_expose_human_vendor_slugs_and_map_both(tmp_path):
+    """Measured 2026-10-29 on `qodercli --acp`: `session/new` reports opaque internal
+    ids (`smodel`, `qmodel_38max`, `kmodel_latest`) alongside human vendor names
+    (`Sonus`, `Qwen3.8-Max`, `Kimi-K3.1-Pro`). The picker gets the vendor slugs while
+    `model_map` resolves both `<prefix>/<slug>` and `<prefix>/<raw_id>` to `<raw_id>`."""
+    prov = AcpProvider({**_cfg(tmp_path), "model_prefix": "qoder"}, None)
+    prov._probe = {
+        "probed": True,
+        "signed_in": True,
+        "switch": True,
+        "current": "auto",
+        "models": [
+            {"id": "auto", "name": "Auto (default)"},
+            {"id": "smodel", "name": "Sonus"},
+            {"id": "qmodel_38max", "name": "Qwen3.8-Max"},
+        ],
+    }
+    shorts = prov._apply_probed_models()
+    assert shorts == ["auto", "sonus", "qwen3.8-max"]
+    assert prov.served_models == ("qoder/auto", "qoder/sonus", "qoder/qwen3.8-max")
+    assert prov.model_map["qoder/sonus"] == "smodel"
+    assert prov.model_map["qoder/smodel"] == "smodel"
+    assert prov.model_map["qoder/qwen3.8-max"] == "qmodel_38max"
+

@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -228,6 +229,28 @@ class AcpProvider(Provider):
         self._apply_probed_models()
         return verdict
 
+    @staticmethod
+    def _public_model_slug(item: dict[str, str]) -> str:
+        """Use the human model name when the CLI's raw `id` is an opaque `*model*` token.
+
+        Measured 2026-10-29 on `qodercli --acp`: `session/new` reports opaque internal ids
+        (`smodel`, `cmodel`, `qmodel_38max`, `kmodel_latest`, `gmodel`, `dmodel`, `mmodel`)
+        alongside the real vendor names (`Sonus`, `Cantus`, `Qwen3.8-Max`, `Kimi-K3.1-Pro`,
+        `GLM-5.3`, `DeepSeek-V4-Pro`, `MiniMax-M3.1-Flash`). Exposing the normalized vendor
+        slug in `served_models` while mapping both `<prefix>/<slug>` and `<prefix>/<raw>`
+        in `model_map` keeps the picker human-readable and `session/set_model` exact.
+        """
+        raw_id = str(item.get("id") or "").strip()
+        raw_name = str(item.get("name") or "").strip()
+        if not raw_name or raw_name == raw_id:
+            return raw_id
+        if "model" in raw_id.lower():
+            cleaned = re.sub(r"\s*\(default\)\s*$", "", raw_name, flags=re.IGNORECASE).strip()
+            slug = re.sub(r"\s+", "-", cleaned.lower())
+            if slug:
+                return slug
+        return raw_id
+
     def _apply_probed_models(self) -> list[str]:
         """Turn the CLI's reported models into this leg's served ids."""
         models = self._probe.get("models") or []
@@ -236,9 +259,23 @@ class AcpProvider(Provider):
             models = [m for m in models if m["id"] == self._probe["current"]] or [
                 {"id": str(self._probe["current"]), "name": str(self._probe["current"])}
             ]
-        shorts = [m["id"] for m in models if m.get("id")]
-        self.model_map = {f"{self.model_prefix}/{s}": s for s in shorts}
-        self.served_models = tuple(self.model_map)
+        shorts: list[str] = []
+        mapping: dict[str, str] = {}
+        served: list[str] = []
+        for m in models:
+            raw_id = str(m.get("id") or "").strip()
+            if not raw_id:
+                continue
+            slug = self._public_model_slug(m)
+            pub_key = f"{self.model_prefix}/{slug}"
+            raw_key = f"{self.model_prefix}/{raw_id}"
+            mapping[pub_key] = raw_id
+            mapping[raw_key] = raw_id
+            if pub_key not in served:
+                served.append(pub_key)
+                shorts.append(slug)
+        self.model_map = mapping
+        self.served_models = tuple(served)
         return shorts
 
     async def refresh_models(self, acc: Account) -> list[str] | None:

@@ -298,3 +298,28 @@ def test_shutdown_closes_the_legs_that_hold_child_processes(monkeypatch):
     asyncio.run(main._shutdown())
 
     assert closed == ["leg", "http"]
+
+
+def test_single_model_detail_route_supports_slashed_ids(monkeypatch, state_with):
+    """OpenAI clients (including Plobi's own model check) query `GET /v1/models/<id>`
+    where `<id>` contains a slash (`antigravity/gemini-3-flash-agent`, `qoder/sonus`)."""
+    import httpx
+
+    reg = _registry(FakeProv("qoder", ["qoder/sonus"], tools=True))
+    reg._models_refreshed = True
+    state_with(reg)
+
+    async def _go():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=main.app), base_url="http://gateway"
+        ) as c:
+            h = {"authorization": "Bearer sk-test"}
+            ok = await c.get("/v1/models/qoder/sonus", headers=h)
+            missing = await c.get("/v1/models/unknown/nope", headers=h)
+            return ok, missing
+
+    ok, missing = asyncio.run(_go())
+    assert ok.status_code == 200
+    assert ok.json()["id"] == "qoder/sonus"
+    assert missing.status_code == 404
+

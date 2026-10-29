@@ -367,6 +367,35 @@ async def models(
     return {"object": "list", "data": STATE["reg"].list_models(selectable_only=selectable)}
 
 
+@app.get("/v1/models/{model_id:path}")
+async def model_detail(
+    model_id: str,
+    authorization: str = Header(None),
+):
+    _auth(authorization)
+    try:
+        await asyncio.wait_for(asyncio.shield(STATE["reg"].models_refresh_task()), timeout=MODEL_CATALOG_WAIT)
+    except asyncio.TimeoutError:
+        pass
+    reg: Registry = STATE["reg"]
+    for row in reg.list_models(selectable_only=False):
+        if row["id"] == model_id:
+            return row
+    try:
+        prov_name, canonical = reg.resolve(model_id)
+    except KeyError as e:
+        raise HTTPException(404, str(e)) from e
+    if isinstance(prov_name, (list, tuple)):
+        prov_name = prov_name[0]
+    return {
+        "id": canonical,
+        "object": "model",
+        "created": 0,
+        "owned_by": "quota_hub",
+        "provider": prov_name,
+    }
+
+
 @app.get("/healthz")
 async def healthz():
     out: dict = {
