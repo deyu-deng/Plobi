@@ -169,6 +169,11 @@ class AntigravityProvider(Provider):
         # explicit proxy. One node, shared by every leg that needs it.
         explicit = str(config.get("proxy") or os.environ.get("QUOTA_HUB_ANTIGRAVITY_PROXY") or "").strip()
         self.proxy, self.proxy_reason = (explicit, "ok") if explicit else proxy_url()
+        # Bookkeeping for `_rebind_node`: was the node pinned by hand, which client did we
+        # create (never close the shared one), and where are we bound right now.
+        self._explicit_proxy = bool(explicit)
+        self._bound_proxy = self.proxy
+        self._own_client = False
         if self.proxy:
             import httpx as _httpx
 
@@ -189,6 +194,10 @@ class AntigravityProvider(Provider):
 
     # --- discovery -------------------------------------------------------
     async def discover_accounts(self) -> list[Account]:
+        # The node may have come up since boot (he starts the VPN, then clicks) — this
+        # runs at startup and again right after a sign-in, so both the verdict and the
+        # client follow it here instead of waiting for a restart.
+        await self._rebind_node()
         accs: list[Account] = []
         stored_id, stored_secret = account_store.client_credentials()
         cid = self.config.get("client_id") or stored_id or ds.GOOGLE_CC_CLIENT_ID
@@ -313,6 +322,9 @@ class AntigravityProvider(Provider):
 
     # --- refresh ---------------------------------------------------------
     async def ensure_fresh(self, acc: Account) -> None:
+        # Before a turn is the moment the node matters: if it came up (or went away) since
+        # the last check, the client is rebound here rather than sending the turn direct.
+        await self._rebind_node()
         cred = acc.cred
         if cred.refresh_token:
             if cred.access_token and not cred.is_expired():
@@ -370,14 +382,57 @@ class AntigravityProvider(Provider):
                 reauth=True,
             )
 
-    def signed_in(self) -> tuple[bool, str]:
-        """Credential only: does the desktop app's own record hold a token for us?
+    #: How long "can the node be reached" stays good for. The verdict *and* the HTTP client
+    #: used to be frozen at construction, so starting the VPN after the hub was up left
+    #: this leg reading `proxy_unreachable` — and, worse, sending turns direct even after
+    #: the card said ok. Both are re-resolved before a turn and after a sign-in.
+    _proxy_ttl = 30.0
 
-        The node question is deliberately absent here. Measured 2026-10-28: with this
-        folded into one verdict, a signed-in user whose egress node was down saw the card
-        fall back to `+` — a button that says "you have not logged in", which is false, on
-        the screen he was looking at right after logging in.
+    async def _rebind_node(self) -> None:
+        if self._explicit_proxy:
+            return
+        now = time.time()
+        cached = getattr(self, "_proxy_seen", None)
+        if cached and now - cached[0] < self._proxy_ttl:
+            return
+        proxy, reason = proxy_url()
+        self._proxy_seen = (now, reason)
+        self.proxy_reason = reason
+        if proxy == self._bound_proxy:
+            return
+        import httpx as _httpx
+
+        old = self.http
+        self.http = _httpx.AsyncClient(proxy=proxy or None, timeout=_httpx.Timeout(120.0, connect=15.0))
+        self.proxy = proxy
+        self._bound_proxy = proxy
+        self.cloudcode.http = self.http
+        if self._own_client:
+            try:
+                await old.aclose()
+            except Exception:  # noqa: BLE001 — a closed client is not a failed rebind
+                pass
+        self._own_client = True
+        logger.info("[antigravity] egress node changed; HTTP client rebound (reason=%s)", reason)
+
+    def signed_in(self) -> tuple[bool, str]:
+        """Credential only: does any source this leg serves from hold a session?
+
+        Three sources, in the order the leg itself uses them: our own sign-in (the file
+        `run_bootstrap` writes when he completes Google's consent), a refresh token from
+        config/env, and the desktop app's own record. Measured 2026-10-29: this answered
+        from the desktop store alone, so a *successful* click on the card left it a `+`
+        while the leg could already serve turns.
         """
+        if any(str(row.get("refresh_token") or "").strip() for row in account_store.load_accounts()):
+            return True, "ok"
+        if any(str(a.get("refresh_token") or "").strip() for a in (self.config.get("accounts") or [])):
+            return True, "ok"
+        if os.environ.get("ANTIGRAVITY_REFRESH_TOKEN", "").strip():
+            return True, "ok"
+        # Last: the desktop app's own record. The node question is deliberately absent
+        # here — folding it in once made a signed-in user with a dead node see the `+`
+        # again (measured 2026-10-28), which reads as "you never logged in".
         st = ds.antigravity_desktop_token_status()
         if not st.get("present"):
             return False, "no_desktop_credential"
@@ -398,7 +453,9 @@ class AntigravityProvider(Provider):
             return False, reason
         # Signed in, but Google is unreachable without the node — say which of the two
         # it is, so the card's tooltip points at Settings → VPN instead of at a login.
-        if getattr(self, "proxy_reason", "ok") != "ok":
+        # (`proxy_reason` is refreshed by `_rebind_node` before every turn and after a
+        # sign-in; this stays sync so a catalog read never waits on a socket probe.)
+        if self.proxy_reason != "ok":
             return False, self.proxy_reason
         return True, "ok"
 

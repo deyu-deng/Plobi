@@ -197,3 +197,41 @@ def test_accounts_upsert_by_email_and_are_discovered(home, monkeypatch):
     stored = next(a for a in accounts if a.id == "antigravity-2")
     assert stored.cred.refresh_token == "refresh-2"
     assert stored.cred.extra["project_id"] == "proj-3"
+
+
+def test_a_hub_sign_in_counts_even_if_the_desktop_app_never_logged_in(home, monkeypatch):
+    """Measured 2026-10-29: `signed_in()` only read the desktop app's record, so a
+    *successful* click through Plobi left the card a `+` while the leg could already
+    serve turns from the file `run_bootstrap` wrote."""
+    from quota_hub.providers.apps.antigravity import api as aa
+
+    monkeypatch.setattr(aa, "proxy_url", lambda: ("", "no_proxy"))
+    prov = AntigravityProvider({}, None)
+    prov.config = {}
+    assert prov.signed_in()[0] is False
+
+    account_store.upsert_account(
+        {"id": "a1", "email": "x@example.com", "refresh_token": "rt-1", "project_id": "p-1"}
+    )
+
+    assert prov.signed_in() == (True, "ok")
+
+
+def test_a_node_that_comes_up_after_boot_is_adopted_without_a_restart(home, monkeypatch):
+    """The verdict *and* the client were frozen at construction, so starting the VPN after
+    the hub was up sent turns direct even once the card said ok."""
+    from quota_hub.providers.apps.antigravity import api as aa
+
+    monkeypatch.setattr(aa, "proxy_url", lambda: ("", "proxy_unreachable"))
+    prov = AntigravityProvider({}, None)
+    prov.config = {}
+    before = prov.http
+
+    monkeypatch.setattr(aa, "proxy_url", lambda: ("http://127.0.0.1:7895", "ok"))
+    prov._proxy_seen = None
+    asyncio.run(prov._rebind_node())
+
+    assert prov.proxy_reason == "ok"
+    assert prov.http is not before
+    assert prov.cloudcode.http is prov.http
+    asyncio.run(prov.http.aclose())

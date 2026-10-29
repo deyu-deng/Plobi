@@ -45,6 +45,9 @@ def _leg(http, cfg: dict | None = None):
     # judgement (pinned by the egress tests below).
     prov.cloudcode.http = http
     prov.proxy_reason = "ok"
+    # The node verdict is cached per leg and refreshed by `_rebind_node`; seed the cache so
+    # that refresh does not overwrite the "no node in this test" decision above.
+    prov._proxy_seen = (time.time(), "ok")
     return prov
 
 

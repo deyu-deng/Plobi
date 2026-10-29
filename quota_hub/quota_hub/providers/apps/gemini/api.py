@@ -140,6 +140,12 @@ class GeminiApiProvider(Provider):
         # Without one the leg rides the hub's shared client, so a dead proxy breaks this leg
         # with its own reason instead of every upstream at once.
         self.client = http or httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, connect=15.0))
+        # Bookkeeping for `_rebind_node` (see the antigravity leg for the same shape):
+        # was the node pinned by hand, which client did we create, where are we bound.
+        self._explicit_proxy = bool(explicit)
+        self._bound_proxy = self.proxy
+        self._own_client = bool(self.proxy)
+        self._proxy_ttl = 30.0
         if self.proxy:
             self.client = httpx.AsyncClient(
                 proxy=self.proxy, timeout=httpx.Timeout(self.timeout, connect=15.0)
@@ -229,7 +235,42 @@ class GeminiApiProvider(Provider):
             return []
         return [f"{self.name}/{m}" for m in short]
 
+    async def _rebind_node(self) -> None:
+        """Follow the Settings → VPN node when it comes up after boot.
+
+        Both the verdict and the HTTP client were frozen at construction, so starting the
+        node *after* the hub was up left this leg reading `proxy_unreachable` — and, worse,
+        sending turns direct even once the card said ok. Re-resolved before a turn and
+        after a sign-in (the two moments it matters), cached for `_proxy_ttl`.
+        """
+        if self._explicit_proxy:
+            return
+        now = time.time()
+        cached = getattr(self, "_proxy_seen", None)
+        if cached and now - cached[0] < self._proxy_ttl:
+            return
+        shared, reason = egress_proxy()
+        self._proxy_seen = (now, reason)
+        self.proxy_reason = reason
+        if shared == self._bound_proxy:
+            return
+        old = self.client
+        self.client = httpx.AsyncClient(proxy=shared or None, timeout=httpx.Timeout(self.timeout, connect=15.0))
+        self.proxy = shared
+        self._bound_proxy = shared
+        self.cloudcode.http = self.client
+        if self._own_client:
+            try:
+                await old.aclose()
+            except Exception:  # noqa: BLE001 — a closed client is not a failed rebind
+                pass
+        self._own_client = True
+        log.info("[gemini_api] egress node changed; HTTP client rebound (reason=%s)", reason)
+
     async def discover_accounts(self) -> list[Account]:
+        # Runs at startup and again right after a sign-in — the two moments the node may
+        # have changed under us (he starts the VPN, then clicks).
+        await self._rebind_node()
         live, _reason = self.signed_in()
         data = read_credential()
         if not live or data is None:
@@ -254,6 +295,9 @@ class GeminiApiProvider(Provider):
         return self.accounts
 
     async def ensure_fresh(self, acc: Account) -> None:
+        # Before a turn is the moment the node matters: if it came up (or went away) since
+        # the last check, the client is rebound here instead of sending the turn direct.
+        await self._rebind_node()
         if not acc.cred.is_expired():
             return
         from . import oauth as _oauth
