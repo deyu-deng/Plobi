@@ -393,3 +393,40 @@ async def test_a_stale_slot_is_refreshed_through_antigravity_tools(monkeypatch):
 
     assert acc.cred.access_token == "FRESH"
     assert getattr(acc.state, "value", acc.state) == "active"
+
+
+@pytest.mark.asyncio
+async def test_a_quota_refusal_rotates_to_the_next_account_and_retries(monkeypatch):
+    """Measured from their source (Antigravity-Manager): an upstream 429/401 triggers a
+    silent rotation to the next account and a retry. We ask the tool that owns the
+    accounts instead of re-implementing the rotation."""
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+    from quota_hub.providers.base import UpstreamError
+
+    calls = {"n": 0}
+
+    class _Cloudcode:
+        async def chat(self, **_kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise UpstreamError(429, "quota exhausted", retryable=True)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    prov.cloudcode = _Cloudcode()
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec",
+                                    desktop_store=True)
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", lambda **_kw: (True, "switched"))
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() + 3000, "expires_in_seconds": 3000})
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: "FRESH")
+
+    out = await prov.chat(acc, {"model": "antigravity/gemini-3-flash",
+                                "messages": [{"role": "user", "content": "hi"}]})
+
+    assert calls["n"] == 2, "the turn was not retried after the rotation"
+    assert out["choices"][0]["message"]["content"] == "ok"
+    assert acc.cred.access_token == "FRESH"

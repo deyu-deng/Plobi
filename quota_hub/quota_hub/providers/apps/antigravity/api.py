@@ -664,7 +664,7 @@ class AntigravityProvider(Provider):
     def _wrap(self, oai_req: dict, project: str, model: str, session_id: str) -> dict:
         return self.cloudcode.wrap(oai_req, project, model, session_id)
 
-    async def chat(self, acc: Account, oai_req: dict) -> dict:
+    async def _cloudcode_chat(self, acc: Account, oai_req: dict) -> dict:
         return await self.cloudcode.chat(
             token=acc.cred.access_token,
             project=await self._project_id(acc),
@@ -674,7 +674,7 @@ class AntigravityProvider(Provider):
             on_response=lambda r: self._note_quota(acc, r),
         )
 
-    async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
+    async def _cloudcode_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         async for chunk in self.cloudcode.chat_stream(
             token=acc.cred.access_token,
             project=await self._project_id(acc),
@@ -683,6 +683,47 @@ class AntigravityProvider(Provider):
             session_id=acc.cred.extra.get("session_id", ""),
             on_response=lambda r: self._note_quota(acc, r),
         ):
+            yield chunk
+
+    async def _rotate_account(self, acc: Account) -> bool:
+        """Let Antigravity Tools move to its next account, then re-read the shared slot.
+
+        Their proxy does the same thing on an upstream 429/401 (a silent rotation plus a
+        retry). We ask the tool that owns the accounts rather than re-implementing the
+        rotation, and we do not read or store their credentials: the slot we already read
+        is the one they write.
+        """
+        ok, _detail = await asyncio.to_thread(tool_bridge.refresh_via_tool)
+        if not ok:
+            return False
+        status = ds.antigravity_desktop_token_status()
+        fresh = ds.read_antigravity_access_token() if status.get("present") else None
+        if not fresh:
+            return False
+        acc.cred.access_token = fresh
+        if status.get("expires_at"):
+            acc.cred.expires_at = status["expires_at"]
+        acc.state = AccountState.ACTIVE
+        return True
+
+    async def chat(self, acc: Account, oai_req: dict) -> dict:
+        try:
+            return await self._cloudcode_chat(acc, oai_req)
+        except UpstreamError as exc:
+            # Out of quota or the token was revoked: move to the next account and retry once.
+            if exc.status not in (401, 429) or not await self._rotate_account(acc):
+                raise
+            return await self._cloudcode_chat(acc, oai_req)
+
+    async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
+        try:
+            async for chunk in self._cloudcode_stream(acc, oai_req):
+                yield chunk
+            return
+        except UpstreamError as exc:
+            if exc.status not in (401, 429) or not await self._rotate_account(acc):
+                raise
+        async for chunk in self._cloudcode_stream(acc, oai_req):
             yield chunk
 
     def _note_quota(self, acc, resp):
