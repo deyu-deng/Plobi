@@ -199,3 +199,46 @@ def test_pool_mark_is_treated_as_a_mutation_and_pool_read_is_not():
 
     assert "pool_mark" in MUTATING_TOOL_NAMES
     assert "pool_read" not in MUTATING_TOOL_NAMES
+
+
+# -------------------------------------------------- 全量进池之后：数与翻页（WP-WECHAT-POOL-FULL-LANDING）
+
+
+def test_the_read_carries_the_size_of_its_own_filter(pool):
+    """每次读都带 `scope`＝**这一筛**的条数：不需要一枚只数不读的分支参数（裁 185）。"""
+    got = _read(source="wechat", limit=1)
+
+    assert got["ok"] is True and got["count"] == 1
+    assert got["scope"]["total"] == 1 and got["scope"]["by_source"] == {"wechat": 1}
+    assert got["pool"]["total"] == 2, "`pool` 是全池背景，`scope` 才是这一筛"
+
+
+def test_until_closes_the_window_on_the_other_side(pool):
+    """夹具里两条：wechat 10-19、dingtalk 10-18。`until=10-19 00:00` 只该剩那条钉钉的。"""
+    got = _read(until="2026-10-19 00:00:00")
+
+    assert [row["external_id"] for row in got["items"]] == ["d1"]
+    assert got["scope"]["total"] == 1
+
+
+def test_an_unreadable_until_is_refused_not_ignored(pool):
+    got = _read(until="下辈子")
+
+    assert got["ok"] is False and "until" in got["error"]
+
+
+def test_offset_and_next_offset_page_a_window(pool):
+    first = _read(limit=1, offset=0)
+    second = _read(limit=1, offset=first["next_offset"])
+
+    assert first["next_offset"] == 1 and second["offset"] == 1
+    ids = {row["external_id"] for row in first["items"]} | {row["external_id"] for row in second["items"]}
+    assert len(ids) == 2, "两页不该拿到同一条"
+
+
+def test_the_new_parameters_are_filters_and_positions_not_branch_switches():
+    """这一刀往参数面加的只有筛选条件与游标；`action`/`mode`/`count_only` 那一类不许进来。"""
+    props = set(pool_tool._POOL_READ_SCHEMA["parameters"]["properties"])
+
+    assert {"until", "offset"} <= props
+    assert "count_only" not in props, "只数不读该是同一次读自带的 `scope`，不是一枚分支参数"

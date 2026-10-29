@@ -52,6 +52,9 @@ class IngestReport:
     # ADR-0010 修订 2026-09-30（裁定 50）：黑名单模式下用户明确关掉的会话。
     # 旧形状里那个"新会话也拒采"的 `skipped_new_talker` 计数随 fail-open 一起删了。
     skipped_excluded: int = 0
+    # 这一格在微信这一腿**恒 0**了（`WP-WECHAT-POOL-FULL-LANDING`，用户 10-23 拍「要全量进池，
+    # 微信消息的价值不止是待办」）：采集侧不再判"值不值得"，没命中规则的也照样落一条 `message`。
+    # 格子留着不删——它是"这一轮为什么只算普通消息"的读数，别的信源还可能用得上。
     filtered_out: int = 0
     unresolved: int = 0
     created: list[str] = field(default_factory=list)
@@ -262,16 +265,11 @@ class ChatlogPipeline:
             return
 
         hit = rule_match(message.content)
-        if hit is None:
-            self.seen.mark_seen(message.msg_id)
-            report.filtered_out += 1
-            return
-
-        candidate = self.confirmer.confirm(message, hit, context)
-        if candidate is None:
-            self.seen.mark_seen(message.msg_id)
+        candidate = None if hit is None else self.confirmer.confirm(message, hit, context)
+        if hit is not None and candidate is None:
+            # 命中了规则却确认不下来（「三点开会吧」那种没日期的）：这一条**照样进池**，
+            # 只是不带上一个编出来的时间。计数格留着——它说的是"这条为什么只是普通消息"。
             report.unresolved += 1
-            return
 
         evidence = {
             "msg_id": message.msg_id,
@@ -280,17 +278,18 @@ class ChatlogPipeline:
             # chatlog did not name the sender; we never substitute the talker id.
             "sender": message.sender,
             "sent_at": message.sent_at,
-            # Only the matched snippet is ever persisted or forwarded.
-            "snippet": snippet(message.content),
+        }
+        if hit is not None:
+            evidence["snippet"] = snippet(message.content)
+        if candidate is not None:
             # Source weight: "task"-tier talkers get a higher number so the
             # board / report can surface them above "info" noise. This is the
             # only behaviour change tied to tiers — everything else is gated
             # upstream by the scope layer.
-            "tier": candidate.tier,
-            "source_weight": candidate.weight,
-        }
-        if candidate.end_at:
-            evidence["end_at"] = candidate.end_at
+            evidence["tier"] = candidate.tier
+            evidence["source_weight"] = candidate.weight
+            if candidate.end_at:
+                evidence["end_at"] = candidate.end_at
         talker_name = context.talker_name if context is not None else None
         if talker_name:
             evidence["talker_name"] = talker_name
@@ -299,14 +298,15 @@ class ChatlogPipeline:
         # （微信就是发送时间）。原来这里直接把 `candidate.start_at` 写进列，于是 12 条里
         # 混进过 `2026-10-24T14:00:00` 那种"还没开的会"，`ORDER BY occurred_at DESC` 与 `since`
         # 就都不是它们看起来的那个意思了。
-        if candidate.start_at:
+        if candidate is not None and candidate.start_at:
             evidence["event_at"] = candidate.start_at
 
-        target_id = self._find_change_target(candidate) if candidate.is_change else None
-        if target_id:
-            # Consumed by ingest_occurrences (never stored): turns this
-            # message into an ADR-0009 pending change on the target event.
-            evidence["target_event_id"] = target_id
+        if candidate is not None:
+            target_id = self._find_change_target(candidate) if candidate.is_change else None
+            if target_id:
+                # Consumed by ingest_occurrences (never stored): turns this
+                # message into an ADR-0009 pending change on the target event.
+                evidence["target_event_id"] = target_id
 
         # WP-POOL（用户 10-19 原话）：**这一层不再往 `agenda.db` 写任何东西。**
         # 采到的东西落进信息池；「要不要变成一条日程」由 Agent 读池之后自己判断、
@@ -323,8 +323,8 @@ class ChatlogPipeline:
                 PoolItem(
                     source=self.source_id,
                     external_id=message.msg_id,
-                    kind=candidate.kind or "message",
-                    title=candidate.title or "",
+                    kind=(candidate.kind if candidate is not None else "") or "message",
+                    title=(candidate.title if candidate is not None else "") or "",
                     body=message.content or "",
                     context=evidence,
                     # 形状由池那一侧唯一的归一点管（`store.normalize_time`：aware→本机 naive、

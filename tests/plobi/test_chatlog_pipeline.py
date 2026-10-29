@@ -137,11 +137,17 @@ def test_duplicate_message_is_ingested_once(pipeline, _pool):
     assert len(_pooled(_pool)) == 1
 
 
-def test_chatter_is_filtered_before_any_confirm(pipeline):
+def test_chatter_lands_as_a_plain_message_and_never_becomes_a_candidate(pipeline, _pool):
+    """「好的收到」这种闲聊：**照样进池**（用户 10-23 拍「要全量进池，微信消息的价值不止是待办」），
+    但它既不许变成一条带时间的候选，也不许被送去确认器。"""
     report = IngestReport()
     pipeline.handle_message(message("好的收到"), report)
 
-    assert report.filtered_out == 1
+    assert report.filtered_out == 0, "采集侧不再判「值不值得」，那一格在微信这一腿恒 0"
+    assert report.created == ["m1"]
+    row = _pooled(_pool)[0]
+    assert row["kind"] == "message" and row["body"] == "好的收到"
+    assert "event_at" not in row["context"] and "snippet" not in row["context"]
     assert pipeline.service.list_pending() == []
 
 
@@ -699,13 +705,14 @@ def test_neighbours_are_capped_at_one_each_side(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_dirty_shape_date_without_clock_lands_no_invented_morning(pipeline):
-    """「周五开会」这种只有日期没钟点的：库里一行都不许多出来。"""
+def test_dirty_shape_date_without_clock_lands_but_invents_no_morning(pipeline, _pool):
+    """「周五开会」这种只有日期没钟点的：**照样进池**，但不许给它编一个上午。"""
     report = IngestReport()
     pipeline.handle_message(message("周五开会", msg_id="eq-1"), report)
 
-    assert report.unresolved == 1
-    assert report.created == []
+    assert report.created == ["eq-1"], "全量进池：这条在池里"
+    row = _pooled(_pool)[0]
+    assert "event_at" not in row["context"], "没有钟点就不许有时间"
     assert pipeline.service.list_pending() == []
 
 
@@ -724,16 +731,20 @@ def test_dirty_shape_missing_end_time_stays_missing(pipeline, _pool):
     assert pipeline.service.list_pending() == [], "采集器不写日程"
 
 
-def test_dirty_shape_chatter_with_a_meeting_keyword_never_lands(pipeline):
-    """带"组会"两个字的闲聊（过去时 / 疑问句）：一条都不许入库。
+def test_dirty_shape_chatter_with_a_meeting_keyword_lands_without_a_time(pipeline, _pool):
+    """带"组会"两个字的闲聊（过去时 / 疑问句）：进池，但**不当成一件待办**。
 
-    这一条比"好的收到"难：规则关键词是真命中了，脏在**它不是一件待办**。
+    这一条比"好的收到"难：规则关键词是真命中了，脏在**它不是一件待办**——
+    旧形状靠"不落库"来躲；新契约改成"落库，但不给它时间、也不给它候选身份"。
     """
     for idx, text in enumerate(("哈哈上次那个组会真是开到半夜", "那个组会是不是要改时间啊？")):
         report = IngestReport()
         pipeline.handle_message(message(text, msg_id=f"eq-3-{idx}"), report)
 
-        assert report.filtered_out == 1, text
+        assert report.created == [f"eq-3-{idx}"], text
+        row = _pooled(_pool)[-1]
+        assert row["kind"] == "message", text
+        assert "event_at" not in row["context"], text
         assert pipeline.service.list_pending() == [], text
 
 

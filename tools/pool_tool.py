@@ -26,7 +26,9 @@ _POOL_READ_SCHEMA: Dict[str, Any] = {
         "所有参数都是**筛选条件**（可组合，全部可省）：`source` 哪个信源、`kind` 条目类型、"
         "`visibility` 那一面的可见性（私聊／群聊这类）、`conversation` 哪一扇窗口、"
         "`since` 起点时间（ISO，如 `2026-10-19` 或带时分秒）、`contains` 标题或正文里含这段文字、"
-        "`acted` 是否已标记过、`limit` 最多几条（默认 50，上限 500）。\n"
+        "`acted` 是否已标记过、`limit` 最多几条（默认 50，上限 500）、`offset` 从第几条起（翻页）。\n"
+        "回包里 `scope` 就是**这一筛**的条数（总数／按类型／前几扇窗口），不用另外要一枚只数不读的口子："
+        "先看 `scope.matched` 有多大，再用 `limit` 与 `next_offset` 决定读几条。\n"
         "一个参数都不给 = 最近的一批。返回按时间倒序，每条带 `body` 正文，"
         "并带 `visibility` 与 `conversation`（空串 = 采它那一轮还没记这一格，不是「不属于任何窗口」）。"
     ),
@@ -54,9 +56,18 @@ _POOL_READ_SCHEMA: Dict[str, Any] = {
                 "description": "只要这个时间之后**收到**的条目（裁 189）。形状随意：`YYYY-MM-DD HH:MM:SS`、"
                                "ISO（带不带 T／时区偏移都行）、epoch 秒或毫秒都认；读不出会报错而不是当成没筛。",
             },
+            "until": {
+                "type": "string",
+                "description": "只要这个时间**之前收到**的条目（与 `since` 同一套形状与归一）。"
+                               "时间读不出来的行算在窗口内——不藏真收到的消息。",
+            },
             "contains": {
                 "type": "string",
                 "description": "标题或正文里包含这段文字的条目。",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "从第几条开始（翻页用）。回包里给 `next_offset`，原样传回来就是下一页。",
             },
             "acted": {
                 "type": "boolean",
@@ -103,14 +114,17 @@ def pool_read(
     visibility: Optional[str] = None,
     conversation: Optional[str] = None,
     since: Optional[str] = None,
+    until: Optional[str] = None,
     contains: Optional[str] = None,
     acted: Optional[bool] = None,
     limit: int = 50,
+    offset: int = 0,
     **_kw: Any,
 ) -> str:
-    """按筛选条件读池，返回含正文的结构化条目。"""
+    """按筛选条件读池，返回含正文的结构化条目 + 这一筛自己的条数。"""
     try:
         _PoolError, _mark, query, stats = _pool_module()
+        from plobi.pool import count as pool_count
     except Exception as exc:  # noqa: BLE001 - 池这一层没装好也要出声
         return json.dumps({"ok": False, "error": f"信息池不可用：{exc}"}, ensure_ascii=False)
 
@@ -118,13 +132,17 @@ def pool_read(
         k: v
         for k, v in (
             ("source", source), ("kind", kind), ("visibility", visibility),
-            ("conversation", conversation), ("since", since),
+            ("conversation", conversation), ("since", since), ("until", until),
             ("contains", contains), ("acted", acted),
         )
         if v not in (None, "")
     }
+
     try:
-        items = query(**filters, limit=limit)
+        # 数与正文同一次给：`scope` 是**这一筛**的条数，不是全池背景。
+        # 做成两枚分支参数会撞裁 185（参数只许是筛选条件），也不如一次问清。
+        scope = pool_count(**filters)
+        items = query(**filters, limit=limit, offset=offset)
     except Exception as exc:  # noqa: BLE001 - 读不到就说读不到，别回一个空列表装成"池里没有"
         return json.dumps(
             {"ok": False, "error": f"读信息池失败：{exc}", "filters": filters},
@@ -140,6 +158,10 @@ def pool_read(
             "ok": True,
             "count": len(items),
             "filters": filters,
+            "scope": scope,
+            "offset": max(0, int(offset)),
+            # 拿这个值原样传回 `offset` 就是下一页；给的是"这一批之后的位置"，不是"还剩几条"。
+            "next_offset": max(0, int(offset)) + len(items),
             "items": items,
             "pool": counts,
         },

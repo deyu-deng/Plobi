@@ -225,7 +225,7 @@ def test_prompt_carries_sender_and_sent_at():
     assert "2026-09-10" in prompt, "sent-date anchor absent from prompt"
 
 
-def test_not_users_plan_is_not_ingested_at_pipeline_level(tmp_path, _pool):
+def test_not_users_plan_lands_but_never_becomes_a_candidate(tmp_path, _pool):
     cap = CaptureCompleter(
         '{"is_users_plan":false,"date":"2026-09-11","time":"15:00","title":"别人的课"}'
     )
@@ -234,9 +234,13 @@ def test_not_users_plan_is_not_ingested_at_pipeline_level(tmp_path, _pool):
 
     report = pipeline.run_once()
 
-    assert report.created == []
+    # 用户 10-23 拍的全量进池：「不是我的事」≠「没收到过」。这一条照样进池，
+    # 但不许带着模型给的那个时间——那句判词说的是"不该变成待办"，不是"不该在池里"。
+    assert report.created, "闲聊/别人的事也进池"
     assert report.updated == []
-    assert _pooled(_pool) == []
+    rows = _pooled(_pool)
+    assert len(rows) == 1 and rows[0]["kind"] == "message"
+    assert "event_at" not in rows[0]["context"]
 
 
 @pytest.mark.parametrize("flag", ["false", "0", "no", "no", "不是"])
@@ -265,9 +269,12 @@ def test_only_immediate_neighbours_enter_the_prompt(tmp_path, _pool):
     ))
     _ = pipeline.run_once()
 
-    pooled = _pooled(_pool)
-    assert len(pooled) == 1
-    assert pooled[0]["context"]["snippet"] == "明天下午三点开会"
+    # 全量进池之后三条**都**在池里（旧断言是"只有命中那条进"）；这一档量的是那一条带片段。
+    pooled = {row["external_id"]: row for row in _pooled(_pool)}
+    assert len(pooled) == 3, "邻居也是消息，不再只落命中那条"
+    assert pooled["m2"]["context"]["snippet"] == "明天下午三点开会"
+    assert pooled["m2"]["kind"] == "meeting"
+    assert pooled["m-1"]["kind"] == "message" and "event_at" not in pooled["m-1"]["context"]
 
 
 def test_neighbour_is_snippet_clipped_never_whole(tmp_path, _pool):
@@ -377,8 +384,8 @@ def test_garbage_end_time_is_not_invented(tmp_path, _pool):
     )
     report = pipeline.run_once()
 
-    assert report.unresolved == 1
-    assert _pooled(_pool) == []
+    assert _pooled(_pool), "全量进池：这条在池里"
+    assert all("end_at" not in row["context"] for row in _pooled(_pool)), "脏结束时间不许被编出来"
 
 
 def test_l1_route_is_rejected_and_confirm_degrades_to_none(tmp_path, _pool):
@@ -392,8 +399,11 @@ def test_l1_route_is_rejected_and_confirm_degrades_to_none(tmp_path, _pool):
     )
     report = pipeline.run_once()
 
-    assert report.created == []
-    assert _pooled(_pool) == []
+    # L1 那一路被拒 ⇒ 拿不到一个候选，但这条消息本身还是进了池（全量进池）。
+    assert report.created
+    rows = _pooled(_pool)
+    assert len(rows) == 1 and rows[0]["kind"] == "message"
+    assert "event_at" not in rows[0]["context"]
 
 
 def test_default_production_path_wires_heuristic_then_model(tmp_path):
@@ -425,7 +435,9 @@ def test_default_confirmer_degrades_gracefully_when_quota_unavailable(tmp_path, 
     report = pipeline.run_once()
 
     assert report.unresolved == 1
-    assert _pooled(_pool) == []
+    rows = _pooled(_pool)
+    assert len(rows) == 1 and "event_at" not in rows[0]["context"], "降级≠丢消息"
+    assert report.created == [rows[0]["external_id"]]
 
 
 # --------------------------------------------------------------------------

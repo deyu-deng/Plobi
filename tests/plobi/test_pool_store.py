@@ -374,3 +374,52 @@ class TestItDoesNotBreak:
 
         with pytest.raises(sqlite3.OperationalError):
             store.land([item()])
+
+
+class TestTheWindowAndTheSizes:
+    """`WP-WECHAT-POOL-FULL-LANDING` 的另一半：全量进池之后池子大得快，读手要能关窗口、能翻页、能先数。"""
+
+    def test_until_is_the_other_end_of_the_window(self, pool):
+        store.land([
+            item(external_id="early", occurred_at="2026-10-01 09:00:00"),
+            item(external_id="late", occurred_at="2026-10-20 09:00:00"),
+        ])
+
+        assert [r["external_id"] for r in store.query(until="2026-10-10")] == ["early"]
+        assert [r["external_id"] for r in store.query(since="2026-10-05", until="2026-10-25")] == ["late"]
+        assert store.query(until="2026-10-10", source="dingtalk") == []
+
+    def test_a_row_without_a_readable_time_is_never_hidden(self, pool):
+        # 与 `since` 同一口径：**宁可多给一条说不清时间的，也不许把一条真收到的藏起来**。
+        store.land([item(external_id="no-time", occurred_at="这个钟点读不出")])
+
+        assert [r["external_id"] for r in store.query(since="2099-01-01")] == ["no-time"]
+        assert [r["external_id"] for r in store.query(until="2000-01-01")] == ["no-time"]
+
+    def test_an_unreadable_until_says_so_instead_of_not_filtering(self, pool):
+        # 「筛错了」不许伪装成「池里就这些」——`since` 那条纪律在另一头同样成立。
+        store.land([item()])
+
+        with pytest.raises(store.PoolError):
+            store.query(until="下辈子")
+
+    def test_offset_pages_without_repeating_or_losing_one(self, pool):
+        store.land([item(external_id=str(i)) for i in range(5)])
+
+        pages = [store.query(limit=2, offset=off) for off in (0, 2, 4)]
+        ids = [r["external_id"] for page in pages for r in page]
+
+        assert len(ids) == 5, "翻页不该漏"
+        assert len(set(ids)) == 5, "翻页不该重"
+
+    def test_count_gives_sizes_and_reads_not_a_single_body(self, pool):
+        store.land([
+            item(external_id="a", body="开组会", conversation="班级群"),
+            item(external_id="b", body="交作业", source="dingtalk", conversation="班级群"),
+        ])
+
+        counts = store.count(source="wechat")
+
+        assert counts["total"] == 1 and counts["by_source"] == {"wechat": 1}
+        assert counts["by_kind"] == {"note": 1}, "按类型的那一格数的是这一筛里的种类"
+        assert "开组会" not in repr(counts), "数条数的那只手不许顺手把正文读出来"

@@ -339,6 +339,93 @@ def land(items: Iterable[PoolItem], *, db_path: Optional[Path] = None) -> dict[s
     return {"created": created, "updated": updated, "unchanged": 0}
 
 
+def _filters(*, source: Optional[str] = None, kind: Optional[str] = None,
+             visibility: Optional[str] = None, conversation: Optional[str] = None,
+             since: Optional[str] = None, until: Optional[str] = None,
+             contains: Optional[str] = None,
+             acted: Optional[bool] = None) -> tuple[str, list[Any]]:
+    """筛选条件 → `(WHERE 片段, 参数)`。`query` 与 `count` 共用这一份。
+
+    `since` / `until` 都走同一枚 :func:`normalize_time`：写侧只准一种形状，读侧就不能拿
+    `'...T00:00:00'` 去和 `'... 00:00:00'` 比（`'T'` 比空格大，同一天内的行会被整日判反）。
+    读不出来时**出声**，不退化成「不过滤」——那会把"筛错了"伪装成"池里就这些"。
+    **没有时间的那些行永远算在窗口内**（含时间读不出被存成空串的）：宁可多给一条说不清时间的，
+    也不许把一条真收到的消息藏起来。
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if source:
+        clauses.append("source = ?")
+        params.append(source)
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
+    if visibility:
+        clauses.append("visibility = ?")
+        params.append(visibility)
+    if conversation:
+        clauses.append("conversation = ?")
+        params.append(conversation)
+    if since:
+        since_value, _since_raw = normalize_time(since)
+        if not since_value:
+            raise PoolError(
+                f"`since` 这个时间读不出来：{since!r}——要 `YYYY-MM-DD HH:MM:SS`、"
+                "ISO（带不带 T／偏移都行）或 epoch 秒／毫秒。"
+            )
+        clauses.append("(occurred_at = '' OR occurred_at >= ?)")
+        params.append(since_value)
+    if until:
+        until_value, _until_raw = normalize_time(until)
+        if not until_value:
+            raise PoolError(
+                f"`until` 这个时间读不出来：{until!r}——形状同 `since`。"
+            )
+        clauses.append("(occurred_at = '' OR occurred_at <= ?)")
+        params.append(until_value)
+    if contains:
+        clauses.append("(title LIKE ? OR body LIKE ?)")
+        params.extend([f"%{contains}%", f"%{contains}%"])
+    if acted is not None:
+        clauses.append("acted = ?")
+        params.append(1 if acted else 0)
+
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params
+
+
+def count(*, source: Optional[str] = None, kind: Optional[str] = None,
+          visibility: Optional[str] = None, conversation: Optional[str] = None,
+          since: Optional[str] = None, until: Optional[str] = None,
+          contains: Optional[str] = None, acted: Optional[bool] = None,
+          db_path: Optional[Path] = None) -> dict[str, Any]:
+    """**只数不读正文**：先问「这个群这周有多少条」，再决定读多少（用户 10-23 那一拍的另外半句）。
+
+    全量进池之后池子会明显变大（这台一轮就是几百条），所以"读之前先知道有多大"是
+    `pool_read` 不撑爆上下文的前提，不是礼貌功能。
+    """
+    where, params = _filters(source=source, kind=kind, visibility=visibility,
+                             conversation=conversation, since=since, until=until,
+                             contains=contains, acted=acted)
+    conn = connect(db_path)
+    try:
+        total = conn.execute(f"SELECT COUNT(*) AS n FROM pool_items{where}", params).fetchone()["n"]
+
+        def group(column: str, cap: int = 0) -> dict[str, int]:
+            sql = (f"SELECT {column} AS k, COUNT(*) AS n FROM pool_items{where}"
+                   f" GROUP BY {column} ORDER BY n DESC, k")
+            if cap:
+                sql += f" LIMIT {cap}"
+            return {str(row["k"]): int(row["n"]) for row in conn.execute(sql, params)}
+
+        return {"total": int(total), "by_source": group("source"), "by_kind": group("kind"),
+                # 窗口名可能上百个：只给前 20 扇，剩下的用 total 减一下就知道还有多少。
+                "by_conversation": group("conversation", cap=20)}
+    finally:
+        conn.close()
+
+
 def query(
     *,
     source: Optional[str] = None,
@@ -346,9 +433,11 @@ def query(
     visibility: Optional[str] = None,
     conversation: Optional[str] = None,
     since: Optional[str] = None,
+    until: Optional[str] = None,
     contains: Optional[str] = None,
     acted: Optional[bool] = None,
     limit: int = DEFAULT_LIMIT,
+    offset: int = 0,
     db_path: Optional[Path] = None,
 ) -> list[dict[str, Any]]:
     """Agent 读池的那一格。**返回正文**（用户 10-19 拍「放开」）。
@@ -366,42 +455,10 @@ def query(
     而那与隐私无关但同样要防。默认给一个保守值。
     """
     capped = max(1, min(int(limit), MAX_LIMIT))
-    clauses: list[str] = []
-    params: list[Any] = []
-
-    if source:
-        clauses.append("source = ?")
-        params.append(source)
-    if kind:
-        clauses.append("kind = ?")
-        params.append(kind)
-    if visibility:
-        clauses.append("visibility = ?")
-        params.append(visibility)
-    if conversation:
-        clauses.append("conversation = ?")
-        params.append(conversation)
-    if since:
-        # `since` 走同一个归一点：写侧只准一种形状，读侧就不能拿 `'...T00:00:00'` 去和
-        # `'... 00:00:00'` 比——`'T'` 比空格大，那样同一天内的行会被整日判成"还没到"。
-        # 读不出来时**出声**，不退化成「不过滤」（那会把"筛错了"伪装成"池里就这些"）。
-        since_value, _since_raw = normalize_time(since)
-        if not since_value:
-            raise PoolError(
-                f"`since` 这个时间读不出来：{since!r}——要 `YYYY-MM-DD HH:MM:SS`、"
-                "ISO（带不带 T／偏移都行）或 epoch 秒／毫秒。"
-            )
-        clauses.append("(occurred_at = '' OR occurred_at >= ?)")
-        params.append(since_value)
-    if contains:
-        clauses.append("(title LIKE ? OR body LIKE ?)")
-        params.extend([f"%{contains}%", f"%{contains}%"])
-    if acted is not None:
-        clauses.append("acted = ?")
-        params.append(1 if acted else 0)
-
-    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    params.append(capped)
+    where, params = _filters(source=source, kind=kind, visibility=visibility,
+                             conversation=conversation, since=since, until=until,
+                             contains=contains, acted=acted)
+    params.extend([capped, max(0, int(offset))])
 
     conn = connect(db_path)
     try:
@@ -409,7 +466,7 @@ def query(
             f"SELECT source, external_id, kind, title, body, context, visibility,"
             f" conversation, occurred_at,"
             f" captured_at, acted FROM pool_items{where}"
-            " ORDER BY COALESCE(NULLIF(occurred_at, ''), captured_at) DESC, external_id DESC LIMIT ?",
+            " ORDER BY COALESCE(NULLIF(occurred_at, ''), captured_at) DESC, external_id DESC LIMIT ? OFFSET ?",
             params,
         ).fetchall()
     finally:
