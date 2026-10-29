@@ -617,3 +617,64 @@ def test_an_installed_target_is_listed_as_not_signed_in(monkeypatch):
     assert rows["ghost-cli"]["live"] is False
     assert rows["ghost-cli"]["installed"] is True
     assert "还没登录" in rows["ghost-cli"]["reason"]
+
+
+def test_a_login_window_that_outlives_the_timeout_is_still_watched(monkeypatch):
+    """A sign-in ends when *his* window ends. Without this the card stayed a `+` until the
+    next restart, because a probe-backed leg only re-asks at startup and after a login we
+    watched finish in time."""
+    class _Proc:
+        returncode = 0
+
+        def __init__(self):
+            self.done = asyncio.Event()
+
+        async def wait(self):
+            await self.done.wait()
+            return 0
+
+    proc = _Proc()
+
+    async def _fake_exec(*argv, **kwargs):
+        return proc
+
+    monkeypatch.setattr(authflow.asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\cline.exe")
+
+    hits: list[str] = []
+
+    async def _refresh():
+        hits.append("refreshed")
+
+    async def _go():
+        mgr = authflow.LoginManager()
+        session = await mgr.start(
+            "cline_cli",
+            {
+                "kind": "cli_login",
+                "name": "Cline",
+                "binary": "cline",
+                "argv": ["auth"],
+                "tty": True,
+                "timeout": 0.1,
+                "verify": lambda: (True, "ok"),
+                "on_success": _refresh,
+            },
+        )
+        assert session.state == "pending"         # start() is fire-and-forget
+        for _ in range(100):
+            if session.state != "pending":
+                break
+            await asyncio.sleep(0.02)
+        assert session.state == "failed"          # the timeout itself is reported honestly
+        proc.done.set()
+        for _ in range(200):
+            if session.state == "ok" and hits:
+                break
+            await asyncio.sleep(0.02)
+        return session
+
+    session = asyncio.run(_go())
+
+    assert session.state == "ok"
+    assert hits == ["refreshed"]

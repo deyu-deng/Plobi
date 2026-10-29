@@ -367,8 +367,12 @@ class LoginManager:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             session.state = "failed"
-            session.detail = f"登录在 {timeout:.0f}s 内没有完成"
+            session.detail = f"登录在 {timeout:.0f}s 内没有完成（窗口还开着的话，登完它会自己再查一次）"
             session.finished_at = time.time()
+            # The window outlives our patience, not the sign-in. He may finish two minutes
+            # later; without this the card would stay a `+` until the next restart, because
+            # a probe-backed leg only re-asks at startup and after a login *we* saw end.
+            asyncio.create_task(self._finish_when_closed(session, proc, plan))
             return
         except asyncio.CancelledError:
             session.state = "failed"
@@ -465,6 +469,32 @@ class LoginManager:
             session.detail = f"{type(exc).__name__}: {exc}"
         finally:
             session.finished_at = time.time()
+        await self._finish(session, plan)
+
+    async def _finish_when_closed(self, session: LoginSession, proc, plan: dict) -> None:
+        """Keep watching a login window that outlived the timeout.
+
+        A sign-in is the CLI's, not ours: it ends when that window ends, however long he
+        takes. When it finally closes, ask the leg the same question `_run_console_login`
+        asks, and run the post-login pass if the answer is "signed in" — otherwise the
+        card would stay a `+` until the next restart.
+        """
+        try:
+            await proc.wait()
+        except Exception:  # noqa: BLE001 — a dead child is not a failed sign-in
+            return
+        verify = plan.get("verify")
+        if not callable(verify):
+            return
+        try:
+            live, _reason = await asyncio.to_thread(verify)
+        except Exception:  # noqa: BLE001
+            return
+        if not live:
+            return
+        session.state = "ok"
+        session.detail = "登录窗口关掉之后，它自己确认已经登录了"
+        session.finished_at = time.time()
         await self._finish(session, plan)
 
 
