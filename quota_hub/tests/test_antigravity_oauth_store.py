@@ -42,7 +42,7 @@ def test_the_google_login_leaves_through_the_same_node_as_the_leg(monkeypatch, h
         return {"refresh_token": "r", "access_token": "a"}
 
     monkeypatch.setattr(oa.google_oauth, "sign_in", _fake_sign_in)
-    monkeypatch.setattr(oa, "probe_network", lambda: {"ok": True, "checks": []})
+    monkeypatch.setattr(oa, "probe_network", lambda *_a, **_k: {"ok": True, "checks": []})
     monkeypatch.setattr(oa, "resolve_proxy", lambda: ("http://127.0.0.1:1", "ok"))
 
     oa.run_bootstrap(print_token=False)
@@ -63,7 +63,7 @@ def test_the_consent_asks_google_the_way_the_working_clients_do(monkeypatch, hom
     seen: dict = {}
 
     monkeypatch.setattr(oa.google_oauth, "sign_in", lambda **k: seen.update(k) or {"access_token": "a", "refresh_token": "r"})
-    monkeypatch.setattr(oa, "probe_network", lambda: {"ok": True, "checks": []})
+    monkeypatch.setattr(oa, "probe_network", lambda *_a, **_k: {"ok": True, "checks": []})
     monkeypatch.setattr(oa, "resolve_proxy", lambda: ("http://127.0.0.1:1", "ok"))
 
     oa.run_bootstrap(print_token=False)
@@ -90,7 +90,7 @@ def test_a_busy_callback_port_falls_back_instead_of_failing_the_click():
 def test_a_missing_node_refuses_before_his_browser_is_opened(monkeypatch, home):
     monkeypatch.setenv("GOOGLE_CC_CLIENT_ID", "cid")
     monkeypatch.setenv("GOOGLE_CC_CLIENT_SECRET", "secret")
-    monkeypatch.setattr(oa, "probe_network", lambda: {"ok": True, "checks": []})
+    monkeypatch.setattr(oa, "probe_network", lambda *_a, **_k: {"ok": True, "checks": []})
     monkeypatch.setattr(oa, "resolve_proxy", lambda: ("", "no_proxy"))
     opened: list[str] = []
 

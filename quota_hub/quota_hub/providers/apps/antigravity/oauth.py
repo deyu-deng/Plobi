@@ -32,7 +32,7 @@ import httpx
 from .... import google_oauth
 from ....egress import proxy_url
 from . import account_store
-from .network import probe_network
+from .network import LOGIN_ENDPOINTS, probe_network
 
 #: Same knob the leg itself reads, so a login and the traffic it enables leave the same way.
 PROXY_ENV = "QUOTA_HUB_ANTIGRAVITY_PROXY"
@@ -147,7 +147,7 @@ def resolve_proxy() -> tuple[str, str]:
 
 def run_bootstrap(*, print_token: bool = False, on_url: Callable[[str], None] | None = None) -> str:
     """Full bootstrap: start local callback, open browser, exchange code, store account."""
-    network = probe_network()
+    network = probe_network(LOGIN_ENDPOINTS)
     if not network["ok"]:
         # What reaches the screen is the CLI's one-line `[quota_hub auth] …` sentence, because
         # the desktop uses this child's whole stderr as the error text (measured 2026-10-28:

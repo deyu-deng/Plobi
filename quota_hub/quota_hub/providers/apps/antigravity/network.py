@@ -31,6 +31,18 @@ DEFAULT_ENDPOINTS: tuple[tuple[str, str], ...] = (
 )
 
 
+#: The hosts a *sign-in* actually needs: the consent page and the token endpoint.
+#: The third one (the Code Assist API) is for turns, not for the consent — and it is the
+#: flaky one on this machine (measured 2026-10-29: of five probes one failed on it alone,
+#: while accounts/oauth answered every time). Probing it before the consent made an
+#: otherwise good login fail at random — and a refused login opens no browser, which is
+#: exactly what the user reported: 「点击没有弹出浏览器」.
+LOGIN_ENDPOINTS: tuple[tuple[str, str], ...] = (
+    ("google-accounts", "https://accounts.google.com/"),
+    ("google-oauth", "https://oauth2.googleapis.com/"),
+)
+
+
 def _configured_proxy() -> tuple[str, str]:
     """The route a Google leg will actually take: the Settings → VPN node first, then env.
 
