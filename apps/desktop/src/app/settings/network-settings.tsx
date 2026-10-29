@@ -460,6 +460,15 @@ export function NetworkSettings() {
       {!loaded ? (
         <p className="text-sm text-(--ui-text-danger)">读不到当前的出口表：先别保存（保存会把表清空）</p>
       ) : null}
+      <div className={CAPTION}>
+        {[
+          `${copy.engine}: ${status?.engine.state ?? '—'}`,
+          `${copy.nodes}: ${nodes.length}`,
+          `${copy.groups}: ${groups.length}`,
+          `${copy.rules}: ${rules.length}`,
+          `${copy.proxyApplied}: ${status?.system_proxy?.ours ? '✓' : '×'}`
+        ].join('   ·   ')}
+      </div>
 
       <div className="grid gap-1">
         <ListRow
@@ -485,6 +494,7 @@ export function NetworkSettings() {
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">{copy.exits}</h3>
+          {exits.length === 0 ? <p className={CAPTION}>还没有出口：加一条，或从订阅导入</p> : null}
           <Button onClick={() => setExits([...exits, { name: '', url: '' }])} size="sm" variant="outline">
             {copy.addExit}
           </Button>
@@ -516,6 +526,7 @@ export function NetworkSettings() {
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">{copy.rules}</h3>
+          {rules.length === 0 ? <p className={CAPTION}>还没有规则：默认全部直连</p> : null}
           <Button onClick={() => setRules([...rules, { match: '', via: 'direct' }])} size="sm" variant="outline">
             {copy.addRule}
           </Button>
@@ -572,6 +583,7 @@ export function NetworkSettings() {
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">{copy.nodes}</h3>
+          {nodes.length === 0 ? <p className={CAPTION}>还没有成员：用下面的订阅导入</p> : null}
           <Button
             disabled={importing || !poolPath.trim()}
             onClick={() => void importPool()}
@@ -662,6 +674,7 @@ export function NetworkSettings() {
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">{copy.groups}</h3>
+          {groups.length === 0 ? <p className={CAPTION}>还没有组：规则可以指的地方</p> : null}
           <Button
             onClick={() => setGroups([...groups, { include: '', name: '', raw: {}, type: 'url-test' }])}
             size="sm"
