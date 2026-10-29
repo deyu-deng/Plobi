@@ -8953,3 +8953,35 @@ def test_get_usage_clamps_post_compression_sentinel():
     usage = server._get_usage(agent)
     assert "context_used" not in usage
     assert "context_percent" not in usage
+
+
+def test_wait_agent_timeout_names_the_frame_the_build_thread_is_stuck_on():
+    """超时不许只说 timed out——要把那条线程正卡在哪一帧带出来。
+
+    10-29 现场：屏幕上只有「agent initialization timed out」，四份日志里这句 0 命中，
+    谁都答不出那 30 秒耗在哪。异常路径有 agent_error，卡死路径原本什么都没有。
+    """
+    gate = threading.Event()
+
+    def _stuck_in_build():
+        gate.wait(5)
+
+    th = threading.Thread(target=_stuck_in_build, name="agent-build-test")
+    session = {"agent_ready": threading.Event(), "agent_build_thread": th, "session_id": "s1"}
+    th.start()
+    try:
+        err = server._wait_agent(session, "rid-1", timeout=0.3)
+    finally:
+        gate.set()
+        th.join(timeout=3)
+
+    assert err["error"]["code"] == 5032
+    msg = err["error"]["message"]
+    assert "timed out" in msg, msg
+    assert "_stuck_in_build" in msg, f"没把卡住的那一帧带出来：{msg}"
+
+
+def test_wait_agent_timeout_says_so_when_the_build_thread_never_started():
+    """线程压根没起 ≠ 卡住：这两种情况必须说不同的话，否则下一次还是猜。"""
+    err = server._wait_agent({"agent_ready": threading.Event(), "session_id": "s2"}, "rid-2", timeout=0.1)
+    assert "根本没起" in err["error"]["message"], err["error"]["message"]

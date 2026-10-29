@@ -1306,10 +1306,34 @@ def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
         reset_transport(token)
 
 
+def _build_stack_hint(session: dict) -> str:
+    """超时那一刻，把「还在建 Agent 的那条线程正卡在哪一行」拼进错误里。
+
+    2026-10-29 现场：屏幕上只有 `agent initialization timed out`，四份日志里这句 0 命中，
+    谁也说不出那 30 秒耗在哪儿——异常路径是有 ``agent_error`` 的，**卡死路径什么都没有**。
+    这条不是日志噪音：不带上来的栈，下一次红还是只能猜。
+    截到 6 帧 / 600 字是故意的——这句话要过 RPC 进 toast，不是给终端看的。
+    """
+    thread = session.get("agent_build_thread")
+    if thread is None:
+        return "（建 Agent 的线程根本没起：`agent_build_started` 没置上）"
+    frame = sys._current_frames().get(thread.ident)
+    if frame is None:
+        return f"（线程 {thread.name} 已经不在，但 ready 没被 set —— 建到一半被杀）"
+    import traceback
+
+    frames = traceback.extract_stack(frame)[-6:]
+    where = " ← ".join(f"{f.filename.split(os.sep)[-1]}:{f.lineno} {f.name}" for f in frames)
+    return f"（卡在：{where}）"[:600]
+
+
 def _wait_agent(session: dict, rid: str, timeout: float = 30.0) -> dict | None:
     ready = session.get("agent_ready")
     if ready is not None and not ready.wait(timeout=timeout):
-        return _err(rid, 5032, "agent initialization timed out")
+        hint = _build_stack_hint(session)
+        logger.error("agent initialization timed out for session %s: %s",
+                     session.get("session_id") or "?", hint)
+        return _err(rid, 5032, f"agent initialization timed out {hint}")
     err = session.get("agent_error")
     return _err(rid, 5032, err) if err else None
 
@@ -1490,7 +1514,12 @@ def _start_agent_build(sid: str, session: dict) -> None:
                     pass
             ready.set()
 
-    threading.Thread(target=_build, daemon=True).start()
+    build_thread = threading.Thread(target=_build, daemon=True, name=f"agent-build-{sid[:8]}")
+    with _sessions_lock:
+        current_or_new = _sessions.get(sid)
+    if current_or_new is not None:
+        current_or_new["agent_build_thread"] = build_thread
+    build_thread.start()
 
 
 def _sess_nowait(params, rid):
