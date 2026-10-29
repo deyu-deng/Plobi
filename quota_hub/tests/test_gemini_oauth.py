@@ -329,3 +329,54 @@ def test_the_consent_uses_the_cli_s_own_loopback_path(monkeypatch):
 
     assert seen["redirect_path"] == "/oauth2callback"
     assert seen["use_pkce"] is False
+
+
+def test_a_refused_client_is_retried_in_the_installed_app_shape(monkeypatch):
+    """Measured 2026-10-29 (user report: the Antigravity card stayed a `+` after a
+    completed Google sign-in): Google answered `invalid_client`. A client registered as an
+    installed app has no secret, and one that is handed a secret it does not own is
+    refused exactly like this. The code survives a refusal at client authentication, so the
+    same code can be redeemed again without the secret."""
+    from quota_hub import google_oauth
+
+    seen: list[dict] = []
+
+    class _Resp:
+        def __init__(self, ok, payload):
+            self._ok = ok
+            self._payload = payload
+            self.status_code = 200 if ok else 400
+            self.text = str(payload)
+
+        @property
+        def is_success(self):
+            return self._ok
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __init__(self, **_kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def post(self, _url, data=None):
+            body = dict(data or {})
+            seen.append(body)
+            if body.get("client_secret"):
+                return _Resp(False, {"error": "invalid_client"})
+            return _Resp(True, {"access_token": "a", "refresh_token": "r"})
+
+    monkeypatch.setattr(google_oauth.httpx, "Client", _Client)
+
+    tokens = google_oauth.exchange("cid", "secret", "code", "", "http://127.0.0.1:1/callback")
+
+    assert tokens["refresh_token"] == "r"
+    assert len(seen) == 2
+    assert "client_secret" in seen[0]
+    assert "client_secret" not in seen[1]

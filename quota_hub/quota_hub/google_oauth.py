@@ -191,6 +191,15 @@ def exchange(client_id: str, client_secret: str, code: str, verifier: str,
         body["code_verifier"] = verifier
     with httpx.Client(proxy=proxy or None, timeout=timeout, trust_env=False) as client:
         res = client.post(OAUTH_TOKEN_URL, data=body)
+        if not res.is_success and client_secret:
+            # Measured 2026-10-29 (user report: the Antigravity card stayed a `+` after a
+            # completed Google sign-in): Google answered `invalid_client`. A client
+            # registered as an *installed app* has no secret at all, and one that is
+            # handed a secret it does not own is refused exactly like this. The code is
+            # not consumed by a refusal at client authentication, so the same code can be
+            # redeemed again in the installed-app shape: no secret.
+            retry = {k: v for k, v in body.items() if k != "client_secret"}
+            res = client.post(OAUTH_TOKEN_URL, data=retry)
     if not res.is_success:
         raise RuntimeError(_token_error(res))
     return res.json()
