@@ -323,6 +323,11 @@ class AcpProvider(Provider):
         """
         msgs = [m for m in (oai_req.get("messages") or []) if isinstance(m, dict)]
         sess = self._session(acc)
+        if not sess.alive:
+            # A dead session is respawned by `_turn` with no memory of what we sent before,
+            # so the "already sent" bookkeeping goes with it — otherwise the new child would
+            # receive only the tail and answer without the conversation.
+            self._sent.pop(acc.id, None)
         sent = self._sent.get(acc.id)
         conversation = _conversation(msgs)
         if sent is None:

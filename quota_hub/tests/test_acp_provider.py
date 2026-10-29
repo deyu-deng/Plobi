@@ -367,6 +367,9 @@ def test_a_retry_of_the_same_history_asks_the_last_question_again(tmp_path):
             {"role": "assistant", "content": "answer"},
             {"role": "user", "content": "second"},
         ]
+        # The session must be alive before "already sent" means anything: a dead one is
+        # respawned empty (see the respawn test).
+        await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": msgs[:1]})
         prov._sent[acc.id] = msgs
 
         _sess, text, _msgs = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": msgs})
@@ -404,6 +407,37 @@ def test_a_rebuilt_system_prompt_does_not_restart_the_session(tmp_path):
 
         assert sess2.proc.pid == pid_before        # same child: no restart
         assert text2 == "assistant: hi\n\nuser: and again"
+
+        await prov.aclose()
+
+    _run(_go())
+
+
+def test_a_respawned_session_gets_the_whole_conversation_again(tmp_path):
+    """A dead child has no memory. Keeping the "already sent" bookkeeping would hand the
+    fresh session only the tail, and the model would answer without the conversation."""
+
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path), None)
+        acc = (await prov.discover_accounts())[0]
+        await prov.refresh_models(acc)
+
+        msgs = [
+            {"role": "user", "content": "one"},
+            {"role": "assistant", "content": "two"},
+        ]
+        sess, _text, _m = await prov._prepare(acc, {"model": "fake_acp/m-a", "messages": msgs})
+        await sess.start()
+        prov._sent[acc.id] = msgs
+
+        await sess.close()  # the child dies between turns
+
+        _sess, text, _m = await prov._prepare(
+            acc,
+            {"model": "fake_acp/m-a", "messages": msgs + [{"role": "user", "content": "three"}]},
+        )
+        expected = "\n\n".join(["user: one", "assistant: two", "user: three"])
+        assert text == expected
 
         await prov.aclose()
 
