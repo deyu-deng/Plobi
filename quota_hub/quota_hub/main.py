@@ -123,6 +123,12 @@ def _startup_safety_checks(cfg: dict) -> None:
 
 QUOTA_REFRESH_SECONDS = 900.0
 
+#: How long one `/v1/models` read may wait for the model refresh before answering with
+#: what is known. Spawn-based legs start their own process before they can name anything
+#: (cline ~10 s, qwen ~25 s on this machine, 2026-10-29) — a desktop that opened during
+#: those seconds must not see a request that never comes back.
+MODEL_CATALOG_WAIT = 4.0
+
 
 async def _quota_refresh_loop(reg, interval: float) -> None:
     """Keep account quota snapshots fresh without blocking chat routing."""
@@ -183,8 +189,9 @@ async def _startup():
     reg = await Registry(cfg, http).build()
     # Eagerly refresh each provider's model catalog from upstream (Antigravity
     # fetches its real model list via fetchAvailableModels). Best-effort and
-    # non-blocking; /v1/models also triggers it lazily on first call.
-    asyncio.create_task(reg.ensure_models_refreshed())
+    # non-blocking; /v1/models also waits on it, but only briefly (see
+    # MODEL_CATALOG_WAIT).
+    reg.models_refresh_task()
     quota_task = asyncio.create_task(
         _quota_refresh_loop(reg, float(cfg.get("quota_refresh_seconds", QUOTA_REFRESH_SECONDS)))
     )
@@ -308,9 +315,13 @@ async def models(
     selectable: bool = Query(False),
 ):
     _auth(authorization)
-    # Ensure the catalog is live (no-op once refreshed). The Antigravity adapter
-    # replaces its seed model list with the real one fetched from upstream.
-    await STATE["reg"].ensure_models_refreshed()
+    # Read the catalog without waiting on a leg that is still booting. The refresh runs
+    # as one shared task; this request only waits for it briefly and then answers with
+    # what is known (measured 2026-10-29: cline ~10 s, qwen ~25 s to answer at all).
+    try:
+        await asyncio.wait_for(asyncio.shield(STATE["reg"].models_refresh_task()), timeout=MODEL_CATALOG_WAIT)
+    except asyncio.TimeoutError:
+        pass
     # The OpenAI-compat catalog stays complete: a consumer that only wants models
     # that can serve an agent turn (tool-capable AND live credential) asks
     # `?selectable=1`. Every row also carries its own `selectable` +
