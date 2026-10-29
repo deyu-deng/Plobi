@@ -52,21 +52,42 @@ def main() -> int:
             return 1
 
         selectable = [m for m in models if m.get("selectable")]
-        by_leg: dict[str, list[str]] = {}
-        for m in selectable:
+
+        def _leg_of(m: dict) -> str:
             # The row says which leg serves it; the id prefix is the *model* namespace and
             # does not always equal the card id (`kiro` vs `kiro_cli`, `cline` vs `cline_cli`).
-            by_leg.setdefault(str(m.get("provider") or m["id"].split("/")[0]), []).append(m["id"])
+            return str(m.get("provider") or m["id"].split("/")[0])
 
-        print(f"\n{'leg':16s} {'signed_in':9s} {'live':5s} {'models':6s} reason")
+        by_leg: dict[str, list[str]] = {}
+        for m in selectable:
+            by_leg.setdefault(_leg_of(m), []).append(m["id"])
+        listed: dict[str, list[dict]] = {}
+        for m in models:
+            listed.setdefault(_leg_of(m), []).append(m)
+
+        print(f"\n{'leg':16s} {'signed_in':9s} {'live':5s} {'usable':6s} {'listed':6s} reason")
         problems: list[str] = []
         for leg, card in sorted(cards.items()):
             rows = by_leg.get(leg, [])
-            reason = card.get("signed_in_reason") or card.get("reason") or ""
+            all_rows = listed.get(leg, [])
             signed = bool(card.get("signed_in"))
-            print(f"{leg:16s} {str(signed):9s} {str(card.get('live')):5s} {len(rows):6d} {reason}")
+            live = bool(card.get("live"))
+            # When a leg cannot serve, the *blocking* reason is the one worth printing: a
+            # signed-in leg with a dead node reads `signed_in_reason=ok` and would otherwise
+            # look fine. Take the first unselectable row's reason, else the card's.
+            blocking = "" if live else (all_rows[0].get("unselectable_reason") if all_rows else "")
+            reason = blocking or card.get("reason") or card.get("signed_in_reason") or ""
+            print(f"{leg:16s} {str(signed):9s} {str(live):5s} {len(rows):6d} {len(all_rows):6d} {reason}")
             if signed and not rows:
-                problems.append(f"{leg}: signed in but the hub offers no model ({reason})")
+                if all_rows:
+                    why = blocking or "unknown"
+                    problems.append(
+                        f"{leg}: signed in, {len(all_rows)} model(s) listed but none usable ({why})"
+                    )
+                else:
+                    problems.append(
+                        f"{leg}: signed in but the hub reports no model for it ({reason or 'unknown'})"
+                    )
 
         if not selectable:
             print("\nFAIL  the hub offers no usable model at all")
