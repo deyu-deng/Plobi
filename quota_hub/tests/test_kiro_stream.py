@@ -164,10 +164,22 @@ def test_streamed_turns_send_each_chunk_instead_of_one_blob(monkeypatch):
     from quota_hub.providers.base import Account
 
     prov = KiroCliProvider({"binary": "kiro-cli"}, None)
-    lines = [line.encode("utf-8") + b"\n" for line in RUN.splitlines()]
+    # Two token groups with a metering line between them: the client must see two deltas,
+    # and the credit line must still land.
+    lines = [
+        json.dumps({"type": "sessionUpdate", "data": {"update": {
+            "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "第一段"}}}}),
+        json.dumps({"type": "metadata", "data": {"meteringUsage": [{"value": 0.1, "unit": "credit"}],
+                                                 "contextUsagePercentage": 12.0}}),
+        json.dumps({"type": "sessionUpdate", "data": {"update": {
+            "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "第二段"}}}}),
+        json.dumps({"type": "metadata", "data": {"meteringUsage": [{"value": 0.1264, "unit": "credit"}]}}),
+        json.dumps({"type": "runFinished", "data": {"finalText": "第一段第二段"}}),
+    ]
+    encoded = [line.encode("utf-8") + b"\n" for line in lines]
 
     async def _spawn(acc, oai_req):
-        return _FakeProc(lines)
+        return _FakeProc(encoded)
 
     monkeypatch.setattr(prov, "_spawn", _spawn)
     acc = Account(id="a", provider="kiro_cli")
@@ -182,9 +194,10 @@ def test_streamed_turns_send_each_chunk_instead_of_one_blob(monkeypatch):
 
     chunks = asyncio.run(_go())
     deltas = [c["choices"][0]["delta"].get("content") for c in chunks if c["choices"][0]["delta"].get("content")]
-    assert deltas == ["输出是 plobi-tool-ok"]
+    assert deltas == ["第一段", "第二段"], deltas
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
     assert acc.quota["credits_used_last_turn"] == 0.2264
+    assert acc.quota["context_percent"] == 12.0
 
 
 def test_a_run_that_only_ends_with_final_text_still_answers():
