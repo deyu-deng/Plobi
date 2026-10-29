@@ -226,6 +226,37 @@ def test_a_sign_in_over_there_flips_the_card_without_a_restart(tmp_path):
     _run(_go())
 
 
+def test_the_post_login_recheck_puts_the_models_into_the_catalog(tmp_path):
+    """The whole point of `_recheck_after_login`: one sign-in, no restart.
+
+    This drives the real function the route calls after a login — discover → refresh →
+    rebuild the routing index — against the stand-in agent, so the promise "点一下登录，
+    模型就进框" is checked end to end instead of only at the provider level.
+    """
+
+    marker = tmp_path / "signed-in"
+
+    async def _go():
+        from quota_hub import main as hubmain
+
+        async with httpx.AsyncClient() as http:
+            reg = await _registry(http, tmp_path, f"--auth-file={marker}").build()
+            hubmain.STATE["reg"] = reg
+            await reg.ensure_models_refreshed()
+            assert reg.list_models(selectable_only=True) == []
+
+            marker.write_text("yes", encoding="utf-8")  # he finished the CLI's sign-in
+            await hubmain._recheck_after_login("fake_acp")
+
+            ids = [row["id"] for row in reg.list_models(selectable_only=True)]
+            routed = dict(reg.model_to_provider)
+
+        assert ids == ["fake_acp/m-a", "fake_acp/m-b"]
+        assert routed == {"fake_acp/m-a": "fake_acp", "fake_acp/m-b": "fake_acp"}
+
+    _run(_go())
+
+
 def test_a_turn_runs_on_the_model_the_picker_chose(tmp_path):
     async def _go():
         prov = AcpProvider(_cfg(tmp_path), None)
