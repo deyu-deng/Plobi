@@ -65,15 +65,36 @@ logger = logging.getLogger(__name__)
 # truth. Do NOT redefine it here; updating one without the other causes
 # security checks to diverge.
 
-# 人读面读写那两枚工具的名字与上限（WP-MIND-DOSSIER-WRITE）。
-# 叫 ``vault_*`` 不叫 ``mind_*``：裁定 181/182 把根按**读者**分成两个，这两枚工具只碰人读的那一个
-# （``Vault/*``）。脑自己那一面（``Loom/wiki/*``）不进工具面——它的召回由注入完成，
-# 管道要写它也走 MindWriter，不经过模型的手。用户 2026-10-27 拍「读也改：vault_read + vault_write」。
+# 两对读写工具，一面一对（用户 2026-10-29 拍「读写都给，真对称」）。
+# ``vault_*`` 只碰人读面，``mind_*`` 只碰脑自己那一面；两枚工具各自的面由**工具身份**决定，
+# 不是一颗给模型猜的 ``surface`` 参数（裁 185）。
 VAULT_READ_TOOL = "vault_read"
 VAULT_WRITE_TOOL = "vault_write"
+MIND_READ_TOOL = "mind_read"
+MIND_WRITE_TOOL = "mind_write"
 VAULT_LOGICAL_PREFIX = "Vault/"
 VAULT_READ_MAX_CHARS = 24_000
 VAULT_WRITE_MAX_CHARS = 60_000
+# 盘上没有 ``Loom`` 这一层——脑仓摊平之后顶层就是 ``wiki/ raw/ persona/``（现核）。
+# ``Loom/`` 是**内部与存量**的旧拼法（待批队列、信任账、脑仓自己那份 AGENTS.md 里都写着它），
+# 所以给人和模型看的说法用 ``Mind/``，进 paths 之前在这一格归一；把 ``Loom/`` 全线改名是另一把刀
+# （登记在 `Docs/reference/agent-register.md`，要连 writer／CLI／脑仓那份文件一起动）。
+BRAIN_SPOKEN_PREFIX = "Mind/"
+BRAIN_LOGICAL_PREFIX = "Loom/"
+
+
+def _to_logical(path: str) -> str:
+    """模型说的 ``Mind/…`` → 内部用的 ``Loom/…``。"""
+    if path.startswith(BRAIN_SPOKEN_PREFIX):
+        return BRAIN_LOGICAL_PREFIX + path[len(BRAIN_SPOKEN_PREFIX) :]
+    return path
+
+
+def _to_spoken(path: str) -> str:
+    """反向：回给模型的字符串里不许出现盘上没有的那个词。"""
+    if path.startswith(BRAIN_LOGICAL_PREFIX):
+        return BRAIN_SPOKEN_PREFIX + path[len(BRAIN_LOGICAL_PREFIX) :]
+    return path
 
 MAX_DIGEST_TURNS = 40
 MAX_DIGEST_CHARS_PER_MSG = 1200
@@ -210,11 +231,12 @@ class MindProvider(MemoryProvider):
         )
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        """人读面读写两枚原子工具（WP-MIND-DOSSIER-WRITE，用户 2026-10-25 拍；名字 10-27 改成 ``vault_*``）。
+        """两对原子工具：一面一对（WP-MIND-DOSSIER-WRITE；用户 10-29 拍「读写都给，真对称」）。
 
-        裁定 185：一枚工具只干一件事——所以是 ``vault_read`` 与 ``vault_write`` 两只手，
-        不是一颗带 ``action`` 的开关。写一律走 :class:`MindWriter`，因此过 L1 那道闸：
-        这台出厂 ``mind_write_auto_approve`` 关着，落不了盘就照实回「已进待批 + id」。
+        裁定 185：一枚工具只干一件事——所以是 ``vault_read``／``vault_write``／``mind_read``／
+        ``mind_write`` 四只手，不是一颗带 ``action`` 或 ``surface`` 的开关：哪一面由**工具身份**决定。
+        写一律走 :class:`MindWriter`，因此过 L1 那道闸：这台 ``mind_write_auto_approve`` 关着时
+        落不了盘，就照实回「已进待批 + id」。
         """
         return [
             {
@@ -224,8 +246,8 @@ class MindProvider(MemoryProvider):
                     "``Vault/...`` — a dossier (``Vault/projects/Aura/progress.md``), a note "
                     "(``Vault/notes/...``), today's diary (``Vault/diary/<date>-<Weekday>.md``). "
                     "Only paths inside that surface resolve; anything else comes back as an "
-                    "error, never as an empty file. The brain's own pages (``Loom/wiki/...``) "
-                    "are not reachable here — recalled content already arrives in your context."
+                    "error, never as an empty file. The brain's own pages are a different tool: "
+                    "``mind_read`` — recalled content from there already arrives in your context."
                 ),
                 "parameters": {
                     "type": "object",
@@ -269,56 +291,113 @@ class MindProvider(MemoryProvider):
                     "required": ["path", "content"],
                 },
             },
+            {
+                "name": MIND_READ_TOOL,
+                "description": (
+                    "Read one page of the brain's OWN surface by its LOGICAL path, "
+                    "``Mind/wiki/...`` — concept pages, entity pages, source pages, "
+                    "comparisons, the daily summary, memory notes. This is the AI-facing "
+                    "surface: what is written here is mostly machine product, not prose for "
+                    "the user. Only paths inside those zones resolve; the human surface "
+                    "(``Vault/...``) is a different tool: ``vault_read``."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path on the brain surface, e.g. Mind/wiki/concepts/plobi-x.md",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": MIND_WRITE_TOOL,
+                "description": (
+                    "Overwrite one page on the brain's OWN surface (``Mind/wiki/...``) by its "
+                    "LOGICAL path — the zones this tool may touch are the memory system's own "
+                    "pages (concepts, entities, sources, comparisons, daily, memory). Keep the "
+                    "file's frontmatter. Notes for the user (``Vault/notes/``) and dossiers "
+                    "(``Vault/projects/``) are a different tool: ``vault_write``. The write is "
+                    "checked by the trust gate; the result says whether it landed, went to the "
+                    "pending queue (with an id), or was refused, and why. Never report success "
+                    "the model did not read back."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Logical path on the brain surface, e.g. Mind/wiki/memory/x.md",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The full new contents of that page (markdown).",
+                        },
+                    },
+                    "required": ["path", "content"],
+                },
+            },
         ]
 
     # -- model-facing dossier tools (WP-MIND-DOSSIER-WRITE) --------------
 
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
-        """Serve ``vault_read`` / ``vault_write``; anything else is an explicit no-op."""
+        """Serve the four tools; anything else is an explicit no-op.
+
+        哪一面由工具身份决定——``vault_*`` 只给人读面，``mind_*`` 只给脑那一面。
+        """
         if tool_name == VAULT_READ_TOOL:
-            return json.dumps(self._tool_read(args), ensure_ascii=False)
+            return json.dumps(self._tool_read(args, (VAULT_LOGICAL_PREFIX,)), ensure_ascii=False)
         if tool_name == VAULT_WRITE_TOOL:
-            return json.dumps(self._tool_write(args), ensure_ascii=False)
+            return json.dumps(self._tool_write(args, (VAULT_LOGICAL_PREFIX,)), ensure_ascii=False)
+        if tool_name == MIND_READ_TOOL:
+            return json.dumps(self._tool_read(args, MEMORY_ZONES), ensure_ascii=False)
+        if tool_name == MIND_WRITE_TOOL:
+            return json.dumps(self._tool_write(args, MEMORY_ZONES), ensure_ascii=False)
         return json.dumps(
             {"success": False, "error": f"mind provider does not handle tool {tool_name!r}"},
             ensure_ascii=False,
         )
 
     @staticmethod
-    def _off_surface(path: str) -> Dict[str, Any] | None:
-        """工具面只认人读面（``Vault/*``），别的形状当场说清，不装作读不到。
+    def _surface_guard(logical: str, allowed: tuple[str, ...]) -> Dict[str, Any] | None:
+        """一枚工具只碰一面：越面的形状当场说清，不装作读不到。
 
-        ``plobi/mind/paths.py`` 的白名单比这一格宽（管道自己写 ``Loom/wiki/daily`` 那些要过它），
+        ``plobi/mind/paths.py`` 的白名单比这两面加起来还宽（管道自己写脑的日页面要过它），
         所以这里不是重复检查，是**模型的手**与**管道的写路**各自的面。
         """
-        if path.startswith(VAULT_LOGICAL_PREFIX):
+        if any(logical == a.rstrip("/") or logical.startswith(a) for a in allowed):
             return None
         return {
             "success": False,
             "error": (
-                f"{path} 不在人读面上：这两枚工具只管 ``Vault/*``（档案、笔记、日记）。"
-                "脑自己那一面（``Loom/wiki/*``）不给模型的手——要那条内容走召回，已经在你上下文里了。"
+                f"{_to_spoken(logical)} 不在这一枚工具的面里。能碰的形状只有："
+                + "、".join(f"`{_to_spoken(a)}`" for a in allowed)
+                + "——人读面（档案／笔记／日记）用 ``vault_*``，脑那一面用 ``mind_*``。"
             ),
         }
 
-    def _tool_read(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_read(self, args: Dict[str, Any], allowed: tuple[str, ...]) -> Dict[str, Any]:
         from plobi.mind.paths import MindUnavailable, is_safe_relative, require_root
 
-        path = str((args or {}).get("path") or "").strip()
+        shown = str((args or {}).get("path") or "").strip().replace("\\", "/")
+        path = _to_logical(shown)
         if not path:
             return {"success": False, "error": "path is required"}
-        off = self._off_surface(path)
+        off = self._surface_guard(path, allowed)
         if off:
             return off
         if not is_safe_relative(path):
-            return {"success": False, "error": f"{path} 不在可读写的面里"}
+            return {"success": False, "error": f"{shown} 不在可读写的面里"}
         try:
             root = require_root(self._mind_root)
             target = safe_target(root, path)
         except (MindUnavailable, UnsafeMindPath) as exc:
             return {"success": False, "error": str(exc)}
         if not target.is_file():
-            return {"success": False, "error": f"{path} 还不存在（读不到不等于空文件，别当它是空的）"}
+            return {"success": False, "error": f"{shown} 还不存在（读不到不等于空文件，别当它是空的）"}
         try:
             text = target.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
@@ -326,19 +405,20 @@ class MindProvider(MemoryProvider):
         truncated = len(text) > VAULT_READ_MAX_CHARS
         return {
             "success": True,
-            "path": path,
+            "path": shown,
             "content": text[:VAULT_READ_MAX_CHARS],
             "chars": len(text),
             "truncated": truncated,
         }
 
-    def _tool_write(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_write(self, args: Dict[str, Any], allowed: tuple[str, ...]) -> Dict[str, Any]:
         from plobi.mind.notes_contract import validate_note
         from plobi.mind.paths import MindUnavailable, is_safe_relative
         from plobi.mind.writer import WriteRequest
 
         payload = args or {}
-        path = str(payload.get("path") or "").strip()
+        shown = str(payload.get("path") or "").strip().replace("\\", "/")
+        path = _to_logical(shown)
         content = payload.get("content")
         if not path:
             return {"success": False, "error": "path is required"}
@@ -349,11 +429,11 @@ class MindProvider(MemoryProvider):
                 "success": False,
                 "error": f"content too large ({len(content)} chars > {VAULT_WRITE_MAX_CHARS})",
             }
-        off = self._off_surface(path)
+        off = self._surface_guard(path, allowed)
         if off:
             return off
         if not is_safe_relative(path):
-            return {"success": False, "error": f"{path} 不在可写的面里"}
+            return {"success": False, "error": f"{shown} 不在可写的面里"}
         # 笔记那一格另有一道硬约束（用户 10-25 答「不合规拒写」）：缺 title/tags/belongs、
         # 一篇多个一级标题、发明新主题目录，一律拒，并把缺什么逐条说回去。
         notes_problems = validate_note(path, content)
@@ -370,7 +450,7 @@ class MindProvider(MemoryProvider):
         except MindUnavailable as exc:
             return {"success": False, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a failed write must not crash the turn
-            logger.warning("[mind] vault_write(%s) failed: %s", path, exc)
+            logger.warning("[mind] write(%s) failed: %s", path, exc)
             return {"success": False, "error": str(exc)}
 
         if result.staged:
@@ -378,16 +458,21 @@ class MindProvider(MemoryProvider):
                 "success": False,
                 "staged": True,
                 "pending_id": result.pending_id,
-                "path": path,
+                "path": shown,
                 "detail": result.detail,
             }
         if result.ok and path in result.written:
-            return {"success": True, "written": result.written, "path": path, "detail": result.detail}
+            return {
+                "success": True,
+                "written": [_to_spoken(w) for w in result.written],
+                "path": shown,
+                "detail": result.detail,
+            }
         return {
             "success": False,
-            "path": path,
+            "path": shown,
             "error": "这一笔没有落盘",
-            "detail": result.detail or f"{path} 被写路径的守卫拒了",
+            "detail": result.detail or f"{shown} 被写路径的守卫拒了",
         }
 
     # -- recall (per-turn, injected as context) --------------------------
