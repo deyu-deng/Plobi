@@ -94,6 +94,10 @@ providers:
   # 声明位置；{model_flag} 只在真解析出模型时展开。都跑在私有 cwd（不碰工作树）。
   # 额度：codex / claude / opencode 读各自本机凭据 + 官方 usage 端点；kiro/cline
   # 没有统一的本机额度端点，宁可空着也不编一个数。
+  # ⚠️ 这三条（codex / claude / opencode）在这台机器上**没装**（`which` 现核为空）。
+  # 它们的模型名有两份抄本——这里的 `models` 与各自 provider 类的默认值，内容相同；
+  # 所以只进 `/v1/models` 的完整表、不进选择框（`selectable=false`）。要真正断掉抄本
+  # 得类和这里一起改（`test_cli_apps` 钉着对应的 argv），别只删一边——删了也没变化。
   codex_cli:
     enabled: true
     binary: codex
