@@ -28,6 +28,7 @@ rest of the hub stays direct.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -291,8 +292,40 @@ class GeminiApiProvider(Provider):
                 ),
             )
         ]
-        self.served_models = tuple(await self._discovered_models(token)) if self.credential_health()[0] else ()
+        if self.credential_health()[0]:
+            await self.refresh_models(self.accounts[0])
+        else:
+            # Signed in but not live (usually the node): a fetch now would just burn the
+            # HTTP timeout. `ensure_fresh` re-binds the node before a turn; the list is
+            # re-read by the post-login pass or the next refresh.
+            self.served_models = ()
         return self.accounts
+
+    async def refresh_models(self, acc: Account) -> list[str] | None:
+        """Re-read the names from `fetchAvailableModels`, with one retry.
+
+        Measured 2026-10-29: the list was only fetched inside `discover_accounts`, so a
+        single flaky answer at the moment of signing in left this leg with **zero** models
+        until the next restart — the same shape as Kiro's one-row seed, one step worse.
+        """
+        token = str(acc.cred.access_token or "")
+        if not token:
+            return None
+        if not self.credential_health()[0]:
+            # Signed in but not live (usually the node): fetching now would only burn the
+            # HTTP timeout inside the startup refresh. Keep what we have.
+            return None
+        for attempt in (1, 2):
+            names = await self._discovered_models(token)
+            if names:
+                self.served_models = tuple(names)
+                return list(names)
+            if attempt == 1:
+                await asyncio.sleep(0.6)
+        log.warning(
+            "[gemini_api] model list came back empty twice; keeping %d id(s)", len(self.served_models)
+        )
+        return None
 
     async def ensure_fresh(self, acc: Account) -> None:
         # Before a turn is the moment the node matters: if it came up (or went away) since

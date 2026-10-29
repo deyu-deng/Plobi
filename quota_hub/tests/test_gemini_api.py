@@ -19,6 +19,7 @@ import time
 import types
 
 import httpx
+import pytest
 from quota_hub.providers.apps.gemini.api import GeminiApiProvider, read_credential
 
 HOST = "https://cloudcode.test"
@@ -313,3 +314,75 @@ def test_the_credential_reader_treats_an_unparsable_file_as_no_credential(tmp_pa
     monkeypatch.setenv("QUOTA_HUB_GEMINI_STORE", str(path))
 
     assert read_credential() is None
+
+
+def test_renewing_without_the_node_fails_before_the_wire(monkeypatch, tmp_path):
+    """Same rule as the antigravity leg (measured 2026-10-29): a renewal is a network call,
+    so without the node it cannot succeed — refuse before the ten-second timeout and keep
+    the account out of a cooldown it did not earn."""
+    from quota_hub.providers.base import UpstreamError
+    from quota_hub.providers.apps.gemini import api as ga
+
+    monkeypatch.setattr(ga, "egress_proxy", lambda: ("", "proxy_unreachable"))
+    prov = GeminiApiProvider({"host": HOST}, None)
+    prov._proxy_seen = None
+    prov.proxy_reason = "proxy_unreachable"
+
+    from quota_hub.providers.base import Account, Credential
+
+    acc = Account(id="a", provider="gemini_api", cred=Credential(access_token="old", expires_at=1.0))
+
+    calls = {"n": 0}
+
+    def _boom():
+        calls["n"] += 1
+        raise AssertionError("renewal must not be attempted without the node")
+
+    from quota_hub.providers.apps.gemini import oauth as g_oauth
+
+    monkeypatch.setattr(g_oauth, "refresh_credential", _boom)
+
+    with pytest.raises(UpstreamError) as exc:
+        asyncio.run(prov.ensure_fresh(acc))
+
+    assert "VPN" in str(exc.value)
+    assert calls["n"] == 0
+
+
+def test_a_flaky_model_list_is_retried_before_the_leg_stays_empty(monkeypatch):
+    """Measured 2026-10-29: the names were only ever read inside `discover_accounts`, so one
+    flaky answer at sign-in left this leg with zero models until the next restart."""
+    from quota_hub.providers.base import Account, Credential
+
+    prov = GeminiApiProvider({"host": HOST}, None)
+    prov._proxy_seen = (time.time(), "ok")
+    prov.credential_health = lambda: (True, "ok")
+    acc = Account(id="a", provider="gemini_api", cred=Credential(access_token="tok"))
+    calls = {"n": 0}
+
+    async def _names(_token):
+        calls["n"] += 1
+        return [] if calls["n"] == 1 else ["gemini_api/gemini-2.5-pro"]
+
+    monkeypatch.setattr(prov, "_discovered_models", _names)
+
+    assert asyncio.run(prov.refresh_models(acc)) == ["gemini_api/gemini-2.5-pro"]
+    assert calls["n"] == 2
+    assert prov.served_models == ("gemini_api/gemini-2.5-pro",)
+
+
+def test_a_model_list_that_stays_empty_keeps_what_we_had(monkeypatch):
+    from quota_hub.providers.base import Account, Credential
+
+    prov = GeminiApiProvider({"host": HOST}, None)
+    prov.served_models = ("gemini_api/old-one",)
+    prov.credential_health = lambda: (True, "ok")
+    acc = Account(id="a", provider="gemini_api", cred=Credential(access_token="tok"))
+
+    async def _names(_token):
+        return []
+
+    monkeypatch.setattr(prov, "_discovered_models", _names)
+
+    assert asyncio.run(prov.refresh_models(acc)) is None
+    assert prov.served_models == ("gemini_api/old-one",)
