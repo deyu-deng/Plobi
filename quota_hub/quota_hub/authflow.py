@@ -447,10 +447,12 @@ class LoginManager:
 
         def record_url(url: str) -> None:
             session.url = url
-            # The hub is a detached child process; its own `webbrowser` may not resolve a
-            # browser at all. Recording the URL is what lets the desktop shell — which
-            # does own the browser — open it, and what lets a re-click show the link.
-            logging.getLogger("quota_hub").info("login %s: consent url recorded", app_id)
+            # Two readers for one URL: the desktop shell (which owns the browser on a
+            # desktop) and the log. The hub also opens it itself — measured 2026-10-29:
+            # when it only handed the URL over, a click produced no browser at all.
+            # The URL in the log because the browser may already be running, and then the
+            # consent page lands as just another tab in his open window (nothing "pops up").
+            logging.getLogger("quota_hub").info("login %s: consent url recorded: %s", app_id, url)
 
         try:
             # A runner that can hand the URL over gets told where to put it; the older
