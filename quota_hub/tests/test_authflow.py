@@ -307,11 +307,14 @@ def test_already_signed_in_words_are_a_success_not_a_failed_click(tmp_path, monk
     assert "kiro-cli logout" not in session.detail
 
 
-def test_a_tty_plan_gets_a_real_window_instead_of_a_pipe(monkeypatch):
+def test_a_tty_plan_gets_a_real_terminal_not_just_a_window(monkeypatch):
     """Some CLIs refuse their login without a terminal (`cline auth`, measured 10-28).
 
-    The window is the fix, so the plan must actually ask for one: a new console on
-    Windows, a new session elsewhere, and no pipes pretending to be a login.
+    And a window alone is not a terminal — measured 2026-10-29: `CREATE_NEW_CONSOLE` with
+    `stdin=DEVNULL` gave cline a NUL stdin, it checked `isatty()`, and exited in ~2 s
+    ("登录窗口里那一步没有走完" for a login nobody could have done). The launch now goes
+    through `cmd /c start "" /wait`, which was measured to hand the child a real console
+    (both `stdin.isatty()` and `stdout.isatty()` True).
     """
     seen: dict = {}
 
@@ -335,11 +338,61 @@ def test_a_tty_plan_gets_a_real_window_instead_of_a_pipe(monkeypatch):
     )
 
     assert session.state == "ok", session.detail
-    assert "stdout" not in seen["kwargs"]
     if sys.platform == "win32":
-        assert seen["kwargs"]["creationflags"] == authflow.subprocess.CREATE_NEW_CONSOLE
+        assert list(seen["argv"][:5]) == ["cmd", "/c", "start", "", "/wait"]
+        assert seen["argv"][5:] == (r"C:\fake\cline.exe", "auth")
+        assert seen["kwargs"]["creationflags"] == authflow.subprocess.CREATE_NO_WINDOW
     else:
+        assert seen["argv"] == (r"C:\fake\cline.exe", "auth")
         assert seen["kwargs"]["start_new_session"] is True
+
+
+def test_a_closed_window_is_not_reported_as_a_finished_login(monkeypatch):
+    """`cmd /c start` throws the exit code away, so the verdict has to come from the leg.
+
+    Without this, a failed sign-in read as success and the card stayed a `+` — the exact
+    "登录完了回来还是个加号" complaint, one layer down.
+    """
+    class _Proc:
+        returncode = 0
+
+        async def wait(self):
+            return 0
+
+    async def _fake_exec(*argv, **kwargs):
+        return _Proc()
+
+    monkeypatch.setattr(authflow.asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(authflow, "_resolve_binary", lambda name: r"C:\fake\cline.exe")
+
+    session = _login(
+        "cline_cli",
+        {
+            "kind": "cli_login",
+            "name": "Cline",
+            "binary": "cline",
+            "argv": ["auth"],
+            "tty": True,
+            "verify": lambda: (False, "not_signed_in"),
+        },
+    )
+
+    assert session.state == "failed"
+    assert "not_signed_in" in session.detail
+
+    session = _login(
+        "cline_cli",
+        {
+            "kind": "cli_login",
+            "name": "Cline",
+            "binary": "cline",
+            "argv": ["auth"],
+            "tty": True,
+            "verify": lambda: (True, "ok"),
+        },
+    )
+
+    assert session.state == "ok"
 
 
 def test_a_click_waits_for_the_url_it_is_supposed_to_return(tmp_path):

@@ -326,16 +326,36 @@ class LoginManager:
 
         await self._finish(session, plan)
 
+    @staticmethod
+    def _console_argv(argv: list[str]) -> tuple[list[str], dict]:
+        """How a login command gets a *real* terminal window.
+
+        Measured 2026-10-29: `CREATE_NEW_CONSOLE` with `stdin=DEVNULL` opened a window but
+        handed the child a NUL stdin, so a CLI that asks `isatty()` (cline says it in
+        words: "interactive auth setup requires a TTY") exited in ~2 s — the card then
+        read "登录窗口里那一步没有走完" for a login nobody had a chance to do. Through
+        `cmd /c start "" /wait` the child gets its own console (measured: both
+        `stdin.isatty()` and `stdout.isatty()` are True).
+
+        The price is the exit code: `start` returns 0 whatever the app did, so success is
+        decided from `verify` (see `_run_console_login`), never from the code.
+        """
+        if sys.platform == "win32":
+            return ["cmd", "/c", "start", "", "/wait", *argv], {
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+                "creationflags": subprocess.CREATE_NO_WINDOW,
+            }
+        return list(argv), {"start_new_session": True, "stdin": subprocess.DEVNULL}
+
+
     async def _run_console_login(self, session: LoginSession, argv: list[str], plan: dict) -> None:
         """Run a login command in its own window, for the CLIs that demand a terminal."""
         timeout = float(plan.get("timeout", 300.0))
-        kwargs: dict = {"stdin": subprocess.DEVNULL}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-        else:
-            kwargs["start_new_session"] = True
+        launch_argv, kwargs = self._console_argv(argv)
         try:
-            proc = await asyncio.create_subprocess_exec(*argv, **kwargs)
+            proc = await asyncio.create_subprocess_exec(*launch_argv, **kwargs)
         except (OSError, ValueError) as exc:
             session.state = "failed"
             session.detail = f"起不动它的登录窗口：{type(exc).__name__}: {exc}"
@@ -361,7 +381,21 @@ class LoginManager:
             raise
 
         session.finished_at = time.time()
-        if proc.returncode == 0:
+        verify = plan.get("verify")
+        if callable(verify):
+            # Ask the leg, not the window: the console's exit code is gone on Windows and
+            # "he closed the window" is not "he signed in".
+            try:
+                live, reason = await asyncio.to_thread(verify)
+            except Exception as exc:  # noqa: BLE001 — a probe crash is not a login verdict
+                live, reason = False, f"{type(exc).__name__}: {exc}"
+            if live:
+                session.state = "ok"
+                session.detail = "它自己确认已经登录了"
+            else:
+                session.state = "failed"
+                session.detail = f"窗口关掉了，但那边还是没登录（{reason or 'not_signed_in'}）"
+        elif proc.returncode == 0:
             session.state = "ok"
             session.detail = "登录窗口里的命令自己跑完了；凭据归那个 CLI，我们没读也没存"
         else:
@@ -449,6 +483,12 @@ def login_plan_for(registry, app_id: str) -> dict:
     if prov is not None:
         plan = prov.login_plan()
         plan.setdefault("name", getattr(prov, "display_name", "") or key)
+        # A leg that answers its own sign-in question (the ACP legs: their handshake is
+        # the verdict) also supplies the verdict for the console window — because that
+        # window's exit code is thrown away by `cmd /c start` (see `_console_argv`), and
+        # "the window closed" must never be reported as "he is signed in".
+        if plan.get("kind") == "cli_login" and getattr(prov, "_probe", None) is not None:
+            plan["verify"] = prov.credential_health
         return plan
 
     if key in LOGIN_ONLY_TARGETS:
