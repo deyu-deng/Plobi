@@ -304,3 +304,28 @@ def test_the_consent_url_is_opened_by_the_hub_even_when_it_is_handed_over(monkey
     google_oauth.sign_in(client_id="cid", client_secret="s", scopes=["scope"])
 
     assert len(opened) == 2
+
+
+def test_the_consent_uses_the_cli_s_own_loopback_path(monkeypatch):
+    """Measured 2026-10-29 in the installed bundle (chunk-DKZARV6U.js):
+    `const redirectUri = `http://127.0.0.1:${port}/oauth2callback``. Google does not match
+    loopback origins regardless of path: with our own `/callback` the consent completed and
+    the redirect landed where nobody was listening — the login only timed out."""
+    from quota_hub.providers.apps.gemini import oauth as g_oauth
+
+    seen = {}
+
+    def _fake_sign_in(**kwargs):
+        seen.update(kwargs)
+        return {"refresh_token": "r", "access_token": "a"}
+
+    monkeypatch.setattr(g_oauth.google_oauth, "sign_in", _fake_sign_in)
+    monkeypatch.setattr(g_oauth, "discover_client", lambda: ("cid", "secret"))
+    monkeypatch.setattr(g_oauth, "discover_scopes", lambda: ["scope"])
+    monkeypatch.setattr(g_oauth, "proxy_for_leg", lambda: ("http://127.0.0.1:7895", "ok"))
+    monkeypatch.setattr(g_oauth, "write_credential", lambda _tokens: None)
+
+    g_oauth.run_login()
+
+    assert seen["redirect_path"] == "/oauth2callback"
+    assert seen["use_pkce"] is False

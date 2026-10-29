@@ -200,9 +200,15 @@ def run_login(on_url: Callable[[str], None] | None = None) -> dict:
         scopes=discover_scopes(),
         proxy=proxy,
         # No PKCE: the CLI's own `authWithWeb` sends none, so this request is the same
-        # one his terminal would have sent. The loopback path is its `/oauth2callback`;
-        # Google matches loopback origins regardless of path.
+        # one his terminal would have sent.
         use_pkce=False,
+        # The loopback path is the CLI's own — read out of the installed bundle
+        # (`http://127.0.0.1:${port}/oauth2callback`, measured 2026-10-29 in
+        # chunk-DKZARV6U.js). Google does **not** match loopback origins regardless of
+        # path: with our own `/callback` the consent completed and the redirect landed
+        # on an address nobody was listening on — the login only timed out
+        # ("浏览器里没有完成这次登录（300s 内没等到回调）").
+        redirect_path="/oauth2callback",
         on_url=on_url,
     )
     write_credential(tokens)
