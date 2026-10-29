@@ -283,10 +283,11 @@ def test_a_non_https_or_loopback_link_is_never_the_one_we_hand_over():
     assert sign_in_url("see https://accounts.google.com/o/oauth2/v2/auth?x=1").startswith("https://accounts")
 
 
-def test_the_consent_url_gets_exactly_one_opener(monkeypatch):
-    """Measured 2026-10-29: the hub hands the URL to the desktop, which opens one tab
-    (`openAuthUrlOnce`), and `sign_in` opened another — every click put two tabs on his
-    screen. A caller that took the URL opens it; nobody else does."""
+def test_the_consent_url_is_opened_by_the_hub_even_when_it_is_handed_over(monkeypatch):
+    """Measured 2026-10-29 (user report: 「点击没有弹出浏览器」): the hub handed the URL
+    to the desktop and left the opening to it — and that hand-off did not reliably
+    happen, so a click opened nothing at all. The hub opens it itself now; a possible
+    second tab from the desktop is the smaller problem."""
     from quota_hub import google_oauth
 
     opened: list[str] = []
@@ -298,8 +299,8 @@ def test_the_consent_url_gets_exactly_one_opener(monkeypatch):
     google_oauth.sign_in(client_id="cid", client_secret="s", scopes=["scope"], on_url=seen.append)
 
     assert seen and seen[0].startswith("https://accounts.google.com/")
-    assert opened == [], "the caller took the URL; sign_in must not open a second tab"
+    assert opened and opened[0].startswith("https://accounts.google.com/")
 
     google_oauth.sign_in(client_id="cid", client_secret="s", scopes=["scope"])
 
-    assert opened and opened[0].startswith("https://accounts.google.com/")
+    assert len(opened) == 2
