@@ -16,6 +16,7 @@ Run:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -118,3 +119,76 @@ def test_a_run_records_its_credit_cost_on_the_account(monkeypatch, tmp_path: Pat
     assert out["choices"][0]["message"]["content"] == "输出是 plobi-tool-ok"
     assert acc.quota["credits_used_last_turn"] == 0.2264
     assert acc.quota["context_percent"] == 22.6
+
+
+class _FakeStdout:
+    def __init__(self, lines):
+        self._lines = list(lines)
+        self._index = 0
+
+    async def readline(self):
+        if self._index < len(self._lines):
+            line = self._lines[self._index]
+            self._index += 1
+            return line
+        return b""
+
+    async def read(self):
+        return b""
+
+
+class _FakeStderr:
+    async def read(self):
+        return b""
+
+
+class _FakeProc:
+    """Just enough of a child process for the base streaming loop."""
+
+    returncode = 0
+
+    def __init__(self, lines):
+        self.stdout = _FakeStdout(lines)
+        self.stderr = _FakeStderr()
+
+    async def wait(self):
+        return 0
+
+    def kill(self):
+        self.returncode = -9
+
+
+def test_streamed_turns_send_each_chunk_instead_of_one_blob(monkeypatch):
+    """Measured 2026-10-29: with `stream_from_chat=True` the whole answer arrived as a
+    single delta after the turn ended. The CLI was streaming all along."""
+    from quota_hub.providers.base import Account
+
+    prov = KiroCliProvider({"binary": "kiro-cli"}, None)
+    lines = [line.encode("utf-8") + b"\n" for line in RUN.splitlines()]
+
+    async def _spawn(acc, oai_req):
+        return _FakeProc(lines)
+
+    monkeypatch.setattr(prov, "_spawn", _spawn)
+    acc = Account(id="a", provider="kiro_cli")
+
+    async def _go():
+        return [
+            chunk
+            async for chunk in prov.chat_stream(
+                acc, {"model": "kiro/x", "messages": [{"content": "hi", "role": "user"}]}
+            )
+        ]
+
+    chunks = asyncio.run(_go())
+    deltas = [c["choices"][0]["delta"].get("content") for c in chunks if c["choices"][0]["delta"].get("content")]
+    assert deltas == ["输出是 plobi-tool-ok"]
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    assert acc.quota["credits_used_last_turn"] == 0.2264
+
+
+def test_a_run_that_only_ends_with_final_text_still_answers():
+    prov = KiroCliProvider({"binary": "kiro-cli"}, None)
+    prov._streamed_text = False
+    line = json.dumps({"type": "runFinished", "data": {"finalText": "整段答案"}})
+    assert prov.stream_text(line.encode("utf-8")) == "整段答案"

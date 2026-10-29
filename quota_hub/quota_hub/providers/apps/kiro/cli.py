@@ -144,7 +144,9 @@ class KiroCliProvider(CliProvider):
     model_flag = "--model"
     timeout = 300.0
     isolate_workspace = True
-    stream_from_chat = True
+    #: Its stream is JSONL, so it is forwarded line by line (`stream_text`) instead of
+    #: being run whole and handed back as one blob.
+    stream_from_chat = False
     #: Discovered ids keep the same prefix the seed and config use, so the
     #: picker shows one namespace for one product.
     model_prefix = "kiro"
@@ -155,6 +157,70 @@ class KiroCliProvider(CliProvider):
     #: The CLI's own answer about its session. `kiro-cli login` refuses when already
     #: signed in, so a click cannot be the only way to learn the truth.
     whoami_argv = ("whoami",)
+    #: Per-turn streaming state (reset in `chat_stream`, filled by `stream_text`).
+    _streamed_text = False
+    _stream_credits = 0.0
+    _stream_context = None
+
+    async def chat_stream(self, acc, oai_req):
+        """Same turn, but the model's token groups leave as they arrive.
+
+        Measured 2026-10-29: this leg used to run the whole turn and emit one chunk at the
+        end, so a client that asked for SSE got a single delta — the CLI was streaming all
+        along (`--output-format stream-json` carries one `agent_message_chunk` per group).
+        """
+        self._streamed_text = False
+        self._stream_credits = 0.0
+        self._stream_context = None
+        async for chunk in super().chat_stream(acc, oai_req):
+            yield chunk
+
+    def stream_text(self, raw: bytes, acc=None) -> str:
+        """One JSONL line → the assistant text only; everything else is collected.
+
+        The stream also carries tool calls, credit metering and a final snapshot. None of
+        that belongs in the token stream: metering goes onto the account (so the card's
+        credit line keeps working on streamed turns), the rest is ignored here and still
+        parsed in full by `parse_stream_json` on the non-streaming path.
+        """
+        line = _strip_ansi(raw.decode(errors="replace")).strip()
+        if not line.startswith("{"):
+            return ""
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(event, dict):
+            return ""
+        data = event.get("data") or {}
+        kind = event.get("type")
+        if kind == "sessionUpdate":
+            update = data.get("update") or {}
+            if update.get("sessionUpdate") == "agent_message_chunk":
+                text = str(((update.get("content") or {}).get("text")) or "")
+                if text:
+                    self._streamed_text = True
+                return text
+            return ""
+        if kind == "metadata":
+            percent = data.get("contextUsagePercentage")
+            if percent is not None:
+                self._stream_context = percent
+            for row in data.get("meteringUsage") or []:
+                if isinstance(row, dict) and str(row.get("unit", "")).startswith("credit"):
+                    try:
+                        self._stream_credits += float(row.get("value") or 0.0)
+                    except (TypeError, ValueError):
+                        pass
+            if acc is not None:
+                acc.quota["credits_used_last_turn"] = round(self._stream_credits, 4)
+                if self._stream_context is not None:
+                    acc.quota["context_percent"] = self._stream_context
+            return ""
+        if kind == "runFinished":
+            # Only when the run never sent a chunk — otherwise the answer arrives twice.
+            return "" if self._streamed_text else str(data.get("finalText") or "")
+        return ""
 
     def credential_health(self) -> tuple[bool, str]:
         live, reason = super().credential_health()
