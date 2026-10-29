@@ -199,6 +199,33 @@ def test_an_unsigned_cli_offers_no_models_and_no_switch(tmp_path):
     _run(_go())
 
 
+def test_a_sign_in_over_there_flips_the_card_without_a_restart(tmp_path):
+    """The one moment he actually watches: he signs in, the `+` must become a switch.
+
+    The hub re-reads a leg right after a login (`_recheck_after_login`); for an ACP leg
+    that means a fresh handshake, not the cached "not signed in". The stand-in stays
+    unsigned until a marker file appears, so writing it here *is* the sign-in.
+    """
+
+    marker = tmp_path / "signed-in"
+
+    async def _go():
+        prov = AcpProvider(_cfg(tmp_path, f"--auth-file={marker}"), None)
+        acc = (await prov.discover_accounts())[0]
+        assert await prov.refresh_models(acc) is None
+        assert prov.credential_health() == (False, "not_signed_in")
+        assert prov.served_models == ()
+
+        marker.write_text("yes", encoding="utf-8")
+        shorts = await prov.refresh_models(acc)
+
+        assert shorts == ["m-a", "m-b"]
+        assert prov.credential_health() == (True, "ok")
+        assert prov.served_models == ("fake_acp/m-a", "fake_acp/m-b")
+
+    _run(_go())
+
+
 def test_a_turn_runs_on_the_model_the_picker_chose(tmp_path):
     async def _go():
         prov = AcpProvider(_cfg(tmp_path), None)

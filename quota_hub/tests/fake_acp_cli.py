@@ -16,13 +16,29 @@ Modes (argv):
               serve one model only: the one that session is already on.
   --slow-init   drops the first `initialize` without a word and answers later ones —
               the shape of qwen-code 0.26.0, which does not read stdin for ~20 s.
+  --needs-auth  refuses session/new the way an unsigned CLI does (measured on cline
+              3.0.74: `-32000 Authentication required: Call authenticate before
+              starting a session`) and names its sign-in methods in `initialize`.
+  --auth-file=PATH  the same refusal, but only while PATH does not exist. Writing the
+              file mid-test is "he just signed in", which is the one moment the card is
+              supposed to flip by itself — no restart, no second probe mode.
 """
 
 import json
+import os
 import sys
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else ""
+AUTH_FILE = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--auth-file=")), "")
 _init_seen = 0
+
+
+def _refuse() -> bool:
+    if MODE == "--needs-auth":
+        return True
+    if MODE.startswith("--auth-file"):
+        return not os.path.exists(AUTH_FILE)
+    return False
 
 #: The models this stand-in claims to run, in its own ids and names. Answering with them
 #: is what lets a test pin "the picker showed what the CLI reported, not a config list".
@@ -82,11 +98,11 @@ def main():
             if MODE == "--slow-init" and _init_seen == 1:
                 continue
             result = {"protocolVersion": 1, "agentCapabilities": {}}
-            if MODE == "--needs-auth":
+            if _refuse():
                 result["authMethods"] = [{"id": "fake", "name": "Sign in with Fake"}]
             send({"jsonrpc": "2.0", "id": mid, "result": result})
         elif method == "session/new":
-            if MODE == "--needs-auth":
+            if _refuse():
                 send(
                     {
                         "jsonrpc": "2.0",
