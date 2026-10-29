@@ -340,7 +340,7 @@ class GeminiApiProvider(Provider):
                 503,
                 "设置里的 VPN 节点现在连不上，把那个代理软件开起来再试",
                 retryable=True,
-                cooldown=10.0,
+                # No cooldown: the account is fine, the network is not.
             )
         from . import oauth as _oauth
 

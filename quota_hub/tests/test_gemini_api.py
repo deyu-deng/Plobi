@@ -346,6 +346,7 @@ def test_renewing_without_the_node_fails_before_the_wire(monkeypatch, tmp_path):
         asyncio.run(prov.ensure_fresh(acc))
 
     assert "VPN" in str(exc.value)
+    assert exc.value.cooldown == 0.0, "a network condition must not cool the account down"
     assert calls["n"] == 0
 
 

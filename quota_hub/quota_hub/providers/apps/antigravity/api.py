@@ -341,7 +341,8 @@ class AntigravityProvider(Provider):
                         503,
                         "设置里的 VPN 节点现在连不上，把那个代理软件开起来再试",
                         retryable=True,
-                        cooldown=10.0,
+                        # No cooldown: the account is fine, the network is not. Tripping it
+                        # would pull a perfectly good model out of the picker for the backoff.
                     )
                 try:
                     res = await ds.refresh_antigravity(
