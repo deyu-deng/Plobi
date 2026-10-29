@@ -295,6 +295,34 @@ describe('Desktop Quotas cards are the hub catalog', () => {
     }
   })
 
+  it('also re-reads when nothing is pending, because a spawn leg reports later', async () => {
+    // Measured 2026-10-29: cline answers the hub's probe ~10 s after boot, qwen ~25 s.
+    // A Settings view opened inside that window used to keep the `+` it read first,
+    // until he closed and reopened it — the same complaint, one boot later.
+    shell([authRow('cline_cli', { signed_in: false, live: false, reason: 'not_signed_in' })])
+    vi.useFakeTimers()
+
+    try {
+      await act(async () => {
+        const { ProvidersSettings } = await import('./providers-settings')
+
+        render(<ProvidersSettings onClose={vi.fn()} onViewChange={vi.fn()} view="desktop" />)
+        await Promise.resolve()
+      })
+
+      const reads = window.plobiDesktop.authCatalog as ReturnType<typeof vi.fn>
+      const before = reads.mock.calls.length
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(16000)
+      })
+
+      expect(reads.mock.calls.length).toBeGreaterThan(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('gives a signed-in login-only CLI no control, because Plobi has nothing to toggle', async () => {
     shell([authRow('qwen-cli', { aggregate: false, kind: 'cli_login', live: true, reason: 'signed in' })])
 

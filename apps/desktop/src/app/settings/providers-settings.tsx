@@ -387,13 +387,16 @@ function DesktopQuotasView() {
   // only updates when the view re-mounts, so a login that finished perfectly kept showing
   // the `+` he had already pressed (his report 2026-10-28: 「登录完了回来还是个加号」).
   const anyPending = Boolean(authCatalog?.some(card => card.pending))
+  // Two cadences, and the slow one never stops while this view is open: a spawn-based leg
+  // reports its sign-in state only after its CLI answers, which lands *after* boot
+  // (measured 2026-10-29: cline ~10 s, qwen ~25 s). Without the slow read, a Settings
+  // view opened during those seconds would keep the `+` it read before the probe landed,
+  // until he closed and reopened it — the same complaint, one boot later.
   useEffect(() => {
-    if (!anyPending) {return}
-
     const timer = setInterval(() => {
       readAuthCatalog()
       requestQuotaCatalog()
-    }, 4000)
+    }, anyPending ? 4000 : 15000)
 
     return () => clearInterval(timer)
   }, [anyPending, readAuthCatalog])
