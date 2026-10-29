@@ -360,3 +360,36 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+@pytest.mark.asyncio
+async def test_a_stale_slot_is_refreshed_through_antigravity_tools(monkeypatch):
+    """Measured 2026-10-29: `antigravity-tools switch --target agy` put a fresh token
+    into the shared Keychain slot, and this leg's eight models became selectable — no
+    browser, no consent page. So when the slot has gone stale we ask the tool that owns
+    the account instead of telling the user to open an app."""
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    calls = {"n": 0}
+
+    def _status():
+        calls["n"] += 1
+        if calls["n"] <= 1:
+            return {"source": "windows-credential-manager", "present": True,
+                    "expires_at": time.time() - 600, "expires_in_seconds": -600}
+        return {"source": "windows-credential-manager", "present": True,
+                "expires_at": time.time() + 3000, "expires_in_seconds": 3000}
+
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec",
+                                    desktop_store=True)
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", _status)
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda: "FRESH")
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", lambda **_kw: (True, "switched"))
+
+    await prov.ensure_fresh(acc)
+
+    assert acc.cred.access_token == "FRESH"
+    assert getattr(acc.state, "value", acc.state) == "active"

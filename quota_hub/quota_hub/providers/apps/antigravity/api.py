@@ -41,6 +41,7 @@ Accept: text/event-stream.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -51,6 +52,7 @@ from collections.abc import AsyncIterator
 from ....egress import proxy_url
 from ....providers.cloudcode import CloudCodeClient
 from . import account_store
+from . import tool_bridge
 from ....tokens import desktop_stores as ds
 from ...base import Account, AccountState, Capabilities, Credential, Provider, UpstreamError
 
@@ -377,6 +379,20 @@ class AntigravityProvider(Provider):
                 status.get("expires_in_seconds") is None
                 or status["expires_in_seconds"] > 0
             )
+            if not live:
+                # The slot went stale (its access token lives about an hour). The tool that
+                # owns the account can re-push it — measured 2026-10-29: one
+                # `antigravity-tools switch --target agy` put a fresh token back and this
+                # leg's eight models became selectable, with no browser involved.
+                ok, _detail = await asyncio.to_thread(tool_bridge.refresh_via_tool)
+                if ok:
+                    status = ds.antigravity_desktop_token_status()
+                    if status.get("present") and status.get("expires_at"):
+                        cred.expires_at = status["expires_at"]
+                    live = status.get("present") and (
+                        status.get("expires_in_seconds") is None
+                        or status.get("expires_in_seconds") > 0
+                    )
             fresh = ds.read_antigravity_access_token() if live else None
             if fresh and fresh != cred.access_token:
                 cred.access_token = fresh

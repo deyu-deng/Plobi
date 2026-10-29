@@ -206,6 +206,13 @@ def test_a_hub_sign_in_counts_even_if_the_desktop_app_never_logged_in(home, monk
     from quota_hub.providers.apps.antigravity import api as aa
 
     monkeypatch.setattr(aa, "proxy_url", lambda: ("", "no_proxy"))
+    # The owner's machine may hold a live Keychain entry (Antigravity Tools pushes one);
+    # a test must not depend on what the owner has on the machine.
+    monkeypatch.setattr(
+        aa.ds,
+        "antigravity_desktop_token_status",
+        lambda: {"present": False, "expires_in_seconds": None, "expires_at": None},
+    )
     prov = AntigravityProvider({}, None)
     prov.config = {}
     assert prov.signed_in()[0] is False
