@@ -48,7 +48,14 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
         # L0 条目（内置记忆）与技能那两类：卡片要能说清"它想记什么/改什么/删什么"，
         # 所以 action 与 old_text 一并给出（屏幕文案自己决定措辞，这里只给事实）。
         action = str(payload.get("action") or "")
-        entry = payload.get("content") or payload.get("entry") or payload.get("old_text") or ""
+        entries = payload.get("entries")
+        entry = (
+            ("；".join(str(e) for e in entries) if isinstance(entries, list) else "")
+            or payload.get("content")
+            or payload.get("entry")
+            or payload.get("old_text")
+            or ""
+        )
         summary = str(entry)[:200]
         target = payload.get("target") or payload.get("skill") or ""
         if target:
