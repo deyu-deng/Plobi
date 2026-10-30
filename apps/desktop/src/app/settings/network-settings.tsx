@@ -352,7 +352,8 @@ export function NetworkSettings() {
   }
 
   const badgeFor = (match: string) => {
-    const rule = status?.rules.find((entry) => entry.match === match)
+    // 后端少一个键就把整屏炸掉过一次（测试里就是这么喂的）——每一处都当「可能没有」读。
+    const rule = (status?.rules ?? []).find((entry) => entry.match === match)
     if (!rule) return ''
     if (rule.engine_only) return copy.engineOnly
     if (rule.env_dropped) return copy.envDropped
@@ -452,6 +453,40 @@ export function NetworkSettings() {
     ])
   }
 
+  // 简约控制台（用户 10-30：像 ikuuu 那样"一张卡 + 一个宫格"）：
+  // 「默认出口」就是兜底规则指的那个组/节点；「按规则 / 全部走代理」只增删 direct 那几条，
+  // 兜底规则本身不动——它一直是"未匹配的都去哪"，改它等于改整机行为。
+  const catchAll = (() => {
+    const via = rules.length ? rules[rules.length - 1].via : ''
+    return via.startsWith('proxy:') ? via.slice('proxy:'.length) : ''
+  })()
+  const ruleMode: 'rules' | 'global' = rules.some(
+    (row) => row.match.trim() === 'geosite:cn' && row.via === 'direct'
+  )
+    ? 'rules'
+    : 'global'
+
+  const setCatchAll = (target: string) => {
+    const via = `proxy:${target}`
+    if (!rules.length) {
+      setRules([{ match: '*', via }])
+      return
+    }
+    const next = [...rules]
+    next[next.length - 1] = { ...next[next.length - 1], via }
+    setRules(next)
+  }
+
+  const setRuleMode = (mode: 'rules' | 'global') => {
+    const without = rules.filter((row) => row.match.trim() !== 'geosite:cn')
+    if (mode === 'global' || !without.length) {
+      setRules(without)
+      return
+    }
+    const last = without[without.length - 1]
+    setRules([...without.slice(0, -1), { match: 'geosite:cn', via: 'direct' }, last])
+  }
+
   return (
     <SettingsContent>
       <div title={copy.intro}>
@@ -490,6 +525,75 @@ export function NetworkSettings() {
           </p>
         ))}
       </div>
+
+      {/* 一张卡：现在走哪个出口、引擎在不在、按规则还是全部走代理 */}
+      <div className="grid gap-3 rounded-xl border border-(--stroke-nous) bg-(--ui-chat-bubble-background) p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="grid gap-0.5">
+            <span className={CAPTION}>当前默认出口</span>
+            <span className="text-lg font-semibold">{catchAll || '直连'}</span>
+            <span className={CAPTION}>
+              {copy.engine}: {status?.engine.state ?? '—'}
+              {status?.engine.probe ? ` · ${status.engine.probe}` : ''}
+            </span>
+          </div>
+          <div className="flex shrink-0 overflow-hidden rounded-lg border border-(--stroke-nous) text-sm">
+            {(['rules', 'global'] as const).map((mode) => (
+              <button
+                className={`px-3 py-1.5 ${
+                  ruleMode === mode ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
+                }`}
+                key={mode}
+                onClick={() => setRuleMode(mode)}
+                type="button"
+              >
+                {mode === 'rules' ? '按规则' : '全部走代理'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {groups.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {groups.map((group) => (
+              <button
+                className={`rounded-full border border-(--stroke-nous) px-2.5 py-1 text-xs ${
+                  catchAll === group.name ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
+                }`}
+                key={group.name}
+                onClick={() => setCatchAll(group.name)}
+                type="button"
+              >
+                {group.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {nodes.length ? (
+          <div className="grid max-h-56 grid-cols-2 gap-1.5 overflow-auto sm:grid-cols-3 lg:grid-cols-4">
+            {nodes.map((node) => (
+              <button
+                className={`truncate rounded-lg border border-(--stroke-nous) px-2 py-1.5 text-left text-xs ${
+                  catchAll === node.name ? 'bg-(--theme-primary) text-white' : ''
+                }`}
+                key={node.name}
+                onClick={() => setCatchAll(node.name)}
+                title={node.server}
+                type="button"
+              >
+                {node.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* 其余是"改表"的活，收起来；要动再展开 */}
+      <details className="grid gap-2">
+        <summary className="cursor-pointer text-sm text-(--ui-text-secondary)">
+          高级：出口 / 规则 / 成员表 / 组 / 导入 / 引擎
+        </summary>
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
@@ -711,6 +815,8 @@ export function NetworkSettings() {
         ))}
       </div>
 
+      </details>
+
       <div className="flex items-center gap-3">
         <Button disabled={saving || !loaded} onClick={() => void save()}>
           {saving ? '…' : copy.save}
@@ -732,12 +838,12 @@ export function NetworkSettings() {
             }`}
             title={`127.0.0.1:${status.engine.mixed_port || 0}`}
           />
-          {status.engine.notes.map((note, index) => (
+          {(status.engine.notes ?? []).map((note, index) => (
             <p className={CAPTION} key={index}>
               {note}
             </p>
           ))}
-          {status.downgrades.map((entry, index) => (
+          {(status.downgrades ?? []).map((entry, index) => (
             <p className={CAPTION} key={index}>
               {entry.exit} · {entry.reason}
             </p>
