@@ -10512,6 +10512,8 @@ class CronJobCreate(BaseModel):
     enabled_toolsets: Optional[List[str]] = None
     workdir: Optional[str] = None
     no_agent: bool = False
+    catch_up: Optional[bool] = None
+    grace_minutes: Optional[int] = None
 
 
 class CronJobUpdate(BaseModel):
@@ -10615,6 +10617,14 @@ def _normalize_dashboard_cron_updates(
         normalized["context_from"] = _cron_string_list(normalized["context_from"])
     if "enabled_toolsets" in normalized:
         normalized["enabled_toolsets"] = _cron_string_list(normalized["enabled_toolsets"])
+    if "catch_up" in normalized:
+        normalized["catch_up"] = bool(normalized["catch_up"])
+    if "grace_minutes" in normalized:
+        raw = normalized["grace_minutes"]
+        try:
+            normalized["grace_minutes"] = max(0, min(1440, int(raw))) if raw is not None else None
+        except (TypeError, ValueError):
+            normalized.pop("grace_minutes", None)
     return normalized
 
 
@@ -10823,6 +10833,16 @@ def _annotate_cron_job(job: Dict[str, Any], profile: str, home: Path) -> Dict[st
     annotated["profile_name"] = profile
     annotated["plobi_home"] = str(home)
     annotated["is_default_profile"] = profile == "default"
+    # 桌面那一屏要判断「能不能停」：只有正在跑的那一趟才有可停的东西。
+    try:
+        from cron import cancellation as _cancellation
+        from cron import scheduler as _cron_scheduler
+
+        annotated["running"] = job.get("id") in _cron_scheduler.get_running_job_ids()
+        annotated["cancel_requested"] = _cancellation.cancel_requested(str(job.get("id") or ""))
+    except Exception:  # noqa: BLE001 - 注解失败不该让列表 500
+        annotated["running"] = False
+        annotated["cancel_requested"] = False
     return annotated
 
 
@@ -11028,6 +11048,8 @@ def _create_cron_job_sync(body: CronJobCreate, profile: str = "default"):
             enabled_toolsets=_cron_string_list(body.enabled_toolsets),
             workdir=_cron_optional_text(body.workdir),
             no_agent=no_agent,
+            catch_up=body.catch_up,
+            grace_minutes=body.grace_minutes,
         )
     except HTTPException:
         raise
@@ -11164,6 +11186,25 @@ def _delete_cron_job_sync(job_id: str, profile: Optional[str] = None):
     if not removed:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"ok": True}
+
+
+@app.post("/api/cron/jobs/{job_id}/cancel")
+async def cancel_cron_job(job_id: str, profile: Optional[str] = None):
+    """停下这一趟正在跑的作业（不删任务、不改下一次）。
+
+    写一个标记文件就返回：真正在跑的那一趟会在起跑前/交付前/脚本运行中读到它，
+    记成 ``cancelled``——「停不下来」与「已经停了」是两句不同的话，不能混。
+    """
+    def _cancel_sync():
+        from cron import cancellation
+
+        return cancellation.request_cancel(job_id)
+
+    requested = await _run_cron_dashboard_io(_cancel_sync)
+    if not requested:
+        return JSONResponse({"ok": False, "error": "cancel marker could not be written"}, status_code=500)
+    job = await _run_cron_dashboard_io(_get_cron_job_sync, job_id, profile)
+    return job if job else {"ok": True, "cancel_requested": True, "job_id": job_id}
 
 
 @app.delete("/api/cron/jobs/{job_id}")

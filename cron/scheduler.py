@@ -11,6 +11,7 @@ runs at a time if multiple processes overlap.
 import asyncio
 import atexit
 import concurrent.futures
+import contextlib
 import contextvars
 import json
 import logging
@@ -238,6 +239,7 @@ _LEGACY_HOME_TARGET_ENV_VARS = {
     "QQBOT_HOME_CHANNEL": "QQ_HOME_CHANNEL",
 }
 
+from cron import cancellation
 from cron.jobs import get_due_jobs, mark_job_run, save_job_output, advance_next_run, claim_dispatch, heartbeat_run_claim
 
 # Sentinel: when a cron agent has nothing new to report, it can start its
@@ -2297,7 +2299,7 @@ def _get_script_timeout() -> int:
     return _DEFAULT_SCRIPT_TIMEOUT
 
 
-def _run_job_script(script_path: str) -> tuple[bool, str]:
+def _run_job_script(script_path: str, job_id: Optional[str] = None, *, started_at: Optional[float] = None) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
     Scripts must reside within PLOBI_HOME/scripts/.  Both relative and
@@ -2383,15 +2385,51 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
         from tools.environments.local import _sanitize_subprocess_env
 
         popen_kwargs = {"creationflags": windows_hide_flags()} if sys.platform == "win32" else {}
-        result = subprocess.run(
+
+        def _should_stop() -> bool:
+            return bool(job_id) and cancellation.cancel_requested(job_id, since=started_at)
+
+        # 跑脚本这一趟要能被「停止这一趟」打断：阻塞式 subprocess.run 没有插针的地方，
+        # 所以改成 Popen + 短轮询；取消时先 terminate，宽限 2s 再 kill。
+        proc = subprocess.Popen(
             argv,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=script_timeout,
             cwd=str(path.parent),
             env=_sanitize_subprocess_env(os.environ.copy()),
             **popen_kwargs,
         )
+        deadline = time.time() + float(script_timeout)
+        cancelled = False
+        while True:
+            if _should_stop():
+                cancelled = True
+                with contextlib.suppress(Exception):
+                    proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    with contextlib.suppress(Exception):
+                        proc.kill()
+                break
+            if proc.poll() is not None:
+                break
+            if time.time() >= deadline:
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(cmd=argv, timeout=script_timeout)
+            time.sleep(0.25)
+        try:
+            stdout_raw, stderr_raw = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(Exception):
+                proc.kill()
+            stdout_raw, stderr_raw = proc.communicate()
+        if cancelled:
+            return False, f"Script cancelled on request: {path.name}"
+        result = type("_Completed", (), {"returncode": proc.returncode, "stdout": stdout_raw, "stderr": stderr_raw})()
         stdout = (result.stdout or "").strip()
         stderr = (result.stderr or "").strip()
 
@@ -2474,7 +2512,7 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
         if prerun_script is not None:
             success, script_output = prerun_script
         else:
-            success, script_output = _run_job_script(script_path)
+            success, script_output = _run_job_script(script_path, job.get("id"))
         if success:
             if script_output:
                 prompt = (
@@ -2828,7 +2866,7 @@ def run_job(
                 _prior_cwd = None
 
         try:
-            ok, output = _run_job_script(script_path)
+            ok, output = _run_job_script(script_path, job.get("id"))
         finally:
             if _prior_cwd is not None:
                 try:
@@ -2938,7 +2976,7 @@ def run_job(
     prerun_script = None
     script_path = job.get("script")
     if script_path:
-        prerun_script = _run_job_script(script_path)
+        prerun_script = _run_job_script(script_path, job.get("id"))
         _ran_ok, _script_output = prerun_script
         if _ran_ok and not _parse_wake_gate(_script_output):
             logger.info(
@@ -3776,6 +3814,8 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
     Returns True if the job was processed (even if the job itself failed —
     failure is recorded via ``mark_job_run``), False only if processing raised.
     """
+    started_at = time.time()
+    cancelled_run = False
     try:
         # Pre-run dispatch claim (issue #38758): atomically commit a finite
         # one-shot's dispatch BEFORE its side effect runs, so a tick that dies
@@ -3784,6 +3824,13 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
         # use advance_next_run) and infinite/no-repeat jobs. This lives here in
         # the shared body so BOTH the built-in ticker and the external provider
         # (Chronos fire_due) get at-most-times semantics.
+        pending_cancel = cancellation.pop_cancel(job["id"], since=started_at)
+        if pending_cancel:
+            reason = str(pending_cancel.get("reason") or "cancelled on request")
+            logger.info("Job '%s': cancelled before it started (%s)", job["id"], reason)
+            mark_job_run(job["id"], False, reason, cancelled=True)
+            return True
+
         if not claim_dispatch(job["id"]):
             logger.info(
                 "Job '%s': one-shot dispatch limit reached — skipping",
@@ -3860,6 +3907,13 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
                     "(tool subprocess was killed mid-flight)."
                 )
 
+            cancelled_now = cancellation.cancel_requested(job["id"], since=started_at)
+            if cancelled_now:
+                success = False
+                cancelled_run = True
+                error = "cancelled on request before delivery"
+                logger.info("Job '%s': cancelled after the run, before delivery", job["id"])
+
             # Deliver the final response to the origin/target chat.
             # If the agent responded with [SILENT], skip delivery (but
             # output is already saved above).  Failed jobs always deliver.
@@ -3907,7 +3961,9 @@ def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -
                 error,
                 delivery_error=delivery_error,
                 delivery=_delivery_out.get("record"),
+                cancelled=cancelled_run,
             )
+        cancellation.clear(job["id"])
         return True
 
     except Exception as e:

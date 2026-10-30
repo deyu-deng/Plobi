@@ -701,7 +701,30 @@ def _recoverable_oneshot_run_at(
     return None
 
 
-def _compute_grace_seconds(schedule: dict) -> int:
+def _job_grace_seconds(schedule: dict, job: Optional[dict]) -> int:
+    """这一趟的宽限秒数：任务自己写了 ``grace_minutes`` 就用它，否则走全局默认。
+
+    **故意不把覆盖值塞进 ``_compute_grace_seconds`` 的参数**：那个函数在既有测试里被
+    单参 monkeypatch 过（containment 用例），加参数会让它当场 TypeError——兼容面留在这里。
+    """
+    raw = (job or {}).get("grace_minutes")
+    if raw is not None:
+        try:
+            return max(0, min(1440, int(raw))) * 60
+        except (TypeError, ValueError):
+            pass
+    return _compute_grace_seconds(schedule)
+
+
+def _compute_grace_seconds(schedule: dict, job: Optional[dict] = None) -> int:
+    """这一趟晚多久还算"赶上"；``job['grace_minutes']`` 覆盖默认值（0 = 不宽容）。"""
+    if job is not None:
+        raw = job.get("grace_minutes")
+        if raw is not None:
+            try:
+                return max(0, min(1440, int(raw))) * 60
+            except (TypeError, ValueError):
+                pass
     """Compute how late a job can be and still catch up instead of fast-forwarding.
 
     Uses half the schedule period, clamped between 120 seconds and 2 hours.
@@ -1107,6 +1130,8 @@ def create_job(
     no_agent: bool = False,
     attach_to_session: Optional[bool] = None,
     recipient: Optional[str] = None,
+    catch_up: Optional[bool] = None,
+    grace_minutes: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -1286,6 +1311,16 @@ def create_job(
     # global cron.mirror_delivery config, default off).
     if normalized_attach is not None:
         job["attach_to_session"] = normalized_attach
+
+    # 错过这一轮怎么办（用户 10-30 要的：每个任务自己选）。
+    # 只在显式给出时才落盘：老作业的持久形状保持逐字节不变，读侧用 ``.get`` 回默认。
+    if catch_up is not None:
+        job["catch_up"] = bool(catch_up)
+    if grace_minutes is not None:
+        try:
+            job["grace_minutes"] = max(0, min(1440, int(grace_minutes)))
+        except (TypeError, ValueError):
+            pass
 
     with _jobs_lock():
         jobs = load_jobs()
@@ -1563,7 +1598,8 @@ def drift_of_error(error: Optional[str]) -> Optional[Dict[str, Any]]:
 
 def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                  delivery_error: Optional[str] = None,
-                 delivery: Optional[Dict[str, Any]] = None):
+                 delivery: Optional[Dict[str, Any]] = None,
+                 cancelled: bool = False):
     """
     Mark a job as having been run.
     
@@ -1584,11 +1620,11 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
             if job["id"] == job_id:
                 now = _plobi_now().isoformat()
                 job["last_run_at"] = now
-                job["last_status"] = "ok" if success else "error"
+                job["last_status"] = "cancelled" if cancelled else ("ok" if success else "error")
                 job["last_error"] = error if not success else None
                 # 裁 179：漂移这种"守卫替我们省了钱但没人知道"的失败要留结构化的一格，
                 # 让日程那一屏说得出「今晚没排：默认模型变了」。成功那一轮顺带清空。
-                job["last_drift"] = drift_of_error(error) if not success else None
+                job["last_drift"] = drift_of_error(error) if (not success and not cancelled) else None
                 # Track delivery failures separately — cleared on successful delivery
                 job["last_delivery_error"] = delivery_error
                 # 这一轮结果真正落到了哪一屏；没投递（脚本作业、或发去平台那一档）
@@ -2104,7 +2140,7 @@ def _get_due_jobs_locked() -> List[Dict[str, Any]]:
                 # For recurring jobs, check if the scheduled time is stale
                 # (gateway was down and missed the window). Fast-forward to
                 # the next future occurrence instead of firing a stale run.
-                grace = _compute_grace_seconds(schedule)
+                grace = _job_grace_seconds(schedule, job)
                 if kind in {"cron", "interval"} and (now - next_run_dt).total_seconds() > grace:
                     # Job is past its catch-up grace window — skip accumulated
                     # missed runs but still execute once now to avoid deferring
@@ -2128,11 +2164,24 @@ def _get_due_jobs_locked() -> List[Dict[str, Any]]:
                         # fire_due provider path, which does not call
                         # advance_next_run. mark_job_run re-anchors next_run_at off
                         # the actual completion time, so this value is provisional.
+                        # 只有**显式** catch_up=False 才跳过；没有这格的旧作业保持原行为（晚到照跑一次）
+                        skip_missed = job.get("catch_up") is False
                         for rj in raw_jobs:
                             if rj["id"] == job["id"]:
                                 rj["next_run_at"] = new_next
+                                if skip_missed:
+                                    # 「错过就跳过」：记一笔 missed（不补跑），下一轮照常。
+                                    rj["missed_runs"] = int(rj.get("missed_runs") or 0) + 1
+                                    rj["last_missed_at"] = now.isoformat()
                                 needs_save = True
                                 break
+                        if skip_missed:
+                            logger.info(
+                                "Job '%s' missed its window and does not catch up "
+                                "(catch_up=False) — recorded and skipped",
+                                job.get("name", job.get("id", "?")),
+                            )
+                            continue
                         # Fall through to due.append(job) — execute once now
 
                 # One-shot dispatch-limit guard (issue #38758): a finite one-shot
