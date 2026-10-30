@@ -58,3 +58,14 @@ describe('MemoryLedgers', () => {
     await waitFor(() => expect(box.queryByText('周三有实验')).toBeNull(), { timeout: 3000 })
   })
 })
+
+  it('后端还是旧进程（404）时说的是「重启后可用」，不是笼统的读不到', async () => {
+    ;(window as unknown as { plobiDesktop: { api: unknown } }).plobiDesktop = {
+      api: vi.fn(async () => {
+        throw new Error('404 Not Found')
+      })
+    }
+    render(<MemoryLedgers />)
+
+    expect(await screen.findByText('后端还是旧进程，重启 Plobi 后这一页就能读。')).toBeTruthy()
+  })

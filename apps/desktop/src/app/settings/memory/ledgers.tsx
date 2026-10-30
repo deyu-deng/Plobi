@@ -48,6 +48,7 @@ interface LedgerCopy {
   unbound: string
   streakLabel: (streak: number, threshold: number) => string
   confirmForget: string
+  needsRestart: string
 }
 
 const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
@@ -55,6 +56,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     agentLine: agent => `Agent: ${agent}`,
     streakLabel: (streak, threshold) => `${streak}/${threshold} nods in a row`,
     confirmForget: 'Confirm forget',
+    needsRestart: 'Backend is older than this page — restart Plobi to load it.',
     unbound: 'Secretary — no agent bound',
     openPending: 'Review pending',
     empty: 'Nothing remembered yet',
@@ -67,6 +69,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     agentLine: agent => `这份 Agent：${agent}`,
     streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}`,
     confirmForget: '确认忘掉',
+    needsRestart: '后端还是旧进程，重启 Plobi 后这一页就能读。',
     unbound: '总秘书（没有绑定到某个 Agent）',
     openPending: '看等你点头的',
     empty: '还没记住什么',
@@ -79,6 +82,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     agentLine: agent => `この Agent：${agent}`,
     streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}`,
     confirmForget: '忘れる（確認）',
+    needsRestart: 'バックエンドが古いままです。Plobi を再起動してください。',
     unbound: '秘書（エージェント未割当）',
     openPending: '承認待ちを見る',
     empty: 'まだ何も覚えていません',
@@ -91,6 +95,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
     agentLine: agent => `這份 Agent：${agent}`,
     streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}`,
     confirmForget: '確認忘掉',
+    needsRestart: '後端還是舊進程，重啟 Plobi 後這一頁就能讀。',
     unbound: '總秘書（沒有綁定到某個 Agent）',
     openPending: '看等你點頭的',
     empty: '還沒記住什麼',
@@ -129,10 +134,12 @@ export function MemoryLedgers() {
       const payload = await window.plobiDesktop.api<LedgersPayload>({ path: '/api/memory/ledgers' })
       setData(payload)
       setError(null)
-    } catch {
-      setError(m.unavailable)
+    } catch (err) {
+      // 404 通常意味着"界面是新的、后端还是旧进程"（重启前就是这样）——那句话比"读不到"有用。
+      const text = String(err)
+      setError(text.includes('404') ? m.needsRestart : m.unavailable)
     }
-  }, [m.unavailable])
+  }, [m.needsRestart, m.unavailable])
 
   useEffect(() => {
     void load()
