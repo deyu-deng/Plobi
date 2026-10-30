@@ -71,6 +71,16 @@ class Account:
             return True
         return False
 
+    async def revive_accounts(self) -> bool:
+        """Bring this leg's retired accounts back if the credential is usable again.
+
+        Default: nothing to do. A leg that can renew its own credential locally should
+        override this — otherwise one network blip marks an account "needs re-auth" and
+        it stays dead until the process restarts, while the card says everything is fine.
+        Returns True when at least one account became schedulable.
+        """
+        return False
+
     def trip(self, seconds: float):
         """Circuit-break this account for `seconds` (exponential caller-side)."""
         self.state = AccountState.COOLDOWN

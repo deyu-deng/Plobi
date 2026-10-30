@@ -140,9 +140,19 @@ def main():
                         "params": {
                             "sessionId": "fake-session",
                             "options": [
-                                {"optionId": "allow_plobi_read", "kind": "allow_once", "name": "plobi read"},
-                                {"optionId": "allow_shell", "kind": "allow_once", "name": "shell"},
+                                # The spec's generic three: the option id says nothing
+                                # about the tool. Cline, measured 2026-10-30, sends
+                                # exactly these ids and names the tool in toolCall.
+                                {"optionId": "allow_once", "kind": "allow_once", "name": "Allow once"},
+                                {"optionId": "allow_always", "kind": "allow_always", "name": "Allow always"},
+                                {"optionId": "reject_once", "kind": "reject_once", "name": "Reject"},
                             ],
+                            "toolCall": {
+                                "toolCallId": "plobi_read_0",
+                                "title": "plobi_read: notes.md",
+                                "kind": "other",
+                                "status": "pending",
+                            },
                         },
                     }
                 )

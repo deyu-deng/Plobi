@@ -95,6 +95,24 @@ class Scheduler:
             self._sticky[session_id] = (best[0].id, time.time())
         return best
 
+    async def _revive(self, prov_list) -> bool:
+        """Ask each leg to un-retire its accounts; True if any became schedulable.
+
+        A provider that cannot renew its own credential returns False from the base hook,
+        so this costs nothing for them.
+        """
+        changed = False
+        for name in prov_list:
+            prov = self.providers.get(name)
+            revive = getattr(prov, "revive_accounts", None)
+            if not callable(revive):
+                continue
+            try:
+                changed = bool(await revive()) or changed
+            except Exception:  # noqa: BLE001 — a failed revive is not a new error to report
+                continue
+        return changed
+
     # ---- dispatch -------------------------------------------------------
     async def dispatch(self, provider, oai_req: dict, session_id: str | None, stream: bool):
         """provider may be a single provider name or a list of names (cross-provider
@@ -106,10 +124,17 @@ class Scheduler:
 
         tried: set[str] = set()
         last_err: Exception | None = None
+        revived = False
 
         for attempt in range(self.max_retries):
             candidates = self._candidates(prov_list, tried, oai_req["model"])
             if not candidates:
+                # Before reporting "no accounts", let a leg whose credential is its own
+                # to renew bring its retired accounts back. One attempt per dispatch.
+                if not revived:
+                    revived = True
+                    if await self._revive(prov_list):
+                        continue
                 last_err = NoAccountAvailable(f"no more accounts for {prov_list}")
                 break
             acc, chosen = self._select(candidates, session_id)

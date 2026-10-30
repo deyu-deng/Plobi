@@ -174,6 +174,22 @@ def _refusal(method: str, err: Any) -> AcpError:
     return AcpError(f"{method} failed: {text}")
 
 
+def _is_our_tool(call: dict[str, Any]) -> bool:
+    """Is this tool call one of ours (the MCP server we mounted), not the CLI's own?
+
+    The names our server exposes all carry the `plobi_` prefix, and a CLI that got its
+    tools from it reports them as `plobi` or `<server>:<tool>` in the title/id
+    (measured: Cline reports its own Composio lookup as `composio_search_tools: {...}`,
+    which is exactly the shape this must NOT match).
+    """
+    if not isinstance(call, dict):
+        return False
+    haystack = " ".join(
+        str(call.get(key) or "") for key in ("toolCallId", "tool_call_id", "title", "name")
+    ).lower()
+    return "plobi" in haystack
+
+
 def _models_of(result: dict[str, Any]) -> tuple[list[dict[str, str]], str]:
     """`[{"id","name"}]` + the current id, from whatever shape this CLI answered with.
 
@@ -463,13 +479,34 @@ class AcpSession:
         """
         params = msg.get("params") or {}
         options = params.get("options") or []
+        # What the CLI actually asks for decides the predicate. The option id is a
+        # generic allow_once in the spec, so guessing from it is how a leg ends up
+        # denied its own tools (measured 2026-10-30 with Cline).
+        log.info(
+            "acp:%s permission request: options=%s toolCall=%s",
+            self.name,
+            options,
+            params.get("toolCall") or params.get("tool_call"),
+        )
+        call = params.get("toolCall") or params.get("tool_call") or {}
+        ours = _is_our_tool(call)
         chosen = None
-        for opt in options:
-            kind = str(opt.get("kind") or "").lower()
-            oid = str(opt.get("optionId") or opt.get("option_id") or "")
-            if kind.startswith("allow") and "plobi" in oid:
-                chosen = oid
-                break
+        if ours:
+            # Ours: take the narrowest allow option the CLI offers (once, not always).
+            for want in ("allow_once", "allow_always"):
+                for opt in options:
+                    oid = str(opt.get("optionId") or opt.get("option_id") or "")
+                    if oid == want or str(opt.get("kind") or "").lower() == want:
+                        chosen = oid
+                        break
+                if chosen:
+                    break
+        if not chosen and not ours:
+            log.info(
+                "acp:%s 要用的不是我们的工具，拒了（title=%s）",
+                self.name,
+                str(call.get("title") or call.get("toolCallId") or "")[:120],
+            )
         outcome = {"outcome": "selected", "optionId": chosen} if chosen else {"outcome": "cancelled"}
         await self._send({"jsonrpc": "2.0", "id": msg.get("id"), "result": {"outcome": outcome}})
 

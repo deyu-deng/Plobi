@@ -101,9 +101,10 @@ def test_only_our_own_tool_option_is_approved(tmp_path):
         sess = AcpSession(argv=[sys.executable, FAKE, "--permission"], cwd=str(tmp_path), name="fake")
         await sess.start()
         text = await sess.prompt("hi")
-        # The fake offered `allow_plobi_read` (ours) and `allow_shell` (foreign); only
-        # our option is selected, so the foreign one is never authorized.
-        assert "chosen=allow_plobi_read" in text
+        # The fake asks with the generic option ids and names *our* tool in toolCall;
+        # the narrowest allow must be selected. A foreign tool is refused by the unit
+        # test next to this one, where the request shape is spelled out verbatim.
+        assert "chosen=allow_once" in text, text
         await sess.close()
 
     _run(_go())
@@ -468,3 +469,73 @@ def test_opaque_internal_model_ids_expose_human_vendor_slugs_and_map_both(tmp_pa
     assert prov.model_map["qoder/smodel"] == "smodel"
     assert prov.model_map["qoder/qwen3.8-max"] == "qmodel_38max"
 
+
+
+def test_is_our_tool_reads_the_call_not_the_option_id():
+    """The names our MCP server exposes carry plobi; the CLI's own tools do not."""
+    from quota_hub.acp import _is_our_tool
+
+    assert _is_our_tool({"toolCallId": "plobi_terminal_0", "title": "plobi_terminal: ls"}) is True
+    # Verbatim shape captured from Cline on 2026-10-30: it went looking for our tool in
+    # its own Composio catalogue — that is not ours, and must stay refused.
+    assert _is_our_tool({
+        "toolCallId": "composio_search_tools_0_615a3dcc",
+        "title": 'composio_search_tools: {"queries":[{"use_case":"use the get_time tool',
+    }) is False
+    assert _is_our_tool({}) is False
+    assert _is_our_tool(None) is False
+
+
+@pytest.mark.asyncio
+async def test_a_permission_request_for_our_tool_is_allowed_once():
+    from quota_hub.acp import AcpSession
+
+    class _Stub:
+        name = "stub"
+
+        def __init__(self):
+            self.sent = []
+
+        async def _send(self, msg):
+            self.sent.append(msg)
+
+    stub = _Stub()
+    await AcpSession._answer_permission(stub, {
+        "id": 7,
+        "params": {
+            "options": [
+                {"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"},
+                {"optionId": "allow_always", "name": "Allow always", "kind": "allow_always"},
+                {"optionId": "reject_once", "name": "Reject", "kind": "reject_once"},
+            ],
+            "toolCall": {"toolCallId": "plobi_process_0", "title": "plobi_process: run ls", "kind": "other"},
+        },
+    })
+    outcome = stub.sent[0]["result"]["outcome"]
+    assert outcome["outcome"] == "selected"
+    assert outcome["optionId"] == "allow_once", "取最窄的那一枚，不用 allow_always"
+
+
+@pytest.mark.asyncio
+async def test_a_permission_request_for_someone_elses_tool_is_cancelled():
+    """The refusal is deliberate: the CLI's own executor is not authorized by us."""
+    from quota_hub.acp import AcpSession
+
+    class _Stub:
+        name = "stub"
+
+        def __init__(self):
+            self.sent = []
+
+        async def _send(self, msg):
+            self.sent.append(msg)
+
+    stub = _Stub()
+    await AcpSession._answer_permission(stub, {
+        "id": 8,
+        "params": {
+            "options": [{"optionId": "allow_once", "kind": "allow_once"}],
+            "toolCall": {"toolCallId": "composio_search_tools_0_x", "title": "composio_search_tools: {}", "kind": "other"},
+        },
+    })
+    assert stub.sent[0]["result"]["outcome"]["outcome"] == "cancelled"
