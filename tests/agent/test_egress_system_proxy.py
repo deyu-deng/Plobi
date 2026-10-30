@@ -55,15 +55,6 @@ def machine(tmp_path, monkeypatch):
     return written
 
 
-@pytest.fixture(autouse=True)
-def no_real_pac_server(monkeypatch):
-    """These tests must not leave a detached PAC server behind on the test box."""
-    from agent.egress import pac_server
-
-    monkeypatch.setattr(pac_server, "start", lambda port, **kw: (True, "test: up"))
-    monkeypatch.setattr(pac_server, "stop", lambda **kw: (True, "test: nothing to stop"))
-
-
 # ── the PAC ────────────────────────────────────────────────────────────────
 
 
@@ -126,15 +117,15 @@ def test_a_corrupt_backup_blocks_rather_than_overwriting_our_only_way_back(machi
 # ── enabling, and giving it all back ────────────────────────────────────────
 
 
-def test_enable_backs_up_then_points_the_system_at_our_pac(machine, tmp_path):
+def test_enable_backs_up_then_points_the_system_at_the_engine_not_at_a_pac(machine, tmp_path):
     before = dict(machine)
     plan = system_proxy.enable(_table(), home=tmp_path)
     assert plan.ok, plan.reason
     assert machine["ProxyEnable"] == 1
-    # WinINET does not load a file:// PAC (measured 2026-10-25), so the registry has
-    # to carry the http URL of our PAC server; the file stays on disk as well.
-    assert machine["AutoConfigURL"].startswith("http://127.0.0.1:")
-    assert machine["AutoConfigURL"].endswith(system_proxy.PAC_BASENAME)
+    # 10-30 实测（A/B/A 两轮）：`AutoConfigURL` 一挂上，WinINET 的 HTTPS 就全断。
+    # 所以静态那一路是唯一的挂载点，PAC 只作为文件留在盘上。
+    assert "AutoConfigURL" not in machine, machine
+    assert machine["ProxyServer"] == "127.0.0.1:7895", machine
     egress_dir = tmp_path / "egress"  # _home(home) is <home>/egress, not <home>
     assert (egress_dir / system_proxy.PAC_BASENAME).exists()
 
@@ -213,7 +204,7 @@ def test_the_takeover_writes_a_static_proxy_as_well_because_pac_is_not_universal
     reg = p.registry
     assert reg["ProxyEnable"] == 1
     assert reg["ProxyServer"] == "127.0.0.1:7895", reg
-    assert reg["AutoConfigURL"].endswith("plobi-egress.pac"), reg
+    assert "AutoConfigURL" not in reg, reg
     override = reg["ProxyOverride"].split(";")
     for want in ("localhost", "127.*", "10.*", "*.internal.test", "store.steampowered.com"):
         assert want in override, override
@@ -266,3 +257,30 @@ def test_read_current_reads_the_registry_and_never_invents_values():
     #: never from "we enabled it a minute ago".
     info = system_proxy.status(_table(system_proxy={"enabled": False}))
     assert info["supported"] is True and isinstance(info["ours"], bool), info
+
+def test_a_stale_autoconfigurl_gets_cleared_because_it_breaks_https(machine, tmp_path):
+    """挂 PAC 会让 WinINET 的 HTTPS 全断（10-30 实测），所以接管时看到就得摘掉。
+
+    这台机器上真实存在过：10-28 那一版把 `AutoConfigURL` 指到我们的 http PAC，
+    google 就打不开了——不是引擎的错，是挂载点的形状错。
+    """
+    machine["AutoConfigURL"] = "http://127.0.0.1:7896/plobi-egress.pac"
+
+    assert system_proxy.status(_table(), home=tmp_path)["pac_advertised"] is True
+    system_proxy.enable(_table(), home=tmp_path)
+
+    assert "AutoConfigURL" not in machine, machine
+    assert system_proxy.status(_table(), home=tmp_path)["pac_advertised"] is False
+
+
+def test_ours_is_read_from_the_static_entry_not_from_memory(machine, tmp_path):
+    """`ours` 必须能从注册表读出来：接管在不在，看的是端口指没指我们。"""
+    table = _table(system_proxy={"enabled": True})
+    assert system_proxy.status(table, home=tmp_path)["ours"] is False
+
+    system_proxy.enable(table, home=tmp_path)
+    assert system_proxy.status(table, home=tmp_path)["ours"] is True
+
+    machine["ProxyServer"] = "127.0.0.1:7890"  # 别的程序把系统代理改走了
+    assert system_proxy.status(table, home=tmp_path)["ours"] is False
+

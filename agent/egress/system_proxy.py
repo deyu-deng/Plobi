@@ -13,13 +13,15 @@ PAC 只负责"哪些绝不进代理"（本机、私网、表里点名 direct 的
 引擎按同一张表选路** —— 出口判定只有一处真源（裁定 94），PAC 里不复制 `geosite:`
 之类的判断，引擎收到请求后自己会算。
 
-**PAC 必须用 http:// 给，file:// 那份 WinINET 不读**（2026-10-25 实测：把静态代理
-指向一个死端口、`AutoConfigURL` 指着我们的 `file://` PAC，WinINET 走的是静态那一路、
-PAC 被忽略；同一份 PAC 用 http:// 供，WinINET 就走 PAC）。所以接管时起一个
-`agent/egress/pac_server`（脱离父进程，像引擎那样），`AutoConfigURL` 指它的
-http 地址，盘上那份 file:// 仍然留着（给会读文件的客户端，也给人看）。
-PAC 服务起不来时退回 file:// 并**说出来** —— 那不是 PAC 那条路，只是静态那一路
-在扛机器。
+**Windows 上不要把 PAC 挂到系统上**（2026-10-30 实测，A/B/A 两轮）：`AutoConfigURL`
+一挂上（`file://` 或 `http://` 都一样），WinINET 的 **HTTPS 就全断** ——
+`https://www.google.com/generate_204` 报「基础连接已经关闭: 发送时发生错误」，
+把 `AutoConfigURL` 摘掉只留静态代理，同一发请求就是 204。HTTP 不受影响，所以这个
+形状能藏很久：网页看着"部分能开"，TLS 站点全废。
+⇒ 接管只写 `ProxyEnable`/`ProxyServer`/`ProxyOverride`；PAC **仍然生成并留在盘上**
+（给人看、给会自己配 PAC 的客户端用），但不挂到系统上。
+（上一笔 10-28 反过来做过：那时测的是"谁在承运"，把 PAC 挂成 http —— 结果就是这台
+机器打不开 google。静态那一路本来就带着同一张表要它带的一切：一切都交给引擎。）
 """
 
 from __future__ import annotations
@@ -43,14 +45,6 @@ REG_VALUES = ("ProxyEnable", "ProxyServer", "AutoConfigURL", "ProxyOverride")
 PAC_BASENAME = "plobi-egress.pac"
 BACKUP_BASENAME = "system-proxy.json"
 
-#: The PAC server listens next to the engine, one port above it.
-#:
-#: WinINET does **not** load a ``file://`` PAC (measured 2026-10-25: with the static
-#: proxy pointed at a dead port and ``AutoConfigURL`` at our file, WinINET used the
-#: static entry and ignored the PAC; served over ``http://`` it used the PAC), so the
-#: file we write is documentation for WinINET unless we also serve it.
-PAC_PORT_OFFSET = 1
-
 INTERNET_OPTION_SETTINGS_CHANGED = 39
 INTERNET_OPTION_REFRESH = 37
 
@@ -64,23 +58,6 @@ def _home(home: str | Path | None = None) -> Path:
     from agent.egress.engine import egress_dir
 
     return egress_dir(home)
-
-
-def _pac_server():
-    """The PAC server module, imported late: it needs this module to render the PAC."""
-    from agent.egress import pac_server
-
-    return pac_server
-
-
-def pac_port(table: Table) -> int:
-    """Where our PAC server listens — one port above the engine's mixed port."""
-    return (table.engine_mixed_port or 0) + PAC_PORT_OFFSET
-
-
-def pac_url(table: Table) -> str:
-    """The URL WinINET can actually load (it will not load a ``file://`` PAC)."""
-    return _pac_server().url_for(pac_port(table))
 
 
 @dataclass(frozen=True)
@@ -306,14 +283,13 @@ def plan(table: Optional[Table] = None, *, home: str | Path | None = None) -> Pr
     entries, unexpressible = override_entries(table)
     return ProxyPlan(
         True,
-        f"表 {len(table.rules)} 条，其余全部交给引擎按表选路；静态代理 + PAC 两处都写"
-        f"（PAC 用 http:// 供——WinINET 实测不读 file:// 的 PAC）",
+        f"表 {len(table.rules)} 条，其余全部交给引擎按表选路；只写静态代理那一路"
+        f"（PAC 留在盘上但不挂系统——挂上 WinINET 的 HTTPS 会全断，10-30 实测）",
         port,
         str(pac),
         pac_text(table, port),
         {"ProxyEnable": 1,
          "ProxyServer": f"127.0.0.1:{port}",
-         "AutoConfigURL": pac_url(table),
          "ProxyOverride": ";".join(entries)},
         was,
         tuple(unexpressible),
@@ -328,24 +304,14 @@ def enable(table: Optional[Table] = None, *, home: str | Path | None = None, app
     if not apply:
         return p
 
-    table = table if table is not None else load_table()
     backup = _backup_path(home)
     if not backup.exists():
         backup.write_text(json.dumps(p.was, ensure_ascii=False, indent=1), encoding="utf-8")
     Path(p.pac_path).write_text(p.pac_text, encoding="utf-8")
-
-    registry = dict(p.registry or {})
-    up, detail = _pac_server().start(pac_port(table), home=home)
-    if up:
-        registry["AutoConfigURL"] = pac_url(table)
-    else:
-        # WinINET will not load a file:// PAC, so this fallback is not the PAC path —
-        # it is the static entry alone carrying the machine. Say so out loud.
-        registry["AutoConfigURL"] = Path(p.pac_path).as_uri()
-        log.warning("system proxy: PAC 服务没起来（%s）——AutoConfigURL 退回 file://；"
-                    "WinINET 实测不读它，机器上的流量靠静态代理那一路", detail)
-
-    _write_registry(registry)
+    # `_write_registry` deletes any REG_VALUES key the plan omits, so an
+    # ``AutoConfigURL`` we advertised earlier (or that a stale takeover left) is
+    # cleared here — leaving it set would keep breaking HTTPS.
+    _write_registry(dict(p.registry or {}))
     _notify_wininet()
     log.warning("system proxy: Plobi 接管了系统代理（PAC %s）——回退：plobi network proxy off", p.pac_path)
     return p
@@ -358,10 +324,10 @@ def disable(*, home: str | Path | None = None) -> tuple[bool, str]:
     backup = _backup_path(home)
     if not backup.exists():
         current = read_current()
-        if current.get("AutoConfigURL", "").replace("file:///", "").lower().startswith(
-            str(_home(home)).replace("\\", "/").lower()
-        ):
-            return False, "PAC 像是我们写的，但没有备份记录：不敢替你猜原值，请手工核对 Internet Settings"
+        port = (load_table()).engine_mixed_port
+        if port and str(current.get("ProxyServer") or "") == f"127.0.0.1:{port}":
+            return False, ("系统代理指着我们的引擎端口，但没有接管记录：不敢替你猜原值，"
+                           "请手工核对 Internet Settings")
         return False, f"没有接管记录（{backup}）——系统代理不是我们开的，不碰它"
     try:
         was = json.loads(backup.read_text(encoding="utf-8"))
@@ -370,8 +336,7 @@ def disable(*, home: str | Path | None = None) -> tuple[bool, str]:
     _write_registry({k: was.get(k) for k in REG_VALUES if k in was} if was else {k: None for k in REG_VALUES})
     _notify_wininet()
     backup.unlink(missing_ok=True)
-    stopped, why = _pac_server().stop(home=home)
-    return True, f"已还原接管前的系统代理设置：{was}（PAC 服务：{why}）"
+    return True, f"已还原接管前的系统代理设置：{was}"
 
 
 def ensure(table: Optional[Table] = None, *, home: str | Path | None = None) -> Optional[ProxyPlan]:
@@ -395,26 +360,19 @@ def status(table: Optional[Table] = None, *, home: str | Path | None = None) -> 
     current = read_current()
     table = table if table is not None else load_table()
     pac = _home(home) / PAC_BASENAME
-    url = str(current.get("AutoConfigURL") or "")
-    ours = url.lower() == pac.as_uri().lower() or _is_our_pac_url(url)
+    port = table.engine_mixed_port
+    ours = bool(port) and int(current.get("ProxyEnable") or 0) == 1 \
+        and str(current.get("ProxyServer") or "") == f"127.0.0.1:{port}"
     return {
         "supported": supported(),
         "current": current,
-        "ours": bool(url) and ours,
+        "ours": ours,
         "declared": bool(table.system_proxy_enabled),
         "pac_path": str(pac),
-        "pac_url": pac_url(table),
-        "pac_server": _pac_server().status(pac_port(table), home=home),
+        "pac_advertised": bool(str(current.get("AutoConfigURL") or "")),
         "backup_exists": _backup_path(home).exists(),
-        "engine_port": table.engine_mixed_port,
+        "engine_port": port,
     }
-
-
-def _is_our_pac_url(url: str) -> bool:
-    """Is this the URL of **our** PAC server (any port — the engine may have moved)?"""
-    if not url.lower().startswith("http://127.0.0.1:"):
-        return False
-    return url.rstrip("/").lower().endswith("/" + PAC_BASENAME)
 
 
 #: Always-direct, same list the PAC hard-codes above.
@@ -491,12 +449,10 @@ def status_lines(info: dict[str, Any]) -> list[str]:
         f"ProxyServer={cur.get('ProxyServer') or '—'} AutoConfigURL={cur.get('AutoConfigURL') or '—'}"
     )
     out.append(f"  我们的 PAC: {info['pac_path']}{'' if Path(info['pac_path']).exists() else '（还没生成）'}")
-    server = info.get("pac_server") or {}
-    if server.get("url"):
-        out.append(
-            f"  PAC 服务: {server['url']}"
-            f"（{'在跑' if server.get('alive') else '没在跑'}——{server.get('detail', '')}）"
-        )
+    out.append(
+        "  PAC 挂在系统上吗: %s（挂上 WinINET 的 HTTPS 会全断，所以只留文件不挂）"
+        % ("是——建议摘掉" if info.get("pac_advertised") else "没有")
+    )
     out.append(f"  接管前那份备份: {'在' if info['backup_exists'] else '没有'}（off 靠它原样还原）")
     if info["declared"] and not info["ours"]:
         out.append("  ⚠️ 表里 system_proxy.enabled 是 true，但系统代理不是我们的 —— 跑：plobi network proxy on")
