@@ -189,7 +189,11 @@ def _apply_one(subsystem: str, rec, memory_store):
         if subsystem == wa.MEMORY:
             if memory_store is None:
                 return False, "memory store unavailable"
-            from tools.memory_tool import apply_memory_pending
+            from tools.memory_tool import apply_memory_pending, load_on_disk_store
+
+            slug = str(payload.get("agent_slug") or "").strip()
+            if slug and getattr(memory_store, "slug", "") != slug:
+                memory_store = load_on_disk_store(slug)
             result = apply_memory_pending(payload, memory_store)
             return bool(result.get("success")), result.get("error", "")
         else:

@@ -1463,6 +1463,9 @@ def _stage_scoped_write(target: str, entries: List[str], store: "MemoryStore") -
         "action": "rewrite",
         "target": target,
         "entries": list(entries),
+        # 这份记忆属于谁：点头那一刻必须落到同一个 agents/<slug>，
+        # 否则批的是 A 的纸、写进 B 的文件（真进程联调时抓到过：默认 store 的 slug 是 l1）。
+        "agent_slug": getattr(store, "slug", "") or resolve_agent_slug(),
         "base_sha256": _file_sha(store._path_for(target)),
     }
     gist = "；".join(e.strip() for e in entries if str(e).strip())[:120]

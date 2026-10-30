@@ -116,7 +116,7 @@ def register_memory_pending_api(app: FastAPI) -> None:
         return JSONResponse(_prune())
 
 
-def _memory_store():
+def _memory_store(record: Dict[str, Any] | None = None):
     """按出厂上限造一个 store —— 批的不是脑里那张计划时（内置 MEMORY/USER 条目）要用。
 
     与 ``agent/agent_init.py`` 那一处同一构造方式（``memory_limits_from_config``），
@@ -129,6 +129,12 @@ def _memory_store():
         from plobi_cli.config import load_config
 
         mem = (load_config() or {}).get("memory") or {}
+        payload = (record or {}).get("payload") or {}
+        slug = str(payload.get("agent_slug") or "").strip()
+        if slug:
+            from tools.memory_tool import load_on_disk_store
+
+            return load_on_disk_store(slug)
         return MemoryStore(**memory_limits_from_config(mem))
     except Exception as exc:  # noqa: BLE001 - 造不出 store 不影响脑里那张计划
         logger.warning("mind pending: memory store unavailable (%s)", exc)
@@ -176,8 +182,11 @@ def _act(pending_id: str, verb: str) -> Dict[str, Any]:
 
     message = ""
     try:
+        from tools import write_approval as _wa
+
+        record = _wa.get_pending(_wa.MEMORY, pending_id)
         message = handle_pending_subcommand(
-            "memory", [verb, pending_id], memory_store=_memory_store()
+            "memory", [verb, pending_id], memory_store=_memory_store(record)
         )
     except Exception as exc:  # noqa: BLE001 - 批不动要说清为什么，不抛给前端一个 500
         logger.warning("mind pending: %s %s failed (%s)", verb, pending_id, exc)
