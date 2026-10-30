@@ -1818,6 +1818,17 @@ export interface Translations {
     resumeTitle: string
     pauseTitle: string
     triggerNow: string
+    stopRun: string
+    stopRequested: string
+    failedStop: string
+    missedPolicyLabel: string
+    missedCatchUp: string
+    missedSkip: string
+    catchUpLabel: string
+    catchUpHint: string
+    graceLabel: string
+    gracePlaceholder: string
+    graceHint: string
     edit: string
     deleteTitle: string
     deleteDescPrefix: string

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   createCronJob,
@@ -27,6 +28,7 @@ import {
   pauseCronJob,
   resumeCronJob,
   type SessionInfo,
+  stopCronJob,
   triggerCronJob,
   updateCronJob
 } from '@/plobi'
@@ -369,6 +371,20 @@ export function CronView({ onClose, onOpenSession, setStatusbarItemGroup: _setSt
     }
   }
 
+  async function handleStop(job: CronJob) {
+    setBusyJobId(job.id)
+
+    try {
+      const updated = await stopCronJob(job.id)
+      updateCronJobs(rows => rows.map(row => (row.id === job.id ? updated : row)))
+      notify({ kind: 'success', title: c.stopRequested, message: truncate(jobTitle(job), 60) })
+    } catch (err) {
+      notifyError(err, c.failedStop)
+    } finally {
+      setBusyJobId(null)
+    }
+  }
+
   async function handleConfirmDelete() {
     if (!pendingDelete) {
       return
@@ -397,7 +413,9 @@ export function CronView({ onClose, onOpenSession, setStatusbarItemGroup: _setSt
         schedule: values.schedule,
         name: values.name || undefined,
         recipient,
-        deliver: values.deliver || DEFAULT_DELIVER
+        deliver: values.deliver || DEFAULT_DELIVER,
+        catch_up: values.catchUp,
+        grace_minutes: values.graceMinutes.trim() === '' ? null : Number(values.graceMinutes)
       })
 
       updateCronJobs(rows => [...rows, created])
@@ -409,7 +427,9 @@ export function CronView({ onClose, onOpenSession, setStatusbarItemGroup: _setSt
         name: values.name,
         // 编辑时"从有到无"是一个动作，不是"没改"——所以这里送 null 而不是省略。
         recipient: recipient ?? null,
-        deliver: values.deliver
+        deliver: values.deliver,
+        catch_up: values.catchUp,
+        grace_minutes: values.graceMinutes.trim() === '' ? null : Number(values.graceMinutes)
       })
 
       updateCronJobs(rows => rows.map(row => (row.id === updated.id ? updated : row)))
@@ -478,6 +498,7 @@ export function CronView({ onClose, onOpenSession, setStatusbarItemGroup: _setSt
                 job={selectedJob}
                 onOpenSession={onOpenSession}
                 onPauseResume={() => void handlePauseResume(selectedJob)}
+                onStop={() => void handleStop(selectedJob)}
                 onTrigger={() => void handleTrigger(selectedJob)}
               />
             ) : (
@@ -548,6 +569,7 @@ function CronJobDetail({
   job,
   onOpenSession,
   onPauseResume,
+  onStop,
   onTrigger
 }: {
   busy: boolean
@@ -555,6 +577,7 @@ function CronJobDetail({
   job: CronJob
   onOpenSession?: (sessionId: string) => void
   onPauseResume: () => void
+  onStop: () => void
   onTrigger: () => void
 }) {
   const state = jobState(job)
@@ -579,6 +602,11 @@ function CronJobDetail({
             <PanelAction disabled={busy} icon="zap" onClick={onTrigger}>
               {c.triggerNow}
             </PanelAction>
+            {job.running ? (
+              <PanelAction disabled={busy || Boolean(job.cancel_requested)} icon="debug-stop" onClick={onStop}>
+                {c.stopRun}
+              </PanelAction>
+            ) : null}
           </div>
         </div>
 
@@ -586,6 +614,13 @@ function CronJobDetail({
           rows={[
             { label: c.frequencyLabel, value: jobScheduleDisplay(job) },
             { label: c.last.replace(/:$/, ''), value: formatTime(job.last_run_at) },
+            {
+              label: c.missedPolicyLabel,
+              value:
+                job.catch_up === false
+                  ? `${c.missedSkip}${job.missed_runs ? ` · ${job.missed_runs}` : ''}`
+                  : c.missedCatchUp
+            },
             { label: c.next.replace(/:$/, ''), value: formatTime(job.next_run_at) },
             { label: c.deliverLabel, value: c.deliveryLabels[deliver] ?? deliver },
             { label: c.recipientRowLabel, value: asText(job.recipient) || c.recipientRowUnset },
@@ -800,6 +835,8 @@ function CronEditorDialog({
   const [schedulePreset, setSchedulePreset] = useState('daily')
   const [deliver, setDeliver] = useState(DEFAULT_DELIVER)
   const [recipient, setRecipient] = useState(RECIPIENT_NONE)
+  const [catchUp, setCatchUp] = useState(true)
+  const [graceMinutes, setGraceMinutes] = useState('')
   const rosterAgents = useStore($consoleAgents)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<null | string>(null)
@@ -815,6 +852,8 @@ function CronEditorDialog({
     setSchedulePreset(initial ? scheduleOptionForExpr(jobScheduleExpr(initial)).value : 'daily')
     setDeliver(initial ? jobDeliver(initial) : DEFAULT_DELIVER)
     setRecipient(initial ? recipientInitialValue(initial.recipient) : RECIPIENT_NONE)
+    setCatchUp(initial ? initial.catch_up !== false : true)
+    setGraceMinutes(initial && initial.grace_minutes != null ? String(initial.grace_minutes) : '')
     setError(null)
     setSaving(false)
 
@@ -871,7 +910,9 @@ function CronEditorDialog({
 
     try {
       await onSave({
+        catchUp,
         deliver,
+        graceMinutes,
         name: name.trim(),
         prompt: trimmedPrompt,
         recipient,
@@ -962,6 +1003,25 @@ function CronEditorDialog({
             <FieldHint>{c.recipientHint}</FieldHint>
           </Field>
 
+          <div className="grid grid-cols-2 gap-3">
+            <Field htmlFor="cron-catch-up" label={c.catchUpLabel}>
+              <div className="flex h-9 items-center">
+                <Switch checked={catchUp} id="cron-catch-up" onCheckedChange={setCatchUp} />
+              </div>
+              <FieldHint>{c.catchUpHint}</FieldHint>
+            </Field>
+            <Field htmlFor="cron-grace" label={c.graceLabel}>
+              <Input
+                id="cron-grace"
+                inputMode="numeric"
+                onChange={event => setGraceMinutes(event.target.value.replace(/[^0-9]/g, ''))}
+                placeholder={c.gracePlaceholder}
+                value={graceMinutes}
+              />
+              <FieldHint>{c.graceHint}</FieldHint>
+            </Field>
+          </div>
+
           {schedulePreset === 'custom' ? (
             <Field htmlFor="cron-schedule" label={c.customScheduleLabel}>
               <Input
@@ -1037,6 +1097,10 @@ interface EditorValues {
   deliver: string
   name: string
   prompt: string
+  /** 错过一轮补不补跑（缺省跟后端老行为：补跑一次）。 */
+  catchUp: boolean
+  /** 宽限分钟；空串＝按频率算（后端默认）。 */
+  graceMinutes: string
   /** 空串＝不指定（那一格干脆不给后端）。 */
   recipient: string
   schedule: string

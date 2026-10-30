@@ -1116,6 +1116,15 @@ export function triggerCronJob(jobId: string): Promise<CronJob> {
   })
 }
 
+export function stopCronJob(jobId: string): Promise<CronJob> {
+  // 停的是"正在跑的那一趟"，不是任务本身：后端写一个标记文件，运行路径在
+  // 起跑前 / 交付前 / 脚本运行中读到它就收；任务与下一次计划都不动。
+  return window.plobiDesktop.api<CronJob>({
+    path: `/api/cron/jobs/${encodeURIComponent(jobId)}/cancel`,
+    method: 'POST'
+  })
+}
+
 export function deleteCronJob(jobId: string): Promise<{ ok: boolean }> {
   return window.plobiDesktop.api<{ ok: boolean }>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}`,

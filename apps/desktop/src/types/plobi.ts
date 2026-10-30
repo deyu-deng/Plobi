@@ -733,6 +733,18 @@ export interface CronDeliveryRecord {
 }
 
 export interface CronJob {
+  /** 这一趟正在跑（后端拿当刻在跑的 job id 比出来的）；能"停止"的只有这种。 */
+  running?: boolean
+  /** 已经有人请求停这一趟（标记已写，等运行路径在下一个边界收）。 */
+  cancel_requested?: boolean
+  /** 错过一轮时补不补跑。缺省＝老行为（晚到照跑一次）。 */
+  catch_up?: boolean
+  /** 每个任务自己的宽限（分钟）；缺省＝按频率算。 */
+  grace_minutes?: null | number
+  /** 累积错过的轮数（`catch_up=false` 时才会涨）。 */
+  missed_runs?: number
+  last_missed_at?: null | string
+  last_status?: null | string
   deliver?: null | string
   enabled: boolean
   id: string
@@ -757,6 +769,8 @@ export interface CronJobCreatePayload {
   prompt: string
   recipient?: string
   schedule: string
+  catch_up?: boolean
+  grace_minutes?: null | number
 }
 
 export interface CronJobSchedule {
@@ -770,6 +784,9 @@ export interface CronJobUpdates {
   enabled?: boolean
   name?: string
   prompt?: string
+  catch_up?: boolean
+  /** `null` ＝改回「按频率算」。 */
+  grace_minutes?: null | number
   /** `null` ＝改回「不指定」（按创建处的身份跑）。省略＝不动这一格。 */
   recipient?: null | string
   schedule?: string
