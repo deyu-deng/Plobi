@@ -1416,6 +1416,27 @@ def _missing_old_text_error(store: "MemoryStore", target: str, action: str) -> s
     )
 
 
+def _l0_trust_allows(scope: str, old_entries: List[str], new_entries: List[str]) -> bool:
+    """信任账决定这一笔要不要问人（用户 2026-10-30：「开信任帐」＋卡片形态）。
+
+    三条硬边界先判、再问账本：
+    - ``user``（画像）永不自动；
+    - **删条目**永不自动（少了一条就得有人看见）；
+    - 其余按 ``TrustLedger``：同一个作用域连续采纳 ``AUTO_THRESHOLD`` 次才放行；
+      被驳回或被人工改过即归零（账本自己管），所以"它学歪过一次"会立刻回到逐条问。
+    """
+    if scope == "user":
+        return False
+    if any(entry not in new_entries for entry in old_entries):
+        return False
+    try:
+        from plobi.mind.proposal import TrustLedger
+
+        return not TrustLedger().should_ask(scope, "l0", always_ask=("user",))
+    except Exception:  # noqa: BLE001 - 账本读不到就按"要问"办，绝不因此静默写
+        return False
+
+
 def _write_approval_on() -> bool:
     """``memory.write_approval`` 现在开着吗（读不到就当关着，绝不因为配置出错而停写）。"""
     try:
@@ -1787,7 +1808,7 @@ def memory_write(scope: str = "self", parts: Optional[List[str]] = None,
     # 用户 2026-10-30 定的形态：每次对话之后出一张小卡片说"它想记住什么"，
     # 所以 `memory.write_approval` 开着时，**各作用域**的写都先进待确认层
     # （以前只有 global 那样做，自己那份是直接落盘的 ⇒ 卡片永远不出现）。
-    if _write_approval_on():
+    if _write_approval_on() and not _l0_trust_allows(target, list(live._entries_for(target)), entries):
         return _stage_scoped_write(target, entries, live)
 
     return json.dumps(live.rewrite(target, entries), ensure_ascii=False)

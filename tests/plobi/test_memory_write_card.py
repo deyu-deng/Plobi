@@ -56,3 +56,31 @@ def test_approval_off_keeps_the_direct_write(home):
     assert out.get("staged") is None, out
     target = home / "memory" / "agents" / "l2-course-x" / "MEMORY.md"
     assert "直接记下" in target.read_text(encoding="utf-8")
+
+
+def test_trust_ramp_stops_asking_after_enough_adoptions(home):
+    """用户 2026-10-30「开信任帐」：同一作用域连续采纳够 8 次后，不再逐条问。
+
+    三条硬边界同时钉住：画像永不自动；删条目永不自动（哪怕账已经攒够）。
+    """
+    import json as _json
+
+    from plobi.mind.proposal import AUTO_THRESHOLD, TrustLedger
+
+    _config(home, True)
+    ledger = TrustLedger()
+    for _ in range(AUTO_THRESHOLD):
+        ledger.record("adopted", "memory", "l0")
+
+    out = _json.loads(memory_write(scope="memory", parts=["第九次之后直接落"]))
+    assert out.get("staged") is None, out
+    assert "第九次之后直接落" in (home / "memory" / "agents" / "l2-course-x" / "MEMORY.md").read_text(encoding="utf-8")
+
+    # 画像：账攒得再多也要问
+    for _ in range(AUTO_THRESHOLD * 2):
+        ledger.record("adopted", "user", "l0")
+    assert _json.loads(memory_write(scope="user", parts=["画像一条"])).get("staged") is True
+
+    # 删条目：也要问（少了一条必须有人看见）
+    staged = _json.loads(memory_write(scope="memory", parts=[]))
+    assert staged.get("staged") is True, staged

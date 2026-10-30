@@ -138,10 +138,26 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
     return "\n".join(out)
 
 
+def _remember_l0_decision(payload: dict, outcome: str) -> None:
+    """L0 的一次采纳/驳回进信任账（账本只认"人真的点过"这件事本身）。"""
+    scope = str((payload or {}).get("target") or "").strip()
+    if not scope:
+        return
+    try:
+        from plobi.mind.proposal import TrustLedger
+
+        TrustLedger().record(outcome, scope, "l0")
+    except Exception:  # noqa: BLE001 - 记不上账不该让批准本身失败
+        pass
+
+
 def _remember_rejection(rec) -> None:
     """驳回要进信任账（裁定 156／199：被驳一次，那一类立刻退回必问）。"""
     payload = (rec or {}).get("payload", {})
     if payload.get("kind") != "mind_plan":
+        # L0 那些改写（action=rewrite）：驳一次，那一类立刻退回必问。
+        if str(payload.get("action") or "") == "rewrite":
+            _remember_l0_decision(payload, "rejected")
         return
     try:
         from plobi.mind import proposal as L1
@@ -167,6 +183,8 @@ def _apply_one(subsystem: str, rec, memory_store):
                 plan, approved=plan.digest, roots=resolve_roots(),
                 writer=MindWriter(require_approval=False),
             )
+            if report.ok:
+                _remember_l0_decision(payload, "adopted")
             return (True, "") if report.ok else (False, "计划过期或对象/内容已变，重出一张再点头")
         if subsystem == wa.MEMORY:
             if memory_store is None:
