@@ -90,6 +90,7 @@ export function MindPendingOverlay() {
                       <div className="truncate text-sm" title={item.paths.join('\n')}>
                         {item.paths[0]}
                         {item.paths.length > 1 ? ` +${item.paths.length - 1}` : ''}
+                        {item.agent ? ` · ${item.agent}` : ''}
                       </div>
                     ) : (
                       <div className="text-sm">{item.summary || item.id}</div>

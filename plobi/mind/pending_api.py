@@ -63,6 +63,7 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
         if action:
             summary = f"[{action}] {summary}".strip()
     created = rec.get("created_at")
+    agent = str(payload.get("agent_slug") or "").strip()
     return {
         "id": str(rec.get("id") or ""),
         "kind": kind,
@@ -70,6 +71,8 @@ def _describe(rec: Dict[str, Any]) -> Dict[str, Any]:
         "summary": summary,
         "created_at": created,
         "expired": expired,
+        # 这张纸属于哪个 Agent（L0 的改写才有）。屏幕上要说得出来，否则"memory"一词看不出是谁的。
+        "agent": agent,
     }
 
 

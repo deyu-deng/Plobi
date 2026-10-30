@@ -17,6 +17,8 @@ export interface MindPendingItem {
   summary: string
   created_at?: number | string
   expired: boolean
+  /** 这张纸属于哪个 Agent（L0 改写才有；屏幕上要说得出来）。 */
+  agent?: string
 }
 
 export interface MindPendingState {
