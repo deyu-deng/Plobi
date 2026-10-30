@@ -196,7 +196,13 @@ def _act(pending_id: str, verb: str) -> Dict[str, Any]:
         message = f"没做成：{exc}"
     out = _listing()
     out["message"] = str(message).strip()
-    out["ok"] = bool(message) and not any(
-        w in out["message"] for w in ("No pending", "Failed:", "Usage:", "没做成", "过期")
-    )
+    # 成没成，看事实：那纸还在不在待批层里。原来靠对命令返回的**文案**做子串匹配
+    # （"过期"/"Failed:"…），谁改一句措辞就会误报——屏幕上的"已记下"不能建在措辞上。
+    try:
+        from tools import write_approval as _wa
+
+        gone = _wa.get_pending(_wa.MEMORY, pending_id) is None
+    except Exception:  # noqa: BLE001 - 读不到就当没成（宁可让人再点一次）
+        gone = False
+    out["ok"] = bool(verb in ("approve", "reject") and gone)
     return out
