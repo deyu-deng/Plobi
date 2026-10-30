@@ -1375,6 +1375,59 @@ def _missing_old_text_error(store: "MemoryStore", target: str, action: str) -> s
     )
 
 
+def _write_approval_on() -> bool:
+    """``memory.write_approval`` 现在开着吗（读不到就当关着，绝不因为配置出错而停写）。"""
+    try:
+        from plobi_cli.config import load_config
+
+        mem = (load_config() or {}).get("memory") or {}
+        return bool(mem.get("write_approval", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _stage_scoped_write(target: str, entries: List[str], store: "MemoryStore") -> str:
+    """把「这一份现在就是这几条」排进待确认层；点头后 :func:`apply_memory_pending` 重放。
+
+    与 global 那条同一层（``tools/write_approval``），不新造队列：payload 带目标作用域、
+    完整条目清单与被审批绑定的 ``base_sha256``（文件在点头前被人改过就拒，不覆盖人的改动）。
+    """
+    try:
+        from tools import write_approval as wa
+    except Exception:
+        return tool_error("Approval layer unavailable — the write was not staged.", success=False)
+
+    payload: Dict[str, Any] = {
+        "action": "rewrite",
+        "target": target,
+        "entries": list(entries),
+        "base_sha256": _file_sha(store._path_for(target)),
+    }
+    gist = "；".join(e.strip() for e in entries if str(e).strip())[:120]
+    record = wa.stage_write(
+        wa.MEMORY, payload,
+        summary=f"write to {_scope_label(target)}: {gist}",
+        origin=wa.current_origin(),
+    )
+    return json.dumps(
+        {
+            "success": True,
+            "staged": True,
+            "done": True,
+            "target": target,
+            "pending_id": record["id"],
+            "base_sha256": payload["base_sha256"],
+            "message": (
+                f"{_scope_label(target)} is staged for approval and changed nothing on disk. "
+                "Review with /memory pending, then /memory approve "
+                f"{record['id']}."
+            ),
+            "note": "Staged is terminal for this call — do not repeat the write.",
+        },
+        ensure_ascii=False,
+    )
+
+
 def _stage_global_write(action: str, content: Optional[str], old_text: Optional[str],
                         operations: Optional[List[Dict[str, Any]]],
                         store: "MemoryStore") -> str:
@@ -1579,6 +1632,8 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
                 "pending record and stage it again."
             ),
         }
+    if action == "rewrite":
+        return store.rewrite(target, list(payload.get("entries") or []))
     if action == "batch":
         return store.apply_batch(target, payload.get("operations") or [])
     if action == "add":
@@ -1687,6 +1742,12 @@ def memory_write(scope: str = "self", parts: Optional[List[str]] = None,
                 ensure_ascii=False,
             )
         return _stage_global_write("batch", None, None, operations, live)
+
+    # 用户 2026-10-30 定的形态：每次对话之后出一张小卡片说"它想记住什么"，
+    # 所以 `memory.write_approval` 开着时，**各作用域**的写都先进待确认层
+    # （以前只有 global 那样做，自己那份是直接落盘的 ⇒ 卡片永远不出现）。
+    if _write_approval_on():
+        return _stage_scoped_write(target, entries, live)
 
     return json.dumps(live.rewrite(target, entries), ensure_ascii=False)
 
