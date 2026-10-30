@@ -1823,7 +1823,7 @@ MEMORY_WRITE_SCHEMA = {
         "list, so one call can merge stale entries, drop what's wrong, and add the new fact "
         "together. Each location has its own char cap and the limit is checked on the FINAL "
         "content; an over-budget write is refused with the current entries shown, and "
-        "nothing is dropped silently.\n\n"
+        "nothing is dropped silently. APPROVAL: with the user's approval switch on (memory.write_approval), every location's write is staged — nothing lands until they nod on the card in the chat, and a staged result is terminal (do not repeat the call).\n\n"
         "'source' is how memory stays small: the relative path of the page a person can "
         "read (under vault/ or mind/) plus its date, e.g. "
         "'vault/projects/Plobi/plan.md 2026-10-19'. It is appended to each entry that has "
