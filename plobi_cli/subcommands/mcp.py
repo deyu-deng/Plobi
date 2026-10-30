@@ -38,6 +38,20 @@ def build_mcp_parser(subparsers, *, cmd_mcp: Callable) -> None:
     )
     add_accept_hooks_flag(mcp_serve_p)
 
+    # WP-TOOLS-MCP：暴露**工具面**（say / ask），与上面那个「暴露会话」分开——
+    # 外部 Agent 需要的是能派工，不是能把对话听一遍。
+    mcp_tools_p = mcp_sub.add_parser(
+        "serve-tools",
+        help="Run Plobi as an MCP server that exposes the say / ask tools",
+    )
+    mcp_tools_p.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging on stderr",
+    )
+    add_accept_hooks_flag(mcp_tools_p)
+
     mcp_add_p = mcp_sub.add_parser(
         "add", help="Add an MCP server (discovery-first install)"
     )

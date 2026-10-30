@@ -1025,6 +1025,12 @@ def mcp_command(args):
         run_mcp_server(verbose=getattr(args, "verbose", False))
         return
 
+    if action == "serve-tools":
+        # WP-TOOLS-MCP：只暴露 say / ask 两枚原子，给外部 MCP 客户端派工用。
+        from mcp_tools_serve import run_tool_server
+        run_tool_server(verbose=getattr(args, "verbose", False))
+        return
+
     # Catalog subcommands live in mcp_picker / mcp_catalog. Import lazily so
     # the original `mcp_config` module stays import-cheap.
     if action == "picker":
