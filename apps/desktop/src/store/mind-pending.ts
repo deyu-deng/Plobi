@@ -48,7 +48,16 @@ async function call(path: string, method?: 'POST'): Promise<MindPendingState> {
 
 export async function refreshMindPending(): Promise<MindPendingState> {
   try {
-    const state = await call('/api/memory/pending')
+    let state = await call('/api/memory/pending')
+    // 过期纸先归档再清掉（后端 prune 会先抄一份），否则它们会在角标/面板上冒充"等你点头"。
+    // 只在真有过期时调一次，失败不影响主流程（下一轮再试）。
+    if ((state.expired_count ?? 0) > 0) {
+      try {
+        state = await call('/api/memory/pending/prune', 'POST')
+      } catch {
+        // 清不动就照实显示（过期那条仍会带 expired 标）
+      }
+    }
     $mindPending.set({ ...EMPTY, ...state })
     return state
   } catch {
