@@ -10,6 +10,7 @@ import {
   findLatestSessionForProfile,
   forgetL1MainSession,
   pickL1MainSession,
+  pickL1Mouth,
   profileListHasMaster,
   readL1MainSessionId,
   resolveL1HomeProfile,
@@ -160,6 +161,49 @@ describe('pickL1MainSession (WP-G7)', () => {
     ]
 
     expect(pickL1MainSession(rows, 'default', 'l2')?.id).toBe('l1')
+  })
+})
+
+// 用户 10-30：「侧栏没有会话概念了。就一张嘴。永远都只有一张嘴。」
+// 嘴＝这个家上**最新的一条有内容的会话**：不读"记住的主线"（它会把嘴钉在几天前那条上，
+// 之后每条新对话都被归档 ⇒「聊天记录不见了」），空草稿也不参选。
+describe('pickL1Mouth (one mouth, always the newest real conversation)', () => {
+  it('takes the newest session that actually has messages', () => {
+    const rows = [
+      { id: 'old', profile: 'default', started_at: 1, message_count: 197 },
+      { id: 'empty-draft', profile: 'default', started_at: 99, message_count: 0 }
+    ]
+
+    expect(pickL1Mouth(rows, 'default')?.id).toBe('old')
+  })
+
+  it('falls back to the newest row when every row is empty', () => {
+    const rows = [
+      { id: 'a', profile: 'default', started_at: 1, message_count: 0 },
+      { id: 'b', profile: 'default', started_at: 9, message_count: 0 }
+    ]
+
+    expect(pickL1Mouth(rows, 'default')?.id).toBe('b')
+  })
+
+  it('never crosses into another profile', () => {
+    const rows = [
+      { id: 'l2', profile: 'l2-agenda', started_at: 99, message_count: 50 },
+      { id: 'l1', profile: 'default', started_at: 1, message_count: 5 }
+    ]
+
+    expect(pickL1Mouth(rows, 'default')?.id).toBe('l1')
+  })
+
+  it('keeps the desktop conversation when a newer TUI/CLI chat exists', () => {
+    // 同一份家上别的线会用 `plobi chat` 做验证，那些会话会写进来；
+    // 它们不许把桌面手上那张嘴抢走（用户 10-30 报「聊天记录不见了」）。
+    const rows = [
+      { id: 'his', profile: 'default', source: 'desktop', started_at: 1, message_count: 197 },
+      { id: 'agent-test', profile: 'default', source: 'tui', started_at: 99, message_count: 6 }
+    ]
+
+    expect(pickL1Mouth(rows, 'default')?.id).toBe('his')
   })
 })
 

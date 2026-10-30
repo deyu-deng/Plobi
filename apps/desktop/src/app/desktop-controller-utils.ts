@@ -86,6 +86,36 @@ export function findLatestSessionForProfile<
   return [...pool].sort((a, b) => (b.started_at || 0) - (a.started_at || 0))[0]
 }
 
+/**
+ * 总秘书**那一张嘴**：这个家上最新的一条**有内容**的会话。
+ *
+ * 用户 10-30：「侧栏没有会话概念了。就一张嘴。永远都只有一张嘴。」
+ * ⇒ 嘴就是「最近那条真对话」：
+ * ① **不读"记住的主线"**（那份记忆会把嘴钉在几天前那条上——现读钉在 10-07，
+ *    于是之后每一条新对话都被当成旁路收进归档 ⇒ 用户看到的就是「聊天记录不见了」）；
+ * ② **0 条消息的空草稿不参选**（否则界面一开一个新建草稿，嘴就被抢走）；
+ * ③ **优先桌面自己在用的那条**（`source === 'desktop'`）：同一份家上还有 TUI / CLI
+ *    写进来的会话（别的线用 `plobi chat` 做验证会留下），那些不该把手上的嘴抢走；
+ *    桌面一条都没有时才退到"任意来源里最新那条"。
+ */
+export function pickL1Mouth<
+  T extends {
+    id: string
+    profile?: null | string
+    source?: null | string
+    _lineage_root_id?: null | string
+    started_at?: null | number
+    message_count?: null | number
+  }
+>(sessions: T[], profile: string): T | undefined {
+  const withHistory = sessions.filter(session => (session.message_count ?? 0) > 0)
+  const desktopChats = withHistory.filter(session => (session.source ?? '') === 'desktop')
+
+  const pool = desktopChats.length > 0 ? desktopChats : withHistory.length > 0 ? withHistory : sessions
+
+  return findLatestSessionForProfile(pool, profile)
+}
+
 export function l1MainSessionKey(profile: string): string {
   return `plobi.desktop.l1MainSession.${normalizeProfileKey(profile)}`
 }

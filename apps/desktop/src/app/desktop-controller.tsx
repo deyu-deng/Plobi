@@ -24,8 +24,6 @@ import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { storedSessionIdForNotification } from '../lib/session-ids'
-import { MESSAGING_SESSION_SOURCE_IDS } from '../lib/session-source'
-import { listAllProfileSessions, setSessionArchived } from '../plobi'
 import type { ComposerAttachment } from '../store/composer'
 import {
   $fileBrowserOpen,
@@ -92,11 +90,9 @@ import {
 } from './console/right/use-agenda-timeline'
 import { $consoleAgents, refreshConsoleAgents } from './console/store/agents'
 import {
-  archiveL1BypassSessions,
   bindL1GatewayIfMasterExists,
-  collectL1BypassSessionIds,
   findKnownOverviewSession,
-  pickL1MainSession,
+  pickL1Mouth,
   readL1MainSessionId,
   resolveL1HomeProfile,
   secretaryShellLabel,
@@ -1311,46 +1307,15 @@ export function DesktopController() {
           return
         }
 
-        const existing = pickL1MainSession(
-          $sessions.get(),
-          profileForSessions,
-          readL1MainSessionId(profileForSessions)
-        )
+        // 总秘书**只有一张嘴**（用户 10-30：「侧栏没有会话概念了。就一张嘴。永远都只有一张嘴。」）。
+        // 那张嘴＝这个家上**最新的一条有内容的会话**——不再读"记住的主线"（它会
+        // 把嘴钉在几天前那条上，之后每条新对话都被归档掉 ⇒「聊天记录不见了」）。
+        const existing = pickL1Mouth($sessions.get(), profileForSessions)
 
         if (existing) {
-          writeL1MainSessionId(profileForSessions, existing.id)
           await resumeSessionRef.current(existing.id)
         } else {
           prepareFreshDraftInPlace()
-        }
-
-        // Archive every other L1 local chat — one conversation only, no bypass drawer.
-        try {
-          const agentProfiles = $consoleAgents
-            .get()
-            .map(agent => (agent.profile ?? '').trim())
-            .filter(Boolean)
-
-          const listed = await listAllProfileSessions(500, 0, 'exclude', 'recent', profileForSessions, {
-            excludeSources: ['cron', 'subagent', 'tool', ...MESSAGING_SESSION_SOURCE_IDS]
-          })
-
-          const bypassIds = collectL1BypassSessionIds(listed.sessions, {
-            agentProfiles,
-            keepId: existing?.id ?? null,
-            profile: profileForSessions
-          })
-
-          await archiveL1BypassSessions(bypassIds, id =>
-            setSessionArchived(id, true, profileForSessions)
-          )
-
-          if (bypassIds.length) {
-            await refreshSessionsRef.current().catch(() => undefined)
-          }
-        } catch {
-          // Non-fatal: nothing on this path deletes rows, so a failed archive only
-          // leaves that bypass session visible; the next L1 entry retries it.
         }
 
         if (cancelled) {
