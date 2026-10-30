@@ -98,6 +98,16 @@ def register_memory_pending_api(app: FastAPI) -> None:
     async def memory_pending_reject(pending_id: str) -> JSONResponse:
         return JSONResponse(_act(pending_id, "reject"))
 
+    @app.post(f"{PREFIX}/pending/prune", name="memory_pending_prune")
+    async def memory_pending_prune() -> JSONResponse:
+        """清掉**已过期**的那些纸（不碰还在有效期内的，也不碰人手写的）。
+
+        过期＝按计划里的 TTL 判，点 approve 也不会落盘（`apply_plan` 会拒），
+        留着只会在角标上冒充"等你点头"。清之前把每一张抄进
+        `$PLOBI_HOME/archive/pending-expired/`，不是直接丢。
+        """
+        return JSONResponse(_prune())
+
 
 def _memory_store():
     """按出厂上限造一个 store —— 批的不是脑里那张计划时（内置 MEMORY/USER 条目）要用。
@@ -116,6 +126,42 @@ def _memory_store():
     except Exception as exc:  # noqa: BLE001 - 造不出 store 不影响脑里那张计划
         logger.warning("mind pending: memory store unavailable (%s)", exc)
         return None
+
+
+def _prune() -> Dict[str, Any]:
+    import json as _json
+    import shutil
+
+    from plobi.mind import proposal as L1
+    from plobi_constants import get_plobi_home
+    from tools import write_approval as wa
+
+    home = get_plobi_home()
+    archive = home / "archive" / "pending-expired"
+    pruned, kept = [], 0
+    for record in list(wa.list_pending(wa.MEMORY)):
+        payload = record.get("payload") or {}
+        expired = False
+        if payload.get("kind") == "mind_plan":
+            try:
+                expired = L1.is_expired(L1.Plan.from_json(payload.get("plan") or ""))
+            except Exception:  # noqa: BLE001 - 读不出来的纸不当过期处理
+                expired = False
+        if not expired:
+            kept += 1
+            continue
+        try:
+            archive.mkdir(parents=True, exist_ok=True)
+            src = home / "pending" / "memory" / f"{record.get('id')}.json"
+            if src.is_file():
+                shutil.copy2(src, archive / src.name)
+        except OSError:
+            pass
+        if wa.discard_pending(wa.MEMORY, str(record.get("id") or "")):
+            pruned.append(str(record.get("id")))
+    out = _listing()
+    out.update({"ok": True, "pruned": pruned, "kept": kept, "archive": str(archive)})
+    return out
 
 
 def _act(pending_id: str, verb: str) -> Dict[str, Any]:

@@ -48,7 +48,8 @@ def test_an_expired_paper_is_listed_as_expired_and_a_click_lands_nothing(client)
     item = got["items"][0]
     assert item["id"] == pending_id
     assert item["expired"] is False, "刚出的计划不该被判过期"
-    assert item["paths"] == [rel]
+    # 屏幕上不写逻辑前缀 Loom/（用户 2026-10-29「不是已经没有 Loom 这个概念了吗」）
+    assert item["paths"] == [rel[len("Loom/"):] if rel.startswith("Loom/") else rel]
 
     # 时间往前推过 TTL（6h）：这张纸作废，屏幕上要看得见"过期"，点它也不落一个字
     store = Path(os.environ["PLOBI_HOME"]) / "pending" / "memory" / f"{pending_id}.json"
@@ -76,3 +77,27 @@ def test_approving_a_live_plan_lands_the_file_and_clears_it_from_the_list(client
     assert out["ok"] is True, out
     assert (mind / "wiki" / "daily" / "2026-10-27.md").read_text(encoding="utf-8") == "# 日程摘要\n"
     assert out["count"] == 0, "批完了屏幕上还挂着数＝这个入口本身就变成噪音"
+
+
+def test_prune_clears_only_expired_papers_and_keeps_a_copy(client):
+    """清过期的，不动还活着的；清掉的要先抄进归档（不是直接丢）。"""
+    import json
+
+    http, _mind = client
+    live_id, _rel = _stage("Loom/wiki/daily/2026-10-29.md")
+    dead_id, _rel2 = _stage("Loom/wiki/daily/2026-10-28.md")
+
+    store = Path(os.environ["PLOBI_HOME"]) / "pending" / "memory" / f"{dead_id}.json"
+    record = json.loads(store.read_text(encoding="utf-8"))
+    plan = L1.Plan.from_json(record["payload"]["plan"])
+    plan.created_at -= L1.PLAN_TTL_SECONDS + 60
+    record["payload"]["plan"] = plan.to_json()
+    store.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+
+    out = http.post("/api/memory/pending/prune").json()
+
+    assert out["ok"] is True
+    assert out["pruned"] == [dead_id]
+    assert out["count"] == 1 and out["items"][0]["id"] == live_id
+    archived = Path(os.environ["PLOBI_HOME"]) / "archive" / "pending-expired" / f"{dead_id}.json"
+    assert archived.is_file(), "清掉的纸要先有一份归档，别直接丢"
