@@ -775,3 +775,123 @@ async def test_a_stale_lease_with_a_node_that_refuses_google_says_so(monkeypatch
     assert "节点" in reason, reason
     assert "过期" not in reason, reason
     assert prov.credential_health()[1] == reason
+
+
+@pytest.mark.asyncio
+async def test_a_retired_account_comes_back_when_the_slot_is_fresh_again(monkeypatch, tmp_path):
+    """2026-10-30 21:14: the lease was renewed (60 min of life), the card said `ok`, and
+    every turn still answered `no more accounts for ['antigravity']`.
+
+    The single account had been marked "needs re-auth" during the earlier failure and
+    nothing looked at it again until a process restart. A retired account is not a
+    logout; a restart is not the price of a blip.
+    """
+    import time
+
+    from quota_hub.providers.base import AccountState
+
+    prov = build_provider()
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec", desktop_store=True)
+    acc.state = AccountState.REAUTH
+    prov.accounts = [acc]
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() + 1800, "expires_in_seconds": 1800})
+    monkeypatch.setattr(ds, "read_antigravity_access_token", lambda *a, **k: "NEW")
+
+    assert await prov.revive_accounts() is True
+    assert acc.state is AccountState.ACTIVE
+    assert acc.cred.access_token == "NEW"
+    assert acc.schedulable() is True
+
+
+@pytest.mark.asyncio
+async def test_revive_renews_the_lease_itself_before_giving_up(monkeypatch, tmp_path):
+    """The slot is stale again, but the account that owns it can re-push it: wait for it."""
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+    from quota_hub.providers.base import AccountState
+
+    prov = build_provider()
+    acc = prov._access_only_account("antigravity-keychain", "OLD", "cid", "csec", desktop_store=True)
+    acc.state = AccountState.REAUTH
+    prov.accounts = [acc]
+
+    slot = {"present": True, "expires_at": time.time() - 60, "expires_in_seconds": -60}
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: dict(slot))
+    monkeypatch.setattr(ds, "read_antigravity_access_token",
+                        lambda *a, **k: None if slot["expires_in_seconds"] <= 0 else "FRESH")
+    asked = []
+
+    def _fake_refresh(**_kw):
+        slot["expires_at"] = time.time() + 3600
+        slot["expires_in_seconds"] = 3600
+        asked.append(1)
+        return True, "ok"
+
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", _fake_refresh)
+
+    assert await prov.revive_accounts() is True
+    assert asked == [1]
+    assert acc.cred.access_token == "FRESH"
+    assert acc.state is AccountState.ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_a_stale_slot_still_gives_the_leg_an_account(monkeypatch, tmp_path):
+    """Discovery used to require a *fresh* lease: boot 5 minutes after an expiry and the
+    leg had zero accounts forever — nothing re-discovered them until a restart.
+    """
+    import time
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() - 60, "expires_in_seconds": -60})
+    monkeypatch.setattr(ds, "read_antigravity_access_token",
+                        lambda allow_stale=False: "STALE" if allow_stale else None)
+
+    accs = await prov.discover_accounts()
+    assert len(accs) == 1, "过期租约也要有一条账号，续期是发回合前那一步的事"
+    assert accs[0].cred.access_token == "STALE"
+
+
+@pytest.mark.asyncio
+async def test_the_scheduler_lets_a_leg_un_retire_its_accounts_before_saying_none():
+    """`no more accounts` must not be the last word when the credential is ours to renew."""
+    from quota_hub.providers.base import Account, AccountState, Credential, Provider
+    from quota_hub.scheduler import Scheduler
+
+    class _Reviving(Provider):
+        name = "reviving"
+
+        def __init__(self):
+            super().__init__({}, None)
+            self.served_models = ["reviving/m1"]
+            self.acc = Account(id="a1", provider="reviving", label="a1", cred=Credential(access_token="t"))
+            self.acc.state = AccountState.REAUTH
+            self.accounts = [self.acc]
+            self.woke = 0
+
+        def capabilities(self):
+            from quota_hub.providers.base import Capabilities
+            return Capabilities(chat=True, stream=True, tools=True)
+
+        async def revive_accounts(self):
+            self.woke += 1
+            self.acc.state = AccountState.ACTIVE
+            return True
+
+        async def ensure_fresh(self, acc):
+            return None
+
+        async def chat(self, acc, oai_req):
+            return {"choices": [{"message": {"content": "woke"}, "finish_reason": "stop"}]}
+
+    prov = _Reviving()
+    sched = Scheduler({prov.name: prov})
+    out = await sched.dispatch(prov.name, {"model": "reviving/m1", "messages": [{"role": "user", "content": "x"}]}, None, stream=False)
+    assert prov.woke == 1, "调度器没有先给这条腿一次把账号拉回来的机会"
+    assert (out["choices"][0]["message"]["content"]) == "woke"

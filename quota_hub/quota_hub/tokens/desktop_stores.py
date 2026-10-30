@@ -306,12 +306,16 @@ def _win_token_and_expiry(raw: str | None) -> tuple[str | None, float | None]:
     return (token or None), _iso_to_ts(expiry or "")
 
 
-def _read_antigravity_access_token_windows() -> str | None:
+def _read_antigravity_access_token_windows(allow_stale: bool = False) -> str | None:
     token, ts = _win_token_and_expiry(_win_credential_text(WIN_ANTIGRAVITY_TARGET))
     if not token:
         return None
-    if ts is not None and ts <= time.time():
-        # Known-stale: hand this over and it is a guaranteed 401 round-trip.
+    if ts is not None and ts <= time.time() and not allow_stale:
+        # Known-stale: handing this to a caller that cannot renew it is a guaranteed 401
+        # round-trip. `allow_stale` is for the caller that *can*: the leg re-reads and
+        # renews the slot itself before a turn, so a stale entry there is a starting
+        # point, not a wasted call (measured 2026-10-30: skipping it at discovery left
+        # the leg with no account at all until the next process start).
         return None
     return token
 
@@ -339,7 +343,7 @@ def antigravity_desktop_token_status() -> dict:
     return out
 
 
-def read_antigravity_access_token() -> str | None:
+def read_antigravity_access_token(allow_stale: bool = False) -> str | None:
     """Read the live access token from whichever desktop store this OS uses
     (Windows: Credential Manager target `gemini:antigravity`; macOS: Keychain
     entry svce="gemini", acct="antigravity", a `go-keyring-base64` blob wrapping a
@@ -352,7 +356,7 @@ def read_antigravity_access_token() -> str | None:
     back to the Keychain, only to the Windows store (measured above).
     """
     if os.name == "nt":
-        return _read_antigravity_access_token_windows()
+        return _read_antigravity_access_token_windows(allow_stale=allow_stale)
     try:
         out = subprocess.run(
             ["security", "find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"],

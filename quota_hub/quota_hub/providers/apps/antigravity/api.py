@@ -314,12 +314,15 @@ class AntigravityProvider(Provider):
             if acc is not None:
                 accs.append(acc)
 
-        # 4) keychain gemini/antigravity access token (go-keyring blob). Only useful
-        #    when a *fresh* token is present; normally the app does not write one back.
-        #    Skip it when a refresh token is already available (env/config) — the
-        #    keychain token is almost always stale and would just waste a 401 round-trip.
+        # 4) keychain gemini/antigravity access token (go-keyring blob), taken whether or
+        #    not its lease is still good: `ensure_fresh` re-reads the slot and re-pushes
+        #    the account before it dials, so a stale entry is a starting point. Skipping
+        #    it here was the deadlock — a boot with an expired lease left this leg with
+        #    **zero accounts**, and nothing re-discovered them until a process restart
+        #    (measured 2026-10-30 21:14, with the lease renewed and the card saying ok).
+        #    Still skipped when a refresh token is available (env/config) — that source wins.
         if not env_rt:
-            kc_at = ds.read_antigravity_access_token()
+            kc_at = ds.read_antigravity_access_token(allow_stale=True)
             if kc_at:
                 accs.append(self._access_only_account("antigravity-keychain", kc_at, cid, csec,
                                                       desktop_store=True))
@@ -884,6 +887,50 @@ class AntigravityProvider(Provider):
             return
         logger.info("antigravity: the active account has no quota left; rotating before the turn")
         await self._rotate_account(acc)
+
+    async def revive_accounts(self) -> bool:
+        """Pull the shared slot back into any account a blip retired.
+
+        Measured 2026-10-30 21:14: the tool had just renewed the lease (60 minutes of
+        life in the slot), the card said `ok`, and every turn still answered
+        `no more accounts for ['antigravity']` — the single account had been marked
+        "needs re-auth" during the earlier failure and nothing looked at it again until a
+        process restart. A retired account is not a logout, and a restart is not the
+        price of a network blip.
+        """
+        if not self.accounts:
+            await self.discover_accounts()
+            return bool(self.accounts)
+
+        retired = [a for a in self.accounts if not a.schedulable()]
+        if not retired:
+            return False
+
+        status = ds.antigravity_desktop_token_status()
+        left = status.get("expires_in_seconds")
+        if not status.get("present") or (left is not None and left <= 0):
+            # The slot is stale again — the account that owns it can re-push it. This is
+            # the same seam the verdict uses; here we wait for it, because a turn is
+            # already in flight and failing is the alternative.
+            ok, _detail = await asyncio.to_thread(tool_bridge.refresh_via_tool)
+            if not ok:
+                return False
+            status = ds.antigravity_desktop_token_status()
+
+        token = ds.read_antigravity_access_token()
+        if not token:
+            return False
+
+        revived = 0
+        for acc in retired:
+            acc.cred.access_token = token
+            if status.get("expires_at"):
+                acc.cred.expires_at = status["expires_at"]
+            acc.state = AccountState.ACTIVE
+            acc.fail_count = 0
+            revived += 1
+        logger.info("antigravity: %d 个账号被上游拒过一次，槽里的凭据现在又是好的，已经拉回来", revived)
+        return True
 
     def _note_upstream(self, exc: UpstreamError | None) -> None:
         """Remember what the upstream last said about this account's allowance."""
