@@ -398,6 +398,10 @@ app.include_router(_vault_router, prefix="/api", tags=["vault"])
 from plobi.mind.pending_api import register_memory_pending_api  # noqa: E402
 
 register_memory_pending_api(app)
+# 个人记忆的读口与「忘掉」（设置里那一页的背面）：三份 ledger ＋ 真删并记一笔。
+from plobi.mind.memory_api import register_memory_ledger_api as _register_memory_ledger_api  # noqa: E402
+
+_register_memory_ledger_api(app)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
