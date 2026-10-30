@@ -76,11 +76,12 @@ export function MemoryWriteTool({ args, result }: MemoryWriteProps) {
   const act = async (verb: 'approve' | 'reject') => {
     setBusy(true)
     try {
-      await window.plobiDesktop.api<{ ok?: boolean }>({
+      const answer = await window.plobiDesktop.api<{ ok?: boolean }>({
         method: 'POST',
         path: `/api/memory/pending/${encodeURIComponent(pendingId)}/${verb}`
       })
-      setOutcome(verb === 'approve' ? 'confirmed' : 'dismissed')
+      // 后端说没成（例如同一张纸被点过两次、或已过期）就别回"已记下"。
+      setOutcome(answer.ok === false ? 'error' : verb === 'approve' ? 'confirmed' : 'dismissed')
     } catch {
       setOutcome('error')
     } finally {

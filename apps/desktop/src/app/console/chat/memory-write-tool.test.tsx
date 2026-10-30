@@ -2,7 +2,7 @@
  * 对话里那张记忆小卡片：只有进了待确认层才出；点头/驳回打到同一个口。
  * 文案复用已有键（不新增字符串），所以这里只需证明"显示什么、点了发生什么"。
  */
-import { fireEvent, render, within } from '@testing-library/react'
+import { fireEvent, render, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MemoryWriteTool, stagedMemoryPendingId } from './memory-write-tool'
@@ -44,3 +44,15 @@ describe('MemoryWriteTool', () => {
     expect(box.getByText('已记下')).toBeTruthy()
   })
 })
+
+  it('后端说没成就别回"已记下"（同一张纸被点过两次/已过期）', async () => {
+    ;(window as unknown as { plobiDesktop: { api: unknown } }).plobiDesktop = {
+      api: vi.fn(async () => ({ ok: false }))
+    }
+    const view = render(<MemoryWriteTool args={{ content: 'x' }} result={{ staged: true, pending_id: 'p1' }} />)
+    const box = within(view.container)
+
+    fireEvent.click(box.getByText('点头'))
+
+    await waitFor(() => expect(box.getByText('没成功')).toBeTruthy(), { timeout: 3000 })
+  })
