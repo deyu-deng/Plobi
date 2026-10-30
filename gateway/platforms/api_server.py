@@ -1782,7 +1782,21 @@ class APIServerAdapter(BasePlatformAdapter):
         system_prompt = body.get("system_prompt")
         if system_prompt is not None and not isinstance(system_prompt, str):
             return web.json_response(_openai_error("system_prompt must be a string", code="invalid_system_prompt"), status=400)
-        db.create_session(session_id, "api_server", model=str(model) if model else None, system_prompt=system_prompt)
+        # 身份进会话行（用户 2026-10-30「每个 Agent 要有自己的记忆」那一刀的接线口）：
+        # 桌面开某个 Agent 的会话时把名册 name（或旧的家名）带上来，这里翻成不可变的 name 写进
+        # `sessions.agent_id`。不传就是 L1（空串），与裁定 178 乙案同一约定。
+        try:
+            from plobi.mind.identity import resolve_agent_name
+
+            agent_id = resolve_agent_name(str(body.get("agent") or body.get("agent_id") or ""))
+        except Exception:  # noqa: BLE001 - 名册读不到就当没绑定，别把建会话拖死
+            agent_id = ""
+        db.create_session(
+            session_id, "api_server",
+            model=str(model) if model else None,
+            system_prompt=system_prompt,
+            agent_id=agent_id,
+        )
         title = body.get("title")
         if title is not None:
             try:

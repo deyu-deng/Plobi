@@ -102,11 +102,11 @@ def resolve_agent_slug(slug: Optional[str] = None) -> str:
     # 两种写法都落到同一个 `agents/<name>/MEMORY.md`，不因为换写法就换一份记忆。
     if raw:
         try:
-            from plobi.agents.registry import entry_for_profile
+            from plobi.mind.identity import resolve_agent_name
 
-            entry = entry_for_profile(raw)
-            if entry is not None and getattr(entry, "name", ""):
-                raw = str(entry.name)
+            resolved = resolve_agent_name(raw)
+            if resolved:
+                raw = resolved
         except Exception:  # noqa: BLE001 - 名册读不到就按原样当身份，记忆这条腿不能因此停
             pass
     name = _SLUG_UNSAFE_RE.sub("-", raw.lower()).strip("-")
