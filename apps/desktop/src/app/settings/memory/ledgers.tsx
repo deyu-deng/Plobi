@@ -28,6 +28,8 @@ export interface MemoryScope {
   chars: number
   limit: number
   entries: MemoryEntry[]
+  streak?: number
+  threshold?: number
 }
 
 interface LedgersPayload {
@@ -44,11 +46,13 @@ interface LedgerCopy {
   failed: string
   unavailable: string
   unbound: string
+  streakLabel: (streak: number, threshold: number) => string
 }
 
 const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   en: {
     agentLine: agent => `Agent: ${agent}`,
+    streakLabel: (streak, threshold) => `${streak}/${threshold} nods in a row`,
     unbound: 'Secretary — no agent bound',
     openPending: 'Review pending',
     empty: 'Nothing remembered yet',
@@ -59,6 +63,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   },
   zh: {
     agentLine: agent => `这份 Agent：${agent}`,
+    streakLabel: (streak, threshold) => `连采 ${streak}/${threshold}`,
     unbound: '总秘书（没有绑定到某个 Agent）',
     openPending: '看等你点头的',
     empty: '还没记住什么',
@@ -69,6 +74,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   },
   ja: {
     agentLine: agent => `この Agent：${agent}`,
+    streakLabel: (streak, threshold) => `連続 ${streak}/${threshold}`,
     unbound: '秘書（エージェント未割当）',
     openPending: '承認待ちを見る',
     empty: 'まだ何も覚えていません',
@@ -79,6 +85,7 @@ const COPY: Record<'en' | 'zh' | 'ja' | 'zh-hant', LedgerCopy> = {
   },
   'zh-hant': {
     agentLine: agent => `這份 Agent：${agent}`,
+    streakLabel: (streak, threshold) => `連採 ${streak}/${threshold}`,
     unbound: '總秘書（沒有綁定到某個 Agent）',
     openPending: '看等你點頭的',
     empty: '還沒記住什麼',
@@ -160,8 +167,13 @@ export function MemoryLedgers() {
         <section className="border-border rounded-lg border p-3" key={scope.key}>
           <header className="flex items-baseline justify-between gap-3">
             <h4 className="text-sm font-medium">{scope.label}</h4>
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {scope.chars}/{scope.limit}
+            <span className="text-muted-foreground flex items-center gap-2 text-xs tabular-nums">
+              {scope.key === 'user' ? null : (
+                <span title={m.forgetHint}>{m.streakLabel(scope.streak ?? 0, scope.threshold ?? 8)}</span>
+              )}
+              <span>
+                {scope.chars}/{scope.limit}
+              </span>
             </span>
           </header>
 

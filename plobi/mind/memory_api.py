@@ -82,11 +82,30 @@ def _deletions_path() -> Path:
     return get_memory_dir() / "deletions.jsonl"
 
 
+def _streaks() -> Dict[str, int]:
+    """每个作用域"连续采纳了几次"——屏幕上要能解释"为什么这条还在问我"。"""
+    try:
+        from plobi.mind.proposal import TrustLedger
+
+        ledger = TrustLedger()
+        return {
+            scope: int(ledger.entry(scope, "l0").streak)
+            for scope in _SCOPE_ORDER
+        }
+    except Exception:  # noqa: BLE001 - 账本读不到就都算 0（＝要多问几次，不是放行）
+        return {scope: 0 for scope in _SCOPE_ORDER}
+
+
 def _snapshot(agent: Optional[str]) -> Dict[str, Any]:
     from tools.memory_tool import resolve_agent_slug
 
     slug = (agent or "").strip() or resolve_agent_slug()
     limits = _limits()
+    streaks = _streaks()
+    try:
+        from plobi.mind.proposal import AUTO_THRESHOLD as _threshold
+    except Exception:  # noqa: BLE001
+        _threshold = 8
     scopes = []
     for key in _SCOPE_ORDER:
         label, limit_key = _SCOPES[key]
@@ -100,6 +119,8 @@ def _snapshot(agent: Optional[str]) -> Dict[str, Any]:
             "chars": len(text.strip()),
             "limit": int(limits.get(limit_key, 0) or 0),
             "entries": [{"index": i, "text": e} for i, e in enumerate(entries)],
+            "streak": streaks.get(key, 0),
+            "threshold": int(_threshold),
         })
     return {"agent": slug, "scopes": scopes}
 

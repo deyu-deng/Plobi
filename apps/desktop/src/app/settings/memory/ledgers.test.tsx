@@ -26,7 +26,7 @@ const snapshot = {
   scopes: [
     { chars: 6, entries: [{ index: 0, text: '共用甲' }, { index: 1, text: '共用乙' }], key: 'global', label: '共用纪律', limit: 2200, present: true },
     { chars: 0, entries: [], key: 'user', label: '你的画像', limit: 1375, present: false },
-    { chars: 8, entries: [{ index: 0, text: '周三有实验' }], key: 'memory', label: '这个 Agent 自己的记忆', limit: 2200, present: true }
+    { chars: 8, entries: [{ index: 0, text: '周三有实验' }], key: 'memory', label: '这个 Agent 自己的记忆', limit: 2200, present: true, streak: 3, threshold: 8 }
   ]
 }
 
@@ -45,7 +45,9 @@ describe('MemoryLedgers', () => {
     expect(await screen.findByText('共用甲')).toBeTruthy()
     expect(screen.getByText('共用乙')).toBeTruthy()
     expect(screen.getByText('周三有实验')).toBeTruthy()
-    expect(screen.getByText('6/2200')).toBeTruthy()
+    expect(screen.getByText('6/2200')).toBeTruthy()
+    // 信任账那一格：屏幕上要能解释"为什么这条还在问我"（连采 3/8）
+    expect(screen.getByText('连采 3/8')).toBeTruthy()
     expect(screen.getAllByText('还没记住什么').length).toBe(1) // 只有画像那份是空的
   })
 
