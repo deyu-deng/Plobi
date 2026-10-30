@@ -2,6 +2,7 @@ import { type ToolCallMessagePartProps, useAuiState } from '@assistant-ui/react'
 import { type ComponentProps, type FC, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { AgendaProposeTool } from '@/app/console/chat/agenda-propose-tool'
+import { MemoryWriteTool, stagedMemoryPendingId } from '@/app/console/chat/memory-write-tool'
 import { ClarifyTool } from '@/components/assistant-ui/clarify-tool'
 import { MarkdownText, MarkdownTextContent } from '@/components/assistant-ui/markdown-text'
 import { ToolFallback, ToolGroupSlot } from '@/components/assistant-ui/tool/fallback'
@@ -43,6 +44,12 @@ const ChainToolFallback: FC<ToolCallMessagePartProps> = props => {
   // dispatched here like `clarify`/`image_generate`.
   if (props.toolName === 'agenda_propose') {
     return <AgendaProposeTool {...props} />
+  }
+
+  // 记忆写入进了待确认层才出小卡片（用户 2026-10-30：像请求运行命令那样的交互）。
+  // 直接写成功的照常走默认工具行——不拿卡片去冒充"已经记过了"。
+  if ((props.toolName === 'memory_write' || props.toolName === 'memory') && stagedMemoryPendingId(props.result)) {
+    return <MemoryWriteTool {...props} />
   }
 
   return <ToolFallback {...props} />
