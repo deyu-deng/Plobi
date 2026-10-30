@@ -54,6 +54,13 @@ def supported() -> bool:
     return sys.platform == "win32"
 
 
+def _watchdog():
+    """The watchdog module, imported late: it calls back into the engine."""
+    from agent.egress import watchdog
+
+    return watchdog
+
+
 def _home(home: str | Path | None = None) -> Path:
     from agent.egress.engine import egress_dir
 
@@ -313,6 +320,11 @@ def enable(table: Optional[Table] = None, *, home: str | Path | None = None, app
     # cleared here — leaving it set would keep breaking HTTPS.
     _write_registry(dict(p.registry or {}))
     _notify_wininet()
+    # The machine now depends on the engine being up, and nothing else supervises it
+    # when the desktop is closed (10-29: it went down twice and stayed down).
+    alive, detail = _watchdog().start(home=home)
+    if not alive:
+        log.warning("system proxy: 看门狗没起来（%s）——引擎掉了就只能靠人发现", detail)
     log.warning("system proxy: Plobi 接管了系统代理（PAC %s）——回退：plobi network proxy off", p.pac_path)
     return p
 
@@ -336,6 +348,7 @@ def disable(*, home: str | Path | None = None) -> tuple[bool, str]:
     _write_registry({k: was.get(k) for k in REG_VALUES if k in was} if was else {k: None for k in REG_VALUES})
     _notify_wininet()
     backup.unlink(missing_ok=True)
+    _watchdog().stop(home=home)
     return True, f"已还原接管前的系统代理设置：{was}"
 
 
@@ -370,6 +383,7 @@ def status(table: Optional[Table] = None, *, home: str | Path | None = None) -> 
         "declared": bool(table.system_proxy_enabled),
         "pac_path": str(pac),
         "pac_advertised": bool(str(current.get("AutoConfigURL") or "")),
+        "watchdog": _watchdog().status(home=home),
         "backup_exists": _backup_path(home).exists(),
         "engine_port": port,
     }
@@ -453,6 +467,15 @@ def status_lines(info: dict[str, Any]) -> list[str]:
         "  PAC 挂在系统上吗: %s（挂上 WinINET 的 HTTPS 会全断，所以只留文件不挂）"
         % ("是——建议摘掉" if info.get("pac_advertised") else "没有")
     )
+    dog = info.get("watchdog") or {}
+    if dog.get("alive"):
+        age = dog.get("age_seconds")
+        out.append(
+            "  看门狗: 在（pid %s，%s）"
+            % (dog.get("pid"), "刚看过 %0.0fs 前" % age if isinstance(age, (int, float)) else "还没跑过")
+        )
+    else:
+        out.append("  看门狗: 没有——引擎掉了没人拉（`plobi network proxy on` 会重新起一个）")
     out.append(f"  接管前那份备份: {'在' if info['backup_exists'] else '没有'}（off 靠它原样还原）")
     if info["declared"] and not info["ours"]:
         out.append("  ⚠️ 表里 system_proxy.enabled 是 true，但系统代理不是我们的 —— 跑：plobi network proxy on")

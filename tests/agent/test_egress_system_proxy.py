@@ -34,6 +34,21 @@ def _table(**extra):
     return load_table(config={"network": {"egress": raw}}, force_reload=True)
 
 
+@pytest.fixture(autouse=True)
+def no_real_watchdog(monkeypatch):
+    """接管会起一个脱离子进程；测试里只记账，不真起。"""
+    from agent.egress import watchdog
+
+    calls: dict[str, int] = {"start": 0, "stop": 0}
+    monkeypatch.setattr(watchdog, "start", lambda **kw: (calls.__setitem__("start", calls["start"] + 1),
+                                                         (True, "test: up"))[1])
+    monkeypatch.setattr(watchdog, "stop", lambda **kw: (calls.__setitem__("stop", calls["stop"] + 1),
+                                                        (True, "test: nothing"))[1])
+    monkeypatch.setattr(watchdog, "status", lambda **kw: {"alive": False, "pid": None,
+                                                          "age_seconds": None, "detail": "test"})
+    return calls
+
+
 @pytest.fixture
 def machine(tmp_path, monkeypatch):
     """A fake Windows box: registry in a dict, home in tmp_path, engine carrying."""
@@ -283,4 +298,12 @@ def test_ours_is_read_from_the_static_entry_not_from_memory(machine, tmp_path):
 
     machine["ProxyServer"] = "127.0.0.1:7890"  # 别的程序把系统代理改走了
     assert system_proxy.status(table, home=tmp_path)["ours"] is False
+
+def test_the_takeover_starts_the_watchdog_and_off_stops_it(machine, tmp_path, no_real_watchdog):
+    """10-29：引擎掉了两次都没人拉 ⇒ 接管时起看门狗，交还时停掉它。"""
+    system_proxy.enable(_table(), home=tmp_path)
+    assert no_real_watchdog["start"] == 1, no_real_watchdog
+
+    system_proxy.disable(home=tmp_path)
+    assert no_real_watchdog["stop"] == 1, no_real_watchdog
 
