@@ -95,7 +95,21 @@ def resolve_agent_slug(slug: Optional[str] = None) -> str:
     ``sessions.agent_id``.
     """
     raw = (os.environ.get("PLOBI_AGENT_ID", "") if slug is None else slug) or ""
-    name = _SLUG_UNSAFE_RE.sub("-", raw.strip().lower()).strip("-")
+    raw = raw.strip()
+    # 身份有两种写法：名册 name（不可变的 slug）与 profile 家名（`l2-course-…`）。
+    # 家名是旧口径，profile 退休之后桌面那些会话一个都没绑上（现核：`sessions.agent_id`
+    # 全空、`memory/agents/` 只有 l1 一份）⇒ 这里把家名先翻成名册 name，
+    # 两种写法都落到同一个 `agents/<name>/MEMORY.md`，不因为换写法就换一份记忆。
+    if raw:
+        try:
+            from plobi.agents.registry import entry_for_profile
+
+            entry = entry_for_profile(raw)
+            if entry is not None and getattr(entry, "name", ""):
+                raw = str(entry.name)
+        except Exception:  # noqa: BLE001 - 名册读不到就按原样当身份，记忆这条腿不能因此停
+            pass
+    name = _SLUG_UNSAFE_RE.sub("-", raw.lower()).strip("-")
     return name or L1_SLUG
 
 
