@@ -326,3 +326,30 @@ def test_a_refused_client_points_at_the_tool_that_actually_works(home, monkeypat
         oa.run_bootstrap(print_token=False)
 
     assert "Antigravity Tools" in str(exc.value)
+
+
+def test_the_turn_error_line_is_never_english():
+    """Measured 2026-10-30 15:2x: the screen read
+
+    `no upstream account available: no more accounts for ['antigravity']`
+
+    while the leg itself had an answer in the user's language. The router must carry
+    that answer, translate the machine keys it knows, and never fall back to English.
+    """
+    from quota_hub import main as hub_main
+
+    class _Leg:
+        def __init__(self, live, reason):
+            self._verdict = (live, reason)
+
+        def credential_health(self):
+            return self._verdict
+
+    sentence = "这个节点不放 Google 流量——在「设置 → VPN」换一个节点或分组再试"
+    assert hub_main._no_account_detail(_Leg(False, sentence)) == sentence
+    assert "额度" in hub_main._no_account_detail(_Leg(False, "quota_exhausted"))
+    assert "没登录" in hub_main._no_account_detail(_Leg(False, "not_signed_in"))
+    # Everything local says fine and there is still no schedulable account.
+    detail = hub_main._no_account_detail(_Leg(True, "ok"))
+    assert detail and not detail.isascii(), detail
+    assert hub_main._no_account_detail(None) == ""

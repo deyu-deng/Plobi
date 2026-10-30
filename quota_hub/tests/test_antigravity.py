@@ -712,3 +712,66 @@ def test_a_spent_quota_says_so_instead_of_pretending_to_be_logged_out(monkeypatc
     # And a turn that works clears it again.
     prov.quota_exhausted = False
     assert prov.credential_health() == (True, "ok")
+
+
+def test_classify_renewal_failure_names_the_node_not_the_credential():
+    """2026-10-30 15:22, by hand, with the Settings → VPN node in the environment:
+
+    `[Antigravity CLI Error] Token refresh failed: … oauth2.googleapis.com/token:
+    client error (Connect). 无法连接 Google 授权服务器，请检查代理设置。`
+
+    That is the node refusing Google, not a dead login — and it must not be answered
+    with "open the app and sign in again", because signing in needs the same door.
+    """
+    from quota_hub.providers.apps.antigravity.api import (
+        RENEW_NO_GOOGLE,
+        RENEW_OK,
+        RENEW_RATE_LIMITED,
+        classify_renewal_failure,
+    )
+
+    real = (
+        "[Antigravity CLI Error] Token refresh failed: Refresh failed for client "
+        "[antigravity_enterprise]: Refresh request failed: error sending request for "
+        "url (https://oauth2.googleapis.com/token): client error (Connect). "
+        "无法连接 Google 授权服务器，请检查代理设置。"
+    )
+    assert classify_renewal_failure(real) == RENEW_NO_GOOGLE
+    assert classify_renewal_failure("HTTP 429 Too Many Requests from upstream") == RENEW_RATE_LIMITED
+    assert classify_renewal_failure("退出码 3") == RENEW_OK
+    assert classify_renewal_failure("") == RENEW_OK
+
+
+@pytest.mark.asyncio
+async def test_a_stale_lease_with_a_node_that_refuses_google_says_so(monkeypatch, tmp_path):
+    """The verdict the card and the turn error both read, for that same measurement."""
+    import asyncio
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() - 600, "expires_in_seconds": -600})
+    prov.proxy_reason = "ok"
+
+    class _Proc:
+        returncode = 1
+        stdout = "[Antigravity CLI] 正在检索目标账号..."
+        stderr = "Token refresh failed: error sending request for url (https://oauth2.googleapis.com/token): 无法连接 Google 授权服务器"
+
+    monkeypatch.setattr(tool_bridge, "find_tool", lambda: r"C:\fake\antigravity-tools.exe")
+    monkeypatch.setattr(tool_bridge, "_run_tool", lambda *a, **k: _Proc())
+
+    prov.signed_in()  # fires the renewal
+    deadline = time.time() + 5
+    while time.time() < deadline and prov._verdict is None:
+        await asyncio.sleep(0.02)
+    assert prov._verdict is not None, "the renewal never answered"
+    live, reason = prov.signed_in()
+    assert live is False
+    assert "节点" in reason, reason
+    assert "过期" not in reason, reason
+    assert prov.credential_health()[1] == reason

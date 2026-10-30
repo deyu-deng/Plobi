@@ -59,6 +59,49 @@ from ...base import Account, AccountState, Capabilities, Credential, Provider, U
 
 logger = logging.getLogger("quota_hub.antigravity")
 
+#: 续租约那条路失败时，真正的原因有两样，屏幕上不能都写成「凭据过期」。
+#: 现场 2026-10-30 15:22：把设置里那个节点放进环境里再跑一次它自己的工具，
+#: 它回的是 `Token refresh failed … oauth2.googleapis.com/token: client error (Connect).
+#: 无法连接 Google 授权服务器` —— 那是**节点不放 Google**，不是没登录、也不是过期：
+#: 这种时候把人推去「重新登录一次」是死路，因为登录也要走 Google。
+#: 另一种是工具自己回 429（上游说额度没了）—— 那更不是凭据问题。
+RENEW_OK = "ok"
+RENEW_NO_GOOGLE = "no_google"
+RENEW_RATE_LIMITED = "rate_limited"
+_NO_GOOGLE_WORDS = "这个节点不放 Google 流量——在「设置 → VPN」换一个节点或分组再试"
+_RATE_LIMITED_WORDS = "上游说这个账号被限住了（额度或速率）——等一会儿再发"
+_TRANSPORT_MARKS = ("无法连接", "error sending request", "connect", "tls", "eof", "timed out", "timeout")
+
+
+def classify_renewal_failure(detail: str) -> str:
+    """What the tool's own complaint means: the node, or the quota, or nothing known.
+
+    A node that refuses Google and a spent quota are not credential problems, and the
+    card must not push him to sign in again when signing in needs the same Google door.
+    Anything we cannot read keeps the old answer ("凭据过期"), which is the honest
+    default for a lease we could not bring back.
+    """
+    low = (detail or "").lower()
+    if "429" in low or "rate limit" in low or "too many" in low:
+        return RENEW_RATE_LIMITED
+    if any(mark in low for mark in _TRANSPORT_MARKS):
+        return RENEW_NO_GOOGLE
+    return RENEW_OK
+
+#: When the tool that owns the account cannot reach Google at all, the reason is the
+#: exit node — not a missing login and not a spent credential. Measured 2026-10-30
+#: 15:22 with the node from Settings → VPN in the environment: the tool answered
+#: "Token refresh failed … oauth2.googleapis.com/token: client error (Connect).
+#: 无法连接 Google 授权服务器". Saying "凭据过期" there sends him to log in again, which
+#: cannot work while the node refuses Google.
+_NODE_BLOCKS_GOOGLE = "这个节点不放 Google 流量——在「设置 → VPN」换一个节点或分组再试"
+_TRANSPORT_MARKS = ("无法连接", "error sending request", "connect", "tls", "eof", "timed out", "timeout")
+
+
+def _renewal_is_a_network_failure(detail: str) -> bool:
+    low = (detail or "").lower()
+    return any(mark in low for mark in _TRANSPORT_MARKS)
+
 # Antigravity's own client constants (from the reference proxy / gemini-cli).
 DEFAULT_HOST_DAILY = "https://daily-cloudcode-pa.googleapis.com"
 DEFAULT_HOST_PROD = "https://cloudcode-pa.googleapis.com"
@@ -191,6 +234,10 @@ class AntigravityProvider(Provider):
         # neither a login problem nor a node problem, and it must not be reported as
         # either.
         self.quota_exhausted = False
+        # Why the last renewal did not land (one of RENEW_*). Measured 2026-10-30 15:22:
+        # the node was up and the account was ours to renew, and the tool simply could
+        # not reach Google — that answer belongs to the node, not to the login.
+        self.renew_state = RENEW_OK
         import httpx as _httpx
         if self.proxy and isinstance(self.http, _httpx.AsyncClient):
             self.http = _httpx.AsyncClient(proxy=self.proxy, timeout=_httpx.Timeout(120.0, connect=15.0))
@@ -549,13 +596,25 @@ class AntigravityProvider(Provider):
             if ok:
                 # Read the slot back: the tool said it re-pushed the account, and the
                 # slot is the only thing that says whether that landed.
+                self.renew_state = RENEW_OK
                 st = ds.antigravity_desktop_token_status()
                 left = st.get("expires_in_seconds")
                 fresh = bool(st.get("present")) and (left is None or left > 0)
                 verdict = (True, "ok") if fresh else (False, "credential_expired")
             else:
                 # We asked and it did not work — now the `+` is the honest answer.
-                verdict = (False, "credential_expired")
+                # But *which* honest answer: measured 2026-10-30 15:22, the tool's own
+                # complaint was `无法连接 Google 授权服务器` while the node from Settings
+                # → VPN was up and passing everything else. Saying "凭据过期" for that
+                # sends him to sign in again — and signing in needs the same Google door
+                # the node is refusing.
+                self.renew_state = classify_renewal_failure(detail)
+                if self.renew_state == RENEW_NO_GOOGLE:
+                    verdict = (False, _NO_GOOGLE_WORDS)
+                elif self.renew_state == RENEW_RATE_LIMITED:
+                    verdict = (False, _RATE_LIMITED_WORDS)
+                else:
+                    verdict = (False, "credential_expired")
                 logger.warning("antigravity: the credential could not be renewed: %s", detail)
             self._verdict = verdict
             self._verdict_at = time.time()

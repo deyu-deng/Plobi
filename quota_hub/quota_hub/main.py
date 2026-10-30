@@ -345,8 +345,11 @@ def _no_account_detail(prov) -> str:
     except Exception:  # noqa: BLE001 — a probe crash must not mask the original 503
         return ""
     if live:
-        return ""
-    return _NO_ACCOUNT_WORDS.get(str(reason), "")
+        # Everything local says the leg is fine and it still has no schedulable account
+        # (a stale lease the owner could not re-push, an account the upstream just
+        # retired). That is not English's job to explain.
+        return "这条腿现在没有一个能服务回合的账号——通常是它的登录租约刚过期，稍后再发"
+    return _NO_ACCOUNT_WORDS.get(str(reason), "") or (str(reason) if reason and not str(reason).isascii() else "")
 
 
 @app.get("/v1/models")
