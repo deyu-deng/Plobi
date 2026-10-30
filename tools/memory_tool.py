@@ -109,8 +109,49 @@ def resolve_agent_slug(slug: Optional[str] = None) -> str:
                 raw = resolved
         except Exception:  # noqa: BLE001 - 名册读不到就按原样当身份，记忆这条腿不能因此停
             pass
+    else:
+        # 没有 PLOBI_AGENT_ID（桌面正路就是这样）：按"这条会话归谁"认——
+        # 会话行上的 agent_id 优先，其次拿它的 cwd 去名册里按目录归属认。
+        # 这一步让"每个 Agent 有自己的记忆"在**不依赖前端改动**的前提下成立。
+        raw = _agent_slug_from_current_session()
     name = _SLUG_UNSAFE_RE.sub("-", raw.lower()).strip("-")
     return name or L1_SLUG
+
+
+def _agent_slug_from_current_session() -> str:
+    """从**当前会话**反推身份：`sessions.agent_id` 优先，否则按会话 cwd 认目录归属。
+
+    只读一次 DB，并且只在"没有显式身份"的进程里发生（桌面正路）；查不到就回空串，
+    调用方继续落到 L1——与裁定 178 乙案的约定一致（空 = L1）。
+    """
+    try:
+        from gateway.session_context import get_session_env
+
+        sid = (get_session_env("PLOBI_SESSION_ID") or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+    if not sid:
+        return ""
+    try:
+        # 与 `plobi/agents/registry.py:3403` 同一处取法：库路径每次现算，不缓存全局实例。
+        from plobi_constants import get_plobi_state_home
+        from plobi_state import SessionDB
+
+        db = SessionDB(db_path=get_plobi_state_home() / "state.db", read_only=True)
+        row = db.get_session(sid)
+    except Exception:  # noqa: BLE001 - DB 读不到就当没绑定
+        return ""
+    if not row:
+        return ""
+    try:
+        from plobi.mind.identity import resolve_agent_for_path, resolve_agent_name
+
+        bound = resolve_agent_name(str(row.get("agent_id") or ""))
+        if bound:
+            return bound
+        return resolve_agent_for_path(str(row.get("cwd") or ""))
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def is_l1_slug(slug: str) -> bool:

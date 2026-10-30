@@ -1728,6 +1728,35 @@ def _agent_id_for_profile_home(profile_home) -> str:
     return ""
 
 
+def _agent_id_for_session(session: dict) -> str:
+    """这条会话归谁：家名（旧口径）→ 显式 ``agent`` → 目录归属（现核的主路）。
+
+    profile 退休之后 ``profile_home`` 是空的，桌面也没有把名册 name 单独塞进请求
+    ⇒ 身份一直落成 L1（现核 ``sessions.agent_id`` 全空、``memory/agents/`` 只有 l1）。
+    最后一跳用"会话所在目录"认人：进某个 Agent 时桌面已经把它的文件夹种成 cwd，
+    课程行本来就有 ``project_path``。认不出仍是空串（= L1），不猜。
+    """
+    explicit = str(session.get("agent") or session.get("agent_id") or "").strip()
+    if explicit:
+        try:
+            from plobi.mind.identity import resolve_agent_name
+
+            resolved = resolve_agent_name(explicit)
+            if resolved:
+                return resolved
+        except Exception:
+            pass
+    by_home = _agent_id_for_profile_home(session.get("profile_home"))
+    if by_home:
+        return by_home
+    try:
+        from plobi.mind.identity import resolve_agent_for_path
+
+        return resolve_agent_for_path(str(session.get("cwd") or ""))
+    except Exception:
+        return ""
+
+
 def _ensure_session_db_row(session: dict) -> None:
     """Idempotently persist the session's DB row on first real activity.
 
@@ -1816,7 +1845,7 @@ def _ensure_session_db_row(session: dict) -> None:
             model_config=model_config or None,
             parent_session_id=parent_session_id,
             cwd=_session_cwd(session) if session.get("explicit_cwd") else None,
-            agent_id=_agent_id_for_profile_home(session.get("profile_home")),
+            agent_id=_agent_id_for_session(session),
         )
     except Exception:
         logger.debug("failed to persist desktop session row", exc_info=True)

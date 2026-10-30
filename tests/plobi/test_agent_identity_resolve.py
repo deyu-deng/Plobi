@@ -35,3 +35,24 @@ def test_profile_home_roster_name_and_unknown(monkeypatch):
     assert I.resolve_agent_name("AURA") == "", "大小写不同不是同一格：不许猜"
     assert I.resolve_agent_name("") == ""
     assert I.resolve_agent_name("完全不存在的名字") == ""
+
+
+def test_directory_binding_picks_the_longest_matching_folder(monkeypatch):
+    """目录认人：最长前缀胜；认不出回空串（不许拿"像是它"当身份）。"""
+    from types import SimpleNamespace
+
+    import plobi.agents.registry as R
+    from plobi.mind import identity as I
+
+    rows = [
+        SimpleNamespace(name="course-a", project_path=r"D:\Cloud\Courses\2026-秋-甲", project_paths=[]),
+        SimpleNamespace(name="course-a-lab", project_path=r"D:\Cloud\Courses\2026-秋-甲\实验", project_paths=[]),
+        SimpleNamespace(name="project-x", project_path="", project_paths=[r"D:\Projects\X"]),
+    ]
+    monkeypatch.setattr(R, "load_registry", lambda *a, **k: SimpleNamespace(entries=lambda: rows))
+
+    assert I.resolve_agent_for_path(r"D:\Cloud\Courses\2026-秋-甲") == "course-a"
+    assert I.resolve_agent_for_path(r"D:\Cloud\Courses\2026-秋-甲\实验\ch01") == "course-a-lab"
+    assert I.resolve_agent_for_path(r"d:/projects/x/sub") == "project-x", "路径大小写与斜杠方向不该影响归属"
+    assert I.resolve_agent_for_path(r"D:\Cloud\Courses\别的课") == ""
+    assert I.resolve_agent_for_path("") == ""
