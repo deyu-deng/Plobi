@@ -22,6 +22,7 @@ import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS, SEC
 import { fieldCopyForSchemaKey } from './field-copy'
 import { enumOptionsFor, getNested, prettyName, setNested } from './helpers'
 import { MemoryConnect } from './memory/connect'
+import { MemoryLedgers } from './memory/ledgers'
 import { ModelSettings, ModelSettingsSkeleton } from './model-settings'
 import { EmptyState, ListRow, LoadingState, SettingsContent } from './primitives'
 import { ProviderConfigPanel } from './provider-config-panel'
@@ -451,8 +452,14 @@ export function ConfigSettings({
             <div className="scroll-mt-6 rounded-lg" id={`setting-field-${key}`} key={key}>
               <ConfigField
                 descriptionExtra={
-                  key === 'memory.provider' && Boolean(getNested(config, key)) ? (
-                    <MemoryConnect provider={String(getNested(config, key))} />
+                  key === 'memory.provider' ? (
+                    <>
+                      {Boolean(getNested(config, key)) ? (
+                        <MemoryConnect provider={String(getNested(config, key))} />
+                      ) : null}
+                      {/* 个人记忆那一页（用户 2026-10-30 定：入口放这里、只做个人记忆） */}
+                      <MemoryLedgers />
+                    </>
                   ) : undefined
                 }
                 enumOptions={
