@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
+import { useI18n } from '@/i18n'
 import { AlertTriangle } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
@@ -63,6 +65,124 @@ export function ErrorState({ children, className, description, icon, title }: Er
       </div>
 
       {children && <div className="grid gap-2">{children}</div>}
+    </div>
+  )
+}
+
+export interface ErrorCardAction {
+  label: string
+  onClick: () => void
+}
+
+export interface ErrorCardProps {
+  /** 严重度只分两档：`error` 会拦事，`warning` 只是提醒。 */
+  severity?: 'error' | 'warning'
+  /** 一行说清"哪件事没成"，不写机制。 */
+  title: string
+  /** 原始详情（后端那句话/堆栈）。**默认收起**，可复制——它是给修它的人看的。 */
+  detail?: null | string
+  /** **只有一个**动作。两个动作等于没动作。 */
+  action?: ErrorCardAction
+  onDismiss?: () => void
+  className?: string
+}
+
+/**
+ * 错误卡（v2）：严重度 + 一句话 + **一个**动作 + 可复制的详情。
+ *
+ * 设计口径（用户 10-22/10-30 的两句）：屏幕只写"这是什么"，不写"机制怎么运作"；
+ * 机器词不上屏。所以标题永远是人话，原始错误只进「详情」那一块，并且能一键复制——
+ * 修它的人要的是原文，不是又一句转述。
+ *
+ * 与既有三件的关系：`ErrorBanner` 仍是"行内一条带背景的小条"（详情本来就在界面上），
+ * `ErrorState` 是整面居中的空态；这一张是**带动作与可折叠原文的卡片**，用于"出错了，能做什么"。
+ */
+export function ErrorCard({
+  action,
+  className,
+  detail,
+  onDismiss,
+  severity = 'error',
+  title
+}: ErrorCardProps) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const trimmed = (detail ?? '').trim()
+  const tone = severity === 'warning' ? 'text-[color:var(--dl-status-warn,#b5811f)]' : 'text-destructive'
+
+  async function handleCopy() {
+    if (!trimmed) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(trimmed)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // 复制不了就把详情展开让人手选——静默失败比报错更糟。
+      setOpen(true)
+    }
+  }
+
+  return (
+    <div
+      className={cn('rounded-lg border px-3 py-2.5 text-[length:var(--conversation-caption-font-size)]', className)}
+      data-severity={severity}
+      data-slot="error-card"
+      role={severity === 'warning' ? 'status' : 'alert'}
+      style={{
+        borderColor: severity === 'warning' ? 'color-mix(in srgb, var(--dl-status-warn, #b5811f) 35%, transparent)' : undefined,
+        background:
+          severity === 'warning'
+            ? 'color-mix(in srgb, var(--dl-status-warn, #b5811f) 8%, transparent)'
+            : 'color-mix(in srgb, var(--destructive, #b91c1c) 8%, transparent)'
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <AlertTriangle className={cn('mt-0.5 size-3.5 shrink-0', tone)} />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-foreground">{title}</div>
+          {trimmed ? (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <button
+                className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary) underline-offset-2 hover:underline"
+                onClick={() => setOpen(value => !value)}
+                type="button"
+              >
+                {open ? t.common.hideDetails : t.common.errorDetails}
+              </button>
+              <button
+                className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary) underline-offset-2 hover:underline"
+                onClick={() => void handleCopy()}
+                type="button"
+              >
+                {copied ? t.common.detailsCopied : t.common.copyDetails}
+              </button>
+            </div>
+          ) : null}
+          {open && trimmed ? (
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-black/5 p-2 font-mono text-[0.7rem] leading-4 text-(--ui-text-secondary) dark:bg-white/5">
+              {trimmed}
+            </pre>
+          ) : null}
+          {action ? (
+            <button
+              className="mt-2 rounded-md border px-2.5 py-1 text-[length:var(--conversation-caption-font-size)] font-medium hover:bg-black/5 dark:hover:bg-white/10"
+              onClick={action.onClick}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ) : null}
+        </div>
+        {onDismiss ? (
+          <button aria-label="dismiss" className="shrink-0 text-(--ui-text-tertiary) hover:text-foreground" onClick={onDismiss} type="button">
+            ✕
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }

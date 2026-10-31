@@ -6,6 +6,7 @@ import { $consoleAgents, refreshConsoleAgents } from '@/app/console/store/agents
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { ErrorCard } from '@/components/ui/error-state'
 import {
   Dialog,
   DialogContent,
@@ -631,10 +632,12 @@ function CronJobDetail({
         />
 
         {job.last_error ? (
-          <div className="flex items-start gap-1.5 rounded bg-destructive/10 p-2 text-[0.7rem] text-destructive">
-            <AlertTriangle className="mt-px size-3 shrink-0" />
-            <span className="min-w-0 break-words">{job.last_error}</span>
-          </div>
+          <ErrorCard
+            action={{ label: c.triggerNow, onClick: onTrigger }}
+            detail={job.last_error}
+            severity="error"
+            title={c.lastErrorTitle}
+          />
         ) : null}
 
         <CronJobOutputLine jobId={job.id} />

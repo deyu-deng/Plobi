@@ -65,6 +65,10 @@ export interface Translations {
     continue: string
     copied: string
     copy: string
+    errorDetails: string
+    hideDetails: string
+    copyDetails: string
+    detailsCopied: string
     copyFailed: string
     delete: string
     docs: string
@@ -1819,6 +1823,7 @@ export interface Translations {
     pauseTitle: string
     triggerNow: string
     stopRun: string
+    lastErrorTitle: string
     stopRequested: string
     failedStop: string
     missedPolicyLabel: string
