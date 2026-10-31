@@ -209,6 +209,30 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
 
   const scopedAgent = useStore($consoleAgents).find(agent => agent.id === scopedAgentId)
 
+  // Agent 页要能区分两种「关」：全局关掉的（锁住，开不了）与本 Agent 关掉的（可点开）。
+  // 全局那一份只在 Agent 模式才查——全局页本身就是它，不必再查一遍。
+  const { data: globalSkillsForScope } = useQuery({
+    queryKey: ['capabilities-global-skills'],
+    queryFn: getSkillsGlobal,
+    enabled: Boolean(scopedAgentId),
+    staleTime: 0
+  })
+  const { data: globalToolsetsForScope } = useQuery({
+    queryKey: ['capabilities-global-toolsets'],
+    queryFn: getToolsetsGlobal,
+    enabled: Boolean(scopedAgentId),
+    staleTime: 0
+  })
+
+  const globallyOffSkills = useMemo(
+    () => new Set((globalSkillsForScope ?? []).filter(row => !row.enabled).map(row => row.name)),
+    [globalSkillsForScope]
+  )
+  const globallyOffToolsets = useMemo(
+    () => new Set((globalToolsetsForScope ?? []).filter(row => !row.enabled).map(row => row.name)),
+    [globalToolsetsForScope]
+  )
+
   // 名字不变，实现按作用域分叉——下面 500 行调用点一行都不用改。
   const getSkills = useCallback(
     () => (scopedAgentId ? getSkillsForAgent(scopedAgentId) : getSkillsGlobal()),
@@ -655,6 +679,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                   busy={bulkBusy}
                   enabled={skill.enabled}
                   key={skill.name}
+                  locked={Boolean(scopedAgentId) && globallyOffSkills.has(skill.name)}
                   meta={usageOf(skill) > 0 ? `×${compactNumber(usageOf(skill))}` : undefined}
                   onSelect={() => setSelectedSkill(skill.name)}
                   onToggle={enabled => void handleToggleSkill(skill, enabled)}
@@ -697,6 +722,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                   busy={bulkBusy}
                   enabled={toolset.enabled}
                   key={toolset.name}
+                  locked={Boolean(scopedAgentId) && globallyOffToolsets.has(toolset.name)}
                   meta={
                     calls === null ? (
                       <CountSkeleton />
@@ -804,7 +830,11 @@ function AgentMcpTab({ agent }: { agent: RosterAgent }) {
             key={name}
           >
             <span className="min-w-0 flex-1 truncate">{name}</span>
-            <Switch checked={checked} disabled={busy === name} onCheckedChange={next => void toggle(name, next)} />
+            <Switch
+              checked={checked}
+              disabled={busy === name || globalOff}
+              onCheckedChange={next => void toggle(name, next)}
+            />
           </div>
         )
       })}

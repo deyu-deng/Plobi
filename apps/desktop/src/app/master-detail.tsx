@@ -331,6 +331,12 @@ interface CapRowProps {
   active: boolean
   busy?: boolean
   enabled: boolean
+  /** 全局已经关掉的那一项：Agent 页只能再关，不能替全局开。
+   *
+   *  10-31（WP-CAPACITY-AGENT-KEY 的收尾）：以前这一态和「本 Agent 关掉的」
+   *  在界面上长得一样，用户点了没反应，看起来像开关坏了。锁住 + 降透明度
+   *  至少让「你开不了」这件事看得见。 */
+  locked?: boolean
   meta?: ReactNode
   onSelect: () => void
   onToggle: (checked: boolean) => void
@@ -348,6 +354,7 @@ export function CapRow({
   active,
   busy,
   enabled,
+  locked,
   meta,
   onSelect,
   onToggle,
@@ -393,8 +400,8 @@ export function CapRow({
       <Switch
         aria-label={toggleLabel}
         checked={enabled}
-        className={cn('mr-1.5 shrink-0 cursor-pointer', !enabled && 'opacity-60')}
-        disabled={busy}
+        className={cn('mr-1.5 shrink-0', locked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer', !enabled && 'opacity-60')}
+        disabled={busy || locked}
         onCheckedChange={onToggle}
         size="xs"
         title={toggleLabel}
