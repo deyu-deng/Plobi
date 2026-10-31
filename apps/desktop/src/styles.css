@@ -2064,9 +2064,9 @@ text-* variant utilities. */ .btn-arc {
 }
 
 /* 右栏里的 aside 不再自己描边/内高光；顶栏留白也由卡本身让过（preview 那格是内联样式，只能 !important） */
-.shell-cards [data-pane-id='preview'] > aside,
-.shell-cards [data-pane-id='agenda-timeline'] > aside,
-.shell-cards [data-pane-id='file-browser'] > aside {
+.shell-cards [data-pane-id='preview'] aside,
+.shell-cards [data-pane-id='agenda-timeline'] aside,
+.shell-cards [data-pane-id='file-browser'] aside {
   border-width: 0;
   border-radius: calc(var(--dl-shell-radius) - 1px);
   box-shadow: none;

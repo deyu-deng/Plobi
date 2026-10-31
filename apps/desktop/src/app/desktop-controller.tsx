@@ -1855,7 +1855,13 @@ export function DesktopController() {
       side={railSide}
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
-      {filesWorkbench}
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-shell-card-drop={railDrop.over ? '' : undefined}
+        {...railDrop.dropProps}
+      >
+        {filesWorkbench}
+      </div>
     </Pane>
   )
 
@@ -1909,7 +1915,13 @@ export function DesktopController() {
       side={railSide}
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
-      {agendaWorkbench}
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-shell-card-drop={railDrop.over ? '' : undefined}
+        {...railDrop.dropProps}
+      >
+        {agendaWorkbench}
+      </div>
     </Pane>
   )
 

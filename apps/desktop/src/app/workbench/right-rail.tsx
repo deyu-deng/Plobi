@@ -116,7 +116,8 @@ export function RightRailWorkbench({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {hasTabs || onCollapse ? (
+      {/* 有拖动把手时也必须画抬头：没开标签页时它就是这张卡唯一的拖拽入口 */}
+      {hasTabs || onCollapse || dragHandleProps ? (
         <div
           className={cn(
             'flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1',
