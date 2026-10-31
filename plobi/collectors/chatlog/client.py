@@ -110,11 +110,14 @@ class ChatMessage:
 
     @property
     def is_empty(self) -> bool:
-        """"这条能不能当一句话读"。**故意不看 `media`**：媒体那一条腿今天还没接进落点，
-        把只有图没有字的消息放进现有那条链，会得到一批空正文的行——那是假"采到了"。
-        接媒体那一只口的时候，这一格与它的调用方一起改（见 `tasks/wechat-media-task.md` §1 第 5 条）。
+        """这条能不能当"一句话"或"一个件"读。
+
+        10-31 之前这里**故意只看正文**：媒体那一条腿还没接进落点，放进只有图没有字的消息
+        只会得到一批空正文的行（那是假"采到了"）。落点接上了（`WP-WECHAT-MEDIA` 那一笔：
+        带件的条目进 `context.media`，只有媒体没正文的那条靠标题说出它是什么），
+        所以这一格改成"正文和媒体都没有才算空"。
         """
-        return not self.content.strip()
+        return not self.content.strip() and not self.media
 
 
 @dataclass(frozen=True)

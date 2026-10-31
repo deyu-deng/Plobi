@@ -31,6 +31,7 @@ from .client import ChatlogClient, ChatlogUnavailable, ChatMessage
 from .client import pool_columns as client_pool_columns
 from .config import CollectorConfig
 from .confirm import Candidate, Confirmer, ConfirmContext, HeuristicConfirmer
+from .media import MAX_MEDIA_BYTES, MAX_MEDIA_PER_ROUND, stage_media
 from .state import SeenStore, TalkerStore
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ logger = logging.getLogger(__name__)
 # Two events count as "the same thing rescheduled" when they fall on the same
 # day and share this much of their keyword set.
 _MATCH_KEYWORDS = ("组会", "例会", "会议", "开会", "答辩", "面试", "课", "培训", "宣讲", "聚餐")
+
+#: 一条只有图没有字的媒体消息，池里那一行靠这个标题说出它是什么（`WP-WECHAT-MEDIA`：
+#: 空正文不等于"没采到"，但也不许读成"采到一条空消息"——形状照钉钉那一家）。
+_MEDIA_LABEL = {"image": "图片", "video": "视频", "voice": "语音", "file": "文件"}
 
 # The review-complete kick and POST /api/collect/sweep sweep this many days
 # (today included); the routine watchdog sweep stays at 1.
@@ -57,12 +62,27 @@ class IngestReport:
     # 格子留着不删——它是"这一轮为什么只算普通消息"的读数，别的信源还可能用得上。
     filtered_out: int = 0
     unresolved: int = 0
+    # 媒体那一腿的账，**四个"没有"分开记**（`WP-WECHAT-MEDIA` §1 第 4 条）：合并成一句
+    # "跳过 N 件"就读不出该修哪一个——索引滞后要和侧车坏了分开，放弃要和取回分开。
+    media_saved: int = 0
+    media_absent: int = 0
+    media_failed: int = 0
+    media_malformed: int = 0
+    media_dropped: int = 0
+    media_bytes_staged: int = 0
+    # 带件但这一轮没全取回的消息数——它们是"下一轮还要重试"的那一批（没记进 seen）。
+    media_pending_messages: int = 0
     created: list[str] = field(default_factory=list)
     updated: list[str] = field(default_factory=list)
 
     @property
     def pending_ids(self) -> list[str]:
         return [*self.created, *self.updated]
+
+    @property
+    def media_asked(self) -> int:
+        """这一轮已经问侧车要过几件——用来扣掉一轮的件数上限。"""
+        return self.media_saved + self.media_absent + self.media_failed + self.media_malformed
 
     def as_dict(self) -> dict:
         return {
@@ -72,9 +92,24 @@ class IngestReport:
             "skipped_excluded": self.skipped_excluded,
             "filtered_out": self.filtered_out,
             "unresolved": self.unresolved,
+            "media_saved": self.media_saved,
+            "media_absent": self.media_absent,
+            "media_failed": self.media_failed,
+            "media_malformed": self.media_malformed,
+            "media_dropped": self.media_dropped,
+            "media_bytes_staged": self.media_bytes_staged,
+            "media_pending_messages": self.media_pending_messages,
             "created": list(self.created),
             "updated": list(self.updated),
         }
+
+
+def _media_title(message: ChatMessage) -> str:
+    """只有媒体、没有正文的那一条：标题说得出它是什么。有正文的照旧空着（正文就是标题的来源）。"""
+    if message.content.strip() or not message.media:
+        return ""
+    labels = list(dict.fromkeys(_MEDIA_LABEL.get(str(item.get("kind")), "附件") for item in message.media))
+    return f"（{'、'.join(labels)}）"
 
 
 def _topic_tokens(text: str) -> set[str]:
@@ -155,6 +190,11 @@ class ChatlogPipeline:
             "updated": len(report.updated),
             "unchanged": report.skipped_duplicate,
             "pending": report.pending_ids,
+            # 媒体那一腿的三个数要跟着这一轮的读数走（裁 91：跑完 ≠ 观测过）。
+            # `absent` 与 `pending` 分开：前者是"侧车今天还不知道"，后者是"还欠着件、没记 seen 的那些条"。
+            "media_saved": report.media_saved,
+            "media_absent": report.media_absent,
+            "media_pending_messages": report.media_pending_messages,
         }
 
     def _heal_and_reprobe(self, health: dict) -> tuple[dict, str]:
@@ -301,6 +341,16 @@ class ChatlogPipeline:
         if candidate is not None and candidate.start_at:
             evidence["event_at"] = candidate.start_at
 
+        # 媒体那一腿（`WP-WECHAT-MEDIA` 的落点那一笔）：件是这条消息自己带的键认出来的
+        # （`client.media_of`），字节由侧车解好、我们只搬进 Plobi 自己的家。取不回来**分两种**，
+        # 读数不许并成一种：`absent` = 侧车今天还不知道这一件（微信没 checkpoint），下一轮重试；
+        # `failed` = 这一趟有问题。两种都不许伪装成"这条没媒体"。
+        saved_media, pending_media = self._stage_media(message, report)
+        if saved_media:
+            evidence["media"] = saved_media
+        if pending_media:
+            evidence["media_pending"] = pending_media
+
         if candidate is not None:
             target_id = self._find_change_target(candidate) if candidate.is_change else None
             if target_id:
@@ -324,7 +374,7 @@ class ChatlogPipeline:
                     source=self.source_id,
                     external_id=message.msg_id,
                     kind=(candidate.kind if candidate is not None else "") or "message",
-                    title=(candidate.title if candidate is not None else "") or "",
+                    title=(candidate.title if candidate is not None else "") or _media_title(message),
                     body=message.content or "",
                     context=evidence,
                     # 形状由池那一侧唯一的归一点管（`store.normalize_time`：aware→本机 naive、
@@ -343,7 +393,45 @@ class ChatlogPipeline:
         # 池里已有这条且没变：不再报——与旧形状那句 early return 同义。
         # 池里有了才落 seen——判据 6 的方向不变（写成功但没记上=重跑幂等，
         # 记上了但没写=永久丢，所以只有这个方向是安全的）。
+        if pending_media:
+            # 还欠着件就没记 seen：下一轮这条会被再扫到、再问一次侧车（微信没 checkpoint 的那些）。
+            # 重试的边界就是引擎那个按天回看的窗口——我们不扩它；窗口过了仍没取回，池里那一行留着
+            # `media_pending`，说的是"带过件、没取回"，不是"这条没媒体"。
+            report.media_pending_messages += 1
+            return
         self.seen.mark_seen(message.msg_id)
+
+    def _stage_media(self, message: ChatMessage, report: IngestReport) -> tuple[list[dict], int]:
+        """取回这条消息带的媒体件，返回（落好的清单, 还欠几件）。
+
+        一轮的上限扣在 `report` 上而不是每条一个上限：一轮几百条、每条几件，
+        按条给上限会把侧车问爆。到顶之后**一次都不再问**（封顶要保护那次往返，不只是磁盘）。
+        """
+        if not message.media:
+            return [], 0
+
+        left = MAX_MEDIA_PER_ROUND - report.media_asked
+        bytes_left = MAX_MEDIA_BYTES - report.media_bytes_staged
+        asked = list(message.media)[:max(left, 0)]
+        gave_up = len(message.media) - len(asked)
+        if gave_up:
+            report.media_dropped += gave_up
+        if not asked:
+            return [], gave_up
+        if bytes_left <= 0:
+            # 一轮的字节上限到了：剩下的**一次都不再问**，件数照实记成放弃。
+            report.media_dropped += len(asked)
+            return [], len(asked)
+
+        staged = stage_media(self.client, asked, budget=max(bytes_left, 0))
+        report.media_saved += len(staged.saved)
+        report.media_bytes_staged += sum(int(item.get("size_bytes") or 0) for item in staged.saved)
+        report.media_absent += staged.absent
+        report.media_failed += staged.failed
+        report.media_malformed += staged.malformed
+        report.media_dropped += staged.dropped
+
+        return staged.saved, staged.absent + staged.failed + gave_up
 
     def _find_change_target(self, candidate: Candidate) -> Optional[str]:
         """Best-effort: which existing event is this message rescheduling?

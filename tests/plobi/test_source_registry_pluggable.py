@@ -367,7 +367,10 @@ class TestDiscoveryCannotFailSilently:
 class TestRegisteredSourcesDeclareTheirRealShape:
     def test_wechat_and_timetable_declare_their_real_shape(self) -> None:
         assert registry.require("wechat", "history_backfill") is True
-        assert registry.require("wechat", "supports_media") is False
+        # 这一格 10-31 从 `False` 翻成 `True`，依据是真数据不是代码写完：三天窗口一轮落进池
+        # 12 件（1.88 MB），`context.media` 带着读得回来的路径。以前那句 `False` 说的是"采集层
+        # 零媒体处理"——那句话连同它的前提一起过期了（`WP-WECHAT-MEDIA` 落点那一笔）。
+        assert registry.require("wechat", "supports_media") is True
         assert registry.require("timetable", "incremental_since") is False
         # 这一格以前钉的是"谁都不许声称没出现就当取消"（那时公共层确实执行不了它）。
         # 裁定 191 把它换成了三条**可核**的话：其余三条各有明确读数；教务那一条现在是 `True`，

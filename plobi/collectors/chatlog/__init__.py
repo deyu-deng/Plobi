@@ -102,7 +102,10 @@ SPEC = SourceSpec(
     capabilities={
         "history_backfill": True,       # client.fetch(talker, day) 按天回溯
         "incremental_since": True,      # day 游标 + SeenStore
-        "supports_media": False,        # 采集层代码零媒体处理
+        # 10-31 起是真话：一条三天窗口（1679 条）里认出 146 件、落进池 12 件（1.88 MB），
+        # 池里那一行的 `context.media` 带着读得回来的路径；只有图没有字的那条标题是「（图片）」。
+        # 没落成的那些不是"坏了"而是"侧车今天还不知道"（微信没 checkpoint）——`media_absent` 那一格说这件事。
+        "supports_media": True,
         "requires_manual_setup": True,  # 构建 + 数据密钥 + 微信登录
         "authoritative_replace": False,  # ingest 契约：本轮缺的不删
     },

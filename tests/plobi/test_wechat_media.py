@@ -13,12 +13,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from plobi.agenda.service import AgendaService
 from plobi.collectors.chatlog import media as M
+from plobi.collectors.chatlog.client import ChatMessage
 from plobi.collectors.chatlog.client import ChatlogUnavailable
 from plobi.collectors.chatlog.client import MediaNotFound
 from plobi.collectors.chatlog.client import media_of as media_of
 from plobi.collectors.chatlog.client import normalize_message
-
+from plobi.collectors.chatlog.config import CollectorConfig
+from plobi.collectors.chatlog.confirm import HeuristicConfirmer
+from plobi.collectors.chatlog.pipeline import ChatlogPipeline, IngestReport
+from plobi.collectors.chatlog.state import SeenStore, TalkerStore
+from plobi.pool import store
 
 class TestTheKeysComeFromContents:
     def test_an_image_message_gives_its_md5(self) -> None:
@@ -69,8 +75,10 @@ class TestTheKeysComeFromContents:
 
         assert message is not None
         assert message.media[0]["key"] == "988e2154899728094f58b0ffd516c1c3"
-        # 只有图没有字的一条，在现有那条链上仍然是"不能当一句话读"——媒体那一腿没接进落点之前不许放行。
-        assert message.is_empty is True
+        # 落点接上之后（`TestTheLandingIntoPoolRows`），只有图没有字的一条**不再算空**：
+        # 它在池里有标题和 `context.media`，读得出它是什么。以前这一格钉的是"媒体那条腿没接上，
+        # 不许放行进链"——那句话连同它的前提一起过期了。
+        assert message.is_empty is False
 
 
 class FakeSidecar:
@@ -212,3 +220,86 @@ class TestTheEngineSaysNo:
         with pytest.raises(C.ChatlogUnavailable) as got:
             C.ChatlogClient("http://127.0.0.1:5030").media_bytes("image", "9" * 32)
         assert not isinstance(got.value, C.MediaNotFound)
+
+
+class TestTheLandingIntoPoolRows:
+    """落点那一笔（`WP-WECHAT-MEDIA` 的第①件）：媒体件跟着那条消息进池。
+
+    钉四件容易跑偏的：取回的件要带**读得回来的路径**；只有图没有字的那条不许落成一行空消息；
+    侧车还不知道的那些**不许伪装成"这条没媒体"**（要留得下"还欠几件"、并把这条留给下一轮）；
+    一轮的上限到顶之后要**一次都不再问**侧车——封顶保护的是那次往返，不只是磁盘。
+    """
+
+    MD5 = "988e2154899728094f58b0ffd516c1c3"
+
+    def item(self, key: str) -> dict:
+        return {"kind": "image", "key": key, "key_name": "md5", "path": "", "name": ""}
+
+    def message(self, content: str, *, msg_id: str = "cl_9", media: list[dict] | None = None) -> ChatMessage:
+        return ChatMessage(
+            msg_id=msg_id, talker="班级群", sender="甲", sent_at="2026-10-30T12:00:00",
+            content=content, media=tuple(media if media is not None else [self.item(self.MD5)]),
+        )
+
+    def wired(self, tmp_path, client, monkeypatch) -> ChatlogPipeline:
+        monkeypatch.setattr(store, "path", lambda: tmp_path / "pool.db")
+        monkeypatch.setenv("PLOBI_WECHAT_MEDIA_DIR", str(tmp_path / "media-home"))
+        return ChatlogPipeline(
+            config=CollectorConfig(mode="whitelist", talkers=["班级群"], enabled=True),
+            client=client,
+            service=AgendaService(tmp_path / "agenda.db"),
+            seen=SeenStore(tmp_path / "seen.db"),
+            talkers=TalkerStore(tmp_path / "talkers.db"),
+            confirmer=HeuristicConfirmer(),
+        )
+
+    def test_a_message_with_an_image_lands_the_file_it_was_asked_for(self, tmp_path, monkeypatch) -> None:
+        payload = b"jpeg-bytes" * 4
+        pipeline = self.wired(tmp_path, FakeSidecar({self.MD5: (payload, "image/jpeg")}), monkeypatch)
+        report = IngestReport()
+
+        pipeline.handle_message(self.message("看下这张图"), report)
+
+        [row] = store.query(source="wechat")
+        assert row["body"] == "看下这张图"
+        [item] = row["context"]["media"]
+        assert item["kind"] == "image" and item["size_bytes"] == len(payload)
+        assert Path(item["saved_to"]).is_file()
+        assert report.media_saved == 1 and report.media_bytes_staged == len(payload)
+
+    def test_an_image_without_any_text_lands_as_itself_not_as_an_empty_row(self, tmp_path, monkeypatch) -> None:
+        pipeline = self.wired(tmp_path, FakeSidecar({self.MD5: (b"x" * 12, "image/png")}), monkeypatch)
+        report = IngestReport()
+
+        pipeline.handle_message(self.message(""), report)
+
+        [row] = store.query(source="wechat")
+        assert row["title"] == "（图片）"
+        assert row["body"] == ""
+        assert row["context"]["media"][0]["saved_to"].endswith(".png")
+
+    def test_media_the_sidecar_does_not_know_yet_is_left_for_the_next_round(self, tmp_path, monkeypatch) -> None:
+        pipeline = self.wired(tmp_path, FakeSidecar({}, absent=(self.MD5,)), monkeypatch)
+        report = IngestReport()
+
+        pipeline.handle_message(self.message("看图"), report)
+
+        [row] = store.query(source="wechat")
+        # 「这一件它还不知道」不许写成「这条没媒体」：那一格要说欠几件，行要留着重试的口子。
+        assert "media" not in row["context"]
+        assert row["context"]["media_pending"] == 1
+        assert report.media_absent == 1 and report.media_pending_messages == 1
+        assert not pipeline.seen.already_seen("cl_9")
+
+    def test_the_round_cap_stops_asking_the_sidecar_entirely(self, tmp_path, monkeypatch) -> None:
+        keys = [f"{n:032x}" for n in range(M.MAX_MEDIA_PER_ROUND + 3)]
+        sidecar = FakeSidecar({key: (b"x" * 8, "image/jpeg") for key in keys})
+        pipeline = self.wired(tmp_path, sidecar, monkeypatch)
+        report = IngestReport()
+
+        for index, key in enumerate(keys):
+            pipeline.handle_message(self.message("图", msg_id=f"m{index}", media=[self.item(key)]), report)
+
+        assert len(sidecar.asked) == M.MAX_MEDIA_PER_ROUND
+        assert report.media_saved == M.MAX_MEDIA_PER_ROUND
+        assert report.media_dropped == len(keys) - M.MAX_MEDIA_PER_ROUND
