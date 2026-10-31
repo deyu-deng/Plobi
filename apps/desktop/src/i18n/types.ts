@@ -259,6 +259,8 @@ export interface Translations {
     swapSidebarSides: string
     swapSidebarSidesTitle: string
     hideRightSidebar: string
+    maximizeCard: string
+    restoreCard: string
     showRightSidebar: string
     muteHaptics: string
     unmuteHaptics: string
@@ -2848,6 +2850,7 @@ export interface Translations {
     quotaFallbackMessage: (from: string, to: string, reason: string) => string
     quotaReason: {
       credential_expired: string
+      quota_exhausted: string
       no_desktop_credential: string
       no_tools: string
       not_offered: string
@@ -2958,12 +2961,6 @@ export interface Translations {
       copied: string
       openExternal: string
       archiveEmpty: string
-      highlight: string
-      note: string
-      saveMarks: string
-      restoreOriginal: string
-      marksSaved: string
-      notePlaceholder: string
       highlight: string
       note: string
       saveMarks: string
