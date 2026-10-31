@@ -1944,19 +1944,28 @@ text-* variant utilities. */ .btn-arc {
    卡间接缝 1px（用户选的「贴死」），圆角 12px。整组由偏好 `layout.shellCards` 控制。
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  --dl-shell-margin: 8px;
+  --dl-shell-margin: 14px;
   --dl-shell-gap: 1px;
   --dl-shell-radius: 12px;
-  /* 渐变取自 Qoder 实测：暖黄 → 浅绿 → 浅蓝 */
   --dl-shell-canvas: linear-gradient(150deg, #eaecc7 0%, #e4ead1 42%, #d9e2e3 100%);
 }
 
 .shell-cards {
+  /* 卡片模式的三条口径（2026-10-30 实测差距之后改的）：
+     ① 底必须真的露出来——8px 实际只渲出 ~3px，加到 14px；
+     ② 底不能是"主题把强调色混进去的蓝白"（量到 #F4F7FF），钉成中性白/黑；
+     ③ 左栏不上卡 ⇒ 连它内部用的 --ui-bg-chrome 一起置空，否则它自己刷一层底。 */
+  --ui-bg-primary: var(--dl-surface-base, #fff);
+  --ui-chat-surface-background: var(--dl-surface-base, #fff);
+  --sidebar: transparent;
+  --ui-bg-chrome: transparent;
+  --ui-stroke-quaternary: var(--dl-stroke-hairline, #e5e5e5);
+  --ui-stroke-tertiary: var(--dl-stroke-hairline, #e5e5e5);
   padding: var(--dl-shell-margin);
-  background-color: var(--ui-bg-primary);
+  background-color: var(--dl-surface-canvas, #fff);
+  box-sizing: border-box;
 }
 
-/* 只有亮色主题铺那块暖色玻璃；暗色主题保持平底（避免整屏发白） */
 :root:not(.dark) .shell-cards {
   background-image: var(--theme-asset-bg, var(--dl-shell-canvas));
   background-position: center;
@@ -1967,24 +1976,37 @@ text-* variant utilities. */ .btn-arc {
   gap: var(--dl-shell-gap);
 }
 
-/* 左栏：不上卡 */
+/* 左栏：不上卡，直接坐在玻璃底上（连内部的底色一起让开） */
 .shell-cards [data-pane-id][data-pane-side='left'] {
+  --ui-bg-primary: transparent;
+  --ui-bg-secondary: transparent;
+  --ui-bg-chrome: transparent;
   background: transparent;
   border-radius: 0;
   box-shadow: none;
 }
 
-/* 对话与右栏：白卡 */
+/* 对话与右栏：白卡。用设计令牌里的中性白/发丝线，不跟主题的混色走 */
 .shell-cards [data-pane-main='true'],
 .shell-cards [data-pane-id][data-pane-side='right'] {
-  background: var(--ui-bg-primary);
-  border: 1px solid var(--ui-stroke-quaternary, var(--ui-stroke-tertiary));
+  --ui-bg-primary: var(--dl-surface-base, #fff);
+  --ui-chat-surface-background: var(--dl-surface-base, #fff);
+  background: var(--dl-surface-base, #fff);
+  border: 1px solid var(--dl-stroke-hairline, #e5e5e5);
   border-radius: var(--dl-shell-radius);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px -12px rgba(16, 24, 40, 0.18);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
   overflow: hidden;
+}
+
+.dark .shell-cards {
+  --ui-bg-primary: #161616;
+  --ui-chat-surface-background: #161616;
+  background-color: #101010;
 }
 
 .dark .shell-cards [data-pane-main='true'],
 .dark .shell-cards [data-pane-id][data-pane-side='right'] {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 10px 28px -14px rgba(0, 0, 0, 0.55);
+  background: #161616;
+  border-color: #2a2a2a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
 }
