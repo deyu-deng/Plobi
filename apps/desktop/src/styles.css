@@ -1972,7 +1972,10 @@ text-* variant utilities. */ .btn-arc {
   --ui-bg-chrome: transparent;
   --ui-stroke-quaternary: var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
   --ui-stroke-tertiary: var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
+  /* 顶栏是浮层（absolute），主区从 y=0 开始 ⇒ 卡片必须自己把顶栏那一条让出来。
+     用户 10-30 截图里卡片压住了标题栏，就是漏了这一句。 */
   padding: var(--dl-shell-margin);
+  padding-top: calc(var(--titlebar-height, 28px) + 6px);
   background-color: var(--theme-background-seed, var(--dl-surface-canvas));
   box-sizing: border-box;
 }
@@ -2014,4 +2017,28 @@ text-* variant utilities. */ .btn-arc {
 .dark .shell-cards [data-pane-main='true'],
 .dark .shell-cards [data-pane-id][data-pane-side='right'] {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+}
+
+/* 卡片模式：底栏不再是"一条横贯全宽的条"，收成右下角一枚胶囊（图标化，信息仍在）。
+   用户 10-30：Qoder 没有底栏；底栏的东西应做成矢量图标放到角落。 */
+.shell-cards [data-slot='statusbar'] {
+  position: fixed;
+  right: var(--dl-shell-margin);
+  bottom: var(--dl-shell-margin);
+  left: auto;
+  width: auto;
+  height: auto;
+  max-width: calc(100vw - 2 * var(--dl-shell-margin));
+  padding: 2px 8px;
+  gap: 2px;
+  border: 1px solid var(--theme-border, var(--dl-stroke-hairline, #e5e5e5));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-shell-card, var(--theme-card-seed, #fff)) 92%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 20px -12px rgba(16, 24, 40, .2);
+  z-index: 5;
+}
+
+.shell-cards [data-slot='statusbar'] > div {
+  gap: 0;
 }
