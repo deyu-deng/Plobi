@@ -8,11 +8,10 @@ import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
-import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
-import { toggleKeybindPanel } from '@/store/keybinds'
 import {
   $fileBrowserOpen,
   $panesFlipped,
+  $shellCards,
   $sidebarOpen,
   toggleFileBrowserOpen,
   togglePanesFlipped,
@@ -21,6 +20,7 @@ import {
 
 import { appViewForPath, isOverlayView } from '../routes'
 
+import { useSystemTools } from './system-tools'
 import { titlebarButtonClass } from './titlebar'
 
 export interface TitlebarTool {
@@ -61,22 +61,11 @@ export function TitlebarControls({
   const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const hapticsMuted = useStore($hapticsMuted)
+  const systemTools = useSystemTools(onOpenSettings)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const sidebarOpen = useStore($sidebarOpen)
   const panesFlipped = useStore($panesFlipped)
-
-  const toggleHaptics = () => {
-    if (!hapticsMuted) {
-      triggerHaptic('tap')
-    }
-
-    toggleHapticsMuted()
-
-    if (hapticsMuted) {
-      window.requestAnimationFrame(() => triggerHaptic('success'))
-    }
-  }
+  const shellCards = useStore($shellCards)
 
   // Each titlebar button controls the pane physically on its side, so a flip
   // swaps which pane each one toggles. Default: sessions left, file browser
@@ -122,34 +111,10 @@ export function TitlebarControls({
     }
   }
 
-  // Static system tools — always pinned to the screen's right edge.
-  const systemTools: TitlebarTool[] = [
-    {
-      active: hapticsMuted,
-      icon: <Codicon name={hapticsMuted ? 'mute' : 'unmute'} />,
-      id: 'haptics',
-      label: hapticsMuted ? t.titlebar.unmuteHaptics : t.titlebar.muteHaptics,
-      onSelect: toggleHaptics
-    },
-    {
-      icon: <Codicon name="keyboard" />,
-      id: 'keybinds',
-      label: t.titlebar.openKeybinds,
-      onSelect: () => {
-        triggerHaptic('open')
-        toggleKeybindPanel()
-      }
-    },
-    {
-      icon: <Codicon name="settings-gear" />,
-      id: 'settings',
-      label: t.titlebar.openSettings,
-      onSelect: () => {
-        triggerHaptic('open')
-        onOpenSettings()
-      }
-    }
-  ]
+  // 卡片模式里这三枚在左下图标条（用户 10-30），顶栏只留左栏开关、换边与右侧栏开关。
+  const showSystemTools = !shellCards
+  // 右栏收起后「重开」那一枚继续留在顶栏：收起按钮已经跟着卡片走了，否则关了就回不来。
+  const showRightRailTool = !shellCards || !rightEdge.open
 
   // While a full-screen overlay (settings, command center, …) is open it should
   // visually own the window. These control clusters are `fixed` at a higher
@@ -196,16 +161,19 @@ export function TitlebarControls({
         </div>
       )}
 
-      <div
-        aria-label={t.shell.appControls}
-        className="fixed right-(--titlebar-tools-right) top-(--titlebar-controls-top) z-70 flex flex-row items-center justify-end gap-x-1 pointer-events-auto select-none [-webkit-app-region:no-drag]"
-      >
-        {visibleSystemToolsBeforeSettings.map(tool => (
-          <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
-        ))}
-        {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
-        <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />
-      </div>
+      {(showSystemTools || showRightRailTool) && (
+        <div
+          aria-label={t.shell.appControls}
+          className="fixed right-(--titlebar-tools-right) top-(--titlebar-controls-top) z-70 flex flex-row items-center justify-end gap-x-1 pointer-events-auto select-none [-webkit-app-region:no-drag]"
+        >
+          {showSystemTools &&
+            visibleSystemToolsBeforeSettings.map(tool => (
+              <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
+            ))}
+          {showSystemTools && settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
+          {showRightRailTool && <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />}
+        </div>
+      )}
     </>
   )
 }

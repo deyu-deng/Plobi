@@ -1825,6 +1825,9 @@ export function DesktopController() {
             ...fileTabContents
           }}
           labels={t.workbench}
+          collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
+          collapseLabel={t.titlebar.hideRightSidebar}
+          onCollapse={() => setFileBrowserOpen(false)}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
           onTabOpen={handleWorkbenchTabOpen}
@@ -1874,6 +1877,9 @@ export function DesktopController() {
             terminal: isL1Workbench ? <TerminalPaneChrome /> : null
           }}
           labels={t.workbench}
+          collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
+          collapseLabel={t.titlebar.hideRightSidebar}
+          onCollapse={() => togglePane('agenda-timeline')}
           onTabChange={handleWorkbenchTabChange}
           onTabClose={handleWorkbenchTabClose}
           onTabOpen={handleWorkbenchTabOpen}

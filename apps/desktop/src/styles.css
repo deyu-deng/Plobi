@@ -1994,57 +1994,106 @@ text-* variant utilities. */ .btn-arc {
   gap: var(--dl-shell-gap);
 }
 
-/* 左栏：不上卡，直接坐在画布上；连它内部用的 chrome 底一起让开 */
-.shell-cards [data-pane-id][data-pane-side='left'] {
+/* 顶栏右端给原生窗口按钮留的那块底：卡片模式里顶栏是玻璃底座，别在上面补一块卡的白色 */
+.shell-cards [data-native-overlay] {
+  background: transparent;
+  border-bottom-width: 0;
+}
+
+/* 左栏：不上卡，直接坐在画布上。
+   它画自己的底的不是 --ui-bg-primary，而是 Sidebar 根上的
+   `bg-(--ui-sidebar-surface-background)` 与 `border-(--sidebar-edge-border)`
+   —— 只清 --ui-bg-* 时它就继续像一张浮在底座上的卡（10-31 用户截图复现）。
+   按 id 选而不是 side='left'：左右互换后它仍要坐在底上，那一侧的右栏才是卡。
+   hover-reveal 的浮层形态例外：那时浮层必须有自己的底，否则内容悬在卡上。 */
+.shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal]) {
   --ui-bg-primary: transparent;
   --ui-bg-secondary: transparent;
   --ui-bg-chrome: transparent;
+  --ui-sidebar-surface-background: transparent;
   background: transparent;
   border-radius: 0;
   box-shadow: none;
 }
 
-/* 只有对话是卡；右栏回到玻璃底座上（与顶栏同底，不再是卡） */
-.shell-cards [data-pane-main='true'] {
+/* 只撤栏根自己那一条右边框（栏与卡之间由卡的 1px 边说话）——
+   别把 --sidebar-edge-border 整个清零：Agent 树里那几条缩进竖线用的也是它。 */
+.shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal]) > [data-slot='sidebar'] {
+  border-color: transparent;
+}
+
+/* 主区已整体让出顶栏，栏内第一组那 28px 的顶栏留白就成了第二份 → 收掉。
+   底部再空出一条给左下图标条（那条是 fixed 的，不占栏内文档流）。 */
+.shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal]) [data-sidebar='content'] {
+  padding-bottom: 38px;
+}
+
+.shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal])
+  [data-sidebar='content']
+  > [data-sidebar='group']:first-child {
+  padding-top: 0.375rem;
+}
+
+/* 对话与右栏是**同一张白卡**（用户 10-31：「右栏应该是和对话窗口一样的白色卡片，一模一样」）。
+   右栏的 aside 自己还会画 sidebar 底、描边和内高光，卡片里再出现第二条线不行，下面一并让开。 */
+.shell-cards [data-pane-main='true'],
+.shell-cards [data-pane-id='preview'],
+.shell-cards [data-pane-id='agenda-timeline'],
+.shell-cards [data-pane-id='file-browser'] {
   --ui-bg-primary: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   --ui-chat-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  --ui-sidebar-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  --ui-editor-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   border: 1px solid var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
   border-radius: var(--dl-shell-radius);
   /* Chromium 139+；老内核忽略这一行时退回普通圆角，不会坏 */
   corner-shape: squircle;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
+}
+
+/* 对话卡没有拖动条，直接裁；右栏三格有 resize sash（半个把手探在框外），
+   卡面不裁、只让里面的 aside 按圆角裁——否则拖动条会被切成 2px。 */
+.shell-cards [data-pane-main='true'] {
   overflow: hidden;
 }
 
-/* 右栏：和左栏一样让开自己的底，直接坐在画布上 */
-.shell-cards [data-pane-id][data-pane-side='right'] {
-  --ui-bg-primary: transparent;
-  --ui-bg-secondary: transparent;
-  --ui-bg-chrome: transparent;
-  background: transparent;
-  border-radius: 0;
+/* 右栏里的 aside 不再自己描边/内高光；顶栏留白也由卡本身让过（preview 那格是内联样式，只能 !important） */
+.shell-cards [data-pane-id='preview'] > aside,
+.shell-cards [data-pane-id='agenda-timeline'] > aside,
+.shell-cards [data-pane-id='file-browser'] > aside {
+  border-width: 0;
+  border-radius: calc(var(--dl-shell-radius) - 1px);
   box-shadow: none;
+  overflow: hidden;
+  padding-top: 0 !important;
 }
 
 /* 暗色：几何不动，只把卡的阴影加深 */
-.dark .shell-cards [data-pane-main='true'] {
+.dark .shell-cards [data-pane-main='true'],
+.dark .shell-cards [data-pane-id='preview'],
+.dark .shell-cards [data-pane-id='agenda-timeline'],
+.dark .shell-cards [data-pane-id='file-browser'] {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
 }
 
-/* 卡片模式：底栏不再是横贯全宽的条，也不再是胶囊——**图标直接坐在玻璃底座上**
+/* 卡片模式：底栏不再是横贯全宽的条，也不是胶囊——**图标直接坐在玻璃底座上**
    （用户 10-30：「不要做成一个胶囊，像 Qoder 一样直接放在玻璃底座上」）。
-   右半组只留矢量图标；左半组保留头像+名字。 */
-.shell-cards [data-slot='statusbar'] {
+   10-31 用户再定：这一排跟着**左栏宽度**走，容不下的收进末尾「⋯」（StatusbarDock
+   自己量宽度、按优先级截断），不再横着铺到对话卡上。
+   锚在左栏：宽度取 AppShell 写进来的 --dock-rail-width；左栏收起/换边时退回按内容宽。 */
+[data-slot='statusbar'][data-dock] {
   position: fixed;
-  left: var(--dl-shell-margin);
-  bottom: 2px;
+  left: calc(var(--dl-shell-margin) + 4px);
+  bottom: calc(var(--dl-shell-margin) + 2px);
   right: auto;
-  width: auto;
-  height: auto;
-  max-width: min(560px, calc(100vw - 2 * var(--dl-shell-margin)));
-  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   gap: 2px;
+  height: 26px;
+  padding: 0 2px;
+  max-width: none;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2053,25 +2102,46 @@ text-* variant utilities. */ .btn-arc {
   overflow: hidden;
 }
 
-.shell-cards [data-slot='statusbar'] > div {
-  gap: 2px;
+[data-slot='statusbar'][data-dock][data-dock-anchor='rail'] {
+  width: calc(var(--dock-rail-width, 186px) - 10px);
 }
 
-/* 右半组：只留图标（左半组仍保留"头像 + 名字"） */
-.shell-cards [data-slot='statusbar'] > div:last-child span.truncate {
-  display: none;
+[data-slot='statusbar'][data-dock][data-dock-anchor='edge'] {
+  width: max-content;
 }
 
-.shell-cards [data-slot='statusbar'] button,
-.shell-cards [data-slot='statusbar'] a {
-  padding-left: 4px;
-  padding-right: 4px;
+[data-slot='statusbar'][data-dock] [data-dock-item] {
+  display: inline-flex;
+  width: 24px;
+  height: 22px;
+  min-width: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--theme-foreground, var(--dl-text-secondary, #525252));
   opacity: 0.72;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease;
 }
 
-.shell-cards [data-slot='statusbar'] button:hover,
-.shell-cards [data-slot='statusbar'] a:hover {
+[data-slot='statusbar'][data-dock] [data-dock-item]:hover {
+  background: var(--chrome-action-hover);
+  color: var(--theme-foreground, inherit);
   opacity: 1;
+}
+
+/* 文字类那几格（计时、上下文占比）没有图标可换：留短字，别给固定宽 */
+[data-slot='statusbar'][data-dock] [data-dock-item][data-variant='text'] {
+  width: auto;
+  min-width: auto;
+  padding: 0 4px;
+  font-size: 0.66rem;
+  opacity: 0.6;
 }
 

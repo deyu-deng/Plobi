@@ -2948,6 +2948,7 @@ export const zh: Translations = {
       subagents: count => `${count} 个子代理`,
       failed: count => `${count} 个失败`,
       running: count => `${count} 个运行中`,
+      more: '更多图标',
       cron: '排程',
       openCron: '打开排程任务',
       agenda: '日程',

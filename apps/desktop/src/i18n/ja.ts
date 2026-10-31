@@ -2675,6 +2675,7 @@ export const ja = defineLocale({
       subagents: count => `${count} サブエージェント`,
       failed: count => `${count} 失敗`,
       running: count => `${count} 実行中`,
+      more: 'その他のアイコン',
       cron: 'Cron',
       openCron: 'Cron ジョブを開く',
       agenda: '予定',

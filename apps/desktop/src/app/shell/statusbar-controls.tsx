@@ -1,9 +1,13 @@
-import { type ComponentProps, type ReactNode, useState } from 'react'
+import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { Codicon } from '@/components/ui/codicon'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tip, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+
+import { dockFitCount, dockItemWidth } from './dock-layout'
 
 // Shared chrome styling for interactive statusbar items (button / link / menu
 // trigger). The 'text' variant intentionally omits hover/transition/disabled.
@@ -51,12 +55,33 @@ export type StatusbarItemSide = 'left' | 'right'
 export type SetStatusbarItemGroup = (id: string, items: readonly StatusbarItem[], side?: StatusbarItemSide) => void
 
 interface StatusbarControlsProps extends ComponentProps<'footer'> {
+  /**
+   * 卡片模式的左下图标条（用户 10-31）：只留图标、整排跟着左栏宽度走。
+   * `dockTools` 是设置/快捷键/触感反馈那三枚——它们只在这条里出现，顶栏不再画。
+   */
+  dock?: boolean
+  /** `rail` = 宽度跟左栏走；`edge` = 左栏收起/换边时按内容宽。 */
+  dockAnchor?: 'rail' | 'edge'
+  dockTools?: readonly StatusbarItem[]
   leftItems?: readonly StatusbarItem[]
   items?: readonly StatusbarItem[]
 }
 
-export function StatusbarControls({ className, leftItems = [], items = [], ...props }: StatusbarControlsProps) {
+export function StatusbarControls({
+  className,
+  dock = false,
+  dockAnchor = 'edge',
+  dockTools = [],
+  leftItems = [],
+  items = [],
+  ...props
+}: StatusbarControlsProps) {
   const navigate = useNavigate()
+  const allItems = useMemo(() => [...dockTools, ...leftItems, ...items], [dockTools, items, leftItems])
+
+  if (dock) {
+    return <StatusbarDock anchor={dockAnchor} className={className} items={allItems} {...props} />
+  }
 
   return (
     <footer
@@ -89,14 +114,158 @@ export function StatusbarControls({ className, leftItems = [], items = [], ...pr
   )
 }
 
-function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: ReturnType<typeof useNavigate> }) {
+/**
+ * 卡片模式的左下图标条：一格一个图标，排到左栏右沿为止；放不下的收进「⋯」。
+ * 宽度是量出来的（ResizeObserver），不是写死的格数——左栏可拖宽（186–300）。
+ */
+function StatusbarDock({
+  anchor,
+  className,
+  items,
+  ...props
+}: { anchor: 'rail' | 'edge'; items: readonly StatusbarItem[] } & ComponentProps<'footer'>) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const dockRef = useRef<HTMLElement | null>(null)
+  const visible = useMemo(() => items.filter(item => !item.hidden), [items])
+  const [fitCount, setFitCount] = useState(visible.length)
+
+  useEffect(() => {
+    const element = dockRef.current
+
+    if (!element) {
+      return
+    }
+
+    const measure = () => {
+      const available = element.clientWidth - 4
+      setFitCount(dockFitCount(visible.map(dockItemWidth), available))
+    }
+
+    measure()
+
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [visible])
+
+  const shown = visible.slice(0, Math.min(fitCount, visible.length))
+  const overflow = visible.slice(shown.length)
+
+  return (
+    <footer
+      className={cn('[-webkit-app-region:no-drag]', className)}
+      data-dock=""
+      data-dock-anchor={anchor}
+      data-slot="statusbar"
+      ref={dockRef}
+      {...props}
+    >
+      {shown.map(item => (
+        <StatusbarItemView dock item={item} key={`dock:${item.id}`} navigate={navigate} />
+      ))}
+      {overflow.length > 0 ? <DockOverflow items={overflow} label={t.shell.statusbar.more} /> : null}
+    </footer>
+  )
+}
+
+/** 放不下的那几格：先给清单（图标 + 话），带面板的那几格点开就直接是那个面板。 */
+function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label: string }) {
+  const navigate = useNavigate()
+  const [panelId, setPanelId] = useState<string | null>(null)
+  const panel = items.find(item => item.id === panelId)
+
+  return (
+    <DropdownMenu
+      onOpenChange={open => {
+        if (!open) {
+          setPanelId(null)
+        }
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label={label}
+          data-dock-item=""
+          data-variant="action"
+          title={label}
+          type="button"
+        >
+          <Codicon name="ellipsis" size="0.875rem" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className={cn('w-56', panel && 'p-0')}
+        side="top"
+        sideOffset={6}
+      >
+        {panel ? (
+          typeof panel.menuContent === 'function' ? panel.menuContent(() => setPanelId(null)) : panel.menuContent
+        ) : (
+          items.map(item => (
+            <DropdownMenuItem
+              className="gap-2 text-foreground focus:bg-accent [&_svg]:size-4"
+              key={item.id}
+              onSelect={event => {
+                if (item.menuContent) {
+                  // 面板留在同一张下拉里，别把它关掉
+                  event.preventDefault()
+                  setPanelId(item.id)
+
+                  return
+                }
+
+                if (item.to) {
+                  navigate(item.to)
+                }
+
+                if (item.href) {
+                  window.open(item.href, '_blank', 'noreferrer')
+                }
+
+                item.onSelect?.({ shiftKey: false })
+              }}
+            >
+              {item.icon}
+              <span className="truncate">
+                {typeof item.label === 'string' ? item.label : (item.title ?? item.id)}
+              </span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function StatusbarItemView({
+  dock = false,
+  item,
+  navigate
+}: {
+  dock?: boolean
+  item: StatusbarItem
+  navigate: ReturnType<typeof useNavigate>
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
+
+  // 图标条里没有文字可读，tooltip 退到 label 那一句；a11y 也用它当名字。
+  const tip = item.title ?? (typeof item.label === 'string' ? item.label : undefined)
+  const dockLabel = dock ? (tip ?? item.id) : undefined
+  const dockAttrs = {
+    'data-dock-item': dock ? '' : undefined,
+    'data-variant': dock ? (item.variant ?? 'action') : undefined
+  }
 
   const content = (
     <>
       {item.icon}
-      {item.label && <span className="truncate">{item.label}</span>}
-      {item.detail && <span className="truncate text-muted-foreground/80">{item.detail}</span>}
+      {(item.label && (!dock || item.variant === 'text')) ? <span className="truncate">{item.label}</span> : null}
+      {(item.detail && (!dock || item.variant === 'text')) ? (
+        <span className="truncate text-muted-foreground/80">{item.detail}</span>
+      ) : null}
     </>
   )
 
@@ -108,7 +277,14 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
     // way profile-switcher.tsx stacks Popover/ContextMenu/Tooltip triggers.
     const trigger = (
       <DropdownMenuTrigger asChild>
-        <button className={cn(STATUSBAR_ACTION_CLASS, item.className)} disabled={item.disabled} type="button">
+        <button
+          aria-label={dockLabel}
+          className={cn(STATUSBAR_ACTION_CLASS, item.className)}
+          disabled={item.disabled}
+          title={dock ? tip : undefined}
+          type="button"
+          {...dockAttrs}
+        >
           {content}
         </button>
       </DropdownMenuTrigger>
@@ -182,6 +358,7 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
             'inline-flex h-full items-center gap-1 px-1.5 text-[0.6875rem] text-(--ui-text-tertiary)',
             item.className
           )}
+          {...dockAttrs}
         >
           {content}
         </div>
@@ -191,8 +368,16 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
 
   if (item.href || item.variant === 'link') {
     return (
-      <Tip label={item.title}>
-        <a className={cn(STATUSBAR_ACTION_CLASS, item.className)} href={item.href} rel="noreferrer" target="_blank">
+      <Tip label={tip}>
+        <a
+          aria-label={dockLabel}
+          className={cn(STATUSBAR_ACTION_CLASS, item.className)}
+          href={item.href}
+          rel="noreferrer"
+          target="_blank"
+          title={dock ? tip : undefined}
+          {...dockAttrs}
+        >
           {content}
         </a>
       </Tip>
@@ -200,8 +385,9 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
   }
 
   return (
-    <Tip label={item.title}>
+    <Tip label={tip}>
       <button
+        aria-label={dockLabel}
         className={cn(STATUSBAR_ACTION_CLASS, item.className)}
         disabled={item.disabled}
         onClick={event => {
@@ -211,7 +397,9 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
 
           item.onSelect?.({ shiftKey: event.shiftKey })
         }}
+        title={dock ? tip : undefined}
         type="button"
+        {...dockAttrs}
       >
         {content}
       </button>

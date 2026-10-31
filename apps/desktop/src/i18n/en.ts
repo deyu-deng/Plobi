@@ -2795,6 +2795,7 @@ export const en: Translations = {
       subagents: count => `${count} subagent${count === 1 ? '' : 's'}`,
       failed: count => `${count} failed`,
       running: count => `${count} running`,
+      more: 'More icons',
       cron: 'Cron',
       openCron: 'Open cron jobs',
       agenda: 'Agenda',

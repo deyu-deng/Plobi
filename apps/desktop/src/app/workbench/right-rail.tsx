@@ -65,8 +65,11 @@ function EmptyAction({
 export function RightRailWorkbench({
   activeTab,
   availableTabs,
+  collapseIcon = 'layout-sidebar-right',
+  collapseLabel,
   contents,
   labels,
+  onCollapse,
   onTabChange,
   onTabClose,
   onTabOpen,
@@ -75,8 +78,12 @@ export function RightRailWorkbench({
 }: {
   activeTab: RightRailTabId | null
   availableTabs: RightRailTabDef[]
+  /** 收起这一栏的箭头方向：左右互换时朝另一边（用户 10-30：收起按钮跟卡片放一起）。 */
+  collapseIcon?: string
+  collapseLabel?: string
   contents: Partial<Record<string, ReactNode>>
   labels: RightRailWorkbenchLabels
+  onCollapse?: () => void
   onTabChange: (tab: RightRailTabId) => void
   onTabClose: (tab: RightRailTabId) => void
   onTabOpen: (tab: RightRailTabId) => void
@@ -106,11 +113,12 @@ export function RightRailWorkbench({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {hasTabs ? (
+      {hasTabs || onCollapse ? (
         <div
           className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1"
           ref={menuRef}
         >
+          {hasTabs ? (
           <div
             aria-label={labels.aria}
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -162,10 +170,13 @@ export function RightRailWorkbench({
               )
             })}
           </div>
+          ) : (
+            <div className="min-w-0 flex-1" />
+          )}
 
           {trailing}
 
-          {hasActions ? (
+          {hasActions && hasTabs ? (
             <div className="relative shrink-0">
               <button
                 aria-expanded={menuOpen}
@@ -201,6 +212,18 @@ export function RightRailWorkbench({
                 </div>
               ) : null}
             </div>
+          ) : null}
+
+          {onCollapse ? (
+            <button
+              aria-label={collapseLabel}
+              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={onCollapse}
+              title={collapseLabel}
+              type="button"
+            >
+              <Codicon name={collapseIcon} size="0.85rem" />
+            </button>
           ) : null}
         </div>
       ) : null}

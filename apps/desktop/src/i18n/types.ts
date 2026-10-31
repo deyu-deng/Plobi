@@ -2388,6 +2388,7 @@ export interface Translations {
       subagents: (count: number) => string
       failed: (count: number) => string
       running: (count: number) => string
+      more: string
       cron: string
       openCron: string
       agenda: string
