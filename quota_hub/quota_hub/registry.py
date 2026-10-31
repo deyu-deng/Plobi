@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import logging
 import time
 
 import httpx
@@ -41,6 +42,13 @@ from .providers.apps.workbuddy import (
 )
 from .providers.base import Provider
 from .providers.mock import MockProvider
+
+logger = logging.getLogger(__name__)
+
+#: Ceiling on catalog-refresh passes for a leg that keeps answering with no models. Past
+#: this the leg stays empty until its next sign-in, so a permanently-empty catalog costs a
+#: handful of upstream calls rather than an endless poll.
+_MODELS_MAX_PASSES = 6
 
 # All upstream adapters are registered here. Add a new desktop app by writing a
 # Provider subclass and listing it below; config keys (e.g. "cursor") map 1:1 to
@@ -123,6 +131,8 @@ class Registry:
         # Model-list refresh bookkeeping (see ensure_models_refreshed).
         self._models_lock = asyncio.Lock()
         self._models_refreshed = False
+        self._models_attempt = 0.0
+        self._models_passes = 0
 
     async def build(self):
         for name, pcfg in self.config.get("providers", {}).items():
@@ -142,22 +152,57 @@ class Registry:
         return self
 
     async def ensure_models_refreshed(self) -> None:
-        """Refresh every provider's model catalog from upstream exactly once.
+        """Refresh every provider's model catalog from upstream, retrying until no leg is
+        left with nothing to offer.
 
         Safe to call concurrently (e.g. from the startup task and the first
-        ``/v1/models`` request) — the lock + flag guarantee a single refresh.
+        ``/v1/models`` request) — the lock + flag guarantee a single pass at a time.
         Failures are swallowed so the seed catalog keeps routing working.
+
+        One pass is not enough for a leg whose only name source is upstream: measured
+        2026-10-31 16:47, the hub booted with the Settings → VPN node down, Antigravity's
+        ``fetchAvailableModels`` failed, and because that leg ships no seed list (deliberately)
+        it kept zero models while its card still read signed-in and live — until a restart.
+        So the flag stays down while a live leg with an account still has no catalog, and
+        ``models_refresh_task`` re-arms within ``_MODELS_RETRY_AFTER`` and a bounded number
+        of passes.
         """
         if self._models_refreshed:
             return
         async with self._models_lock:
             if self._models_refreshed:
                 return
+            self._models_attempt = time.monotonic()
+            self._models_passes += 1
             await self._refresh_all_models()
-            self._models_refreshed = True
+            pending = self._legs_without_catalog()
+            self._models_refreshed = not pending or self._models_passes >= _MODELS_MAX_PASSES
+            if pending and self._models_refreshed:
+                logger.info(
+                    "model catalog still empty for %s after %d passes; giving up until next sign-in",
+                    ", ".join(pending), self._models_passes,
+                )
+
+    #: How long to leave a leg with no catalog alone before asking upstream again (the
+    #: total is capped by ``_MODELS_MAX_PASSES``). The floor keeps a picker poll from
+    #: re-spawning a slow CLI leg every second.
+    _MODELS_RETRY_AFTER = 60.0
+
+    def _legs_without_catalog(self) -> list[str]:
+        """Legs that *should* be able to answer: a live credential, a schedulable account,
+        and no model to offer. Anything else is not a retry candidate — an unconfigured
+        card or a leg with no account must not be polled forever."""
+        out: list[str] = []
+        for name, prov in self.providers.items():
+            if prov.served_models or not any(a.schedulable() for a in prov.accounts):
+                continue
+            if self.credential_health(prov)[0]:
+                out.append(name)
+        return out
 
     def models_refresh_task(self) -> asyncio.Task:
-        """The one model-refresh task for this process, created on first ask.
+        """The model-refresh task for this process, created on first ask and re-armed
+        while a live leg still has no catalog.
 
         A reader that only wants the catalog can wait on this with a short timeout
         instead of doing the work itself — so a slow leg makes the answer *later*, never
@@ -166,6 +211,10 @@ class Registry:
         """
         task = getattr(self, "_refresh_task", None)
         if task is None:
+            self._refresh_task = asyncio.create_task(self.ensure_models_refreshed())
+        elif task.done() and not self._models_refreshed and (
+            time.monotonic() - self._models_attempt >= self._MODELS_RETRY_AFTER
+        ):
             self._refresh_task = asyncio.create_task(self.ensure_models_refreshed())
         return self._refresh_task
 
