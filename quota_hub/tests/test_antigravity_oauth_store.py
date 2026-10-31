@@ -27,6 +27,49 @@ def _no_google_calls(monkeypatch):
     monkeypatch.setattr(oa, "fetch_userinfo", lambda _token: {})
 
 
+def test_the_extractor_pairs_a_secret_with_the_client_id_it_sits_next_to(tmp_path):
+    """Two measured facts, one test.
+
+    `antigravity-tools.exe` embeds several OAuth clients, and the old extractor took the
+    first id and the first secret from anywhere in the file - a mixed pair, which Google
+    answers `invalid_client`. We read that as "the app ships its own runtime client" and
+    stopped trying our own sign-in; it was our own pairing. Google's public constants are
+    also exactly 35 characters, and here one is packed against another with no separator,
+    so an open-ended pattern stored 60.
+    """
+    other_id = "1234567890102-abcdefghijklmnopqrstuvwxys.apps.googleusercontent.com"
+    ours_id = "REDACTED_GOOGLE_PUBLIC_CLIENT_ID"
+    ours_secret = "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET"
+    blob = (other_id.encode() + b"\x00" + b"Z" * 600 + b"\x00"      # a far client, unpaired
+            + b'{"client_id":"' + ours_id.encode() + b'","client_secret":"' + ours_secret.encode()
+            + b"TAIL_AFTER_THE_CONSTANT" + b"\x00")
+    path = tmp_path / "bundle.bin"
+    path.write_bytes(blob)
+
+    found_id, found_secret = account_store._find_pair_in_file(path)
+    assert found_id == ours_id, "the id must be the one next to this secret"
+    assert found_secret == ours_secret, "and 35 characters, not the constant plus its neighbour"
+
+
+def test_a_poisoned_saved_pair_is_ignored_and_the_pair_is_rediscovered(tmp_path, monkeypatch, home):
+    monkeypatch.setattr(account_store, "client_path", lambda: tmp_path / "client.json")
+    (tmp_path / "client.json").write_text(
+        '{"client_id": "cid.apps.googleusercontent.com", "client_secret": '
+        '"REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET_TAIL_999"}', encoding="utf-8")
+
+    monkeypatch.setattr(account_store, "discover_client_from_apps",
+                        lambda: ("REDACTED_GOOGLE_PUBLIC_CLIENT_ID",
+                                 "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET"))
+    found_id, found_secret = account_store.client_credentials(persist_discovered=False)
+    assert found_secret == "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET", found_secret
+
+    # an env-supplied pair is the operator's own words and is taken as given
+    monkeypatch.setenv(account_store.CLIENT_ID_ENV, "whatever-id")
+    monkeypatch.setenv(account_store.CLIENT_SECRET_ENV, "not-a-GOCSPX-shaped-value")
+    assert account_store.client_credentials(persist_discovered=False) == (
+        "whatever-id", "not-a-GOCSPX-shaped-value")
+
+
 def test_the_google_login_leaves_through_the_same_node_as_the_leg(monkeypatch, home):
     """回归本体的判据：抽公共流程那天，这条腿的换令牌改成了直连。
 

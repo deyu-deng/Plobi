@@ -31,7 +31,24 @@ APP_SCAN_ENV = "QUOTA_HUB_ANTIGRAVITY_APP_SCAN"
 LEGACY_APP_SCAN_ENV = "AIGW_ANTIGRAVITY_APP_SCAN"
 
 _CLIENT_ID_RE = re.compile(rb"[0-9]{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com")
-_CLIENT_SECRET_RE = re.compile(rb"GOCSPX-[A-Za-z0-9_-]{10,}")
+#: Google's public client secrets are `GOCSPX-` plus exactly 28 characters (35 total).
+#: Measured on this machine 2026-10-31: `antigravity-tools.exe` holds that constant with
+#: another alphanumeric string packed immediately after it and no separator until a NUL 60
+#: bytes in, so an open-ended `{10,}` captured both and stored 60 characters - Google then
+#: answered `invalid_client`, and we misread that as "the app ships its own runtime client".
+#: A bounded `{28}` takes the constant and stops; a negative lookahead would be worse here,
+#: because the next byte is a legal character, so nothing would match at all.
+_CLIENT_SECRET_RE = re.compile(rb"GOCSPX-[A-Za-z0-9_-]{28}")
+_CLIENT_SECRET_SHAPE = re.compile(r"^GOCSPX-[A-Za-z0-9_-]{28}$")
+
+
+def _is_an_over_captured_public_secret(secret: str) -> bool:
+    """Only Google's own public-constant shape can be judged wrong.
+
+    A saved pair that does not start with `GOCSPX-` is the operator's own OAuth client and
+    is taken as given - we have no business refusing it.
+    """
+    return secret.startswith("GOCSPX-") and not _CLIENT_SECRET_SHAPE.match(secret)
 
 
 def _root() -> Path:
@@ -133,13 +150,37 @@ def _candidate_binaries() -> list[Path]:
     return out
 
 
-def extract_client_pair(data: bytes) -> tuple[str, str]:
-    """Extract the public Antigravity client pair from an app binary, if present."""
-    ids = _CLIENT_ID_RE.findall(data)
-    secrets = _CLIENT_SECRET_RE.findall(data)
-    if not ids or not secrets:
+def _find_pair_in_file(path: Path, *, chunk: int = 8 * 1024 * 1024, window: int = 512) -> tuple[str, str]:
+    """Scan a binary in chunks for a client id sitting next to its own secret.
+
+    Two facts measured on this machine 2026-10-31:
+
+    * the IDE executable is 234 MB, so skipping files over 200 MB meant discovery found
+      nothing at all and the stale value stayed in place for ever;
+    * `antigravity-tools.exe` embeds **several** OAuth clients. Taking the first id and the
+      first secret independently paired one product's id with another product's secret,
+      which Google answers `invalid_client` - the exact thing we blamed on "the app ships
+      its own runtime client" on 2026-10-28.
+
+    So a hit only counts when the secret sits within `window` bytes of its own id.
+    """
+    try:
+        with path.open("rb") as handle:
+            tail = b""
+            while True:
+                block = handle.read(chunk)
+                if not block:
+                    break
+                data = tail + block
+                for match in _CLIENT_SECRET_RE.finditer(data):
+                    start = max(0, match.start() - window)
+                    near = _CLIENT_ID_RE.search(data[start:match.start()])
+                    if near:
+                        return near.group(0).decode("ascii"), match.group(0).decode("ascii")
+                tail = data[-window:]
+    except OSError:
         return "", ""
-    return ids[0].decode("ascii"), secrets[0].decode("ascii")
+    return "", ""
 
 
 def discover_client_from_apps() -> tuple[str, str]:
@@ -155,9 +196,9 @@ def discover_client_from_apps() -> tuple[str, str]:
         return "", ""
     for path in _candidate_binaries():
         try:
-            if path.stat().st_size > 200 * 1024 * 1024:
+            if not path.is_file() or path.stat().st_size > 1024 * 1024 * 1024:
                 continue
-            pair = extract_client_pair(path.read_bytes())
+            pair = _find_pair_in_file(path)
         except OSError:
             continue
         if pair[0] and pair[1]:
@@ -176,7 +217,12 @@ def client_credentials(*, persist_discovered: bool = True) -> tuple[str, str]:
         saved_id = str(data.get("client_id") or "").strip()
         saved_secret = str(data.get("client_secret") or "").strip()
         if saved_id and saved_secret:
-            return saved_id, saved_secret
+            # A secret saved by the old open-ended extractor is Google's 35-character
+            # constant plus whatever ran into it, and Google refuses it; drop that and let
+            # the re-discovery write the clean one. Anything else the operator stored is
+            # their own client and is taken as given.
+            if not _is_an_over_captured_public_secret(saved_secret):
+                return saved_id, saved_secret
     found = discover_client_from_apps()
     if found[0] and found[1]:
         if persist_discovered:
