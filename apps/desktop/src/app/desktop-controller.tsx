@@ -29,6 +29,8 @@ import {
   $fileBrowserOpen,
   $panesFlipped,
   $rightRailView,
+  $shellCards,
+  $shellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
@@ -36,8 +38,10 @@ import {
   setFileBrowserOpen,
   setSidebarOverlayMounted,
   SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MAX_WIDTH
+  SIDEBAR_MAX_WIDTH,
+  toggleShellSwapped
 } from '../store/layout'
+import { cardDragProps, useCardDrop } from './shell/card-drag'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab, type PreviewTarget } from '../store/preview'
@@ -216,6 +220,11 @@ export function DesktopController() {
   const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
   const panesFlipped = useStore($panesFlipped)
+  const shellCards = useStore($shellCards)
+  // 对话卡 ↔ 右栏卡互换（用户 10-31 选的换法）：交换后右栏当主区、对话进右侧窄卡。
+  const swapped = useStore($shellSwapped)
+  const chatDrop = useCardDrop('chat', toggleShellSwapped)
+  const railDrop = useCardDrop('rail', toggleShellSwapped)
   const profileScope = useStore($profileScope)
   // WP-D: the L1 agenda rail reads the same single agenda store the full-screen
   // board renders; the controller subscribes so the base Pane can host it.
@@ -1729,11 +1738,17 @@ export function DesktopController() {
     </Pane>
   )
 
+  // 互换后这块栏内容进主区：不再有侧边描边、也不用再让顶栏（卡本身已经让过了）。
   const workbenchAsideClass = cn(
-    'relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)',
-    panesFlipped
-      ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
-      : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+    'relative flex h-full w-full min-w-0 flex-col overflow-hidden text-(--ui-text-tertiary)',
+    swapped
+      ? 'bg-(--ui-sidebar-surface-background)'
+      : cn(
+          'border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)',
+          panesFlipped
+            ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+        )
   )
 
   const workbenchFilesContent = agentCwd.trim() ? (
@@ -1791,6 +1806,40 @@ export function DesktopController() {
     </Button>
   )
 
+  // 右栏内容抽成变量：正常时住在右侧 Pane 里，互换后同一块进 PaneMain（主区）。
+  const filesWorkbench = (
+    <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
+      <RightRailWorkbench
+        activeTab={l2Active}
+        availableTabs={l2TabDefs.filter(
+          tab =>
+            !l2Tabs.includes(tab.id) &&
+            (tab.id !== 'review' || Boolean(agentCwd.trim())) &&
+            (tab.id !== 'progress' || Boolean(activeAgentId))
+        )}
+        contents={{
+          agenda: agendaTabContent,
+          browser: <BrowserTabPanel labels={t.workbench.browser} />,
+          files: workbenchFilesContent,
+          progress: activeAgentId ? <AgentProgressPane agentId={activeAgentId} /> : null,
+          review: workbenchReviewContent,
+          terminal: isL1Workbench ? null : <TerminalPaneChrome />,
+          ...fileTabContents
+        }}
+        dragHandleProps={shellCards ? cardDragProps('rail') : undefined}
+        labels={t.workbench}
+        collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
+        collapseLabel={t.titlebar.hideRightSidebar}
+        onCollapse={swapped ? undefined : () => setFileBrowserOpen(false)}
+        onTabChange={handleWorkbenchTabChange}
+        onTabClose={handleWorkbenchTabClose}
+        onTabOpen={handleWorkbenchTabOpen}
+        tabs={l2OpenTabDefs}
+        trailing={l2Active === 'agenda' ? agendaAddButton : null}
+      />
+    </aside>
+  )
+
   const fileBrowserPane = (
     <Pane
       defaultOpen={false}
@@ -1798,7 +1847,7 @@ export function DesktopController() {
       // the tabs here too; this column opens through Ctrl+J / review selection.
       disabled={!isL2}
       forceCollapsed={narrowViewport}
-      hoverReveal
+      hoverReveal={!shellCards}
       id="file-browser"
       key="file-browser"
       minWidth={FILE_BROWSER_MIN_WIDTH}
@@ -1806,35 +1855,7 @@ export function DesktopController() {
       side={railSide}
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
-      <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
-        <RightRailWorkbench
-          activeTab={l2Active}
-          availableTabs={l2TabDefs.filter(
-            tab =>
-              !l2Tabs.includes(tab.id) &&
-              (tab.id !== 'review' || Boolean(agentCwd.trim())) &&
-              (tab.id !== 'progress' || Boolean(activeAgentId))
-          )}
-          contents={{
-            agenda: agendaTabContent,
-            browser: <BrowserTabPanel labels={t.workbench.browser} />,
-            files: workbenchFilesContent,
-            progress: activeAgentId ? <AgentProgressPane agentId={activeAgentId} /> : null,
-            review: workbenchReviewContent,
-            terminal: isL1Workbench ? null : <TerminalPaneChrome />,
-            ...fileTabContents
-          }}
-          labels={t.workbench}
-          collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
-          collapseLabel={t.titlebar.hideRightSidebar}
-          onCollapse={() => setFileBrowserOpen(false)}
-          onTabChange={handleWorkbenchTabChange}
-          onTabClose={handleWorkbenchTabClose}
-          onTabOpen={handleWorkbenchTabOpen}
-          tabs={l2OpenTabDefs}
-          trailing={l2Active === 'agenda' ? agendaAddButton : null}
-        />
-      </aside>
+      {filesWorkbench}
     </Pane>
   )
 
@@ -1849,13 +1870,38 @@ export function DesktopController() {
   // store and same four states the old console `RightRail` rendered — only the
   // chrome moved from a hand-rolled aside to the shell's right rail. This Pane
   // is L1-only; L2 gets the same `agendaTabContent` inside its own workbench.
+  const agendaWorkbench = (
+    <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
+      <RightRailWorkbench
+        activeTab={l1Active}
+        availableTabs={l1TabDefs.filter(tab => !l1Tabs.includes(tab.id))}
+        contents={{
+          agenda: agendaTabContent,
+          browser: <BrowserTabPanel labels={t.workbench.browser} />,
+          files: null,
+          terminal: isL1Workbench ? <TerminalPaneChrome /> : null
+        }}
+        dragHandleProps={shellCards ? cardDragProps('rail') : undefined}
+        labels={t.workbench}
+        collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
+        collapseLabel={t.titlebar.hideRightSidebar}
+        onCollapse={swapped ? undefined : () => togglePane('agenda-timeline')}
+        onTabChange={handleWorkbenchTabChange}
+        onTabClose={handleWorkbenchTabClose}
+        onTabOpen={handleWorkbenchTabOpen}
+        tabs={l1OpenTabDefs}
+        trailing={l1Active === 'agenda' ? agendaAddButton : null}
+      />
+    </aside>
+  )
+
   const agendaTimelinePane = (
     <Pane
       defaultOpen
       disabled={level !== 'l1'}
       divider
       forceCollapsed={narrowViewport}
-      hoverReveal
+      hoverReveal={!shellCards}
       id="agenda-timeline"
       key="agenda-timeline"
       minWidth={FILE_BROWSER_MIN_WIDTH}
@@ -1863,30 +1909,136 @@ export function DesktopController() {
       side={railSide}
       width={FILE_BROWSER_DEFAULT_WIDTH}
     >
-      <aside
-        aria-label={t.workbench.aria}
-        className={workbenchAsideClass}
-      >
-        <RightRailWorkbench
-          activeTab={l1Active}
-          availableTabs={l1TabDefs.filter(tab => !l1Tabs.includes(tab.id))}
-          contents={{
-            agenda: agendaTabContent,
-            browser: <BrowserTabPanel labels={t.workbench.browser} />,
-            files: null,
-            terminal: isL1Workbench ? <TerminalPaneChrome /> : null
-          }}
-          labels={t.workbench}
-          collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
-          collapseLabel={t.titlebar.hideRightSidebar}
-          onCollapse={() => togglePane('agenda-timeline')}
-          onTabChange={handleWorkbenchTabChange}
-          onTabClose={handleWorkbenchTabClose}
-          onTabOpen={handleWorkbenchTabOpen}
-          tabs={l1OpenTabDefs}
-          trailing={l1Active === 'agenda' ? agendaAddButton : null}
-        />
-      </aside>
+      {agendaWorkbench}
+    </Pane>
+  )
+
+  // 右栏开关：L1 是日程栏，L2 是工作台；对话卡抬头与顶栏重开共用这一份。
+  const shellRightRail =
+    level === 'l1'
+      ? { open: agendaPaneOpen, toggle: () => togglePane('agenda-timeline') }
+      : level !== null
+        ? {
+            open: fileBrowserOpen,
+            toggle: () => {
+              if (fileBrowserOpen) {
+                setFileBrowserOpen(false)
+
+                return
+              }
+
+              if (l2Tabs.length === 0) {
+                setL2Tabs(['files'])
+                setL2Active('files')
+              } else if (l2Active === null) {
+                setL2Active(l2Tabs[0])
+              }
+
+              setFileBrowserOpen(true)
+            }
+          }
+        : undefined
+
+  const chatRoutes = (
+    <Routes>
+      {/* WP-A/E: `/` (L1), `/agent/:id` (L2) and `/console` all fall through
+          to the single `*` secretary route below, so the center
+          `ChatSurface` stays mounted across L1 ↔ L2 switches (only the
+          left/right rail content changes). The legacy `/new` + `/:sessionId`
+          pure-chat routes were removed (WP-E) — stray navigations to them
+          land on `*` with a null level and bounce home. */}
+      <Route
+        element={
+          <Suspense fallback={null}>
+            <SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />
+          </Suspense>
+        }
+        path="skills"
+      />
+      <Route
+        element={
+          <Suspense fallback={null}>
+            <MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />
+          </Suspense>
+        }
+        path="messaging"
+      />
+      <Route
+        element={
+          <Suspense fallback={null}>
+            <ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />
+          </Suspense>
+        }
+        path="artifacts"
+      />
+      <Route
+        element={
+          <Suspense fallback={null}>
+            <KnowledgeView />
+          </Suspense>
+        }
+        path="knowledge"
+      />
+      <Route
+        element={
+          <Suspense fallback={null}>
+            <DiaryView />
+          </Suspense>
+        }
+        path="diary"
+      />
+      {/* Overlay routes: center stays empty; the card mounts via
+          `overlays` from `useOverlayRouting`. Missing a stub here lets
+          `*` match, null `chatScope` → Navigate home (open full board bounce). */}
+      <Route element={null} path="agenda" />
+      <Route element={null} path="cron" />
+      <Route element={null} path="settings" />
+      <Route element={null} path="command-center" />
+      <Route element={null} path="agents" />
+      <Route element={null} path="starmap" />
+      <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
+      <Route element={<Navigate replace to={HOME_ROUTE} />} path="console" />
+      <Route
+        element={
+          <SecretaryCenterPane
+            cancel={stableCancel}
+            chatScope={chatScope}
+            composer={composer}
+            modelMenuContent={modelMenuContent}
+            rightRail={swapped ? undefined : shellRightRail}
+            submit={stableSubmit}
+          />
+        }
+        path="*"
+      />
+    </Routes>
+  )
+
+  // 互换后：右栏内容进主区，对话进右侧窄卡。两张卡都带落点，拖另一张过来就换回。
+  const chatCard = (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-shell-card-drop={chatDrop.over ? '' : undefined}
+      {...chatDrop.dropProps}
+    >
+      {chatRoutes}
+    </div>
+  )
+
+  const railCard = (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-shell-card-drop={railDrop.over ? '' : undefined}
+      {...railDrop.dropProps}
+    >
+      {level === 'l1' ? agendaWorkbench : filesWorkbench}
+    </div>
+  )
+
+  // 互换后对话卡落到右侧栏原来的位置，宽度与右栏同量级但给到能读宽度、可拖。
+  const chatPane = (
+    <Pane defaultOpen id="chat-pane" key="chat-pane" minWidth={360} resizable side="right" width="42rem">
+      {chatCard}
     </Pane>
   )
 
@@ -1897,32 +2049,8 @@ export function DesktopController() {
       mainOverlays={mainOverlays}
       onOpenSettings={openSettings}
       overlays={overlays}
-      previewPaneOpen={secretaryShellOpen && previewRailContent}
-      rightRail={
-        level === 'l1'
-          ? { open: agendaPaneOpen, toggle: () => togglePane('agenda-timeline') }
-          : level !== null
-            ? {
-                open: fileBrowserOpen,
-                toggle: () => {
-                  if (fileBrowserOpen) {
-                    setFileBrowserOpen(false)
-
-                    return
-                  }
-
-                  if (l2Tabs.length === 0) {
-                    setL2Tabs(['files'])
-                    setL2Active('files')
-                  } else if (l2Active === null) {
-                    setL2Active(l2Tabs[0])
-                  }
-
-                  setFileBrowserOpen(true)
-                }
-              }
-            : undefined
-      }
+      previewPaneOpen={!swapped && secretaryShellOpen && previewRailContent}
+      rightRail={swapped ? undefined : shellRightRail}
       statusbarItems={statusbarItems}
       titlebarTools={titlebarToolGroups.flat.right}
     >
@@ -1945,88 +2073,25 @@ export function DesktopController() {
           {sidebar}
         </Pane>
       )}
-      <PaneMain>
-        <Routes>
-          {/* WP-A/E: `/` (L1), `/agent/:id` (L2) and `/console` all fall through
-              to the single `*` secretary route below, so the center
-              `ChatSurface` stays mounted across L1 ↔ L2 switches (only the
-              left/right rail content changes). The legacy `/new` + `/:sessionId`
-              pure-chat routes were removed (WP-E) — stray navigations to them
-              land on `*` with a null level and bounce home. */}
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <SkillsView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="skills"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <MessagingView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="messaging"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="artifacts"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <KnowledgeView />
-              </Suspense>
-            }
-            path="knowledge"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <DiaryView />
-              </Suspense>
-            }
-            path="diary"
-          />
-          {/* Overlay routes: center stays empty; the card mounts via
-              `overlays` from `useOverlayRouting`. Missing a stub here lets
-              `*` match, null `chatScope` → Navigate home (open full board bounce). */}
-          <Route element={null} path="agenda" />
-          <Route element={null} path="cron" />
-          <Route element={null} path="settings" />
-          <Route element={null} path="command-center" />
-          <Route element={null} path="agents" />
-          <Route element={null} path="starmap" />
-          <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
-          <Route element={<Navigate replace to={HOME_ROUTE} />} path="console" />
-          <Route
-            element={
-              <SecretaryCenterPane
-                cancel={stableCancel}
-                chatScope={chatScope}
-                composer={composer}
-                modelMenuContent={modelMenuContent}
-                submit={stableSubmit}
-              />
-            }
-            path="*"
-          />
-        </Routes>
-      </PaneMain>
-      {/*
-        Order within a side maps to column order. Default (rail on the right):
-        main | preview | review | agenda. Flipped (rail on the left): mirror so
-        the workbench stays adjacent to the chat.
-      */}
-      {panesFlipped ? fileBrowserPane : null}
-      {previewPane}
-      {agendaTimelinePane}
-      {panesFlipped ? null : fileBrowserPane}
+      {swapped ? (
+        <>
+          <PaneMain>{railCard}</PaneMain>
+          {chatPane}
+        </>
+      ) : (
+        <>
+          <PaneMain>{chatCard}</PaneMain>
+          {/*
+            Order within a side maps to column order. Default (rail on the right):
+            main | preview | review | agenda. Flipped (rail on the left): mirror so
+            the workbench stays adjacent to the chat.
+          */}
+          {panesFlipped ? fileBrowserPane : null}
+          {previewPane}
+          {agendaTimelinePane}
+          {panesFlipped ? null : fileBrowserPane}
+        </>
+      )}
     </AppShell>
   )
 }

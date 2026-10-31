@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
@@ -68,6 +68,7 @@ export function RightRailWorkbench({
   collapseIcon = 'layout-sidebar-right',
   collapseLabel,
   contents,
+  dragHandleProps,
   labels,
   onCollapse,
   onTabChange,
@@ -82,6 +83,8 @@ export function RightRailWorkbench({
   collapseIcon?: string
   collapseLabel?: string
   contents: Partial<Record<string, ReactNode>>
+  /** 卡片互换：抬头那一行当拖动把手（用户 10-31 拖右栏卡到对话卡上换位）。 */
+  dragHandleProps?: HTMLAttributes<HTMLDivElement>
   labels: RightRailWorkbenchLabels
   onCollapse?: () => void
   onTabChange: (tab: RightRailTabId) => void
@@ -115,8 +118,12 @@ export function RightRailWorkbench({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {hasTabs || onCollapse ? (
         <div
-          className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1"
+          className={cn(
+            'flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1',
+            dragHandleProps && 'cursor-grab select-none active:cursor-grabbing'
+          )}
           ref={menuRef}
+          {...dragHandleProps}
         >
           {hasTabs ? (
           <div

@@ -159,9 +159,9 @@ export function AppShell({
   // between the pane-tool cluster and the system cluster so they don't sit
   // flush against each other. Modeled as N gaps (N - 1 inner + 1 trailing)
   // to keep the formula generic for any pane-tool count.
-  // 卡片模式里顶栏右簇只剩「右栏已关时的重开」那一枚；非卡片模式仍是四枚静态系统工具。
-  const rightEdgeOpen = rightRail ? rightRail.open : fileBrowserOpen
-  const systemToolCount = shellCards ? (rightEdgeOpen ? 0 : 1) : 4
+  // 卡片模式里顶栏右簇整个不在（设置/快捷键/触感反馈在左下图标条，右栏开关在对话卡抬头）；
+  // 非卡片模式仍是四枚静态系统工具。
+  const systemToolCount = shellCards ? 0 : 4
   const paneToolCount = titlebarTools?.filter(tool => !tool.hidden).length ?? 0
   const systemToolsWidth = `calc(${systemToolCount} * (var(--titlebar-control-size) + 0.25rem))`
 

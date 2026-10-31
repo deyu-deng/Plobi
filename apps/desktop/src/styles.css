@@ -1953,7 +1953,8 @@ text-* variant utilities. */ .btn-arc {
      `--theme-shell-card`（自定义卡面），给品牌主题留口。
    ───────────────────────────────────────────────────────────────────────── */
 :root {
-  --dl-shell-margin: 14px;
+  /* 卡与窗口边/彼此的留白（用户 10-31：离底部和右侧有点远 → 14 → 8） */
+  --dl-shell-margin: 8px;
   --dl-shell-gap: 1px;
   /* 逆 Qoder 包里读到的：内容卡圆角 8px，且用 `corner-shape: squircle`（不是普通圆角） */
   --dl-shell-radius: 8px;
@@ -2025,6 +2026,9 @@ text-* variant utilities. */ .btn-arc {
 /* 主区已整体让出顶栏，栏内第一组那 28px 的顶栏留白就成了第二份 → 收掉。
    底部再空出一条给左下图标条（那条是 fixed 的，不占栏内文档流）。 */
 .shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal]) [data-sidebar='content'] {
+  /* 用户 10-31：左栏文字离最左边有点远 → 内容左内缩 10 → 4（行自己还有 8） */
+  padding-left: 4px;
+  padding-right: 6px;
   padding-bottom: 38px;
 }
 
@@ -2037,6 +2041,7 @@ text-* variant utilities. */ .btn-arc {
 /* 对话与右栏是**同一张白卡**（用户 10-31：「右栏应该是和对话窗口一样的白色卡片，一模一样」）。
    右栏的 aside 自己还会画 sidebar 底、描边和内高光，卡片里再出现第二条线不行，下面一并让开。 */
 .shell-cards [data-pane-main='true'],
+.shell-cards [data-pane-id='chat-pane'],
 .shell-cards [data-pane-id='preview'],
 .shell-cards [data-pane-id='agenda-timeline'],
 .shell-cards [data-pane-id='file-browser'] {
@@ -2070,7 +2075,15 @@ text-* variant utilities. */ .btn-arc {
 }
 
 /* 暗色：几何不动，只把卡的阴影加深 */
+/* 拖卡互换时的落点提示：虚线框贴着卡内沿走，不改变尺寸 */
+.shell-cards [data-shell-card-drop] {
+  border-radius: calc(var(--dl-shell-radius) - 1px);
+  outline: 2px dashed color-mix(in srgb, var(--theme-midground, #4b6f5a) 55%, transparent);
+  outline-offset: -6px;
+}
+
 .dark .shell-cards [data-pane-main='true'],
+.dark .shell-cards [data-pane-id='chat-pane'],
 .dark .shell-cards [data-pane-id='preview'],
 .dark .shell-cards [data-pane-id='agenda-timeline'],
 .dark .shell-cards [data-pane-id='file-browser'] {

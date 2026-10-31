@@ -1,6 +1,9 @@
 import type { PlobiConnection } from '@/global'
 
-export const TITLEBAR_HEIGHT = 28
+// 必须与 electron/main.ts 的 titleBarOverlay.height 同值（那边是 34）：卡片模式下
+// 顶栏是一条玻璃带，右上原生最小化/最大化/关闭按钮就画在这条带里。这边写小了，
+// 按钮会比带子高，下沿戳进卡片——10-31 用户截图里「窗口控件还在卡片里」就是这个。
+export const TITLEBAR_HEIGHT = 34
 export const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 export const TITLEBAR_ICON_SIZE = 12
 export const TITLEBAR_CONTROL_OFFSET_X = 74

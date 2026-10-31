@@ -111,10 +111,10 @@ export function TitlebarControls({
     }
   }
 
-  // 卡片模式里这三枚在左下图标条（用户 10-30），顶栏只留左栏开关、换边与右侧栏开关。
+  // 卡片模式里这三枚在左下图标条（用户 10-30），顶栏只剩左栏开关与换边。
+  // 右栏开关整套住进对话卡抬头（10-31 用户：「点了之后图标又回到顶栏」），顶栏不再留重开。
   const showSystemTools = !shellCards
-  // 右栏收起后「重开」那一枚继续留在顶栏：收起按钮已经跟着卡片走了，否则关了就回不来。
-  const showRightRailTool = !shellCards || !rightEdge.open
+  const showRightRailTool = !shellCards
 
   // While a full-screen overlay (settings, command center, …) is open it should
   // visually own the window. These control clusters are `fixed` at a higher

@@ -14,6 +14,19 @@ export function setShellCards(value: boolean): void {
   $shellCards.set(Boolean(value))
 }
 
+// 对话卡 ↔ 右栏卡互换（用户 10-31：拖一张卡到另一张上即换位）。持久化，
+// 因为这是"你把工作台摆在哪边"的决定，不该重开一次就忘掉。
+export const SHELL_SWAPPED_STORAGE_KEY = 'plobi.desktop.shellSwapped'
+export const $shellSwapped = persistentAtom(SHELL_SWAPPED_STORAGE_KEY, false, Codecs.bool)
+
+export function setShellSwapped(value: boolean): void {
+  $shellSwapped.set(Boolean(value))
+}
+
+export function toggleShellSwapped(): void {
+  $shellSwapped.set(!$shellSwapped.get())
+}
+
 export const SIDEBAR_DEFAULT_WIDTH = 186
 export const SIDEBAR_MAX_WIDTH = 300
 // Open at the same width as the sessions sidebar so the two rails match, but
