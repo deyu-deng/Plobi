@@ -54,6 +54,7 @@ from ....egress import proxy_url
 from ....providers.cloudcode import CloudCodeClient
 from . import account_store
 from . import tool_bridge
+from .network import LOGIN_ENDPOINTS, probe_network
 from ....tokens import desktop_stores as ds
 from ...base import Account, AccountState, Capabilities, Credential, Provider, UpstreamError
 
@@ -74,10 +75,12 @@ _TRANSPORT_MARKS = ("无法连接", "error sending request", "connect", "tls", "
 
 
 def classify_renewal_failure(detail: str) -> str:
-    """What the tool's own complaint means: the node, or the quota, or nothing known.
+    """What the tool's own complaint *sounds* like: the node, the quota, or nothing known.
 
-    A node that refuses Google and a spent quota are not credential problems, and the
-    card must not push him to sign in again when signing in needs the same Google door.
+    A hint, not a verdict: measured 2026-10-31 18:4x, this same complaint came in while
+    the Settings → VPN node was passing all three Google hosts (302/404/404 within 3 s),
+    so "could not send the request" inside their process is not proof the node refused
+    Google. The caller measures the node before it says which one it was.
     Anything we cannot read keeps the old answer ("凭据过期"), which is the honest
     default for a lease we could not bring back.
     """
@@ -87,20 +90,6 @@ def classify_renewal_failure(detail: str) -> str:
     if any(mark in low for mark in _TRANSPORT_MARKS):
         return RENEW_NO_GOOGLE
     return RENEW_OK
-
-#: When the tool that owns the account cannot reach Google at all, the reason is the
-#: exit node — not a missing login and not a spent credential. Measured 2026-10-30
-#: 15:22 with the node from Settings → VPN in the environment: the tool answered
-#: "Token refresh failed … oauth2.googleapis.com/token: client error (Connect).
-#: 无法连接 Google 授权服务器". Saying "凭据过期" there sends him to log in again, which
-#: cannot work while the node refuses Google.
-_NODE_BLOCKS_GOOGLE = "这个节点不放 Google 流量——在「设置 → VPN」换一个节点或分组再试"
-_TRANSPORT_MARKS = ("无法连接", "error sending request", "connect", "tls", "eof", "timed out", "timeout")
-
-
-def _renewal_is_a_network_failure(detail: str) -> bool:
-    low = (detail or "").lower()
-    return any(mark in low for mark in _TRANSPORT_MARKS)
 
 # Antigravity's own client constants (from the reference proxy / gemini-cli).
 DEFAULT_HOST_DAILY = "https://daily-cloudcode-pa.googleapis.com"
@@ -612,17 +601,35 @@ class AntigravityProvider(Provider):
                 # sends him to sign in again — and signing in needs the same Google door
                 # the node is refusing.
                 self.renew_state = classify_renewal_failure(detail)
-                if self.renew_state == RENEW_NO_GOOGLE:
+                if self.renew_state == RENEW_NO_GOOGLE and not self._node_passes_google():
                     verdict = (False, _NO_GOOGLE_WORDS)
                 elif self.renew_state == RENEW_RATE_LIMITED:
                     verdict = (False, _RATE_LIMITED_WORDS)
                 else:
+                    # Either nothing readable, or their process could not get out while
+                    # the node itself answered every Google host (measured 2026-10-31
+                    # 18:4x). Then the next move is opening that app once - it re-pushes
+                    # the slot - not swapping a node that is working.
                     verdict = (False, "credential_expired")
                 logger.warning("antigravity: the credential could not be renewed: %s", detail)
             self._verdict = verdict
             self._verdict_at = time.time()
 
         threading.Thread(target=_work, name="antigravity-lease", daemon=True).start()
+
+    @staticmethod
+    def _node_passes_google() -> bool:
+        """Ask the exit node, plainly, whether Google answers — before blaming it.
+
+        A plain GET to the two hosts a sign-in really needs; any HTTP status proves the
+        route works. Called only from the lease thread, never on a turn, and it sends no
+        credential. A failed question is not evidence of a guilty node either way, so the
+        honest reading of "cannot ask" is "cannot reach".
+        """
+        try:
+            return bool(probe_network(LOGIN_ENDPOINTS).get("ok"))
+        except Exception:  # noqa: BLE001
+            return False
 
     def credential_health(self) -> tuple[bool, str]:
         """Local-only: what the desktop app's own record says about this token.

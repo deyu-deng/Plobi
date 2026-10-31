@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -40,6 +41,13 @@ TOOL_PATHS: tuple[str, ...] = (
 
 #: The tool refuses to touch another product's slot; `agy` is the one we read.
 TARGET = "agy"
+
+#: Their tool prints freely; a Google access token must not ride its way into our log.
+_YA29 = re.compile(r"ya29\.[A-Za-z0-9_\-]{6,}")
+
+
+def _scrub(text: str) -> str:
+    return _YA29.sub("<token>", text or "").strip()
 
 
 def find_tool() -> str:
@@ -80,10 +88,13 @@ def refresh_via_tool(*, timeout: float = 60.0) -> tuple[bool, str]:
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return False, f"{type(exc).__name__}: {exc}"
     out = (proc.stdout or "") + (proc.stderr or "")
+    # 200 characters cut the diagnosis in half: measured 2026-10-31 18:4x, the complaint
+    # ended as `error sending request for url ` with the URL - the whole finding - chopped
+    # off. 600 keeps it, and no token crosses that line.
     if proc.returncode != 0:
-        return False, out.strip()[:200] or f"退出码 {proc.returncode}"
+        return False, _scrub(out)[:600] or f"退出码 {proc.returncode}"
     log.info("antigravity: credential refreshed through Antigravity Tools")
-    return True, out.strip()[:200]
+    return True, _scrub(out)[:600]
 
 
 def _run_tool(binary: str, env: dict, timeout: float):

@@ -756,6 +756,10 @@ async def test_a_stale_lease_with_a_node_that_refuses_google_says_so(monkeypatch
         "source": "windows-credential-manager", "present": True,
         "expires_at": time.time() - 600, "expires_in_seconds": -600})
     prov.proxy_reason = "ok"
+    # The node gets *asked* before it can be blamed (2026-10-31: this exact complaint also
+    # arrived while the node was passing every Google host).
+    monkeypatch.setattr("quota_hub.providers.apps.antigravity.api.probe_network",
+                        lambda *_a, **_k: {"ok": False, "failed": ["google-oauth"]})
 
     class _Proc:
         returncode = 1
@@ -775,6 +779,46 @@ async def test_a_stale_lease_with_a_node_that_refuses_google_says_so(monkeypatch
     assert "节点" in reason, reason
     assert "过期" not in reason, reason
     assert prov.credential_health()[1] == reason
+
+
+@pytest.mark.asyncio
+async def test_a_renewal_that_cannot_get_out_while_the_node_passes_blames_neither(monkeypatch, tmp_path):
+    """Measured 2026-10-31 18:4x: the tool could not send its refresh request, and the node
+    answered all three Google hosts inside 3 s. Saying "换一个节点" there sends him to swap a
+    working node; the one thing that actually re-pushes the slot is opening that app once."""
+    import asyncio
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    _empty_store(monkeypatch, tmp_path)
+    prov = build_provider()
+    monkeypatch.setattr(ds, "antigravity_desktop_token_status", lambda: {
+        "source": "windows-credential-manager", "present": True,
+        "expires_at": time.time() - 865, "expires_in_seconds": -865})
+    prov.proxy_reason = "ok"
+    monkeypatch.setattr("quota_hub.providers.apps.antigravity.api.probe_network",
+                        lambda *_a, **_k: {"ok": True, "failed": []})
+
+    class _Proc:
+        returncode = 1
+        stdout = "[Antigravity CLI] 正在检索目标账号..."
+        stderr = ("[Antigravity CLI Error] Token refresh failed: Refresh failed for client "
+                  "[antigravity_enterprise]: Refresh request failed: error sending request for url "
+                  "(https://oauth2.googleapis.com/token)")
+
+    monkeypatch.setattr(tool_bridge, "find_tool", lambda: r"C:\fake\antigravity-tools.exe")
+    monkeypatch.setattr(tool_bridge, "_run_tool", lambda *a, **k: _Proc())
+
+    prov.signed_in()  # fires the renewal
+    deadline = time.time() + 5
+    while time.time() < deadline and prov._verdict is None:
+        await asyncio.sleep(0.02)
+    assert prov._verdict is not None, "the renewal never answered"
+    live, reason = prov.credential_health()
+    assert live is False
+    assert "节点" not in reason, reason
+    assert reason == "credential_expired", reason
 
 
 @pytest.mark.asyncio
