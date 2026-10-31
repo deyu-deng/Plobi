@@ -1943,31 +1943,43 @@ text-* variant utilities. */ .btn-arc {
    渐变玻璃底 + 对话/右栏两张白卡；**左栏不上卡**（和 Qoder 一样直接坐在底上）；
    卡间接缝 1px（用户选的「贴死」），圆角 12px。整组由偏好 `layout.shellCards` 控制。
    ───────────────────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────
+   主界面「卡片壳」：**几何归设计语言，颜色归主题**（用户 10-30 定的融合口径）
+
+   - 几何：外边距 14 / 接缝 1 / 圆角 12（任何主题都不改，否则界面会散）
+   - 颜色：画布与卡片底**从主题种子派生**，不写死——
+     换主题时连那层雾和卡片底色一起换；Qoder 那套暖色只是默认主题的观感。
+   - 主题可以整体覆盖两格：`--theme-shell-canvas`（自定义画布）与
+     `--theme-shell-card`（自定义卡面），给品牌主题留口。
+   ───────────────────────────────────────────────────────────────────────── */
 :root {
   --dl-shell-margin: 14px;
   --dl-shell-gap: 1px;
   --dl-shell-radius: 12px;
-  --dl-shell-canvas: linear-gradient(150deg, #eaecc7 0%, #e4ead1 42%, #d9e2e3 100%);
+  /* 画布雾：背景色 → 混一点品牌色 → 混一点前景色，低对比三段；主题没给种子时退回中性灰 */
+  --dl-shell-canvas: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--theme-background-seed, #f6f6f6) 82%, var(--theme-midground, #4b6f5a) 18%) 0%,
+    var(--theme-background-seed, #f6f6f6) 52%,
+    color-mix(in srgb, var(--theme-background-seed, #f6f6f6) 86%, var(--theme-foreground, #0b0b0a) 14%) 100%
+  );
 }
 
 .shell-cards {
-  /* 卡片模式的三条口径（2026-10-30 实测差距之后改的）：
-     ① 底必须真的露出来——8px 实际只渲出 ~3px，加到 14px；
-     ② 底不能是"主题把强调色混进去的蓝白"（量到 #F4F7FF），钉成中性白/黑；
-     ③ 左栏不上卡 ⇒ 连它内部用的 --ui-bg-chrome 一起置空，否则它自己刷一层底。 */
-  --ui-bg-primary: var(--dl-surface-base, #fff);
-  --ui-chat-surface-background: var(--dl-surface-base, #fff);
+  --ui-bg-primary: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  --ui-chat-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   --sidebar: transparent;
   --ui-bg-chrome: transparent;
-  --ui-stroke-quaternary: var(--dl-stroke-hairline, #e5e5e5);
-  --ui-stroke-tertiary: var(--dl-stroke-hairline, #e5e5e5);
+  --ui-stroke-quaternary: var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
+  --ui-stroke-tertiary: var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
   padding: var(--dl-shell-margin);
-  background-color: var(--dl-surface-canvas, #fff);
+  background-color: var(--theme-background-seed, var(--dl-surface-canvas));
   box-sizing: border-box;
 }
 
-:root:not(.dark) .shell-cards {
-  background-image: var(--theme-asset-bg, var(--dl-shell-canvas));
+/* 画布：主题自带的图 > 主题自绘的画布 > 从种子生成的那层雾 */
+.shell-cards {
+  background-image: var(--theme-asset-bg, var(--theme-shell-canvas, var(--dl-shell-canvas)));
   background-position: center;
   background-size: cover;
 }
@@ -1976,7 +1988,7 @@ text-* variant utilities. */ .btn-arc {
   gap: var(--dl-shell-gap);
 }
 
-/* 左栏：不上卡，直接坐在玻璃底上（连内部的底色一起让开） */
+/* 左栏：不上卡，直接坐在画布上；连它内部用的 chrome 底一起让开 */
 .shell-cards [data-pane-id][data-pane-side='left'] {
   --ui-bg-primary: transparent;
   --ui-bg-secondary: transparent;
@@ -1986,27 +1998,20 @@ text-* variant utilities. */ .btn-arc {
   box-shadow: none;
 }
 
-/* 对话与右栏：白卡。用设计令牌里的中性白/发丝线，不跟主题的混色走 */
+/* 对话与右栏：卡片。底色、发丝线全部走主题；几何走设计语言 */
 .shell-cards [data-pane-main='true'],
 .shell-cards [data-pane-id][data-pane-side='right'] {
-  --ui-bg-primary: var(--dl-surface-base, #fff);
-  --ui-chat-surface-background: var(--dl-surface-base, #fff);
-  background: var(--dl-surface-base, #fff);
-  border: 1px solid var(--dl-stroke-hairline, #e5e5e5);
+  --ui-bg-primary: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  --ui-chat-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  border: 1px solid var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
   border-radius: var(--dl-shell-radius);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
   overflow: hidden;
 }
 
-.dark .shell-cards {
-  --ui-bg-primary: #161616;
-  --ui-chat-surface-background: #161616;
-  background-color: #101010;
-}
-
+/* 暗色：几何不动，只把阴影加深（卡片底/画布已经跟着主题种子走了） */
 .dark .shell-cards [data-pane-main='true'],
 .dark .shell-cards [data-pane-id][data-pane-side='right'] {
-  background: #161616;
-  border-color: #2a2a2a;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
 }
