@@ -225,3 +225,101 @@ def test_a_configured_key_turns_the_leg_on_without_any_store(tmp_path, monkeypat
             assert prov.served_models == ("opencode_api/jev-1.13",)
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def _recording_http(routes: dict[str, httpx.Response], seen: list) -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, dict(request.headers), request.content))
+        if request.url.path in routes:
+            return routes[request.url.path]
+        return httpx.Response(404, json={"error": "route"})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def test_the_vendor_default_splits_chat_and_list_across_the_two_lanes():
+    """Measured 2026-10-31: chat lives on `/inference/openai/v1`, the list on `/inference/v1`.
+
+    `/zen/v1`, which this leg and the hub's own config used to dial, is a legacy base: the
+    working community proxy rewrites all four legacy forms on load, and non-CLI traffic
+    against them is answered as quota-exhausted - so a paid subscription would still have
+    kept hitting a wall we built ourselves.
+    """
+    prov = OpencodeApiProvider({"api_key": "k"}, _recording_http({}, []))
+    assert prov.base_url == "https://opencode.ai/inference/openai/v1"
+    assert prov.models_url == "https://opencode.ai/inference/v1/models"
+
+
+def test_the_paid_lane_identity_headers_are_ours_to_send(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+    seen: list = []
+    chat = httpx.Response(200, json={"id": "c1", "object": "chat.completion", "choices": [
+        {"index": 0, "message": {"role": "assistant", "content": "好"}, "finish_reason": "stop"}]})
+    http = _recording_http({"/v1/models": _models("big-pickle"), "/v1/chat/completions": chat}, seen)
+
+    async def _go():
+        async with http:
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "zen-key"}, http)
+            accounts = await prov.discover_accounts()
+            await prov.chat(accounts[0], {"model": "opencode_api/big-pickle",
+                                          "messages": [{"role": "user", "content": "hi"}]})
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    assert len(seen) == 2
+    for _method, _path, headers, _body in seen:
+        assert headers["user-agent"] == "plobi-quota-hub/1.0", "our own identity, not a fake CLI"
+        session = headers["x-opencode-session"]
+        assert session.startswith("ses_") and len(session) > 16
+        assert int(session[4:16], 16) > 0, "the gate reads the leading 12 hex as a creation timestamp"
+        assert len(headers["x-opencode-project"]) == 40, "sha1 hex of `directory:<abs path>`"
+    assert "x-org-id" not in seen[0][2], "no org header when the credential carries no org"
+
+
+def test_an_org_bearing_credential_sends_the_org_header(tmp_path, monkeypatch):
+    path = tmp_path / "org.sqlite3"
+    con = sqlite3.connect(path)
+    con.execute("create table credential (id text, integration_id text, label text, value text, "
+                "connector_id text, method_id text, active integer, time_created integer, time_updated integer)")
+    value = json.dumps({"type": "oauth", "access": "at", "refresh": "rt", "expires": 0, "methodID": "code",
+                        "metadata": {"orgID": "org-77", "server": "https://opencode.ai/console"}})
+    con.execute("insert into credential values ('c1','opencode','Personal',?,null,null,1,0,1)", (value,))
+    con.commit()
+    con.close()
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", str(path))
+
+    seen: list = []
+    http = _recording_http({"/v1/models": _models("big-pickle")}, seen)
+
+    async def _go():
+        async with http:
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "zen-key"}, http)
+            await prov.discover_accounts()
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    assert seen[0][2]["x-org-id"] == "org-77"
+
+
+def test_streaming_forwards_each_frame_instead_of_folding_the_answer(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+    sse = ("data: " + json.dumps({"id": "s1", "object": "chat.completion.chunk", "choices": [
+        {"index": 0, "delta": {"content": "你"}, "finish_reason": None}]})
+           + "\n\ndata: " + json.dumps({"id": "s1", "object": "chat.completion.chunk", "choices": [
+        {"index": 0, "delta": {"content": "好"}, "finish_reason": "stop"}]}) + "\n\ndata: [DONE]\n\n")
+    seen: list = []
+    routes = {"/v1/models": _models("big-pickle"),
+              "/v1/chat/completions": httpx.Response(200, text=sse,
+                                                    headers={"content-type": "text/event-stream"})}
+    http = _recording_http(routes, seen)
+
+    async def _go():
+        async with http:
+            prov = OpencodeApiProvider({"base_url": BASE, "api_key": "zen-key"}, http)
+            accounts = await prov.discover_accounts()
+            return [chunk async for chunk in prov.chat_stream(
+                accounts[0], {"model": "opencode_api/big-pickle",
+                              "messages": [{"role": "user", "content": "hi"}]})]
+
+    chunks = asyncio.run(asyncio.wait_for(_go(), timeout=30))
+    assert [c["choices"][0]["delta"]["content"] for c in chunks] == ["你", "好"], "incremental, not one blob"
+    sent = json.loads(seen[-1][3])
+    assert sent["stream"] is True and sent["stream_options"]["include_usage"] is True, "usage only comes if asked"

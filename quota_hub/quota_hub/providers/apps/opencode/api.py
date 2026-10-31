@@ -37,6 +37,7 @@ the box stays empty — which is the honest answer to "你有 Zen 吗".
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -66,9 +67,11 @@ def read_credential() -> dict[str, Any] | None:
     path = store_path()
     if not path.is_file():
         return None
-    uri = f"file:{path.as_posix()}?mode=ro&immutable=1"
+    uri = f"file:{path.as_posix()}?mode=ro"
     try:
-        con = sqlite3.connect(uri, uri=True)
+        # `mode=ro` without `immutable`: OpenCode rewrites this row when it renews, and
+        # immutable tells SQLite the file never changes.
+        con = sqlite3.connect(uri, uri=True, timeout=0.25)
     except sqlite3.Error as exc:
         log.warning("opencode store at %s cannot be opened read-only: %s", path, exc)
         return None
@@ -92,6 +95,32 @@ def read_credential() -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+DEFAULT_CHAT_BASE = "https://opencode.ai/inference/openai/v1"
+DEFAULT_MODELS_BASE = "https://opencode.ai/inference/v1"
+#: Our own identity, per OpenCode's paid-lane instructions.
+SELF_UA = "plobi-quota-hub/1.0"
+
+_BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _session_id() -> str:
+    """`ses_` + a plausible creation timestamp + random tail.
+
+    Measured in `12errh/zen-proxy`: the gate decodes the leading 12 hex characters as a
+    creation timestamp and rejects ids without a plausible one (`403 FreeTierError`), so a
+    random string is not a session id.
+    """
+    stamp = int(time.time() * 1000) * 0x1000
+    head = f"{stamp:012x}"[-12:]
+    return "ses_" + head + "".join(_BASE62[b % 62] for b in os.urandom(14))
+
+
+def _project_id(config: dict) -> str:
+    """sha1 of `directory:<absolute path>` - the shape the upstream expects."""
+    directory = str(config.get("project_directory") or os.getcwd())
+    return hashlib.sha1(f"directory:{Path(directory).resolve()}".encode("utf-8")).hexdigest()
+
+
 class OpencodeApiProvider(Provider):
     name = "opencode_api"
     display_name = "OpenCode Zen"
@@ -99,10 +128,25 @@ class OpencodeApiProvider(Provider):
 
     def __init__(self, config: dict, http) -> None:
         super().__init__(config, http)
-        self.base_url = str(config.get("base_url") or "https://opencode.ai/zen/v1").rstrip("/")
+        # Two lanes, measured 2026-10-31 from the vendor's own console docs and from
+        # `12errh/zen-proxy` (MIT): chat goes on `/inference/openai/v1`, the model list on
+        # `/inference/v1`. The `/zen/v1` this leg used to dial is a *legacy* base - the
+        # proxy rewrites all four legacy forms on load, and non-CLI traffic against them is
+        # treated as quota-exhausted (429 FreeUsageLimitError), which is what a working
+        # subscription would have kept hitting.
+        self.base_url = str(config.get("base_url") or DEFAULT_CHAT_BASE).rstrip("/")
+        # An explicitly configured base keeps its own list endpoint (that is how a test or a
+        # mirror is pointed at one host); the vendor default splits across the two lanes.
+        self.models_url = str(config.get("models_url")
+                              or (f"{self.base_url}/models" if config.get("base_url")
+                                  else f"{DEFAULT_MODELS_BASE}/models"))
         self.timeout = float(config.get("timeout", 120.0))
         self.served_models = ()
         self._credential: dict[str, Any] | None = None
+        # A paid lane has to identify itself: OpenCode's docs ask for "its own user agent…
+        # rather than a generic SDK" plus a stable session id. These are ours, per process.
+        self._session_id = _session_id()
+        self._project_id = _project_id(config)
         # A paid plan / API key is the only way a turn is served over HTTP (see header).
         self.api_key = str(
             config.get("api_key") or os.environ.get("OPENCODE_ZEN_API_KEY") or os.environ.get("OPENCODE_API_KEY") or ""
@@ -155,8 +199,8 @@ class OpencodeApiProvider(Provider):
         """Upstream's own list. Failure means "no models", not "use the old list"."""
         try:
             res = await self.http.get(
-                f"{self.base_url}/models",
-                headers={"Authorization": f"Bearer {token}"},
+                self.models_url,
+                headers=self._headers(token),
                 timeout=self.timeout,
             )
         except Exception as exc:  # noqa: BLE001 - transport errors are not model names
@@ -207,6 +251,21 @@ class OpencodeApiProvider(Provider):
             raise UpstreamError(401, "opencode credential expired — sign in again with `opencode auth login`", reauth=True)
 
     # --- the turn ----------------------------------------------------------
+    def _headers(self, token: str) -> dict[str, str]:
+        data = self._credential if self._credential is not None else (read_credential() or {})
+        metadata = data.get("metadata") or {}
+        org = str(metadata.get("orgID") or metadata.get("org_id") or "")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": SELF_UA,
+            "x-opencode-session": self._session_id,
+            "x-opencode-project": self._project_id,
+        }
+        if org:
+            headers["x-org-id"] = org
+        return headers
+
     def _body(self, oai_req: dict) -> dict[str, Any]:
         body = {k: v for k, v in oai_req.items() if k in {
             "messages", "temperature", "top_p", "max_tokens", "stop", "tools", "tool_choice", "parallel_tool_calls",
@@ -218,7 +277,7 @@ class OpencodeApiProvider(Provider):
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         res = await self.http.post(
             f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {acc.cred.access_token}"},
+            headers=self._headers(acc.cred.access_token),
             json=self._body(oai_req),
             timeout=self.timeout,
         )
@@ -230,13 +289,47 @@ class OpencodeApiProvider(Provider):
             raise UpstreamError(502, f"opencode answered a non-JSON body: {exc}") from exc
 
     async def chat_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
-        # v1 folds the answer into one chunk: correct, just not incremental. The
-        # incremental path needs SSE proxying and its own tests; the turn is what matters.
-        result = await self.chat(acc, oai_req)
+        """Real SSE when the lane speaks it, folded answer when it answers JSON.
+
+        Measured: the paid lane streams OpenAI-shaped `chat.completion.chunk` frames, and
+        usage only arrives when `stream_options.include_usage` is asked for. This leg used
+        to fold the whole answer into one chunk, which is a turn that works and a UI that
+        never shows progress.
+        """
+        body = {**self._body(oai_req), "stream": True, "stream_options": {"include_usage": True}}
+        async with self.http.stream(
+                "POST", f"{self.base_url}/chat/completions",
+                headers=self._headers(acc.cred.access_token), json=body, timeout=self.timeout) as res:
+            if res.status_code != 200:
+                await res.aread()
+                raise UpstreamError(res.status_code, res.text[:400])
+            if "text/event-stream" not in str(res.headers.get("content-type", "")):
+                payload = await res.aread()
+                try:
+                    result = json.loads(payload.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise UpstreamError(502, f"opencode answered a non-JSON body: {exc}") from exc
+                yield self._folded(result, oai_req)
+                return
+            async for line in res.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    return
+                try:
+                    chunk = json.loads(payload)
+                except ValueError:
+                    continue
+                if isinstance(chunk, dict):
+                    yield chunk
+
+    @staticmethod
+    def _folded(result: dict, oai_req: dict) -> dict:
         choice = (result.get("choices") or [{}])[0] if isinstance(result, dict) else {}
         message = choice.get("message") or {}
         cid = str(result.get("id") or f"opencode-{int(time.time())}")
-        yield {
+        return {
             "choices": [{"delta": message, "finish_reason": choice.get("finish_reason") or "stop", "index": 0}],
             "created": int(result.get("created") or time.time()),
             "id": cid,

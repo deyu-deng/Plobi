@@ -130,7 +130,9 @@ providers:
 
   opencode_api:
     enabled: true
-    base_url: https://opencode.ai/zen/v1
+    # 10-31：基座交给类里的默认值——chat 走 `/inference/openai/v1`，名单走 `/inference/v1`。
+    # 原来这里写死的是 `/zen/v1`，而那是被现成实现当"旧基座"迁移掉的一条：非 CLI 流量在上面
+    # 一律按额度耗尽处理（429 FreeUsageLimitError）。要指别处再显式加 base_url / models_url。
 
   opencode_cli:
     enabled: true
