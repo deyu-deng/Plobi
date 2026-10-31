@@ -153,6 +153,8 @@ class OpencodeApiProvider(Provider):
         self._project_id = _project_id(config)
         #: Set from the upstream's own `retry-after` when the free bucket answers 429.
         self._free_blocked_until = 0.0
+        #: Set by an account-level `402 Insufficient account funds`; cleared by a served turn.
+        self._no_wallet = False
         # A paid plan / API key is the only way a turn is served over HTTP (see header).
         self.api_key = str(
             config.get("api_key") or os.environ.get("OPENCODE_ZEN_API_KEY") or os.environ.get("OPENCODE_API_KEY") or ""
@@ -196,6 +198,10 @@ class OpencodeApiProvider(Provider):
         blocked = float(self._free_blocked_until or 0.0)
         if blocked > time.time():
             return False, "quota_exhausted", data
+        # An account-level "no funds" answer outranks "live" until a turn proves otherwise;
+        # the wording already exists in all four languages (这条渠道要付费订阅或一个 API key).
+        if self._no_wallet:
+            return False, "no_subscription", data
         return True, "ok", data
 
     def credential_health(self) -> tuple[bool, str]:
@@ -303,6 +309,15 @@ class OpencodeApiProvider(Provider):
             pass
         if res.status_code == 401:
             return UpstreamError(401, text, reauth=True)
+        if res.status_code == 402:
+            # Measured 2026-10-31 on his own account: every paid id answers
+            # `402 {"type":"server_error","message":"Upstream request failed: Insufficient
+            # account funds"}`. That answer is only reachable *after* the door accepts who
+            # we are - so this leg is not a stranger; the account simply has no balance.
+            # One such answer is an account-level fact, so it ends the whole leg's turn
+            # here instead of letting 32 ids each burn two refusals to leave the box one by one.
+            self._no_wallet = True
+            return UpstreamError(res.status_code, text, retryable=False)
         if res.status_code == 429 and kind == "FreeUsageLimitError":
             try:
                 wait = float(res.headers.get("retry-after") or 0.0)
@@ -322,6 +337,7 @@ class OpencodeApiProvider(Provider):
         )
         if res.status_code != 200:
             raise self._refuse(res)
+        self._no_wallet = False  # a served turn outranks any earlier "no funds"
         try:
             return res.json()
         except ValueError as exc:
@@ -342,6 +358,7 @@ class OpencodeApiProvider(Provider):
             if res.status_code != 200:
                 await res.aread()
                 raise self._refuse(res)
+            self._no_wallet = False  # a served stream is as good evidence as a served turn
             if "text/event-stream" not in str(res.headers.get("content-type", "")):
                 payload = await res.aread()
                 try:

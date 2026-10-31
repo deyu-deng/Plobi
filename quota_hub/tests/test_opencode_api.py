@@ -354,3 +354,33 @@ def test_streaming_forwards_each_frame_instead_of_folding_the_answer(tmp_path, m
     assert [c["choices"][0]["delta"]["content"] for c in chunks] == ["你", "好"], "incremental, not one blob"
     sent = json.loads(seen[-1][3])
     assert sent["stream"] is True and sent["stream_options"]["include_usage"] is True, "usage only comes if asked"
+
+
+def test_an_insufficient_funds_answer_ends_the_leg_instead_of_per_model_strikes(tmp_path, monkeypatch):
+    """Measured 2026-10-31: every paid id answers `402 Insufficient account funds`.
+
+    That answer is only reachable after the door accepts who is asking, so the leg is not a
+    stranger - the account has no balance. It is an account-level fact, so one of them must
+    retire the whole leg rather than let 32 ids each burn two refusals to leave the box one
+    by one, and the card must then state the true reason.
+    """
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+    unpaid = httpx.Response(
+        402,
+        json={"type": "error", "error": {"type": "server_error",
+                                         "message": "Upstream request failed: Insufficient account funds"}})
+
+    async def _go():
+        async with _http({"/v1/models": _models("claude-opus-5-5"),
+                          "/v1/chat/completions": unpaid}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            accounts = await prov.discover_accounts()
+            with pytest.raises(UpstreamError) as caught:
+                await prov.chat(accounts[0], {"model": "opencode_api/claude-opus-5-5",
+                                              "messages": [{"role": "user", "content": "hi"}]})
+            assert caught.value.status == 402 and caught.value.retryable is False
+            assert prov.credential_health() == (False, "no_subscription")
+            prov._no_wallet = False
+            assert prov.credential_health() == (True, "ok"), "a top-up needs no restart"
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
