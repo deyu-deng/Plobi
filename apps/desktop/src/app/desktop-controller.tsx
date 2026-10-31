@@ -2042,6 +2042,18 @@ export function DesktopController() {
     </Pane>
   )
 
+  // PaneShell 只收**直接子元素**（Children.forEach 不钻 Fragment）：这一组必须平铺成数组，
+  // 用 <>…</> 包起来的话 Pane 收不到槽位、就整块不渲染（10-31 自测：右栏与对话窄卡都消失）。
+  const shellPanes = swapped
+    ? [<PaneMain key="main">{railCard}</PaneMain>, chatPane]
+    : [
+        <PaneMain key="main">{chatCard}</PaneMain>,
+        panesFlipped ? fileBrowserPane : null,
+        previewPane,
+        agendaTimelinePane,
+        panesFlipped ? null : fileBrowserPane
+      ]
+
   return (
     <AppShell
       leftStatusbarItems={leftStatusbarItems}
@@ -2073,25 +2085,8 @@ export function DesktopController() {
           {sidebar}
         </Pane>
       )}
-      {swapped ? (
-        <>
-          <PaneMain>{railCard}</PaneMain>
-          {chatPane}
-        </>
-      ) : (
-        <>
-          <PaneMain>{chatCard}</PaneMain>
-          {/*
-            Order within a side maps to column order. Default (rail on the right):
-            main | preview | review | agenda. Flipped (rail on the left): mirror so
-            the workbench stays adjacent to the chat.
-          */}
-          {panesFlipped ? fileBrowserPane : null}
-          {previewPane}
-          {agendaTimelinePane}
-          {panesFlipped ? null : fileBrowserPane}
-        </>
-      )}
+      {/* 顺序即列序（正常态）：main | preview | 日程 | 工作台；换边/互换时由 shellPanes 重排 */}
+      {shellPanes}
     </AppShell>
   )
 }
