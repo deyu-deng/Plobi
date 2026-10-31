@@ -29,6 +29,15 @@ import {
   withSessionBusyRetry
 } from './utils'
 
+/**
+ * 当前屏对应哪个 Agent（`#/agent/<name>`）。带着它发这一轮，会话就有了硬身份；
+ * 不带时后端仍按目录归属认人（兜底，不是主路）。
+ */
+function currentAgentName(): string | null {
+  const match = /#\/agent\/([^/?#]+)/.exec(window.location.hash)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
 interface SubmitPromptDeps {
   activeSessionId: string | null
   activeSessionIdRef: MutableRefObject<string | null>
@@ -400,6 +409,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
               {
                 session_id: liveSessionId,
                 text,
+                ...(currentAgentName() ? { agent: currentAgentName() as string } : {}),
                 ...(options?.replyTo ? { reply_to: options.replyTo } : {}),
               },
               PROMPT_SUBMIT_REQUEST_TIMEOUT_MS,
@@ -421,6 +431,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
                   {
                     session_id: recoveredId,
                     text,
+                    ...(currentAgentName() ? { agent: currentAgentName() as string } : {}),
                     ...(options?.replyTo ? { reply_to: options.replyTo } : {}),
                   },
                   PROMPT_SUBMIT_REQUEST_TIMEOUT_MS,

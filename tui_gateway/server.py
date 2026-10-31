@@ -1847,6 +1847,12 @@ def _ensure_session_db_row(session: dict) -> None:
             cwd=_session_cwd(session) if session.get("explicit_cwd") else None,
             agent_id=_agent_id_for_session(session),
         )
+        # 老会话（行已存在）也要能被后来带的 agent 绑上——只填空、不改已绑的。
+        resolved = _agent_id_for_session(session)
+        if resolved:
+            from plobi.mind.identity import bind_session_agent
+
+            bind_session_agent(key, resolved, db=db)
     except Exception:
         logger.debug("failed to persist desktop session row", exc_info=True)
 
@@ -8564,6 +8570,16 @@ def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
         return err
+    # 身份显式带上来（渲染层按当前 `/agent/<name>` 给）：比目录归属更硬。
+    # 先记在 session 上，真正落库在 `_ensure_session_db_row`（每轮都会跑一次）。
+    agent_hint = str(params.get("agent") or "").strip()
+    if agent_hint:
+        try:
+            from plobi.mind.identity import resolve_agent_name
+
+            session["agent"] = resolve_agent_name(agent_hint) or agent_hint
+        except Exception:  # noqa: BLE001 - 名册读不到就按原样记
+            session["agent"] = agent_hint
     # Narrow hard-route seam (WP-BE-13): a plugin may pin a frozen utterance
     # onto a tool call by rewriting the turn text.  Non-matching utterances
     # come back byte-for-byte identical.

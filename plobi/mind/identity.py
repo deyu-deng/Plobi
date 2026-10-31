@@ -64,3 +64,33 @@ def resolve_agent_for_path(path: str) -> str:
                 if len(folder) > best_len:
                     best_name, best_len = str(getattr(entry, "name", "") or ""), len(folder)
     return best_name
+
+
+def bind_session_agent(session_id: str, agent_id: str, db=None) -> bool:
+    """把一条会话**只往里填**一次身份；已绑过就不动（改名只改显示名）。
+
+    放在这一档而不是 `plobi_state.py`：那一档由别线在派，而"填空"是这一条链自己的责任。
+    走的是 `SessionDB._execute_write`（本仓既有的写法入口），条件里带 `agent_id 为空`，
+    所以并发下也是「先到的那次赢」，不会把已绑的会话改到别的 Agent 上。
+    """
+    agent = str(agent_id or "").strip()
+    if not session_id or not agent:
+        return False
+    try:
+        if db is None:
+            from plobi_constants import get_plobi_state_home
+            from plobi_state import SessionDB
+
+            db = SessionDB(db_path=get_plobi_state_home() / "state.db")
+
+        def _do(conn):
+            cur = conn.execute(
+                "UPDATE sessions SET agent_id = ? WHERE id = ? "
+                "AND (agent_id IS NULL OR agent_id = '')",
+                (agent, session_id),
+            )
+            return cur.rowcount or 0
+
+        return int(db._execute_write(_do) or 0) > 0
+    except Exception:  # noqa: BLE001 - 绑不上按未绑定处理，别让这一轮失败
+        return False
