@@ -19,6 +19,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { useI18n } from '@/i18n'
 import { isFocusWithin } from '@/lib/keybinds/combo'
 import { mediaKind } from '@/lib/media'
+import { readKey, storageKey, writeKey } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
@@ -34,6 +35,8 @@ import {
   $shellCards,
   $shellSwapped,
   $sidebarOpen,
+  $workbenchOnly,
+  toggleWorkbenchOnly,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
@@ -198,6 +201,61 @@ const SkillsView = lazy(async () => ({ default: (await import('./skills')).Skill
 const KnowledgeView = lazy(async () => ({ default: (await import('./knowledge')).KnowledgeView }))
 const DiaryView = lazy(async () => ({ default: (await import('./diary')).DiaryView }))
 
+// ── 文件页签按工作区记住 ──────────────────────────────────────────────────
+// 用户 10-31：在 A 这个 Agent 里开着页签，切去 B 说句话再回来，页签全没了。
+// 页签本来就属于 Agent 的文件夹，切走时该收起来而不是丢掉——所以按 cwd 分格存，
+// 内存一份（同一次运行内立刻可用）+ localStorage 一份（重启后还在）。
+// 文件被删/移走时不报错：那一条恢复失败就跳过，界面照常。
+type OpenFileTabs = Record<string, { def: RightRailTabDef; target: PreviewTarget }>
+
+const FILE_TABS_STORAGE = 'desktop.workbench.fileTabs'
+
+function fileTabsKey(workspace: string): string {
+  return `${storageKey(FILE_TABS_STORAGE)}.${workspace || 'l1'}`
+}
+
+function persistFileTabs(workspace: string, files: OpenFileTabs) {
+  try {
+    const rows = Object.entries(files).map(([id, entry]) => ({
+      id,
+      target: entry.target,
+      title: entry.def.title
+    }))
+
+    writeKey(fileTabsKey(workspace), JSON.stringify(rows))
+  } catch {
+    // 存不下就算了：页签只是便利，不该让一次写失败冒到界面上。
+  }
+}
+
+function loadFileTabs(workspace: string): OpenFileTabs {
+  try {
+    const raw = readKey(fileTabsKey(workspace))
+
+    if (!raw) {
+      return {}
+    }
+
+    const rows = JSON.parse(raw) as Array<{ id?: string; target?: PreviewTarget; title?: string }>
+    const restored: OpenFileTabs = {}
+
+    for (const row of rows) {
+      if (!row?.id || !row.target || !row.id.startsWith('file:')) {
+        continue
+      }
+
+      restored[row.id] = {
+        def: { icon: 'file', id: row.id as RightRailTabId, title: row.title ?? row.id },
+        target: row.target
+      }
+    }
+
+    return restored
+  } catch {
+    return {}
+  }
+}
+
 export function DesktopController() {
   const queryClient = useQueryClient()
   const location = useLocation()
@@ -230,6 +288,7 @@ export function DesktopController() {
   const sidebarOpen = useStore($sidebarOpen)
   // 对话卡 ↔ 右栏卡互换（用户 10-31 选的换法）：交换后右栏当主区、对话进右侧窄卡。
   const swapped = useStore($shellSwapped)
+  const workbenchOnly = useStore($workbenchOnly)
   const chatDrop = useCardDrop('chat', toggleShellSwapped)
   const railDrop = useCardDrop('rail', toggleShellSwapped)
   const profileScope = useStore($profileScope)
@@ -702,16 +761,45 @@ export function DesktopController() {
     setFileBrowserOpen(true)
   }, [isL2])
 
-  // File tabs belong to the Agent's folder; switching folders must not leave a
-  // stale file from the previous workspace open.
+  // 文件页签属于 Agent 的文件夹：切走时**收起来**（不是丢掉），切回来原样摆回去。
+  // 10-31 用户报：在 A 里开着页签，切去 B 说句话再回 A，页签全没了。
+  const fileTabsByWorkspace = useRef<Record<string, OpenFileTabs>>({})
+  const openFilesRef = useRef(openFiles)
+  openFilesRef.current = openFiles
+  // 起点是空串：第一次进入某个工作区也要走「恢复」那一支，否则重启后明明存过也回不来。
+  const previousWorkspaceRef = useRef<string>('')
+
   useEffect(() => {
-    setOpenFiles({})
-    setL2Tabs(tabs => tabs.filter(id => !id.startsWith('file:')))
-    setL2Active(active => (active?.startsWith('file:') ? 'files' : active))
-    // L1 的栏也收文件页签（日程附件）。同一张 `openFiles` 被清空时两条腿都得收，
-    // 否则 l1Tabs 里会留一个没有 def 的 `file:` id：标签从栏里消失，active 还指着它。
-    setL1Tabs(tabs => tabs.filter(id => !id.startsWith('file:')))
+    const previous = previousWorkspaceRef.current
+
+    if (previous === agentCwd) {
+      return
+    }
+
+    previousWorkspaceRef.current = agentCwd
+
+    if (previous) {
+      fileTabsByWorkspace.current[previous] = openFilesRef.current
+    }
+
+    const restored = fileTabsByWorkspace.current[agentCwd] ?? loadFileTabs(agentCwd)
+    fileTabsByWorkspace.current[agentCwd] = restored
+
+    const fileIds = Object.keys(restored).filter(id => id.startsWith('file:')) as RightRailTabId[]
+
+    setOpenFiles(restored)
+    // 两条腿的栏都按这个工作区的页签重排：先摘掉 file: 那几条，再把恢复的接回去。
+    // 否则栏里会留一个没有 def 的 `file:` id：标签从栏里消失，active 还指着它。
+    setL1Tabs(tabs => [...tabs.filter(id => !id.startsWith('file:')), ...fileIds])
+    setL2Tabs(tabs => [...tabs.filter(id => !id.startsWith('file:')), ...fileIds])
+    setL1Active(active => (active?.startsWith('file:') ? (fileIds[0] ?? null) : active))
+    setL2Active(active => (active?.startsWith('file:') ? (fileIds[0] ?? 'files') : active))
   }, [agentCwd])
+
+  // 页签一有变化就落盘，重启后还能回到原样。写失败静默（页签只是便利）。
+  useEffect(() => {
+    persistFileTabs(agentCwd, openFiles)
+  }, [agentCwd, openFiles])
 
   // active 指着一条已经不在栏里的 id 时（关标签、清文件页签、附件被移走），
   // 落回第一个还在的标签——否则每个 panel 都是 hidden，整栏一片空白。
@@ -1920,11 +2008,14 @@ export function DesktopController() {
           terminal: isL1Workbench ? null : <TerminalPaneChrome />,
           ...fileTabContents
         }}
-        dragHandleProps={shellCards ? cardDragProps('rail') : undefined}
+        dragHandleProps={shellCards && !workbenchOnly ? cardDragProps('rail') : undefined}
         labels={t.workbench}
         collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
         collapseLabel={t.titlebar.hideRightSidebar}
-        onCollapse={swapped ? undefined : () => setFileBrowserOpen(false)}
+        maximizeLabel={workbenchOnly ? t.titlebar.restoreCard : t.titlebar.maximizeCard}
+        maximized={workbenchOnly}
+        onCollapse={swapped || workbenchOnly ? undefined : () => setFileBrowserOpen(false)}
+        onMaximize={toggleWorkbenchOnly}
         onTabChange={handleWorkbenchTabChange}
         onTabClose={handleWorkbenchTabClose}
         onTabOpen={handleWorkbenchTabOpen}
@@ -1982,11 +2073,14 @@ export function DesktopController() {
           // 文件页签（日程附件点开的那种）。内容和 L2 那份是同一张 `fileTabContents`。
           ...fileTabContents
         }}
-        dragHandleProps={shellCards ? cardDragProps('rail') : undefined}
+        dragHandleProps={shellCards && !workbenchOnly ? cardDragProps('rail') : undefined}
         labels={t.workbench}
         collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
         collapseLabel={t.titlebar.hideRightSidebar}
-        onCollapse={swapped ? undefined : () => togglePane('agenda-timeline')}
+        maximizeLabel={workbenchOnly ? t.titlebar.restoreCard : t.titlebar.maximizeCard}
+        maximized={workbenchOnly}
+        onCollapse={swapped || workbenchOnly ? undefined : () => togglePane('agenda-timeline')}
+        onMaximize={toggleWorkbenchOnly}
         onTabChange={handleWorkbenchTabChange}
         onTabClose={handleWorkbenchTabClose}
         onTabOpen={handleWorkbenchTabOpen}
@@ -2111,7 +2205,11 @@ export function DesktopController() {
             chatScope={chatScope}
             composer={composer}
             modelMenuContent={modelMenuContent}
-            rightRail={swapped ? undefined : shellRightRail}
+            rightRail={
+              swapped || workbenchOnly || (level === 'l1' ? agendaPaneOpen : fileBrowserOpen)
+                ? undefined
+                : shellRightRail && { ...shellRightRail, side: railSide }
+            }
             submit={stableSubmit}
           />
         }
@@ -2121,6 +2219,7 @@ export function DesktopController() {
   )
 
   // 互换后：右栏内容进主区，对话进右侧窄卡。两张卡都带落点，拖另一张过来就换回。
+  // 「只隐藏对话」（10-31）：工作面独占主区，对话不渲染，侧边栏照旧。
   const chatCard = (
     <div
       className="flex h-full min-h-0 flex-col"
@@ -2150,15 +2249,37 @@ export function DesktopController() {
 
   // PaneShell 只收**直接子元素**（Children.forEach 不钻 Fragment）：这一组必须平铺成数组，
   // 用 <>…</> 包起来的话 Pane 收不到槽位、就整块不渲染（10-31 自测：右栏与对话窄卡都消失）。
-  const shellPanes = swapped
-    ? [<PaneMain key="main">{railCard}</PaneMain>, chatPane]
-    : [
-        <PaneMain key="main">{chatCard}</PaneMain>,
-        panesFlipped ? fileBrowserPane : null,
-        previewPane,
-        agendaTimelinePane,
-        panesFlipped ? null : fileBrowserPane
-      ]
+  const shellPanes = workbenchOnly
+    ? [<PaneMain key="main">{railCard}</PaneMain>]
+    : swapped
+      ? [<PaneMain key="main">{railCard}</PaneMain>, chatPane]
+      : [
+          <PaneMain key="main">{chatCard}</PaneMain>,
+          panesFlipped ? fileBrowserPane : null,
+          previewPane,
+          agendaTimelinePane,
+          panesFlipped ? null : fileBrowserPane
+        ]
+
+  // 左栏也是一条 Pane：换边后它必须排在同侧最后（最外一列），否则会掉进对话和工作面中间
+  // ——10-31 第二张截图那个 bug。正常态它排最前。
+  const sidebarPane = !isSecondaryWindow() ? (
+    <Pane
+      disabled={!sidebarPaneOpen}
+      forceWidth={sidebarOpen ? undefined : `${SIDEBAR_COLLAPSED_WIDTH}px`}
+      id="chat-sidebar"
+      key="chat-sidebar"
+      minWidth={SIDEBAR_DEFAULT_WIDTH}
+      maxWidth={SIDEBAR_MAX_WIDTH}
+      resizable={sidebarOpen}
+      side={sidebarSide}
+      width={`${SIDEBAR_DEFAULT_WIDTH}px`}
+    >
+      {sidebar}
+    </Pane>
+  ) : null
+
+  const orderedPanes = panesFlipped ? [...shellPanes, sidebarPane] : [sidebarPane, ...shellPanes]
 
   return (
     <AppShell
@@ -2172,27 +2293,8 @@ export function DesktopController() {
       statusbarItems={statusbarItems}
       titlebarTools={titlebarToolGroups.flat.right}
     >
-      {!isSecondaryWindow() && (
-        <Pane
-          // WP-A: the base sidebar is the shell's left rail for L1/L2 and the
-          // legacy chat alike. Overlay modals cover the shell; skills/messaging/
-          // artifacts keep this rail (Plobi original) so the page is escapable.
-          // 用户 10-31：收起 = 40px 图标条，栏本身永远在，所以不再用 disabled/
-          // hoverReveal 把它整个关掉；只有本页压根不该有左栏时才 disabled。
-          disabled={!sidebarPaneOpen}
-          forceWidth={sidebarOpen ? undefined : `${SIDEBAR_COLLAPSED_WIDTH}px`}
-          id="chat-sidebar"
-          minWidth={SIDEBAR_DEFAULT_WIDTH}
-          maxWidth={SIDEBAR_MAX_WIDTH}
-          resizable={sidebarOpen}
-          side={sidebarSide}
-          width={`${SIDEBAR_DEFAULT_WIDTH}px`}
-        >
-          {sidebar}
-        </Pane>
-      )}
-      {/* 顺序即列序（正常态）：main | preview | 日程 | 工作台；换边/互换时由 shellPanes 重排 */}
-      {shellPanes}
+      {/* 顺序即列序：正常态 sidebar | main | 右栏卡；换边后整条镜像，侧边栏排同侧最后 */}
+      {orderedPanes}
     </AppShell>
   )
 }
