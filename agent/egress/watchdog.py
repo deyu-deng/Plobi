@@ -108,22 +108,33 @@ def tick(table: Any = None, *, home: str | Path | None = None) -> str:
 
     Kept as a plain function (no loop) so the judgement is testable without processes.
     """
-    from agent.egress import engine
+    from agent.egress import engine, system_proxy
 
     table = table if table is not None else _load_table()
     if not getattr(table, "system_proxy_enabled", False):
         # Nothing on this machine points at the engine ⇒ nothing to keep alive.
         return "idle"
     state = engine.status(table, home=home).state
-    if state == engine.OURS:
-        return "healthy"
     if state == engine.FOREIGN:
         # Somebody else's proxy owns the port; a watchdog must not fight it.
         return "gave-up"
     if state == engine.OFF:
         return "idle"
-    engine.ensure(table, home=home)
-    return "restarted"
+    verdict = "healthy"
+    if state != engine.OURS:
+        engine.ensure(table, home=home)
+        verdict = "restarted"
+
+    # The **takeover** is part of "this machine depends on us".  Measured 10-31: the
+    # ikuuu client, on exit, restored its own registry values (ProxyEnable=0 + its
+    # override list) — our takeover disappeared silently and the machine went direct
+    # for ~15 hours (google dead, CN fine) while the table still said "take over".
+    # The table is the source of truth (裁定 94), so re-assert it.
+    info = system_proxy.status(table, home=home)
+    if info.get("declared") and not info.get("ours"):
+        if system_proxy.enable(table, home=home).ok and verdict == "healthy":
+            verdict = "retaken"
+    return verdict
 
 
 def _load_table():

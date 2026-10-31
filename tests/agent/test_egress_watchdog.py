@@ -19,9 +19,21 @@ class _Table:
 @pytest.fixture
 def fakes(monkeypatch):
     """engine.status / engine.ensure replaced by recorders."""
-    state = {"state": engine.OURS, "ensured": 0}
+    import types
+
+    state = {"state": engine.OURS, "ensured": 0, "ours": True, "taken": 0}
 
     monkeypatch.setattr(engine, "status", lambda table, **kw: engine.EngineReport(state["state"], "fake"))
+    from agent.egress import system_proxy
+
+    monkeypatch.setattr(
+        system_proxy, "status",
+        lambda table, **kw: {"declared": bool(table.system_proxy_enabled), "ours": state["ours"]},
+    )
+    monkeypatch.setattr(
+        system_proxy, "enable",
+        lambda table, **kw: (state.__setitem__("taken", state["taken"] + 1), types.SimpleNamespace(ok=True))[1],
+    )
     monkeypatch.setattr(engine, "ensure", lambda table, **kw: (state.__setitem__("ensured", state["ensured"] + 1),
                                                               engine.EngineReport(engine.OURS, "fake"))[1])
     return state
@@ -124,3 +136,15 @@ def types_simple():
     import types
 
     return types.SimpleNamespace(wait_procs=lambda procs, timeout=0: ([], []))
+
+def test_a_takeover_that_went_missing_is_taken_back(fakes):
+    """10-31 实测：ikuuu 退出时把注册表还原成它自己的值，我们的接管静默消失 ⇒ 整机直连 15 小时。"""
+    fakes["ours"] = False
+    assert watchdog.tick(_Table(True)) == "retaken"
+    assert fakes["taken"] == 1
+    assert fakes["ensured"] == 0, "引擎健康，不该因为接管丢了就重启引擎"
+
+
+def test_a_healthy_takeover_is_left_alone(fakes):
+    assert watchdog.tick(_Table(True)) == "healthy"
+    assert fakes["taken"] == 0
