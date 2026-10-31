@@ -1,4 +1,4 @@
-"""Kiro CLI (AWS) — spawn-based chat; model catalog from the CLI itself.
+"""Kiro (AWS) — its own streaming API first, the spawn of `kiro-cli` as the floor.
 
 Chat (compliant):
 
@@ -29,6 +29,7 @@ import time
 
 from ...base import Account, Capabilities
 from ...cli import CliProvider, _strip_ansi
+from .http import KiroHttpMixin
 
 _HELP_TIMEOUT = 20.0
 _WHOAMI_TTL = 600.0
@@ -124,7 +125,7 @@ def parse_stream_json(stdout: str) -> dict:
     }
 
 
-class KiroCliProvider(CliProvider):
+class KiroSpawnProvider(CliProvider):
     name = "kiro_cli"
     display_name = "Kiro"
     binary = "kiro-cli"
@@ -406,3 +407,18 @@ class KiroCliProvider(CliProvider):
         if not short:
             return [], f"no model ids in output: {raw[:120]}"
         return short, ""
+
+
+class KiroCliProvider(KiroHttpMixin, KiroSpawnProvider):
+    """One card, two mouths: Kiro's streaming API in front, the spawn path as the floor.
+
+    The split above is deliberate. `KiroCliProvider` used to define the spawn methods
+    itself, so a mixin placed in front of it in the bases was shadowed by its own class
+    body and every override silently did nothing (measured 2026-10-31: catalogue returned
+    None without a request). Putting the spawn implementation one class *behind* the mixin
+    is what makes the mixin's `super()` reach it.
+
+    Which mouth is used stays a config decision - `transport: api` in the hub's config, the
+    same convention the registry already uses for `transport: acp` - so adding or rolling
+    back a leg never means editing a table.
+    """

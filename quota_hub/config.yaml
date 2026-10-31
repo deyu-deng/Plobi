@@ -144,6 +144,10 @@ providers:
 
   kiro_cli:
     enabled: true
+    # 10-31：嘴换成它自己的流式 API（`transport: api`，见 providers/apps/kiro/http.py）。
+    # 现核：目录 5 个模型；一个真回合 200 / 1619 字节 / 10 帧，toolUseEvent 把我们给的
+    # 函数名流回来，metadataEvent{"stopReason":"TOOL_USE"} 收尾。删掉这行就回到 spawn。
+    transport: api
     binary: kiro-cli
     args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
     model_flag: "--model"
