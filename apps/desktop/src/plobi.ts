@@ -820,27 +820,31 @@ export function toggleToolset(
 // Agent 界面里的面板必须读写「这个 Agent」的名册行，与当前网关在哪个
 // profile 无关。后端按 profile→名册行分叉：行在场 = 读写行黑名单。
 
-export function getSkillsForProfile(profile: string): Promise<SkillInfo[]> {
+/** 一个 Agent 的生效技能表：全局名单 − 它名册行的黑名单。
+ *
+ *  10-31：作用域键是**名册 id**（``agent``），不再是 profile 家名——profile
+ *  是裁 42 / ADR-0013 要拆掉的概念，产品面上不该再出现。 */
+export function getSkillsForAgent(agent: string): Promise<SkillInfo[]> {
   return window.plobiDesktop.api<SkillInfo[]>({
-    path: `/api/skills?profile=${encodeURIComponent(profile)}`
+    path: `/api/skills?agent=${encodeURIComponent(agent)}`
   })
 }
 
-export function toggleSkillForProfile(
-  profile: string,
+export function toggleSkillForAgent(
+  agent: string,
   name: string,
   enabled: boolean
 ): Promise<{ ok: boolean; name: string; enabled: boolean }> {
   return window.plobiDesktop.api<{ ok: boolean; name: string; enabled: boolean }>({
     path: '/api/skills/toggle',
     method: 'PUT',
-    body: { name, enabled, profile }
+    body: { name, enabled, agent }
   })
 }
 
-export function getToolsetsForProfile(profile: string): Promise<ToolsetInfo[]> {
+export function getToolsetsForAgent(agent: string): Promise<ToolsetInfo[]> {
   return window.plobiDesktop.api<ToolsetInfo[]>({
-    path: `/api/tools/toolsets?profile=${encodeURIComponent(profile)}`
+    path: `/api/tools/toolsets?agent=${encodeURIComponent(agent)}`
   })
 }
 
@@ -853,15 +857,15 @@ export function getGlobalMcpServers(): Promise<Record<string, Record<string, unk
     .then(record => (record.mcp_servers && typeof record.mcp_servers === 'object' ? record.mcp_servers : {}))
 }
 
-export function toggleToolsetForProfile(
-  profile: string,
+export function toggleToolsetForAgent(
+  agent: string,
   name: string,
   enabled: boolean
 ): Promise<{ ok: boolean; name: string; enabled: boolean }> {
   return window.plobiDesktop.api<{ ok: boolean; name: string; enabled: boolean }>({
     path: `/api/tools/toolsets/${encodeURIComponent(name)}`,
     method: 'PUT',
-    body: { enabled, profile }
+    body: { enabled, agent }
   })
 }
 

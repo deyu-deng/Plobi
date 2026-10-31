@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -11,14 +12,23 @@ import { Button } from '@/components/ui/button'
 import { CountSkeleton } from '@/components/ui/skeleton'
 import {
   editLearningNode,
+  getGlobalMcpServers,
   getLearningNode,
-  getSkills,
-  getToolsets,
+  getSkills as getSkillsGlobal,
+  getSkillsForAgent,
+  getToolsets as getToolsetsGlobal,
+  getToolsetsForAgent,
   getUsageAnalytics,
   type PlobiGateway,
-  toggleSkill,
-  toggleToolset
+  toggleSkill as toggleSkillGlobal,
+  toggleSkillForAgent,
+  toggleToolset as toggleToolsetGlobal,
+  toggleToolsetForAgent
 } from '@/plobi'
+import { $consoleAgents } from '@/app/console/store/agents'
+import type { RosterAgent } from '@/app/settings/agent-model-overrides'
+import { putAgentToolPrefs } from '@/app/console/api'
+import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { isDesktopToolsetVisible } from '@/lib/desktop-toolsets'
 import { compactNumber } from '@/lib/format'
@@ -183,6 +193,42 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const gateway = useStore($gateway) as PlobiGateway | null
   const [mode, setMode] = useRouteEnumParam('tab', SKILLS_MODES, 'skills')
 
+  // ─── Agent 作用域（2026-10-20 用户裁定 C；10-31 换键） ───────────────────
+  // 带 `?agent=<名册 id>` 进来，这一页就是**这个 Agent 自己的**能力页：四张表
+  // 照旧摆着，但读的是它名册行的生效值、写的是它自己的三份黑名单；不带就是
+  // 全局真源（只在「设置 → Capabilities」里用）。
+  //
+  // 键是**名册 id**，不是 profile 家名——profile 是裁 42 / ADR-0013 要拆掉的
+  // 概念，产品面上不该再出现（用户 10-31：「不要让 profile 的概念回归」）。
+  const { search } = useLocation()
+  const scopedAgentId = useMemo(() => {
+    const value = new URLSearchParams(search).get('agent')?.trim()
+
+    return value ? value : null
+  }, [search])
+
+  const scopedAgent = useStore($consoleAgents).find(agent => agent.id === scopedAgentId)
+
+  // 名字不变，实现按作用域分叉——下面 500 行调用点一行都不用改。
+  const getSkills = useCallback(
+    () => (scopedAgentId ? getSkillsForAgent(scopedAgentId) : getSkillsGlobal()),
+    [scopedAgentId]
+  )
+  const getToolsets = useCallback(
+    () => (scopedAgentId ? getToolsetsForAgent(scopedAgentId) : getToolsetsGlobal()),
+    [scopedAgentId]
+  )
+  const toggleSkill = useCallback(
+    (name: string, enabled: boolean) =>
+      scopedAgentId ? toggleSkillForAgent(scopedAgentId, name, enabled) : toggleSkillGlobal(name, enabled),
+    [scopedAgentId]
+  )
+  const toggleToolset = useCallback(
+    (name: string, enabled: boolean) =>
+      scopedAgentId ? toggleToolsetForAgent(scopedAgentId, name, enabled) : toggleToolsetGlobal(name, enabled),
+    [scopedAgentId]
+  )
+
   const [query, setQuery] = useState('')
 
   const {
@@ -200,6 +246,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     queryFn: getToolsets,
     staleTime: 0
   })
+
+  // 缓存键仍是全局那一把（模块级的 setSkills/setToolsets 绑在它上面，换键会把
+  // 乐观写入写到另一格去）。所以作用域一换就显式重取一次：全局页与某个 Agent 的
+  // 页不会同时存在，这一取就是对的读数。
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: SKILLS_QUERY_KEY })
+    void queryClient.invalidateQueries({ queryKey: TOOLSETS_QUERY_KEY })
+  }, [scopedAgentId])
 
   // tool name -> call count over the analytics window. null = still loading
   // (badges show skeletons); {} = loaded empty / unavailable backend.
@@ -556,7 +610,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       {mode === 'hub' ? (
         <SkillsHub query={query} />
       ) : mode === 'mcp' ? (
-        <McpTab gateway={gateway} />
+        scopedAgent ? (
+          <AgentMcpTab agent={scopedAgent} />
+        ) : (
+          <McpTab gateway={gateway} />
+        )
       ) : (skillsFailed || toolsetsFailed) && (!skills || !toolsets) ? (
         <PanelEmpty
           action={
@@ -691,6 +749,69 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
 
 // Shared inspector header — mirrors Messaging's PlatformDetail so Skills and
 // Tools share one title/description block and tab switches don't jump.
+/**
+ * 某个 Agent 的 MCP 一栏（2026-10-20 用户裁定 C）。
+ *
+ * 全局名单是唯一真源（`mcp_servers`），这里只画**这个 Agent 关掉了哪些**：
+ * 读全局名单 + 名册行的 `disabledMcpServers`，写走 `PUT /api/agents/:id/tool-prefs`
+ * （整份回写，端点是 PUT 语义）。全局关掉的照旧置灰并标出来——这个 Agent 只能再关
+ * 自己那份，不能替全局开。
+ */
+function AgentMcpTab({ agent }: { agent: RosterAgent }) {
+  const { t } = useI18n()
+  const m = t.settings.mcp
+  const { data: servers } = useQuery({ queryKey: ['agent-capabilities', 'mcp-servers'], queryFn: getGlobalMcpServers, staleTime: 0 })
+  const [busy, setBusy] = useState<string | null>(null)
+  const off = new Set((agent.disabledMcpServers ?? []).map(name => name.toLowerCase()))
+  const names = Object.keys(servers ?? {})
+
+  const toggle = async (name: string, enabled: boolean) => {
+    const next = new Set(agent.disabledMcpServers ?? [])
+    const matched = [...next].find(key => key.toLowerCase() === name.toLowerCase())
+
+    if (enabled) {
+      if (matched) {
+        next.delete(matched)
+      }
+    } else {
+      next.add(matched ?? name)
+    }
+
+    setBusy(name)
+
+    try {
+      await putAgentToolPrefs(agent.id, { disabledMcpServers: [...next] })
+    } catch (err) {
+      notifyError(err, t.rightSidebar.capabilitiesToggleFailed)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (names.length === 0) {
+    return <PanelEmpty icon="info" title={m.emptyTitle} description={m.emptyDesc} />
+  }
+
+  return (
+    <div className="px-1.5 py-1">
+      {names.map(name => {
+        const globalOff = servers?.[name]?.enabled === false
+        const checked = !globalOff && !off.has(name.toLowerCase())
+
+        return (
+          <div
+            className="flex h-8 items-center justify-between gap-2 rounded-md px-2 text-[0.78rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
+            key={name}
+          >
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+            <Switch checked={checked} disabled={busy === name} onCheckedChange={next => void toggle(name, next)} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function DetailHeader({
   description,
   pills,

@@ -10129,20 +10129,37 @@ def _agent_id_for_profile(profile: Optional[str]) -> str:
 
 
 def _agent_tool_row(scope: Optional[str]):
-    """scope（家名）→ ``(registry, entry)``；不是 Agent 作用域 → ``(None, None)``。
+    """作用域键 → ``(registry, entry)``；不是 Agent 作用域 → ``(None, None)``。
 
     「全局真源 + per-agent 开关」（2026-10-19）：技能 / 工具集 / MCP 只有一张
     全局表；当面板作用域指向某个 Agent 时，开关读写**名册那一行**的黑名单
-    （偏好），全局表一个字不动。L1 / flat 作用域走原路径。
+    （偏好），全局表一个字不动。
+
+    10-31：作用域键**优先按名册 id**（``agent`` 参数），不再要求调用方先知道
+    profile 家名——profile 只是兼容旧调用方的回退路径。产品面上不该再出现
+    「一个 Agent 一个 profile」这个概念（裁 42 / ADR-0013 的终态是 profiles
+    目录整体消失）。
     """
-    name = _agent_id_for_profile(scope)
-    if not name:
+    if not scope:
         return None, None
+
+    key = str(scope).strip()
+
+    if not key:
+        return None, None
+
     try:
         from plobi.agents.registry import AgentRegistry
 
         registry = AgentRegistry.load()
-        return registry, registry.get(name)
+        entry = registry.get(key) or registry.get(key.lower())
+
+        if entry is None:
+            # 回退：旧调用方传的是 profile 家名。
+            name = _agent_id_for_profile(key)
+            entry = registry.get(name) if name else None
+
+        return registry, entry
     except Exception:
         return None, None
 
@@ -14055,11 +14072,12 @@ def _config_profile_scope(profile: Optional[str]):
 class SkillToggle(BaseModel):
     name: str
     enabled: bool
+    agent: Optional[str] = None
     profile: Optional[str] = None
 
 
 @app.get("/api/skills")
-async def get_skills(profile: Optional[str] = None):
+async def get_skills(profile: Optional[str] = None, agent: Optional[str] = None):
     from tools.skills_tool import _find_all_skills
     from plobi_cli.skills_config import get_disabled_skills
     from tools.skill_usage import (
@@ -14068,7 +14086,7 @@ async def get_skills(profile: Optional[str] = None):
         activity_count,
         load_usage,
     )
-    agent_registry, agent_entry = _agent_tool_row(profile)
+    agent_registry, agent_entry = _agent_tool_row(agent or profile)
     if agent_entry is not None:
         # Agent 作用域：资产名单仍读**全局真源**（顶层家）——家目录下的
         # skills/ 是空壳，把 _profile_scope 套上去名单就成了空集，
@@ -14108,9 +14126,11 @@ async def get_skills(profile: Optional[str] = None):
 
 
 @app.put("/api/skills/toggle")
-async def toggle_skill(body: SkillToggle, profile: Optional[str] = None):
+async def toggle_skill(
+    body: SkillToggle, profile: Optional[str] = None, agent: Optional[str] = None
+):
     from plobi_cli.skills_config import get_disabled_skills, save_disabled_skills
-    scope = body.profile or profile
+    scope = body.agent or agent or body.profile or profile
     agent_registry, agent_entry = _agent_tool_row(scope)
     if agent_registry is not None and agent_entry is not None:
         # Agent 作用域：写**这个 Agent 名册行**的黑名单，全局表一个字不动。
@@ -14216,7 +14236,7 @@ async def update_skill_content(body: SkillContentUpdate):
 
 
 @app.get("/api/tools/toolsets")
-async def get_toolsets(profile: Optional[str] = None):
+async def get_toolsets(profile: Optional[str] = None, agent: Optional[str] = None):
     from plobi_cli.tools_config import (
         _get_effective_configurable_toolsets,
         _get_platform_tools,
@@ -14225,7 +14245,7 @@ async def get_toolsets(profile: Optional[str] = None):
     )
     from toolsets import resolve_toolset
 
-    agent_registry, agent_entry = _agent_tool_row(profile)
+    agent_registry, agent_entry = _agent_tool_row(agent or profile)
     if agent_entry is not None:
         # Agent 作用域：全局白名单仍读**全局真源**（顶层家 config）——
         # 家目录没有 config.yaml，套 _profile_scope 会把白名单读成空集。
@@ -14268,17 +14288,24 @@ async def get_toolsets(profile: Optional[str] = None):
 
 class ToolsetToggle(BaseModel):
     enabled: bool
+    agent: Optional[str] = None
     profile: Optional[str] = None
 
 
 @app.put("/api/tools/toolsets/{name}")
-async def toggle_toolset(name: str, body: ToolsetToggle, profile: Optional[str] = None):
+async def toggle_toolset(
+    name: str,
+    body: ToolsetToggle,
+    profile: Optional[str] = None,
+    agent: Optional[str] = None,
+):
     """Enable/disable a configurable toolset for the desktop (cli) platform.
 
     Persists to ``platform_toolsets.cli`` via the same ``_save_platform_tools``
     helper the CLI ``plobi tools`` picker uses, so the GUI and CLI stay in
-    lockstep. Scoped to ``body.profile`` when provided. Returns 400 for
-    unknown toolset keys.
+    lockstep. Scoped to ``body.agent``（名册 id，10-31 起是首选键）／
+    ``body.profile``（旧键，兼容）when provided. Returns 400 for unknown
+    toolset keys.
     """
     from plobi_cli.tools_config import (
         _get_effective_configurable_toolsets,
@@ -14290,7 +14317,7 @@ async def toggle_toolset(name: str, body: ToolsetToggle, profile: Optional[str] 
     if name not in valid:
         raise HTTPException(status_code=400, detail=f"Unknown toolset: {name}")
 
-    scope = body.profile or profile
+    scope = body.agent or agent or body.profile or profile
     agent_registry, agent_entry = _agent_tool_row(scope)
     if agent_registry is not None and agent_entry is not None:
         # Agent 作用域：全局白名单不动，翻转**这个 Agent 名册行**的工具集黑名单。

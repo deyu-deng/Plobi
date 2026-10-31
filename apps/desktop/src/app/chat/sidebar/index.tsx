@@ -29,7 +29,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { SessionInfo } from '@/plobi'
 import { $panesFlipped, $sidebarOpen, pinSession } from '@/store/layout'
-import { $activeGatewayProfile } from '@/store/profile'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
@@ -162,19 +162,28 @@ export function ChatSidebar({
   }, [])
 
   // 左栏那颗 Capabilities 指向**当前 Agent 自己的**那一页（2026-10-20 用户裁定 C）。
-  // L2 → 它名册行的 profile；L1 也是 Agent，用当前生效的 profile。解析不到 profile
-  // 就退回不带参数的 /skills（那是全局真源，只在「设置 → Capabilities」里用）。
+  // L2 → 它名册行的 id；L1 也是 Agent，用当前生效 profile 反查它那一行。
+  // 解析不到就退回不带参数的 /skills（那是全局真源，只在「设置 → Capabilities」里用）。
+  //
+  // 10-31：键换成**名册 id**——profile 是裁 42 / ADR-0013 要拆掉的概念，
+  // 不许再从产品面的 URL 上回来（用户：「不要让 profile 的概念回归」）。
   const liveProfile = useStore($activeGatewayProfile)
 
   const navItems = useMemo(() => {
     const base = sidebarNavForLevel(SIDEBAR_NAV, { l1, l2Id })
 
-    const activeProfile =
-      (l2Id ? secretaryAgents.find(agent => agent.id === l2Id)?.profile : null) || liveProfile || null
+    const scopedAgent =
+      (l2Id ? secretaryAgents.find(agent => agent.id === l2Id) : null) ??
+      (liveProfile
+        ? secretaryAgents.find(
+            agent => normalizeProfileKey(agent.profile ?? '') === normalizeProfileKey(liveProfile)
+          )
+        : null) ??
+      null
 
     return base.map(item =>
-      item.id === 'skills' && activeProfile
-        ? { ...item, route: `${SKILLS_ROUTE}?profile=${encodeURIComponent(activeProfile)}` }
+      item.id === 'skills' && scopedAgent
+        ? { ...item, route: `${SKILLS_ROUTE}?agent=${encodeURIComponent(scopedAgent.id)}` }
         : item
     )
   }, [l1, l2Id, liveProfile, secretaryAgents])
