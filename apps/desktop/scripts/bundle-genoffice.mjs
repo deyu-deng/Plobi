@@ -3,7 +3,8 @@
 // module and CommonJS vendor code that an ESM main bundle cannot import.
 import { build } from 'esbuild'
 import { createOpenDeskOfficeViteAliases } from '@bitclub.ai/opendesk-office/vite'
-import { copyFileSync, mkdirSync, promises as fsPromises } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, promises as fsPromises } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +17,38 @@ const packageRequire = createRequire(path.join(packageRoot, 'package.json'))
 const harfbuzzDist = path.dirname(packageRequire.resolve('harfbuzzjs'))
 const dist = path.join(appRoot, 'dist', 'genoffice')
 mkdirSync(dist, { recursive: true })
+
+// 产物契约：dist/genoffice 必须同时有 html（vite build 产）和 host/preload（本脚本产）。
+// 历史上 `dev:electron` 只调本脚本 ⇒ 目录里只有 cjs、没有 html，而 genoffice-editor
+// 的 builtEditorUrl 优先用 dist 里的 html ⇒ Office 页签必然白屏（10-31 用户报的故障，
+// 当时 5175 的 dev server 明明通着，代码却去读一个不存在的 file:// 页面）。
+// 所以缺 html 就先把 vite build 补上；顺序不能反——vite 的 emptyOutDir 会清空目录，
+// 先写 cjs 再 build 会把 cjs 一起清掉。
+const PAGES = ['sheets.html', 'slides.html', 'word.html']
+const missingPages = () => PAGES.filter(page => !existsSync(path.join(dist, page)))
+
+if (missingPages().length) {
+  console.log(`genoffice: html missing (${missingPages().join(', ')}) — running vite build first`)
+  execFileSync(
+    process.execPath,
+    [
+      path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
+      'build',
+      '--config',
+      path.join(appRoot, 'genoffice.vite.config.ts')
+    ],
+    { cwd: appRoot, stdio: 'inherit' }
+  )
+}
+
+const stillMissing = missingPages()
+
+if (stillMissing.length) {
+  throw new Error(
+    `genoffice: dist is incomplete — missing ${stillMissing.join(', ')} in ${dist}. ` +
+      'The Office tabs load these pages directly; without them the editor is a blank pane.'
+  )
+}
 
 const aliases = createOpenDeskOfficeViteAliases()
 const assetPlugin = {
