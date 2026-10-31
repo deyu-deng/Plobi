@@ -847,6 +847,11 @@ def _handle_create(args: dict, **kw) -> str:
             "task (the dispatcher will only spawn tasks with an assignee)"
         )
     body = args.get("body")
+    if not body or not str(body).strip():
+        return tool_error(
+            "body is required — full spec, acceptance criteria, and links. "
+            "The assigned worker reads this as context. Don't just put a title."
+        )
     parents = args.get("parents") or []
     tenant = args.get("tenant") or os.environ.get("PLOBI_TENANT")
     # Stamp the originating session id when the agent loop runs under
@@ -1543,7 +1548,7 @@ KANBAN_CREATE_SCHEMA = {
             },
             "board": _board_schema_prop(),
         },
-        "required": ["title", "assignee"],
+        "required": ["title", "assignee", "body"],
     },
 }
 
