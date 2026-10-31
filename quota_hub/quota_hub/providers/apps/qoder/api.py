@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -92,6 +93,19 @@ def frame_inner(frame: object) -> dict | None:
     return frame if isinstance(frame.get("choices"), list) else None
 
 
+def _slug(display_name: str, key: str) -> str:
+    """The human name upstream reports for itself, as a model id.
+
+    The desktop has no name field to read — it derives the label from the id (`model-status-label.ts`:
+    dashes to spaces, title case, vendor rules for `glm-`, `minimax-`…). So the *id* has to carry
+    the name Qoder itself shows, and the routing key (`dfmodel`, `kmodel_latest`) stays internal.
+    Measured 2026-10-31 from the live catalogue: `display_name` is `DeepSeek-V4-Pro`,
+    `Kimi-K3.1-Pro`, `Qwen3.8-Max`, while the key is an internal code nobody reads.
+    """
+    base = re.sub(r"[^a-z0-9.]+", "-", str(display_name or "").lower()).strip("-.")
+    return base or key
+
+
 class QoderProvider(Provider):
     name = "qoder"
     display_name = "Qoder"
@@ -105,6 +119,9 @@ class QoderProvider(Provider):
         self.served_models: tuple[str, ...] = tuple(f"{self.model_prefix}/{m}" for m in config.get("models", ()))
         #: keyed by the vendor's own model key (`fast`, `kmodel`, ...), filled by refresh_models
         self._entries: dict[str, dict] = {}
+        #: public id tail (a slug of upstream's own display name) <-> wire key
+        self._key_of: dict[str, str] = {}
+        self._slug_of: dict[str, str] = {}
         self._sessions: dict[str, cosy.Session] = {}
 
     # --- presence / verdicts ---------------------------------------------
@@ -194,7 +211,8 @@ class QoderProvider(Provider):
         if not isinstance(rows, list):
             logger.warning("qoder model list carried no chat role (keys=%s)", sorted(payload or {})[:8])
             return None
-        keys: list[str] = []
+        slugs: list[str] = []
+        self._key_of, self._slug_of = {}, {}
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -202,17 +220,26 @@ class QoderProvider(Provider):
             if not key or row.get("enable") is False:
                 continue
             self._entries[key] = row
-            keys.append(key)
-        if not keys:
+            slug = _slug(str(row.get("display_name") or ""), key)
+            if slug in self._key_of:  # two roles showing the same name
+                slug = f"{slug}-{_slug(key, key)}"
+            self._key_of[slug] = key
+            self._slug_of[key] = slug
+            slugs.append(slug)
+        if not slugs:
             return None
-        self.served_models = tuple(f"{self.model_prefix}/{k}" for k in keys)
-        return keys
+        self.served_models = tuple(f"{self.model_prefix}/{s}" for s in slugs)
+        return slugs
 
     # --- request path -----------------------------------------------------
     def _body(self, oai_req: dict, record_id: str) -> tuple[str, dict]:
         """The gateway's own request shape; returns (upstream model key, body)."""
         requested = str(oai_req.get("model") or "")
-        key = requested[len(self.model_prefix) + 1:] if requested.startswith(f"{self.model_prefix}/") else requested
+        prefix = f"{self.model_prefix}/"
+        tail = requested[len(prefix):] if requested.startswith(prefix) else requested
+        # The picker's id is upstream's human name; the door wants its own key. A caller
+        # still holding a raw key keeps working, because an unknown tail routes as-is.
+        key = self._key_of.get(tail, tail)
         entry = self._entries.get(key, {})
         messages = oai_req.get("messages") or []
         prompt = _latest_user_text(messages)

@@ -73,11 +73,35 @@ def test_the_catalogue_takes_the_chat_role_and_drops_what_upstream_disabled():
     prov, _ = _provider({"/algo/api/v2/model/list": {
         "chat": [{"key": "auto", "is_reasoning": True, "enable": True, "max_input_tokens": 200000},
                  {"key": "kmodel", "is_reasoning": True, "enable": True},
-                 {"key": "hidden_one", "enable": False}]}})
+                 {"key": "hidden_one", "display_name": "Hidden One", "enable": False}]}})
     acc = asyncio.run(prov.discover_accounts())[0]
     keys = asyncio.run(prov.refresh_models(acc))
     assert keys == ["auto", "kmodel"], keys
+    assert "hidden-one" not in keys, "a role upstream disabled must not be offered"
     assert prov.served_models == ("qoder/auto", "qoder/kmodel")
+
+
+def test_the_id_we_publish_is_the_name_upstream_reports_its_key_stays_internal():
+    """Measured 2026-10-31: the door calls its models `dfmodel` / `kmodel_latest` and calls
+    what a human sees `DeepSeek-Flash` / `Kimi-K3.1-Pro`. The desktop has no name field to
+    read - it prettifies the id - so the name has to live in the id.
+    """
+    prov, _ = _provider({"/algo/api/v2/model/list": {"chat": [
+        {"key": "dmodel", "display_name": "DeepSeek-V4-Pro", "is_reasoning": True},
+        {"key": "dfmodel", "display_name": "DeepSeek-Flash", "is_reasoning": False},
+        {"key": "kmodel_latest", "display_name": "Kimi-K3.1-Pro"},
+        {"key": "same_name_one", "display_name": "Twice"},
+        {"key": "same_name_two", "display_name": "Twice"}]}})
+    acc = asyncio.run(prov.discover_accounts())[0]
+    asyncio.run(prov.refresh_models(acc))
+    assert prov.served_models == ("qoder/deepseek-v4-pro", "qoder/deepseek-flash",
+                                  "qoder/kimi-k3.1-pro", "qoder/twice", "qoder/twice-same-name-two")
+
+    key, body = prov._body({"model": "qoder/kimi-k3.1-pro",
+                            "messages": [{"role": "user", "content": "hi"}]}, "rec")
+    assert key == "kmodel_latest" and body["model_config"]["key"] == "kmodel_latest"
+    # a caller still holding the raw key is not stranded
+    assert prov._body({"model": "qoder/dfmodel", "messages": []}, "rec")[0] == "dfmodel"
 
 
 def test_a_turn_is_assembled_from_frames_and_the_tool_call_survives_the_split():
