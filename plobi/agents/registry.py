@@ -4476,6 +4476,55 @@ def shared_soul_path(entry) -> Path:
     return shared_soul_path_for(entry.name)
 
 
+def identity_name_for_key(key: str | None) -> str:
+    """把身份的**任意写法**翻回名册那一行的 ``name``；翻不到回空串。
+
+    运行时身份有好几种写法：名册 name（真源）、它的小写、记忆那颗 slug
+    （``tools.memory_tool.resolve_agent_slug`` 会把「（）」这类字符换成 '-'）、
+    profile 家名（``l2-course-*``），以及 ``souls/`` 里那个身份文件名。读侧
+    （``agent/prompt_builder.load_soul_md``）以前只拿 slug 去算文件名——名字一
+    变形就算不出自己那份，于是静默回落到顶层那份 **L1 秘书 SOUL**，分身当场
+    自称总秘书（10-31 现读：名册 24 行里有 5 行中招，全是名字带全角括号或
+    罗马数字的课程行）。
+
+    判据：**认得出就翻回那一行的 name**，认不出就回空串（调用方据此不给身份，
+    而不是去拿 L1 那份）。
+    """
+    raw = (key or "").strip()
+    if not raw:
+        return ""
+    try:
+        registry = load_registry()
+    except Exception as exc:  # noqa: BLE001 - 名册读不到就当认不出
+        logger.debug("plobi: identity lookup skipped (registry): %s", exc)
+        return ""
+    try:
+        from tools.memory_tool import resolve_agent_slug
+    except Exception:  # noqa: BLE001 - 记忆那条腿不可用就少一种写法
+        resolve_agent_slug = None
+    for entry in registry.agents.values():
+        if getattr(entry, "archived", False):
+            continue
+        candidates = {entry.name, entry.name.lower()}
+        for attr in ("profile", "profile_name"):
+            value = str(getattr(entry, attr, "") or "").strip()
+            if value:
+                candidates.add(value)
+                candidates.add(value.lower())
+        try:
+            candidates.add(shared_soul_path_for(entry.name).stem)
+        except Exception:  # noqa: BLE001 - 算不出文件名就少一种写法
+            pass
+        if resolve_agent_slug is not None:
+            try:
+                candidates.add(resolve_agent_slug(entry.name))
+            except Exception:  # noqa: BLE001
+                pass
+        if raw in candidates:
+            return entry.name
+    return ""
+
+
 def ensure_l2_identity_soul(
     entry: AgentEntry, *, home: Path | str | None = None
 ) -> bool:

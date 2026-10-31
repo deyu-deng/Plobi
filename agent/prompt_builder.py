@@ -1921,7 +1921,18 @@ def _soul_agent_id() -> str:
         from tools.memory_tool import is_l1_slug, resolve_agent_slug
 
         slug = resolve_agent_slug()
-        return "" if is_l1_slug(slug) else str(slug or "")
+        if is_l1_slug(slug):
+            return ""
+        # slug 是**记忆那颗键**，不保证等于名册那一行的 name（名字里带全角括号
+        # 时两者不同：「电子工程训练（乙）」→ slug「电子工程训练-乙」）。拿 slug
+        # 去算身份文件名就算不出自己那份 ⇒ 静默读成顶层那份 L1 秘书 SOUL ⇒ 分身
+        # 当场自称总秘书（10-31 现读，五门课中招）。所以先翻回 name。
+        try:
+            from plobi.agents.registry import identity_name_for_key
+
+            return identity_name_for_key(slug) or str(slug or "")
+        except Exception:  # noqa: BLE001 - 名册读不到就按原样，交给下一跳判
+            return str(slug or "")
     except Exception:  # noqa: BLE001 - 反推不到就当 L1，别把身份读坏
         return ""
 
@@ -1958,7 +1969,7 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
             logger.debug("shared soul path unavailable for %s: %s", _agent_id, exc)
         if _shared is not None and _shared.is_file():
             soul_path = _shared
-        elif _shared is not None:
+        else:
             # 这一份还没生成：**别退回顶层那份（那是 L1 的秘书 SOUL）**，就地按名册生成身份。
             try:
                 from plobi.agents.registry import build_l2_identity_soul_block, load_registry
@@ -1971,10 +1982,16 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
                         build_l2_identity_soul_block(entry),
                         "SOUL.md",
                         context_length=context_length,
-                        read_path=str(_shared),
+                        read_path=str(_shared) if _shared is not None else "SOUL.md",
                     )
             except Exception as exc:  # noqa: BLE001 - 生成不了就当没身份，别读错的
                 logger.debug("soul block for %s unavailable: %s", _agent_id, exc)
+            # 认不出是哪一行 ⇒ **宁可不给身份**，也不把 L1 的秘书合同印到分身身上
+            # （10-31：五门带括号的课就是这样答「我是你本机的总秘书」的）。
+            logger.debug(
+                "identity %r has no soul of its own; refusing the L1 one", _agent_id
+            )
+            return None
 
     if not soul_path.exists():
         return None

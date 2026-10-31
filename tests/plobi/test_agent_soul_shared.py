@@ -169,3 +169,97 @@ def test_boot_refresh_rewrites_old_fences_without_touching_the_persona(
     assert "旧版身份段" not in text
     assert "统筹者" in text
     assert refresh_l2_identity_souls() == 0
+
+
+def _roster(tmp_path, monkeypatch, body):
+    roster = tmp_path / "projects.yaml"
+    roster.write_text(body, encoding="utf-8")
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
+    return roster
+
+
+def test_a_name_that_slugifies_differently_still_reads_its_own_soul(
+    soul_home, tmp_path, monkeypatch
+):
+    """10-31 现场：「电子工程训练（乙）」答「我是你本机的总秘书」。
+
+    读侧拿的是**记忆那颗 slug**（`resolve_agent_slug` 把全角括号换成 '-'），
+    再用它去算 `souls/<名字>.md` 的文件名——名字一变形就算不出自己那份，
+    于是静默回落到顶层那份 **L1 秘书 SOUL**，分身当场自称总秘书。
+    `45b9081d` 修的是 ASCII 名（slug 与名字只差大小写，这台盘不敏感）；
+    名字里带全角括号/罗马数字的那五门课还在踩这一脚。
+    """
+    name = "电子工程训练（乙）"
+    _roster(
+        tmp_path,
+        monkeypatch,
+        f"version: 1\nagents:\n  {name}:\n    role: l2_project\n"
+        f"    category: courses\n    profile: l2-course-ee\n",
+    )
+
+    entry = AgentEntry(
+        name=name, role="l2_project", profile="l2-course-ee", category="courses"
+    )
+    assert ensure_l2_identity_soul(entry) is True
+    (soul_home / "SOUL.md").write_text("L1-SECRETARY-SOUL", encoding="utf-8")
+
+    from tools.memory_tool import resolve_agent_slug
+
+    assert resolve_agent_slug(name) != name, "这颗 slug 与名字不同——正是踩雷的形状"
+
+    # 桌面正路：进程环境里没有 PLOBI_AGENT_ID，身份从会话那一行反推（反推回来是名字）
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+    monkeypatch.setattr(
+        "tools.memory_tool._agent_slug_from_current_session", lambda: name
+    )
+
+    from agent.prompt_builder import load_soul_md
+
+    got = load_soul_md() or ""
+    assert "PLOBI_L2_IDENTITY" in got, got[:160]
+    assert "L1-SECRETARY-SOUL" not in got
+
+
+def test_an_unresolvable_identity_never_borrows_the_l1_secretary_soul(
+    soul_home, tmp_path, monkeypatch
+):
+    """认不出是哪一行 ⇒ 宁可不给身份，也不许把 L1 的秘书合同印到分身身上。"""
+    _roster(tmp_path, monkeypatch, "version: 1\nagents: {}\n")
+    (soul_home / "SOUL.md").write_text("L1-SECRETARY-SOUL", encoding="utf-8")
+
+    monkeypatch.delenv("PLOBI_AGENT_ID", raising=False)
+    monkeypatch.setattr(
+        "tools.memory_tool._agent_slug_from_current_session", lambda: "没有这一行"
+    )
+
+    from agent.prompt_builder import load_soul_md
+
+    assert load_soul_md() is None
+
+
+def test_identity_name_for_key_maps_every_spelling_of_the_same_row(
+    soul_home, tmp_path, monkeypatch
+):
+    """身份的写法不止一种（名册 name／记忆 slug／profile 家名／身份文件名），都要翻回同一行。"""
+    name = "电子工程训练（乙）"
+    _roster(
+        tmp_path,
+        monkeypatch,
+        f"version: 1\nagents:\n  {name}:\n    role: l2_project\n"
+        f"    category: courses\n    profile: l2-course-ee\n",
+    )
+
+    from plobi.agents.registry import identity_name_for_key, shared_soul_path_for
+    from tools.memory_tool import resolve_agent_slug
+
+    for key in (
+        name,
+        name.lower(),
+        resolve_agent_slug(name),
+        "l2-course-ee",
+        shared_soul_path_for(name).stem,
+    ):
+        assert identity_name_for_key(key) == name, key
+
+    assert identity_name_for_key("") == ""
+    assert identity_name_for_key("没有这一行") == ""
