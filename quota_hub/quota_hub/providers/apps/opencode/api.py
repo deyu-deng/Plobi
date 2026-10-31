@@ -24,15 +24,19 @@ Boundaries kept on purpose:
 * If `/models` cannot be read, the leg serves **no** models. Falling back to a declared
   list is what the ruling forbids.
 
-**Measured 2026-10-28, and it changed this leg's contract**: the Free pool is refused over
-HTTP — one tiny completion with a `tools` array came back
-`429 {"type":"error","error":{"type":"FreeUsageLimitError", "message":"Free usage limit
-reached. Free models work in OpenCode ... subscribe to OpenCode Go"}}`. So an OAuth
-credential from the store is **not** evidence that a turn can be served here: Free exists
-only inside the OpenCode client (that is what the ACP leg is for). This leg therefore
-serves models only when the account carries a paid plan or the operator hands us a key
-(`OPENCODE_ZEN_API_KEY` / config `api_key`); otherwise it reports `no_subscription` and
-the box stays empty — which is the honest answer to "你有 Zen 吗".
+**Measured twice, and the second reading changed the contract.** On 2026-10-28 one tiny
+completion came back `429 {"type":"error","error":{"type":"FreeUsageLimitError", …}}`, which
+we turned into "an OAuth credential is not a subscription" (`no_subscription`, box empty).
+Re-measured 2026-10-31 against the same account with the *correct* lane and identity shapes:
+a region-restricted free model answers `403 RegionError` — which proves the gate reads his
+identity — while the free pool answers `429 FreeUsageLimitError` **with
+`retry-after: 38690`**. That is a shared bucket that refills, not a missing purchase, so
+this leg now reports a store credential as live and lets the upstream say otherwise: the
+first 429 records that window, the card then reads "额度用完了" (the existing
+`quota_exhausted`, no new wording), the scheduler cools down by exactly the seconds
+upstream asked for, and the verdict lifts itself when the window passes. A paid plan or an
+`api_key` still makes it unconditionally live. What the leg will never do is guess at a
+model list: if `/models` cannot be read, it serves nothing.
 """
 
 from __future__ import annotations
@@ -147,6 +151,8 @@ class OpencodeApiProvider(Provider):
         # rather than a generic SDK" plus a stable session id. These are ours, per process.
         self._session_id = _session_id()
         self._project_id = _project_id(config)
+        #: Set from the upstream's own `retry-after` when the free bucket answers 429.
+        self._free_blocked_until = 0.0
         # A paid plan / API key is the only way a turn is served over HTTP (see header).
         self.api_key = str(
             config.get("api_key") or os.environ.get("OPENCODE_ZEN_API_KEY") or os.environ.get("OPENCODE_API_KEY") or ""
@@ -162,7 +168,7 @@ class OpencodeApiProvider(Provider):
         # way in is a paid plan or a key, which is configuration, not a sign-in.
         return {
             "kind": "none",
-            "reason": "Free 池在 HTTP 上不给用；要 OpenCode Go 订阅或一个 API key（OPENCODE_ZEN_API_KEY）",
+            "reason": "免费池按时刻复位；要常驻用就订 Go 或给一枚 key（OPENCODE_ZEN_API_KEY）",
             "name": self.display_name,
         }
 
@@ -181,10 +187,16 @@ class OpencodeApiProvider(Provider):
                 return False, "credential_expired", data
         if not str(data.get("access") or data.get("access_token") or ""):
             return False, "no_desktop_credential", None
-        # Measured: the Free pool refuses HTTP turns (429 FreeUsageLimitError). The
-        # credential is real; the entitlement is not. Saying "ok" here is what put 44
-        # unusable ids in the model box on 2026-10-28.
-        return False, "no_subscription", data
+        # Measured 2026-10-31 on this account: the free lane answers per *bucket*, not per
+        # subscription - a region-restricted model gives `403 RegionError` (which proves the
+        # gate is reading his identity), while the free pool gives `429 FreeUsageLimitError`
+        # with `retry-after: 38690` (~10.7 h). Saying "要付费订阅" for a bucket that refills
+        # on its own sends him to buy something he does not need; say what is spent instead,
+        # and for how long.
+        blocked = float(self._free_blocked_until or 0.0)
+        if blocked > time.time():
+            return False, "quota_exhausted", data
+        return True, "ok", data
 
     def credential_health(self) -> tuple[bool, str]:
         live, reason, _ = self._credential_state()
@@ -274,6 +286,33 @@ class OpencodeApiProvider(Provider):
         body["model"] = model.split("/", 1)[1] if "/" in model else model
         return body
 
+    def _refuse(self, res) -> UpstreamError:
+        """Map the vendor's own envelope, and honour its `retry-after` on the free bucket.
+
+        Measured 2026-10-31: a spent free pool answers `429` with `retry-after: 38690`.
+        Cooling down by that exact amount is the difference between one honest "满了，等一会儿"
+        and a leg that hammers a bucket nobody can refill faster by asking again.
+        """
+        text = (getattr(res, "text", "") or "")[:400]
+        kind = ""
+        try:
+            payload = res.json()
+            err = payload.get("error") if isinstance(payload, dict) else None
+            kind = str(err.get("type") or "") if isinstance(err, dict) else ""
+        except ValueError:
+            pass
+        if res.status_code == 401:
+            return UpstreamError(401, text, reauth=True)
+        if res.status_code == 429 and kind == "FreeUsageLimitError":
+            try:
+                wait = float(res.headers.get("retry-after") or 0.0)
+            except ValueError:
+                wait = 0.0
+            wait = wait or 300.0
+            self._free_blocked_until = time.time() + wait
+            return UpstreamError(429, text, retryable=True, cooldown=wait)
+        return UpstreamError(res.status_code, text, retryable=res.status_code in (429, 500, 502, 503))
+
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         res = await self.http.post(
             f"{self.base_url}/chat/completions",
@@ -282,7 +321,7 @@ class OpencodeApiProvider(Provider):
             timeout=self.timeout,
         )
         if res.status_code != 200:
-            raise UpstreamError(res.status_code, res.text[:400])
+            raise self._refuse(res)
         try:
             return res.json()
         except ValueError as exc:
@@ -302,7 +341,7 @@ class OpencodeApiProvider(Provider):
                 headers=self._headers(acc.cred.access_token), json=body, timeout=self.timeout) as res:
             if res.status_code != 200:
                 await res.aread()
-                raise UpstreamError(res.status_code, res.text[:400])
+                raise self._refuse(res)
             if "text/event-stream" not in str(res.headers.get("content-type", "")):
                 payload = await res.aread()
                 try:

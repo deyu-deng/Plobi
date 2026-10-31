@@ -28,6 +28,7 @@ import time
 import httpx
 import pytest
 from quota_hub.providers.apps.opencode.api import OpencodeApiProvider, read_credential
+from quota_hub.providers.base import UpstreamError
 
 BASE = "https://zen.test/v1"
 
@@ -194,21 +195,51 @@ def test_an_unknown_expiry_is_still_a_present_credential(tmp_path, monkeypatch, 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
 
-def test_a_store_credential_alone_is_not_a_subscription(tmp_path, monkeypatch):
-    """Measured 2026-10-28: the Free pool refuses HTTP turns (`429 FreeUsageLimitError`).
+def test_a_store_credential_is_believed_until_the_upstream_says_otherwise(tmp_path, monkeypatch):
+    """2026-10-28 read one answer and concluded "no subscription".
 
-    The credential is real, the entitlement is not — so this must report `no_subscription`
-    and contribute no models. Saying "ok" here is what put 44 unusable ids in the box.
+    Re-measured 2026-10-31 on the same account with the right lane and the right identity
+    shapes: a region-restricted model answers `403 RegionError` - which proves the gate does
+    read his identity - while the free pool answers `429` with `retry-after`. That is a
+    bucket that refills, not a purchase he lacks, so the credential is believed and the
+    upstream is allowed to overturn it (see the next test).
     """
     monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
 
     async def _go():
-        async with _http({"/v1/models": _models("big-pickle", "glm-5.3-flash-free")}) as http:
+        async with _http({"/v1/models": _models("big-pickle", "beam-free")}) as http:
             prov = OpencodeApiProvider({"base_url": BASE}, http)
             assert prov.present() is True
-            assert prov.credential_health() == (False, "no_subscription")
-            assert await prov.discover_accounts() == []
-            assert prov.served_models == ()
+            assert prov.credential_health() == (True, "ok")
+            accounts = await prov.discover_accounts()
+            assert accounts, "a real credential yields an account"
+            assert prov.served_models == ("opencode_api/big-pickle", "opencode_api/beam-free")
+
+    asyncio.run(asyncio.wait_for(_go(), timeout=30))
+
+
+def test_a_spent_free_bucket_cools_down_by_exactly_what_upstream_asked_for(tmp_path, monkeypatch):
+    """The verdict flips to "额度用完了" on the answer, not on our guess, and lifts itself."""
+    monkeypatch.setenv("QUOTA_HUB_OPENCODE_STORE", _store(tmp_path))
+    refusal = httpx.Response(
+        429,
+        json={"type": "error", "error": {"type": "FreeUsageLimitError",
+                                         "message": "Free usage limit reached"}},
+        headers={"retry-after": "1234"})
+
+    async def _go():
+        async with _http({"/v1/models": _models("big-pickle"),
+                          "/v1/chat/completions": refusal}) as http:
+            prov = OpencodeApiProvider({"base_url": BASE}, http)
+            accounts = await prov.discover_accounts()
+            with pytest.raises(UpstreamError) as caught:
+                await prov.chat(accounts[0], {"model": "opencode_api/big-pickle",
+                                              "messages": [{"role": "user", "content": "hi"}]})
+            assert caught.value.status == 429 and caught.value.retryable
+            assert caught.value.cooldown == 1234.0, "cool down by the seconds upstream named"
+            assert prov.credential_health() == (False, "quota_exhausted")
+            prov._free_blocked_until = time.time() - 1
+            assert prov.credential_health() == (True, "ok"), "a window that passed is over"
 
     asyncio.run(asyncio.wait_for(_go(), timeout=30))
 
