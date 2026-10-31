@@ -68,9 +68,11 @@ def test_trust_ramp_stops_asking_after_enough_adoptions(home):
     from plobi.mind.proposal import AUTO_THRESHOLD, TrustLedger
 
     _config(home, True)
+    from tools.memory_tool import _l0_trust_category
+
     ledger = TrustLedger()
     for _ in range(AUTO_THRESHOLD):
-        ledger.record("adopted", "memory", "l0")
+        ledger.record("adopted", _l0_trust_category("memory", "l2-course-x"), "l0")
 
     out = _json.loads(memory_write(scope="memory", parts=["第九次之后直接落"]))
     assert out.get("staged") is None, out
@@ -78,7 +80,7 @@ def test_trust_ramp_stops_asking_after_enough_adoptions(home):
 
     # 画像：账攒得再多也要问
     for _ in range(AUTO_THRESHOLD * 2):
-        ledger.record("adopted", "user", "l0")
+        ledger.record("adopted", _l0_trust_category("user", "l2-course-x"), "l0")
     assert _json.loads(memory_write(scope="user", parts=["画像一条"])).get("staged") is True
 
     # 删条目：也要问（少了一条必须有人看见）
@@ -112,3 +114,12 @@ def test_approval_lands_in_the_agent_the_paper_belongs_to(home):
     assert ok is True, msg
     assert "属于这门课的一条" in (home / "memory" / "agents" / "l2-course-x" / "MEMORY.md").read_text(encoding="utf-8")
     assert not (home / "memory" / "agents" / "l1" / "MEMORY.md").exists(), "别落到默认身份那份里"
+
+    # 换了 Agent：那是另一格账，必须照样问（一门课攒的不放行别门课）
+    import os as _os
+
+    _os.environ["PLOBI_AGENT_ID"] = "l2-course-y"
+    try:
+        assert _json.loads(memory_write(scope="memory", parts=["别门课的一条"])).get("staged") is True
+    finally:
+        _os.environ["PLOBI_AGENT_ID"] = "l2-course-x"

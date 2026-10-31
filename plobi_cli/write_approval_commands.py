@@ -139,14 +139,22 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
 
 
 def _remember_l0_decision(payload: dict, outcome: str) -> None:
-    """L0 的一次采纳/驳回进信任账（账本只认"人真的点过"这件事本身）。"""
+    """L0 的一次采纳/驳回进信任账（账本只认「人真的点过」这件事本身）。
+
+    记在 (作用域, Agent) 这一格上——见 `_l0_trust_category`：一门课攒的次数只管那门课。
+    """
     scope = str((payload or {}).get("target") or "").strip()
     if not scope:
         return
     try:
         from plobi.mind.proposal import TrustLedger
+        from tools.memory_tool import _l0_trust_category
 
-        TrustLedger().record(outcome, scope, "l0")
+        TrustLedger().record(
+            outcome,
+            _l0_trust_category(scope, str((payload or {}).get("agent_slug") or "")),
+            "l0",
+        )
     except Exception:  # noqa: BLE001 - 记不上账不该让批准本身失败
         pass
 
