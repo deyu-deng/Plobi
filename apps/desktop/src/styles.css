@@ -2031,7 +2031,6 @@ text-* variant utilities. */ .btn-arc {
   /* 用户 10-31：左栏文字离最左边有点远 → 内容左内缩 10 → 4（行自己还有 8） */
   padding-left: 4px;
   padding-right: 6px;
-  padding-bottom: 38px;
 }
 
 .shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal])
@@ -2123,6 +2122,19 @@ text-* variant utilities. */ .btn-arc {
 
 [data-slot='statusbar'][data-dock][data-dock-anchor='edge'] {
   width: max-content;
+}
+
+/* 10-31：收敛区搬进左栏底部——静态流，宽度跟着栏走；
+   40px 收起条里一个图标都放不下，这条自然只剩末尾的「⋯」。 */
+[data-slot='statusbar'][data-dock][data-inline] {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-width: none;
+  height: 26px;
+  z-index: auto;
 }
 
 [data-slot='statusbar'][data-dock] [data-dock-item] {

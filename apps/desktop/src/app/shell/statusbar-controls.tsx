@@ -62,6 +62,8 @@ interface StatusbarControlsProps extends ComponentProps<'footer'> {
   dock?: boolean
   /** `rail` = 宽度跟左栏走；`edge` = 左栏收起/换边时按内容宽。 */
   dockAnchor?: 'rail' | 'edge'
+  /** 放在左栏底部（展开横排 / 收起只剩⋯）——静态流，不吸在窗口角上。 */
+  inline?: boolean
   dockTools?: readonly StatusbarItem[]
   leftItems?: readonly StatusbarItem[]
   items?: readonly StatusbarItem[]
@@ -71,6 +73,7 @@ export function StatusbarControls({
   className,
   dock = false,
   dockAnchor = 'edge',
+  inline = false,
   dockTools = [],
   leftItems = [],
   items = [],
@@ -80,7 +83,7 @@ export function StatusbarControls({
   const allItems = useMemo(() => [...dockTools, ...leftItems, ...items], [dockTools, items, leftItems])
 
   if (dock) {
-    return <StatusbarDock anchor={dockAnchor} className={className} items={allItems} {...props} />
+    return <StatusbarDock anchor={dockAnchor} className={className} inline={inline} items={allItems} {...props} />
   }
 
   return (
@@ -121,9 +124,14 @@ export function StatusbarControls({
 function StatusbarDock({
   anchor,
   className,
+  inline = false,
   items,
   ...props
-}: { anchor: 'rail' | 'edge'; items: readonly StatusbarItem[] } & ComponentProps<'footer'>) {
+}: {
+  anchor: 'rail' | 'edge'
+  inline?: boolean
+  items: readonly StatusbarItem[]
+} & ComponentProps<'footer'>) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const dockRef = useRef<HTMLElement | null>(null)
@@ -158,6 +166,7 @@ function StatusbarDock({
       className={cn('[-webkit-app-region:no-drag]', className)}
       data-dock=""
       data-dock-anchor={anchor}
+      data-inline={inline ? '' : undefined}
       data-slot="statusbar"
       ref={dockRef}
       {...props}

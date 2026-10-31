@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import type { Agent, AgentStatus } from '@/app/console/types'
 import { secretaryShortName } from '@/app/desktop-controller-utils'
@@ -16,8 +16,7 @@ import {
   SidebarRowBody,
   SidebarRowLabel,
   SidebarRowLead,
-  SidebarRowShell,
-  SidebarSectionHeader
+  SidebarRowShell
 } from './chrome'
 import { SidebarSessionRow } from './session-row'
 
@@ -40,6 +39,8 @@ export interface AgentCategoryGroupProps {
    * only a Plobi mainline consumer would pass false.
    */
   hideSessions?: boolean
+  /** 分类图标（用户 10-31：五类各一枚语义清楚的图标）。 */
+  icon?: ReactNode
   label: string
   onArchiveSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
@@ -67,6 +68,7 @@ export function AgentCategoryGroup({
   agents,
   category,
   hideSessions = false,
+  icon,
   label,
   onArchiveSession,
   onDeleteSession,
@@ -83,12 +85,23 @@ export function AgentCategoryGroup({
 
   return (
     <div className="pb-0.5" data-testid={`agent-category-${category}`}>
-      <SidebarSectionHeader
-        label={label}
-        meta={agents.length}
-        onToggle={() => toggleSidebarAgentCategoryCollapsed(category)}
-        open={open}
-      />
+      {/* 分类行长得和上面那些导航行一样（用户 10-31：图标和名字之间那块小方块
+          很违和）——同一套行高/内缩/字号，只多一枚计数与折角。 */}
+      <button
+        aria-expanded={open}
+        className="group/category flex h-7 w-full shrink-0 items-center gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out [-webkit-app-region:no-drag] hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
+        onClick={() => toggleSidebarAgentCategoryCollapsed(category)}
+        type="button"
+      >
+        {icon ? <span className="grid size-4 shrink-0 place-items-center">{icon}</span> : null}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="shrink-0 text-[0.68rem] font-medium text-(--ui-text-quaternary)">{agents.length}</span>
+        <Codicon
+          className="shrink-0 text-(--ui-text-tertiary) opacity-60"
+          name={open ? 'chevron-down' : 'chevron-right'}
+          size="0.75rem"
+        />
+      </button>
 
       {open && (
         <div className="flex flex-col gap-px pt-0.5">

@@ -34,6 +34,11 @@ export interface PaneProps {
   divider?: boolean
   /** Forces the pane closed (track→0, aria-hidden) without writing to the store — for transient route gates. */
   disabled?: boolean
+  /**
+   * 锁定这条轨道的宽度，压过用户拖出来的 widthOverride（不写 store）。
+   * 左栏「收起成 40px 图标条」用它：栏一直开着，只是换一种宽度形态。
+   */
+  forceWidth?: WidthValue
   /** Like disabled, but keeps hoverReveal alive — collapses the track without writing to the store (e.g. narrow window). */
   forceCollapsed?: boolean
   /** When collapsed, float the contents over the main column on hover/focus instead of hiding them (track stays 0px). */
@@ -77,6 +82,7 @@ interface CollectedPane {
   defaultOpen: boolean
   disabled: boolean
   forceCollapsed: boolean
+  forceWidth?: string
   height: string
   id: string
   resizable: boolean
@@ -195,6 +201,7 @@ function collectPanes(children: ReactNode) {
       defaultOpen: props.defaultOpen ?? true,
       disabled: props.disabled ?? false,
       forceCollapsed: props.forceCollapsed ?? false,
+      forceWidth: props.forceWidth === undefined ? undefined : widthToCss(props.forceWidth, DEFAULT_WIDTH),
       height: widthToCss(props.height, DEFAULT_HEIGHT),
       id: props.id,
       resizable: props.resizable ?? false,
@@ -221,6 +228,11 @@ function trackForPane(pane: CollectedPane, states: PaneStoreState) {
 
   if (!open) {
     return { open: false, track: '0px' }
+  }
+
+  // 锁宽优先于用户拖出来的宽度（收起态就是这么盖过展开时存的宽度）
+  if (pane.forceWidth) {
+    return { open: true, track: pane.forceWidth }
   }
 
   const override = pane.resizable ? states[pane.id]?.widthOverride : undefined

@@ -3,7 +3,7 @@ import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
+import { StatusbarControls, type StatusbarItem } from '@/app/shell/statusbar-controls'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import {
@@ -28,14 +28,14 @@ import {
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { SessionInfo } from '@/plobi'
-import { $panesFlipped, $sidebarOpen, $sidebarOverlayMounted, pinSession } from '@/store/layout'
+import { $panesFlipped, $sidebarOpen, pinSession } from '@/store/layout'
 import { $activeGatewayProfile } from '@/store/profile'
 import { pickProjectFolder } from '@/store/projects'
 import { $selectedStoredSessionId, $sessions, $workingSessionIds, sessionPinId } from '@/store/session'
 
+import type { Agent } from '../../console/types'
 import { createAgent } from '../../console/api'
 import { $consoleAgents, $consoleAgentsError, $consoleAgentsLoading, refreshConsoleAgents } from '../../console/store/agents'
-import { secretaryShellLabel } from '../../desktop-controller-utils'
 import {
   agentRoute,
   type AppView,
@@ -50,8 +50,16 @@ import {
 import type { SidebarNavItem } from '../../types'
 
 import { AgentCategoryGroup } from './agent-category-group'
-import { agentProfileIdSet, groupAgentsByCategory, isL1SessionProfile, normalizeAgentCategory } from './agent-groups'
+import {
+  AGENT_CATEGORY_PREFERENCE,
+  type AgentCategoryGroup as AgentCategoryGroupData,
+  agentProfileIdSet,
+  groupAgentsByCategory,
+  isL1SessionProfile
+} from './agent-groups'
 import { AgentOffloadPanel } from './agent-offload-panel'
+import { categoryIcon } from './category-icons'
+import { SidebarStrip } from './sidebar-strip'
 import {
   AGENT_COLOR_CHOICES,
   AGENT_ICON_CHOICES,
@@ -64,7 +72,7 @@ import {
   isCreateAgentCategoryBlocked,
   isCreateAgentSubmitDisabled
 } from './create-agent'
-import { hidesAgentSessions, sidebarNavForLevel } from './nav-level'
+import { sidebarNavForLevel } from './nav-level'
 import { ProjectDialog } from './project-dialog'
 
 export const SIDEBAR_NAV: SidebarNavItem[] = [
@@ -103,6 +111,8 @@ const NAV_BUTTON_DISABLED = 'cursor-default hover:border-transparent hover:bg-tr
 const NAV_ICON = 'size-4 shrink-0 leading-none text-[color-mix(in_srgb,currentColor_72%,transparent)]'
 
 interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  /** 底部收敛区那一排（系统工具 + 状态图标）：10-31 起住在左栏底部。 */
+  footerItems: readonly StatusbarItem[]
   currentView: AppView
   level: ShellLevel | null
   onNavigate: (item: SidebarNavItem) => void
@@ -112,6 +122,7 @@ interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function ChatSidebar({
+  footerItems,
   currentView,
   level,
   onNavigate,
@@ -135,12 +146,9 @@ export function ChatSidebar({
   // `console/store/agents` cache — a render cache whose truth is the backend
   // `GET /api/agents` (WP-BE-1).
   const secretaryAgents = useStore($consoleAgents)
-  // 点进一个 L2 时左栏这一格默认换成"外包给了谁"；这一格只记住"我按了返回"，
-  // 换一个分身就回到默认（不是全局开关，也不改导航）。
-  const [offloadsBackToList, setOffloadsBackToList] = useState(false)
-
+  // 换一个 Agent 就退出「外包」那一页（它不是全局开关，也不改导航）。
   useEffect(() => {
-    setOffloadsBackToList(false)
+    setShowOffload(false)
   }, [l2Id])
   const secretaryAgentsLoading = useStore($consoleAgentsLoading)
   // 读失败与「名册真的空」必须长成两张脸：前者要留着上一栏并给一句人话＋重试，
@@ -172,9 +180,8 @@ export function ChatSidebar({
   }, [l1, l2Id, liveProfile, secretaryAgents])
 
   const sidebarOpen = useStore($sidebarOpen)
-  // Collapsed-but-overlay-mounted → render the full sidebar, not just the nav rail.
-  const overlayMounted = useStore($sidebarOverlayMounted)
-  const contentVisible = sidebarOpen || overlayMounted
+  // 收起态不再归零：同一个栏换成 40px 图标条（用户 10-31）。
+  const contentVisible = sidebarOpen
   const panesFlipped = useStore($panesFlipped)
   const selectedSessionId = useStore($selectedStoredSessionId)
   const sessions = useStore($sessions)
@@ -182,6 +189,7 @@ export function ChatSidebar({
 
   const workingSessionIdSet = useMemo(() => new Set(workingSessionIds), [workingSessionIds])
 
+  const [showOffload, setShowOffload] = useState(false)
   const [createAgentOpen, setCreateAgentOpen] = useState(false)
   const [createAgentName, setCreateAgentName] = useState('')
   const [createAgentBusy, setCreateAgentBusy] = useState(false)
@@ -234,17 +242,6 @@ export function ChatSidebar({
 
     return map
   }, [agentProfileSet, sessions])
-
-  // R-012: the active agent's category badge for the /agent/:id shell label.
-  const l2CategoryLabel = useMemo(() => {
-    if (!l2Id) {
-      return ''
-    }
-
-    const agent = secretaryAgents.find(row => row.id === l2Id)
-
-    return agent ? (c.agentCategories[normalizeAgentCategory(agent.category)] ?? '') : ''
-  }, [c.agentCategories, l2Id, secretaryAgents])
 
   const openCreateAgent = useCallback(() => {
     setCreateAgentName('')
@@ -325,37 +322,69 @@ export function ChatSidebar({
     navigate
   ])
 
+  const expanded = contentVisible
+  // 收起条上五类图标是固定的（用户 10-31），没有 Agent 的类型也占一个位；
+  // 展开的列表仍只显示真有名册的组。
+  const stripGroups = useMemo<AgentCategoryGroupData<Agent>[]>(
+    () =>
+      AGENT_CATEGORY_PREFERENCE.map(
+        category => agentCategoryGroups.find(group => group.category === category) ?? { agents: [], category }
+      ),
+    [agentCategoryGroups]
+  )
+  const sharedItems = useMemo(
+    () => navItems.filter(item => item.id === 'knowledge' || item.id === 'messaging' || item.id === 'diary'),
+    [navItems]
+  )
+  const capabilitiesHref = navItems.find(item => item.id === 'skills')?.route ?? SKILLS_ROUTE
+  const agentActions = useMemo(() => {
+    const actions = [
+      {
+        icon: 'extensions',
+        id: 'capabilities',
+        label: s.nav.skills,
+        onClick: () => navigate(capabilitiesHref)
+      },
+      {
+        icon: 'archive',
+        id: 'artifacts',
+        label: s.nav.artifacts,
+        onClick: () => navigate(ARTIFACTS_ROUTE)
+      }
+    ]
+
+    if (l2Id) {
+      actions.push({ icon: 'send', id: 'offload', label: s.nav.offload, onClick: () => setShowOffload(true) })
+    }
+
+    return actions
+  }, [capabilitiesHref, l2Id, navigate, s.nav.artifacts, s.nav.offload, s.nav.skills])
+
+  const sharedActive = (id: string) =>
+    (id === 'knowledge' && currentView === 'knowledge') ||
+    (id === 'messaging' && currentView === 'messaging') ||
+    (id === 'diary' && currentView === 'diary')
+
   return (
     <Sidebar
       className={cn(
         'relative h-full min-w-0 overflow-hidden border-t-0 border-b-0 text-foreground transition-none',
         panesFlipped ? 'border-l border-r-0' : 'border-r border-l-0',
-        sidebarOpen
-          ? 'border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background) opacity-100'
-          : 'pointer-events-none border-transparent bg-transparent opacity-0',
-        // While floated by PaneShell's hover-reveal, force visible + interactive
-        // — on hover (group-hover/reveal) or when keyboard-pinned (data-forced).
-        'in-data-[pane-hover-reveal=open]:pointer-events-auto in-data-[pane-hover-reveal=open]:border-(--sidebar-edge-border) in-data-[pane-hover-reveal=open]:bg-(--ui-sidebar-surface-background) in-data-[pane-hover-reveal=open]:opacity-100',
-        'group-hover/reveal:pointer-events-auto group-hover/reveal:border-(--sidebar-edge-border) group-hover/reveal:bg-(--ui-sidebar-surface-background) group-hover/reveal:opacity-100'
+        expanded
+          ? 'border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background)'
+          : 'border-transparent bg-transparent'
       )}
       collapsible="none"
     >
-      <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
-        <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-px">
-              {level && contentVisible && (
-                <div className="flex items-center gap-2 pb-1.5 pt-0.5">
-                  <SidebarPanelLabel>{secretaryShellLabel(level, c.chiefSecretary, secretaryAgents)}</SidebarPanelLabel>
-                  {/* R-012: category badge for the active agent's workbench. */}
-                  {l2CategoryLabel && (
-                    <span className="shrink-0 rounded border border-(--ui-stroke-tertiary) px-1.5 py-0.5 text-[0.6rem] font-medium leading-none text-(--ui-text-tertiary)">
-                      {l2CategoryLabel}
-                    </span>
-                  )}
-                </div>
-              )}
-              {!l2Id && (
+      {expanded ? (
+        <SidebarContent className="min-h-0 gap-0 bg-transparent px-2.5">
+          {showOffload && l2Id ? (
+            <div className="min-h-0 flex-1 overflow-y-auto pt-2">
+              <AgentOffloadPanel agentId={l2Id} onBack={() => setShowOffload(false)} />
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              <SidebarMenu className="gap-px pt-2">
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     aria-label={c.newAgent}
@@ -365,91 +394,64 @@ export function ChatSidebar({
                     type="button"
                   >
                     <Codicon className={NAV_ICON} name="add" />
-                    {contentVisible && <span className="min-w-0 flex-1 truncate">{c.newAgentLabel}</span>}
+                    <span className="min-w-0 flex-1 truncate">{c.newAgentLabel}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              )}
 
-              {l2Id && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    className={NAV_BUTTON}
-                    onClick={() => navigate(HOME_ROUTE)}
-                    tooltip={c.backToSecretary}
-                    type="button"
-                  >
-                    <Codicon className={NAV_ICON} name="arrow-left" />
-                    {contentVisible && <span className="min-w-0 flex-1 truncate">{c.backToSecretary}</span>}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
+                {l2Id && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      className={NAV_BUTTON}
+                      onClick={() => navigate(HOME_ROUTE)}
+                      tooltip={c.backToSecretary}
+                      type="button"
+                    >
+                      <Codicon className={NAV_ICON} name="arrow-left" />
+                      <span className="min-w-0 flex-1 truncate">{c.backToSecretary}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
 
-              {navItems.map(item => {
-                const isInteractive = Boolean(item.action) || Boolean(item.route)
-
-                const active =
-                  (item.id === 'skills' && currentView === 'skills') ||
-                  (item.id === 'messaging' && currentView === 'messaging') ||
-                  (item.id === 'artifacts' && currentView === 'artifacts') ||
-                  (item.id === 'knowledge' && currentView === 'knowledge') ||
-                  (item.id === 'diary' && currentView === 'diary')
-
-                return (
+                {sharedItems.map(item => (
                   <SidebarMenuItem key={item.id}>
                     <SidebarMenuButton
-                      aria-disabled={!isInteractive}
-                      className={cn(NAV_BUTTON, active && NAV_BUTTON_ACTIVE, !isInteractive && NAV_BUTTON_DISABLED)}
+                      className={cn(NAV_BUTTON, sharedActive(item.id) && NAV_BUTTON_ACTIVE)}
                       onClick={() => onNavigate(item)}
                       tooltip={s.nav[item.id] ?? item.label}
                       type="button"
                     >
                       <item.icon className={NAV_ICON} />
-                      {contentVisible && (
-                        <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
-                      )}
+                      <span className="min-w-0 flex-1 truncate">{s.nav[item.id] ?? item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                ))}
 
-        {/* 纯 Agents 列表：每个壳（L1 / L2 / overlay 页）都常驻 —— 裁定 38/39
-            终态，会话与 profile 段已整体撤出左栏。 */}
-        <SidebarGroup className="shrink-0 p-0 pb-1">
-          <SidebarGroupContent>
-            {l2Id && !offloadsBackToList && (
-              <AgentOffloadPanel agentId={l2Id} onBack={() => setOffloadsBackToList(true)} />
-            )}
-            {(!l2Id || offloadsBackToList) && (<>
-              {/* Match PINNED/PROJECTS: SidebarPanelLabel already has pl-2 + dot — no extra px-2. */}
-              <div className="flex shrink-0 items-center pb-1 pt-0.5">
-                <SidebarPanelLabel>{c.agentsTitle}</SidebarPanelLabel>
-              </div>
-              {secretaryAgentsError && (
-                <div className="mb-1 flex items-start gap-2 px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
-                  <span className="min-w-0 flex-1" title={secretaryAgentsError}>
-                    {c.agentsLoadFailed}
-                  </span>
-                  <Button onClick={() => void refreshConsoleAgents()} size="sm" type="button" variant="ghost">
-                    {t.common.retry}
-                  </Button>
-                </div>
-              )}
-              {secretaryAgents.length === 0 ? (
-                <div className="px-3 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
-                  {secretaryAgentsLoading ? c.agentsLoading : c.agentsEmptyDesc}
-                </div>
-              ) : (
-                <SidebarMenu className="gap-px">
-                  {agentCategoryGroups.map(group => (
+                <div aria-hidden="true" className="my-2 h-px bg-(--ui-stroke-tertiary)" />
+
+                {secretaryAgentsError && (
+                  <div className="mb-1 flex items-start gap-2 px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-secondary)">
+                    <span className="min-w-0 flex-1" title={secretaryAgentsError}>
+                      {c.agentsLoadFailed}
+                    </span>
+                    <Button onClick={() => void refreshConsoleAgents()} size="sm" type="button" variant="ghost">
+                      {t.common.retry}
+                    </Button>
+                  </div>
+                )}
+
+                {secretaryAgents.length === 0 ? (
+                  <div className="px-2 pb-1 text-[0.75rem] leading-snug text-(--ui-text-tertiary)">
+                    {secretaryAgentsLoading ? c.agentsLoading : c.agentsEmptyDesc}
+                  </div>
+                ) : (
+                  agentCategoryGroups.map(group => (
                     <AgentCategoryGroup
                       activeAgentId={l2Id}
                       activeSessionId={activeSidebarSessionId}
                       agents={group.agents}
                       category={group.category}
-                      hideSessions={hidesAgentSessions(level)}
+                      hideSessions
+                      icon={<Codicon name={categoryIcon(group.category)} size="0.875rem" />}
                       key={group.category}
                       label={c.agentCategories[group.category] ?? group.category}
                       onArchiveSession={onArchiveSession}
@@ -460,212 +462,247 @@ export function ChatSidebar({
                       sessionsByProfile={sessionsByAgentProfile}
                       workingSessionIdSet={workingSessionIdSet}
                     />
-                  ))}
-                </SidebarMenu>
-              )}
-            </>)}
-          </SidebarGroupContent>
-        </SidebarGroup>
+                  ))
+                )}
+              </SidebarMenu>
+            </div>
+          )}
 
-        <ProjectDialog />
-        <Dialog onOpenChange={value => !value && !createAgentBusy && setCreateAgentOpen(false)} open={createAgentOpen}>
-          <DialogContent className="max-w-md" onInteractOutside={event => event.preventDefault()}>
-            <DialogHeader>
-              <DialogTitle>{c.newAgentLabel}</DialogTitle>
-              <DialogDescription>{c.newAgentDesc}</DialogDescription>
-            </DialogHeader>
-            <form
-              className="grid gap-4"
-              onSubmit={event => {
-                event.preventDefault()
-                void submitCreateAgent()
-              }}
-            >
-              <div className="grid gap-1.5">
-                <label className="text-xs font-medium" htmlFor="new-agent-name">
-                  {t.profiles.nameLabel}
-                </label>
-                <Input
-                  autoFocus
-                  id="new-agent-name"
-                  onChange={event => setCreateAgentName(event.target.value)}
-                  value={createAgentName}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <label className="text-xs font-medium" htmlFor="new-agent-category">
-                  {c.newAgentCategoryLabel}
-                </label>
-                <Select
-                  onValueChange={value => setCreateAgentCategory(value as AgentCategory)}
-                  value={createAgentCategory}
-                >
-                  <SelectTrigger aria-label={c.newAgentCategoryLabel} id="new-agent-category">
-                    <SelectValue placeholder={c.newAgentCategoryLabel} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {createAgentCategoryOptions.map(cat => (
-                      <SelectItem key={cat} value={cat}>
-                        {c.agentCategories[cat] ?? cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {/* WP-AGENT-CREATE-UPGRADE：每类一行帮助——选这类是干什么的。
-                    可选链：i18n 键被别线的整文件覆写卷走时降级为空串，绝不打挂整棵树。 */}
-                <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                  {c.newAgentCategoryHelp?.[createAgentCategory] ?? ''}
-                </p>
-              </div>
-              {/* WP-STUDIO (裁定 36.1): a projects/research/courses agent needs the
-                  folder(s) it works in. Butler agents work nowhere in particular,
-                  so the picker never appears for them.
-                  WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加
-                  多个文件夹」）：单值 → 清单，可加多个；第一个是主文件夹。 */}
-              {categoryNeedsProjectPath(createAgentCategory) && (
-                <div className="grid gap-1.5">
-                  <label className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
-                    {c.newAgentFoldersLabel}
-                  </label>
-                  {createAgentPaths.length === 0 ? (
-                    <p className="text-[0.75rem] text-(--ui-text-tertiary)">
-                      {c.newAgentFolderPlaceholder}
-                    </p>
-                  ) : (
-                    <ul className="grid gap-1">
-                      {createAgentPaths.map((path, index) => (
-                        <li
-                          className={cn(
-                            'flex items-center gap-2 rounded-md bg-(--ui-control-hover-background) px-2 py-1 text-[0.75rem]'
-                          )}
-                          key={path}
-                        >
-                          <Codicon
-                            className="shrink-0 text-(--ui-text-tertiary)"
-                            name="folder"
-                            size="0.75rem"
-                          />
-                          <span className="min-w-0 flex-1 truncate" title={path}>
-                            {path}
-                          </span>
-                          {index === 0 && (
-                            <span className="shrink-0 text-[0.625rem] uppercase text-(--ui-text-quaternary)">
-                              {c.newAgentFolderPrimary}
-                            </span>
-                          )}
-                          <Button
-                            aria-label={c.newAgentFolderRemove}
-                            className="size-5 shrink-0 text-(--ui-text-quaternary) hover:text-foreground"
-                            onClick={() =>
-                              setCreateAgentPaths(createAgentPaths.filter(item => item !== path))
-                            }
-                            size="icon-xs"
-                            type="button"
-                            variant="ghost"
-                          >
-                            <Codicon name="close" size="0.75rem" />
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <Button
-                    className="self-start"
-                    onClick={() => void pickCreateAgentFolder()}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Codicon name="add" size="0.75rem" />
-                    {c.newAgentFolderAdd}
-                  </Button>
-                  <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                    {c.newAgentFolderPrimaryHint}
-                  </p>
-                </div>
-              )}
-              {/* WP-AGENT-CREATE-UPGRADE：图标与颜色（用户 10-16 要回的「可爱」）。 */}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
-                  {c.newAgentAppearanceLabel}
-                </span>
-                <div className="flex flex-wrap items-center gap-1">
-                  {AGENT_ICON_CHOICES.map(name => (
-                    <button
-                      aria-label={name}
-                      aria-pressed={createAgentIcon === name}
-                      className={cn(
-                        'flex size-7 items-center justify-center rounded-md',
-                        createAgentIcon === name
-                          ? 'bg-(--ui-control-hover-background) text-foreground'
-                          : 'text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
-                      )}
-                      key={name}
-                      onClick={() => setCreateAgentIcon(createAgentIcon === name ? '' : name)}
+          {/* 本 Agent 的两个入口贴在底部、和下面那排图标同一条底边（用户 10-31）。 */}
+          {!showOffload && agentActions.length > 0 ? (
+            <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-1.5 py-1">
+              <SidebarMenu className="gap-px">
+                {agentActions.map(action => (
+                  <SidebarMenuItem key={action.id}>
+                    <SidebarMenuButton
+                      className={NAV_BUTTON}
+                      onClick={action.onClick}
+                      tooltip={action.label}
                       type="button"
                     >
-                      <Codicon name={name} size="0.875rem" />
-                    </button>
+                      <Codicon className={NAV_ICON} name={action.icon} />
+                      <span className="min-w-0 flex-1 truncate">{action.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </div>
+          ) : null}
+
+          <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-0.5 py-1">
+            <StatusbarControls dock inline items={footerItems} />
+          </div>
+        </SidebarContent>
+      ) : (
+        <SidebarStrip
+          activeAgentId={l2Id}
+          agentActions={agentActions}
+          footerItems={footerItems}
+          groups={stripGroups}
+          onCreateAgent={openCreateAgent}
+          onNavigate={onNavigate}
+          onNavigateAgent={id => navigate(agentRoute(id))}
+          sharedItems={sharedItems}
+        />
+      )}
+
+      <ProjectDialog />
+      <Dialog onOpenChange={value => !value && !createAgentBusy && setCreateAgentOpen(false)} open={createAgentOpen}>
+        <DialogContent className="max-w-md" onInteractOutside={event => event.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{c.newAgentLabel}</DialogTitle>
+            <DialogDescription>{c.newAgentDesc}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-4"
+            onSubmit={event => {
+              event.preventDefault()
+              void submitCreateAgent()
+            }}
+          >
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="new-agent-name">
+                {t.profiles.nameLabel}
+              </label>
+              <Input
+                autoFocus
+                id="new-agent-name"
+                onChange={event => setCreateAgentName(event.target.value)}
+                value={createAgentName}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="new-agent-category">
+                {c.newAgentCategoryLabel}
+              </label>
+              <Select
+                onValueChange={value => setCreateAgentCategory(value as AgentCategory)}
+                value={createAgentCategory}
+              >
+                <SelectTrigger aria-label={c.newAgentCategoryLabel} id="new-agent-category">
+                  <SelectValue placeholder={c.newAgentCategoryLabel} />
+                </SelectTrigger>
+                <SelectContent>
+                  {createAgentCategoryOptions.map(cat => (
+                    <SelectItem key={cat} value={cat}>
+                      {c.agentCategories[cat] ?? cat}
+                    </SelectItem>
                   ))}
-                  <Button
-                    aria-label={c.newAgentAppearanceClear}
-                    className="size-7 text-(--ui-text-quaternary) hover:text-foreground"
-                    onClick={() => {
-                      setCreateAgentIcon('')
-                      setCreateAgentColor('')
-                    }}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Codicon name="close" size="0.75rem" />
-                  </Button>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {AGENT_COLOR_CHOICES.map(color => (
-                    <button
-                      aria-label={color}
-                      aria-pressed={createAgentColor === color}
-                      className={cn(
-                        'size-5 rounded-full ring-offset-2 transition-shadow',
-                        createAgentColor === color
-                          ? 'ring-2 ring-(--ui-text-tertiary) ring-offset-(--ui-background)'
-                          : 'hover:ring-2 hover:ring-(--ui-text-quaternary) hover:ring-offset-(--ui-background)'
-                      )}
-                      key={color}
-                      onClick={() => setCreateAgentColor(createAgentColor === color ? '' : color)}
-                      style={{ backgroundColor: color }}
-                      type="button"
-                    />
-                  ))}
-                </div>
+                </SelectContent>
+              </Select>
+              {/* WP-AGENT-CREATE-UPGRADE：每类一行帮助——选这类是干什么的。
+                  可选链：i18n 键被别线的整文件覆写卷走时降级为空串，绝不打挂整棵树。 */}
+              <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                {c.newAgentCategoryHelp?.[createAgentCategory] ?? ''}
+              </p>
+            </div>
+            {/* WP-STUDIO (裁定 36.1): a projects/research/courses agent needs the
+                folder(s) it works in. Butler agents work nowhere in particular,
+                so the picker never appears for them.
+                WP-AGENT-CREATE-UPGRADE（用户 10-16「一个 Agent 肯定也要可以添加
+                多个文件夹」）：单值 → 清单，可加多个；第一个是主文件夹。 */}
+            {categoryNeedsProjectPath(createAgentCategory) && (
+              <div className="grid gap-1.5">
+                <label className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
+                  {c.newAgentFoldersLabel}
+                </label>
+                {createAgentPaths.length === 0 ? (
+                  <p className="text-[0.75rem] text-(--ui-text-tertiary)">
+                    {c.newAgentFolderPlaceholder}
+                  </p>
+                ) : (
+                  <ul className="grid gap-1">
+                    {createAgentPaths.map((path, index) => (
+                      <li
+                        className={cn(
+                          'flex items-center gap-2 rounded-md bg-(--ui-control-hover-background) px-2 py-1 text-[0.75rem]'
+                        )}
+                        key={path}
+                      >
+                        <Codicon
+                          className="shrink-0 text-(--ui-text-tertiary)"
+                          name="folder"
+                          size="0.75rem"
+                        />
+                        <span className="min-w-0 flex-1 truncate" title={path}>
+                          {path}
+                        </span>
+                        {index === 0 && (
+                          <span className="shrink-0 text-[0.625rem] uppercase text-(--ui-text-quaternary)">
+                            {c.newAgentFolderPrimary}
+                          </span>
+                        )}
+                        <Button
+                          aria-label={c.newAgentFolderRemove}
+                          className="size-5 shrink-0 text-(--ui-text-quaternary) hover:text-foreground"
+                          onClick={() =>
+                            setCreateAgentPaths(createAgentPaths.filter(item => item !== path))
+                          }
+                          size="icon-xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Codicon name="close" size="0.75rem" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Button
+                  className="self-start"
+                  onClick={() => void pickCreateAgentFolder()}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="add" size="0.75rem" />
+                  {c.newAgentFolderAdd}
+                </Button>
                 <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
-                  {c.newAgentAppearanceHint}
+                  {c.newAgentFolderPrimaryHint}
                 </p>
               </div>
-              {isCreateAgentCategoryBlocked(createAgentCategory) && (
-                <p className="text-xs text-destructive">{c.createEventAgentHint}</p>
-              )}
-              {createAgentError && <p className="text-xs text-destructive">{createAgentError}</p>}
-              <DialogFooter>
-                <Button disabled={createAgentBusy} onClick={() => setCreateAgentOpen(false)} type="button" variant="ghost">
-                  {t.common.cancel}
-                </Button>
+            )}
+            {/* WP-AGENT-CREATE-UPGRADE：图标与颜色（用户 10-16 要回的「可爱」）。 */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">
+                {c.newAgentAppearanceLabel}
+              </span>
+              <div className="flex flex-wrap items-center gap-1">
+                {AGENT_ICON_CHOICES.map(name => (
+                  <button
+                    aria-label={name}
+                    aria-pressed={createAgentIcon === name}
+                    className={cn(
+                      'flex size-7 items-center justify-center rounded-md',
+                      createAgentIcon === name
+                        ? 'bg-(--ui-control-hover-background) text-foreground'
+                        : 'text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
+                    )}
+                    key={name}
+                    onClick={() => setCreateAgentIcon(createAgentIcon === name ? '' : name)}
+                    type="button"
+                  >
+                    <Codicon name={name} size="0.875rem" />
+                  </button>
+                ))}
                 <Button
-                  disabled={
-                    createAgentBusy ||
-                    isCreateAgentSubmitDisabled(createAgentName, createAgentCategory, createAgentPaths)
-                  }
-                  type="submit"
+                  aria-label={c.newAgentAppearanceClear}
+                  className="size-7 text-(--ui-text-quaternary) hover:text-foreground"
+                  onClick={() => {
+                    setCreateAgentIcon('')
+                    setCreateAgentColor('')
+                  }}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
                 >
-                  {c.newAgentLabel}
+                  <Codicon name="close" size="0.75rem" />
                 </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </SidebarContent>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {AGENT_COLOR_CHOICES.map(color => (
+                  <button
+                    aria-label={color}
+                    aria-pressed={createAgentColor === color}
+                    className={cn(
+                      'size-5 rounded-full ring-offset-2 transition-shadow',
+                      createAgentColor === color
+                        ? 'ring-2 ring-(--ui-text-tertiary) ring-offset-(--ui-background)'
+                        : 'hover:ring-2 hover:ring-(--ui-text-quaternary) hover:ring-offset-(--ui-background)'
+                    )}
+                    key={color}
+                    onClick={() => setCreateAgentColor(createAgentColor === color ? '' : color)}
+                    style={{ backgroundColor: color }}
+                    type="button"
+                  />
+                ))}
+              </div>
+              <p className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                {c.newAgentAppearanceHint}
+              </p>
+            </div>
+            {isCreateAgentCategoryBlocked(createAgentCategory) && (
+              <p className="text-xs text-destructive">{c.createEventAgentHint}</p>
+            )}
+            {createAgentError && <p className="text-xs text-destructive">{createAgentError}</p>}
+            <DialogFooter>
+              <Button disabled={createAgentBusy} onClick={() => setCreateAgentOpen(false)} type="button" variant="ghost">
+                {t.common.cancel}
+              </Button>
+              <Button
+                disabled={
+                  createAgentBusy ||
+                  isCreateAgentSubmitDisabled(createAgentName, createAgentCategory, createAgentPaths)
+                }
+                type="submit"
+              >
+                {c.newAgentLabel}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Sidebar>
   )
 }
-

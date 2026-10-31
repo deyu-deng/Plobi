@@ -66,10 +66,12 @@ ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true })
 ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false })
 ensurePaneRegistered(PREVIEW_PANE_ID, { open: true })
 
-export const $sidebarOpen: ReadableAtom<boolean> = computed(
-  $paneStates,
-  states => states[CHAT_SIDEBAR_PANE_ID]?.open ?? true
-)
+// 收起 = 40px 图标条，不再归零（用户 10-31）。Pane 永远开着；「展开/收起」只是
+// 这条栏的形态开关，所以不再跟 pane 的 open 状态绑在一起。
+export const SIDEBAR_COLLAPSED_WIDTH = 40
+const SIDEBAR_EXPANDED_STORAGE_KEY = 'plobi.desktop.sidebarExpanded'
+export const $sidebarExpanded = persistentAtom(SIDEBAR_EXPANDED_STORAGE_KEY, true, Codecs.bool)
+export const $sidebarOpen: ReadableAtom<boolean> = $sidebarExpanded
 
 export const $fileBrowserOpen: ReadableAtom<boolean> = computed(
   $paneStates,
@@ -248,11 +250,11 @@ export function setSidebarWidth(width: number) {
 }
 
 export function setSidebarOpen(open: boolean) {
-  setPaneOpen(CHAT_SIDEBAR_PANE_ID, open)
+  $sidebarExpanded.set(Boolean(open))
 }
 
 export function toggleSidebarOpen() {
-  togglePane(CHAT_SIDEBAR_PANE_ID)
+  $sidebarExpanded.set(!$sidebarExpanded.get())
 }
 
 export function toggleFileBrowserOpen() {

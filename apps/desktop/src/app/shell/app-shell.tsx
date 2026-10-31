@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type { CSSProperties, ReactNode } from 'react'
-import { useMemo, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 
 import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
@@ -13,7 +13,6 @@ import {
   $panesFlipped,
   $shellCards,
   $sidebarOpen,
-  $sidebarWidth,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_PANE_ID,
   setSidebarOpen
@@ -27,7 +26,6 @@ import { SIDEBAR_COLLAPSE_MEDIA_QUERY } from '../layout-constants'
 import { useWindowControlsOverlayWidth } from './hooks/use-window-controls-overlay-width'
 import { KeybindPanel } from './keybind-panel'
 import { StatusbarControls, type StatusbarItem } from './statusbar-controls'
-import { useSystemTools } from './system-tools'
 import { TITLEBAR_HEIGHT, titlebarControlsPosition } from './titlebar'
 import { TitlebarControls, type TitlebarTool } from './titlebar-controls'
 
@@ -80,28 +78,9 @@ export function AppShell({
   titlebarTools
 }: AppShellProps) {
   const sidebarOpen = useStore($sidebarOpen)
-  const sidebarWidth = useStore($sidebarWidth)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const panesFlipped = useStore($panesFlipped)
   const shellCards = useStore($shellCards)
-  const systemTools = useSystemTools(onOpenSettings)
-  // 左下图标条把三枚系统工具摆最前面：栏一窄先被收进「⋯」的是版本/计时那些，设置永远够得着。
-  const dockTools = useMemo(
-    () =>
-      systemTools.map(tool => ({
-        disabled: tool.disabled,
-        hidden: tool.hidden,
-        href: tool.href,
-        icon: tool.icon,
-        id: `system:${tool.id}`,
-        label: tool.title ?? tool.label,
-        onSelect: tool.onSelect,
-        title: tool.title ?? tool.label,
-        to: tool.to,
-        variant: 'action' as const
-      })),
-    [systemTools]
-  )
   const narrowViewport = useMediaQuery(SIDEBAR_COLLAPSE_MEDIA_QUERY)
   const fileBrowserWidthOverride = useStore($paneWidthOverride(FILE_BROWSER_PANE_ID))
   const connection = useStore($connection)
@@ -260,18 +239,6 @@ export function AppShell({
         )}
       </main>
 
-      {/* 卡片模式的左下图标条：画在**底座上**（main 之外），不跟内容卡的堆叠/裁切混在一起；
-          overlays 排在它后面，弹层照旧盖住它。宽度跟左栏走，装不下的进「⋯」。 */}
-      {!isSecondaryWindow() && shellCards && (
-        <StatusbarControls
-          dock
-          dockAnchor={sidebarOpen && !narrowViewport && !panesFlipped ? 'rail' : 'edge'}
-          dockTools={dockTools}
-          items={statusbarItems}
-          leftItems={leftStatusbarItems}
-          style={{ '--dock-rail-width': `${sidebarWidth}px` } as CSSProperties}
-        />
-      )}
 
       {overlays}
 

@@ -22,6 +22,7 @@ import { mediaKind } from '@/lib/media'
 import { cn } from '@/lib/utils'
 import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
+import type { AgendaEvent } from '@/types/plobi'
 
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setAgentScope } from '../store/agent-scope'
@@ -32,17 +33,19 @@ import {
   $rightRailView,
   $shellCards,
   $shellSwapped,
+  $sidebarOpen,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
   RIGHT_RAIL_VIEW_NOTES,
   setFileBrowserOpen,
-  setSidebarOverlayMounted,
+  SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   toggleShellSwapped
 } from '../store/layout'
 import { cardDragProps, useCardDrop } from './shell/card-drag'
+import { useSystemTools } from './shell/system-tools'
 import { respondToApprovalAction } from '../store/native-notifications'
 import { $paneOpen, setPaneOpen, togglePane } from '../store/panes'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab, type PreviewTarget } from '../store/preview'
@@ -74,6 +77,7 @@ import { onSessionsChanged } from '../store/session-sync'
 import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store/updates'
 import { isSecondaryWindow } from '../store/windows'
 
+import { fileUrl } from './agenda/detail'
 import { requestComposerFocus, requestComposerInsert } from './chat/composer/focus'
 import { useComposerActions } from './chat/hooks/use-composer-actions'
 import {
@@ -86,6 +90,7 @@ import { CommandPalette } from './command-palette'
 import { getAgentOverview } from './console/api'
 import { agentScope, L1_SCOPE } from './console/chat/scope'
 import { AddEventForm } from './console/right/add-event'
+import { RailEventDetail } from './console/right/event-detail'
 import { Timeline } from './console/right/timeline'
 import {
   $agendaAvoidWindows,
@@ -222,6 +227,7 @@ export function DesktopController() {
   const agendaPaneOpen = useStore($paneOpen('agenda-timeline'))
   const panesFlipped = useStore($panesFlipped)
   const shellCards = useStore($shellCards)
+  const sidebarOpen = useStore($sidebarOpen)
   // 对话卡 ↔ 右栏卡互换（用户 10-31 选的换法）：交换后右栏当主区、对话进右侧窄卡。
   const swapped = useStore($shellSwapped)
   const chatDrop = useCardDrop('chat', toggleShellSwapped)
@@ -318,6 +324,9 @@ export function DesktopController() {
   // (`enabled: false` → no seed, no 8s interval).
   useAgendaTimeline(level !== null)
   const [agendaAdding, setAgendaAdding] = useState(false)
+  // 点轴上的块 → 右栏就地换成这条日程的详情（用户 10-31）。null ＝ 还在时间轴。
+  // 存整条事件而不是 id：选中别的日子时那一行不在共享 store 里。
+  const [railEvent, setRailEvent] = useState<AgendaEvent | null>(null)
   const [l1Tabs, setL1Tabs] = useState<RightRailTabId[]>([])
   const [l1Active, setL1Active] = useState<null | RightRailTabId>(null)
   const [l2Tabs, setL2Tabs] = useState<RightRailTabId[]>([])
@@ -377,16 +386,46 @@ export function DesktopController() {
   ]
   const isL1Workbench = level === 'l1'
 
-  const openFileTab = useCallback((target: PreviewTarget) => {
-    const key = target.path ?? target.url ?? 'preview'
-    const title = key.split(/[\\/]/).filter(Boolean).pop() ?? key
-    const id = `file:${key}` as RightRailTabId
+  // 文件页签两条腿共用一张 `openFiles` 表，但各自的标签栏是分开的（L1 是
+  // agendaWorkbench，L2 是 filesWorkbench）。所以「开一个文件」要按当前腿写进
+  // 对应的 tab 列表，否则页签会落到另一条腿的栏里、或者干脆不显示。
+  const openFileTab = useCallback(
+    (target: PreviewTarget) => {
+      const key = target.path ?? target.url ?? 'preview'
+      const title = key.split(/[\\/]/).filter(Boolean).pop() ?? key
+      const id = `file:${key}` as RightRailTabId
 
-    setOpenFiles(files => ({ ...files, [id]: { def: { icon: 'file', id, title }, target } }))
-    setL2Tabs(tabs => (tabs.includes(id) ? tabs : [...tabs, id]))
-    setL2Active(id)
-    setFileBrowserOpen(true)
-  }, [])
+      setOpenFiles(files => ({ ...files, [id]: { def: { icon: 'file', id, title }, target } }))
+
+      if (isL1Workbench) {
+        setL1Tabs(tabs => (tabs.includes(id) ? tabs : [...tabs, id]))
+        setL1Active(id)
+        setPaneOpen('agenda-timeline', true)
+
+        return
+      }
+
+      setL2Tabs(tabs => (tabs.includes(id) ? tabs : [...tabs, id]))
+      setL2Active(id)
+      setFileBrowserOpen(true)
+    },
+    [isL1Workbench]
+  )
+
+  // 附件点了在当前右栏开一个页签看内容（用户 10-31）。L1 的标签栏现在也收文件
+  // 页签了（`openFileTab` 按腿分流），所以两条腿走同一条路。
+  const openAgendaAttachment = useCallback(
+    (attachment: { name: string; path: string }) => {
+      openFileTab({
+        kind: 'file',
+        label: attachment.name,
+        path: attachment.path,
+        source: attachment.path,
+        url: fileUrl(attachment.path)
+      })
+    },
+    [openFileTab]
+  )
   const handleWorkbenchTabChange = useCallback(
     (tab: RightRailTabId) => {
       if (isL1Workbench) {
@@ -669,11 +708,23 @@ export function DesktopController() {
     setOpenFiles({})
     setL2Tabs(tabs => tabs.filter(id => !id.startsWith('file:')))
     setL2Active(active => (active?.startsWith('file:') ? 'files' : active))
+    // L1 的栏也收文件页签（日程附件）。同一张 `openFiles` 被清空时两条腿都得收，
+    // 否则 l1Tabs 里会留一个没有 def 的 `file:` id：标签从栏里消失，active 还指着它。
+    setL1Tabs(tabs => tabs.filter(id => !id.startsWith('file:')))
   }, [agentCwd])
 
+  // active 指着一条已经不在栏里的 id 时（关标签、清文件页签、附件被移走），
+  // 落回第一个还在的标签——否则每个 panel 都是 hidden，整栏一片空白。
+  useEffect(() => {
+    if (l1Active && !l1Tabs.includes(l1Active)) {
+      setL1Active(l1Tabs[0] ?? null)
+    }
+  }, [l1Active, l1Tabs])
+
+  // L1 的标签栏也收文件页签（用户 10-31：日程附件点开就在这一栏看内容）。
   const l1OpenTabDefs = l1Tabs
     .map(id =>
-      id === 'agenda' || id === 'browser' || id === 'terminal' ? workbenchTabDefs[id] : null
+      id === 'agenda' || id === 'browser' || id === 'terminal' ? workbenchTabDefs[id] : openFiles[id]?.def
     )
     .filter((def): def is RightRailTabDef => Boolean(def))
   const l2OpenTabDefs = l2Tabs
@@ -1574,8 +1625,25 @@ export function DesktopController() {
     toggleCommandCenter
   })
 
+  // 左下那排状态图标搬进左栏（10-31）：展开时横排，收起时只剩「⋯」。
+  const systemTools = useSystemTools(openSettings)
+  const dockTools = systemTools.map(tool => ({
+    disabled: tool.disabled,
+    hidden: tool.hidden,
+    href: tool.href,
+    icon: tool.icon,
+    id: `system:${tool.id}`,
+    label: tool.title ?? tool.label,
+    onSelect: tool.onSelect,
+    title: tool.title ?? tool.label,
+    to: tool.to,
+    variant: 'action' as const
+  }))
+  const sidebarFooterItems = [...dockTools, ...leftStatusbarItems, ...statusbarItems]
+
   const sidebar = (
     <ChatSidebar
+      footerItems={sidebarFooterItems}
       currentView={currentView}
       level={level}
       onArchiveSession={sessionId => void archiveSession(sessionId)}
@@ -1771,9 +1839,36 @@ export function DesktopController() {
     />
   ) : null
   const workbenchReviewContent = <ReviewPane embedded key={agentCwd || 'no-cwd'} />
-  const agendaTabContent = (
+  // 点开的日程（用户 10-31）：右栏就地换成这条的详情，返回才回到时间轴。
+  // 动作（勾清单、改字段）会把新行写回共享 store，所以渲染时优先取 store 那份；
+  // 别的日子那根轴上的行不在 store 里，就退回点进来时那一份。
+  const shownRailEvent = railEvent
+    ? (agendaEvents.find(event => event.id === railEvent.id) ?? railEvent)
+    : null
+  const agendaTabContent = shownRailEvent ? (
+    <RailEventDetail
+      event={shownRailEvent}
+      onBack={() => setRailEvent(null)}
+      onOpenAttachment={openAgendaAttachment}
+    />
+  ) : (
     <>
       {agendaAdding ? <AddEventForm onClose={() => setAgendaAdding(false)} /> : null}
+      {/* 「加一条」原来挂在标签栏的 trailing 上，跟「新开标签」那个 + 长得一模一样
+          （用户 10-31：两个加号分不清）。挪进日程内容里、带文字，标签栏只剩一个 +。 */}
+      <div className="flex shrink-0 items-center justify-end px-2 pt-1">
+        <Button
+          aria-label={t.console.timeline.addEvent}
+          className="gap-1"
+          onClick={() => setAgendaAdding(open => !open)}
+          size="xs"
+          title={t.console.timeline.addEvent}
+          variant="ghost"
+        >
+          <Codicon name="add" size="0.75rem" />
+          {t.console.timeline.addEvent}
+        </Button>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {/* 裁定 40: the today axis (with its "now" line) MUST mount even
            when the rail is still loading or the day payload is empty.
@@ -1791,7 +1886,11 @@ export function DesktopController() {
             </Button>
           </div>
         ) : null}
-        <Timeline avoidWindows={agendaAvoidWindows} events={agendaEvents} />
+        <Timeline
+          avoidWindows={agendaAvoidWindows}
+          events={agendaEvents}
+          onSelectEvent={setRailEvent}
+        />
         {agendaRhythmOff && !agendaLoading ? (
           <p className="px-2 pt-1 text-[0.7rem] text-muted-foreground/70" data-testid="timeline-rhythm-off">
             {t.agenda.rhythmOff}
@@ -1799,19 +1898,6 @@ export function DesktopController() {
         ) : null}
       </div>
     </>
-  )
-  const agendaAddButton = (
-    /* 完整日程页的入口全应用只有状态栏那一个 chip（它还带 pending 计数），
-       这里只保留「加一条」；同一个页面不许有第二张门。 */
-    <Button
-      aria-label={t.console.timeline.addEvent}
-      onClick={() => setAgendaAdding(open => !open)}
-      size="icon-xs"
-      title={t.console.timeline.addEvent}
-      variant="ghost"
-    >
-      <Codicon name="add" size="0.8125rem" />
-    </Button>
   )
 
   // 右栏内容抽成变量：正常时住在右侧 Pane 里，互换后同一块进 PaneMain（主区）。
@@ -1843,7 +1929,6 @@ export function DesktopController() {
         onTabClose={handleWorkbenchTabClose}
         onTabOpen={handleWorkbenchTabOpen}
         tabs={l2OpenTabDefs}
-        trailing={l2Active === 'agenda' ? agendaAddButton : null}
       />
     </aside>
   )
@@ -1893,7 +1978,9 @@ export function DesktopController() {
           agenda: agendaTabContent,
           browser: <BrowserTabPanel labels={t.workbench.browser} />,
           files: null,
-          terminal: isL1Workbench ? <TerminalPaneChrome /> : null
+          terminal: isL1Workbench ? <TerminalPaneChrome /> : null,
+          // 文件页签（日程附件点开的那种）。内容和 L2 那份是同一张 `fileTabContents`。
+          ...fileTabContents
         }}
         dragHandleProps={shellCards ? cardDragProps('rail') : undefined}
         labels={t.workbench}
@@ -1904,7 +1991,6 @@ export function DesktopController() {
         onTabClose={handleWorkbenchTabClose}
         onTabOpen={handleWorkbenchTabOpen}
         tabs={l1OpenTabDefs}
-        trailing={l1Active === 'agenda' ? agendaAddButton : null}
       />
     </aside>
   )
@@ -2091,14 +2177,14 @@ export function DesktopController() {
           // WP-A: the base sidebar is the shell's left rail for L1/L2 and the
           // legacy chat alike. Overlay modals cover the shell; skills/messaging/
           // artifacts keep this rail (Plobi original) so the page is escapable.
+          // 用户 10-31：收起 = 40px 图标条，栏本身永远在，所以不再用 disabled/
+          // hoverReveal 把它整个关掉；只有本页压根不该有左栏时才 disabled。
           disabled={!sidebarPaneOpen}
-          forceCollapsed={narrowViewport}
-          hoverReveal
+          forceWidth={sidebarOpen ? undefined : `${SIDEBAR_COLLAPSED_WIDTH}px`}
           id="chat-sidebar"
-          maxWidth={SIDEBAR_MAX_WIDTH}
           minWidth={SIDEBAR_DEFAULT_WIDTH}
-          onOverlayActiveChange={setSidebarOverlayMounted}
-          resizable
+          maxWidth={SIDEBAR_MAX_WIDTH}
+          resizable={sidebarOpen}
           side={sidebarSide}
           width={`${SIDEBAR_DEFAULT_WIDTH}px`}
         >
