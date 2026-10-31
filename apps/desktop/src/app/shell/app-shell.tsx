@@ -4,12 +4,14 @@ import { useSyncExternalStore } from 'react'
 
 import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
+import { cn } from '@/lib/utils'
 import { FloatingPet } from '@/components/pet/floating-pet'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import {
   $fileBrowserOpen,
   $panesFlipped,
+  $shellCards,
   $sidebarOpen,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_PANE_ID,
@@ -78,6 +80,7 @@ export function AppShell({
   const sidebarOpen = useStore($sidebarOpen)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const panesFlipped = useStore($panesFlipped)
+  const shellCards = useStore($shellCards)
   const narrowViewport = useMediaQuery(SIDEBAR_COLLAPSE_MEDIA_QUERY)
   const fileBrowserWidthOverride = useStore($paneWidthOverride(FILE_BROWSER_PANE_ID))
   const connection = useStore($connection)
@@ -202,7 +205,12 @@ export function AppShell({
         />
       )}
 
-      <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
+      <main
+        className={cn(
+          'relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none',
+          shellCards && 'shell-cards'
+        )}
+      >
         <PaneShell className="min-h-0 flex-1">
           <div
             aria-hidden="true"

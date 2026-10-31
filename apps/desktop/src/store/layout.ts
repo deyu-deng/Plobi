@@ -5,6 +5,15 @@ import { arraysEqual, insertUniqueId } from '@/lib/storage'
 
 import { $paneStates, ensurePaneRegistered, setPaneOpen, setPaneWidthOverride, togglePane } from './panes'
 
+// 主界面「卡片壳」：渐变底 + 对话/右栏两张白卡，左栏不上卡（用户 10-30 定）。
+// 存成偏好而不是写死：他不喜欢时能关回铺满的旧样子。
+export const SHELL_CARDS_STORAGE_KEY = 'plobi.desktop.shellCards'
+export const $shellCards = persistentAtom(SHELL_CARDS_STORAGE_KEY, true, Codecs.bool)
+
+export function setShellCards(value: boolean): void {
+  $shellCards.set(Boolean(value))
+}
+
 export const SIDEBAR_DEFAULT_WIDTH = 186
 export const SIDEBAR_MAX_WIDTH = 300
 // Open at the same width as the sessions sidebar so the two rails match, but

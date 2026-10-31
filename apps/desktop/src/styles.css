@@ -1937,3 +1937,54 @@ text-* variant utilities. */ .btn-arc {
 ::highlight(plobi-pdf-search-current) {
   background-color: rgb(245 158 11 / 90%);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   主界面「卡片壳」（用户 10-30 定）
+   渐变玻璃底 + 对话/右栏两张白卡；**左栏不上卡**（和 Qoder 一样直接坐在底上）；
+   卡间接缝 1px（用户选的「贴死」），圆角 12px。整组由偏好 `layout.shellCards` 控制。
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --dl-shell-margin: 8px;
+  --dl-shell-gap: 1px;
+  --dl-shell-radius: 12px;
+  /* 渐变取自 Qoder 实测：暖黄 → 浅绿 → 浅蓝 */
+  --dl-shell-canvas: linear-gradient(150deg, #eaecc7 0%, #e4ead1 42%, #d9e2e3 100%);
+}
+
+.shell-cards {
+  padding: var(--dl-shell-margin);
+  background-color: var(--ui-bg-primary);
+}
+
+/* 只有亮色主题铺那块暖色玻璃；暗色主题保持平底（避免整屏发白） */
+:root:not(.dark) .shell-cards {
+  background-image: var(--theme-asset-bg, var(--dl-shell-canvas));
+  background-position: center;
+  background-size: cover;
+}
+
+.shell-cards [data-pane-shell] {
+  gap: var(--dl-shell-gap);
+}
+
+/* 左栏：不上卡 */
+.shell-cards [data-pane-id][data-pane-side='left'] {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 对话与右栏：白卡 */
+.shell-cards [data-pane-main='true'],
+.shell-cards [data-pane-id][data-pane-side='right'] {
+  background: var(--ui-bg-primary);
+  border: 1px solid var(--ui-stroke-quaternary, var(--ui-stroke-tertiary));
+  border-radius: var(--dl-shell-radius);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px -12px rgba(16, 24, 40, 0.18);
+  overflow: hidden;
+}
+
+.dark .shell-cards [data-pane-main='true'],
+.dark .shell-cards [data-pane-id][data-pane-side='right'] {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 10px 28px -14px rgba(0, 0, 0, 0.55);
+}

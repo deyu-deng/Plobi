@@ -642,6 +642,8 @@ export const en: Translations = {
       system: { label: 'System', description: 'Follow OS appearance' }
     },
     appearance: {
+    shellCards: 'Card layout',
+    shellCardsHint: 'Put the chat and the right panel on two floating cards over a gradient canvas. The left rail stays on the background, like Qoder.',
       title: 'Appearance',
       intro:
         'These are desktop-only display preferences. Mode controls brightness; theme controls the accent palette and chat surface styling.',

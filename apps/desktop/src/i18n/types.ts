@@ -559,6 +559,8 @@ export interface Translations {
     searchPlaceholder: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string>
     modeOptions: Record<'light' | 'dark' | 'system', ModeOptionCopy>
     appearance: {
+    shellCards: string
+    shellCardsHint: string
       title: string
       intro: string
       colorMode: string

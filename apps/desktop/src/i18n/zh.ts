@@ -628,6 +628,8 @@ export const zh: Translations = {
       system: { label: '跟随系统', description: '跟随系统外观' }
     },
     appearance: {
+    shellCards: '卡片式主界面',
+    shellCardsHint: '对话与右栏浮在渐变底上的两张白卡上；左栏仍直接坐在底上（和 Qoder 一样）。',
       title: '外观',
       intro: '这些是仅桌面端的显示偏好。模式控制明暗；主题控制强调色与对话界面样式。',
       colorMode: '颜色模式',

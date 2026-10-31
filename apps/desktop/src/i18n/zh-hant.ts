@@ -557,6 +557,8 @@ export const zhHant = defineLocale({
       system: { label: '跟隨系統', description: '跟隨作業系統外觀' }
     },
     appearance: {
+    shellCards: '卡片式主介面',
+    shellCardsHint: '對話與右欄浮在漸變底上的兩張白卡上；左欄仍直接坐在底上（和 Qoder 一樣）。',
       title: '外觀',
       intro: '這些是僅限桌面端的顯示偏好。模式控制亮度；主題控制強調色與聊天介面樣式。',
       colorMode: '色彩模式',

@@ -566,6 +566,8 @@ export const ja = defineLocale({
       system: { label: 'システム', description: 'OS の外観に合わせる' }
     },
     appearance: {
+    shellCards: 'カード型メイン画面',
+    shellCardsHint: 'チャットと右パネルをグラデーション上の 2 枚のカードに載せる。左レールは Qoder と同じく背景の上。',
       title: '外観',
       intro:
         'デスクトップ専用の表示設定です。モードは明るさ、テーマはアクセントカラーとチャット面のスタイルを制御します。',
