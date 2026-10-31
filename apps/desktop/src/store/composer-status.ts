@@ -6,6 +6,7 @@ import type { TodoItem, TodoStatus } from '@/lib/todos'
 import { $gateway } from './gateway'
 import { dispatchNativeNotification } from './native-notifications'
 import { notifyError } from './notifications'
+import { $agentScope } from './session'
 import { $subagentsBySession, type SubagentProgress } from './subagents'
 import { $todosBySession } from './todos'
 
@@ -34,6 +35,16 @@ export interface ComposerStatusItem {
 // Writable source for background work, synced from the gateway's process
 // registry (`terminal(background=true)` spawns) via `process.list`.
 export const $backgroundStatusBySession = atom<Record<string, ComposerStatusItem[]>>({})
+
+/**
+ * sid → 该会话是在哪个 **Agent 作用域** 下跑的（`'l1'` 或 L2 名册 id）。
+ *
+ * 后台进程页签要按 Agent 归户，不能把所有会话的进程都灌进同一个终端条
+ * （10-31 用户报「换一个 Agent 还是共享的」）。会话本身不带 agent 字段，
+ * 但 reconcile 一定发生在「当前正在跑的那个 Agent」的上下文里，所以在这一刻
+ * 记一笔就够；只在值变化时写，避免每次 reconcile 都惊动订阅者。
+ */
+export const $sessionAgentScope = atom<Record<string, string>>({})
 
 // Rows the user X-ed away. The registry keeps finished processes around for a
 // while, so without this every refresh would resurrect a dismissed row.
@@ -212,6 +223,16 @@ const sameItem = (a: ComposerStatusItem, b: ComposerStatusItem) =>
  */
 export function reconcileBackgroundProcesses(sid: string, procs: GatewayProcessEntry[]) {
   const dismissed = dismissedBySession.get(sid)
+
+  // Stamp which Agent this session belongs to, so the terminal rail can show
+  // only its own background tabs. Written lazily (only when it changes) —
+  // reconcile runs on every status poll.
+  const scope = $agentScope.get()
+  const known = $sessionAgentScope.get()
+
+  if ((known[sid] ?? '') !== scope) {
+    $sessionAgentScope.set({ ...known, [sid]: scope })
+  }
 
   const fresh = new Map(
     procs

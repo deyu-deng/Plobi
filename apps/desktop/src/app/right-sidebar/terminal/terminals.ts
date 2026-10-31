@@ -1,7 +1,7 @@
 import { atom, computed } from 'nanostores'
 
 import { readKey, writeKey } from '@/lib/storage'
-import { $currentCwd } from '@/store/session'
+import { $agentScope, $currentCwd } from '@/store/session'
 
 import { setTerminalTakeover } from '../store'
 
@@ -17,7 +17,8 @@ export interface TerminalEntry {
   /** Working directory, snapshotted once at creation. Terminals live outside
    *  session/project state — the only thing they inherit is this initial cwd
    *  (the project root if opened in one, else the backend's default). Switching
-   *  sessions never moves or recreates a terminal. */
+   *  Agents never moves or recreates a terminal; it only decides which tab strip
+   *  shows it. */
   cwd: string
   /** Serialized xterm scrollback from the last session, replayed on relaunch so
    *  the tab reopens with its recent history (VS Code parity). Processes are NOT
@@ -28,6 +29,11 @@ export interface TerminalEntry {
    *  background process (`terminal(background=true)`), keyed by `procId`. */
   kind: 'user' | 'agent'
   procId?: string
+  /** Owning Agent scope (`'l1'` or an L2 roster id). Plobi has no "session"
+   *  concept — one Agent is one mouth — so the tab strip is partitioned by
+   *  Agent, not by conversation: every tab belongs to exactly one mouth, and
+   *  switching Agents swaps the strip while all PTYs stay alive. */
+  scope: string
 }
 
 interface PersistedTerminalEntry {
@@ -35,11 +41,13 @@ interface PersistedTerminalEntry {
   cwd: string
   id: string
   reviveBuffer?: string
+  scope: string
   title: string
 }
 
 interface PersistedTerminalState {
-  activeTerminalId: null | string
+  /** Active tab per Agent scope. */
+  activeByScope: Record<string, null | string>
   terminals: PersistedTerminalEntry[]
 }
 
@@ -49,6 +57,8 @@ const TERMINALS_STORAGE_KEY = 'plobi.desktop.terminals.v1'
 // localStorage quota. Roughly mirrors VS Code's persistentSessionScrollback
 // default (100 lines) once the serialized escape codes are counted in.
 const MAX_REVIVE_BUFFER_CHARS = 48_000
+
+const L1_SCOPE = 'l1'
 
 function sanitizePersistedTerminal(value: unknown): PersistedTerminalEntry | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -60,6 +70,9 @@ function sanitizePersistedTerminal(value: unknown): PersistedTerminalEntry | nul
   const title = typeof record.title === 'string' ? record.title.trim() : ''
   const cwd = typeof record.cwd === 'string' ? record.cwd : ''
   const reviveBuffer = typeof record.reviveBuffer === 'string' ? record.reviveBuffer : undefined
+  // Archives written before tabs were partitioned by Agent carry no scope —
+  // they all belonged to the L1 window, so fold them there instead of dropping.
+  const scope = typeof record.scope === 'string' && record.scope.trim() ? record.scope.trim() : L1_SCOPE
 
   if (!id) {
     return null
@@ -70,12 +83,13 @@ function sanitizePersistedTerminal(value: unknown): PersistedTerminalEntry | nul
     cwd,
     id,
     ...(reviveBuffer ? { reviveBuffer } : {}),
+    scope,
     title: title || 'Terminal'
   }
 }
 
 function loadPersistedTerminals(): PersistedTerminalState {
-  const fallback: PersistedTerminalState = { activeTerminalId: null, terminals: [] }
+  const fallback: PersistedTerminalState = { activeByScope: {}, terminals: [] }
   const raw = readKey(TERMINALS_STORAGE_KEY)
 
   if (!raw) {
@@ -95,12 +109,31 @@ function loadPersistedTerminals(): PersistedTerminalState {
       ? record.terminals.map(sanitizePersistedTerminal).filter((term): term is PersistedTerminalEntry => Boolean(term))
       : []
 
-    const active =
-      typeof record.activeTerminalId === 'string' && terminals.some(term => term.id === record.activeTerminalId)
-        ? record.activeTerminalId
-        : (terminals[0]?.id ?? null)
+    const ids = new Set(terminals.map(term => term.id))
+    const activeByScope: Record<string, null | string> = {}
 
-    return { activeTerminalId: active, terminals }
+    if (record.activeByScope && typeof record.activeByScope === 'object' && !Array.isArray(record.activeByScope)) {
+      for (const [scope, id] of Object.entries(record.activeByScope as Record<string, unknown>)) {
+        if (typeof id === 'string' && ids.has(id)) {
+          activeByScope[scope] = id
+        }
+      }
+    }
+
+    // Pre-10-31 archives carried one global `activeTerminalId`.
+    const legacyActive = typeof record.activeTerminalId === 'string' ? record.activeTerminalId : null
+
+    if (legacyActive && ids.has(legacyActive)) {
+      activeByScope[L1_SCOPE] = activeByScope[L1_SCOPE] ?? legacyActive
+    }
+
+    for (const scope of new Set(terminals.map(term => term.scope))) {
+      if (activeByScope[scope] == null) {
+        activeByScope[scope] = terminals.find(term => term.scope === scope)?.id ?? null
+      }
+    }
+
+    return { activeByScope, terminals }
   } catch {
     return fallback
   }
@@ -109,7 +142,7 @@ function loadPersistedTerminals(): PersistedTerminalState {
 // Persist synchronously on every change (the app-wide convention — see panes.ts
 // / layout.ts). Capturing history this way means a snapshot is already on disk
 // well before the renderer tears down, so app quit needs no unload hook.
-function persistTerminals(list: readonly TerminalEntry[], activeTerminalId: null | string) {
+function persistTerminals(list: readonly TerminalEntry[], activeByScope: Record<string, null | string>) {
   const terminals = list
     .filter(term => term.kind === 'user')
     .map(term => ({
@@ -117,6 +150,7 @@ function persistTerminals(list: readonly TerminalEntry[], activeTerminalId: null
       cwd: term.cwd,
       id: term.id,
       ...(term.reviveBuffer ? { reviveBuffer: term.reviveBuffer } : {}),
+      scope: term.scope,
       title: term.title
     }))
 
@@ -126,8 +160,20 @@ function persistTerminals(list: readonly TerminalEntry[], activeTerminalId: null
     return
   }
 
-  const active = terminals.some(term => term.id === activeTerminalId) ? activeTerminalId : (terminals[0]?.id ?? null)
-  writeKey(TERMINALS_STORAGE_KEY, JSON.stringify({ activeTerminalId: active, terminals }))
+  const ids = new Set(terminals.map(term => term.id))
+  const persistedActive: Record<string, null | string> = {}
+
+  for (const [scope, id] of Object.entries(activeByScope)) {
+    if (id && ids.has(id)) {
+      persistedActive[scope] = id
+    }
+  }
+
+  for (const scope of new Set(terminals.map(term => term.scope))) {
+    persistedActive[scope] = persistedActive[scope] ?? terminals.find(term => term.scope === scope)?.id ?? null
+  }
+
+  writeKey(TERMINALS_STORAGE_KEY, JSON.stringify({ activeByScope: persistedActive, terminals }))
 }
 
 const restored = loadPersistedTerminals()
@@ -135,10 +181,25 @@ const restored = loadPersistedTerminals()
 export const $terminals = atom<readonly TerminalEntry[]>(
   restored.terminals.map(term => ({ ...term, kind: 'user' as const }))
 )
-export const $activeTerminalId = atom<string | null>(restored.activeTerminalId)
 
-$terminals.subscribe(list => persistTerminals(list, $activeTerminalId.get()))
-$activeTerminalId.subscribe(active => persistTerminals($terminals.get(), active))
+/** Active tab id, per Agent scope. Kept as a map so switching Agents never
+ *  loses where you were in the one you left. */
+export const $activeTerminalByScope = atom<Record<string, null | string>>(restored.activeByScope)
+
+/** The active tab of the Agent currently on screen. */
+export const $activeTerminalId = computed(
+  [$activeTerminalByScope, $agentScope],
+  (byScope, scope) => byScope[scope] ?? null
+)
+
+/** The tab strip of the Agent currently on screen. Every other Agent's tabs
+ *  stay mounted and their shells stay alive — they're just not listed here. */
+export const $scopeTerminals = computed([$terminals, $agentScope], (list, scope) =>
+  list.filter(term => term.scope === scope)
+)
+
+$terminals.subscribe(list => persistTerminals(list, $activeTerminalByScope.get()))
+$activeTerminalByScope.subscribe(active => persistTerminals($terminals.get(), active))
 
 export const $activeTerminal = computed(
   [$terminals, $activeTerminalId],
@@ -148,12 +209,23 @@ export const $activeTerminal = computed(
 const newId = () =>
   globalThis.crypto?.randomUUID?.() ?? `term-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 
-/** Append a fresh terminal and focus it. Captures the current cwd once (its only
- *  tie to session/project state); pass an explicit cwd to override. Returns the id. */
-export function createTerminal(cwd: string = $currentCwd.get()): string {
+function setActiveTerminalForScope(scope: string, id: null | string): void {
+  const current = $activeTerminalByScope.get()
+
+  if (current[scope] === id) {
+    return
+  }
+
+  $activeTerminalByScope.set({ ...current, [scope]: id })
+}
+
+/** Append a fresh terminal to the current Agent's strip and focus it. Captures
+ *  the current cwd once (its only tie to project state); pass an explicit cwd or
+ *  scope to override. Returns the id. */
+export function createTerminal(cwd: string = $currentCwd.get(), scope: string = $agentScope.get()): string {
   const id = newId()
-  $terminals.set([...$terminals.get(), { id, title: 'Terminal', auto: true, cwd, kind: 'user' }])
-  $activeTerminalId.set(id)
+  $terminals.set([...$terminals.get(), { id, title: 'Terminal', auto: true, cwd, kind: 'user', scope }])
+  setActiveTerminalForScope(scope, id)
 
   return id
 }
@@ -164,9 +236,10 @@ const surfacedProcs = new Set<string>()
 
 const findByProc = (procId: string) => $terminals.get().find(term => term.procId === procId)
 
-/** Auto-surface an agent background process as a read-only tab — once. Returns
- *  the tab id, or null if it was already surfaced and the user has since closed it. */
-export function ensureAgentTerminal(procId: string, title: string): string | null {
+/** Auto-surface an agent background process as a read-only tab in `scope` —
+ *  once. Returns the tab id, or null if it was already surfaced and the user
+ *  has since closed it. */
+export function ensureAgentTerminal(procId: string, title: string, scope: string = $agentScope.get()): string | null {
   const existing = findByProc(procId)
 
   if (existing) {
@@ -179,60 +252,72 @@ export function ensureAgentTerminal(procId: string, title: string): string | nul
 
   surfacedProcs.add(procId)
   const id = newId()
-  $terminals.set([...$terminals.get(), { id, title: title || 'agent', auto: false, cwd: '', kind: 'agent', procId }])
+  $terminals.set([
+    ...$terminals.get(),
+    { id, title: title || 'agent', auto: false, cwd: '', kind: 'agent', procId, scope }
+  ])
 
   return id
 }
 
 /** Open + focus an agent process's tab (the status-stack link), recreating it if
  *  the user had closed it. Opens the pane. */
-export function openAgentTerminal(procId: string, title: string): void {
+export function openAgentTerminal(procId: string, title: string, scope: string = $agentScope.get()): void {
   surfacedProcs.add(procId)
   seedAgentTerminalCommand(procId, title)
   let id = findByProc(procId)?.id
 
   if (!id) {
     id = newId()
-    $terminals.set([...$terminals.get(), { id, title: title || 'agent', auto: false, cwd: '', kind: 'agent', procId }])
+    $terminals.set([
+      ...$terminals.get(),
+      { id, title: title || 'agent', auto: false, cwd: '', kind: 'agent', procId, scope }
+    ])
   }
 
-  $activeTerminalId.set(id)
+  setActiveTerminalForScope(scope, id)
   setTerminalTakeover(true)
 }
 
-/** Guarantee at least one tab exists when the pane opens.
+/** Guarantee the current Agent has at least one tab when the pane opens.
  *  If a status-stack click already opened an agent tab, don't create a
  *  second, unrelated user shell just because the pane became visible. */
 export function ensureTerminal(): void {
-  if ($terminals.get().length === 0) {
-    createTerminal()
+  const scope = $agentScope.get()
+
+  if (!$terminals.get().some(term => term.scope === scope)) {
+    createTerminal(undefined, scope)
   }
 }
 
 export function selectTerminal(id: string): void {
-  if ($terminals.get().some(term => term.id === id)) {
-    $activeTerminalId.set(id)
+  const term = $terminals.get().find(entry => entry.id === id)
+
+  if (term) {
+    setActiveTerminalForScope(term.scope, id)
   }
 }
 
-/** Move the active tab by `direction` (+1 next / -1 prev), wrapping around. */
+/** Move the active tab of the current Agent by `direction` (+1 next / -1 prev),
+ *  wrapping around inside that Agent's strip only. */
 export function cycleTerminal(direction: 1 | -1): void {
-  const list = $terminals.get()
+  const list = $scopeTerminals.get()
 
   if (list.length < 2) {
     return
   }
 
+  const activeId = $activeTerminalId.get()
   const current = Math.max(
     0,
-    list.findIndex(term => term.id === $activeTerminalId.get())
+    list.findIndex(term => term.id === activeId)
   )
 
-  $activeTerminalId.set(list[(current + direction + list.length) % list.length].id)
+  setActiveTerminalForScope($agentScope.get(), list[(current + direction + list.length) % list.length].id)
 }
 
-/** Drop a terminal. Focus slides to the neighbor that fills its slot; closing
- *  the last one closes the whole pane. */
+/** Drop a terminal. Focus slides to the neighbor that fills its slot **within
+ *  the same Agent**; closing the last one closes the whole pane. */
 export function closeTerminal(id: string): void {
   const list = $terminals.get()
   const index = list.findIndex(term => term.id === id)
@@ -241,14 +326,19 @@ export function closeTerminal(id: string): void {
     return
   }
 
+  const closing = list[index]
   const next = list.filter(term => term.id !== id)
   $terminals.set(next)
 
-  if ($activeTerminalId.get() === id) {
-    $activeTerminalId.set((next[index] ?? next[index - 1])?.id ?? null)
+  if ($activeTerminalByScope.get()[closing.scope] === id) {
+    const before = list.slice(0, index).filter(term => term.scope === closing.scope)
+    const after = list.slice(index + 1).filter(term => term.scope === closing.scope)
+    const fallback = after[0] ?? before[before.length - 1]
+
+    setActiveTerminalForScope(closing.scope, fallback?.id ?? null)
   }
 
-  if (!next.length) {
+  if (!next.some(term => term.scope === closing.scope)) {
     setTerminalTakeover(false)
   }
 }
@@ -278,23 +368,31 @@ export function closeActiveTerminal(): void {
   }
 }
 
+/** Close every tab of the current Agent. Other Agents' shells are untouched. */
 export function closeAllTerminals(): void {
-  if ($terminals.get().length === 0) {
+  const scope = $agentScope.get()
+  const list = $terminals.get()
+  const next = list.filter(term => term.scope !== scope)
+
+  if (next.length === list.length) {
     return
   }
 
-  $terminals.set([])
-  $activeTerminalId.set(null)
+  $terminals.set(next)
+  setActiveTerminalForScope(scope, null)
   setTerminalTakeover(false)
 }
 
+/** Keep only `id` among the current Agent's tabs; other Agents keep theirs. */
 export function closeOtherTerminals(id: string): void {
   const keep = $terminals.get().find(term => term.id === id)
 
-  if (keep) {
-    $terminals.set([keep])
-    $activeTerminalId.set(keep.id)
+  if (!keep) {
+    return
   }
+
+  $terminals.set($terminals.get().filter(term => term.id === id || term.scope !== keep.scope))
+  setActiveTerminalForScope(keep.scope, keep.id)
 }
 
 /** Record the latest serialized scrollback for a tab so it can be replayed on

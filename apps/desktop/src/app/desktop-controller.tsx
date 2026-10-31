@@ -62,6 +62,7 @@ import {
   getRememberedSessionId,
   releaseAgentCwd,
   setAgentCwd,
+  setAgentScope,
   setAwaitingResponse,
   setBusy,
   setCurrentModel,
@@ -298,6 +299,13 @@ export function DesktopController() {
   // markdown tab stole the full main column (flash / stuck preview bug).
   const secretaryShellOpen = level !== null
   const activeAgentId = level && level !== 'l1' ? level.l2 : ''
+
+  // 终端页签按 Agent 分家（10-31）：把当前路由的 Agent 身份写进 store。
+  // 归属键只认这个值，不认会话 id —— 一个 Agent 一张嘴、一套页签；同一个
+  // Agent 的多轮对话共用同一套。L1 / 裸聊归一成 'l1'。
+  useEffect(() => {
+    setAgentScope(activeAgentId || 'l1')
+  }, [activeAgentId])
 
   const previewRailContent =
     Boolean(previewTarget) ||

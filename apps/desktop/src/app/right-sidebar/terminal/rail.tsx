@@ -18,7 +18,7 @@ import { setTerminalTakeover } from '../store'
 
 import {
   $activeTerminalId,
-  $terminals,
+  $scopeTerminals,
   closeAllTerminals,
   closeOtherTerminals,
   closeTerminal,
@@ -44,10 +44,11 @@ function hintLabel(text: string, combo?: string) {
 
 /** Thin icon "bookmark" strip blended into the terminal surface, shown whenever a
  *  terminal exists. Each square is a tab (name + hotkey on hover); close via the
- *  shell's `exit`, middle-click, or the context menu. */
+ *  shell's `exit`, middle-click, or the context menu. Lists only the current
+ *  Agent's tabs — other Agents keep their shells but not their place here. */
 export function TerminalRail() {
   const { t } = useI18n()
-  const terminals = useStore($terminals)
+  const terminals = useStore($scopeTerminals)
   const activeId = useStore($activeTerminalId)
   const bindings = useStore($bindings)
   const toggleHint = bindings['view.showTerminal']?.[0]

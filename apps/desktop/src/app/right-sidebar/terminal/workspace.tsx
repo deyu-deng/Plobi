@@ -1,7 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 
-import { $backgroundStatusBySession } from '@/store/composer-status'
+import { $backgroundStatusBySession, $sessionAgentScope } from '@/store/composer-status'
+import { $agentScope } from '@/store/session'
 
 import { seedAgentTerminalCommand, syncAgentTerminalSnapshot } from './agent-terminal-stream'
 import { setActiveTerminalId } from './buffer'
@@ -19,7 +20,9 @@ interface TerminalWorkspaceProps {
 export function TerminalWorkspace({ onAddSelectionToChat }: TerminalWorkspaceProps) {
   const terminals = useStore($terminals)
   const activeId = useStore($activeTerminalId)
+  const scope = useStore($agentScope)
   const background = useStore($backgroundStatusBySession)
+  const sessionScope = useStore($sessionAgentScope)
 
   // Mirror the tab selection into the agent reader (read_terminal reads it).
   useEffect(() => {
@@ -34,15 +37,26 @@ export function TerminalWorkspace({ onAddSelectionToChat }: TerminalWorkspacePro
   // Surface the agent's background processes as read-only tabs (once each).
   // Live chunks stream via agent.terminal.output; the process-list snapshot also
   // seeds/falls back so the tab never stays blank if the stream races startup.
+  //
+  // Scoped to the Agent on screen: this loop used to walk *every* session's
+  // processes, which put another Agent's background tabs on this Agent's rail.
+  // A session with no stamp yet (reconcile hasn't run since it started) counts
+  // as the current Agent — it is running here, right now.
   useEffect(() => {
-    for (const list of Object.values(background)) {
+    for (const [sid, list] of Object.entries(background)) {
+      const owner = sessionScope[sid] || scope
+
+      if (owner !== scope) {
+        continue
+      }
+
       for (const item of list) {
-        ensureAgentTerminal(item.id, item.title)
+        ensureAgentTerminal(item.id, item.title, scope)
         seedAgentTerminalCommand(item.id, item.title)
         syncAgentTerminalSnapshot(item.id, item.output ?? '')
       }
     }
-  }, [background])
+  }, [background, scope, sessionScope])
 
   return (
     <>

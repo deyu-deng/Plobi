@@ -2,6 +2,8 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import { $agentScope } from '@/store/session'
+
 import { $terminalTakeover } from '../store'
 
 import { ensureTerminal } from './terminals'
@@ -57,6 +59,7 @@ const sameRect = (a: Rect | null, b: Rect) =>
 export function PersistentTerminal({ onAddSelectionToChat }: PersistentTerminalProps) {
   const slot = useStore($slot)
   const terminalTakeover = useStore($terminalTakeover)
+  const scope = useStore($agentScope)
   const [rect, setRect] = useState<Rect | null>(null)
   const [ready, setReady] = useState(false)
 
@@ -67,12 +70,15 @@ export function PersistentTerminal({ onAddSelectionToChat }: PersistentTerminalP
   // terminal exists (covers having closed the last tab).
   const [mounted, setMounted] = useState(false)
 
+  // `scope` is a dependency: switching to an Agent that has no tab yet must seed
+  // one here — otherwise the pane opens onto an empty strip (the latch means the
+  // takeover flag alone won't re-fire).
   useEffect(() => {
     if (terminalTakeover && ready) {
       setMounted(true)
       ensureTerminal()
     }
-  }, [terminalTakeover, ready])
+  }, [terminalTakeover, ready, scope])
 
   useLayoutEffect(() => {
     if (!slot) {
