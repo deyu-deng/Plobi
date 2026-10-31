@@ -1904,6 +1904,26 @@ def _truncate_content(
     return head + marker + tail
 
 
+def _soul_agent_id() -> str:
+    """这一轮该按谁的身份读 SOUL：显式 env 优先，其次**当前会话**绑定的那个 Agent。
+
+    桌面主会话的进程环境里没有 ``PLOBI_AGENT_ID``（那是 spawn 出去的子会话才有的），
+    所以只看 env 的话，Sindri 那一屏也会读到顶层那份 **L1 总秘书** 的 SOUL——
+    它就会答「我是总秘书」。这里补上"从会话行反推"这一跳（与记忆那条同一解析）。
+    回 ``""`` 表示 L1（顶层 SOUL 才是它自己的）。
+    """
+    env_id = (os.environ.get("PLOBI_AGENT_ID") or "").strip()
+    if env_id:
+        return env_id
+    try:
+        from tools.memory_tool import is_l1_slug, resolve_agent_slug
+
+        slug = resolve_agent_slug()
+        return "" if is_l1_slug(slug) else str(slug or "")
+    except Exception:  # noqa: BLE001 - 反推不到就当 L1，别把身份读坏
+        return ""
+
+
 def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
     """Load SOUL.md from PLOBI_HOME and return its content, or None.
 
@@ -1925,7 +1945,7 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
     # 只有手里有 `PLOBI_AGENT_ID` 才进这个分支——`build_child_command` 与桌面
     # 都会放它，L1（无该变量）**逐字不走这里**，行为与改动前一致。
     # 共享层那份不在时安静回退顶层：家还在的老安装不因此瞎掉。
-    _agent_id = (os.environ.get("PLOBI_AGENT_ID") or "").strip()
+    _agent_id = _soul_agent_id()
     if _agent_id and _agent_id != "default":
         _shared = None
         try:
@@ -1936,6 +1956,23 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
             logger.debug("shared soul path unavailable for %s: %s", _agent_id, exc)
         if _shared is not None and _shared.is_file():
             soul_path = _shared
+        elif _shared is not None:
+            # 这一份还没生成：**别退回顶层那份（那是 L1 的秘书 SOUL）**，就地按名册生成身份。
+            try:
+                from plobi.agents.registry import build_l2_identity_soul_block, load_registry
+
+                entry = next(
+                    (e for e in load_registry().entries() if e.name == _agent_id), None
+                )
+                if entry is not None:
+                    return _truncate_content(
+                        build_l2_identity_soul_block(entry),
+                        "SOUL.md",
+                        context_length=context_length,
+                        read_path=str(_shared),
+                    )
+            except Exception as exc:  # noqa: BLE001 - 生成不了就当没身份，别读错的
+                logger.debug("soul block for %s unavailable: %s", _agent_id, exc)
 
     if not soul_path.exists():
         return None
