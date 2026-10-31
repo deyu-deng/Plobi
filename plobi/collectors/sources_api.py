@@ -30,9 +30,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-#: 数"这一条在池里几条"时最多扫多少行。到顶就说明这一族多到不需要精确数（界面上写"300+"）。
-_POOL_SCAN_LIMIT = 5000
-
 
 class EnabledRequest(BaseModel):
     enabled: bool
@@ -170,19 +167,20 @@ def _pool_counts(source_id: str) -> tuple[int, dict[str, int]]:
 
     一次按 `source` 问，不按 kind 循环问：那一族索引是 `(source, kind)`，按 source 走一次
     就够，循环问等于把这一屏的开销乘以种类数。
+
+    **数的是池里的行，不是取回来的页**（10-31 现核出的假数）：旧写法把整页 `query()` 回来再数，
+    而那只手有 `MAX_LIMIT`（这台是 500）⇒ 微信池里 1937 条，屏上写 500 条；`pool_kinds` 同样会被
+    那一页截掉稀有那一类，而它是屏上标签的名单来源。所以改走 `count()`——同族里那只"只数不读正文"的手。
     """
-    from plobi.pool import query as pool_query
+    from plobi.pool import count as pool_count
 
     try:
-        rows = pool_query(source=source_id, limit=_POOL_SCAN_LIMIT)
+        got = pool_count(source=source_id)
     except Exception as exc:  # noqa: BLE001 - 池读不到就说读不到，-1 是"读不到"而不是"零条"
         logger.debug("sources: pool unreadable for %s: %s", source_id, exc)
         return -1, {}
-    by_kind: dict[str, int] = {}
-    for row in rows:
-        by_kind[str(row.get("kind") or "")] = by_kind.get(str(row.get("kind") or ""), 0) + 1
 
-    return sum(by_kind.values()), by_kind
+    return int(got["total"]), {str(key): int(value) for key, value in got["by_kind"].items()}
 
 
 def _enrich(row: dict[str, Any], switches: Optional[dict[str, Optional[bool]]],

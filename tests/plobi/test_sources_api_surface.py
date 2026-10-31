@@ -395,6 +395,26 @@ class TestPoolCountsReachTheScreen:
         assert row["pool_kinds"] == {"class": 1, "term": 1}
         assert row["events"] == 0, "两个数是两句话，不许合成一个"
 
+    def test_a_source_bigger_than_the_read_cap_still_reports_its_real_number(
+            self, client, monkeypatch) -> None:
+        """「池里几条」是**计数**，不是数取回来的行——取行那只手有上限，超了就谎报。
+
+        现场（10-31）：微信池里 1937 条，这一屏写 500 条，因为旧写法把整页取回来再数，
+        而 `query()` 的 `MAX_LIMIT` 把页钳在 500。同一颗牙还咬得住另一半：那一族
+        `pool_kinds` 是给屏上标签用的名单，按取行做窗口就会漏掉稀有那一类。
+        """
+        from plobi.pool import PoolItem, land
+        from plobi.pool import store as pool_store
+
+        monkeypatch.setattr(pool_store, "MAX_LIMIT", 1)
+        land([PoolItem(source="wechat", external_id=f"m{n}", kind="message", title=f"第 {n} 条")
+              for n in range(3)])
+
+        row = {r["source"]: r for r in client.get("/api/collect/sources").json()["data"]["sources"]}["wechat"]
+
+        assert row["pool_count"] == 3
+        assert row["pool_kinds"] == {"message": 3}
+
 
 class TestTheSourceNamesItself:
     """名字归一处（用户 10-24：「网站就显示网站名就行了，不要叫什么"教务"」）。"""
