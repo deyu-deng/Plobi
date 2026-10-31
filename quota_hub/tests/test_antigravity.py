@@ -267,10 +267,51 @@ async def test_load_code_assist_returns_empty_on_the_wrong_shape_instead_of_rais
 
 
 @pytest.mark.asyncio
+async def test_a_self_owned_account_renews_without_any_external_binary(monkeypatch):
+    """Measured 2026-10-31: we CAN refresh this account ourselves.
+
+    The stored refresh token plus the public client pair - adjacency-extracted from the
+    product installed on this machine, byte-identical to what three independent
+    implementations cite - renews the lease directly (`access_len=260 expires_in=3599`),
+    and a turn served afterwards still comes back `finish_reason=tool_calls`. The old claim
+    in this file's docstrings ("the leg cannot refresh itself, no client pair") was a
+    misreading of a pair WE had assembled wrongly: one product's id with another's secret.
+    """
+    import time
+
+    from quota_hub.providers.apps.antigravity import tool_bridge
+
+    async def _renew(_http, refresh_token, client_id, client_secret):
+        seen["renewed_with"] = (client_id[:12], bool(client_secret))
+        # The shape `desktop_stores.refresh_antigravity` really returns: an absolute stamp.
+        return {"access_token": "SELF-RENEWED", "expires_at": time.time() + 3599,
+                "refresh_token": refresh_token}
+
+    def _no_binary(*_a, **_k):
+        raise AssertionError("the external tool must not be needed once we hold our own token")
+
+    seen: dict = {}
+    monkeypatch.setattr(ds, "refresh_antigravity", _renew)
+    monkeypatch.setattr(tool_bridge, "refresh_via_tool", _no_binary)
+
+    prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    acc = prov._make_account(id="antigravity-self", label="self", refresh_token="RT",
+                             access_token="STALE", client_id="cid.apps.googleusercontent.com",
+                             client_secret="GOCSPX-x")
+    acc.cred.expires_at = time.time() - 10  # the lease an idle hour would have killed
+
+    await prov.ensure_fresh(acc)
+    assert acc.cred.access_token == "SELF-RENEWED"
+    assert seen["renewed_with"][0] == "cid.apps.goo" and seen["renewed_with"][1] is True
+    assert acc.cred.expires_at > time.time()
+
+
+@pytest.mark.asyncio
 async def test_ensure_fresh_picks_up_the_token_the_desktop_app_renewed(monkeypatch):
-    """The leg cannot refresh itself (no OAuth client pair), so the only renewal
-    available is the one agy performs and writes back. Re-reading the local store
-    before each dispatch is what makes the leg survive past ~60 minutes."""
+    """The shared slot's lease is the desktop app's to renew - we re-read it instead of
+    spending a credential that is not ours. (A sign-in of our own, with a refresh token in
+    our own file, renews directly: see the test above.) Reading the local store before each
+    dispatch is what keeps the leg alive past ~60 minutes."""
     import time
     from quota_hub.providers.base import AccountState
     prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))

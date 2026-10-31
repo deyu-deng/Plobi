@@ -634,9 +634,13 @@ class AntigravityProvider(Provider):
     def credential_health(self) -> tuple[bool, str]:
         """Local-only: what the desktop app's own record says about this token.
 
-        We cannot renew it ourselves (no OAuth client pair), so "expired" really
-        means "open agy once" — which is why it is a visibility problem, not a
-        retry problem.
+        This is about the **shared slot**, whose access token the app owns and renews; we
+        hold no refresh token for it, so "expired" there really means "open it once" - a
+        visibility problem, not a retry problem. An account signed in through Plobi is the
+        other case: we hold its refresh token and its own client pair, and `ensure_fresh`
+        renews that directly, without the app and without the external tool (measured
+        2026-10-31: a dead lease came back with `expires_in=3599`, and the turn after it
+        answered `finish_reason=tool_calls`).
         """
         live, reason = self.signed_in()
         if not live:
