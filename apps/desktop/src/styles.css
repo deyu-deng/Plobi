@@ -2019,26 +2019,39 @@ text-* variant utilities. */ .btn-arc {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
 }
 
-/* 卡片模式：底栏不再是"一条横贯全宽的条"，收成右下角一枚胶囊（图标化，信息仍在）。
-   用户 10-30：Qoder 没有底栏；底栏的东西应做成矢量图标放到角落。 */
+/* 卡片模式：底栏不再是一条横贯全宽的条，收成**左下角**一枚胶囊，接在头像条之后；
+   右半组（代理/网关/待批/日程/推理…）只留矢量图标，文字与详情在胶囊里隐藏。
+   用户 10-30 拍：「并入左下头像条」，与 Qoder 一致；右下角留空。 */
 .shell-cards [data-slot='statusbar'] {
   position: fixed;
-  right: var(--dl-shell-margin);
+  left: var(--dl-shell-margin);
   bottom: var(--dl-shell-margin);
-  left: auto;
+  right: auto;
   width: auto;
   height: auto;
-  max-width: calc(100vw - 2 * var(--dl-shell-margin));
+  max-width: min(520px, calc(100vw - 2 * var(--dl-shell-margin)));
   padding: 2px 8px;
-  gap: 2px;
+  gap: 4px;
   border: 1px solid var(--theme-border, var(--dl-stroke-hairline, #e5e5e5));
   border-radius: 999px;
   background: color-mix(in srgb, var(--theme-shell-card, var(--theme-card-seed, #fff)) 92%, transparent);
   backdrop-filter: blur(10px);
   box-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 20px -12px rgba(16, 24, 40, .2);
   z-index: 5;
+  overflow: hidden;
 }
 
 .shell-cards [data-slot='statusbar'] > div {
-  gap: 0;
+  gap: 2px;
+}
+
+/* 右半组：只留图标（左半组仍保留"头像 + 名字"） */
+.shell-cards [data-slot='statusbar'] > div:last-child span.truncate {
+  display: none;
+}
+
+.shell-cards [data-slot='statusbar'] button,
+.shell-cards [data-slot='statusbar'] a {
+  padding-left: 4px;
+  padding-right: 4px;
 }
