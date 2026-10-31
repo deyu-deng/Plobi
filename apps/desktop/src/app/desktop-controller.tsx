@@ -24,6 +24,7 @@ import { $agendaError, $agendaEvents, $agendaLoading } from '@/store/agenda'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { storedSessionIdForNotification } from '../lib/session-ids'
+import { setAgentScope } from '../store/agent-scope'
 import type { ComposerAttachment } from '../store/composer'
 import {
   $fileBrowserOpen,
@@ -62,7 +63,6 @@ import {
   getRememberedSessionId,
   releaseAgentCwd,
   setAgentCwd,
-  setAgentScope,
   setAwaitingResponse,
   setBusy,
   setCurrentModel,

@@ -3,10 +3,10 @@ import { atom, computed } from 'nanostores'
 import { translateNow } from '@/i18n'
 import type { TodoItem, TodoStatus } from '@/lib/todos'
 
+import { $agentScope } from './agent-scope'
 import { $gateway } from './gateway'
 import { dispatchNativeNotification } from './native-notifications'
 import { notifyError } from './notifications'
-import { $agentScope } from './session'
 import { $subagentsBySession, type SubagentProgress } from './subagents'
 import { $todosBySession } from './todos'
 

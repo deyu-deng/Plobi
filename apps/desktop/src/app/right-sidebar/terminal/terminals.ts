@@ -1,7 +1,8 @@
 import { atom, computed } from 'nanostores'
 
 import { readKey, writeKey } from '@/lib/storage'
-import { $agentScope, $currentCwd } from '@/store/session'
+import { $agentScope } from '@/store/agent-scope'
+import { $currentCwd } from '@/store/session'
 
 import { setTerminalTakeover } from '../store'
 

@@ -1,8 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 
+import { $agentScope } from '@/store/agent-scope'
 import { $backgroundStatusBySession, $sessionAgentScope } from '@/store/composer-status'
-import { $agentScope } from '@/store/session'
 
 import { seedAgentTerminalCommand, syncAgentTerminalSnapshot } from './agent-terminal-stream'
 import { setActiveTerminalId } from './buffer'

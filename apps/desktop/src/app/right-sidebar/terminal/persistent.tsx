@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import { $agentScope } from '@/store/session'
+import { $agentScope } from '@/store/agent-scope'
 
 import { $terminalTakeover } from '../store'
 

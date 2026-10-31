@@ -6,8 +6,8 @@ const STORAGE_KEY = 'plobi.desktop.terminals.v1'
 async function loadTerminalStore() {
   const scope = atom('l1')
 
+  vi.doMock('@/store/agent-scope', () => ({ $agentScope: scope }))
   vi.doMock('@/store/session', () => ({
-    $agentScope: scope,
     $currentCwd: atom('/workspace')
   }))
 
