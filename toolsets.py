@@ -288,7 +288,8 @@ TOOLSETS = {
             "task_reject",
             "task_complete",
             "task_update",
-            "task_stage"
+            "task_stage_advance",
+            "task_stage_approve"
         ],
         "includes": []
     },
