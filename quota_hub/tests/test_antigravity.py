@@ -295,6 +295,14 @@ async def test_a_self_owned_account_renews_without_any_external_binary(monkeypat
     monkeypatch.setattr(tool_bridge, "refresh_via_tool", _no_binary)
 
     prov = AntigravityProvider({"project_id": "p"}, _FakeHttp(_SUCCESS))
+    # The node is a separate question from the renewal, and this test is about the renewal.
+    # Left un-pinned, the leg's own "no node, don't dial" guard fired on a machine whose VPN
+    # was down and this test failed for a reason it does not cover (measured 2026-10-31 22:4x).
+    async def _no_rebind() -> None:
+        return None
+
+    monkeypatch.setattr(prov, "_rebind_node", _no_rebind)
+    prov.proxy_reason = "ok"
     acc = prov._make_account(id="antigravity-self", label="self", refresh_token="RT",
                              access_token="STALE", client_id="cid.apps.googleusercontent.com",
                              client_secret="GOCSPX-x")

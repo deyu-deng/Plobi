@@ -297,18 +297,25 @@ providers:
   # Any CLI that speaks ACP over stdio can be a leg: `transport: acp` makes the registry
   # build it from this block alone (no entry in `PROVIDER_CLASSES`). The hub asks it three
   # things — signed in? which models? can you switch models? — and serves only what the
-  # CLI itself reports. `probe_timeout` must cover its boot time (qwen needs ~20 s before
-  # it reads stdin; the client resends `initialize` in the meantime).
-  qwen-cli:
-    enabled: true
-    transport: acp
-    binary: qwen
-    display_name: Qwen Code
-    model_prefix: qwen
-    timeout: 300
-    probe_timeout: 30
-    login_args: ["--auth-type=qwen-oauth"]
-    login_tty: true
+  # CLI itself reports. `probe_timeout` must cover the CLI's own boot time (some need ~20 s
+  # before they read stdin; the client resends `initialize` in the meantime).
+  #
+  # Nothing ships on this route today. It used to carry Qwen Code, removed 2026-10-31: the
+  # vendor closed its free OAuth itself, and what is left of Qwen is already an
+  # OpenAI-compatible API (Alibaba DashScope / Coding Plan) — a normal model provider
+  # (`plugins/model-providers/alibaba-coding-plan`), not a subscription turned into an API.
+  # The shape, if you have such a CLI:
+  #
+  #   some-acp-cli:
+  #     enabled: true
+  #     transport: acp
+  #     binary: <the cli>
+  #     display_name: <what the card says>
+  #     model_prefix: <namespace for its model ids>
+  #     timeout: 300
+  #     probe_timeout: 30        # must cover its boot time
+  #     login_args: ["<its own sign-in argv>"]
+  #     login_tty: true          # if it refuses to log in through a pipe
 
   # --- Marvis via a CLI (spawn-based, compliant) ------------------------
   # Generic adapter for ANY CLI-based Marvis build (openmarvis / marvisx-cli /

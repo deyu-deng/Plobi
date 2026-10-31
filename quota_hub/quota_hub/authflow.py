@@ -94,12 +94,12 @@ def _says_already_signed_in(lines: list[str]) -> bool:
 #: declared here either: an unverified argv would open a browser to the wrong thing
 #: and read as a working button.
 LOGIN_ONLY_TARGETS: dict[str, dict] = {
-    # Qwen used to be the one entry here: a card with a login command and nothing behind
-    # it — no models, no tools, nothing a picker could offer. Measured 2026-10-29, its
-    # `--acp` port answers `initialize` after ~20 s and refuses `session/new` until the
-    # user signs in, which is exactly what `transport: acp` reads. So the leg moved to
-    # the registry (`qwen-cli` in config.yaml) and this table is empty on purpose: a
-    # product gets one card, and that card now has a model list behind it once he logs in.
+    # Empty on purpose. A card needs something behind it: models a picker can offer, or a
+    # tool-capable session. Qwen Code was the last entry here - a card with a login command
+    # and nothing behind it - and it is gone now (2026-10-31): the vendor closed its free
+    # OAuth itself on 2026-04-15, and what remains of Qwen is already an OpenAI-compatible
+    # API (Alibaba DashScope / Coding Plan), i.e. a normal model provider, not a
+    # subscription we convert. A product that cannot serve a turn gets no card at all.
 }
 
 

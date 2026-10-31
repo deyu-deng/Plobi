@@ -169,27 +169,19 @@ providers:
     timeout: 300
     accounts: [{ id: cline-default }]
 
-  # Qwen Code 也走它自己的 ACP 口（`qwen --acp`，10-29 实测 0.26.0）：`initialize` 回
-  # `qwen-code` + 登录方式，没登录时 `session/new` 拒。它有个脾气——**启动后约 20 秒
-  # 才开始读 stdin**，这之前发的 `initialize` 会被吞，所以 `probe_timeout` 给到 30 秒，
-  # 客户端会隔几秒重发一次（重发逻辑在 `quota_hub/acp.py`，不是这条腿特有的）。
-  # 模型名同样不抄：登录后由它 `session/new` 自报。
-  qwen-cli:
-    enabled: true
-    transport: acp
-    binary: qwen
-    display_name: Qwen Code
-    model_prefix: qwen
-    timeout: 300
-    probe_timeout: 30
-    login_args: ["--auth-type=qwen-oauth"]
-    login_tty: true
+  # Qwen Code 不在这张表里了（用户 10-31 拍）：厂商 2026-04-15 自己关了免费 OAuth，
+  # 而它剩下的那条本来就是 API 形态——阿里云 DashScope 的 key（`coding.dashscope.aliyuncs.com/v1`，
+  # OpenAI 兼容）。所以它是「正常的提供商」，不是「订阅转 API」：走
+  # `plugins/model-providers/alibaba-coding-plan`（key: `ALIBABA_CODING_PLAN_API_KEY` /
+  # `DASHSCOPE_API_KEY`，指国内道用 `ALIBABA_CODING_PLAN_BASE_URL`）。
+  # 这里不再给它留 ACP 腿：一条没有可服务模型的腿占一张卡，正是这套东西要避免的样子。
 
-  # Qoder 走它自己的 ACP 口（`qodercli --acp --strict-mcp-config`，10-29 实测 0.1.42）：
-  # `--strict-mcp-config` 忽略 ~/.qoder/settings.json 里的用户自定义 MCP，只挂载我们在
-  # `session/new` 里传入的 Plobi MCP 工具服务，避免外部 MCP 卡死会话握手。
-  # 模型名单（Sonus / Cantus / Qwen3.8-Max / Kimi-K3.1-Pro / GLM-5.3 / DeepSeek-V4-Pro 等 15 条）
-  # 由 `session/new` 实时自报，支持 `session/set_model` 动态切模型。
+  # Qoder 走它自己那扇签名的门（`gateway.qoder.com.cn/algo/…`，设备码 PKCE 自登录 + COSY 签名
+  # SSE，10-31 现核：一个回合 1.0 s 回 `tool_calls`）。类表里 `qoder` = `QoderProvider`。
+  # 要退回它原来的 ACP 口（`qodercli --acp --strict-mcp-config`，10-29 实测 0.1.42：
+  # `--strict-mcp-config` 忽略用户自己的 MCP 设置、只挂我们传进去的那台工具服务），
+  # 把 `transport: acp` 加回这一格即可——registry 先看那行再看类表。
+  # 模型名单不抄：10-31 现核 11 条由 `…/algo/api/v2/model/list` 自报（名字取它的 display_name）。
   qoder:
     enabled: true
     display_name: Qoder
