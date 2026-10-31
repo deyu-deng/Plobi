@@ -32,6 +32,7 @@ import {
   setCurrentProvider,
   setCurrentReasoningEffort,
   setCurrentServiceTier,
+  setApprovalMode,
   setCurrentUsage,
   setSessions,
   setTurnStartedAt,
@@ -165,6 +166,14 @@ export function useGatewayEventHandler(deps: GatewayEventDeps) {
 
           if (typeof payload?.yolo === 'boolean') {
             setYoloActive(payload.yolo)
+          }
+
+          if (
+            payload?.approval_mode === 'manual' ||
+            payload?.approval_mode === 'smart' ||
+            payload?.approval_mode === 'off'
+          ) {
+            setApprovalMode(payload.approval_mode)
           }
         }
 

@@ -404,7 +404,8 @@
     --sticky-human-top: 0.23rem;
     --file-tree-row-height: 1.375rem;
 
-    --composer-width: 48.75rem;
+    /* Qoder 那张输入框相对对话卡要更宽（左右各留 ~50px），不再是一条窄带 */
+    --composer-width: 56rem;
     --composer-control-size: 1.5rem;
     --composer-control-primary-size: 1.625rem;
     --composer-control-gap: 0.25rem;
@@ -412,7 +413,8 @@
     --composer-ring-strength: 1;
     --composer-surface-pad-x: 0.5rem;
     --composer-surface-pad-y: 0.3125rem;
-    --composer-input-min-height: 1.625rem;
+    /* 空输入框也给三行左右的高度（Qoder 的框是「写区在上、控件在下」的高盒） */
+    --composer-input-min-height: 3rem;
     --composer-input-max-height: 9.375rem;
     --composer-input-inline-min-width: 8rem;
     --composer-fallback-height: 2.75rem;

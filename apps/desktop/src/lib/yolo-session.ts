@@ -1,6 +1,31 @@
-import { setYoloActive } from '@/store/session'
+import { setApprovalMode, setYoloActive, type ApprovalMode } from '@/store/session'
 
 export type GatewayRequester = <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+
+/**
+ * 会话的三档审批（桌面输入框下拉，用户 10-31）。`off` 就是原来的 YOLO，
+ * backend 会同时把 yolo 标志置上；manual / smart 关掉它。
+ */
+export async function setSessionApproval(
+  requestGateway: GatewayRequester,
+  sessionId: string,
+  mode: ApprovalMode
+): Promise<ApprovalMode> {
+  const result = await requestGateway<{ mode?: string; value?: string }>('config.set', {
+    key: 'yolo',
+    mode,
+    session_id: sessionId
+  })
+
+  setYoloActive(result?.value === '1')
+
+  const applied: ApprovalMode =
+    result?.mode === 'smart' || result?.mode === 'off' || result?.mode === 'manual' ? result.mode : mode
+
+  setApprovalMode(applied)
+
+  return applied
+}
 
 /**
  * Toggle per-session YOLO (approval bypass) via gateway `config.set` — the same

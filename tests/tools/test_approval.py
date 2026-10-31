@@ -2370,3 +2370,80 @@ class TestApprovalPromptRedaction:
         # The script's credential must not appear in the user-facing message.
         assert "sk-proj-abc123xyz4567890abcdef" not in result["message"]
         assert "sk-proj-abc123xyz4567890abcdef" not in result["command"]
+
+
+class TestSessionApprovalMode:
+    """三档权限下拉（2026-10-31）：会话级 manual / smart / off。
+
+    `off` 必须与既有 YOLO 同义；manual/smart 必须真的关掉 YOLO，
+    否则「自动审批」会在界面上显示成一档、实际仍是完全放行。
+    """
+
+    def setup_method(self):
+        from tools.approval import clear_session
+
+        self.key = "test-session-approval-tiers"
+        clear_session(self.key)
+
+    def teardown_method(self):
+        from tools.approval import clear_session
+
+        clear_session(self.key)
+
+    def test_smart_is_stored_and_disables_yolo(self):
+        from tools.approval import (
+            enable_session_yolo,
+            get_session_approval_mode,
+            is_session_yolo_enabled,
+            set_session_approval_mode,
+        )
+
+        enable_session_yolo(self.key)
+        assert is_session_yolo_enabled(self.key)
+
+        assert set_session_approval_mode(self.key, "smart") == "smart"
+        assert get_session_approval_mode(self.key) == "smart"
+        assert not is_session_yolo_enabled(self.key)
+
+    def test_manual_clears_any_previous_tier(self):
+        from tools.approval import get_session_approval_mode, set_session_approval_mode
+
+        set_session_approval_mode(self.key, "smart")
+        assert set_session_approval_mode(self.key, "manual") == "manual"
+        assert get_session_approval_mode(self.key) == "manual"
+
+    def test_off_equals_yolo_and_clears_the_tier_override(self):
+        from tools.approval import (
+            get_session_approval_mode,
+            is_session_yolo_enabled,
+            set_session_approval_mode,
+        )
+
+        set_session_approval_mode(self.key, "smart")
+        assert set_session_approval_mode(self.key, "OFF") == "off"
+        assert is_session_yolo_enabled(self.key)
+        assert get_session_approval_mode(self.key) is None
+
+    def test_clear_session_drops_the_tier(self):
+        from tools.approval import clear_session, get_session_approval_mode, set_session_approval_mode
+
+        set_session_approval_mode(self.key, "smart")
+        clear_session(self.key)
+        assert get_session_approval_mode(self.key) is None
+
+    def test_effective_mode_prefers_the_session_override(self, monkeypatch):
+        from tools.approval import _get_effective_approval_mode
+
+        monkeypatch.setattr(approval_module, "_get_approval_mode", lambda: "manual")
+        monkeypatch.setattr(approval_module, "get_current_session_approval_mode", lambda: "smart")
+        assert _get_effective_approval_mode() == "smart"
+
+        monkeypatch.setattr(approval_module, "get_current_session_approval_mode", lambda: None)
+        assert _get_effective_approval_mode() == "manual"
+
+    def test_unknown_value_falls_back_to_manual(self):
+        from tools.approval import get_session_approval_mode, set_session_approval_mode
+
+        with mock_patch.object(approval_module.logger, "warning"):
+            assert set_session_approval_mode(self.key, "auto") == "manual"
+        assert get_session_approval_mode(self.key) == "manual"

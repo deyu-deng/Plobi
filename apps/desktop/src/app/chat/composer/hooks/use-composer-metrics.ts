@@ -156,5 +156,7 @@ export function useComposerMetrics({ composerRef, composerSurfaceRef, editorRef,
     }
   }, [])
 
-  return { stacked: expanded || narrow || tight }
+  // 用户 10-31（照 Qoder）：停靠的输入框固定两排——上面写，下面那排放 + / 权限 /
+  // 模型 / 麦克风 / 发送；只有浮出来的小输入框还保持单排紧凑。
+  return { stacked: expanded || narrow || tight || !poppedOut }
 }

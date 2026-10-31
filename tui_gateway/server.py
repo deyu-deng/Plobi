@@ -3452,10 +3452,12 @@ def _session_info(agent, session: dict | None = None) -> dict:
     # the desktop status bar (it would show YOLO "off" while approvals.mode=off
     # silently auto-approves every dangerous command).
     yolo = False
+    approval_mode = "manual"
     try:
         from tools.approval import (
             _YOLO_MODE_FROZEN,
             _get_approval_mode,
+            get_session_approval_mode,
             is_session_yolo_enabled,
         )
 
@@ -3463,6 +3465,13 @@ def _session_info(agent, session: dict | None = None) -> dict:
             bool(is_session_yolo_enabled(session_key)) if session_key else False
         )
         yolo = bool(_YOLO_MODE_FROZEN) or session_yolo or _get_approval_mode() == "off"
+        # 会话三档（桌面输入框那枚下拉）；off 与 yolo 是同一件事。
+        approval_mode = (
+            "off"
+            if yolo
+            else (get_session_approval_mode(session_key) if session_key else None)
+            or _get_approval_mode()
+        )
     except Exception:
         yolo = False
     info: dict = {
@@ -3472,6 +3481,7 @@ def _session_info(agent, session: dict | None = None) -> dict:
         "service_tier": service_tier,
         "fast": service_tier == "priority",
         "yolo": yolo,
+        "approval_mode": approval_mode,
         "tools": {},
         "skills": {},
         "cwd": cwd,
@@ -10565,12 +10575,56 @@ def _(rid, params: dict) -> dict:
         #     "manual" (bypass off). This DOES affect every session, the CLI,
         #     the TUI, and cron, and survives restarts.
         scope = str(params.get("scope") or "session").strip().lower()
+        # 桌面输入框的三档下拉（2026-10-31）：`mode` = manual | smart | off。
+        # 与 `value` 的 0/1 二值并存：off 等价于旧 YOLO 开，manual/smart 关掉它。
+        mode = str(params.get("mode") or "").strip().lower()
         try:
             from tools.approval import (
+                _normalize_approval_mode,
                 disable_session_yolo,
                 enable_session_yolo,
                 is_session_yolo_enabled,
+                set_session_approval_mode,
             )
+
+            if mode:
+                normalized = _normalize_approval_mode(mode)
+                if normalized != mode:
+                    return _err(rid, 4002, f"unknown approval mode: {mode}")
+                if scope == "global":
+                    _write_config_key("approvals.mode", normalized)
+                    for sid, sess in list(_sessions.items()):
+                        agent = sess.get("agent")
+                        if agent is not None:
+                            _emit("session.info", sid, _session_info(agent, sess))
+                    return _ok(
+                        rid,
+                        {
+                            "key": key,
+                            "value": "1" if normalized == "off" else "0",
+                            "mode": normalized,
+                            "scope": "global",
+                        },
+                    )
+                if not session:
+                    return _err(rid, 4002, "session required to set approval mode")
+                set_session_approval_mode(session["session_key"], normalized)
+                agent = session.get("agent")
+                if agent is not None:
+                    _emit(
+                        "session.info",
+                        params.get("session_id", ""),
+                        _session_info(agent, session),
+                    )
+                return _ok(
+                    rid,
+                    {
+                        "key": key,
+                        "value": "1" if normalized == "off" else "0",
+                        "mode": normalized,
+                        "scope": "session",
+                    },
+                )
 
             raw = str(value or "").strip().lower()
 

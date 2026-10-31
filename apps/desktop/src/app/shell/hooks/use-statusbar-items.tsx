@@ -2,29 +2,24 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useMemo } from 'react'
 
 import type { CommandCenterSection } from '@/app/command-center'
-import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
 import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
 import { Codicon } from '@/components/ui/codicon'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import type { DesktopDeferredSubsystem } from '@/global'
 import { type Translations, useI18n } from '@/i18n'
 import { deferredRowLabel, readDeferredLedgerView } from '@/lib/desktop-deferred-sidecars'
-import { Activity, AlertCircle, Clock, Command, Hash, Loader2, Zap, ZapFilled } from '@/lib/icons'
+import { Activity, AlertCircle, Clock, Command, Hash, Loader2 } from '@/lib/icons'
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
-import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
+import { LiveDuration } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
-import { setGlobalYolo, setSessionYolo } from '@/lib/yolo-session'
 import { $agendaPendingCount } from '@/store/agenda'
 import { $mindPendingCount, setMindPendingOpen } from '@/store/mind-pending'
 import { $desktopBoot } from '@/store/boot'
 import {
-  $activeSessionId,
   $busy,
   $connection,
-  $currentUsage,
   $sessionStartedAt,
   $turnStartedAt,
-  $yoloActive,
   setYoloActive
 } from '@/store/session'
 import { $subagentsBySession, activeSubagentCount, failedSubagentCount } from '@/store/subagents'
@@ -102,17 +97,12 @@ export function useStatusbarItems({
   inferenceStatus,
   openAgents,
   openCommandCenterSection,
-  freshDraftReady,
-  requestGateway,
   statusSnapshot,
   toggleCommandCenter
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
   const copy = t.shell.statusbar
-  const activeSessionId = useStore($activeSessionId)
-  const yoloActive = useStore($yoloActive)
   const busy = useStore($busy)
-  const currentUsage = useStore($currentUsage)
   const gatewayRestarting = useStore($gatewayRestarting)
   const sessionStartedAt = useStore($sessionStartedAt)
   const turnStartedAt = useStore($turnStartedAt)
@@ -131,48 +121,6 @@ export function useStatusbarItems({
   // dot menu carries the reason and the enable steps for both.
   const bootSidecars = useStore($desktopBoot).sidecars
   const sidecarView = useMemo(() => readDeferredLedgerView(bootSidecars), [bootSidecars])
-
-  const contextUsage = useMemo(() => usageContextLabel(currentUsage), [currentUsage])
-  const contextBar = useMemo(() => contextBarLabel(currentUsage), [currentUsage])
-
-  // Per-session approval bypass (same scope as the TUI's Shift+Tab). On a
-  // new-chat draft (no runtime session yet) we arm locally; the session-create
-  // path applies it once the backend session exists.
-  //
-  // Shift+click flips the GLOBAL approvals.mode instead — a persistent,
-  // all-sessions/CLI/TUI/cron bypass that survives restarts.
-  const toggleYolo = useCallback(
-    async (modifiers?: StatusbarSelectModifiers) => {
-      const next = !$yoloActive.get()
-
-      setYoloActive(next)
-
-      if (modifiers?.shiftKey) {
-        try {
-          await setGlobalYolo(requestGateway, next)
-        } catch {
-          setYoloActive(!next)
-        }
-
-        return
-      }
-
-      const sid = $activeSessionId.get()
-
-      if (!sid) {
-        return
-      }
-
-      try {
-        await setSessionYolo(requestGateway, sid, next)
-      } catch {
-        setYoloActive(!next)
-      }
-    },
-    [requestGateway]
-  )
-
-  const showYoloToggle = gatewayState === 'open' && (!!activeSessionId || freshDraftReady)
 
   const gatewayMenuContent = useMemo(
     () => (close: () => void) => (
@@ -464,19 +412,6 @@ export function useStatusbarItems({
         variant: 'text'
       },
       {
-        detail: contextBar || undefined,
-        hidden: !contextUsage,
-        id: 'context-usage',
-        label: contextUsage,
-        menuAlign: 'end',
-        menuClassName: 'w-auto border-(--ui-stroke-secondary) p-0',
-        menuContent: (
-          <ContextUsagePanel currentUsage={currentUsage} requestGateway={requestGateway} sessionId={activeSessionId} />
-        ),
-        title: copy.openContextUsage,
-        variant: 'menu'
-      },
-      {
         detail: <LiveDuration since={sessionStartedAt} />,
         hidden: !sessionStartedAt,
         id: 'session-timer',
@@ -484,38 +419,12 @@ export function useStatusbarItems({
         title: copy.runtimeSessionElapsed,
         variant: 'text'
       },
-      {
-        className: cn('px-1', yoloActive && 'bg-(--chrome-action-hover)'),
-        hidden: !showYoloToggle,
-        icon: yoloActive ? (
-          <ZapFilled className="size-3.5 shrink-0" />
-        ) : (
-          <Zap className="size-3.5 shrink-0 opacity-70" />
-        ),
-        id: 'yolo',
-        onSelect: modifiers => void toggleYolo(modifiers),
-        title: yoloActive ? copy.yoloOn : copy.yoloOff,
-        variant: 'action'
-      },
+      // 上下文容量与权限档都搬进输入框了（用户 10-31 照 Qoder）：容量在框下方那一行，
+      // 权限是框里的三档下拉。底栏只留计时与版本。
       clientVersionItem,
       ...(backendVersionItem ? [backendVersionItem] : [])
     ],
-    [
-      activeSessionId,
-      backendVersionItem,
-      busy,
-      clientVersionItem,
-      contextBar,
-      contextUsage,
-      copy,
-      currentUsage,
-      requestGateway,
-      sessionStartedAt,
-      showYoloToggle,
-      toggleYolo,
-      turnStartedAt,
-      yoloActive
-    ]
+    [backendVersionItem, busy, clientVersionItem, copy, sessionStartedAt, turnStartedAt]
   )
 
   const leftStatusbarItems = useMemo(

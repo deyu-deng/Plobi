@@ -443,6 +443,8 @@ export interface SessionRuntimeInfo {
   usage?: Partial<UsageStats>
   version?: string
   yolo?: boolean
+  /** 会话三档审批（manual / smart / off）；桌面输入框那枚下拉读它。 */
+  approval_mode?: 'manual' | 'smart' | 'off'
 }
 
 export interface UsageStats {

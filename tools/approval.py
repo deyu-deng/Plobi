@@ -1406,6 +1406,10 @@ _lock = threading.Lock()
 _pending: dict[str, dict] = {}
 _session_approved: dict[str, set] = {}
 _session_yolo: set[str] = set()
+# 会话级审批档（manual / smart / off）。None = 跟随全局 approvals.mode。
+# 2026-10-31：桌面输入框那枚权限下拉写明要三档（Qoder 形状），而 /yolo 只有二值；
+# 单独记一张表，避免把「自动审批」和「每次询问」挤成同一个布尔。
+_session_approval_mode: dict[str, str] = {}
 _permanent_approved: set = set()
 
 # =========================================================================
@@ -1537,6 +1541,7 @@ def clear_session(session_key: str) -> None:
     with _lock:
         _session_approved.pop(session_key, None)
         _session_yolo.discard(session_key)
+        _session_approval_mode.pop(session_key, None)
         _pending.pop(session_key, None)
         entries = _gateway_queues.pop(session_key, [])
     for entry in entries:
@@ -1557,6 +1562,42 @@ def is_session_yolo_enabled(session_key: str) -> bool:
 def is_current_session_yolo_enabled() -> bool:
     """Return True when the active approval session has YOLO bypass enabled."""
     return is_session_yolo_enabled(get_current_session_key(default=""))
+
+
+def set_session_approval_mode(session_key: str, mode: str) -> str:
+    """Set one session's approval tier: manual / smart / off.
+
+    `off` is exactly the existing YOLO bypass, so it keeps `_session_yolo` in
+    sync — every bypass check in this module keeps working unchanged. `manual`
+    and `smart` clear the bypass and are read through
+    :func:`_get_effective_approval_mode`.
+    """
+    normalized = _normalize_approval_mode(mode)
+
+    if not session_key:
+        return normalized
+
+    with _lock:
+        if normalized == "off":
+            _session_approval_mode.pop(session_key, None)
+            _session_yolo.add(session_key)
+        else:
+            _session_yolo.discard(session_key)
+            _session_approval_mode[session_key] = normalized
+
+    return normalized
+
+
+def get_session_approval_mode(session_key: str) -> Optional[str]:
+    """That session's explicit tier, or None when it follows the global config."""
+    if not session_key:
+        return None
+    with _lock:
+        return _session_approval_mode.get(session_key)
+
+
+def get_current_session_approval_mode() -> Optional[str]:
+    return get_session_approval_mode(get_current_session_key(default=""))
 
 
 def is_approved(session_key: str, pattern_key: str) -> bool:
@@ -1828,6 +1869,15 @@ def _get_approval_mode() -> str:
     """Read the approval mode from config. Returns 'manual', 'smart', or 'off'."""
     mode = _get_approval_config().get("mode", "manual")
     return _normalize_approval_mode(mode)
+
+
+def _get_effective_approval_mode() -> str:
+    """The tier that actually applies right now: session choice wins over config.
+
+    The desktop composer's permission dropdown writes a session tier; CLI / TUI /
+    cron have no session override, so they keep reading `approvals.mode` verbatim.
+    """
+    return get_current_session_approval_mode() or _get_approval_mode()
 
 
 def is_approval_bypass_active() -> bool:
@@ -2584,7 +2634,7 @@ def check_all_command_guards(command: str, env_type: str,
 
     # --yolo or approvals.mode=off: bypass all approval prompts.
     # Gateway /yolo is session-scoped; CLI --yolo remains process-scoped.
-    approval_mode = _get_approval_mode()
+    approval_mode = _get_effective_approval_mode()
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled() or approval_mode == "off":
         return {"approved": True, "message": None}
 
@@ -2986,7 +3036,7 @@ def check_execute_code_guard(code: str, env_type: str,
         return {"approved": True, "message": None}
 
     # --yolo or approvals.mode=off: bypass (session- or process-scoped).
-    approval_mode = _get_approval_mode()
+    approval_mode = _get_effective_approval_mode()
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled() or approval_mode == "off":
         return {"approved": True, "message": None}
 

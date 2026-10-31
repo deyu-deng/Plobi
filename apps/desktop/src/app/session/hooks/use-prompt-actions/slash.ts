@@ -23,6 +23,7 @@ import {
   $connection,
   $sessions,
   $yoloActive,
+  setApprovalMode,
   setModelPickerOpen,
   setSessionPickerOpen,
   setSessions,
@@ -241,6 +242,10 @@ export function useSlashCommand(deps: SlashCommandDeps) {
           const sid = sessionHint || activeSessionIdRef.current
           const next = !$yoloActive.get()
 
+          // /yolo 只剩两值：开 = 完全访问（off），关 = 每次询问（manual）。
+          // 三档下拉在输入框里（用户 10-31），这里保持老命令的语义。
+          setApprovalMode(next ? 'off' : 'manual')
+
           if (!sid) {
             setYoloActive(next)
             notify({ kind: 'success', message: next ? copy.yoloArmed : copy.yoloOff })
@@ -252,6 +257,7 @@ export function useSlashCommand(deps: SlashCommandDeps) {
             const active = await setSessionYolo(requestGateway, sid, next)
             appendSessionTextMessage(sid, 'system', copy.yoloSystem(active))
           } catch {
+            setApprovalMode(next ? 'manual' : 'off')
             notify({ kind: 'error', title: copy.yoloTitle, message: copy.yoloToggleFailed })
           }
         },

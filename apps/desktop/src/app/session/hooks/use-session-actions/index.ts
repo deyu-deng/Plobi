@@ -5,7 +5,7 @@ import type { NavigateFunction } from 'react-router-dom'
 import { deleteSession, getSessionMessages, setSessionArchived } from '@/plobi'
 import { useI18n } from '@/i18n'
 import { preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
-import { setSessionYolo } from '@/lib/yolo-session'
+import { setSessionApproval, setSessionYolo } from '@/lib/yolo-session'
 import { clearQueuedPrompts } from '@/store/composer-queue'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
@@ -19,9 +19,12 @@ import {
   $currentReasoningEffort,
   $messages,
   $sessions,
+  $approvalMode,
+  $approvalModePending,
   $yoloActive,
   sessionPinId,
   setActiveSessionId,
+  setApprovalModePending,
   setAwaitingResponse,
   setBusy,
   setCurrentBranch,
@@ -222,15 +225,21 @@ export function useSessionActions({
         setSelectedStoredSessionId(stored)
         setSessionStartedAt(Date.now())
         const yoloArmed = $yoloActive.get()
+        // 草稿上选过的三档（输入框权限下拉）——会话一建好就补交；
+        // 没选过就不发，免得把全局 smart/off 覆盖成默认 manual。
+        const pendingApproval = $approvalModePending.get() ? $approvalMode.get() : null
         const runtimeInfo = applyRuntimeInfo(created.info)
 
         if (runtimeInfo) {
           updateSessionState(created.session_id, state => ({ ...state, ...runtimeInfo }), stored)
         }
 
-        // User may have armed YOLO on the new-chat draft before the runtime
-        // session existed — apply it to the freshly created session.
-        if (yoloArmed) {
+        // User may have armed YOLO / a permission tier on the new-chat draft
+        // before the runtime session existed — apply it to the fresh session.
+        if (pendingApproval) {
+          await setSessionApproval(requestGateway, created.session_id, pendingApproval).catch(() => undefined)
+          setApprovalModePending(false)
+        } else if (yoloArmed) {
           await setSessionYolo(requestGateway, created.session_id, true).catch(() => undefined)
         }
 

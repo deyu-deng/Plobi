@@ -27,8 +27,10 @@ import { useChatContext } from '../context'
 import { AttachmentList } from './attachments'
 import { COMPOSER_FADE_BACKGROUND, type QueueEditState, slashArgStage } from './composer-utils'
 import { ContextMenu } from './context-menu'
+import { ComposerContextFooter } from './context-footer'
 import { ComposerControls } from './controls'
 import { COMPOSER_DROP_ACTIVE_CLASS, COMPOSER_DROP_FADE_CLASS } from './drop-affordance'
+import { PermissionPill } from './permission-pill'
 import { markActiveComposer } from './focus'
 import { HelpHint } from './help-hint'
 import { useAtCompletions } from './hooks/use-at-completions'
@@ -1008,13 +1010,22 @@ export function ChatBar() {
                       : 'grid-cols-[auto_1fr_auto] items-center gap-(--composer-control-gap) [grid-template-areas:"menu_input_controls"]'
                   )}
                 >
-                  <div className="flex translate-y-[3px] items-start self-start [grid-area:menu]">{contextMenu}</div>
+                  <div
+                    className={cn(
+                      'flex items-center gap-1 [grid-area:menu]',
+                      stacked ? 'self-stretch' : 'translate-y-[3px] self-start'
+                    )}
+                  >
+                    {contextMenu}
+                    <PermissionPill disabled={inputDisabled} />
+                  </div>
                   <div className="min-w-0 [grid-area:input]">{input}</div>
                   <div className="flex items-center justify-end [grid-area:controls]">{controls}</div>
                 </div>
               </div>
             </div>
           </div>
+          {!poppedOut && <ComposerContextFooter />}
         </ComposerPrimitive.Root>
       </ComposerPrimitive.Unstable_TriggerPopoverRoot>
 

@@ -2168,6 +2168,17 @@ export const zhHant = defineLocale({
   composer: {
     message: '訊息',
     wakingProfile: profile => `正在喚醒 ${profile}…`,
+    permission: {
+      label: '權限',
+      ask: '每次詢問',
+      askDetail: '執行命令、修改工作區外檔案或存取網路前，一律詢問',
+      auto: '自動核准',
+      autoDetail: '僅在偵測到潛在風險時詢問',
+      full: '完全存取',
+      fullDetail: '不再詢問，可自由存取你的檔案、終端與網路',
+      failed: '權限層級沒有切換成功'
+    },
+    footer: { local: '本機', remote: '遠端', context: '上下文' },
     placeholderStarting: '正在啟動 Plobi...',
     placeholderReconnecting: '正在重新連線至 Plobi…',
     placeholderFollowUp: '傳送後續訊息',

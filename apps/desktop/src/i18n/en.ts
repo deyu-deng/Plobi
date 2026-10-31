@@ -2341,6 +2341,17 @@ export const en: Translations = {
   composer: {
     message: 'Message',
     wakingProfile: profile => `Waking up ${profile}…`,
+    permission: {
+      label: 'Permissions',
+      ask: 'Ask every time',
+      askDetail: 'Always ask before running commands, editing files outside the workspace, or using the network',
+      auto: 'Auto-approve',
+      autoDetail: 'Only ask when a potential risk is detected',
+      full: 'Full access',
+      fullDetail: 'Never ask — free access to your files, terminal and network',
+      failed: 'Could not change the permission level'
+    },
+    footer: { local: 'Local', remote: 'Remote', context: 'Context' },
     placeholderStarting: 'Starting Plobi...',
     placeholderReconnecting: 'Reconnecting to Plobi…',
     placeholderFollowUp: 'Send follow-up',

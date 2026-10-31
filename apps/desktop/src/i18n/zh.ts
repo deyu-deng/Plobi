@@ -2505,6 +2505,17 @@ export const zh: Translations = {
   composer: {
     message: '消息',
     wakingProfile: profile => `正在唤醒 ${profile}…`,
+    permission: {
+      label: '权限',
+      ask: '每次询问',
+      askDetail: '执行命令、修改工作区外文件或访问网络前，始终询问',
+      auto: '自动审批',
+      autoDetail: '仅在检测到潜在风险时询问',
+      full: '完全访问',
+      fullDetail: '不再询问，可自由访问你的文件、终端和网络',
+      failed: '权限档位没切过去'
+    },
+    footer: { local: '本地', remote: '远程', context: '上下文' },
     placeholderStarting: '正在启动 Plobi…',
     placeholderReconnecting: '正在重新连接 Plobi…',
     placeholderFollowUp: '发送后续消息',

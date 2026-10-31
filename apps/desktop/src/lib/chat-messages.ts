@@ -216,6 +216,7 @@ export type GatewayEventPayload = {
   service_tier?: string
   fast?: boolean
   yolo?: boolean
+  approval_mode?: 'manual' | 'smart' | 'off'
   running?: boolean
   cwd?: string
   branch?: string

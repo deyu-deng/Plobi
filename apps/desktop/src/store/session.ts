@@ -258,6 +258,12 @@ export const $resumeExhaustedSessionId = atom<string | null>(null)
 // Persistence lives in the backend config (approvals.mode), so this is a plain
 // reflection of the truth the gateway reports rather than its own store.
 export const $yoloActive = atom(false)
+// 会话的三档审批（用户 10-31：YOLO 变成 Qoder 那种权限下拉）。后端 session.info
+// 直接报 `approval_mode`（manual / smart / off），这里只做镜像；off 与 $yoloActive 同义。
+export type ApprovalMode = 'manual' | 'smart' | 'off'
+export const $approvalMode = atom<ApprovalMode>('manual')
+// 新对话草稿上还没有运行时会话：此时选定的档位先记下，会话一建好就补交（见 use-session-actions）。
+export const $approvalModePending = atom(false)
 export const $currentCwd = atom(getRememberedWorkspaceCwd())
 export const $currentBranch = atom('')
 export const $currentUsage = atom<UsageStats>({
@@ -298,6 +304,10 @@ export const setBusy = (next: Updater<boolean>) => updateAtom($busy, next)
 export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($awaitingResponse, next)
 
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
+
+export const setApprovalMode = (next: Updater<ApprovalMode>) => updateAtom($approvalMode, next)
+
+export const setApprovalModePending = (next: Updater<boolean>) => updateAtom($approvalModePending, next)
 
 export const setCurrentCwd = (next: Updater<string>) => {
   updateAtom($currentCwd, next)

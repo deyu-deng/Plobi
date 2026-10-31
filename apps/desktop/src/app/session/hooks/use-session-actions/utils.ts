@@ -15,6 +15,7 @@ import {
   setCurrentProvider,
   setCurrentReasoningEffort,
   setCurrentServiceTier,
+  setApprovalMode,
   setCurrentUsage,
   setSessions,
   setYoloActive
@@ -316,6 +317,12 @@ export function applyRuntimeInfo(info: SessionRuntimeInfo | undefined): SessionR
   if (typeof info.yolo === 'boolean') {
     setYoloActive(info.yolo)
     sessionState.yolo = info.yolo
+  }
+
+  if (info.approval_mode === 'manual' || info.approval_mode === 'smart' || info.approval_mode === 'off') {
+    setApprovalMode(info.approval_mode)
+  } else if (typeof info.yolo === 'boolean') {
+    setApprovalMode(info.yolo ? 'off' : 'manual')
   }
 
   if (info.usage) {

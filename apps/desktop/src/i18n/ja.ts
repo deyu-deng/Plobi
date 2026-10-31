@@ -2219,6 +2219,17 @@ export const ja = defineLocale({
   composer: {
     message: 'メッセージ',
     wakingProfile: profile => `${profile} を起動中…`,
+    permission: {
+      label: '権限',
+      ask: '毎回確認',
+      askDetail: 'コマンド実行、ワークスペース外のファイル変更、ネットワーク利用の前に必ず確認します',
+      auto: '自動承認',
+      autoDetail: 'リスクが検出されたときだけ確認します',
+      full: '完全アクセス',
+      fullDetail: '確認せず、ファイル・ターミナル・ネットワークに自由にアクセスします',
+      failed: '権限レベルを変更できませんでした'
+    },
+    footer: { local: 'ローカル', remote: 'リモート', context: 'コンテキスト' },
     placeholderStarting: 'Plobi を起動中...',
     placeholderReconnecting: 'Plobi に再接続中…',
     placeholderFollowUp: 'フォローアップを送信',

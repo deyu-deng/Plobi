@@ -2028,6 +2028,17 @@ export interface Translations {
   composer: {
     message: string
     wakingProfile: (profile: string) => string
+    permission: {
+      label: string
+      ask: string
+      askDetail: string
+      auto: string
+      autoDetail: string
+      full: string
+      fullDetail: string
+      failed: string
+    }
+    footer: { local: string; remote: string; context: string }
     placeholderStarting: string
     placeholderReconnecting: string
     placeholderFollowUp: string
