@@ -104,19 +104,67 @@ def resolve_memory_provider_name(configured: object) -> str:
     name = str(configured).strip()
     return name
 
+# 10-31（WP-TOOLSET-INBOUND-2）：memory-provider 的工具按门类归户。
+# vault_* 只碰人读面（Vault/），mind_* 只碰脑面（Mind/）——用户在 Tools 页
+# 可以分别开关，所以这里要一张 工具名 → 门类 的表来过滤。
+_PROVIDER_TOOL_TOOLSET = {
+    "vault_read": "vault",
+    "vault_write": "vault",
+    "mind_read": "mind",
+    "mind_write": "mind",
+}
+_PROVIDER_TOOLSETS = frozenset(_PROVIDER_TOOL_TOOLSET.values())
+
+# 任一门类命中就把 provider 工具放出来。``memory`` 是总开关（旧行为：开了它
+# 全部 provider 工具都下发）；``vault`` / ``mind`` 是新拆的两个细分门类。
+# 复合门类（如 ``plobi-acp``）解析出来的工具名里含 ``memory`` 也算命中。
+_GATE_TOOLSETS = ("memory", "vault", "mind")
+_GATE_TOOL_NAMES = ("memory", *_PROVIDER_TOOL_TOOLSET.keys())
+
+
+def _enabled_tool_names(enabled_toolsets: Optional[List[str]]) -> Optional[set]:
+    """把 enabled_toolsets 摊平成工具名集合。
+
+    ``None`` 表示「不筛」（没有 enabled_toolsets 限制时全部给），与
+    :func:`memory_provider_tools_enabled` 的 ``None`` 语义一致。
+    """
+    if enabled_toolsets is None:
+        return None
+
+    try:
+        from toolsets import resolve_toolset
+
+        names: set = set()
+        for toolset in enabled_toolsets:
+            names.update(resolve_toolset(toolset))
+        return names
+    except Exception:
+        logger.debug("Failed to flatten enabled toolsets; not filtering", exc_info=True)
+        return None
+
+
 def memory_provider_tools_enabled(enabled_toolsets: Optional[List[str]]) -> bool:
-    """Return whether external memory-provider tools should be exposed."""
+    """Return whether external memory-provider tools should be exposed.
+
+    10-31（WP-TOOLSET-INBOUND-2）：vault / mind 各自成门类了，所以这里不再只认
+    ``memory``——只开 ``vault`` 或 ``mind`` 的 profile 同样应该拿到 provider 的工具。
+    逐个工具归哪个门类由 :data:`_PROVIDER_TOOL_TOOLSET` 决定，真正的过滤在
+    :func:`add_memory_provider_tools`。
+    """
     if enabled_toolsets is None:
         return True
     if not enabled_toolsets:
         return False
-    if "memory" in enabled_toolsets:
+    if any(name in enabled_toolsets for name in _GATE_TOOLSETS):
         return True
 
     try:
         from toolsets import resolve_toolset
 
-        return any("memory" in resolve_toolset(name) for name in enabled_toolsets)
+        return any(
+            any(name in resolve_toolset(toolset) for name in _GATE_TOOL_NAMES)
+            for toolset in enabled_toolsets
+        )
     except Exception:
         logger.debug("Failed to resolve enabled toolsets for memory-provider tools", exc_info=True)
         return False
@@ -149,6 +197,8 @@ def inject_memory_provider_tools(agent: Any) -> int:
         valid_tool_names = set()
         agent.valid_tool_names = valid_tool_names
 
+    enabled_names = _enabled_tool_names(getattr(agent, "enabled_toolsets", None))
+
     added = 0
     for raw_schema in get_schemas():
         schema = normalize_tool_schema(raw_schema)
@@ -161,6 +211,11 @@ def inject_memory_provider_tools(agent: Any) -> int:
             continue
         tool_name = schema["name"]
         if tool_name in existing_tool_names:
+            continue
+        # 10-31：vault_* / mind_* 各自归门类——所属门类没开就不下发。
+        # 这样 Tools 页上关掉「档案」就真的关掉了，而不是关了还在。
+        owner = _PROVIDER_TOOL_TOOLSET.get(tool_name)
+        if owner and enabled_names is not None and tool_name not in enabled_names:
             continue
         tools.append({"type": "function", "function": schema})
         valid_tool_names.add(tool_name)

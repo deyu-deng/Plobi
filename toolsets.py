@@ -256,6 +256,77 @@ TOOLSETS = {
         "tools": ["project_list", "project_create", "project_switch"],
         "includes": []
     },
+
+    # ── 10-31 工具面按「用户能说出口的一件事」重排（WP-TOOLSET-INBOUND-2）──
+    # 每个门类在 Tools 页可开关；`plobi` 那枚 area/action 元工具不再注册，
+    # 它下面的 task / compute / preview / ops 各自成门类。
+    "office": {
+        "description": "Office documents (DOCX / XLSX / PPTX): read the structure, edit a cell or a run, validate, render a page",
+        "tools": ["office_read", "office_edit", "office_validate", "office_render"],
+        "includes": []
+    },
+
+    "vault": {
+        "description": "The human-readable archive (Vault/): dossiers, notes, diary — read one file and rewrite it",
+        "tools": ["vault_read", "vault_write"],
+        "includes": []
+    },
+
+    "mind": {
+        "description": "The brain's own pages (Mind/): wiki, raw, persona — read, write, and resolve what was learned",
+        "tools": ["mind_read", "mind_write", "learn_observe", "learn_drafts", "learn_resolve"],
+        "includes": []
+    },
+
+    "task": {
+        "description": "The task queue: enqueue, board, get, approve / reject, complete, update, advance a stage",
+        "tools": [
+            "task_board",
+            "task_enqueue",
+            "task_get",
+            "task_approve",
+            "task_reject",
+            "task_complete",
+            "task_update",
+            "task_stage"
+        ],
+        "includes": []
+    },
+
+    "channel": {
+        "description": "Talk to another Agent: say (deliver and return) / ask (deliver and wait for the answer)",
+        "tools": ["say", "ask"],
+        "includes": []
+    },
+
+    "edge": {
+        "description": "Edge capability: compute routing, HID workers, and the preview bus",
+        "tools": [
+            "edge_compute",
+            "edge_hid_status",
+            "edge_hid_run",
+            "edge_preview_push",
+            "edge_preview_list",
+            "edge_preview_latest"
+        ],
+        "includes": []
+    },
+
+    "ops": {
+        "description": "Operator duties for L1: daily plan, morning report, night tick, mobile board, domains, diagnose",
+        "tools": [
+            "ops_plan",
+            "ops_summarize",
+            "ops_morning",
+            "ops_night",
+            "ops_mobile_board",
+            "ops_mobile_instruct",
+            "ops_domain_list",
+            "ops_domain_register",
+            "ops_diagnose"
+        ],
+        "includes": []
+    },
     
     "clarify": {
         "description": "Ask the user clarifying questions (multiple-choice or open-ended)",
