@@ -1736,7 +1736,16 @@ def _agent_id_for_session(session: dict) -> str:
     最后一跳用"会话所在目录"认人：进某个 Agent 时桌面已经把它的文件夹种成 cwd，
     课程行本来就有 ``project_path``。认不出仍是空串（= L1），不猜。
     """
-    explicit = str(session.get("agent") or session.get("agent_id") or "").strip()
+    # `agent_name_hint` 是 prompt.submit 带的名册名（身份那一跳的正路）；
+    # `session["agent"]` 槽里若躺着 str，是 02bdc9e6 之前形状的遗留，也认——
+    # 但对象（AIAgent）不算名字，跳过它。
+    agent_slot = session.get("agent")
+    explicit = str(
+        session.get("agent_name_hint")
+        or (agent_slot if isinstance(agent_slot, str) else "")
+        or session.get("agent_id")
+        or ""
+    ).strip()
     if explicit:
         try:
             from plobi.mind.identity import resolve_agent_name
@@ -8582,14 +8591,19 @@ def _(rid, params: dict) -> dict:
         return err
     # 身份显式带上来（渲染层按当前 `/agent/<name>` 给）：比目录归属更硬。
     # 先记在 session 上，真正落库在 `_ensure_session_db_row`（每轮都会跑一次）。
+    # ⚠️ 只能落 `agent_name_hint`，不许碰 `session["agent"]`——那个槽historically是
+    # **活着的 AIAgent 对象**（`_make_agent` 写入、`_run_prompt_submit` 原样取用）；
+    # 02bdc9e6 把名字写进同一个槽，凡是桌面带了 `agent` 的会话下一轮就
+    # `'str' object has no attribute 'run_conversation'`（10-31 21:24 现读，
+    # 课程 Agent 全灭、L1 不带 agent 参数所以活着）。
     agent_hint = str(params.get("agent") or "").strip()
     if agent_hint:
         try:
             from plobi.mind.identity import resolve_agent_name
 
-            session["agent"] = resolve_agent_name(agent_hint) or agent_hint
+            session["agent_name_hint"] = resolve_agent_name(agent_hint) or agent_hint
         except Exception:  # noqa: BLE001 - 名册读不到就按原样记
-            session["agent"] = agent_hint
+            session["agent_name_hint"] = agent_hint
     # Narrow hard-route seam (WP-BE-13): a plugin may pin a frozen utterance
     # onto a tool call by rewriting the turn text.  Non-matching utterances
     # come back byte-for-byte identical.
