@@ -15,6 +15,9 @@ import pytest
 from agent.egress import system_proxy
 from agent.egress.rules import EgressConfigError, load_table
 
+_OK = system_proxy.ProxyPlan(True, "test")
+
+
 TABLE_RAW = {
     "proxies": {"gw": {"url": "http://127.0.0.1:7895"}},
     "rules": [
@@ -306,4 +309,20 @@ def test_the_takeover_starts_the_watchdog_and_off_stops_it(machine, tmp_path, no
 
     system_proxy.disable(home=tmp_path)
     assert no_real_watchdog["stop"] == 1, no_real_watchdog
+
+def test_ensure_lights_the_engine_before_it_plans_the_takeover(machine, tmp_path, monkeypatch):
+    """10-31 实测：重启后没有引擎在听 ⇒ plan() 以「带不动流量」拒绝接管，而没有任何人再去点引擎。
+
+    开机那条路径必须先起引擎：顺序反了，"接管被拒"就会被读成"这台机器不需要代理"。
+    """
+    from agent.egress import engine
+
+    calls: list[str] = []
+    monkeypatch.setattr(engine, "ensure", lambda table, **kw: calls.append("engine") or None)
+    monkeypatch.setattr(system_proxy, "enable", lambda table, **kw: (calls.append("enable"), _OK)[1])
+
+    table = _table(system_proxy={"enabled": True})
+    system_proxy.ensure(table, home=tmp_path)
+
+    assert calls == ["engine", "enable"], calls
 

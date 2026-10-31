@@ -307,6 +307,10 @@ def enable(table: Optional[Table] = None, *, home: str | Path | None = None, app
     """Take over the system proxy, remembering exactly what was there before."""
     p = plan(table, home=home)
     if not p.ok:
+        if apply:
+            # A refusal now must not mean "and nobody will ever look again": the
+            # watchdog's next tick re-plans (it may be the engine that was missing).
+            _watchdog().start(home=home)
         return p
     if not apply:
         return p
@@ -365,6 +369,17 @@ def ensure(table: Optional[Table] = None, *, home: str | Path | None = None) -> 
             ok, detail = disable(home=home)
             return ProxyPlan(ok, "表里已关掉，系统代理交还原主" if ok else f"想交还但没成：{detail}")
         return None
+    # **Boot order matters.**  ``plan()`` refuses a takeover whose exit cannot carry
+    # traffic, and a fresh boot has no engine listening yet — measured 10-31: after a
+    # reboot nothing started the engine, the takeover was refused for that reason, and
+    # the machine sat with no proxy at all.  Light the engine first; if it still cannot
+    # come up, the refusal below is honest.
+    try:
+        from agent.egress import engine as _engine
+
+        _engine.ensure(table, home=home)
+    except Exception as exc:  # noqa: BLE001 - the plan() refusal carries the real reason
+        log.warning("system proxy: 先起引擎失败（%s: %s）——继续按计划判", type(exc).__name__, exc)
     return enable(table, home=home)
 
 
