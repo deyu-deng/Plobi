@@ -78,16 +78,21 @@ export function TitlebarControls({
   const leftEdge = panesFlipped ? agendaEdge : sessionsEdge
   const rightEdge = panesFlipped ? sessionsEdge : agendaEdge
 
+  // 卡片模式（10-31 用户）：换边换的是整条布局，「收起左栏」永远收那个带图标的侧边栏，
+  // 并且跟着它挪到窗口控件那一侧、图标镜像；换边按钮留在左上角。
+  const sidebarTool: TitlebarTool = {
+    icon: <Codicon name={shellCards && panesFlipped ? 'layout-sidebar-right' : 'layout-sidebar-left'} />,
+    id: 'sidebar',
+    label: (shellCards ? sessionsEdge : leftEdge).open ? t.titlebar.hideSidebar : t.titlebar.showSidebar,
+    onSelect: () => {
+      triggerHaptic('tap')
+      ;(shellCards ? sessionsEdge : leftEdge).toggle()
+    }
+  }
+  const sidebarOnRight = shellCards && panesFlipped
+
   const leftToolbarTools: TitlebarTool[] = [
-    {
-      icon: <Codicon name="layout-sidebar-left" />,
-      id: 'sidebar',
-      label: leftEdge.open ? t.titlebar.hideSidebar : t.titlebar.showSidebar,
-      onSelect: () => {
-        triggerHaptic('tap')
-        leftEdge.toggle()
-      }
-    },
+    ...(sidebarOnRight ? [] : [sidebarTool]),
     {
       icon: <Codicon name="arrow-swap" />,
       id: 'flip-panes',
@@ -161,7 +166,7 @@ export function TitlebarControls({
         </div>
       )}
 
-      {(showSystemTools || showRightRailTool) && (
+      {(showSystemTools || showRightRailTool || sidebarOnRight) && (
         <div
           aria-label={t.shell.appControls}
           className="fixed right-(--titlebar-tools-right) top-(--titlebar-controls-top) z-70 flex flex-row items-center justify-end gap-x-1 pointer-events-auto select-none [-webkit-app-region:no-drag]"
@@ -172,6 +177,7 @@ export function TitlebarControls({
             ))}
           {showSystemTools && settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
           {showRightRailTool && <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />}
+          {sidebarOnRight && <TitlebarToolButton navigate={navigate} tool={sidebarTool} />}
         </div>
       )}
     </>

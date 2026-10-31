@@ -21,7 +21,7 @@ export function ChatTopBar({
   rightRail,
   scope
 }: {
-  rightRail?: { open: boolean; toggle: () => void }
+  rightRail?: { open: boolean; side?: 'left' | 'right'; toggle: () => void }
   scope: ChatScope
 }) {
   const { t } = useI18n()
@@ -50,7 +50,10 @@ export function ChatTopBar({
             type="button"
             variant="ghost"
           >
-            <Codicon name="layout-sidebar-right" size="0.875rem" />
+            <Codicon
+              name={rightRail.side === 'left' ? 'layout-sidebar-left' : 'layout-sidebar-right'}
+              size="0.875rem"
+            />
           </Button>
         </Tip>
       ) : null}

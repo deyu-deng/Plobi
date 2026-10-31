@@ -479,7 +479,7 @@ export function ChatSidebar({
 
           {/* 本 Agent 的两个入口贴在底部、和下面那排图标同一条底边（用户 10-31）。 */}
           {!showOffload && agentActions.length > 0 ? (
-            <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-1.5 py-1">
+            <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-1 py-1">
               <SidebarMenu className="gap-px">
                 {agentActions.map(action => (
                   <SidebarMenuItem key={action.id}>
@@ -498,7 +498,7 @@ export function ChatSidebar({
             </div>
           ) : null}
 
-          <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-0.5 py-1">
+          <div className="shrink-0 border-t border-(--ui-stroke-tertiary) px-1.5 py-1">
             <StatusbarControls dock inline items={footerItems} />
           </div>
         </SidebarContent>

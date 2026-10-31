@@ -32,7 +32,7 @@ interface SidebarStripProps {
 }
 
 const STRIP_BUTTON =
-  'grid size-8 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:cursor-default disabled:opacity-40'
+  'grid size-7 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:cursor-default disabled:opacity-40'
 
 function StripSep() {
   return <div aria-hidden="true" className="my-1.5 h-px w-5 shrink-0 bg-(--ui-stroke-tertiary)" />
@@ -183,8 +183,8 @@ export function SidebarStrip({
   const { t } = useI18n()
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center px-0.5 py-2" data-slot="sidebar-strip">
-      <div className="flex min-h-0 flex-1 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex h-full min-h-0 flex-col items-center px-1.5 py-2" data-slot="sidebar-strip">
+      <div className="flex min-h-0 flex-1 flex-col items-center gap-px overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <StripButton icon="add" label={t.console.newAgent} onClick={onCreateAgent} />
 
         <StripSep />

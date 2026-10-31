@@ -26,7 +26,7 @@ export function SecretaryCenterPane({
   composer?: ChatSurfaceProps['composer']
   modelMenuContent?: ChatSurfaceProps['modelMenuContent']
   /** 卡片模式下由对话卡自己的抬头承载「右栏开关」（用户 10-31）。 */
-  rightRail?: { open: boolean; toggle: () => void }
+  rightRail?: { open: boolean; side?: 'left' | 'right'; toggle: () => void }
   submit?: ChatSurfaceProps['submit']
 }) {
   const shellCards = useStore($shellCards)

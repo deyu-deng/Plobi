@@ -2025,6 +2025,40 @@ text-* variant utilities. */ .btn-arc {
   border-color: transparent;
 }
 
+/* 左栏收起/展开（用户 10-31：「像只是把文字详情收起」）：只在点的那一下过渡列宽，
+   拖拽调宽时不加延迟；两种形态的内容各自淡入一下，避免硬切。 */
+.shell-sidebar-animating [data-pane-shell] {
+  transition: grid-template-columns 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes sidebar-swap-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.shell-cards [data-pane-id='chat-sidebar'] [data-slot='sidebar-strip'],
+.shell-cards [data-pane-id='chat-sidebar'] [data-sidebar='content'] {
+  animation: sidebar-swap-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-sidebar-animating [data-pane-shell] {
+    transition: none;
+  }
+
+  .shell-cards [data-pane-id='chat-sidebar'] [data-slot='sidebar-strip'],
+  .shell-cards [data-pane-id='chat-sidebar'] [data-sidebar='content'] {
+    animation: none;
+  }
+}
+
 /* 主区已整体让出顶栏，栏内第一组那 28px 的顶栏留白就成了第二份 → 收掉。
    底部再空出一条给左下图标条（那条是 fixed 的，不占栏内文档流）。 */
 .shell-cards [data-pane-id='chat-sidebar']:not([data-pane-hover-reveal]) [data-sidebar='content'] {

@@ -251,10 +251,12 @@ export function setSidebarWidth(width: number) {
 
 export function setSidebarOpen(open: boolean) {
   $sidebarExpanded.set(Boolean(open))
+  markSidebarAnimating()
 }
 
 export function toggleSidebarOpen() {
   $sidebarExpanded.set(!$sidebarExpanded.get())
+  markSidebarAnimating()
 }
 
 export function toggleFileBrowserOpen() {
@@ -289,6 +291,35 @@ export function requestSessionSearchFocus() {
 
 export function togglePanesFlipped() {
   $panesFlipped.set(!$panesFlipped.get())
+}
+
+// 工作面「只隐藏对话」：工作面顶栏那枚斜向双箭头的状态（不持久化——这是一次性
+// 的聚焦动作，重开回到三栏）。
+export const $workbenchOnly = atom(false)
+
+export function toggleWorkbenchOnly(): void {
+  $workbenchOnly.set(!$workbenchOnly.get())
+}
+
+export function setWorkbenchOnly(value: boolean): void {
+  $workbenchOnly.set(Boolean(value))
+}
+
+// 左栏展开/收起的那 200ms：只在这时给网格列加过渡，拖拽改宽时不能有延迟。
+export const $sidebarAnimating = atom(false)
+let sidebarAnimationTimer: ReturnType<typeof setTimeout> | null = null
+
+function markSidebarAnimating(): void {
+  $sidebarAnimating.set(true)
+
+  if (sidebarAnimationTimer) {
+    clearTimeout(sidebarAnimationTimer)
+  }
+
+  sidebarAnimationTimer = setTimeout(() => {
+    $sidebarAnimating.set(false)
+    sidebarAnimationTimer = null
+  }, 240)
 }
 
 export function selectRightRailTab(id: RightRailTabId) {

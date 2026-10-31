@@ -70,7 +70,10 @@ export function RightRailWorkbench({
   contents,
   dragHandleProps,
   labels,
+  maximizeLabel,
+  maximized = false,
   onCollapse,
+  onMaximize,
   onTabChange,
   onTabClose,
   onTabOpen,
@@ -86,7 +89,11 @@ export function RightRailWorkbench({
   /** 卡片互换：抬头那一行当拖动把手（用户 10-31 拖右栏卡到对话卡上换位）。 */
   dragHandleProps?: HTMLAttributes<HTMLDivElement>
   labels: RightRailWorkbenchLabels
+  /** 「只显示这张卡」（用户 10-31）：隐藏对话，让工作面自己占满。 */
+  maximizeLabel?: string
+  maximized?: boolean
   onCollapse?: () => void
+  onMaximize?: () => void
   onTabChange: (tab: RightRailTabId) => void
   onTabClose: (tab: RightRailTabId) => void
   onTabOpen: (tab: RightRailTabId) => void
@@ -117,7 +124,7 @@ export function RightRailWorkbench({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* 有拖动把手时也必须画抬头：没开标签页时它就是这张卡唯一的拖拽入口 */}
-      {hasTabs || onCollapse || dragHandleProps ? (
+      {hasTabs || onCollapse || onMaximize || dragHandleProps ? (
         <div
           className={cn(
             'flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1',
@@ -231,6 +238,19 @@ export function RightRailWorkbench({
               type="button"
             >
               <Codicon name={collapseIcon} size="0.85rem" />
+            </button>
+          ) : null}
+
+          {onMaximize ? (
+            <button
+              aria-label={maximizeLabel}
+              aria-pressed={maximized}
+              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={onMaximize}
+              title={maximizeLabel}
+              type="button"
+            >
+              <Codicon name={maximized ? 'screen-normal' : 'screen-full'} size="0.85rem" />
             </button>
           ) : null}
         </div>

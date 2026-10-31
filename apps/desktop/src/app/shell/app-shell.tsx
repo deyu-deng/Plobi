@@ -12,6 +12,7 @@ import {
   $fileBrowserOpen,
   $panesFlipped,
   $shellCards,
+  $sidebarAnimating,
   $sidebarOpen,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_PANE_ID,
@@ -78,6 +79,7 @@ export function AppShell({
   titlebarTools
 }: AppShellProps) {
   const sidebarOpen = useStore($sidebarOpen)
+  const sidebarAnimating = useStore($sidebarAnimating)
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const panesFlipped = useStore($panesFlipped)
   const shellCards = useStore($shellCards)
@@ -211,7 +213,8 @@ export function AppShell({
       <main
         className={cn(
           'relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none',
-          shellCards && 'shell-cards'
+          shellCards && 'shell-cards',
+          sidebarAnimating && 'shell-sidebar-animating'
         )}
       >
         <PaneShell className="min-h-0 flex-1">
