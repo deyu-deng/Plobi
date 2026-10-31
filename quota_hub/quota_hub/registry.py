@@ -35,6 +35,7 @@ from .providers.apps.marvis import MarvisCliProvider, MarvisGuiProvider
 from .providers.apps.opencode import OpenCodeCliProvider
 from .providers.apps.opencode.api import OpencodeApiProvider
 from .providers.apps.gemini.api import GeminiApiProvider
+from .providers.apps.qoder.api import QoderProvider
 from .providers.apps.workbuddy import (
     WorkbuddyApiProvider,
     WorkbuddyCliProvider,
@@ -100,6 +101,10 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     "gemini_api": GeminiApiProvider,
     "kiro_cli": KiroCliProvider,
     "cline_cli": ClineCliProvider,
+    # 用户 10-31 令「能变成 API 的都做完」：Qoder 自己那扇签名的门
+    # （`gateway.qoder.com.cn/algo/...`，设备码 PKCE 自登录 + COSY 签名 SSE）。
+    # 回退到 ACP 只要把 `transport: acp` 加回 config —— 上面那行分支优先于这张表。
+    "qoder": QoderProvider,
     "marvis_cli": MarvisCliProvider,
     "marvis_gui": MarvisGuiProvider,
     "workbuddy_api": WorkbuddyApiProvider,
