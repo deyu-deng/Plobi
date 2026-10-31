@@ -1955,7 +1955,8 @@ text-* variant utilities. */ .btn-arc {
 :root {
   --dl-shell-margin: 14px;
   --dl-shell-gap: 1px;
-  --dl-shell-radius: 12px;
+  /* 逆 Qoder 包里读到的：内容卡圆角 8px，且用 `corner-shape: squircle`（不是普通圆角） */
+  --dl-shell-radius: 8px;
   /* 画布雾：背景色 → 混一点品牌色 → 混一点前景色，低对比三段；主题没给种子时退回中性灰 */
   --dl-shell-canvas: linear-gradient(
     150deg,
@@ -1982,6 +1983,8 @@ text-* variant utilities. */ .btn-arc {
 
 /* 画布：主题自带的图 > 主题自绘的画布 > 从种子生成的那层雾 */
 .shell-cards {
+  /* 逆 Qoder：它的 shell 只是「半透明底色（60–95%）叠在壁纸上」，这版 blur=0。
+     我们同样只用一层壁纸/雾 + 不透明卡面，不额外加 backdrop-filter。 */
   background-image: var(--theme-asset-bg, var(--theme-shell-canvas, var(--dl-shell-canvas)));
   background-position: center;
   background-size: cover;
@@ -2008,6 +2011,8 @@ text-* variant utilities. */ .btn-arc {
   background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   border: 1px solid var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
   border-radius: var(--dl-shell-radius);
+  /* Chromium 139+；老内核忽略这一行时退回普通圆角，不会坏 */
+  corner-shape: squircle;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
   overflow: hidden;
 }
