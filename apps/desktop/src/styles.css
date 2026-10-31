@@ -2001,9 +2001,8 @@ text-* variant utilities. */ .btn-arc {
   box-shadow: none;
 }
 
-/* 对话与右栏：卡片。底色、发丝线全部走主题；几何走设计语言 */
-.shell-cards [data-pane-main='true'],
-.shell-cards [data-pane-id][data-pane-side='right'] {
+/* 只有对话是卡；右栏回到玻璃底座上（与顶栏同底，不再是卡） */
+.shell-cards [data-pane-main='true'] {
   --ui-bg-primary: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   --ui-chat-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
@@ -2013,30 +2012,38 @@ text-* variant utilities. */ .btn-arc {
   overflow: hidden;
 }
 
-/* 暗色：几何不动，只把阴影加深（卡片底/画布已经跟着主题种子走了） */
-.dark .shell-cards [data-pane-main='true'],
-.dark .shell-cards [data-pane-id][data-pane-side='right'] {
+/* 右栏：和左栏一样让开自己的底，直接坐在画布上 */
+.shell-cards [data-pane-id][data-pane-side='right'] {
+  --ui-bg-primary: transparent;
+  --ui-bg-secondary: transparent;
+  --ui-bg-chrome: transparent;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 暗色：几何不动，只把卡的阴影加深 */
+.dark .shell-cards [data-pane-main='true'] {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
 }
 
-/* 卡片模式：底栏不再是一条横贯全宽的条，收成**左下角**一枚胶囊，接在头像条之后；
-   右半组（代理/网关/待批/日程/推理…）只留矢量图标，文字与详情在胶囊里隐藏。
-   用户 10-30 拍：「并入左下头像条」，与 Qoder 一致；右下角留空。 */
+/* 卡片模式：底栏不再是横贯全宽的条，也不再是胶囊——**图标直接坐在玻璃底座上**
+   （用户 10-30：「不要做成一个胶囊，像 Qoder 一样直接放在玻璃底座上」）。
+   右半组只留矢量图标；左半组保留头像+名字。 */
 .shell-cards [data-slot='statusbar'] {
   position: fixed;
   left: var(--dl-shell-margin);
-  bottom: var(--dl-shell-margin);
+  bottom: 2px;
   right: auto;
   width: auto;
   height: auto;
-  max-width: min(520px, calc(100vw - 2 * var(--dl-shell-margin)));
-  padding: 2px 8px;
-  gap: 4px;
-  border: 1px solid var(--theme-border, var(--dl-stroke-hairline, #e5e5e5));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--theme-shell-card, var(--theme-card-seed, #fff)) 92%, transparent);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 20px -12px rgba(16, 24, 40, .2);
+  max-width: min(560px, calc(100vw - 2 * var(--dl-shell-margin)));
+  padding: 0 4px;
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   z-index: 5;
   overflow: hidden;
 }
@@ -2054,4 +2061,12 @@ text-* variant utilities. */ .btn-arc {
 .shell-cards [data-slot='statusbar'] a {
   padding-left: 4px;
   padding-right: 4px;
+  color: var(--theme-foreground, var(--dl-text-secondary, #525252));
+  opacity: 0.72;
 }
+
+.shell-cards [data-slot='statusbar'] button:hover,
+.shell-cards [data-slot='statusbar'] a:hover {
+  opacity: 1;
+}
+
