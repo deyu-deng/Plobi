@@ -102,6 +102,15 @@ def _persist_switch(desired: bool) -> None:
         print(f"⚠️ 系统设置已经改了，但开关没落盘：{'；'.join(issues)}")
 
 
+def _stdin_or_value(text: str) -> str:
+    """``--text -`` means "read it from stdin", so a pasted config can be piped in."""
+    if text != "-":
+        return text
+    import sys
+
+    return sys.stdin.read()
+
+
 def _import_subscription(args: argparse.Namespace) -> int:
     """Pull a subscription and write it into the table.
 
@@ -117,6 +126,7 @@ def _import_subscription(args: argparse.Namespace) -> int:
             ("--url", getattr(args, "url", "")),
             ("--file", getattr(args, "file", "")),
             ("--from-client", getattr(args, "from_client", "")),
+            ("--text", getattr(args, "text", "")),
         )
         if value
     ]
@@ -134,6 +144,7 @@ def _import_subscription(args: argparse.Namespace) -> int:
             url=getattr(args, "url", "") or "",
             path=getattr(args, "file", "") or "",
             client=getattr(args, "from_client", "") or "",
+            text=_stdin_or_value(getattr(args, "text", "") or ""),
             apply=not dry,
             catch_all=getattr(args, "catch_all", "") or "",
             pool_name=getattr(args, "pool_name", "") or "POOL",

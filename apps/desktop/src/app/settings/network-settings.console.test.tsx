@@ -5,6 +5,7 @@ const getNetworkEgress = vi.fn()
 const getNetworkImportClients = vi.fn()
 const getNetworkStatus = vi.fn()
 const getNetworkSubscription = vi.fn()
+const importNetworkSubscription = vi.fn()
 
 vi.mock('@/plobi', () => ({
   getNetworkEgress: () => getNetworkEgress(),
@@ -12,7 +13,7 @@ vi.mock('@/plobi', () => ({
   getNetworkStatus: () => getNetworkStatus(),
   getNetworkSubscription: () => getNetworkSubscription(),
   importNetworkPool: vi.fn(),
-  importNetworkSubscription: vi.fn(),
+  importNetworkSubscription: (input: unknown) => importNetworkSubscription(input),
   saveNetworkEgress: vi.fn(),
   setNetworkSystemProxy: vi.fn()
 }))
@@ -41,10 +42,21 @@ const RECORD = {
   }
 }
 
+//: 故意只给最少字段：后端少一个键就把整屏炸掉过一次（`status.rules.find`），这条钉住那处防御。
 const STATUS = {
-  downgrades: [],
-  engine: { detail: 'started by Plobi', mixed_port: 7895, notes: [], probe: '204 via http://127.0.0.1:7895', state: 'running-ours' },
-  system_proxy: { backup_exists: true, declared: true, ours: true, pac_path: 'D:/plobi/plobi-egress.pac', supported: true }
+  engine: {
+    detail: 'started by Plobi',
+    mixed_port: 7895,
+    probe: '204 via http://127.0.0.1:7895',
+    state: 'running-ours'
+  },
+  system_proxy: {
+    backup_exists: true,
+    declared: true,
+    ours: true,
+    pac_path: 'D:/plobi/plobi-egress.pac',
+    supported: true
+  }
 }
 
 beforeEach(() => {
@@ -52,6 +64,7 @@ beforeEach(() => {
   getNetworkStatus.mockResolvedValue(STATUS)
   getNetworkImportClients.mockResolvedValue({ clients: [] })
   getNetworkSubscription.mockResolvedValue({ saved: true })
+  importNetworkSubscription.mockResolvedValue({ groups: {}, nodes: {}, notes: [], ok: true })
 })
 
 afterEach(() => {
@@ -67,8 +80,7 @@ describe('代理（VPN）那一屏的简约控制台', () => {
     await waitFor(() => expect(screen.getByText('当前默认出口')).toBeTruthy())
     expect(screen.getByText('POOL', { selector: 'span' })).toBeTruthy()
 
-    const jp = screen.getByRole('button', { name: '🇯🇵 日本W01' })
-    fireEvent.click(jp)
+    fireEvent.click(screen.getByRole('button', { name: '🇯🇵 日本W01' }))
 
     expect(screen.getByText('🇯🇵 日本W01', { selector: 'span' })).toBeTruthy()
     expect(screen.queryByText('POOL', { selector: 'span' })).toBeNull()
@@ -94,5 +106,20 @@ describe('代理（VPN）那一屏的简约控制台', () => {
     const details = screen.getByText('高级：出口 / 规则 / 成员表 / 组 / 导入 / 引擎').closest('details')
     expect(details).toBeTruthy()
     expect(details?.open).toBe(false)
+  })
+
+  it('粘贴一段配置也能导入——用户问的第二种方式', async () => {
+    render(<NetworkSettings />)
+    await waitFor(() => expect(screen.getByText('当前默认出口')).toBeTruthy())
+
+    const pasted = ['proxies:', '  - {name: a, type: ss, server: x.example, port: 1}'].join('\n')
+    fireEvent.change(screen.getByPlaceholderText(/粘在这里/), { target: { value: pasted } })
+    fireEvent.click(screen.getByRole('button', { name: '导入粘贴的配置' }))
+
+    await waitFor(() =>
+      expect(importNetworkSubscription).toHaveBeenCalledWith(
+        expect.objectContaining({ text: expect.stringContaining('proxies:') })
+      )
+    )
   })
 })

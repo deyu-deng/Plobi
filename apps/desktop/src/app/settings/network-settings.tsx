@@ -270,6 +270,9 @@ export function NetworkSettings() {
   const [groups, setGroups] = useState<GroupRow[]>([])
   const [poolPath, setPoolPath] = useState('')
   const [subUrl, setSubUrl] = useState('')
+  //: 用户 10-30 问到的第二种配置方式：把别人给的整份配置**粘进来**。解析器一直支持
+  //: （yaml / base64 / 一行一个链接），只是没有入口。
+  const [pasted, setPasted] = useState('')
   const [localClients, setLocalClients] = useState<NonNullable<NetworkImportClients['clients']>>([])
   const [poolNotes, setPoolNotes] = useState<string[]>([])
   const [importing, setImporting] = useState(false)
@@ -402,6 +405,22 @@ export function NetworkSettings() {
       if (!answer.ok && !(answer.notes ?? []).length) {
         setError('订阅里没有可用的成员')
       }
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 粘贴一段配置就导入：与链接、文件、客户端缓存走同一个解析器（一份 yaml / base64 / 链接清单）。 */
+  const importPasted = async () => {
+    setImporting(true)
+    setError('')
+    try {
+      const answer = await importNetworkSubscription({ keepGroups: true, text: pasted.trim() })
+      applyImport(answer)
+      if (answer.ok) setPasted('')
+      if (!answer.ok && !(answer.notes ?? []).length) setError('这段配置里没有可用的成员')
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -708,6 +727,24 @@ export function NetworkSettings() {
           <Button disabled={importing || !subUrl.trim()} onClick={() => void importSubscription()} size="sm" variant="outline">
             {importing ? '…' : copy.importSub}
           </Button>
+        </div>
+        <div className="grid gap-1">
+          <textarea
+            className="min-h-20 w-full rounded-md border border-(--stroke-nous) bg-transparent p-2 font-mono text-xs text-(--ui-text-secondary)"
+            onChange={(event) => setPasted(event.target.value)}
+            placeholder="或者把整份配置粘在这里：Clash/mihomo 的 yaml、一行一个 ss:// / vmess:// 链接、或 base64"
+            value={pasted}
+          />
+          <div>
+            <Button
+              disabled={importing || !pasted.trim()}
+              onClick={() => void importPasted()}
+              size="sm"
+              variant="outline"
+            >
+              {importing ? '…' : '导入粘贴的配置'}
+            </Button>
+          </div>
         </div>
         {localClients.map((client) => (
           <div className="flex items-center gap-2" key={client.id}>

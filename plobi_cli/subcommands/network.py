@@ -54,6 +54,11 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
     import_parser.add_argument("--url", default="", help="Subscription URL (fetched once, no silent retry)")
     import_parser.add_argument("--file", dest="file", default="", help="A config file or a link list on disk")
     import_parser.add_argument(
+        "--text",
+        default="",
+        help="Paste a whole config (a Clash/mihomo yaml, a base64 blob, or link lines); '-' reads stdin",
+    )
+    import_parser.add_argument(
         "--from-client",
         dest="from_client",
         default="",
