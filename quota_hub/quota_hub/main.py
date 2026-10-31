@@ -149,6 +149,10 @@ async def _quota_refresh_loop(reg, interval: float) -> None:
                     ", ".join(network.get("failed") or []), network.get("advice", ""),
                 )
         try:
+            # A leg whose catalog never came back (node down at boot) has no model to
+            # offer, and only an upstream answer can fix that. The picker re-asks when it
+            # polls; this catches the case where nobody opens it.
+            await reg.ensure_models_refreshed()
             await reg.refresh_quotas()
         except asyncio.CancelledError:
             raise

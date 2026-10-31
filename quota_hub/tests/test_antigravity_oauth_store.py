@@ -187,7 +187,7 @@ def test_accounts_upsert_by_email_and_are_discovered(home, monkeypatch):
     assert rows[0]["refresh_token"] == "refresh-2"
     assert rows[0]["project_id"] == "proj-3"
 
-    monkeypatch.setattr("quota_hub.tokens.desktop_stores.read_antigravity_access_token", lambda: None)
+    monkeypatch.setattr("quota_hub.tokens.desktop_stores.read_antigravity_access_token", lambda **kw: None)
     monkeypatch.setattr("quota_hub.tokens.desktop_stores.read_antigravity", lambda: None)
     provider = AntigravityProvider(
         {"host": "https://daily-cloudcode-pa.googleapis.com", "accounts": []}, object()

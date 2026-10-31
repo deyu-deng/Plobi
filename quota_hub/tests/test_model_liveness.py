@@ -19,7 +19,7 @@ import pytest
 import quota_hub.main as main
 from quota_hub.providers.base import Account, Capabilities
 from quota_hub.providers.apps.workbuddy import WorkbuddyApiProvider
-from quota_hub.registry import Registry
+from quota_hub.registry import Registry, _MODELS_MAX_PASSES
 from quota_hub.tokens import desktop_stores as ds
 
 
@@ -98,6 +98,58 @@ def test_dead_credential_leaves_the_pickable_view_and_renewal_brings_it_back():
     # the desktop app renews its own token: no code change, no name list edit
     prov._health = (True, "ok")
     assert ids(reg.list_models(selectable_only=True)) == ["antigravity/gemini-3.8"]
+
+
+class CatalogProv(FakeProv):
+    """A leg with no seed list — upstream's answer is the only source of its model names."""
+
+    def __init__(self, name, answers, tools=True, health=(True, "ok"), with_account=True):
+        super().__init__(name, [], tools=tools, health=health)
+        self._answers = list(answers)
+        self.accounts = [Account(id=f"{name}-1", provider=name)] if with_account else []
+        self.calls = 0
+
+    async def refresh_models(self, acc):
+        self.calls += 1
+        short = self._answers.pop(0) if self._answers else None
+        if short:
+            self.served_models = tuple(f"{self.name}/{m}" for m in short)
+        return short
+
+
+def test_a_live_leg_with_no_catalog_is_asked_again_and_self_heals():
+    """Measured 2026-10-31 16:47: the hub booted with the Settings → VPN node down,
+    Antigravity's fetchAvailableModels failed, and the once-per-process pass left that
+    card signed-in and live with zero models until the app was restarted by hand."""
+    prov = CatalogProv("antigravity", [None, ["gemini-3.8"]])
+    reg = _registry(prov)
+
+    async def _go():
+        await reg.ensure_models_refreshed()
+        assert reg._models_refreshed is False, "an empty catalog is not a finished refresh"
+        reg._models_attempt = time.monotonic() - (Registry._MODELS_RETRY_AFTER + 1)
+        await reg.models_refresh_task()
+
+    asyncio.run(_go())
+    assert prov.calls == 2
+    assert reg._models_refreshed is True
+    assert ids(reg.list_models(selectable_only=True)) == ["antigravity/gemini-3.8"]
+
+
+def test_a_leg_that_never_answers_is_asked_a_bounded_number_of_times():
+    silent = CatalogProv("antigravity", [None] * 20)
+    unconfigured = CatalogProv("gemini_api", [None] * 20, with_account=False)
+    reg = _registry(silent, unconfigured)
+
+    async def _go():
+        for _ in range(_MODELS_MAX_PASSES):
+            reg._models_attempt = 0.0
+            await reg.models_refresh_task()
+
+    asyncio.run(_go())
+    assert silent.calls == _MODELS_MAX_PASSES, "the retry must be capped, not forever"
+    assert unconfigured.calls == 0, "a card with no account has nothing to ask for"
+    assert reg._models_refreshed is True
 
 
 def test_a_broken_probe_is_reported_as_not_live_not_guessed_as_working():

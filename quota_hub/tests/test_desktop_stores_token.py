@@ -90,8 +90,9 @@ def test_windows_branch_returns_none_when_there_is_no_entry_or_no_token(win_blob
 def test_dispatcher_picks_the_branch_by_os(monkeypatch):
     hits = {"win": 0, "mac": 0}
 
-    def _win():
+    def _win(**kw):
         hits["win"] += 1
+        assert set(kw) <= {"allow_stale"}, kw
         return "from-win-store"
 
     def _mac_run(*a, **k):
