@@ -1528,3 +1528,25 @@ def test_user_granted_memory_is_not_stripped_by_the_l1_mid_pass():
     assert "memory" in cfg["platform_toolsets"]["cli"]
     for denied_default in ("terminal", "session_search", "code_execution", "computer_use"):
         assert denied_default not in cfg["platform_toolsets"]["cli"]
+
+
+def test_l2_identity_block_turns_it_into_the_orchestrator_of_its_own_work():
+    """用户 10-31：「L1 和 L2 干活第一反应都不是统筹，而是自己干活」。
+
+    北星 §4 的原话是「L2 是统筹者，不是独力干将」，而身份围栏里原本只有「你手上
+    只有这一个项目」和「跨项目统筹归 L1」——它读到的岗位是干活的，不是统筹的。
+    判据：① 明写它是这一摊的统筹者；② 点名能派的四个专家（`delegate_task` 的
+    preset）；③ 派不出去时先如实说一句，再自己扛——不许一声不响全自己干。
+    """
+    from plobi.agents.registry import build_l2_identity_soul_block
+
+    block = build_l2_identity_soul_block(_l2_entry())
+
+    assert "统筹者" in block
+    assert "本项目内部的统筹是你自己的" in block
+    assert "delegate_task" in block
+    for expert in ("file", "browser", "software", "computer"):
+        assert expert in block, expert
+    assert "这个我现在做不了" in block
+    assert "全自己干" in block
+    assert len(block.splitlines()) <= 15

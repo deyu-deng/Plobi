@@ -4414,11 +4414,22 @@ def build_l2_identity_soul_block(
         lines.append(
             "- 这个项目到底在做什么，目前没有人写下来。别拿任何一句现成的模板话当用途：先读你自己那棵树，读不出来就问用户一句，他说了你记下来。"
         )
+    # 用户 10-31：「L1 和 L2 干活第一反应都不是统筹，而是自己干活」。北星 §4 的原话
+    # 是「L2 是统筹者，不是独力干将」——这一句以前只在文档里，围栏里只有「你手上只有
+    # 这一个项目」和「统筹归 L1」，于是一个项目 Agent 读到的岗位是干活的。
+    lines.append(
+        "- **你是这一摊的统筹者，不是独力干将**：拿到一件事先拆开，能派出去的就派——"
+        "整理文件、查网页、操作软件/电脑这类活优先交给即用即丢的专家（`delegate_task`"
+        " 的 expert 填 file / browser / software / computer）；你手上若还给了外包口"
+        "（把活交给本机别的 AI 软件），也优先外包。你自己做的是判断、拆解、验收、"
+        "把结果收成一句人话。工具没给或专家起不来，就如实说一句「这个我现在做不了」，"
+        "再退回自己扛——不要一声不响全自己干。"
+    )
     lines += [
         "- 你的长期记忆是**本机唯一的那一份共享账本**：别的 Agent 也往同一本里写，每条带「哪个项目」的标签。账本只记发生过什么——**「我是谁」不看账本，看这份文件**。",
         "- 你带着这个项目自己那条「现在」（裁定 44：同一时刻只有一条现在）。用户问「你在忙什么 / 上次推到哪了」，你要答得上来；答不上就说不记得，不要拿别的项目的进度顶。",
         "- **职责不是从共享记忆里挑一个来当**。账本里写着别人的分工——比如总秘书那套「架构 + 验证 + 文档 + 测试 + 小修」——那是他的岗位，不是你的。上面没写你的职责，就照项目归属说话；说不准就问用户一句，不要自己认领一个头衔。",
-        "- 你**不是**本机 Plobi 总秘书（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）；不要转述调度器的角色，不要替别的项目作答，也不要自称总秘书。",
+        "- 你**不是**本机 Plobi 总秘书（L1），**不是** 通道模型的名字、**不是** 通用 chatbot、**不是** Cursor / Claude Code 这种 GUI 工具里钻的工具人。跨项目的派工、日程入口、跨项目统筹归 L1（裁定 44：一嘴一个 Agent）——**本项目内部的统筹是你自己的**；不要转述调度器的角色，不要替别的项目作答，也不要自称总秘书。",
     ]
     if persona_written:
         lines.append(
@@ -4602,6 +4613,34 @@ def _apply_l1_secretary_config(config: dict) -> bool:
     return changed
 
 
+def refresh_l2_identity_souls() -> int:
+    """按**当前**契约重渲染名册里每个未归档 L2 的身份围栏，返回改写了几份。
+
+    身份块只在 ``spawn()`` 时落盘（:func:`ensure_l2_identity_soul`），所以契约
+    改版以后，已经在盘上的分身不会自己更新。桌面 / 网关每次启动过一遍，新契约
+    才不会只对以后新建的 Agent 生效（用户 10-31：「L1 和 L2 干活第一反应都不是
+    统筹，而是自己干活」——改的正是这段围栏）。只动围栏以内：围栏外人写的人设
+    一个字不碰，内容没变就不写盘（幂等）。
+    """
+    try:
+        registry = load_registry()
+    except Exception as exc:
+        logger.debug("plobi: L2 identity refresh skipped (registry): %s", exc)
+        return 0
+    updated = 0
+    for entry in list(registry.agents.values()):
+        if entry.archived:
+            continue
+        try:
+            if ensure_l2_identity_soul(entry):
+                updated += 1
+        except Exception as exc:
+            logger.debug(
+                "plobi: L2 identity refresh skipped for %s: %s", entry.name, exc
+            )
+    return updated
+
+
 def ensure_l1_secretary_form() -> bool:
     """Give the **default profile** its L1 secretary shape, inside its own home.
 
@@ -4613,6 +4652,11 @@ def ensure_l1_secretary_form() -> bool:
     is exactly what was measured. Never creates a profile (裁定 6: L1 *is* the
     default profile, not a ``master`` one), never writes outside a home that
     already exists, and returns False once the shape is in place.
+
+    It also refreshes every L2 identity fence (:func:`refresh_l2_identity_souls`)
+    for the same reason one level down: those fences are written at spawn time,
+    so a contract change would otherwise never reach an agent that already
+    exists.
     """
     from plobi_cli.config import load_config, save_config
     from plobi_cli.profiles import get_active_profile_name
@@ -4628,7 +4672,8 @@ def ensure_l1_secretary_form() -> bool:
     changed = _apply_l1_secretary_config(config)
     if changed:
         save_config(config)
-    return ensure_l1_secretary_routing_soul() or changed
+    refreshed = refresh_l2_identity_souls()
+    return ensure_l1_secretary_routing_soul() or changed or refreshed > 0
 
 
 def ensure_north_star_toolset(*, save: bool = True) -> dict:

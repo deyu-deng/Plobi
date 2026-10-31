@@ -130,3 +130,42 @@ def test_a_chinese_agent_name_still_gets_a_safe_filename(soul_home):
     path = shared_soul_path_for("电工电子学")
     assert path.is_file(), path
     assert path.name == "proj-bbd45c368645.md" or path.name.startswith("proj-")
+
+
+def test_boot_refresh_rewrites_old_fences_without_touching_the_persona(
+    soul_home, tmp_path, monkeypatch
+):
+    """契约改版后，已经在盘上的分身不会自己更新（身份只在 spawn 时落盘）。
+
+    用户 10-31 报「L2 第一反应也是自己干活」，改的是身份围栏；若只有新建的
+    Agent 吃到新契约，24 个老分身照旧——所以启动要过一遍。判据：旧围栏整段换成
+    新版，围栏外的人设一个字不动，第二遍不再写盘。
+    """
+    from plobi.agents.registry import (
+        L2_SOUL_BEGIN,
+        L2_SOUL_END,
+        refresh_l2_identity_souls,
+    )
+
+    roster = tmp_path / "projects.yaml"
+    roster.write_text(
+        "version: 1\nagents:\n  Stithy:\n    role: l2_project\n    category: projects\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PLOBI_PROJECTS_CONFIG", str(roster))
+
+    path = shared_soul_path_for("Stithy")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    persona = "- 说话短，先给结论。"
+    path.write_text(
+        f"{persona}\n\n{L2_SOUL_BEGIN}\n## 旧版身份段\n"
+        f"- 派工、日程入口、跨项目统筹归 L1。\n{L2_SOUL_END}\n",
+        encoding="utf-8",
+    )
+
+    assert refresh_l2_identity_souls() == 1
+    text = path.read_text(encoding="utf-8")
+    assert persona in text
+    assert "旧版身份段" not in text
+    assert "统筹者" in text
+    assert refresh_l2_identity_souls() == 0

@@ -225,3 +225,21 @@ def test_the_dispatch_section_feeds_no_hierarchy_back_to_the_model():
     assert "分身" not in s
     assert "同级" in s and "只有**类型**不同" in s
     assert "L2 Agent" in s
+
+
+def test_dispatch_is_the_default_action_and_the_temp_worker_has_a_ceiling():
+    """用户 10-31 又报一次：「L1 和 L2 干活第一反应都不是统筹，而是自己干活」。
+
+    10-15 的原话是「你总是不派工。总是自己做事」。清单只能说明「哪三类必须派」，
+    却没说「剩下的默认也先派」——模型于是把「自己动」当成第一反应。判据三条：
+    ① 这一节开头就把「有活先派」立成默认，自办只是派不出去时的兜底；
+    ② 派工的两条腿都点名（`say` 交待去做、`ask` 现在就要回答）；
+    ③ `delegate_task` 被写成「没有对应手下时才开的临时工」——有主人的活不许拿它顶替。
+    """
+    s = _dispatch_section()
+
+    assert "有活先派" in s
+    assert "兜底" in s
+    assert "`say`" in s and "`ask`" in s
+    assert "没有对应手下时才" in s
+    assert "临时工" in s
