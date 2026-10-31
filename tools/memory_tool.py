@@ -1910,33 +1910,12 @@ MEMORY_WRITE_SCHEMA = {
 MEMORY_SCHEMA = {
     "name": "memory",
     "description": (
-        "Save durable facts to persistent memory that survive across sessions. Memory is "
-        "injected into every future turn, so keep entries compact and high-signal.\n\n"
-        "HOW: make ALL your changes in ONE call via an 'operations' array (each item: "
-        "{action, content?, old_text?}). The batch applies atomically and the char limit is "
-        "checked only on the FINAL result — so a single call can remove/replace stale entries "
-        "to free room AND add new ones, even when an add alone would overflow. The response "
-        "reports current/limit chars and confirms completion; one batch call finishes the "
-        "update, so don't repeat it. Use the bare action/content/old_text fields only for a "
-        "single lone change.\n\n"
-        "WHEN: save proactively when the user states a preference, correction, or personal "
-        "detail, or you learn a stable fact about their environment, conventions, or workflow. "
-        "Priority: user preferences & corrections > environment facts > procedures. The best "
-        "memory stops the user repeating themselves.\n\n"
-        "IF FULL: an add is rejected with the current entries shown. Reissue as ONE batch that "
-        "removes or shortens enough stale entries and adds the new one together.\n\n"
-        "TARGETS: 'memory' = this agent's own notes (environment, conventions, tool quirks, "
-        "lessons) — the default, and where writes land unless a fact holds for every agent. "
-        "'user' = who the user is (name, role, preferences, style), one copy shared by every "
-        "agent. 'status' = a few lines on where you are right now; only the L1 secretary reads "
-        "those, as a digest. 'global' = the one layer every agent reads; writing it stages the "
-        "change for approval and leaves the file untouched until a person nods.\n\n"
-        "SOURCE: on every add/replace, pass 'source' = the relative path of the page a person "
-        "can read (under vault/ or mind/) plus its date. Memory is a bounded index, not a "
-        "warehouse; the pointer is what keeps 2200 chars enough.\n\n"
-        "SKIP: trivial/obvious info, easily re-discovered facts, raw data dumps, task progress, "
-        "completed-work logs, temporary TODO state (use session_search for those). Reusable "
-        "procedures belong in a skill, not memory."
+        "Legacy single-call alias over the SAME store as `memory_read` / `memory_write` — "
+        "prefer those two atoms. Four locations: 'memory' = this agent's own notes (default), "
+        "'user' = who the person is (one shared copy), 'status' = a few lines of current state "
+        "that only L1 reads, 'global' = the layer every agent reads (writing it stages a change "
+        "for approval). What belongs in memory — and what to leave out — is in the memory "
+        "guidance, not here."
     ),
     "parameters": {
         "type": "object",
@@ -1944,12 +1923,12 @@ MEMORY_SCHEMA = {
             "action": {
                 "type": "string",
                 "enum": ["add", "replace", "remove"],
-                "description": "The action to perform (single-op shape). Omit when using 'operations'."
+                "description": "Single-op action. Omit when using 'operations'."
             },
             "target": {
                 "type": "string",
                 "enum": ["memory", "user", "status", "global"],
-                "description": "Which memory scope to write: 'memory' this agent's own notes, 'user' the shared user profile, 'status' a few lines of current state that only L1 reads, 'global' the layer every agent reads (that location's rule is approval, so the write is staged rather than applied)."
+                "description": "Which of the four locations to write. Default 'memory'."
             },
             "content": {
                 "type": "string",
@@ -1957,7 +1936,7 @@ MEMORY_SCHEMA = {
             },
             "source": {
                 "type": "string",
-                "description": "Provenance pointer for add/replace: a relative path under vault/ or mind/ that a human can read, with its date (e.g. 'vault/projects/Plobi/plan.md 2026-10-19'). Memory stays small because it points at the page instead of storing it."
+                "description": "Provenance pointer for add/replace: a relative path under vault/ or mind/ with its date, e.g. 'vault/projects/Plobi/plan.md 2026-10-19'."
             },
             "old_text": {
                 "type": "string",
@@ -1966,9 +1945,8 @@ MEMORY_SCHEMA = {
             "operations": {
                 "type": "array",
                 "description": (
-                    "Batch shape: a list of operations applied atomically in one call "
-                    "against the final char budget. Preferred when making multiple changes "
-                    "or consolidating to make room. Each item is {action, content?, old_text?}."
+                    "Batch shape, applied atomically against the final char budget: "
+                    "[{action, content?, old_text?}]."
                 ),
                 "items": {
                     "type": "object",

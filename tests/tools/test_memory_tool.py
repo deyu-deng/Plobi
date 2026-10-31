@@ -26,15 +26,28 @@ def _own_memory_file(root):
 # =========================================================================
 
 class TestMemorySchema:
+    """The model sees ONE memory surface: the atoms carry the protocol, the guidance
+    carries the judgment. WP-MEMORY-LAYERING（2026-10-31 收固定前缀）: 同一件事不许
+    在两把手上各写一遍——每轮都付的字数就是这么攒出来的。
+    """
+
     def test_discourages_diary_style_task_logs(self):
-        description = MEMORY_SCHEMA["description"].lower()
+        from agent.prompt_builder import MEMORY_GUIDANCE
+
+        surface = (MEMORY_SCHEMA["description"] + "\n" + MEMORY_GUIDANCE).lower()
         # Intent (not exact phrasing): discourage saving task progress / logs,
         # and point the model at session_search for those instead.
-        assert "task progress" in description
-        assert "session_search" in description
-        assert "like a diary" not in description
-        assert "todo state" in description
-        assert ">80%" not in description
+        assert "task progress" in surface
+        assert "session_search" in surface
+        assert "like a diary" not in surface
+        assert "todo state" in surface
+        assert ">80%" not in surface
+
+    def test_legacy_hand_points_at_the_atoms(self):
+        """上游那把 `memory` 留在可用面，但它自己要说清「优先用那两枚原子」。"""
+        description = MEMORY_SCHEMA["description"]
+        assert "memory_read" in description and "memory_write" in description
+        assert "SAME store" in description
 
 
 # =========================================================================

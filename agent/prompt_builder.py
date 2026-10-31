@@ -149,8 +149,10 @@ PLOBI_AGENT_HELP_GUIDANCE = (
 )
 
 MEMORY_GUIDANCE = (
-    "You have persistent memory across sessions. Save durable facts using the memory "
-    "tool: user preferences, environment details, tool quirks, and stable conventions. "
+    "You have persistent memory across sessions, held in four locations, and the interface "
+    "is the pair `memory_read` then `memory_write`: read the location, send back the edited "
+    "list. Save durable facts: user preferences, environment details, tool quirks, and stable "
+    "conventions. "
     "Memory is injected into every turn, so keep it compact and focused on facts that "
     "will still matter later.\n"
     "Prioritize what reduces future user steering — the most valuable memory is one "
