@@ -182,8 +182,13 @@ class Session:
         self.cosy_key = base64.b64encode(wrapped).decode("ascii")
 
         identity = _sorted_compact(account.identity_fields()).encode("utf-8")
-        padder = len(identity) % 16 or 16
-        padded = identity + bytes([padder]) * padder
+        # PKCS#7: pad with (16 - len % 16) bytes, a full block when the length already
+        # divides. The first port had this inverted (`len % 16 or 16`), which happened to
+        # land on a multiple of 16 for the identity measured that evening and raised
+        # "not a multiple of the block length" for every other name length - e.g. a label
+        # of "Qoder" (measured 2026-10-31, when the shipped leg first built a session).
+        pad = 16 - (len(identity) % 16)
+        padded = identity + bytes([pad]) * pad
         encryptor = Cipher(algorithms.AES(self._temp_key), modes.CBC(self._temp_key)).encryptor()
         self.info = base64.b64encode(encryptor.update(padded) + encryptor.finalize()).decode("ascii")
 

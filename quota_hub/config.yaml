@@ -186,14 +186,12 @@ providers:
   # 由 `session/new` 实时自报，支持 `session/set_model` 动态切模型。
   qoder:
     enabled: true
-    transport: acp
-    binary: qodercli
-    acp_args: ["--acp", "--strict-mcp-config"]
     display_name: Qoder
     model_prefix: qoder
+    # 10-31：换成它自己那扇签名的门（设备码登录 + COSY 签名 SSE，一个回合 1.0 s 回
+    # tool_calls）。ACP 那条要回来只要加一行 `transport: acp`——registry 先看这行再看类表。
     timeout: 300
-    probe_timeout: 20
-    login_args: ["login"]
+    stream_idle_seconds: 90
 
   # CodeBuddy 订阅的 HTTP 口：`POST /v2/chat/completions`，OpenAI 形状，**带工具**。
   # 2026-10-11 那把桥接的是 agy（Google）；这条是用户 10-12 拍的第二条订阅口——

@@ -149,3 +149,27 @@ def test_payload_carries_the_five_fields_in_order():
     assert list(payload) == sorted(["cosyVersion", "ideVersion", "info", "requestId", "version"])
     assert payload["cosyVersion"] == COSY_VERSION and payload["version"] == "v1"
     assert payload["requestId"] == "req-9" and payload["info"] == session.info
+
+
+def test_the_identity_block_is_always_padded_to_a_full_aes_block():
+    """The measured shape, not a fixture that happens to land on 16.
+
+    A name of "Qoder" broke the first port: `len % 16 or 16` is not PKCS#7, so only the
+    one identity length that already divided evenly produced a usable session. The pad
+    lives inside the ciphertext, so the check is a real round trip.
+    """
+    import base64 as _b64
+
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    key = b"0123456789abcdef"
+    for length in range(0, 41):
+        account = Account(uid="u" * 8, name="N" * length, access_token="tok")
+        session = Session(account, temp_key=key.decode())
+        raw = _b64.b64decode(session.info)
+        assert len(raw) % 16 == 0, (length, len(raw))
+        decryptor = Cipher(algorithms.AES(key), modes.CBC(key)).decryptor()
+        plain = decryptor.update(raw) + decryptor.finalize()
+        pad = plain[-1]
+        assert 1 <= pad <= 16 and plain[-pad:] == bytes([pad]) * pad, (length, pad)
+        assert plain[:-pad].decode("utf-8").startswith('{"aid":'), (length, plain[:24])
