@@ -97,6 +97,12 @@ def _switch(args: argparse.Namespace) -> int:
     breath: 配了不生效 is the failure this whole surface was built to make impossible, so a
     switch that only edited a file would be a lie with extra steps (裁定 94 — the same
     reading the pane gets, from :mod:`agent.egress.status`).
+
+    The write + supervision + **rollback-on-refusal** live in
+    :func:`plobi_cli.egress_config.switch_and_supervise` rather than here: the pane does
+    the same three steps in the same order, and a refused TUN that stopped the engine
+    while the table still claimed it is exactly the 整机没网 shape this line exists to
+    prevent.  One action, one implementation.
     """
     from agent.egress.rules import load_table
     from agent.egress.switch import read as read_switch
@@ -110,34 +116,13 @@ def _switch(args: argparse.Namespace) -> int:
         print(" ".join(f"{k}={v}" for k, v in read_switch(load_table(force_reload=True)).items()))
         return 0
 
-    from plobi_cli.egress_config import apply_switch
+    from plobi_cli.egress_config import switch_and_supervise
 
-    ok, issues = apply_switch(transport=transport, mode=mode, exit_to=exit_to, allow_foreign=allow_foreign)
-    if not ok:
-        for line in issues:
-            print(f"表没写进去：{line}")
-        return 1
-
-    table = load_table(force_reload=True)
-    print(" ".join(f"{k}={v}" for k, v in read_switch(table).items()))
-
-    from agent.egress import engine as _engine
-    from agent.egress import system_proxy as _system_proxy
-
-    rc = 0
-    report = _engine.reload_engine(table)
-    for line in report.lines():
+    rc, lines = switch_and_supervise(
+        transport=transport, mode=mode, exit_to=exit_to, allow_foreign=allow_foreign
+    )
+    for line in lines:
         print(line)
-    if report.state not in (_engine.OFF, _engine.OURS, _engine.STOPPED):
-        rc = 1
-    plan = _system_proxy.ensure(table)
-    if plan is None:
-        print("system proxy: 表里没说要接管，注册表不动")
-    else:
-        for line in plan.lines():
-            print(line)
-        if not plan.ok:
-            rc = 1
     return rc
 
 

@@ -235,6 +235,75 @@ def apply_switch(
     return replace_egress(network)
 
 
+#: Engine states that mean "the machine still has the exit it had a moment ago".
+_SETTLED = ("running-ours", "stopped", "off")
+
+
+def switch_and_supervise(
+    *,
+    transport: str = "",
+    mode: str = "",
+    exit_to: str = "",
+    allow_foreign: bool = False,
+) -> tuple[int, list[str]]:
+    """One carrier switch = one machine action: write, supervise, and **take it back if refused**.
+
+    Why the rollback lives at the write instead of in the caller: measured 11-01, the
+    command-line half of the bottom-bar switch had none, and the shape of the hole is
+    worse than "a setting that did not apply".  :func:`agent.egress.switch.set_transport`
+    turns ``system_proxy.enabled`` off in the same breath as it asks for TUN, and
+    :func:`agent.egress.engine.reload_engine` **stops the running engine before** the TUN
+    guard gets its say — so a refused ``plobi network switch --transport tun`` left the
+    table claiming TUN, the registry proxy handed back to whatever was there before, and
+    nothing listening: 整机没网 while every reading said 已接管 (纸 §37 的形状).
+
+    The pane has rolled this back since §42; two halves of one action may not disagree
+    (裁定 94), so the rule moves to the one place both go through.  A refusal is
+    ``state == failed`` — the same predicate the pane uses; a foreign engine on our port
+    is a different answer (nothing of ours moved) and is reported, not reverted.
+
+    Returns ``(rc, lines)``: the lines are what the CLI prints, ``rc`` is its exit code.
+    """
+    from agent.egress import engine as _engine
+    from agent.egress import switch as _switch
+    from agent.egress import system_proxy as _system_proxy
+
+    def reading(table: Any) -> str:
+        return " ".join(f"{key}={value}" for key, value in _switch.read(table).items())
+
+    before = dict(read_egress().get("network") or {})
+    ok, issues = apply_switch(transport=transport, mode=mode, exit_to=exit_to, allow_foreign=allow_foreign)
+    if not ok:
+        return 1, [f"表没写进去：{line}" for line in issues]
+
+    table = egress.load_table(force_reload=True)
+    lines = [reading(table)]
+    report = _engine.reload_engine(table)
+    lines.extend(report.lines())
+    plan = _system_proxy.ensure(table)
+    if plan is None:
+        lines.append("system proxy: 表里没说要接管，注册表不动")
+    else:
+        lines.extend(plan.lines())
+
+    if report.state != _engine.FAILED:
+        return (0 if (report.state in _SETTLED and (plan is None or plan.ok)) else 1), lines
+
+    #: 引擎没接住这一拨 —— 表和机器一起退回原样，顺序与开机那处一致（先有引擎，再交出口）。
+    lines.append("引擎没接住这一拨，把表和机器退回原样（屏幕与注册表不许停在一个没人执行的声明上）")
+    back_ok, back_issues = replace_egress(before)
+    if not back_ok:
+        lines.append("⚠️ 退回时表写不回去：" + "；".join(back_issues))
+        return 1, lines
+    back_table = egress.load_table(force_reload=True)
+    lines.extend(_engine.reload_engine(back_table).lines())
+    back_plan = _system_proxy.ensure(back_table)
+    if back_plan is not None:
+        lines.extend(back_plan.lines())
+    lines.append("已经是原样：" + reading(back_table))
+    return 1, lines
+
+
 def set_system_proxy(desired: bool) -> tuple[bool, list[str]]:
     """Flip ``network.egress.system_proxy.enabled`` and leave every other key alone.
 

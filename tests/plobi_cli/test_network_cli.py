@@ -224,3 +224,100 @@ def test_choosing_an_exit_reaches_the_parser_not_only_the_file(tmp_path, monkeyp
 
     assert cmd_network(args) == 1
     assert "表没写进去" in capsys.readouterr().out
+
+
+def _refusing_supervision(monkeypatch, *, first_state: str = "failed"):
+    """First supervision pass refuses, the second (the rollback) succeeds.
+
+    The refusal is what the TUN guard really returns on this box (non-admin shell,
+    Tailscale on the machine): `EngineReport(FAILED, "TUN 被守卫拒了：…")` — and
+    `reload_engine` has already stopped the running engine by then.
+    """
+    from agent.egress import engine as _engine
+    from agent.egress import system_proxy as _system_proxy
+
+    seen: list[tuple[str, str]] = []
+
+    class _Report:
+        def __init__(self, state: str, detail: str):
+            self.state = state
+            self.detail = detail
+
+        def lines(self):
+            return [f"engine: {self.state} — {self.detail}"]
+
+    class _Plan:
+        ok = True
+        reason = "接管了（test）"
+
+        def lines(self):
+            return ["system proxy: test"]
+
+    state = {"n": 0}
+
+    def reload_engine(table=None, **kw):
+        from agent.egress.switch import read as read_switch
+
+        state["n"] += 1
+        seen.append(("engine", str(read_switch(table)["transport"])))
+        if state["n"] == 1:
+            return _Report(first_state, "TUN 被守卫拒了：这个进程不是管理员")
+        return _Report(_engine.OURS, "engine reloaded (test)")
+
+    def ensure(table=None, **kw):
+        from agent.egress.switch import read as read_switch
+
+        seen.append(("proxy", str(read_switch(table)["transport"])))
+        return _Plan()
+
+    monkeypatch.setattr(_engine, "reload_engine", reload_engine)
+    monkeypatch.setattr(_system_proxy, "ensure", ensure)
+    return seen
+
+
+def test_a_refused_tun_puts_the_table_and_the_machine_back(tmp_path, monkeypatch, capsys):
+    """被守卫拒掉的那一拨不许留在表里：引擎已经停了，注册表也交还了。
+
+    Reproduced shape (11-01): `set_transport("tun")` writes `system_proxy.enabled: false`
+    in the same breath, and `reload_engine` stops our engine **before** the guard refuses —
+    so without this rollback the command line left the machine with no engine, no system
+    proxy and a table claiming TUN. The pane has done this since §42; the CLI did not.
+    """
+    from plobi_cli import egress_config
+
+    _home(tmp_path, monkeypatch, _SWITCH_TABLE)
+    seen = _refusing_supervision(monkeypatch)
+    args = _SwitchArgs()
+    args.transport = "tun"
+
+    assert cmd_network(args) == 1
+    said = capsys.readouterr().out
+    assert "退回原样" in said, said
+    #: 拨出去 → 退回：两次都交给监督，退回那一次读的必须是**旧的**那份表。
+    assert seen == [("engine", "tun"), ("proxy", "tun"), ("engine", "system"), ("proxy", "system")], seen
+
+    egress_config.read_egress()
+    saved = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    assert "PlobiTun" not in saved or "enabled: false" in saved.split("tun:")[1].split("system_proxy")[0], saved
+    assert "enabled: true" in saved.split("system_proxy")[1], "系统代理要交还回来，否则整机没出口"
+    assert egress_config.read_egress()["network"]["egress"]["nodes"], "退回也不许把成员抹掉"
+
+
+def test_a_foreign_engine_is_reported_not_reverted(tmp_path, monkeypatch, capsys):
+    """别人占着端口时我们的声明没有生效，但**我们什么都没动** —— 那是另一个答案。
+
+    Same predicate the pane uses (`state == failed`): a foreign engine on our port is not
+    a refusal of this write, so the table keeps what the user asked for and the reading
+    says why nothing moved.
+    """
+    _home(tmp_path, monkeypatch, _SWITCH_TABLE)
+    _refusing_supervision(monkeypatch, first_state="running-foreign")
+    args = _SwitchArgs()
+    args.transport = "tun"
+
+    assert cmd_network(args) == 1
+    said = capsys.readouterr().out
+    assert "退回原样" not in said, said
+    saved = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    assert "PlobiTun" in saved, saved
+
