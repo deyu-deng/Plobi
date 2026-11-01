@@ -415,7 +415,8 @@ export function EgressRailIcon({ className }: { className?: string }) {
  * 底栏那一格。放在面板自己这一档、由 `useStatusbarItems` 直接摆出去：控制面归这一族，
  * 状态栏只是它挂的地方（被占文件只留一行挂载那条规矩的另一半——逻辑不许散进别人那一档）。
  *
- * 文案硬编中文：i18n 那五档在别的线手上（裁定 77 拦过一次），落那儿的窗口到了再搬。
+ * 文案走 `useI18n().t.settings.network`（11-01 四语目录接回屏幕；`egressRailItem` 的
+ * `title` 由挂载方给，它自己不带句子）。
  */
 export function egressRailItem(title: string): StatusbarItem {
   return {
