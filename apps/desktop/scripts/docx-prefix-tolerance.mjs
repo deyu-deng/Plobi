@@ -33,7 +33,18 @@ function standardPrefixByUri() {
     'http://schemas.openxmlformats.org/drawingml/2006/picture': 'pic',
     'http://schemas.microsoft.com/office/drawing/2010/main': 'a14',
     'http://schemas.microsoft.com/office/word/2010/wordml': 'w14',
-    'http://schemas.microsoft.com/office/word/2012/wordml': 'w15'
+    'http://schemas.microsoft.com/office/word/2012/wordml': 'w15',
+    // VML（Word 97 图形，公式编辑器与旧对象都用它）与 Office 扩展命名空间。
+    // 渲染器认 `v:`（4 处）与 `m:`（1 处）；`o:` / `w10:` / `wp14:` 它不看，
+    // 但一并改名保持一致，免得 `mc:Ignorable` 里的清单对不上。
+    'urn:schemas-microsoft-com:vml': 'v',
+    'urn:schemas-microsoft-com:office:office': 'o',
+    'urn:schemas-microsoft-com:office:word': 'w10',
+    'http://schemas.openxmlformats.org/officeDocument/2006/math': 'm',
+    'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing': 'wp14',
+    // 空串 = 这个命名空间在 OOXML 里用**默认命名空间**（.rels 文件就是），
+    // 前缀要整个剥掉而不是改名：`<ns0:Relationships>` → `<Relationships>`。
+    'http://schemas.openxmlformats.org/package/2006/relationships': ''
   }
 }
 
@@ -64,7 +75,12 @@ export function fixDocxPrefixes(text) {
   declared.forEach((uri, prefix) => {
     const want = standard[uri]
 
-    if (!want || want === prefix || declared.has(want)) {
+    if (want === undefined || want === prefix) {
+      return
+    }
+
+    // 目标前缀非空时不能撞车；空串是默认命名空间，没有撞车问题。
+    if (want && declared.has(want)) {
       return
     }
 
@@ -89,6 +105,17 @@ export function fixDocxPrefixes(text) {
     const want = rename.get(old)
     const escaped = old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+    if (want === '') {
+      // 默认命名空间：剥掉前缀，连 xmlns 声明本身也退回无前缀形式。
+      out = out
+        .replace(new RegExp(`xmlns:${escaped}=`, 'g'), 'xmlns=')
+        .replace(new RegExp(`<${escaped}:`, 'g'), '<')
+        .replace(new RegExp(`</${escaped}:`, 'g'), '</')
+        .replace(new RegExp(`\\s${escaped}:`, 'g'), ' ')
+
+      continue
+    }
+
     out = out
       .replace(new RegExp(`xmlns:${escaped}=`, 'g'), `xmlns:${want}=`)
       .replace(new RegExp(`<${escaped}:`, 'g'), `<${want}:`)
@@ -110,7 +137,9 @@ export function normalizeDocxZip(zip) {
       !entry ||
       typeof entry.async !== 'function' ||
       typeof name !== 'string' ||
-      !/^word\/.*\.xml$/iu.test(name)
+      // `.rels` 也要管：`word/_rels/document.xml.rels` 里同样是非标准前缀，
+      // 而它决定 `r:embed` / `r:id` 能不能解析出图片——漏了它图片就全挂。
+      !/\.(xml|rels)$/iu.test(name)
     ) {
       return entry
     }
