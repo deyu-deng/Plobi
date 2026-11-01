@@ -1,27 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { NetworkEgressBlock, NetworkEgressRecord, NetworkStatusSystemProxy } from '@/types/plobi'
+import type { NetworkEgressBlock, NetworkEgressRecord } from '@/types/plobi'
 
-import { appliedNote, buildSection, mergeByName, proxyStateText, toGroupRows, toNodeRows } from './network-settings'
+import { appliedNote, buildSection, mergeByName, toGroupRows, toNodeRows } from './network-settings'
 
 const record = (egress: NetworkEgressBlock | null): NetworkEgressRecord =>
   ({ declared: true, network: { egress: egress ?? undefined } }) as NetworkEgressRecord
-
-const COPY = {
-  proxyDeclaredNotApplied: 'declared-but-not-ours',
-  proxyNotOurs: 'not-taken-over',
-  proxyOurs: 'we-hold-it',
-  proxyUnsupported: 'windows-only'
-}
-
-const proxy = (over: Partial<NetworkStatusSystemProxy>): NetworkStatusSystemProxy => ({
-  backup_exists: false,
-  declared: false,
-  ours: false,
-  pac_path: 'D:/plobi/plobi-egress.pac',
-  supported: true,
-  ...over
-})
 
 describe('buildSection', () => {
   it('drops pieces the user left blank instead of writing empty containers', () => {
@@ -110,24 +94,6 @@ describe('buildSection', () => {
     expect(section.egress?.proxies).toBeUndefined()
     expect(section.egress?.rules).toBeUndefined()
   })
-
-describe('proxyStateText', () => {
-  it('keeps the intent and the registry as two different sentences', () => {
-    expect(proxyStateText(COPY, proxy({ declared: true, ours: true }))).toBe('we-hold-it')
-    // The state this whole slice worries about: the table asks for the takeover and
-    // the machine does not show it. Saying "on" here would be the optimistic lie.
-    expect(proxyStateText(COPY, proxy({ declared: true, ours: false }))).toBe('declared-but-not-ours')
-    expect(proxyStateText(COPY, proxy({ declared: false, ours: false }))).toBe('not-taken-over')
-  })
-
-  it('never claims a takeover on a platform that cannot do it', () => {
-    expect(proxyStateText(COPY, proxy({ declared: true, ours: true, supported: false }))).toBe('windows-only')
-  })
-
-  it('says nothing rather than "off" when the reading is missing', () => {
-    expect(proxyStateText(COPY, undefined)).toBe('')
-  })
-})
 
 describe('appliedNote', () => {
   it('says what supervision did, in the backend\'s own words', () => {

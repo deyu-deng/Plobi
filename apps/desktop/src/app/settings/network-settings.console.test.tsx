@@ -6,6 +6,7 @@ const getNetworkImportClients = vi.fn()
 const getNetworkStatus = vi.fn()
 const getNetworkSubscription = vi.fn()
 const importNetworkSubscription = vi.fn()
+const saveNetworkEgress = vi.fn()
 
 vi.mock('@/plobi', () => ({
   getNetworkEgress: () => getNetworkEgress(),
@@ -14,11 +15,13 @@ vi.mock('@/plobi', () => ({
   getNetworkSubscription: () => getNetworkSubscription(),
   importNetworkPool: vi.fn(),
   importNetworkSubscription: (input: unknown) => importNetworkSubscription(input),
-  saveNetworkEgress: vi.fn(),
+  saveNetworkEgress: (section: unknown) => saveNetworkEgress(section),
   setNetworkSystemProxy: vi.fn()
 }))
 
 import { NetworkSettings } from './network-settings'
+
+const LONG = '🇺🇲 美国W01 | IEPL | x1.5'
 
 const RECORD = {
   declared: true,
@@ -31,7 +34,7 @@ const RECORD = {
       },
       nodes: {
         '🇭🇰 香港W01': { type: 'ss', server: 'hk.example', port: 1 },
-        '🇯🇵 日本W01': { type: 'ss', server: 'jp.example', port: 1 }
+        [LONG]: { type: 'ss', server: 'us.example', port: 1 }
       },
       rules: [
         { match: 'geosite:cn', via: 'direct' },
@@ -42,7 +45,7 @@ const RECORD = {
   }
 }
 
-//: 故意只给最少字段：后端少一个键就把整屏炸掉过一次（`status.rules.find`），这条钉住那处防御。
+//: 故意只给最少字段：后端少一个键就把整屏炸掉过一次（`status.rules.find`），这条继续钉那处防御。
 const STATUS = {
   engine: {
     detail: 'started by Plobi',
@@ -50,13 +53,7 @@ const STATUS = {
     probe: '204 via http://127.0.0.1:7895',
     state: 'running-ours'
   },
-  system_proxy: {
-    backup_exists: true,
-    declared: true,
-    ours: true,
-    pac_path: 'D:/plobi/plobi-egress.pac',
-    supported: true
-  }
+  system_proxy: { backup_exists: true, declared: true, ours: true, supported: true }
 }
 
 beforeEach(() => {
@@ -65,6 +62,7 @@ beforeEach(() => {
   getNetworkImportClients.mockResolvedValue({ clients: [] })
   getNetworkSubscription.mockResolvedValue({ saved: true })
   importNetworkSubscription.mockResolvedValue({ groups: {}, nodes: {}, notes: [], ok: true })
+  saveNetworkEgress.mockResolvedValue({ engine: { detail: 'ok', state: 'running-ours' }, ok: true })
 })
 
 afterEach(() => {
@@ -72,45 +70,43 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('代理（VPN）那一屏的简约控制台', () => {
-  it('把兜底规则指的出口摆在正面，点一个成员就换过去（不点保存不写盘）', async () => {
+//: 用户 11-01 第 1、2 条把这屏改成了**只剩编辑**：导入成员 + 配规则。
+//: 开关、选节点、TUN/系统代理全搬进左下底栏那枚图标点出来的面板（那两屏由 `egress-panel.test.tsx` 判）。
+describe('设置里那一屏只剩编辑', () => {
+  it('控制按键不在这一屏：没有载体开关、没有默认出口卡、没有模式分段', async () => {
     render(<NetworkSettings />)
+    await waitFor(() => expect(screen.getByDisplayValue(LONG)).toBeTruthy())
 
-    // 兜底规则 `* → proxy:POOL` ⇒ 卡上就该写着 POOL
-    await waitFor(() => expect(screen.getByText('当前默认出口')).toBeTruthy())
-    expect(screen.getByText('POOL', { selector: 'span' })).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: '🇯🇵 日本W01' }))
-
-    expect(screen.getByText('🇯🇵 日本W01', { selector: 'span' })).toBeTruthy()
-    expect(screen.queryByText('POOL', { selector: 'span' })).toBeNull()
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(screen.queryByText('当前默认出口')).toBeNull()
+    expect(screen.queryByRole('button', { name: '全部走代理' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '按规则' })).toBeNull()
+    // 那排读数（引擎/成员/组/规则/接管）也走了：状态由底栏图标的颜色说，句子留在屏上正是"太多文字"。
+    expect(screen.queryByText(/running-ours ·/)).toBeNull()
   })
 
-  it('「全部走代理」把 geosite:cn 那条直连摘掉，「按规则」再补回来', async () => {
+  it('后端少给一格也不炸屏，且不许冒出半截句子', async () => {
     render(<NetworkSettings />)
-    await waitFor(() => expect(screen.getByText('当前默认出口')).toBeTruthy())
+    await waitFor(() => expect(screen.getByDisplayValue('geosite:cn')).toBeTruthy())
 
-    expect(screen.getByDisplayValue('geosite:cn')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: '全部走代理' }))
-    expect(screen.queryByDisplayValue('geosite:cn')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: '按规则' }))
-    expect(screen.getByDisplayValue('geosite:cn')).toBeTruthy()
+    expect(screen.queryByText(/引擎会判|表达不了/)).toBeNull()
   })
 
-  it('编辑器收在「高级」里，不展开就不占地方', async () => {
+  it('长名字整条在自己的输入框里，不是被裁掉的芯片（用户 11-01「文字信息也被遮挡了」）', async () => {
     render(<NetworkSettings />)
-    await waitFor(() => expect(screen.getByText('当前默认出口')).toBeTruthy())
+    await waitFor(() => expect(screen.getByDisplayValue(LONG)).toBeTruthy())
 
-    const details = screen.getByText('高级：出口 / 规则 / 成员表 / 组 / 导入 / 引擎').closest('details')
-    expect(details).toBeTruthy()
-    expect(details?.open).toBe(false)
+    const input = screen.getByDisplayValue(LONG)
+    expect(input.tagName).toBe('INPUT')
+    expect(screen.getAllByDisplayValue('🇭🇰 香港W01').length).toBeGreaterThan(0)
+    // 旧的形状是 `truncate` + 定高滚动容器：值还在 DOM 里但屏幕上看不见，等于没有这条。
+    expect(input.className).not.toMatch(/truncate/)
+    expect(screen.queryByRole('button', { name: LONG })).toBeNull()
   })
 
-  it('粘贴一段配置也能导入——用户问的第二种方式', async () => {
+  it('粘贴一段配置也能导入——与链接、文件、客户端缓存同一个解析器', async () => {
     render(<NetworkSettings />)
-    await waitFor(() => expect(screen.getByText('当前默认出口')).toBeTruthy())
+    await waitFor(() => expect(screen.getByDisplayValue(LONG)).toBeTruthy())
 
     const pasted = ['proxies:', '  - {name: a, type: ss, server: x.example, port: 1}'].join('\n')
     fireEvent.change(screen.getByPlaceholderText(/粘在这里/), { target: { value: pasted } })
@@ -121,5 +117,15 @@ describe('代理（VPN）那一屏的简约控制台', () => {
         expect.objectContaining({ text: expect.stringContaining('proxies:') })
       )
     )
+  })
+
+  it('没读到表之前保存点不动：空草稿覆盖整张表这件事在这台发生过（10-29）', async () => {
+    getNetworkEgress.mockRejectedValue(new Error('读不到'))
+    render(<NetworkSettings />)
+
+    await waitFor(() => expect(screen.getByText(/先别保存/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /Save|保存/ }))
+
+    expect(saveNetworkEgress).not.toHaveBeenCalled()
   })
 })

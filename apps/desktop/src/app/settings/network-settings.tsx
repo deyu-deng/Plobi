@@ -2,17 +2,15 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { Globe } from '@/lib/icons'
-import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, importNetworkPool, importNetworkSubscription, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
+import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, importNetworkPool, importNetworkSubscription, saveNetworkEgress } from '@/plobi'
 import type {
   NetworkEgressBlock,
   NetworkEgressRecord,
   NetworkImportClients,
   NetworkSection,
-  NetworkStatus,
-  NetworkStatusSystemProxy
+  NetworkStatus
 } from '@/types/plobi'
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
@@ -208,12 +206,6 @@ export interface EngineAnswer {
   probe?: string
 }
 
-/** The takeover answer, in the backend's words: state, reason, and the lines that
- *  spell out what it wrote (PAC path, the value `off` will hand back). */
-export interface ProxyAnswer extends EngineAnswer {
-  lines?: string[]
-}
-
 /**
  * One line saying what supervision did with the table just saved — the answer to
  * "配了不生效". Words come from the backend verbatim; this pane never re-derives
@@ -228,37 +220,11 @@ export function appliedNote(engineLabel: string, engine?: EngineAnswer): string 
 }
 
 /**
- * What the machine-wide half is actually doing, in four distinct sentences.
+ * 设置里的那一屏：**导入成员 + 配置规则**（用户 11-01 令）。
  *
- * `declared` is the intent (what the table says) and `ours` is the registry — the
- * two disagree whenever a takeover was refused or someone else rewrote the
- * settings underneath us, so the pane must not collapse them into one word. No
- * branch is optimistic: a missing reading says nothing rather than "off".
+ * 开关、选节点、TUN/系统代理都不在这页了——它们在左下底栏那枚图标点出来的面板里
+ * （`@/app/shell/egress-panel`）。这一页只留下会把表改写的编辑动作。
  */
-export function proxyStateText(
-  copy: {
-    proxyDeclaredNotApplied: string
-    proxyNotOurs: string
-    proxyOurs: string
-    proxyUnsupported: string
-  },
-  proxy?: NetworkStatusSystemProxy
-): string {
-  if (!proxy) {
-    return ''
-  }
-
-  if (!proxy.supported) {
-    return copy.proxyUnsupported
-  }
-
-  if (proxy.ours) {
-    return copy.proxyOurs
-  }
-
-  return proxy.declared ? copy.proxyDeclaredNotApplied : copy.proxyNotOurs
-}
-
 export function NetworkSettings() {
   const { t } = useI18n()
   const copy = t.settings.network
@@ -280,8 +246,6 @@ export function NetworkSettings() {
   const [saved, setSaved] = useState(false)
   const [applied, setApplied] = useState('')
   const [saving, setSaving] = useState(false)
-  const [proxyBusy, setProxyBusy] = useState(false)
-  const [proxyAnswer, setProxyAnswer] = useState<ProxyAnswer | null>(null)
   //: Whether the table actually came back. Saving from a draft that never loaded
   //: writes the empty draft over the real table — measured 10-29: the whole table
   //: (46 members, 17 groups, 3 rules) went to `{system_proxy: {enabled: false}}`
@@ -335,25 +299,7 @@ export function NetworkSettings() {
     }
   }
 
-  const setProxy = async (enabled: boolean) => {
-    setProxyBusy(true)
-    setError('')
-
-    try {
-      const result = await setNetworkSystemProxy(enabled)
-
-      setProxyAnswer(result.proxy ?? null)
-      // The switch is a key inside the table, and the editor holds a copy of that
-      // table — reload so the next Save cannot write back the pre-toggle block.
-      await load()
-      setStatus(await getNetworkStatus())
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setProxyBusy(false)
-    }
-  }
-
+  /** 一条规则在这个面上只能被说成"引擎会判"或"孩子那条腿表达不了"——两个都摆出来。 */
   const badgeFor = (match: string) => {
     // 后端少一个键就把整屏炸掉过一次（测试里就是这么喂的）——每一处都当「可能没有」读。
     const rule = (status?.rules ?? []).find((entry) => entry.match === match)
@@ -472,241 +418,20 @@ export function NetworkSettings() {
     ])
   }
 
-  // 简约控制台（用户 10-30：像 ikuuu 那样"一张卡 + 一个宫格"）：
-  // 「默认出口」就是兜底规则指的那个组/节点；「按规则 / 全部走代理」只增删 direct 那几条，
-  // 兜底规则本身不动——它一直是"未匹配的都去哪"，改它等于改整机行为。
-  const catchAll = (() => {
-    const via = rules.length ? rules[rules.length - 1].via : ''
-    return via.startsWith('proxy:') ? via.slice('proxy:'.length) : ''
-  })()
-  const ruleMode: 'rules' | 'global' = rules.some(
-    (row) => row.match.trim() === 'geosite:cn' && row.via === 'direct'
-  )
-    ? 'rules'
-    : 'global'
-
-  const setCatchAll = (target: string) => {
-    const via = `proxy:${target}`
-    if (!rules.length) {
-      setRules([{ match: '*', via }])
-      return
-    }
-    const next = [...rules]
-    next[next.length - 1] = { ...next[next.length - 1], via }
-    setRules(next)
-  }
-
-  const setRuleMode = (mode: 'rules' | 'global') => {
-    const without = rules.filter((row) => row.match.trim() !== 'geosite:cn')
-    if (mode === 'global' || !without.length) {
-      setRules(without)
-      return
-    }
-    const last = without[without.length - 1]
-    setRules([...without.slice(0, -1), { match: 'geosite:cn', via: 'direct' }, last])
-  }
-
   return (
     <SettingsContent>
+      {/* 标题不摆 `engine.state`：`running-ours` 这类机器词不许上屏（用户 10-27 令），
+          而引擎在不在跑已经由底栏那枚图标的颜色和面板上的点说了。 */}
       <div title={copy.intro}>
-        <SectionHeading icon={Globe} meta={status?.engine.state ?? ''} title={copy.title} />
+        <SectionHeading icon={Globe} title={copy.title} />
       </div>
       {!loaded ? (
         <p className="text-sm text-(--ui-text-danger)">读不到当前的出口表：先别保存（保存会把表清空）</p>
       ) : null}
-      <div className={CAPTION}>
-        {[
-          `${copy.engine}: ${status?.engine.state ?? '—'}`,
-          `${copy.nodes}: ${nodes.length}`,
-          `${copy.groups}: ${groups.length}`,
-          `${copy.rules}: ${rules.length}`,
-          `${copy.proxyApplied}: ${status?.system_proxy?.ours ? '✓' : '×'}`
-        ].join('   ·   ')}
-      </div>
-
-      <div className="grid gap-1">
-        <ListRow
-          action={
-            <Switch
-              aria-label={copy.systemProxy}
-              checked={status?.system_proxy?.declared ?? false}
-              disabled={!loaded || !status?.system_proxy?.supported || proxyBusy}
-              onCheckedChange={(on) => void setProxy(on)}
-            />
-          }
-          description={proxyStateText(copy, status?.system_proxy)}
-          title={copy.systemProxy}
-        />
-        {proxyAnswer ? <p className={CAPTION}>{appliedNote(copy.proxyApplied, proxyAnswer)}</p> : null}
-        {(proxyAnswer?.lines ?? []).map((line, index) => (
-          <p className={CAPTION} key={index}>
-            {line}
-          </p>
-        ))}
-      </div>
-
-      {/* 一张卡：现在走哪个出口、引擎在不在、按规则还是全部走代理 */}
-      <div className="grid gap-3 rounded-xl border border-(--stroke-nous) bg-(--ui-chat-bubble-background) p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="grid gap-0.5">
-            <span className={CAPTION}>当前默认出口</span>
-            <span className="text-lg font-semibold">{catchAll || '直连'}</span>
-            <span className={CAPTION}>
-              {copy.engine}: {status?.engine.state ?? '—'}
-              {status?.engine.probe ? ` · ${status.engine.probe}` : ''}
-            </span>
-          </div>
-          <div className="flex shrink-0 overflow-hidden rounded-lg border border-(--stroke-nous) text-sm">
-            {(['rules', 'global'] as const).map((mode) => (
-              <button
-                className={`px-3 py-1.5 ${
-                  ruleMode === mode ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
-                }`}
-                key={mode}
-                onClick={() => setRuleMode(mode)}
-                type="button"
-              >
-                {mode === 'rules' ? '按规则' : '全部走代理'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {groups.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {groups.map((group) => (
-              <button
-                className={`rounded-full border border-(--stroke-nous) px-2.5 py-1 text-xs ${
-                  catchAll === group.name ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
-                }`}
-                key={group.name}
-                onClick={() => setCatchAll(group.name)}
-                type="button"
-              >
-                {group.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {nodes.length ? (
-          <div className="grid max-h-56 grid-cols-2 gap-1.5 overflow-auto sm:grid-cols-3 lg:grid-cols-4">
-            {nodes.map((node) => (
-              <button
-                className={`truncate rounded-lg border border-(--stroke-nous) px-2 py-1.5 text-left text-xs ${
-                  catchAll === node.name ? 'bg-(--theme-primary) text-white' : ''
-                }`}
-                key={node.name}
-                onClick={() => setCatchAll(node.name)}
-                title={node.server}
-                type="button"
-              >
-                {node.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      {/* 其余是"改表"的活，收起来；要动再展开 */}
-      <details className="grid gap-2">
-        <summary className="cursor-pointer text-sm text-(--ui-text-secondary)">
-          高级：出口 / 规则 / 成员表 / 组 / 导入 / 引擎
-        </summary>
-
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">{copy.exits}</h3>
-          {exits.length === 0 ? <p className={CAPTION}>还没有出口：加一条，或从订阅导入</p> : null}
-          <Button onClick={() => setExits([...exits, { name: '', url: '' }])} size="sm" variant="outline">
-            {copy.addExit}
-          </Button>
-        </div>
-        {exits.map((exit, index) => (
-          <div className="flex items-center gap-2" key={index}>
-            <Input
-              className="w-40"
-              onChange={(event) =>
-                setExits(exits.map((row, i) => (i === index ? { ...row, name: event.target.value } : row)))
-              }
-              placeholder={copy.name}
-              value={exit.name}
-            />
-            <Input
-              onChange={(event) =>
-                setExits(exits.map((row, i) => (i === index ? { ...row, url: event.target.value } : row)))
-              }
-              placeholder="http://127.0.0.1:7890"
-              value={exit.url}
-            />
-            <Button onClick={() => setExits(exits.filter((_, i) => i !== index))} size="icon" variant="ghost">
-              ×
-            </Button>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">{copy.rules}</h3>
-          {rules.length === 0 ? <p className={CAPTION}>还没有规则：默认全部直连</p> : null}
-          <Button onClick={() => setRules([...rules, { match: '', via: 'direct' }])} size="sm" variant="outline">
-            {copy.addRule}
-          </Button>
-        </div>
-        {rules.map((rule, index) => {
-          const badge = badgeFor(rule.match)
-          const isLast = index === rules.length - 1
-          return (
-            <div className="grid gap-1" key={index}>
-              <div className="flex items-center gap-2">
-                <Input
-                  onChange={(event) =>
-                    setRules(rules.map((row, i) => (i === index ? { ...row, match: event.target.value } : row)))
-                  }
-                  placeholder={copy.match}
-                  value={rule.match}
-                />
-                <select
-                  className="rounded-md border px-2 py-1 text-sm"
-                  onChange={(event) =>
-                    setRules(rules.map((row, i) => (i === index ? { ...row, via: event.target.value } : row)))
-                  }
-                  value={rule.via}
-                >
-                  <option value="direct">{copy.direct}</option>
-                  {exitNames.map((name) => (
-                    <option key={`p-${name}`} value={`proxy:${name}`}>
-                      {name}
-                    </option>
-                  ))}
-                  {engineNames
-                    .filter((name) => !exitNames.includes(name))
-                    .map((name) => (
-                      <option key={`n-${name}`} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                </select>
-                <Button onClick={() => setRules(rules.filter((_, i) => i !== index))} size="icon" variant="ghost">
-                  ×
-                </Button>
-              </div>
-              {(badge || isLast) && (
-                <p className={CAPTION}>
-                  {isLast && rule.match.trim() !== '*' ? `${copy.catchAll}` : ''}
-                  {badge ? ` · ${badge}` : ''}
-                </p>
-              )}
-            </div>
-          )
-        })}
-      </div>
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">{copy.nodes}</h3>
-          {nodes.length === 0 ? <p className={CAPTION}>还没有成员：用下面的订阅导入</p> : null}
           <Button
             disabled={importing || !poolPath.trim()}
             onClick={() => void importPool()}
@@ -767,55 +492,72 @@ export function NetworkSettings() {
             {note}
           </p>
         ))}
-        {nodes.map((node, index) => (
-          <div className="grid gap-1" key={index}>
-            <div className="flex items-center gap-2">
+
+        {/* 成员一行一条：名字与地址各占一段，**不截断**——长名字（`🇺🇲 美国W01 | IEPL | x1.5`）
+            被裁掉就等于没这条（用户 11-01）。窄的时候整条换到第二行，而不是把字挤没。 */}
+        <div className="grid gap-1.5">
+          {nodes.map((node, index) => (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-(--stroke-nous) px-2 py-1.5" key={index}>
               <Input
-                className="w-36"
+                aria-label={copy.name}
+                className="min-w-40 flex-[2] border-none bg-transparent px-0 focus-visible:ring-0"
                 onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, name: event.target.value } : row)))}
                 placeholder={copy.name}
                 value={node.name}
               />
               <Input
-                className="w-28"
+                aria-label={copy.type}
+                className="w-24 border-none bg-transparent px-0 focus-visible:ring-0"
                 onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, type: event.target.value } : row)))}
                 placeholder={copy.type}
                 value={node.type}
               />
               <Input
+                aria-label={copy.server}
+                className="min-w-32 flex-[3] border-none bg-transparent px-0 focus-visible:ring-0"
                 onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, server: event.target.value } : row)))}
                 placeholder={copy.server}
                 value={node.server}
               />
               <Input
-                className="w-24"
+                aria-label={copy.port}
+                className="w-16 border-none bg-transparent px-0 focus-visible:ring-0"
                 onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, port: event.target.value } : row)))}
                 placeholder={copy.port}
                 value={node.port}
               />
-              <Button onClick={() => setNodes(nodes.filter((_, i) => i !== index))} size="icon" variant="ghost">
+              <Button
+                aria-label={`删除 ${node.name || index + 1}`}
+                onClick={() => setNodes(nodes.filter((_, i) => i !== index))}
+                size="icon"
+                variant="ghost"
+              >
                 ×
               </Button>
+              {node.credKey ? (
+                <Input
+                  aria-label={node.credKey}
+                  className="basis-full border-none bg-transparent px-0 text-xs focus-visible:ring-0"
+                  onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, cred: event.target.value } : row)))}
+                  placeholder={node.credKey}
+                  value={node.cred}
+                />
+              ) : null}
             </div>
-            {node.credKey ? (
-              <Input
-                onChange={(event) => setNodes(nodes.map((row, i) => (i === index ? { ...row, cred: event.target.value } : row)))}
-                placeholder={node.credKey}
-                value={node.cred}
-              />
-            ) : null}
-            {node.credKey ? <p className={CAPTION}>{copy.credEnv}</p> : null}
-          </div>
-        ))}
-        <Button onClick={() => setNodes([...nodes, { cred: '', credKey: 'password_env', name: '', port: '', raw: {}, server: '', type: 'ss' }])} size="sm" variant="outline">
-          {copy.addNode}
-        </Button>
+          ))}
+          <Button
+            onClick={() => setNodes([...nodes, { cred: '', credKey: 'password_env', name: '', port: '', raw: {}, server: '', type: 'ss' }])}
+            size="sm"
+            variant="outline"
+          >
+            {copy.addNode}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">{copy.groups}</h3>
-          {groups.length === 0 ? <p className={CAPTION}>还没有组：规则可以指的地方</p> : null}
           <Button
             onClick={() => setGroups([...groups, { include: '', name: '', raw: {}, type: 'url-test' }])}
             size="sm"
@@ -828,22 +570,25 @@ export function NetworkSettings() {
           <div className="grid gap-1" key={index}>
             <div className="flex items-center gap-2">
               <Input
-                className="w-36"
+                aria-label={copy.name}
+                className="min-w-0 flex-1"
                 onChange={(event) => setGroups(groups.map((row, i) => (i === index ? { ...row, name: event.target.value } : row)))}
                 placeholder={copy.name}
                 value={group.name}
               />
               <Input
+                aria-label={copy.type}
                 className="w-28"
                 onChange={(event) => setGroups(groups.map((row, i) => (i === index ? { ...row, type: event.target.value } : row)))}
                 placeholder={copy.type}
                 value={group.type}
               />
-              <Button onClick={() => setGroups(groups.filter((_, i) => i !== index))} size="icon" variant="ghost">
+              <Button aria-label={`删除 ${group.name || index + 1}`} onClick={() => setGroups(groups.filter((_, i) => i !== index))} size="icon" variant="ghost">
                 ×
               </Button>
             </div>
             <Input
+              aria-label={copy.members}
               onChange={(event) => setGroups(groups.map((row, i) => (i === index ? { ...row, include: event.target.value } : row)))}
               placeholder={copy.members}
               value={group.include}
@@ -852,40 +597,106 @@ export function NetworkSettings() {
         ))}
       </div>
 
-      </details>
-
-      <div className="flex items-center gap-3">
-        <Button disabled={saving || !loaded} onClick={() => void save()}>
-          {saving ? '…' : copy.save}
-        </Button>
-        {saved && !error ? <span className={CAPTION}>{copy.saved}{applied ? ` · ${applied}` : ''}</span> : null}
-        {error ? (
-          <span className="text-sm text-(--ui-text-danger)">
-            {copy.refused}: {error}
-          </span>
-        ) : null}
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">{copy.rules}</h3>
+          <Button onClick={() => setRules([...rules, { match: '', via: 'direct' }])} size="sm" variant="outline">
+            {copy.addRule}
+          </Button>
+        </div>
+        {rules.map((rule, index) => {
+          const badge = badgeFor(rule.match)
+          return (
+            <div className="grid gap-1" key={index}>
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label={copy.match}
+                  className="min-w-0 flex-1"
+                  onChange={(event) =>
+                    setRules(rules.map((row, i) => (i === index ? { ...row, match: event.target.value } : row)))
+                  }
+                  placeholder={copy.match}
+                  value={rule.match}
+                />
+                <select
+                  aria-label={copy.direct}
+                  className="rounded-md border px-2 py-1 text-sm"
+                  onChange={(event) =>
+                    setRules(rules.map((row, i) => (i === index ? { ...row, via: event.target.value } : row)))
+                  }
+                  value={rule.via}
+                >
+                  <option value="direct">{copy.direct}</option>
+                  {exitNames.map((name) => (
+                    <option key={`p-${name}`} value={`proxy:${name}`}>
+                      {name}
+                    </option>
+                  ))}
+                  {engineNames
+                    .filter((name) => !exitNames.includes(name))
+                    .map((name) => (
+                      <option key={`n-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                </select>
+                <Button aria-label={`删除 ${rule.match || index + 1}`} onClick={() => setRules(rules.filter((_, i) => i !== index))} size="icon" variant="ghost">
+                  ×
+                </Button>
+              </div>
+              {badge ? <p className={CAPTION}>{badge}</p> : null}
+            </div>
+          )
+        })}
       </div>
 
-      {status ? (
-        <div className="grid gap-1">
-          <h3 className="text-sm font-medium">{copy.status}</h3>
-          <ListRow
-            description={`${copy.engine}: ${status.engine.state} — ${status.engine.detail}${
-              status.engine.probe ? ` (${status.engine.probe})` : ''
-            }`}
-            title={`127.0.0.1:${status.engine.mixed_port || 0}`}
-          />
-          {(status.engine.notes ?? []).map((note, index) => (
-            <p className={CAPTION} key={index}>
-              {note}
-            </p>
-          ))}
-          {(status.downgrades ?? []).map((entry, index) => (
-            <p className={CAPTION} key={index}>
-              {entry.exit} · {entry.reason}
-            </p>
-          ))}
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">{copy.exits}</h3>
+          <Button onClick={() => setExits([...exits, { name: '', url: '' }])} size="sm" variant="outline">
+            {copy.addExit}
+          </Button>
         </div>
+        {exits.map((exit, index) => (
+          <div className="flex items-center gap-2" key={index}>
+            <Input
+              aria-label={copy.name}
+              className="w-40"
+              onChange={(event) =>
+                setExits(exits.map((row, i) => (i === index ? { ...row, name: event.target.value } : row)))
+              }
+              placeholder={copy.name}
+              value={exit.name}
+            />
+            <Input
+              aria-label="url"
+              className="min-w-0 flex-1"
+              onChange={(event) =>
+                setExits(exits.map((row, i) => (i === index ? { ...row, url: event.target.value } : row)))
+              }
+              placeholder="http://127.0.0.1:7890"
+              value={exit.url}
+            />
+            <Button aria-label={`删除 ${exit.name || index + 1}`} onClick={() => setExits(exits.filter((_, i) => i !== index))} size="icon" variant="ghost">
+              ×
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <ListRow
+        action={
+          <Button disabled={saving || !loaded} onClick={() => void save()}>
+            {saving ? '…' : copy.save}
+          </Button>
+        }
+        description={saved && !error ? `${copy.saved}${applied ? ` · ${applied}` : ''}` : undefined}
+        title={copy.save}
+      />
+      {error ? (
+        <p className="text-sm text-(--ui-text-danger)">
+          {copy.refused}: {error}
+        </p>
       ) : null}
     </SettingsContent>
   )
