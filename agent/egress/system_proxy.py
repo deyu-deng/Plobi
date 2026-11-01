@@ -333,6 +333,38 @@ def enable(table: Optional[Table] = None, *, home: str | Path | None = None, app
     return p
 
 
+def _localhost_port_dead(server: str) -> bool:
+    """True only if ``server`` is a **loopback** ``host:port`` nothing is listening on.
+
+    Used as the fail-safe gate when restoring: handing the machine a loopback proxy
+    whose port is dead reads, from every app's point of view, as "no internet".
+    """
+    raw = (server or "").strip()
+    if not raw:
+        return False
+    if "://" in raw:  # tolerate `http://127.0.0.1:7890`
+        raw = raw.split("://", 1)[1]
+    raw = raw.split(";")[0].strip()  # `http=h:p;https=h:p` — first entry is enough
+    if "=" in raw:
+        raw = raw.split("=", 1)[1].strip()
+    host, sep, port = raw.rpartition(":")
+    if not sep or not port.isdigit():
+        return False
+    host = host.strip().strip("[]").lower()
+    if host not in ("127.0.0.1", "localhost", "::1", ""):
+        return False
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.6)
+    try:
+        return sock.connect_ex((host or "127.0.0.1", int(port))) != 0
+    except OSError:
+        return True
+    finally:
+        sock.close()
+
+
 def disable(*, home: str | Path | None = None) -> tuple[bool, str]:
     """Restore the pre-takeover settings byte for byte, or say why we cannot."""
     if not supported():
@@ -349,7 +381,15 @@ def disable(*, home: str | Path | None = None) -> tuple[bool, str]:
         was = json.loads(backup.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return False, f"备份读不出来（{type(exc).__name__}）：{backup}"
-    _write_registry({k: was.get(k) for k in REG_VALUES if k in was} if was else {k: None for k in REG_VALUES})
+    restore = {k: was.get(k) for k in REG_VALUES if k in was} if was else {k: None for k in REG_VALUES}
+    # Fail-safe (measured 10-31): the saved "before" was often another proxy client's
+    # own ``127.0.0.1:7890`` — long since dead once that client was uninstalled. Restoring
+    # it byte-for-byte would hand the machine a corpse and read as "no internet". If what
+    # we'd put back points at a loopback port nothing listens on, hand back DIRECT instead.
+    if restore.get("ProxyEnable") and _localhost_port_dead(str(restore.get("ProxyServer") or "")):
+        log.warning("system proxy: 备份里的代理 %s 已无监听，改为还原成直连", was.get("ProxyServer"))
+        restore = {"ProxyEnable": 0, "ProxyServer": None}
+    _write_registry(restore)
     _notify_wininet()
     backup.unlink(missing_ok=True)
     _watchdog().stop(home=home)

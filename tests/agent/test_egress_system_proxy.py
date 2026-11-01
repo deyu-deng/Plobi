@@ -326,3 +326,60 @@ def test_ensure_lights_the_engine_before_it_plans_the_takeover(machine, tmp_path
 
     assert calls == ["engine", "enable"], calls
 
+
+
+# ── 交还时那根「尸体」（10-31 实测，11-01 落档）───────────────────────────────
+
+def _closed_loopback_port() -> int:
+    """Bind and release, so the port is provably nobody's for the length of one test."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_a_backup_whose_proxy_is_gone_is_handed_back_as_direct(machine, tmp_path):
+    """备份里那位常常是**上一个 VPN 客户端自己**的 `127.0.0.1:7890`。它卸载了，端口没人听——
+    一字不改地还原，等于把一具尸体交回系统代理：每个读系统代理的应用都报「没网」，
+    而这看起来像是 Plobi 的错。判据：端口现在通不通，不是它以前是谁。"""
+    port = _closed_loopback_port()
+    directory = tmp_path / "egress"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / system_proxy.BACKUP_BASENAME).write_text(
+        json.dumps({"ProxyEnable": 1, "ProxyServer": f"127.0.0.1:{port}"}), encoding="utf-8"
+    )
+
+    ok, detail = system_proxy.disable(home=tmp_path)
+
+    assert ok, detail
+    assert machine["ProxyEnable"] == 0, machine
+    assert "ProxyServer" not in machine, machine
+
+
+def test_a_backup_that_still_carries_traffic_is_restored_byte_for_byte(machine, tmp_path):
+    """反向那一半：活着的代理不许被这条 fail-safe 顺手改掉——那是别人的配置。"""
+    import socket
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    directory = tmp_path / "egress"
+    directory.mkdir(parents=True, exist_ok=True)
+    backup = {"ProxyEnable": 1, "ProxyServer": f"127.0.0.1:{port}"}
+    (directory / system_proxy.BACKUP_BASENAME).write_text(json.dumps(backup), encoding="utf-8")
+    try:
+        ok, detail = system_proxy.disable(home=tmp_path)
+    finally:
+        listener.close()
+
+    assert ok, detail
+    assert machine["ProxyServer"] == f"127.0.0.1:{port}", machine
+
+
+def test_a_remote_proxy_in_the_backup_is_never_second_guessed(machine, tmp_path):
+    """只看 loopback：`http://parent.test:8080` 通不通不是这台机器能当场判的，也不归我们判。"""
+    assert system_proxy._localhost_port_dead("http://parent.test:8080") is False
+    assert system_proxy._localhost_port_dead("") is False
+    assert system_proxy._localhost_port_dead("127.0.0.1:1") is True
