@@ -553,8 +553,11 @@ def test_to_gemini_tools_sanitizes_openai_schema_for_cloudcode_protobuf() -> Non
     assert tags_prop["type"] == "array"
     assert tags_prop["nullable"] is True
 
-    # Also verify _parse_antigravity_models drops internal buckets with no displayName
-    # and legacy 2.5 aliases that point to Gemini 3.5 Flash Lite.
+    # Also verify the parser drops internal buckets and legacy 2.5 aliases that point
+    # to Gemini 3.5 Flash Lite — but NOT a `-tiered` group: measured 2026-11-01, that
+    # is how upstream ships its newest model (`gemini-3.8-flash-tiered`, recommended,
+    # no displayName), and dropping it hid a model the app shows him. The family name
+    # is what we publish and send, because the app resolves the tiers itself.
     catalog = {
         "models": {
             "gemini-2.5-flash": {"displayName": "Gemini 3.5 Flash Lite"},
@@ -568,7 +571,8 @@ def test_to_gemini_tools_sanitizes_openai_schema_for_cloudcode_protobuf() -> Non
         ],
     }
     parsed = _parse_antigravity_models(catalog)
-    assert parsed == ["claude-sonnet-5-5-high", "gemini-3-flash-agent", "gemini-3.5-flash-lite"]
+    assert parsed == ["claude-sonnet-5-5-high", "gemini-3-flash-agent",
+                      "gemini-3.5-flash-lite", "gemini-3.8-flash"], parsed
 
 
 

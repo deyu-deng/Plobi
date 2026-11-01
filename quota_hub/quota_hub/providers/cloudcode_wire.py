@@ -92,9 +92,17 @@ def _parse_antigravity_models(data: object) -> list[str]:
             continue
         low = mid.lower()
         # Drop internal / non-chat models that real clients filter out.
-        if low.startswith(("chat_", "rev19", "tab_")) or low.endswith("-tiered"):
+        if low.startswith(("chat_", "rev19", "tab_")):
             continue
-        if any(s in low for s in ("image", "embedding", "tts")):
+        # A `-tiered` row is NOT an internal bucket. Measured 2026-11-01 on this machine:
+        # the newest Gemini row arrives as `gemini-3.8-flash-tiered` — `recommended: true`,
+        # a 1M window, `supportsThinking`, and no `displayName` at all — and dropping every
+        # `-tiered` id hid a model his Antigravity app shows him. The app resolves a tiered
+        # row into `<family>-low|-medium|-high` (those strings are in its own binary), so the
+        # family name is what we publish and what we send.
+        if low.endswith("-tiered"):
+            mid = mid[: -len("-tiered")]
+        if any(s in mid.lower() for s in ("image", "embedding", "tts")):
             continue
         if mid and mid not in ids:
             ids.append(mid)

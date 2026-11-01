@@ -46,6 +46,14 @@ AGY_MODELS = {
                        "maxTokens": 1048576, "maxOutputTokens": 65536},
     "gemini-2.5-pro": {"displayName": "Gemini 2.5 Pro", "supportsThinking": True,
                        "maxTokens": 1048576, "maxOutputTokens": 65536},
+    # Measured 2026-11-01: the newest Gemini row arrives as a *tiered group* — no
+    # displayName, `recommended: true`, a 1M window — and the app resolves it into
+    # `gemini-3.8-flash-low|-medium|-high` out of its own binary. Dropping every
+    # `-tiered` id is what hid the model he could see in Antigravity.
+    "gemini-3.8-flash-tiered": {"supportsImages": True, "supportsThinking": True,
+                                "thinkingBudget": -1, "minThinkingBudget": 32,
+                                "recommended": True, "maxTokens": 1048576,
+                                "maxOutputTokens": 65536},
 }
 AGY_ORDER = list(AGY_MODELS)
 
@@ -143,10 +151,17 @@ def test_the_three_thinking_levels_publish_as_one_model():
     acc = _account(prov)
     published = asyncio.run(prov.refresh_models(acc))
 
-    assert published == ["claude-opus-5-5", "gpt-oss-120b-medium", "gemini-3-flash", "gemini-2.5-pro"], published
+    # `published` is the wire-side family list; the names below are what we publish.
+    assert published == ["claude-opus-5-5", "gpt-oss-120b-medium", "gemini-3-flash",
+                         "gemini-2.5-pro", "gemini-3.8-flash"], published
     assert prov.served_models == (
-        "antigravity/claude-opus-5-5", "antigravity/gpt-oss-120b-medium",
-        "antigravity/gemini-3-flash", "antigravity/gemini-2.5-pro"), prov.served_models
+        "antigravity/claude-opus-5-5", "antigravity/gpt-oss-120b",
+        "antigravity/gemini-3-flash", "antigravity/gemini-2.5-pro",
+        "antigravity/gemini-3.8-flash"), prov.served_models
+    # The name we publish is the vendor's `displayName`; the wire id behind it stays
+    # upstream's own — including the tier a single-level row ships with.
+    assert prov.MODEL_MAP["antigravity/gpt-oss-120b"] == "gpt-oss-120b-medium", prov.MODEL_MAP
+    assert prov.MODEL_MAP["antigravity/gemini-3.8-flash"] == "gemini-3.8-flash", prov.MODEL_MAP
 
 
 def test_the_request_picks_the_tier_the_turn_asks_for():
@@ -163,6 +178,8 @@ def test_the_request_picks_the_tier_the_turn_asks_for():
     assert prov._short_model("antigravity/claude-opus-5-5-high", "high") == "claude-opus-5-5-high"
     # And a single-level model stays exactly what upstream called it.
     assert prov._short_model("antigravity/gpt-oss-120b-medium", "high") == "gpt-oss-120b-medium"
+    # ...and the row published under its display name reaches the same wire id.
+    assert prov._short_model("antigravity/gpt-oss-120b", "high") == "gpt-oss-120b-medium"
 
 
 def test_a_tiered_turn_asks_upstream_for_the_variant_not_a_thinking_budget():
@@ -190,7 +207,7 @@ def test_the_published_tuning_is_what_the_vendor_wrote():
     assert opus["max_output"] == 128000, opus
 
     # One row, one level: it is not a menu, and the picker is told so.
-    oss = prov.tuning("antigravity/gpt-oss-120b-medium")
+    oss = prov.tuning("antigravity/gpt-oss-120b")
     assert oss["efforts"] == ["medium"], oss
     assert oss["default_effort"] == "medium", oss
 
@@ -200,6 +217,22 @@ def test_the_published_tuning_is_what_the_vendor_wrote():
     assert gemini["efforts"] == ["minimal", "low", "medium", "high"], gemini
     assert gemini["default_effort"] == "medium", gemini
 
+
+
+def test_a_tiered_group_is_published_as_the_model_the_app_shows():
+    """`gemini-3.8-flash-tiered` is the vendor's newest row, and it had no name to copy.
+
+    With no `displayName` the family id is the name (that is what the app renders), and
+    the limits come from the same row — 1M window, 65536 out, thinking by budget.
+    """
+    prov = _agy(AGY_MODELS, AGY_ORDER)
+    asyncio.run(prov.refresh_models(_account(prov)))
+
+    tuning = prov.tuning("antigravity/gemini-3.8-flash")
+    assert tuning["context"] == {"max": 1048576}, tuning
+    assert tuning["max_output"] == 65536, tuning
+    assert tuning["efforts"] == ["minimal", "low", "medium", "high"], tuning
+    assert prov._short_model("antigravity/gemini-3.8-flash", "high") == "gemini-3.8-flash"
 
 # --- Qoder: its own effort menu and context menu --------------------------
 def test_qoder_publishes_the_levels_and_windows_of_that_model():

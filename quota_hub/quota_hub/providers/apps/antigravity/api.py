@@ -45,6 +45,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -133,6 +134,17 @@ from ...cloudcode_wire import (  # noqa: F401
     _tool_chunk,
     _parse_antigravity_models,
 )
+
+
+def _slug(display_name: str) -> str:
+    """A vendor display name turned into an id tail, the same way the Qoder leg does it.
+
+    The tail is what the picker shows and what a session stores; the wire id stays
+    internal in `MODEL_MAP`. Deliberately the same shape as `apps/qoder/api.py::_slug` —
+    both must survive the desktop's `modelBaseId`/`displayModelName` humanizer unchanged,
+    which is why a name goes in lowercase-with-dashes and not with spaces.
+    """
+    return re.sub(r"[^a-z0-9.]+", "-", str(display_name or "").lower()).strip("-.")
 
 
 class AntigravityProvider(Provider):
@@ -826,17 +838,47 @@ class AntigravityProvider(Provider):
             logger.warning("antigravity model refresh returned an empty list; keeping seed")
             return None
         rows = payload.get("models") if isinstance(payload.get("models"), dict) else {}
-        self._model_rows = {
-            str(k).strip().split("/")[-1]: v for k, v in rows.items() if isinstance(v, dict)
-        }
+        # A tiered row is entitled under its `-tiered` key but is addressed by its family
+        # name (see `_parse_antigravity_models`), so the metadata is stored both ways.
+        self._model_rows = {}
+        for key, row in rows.items():
+            if not isinstance(row, dict):
+                continue
+            wire = str(key).strip().split("/")[-1]
+            self._model_rows[wire] = row
+            if wire.lower().endswith("-tiered"):
+                self._model_rows.setdefault(wire[: -len("-tiered")], row)
         published, variants = self._fold_tiers(short_ids)
         prefix = self.name
-        self.served_models = tuple(f"{prefix}/{m}" for m in published)
-        self.MODEL_MAP = {f"{prefix}/{m}": m for m in published}
+        tails: dict[str, str] = {}
+        taken: set[str] = set()
+        for family in published:
+            tail = self._display_tail(family, variants.get(family) or {})
+            if tail in taken:  # two rows showing the same name: keep both addressable
+                tail = f"{tail}-{family}"
+            taken.add(tail)
+            tails[family] = tail
+        self.served_models = tuple(f"{prefix}/{tails[m]}" for m in published)
+        self.MODEL_MAP = {f"{prefix}/{t}": m for m, t in tails.items()}
         self._tier_variants = variants
         self.models_refreshed = True
         logger.info("antigravity: live model catalog = %s", self.served_models)
         return published
+
+    def _display_tail(self, family: str, members: dict[str, str]) -> str:
+        """The name this model has *in the vendor's own list*, slugified into an id tail.
+
+        Upstream writes a `displayName` per row and it is regularly not the wire id
+        (measured 2026-11-01: `gemini-2.5-flash` is displayed as "Gemini 3.5 Flash Lite"),
+        and a tiered family carries the level in the name ("Claude Opus 5.5 (High)") —
+        which is the level, not the model, so it comes off when the tiers are folded.
+        Rows with no name at all (`gemini-3.8-flash-tiered`) keep the family id, which is
+        already what the app shows him.
+        """
+        name = str((self._model_rows.get(family) or {}).get("displayName") or "").strip()
+        if members:
+            name = re.sub(r"\s*\([^)]*\)\s*$", "", name).strip()
+        return _slug(name) or family
 
     # --- thinking levels are one model, not three rows ---------------------
     @classmethod
