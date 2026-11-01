@@ -107,7 +107,14 @@ class AigwProfile(ProviderProfile):
         windows for one model — Qoder's own catalogue lists 200K / 400K / 1M for the same
         row and marks it editable — and the window Plobi budgets against is the number
         that says which one we are actually filling. Legs with no menu ignore the key.
+        It goes through `extra_body`, never top-level: `api_kwargs` are **Python arguments
+        to `chat.completions.create()`**, and that SDK takes `reasoning_effort` but has no
+        `context_length` parameter. Measured on this machine 2026-11-01 16:49 — my first
+        version put it top-level and every hub turn died before a request was even sent:
+        `TypeError: Completions.create() got an unexpected keyword argument 'context_length'`.
+        `extra_body` merges into the JSON body, which is where the hub reads it.
         """
+        extra: dict[str, Any] = {}
         top: dict[str, Any] = {}
 
         if isinstance(reasoning_config, dict) and reasoning_config.get("enabled") is not False:
@@ -116,9 +123,9 @@ class AigwProfile(ProviderProfile):
                 top["reasoning_effort"] = effort
 
         if isinstance(context_length, int) and not isinstance(context_length, bool) and context_length > 0:
-            top["context_length"] = context_length
+            extra["context_length"] = context_length
 
-        return {}, top
+        return extra, top
 
 
 aigw = AigwProfile(

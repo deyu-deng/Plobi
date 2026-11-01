@@ -84,11 +84,14 @@ class TestAigwThroughTheTransport:
         assert kwargs["reasoning_effort"] == "low", kwargs
         assert "reasoning" not in kwargs.get("extra_body", {}), kwargs
 
-    def test_the_window_we_budget_against_travels_with_it(self):
+    def test_the_window_we_budget_against_travels_in_the_body_not_the_call_signature(self):
         """Some doors sell a menu of windows for one model (Qoder: 200K/400K/1M).
 
         The number that decides when Plobi compresses is the same number, so it is the
-        one the door is told. Legs without a menu ignore the key — it costs nothing.
+        one the door is told — but `api_kwargs` are Python arguments to
+        `chat.completions.create()`, which has no `context_length` parameter. Put there,
+        every hub turn dies with a `TypeError` before a request is sent (measured on this
+        machine 2026-11-01 16:49). It belongs in `extra_body`, which merges into the JSON.
         """
         from agent.transports import get_transport
 
@@ -106,7 +109,27 @@ class TestAigwThroughTheTransport:
         )
 
         assert kwargs["reasoning_effort"] == "medium", kwargs
-        assert kwargs["context_length"] == 400000, kwargs
+        assert "context_length" not in kwargs, "not an SDK argument — the call would TypeError"
+        assert kwargs["extra_body"]["context_length"] == 400000, kwargs
+
+    def test_nothing_the_profile_adds_is_outside_the_sdks_signature(self, aigw_profile):
+        """The invariant my own regression broke: top-level kwargs must be real parameters.
+
+        Checked against the installed client itself, so the day the SDK drops a name this
+        test says so instead of his conversations going quiet.
+        """
+        import inspect
+
+        from openai.resources.chat.completions import Completions
+
+        accepted = set(inspect.signature(Completions.create).parameters)
+        accepted -= {"self", "extra_headers", "extra_query", "extra_body", "timeout"}
+
+        _extra, top = aigw_profile.build_api_kwargs_extras(
+            reasoning_config={"enabled": True, "effort": "high"}, context_length=200000
+        )
+
+        assert set(top) <= accepted, (sorted(set(top) - accepted), sorted(accepted)[:8])
 
     def test_a_profile_that_is_not_given_a_window_says_nothing(self, aigw_profile):
         extra_body, top = aigw_profile.build_api_kwargs_extras(
