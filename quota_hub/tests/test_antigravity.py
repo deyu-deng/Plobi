@@ -576,6 +576,64 @@ def test_to_gemini_tools_sanitizes_openai_schema_for_cloudcode_protobuf() -> Non
 
 
 
+def test_a_429_on_one_door_tries_the_other_before_blaming_his_quota():
+    """Measured 2026-11-01: prod answered 429 RESOURCE_EXHAUSTED for every model in 0.3 s
+    while daily served the same request, and the account's own quota summary read
+    0.98-1.0 remaining on all four buckets. A full shared door is not a spent allowance,
+    so the leg tries the sibling door — but only after the tool's own rotation, which is
+    the existing contract (`test_a_quota_refusal_rotates_to_the_next_account_and_retries`).
+    """
+    import asyncio
+
+    from quota_hub.providers.base import UpstreamError
+    from quota_hub.providers.apps.antigravity import api as agy_api
+
+    seen: list[str] = []
+    holder: dict = {}
+
+    class _Doors:
+        """A transport that refuses on prod and answers on daily, like the real doors did."""
+
+        host = ""
+
+        async def chat(self, **kwargs):
+            seen.append(self.host)
+            if self.host.endswith("cloudcode-pa.googleapis.com") and "daily" not in self.host:
+                raise UpstreamError(429, "Resource has been exhausted", retryable=True)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    prov = AntigravityProvider({"host": agy_api.DEFAULT_HOST_PROD, "project_id": "p"}, _FakeHttp(_SUCCESS))
+    doors = _Doors()
+    doors.host = agy_api.DEFAULT_HOST_PROD
+    prov.cloudcode = doors
+    # Live shape of this failure: the tool's rotation *succeeds* every time (their CLI
+    # re-pushes a valid account), yet the door still refuses — which is why the door flip
+    # runs after rotation on the same refusal instead of only when rotation fails.
+    prov._rotate_account = lambda acc: asyncio.sleep(0, result=True)
+    prov._rotate_if_exhausted = lambda acc: asyncio.sleep(0)
+    prov._project_id = lambda acc: asyncio.sleep(0, result="p")
+    acc = prov._access_only_account("antigravity-keychain", "T", "cid", "csec", desktop_store=True)
+
+    # The leg's own `_use_the_other_door` rewrites `cloudcode.host`, which is what the
+    # fake transport reads to decide whether this door answers.
+    real_use = prov._use_the_other_door
+
+    def _use_and_report() -> bool:
+        flipped = real_use()
+        doors.host = prov.host
+        return flipped
+
+    prov._use_the_other_door = _use_and_report
+
+    out = asyncio.run(prov.chat(acc, {"model": "antigravity/claude-opus-5-5",
+                                      "messages": [{"role": "user", "content": "hi"}]}))
+
+    assert out["choices"][0]["message"]["content"] == "ok", out
+    assert prov.host == agy_api.DEFAULT_HOST_DAILY, prov.host
+    assert seen == [agy_api.DEFAULT_HOST_PROD, agy_api.DEFAULT_HOST_PROD,
+                    agy_api.DEFAULT_HOST_DAILY], seen
+
+
 def _empty_store(monkeypatch, tmp_path) -> None:
     """No account of ours: the shared slot is then the only source of truth."""
     monkeypatch.setenv("PLOBI_HOME", str(tmp_path / "home"))

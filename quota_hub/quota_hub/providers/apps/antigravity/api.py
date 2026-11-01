@@ -106,11 +106,19 @@ QUOTA_SUMMARY_ENDPOINTS = (
 
 # Headers the real Antigravity client sends. Google rejects the call without a
 # believable x-goog-api-client, so we mirror the binary exactly.
+#: The client version we claim is NOT cosmetic. Measured 2026-11-01 against this account,
+#: `fetchAvailableModels` answers 20 rows for `1.107.0` and **23** for `2.28.1` — the three
+#: extra rows are `gemini-3.8-flash-low|-medium|-high`, the real tiered rows behind the
+#: family entry. The installed Antigravity on this machine reports FileVersion 2.28.1, so
+#: that is what we claim; `client_version` in config.yaml overrides it when the app moves
+#: again and the list starts losing rows.
+CLIENT_VERSION = "2.28.1"
+
 ANTIGRAVITY_HEADERS = {
     "X-Client-Name": "antigravity",
-    "X-Client-Version": "1.107.0",
+    "X-Client-Version": CLIENT_VERSION,
     "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x",
-    "User-Agent": "antigravity/1.107.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "User-Agent": f"antigravity/{CLIENT_VERSION} (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
 }
 
 # loadCodeAssist body metadata (ideType 9 = Antigravity, pluginType 2 = Gemini).
@@ -145,6 +153,15 @@ def _slug(display_name: str) -> str:
     which is why a name goes in lowercase-with-dashes and not with spaces.
     """
     return re.sub(r"[^a-z0-9.]+", "-", str(display_name or "").lower()).strip("-.")
+
+
+def _headers_for_version(version: str) -> dict:
+    """The client's own headers at one version — which rows we are shown depends on it."""
+    headers = dict(ANTIGRAVITY_HEADERS)
+    headers["X-Client-Version"] = version
+    headers["User-Agent"] = (f"antigravity/{version} (Macintosh; Intel Mac OS X 10_15_7) "
+                             f"AppleWebKit/537.36")
+    return headers
 
 
 class AntigravityProvider(Provider):
@@ -219,7 +236,15 @@ class AntigravityProvider(Provider):
 
     def __init__(self, config, http):
         super().__init__(config, http)
+        # Measured 2026-11-01, one credential, one envelope, one model:
+        #   cloudcode-pa.googleapis.com       -> 429 RESOURCE_EXHAUSTED in 0.3 s, every model
+        #   daily-cloudcode-pa.googleapis.com -> 200, and it answered ("好", 15/3/18 tokens)
+        # while that account's OWN quota summary read 0.98-1.0 remaining on all four buckets.
+        # A prod 429 is that shared door being full, not his allowance. Daily is the default;
+        # `_use_the_other_door` still flips a leg that config points at prod.
         self.host = config.get("host", DEFAULT_HOST_DAILY).rstrip("/")
+        self.client_version = str(config.get("client_version") or CLIENT_VERSION)
+        self._alt_door_tried = False
         self.api_version = config.get("api_version", "v1internal")
         self.thinking = config.get("thinking", False)
         self.client_metadata = config.get("client_metadata", CLIENT_METADATA)
@@ -276,7 +301,7 @@ class AntigravityProvider(Provider):
             self.http,
             host=self.host,
             api_version=self.api_version,
-            headers=dict(ANTIGRAVITY_HEADERS),
+            headers=_headers_for_version(self.client_version),
             client_metadata=self.client_metadata,
             extra_headers=self.extra_headers,
             thinking=self.thinking,
@@ -1041,7 +1066,27 @@ class AntigravityProvider(Provider):
     def _wrap(self, oai_req: dict, project: str, model: str, session_id: str) -> dict:
         return self.cloudcode.wrap(oai_req, project, model, session_id)
 
+    def _use_the_other_door(self) -> bool:
+        """Point the transport at the sibling Cloud Code door; False when there is none.
+
+        Only ever reached on an upstream 429: a refused request spent nothing, so trying
+        the other door is free — and measured 2026-11-01 the two doors disagree completely
+        for the same account and model (prod 429 / daily 200). One flip per process, so a
+        genuinely spent allowance cannot make every turn pay two round trips.
+        """
+        alt = DEFAULT_HOST_DAILY if self.host == DEFAULT_HOST_PROD else DEFAULT_HOST_PROD
+        if alt == self.host:
+            return False
+        logger.warning("antigravity: %s 回 429，同一个凭据同一个模型换 %s 再发一次", self.host, alt)
+        self.host = alt
+        self.cloudcode.host = alt
+        self._alt_door_tried = True
+        return True
+
     async def _cloudcode_chat(self, acc: Account, oai_req: dict) -> dict:
+        return await self._send_chat(acc, oai_req)
+
+    async def _send_chat(self, acc: Account, oai_req: dict) -> dict:
         return await self.cloudcode.chat(
             token=acc.cred.access_token,
             project=await self._project_id(acc),
@@ -1052,6 +1097,10 @@ class AntigravityProvider(Provider):
         )
 
     async def _cloudcode_stream(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
+        async for chunk in self._stream_chat(acc, oai_req):
+            yield chunk
+
+    async def _stream_chat(self, acc: Account, oai_req: dict) -> AsyncIterator[dict]:
         async for chunk in self.cloudcode.chat_stream(
             token=acc.cred.access_token,
             project=await self._project_id(acc),
@@ -1155,20 +1204,53 @@ class AntigravityProvider(Provider):
         elif exc.status == 429:
             self.quota_exhausted = True
 
+    async def _recover_refusal(self, acc: Account, exc: UpstreamError) -> bool:
+        """Try what a refusal might actually mean; True when the caller should resend.
+
+        1. the tool's own account rotation — their documented 429/401 behaviour, and the
+           contract `test_a_quota_refusal_rotates_to_the_next_account_and_retries` pins;
+        2. the sibling door. Measured 2026-11-01: prod answered 429 RESOURCE_EXHAUSTED for
+           every model in 0.3 s while daily served the same credential and the same model,
+           and the account's own quota summary read 0.98-1.0 remaining on all four buckets.
+           A refused request spent nothing, so the second try is free — and it is the
+           difference between telling him "wait for your quota" and telling him the truth.
+
+        One recovery per refusal, in this order; the next turn gets the other one if this
+        one did not help, so a genuinely spent allowance still ends up as `quota_exhausted`.
+        """
+        if await self._rotate_account(acc):
+            return True
+        if exc.status == 429 and not self._alt_door_tried and self._use_the_other_door():
+            self._alt_door_tried = True
+            return True
+        return False
+
+    def _flip_door_and_retry_soon(self, exc: UpstreamError) -> bool:
+        """Second recovery for the same refusal: the sibling door, when it is plausible.
+
+        Only for a 429 (a 401 is the credential, and another door will say the same), and
+        only once per process — a genuinely spent allowance stays spent, and the next turn
+        stops paying two round trips.
+        """
+        if exc.status != 429 or self._alt_door_tried:
+            return False
+        return self._use_the_other_door()
+
     async def chat(self, acc: Account, oai_req: dict) -> dict:
         await self._rotate_if_exhausted(acc)
         try:
             out = await self._cloudcode_chat(acc, oai_req)
         except UpstreamError as exc:
             self._note_upstream(exc)
-            # Out of quota or the token was revoked: move to the next account and retry once.
-            if exc.status not in (401, 429) or not await self._rotate_account(acc):
+            if exc.status not in (401, 429) or not await self._recover_refusal(acc, exc):
                 raise
             try:
                 out = await self._cloudcode_chat(acc, oai_req)
             except UpstreamError as retry_exc:
                 self._note_upstream(retry_exc)
-                raise
+                if not self._flip_door_and_retry_soon(retry_exc):
+                    raise
+                out = await self._cloudcode_chat(acc, oai_req)
         self._note_upstream(None)
         return out
 
@@ -1181,14 +1263,19 @@ class AntigravityProvider(Provider):
             return
         except UpstreamError as exc:
             self._note_upstream(exc)
-            if exc.status not in (401, 429) or not await self._rotate_account(acc):
+            if exc.status not in (401, 429) or not await self._recover_refusal(acc, exc):
                 raise
-        try:
-            async for chunk in self._cloudcode_stream(acc, oai_req):
-                yield chunk
-        except UpstreamError as retry_exc:
-            self._note_upstream(retry_exc)
-            raise
+            # A refusal lands before the first byte, so resending cannot duplicate anything
+            # the caller already saw.
+            try:
+                async for chunk in self._cloudcode_stream(acc, oai_req):
+                    yield chunk
+            except UpstreamError as retry_exc:
+                self._note_upstream(retry_exc)
+                if not self._flip_door_and_retry_soon(retry_exc):
+                    raise
+                async for chunk in self._cloudcode_stream(acc, oai_req):
+                    yield chunk
         self._note_upstream(None)
 
     def _note_quota(self, acc, resp):

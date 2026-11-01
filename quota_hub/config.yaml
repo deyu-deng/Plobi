@@ -80,7 +80,12 @@ providers:
   #    generateContent+tools 回 `Request contains an invalid argument`。
   antigravity:
     enabled: true
-    host: https://cloudcode-pa.googleapis.com
+    # 11-01 现核：同一个凭据、同一个模型，prod 那道门 0.3 秒回 429 RESOURCE_EXHAUSTED
+    # （四个模型全一样），daily 这道门 200 并真答了「好」；而账号自己的 quota summary
+    # 四格都还剩 0.98–1.0。所以 prod 那个 429 是**公共门满了**，不是他的额度——原来这里
+    # 写死 prod，卡片就把「门满」说成了「你额度用完」。换 daily；两门互探的兜底在
+    # `providers/apps/antigravity/api.py::_use_the_other_door`。
+    host: https://daily-cloudcode-pa.googleapis.com
     api_version: v1internal
     # 不写 refresh_token：这条腿的凭据来自桌面应用自己维护的本机存储
     # （Windows: Credential Manager `gemini:antigravity`；macOS: Keychain）。
