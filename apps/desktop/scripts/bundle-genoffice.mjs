@@ -3,6 +3,8 @@
 // module and CommonJS vendor code that an ESM main bundle cannot import.
 import { build } from 'esbuild'
 import { createOpenDeskOfficeViteAliases } from '@bitclub.ai/opendesk-office/vite'
+
+import { patchDocxParser } from './docx-prefix-tolerance.mjs'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, promises as fsPromises } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -109,6 +111,22 @@ const xlsxPrefixTolerancePlugin = {
   }
 }
 
+// docx 前缀容忍：有些写入方把 WordprocessingML 序列化成 `<ns0:p>` 而不是 `<w:p>`，
+// 而 GenOffice 的解析器按字面匹配 `'w:p'` —— 这类文档在它眼里等于空文档：字体全塌、
+// 图片塌成「图片 N」、域塌成 `Field (ADDIN)`。解析发生在主进程（host.cjs），入口是
+// `dist/main.js`（`word-main.js` 再转手到它），所以补在这一侧；逻辑见
+// `docx-prefix-tolerance.mjs`。
+const docxPrefixTolerancePlugin = {
+  name: 'docx-prefix-tolerance',
+  setup(build) {
+    build.onLoad({ filter: /[\\/]dist[\\/]main\.js$/ }, async args => {
+      const source = await fsPromises.readFile(args.path, 'utf8')
+
+      return { contents: patchDocxParser(source), loader: 'js' }
+    })
+  }
+}
+
 await build({
   entryPoints: [path.join(appRoot, 'scripts', 'genoffice-host-entry.ts')],
   outfile: path.join(dist, 'host.cjs'),
@@ -117,7 +135,7 @@ await build({
   format: 'cjs',
   target: 'node20',
   external: ['electron'],
-  plugins: [xlsxPrefixTolerancePlugin, assetPlugin],
+  plugins: [xlsxPrefixTolerancePlugin, docxPrefixTolerancePlugin, assetPlugin],
   loader: { '.css': 'empty', '.ttf': 'empty', '.wasm': 'empty', '.png': 'empty' },
   define: { 'process.env.NODE_ENV': '"production"' },
   logLevel: 'info'
