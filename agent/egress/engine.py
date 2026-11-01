@@ -501,6 +501,24 @@ def _spawn(snap: _Snapshot, log_path: Path) -> tuple[int, float]:
     return proc.pid, proc.create_time() if hasattr(proc, "create_time") else time.time()
 
 
+def _tun_precheck(
+    table: Table, snap: _Snapshot, *, home: str | Path | None = None
+) -> tuple[Optional[EngineReport], tuple[str, ...]]:
+    """Place the driver, then ask the guard — **before** anything of ours is stopped.
+
+    The driver goes in first: without `wintun.dll` next to the binary the guard would
+    refuse a machine that only lacked a file we ship ourselves (measured 11-01).
+    One implementation for both callers: `ensure` (cold start) and `reload_engine`
+    (a switch), because a refusal must read the same in both places.
+    """
+    placed, why = engine_files.install_wintun(snap.binary, home=home, workdir=snap.workdir)
+    notes = (f"wintun: {'在位' if placed else '没放好'} — {why}",)
+    refused, said = _tun_gate(table, snap)
+    if refused is not None:
+        return refused, (*notes, *said)
+    return None, (*notes, *said)
+
+
 def _tun_gate(table: Table, snap: _Snapshot) -> tuple[Optional[EngineReport], tuple[str, ...]]:
     """Refuse a TUN start this machine cannot host — and hand back the machine readings.
 
@@ -566,16 +584,11 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
     #: A TUN rewrites this machine's default route, so it gets a gate before anything
     #: is written or started: no admin, another party's TUN on the box, or an unreadable
     #: routing table all mean **refuse**, never "start without it and hope nobody notices".
-    #: The driver goes in first — without `wintun.dll` next to the binary the guard would
-    #: refuse a machine that only lacked a file we ship ourselves (measured 11-01).
     tun_notes: tuple[str, ...] = ()
     if table.engine_tun.get("enabled"):
-        placed, why = engine_files.install_wintun(snap.binary, home=home, workdir=snap.workdir)
-        tun_notes = (f"wintun: {'在位' if placed else '没放好'} — {why}",)
-        refused, gate_notes = _tun_gate(table, snap)
+        refused, tun_notes = _tun_precheck(table, snap, home=home)
         if refused is not None:
             return refused
-        tun_notes = (*tun_notes, *gate_notes)
 
     snap.workdir.mkdir(parents=True, exist_ok=True)
     #: The engine reads its geo data out of the directory it was started in. Copying it there
@@ -669,6 +682,18 @@ def reload_engine(table: Table, *, home: str | Path | None = None) -> EngineRepo
                 snap.port, str(snap.workdir or ""), snap.source,
                 notes=(*snap.notes, "reload refused before the stop — the old config is still serving"),
             )
+        #: 守卫先问、引擎后停。Measured 11-01: `ensure` asks the TUN guard **after** the old
+        #: engine is gone, so a refused switch cost this machine its exit for as long as the
+        #: caller took to roll back — and the command-line half never rolled back at all
+        #: (`9a2b6a35`). Asking the same guard here makes a refusal cost nothing: the old
+        #: config keeps serving and the report says why (纸 §37 的形状，只有一次也没发生).
+        if table.engine_tun.get("enabled") and snap.workdir is not None:
+            refused, _notes = _tun_precheck(table, snap, home=home)
+            if refused is not None:
+                return replace(
+                    refused,
+                    notes=(*refused.notes, "reload refused before the stop — the old config is still serving"),
+                )
         stopped = stop_ours(table, home=home)
         if stopped.state != STOPPED:
             return replace(current, notes=(*current.notes, f"reload refused: {stopped.detail}"))

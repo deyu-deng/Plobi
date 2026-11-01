@@ -20,19 +20,22 @@ from agent.egress.rules import load_table
 _PORT = 7896
 
 
-def _table(*, include=(), enabled=True, port=_PORT, binary=""):
+def _table(*, include=(), enabled=True, port=_PORT, binary="", tun=None):
+    engine_block = {
+        "enabled": enabled,
+        "binary": binary,
+        "mixed_port": port,
+        "include_files": list(include),
+    }
+    if tun is not None:
+        engine_block["tun"] = tun
     return load_table(
         config={
             "network": {
                 "egress": {
                     "proxies": {"front": {"url": f"http://127.0.0.1:{port + 1}"}},
                     "rules": [{"match": "*", "via": "proxy:front"}],
-                    "engine": {
-                        "enabled": enabled,
-                        "binary": binary,
-                        "mixed_port": port,
-                        "include_files": list(include),
-                    },
+                    "engine": engine_block,
                 }
             }
         }
@@ -577,3 +580,38 @@ def test_a_reload_that_cannot_compile_leaves_the_running_engine_alone(
     assert fake.terminated == [], "编译不出来就不许先停在跑的引擎"
     assert inert["up"] == {_PORT}, "在跑的引擎必须还在服务"
     assert rep.state == OURS and "没动在跑的引擎" in rep.detail, rep
+
+
+def test_a_refused_tun_reload_leaves_the_running_engine_alone(
+    tmp_path, pool, fake_binary, inert, monkeypatch
+):
+    """11-01：守卫在 `ensure` 里问得太晚 —— 老引擎已经停了才说「TUN 不行」。
+
+    那一下的代价是**这台机器一度没有出口**：引擎没了，注册表还指着它的端口，而命令行
+    那一半根本不回退（`9a2b6a35` 之前）。所以顺序钉在这里：要 TUN 的 reload，守卫在停
+    **之前**就得说话；被拒 = 这一拨没发生，老配置继续服务。
+    """
+    home = tmp_path / "home"
+    table = _table(include=[str(pool)], binary=fake_binary)
+    fake = FakePsutil({4242: {"name": "mihomo.exe", "created": 1000.0}}, up=inert["up"], port=_PORT)
+    monkeypatch.setattr(engine, "_psutil", lambda: fake)
+    assert ensure(table, home=home, wait_s=0).state == OURS
+
+    monkeypatch.setattr(engine.engine_files, "install_wintun", lambda *a, **kw: (True, "test"))
+    monkeypatch.setattr(
+        engine,
+        "_tun_gate",
+        lambda tbl, snap: (
+            engine.EngineReport(engine.FAILED, "TUN 被守卫拒了：场上已经有别人的 TUN 类网卡（Tailscale）", _PORT),
+            ("tun: 守卫拒绝开启",),
+        ),
+    )
+
+    rep = engine.reload_engine(_table(include=[str(pool)], binary=fake_binary,
+                                      tun={"enabled": True, "name": "PlobiTun", "stack": "gvisor"}),
+                               home=home)
+
+    assert fake.terminated == [], "守卫还没说话就不许停在跑的引擎"
+    assert inert["up"] == {_PORT}, "被拒的那一拨不许让机器少一个出口"
+    assert rep.state == engine.FAILED and "TUN 被守卫拒了" in rep.detail, rep
+    assert any("before the stop" in n for n in rep.notes), rep.notes
