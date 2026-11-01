@@ -53,16 +53,21 @@ function Segmented<T extends string>({
   value: T | ''
 }) {
   return (
-    <div className="flex shrink-0 overflow-hidden rounded-lg border border-(--stroke-nous) text-sm">
+    //: `min-w-0` 与 `w-full` 不是装饰：这两颗按钮里是**四种语言**的标签（en 的
+    //: 「System proxy」、ja 的「システムプロキシ」），而这里以前是 `shrink-0` ⇒ 整段
+    //: 按内容撑宽、顶出弹窗被裁掉（用户 11-01 截图：右边「Everything」只剩「Eve」）。
+    //: 段宽由外框给，标签不换行，超出才省略——宁可省略也不许把面板撑破。
+    <div className="flex w-full min-w-0 overflow-hidden rounded-lg border border-(--stroke-nous) text-sm">
       {options.map(option => (
         <button
           aria-pressed={value === option.value}
-          className={`flex-1 px-2.5 py-1.5 transition-colors disabled:cursor-default disabled:opacity-40 ${
+          className={`min-w-0 flex-1 truncate whitespace-nowrap px-2 py-1.5 transition-colors disabled:cursor-default disabled:opacity-40 ${
             value === option.value ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
           }`}
           disabled={disabled}
           key={option.value}
           onClick={() => onChange(option.value)}
+          title={option.label}
           type="button"
         >
           {option.label}
@@ -217,7 +222,9 @@ export function EgressPanel() {
   const proxyWarn = ctl.transport === 'system' && status?.system_proxy !== undefined && status.system_proxy.ours === false
 
   return (
-    <div className="w-80 select-text" data-testid="egress-panel">
+    //: 宽度由弹窗那一格给（`menuClassName`），这里只许跟着走：以前这里写死 `w-80`，
+    //: 而弹窗也是 `w-80`，看着一致，其实把「谁说了算」写成了两处 —— 谁改一处就错位。
+    <div className="w-full min-w-0 select-text" data-testid="egress-panel">
       <div className="flex items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2 py-1.5">
         <TabButton active={view === 'switch'} icon={Power} onClick={() => setView('switch')}>
           {copy.tabSwitch}
@@ -230,8 +237,10 @@ export function EgressPanel() {
       </div>
 
       {view === 'switch' ? (
-        <div className="grid gap-2.5 px-3 py-3">
-          <div className="flex items-center gap-3">
+        //: `grid-cols-1` = `minmax(0,1fr)`：裸 `grid` 的隐式轨道按 max-content 算，
+        //: 一行长标签就能把整列顶宽、然后被弹窗裁掉（11-01 那次截图的成因）。
+        <div className="grid min-w-0 grid-cols-1 gap-2.5 px-3 py-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label={ctl.vpn ? copy.powerOff : copy.powerOn}
               className={`grid size-14 shrink-0 place-items-center rounded-full border-2 transition-colors ${
@@ -245,7 +254,7 @@ export function EgressPanel() {
             >
               <Globe className="size-6" />
             </button>
-            <div className="grid min-w-0 gap-0.5">
+            <div className="grid min-w-0 grid-cols-1 gap-0.5">
               <div className="flex min-w-0 items-center gap-1.5">
                 <StatusDot ok={engineOk} title={status?.engine?.detail ?? copy.engineNotRead} />
                 <span className="truncate text-sm font-medium" title={ctl.exit || copy.direct}>
@@ -268,16 +277,18 @@ export function EgressPanel() {
             value={ctl.mode}
           />
 
-          <div className="flex items-center gap-1.5">
-            <Segmented<Transport>
-              disabled={busy || !loaded}
-              onChange={transport => void flip(transport)}
-              options={[
-                { label: copy.transportTun, value: 'tun' },
-                { label: copy.transportSystem, value: 'system' }
-              ]}
-              value={ctl.transport}
-            />
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <Segmented<Transport>
+                disabled={busy || !loaded}
+                onChange={transport => void flip(transport)}
+                options={[
+                  { label: copy.transportTun, value: 'tun' },
+                  { label: copy.transportSystem, value: 'system' }
+                ]}
+                value={ctl.transport}
+              />
+            </div>
             {tunBlocked ? (
               <span
                 className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-danger)"
@@ -303,7 +314,7 @@ export function EgressPanel() {
             // 纸 §25 买的那条出口：默认拒绝与别人的网卡抢默认路由，但这是**表能说的一个决定**，
             // 所以拒了之后屏幕给一个按钮，而不是只给一句话。
             <button
-              className="justify-self-start rounded-lg border border-(--stroke-nous) px-2.5 py-1.5 text-xs text-(--ui-text-secondary)"
+              className="max-w-full justify-self-start rounded-lg border border-(--stroke-nous) px-2.5 py-1.5 text-left text-xs text-(--ui-text-secondary)"
               disabled={busy}
               onClick={() => void flip(refused.target, true)}
               type="button"
@@ -313,7 +324,7 @@ export function EgressPanel() {
           ) : null}
         </div>
       ) : (
-        <div className="grid gap-2 px-3 py-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 px-3 py-3">
           {groupNames.length > 0 ? (
             <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
               <button
@@ -422,7 +433,10 @@ export function egressRailItem(title: string): StatusbarItem {
   return {
     icon: <EgressRailIcon />,
     id: 'egress',
-    menuClassName: 'w-80',
+    //: 面板宽度**只在这里定一次**（`w-96` = 384px）：四种语言的标签里最长的是 ja 的
+    //: 「システムプロキシ」与 en 的「System proxy」，320px 那档放不下两颗并排的载体按钮
+    //: （11-01 用户截图：右边被裁、按钮里的字换行）。
+    menuClassName: 'w-96',
     menuContent: () => <EgressPanel />,
     title,
     variant: 'menu'

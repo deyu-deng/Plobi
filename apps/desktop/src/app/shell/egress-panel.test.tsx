@@ -237,4 +237,26 @@ describe('左下底栏那一格', () => {
     const view = render(<div>{(item.menuContent as (close: () => void) => ReactNode)(() => {})}</div>)
     expect(view.getByTestId('egress-panel')).toBeTruthy()
   })
+
+  it('面板宽度只有一个来源：那一格给，面板自己不再写死', () => {
+    // 11-01 用户截图：右边「Everything」只剩「Eve」、载体按钮里的字换行。成因是两处都写
+    // `w-80`（弹窗与面板各一份），而里面那几行按内容撑宽 ⇒ 超出弹窗、被裁掉。
+    const item = egressRailItem(copy.title)
+    expect(item.menuClassName).toContain('w-96')
+
+    const view = render(<div>{(item.menuContent as (close: () => void) => ReactNode)(() => {})}</div>)
+    const panel = view.getByTestId('egress-panel')
+    expect(panel.className).toContain('w-full')
+    expect(panel.className).toContain('min-w-0')
+    expect(panel.className).not.toMatch(/(^|\s)w-(56|64|72|80|96)(\s|$)/)
+  })
+
+  it('载体那两颗按钮不换行：窄了就省略，不许把面板撑破', async () => {
+    render(<EgressPanel />)
+    const button = await screen.findByRole('button', { name: copy.transportSystem })
+
+    expect(button.className).toContain('whitespace-nowrap')
+    expect(button.className).toContain('min-w-0')
+    expect(button.className).toContain('truncate')
+  })
 })
