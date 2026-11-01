@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { applyDesktopProxy, describeDesktopProxy, desktopProxyConfig, type DesktopProxyView } from './egress-proxy'
+import { applyDesktopProxy, describeDesktopProxy, desktopProxyConfig, readProxyValues, restoreLoopbackSystemProxy, type DesktopProxyView } from './egress-proxy'
 
 const TAKEN_OVER: DesktopProxyView = {
   bypass: ['localhost', '10.0.0.0/8', 'github.com'],
@@ -58,4 +58,62 @@ test('a half-read answer falls back to the system rather than to "direct" — an
   for (const view of [null, undefined, {}, { declared: false, mode: 'system' }, { declared: true, mode: 'off' }, { ...TAKEN_OVER, proxy: '' }]) {
     assert.equal(desktopProxyConfig(view).mode, 'system', `读不出/没接管/没端口都不能变成"直连"：${JSON.stringify(view)}`)
   }
+})
+
+// ── 退出时把机器还回去（10-31 那 39 行，11-01 搬进这一档并钉上反例件）────────
+function fakeRegistry(raw: string, opts: { throwOnQuery?: boolean } = {}) {
+  const calls: string[] = []
+
+  return {
+    calls,
+    registry: {
+      clear: (names: string[]) => calls.push(`clear:${names.join(',')}`),
+      disable: () => calls.push('disable'),
+      query: () => {
+        if (opts.throwOnQuery) throw new Error('OSError 5: 拒绝访问')
+        return raw
+      }
+    }
+  }
+}
+
+const said: string[] = []
+
+test('only a loopback proxy is ours to undo — and it goes back to DIRECT', () => {
+  const box = fakeRegistry('    ProxyEnable    REG_DWORD    0x1\n    ProxyServer    REG_SZ    127.0.0.1:7895\n')
+
+  assert.equal(restoreLoopbackSystemProxy(line => said.push(line), box.registry), 'handed-back')
+  assert.deepEqual(box.calls, ['disable', 'clear:ProxyServer,AutoConfigURL,ProxyOverride'], box.calls)
+  assert.match(said.join('\n'), /127\.0\.0\.1:7895/)
+})
+
+test('a real remote proxy in the registry is somebody else answer, not ours to clear', () => {
+  const box = fakeRegistry('    ProxyEnable    REG_DWORD    0x1\n    ProxyServer    REG_SZ    proxy.corp.test:8080\n')
+
+  assert.equal(restoreLoopbackSystemProxy(() => {}, box.registry), 'not-ours')
+  assert.deepEqual(box.calls, [], '不许替用户把他自己配的代理关掉')
+})
+
+test('not enabled means nothing to hand back — and no writes', () => {
+  const box = fakeRegistry('    ProxyEnable    REG_DWORD    0x0\n    ProxyServer    REG_SZ    127.0.0.1:7895\n')
+
+  assert.equal(restoreLoopbackSystemProxy(() => {}, box.registry), 'not-taken-over')
+  assert.deepEqual(box.calls, [])
+})
+
+test('an unreadable registry is reported, never guessed at', () => {
+  const box = fakeRegistry('', { throwOnQuery: true })
+  const lines: string[] = []
+
+  assert.equal(restoreLoopbackSystemProxy(line => lines.push(line), box.registry), 'unreadable')
+  assert.deepEqual(box.calls, [], '读不到就写「off」会把一台读不清的机器变成没路的机器')
+  assert.match(lines.join('\n'), /拒绝访问/)
+})
+
+test('the scheme prefix does not hide a loopback from the check', () => {
+  assert.deepEqual(readProxyValues('ProxyEnable REG_DWORD 0x1\nProxyServer REG_SZ 127.0.0.1:7895'),
+    { enable: true, server: '127.0.0.1:7895' })
+  const box = fakeRegistry('ProxyEnable REG_DWORD 0x1\nProxyServer REG_SZ http://127.0.0.1:7895')
+
+  assert.equal(restoreLoopbackSystemProxy(() => {}, box.registry), 'handed-back', '带 scheme 前缀的回环也是我们的')
 })

@@ -16,7 +16,7 @@ vi.mock('@/plobi', () => ({
   setNetworkSystemProxy: (enabled: boolean) => setNetworkSystemProxy(enabled)
 }))
 
-import { EgressPanel, egressRailItem } from './egress-panel'
+import { EgressPanel, EgressRailIcon, egressRailItem } from './egress-panel'
 
 //: 屏幕上的字来自目录，测试也从目录取——换语言不许把测试换红。
 const copy = TRANSLATIONS.en.settings.network
@@ -188,6 +188,25 @@ describe('拨不过去与没读到表', () => {
     fireEvent.click(screen.getByRole('button', { name: copy.allowForeignRetry }))
     await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalledTimes(3))
     expect(sent().egress.engine.tun).toMatchObject({ 'allow-foreign': true, enabled: true })
+  })
+
+  it('桥不在的时候同步抛不许崩掉整棵树（11-01 这台：preload 被抹掉 ⇒ 整屏 Something went wrong）', async () => {
+    getNetworkStatus.mockImplementation(() => {
+      throw new TypeError("Cannot read properties of undefined (reading 'api')")
+    })
+    getNetworkEgress.mockImplementation(() => {
+      throw new TypeError("Cannot read properties of undefined (reading 'api')")
+    })
+
+    const view = render(<div>
+      <EgressRailIcon />
+      <EgressPanel />
+    </div>)
+
+    // 不崩：图标还在，面板还在，只是没读到——控件因此是禁用的。
+    await waitFor(() => expect(view.getByTestId('egress-panel')).toBeTruthy())
+    expect(view.getByRole('button', { name: copy.powerOn }).getAttribute('disabled')).not.toBeNull()
+    expect(saveNetworkEgress).not.toHaveBeenCalled()
   })
 
   it('没读到表的时候一张卡都点不动，一次保存都不许发生', async () => {

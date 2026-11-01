@@ -387,15 +387,21 @@ export function EgressRailIcon({ className }: { className?: string }) {
 
   useEffect(() => {
     let alive = true
-    const read = () => {
-      getNetworkStatus()
-        .then(next => {
-          if (alive) setVpn(Boolean((next as EgressStatusExtra).switch?.vpn))
-        })
-        .catch(() => {})
+    //: `window.plobiDesktop` 缺席时 `getNetworkStatus()` 是**同步抛**的（读 `.api` 就炸）。
+    //: 这个 effect 在 `useEffect` 里跑，同步抛会直接把整棵树上进错误边界——所以这里必须
+    //: 是 async：async 函数里的同步抛会变成 rejected promise，下面的 `.catch` 才接得住。
+    //: （11-01 这台实测：一次 `vite build` 把开发态的 `dist/electron-preload.js` 抹掉，
+    //: 桥没了，底栏这枚图标就把整个界面崩成「Something went wrong」。）
+    const read = async () => {
+      try {
+        const next = await getNetworkStatus()
+        if (alive) setVpn(Boolean((next as EgressStatusExtra).switch?.vpn))
+      } catch {
+        // 读不到就保持灰色：图标是状态的渲染，不是状态的来源。
+      }
     }
-    read()
-    const timer = setInterval(read, 60_000)
+    void read()
+    const timer = setInterval(() => void read(), 60_000)
     return () => {
       alive = false
       clearInterval(timer)

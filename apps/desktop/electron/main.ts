@@ -123,7 +123,7 @@ import {
   remoteEgressIndicator
 } from './egress-tray'
 import { EMBED_SESSION_PARTITION, installEmbedReferer } from './embed-referer'
-import { applyDesktopProxy, desktopProxyConfig, describeDesktopProxy } from './egress-proxy'
+import { applyDesktopProxy, describeDesktopProxy, desktopProxyConfig, restoreLoopbackSystemProxy } from './egress-proxy'
 import { invalidateWorkspaceIndex, searchWorkspaceIndex } from './fs-index'
 import { convertLegacyOffice } from './office-convert'
 import { readDirForIpc } from './fs-read-dir'
@@ -12263,12 +12263,24 @@ function configureSpellChecker() {
   }
 }
 
+// ─── Hand the machine's proxy back on quit (WP-EGRESS-ROUTING) ──────────────
+// 判据与落点都在 `egress-proxy.ts`（那一族带反例件），这里只留一次调用：
+// `before-quit` 往下就是 `taskkill /T /F`，后端、引擎与看门狗同一瞬间没命，
+// 没人再有机会把系统代理交还——机器会指着那个死端口，每个读系统代理的应用都报「没网」。
+function restoreSystemProxyOnQuit(): void {
+  restoreLoopbackSystemProxy(rememberLog)
+}
+
 app.on('before-quit', () => {
   // Any quit path — tray "Quit Plobi", the macOS app menu, an updater
   // hand-off — must be able to close windows for real. Flipping this here (not
   // only in the tray handler) means the close handler can never turn a quit
   // into a hide and strand an unquittable headless process.
   isQuittingByUser = true
+
+  // Give the machine its internet back before the tree-kill below takes the engine
+  // (and any chance to restore the system proxy) with it.
+  restoreSystemProxyOnQuit()
 
   // No timer may outlive the app it polls for.
   stopQuotaAppsPolling()
