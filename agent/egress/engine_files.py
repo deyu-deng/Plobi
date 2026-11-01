@@ -70,6 +70,103 @@ GEOIP = Artifact(
 
 ARTIFACTS = (BINARY, GEOSITE, GEOIP)
 
+#: The fourth file, deliberately **not** in `ARTIFACTS`: the three above are "the engine and
+#: its data", and `engine files: n/3 在位` is that sentence.  wintun is the engine's *driver*
+#: — only asked for when `engine.tun.enabled` is true, and it must sit next to the
+#: executable (Windows loads it by name, `wintun.dll`, from the exe directory or System32),
+#: which is a different question from "is it in the workdir".
+#:
+#: Digest measured on this box 2026-11-01 from the official package, whose own published
+#: SHA2-256 (`https://www.wintun.net/`: `07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51`)
+#: was compared to the bytes actually downloaded before extracting `wintun/bin/amd64/wintun.dll`.
+WINTUN_VERSION = "0.14.1"
+WINTUN = Artifact(
+    key="wintun",
+    basename="wintun.dll",
+    subdir="bin",
+    bytes=427_552,
+    sha256="e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce",
+    note=f"wintun {WINTUN_VERSION} amd64（官方包 www.wintun.net，指纹现读核对）；TUN 建网卡用，"
+    "必须与引擎可执行体同目录或在 System32 —— 缺它 mihomo 起不来 TUN",
+)
+
+
+def wintun_sides(binary: str = "", *, workdir: str | Path | None = None) -> list[Path]:
+    """Where Windows would actually look for `wintun.dll`, in load order.
+
+    The order is the OS's, not a preference: the executable's own directory, then the system
+    directories, then the **current directory** — and the engine is spawned with
+    `cwd=<workdir>` (`engine._spawn`), which is why the workdir counts as a real answer here.
+    `$PLOBI_HOME/egress/bin` is *our* shelf, not a search path, so it never appears below.
+    """
+    out: list[Path] = []
+    if binary:
+        raw = os.path.abspath(os.path.expanduser(str(binary)))
+        out.append((Path(raw) if os.path.isdir(raw) else Path(raw).parent) / WINTUN.basename)
+    system = os.environ.get("SystemRoot") or r"C:\Windows"
+    out.append(Path(system) / "System32" / WINTUN.basename)
+    if workdir is not None:
+        out.append(Path(workdir) / WINTUN.basename)
+    return out
+
+
+def wintun_side(binary: str = "", *, home: str | Path | None = None,
+                workdir: str | Path | None = None) -> dict[str, Any]:
+    """Is the TUN driver reachable, and where would we put it?  Read-only.
+
+    `target` is the directory **we** own (the engine's workdir, else next to the binary):
+    writing into somebody's portable tool directory is not a default, and the workdir is on
+    the load path anyway because the engine starts with that as its current directory.
+
+    With no workdir given it falls back to the compiled-config one (`<egress>/runtime`), so a
+    status poll — which has no snapshot in hand — still asks about the directory the engine
+    will actually be sitting in.
+    """
+    if workdir is None:
+        workdir = egress_root(home) / "runtime"
+    sides = wintun_sides(binary, workdir=workdir)
+    found = next((p for p in sides if p.is_file()), None)
+    source = artifact_path(WINTUN, home=home)
+    target = Path(workdir) / WINTUN.basename
+    return {
+        "found": bool(found),
+        "where": str(found) if found else "",
+        "searched": [str(p) for p in sides],
+        #: what `install_wintun` copies from, and where it lands
+        "source": str(source) if source.is_file() else "",
+        "target": str(target) if target else "",
+    }
+
+
+def install_wintun(binary: str = "", *, home: str | Path | None = None,
+                   workdir: str | Path | None = None) -> tuple[bool, str]:
+    """Put our shipped `wintun.dll` where the engine will load it.  **Copy, never download.**
+
+    The engine loads it by name when the TUN comes up; with no copy on its search path mihomo
+    fails the adapter and the machine keeps its old route — which reads as "TUN 拨上去了但没生效".
+    Copying into the engine's own workdir is what makes 装机后不碰命令行 true on a box that
+    pointed `engine.binary` at somebody's portable folder.
+    """
+    import shutil
+
+    side = wintun_side(binary, home=home, workdir=workdir)
+    if side["found"]:
+        return True, f"TUN 驱动在位：{side['where']}"
+    source, target = side["source"], side["target"]
+    if not source:
+        return False, (
+            f"没有 wintun.dll（{WINTUN.human}，sha256 {WINTUN.sha256[:12]}…）可放：随包里没带，"
+            f"$PLOBI_HOME 侧也没有 —— 把它放到 {target} 是 TUN 的前置"
+        )
+    if not target:
+        return False, "引擎工作目录没读出来，wintun.dll 没地方放"
+    try:
+        Path(target).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    except OSError as exc:
+        return False, f"wintun.dll 没能从 {source} 放到 {target}：{type(exc).__name__} {exc}"
+    return True, f"TUN 驱动放到 {target}（来自 {source}）"
+
 
 def egress_root(home: str | Path | None = None) -> Path:
     from agent.egress.engine import egress_dir

@@ -10,7 +10,7 @@ function tempRoot(label) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `plobi-egress-assets-${label}-`))
 }
 
-test('staging copies the three files by name from any layout, newest wins, and leaves no marker', async () => {
+test('staging copies every shipped file by name from any layout, newest wins, and leaves no marker', async () => {
   const root = tempRoot('copy')
   try {
     const src = path.join(root, 'src')
@@ -20,6 +20,7 @@ test('staging copies the three files by name from any layout, newest wins, and l
     fs.writeFileSync(path.join(src, 'vendor', 'bin', 'mihomo.exe'), 'n'.repeat(4096), 'utf8')
     fs.writeFileSync(path.join(src, 'home-egress', 'GeoSite.dat'), 'fresh'.repeat(20), 'utf8')
     fs.writeFileSync(path.join(src, 'vendor', 'geoip.metadb'), 'i'.repeat(1024), 'utf8')
+    fs.writeFileSync(path.join(src, 'vendor', 'bin', 'wintun.dll'), 'w'.repeat(512), 'utf8')
     const dest = path.join(root, 'build', 'egress')
     const stale = path.join(dest, 'GeoSite.dat')
     fs.mkdirSync(dest, { recursive: true })
@@ -36,6 +37,7 @@ test('staging copies the three files by name from any layout, newest wins, and l
     assert.equal(fs.readFileSync(path.join(dest, 'bin', 'mihomo.exe'), 'utf8'), 'n'.repeat(4096), 'the newer binary wins')
     assert.equal(fs.readFileSync(path.join(dest, 'GeoSite.dat'), 'utf8'), 'fresh'.repeat(20))
     assert.equal(fs.readFileSync(path.join(dest, 'geoip.metadb'), 'utf8'), 'i'.repeat(1024))
+    assert.equal(fs.readFileSync(path.join(dest, 'bin', 'wintun.dll'), 'utf8'), 'w'.repeat(512), 'TUN 的驱动必须与 mihomo.exe 同在 bin/')
     assert.equal(fs.existsSync(path.join(dest, 'MISSING.txt')), false, 'a complete bundle must not leave a marker')
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
@@ -53,11 +55,12 @@ test('a bundle without the engine says so in the package instead of failing the 
     const partial = await stageEgressAssets({ srcDir: src, destDir: dest, log: () => {} })
 
     assert.deepEqual(partial.copy.map((item) => item.name), ['mihomo.exe'], partial.copy)
-    assert.deepEqual(partial.missing.sort(), ['GeoSite.dat', 'geoip.metadb'], partial.missing)
+    assert.deepEqual(partial.missing.sort(), ['GeoSite.dat', 'geoip.metadb', 'wintun.dll'], partial.missing)
     const marker = fs.readFileSync(path.join(dest, 'MISSING.txt'), 'utf8')
 
     assert.match(marker, /GeoSite\.dat/, marker)
     assert.match(marker, /geoip\.metadb/, marker)
+    assert.match(marker, /wintun\.dll/, 'a bundle without the TUN driver cannot do TUN — say it')
     assert.match(marker, /PLOBI_EGRESS_SRC/, 'the marker has to name the build-side fix')
 
     // No source at all (the state of a machine that simply never set the variable).

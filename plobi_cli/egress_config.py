@@ -198,6 +198,43 @@ def read_egress() -> dict[str, Any]:
     }
 
 
+def apply_switch(
+    *,
+    transport: str = "",
+    mode: str = "",
+    exit_to: str = "",
+    allow_foreign: bool = False,
+) -> tuple[bool, list[str]]:
+    """Drive the bottom-bar switch from the command line — the same three writes the pane makes.
+
+    Why it lives here: this is the one module allowed to name the ``egress`` key, and every
+    edit is a read-modify-write through :func:`read_egress`, so switching the machine's
+    carrier cannot also wipe the members, the mirrors or ``engine.dns`` the block carries.
+    ``transport`` needs the TUN shape from :func:`agent.egress.tun.default_block` — the
+    name of an adapter is not something a caller gets to invent (纸 §25).
+    """
+    from agent.egress import switch, tun
+
+    network = dict(read_egress().get("network") or {})
+    block = dict(network.get("egress") or {})
+    current_tun = dict((((block.get("engine") or {}) if isinstance(block.get("engine"), dict) else {}).get("tun") or {}))
+    try:
+        if transport:
+            block = switch.set_transport(
+                block,
+                transport,
+                tun_block=tun.default_block(allow_foreign=True if allow_foreign else None, keep=current_tun),
+            )
+        if mode:
+            block = switch.set_mode(block, mode)
+        if exit_to:
+            block = switch.set_exit(block, exit_to)
+    except ValueError as exc:
+        return False, [str(exc)]
+    network["egress"] = block
+    return replace_egress(network)
+
+
 def set_system_proxy(desired: bool) -> tuple[bool, list[str]]:
     """Flip ``network.egress.system_proxy.enabled`` and leave every other key alone.
 

@@ -1,12 +1,13 @@
 'use strict'
 /**
- * stage-egress-assets.mjs — put the routing engine's three big files into the bundle.
+ * stage-egress-assets.mjs — put the routing engine's files into the bundle.
  *
  * Why this exists: `network.egress` can supervise mihomo, but on a machine that only ever
- * installed the app there is no mihomo, no `GeoSite.dat` and no `geoip.metadb` — and an engine
- * started without the geo data prints "start download" and never binds, while that download needs
- * the egress the engine was supposed to provide (纸 §28). The user's 10-12 ruling was 随包全带;
- * this is the build side of it, so nobody has to run a script after installing (口径 32).
+ * installed the app there is no mihomo, no `GeoSite.dat`, no `geoip.metadb` and no TUN driver
+ * — and an engine started without the geo data prints "start download" and never binds, while
+ * that download needs the egress the engine was supposed to provide (纸 §28). The user's 10-12
+ * ruling was 随包全带; this is the build side of it, so nobody has to run a script after
+ * installing (口径 32).
  *
  * Two deliberate limits:
  *  · **The files are not in git.** Code is a public product repo (裁定 134), so a 59 MB binary
@@ -23,7 +24,10 @@ import crypto from 'node:crypto'
 export const EGRESS_ASSETS = [
   { name: 'mihomo.exe', subdir: 'bin' },
   { name: 'GeoSite.dat', subdir: '' },
-  { name: 'geoip.metadb', subdir: '' }
+  { name: 'geoip.metadb', subdir: '' },
+  // 11-01: TUN 的驱动。引擎按名字加载 `wintun.dll`（exe 目录 → System32 → 当前目录），
+  // 随包那一半落在 bin/ 里与 mihomo.exe 同目录；缺它守卫会过、引擎会起、网卡不会建。
+  { name: 'wintun.dll', subdir: 'bin' }
 ]
 
 function walk(dir, depth = 0, out = []) {

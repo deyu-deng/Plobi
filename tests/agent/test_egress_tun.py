@@ -39,9 +39,17 @@ def _tun_table():
 
 @pytest.fixture
 def quiet_guard(monkeypatch):
-    """A machine the guard would let through: Windows, elevated, nobody else's TUN."""
+    """A machine the guard would let through: Windows, elevated, the driver present, nobody else's TUN."""
     monkeypatch.setattr(tun, "supported", lambda: True)
     monkeypatch.setattr(tun, "is_admin", lambda: (True, ""))
+    #: 11-01 added to this fixture: a guard that passes on permissions still cannot build an
+    #: adapter without `wintun.dll` beside the binary, and on this box the engine binary is
+    #: wherever the table put it — so the tests state the driver rather than touch a disk.
+    monkeypatch.setattr(
+        tun, "_wintun_side",
+        lambda binary="", **kw: {"found": True, "where": "M:/fake/wintun.dll", "searched": [],
+                                 "source": "", "target": "M:/fake/wintun.dll"},
+    )
     monkeypatch.setattr(tun, "default_route_holders", lambda: ([{"ifIndex": 12, "name": "Wi-Fi",
                                                                  "description": "Intel Wi-Fi"}], ""))
     monkeypatch.setattr(tun, "tun_class_adapters", lambda: ([], ""))
@@ -352,3 +360,45 @@ def test_listening_is_a_real_socket_call_not_a_string_match(tmp_path):
     finally:
         s.close()
     assert egress_engine.listening(port, timeout=0.6) is False, "关掉之后必须不再说有人在听"
+
+
+# ── the driver (11-01): 权限过了不等于网卡建得出来 ────────────────────────────
+
+def test_no_driver_is_refused_even_with_everything_else_in_place(monkeypatch, quiet_guard):
+    """Measured on this box: an elevated engine with a clean route still came up with **no
+    TUN at all**, because nothing was loading `wintun.dll`.  A guard that only asks about
+    permissions calls that machine "放行" — the refusal has to name the file."""
+    monkeypatch.setattr(
+        tun, "_wintun_side",
+        lambda binary="", **kw: {"found": False, "where": "", "searched": ["M:/x/wintun.dll"],
+                                 "source": "", "target": "M:/x/wintun.dll"},
+    )
+
+    verdict = tun.preflight(_tun_table())
+
+    assert verdict["ok"] is False
+    assert any("wintun.dll" in r for r in verdict["reasons"]), verdict["reasons"]
+    said = " ".join(tun.status_lines(verdict))
+    assert "wintun 驱动: 不在场" in said, said
+
+
+def test_a_shipped_copy_is_named_as_the_way_to_fix_it(monkeypatch, quiet_guard):
+    monkeypatch.setattr(
+        tun, "_wintun_side",
+        lambda binary="", **kw: {"found": False, "where": "", "searched": [],
+                                 "source": "D:/plobi/egress/bin/wintun.dll", "target": "D:/run/wintun.dll"},
+    )
+
+    verdict = tun.preflight(_tun_table())
+
+    assert "D:/plobi/egress/bin/wintun.dll" in verdict["reasons"][0], verdict["reasons"]
+
+
+def test_the_switch_writes_the_shape_the_guard_reads_by_name():
+    """`allow-foreign` never arrives by default, and the adapter name is the guard's own
+    way of telling ours from theirs — so both come from one function, not from a pane."""
+    assert tun.default_block() == {"name": tun.DEFAULT_NAME, "stack": tun.DEFAULT_STACK,
+                                   "allow-foreign": False}
+    assert tun.default_block(keep={"name": "mine", "strict-route": True})["name"] == "mine"
+    assert tun.default_block(keep={"allow-foreign": True})["allow-foreign"] is True
+    assert tun.default_block(allow_foreign=False, keep={"allow-foreign": True})["allow-foreign"] is False

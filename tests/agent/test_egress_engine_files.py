@@ -105,3 +105,52 @@ def test_the_files_note_counts_a_binary_the_table_points_at_somewhere_else(tmp_p
 
     assert "3/3 在位" in said, snap.notes
     assert "binary 在" in said, snap.notes
+
+
+# ── wintun: the TUN driver, shipped beside the binary (纸 §42) ───────────────
+
+def test_the_tun_driver_is_pinned_from_what_this_box_downloaded():
+    """The digest is read from the bytes this box actually took from www.wintun.net on
+    11-01, after the **package** digest was compared to the one that site publishes —
+    a driver we did not measure does not go in here (same rule as the three above)."""
+    from agent.egress.engine_files import WINTUN
+
+    assert re.fullmatch(r"[0-9a-f]{64}", WINTUN.sha256), WINTUN.sha256
+    assert WINTUN.bytes == 427_552 and WINTUN.subdir == "bin", WINTUN
+    assert engine_files.WINTUN_VERSION == "0.14.1"
+
+
+def test_the_workdir_counts_as_a_load_path_because_the_engine_starts_there(tmp_path):
+    """`_spawn` starts mihomo with `cwd=<workdir>`, and Windows searches the current
+    directory — so the directory **we own** is a real answer, and nobody's portable tool
+    folder has to be written into."""
+    workdir = tmp_path / "runtime"
+    workdir.mkdir()
+    (workdir / "wintun.dll").write_bytes(b"x")
+
+    side = engine_files.wintun_side("D:/somewhere/mihomo.exe", workdir=workdir)
+
+    assert side["found"] is True and side["where"].endswith("runtime\wintun.dll") or side["where"].endswith("runtime/wintun.dll"), side
+    assert str(workdir) in side["searched"][-1], side["searched"]
+
+
+def test_install_wintun_copies_our_own_and_never_downloads(tmp_path):
+    home = tmp_path / "home"
+    shelf = home / "egress" / "bin"
+    shelf.mkdir(parents=True)
+    (shelf / "wintun.dll").write_bytes(b"driver-bytes")
+    workdir = home / "egress" / "runtime"
+
+    ok, why = engine_files.install_wintun("", home=home, workdir=workdir)
+
+    assert ok, why
+    assert (workdir / "wintun.dll").read_bytes() == b"driver-bytes", why
+    assert "runtime" in why, why
+
+
+def test_no_shipped_copy_is_said_as_a_missing_file_not_a_refusal_to_try(tmp_path):
+    ok, why = engine_files.install_wintun("", home=tmp_path / "empty", workdir=tmp_path / "run")
+
+    assert ok is False
+    assert "wintun.dll" in why and "sha256 e5da8447dc2c" in why, why
+    assert "wintun.dll" in why.split("把它放到")[1], "要点名放到哪：一句话说不清落点就等于没说"

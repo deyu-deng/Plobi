@@ -37,6 +37,9 @@ def cmd_network(args: argparse.Namespace) -> int:
     if action == "proxy":
         return _proxy(args)
 
+    if action == "switch":
+        return _switch(args)
+
     table = load_table()
     if action == "start":
         report = engine.ensure(table)
@@ -85,6 +88,57 @@ def _proxy(args: argparse.Namespace) -> int:
     if ok:
         _persist_switch(False)
     return 0 if ok else 1
+
+
+def _switch(args: argparse.Namespace) -> int:
+    """The bottom-bar switch, from the command line.
+
+    No flags = read it.  Flags = write the table **and** hand it to supervision in the same
+    breath: 配了不生效 is the failure this whole surface was built to make impossible, so a
+    switch that only edited a file would be a lie with extra steps (裁定 94 — the same
+    reading the pane gets, from :mod:`agent.egress.status`).
+    """
+    from agent.egress.rules import load_table
+    from agent.egress.switch import read as read_switch
+
+    transport = str(getattr(args, "transport", "") or "")
+    mode = str(getattr(args, "mode", "") or "")
+    exit_to = str(getattr(args, "exit_to", "") or "")
+    allow_foreign = bool(getattr(args, "allow_foreign", False))
+
+    if not (transport or mode or exit_to):
+        print(" ".join(f"{k}={v}" for k, v in read_switch(load_table(force_reload=True)).items()))
+        return 0
+
+    from plobi_cli.egress_config import apply_switch
+
+    ok, issues = apply_switch(transport=transport, mode=mode, exit_to=exit_to, allow_foreign=allow_foreign)
+    if not ok:
+        for line in issues:
+            print(f"表没写进去：{line}")
+        return 1
+
+    table = load_table(force_reload=True)
+    print(" ".join(f"{k}={v}" for k, v in read_switch(table).items()))
+
+    from agent.egress import engine as _engine
+    from agent.egress import system_proxy as _system_proxy
+
+    rc = 0
+    report = _engine.reload_engine(table)
+    for line in report.lines():
+        print(line)
+    if report.state not in (_engine.OFF, _engine.OURS, _engine.STOPPED):
+        rc = 1
+    plan = _system_proxy.ensure(table)
+    if plan is None:
+        print("system proxy: 表里没说要接管，注册表不动")
+    else:
+        for line in plan.lines():
+            print(line)
+        if not plan.ok:
+            rc = 1
+    return rc
 
 
 def _persist_switch(desired: bool) -> None:

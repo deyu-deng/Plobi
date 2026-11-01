@@ -136,3 +136,91 @@ def test_a_failed_start_is_a_nonzero_exit(monkeypatch, capsys):
     )
     assert network_cmd.cmd_network(_Action("start")) == 1
     assert "failed" in capsys.readouterr().out
+
+
+# ── `plobi network switch` — the bottom-bar overlay's command-line twin (纸 §42) ──
+
+_SWITCH_TABLE = {
+    "nodes": {"🇭🇰 香港W01": {"type": "ss", "server": "hk.example", "port": 1,
+                              "cipher": "aes-256-gcm", "password_env": "PLOBI_T_PW"}},
+    "groups": {"POOL": {"type": "url-test", "include": ["🇭🇰 香港W01"]}},
+    "rules": [{"match": "geosite:cn", "via": "direct"}, {"match": "*", "via": "proxy:POOL"}],
+    "engine": {"enabled": True, "mixed_port": 7895},
+    "system_proxy": {"enabled": True},
+}
+
+
+class _SwitchArgs:
+    network_action = "switch"
+    transport = ""
+    mode = ""
+    exit_to = ""
+    allow_foreign = False
+
+
+def _quiet_supervision(monkeypatch):
+    """The switch hands the table to supervision; a test must not touch this machine."""
+    from agent.egress import engine as _engine
+    from agent.egress import system_proxy as _system_proxy
+
+    calls: list[str] = []
+
+    class _Report:
+        state = _engine.OURS
+
+        def lines(self):
+            return ["engine: running-ours (test)"]
+
+    class _Plan:
+        ok = True
+        reason = "接管了（test）"
+
+        def lines(self):
+            return ["system proxy: test"]
+
+    def reload_engine(table=None, **kw):
+        calls.append("engine")
+        return _Report()
+
+    def ensure(table=None, **kw):
+        calls.append("proxy")
+        return _Plan()
+
+    monkeypatch.setattr(_engine, "reload_engine", reload_engine)
+    monkeypatch.setattr(_system_proxy, "ensure", ensure)
+    return calls
+
+
+def test_no_flags_reads_the_switch_without_writing(tmp_path, monkeypatch, capsys):
+    _home(tmp_path, monkeypatch, _SWITCH_TABLE)
+
+    assert cmd_network(_SwitchArgs()) == 0
+    said = capsys.readouterr().out
+    assert "transport=system" in said and "mode=rule" in said and "exit=POOL" in said, said
+    assert (tmp_path / "config.yaml").read_text(encoding="utf-8").count("geosite:cn") == 1
+
+
+def test_a_transport_change_writes_the_table_and_hands_it_to_supervision(tmp_path, monkeypatch, capsys):
+    from plobi_cli import egress_config
+
+    _home(tmp_path, monkeypatch, _SWITCH_TABLE)
+    calls = _quiet_supervision(monkeypatch)
+    args = _SwitchArgs()
+    args.transport = "tun"
+
+    assert cmd_network(args) == 0
+    assert calls == ["engine", "proxy"], "拨开关必须当场生效，不是写个文件等人重启"
+    saved = (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    assert "tun:" in saved and "PlobiTun" in saved, saved
+    assert "enabled: false" in saved.split("system_proxy")[1], "两种承载互斥：TUN 上来就把系统代理交还"
+    assert egress_config.read_egress()["network"]["egress"]["nodes"], "换承载不许把成员抹掉"
+
+
+def test_choosing_an_exit_reaches_the_parser_not_only_the_file(tmp_path, monkeypatch, capsys):
+    _home(tmp_path, monkeypatch, _SWITCH_TABLE)
+    _quiet_supervision(monkeypatch)
+    args = _SwitchArgs()
+    args.exit_to = "没有这个组"
+
+    assert cmd_network(args) == 1
+    assert "表没写进去" in capsys.readouterr().out

@@ -520,7 +520,7 @@ def _tun_gate(table: Table, snap: _Snapshot) -> tuple[Optional[EngineReport], tu
             snap.port, str(snap.workdir or ""), snap.source,
             notes=(*snap.notes, "tun: refused — the pool file is not ours to rewrite"),
         ), ()
-    verdict = tun.preflight(table)
+    verdict = tun.preflight(table, workdir=str(snap.workdir) if snap.workdir else None)
     said = tuple(tun.status_lines(verdict))
     if verdict["ok"]:
         return None, said
@@ -566,11 +566,16 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
     #: A TUN rewrites this machine's default route, so it gets a gate before anything
     #: is written or started: no admin, another party's TUN on the box, or an unreadable
     #: routing table all mean **refuse**, never "start without it and hope nobody notices".
+    #: The driver goes in first — without `wintun.dll` next to the binary the guard would
+    #: refuse a machine that only lacked a file we ship ourselves (measured 11-01).
     tun_notes: tuple[str, ...] = ()
     if table.engine_tun.get("enabled"):
-        refused, tun_notes = _tun_gate(table, snap)
+        placed, why = engine_files.install_wintun(snap.binary, home=home, workdir=snap.workdir)
+        tun_notes = (f"wintun: {'在位' if placed else '没放好'} — {why}",)
+        refused, gate_notes = _tun_gate(table, snap)
         if refused is not None:
             return refused
+        tun_notes = (*tun_notes, *gate_notes)
 
     snap.workdir.mkdir(parents=True, exist_ok=True)
     #: The engine reads its geo data out of the directory it was started in. Copying it there

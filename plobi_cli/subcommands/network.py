@@ -110,5 +110,34 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
     proxy_parser.add_argument("proxy_action", choices=("on", "off", "status"), nargs="?", default="status")
     proxy_parser.add_argument("--dry-run", action="store_true", help="Show what `on` would write; change nothing")
     proxy_parser.set_defaults(func=cmd_network)
+    # 底栏那个 overlay 的命令行形状（用户 11-01 要「一屏开关、一屏选节点」）：同一张表的同三个
+    # 动作，桌面点得到、没有桌面也该拨得动（口径 32：装机后的机器不该只能从某个 GUI 配置）。
+    switch_parser = network_sub.add_parser(
+        "switch",
+        help="Drive the machine-wide switch: which carrier, rules or global, which default exit",
+        description="Read (with no flags) or change the three things the bottom-bar overlay shows: "
+        "the machine-wide carrier (TUN / system proxy / none), whether the CN classification still "
+        "goes direct (rules) or everything follows the catch-all (global), and what the catch-all "
+        "points at. Writes the table, then hands it to supervision — same reading as the pane.",
+    )
+    switch_parser.add_argument(
+        "--transport", dest="transport", choices=("tun", "system", "off"), default="",
+        help="Which carrier the machine gets; the other one is turned off (they are modes, not stacks)",
+    )
+    switch_parser.add_argument(
+        "--mode", dest="mode", choices=("rule", "global"), default="",
+        help="rule = the geosite:cn classification goes direct; global = everything uses the default exit",
+    )
+    switch_parser.add_argument(
+        "--exit", dest="exit_to", default="", help="Point the catch-all at this group or member"
+    )
+    switch_parser.add_argument(
+        "--allow-foreign",
+        dest="allow_foreign",
+        action="store_true",
+        help="With --transport tun: start our adapter next to somebody else's tunnel instead of refusing "
+        "(纸 §25 — a stated decision, never a default)",
+    )
+    switch_parser.set_defaults(func=cmd_network)
     # `plobi network` alone should do the read-only thing, never the destructive one.
     network_parser.set_defaults(func=cmd_network, network_action="status")

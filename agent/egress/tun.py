@@ -33,6 +33,36 @@ PROBE_TIMEOUT = 8.0
 #: Adapter classes that own — or are built to own — the default route.
 TUN_CLASSES = ("wintun", "tap", "utun", "vpn", "tunnel")
 
+#: What a TUN this product turns on looks like, when the table has not said otherwise.
+#: Named by the **product** because the guard tells ours from somebody else's by name
+#: (`preflight` filters `foreign_tun` on it), and the stack is the one the pinned engine
+#: was compiled with (`engine_files.BINARY.note`: windows amd64 **with_gvisor**).
+DEFAULT_NAME = "PlobiTun"
+DEFAULT_STACK = "gvisor"
+
+
+def default_block(*, allow_foreign: Optional[bool] = None, keep: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The ``engine.tun`` block the switch writes.
+
+    One place owns the shape, so a pane, the CLI and the tray cannot each invent an adapter
+    name — and ``allow-foreign`` stays an explicit decision instead of a default: it means
+    "start our TUN next to theirs and let the metrics fight", which is 纸 §25's escape hatch,
+    not this product's assumption about a machine.
+
+    `allow_foreign=None` means **no new statement**: whatever the table already said is kept,
+    because re-picking the carrier is not a way to silently revoke a decision somebody made.
+    Only an explicit True/False overrides.
+
+    Only keys mihomo itself reads go in here (plus our two guard-only keys): the compiler
+    passes the block through, so a comment field would become a config field.
+    """
+    block: dict[str, Any] = dict(keep or {})
+    block.setdefault("name", DEFAULT_NAME)
+    block.setdefault("stack", DEFAULT_STACK)
+    if allow_foreign is not None or "allow-foreign" not in block:
+        block["allow-foreign"] = bool(allow_foreign)
+    return block
+
 _PS_DEFAULT_ROUTE = (
     "$ErrorActionPreference='SilentlyContinue';"
     "$r=Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 4;"
@@ -108,7 +138,19 @@ def _is_tun_class(entry: dict[str, Any]) -> bool:
     return any(needle in said for needle in TUN_CLASSES)
 
 
-def preflight(table: Optional[Table] = None) -> dict[str, Any]:
+def _wintun_side(binary: str = "", *, workdir: str | None = None) -> dict[str, Any]:
+    """Import seam for the driver check — a guard must be testable without a real DLL."""
+    from agent.egress import engine_files
+
+    return engine_files.wintun_side(binary, workdir=workdir)
+
+
+#: Named here so the refusal sentence does not depend on importing the manifest module.
+WINTUN_BASENAME = "wintun.dll"
+WINTUN_BYTES = 427_552
+
+
+def preflight(table: Optional[Table] = None, *, workdir: str | None = None) -> dict[str, Any]:
     """Can we hand this machine's default route to our engine — with the reasons."""
     tun = dict((table.engine_tun if table is not None else {}) or {})
     out: dict[str, Any] = {
@@ -123,6 +165,8 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
         "foreign_tun": [],
         "allow_foreign": False,
         "overridden": False,
+        "wintun": {},
+        "block": default_block(allow_foreign=bool(tun.get("allow-foreign")), keep=tun),
         "ok": False,
         "reasons": [],
         "probe_errors": [],
@@ -140,6 +184,21 @@ def preflight(table: Optional[Table] = None) -> dict[str, Any]:
         out["reasons"].append(
             "这个进程不是管理员 —— TUN 要建网卡就得提权。我们不自己弹 UAC：以管理员身份重启 Plobi 再拨这个开关"
             + (f"（{why}）" if why else "")
+        )
+
+    #: The driver, not the permission.  Measured 11-01: the guard passed on an elevated
+    #: process and mihomo still came up with **no TUN at all** because nothing was loading
+    #: `wintun.dll` — "admin yes, adapter no" is a refusal nobody can guess from the log.
+    side = _wintun_side(getattr(table, "engine_binary", "") if table is not None else "", workdir=workdir)
+    out["wintun"] = side
+    if not side["found"]:
+        out["reasons"].append(
+            "场上没有 wintun.dll —— TUN 网卡建不出来。"
+            + (
+                f"我们随包的那份在 {side['source']}，起引擎前会复制到 {side['target']}"
+                if side["source"]
+                else f"把 {WINTUN_BASENAME}（{WINTUN_BYTES} 字节）放到 {side['target']}"
+            )
         )
 
     holders, err = default_route_holders()
@@ -217,6 +276,15 @@ def _adapters_said(info: dict[str, Any]) -> str:
     return f"场上别人的 tunnel/虚拟网卡: {names}"
 
 
+def _wintun_said(info: dict[str, Any]) -> str:
+    side = info.get("wintun") or {}
+    if not side:
+        return "wintun 驱动: 没查"
+    if side.get("found"):
+        return f"wintun 驱动: {side.get('where')}"
+    return "wintun 驱动: 不在场（引擎旁边与 System32 都没有）"
+
+
 def status_lines(info: dict[str, Any]) -> list[str]:
     """The same reading in prose, for `plobi network status` (裁定 94: one reading).
 
@@ -231,7 +299,7 @@ def status_lines(info: dict[str, Any]) -> list[str]:
         if info.get("ok")
         else f"tun: 守卫拒绝开启 —— {info.get('name') or '未命名'}"
     )
-    lines = [head, f"  {_holders_said(info)}", f"  {_adapters_said(info)}"]
+    lines = [head, f"  {_holders_said(info)}", f"  {_adapters_said(info)}", f"  {_wintun_said(info)}"]
     if info.get("overridden"):
         names = ", ".join(str(e.get("name") or e.get("description")) for e in (info.get("foreign_tun") or [])[:4])
         lines.append(

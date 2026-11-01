@@ -17,8 +17,27 @@ answer for the CLI, the panel, and the boot path.
 
 from __future__ import annotations
 
-from agent.egress import engine, system_proxy, tun
+from agent.egress import engine, switch, system_proxy, tun
 from agent.egress.rules import Table, load_table
+
+
+def _tun_reading(table: Table) -> dict:
+    """The TUN answer, **always** with the block a switch has to write.
+
+    The guard runs OS probes, so those only run when the table asks for a TUN — the tray
+    and the panel poll this endpoint.  The *shape* (`name` / `stack` / `allow-foreign`) is
+    pure, so it is always there: a pane that wants to offer 「打开 TUN」 needs what to write
+    before anything is requested, and it must not invent its own adapter name (裁定 94).
+    """
+    if table.engine_tun.get("enabled"):
+        return tun.preflight(table)
+    return {
+        "requested": False,
+        "admin": tun.is_admin()[0],
+        "block": tun.default_block(keep=table.engine_tun),
+        "reasons": [],
+    }
+
 
 
 def snapshot(table: Table | None = None, *, home: str | None = None) -> dict:
@@ -61,9 +80,13 @@ def snapshot(table: Table | None = None, *, home: str | None = None) -> dict:
         # Electron's own traffic is a *rendering* of the same table, not a second decision:
         # `session.setProxy` cannot read our PAC, so the backend says it in Chromium's dialect.
         "desktop_proxy": system_proxy.desktop_view(table),
+        #: The control reading for the bottom-bar switch (一屏 VPN 开关 / 规则还是全局 /
+        #: TUN 还是系统代理).  Derived here, in the module every surface already reads,
+        #: so a pane cannot grow its own idea of "which one is on" (裁定 94).
+        "switch": switch.read(table),
         # The guard runs OS probes, so it is only consulted when the table actually
         # asks for a TUN — the tray and panel poll this endpoint every few minutes.
-        "tun": tun.preflight(table) if table.engine_tun.get("enabled") else {"requested": False},
+        "tun": _tun_reading(table),
     }
 
 
@@ -85,7 +108,13 @@ def render(
         lines.append("network.egress: not declared — traffic uses whatever the environment says")
         return lines
 
-    lines.append(f"table: {len(table.rules)} rule(s), catch-all {table.rules[-1].via}")
+    ctl = switch.read(table)
+    lines.append(
+        f"switch: vpn={'on' if ctl['vpn'] else 'off'} transport={ctl['transport']} "
+        f"mode={ctl['mode']} exit={ctl['exit'] or '—'}"
+    )
+    if table.rules:
+        lines.append(f"table: {len(table.rules)} rule(s), catch-all {table.rules[-1].via}")
     if table.nodes or table.groups:
         if table.client_front_door:
             lines.append(
