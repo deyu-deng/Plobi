@@ -294,6 +294,22 @@ class Registry:
         except Exception as e:  # a broken probe is not evidence the leg works
             return False, f"probe_error:{type(e).__name__}"
 
+    def _tuning_of(self, prov, model: str) -> dict:
+        """One model's own adjustable surface, as the leg reports it.
+
+        A leg that cannot answer is a leg that said nothing — never a leg that said
+        "no choices" — so a broken `tuning()` falls back to the empty dict and the
+        picker keeps its generic controls.
+        """
+        probe = getattr(prov, "tuning", None)
+        if not callable(probe):
+            return {}
+        try:
+            answer = probe(model)
+        except Exception:  # noqa: BLE001 - a catalog row must not fail on a knob
+            return {}
+        return answer if isinstance(answer, dict) else {}
+
     def list_models(self, selectable_only: bool = False) -> list[dict]:
         out = []
         seen = set()
@@ -340,6 +356,11 @@ class Registry:
                     # Plobi / Plobi extensions (OpenAI clients ignore unknown keys)
                     "provider": prov_name,
                     "capabilities": caps,
+                    # What this model itself says the user may change: its thinking levels,
+                    # its context windows, its output cap. `{}` = the leg did not say
+                    # (see `Provider.tuning`), which the picker reads as "keep the generic
+                    # controls", not as "nothing is adjustable".
+                    "tuning": self._tuning_of(prov, m),
                     "live": live,
                     "live_reason": reason,
                     "selectable": usable,
