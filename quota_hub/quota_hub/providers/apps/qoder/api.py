@@ -322,8 +322,10 @@ class QoderProvider(Provider):
         if windows:
             if want in windows:
                 return want
-            near = min(windows, key=lambda w: abs(w - want))
-            return min(near, windows[-1])
+            # Never grant more than was asked: the largest window at or below it, and
+            # only when nothing is that small, the smallest one the model offers.
+            smaller = [w for w in windows if w <= want]
+            return max(smaller) if smaller else min(windows)
         return min(want, ceiling)
 
     def _body(self, oai_req: dict, record_id: str) -> tuple[str, dict]:

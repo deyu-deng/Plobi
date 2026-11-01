@@ -973,6 +973,9 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             ephemeral_max_output_tokens=_ephemeral_out,
             max_tokens_param_fn=agent._max_tokens_param,
             reasoning_config=agent.reasoning_config,
+            # The window this agent budgets against: a door with its own per-model menu
+            # (the quota hub) declares the choice there. Nothing else reads it.
+            context_length=getattr(agent.context_compressor, "context_length", None),
             request_overrides=agent.request_overrides,
             session_id=getattr(agent, "session_id", None),
             provider_profile=_profile,
@@ -1005,6 +1008,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
         ephemeral_max_output_tokens=_ephemeral_out,
         max_tokens_param_fn=agent._max_tokens_param,
         reasoning_config=agent.reasoning_config,
+        context_length=getattr(agent.context_compressor, "context_length", None),
         request_overrides=agent.request_overrides,
         session_id=getattr(agent, "session_id", None),
         model_lower=(agent.model or "").lower(),

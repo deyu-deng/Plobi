@@ -87,8 +87,8 @@ class AigwProfile(ProviderProfile):
         """
         return aigw_api_key()
 
-    def build_api_kwargs_extras(self, *, reasoning_config=None, **context):
-        """Send the user's thinking level as OpenAI's own top-level field.
+    def build_api_kwargs_extras(self, *, reasoning_config=None, context_length=None, **context):
+        """Send the thinking level as OpenAI's own field, plus the window we fill.
 
         Measured 2026-11-01: the 思考强度 picker wrote `agent.reasoning_effort`, and the
         generic transport only emits a reasoning field on three gated routes
@@ -102,13 +102,23 @@ class AigwProfile(ProviderProfile):
         it directly instead of re-opening that gate for every other provider. An
         explicit "thinking off" carries no level at all: the legs keep the vendor's own
         default rather than a level the user never asked for.
+
+        `context_length` rides the same request because some doors sell a **menu** of
+        windows for one model — Qoder's own catalogue lists 200K / 400K / 1M for the same
+        row and marks it editable — and the window Plobi budgets against is the number
+        that says which one we are actually filling. Legs with no menu ignore the key.
         """
-        if not isinstance(reasoning_config, dict) or reasoning_config.get("enabled") is False:
-            return {}, {}
-        effort = str(reasoning_config.get("effort") or "").strip().lower()
-        if effort not in _EFFORTS:
-            return {}, {}
-        return {}, {"reasoning_effort": effort}
+        top: dict[str, Any] = {}
+
+        if isinstance(reasoning_config, dict) and reasoning_config.get("enabled") is not False:
+            effort = str(reasoning_config.get("effort") or "").strip().lower()
+            if effort in _EFFORTS:
+                top["reasoning_effort"] = effort
+
+        if isinstance(context_length, int) and not isinstance(context_length, bool) and context_length > 0:
+            top["context_length"] = context_length
+
+        return {}, top
 
 
 aigw = AigwProfile(

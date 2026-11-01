@@ -83,3 +83,42 @@ class TestAigwThroughTheTransport:
 
         assert kwargs["reasoning_effort"] == "low", kwargs
         assert "reasoning" not in kwargs.get("extra_body", {}), kwargs
+
+    def test_the_window_we_budget_against_travels_with_it(self):
+        """Some doors sell a menu of windows for one model (Qoder: 200K/400K/1M).
+
+        The number that decides when Plobi compresses is the same number, so it is the
+        one the door is told. Legs without a menu ignore the key — it costs nothing.
+        """
+        from agent.transports import get_transport
+
+        transport = get_transport("chat_completions")
+        profile = get_provider_profile("aigw")
+
+        kwargs = transport.build_kwargs(
+            model="qoder/qwen3.8-max",
+            messages=[{"role": "user", "content": "hi"}],
+            provider_profile=profile,
+            reasoning_config={"enabled": True, "effort": "medium"},
+            context_length=400000,
+            supports_reasoning=False,
+            base_url="http://127.0.0.1:8000/v1",
+        )
+
+        assert kwargs["reasoning_effort"] == "medium", kwargs
+        assert kwargs["context_length"] == 400000, kwargs
+
+    def test_a_profile_that_is_not_given_a_window_says_nothing(self, aigw_profile):
+        extra_body, top = aigw_profile.build_api_kwargs_extras(
+            reasoning_config={"enabled": True, "effort": "high"}, context_length=None
+        )
+
+        assert top == {"reasoning_effort": "high"}, top
+        assert extra_body == {}, extra_body
+
+    @pytest.mark.parametrize("junk", [0, -1, "400000", True, 1.5])
+    def test_a_number_we_cannot_budget_with_is_not_sent(self, aigw_profile, junk):
+        """`model.context_length` is user-written, so junk reaches here sometimes."""
+        _extra, top = aigw_profile.build_api_kwargs_extras(context_length=junk)
+
+        assert "context_length" not in top, top

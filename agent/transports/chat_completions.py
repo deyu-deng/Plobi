@@ -568,6 +568,9 @@ class ChatCompletionsTransport(ProviderTransport):
             profile.build_api_kwargs_extras(
                 reasoning_config=reasoning_config,
                 supports_reasoning=params.get("supports_reasoning", False),
+                # The window this agent budgets against. A door with its own per-model
+                # menu (the quota hub) declares it there; nobody else reads it.
+                context_length=params.get("context_length"),
                 qwen_session_metadata=params.get("qwen_session_metadata"),
                 model=model,
                 base_url=params.get("base_url"),

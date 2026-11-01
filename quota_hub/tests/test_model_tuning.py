@@ -231,8 +231,15 @@ def test_qoder_clamps_the_level_and_the_window_to_what_the_model_sells():
     assert key == "qmodel_38max", key
     # `high` is not on Qwen3.8-Max's menu (low/medium/xhigh) → nearest rung: xhigh.
     assert body["parameters"]["reasoning_effort"] == "xhigh", body["parameters"]
-    # 900K is not a window it sells → the nearest offered one, never a made-up number.
-    assert body["model_config"]["max_input_tokens"] == 1000000, body["model_config"]
+    # 900K is not a window it sells: take the largest one at or below it, never a bigger
+    # number than the caller budgeted for.
+    assert body["model_config"]["max_input_tokens"] == 400000, body["model_config"]
+
+    _, tiny = prov._body({"model": "qoder/qwen3.8-max", "context_length": 50000,
+                          "messages": [{"role": "user", "content": "hi"}]}, "rec0")
+    # Nothing that small exists on this menu → its smallest, and that is said plainly by
+    # the fact that the turn still runs.
+    assert tiny["model_config"]["max_input_tokens"] == 200000, tiny["model_config"]
 
     _, off = prov._body({"model": "qoder/auto", "reasoning_effort": "none",
                          "messages": [{"role": "user", "content": "hi"}]}, "rec2")
