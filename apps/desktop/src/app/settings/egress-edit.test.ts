@@ -100,16 +100,24 @@ describe('规则/全局与默认出口', () => {
   })
 })
 
+//: 句子来自 i18n 目录，所以这里比的是「哪一句被选中」，不是措辞。
+const COPY = {
+  proxyDeclaredNotApplied: 'declared-but-not-ours',
+  proxyNotOurs: 'not-taken-over',
+  proxyOurs: 'we-hold-it',
+  proxyUnsupported: 'windows-only'
+}
+
 describe('proxyTooltip：声明与注册表是两句话', () => {
-  it('四种读数各说各的', () => {
-    expect(proxyTooltip({ declared: true, ours: true, supported: true })).toBe('Plobi 在管这台机器的系统代理')
-    // 这台 10-31 的真实形状：表说要接管，别的程序把注册表改回去了。说"在管"就是那句假话。
-    expect(proxyTooltip({ declared: true, ours: false, supported: true })).toBe('表里说要接管，但注册表里不是我们的')
-    expect(proxyTooltip({ declared: false, ours: false, supported: true })).toBe('不是 Plobi 的（跟着系统或别的程序）')
-    expect(proxyTooltip({ declared: true, ours: true, supported: false })).toBe('这一格目前只实现 Windows')
+  it('四种读数各选各的那一句', () => {
+    expect(proxyTooltip(COPY, { declared: true, ours: true, supported: true })).toBe('we-hold-it')
+    // 这台 10-31 的真实形状：表说要接管，别的程序把注册表改回去了。选"在管"那一句就是假话。
+    expect(proxyTooltip(COPY, { declared: true, ours: false, supported: true })).toBe('declared-but-not-ours')
+    expect(proxyTooltip(COPY, { declared: false, ours: false, supported: true })).toBe('not-taken-over')
+    expect(proxyTooltip(COPY, { declared: true, ours: true, supported: false })).toBe('windows-only')
   })
 
   it('没有读数就不说话——把"读不到"报成"没接管"是另一种谎', () => {
-    expect(proxyTooltip(undefined)).toBe('')
+    expect(proxyTooltip(COPY, undefined)).toBe('')
   })
 })

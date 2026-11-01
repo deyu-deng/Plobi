@@ -380,7 +380,7 @@ export function useStatusbarItems({
       },
       // 整机出口那一格（用户 11-01：控制不该住在设置页）。形状与面板都在本线那一档里，
       // 这里只挂一行——被占文件只留挂载那条规矩。
-      egressRailItem()
+      egressRailItem(t.settings.network.title)
     ],
     [
       agendaPendingCount,

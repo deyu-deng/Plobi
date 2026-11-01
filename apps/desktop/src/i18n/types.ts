@@ -544,6 +544,31 @@ export interface Translations {
       title: string
       type: string
       url: string
+      allowForeignRetry: string
+      credMovedToEnv: (names: string) => string
+      engineNotRead: string
+      importPasted: string
+      importedCount: (format: string, nodes: number, groups: number) => string
+      modeGlobal: string
+      modeRule: string
+      needEnvVars: (names: string) => string
+      noMembersClient: string
+      noMembersPaste: string
+      noMembersSub: string
+      notLoaded: string
+      panelAll: string
+      panelEmpty: string
+      pasteHint: string
+      powerOff: string
+      powerOn: string
+      readFailed: string
+      refreshSub: string
+      refreshSubHint: string
+      tabNodes: string
+      tabSwitch: string
+      transportOff: string
+      transportSystem: string
+      transportTun: string
     }
     notifications: {
       title: string

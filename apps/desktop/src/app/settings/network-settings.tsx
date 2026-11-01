@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
 import { Globe } from '@/lib/icons'
-import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, importNetworkPool, importNetworkSubscription, saveNetworkEgress } from '@/plobi'
+import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, getNetworkSubscription, importNetworkPool, importNetworkSubscription, saveNetworkEgress } from '@/plobi'
 import type {
   NetworkEgressBlock,
   NetworkEgressRecord,
@@ -239,6 +239,7 @@ export function NetworkSettings() {
   //: 用户 10-30 问到的第二种配置方式：把别人给的整份配置**粘进来**。解析器一直支持
   //: （yaml / base64 / 一行一个链接），只是没有入口。
   const [pasted, setPasted] = useState('')
+  const [savedLink, setSavedLink] = useState(false)
   const [localClients, setLocalClients] = useState<NonNullable<NetworkImportClients['clients']>>([])
   const [poolNotes, setPoolNotes] = useState<string[]>([])
   const [importing, setImporting] = useState(false)
@@ -271,6 +272,9 @@ export function NetworkSettings() {
       .catch(() => {})
     getNetworkImportClients()
       .then((next) => alive && setLocalClients(next.clients ?? []))
+      .catch(() => {})
+    getNetworkSubscription()
+      .then((next) => alive && setSavedLink(Boolean(next.saved)))
       .catch(() => {})
     return () => {
       alive = false
@@ -328,7 +332,7 @@ export function NetworkSettings() {
       setGroups(toGroupRows({ network: { egress: answer.egress } } as unknown as NetworkEgressRecord))
       const envNames = answer.env_names ?? []
 
-      setPoolNotes([...(answer.notes ?? []), ...(envNames.length ? [`需要这些环境变量：${envNames.join(', ')}`] : [])])
+      setPoolNotes([...(answer.notes ?? []), ...(envNames.length ? [copy.needEnvVars(envNames.join(', '))] : [])])
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -349,8 +353,24 @@ export function NetworkSettings() {
       const answer = await importNetworkSubscription({ keepGroups: true, save: true, url: subUrl.trim() })
       applyImport(answer)
       if (!answer.ok && !(answer.notes ?? []).length) {
-        setError('订阅里没有可用的成员')
+        setError(copy.noMembersSub)
       }
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  /** 按存过的链接再拉一次：`plobi network import-subscription --refresh` 的屏幕形状。
+   *  不自动拉、失败不静默重试；成员换，用户自己配的组不换。 */
+  const refreshSubscription = async () => {
+    setImporting(true)
+    setError('')
+    try {
+      const answer = await importNetworkSubscription({ keepGroups: true, refresh: true })
+      applyImport(answer)
+      if (!answer.ok && !(answer.notes ?? []).length) setError(copy.noMembersSub)
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -366,7 +386,7 @@ export function NetworkSettings() {
       const answer = await importNetworkSubscription({ keepGroups: true, text: pasted.trim() })
       applyImport(answer)
       if (answer.ok) setPasted('')
-      if (!answer.ok && !(answer.notes ?? []).length) setError('这段配置里没有可用的成员')
+      if (!answer.ok && !(answer.notes ?? []).length) setError(copy.noMembersPaste)
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -385,7 +405,7 @@ export function NetworkSettings() {
       const answer = await importNetworkSubscription({ client })
       applyImport(answer)
       if (!answer.ok && !(answer.notes ?? []).length) {
-        setError('这个客户端的缓存里没有可用的成员')
+        setError(copy.noMembersClient)
       }
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -413,8 +433,8 @@ export function NetworkSettings() {
 
     setPoolNotes([
       ...(answer.notes ?? []),
-      ...(answer.format ? [`认出的格式：${answer.format}；成员 ${nextNodes.length} 个、组 ${nextGroups.length} 个`] : []),
-      ...(envNames.length ? [`凭据已写进根 .env，表里只留这些名字：${envNames.join(', ')}`] : [])
+      ...(answer.format ? [copy.importedCount(answer.format, nextNodes.length, nextGroups.length)] : []),
+      ...(envNames.length ? [copy.credMovedToEnv(envNames.join(', '))] : [])
     ])
   }
 
@@ -426,7 +446,7 @@ export function NetworkSettings() {
         <SectionHeading icon={Globe} title={copy.title} />
       </div>
       {!loaded ? (
-        <p className="text-sm text-(--ui-text-danger)">读不到当前的出口表：先别保存（保存会把表清空）</p>
+        <p className="text-sm text-(--ui-text-danger)">{copy.notLoaded}</p>
       ) : null}
 
       <div className="grid gap-2">
@@ -452,12 +472,21 @@ export function NetworkSettings() {
           <Button disabled={importing || !subUrl.trim()} onClick={() => void importSubscription()} size="sm" variant="outline">
             {importing ? '…' : copy.importSub}
           </Button>
+          <Button
+            disabled={importing || !savedLink}
+            onClick={() => void refreshSubscription()}
+            size="sm"
+            title={copy.refreshSubHint}
+            variant="outline"
+          >
+            {importing ? '…' : copy.refreshSub}
+          </Button>
         </div>
         <div className="grid gap-1">
           <textarea
             className="min-h-20 w-full rounded-md border border-(--stroke-nous) bg-transparent p-2 font-mono text-xs text-(--ui-text-secondary)"
             onChange={(event) => setPasted(event.target.value)}
-            placeholder="或者把整份配置粘在这里：Clash/mihomo 的 yaml、一行一个 ss:// / vmess:// 链接、或 base64"
+            placeholder={copy.pasteHint}
             value={pasted}
           />
           <div>
@@ -467,7 +496,7 @@ export function NetworkSettings() {
               size="sm"
               variant="outline"
             >
-              {importing ? '…' : '导入粘贴的配置'}
+              {importing ? '…' : copy.importPasted}
             </Button>
           </div>
         </div>

@@ -141,14 +141,23 @@ export interface SystemProxyReading {
 
 /**
  * 「表说要接管」和「注册表现在是我们的」是两件事，四句话不许合并成一句（这台 10-31 实测：
- * 别的程序在我们接管之后自己把注册表改回去了，屏幕上那个开关当时还亮着）。
+ * 别的程序在我们接管之后自己把注册表改回去了，屏幕上那个开关照旧亮着）。
  *
- * 它是 tooltip 的句子，不是屏幕上的正文——状态用形状说（用户 10-27），话放在悬停里。
- * 少一个读数就说没有：没有 `ours` 不等于 `false`，那会把"读不到"报成"没接管"。
+ * 它是 tooltip 的句子，不是屏幕上的正文——状态用形状说（用户 10-27），话留在悬停里。
+ * 句子全部来自 i18n 目录，本模块不自己造词。少一个读数就说没有：没有 `ours` 不等于 `false`，
+ * 那会把"读不到"报成"没接管"。
  */
-export function proxyTooltip(proxy?: SystemProxyReading): string {
+export function proxyTooltip(
+  copy: {
+    proxyDeclaredNotApplied: string
+    proxyNotOurs: string
+    proxyOurs: string
+    proxyUnsupported: string
+  },
+  proxy?: SystemProxyReading
+): string {
   if (!proxy) return ''
-  if (!proxy.supported) return '这一格目前只实现 Windows'
-  if (proxy.ours) return 'Plobi 在管这台机器的系统代理'
-  return proxy.declared ? '表里说要接管，但注册表里不是我们的' : '不是 Plobi 的（跟着系统或别的程序）'
+  if (!proxy.supported) return copy.proxyUnsupported
+  if (proxy.ours) return copy.proxyOurs
+  return proxy.declared ? copy.proxyDeclaredNotApplied : copy.proxyNotOurs
 }

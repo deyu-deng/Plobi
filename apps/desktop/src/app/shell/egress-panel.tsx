@@ -33,6 +33,7 @@ import {
   type RuleMode,
   type Transport
 } from '@/app/settings/egress-edit'
+import { useI18n } from '@/i18n'
 import { AlertTriangle, Check, Globe, LayoutGrid, Loader2, Power, Route } from '@/lib/icons'
 import { getNetworkEgress, getNetworkStatus, saveNetworkEgress, setNetworkSystemProxy } from '@/plobi'
 import type { StatusbarItem } from '@/app/shell/statusbar-controls'
@@ -98,6 +99,7 @@ function TabButton({
 }
 
 export function EgressPanel() {
+  const copy = useI18n().t.settings.network
   const [record, setRecord] = useState<NetworkEgressRecord | null>(null)
   const [status, setStatus] = useState<(EgressStatusExtra & NetworkStatus) | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -218,20 +220,20 @@ export function EgressPanel() {
     <div className="w-80 select-text" data-testid="egress-panel">
       <div className="flex items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2 py-1.5">
         <TabButton active={view === 'switch'} icon={Power} onClick={() => setView('switch')}>
-          控制
+          {copy.tabSwitch}
         </TabButton>
         <TabButton active={view === 'nodes'} icon={LayoutGrid} onClick={() => setView('nodes')}>
-          节点
+          {copy.tabNodes}
         </TabButton>
         {busy ? <Loader2 className="ml-auto size-3.5 animate-spin text-(--ui-text-tertiary)" /> : null}
-        {!busy && !loaded ? <AlertTriangle className="ml-auto size-3.5 text-(--ui-text-danger)" title="读不到当前的表" /> : null}
+        {!busy && !loaded ? <AlertTriangle className="ml-auto size-3.5 text-(--ui-text-danger)" title={copy.readFailed} /> : null}
       </div>
 
       {view === 'switch' ? (
         <div className="grid gap-2.5 px-3 py-3">
           <div className="flex items-center gap-3">
             <button
-              aria-label={ctl.vpn ? '关闭' : '开启'}
+              aria-label={ctl.vpn ? copy.powerOff : copy.powerOn}
               className={`grid size-14 shrink-0 place-items-center rounded-full border-2 transition-colors ${
                 ctl.vpn
                   ? 'border-(--theme-primary) bg-(--theme-primary) text-white'
@@ -245,13 +247,13 @@ export function EgressPanel() {
             </button>
             <div className="grid min-w-0 gap-0.5">
               <div className="flex min-w-0 items-center gap-1.5">
-                <StatusDot ok={engineOk} title={status?.engine?.detail ?? '引擎还没读到'} />
-                <span className="truncate text-sm font-medium" title={ctl.exit || '直连'}>
-                  {ctl.exit || '直连'}
+                <StatusDot ok={engineOk} title={status?.engine?.detail ?? copy.engineNotRead} />
+                <span className="truncate text-sm font-medium" title={ctl.exit || copy.direct}>
+                  {ctl.exit || copy.direct}
                 </span>
               </div>
               <span className={CAPTION} title={tun.reasons?.[0]}>
-                {ctl.transport === 'tun' ? 'TUN' : ctl.transport === 'system' ? '系统代理' : '未接管'}
+                {ctl.transport === 'tun' ? copy.transportTun : ctl.transport === 'system' ? copy.transportSystem : copy.transportOff}
               </span>
             </div>
           </div>
@@ -260,8 +262,8 @@ export function EgressPanel() {
             disabled={busy || !loaded}
             onChange={mode => void apply(patchMode(block, mode))}
             options={[
-              { label: '规则', value: 'rule' },
-              { label: '全局', value: 'global' }
+              { label: copy.modeRule, value: 'rule' },
+              { label: copy.modeGlobal, value: 'global' }
             ]}
             value={ctl.mode}
           />
@@ -271,8 +273,8 @@ export function EgressPanel() {
               disabled={busy || !loaded}
               onChange={transport => void flip(transport)}
               options={[
-                { label: 'TUN', value: 'tun' },
-                { label: '系统代理', value: 'system' }
+                { label: copy.transportTun, value: 'tun' },
+                { label: copy.transportSystem, value: 'system' }
               ]}
               value={ctl.transport}
             />
@@ -289,7 +291,7 @@ export function EgressPanel() {
               <span
                 className="grid size-6 shrink-0 place-items-center rounded-md text-(--ui-text-danger)"
                 data-testid="proxy-warning"
-                title={proxyTooltip(status?.system_proxy)}
+                title={proxyTooltip(copy, status?.system_proxy)}
               >
                 <AlertTriangle className="size-3.5" />
               </span>
@@ -306,7 +308,7 @@ export function EgressPanel() {
               onClick={() => void flip(refused.target, true)}
               type="button"
             >
-              与其他 VPN 并行打开
+              {copy.allowForeignRetry}
             </button>
           ) : null}
         </div>
@@ -321,7 +323,7 @@ export function EgressPanel() {
                 onClick={() => setFilter('')}
                 type="button"
               >
-                全部
+                {copy.panelAll}
               </button>
               {groupNames.map(name => (
                 <button
@@ -359,7 +361,7 @@ export function EgressPanel() {
                 </span>
               </button>
             ))}
-            {shown.length === 0 ? <p className={CAPTION}>还没有成员</p> : null}
+            {shown.length === 0 ? <p className={CAPTION}>{copy.panelEmpty}</p> : null}
           </div>
         </div>
       )}
@@ -409,13 +411,13 @@ export function EgressRailIcon({ className }: { className?: string }) {
  *
  * 文案硬编中文：i18n 那五档在别的线手上（裁定 77 拦过一次），落那儿的窗口到了再搬。
  */
-export function egressRailItem(): StatusbarItem {
+export function egressRailItem(title: string): StatusbarItem {
   return {
     icon: <EgressRailIcon />,
     id: 'egress',
     menuClassName: 'w-80',
     menuContent: () => <EgressPanel />,
-    title: '代理（VPN）',
+    title,
     variant: 'menu'
   }
 }

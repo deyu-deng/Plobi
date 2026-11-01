@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
+
+import { TRANSLATIONS } from '@/i18n/catalog'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getNetworkEgress = vi.fn()
@@ -15,6 +17,9 @@ vi.mock('@/plobi', () => ({
 }))
 
 import { EgressPanel, egressRailItem } from './egress-panel'
+
+//: 屏幕上的字来自目录，测试也从目录取——换语言不许把测试换红。
+const copy = TRANSLATIONS.en.settings.network
 
 const BLOCK = {
   engine: { enabled: true, mixed_port: 7895, tun: { 'allow-foreign': false, enabled: false, name: 'PlobiTun', stack: 'gvisor' } },
@@ -60,17 +65,17 @@ describe('底栏那个面板的控制屏', () => {
     )
     render(<EgressPanel />)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy())
-    expect(screen.getByRole('button', { name: '系统代理' }).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: '全局' }).getAttribute('aria-pressed')).toBe('true')
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOff })).toBeTruthy())
+    expect(screen.getByRole('button', { name: copy.transportSystem }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: copy.modeGlobal }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByText('POOL')).toBeTruthy()
   })
 
   it('点 TUN：送出守卫给的那块网卡，并把注册表那一半交还', async () => {
     render(<EgressPanel />)
-    await waitFor(() => expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOff })).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: 'TUN' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.transportTun }))
 
     await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalled())
     const egress = sent().egress
@@ -108,7 +113,7 @@ describe('底栏那个面板的控制屏', () => {
     render(<EgressPanel />)
 
     await waitFor(() => expect(screen.getByTestId('proxy-warning')).toBeTruthy())
-    expect(screen.getByTestId('proxy-warning').getAttribute('title')).toBe('表里说要接管，但注册表里不是我们的')
+    expect(screen.getByTestId('proxy-warning').getAttribute('title')).toBe(copy.proxyDeclaredNotApplied)
   })
 
   it('接管被拒那句话要上屏——它是解析器/监督在说话，不是装饰', async () => {
@@ -118,9 +123,9 @@ describe('底栏那个面板的控制屏', () => {
       proxy: { detail: '接管前那份备份读不出来', state: 'refused' }
     })
     render(<EgressPanel />)
-    await waitFor(() => expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOff })).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.powerOff }))
 
     await waitFor(() => expect(screen.getByText('接管前那份备份读不出来')).toBeTruthy())
   })
@@ -133,9 +138,9 @@ describe('底栏那个面板的节点屏', () => {
       status({ ...status(), membership: { groups: { POOL: [long] }, nodes: [long] } })
     )
     render(<EgressPanel />)
-    await waitFor(() => expect(screen.getByRole('button', { name: '节点' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.tabNodes })).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: '节点' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.tabNodes }))
 
     const card = await screen.findByRole('button', { name: new RegExp(long.slice(0, 6)) })
     expect(card.textContent).toContain(long)
@@ -145,9 +150,9 @@ describe('底栏那个面板的节点屏', () => {
 
   it('点一张卡片就把兜底规则指过去，别的规则一条不碰', async () => {
     render(<EgressPanel />)
-    await waitFor(() => expect(screen.getByRole('button', { name: '节点' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.tabNodes })).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: '节点' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.tabNodes }))
     fireEvent.click(await screen.findByRole('button', { name: /日本W01/ }))
 
     await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalled())
@@ -170,17 +175,17 @@ describe('拨不过去与没读到表', () => {
       })
       .mockResolvedValueOnce({ engine: { detail: 'ok', state: 'running-ours' }, ok: true })
     render(<EgressPanel />)
-    await waitFor(() => expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOff })).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: 'TUN' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.transportTun }))
 
-    await waitFor(() => expect(screen.getByText('与其他 VPN 并行打开')).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.allowForeignRetry })).toBeTruthy())
     // 第二次写盘必须把**原样**放回去：表里写着 TUN 而机器上什么都没有，就是 10-29 那次事故的形状。
     expect(sent().egress.engine.tun.enabled).toBe(false)
     expect(setNetworkSystemProxy).toHaveBeenLastCalledWith(true)
     expect(saveNetworkEgress).toHaveBeenCalledTimes(2)
 
-    fireEvent.click(screen.getByRole('button', { name: '与其他 VPN 并行打开' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.allowForeignRetry }))
     await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalledTimes(3))
     expect(sent().egress.engine.tun).toMatchObject({ 'allow-foreign': true, enabled: true })
   })
@@ -190,8 +195,8 @@ describe('拨不过去与没读到表', () => {
     render(<EgressPanel />)
 
     await waitFor(() => expect(screen.getByTestId('egress-panel')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'TUN' }))
-    fireEvent.click(screen.getByRole('button', { name: '节点' }))
+    fireEvent.click(screen.getByRole('button', { name: copy.transportTun }))
+    fireEvent.click(screen.getByRole('button', { name: copy.tabNodes }))
 
     await waitFor(() => expect(screen.getByTestId('egress-panel')).toBeTruthy())
     expect(saveNetworkEgress).not.toHaveBeenCalled()
@@ -201,13 +206,13 @@ describe('拨不过去与没读到表', () => {
 
 describe('左下底栏那一格', () => {
   it('是一枚带面板的动作图标：点开的就是那两屏', () => {
-    const item = egressRailItem()
+    const item = egressRailItem(copy.title)
 
     expect(item.id).toBe('egress')
     expect(item.variant).toBe('menu')
     expect(typeof item.menuContent).toBe('function')
     // 底栏那一排是图标条：名字给 tooltip，屏幕上不占字。
-    expect(item.title).toBe('代理（VPN）')
+    expect(item.title).toBe(copy.title)
     expect(item.label).toBeUndefined()
 
     const view = render(<div>{(item.menuContent as (close: () => void) => ReactNode)(() => {})}</div>)

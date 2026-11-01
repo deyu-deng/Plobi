@@ -21,6 +21,11 @@ vi.mock('@/plobi', () => ({
 
 import { NetworkSettings } from './network-settings'
 
+//: 屏幕上的字来自 i18n 目录，断言也从目录取：换语言不许把测试换红。
+import { TRANSLATIONS } from '@/i18n/catalog'
+
+const copy = TRANSLATIONS.en.settings.network
+
 const LONG = '🇺🇲 美国W01 | IEPL | x1.5'
 
 const RECORD = {
@@ -79,8 +84,8 @@ describe('设置里那一屏只剩编辑', () => {
 
     expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.queryByText('当前默认出口')).toBeNull()
-    expect(screen.queryByRole('button', { name: '全部走代理' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '按规则' })).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.modeGlobal })).toBeNull()
+    expect(screen.queryByRole('button', { name: copy.modeRule })).toBeNull()
     // 那排读数（引擎/成员/组/规则/接管）也走了：状态由底栏图标的颜色说，句子留在屏上正是"太多文字"。
     expect(screen.queryByText(/running-ours ·/)).toBeNull()
   })
@@ -109,8 +114,8 @@ describe('设置里那一屏只剩编辑', () => {
     await waitFor(() => expect(screen.getByDisplayValue(LONG)).toBeTruthy())
 
     const pasted = ['proxies:', '  - {name: a, type: ss, server: x.example, port: 1}'].join('\n')
-    fireEvent.change(screen.getByPlaceholderText(/粘在这里/), { target: { value: pasted } })
-    fireEvent.click(screen.getByRole('button', { name: '导入粘贴的配置' }))
+    fireEvent.change(screen.getByPlaceholderText(copy.pasteHint), { target: { value: pasted } })
+    fireEvent.click(screen.getByRole('button', { name: copy.importPasted }))
 
     await waitFor(() =>
       expect(importNetworkSubscription).toHaveBeenCalledWith(
@@ -123,9 +128,26 @@ describe('设置里那一屏只剩编辑', () => {
     getNetworkEgress.mockRejectedValue(new Error('读不到'))
     render(<NetworkSettings />)
 
-    await waitFor(() => expect(screen.getByText(/先别保存/)).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /Save|保存/ }))
+    await waitFor(() => expect(screen.getByText(copy.notLoaded)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: copy.save }))
 
     expect(saveNetworkEgress).not.toHaveBeenCalled()
+  })
+
+  it('存过链接之后「更新」只要一个动词：不必再粘一遍', async () => {
+    render(<NetworkSettings />)
+    await waitFor(() => expect((screen.getByRole('button', { name: copy.refreshSub }) as HTMLButtonElement).disabled).toBe(false))
+
+    fireEvent.click(screen.getByRole('button', { name: copy.refreshSub }))
+
+    await waitFor(() => expect(importNetworkSubscription).toHaveBeenCalledWith({ keepGroups: true, refresh: true }))
+  })
+
+  it('没存过链接时「更新」是灰的——不是点下去才报没有', async () => {
+    getNetworkSubscription.mockResolvedValue({ saved: false })
+    render(<NetworkSettings />)
+
+    await waitFor(() => expect((screen.getByRole('button', { name: copy.refreshSub }) as HTMLButtonElement).disabled).toBe(true))
+    expect(importNetworkSubscription).not.toHaveBeenCalled()
   })
 })
