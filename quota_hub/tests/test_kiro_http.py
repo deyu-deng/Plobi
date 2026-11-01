@@ -93,7 +93,7 @@ def test_the_catalogue_keeps_our_namespace_and_follows_the_accounts_region(store
     prov = _provider({"data_sqlite": store}, routes, seen)
     keys = asyncio.run(prov.refresh_models(_account()))
     assert keys == ["deepseek-3.2", "glm-5"]
-    assert prov.served_models == ("kiro/deepseek-3.2", "kiro/glm-5")
+    assert prov.served_models == ("kiro_cli/deepseek-3.2", "kiro_cli/glm-5")
 
     method, url, headers, body = seen[-1]
     assert (method, url) == ("POST", "https://management.eu-central-1.kiro.dev/"), url
@@ -123,7 +123,7 @@ def test_a_turn_is_translated_and_the_tool_call_survives_the_three_frame_shape(s
     seen: list = []
     routes = {"/": (200, _frames(), "application/vnd.amazon.eventstream")}
     prov = _provider({"data_sqlite": store}, routes, seen)
-    req = {"model": "kiro/deepseek-3.2",
+    req = {"model": "kiro_cli/deepseek-3.2",
            "messages": [{"role": "user", "content": "读那个文件"}],
            "tools": [{"type": "function", "function": {"name": "plobi_probe_read",
                                                       "parameters": {"type": "object", "properties": {}}}}]}
@@ -133,7 +133,7 @@ def test_a_turn_is_translated_and_the_tool_call_survives_the_three_frame_shape(s
     assert message["content"] is None
     assert message["tool_calls"][0]["function"]["name"] == "plobi_probe_read"
     assert json.loads(message["tool_calls"][0]["function"]["arguments"]) == {"path": "D:/Projects/Plobi/AGENTS.md"}
-    assert out["model"] == "kiro/deepseek-3.2"
+    assert out["model"] == "kiro_cli/deepseek-3.2"
 
     _method, _path, headers, body = seen[-1]
     sent = json.loads(body)
@@ -151,7 +151,7 @@ def test_a_rate_limit_wearing_http_200_is_not_parsed_as_frames(store):
     envelope = json.dumps({"__type": "ThrottlingException", "message": "Too many tokens"}).encode()
     prov = _provider({"data_sqlite": store}, {"/": (200, envelope, "application/json")}, [])
     with pytest.raises(UpstreamError) as caught:
-        asyncio.run(prov.chat(_account(), {"model": "kiro/glm-5", "messages": [{"role": "user", "content": "hi"}]}))
+        asyncio.run(prov.chat(_account(), {"model": "kiro_cli/glm-5", "messages": [{"role": "user", "content": "hi"}]}))
     assert caught.value.status == 429 and caught.value.retryable
 
 
@@ -160,7 +160,7 @@ def test_a_tool_result_turn_replays_history_and_carries_tool_results(store):
     routes = {"/": (200, _frames(), "application/vnd.amazon.eventstream")}
     prov = _provider({"data_sqlite": store}, routes, seen)
     asyncio.run(prov.chat(_account(), {
-        "model": "kiro/deepseek-3.2",
+        "model": "kiro_cli/deepseek-3.2",
         "messages": [{"role": "system", "content": "你是 Plobi"},
                     {"role": "user", "content": "读文件"},
                     {"role": "assistant", "tool_calls": [{"id": "t1", "type": "function",
@@ -198,7 +198,7 @@ def test_kiros_token_counts_arrive_on_their_own_frame(store):
     stream = _frames() + _encoded_frame("meteringEvent", {
         "usage": {"inputTokens": 1234, "outputTokens": 56}, "stop": True})
     prov = _provider({"data_sqlite": store}, {"/": (200, stream, "application/vnd.amazon.eventstream")}, [])
-    out = asyncio.run(prov.chat(_account(), {"model": "kiro/glm-5",
+    out = asyncio.run(prov.chat(_account(), {"model": "kiro_cli/glm-5",
                                              "messages": [{"role": "user", "content": "hi"}]}))
     assert out["usage"] == {"prompt_tokens": 1234, "completion_tokens": 56, "total_tokens": 1290}, out["usage"]
 

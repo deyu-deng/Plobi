@@ -27,6 +27,18 @@ def _no_google_calls(monkeypatch):
     monkeypatch.setattr(oa, "fetch_userinfo", lambda _token: {})
 
 
+#: The *shape* of Google's public OAuth client constants, not their values. The extractor
+#: only accepts this shape (`_CLIENT_SECRET_RE` is `GOCSPX-` plus exactly 28, 35 total;
+#: `_CLIENT_ID_RE` is `<digits>-<lowercase>.apps.googleusercontent.com`), so a fixture that
+#: names the constant in prose instead of matching it can never pair anything — which is
+#: exactly how these three went red after the values came out of the repo on 10-31. The
+#: real strings are public; they still do not belong in a file with a remote.
+PUBLIC_CLIENT_ID = "1234567890123-abcdefghijklmnopqrstuvwx.apps.googleusercontent.com"
+PUBLIC_CLIENT_SECRET = "GOCSPX-" + "aB3dE6fG9hI2jK5lM8nQ1rStUvWx"
+
+assert len(PUBLIC_CLIENT_SECRET) == 35, len(PUBLIC_CLIENT_SECRET)
+
+
 def test_the_extractor_pairs_a_secret_with_the_client_id_it_sits_next_to(tmp_path):
     """Two measured facts, one test.
 
@@ -38,8 +50,8 @@ def test_the_extractor_pairs_a_secret_with_the_client_id_it_sits_next_to(tmp_pat
     so an open-ended pattern stored 60.
     """
     other_id = "1234567890102-abcdefghijklmnopqrstuvwxys.apps.googleusercontent.com"
-    ours_id = "REDACTED_GOOGLE_PUBLIC_CLIENT_ID"
-    ours_secret = "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET"
+    ours_id = PUBLIC_CLIENT_ID
+    ours_secret = PUBLIC_CLIENT_SECRET
     blob = (other_id.encode() + b"\x00" + b"Z" * 600 + b"\x00"      # a far client, unpaired
             + b'{"client_id":"' + ours_id.encode() + b'","client_secret":"' + ours_secret.encode()
             + b"TAIL_AFTER_THE_CONSTANT" + b"\x00")
@@ -55,13 +67,13 @@ def test_a_poisoned_saved_pair_is_ignored_and_the_pair_is_rediscovered(tmp_path,
     monkeypatch.setattr(account_store, "client_path", lambda: tmp_path / "client.json")
     (tmp_path / "client.json").write_text(
         '{"client_id": "cid.apps.googleusercontent.com", "client_secret": '
-        '"REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET_TAIL_999"}', encoding="utf-8")
+        'PUBLIC_CLIENT_SECRET + "_TAIL_999"}', encoding="utf-8")
 
     monkeypatch.setattr(account_store, "discover_client_from_apps",
-                        lambda: ("REDACTED_GOOGLE_PUBLIC_CLIENT_ID",
-                                 "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET"))
+                        lambda: (PUBLIC_CLIENT_ID,
+                                 PUBLIC_CLIENT_SECRET))
     found_id, found_secret = account_store.client_credentials(persist_discovered=False)
-    assert found_secret == "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET", found_secret
+    assert found_secret == PUBLIC_CLIENT_SECRET, found_secret
 
     # an env-supplied pair is the operator's own words and is taken as given
     monkeypatch.setenv(account_store.CLIENT_ID_ENV, "whatever-id")
@@ -184,8 +196,8 @@ def test_missing_client_pair_is_named_not_faked(home):
 def test_public_client_pair_is_extracted_from_an_installed_app(home, monkeypatch, tmp_path):
     fake = tmp_path / "antigravity-tools.exe"
     fake.write_bytes(
-        b"...REDACTED_GOOGLE_PUBLIC_CLIENT_ID..."
-        b"...REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET..."
+        b'...' + PUBLIC_CLIENT_ID.encode() + b'...'
+        b'...' + PUBLIC_CLIENT_SECRET.encode() + b'...'
     )
     monkeypatch.setattr(account_store, "_candidate_binaries", lambda: [fake])
     monkeypatch.delenv(account_store.APP_SCAN_ENV)
@@ -193,8 +205,8 @@ def test_public_client_pair_is_extracted_from_an_installed_app(home, monkeypatch
     pair = account_store.client_credentials()
 
     assert pair == (
-        "REDACTED_GOOGLE_PUBLIC_CLIENT_ID",
-        "REDACTED_GOOGLE_PUBLIC_CLIENT_SECRET",
+        PUBLIC_CLIENT_ID,
+        PUBLIC_CLIENT_SECRET,
     )
     assert account_store.client_path().is_file()
 

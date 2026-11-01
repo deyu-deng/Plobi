@@ -108,8 +108,8 @@ class OpenCodeCliProvider(CliProvider):
     timeout = 300.0
     isolate_workspace = True
     stream_from_chat = True
-    served_models = ("opencode/default",)
-    model_map = {"opencode/default": ""}
+    served_models = ("opencode_cli/default",)
+    model_map = {"opencode_cli/default": ""}
 
     async def refresh_quota(self, acc: Account) -> None:
         key = _load_go_key(self.config)

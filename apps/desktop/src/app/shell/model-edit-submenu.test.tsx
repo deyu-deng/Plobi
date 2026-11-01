@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -85,5 +85,100 @@ describe('ModelEditSubmenu no-session guard', () => {
     fireEvent.click(screen.getByRole('switch'))
 
     expect(requestGateway).toHaveBeenCalledWith('config.set', { key: 'fast', session_id: 'sess1', value: 'fast' })
+  })
+})
+
+// The vendor names the levels a model really has; the popover may not offer more.
+// Measured 2026-11-01: Antigravity sells Claude Opus 5.5 at low/medium/high (its
+// `fetchAvailableModels` writes three rows, which the hub now folds into one model), and
+// Qoder sells Qwen3.8-Max at low/medium/xhigh. "Max" for a model with no such rung is a
+// promise the turn cannot keep, and it was the user's complaint about the ladder.
+describe('ModelEditSubmenu effort ladder per model', () => {
+  function renderWith(opts: { defaultEffort?: string; efforts?: string[]; effort: string }) {
+    return render(
+      <DropdownMenu open>
+        <DropdownMenuContent>
+          <DropdownMenuSub open>
+            <DropdownMenuSubTrigger>edit</DropdownMenuSubTrigger>
+            <ModelEditSubmenu
+              defaultEffort={opts.defaultEffort}
+              efforts={opts.efforts}
+              effort={opts.effort}
+              fastControl={{ kind: 'none' }}
+              isActive
+              model="antigravity/claude-opus-5-5"
+              onSelectModel={vi.fn()}
+              provider="quota-row"
+              reasoning
+              requestGateway={vi.fn().mockResolvedValue({}) as never}
+            />
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
+  it('offers exactly the three levels this model sells', () => {
+    renderWith({ effort: 'medium', efforts: ['low', 'medium', 'high'] })
+
+    const radios = within(document.body).getAllByRole('menuitemradio')
+    const levels = radios.filter(node => /Minimal|Max/.test(node.textContent ?? ''))
+
+    expect(levels).toHaveLength(0)
+    expect(within(document.body).getAllByRole('menuitemradio')).toHaveLength(3)
+  })
+
+  it('keeps the whole ladder for a model that said nothing', () => {
+    renderWith({ effort: 'medium' })
+
+    expect(within(document.body).getAllByRole('menuitemradio')).toHaveLength(5)
+  })
+
+  it('shows no level selected when the stored preset is one this model cannot run', () => {
+    renderWith({ effort: 'xhigh', efforts: ['low', 'medium', 'high'] })
+
+    const checked = within(document.body)
+      .getAllByRole('menuitemradio')
+      .filter(node => node.getAttribute('aria-checked') === 'true')
+
+    expect(checked).toHaveLength(0)
+  })
+
+  it('turning thinking on uses the model’s own default level', () => {
+    const requestGateway = vi.fn().mockResolvedValue({})
+
+    $activeSessionId.set('ses-1')
+
+    render(
+      <DropdownMenu open>
+        <DropdownMenuContent>
+          <DropdownMenuSub open>
+            <DropdownMenuSubTrigger>edit</DropdownMenuSubTrigger>
+            <ModelEditSubmenu
+              defaultEffort="xhigh"
+              effort="none"
+              efforts={['low', 'medium', 'xhigh']}
+              fastControl={{ kind: 'none' }}
+              isActive
+              model="qoder/qwen3.8-max"
+              onSelectModel={vi.fn()}
+              provider="quota-row"
+              reasoning
+              requestGateway={requestGateway as never}
+            />
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+
+    const thinking = within(document.body)
+      .getAllByRole('switch')
+      .find(node => (node.closest('[role="menuitem"]')?.textContent ?? '').includes('Thinking'))
+
+    fireEvent.click(thinking as HTMLElement)
+
+    // The session-scoped write is the whole effect: the level the vendor defaults to,
+    // never Plobi's generic middle on a model that also sells it.
+    expect(requestGateway).toHaveBeenCalledWith('config.set', expect.objectContaining({ value: 'xhigh' }))
   })
 })

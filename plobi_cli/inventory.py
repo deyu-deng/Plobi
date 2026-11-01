@@ -34,7 +34,7 @@ Substrate facts (verified May 2026):
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Optional
+from typing import Any, Optional
 
 
 # ─── Public types ───────────────────────────────────────────────────────
@@ -269,13 +269,17 @@ def build_models_payload(
 
 
 def _apply_capabilities(rows: list[dict]) -> None:
-    """Attach a ``{model: {fast, reasoning}}`` map to each provider row.
+    """Attach a ``{model: {fast, reasoning, …}}`` map to each provider row.
 
     `fast` mirrors ``model_supports_fast_mode`` (the same gate the runtime
     enforces). `reasoning` comes from the models.dev catalog when known and
     defaults to True otherwise — the effort dial is broadly accepted and a
     no-op on models that ignore it, whereas hiding it from a capable-but-
     uncatalogued model is the worse failure.
+
+    For the subscription gateway (`aigw`) the hub itself answers, per model, which
+    thinking levels and which context windows that model really has, and those keys
+    ride along — a level the vendor does not sell must not be offered.
     """
     from plobi_cli.models import model_supports_fast_mode
 
@@ -286,7 +290,22 @@ def _apply_capabilities(rows: list[dict]) -> None:
 
     for row in rows:
         slug = row.get("slug") or ""
-        caps: dict[str, dict[str, bool]] = {}
+
+        # The subscription legs each publish, per model, what that model actually lets
+        # the user change (its thinking levels, its windows, its output cap) — read once
+        # per payload build, from the hub that already owns the catalog (裁定 46). An
+        # empty answer means the hub is not there, not that the model has no knobs.
+        hub_tuning: dict[str, dict] = {}
+        if slug.lower() == "aigw":
+            try:
+                from plobi.agents.registry import aigw_api_key, aigw_base_url
+                from plobi.quota.gateway import catalog_tuning
+
+                hub_tuning = catalog_tuning(aigw_base_url(), aigw_api_key()) or {}
+            except Exception:
+                hub_tuning = {}
+
+        caps: dict[str, dict[str, Any]] = {}
 
         for model in row.get("models") or []:
             reasoning = True
@@ -302,6 +321,14 @@ def _apply_capabilities(rows: list[dict]) -> None:
                 "fast": bool(model_supports_fast_mode(model)),
                 "reasoning": reasoning,
             }
+            knobs = hub_tuning.get(model) or {}
+            for name in ("efforts", "default_effort", "context", "max_output"):
+                if knobs.get(name) is not None:
+                    caps[model][name] = knobs[name]
+            if isinstance(knobs.get("efforts"), list):
+                # A model that names its levels is a model that takes them; a leg that
+                # lists none keeps the honest default above.
+                caps[model]["reasoning"] = bool(knobs["efforts"])
 
         row["capabilities"] = caps
 

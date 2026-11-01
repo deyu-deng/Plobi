@@ -216,14 +216,14 @@ class CodexCliProvider(CliProvider):
     isolate_workspace = True
     stream_from_chat = True
     served_models = (
-        "codex/gpt-5.4",
-        "codex/gpt-5.4-mini",
-        "codex/gpt-5.3-codex",
+        "codex_cli/gpt-5.4",
+        "codex_cli/gpt-5.4-mini",
+        "codex_cli/gpt-5.3-codex",
     )
     model_map = {
-        "codex/gpt-5.4": "gpt-5.4",
-        "codex/gpt-5.4-mini": "gpt-5.4-mini",
-        "codex/gpt-5.3-codex": "gpt-5.3-codex",
+        "codex_cli/gpt-5.4": "gpt-5.4",
+        "codex_cli/gpt-5.4-mini": "gpt-5.4-mini",
+        "codex_cli/gpt-5.3-codex": "gpt-5.3-codex",
     }
 
     def parse_response(self, stdout: str, oai_req: dict) -> dict:

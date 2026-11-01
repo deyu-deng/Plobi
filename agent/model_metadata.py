@@ -2036,6 +2036,7 @@ def get_model_context_length(
     3. Local server query (for local endpoints)
     4. Anthropic /v1/models API (API-key users only, not OAuth)
     5. Provider-aware lookups (before generic OpenRouter cache):
+       a0. Quota hub (`aigw`): the window each model's own vendor list published.
        a. Copilot live /models API
        b. Nous: live /v1/models probe first (authoritative), then OR
           cache fallback with suffix/version normalisation.  Only
@@ -2278,6 +2279,24 @@ def get_model_context_length(
             inferred = _infer_provider_from_url(base_url)
             if inferred:
                 effective_provider = inferred
+
+    # 5a0. The local quota hub publishes, per model, the window that model's own vendor
+    # list writes (measured 2026-11-01: Antigravity's Claude Opus 5.5 row says 1M and its
+    # GPT-OSS 120B says 131072; Qoder's `auto` says 200K; Kiro says 1M on `auto`, 164K on
+    # deepseek-3.2). These numbers are what decides when Plobi compresses, and before
+    # this step the subscription legs fell through the whole probe chain to the 256K
+    # fallback — a guess, on a model whose real window the vendor had already told us.
+    if effective_provider == "aigw":
+        try:
+            from plobi.agents.registry import aigw_api_key, aigw_base_url
+            from plobi.quota.gateway import catalog_tuning
+
+            knobs = catalog_tuning(aigw_base_url(), aigw_api_key()).get(model) or {}
+            window = (knobs.get("context") or {}).get("max")
+            if isinstance(window, int) and window > 0:
+                return window
+        except Exception:
+            pass  # A hub we cannot reach is not a reason to change what a turn does.
 
     # 5a. Copilot live /models API — max_prompt_tokens from the user's account.
     # This catches account-specific models (e.g. claude-opus-4.6-1m) that

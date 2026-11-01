@@ -52,7 +52,7 @@ def test_codex_invocation_is_positional_and_read_only():
     prov.binary_path = "codex"
     argv = prov.build_invocation(
         _account("codex_cli"),
-        {"model": "codex/gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+        {"model": "codex_cli/gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert argv[:5] == ["codex", "exec", "--model", "gpt-5.4", "[user]\nhi"]
     assert "--json" in argv
@@ -65,7 +65,7 @@ def test_claude_invocation_puts_model_before_print_mode():
     prov.binary_path = "claude"
     argv = prov.build_invocation(
         _account("claude_code_cli"),
-        {"model": "claude/sonnet-4-6", "messages": [{"role": "user", "content": "hi"}]},
+        {"model": "claude_code_cli/sonnet-4-6", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert argv == [
         "claude",
@@ -83,7 +83,7 @@ def test_kiro_default_model_does_not_invent_a_model_flag():
     prov.binary_path = "kiro-cli"
     argv = prov.build_invocation(
         _account("kiro_cli"),
-        {"model": "kiro/default", "messages": [{"role": "user", "content": "hi"}]},
+        {"model": "kiro_cli/default", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert "--model" not in argv, argv
     assert argv[-1] == "[user]\nhi"
@@ -325,7 +325,7 @@ def _spawn_chat(provider, model: str) -> tuple[str, dict]:
 
 def test_codex_full_spawn_returns_the_agent_message_not_the_jsonl(tmp_path):
     prov = CodexCliProvider(_fake_cfg("codex", tmp_path), None)
-    out = _spawn_chat(prov, "codex/gpt-5.4")
+    out = _spawn_chat(prov, "codex_cli/gpt-5.4")
     content = out["choices"][0]["message"]["content"]
     assert content == "CODEX<<[user]\nhello world>>"
     assert "thread.started" not in content
@@ -334,14 +334,14 @@ def test_codex_full_spawn_returns_the_agent_message_not_the_jsonl(tmp_path):
 
 def test_claude_full_spawn_reads_the_json_result(tmp_path):
     prov = ClaudeCodeCliProvider(_fake_cfg("claude", tmp_path), None)
-    out = _spawn_chat(prov, "claude/sonnet-4-6")
+    out = _spawn_chat(prov, "claude_code_cli/sonnet-4-6")
     assert out["choices"][0]["message"]["content"] == "CLAUDE<<[user]\nhello world>>"
     assert out["usage"]["total_tokens"] == 6
 
 
 def test_kiro_full_spawn_strips_the_terminal_frame(tmp_path):
     prov = KiroCliProvider(_fake_cfg("kiro", tmp_path), None)
-    out = _spawn_chat(prov, "kiro/default")
+    out = _spawn_chat(prov, "kiro_cli/default")
     content = out["choices"][0]["message"]["content"]
     assert content == "KIRO<<[user]\nhello world>>"
     assert "banner" not in content
@@ -349,7 +349,7 @@ def test_kiro_full_spawn_strips_the_terminal_frame(tmp_path):
 
 def test_opencode_full_spawn_returns_plain_text(tmp_path):
     prov = OpenCodeCliProvider(_fake_cfg("opencode", tmp_path), None)
-    out = _spawn_chat(prov, "opencode/default")
+    out = _spawn_chat(prov, "opencode_cli/default")
     assert out["choices"][0]["message"]["content"] == "FAKE_CLI<<[user]\nhello world>>"
 
 
@@ -361,7 +361,7 @@ def test_new_json_legs_stream_the_parsed_answer(tmp_path):
     async def _drive():
         async for chunk in prov.chat_stream(
             prov.accounts[0],
-            {"model": "codex/gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
+            {"model": "codex_cli/gpt-5.4", "messages": [{"role": "user", "content": "hi"}]},
         ):
             chunks.append(chunk)
 

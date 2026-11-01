@@ -27,6 +27,43 @@ const EFFORT_OPTIONS = [
   { value: 'xhigh', labelKey: 'max' }
 ] as const
 
+/** The levels this model may be set to, as the catalog answered.
+ *
+ *  A subscription leg names the levels it actually sells (Antigravity's Claude runs at
+ *  low / medium / high; Qoder's Qwen3.8-Max at low / medium / xhigh), and a level the
+ *  vendor does not have must not sit in his radio group. When the model says nothing at
+ *  all the generic ladder stays — "we did not ask" is not "there is no choice".
+ *
+ *  Exported for the test that pins the two shapes apart.
+ */
+export function effortChoices(efforts?: readonly string[]): typeof EFFORT_OPTIONS[number][] {
+  if (!efforts || efforts.length === 0) {
+    return [...EFFORT_OPTIONS]
+  }
+
+  const wanted = new Set(efforts.map(effort => effort.trim().toLowerCase()))
+
+  return EFFORT_OPTIONS.filter(option => wanted.has(option.value))
+}
+
+/** What the quota hub publishes, per model, about what that model lets him change.
+ *
+ *  `model.options` returns these keys on the very same object that carries
+ *  `fast`/`reasoning`. `ModelCapabilities` in `src/types/plobi.ts` declares only those
+ *  two today, and that file is another line's live claim, so the wider shape is read
+ *  here — it belongs in the type, and should move there when that window opens.
+ */
+export interface ModelTuning {
+  context?: { adjustable?: boolean; choices?: number[]; default?: number; max?: number }
+  default_effort?: string
+  efforts?: string[]
+  max_output?: number
+}
+
+export function tuningOf(capabilities: unknown): ModelTuning {
+  return (capabilities ?? {}) as ModelTuning
+}
+
 /** How "fast" is achieved for a given model — two different mechanisms:
  *  - `param`: the Anthropic/OpenAI `speed=fast` request parameter.
  *  - `variant`: a separate `…-fast` sibling model selected via the model field.
@@ -73,6 +110,10 @@ export function resolveFastControl(
 }
 
 interface ModelEditSubmenuProps {
+  /** The vendor's own default level for this model, when it names one. */
+  defaultEffort?: string
+  /** The levels this model really sells, when the catalog names them. */
+  efforts?: readonly string[]
   /** This row's effective reasoning effort (live for the active model, else its
    *  preset) — the submenu shows and edits from this, never the raw session. */
   effort: string
@@ -92,6 +133,8 @@ interface ModelEditSubmenuProps {
 }
 
 export function ModelEditSubmenu({
+  defaultEffort,
+  efforts,
   effort,
   fastControl,
   isActive,
@@ -105,7 +148,9 @@ export function ModelEditSubmenu({
   const copy = t.shell.modelOptions
   const activeSessionId = useStore($activeSessionId)
 
-  const effortValue = normalizeEffort(effort)
+  const choices = effortChoices(efforts)
+  const fallbackEffort = levelForModel(defaultEffort, choices)
+  const effortValue = normalizeEffort(effort, choices, fallbackEffort)
   const thinkingOn = isThinkingEnabled(effort)
 
   // Editing always records the model's global preset; the active model also gets
@@ -197,7 +242,7 @@ export function ModelEditSubmenu({
               <Switch
                 checked={thinkingOn}
                 className="ml-auto"
-                onCheckedChange={checked => void patchReasoning(checked ? effortValue || 'medium' : 'none')}
+                onCheckedChange={checked => void patchReasoning(checked ? effortValue || fallbackEffort : 'none')}
                 size="xs"
               />
             </DropdownMenuItem>
@@ -213,7 +258,7 @@ export function ModelEditSubmenu({
               <DropdownMenuSeparator className="mx-0" />
               <DropdownMenuLabel className={dropdownMenuSectionLabel}>{copy.effort}</DropdownMenuLabel>
               <DropdownMenuRadioGroup onValueChange={value => void patchReasoning(value)} value={effortValue}>
-                {EFFORT_OPTIONS.map(option => (
+                {choices.map(option => (
                   <DropdownMenuRadioItem
                     className={dropdownMenuRow}
                     key={option.value}
@@ -237,13 +282,39 @@ function isThinkingEnabled(effort: string): boolean {
   return normalize(effort || 'medium') !== 'none'
 }
 
-function normalizeEffort(effort: string): string {
-  const value = normalize(effort || 'medium')
+/** The level to use when nobody chose one: the vendor's own default when it names
+ *  one and that default is really on offer, else Plobi's middle, else the middle of
+ *  what the model does sell. Never a level this model cannot run. */
+export function levelForModel(
+  defaultEffort: string | undefined,
+  choices: readonly { value: string }[]
+): string {
+  const wanted = normalize(defaultEffort || '').toLowerCase()
+
+  if (wanted && choices.some(choice => choice.value === wanted)) {
+    return wanted
+  }
+
+  if (choices.some(choice => choice.value === 'medium')) {
+    return 'medium'
+  }
+
+  return choices[Math.floor((choices.length - 1) / 2)]?.value ?? ''
+}
+
+function normalizeEffort(
+  effort: string,
+  choices: readonly { value: string }[],
+  fallback: string
+): string {
+  const value = normalize(effort || fallback)
 
   // Thinking off → no effort selected in the radio group.
   if (value === 'none') {
     return ''
   }
 
-  return EFFORT_OPTIONS.some(option => option.value === value) ? value : 'medium'
+  // A stored preset naming a level this model does not sell shows as unselected
+  // rather than pretending to be one the model never offered.
+  return choices.some(option => option.value === value) ? value : ''
 }

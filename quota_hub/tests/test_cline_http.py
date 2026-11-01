@@ -66,7 +66,7 @@ def test_the_free_pool_never_enters_our_catalog_and_the_key_is_a_live_credential
     assert prov.credential_health() == (True, "ok")
     assert asyncio.run(prov.refresh_models(_account("sk-cpb-test"))) == [
         "moonshotai/kimi-k3.1-pro", "deepseek/deepseek-v4.1-flash-1017"]
-    assert prov.served_models == ("cline/moonshotai/kimi-k3.1-pro", "cline/deepseek/deepseek-v4.1-flash-1017")
+    assert prov.served_models == ("cline_cli/moonshotai/kimi-k3.1-pro", "cline_cli/deepseek/deepseek-v4.1-flash-1017")
 
 
 def test_a_turn_is_unwrapped_and_the_caller_gets_its_own_model_id_back():
@@ -75,13 +75,13 @@ def test_a_turn_is_unwrapped_and_the_caller_gets_its_own_model_id_back():
               "POST /api/v1/chat/completions:stream":
                   (f"data: {json.dumps(completion)}\n\ndata: [DONE]\n\n",)}
     prov, seen = _provider(routes, {"api_key": "sk-cpb-test"})
-    req = {"model": "cline/moonshotai/kimi-k3.1-pro", "messages": [{"role": "user", "content": "读一个文件"}],
+    req = {"model": "cline_cli/moonshotai/kimi-k3.1-pro", "messages": [{"role": "user", "content": "读一个文件"}],
            "tools": [{"type": "function", "function": {"name": "plobi_probe_read"}}]}
 
     out = asyncio.run(prov.chat(_account("sk-cpb-test"), req))
     assert out["choices"][0]["finish_reason"] == "tool_calls"
     assert out["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "plobi_probe_read"
-    assert out["model"] == "cline/moonshotai/kimi-k3.1-pro", "the vendor's id must not leak to the caller"
+    assert out["model"] == "cline_cli/moonshotai/kimi-k3.1-pro", "the vendor's id must not leak to the caller"
     # what we dial is Cline's own id, prefix stripped
     assert seen[-1][2]["model"] == "moonshotai/kimi-k3.1-pro"
 
@@ -89,7 +89,7 @@ def test_a_turn_is_unwrapped_and_the_caller_gets_its_own_model_id_back():
         return [chunk async for chunk in prov.chat_stream(_account("sk-cpb-test"), req)]
 
     chunks = asyncio.run(_stream())
-    assert len(chunks) == 1 and chunks[0]["model"] == "cline/moonshotai/kimi-k3.1-pro"
+    assert len(chunks) == 1 and chunks[0]["model"] == "cline_cli/moonshotai/kimi-k3.1-pro"
 
 
 def test_the_lease_is_milliseconds_and_the_two_verdicts_stay_separate(tmp_path):
@@ -131,5 +131,5 @@ def test_with_no_credential_the_leg_is_the_acp_session_it_used_to_be(monkeypatch
 
     prov, seen = _provider({f"POST {BASE}/chat/completions": _completion("x")}, {})
     assert prov.signed_in() == (False, "no_desktop_credential")
-    out = asyncio.run(prov.chat(_account(), {"model": "cline/anything", "messages": []}))
+    out = asyncio.run(prov.chat(_account(), {"model": "cline_cli/anything", "messages": []}))
     assert out is marker and seen == [], "no token means no HTTP call"

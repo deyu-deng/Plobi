@@ -40,6 +40,11 @@ from .base import UpstreamError
 
 API_VERSION = "v1internal"
 
+#: The thinking budget each Plobi effort word means for a model that thinks in budgets
+#: rather than in named tiers (Gemini / GPT-OSS on the Code Assist door). One table, two
+#: readers: `to_gemini` sends it, and the Antigravity leg names it back to the picker.
+THINKING_BUDGET_BY_EFFORT = {"minimal": 1024, "low": 4096, "medium": 8192, "high": 16384}
+
 
 class CloudCodeClient:
     """One Code Assist transport, parameterised by the product that owns the token."""
@@ -112,8 +117,15 @@ class CloudCodeClient:
             proj = proj.get("id", "")
         return proj or ""
 
-    async def available_models(self, token: str, project: str = "") -> list[str]:
-        """The model list the account is actually entitled to — our ONLY name source."""
+    async def fetch_models_payload(self, token: str, project: str = "") -> dict:
+        """One `fetchAvailableModels` round trip, answered as upstream wrote it.
+
+        The legs need this shape (not just the names) because each model's own row is
+        the only honest source for what a picker may offer: measured 2026-11-01,
+        `claude-opus-5-5-high` reports `maxTokens: 1000000` / `maxOutputTokens: 128000`,
+        `gpt-oss-120b-medium` reports 131072 / 32768, and every row says for itself
+        whether it thinks (`supportsThinking`, `minThinkingBudget`).
+        """
         url = f"{self.host}/{self.api_version}:fetchAvailableModels"
         body = {"project": project} if project else {}
         try:
@@ -128,7 +140,11 @@ class CloudCodeClient:
             data = r.json()
         except Exception as e:
             raise UpstreamError(502, f"{self.label}: fetchAvailableModels invalid JSON {type(e).__name__}: {e}")
-        return _parse_antigravity_models(data)
+        return data if isinstance(data, dict) else {}
+
+    async def available_models(self, token: str, project: str = "") -> list[str]:
+        """The model list the account is actually entitled to — our ONLY name source."""
+        return _parse_antigravity_models(await self.fetch_models_payload(token, project))
 
     # --- the turn ---------------------------------------------------------
     def to_gemini(self, oai_req: dict, session_id: str, model: str = "") -> dict:
@@ -197,9 +213,7 @@ class CloudCodeClient:
             or "gpt-oss" in low_model
         )
         if self.thinking or (oai_req.get("reasoning_effort") and not fixed_tier):
-            budget = {"minimal": 1024, "low": 4096, "medium": 8192, "high": 16384}.get(
-                oai_req.get("reasoning_effort"), 8192
-            )
+            budget = THINKING_BUDGET_BY_EFFORT.get(oai_req.get("reasoning_effort"), 8192)
             gen["thinkingConfig"] = {"thinkingBudget": budget, "includeThoughts": bool(self.thinking)}
         if gen:
             body["generationConfig"] = gen

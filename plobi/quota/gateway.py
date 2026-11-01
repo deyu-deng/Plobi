@@ -113,6 +113,9 @@ def sources_from_catalog(
     else:
         rows = []
     grouped: dict[str, list[tuple[str, dict]]] = {}
+    #: model id → what that model itself says the user may change (its thinking levels,
+    #: its context windows, its output cap). The hub writes it; we only carry it.
+    tuning: dict[str, dict[str, Any]] = {}
     # 可用性不由我们再判一遍：目录里每条模型已经带了 `live/selectable` 与各自的 reason
     # （写入方是 `aigw/registry.py:230-232`，判据在 provider 那一侧，如 `workbuddy.py:102`）。
     # 这里只按 provider 汇总，R-108 那一格要用它回答"这条腿现在能不能用"。
@@ -151,6 +154,8 @@ def sources_from_catalog(
         # empty claim dict, which reads as "unknown" downstream rather than "no
         # streaming".
         grouped.setdefault(provider, []).append((model_id, dict(caps)))
+        if isinstance(row, dict) and isinstance(row.get("tuning"), dict):
+            tuning[model_id] = dict(row["tuning"])
 
     sources: dict[str, dict[str, Any]] = {}
     for provider, entries in grouped.items():
@@ -164,6 +169,9 @@ def sources_from_catalog(
             "capabilities": dict(caps),
             "derived": True,
             "availability": dict(availability.get(provider) or {}),
+            "model_tuning": {
+                m: tuning[m] for m, _ in entries if m in tuning
+            },
         }
     return sources, seen
 
@@ -221,3 +229,43 @@ def fetch_sources(
         now,
         seen,
     )
+
+
+#: The picker builds this payload on every open; the hub is a loopback process whose
+#: catalog only moves when a leg refreshes, so one read per half-minute is plenty.
+_TUNING_TTL = 30.0
+_TUNING_CACHE: dict[str, tuple[float, dict[str, dict[str, Any]]]] = {}
+
+
+def catalog_tuning(
+    base_url: str,
+    api_key: str = "",
+    *,
+    open_url: Optional[Callable[[urllib.request.Request, float], Any]] = None,
+) -> dict[str, dict[str, Any]]:
+    """`{model id: what that model lets the user change}` for the whole hub catalog.
+
+    The numbers come from each vendor's own model list — a thinking level the vendor
+    does not sell never appears here, and neither does a context window it does not
+    offer. An unreachable hub answers `{}`: the picker then keeps the generic controls
+    it had before, because "we could not ask" is not "there is nothing to choose".
+    ``open_url`` is the test seam, same as :func:`fetch_sources`.
+    """
+    url = (base_url or "").strip()
+    if not url:
+        return {}
+    now = time.time()
+    if open_url is None:
+        hit = _TUNING_CACHE.get(url)
+        if hit and now - hit[0] < _TUNING_TTL:
+            return hit[1]
+
+    merged: dict[str, dict[str, Any]] = {}
+    outcome = fetch_sources(url, api_key, open_url=open_url)
+    if outcome.answered:
+        for source in outcome.sources.values():
+            for model_id, knobs in (source.get("model_tuning") or {}).items():
+                merged[str(model_id)] = knobs
+    if open_url is None:
+        _TUNING_CACHE[url] = (now, merged)
+    return merged

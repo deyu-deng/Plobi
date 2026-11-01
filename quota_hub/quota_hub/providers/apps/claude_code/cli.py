@@ -137,14 +137,14 @@ class ClaudeCodeCliProvider(CliProvider):
     isolate_workspace = True
     stream_from_chat = True
     served_models = (
-        "claude/sonnet-4-6",
-        "claude/opus-4-6",
-        "claude/haiku-4-5",
+        "claude_code_cli/sonnet-4-6",
+        "claude_code_cli/opus-4-6",
+        "claude_code_cli/haiku-4-5",
     )
     model_map = {
-        "claude/sonnet-4-6": "claude-sonnet-4-6",
-        "claude/opus-4-6": "claude-opus-4-6",
-        "claude/haiku-4-5": "claude-haiku-4-5",
+        "claude_code_cli/sonnet-4-6": "claude-sonnet-4-6",
+        "claude_code_cli/opus-4-6": "claude-opus-4-6",
+        "claude_code_cli/haiku-4-5": "claude-haiku-4-5",
     }
 
     def parse_response(self, stdout: str, oai_req: dict) -> dict:

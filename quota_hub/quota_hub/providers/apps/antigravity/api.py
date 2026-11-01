@@ -51,7 +51,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from ....egress import proxy_url
-from ....providers.cloudcode import CloudCodeClient
+from ....providers.cloudcode import CloudCodeClient, THINKING_BUDGET_BY_EFFORT
 from . import account_store
 from . import tool_bridge
 from .network import LOGIN_ENDPOINTS, probe_network
@@ -196,6 +196,11 @@ class AntigravityProvider(Provider):
         "minimal": "extra-low", "none": "extra-low", "low": "low",
         "medium": "medium", "high": "high", "xhigh": "high", "max": "high",
     }
+    #: The same table read the other way, for telling the picker which words to show.
+    _EFFORT_ORDER = (("minimal", "extra-low"), ("low", "low"), ("medium", "medium"), ("high", "high"))
+    #: A budget-backed model (Gemini, GPT-OSS) says which level it runs at by writing
+    #: `thinkingBudget`; this reads that number back as a word.
+    _BUDGET_EFFORT = {v: k for k, v in THINKING_BUDGET_BY_EFFORT.items()}
     #: The tier a turn with no `reasoning_effort` gets — the vendor's own middle choice, which is
     #: also what the desktop's status bar prints when the knob is untouched ("… · Med").
     _DEFAULT_TIERS = ("medium", "high", "low", "extra-low")
@@ -215,6 +220,8 @@ class AntigravityProvider(Provider):
         self.MODEL_MAP = dict(self._SEED_MODEL_MAP)
         #: family id → {tier → the id upstream actually sells} (see `refresh_models`).
         self._tier_variants: dict[str, dict[str, str]] = {}
+        #: the model's own row from `fetchAvailableModels` (limits, thinking flags).
+        self._model_rows: dict[str, dict] = {}
         self.models_refreshed = False
         # The node from Settings → VPN (裁定 206 / 用户 10-28): the hub's shared client
         # runs with trust_env=false, so a Google leg can only reach the network through an
@@ -803,7 +810,10 @@ class AntigravityProvider(Provider):
         """
         try:
             await self.ensure_fresh(acc)
-            short_ids = await self.fetch_available_models(acc)
+            payload = await self.cloudcode.fetch_models_payload(
+                acc.cred.access_token, await self._project_id(acc)
+            )
+            short_ids = _parse_antigravity_models(payload)
         except UpstreamError as e:
             logger.warning("antigravity model refresh skipped: %s", e)
             return None
@@ -815,11 +825,131 @@ class AntigravityProvider(Provider):
         if not short_ids:
             logger.warning("antigravity model refresh returned an empty list; keeping seed")
             return None
-        self.served_models = tuple(f"antigravity/{m}" for m in short_ids)
-        self.MODEL_MAP = {f"antigravity/{m}": m for m in short_ids}
+        rows = payload.get("models") if isinstance(payload.get("models"), dict) else {}
+        self._model_rows = {
+            str(k).strip().split("/")[-1]: v for k, v in rows.items() if isinstance(v, dict)
+        }
+        published, variants = self._fold_tiers(short_ids)
+        prefix = self.name
+        self.served_models = tuple(f"{prefix}/{m}" for m in published)
+        self.MODEL_MAP = {f"{prefix}/{m}": m for m in published}
+        self._tier_variants = variants
         self.models_refreshed = True
         logger.info("antigravity: live model catalog = %s", self.served_models)
-        return short_ids
+        return published
+
+    # --- thinking levels are one model, not three rows ---------------------
+    @classmethod
+    def _split_tier(cls, model_id: str) -> tuple[str, str]:
+        """(`family`, tier) for `<family>-low|-medium|-high|-extra-low`, else (id, "").
+
+        Longest suffix first: `-extra-low` also ends in `-low`.
+        """
+        low = (model_id or "").lower()
+        for tier in sorted(cls._TIERS, key=len, reverse=True):
+            if low.endswith(f"-{tier}"):
+                return model_id[: len(model_id) - len(tier) - 1], tier
+        return model_id, ""
+
+    @classmethod
+    def _fold_tiers(cls, short_ids: list[str]) -> tuple[list[str], dict[str, dict[str, str]]]:
+        """Collapse `<family>-<tier>` siblings into one published id plus a tier map.
+
+        A tier only folds when upstream really sells more than one level for that
+        family. `gpt-oss-120b-medium` arrives alone, so it keeps its literal id —
+        renaming a single row to a family we could not serve would put a name in the
+        picker that has nothing behind it. Order follows the incoming list, which
+        already carries upstream's own `agentModelSorts` preference.
+        """
+        groups: dict[str, dict[str, str]] = {}
+        order: list[str] = []
+        for mid in short_ids:
+            family, tier = cls._split_tier(mid)
+            if family not in groups:
+                groups[family] = {}
+                order.append(family)
+            groups[family][tier or mid] = mid
+
+        published: list[str] = []
+        variants: dict[str, dict[str, str]] = {}
+        for family in order:
+            members = {t: m for t, m in groups[family].items() if t in cls._TIERS}
+            if len(members) >= 2:
+                published.append(family)
+                variants[family] = members
+                continue
+            # One row, one level: `gpt-oss-120b-medium` arrived alone. It keeps its
+            # literal id (naming a family we could not serve would put a dead name in
+            # the picker) but still records the level it can run at, so the picker says
+            # "Medium" instead of offering a ladder this model cannot climb.
+            single = groups[family].get("") or next(iter(groups[family].values()), "")
+            if single:
+                published.append(single)
+                if members:
+                    variants[single] = members
+        return published, variants
+
+    def _variant_for_effort(self, family: str, effort: str) -> str:
+        """The upstream id this family should run at for one OpenAI effort word.
+
+        A level the vendor does not sell clamps **along the ladder** rather than
+        jumping to the default: `minimal` on a family that only has low/medium/high
+        means its lowest, not its middle.
+        """
+        members = self._tier_variants.get(family) or {}
+        if not members:
+            return ""
+        asked = (effort or "").strip().lower()
+        tier = self._EFFORT_TIER.get(asked, "") or (asked if asked in self._TIERS else "")
+        if tier and members.get(tier):
+            return members[tier]
+        if tier in self._TIERS:
+            rung = list(self._TIERS).index(tier)
+            for step in range(rung - 1, -1, -1):
+                if members.get(self._TIERS[step]):
+                    return members[self._TIERS[step]]
+            for step in range(rung + 1, len(self._TIERS)):
+                if members.get(self._TIERS[step]):
+                    return members[self._TIERS[step]]
+        for candidate in self._DEFAULT_TIERS:
+            if members.get(candidate):
+                return members[candidate]
+        return ""
+
+    def tuning(self, model: str) -> dict:
+        """What this model can actually change, taken from the row upstream wrote.
+
+        Nothing here is inferred: the effort menu only exists when upstream listed more
+        than one tier for that family, and the context numbers are the model's own
+        `maxTokens` / `maxOutputTokens`.
+        """
+        short = self._short_model(model)
+        family = self.MODEL_MAP.get(model, model.split("/")[-1])
+        members = self._tier_variants.get(family) or {}
+        row = self._model_rows.get(short) or {}
+        out: dict[str, Any] = {}
+        if members:
+            # Plobi's own words for the levels this family really has, lowest first.
+            efforts = [eff for eff, tier in self._EFFORT_ORDER if tier in members]
+            out["efforts"] = efforts
+            for preferred in ("medium", "high", "low", "minimal"):
+                if preferred in efforts:
+                    out["default_effort"] = preferred
+                    break
+        elif row.get("supportsThinking"):
+            # A model that names no tiers thinks with a budget instead
+            # (`minThinkingBudget: 128`, `thinkingBudget: -1` = adaptive), and the four
+            # levels below are exactly what `cloudcode.to_gemini` already turns into
+            # `thinkingBudget` — so this menu is what the leg does, not what we hope.
+            out["efforts"] = ["minimal", "low", "medium", "high"]
+            out["default_effort"] = self._BUDGET_EFFORT.get(
+                row.get("thinkingBudget"), "medium"
+            )
+        if isinstance(row.get("maxTokens"), (int, float)):
+            out["context"] = {"max": int(row["maxTokens"])}
+        if isinstance(row.get("maxOutputTokens"), (int, float)):
+            out["max_output"] = int(row["maxOutputTokens"])
+        return out
 
     async def fetch_available_models(self, acc: Account) -> list[str]:
         """The account's own entitlement list — the transport raises, we do not guess."""
@@ -849,8 +979,22 @@ class AntigravityProvider(Provider):
     ) -> dict:
         return self.cloudcode.headers_for(token, session_id, model, accept)
 
-    def _short_model(self, oai_model: str) -> str:
-        return self.MODEL_MAP.get(oai_model, oai_model.split("/")[-1])
+    def _short_model(self, oai_model: str, effort: str = "") -> str:
+        """The id upstream sells for this pick at this thinking level.
+
+        A family whose tiers we folded answers with the tier the turn's
+        `reasoning_effort` asks for (default: the vendor's middle), so one picker row
+        can run at three levels. An id we did not fold — a real single model, or a
+        session still holding an old `…-high` id — goes through verbatim.
+        """
+        family = self.MODEL_MAP.get(oai_model, oai_model.split("/")[-1])
+        return self._variant_for_effort(family, effort) or family
+
+    def _model_of(self, oai_req: dict) -> str:
+        """The upstream name for one request: the pick, at the level it asks for."""
+        return self._short_model(
+            str(oai_req.get("model") or ""), str(oai_req.get("reasoning_effort") or "")
+        )
 
     def _wrap(self, oai_req: dict, project: str, model: str, session_id: str) -> dict:
         return self.cloudcode.wrap(oai_req, project, model, session_id)
@@ -859,7 +1003,7 @@ class AntigravityProvider(Provider):
         return await self.cloudcode.chat(
             token=acc.cred.access_token,
             project=await self._project_id(acc),
-            model=self._short_model(oai_req["model"]),
+            model=self._model_of(oai_req),
             oai_req=oai_req,
             session_id=acc.cred.extra.get("session_id", ""),
             on_response=lambda r: self._note_quota(acc, r),
@@ -869,7 +1013,7 @@ class AntigravityProvider(Provider):
         async for chunk in self.cloudcode.chat_stream(
             token=acc.cred.access_token,
             project=await self._project_id(acc),
-            model=self._short_model(oai_req["model"]),
+            model=self._model_of(oai_req),
             oai_req=oai_req,
             session_id=acc.cred.extra.get("session_id", ""),
             on_response=lambda r: self._note_quota(acc, r),

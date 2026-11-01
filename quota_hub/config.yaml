@@ -104,8 +104,8 @@ providers:
     args_template: ["exec", "{model_flag}", "{prompt}", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]
     model_flag: "--model"
     timeout: 300
-    models: [codex/gpt-5.4, codex/gpt-5.4-mini, codex/gpt-5.3-codex]
-    model_map: { codex/gpt-5.4: gpt-5.4, codex/gpt-5.4-mini: gpt-5.4-mini, codex/gpt-5.3-codex: gpt-5.3-codex }
+    models: [codex_cli/gpt-5.4, codex_cli/gpt-5.4-mini, codex_cli/gpt-5.3-codex]
+    model_map: { codex_cli/gpt-5.4: gpt-5.4, codex_cli/gpt-5.4-mini: gpt-5.4-mini, codex_cli/gpt-5.3-codex: gpt-5.3-codex }
     accounts: [{ id: codex-default }]
 
   claude_code_cli:
@@ -114,8 +114,8 @@ providers:
     args_template: ["{model_flag}", "-p", "{prompt}", "--output-format", "json"]
     model_flag: "--model"
     timeout: 300
-    models: [claude/sonnet-4-6, claude/opus-4-6, claude/haiku-4-5]
-    model_map: { claude/sonnet-4-6: claude-sonnet-4-6, claude/opus-4-6: claude-opus-4-6, claude/haiku-4-5: claude-haiku-4-5 }
+    models: [claude_code_cli/sonnet-4-6, claude_code_cli/opus-4-6, claude_code_cli/haiku-4-5]
+    model_map: { claude_code_cli/sonnet-4-6: claude-sonnet-4-6, claude_code_cli/opus-4-6: claude-opus-4-6, claude_code_cli/haiku-4-5: claude-haiku-4-5 }
     accounts: [{ id: claude-default }]
 
   # OpenCode Zen（裁定 204）：读本机 OAuth（~/.local/share/opencode/opencode.db 的 credential 表），
@@ -140,8 +140,8 @@ providers:
     args_template: ["run", "{model_flag}", "{prompt}"]
     model_flag: "--model"
     timeout: 300
-    models: [opencode/default]
-    model_map: { opencode/default: "" }
+    models: [opencode_cli/default]
+    model_map: { opencode_cli/default: "" }
     accounts: [{ id: opencode-default }]
 
   kiro_cli:
@@ -154,8 +154,8 @@ providers:
     args_template: ["chat", "--no-interactive", "--trust-all-tools", "{model_flag}", "{prompt}"]
     model_flag: "--model"
     timeout: 300
-    models: [kiro/default]
-    model_map: { kiro/default: "" }
+    models: [kiro_cli/default]
+    model_map: { kiro_cli/default: "" }
     accounts: [{ id: kiro-default }]
 
   # Cline 走它自己的 ACP 口（`cline --acp`，10-29 实测 3.0.74）：模型名由它 `session/new`

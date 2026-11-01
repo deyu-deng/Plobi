@@ -46,7 +46,7 @@ import {
 } from '@/store/session'
 import type { ModelOptionProvider, ModelOptionsResponse } from '@/types/plobi'
 
-import { ModelEditSubmenu, resolveFastControl } from './model-edit-submenu'
+import { ModelEditSubmenu, resolveFastControl, tuningOf } from './model-edit-submenu'
 import { humanizeProviders } from './model-provider-label'
 
 // Lets the host dropdown (model-pill) hand the panel a way to dismiss itself so
@@ -190,7 +190,11 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
 
     await applyModelPreset(
       {
-        effort: (caps?.reasoning ?? true) ? (preset.effort ?? 'medium') : undefined,
+        effort: (caps?.reasoning ?? true)
+          // A model that names its own default level is restored to it; the generic
+          // middle stays the fallback for legs that said nothing.
+          ? (preset.effort ?? tuningOf(caps).default_effort ?? 'medium')
+          : undefined,
         fast: (caps?.fast ?? false) ? (preset.fast ?? false) : undefined
       },
       { failMessage: t.shell.modelOptions.updateFailed, request: requestGateway, sessionId: activeSessionId }
@@ -274,6 +278,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                 // Capabilities are looked up against the active/base id; the
                 // -fast variant carries the same param support as its base.
                 const caps = group.provider.capabilities?.[family.id]
+                const tuning = tuningOf(caps)
 
                 // Effective settings for this row: live session state when it's
                 // the active model, otherwise its remembered preset (Plobi
@@ -332,6 +337,8 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
                       {isCurrent ? <Codicon className="ml-auto text-foreground" name="check" size="0.75rem" /> : null}
                     </DropdownMenuSubTrigger>
                     <ModelEditSubmenu
+                      defaultEffort={tuning.default_effort}
+                      efforts={tuning.efforts}
                       effort={effEffort}
                       fastControl={fastControl}
                       isActive={isCurrent}

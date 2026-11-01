@@ -369,8 +369,12 @@ class KiroHttpMixin:
         return {}
 
     def _model_id(self, requested: str) -> str:
-        prefix = f"{getattr(self, 'model_prefix', 'kiro')}/"
+        prefix = f"{self._prefix()}/"
         return requested[len(prefix):] if requested.startswith(prefix) else requested
+
+    #: Our ids are namespaced by the card's own registry name (see `cli.py`).
+    def _prefix(self) -> str:
+        return str(getattr(self, "model_prefix", "") or self.name)
 
     # --- verdicts --------------------------------------------------------
     def signed_in(self) -> tuple[bool, str]:
@@ -444,7 +448,7 @@ class KiroHttpMixin:
             await self.ensure_fresh(acc)
         except UpstreamError:
             return None
-        prefix = getattr(self, "model_prefix", "kiro")
+        prefix = self._prefix()
         try:
             res = await self.http.post(self._management_url(acc),
                                        headers=self._headers(acc, "AmazonCodeWhispererService.ListAvailableModels"),
@@ -460,8 +464,26 @@ class KiroHttpMixin:
         if not isinstance(rows, list) or not rows:
             return None
         short = [str(row.get("modelId")) for row in rows if isinstance(row, dict) and row.get("modelId")]
+        # Keep the rows themselves: they carry the numbers the picker may show and we
+        # must never invent (measured 2026-11-01: `tokenLimits.maxInputTokens` = 1M on
+        # `auto`, 200K on claude-sonnet-4.5, 164K on deepseek-3.2; `maxOutputTokens`
+        # 64000; `supportedInputTypes` says IMAGE for the two Claudes and TEXT-only for
+        # the others). Kiro publishes no reasoning-effort menu at all, so this leg says
+        # nothing about `efforts` instead of guessing one.
+        self._model_rows = {str(row.get("modelId")): row for row in rows if isinstance(row, dict)}
         self.served_models = tuple(f"{prefix}/{m}" for m in short)
         return short
+
+    def tuning(self, model: str) -> dict:
+        """Kiro's own per-model limits, from `ListAvailableModels` (no effort menu)."""
+        row = getattr(self, "_model_rows", {}).get(self._model_id(model)) or {}
+        limits = row.get("tokenLimits") if isinstance(row.get("tokenLimits"), dict) else {}
+        out: dict[str, Any] = {}
+        if isinstance(limits.get("maxInputTokens"), (int, float)):
+            out["context"] = {"max": int(limits["maxInputTokens"])}
+        if isinstance(limits.get("maxOutputTokens"), (int, float)):
+            out["max_output"] = int(limits["maxOutputTokens"])
+        return out
 
     # --- request path ----------------------------------------------------
     async def chat(self, acc: Account, oai_req: dict) -> dict:

@@ -189,6 +189,19 @@ class Provider:
         live, reason = health()
         return bool(live), str(reason or "ok")
 
+    # --- what one model can change ---------------------------------------
+    def tuning(self, model: str) -> dict:
+        """What *this model* lets the user change, copied from what the vendor wrote.
+
+        A leg that reads a live catalogue can answer with the model's own numbers —
+        the thinking levels it actually sells, the context windows it offers, its
+        output cap. `/v1/models` puts the answer on every row as `tuning`, and an
+        empty dict means "this leg did not say", never "there is nothing to choose":
+        the picker keeps its generic controls for that model instead of inventing a
+        list we cannot back up.
+        """
+        return {}
+
     # --- sign-in ---------------------------------------------------------
     def login_plan(self) -> dict:
         """How the user signs into THIS provider, stated by the provider itself.

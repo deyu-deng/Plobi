@@ -66,6 +66,13 @@ def _host_and_port(base_url: str) -> str:
     return parsed.netloc.lower()
 
 
+#: The effort words Plobi itself uses (`plobi_constants.VALID_REASONING_EFFORTS`).
+#: Kept as a local tuple on purpose: the gateway's `model.options` RPC answers with
+#: whatever the profile says it accepts, and a level the hub cannot act on is a level
+#: the leg clamps or ignores — not one we invent here.
+_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
+
+
 class AigwProfile(ProviderProfile):
     """Local quota gateway — OpenAI-compatible endpoint on loopback."""
 
@@ -79,6 +86,29 @@ class AigwProfile(ProviderProfile):
         live in ``plobi.agents.registry.aigw_api_key`` / ``aigw_credential_source``.
         """
         return aigw_api_key()
+
+    def build_api_kwargs_extras(self, *, reasoning_config=None, **context):
+        """Send the user's thinking level as OpenAI's own top-level field.
+
+        Measured 2026-11-01: the 思考强度 picker wrote `agent.reasoning_effort`, and the
+        generic transport only emits a reasoning field on three gated routes
+        (OpenRouter / LM Studio / Kimi / TokenHub, plus `extra_body.reasoning` when
+        ``_supports_reasoning_extra_body()`` says yes — which is False for a loopback
+        base_url). So on the subscription legs the level never left the desktop, and a
+        leg whose thinking tier is *part of the model name* (Antigravity's
+        `claude-opus-5-5-low|-medium|-high`) could not pick its row.
+
+        The hub is our own door and reads `reasoning_effort`, so this profile declares
+        it directly instead of re-opening that gate for every other provider. An
+        explicit "thinking off" carries no level at all: the legs keep the vendor's own
+        default rather than a level the user never asked for.
+        """
+        if not isinstance(reasoning_config, dict) or reasoning_config.get("enabled") is False:
+            return {}, {}
+        effort = str(reasoning_config.get("effort") or "").strip().lower()
+        if effort not in _EFFORTS:
+            return {}, {}
+        return {}, {"reasoning_effort": effort}
 
 
 aigw = AigwProfile(

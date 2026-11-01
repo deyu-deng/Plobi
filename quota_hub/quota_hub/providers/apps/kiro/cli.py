@@ -149,11 +149,16 @@ class KiroSpawnProvider(CliProvider):
     #: Its stream is JSONL, so it is forwarded line by line (`stream_text`) instead of
     #: being run whole and handed back as one blob.
     stream_from_chat = False
-    #: Discovered ids keep the same prefix the seed and config use, so the
-    #: picker shows one namespace for one product.
-    model_prefix = "kiro"
-    served_models = ("kiro/default",)
-    model_map = {"kiro/default": ""}
+    #: The prefix of our published ids **is** the card's registry name — that is the
+    #: invariant the desktop chain depends on: `electron/main.ts` strips
+    #: `<row.provider>/` from each id and `src/store/desktop-quotas.ts` puts the card
+    #: id back, so a prefix that differs from the card id produces a three-segment
+    #: selection value (`kiro_cli/kiro/deepseek-3.2`) that the hub cannot route.
+    #: Measured 2026-11-01 on his machine: switching to Kiro's DeepSeek failed with
+    #: exactly that string.  So: no `model_prefix` here; `providers/cli.py` falls back
+    #: to `self.name`, which is the card id.
+    served_models = ("kiro_cli/default",)
+    model_map = {"kiro_cli/default": ""}
     #: The last ACP-shaped run, for the quota fields and for the tool evidence.
     last_run: dict = {}
     #: The CLI's own answer about its session. `kiro-cli login` refuses when already

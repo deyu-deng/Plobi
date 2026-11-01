@@ -114,7 +114,7 @@ def test_a_run_records_its_credit_cost_on_the_account(monkeypatch, tmp_path: Pat
     acc = Account(id="kiro-default", provider="kiro_cli", label="Kiro", cred=Credential(access_token="x"))
     prov.accounts = [acc]
 
-    out = prov.parse_response(RUN, {"model": "kiro/default", "messages": [{"role": "user", "content": "hi"}]})
+    out = prov.parse_response(RUN, {"model": "kiro_cli/default", "messages": [{"role": "user", "content": "hi"}]})
 
     assert out["choices"][0]["message"]["content"] == "输出是 plobi-tool-ok"
     assert acc.quota["credits_used_last_turn"] == 0.2264
@@ -188,7 +188,7 @@ def test_streamed_turns_send_each_chunk_instead_of_one_blob(monkeypatch):
         return [
             chunk
             async for chunk in prov.chat_stream(
-                acc, {"model": "kiro/x", "messages": [{"content": "hi", "role": "user"}]}
+                acc, {"model": "kiro_cli/x", "messages": [{"content": "hi", "role": "user"}]}
             )
         ]
 
@@ -226,7 +226,7 @@ def test_a_failed_model_list_is_retried_once_before_keeping_the_seed():
 
     assert calls["n"] == 2
     assert shorts == ["m1", "m2"]
-    assert prov.served_models == ("kiro/m1", "kiro/m2")
+    assert prov.served_models == ("kiro_cli/m1", "kiro_cli/m2")
 
 
 def test_both_attempts_failing_keeps_the_seed_and_says_why(caplog):
@@ -234,7 +234,7 @@ def test_both_attempts_failing_keeps_the_seed_and_says_why(caplog):
 
     prov = KiroCliProvider({"binary": "kiro-cli"}, None)
     prov.binary_path = "kiro-cli"
-    prov.served_models = ("kiro/default",)
+    prov.served_models = ("kiro_cli/default",)
 
     async def _once():
         return [], "exit 1: locked"
@@ -243,6 +243,6 @@ def test_both_attempts_failing_keeps_the_seed_and_says_why(caplog):
     with caplog.at_level(logging.WARNING, logger="quota_hub"):
         assert asyncio.run(prov.refresh_models(None)) is None
 
-    assert prov.served_models == ("kiro/default",)
+    assert prov.served_models == ("kiro_cli/default",)
     assert "model refresh failed twice" in caplog.text
     assert "locked" in caplog.text

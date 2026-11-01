@@ -231,7 +231,101 @@ class QoderProvider(Provider):
         self.served_models = tuple(f"{self.model_prefix}/{s}" for s in slugs)
         return slugs
 
+    # --- what this model can actually change -------------------------------
+    #: Plobi's effort words, lowest rung first. Qoder uses the same vocabulary in its
+    #: own `thinking_config` (`low` / `medium` / `xhigh`), so no translation is needed.
+    _EFFORT_LADDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+    def tuning(self, model: str) -> dict:
+        """Qoder's own per-model knobs, read out of the catalogue row it wrote.
+
+        Measured 2026-11-01: `Qwen3.8-Max` carries
+        `thinking_config {disabled, enabled {efforts {low, medium(default), xhigh}}}` and
+        `context_config {200K(default), 400K, 1M}` with `is_editable: true`, while `Auto`
+        carries one 200K context and no `is_editable`. So the picker gets exactly the
+        levels the vendor sells for *that* model — and no list is invented where the
+        answer says there is no choice.
+        """
+        entry = self._entries.get(self._key_of.get(
+            (str(model or "")).removeprefix(f"{self.model_prefix}/"), str(model or "")), {}) or {}
+        out: dict[str, Any] = {}
+
+        enabled = (entry.get("thinking_config") or {}).get("enabled") or {}
+        levels = enabled.get("efforts") or {}
+        efforts = [e for e in self._EFFORT_LADDER if e in levels]
+        if efforts:
+            out["efforts"] = efforts
+            default = next((w for w, cfg in levels.items() if isinstance(cfg, dict) and cfg.get("is_default")), "")
+            out["default_effort"] = default if default in efforts else (
+                "medium" if "medium" in efforts else efforts[len(efforts) // 2]
+            )
+
+        choices = (entry.get("context_config") or {}).values()
+        windows = sorted({int(c.get("token_count")) for c in choices
+                          if isinstance(c, dict) and c.get("token_count")})
+        if windows:
+            context: dict[str, Any] = {"max": windows[-1], "choices": windows}
+            for c in (entry.get("context_config") or {}).values():
+                if isinstance(c, dict) and c.get("is_default") and c.get("token_count"):
+                    context["default"] = int(c["token_count"])
+            context["adjustable"] = bool(entry.get("is_editable")) and len(windows) > 1
+            out["context"] = context
+        if isinstance(entry.get("max_input_tokens"), (int, float)):
+            out.setdefault("context", {"max": int(entry["max_input_tokens"])})
+        return out
+
     # --- request path -----------------------------------------------------
+    def _effort_for(self, entry: dict, asked: str) -> str:
+        """The level to send, clamped to the rungs this model's own row sells.
+
+        `thinking_config.enabled.efforts` is vendor-written per model (measured
+        2026-11-01: Qwen3.8-Max sells low / medium / xhigh, `Auto` writes no
+        thinking_config at all). Asking for a rung it does not sell moves to the
+        nearest one it does instead of sending a word the door would have to guess at.
+        """
+        asked = (asked or "").strip().lower()
+        if not asked:
+            return ""
+        levels = [e for e in self._EFFORT_LADDER
+                  if e in ((entry.get("thinking_config") or {}).get("enabled") or {}).get("efforts", {})]
+        if not levels:
+            return asked
+        if asked in levels:
+            return asked
+        if asked not in self._EFFORT_LADDER:
+            return asked
+        rung = self._EFFORT_LADDER.index(asked)
+        # Nearest rung on the ladder; on a tie the *higher* one wins, because an
+        # unanswered "think more" should not quietly mean "think less".
+        near = min(levels, key=lambda e: (abs(self._EFFORT_LADDER.index(e) - rung),
+                                          -self._EFFORT_LADDER.index(e)))
+        return near
+
+    def _window_for(self, entry: dict, asked: Any) -> int:
+        """The context window to declare, from the model's own `context_config`.
+
+        A number the model does not sell never reaches the door: we keep the vendor's
+        default. The default itself is the model's `is_default` entry, falling back to
+        `max_input_tokens` for rows that publish no menu.
+        """
+        windows = sorted({int(c.get("token_count")) for c in (entry.get("context_config") or {}).values()
+                          if isinstance(c, dict) and c.get("token_count")})
+        default = next((int(c["token_count"]) for c in (entry.get("context_config") or {}).values()
+                        if isinstance(c, dict) and c.get("is_default") and c.get("token_count")), 0)
+        ceiling = int(_number(entry.get("max_input_tokens"), DEFAULT_MAX_INPUT))
+        if not asked:
+            return default or ceiling
+        try:
+            want = int(float(asked))
+        except (TypeError, ValueError):
+            return default or ceiling
+        if windows:
+            if want in windows:
+                return want
+            near = min(windows, key=lambda w: abs(w - want))
+            return min(near, windows[-1])
+        return min(want, ceiling)
+
     def _body(self, oai_req: dict, record_id: str) -> tuple[str, dict]:
         """The gateway's own request shape; returns (upstream model key, body)."""
         requested = str(oai_req.get("model") or "")
@@ -243,13 +337,16 @@ class QoderProvider(Provider):
         entry = self._entries.get(key, {})
         messages = oai_req.get("messages") or []
         prompt = _latest_user_text(messages)
-        reasoning = bool(entry.get("is_reasoning", True))
+        effort = self._effort_for(entry, str(oai_req.get("reasoning_effort") or ""))
+        reasoning = bool(entry.get("is_reasoning", True)) and effort not in ("none", "false", "off")
         parameters: dict[str, Any] = {"max_tokens": int(_number(oai_req.get("max_tokens")
                                                                or oai_req.get("max_completion_tokens"),
                                                                DEFAULT_MAX_OUTPUT))}
         for name in ("temperature", "top_p", "stop", "response_format", "reasoning_effort", "tool_choice"):
             if oai_req.get(name) is not None:
                 parameters[name] = oai_req[name]
+        if effort:
+            parameters["reasoning_effort"] = effort
         if oai_req.get("parallel_tool_calls") is not None:
             parameters["parallel_tool_calls"] = bool(oai_req["parallel_tool_calls"])
         if entry.get("is_reasoning") is not None or oai_req.get("reasoning_effort") is not None:
@@ -284,7 +381,9 @@ class QoderProvider(Provider):
                 "key": key, "display_name": key, "model": "", "format": "openai",
                 "is_vl": bool(entry.get("is_vl", True)), "is_reasoning": reasoning,
                 "api_key": "", "url": "", "source": str(entry.get("source") or "system"),
-                "max_input_tokens": int(_number(entry.get("max_input_tokens"), DEFAULT_MAX_INPUT)),
+                # The window this turn runs at, taken from the model's own `context_config`:
+                # a number the row does not sell never reaches the door.
+                "max_input_tokens": self._window_for(entry, oai_req.get("context_length")),
             },
             "custom_model": None,
             "system": _system_text(messages),
