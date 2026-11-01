@@ -12,6 +12,7 @@ describe('humanizeProviderName', () => {
   it('maps aigw-aggregated software to its brand (slug or name match)', () => {
     expect(humanizeProviderName(provider({ slug: 'workbuddy', name: 'anything' }))).toBe('WorkBuddy')
     expect(humanizeProviderName(provider({ slug: 'whatever', name: 'AIGW · Antigravity' }))).toBe('Antigravity')
+    expect(humanizeProviderName(provider({ slug: 'qoder', name: 'Qoder' }))).toBe('Qoder')
   })
 
   it('maps direct-API vendors to their public names', () => {

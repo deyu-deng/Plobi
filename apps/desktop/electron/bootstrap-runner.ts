@@ -384,7 +384,7 @@ function spawnPowerShell(scriptPath, args, { emit, stageName, abortSignal, plobi
           ...process.env,
           // Pass PLOBI_HOME through so install.ps1 respects the caller's
           // choice rather than re-computing the default.
-          PLOBI_HOME: plobiHome || process.env.PLOBI_HOME || ''
+          PLOBI_HOME: plobiHome || process.env.PLOBI_HOME?.trim() || ''
         }
       })
     )
@@ -478,7 +478,7 @@ function spawnBash(scriptPath, args, { emit, stageName, abortSignal, plobiHome }
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        PLOBI_HOME: plobiHome || process.env.PLOBI_HOME || ''
+        PLOBI_HOME: plobiHome || process.env.PLOBI_HOME?.trim() || ''
       }
     })
 

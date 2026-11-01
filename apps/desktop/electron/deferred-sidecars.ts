@@ -98,16 +98,16 @@ const DEFERRED_SUBSYSTEMS: Record<string, DeferredSubsystemDefinition> = {
     // Byte-equal to the `aigw` entry in doctor.py's DEFERRED_ENABLE_HINTS — a
     // test pins it, because this is a claim about app behaviour and it must say
     // the same thing wherever the user reads it.
-    enableHint: 'Plobi 需要时自己起这一条 —— 没有要人手跑的东西',
+    enableHint: 'Plobi 会在需要时自动启动该服务，无需手动操作',
     id: 'aigw',
-    name: { en: 'Local Quota Hub', zh: '本地额度网关' },
+    name: { en: 'Local Quota Service', zh: '本地额度服务' },
     port: 8000
   },
   chatlog: {
     enableHint:
-      '把 sidecar 起来监听 :5030（这台上的二进制在 `plobi/collectors/chatlog/vendor/chatlog/bin/chatlog.exe`；Go 与 `CHATLOG_DATA_KEY` 齐不齐不是这条探针的读数，所以这里不替它担保）',
+      '微信消息采集服务，应用需要时自动启动，无需手动操作。',
     id: 'chatlog',
-    name: { en: 'chatlog WeChat collector', zh: '微信采集 chatlog' },
+    name: { en: 'WeChat message collector', zh: '微信消息采集' },
     port: 5030
   }
 }
@@ -122,7 +122,7 @@ const PROFILE_BACKEND_ID_PREFIX = 'backend:'
 
 /** Same shape as the quota hub hint: the app owns the lifecycle, nothing to run. */
 const PROFILE_BACKEND_ENABLE_HINT =
-  'Plobi brings this profile backend up itself and backs off between attempts — there is nothing to run by hand.'
+  'Plobi 会在需要时自动启动该项目服务，无需手动操作'
 
 /**
  * The deferred wording, kept byte-identical to `DEFERRED_SUFFIX` in
@@ -130,7 +130,7 @@ const PROFILE_BACKEND_ENABLE_HINT =
  * It used to cite a ruling number that was revoked on 2026-09-30 — a revoked
  * number cannot be the reason a row reports gray (裁定 162).
  */
-const DEFERRED_SUFFIX = 'deferred — 不是坏了：这一档不归「该跑而没跑」那一型，真跑起来自己就变绿。怎么回到绿：'
+const DEFERRED_SUFFIX = '稍后自动启动 — 不是故障：需要时会自动运行并恢复正常。如何手动启动：'
 
 /**
  * The fault wording for `red`. It deliberately carries NONE of the deferral
@@ -138,7 +138,7 @@ const DEFERRED_SUFFIX = 'deferred — 不是坏了：这一档不归「该跑而
  * intentional postponement, and `deferred-sidecars.test.ts` pins only the
  * `deferred` branch to doctor.py byte-for-byte.
  */
-const RED_SUFFIX = '这一条这台试过，没起来：是坏了，不是后置'
+const RED_SUFFIX = '此服务启动失败，需要处理。'
 
 function definitionFor(id: string): DeferredSubsystemDefinition | null {
   return (
@@ -165,7 +165,7 @@ function profileBackendDefinition(id: string): DeferredSubsystemDefinition | nul
   return {
     enableHint: PROFILE_BACKEND_ENABLE_HINT,
     id,
-    name: { en: `Profile backend · ${profile}`, zh: `项目后端 · ${profile}` },
+    name: { en: `Project service · ${profile}`, zh: `项目服务 · ${profile}` },
     port: 0
   }
 }
@@ -189,7 +189,7 @@ export const KEY_RECONCILE_ROW_ID = 'aigw-key'
 
 /** Same shape as the quota hub hint: the app owns the lifecycle, nothing to run. */
 const KEY_RECONCILE_ENABLE_HINT =
-  'make the two sides agree — point the gateway config.yaml `server.api_key` at the same `${VAR:-…}` reference the shell exports, or set the value the gateway declares to the key the shell already uses'
+  '请让两侧密钥一致：修改网关配置中的 server.api_key，使其与当前环境保持一致，或采用网关当前声明的密钥'
 
 function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null {
   if (id !== KEY_RECONCILE_ROW_ID) {
@@ -199,7 +199,7 @@ function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null 
   return {
     enableHint: KEY_RECONCILE_ENABLE_HINT,
     id,
-    name: { en: 'Gateway key check', zh: '网关 key 对账' },
+    name: { en: 'Key consistency check', zh: '密钥一致性核对' },
     port: 0
   }
 }
@@ -214,7 +214,7 @@ function keyReconcileDefinition(id: string): DeferredSubsystemDefinition | null 
 export const TRAY_RESTART_ROW_ID = 'tray-restart'
 
 const TRAY_RESTART_ENABLE_HINT =
-  'no action needed — the restart re-launches the same tree; if it says it aborted, open Plobi again by hand'
+  '无需操作——重启会自动重新拉起完整服务；若提示失败，请手动重新打开 Plobi'
 
 function restartRowDefinition(id: string): DeferredSubsystemDefinition | null {
   if (id !== TRAY_RESTART_ROW_ID) {
@@ -248,12 +248,12 @@ function deferredDetail(row: Omit<DeferredSubsystemRow, 'detail'>): string {
   }
 
   // The deferred branch renders byte-identically to doctor.py's `deferred_row()`
-  // — the suffix already ends in "怎么回到绿：", so the hint is appended, not
+  // — the suffix already ends in "如何手动启动：", so the hint is appended, not
   // re-labelled. The red branch keeps its own sentence, which doctor does not
   // share (doctor's red reason names the registry switch; this side cannot read
   // that table and must not pretend to).
   const tail =
-    row.state === 'red' ? `${RED_SUFFIX}。怎么回到绿：${row.enableHint}` : `${DEFERRED_SUFFIX}${row.enableHint}`
+    row.state === 'red' ? `${RED_SUFFIX}如何手动启动：${row.enableHint}` : `${DEFERRED_SUFFIX}${row.enableHint}`
 
   if (!row.observed) {
     return tail

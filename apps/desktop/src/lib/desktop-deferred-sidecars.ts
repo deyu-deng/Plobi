@@ -149,7 +149,7 @@ export function reportDeferredSubsystems(rows?: DesktopDeferredSubsystem[]): voi
       // notification renderer folds into a collapsed <details> by default
       // (src/components/notifications.tsx). The fault still speaks: same
       // persistent `warning` kind, same title, same row — layering is not
-      // muting.
+      // muting. Ports stay out of the user-facing title/message.
       action: {
         label: translateNow('boot.sidecars.goToCollectionSettings'),
         onClick: () => {
@@ -163,7 +163,7 @@ export function reportDeferredSubsystems(rows?: DesktopDeferredSubsystem[]): voi
       // unlike `error` it does not gate or fail the boot.
       kind: 'warning',
       message: translateNow('boot.sidecars.redUserMessage', deferredRowLabel(row), row.port > 0 ? `:${row.port}` : ''),
-      title: `${translateNow('boot.sidecars.redTitle')} · ${deferredRowLabel(row)}${row.port > 0 ? ` (:${row.port})` : ''}`
+      title: `${translateNow('boot.sidecars.redTitle')} · ${deferredRowLabel(row)}`
     })
   }
 }

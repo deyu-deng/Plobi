@@ -79,17 +79,16 @@ DEFERRED = "deferred"
 # Each hint says which part is a reading and which part is the remaining step.
 DEFERRED_ENABLE_HINTS: dict[str, str] = {
     "chatlog": (
-        "把 sidecar 起来监听 :5030（这台上的二进制在 `tools/chatlog/bin/chatlog.exe`；"
-        "Go 与 `CHATLOG_DATA_KEY` 齐不齐不是这条探针的读数，所以这里不替它担保）"
+        "无需手动操作——应用需要时自动启动该服务"
     ),
     "aigw": (
-        "Plobi 需要时自己起这一条 —— 没有要人手跑的东西"
+        "Plobi 会在需要时自动启动该服务，无需手动操作"
     ),
     "collect": (
-        "做首轮黑名单复核，让 `$PLOBI_HOME/plobi/chatlog.json` 存在且 `mode=blacklist`"
+        "请完成首次黑名单复核，确保采集数据已就绪"
     ),
     "whitelist_eff": (
-        "跑一次 `python scripts/plobi/whitelist_report.py`，让 `whitelist_proposal.json` 生成出来"
+        "请先生成白名单建议，再重试"
     ),
 }
 
@@ -157,7 +156,7 @@ def deferred_row(check_id: str, observed: str, **extra: Any) -> dict[str, Any]:
     """
     hint = DEFERRED_ENABLE_HINTS[check_id]
     # "Enable:" promised *steps* in front of a hint that is frequently a
-    # statement — the aigw row reads "Plobi 需要时自己起这一条", so an imperative
+    # statement — the aigw row reads "Plobi 会在需要时自动启动该服务", so an imperative
     # label contradicted the sentence after it. The prefix is an explanation of
     # the path back to green, which is true for both shapes (real steps for
     # chatlog, a statement for the app-owned service). Wording is byte-pinned to

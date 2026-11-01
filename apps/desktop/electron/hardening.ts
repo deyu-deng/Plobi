@@ -3,7 +3,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const DEFAULT_FETCH_TIMEOUT_MS = 15_000
+// Default HTTP timeout for desktop<->backend requests. Raised from 15s to 30s
+// because the local backend can take ~45s to fully boot on cold start (cold
+// Python imports, one observed 29.1s "event loop stalled (GIL pressure)" in
+// gui.log). At 15s the startup window repeatedly surfaced "Timed out
+// connecting to Plobi backend after 15000ms" even though the backend was
+// merely still booting; 30s rides out the cold window while keeping dead
+// endpoints from hanging the UI indefinitely.
+const DEFAULT_FETCH_TIMEOUT_MS = 30_000
 const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 const TEXT_PREVIEW_SOURCE_MAX_BYTES = 64 * 1024 * 1024
 

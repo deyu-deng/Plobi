@@ -74,7 +74,7 @@ export function ExpertPanel({ agentId }: { agentId: string }) {
       {show &&
         experts.map(expert => (
           <button
-            className="grid min-h-[1.625rem] grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md pl-2 pr-1 text-left hover:bg-(--ui-bg-secondary)"
+            className="grid min-h-[1.625rem] grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md pl-2 pr-1 text-left hover:bg-(--ui-control-hover-background)"
             key={expert.id}
             onClick={() => setOpen(expert)}
             title={expert.goal}

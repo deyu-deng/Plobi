@@ -183,6 +183,23 @@ class AntigravityProvider(Provider):
     _SEED_MODELS: tuple[str, ...] = ()
     _SEED_MODEL_MAP: dict[str, str] = {}
 
+    #: Upstream sells some models as **one model plus a thinking level**: `fetchAvailableModels`
+    #: answers `claude-opus-5-5-low / -medium / -high` as three entitled ids. Published as three
+    #: ids they become three rows in the picker, which is what the user objected to on 2026-11-01
+    #: ("同一个模型的不同思考强度为什么要单独列出来，思考强度不是在悬浮框里调整吗？") — the level
+    #: already has a control, and the OpenAI surface already has a word for it (`reasoning_effort`).
+    #: So the catalogue publishes the family once and the tier is chosen per turn from that field.
+    _TIERS = ("extra-low", "low", "medium", "high")
+    #: Which upstream tier each OpenAI effort word asks for. `xhigh`/`max` have no tier of their
+    #: own here, so they land on the top one the vendor actually sells.
+    _EFFORT_TIER = {
+        "minimal": "extra-low", "none": "extra-low", "low": "low",
+        "medium": "medium", "high": "high", "xhigh": "high", "max": "high",
+    }
+    #: The tier a turn with no `reasoning_effort` gets — the vendor's own middle choice, which is
+    #: also what the desktop's status bar prints when the knob is untouched ("… · Med").
+    _DEFAULT_TIERS = ("medium", "high", "low", "extra-low")
+
     def __init__(self, config, http):
         super().__init__(config, http)
         self.host = config.get("host", DEFAULT_HOST_DAILY).rstrip("/")
@@ -196,6 +213,8 @@ class AntigravityProvider(Provider):
         # by the live Antigravity model list once refresh_models() succeeds.
         self.served_models = list(self._SEED_MODELS)
         self.MODEL_MAP = dict(self._SEED_MODEL_MAP)
+        #: family id → {tier → the id upstream actually sells} (see `refresh_models`).
+        self._tier_variants: dict[str, dict[str, str]] = {}
         self.models_refreshed = False
         # The node from Settings → VPN (裁定 206 / 用户 10-28): the hub's shared client
         # runs with trust_env=false, so a Google leg can only reach the network through an

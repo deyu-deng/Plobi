@@ -79,9 +79,14 @@ def read_stored_auth(config: dict) -> tuple[str, float]:
 class ClineHttpMixin:
     """Serves the ``cline`` leg over ``api.cline.bot`` when a credential is available."""
 
+    #: The namespace of our published ids: always the card's own registry name, so
+    #: `provider/<id>` in `/v1/models` and the id itself agree (see `cli.py`).
+    def _prefix(self) -> str:
+        return str(getattr(self, "model_prefix", "") or self.name)
+
     #: What the caller asked for, verbatim - Cline's ids are already vendor-qualified.
     def _upstream_model(self, model: str) -> str:
-        prefix = f"{self.model_prefix}/"
+        prefix = f"{self._prefix()}/"
         return model[len(prefix):] if model.startswith(prefix) else model
 
     def _static_key(self) -> str:

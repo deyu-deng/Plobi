@@ -1199,9 +1199,9 @@ def dissolve_agent(agent_id: str) -> Union[dict, JSONResponse]:
     reload_registry()
 
     notification = (
-        f"代理 {agent_id} 已解散并归档（category={entry.category}）。"
-        f"归档目录：{archive_path or '(profile 未落地)'}。"
-        "注册表条目保留，可在归档列表查看；彻底删除需二次确认。"
+        f"代理 {agent_id} 已归档。"
+        f"归档位置：{archive_path or '(未落地)'}。"
+        "原记录保留，可在归档列表查看；彻底删除需二次确认。"
     )
     return {
         "ok": True,
@@ -1624,18 +1624,18 @@ def resume_external_session(agent: str, session_id: str) -> dict:
                 if str(row.get("agent") or "").strip().lower() == key
                 and str(row.get("external_session") or "").strip() == sid]
     if not recorded:
-        return {"ok": False, "status": 409, "error": "台账里没有这一轮：这个标识不是我们记过的那个"}
+        return {"ok": False, "status": 409, "error": "未找到对应的任务记录，标识无法识别"}
     workdir = str(recorded[-1].get("cwd") or "").strip()
     if not workdir:
         return {"ok": False, "status": 409, "error": "台账那一行没记工作区，不知道去哪儿起它"}
 
     binary = (channel.resolve_command(key) or "").strip()
     if not binary:
-        return {"ok": False, "status": 409, "error": f"这台机器解析不到 {key} 的可执行入口"}
+        return {"ok": False, "status": 409, "error": f"找不到 {key} 对应的可执行程序"}
 
     allowed, why = channel.cwd_is_allowed(workdir)
     if not allowed:
-        return {"ok": False, "status": 409, "error": f"那一行记的目录现在不能用：{why}"}
+        return {"ok": False, "status": 409, "error": f"记录的工作目录当前不可用：{why}"}
 
     argv = [binary] + [sid if piece == "{session_id}" else piece for piece in pattern]
     # 桌面/服务进程可能带着那三个 SDK 变量（10-23 实测：不清就 `sdk_invalid_args` 秒退）。

@@ -79,8 +79,8 @@ test('a failed probe downgrades the row but never hides what was observed', () =
   const row = deferredDetail(observation('aigw', 'deferred', 'http://127.0.0.1:8000 unreachable (no listener)'))
 
   assert.match(row, /http:\/\/127\.0\.0\.1:8000 unreachable \(no listener\)/)
-  assert.match(row, /不是坏了/)
-  assert.match(row, /怎么回到绿：/)
+  assert.match(row, /不是故障/)
+  assert.match(row, /如何手动启动：/)
 })
 
 test('a ready row reports the observation plainly, with no deferred wording', () => {
@@ -227,17 +227,17 @@ test('red is a state the ledger can actually hold, and it is worded as a fault',
   assert.ok(row, 'record() must accept red — refusing it is what hid the fault')
   assert.equal(row.state, 'red')
   assert.match(row.detail, /spawned \/bin\/chatlog but :5030 never answered/)
-  assert.match(row.detail, /是坏了，不是后置/)
+  assert.match(row.detail, /此服务启动失败/)
   // The "how it comes back" line stays in the detail for every non-ready row.
-  assert.match(row.detail, /怎么回到绿：/)
+  assert.match(row.detail, /如何手动启动：/)
   assert.ok(!row.detail.includes(DEFERRED_SUFFIX), 'a real fault must never read as a deferral')
 })
 
 test('a red row with no recorded observation still says it is a fault', () => {
   const red = deferredDetail({ ...observation('aigw', 'ready', ''), observed: '', state: 'red' })
 
-  assert.match(red, /是坏了，不是后置/)
-  assert.match(red, /怎么回到绿：/)
+  assert.match(red, /此服务启动失败/)
+  assert.match(red, /如何手动启动：/)
   assert.ok(!red.includes(DEFERRED_SUFFIX))
 })
 
@@ -518,7 +518,7 @@ test('clear() only reports a real change, so a healthy backend stays silent', ()
 test('the quota hub enable hint is a statement, not a command the user is handed', () => {
   const hint = definitionFor('aigw')?.enableHint ?? ''
 
-  assert.match(hint, /Plobi 需要时自己起这一条/)
+  assert.match(hint, /Plobi 会在需要时自动启动该服务/)
   assert.ok(!/cd |uv run|python -m|\$ /.test(hint), 'a runnable-looking line is what made this read as TODO')
   assert.ok(!/aigw/.test(hint), '裁定 45: the internal word must not reach user-visible copy')
 })

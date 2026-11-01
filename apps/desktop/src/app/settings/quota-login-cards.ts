@@ -57,6 +57,7 @@ export const QUOTA_CARD_INTROS: Record<string, string> = {
   gemini_api: 'Gemini CLI 免费额度',
   kiro_cli: 'Kiro 订阅额度',
   opencode_cli: 'OpenCode 免费额度',
+  qoder: 'Qoder 订阅额度',
   'qwen-cli': 'Qwen Code 免费额度',
   workbuddy: 'CodeBuddy 订阅额度',
   workbuddy_api: 'CodeBuddy 订阅额度'

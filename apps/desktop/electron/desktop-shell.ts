@@ -132,6 +132,9 @@ export interface TrayStrings {
    * R-051 — heading of the deferred-subsystem submenu. The rows underneath come
    * from the main-process ledger (electron/deferred-sidecars.ts), which is the
    * SAME array the boot-progress payload renders — this string only labels it.
+   *
+   * WP-TRAY-SLIM — user-facing wording only: no service code (R-047) and no
+   * developer classification ("deferred" / "not a fault") on the visible menu.
    */
   deferredGroup: string
 }
@@ -148,7 +151,7 @@ const TRAY_STRINGS: Record<TrayLanguage, TrayStrings> = {
     quit: '退出 Plobi',
     balloonTitle: 'Plobi 仍在运行',
     balloonBody: '窗口已收进托盘，后台服务继续运行。',
-    deferredGroup: '后置服务（R-047 延后，非故障）'
+    deferredGroup: '后台服务'
   },
   en: {
     tooltip: 'Plobi',
@@ -157,7 +160,7 @@ const TRAY_STRINGS: Record<TrayLanguage, TrayStrings> = {
     quit: 'Quit Plobi',
     balloonTitle: 'Plobi is still running',
     balloonBody: 'The window is in the tray; background services keep running.',
-    deferredGroup: 'Deferred services (postponed, not faults)'
+    deferredGroup: 'Background services'
   }
 }
 

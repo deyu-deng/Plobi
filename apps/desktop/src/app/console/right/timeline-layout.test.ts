@@ -4,6 +4,8 @@ import type { AgendaEvent } from '@/types/plobi'
 
 import {
   dayKeysOf,
+  detailRowsForHeight,
+  detailRowsOf,
   emptyDay,
   HOUR_HEIGHT,
   layoutDay,
@@ -189,6 +191,92 @@ describe('layoutDay', () => {
     // 22:00 → 轴尾（24:00）= 两小时；负的算法早被夹掉了，这里也没有最小高度可撑。
     expect(block?.heightPx).toBe(2 * HOUR_HEIGHT)
     expect(block?.heightPx).toBeGreaterThan(0)
+  })
+})
+
+describe('跨天事件（用户 10-31：睡觉那种要两头都显示）', () => {
+  const NEXT = '2026-09-12'
+
+  it('真 ISO 跨天：前一天铺到轴尾，第二天早上接着画', () => {
+    const sleep = event('sleep', `${DAY}T23:00:00`, `${NEXT}T07:00:00`)
+
+    const first = layoutDay([sleep], DAY)?.blocks[0]
+    const second = layoutDay([sleep], NEXT)?.blocks[0]
+
+    // 前一天 23:00 → 24:00 只有一小时。
+    expect(first?.topPx).toBe(23 * HOUR_HEIGHT)
+    expect(first?.heightPx).toBe(HOUR_HEIGHT)
+    expect(first?.clippedEnd).toBe(true)
+    expect(first?.clippedStart).toBe(false)
+
+    // 第二天 00:00 → 07:00 从头开始，块顶贴着轴顶。
+    expect(second?.topPx).toBe(0)
+    expect(second?.heightPx).toBe(7 * HOUR_HEIGHT)
+    expect(second?.clippedStart).toBe(true)
+    expect(second?.clippedEnd).toBe(false)
+  })
+
+  it('单日写法（同一天写 23:00 → 07:00）也算跨天', () => {
+    const sleep = event('sleep', `${DAY}T23:00:00`, `${DAY}T07:00:00`)
+    const second = layoutDay([sleep], NEXT)?.blocks[0]
+
+    expect(second?.heightPx).toBe(7 * HOUR_HEIGHT)
+    expect(second?.clippedStart).toBe(true)
+  })
+
+  it('跨好几天时两头都切，中间那天画满整根轴', () => {
+    const trip = event('trip', '2026-09-10T20:00:00', '2026-09-13T09:00:00')
+    const middle = layoutDay([trip], DAY)?.blocks[0]
+
+    expect(middle?.topPx).toBe(0)
+    expect(middle?.heightPx).toBe(24 * HOUR_HEIGHT)
+    expect(middle?.clippedStart).toBe(true)
+    expect(middle?.clippedEnd).toBe(true)
+  })
+
+  it('deadline 不跨天：没有结束时间就只落在它自己那一天', () => {
+    const ddl = event('ddl', `${DAY}T23:00:00`)
+
+    expect(layoutDay([ddl], NEXT)).toBeNull()
+  })
+
+  it('跨天那半截照样参与列切分（第二天早上有事不叠着画）', () => {
+    const sleep = event('sleep', `${DAY}T23:00:00`, `${NEXT}T07:00:00`)
+    const jog = event('jog', `${NEXT}T06:00:00`, `${NEXT}T07:30:00`)
+    const blocks = layoutDay([sleep, jog], NEXT)?.blocks ?? []
+
+    expect(blocks.map(block => block.id)).toEqual(['sleep', 'jog'])
+    expect(blocks.map(block => block.column)).toEqual([0, 1])
+    expect(blocks.every(block => block.overlaps)).toBe(true)
+  })
+})
+
+describe('块内清单（用户 10-31）', () => {
+  it('顺序是地点 → 未勾清单 → 备注，勾掉的清单不进块', () => {
+    const row = event('a', `${DAY}T09:00:00`, `${DAY}T12:00:00`)
+
+    row.location = '教三-201'
+    row.details = [
+      { done: true, id: 'd1', text: '已办完的' },
+      { done: false, id: 'd2', text: '数据整理' }
+    ]
+    row.notes = '别忘带 U 盘'
+
+    const block = layoutDay([row], DAY)?.blocks[0]
+    const rows = detailRowsOf(block!, 3)
+
+    expect(rows.map(item => item.kind)).toEqual(['location', 'detail', 'note'])
+    expect(rows.map(item => item.text)).toEqual(['教三-201', '数据整理', '别忘带 U 盘'])
+    // 勾完的不占块内空间。
+    expect(block?.details.map(item => item.text)).toEqual(['数据整理'])
+  })
+
+  it('能写几行由块高决定：半小时只够标题，三小时能写满四行', () => {
+    expect(detailRowsForHeight(22)).toBe(0)
+    expect(detailRowsForHeight(HOUR_HEIGHT)).toBe(1)
+    expect(detailRowsForHeight(3 * HOUR_HEIGHT)).toBe(3)
+    // 再高也不超过四行（标题 + 三行正文），免得块里变成一篇文章。
+    expect(detailRowsForHeight(10 * HOUR_HEIGHT)).toBe(3)
   })
 })
 

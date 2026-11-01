@@ -36,6 +36,7 @@ CLASS_WORDS = ("上课", "课程", "实验课", "补课", "停课", "课表")
 # Chinese form here would silently drop messages that timeparse can resolve.
 TIME_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(周|礼拜|星期)[一二三四五六日天1-7]"),
+    re.compile(r"(下周|下个周|下个周)"),
     re.compile(r"\d{1,2}\s*[:：]\s*\d{2}"),
     re.compile(r"(?:\d{1,2}|[零一二两三四五六七八九十]{1,3})\s*点(半|\d{1,2}\s*分?|[零一二两三四五六七八九十]{1,3}\s*分)?"),
     re.compile(r"(今天|明天|后天|大后天|今晚|明早|明晚|今早)"),

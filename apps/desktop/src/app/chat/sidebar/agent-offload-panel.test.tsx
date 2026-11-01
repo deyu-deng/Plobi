@@ -197,10 +197,12 @@ describe('AgentOffloadPanel', () => {
     expect(row.textContent).not.toContain('{"ok"')
   })
 
-  it('后端给了归属原因时，空表说那句原因而不是"还没外包过"', async () => {
+  it('空表不再留整句：后端给了归属原因也不在栏里铺一行解释', async () => {
     await renderPanel([], '这一条没有绑定目录')
 
-    expect(await screen.findByText('这一条没有绑定目录')).toBeTruthy()
+    // 10-28 起这一格空着就是空着（屏上不放解释句）：表头仍在，但既不说原因，也不说「还没外包过」。
+    expect(await screen.findByText('Offloaded to')).toBeTruthy()
+    expect(screen.queryByText('这一条没有绑定目录')).toBeNull()
   })
 
   it('主进程打不开就当场写明打不开，不留"点了没反应"', async () => {

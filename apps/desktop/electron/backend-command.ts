@@ -147,7 +147,7 @@ export function serveBackendArgs(
 ) {
   const env = options?.env ?? process.env
   const plobiHomeEnvPath =
-    options?.plobiHomeEnvPath ?? (env.PLOBI_HOME ? `${env.PLOBI_HOME}/.env` : undefined)
+    options?.plobiHomeEnvPath ?? (env.PLOBI_HOME?.trim() ? `${env.PLOBI_HOME.trim()}/.env` : undefined)
 
   if (resolveLanMode(env, plobiHomeEnvPath)) {
     return ['serve', '--host', LAN_BIND_HOST, '--port', LAN_BIND_PORT]

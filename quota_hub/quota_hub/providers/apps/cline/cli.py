@@ -25,7 +25,11 @@ class ClineCliProvider(ClineHttpMixin, AcpProvider):
     display_name = "Cline"
     binary = "cline"
     acp_args = ("--acp",)
-    #: The picker shows `cline/<what Cline itself calls it>`.
-    model_prefix = "cline"
+    #: 模型 id 的前缀**必须**等于这张卡在名册里的 id。桌面那条链是死的：
+    #: `electron/main.ts` 按 `/v1/models` 每行的 `provider`（=卡 id）剥一次前缀，
+    #: `src/store/desktop-quotas.ts` 再把卡片 id 拼回去当选择值——两边都用同一个名字
+    #: 才对得上。10-31 现场：这里写 `cline` 而卡叫 `cline_cli`，于是选择值成了
+    #: `cline_cli/cline/moonshotai/…` 这种三段名，切换当场报「Model switch failed」。
+    #: 所以这里**不写** `model_prefix`：`providers/acp.py` 拿 `self.name` 兜底。
     login_args = ("auth",)
     login_tty = True

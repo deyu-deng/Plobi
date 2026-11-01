@@ -14,7 +14,7 @@
  * renders.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PanelSectionLabel } from '@/app/overlays/panel'
 import { currentI18nLocale, useI18n } from '@/i18n'
@@ -30,6 +30,8 @@ import {
 } from './use-agenda-timeline'
 
 import {
+  detailRowsForHeight,
+  detailRowsOf,
   emptyDay,
   HOUR_HEIGHT,
   LABEL_GUTTER_FRACTION,
@@ -95,6 +97,7 @@ function DayAxis({
   day,
   label,
   nowMinutes,
+  onSelectEvent,
   pendingLabel
 }: {
   avoidBands: TimelineAvoidBand[]
@@ -104,6 +107,9 @@ function DayAxis({
   label: string
   /** Local wall-clock minutes since midnight, only for the LOCAL today axis. */
   nowMinutes?: number
+  /** 点块＝在右栏换成这条日程的详情页（用户 10-31）。给的是整条事件，不是一个
+   *  id：别的日子那根轴上的行不在共享 store 里，按 id 回头找会找不到。 */
+  onSelectEvent?: (event: AgendaEvent) => void
   pendingLabel: string
 }) {
   const axisLeftFraction = LABEL_GUTTER_FRACTION
@@ -182,6 +188,19 @@ function DayAxis({
           const leftPct = axisLeftPct + block.column * widthPct
           const widthPx = `calc(${widthPct}% - ${LANE_INSET_PX}px)`
           const leftPx = `calc(${leftPct}% + ${LANE_INSET_PX}px)`
+          // 只有带事件源的行才点得开（作息带之类没有行可开）。
+          const selectable = Boolean(onSelectEvent && block.source)
+          const openDetail = () => {
+            if (block.source) {
+              onSelectEvent?.(block.source)
+            }
+          }
+          const onKeyDownDetail = (keyEvent: ReactKeyboardEvent) => {
+            if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+              keyEvent.preventDefault()
+              openDetail()
+            }
+          }
 
           if (block.openEnded) {
             // 没有结束时间＝那一刻，不是一段。画成**横贯当天的一条线**、标题挂在线上
@@ -189,11 +208,18 @@ function DayAxis({
             // 于是 13:13 那条直接压在 13:25 的课上——线不参与列切分，也不遮任何人。
             return (
               <div
-                className="absolute inset-x-0 z-10 flex items-center gap-1.5"
+                className={cn(
+                  'absolute inset-x-0 z-10 flex items-center gap-1.5',
+                  selectable && 'cursor-pointer rounded-sm hover:bg-(--ui-accent)/8'
+                )}
                 data-open-ended="true"
                 data-testid={`timeline-block-${block.id ?? `deadline-${index}`}`}
                 key={block.id ?? `deadline-${index}-${block.startMinutes}`}
+                onClick={selectable ? openDetail : undefined}
+                onKeyDown={selectable ? onKeyDownDetail : undefined}
+                role={selectable ? 'button' : undefined}
                 style={{ top: block.topPx }}
+                tabIndex={selectable ? 0 : undefined}
               >
                 <span className="w-9 shrink-0 tabular-nums text-[0.62rem] text-(--ui-accent)">
                   {clockOf(block.source && 'start_at' in block.source ? block.source.start_at : '')}
@@ -208,15 +234,23 @@ function DayAxis({
             )
           }
 
+          const extraRows = detailRowsOf(block, detailRowsForHeight(block.heightPx))
+
           return (
             <div
               className={cn(
                 'absolute z-10 overflow-hidden rounded-md border px-1.5 py-0.5',
-                blockBorderClass(block)
+                blockBorderClass(block),
+                selectable && 'cursor-pointer hover:border-(--ui-accent)/60'
               )}
+              data-clipped-end={block.clippedEnd ? 'true' : undefined}
+              data-clipped-start={block.clippedStart ? 'true' : undefined}
               data-overlap={block.overlaps ? 'true' : undefined}
               data-testid={`timeline-block-${block.id ?? `block-${index}`}`}
               key={block.id ?? `block-${index}-${block.startMinutes}`}
+              onClick={selectable ? openDetail : undefined}
+              onKeyDown={selectable ? onKeyDownDetail : undefined}
+              role={selectable ? 'button' : undefined}
               style={{
                 // `top: auto` (the default for an absolutely positioned box)
                 // pins every block to the container top — the "everything
@@ -227,6 +261,7 @@ function DayAxis({
                 left: leftPx,
                 width: widthPx
               }}
+              tabIndex={selectable ? 0 : undefined}
             >
               <div className="flex min-w-0 items-center gap-1">
                 <span className="shrink-0 tabular-nums text-[0.62rem] text-(--ui-text-tertiary)">
@@ -238,9 +273,17 @@ function DayAxis({
                 ) : null}
                 <span className="min-w-0 truncate text-[0.72rem] text-foreground/90">{block.title}</span>
               </div>
-              {block.location ? (
-                <span className="block truncate text-[0.6rem] text-(--ui-text-tertiary)">{block.location}</span>
-              ) : null}
+              {extraRows.map((row, rowIndex) => (
+                <span
+                  className="flex min-w-0 items-center gap-1 leading-4 text-[0.6rem] text-(--ui-text-tertiary)"
+                  key={`${row.kind}-${rowIndex}`}
+                >
+                  {row.kind === 'detail' ? (
+                    <span className="size-1.5 shrink-0 rounded-[1px] border border-current opacity-70" />
+                  ) : null}
+                  <span className="min-w-0 truncate">{row.text}</span>
+                </span>
+              ))}
             </div>
           )
         })}
@@ -251,11 +294,17 @@ function DayAxis({
 
 export function Timeline({
   avoidWindows,
-  events
+  events,
+  onSelectEvent
 }: {
   /** Confirmed avoid windows keyed by day (rendered as faint bands). */
   avoidWindows?: AgendaAvoidWindow[]
   events: AgendaEvent[]
+  /**
+   * 点块 → 右栏换成这条日程的详情页（用户 10-31）。不给就是只读轴。
+   * 传整条事件：选中别的日子时那一行不在共享 store 里，按 id 回头找会落空。
+   */
+  onSelectEvent?: (event: AgendaEvent) => void
 }) {
   const { t } = useI18n()
   const todayKey = localDateKey(new Date())
@@ -387,6 +436,7 @@ export function Timeline({
               : selected
         }
         nowMinutes={selected === todayKey ? nowMinutes : undefined}
+        onSelectEvent={onSelectEvent}
         pendingLabel={t.console.timeline.pending}
       />
     </div>

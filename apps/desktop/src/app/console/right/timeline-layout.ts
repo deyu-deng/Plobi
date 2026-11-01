@@ -35,7 +35,7 @@ export interface TimelineAvoidBand {
  *   MUST apply it, otherwise every block stacks at the top (裁定 32.1).
  */
 
-import type { AgendaAvoidWindow, AgendaEvent } from '@/types/plobi'
+import type { AgendaAvoidWindow, AgendaDetailItem, AgendaEvent } from '@/types/plobi'
 
 /** The axis always starts at local midnight. */
 export const TIMELINE_START_HOUR = 0
@@ -72,9 +72,131 @@ export function minutesOf(iso: string): number {
   return safeHours * 60 + safeMinutes
 }
 
+/** `YYYY-MM-DD` 前后推几天。纯日期字符串进、纯日期字符串出。 */
+export function shiftDayKey(dayKey: string, deltaDays: number): string {
+  const date = new Date(`${dayKey}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) {
+    return dayKey
+  }
+
+  date.setDate(date.getDate() + deltaDays)
+
+  const pad = (value: number) => String(value).padStart(2, '0')
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/** 一条事件**落在某一天里的那一段**（分钟）。 */
+export interface DaySpan {
+  clippedEnd: boolean
+  clippedStart: boolean
+  /** 这一天里画到哪儿（24:00 封顶）。 */
+  endMinutes: number
+  /** 这一天里从哪儿开始画（00:00 起底）。 */
+  startMinutes: number
+}
+
+/**
+ * 把一条事件裁到某一天里（用户 10-31：跨天日程要两头都显示）。
+ *
+ * 三种跨天写法都要认：
+ * - 真 ISO 跨天：`23:00` → 次日 `07:00`（`end_at` 的日期更大）；
+ * - 单日写法：`23:00` → 同一天 `07:00`（end 早于 start，历史数据里这么存过）；
+ * - 更长的事件：两头都切，这一天画满整根轴。
+ *
+ * 返回 null ＝ 这条事件跟这一天没关系。**不编造**：没有 `end_at` 的 deadline 只落在
+ * 它自己那一天，仍是一条零高度的线，不会被拖成跨天。
+ */
+export function spanOnDay(event: AgendaEvent, dayKey: string): DaySpan | null {
+  const startKey = dayKeyOf(event.start_at)
+
+  if (!startKey) {
+    return null
+  }
+
+  const startMinutes = minutesOf(event.start_at)
+
+  if (!event.end_at) {
+    return startKey === dayKey
+      ? { clippedEnd: false, clippedStart: false, endMinutes: startMinutes, startMinutes }
+      : null
+  }
+
+  let endKey = dayKeyOf(event.end_at)
+  const endMinutes = minutesOf(event.end_at)
+
+  // 同一天写成 end < start ＝ 其实跨到了第二天早上。
+  if (endKey === startKey && endMinutes < startMinutes) {
+    endKey = shiftDayKey(startKey, 1)
+  }
+
+  // 日期串按字典序就是时间序，直接比。
+  if (startKey > dayKey || endKey < dayKey) {
+    return null
+  }
+
+  const clippedStart = startKey < dayKey
+  const clippedEnd = endKey > dayKey
+  const from = clippedStart ? 0 : startMinutes
+  const to = clippedEnd ? 24 * 60 : endMinutes
+
+  // 起点＝终点：零高度的点。不撑成一段时间。
+  if (to <= from) {
+    return { clippedEnd: false, clippedStart: false, endMinutes: from, startMinutes: from }
+  }
+
+  return { clippedEnd, clippedStart, endMinutes: to, startMinutes: from }
+}
+
+export interface DetailRow {
+  kind: 'detail' | 'location' | 'note'
+  text: string
+}
+
+/**
+ * 块里除标题外还能写哪几行，按顺序：地点 → 未勾选清单 → 备注首行。
+ *
+ * `maxRows` 由块高算出来（`detailRowsForHeight`），所以三小时的块自然写得多、
+ * 半小时的块只写标题——面积和内容成正比，不靠悬停。
+ */
+export function detailRowsOf(block: TimelineBlock, maxRows: number): DetailRow[] {
+  const rows: DetailRow[] = []
+
+  if (block.location) {
+    rows.push({ kind: 'location', text: block.location })
+  }
+
+  for (const item of block.details) {
+    rows.push({ kind: 'detail', text: item.text })
+  }
+
+  if (block.notes) {
+    rows.push({ kind: 'note', text: block.notes })
+  }
+
+  return rows.slice(0, Math.max(0, maxRows))
+}
+
+/** 块高能塞几行正文（不含标题行）。行高 16px、上下内边距共 8px。 */
+export function detailRowsForHeight(heightPx: number, cap = 4): number {
+  const rows = Math.floor((heightPx - 8) / 16) - 1
+
+  return Math.max(0, Math.min(cap - 1, rows))
+}
+
 export interface TimelineBlock {
   /** Overlap column index (0-based) — the renderer places the block left→right. */
   column: number
+  /** 这一段是**跨天事件落到这一天的那半截**：它开始于更早的一天，块顶被切到 00:00。
+   *  渲染层据此把标题标成"从前一天来"，不改高度（高度＝这一天里真实占的时长）。 */
+  clippedStart: boolean
+  /** 同理：它在更晚的一天结束，块底被切到 24:00。 */
+  clippedEnd: boolean
+  /** 未勾选的清单条目（用户 10-31：块里要能看到清单，勾完的不占地方）。 */
+  details: AgendaDetailItem[]
+  /** 备注首行，块够高才显示。 */
+  notes: null | string
   /** `end_at` clock, or null when the entry is open-ended. */
   endClock: null | string
   /** Horizontal fraction (0–1) of the axis this block occupies. */
@@ -167,20 +289,6 @@ function blockHeightPx(startMinutes: number, endMinutes: number, spanEndMinutes:
   return Math.round(((clampedEnd - startMinutes) / 60) * HOUR_HEIGHT)
 }
 
-/**
- * End used by the one-grid layout. An open-ended row is zero-length (never
- * swallows a column — 裁定 32.1), and a same-day row whose end precedes its
- * start (23:30 → 07:30) runs to the axis bottom, so it really contends with a
- * late-night block instead of pretending to be empty (裁定 36.2).
- */
-function effectiveEnd(startMinutes: number, endMinutes: null | number, spanEndMinutes: number): number {
-  if (endMinutes === null) {
-    return startMinutes
-  }
-
-  return endMinutes < startMinutes ? spanEndMinutes : endMinutes
-}
-
 interface OverlapCandidate {
   block: TimelineBlock
   /** Block end in minutes; open-ended → use the same value as start so it
@@ -202,10 +310,11 @@ export function layoutDay(
   dayKey: string,
   avoidWindows: AgendaAvoidWindow[] = []
 ): TimelineDay | null {
+  // 跨天的事件也要落到这一天：判据是「跟这一天有交集」，不是「在这一天开始」。
   const eventRows = events
-    .filter(event => dayKeyOf(event.start_at) === dayKey)
-    .slice()
-    .sort((left, right) => minutesOf(left.start_at) - minutesOf(right.start_at))
+    .map(event => ({ event, span: spanOnDay(event, dayKey) }))
+    .filter((row): row is { event: AgendaEvent; span: DaySpan } => row.span !== null)
+    .sort((left, right) => left.span.startMinutes - right.span.startMinutes)
 
   if (eventRows.length === 0 && avoidWindows.length === 0) {
     return null
@@ -221,30 +330,29 @@ export function layoutDay(
     hours.push(hour)
   }
 
-  const eventCandidates: OverlapCandidate[] = eventRows.map(event => {
-    const startMinutes = minutesOf(event.start_at)
-    const endMinutes = event.end_at ? minutesOf(event.end_at) : null
-
-    return {
-      block: {
-        column: 0,
-        endClock: event.end_at ? clockOf(event.end_at) : null,
-        heightPx: 0,
-        id: event.id,
-        location: event.location?.trim() || event.evidence?.location?.trim() || null,
-        openEnded: endMinutes === null,
-        overlaps: false,
-        source: event,
-        startMinutes,
-        status: event.status,
-        title: event.title,
-        topPx: Math.round(pxOf(startMinutes, spanStartMinutes)),
-        widthFraction: 0
-      },
-      endMinutes: effectiveEnd(startMinutes, endMinutes, spanEndMinutes),
-      startMinutes
-    }
-  })
+  const eventCandidates: OverlapCandidate[] = eventRows.map(({ event, span }) => ({
+    block: {
+      clippedEnd: span.clippedEnd,
+      clippedStart: span.clippedStart,
+      column: 0,
+      details: (event.details ?? []).filter(item => !item.done),
+      endClock: event.end_at ? clockOf(event.end_at) : null,
+      heightPx: 0,
+      id: event.id,
+      location: event.location?.trim() || event.evidence?.location?.trim() || null,
+      notes: event.notes?.trim() || null,
+      openEnded: !event.end_at,
+      overlaps: false,
+      source: event,
+      startMinutes: span.startMinutes,
+      status: event.status,
+      title: event.title,
+      topPx: Math.round(pxOf(span.startMinutes, spanStartMinutes)),
+      widthFraction: 0
+    },
+    endMinutes: span.endMinutes,
+    startMinutes: span.startMinutes
+  }))
 
   // ONE grid (裁定 36.2): blocks that intersect get different columns instead
   // of stacking as two translucent layers. Blocks that collide with nothing

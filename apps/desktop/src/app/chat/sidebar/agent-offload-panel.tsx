@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
-import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { getAgentOffloads, offloadResume } from '@/plobi'
@@ -71,11 +70,6 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
       <ExpertPanel agentId={agentId} />
 
       <SidebarSectionHeader
-        collapsible={false}
-        label={c.offloadsTitle}
-        meta={rounds.length > 0 ? rounds.length : ''}
-        onToggle={() => undefined}
-        open
         action={
           onBack ? (
             <button
@@ -88,6 +82,11 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
             </button>
           ) : undefined
         }
+        collapsible={false}
+        label={c.offloadsTitle}
+        meta={rounds.length > 0 ? rounds.length : ''}
+        onToggle={() => undefined}
+        open
       />
 
       {groups.map(group => {
@@ -96,7 +95,7 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
         return (
           <div key={group.target}>
             <button
-              className="group/off flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[0.8rem] hover:bg-(--ui-bg-secondary)"
+              className="group/offload flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
               onClick={() => setOpenTarget(open ? null : group.target)}
               title={group.target}
               type="button"
@@ -104,7 +103,11 @@ export function AgentOffloadPanel({ agentId, onBack }: { agentId: string, onBack
               <OffloadVendorAvatar vendor={group.target} />
               <span className="min-w-0 flex-1 truncate">{group.target}</span>
               <SidebarCount>{group.rounds.length}</SidebarCount>
-              <DisclosureCaret className="shrink-0 text-(--ui-text-tertiary)" open={open} />
+              <Codicon
+                className="shrink-0 text-(--ui-text-tertiary) opacity-60"
+                name={open ? 'chevron-down' : 'chevron-right'}
+                size="0.75rem"
+              />
             </button>
 
             {open && (
@@ -168,15 +171,15 @@ function OffloadRoundRow({ round }: { round: OffloadRoundWithReply }) {
   return (
     <button
       className={cn(
-        'flex w-full flex-col gap-0.5 rounded-md px-2 py-1 text-left',
-        clickable ? 'hover:bg-(--ui-bg-secondary)' : 'cursor-default opacity-70',
+        'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors duration-100 ease-out',
+        clickable ? 'hover:bg-(--ui-control-hover-background)' : 'cursor-default opacity-70',
       )}
       disabled={!clickable}
       onClick={run}
       title={title}
       type="button"
     >
-      <span className="truncate text-[0.75rem]">{round.brief || round.cwd || '—'}</span>
+      <span className="truncate text-[0.8125rem] leading-none text-(--ui-text-secondary)">{round.brief || round.cwd || '—'}</span>
       {round.reply && (
         <span className="line-clamp-3 text-[0.7rem] leading-snug text-(--ui-text-secondary)">
           {c.offloadsReply}

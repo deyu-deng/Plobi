@@ -292,7 +292,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
 
                 const meta = [
                   fastControl.kind !== 'none' && fastControl.on ? copy.fast : null,
-                  (caps?.reasoning ?? true) ? reasoningEffortLabel(effEffort) || copy.medium : null
+                  (caps?.reasoning ?? true) && effEffort ? reasoningEffortLabel(effEffort) : null
                 ]
                   .filter(Boolean)
                   .join(' ')

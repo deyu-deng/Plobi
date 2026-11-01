@@ -75,7 +75,7 @@ export function readCollectorAnswer(statusCode: number, body: unknown): Collecto
  */
 export function chatlogLedgerRow(answer: CollectorAnswer): { level: LedgerLevel; body: string } {
   if (answer.state === 'ready') {
-    return { level: 'ready', body: 'collector says it is answering on :5030' }
+    return { level: 'ready', body: '微信消息采集服务已就绪' }
   }
 
   if (DEAD_STATES.has(answer.state)) {
@@ -87,7 +87,7 @@ export function chatlogLedgerRow(answer: CollectorAnswer): { level: LedgerLevel;
     return { level: 'red', body: answer.note }
   }
 
-  return { level: 'deferred', body: 'the backend did not answer for the collector (it is not the collector being idle)' }
+  return { level: 'deferred', body: '暂时无法获取微信采集服务状态' }
 }
 
 /** spawn 只该用服务端给的那一个路径；`null` 就是"没有产物"，桌面不许再去猜候选清单。 */

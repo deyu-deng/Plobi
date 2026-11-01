@@ -389,12 +389,24 @@ def _filter_explicit_provider_rows(rows: list[dict], ctx: ConfigContext) -> list
     from plobi_cli.auth import is_provider_explicitly_configured
 
     current_slug = str(ctx.current_provider or "").strip().lower()
+    declared = {str(k).strip().lower() for k in (ctx.user_providers or {})}
     kept: list[dict] = []
     for row in rows:
         slug = str(row.get("slug", "")).strip().lower()
         if not slug:
             continue
         if row.get("is_user_defined"):
+            kept.append(row)
+            continue
+        # A slug the user wrote into config.yaml's ``providers:`` block IS an
+        # explicit choice, even when the same slug also exists in
+        # PROVIDER_REGISTRY (those rows are built with ``is_user_defined=False``,
+        # so without this line the config entry would be honoured for the
+        # credential and then silently filtered out of every explicit picker).
+        # Measured 2026-10-20: ``providers.aigw`` in config.yaml, but the picker
+        # only ever got ``wb-gateway`` — and with no hub row the desktop's
+        # quota-backed picks could not be joined back to a provider at all.
+        if slug in declared:
             kept.append(row)
             continue
         if current_slug and slug == current_slug:
@@ -452,10 +464,18 @@ def _drop_unusable_credential_rows(rows: list[dict], ctx: ConfigContext) -> list
     from plobi_cli.auth import has_usable_secret, read_credential_pool
 
     current = str(ctx.current_provider or "").strip().lower()
+    declared = {str(k).strip().lower() for k in (ctx.user_providers or {})}
     kept: list[dict] = []
     for row in rows:
         slug = str(row.get("slug") or "").strip().lower()
-        if not slug or slug == current or row.get("is_user_defined"):
+        if not slug or slug == current or row.get("is_user_defined") or slug in declared:
+            # ``slug in declared``: the user wrote this provider into config.yaml
+            # (base_url / inline api_key / models). That entry IS the credential
+            # evidence — a stale ``env:`` pool row from a shell that no longer
+            # exports the variable must not outvote the config file. Without
+            # this, a provider configured *only* through config.yaml vanished
+            # from every picker the moment the shell stopped exporting its env
+            # var (measured 2026-10-20 on ``providers.aigw``).
             kept.append(row)
             continue
         try:

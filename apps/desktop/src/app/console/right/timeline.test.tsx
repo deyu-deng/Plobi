@@ -390,6 +390,53 @@ it('scrolls today into view inside a scrollable ancestor (裁定 40)', () => {
     expect(matched).toHaveLength(1)
   })
 
+  it('点块把 id 交给右栏（用户 10-31：点开就地看详情）', () => {
+    const onSelect = vi.fn()
+
+    render(
+      <Timeline
+        events={[event('a', dateAt(0, 9), { end_at: dateAt(0, 11) })]}
+        onSelectEvent={onSelect}
+      />
+    )
+
+    fireEvent.click(screen.getByTestId('timeline-block-a'))
+
+    // 传的是整条事件，不是 id——别的日子那根轴上的行不在共享 store 里。
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }))
+  })
+
+  it('没有 onSelectEvent 时块不可点（只读轴）', () => {
+    render(<Timeline events={[event('a', dateAt(0, 9), { end_at: dateAt(0, 11) })]} />)
+
+    expect(screen.getByTestId('timeline-block-a').getAttribute('role')).toBeNull()
+  })
+
+  it('块够高才写清单：三小时写地点和未勾项，半小时只写标题', () => {
+    render(
+      <Timeline
+        events={[
+          event('long', dateAt(0, 9), {
+            details: [{ done: false, id: 'd1', text: '数据整理' }],
+            end_at: dateAt(0, 12),
+            location: '教三-201'
+          }),
+          event('short', dateAtTime(0, '13:00'), {
+            end_at: dateAtTime(0, '13:30'),
+            location: '教三-201'
+          })
+        ]}
+      />
+    )
+
+    const long = screen.getByTestId('timeline-block-long')
+
+    expect(long.textContent).toContain('教三-201')
+    expect(long.textContent).toContain('数据整理')
+    // 半小时的块只有 22px，塞不下第二行——不硬挤。
+    expect(screen.getByTestId('timeline-block-short').textContent).not.toContain('教三-201')
+  })
+
 })
 
 describe('shouldRefreshAgendaOnBusyChange (WP-G2)', () => {

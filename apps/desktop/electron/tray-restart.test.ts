@@ -449,7 +449,7 @@ test('dev mode reuses the existing dev launcher chain instead of relaunching Ele
   if (plan.kind === 'dev') {
     assert.equal(plan.cwd, 'D:\\Code\\apps\\desktop', '工作目录必须是 apps/desktop，否则 npm run dev 起不来')
     assert.match(plan.command, /npm run dev/)
-    assert.ok(plan.note.includes('假重启'), '要能说出来：只重拉 Electron 就是假按钮')
+    assert.ok(plan.note.includes('不算真正重启'), '要能说出来：只重拉 Electron 就是假按钮')
   }
 })
 
@@ -487,7 +487,7 @@ test('both locales keep the confirmation to two or three user-facing sentences',
 
     assert.ok(body.trim().length > 0)
     // 干什么
-    assert.match(body, /关掉|tears down/)
+    assert.match(body, /stops|停止|关掉|tears down/)
     // 可能打断什么
     assert.match(body, /打断|interrupted/)
     // 确认吗
@@ -515,7 +515,7 @@ test('the boot ledger accepts the restart row, so its outcome is actually visibl
 
   assert.ok(row, 'record() 丢掉这个 id ⇒ reportDeferredSubsystem 无处渲染，"重启失败"就只活在 desktop.log 里')
   assert.equal(row.port, 0, '这一格没有端口，渲染侧要按非正端口省略')
-  assert.match(row.detail, /RED — real fault/, '失败不许被读成 R-047 那种"故意推迟"')
+  assert.match(row.detail, /此服务启动失败/, '失败不许被读成 R-047 那种"故意推迟"')
   assert.ok(row.detail.length > 0)
 })
 

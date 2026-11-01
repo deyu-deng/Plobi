@@ -108,6 +108,19 @@ describe('model visibility', () => {
     // Display variant drops the sentinel.
     expect(effectiveVisibleKeys(stored, providers).has(emptyProviderSentinelKey('nous'))).toBe(false)
   })
+  it('keeps newly connected quota clone rows visible when another clone row already has stored choices', () => {
+    const stored = new Set([modelVisibilityKey('hub', 'workbuddy/hy3')])
+
+    const visible = effectiveVisibleKeys(stored, [
+      { models: ['workbuddy/hy3', 'workbuddy/glm-5.3'], name: 'WorkBuddy', slug: 'hub', ui_key: 'hub::workbuddy' },
+      { models: ['qoder/sonus', 'qoder/qwen3.8-max'], name: 'Qoder', slug: 'hub', ui_key: 'hub::qoder' }
+    ])
+
+    expect(visible.has(modelVisibilityKey('hub', 'workbuddy/hy3'))).toBe(true)
+    expect(visible.has(modelVisibilityKey('hub', 'workbuddy/glm-5.3'))).toBe(false)
+    expect(visible.has(modelVisibilityKey('hub', 'qoder/sonus'))).toBe(true)
+    expect(visible.has(modelVisibilityKey('hub', 'qoder/qwen3.8-max'))).toBe(true)
+  })
 })
 
 describe('toggleModelVisibility', () => {

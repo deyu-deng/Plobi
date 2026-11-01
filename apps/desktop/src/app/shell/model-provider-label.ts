@@ -9,7 +9,8 @@ import type { ModelOptionProvider } from '@/types/plobi'
 
 const AIGW_SOFTWARE_PROVIDERS: ReadonlyArray<readonly [RegExp, string]> = [
   [/workbuddy/i, 'WorkBuddy'],
-  [/antigravity/i, 'Antigravity']
+  [/antigravity/i, 'Antigravity'],
+  [/\bqoder\b/i, 'Qoder']
 ]
 
 /** Well-known direct-API vendors, keyed by slug (exact match first, then substring). */

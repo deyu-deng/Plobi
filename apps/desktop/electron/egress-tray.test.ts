@@ -94,15 +94,15 @@ test('running-ours + 打一枪成 ⇒ 绿，并把端口与探针句子原样带
   assert.ok(indicator.summary.includes(zh.off) === false)
   assert.deepEqual(labels(indicator).slice(0, 2), [
     '出口正常 · started by Plobi and still running',
-    '2 条规则 · 兜底 POOL'
+    '2 条规则 · 默认出口 POOL'
   ])
-  assert.ok(labels(indicator).includes('监听 127.0.0.1:7898 · compiled'))
-  assert.ok(labels(indicator).includes('打一枪 204 via http://127.0.0.1:7898'))
-  assert.ok(labels(indicator).includes('pid 20064'))
-  assert.ok(labels(indicator).includes('成员 2 节点 / 1 组 · 只到引擎'))
-  assert.ok(labels(indicator).includes('镜像 1 项（按工具配，不改 TLS）'))
-  assert.ok(labels(indicator).includes('1 条只在引擎里生效 · 子进程拿不到'))
-  assert.ok(labels(indicator).includes('上限：1 条规则装不进子进程的环境变量，那些请求会走兜底出口'))
+  assert.ok(labels(indicator).includes('监听本地端口 7898'))
+  assert.ok(labels(indicator).includes('探测：204 via http://127.0.0.1:7898'))
+  assert.ok(labels(indicator).includes('运行中'))
+  assert.ok(labels(indicator).includes('成员 2 节点 / 1 组'))
+  assert.ok(labels(indicator).includes('镜像 1 项（按工具配置）'))
+  assert.ok(labels(indicator).includes('1 条规则仅对部分连接生效'))
+  assert.ok(labels(indicator).includes('超出上限的规则不会生效，相关请求将走默认出口'))
 })
 
 test('打一枪 FAIL ⇒ 红，端口在听也不算正常', () => {
@@ -112,7 +112,7 @@ test('打一枪 FAIL ⇒ 红，端口在听也不算正常', () => {
   )
 
   assert.equal(indicator.tone, 'bad')
-  assert.ok(labels(indicator).some(line => line.startsWith('打一枪 FAIL')))
+  assert.ok(labels(indicator).some(line => line.startsWith('探测：FAIL')))
 })
 
 test('别人起的引擎：能带流量就算 ok，但归属那句话必须逐字到达', () => {
@@ -189,7 +189,7 @@ test('tooltip 只到「分组 · 档位」，短到 Windows 不截；远端模�
 
   assert.equal(english.tone, 'ok')
   assert.ok(english.summary.startsWith('egress ok · '))
-  assert.ok(labels(english).includes('membership 2 node(s) / 1 group(s) · engine-side'))
+  assert.ok(labels(english).includes('membership 2 node(s) / 1 group(s)'))
   assert.equal(egressTooltip(en, english), 'Proxy (VPN) · egress ok')
 
   const remote = remoteEgressIndicator(zh)

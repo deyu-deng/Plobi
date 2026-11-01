@@ -1114,3 +1114,74 @@ def test_dead_key_provider_is_still_findable_for_setup(monkeypatch):
     assert rows[0]["models"] == []
     assert rows[0]["authenticated"] is False
     assert "DEEPSEEK_API_KEY" in rows[0]["warning"]
+
+
+# ─── config.yaml providers: 就是显式配置（2026-10-20 用户报的那个） ─────────
+
+
+def test_provider_declared_in_config_survives_the_dead_env_pool_rule(monkeypatch):
+    """``providers.aigw`` 写在 config.yaml 里（base_url + 内联 api_key + models），
+    它的凭据池却只剩一条 ``env:AIGW_API_KEY`` —— 那个变量在跑后端的环境里没有。
+
+    两条过滤都会把它吃掉：`_drop_unusable_credential_rows`（env: 源解析不到 ⇒ 丢）
+    与 `_filter_explicit_provider_rows`（注册表行 `is_user_defined=False` ⇒ 丢）。
+    结果是**整张 catalog 里没有 hub 行**，桌面那边 quota 模型的 pick 再也 join 不回
+    任何 provider（用户看到「Model switch failed / the local quota hub no longer
+    lists it」）。config 里的那一行就是凭据证据，它必须活下来。
+    """
+    from plobi_cli.inventory import ConfigContext
+
+    monkeypatch.delenv("AIGW_API_KEY", raising=False)
+    ctx = ConfigContext(
+        current_provider="wb-gateway",
+        current_model="workbuddy/space-bunny",
+        current_base_url="http://127.0.0.1:8000/v1",
+        user_providers={
+            "aigw": {
+                "base_url": "http://127.0.0.1:8000/v1",
+                "api_key": "sk-local-dev-key",
+                "models": ["workbuddy/space-bunny"],
+            },
+            "wb-gateway": {
+                "base_url": "http://127.0.0.1:8000/v1",
+                "api_key": "sk-local-dev-key",
+                "models": ["workbuddy/space-bunny"],
+            },
+        },
+        custom_providers=[],
+    )
+    rows = [
+        {
+            "slug": "wb-gateway",
+            "name": "WorkBuddy (aigw)",
+            "models": ["workbuddy/space-bunny"],
+            "total_models": 1,
+            "is_current": True,
+            "is_user_defined": True,
+            "source": "user-config",
+        },
+        # 注册表那条：same slug 也在 PROVIDER_REGISTRY 里 ⇒ is_user_defined=False
+        {
+            "slug": "aigw",
+            "name": "Local Quota Hub",
+            "models": ["workbuddy/space-bunny"],
+            "total_models": 1,
+            "is_current": False,
+            "is_user_defined": False,
+            "source": "plobi",
+        },
+    ]
+    dead_env = {
+        "_for": "aigw",
+        "id": "76ae78",
+        "label": "AIGW_API_KEY",
+        "source": "env:AIGW_API_KEY",
+        "last_status": "ok",
+        "secret_fingerprint": "sha256:c9a3e7c96041c053",
+    }
+    with _list_auth_returning(rows), _pool_with(dead_env):
+        payload = build_models_payload(ctx, explicit_only=True, picker_hints=True)
+
+    slugs = [r["slug"] for r in payload["providers"]]
+    assert "aigw" in slugs, f"the hub row vanished again: {slugs}"
+    assert "wb-gateway" in slugs

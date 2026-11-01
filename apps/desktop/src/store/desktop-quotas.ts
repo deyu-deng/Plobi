@@ -72,6 +72,7 @@ export const DESKTOP_QUOTA_NAMES: Record<string, string> = {
   // Sub2API-shaped legs carry the hub's provider id (`opencode_api`), which is a machine
   // name; the row has to read as the product (裁定 204 made these legs first-class).
   opencode_api: 'OpenCode Zen',
+  qoder: 'Qoder',
   workbuddy: 'Workbuddy',
   cursor: 'Cursor'
 }

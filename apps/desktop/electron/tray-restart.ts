@@ -71,17 +71,17 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
     confirmCancel: '取消',
     confirmTitle: '重启 Plobi？',
     confirmBody:
-      '这会关掉整个后端树（会话后端 / 额度网关 / cron / chatlog）再用新代码重起。' +
-      '正在跑的会话、未回的子分身委派、cron 本轮都可能被打断。确定要重启吗？',
-    cancelled: '未重启：确认框取消，什么都没动。',
+      '重启会停止当前所有后台服务，并以最新版本重新启动。' +
+      '正在进行的对话或任务可能被打断。确定要重启吗？',
+    cancelled: '已取消重启，未做任何更改。',
     awaitingConfirm: '重启应用 · 正在等你在弹窗里确认',
-    dialogStalled: '未重启：等确认框回答等到超时（10 分钟），闸门已释放 —— 再点一次即可。',
-    restarting: '正在停整棵树并按命令行确认没了…',
-    doneDev: '已重启（开发态：重起 npm run dev 整树，Vite 与后端都是新代码）。',
-    donePackaged: '已重启（打包态：应用自己重拉，后端随之起来）。',
-    failedNotGone: '没重启成功：旧进程树在超时内仍按命令行可见，新树没起（避免撞端口/文件占用）。',
-    failedRelaunch: '部分完成：旧树已退，但新树没拉起来，需要手动重开。',
-    unsupported: '这种运行形态我暂时不支持自动重启，请手动重开应用。'
+    dialogStalled: '未重启：确认提示 10 分钟未收到回应，再点一次即可。',
+    restarting: '正在停止并重启应用…',
+    doneDev: '已重启完成。',
+    donePackaged: '已重启（正式版：应用重新启动，后台服务已随之恢复）。',
+    failedNotGone: '重启失败：旧实例未能完全退出，新实例未启动。请稍后重试或手动重启。',
+    failedRelaunch: '部分完成：应用已退出但未能重新启动，请手动重新打开。',
+    unsupported: '当前运行模式不支持自动重启，请手动重新打开应用。'
   },
   en: {
     restart: 'Restart Plobi',
@@ -89,18 +89,17 @@ const RESTART_STRINGS: Record<'zh' | 'en', RestartLabelSet> = {
     confirmCancel: 'Cancel',
     confirmTitle: 'Restart Plobi?',
     confirmBody:
-      'This tears down the whole backend tree (session backend / quota gateway / cron / chatlog) ' +
-      'and brings it back on new code. An in-flight chat turn, an unanswered L2 delegation or a ' +
-      'cron tick can all be interrupted. Restart now?',
+      'Restarting stops all background services and starts the latest version. An in-flight ' +
+      'conversation or task may be interrupted. Restart now?',
     cancelled: 'Not restarted: confirmation cancelled, nothing was touched.',
     awaitingConfirm: 'Restart app · waiting for you in the dialog',
     dialogStalled: 'Not restarted: the confirmation dialog went unanswered for 10 minutes; the guard is released — just click again.',
-    restarting: 'Stopping the tree and verifying by command line…',
-    doneDev: 'Restarted (dev mode: the whole `npm run dev` tree came back, Vite and backend included).',
-    donePackaged: 'Restarted (packaged: the app re-launched itself and the backend came with it).',
+    restarting: 'Stopping the app and preparing to restart…',
+    doneDev: 'Restarted (development mode: app and background services came back up).',
+    donePackaged: 'Restarted (release build: the app relaunched itself and background services came with it).',
     failedNotGone: 'Restart aborted: the old tree was still visible by command line when the timeout hit; nothing new was launched.',
-    failedRelaunch: 'Half done: the old tree is gone but the new one did not come up — open the app manually.',
-    unsupported: 'This run mode cannot be restarted automatically yet — please reopen the app by hand.'
+    failedRelaunch: 'Partially complete: the app exited but did not come back up — please open it manually.',
+    unsupported: 'This mode does not support automatic restart — please reopen the app manually.'
   }
 }
 
@@ -269,14 +268,14 @@ export function planRelaunch({
     return {
       kind: 'packaged',
       execPath: String(execPath || ''),
-      note: '打包态：应用重拉自己的可执行文件，后端随它起来'
+      note: '正式版：应用重新启动自身，后台服务随之一并启动'
     }
   }
 
   if (!isWindows || !devLauncherAvailable || !devCommand || !devCwd) {
     return {
       kind: 'unsupported',
-      note: '开发态但复用不到那条 dev 启动链（非 Windows / 拿不到 launcher 命令）—— 只能手动重开'
+      note: '当前运行模式不支持自动重启，请手动重新打开应用'
     }
   }
 
@@ -284,7 +283,7 @@ export function planRelaunch({
     kind: 'dev',
     command: devCommand,
     cwd: devCwd,
-    note: '开发态：默认重起 npm run dev 那一整棵树（Vite + Electron + 后端），只重拉 Electron 是假重启。唯一例外（用户 10-15 拍甲）：端口被**我们自己那棵残留 vite**占着时复用它、只重起 Electron 那条腿；占用者不是我们的 ⇒ 不重起，只在日志里说清'
+    note: '开发模式：将按开发启动链完整重启（界面与后台服务都会重新拉起）。仅当界面端口被占用时才退化为只重启界面，这不算真正重启。'
   }
 }
 

@@ -176,7 +176,7 @@ test('the ledger accepts the key-check id, so a red actually materialises', () =
   assert.ok(row, 'record() 丢掉了这个 id ⇒ reportDeferredSubsystem() 无处可渲染，那条红就只活在日志里')
   assert.equal(row.id, KEY_RECONCILE_ROW_ID)
   assert.equal(row.port, 0, '这一格没有端口；渲染侧按非正端口省略，不许印成 ":0"')
-  assert.match(row.detail, /RED — real fault/, '不许被读成 R-047 那种"故意推迟"')
+  assert.match(row.detail, /此服务启动失败/, '不许被读成 R-047 那种"故意推迟"')
   assert.match(row.detail, /server\.api_key/, 'detail 要指名改哪一处，不然用户看到了红却不知道动哪')
   assert.ok(!JSON.stringify(row).includes(DEV_DEFAULT_API_KEY), '面上只准出指纹与变量名，key 材料一行都不许进')
 })

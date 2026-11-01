@@ -6,8 +6,12 @@ import { fileURLToPath } from 'node:url'
 
 const ELECTRON_DIR = path.dirname(fileURLToPath(import.meta.url))
 
-// TODO FIXME these tests all grep source code for specific things. This is an antipattern.
-// Tests should NEVER read src, only assert behavior.
+// Deliberate lightweight guard (kept as source-grep snapshot tests on purpose):
+// these protect the Windows child-process console-hidden invariants (CREATE_NO_WINDOW,
+// no pythonw, no cmd.exe handoff) from regressions. Full behavioral tests would need
+// electron/pty mocking that is disproportionate to the blast radius of a regression here.
+// REWRITE DIRECTION (tracked debt): move to a compile-time contract + runtime seam
+// (e.g. export childLaunchOptions for unit tests) when the desktop launcher is refactored.
 
 function readElectronFile(name) {
   return fs.readFileSync(path.join(ELECTRON_DIR, name), 'utf8').replace(/\r\n/g, '\n')

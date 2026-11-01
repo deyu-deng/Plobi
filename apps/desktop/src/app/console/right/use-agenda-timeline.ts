@@ -173,9 +173,6 @@ export interface RailDay {
 export const EMPTY_RAIL_DAY: RailDay = { avoidWindows: [], events: [] }
 
 /** 后端认的是带 `T` 的完整本地 ISO（与 `tools/agenda_tools.py` 的 `_bound()` 同一口径）。 */
-function dayWindow(dateKey: string): [string, string] {
-  return [`${dateKey}T00:00:00`, `${dateKey}T23:59:59`]
-}
 
 export function shiftDateKey(dateKey: string, deltaDays: number): string {
   const date = new Date(`${dateKey}T00:00:00`)
@@ -224,7 +221,9 @@ function loadDay(dateKey: string): Promise<RailDay> {
     return pending
   }
 
-  const [from, to] = dayWindow(dateKey)
+  // 跨天事件从前一天开始（用户 10-31）：窗口往回多要一天，否则「昨晚 23:00 睡到
+  // 今早 07:00」在今天这根轴上根本不存在。裁到当天由 `spanOnDay` 负责。
+  const [from, to] = [`${shiftDateKey(dateKey, -1)}T00:00:00`, `${dateKey}T23:59:59`]
   const request = Promise.all([getAgenda(from, to), fetchDayPayload(dateKey)])
     .then(([events, day]) => {
       const loaded: RailDay = {

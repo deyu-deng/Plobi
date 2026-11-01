@@ -36,6 +36,7 @@ const QUOTA_ICONS: Record<string, QuotaIconSpec> = {
   gemini_api: { Icon: SiGooglegemini, color: '#4285F4' },
   kiro_cli: { color: '#FF9900' },
   opencode_cli: { Icon: SiOpencode, color: '#1B1D21' },
+  qoder: { color: '#615CED' },
   'qwen-cli': { Icon: SiQwen, color: '#615CED' },
   workbuddy: { Icon: SiCodebuddy, color: '#0052D9' },
   workbuddy_api: { Icon: SiCodebuddy, color: '#0052D9' }

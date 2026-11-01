@@ -184,7 +184,8 @@ describe('reportDeferredSubsystems', () => {
     expect(notices[0].kind).toBe('warning')
     expect(notices[0].id).toBe(deferredNoticeId('aigw'))
     expect(notices[0].title).toContain('Local Quota Hub')
-    expect(notices[0].title).toContain('8000')
+    // Ports are internal detail — the user-facing title must not expose them.
+    expect(notices[0].title).not.toContain('8000')
 
     // USER TIER — one sentence naming the subsystem. No developer instruction
     // may leak up into it: the whole point of R-082 is that `go build` /

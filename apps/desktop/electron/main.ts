@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -8624,8 +8625,9 @@ function createWindow({ hidden = false }: { hidden?: boolean } = {}) {
   mainWindow.webContents.on('console-message', (_event, detailsOrLevel, message, line, sourceId) => {
     const details = detailsOrLevel && typeof detailsOrLevel === 'object' ? detailsOrLevel : null
     const level = details ? details.level : detailsOrLevel
+    const isError = details ? details.level === 'error' : level === 3
 
-    if (level !== 3) {
+    if (!isError) {
       return
     }
 
@@ -8958,13 +8960,73 @@ function reportDeferredSubsystem(id, state, observed) {
   return row
 }
 
+/**
+ * Loopback-only HTTP GET that never rides a proxy. Node's `http` module makes a
+ * plain TCP connection by construction (no EnvHttpProxyAgent, no Chromium proxy
+ * stack), and `agent: false` disables keep-alive pooling so every probe is a
+ * fresh connect. During early boot the system proxy transition is exactly the
+ * wrong thing to consult for a 127.0.0.1 probe — it can swallow the request and
+ * turn a healthy gateway into a false "did not become healthy in time". This is
+ * the single helper used for every aigw healthz read in this file.
+ */
+function probeLocalHttpDirect(url: string, timeoutMs = 2000, headers: Record<string, string> = {}): Promise<boolean> {
+  return new Promise(resolve => {
+    let settled = false
+    const done = (ok: boolean) => {
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        resolve(ok)
+      }
+    }
+
+    const timer = setTimeout(() => done(false), timeoutMs)
+    timer.unref?.()
+
+    try {
+      const req = http.get(url, { agent: false, headers }, res => {
+        res.resume()
+        done(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300)
+      })
+      req.setTimeout(timeoutMs, () => {
+        req.destroy()
+        done(false)
+      })
+      req.on('error', () => done(false))
+    } catch {
+      done(false)
+    }
+  })
+}
+
+/**
+ * TCP reachability probe for a loopback listener. Port-first judgement in the
+ * aigw health poll: "is anything listening yet" is answered by a raw connect
+ * (immune to proxy / HTTP semantics), and only then is /healthz asked over HTTP.
+ */
+function probeLocalPort(port: number, timeoutMs = 1500, host = '127.0.0.1'): Promise<boolean> {
+  return new Promise(resolve => {
+    let settled = false
+    const done = (ok: boolean) => {
+      if (!settled) {
+        settled = true
+        socket.destroy()
+        clearTimeout(timer)
+        resolve(ok)
+      }
+    }
+
+    const timer = setTimeout(() => done(false), timeoutMs)
+    timer.unref?.()
+
+    const socket = net.connect({ host, port })
+    socket.once('connect', () => done(true))
+    socket.once('error', () => done(false))
+  })
+}
+
 async function probeLocalHttp(url: string, timeoutMs = 2000): Promise<boolean> {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-    return res.ok
-  } catch {
-    return false
-  }
+  return probeLocalHttpDirect(url, timeoutMs)
 }
 
 /**
@@ -9585,6 +9647,40 @@ function startQuotaAppsPolling(): void {
 
 startQuotaAppsPolling()
 
+// AIGW red→ready self-heal: boot can paint aigw red when the gateway is merely
+// slow to answer (cold interpreter start / proxy-transition swallow) and nothing
+// after boot re-checks it — the "gateway did not become healthy in time" toast
+// then sits on the tray forever. Poll quietly every 30s; only a row that is
+// actually red triggers a direct probe, and a healthy :8000 flips the row back
+// to ready (mirrors the chatlog poll's ready flip above). R-051 is preserved:
+// a no-config row (deferred) is never touched, and a genuinely unreachable hub
+// stays red until it really answers.
+const AIGW_RECOVER_POLL_MS = 30_000
+let aigwRecoverTimer: ReturnType<typeof setInterval> | null = null
+
+function startAigwRecoverPolling(): void {
+  if (aigwRecoverTimer) {
+    return
+  }
+
+  aigwRecoverTimer = setInterval(() => {
+    const row = deferredSidecarLedger.rows().find(r => r.id === 'aigw')
+    if (!row || row.state !== 'red') {
+      return
+    }
+
+    void (async () => {
+      const ok = await probeLocalHttp(`${PRODUCT_QUOTA_BASE.replace(/\/v1$/, '')}/healthz`)
+      if (ok) {
+        reportDeferredSubsystem('aigw', 'ready', '本地额度服务已恢复（:8000 已应答）')
+        rememberLog('[sidecar] product aigw recovered on :8000 — ledger row flipped red→ready')
+      }
+    })()
+  }, AIGW_RECOVER_POLL_MS)
+}
+
+startAigwRecoverPolling()
+
 function stopQuotaAppsPolling(): void {
   if (!quotaAppsPollTimer) {
     return
@@ -9623,7 +9719,7 @@ async function ensureProductAigw(): Promise<void> {
   const result = await startAigwGateway('product', configPath, {}, {
     port: PRODUCT_QUOTA_PORT,
     apiKey,
-    timeoutMs: 20000
+    timeoutMs: 60000
   })
 
   if (result.ok) {
@@ -9636,7 +9732,7 @@ async function ensureProductAigw(): Promise<void> {
   } else {
     // `result.error` is the R-051 payoff: with a gated interpreter ladder this is
     // now a specific, human-readable reason ("no project Python under …, run uv
-    // sync") instead of the old 20-second "did not become healthy in time".
+    // sync") instead of the old 60-second "did not become healthy in time".
     // RED, not deferred: the config EXISTS at this point (the no-config path
     // returned earlier as `deferred`), so a gateway that config promises but
     // never delivers is a fault the user has to see.
@@ -9977,7 +10073,7 @@ async function startAigwGateway(
   appId: string,
   configPath: string,
   extraEnv: Record<string, string>,
-  opts: { port: number; apiKey: string; timeoutMs?: number } = { port: 8019, apiKey: 'sk-local-antigravity', timeoutMs: 20000 }
+  opts: { port: number; apiKey: string; timeoutMs?: number } = { port: 8019, apiKey: 'sk-local-antigravity', timeoutMs: 60000 }
 ): Promise<{ ok: boolean; baseUrl?: string; pid?: number | null; error?: string }> {
   if (!fs.existsSync(configPath)) {
     return { ok: false, error: `Local quota hub config not found at ${configPath}` }
@@ -9990,11 +10086,10 @@ async function startAigwGateway(
   if (existing !== null && !existing.killed) {
     const existingBase = `http://127.0.0.1:${opts.port}/v1`
     try {
-      const probe = await fetch(`${existingBase.replace(/\/v1$/, '')}/healthz`, {
-        headers: { Authorization: `Bearer ${opts.apiKey}` },
-        signal: AbortSignal.timeout(3000)
+      const probe = await probeLocalHttpDirect(`${existingBase.replace(/\/v1$/, '')}/healthz`, 3000, {
+        Authorization: `Bearer ${opts.apiKey}`
       })
-      if (probe.ok) {
+      if (probe) {
         return { ok: true, baseUrl: existingBase, pid: existing.pid ?? null }
       }
     } catch {
@@ -10024,7 +10119,7 @@ async function startAigwGateway(
     child = spawn(
       python,
       ['-m', 'quota_hub', 'start', '--config', configPath, '--host', '127.0.0.1', '--port', String(opts.port)],
-      { cwd: aigwDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
+      hiddenWindowsChildOptions({ cwd: aigwDir, env, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
     )
   } catch (err) {
     return { ok: false, error: `failed to spawn the local quota hub: ${String(err)}` }
@@ -10062,24 +10157,25 @@ async function startAigwGateway(
 
   setAigwChild(appId, child)
 
-  // Poll healthz until ready.
-  const deadline = Date.now() + (opts.timeoutMs ?? 20000)
+  // Poll healthz until ready. Port-first: a raw TCP connect answers "is the
+  // listener up at all" without riding any proxy; only when the port answers do
+  // we ask /healthz over direct HTTP (each read keeps its own short abort so a
+  // stalled tick never eats the whole window). The window itself is long (60s)
+  // so a slow first import / cold interpreter start is not misreported.
+  const deadline = Date.now() + (opts.timeoutMs ?? 60000)
 
   while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${baseUrl.replace(/\/v1$/, '')}/healthz`, {
-        headers: { Authorization: `Bearer ${opts.apiKey}` },
-        signal: AbortSignal.timeout(3000)
+    if (await probeLocalPort(opts.port)) {
+      const ok = await probeLocalHttpDirect(`${baseUrl.replace(/\/v1$/, '')}/healthz`, 3000, {
+        Authorization: `Bearer ${opts.apiKey}`
       })
 
-      if (res.ok) {
+      if (ok) {
         // It answers again: this is a fresh run, not a crash loop.
         delete aigwRestartBudget[appId]
 
         return { ok: true, baseUrl, pid: child.pid ?? null }
       }
-    } catch {
-      // not up yet — keep polling
     }
 
     await new Promise(resolve => setTimeout(resolve, 750))
@@ -10135,7 +10231,7 @@ ipcMain.handle('plobi-gateway:start', async (_event, appId: string = 'antigravit
     appId,
     configPath,
     { ...(token ? { ANTIGRAVITY_REFRESH_TOKEN: token } : {}) },
-    { port, apiKey, timeoutMs: 20000 }
+    { port, apiKey, timeoutMs: 60000 }
   )
   if (!gw.ok) {
     return { ok: false, error: gw.error || 'local quota hub failed to start' }
@@ -10485,7 +10581,7 @@ async function finishGatewayAuth(
 
   logAigw(`auth: starting ${appId} gateway (${configPath})`)
 
-  const gw = await startAigwGateway(appId, configPath, extraEnv, { port, apiKey, timeoutMs: 20000 })
+  const gw = await startAigwGateway(appId, configPath, extraEnv, { port, apiKey, timeoutMs: 60000 })
 
   if (!gw.ok) {
     return { ok: false, error: gw.error || 'local quota hub failed to start' }
@@ -10528,12 +10624,12 @@ function runAigwProbe(
     const child = spawn(
       python,
       ['-m', 'quota_hub', 'probe', '--json'],
-      {
+      hiddenWindowsChildOptions({
         cwd: aigwDir,
         env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false
-      }
+      })
     )
 
     let stdout = ''
@@ -10582,7 +10678,7 @@ function runAigwAuthAntigravity(python: string, aigwDir: string): Promise<boolea
     const child = spawn(
       python,
       ['-m', 'quota_hub', 'auth', 'antigravity'],
-      { cwd: aigwDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false }
+      hiddenWindowsChildOptions({ cwd: aigwDir, env: { ...process.env, PLOBI_HOME, ...resolveSystemProxyEnv(), PYTHONUNBUFFERED: '1' }, stdio: ['ignore', 'pipe', 'pipe'], detached: false })
     )
 
     let stdout = ''
@@ -11545,9 +11641,6 @@ ipcMain.handle('plobi:fs:writeBufferAtomic', async (_event, filePath, data) => {
 
   return { path: resolved }
 })
-
-// Move a file/folder to the OS trash (recoverable) — the VS Code "Delete"
-// default. `shell.trashItem` routes to Finder/Explorer/Files trash per platform.
 
 // Move a file/folder to the OS trash (recoverable) — the VS Code "Delete"
 // default. `shell.trashItem` routes to Finder/Explorer/Files trash per platform.

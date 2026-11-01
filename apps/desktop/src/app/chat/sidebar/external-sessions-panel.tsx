@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 
 import { OffloadVendorAvatar } from '@/app/chat/sidebar/offload-vendor-icon'
+import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-import { SidebarSectionHeader } from './chrome'
+import { SidebarCount, SidebarSectionHeader } from './chrome'
 import {
   deleteExternalSession,
   getAgentExternalSessions,
@@ -116,26 +117,32 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
         return (
           <div key={group.vendor}>
             <button
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[0.78rem] hover:bg-(--ui-bg-secondary)"
+              className="group/ext flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
               onClick={() => setOpenVendor(expanded ? null : group.vendor)}
+              title={vendorLabel(group.vendor)}
               type="button"
             >
               <OffloadVendorAvatar vendor={group.vendor} />
               <span className="min-w-0 flex-1 truncate">{vendorLabel(group.vendor)}</span>
-              <span className="shrink-0 text-[0.65rem] text-(--ui-text-quaternary)">{group.sessions.length}</span>
+              <SidebarCount>{group.sessions.length}</SidebarCount>
+              <Codicon
+                className="shrink-0 text-(--ui-text-tertiary) opacity-60"
+                name={expanded ? 'chevron-down' : 'chevron-right'}
+                size="0.75rem"
+              />
             </button>
 
             {expanded && (
               <div className="flex flex-col gap-px pl-5">
                 {group.sessions.map(session => (
                   <button
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-(--ui-bg-secondary)"
+                    className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[0.8125rem] leading-none text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
                     key={`${session.vendor}-${session.id}`}
                     onClick={() => setOpen(session)}
                     title={session.project}
                     type="button"
                   >
-                    <span className="min-w-0 flex-1 truncate text-[0.75rem]">{titleOf(session)}</span>
+                    <span className="min-w-0 flex-1 truncate">{titleOf(session)}</span>
                     <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
                       {whenText(session.updated_at)}
                     </span>
@@ -151,7 +158,7 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
         <button
           aria-label={showUnknown ? c.externalSessionsHideUnknown : c.externalSessionsShowUnknown}
           className={cn(
-            'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-bg-secondary)',
+            'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-control-hover-background)',
             showUnknown ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'
           )}
           onClick={() => setShowUnknown(value => !value)}
@@ -168,7 +175,7 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
           <button
             aria-label={c.externalSessionsArchived}
             className={cn(
-              'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-bg-secondary)',
+              'flex items-center gap-1 rounded-md px-2 py-0.5 text-left text-[0.68rem] hover:bg-(--ui-control-hover-background)',
               showArchived ? 'text-(--ui-text-secondary)' : 'text-(--ui-text-quaternary)'
             )}
             onClick={() => setShowArchived(value => !value)}
@@ -181,12 +188,12 @@ export function ExternalSessionsPanel({ agentId }: { agentId: string }) {
           {showArchived &&
             archived.map(session => (
               <button
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1 pl-5 text-left hover:bg-(--ui-bg-secondary)"
+                className="flex h-7 w-full items-center gap-2 rounded-md px-2 pl-5 text-left text-[0.8125rem] leading-none text-(--ui-text-tertiary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none"
                 key={`archived-${session.vendor}-${session.id}`}
                 onClick={() => setOpen(session)}
                 type="button"
               >
-                <span className="min-w-0 flex-1 truncate text-[0.75rem] text-(--ui-text-tertiary)">
+                <span className="min-w-0 flex-1 truncate">
                   {titleOf(session)}
                 </span>
                 <span className="shrink-0 text-[0.62rem] text-(--ui-text-quaternary)">
@@ -332,7 +339,7 @@ function TranscriptSheet({
             <div className="flex items-center gap-2">
               <input
                 autoFocus
-                className="min-w-0 flex-1 rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1 text-sm outline-none focus:border-(--ui-stroke-secondary)"
+                className="min-w-0 flex-1 rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1 text-sm text-foreground outline-none focus:border-(--ui-stroke-secondary)"
                 onChange={event => setRenameDraft(event.target.value)}
                 onKeyDown={event => {
                   if (event.key === 'Enter') {
@@ -347,47 +354,44 @@ function TranscriptSheet({
                 }}
                 value={renameDraft}
               />
-              <button className="shrink-0 text-[0.75rem] text-(--ui-accent)" onClick={saveRename} type="button">
+              <Button onClick={saveRename} size="xs" type="button" variant="ghost">
+                <Codicon name="check" size="0.75rem" />
                 {c.externalSessionsSave}
-              </button>
-              <button
-                className="shrink-0 text-[0.75rem] text-(--ui-text-tertiary)"
-                onClick={() => setRenaming(false)}
-                type="button"
-              >
+              </Button>
+              <Button onClick={() => setRenaming(false)} size="xs" type="button" variant="ghost">
                 {c.externalSessionsCancel}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
+              <OffloadVendorAvatar className="shrink-0" vendor={session.vendor} />
               <DialogTitle className="min-w-0 flex-1 truncate text-sm">{titleOf(session)}</DialogTitle>
-              <button
-                className="shrink-0 text-[0.72rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
+              <Button
                 onClick={() => {
                   setRenameDraft(titleOf(session))
                   setRenaming(true)
                 }}
+                size="xs"
                 type="button"
+                variant="ghost"
               >
+                <Codicon name="edit" size="0.75rem" />
                 {c.externalSessionsRename}
-              </button>
-              <button
-                className="shrink-0 text-[0.72rem] text-(--ui-text-tertiary) hover:text-(--ui-text)"
-                onClick={toggleArchive}
-                type="button"
-              >
+              </Button>
+              <Button onClick={toggleArchive} size="xs" type="button" variant="ghost">
+                <Codicon name="archive" size="0.75rem" />
                 {session.archived ? c.externalSessionsUnarchive : c.externalSessionsArchive}
-              </button>
-              <button
-                className={cn(
-                  'shrink-0 text-[0.72rem]',
-                  confirmDelete ? 'font-semibold text-(--ui-red)' : 'text-(--ui-text-tertiary) hover:text-(--ui-text)'
-                )}
+              </Button>
+              <Button
+                className={confirmDelete ? 'font-semibold text-(--ui-red) hover:text-(--ui-red)' : undefined}
                 onClick={remove}
+                size="xs"
                 type="button"
+                variant="ghost"
               >
+                <Codicon name="trash" size="0.75rem" />
                 {confirmDelete ? c.externalSessionsDeleteConfirm : c.externalSessionsDelete}
-              </button>
+              </Button>
             </div>
           )}
         </DialogHeader>
@@ -439,13 +443,9 @@ function TranscriptSheet({
               rows={2}
               value={draft}
             />
-            <button
-              className="rounded-md bg-(--ui-accent) px-3 py-1.5 text-[0.8rem] text-(--ui-accent-foreground) disabled:opacity-60"
-              disabled={pending || !draft.trim()}
-              type="submit"
-            >
+            <Button disabled={pending || !draft.trim()} size="sm" type="submit" variant="default">
               {pending ? c.externalSessionsSending : c.externalSessionsSend}
-            </button>
+            </Button>
           </form>
         ) : (
           <div className="border-t border-(--ui-stroke-tertiary) pt-2 text-[0.72rem] text-(--ui-text-tertiary)">

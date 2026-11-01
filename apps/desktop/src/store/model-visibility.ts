@@ -122,6 +122,18 @@ function expandProviderDefaults(provider: ModelOptionProvider, target: Set<strin
   }
 }
 
+function visibilityScopePrefix(provider: ModelOptionProvider): string {
+  if (provider.ui_key) {
+    const first = provider.models?.[0] ?? ''
+    const slash = first.indexOf('/')
+    if (slash > 0) {
+      return `${provider.slug}::${first.slice(0, slash + 1)}`
+    }
+  }
+
+  return `${provider.slug}::`
+}
+
 /** Resolve the canonical working set: the user's stored keys plus the curated
  *  default expansion for any provider they haven't customized. Hide-all
  *  sentinels are PRESERVED here — this is the set the toggle handler mutates and
@@ -139,7 +151,7 @@ export function resolveVisibleKeys(stored: Set<string> | null, providers: readon
   const next = new Set(stored)
 
   for (const provider of providers) {
-    const providerPrefix = `${provider.slug}::`
+    const providerPrefix = visibilityScopePrefix(provider)
 
     const hasStoredProvider = [...stored].some(key => key.startsWith(providerPrefix) && !isProviderSentinel(key))
 

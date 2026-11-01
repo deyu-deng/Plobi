@@ -13,11 +13,16 @@ describe('model-status-label', () => {
     expect(displayModelName('openai/gpt-5.5-fast')).toBe('GPT-5.5')
     expect(displayModelName('deepseek/deepseek-v4-pro-thinking')).toBe('Deepseek V4 Pro')
     expect(displayModelName('openai/gpt-5.5')).toBe('GPT-5.5')
+    expect(displayModelName('antigravity/claude-opus-5-5-medium')).toBe('Opus 5.5 (Medium)')
+    expect(displayModelName('antigravity/gpt-oss-120b-medium')).toBe('GPT-OSS 120B (Medium)')
+    expect(displayModelName('antigravity/gemini-3-flash-agent')).toBe('Gemini 3.5 Flash (High)')
+    expect(displayModelName('antigravity/gemini-3.5-flash-lite')).toBe('Gemini 3.5 Flash Lite')
+    expect(displayModelName('workbuddy/glm-5.3-flash')).toBe('GLM 5.3 Flash')
   })
 
   it('strips trailing date-pin snapshots from the display name', () => {
-    expect(displayModelName('claude-opus-4-5-20251101')).toBe('Opus 4 5')
-    expect(displayModelName('anthropic/claude-haiku-4-5-20251001')).toBe('Haiku 4 5')
+    expect(displayModelName('claude-opus-4-5-20251101')).toBe('Opus 4.5')
+    expect(displayModelName('anthropic/claude-haiku-4-5-20251001')).toBe('Haiku 4.5')
   })
 
   it('maps reasoning effort to compact labels', () => {
