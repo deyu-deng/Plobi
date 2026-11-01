@@ -293,16 +293,32 @@ export function togglePanesFlipped() {
   $panesFlipped.set(!$panesFlipped.get())
 }
 
-// 工作面「只隐藏对话」：工作面顶栏那枚斜向双箭头的状态（不持久化——这是一次性
-// 的聚焦动作，重开回到三栏）。
-export const $workbenchOnly = atom(false)
+export function setPanesFlipped(value: boolean) {
+  $panesFlipped.set(Boolean(value))
+}
+
+// 「只显示这一张卡」（用户 10-31）：聚焦对话或工作面，另一张收起来。
+// 不持久化——这是一次性动作，重开回到三栏。
+export type CardFocus = 'chat' | 'workbench' | null
+export const $cardFocus = atom<CardFocus>(null)
+
+export function setCardFocus(next: CardFocus): void {
+  $cardFocus.set(next)
+}
+
+export function toggleCardFocus(which: 'chat' | 'workbench'): void {
+  $cardFocus.set($cardFocus.get() === which ? null : which)
+}
+
+/** 兼容旧名：true = 只留工作面。 */
+export const $workbenchOnly = computed($cardFocus, focus => focus === 'workbench')
 
 export function toggleWorkbenchOnly(): void {
-  $workbenchOnly.set(!$workbenchOnly.get())
+  toggleCardFocus('workbench')
 }
 
 export function setWorkbenchOnly(value: boolean): void {
-  $workbenchOnly.set(Boolean(value))
+  setCardFocus(value ? 'workbench' : null)
 }
 
 // 左栏展开/收起的那 200ms：只在这时给网格列加过渡，拖拽改宽时不能有延迟。

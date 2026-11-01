@@ -404,6 +404,10 @@
     --sticky-human-top: 0.23rem;
     --file-tree-row-height: 1.375rem;
 
+    /* 大卡抬头的高度：对话卡、工作面标签栏、文件树抬头用同一个值，
+       两张卡的顶栏底线才会落在同一条线上（用户 10-31）。 */
+    --card-header-height: 2.25rem;
+
     /* Qoder 那张输入框相对对话卡要更宽（左右各留 ~50px），不再是一条窄带 */
     --composer-width: 56rem;
     --composer-control-size: 1.5rem;

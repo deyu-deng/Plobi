@@ -35,8 +35,9 @@ import {
   $shellCards,
   $shellSwapped,
   $sidebarOpen,
-  $workbenchOnly,
-  toggleWorkbenchOnly,
+  $cardFocus,
+  setCardFocus,
+  setShellSwapped,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   PREVIEW_PANE_ID,
@@ -288,7 +289,9 @@ export function DesktopController() {
   const sidebarOpen = useStore($sidebarOpen)
   // 对话卡 ↔ 右栏卡互换（用户 10-31 选的换法）：交换后右栏当主区、对话进右侧窄卡。
   const swapped = useStore($shellSwapped)
-  const workbenchOnly = useStore($workbenchOnly)
+  const cardFocus = useStore($cardFocus)
+  const focusWorkbench = cardFocus === 'workbench'
+  const focusChat = cardFocus === 'chat'
   const chatDrop = useCardDrop('chat', toggleShellSwapped)
   const railDrop = useCardDrop('rail', toggleShellSwapped)
   const profileScope = useStore($profileScope)
@@ -1989,6 +1992,71 @@ export function DesktopController() {
   )
 
   // 右栏内容抽成变量：正常时住在右侧 Pane 里，互换后同一块进 PaneMain（主区）。
+  const shellRightRail =
+    level === 'l1'
+      ? { open: agendaPaneOpen, toggle: () => togglePane('agenda-timeline') }
+      : level !== null
+        ? {
+            open: fileBrowserOpen,
+            toggle: () => {
+              if (fileBrowserOpen) {
+                setFileBrowserOpen(false)
+
+                return
+              }
+
+              if (l2Tabs.length === 0) {
+                setL2Tabs(['files'])
+                setL2Active('files')
+              } else if (l2Active === null) {
+                setL2Active(l2Tabs[0])
+              }
+
+              setFileBrowserOpen(true)
+            }
+          }
+        : undefined
+
+  // 最外侧那张大卡（用户 10-31：「两个符号时刻在最靠窗口边的卡片上面」）：
+  // 正常态=工作面侧卡；互换态=对话侧卡；聚焦时=只剩的那张。
+  const workbenchSideOpen = level === 'l1' ? agendaPaneOpen : fileBrowserOpen
+  const workbenchIsEdge = focusWorkbench || (!swapped && !focusChat && workbenchSideOpen)
+  const chatIsEdge = !workbenchIsEdge
+
+  const workbenchEdgeControls = {
+    collapse: focusWorkbench
+      ? { label: t.titlebar.exitFocus, onClick: () => setCardFocus(null) }
+      : {
+          icon: panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right',
+          label: t.titlebar.collapseWorkbench,
+          onClick: () => shellRightRail?.toggle()
+        },
+    maximize: {
+      label: focusWorkbench ? t.titlebar.restoreChat : t.titlebar.maximizeCard,
+      onClick: () => setCardFocus(focusWorkbench ? null : 'workbench')
+    }
+  }
+
+  const chatEdgeControls = {
+    collapse: focusChat
+      ? { label: t.titlebar.exitFocus, onClick: () => setCardFocus(null) }
+      : swapped
+        ? {
+            icon: 'layout-sidebar-left',
+            label: t.titlebar.workbenchBackToRight,
+            onClick: () => setShellSwapped(false)
+          }
+        : {
+            icon: 'layout-sidebar-right',
+            label: t.titlebar.expandWorkbench,
+            onClick: () => shellRightRail?.toggle()
+          },
+    maximize: {
+      label: focusChat ? t.titlebar.restoreChat : t.titlebar.showChatOnly,
+      onClick: () => setCardFocus(focusChat ? null : 'chat')
+    }
+  }
+
   const filesWorkbench = (
     <aside aria-label={t.workbench.aria} className={workbenchAsideClass}>
       <RightRailWorkbench
@@ -2008,14 +2076,9 @@ export function DesktopController() {
           terminal: isL1Workbench ? null : <TerminalPaneChrome />,
           ...fileTabContents
         }}
-        dragHandleProps={shellCards && !workbenchOnly ? cardDragProps('rail') : undefined}
+        dragHandleProps={shellCards && !focusWorkbench ? cardDragProps('rail') : undefined}
+        edgeControls={workbenchIsEdge ? workbenchEdgeControls : undefined}
         labels={t.workbench}
-        collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
-        collapseLabel={t.titlebar.hideRightSidebar}
-        maximizeLabel={workbenchOnly ? t.titlebar.restoreCard : t.titlebar.maximizeCard}
-        maximized={workbenchOnly}
-        onCollapse={swapped || workbenchOnly ? undefined : () => setFileBrowserOpen(false)}
-        onMaximize={toggleWorkbenchOnly}
         onTabChange={handleWorkbenchTabChange}
         onTabClose={handleWorkbenchTabClose}
         onTabOpen={handleWorkbenchTabOpen}
@@ -2073,14 +2136,9 @@ export function DesktopController() {
           // 文件页签（日程附件点开的那种）。内容和 L2 那份是同一张 `fileTabContents`。
           ...fileTabContents
         }}
-        dragHandleProps={shellCards && !workbenchOnly ? cardDragProps('rail') : undefined}
+        dragHandleProps={shellCards && !focusWorkbench ? cardDragProps('rail') : undefined}
+        edgeControls={workbenchIsEdge ? workbenchEdgeControls : undefined}
         labels={t.workbench}
-        collapseIcon={panesFlipped ? 'layout-sidebar-left' : 'layout-sidebar-right'}
-        collapseLabel={t.titlebar.hideRightSidebar}
-        maximizeLabel={workbenchOnly ? t.titlebar.restoreCard : t.titlebar.maximizeCard}
-        maximized={workbenchOnly}
-        onCollapse={swapped || workbenchOnly ? undefined : () => togglePane('agenda-timeline')}
-        onMaximize={toggleWorkbenchOnly}
         onTabChange={handleWorkbenchTabChange}
         onTabClose={handleWorkbenchTabClose}
         onTabOpen={handleWorkbenchTabOpen}
@@ -2114,31 +2172,6 @@ export function DesktopController() {
   )
 
   // 右栏开关：L1 是日程栏，L2 是工作台；对话卡抬头与顶栏重开共用这一份。
-  const shellRightRail =
-    level === 'l1'
-      ? { open: agendaPaneOpen, toggle: () => togglePane('agenda-timeline') }
-      : level !== null
-        ? {
-            open: fileBrowserOpen,
-            toggle: () => {
-              if (fileBrowserOpen) {
-                setFileBrowserOpen(false)
-
-                return
-              }
-
-              if (l2Tabs.length === 0) {
-                setL2Tabs(['files'])
-                setL2Active('files')
-              } else if (l2Active === null) {
-                setL2Active(l2Tabs[0])
-              }
-
-              setFileBrowserOpen(true)
-            }
-          }
-        : undefined
-
   const chatRoutes = (
     <Routes>
       {/* WP-A/E: `/` (L1), `/agent/:id` (L2) and `/console` all fall through
@@ -2205,11 +2238,7 @@ export function DesktopController() {
             chatScope={chatScope}
             composer={composer}
             modelMenuContent={modelMenuContent}
-            rightRail={
-              swapped || workbenchOnly || (level === 'l1' ? agendaPaneOpen : fileBrowserOpen)
-                ? undefined
-                : shellRightRail && { ...shellRightRail, side: railSide }
-            }
+            edgeControls={chatIsEdge ? chatEdgeControls : undefined}
             submit={stableSubmit}
           />
         }
@@ -2249,17 +2278,19 @@ export function DesktopController() {
 
   // PaneShell 只收**直接子元素**（Children.forEach 不钻 Fragment）：这一组必须平铺成数组，
   // 用 <>…</> 包起来的话 Pane 收不到槽位、就整块不渲染（10-31 自测：右栏与对话窄卡都消失）。
-  const shellPanes = workbenchOnly
-    ? [<PaneMain key="main">{railCard}</PaneMain>]
-    : swapped
-      ? [<PaneMain key="main">{railCard}</PaneMain>, chatPane]
-      : [
-          <PaneMain key="main">{chatCard}</PaneMain>,
-          panesFlipped ? fileBrowserPane : null,
-          previewPane,
-          agendaTimelinePane,
-          panesFlipped ? null : fileBrowserPane
-        ]
+  const shellPanes = focusChat
+    ? [<PaneMain key="main">{chatCard}</PaneMain>]
+    : focusWorkbench
+      ? [<PaneMain key="main">{railCard}</PaneMain>]
+      : swapped
+        ? [<PaneMain key="main">{railCard}</PaneMain>, chatPane]
+        : [
+            <PaneMain key="main">{chatCard}</PaneMain>,
+            panesFlipped ? fileBrowserPane : null,
+            previewPane,
+            agendaTimelinePane,
+            panesFlipped ? null : fileBrowserPane
+          ]
 
   // 左栏也是一条 Pane：换边后它必须排在同侧最后（最外一列），否则会掉进对话和工作面中间
   // ——10-31 第二张截图那个 bug。正常态它排最前。

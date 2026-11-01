@@ -261,6 +261,13 @@ export interface Translations {
     hideRightSidebar: string
     maximizeCard: string
     restoreCard: string
+    collapseWorkbench: string
+    expandWorkbench: string
+    restoreWorkbench: string
+    showChatOnly: string
+    restoreChat: string
+    workbenchBackToRight: string
+    exitFocus: string
     showRightSidebar: string
     muteHaptics: string
     unmuteHaptics: string

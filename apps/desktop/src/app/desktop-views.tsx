@@ -7,6 +7,7 @@ import { $shellCards } from '@/store/layout'
 import { ChatSurface, type ChatSurfaceProps } from './console/chat/chat-surface'
 import type { ChatScope } from './console/chat/scope'
 import { HOME_ROUTE } from './routes'
+import type { CardEdgeControls } from './shell/card-edge-controls'
 import { ChatTopBar } from './shell/chat-top-bar'
 
 /**
@@ -17,16 +18,16 @@ export function SecretaryCenterPane({
   cancel,
   chatScope,
   composer,
+  edgeControls,
   modelMenuContent,
-  rightRail,
   submit
 }: {
   cancel?: ChatSurfaceProps['cancel']
   chatScope: ChatScope | null
   composer?: ChatSurfaceProps['composer']
   modelMenuContent?: ChatSurfaceProps['modelMenuContent']
-  /** 卡片模式下由对话卡自己的抬头承载「右栏开关」（用户 10-31）。 */
-  rightRail?: { open: boolean; side?: 'left' | 'right'; toggle: () => void }
+  /** 靠窗口边那张卡的右上角两枚符号（只有最外侧那张卡才有）。 */
+  edgeControls?: CardEdgeControls
   submit?: ChatSurfaceProps['submit']
 }) {
   const shellCards = useStore($shellCards)
@@ -37,7 +38,7 @@ export function SecretaryCenterPane({
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col', !shellCards && 'pt-[var(--titlebar-height)]')}>
-      {shellCards ? <ChatTopBar rightRail={rightRail} scope={chatScope} /> : null}
+      {shellCards ? <ChatTopBar edgeControls={edgeControls} scope={chatScope} /> : null}
       <div className="flex min-h-0 flex-1 flex-col">
         <ChatSurface
           cancel={cancel}

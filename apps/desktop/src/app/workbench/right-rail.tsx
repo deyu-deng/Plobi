@@ -1,6 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
+import { CardEdgeControlButtons, type CardEdgeControls } from '@/app/shell/card-edge-controls'
 import { Codicon } from '@/components/ui/codicon'
 import { cn } from '@/lib/utils'
 
@@ -65,15 +66,10 @@ function EmptyAction({
 export function RightRailWorkbench({
   activeTab,
   availableTabs,
-  collapseIcon = 'layout-sidebar-right',
-  collapseLabel,
   contents,
   dragHandleProps,
+  edgeControls,
   labels,
-  maximizeLabel,
-  maximized = false,
-  onCollapse,
-  onMaximize,
   onTabChange,
   onTabClose,
   onTabOpen,
@@ -83,17 +79,12 @@ export function RightRailWorkbench({
   activeTab: RightRailTabId | null
   availableTabs: RightRailTabDef[]
   /** 收起这一栏的箭头方向：左右互换时朝另一边（用户 10-30：收起按钮跟卡片放一起）。 */
-  collapseIcon?: string
-  collapseLabel?: string
   contents: Partial<Record<string, ReactNode>>
+  /** 靠窗口边那张卡的右上角两枚符号（收起/展开 + 只显示这张卡）。 */
+  edgeControls?: CardEdgeControls
   /** 卡片互换：抬头那一行当拖动把手（用户 10-31 拖右栏卡到对话卡上换位）。 */
   dragHandleProps?: HTMLAttributes<HTMLDivElement>
   labels: RightRailWorkbenchLabels
-  /** 「只显示这张卡」（用户 10-31）：隐藏对话，让工作面自己占满。 */
-  maximizeLabel?: string
-  maximized?: boolean
-  onCollapse?: () => void
-  onMaximize?: () => void
   onTabChange: (tab: RightRailTabId) => void
   onTabClose: (tab: RightRailTabId) => void
   onTabOpen: (tab: RightRailTabId) => void
@@ -124,10 +115,10 @@ export function RightRailWorkbench({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* 有拖动把手时也必须画抬头：没开标签页时它就是这张卡唯一的拖拽入口 */}
-      {hasTabs || onCollapse || onMaximize || dragHandleProps ? (
+      {hasTabs || edgeControls?.collapse || edgeControls?.maximize || dragHandleProps ? (
         <div
           className={cn(
-            'flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1',
+            'flex h-(--card-header-height) shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1',
             dragHandleProps && 'cursor-grab select-none active:cursor-grabbing'
           )}
           ref={menuRef}
@@ -229,30 +220,7 @@ export function RightRailWorkbench({
             </div>
           ) : null}
 
-          {onCollapse ? (
-            <button
-              aria-label={collapseLabel}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={onCollapse}
-              title={collapseLabel}
-              type="button"
-            >
-              <Codicon name={collapseIcon} size="0.85rem" />
-            </button>
-          ) : null}
-
-          {onMaximize ? (
-            <button
-              aria-label={maximizeLabel}
-              aria-pressed={maximized}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={onMaximize}
-              title={maximizeLabel}
-              type="button"
-            >
-              <Codicon name={maximized ? 'screen-normal' : 'screen-full'} size="0.85rem" />
-            </button>
-          ) : null}
+          <CardEdgeControlButtons controls={edgeControls ?? {}} />
         </div>
       ) : null}
 

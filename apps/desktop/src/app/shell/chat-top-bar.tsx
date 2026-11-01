@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import type { ChatScope } from '../console/chat/scope'
 import { secretaryShellLabel } from '../desktop-controller-utils'
 
+import { CardEdgeControlButtons, type CardEdgeControls } from './card-edge-controls'
 import { cardDragProps } from './card-drag'
 
 /**
@@ -18,20 +19,20 @@ import { cardDragProps } from './card-drag'
  * 名字那一块同时是这张卡的拖动把手：拖到右栏卡上两张互换（开关本身不参与拖动）。
  */
 export function ChatTopBar({
-  rightRail,
+  edgeControls,
   scope
 }: {
-  rightRail?: { open: boolean; side?: 'left' | 'right'; toggle: () => void }
+  /** 靠窗口边那张卡的右上角两枚符号（只有最外侧那张卡才有）。 */
+  edgeControls?: CardEdgeControls
   scope: ChatScope
 }) {
   const { t } = useI18n()
   const agents = useStore($consoleAgents)
   const level = scope.kind === 'agent' ? { l2: scope.id } : 'l1'
   const name = secretaryShellLabel(level, t.console.chiefSecretary, agents)
-  const label = rightRail?.open ? t.titlebar.hideRightSidebar : t.titlebar.showRightSidebar
 
   return (
-    <div className="flex h-(--titlebar-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]">
+    <div className="flex h-(--card-header-height) shrink-0 select-none items-center gap-2 border-b border-(--ui-stroke-tertiary) px-2.5 [-webkit-app-region:no-drag]">
       <div
         className={cn('flex h-full min-w-0 flex-1 cursor-grab items-center gap-2 active:cursor-grabbing')}
         data-chat-topbar=""
@@ -40,23 +41,9 @@ export function ChatTopBar({
       >
         <span className="min-w-0 truncate text-[0.8125rem] font-medium text-foreground">{name}</span>
       </div>
-      {rightRail ? (
-        <Tip label={label}>
-          <Button
-            aria-label={label}
-            aria-pressed={rightRail.open}
-            onClick={rightRail.toggle}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <Codicon
-              name={rightRail.side === 'left' ? 'layout-sidebar-left' : 'layout-sidebar-right'}
-              size="0.875rem"
-            />
-          </Button>
-        </Tip>
-      ) : null}
+      <div className="ml-auto flex shrink-0 items-center">
+        <CardEdgeControlButtons controls={edgeControls ?? {}} />
+      </div>
     </div>
   )
 }

@@ -229,7 +229,7 @@ function FilesystemTab({
           <Codicon name="collapse-all" size="0.8125rem" />
         </Button>
       </RightSidebarSectionHeader>
-      <div className="flex h-10 shrink-0 items-center px-1.5">
+      <div className="flex h-(--card-header-height) shrink-0 items-center px-1.5">
         <div className="relative w-full">
           <Codicon
             className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-(--ui-text-tertiary)"
@@ -238,7 +238,7 @@ function FilesystemTab({
           />
           <input
             aria-label={r.filterFiles}
-            className="h-8 w-full appearance-none rounded-md border border-transparent bg-(--ui-bg-quaternary) pr-7 pl-7 text-xs text-foreground outline-none transition-colors placeholder:text-(--ui-text-tertiary) focus:border-(--ui-stroke-secondary) [&::-webkit-search-cancel-button]:hidden"
+            className="h-7 w-full appearance-none rounded-md border border-transparent bg-(--ui-bg-quaternary) pr-7 pl-7 text-xs text-foreground outline-none transition-colors placeholder:text-(--ui-text-tertiary) focus:border-(--ui-stroke-secondary) [&::-webkit-search-cancel-button]:hidden"
             onChange={event => setQuery(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'Escape') {
