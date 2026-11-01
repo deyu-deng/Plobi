@@ -227,11 +227,12 @@ def test_choosing_an_exit_reaches_the_parser_not_only_the_file(tmp_path, monkeyp
 
 
 def _refusing_supervision(monkeypatch, *, first_state: str = "failed"):
-    """First supervision pass refuses, the second (the rollback) succeeds.
+    """First supervision pass refuses, the rollback then succeeds.
 
     The refusal is what the TUN guard really returns on this box (non-admin shell,
-    Tailscale on the machine): `EngineReport(FAILED, "TUN 被守卫拒了：…")` — and
-    `reload_engine` has already stopped the running engine by then.
+    Tailscale on the machine): `EngineReport(FAILED, "TUN 被守卫拒了：…")`.
+    `seen` records every supervision call as `(which, transport-of-the-table-it-read)`,
+    so a test can prove **which table** each step was handed.
     """
     from agent.egress import engine as _engine
     from agent.egress import system_proxy as _system_proxy
@@ -259,7 +260,7 @@ def _refusing_supervision(monkeypatch, *, first_state: str = "failed"):
         from agent.egress.switch import read as read_switch
 
         state["n"] += 1
-        seen.append(("engine", str(read_switch(table)["transport"])))
+        seen.append(("reload", str(read_switch(table)["transport"])))
         if state["n"] == 1:
             return _Report(first_state, "TUN 被守卫拒了：这个进程不是管理员")
         return _Report(_engine.OURS, "engine reloaded (test)")
@@ -267,11 +268,18 @@ def _refusing_supervision(monkeypatch, *, first_state: str = "failed"):
     def ensure(table=None, **kw):
         from agent.egress.switch import read as read_switch
 
-        seen.append(("proxy", str(read_switch(table)["transport"])))
+        seen.append(("engine.ensure", str(read_switch(table)["transport"])))
+        return _Report(_engine.OURS, "engine already serving (test)")
+
+    def proxy_ensure(table=None, **kw):
+        from agent.egress.switch import read as read_switch
+
+        seen.append(("proxy.ensure", str(read_switch(table)["transport"])))
         return _Plan()
 
     monkeypatch.setattr(_engine, "reload_engine", reload_engine)
-    monkeypatch.setattr(_system_proxy, "ensure", ensure)
+    monkeypatch.setattr(_engine, "ensure", ensure)
+    monkeypatch.setattr(_system_proxy, "ensure", proxy_ensure)
     return seen
 
 
@@ -293,8 +301,14 @@ def test_a_refused_tun_puts_the_table_and_the_machine_back(tmp_path, monkeypatch
     assert cmd_network(args) == 1
     said = capsys.readouterr().out
     assert "退回原样" in said, said
-    #: 拨出去 → 退回：两次都交给监督，退回那一次读的必须是**旧的**那份表。
-    assert seen == [("engine", "tun"), ("proxy", "tun"), ("engine", "system"), ("proxy", "system")], seen
+    #: 拨出去用 reload（要换配置），退回用 `ensure`（表与在跑的配置逐字节相同 ⇒ 确认在跑，
+    #: 不是"停一下再起来"）。两次读的必须是**各自那一刻**的表：先 tun，退回那次是 system。
+    assert seen == [
+        ("reload", "tun"),
+        ("proxy.ensure", "tun"),
+        ("engine.ensure", "system"),
+        ("proxy.ensure", "system"),
+    ], seen
 
     egress_config.read_egress()
     saved = (tmp_path / "config.yaml").read_text(encoding="utf-8")

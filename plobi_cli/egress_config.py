@@ -296,7 +296,10 @@ def switch_and_supervise(
         lines.append("⚠️ 退回时表写不回去：" + "；".join(back_issues))
         return 1, lines
     back_table = egress.load_table(force_reload=True)
-    lines.extend(_engine.reload_engine(back_table).lines())
+    #: `ensure` 而不是 `reload_engine`：退回之后那份表与正在服务的配置**逐字节相同**
+    #: （`config_sha` 那一格），所以这里该是"确认它在跑"，不是"停一下再起来"。
+    #: 一次被拒的拨开关不该让这台机器多断一次网。
+    lines.extend(_engine.ensure(back_table).lines())
     back_plan = _system_proxy.ensure(back_table)
     if back_plan is not None:
         lines.extend(back_plan.lines())
