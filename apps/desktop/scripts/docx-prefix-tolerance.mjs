@@ -23,7 +23,7 @@
  * 放在函数内部而不是模块级：注入到 main.js 的是 `fn.toString()`，函数体必须自包含，
  * 否则搬过去会引用一个不存在的模块级常量。
  */
-function standardPrefixByUri() {
+export function standardPrefixByUri() {
   return {
     'http://schemas.openxmlformats.org/wordprocessingml/2006/main': 'w',
     'http://schemas.openxmlformats.org/markup-compatibility/2006': 'mc',
