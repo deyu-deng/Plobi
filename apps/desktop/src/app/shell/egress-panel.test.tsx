@@ -238,17 +238,28 @@ describe('左下底栏那一格', () => {
     expect(view.getByTestId('egress-panel')).toBeTruthy()
   })
 
-  it('面板宽度只有一个来源：那一格给，面板自己不再写死', () => {
-    // 11-01 用户截图：右边「Everything」只剩「Eve」、载体按钮里的字换行。成因是两处都写
-    // `w-80`（弹窗与面板各一份），而里面那几行按内容撑宽 ⇒ 超出弹窗、被裁掉。
+  it('宽度只有一个来源：弹窗跟着走，面板按屏给', () => {
+    // 11-01 用户两次截图：先是「右边被裁」（两处都写 `w-80`，里面一撑宽就裁），
+    // 后是「一行两张太松」。所以宽度收到面板这一格，并且**两屏不一样**。
     const item = egressRailItem(copy.title)
-    expect(item.menuClassName).toContain('w-96')
+    expect(item.menuClassName).toContain('w-auto')
+    expect(item.menuClassName).not.toMatch(/(^|\s)w-(56|64|72|80|96)(\s|$)/)
 
     const view = render(<div>{(item.menuContent as (close: () => void) => ReactNode)(() => {})}</div>)
     const panel = view.getByTestId('egress-panel')
-    expect(panel.className).toContain('w-full')
+    expect(panel.className).toContain('w-96')
     expect(panel.className).toContain('min-w-0')
-    expect(panel.className).not.toMatch(/(^|\s)w-(56|64|72|80|96)(\s|$)/)
+  })
+
+  it('节点屏一行三张：一行两张在这个宽度上显得空', async () => {
+    render(<EgressPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: copy.tabNodes }))
+
+    const panel = screen.getByTestId('egress-panel')
+    expect(panel.className).toContain('w-[32rem]')
+
+    const grid = screen.getByRole('button', { name: copy.panelAll }).parentElement?.nextElementSibling
+    expect(grid?.className).toContain('grid-cols-3')
   })
 
   it('载体那两颗按钮不换行：窄了就省略，不许把面板撑破', async () => {

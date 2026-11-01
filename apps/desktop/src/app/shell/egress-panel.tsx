@@ -222,9 +222,13 @@ export function EgressPanel() {
   const proxyWarn = ctl.transport === 'system' && status?.system_proxy !== undefined && status.system_proxy.ours === false
 
   return (
-    //: 宽度由弹窗那一格给（`menuClassName`），这里只许跟着走：以前这里写死 `w-80`，
-    //: 而弹窗也是 `w-80`，看着一致，其实把「谁说了算」写成了两处 —— 谁改一处就错位。
-    <div className="w-full min-w-0 select-text" data-testid="egress-panel">
+    //: 宽度由这一格按屏给（弹窗那格是 `w-auto`，跟着这里走）：控制屏是一列控件，
+    //: 22rem 够；节点屏是卡片，要**一行三张**才不显得空（用户 11-01：「怎么也要一横行
+    //: 能同时显示三个卡片的宽度」）⇒ 32rem，三列各 ~158px，名字两行放得下。
+    <div
+      className={`min-w-0 select-text ${view === 'nodes' ? 'w-[32rem]' : 'w-96'}`}
+      data-testid="egress-panel"
+    >
       <div className="flex items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2 py-1.5">
         <TabButton active={view === 'switch'} icon={Power} onClick={() => setView('switch')}>
           {copy.tabSwitch}
@@ -351,10 +355,10 @@ export function EgressPanel() {
             </div>
           ) : null}
 
-          <div className="grid max-h-72 grid-cols-2 gap-1.5 overflow-y-auto">
+          <div className="grid max-h-80 grid-cols-3 gap-1.5 overflow-y-auto">
             {shown.map(name => (
               <button
-                className={`flex min-h-11 items-center gap-1.5 rounded-lg border border-(--stroke-nous) px-2 py-1.5 text-left text-xs ${
+                className={`flex min-h-10 items-center gap-1 rounded-lg border border-(--stroke-nous) px-1.5 py-1 text-left text-xs ${
                   ctl.exit === name ? 'bg-(--theme-primary) text-white' : 'text-(--ui-text-secondary)'
                 }`}
                 disabled={busy || !loaded}
@@ -433,10 +437,10 @@ export function egressRailItem(title: string): StatusbarItem {
   return {
     icon: <EgressRailIcon />,
     id: 'egress',
-    //: 面板宽度**只在这里定一次**（`w-96` = 384px）：四种语言的标签里最长的是 ja 的
-    //: 「システムプロキシ」与 en 的「System proxy」，320px 那档放不下两颗并排的载体按钮
-    //: （11-01 用户截图：右边被裁、按钮里的字换行）。
-    menuClassName: 'w-96',
+    //: 宽度**不在这里定**：两屏要的宽度不一样（控制 22rem / 节点 30rem，见面板根那一格），
+    //: 所以这里只给 `w-auto` —— 弹窗跟着内容走，宽度只有一个来源，也就不会再出现
+    //: 「两处都写 320，里面一撑宽就被裁」（11-01 那次截图的成因）。
+    menuClassName: 'w-auto',
     menuContent: () => <EgressPanel />,
     title,
     variant: 'menu'
