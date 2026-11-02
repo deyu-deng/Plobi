@@ -60,7 +60,9 @@ export function OverlaySidebar({ children, className }: OverlaySidebarProps) {
         // pt clears the in-card close button (the OverlayView now insets the
         // whole card below the OS titlebar); the bg fills from the card's top
         // edge so there's no surface-colored gap above the sidebar.
-        'flex min-h-0 flex-col gap-0.5 overflow-y-auto bg-(--ui-sidebar-surface-background) px-2.5 pb-3 pt-[calc(var(--titlebar-height)/2+1rem)]',
+        // 导航贴在"页"那一层上（不另涂一张白底）：Qoder 的左导航本来就不是卡，
+        // 它和正文共用同一层浅底，白的是正文里那一张张分组卡。
+        'flex min-h-0 flex-col gap-0.5 overflow-y-auto bg-transparent px-2.5 pb-3 pt-[calc(var(--titlebar-height)/2+1rem)]',
         className
       )}
     >

@@ -1977,9 +1977,12 @@ text-* variant utilities. */ .btn-arc {
   --dl-card-bg: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   --dl-card-line: var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
   --dl-card-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
-  /* 正文尺：设置那一屏的读数宽（Qoder 实测 `max-w-[820px]`）。别的浮层暂时还走
-     `PAGE_MAX_W`(75rem)，一块一块搬过来。 */
-  --dl-measure-page: 51.25rem;
+  /* 页比卡暗一档（明暗两边都成立：混的是主题自己的前景色，不是写死的灰）。
+     4% 是照 Qoder 截图上那一档色差定的——再大就开始像表格底纹。 */
+  --dl-page-bg: color-mix(in srgb, var(--dl-card-bg) 96%, var(--theme-foreground, #0b0b0a) 4%);
+  /* 正文尺：设置那一屏的读数宽。Qoder 实测是 **960px**（`max-w-[960px]`），
+     只有模板/分身编辑器那一屏才收到 820px——上一轮我把 820 当成了整屏的尺，取错了分支。 */
+  --dl-measure-page: 60rem;
   /* 分组里一行的上下内边距（Qoder `SettingsItem py-3.5` = 14px） */
   --dl-row-pad-y: 0.875rem;
   /* 设置那一屏的字阶（Qoder 实测：行标题 13/20、说明 12/18）。字号沿用对话那两枚，
@@ -2010,6 +2013,17 @@ text-* variant utilities. */ .btn-arc {
    只能给半径，`corner-shape` 得自己写。老内核忽略这行照样是圆角，不坏。 */
 .dl-squircle {
   corner-shape: squircle;
+}
+
+/* 一张"页"：浮层外壳那一层。它比卡**暗一档**——Qoder 那两张截图里"一张一张卡片"读得出来，
+   靠的不是描边，是三级表面：画布（雾）→ 页（浅灰）→ 卡（白）。我们以前浮层外壳和分组卡
+   都吃同一张白底，卡就"浮"不起来，只剩一条发丝边。 */
+.dl-sheet {
+  background: var(--dl-page-bg);
+  border: 1px solid var(--dl-card-line);
+  border-radius: var(--dl-shell-radius);
+  corner-shape: squircle;
+  box-shadow: var(--dl-card-shadow);
 }
 
 .shell-cards {

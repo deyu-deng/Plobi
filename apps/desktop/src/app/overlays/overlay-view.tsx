@@ -69,10 +69,10 @@ export function OverlayView({
     >
       <div
         className={cn(
-          // 外壳就是主窗口那一张卡：`dl-card` 一份几何（8px squircle + 1px 发丝边 +
-          // 同一支阴影）。以前这里是 `rounded-xl border shadow-md`，浮层和外壳两套尺子，
-          // 就是用户说的"overlay 各长各的"。（用户 11-02 拍「外壳 + 设置」）
-          'dl-card relative flex h-full min-h-0 flex-col overflow-hidden',
+          // 外壳是"一张页"（`.dl-sheet`）：与主窗口卡同一份圆角/边/阴影，但底色比卡暗一档，
+          // 里面的分组卡（`.dl-card`，白）才浮得起来。（用户 11-02 那两张 Qoder 截图照出来的
+          // 就是这三级表面：画布 → 页 → 卡。）
+          'dl-sheet relative flex h-full min-h-0 flex-col overflow-hidden',
           rootClassName
         )}
       >
