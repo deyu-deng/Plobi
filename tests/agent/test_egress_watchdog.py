@@ -148,3 +148,67 @@ def test_a_takeover_that_went_missing_is_taken_back(fakes):
 def test_a_healthy_takeover_is_left_alone(fakes):
     assert watchdog.tick(_Table(True)) == "healthy"
     assert fakes["taken"] == 0
+
+
+# ── 谁来看门狗（11-02：它 10:06 被外力杀掉，之后三小时没人挂回去）──────────────
+
+class _WideTable:
+    def __init__(self, proxy: bool = False, tun: bool = False):
+        self.system_proxy_enabled = proxy
+        self.engine_tun = {"enabled": tun}
+
+
+def test_the_supervisor_does_not_fork_itself(monkeypatch):
+    """看门狗每 tick 都调 `engine.ensure`——那条路若也负责挂监督者，就会给自己生一堆兄弟。"""
+    monkeypatch.setenv(watchdog.MARKER, "1")
+    started: list = []
+    monkeypatch.setattr(watchdog, "start", lambda **kw: started.append(kw) or (True, "started"))
+
+    ok, why = watchdog.ensure_running()
+
+    assert ok is True and started == [] and "不 spawn" in why
+
+
+def test_arming_outside_the_child_calls_start_with_the_same_home(monkeypatch):
+    monkeypatch.delenv(watchdog.MARKER, raising=False)
+    started: list = []
+    monkeypatch.setattr(watchdog, "start", lambda **kw: (started.append(kw), (True, "ok"))[1])
+
+    assert watchdog.ensure_running(home="H")[0] is True
+    assert started == [{"home": "H", "interval": watchdog.INTERVAL_SECONDS}]
+
+
+def test_a_table_that_takes_over_nothing_starts_no_watcher(monkeypatch):
+    calls: list = []
+    monkeypatch.setattr(watchdog, "ensure_running", lambda **kw: calls.append(kw) or (True, ""))
+
+    engine._arm_supervisor(_WideTable())
+    assert calls == [], "没东西要监督，就别起一个每 20 秒读注册表的进程"
+
+    engine._arm_supervisor(_WideTable(proxy=True))
+    engine._arm_supervisor(_WideTable(tun=True))
+    assert len(calls) == 2, "两种整机承载都算「有东西要监督」"
+
+
+def test_an_already_running_engine_still_arms_its_supervisor(monkeypatch, tmp_path):
+    """那三小时的形状：引擎活着、接管早就生效 ⇒ `ensure()` 走"什么都不做"的早退分支，
+    而看门狗已经没了。早退现在也要问一句。"""
+    calls: list = []
+    monkeypatch.setattr(engine, "_arm_supervisor", lambda table, **kw: calls.append(kw.get("home")))
+    snap = engine._Snapshot(True, "mihomo", 7895, None, None, "compiled", {}, ())
+    monkeypatch.setattr(engine, "snapshot", lambda table, **kw: snap)
+    monkeypatch.setattr(engine, "status", lambda table, **kw: engine.EngineReport(engine.OURS, "fake"))
+
+    report = engine.ensure(_WideTable(proxy=True), home=tmp_path)
+
+    assert report.state == engine.OURS
+    assert calls == [tmp_path]
+
+
+def test_a_failing_supervisor_never_breaks_the_engine_path(monkeypatch):
+    """监督者起不来是一句警告，不是把「引擎已就绪」这条读数改成失败。"""
+    def boom(**kw):
+        raise OSError("spawn denied")
+
+    monkeypatch.setattr(watchdog, "ensure_running", boom)
+    engine._arm_supervisor(_WideTable(proxy=True))

@@ -38,6 +38,9 @@ LOG_BASENAME = "watchdog.log"
 INTERVAL_SECONDS = 20.0
 #: A marker in the child's own command line, so ownership is provable.
 CMDLINE_MARKER = "egress.watchdog"
+#: Set in the child's own environment: it is how a re-arm request knows "I am the supervisor",
+#: so `engine.ensure()` (which the watchdog itself calls every tick) cannot fork copies of us.
+MARKER = "PLOBI_EGRESS_WATCHDOG"
 
 
 def repo_root() -> Path:
@@ -189,6 +192,7 @@ def start(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS)
         _clear_record(home=home)
 
     cmd = [sys.executable, "-m", "agent.egress.watchdog", "--interval", str(interval)]
+    child_env = {**os.environ, MARKER: "1"}
     flags = 0
     kwargs: dict[str, Any] = {}
     if os.name == "nt":
@@ -201,7 +205,7 @@ def start(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS)
     try:
         proc = subprocess.Popen(  # noqa: S603 - our own interpreter and our own module
             cmd, stdout=handle, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-            cwd=str(repo_root()), creationflags=flags, **kwargs,
+            cwd=str(repo_root()), creationflags=flags, env=child_env, **kwargs,
         )
     except OSError as exc:
         return False, "起看门狗失败（%s: %s）" % (type(exc).__name__, exc)
@@ -255,6 +259,22 @@ def stop(*, home: str | Path | None = None) -> tuple[bool, str]:
         return True, "看门狗本来就不在了（%s）" % type(exc).__name__
     _clear_record(home=home)
     return True, "已停掉看门狗（pid %d，共 %d 个进程）" % (rec["pid"], len(family))
+
+def ensure_running(*, home: str | Path | None = None, interval: float = INTERVAL_SECONDS) -> tuple[bool, str]:
+    """Arm the supervisor if nobody has it — **the answer to "who watches the watchdog"**.
+
+    11-02 这台实测：看门狗 10:06 被外力杀掉（日志停在一句 `healthy`，没有异常、pid 已不存在），
+    之后 3 小时没有任何路径会把它挂回去——引擎有监督者，监督者自己没有。`enable()` 只在
+    「接管动作发生的那一刻」起它，而接管一旦已经生效，重启之外的任何一次 `engine.ensure()`
+    都不再碰它。
+
+    所以任何一次「把引擎弄好」的路径都顺手问这一句。两条限制：
+    · **自己是看门狗时不自 spawn**（子进程带 `MARKER`，它每 tick 都调 `engine.ensure`）；
+    · 表里没要求整机承载时不动（没东西要监督，起一个每 20 秒读一次注册表的进程是白付的税）。
+    """
+    if os.environ.get(MARKER):
+        return True, "我们自己就是看门狗——不 spawn 第二个"
+    return start(home=home, interval=interval)
 
 
 def status(*, home: str | Path | None = None) -> dict[str, Any]:

@@ -550,6 +550,27 @@ def _tun_gate(table: Table, snap: _Snapshot) -> tuple[Optional[EngineReport], tu
     ), said
 
 
+def _arm_supervisor(table: Table, *, home: str | Path | None = None) -> None:
+    """引擎活着的那两条路都顺手问一句「监督者还在吗」。
+
+    11-02 这台：看门狗 10:06 被外力杀掉，日志停在一句 `healthy`，之后三小时没人挂回去——
+    `enable()` 只在接管发生的那一刻起它，而接管一旦已经生效，之后任何一次 `engine.ensure()`
+    都不再碰它。引擎有监督者、监督者自己没有，这一格就是补那一层。
+    只在表里要求整机承载时才问：没东西要监督就别起一个每 20 秒读注册表的进程。
+    """
+    if not (table.system_proxy_enabled or table.engine_tun.get("enabled")):
+        return
+    from agent.egress import watchdog as _watchdog
+
+    try:
+        alive, why = _watchdog.ensure_running(home=home)
+    except Exception as exc:  # noqa: BLE001 - 监督者起不来不许把引擎这条路带崩
+        _log.warning("engine is up but arming the supervisor raised %s: %s", type(exc).__name__, exc)
+        return
+    if not alive:
+        _log.warning("engine is up but the supervisor did not arm: %s", why)
+
+
 def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0) -> EngineReport:
     """Bring the engine up if it is ours to bring up.
 
@@ -568,6 +589,7 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
             if stopped.state != STOPPED:
                 return replace(current, notes=(*snap.notes, f"reload refused: {stopped.detail}"))
         else:
+            _arm_supervisor(table, home=home)
             return current
     if current.state == FOREIGN:
         return current
@@ -627,6 +649,8 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
                    "config_sha": _sha(data), "source": snap.source,
                    "started_by": "plobi", "started_at": time.time()}, home=home)
     ok, detail = probe_engine(snap.port)
+    if ok:
+        _arm_supervisor(table, home=home)
     notes = [*snap.notes, *seed_notes, *render_notes, *acl_notes, *tun_notes]
     if not ok:
         # Measured on this box (09:10): an engine workdir without GeoSite.dat
