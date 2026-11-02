@@ -8,6 +8,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
 import { dockFitCount, dockItemWidth } from './dock-layout'
+import { pickRailFooterItems } from './rail-footer'
 
 // Shared chrome styling for interactive statusbar items (button / link / menu
 // trigger). The 'text' variant intentionally omits hover/transition/disabled.
@@ -83,7 +84,13 @@ export function StatusbarControls({
   const allItems = useMemo(() => [...dockTools, ...leftItems, ...items], [dockTools, items, leftItems])
 
   if (dock) {
-    return <StatusbarDock anchor={dockAnchor} className={className} inline={inline} items={allItems} {...props} />
+    // `inline` 就是"这一条住在左栏底部"（展开横排 / 收起只剩「⋯」）——那里只留六枚
+    // （用户 11-02 拍），单子与去向写在 rail-footer.ts。吸在窗口角上的经典状态栏不走
+    // 这张单子，照旧全给。挂在这里而不是左栏调用方，是因为左栏那一档此刻压着别人
+    // 未提交的活（11-02 现核 `chat/sidebar/index.tsx` 工树 88/61），一行也不许替他签。
+    const dockItems = inline ? pickRailFooterItems(allItems) : allItems
+
+    return <StatusbarDock anchor={dockAnchor} className={className} inline={inline} items={dockItems} {...props} />
   }
 
   return (

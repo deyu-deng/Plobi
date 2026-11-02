@@ -20,6 +20,7 @@ import {
 import { notify } from '@/store/notifications'
 
 import { CONTROL_TEXT } from './constants'
+import { HapticsRow } from './haptics-row'
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
@@ -133,6 +134,10 @@ export function NotificationsSettings() {
         description={copy.completionSoundDesc}
         title={copy.completionSoundTitle}
       />
+
+      {/* 触感这一格原来住在左上角那条图标条里，11-02 拍「底部只留六枚」后搬到这里；
+          组件与它的判据在 haptics-row.tsx，这一屏只负责挂。 */}
+      <HapticsRow />
 
       <div className="mt-4 flex flex-col gap-2">
         <Button className="self-start" onClick={() => void runTest()} size="sm" type="button" variant="outline">

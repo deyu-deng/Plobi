@@ -36,8 +36,9 @@ vi.mock('@/i18n', () => ({
 
 const ITEMS: readonly StatusbarItem[] = [
   { icon: <Codicon name="book" size="0.75rem" />, id: 'mind-pending', label: '待确认', variant: 'action' },
-  { icon: <span data-testid="svg-icon" />, id: 'cron', label: '定时任务', variant: 'action' },
-  { detail: '00:12:34', id: 'session-timer', label: '会话', variant: 'text' }
+  { detail: '3 项', icon: <Codicon name="hubot" size="0.75rem" />, id: 'gateway-health', label: '网关', variant: 'menu' },
+  // 没有图标、只带读数的那一格：既要有列，也要把数带出来。
+  { detail: '00:12:34', id: 'agenda', label: '日程', variant: 'text' }
 ]
 
 function openOverflow() {
@@ -78,8 +79,15 @@ describe('左栏「⋯」里的那些行', () => {
 
   it('读数那一行把数也带出来，不留一个孤零零的词', async () => {
     const menu = await openOverflow()
-    const row = within(menu).getAllByRole('menuitem').find(item => /会话/.test(item.textContent ?? ''))
+    const row = within(menu).getAllByRole('menuitem').find(item => /日程/.test(item.textContent ?? ''))
 
     expect(row?.textContent).toContain('00:12:34')
+  })
+
+  it('那张六枚的单子只管左栏底部，吸在窗口角上的经典状态栏照旧全给', () => {
+    render(<StatusbarControls items={[...ITEMS, { id: 'cron', label: '定时任务', variant: 'action' }]} />)
+
+    expect(screen.getByText('定时任务')).toBeTruthy()
+    expect(screen.getByText('待确认')).toBeTruthy()
   })
 })

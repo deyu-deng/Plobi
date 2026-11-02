@@ -25,6 +25,7 @@ import type { DesktopTheme } from '@/themes/types'
 import { $marketplaceInstalls, isUserTheme, removeUserTheme } from '@/themes/user-themes'
 
 import { MODE_OPTIONS } from './constants'
+import { KeybindsRow } from './keybinds-row'
 import { PetSettings } from './pet-settings'
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 
@@ -312,6 +313,10 @@ export function AppearanceSettings() {
             description={a.shellCardsHint}
             title={a.shellCards}
           />
+
+          {/* 快捷键那一格从左上角的图标条搬来（用户 11-02 拍「底部只留六枚」）；
+              组件与判据在 keybinds-row.tsx，这一屏只负责挂。 */}
+          <KeybindsRow />
 
           <ListRow
             action={<LanguageSwitcher />}
