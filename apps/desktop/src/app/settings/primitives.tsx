@@ -12,13 +12,62 @@ import { PAGE_INSET_X } from '../layout-constants'
 export function SettingsContent({ children }: { children: ReactNode }) {
   return (
     <section className="min-h-0 overflow-hidden">
-      <div className={cn('h-full min-h-0 overflow-y-auto pb-20', PAGE_INSET_X)}>{children}</div>
+      {/* 正文尺收到 820px 居中（Qoder 实测 `max-w-[820px]`）：设置是一行一行的读物流，
+          跟着窗口铺到 1200px 时"标题—控件"之间那条空档会宽到看不出是一对。
+          别的浮层暂时还吃 `PAGE_MAX_W`，一块一块搬。 */}
+      <div
+        className={cn(
+          'mx-auto h-full min-h-0 w-full max-w-[var(--dl-measure-page)] overflow-y-auto pb-20',
+          PAGE_INSET_X
+        )}
+      >
+        {children}
+      </div>
     </section>
   )
 }
 
 export function Pill({ tone = 'muted', children }: { tone?: 'muted' | 'primary'; children: ReactNode }) {
   return <Badge variant={tone === 'primary' ? 'default' : 'muted'}>{children}</Badge>
+}
+
+/**
+ * 一组一张卡（用户 11-02 拍「外壳 + 设置」，形状照 Qoder 实测搬：卡 + 44px 组抬头 +
+ * 行与行之间**虚线**分隔，末行不带）。组名不再画中黑体 + 图标那一行——它是"这一堆是什么"，
+ * 不是标题，所以 12px 常规体、tertiary 色。
+ *
+ * 卡面几何不在这里写：`.dl-card` 那一份（8px squircle + 1px 发丝边 + 同一支阴影），
+ * 与浮层外壳、主窗口那两张卡同源。
+ */
+export function SettingsGroup({
+  action,
+  children,
+  description,
+  title
+}: {
+  action?: ReactNode
+  children: ReactNode
+  description?: ReactNode
+  title: ReactNode
+}) {
+  const caption = 'text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)]'
+
+  return (
+    <section className="mt-5 first:mt-0">
+      <header className="flex min-h-11 items-end justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <h2 className={cn('truncate font-normal text-(--ui-text-tertiary)', caption)}>{title}</h2>
+          {description && <p className={cn('mt-0.5 text-(--ui-text-tertiary)', caption)}>{description}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </header>
+      <div className="dl-card mt-2 px-4">
+        <div className="flex flex-col [&>*+*]:border-t [&>*+*]:border-dashed [&>*+*]:border-(--ui-stroke-tertiary)">
+          {children}
+        </div>
+      </div>
+    </section>
+  )
 }
 
 export function SectionHeading({ icon: Icon, title, meta }: { icon: IconComponent; title: string; meta?: string }) {
@@ -93,7 +142,9 @@ export function ListRow({
   wide?: boolean
 }) {
   const heading = (
-    <div className="text-[length:var(--conversation-text-font-size)] font-medium text-foreground">{title}</div>
+    <div className="text-[length:var(--conversation-text-font-size)] leading-[var(--dl-leading-row-title)] font-medium text-foreground">
+      {title}
+    </div>
   )
 
   const label = (
@@ -110,7 +161,7 @@ export function ListRow({
         </button>
       ) : heading}
       {description && (
-        <div className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+        <div className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)] text-(--ui-text-tertiary)">
           {description}
         </div>
       )}
@@ -122,12 +173,15 @@ export function ListRow({
   return (
     // Container-queried, not viewport-queried: the label/control split keys on
     // the row's own pane width, so a narrow detail column (messaging, split
-    // views) stacks instead of squishing the label against minmax(15rem,…).
+    // views) stacks instead of squishing the label against the control.
+    //
+    // 控件那一列改成 `auto`（Qoder 实测：控件靠右、不预留一条固定宽）。以前那条
+    // `minmax(15rem,22rem)` 让一颗开关后面拖着 240px 空白，一行读起来是断的。
     <div className="@container">
       <div
         className={cn(
-          'grid gap-3 py-3',
-          !wide && '@2xl:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] @2xl:items-center'
+          'grid gap-3 py-[var(--dl-row-pad-y)]',
+          !wide && '@2xl:grid-cols-[minmax(0,1fr)_auto] @2xl:items-center'
         )}
       >
         {icon ? (

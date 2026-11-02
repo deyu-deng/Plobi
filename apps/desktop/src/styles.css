@@ -1964,6 +1964,28 @@ text-* variant utilities. */ .btn-arc {
   --dl-shell-gap: 1px;
   /* 逆 Qoder 包里读到的：内容卡圆角 8px，且用 `corner-shape: squircle`（不是普通圆角） */
   --dl-shell-radius: 8px;
+  /* 半径阶（用户 11-02：浮层与主窗口要说同一套几何）。尺度照 Qoder 实测抄：
+     xs 2 / sm 4 / md 6 / lg 8 / xl 12 / 2xl 16，`corner-shape: squircle` 一律带上。 */
+  --dl-radius-xs: 2px;
+  --dl-radius-sm: 4px;
+  --dl-radius-md: 6px;
+  --dl-radius-lg: 8px;
+  --dl-radius-xl: 12px;
+  --dl-radius-2xl: 16px;
+  /* 一张"卡"的四件套只有一个来源：主窗口那两张卡、浮层外壳、设置里的分组卡
+     都从这里取——不许再出现第二处写死 12px + shadow-md 的卡。 */
+  --dl-card-bg: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
+  --dl-card-line: var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
+  --dl-card-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
+  /* 正文尺：设置那一屏的读数宽（Qoder 实测 `max-w-[820px]`）。别的浮层暂时还走
+     `PAGE_MAX_W`(75rem)，一块一块搬过来。 */
+  --dl-measure-page: 51.25rem;
+  /* 分组里一行的上下内边距（Qoder `SettingsItem py-3.5` = 14px） */
+  --dl-row-pad-y: 0.875rem;
+  /* 设置那一屏的字阶（Qoder 实测：行标题 13/20、说明 12/18）。字号沿用对话那两枚，
+     行高在这里给——设置行比正文行要松一点，混进对话字号会挤。 */
+  --dl-leading-row-title: 1.25rem;
+  --dl-leading-row-desc: 1.125rem;
   /* 画布雾：背景色 → 混一点品牌色 → 混一点前景色，低对比三段；主题没给种子时退回中性灰 */
   --dl-shell-canvas: linear-gradient(
     150deg,
@@ -1971,6 +1993,23 @@ text-* variant utilities. */ .btn-arc {
     var(--theme-background-seed, #f6f6f6) 52%,
     color-mix(in srgb, var(--theme-background-seed, #f6f6f6) 86%, var(--theme-foreground, #0b0b0a) 14%) 100%
   );
+}
+
+/* 一张卡。主窗口那两张卡、浮层外壳、设置里的分组卡都用这一份几何——
+   同一件事实只写一次，改圆角/阴影只改上面那几枚令牌。 */
+.dl-card {
+  background: var(--dl-card-bg);
+  border: 1px solid var(--dl-card-line);
+  border-radius: var(--dl-shell-radius);
+  /* Chromium 139+；老内核忽略这一行时退回普通圆角，不会坏 */
+  corner-shape: squircle;
+  box-shadow: var(--dl-card-shadow);
+}
+
+/* 小控件（导航条目、分组抬头里的按钮）那层的 squircle：Tailwind 的 rounded-*
+   只能给半径，`corner-shape` 得自己写。老内核忽略这行照样是圆角，不坏。 */
+.dl-squircle {
+  corner-shape: squircle;
 }
 
 .shell-cards {
@@ -2088,12 +2127,12 @@ text-* variant utilities. */ .btn-arc {
   --ui-chat-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   --ui-sidebar-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
   --ui-editor-surface-background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
-  background: var(--theme-shell-card, var(--theme-card-seed, var(--dl-surface-base, #fff)));
-  border: 1px solid var(--theme-shell-line, var(--theme-border, var(--dl-stroke-hairline, #e5e5e5)));
+  background: var(--dl-card-bg);
+  border: 1px solid var(--dl-card-line);
   border-radius: var(--dl-shell-radius);
   /* Chromium 139+；老内核忽略这一行时退回普通圆角，不会坏 */
   corner-shape: squircle;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 10px 30px -14px rgba(16, 24, 40, 0.16);
+  box-shadow: var(--dl-card-shadow);
 }
 
 /* 对话卡没有拖动条，直接裁；右栏三格有 resize sash（半个把手探在框外），

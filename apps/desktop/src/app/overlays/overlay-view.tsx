@@ -50,7 +50,9 @@ export function OverlayView({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 bg-black/22 backdrop-blur-[0.125rem]',
+        // 遮罩不糊背景（Qoder 的玻璃是"半透明不模糊"，我们的主窗口画布也不糊：
+        // 浮层压上来时后面那层该读得出是什么，不该化成一团）。
+        'fixed inset-0 z-50 bg-black/22',
         // Equidistant inset on every side. The top value is driven by the
         // titlebar height so the card clears the OS traffic-lights vertically;
         // since the card top already sits below them, the left needs no extra
@@ -67,7 +69,10 @@ export function OverlayView({
     >
       <div
         className={cn(
-          'relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-chat-surface-background) shadow-md',
+          // 外壳就是主窗口那一张卡：`dl-card` 一份几何（8px squircle + 1px 发丝边 +
+          // 同一支阴影）。以前这里是 `rounded-xl border shadow-md`，浮层和外壳两套尺子，
+          // 就是用户说的"overlay 各长各的"。（用户 11-02 拍「外壳 + 设置」）
+          'dl-card relative flex h-full min-h-0 flex-col overflow-hidden',
           rootClassName
         )}
       >

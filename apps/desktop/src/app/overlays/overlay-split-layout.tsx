@@ -90,14 +90,16 @@ export function OverlayNavItem({ active, icon: Icon, label, nested, onClick, tra
   return (
     <button
       className={cn(
-        'flex h-7 w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
+        // 选中态不再画"描边盒子"（Qoder 的导航条目只变文字与一层软底）：描边会让
+        // 每一条看起来像一张卡，和卡里的卡打架。半径走设计语言那一阶，不是随手 rounded-md。
+        'flex h-7 w-full items-center justify-start gap-2 rounded-[var(--dl-radius-lg)] dl-squircle px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
         nested
           ? active
-            ? 'border-transparent bg-(--chrome-action-hover) font-medium text-foreground'
-            : 'border-transparent bg-transparent text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+            ? 'bg-(--chrome-action-hover) font-medium text-foreground'
+            : 'bg-transparent text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
           : active
-            ? 'border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary) text-foreground'
-            : 'border-transparent bg-transparent text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+            ? 'bg-(--ui-bg-tertiary) font-medium text-foreground'
+            : 'bg-transparent text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground'
       )}
       onClick={onClick}
       type="button"

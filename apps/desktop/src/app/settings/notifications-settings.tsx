@@ -21,7 +21,7 @@ import { notify } from '@/store/notifications'
 
 import { CONTROL_TEXT } from './constants'
 import { HapticsRow } from './haptics-row'
-import { ListRow, SectionHeading, SettingsContent } from './primitives'
+import { ListRow, SettingsContent, SettingsGroup } from './primitives'
 
 const CAPTION = 'text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)'
 
@@ -69,83 +69,84 @@ export function NotificationsSettings() {
 
   return (
     <SettingsContent>
-      <SectionHeading icon={Bell} title={copy.title} />
-      <Caption className="mb-2 leading-(--conversation-caption-line-height)">{copy.intro}</Caption>
-
-      <ToggleRow
-        checked={prefs.enabled}
-        description={copy.enableAllDesc}
-        label={copy.enableAll}
-        onChange={setNativeNotifyEnabled}
-      />
-
-      {NATIVE_NOTIFICATION_KINDS.map(kind => (
+      {/* 一组一张卡（用户 11-02 拍「外壳 + 设置」，形状照 Qoder 实测）：抬头那一行是
+          组名 + 一句说明，卡里行与行之间虚线分隔，末行不带。 */}
+      <SettingsGroup description={copy.intro} title={copy.title}>
         <ToggleRow
-          checked={prefs.enabled && prefs.kinds[kind]}
-          description={copy.kinds[kind].description}
-          disabled={!prefs.enabled}
-          key={kind}
-          label={copy.kinds[kind].label}
-          onChange={on => setNativeNotifyKind(kind, on)}
+          checked={prefs.enabled}
+          description={copy.enableAllDesc}
+          label={copy.enableAll}
+          onChange={setNativeNotifyEnabled}
         />
-      ))}
 
-      <ListRow
-        action={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Select
-              onValueChange={value => {
-                const variantId = Number.parseInt(value, 10)
+        {NATIVE_NOTIFICATION_KINDS.map(kind => (
+          <ToggleRow
+            checked={prefs.enabled && prefs.kinds[kind]}
+            description={copy.kinds[kind].description}
+            disabled={!prefs.enabled}
+            key={kind}
+            label={copy.kinds[kind].label}
+            onChange={on => setNativeNotifyKind(kind, on)}
+          />
+        ))}
 
-                setCompletionSoundVariantId(variantId)
-                previewCompletionSound(variantId)
-                triggerHaptic('selection')
-              }}
-              value={String(completionSoundVariantId)}
-            >
-              <SelectTrigger className={cn('min-w-56', CONTROL_TEXT)}>
-                <SelectValue />
-              </SelectTrigger>
+        <ListRow
+          action={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Select
+                onValueChange={value => {
+                  const variantId = Number.parseInt(value, 10)
 
-              <SelectContent>
-                {COMPLETION_SOUND_VARIANTS.map(variant => (
-                  <SelectItem key={variant.id} value={String(variant.id)}>
-                    {variant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  setCompletionSoundVariantId(variantId)
+                  previewCompletionSound(variantId)
+                  triggerHaptic('selection')
+                }}
+                value={String(completionSoundVariantId)}
+              >
+                <SelectTrigger className={cn('min-w-56', CONTROL_TEXT)}>
+                  <SelectValue />
+                </SelectTrigger>
 
-            <Button
-              className="gap-1.5"
-              onClick={() => {
-                previewCompletionSound()
-                triggerHaptic('crisp')
-              }}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Play className="size-3.5" />
-              {copy.completionSoundPreview}
-            </Button>
-          </div>
-        }
-        description={copy.completionSoundDesc}
-        title={copy.completionSoundTitle}
-      />
+                <SelectContent>
+                  {COMPLETION_SOUND_VARIANTS.map(variant => (
+                    <SelectItem key={variant.id} value={String(variant.id)}>
+                      {variant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-      {/* 触感这一格原来住在左上角那条图标条里，11-02 拍「底部只留六枚」后搬到这里；
-          组件与它的判据在 haptics-row.tsx，这一屏只负责挂。 */}
-      <HapticsRow />
+              <Button
+                className="gap-1.5"
+                onClick={() => {
+                  previewCompletionSound()
+                  triggerHaptic('crisp')
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Play className="size-3.5" />
+                {copy.completionSoundPreview}
+              </Button>
+            </div>
+          }
+          description={copy.completionSoundDesc}
+          title={copy.completionSoundTitle}
+        />
 
-      <div className="mt-4 flex flex-col gap-2">
-        <Button className="self-start" onClick={() => void runTest()} size="sm" type="button" variant="outline">
-          <Bell />
-          {copy.test}
-        </Button>
-        <Caption>{copy.focusedHint}</Caption>
-      </div>
+        {/* 触感这一格原来住在左上角那条图标条里，11-02 拍「底部只留六枚」后搬到这里；
+            组件与它的判据在 haptics-row.tsx，这一屏只负责挂。 */}
+        <HapticsRow />
+
+        <div className="flex flex-col gap-2 py-[var(--dl-row-pad-y)]">
+          <Button className="self-start" onClick={() => void runTest()} size="sm" type="button" variant="outline">
+            <Bell />
+            {copy.test}
+          </Button>
+          <Caption>{copy.focusedHint}</Caption>
+        </div>
+      </SettingsGroup>
     </SettingsContent>
   )
 }
