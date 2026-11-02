@@ -48,20 +48,23 @@ export function SettingsGroup({
   action?: ReactNode
   children: ReactNode
   description?: ReactNode
-  title: ReactNode
+  /** 不给组名就只剩一张卡（有些屏本来就没有第二个组名可叫）。 */
+  title?: ReactNode
 }) {
   const caption = 'text-[length:var(--conversation-caption-font-size)] leading-[var(--dl-leading-row-desc)]'
 
   return (
     <section className="mt-5 first:mt-0">
-      <header className="flex min-h-11 items-end justify-between gap-3 px-1">
-        <div className="min-w-0">
-          <h2 className={cn('truncate font-normal text-(--ui-text-tertiary)', caption)}>{title}</h2>
-          {description && <p className={cn('mt-0.5 text-(--ui-text-tertiary)', caption)}>{description}</p>}
-        </div>
-        {action && <div className="shrink-0">{action}</div>}
-      </header>
-      <div className="dl-card mt-2 px-4">
+      {(title || description || action) && (
+        <header className="flex min-h-11 items-end justify-between gap-3 px-1">
+          <div className="min-w-0">
+            {title && <h2 className={cn('truncate font-normal text-(--ui-text-tertiary)', caption)}>{title}</h2>}
+            {description && <p className={cn('mt-0.5 text-(--ui-text-tertiary)', caption)}>{description}</p>}
+          </div>
+          {action && <div className="shrink-0">{action}</div>}
+        </header>
+      )}
+      <div className={cn('dl-card px-4', (title || description || action) && 'mt-2')}>
         <div className="flex flex-col [&>*+*]:border-t [&>*+*]:border-dashed [&>*+*]:border-(--ui-stroke-tertiary)">
           {children}
         </div>
