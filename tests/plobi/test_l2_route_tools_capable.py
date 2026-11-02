@@ -23,8 +23,11 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "aigw"))
 
 from aigw.registry import PROVIDER_CLASSES  # noqa: E402
-from plobi.agents.registry import WORKBUDDY_PREFIX  # noqa: E402
 
+#: 这条腿的前缀就写在这里，不再从 ``plobi.agents.registry`` 借：那个常量当初只服务
+#: 早报那条路（``pick_workbuddy_model``），随裁定 183 一起退役了。本档钉的是
+#: **网关那份 config.yaml** 的形状，值属于这份契约。
+WORKBUDDY_PREFIX = "workbuddy/"
 _KEY = WORKBUDDY_PREFIX.strip("/")
 
 

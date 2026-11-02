@@ -66,7 +66,8 @@ def test_memory_survives_the_reset_branch_as_an_extra():
 
 def test_mid_narrow_still_drops_terminal_session_search_code_execution_computer_use():
     """这四件仍是**默认不给**（不是「不许有」）：没勾就剥掉；用户真勾了由
-    ``_explicit_toolset_optins`` 那条路活着——见 tests/plobi/test_master_tools.py。"""
+    ``_explicit_toolset_optins`` 那条路活着——见
+    ``plobi/agents/registry.py::_explicit_toolset_optins``。"""
     from plobi.agents.registry import mid_narrow_toolset_names
 
     for forbidden in ("terminal", "session_search", "code_execution", "computer_use"):

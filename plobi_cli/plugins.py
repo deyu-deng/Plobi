@@ -2465,9 +2465,20 @@ def get_plugin_toolsets() -> List[tuple]:
     for ts_key in sorted(toolset_tools):
         plugin = toolset_plugin.get(ts_key)
         label = f"🔌 {ts_key.replace('_', ' ').title()}"
-        if plugin and plugin.manifest.description:
+        # 这一格的简介先问 ``toolsets.py`` 里这个 toolset 自己那句——插件清单的
+        # 简介是**整包**的（plobi-north-star 一句 "runtime: Master helpers…"），
+        # 拿它填每一格会让 ``channel`` / ``edge`` / ``ops`` 长成一模一样，面板上
+        # 就再也读不出「这一格现在是什么」。清单只在 toolset 自己没有描述时兜底。
+        desc = ""
+        try:
+            from toolsets import TOOLSETS as _TOOLSETS
+
+            desc = str((_TOOLSETS.get(ts_key) or {}).get("description") or "").strip()
+        except Exception:
+            desc = ""
+        if not desc and plugin and plugin.manifest.description:
             desc = plugin.manifest.description
-        else:
+        if not desc:
             desc = ", ".join(sorted(toolset_tools[ts_key]))
         result.append((ts_key, label, desc))
 

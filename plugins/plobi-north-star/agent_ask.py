@@ -38,11 +38,12 @@ proves in production, not a new mechanism:
   survives. The child is always reaped — a busy or wedged one is killed
   together with its process group, never left running.
 
-Footprint: registered by ``plugins/plobi-north-star`` under the
-``plobi_north_star`` toolset and gated by :func:`check_agent_ask_available` —
-the schema only reaches a model when the registry actually has at least one
-live 分身 (Footprint Ladder rung 3). It is **not** in ``_PLOBI_CORE_TOOLS``, so
-only agents whose toolset includes this plugin ever pay for it.
+Footprint: **it is no longer a tool of its own.** 裁定 183 折掉了
+``plobi_agent_ask`` 那枚嘴，只留 ``say`` / ``ask`` 两枚原子——本模块现在是
+``ask`` 的**内壳**：``plugins/plobi-north-star/channel.py::handle_ask`` 判完收件人
+与那一屏会话之后调 :func:`handle_agent_ask` 起子进程，schema 由
+``channel.ASK_SCHEMA`` 下发。所以这里不再有 ``check_fn``、不再注册 toolset，
+也没有任何一条路能让模型直接按名字叫它。
 """
 
 from __future__ import annotations
@@ -65,15 +66,13 @@ from tools.registry import tool_error
 logger = logging.getLogger(__name__)
 
 PLUGIN_KEY = "plobi-north-star"
-ASK_TOOLSET = "plobi_north_star"
 
 #: 「谁能被当面问」的判据**不在这里**——那是名册的事，一份在
 #: ``plobi.agents.registry.agent_askability``（角色 / 归档 / profile 名 / 家在不在
-#: 盘上，四条都是结构性事实）。名单 ``plobi_secretary_ask(intent=project_status)``
-#: 与这张嘴读同一份，才不会出现「名单说有这个人、问到跟前说问不到」（R-072）。
-#: 项目分身之外都不放行：日程 L2 有它自己那张嘴（``plobi_secretary_ask``），
-#: default profile 就是提问的那一个——挡的是**角色**，不是名字，日程秘书不因
-#: 自己是系统自带的就特殊一分（裁定 69）。
+#: 盘上，四条都是结构性事实）。名册那一格与这张嘴读同一份，才不会出现
+#: 「名单说有这个人、问到跟前说问不到」（R-072）。
+#: 收件人由 ``channel.resolve_recipient`` 判一次，与 ``say`` 同一份名单；
+#: 挡的是**角色**，不是名字（裁定 69）。
 
 #: Bounded wait for the child. ``timeout_seconds`` is a ``config.yaml`` knob
 #: (``plugins.entries.plobi-north-star.agent_ask.timeout_seconds``) — behavioural
@@ -101,78 +100,6 @@ _ANSWER_MAX_CHARS = 6000
 _CHILD_TAIL_MAX_CHARS = 800
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
-
-
-# ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
-
-AGENT_ASK_SCHEMA = {
-    "name": "plobi_agent_ask",
-    "description": (
-        "当面问一个项目 / 课程的 L2 Agent 一句话，拿回它本人现在的回答。用户问「某个项目现在怎么样」"
-        "「这件事你手上是什么情况」时用它——别只读硬盘上那份笔记，那只是上次有人写字那一天"
-        "的话，这个 Agent 会自己回答。能问谁看名册：plobi_secretary_ask（intent=project_status）"
-        "回的 roster 就是手下名单，其中 askable 那几行现在问得到；一次问一个 Agent，"
-        "要问几个项目就分别问几次。项目名照用户说的那样填就行（大小写、显示名都认），"
-        "问题尽量用他的原话，不要替他改写。这次问答会留在被问的那个 Agent 自己的会话记录里，"
-        "回答同时带回它的会话号，方便事后回看。"
-        "问不到（名字不对、已经归档、家还没在这台机器上落地、它答不上来、超时）会明确回错，"
-        "并列出现在能问的项目名——照实说那一句原因，不要拿笔记冒充 Agent 的回答，"
-        "也不要换个名字硬试或转去问日程秘书。"
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "agent": {
-                "type": "string",
-                "description": "要问的那个项目 / 课程的 L2 Agent 的名字。",
-            },
-            "question": {
-                "type": "string",
-                "description": "要问它的话；尽量用用户的原话，不要替他改写。",
-            },
-        },
-        "required": ["agent", "question"],
-    },
-}
-
-
-# ---------------------------------------------------------------------------
-# Service gate (Footprint Ladder rung 3 — zero schema footprint otherwise)
-# ---------------------------------------------------------------------------
-
-
-def has_askable_agents() -> bool:
-    """True when the registry holds at least one live project 分身."""
-    try:
-        return bool(askable_entries())
-    except Exception:  # an unreadable projects.yaml must not advertise the tool
-        logger.debug("plobi_agent_ask: registry probe failed", exc_info=True)
-        return False
-
-
-def check_agent_ask_available() -> bool:
-    """``check_fn`` — the secretary only sees the tool when it can use it.
-
-    Two cheap conditions: this profile already opted into the plugin (same gate
-    as ``plobi_secretary_ask``, so dispatcher-spawned workers stay out), *and*
-    there is somebody to ask.
-    """
-    if not _master_mode_enabled():
-        return False
-    return has_askable_agents()
-
-
-def _master_mode_enabled() -> bool:
-    """Reuse this plugin's own service gate rather than restating it."""
-    try:
-        from . import master_tools as _mt
-
-        return bool(_mt.check_plobi_master_mode())
-    except Exception:  # pragma: no cover - defensive
-        logger.debug("plobi_agent_ask: master-mode gate unavailable", exc_info=True)
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -333,26 +260,6 @@ def askable_entries(registry=None) -> list:
 
     reg = registry if registry is not None else _load_registry()
     return [entry for entry in reg.entries() if is_askable_agent(entry)]
-
-
-def unaskable_project_entries(registry=None) -> list:
-    """名册里那些**项目分身但此刻问不到**的行：``[(entry, 原因), …]``。
-
-    就是名单里 ``askable=false`` 的那几行（角色是项目、没归档，却缺家 / profile 名
-    建不出来）。拒答时把它们点出来，秘书看到的是「名单里有这个人，但它现在问不到，
-    因为……」——不是「查无此人」，也不用换个名字再试一次。
-    """
-    from plobi.agents.registry import ASKABLE_ROLE, agent_askability
-
-    reg = registry if registry is not None else _load_registry()
-    found = []
-    for entry in reg.entries():
-        if entry.archived or entry.role != ASKABLE_ROLE:
-            continue
-        askable, reason = agent_askability(entry)
-        if not askable:
-            found.append((entry, reason))
-    return found
 
 
 def _available_names(entries) -> list[str]:

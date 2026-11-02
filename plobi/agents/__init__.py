@@ -9,7 +9,6 @@ from .registry import (
     AgentRegistry,
     default_path,
     load_registry,
-    run_secretary_ask,
 )
 
 __all__ = [
@@ -17,5 +16,4 @@ __all__ = [
     "AgentRegistry",
     "default_path",
     "load_registry",
-    "run_secretary_ask",
 ]

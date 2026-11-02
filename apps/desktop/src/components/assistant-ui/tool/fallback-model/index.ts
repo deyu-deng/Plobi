@@ -38,7 +38,12 @@ export function isFileEditTool(toolName: string): boolean {
   return FILE_EDIT_TOOL_NAMES.has(toolName)
 }
 
-/** L1 silent-dispatch tool (MVP §8.2 C3). Keep this list tight — kanban tools stay generic. */
+/**
+ * 历史转录渲染：`plobi_secretary_ask` 是**裁定 183 之前**那枚嘴（2026-10-19 起
+ * 由 `say` / `ask` 取代，模型再也调不到它）。这里留着是因为**旧会话还在库里**——
+ * 转录要把当时那张派工卡原样画出来，删了它等于把历史聊天的这一段变成一行
+ * 无名的工具调用。所以它只认历史名字，不是活工具的特判：**新工具不要往这里加**。
+ */
 export function isSecretaryDispatchTool(name: string): boolean {
   return name === 'plobi_secretary_ask' || name === 'secretary_ask'
 }

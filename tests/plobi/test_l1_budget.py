@@ -58,7 +58,7 @@ def _load_l1_budget():
 
     ``l1_budget.py`` is a leaf module (only stdlib imports) so we don't have
     to spin up the full plugin package — which would pull in
-    ``hard_route`` / ``tools`` / ``master_tools`` and fail in tests where
+    ``hard_route`` / ``tools`` / ``channel`` and fail in tests where
     the rest of the plugin isn't on sys.path.
     """
     name = "plobi_plugins.plobi_north_star.l1_budget"
@@ -535,7 +535,7 @@ class TestApplyL1BudgetEveryTurn:
         agent = _FakeAgent(
             profile="default",
             enabled_toolsets={"plobi_north_star", "memory"},
-            valid_tool_names={"plobi_secretary_ask"},
+            valid_tool_names={"ask"},
             compressor=compressor,
         )
         # 模拟桌面续聊：history 非空
@@ -568,7 +568,7 @@ class TestApplyL1BudgetEveryTurn:
         agent = _FakeAgent(
             profile="default",
             enabled_toolsets={"plobi_north_star"},
-            valid_tool_names={"plobi_secretary_ask"},
+            valid_tool_names={"ask"},
             compressor=compressor,
         )
 
@@ -611,7 +611,7 @@ class TestApplyL1BudgetEveryTurn:
         agent = _FakeAgent(
             profile="default",
             enabled_toolsets={"plobi_north_star", "memory"},
-            valid_tool_names={"plobi_secretary_ask"},
+            valid_tool_names={"ask"},
             compressor=compressor,
         )
 
@@ -654,7 +654,7 @@ class TestRestoreOrBuildCallsApply:
         agent = _FakeAgent(
             profile="default",
             enabled_toolsets={"plobi_north_star"},
-            valid_tool_names={"plobi_secretary_ask"},
+            valid_tool_names={"ask"},
             compressor=compressor,
         )
         recorded["continuation"] += 1
@@ -663,7 +663,7 @@ class TestRestoreOrBuildCallsApply:
         agent2 = _FakeAgent(
             profile="default",
             enabled_toolsets={"plobi_north_star"},
-            valid_tool_names={"plobi_secretary_ask"},
+            valid_tool_names={"ask"},
             compressor=_FakeCompressor(context_length=128_000),
         )
         recorded["init_agent"] += 1

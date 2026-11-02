@@ -164,14 +164,14 @@ def test_register_deep_tool_and_secretary_surface(ns):
             return None
 
     ns.register(Ctx())
-    # Relationship, not a snapshot: the deep tool ships first, and everything
-    # the plugin declares in ``_CHANNEL_TOOLS`` gets registered after it, in
-    # order. A literal list drifts the moment the family changes.
-    assert registered[0] == "plobi"
-    assert registered[1:] == [name for name, *_rest in ns._CHANNEL_TOOLS]
-    # 裁 183：Agent 之间的嘴只剩这两枚原子。带 intent/action 枚举的那 7 枚
-    # （plobi_secretary_ask 等）全删了——少一枚就是产品退步。
-    assert registered[1:] == ["say", "ask"], registered[1:]
+    # 裁 183：Agent 之间的嘴只剩这两枚原子（say / ask），带 intent/action 枚举的
+    # 那 7 枚全删了。深工具 ``plobi`` 更早就在 WP-TOOLSET-INBOUND-2 拆成了门类
+    # 工具（``task_*`` / ``edge_*`` / ``ops_*`` / ``learn_*``），所以注册面里
+    # 不该再有它——这条以前钉着 "registered[0] == 'plobi'"，是那个工具拆掉之后
+    # 没跟着改的旧账。
+    assert registered[:2] == ["say", "ask"], registered
+    assert "plobi" not in registered, registered
+    assert registered[2:] == [name for name, *_rest in ns._DOMAIN_TOOLS]
 
 
 def test_boot_get_north_star(tmp_home):

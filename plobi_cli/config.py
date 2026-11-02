@@ -1187,15 +1187,9 @@ DEFAULT_CONFIG = {
         # provider hiccups on a single provider.
         "api_max_retries": 3,
         "service_tier": "",
-        # WP-L1-MOUTH-SWITCH (裁定 78) — does L1 总秘书 get the 派工-family mouths:
-        # ``plobi_master_status`` / ``plobi_master_preview`` / ``plobi_master_dispatch``
-        # / ``plobi_master_approve``, plus the deep ``plobi`` tool. Off by default, which
-        # preserves what 裁定 33.4 actually decided (L1's first action is
-        # ``plobi_secretary_ask``) without expressing it as an unconditional
-        # ``return False`` inside the plugin: switching these mouths on is a user choice
-        # in the product, not an edit under ``plugins/plobi-north-star/``. Read by
-        # ``plugins/plobi-north-star/master_tools.py::check_plobi_l1_master_tools``.
-        "l1_master_tools_enabled": False,
+        # （原 ``l1_master_tools_enabled`` 随裁定 183 一起退役：它开的那五枚嘴
+        # ——``plobi_master_*`` 与深工具 ``plobi``——已经不存在，开关留着只会
+        # 让人以为勾了能开什么。老 config.yaml 里那一格仍在，读侧不再认它。）
         # Tool-use enforcement: injects system prompt guidance that tells the
         # model to actually call tools instead of describing intended actions.
         # Values: "auto" (default — applies to gpt/codex models), true/false

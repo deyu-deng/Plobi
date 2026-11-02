@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -304,71 +303,3 @@ def test_proposal_rejects_unknown_project(env):
             )
     finally:
         conn.close()
-
-
-# ── C6b：L1 窄工具 plobi_checkin_respond ────────────────────────────────────
-
-
-def _load_master_tools():
-    """插件目录带连字符，按文件路径加载（沿用 test_master_tools.py 的做法）。"""
-    import importlib.util
-
-    path = (
-        Path(__file__).resolve().parents[2]
-        / "plugins" / "plobi-north-star" / "master_tools.py"
-    )
-    spec = importlib.util.spec_from_file_location("plobi_master_tools_c6", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-MT = _load_master_tools()
-
-
-def test_checkin_respond_creates_proposal_card_only(env):
-    db = env
-    out = json.loads(MT.handle_checkin_respond({
-        "pace_updates": [{"project_id": "simulation", "weekly_hours": 9}]
-    }))
-    assert out["ok"] is True, out
-    assert out["confirm_seq"]
-    assert "确认" in out["note"]
-
-    # R3：提案未确认前配置不动
-    registry = AgentRegistry.load(env.parent / "projects.yaml")
-    assert registry.get("simulation").weekly_hours == 6.0
-
-    from plobi.agenda.service import AgendaService
-
-    AgendaService(db_path=db).resolve_by_seq(out["confirm_seq"], accept=True)
-    registry = AgentRegistry.load(env.parent / "projects.yaml")
-    assert registry.get("simulation").weekly_hours == 9.0
-
-
-def test_checkin_respond_rejects_bad_input(env):
-    assert json.loads(MT.handle_checkin_respond({}))["ok"] is False
-    assert json.loads(MT.handle_checkin_respond({"pace_updates": "oops"}))["ok"] is False
-    out = json.loads(MT.handle_checkin_respond(
-        {"pace_updates": [{"project_id": "nope", "weekly_hours": 5}]}
-    ))
-    assert out["ok"] is False
-
-
-def test_checkin_respond_free_text_only_archives(env, monkeypatch):
-    calls = []
-
-    class _W:
-        available = True
-
-        def write_one(self, rel, content, *, mode="overwrite"):
-            calls.append((rel, mode))
-            from plobi.mind.writer import WriteResult
-
-            return WriteResult(ok=True, written=[rel], skipped=[])
-
-    monkeypatch.setattr("plobi.mind.get_writer", lambda: _W())
-    out = json.loads(MT.handle_checkin_respond({"free_text": "想把睡眠改到 23 点"}))
-    assert out["ok"] is True and out["archived"] is True
-    assert calls and calls[0][1] == "append"
-    assert "checkin-replies.md" in calls[0][0]
