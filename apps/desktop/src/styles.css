@@ -1998,32 +1998,36 @@ text-* variant utilities. */ .btn-arc {
   );
 }
 
-/* 一张卡。主窗口那两张卡、浮层外壳、设置里的分组卡都用这一份几何——
-   同一件事实只写一次，改圆角/阴影只改上面那几枚令牌。 */
-.dl-card {
-  background: var(--dl-card-bg);
-  border: 1px solid var(--dl-card-line);
-  border-radius: var(--dl-shell-radius);
-  /* Chromium 139+；老内核忽略这一行时退回普通圆角，不会坏 */
-  corner-shape: squircle;
-  box-shadow: var(--dl-card-shadow);
-}
+@layer components {
+  /* 这三条放在 components 层：未分层的声明会盖过 Tailwind 全部 utilities，那样卡面上再叠状态色
+     （`border-primary/30 bg-primary/5` 那一类）就被押死了。放进层里，工具类才翻得动。 */
+  /* 一张卡。主窗口那两张卡、浮层外壳、设置里的分组卡都用这一份几何——
+     同一件事实只写一次，改圆角/阴影只改上面那几枚令牌。 */
+  .dl-card {
+    background: var(--dl-card-bg);
+    border: 1px solid var(--dl-card-line);
+    border-radius: var(--dl-shell-radius);
+    /* Chromium 139+；老内核忽略这一行时退回普通圆角，不会坏 */
+    corner-shape: squircle;
+    box-shadow: var(--dl-card-shadow);
+  }
 
-/* 小控件（导航条目、分组抬头里的按钮）那层的 squircle：Tailwind 的 rounded-*
-   只能给半径，`corner-shape` 得自己写。老内核忽略这行照样是圆角，不坏。 */
-.dl-squircle {
-  corner-shape: squircle;
-}
+  /* 小控件（导航条目、分组抬头里的按钮）那层的 squircle：Tailwind 的 rounded-*
+     只能给半径，`corner-shape` 得自己写。老内核忽略这行照样是圆角，不坏。 */
+  .dl-squircle {
+    corner-shape: squircle;
+  }
 
-/* 一张"页"：浮层外壳那一层。它比卡**暗一档**——Qoder 那两张截图里"一张一张卡片"读得出来，
-   靠的不是描边，是三级表面：画布（雾）→ 页（浅灰）→ 卡（白）。我们以前浮层外壳和分组卡
-   都吃同一张白底，卡就"浮"不起来，只剩一条发丝边。 */
-.dl-sheet {
-  background: var(--dl-page-bg);
-  border: 1px solid var(--dl-card-line);
-  border-radius: var(--dl-shell-radius);
-  corner-shape: squircle;
-  box-shadow: var(--dl-card-shadow);
+  /* 一张"页"：浮层外壳那一层。它比卡**暗一档**——Qoder 那两张截图里"一张一张卡片"读得出来，
+     靠的不是描边，是三级表面：画布（雾）→ 页（浅灰）→ 卡（白）。我们以前浮层外壳和分组卡
+     都吃同一张白底，卡就"浮"不起来，只剩一条发丝边。 */
+  .dl-sheet {
+    background: var(--dl-page-bg);
+    border: 1px solid var(--dl-card-line);
+    border-radius: var(--dl-shell-radius);
+    corner-shape: squircle;
+    box-shadow: var(--dl-card-shadow);
+  }
 }
 
 .shell-cards {

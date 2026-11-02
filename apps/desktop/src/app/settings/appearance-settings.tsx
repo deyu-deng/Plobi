@@ -27,7 +27,7 @@ import { $marketplaceInstalls, isUserTheme, removeUserTheme } from '@/themes/use
 import { MODE_OPTIONS } from './constants'
 import { KeybindsRow } from './keybinds-row'
 import { PetSettings } from './pet-settings'
-import { ListRow, SectionHeading, SettingsContent } from './primitives'
+import { ListRow, SettingsContent, SettingsGroup } from './primitives'
 
 function ThemePreview({ name, mode }: { name: string; mode: 'light' | 'dark' }) {
   // Preview in the *current* mode: the dark palette in Dark, and the light
@@ -301,13 +301,10 @@ export function AppearanceSettings() {
 
   return (
     <SettingsContent>
-      <div>
-        <SectionHeading icon={Palette} title={a.title} />
-        <p className="max-w-2xl text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-          {a.intro}
-        </p>
-
-        <div className="mt-2">
+      {/* 一屏一张卡一组（用户 11-02 那两张 Qoder 截图照出来的约定）：组名在卡**上方**，
+          卡里行与行之间虚线分隔。原来这里是「图标 + 中黑体标题 + 一句说明 + 平铺的行」。 */}
+      <SettingsGroup description={a.intro} title={a.title}>
+        <div>
           <ListRow
             action={<Switch checked={shellCards} onCheckedChange={setShellCards} />}
             description={a.shellCardsHint}
@@ -509,7 +506,7 @@ export function AppearanceSettings() {
             title={a.embedsTitle}
           />
         </div>
-      </div>
+      </SettingsGroup>
 
       <div className="mt-6">
         <PetSettings />

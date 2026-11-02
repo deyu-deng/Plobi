@@ -110,7 +110,8 @@ export function AboutSettings() {
 
         <div
           className={cn(
-            'rounded-xl border px-4 py-3 text-sm',
+            // 卡面几何不在这里各写一套：`.dl-card` 一份，状态色只改边与底。
+            'dl-card px-4 py-3 text-sm',
             statusTone === 'available' && 'border-primary/30 bg-primary/5 text-foreground',
             statusTone === 'error' && 'border-destructive/35 bg-destructive/5 text-destructive',
             statusTone === 'idle' && 'border-border/70 bg-muted/20 text-foreground'
