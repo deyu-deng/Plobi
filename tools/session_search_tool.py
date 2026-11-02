@@ -172,6 +172,19 @@ def _resolve_profile_db(profile: str):
     return None
 
 
+def _current_identity_name(profile: str) -> str:
+    """改过名的旧写法 → 现名（``@session:<旧名>/<id>`` 是历史链接，不能查无此人）。
+
+    别名表只服务于**解析**，不参与存在性判据（裁定 192：判据只问名册那一行）。
+    """
+    try:
+        from plobi.agents.identity_aliases import resolve_identity_alias
+
+        return resolve_identity_alias(str(profile or "").strip()) or profile
+    except Exception:
+        return profile
+
+
 def _locate_session_db(session_id: str):
     """Scan every profile's ``state.db`` (read-only) for a session id.
 
@@ -680,6 +693,7 @@ def session_search(
     # shape below. The current-session-lineage guards no longer apply across
     # profiles, but they key off ids that won't collide, so they stay inert.
     if profile is not None and str(profile).strip():
+        profile = _current_identity_name(profile)
         try:
             profile_db = _resolve_profile_db(profile)
         except Exception as e:

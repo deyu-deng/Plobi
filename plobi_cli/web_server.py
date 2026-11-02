@@ -13269,6 +13269,8 @@ class ProfileCreate(BaseModel):
 
 class ProfileRename(BaseModel):
     new_name: str
+    #: 只看「这次改名会动哪几处」，一个盘都不碰（改名是十几次落盘动作，先给人看一眼）。
+    dry_run: bool = False
 
 
 class ProfileSoulUpdate(BaseModel):
@@ -13790,12 +13792,17 @@ async def open_profile_terminal_endpoint(name: str):
 @app.patch("/api/profiles/{name}")
 async def rename_profile_endpoint(name: str, body: ProfileRename):
     # 10-27 改名册语义（用户拍板）：改的是**名册那一行的键**，不是家目录。
+    # 11-02 全链（WP-AGENT-RENAME-FULL-CHAIN）：一次改名要跟着走十几处归属，
+    # 所以这里给一个 dry_run——先看清单，再动手。
     from plobi_cli import profiles as profiles_mod
     try:
+        if body.dry_run:
+            return profiles_mod.preview_identity_rename(name, body.new_name)
         new_name = profiles_mod.rename_identity(name, body.new_name)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except (ValueError, FileExistsError) as e:
+    except (ValueError, FileExistsError, RuntimeError) as e:
+        # RuntimeError = 执行到某一步失败、已经动过的都退回去了（不是服务器坏了）。
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         _log.exception("PATCH /api/profiles/%s failed", name)

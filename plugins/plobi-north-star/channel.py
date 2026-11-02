@@ -144,6 +144,13 @@ def resolve_recipient(name: str):
     name = (name or "").strip()
     if not name:
         return None, "没说要发给谁（`to` 不能空）。"
+    # 改过名的旧写法照样找得到人：别名表只服务于解析，不参与存在性判据（裁 192）。
+    try:
+        from plobi.agents.identity_aliases import resolve_identity_alias
+
+        name = resolve_identity_alias(name) or name
+    except Exception:  # noqa: BLE001 - 别名表读不到就按原样找，别把说话这条路堵死
+        pass
     try:
         registry = _roster()
     except Exception as exc:  # noqa: BLE001 - 名册读不动 ≠ 可以匿名发

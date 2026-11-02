@@ -1266,19 +1266,178 @@ def export_identity(name: str, output_path: str) -> Path:
     return Path(result)
 
 
-def rename_identity(old_name: str, new_name: str) -> str:
-    """改名册那一行（名册 name ＝ 身份），连同它在共享层的那几份产物。
+def rename_identity(old_name: str, new_name: str, *, dry_run: bool = False):
+    """改名册那一行（名册 name ＝ 身份），**全链跟到**。
 
-    改名的连带三样：身份文件（``souls/<名册 name>.md``）、它那一份排程存储
-    （``cron/agents/<名册 name>/``）、以及总账里那些会话的 ``agent_id``
-    ——不改最后一样，这一行的会话历史会掉队（总账是单库，归属键就是名册 name）。
+    名册那一行的 ``name`` 同时被十几处当钥匙用：身份文件、它那一份排程、总账的
+    ``sessions.agent_id``、记忆那份目录、信任账的 ``scope::<agent>`` 键、删除台账、
+    笔记的 ``belongs:``、外部会话那份索引、看板上的归属、``config.yaml`` 里那两个
+    看板默认值、Mind 那棵子树。以前这里只搬三样，剩下的仍按旧名躺在盘上——最坏的一处
+    是看板：调度器认不出旧 assignee，就把卡**静默**停在 ``ready`` 不出声。
 
-    ``profile_name``（旧家目录名）**不动**：它现在只是这一行的别名，改它会让旧写法失效。
+    两段式：:func:`plan_identity_rename` 纯算计划（不碰盘），:func:`apply_identity_rename`
+    逐步执行、任何一步失败就把已动的原路退回、并留一份 journal。判据全文在
+    ``Docs/tasks/wp-agent-rename-full-chain-task.md`` §1。
+
+    ``profile_name``（旧家目录名）**不动**：它现在只是这一行的别名；旧写法由别名表
+    兜住（``plobi/agents/identity_aliases.py``），不参与任何存在性判据。
+
+    ``dry_run=True`` 只回「要动哪几处」的清单，一个盘都不碰。
     """
-    from dataclasses import replace
+    info, steps = plan_identity_rename(old_name, new_name)
+    result = apply_identity_rename(info, steps, dry_run=dry_run)
+    if dry_run:
+        return result
+    return result["new"]
 
+
+# ── 身份改名的计划与执行（WP-AGENT-RENAME-FULL-CHAIN）───────────────────────
+
+_RENAME_JOURNAL_DIR = "renames"
+#: ``config.yaml`` 里按身份名存的那两格。
+_RENAME_CONFIG_KEYS = ("kanban.default_assignee", "kanban.orchestrator_profile")
+#: 看板里存身份名的三列。事件流水（``task_events``）按**历史事实**保留旧名，不改写。
+_RENAME_KANBAN_COLUMNS = (
+    ("tasks", "assignee"),
+    ("task_runs", "profile"),
+    ("kanban_notify_subs", "notifier_profile"),
+)
+
+
+def _memory_agent_dir(agent_name: str) -> Path:
+    """那个人自己的记忆目录（键＝记忆那颗 slug，不是名册 name）。"""
+    from tools.memory_tool import get_memory_dir, resolve_agent_slug
+
+    return get_memory_dir() / "agents" / resolve_agent_slug(agent_name)
+
+
+def _state_db_path() -> Optional[Path]:
+    """总账那份库（问 ``plobi_state`` 自己，不在这儿复算落点）。"""
+    try:
+        from plobi_state import get_plobi_state_home
+
+        return get_plobi_state_home() / "state.db"
+    except Exception:
+        return None
+
+
+def _deletions_path() -> Optional[Path]:
+    try:
+        from tools.memory_tool import get_memory_dir
+
+        return get_memory_dir() / "deletions.jsonl"
+    except Exception:
+        return None
+
+
+def _trust_ledger_path() -> Optional[Path]:
+    try:
+        from plobi.mind.proposal import default_ledger_path
+
+        return default_ledger_path()
+    except Exception:
+        return None
+
+
+def _external_sessions_index_path() -> Optional[Path]:
+    try:
+        from plobi.delegation.external_sessions import index_file
+
+        return index_file()
+    except Exception:
+        return None
+
+
+def _trust_pairs_for(path: Path, old_key: str, new_key: str) -> List[list]:
+    """信任账里属于这个人的那几格（键形如 ``<作用域>::<名字>``）→ 换键对。
+
+    键的形状真源在 ``tools/memory_tool._l0_trust_category``，这里只按**后缀**认，
+    不复制那份格式，免得两处各写一套。
+    """
+    suffix = f"::{old_key}"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return [
+        [key, key[: len(key) - len(old_key)] + new_key]
+        for key in payload
+        if isinstance(key, str) and key.endswith(suffix)
+    ]
+
+
+def _mind_subtree_dir(subtree: str) -> Optional[Path]:
+    """名册行上那棵子树的**物理**目录（逻辑路径 ``Vault/<类>/<名>`` 解析过来）。"""
+    if not (subtree or "").strip():
+        return None
+    try:
+        from plobi.mind.paths import real_target
+
+        return real_target(subtree)
+    except Exception:
+        return None
+
+
+def _kanban_db_path() -> Optional[Path]:
+    candidate = _get_default_plobi_home() / "kanban.db"
+    return candidate if candidate.is_file() else None
+
+
+def _kanban_running_count(agent_name: str) -> int:
+    """这个人名下还有几张卡在跑（跑动中改 assignee 会让那一趟落不到人）。"""
+    db = _kanban_db_path()
+    if db is None:
+        return 0
+    try:
+        import sqlite3
+
+        conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=10)
+        try:
+            return int(
+                conn.execute(
+                    "select count(*) from tasks where assignee = ? and status = 'running'",
+                    (agent_name,),
+                ).fetchone()[0]
+            )
+        finally:
+            conn.close()
+    except Exception:
+        return 0
+
+
+def _markdown_with_belongs(roots: List[Path], old_name: str) -> List[Path]:
+    """``belongs:`` 那一行写着旧名的笔记（只认前 40 行里的 frontmatter，不碰正文）。"""
+    hits: List[Path] = []
+    needle = (old_name or "").strip()
+    if not needle:
+        return hits
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.md")):
+            try:
+                if not path.is_file() or path.stat().st_size > 200_000:
+                    continue
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for line in text.splitlines()[:40]:
+                if line.strip().startswith("belongs:") and needle in line:
+                    hits.append(path)
+                    break
+    return hits
+
+
+def plan_identity_rename(old_name: str, new_name: str) -> Tuple[dict, List[dict]]:
+    """算出「这次改名要动哪几处」。**不碰盘**——dry-run 与执行共用这一份计划。
+
+    校验全在这儿（撞名／空／``default``／系统自带那两行／还在跑的卡），所以 dry-run
+    报出来的就是真会做的事，不会"看着能改、一执行就炸"。
+    """
     old_canon = normalize_profile_name(old_name)
-    # 键＝名册 name ＝ 身份：**保留用户写的大小写**（``Aura`` 与 ``aura`` 是两样东西：
+    # 键＝名册 name＝身份：**保留用户写的大小写**（``Aura`` 与 ``aura`` 是两样东西：
     # 身份文件 ``souls/Aura.md`` 与总账里的 ``agent_id`` 都按原样记）。
     new_key = str(new_name or "").strip()
     if not new_key:
@@ -1291,6 +1450,8 @@ def rename_identity(old_name: str, new_name: str) -> str:
     registry, entry = _roster_row(old_canon)
     if entry is None:
         raise FileNotFoundError(f"Profile '{old_canon}' does not exist.")
+    if entry.role == "l1_secretary" or entry.name == "agenda":
+        raise ValueError("总秘书与日程秘书那两行不改名（系统自带的身份）。")
     for other in registry.entries():
         if other.name != entry.name and other.name.casefold() == new_key.casefold():
             raise ValueError(
@@ -1299,43 +1460,386 @@ def rename_identity(old_name: str, new_name: str) -> str:
     if new_key.casefold() == entry.name.casefold():
         raise FileExistsError(f"Profile '{new_key}' already exists.")
 
-    shared = _get_default_plobi_home()
+    old_key = entry.name
+    running = _kanban_running_count(old_key)
+    if running:
+        raise ValueError(f"「{old_key}」看板上还有 {running} 张卡在跑，等这一趟跑完再改名。")
+
+    home = _get_default_plobi_home()
+    steps: List[dict] = [{"kind": "roster", "old": old_key, "new": new_key}]
+
     old_soul = _shared_soul_path(entry)
     new_soul = _shared_soul_path_for_name(new_key)
     if old_soul.exists():
-        new_soul.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(old_soul), str(new_soul))
-    old_store = shared / "cron" / "agents" / identity_store_key(entry.name)
-    new_store = shared / "cron" / "agents" / identity_store_key(new_key)
-    if old_store.is_dir():
-        new_store.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(old_store), str(new_store))
+        steps.append({"kind": "move-file", "src": str(old_soul), "dst": str(new_soul)})
+        steps.append({"kind": "soul-content", "path": str(new_soul), "new": new_key})
 
-    # 总账里的归属键跟着改名（单库 + agent_id 列，裁 180）
+    old_store = home / "cron" / "agents" / identity_store_key(old_key)
+    new_store = home / "cron" / "agents" / identity_store_key(new_key)
+    if old_store.is_dir():
+        steps.append({"kind": "move-dir", "src": str(old_store), "dst": str(new_store)})
+
+    state_db = _state_db_path()
+    if state_db is not None and state_db.is_file():
+        steps.append(
+            {
+                "kind": "sql-update",
+                "db": str(state_db),
+                "table": "sessions",
+                "column": "agent_id",
+                "old": old_key,
+                "new": new_key,
+            }
+        )
+
+    old_mem = _memory_agent_dir(old_key)
+    new_mem = _memory_agent_dir(new_key)
+    if old_mem.is_dir() and str(old_mem) != str(new_mem):
+        steps.append({"kind": "move-dir", "src": str(old_mem), "dst": str(new_mem)})
+
+    trust = _trust_ledger_path()
+    if trust is not None and trust.is_file():
+        pairs = _trust_pairs_for(trust, old_key, new_key)
+        if pairs:
+            steps.append({"kind": "json-rekey", "file": str(trust), "pairs": pairs})
+
+    deletions = _deletions_path()
+    if deletions is not None and deletions.is_file():
+        steps.append(
+            {
+                "kind": "jsonl-rekey",
+                "file": str(deletions),
+                "field": "agent",
+                "old": old_key,
+                "new": new_key,
+            }
+        )
+
+    ext_index = _external_sessions_index_path()
+    if ext_index is not None and ext_index.is_file():
+        steps.append(
+            {"kind": "json-rekey", "file": str(ext_index), "pairs": [[old_key, new_key]]}
+        )
+
     try:
+        from plobi.mind.paths import real_target
+        from plobi.mind.project_tree import TREE_ROOT_RELATIVES
+
+        note_roots = [real_target(relative) for relative in TREE_ROOT_RELATIVES]
+    except Exception:
+        note_roots = []
+    note_files = _markdown_with_belongs(note_roots, old_key)
+    if note_files:
+        steps.append(
+            {
+                "kind": "md-belongs",
+                "files": [str(p) for p in note_files],
+                "old": old_key,
+                "new": new_key,
+            }
+        )
+
+    board_db = _kanban_db_path()
+    if board_db is not None:
+        for table, column in _RENAME_KANBAN_COLUMNS:
+            steps.append(
+                {
+                    "kind": "sql-update",
+                    "db": str(board_db),
+                    "table": table,
+                    "column": column,
+                    "old": old_key,
+                    "new": new_key,
+                }
+            )
+
+    steps.append({"kind": "config-rekey", "old": old_key, "new": new_key})
+
+    subtree = (entry.mind_subtree or "").strip()
+    if subtree:
+        head, _, _tail = subtree.rpartition("/")
+        new_subtree = f"{head}/{new_key}" if head else new_key
+        src_dir = _mind_subtree_dir(subtree)
+        dst_dir = _mind_subtree_dir(new_subtree)
+        if src_dir is not None and dst_dir is not None and src_dir.exists() and not dst_dir.exists():
+            steps.append({"kind": "move-dir", "src": str(src_dir), "dst": str(dst_dir)})
+        steps.append({"kind": "mind-subtree", "old": subtree, "new": new_subtree})
+
+    steps.append({"kind": "alias", "old": old_key, "new": new_key})
+
+    info = {"old": old_key, "new": new_key, "mind_subtree": subtree}
+    return info, steps
+
+
+def describe_identity_rename_steps(steps: List[dict]) -> List[str]:
+    """给人看的一行一步（dry-run 的输出与 journal 的正文都用它）。"""
+    out: List[str] = []
+    for step in steps:
+        kind = step.get("kind")
+        if kind == "roster":
+            out.append(f"名册那一行：{step['old']} → {step['new']}")
+        elif kind in ("move-file", "move-dir"):
+            what = "身份文件" if kind == "move-file" else "目录"
+            out.append(f"搬{what}：{step['src']} → {step['dst']}")
+        elif kind == "soul-content":
+            out.append(f"身份段按新名重渲染：{step['path']}")
+        elif kind == "sql-update":
+            out.append(
+                f"{os.path.basename(step['db'])}:{step['table']}.{step['column']} "
+                f"里 {step['old']} → {step['new']}"
+            )
+        elif kind == "json-rekey":
+            pairs = "、".join(f"{a}→{b}" for a, b in step["pairs"])
+            out.append(f"{os.path.basename(step['file'])} 换键：{pairs}")
+        elif kind == "jsonl-rekey":
+            out.append(
+                f"{os.path.basename(step['file'])} 里 {step['field']}={step['old']} → {step['new']}"
+            )
+        elif kind == "md-belongs":
+            out.append(f"{len(step['files'])} 篇笔记的 belongs: 换名")
+        elif kind == "config-rekey":
+            out.append("、".join(_RENAME_CONFIG_KEYS) + " 里那两格换名（若正等于旧名）")
+        elif kind == "mind-subtree":
+            out.append(f"Mind 子树那一格：{step['old']} → {step['new']}")
+        elif kind == "alias":
+            out.append(f"记一条别名：旧写法「{step['old']}」照样指向 {step['new']}")
+        else:
+            out.append(str(step))
+    return out
+
+
+def apply_identity_rename(info: dict, steps: List[dict], *, dry_run: bool = False) -> dict:
+    """按计划执行。任何一步失败 ⇒ 已经动过的**原路退回**，名册不留半截状态。"""
+    labels = describe_identity_rename_steps(steps)
+    if dry_run:
+        return {
+            "ok": True,
+            "dryRun": True,
+            "old": info["old"],
+            "new": info["new"],
+            "steps": labels,
+        }
+
+    undo: List[Tuple[str, object]] = []
+    done: List[str] = []
+    failed = "?"
+    try:
+        for index, step in enumerate(steps):
+            failed = labels[index]
+            reverse = _apply_rename_step(step, info)
+            done.append(failed)
+            if reverse is not None:
+                undo.append((failed, reverse))
+    except Exception as exc:
+        for label, reverse in reversed(undo):
+            try:
+                reverse()  # type: ignore[operator]
+            except Exception:
+                pass
+        raise RuntimeError(
+            f"改名失败（停在「{failed}」），已经动过的都退回去了：{exc}"
+        ) from exc
+
+    _write_rename_journal(
+        {
+            "old": info["old"],
+            "new": info["new"],
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "steps": done,
+        }
+    )
+    print(f"✓ Renamed '{info['old']}' → '{info['new']}'（全链 {len(done)} 处）")
+    return {"ok": True, "dryRun": False, "old": info["old"], "new": info["new"], "steps": done}
+
+
+def preview_identity_rename(old_name: str, new_name: str) -> dict:
+    """dry-run：只说「这次会动哪几处」，一个盘都不碰。"""
+    info, steps = plan_identity_rename(old_name, new_name)
+    return apply_identity_rename(info, steps, dry_run=True)
+
+
+def _write_rename_journal(journal: dict) -> None:
+    """留底：``<共享根>/renames/<时刻>-<新名>.json``，记这次改名动了哪几处。"""
+    try:
+        base = _get_default_plobi_home() / _RENAME_JOURNAL_DIR
+        base.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = base / f"{stamp}-{identity_store_key(journal['new'])}.json"
+        path.write_text(json.dumps(journal, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # 留底失败不许把改名本身弄失败（那时改动已经落盘了）
+
+
+def _snapshot_bytes(path: str) -> Optional[bytes]:
+    try:
+        return Path(path).read_bytes()
+    except OSError:
+        return None
+
+
+def _restore_bytes(path: str, blob: Optional[bytes]) -> None:
+    if blob is None:
+        return
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(blob)
+
+
+def _restore_many(pairs: List[Tuple[str, Optional[bytes]]]) -> None:
+    for path, blob in reversed(pairs):
+        _restore_bytes(path, blob)
+
+
+def _apply_rename_step(step: dict, info: dict):
+    """执行一步，返回一个"退回"闭包（没什么可退就给 ``None``）。"""
+    kind = step.get("kind")
+
+    if kind == "roster":
+        from dataclasses import replace
+
+        registry, entry = _roster_row(step["old"])
+        if entry is None:
+            raise FileNotFoundError(f"Profile '{step['old']}' does not exist.")
+        roster_path = str(registry.path)
+        before = _snapshot_bytes(roster_path)
+        subtree = (entry.mind_subtree or "").strip()
+        updates = {"name": step["new"]}
+        if subtree:
+            head, _, _tail = subtree.rpartition("/")
+            updates["mind_subtree"] = f"{head}/{step['new']}" if head else step["new"]
+        registry.agents.pop(entry.name, None)
+        registry.agents[step["new"]] = replace(entry, **updates)
+        registry.save()
+        return lambda: _restore_bytes(roster_path, before)
+
+    if kind in ("move-file", "move-dir"):
+        src, dst = Path(step["src"]), Path(step["dst"])
+        if not src.exists():
+            return None
+        if dst.exists():
+            raise FileExistsError(f"目标已经存在，不覆盖：{dst}")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+
+        def _undo_move() -> None:
+            if dst.exists() and not src.exists():
+                src.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(dst), str(src))
+
+        return _undo_move
+
+    if kind == "soul-content":
+        path = step["path"]
+        before = _snapshot_bytes(path)
+        from plobi.agents.registry import ensure_l2_identity_soul, load_registry
+
+        entry = next(
+            (e for e in load_registry().entries() if e.name == step["new"]), None
+        )
+        if entry is None:
+            return None
+        ensure_l2_identity_soul(entry)
+        return lambda: _restore_bytes(path, before)
+
+    if kind == "sql-update":
         import sqlite3
 
-        from plobi_state import get_plobi_state_home
+        db, table, column = step["db"], step["table"], step["column"]
 
-        db_path = get_plobi_state_home() / "state.db"
-        if db_path.is_file():
-            conn = sqlite3.connect(str(db_path), timeout=10)
+        def _update(from_value: str, to_value: str) -> None:
+            conn = sqlite3.connect(db, timeout=10)
             try:
                 conn.execute(
-                    "UPDATE sessions SET agent_id = ? WHERE agent_id = ?",
-                    (new_key, entry.name),
+                    f"update {table} set {column} = ? where {column} = ?",
+                    (to_value, from_value),
                 )
                 conn.commit()
             finally:
                 conn.close()
-    except Exception:
-        pass
 
-    registry.agents.pop(entry.name, None)
-    registry.agents[new_key] = replace(entry, name=new_key)
-    registry.save()
-    print(f"✓ Renamed '{entry.name}' → '{new_key}'")
-    return new_key
+        _update(step["old"], step["new"])
+        return lambda: _update(step["new"], step["old"])
+
+    if kind == "json-rekey":
+        path = step["file"]
+        before = _snapshot_bytes(path)
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            for old_key, new_key in step["pairs"]:
+                if old_key in payload and new_key not in payload:
+                    payload[new_key] = payload.pop(old_key)
+            Path(path).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        return lambda: _restore_bytes(path, before)
+
+    if kind == "jsonl-rekey":
+        path = step["file"]
+        before = _snapshot_bytes(path)
+        field, old, new = step["field"], step["old"], step["new"]
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+        rewritten = []
+        for line in lines:
+            if not line.strip():
+                rewritten.append(line)
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                rewritten.append(line)
+                continue
+            if isinstance(row, dict) and row.get(field) == old:
+                row[field] = new
+                rewritten.append(json.dumps(row, ensure_ascii=False))
+            else:
+                rewritten.append(line)
+        Path(path).write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+        return lambda: _restore_bytes(path, before)
+
+    if kind == "md-belongs":
+        old, new = step["old"], step["new"]
+        snapshots = [(path, _snapshot_bytes(path)) for path in step["files"]]
+        for path, _ in snapshots:
+            try:
+                text = Path(path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            lines = text.split("\n")
+            for index, line in enumerate(lines[:40]):
+                if line.strip().startswith("belongs:") and old in line:
+                    lines[index] = line.replace(old, new)
+                    break
+            Path(path).write_text("\n".join(lines), encoding="utf-8")
+        return lambda: _restore_many(snapshots)
+
+    if kind == "config-rekey":
+        from plobi_cli.config import load_config, save_config
+
+        cfg_path = str(_get_default_plobi_home() / "config.yaml")
+        before = _snapshot_bytes(cfg_path)
+        old, new = step["old"], step["new"]
+        config = load_config()
+        touched = False
+        for dotted in _RENAME_CONFIG_KEYS:
+            head, _, tail = dotted.partition(".")
+            section = config.get(head)
+            if isinstance(section, dict) and section.get(tail) == old:
+                section[tail] = new
+                touched = True
+        if touched:
+            save_config(config)
+        return lambda: _restore_bytes(cfg_path, before)
+
+    if kind == "mind-subtree":
+        return None  # 那一格随 roster 一起改；目录搬运是独立的 move-dir 步
+
+    if kind == "alias":
+        from plobi.agents.identity_aliases import drop_aliases_for, record_alias
+
+        record_alias(step["old"], step["new"])
+        return lambda: drop_aliases_for(step["new"])
+
+    raise ValueError(f"未知的改名副作用类型：{kind!r}")
 
 
 def _shared_soul_path(entry):
