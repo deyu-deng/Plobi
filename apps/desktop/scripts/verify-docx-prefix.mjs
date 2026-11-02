@@ -15,7 +15,7 @@ import JSZip from 'jszip'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { fixDocxPrefixes } from './docx-prefix-tolerance.mjs'
+import { fixDocxPrefixes, normalizeDocxBuffer } from './docx-prefix-tolerance.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '../../../node_modules/@bitclub.ai/opendesk-office')
@@ -86,17 +86,29 @@ const images = doc => (doc.blocks ?? []).filter(b => b.type === 'image').length
 const chips = doc =>
   [...new Set((doc.blocks ?? []).filter(b => b.type === 'passthrough').map(b => b.label))].slice(0, 6)
 
+// 第二条路：真正跑的那条 —— 主进程 `loadDocx` 交给渲染进程之前，用
+// `normalizeDocxBuffer` 归一化字节。这里直接喂原始字节，验证同一个函数也能让
+// 渲染进程的 parseDocx 认出图片（dev / 生产都走这一个出口）。
+const normalizedBuffer = await normalizeDocxBuffer(rawBytes)
+const viaBuffer = normalizedBuffer ? await parseDocx(new Uint8Array(normalizedBuffer)) : null
+
 console.log('原始：  ', JSON.stringify(tally(before)))
 console.log('归一化：', JSON.stringify(tally(after)))
 console.log('原始占位：', chips(before))
 console.log('剩余占位：', chips(after))
 console.log()
 console.log(`图片块：原始 ${images(before)} → 归一化 ${images(after)}`)
+console.log(`字节路径（loadDocx）：${viaBuffer ? `${images(viaBuffer)} 张图片` : '未触发归一化'}`)
 
 fs.rmSync(BUNDLE, { force: true })
 
 if (images(after) <= images(before)) {
   console.error('FAIL —— 归一化没有让渲染器多认出图片')
+  process.exit(1)
+}
+
+if (!viaBuffer || images(viaBuffer) < images(after)) {
+  console.error('FAIL —— 字节路径（loadDocx 交付前归一化）没有生效')
   process.exit(1)
 }
 

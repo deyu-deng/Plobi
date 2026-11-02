@@ -4,7 +4,7 @@
 import { build } from 'esbuild'
 import { createOpenDeskOfficeViteAliases } from '@bitclub.ai/opendesk-office/vite'
 
-import { patchDocxParser } from './docx-prefix-tolerance.mjs'
+import { patchDocxParser, patchDocsMain } from './docx-prefix-tolerance.mjs'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, promises as fsPromises } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -111,11 +111,35 @@ const xlsxPrefixTolerancePlugin = {
   }
 }
 
-// docx 前缀容忍：有些写入方把 WordprocessingML 序列化成 `<ns0:p>` 而不是 `<w:p>`，
-// 而 GenOffice 的解析器按字面匹配 `'w:p'` —— 这类文档在它眼里等于空文档：字体全塌、
-// 图片塌成「图片 N」、域塌成 `Field (ADDIN)`。解析发生在主进程（host.cjs），入口是
-// `dist/main.js`（`word-main.js` 再转手到它），所以补在这一侧；逻辑见
-// `docx-prefix-tolerance.mjs`。
+// docx 前缀容忍（渲染进程那一半）：Word 编辑器的 `parseDocx` 跑在**渲染进程**
+// （vendor/apps/docs/src/renderer/file-actions.ts），主进程的 `parseDocx` 只服务
+// 别处的预解析——所以只补 `dist/main.js` 时 Word 页签一点没变（用户 11-02 复报
+// 「重启了还是没用」）。渲染进程的字节只从主进程 `loadDocx` 出来，在那之前把 XML
+// 归一化，dev 与生产同一份 `host.cjs`，与 vite 是否在跑无关。
+//
+// 注意补的是 `dist/word-main.js`（package exports 的 `./word-main` 直接指向这份预打包
+// 产物，docs-main 已经被打进去了），不是 vendor 里的 `docs-main.ts`——那个 .ts 压根不
+// 在模块图里，onLoad 永远不会命中。
+const docsHostPrefixTolerancePlugin = {
+  name: 'docs-host-prefix-tolerance',
+  setup(build) {
+    build.onLoad({ filter: /[\\/]dist[\\/]word-main\.js$/ }, async args => {
+      const source = await fsPromises.readFile(args.path, 'utf8')
+
+      return {
+        contents: patchDocsMain(source),
+        loader: 'js',
+        // 归一化里 `await import('jszip')` 要能解析到包：按原文件目录解析
+        resolveDir: path.dirname(args.path)
+      }
+    })
+  }
+}
+
+// docx 前缀容忍（主进程那一半）：有些写入方把 WordprocessingML 序列化成 `<ns0:p>`
+// 而不是 `<w:p>`，而 GenOffice 的解析器按字面匹配 `'w:p'` —— 这类文档在它眼里等于
+// 空文档：字体全塌、图片塌成「图片 N」、域塌成 `Field (ADDIN)`。主进程自己的预解析
+// 走 `dist/main.js` 的 `parseDocx`，一并补上；逻辑见 `docx-prefix-tolerance.mjs`。
 const docxPrefixTolerancePlugin = {
   name: 'docx-prefix-tolerance',
   setup(build) {
@@ -135,7 +159,7 @@ await build({
   format: 'cjs',
   target: 'node20',
   external: ['electron'],
-  plugins: [xlsxPrefixTolerancePlugin, docxPrefixTolerancePlugin, assetPlugin],
+  plugins: [xlsxPrefixTolerancePlugin, docxPrefixTolerancePlugin, docsHostPrefixTolerancePlugin, assetPlugin],
   loader: { '.css': 'empty', '.ttf': 'empty', '.wasm': 'empty', '.png': 'empty' },
   define: { 'process.env.NODE_ENV': '"production"' },
   logLevel: 'info'

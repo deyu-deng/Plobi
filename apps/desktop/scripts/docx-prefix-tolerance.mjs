@@ -154,6 +154,44 @@ export function normalizeDocxZip(zip) {
 }
 
 /**
+ * 把一个 docx 的**字节**归一化：解压 → 逐个 xml/rels 改前缀 → 重新打包。
+ *
+ * 这是渲染进程那条路的入口。GenOffice 的 Word 编辑器在**渲染进程**里调
+ * `parseDocx`（vendor/apps/docs/src/renderer/file-actions.ts），主进程只负责
+ * 把文件字节交过去（`loadDocx`）。所以在那之前把字节归一化，等于不管渲染进程
+ * 从哪条路进来（打开、拖入、另存为副本）都吃到同一份规范 XML。
+ *
+ * 只改读：渲染进程保存时 GenOffice 整档重写，输出自然是标准前缀。
+ * 没有任何一处需要改时返回 `null`，调用方据此跳过重新打包（大文档省一次压缩）。
+ */
+export async function normalizeDocxBuffer(data) {
+  const { default: JSZip } = await import('jszip')
+  const zip = await JSZip.loadAsync(data)
+  let changed = false
+
+  for (const name of Object.keys(zip.files)) {
+    if (!/\.(xml|rels)$/iu.test(name)) continue
+
+    const entry = zip.file(name)
+    if (!entry) continue
+
+    const text = await entry.async('string')
+    const fixed = fixDocxPrefixes(text)
+
+    if (fixed !== text) {
+      zip.file(name, fixed)
+      changed = true
+    }
+  }
+
+  if (!changed) return null
+
+  const out = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+
+  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength)
+}
+
+/**
  * 注入进 main.js 的运行时源码。
  *
  * 用 `fn.toString()` 搬函数体（单一真源），但必须做两件事：
@@ -161,7 +199,10 @@ export function normalizeDocxZip(zip) {
  * 2. 把函数之间的互相引用改成搬过去之后的新名字，否则运行时找不到
  */
 function inlineFunction(fn, newName, refs = {}) {
-  let source = fn.toString().replace(/^function\s+\w+/u, 'function')
+  let source = fn
+    .toString()
+    .replace(/^export\s+/u, '')
+    .replace(/^(async\s+)?function\s+\w+/u, (_all, asyncPrefix) => `${asyncPrefix ?? ''}function`)
 
   for (const [from, to] of Object.entries(refs)) {
     source = source.replace(new RegExp(`\\b${from}\\b`, 'gu'), to)
@@ -203,5 +244,69 @@ export function patchDocxParser(source) {
   return (
     source.replace(NEEDLE, `${NEEDLE}\n  __plobiNormalizeDocxZip(zip);`) +
     `\n\n// ── Plobi: docx 前缀容忍（见 apps/desktop/scripts/docx-prefix-tolerance.mjs）──\n${RUNTIME_SOURCE}\n`
+  )
+}
+
+/** 交给渲染进程那一侧（docs-main 的 loadDocx）用的运行时源码。 */
+const DOCS_RUNTIME_SOURCE = [
+  inlineFunction(standardPrefixByUri, '__plobiStandardPrefixByUri'),
+  inlineFunction(fixDocxPrefixes, '__plobiFixDocxPrefixes', {
+    standardPrefixByUri: '__plobiStandardPrefixByUri'
+  }),
+  inlineFunction(normalizeDocxBuffer, '__plobiNormalizeDocxBuffer', {
+    fixDocxPrefixes: '__plobiFixDocxPrefixes'
+  })
+].join('\n\n')
+
+const DOCS_NEEDLE = 'async function loadDocx('
+
+/**
+ * 在 GenOffice 预打包的 `dist/word-main.js` 里包住 `loadDocx`：文件字节交给渲染进程
+ * 之前先归一化前缀。
+ *
+ * 为什么必须在这里：Word 编辑器的 `parseDocx` 跑在**渲染进程**
+ * （`vendor/apps/docs/src/renderer/file-actions.ts`），主进程的 `parseDocx` 只服务
+ * 别处的预解析。之前把补丁打在 `dist/main.js` 的 `parseDocx` 上，Word 页签根本不走
+ * 那条路——所以「重启了还是没用」。`loadDocx` 是渲染进程拿字节的唯一出口，堵在这里
+ * 就与 dev / 生产无关：主进程永远是这份 `host.cjs`。
+ *
+ * 补的是 `dist/word-main.js` 而不是 vendor 的 `docs-main.ts`：package exports 的
+ * `./word-main` 直接指向这份预打包产物，docs-main 已经被打进去了，那个 `.ts` 压根
+ * 不在模块图里（onLoad 永远不会命中，构建会静默地什么也没做）。
+ *
+ * 找不到 needle 或找到多处就抛错，让构建当场红（同 `patchDocxParser`）。
+ */
+export function patchDocsMain(source) {
+  const occurrences = source.split(DOCS_NEEDLE).length - 1
+
+  if (occurrences !== 1) {
+    throw new Error(
+      `docx prefix patch: expected exactly one \`${DOCS_NEEDLE}\` in opendesk-office dist/word-main.js, found ${occurrences}. ` +
+        'The upstream loadDocx shape changed — re-check the injection point before rebuilding.'
+    )
+  }
+
+  const wrapper = [
+    '',
+    '// ── Plobi: docx 前缀容忍 —— 交给渲染进程前先把非标准前缀改回惯用的那几个 ──',
+    '// 见 apps/desktop/scripts/docx-prefix-tolerance.mjs',
+    '',
+    'async function loadDocx(filePath, wcId, password) {',
+    '  const result = await __plobiLoadDocxRaw(filePath, wcId, password);',
+    '  if (!result || !result.data) return result;',
+    '  try {',
+    '    const fixed = await __plobiNormalizeDocxBuffer(result.data);',
+    '    if (fixed) result.data = fixed;',
+    '  } catch {',
+    '    // 归一化失败就按原样交付：宁可少几张图，也不能打不开文档',
+    '  }',
+    '  return result;',
+    '}',
+    ''
+  ].join('\n')
+
+  return (
+    source.replace(DOCS_NEEDLE, 'async function __plobiLoadDocxRaw(') +
+    `\n\n${DOCS_RUNTIME_SOURCE}\n${wrapper}`
   )
 }
