@@ -169,6 +169,41 @@ export async function updateAgent(
   return unwrapEnvelope<Agent>(payload)
 }
 
+/** 身份名改名（`name` 那一格，不是显示名）。
+ *
+ * 与 `updateAgent` 是两件事：那一格只改人和这个 Agent 的关系，这一格改的是身份本身，
+ * 会带着会话历史、记忆、日程、看板上的卡、Mind 那棵子树一起换名字。
+ * `dryRun` 只回「会动哪几处」的清单，一个盘都不碰——确认面板要的就是它。
+ */
+async function postAgentRename(
+  agentId: string,
+  newName: string,
+  dryRun: boolean
+): Promise<{ id: string; previousId: string } | { steps: string[]; old: string; new: string }> {
+  const payload = await window.plobiDesktop.api<unknown>({
+    body: { dryRun, newName },
+    method: 'POST',
+    path: `/api/agents/${encodeURIComponent(agentId)}/rename`
+  })
+
+  return unwrapEnvelope<{ id: string; previousId: string }>(payload)
+}
+
+export function previewAgentRename(agentId: string, newName: string) {
+  return postAgentRename(agentId, newName, true) as Promise<{
+    steps: string[]
+    old: string
+    new: string
+  }>
+}
+
+export function renameAgent(agentId: string, newName: string) {
+  return postAgentRename(agentId, newName, false) as Promise<{
+    id: string
+    previousId: string
+  }>
+}
+
 /** 全局真源 + per-agent 开关（2026-10-19 用户裁定）：只写「这个 Agent 关掉了
  *  哪些」的三份黑名单（名册行偏好）。传空对象 = 只读当前偏好。资产名单不归
  *  这里管——全量列表各自从 /api/skills、/api/tools/toolsets、mcp config 拉。 */

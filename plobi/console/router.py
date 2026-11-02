@@ -1367,6 +1367,47 @@ async def update_agent_route(agent_id: str, request: Request):
     return result
 
 
+def rename_agent(agent_id: str, body: dict):
+    """``POST /api/agents/:id/rename`` — 改**身份名**（名册那一行的键），全链跟到。
+
+    与 ``PATCH /api/agents/:id`` 是两件事：那一格只改"人和这个 Agent 的关系"
+    （显示名／图标／目录），这一格改的是身份本身，会带着会话历史、记忆、日程、
+    看板上的卡、Mind 那棵子树一起换名字，所以前端要单独确认一次。
+    ``dryRun`` 只回"会动哪几处"的清单，一个盘都不碰。
+    """
+    from plobi_cli import profiles as profiles_mod
+
+    payload = body if isinstance(body, dict) else {}
+    new_name = str(payload.get("newName") or "").strip()
+    if not new_name:
+        return _error(400, "新名字不能空。")
+    try:
+        if payload.get("dryRun"):
+            return {"ok": True, "data": profiles_mod.preview_identity_rename(agent_id, new_name)}
+        stored = profiles_mod.rename_identity(agent_id, new_name)
+    except FileNotFoundError as exc:
+        return _error(404, str(exc))
+    except (ValueError, FileExistsError, RuntimeError) as exc:
+        # RuntimeError = 执行到某一步失败，已经动过的都退回去了。
+        return _error(400, str(exc))
+    except Exception as exc:  # noqa: BLE001 - 落盘失败要说清是哪一处，不裸抛
+        return _error(500, f"改名失败：{exc}")
+    reload_registry()
+    return {"ok": True, "data": {"id": stored, "previousId": agent_id}}
+
+
+@router.post("/agents/{agent_id}/rename", name="rename_agent")
+async def rename_agent_route(agent_id: str, request: Request):
+    """POST /api/agents/:id/rename — 身份名改名（或只看清单）。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return _error(400, "请求体不是合法的 JSON")
+    if not isinstance(body, dict):
+        return _error(400, "请求体必须是一个对象")
+    return await run_in_threadpool(rename_agent, agent_id, body)
+
+
 @router.post("/agents/{agent_id}/dissolve", name="dissolve_agent")
 async def dissolve_agent_route(agent_id: str):
     """裁定 19: archive an L2 (profile dir → _archived/, row marked archived)."""

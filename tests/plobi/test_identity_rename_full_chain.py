@@ -305,3 +305,33 @@ def test_rename_leaves_a_journal(full_home):
     record = json.loads(entries[-1].read_text(encoding="utf-8"))
     assert record["old"] == "Aura" and record["new"] == "AuraPrime"
     assert len(record["steps"]) >= 8
+
+
+def test_the_rename_endpoint_shows_the_plan_before_it_touches_anything(full_home):
+    """B 段：桌面点「改名…」先要清单（dryRun），看过确认才真改。"""
+    from plobi.console.router import rename_agent
+
+    preview = rename_agent("Aura", {"dryRun": True, "newName": "AuraPrime"})
+
+    assert preview["ok"] is True
+    assert preview["data"]["dryRun"] is True and preview["data"]["steps"]
+    assert "Aura" in _roster_names(), "dry-run 不该动名册"
+
+    done = rename_agent("Aura", {"newName": "AuraPrime"})
+
+    assert done["ok"] is True and done["data"]["id"] == "AuraPrime"
+    assert "AuraPrime" in _roster_names()
+
+    # 旧家名那一格仍是这一行的别名（裁 192：家名不动，旧写法照样找得到同一个人）⇒
+    # 用「aura」喊它，改的还是那一条行，不会另起一个人。
+    again = rename_agent("aura", {"newName": "AuraAgain"})
+
+    assert again["ok"] is True and again["data"]["id"] == "AuraAgain"
+    assert "AuraAgain" in _roster_names() and "AuraPrime" not in _roster_names()
+
+    # 真空名字与查无此人：当场拒，不许留下半个改动。
+    empty = rename_agent("AuraAgain", {"newName": "  "})
+    assert getattr(empty, "status_code", 200) == 400
+    missing = rename_agent("nobody-here", {"newName": "Whatever"})
+    assert getattr(missing, "status_code", 200) == 404
+    assert _roster_names() == ["AuraAgain", "agenda"]

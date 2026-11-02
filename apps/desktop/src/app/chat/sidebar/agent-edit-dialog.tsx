@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { updateAgent } from '@/app/console/api'
+import { previewAgentRename, renameAgent, updateAgent } from '@/app/console/api'
 import { refreshConsoleAgents } from '@/app/console/store/agents'
 import type { Agent } from '@/app/console/types'
 import { Codicon } from '@/components/ui/codicon'
@@ -47,6 +47,11 @@ export function AgentEditDialog({
   const [color, setColor] = useState(agent.color ?? '')
   const [paths, setPaths] = useState<string[]>(agent.projectPaths ?? (agent.projectPath ? [agent.projectPath] : []))
   const [busy, setBusy] = useState(false)
+  // 身份名那一格：改它动的是身份，不是"怎么叫它"。确认面板要的那份清单在点下
+  // 「改名…」之后才向后端要（dry-run），拿到才显示——不预告一个可能失败的清单。
+  const [identity, setIdentity] = useState(agent.id)
+  const [renameSteps, setRenameSteps] = useState<string[] | null>(null)
+  const [renaming, setRenaming] = useState(false)
 
   // 每次打开都从名册现状回填：攒着上一次关窗时的半截输入再来一次很吓人。
   useEffect(() => {
@@ -55,10 +60,50 @@ export function AgentEditDialog({
     }
 
     setDisplayName(agent.name || agent.id)
+    setIdentity(agent.id)
+    setRenameSteps(null)
     setIcon(agent.icon ?? '')
     setColor(agent.color ?? '')
     setPaths(agent.projectPaths ?? (agent.projectPath ? [agent.projectPath] : []))
   }, [agent.color, agent.icon, agent.id, agent.name, agent.projectPath, agent.projectPaths, open])
+
+  const askRename = async () => {
+    const next = identity.trim()
+
+    if (!next || next === agent.id) {
+      return
+    }
+
+    setBusy(true)
+
+    try {
+      const preview = await previewAgentRename(agent.id, next)
+
+      setRenameSteps(preview.steps ?? [])
+    } catch (cause) {
+      notifyError(cause, c.agentEditRenameFailed)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmRename = async () => {
+    const next = identity.trim()
+
+    setRenaming(true)
+
+    try {
+      await renameAgent(agent.id, next)
+      setRenameSteps(null)
+      await refreshConsoleAgents()
+      notify({ message: c.agentEditRenamed })
+      onOpenChange(false)
+    } catch (cause) {
+      notifyError(cause, c.agentEditRenameFailed)
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   const addFolder = async () => {
     const dir = await pickProjectFolder()
@@ -220,6 +265,71 @@ export function AgentEditDialog({
               <Codicon name="add" size="0.75rem" />
               {c.agentEditPathAdd}
             </button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="flex flex-col gap-1">
+              <span className="text-[0.6875rem] font-medium text-(--ui-text-tertiary)">{c.agentEditIdentityLabel}</span>
+              <input
+                className="h-8 w-full rounded-md border border-(--ui-stroke-tertiary) bg-transparent px-2 text-sm outline-none focus:border-(--ui-stroke-secondary)"
+                onChange={event => {
+                  setIdentity(event.target.value)
+                  setRenameSteps(null)
+                }}
+                value={identity}
+              />
+            </label>
+            <span className="text-[0.6875rem] text-(--ui-text-quaternary)">{c.agentEditIdentityNote}</span>
+            {identity.trim() !== agent.id && !renameSteps && (
+              <button
+                className="self-start rounded-md border border-(--ui-stroke-tertiary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-60"
+                disabled={busy}
+                onClick={() => {
+                  void askRename()
+                }}
+                type="button"
+              >
+                {c.agentEditIdentityChange}
+              </button>
+            )}
+            {renameSteps && (
+              <div
+                className="flex flex-col gap-1.5 rounded-md border border-(--ui-stroke-secondary) p-2"
+                role="alertdialog"
+              >
+                <span className="text-xs font-medium">{c.agentEditRenameTitle.replace('{name}', identity.trim())}</span>
+                <span className="text-[0.6875rem] text-(--ui-text-tertiary)">
+                  {c.agentEditRenameBody.replace('{count}', String(renameSteps.length))}
+                </span>
+                <ul className="flex max-h-32 flex-col gap-0.5 overflow-y-auto text-[0.6875rem] text-(--ui-text-quaternary)">
+                  {renameSteps.map(line => (
+                    <li className="truncate" key={line} title={line}>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    className="rounded-md bg-(--ui-accent) px-2 py-1 text-[0.6875rem] text-(--ui-accent-foreground) disabled:opacity-60"
+                    disabled={renaming}
+                    onClick={() => {
+                      void confirmRename()
+                    }}
+                    type="button"
+                  >
+                    {c.agentEditRenameConfirm}
+                  </button>
+                  <button
+                    className="rounded-md px-2 py-1 text-[0.6875rem] text-muted-foreground hover:bg-(--ui-control-hover-background)"
+                    disabled={renaming}
+                    onClick={() => setRenameSteps(null)}
+                    type="button"
+                  >
+                    {c.agentEditRenameCancel}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

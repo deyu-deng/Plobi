@@ -1633,6 +1633,15 @@ export interface Translations {
     agentEditCancel: string
     agentEditSaved: string
     agentEditFailed: string
+    agentEditIdentityLabel: string
+    agentEditIdentityNote: string
+    agentEditIdentityChange: string
+    agentEditRenameTitle: string
+    agentEditRenameBody: string
+    agentEditRenameConfirm: string
+    agentEditRenameCancel: string
+    agentEditRenamed: string
+    agentEditRenameFailed: string
     chatEmptyHint: string
     agentsLoading: string
     agentsLoadFailed: string
