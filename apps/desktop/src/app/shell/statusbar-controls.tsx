@@ -179,7 +179,17 @@ function StatusbarDock({
   )
 }
 
-/** 放不下的那几格：先给清单（图标 + 话），带面板的那几格点开就直接是那个面板。 */
+/**
+ * 放不下的那几格：先给清单（图标 + 话），带面板的那几格点开就直接是那个面板。
+ *
+ * 图标一律装进一条 16px 的列里再排话（用户 11-02：「这些图标为什么没有对齐」）。
+ * 这一列必须固定：SVG 被 `[&_svg]:size-4` 撑成 16px，而 Codicon 是字体字形、不吃
+ * 这条，各家的字形宽度不一样 ⇒ 没有这一列时，每一行的文字起点都不一样，没有图标的
+ * 那一行更是直接顶到最左。
+ *
+ * 读数那一格（跑了多久、版本号）的**数**在 `detail` 里，光留 `label` 就剩一个
+ * 孤零零的词挂在菜单上（同一次反馈里的「莫名其妙的 session」）。
+ */
 function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label: string }) {
   const navigate = useNavigate()
   const [panelId, setPanelId] = useState<string | null>(null)
@@ -237,10 +247,15 @@ function DockOverflow({ items, label }: { items: readonly StatusbarItem[]; label
                 item.onSelect?.({ shiftKey: false })
               }}
             >
-              {item.icon}
-              <span className="truncate">
+              <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">
+                {item.icon}
+              </span>
+              <span className="min-w-0 flex-1 truncate">
                 {typeof item.label === 'string' ? item.label : (item.title ?? item.id)}
               </span>
+              {item.detail ? (
+                <span className="shrink-0 text-muted-foreground/80">{item.detail}</span>
+              ) : null}
             </DropdownMenuItem>
           ))
         )}
@@ -263,6 +278,7 @@ function StatusbarItemView({
   // 图标条里没有文字可读，tooltip 退到 label 那一句；a11y 也用它当名字。
   const tip = item.title ?? (typeof item.label === 'string' ? item.label : undefined)
   const dockLabel = dock ? (tip ?? item.id) : undefined
+
   const dockAttrs = {
     'data-dock-item': dock ? '' : undefined,
     'data-variant': dock ? (item.variant ?? 'action') : undefined
