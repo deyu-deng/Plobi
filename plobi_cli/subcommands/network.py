@@ -138,6 +138,14 @@ def build_network_parser(subparsers, *, cmd_network: Callable) -> None:
         help="With --transport tun: start our adapter next to somebody else's tunnel instead of refusing "
         "(纸 §25 — a stated decision, never a default)",
     )
+    switch_parser.add_argument(
+        "--strict-route",
+        dest="strict_route",
+        action="store_true",
+        help="With --transport tun: take the default route even when another interface holds it with a "
+        "better metric. This DELETES other default routes, so it is a stated decision, never a default "
+        "(measured 11-02 on this box: WLAN 2 sat at metric 0, our adapter came up and carried nothing)",
+    )
     switch_parser.set_defaults(func=cmd_network)
     # `plobi network` alone should do the read-only thing, never the destructive one.
     network_parser.set_defaults(func=cmd_network, network_action="status")

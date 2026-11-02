@@ -204,6 +204,7 @@ def apply_switch(
     mode: str = "",
     exit_to: str = "",
     allow_foreign: bool = False,
+    strict_route: bool = False,
 ) -> tuple[bool, list[str]]:
     """Drive the bottom-bar switch from the command line — the same three writes the pane makes.
 
@@ -223,7 +224,12 @@ def apply_switch(
             block = switch.set_transport(
                 block,
                 transport,
-                tun_block=tun.default_block(allow_foreign=True if allow_foreign else None, keep=current_tun),
+                tun_block={
+                    **tun.default_block(allow_foreign=True if allow_foreign else None, keep=current_tun),
+                    # 11-02：网卡建出来却抢不到默认路由（这台 WLAN 2 的 metric 是 0）是一种
+                    # 独立的失败，出口也独立——`strict-route` 会删掉别人的默认路由，只能明示。
+                    **({"strict-route": True} if strict_route else {}),
+                },
             )
         if mode:
             block = switch.set_mode(block, mode)
@@ -245,6 +251,7 @@ def switch_and_supervise(
     mode: str = "",
     exit_to: str = "",
     allow_foreign: bool = False,
+    strict_route: bool = False,
 ) -> tuple[int, list[str]]:
     """One carrier switch = one machine action: write, supervise, and **take it back if refused**.
 
@@ -272,7 +279,8 @@ def switch_and_supervise(
         return " ".join(f"{key}={value}" for key, value in _switch.read(table).items())
 
     before = dict(read_egress().get("network") or {})
-    ok, issues = apply_switch(transport=transport, mode=mode, exit_to=exit_to, allow_foreign=allow_foreign)
+    ok, issues = apply_switch(transport=transport, mode=mode, exit_to=exit_to,
+                              allow_foreign=allow_foreign, strict_route=strict_route)
     if not ok:
         return 1, [f"表没写进去：{line}" for line in issues]
 

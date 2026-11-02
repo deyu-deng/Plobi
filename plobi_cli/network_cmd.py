@@ -111,6 +111,7 @@ def _switch(args: argparse.Namespace) -> int:
     mode = str(getattr(args, "mode", "") or "")
     exit_to = str(getattr(args, "exit_to", "") or "")
     allow_foreign = bool(getattr(args, "allow_foreign", False))
+    strict_route = bool(getattr(args, "strict_route", False))
 
     if not (transport or mode or exit_to):
         print(" ".join(f"{k}={v}" for k, v in read_switch(load_table(force_reload=True)).items()))
@@ -119,7 +120,8 @@ def _switch(args: argparse.Namespace) -> int:
     from plobi_cli.egress_config import switch_and_supervise
 
     rc, lines = switch_and_supervise(
-        transport=transport, mode=mode, exit_to=exit_to, allow_foreign=allow_foreign
+        transport=transport, mode=mode, exit_to=exit_to,
+        allow_foreign=allow_foreign, strict_route=strict_route
     )
     for line in lines:
         print(line)

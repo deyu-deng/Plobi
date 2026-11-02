@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from agent.egress import engine as egress_engine, tun
+from agent.egress import engine as engine_module
 from agent.egress.engine import FAILED, ensure
 from agent.egress.mihomo_config import compile_config
 from agent.egress.rules import EgressConfigError, load_table
@@ -402,3 +403,118 @@ def test_the_switch_writes_the_shape_the_guard_reads_by_name():
     assert tun.default_block(keep={"name": "mine", "strict-route": True})["name"] == "mine"
     assert tun.default_block(keep={"allow-foreign": True})["allow-foreign"] is True
     assert tun.default_block(allow_foreign=False, keep={"allow-foreign": True})["allow-foreign"] is False
+
+
+# ── 起了网卡 ≠ 拿到路由（11-02 这台：WLAN 2 的 metric 是 0，我们抢不过它）──────
+
+def _ours_top():
+    return ([{"ifIndex": 12, "name": "plobi-tun", "description": "Wintun Userspace Tunnel",
+              "status": "Up", "metric": 15}], "")
+
+
+def test_route_taken_passes_only_when_our_adapter_is_the_best_metric():
+    monkey = _ours_top()
+    original = tun.default_route_holders
+    tun.default_route_holders = lambda: monkey
+    try:
+        taken, said, holders = tun.route_taken("plobi-tun")
+    finally:
+        tun.default_route_holders = original
+    assert taken is True and holders, said
+    assert "metric 15" in said
+
+
+def test_a_route_still_held_by_somebody_else_is_said_as_a_failure_with_the_way_out():
+    original = tun.default_route_holders
+    tun.default_route_holders = lambda: ([{"ifIndex": 10, "name": "WLAN 2", "description": "Intel Wi-Fi",
+                                           "status": "Up", "metric": 0}], "")
+    try:
+        taken, said, _ = tun.route_taken("plobi-tun")
+    finally:
+        tun.default_route_holders = original
+    assert taken is False
+    assert "WLAN 2" in said and "metric 0" in said
+    assert "strict-route" in said, "拒了要给出口：要么调别人的 metric（我们不动），要么明示接管"
+
+
+def test_an_unreadable_route_is_never_read_as_a_pass():
+    """口径 27：读不到就不算生效——半截 TUN 比没有 TUN 更难查。"""
+    original = tun.default_route_holders
+    tun.default_route_holders = lambda: ([], "Get-NetRoute : Access denied")
+    try:
+        taken, said, _ = tun.route_taken("plobi-tun")
+    finally:
+        tun.default_route_holders = original
+    assert taken is False and "读不到默认路由" in said
+
+    tun.default_route_holders = lambda: ([], "")
+    try:
+        assert tun.route_taken("plobi-tun")[0] is False, "0 条默认路由也不算我们拿到了"
+    finally:
+        tun.default_route_holders = original
+
+
+def test_a_tun_that_never_took_the_route_is_taken_back_down_instead_of_fooling_the_screen(
+        monkeypatch, tmp_path, inert, quiet_guard):
+    """引擎起来了、探针也 204，但默认路由还在 WLAN 2 ⇒ 这块网卡必须撤掉并照实说。"""
+    monkeypatch.setattr(tun, "ROUTE_SETTLE_SECONDS", 0.0)
+    monkeypatch.setattr(tun, "default_route_holders",
+                        lambda: ([{"ifIndex": 10, "name": "WLAN 2", "description": "Intel Wi-Fi",
+                                   "status": "Up", "metric": 0}], ""))
+    stopped: list = []
+
+    def fake_stop(table, **kw):
+        stopped.append("stop")
+        return engine_module.EngineReport(engine_module.STOPPED, "fake stopped")
+
+    monkeypatch.setattr(engine_module, "stop_ours", fake_stop)
+    table = _table(engine={**_BASE["engine"], "binary": inert["binary"], "tun": dict(_OUR_TUN)})
+
+    rep = ensure(table, home=tmp_path / "home", wait_s=0)
+
+    assert rep.state == FAILED, rep
+    assert stopped == ["stop"], "不许留一块不承运流量的 TUN 在屏幕上装作开着"
+    assert "WLAN 2" in rep.detail and "strict-route" in rep.detail, rep.detail
+    assert any("网卡已撤" in n for n in rep.notes), rep.notes
+
+
+def test_a_tun_that_took_the_route_stays_up(monkeypatch, tmp_path, inert, quiet_guard):
+    monkeypatch.setattr(tun, "ROUTE_SETTLE_SECONDS", 0.0)
+    monkeypatch.setattr(tun, "default_route_holders", _ours_top)
+    table = _table(engine={**_BASE["engine"], "binary": inert["binary"], "tun": dict(_OUR_TUN)})
+
+    rep = ensure(table, home=tmp_path / "home", wait_s=0)
+
+    assert rep.state == engine_module.OURS, (rep.state, rep.detail, rep.notes)
+
+
+def test_a_tun_start_waits_longer_than_a_plain_one(monkeypatch, tmp_path, quiet_guard):
+    """6 秒是普通启动的窗口；wintun 交出适配器比这慢，等太短会把「正在起来」判成失败。
+
+    11-02 实测到的正是这个：面板报了 `started but is not carrying traffic`，而引擎日志里
+    那块网卡后来是建出来了的——它不是失败，是我没等够。
+    """
+    ticks = {"now": 1000.0}
+    slept: list = []
+
+    monkeypatch.setattr("agent.egress.engine.time.sleep", lambda s: (slept.append(s), ticks.__setitem__("now", ticks["now"] + s)))
+    monkeypatch.setattr("agent.egress.engine.time.time", lambda: ticks["now"])
+    monkeypatch.setattr("agent.egress.engine.listening", lambda port, **kw: False)  # 一直不监听 ⇒ 走完整个窗口
+    monkeypatch.setattr("agent.egress.engine._spawn", lambda snap, log_path: (4242, 1000.0))
+    monkeypatch.setattr("agent.egress.engine.probe_engine", lambda port, **kw: (False, "no listener"))
+    monkeypatch.setattr("agent.egress.engine.verify_with_binary", lambda b, p: ("VERIFIED", ""))
+    binary = tmp_path / "mihomo.exe"
+    binary.write_text("not a binary", encoding="utf-8")
+    tun_table = _table(engine={**_BASE["engine"], "binary": str(binary), "tun": dict(_OUR_TUN)})
+    plain_table = _table(engine={**_BASE["engine"], "binary": str(binary)})
+
+    ensure(tun_table, home=tmp_path / "tun-home", wait_s=0)
+    tun_waits = sum(slept)
+
+    slept.clear()
+    ticks["now"] = 1000.0
+    ensure(plain_table, home=tmp_path / "plain-home", wait_s=0)
+    plain_waits = sum(slept)
+
+    assert tun_waits >= engine_module.TUN_START_WAIT_SECONDS * 0.8, (tun_waits, plain_waits)
+    assert plain_waits < 1.0, f"普通启动不该跟着等 25 秒（等了 {plain_waits}）"

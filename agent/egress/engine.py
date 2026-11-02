@@ -550,6 +550,17 @@ def _tun_gate(table: Table, snap: _Snapshot) -> tuple[Optional[EngineReport], tu
     ), said
 
 
+#: 一次要建网卡的启动等多久才认「它起不来」。6 秒是普通启动的窗口，实测不够 wintun 交出适配器。
+TUN_START_WAIT_SECONDS = 25.0
+
+
+def _tun_module():
+    """Late import: `agent.egress.tun` imports the rules, and the engine owns the spawn."""
+    from agent.egress import tun as _tun
+
+    return _tun
+
+
 def _arm_supervisor(table: Table, *, home: str | Path | None = None) -> None:
     """引擎活着的那两条路都顺手问一句「监督者还在吗」。
 
@@ -641,7 +652,10 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
 
     log_path = snap.workdir / "plobi-engine.log"
     pid, created = _spawn(snap, log_path)
-    deadline = time.time() + wait_s
+    #: 要建网卡的启动不是同一种启动：11-02 这台 6 秒窗口里 wintun 还没把适配器交出来，
+    #: 探针没答 ⇒ 我把它判成 failed 并回滚了，而它其实正在起来。等待必须跟着动作变。
+    budget = max(wait_s, TUN_START_WAIT_SECONDS) if table.engine_tun.get("enabled") else wait_s
+    deadline = time.time() + budget
     while time.time() < deadline and not listening(snap.port):
         time.sleep(0.2)
     _write_record({"pid": pid, "created": created, "binary": snap.binary,
@@ -651,6 +665,18 @@ def ensure(table: Table, *, home: str | Path | None = None, wait_s: float = 6.0)
     ok, detail = probe_engine(snap.port)
     if ok:
         _arm_supervisor(table, home=home)
+    #: 「网卡建出来了」不等于「流量进来了」。mihomo 自己会看见默认路由还在别人那里
+    #: （11-02：WLAN 2 metric 0 压过我们），那种 TUN 对用户就是「开了但 Antigravity 还是不通」，
+    #: 比直接失败更难查——所以当场验一次，没抢到就把我们这块网卡撤掉、照实说。
+    if ok and table.engine_tun.get("enabled"):
+        time.sleep(_tun_module().ROUTE_SETTLE_SECONDS)
+        taken, said, _holders = _tun_module().route_taken(str(table.engine_tun.get("name") or ""))
+        if not taken:
+            stopped = stop_ours(table, home=home)
+            notes_extra = (*snap.notes, *seed_notes, *render_notes, *acl_notes, *tun_notes,
+                           f"tun: {said}", f"tun: 网卡已撤（{stopped.state}）——不留一块不承运流量的 TUN 骗屏幕")
+            return EngineReport(FAILED, said, snap.port, str(snap.workdir), snap.source, None,
+                                detail, tuple(notes_extra))
     notes = [*snap.notes, *seed_notes, *render_notes, *acl_notes, *tun_notes]
     if not ok:
         # Measured on this box (09:10): an engine workdir without GeoSite.dat

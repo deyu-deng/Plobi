@@ -150,6 +150,35 @@ WINTUN_BASENAME = "wintun.dll"
 WINTUN_BYTES = 427_552
 
 
+#: A TUN that does not own the default route is a TUN that does nothing: the machine keeps
+#: its old interface and the user sees "TUN 开了但没生效". 11-02 这台实测到的正是这一种——
+#: WLAN 2 的 route metric 是 0，我们那块网卡建出来了却抢不过它。
+#: 所以起完之后必须回头看一眼路由在谁手上，而不是信 `enable: true` 那句话。
+ROUTE_SETTLE_SECONDS = 3.0
+
+
+def route_taken(name: str) -> tuple[bool, str, list[dict[str, Any]]]:
+    """Did our adapter actually become the default route?  ``(taken, said, holders)``.
+
+    A failed probe is **not** a pass: 口径 27 — we do not hand the machine a half-TUN
+    because we could not read it. The caller decides what to do about it; nothing here
+    changes a route or a metric.
+    """
+    holders, err = default_route_holders()
+    if err:
+        return False, f"读不到默认路由（{err}）——不知道路由在谁手上就不算 TUN 生效", holders
+    if not holders:
+        return False, "这台机器现在没有默认路由可读，TUN 建了也没人走它", holders
+    top = holders[0]
+    if str(top.get("name") or "") == name:
+        return True, f"默认路由已在 {name}（metric {top.get('metric')}）", holders
+    return False, (
+        f"默认路由还在 {top.get('name') or '?'}（metric {top.get('metric')}），我们的网卡 {name} 没抢到——"
+        f"TUN 建出来了但流量不会进来。要么把 {top.get('name')} 的接口 metric 调高，"
+        f"要么在表里写明 network.egress.engine.tun.strict-route: true（那会删掉别人的默认路由，是一次明示的接管）"
+    ), holders
+
+
 def preflight(table: Optional[Table] = None, *, workdir: str | None = None) -> dict[str, Any]:
     """Can we hand this machine's default route to our engine — with the reasons."""
     tun = dict((table.engine_tun if table is not None else {}) or {})
