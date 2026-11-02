@@ -606,6 +606,7 @@ export const en: Translations = {
       powerOff: 'Turn off',
       powerOn: 'Turn on',
       readFailed: 'The routing table could not be read',
+      strictRouteRetry: 'Take the default route anyway',
       refreshSub: 'Refresh',
       refreshSubHint: 'Re-pull the subscription link this machine saved; members update, your own groups stay',
       tabNodes: 'Nodes',

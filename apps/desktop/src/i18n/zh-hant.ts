@@ -522,6 +522,7 @@ export const zhHant = defineLocale({
       powerOff: '關閉',
       powerOn: '開啟',
       readFailed: '讀不到目前的表',
+      strictRouteRetry: '仍然接管預設路由',
       refreshSub: '更新',
       refreshSubHint: '按存過的訂閱連結重新拉一次：成員更新，我自己配的組保留',
       tabNodes: '節點',

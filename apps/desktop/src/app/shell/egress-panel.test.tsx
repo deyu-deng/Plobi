@@ -170,7 +170,8 @@ describe('拨不过去与没读到表', () => {
   it('守卫拒了 TUN：表退回拨之前，注册表回到原来的载体，屏上给那一条出口', async () => {
     saveNetworkEgress
       .mockResolvedValueOnce({
-        engine: { detail: 'TUN 被守卫拒了：场上已经有别人的 TUN 类网卡（Tailscale）', state: 'failed' },
+        // 用守卫真正产出的那句（含它点名的那个字段），不是转述——判据是照字段分的
+        engine: { detail: 'TUN 被守卫拒了：场上已经有别人的 TUN 类网卡（Tailscale）—— 要么先把那个 VPN 关掉，要么在表里写明 network.egress.engine.tun.allow-foreign: true', state: 'failed' },
         ok: true
       })
       .mockResolvedValueOnce({ engine: { detail: 'ok', state: 'running-ours' }, ok: true })
@@ -180,6 +181,7 @@ describe('拨不过去与没读到表', () => {
     fireEvent.click(screen.getByRole('button', { name: copy.transportTun }))
 
     await waitFor(() => expect(screen.getByRole('button', { name: copy.allowForeignRetry })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: copy.strictRouteRetry })).toBeNull()
     // 第二次写盘必须把**原样**放回去：表里写着 TUN 而机器上什么都没有，就是 10-29 那次事故的形状。
     expect(sent().egress.engine.tun.enabled).toBe(false)
     expect(setNetworkSystemProxy).toHaveBeenLastCalledWith(true)
@@ -207,6 +209,28 @@ describe('拨不过去与没读到表', () => {
     await waitFor(() => expect(view.getByTestId('egress-panel')).toBeTruthy())
     expect(view.getByRole('button', { name: copy.powerOn }).getAttribute('disabled')).not.toBeNull()
     expect(saveNetworkEgress).not.toHaveBeenCalled()
+  })
+
+  it('网卡建出来却没抢到默认路由：给的是「仍然接管默认路由」那颗，不是并行的那颗', async () => {
+    saveNetworkEgress.mockResolvedValueOnce({
+      engine: {
+        detail: '默认路由还在 WLAN 2（metric 0），我们的网卡 PlobiTun 没抢到——要么调高 WLAN 2 的接口 metric，要么在表里写明 network.egress.engine.tun.strict-route: true',
+        state: 'failed'
+      },
+      ok: true
+    })
+    render(<EgressPanel />)
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.powerOff })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: copy.transportTun }))
+
+    // 两句拒因不许混成一颗按钮
+    await waitFor(() => expect(screen.getByRole('button', { name: copy.strictRouteRetry })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: copy.allowForeignRetry })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: copy.strictRouteRetry }))
+    await waitFor(() => expect(saveNetworkEgress).toHaveBeenCalledTimes(3))
+    expect(sent().egress.engine.tun).toMatchObject({ 'allow-foreign': true, 'strict-route': true, enabled: true })
   })
 
   it('没读到表的时候一张卡都点不动，一次保存都不许发生', async () => {

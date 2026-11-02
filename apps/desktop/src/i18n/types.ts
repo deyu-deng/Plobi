@@ -562,6 +562,7 @@ export interface Translations {
       powerOff: string
       powerOn: string
       readFailed: string
+      strictRouteRetry: string
       refreshSub: string
       refreshSubHint: string
       tabNodes: string

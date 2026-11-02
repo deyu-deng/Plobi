@@ -593,6 +593,7 @@ export const zh: Translations = {
       powerOff: '关闭',
       powerOn: '开启',
       readFailed: '读不到当前的表',
+      strictRouteRetry: '仍然接管默认路由',
       refreshSub: '更新',
       refreshSubHint: '按存过的订阅链接重新拉一次：成员更新，我自己配的组保留',
       tabNodes: '节点',

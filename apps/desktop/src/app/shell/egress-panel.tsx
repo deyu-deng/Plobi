@@ -111,7 +111,7 @@ export function EgressPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   //: 拨不过去的那一次：留着它的理由与目标，屏幕才可能给出那一个出口（与别人的网卡并行）。
-  const [refused, setRefused] = useState<{ foreign: boolean; target: Transport; why: string } | null>(null)
+  const [refused, setRefused] = useState<{ foreign: boolean; strict: boolean; target: Transport; why: string } | null>(null)
   const [view, setView] = useState<'nodes' | 'switch'>('switch')
   const [filter, setFilter] = useState('')
 
@@ -177,19 +177,24 @@ export function EgressPanel() {
    * 守卫拒 TUN 的理由（不是管理员 / 场上有别人的网卡 / 缺驱动）都不该由屏幕替它乐观。
    */
   const flip = useCallback(
-    async (target: Transport, allowForeign = false) => {
+    async (target: Transport, opts: { allowForeign?: boolean; strictRoute?: boolean } = {}) => {
       const prev = transportOf(block)
       setBusy(true)
       setError('')
       setRefused(null)
       try {
-        const next = patchTransport(block, target, { ...(tun.block ?? {}), 'allow-foreign': allowForeign })
+        const next = patchTransport(block, target, {
+          ...(tun.block ?? {}),
+          ...(opts.allowForeign ? { 'allow-foreign': true } : {}),
+          ...(opts.strictRoute ? { 'strict-route': true } : {})
+        })
         const answer = await saveNetworkEgress({ egress: next })
         if (answer.engine?.state === 'failed') {
           const why = answer.engine.detail ?? '引擎没起来'
           await saveNetworkEgress({ egress: block })
           await moveProxy(prev === 'system')
-          setRefused({ foreign: /allow-foreign|别人的/.test(why), target, why })
+          // 两句拒因要分得开：并行别人的网卡与强制接管默认路由是两个不同的决定（一个网卡，一张路由表）。
+          setRefused({ foreign: /allow-foreign/.test(why), strict: /strict-route/.test(why), target, why })
           setError(why)
         } else if (target !== prev) {
           // TUN 与系统代理互斥：拨一个就把另一个的注册表那一半带走/带回来。
@@ -314,17 +319,31 @@ export function EgressPanel() {
           </div>
 
           {error ? <p className="text-xs text-(--ui-text-danger)">{error}</p> : null}
-          {refused?.foreign ? (
-            // 纸 §25 买的那条出口：默认拒绝与别人的网卡抢默认路由，但这是**表能说的一个决定**，
-            // 所以拒了之后屏幕给一个按钮，而不是只给一句话。
-            <button
-              className="max-w-full justify-self-start rounded-lg border border-(--stroke-nous) px-2.5 py-1.5 text-left text-xs text-(--ui-text-secondary)"
-              disabled={busy}
-              onClick={() => void flip(refused.target, true)}
-              type="button"
-            >
-              {copy.allowForeignRetry}
-            </button>
+          {refused ? (
+            // 纸 §25 与 11-02 那条：默认都拒，但拒了要给**那一个**决定——并行别人的网卡、
+            // 和把默认路由从别人那里抢过来，是两件事，不是一颗按钮。
+            <div className="flex flex-wrap gap-1.5">
+              {refused.foreign ? (
+                <button
+                  className="max-w-full rounded-lg border border-(--stroke-nous) px-2.5 py-1.5 text-left text-xs text-(--ui-text-secondary)"
+                  disabled={busy}
+                  onClick={() => void flip(refused.target, { allowForeign: true })}
+                  type="button"
+                >
+                  {copy.allowForeignRetry}
+                </button>
+              ) : null}
+              {refused.strict ? (
+                <button
+                  className="max-w-full rounded-lg border border-(--stroke-nous) px-2.5 py-1.5 text-left text-xs text-(--ui-text-secondary)"
+                  disabled={busy}
+                  onClick={() => void flip(refused.target, { allowForeign: true, strictRoute: true })}
+                  type="button"
+                >
+                  {copy.strictRouteRetry}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : (

@@ -530,6 +530,7 @@ export const ja = defineLocale({
       powerOff: 'オフ',
       powerOn: 'オン',
       readFailed: 'テーブルを読み取れません',
+      strictRouteRetry: 'それでも既定ルートを取る',
       refreshSub: '更新',
       refreshSubHint: '保存済みサブスクリプションを再取得：メンバーは更新、自分のグループは保持',
       tabNodes: 'ノード',
