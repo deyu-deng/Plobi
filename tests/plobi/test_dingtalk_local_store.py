@@ -61,6 +61,28 @@ def make_plain_db(path: Path, messages: list[tuple[str, str, str, int, int, str,
     connection.close()
 
 
+def _opened_store_with(tmp_path, monkeypatch, messages):
+    """同一套假资料目录，但**消息表由调用方给**——`fake_profile` 那四行钉的是别的事实，
+    要测"窗口取哪一头"必须能自己决定有几条、谁最新。"""
+    root = tmp_path / "DingTalk"
+    profile = root / "e34da8455d4779ae5786_v3"
+    (profile / "DBFiles").mkdir(parents=True)
+    (root / "log").mkdir(parents=True)
+
+    plain = profile / "DBFiles" / "plain.db"
+    make_plain_db(plain, messages)
+    key = store.derive_key(UID, SALT)
+    (profile / "DBFiles" / "dingtalk.db").write_bytes(encrypt_pages(plain.read_bytes(), key))
+    plain.unlink()
+    (profile / "user_config").write_bytes(base64.b64encode(json.dumps({"salt": SALT}).encode()))
+    (root / "log" / "cef_debug.log.2026-10-24").write_text(f"x real_uid={UID} y\n", encoding="utf-8")
+
+    monkeypatch.setenv("PLOBI_DINGTALK_DATA_DIR", str(root))
+    monkeypatch.setenv("PLOBI_DINGTALK_LOCAL_DIR", str(tmp_path / "local"))
+    monkeypatch.delenv("DINGTALK_UID", raising=False)
+    return store.open_local_store(candidates=[UID])
+
+
 @pytest.fixture()
 def fake_profile(tmp_path, monkeypatch) -> Path:
     """一个"看起来像已登录"的假资料目录：`{20hex}_v3/DBFiles/dingtalk.db` + `user_config` + 日志。"""
@@ -194,6 +216,25 @@ class TestTheStoreOpens:
             opened.close()
 
         assert mids == ["1001", "1004"], "撤回那条(1002)不该被当成还在"
+
+    def test_the_window_keeps_the_newest_rows_not_the_oldest(self, tmp_path, monkeypatch) -> None:
+        """`limit` 那一格取的是**最新**几条，不是最旧几条。
+
+        现场（11-03 现核）：点名会话在他本机库里有 904 条、最新一条是当天 19:54，可连着几天
+        每一轮都交出**同一批** 500 条、最新停在 10-28 —— 因为旧写法是
+        `ORDER BY createdAt LIMIT n`（升序取前 n）再 `out[:limit]`：库里一直有新东西，
+        我们只是永远从最旧那一头数，于是屏上读出来像"这条信源很久没采了"。
+        """
+        rows = [("cid-one", f"{2000 + n}", "u-9", 1_762_000_000_000 + n * 1000, 1, f"第 {n} 条", 0)
+                for n in range(6)]
+        opened = _opened_store_with(tmp_path, monkeypatch, rows)
+
+        try:
+            got = store.recent_messages(opened, ["cid-one"], limit=3)
+        finally:
+            opened.close()
+
+        assert [row["mid"] for row in got] == ["2003", "2004", "2005"], "取最新的三条，交回仍按时间从旧到新"
 
 
 class TestTheCollector:

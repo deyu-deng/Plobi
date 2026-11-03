@@ -583,7 +583,14 @@ def describe_of(content: Any, content_type: int) -> str:
 
 def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
                     since_ms: int = 0) -> list[dict]:
-    """**只读被点名的那几扇会话**。一条都没点名就一条都不取（隐私默认关在这一层的落点）。"""
+    """**只读被点名的那几扇会话**。一条都没点名就一条都不取（隐私默认关在这一层的落点）。
+
+    `limit` 取的是**最新**那几条——11-03 现核出的假"这条信源很久没采"就死在这格上：旧写法每片
+    `ORDER BY createdAt LIMIT n` 拿的是**最旧** n 条，收尾又 `out[:limit]` 从最旧那头留。
+    一台用了几年的库只要点名会话累计越过 `limit`，窗口就永久卡在最旧那批，新消息一条进不来
+    （这台现场：库里 904 条、最新当天 19:54，连续几天每轮交出的都是同一批 500 条、最新 10-28）。
+    交回的顺序仍是**从旧到新**，调用方按这个顺序进池，别反过来。
+    """
     wanted = [cid for cid in cids if str(cid).strip()]
     if not wanted:
         return []
@@ -598,7 +605,7 @@ def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
             rows = store.connection.execute(
                 f'SELECT cid, mid, senderId, createdAt, contentType, content, recallStatus, atIds '
                 f'FROM "{shard}" WHERE cid IN ({placeholders}) AND createdAt > ? '
-                f'ORDER BY createdAt LIMIT ?', (*wanted, since_ms, limit)).fetchall()
+                f'ORDER BY createdAt DESC LIMIT ?', (*wanted, since_ms, limit)).fetchall()
         except sqlite3.Error:
             continue
         for cid, mid, sender, created, content_type, content, recall, at_ids in rows:
@@ -608,8 +615,9 @@ def recent_messages(store: LocalStore, cids: Iterable[str], *, limit: int = 500,
                         "created_at": str(created or ""), "content_type": int(content_type or 0),
                         "text": describe_of(content, int(content_type or 0)),
                         "at_ids": str(at_ids or ""), "shard": shard})
-    out.sort(key=lambda row: row["created_at"])
-    return out[:limit]
+    # 按**数**排不按字符串排：毫秒时间戳位数一变，字典序会把 9xxx 那批排到 10xxx 之后。
+    out.sort(key=lambda row: int(row["created_at"] or 0))
+    return out[-limit:]
 
 
 def open_calendar_store(**kwargs: Any) -> LocalStore:
