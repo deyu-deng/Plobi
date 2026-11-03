@@ -4,11 +4,12 @@ import { type FC, type ReactNode, useCallback, useRef, useState } from 'react'
 
 import { $consoleAgents } from '@/app/console/store/agents'
 import { DirectiveContent } from '@/components/assistant-ui/directive-text'
-import { QuoteButton } from '@/components/assistant-ui/thread/quote-button'
 import { messageAttachmentRefs, messageContentText } from '@/components/assistant-ui/thread/content'
+import { QuoteButton } from '@/components/assistant-ui/thread/quote-button'
 import { type RestoreMessageTarget } from '@/components/assistant-ui/thread/types'
 import { UserMessageText } from '@/components/assistant-ui/thread/user-message-text'
 import { Codicon } from '@/components/ui/codicon'
+import { CopyButton } from '@/components/ui/copy-button'
 import { useResizeObserver } from '@/hooks/use-resize-observer'
 import { useI18n } from '@/i18n'
 import { askedByBadge, externalSenderOf, splitFilePointers, splitSpeakerPrefix } from '@/lib/chat-messages'
@@ -198,10 +199,12 @@ export const UserMessage: FC<{
   const customMeta = useAuiState(
     s => (s.message.metadata?.custom ?? {}) as { askedBy?: unknown; kind?: unknown }
   )
+
   const askedBy = askedByBadge(customMeta.askedBy)
   // 自己的消息**不写名字**（微信也不在自己的气泡上署名）；只有「总秘书代问」这类
   // 第三方发起的才在气泡上方标一行，说明这不是主人亲手打的。
   const showByline = Boolean(askedBy && (askedBy.kind === 'secretary' || askedBy.kind === 'other'))
+
   const askedByLabel = askedBy === null
     ? ''
     : askedBy.kind === 'me'
@@ -211,6 +214,7 @@ export const UserMessage: FC<{
         : askedBy.kind === 'unrecorded'
           ? copy.askedByUnrecorded
           : askedBy.raw
+
   const readOnly = isWatchWindow()
   const [expanded, setExpanded] = useState(false)
   const clampActive = !(readOnly && expanded)
@@ -299,6 +303,7 @@ export const UserMessage: FC<{
     const roster = externalSpeaker.kind === 'agent'
       ? agents.find(agent => agent.name.trim().toLowerCase() === speaker.trim().toLowerCase())
       : undefined
+
     const accent = roster?.color || undefined
 
     return (
@@ -365,7 +370,8 @@ export const UserMessage: FC<{
   const bubbleClassName = cn(
     USER_BUBBLE_BASE_CLASS,
     // 与外部气泡同一条宽度行为：内容多长就多宽（上限 86%/44rem），不撑满整行。
-    'w-auto max-w-full cursor-pointer pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors',
+    // 原来右侧留 9 是给压在气泡里的停止/回到此处让位——动作搬到气泡下方后不再需要。
+    'w-auto max-w-full cursor-pointer text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors',
     'border-(--ui-stroke-tertiary) hover:border-(--ui-stroke-secondary)'
   )
 
@@ -408,8 +414,10 @@ export const UserMessage: FC<{
           data-slot="aui_user-bubble-actions"
         >
           <div className="human-message-with-todos-wrapper flex min-w-0 flex-1 flex-col gap-0">
-            <div className={cn('flex items-center gap-1', !showByline && 'h-0 overflow-visible')}>
-              {showByline && (
+            {/* 抬头那一行只放"谁发起的"；动作不再压在气泡上（用户 11-03：
+                「引用符号不要和气泡重合，悬浮时下方出现编辑/复制/引用，不悬浮就隐藏」）。 */}
+            {showByline && (
+              <div className="flex items-center gap-1">
                 <span
                   className={MESSAGE_BYLINE}
                   data-slot="aui_user-asked-by"
@@ -417,13 +425,8 @@ export const UserMessage: FC<{
                 >
                   {askedByLabel}
                 </span>
-              )}
-              <QuoteButton
-                className="ml-auto opacity-0 group-hover/user-message:opacity-100"
-                id={messageId}
-                text={messageText}
-              />
-            </div>
+              </div>
+            )}
             <div className="relative flex w-full justify-end">
               {readOnly || !canEdit ? (
                 // Spectator transcript, and any runtime without an `onEdit` (the
@@ -462,48 +465,71 @@ export const UserMessage: FC<{
                   </button>
                 </ActionBarPrimitive.Edit>
               )}
-              {(showStop || showRestore) && (
-                <div className="pointer-events-none absolute right-2 bottom-2 z-10 flex items-center justify-center opacity-0 transition-opacity group-hover/user-message:opacity-100 group-focus-within/user-message:opacity-100">
-                  {showStop ? (
-                    <button
-                      aria-label={copy.stop}
-                      className={cn('pointer-events-auto size-5', USER_ACTION_ICON_BUTTON_CLASS)}
-                      onClick={event => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        void onCancel?.()
-                      }}
-                      title={copy.stop}
-                      type="button"
-                    >
-                      {StopGlyph}
-                    </button>
-                  ) : (
-                    <button
-                      aria-label={copy.restoreCheckpoint}
-                      className={cn('pointer-events-auto size-6', USER_ACTION_ICON_BUTTON_CLASS)}
-                      onClick={event => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        triggerHaptic('selection')
-                        onRequestRestoreConfirm?.(messageId, {
-                          text: messageText,
-                          userOrdinal: runtimeUserOrdinal
-                        })
-                      }}
-                      onPointerDown={event => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                      }}
-                      title={copy.restoreFromHere}
-                      type="button"
-                    >
-                      <Codicon name="discard" size="0.875rem" />
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* 自己的消息也署名（用户 11-03：「用户的也要」）。这一笔先上头像——一枚中性
+                  人形、不带品牌色；名字那一格要一个「我」字的新文案，而五份语言目录此刻压在
+                  别人手上，所以名字随下一个能签 i18n 的窗口补，不硬塞一句现成的长话。 */}
+              <div aria-hidden className={cn(MESSAGE_AVATAR, 'self-start')} data-slot="aui_user-avatar">
+                <Codicon name="person" size="0.75rem" />
+              </div>
             </div>
+
+            {/* 动作条改摆在气泡**下方**，平时不显示、悬浮或键盘聚焦到这一条才出来
+                  （用户 11-03：「悬浮在气泡旁边时下方出现编辑、复制和引用等符号」）。
+                  形状与 Agent 那侧的 `AssistantActionBar` 同一份：`opacity-0` +
+                  `pointer-events-none`，靠 `group-hover` / `group-focus-within` 抬起来。
+                  原来那两颗停止/回到此处是绝对定位压在气泡右下角的，正是要拆掉的"重合"。 */}
+              <div
+                className="flex items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none transition-opacity group-hover/user-message:pointer-events-auto group-hover/user-message:opacity-100 group-focus-within/user-message:pointer-events-auto group-focus-within/user-message:opacity-100"
+                data-slot="aui_user-message-actions"
+              >
+                {showStop ? (
+                  <button
+                    aria-label={copy.stop}
+                    className={cn('size-5', USER_ACTION_ICON_BUTTON_CLASS)}
+                    onClick={event => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      void onCancel?.()
+                    }}
+                    title={copy.stop}
+                    type="button"
+                  >
+                    {StopGlyph}
+                  </button>
+                ) : null}
+                {showRestore ? (
+                  <button
+                    aria-label={copy.restoreCheckpoint}
+                    className={cn('size-6', USER_ACTION_ICON_BUTTON_CLASS)}
+                    onClick={event => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      triggerHaptic('selection')
+                      onRequestRestoreConfirm?.(messageId, {
+                        text: messageText,
+                        userOrdinal: runtimeUserOrdinal
+                      })
+                    }}
+                    onPointerDown={event => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }}
+                    title={copy.restoreFromHere}
+                    type="button"
+                  >
+                    <Codicon name="discard" size="0.875rem" />
+                  </button>
+                ) : null}
+                {hasBody && !readOnly ? (
+                  <CopyButton
+                    appearance="icon"
+                    buttonSize="icon"
+                    label={copy.copy}
+                    text={messageText}
+                  />
+                ) : null}
+                <QuoteButton id={messageId} text={messageText} />
+              </div>
             <BranchPickerPrimitive.Root
               className={cn(
                 'checkpoint-container flex items-center gap-1 pb-0 pt-1 pl-1.5 text-[0.75rem] leading-none text-(--ui-text-tertiary)',
