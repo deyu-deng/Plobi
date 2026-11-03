@@ -1109,9 +1109,9 @@ def profile_name_blocker(entry: AgentEntry) -> str:
         validate_profile_name(canon)
     except ValueError as exc:
         hint = suggested_profile_name(entry)
-        advice = f"给这条记录单独填一个能用的 profile 名，比如 ``{hint}``；" if hint else ""
+        advice = f"给这条记录单独填一个能用的运行时名字，比如 ``{hint}``；" if hint else ""
         return (
-            f"分身「{entry.display_name or entry.name}」建不出自己的家：profile 名"
+            f"智能体「{entry.display_name or entry.name}」起不来：它的运行时名字"
             f" ``{canon}`` 不能用（{exc}）。{advice}改完再登记一次就能问到它了。"
         )
     return ""
@@ -1160,7 +1160,7 @@ def agent_askability(entry: AgentEntry) -> "tuple[bool, str]":
         return False, "这一条已经归档，问不到它。"
     if entry.role != ASKABLE_ROLE:
         return False, (
-            f"这一条的角色是 ``{entry.role}``，不是项目分身，不归那枚嘴问"
+            f"这一条的角色是 ``{entry.role}``，不是项目智能体，不归那枚嘴问"
             "（日程秘书有它自己的沟通路：say / ask）。"
         )
     if not has_agent_identity(entry):
@@ -1200,7 +1200,7 @@ def agent_navigability(entry: AgentEntry) -> "tuple[bool, str]":
     if entry.archived:
         return False, "这一条已经归档。"
     if not has_agent_identity(entry):
-        return False, "这一条没有自己的运行时（课程是数据记录，不是可对话的分身）——点进去也只会是一张空壳。"
+        return False, "这一条没有自己的运行时（课程是数据记录，不是可对话的智能体）——点进去也只会是一张空壳。"
     blocker = profile_name_blocker(entry)
     if blocker:
         return False, blocker
@@ -1236,7 +1236,7 @@ def registration_blocker(registry: AgentRegistry, entry: AgentEntry) -> str:
         owner = registry.find_mind_subtree_owner(subtree, exclude=entry.name)
         if owner:
             return (
-                f"Mind 那棵树（``{subtree}``）已经挂在分身「{owner}」名下——同一个项目不登记"
+                f"Mind 那棵树（``{subtree}``）已经挂在智能体「{owner}」名下——同一个项目不登记"
                 f"第二条：要推进它就是去编辑「{owner}」，真另起一个项目请换一个项目名。"
             )
 
@@ -1247,7 +1247,7 @@ def registration_blocker(registry: AgentRegistry, entry: AgentEntry) -> str:
                 continue
             if incoming == _normalized_project_name(other):
                 return (
-                    f"名册里已经有一条叫「{other.display_name or other.name}」的分身"
+                    f"名册里已经有一条叫「{other.display_name or other.name}」的智能体"
                     f"（注册键 ``{other.name}``）——重名不许再建第二条：要改它就是编辑那一条，"
                     f"想真的另起炉灶请换一个项目名。"
                 )
@@ -1257,7 +1257,7 @@ def registration_blocker(registry: AgentRegistry, entry: AgentEntry) -> str:
     held_name = _normalized_project_name(held)
     if incoming and held_name and incoming != held_name:
         return (
-            f"注册键「{entry.name}」已经是分身「{held.display_name or held.name}」——"
+            f"注册键「{entry.name}」已经是智能体「{held.display_name or held.name}」——"
             f"新建请换一个名字；要改那一条，请带着它自己的名字来编辑它。"
         )
     return ""

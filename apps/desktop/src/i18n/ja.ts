@@ -628,8 +628,6 @@ export const ja = defineLocale({
       technicalDesc: '生のツール引数、結果、低レベルの詳細を含めます。',
       themeTitle: 'テーマ',
       themeDesc: 'デスクトップ専用のパレットです。選択したモードの上に適用されます。',
-      themeProfileNote: profile =>
-        `「${profile}」プロファイルに保存されます。プロファイルごとに個別のテーマを保持します。`,
       installTitle: 'VS Code から導入',
       installDesc:
         'Marketplace の拡張機能 ID（例: dracula-theme.theme-dracula）を貼り付けると、その配色テーマをデスクトップ用パレットに変換します。',
@@ -806,9 +804,9 @@ export const ja = defineLocale({
       },
       memory: {
         memoryEnabled: '永続メモリ',
-        userProfileEnabled: 'ユーザープロファイル',
+        userProfileEnabled: 'ユーザー像',
         memoryCharLimit: 'メモリ予算',
-        userCharLimit: 'プロファイル予算',
+        userCharLimit: 'ユーザー像の予算',
         provider: 'メモリプロバイダー'
       },
       context: {
@@ -867,7 +865,7 @@ export const ja = defineLocale({
       },
       memory: {
         memoryEnabled: '将来のセッションに役立つ永続メモリを保存します。',
-        userProfileEnabled: 'ユーザーの好みをまとめた簡潔なプロファイルを維持します。'
+        userProfileEnabled: 'ユーザーの好みをまとめた簡潔なユーザー像を維持します。'
       },
       context: {
         engine: '長い会話がコンテキスト上限に近づいたときの管理戦略です。'
@@ -956,12 +954,12 @@ export const ja = defineLocale({
       title: 'ゲートウェイ接続',
       envOverride: 'env オーバーライド',
       intro:
-        'Plobi Desktop はデフォルトで独自のローカルゲートウェイを起動します。別のマシンや信頼できるプロキシの背後で既に動作している Plobi バックエンドをこのアプリで制御する場合は、リモートゲートウェイを使用してください。以下でプロファイルを選択して、それぞれのリモートホストを設定します。',
+        'Plobi Desktop はデフォルトで独自のローカルゲートウェイを起動します。別のマシンや信頼できるプロキシの背後で既に動作している Plobi バックエンドをこのアプリで制御する場合は、リモートゲートウェイを使用してください。以下でエージェントを選ぶと、それぞれにリモートホストを設定できます。',
       appliesTo: '適用対象',
-      allProfiles: 'すべてのプロファイル',
-      defaultConnection: '独自のオーバーライドがないすべてのプロファイルのデフォルト接続。',
+      allProfiles: 'すべてのエージェント',
+      defaultConnection: '独自のオーバーライドがないすべてのエージェントのデフォルト接続。',
       profileConnection: profile =>
-        `"${profile}" がアクティブプロファイルのときのみ使用される接続。ローカルに設定するとデフォルトを継承します。`,
+        `"${profile}" が現在のエージェントのときのみ使用される接続。ローカルに設定するとデフォルトを継承します。`,
       envOverrideTitle: 'このセッションのゲートウェイ接続は環境変数によって制御されています。',
       envOverrideDesc:
         'リモート接続に関連する環境変数をクリアすると、以下に保存された設定が使用されます。',
@@ -2262,7 +2260,6 @@ export const ja = defineLocale({
 
   composer: {
     message: 'メッセージ',
-    wakingProfile: profile => `${profile} を起動中…`,
     permission: {
       label: '権限',
       ask: '毎回確認',
@@ -3181,11 +3178,11 @@ export const ja = defineLocale({
     yoloTitle: 'YOLO',
     yoloToggleFailed: 'YOLO を切り替えられませんでした',
     profileStatus: current =>
-      `プロファイル: ${current}。/profile <name> または「新しいセッション」ピッカーを使って別のプロファイルでチャットを始めてください。`,
-    unknownProfile: '不明なプロファイル',
-    noProfileNamed: (target, available) => `"${target}" という名前のプロファイルはありません。利用可能: ${available}`,
-    newChatsProfile: name => `新しいチャットはプロファイル ${name} を使用します。`,
-    setProfileFailed: 'プロファイルの設定に失敗しました',
+      `現在のエージェント: ${current}。/agent <名前> または「新しいセッション」ピッカーで別のエージェントとのチャットを始められます。`,
+    unknownProfile: '分からないエージェント',
+    noProfileNamed: (target, available) => `"${target}" という名前のエージェントはありません。利用可能: ${available}`,
+    newChatsProfile: name => `新しいチャットはエージェント ${name} を使います。`,
+    setProfileFailed: 'エージェントの設定に失敗しました',
     sttDisabled: '音声認識は設定で無効になっています。',
     stopFailed: '停止に失敗しました',
     regenerateFailed: '再生成に失敗しました',

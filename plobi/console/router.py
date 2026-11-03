@@ -1045,7 +1045,7 @@ def create_agent(body: dict) -> Union[dict, JSONResponse]:
             tree.rollback()
             return _error(
                 409,
-                f"Mind 里 ``{tree.relative}`` 已经挂在分身「{owner}」名下——同一个项目不登记"
+                f"Mind 里 ``{tree.relative}`` 已经挂在智能体「{owner}」名下——同一个项目不登记"
                 f"第二条：要推进它就是去编辑「{owner}」，真另起一个项目请换一个项目名。",
             )
         # 建完必须同步脑仓自己那两处声明（``AGENTS.md`` §1 那一行 + ``Vault/projects/INDEX.md``）：

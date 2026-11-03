@@ -138,7 +138,7 @@ def _spawn(registry: AgentRegistry, args: Any) -> None:
     # WP-REGISTRY-NO-HOME（B 刀）：不再落一个家，所以这一行从
     # 「Profile: x → <那个家的路径>」改成「身份在名册这一行上」。原来这里读
     # ``result['profile_dir']``——spawn 的返回值里已经没有这个键了。
-    print(f"Profile:  {result['profile']}（身份在名册这一行；不再建分身家）")
+    print(f"Agent:    {result['profile']}（身份在名册这一行；家已退役，不再建目录）")
     print(f"Routing:  ✅ ADR-0011 green (L1 ≠ L2 model)")
     print(f"Start:    {result['command']}")
     print()

@@ -618,7 +618,6 @@ export const zhHant = defineLocale({
       technicalDesc: '包含原始工具參數、結果與底層細節。',
       themeTitle: '主題',
       themeDesc: '僅限桌面端的調色盤。所選模式會套用在其上。',
-      themeProfileNote: profile => `已為「${profile}」設定檔儲存——每個設定檔保留各自的主題。`,
       installTitle: '從 VS Code 安裝',
       installDesc: '貼上 Marketplace 擴充功能 ID（例如 dracula-theme.theme-dracula），將其配色主題轉換為桌面調色盤。',
         installPlaceholder: 'publisher.extension',
@@ -793,9 +792,9 @@ export const zhHant = defineLocale({
       },
       memory: {
         memoryEnabled: '持久記憶',
-        userProfileEnabled: '使用者設定檔',
+        userProfileEnabled: '使用者画像',
         memoryCharLimit: '記憶預算',
-        userCharLimit: '設定檔預算',
+        userCharLimit: '画像預算',
         provider: '記憶提供方'
       },
       context: {
@@ -853,7 +852,7 @@ export const zhHant = defineLocale({
       },
       memory: {
         memoryEnabled: '儲存有助於未來工作階段的持久記憶。',
-        userProfileEnabled: '維護一份精簡的使用者偏好設定檔。'
+        userProfileEnabled: '維護一份精簡的使用者偏好画像。'
       },
       context: {
         engine: '長對話接近上下文上限時的管理策略。'
@@ -942,11 +941,11 @@ export const zhHant = defineLocale({
       title: '閘道連線',
       envOverride: '環境變數覆寫',
       intro:
-        'Plobi Desktop 預設會啟動自己的本機閘道。如果您希望此應用程式控制另一台機器或可信代理後面已執行的 Plobi 後端，請使用遠端閘道。在下方按設定檔指定各自的遠端主機。',
+        'Plobi Desktop 預設會啟動自己的本機閘道。如果您希望此應用程式控制另一台機器或可信代理後面已執行的 Plobi 後端，請使用遠端閘道。在下方按智能體指定各自的遠端主機。',
       appliesTo: '套用至',
-      allProfiles: '全部設定檔',
-      defaultConnection: '預設連線適用於所有沒有自訂覆寫的設定檔。',
-      profileConnection: profile => `僅當「${profile}」為作用中設定檔時使用此連線。設為本機可繼承預設連線。`,
+      allProfiles: '全部智能體',
+      defaultConnection: '預設連線適用於沒有單獨設定的智能體。',
+      profileConnection: profile => `僅當「${profile}」為目前智能體時使用此連線。設為本機可繼承預設連線。`,
       envOverrideTitle: '目前會話的閘道連線由環境變數控制。',
       envOverrideDesc: '清除遠端連線相關的環境變數後，才會使用下方儲存的設定。',
       localTitle: '本機閘道',
@@ -2211,7 +2210,6 @@ export const zhHant = defineLocale({
 
   composer: {
     message: '訊息',
-    wakingProfile: profile => `正在喚醒 ${profile}…`,
     permission: {
       label: '權限',
       ask: '每次詢問',
@@ -3084,11 +3082,11 @@ export const zhHant = defineLocale({
     yoloSystem: active => `此工作階段 YOLO ${active ? '已開啟' : '已關閉'}`,
     yoloTitle: 'YOLO',
     yoloToggleFailed: '無法切換 YOLO',
-    profileStatus: current => `設定檔：${current}。使用 /profile <name> 或「新工作階段」選擇器在其他設定檔中開始聊天。`,
-    unknownProfile: '未知設定檔',
-    noProfileNamed: (target, available) => `沒有名為「${target}」的設定檔。可用的：${available}`,
-    newChatsProfile: name => `新聊天將使用設定檔 ${name}。`,
-    setProfileFailed: '設定設定檔失敗',
+    profileStatus: current => `目前智能體：${current}。用 /agent <名字> 或「新工作階段」選擇器換到別的智能體開始聊天。`,
+    unknownProfile: '沒有這個智能體',
+    noProfileNamed: (target, available) => `沒有叫「${target}」的智能體。可用的：${available}`,
+    newChatsProfile: name => `新對話將使用智能體 ${name}。`,
+    setProfileFailed: '設定智能體失敗',
     sttDisabled: '設定中已停用語音轉文字。',
     stopFailed: '停止失敗',
     regenerateFailed: '重新生成失敗',

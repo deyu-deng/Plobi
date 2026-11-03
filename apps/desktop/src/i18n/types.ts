@@ -618,7 +618,6 @@ export interface Translations {
       technicalDesc: string
       themeTitle: string
       themeDesc: string
-      themeProfileNote: (profile: string) => string
       installTitle: string
       installDesc: string
       installPlaceholder: string
@@ -2071,7 +2070,6 @@ export interface Translations {
 
   composer: {
     message: string
-    wakingProfile: (profile: string) => string
     permission: {
       label: string
       ask: string

@@ -704,7 +704,6 @@ export const en: Translations = {
       technicalDesc: 'Include raw tool args/results and low-level details.',
       themeTitle: 'Theme',
       themeDesc: 'Desktop palettes only. The selected mode is applied on top.',
-      themeProfileNote: profile => `Saved for the ${profile} profile — each profile keeps its own theme.`,
       installTitle: 'Install from VS Code',
       installDesc:
         'Paste a Marketplace extension id (e.g. dracula-theme.theme-dracula) to convert its color theme into a desktop palette.',
@@ -825,12 +824,12 @@ export const en: Translations = {
       title: 'Gateway Connection',
       envOverride: 'env override',
       intro:
-        'Plobi Desktop starts its own local gateway by default. Use a remote gateway when you want this app to control an already-running Plobi backend on another machine or behind a trusted proxy. Pick a profile below to give it its own remote host.',
+        'Plobi Desktop starts its own local gateway by default. Use a remote gateway when you want this app to control an already-running Plobi backend on another machine or behind a trusted proxy. Pick an agent below to give it its own remote host.',
       appliesTo: 'Applies to',
-      allProfiles: 'All profiles',
-      defaultConnection: 'Default connection for every profile that has no override of its own.',
+      allProfiles: 'All agents',
+      defaultConnection: 'Default connection for every agent that has no override of its own.',
       profileConnection: profile =>
-        `Connection used only when “${profile}” is the active profile. Set it to Local to inherit the default.`,
+        `Connection used only when “${profile}” is the current agent. Set it to Local to inherit the default.`,
       envOverrideTitle: 'Environment variables are controlling this session\'s gateway connection.',
       envOverrideDesc:
         'The settings below are used only after the remote-connection environment variables are cleared.',
@@ -1526,11 +1525,11 @@ export const en: Translations = {
       memoryProvider: name => `Active provider: ${name}`,
       builtinMemory: 'built-in',
       memoryFile: 'Agent memory (MEMORY.md)',
-      userFile: 'User profile (USER.md)',
+      userFile: 'About you (USER.md)',
       bytes: size => size,
       empty: 'empty',
       resetMemory: 'Reset memory',
-      resetUser: 'Reset profile',
+      resetUser: 'Reset "about you"',
       resetAll: 'Reset both',
       resetConfirm: target => `Delete ${target}? This cannot be undone.`,
       resetDone: files => `Deleted ${files}.`,
@@ -2384,7 +2383,6 @@ export const en: Translations = {
 
   composer: {
     message: 'Message',
-    wakingProfile: profile => `Waking up ${profile}…`,
     permission: {
       label: 'Permissions',
       ask: 'Ask every time',
@@ -3297,11 +3295,11 @@ export const en: Translations = {
     yoloTitle: 'YOLO',
     yoloToggleFailed: 'Could not toggle YOLO',
     profileStatus: current =>
-      `Profile: ${current}. Use /profile <name> or the "New session" picker to start a chat in another profile.`,
-    unknownProfile: 'Unknown profile',
-    noProfileNamed: (target, available) => `No profile named "${target}". Available: ${available}`,
-    newChatsProfile: name => `New chats will use profile ${name}.`,
-    setProfileFailed: 'Failed to set profile',
+      `Current agent: ${current}. Use /agent <name> or the "New session" picker to start a chat with another agent.`,
+    unknownProfile: 'Unknown agent',
+    noProfileNamed: (target, available) => `No agent named "${target}". Available: ${available}`,
+    newChatsProfile: name => `New chats will use agent ${name}.`,
+    setProfileFailed: 'Failed to set the agent',
     sttDisabled: 'Speech-to-text is disabled in settings.',
     stopFailed: 'Stop failed',
     regenerateFailed: 'Regenerate failed',

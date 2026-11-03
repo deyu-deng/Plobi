@@ -113,7 +113,7 @@ const DESKTOP_COMMAND_SPECS: readonly DesktopCommandSpec[] = [
     surface: action('handoff'),
     args: true
   },
-  { name: '/profile', description: 'Switch the active Plobi profile', surface: action('profile') },
+  { aliases: ['/profile'], name: '/agent', description: 'Switch which agent the next chat runs as', surface: action('profile') },
   { name: '/skin', description: 'Switch desktop theme or cycle to the next one', surface: action('skin'), args: true },
   { name: '/title', description: 'Rename the current session', surface: action('title') },
   { name: '/help', description: 'Show desktop slash commands', aliases: ['/commands'], surface: action('help') },
