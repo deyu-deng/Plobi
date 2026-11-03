@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_FAILURE_THRESHOLD = 3
 DEFAULT_ALERT_INTERVAL_SECONDS = 3600
+#: 「拉一把」的重试窗口。旧形状那枚闩**永不松开**：试着拉起没成，就再也不试第二次；
+#: 而它只在"探到健康"那一路被清，那一路又只在被调用时才走到——于是自愈失败一次 = 永久锁死。
+#: 这台实测：`watchdog_state.json` 的 `heal_attempted_at` 停在 10-17 15:17，之后 16 天里
+#: 按需自愈一次都没真的拉过（11-03 那三轮 `not_listening` 就死在这）。
+DEFAULT_HEAL_RETRY_AFTER_SECONDS = 30 * 60
 
 
 def _repo_root() -> Path:
@@ -78,6 +83,7 @@ class Watchdog:
         heal_command: Optional[Callable[[], object]] = None,
         failure_threshold: int = DEFAULT_FAILURE_THRESHOLD,
         alert_interval_seconds: int = DEFAULT_ALERT_INTERVAL_SECONDS,
+        heal_retry_after_seconds: int = DEFAULT_HEAL_RETRY_AFTER_SECONDS,
     ):
         self.pipeline = pipeline if pipeline is not None else ChatlogPipeline()
         self.client = client or (pipeline.client if pipeline else self.pipeline.client)
@@ -87,6 +93,7 @@ class Watchdog:
         self.heal_command = heal_command or self._default_heal_command
         self.failure_threshold = max(1, int(failure_threshold))
         self.alert_interval_seconds = int(alert_interval_seconds)
+        self.heal_retry_after_seconds = max(0, int(heal_retry_after_seconds))
 
     # --- self-heal ----------------------------------------------------------
 
@@ -107,6 +114,21 @@ class Watchdog:
         )
 
     # --- on-demand heal (no sweep, no alert) --------------------------------
+
+    def _heal_gate_open(self, now: datetime) -> bool:
+        """这一轮能不能再拉一把：没试过，或者上一次已经过了重试窗口。
+
+        读不懂那一格就**当没试过**——宁可多拉一次，也不要再来一次 16 天的静默。
+        两边都按本机 naive 时间比（`_now()` 写进去的就是这个形状）。
+        """
+        stamp = str(self.state.get("heal_attempted_at") or "").strip()
+        if not stamp:
+            return True
+        try:
+            age = (now - datetime.fromisoformat(stamp)).total_seconds()
+        except (TypeError, ValueError):
+            return True
+        return age >= self.heal_retry_after_seconds
 
     def attempt_heal_once(self) -> dict:
         """确认没在听 → 拉一把 → 记限速位。**不跑采集、不告警**。
@@ -129,7 +151,7 @@ class Watchdog:
             self._save()
             return {"healthy": True, "healed": False, "already_attempted": False}
 
-        if self.state.get("heal_attempted_at"):
+        if not self._heal_gate_open(datetime.now()):
             return {"healthy": False, "healed": False, "already_attempted": True}
 
         healed = False
@@ -231,8 +253,9 @@ class Watchdog:
         self.state["consecutive_failures"] = int(self.state.get("consecutive_failures") or 0) + 1
         result["consecutive_failures"] = self.state["consecutive_failures"]
 
-        # 4) self-heal: once per down-episode
-        if self.state["consecutive_failures"] >= self.failure_threshold and not self.state.get("heal_attempted_at"):
+        # 4) self-heal: 一个断连窗口里一次，**窗口会过期**（不过期的话一次失败就永久锁死）
+        if (self.state["consecutive_failures"] >= self.failure_threshold
+                and self._heal_gate_open(datetime.now())):
             try:
                 outcome = self.heal_command()
                 result["healed"] = outcome is not None

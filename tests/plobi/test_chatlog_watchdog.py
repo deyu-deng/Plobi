@@ -220,3 +220,44 @@ def _pool(tmp_path):
 def _pooled(pool, **filters):
     """池子里那些行。不是 `service.list_pending()` -- 那是日程，采集器不再写它。"""
     return pool.query(**filters)
+
+
+def _stamp_state(tmp_path, heal_attempted_at) -> None:
+    """把自愈闸写成给定的那一枚时间戳（`attempt_heal_once` 一进来就从盘上重读，注入 `.state` 没用）。"""
+    import json
+
+    (tmp_path / "watchdog_state.json").write_text(json.dumps({
+        "consecutive_failures": 0, "last_alert_at": None,
+        "heal_attempted_at": heal_attempted_at,
+    }), encoding="utf-8")
+
+
+def test_a_failed_heal_is_retried_once_the_window_expires(tmp_path) -> None:
+    """拉一把没成 ≠ 从此不再拉：**过了重试窗口还要再试**。
+
+    旧形状那枚闩只在"探到健康"那一路被清，而那一路只有自愈被调用时才走到——一次失败就是永久锁死。
+    这台 11-03 的现场：`watchdog_state.json` 的 `heal_attempted_at` 停在 10-17 15:17，
+    之后 16 天里按需自愈一次都没真跑过；微信 19:00 掉线后连着的三轮 `not_listening` 全都被这把闩挡着。
+    """
+    from datetime import datetime, timedelta
+
+    watchdog, _client, heal_calls = _make(tmp_path, fail=True, notifier=RecordingNotifier())
+    _stamp_state(tmp_path, (datetime.now() - timedelta(hours=2)).replace(microsecond=0).isoformat())
+
+    outcome = watchdog.attempt_heal_once()
+
+    assert outcome["already_attempted"] is False
+    assert len(heal_calls) == 1, "闸过期了就该再拉一次"
+
+
+def test_the_heal_window_still_holds_to_one_attempt_per_window(tmp_path) -> None:
+    """但**一个窗口里仍然只试一次**——这把闸要收的是 spawn 循环，不是把自愈锁死。"""
+    from datetime import datetime
+
+    watchdog, _client, heal_calls = _make(tmp_path, fail=True, notifier=RecordingNotifier())
+    _stamp_state(tmp_path, datetime.now().replace(microsecond=0).isoformat())
+
+    outcome = watchdog.attempt_heal_once()
+
+    assert outcome["already_attempted"] is True
+    assert heal_calls == [], "窗口之内一次都不该再拉"
