@@ -1642,6 +1642,7 @@ export interface Translations {
     agentsLoadFailed: string
     agentsEmptyTitle: string
     agentsEmptyDesc: string
+    /** 左栏中段那枚来回切换的两个名词（用户 11-01）：名单 / 外包。 */
     tabAgents: string
     tabOutsourced: string
     /**
