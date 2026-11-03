@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
+import { AlertTriangle, Loader2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
   getAuxiliaryModels,
@@ -41,7 +41,7 @@ import { humanizeProviderRows } from '../shell/model-provider-label'
 import { CONTROL_TEXT } from './constants'
 import { getNested, setNested } from './helpers'
 import { mainProviderRows } from './provider-rows'
-import { ListRow, Pill, SectionHeading } from './primitives'
+import { ListRow, Pill, SettingsGroup } from './primitives'
 
 // Skeleton mirror of the Model settings DOM so the page keeps its shape while
 // the provider/model catalog loads, instead of collapsing to a centered
@@ -800,18 +800,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
       </section>
 
       <section>
-        <div className="mb-2.5 flex items-center justify-between">
-          <SectionHeading icon={Cpu} title={m.auxiliaryTitle} />
-          <Button
-            disabled={!mainModel || applying}
-            onClick={() => void resetAuxiliaryModels()}
-            size="sm"
-            variant="textStrong"
-          >
-            {m.resetAllToMain}
-          </Button>
-        </div>
-        <p className="mb-2 text-xs text-muted-foreground">{m.auxiliaryDesc}</p>
+        {/* 告警留在卡**外、卡上方**（与网络/宠物那两屏同一形状）；组名与那句说明落在卡抬头。 */}
         {switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (
           <div className="mb-2.5">
             <StaleAuxWarning
@@ -822,6 +811,20 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             />
           </div>
         )}
+        <SettingsGroup
+          action={
+            <Button
+              disabled={!mainModel || applying}
+              onClick={() => void resetAuxiliaryModels()}
+              size="sm"
+              variant="textStrong"
+            >
+              {m.resetAllToMain}
+            </Button>
+          }
+          description={m.auxiliaryDesc}
+          title={m.auxiliaryTitle}
+        >
         <div className="grid gap-1">
           {AUX_TASKS.map(meta => {
             const copy = m.tasks[meta.key] ?? { label: meta.key, hint: meta.key }
@@ -915,19 +918,19 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             )
           })}
         </div>
+        </SettingsGroup>
       </section>
       {moa && currentMoaPreset && (
         <section>
-          <div className="mb-2.5 flex items-center justify-between">
-            <SectionHeading icon={Cpu} title="Mixture of Agents" />
-            <Button disabled={applying} onClick={() => void saveMoa(moa)} size="sm" variant="textStrong">
-              {applying ? m.applying : t.common.save}
-            </Button>
-          </div>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Configure named presets that appear as models under the Mixture of Agents provider. The aggregator is the
-            acting model.
-          </p>
+          <SettingsGroup
+            action={
+              <Button disabled={applying} onClick={() => void saveMoa(moa)} size="sm" variant="textStrong">
+                {applying ? m.applying : t.common.save}
+              </Button>
+            }
+            description="Configure named presets that appear as models under the Mixture of Agents provider. The aggregator is the acting model."
+            title="Mixture of Agents"
+          >
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <Select onValueChange={setSelectedMoaPreset} value={selectedMoaPreset || moa.default_preset}>
               <SelectTrigger className={cn('min-w-40', CONTROL_TEXT)}>
@@ -1153,6 +1156,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
               title="Aggregator"
             />
           </div>
+          </SettingsGroup>
         </section>
       )}
     </div>
