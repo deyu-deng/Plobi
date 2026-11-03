@@ -36,7 +36,6 @@ import type {
   ModelInfoResponse,
   ModelOptionsResponse,
   NetworkEgressRecord,
-  NetworkImportClients,
   NetworkPoolImport,
   NetworkSubscriptionImport,
   NetworkSection,
@@ -507,11 +506,10 @@ export function importNetworkPool(path: string): Promise<NetworkPoolImport> {
  * `client` reads the subscription out of a desktop client's own cache: some providers ship a client
  * and no "copy subscription link" button, but the config it fetched is already on this box.
  */
-export function importNetworkSubscription(input: { client?: string; keepGroups?: boolean; refresh?: boolean; save?: boolean; text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
+export function importNetworkSubscription(input: { keepGroups?: boolean; refresh?: boolean; save?: boolean; text?: string; url?: string }): Promise<NetworkSubscriptionImport> {
   return window.plobiDesktop.api<NetworkSubscriptionImport>({
     ...profileScoped(),
     body: {
-      client: input.client ?? '',
       keep_groups: input.keepGroups ?? false,
       refresh: input.refresh ?? false,
       save: input.save ?? false,
@@ -531,14 +529,6 @@ export function getNetworkSubscription(): Promise<{ saved: boolean; env?: string
   return window.plobiDesktop.api<{ saved: boolean; env?: string }>({
     ...profileScoped(),
     path: '/api/network/egress/subscription'
-  })
-}
-
-/** The local clients whose own cache this machine can read a subscription out of. */
-export function getNetworkImportClients(): Promise<NetworkImportClients> {
-  return window.plobiDesktop.api<NetworkImportClients>({
-    ...profileScoped(),
-    path: '/api/network/egress/import-clients'
   })
 }
 

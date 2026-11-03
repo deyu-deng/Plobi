@@ -561,9 +561,6 @@ export const en: Translations = {
       importPath: 'Config file path (the proxy pool config file)',
       importPool: 'Import members and groups from a config file',
       importSub: 'Pull the subscription and unfold it into members and groups',
-      importClient: 'Import from a local client’s own cache:',
-      importClientButton: 'Import',
-      importClientMissing: 'no cache of it on this machine',
       subUrl: 'Subscription URL (fetched only when you click; no silent retry)',
       intro:
         'Which exit each destination uses. By default only what Plobi starts is routed — the switch below decides whether this machine\'s system proxy is handed over too. Without it Plobi does not set the system proxy and does not take over DNS; your browser and your own terminal keep their own route.',
@@ -596,7 +593,6 @@ export const en: Translations = {
       modeGlobal: 'Everything',
       modeRule: 'By rule',
       needEnvVars: (names) => `These environment variables are needed: ${names}`,
-      noMembersClient: 'That client’s own cache has no usable members',
       noMembersPaste: 'The pasted config has no usable members',
       noMembersSub: 'The subscription has no usable members',
       notLoaded: 'The current routing table could not be read — do not save (a save would empty the table)',

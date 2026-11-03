@@ -10,6 +10,7 @@ const saveNetworkEgress = vi.fn()
 
 vi.mock('@/plobi', () => ({
   getNetworkEgress: () => getNetworkEgress(),
+  //: 这一枚留在 mock 里是**有牙的**：这一屏不该再问它，谁把它接回去下面那条测试就红。
   getNetworkImportClients: () => getNetworkImportClients(),
   getNetworkStatus: () => getNetworkStatus(),
   getNetworkSubscription: () => getNetworkSubscription(),
@@ -64,7 +65,6 @@ const STATUS = {
 beforeEach(() => {
   getNetworkEgress.mockResolvedValue(RECORD)
   getNetworkStatus.mockResolvedValue(STATUS)
-  getNetworkImportClients.mockResolvedValue({ clients: [] })
   getNetworkSubscription.mockResolvedValue({ saved: true })
   importNetworkSubscription.mockResolvedValue({ groups: {}, nodes: {}, notes: [], ok: true })
   saveNetworkEgress.mockResolvedValue({ engine: { detail: 'ok', state: 'running-ours' }, ok: true })
@@ -109,7 +109,7 @@ describe('设置里那一屏只剩编辑', () => {
     expect(screen.queryByRole('button', { name: LONG })).toBeNull()
   })
 
-  it('粘贴一段配置也能导入——与链接、文件、客户端缓存同一个解析器', async () => {
+  it('粘贴一段配置也能导入——与链接、文件同一个解析器', async () => {
     render(<NetworkSettings />)
     await waitFor(() => expect(screen.getByDisplayValue(LONG)).toBeTruthy())
 
@@ -149,5 +149,16 @@ describe('设置里那一屏只剩编辑', () => {
 
     await waitFor(() => expect((screen.getByRole('button', { name: copy.refreshSub }) as HTMLButtonElement).disabled).toBe(true))
     expect(importNetworkSubscription).not.toHaveBeenCalled()
+  })
+
+  it('「从本机客户端缓存导入」不在这一屏，连问都不问（用户 11-03 判死这一型）', async () => {
+    getNetworkImportClients.mockResolvedValue({ clients: [{ id: 'ikuuu', note: 'iKuuu', present: true }] })
+    render(<NetworkSettings />)
+    await waitFor(() => expect(screen.getByDisplayValue(LONG)).toBeTruthy())
+
+    // 读别的软件自己拉的缓存当配置来源 = 把别人的存储格式当自己的契约：它一变，这台就静默没节点。
+    expect(screen.queryByText(/client’s own cache/i)).toBeNull()
+    expect(screen.queryByText(/客户端的缓存|客戶端的快取|キャッシュ/)).toBeNull()
+    expect(getNetworkImportClients).not.toHaveBeenCalled()
   })
 })

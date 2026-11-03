@@ -3,11 +3,10 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
-import { getNetworkEgress, getNetworkImportClients, getNetworkStatus, getNetworkSubscription, importNetworkPool, importNetworkSubscription, saveNetworkEgress } from '@/plobi'
+import { getNetworkEgress, getNetworkStatus, getNetworkSubscription, importNetworkPool, importNetworkSubscription, saveNetworkEgress } from '@/plobi'
 import type {
   NetworkEgressBlock,
   NetworkEgressRecord,
-  NetworkImportClients,
   NetworkSection,
   NetworkStatus
 } from '@/types/plobi'
@@ -239,7 +238,6 @@ export function NetworkSettings() {
   //: （yaml / base64 / 一行一个链接），只是没有入口。
   const [pasted, setPasted] = useState('')
   const [savedLink, setSavedLink] = useState(false)
-  const [localClients, setLocalClients] = useState<NonNullable<NetworkImportClients['clients']>>([])
   const [poolNotes, setPoolNotes] = useState<string[]>([])
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
@@ -268,9 +266,6 @@ export function NetworkSettings() {
     load().catch((error: unknown) => alive && setError(String(error)))
     getNetworkStatus()
       .then((next) => alive && setStatus(next))
-      .catch(() => {})
-    getNetworkImportClients()
-      .then((next) => alive && setLocalClients(next.clients ?? []))
       .catch(() => {})
     getNetworkSubscription()
       .then((next) => alive && setSavedLink(Boolean(next.saved)))
@@ -377,7 +372,7 @@ export function NetworkSettings() {
     }
   }
 
-  /** 粘贴一段配置就导入：与链接、文件、客户端缓存走同一个解析器（一份 yaml / base64 / 链接清单）。 */
+  /** 粘贴一段配置就导入：与链接、文件走同一个解析器（一份 yaml / base64 / 链接清单）。 */
   const importPasted = async () => {
     setImporting(true)
     setError('')
@@ -386,26 +381,6 @@ export function NetworkSettings() {
       applyImport(answer)
       if (answer.ok) setPasted('')
       if (!answer.ok && !(answer.notes ?? []).length) setError(copy.noMembersPaste)
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  /**
-   * 从本机客户端自己的缓存里读订阅。有些订阅商只给软件、不给"复制订阅链接"的按钮——但它拉下来的
-   * 配置就在这台机器上（DPAPI 加密，用户的用户上下文），读它比让人换订阅商实际得多。
-   */
-  const importFromClient = async (client: string) => {
-    setImporting(true)
-    setError('')
-    try {
-      const answer = await importNetworkSubscription({ client })
-      applyImport(answer)
-      if (!answer.ok && !(answer.notes ?? []).length) {
-        setError(copy.noMembersClient)
-      }
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -500,22 +475,6 @@ export function NetworkSettings() {
             </Button>
           </div>
         </div>
-        {localClients.map((client) => (
-          <div className="flex items-center gap-2" key={client.id}>
-            <p className={CAPTION}>
-              {copy.importClient}: {client.note}
-              {client.present ? '' : ` — ${copy.importClientMissing}`}
-            </p>
-            <Button
-              disabled={importing || !client.present}
-              onClick={() => void importFromClient(client.id)}
-              size="sm"
-              variant="outline"
-            >
-              {importing ? '…' : copy.importClientButton}
-            </Button>
-          </div>
-        ))}
         {poolNotes.map((note, index) => (
           <p className={CAPTION} key={index}>
             {note}

@@ -1320,11 +1320,6 @@ export interface NetworkSubscriptionImport {
   source?: string
 }
 
-/** The local clients whose own cache this machine can read a subscription out of. */
-export interface NetworkImportClients {
-  clients?: { id: string; note: string; present?: boolean }[]
-}
-
 export interface NetworkSection {
   egress?: NetworkEgressBlock
   force_ipv4?: boolean

@@ -512,7 +512,6 @@ export const zhHant = defineLocale({
       modeGlobal: '全域',
       modeRule: '規則',
       needEnvVars: (names) => `需要這些環境變數：${names}`,
-      noMembersClient: '這個客戶端的快取裏沒有可用的成員',
       noMembersPaste: '這段設定裏沒有可用的成員',
       noMembersSub: '訂閱裏沒有可用的成員',
       notLoaded: '讀不到目前的出口表：先別儲存（儲存會把表清空）',

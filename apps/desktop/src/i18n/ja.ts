@@ -520,7 +520,6 @@ export const ja = defineLocale({
       modeGlobal: '全体',
       modeRule: 'ルール',
       needEnvVars: (names) => `次の環境変数が必要です：${names}`,
-      noMembersClient: 'このクライアントのキャッシュに利用可能なメンバーがありません',
       noMembersPaste: 'この設定に利用可能なメンバーがありません',
       noMembersSub: 'サブスクリプションに利用可能なメンバーがありません',
       notLoaded: '現在の出口テーブルを読み取れません——保存しないでください（保存するとテーブルが空になります）',
