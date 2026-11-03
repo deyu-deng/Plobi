@@ -84,10 +84,11 @@ export function StatusbarControls({
   const allItems = useMemo(() => [...dockTools, ...leftItems, ...items], [dockTools, items, leftItems])
 
   if (dock) {
-    // `inline` 就是"这一条住在左栏底部"（展开横排 / 收起只剩「⋯」）——那里只留六枚
-    // （用户 11-02 拍），单子与去向写在 rail-footer.ts。吸在窗口角上的经典状态栏不走
-    // 这张单子，照旧全给。挂在这里而不是左栏调用方，是因为左栏那一档此刻压着别人
-    // 未提交的活（11-02 现核 `chat/sidebar/index.tsx` 工树 88/61），一行也不许替他签。
+    // `inline` 就是"这一条住在左栏底部"（展开横排 / 收起只剩「⋯」）——那几枚、以及
+    // 「整屏的在前、面板的在后」这一条顺序，单子和理由都写在 rail-footer.ts（用户
+    // 11-03 拍顺序）。吸在窗口角上的经典状态栏不走这张单子，照旧全给。挂在这里而不是
+    // 左栏调用方，是因为左栏那一档此刻压着别人未提交的活（11-02 现核 `chat/sidebar/index.tsx`
+    // 工树 88/61），一行也不许替他签。
     const dockItems = inline ? pickRailFooterItems(allItems) : allItems
 
     return <StatusbarDock anchor={dockAnchor} className={className} inline={inline} items={dockItems} {...props} />
