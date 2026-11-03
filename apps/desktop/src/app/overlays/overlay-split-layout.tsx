@@ -144,10 +144,21 @@ export interface OverlayNavGroup extends OverlayNavLink {
 // dropdown in PageSearchShell), so every OverlaySplitLayout pane degrades the
 // same way instead of stacking its whole sidebar. Drop it in as the first
 // child of an OverlaySplitLayout, before OverlayMain.
-export function OverlayNav({ footer, groups }: { footer?: ReactNode; groups: OverlayNavGroup[] }) {
+export function OverlayNav({
+  footer,
+  groups,
+  search
+}: {
+  footer?: ReactNode
+  groups: OverlayNavGroup[]
+  /** 导航顶上那格过滤（设置那一屏用，Qoder 就有这一格）。窄条那一行已经排满
+   *  了下拉与关闭键，所以这一格只在宽栏上画——不在窄条里塞第三个控件。 */
+  search?: ReactNode
+}) {
   return (
     <>
       <OverlaySidebar className={RAIL_HIDDEN}>
+        {search ? <div className="pb-2">{search}</div> : null}
         {groups.map(group => (
           <Fragment key={group.id}>
             {group.gapBefore && <div aria-hidden className="h-2" />}

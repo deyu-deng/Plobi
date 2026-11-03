@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { SkillsView } from '@/app/skills'
 import { codiconIcon } from '@/components/ui/codicon'
+import { SearchField } from '@/components/ui/search-field'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
@@ -15,8 +17,6 @@ import { OverlayMain, OverlayNav, type OverlayNavGroup, OverlaySplitLayout } fro
 import { OverlayView } from '../overlays/overlay-view'
 import { SKILLS_ROUTE } from '../routes'
 
-import { SkillsView } from '@/app/skills'
-
 import { AboutSettings } from './about-settings'
 import { AppearanceSettings } from './appearance-settings'
 import { ConfigSettings } from './config-settings'
@@ -25,9 +25,9 @@ import { GatewaySettings } from './gateway-settings'
 import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
 import { NetworkSettings } from './network-settings'
 import { NotificationsSettings } from './notifications-settings'
+import { OffloadSettings } from './offload-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
 import { SessionsSettings } from './sessions-settings'
-import { OffloadSettings } from './offload-settings'
 import { SourcesSettings } from './sources-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
@@ -44,6 +44,28 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'capabilities',
   'about'
 ]
+
+/**
+ * 设置导航的过滤（Qoder 那一屏顶上就有这一格）。两条判据：
+ * ① 命中组名 ⇒ 整组上，不带子项（否则展开态会突然多出一堆缩进行）；
+ * ② 只命中子项 ⇒ 把那条**提到顶层**——它本来藏在"要点开那一组才看得见"的位置，
+ *    搜到了却点不到，等于没搜。
+ */
+export function filterNavGroups(groups: readonly OverlayNavGroup[], query: string): OverlayNavGroup[] {
+  const needle = query.trim().toLowerCase()
+
+  if (!needle) {
+    return [...groups]
+  }
+
+  const hits = (label: string) => label.toLowerCase().includes(needle)
+
+  return groups.flatMap(group =>
+    hits(group.label)
+      ? [{ ...group, children: undefined }]
+      : (group.children ?? []).filter(child => hits(child.label)).map(child => ({ ...child }))
+  )
+}
 
 export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
   const { t } = useI18n()
@@ -146,7 +168,9 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       // 四张**全局**表。它是全局真源本身，不是某个 Agent 的减法视图——所以渲染
       // 在设置 overlay 里，而不是跳出去、也不进任何 Agent 的界面。
       active: activeView === 'capabilities',
-      icon: Package,
+      // 与主界面左栏那一格同一枚字形（用户 11-03：两处 Capabilities 图标不一样，
+      // 主界面那个语义更贴切）——同一件事在两个地方不该画两种样子。
+      icon: codiconIcon('extensions'),
       id: 'capabilities',
       label: t.settings.nav.capabilities,
       onSelect: () => setActiveView('capabilities' as SettingsViewId)
@@ -250,6 +274,9 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
     }
   ]
 
+  // 导航过滤那一格的查询词（Qoder 的设置导航顶上就有）。
+  const [navQuery, setNavQuery] = useState('')
+
   const navFooter = (
     <>
       <Tip label={t.settings.exportConfig}>
@@ -284,7 +311,18 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
   return (
     <OverlayView closeLabel={t.settings.closeSettings} onClose={onClose}>
       <OverlaySplitLayout>
-        <OverlayNav footer={navFooter} groups={navGroups} />
+        <OverlayNav
+          footer={navFooter}
+          groups={filterNavGroups(navGroups, navQuery)}
+          search={
+            <SearchField
+              aria-label={t.titlebar.search}
+              onChange={setNavQuery}
+              placeholder={t.titlebar.search}
+              value={navQuery}
+            />
+          }
+        />
 
         <OverlayMain className="px-0 pb-0">
           {activeView === 'config:appearance' ? (
