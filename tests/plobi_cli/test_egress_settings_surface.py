@@ -421,3 +421,58 @@ def test_put_refuses_an_empty_draft_that_would_delete_every_member(monkeypatch):
 
     assert answer["ok"] is True, answer
     assert written, "说了 force 就该真的写"
+
+
+def test_the_only_writer_refuses_to_erase_every_member(tmp_path, monkeypatch):
+    """11-03 这台：整张表被抹成 `DEFAULT_CONFIG` 那个空壳。§37 之后立的守卫只长在 HTTP 入口上，
+    而 `set_system_proxy` / `apply_switch` 这些路径是直接走 `replace_egress` 的——
+    一条只在某个门上响的判据不是判据。"""
+    import yaml
+    from agent.egress import rules as egress
+    from plobi_cli.egress_config import replace_egress, wipe_check
+
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({
+        "network": {"egress": {
+            "nodes": {"a": {"cipher": "aes-256-gcm", "password_env": "P_X", "port": 1,
+                            "server": "1.2.3.4", "type": "ss"}},
+            "groups": {"POOL": {"include": ["a"], "type": "select"}},
+            "rules": [{"match": "*", "via": "proxy:POOL"}],
+            "engine": {"enabled": True, "mixed_port": 7895},
+        }}
+    }), encoding="utf-8")
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    monkeypatch.setattr(egress, "_TABLE_CACHE", None)
+    monkeypatch.setenv("P_X", "test-only")
+
+    empty = {"egress": {"rules": [], "engine": {"binary": "", "enabled": False, "mixed_port": 0}}}
+    would, had, keeps = wipe_check(empty)
+    assert (would, had, keeps) == (True, 1, 0), (would, had, keeps)
+
+    ok, issues = replace_egress(empty)
+    assert ok is False and any("抹掉" in line for line in issues), issues
+    assert len(egress.load_table(force_reload=True).nodes) == 1, "拒了就不许已经写下去"
+
+    assert replace_egress(empty, force=True)[0] is True
+    assert len(egress.load_table(force_reload=True).nodes) == 0, "明示要清空才清得掉"
+
+
+def test_a_switch_action_cannot_wipe_the_table_by_accident(tmp_path, monkeypatch):
+    """开关那几条路（`set_system_proxy` / `apply_switch`）读的是同一份表：
+    读回来是默认空壳时，它们也不许把空壳存回去。"""
+    import yaml
+    from agent.egress import rules as egress
+    from plobi_cli.egress_config import set_system_proxy
+
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({
+        "network": {"egress": {
+            "nodes": {"a": {"cipher": "aes-256-gcm", "password_env": "P_X", "port": 1,
+                            "server": "1.2.3.4", "type": "ss"}},
+            "rules": [{"match": "*", "via": "direct"}],
+        }}
+    }), encoding="utf-8")
+    monkeypatch.setenv("PLOBI_HOME", str(tmp_path))
+    monkeypatch.setattr(egress, "_TABLE_CACHE", None)
+
+    # 表里只剩这一位成员；开关本身不该动成员，所以这条必须成功且成员还在
+    assert set_system_proxy(True)[0] is True
+    assert len(egress.load_table(force_reload=True).nodes) == 1

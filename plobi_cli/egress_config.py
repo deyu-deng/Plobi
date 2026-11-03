@@ -55,6 +55,19 @@ _FLAG_REGIONS: dict[str, str] = {
 }
 
 
+def wipe_check(network_block: Any) -> tuple[bool, int, int]:
+    """Would this write erase every member the table currently has?  ``(would_wipe, had, keeps)``.
+
+    11-03 这台：整张 `network.egress`（46 成员/17 组/3 规则）被抹成 `DEFAULT_CONFIG` 那一格
+    空壳。§37 之后立的守卫只长在 HTTP 入口上，而 `set_system_proxy` / `apply_switch` /
+    任何将来多出来的写家都直接走 `replace_egress` —— 一条只在某个门上响的判据不是判据。
+    所以判据搬到这里，与唯一的写家同处；HTTP 那半边只负责把它渲染成 409。
+    """
+    had = len(egress.load_table().nodes)
+    keeps = candidate_node_count(network_block)
+    return (had > 0 and keeps == 0), had, keeps
+
+
 def candidate_node_count(network_block: Any) -> int:
     """How many members this candidate table would leave — **through the parser**.
 
@@ -330,15 +343,26 @@ def set_system_proxy(desired: bool) -> tuple[bool, list[str]]:
     return replace_egress(network)
 
 
-def replace_egress(network_block: Any) -> tuple[bool, list[str]]:
+def replace_egress(network_block: Any, *, force: bool = False) -> tuple[bool, list[str]]:
     """Set the whole ``network`` section (empty/None removes it), then re-read it.
 
     Returns ``(ok, issues)``; nothing is written when issues is non-empty, so a
     half-valid paste cannot be partially applied.
+
+    The wipe check lives here rather than at the caller because this is the only
+    writer: a pane, the CLI, a switch action or a future surface all land in the same
+    gate, and "we only check on HTTP" is how 11-03 lost the whole table.
     """
     ok, issues = validate_egress(network_block)
     if not ok:
         return False, issues
+
+    would_wipe, had, keeps = wipe_check(network_block)
+    if would_wipe and not force:
+        return False, [
+            f"这次写入会把现有的 {had} 个成员全部抹掉（送来的表里一个成员都没有）——"
+            f"多半是有人把默认值当成了你的表存回去。确认要清空就带 force: true 再来。"
+        ]
 
     from plobi_cli.config import load_config, save_config
 
