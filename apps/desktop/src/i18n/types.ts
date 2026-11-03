@@ -1642,21 +1642,13 @@ export interface Translations {
     agentsLoadFailed: string
     agentsEmptyTitle: string
     agentsEmptyDesc: string
-    /** 左栏中段那枚来回切换的两个名词（用户 11-01）：名单 / 外包。 */
-    tabAgents: string
-    tabOutsourced: string
-    /**
-     * 主区那张「外面的对话」卡片的抬头（用户 11-01：不再用弹窗）：
-     * 返回、以及外部会话那枚「⋯」（重命名 / 归档 / 删除）。
-     */
-    conversationBack: string
-    conversationActions: string
     /** 点进一个 L2 时左栏那一格：它把活外包给了谁（WP-L2-OUTSOURCE-ENTRY ③）。 */
     offloadsTitle: string
     offloadsLoading: string
     offloadsEmpty: string
     offloadsReply: string
     offloadsCredits: string
+    externalSessionsTitle: string
     externalSessionsLoading: string
     externalSessionsEmpty: string
     externalSessionsLoadFailed: string
@@ -1689,6 +1681,7 @@ export interface Translations {
     externalSessionsDeleteConfirm: string
     externalSessionsDeleted: string
     externalSessionsRestore: string
+    offloadsBackToList: string
     offloadsLoadFailed: string
     offloadsNoArtifact: string
     offloadsOpenFailed: string
